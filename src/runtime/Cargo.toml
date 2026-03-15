@@ -13,9 +13,10 @@ name = "z42_vm"
 path = "src/lib.rs"
 
 [dependencies]
-# Serialization for .z42bc bytecode
+# Serialization
 serde = { version = "1", features = ["derive"] }
-bincode = "1"
+serde_json = "1"   # Phase 1: JSON interchange format (.z42ir.json)
+bincode = "1"      # Phase 2: compact binary format (.z42bc)
 
 # Error handling
 anyhow = "1"

@@ -2,21 +2,39 @@ namespace Z42.Compiler.Lexer;
 
 public enum TokenKind
 {
-    // Literals
-    IntLiteral, FloatLiteral, StringLiteral, CharLiteral, True, False,
+    // ── Literals ──────────────────────────────────────────────────────────────
+    IntLiteral, FloatLiteral, StringLiteral, CharLiteral,
+    InterpolatedStringLiteral,   // $"..."
+    True, False,
 
-    // Identifiers & keywords
+    // ── Identifiers & keywords ─────────────────────────────────────────────
     Identifier,
-    Fn, Let, Mut, Return, If, Else, While, For, In,
-    Match, Struct, Enum, Trait, Impl, Use, Module,
-    Async, Await, Spawn,
-    None, Error,
 
-    // Types
+    // C# keywords
+    Namespace, Using, Var,
+    Static, Public, Private, Protected, Internal,
+    Class, Struct, Enum, Interface, Record,
+    Abstract, Sealed, Override, Virtual, New,
+    Async, Await,
+    Return, If, Else, While, For, Foreach, In,
+    Do, Break, Continue,
+    Switch, Case, Default,
+    Try, Catch, Finally, Throw,
+    Typeof, Is, As,
+    Null,
+
+    // Legacy / z42-specific keywords (kept for future use)
+    Fn, Let, Mut, Trait, Impl, Use, Module, Spawn, None, Error,
+
+    // ── Type keywords ──────────────────────────────────────────────────────
+    // C# type names
+    String, Int, Long, Short, Double, Float, Byte,
+    Uint, Ulong, Ushort, Sbyte, Object,
+    Bool, Char, Void,
+    // Explicit-size aliases
     I8, I16, I32, I64, U8, U16, U32, U64, F32, F64,
-    Bool, Char, Str, Void,
 
-    // Symbols
+    // ── Symbols ───────────────────────────────────────────────────────────
     LParen, RParen, LBrace, RBrace, LBracket, RBracket,
     Comma, Dot, DotDot, Colon, ColonColon, Semicolon,
     Arrow,          // ->
@@ -26,14 +44,15 @@ public enum TokenKind
     Ampersand, Pipe, Caret, Tilde,
     Plus, Minus, Star, Slash, Percent,
     Eq, EqEq, BangEq, Lt, LtEq, Gt, GtEq,
-    LtLt, GtGt,     // << >>
+    LtLt, GtGt,
     AmpAmp, PipePipe,
     PlusEq, MinusEq, StarEq, SlashEq, PercentEq,
+    PlusPlus, MinusMinus,   // ++ --
 
-    // Attributes
-    Hash, LBracketHash, // #[
+    // ── Attributes ────────────────────────────────────────────────────────
+    Hash, LBracketHash,
 
-    // Special
+    // ── Special ───────────────────────────────────────────────────────────
     Underscore,
     Newline,
     Eof,
