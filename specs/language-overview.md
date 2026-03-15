@@ -1,160 +1,521 @@
 # z42 Language Overview
 
-## Core Principles
+## 设计策略
 
-1. **Safe by default** — memory safety, null safety, exhaustive pattern matching
-2. **Fast by default** — zero-cost abstractions, AOT/JIT compilation
-3. **Ergonomic** — minimal boilerplate, expressive syntax, great error messages
-4. **Interoperable** — FFI with C, C#, and Rust ecosystems
+z42 分两个演进阶段：
+
+| 阶段 | 策略 | 目标 |
+|------|------|------|
+| **Phase 1 — Bootstrap** | 语法完全对齐 C#，降低编译器开发难度 | 跑通完整 pipeline：源码 → IR → 解释执行 |
+| **Phase 2 — Evolution** | 引入 Rust 设计改进内存模型、类型系统、错误处理 | 零开销抽象、无 GC、更强的安全保证 |
+
+本文档描述 **Phase 1** 语法。Phase 2 改动标注为 `[Phase 2]`。
 
 ---
 
-## Syntax Sketch
+## 1. 顶层结构
 
 ```z42
-// Module declaration
-module hello
+namespace Geometry;          // 命名空间声明
 
-// Import
-use std.io
+using System.Math;           // 导入
+using System.Collections.Generic;
 
-// Function
-fn greet(name: str) -> str {
-    return "Hello, {name}!"
-}
-
-// Entry point
-fn main() {
-    let msg = greet("world")
-    io.println(msg)
+// 顶层函数（C# 9+ 风格，无需包在类中）
+void Main() {
+    var p = new Point(1.0, 2.0);
+    Console.WriteLine(p.ToString());
 }
 ```
 
-### Types
+---
+
+## 2. 基本类型
+
+| z42 类型   | 位宽 | 等价 C# 类型 |
+|-----------|------|------------|
+| `sbyte`   | 8    | `sbyte`    |
+| `short`   | 16   | `short`    |
+| `int`     | 32   | `int`      |
+| `long`    | 64   | `long`     |
+| `byte`    | 8    | `byte`     |
+| `ushort`  | 16   | `ushort`   |
+| `uint`    | 32   | `uint`     |
+| `ulong`   | 64   | `ulong`    |
+| `float`   | 32   | `float`    |
+| `double`  | 64   | `double`   |
+| `bool`    | —    | `bool`     |
+| `char`    | 32   | `char` (Unicode) |
+| `string`  | —    | `string`   |
+| `void`    | —    | `void`     |
 
 ```z42
-// Primitive types
-let x: i32 = 42
-let y: f64 = 3.14
-let flag: bool = true
-let ch: char = 'z'
-let s: str = "hello"
+int    x = 42;
+long   big = 9_000_000_000L;
+double pi = 3.14159;
+float  f = 1.5f;
+bool   flag = true;
+char   ch = 'z';
+string s = "hello";
 
-// Inferred
-let z = 42          // i32
-
-// Option (no null)
-let maybe: i32? = none
-let value: i32? = 7
-
-// Result
-fn divide(a: f64, b: f64) -> f64! {
-    if b == 0.0 { return error("division by zero") }
-    return a / b
-}
+// var 推断
+var count = 0;          // int
+var name = "z42";       // string
+var ratio = 0.5;        // double
 ```
 
-### Ownership & Memory
+### 可空类型
 
 ```z42
-// Owned value — moved on assignment
-let a = Buffer.new(1024)
-let b = a               // a is moved, b owns the buffer
+string? maybeNull = null;
+int? optInt = 42;
 
-// Borrow (immutable)
-fn inspect(buf: &Buffer) { ... }
+// null 合并
+string result = maybeNull ?? "default";
 
-// Borrow (mutable)
-fn fill(buf: &mut Buffer) { ... }
-
-// Region-based allocation (escape-hatch for performance)
-region r {
-    let tmp = r.alloc(MyStruct { ... })
-    process(tmp)
-}   // all region memory freed here
+// null 条件访问
+int? len = maybeNull?.Length;
 ```
 
-### Structs & Traits
+---
+
+## 3. 字符串
 
 ```z42
-struct Point {
-    x: f64
-    y: f64
-}
+string a = "hello";
+string b = "world";
 
-trait Distance {
-    fn dist(self, other: &Self) -> f64
-}
+// 字符串插值（C# $ 前缀）
+string msg = $"Hello, {b}! Length = {b.Length}";
 
-impl Distance for Point {
-    fn dist(self, other: &Point) -> f64 {
-        let dx = self.x - other.x
-        let dy = self.y - other.y
-        return (dx*dx + dy*dy).sqrt()
+// 原始字符串（C# 11+）
+string json = """
+    {
+        "key": "value"
     }
+    """;
+
+// 常用方法
+int len = a.Length;
+string upper = a.ToUpper();
+bool starts = a.StartsWith("he");
+string[] parts = a.Split(',');
+```
+
+---
+
+## 4. 控制流
+
+```z42
+// if / else
+if (x > 0) {
+    Console.WriteLine("positive");
+} else if (x < 0) {
+    Console.WriteLine("negative");
+} else {
+    Console.WriteLine("zero");
+}
+
+// while / do-while
+while (count < 10) {
+    count++;
+}
+
+do {
+    count--;
+} while (count > 0);
+
+// for
+for (int i = 0; i < 10; i++) {
+    Console.WriteLine(i);
+}
+
+// foreach
+var numbers = new[] { 1, 2, 3, 4, 5 };
+foreach (var n in numbers) {
+    Console.WriteLine(n);
+}
+
+// switch 表达式（C# 8+）
+string label = x switch {
+    > 0  => "positive",
+    < 0  => "negative",
+    _    => "zero"
+};
+
+// switch 语句
+switch (direction) {
+    case Direction.North:
+        Console.WriteLine("going north");
+        break;
+    default:
+        Console.WriteLine("other direction");
+        break;
 }
 ```
 
-### Pattern Matching
+---
+
+## 5. 函数与方法
 
 ```z42
-enum Shape {
-    Circle(radius: f64)
-    Rect(w: f64, h: f64)
-    Triangle(base: f64, height: f64)
+// 顶层函数
+int Add(int a, int b) {
+    return a + b;
 }
 
-fn area(s: Shape) -> f64 {
-    match s {
-        Circle(r)     => Math.PI * r * r
-        Rect(w, h)    => w * h
-        Triangle(b, h) => 0.5 * b * h
-    }
-}
-```
+// 表达式体（C# expression-bodied）
+int Multiply(int a, int b) => a * b;
 
-### Async / Concurrency
-
-```z42
-async fn fetch(url: str) -> str! {
-    let resp = await Http.get(url)?
-    return await resp.text()
+// 默认参数
+void Greet(string name, string prefix = "Hello") {
+    Console.WriteLine($"{prefix}, {name}!");
 }
 
-fn main() {
-    let result = spawn fetch("https://example.com")
+// 命名参数
+Greet(name: "world", prefix: "Hi");
+
+// 可变参数
+int Sum(params int[] values) {
+    int total = 0;
+    foreach (var v in values) total += v;
+    return total;
+}
+
+// out / ref 参数
+bool TryParse(string s, out int result) {
     // ...
-    let text = await result
+    result = 0;
+    return false;
+}
+
+// 泛型函数
+T Max<T>(T a, T b) where T : IComparable<T> {
+    return a.CompareTo(b) >= 0 ? a : b;
 }
 ```
 
 ---
 
-## Execution Mode Annotations
-
-Modules can declare their preferred execution mode; the VM honours it:
+## 6. 类
 
 ```z42
-#[exec = interp]   // always interpreted (scripting, hot-reload)
-module scripts.config
+public class Point {
+    // 属性（C# auto-property）
+    public double X { get; set; }
+    public double Y { get; set; }
 
-#[exec = jit]      // JIT-compiled at runtime
-module engine.render
+    // 构造函数
+    public Point(double x, double y) {
+        X = x;
+        Y = y;
+    }
 
-#[exec = aot]      // ahead-of-time compiled to native
-module core.crypto
+    // 主构造函数（C# 12+）
+    // public class Point(double X, double Y) { ... }
+
+    // 方法
+    public double DistanceTo(Point other) {
+        double dx = X - other.X;
+        double dy = Y - other.Y;
+        return Math.Sqrt(dx * dx + dy * dy);
+    }
+
+    // 重写 ToString
+    public override string ToString() => $"Point({X}, {Y})";
+
+    // 静态工厂方法
+    public static Point Origin() => new Point(0, 0);
+}
+
+// 继承
+public class Point3D(double X, double Y, double Z) : Point(X, Y) {
+    public double Z { get; set; } = Z;
+
+    public override string ToString() => $"Point3D({X}, {Y}, {Z})";
+}
 ```
-
-Mixed execution is transparent — calling across mode boundaries is a normal function call.
 
 ---
 
-## IR (Intermediate Representation)
+## 7. 结构体
 
-z42 IR is a typed, SSA-form bytecode designed to target all three execution backends:
+值类型，分配在栈上，赋值时复制。
 
-- Register-based (not stack-based) for JIT friendliness
-- Explicit ownership / lifetime annotations preserved through IR
-- Serialisable to a compact binary format (`.z42bc`)
+```z42
+public struct Color {
+    public byte R { get; }
+    public byte G { get; }
+    public byte B { get; }
 
-Spec TBD in `specs/ir.md`.
+    public Color(byte r, byte g, byte b) => (R, G, B) = (r, g, b);
+
+    public static readonly Color White = new Color(255, 255, 255);
+    public static readonly Color Black = new Color(0, 0, 0);
+
+    public override string ToString() => $"#{R:X2}{G:X2}{B:X2}";
+}
+
+// 使用
+var red = new Color(255, 0, 0);
+var copy = red;     // 值拷贝
+```
+
+---
+
+## 8. Record
+
+不可变数据类型，自动生成相等性比较、`ToString`、解构。
+
+```z42
+// record class（引用语义）
+public record Person(string Name, int Age);
+
+// record struct（值语义）
+public record struct Vector2(double X, double Y);
+
+// 使用
+var alice = new Person("Alice", 30);
+var older = alice with { Age = 31 };    // 非破坏性更新
+
+Console.WriteLine(alice);              // Person { Name = Alice, Age = 30 }
+Console.WriteLine(alice == older);     // false
+```
+
+---
+
+## 9. 接口
+
+```z42
+public interface IShape {
+    double Area();
+    double Perimeter();
+    string Name { get; }
+}
+
+public interface IDrawable {
+    void Draw();
+}
+
+// 多接口实现
+public class Circle : IShape, IDrawable {
+    public double Radius { get; }
+
+    public Circle(double radius) {
+        Radius = radius;
+    }
+
+    public double Area()      => Math.PI * Radius * Radius;
+    public double Perimeter() => 2 * Math.PI * Radius;
+    public string Name        => "Circle";
+
+    public void Draw() {
+        Console.WriteLine($"Drawing {Name} r={Radius}");
+    }
+}
+```
+
+---
+
+## 10. 枚举
+
+```z42
+// 简单枚举
+public enum Direction {
+    North, South, East, West
+}
+
+// 带底层值的枚举
+public enum StatusCode : int {
+    Ok      = 200,
+    NotFound = 404,
+    Error   = 500
+}
+
+Direction dir = Direction.North;
+StatusCode code = StatusCode.Ok;
+
+// 枚举作为 switch 目标
+string label = dir switch {
+    Direction.North => "↑",
+    Direction.South => "↓",
+    Direction.East  => "→",
+    Direction.West  => "←",
+    _               => "?"
+};
+```
+
+---
+
+## 11. 判别联合（代数类型）
+
+Phase 1 使用 C# abstract record 层次结构模拟。
+
+```z42
+public abstract record Shape;
+public sealed record Circle(double Radius) : Shape;
+public sealed record Rectangle(double Width, double Height) : Shape;
+public sealed record Triangle(double Base, double Height) : Shape;
+
+// 模式匹配
+double Area(Shape s) => s switch {
+    Circle c        => Math.PI * c.Radius * c.Radius,
+    Rectangle r     => r.Width * r.Height,
+    Triangle t      => 0.5 * t.Base * t.Height,
+    _               => throw new ArgumentException($"Unknown shape: {s}")
+};
+
+// 解构模式
+if (s is Circle { Radius: > 10 } big) {
+    Console.WriteLine($"Big circle: r={big.Radius}");
+}
+```
+
+---
+
+## 12. 泛型
+
+```z42
+// 泛型类
+public class Stack<T> {
+    private readonly List<T> _items = new();
+
+    public void Push(T item) => _items.Add(item);
+
+    public T Pop() {
+        if (_items.Count == 0) throw new InvalidOperationException("Stack is empty");
+        var last = _items[^1];
+        _items.RemoveAt(_items.Count - 1);
+        return last;
+    }
+
+    public int Count => _items.Count;
+}
+
+// 泛型约束
+public T Min<T>(T a, T b) where T : IComparable<T> =>
+    a.CompareTo(b) <= 0 ? a : b;
+
+// 多约束
+public class Repository<T> where T : class, IEntity, new() {
+    // ...
+}
+```
+
+---
+
+## 13. 委托与 Lambda
+
+```z42
+// 内置委托类型
+Func<int, int, int> add = (a, b) => a + b;
+Action<string> print = s => Console.WriteLine(s);
+Predicate<int> isEven = n => n % 2 == 0;
+
+// Lambda 捕获
+int multiplier = 3;
+Func<int, int> triple = x => x * multiplier;
+
+// LINQ 风格
+var numbers = new[] { 1, 2, 3, 4, 5, 6 };
+var result = numbers
+    .Where(n => n % 2 == 0)
+    .Select(n => n * n)
+    .ToList();   // [4, 16, 36]
+```
+
+---
+
+## 14. 异常处理
+
+```z42
+// throw
+void Validate(int age) {
+    if (age < 0) throw new ArgumentException($"Invalid age: {age}");
+}
+
+// try / catch / finally
+try {
+    var result = Divide(10, 0);
+} catch (DivideByZeroException ex) {
+    Console.WriteLine($"Error: {ex.Message}");
+} catch (Exception ex) when (ex.Message.Contains("overflow")) {
+    Console.WriteLine("Overflow detected");
+} finally {
+    Console.WriteLine("cleanup");
+}
+
+// 自定义异常
+public class Z42RuntimeException(string message, int errorCode)
+    : Exception(message) {
+    public int ErrorCode { get; } = errorCode;
+}
+```
+
+---
+
+## 15. 异步编程
+
+```z42
+using System.Net.Http;
+
+// async / await（完全对齐 C#）
+async Task<string> FetchAsync(string url) {
+    using var client = new HttpClient();
+    return await client.GetStringAsync(url);
+}
+
+// async void（事件处理器）
+async void OnButtonClick() {
+    var content = await FetchAsync("https://example.com");
+    Console.WriteLine(content[..100]);
+}
+
+// Task.WhenAll 并行
+async Task<string[]> FetchAllAsync(string[] urls) {
+    var tasks = urls.Select(FetchAsync);
+    return await Task.WhenAll(tasks);
+}
+
+// ValueTask（低分配路径）
+async ValueTask<int> GetCachedAsync(string key) {
+    if (_cache.TryGetValue(key, out var v)) return v;
+    return await LoadFromDbAsync(key);
+}
+```
+
+---
+
+## 16. 执行模式注解（z42 扩展）
+
+z42 在 C# 基础上新增执行模式注解，对 VM 行为进行提示：
+
+```z42
+[ExecMode(Mode.Interp)]        // 始终解释执行（快速启动、热重载）
+namespace Scripts.Config;
+
+[ExecMode(Mode.Jit)]           // JIT 编译（最优吞吐）
+namespace Engine.Render;
+
+[ExecMode(Mode.Aot)]           // AOT 编译（确定性性能）
+namespace Core.Crypto;
+```
+
+跨模式调用透明，像普通方法调用一样。
+
+---
+
+## Phase 2 改进预告（引入 Rust 思想）
+
+以下特性将在完成基础实现后引入：
+
+| 特性 | C# Phase 1 | Rust-influenced Phase 2 |
+|------|-----------|------------------------|
+| 内存模型 | GC（.NET 运行时）| 所有权 + 借用，无 GC |
+| 可变性 | 默认可变 | 默认不可变，显式 `mut` |
+| 错误处理 | 异常（`try/catch`）| `Result<T, E>` + `?` 运算符 |
+| 接口分发 | 虚函数表（运行时） | Trait 静态分发（零开销）|
+| 模式匹配 | `switch` 表达式 | `match` 表达式（穷尽检查）|
+| 空安全 | `T?` 可空类型 | `Option<T>`，编译期穷尽检查 |
+| 并发 | `async/await` + Task | `async/await` + Send/Sync trait |
+| 枚举 | abstract record 层次 | 代数类型（真正的 sum type）|

@@ -1,12 +1,14 @@
-module hello
+// Hello World — z42 Phase 1 (C# syntax)
+namespace Hello;
 
-use std.io
+using System;
 
-fn greet(name: str) -> str {
-    return "Hello, world!"
+string Greet(string name) {
+    return $"Hello, {name}!";
 }
 
-fn main() {
-    let msg = greet("world")
-    io.println(msg)
+void Main() {
+    var msg = Greet("world");
+    Console.WriteLine(msg);
+    Console.WriteLine($"z42 version 0.1, the answer is {42}");
 }

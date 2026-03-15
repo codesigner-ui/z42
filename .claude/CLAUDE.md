@@ -62,12 +62,41 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|
 | 6 | Rust VM：AOT（LLVM/inkwell） | 📋 规划 |
 | 7 | 自举：用 z42 重写编译器和工具链 | 📋 规划 |
 
-## 关键设计决策
+## 语言设计策略（两阶段，不要跳越）
+
+### Phase 1 — C# 语法（当前）
+
+语法**完全对齐 C# 9–12**，目标是尽快跑通完整 pipeline。
+
+| 特性 | Phase 1 写法 |
+|------|-------------|
+| 命名空间 | `namespace Foo;` |
+| 导入 | `using System;` |
+| 类型 | `int`, `long`, `double`, `string`, `bool` |
+| 推断 | `var x = 42;` |
+| 类/结构体 | `class`, `struct`, `record`, `record struct` |
+| 接口 | `interface` |
+| 模式匹配 | `switch` 表达式（C# 8+ 风格） |
+| 错误处理 | `try/catch/throw` |
+| 异步 | `async Task<T>` + `await` |
+| 专有扩展 | `[ExecMode(Mode.Jit)]` 执行模式注解 |
+
+### Phase 2 — Rust 改进（完成基础实现后引入）
+
+| 特性 | Phase 2 方向 |
+|------|-------------|
+| 内存 | 所有权 + 借用，`mut` 显式可变，无 GC |
+| 错误处理 | `Result<T, E>` + `?` 运算符替换异常 |
+| 接口 → Trait | 零开销静态分发 |
+| 枚举 | 真正的代数数据类型（sum type） |
+| 模式匹配 | `match` 穷尽检查替换 `switch` |
+| 空安全 | `Option<T>` 编译期检查，消除 null |
+
+### 固定不变的决策
 
 - **IR 是寄存器 SSA 形式**，非栈机，便于 JIT 生成高质量原生代码
-- **执行模式注解** `#[exec = interp|jit|aot]` 作用于模块级别，VM 按注解分发
-- **无 null**，使用 `T?`（Option）和 `T!`（Result）代替
-- **所有权 + Region 内存模型**，无 GC
+- **执行模式注解**作用于命名空间级别，VM 按注解分发
+- `.z42bc` magic bytes 固定为 `[0x5A, 0x34, 0x32, 0x00]`（"Z42\0"）
 
 ## 规范文件
 
@@ -90,9 +119,9 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|
 
 ## 注意事项
 
-- `.z42bc` 文件的 magic bytes 固定为 `[0x5A, 0x34, 0x32, 0x00]`（"Z42\0"）
 - 在语言自举完成前，**不要**把编译器代码改写成 z42
 - JIT/AOT 后端暂为存根，不要填充实现直到解释器通过全部测试
+- Phase 2 的改动（所有权、Result、match 等）**不要**在 Phase 1 实现阶段提前引入到规范中
 
 @specs/language-overview.md
 @specs/ir.md

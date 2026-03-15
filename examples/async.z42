@@ -1,0 +1,120 @@
+// 异步编程 — z42 Phase 1 (C# syntax)
+namespace Demo.Async;
+
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
+
+// ── 基础 async/await ────────────────────────────────────────────────────────
+
+async Task<string> ReadFileAsync(string path) {
+    await Task.Delay(10);    // 模拟 I/O
+    return $"content of {path}";
+}
+
+async Task<int> CountLinesAsync(string path) {
+    var content = await ReadFileAsync(path);
+    return content.Split('\n').Length;
+}
+
+// ── 并行执行 ────────────────────────────────────────────────────────────────
+
+async Task<string[]> FetchAllAsync(string[] paths) {
+    // 并行启动所有任务
+    var tasks = Array.ConvertAll(paths, ReadFileAsync);
+    return await Task.WhenAll(tasks);
+}
+
+async Task<string> FetchFirstAsync(string[] paths) {
+    var tasks = Array.ConvertAll(paths, ReadFileAsync);
+    return await Task.WhenAny(tasks).ContinueWith(t => t.Result.Result);
+}
+
+// ── 取消令牌 ────────────────────────────────────────────────────────────────
+
+async Task<List<string>> ProcessWithCancelAsync(
+    string[] paths,
+    CancellationToken ct = default) {
+
+    var results = new List<string>();
+    foreach (var path in paths) {
+        ct.ThrowIfCancellationRequested();
+        var content = await ReadFileAsync(path);
+        results.Add(content);
+    }
+    return results;
+}
+
+// ── ValueTask — 避免热路径分配 ─────────────────────────────────────────────
+
+private readonly Dictionary<string, string> _cache = new();
+
+async ValueTask<string> GetCachedAsync(string key) {
+    if (_cache.TryGetValue(key, out var cached)) {
+        return cached;    // 同步返回，不分配 Task
+    }
+    var value = await ReadFileAsync(key);
+    _cache[key] = value;
+    return value;
+}
+
+// ── 异步流（IAsyncEnumerable） ──────────────────────────────────────────────
+
+async IAsyncEnumerable<string> StreamLinesAsync(string path) {
+    var content = await ReadFileAsync(path);
+    foreach (var line in content.Split('\n')) {
+        await Task.Delay(1);    // 模拟逐行读取
+        yield return line;
+    }
+}
+
+// ── 带进度报告 ─────────────────────────────────────────────────────────────
+
+async Task ProcessWithProgressAsync(
+    string[] paths,
+    IProgress<int> progress) {
+
+    for (int i = 0; i < paths.Length; i++) {
+        await ReadFileAsync(paths[i]);
+        progress.Report((i + 1) * 100 / paths.Length);
+    }
+}
+
+// ── 执行模式注解（z42 扩展） ────────────────────────────────────────────────
+// 异步 I/O 密集型模块推荐使用 JIT
+
+[ExecMode(Mode.Jit)]
+namespace Demo.Async;
+
+// ── 入口 ───────────────────────────────────────────────────────────────────
+
+async Task Main() {
+    // 串行
+    var count = await CountLinesAsync("README.md");
+    Console.WriteLine($"Lines: {count}");
+
+    // 并行
+    var paths = new[] { "a.txt", "b.txt", "c.txt" };
+    var contents = await FetchAllAsync(paths);
+    Console.WriteLine($"Fetched {contents.Length} files");
+
+    // 取消
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+    try {
+        var results = await ProcessWithCancelAsync(paths, cts.Token);
+        Console.WriteLine($"Processed {results.Count} files");
+    } catch (OperationCanceledException) {
+        Console.WriteLine("Cancelled");
+    }
+
+    // 异步流
+    await foreach (var line in StreamLinesAsync("data.txt")) {
+        Console.WriteLine($"  > {line}");
+    }
+
+    // 进度
+    var progress = new Progress<int>(p => Console.Write($"\r{p}%"));
+    await ProcessWithProgressAsync(paths, progress);
+    Console.WriteLine("\nDone");
+}
