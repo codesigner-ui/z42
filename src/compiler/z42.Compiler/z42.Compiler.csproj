@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Z42.IR\Z42.IR.csproj" />
+    <ProjectReference Include="..\z42.IR\z42.IR.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

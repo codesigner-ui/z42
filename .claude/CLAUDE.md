@@ -40,7 +40,7 @@ z42/
 dotnet build src/compiler/z42.slnx
 
 # 运行编译器
-dotnet run --project src/compiler/Z42.Driver -- <file.z42> [--dump-tokens]
+dotnet run --project src/compiler/z42.Driver -- <file.z42> [--dump-tokens]
 
 # VM（Rust）
 cargo build --manifest-path src/runtime/Cargo.toml
