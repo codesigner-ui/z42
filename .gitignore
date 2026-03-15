@@ -1,8 +1,5 @@
-# Build artifacts
-bin/
-obj/
-target/
-out/
+# Build artifacts (all redirected to artifacts/)
+artifacts/
 
 # .NET / C#
 *.user
