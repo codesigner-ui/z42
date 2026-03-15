@@ -12,20 +12,29 @@ z42 是一门融合 C#、Rust、Python 优点的系统编程语言。
 ```
 z42/
 ├── CLAUDE.md
-├── specs/                    # 语言规范（language-overview.md, ir.md）
-├── examples/                 # .z42 示例源文件
+├── specs/                    # 语言规范
+│   ├── language-overview.md
+│   ├── ir.md                 # SSA IR 指令集
+│   ├── compilation.md        # 编译产物 .zbc/.zmod/.zlib
+│   └── project.md            # 工程文件 .z42proj/.z42sln
+├── examples/                 # .z42 示例源文件 + .z42proj
 └── src/
     ├── compiler/             # C# Bootstrap 编译器 (.NET 10)
-    │   ├── Z42.IR/           # IR 数据类型（纯数据，无逻辑）
-    │   ├── Z42.Compiler/
+    │   ├── z42.IR/           # IR + 工程数据类型（纯数据，无逻辑）
+    │   │   ├── IrModule.cs       # SSA IR 数据模型
+    │   │   ├── PackageTypes.cs   # ZbcFile / ZmodManifest / ZlibFile
+    │   │   └── ProjectTypes.cs   # Z42Proj / Z42Sln（TOML 模型）
+    │   ├── z42.Compiler/
     │   │   ├── Lexer/        # Lexer.cs, Token.cs, TokenKind.cs
     │   │   ├── Parser/       # Parser.cs, Ast.cs
     │   │   ├── TypeCheck/    # 类型检查器（待实现）
-    │   │   └── Codegen/      # IR 代码生成（待实现）
-    │   └── Z42.Driver/       # CLI 入口 z42c
+    │   │   └── Codegen/      # IrGen.cs — AST → IrModule
+    │   └── z42.Driver/       # CLI 入口 z42c（--emit ir|zbc|zmod|zlib）
     └── runtime/              # Rust VM
         └── src/
-            ├── bytecode.rs   # .z42bc 模块格式
+            ├── bytecode.rs   # Module / Instruction / Terminator
+            ├── package.rs    # ZbcFile / ZmodManifest / ZlibFile
+            ├── project.rs    # Z42Proj / Z42Sln（TOML 模型）
             ├── types.rs      # Value、ExecMode
             ├── interp.rs     # 解释器后端
             ├── jit.rs        # JIT 存根

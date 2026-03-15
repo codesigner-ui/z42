@@ -1,0 +1,30 @@
+# hello.z42proj — z42 project manifest
+
+[project]
+name        = "Hello"
+version     = "0.1.0"
+description = "Hello World demo"
+authors     = ["z42 team"]
+license     = "MIT"
+kind        = "exe"
+entry       = "Hello.Main"
+
+[sources]
+include = ["*.z42"]
+exclude = []
+
+[build]
+emit        = "zlib"
+mode        = "interp"
+incremental = true
+out_dir     = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "jit"
+optimize = 3
+strip    = true

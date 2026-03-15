@@ -16,6 +16,7 @@ path = "src/lib.rs"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"   # Phase 1: JSON interchange format (.z42ir.json)
+toml = "0.8"       # .z42proj / .z42sln project manifest format
 bincode = "1"      # Phase 2: compact binary format (.z42bc)
 
 # Error handling
