@@ -117,6 +117,57 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|
 - 不使用 `unwrap()`，用 `?` 传播
 - 公开类型加 `#[derive(Debug)]`，序列化类型加 `Serialize, Deserialize`
 
+## 充分利用开源库，不重复造轮子
+
+**核心原则：优先寻找成熟开源库，只在无合适库或需要深度定制时才自行实现。**
+
+### 编译器（C#）推荐库
+
+| 用途 | 推荐库 | 说明 |
+|------|--------|------|
+| 命令行解析 | `System.CommandLine` | 官方 CLI 框架 |
+| 测试 | `xUnit` + `FluentAssertions` | 单元 / 集成测试 |
+| 基准测试 | `BenchmarkDotNet` | 编译器性能回归 |
+| 源码生成辅助 | `Roslyn`（只读引用）| 参考 C# AST 结构 |
+| 二进制序列化 | `MessagePack-CSharp` | `.z42bc` 读写（比手写快）|
+| 日志 | `Microsoft.Extensions.Logging` | 统一日志接口 |
+
+### VM（Rust）推荐库
+
+| 用途 | 推荐库 | 说明 |
+|------|--------|------|
+| JIT 代码生成 | `cranelift-jit` | Bytecode Alliance，Wasmtime 同款 |
+| AOT / LLVM | `inkwell` | LLVM safe bindings for Rust |
+| 二进制格式 | `bincode` ✅（已用）| 序列化 `.z42bc` |
+| 解析辅助（调试格式）| `nom` 或 `winnow` | 文本 IR（`.z42ir`）解析 |
+| GC（未来沙盒模式）| `gc-arena` | arena 式 GC，可选引入 |
+| 并发运行时 | `tokio` | async VM task 调度 |
+| 性能剖析 | `pprof-rs` | 火焰图 |
+
+### 参考实现与学习资源
+
+在实现某个子系统前，**先调研同类开源项目**：
+
+| 子系统 | 参考项目 |
+|--------|---------|
+| 解释器结构 | CPython（ceval.c）、wren、lua 5.4 |
+| SSA / IR 设计 | LLVM IR、Cranelift CLIF、QBE |
+| 类型推导 | OCaml 编译器、Hindley-Milner 论文实现 |
+| JIT 流水线 | LuaJIT、V8 Maglev、JavascriptCore |
+| 所有权检查（Phase 2）| rustc borrow checker、Midori 语言 |
+| 模式匹配编译 | `rustc_mir_build`、MLton |
+
+### 决策流程
+
+```
+需要某个功能？
+  └─ 搜索 crates.io / NuGet / GitHub
+       ├─ 找到活跃、有测试、许可证兼容的库 → 直接引入
+       ├─ 找到接近的库但需要定制 → fork 或包装后用
+       └─ 没有合适库，或库会引入不可接受的架构耦合 → 自行实现，
+          并在 PR / commit 中说明为何不用现有库
+```
+
 ## 注意事项
 
 - 在语言自举完成前，**不要**把编译器代码改写成 z42
