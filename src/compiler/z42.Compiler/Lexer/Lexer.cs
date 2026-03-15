@@ -104,7 +104,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
             if (_pos >= source.Length) break;
             tokens.Add(NextToken());
         }
-        tokens.Add(Token.Eof(_pos));
+        tokens.Add(Token.Eof(_pos, fileName));
         return tokens;
     }
 
@@ -191,7 +191,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
             '|' => Peek('|') ? Eat(TokenKind.PipePipe)  : TokenKind.Pipe,
             _   => TokenKind.Error_Unknown,
         };
-        return new Token(kind, source[startPos.._pos], new Span(startPos, _pos, startLine, startCol));
+        return new Token(kind, source[startPos.._pos], MakeSpan(startPos, startLine, startCol));
     }
 
     // ── Specific lexers ──────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         }
         return new Token(TokenKind.InterpolatedStringLiteral,
             source[startPos.._pos],
-            new Span(startPos, _pos, startLine, startCol));
+            MakeSpan(startPos, startLine, startCol));
     }
 
     private Token LexString(int startPos, int startLine, int startCol)
@@ -226,7 +226,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         if (_pos < source.Length) Advance(); // closing "
         return new Token(TokenKind.StringLiteral,
             source[startPos.._pos],
-            new Span(startPos, _pos, startLine, startCol));
+            MakeSpan(startPos, startLine, startCol));
     }
 
     private Token LexChar(int startPos, int startLine, int startCol)
@@ -237,7 +237,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         if (_pos < source.Length && source[_pos] == '\'') Advance(); // closing '
         return new Token(TokenKind.CharLiteral,
             source[startPos.._pos],
-            new Span(startPos, _pos, startLine, startCol));
+            MakeSpan(startPos, startLine, startCol));
     }
 
     private Token LexNumber(int startPos, int startLine, int startCol)
@@ -250,14 +250,14 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
                 Advance(); Advance(); // 0x
                 while (_pos < source.Length && (char.IsAsciiHexDigit(source[_pos]) || source[_pos] == '_')) Advance();
                 SkipNumericSuffixes();
-                return new Token(TokenKind.IntLiteral, source[startPos.._pos], new Span(startPos, _pos, startLine, startCol));
+                return new Token(TokenKind.IntLiteral, source[startPos.._pos], MakeSpan(startPos, startLine, startCol));
             }
             if (source[_pos + 1] == 'b' || source[_pos + 1] == 'B')
             {
                 Advance(); Advance(); // 0b
                 while (_pos < source.Length && (source[_pos] == '0' || source[_pos] == '1' || source[_pos] == '_')) Advance();
                 SkipNumericSuffixes();
-                return new Token(TokenKind.IntLiteral, source[startPos.._pos], new Span(startPos, _pos, startLine, startCol));
+                return new Token(TokenKind.IntLiteral, source[startPos.._pos], MakeSpan(startPos, startLine, startCol));
             }
         }
 
@@ -284,7 +284,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         SkipNumericSuffixes();
         return new Token(isFloat ? TokenKind.FloatLiteral : TokenKind.IntLiteral,
             source[startPos.._pos],
-            new Span(startPos, _pos, startLine, startCol));
+            MakeSpan(startPos, startLine, startCol));
     }
 
     private void SkipNumericSuffixes()
@@ -302,10 +302,13 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         var kind = Keywords.TryGetValue(text, out var kw) ? kw : TokenKind.Identifier;
         // _ is a special discard pattern
         if (text == "_") kind = TokenKind.Underscore;
-        return new Token(kind, text, new Span(startPos, _pos, startLine, startCol));
+        return new Token(kind, text, MakeSpan(startPos, startLine, startCol));
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private Span MakeSpan(int startPos, int startLine, int startCol) =>
+        new(startPos, _pos, startLine, startCol, fileName);
 
     private bool Peek(char expected) =>
         _pos < source.Length && source[_pos] == expected;

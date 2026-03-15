@@ -1,0 +1,5 @@
+namespace Demo;
+
+void Main() {
+    var x = 42;
+    // missing closing brace

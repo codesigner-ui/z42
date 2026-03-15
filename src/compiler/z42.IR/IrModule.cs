@@ -47,6 +47,14 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(NeInstr),        "ne")]
 [JsonDerivedType(typeof(LtInstr),        "lt")]
 [JsonDerivedType(typeof(LeInstr),        "le")]
+[JsonDerivedType(typeof(GtInstr),        "gt")]
+[JsonDerivedType(typeof(GeInstr),        "ge")]
+[JsonDerivedType(typeof(AndInstr),       "and")]
+[JsonDerivedType(typeof(OrInstr),        "or")]
+[JsonDerivedType(typeof(NotInstr),       "not")]
+[JsonDerivedType(typeof(NegInstr),       "neg")]
+[JsonDerivedType(typeof(StoreInstr),     "store")]
+[JsonDerivedType(typeof(LoadInstr),      "load")]
 public abstract record IrInstr;
 
 public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
@@ -67,6 +75,14 @@ public sealed record EqInstr(int Dst, int A, int B)          : IrInstr;
 public sealed record NeInstr(int Dst, int A, int B)          : IrInstr;
 public sealed record LtInstr(int Dst, int A, int B)          : IrInstr;
 public sealed record LeInstr(int Dst, int A, int B)          : IrInstr;
+public sealed record GtInstr(int Dst, int A, int B)          : IrInstr;
+public sealed record GeInstr(int Dst, int A, int B)          : IrInstr;
+public sealed record AndInstr(int Dst, int A, int B)         : IrInstr;
+public sealed record OrInstr(int Dst, int A, int B)          : IrInstr;
+public sealed record NotInstr(int Dst, int Src)              : IrInstr;
+public sealed record NegInstr(int Dst, int Src)              : IrInstr;
+public sealed record StoreInstr(string Var, int Src)         : IrInstr;
+public sealed record LoadInstr(int Dst, string Var)          : IrInstr;
 
 // ── Terminators ───────────────────────────────────────────────────────────────
 

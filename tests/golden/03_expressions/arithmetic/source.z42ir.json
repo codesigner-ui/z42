@@ -1,0 +1,144 @@
+{
+  "name": "Expr",
+  "string_pool": [],
+  "functions": [
+    {
+      "name": "Fib",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 1,
+              "val": 1
+            },
+            {
+              "op": "le",
+              "dst": 2,
+              "a": 0,
+              "b": 1
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 2,
+            "true_label": "then_0",
+            "false_label": "end_1"
+          }
+        },
+        {
+          "label": "then_0",
+          "instructions": [],
+          "terminator": {
+            "op": "ret",
+            "reg": 0
+          }
+        },
+        {
+          "label": "end_1",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 1
+            },
+            {
+              "op": "sub",
+              "dst": 4,
+              "a": 0,
+              "b": 3
+            },
+            {
+              "op": "call",
+              "dst": 5,
+              "func": "Fib",
+              "args": [
+                4
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 6,
+              "val": 2
+            },
+            {
+              "op": "sub",
+              "dst": 7,
+              "a": 0,
+              "b": 6
+            },
+            {
+              "op": "call",
+              "dst": 8,
+              "func": "Fib",
+              "args": [
+                7
+              ]
+            },
+            {
+              "op": "add",
+              "dst": 9,
+              "a": 5,
+              "b": 8
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 9
+          }
+        }
+      ]
+    },
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 7
+            },
+            {
+              "op": "call",
+              "dst": 1,
+              "func": "Fib",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "store",
+              "var": "result",
+              "src": 1
+            },
+            {
+              "op": "load",
+              "dst": 2,
+              "var": "result"
+            },
+            {
+              "op": "builtin",
+              "dst": 3,
+              "name": "__println",
+              "args": [
+                2
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

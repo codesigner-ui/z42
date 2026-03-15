@@ -1,4 +1,5 @@
 using System.Text;
+using Z42.Compiler.Features;
 using Z42.Compiler.Lexer;
 
 namespace Z42.Compiler.Parser;
@@ -6,8 +7,9 @@ namespace Z42.Compiler.Parser;
 /// <summary>
 /// Recursive-descent parser for z42 Phase 1 (C# syntax).
 /// </summary>
-public sealed class Parser(List<Token> tokens)
+public sealed class Parser(List<Token> tokens, LanguageFeatures? features = null)
 {
+    private readonly LanguageFeatures _feat = features ?? LanguageFeatures.Phase1;
     private int _pos;
 
     private Token Current    => _pos < tokens.Count ? tokens[_pos] : Token.Eof(0);
@@ -24,8 +26,13 @@ public sealed class Parser(List<Token> tokens)
     private Token Expect(TokenKind kind)
     {
         if (Current.Kind != kind)
+        {
+            string got = Current.Kind == TokenKind.Eof
+                ? "unexpected end of file"
+                : $"unexpected token `{Current.Text}`";
             throw new ParseException(
-                $"expected `{KindName(kind)}` but got `{Current.Text}`", Current.Span);
+                $"{got}, expected `{KindName(kind)}`", Current.Span);
+        }
         return Advance();
     }
 
@@ -230,11 +237,16 @@ public sealed class Parser(List<Token> tokens)
         }
 
         // if
-        if (Check(TokenKind.If)) return ParseIf();
+        if (Check(TokenKind.If))
+        {
+            RequireFeature(_feat.ControlFlow, "control_flow", span);
+            return ParseIf();
+        }
 
         // while
         if (Check(TokenKind.While))
         {
+            RequireFeature(_feat.ControlFlow, "control_flow", span);
             Advance();
             Expect(TokenKind.LParen);
             var cond = ParseExpr();
@@ -246,6 +258,7 @@ public sealed class Parser(List<Token> tokens)
         // for
         if (Check(TokenKind.For))
         {
+            RequireFeature(_feat.ControlFlow, "control_flow", span);
             Advance();
             Expect(TokenKind.LParen);
             Stmt? init = Check(TokenKind.Semicolon) ? null : ParseStmt();
@@ -260,6 +273,7 @@ public sealed class Parser(List<Token> tokens)
         // foreach
         if (Check(TokenKind.Foreach))
         {
+            RequireFeature(_feat.ControlFlow, "control_flow", span);
             Advance();
             Expect(TokenKind.LParen);
             Match(TokenKind.Var); // optional var
@@ -582,6 +596,13 @@ public sealed class Parser(List<Token> tokens)
         TokenKind.F32 or TokenKind.F64 or TokenKind.Identifier;
 
     private static string KindName(TokenKind k) => k.ToString().ToLower();
+
+    private void RequireFeature(bool enabled, string featureName, Span span)
+    {
+        if (!enabled)
+            throw new ParseException(
+                $"feature `{featureName}` is disabled — enable it in LanguageFeatures", span);
+    }
 }
 
 public sealed class ParseException(string message, Span span) : Exception(message)

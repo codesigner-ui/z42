@@ -1,0 +1,346 @@
+# z42 Phase 1 Grammar (PEG notation)
+#
+# Conventions:
+#   rule = expr         definition
+#   /                   ordered choice (try left first)
+#   *                   zero or more
+#   +                   one or more
+#   ?                   optional
+#   &expr               positive lookahead
+#   !expr               negative lookahead
+#   "text"              literal
+#   [a-z]               character class
+#   (expr)              grouping
+#   (* comment *)
+#
+# Feature tags: lines marked [feat:NAME] are gated by LanguageFeatures.NAME.
+# The minimal runnable subset is everything WITHOUT a feature tag.
+
+# ═══════════════════════════════════════════════════════════════════
+# Top level
+# ═══════════════════════════════════════════════════════════════════
+
+compilation_unit
+    = namespace_decl? using_decl* top_decl* EOF
+
+namespace_decl
+    = "namespace" S qualified_name S ";"
+
+using_decl
+    = "using" S qualified_name S ";"
+
+qualified_name
+    = IDENT ("." IDENT)*
+
+top_decl
+    = exec_mode_attr? modifier* (function_decl / class_decl / struct_decl / record_decl / interface_decl / enum_decl)
+
+exec_mode_attr                             (* z42 extension *)
+    = "[" S "ExecMode" S "(" S exec_mode_value S ")" S "]"
+
+exec_mode_value
+    = "Mode.Interp" / "Mode.Jit" / "Mode.Aot"
+
+modifier
+    = ("public" / "private" / "protected" / "internal"
+     / "static" / "abstract" / "virtual" / "override"
+     / "sealed" / "readonly" / "async" / "partial") S
+
+# ═══════════════════════════════════════════════════════════════════
+# Declarations
+# ═══════════════════════════════════════════════════════════════════
+
+function_decl
+    = type_expr S IDENT S "(" S param_list S ")" S block
+
+param_list
+    = (param ("," S param)*)?
+
+param
+    = type_expr S IDENT (S "=" S expr)?
+
+# ── [feat:oop] ──────────────────────────────────────────────────────
+
+class_decl                                 # [feat:oop]
+    = "class" S IDENT type_params? base_list? S class_body
+
+struct_decl                                # [feat:oop]
+    = "struct" S IDENT type_params? base_list? S class_body
+
+record_decl                                # [feat:oop]
+    = "record" S ("struct" S)? IDENT type_params? ("(" S param_list S ")")? base_list? S (class_body / ";")
+
+interface_decl                             # [feat:oop]
+    = "interface" S IDENT type_params? base_list? S class_body
+
+enum_decl                                  # [feat:oop]
+    = "enum" S IDENT (":" S type_expr)? S "{" S enum_members S "}"
+
+enum_members
+    = (enum_member ("," S enum_member)* ","?)?
+
+enum_member
+    = IDENT (S "=" S expr)?
+
+type_params                                # [feat:generics]
+    = "<" S type_param ("," S type_param)* S ">"
+
+type_param
+    = IDENT
+
+base_list
+    = ":" S type_expr ("," S type_expr)*
+
+class_body
+    = "{" S class_member* S "}"
+
+class_member
+    = modifier* (constructor_decl / property_decl / field_decl / function_decl / class_decl / struct_decl / record_decl)
+
+constructor_decl                           # [feat:oop]
+    = IDENT S "(" S param_list S ")" S (":" S ("base" / "this") S "(" S arg_list S ")")? S block
+
+property_decl                              # [feat:oop]
+    = type_expr S IDENT S "{" S accessor* S "}" (S "=" S expr S ";")?
+
+accessor
+    = modifier* ("get" / "set" / "init") S (block / ";")
+
+field_decl                                 # [feat:oop]
+    = type_expr S IDENT (S "=" S expr)? S ";"
+
+# ═══════════════════════════════════════════════════════════════════
+# Type expressions
+# ═══════════════════════════════════════════════════════════════════
+
+type_expr
+    = array_type / nullable_type / generic_type / tuple_type / func_type / named_type / void_type
+
+void_type   = "void"
+named_type  = qualified_name
+nullable_type  = (named_type / generic_type) "?"   # [feat:nullable]
+generic_type   = qualified_name "<" S type_expr ("," S type_expr)* S ">"   # [feat:generics]
+array_type     = type_expr "[" "]"                 # [feat:arrays]
+tuple_type     = "(" S type_expr S IDENT? ("," S type_expr S IDENT?)+ S ")"  # [feat:tuples]
+func_type      = "Func" "<" S type_expr ("," S type_expr)* S ">"  # [feat:delegates]
+
+# Primitive type aliases
+# int long short byte uint ulong ushort sbyte
+# float double decimal
+# bool char string object dynamic var
+
+# ═══════════════════════════════════════════════════════════════════
+# Statements
+# ═══════════════════════════════════════════════════════════════════
+
+stmt
+    = block
+    / var_decl_stmt
+    / return_stmt
+    / if_stmt              (* [feat:control_flow] *)
+    / while_stmt           (* [feat:control_flow] *)
+    / for_stmt             (* [feat:control_flow] *)
+    / foreach_stmt         (* [feat:control_flow] *)
+    / do_while_stmt        (* [feat:control_flow] *)
+    / break_stmt           (* [feat:control_flow] *)
+    / continue_stmt        (* [feat:control_flow] *)
+    / throw_stmt           (* [feat:exceptions] *)
+    / try_stmt             (* [feat:exceptions] *)
+    / using_stmt           (* [feat:using_stmt] *)
+    / await_stmt           (* [feat:async] *)
+    / lock_stmt            (* [feat:threading] *)
+    / expr_stmt
+
+block = "{" S stmt* S "}"
+
+var_decl_stmt
+    = ("var" / type_expr) S IDENT S ("=" S expr)? S ";"
+
+return_stmt
+    = "return" (S expr)? S ";"
+
+if_stmt                                    # [feat:control_flow]
+    = "if" S "(" S expr S ")" S stmt (S "else" S stmt)?
+
+while_stmt                                 # [feat:control_flow]
+    = "while" S "(" S expr S ")" S stmt
+
+for_stmt                                   # [feat:control_flow]
+    = "for" S "(" S for_init S ";" S expr? S ";" S for_update S ")" S stmt
+
+for_init
+    = var_decl_stmt / expr_stmt / (* empty *)
+
+for_update
+    = expr ("," S expr)*
+
+foreach_stmt                               # [feat:control_flow]
+    = "foreach" S "(" S type_expr S IDENT S "in" S expr S ")" S stmt
+
+do_while_stmt                              # [feat:control_flow]
+    = "do" S stmt S "while" S "(" S expr S ")" S ";"
+
+break_stmt    = "break" S ";"              # [feat:control_flow]
+continue_stmt = "continue" S ";"          # [feat:control_flow]
+
+throw_stmt    = "throw" S expr S ";"      # [feat:exceptions]
+
+try_stmt                                   # [feat:exceptions]
+    = "try" S block catch_clause* finally_clause?
+
+catch_clause
+    = "catch" S ("(" S type_expr S IDENT? S ")")? S block
+
+finally_clause
+    = "finally" S block
+
+using_stmt                                 # [feat:using_stmt]
+    = "using" S ("(" S expr S ")" S stmt / var_decl_stmt)
+
+await_stmt                                 # [feat:async]
+    = "await" S expr S ";"
+
+lock_stmt                                  # [feat:threading]
+    = "lock" S "(" S expr S ")" S stmt
+
+expr_stmt = expr S ";"
+
+# ═══════════════════════════════════════════════════════════════════
+# Expressions  (precedence: low → high)
+# ═══════════════════════════════════════════════════════════════════
+
+expr        = assign_expr
+
+assign_expr
+    = unary_expr S assign_op S expr
+    / ternary_expr
+
+assign_op   = "=" / "+=" / "-=" / "*=" / "/=" / "%=" / "&&=" / "||=" / "??="
+
+ternary_expr                               # [feat:ternary]
+    = or_expr (S "?" S expr S ":" S expr)?
+
+or_expr     = and_expr  (S "||" S and_expr)*
+and_expr    = null_coalesce_expr (S "&&" S null_coalesce_expr)*  # [feat:null_coalesce] for ??
+null_coalesce_expr = eq_expr (S "??" S eq_expr)*   # [feat:null_coalesce]
+eq_expr     = rel_expr  (S ("==" / "!=") S rel_expr)*
+rel_expr    = add_expr  (S ("<=" / ">=" / "<" / ">" / "is" / "as") S add_expr)*
+add_expr    = mul_expr  (S ("+" / "-") S mul_expr)*
+mul_expr    = unary_expr (S ("*" / "/" / "%") S unary_expr)*
+
+unary_expr
+    = ("!" / "-" / "+" / "~" / "++" / "--") S unary_expr
+    / "await" S unary_expr                 # [feat:async]
+    / cast_expr
+    / postfix_expr
+
+cast_expr                                  # [feat:cast]
+    = "(" S type_expr S ")" S unary_expr
+
+postfix_expr
+    = primary_expr postfix*
+
+postfix
+    = "++" / "--"                          # post-increment
+    / "." IDENT                            # member access
+    / "?." IDENT                           # null-conditional  [feat:null_coalesce]
+    / "[" S expr ("," S expr)* S "]"       # indexer
+    / "(" S arg_list S ")"                 # invocation
+    / "!" S                                # null-forgiving    [feat:nullable]
+
+arg_list
+    = (arg ("," S arg)*)?
+
+arg
+    = (IDENT S ":" S)? ("ref" / "out" / "in")? S expr
+
+primary_expr
+    = "null"
+    / "true" / "false"
+    / interpolated_string                  # [feat:interpolated_str]
+    / STRING
+    / CHAR
+    / NUMBER
+    / "this"                               # [feat:oop]
+    / "base"                               # [feat:oop]
+    / "default" ("(" S type_expr S ")")?
+    / "typeof" "(" S type_expr S ")"       # [feat:reflection]
+    / "nameof" "(" S expr S ")"
+    / "new" S new_expr                     # [feat:oop]
+    / lambda_expr                          # [feat:lambda]
+    / switch_expr                          # [feat:pattern_match]
+    / "(" S expr S ")"
+    / IDENT
+
+new_expr
+    = type_expr S "(" S arg_list S ")" object_initializer?
+    / type_expr "[" S expr? S "]"          # array creation  [feat:arrays]
+    / "{" S (expr ("," S expr)*)? S "}"    # anonymous object [feat:oop]
+
+object_initializer                         # [feat:oop]
+    = "{" S (IDENT S "=" S expr ("," S IDENT S "=" S expr)*)? S "}"
+
+lambda_expr                                # [feat:lambda]
+    = (IDENT / "(" S param_list S ")") S "=>" S (expr / block)
+
+switch_expr                                # [feat:pattern_match]
+    = primary_expr S "switch" S "{" S switch_arm ("," S switch_arm)* ","? S "}"
+
+switch_arm
+    = pattern S ("when" S expr)? S "=>" S expr
+
+pattern
+    = "_"                                  # wildcard
+    / "var" S IDENT                        # var pattern
+    / type_expr S IDENT?                   # type pattern
+    / relational_pattern
+    / or_pattern
+    / and_pattern
+    / "(" S pattern ("," S pattern)* S ")" # positional / tuple
+    / "[" S pattern ("," S pattern)* S "]" # list pattern     [feat:list_patterns]
+    / primary_expr                         # constant pattern
+
+relational_pattern = ("<" / "<=" / ">" / ">=") S expr
+or_pattern         = pattern S "or" S pattern
+and_pattern        = pattern S "and" S pattern
+
+interpolated_string                        # [feat:interpolated_str]
+    = "$\"" istr_content* "\""
+
+istr_content
+    = "{" S expr S (":" FORMAT_SPEC)? S "}"
+    / [^"{\\]
+    / ESCAPE
+
+# ═══════════════════════════════════════════════════════════════════
+# Terminals
+# ═══════════════════════════════════════════════════════════════════
+
+IDENT   = [a-zA-Z_@] [a-zA-Z0-9_]*
+        (* reserved words are not valid identifiers unless prefixed with @ *)
+
+NUMBER  = HEX_LIT / BIN_LIT / FLOAT_LIT / INT_LIT
+
+INT_LIT   = [0-9] [0-9_]* INT_SUFFIX?
+FLOAT_LIT = [0-9] [0-9_]* ("." [0-9] [0-9_]*)? ([eE] [+-]? [0-9]+)? FLOAT_SUFFIX?
+HEX_LIT   = "0x" [0-9a-fA-F] [0-9a-fA-F_]*
+BIN_LIT   = "0b" [01] [01_]*
+
+INT_SUFFIX   = "L" / "l" / "U" / "u" / "UL" / "ul" / "Lu" / "lU"
+FLOAT_SUFFIX = "f" / "F" / "d" / "D" / "m" / "M"
+
+STRING  = "\"" ([^"\\] / ESCAPE)* "\""
+        / "@\"" ([^"] / "\"\"")* "\""     (* verbatim string *)
+
+CHAR    = "'" ([^'\\] / ESCAPE) "'"
+
+ESCAPE  = "\\" [nrtbf\\'"0] / "\\u" HEX HEX HEX HEX / "\\U" HEX{8} / "\\x" HEX+
+
+FORMAT_SPEC = [^}]+
+
+S       = (WS / LINE_COMMENT / BLOCK_COMMENT)*
+WS      = [ \t\r\n]+
+LINE_COMMENT  = "//" [^\n]* "\n"?
+BLOCK_COMMENT = "/*" (!"*/" .)* "*/"
+
+HEX = [0-9a-fA-F]

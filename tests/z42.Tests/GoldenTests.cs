@@ -1,0 +1,217 @@
+using System.Text;
+using System.Text.Json;
+using FluentAssertions;
+using Xunit;
+using Z42.Compiler.Codegen;
+using Z42.Compiler.Diagnostics;
+using Z42.Compiler.Features;
+using Z42.Compiler.Lexer;
+using Z42.Compiler.Parser;
+using Z42.IR;
+
+namespace Z42.Tests;
+
+/// <summary>
+/// Golden test runner.
+///
+/// Layout under tests/golden/:
+///   &lt;category&gt;/&lt;name&gt;/
+///     source.z42          — z42 source input
+///     expected.txt        — expected stdout (for run tests)
+///     expected_ir.json    — expected IR JSON (optional, for codegen tests)
+///     expected_error.txt  — expected diagnostic output (for error tests)
+///     features.toml       — optional LanguageFeatures overrides
+///
+/// Test discovery: every subdirectory that contains source.z42 is a test case.
+/// Category is inferred from the directory name prefix (errors/ → error test).
+/// </summary>
+public sealed class GoldenTests
+{
+    private static readonly string GoldenRoot = FindGoldenRoot();
+
+    private static string FindGoldenRoot()
+    {
+        // Walk up from the test binary until we find the repo root (contains tests/golden)
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "tests", "golden");
+            if (Directory.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        // Fallback: relative from source (dev run)
+        return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..", "..", "tests", "golden"));
+    }
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy   = JsonNamingPolicy.SnakeCaseLower,
+        WriteIndented          = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    // ── Test discovery ─────────────────────────────────────────────────────
+
+    public static IEnumerable<object[]> ParseTestCases() =>
+        DiscoverCases(hasExpectedIr: true);
+
+    public static IEnumerable<object[]> ErrorTestCases() =>
+        DiscoverCases(errorCategory: true);
+
+    private static IEnumerable<object[]> DiscoverCases(
+        bool hasExpectedIr = false, bool errorCategory = false)
+    {
+        if (!Directory.Exists(GoldenRoot))
+            yield break;
+
+        foreach (var dir in Directory.EnumerateDirectories(GoldenRoot, "*", SearchOption.AllDirectories))
+        {
+            string sourceFile = Path.Combine(dir, "source.z42");
+            if (!File.Exists(sourceFile)) continue;
+
+            bool isErrorCase = dir.Contains(Path.DirectorySeparatorChar + "errors" + Path.DirectorySeparatorChar)
+                            || Path.GetFileName(dir).StartsWith("error_");
+
+            if (errorCategory != isErrorCase) continue;
+            if (hasExpectedIr && !File.Exists(Path.Combine(dir, "expected_ir.json"))) continue;
+
+            string name = Path.GetRelativePath(GoldenRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
+            yield return [name, dir];
+        }
+    }
+
+    // ── Features loader ────────────────────────────────────────────────────
+
+    /// Parses a minimal key=value TOML (features.toml) to override LanguageFeatures.
+    /// Lines starting with # or [ are ignored. Values must be true or false.
+    private static LanguageFeatures LoadFeatures(string dir)
+    {
+        string tomlPath = Path.Combine(dir, "features.toml");
+        if (!File.Exists(tomlPath))
+            return LanguageFeatures.Phase1;
+
+        var overrides = new Dictionary<string, bool>();
+        foreach (var raw in File.ReadAllLines(tomlPath))
+        {
+            var line = raw.Trim();
+            if (string.IsNullOrEmpty(line) || line.StartsWith('#') || line.StartsWith('['))
+                continue;
+            var eq = line.IndexOf('=');
+            if (eq < 0) continue;
+            var key = line[..eq].Trim().ToLowerInvariant();
+            var val = line[(eq + 1)..].Trim().ToLowerInvariant();
+            if (bool.TryParse(val, out var b))
+                overrides[key] = b;
+        }
+        return LanguageFeatures.Phase1.WithOverrides(overrides);
+    }
+
+    // ── Compile helper ─────────────────────────────────────────────────────
+
+    private static (IrModule? ir, DiagnosticBag diags) Compile(string dir)
+    {
+        string sourceFile = Path.Combine(dir, "source.z42");
+        string source     = File.ReadAllText(sourceFile);
+
+        // Load feature overrides if present (features.toml: key = true/false lines)
+        var features = LoadFeatures(dir);
+
+        var diags = new DiagnosticBag();
+
+        var lexer  = new Lexer(source, sourceFile);
+        var tokens = lexer.Tokenize();
+
+        CompilationUnit cu;
+        try
+        {
+            var parser = new Parser(tokens, features);
+            cu = parser.ParseCompilationUnit();
+        }
+        catch (ParseException ex)
+        {
+            diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+            return (null, diags);
+        }
+
+        IrModule ir;
+        try
+        {
+            ir = new IrGen().Generate(cu);
+        }
+        catch (Exception ex)
+        {
+            diags.Error(DiagnosticCodes.UnsupportedSyntax, ex.Message,
+                        new Span(0, 0, 0, 0, sourceFile));
+            return (null, diags);
+        }
+
+        return (ir, diags);
+    }
+
+    // ── IR / codegen tests ─────────────────────────────────────────────────
+
+    [Theory]
+    [MemberData(nameof(ParseTestCases))]
+    public void IrMatchesExpected(string name, string dir)
+    {
+        var (ir, diags) = Compile(dir);
+
+        diags.PrintAll();
+        diags.HasErrors.Should().BeFalse(
+            because: $"test '{name}' should compile without errors");
+        ir.Should().NotBeNull();
+
+        string expectedJson = File.ReadAllText(Path.Combine(dir, "expected_ir.json")).Trim();
+        string actualJson   = JsonSerializer.Serialize(ir, JsonOpts).Trim();
+
+        // Use xUnit Assert.Equal to avoid FluentAssertions crashing on {} in JSON strings
+        Assert.Equal(expectedJson, actualJson);
+    }
+
+    // ── Error / diagnostic tests ───────────────────────────────────────────
+
+    [Theory]
+    [MemberData(nameof(ErrorTestCases))]
+    public void DiagnosticsMatchExpected(string name, string dir)
+    {
+        var (_, diags) = Compile(dir);
+
+        string expectedFile = Path.Combine(dir, "expected_error.txt");
+        string expected     = File.ReadAllText(expectedFile).Trim();
+
+        var sb = new StringBuilder();
+        foreach (var d in diags.All)
+            sb.AppendLine(d.ToString());
+        string actual = sb.ToString().Trim();
+
+        // Match line-by-line, ignoring exact column in spans where marked with *
+        MatchDiagnosticLines(expected, actual, name);
+    }
+
+    private static void MatchDiagnosticLines(string expected, string actual, string name)
+    {
+        var expLines = expected.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var actLines = actual.Split('\n',   StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        actLines.Should().HaveCount(expLines.Length,
+            because: $"test '{name}' should produce exactly {expLines.Length} diagnostic(s)");
+
+        for (int i = 0; i < expLines.Length; i++)
+        {
+            // Lines that contain "*" as a wildcard segment are matched with Contains
+            if (expLines[i].Contains('*'))
+            {
+                var parts = expLines[i].Split('*');
+                foreach (var part in parts.Where(p => p.Length > 0))
+                    actLines[i].Should().Contain(part,
+                        because: $"test '{name}' diagnostic[{i}] should contain '{part}'");
+            }
+            else
+            {
+                actLines[i].Should().Be(expLines[i],
+                    because: $"test '{name}' diagnostic[{i}] should match exactly");
+            }
+        }
+    }
+}

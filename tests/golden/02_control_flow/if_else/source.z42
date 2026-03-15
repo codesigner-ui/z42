@@ -1,0 +1,17 @@
+namespace ControlFlow;
+
+string Sign(int n) {
+    if (n > 0) {
+        return "positive";
+    } else if (n < 0) {
+        return "negative";
+    } else {
+        return "zero";
+    }
+}
+
+void Main() {
+    Console.WriteLine(Sign(1));
+    Console.WriteLine(Sign(-3));
+    Console.WriteLine(Sign(0));
+}

@@ -1,0 +1,7 @@
+namespace Demo;
+
+void Main() {
+    if (true) {
+        Console.WriteLine("yes");
+    }
+}

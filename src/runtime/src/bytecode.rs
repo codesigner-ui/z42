@@ -59,6 +59,17 @@ pub enum Instruction {
     Ne { dst: Reg, a: Reg, b: Reg },
     Lt { dst: Reg, a: Reg, b: Reg },
     Le { dst: Reg, a: Reg, b: Reg },
+    Gt { dst: Reg, a: Reg, b: Reg },
+    Ge { dst: Reg, a: Reg, b: Reg },
+    // Logical
+    And { dst: Reg, a: Reg, b: Reg },
+    Or  { dst: Reg, a: Reg, b: Reg },
+    Not { dst: Reg, src: Reg },
+    // Unary arithmetic
+    Neg { dst: Reg, src: Reg },
+    // Mutable variable slots (for locals that cross basic block boundaries)
+    Store { var: String, src: Reg },
+    Load  { dst: Reg, var: String },
     // String
     StrConcat { dst: Reg, a: Reg, b: Reg },
     ToStr     { dst: Reg, src: Reg },

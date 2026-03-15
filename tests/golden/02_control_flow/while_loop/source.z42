@@ -1,0 +1,15 @@
+namespace ControlFlow;
+
+int Sum(int n) {
+    int total = 0;
+    int i = 1;
+    while (i <= n) {
+        total = total + i;
+        i = i + 1;
+    }
+    return total;
+}
+
+void Main() {
+    Console.WriteLine(Sum(5));
+}

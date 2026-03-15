@@ -1,0 +1,167 @@
+{
+  "name": "ControlFlow",
+  "string_pool": [],
+  "functions": [
+    {
+      "name": "Sum",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 1,
+              "val": 0
+            },
+            {
+              "op": "store",
+              "var": "total",
+              "src": 1
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 1
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 2
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "cond_0"
+          }
+        },
+        {
+          "label": "cond_0",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 3,
+              "var": "i"
+            },
+            {
+              "op": "le",
+              "dst": 4,
+              "a": 3,
+              "b": 0
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 4,
+            "true_label": "body_1",
+            "false_label": "end_2"
+          }
+        },
+        {
+          "label": "body_1",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 5,
+              "var": "total"
+            },
+            {
+              "op": "load",
+              "dst": 6,
+              "var": "i"
+            },
+            {
+              "op": "add",
+              "dst": 7,
+              "a": 5,
+              "b": 6
+            },
+            {
+              "op": "store",
+              "var": "total",
+              "src": 7
+            },
+            {
+              "op": "load",
+              "dst": 8,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 9,
+              "val": 1
+            },
+            {
+              "op": "add",
+              "dst": 10,
+              "a": 8,
+              "b": 9
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 10
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "cond_0"
+          }
+        },
+        {
+          "label": "end_2",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 11,
+              "var": "total"
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 11
+          }
+        }
+      ]
+    },
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 5
+            },
+            {
+              "op": "call",
+              "dst": 1,
+              "func": "Sum",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 2,
+              "name": "__println",
+              "args": [
+                1
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

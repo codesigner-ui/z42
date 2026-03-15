@@ -1,0 +1,110 @@
+{
+  "name": "ControlFlow",
+  "string_pool": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 0
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 0
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "cond_0"
+          }
+        },
+        {
+          "label": "cond_0",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 1,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 3
+            },
+            {
+              "op": "lt",
+              "dst": 3,
+              "a": 1,
+              "b": 2
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 3,
+            "true_label": "body_1",
+            "false_label": "end_2"
+          }
+        },
+        {
+          "label": "body_1",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 4,
+              "var": "i"
+            },
+            {
+              "op": "builtin",
+              "dst": 5,
+              "name": "__println",
+              "args": [
+                4
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 6,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 7,
+              "val": 1
+            },
+            {
+              "op": "add",
+              "dst": 8,
+              "a": 6,
+              "b": 7
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 8
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "cond_0"
+          }
+        },
+        {
+          "label": "end_2",
+          "instructions": [],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

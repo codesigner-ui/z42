@@ -11,6 +11,7 @@ pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
 
 struct Frame {
     regs: HashMap<u32, Value>,
+    vars: HashMap<String, Value>,  // mutable named variable slots
 }
 
 impl Frame {
@@ -19,7 +20,7 @@ impl Frame {
         for (i, v) in args.iter().enumerate() {
             regs.insert(i as u32, v.clone());
         }
-        Frame { regs }
+        Frame { regs, vars: HashMap::new() }
     }
 
     fn set(&mut self, reg: u32, val: Value) {
@@ -30,6 +31,21 @@ impl Frame {
         self.regs
             .get(&reg)
             .with_context(|| format!("undefined register %{reg}"))
+    }
+
+    fn store_var(&mut self, name: &str, reg: u32) -> Result<()> {
+        let val = self.get(reg)?.clone();
+        self.vars.insert(name.to_string(), val);
+        Ok(())
+    }
+
+    fn load_var(&mut self, dst: u32, name: &str) -> Result<()> {
+        let val = self.vars
+            .get(name)
+            .with_context(|| format!("undefined variable `{name}`"))?
+            .clone();
+        self.regs.insert(dst, val);
+        Ok(())
     }
 }
 
@@ -118,6 +134,49 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         Instruction::Le { dst, a, b } => {
             let res = numeric_lt(frame, *b, *a)?; // LE = NOT (b < a)
             frame.set(*dst, Value::Bool(!res));
+        }
+        Instruction::Gt { dst, a, b } => {
+            let res = numeric_lt(frame, *b, *a)?; // GT = b < a
+            frame.set(*dst, Value::Bool(res));
+        }
+        Instruction::Ge { dst, a, b } => {
+            let res = numeric_lt(frame, *a, *b)?; // GE = NOT (a < b)
+            frame.set(*dst, Value::Bool(!res));
+        }
+
+        // ── Logical ──────────────────────────────────────────────────────────
+        Instruction::And { dst, a, b } => {
+            let va = bool_val(frame, *a)?;
+            let vb = bool_val(frame, *b)?;
+            frame.set(*dst, Value::Bool(va && vb));
+        }
+        Instruction::Or { dst, a, b } => {
+            let va = bool_val(frame, *a)?;
+            let vb = bool_val(frame, *b)?;
+            frame.set(*dst, Value::Bool(va || vb));
+        }
+        Instruction::Not { dst, src } => {
+            let v = bool_val(frame, *src)?;
+            frame.set(*dst, Value::Bool(!v));
+        }
+
+        // ── Unary arithmetic ─────────────────────────────────────────────────
+        Instruction::Neg { dst, src } => {
+            let res = match frame.get(*src)? {
+                Value::I32(n) => Value::I32(-n),
+                Value::I64(n) => Value::I64(-n),
+                Value::F64(f) => Value::F64(-f),
+                other => bail!("Neg: expected numeric, got {:?}", other),
+            };
+            frame.set(*dst, res);
+        }
+
+        // ── Variable slots ───────────────────────────────────────────────────
+        Instruction::Store { var, src } => {
+            frame.store_var(var, *src)?;
+        }
+        Instruction::Load { dst, var } => {
+            frame.load_var(*dst, var)?;
         }
 
         // ── String ───────────────────────────────────────────────────────────
@@ -212,6 +271,13 @@ fn int_binop(
         (Value::F64(x), Value::F64(y)) => Value::F64(float_op(*x, *y)),
         (a, b) => bail!("type mismatch in arithmetic: {:?} vs {:?}", a, b),
     })
+}
+
+fn bool_val(frame: &Frame, reg: u32) -> Result<bool> {
+    match frame.get(reg)? {
+        Value::Bool(b) => Ok(*b),
+        other => bail!("expected bool in register %{reg}, got {:?}", other),
+    }
 }
 
 fn numeric_lt(frame: &Frame, a: u32, b: u32) -> Result<bool> {
