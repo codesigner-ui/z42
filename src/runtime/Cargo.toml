@@ -1,0 +1,36 @@
+[package]
+name = "z42_vm"
+version = "0.1.0"
+edition = "2021"
+description = "z42 virtual machine — interpreter, JIT, and AOT backends"
+
+[[bin]]
+name = "z42vm"
+path = "src/main.rs"
+
+[lib]
+name = "z42_vm"
+path = "src/lib.rs"
+
+[dependencies]
+# Serialization for .z42bc bytecode
+serde = { version = "1", features = ["derive"] }
+bincode = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

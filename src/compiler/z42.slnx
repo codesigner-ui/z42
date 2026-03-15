@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Z42.Compiler/Z42.Compiler.csproj" />
+  <Project Path="Z42.Driver/Z42.Driver.csproj" />
+  <Project Path="Z42.IR/Z42.IR.csproj" />
+</Solution>

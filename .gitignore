@@ -1,0 +1,34 @@
+# Build artifacts
+bin/
+obj/
+target/
+out/
+
+# .NET / C#
+*.user
+*.suo
+.vs/
+*.nupkg
+*.snupkg
+*.lock.json
+!packages.lock.json
+
+# Rust
+Cargo.lock
+*.rlib
+*.rmeta
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# z42 build outputs
+*.z42c
+*.z42bc

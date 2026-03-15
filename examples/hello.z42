@@ -1,0 +1,12 @@
+module hello
+
+use std.io
+
+fn greet(name: str) -> str {
+    return "Hello, world!"
+}
+
+fn main() {
+    let msg = greet("world")
+    io.println(msg)
+}

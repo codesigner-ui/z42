@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 status)",
+      "Bash(git init:*)",
+      "Bash(git checkout:*)",
+      "Bash(dotnet new:*)",
+      "Bash(dotnet sln:*)",
+      "Bash(dotnet add:*)",
+      "Bash(cargo init:*)"
+    ]
+  }
+}
