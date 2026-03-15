@@ -1,11 +1,16 @@
 /// z42 project manifest data types.
 ///
-/// Covers `.z42proj` (single project) and `.z42sln` (multi-project workspace).
-/// Both files are TOML; parsed with the `toml` crate.
+/// Both single-project and workspace configurations live in `z42.toml`.
+/// The presence of `[project]` vs `[workspace]` tables determines the file's role
+/// (they may coexist when a workspace root is also a project).
 ///
+/// File name constant: [`FILE_NAME`].
 /// See specs/project.md for the full design.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Canonical file name for z42 project / workspace manifests.
+pub const FILE_NAME: &str = "z42.toml";
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -151,7 +156,7 @@ pub struct ProfileConfig {
     pub strip: Option<bool>,
 }
 
-/// Root of a `.z42proj` file.
+/// Root of a `z42.toml` file that contains a `[project]` table.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Z42Proj {
     pub project: ProjectMeta,
@@ -167,7 +172,7 @@ pub struct Z42Proj {
 }
 
 impl Z42Proj {
-    /// Parse a `.z42proj` file from TOML text.
+    /// Parse a `z42.toml` file from TOML text.
     pub fn from_toml(text: &str) -> Result<Self, toml::de::Error> {
         toml::from_str(text)
     }
@@ -225,7 +230,7 @@ pub struct WorkspaceMeta {
     pub dependencies: HashMap<String, WorkspaceDep>,
 }
 
-/// Root of a `.z42sln` file.
+/// Root of a `z42.toml` file that contains a `[workspace]` table.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Z42Sln {
     pub workspace: WorkspaceMeta,

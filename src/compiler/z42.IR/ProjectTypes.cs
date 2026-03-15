@@ -2,6 +2,12 @@ using System.Text.Json.Serialization;
 
 namespace Z42.IR;
 
+/// Canonical file name for all z42 project / workspace manifests.
+public static class Z42TomlFileName
+{
+    public const string Value = "z42.toml";
+}
+
 // ── Shared enums ──────────────────────────────────────────────────────────────
 
 [JsonConverter(typeof(JsonStringEnumConverter<ProjectKind>))]
@@ -77,8 +83,9 @@ public sealed record ResolvedProfile(
     bool           Strip
 );
 
-/// Root model for a `.z42proj` file.
+/// Root model for a `z42.toml` file containing a <c>[project]</c> table.
 /// Use Tomlyn: <c>Toml.ToModel&lt;Z42Proj&gt;(text)</c>
+/// File name constant: <see cref="Z42TomlFileName"/>
 public sealed class Z42Proj
 {
     public ProjectMeta                       Project      { get; set; } = new();
@@ -103,7 +110,7 @@ public sealed class Z42Proj
     }
 }
 
-// ── .z42sln ───────────────────────────────────────────────────────────────────
+// ── workspace ─────────────────────────────────────────────────────────────────
 
 /// Workspace-level shared dependency entry.
 public sealed class WorkspaceDep
@@ -115,12 +122,12 @@ public sealed class WorkspaceDep
 /// `[workspace]` table.
 public sealed class WorkspaceMeta
 {
-    /// Relative paths to directories that each contain a .z42proj.
+    /// Relative paths to directories that each contain a <c>z42.toml</c>.
     public List<string>                     Members      { get; set; } = [];
     public Dictionary<string, WorkspaceDep> Dependencies { get; set; } = new();
 }
 
-/// Root model for a `.z42sln` file.
+/// Root model for a `z42.toml` file containing a <c>[workspace]</c> table.
 /// Use Tomlyn: <c>Toml.ToModel&lt;Z42Sln&gt;(text)</c>
 public sealed class Z42Sln
 {

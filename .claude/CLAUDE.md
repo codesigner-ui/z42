@@ -16,14 +16,14 @@ z42/
 │   ├── language-overview.md
 │   ├── ir.md                 # SSA IR 指令集
 │   ├── compilation.md        # 编译产物 .zbc/.zmod/.zlib
-│   └── project.md            # 工程文件 .z42proj/.z42sln
-├── examples/                 # .z42 示例源文件 + .z42proj
+│   └── project.md            # 工程文件 z42.toml（[project] / [workspace]）
+├── examples/                 # .z42 示例源文件 + z42.toml
 └── src/
     ├── compiler/             # C# Bootstrap 编译器 (.NET 10)
     │   ├── z42.IR/           # IR + 工程数据类型（纯数据，无逻辑）
     │   │   ├── IrModule.cs       # SSA IR 数据模型
     │   │   ├── PackageTypes.cs   # ZbcFile / ZmodManifest / ZlibFile
-    │   │   └── ProjectTypes.cs   # Z42Proj / Z42Sln（TOML 模型）
+    │   │   └── ProjectTypes.cs   # Z42Proj / Z42Sln（z42.toml 模型）
     │   ├── z42.Compiler/
     │   │   ├── Lexer/        # Lexer.cs, Token.cs, TokenKind.cs
     │   │   ├── Parser/       # Parser.cs, Ast.cs
@@ -34,7 +34,7 @@ z42/
         └── src/
             ├── bytecode.rs   # Module / Instruction / Terminator
             ├── package.rs    # ZbcFile / ZmodManifest / ZlibFile
-            ├── project.rs    # Z42Proj / Z42Sln（TOML 模型）
+            ├── project.rs    # Z42Proj / Z42Sln（z42.toml 模型）
             ├── types.rs      # Value、ExecMode
             ├── interp.rs     # 解释器后端
             ├── jit.rs        # JIT 存根

@@ -1,4 +1,4 @@
-# hello.z42proj — z42 project manifest
+# z42.toml — Hello World demo project
 
 [project]
 name        = "Hello"
