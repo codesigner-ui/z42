@@ -90,16 +90,18 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|
 | 异步 | `async Task<T>` + `await` |
 | 专有扩展 | `[ExecMode(Mode.Jit)]` 执行模式注解 |
 
-### Phase 2 — Rust 改进（完成基础实现后引入）
+### Phase 2 — 吸收 Rust / Python 优点（完成基础实现后引入）
+
+z42 **始终带 GC**，不引入所有权/借用。Phase 2 目标是借鉴 Rust/Python 的**语法和类型系统**优点：
 
 | 特性 | Phase 2 方向 |
 |------|-------------|
-| 内存 | 所有权 + 借用，`mut` 显式可变，无 GC |
-| 错误处理 | `Result<T, E>` + `?` 运算符替换异常 |
-| 接口 → Trait | 零开销静态分发 |
-| 枚举 | 真正的代数数据类型（sum type） |
-| 模式匹配 | `match` 穷尽检查替换 `switch` |
-| 空安全 | `Option<T>` 编译期检查，消除 null |
+| 错误处理 | `Result<T, E>` + `?` 运算符作为 `try/catch` 的替代 |
+| 接口 → Trait | 泛型约束 `where T : Trait`，零开销静态分发 |
+| 枚举 | 代数数据类型（sum type）：`enum Option<T> { Some(T), None }` |
+| 模式匹配 | `match` 穷尽检查，替代 `switch` |
+| 空安全 | `Option<T>` 消除 null，或保留 `T?` + 编译期检查 |
+| Python 风格 | 单文件脚本执行、内置 `eval`、交互式 REPL |
 
 ### 固定不变的决策
 

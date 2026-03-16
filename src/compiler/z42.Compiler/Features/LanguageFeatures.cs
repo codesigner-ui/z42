@@ -153,6 +153,9 @@ public sealed class LanguageFeatures
         };
     }
 
+    /// Returns true if the named feature (snake_case) is enabled.
+    public bool IsEnabled(string key) => GetByName(key);
+
     private bool GetByName(string key) => key switch
     {
         "interpolated_str" => InterpolatedStr,
