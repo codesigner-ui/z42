@@ -1,0 +1,5 @@
+namespace Demo;
+
+int Add(int a, int b) {
+    return "not a number";
+}

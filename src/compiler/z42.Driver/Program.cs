@@ -3,8 +3,10 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Z42.Compiler.Codegen;
+using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
+using Z42.Compiler.TypeCheck;
 using Z42.IR;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -86,6 +88,12 @@ catch (ParseException ex)
 }
 
 if (argv.Contains("--dump-ast")) { Console.WriteLine(cu); return 0; }
+
+// ── Type Check ────────────────────────────────────────────────────────────────
+
+var diags = new DiagnosticBag();
+new TypeChecker(diags).Check(cu);
+if (diags.PrintAll()) return 1;   // PrintAll returns true if there were errors
 
 // ── IR Codegen ────────────────────────────────────────────────────────────────
 

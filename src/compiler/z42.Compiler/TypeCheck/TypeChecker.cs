@@ -1,0 +1,486 @@
+using Z42.Compiler.Diagnostics;
+using Z42.Compiler.Lexer;
+using Z42.Compiler.Parser;
+
+namespace Z42.Compiler.TypeCheck;
+
+/// <summary>
+/// Phase 1 type checker.
+///
+/// Two-pass design:
+///   Pass 1  — collect all function signatures (so functions can be called before declaration).
+///   Pass 2  — walk each function body, infer expression types, check compatibility.
+///
+/// Errors are reported to the supplied <see cref="DiagnosticBag"/>; the checker
+/// continues after errors using the <see cref="Z42Type.Error"/> sentinel to suppress
+/// cascading diagnostics.
+/// </summary>
+public sealed class TypeChecker
+{
+    private readonly DiagnosticBag _diags;
+    private Dictionary<string, Z42FuncType> _funcs = new();
+
+    public TypeChecker(DiagnosticBag diags) => _diags = diags;
+
+    // ── Public entry point ────────────────────────────────────────────────────
+
+    public void Check(CompilationUnit cu)
+    {
+        CollectFunctions(cu);
+        foreach (var fn in cu.Functions)
+            CheckFunction(fn);
+    }
+
+    // ── Pass 1: collect signatures ────────────────────────────────────────────
+
+    private void CollectFunctions(CompilationUnit cu)
+    {
+        foreach (var fn in cu.Functions)
+        {
+            var paramTypes = fn.Params.Select(p => ResolveType(p.Type)).ToList();
+            var retType    = ResolveType(fn.ReturnType);
+            _funcs[fn.Name] = new Z42FuncType(paramTypes, retType);
+        }
+    }
+
+    // ── Pass 2: check bodies ──────────────────────────────────────────────────
+
+    private void CheckFunction(FunctionDecl fn)
+    {
+        var env     = new TypeEnv(_funcs);
+        var scope   = env.PushScope();
+        var retType = ResolveType(fn.ReturnType);
+
+        foreach (var p in fn.Params)
+            scope.Define(p.Name, ResolveType(p.Type));
+
+        CheckBlock(fn.Body, scope, retType);
+    }
+
+    // ── Statements ────────────────────────────────────────────────────────────
+
+    private void CheckBlock(BlockStmt block, TypeEnv parent, Z42Type retType)
+    {
+        var scope = parent.PushScope();
+        foreach (var stmt in block.Stmts)
+            CheckStmt(stmt, scope, retType);
+    }
+
+    private void CheckStmt(Stmt stmt, TypeEnv env, Z42Type retType)
+    {
+        switch (stmt)
+        {
+            case BlockStmt b:
+                CheckBlock(b, env, retType);
+                break;
+
+            case VarDeclStmt v:
+                CheckVarDecl(v, env);
+                break;
+
+            case ReturnStmt r:
+                CheckReturn(r, env, retType);
+                break;
+
+            case ExprStmt e:
+                CheckExpr(e.Expr, env);
+                break;
+
+            case IfStmt i:
+            {
+                var condType = CheckExpr(i.Condition, env);
+                RequireBool(condType, i.Condition.Span, "if");
+                CheckBlock(i.Then, env, retType);
+                if (i.Else is BlockStmt eb) CheckBlock(eb, env, retType);
+                else if (i.Else != null)    CheckStmt(i.Else, env, retType);
+                break;
+            }
+
+            case WhileStmt w:
+            {
+                var condType = CheckExpr(w.Condition, env);
+                RequireBool(condType, w.Condition.Span, "while");
+                CheckBlock(w.Body, env, retType);
+                break;
+            }
+
+            case ForStmt f:
+            {
+                var forScope = env.PushScope();
+                if (f.Init != null) CheckStmt(f.Init, forScope, retType);
+                if (f.Condition != null)
+                {
+                    var condType = CheckExpr(f.Condition, forScope);
+                    RequireBool(condType, f.Condition.Span, "for");
+                }
+                if (f.Increment != null) CheckExpr(f.Increment, forScope);
+                CheckBlock(f.Body, forScope, retType);
+                break;
+            }
+
+            case ForeachStmt fe:
+            {
+                var colType  = CheckExpr(fe.Collection, env);
+                var elemType = ElemTypeOf(colType);
+                var feScope  = env.PushScope();
+                feScope.Define(fe.VarName, elemType);
+                CheckBlock(fe.Body, feScope, retType);
+                break;
+            }
+        }
+        // Unknown stmt kinds are silently skipped (future constructs).
+    }
+
+    // ── Variable declarations ─────────────────────────────────────────────────
+
+    private void CheckVarDecl(VarDeclStmt v, TypeEnv env)
+    {
+        Z42Type varType;
+
+        if (v.TypeAnnotation != null)
+        {
+            // Explicit type: `string s = "hello";`
+            varType = ResolveType(v.TypeAnnotation);
+            if (v.Init != null)
+            {
+                var initType = CheckExpr(v.Init, env);
+                RequireAssignable(varType, initType, v.Init.Span);
+            }
+        }
+        else if (v.Init != null)
+        {
+            // Inferred: `var x = 42;`
+            varType = CheckExpr(v.Init, env);
+            if (varType is Z42VoidType)
+            {
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    "cannot assign void to variable", v.Span);
+                varType = Z42Type.Error;
+            }
+        }
+        else
+        {
+            // `var x;` without annotation or init — unknown type, no error yet
+            varType = Z42Type.Unknown;
+        }
+
+        env.Define(v.Name, varType);
+    }
+
+    // ── Return statement ──────────────────────────────────────────────────────
+
+    private void CheckReturn(ReturnStmt r, TypeEnv env, Z42Type expectedRetType)
+    {
+        if (r.Value == null)
+        {
+            if (expectedRetType is not Z42VoidType && expectedRetType is not Z42UnknownType)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"missing return value; function returns `{expectedRetType}`", r.Span);
+            return;
+        }
+
+        var actual = CheckExpr(r.Value, env);
+        RequireAssignable(expectedRetType, actual, r.Value.Span,
+            $"return type mismatch: expected `{expectedRetType}`, got `{actual}`");
+    }
+
+    // ── Expression type inference ─────────────────────────────────────────────
+
+    private Z42Type CheckExpr(Expr expr, TypeEnv env)
+    {
+        switch (expr)
+        {
+            case LitIntExpr lit:            return lit.Value is > int.MaxValue or < int.MinValue
+                                                ? Z42Type.Long : Z42Type.Int;
+            case LitFloatExpr:              return Z42Type.Double;
+            case LitStrExpr:                return Z42Type.String;
+            case LitBoolExpr:               return Z42Type.Bool;
+            case LitNullExpr:               return Z42Type.Null;
+            case LitCharExpr:               return Z42Type.Char;
+            case InterpolatedStrExpr interp:
+                // All sub-expressions must be checked; result is always string
+                foreach (var p in interp.Parts)
+                    if (p is ExprPart ep) CheckExpr(ep.Inner, env);
+                return Z42Type.String;
+
+            case IdentExpr id:
+                return CheckIdent(id, env);
+
+            case AssignExpr assign:
+                return CheckAssign(assign, env);
+
+            case BinaryExpr bin:
+                return CheckBinary(bin, env);
+
+            case UnaryExpr u:
+                return CheckUnary(u, env);
+
+            case PostfixExpr post:
+            {
+                var t = CheckExpr(post.Operand, env);
+                // ++ / -- on non-numeric is a type error; return same type
+                if (post.Op is "++" or "--" && !Z42Type.IsNumeric(t) && t is not Z42ErrorType and not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{post.Op}` requires numeric operand, got `{t}`", post.Span);
+                return t;
+            }
+
+            case CallExpr call:
+                return CheckCall(call, env);
+
+            case MemberExpr m:
+            {
+                CheckExpr(m.Target, env);
+                return Z42Type.Unknown;   // member type resolution deferred
+            }
+
+            case IndexExpr ix:
+            {
+                var targetType = CheckExpr(ix.Target, env);
+                CheckExpr(ix.Index, env);
+                return ElemTypeOf(targetType);
+            }
+
+            case ConditionalExpr ternary:
+            {
+                var condType = CheckExpr(ternary.Cond, env);
+                RequireBool(condType, ternary.Cond.Span, "ternary");
+                var thenType = CheckExpr(ternary.Then, env);
+                var elseType = CheckExpr(ternary.Else, env);
+                if (thenType is Z42ErrorType || elseType is Z42ErrorType) return Z42Type.Error;
+                return Z42Type.IsAssignableTo(thenType, elseType) ? thenType
+                     : Z42Type.IsAssignableTo(elseType, thenType) ? elseType
+                     : Z42Type.Unknown;
+            }
+
+            case CastExpr cast:
+                CheckExpr(cast.Operand, env);
+                return ResolveType(cast.TargetType);
+
+            case NewExpr newExpr:
+            {
+                foreach (var arg in newExpr.Args) CheckExpr(arg, env);
+                return ResolveType(newExpr.Type);
+            }
+
+            default:
+                return Z42Type.Unknown;
+        }
+    }
+
+    // ── Identifier ────────────────────────────────────────────────────────────
+
+    private Z42Type CheckIdent(IdentExpr id, TypeEnv env)
+    {
+        var t = env.LookupVar(id.Name);
+        if (t != null) return t;
+
+        // Try function table (may be used as a value — e.g. in a call expression)
+        var fn = env.LookupFunc(id.Name);
+        if (fn != null) return fn;
+
+        _diags.UndefinedSymbol(id.Name, id.Span);
+        return Z42Type.Error;
+    }
+
+    // ── Assignment ────────────────────────────────────────────────────────────
+
+    private Z42Type CheckAssign(AssignExpr assign, TypeEnv env)
+    {
+        var targetType = CheckExpr(assign.Target, env);
+        var valueType  = CheckExpr(assign.Value,  env);
+
+        RequireAssignable(targetType, valueType, assign.Value.Span);
+
+        // After assignment, update local variable type if narrowed from Unknown
+        if (assign.Target is IdentExpr id && targetType is Z42UnknownType)
+            env.Define(id.Name, valueType);
+
+        return valueType;
+    }
+
+    // ── Binary expressions ────────────────────────────────────────────────────
+
+    private Z42Type CheckBinary(BinaryExpr bin, TypeEnv env)
+    {
+        var lt = CheckExpr(bin.Left,  env);
+        var rt = CheckExpr(bin.Right, env);
+
+        if (lt is Z42ErrorType || rt is Z42ErrorType) return Z42Type.Error;
+
+        switch (bin.Op)
+        {
+            case "+" when lt == Z42Type.String || rt == Z42Type.String:
+                // String concatenation: always valid
+                return Z42Type.String;
+
+            case "+" or "-" or "*" or "/" or "%":
+                if (!Z42Type.IsNumeric(lt) && lt is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires numeric operand, got `{lt}`", bin.Left.Span);
+                else if (!Z42Type.IsNumeric(rt) && rt is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires numeric operand, got `{rt}`", bin.Right.Span);
+                return (lt is Z42ErrorType || rt is Z42ErrorType)
+                    ? Z42Type.Error
+                    : Z42Type.ArithmeticResult(lt, rt);
+
+            case "<" or "<=" or ">" or ">=":
+                if (!Z42Type.IsNumeric(lt) && lt is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires numeric operand, got `{lt}`", bin.Left.Span);
+                return Z42Type.Bool;
+
+            case "==" or "!=":
+                // Allowed for any matching types; skip detailed checks for Phase 1
+                return Z42Type.Bool;
+
+            case "&&" or "||":
+                if (!Z42Type.IsBool(lt) && lt is not Z42UnknownType and not Z42ErrorType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires bool operand, got `{lt}`", bin.Left.Span);
+                if (!Z42Type.IsBool(rt) && rt is not Z42UnknownType and not Z42ErrorType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires bool operand, got `{rt}`", bin.Right.Span);
+                return Z42Type.Bool;
+
+            case "is" or "as":
+                return Z42Type.Bool;
+
+            default:
+                return Z42Type.Unknown;
+        }
+    }
+
+    // ── Unary expressions ─────────────────────────────────────────────────────
+
+    private Z42Type CheckUnary(UnaryExpr u, TypeEnv env)
+    {
+        var t = CheckExpr(u.Operand, env);
+        if (t is Z42ErrorType) return Z42Type.Error;
+
+        switch (u.Op)
+        {
+            case "!":
+                if (!Z42Type.IsBool(t) && t is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `!` requires bool, got `{t}`", u.Operand.Span);
+                return Z42Type.Bool;
+
+            case "-" or "+":
+                if (!Z42Type.IsNumeric(t) && t is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"unary `{u.Op}` requires numeric operand, got `{t}`", u.Operand.Span);
+                return t;
+
+            case "++" or "--":
+                if (!Z42Type.IsNumeric(t) && t is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{u.Op}` requires numeric operand, got `{t}`", u.Operand.Span);
+                return t;
+
+            case "await":
+                return Z42Type.Unknown;   // async types deferred
+
+            default:
+                return t;
+        }
+    }
+
+    // ── Call expressions ──────────────────────────────────────────────────────
+
+    private Z42Type CheckCall(CallExpr call, TypeEnv env)
+    {
+        // Check all arguments first
+        var argTypes = call.Args.Select(a => CheckExpr(a, env)).ToList();
+
+        // Callee: try to find a known function type
+        Z42Type calleeType;
+        if (call.Callee is IdentExpr funcId)
+        {
+            // Direct function call
+            var fn = env.LookupFunc(funcId.Name);
+            if (fn != null)
+            {
+                calleeType = fn;
+            }
+            else
+            {
+                // May be undefined — CheckIdent will report it
+                calleeType = CheckIdent(funcId, env);
+            }
+        }
+        else
+        {
+            calleeType = CheckExpr(call.Callee, env);
+        }
+
+        if (calleeType is Z42FuncType funcType)
+        {
+            if (argTypes.Count != funcType.Params.Count)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"expected {funcType.Params.Count} argument(s), got {argTypes.Count}",
+                    call.Span);
+            else
+                for (int i = 0; i < argTypes.Count; i++)
+                    RequireAssignable(funcType.Params[i], argTypes[i], call.Args[i].Span,
+                        $"argument {i + 1}: expected `{funcType.Params[i]}`, got `{argTypes[i]}`");
+
+            return funcType.Ret;
+        }
+
+        // Unknown callee type (built-in methods, member calls): return Unknown
+        return Z42Type.Unknown;
+    }
+
+    // ── Type resolution ───────────────────────────────────────────────────────
+
+    private static Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
+    {
+        VoidType              => Z42Type.Void,
+        OptionType ot         => new Z42OptionType(ResolveType(ot.Inner)),
+        ArrayType  at         => new Z42ArrayType(ResolveType(at.Element)),
+        NamedType  nt         => nt.Name switch
+        {
+            "int"    or "i32" => Z42Type.Int,
+            "long"   or "i64" => Z42Type.Long,
+            "float"  or "f32" => Z42Type.Float,
+            "double" or "f64" => Z42Type.Double,
+            "bool"            => Z42Type.Bool,
+            "string"          => Z42Type.String,
+            "char"            => Z42Type.Char,
+            "object"          => Z42Type.Object,
+            "void"            => Z42Type.Void,
+            "var"             => Z42Type.Unknown,
+            _                 => new Z42PrimType(nt.Name),  // user-defined / generic
+        },
+        _ => Z42Type.Unknown
+    };
+
+    // ── Collection element type ───────────────────────────────────────────────
+
+    private static Z42Type ElemTypeOf(Z42Type t) => t switch
+    {
+        Z42ArrayType at  => at.Element,
+        Z42OptionType ot => ot.Inner,
+        Z42UnknownType   => Z42Type.Unknown,
+        _                => Z42Type.Unknown
+    };
+
+    // ── Diagnostic helpers ────────────────────────────────────────────────────
+
+    private void RequireBool(Z42Type actual, Span span, string context)
+    {
+        if (actual is Z42ErrorType or Z42UnknownType) return;
+        if (!Z42Type.IsBool(actual))
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"`{context}` condition must be `bool`, got `{actual}`", span);
+    }
+
+    private void RequireAssignable(Z42Type target, Z42Type source, Span span, string? msg = null)
+    {
+        if (!Z42Type.IsAssignableTo(target, source))
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                msg ?? $"cannot assign `{source}` to `{target}`", span);
+    }
+}

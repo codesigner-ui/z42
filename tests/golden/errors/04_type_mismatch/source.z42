@@ -1,0 +1,8 @@
+namespace Demo;
+
+void Main() {
+    int x = 1;
+    if (x) {
+        Console.WriteLine("bad");
+    }
+}

@@ -7,6 +7,7 @@ using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Features;
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
+using Z42.Compiler.TypeCheck;
 using Z42.IR;
 
 namespace Z42.Tests;
@@ -133,6 +134,10 @@ public sealed class GoldenTests
             diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
             return (null, diags);
         }
+
+        var typeChecker = new TypeChecker(diags);
+        typeChecker.Check(cu);
+        if (diags.HasErrors) return (null, diags);
 
         IrModule ir;
         try
