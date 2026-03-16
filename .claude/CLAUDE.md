@@ -109,6 +109,29 @@ z42 **始终带 GC**，不引入所有权/借用。Phase 2 目标是借鉴 Rust/
 - **执行模式注解**作用于命名空间级别，VM 按注解分发
 - `.z42bc` magic bytes 固定为 `[0x5A, 0x34, 0x32, 0x00]`（"Z42\0"）
 
+## 改动验证流程（必须遵守）
+
+**每次完成一批改动后，必须按以下顺序自动执行，不需要用户提醒：**
+
+```bash
+# 1. 编译（确保无错误）
+dotnet build src/compiler/z42.slnx
+
+# 2. 跑 golden tests（确保全部通过）
+dotnet test tests/z42.Tests/z42.Tests.csproj
+
+# 3. 提交（tests 全通过后才能 commit）
+git add <changed files>
+git commit -m "..."
+
+# 4. 推送
+git push origin main
+```
+
+- **禁止** 在测试失败时 commit 或 push
+- 每个逻辑完整的改动单元提交一次，不要积压多个无关改动
+- commit message 格式：`type(scope): 简要描述`（如 `feat(parser): ...`、`fix(ir): ...`）
+
 ## 规范文件
 
 修改任何语言行为前，**必须先更新对应的 spec 文件**：
