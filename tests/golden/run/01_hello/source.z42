@@ -1,0 +1,11 @@
+namespace Demo;
+
+string Greet(string name) {
+    return $"Hello, {name}!";
+}
+
+void Main() {
+    var msg = Greet("world");
+    Console.WriteLine(msg);
+    Console.WriteLine($"z42 version 0.1, the answer is {42}");
+}

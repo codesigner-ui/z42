@@ -34,6 +34,8 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(ConstI64Instr),  "const_i64")]
 [JsonDerivedType(typeof(ConstF64Instr),  "const_f64")]
 [JsonDerivedType(typeof(ConstBoolInstr), "const_bool")]
+[JsonDerivedType(typeof(ConstNullInstr), "const_null")]
+[JsonDerivedType(typeof(CopyInstr),      "copy")]
 [JsonDerivedType(typeof(StrConcatInstr), "str_concat")]
 [JsonDerivedType(typeof(ToStrInstr),     "to_str")]
 [JsonDerivedType(typeof(CallInstr),      "call")]
@@ -62,6 +64,10 @@ public sealed record ConstI32Instr(int Dst, int Val)         : IrInstr;
 public sealed record ConstI64Instr(int Dst, long Val)        : IrInstr;
 public sealed record ConstF64Instr(int Dst, double Val)      : IrInstr;
 public sealed record ConstBoolInstr(int Dst, bool Val)       : IrInstr;
+/// Loads a null value into Dst.
+public sealed record ConstNullInstr(int Dst)                 : IrInstr;
+/// Copies the value of register Src into Dst.
+public sealed record CopyInstr(int Dst, int Src)             : IrInstr;
 public sealed record StrConcatInstr(int Dst, int A, int B)   : IrInstr;
 public sealed record ToStrInstr(int Dst, int Src)            : IrInstr;
 public sealed record CallInstr(int Dst, string Func, List<int> Args) : IrInstr;

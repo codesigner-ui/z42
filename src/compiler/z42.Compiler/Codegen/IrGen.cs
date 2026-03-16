@@ -254,12 +254,18 @@ public sealed class IrGen
             case LitNullExpr:
             {
                 int dst = Alloc();
-                Emit(new ConstStrInstr(dst, Intern("null")));
+                Emit(new ConstNullInstr(dst));
                 return dst;
             }
             case InterpolatedStrExpr interp:
                 return EmitInterpolation(interp);
 
+            case LitCharExpr c:
+            {
+                int dst = Alloc();
+                Emit(new ConstI32Instr(dst, (int)c.Value));
+                return dst;
+            }
             case IdentExpr id:
             {
                 // Parameters: direct register reference (read-only)
@@ -292,6 +298,37 @@ public sealed class IrGen
 
             case ConditionalExpr ternary:
                 return EmitTernary(ternary);
+
+            case CastExpr cast:
+                // Type is validated by TypeChecker; just emit the operand.
+                return EmitExpr(cast.Operand);
+
+            case MemberExpr m:
+            {
+                // Bare member read (not a call target) — emit target and return unknown reg.
+                EmitExpr(m.Target);
+                // Member access resolution requires runtime support; return null for now.
+                int dst = Alloc();
+                Emit(new ConstNullInstr(dst));
+                return dst;
+            }
+
+            case IndexExpr ix:
+            {
+                int targetReg = EmitExpr(ix.Target);
+                int idxReg    = EmitExpr(ix.Index);
+                int dst       = Alloc();
+                Emit(new BuiltinInstr(dst, "__get_elem", [targetReg, idxReg]));
+                return dst;
+            }
+
+            case NewExpr newExpr:
+            {
+                var argRegs = newExpr.Args.Select(EmitExpr).ToList();
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__new_obj", argRegs));
+                return dst;
+            }
 
             default:
                 throw new NotSupportedException(
@@ -367,14 +404,12 @@ public sealed class IrGen
 
         StartBlock(thenLbl);
         int thenReg = EmitExpr(ternary.Then);
-        // Copy to result slot (LoadInstr/StoreInstr aren't used here;
-        // instead re-use the result register via a direct assignment trick)
-        Emit(new AddInstr(result, thenReg, thenReg));  // result = thenReg (add 0 trick)
+        Emit(new CopyInstr(result, thenReg));
         EndBlock(new BrTerm(endLbl));
 
         StartBlock(elseLbl);
         int elseReg = EmitExpr(ternary.Else);
-        Emit(new AddInstr(result, elseReg, elseReg));
+        Emit(new CopyInstr(result, elseReg));
         EndBlock(new BrTerm(endLbl));
 
         StartBlock(endLbl);

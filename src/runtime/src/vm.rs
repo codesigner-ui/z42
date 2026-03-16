@@ -1,6 +1,6 @@
 use crate::bytecode::Module;
 use crate::types::ExecMode;
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 /// Top-level VM: loads a module and dispatches to the appropriate backend.
 pub struct Vm {
@@ -19,19 +19,22 @@ impl Vm {
             .iter()
             .find(|&&n| self.module.functions.iter().any(|f| f.name == n))
             .copied()
-            .ok_or_else(|| anyhow::anyhow!("no entry point (`Main` or `main`) found in module `{}`", self.module.name))?;
+            .ok_or_else(|| anyhow::anyhow!(
+                "no entry point (`Main` or `main`) found in module `{}`",
+                self.module.name
+            ))?;
 
         let entry = self
             .module
             .functions
             .iter()
             .find(|f| f.name == entry_name)
-            .unwrap(); // safe: we found it above
+            .ok_or_else(|| anyhow::anyhow!("entry `{}` disappeared — this is a bug", entry_name))?;
 
         match self.default_mode {
             ExecMode::Interp => crate::interp::run(&self.module, entry, &[]),
-            ExecMode::Jit    => crate::jit::run(&self.module, entry),
-            ExecMode::Aot    => crate::aot::run(&self.module, entry),
+            ExecMode::Jit    => bail!("JIT mode not yet implemented"),
+            ExecMode::Aot    => bail!("AOT mode not yet implemented"),
         }
     }
 }

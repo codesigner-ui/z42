@@ -1,0 +1,2 @@
+Hello, world!
+z42 version 0.1, the answer is 42

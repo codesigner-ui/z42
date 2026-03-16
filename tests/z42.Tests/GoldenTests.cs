@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -60,8 +61,11 @@ public sealed class GoldenTests
     public static IEnumerable<object[]> ErrorTestCases() =>
         DiscoverCases(errorCategory: true);
 
+    public static IEnumerable<object[]> RunTestCases() =>
+        DiscoverCases(runCategory: true);
+
     private static IEnumerable<object[]> DiscoverCases(
-        bool hasExpectedIr = false, bool errorCategory = false)
+        bool hasExpectedIr = false, bool errorCategory = false, bool runCategory = false)
     {
         if (!Directory.Exists(GoldenRoot))
             yield break;
@@ -73,9 +77,12 @@ public sealed class GoldenTests
 
             bool isErrorCase = dir.Contains(Path.DirectorySeparatorChar + "errors" + Path.DirectorySeparatorChar)
                             || Path.GetFileName(dir).StartsWith("error_");
+            bool isRunCase   = dir.Contains(Path.DirectorySeparatorChar + "run" + Path.DirectorySeparatorChar);
 
             if (errorCategory != isErrorCase) continue;
+            if (runCategory   != isRunCase)   continue;
             if (hasExpectedIr && !File.Exists(Path.Combine(dir, "expected_ir.json"))) continue;
+            if (runCategory   && !File.Exists(Path.Combine(dir, "expected_output.txt"))) continue;
 
             string name = Path.GetRelativePath(GoldenRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
             yield return [name, dir];
@@ -192,6 +199,71 @@ public sealed class GoldenTests
 
         // Match line-by-line, ignoring exact column in spans where marked with *
         MatchDiagnosticLines(expected, actual, name);
+    }
+
+    // ── Run / execution tests ──────────────────────────────────────────────
+
+    [Theory]
+    [MemberData(nameof(RunTestCases))]
+    public void RunMatchesExpected(string name, string dir)
+    {
+        // Step 1 — compile to IR JSON
+        var (ir, diags) = Compile(dir);
+        diags.PrintAll();
+        diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
+        ir.Should().NotBeNull();
+
+        // Step 2 — serialise the IR so the VM can read it
+        string irJson  = JsonSerializer.Serialize(ir, JsonOpts);
+        string irFile  = Path.Combine(Path.GetTempPath(), $"z42_run_{Path.GetRandomFileName()}.json");
+        File.WriteAllText(irFile, irJson);
+
+        try
+        {
+            // Step 3 — find the VM binary (built via `cargo build`)
+            string? vmBin = FindVmBinary();
+            if (vmBin == null)
+            {
+                // VM not built: skip the test rather than fail
+                return;
+            }
+
+            // Step 4 — execute and capture stdout
+            var psi = new ProcessStartInfo(vmBin, irFile)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError  = true,
+                UseShellExecute        = false,
+            };
+            using var proc = Process.Start(psi)!;
+            string stdout = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit();
+
+            proc.ExitCode.Should().Be(0,
+                because: $"test '{name}' VM should exit cleanly (stderr: {proc.StandardError.ReadToEnd()})");
+
+            // Step 5 — compare output
+            string expected = File.ReadAllText(Path.Combine(dir, "expected_output.txt")).ReplaceLineEndings("\n").Trim();
+            string actual   = stdout.ReplaceLineEndings("\n").Trim();
+            Assert.Equal(expected, actual);
+        }
+        finally
+        {
+            File.Delete(irFile);
+        }
+    }
+
+    private static string? FindVmBinary()
+    {
+        // Walk up from test binary to repo root, look for artifacts/rust/debug/z42vm
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "rust", "debug", "z42vm");
+            if (File.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     private static void MatchDiagnosticLines(string expected, string actual, string name)

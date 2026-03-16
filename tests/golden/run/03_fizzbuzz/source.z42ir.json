@@ -1,0 +1,319 @@
+{
+  "name": "Demo",
+  "string_pool": [
+    "FizzBuzz",
+    "Fizz",
+    "Buzz"
+  ],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 1
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 0
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "cond_0"
+          }
+        },
+        {
+          "label": "cond_0",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 1,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 20
+            },
+            {
+              "op": "le",
+              "dst": 3,
+              "a": 1,
+              "b": 2
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 3,
+            "true_label": "body_1",
+            "false_label": "end_2"
+          }
+        },
+        {
+          "label": "body_1",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 4,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 5,
+              "val": 15
+            },
+            {
+              "op": "rem",
+              "dst": 6,
+              "a": 4,
+              "b": 5
+            },
+            {
+              "op": "const_i64",
+              "dst": 7,
+              "val": 0
+            },
+            {
+              "op": "eq",
+              "dst": 8,
+              "a": 6,
+              "b": 7
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 8,
+            "true_label": "then_3",
+            "false_label": "else_4"
+          }
+        },
+        {
+          "label": "then_3",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 9,
+              "idx": 0
+            },
+            {
+              "op": "builtin",
+              "dst": 10,
+              "name": "__println",
+              "args": [
+                9
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_5"
+          }
+        },
+        {
+          "label": "else_4",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 11,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 12,
+              "val": 3
+            },
+            {
+              "op": "rem",
+              "dst": 13,
+              "a": 11,
+              "b": 12
+            },
+            {
+              "op": "const_i64",
+              "dst": 14,
+              "val": 0
+            },
+            {
+              "op": "eq",
+              "dst": 15,
+              "a": 13,
+              "b": 14
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 15,
+            "true_label": "then_6",
+            "false_label": "else_7"
+          }
+        },
+        {
+          "label": "then_6",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 16,
+              "idx": 1
+            },
+            {
+              "op": "builtin",
+              "dst": 17,
+              "name": "__println",
+              "args": [
+                16
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_8"
+          }
+        },
+        {
+          "label": "else_7",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 18,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 19,
+              "val": 5
+            },
+            {
+              "op": "rem",
+              "dst": 20,
+              "a": 18,
+              "b": 19
+            },
+            {
+              "op": "const_i64",
+              "dst": 21,
+              "val": 0
+            },
+            {
+              "op": "eq",
+              "dst": 22,
+              "a": 20,
+              "b": 21
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 22,
+            "true_label": "then_9",
+            "false_label": "else_10"
+          }
+        },
+        {
+          "label": "then_9",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 23,
+              "idx": 2
+            },
+            {
+              "op": "builtin",
+              "dst": 24,
+              "name": "__println",
+              "args": [
+                23
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_11"
+          }
+        },
+        {
+          "label": "else_10",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 25,
+              "var": "i"
+            },
+            {
+              "op": "builtin",
+              "dst": 26,
+              "name": "__println",
+              "args": [
+                25
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_11"
+          }
+        },
+        {
+          "label": "end_11",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "end_8"
+          }
+        },
+        {
+          "label": "end_8",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "end_5"
+          }
+        },
+        {
+          "label": "end_5",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 27,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 28,
+              "val": 1
+            },
+            {
+              "op": "add",
+              "dst": 29,
+              "a": 27,
+              "b": 28
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 29
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "cond_0"
+          }
+        },
+        {
+          "label": "end_2",
+          "instructions": [],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

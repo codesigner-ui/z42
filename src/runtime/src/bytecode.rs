@@ -48,6 +48,8 @@ pub enum Instruction {
     ConstI64  { dst: Reg, val: i64 },
     ConstF64  { dst: Reg, val: f64 },
     ConstBool { dst: Reg, val: bool },
+    ConstNull { dst: Reg },
+    Copy      { dst: Reg, src: Reg },
     // Arithmetic
     Add { dst: Reg, a: Reg, b: Reg },
     Sub { dst: Reg, a: Reg, b: Reg },

@@ -100,10 +100,19 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),
         Instruction::ConstF64  { dst, val } => frame.set(*dst, Value::F64(*val)),
         Instruction::ConstBool { dst, val } => frame.set(*dst, Value::Bool(*val)),
+        Instruction::ConstNull { dst }       => frame.set(*dst, Value::Null),
+        Instruction::Copy      { dst, src }  => frame.set(*dst, frame.get(*src)?.clone()),
 
         // ── Arithmetic ───────────────────────────────────────────────────────
         Instruction::Add { dst, a, b } => {
-            frame.set(*dst, int_binop(frame, *a, *b, |x, y| x + y, |x, y| x + y)?);
+            // String concatenation: if either operand is a string, concat.
+            let result = match (frame.get(*a)?, frame.get(*b)?) {
+                (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
+                (Value::Str(sa), vb)             => Value::Str(format!("{}{}", sa, value_to_str(vb))),
+                (va, Value::Str(sb))             => Value::Str(format!("{}{}", value_to_str(va), sb)),
+                _                                => int_binop(frame, *a, *b, |x, y| x + y, |x, y| x + y)?,
+            };
+            frame.set(*dst, result);
         }
         Instruction::Sub { dst, a, b } => {
             frame.set(*dst, int_binop(frame, *a, *b, |x, y| x - y, |x, y| x - y)?);
@@ -268,7 +277,15 @@ fn int_binop(
     Ok(match (frame.get(a)?, frame.get(b)?) {
         (Value::I32(x), Value::I32(y)) => Value::I32(int_op(*x as i64, *y as i64) as i32),
         (Value::I64(x), Value::I64(y)) => Value::I64(int_op(*x, *y)),
+        // Widen I32 to I64 for mixed operations
+        (Value::I32(x), Value::I64(y)) => Value::I64(int_op(*x as i64, *y)),
+        (Value::I64(x), Value::I32(y)) => Value::I64(int_op(*x, *y as i64)),
         (Value::F64(x), Value::F64(y)) => Value::F64(float_op(*x, *y)),
+        // Widen integer to f64 for mixed float operations
+        (Value::F64(x), Value::I64(y)) => Value::F64(float_op(*x, *y as f64)),
+        (Value::I64(x), Value::F64(y)) => Value::F64(float_op(*x as f64, *y)),
+        (Value::F64(x), Value::I32(y)) => Value::F64(float_op(*x, *y as f64)),
+        (Value::I32(x), Value::F64(y)) => Value::F64(float_op(*x as f64, *y)),
         (a, b) => bail!("type mismatch in arithmetic: {:?} vs {:?}", a, b),
     })
 }
@@ -284,7 +301,13 @@ fn numeric_lt(frame: &Frame, a: u32, b: u32) -> Result<bool> {
     Ok(match (frame.get(a)?, frame.get(b)?) {
         (Value::I32(x), Value::I32(y)) => x < y,
         (Value::I64(x), Value::I64(y)) => x < y,
+        (Value::I32(x), Value::I64(y)) => (*x as i64) < *y,
+        (Value::I64(x), Value::I32(y)) => *x < (*y as i64),
         (Value::F64(x), Value::F64(y)) => x < y,
+        (Value::F64(x), Value::I64(y)) => *x < (*y as f64),
+        (Value::I64(x), Value::F64(y)) => (*x as f64) < *y,
+        (Value::F64(x), Value::I32(y)) => *x < (*y as f64),
+        (Value::I32(x), Value::F64(y)) => (*x as f64) < *y,
         (a, b) => bail!("type mismatch in comparison: {:?} vs {:?}", a, b),
     })
 }
