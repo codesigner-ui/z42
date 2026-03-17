@@ -1,5 +1,11 @@
-/// Primitive value types that the VM operates on at runtime.
-#[derive(Debug, Clone, PartialEq)]
+use std::cell::RefCell;
+use std::rc::Rc;
+
+/// Primitive and heap value types that the VM operates on at runtime.
+///
+/// `Array` uses `Rc<RefCell<Vec<Value>>>` to give reference semantics with
+/// interior mutability — assigning an array copies the reference, not the data.
+#[derive(Debug, Clone)]
 pub enum Value {
     I8(i8),
     I16(i16),
@@ -15,6 +21,32 @@ pub enum Value {
     Char(char),
     Str(String),
     Null,
+    /// Heap-allocated dynamic array with reference semantics.
+    Array(Rc<RefCell<Vec<Value>>>),
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::I8(a),   Value::I8(b))   => a == b,
+            (Value::I16(a),  Value::I16(b))  => a == b,
+            (Value::I32(a),  Value::I32(b))  => a == b,
+            (Value::I64(a),  Value::I64(b))  => a == b,
+            (Value::U8(a),   Value::U8(b))   => a == b,
+            (Value::U16(a),  Value::U16(b))  => a == b,
+            (Value::U32(a),  Value::U32(b))  => a == b,
+            (Value::U64(a),  Value::U64(b))  => a == b,
+            (Value::F32(a),  Value::F32(b))  => a == b,
+            (Value::F64(a),  Value::F64(b))  => a == b,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Char(a), Value::Char(b)) => a == b,
+            (Value::Str(a),  Value::Str(b))  => a == b,
+            (Value::Null,    Value::Null)    => true,
+            // Array equality is reference equality (same as C# reference semantics)
+            (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
 }
 
 /// Execution mode for a module or function.

@@ -54,11 +54,39 @@ internal static class Nuds
     public static readonly NudFn Ident_ = (ctx, tok) =>
         new IdentExpr(tok.Text, tok.Span);
 
-    // ── new T(args) ──────────────────────────────────────────────────────────
+    // ── new expression ───────────────────────────────────────────────────────
+    //   new T(args)          — object constructor
+    //   new T[] { e, ... }   — array literal   (ParseTypeExpr consumed "[]")
+    //   new T[n]             — array with size  (ParseTypeExpr stopped at "[n]")
 
     public static readonly NudFn New_ = (ctx, tok) =>
     {
-        var ty   = ctx.ParseTypeExpr();
+        var ty = ctx.ParseTypeExpr();
+
+        // new T[] { e0, e1, ... }  (ty is already ArrayType because ParseTypeExpr saw "[]")
+        if (ty is ArrayType arrTy && ctx.Check(TokenKind.LBrace))
+        {
+            ctx.Advance(); // consume {
+            var elems = new List<Expr>();
+            while (!ctx.Check(TokenKind.RBrace) && !ctx.Check(TokenKind.Eof))
+            {
+                elems.Add(ctx.ParseExpr());
+                if (!ctx.Match(TokenKind.Comma)) break;
+            }
+            ctx.Expect(TokenKind.RBrace);
+            return new ArrayLitExpr(arrTy.Element, elems, tok.Span);
+        }
+
+        // new T[n]  (ParseTypeExpr returned NamedType because it saw "[n]" not "[]")
+        if (ctx.Check(TokenKind.LBracket))
+        {
+            ctx.Advance(); // consume [
+            var size = ctx.ParseExpr();
+            ctx.Expect(TokenKind.RBracket);
+            return new ArrayCreateExpr(ty, size, tok.Span);
+        }
+
+        // new T(args)  — regular object constructor
         ctx.Expect(TokenKind.LParen);
         var args = new List<Expr>();
         while (!ctx.Check(TokenKind.RParen) && !ctx.Check(TokenKind.Eof))

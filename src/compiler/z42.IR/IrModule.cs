@@ -55,8 +55,13 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(OrInstr),        "or")]
 [JsonDerivedType(typeof(NotInstr),       "not")]
 [JsonDerivedType(typeof(NegInstr),       "neg")]
-[JsonDerivedType(typeof(StoreInstr),     "store")]
-[JsonDerivedType(typeof(LoadInstr),      "load")]
+[JsonDerivedType(typeof(StoreInstr),       "store")]
+[JsonDerivedType(typeof(LoadInstr),        "load")]
+[JsonDerivedType(typeof(ArrayNewInstr),    "array_new")]
+[JsonDerivedType(typeof(ArrayNewLitInstr), "array_new_lit")]
+[JsonDerivedType(typeof(ArrayGetInstr),    "array_get")]
+[JsonDerivedType(typeof(ArraySetInstr),    "array_set")]
+[JsonDerivedType(typeof(ArrayLenInstr),    "array_len")]
 public abstract record IrInstr;
 
 public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
@@ -89,6 +94,17 @@ public sealed record NotInstr(int Dst, int Src)              : IrInstr;
 public sealed record NegInstr(int Dst, int Src)              : IrInstr;
 public sealed record StoreInstr(string Var, int Src)         : IrInstr;
 public sealed record LoadInstr(int Dst, string Var)          : IrInstr;
+// ── Array instructions ────────────────────────────────────────────────────────
+/// Allocate a zero-initialized array of Size elements.
+public sealed record ArrayNewInstr(int Dst, int Size)              : IrInstr;
+/// Allocate an array from a list of element registers.
+public sealed record ArrayNewLitInstr(int Dst, List<int> Elems)    : IrInstr;
+/// Load element at index Idx from array Arr into Dst.
+public sealed record ArrayGetInstr(int Dst, int Arr, int Idx)      : IrInstr;
+/// Store Val into array Arr at index Idx (no result register).
+public sealed record ArraySetInstr(int Arr, int Idx, int Val)      : IrInstr;
+/// Get the length of array Arr as i32 into Dst.
+public sealed record ArrayLenInstr(int Dst, int Arr)               : IrInstr;
 
 // ── Terminators ───────────────────────────────────────────────────────────────
 

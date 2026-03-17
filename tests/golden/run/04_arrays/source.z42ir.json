@@ -1,0 +1,244 @@
+{
+  "name": "main",
+  "string_pool": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 10
+            },
+            {
+              "op": "const_i64",
+              "dst": 1,
+              "val": 20
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 30
+            },
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 40
+            },
+            {
+              "op": "const_i64",
+              "dst": 4,
+              "val": 50
+            },
+            {
+              "op": "array_new_lit",
+              "dst": 5,
+              "elems": [
+                0,
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "op": "store",
+              "var": "arr",
+              "src": 5
+            },
+            {
+              "op": "load",
+              "dst": 6,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 7,
+              "val": 0
+            },
+            {
+              "op": "array_get",
+              "dst": 8,
+              "arr": 6,
+              "idx": 7
+            },
+            {
+              "op": "builtin",
+              "dst": 9,
+              "name": "__println",
+              "args": [
+                8
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 10,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 11,
+              "val": 4
+            },
+            {
+              "op": "array_get",
+              "dst": 12,
+              "arr": 10,
+              "idx": 11
+            },
+            {
+              "op": "builtin",
+              "dst": 13,
+              "name": "__println",
+              "args": [
+                12
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 14,
+              "val": 99
+            },
+            {
+              "op": "load",
+              "dst": 15,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 16,
+              "val": 2
+            },
+            {
+              "op": "array_set",
+              "arr": 15,
+              "idx": 16,
+              "val": 14
+            },
+            {
+              "op": "load",
+              "dst": 17,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 18,
+              "val": 2
+            },
+            {
+              "op": "array_get",
+              "dst": 19,
+              "arr": 17,
+              "idx": 18
+            },
+            {
+              "op": "builtin",
+              "dst": 20,
+              "name": "__println",
+              "args": [
+                19
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 21,
+              "var": "arr"
+            },
+            {
+              "op": "builtin",
+              "dst": 22,
+              "name": "__len",
+              "args": [
+                21
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 23,
+              "name": "__println",
+              "args": [
+                22
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 24,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 25,
+              "val": 0
+            },
+            {
+              "op": "array_get",
+              "dst": 26,
+              "arr": 24,
+              "idx": 25
+            },
+            {
+              "op": "const_i64",
+              "dst": 27,
+              "val": 5
+            },
+            {
+              "op": "add",
+              "dst": 28,
+              "a": 26,
+              "b": 27
+            },
+            {
+              "op": "load",
+              "dst": 29,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 30,
+              "val": 0
+            },
+            {
+              "op": "array_set",
+              "arr": 29,
+              "idx": 30,
+              "val": 28
+            },
+            {
+              "op": "load",
+              "dst": 31,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 32,
+              "val": 0
+            },
+            {
+              "op": "array_get",
+              "dst": 33,
+              "arr": 31,
+              "idx": 32
+            },
+            {
+              "op": "builtin",
+              "dst": 34,
+              "name": "__println",
+              "args": [
+                33
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

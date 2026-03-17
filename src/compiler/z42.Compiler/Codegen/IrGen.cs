@@ -12,7 +12,8 @@ namespace Z42.Compiler.Codegen;
 /// Control flow uses multiple basic blocks with labeled branches.
 /// StartBlock(label) begins a new open block.
 /// EndBlock(term) seals the current block with a terminator.
-/// _blockEnded prevents double-termination after return/break.
+/// _blockEnded prevents double-termination after return/break/continue.
+/// _loopStack tracks (breakLabel, continueLabel) for the innermost loop.
 /// </summary>
 public sealed class IrGen
 {
@@ -24,6 +25,8 @@ public sealed class IrGen
     private Dictionary<string, int> _locals = new();  // parameter name → register
     private HashSet<string> _mutableVars = new();     // local variable names (use Load/Store)
     private List<IrBlock> _blocks = new();
+    // Loop context: (breakLabel, continueLabel) for the innermost enclosing loop
+    private Stack<(string Break, string Continue)> _loopStack = new();
 
     // Current (open) block
     private string _curLabel      = "entry";
@@ -47,6 +50,7 @@ public sealed class IrGen
         _locals      = new Dictionary<string, int>();
         _mutableVars = new HashSet<string>();
         _blocks      = new List<IrBlock>();
+        _loopStack   = new Stack<(string, string)>();
 
         StartBlock("entry");
 
@@ -92,7 +96,7 @@ public sealed class IrGen
     {
         foreach (var stmt in block.Stmts)
         {
-            if (_blockEnded) break;   // dead code after return
+            if (_blockEnded) break;   // dead code after return/break/continue
             EmitStmt(stmt);
         }
     }
@@ -136,8 +140,18 @@ public sealed class IrGen
                 EmitFor(fs);
                 break;
 
-            // foreach not yet lowered
-            case ForeachStmt:
+            case ForeachStmt fe:
+                EmitForeach(fe);
+                break;
+
+            case BreakStmt:
+                if (_loopStack.Count > 0)
+                    EndBlock(new BrTerm(_loopStack.Peek().Break));
+                break;
+
+            case ContinueStmt:
+                if (_loopStack.Count > 0)
+                    EndBlock(new BrTerm(_loopStack.Peek().Continue));
                 break;
         }
     }
@@ -146,7 +160,7 @@ public sealed class IrGen
 
     private void EmitIf(IfStmt ifStmt)
     {
-        int condReg   = EmitExpr(ifStmt.Condition);
+        int condReg    = EmitExpr(ifStmt.Condition);
         string thenLbl = FreshLabel("then");
         string elseLbl = FreshLabel(ifStmt.Else != null ? "else" : "end");
         string endLbl  = ifStmt.Else != null ? FreshLabel("end") : elseLbl;
@@ -182,9 +196,12 @@ public sealed class IrGen
         int condReg = EmitExpr(ws.Condition);
         EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
+        // continue → re-check condition; break → exit
+        _loopStack.Push((endLbl, condLbl));
         StartBlock(bodyLbl);
         EmitBlock(ws.Body);
         if (!_blockEnded) EndBlock(new BrTerm(condLbl));
+        _loopStack.Pop();
 
         StartBlock(endLbl);
     }
@@ -195,6 +212,7 @@ public sealed class IrGen
 
         string condLbl = FreshLabel("cond");
         string bodyLbl = FreshLabel("body");
+        string incrLbl = FreshLabel("incr");
         string endLbl  = FreshLabel("end");
 
         EndBlock(new BrTerm(condLbl));
@@ -210,13 +228,74 @@ public sealed class IrGen
             EndBlock(new BrTerm(bodyLbl));  // infinite loop
         }
 
+        // continue → increment; break → exit
+        _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
         EmitBlock(fs.Body);
-        if (!_blockEnded)
-        {
-            if (fs.Increment != null) EmitExpr(fs.Increment);
-            EndBlock(new BrTerm(condLbl));
-        }
+        if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
+        _loopStack.Pop();
+
+        StartBlock(incrLbl);
+        if (fs.Increment != null) EmitExpr(fs.Increment);
+        EndBlock(new BrTerm(condLbl));
+
+        StartBlock(endLbl);
+    }
+
+    private void EmitForeach(ForeachStmt fe)
+    {
+        // Evaluate collection once in the current (pre-loop) block
+        int arrReg = EmitExpr(fe.Collection);
+
+        int lenReg = Alloc();
+        Emit(new ArrayLenInstr(lenReg, arrReg));
+
+        // Init counter variable
+        string indexVar = $"__fe_i_{_nextLabelId}";
+        _mutableVars.Add(indexVar);
+        int zeroReg = Alloc();
+        Emit(new ConstI32Instr(zeroReg, 0));
+        Emit(new StoreInstr(indexVar, zeroReg));
+
+        string condLbl = FreshLabel("fe_cond");
+        string bodyLbl = FreshLabel("fe_body");
+        string incrLbl = FreshLabel("fe_inc");
+        string endLbl  = FreshLabel("fe_end");
+
+        EndBlock(new BrTerm(condLbl));
+
+        // Condition: i < len
+        StartBlock(condLbl);
+        int iReg   = Alloc();
+        Emit(new LoadInstr(iReg, indexVar));
+        int cmpReg = Alloc();
+        Emit(new LtInstr(cmpReg, iReg, lenReg));
+        EndBlock(new BrCondTerm(cmpReg, bodyLbl, endLbl));
+
+        // Body: load element, bind loop variable, run body
+        // continue → increment block; break → end
+        _loopStack.Push((endLbl, incrLbl));
+        StartBlock(bodyLbl);
+        int iReg2   = Alloc();
+        Emit(new LoadInstr(iReg2, indexVar));
+        int elemReg = Alloc();
+        Emit(new ArrayGetInstr(elemReg, arrReg, iReg2));
+        _mutableVars.Add(fe.VarName);
+        Emit(new StoreInstr(fe.VarName, elemReg));
+        EmitBlock(fe.Body);
+        if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
+        _loopStack.Pop();
+
+        // Increment: i = i + 1
+        StartBlock(incrLbl);
+        int iReg3   = Alloc();
+        Emit(new LoadInstr(iReg3, indexVar));
+        int oneReg  = Alloc();
+        Emit(new ConstI32Instr(oneReg, 1));
+        int nextReg = Alloc();
+        Emit(new AddInstr(nextReg, iReg3, oneReg));
+        Emit(new StoreInstr(indexVar, nextReg));
+        EndBlock(new BrTerm(condLbl));
 
         StartBlock(endLbl);
     }
@@ -268,10 +347,8 @@ public sealed class IrGen
             }
             case IdentExpr id:
             {
-                // Parameters: direct register reference (read-only)
                 if (_locals.TryGetValue(id.Name, out int reg))
                     return reg;
-                // Mutable locals: emit a Load from named slot
                 if (_mutableVars.Contains(id.Name))
                 {
                     int dst = Alloc();
@@ -300,14 +377,19 @@ public sealed class IrGen
                 return EmitTernary(ternary);
 
             case CastExpr cast:
-                // Type is validated by TypeChecker; just emit the operand.
                 return EmitExpr(cast.Operand);
+
+            case MemberExpr m when m.Member == "Length":
+            {
+                int targetReg = EmitExpr(m.Target);
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__len", [targetReg]));
+                return dst;
+            }
 
             case MemberExpr m:
             {
-                // Bare member read (not a call target) — emit target and return unknown reg.
                 EmitExpr(m.Target);
-                // Member access resolution requires runtime support; return null for now.
                 int dst = Alloc();
                 Emit(new ConstNullInstr(dst));
                 return dst;
@@ -318,7 +400,23 @@ public sealed class IrGen
                 int targetReg = EmitExpr(ix.Target);
                 int idxReg    = EmitExpr(ix.Index);
                 int dst       = Alloc();
-                Emit(new BuiltinInstr(dst, "__get_elem", [targetReg, idxReg]));
+                Emit(new ArrayGetInstr(dst, targetReg, idxReg));
+                return dst;
+            }
+
+            case ArrayCreateExpr ac:
+            {
+                int sizeReg = EmitExpr(ac.Size);
+                int dst = Alloc();
+                Emit(new ArrayNewInstr(dst, sizeReg));
+                return dst;
+            }
+
+            case ArrayLitExpr al:
+            {
+                var elemRegs = al.Elements.Select(EmitExpr).ToList();
+                int dst = Alloc();
+                Emit(new ArrayNewLitInstr(dst, elemRegs));
                 return dst;
             }
 
@@ -341,13 +439,21 @@ public sealed class IrGen
     private int EmitAssign(AssignExpr assign)
     {
         int valReg = EmitExpr(assign.Value);
+
         if (assign.Target is IdentExpr id)
         {
             if (_mutableVars.Contains(id.Name))
                 Emit(new StoreInstr(id.Name, valReg));
             else
-                _locals[id.Name] = valReg;  // parameter re-binding (rare)
+                _locals[id.Name] = valReg;
         }
+        else if (assign.Target is IndexExpr ix)
+        {
+            int arrReg = EmitExpr(ix.Target);
+            int idxReg = EmitExpr(ix.Index);
+            Emit(new ArraySetInstr(arrReg, idxReg, valReg));
+        }
+
         return valReg;
     }
 
@@ -355,7 +461,7 @@ public sealed class IrGen
 
     private int EmitUnary(UnaryExpr u)
     {
-        if (u.Op == "await") return EmitExpr(u.Operand);  // async stripped
+        if (u.Op == "await") return EmitExpr(u.Operand);
 
         int src = EmitExpr(u.Operand);
         int dst = Alloc();
@@ -363,7 +469,7 @@ public sealed class IrGen
         {
             "!" => (IrInstr)new NotInstr(dst, src),
             "-" => new NegInstr(dst, src),
-            _   => new NotInstr(dst, src)   // fallback
+            _   => new NotInstr(dst, src)
         });
         return dst;
     }
@@ -372,7 +478,7 @@ public sealed class IrGen
     {
         if (post.Operand is IdentExpr id)
         {
-            int oldReg = EmitExpr(post.Operand);  // reads current value via Load if mutable
+            int oldReg = EmitExpr(post.Operand);
             int one    = Alloc();
             int newReg = Alloc();
             Emit(new ConstI64Instr(one, 1));
@@ -382,22 +488,18 @@ public sealed class IrGen
                 Emit(new StoreInstr(id.Name, newReg));
             else
                 _locals[id.Name] = newReg;
-            return oldReg;   // postfix returns original value
+            return oldReg;
         }
         return EmitExpr(post.Operand);
     }
 
     private int EmitTernary(ConditionalExpr ternary)
     {
-        // Evaluate inline — both branches always run.
-        // Proper phi-based ternary requires more complex IR; for now use boolean trick.
-        // cond ? then : else  is lowered to if/else writing to a fresh var.
-        int condReg   = EmitExpr(ternary.Cond);
+        int condReg    = EmitExpr(ternary.Cond);
         string thenLbl = FreshLabel("tern_then");
         string elseLbl = FreshLabel("tern_else");
         string endLbl  = FreshLabel("tern_end");
 
-        // Allocate the result register BEFORE splitting blocks
         int result = Alloc();
 
         EndBlock(new BrCondTerm(condReg, thenLbl, elseLbl));
@@ -420,7 +522,7 @@ public sealed class IrGen
 
     private int EmitCall(CallExpr call)
     {
-        // Console.WriteLine(...)  →  builtin __println
+        // Console.WriteLine  →  builtin __println
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Console" }, Member: "WriteLine" })
         {
             var argRegs  = call.Args.Select(EmitExpr).ToList();
@@ -430,7 +532,7 @@ public sealed class IrGen
             return dst;
         }
 
-        // Console.Write(...)  →  builtin __print
+        // Console.Write  →  builtin __print
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Console" }, Member: "Write" })
         {
             var argRegs  = call.Args.Select(EmitExpr).ToList();
@@ -440,22 +542,42 @@ public sealed class IrGen
             return dst;
         }
 
-        // Direct function call: Greet(args)
+        // String built-in methods: s.Substring(), s.Contains(), etc.
+        if (call.Callee is MemberExpr mMethod)
+        {
+            string? builtinName = mMethod.Member switch
+            {
+                "Substring"  => "__str_substring",
+                "Contains"   => "__str_contains",
+                "StartsWith" => "__str_starts_with",
+                "EndsWith"   => "__str_ends_with",
+                _            => null
+            };
+
+            if (builtinName != null)
+            {
+                int targetReg = EmitExpr(mMethod.Target);
+                var argRegs   = new List<int> { targetReg };
+                argRegs.AddRange(call.Args.Select(EmitExpr));
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, builtinName, argRegs));
+                return dst;
+            }
+
+            // Generic method call: obj.Method(args)
+            var methodArgRegs = new List<int> { EmitExpr(mMethod.Target) };
+            methodArgRegs.AddRange(call.Args.Select(EmitExpr));
+            int methodDst = Alloc();
+            Emit(new CallInstr(methodDst, mMethod.Member, methodArgRegs));
+            return methodDst;
+        }
+
+        // Direct function call: Foo(args)
         if (call.Callee is IdentExpr funcId)
         {
             var argRegs = call.Args.Select(EmitExpr).ToList();
             int dst = Alloc();
             Emit(new CallInstr(dst, funcId.Name, argRegs));
-            return dst;
-        }
-
-        // Method call on an object: obj.Method(args) — best-effort
-        if (call.Callee is MemberExpr m)
-        {
-            var argRegs = new List<int> { EmitExpr(m.Target) };
-            argRegs.AddRange(call.Args.Select(EmitExpr));
-            int dst = Alloc();
-            Emit(new CallInstr(dst, m.Member, argRegs));
             return dst;
         }
 
@@ -522,8 +644,6 @@ public sealed class IrGen
     private int EmitExprPart(ExprPart ep)
     {
         int exprReg = EmitExpr(ep.Inner);
-
-        // Conservatively wrap non-string expressions with to_str
         bool isStringLit = ep.Inner is LitStrExpr or InterpolatedStrExpr;
         if (!isStringLit)
         {

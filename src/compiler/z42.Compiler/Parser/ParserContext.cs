@@ -233,8 +233,8 @@ internal sealed class ParserContext
         }
 
         // ── Type-annotated local variable: <Type> <Ident> (= | ;) ──
-        if (IsTypeToken(Current.Kind) && Peek().Kind == TokenKind.Identifier
-            && (Peek(2).Kind is TokenKind.Eq or TokenKind.Semicolon))
+        // Handles: int x = ...; string s; int[] arr = ...; etc.
+        if (IsTypeAnnotatedVarDecl())
         {
             var typeAnn = ParseTypeExpr();
             var vname   = Expect(TokenKind.Identifier).Text;
@@ -329,6 +329,31 @@ internal sealed class ParserContext
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// Lookahead: is the current position a type-annotated variable declaration?
+    /// Handles:  T name = ...  and  T[] name = ...
+    private bool IsTypeAnnotatedVarDecl()
+    {
+        if (!IsTypeToken(Current.Kind)) return false;
+
+        // T name = ...  (plain type)
+        if (Peek().Kind == TokenKind.Identifier
+            && (Peek(2).Kind is TokenKind.Eq or TokenKind.Semicolon))
+            return true;
+
+        // T[] name = ...  (array type: current is type, next is "[", then "]", then ident)
+        if (Peek().Kind == TokenKind.LBracket
+            && Peek(2).Kind == TokenKind.RBracket
+            && Peek(3).Kind == TokenKind.Identifier
+            && (Peek(4).Kind is TokenKind.Eq or TokenKind.Semicolon))
+            return true;
+
+        return false;
+    }
+
+    /// Wrap a single statement in a synthetic BlockStmt (for brace-free if/else/while bodies).
+    internal BlockStmt WrapInBlock(Stmt stmt) =>
+        new BlockStmt([stmt], stmt.Span);
 
     internal bool IsTypeToken(TokenKind k) => k is
         TokenKind.Void   or TokenKind.String or TokenKind.Int    or TokenKind.Long  or

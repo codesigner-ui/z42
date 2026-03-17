@@ -57,6 +57,9 @@ public sealed record ForStmt(
 public sealed record ForeachStmt(
     string VarName, Expr Collection, BlockStmt Body, Span Span) : Stmt(Span);
 
+public sealed record BreakStmt(Span Span)    : Stmt(Span);
+public sealed record ContinueStmt(Span Span) : Stmt(Span);
+
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 public abstract record Expr(Span Span);
@@ -87,6 +90,10 @@ public sealed record IndexExpr(Expr Target, Expr Index, Span Span) : Expr(Span);
 public sealed record ConditionalExpr(Expr Cond, Expr Then, Expr Else, Span Span) : Expr(Span);
 public sealed record CastExpr(TypeExpr TargetType, Expr Operand, Span Span) : Expr(Span);
 public sealed record NewExpr(TypeExpr Type, List<Expr> Args, Span Span) : Expr(Span);
+/// new T[n]  — zero-initialized array of size n
+public sealed record ArrayCreateExpr(TypeExpr ElemType, Expr Size, Span Span)           : Expr(Span);
+/// new T[] { e0, e1, ... }  — array from literal elements
+public sealed record ArrayLitExpr(TypeExpr ElemType, List<Expr> Elements, Span Span)    : Expr(Span);
 public sealed record LambdaExpr(List<string> Params, Expr Body, Span Span) : Expr(Span);
 public sealed record SwitchExpr(Expr Subject, List<SwitchArm> Arms, Span Span) : Expr(Span);
 public sealed record SwitchArm(Expr? Pattern, Expr Body, Span Span);

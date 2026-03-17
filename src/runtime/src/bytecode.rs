@@ -78,6 +78,17 @@ pub enum Instruction {
     // Calls
     Call    { dst: Reg, func: String, args: Vec<Reg> },
     Builtin { dst: Reg, name: String, args: Vec<Reg> },
+    // Arrays
+    /// Allocate a zero-initialised array of `size` elements.
+    ArrayNew    { dst: Reg, size: Reg },
+    /// Allocate an array from a literal list of element registers.
+    ArrayNewLit { dst: Reg, elems: Vec<Reg> },
+    /// Load element at `idx` from array `arr` into `dst`. Panics on out-of-bounds.
+    ArrayGet    { dst: Reg, arr: Reg, idx: Reg },
+    /// Store `val` into array `arr` at `idx`. Panics on out-of-bounds.
+    ArraySet    { arr: Reg, idx: Reg, val: Reg },
+    /// Load the length of array `arr` as i32 into `dst`.
+    ArrayLen    { dst: Reg, arr: Reg },
 }
 
 /// Block terminator.

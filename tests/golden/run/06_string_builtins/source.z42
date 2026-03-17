@@ -1,0 +1,18 @@
+void Main() {
+    string s = "Hello, World!";
+
+    // Length (UTF-8 bytes)
+    Console.WriteLine(s.Length);
+
+    // Contains
+    Console.WriteLine(s.Contains("World"));
+    Console.WriteLine(s.Contains("world"));
+
+    // StartsWith / EndsWith
+    Console.WriteLine(s.StartsWith("Hello"));
+    Console.WriteLine(s.EndsWith("!"));
+
+    // Substring
+    Console.WriteLine(s.Substring(7));
+    Console.WriteLine(s.Substring(7, 5));
+}

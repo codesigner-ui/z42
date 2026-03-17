@@ -1,0 +1,227 @@
+{
+  "name": "main",
+  "string_pool": [
+    "Hello, World!",
+    "World",
+    "world",
+    "Hello",
+    "!"
+  ],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 0,
+              "idx": 0
+            },
+            {
+              "op": "store",
+              "var": "s",
+              "src": 0
+            },
+            {
+              "op": "load",
+              "dst": 1,
+              "var": "s"
+            },
+            {
+              "op": "builtin",
+              "dst": 2,
+              "name": "__len",
+              "args": [
+                1
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 3,
+              "name": "__println",
+              "args": [
+                2
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 4,
+              "var": "s"
+            },
+            {
+              "op": "const_str",
+              "dst": 5,
+              "idx": 1
+            },
+            {
+              "op": "builtin",
+              "dst": 6,
+              "name": "__str_contains",
+              "args": [
+                4,
+                5
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 7,
+              "name": "__println",
+              "args": [
+                6
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 8,
+              "var": "s"
+            },
+            {
+              "op": "const_str",
+              "dst": 9,
+              "idx": 2
+            },
+            {
+              "op": "builtin",
+              "dst": 10,
+              "name": "__str_contains",
+              "args": [
+                8,
+                9
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 11,
+              "name": "__println",
+              "args": [
+                10
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 12,
+              "var": "s"
+            },
+            {
+              "op": "const_str",
+              "dst": 13,
+              "idx": 3
+            },
+            {
+              "op": "builtin",
+              "dst": 14,
+              "name": "__str_starts_with",
+              "args": [
+                12,
+                13
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 15,
+              "name": "__println",
+              "args": [
+                14
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 16,
+              "var": "s"
+            },
+            {
+              "op": "const_str",
+              "dst": 17,
+              "idx": 4
+            },
+            {
+              "op": "builtin",
+              "dst": 18,
+              "name": "__str_ends_with",
+              "args": [
+                16,
+                17
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 19,
+              "name": "__println",
+              "args": [
+                18
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 20,
+              "var": "s"
+            },
+            {
+              "op": "const_i64",
+              "dst": 21,
+              "val": 7
+            },
+            {
+              "op": "builtin",
+              "dst": 22,
+              "name": "__str_substring",
+              "args": [
+                20,
+                21
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 23,
+              "name": "__println",
+              "args": [
+                22
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 24,
+              "var": "s"
+            },
+            {
+              "op": "const_i64",
+              "dst": 25,
+              "val": 7
+            },
+            {
+              "op": "const_i64",
+              "dst": 26,
+              "val": 5
+            },
+            {
+              "op": "builtin",
+              "dst": 27,
+              "name": "__str_substring",
+              "args": [
+                24,
+                25,
+                26
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 28,
+              "name": "__println",
+              "args": [
+                27
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

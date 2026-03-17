@@ -127,6 +127,10 @@ public sealed class TypeChecker
                 CheckBlock(fe.Body, feScope, retType);
                 break;
             }
+
+            case BreakStmt:
+            case ContinueStmt:
+                break;   // valid inside any loop; loop-context check deferred to later phase
         }
         // Unknown stmt kinds are silently skipped (future constructs).
     }
@@ -230,8 +234,13 @@ public sealed class TypeChecker
 
             case MemberExpr m:
             {
-                CheckExpr(m.Target, env);
-                return Z42Type.Unknown;   // member type resolution deferred
+                var targetType = CheckExpr(m.Target, env);
+                return m.Member switch
+                {
+                    "Length" when targetType is Z42ArrayType => Z42Type.Int,
+                    "Length" when targetType == Z42Type.String => Z42Type.Int,
+                    _ => Z42Type.Unknown   // other member types deferred
+                };
             }
 
             case IndexExpr ix:
@@ -261,6 +270,26 @@ public sealed class TypeChecker
             {
                 foreach (var arg in newExpr.Args) CheckExpr(arg, env);
                 return ResolveType(newExpr.Type);
+            }
+
+            case ArrayCreateExpr ac:
+            {
+                var sizeType = CheckExpr(ac.Size, env);
+                if (!Z42Type.IsNumeric(sizeType) && sizeType is not Z42ErrorType and not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"array size must be numeric, got `{sizeType}`", ac.Size.Span);
+                return new Z42ArrayType(ResolveType(ac.ElemType));
+            }
+
+            case ArrayLitExpr al:
+            {
+                var elemType = ResolveType(al.ElemType);
+                foreach (var e in al.Elements)
+                {
+                    var et = CheckExpr(e, env);
+                    RequireAssignable(elemType, et, e.Span);
+                }
+                return new Z42ArrayType(elemType);
             }
 
             default:
@@ -391,6 +420,23 @@ public sealed class TypeChecker
 
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {
+        // String / array built-in method calls: s.Substring(...), s.Contains(...), etc.
+        if (call.Callee is MemberExpr mCallee)
+        {
+            var receiverType = CheckExpr(mCallee.Target, env);
+            foreach (var arg in call.Args) CheckExpr(arg, env);
+
+            if (receiverType == Z42Type.String)
+                return mCallee.Member switch
+                {
+                    "Substring"  => Z42Type.String,
+                    "Contains" or "StartsWith" or "EndsWith" => Z42Type.Bool,
+                    _ => Z42Type.Unknown
+                };
+
+            return Z42Type.Unknown;   // generic method call on unknown type
+        }
+
         // Check all arguments first
         var argTypes = call.Args.Select(a => CheckExpr(a, env)).ToList();
 

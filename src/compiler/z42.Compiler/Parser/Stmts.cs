@@ -34,14 +34,19 @@ internal static class Stmts
         ctx.Expect(TokenKind.LParen);
         var cond = ctx.ParseExpr();
         ctx.Expect(TokenKind.RParen);
-        var then = ctx.ParseBlock();
+        // Allow braced block or single statement body (same as C#)
+        var then = ctx.Current.Kind == TokenKind.LBrace
+            ? ctx.ParseBlock()
+            : ctx.WrapInBlock(ctx.ParseStmt());
         Stmt? else_ = null;
         if (ctx.Match(TokenKind.Else))
         {
             if (ctx.Current.Kind == TokenKind.If)
                 else_ = ParseIf(ctx, ctx.Advance());   // else-if chain
-            else
+            else if (ctx.Current.Kind == TokenKind.LBrace)
                 else_ = ctx.ParseBlock();
+            else
+                else_ = ctx.WrapInBlock(ctx.ParseStmt());
         }
         return new IfStmt(cond, then, else_, kw.Span);
     }
@@ -85,5 +90,19 @@ internal static class Stmts
         ctx.Expect(TokenKind.RParen);
         var body = ctx.ParseBlock();
         return new ForeachStmt(vname, collection, body, kw.Span);
+    };
+
+    // ── break / continue ─────────────────────────────────────────────────────
+
+    public static readonly StmtFn Break_ = (ctx, kw) =>
+    {
+        ctx.Match(TokenKind.Semicolon);
+        return new BreakStmt(kw.Span);
+    };
+
+    public static readonly StmtFn Continue_ = (ctx, kw) =>
+    {
+        ctx.Match(TokenKind.Semicolon);
+        return new ContinueStmt(kw.Span);
     };
 }

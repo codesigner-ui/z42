@@ -118,6 +118,8 @@ internal static class ParseTable
             [TokenKind.If]      = new(Stmts.If_,      "control_flow"),
             [TokenKind.While]   = new(Stmts.While_,   "control_flow"),
             [TokenKind.For]     = new(Stmts.For_,      "control_flow"),
-            [TokenKind.Foreach] = new(Stmts.Foreach_,  "control_flow"),
+            [TokenKind.Foreach]  = new(Stmts.Foreach_,  "control_flow"),
+            [TokenKind.Break]    = new(Stmts.Break_,    "control_flow"),
+            [TokenKind.Continue] = new(Stmts.Continue_, "control_flow"),
         };
 }

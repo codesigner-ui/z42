@@ -51,7 +51,7 @@
             "op": "br_cond",
             "cond": 3,
             "true_label": "body_1",
-            "false_label": "end_2"
+            "false_label": "end_3"
           }
         },
         {
@@ -69,7 +69,16 @@
               "args": [
                 4
               ]
-            },
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "incr_2"
+          }
+        },
+        {
+          "label": "incr_2",
+          "instructions": [
             {
               "op": "load",
               "dst": 6,
@@ -98,7 +107,7 @@
           }
         },
         {
-          "label": "end_2",
+          "label": "end_3",
           "instructions": [],
           "terminator": {
             "op": "ret"

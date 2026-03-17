@@ -1,7 +1,9 @@
 use crate::bytecode::{Function, Instruction, Module, Terminator};
 use crate::types::Value;
 use anyhow::{bail, Context, Result};
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 /// Entry point: run a function with the given arguments.
 pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
@@ -100,8 +102,8 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),
         Instruction::ConstF64  { dst, val } => frame.set(*dst, Value::F64(*val)),
         Instruction::ConstBool { dst, val } => frame.set(*dst, Value::Bool(*val)),
-        Instruction::ConstNull { dst }       => frame.set(*dst, Value::Null),
-        Instruction::Copy      { dst, src }  => frame.set(*dst, frame.get(*src)?.clone()),
+        Instruction::ConstNull { dst }      => frame.set(*dst, Value::Null),
+        Instruction::Copy      { dst, src } => frame.set(*dst, frame.get(*src)?.clone()),
 
         // ── Arithmetic ───────────────────────────────────────────────────────
         Instruction::Add { dst, a, b } => {
@@ -216,12 +218,57 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
             let result = exec_builtin(name, &arg_vals)?;
             frame.set(*dst, result);
         }
+
+        // ── Arrays ───────────────────────────────────────────────────────────
+        Instruction::ArrayNew { dst, size } => {
+            let n = to_usize(frame.get(*size)?, "ArrayNew size")?;
+            let arr = Rc::new(RefCell::new(vec![Value::Null; n]));
+            frame.set(*dst, Value::Array(arr));
+        }
+
+        Instruction::ArrayNewLit { dst, elems } => {
+            let vals: Vec<Value> = elems
+                .iter()
+                .map(|r| frame.get(*r).map(|v| v.clone()))
+                .collect::<Result<_>>()?;
+            frame.set(*dst, Value::Array(Rc::new(RefCell::new(vals))));
+        }
+
+        Instruction::ArrayGet { dst, arr, idx } => {
+            let i = to_usize(frame.get(*idx)?, "ArrayGet index")?;
+            let rc = expect_array(frame.get(*arr)?, "ArrayGet")?;
+            let borrowed = rc.borrow();
+            if i >= borrowed.len() {
+                bail!("array index {} out of bounds (len={})", i, borrowed.len());
+            }
+            frame.set(*dst, borrowed[i].clone());
+        }
+
+        Instruction::ArraySet { arr, idx, val } => {
+            let i   = to_usize(frame.get(*idx)?, "ArraySet index")?;
+            let v   = frame.get(*val)?.clone();
+            let rc  = expect_array(frame.get(*arr)?, "ArraySet")?;
+            let mut borrowed = rc.borrow_mut();
+            if i >= borrowed.len() {
+                bail!("array index {} out of bounds (len={})", i, borrowed.len());
+            }
+            borrowed[i] = v;
+        }
+
+        Instruction::ArrayLen { dst, arr } => {
+            let len = match frame.get(*arr)? {
+                Value::Array(rc) => rc.borrow().len() as i32,
+                other => bail!("ArrayLen: expected array, got {:?}", other),
+            };
+            frame.set(*dst, Value::I32(len));
+        }
     }
     Ok(())
 }
 
 fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
     match name {
+        // ── I/O ──────────────────────────────────────────────────────────────
         "__println" => {
             let text = args.first().map(value_to_str).unwrap_or_default();
             println!("{}", text);
@@ -233,11 +280,56 @@ fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Ok(Value::Null)
         }
         "__concat" => {
-            // kept for compatibility
             let a = args.first().map(value_to_str).unwrap_or_default();
             let b = args.get(1).map(value_to_str).unwrap_or_default();
             Ok(Value::Str(format!("{}{}", a, b)))
         }
+
+        // ── Length (works on both arrays and strings) ─────────────────────
+        "__len" => match args.first() {
+            Some(Value::Array(rc)) => Ok(Value::I32(rc.borrow().len() as i32)),
+            Some(Value::Str(s))    => Ok(Value::I32(s.len() as i32)),  // UTF-8 byte count
+            Some(other)            => bail!("__len: expected array or string, got {:?}", other),
+            None                   => bail!("__len: missing argument"),
+        },
+
+        // ── String built-ins ─────────────────────────────────────────────────
+        "__str_substring" => {
+            let s     = require_str(args, 0, "__str_substring")?;
+            let start = require_usize(args, 1, "__str_substring")?;
+            if args.len() == 2 {
+                if start > s.len() {
+                    bail!("__str_substring: start {} out of range (len={})", start, s.len());
+                }
+                Ok(Value::Str(s[start..].to_string()))
+            } else {
+                let len = require_usize(args, 2, "__str_substring")?;
+                let end = start + len;
+                if end > s.len() {
+                    bail!("__str_substring: range {}..{} out of range (len={})", start, end, s.len());
+                }
+                Ok(Value::Str(s[start..end].to_string()))
+            }
+        }
+
+        "__str_contains" => {
+            let s   = require_str(args, 0, "__str_contains")?;
+            let sub = require_str(args, 1, "__str_contains")?;
+            Ok(Value::Bool(s.contains(sub.as_str())))
+        }
+
+        "__str_starts_with" => {
+            let s      = require_str(args, 0, "__str_starts_with")?;
+            let prefix = require_str(args, 1, "__str_starts_with")?;
+            Ok(Value::Bool(s.starts_with(prefix.as_str())))
+        }
+
+        "__str_ends_with" => {
+            let s      = require_str(args, 0, "__str_ends_with")?;
+            let suffix = require_str(args, 1, "__str_ends_with")?;
+            Ok(Value::Bool(s.ends_with(suffix.as_str())))
+        }
+
         other => bail!("unknown builtin `{other}`"),
     }
 }
@@ -255,7 +347,7 @@ fn str_val(frame: &Frame, reg: u32) -> Result<String> {
     }
 }
 
-fn value_to_str(v: &Value) -> String {
+pub fn value_to_str(v: &Value) -> String {
     match v {
         Value::I32(n)  => n.to_string(),
         Value::I64(n)  => n.to_string(),
@@ -263,7 +355,11 @@ fn value_to_str(v: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Str(s)  => s.clone(),
         Value::Null    => "null".to_string(),
-        other          => format!("{:?}", other),
+        Value::Array(rc) => {
+            let inner: Vec<String> = rc.borrow().iter().map(value_to_str).collect();
+            format!("[{}]", inner.join(", "))
+        }
+        other => format!("{:?}", other),
     }
 }
 
@@ -310,4 +406,38 @@ fn numeric_lt(frame: &Frame, a: u32, b: u32) -> Result<bool> {
         (Value::I32(x), Value::F64(y)) => (*x as f64) < *y,
         (a, b) => bail!("type mismatch in comparison: {:?} vs {:?}", a, b),
     })
+}
+
+/// Convert a Value to a usize index/size, rejecting negative values.
+fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
+    match v {
+        Value::I32(n) if *n >= 0 => Ok(*n as usize),
+        Value::I64(n) if *n >= 0 => Ok(*n as usize),
+        other => bail!("{}: expected non-negative integer, got {:?}", ctx, other),
+    }
+}
+
+/// Unwrap an Array value, returning its Rc.
+fn expect_array(v: &Value, ctx: &str) -> Result<Rc<RefCell<Vec<Value>>>> {
+    match v {
+        Value::Array(rc) => Ok(rc.clone()),
+        other => bail!("{}: expected array, got {:?}", ctx, other),
+    }
+}
+
+/// Extract a String argument from the args slice.
+fn require_str(args: &[Value], idx: usize, ctx: &str) -> Result<String> {
+    match args.get(idx) {
+        Some(Value::Str(s)) => Ok(s.clone()),
+        Some(other) => bail!("{}: arg {} expected string, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
+/// Extract a usize argument from the args slice.
+fn require_usize(args: &[Value], idx: usize, ctx: &str) -> Result<usize> {
+    match args.get(idx) {
+        Some(v) => to_usize(v, ctx),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
 }

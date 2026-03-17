@@ -1,0 +1,17 @@
+void Main() {
+    // Array literal
+    int[] arr = new int[] { 10, 20, 30, 40, 50 };
+    Console.WriteLine(arr[0]);
+    Console.WriteLine(arr[4]);
+
+    // Assign to element
+    arr[2] = 99;
+    Console.WriteLine(arr[2]);
+
+    // Length
+    Console.WriteLine(arr.Length);
+
+    // Compound assignment on array element
+    arr[0] += 5;
+    Console.WriteLine(arr[0]);
+}
