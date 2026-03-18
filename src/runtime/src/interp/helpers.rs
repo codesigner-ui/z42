@@ -125,3 +125,155 @@ pub(super) fn require_usize(args: &[Value], idx: usize, ctx: &str) -> Result<usi
         None => bail!("{}: missing arg {}", ctx, idx),
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn regs(pairs: &[(u32, Value)]) -> HashMap<u32, Value> {
+        pairs.iter().cloned().collect()
+    }
+
+    // ── value_to_str ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn value_to_str_i32() {
+        assert_eq!(value_to_str(&Value::I32(42)), "42");
+    }
+
+    #[test]
+    fn value_to_str_i64() {
+        assert_eq!(value_to_str(&Value::I64(-1)), "-1");
+    }
+
+    #[test]
+    fn value_to_str_bool() {
+        assert_eq!(value_to_str(&Value::Bool(true)), "true");
+        assert_eq!(value_to_str(&Value::Bool(false)), "false");
+    }
+
+    #[test]
+    fn value_to_str_null() {
+        assert_eq!(value_to_str(&Value::Null), "null");
+    }
+
+    #[test]
+    fn value_to_str_str() {
+        assert_eq!(value_to_str(&Value::Str("hi".into())), "hi");
+    }
+
+    #[test]
+    fn value_to_str_array() {
+        let arr = Value::Array(Rc::new(RefCell::new(vec![
+            Value::I32(1), Value::I32(2), Value::I32(3),
+        ])));
+        assert_eq!(value_to_str(&arr), "[1, 2, 3]");
+    }
+
+    #[test]
+    fn value_to_str_empty_array() {
+        let arr = Value::Array(Rc::new(RefCell::new(vec![])));
+        assert_eq!(value_to_str(&arr), "[]");
+    }
+
+    // ── int_binop ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn int_binop_i32_add() {
+        let m = regs(&[(0, Value::I32(3)), (1, Value::I32(4))]);
+        assert_eq!(int_binop(&m, 0, 1, |a, b| a + b, |a, b| a + b).unwrap(), Value::I32(7));
+    }
+
+    #[test]
+    fn int_binop_i64_add() {
+        let m = regs(&[(0, Value::I64(10)), (1, Value::I64(20))]);
+        assert_eq!(int_binop(&m, 0, 1, |a, b| a + b, |a, b| a + b).unwrap(), Value::I64(30));
+    }
+
+    #[test]
+    fn int_binop_widen_i32_i64() {
+        let m = regs(&[(0, Value::I32(5)), (1, Value::I64(10))]);
+        assert_eq!(int_binop(&m, 0, 1, |a, b| a + b, |a, b| a + b).unwrap(), Value::I64(15));
+    }
+
+    #[test]
+    fn int_binop_f64_mul() {
+        let m = regs(&[(0, Value::F64(2.0)), (1, Value::F64(3.0))]);
+        assert_eq!(int_binop(&m, 0, 1, |a, b| a * b, |a, b| a * b).unwrap(), Value::F64(6.0));
+    }
+
+    #[test]
+    fn int_binop_type_mismatch_errors() {
+        let m = regs(&[(0, Value::Str("a".into())), (1, Value::I32(1))]);
+        assert!(int_binop(&m, 0, 1, |a, b| a + b, |a, b| a + b).is_err());
+    }
+
+    // ── numeric_lt ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn numeric_lt_i32_true() {
+        let m = regs(&[(0, Value::I32(1)), (1, Value::I32(2))]);
+        assert!(numeric_lt(&m, 0, 1).unwrap());
+    }
+
+    #[test]
+    fn numeric_lt_i32_false() {
+        let m = regs(&[(0, Value::I32(5)), (1, Value::I32(3))]);
+        assert!(!numeric_lt(&m, 0, 1).unwrap());
+    }
+
+    #[test]
+    fn numeric_lt_equal_is_false() {
+        let m = regs(&[(0, Value::I32(3)), (1, Value::I32(3))]);
+        assert!(!numeric_lt(&m, 0, 1).unwrap());
+    }
+
+    #[test]
+    fn numeric_lt_i32_i64_widening() {
+        let m = regs(&[(0, Value::I32(1)), (1, Value::I64(1000))]);
+        assert!(numeric_lt(&m, 0, 1).unwrap());
+    }
+
+    // ── to_usize ──────────────────────────────────────────────────────────────
+
+    #[test]
+    fn to_usize_from_i32() {
+        assert_eq!(to_usize(&Value::I32(5), "test").unwrap(), 5);
+    }
+
+    #[test]
+    fn to_usize_from_i64() {
+        assert_eq!(to_usize(&Value::I64(100), "test").unwrap(), 100);
+    }
+
+    #[test]
+    fn to_usize_negative_errors() {
+        assert!(to_usize(&Value::I32(-1), "test").is_err());
+    }
+
+    #[test]
+    fn to_usize_wrong_type_errors() {
+        assert!(to_usize(&Value::Str("x".into()), "test").is_err());
+    }
+
+    // ── require_str ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn require_str_ok() {
+        let args = vec![Value::Str("hello".into())];
+        assert_eq!(require_str(&args, 0, "test").unwrap(), "hello");
+    }
+
+    #[test]
+    fn require_str_missing_errors() {
+        assert!(require_str(&[], 0, "test").is_err());
+    }
+
+    #[test]
+    fn require_str_wrong_type_errors() {
+        let args = vec![Value::I32(1)];
+        assert!(require_str(&args, 0, "test").is_err());
+    }
+}

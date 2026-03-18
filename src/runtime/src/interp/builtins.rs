@@ -71,3 +71,114 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
         other => bail!("unknown builtin `{other}`"),
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(v: &str) -> Value { Value::Str(v.into()) }
+    fn i(n: i32) -> Value { Value::I32(n) }
+
+    // ── __len ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn len_of_string_is_utf8_bytes() {
+        assert_eq!(exec_builtin("__len", &[s("hello")]).unwrap(), i(5));
+    }
+
+    #[test]
+    fn len_of_empty_string() {
+        assert_eq!(exec_builtin("__len", &[s("")]).unwrap(), i(0));
+    }
+
+    #[test]
+    fn len_missing_arg_errors() {
+        assert!(exec_builtin("__len", &[]).is_err());
+    }
+
+    // ── __str_substring ───────────────────────────────────────────────────────
+
+    #[test]
+    fn substring_one_arg() {
+        assert_eq!(
+            exec_builtin("__str_substring", &[s("Hello, World!"), i(7)]).unwrap(),
+            s("World!")
+        );
+    }
+
+    #[test]
+    fn substring_two_args() {
+        assert_eq!(
+            exec_builtin("__str_substring", &[s("Hello, World!"), i(7), i(5)]).unwrap(),
+            s("World")
+        );
+    }
+
+    #[test]
+    fn substring_out_of_range_errors() {
+        assert!(exec_builtin("__str_substring", &[s("hi"), i(10)]).is_err());
+    }
+
+    // ── __str_contains ────────────────────────────────────────────────────────
+
+    #[test]
+    fn contains_true() {
+        assert_eq!(
+            exec_builtin("__str_contains", &[s("Hello, World!"), s("World")]).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn contains_false() {
+        assert_eq!(
+            exec_builtin("__str_contains", &[s("Hello"), s("world")]).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    // ── __str_starts_with ─────────────────────────────────────────────────────
+
+    #[test]
+    fn starts_with_true() {
+        assert_eq!(
+            exec_builtin("__str_starts_with", &[s("Hello, World!"), s("Hello")]).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn starts_with_false() {
+        assert_eq!(
+            exec_builtin("__str_starts_with", &[s("Hello"), s("World")]).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    // ── __str_ends_with ───────────────────────────────────────────────────────
+
+    #[test]
+    fn ends_with_true() {
+        assert_eq!(
+            exec_builtin("__str_ends_with", &[s("Hello, World!"), s("!")]).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn ends_with_false() {
+        assert_eq!(
+            exec_builtin("__str_ends_with", &[s("Hello"), s("World")]).unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    // ── unknown builtin ───────────────────────────────────────────────────────
+
+    #[test]
+    fn unknown_builtin_errors() {
+        assert!(exec_builtin("__nonexistent", &[]).is_err());
+    }
+}
