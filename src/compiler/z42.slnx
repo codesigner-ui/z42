@@ -2,5 +2,5 @@
   <Project Path="z42.Compiler/z42.Compiler.csproj" />
   <Project Path="z42.Driver/z42.Driver.csproj" />
   <Project Path="z42.IR/z42.IR.csproj" />
-  <Project Path="..\..\tests\z42.Tests\z42.Tests.csproj" />
+  <Project Path="z42.Tests\z42.Tests.csproj" />
 </Solution>

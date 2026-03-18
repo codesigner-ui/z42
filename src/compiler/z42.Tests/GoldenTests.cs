@@ -16,7 +16,7 @@ namespace Z42.Tests;
 /// <summary>
 /// Golden test runner.
 ///
-/// Layout under tests/golden/:
+/// Layout under src/runtime/tests/golden/:
 ///   &lt;category&gt;/&lt;name&gt;/
 ///     source.z42          — z42 source input
 ///     expected.txt        — expected stdout (for run tests)
@@ -33,17 +33,17 @@ public sealed class GoldenTests
 
     private static string FindGoldenRoot()
     {
-        // Walk up from the test binary until we find the repo root (contains tests/golden)
+        // Walk up from the test binary until we find the repo root (contains src/runtime/tests/golden)
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "tests", "golden");
+            string candidate = Path.Combine(dir.FullName, "src", "runtime", "tests", "golden");
             if (Directory.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }
         // Fallback: relative from source (dev run)
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..", "tests", "golden"));
+            "..", "..", "..", "..", "..", "..", "runtime", "tests", "golden"));
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()

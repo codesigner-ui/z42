@@ -6,7 +6,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <!-- Embed golden test files into the test assembly -->
-    <GoldenTestsRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\tests\golden'))</GoldenTestsRoot>
+    <GoldenTestsRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\..\runtime\tests\golden'))</GoldenTestsRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,8 +22,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\compiler\z42.Compiler\z42.Compiler.csproj" />
-    <ProjectReference Include="..\..\src\compiler\z42.IR\z42.IR.csproj" />
+    <ProjectReference Include="..\z42.Compiler\z42.Compiler.csproj" />
+    <ProjectReference Include="..\z42.IR\z42.IR.csproj" />
   </ItemGroup>
 
 </Project>
