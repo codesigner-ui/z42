@@ -23,6 +23,8 @@ namespace Z42.Compiler.Codegen;
 public sealed partial class IrGen
 {
     private readonly List<string> _strings = new();
+    // Class name → set of method names (populated during Generate to resolve method calls)
+    private Dictionary<string, HashSet<string>> _classMethods = new();
 
     // Per-function state
     private int _nextReg;
@@ -42,8 +44,45 @@ public sealed partial class IrGen
 
     public IrModule Generate(CompilationUnit cu)
     {
-        var functions = cu.Functions.Select(EmitFunction).ToList();
-        return new IrModule(cu.Namespace ?? "main", _strings, functions);
+        // Build class method map for call resolution
+        foreach (var cls in cu.Classes)
+            _classMethods[cls.Name] = cls.Methods.Select(m => m.Name).ToHashSet();
+
+        var classes   = cu.Classes.Select(EmitClassDesc).ToList();
+        var functions = new List<IrFunction>();
+        foreach (var cls in cu.Classes)
+            functions.AddRange(cls.Methods.Select(m => EmitMethod(cls.Name, m)));
+        functions.AddRange(cu.Functions.Select(EmitFunction));
+        return new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
+    }
+
+    private static IrClassDesc EmitClassDesc(ClassDecl cls) =>
+        new(cls.Name, cls.Fields.Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
+
+    private IrFunction EmitMethod(string className, FunctionDecl method)
+    {
+        // `this` occupies register 0; declared params start at 1
+        _nextReg     = method.Params.Count + 1;
+        _nextLabelId = 0;
+        _locals      = new Dictionary<string, int> { ["this"] = 0 };
+        _mutableVars = new HashSet<string>();
+        _blocks      = new List<IrBlock>();
+        _loopStack   = new Stack<(string, string)>();
+
+        StartBlock("entry");
+
+        for (int i = 0; i < method.Params.Count; i++)
+            _locals[method.Params[i].Name] = i + 1;
+
+        EmitBlock(method.Body);
+
+        if (!_blockEnded)
+            EndBlock(new RetTerm(null));
+
+        bool isCtor = method.Name == className;
+        var retType = isCtor ? "void" : TypeName(method.ReturnType);
+        string qualifiedName = $"{className}.{method.Name}";
+        return new IrFunction(qualifiedName, method.Params.Count + 1, retType, "Interp", _blocks);
     }
 
     // ── Function ────────────────────────────────────────────────────────────────
@@ -105,6 +144,16 @@ public sealed partial class IrGen
         if (idx >= 0) return idx;
         _strings.Add(s);
         return _strings.Count - 1;
+    }
+
+    /// Finds the qualified class method name (e.g. "Foo.Bar") for a given method name,
+    /// or returns the name as-is if it's a top-level function.
+    internal string ResolveMethodName(string memberName)
+    {
+        foreach (var (className, methods) in _classMethods)
+            if (methods.Contains(memberName))
+                return $"{className}.{memberName}";
+        return memberName;
     }
 
     private static string TypeName(TypeExpr t) => t switch

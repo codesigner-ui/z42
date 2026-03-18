@@ -6,6 +6,7 @@
     "world",
     "z42 version 0.1, the answer is "
   ],
+  "classes": [],
   "functions": [
     {
       "name": "Greet",

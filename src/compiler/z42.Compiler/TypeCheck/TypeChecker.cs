@@ -18,7 +18,8 @@ namespace Z42.Compiler.TypeCheck;
 public sealed class TypeChecker
 {
     private readonly DiagnosticBag _diags;
-    private Dictionary<string, Z42FuncType> _funcs = new();
+    private Dictionary<string, Z42FuncType>  _funcs   = new();
+    private Dictionary<string, Z42ClassType>  _classes = new();
 
     public TypeChecker(DiagnosticBag diags) => _diags = diags;
 
@@ -26,9 +27,31 @@ public sealed class TypeChecker
 
     public void Check(CompilationUnit cu)
     {
+        CollectClasses(cu);
         CollectFunctions(cu);
+        foreach (var cls in cu.Classes)
+            CheckClassMethods(cls);
         foreach (var fn in cu.Functions)
             CheckFunction(fn);
+    }
+
+    // ── Pass 0: collect class shapes ─────────────────────────────────────────
+
+    private void CollectClasses(CompilationUnit cu)
+    {
+        foreach (var cls in cu.Classes)
+        {
+            var fields  = cls.Fields.ToDictionary(f => f.Name, f => ResolveType(f.Type));
+            var methods = new Dictionary<string, Z42FuncType>();
+            foreach (var m in cls.Methods)
+            {
+                // Constructor has same name as class; `this` is implicit (not in params list)
+                var paramTypes = m.Params.Select(p => ResolveType(p.Type)).ToList();
+                var retType    = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
+                methods[m.Name] = new Z42FuncType(paramTypes, retType);
+            }
+            _classes[cls.Name] = new Z42ClassType(cls.Name, fields, methods);
+        }
     }
 
     // ── Pass 1: collect signatures ────────────────────────────────────────────
@@ -43,11 +66,33 @@ public sealed class TypeChecker
         }
     }
 
+    // ── Class method body checking ────────────────────────────────────────────
+
+    private void CheckClassMethods(ClassDecl cls)
+    {
+        if (!_classes.TryGetValue(cls.Name, out var classType)) return;
+        foreach (var method in cls.Methods)
+        {
+            var env   = new TypeEnv(_funcs, _classes);
+            var scope = env.PushScope();
+            // Inject `this` as first implicit parameter
+            scope.Define("this", classType);
+            // Inject field names into scope (accessible without `this.` prefix in methods)
+            foreach (var (fname, ftype) in classType.Fields)
+                scope.Define(fname, ftype);
+            foreach (var p in method.Params)
+                scope.Define(p.Name, ResolveType(p.Type));
+            bool isCtor = method.Name == cls.Name;
+            var retType = isCtor ? Z42Type.Void : ResolveType(method.ReturnType);
+            CheckBlock(method.Body, scope, retType);
+        }
+    }
+
     // ── Pass 2: check bodies ──────────────────────────────────────────────────
 
     private void CheckFunction(FunctionDecl fn)
     {
-        var env     = new TypeEnv(_funcs);
+        var env     = new TypeEnv(_funcs, _classes);
         var scope   = env.PushScope();
         var retType = ResolveType(fn.ReturnType);
 
@@ -235,6 +280,14 @@ public sealed class TypeChecker
             case MemberExpr m:
             {
                 var targetType = CheckExpr(m.Target, env);
+                if (targetType is Z42ClassType ct)
+                {
+                    if (ct.Fields.TryGetValue(m.Member, out var ft))  return ft;
+                    if (ct.Methods.TryGetValue(m.Member, out var mt)) return mt;
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"type `{ct.Name}` has no member `{m.Member}`", m.Span);
+                    return Z42Type.Error;
+                }
                 return m.Member switch
                 {
                     "Length" when targetType is Z42ArrayType => Z42Type.Int,
@@ -420,12 +473,28 @@ public sealed class TypeChecker
 
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {
-        // String / array built-in method calls: s.Substring(...), s.Contains(...), etc.
+        // Member method calls
         if (call.Callee is MemberExpr mCallee)
         {
             var receiverType = CheckExpr(mCallee.Target, env);
-            foreach (var arg in call.Args) CheckExpr(arg, env);
+            var argTypes2    = call.Args.Select(a => CheckExpr(a, env)).ToList();
 
+            // User-defined class method call
+            if (receiverType is Z42ClassType ct2)
+            {
+                if (ct2.Methods.TryGetValue(mCallee.Member, out var mt))
+                {
+                    if (argTypes2.Count != mt.Params.Count)
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"expected {mt.Params.Count} argument(s), got {argTypes2.Count}", call.Span);
+                    return mt.Ret;
+                }
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type `{ct2.Name}` has no method `{mCallee.Member}`", call.Span);
+                return Z42Type.Error;
+            }
+
+            // String / array built-in method calls: s.Substring(...), s.Contains(...), etc.
             if (receiverType == Z42Type.String)
                 return mCallee.Member switch
                 {
@@ -481,7 +550,7 @@ public sealed class TypeChecker
 
     // ── Type resolution ───────────────────────────────────────────────────────
 
-    private static Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
+    private Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
     {
         VoidType              => Z42Type.Void,
         OptionType ot         => new Z42OptionType(ResolveType(ot.Inner)),
@@ -498,14 +567,16 @@ public sealed class TypeChecker
             "object"          => Z42Type.Object,
             "void"            => Z42Type.Void,
             "var"             => Z42Type.Unknown,
-            _                 => new Z42PrimType(nt.Name),  // user-defined / generic
+            _                 => _classes.TryGetValue(nt.Name, out var ct)
+                                  ? ct
+                                  : new Z42PrimType(nt.Name),  // user-defined or generic
         },
         _ => Z42Type.Unknown
     };
 
     // ── Collection element type ───────────────────────────────────────────────
 
-    private static Z42Type ElemTypeOf(Z42Type t) => t switch
+    private Z42Type ElemTypeOf(Z42Type t) => t switch
     {
         Z42ArrayType at  => at.Element,
         Z42OptionType ot => ot.Inner,

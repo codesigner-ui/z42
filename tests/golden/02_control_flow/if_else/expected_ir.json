@@ -5,6 +5,7 @@
     "negative",
     "zero"
   ],
+  "classes": [],
   "functions": [
     {
       "name": "Sign",

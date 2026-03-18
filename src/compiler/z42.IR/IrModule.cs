@@ -8,7 +8,13 @@ namespace Z42.IR;
 public sealed record IrModule(
     string Name,
     List<string> StringPool,
+    List<IrClassDesc> Classes,
     List<IrFunction> Functions);
+
+// ── Class descriptor ──────────────────────────────────────────────────────────
+
+public sealed record IrClassDesc(string Name, List<IrFieldDesc> Fields);
+public sealed record IrFieldDesc(string Name, string Type);
 
 // ── Function ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +68,9 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(ArrayGetInstr),    "array_get")]
 [JsonDerivedType(typeof(ArraySetInstr),    "array_set")]
 [JsonDerivedType(typeof(ArrayLenInstr),    "array_len")]
+[JsonDerivedType(typeof(ObjNewInstr),     "obj_new")]
+[JsonDerivedType(typeof(FieldGetInstr),   "field_get")]
+[JsonDerivedType(typeof(FieldSetInstr),   "field_set")]
 public abstract record IrInstr;
 
 public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
@@ -105,6 +114,14 @@ public sealed record ArrayGetInstr(int Dst, int Arr, int Idx)      : IrInstr;
 public sealed record ArraySetInstr(int Arr, int Idx, int Val)      : IrInstr;
 /// Get the length of array Arr as i32 into Dst.
 public sealed record ArrayLenInstr(int Dst, int Arr)               : IrInstr;
+
+// ── Object instructions ───────────────────────────────────────────────────────
+/// Allocate a new object of ClassName, calling its constructor with Args.
+public sealed record ObjNewInstr(int Dst, string ClassName, List<int> Args) : IrInstr;
+/// Load field FieldName from object in register Obj into Dst.
+public sealed record FieldGetInstr(int Dst, int Obj, string FieldName)      : IrInstr;
+/// Store Val into field FieldName of object in register Obj.
+public sealed record FieldSetInstr(int Obj, string FieldName, int Val)      : IrInstr;
 
 // ── Terminators ───────────────────────────────────────────────────────────────
 

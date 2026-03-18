@@ -114,6 +114,24 @@ ret %value
      store  %refmut, %value     # store through mutable borrow
 ```
 
+### Objects (Phase 1 — class instances)
+```
+%r = obj_new  <ClassName>(%arg0, %arg1, ...)   # allocate + call constructor
+%r = field_get %obj, <field>                   # load a field
+     field_set %obj, <field>, %value           # store a field
+```
+
+JSON wire format (tag = `"op"`):
+```json
+{"op": "obj_new",   "dst": 5, "class_name": "Point", "args": [1, 2]}
+{"op": "field_get", "dst": 6, "obj": 5, "field_name": "X"}
+{"op": "field_set",           "obj": 5, "field_name": "X", "val": 3}
+```
+
+`obj_new` finds the constructor function `ClassName.ClassName` (if it exists) and calls it
+with `[this, ...args]`. The newly allocated object is GC-managed with reference semantics.
+Class descriptors in `IrModule.classes` provide the field layout for zero-initialisation.
+
 ### Structs & Tuples
 ```
 %r = struct.new <TypeName> { field0: %v0, field1: %v1 }

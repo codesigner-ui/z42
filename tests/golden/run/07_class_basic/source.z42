@@ -1,0 +1,22 @@
+namespace Demo;
+
+class Point {
+    int X;
+    int Y;
+
+    Point(int x, int y) {
+        this.X = x;
+        this.Y = y;
+    }
+
+    string ToString() {
+        return $"({this.X}, {this.Y})";
+    }
+}
+
+void Main() {
+    var p = new Point(3, 4);
+    Console.WriteLine(p.ToString());
+    p.X = 10;
+    Console.WriteLine($"X={p.X} Y={p.Y}");
+}

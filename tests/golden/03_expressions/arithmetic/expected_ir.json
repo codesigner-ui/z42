@@ -1,6 +1,7 @@
 {
   "name": "Expr",
   "string_pool": [],
+  "classes": [],
   "functions": [
     {
       "name": "Fib",

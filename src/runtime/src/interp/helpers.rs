@@ -21,6 +21,7 @@ pub fn value_to_str(v: &Value) -> String {
             let inner: Vec<String> = rc.borrow().iter().map(value_to_str).collect();
             format!("[{}]", inner.join(", "))
         }
+        Value::Object(rc) => format!("{}{{...}}", rc.borrow().class_name),
         other => format!("{:?}", other),
     }
 }

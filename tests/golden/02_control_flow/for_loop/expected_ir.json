@@ -1,6 +1,7 @@
 {
   "name": "ControlFlow",
   "string_pool": [],
+  "classes": [],
   "functions": [
     {
       "name": "Main",

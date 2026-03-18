@@ -11,7 +11,24 @@ pub const MAGIC: [u8; 4] = [0x5A, 0x34, 0x32, 0x00];
 pub struct Module {
     pub name: String,
     pub string_pool: Vec<String>,
+    #[serde(default)]
+    pub classes: Vec<ClassDesc>,
     pub functions: Vec<Function>,
+}
+
+/// Class descriptor — field layout for object allocation.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ClassDesc {
+    pub name: String,
+    pub fields: Vec<FieldDesc>,
+}
+
+/// A single field in a class descriptor.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FieldDesc {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_tag: String,
 }
 
 /// A single function.
@@ -89,6 +106,13 @@ pub enum Instruction {
     ArraySet    { arr: Reg, idx: Reg, val: Reg },
     /// Load the length of array `arr` as i32 into `dst`.
     ArrayLen    { dst: Reg, arr: Reg },
+    // Objects
+    /// Allocate a new object of `class_name`, calling its constructor with `args`.
+    ObjNew   { dst: Reg, class_name: String, args: Vec<Reg> },
+    /// Load field `field_name` of object `obj` into `dst`.
+    FieldGet { dst: Reg, obj: Reg, field_name: String },
+    /// Store `val` into field `field_name` of object `obj`.
+    FieldSet { obj: Reg, field_name: String, val: Reg },
 }
 
 /// Block terminator.

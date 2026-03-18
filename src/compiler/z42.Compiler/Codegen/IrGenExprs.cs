@@ -95,9 +95,9 @@ public sealed partial class IrGen
 
             case MemberExpr m:
             {
-                EmitExpr(m.Target);
+                int objReg = EmitExpr(m.Target);
                 int dst = Alloc();
-                Emit(new ConstNullInstr(dst));
+                Emit(new FieldGetInstr(dst, objReg, m.Member));
                 return dst;
             }
 
@@ -126,11 +126,11 @@ public sealed partial class IrGen
                 return dst;
             }
 
-            case NewExpr newExpr:
+            case NewExpr newExpr when newExpr.Type is NamedType nt:
             {
                 var argRegs = newExpr.Args.Select(EmitExpr).ToList();
                 int dst = Alloc();
-                Emit(new BuiltinInstr(dst, "__new_obj", argRegs));
+                Emit(new ObjNewInstr(dst, nt.Name, argRegs));
                 return dst;
             }
 
@@ -158,6 +158,11 @@ public sealed partial class IrGen
             int arrReg = EmitExpr(ix.Target);
             int idxReg = EmitExpr(ix.Index);
             Emit(new ArraySetInstr(arrReg, idxReg, valReg));
+        }
+        else if (assign.Target is MemberExpr fm)
+        {
+            int objReg = EmitExpr(fm.Target);
+            Emit(new FieldSetInstr(objReg, fm.Member, valReg));
         }
 
         return valReg;
@@ -298,11 +303,13 @@ public sealed partial class IrGen
                 return dst;
             }
 
-            // Generic method call: obj.Method(args)
+            // Class method call or generic method call
             var methodArgRegs = new List<int> { EmitExpr(mMethod.Target) };
             methodArgRegs.AddRange(call.Args.Select(EmitExpr));
             int methodDst = Alloc();
-            Emit(new CallInstr(methodDst, mMethod.Member, methodArgRegs));
+            // Resolve to qualified name if we know the receiver type
+            string methodName = ResolveMethodName(mMethod.Member);
+            Emit(new CallInstr(methodDst, methodName, methodArgRegs));
             return methodDst;
         }
 

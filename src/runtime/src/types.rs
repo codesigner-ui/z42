@@ -1,10 +1,19 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
+
+/// Heap-allocated object with named fields and reference semantics.
+#[derive(Debug)]
+pub struct ObjectData {
+    pub class_name: String,
+    pub fields: HashMap<String, Value>,
+}
 
 /// Primitive and heap value types that the VM operates on at runtime.
 ///
 /// `Array` uses `Rc<RefCell<Vec<Value>>>` to give reference semantics with
 /// interior mutability — assigning an array copies the reference, not the data.
+/// `Object` uses `Rc<RefCell<ObjectData>>` for the same reason.
 #[derive(Debug, Clone)]
 pub enum Value {
     I8(i8),
@@ -23,6 +32,8 @@ pub enum Value {
     Null,
     /// Heap-allocated dynamic array with reference semantics.
     Array(Rc<RefCell<Vec<Value>>>),
+    /// Heap-allocated user-defined class instance with reference semantics.
+    Object(Rc<RefCell<ObjectData>>),
 }
 
 impl PartialEq for Value {
@@ -44,6 +55,8 @@ impl PartialEq for Value {
             (Value::Null,    Value::Null)    => true,
             // Array equality is reference equality (same as C# reference semantics)
             (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
+            // Object equality is reference equality
+            (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }
     }

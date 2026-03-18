@@ -8,8 +8,22 @@ namespace Z42.Compiler.Parser;
 public sealed record CompilationUnit(
     string? Namespace,
     List<string> Usings,
+    List<ClassDecl> Classes,
     List<FunctionDecl> Functions,
     Span Span);
+
+// ── Class / struct declaration ────────────────────────────────────────────────
+
+/// `class Foo { ... }` or `struct Foo { ... }`
+public sealed record ClassDecl(
+    string Name,
+    bool IsStruct,
+    List<FieldDecl> Fields,
+    List<FunctionDecl> Methods,
+    Span Span);
+
+/// A field inside a class/struct: `int x;`
+public sealed record FieldDecl(string Name, TypeExpr Type, Span Span);
 
 // ── Function declaration ──────────────────────────────────────────────────────
 

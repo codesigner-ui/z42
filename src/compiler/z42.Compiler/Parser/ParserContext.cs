@@ -88,16 +88,130 @@ internal sealed class ParserContext
             Match(TokenKind.Semicolon);
         }
 
+        var classes   = new List<ClassDecl>();
         var functions = new List<FunctionDecl>();
         while (!Check(TokenKind.Eof))
         {
             if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
             if (Check(TokenKind.Namespace)) { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
             if (Check(TokenKind.Using))     { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
+            if (IsClassOrStructDecl())      { classes.Add(ParseClassDecl()); continue; }
             functions.Add(ParseFunctionDecl());
         }
 
-        return new CompilationUnit(ns, usings, functions, start);
+        return new CompilationUnit(ns, usings, classes, functions, start);
+    }
+
+    /// Returns true if we're about to start a class or struct declaration
+    /// (possibly preceded by access modifiers).
+    private bool IsClassOrStructDecl()
+    {
+        int i = 0;
+        while (_pos + i < _tokens.Count &&
+               _tokens[_pos + i].Kind is TokenKind.Public or TokenKind.Private
+                   or TokenKind.Protected or TokenKind.Internal or TokenKind.Static
+                   or TokenKind.Abstract or TokenKind.Sealed)
+            i++;
+        if (_pos + i >= _tokens.Count) return false;
+        return _tokens[_pos + i].Kind is TokenKind.Class or TokenKind.Struct;
+    }
+
+    private ClassDecl ParseClassDecl()
+    {
+        var start = Current.Span;
+
+        // Skip access modifiers
+        while (Current.Kind is TokenKind.Public or TokenKind.Private or TokenKind.Protected
+                             or TokenKind.Internal or TokenKind.Static or TokenKind.Abstract
+                             or TokenKind.Sealed)
+            Advance();
+
+        bool isStruct = Current.Kind == TokenKind.Struct;
+        Advance();  // consume 'class' or 'struct'
+
+        var name = Expect(TokenKind.Identifier).Text;
+
+        // Skip generic parameters: class Foo<T>
+        if (Check(TokenKind.Lt))
+        {
+            Advance(); int depth = 1;
+            while (!Check(TokenKind.Eof) && depth > 0)
+            {
+                if (Check(TokenKind.Lt)) depth++;
+                if (Check(TokenKind.Gt)) depth--;
+                Advance();
+            }
+        }
+
+        // Skip base types / interfaces: class Foo : Bar, IBaz
+        if (Match(TokenKind.Colon))
+        {
+            ParseTypeExpr();
+            while (Match(TokenKind.Comma)) ParseTypeExpr();
+        }
+
+        Expect(TokenKind.LBrace);
+
+        var fields  = new List<FieldDecl>();
+        var methods = new List<FunctionDecl>();
+
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
+        {
+            // Skip attributes
+            if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
+
+            // Check if this is a field: <Type> <Ident> (= | ;)
+            if (IsFieldDecl())
+            {
+                var fSpan = Current.Span;
+                // Skip access modifiers
+                while (Current.Kind is TokenKind.Public or TokenKind.Private
+                                    or TokenKind.Protected or TokenKind.Internal
+                                    or TokenKind.Static )
+                    Advance();
+                var fType = ParseTypeExpr();
+                var fName = Expect(TokenKind.Identifier).Text;
+                Expr? fInit = Match(TokenKind.Eq) ? ParseExpr() : null;
+                Expect(TokenKind.Semicolon);
+                fields.Add(new FieldDecl(fName, fType, fSpan));
+            }
+            else
+            {
+                // Constructor or method
+                methods.Add(ParseFunctionDecl());
+            }
+        }
+
+        Expect(TokenKind.RBrace);
+        return new ClassDecl(name, isStruct, fields, methods, start);
+    }
+
+    /// Is current position a field declaration (not a method)?
+    /// Field: [modifiers] Type Ident (= | ;)
+    /// Method: [modifiers] Type Ident (
+    private bool IsFieldDecl()
+    {
+        int i = 0;
+        // Skip modifiers
+        while (_pos + i < _tokens.Count &&
+               _tokens[_pos + i].Kind is TokenKind.Public or TokenKind.Private
+                   or TokenKind.Protected or TokenKind.Internal or TokenKind.Static
+                    or TokenKind.Sealed)
+            i++;
+        // Check Type Ident
+        if (_pos + i >= _tokens.Count || !IsTypeToken(_tokens[_pos + i].Kind)) return false;
+        int typeStart = _pos + i;
+        // skip type tokens (could be T or T[])
+        i++;
+        // skip array suffix
+        if (_pos + i < _tokens.Count && _tokens[_pos + i].Kind == TokenKind.LBracket
+            && _pos + i + 1 < _tokens.Count && _tokens[_pos + i + 1].Kind == TokenKind.RBracket)
+            i += 2;
+        if (_pos + i >= _tokens.Count || _tokens[_pos + i].Kind != TokenKind.Identifier)
+            return false;
+        i++;
+        if (_pos + i >= _tokens.Count) return false;
+        return _tokens[_pos + i].Kind is TokenKind.Semicolon or TokenKind.Eq;
     }
 
     private string ParseQualifiedName()
@@ -132,8 +246,19 @@ internal sealed class ParserContext
                              or TokenKind.Sealed)
             Advance();
 
-        var returnType = ParseTypeExpr();
-        var name       = Expect(TokenKind.Identifier).Text;
+        // Constructor pattern: Ident LParen (no return type keyword)
+        TypeExpr returnType;
+        string name;
+        if (Current.Kind == TokenKind.Identifier && Peek(1).Kind == TokenKind.LParen)
+        {
+            returnType = new VoidType(Current.Span);
+            name       = Advance().Text;
+        }
+        else
+        {
+            returnType = ParseTypeExpr();
+            name       = Expect(TokenKind.Identifier).Text;
+        }
 
         Expect(TokenKind.LParen);
         var parms = new List<Param>();

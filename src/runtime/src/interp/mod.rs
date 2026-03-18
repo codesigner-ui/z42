@@ -11,7 +11,7 @@ mod helpers;
 pub use helpers::value_to_str;
 
 use crate::bytecode::{Function, Instruction, Module, Terminator};
-use crate::types::Value;
+use crate::types::{ObjectData, Value};
 use anyhow::{bail, Context, Result};
 use helpers::{bool_val, collect_args, int_binop, numeric_lt, str_val, to_usize, expect_array};
 use std::cell::RefCell;
@@ -274,6 +274,60 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
                 other => bail!("ArrayLen: expected array, got {:?}", other),
             };
             frame.set(*dst, Value::I32(len));
+        }
+
+        // ── Objects ──────────────────────────────────────────────────────────
+        Instruction::ObjNew { dst, class_name, args } => {
+            // Find the class descriptor to get field names.
+            let field_names: Vec<String> = module
+                .classes
+                .iter()
+                .find(|c| &c.name == class_name)
+                .map(|c| c.fields.iter().map(|f| f.name.clone()).collect())
+                .unwrap_or_default();
+
+            // Allocate the object with all fields null-initialised.
+            let fields: HashMap<String, Value> =
+                field_names.into_iter().map(|n| (n, Value::Null)).collect();
+            let obj_rc = Rc::new(RefCell::new(ObjectData {
+                class_name: class_name.clone(),
+                fields,
+            }));
+            let obj_val = Value::Object(obj_rc);
+
+            // If a constructor function exists (qualified name "ClassName.ClassName"),
+            // call it with [this, ...args].
+            let ctor_name = format!("{}.{}", class_name, class_name);
+            if let Some(ctor) = module.functions.iter().find(|f| f.name == ctor_name) {
+                let mut ctor_args = vec![obj_val.clone()];
+                ctor_args.extend(collect_args(&frame.regs, args)?);
+                exec_function(module, ctor, &ctor_args)?;
+            }
+
+            frame.set(*dst, obj_val);
+        }
+
+        Instruction::FieldGet { dst, obj, field_name } => {
+            let val = match frame.get(*obj)? {
+                Value::Object(rc) => rc
+                    .borrow()
+                    .fields
+                    .get(field_name)
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                other => bail!("FieldGet: expected object, got {:?}", other),
+            };
+            frame.set(*dst, val);
+        }
+
+        Instruction::FieldSet { obj, field_name, val } => {
+            let v = frame.get(*val)?.clone();
+            match frame.get(*obj)? {
+                Value::Object(rc) => {
+                    rc.borrow_mut().fields.insert(field_name.clone(), v);
+                }
+                other => bail!("FieldSet: expected object, got {:?}", other),
+            }
         }
     }
     Ok(())

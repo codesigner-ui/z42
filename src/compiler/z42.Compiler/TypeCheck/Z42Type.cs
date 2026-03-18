@@ -51,6 +51,7 @@ public abstract record Z42Type
     public static bool IsReferenceType(Z42Type t) =>
         t is Z42PrimType { Name: "string" or "object" }
         or Z42ArrayType
+        or Z42ClassType
         or Z42OptionType;
 
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
@@ -105,4 +106,13 @@ public sealed record Z42ArrayType(Z42Type Element) : Z42Type
 public sealed record Z42OptionType(Z42Type Inner) : Z42Type
 {
     public override string ToString() => $"{Inner}?";
+}
+
+/// User-defined class or struct type.
+public sealed record Z42ClassType(
+    string Name,
+    IReadOnlyDictionary<string, Z42Type>     Fields,
+    IReadOnlyDictionary<string, Z42FuncType> Methods) : Z42Type
+{
+    public override string ToString() => Name;
 }

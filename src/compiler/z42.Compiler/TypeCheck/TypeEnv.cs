@@ -20,20 +20,23 @@ internal sealed class TypeEnv
     // ── State ────────────────────────────────────────────────────────────────
 
     private readonly TypeEnv?                             _parent;
-    private readonly Dictionary<string, Z42FuncType>      _funcs;   // global function table
+    private readonly Dictionary<string, Z42FuncType>      _funcs;    // global function table
+    private readonly Dictionary<string, Z42ClassType>     _classes;  // global class table
     private readonly Dictionary<string, Z42Type>           _vars = new();
 
-    // Root env: owns the function table.
-    internal TypeEnv(Dictionary<string, Z42FuncType> funcs)
+    // Root env: owns both function and class tables.
+    internal TypeEnv(Dictionary<string, Z42FuncType> funcs, Dictionary<string, Z42ClassType> classes)
     {
-        _parent = null;
-        _funcs  = funcs;
+        _parent  = null;
+        _funcs   = funcs;
+        _classes = classes;
     }
 
     private TypeEnv(TypeEnv parent)
     {
-        _parent = parent;
-        _funcs  = parent._funcs;
+        _parent  = parent;
+        _funcs   = parent._funcs;
+        _classes = parent._classes;
     }
 
     // ── Scope management ─────────────────────────────────────────────────────
@@ -61,4 +64,9 @@ internal sealed class TypeEnv
 
     internal Z42FuncType? LookupFunc(string name) =>
         _funcs.TryGetValue(name, out var f) ? f : null;
+
+    // ── Class operations ──────────────────────────────────────────────────────
+
+    internal Z42ClassType? LookupClass(string name) =>
+        _classes.TryGetValue(name, out var c) ? c : null;
 }
