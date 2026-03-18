@@ -5,8 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <BaseOutputPath>..\..\artifacts\tests\$(MSBuildProjectName)\bin\</BaseOutputPath>
-    <BaseIntermediateOutputPath>..\..\artifacts\tests\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
     <!-- Embed golden test files into the test assembly -->
     <GoldenTestsRoot>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\..\tests\golden'))</GoldenTestsRoot>
   </PropertyGroup>

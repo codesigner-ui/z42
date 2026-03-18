@@ -9,6 +9,9 @@ artifacts/
 *.snupkg
 *.lock.json
 !packages.lock.json
+# Build intermediates — always redirected to artifacts/ via Directory.Build.props
+obj/
+bin/
 
 # Rust
 Cargo.lock
