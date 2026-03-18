@@ -505,6 +505,23 @@ namespace Core.Crypto;
 
 ---
 
+## 17. 热更新注解（z42 扩展）
+
+`[HotReload]` 注解标记的命名空间支持运行时函数替换，无需重启 VM。面向游戏脚本等需要快速迭代的场景。
+
+```z42
+[HotReload]
+namespace Game.Scripts;
+
+void OnUpdate(float dt) { ... }   // 热更新后下一次调用即生效
+```
+
+与 `[ExecMode(Mode.Interp)]` 配套使用；JIT/AOT 模式不支持热更新。
+
+详见 `specs/hot-reload.md`。
+
+---
+
 ## Phase 2 改进预告（引入 Rust 思想）
 
 以下特性将在完成基础实现后引入：

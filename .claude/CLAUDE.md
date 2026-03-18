@@ -16,7 +16,12 @@ z42/
 │   ├── language-overview.md
 │   ├── ir.md                 # SSA IR 指令集
 │   ├── compilation.md        # 编译产物 .zbc/.zmod/.zlib
-│   └── project.md            # 工程文件 z42.toml（[project] / [workspace]）
+│   ├── project.md            # 工程文件 z42.toml（[project] / [workspace]）
+│   ├── arrays.md             # 数组语法与 IR 映射
+│   ├── foreach.md            # foreach 语句与 break/continue
+│   ├── compound-assign.md    # 复合赋值运算符
+│   ├── string-builtins.md    # 字符串内置方法
+│   └── hot-reload.md         # 热更新（游戏脚本场景）
 ├── examples/                 # .z42 示例源文件 + z42.toml
 └── src/
     ├── compiler/             # C# Bootstrap 编译器 (.NET 10)
@@ -88,7 +93,7 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|
 | 模式匹配 | `switch` 表达式（C# 8+ 风格） |
 | 错误处理 | `try/catch/throw` |
 | 异步 | `async Task<T>` + `await` |
-| 专有扩展 | `[ExecMode(Mode.Jit)]` 执行模式注解 |
+| 专有扩展 | `[ExecMode(Mode.Jit)]` 执行模式注解；`[HotReload]` 热更新注解 |
 
 ### Phase 2 — 吸收 Rust / Python 优点（完成基础实现后引入）
 
@@ -150,6 +155,23 @@ git push origin main
 修改任何语言行为前，**必须先更新对应的 spec 文件**：
 - 新语法 → `specs/language-overview.md`
 - 新 IR 指令 → `specs/ir.md`
+- 新语言特性 → `specs/<feature>.md`（独立文件）
+
+## 文档同步（必须遵守）
+
+**每次完成一批改动后，检查以下各项，避免规范与实现脱节：**
+
+| 改动类型 | 需要更新的文档 |
+|----------|--------------|
+| 新语法 / 语句 | `specs/language-overview.md` + 对应 `specs/<feature>.md` |
+| 新 IR 指令 | `specs/ir.md` |
+| 新 VM 行为 / 内置函数 | 对应 `specs/<feature>.md` |
+| 新构建步骤 / CLI 参数 | `CLAUDE.md` 的"构建命令"部分 |
+| 新 Phase 1 特性 | `CLAUDE.md` 的"语言设计策略"表格 |
+| 规范设计变更 | 同步更新所有引用该设计的文档 |
+
+- **禁止**改动已完成、测试通过后跳过文档更新步骤
+- 若实现与规范发生偏差，**以实现为准更新规范**，不得让规范描述不存在的行为
 
 ## 代码风格
 
@@ -190,6 +212,7 @@ git push origin main
 | GC（未来沙盒模式）| `gc-arena` | arena 式 GC，可选引入 |
 | 并发运行时 | `tokio` | async VM task 调度 |
 | 性能剖析 | `pprof-rs` | 火焰图 |
+| 文件监听 | `notify` | 热更新文件系统事件，跨平台，支持 debounce |
 
 ### 参考实现与学习资源
 
