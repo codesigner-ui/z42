@@ -134,6 +134,9 @@ public sealed partial class IrGen
                 return dst;
             }
 
+            case SwitchExpr sw:
+                return EmitSwitchExpr(sw);
+
             default:
                 throw new NotSupportedException(
                     $"expression type {expr.GetType().Name} not yet supported in IrGen");
@@ -376,6 +379,49 @@ public sealed partial class IrGen
             Emit(new StrConcatInstr(dst, result, regs[i]));
             result = dst;
         }
+        return result;
+    }
+
+    // ── Switch expression ─────────────────────────────────────────────────────
+
+    /// Compiles `subject switch { p1 => e1, p2 => e2, _ => e3 }` as an if-else chain.
+    private int EmitSwitchExpr(SwitchExpr sw)
+    {
+        int subjReg = EmitExpr(sw.Subject);
+        int result  = Alloc();
+        string endLbl = FreshLabel("sw_end");
+
+        foreach (var arm in sw.Arms)
+        {
+            if (arm.Pattern == null)
+            {
+                // default arm: unconditionally emit body
+                int defReg = EmitExpr(arm.Body);
+                Emit(new CopyInstr(result, defReg));
+                EndBlock(new BrTerm(endLbl));
+                break;
+            }
+
+            string thenLbl = FreshLabel("sw_arm");
+            string nextLbl = FreshLabel("sw_next");
+
+            int patReg  = EmitExpr(arm.Pattern);
+            int cmpReg  = Alloc();
+            Emit(new EqInstr(cmpReg, subjReg, patReg));
+            EndBlock(new BrCondTerm(cmpReg, thenLbl, nextLbl));
+
+            StartBlock(thenLbl);
+            int bodyReg = EmitExpr(arm.Body);
+            Emit(new CopyInstr(result, bodyReg));
+            EndBlock(new BrTerm(endLbl));
+
+            StartBlock(nextLbl);
+        }
+
+        // If no arm matched and no default, fall through to end
+        if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+
+        StartBlock(endLbl);
         return result;
     }
 }

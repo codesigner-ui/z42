@@ -74,6 +74,28 @@ public sealed record ForeachStmt(
 public sealed record BreakStmt(Span Span)    : Stmt(Span);
 public sealed record ContinueStmt(Span Span) : Stmt(Span);
 
+public sealed record SwitchStmt(
+    Expr Subject, List<SwitchCase> Cases, Span Span) : Stmt(Span);
+
+public sealed record SwitchCase(
+    Expr? Pattern,   // null = default
+    List<Stmt> Body,
+    Span Span);
+
+public sealed record TryCatchStmt(
+    BlockStmt TryBody,
+    List<CatchClause> Catches,
+    BlockStmt? Finally,
+    Span Span) : Stmt(Span);
+
+public sealed record CatchClause(
+    string? ExceptionType,
+    string? VarName,
+    BlockStmt Body,
+    Span Span);
+
+public sealed record ThrowStmt(Expr Value, Span Span) : Stmt(Span);
+
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 public abstract record Expr(Span Span);

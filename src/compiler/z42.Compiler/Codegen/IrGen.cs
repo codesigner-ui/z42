@@ -32,6 +32,7 @@ public sealed partial class IrGen
     private Dictionary<string, int> _locals = new();  // parameter name → register
     private HashSet<string> _mutableVars = new();     // local variable names (use Load/Store)
     private List<IrBlock> _blocks = new();
+    private List<IrExceptionEntry> _exceptionTable = new();
     // Loop context: (breakLabel, continueLabel) for the innermost enclosing loop
     private Stack<(string Break, string Continue)> _loopStack = new();
 
@@ -62,12 +63,13 @@ public sealed partial class IrGen
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
         // `this` occupies register 0; declared params start at 1
-        _nextReg     = method.Params.Count + 1;
-        _nextLabelId = 0;
-        _locals      = new Dictionary<string, int> { ["this"] = 0 };
-        _mutableVars = new HashSet<string>();
-        _blocks      = new List<IrBlock>();
-        _loopStack   = new Stack<(string, string)>();
+        _nextReg        = method.Params.Count + 1;
+        _nextLabelId    = 0;
+        _locals         = new Dictionary<string, int> { ["this"] = 0 };
+        _mutableVars    = new HashSet<string>();
+        _blocks         = new List<IrBlock>();
+        _exceptionTable = new List<IrExceptionEntry>();
+        _loopStack      = new Stack<(string, string)>();
 
         StartBlock("entry");
 
@@ -82,19 +84,21 @@ public sealed partial class IrGen
         bool isCtor = method.Name == className;
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         string qualifiedName = $"{className}.{method.Name}";
-        return new IrFunction(qualifiedName, method.Params.Count + 1, retType, "Interp", _blocks);
+        var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
+        return new IrFunction(qualifiedName, method.Params.Count + 1, retType, "Interp", _blocks, excTable);
     }
 
     // ── Function ────────────────────────────────────────────────────────────────
 
     private IrFunction EmitFunction(FunctionDecl fn)
     {
-        _nextReg     = fn.Params.Count;
-        _nextLabelId = 0;
-        _locals      = new Dictionary<string, int>();
-        _mutableVars = new HashSet<string>();
-        _blocks      = new List<IrBlock>();
-        _loopStack   = new Stack<(string, string)>();
+        _nextReg        = fn.Params.Count;
+        _nextLabelId    = 0;
+        _locals         = new Dictionary<string, int>();
+        _mutableVars    = new HashSet<string>();
+        _blocks         = new List<IrBlock>();
+        _exceptionTable = new List<IrExceptionEntry>();
+        _loopStack      = new Stack<(string, string)>();
 
         StartBlock("entry");
 
@@ -107,7 +111,8 @@ public sealed partial class IrGen
             EndBlock(new RetTerm(null));
 
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
-        return new IrFunction(fn.Name, fn.Params.Count, retType, "Interp", _blocks);
+        var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
+        return new IrFunction(fn.Name, fn.Params.Count, retType, "Interp", _blocks, excTable);
     }
 
     // ── Block management ────────────────────────────────────────────────────────

@@ -64,6 +64,34 @@ internal static class Leds
         return new IndexExpr(left, index, left.Span);
     };
 
+    // ── Switch expression (postfix `switch { arm, ... }`, bp=85) ────────────
+
+    public static readonly LedFn SwitchExpr_ = (ctx, left, tok) =>
+    {
+        ctx.Expect(TokenKind.LBrace);
+        var arms = new List<SwitchArm>();
+        while (!ctx.Check(TokenKind.RBrace) && !ctx.Check(TokenKind.Eof))
+        {
+            var aSpan = ctx.Current.Span;
+            Expr? pattern;
+            if (ctx.Current.Kind == TokenKind.Underscore)
+            {
+                ctx.Advance();
+                pattern = null;
+            }
+            else
+            {
+                pattern = ctx.ParseExpr(11);
+            }
+            ctx.Expect(TokenKind.FatArrow);
+            var body = ctx.ParseExpr(11);
+            arms.Add(new SwitchArm(pattern, body, aSpan));
+            if (!ctx.Match(TokenKind.Comma)) break;
+        }
+        ctx.Expect(TokenKind.RBrace);
+        return new SwitchExpr(left, arms, tok.Span);
+    };
+
     // ── Ternary / null-conditional (both triggered by `?`) ───────────────────
 
     /// Handles `cond ? then : else` (ternary) and `obj?.member` (null-conditional).

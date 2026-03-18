@@ -1,0 +1,4 @@
+before throw
+caught
+hello from catch
+done

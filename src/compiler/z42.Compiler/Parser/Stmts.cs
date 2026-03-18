@@ -92,6 +92,88 @@ internal static class Stmts
         return new ForeachStmt(vname, collection, body, kw.Span);
     };
 
+    // ── switch statement ──────────────────────────────────────────────────────
+
+    /// `switch (expr) { case v: stmts break; ... default: stmts break; }`
+    public static readonly StmtFn Switch_ = (ctx, kw) =>
+    {
+        ctx.Expect(TokenKind.LParen);
+        var subject = ctx.ParseExpr();
+        ctx.Expect(TokenKind.RParen);
+        ctx.Expect(TokenKind.LBrace);
+
+        var cases = new List<SwitchCase>();
+        while (!ctx.Check(TokenKind.RBrace) && !ctx.Check(TokenKind.Eof))
+        {
+            var caseSpan = ctx.Current.Span;
+            Expr? pattern;
+            if (ctx.Match(TokenKind.Default))
+            {
+                pattern = null;
+                ctx.Expect(TokenKind.Colon);
+            }
+            else
+            {
+                ctx.Expect(TokenKind.Case);
+                pattern = ctx.ParseExpr(11);
+                ctx.Expect(TokenKind.Colon);
+            }
+
+            var body = new List<Stmt>();
+            while (!ctx.Check(TokenKind.Case) && !ctx.Check(TokenKind.Default)
+                && !ctx.Check(TokenKind.RBrace) && !ctx.Check(TokenKind.Eof))
+            {
+                body.Add(ctx.ParseStmt());
+            }
+            cases.Add(new SwitchCase(pattern, body, caseSpan));
+        }
+
+        ctx.Expect(TokenKind.RBrace);
+        return new SwitchStmt(subject, cases, kw.Span);
+    };
+
+    // ── try / catch / finally ────────────────────────────────────────────────
+
+    public static readonly StmtFn TryCatch_ = (ctx, kw) =>
+    {
+        var tryBody = ctx.ParseBlock();
+
+        var catches = new List<CatchClause>();
+        while (ctx.Match(TokenKind.Catch))
+        {
+            var cSpan = ctx.Current.Span;
+            string? exType = null;
+            string? varName = null;
+            if (ctx.Match(TokenKind.LParen))
+            {
+                if (ctx.Current.Kind == TokenKind.Identifier)
+                {
+                    exType = ctx.Expect(TokenKind.Identifier).Text;
+                    if (ctx.Current.Kind == TokenKind.Identifier)
+                        varName = ctx.Advance().Text;
+                }
+                ctx.Expect(TokenKind.RParen);
+            }
+            var body = ctx.ParseBlock();
+            catches.Add(new CatchClause(exType, varName, body, cSpan));
+        }
+
+        BlockStmt? finally_ = null;
+        if (ctx.Match(TokenKind.Finally))
+            finally_ = ctx.ParseBlock();
+
+        return new TryCatchStmt(tryBody, catches, finally_, kw.Span);
+    };
+
+    // ── throw ─────────────────────────────────────────────────────────────────
+
+    public static readonly StmtFn Throw_ = (ctx, kw) =>
+    {
+        var val = ctx.ParseExpr();
+        ctx.Expect(TokenKind.Semicolon);
+        return new ThrowStmt(val, kw.Span);
+    };
+
     // ── break / continue ─────────────────────────────────────────────────────
 
     public static readonly StmtFn Break_ = (ctx, kw) =>

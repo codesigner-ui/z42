@@ -97,6 +97,9 @@ internal static class ParseTable
             [TokenKind.Dot]      = new(90, null, Leds.MemberAccess_),
             [TokenKind.LBracket] = new(90, null, Leds.IndexAccess_),
 
+            // ── Switch expression (postfix `expr switch { ... }`, bp=85) ──────
+            [TokenKind.Switch] = new(85, null, Leds.SwitchExpr_, "pattern_match"),
+
             // ── Atoms (Nud-only, LeftBp=0) ────────────────────────────────────
             [TokenKind.IntLiteral]               = new(0, Nuds.IntLit,    null),
             [TokenKind.FloatLiteral]             = new(0, Nuds.FloatLit,  null),
@@ -121,5 +124,8 @@ internal static class ParseTable
             [TokenKind.Foreach]  = new(Stmts.Foreach_,  "control_flow"),
             [TokenKind.Break]    = new(Stmts.Break_,    "control_flow"),
             [TokenKind.Continue] = new(Stmts.Continue_, "control_flow"),
+            [TokenKind.Switch]   = new(Stmts.Switch_,   "pattern_match"),
+            [TokenKind.Try]      = new(Stmts.TryCatch_, "exceptions"),
+            [TokenKind.Throw]    = new(Stmts.Throw_,    "exceptions"),
         };
 }

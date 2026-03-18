@@ -1,0 +1,28 @@
+void Main() {
+    // switch expression
+    var x = 2;
+    var label = x switch {
+        1 => "one",
+        2 => "two",
+        3 => "three",
+        _ => "other"
+    };
+    Console.WriteLine(label);
+
+    // switch statement
+    var day = 3;
+    switch (day) {
+        case 1:
+            Console.WriteLine("Monday");
+            break;
+        case 2:
+            Console.WriteLine("Tuesday");
+            break;
+        case 3:
+            Console.WriteLine("Wednesday");
+            break;
+        default:
+            Console.WriteLine("Other");
+            break;
+    }
+}

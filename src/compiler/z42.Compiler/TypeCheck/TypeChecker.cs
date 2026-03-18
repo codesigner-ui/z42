@@ -176,6 +176,37 @@ public sealed class TypeChecker
             case BreakStmt:
             case ContinueStmt:
                 break;   // valid inside any loop; loop-context check deferred to later phase
+
+            case SwitchStmt sw:
+            {
+                CheckExpr(sw.Subject, env);
+                foreach (var c in sw.Cases)
+                {
+                    if (c.Pattern != null) CheckExpr(c.Pattern, env);
+                    var caseScope = env.PushScope();
+                    foreach (var s in c.Body) CheckStmt(s, caseScope, retType);
+                }
+                break;
+            }
+
+            case TryCatchStmt tc:
+            {
+                CheckBlock(tc.TryBody, env, retType);
+                foreach (var clause in tc.Catches)
+                {
+                    var catchScope = env.PushScope();
+                    if (clause.VarName != null)
+                        catchScope.Define(clause.VarName, Z42Type.Unknown);
+                    CheckBlock(clause.Body, catchScope, retType);
+                }
+                if (tc.Finally != null)
+                    CheckBlock(tc.Finally, env, retType);
+                break;
+            }
+
+            case ThrowStmt th:
+                CheckExpr(th.Value, env);
+                break;
         }
         // Unknown stmt kinds are silently skipped (future constructs).
     }
@@ -343,6 +374,18 @@ public sealed class TypeChecker
                     RequireAssignable(elemType, et, e.Span);
                 }
                 return new Z42ArrayType(elemType);
+            }
+
+            case SwitchExpr sw:
+            {
+                CheckExpr(sw.Subject, env);
+                Z42Type resultType = Z42Type.Unknown;
+                foreach (var arm in sw.Arms)
+                {
+                    if (arm.Pattern != null) CheckExpr(arm.Pattern, env);
+                    resultType = CheckExpr(arm.Body, env);
+                }
+                return resultType;
             }
 
             default:

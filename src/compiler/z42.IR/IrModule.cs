@@ -23,7 +23,17 @@ public sealed record IrFunction(
     int ParamCount,
     string RetType,
     string ExecMode,
-    List<IrBlock> Blocks);
+    List<IrBlock> Blocks,
+    List<IrExceptionEntry>? ExceptionTable = null);
+
+/// One entry in a function's exception table: covers blocks [TryStart, TryEnd)
+/// and redirects unhandled throws to CatchLabel, storing the exception in CatchReg.
+public sealed record IrExceptionEntry(
+    string TryStart,
+    string TryEnd,
+    string CatchLabel,
+    string? CatchType,
+    int CatchReg);
 
 // ── Basic block ───────────────────────────────────────────────────────────────
 
@@ -129,8 +139,11 @@ public sealed record FieldSetInstr(int Obj, string FieldName, int Val)      : Ir
 [JsonDerivedType(typeof(RetTerm),    "ret")]
 [JsonDerivedType(typeof(BrTerm),     "br")]
 [JsonDerivedType(typeof(BrCondTerm), "br_cond")]
+[JsonDerivedType(typeof(ThrowTerm),  "throw")]
 public abstract record IrTerminator;
 
-public sealed record RetTerm(int? Reg)                                       : IrTerminator;
-public sealed record BrTerm(string Label)                                    : IrTerminator;
+public sealed record RetTerm(int? Reg)                                         : IrTerminator;
+public sealed record BrTerm(string Label)                                      : IrTerminator;
 public sealed record BrCondTerm(int Cond, string TrueLabel, string FalseLabel) : IrTerminator;
+/// Throw the value in Reg as an exception; handled by the function's exception table.
+public sealed record ThrowTerm(int Reg)                                        : IrTerminator;

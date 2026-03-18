@@ -1,0 +1,19 @@
+void Main() {
+    // Basic try/catch
+    try {
+        Console.WriteLine("before throw");
+        throw "oops";
+        Console.WriteLine("never reached");
+    } catch (Exception e) {
+        Console.WriteLine("caught");
+    }
+
+    // Catch gets the thrown value
+    try {
+        throw "hello from catch";
+    } catch (Exception msg) {
+        Console.WriteLine(msg);
+    }
+
+    Console.WriteLine("done");
+}

@@ -18,6 +18,38 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+// ── User exception machinery ──────────────────────────────────────────────────
+
+// Thread-local slot: holds the currently-in-flight user exception value.
+// Populated by `user_throw`, consumed by exception table handler lookup.
+thread_local! {
+    static PENDING_EXCEPTION: RefCell<Option<Value>> = const { RefCell::new(None) };
+}
+
+/// Lightweight sentinel: `Send + Sync + 'static` because it carries no payload.
+#[derive(Debug)]
+struct UserException;
+
+impl std::fmt::Display for UserException {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let msg = PENDING_EXCEPTION.with(|p| {
+            p.borrow().as_ref().map(helpers::value_to_str).unwrap_or_default()
+        });
+        write!(f, "uncaught exception: {msg}")
+    }
+}
+
+impl std::error::Error for UserException {}
+
+fn user_throw(val: Value) -> anyhow::Error {
+    PENDING_EXCEPTION.with(|p| *p.borrow_mut() = Some(val));
+    anyhow::Error::new(UserException)
+}
+
+fn user_exception_take() -> Option<Value> {
+    PENDING_EXCEPTION.with(|p| p.borrow_mut().take())
+}
+
 /// Entry point: run a function with the given arguments.
 pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
     exec_function(module, func, args)?;
@@ -68,14 +100,25 @@ fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Opt
     let mut frame = Frame::new(args);
     let mut block_idx = 0usize;
 
-    loop {
+    'exec: loop {
         let block = func
             .blocks
             .get(block_idx)
             .with_context(|| format!("block index {block_idx} out of range"))?;
 
         for instr in &block.instructions {
-            exec_instr(module, &mut frame, instr)?;
+            if let Err(e) = exec_instr(module, &mut frame, instr) {
+                if e.is::<UserException>() {
+                    if let Some(entry_idx) = find_handler(func, block_idx) {
+                        let thrown_val = user_exception_take().unwrap_or(Value::Null);
+                        let entry = &func.exception_table[entry_idx];
+                        frame.set(entry.catch_reg, thrown_val);
+                        block_idx = find_block(func, &entry.catch_label)?;
+                        continue 'exec;
+                    }
+                }
+                return Err(e);
+            }
         }
 
         match &block.terminator {
@@ -90,8 +133,30 @@ fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Opt
                 let label = if go_true { true_label } else { false_label };
                 block_idx = find_block(func, label)?;
             }
+            Terminator::Throw { reg } => {
+                let val = frame.get(*reg)?.clone();
+                if let Some(entry_idx) = find_handler(func, block_idx) {
+                    let entry = &func.exception_table[entry_idx];
+                    frame.set(entry.catch_reg, val);
+                    block_idx = find_block(func, &entry.catch_label)?;
+                } else {
+                    return Err(user_throw(val));
+                }
+            }
         }
     }
+}
+
+/// Find the index into `func.exception_table` that covers the given block index.
+fn find_handler(func: &Function, block_idx: usize) -> Option<usize> {
+    for (i, entry) in func.exception_table.iter().enumerate() {
+        let start_idx = func.blocks.iter().position(|b| b.label == entry.try_start)?;
+        let end_idx   = func.blocks.iter().position(|b| b.label == entry.try_end)?;
+        if block_idx >= start_idx && block_idx < end_idx {
+            return Some(i);
+        }
+    }
+    None
 }
 
 fn find_block(func: &Function, label: &str) -> Result<usize> {

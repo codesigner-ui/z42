@@ -41,6 +41,18 @@ pub struct Function {
     pub ret_type: String,
     pub exec_mode: ExecMode,
     pub blocks: Vec<BasicBlock>,
+    #[serde(default)]
+    pub exception_table: Vec<ExceptionEntry>,
+}
+
+/// One row in a function's exception table.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExceptionEntry {
+    pub try_start:   String,
+    pub try_end:     String,
+    pub catch_label: String,
+    pub catch_type:  Option<String>,
+    pub catch_reg:   u32,
 }
 
 /// A basic block — straight-line instructions ending in exactly one terminator.
@@ -122,4 +134,6 @@ pub enum Terminator {
     Ret    { reg: Option<Reg> },
     Br     { label: String },
     BrCond { cond: Reg, true_label: String, false_label: String },
+    /// Throw the value in `reg` as an exception.
+    Throw  { reg: Reg },
 }

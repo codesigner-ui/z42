@@ -94,6 +94,34 @@ br <label>
 br.cond %cond, <true_label>, <false_label>
 ret
 ret %value
+throw %val          # terminate block by throwing %val; handled by exception table
+```
+
+### Exception Handling (Phase 1)
+
+Functions may carry an exception table (list of `ExceptionEntry`). Each entry:
+
+| Field | Description |
+|-------|-------------|
+| `try_start` | Label of first block inside the try region |
+| `try_end` | Label of first block **after** the try region (exclusive) |
+| `catch_label` | Label of catch handler block |
+| `catch_type` | Optional exception type string (Phase 1: ignored, catches all) |
+| `catch_reg` | Register that receives the thrown value on handler entry |
+
+`throw %val` terminates the block. The VM searches the exception table for an entry whose
+`[try_start, try_end)` block range covers the current block. If found, it jumps to
+`catch_label` and pre-loads `catch_reg` with the thrown value. If not found, the exception
+propagates to the caller.
+
+JSON wire format:
+```json
+{"op": "throw", "reg": 3}
+```
+
+Exception table row:
+```json
+{"try_start": "try_start_0", "try_end": "try_end_1", "catch_label": "catch_start_2", "catch_type": "Exception", "catch_reg": 4}
 ```
 
 ### Calls

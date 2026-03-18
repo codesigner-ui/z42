@@ -69,7 +69,124 @@ public sealed partial class IrGen
                 if (_loopStack.Count > 0)
                     EndBlock(new BrTerm(_loopStack.Peek().Continue));
                 break;
+
+            case SwitchStmt sw:
+                EmitSwitchStmt(sw);
+                break;
+
+            case TryCatchStmt tc:
+                EmitTryCatch(tc);
+                break;
+
+            case ThrowStmt th:
+                EndBlock(new ThrowTerm(EmitExpr(th.Value)));
+                break;
         }
+    }
+
+    // ── Try / catch ───────────────────────────────────────────────────────────
+
+    private void EmitTryCatch(TryCatchStmt tc)
+    {
+        string tryStartLbl = FreshLabel("try_start");
+        string tryEndLbl   = FreshLabel("try_end");
+        string afterLbl    = FreshLabel("after_try");
+
+        EndBlock(new BrTerm(tryStartLbl));
+
+        // Try body
+        StartBlock(tryStartLbl);
+        EmitBlock(tc.TryBody);
+        if (!_blockEnded) EndBlock(new BrTerm(tryEndLbl));
+
+        // try_end block: jump to after (normal exit from try)
+        StartBlock(tryEndLbl);
+        EndBlock(new BrTerm(afterLbl));
+
+        // Catch clauses
+        foreach (var clause in tc.Catches)
+        {
+            int catchReg        = Alloc();
+            string catchStartLbl = FreshLabel("catch_start");
+            string catchEndLbl   = FreshLabel("catch_end");
+
+            _exceptionTable.Add(new IrExceptionEntry(
+                tryStartLbl,
+                tryEndLbl,
+                catchStartLbl,
+                clause.ExceptionType,
+                catchReg));
+
+            StartBlock(catchStartLbl);
+            if (clause.VarName != null)
+            {
+                _mutableVars.Add(clause.VarName);
+                Emit(new StoreInstr(clause.VarName, catchReg));
+            }
+            EmitBlock(clause.Body);
+            if (!_blockEnded) EndBlock(new BrTerm(afterLbl));
+        }
+
+        // Finally (run after try/catch regardless)
+        if (tc.Finally != null)
+        {
+            StartBlock(FreshLabel("finally"));
+            EmitBlock(tc.Finally);
+            if (!_blockEnded) EndBlock(new BrTerm(afterLbl));
+        }
+
+        StartBlock(afterLbl);
+    }
+
+    // ── Switch statement ──────────────────────────────────────────────────────
+
+    /// Compiles `switch (subject) { case p: stmts break; ... default: stmts }` as an if-else chain.
+    private void EmitSwitchStmt(SwitchStmt sw)
+    {
+        int subjReg = EmitExpr(sw.Subject);
+        string endLbl = FreshLabel("sw_end");
+
+        // Push to loop stack so `break` inside cases exits the switch
+        string outerContinue = _loopStack.Count > 0 ? _loopStack.Peek().Continue : endLbl;
+        _loopStack.Push((endLbl, outerContinue));
+
+        foreach (var c in sw.Cases)
+        {
+            if (c.Pattern == null)
+            {
+                // default: emit body unconditionally
+                foreach (var s in c.Body)
+                {
+                    if (_blockEnded) break;
+                    EmitStmt(s);
+                }
+                if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+                break;
+            }
+
+            string bodyLbl = FreshLabel("sw_case");
+            string nextLbl = FreshLabel("sw_next");
+
+            int patReg = EmitExpr(c.Pattern);
+            int cmpReg = Alloc();
+            Emit(new EqInstr(cmpReg, subjReg, patReg));
+            EndBlock(new BrCondTerm(cmpReg, bodyLbl, nextLbl));
+
+            StartBlock(bodyLbl);
+            foreach (var s in c.Body)
+            {
+                if (_blockEnded) break;
+                EmitStmt(s);
+            }
+            if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+
+            StartBlock(nextLbl);
+        }
+
+        _loopStack.Pop();
+
+        if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+        StartBlock(endLbl);
     }
 
     // ── Control flow ──────────────────────────────────────────────────────────

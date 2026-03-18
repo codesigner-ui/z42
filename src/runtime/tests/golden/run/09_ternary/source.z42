@@ -1,0 +1,14 @@
+void Main() {
+    var x = 10;
+    var msg = x > 5 ? "big" : "small";
+    Console.WriteLine(msg);
+
+    var y = -3;
+    var abs = y < 0 ? -y : y;
+    Console.WriteLine(abs);
+
+    // nested ternary
+    var n = 0;
+    var sign = n > 0 ? "positive" : n < 0 ? "negative" : "zero";
+    Console.WriteLine(sign);
+}
