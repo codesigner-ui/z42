@@ -1,17 +1,13 @@
 void Main() {
-    // Array literal
     int[] arr = new int[] { 10, 20, 30, 40, 50 };
-    Console.WriteLine(arr[0]);
-    Console.WriteLine(arr[4]);
+    Assert.Equal(10, arr[0]);
+    Assert.Equal(50, arr[4]);
 
-    // Assign to element
     arr[2] = 99;
-    Console.WriteLine(arr[2]);
+    Assert.Equal(99, arr[2]);
 
-    // Length
-    Console.WriteLine(arr.Length);
+    Assert.Equal(5, arr.Length);
 
-    // Compound assignment on array element
     arr[0] += 5;
-    Console.WriteLine(arr[0]);
+    Assert.Equal(15, arr[0]);
 }

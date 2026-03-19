@@ -25,8 +25,8 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
 
         // ── Length (works on both arrays and strings) ─────────────────────
         "__len" => match args.first() {
-            Some(Value::Array(rc)) => Ok(Value::I32(rc.borrow().len() as i32)),
-            Some(Value::Str(s))    => Ok(Value::I32(s.len() as i32)),  // UTF-8 byte count
+            Some(Value::Array(rc)) => Ok(Value::I64(rc.borrow().len() as i64)),
+            Some(Value::Str(s))    => Ok(Value::I64(s.len() as i64)),  // UTF-8 byte count
             Some(other)            => bail!("__len: expected array or string, got {:?}", other),
             None                   => bail!("__len: missing argument"),
         },
@@ -130,17 +130,18 @@ mod tests {
 
     fn s(v: &str) -> Value { Value::Str(v.into()) }
     fn i(n: i32) -> Value { Value::I32(n) }
+    fn i64(n: i64) -> Value { Value::I64(n) }
 
     // ── __len ─────────────────────────────────────────────────────────────────
 
     #[test]
     fn len_of_string_is_utf8_bytes() {
-        assert_eq!(exec_builtin("__len", &[s("hello")]).unwrap(), i(5));
+        assert_eq!(exec_builtin("__len", &[s("hello")]).unwrap(), i64(5));
     }
 
     #[test]
     fn len_of_empty_string() {
-        assert_eq!(exec_builtin("__len", &[s("")]).unwrap(), i(0));
+        assert_eq!(exec_builtin("__len", &[s("")]).unwrap(), i64(0));
     }
 
     #[test]

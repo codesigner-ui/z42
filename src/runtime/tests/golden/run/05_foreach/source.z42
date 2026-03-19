@@ -1,26 +1,23 @@
 void Main() {
     int[] nums = new int[] { 1, 2, 3, 4, 5 };
 
-    // Basic foreach
     int sum = 0;
     foreach (var n in nums) {
         sum += n;
     }
-    Console.WriteLine(sum);
+    Assert.Equal(15, sum);
 
-    // Foreach with break
     int first = 0;
     foreach (var n in nums) {
         first = n;
         break;
     }
-    Console.WriteLine(first);
+    Assert.Equal(1, first);
 
-    // Foreach with continue (skip even numbers, sum odds)
     int odds = 0;
     foreach (var n in nums) {
         if (n % 2 == 0) continue;
         odds += n;
     }
-    Console.WriteLine(odds);
+    Assert.Equal(9, odds);
 }

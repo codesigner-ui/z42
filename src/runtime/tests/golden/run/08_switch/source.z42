@@ -7,22 +7,17 @@ void Main() {
         3 => "three",
         _ => "other"
     };
-    Console.WriteLine(label);
+    Assert.Equal("two", label);
 
-    // switch statement
+    Assert.Equal("other", 0 switch { 1 => "one", _ => "other" });
+
+    // switch statement assigns to var
     var day = 3;
-    switch (day) {
-        case 1:
-            Console.WriteLine("Monday");
-            break;
-        case 2:
-            Console.WriteLine("Tuesday");
-            break;
-        case 3:
-            Console.WriteLine("Wednesday");
-            break;
-        default:
-            Console.WriteLine("Other");
-            break;
-    }
+    var dayName = day switch {
+        1 => "Monday",
+        2 => "Tuesday",
+        3 => "Wednesday",
+        _ => "Other"
+    };
+    Assert.Equal("Wednesday", dayName);
 }

@@ -1,18 +1,14 @@
 void Main() {
     string s = "Hello, World!";
 
-    // Length (UTF-8 bytes)
-    Console.WriteLine(s.Length);
+    Assert.Equal(13, s.Length);
 
-    // Contains
-    Console.WriteLine(s.Contains("World"));
-    Console.WriteLine(s.Contains("world"));
+    Assert.True(s.Contains("World"));
+    Assert.False(s.Contains("world"));
 
-    // StartsWith / EndsWith
-    Console.WriteLine(s.StartsWith("Hello"));
-    Console.WriteLine(s.EndsWith("!"));
+    Assert.True(s.StartsWith("Hello"));
+    Assert.True(s.EndsWith("!"));
 
-    // Substring
-    Console.WriteLine(s.Substring(7));
-    Console.WriteLine(s.Substring(7, 5));
+    Assert.Equal("World!", s.Substring(7));
+    Assert.Equal("World", s.Substring(7, 5));
 }

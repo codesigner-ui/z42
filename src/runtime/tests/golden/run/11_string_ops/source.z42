@@ -1,8 +1,0 @@
-void Main() {
-    var s = "Hello, World!";
-    Console.WriteLine(s.Length);         // 13
-    Console.WriteLine(s.Contains("World"));    // True
-    Console.WriteLine(s.StartsWith("Hello"));  // True
-    Console.WriteLine(s.EndsWith("!"));        // True
-    Console.WriteLine(s.Substring(7, 5));      // World
-}
