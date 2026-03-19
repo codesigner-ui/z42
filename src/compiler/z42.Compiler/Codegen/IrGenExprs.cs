@@ -312,140 +312,97 @@ public sealed partial class IrGen
         return dst;
     }
 
+    // ── Builtin dispatch tables ───────────────────────────────────────────────
+    //   To add a new pseudo-class static builtin: add one entry to StaticBuiltins.
+    //   To add a new instance method builtin:     add one entry to InstanceBuiltins.
+
+    /// Pseudo-class static calls: "ClassName.Method" → builtin name.
+    private static readonly IReadOnlyDictionary<string, string> StaticBuiltins =
+        new Dictionary<string, string>
+        {
+            // Assert
+            ["Assert.Equal"]    = "__assert_eq",
+            ["Assert.True"]     = "__assert_true",
+            ["Assert.False"]    = "__assert_false",
+            ["Assert.Contains"] = "__assert_contains",
+            ["Assert.Null"]     = "__assert_null",
+            ["Assert.NotNull"]  = "__assert_not_null",
+            // Console
+            ["Console.WriteLine"] = "__println",
+            ["Console.Write"]     = "__print",
+            // Math
+            ["Math.Abs"]     = "__math_abs",
+            ["Math.Max"]     = "__math_max",
+            ["Math.Min"]     = "__math_min",
+            ["Math.Pow"]     = "__math_pow",
+            ["Math.Sqrt"]    = "__math_sqrt",
+            ["Math.Floor"]   = "__math_floor",
+            ["Math.Ceiling"] = "__math_ceiling",
+            ["Math.Round"]   = "__math_round",
+        };
+
+    /// Instance method calls: method name → builtin name (receiver becomes first arg).
+    /// Contains dispatches at runtime so it works for both string and List<T>.
+    private static readonly IReadOnlyDictionary<string, string> InstanceBuiltins =
+        new Dictionary<string, string>
+        {
+            // String
+            ["Substring"]  = "__str_substring",
+            ["StartsWith"] = "__str_starts_with",
+            ["EndsWith"]   = "__str_ends_with",
+            ["IndexOf"]    = "__str_index_of",
+            ["Replace"]    = "__str_replace",
+            ["ToLower"]    = "__str_to_lower",
+            ["ToUpper"]    = "__str_to_upper",
+            ["Trim"]       = "__str_trim",
+            ["TrimStart"]  = "__str_trim_start",
+            ["TrimEnd"]    = "__str_trim_end",
+            ["Split"]      = "__str_split",
+            // Shared: string + List<T>
+            ["Contains"]   = "__contains",
+            // List<T>
+            ["Add"]      = "__list_add",
+            ["RemoveAt"] = "__list_remove_at",
+            ["Clear"]    = "__list_clear",
+            ["Insert"]   = "__list_insert",
+        };
+
     // ── Call ─────────────────────────────────────────────────────────────────
 
     private int EmitCall(CallExpr call)
     {
-        // Assert.XXX  →  builtin __assert_*
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Assert" }, Member: var assertMember })
+        // ── Pseudo-class static calls: Assert.X, Console.X, Math.X ──────────
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var cls }, Member: var mStatic }
+            && StaticBuiltins.TryGetValue($"{cls}.{mStatic}", out var staticBuiltin))
         {
-            string? assertBuiltin = assertMember switch
-            {
-                "Equal"    => "__assert_eq",
-                "True"     => "__assert_true",
-                "False"    => "__assert_false",
-                "Contains" => "__assert_contains",
-                "Null"     => "__assert_null",
-                "NotNull"  => "__assert_not_null",
-                _          => null
-            };
-            if (assertBuiltin != null)
-            {
-                var argRegs = call.Args.Select(EmitExpr).ToList();
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, assertBuiltin, argRegs));
-                return dst;
-            }
+            var argRegs = call.Args.Select(EmitExpr).ToList();
+            // Console: concat multiple args into one string argument
+            if (cls == "Console" && argRegs.Count != 1)
+                argRegs = [EmitConcat(argRegs)];
+            return EmitBuiltin(staticBuiltin, argRegs);
         }
 
-        // Console.WriteLine  →  builtin __println
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Console" }, Member: "WriteLine" })
+        // ── Instance method calls: str.X(), list.X() ─────────────────────────
+        if (call.Callee is MemberExpr mInst
+            && InstanceBuiltins.TryGetValue(mInst.Member, out var instBuiltin))
         {
-            var argRegs  = call.Args.Select(EmitExpr).ToList();
-            var printReg = argRegs.Count == 1 ? argRegs[0] : EmitConcat(argRegs);
-            int dst = Alloc();
-            Emit(new BuiltinInstr(dst, "__println", [printReg]));
-            return dst;
+            int targetReg = EmitExpr(mInst.Target);
+            var argRegs   = new List<int> { targetReg };
+            argRegs.AddRange(call.Args.Select(EmitExpr));
+            return EmitBuiltin(instBuiltin, argRegs);
         }
 
-        // Console.Write  →  builtin __print
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Console" }, Member: "Write" })
-        {
-            var argRegs  = call.Args.Select(EmitExpr).ToList();
-            var printReg = argRegs.Count == 1 ? argRegs[0] : EmitConcat(argRegs);
-            int dst = Alloc();
-            Emit(new BuiltinInstr(dst, "__print", [printReg]));
-            return dst;
-        }
-
-        // List<T> method calls — only methods exclusive to List (not shared with string)
-        // Contains is handled in the string dispatch below (dispatches at runtime by value type)
-        if (call.Callee is MemberExpr mList)
-        {
-            string? listBuiltin = mList.Member switch
-            {
-                "Add"      => "__list_add",
-                "RemoveAt" => "__list_remove_at",
-                "Clear"    => "__list_clear",
-                "Insert"   => "__list_insert",
-                _          => null
-            };
-            if (listBuiltin != null)
-            {
-                int targetReg = EmitExpr(mList.Target);
-                var argRegs   = new List<int> { targetReg };
-                argRegs.AddRange(call.Args.Select(EmitExpr));
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, listBuiltin, argRegs));
-                return dst;
-            }
-        }
-
-        // Math.XXX  →  builtin __math_*
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Math" }, Member: var mathMember })
-        {
-            string? mathBuiltin = mathMember switch
-            {
-                "Abs"     => "__math_abs",
-                "Max"     => "__math_max",
-                "Min"     => "__math_min",
-                "Pow"     => "__math_pow",
-                "Sqrt"    => "__math_sqrt",
-                "Floor"   => "__math_floor",
-                "Ceiling" => "__math_ceiling",
-                "Round"   => "__math_round",
-                _         => null
-            };
-            if (mathBuiltin != null)
-            {
-                var argRegs = call.Args.Select(EmitExpr).ToList();
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, mathBuiltin, argRegs));
-                return dst;
-            }
-        }
-
-        // String built-in methods: s.Substring(), s.Contains(), etc.
+        // ── Class method call: obj.Method(args) ──────────────────────────────
         if (call.Callee is MemberExpr mMethod)
         {
-            string? builtinName = mMethod.Member switch
-            {
-                "Substring"  => "__str_substring",
-                "Contains"   => "__contains",    // works for both string and List
-                "StartsWith" => "__str_starts_with",
-                "EndsWith"   => "__str_ends_with",
-                "IndexOf"    => "__str_index_of",
-                "Replace"    => "__str_replace",
-                "ToLower"    => "__str_to_lower",
-                "ToUpper"    => "__str_to_upper",
-                "Trim"       => "__str_trim",
-                "TrimStart"  => "__str_trim_start",
-                "TrimEnd"    => "__str_trim_end",
-                "Split"      => "__str_split",
-                _            => null
-            };
-
-            if (builtinName != null)
-            {
-                int targetReg = EmitExpr(mMethod.Target);
-                var argRegs   = new List<int> { targetReg };
-                argRegs.AddRange(call.Args.Select(EmitExpr));
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, builtinName, argRegs));
-                return dst;
-            }
-
-            // Class method call or generic method call
-            var methodArgRegs = new List<int> { EmitExpr(mMethod.Target) };
-            methodArgRegs.AddRange(call.Args.Select(EmitExpr));
-            int methodDst = Alloc();
-            // Resolve to qualified name if we know the receiver type
-            string methodName = ResolveMethodName(mMethod.Member);
-            Emit(new CallInstr(methodDst, methodName, methodArgRegs));
-            return methodDst;
+            var argRegs = new List<int> { EmitExpr(mMethod.Target) };
+            argRegs.AddRange(call.Args.Select(EmitExpr));
+            int dst = Alloc();
+            Emit(new CallInstr(dst, ResolveMethodName(mMethod.Member), argRegs));
+            return dst;
         }
 
-        // Direct function call: Foo(args)
+        // ── Free function call: Foo(args) ─────────────────────────────────────
         if (call.Callee is IdentExpr funcId)
         {
             var argRegs = call.Args.Select(EmitExpr).ToList();
@@ -455,6 +412,13 @@ public sealed partial class IrGen
         }
 
         throw new NotSupportedException($"call pattern not supported: {call.Callee.GetType().Name}");
+    }
+
+    private int EmitBuiltin(string name, List<int> args)
+    {
+        int dst = Alloc();
+        Emit(new BuiltinInstr(dst, name, args));
+        return dst;
     }
 
     // ── String interpolation ──────────────────────────────────────────────────
