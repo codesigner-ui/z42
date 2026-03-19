@@ -1,0 +1,45 @@
+namespace Test;
+
+void main() {
+    // Create a List and add elements
+    var list = new List<int>();
+    list.Add(10);
+    list.Add(20);
+    list.Add(30);
+    Assert.Equal(3, list.Count);
+
+    // Index access
+    Assert.Equal(10, list[0]);
+    Assert.Equal(20, list[1]);
+    Assert.Equal(30, list[2]);
+
+    // Contains
+    Assert.Equal(true, list.Contains(20));
+    Assert.Equal(false, list.Contains(99));
+
+    // RemoveAt
+    list.RemoveAt(1);
+    Assert.Equal(2, list.Count);
+    Assert.Equal(10, list[0]);
+    Assert.Equal(30, list[1]);
+
+    // Insert
+    list.Insert(1, 15);
+    Assert.Equal(3, list.Count);
+    Assert.Equal(15, list[1]);
+
+    // Clear
+    list.Clear();
+    Assert.Equal(0, list.Count);
+
+    // Foreach over List
+    var sum = 0;
+    var nums = new List<int>();
+    nums.Add(1);
+    nums.Add(2);
+    nums.Add(3);
+    foreach (var n in nums) {
+        sum = sum + n;
+    }
+    Assert.Equal(6, sum);
+}

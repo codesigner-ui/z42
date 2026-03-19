@@ -40,6 +40,7 @@ public enum TokenKind
     Arrow,          // ->
     FatArrow,       // =>
     Question,       // ?
+    QuestionQuestion, // ??
     Bang,           // !
     Ampersand, Pipe, Caret, Tilde,
     Plus, Minus, Star, Slash, Percent,

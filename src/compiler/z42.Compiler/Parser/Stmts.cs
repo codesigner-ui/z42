@@ -64,6 +64,19 @@ internal static class Stmts
         return new WhileStmt(cond, body, kw.Span);
     };
 
+    // ── do-while ──────────────────────────────────────────────────────────────
+
+    public static readonly StmtFn DoWhile_ = (ctx, kw) =>
+    {
+        var body = ctx.ParseBlock();
+        ctx.Expect(TokenKind.While);
+        ctx.Expect(TokenKind.LParen);
+        var cond = ctx.ParseExpr();
+        ctx.Expect(TokenKind.RParen);
+        ctx.Match(TokenKind.Semicolon);
+        return new DoWhileStmt(body, cond, kw.Span);
+    };
+
     // ── for ──────────────────────────────────────────────────────────────────
 
     public static readonly StmtFn For_ = (ctx, kw) =>

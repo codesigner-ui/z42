@@ -159,6 +159,19 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Ok(Value::Str(s.trim_end().to_string()))
         }
 
+        // Unified contains: works for both string and Array (List<T>)
+        "__contains" => match args.first() {
+            Some(Value::Str(s)) => {
+                let needle = require_str(args, 1, "__contains")?;
+                Ok(Value::Bool(s.contains(needle.as_str())))
+            }
+            Some(Value::Array(arr)) => {
+                let item = args.get(1).cloned().unwrap_or(Value::Null);
+                Ok(Value::Bool(arr.borrow().iter().any(|v| v == &item)))
+            }
+            _ => bail!("Contains: first argument must be a string or List"),
+        },
+
         "__str_split" => {
             let s   = require_str(args, 0, "__str_split")?;
             let sep = require_str(args, 1, "__str_split")?;
@@ -224,6 +237,75 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Some(other) => bail!("Math.Round: unsupported type {:?}", other),
             None => bail!("Math.Round: missing argument"),
         },
+
+        // ── List built-ins ────────────────────────────────────────────────────
+
+        "__list_new" => {
+            Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(vec![]))))
+        }
+
+        "__list_add" => {
+            match args.first() {
+                Some(Value::Array(arr)) => {
+                    let item = args.get(1).cloned().unwrap_or(Value::Null);
+                    arr.borrow_mut().push(item);
+                    Ok(Value::Null)
+                }
+                _ => bail!("List.Add: first argument must be a List"),
+            }
+        }
+
+        "__list_remove_at" => {
+            match (args.first(), args.get(1)) {
+                (Some(Value::Array(arr)), Some(Value::I64(idx))) => {
+                    let idx = *idx as usize;
+                    let mut v = arr.borrow_mut();
+                    if idx >= v.len() {
+                        bail!("List.RemoveAt: index {} out of range (len={})", idx, v.len());
+                    }
+                    v.remove(idx);
+                    Ok(Value::Null)
+                }
+                _ => bail!("List.RemoveAt: expected (List, i64)"),
+            }
+        }
+
+        "__list_contains" => {
+            match args.first() {
+                Some(Value::Array(arr)) => {
+                    let item = args.get(1).cloned().unwrap_or(Value::Null);
+                    let found = arr.borrow().iter().any(|v| v == &item);
+                    Ok(Value::Bool(found))
+                }
+                _ => bail!("List.Contains: first argument must be a List"),
+            }
+        }
+
+        "__list_clear" => {
+            match args.first() {
+                Some(Value::Array(arr)) => {
+                    arr.borrow_mut().clear();
+                    Ok(Value::Null)
+                }
+                _ => bail!("List.Clear: first argument must be a List"),
+            }
+        }
+
+        "__list_insert" => {
+            match (args.first(), args.get(1), args.get(2)) {
+                (Some(Value::Array(arr)), Some(Value::I64(idx)), Some(item)) => {
+                    let idx = *idx as usize;
+                    let item = item.clone();
+                    let mut v = arr.borrow_mut();
+                    if idx > v.len() {
+                        bail!("List.Insert: index {} out of range (len={})", idx, v.len());
+                    }
+                    v.insert(idx, item);
+                    Ok(Value::Null)
+                }
+                _ => bail!("List.Insert: expected (List, i64, value)"),
+            }
+        }
 
         other => bail!("unknown builtin `{other}`"),
     }

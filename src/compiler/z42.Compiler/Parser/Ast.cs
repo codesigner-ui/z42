@@ -10,7 +10,19 @@ public sealed record CompilationUnit(
     List<string> Usings,
     List<ClassDecl> Classes,
     List<FunctionDecl> Functions,
+    List<EnumDecl> Enums,
     Span Span);
+
+// ── Enum declaration ──────────────────────────────────────────────────────────
+
+/// `enum Color { Red, Green = 2, Blue }`
+public sealed record EnumDecl(
+    string Name,
+    List<EnumMember> Members,
+    Span Span);
+
+/// One member of an enum: `Green = 2`
+public sealed record EnumMember(string Name, long? Value, Span Span);
 
 // ── Class / struct declaration ────────────────────────────────────────────────
 
@@ -63,6 +75,7 @@ public sealed record IfStmt(
     Expr Condition, BlockStmt Then, Stmt? Else, Span Span) : Stmt(Span);
 
 public sealed record WhileStmt(Expr Condition, BlockStmt Body, Span Span) : Stmt(Span);
+public sealed record DoWhileStmt(BlockStmt Body, Expr Condition, Span Span) : Stmt(Span);
 
 public sealed record ForStmt(
     Stmt? Init, Expr? Condition, Expr? Increment,
@@ -124,6 +137,8 @@ public sealed record CallExpr(Expr Callee, List<Expr> Args, Span Span) : Expr(Sp
 public sealed record MemberExpr(Expr Target, string Member, Span Span) : Expr(Span);
 public sealed record IndexExpr(Expr Target, Expr Index, Span Span) : Expr(Span);
 public sealed record ConditionalExpr(Expr Cond, Expr Then, Expr Else, Span Span) : Expr(Span);
+/// `left ?? right` — returns left if non-null, otherwise right
+public sealed record NullCoalesceExpr(Expr Left, Expr Right, Span Span) : Expr(Span);
 public sealed record CastExpr(TypeExpr TargetType, Expr Operand, Span Span) : Expr(Span);
 public sealed record NewExpr(TypeExpr Type, List<Expr> Args, Span Span) : Expr(Span);
 /// new T[n]  — zero-initialized array of size n

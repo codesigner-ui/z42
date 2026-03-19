@@ -27,6 +27,7 @@ public sealed class TypeChecker
 
     public void Check(CompilationUnit cu)
     {
+        CollectEnums(cu);
         CollectClasses(cu);
         CollectFunctions(cu);
         foreach (var cls in cu.Classes)
@@ -34,6 +35,24 @@ public sealed class TypeChecker
         foreach (var fn in cu.Functions)
             CheckFunction(fn);
     }
+
+    // ── Pass 0a: collect enum constants ──────────────────────────────────────
+
+    private void CollectEnums(CompilationUnit cu)
+    {
+        foreach (var en in cu.Enums)
+        {
+            // Register each member as a constant integer in the global scope
+            foreach (var m in en.Members)
+                _globalEnumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
+
+            // Also register the enum type name so `EnumType.Member` lookups work
+            _enumTypes.Add(en.Name);
+        }
+    }
+
+    private readonly Dictionary<string, long> _globalEnumConstants = new();
+    private readonly HashSet<string> _enumTypes = new();
 
     // ── Pass 0: collect class shapes ─────────────────────────────────────────
 
@@ -146,6 +165,14 @@ public sealed class TypeChecker
                 var condType = CheckExpr(w.Condition, env);
                 RequireBool(condType, w.Condition.Span, "while");
                 CheckBlock(w.Body, env, retType);
+                break;
+            }
+
+            case DoWhileStmt dw:
+            {
+                CheckBlock(dw.Body, env, retType);
+                var condType = CheckExpr(dw.Condition, env);
+                RequireBool(condType, dw.Condition.Span, "do-while");
                 break;
             }
 
@@ -346,6 +373,15 @@ public sealed class TypeChecker
                      : Z42Type.Unknown;
             }
 
+            case NullCoalesceExpr nc:
+            {
+                var leftType  = CheckExpr(nc.Left, env);
+                var rightType = CheckExpr(nc.Right, env);
+                return Z42Type.IsAssignableTo(leftType, rightType) ? leftType
+                     : Z42Type.IsAssignableTo(rightType, leftType) ? rightType
+                     : Z42Type.Unknown;
+            }
+
             case CastExpr cast:
                 CheckExpr(cast.Operand, env);
                 return ResolveType(cast.TargetType);
@@ -403,6 +439,9 @@ public sealed class TypeChecker
         // Try function table (may be used as a value — e.g. in a call expression)
         var fn = env.LookupFunc(id.Name);
         if (fn != null) return fn;
+
+        // Allow enum type names as identifiers (will be resolved as member access)
+        if (_enumTypes.Contains(id.Name)) return Z42Type.Unknown;
 
         _diags.UndefinedSymbol(id.Name, id.Span);
         return Z42Type.Error;
@@ -514,7 +553,7 @@ public sealed class TypeChecker
 
     // ── Call expressions ──────────────────────────────────────────────────────
 
-    private static readonly HashSet<string> BuiltinPseudoClasses = ["Console", "Assert", "Math"];
+    private static readonly HashSet<string> BuiltinPseudoClasses = ["Console", "Assert", "Math", "List"];
 
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {

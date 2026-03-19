@@ -54,7 +54,9 @@ internal static class ParseTable
             [TokenKind.PercentEq] = new(10, null, Leds.CompoundAssign("%")),
 
             // ── Ternary / null-conditional (bp=20; feature handled inside Led) ──
-            [TokenKind.Question] = new(20, null, Leds.QuestionLed),
+            [TokenKind.Question]         = new(20, null, Leds.QuestionLed),
+            // ── Null-coalescing (bp=20, right-assoc → right uses minBp=19) ──────
+            [TokenKind.QuestionQuestion] = new(20, null, Leds.NullCoalesce, "null_coalesce"),
 
             // ── Logical (bp=30/40) ────────────────────────────────────────────
             [TokenKind.PipePipe] = new(30, null, Leds.BinaryLeft("||", 30)),
@@ -120,6 +122,7 @@ internal static class ParseTable
             [TokenKind.Return]  = new(Stmts.Return_),
             [TokenKind.If]      = new(Stmts.If_,      "control_flow"),
             [TokenKind.While]   = new(Stmts.While_,   "control_flow"),
+            [TokenKind.Do]      = new(Stmts.DoWhile_,  "control_flow"),
             [TokenKind.For]     = new(Stmts.For_,      "control_flow"),
             [TokenKind.Foreach]  = new(Stmts.Foreach_,  "control_flow"),
             [TokenKind.Break]    = new(Stmts.Break_,    "control_flow"),

@@ -90,16 +90,18 @@ internal sealed class ParserContext
 
         var classes   = new List<ClassDecl>();
         var functions = new List<FunctionDecl>();
+        var enums     = new List<EnumDecl>();
         while (!Check(TokenKind.Eof))
         {
             if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
             if (Check(TokenKind.Namespace)) { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
             if (Check(TokenKind.Using))     { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
+            if (IsEnumDecl())               { enums.Add(ParseEnumDecl()); continue; }
             if (IsClassOrStructDecl())      { classes.Add(ParseClassDecl()); continue; }
             functions.Add(ParseFunctionDecl());
         }
 
-        return new CompilationUnit(ns, usings, classes, functions, start);
+        return new CompilationUnit(ns, usings, classes, functions, enums, start);
     }
 
     /// Returns true if we're about to start a class or struct declaration
@@ -114,6 +116,53 @@ internal sealed class ParserContext
             i++;
         if (_pos + i >= _tokens.Count) return false;
         return _tokens[_pos + i].Kind is TokenKind.Class or TokenKind.Struct;
+    }
+
+    private bool IsEnumDecl()
+    {
+        int i = 0;
+        while (_pos + i < _tokens.Count &&
+               _tokens[_pos + i].Kind is TokenKind.Public or TokenKind.Private
+                   or TokenKind.Protected or TokenKind.Internal)
+            i++;
+        return _pos + i < _tokens.Count && _tokens[_pos + i].Kind == TokenKind.Enum;
+    }
+
+    private EnumDecl ParseEnumDecl()
+    {
+        var start = Current.Span;
+        while (Current.Kind is TokenKind.Public or TokenKind.Private
+                             or TokenKind.Protected or TokenKind.Internal)
+            Advance();
+        Expect(TokenKind.Enum);
+        var name    = Expect(TokenKind.Identifier).Text;
+        // optional `: int` base type — skip it
+        if (Match(TokenKind.Colon)) { Advance(); }
+        Expect(TokenKind.LBrace);
+
+        var members = new List<EnumMember>();
+        long next   = 0;
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
+        {
+            var mSpan  = Current.Span;
+            var mName  = Expect(TokenKind.Identifier).Text;
+            long? val  = null;
+            if (Match(TokenKind.Eq))
+            {
+                bool neg = Match(TokenKind.Minus);
+                long raw = long.Parse(Expect(TokenKind.IntLiteral).Text);
+                val  = neg ? -raw : raw;
+                next = val.Value + 1;
+            }
+            else
+            {
+                val  = next++;
+            }
+            members.Add(new EnumMember(mName, val, mSpan));
+            if (!Match(TokenKind.Comma)) break;
+        }
+        Expect(TokenKind.RBrace);
+        return new EnumDecl(name, members, start);
     }
 
     private ClassDecl ParseClassDecl()

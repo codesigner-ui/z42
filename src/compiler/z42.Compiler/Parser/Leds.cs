@@ -113,4 +113,11 @@ internal static class Leds
         var else_ = ctx.ParseExpr();
         return new ConditionalExpr(left, then, else_, left.Span);
     };
+
+    /// Handles `left ?? right` — null-coalescing, right-associative (minBp=19).
+    public static readonly LedFn NullCoalesce = (ctx, left, tok) =>
+    {
+        var right = ctx.ParseExpr(19);   // right-assoc
+        return new NullCoalesceExpr(left, right, tok.Span);
+    };
 }

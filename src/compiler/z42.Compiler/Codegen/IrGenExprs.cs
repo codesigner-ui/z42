@@ -82,10 +82,22 @@ public sealed partial class IrGen
             case ConditionalExpr ternary:
                 return EmitTernary(ternary);
 
+            case NullCoalesceExpr nc:
+                return EmitNullCoalesce(nc);
+
             case CastExpr cast:
                 return EmitExpr(cast.Operand);
 
-            case MemberExpr m when m.Member == "Length":
+            // Enum member access: Direction.North → ConstI64
+            case MemberExpr m when m.Target is IdentExpr enumId
+                                && _enumConstants.TryGetValue($"{enumId.Name}.{m.Member}", out long enumVal):
+            {
+                int dst = Alloc();
+                Emit(new ConstI64Instr(dst, enumVal));
+                return dst;
+            }
+
+            case MemberExpr m when m.Member is "Length" or "Count":
             {
                 int targetReg = EmitExpr(m.Target);
                 int dst = Alloc();
@@ -123,6 +135,14 @@ public sealed partial class IrGen
                 var elemRegs = al.Elements.Select(EmitExpr).ToList();
                 int dst = Alloc();
                 Emit(new ArrayNewLitInstr(dst, elemRegs));
+                return dst;
+            }
+
+            // new List<T>() → __list_new builtin
+            case NewExpr newExpr when newExpr.Type is NamedType { Name: "List" }:
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__list_new", []));
                 return dst;
             }
 
@@ -232,6 +252,38 @@ public sealed partial class IrGen
         return result;
     }
 
+    // ── Null coalescing ───────────────────────────────────────────────────────
+
+    private int EmitNullCoalesce(NullCoalesceExpr nc)
+    {
+        int leftReg  = EmitExpr(nc.Left);
+        int nullReg  = Alloc();
+        int cmpReg   = Alloc();
+        int result   = Alloc();
+
+        Emit(new ConstNullInstr(nullReg));
+        Emit(new EqInstr(cmpReg, leftReg, nullReg));
+
+        string nullLbl = FreshLabel("nc_null");
+        string endLbl  = FreshLabel("nc_end");
+        EndBlock(new BrCondTerm(cmpReg, nullLbl, endLbl));
+
+        // non-null path: result = left
+        StartBlock(endLbl);
+        Emit(new CopyInstr(result, leftReg));
+        string afterNonNull = FreshLabel("nc_after");
+        EndBlock(new BrTerm(afterNonNull));
+
+        // null path: result = right
+        StartBlock(nullLbl);
+        int rightReg = EmitExpr(nc.Right);
+        Emit(new CopyInstr(result, rightReg));
+        EndBlock(new BrTerm(afterNonNull));
+
+        StartBlock(afterNonNull);
+        return result;
+    }
+
     // ── Binary ────────────────────────────────────────────────────────────────
 
     private int EmitBinary(BinaryExpr bin)
@@ -306,6 +358,29 @@ public sealed partial class IrGen
             return dst;
         }
 
+        // List<T> method calls — only methods exclusive to List (not shared with string)
+        // Contains is handled in the string dispatch below (dispatches at runtime by value type)
+        if (call.Callee is MemberExpr mList)
+        {
+            string? listBuiltin = mList.Member switch
+            {
+                "Add"      => "__list_add",
+                "RemoveAt" => "__list_remove_at",
+                "Clear"    => "__list_clear",
+                "Insert"   => "__list_insert",
+                _          => null
+            };
+            if (listBuiltin != null)
+            {
+                int targetReg = EmitExpr(mList.Target);
+                var argRegs   = new List<int> { targetReg };
+                argRegs.AddRange(call.Args.Select(EmitExpr));
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, listBuiltin, argRegs));
+                return dst;
+            }
+        }
+
         // Math.XXX  →  builtin __math_*
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Math" }, Member: var mathMember })
         {
@@ -336,7 +411,7 @@ public sealed partial class IrGen
             string? builtinName = mMethod.Member switch
             {
                 "Substring"  => "__str_substring",
-                "Contains"   => "__str_contains",
+                "Contains"   => "__contains",    // works for both string and List
                 "StartsWith" => "__str_starts_with",
                 "EndsWith"   => "__str_ends_with",
                 "IndexOf"    => "__str_index_of",

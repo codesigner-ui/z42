@@ -1,0 +1,46 @@
+namespace Test;
+
+enum Direction {
+    North,
+    South,
+    East,
+    West,
+}
+
+enum Status {
+    Ok = 0,
+    NotFound = 404,
+    ServerError = 500,
+}
+
+string describe(int d) {
+    return d switch {
+        0 => "north",
+        1 => "south",
+        2 => "east",
+        3 => "west",
+        _ => "unknown",
+    };
+}
+
+void main() {
+    // Auto-numbered enum values (0-based)
+    Assert.Equal(0, Direction.North);
+    Assert.Equal(1, Direction.South);
+    Assert.Equal(2, Direction.East);
+    Assert.Equal(3, Direction.West);
+
+    // Explicit values
+    Assert.Equal(0, Status.Ok);
+    Assert.Equal(404, Status.NotFound);
+    Assert.Equal(500, Status.ServerError);
+
+    // Use enum in switch expression
+    var dir = Direction.East;
+    Assert.Equal("east", describe(dir));
+
+    // Enum comparison
+    Assert.Equal(true, Direction.North == 0);
+    Assert.Equal(true, Status.NotFound == 404);
+    Assert.Equal(false, Direction.South == Direction.North);
+}

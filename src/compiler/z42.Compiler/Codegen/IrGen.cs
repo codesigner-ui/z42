@@ -45,6 +45,11 @@ public sealed partial class IrGen
 
     public IrModule Generate(CompilationUnit cu)
     {
+        // Collect enum constants: "EnumName.Member" → i64 value
+        foreach (var en in cu.Enums)
+            foreach (var m in en.Members)
+                _enumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
+
         // Build class method map for call resolution
         foreach (var cls in cu.Classes)
             _classMethods[cls.Name] = cls.Methods.Select(m => m.Name).ToHashSet();
@@ -56,6 +61,8 @@ public sealed partial class IrGen
         functions.AddRange(cu.Functions.Select(EmitFunction));
         return new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
     }
+
+    private readonly Dictionary<string, long> _enumConstants = new();
 
     private static IrClassDesc EmitClassDesc(ClassDecl cls) =>
         new(cls.Name, cls.Fields.Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());

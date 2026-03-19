@@ -52,6 +52,10 @@ public sealed partial class IrGen
                 EmitWhile(ws);
                 break;
 
+            case DoWhileStmt dw:
+                EmitDoWhile(dw);
+                break;
+
             case ForStmt fs:
                 EmitFor(fs);
                 break;
@@ -235,6 +239,28 @@ public sealed partial class IrGen
         EmitBlock(ws.Body);
         if (!_blockEnded) EndBlock(new BrTerm(condLbl));
         _loopStack.Pop();
+
+        StartBlock(endLbl);
+    }
+
+    private void EmitDoWhile(DoWhileStmt dw)
+    {
+        string bodyLbl = FreshLabel("do_body");
+        string condLbl = FreshLabel("do_cond");
+        string endLbl  = FreshLabel("do_end");
+
+        EndBlock(new BrTerm(bodyLbl));
+
+        // continue → re-check condition; break → exit
+        _loopStack.Push((endLbl, condLbl));
+        StartBlock(bodyLbl);
+        EmitBlock(dw.Body);
+        if (!_blockEnded) EndBlock(new BrTerm(condLbl));
+        _loopStack.Pop();
+
+        StartBlock(condLbl);
+        int condReg = EmitExpr(dw.Condition);
+        EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
         StartBlock(endLbl);
     }
