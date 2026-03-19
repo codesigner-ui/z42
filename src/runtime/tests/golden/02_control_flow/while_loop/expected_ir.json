@@ -4,7 +4,7 @@
   "classes": [],
   "functions": [
     {
-      "name": "Sum",
+      "name": "ControlFlow.Sum",
       "param_count": 1,
       "ret_type": "int",
       "exec_mode": "Interp",
@@ -128,7 +128,7 @@
       ]
     },
     {
-      "name": "Main",
+      "name": "ControlFlow.Main",
       "param_count": 0,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -144,7 +144,7 @@
             {
               "op": "call",
               "dst": 1,
-              "func": "Sum",
+              "func": "ControlFlow.Sum",
               "args": [
                 0
               ]

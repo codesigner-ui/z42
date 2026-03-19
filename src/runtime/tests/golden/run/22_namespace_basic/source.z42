@@ -1,0 +1,24 @@
+namespace Demo;
+
+class Greeter {
+    string name;
+
+    Greeter(string n) {
+        this.name = n;
+    }
+
+    string Greet() {
+        return $"Hello, {this.name}!";
+    }
+}
+
+string FormatCount(int n) {
+    return $"count={n}";
+}
+
+void Main() {
+    var g = new Greeter("world");
+    Console.WriteLine(g.Greet());
+    Console.WriteLine(FormatCount(42));
+    Console.WriteLine("namespace ok");
+}

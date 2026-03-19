@@ -4,7 +4,7 @@
   "classes": [],
   "functions": [
     {
-      "name": "Fib",
+      "name": "Expr.Fib",
       "param_count": 1,
       "ret_type": "int",
       "exec_mode": "Interp",
@@ -56,7 +56,7 @@
             {
               "op": "call",
               "dst": 5,
-              "func": "Fib",
+              "func": "Expr.Fib",
               "args": [
                 4
               ]
@@ -75,7 +75,7 @@
             {
               "op": "call",
               "dst": 8,
-              "func": "Fib",
+              "func": "Expr.Fib",
               "args": [
                 7
               ]
@@ -95,7 +95,7 @@
       ]
     },
     {
-      "name": "Main",
+      "name": "Expr.Main",
       "param_count": 0,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -111,7 +111,7 @@
             {
               "op": "call",
               "dst": 1,
-              "func": "Fib",
+              "func": "Expr.Fib",
               "args": [
                 0
               ]

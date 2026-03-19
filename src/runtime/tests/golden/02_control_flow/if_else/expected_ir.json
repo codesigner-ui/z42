@@ -8,7 +8,7 @@
   "classes": [],
   "functions": [
     {
-      "name": "Sign",
+      "name": "ControlFlow.Sign",
       "param_count": 1,
       "ret_type": "string",
       "exec_mode": "Interp",
@@ -117,7 +117,7 @@
       ]
     },
     {
-      "name": "Main",
+      "name": "ControlFlow.Main",
       "param_count": 0,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -133,7 +133,7 @@
             {
               "op": "call",
               "dst": 1,
-              "func": "Sign",
+              "func": "ControlFlow.Sign",
               "args": [
                 0
               ]
@@ -159,7 +159,7 @@
             {
               "op": "call",
               "dst": 5,
-              "func": "Sign",
+              "func": "ControlFlow.Sign",
               "args": [
                 4
               ]
@@ -180,7 +180,7 @@
             {
               "op": "call",
               "dst": 8,
-              "func": "Sign",
+              "func": "ControlFlow.Sign",
               "args": [
                 7
               ]

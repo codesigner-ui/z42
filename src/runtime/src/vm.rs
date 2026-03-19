@@ -13,15 +13,26 @@ impl Vm {
         Vm { module, default_mode }
     }
 
-    /// Execute the module's entry point — looks for "Main" (C# convention) or "main".
+    /// Execute the module's entry point.
+    ///
+    /// Lookup order (first match wins):
+    ///   1. `{namespace}.Main`
+    ///   2. `{namespace}.main`
+    ///   3. `Main`
+    ///   4. `main`
     pub fn run(&self) -> Result<()> {
-        let entry_name = ["Main", "main"]
+        let ns = &self.module.name;
+        let qualified_main    = format!("{}.Main", ns);
+        let qualified_main_lc = format!("{}.main", ns);
+        let candidates: [&str; 4] = [&qualified_main, &qualified_main_lc, "Main", "main"];
+
+        let entry_name = candidates
             .iter()
-            .find(|&&n| self.module.functions.iter().any(|f| f.name == n))
             .copied()
+            .find(|&n| self.module.functions.iter().any(|f| f.name == n))
             .ok_or_else(|| anyhow::anyhow!(
-                "no entry point (`Main` or `main`) found in module `{}`",
-                self.module.name
+                "no entry point found in module `{}` (tried: {}.Main, {}.main, Main, main)",
+                ns, ns, ns
             ))?;
 
         let entry = self

@@ -161,7 +161,7 @@ public sealed partial class IrGen
             {
                 var argRegs = newExpr.Args.Select(EmitExpr).ToList();
                 int dst = Alloc();
-                Emit(new ObjNewInstr(dst, nt.Name, argRegs));
+                Emit(new ObjNewInstr(dst, QualifyName(nt.Name), argRegs));
                 return dst;
             }
 
@@ -462,7 +462,11 @@ public sealed partial class IrGen
         {
             var argRegs = call.Args.Select(EmitExpr).ToList();
             int dst = Alloc();
-            Emit(new CallInstr(dst, funcId.Name, argRegs));
+            // Qualify if it's a top-level function in the same compilation unit
+            string callName = _topLevelFunctionNames.Contains(funcId.Name)
+                ? QualifyName(funcId.Name)
+                : funcId.Name;
+            Emit(new CallInstr(dst, callName, argRegs));
             return dst;
         }
 

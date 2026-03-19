@@ -23,8 +23,12 @@ namespace Z42.Compiler.Codegen;
 public sealed partial class IrGen
 {
     private readonly List<string> _strings = new();
+    // Namespace for the current compilation unit (null = no namespace declared)
+    private string? _namespace;
     // Class name → set of method names (populated during Generate to resolve method calls)
     private Dictionary<string, HashSet<string>> _classMethods = new();
+    // Top-level function names (unqualified) — used to qualify free function calls
+    private HashSet<string> _topLevelFunctionNames = new();
 
     // Per-function state
     private int _nextReg;
@@ -45,14 +49,19 @@ public sealed partial class IrGen
 
     public IrModule Generate(CompilationUnit cu)
     {
+        _namespace = cu.Namespace;
+
         // Collect enum constants: "EnumName.Member" → i64 value
         foreach (var en in cu.Enums)
             foreach (var m in en.Members)
                 _enumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
 
-        // Build class method map for call resolution
+        // Build class method map for call resolution (keyed by qualified class name)
         foreach (var cls in cu.Classes)
-            _classMethods[cls.Name] = cls.Methods.Select(m => m.Name).ToHashSet();
+            _classMethods[QualifyName(cls.Name)] = cls.Methods.Select(m => m.Name).ToHashSet();
+
+        // Collect top-level function names for qualified call resolution
+        _topLevelFunctionNames = cu.Functions.Select(f => f.Name).ToHashSet();
 
         var classes   = cu.Classes.Select(EmitClassDesc).ToList();
         var functions = new List<IrFunction>();
@@ -64,8 +73,8 @@ public sealed partial class IrGen
 
     private readonly Dictionary<string, long> _enumConstants = new();
 
-    private static IrClassDesc EmitClassDesc(ClassDecl cls) =>
-        new(cls.Name, cls.Fields.Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
+    private IrClassDesc EmitClassDesc(ClassDecl cls) =>
+        new(QualifyName(cls.Name), cls.Fields.Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
 
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
@@ -90,7 +99,7 @@ public sealed partial class IrGen
 
         bool isCtor = method.Name == className;
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
-        string qualifiedName = $"{className}.{method.Name}";
+        string qualifiedName = $"{QualifyName(className)}.{method.Name}";
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         return new IrFunction(qualifiedName, method.Params.Count + 1, retType, "Interp", _blocks, excTable);
     }
@@ -119,7 +128,7 @@ public sealed partial class IrGen
 
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
-        return new IrFunction(fn.Name, fn.Params.Count, retType, "Interp", _blocks, excTable);
+        return new IrFunction(QualifyName(fn.Name), fn.Params.Count, retType, "Interp", _blocks, excTable);
     }
 
     // ── Block management ────────────────────────────────────────────────────────
@@ -167,6 +176,10 @@ public sealed partial class IrGen
                 return $"{className}.{memberName}";
         return memberName;
     }
+
+    /// Returns `{_namespace}.{name}` when a namespace is declared, otherwise `name`.
+    private string QualifyName(string name) =>
+        _namespace is null ? name : $"{_namespace}.{name}";
 
     private static string TypeName(TypeExpr t) => t switch
     {

@@ -384,9 +384,11 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
             }));
             let obj_val = Value::Object(obj_rc);
 
-            // If a constructor function exists (qualified name "ClassName.ClassName"),
-            // call it with [this, ...args].
-            let ctor_name = format!("{}.{}", class_name, class_name);
+            // If a constructor function exists, call it with [this, ...args].
+            // Convention: ctor name = "{qualified_class_name}.{simple_class_name}"
+            // e.g., "Point" → "Point.Point"; "Demo.Point" → "Demo.Point.Point"
+            let simple_name = class_name.split('.').last().unwrap_or(class_name.as_str());
+            let ctor_name = format!("{}.{}", class_name, simple_name);
             if let Some(ctor) = module.functions.iter().find(|f| f.name == ctor_name) {
                 let mut ctor_args = vec![obj_val.clone()];
                 ctor_args.extend(collect_args(&frame.regs, args)?);
