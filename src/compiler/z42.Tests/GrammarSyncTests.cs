@@ -5,7 +5,7 @@ using Z42.Compiler.Features;
 namespace Z42.Tests;
 
 /// <summary>
-/// Validates that every <c>[feat:NAME]</c> tag in <c>specs/grammar.peg</c> is
+/// Validates that every <c>[feat:NAME]</c> tag in <c>docs/design/grammar.peg</c> is
 /// recognised by <see cref="LanguageFeatures"/>. If a tag is a typo or a new
 /// feature is added to the grammar but not to <c>LanguageFeatures.GetByName</c>,
 /// this test will fail with the list of unrecognised names.
@@ -22,12 +22,12 @@ public sealed class GrammarSyncTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "specs", "grammar.peg");
+            string candidate = Path.Combine(dir.FullName, "docs", "design", "grammar.peg");
             if (File.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..", "specs", "grammar.peg"));
+            "..", "..", "..", "..", "..", "..", "docs", "design", "grammar.peg"));
     }
 
     [Fact]

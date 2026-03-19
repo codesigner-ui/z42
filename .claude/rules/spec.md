@@ -1,6 +1,6 @@
 ---
 paths:
-  - "specs/**/*.md"
+  - "docs/design/**/*.md"
   - "examples/**/*.z42"
 ---
 
@@ -10,8 +10,8 @@ paths:
 
 | 文件 | 内容 |
 |------|------|
-| `specs/language-overview.md` | 语法、类型系统、所有权模型、并发模型的 **用户视角** 描述 |
-| `specs/ir.md` | IR 指令集、类型映射、二进制格式的 **实现者视角** 描述 |
+| `docs/design/language-overview.md` | 语法、类型系统、所有权模型、并发模型的 **用户视角** 描述 |
+| `docs/design/ir.md` | IR 指令集、类型映射、二进制格式的 **实现者视角** 描述 |
 
 ## 修改原则
 

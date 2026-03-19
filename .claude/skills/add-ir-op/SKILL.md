@@ -36,9 +36,9 @@ Instruction::NewOp(dst, a, b) => {
 
 **注意**：`exec_instr` 的 match 不允许有 `_` 通配兜底，每条指令必须显式处理。
 
-## 步骤 3 — specs/ir.md（文档）
+## 步骤 3 — docs/design/ir.md（文档）
 
-在 [ir.md](specs/ir.md) 的对应区域添加文档：
+在 [ir.md](docs/design/ir.md) 的对应区域添加文档：
 
 ```
 %r = new_op <type> %a, %b    # 一行描述语义

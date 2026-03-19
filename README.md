@@ -38,7 +38,7 @@ z42/
 │   ├── runtime/      # Virtual machine (interpreter + JIT + AOT) — Rust
 │   ├── stdlib/       # Standard library — z42 (once self-hosting)
 │   └── tools/        # CLI driver, REPL, package manager — C#
-├── specs/            # Language specification documents
+├── docs/design/            # Language specification documents
 ├── docs/             # User-facing documentation
 └── tests/            # Test suite
 ```
@@ -57,7 +57,7 @@ z42/
 
 ## Getting Started
 
-> Work in progress — see `specs/` for language design documents.
+> Work in progress — see `docs/design/` for language design documents.
 
 ## License
 

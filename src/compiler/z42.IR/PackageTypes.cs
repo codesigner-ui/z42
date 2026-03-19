@@ -73,7 +73,7 @@ public sealed record ZlibDep(
 
 /// A .zlib assembly — bundles all .zbc files of a project into one distributable.
 /// Phase 1: JSON with inlined modules.
-/// Phase 2: binary ZLB_MAGIC + MANIFEST + ZBC[n] sections (see specs/compilation.md).
+/// Phase 2: binary ZLB_MAGIC + MANIFEST + ZBC[n] sections (see docs/design/compilation.md).
 /// Matches Rust <c>package::ZlibFile</c>.
 public sealed record ZlibFile(
     [property: JsonPropertyName("zlib_version")]  int[]            ZlibVersion,

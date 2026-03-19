@@ -2,7 +2,7 @@ namespace Z42.Compiler.Features;
 
 /// <summary>
 /// Controls which language features are enabled during compilation.
-/// Gates correspond to [feat:NAME] tags in specs/grammar.peg.
+/// Gates correspond to [feat:NAME] tags in docs/design/grammar.peg.
 /// </summary>
 public sealed class LanguageFeatures
 {

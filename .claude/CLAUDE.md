@@ -5,14 +5,14 @@
 z42 是一门融合 C#、Rust、Python 优点的系统编程语言。
 - **编译器 / 工具链**：C#（Bootstrap），最终自举为 z42
 - **虚拟机**：Rust，支持 Interpreter / JIT / AOT 混合执行
-- **详细设计**：见 `specs/`
+- **详细设计**：见 `docs/design/`
 
 ## 代码库结构
 
 ```
 z42/
 ├── CLAUDE.md
-├── specs/                    # 语言规范
+├── docs/design/                    # 语言规范
 │   ├── language-overview.md
 │   ├── ir.md                 # SSA IR 指令集
 │   ├── compilation.md        # 编译产物 .zbc/.zmod/.zlib
@@ -141,7 +141,7 @@ git push origin main
 
 **任何新语法或语言特性，必须按以下流程推进，不得跳越：**
 
-1. **起草规范**：在 `specs/` 下新建或更新独立的规范文档，描述语法、语义、IR 映射
+1. **起草规范**：在 `docs/design/` 下新建或更新独立的规范文档，描述语法、语义、IR 映射
 2. **讨论确认**：与用户讨论规范内容，取得明确确认（"可以"/"OK"/"开始实现"等）
 3. **实现**：规范确认后才开始编写编译器/VM 代码
 4. **验证**：按"改动验证流程"编译 + 测试通过后提交
@@ -153,9 +153,9 @@ git push origin main
 ## 规范文件
 
 修改任何语言行为前，**必须先更新对应的 spec 文件**：
-- 新语法 → `specs/language-overview.md`
-- 新 IR 指令 → `specs/ir.md`
-- 新语言特性 → `specs/<feature>.md`（独立文件）
+- 新语法 → `docs/design/language-overview.md`
+- 新 IR 指令 → `docs/design/ir.md`
+- 新语言特性 → `docs/design/<feature>.md`（独立文件）
 
 ## 文档同步（必须遵守）
 
@@ -163,9 +163,9 @@ git push origin main
 
 | 改动类型 | 需要更新的文档 |
 |----------|--------------|
-| 新语法 / 语句 | `specs/language-overview.md` + 对应 `specs/<feature>.md` |
-| 新 IR 指令 | `specs/ir.md` |
-| 新 VM 行为 / 内置函数 | 对应 `specs/<feature>.md` |
+| 新语法 / 语句 | `docs/design/language-overview.md` + 对应 `docs/design/<feature>.md` |
+| 新 IR 指令 | `docs/design/ir.md` |
+| 新 VM 行为 / 内置函数 | 对应 `docs/design/<feature>.md` |
 | 新构建步骤 / CLI 参数 | `CLAUDE.md` 的"构建命令"部分 |
 | 新 Phase 1 特性 | `CLAUDE.md` 的"语言设计策略"表格 |
 | 规范设计变更 | 同步更新所有引用该设计的文档 |
@@ -244,5 +244,5 @@ git push origin main
 - JIT/AOT 后端暂为存根，不要填充实现直到解释器通过全部测试
 - Phase 2 的改动（所有权、Result、match 等）**不要**在 Phase 1 实现阶段提前引入到规范中
 
-@specs/language-overview.md
-@specs/ir.md
+@docs/design/language-overview.md
+@docs/design/ir.md

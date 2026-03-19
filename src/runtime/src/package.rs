@@ -4,7 +4,7 @@
 ///   - File-level:    ZbcFile   (.zbc)  + ZmodManifest (.zmod)
 ///   - Assembly-level: ZlibFile (.zlib)
 ///
-/// See specs/compilation.md for the full design.
+/// See docs/design/compilation.md for the full design.
 use serde::{Deserialize, Serialize};
 
 use crate::bytecode::Module;
@@ -136,7 +136,7 @@ pub struct ZlibDep {
 
 /// A `.zlib` assembly — bundles all `.zbc` files of a project into one distributable.
 /// Phase 1: JSON (all `ZbcFile`s inlined in `modules`).
-/// Phase 2: binary archive with MANIFEST + ZBC[n] sections (see specs/compilation.md).
+/// Phase 2: binary archive with MANIFEST + ZBC[n] sections (see docs/design/compilation.md).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ZlibFile {
     pub zlib_version: [u16; 2],
