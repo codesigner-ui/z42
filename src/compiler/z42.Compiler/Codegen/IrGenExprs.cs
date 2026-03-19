@@ -264,6 +264,28 @@ public sealed partial class IrGen
 
     private int EmitCall(CallExpr call)
     {
+        // Assert.XXX  →  builtin __assert_*
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Assert" }, Member: var assertMember })
+        {
+            string? assertBuiltin = assertMember switch
+            {
+                "Equal"    => "__assert_eq",
+                "True"     => "__assert_true",
+                "False"    => "__assert_false",
+                "Contains" => "__assert_contains",
+                "Null"     => "__assert_null",
+                "NotNull"  => "__assert_not_null",
+                _          => null
+            };
+            if (assertBuiltin != null)
+            {
+                var argRegs = call.Args.Select(EmitExpr).ToList();
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, assertBuiltin, argRegs));
+                return dst;
+            }
+        }
+
         // Console.WriteLine  →  builtin __println
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Console" }, Member: "WriteLine" })
         {

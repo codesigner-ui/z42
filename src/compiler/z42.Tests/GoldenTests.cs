@@ -82,7 +82,7 @@ public sealed class GoldenTests
             if (errorCategory != isErrorCase) continue;
             if (runCategory   != isRunCase)   continue;
             if (hasExpectedIr && !File.Exists(Path.Combine(dir, "expected_ir.json"))) continue;
-            if (runCategory   && !File.Exists(Path.Combine(dir, "expected_output.txt"))) continue;
+            // expected_output.txt is optional: if absent, only the exit code is checked (Assert-based tests)
 
             string name = Path.GetRelativePath(GoldenRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
             yield return [name, dir];
@@ -242,10 +242,14 @@ public sealed class GoldenTests
             proc.ExitCode.Should().Be(0,
                 because: $"test '{name}' VM should exit cleanly (stderr: {proc.StandardError.ReadToEnd()})");
 
-            // Step 5 — compare output
-            string expected = File.ReadAllText(Path.Combine(dir, "expected_output.txt")).ReplaceLineEndings("\n").Trim();
-            string actual   = stdout.ReplaceLineEndings("\n").Trim();
-            Assert.Equal(expected, actual);
+            // Step 5 — compare output (if expected_output.txt present; otherwise exit code 0 suffices)
+            string expectedFile = Path.Combine(dir, "expected_output.txt");
+            if (File.Exists(expectedFile))
+            {
+                string expected = File.ReadAllText(expectedFile).ReplaceLineEndings("\n").Trim();
+                string actual   = stdout.ReplaceLineEndings("\n").Trim();
+                Assert.Equal(expected, actual);
+            }
         }
         finally
         {

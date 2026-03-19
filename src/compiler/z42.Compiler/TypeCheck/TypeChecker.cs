@@ -514,8 +514,18 @@ public sealed class TypeChecker
 
     // ── Call expressions ──────────────────────────────────────────────────────
 
+    private static readonly HashSet<string> BuiltinPseudoClasses = ["Console", "Assert"];
+
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {
+        // Built-in pseudo-class calls (Console.*, Assert.*) — skip symbol resolution
+        if (call.Callee is MemberExpr { Target: IdentExpr pseudoId } &&
+            BuiltinPseudoClasses.Contains(pseudoId.Name))
+        {
+            foreach (var a in call.Args) CheckExpr(a, env);
+            return Z42Type.Void;
+        }
+
         // Member method calls
         if (call.Callee is MemberExpr mCallee)
         {

@@ -68,6 +68,56 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Ok(Value::Bool(s.ends_with(suffix.as_str())))
         }
 
+        // ── Assert built-ins ─────────────────────────────────────────────────
+        "__assert_eq" => {
+            let expected = args.first().cloned().unwrap_or(Value::Null);
+            let actual   = args.get(1).cloned().unwrap_or(Value::Null);
+            if expected != actual {
+                bail!("AssertionError: expected {} but got {}",
+                    value_to_str(&expected), value_to_str(&actual));
+            }
+            Ok(Value::Null)
+        }
+
+        "__assert_true" => {
+            match args.first() {
+                Some(Value::Bool(true)) => Ok(Value::Null),
+                Some(other) => bail!("AssertionError: expected true but got {}", value_to_str(other)),
+                None        => bail!("AssertionError: __assert_true missing argument"),
+            }
+        }
+
+        "__assert_false" => {
+            match args.first() {
+                Some(Value::Bool(false)) => Ok(Value::Null),
+                Some(other) => bail!("AssertionError: expected false but got {}", value_to_str(other)),
+                None        => bail!("AssertionError: __assert_false missing argument"),
+            }
+        }
+
+        "__assert_contains" => {
+            let sub = require_str(args, 0, "__assert_contains")?;
+            let s   = require_str(args, 1, "__assert_contains")?;
+            if !s.contains(sub.as_str()) {
+                bail!("AssertionError: expected \"{}\" to contain \"{}\"", s, sub);
+            }
+            Ok(Value::Null)
+        }
+
+        "__assert_null" => {
+            match args.first() {
+                Some(Value::Null) | None => Ok(Value::Null),
+                Some(other) => bail!("AssertionError: expected null but got {}", value_to_str(other)),
+            }
+        }
+
+        "__assert_not_null" => {
+            match args.first() {
+                Some(Value::Null) | None => bail!("AssertionError: expected non-null but got null"),
+                Some(_) => Ok(Value::Null),
+            }
+        }
+
         other => bail!("unknown builtin `{other}`"),
     }
 }
