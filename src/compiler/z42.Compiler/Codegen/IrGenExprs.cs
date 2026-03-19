@@ -306,6 +306,30 @@ public sealed partial class IrGen
             return dst;
         }
 
+        // Math.XXX  →  builtin __math_*
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: "Math" }, Member: var mathMember })
+        {
+            string? mathBuiltin = mathMember switch
+            {
+                "Abs"     => "__math_abs",
+                "Max"     => "__math_max",
+                "Min"     => "__math_min",
+                "Pow"     => "__math_pow",
+                "Sqrt"    => "__math_sqrt",
+                "Floor"   => "__math_floor",
+                "Ceiling" => "__math_ceiling",
+                "Round"   => "__math_round",
+                _         => null
+            };
+            if (mathBuiltin != null)
+            {
+                var argRegs = call.Args.Select(EmitExpr).ToList();
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, mathBuiltin, argRegs));
+                return dst;
+            }
+        }
+
         // String built-in methods: s.Substring(), s.Contains(), etc.
         if (call.Callee is MemberExpr mMethod)
         {
@@ -315,6 +339,14 @@ public sealed partial class IrGen
                 "Contains"   => "__str_contains",
                 "StartsWith" => "__str_starts_with",
                 "EndsWith"   => "__str_ends_with",
+                "IndexOf"    => "__str_index_of",
+                "Replace"    => "__str_replace",
+                "ToLower"    => "__str_to_lower",
+                "ToUpper"    => "__str_to_upper",
+                "Trim"       => "__str_trim",
+                "TrimStart"  => "__str_trim_start",
+                "TrimEnd"    => "__str_trim_end",
+                "Split"      => "__str_split",
                 _            => null
             };
 

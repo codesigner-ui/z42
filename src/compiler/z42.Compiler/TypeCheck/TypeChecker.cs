@@ -514,7 +514,7 @@ public sealed class TypeChecker
 
     // ── Call expressions ──────────────────────────────────────────────────────
 
-    private static readonly HashSet<string> BuiltinPseudoClasses = ["Console", "Assert"];
+    private static readonly HashSet<string> BuiltinPseudoClasses = ["Console", "Assert", "Math"];
 
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {

@@ -118,6 +118,113 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             }
         }
 
+        // ── More string built-ins ─────────────────────────────────────────────
+
+        "__str_index_of" => {
+            let s   = require_str(args, 0, "__str_index_of")?;
+            let sub = require_str(args, 1, "__str_index_of")?;
+            let idx = s.find(sub.as_str()).map(|i| i as i64).unwrap_or(-1);
+            Ok(Value::I64(idx))
+        }
+
+        "__str_replace" => {
+            let s    = require_str(args, 0, "__str_replace")?;
+            let from = require_str(args, 1, "__str_replace")?;
+            let to   = require_str(args, 2, "__str_replace")?;
+            Ok(Value::Str(s.replace(from.as_str(), to.as_str())))
+        }
+
+        "__str_to_lower" => {
+            let s = require_str(args, 0, "__str_to_lower")?;
+            Ok(Value::Str(s.to_lowercase()))
+        }
+
+        "__str_to_upper" => {
+            let s = require_str(args, 0, "__str_to_upper")?;
+            Ok(Value::Str(s.to_uppercase()))
+        }
+
+        "__str_trim" => {
+            let s = require_str(args, 0, "__str_trim")?;
+            Ok(Value::Str(s.trim().to_string()))
+        }
+
+        "__str_trim_start" => {
+            let s = require_str(args, 0, "__str_trim_start")?;
+            Ok(Value::Str(s.trim_start().to_string()))
+        }
+
+        "__str_trim_end" => {
+            let s = require_str(args, 0, "__str_trim_end")?;
+            Ok(Value::Str(s.trim_end().to_string()))
+        }
+
+        "__str_split" => {
+            let s   = require_str(args, 0, "__str_split")?;
+            let sep = require_str(args, 1, "__str_split")?;
+            let parts: Vec<Value> = s.split(sep.as_str())
+                .map(|p| Value::Str(p.to_string()))
+                .collect();
+            Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(parts))))
+        }
+
+        // ── Math built-ins ────────────────────────────────────────────────────
+
+        "__math_abs" => match args.first() {
+            Some(Value::I64(n)) => Ok(Value::I64(n.abs())),
+            Some(Value::F64(f)) => Ok(Value::F64(f.abs())),
+            Some(other) => bail!("Math.Abs: unsupported type {:?}", other),
+            None => bail!("Math.Abs: missing argument"),
+        },
+
+        "__math_max" => match (args.first(), args.get(1)) {
+            (Some(Value::I64(a)), Some(Value::I64(b))) => Ok(Value::I64(*a.max(b))),
+            (Some(Value::F64(a)), Some(Value::F64(b))) => Ok(Value::F64(a.max(*b))),
+            _ => bail!("Math.Max: expected two numeric arguments"),
+        },
+
+        "__math_min" => match (args.first(), args.get(1)) {
+            (Some(Value::I64(a)), Some(Value::I64(b))) => Ok(Value::I64(*a.min(b))),
+            (Some(Value::F64(a)), Some(Value::F64(b))) => Ok(Value::F64(a.min(*b))),
+            _ => bail!("Math.Min: expected two numeric arguments"),
+        },
+
+        "__math_pow" => match (args.first(), args.get(1)) {
+            (Some(Value::I64(base)), Some(Value::I64(exp))) =>
+                Ok(Value::I64(base.pow(*exp as u32))),
+            (Some(Value::F64(base)), Some(Value::F64(exp))) =>
+                Ok(Value::F64(base.powf(*exp))),
+            _ => bail!("Math.Pow: expected two numeric arguments"),
+        },
+
+        "__math_sqrt" => match args.first() {
+            Some(Value::F64(f)) => Ok(Value::F64(f.sqrt())),
+            Some(Value::I64(n)) => Ok(Value::F64((*n as f64).sqrt())),
+            Some(other) => bail!("Math.Sqrt: unsupported type {:?}", other),
+            None => bail!("Math.Sqrt: missing argument"),
+        },
+
+        "__math_floor" => match args.first() {
+            Some(Value::F64(f)) => Ok(Value::F64(f.floor())),
+            Some(Value::I64(n)) => Ok(Value::I64(*n)),
+            Some(other) => bail!("Math.Floor: unsupported type {:?}", other),
+            None => bail!("Math.Floor: missing argument"),
+        },
+
+        "__math_ceiling" => match args.first() {
+            Some(Value::F64(f)) => Ok(Value::F64(f.ceil())),
+            Some(Value::I64(n)) => Ok(Value::I64(*n)),
+            Some(other) => bail!("Math.Ceiling: unsupported type {:?}", other),
+            None => bail!("Math.Ceiling: missing argument"),
+        },
+
+        "__math_round" => match args.first() {
+            Some(Value::F64(f)) => Ok(Value::F64(f.round())),
+            Some(Value::I64(n)) => Ok(Value::I64(*n)),
+            Some(other) => bail!("Math.Round: unsupported type {:?}", other),
+            None => bail!("Math.Round: missing argument"),
+        },
+
         other => bail!("unknown builtin `{other}`"),
     }
 }

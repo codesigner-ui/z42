@@ -1,0 +1,24 @@
+void Main() {
+    // Abs
+    Assert.Equal(5, Math.Abs(-5));
+    Assert.Equal(5, Math.Abs(5));
+
+    // Max / Min
+    Assert.Equal(10, Math.Max(3, 10));
+    Assert.Equal(3, Math.Min(3, 10));
+
+    // Pow
+    Assert.Equal(8, Math.Pow(2, 3));
+    Assert.Equal(1, Math.Pow(7, 0));
+
+    // Floor / Ceiling / Round (float)
+    var f = 3.7;
+    Assert.Equal(3.0, Math.Floor(f));
+    Assert.Equal(4.0, Math.Ceiling(f));
+    Assert.Equal(4.0, Math.Round(f));
+
+    var g = 3.2;
+    Assert.Equal(3.0, Math.Floor(g));
+    Assert.Equal(4.0, Math.Ceiling(g));
+    Assert.Equal(3.0, Math.Round(g));
+}
