@@ -23,11 +23,12 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Ok(Value::Str(format!("{}{}", a, b)))
         }
 
-        // ── Length (works on both arrays and strings) ─────────────────────
+        // ── Length (works on arrays, strings, and maps) ───────────────────
         "__len" => match args.first() {
             Some(Value::Array(rc)) => Ok(Value::I64(rc.borrow().len() as i64)),
             Some(Value::Str(s))    => Ok(Value::I64(s.len() as i64)),  // UTF-8 byte count
-            Some(other)            => bail!("__len: expected array or string, got {:?}", other),
+            Some(Value::Map(rc))   => Ok(Value::I64(rc.borrow().len() as i64)),
+            Some(other)            => bail!("__len: expected array, string, or map, got {:?}", other),
             None                   => bail!("__len: missing argument"),
         },
 
@@ -306,6 +307,45 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
                 _ => bail!("List.Insert: expected (List, i64, value)"),
             }
         }
+
+        // ── Dictionary built-ins ──────────────────────────────────────────────
+
+        "__dict_new" => {
+            Ok(Value::Map(std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()))))
+        }
+
+        "__dict_contains_key" => match (args.first(), args.get(1)) {
+            (Some(Value::Map(rc)), Some(key)) => {
+                let key_str = value_to_str(key);
+                Ok(Value::Bool(rc.borrow().contains_key(&key_str)))
+            }
+            _ => bail!("Dictionary.ContainsKey: expected (Dictionary, key)"),
+        },
+
+        "__dict_remove" => match (args.first(), args.get(1)) {
+            (Some(Value::Map(rc)), Some(key)) => {
+                let key_str = value_to_str(key);
+                rc.borrow_mut().remove(&key_str);
+                Ok(Value::Null)
+            }
+            _ => bail!("Dictionary.Remove: expected (Dictionary, key)"),
+        },
+
+        "__dict_keys" => match args.first() {
+            Some(Value::Map(rc)) => {
+                let keys: Vec<Value> = rc.borrow().keys().map(|k| Value::Str(k.clone())).collect();
+                Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(keys))))
+            }
+            _ => bail!("Dictionary.Keys: expected Dictionary"),
+        },
+
+        "__dict_values" => match args.first() {
+            Some(Value::Map(rc)) => {
+                let vals: Vec<Value> = rc.borrow().values().cloned().collect();
+                Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(vals))))
+            }
+            _ => bail!("Dictionary.Values: expected Dictionary"),
+        },
 
         other => bail!("unknown builtin `{other}`"),
     }

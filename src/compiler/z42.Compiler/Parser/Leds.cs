@@ -104,7 +104,7 @@ internal static class Leds
             // null-conditional: obj?.member
             ctx.Advance();
             var member = ctx.Expect(TokenKind.Identifier).Text;
-            return new MemberExpr(left, "?." + member, left.Span);
+            return new NullConditionalExpr(left, member, left.Span);
         }
         // ternary
         ctx.RequireFeature("ternary", tok.Span);

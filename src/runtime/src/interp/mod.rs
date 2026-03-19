@@ -13,7 +13,7 @@ pub use helpers::value_to_str;
 use crate::bytecode::{Function, Instruction, Module, Terminator};
 use crate::types::{ObjectData, Value};
 use anyhow::{bail, Context, Result};
-use helpers::{bool_val, collect_args, int_binop, numeric_lt, str_val, to_usize, expect_array};
+use helpers::{bool_val, collect_args, int_binop, numeric_lt, str_val, to_usize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -313,24 +313,48 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         }
 
         Instruction::ArrayGet { dst, arr, idx } => {
-            let i = to_usize(frame.get(*idx)?, "ArrayGet index")?;
-            let rc = expect_array(frame.get(*arr)?, "ArrayGet")?;
-            let borrowed = rc.borrow();
-            if i >= borrowed.len() {
-                bail!("array index {} out of bounds (len={})", i, borrowed.len());
-            }
-            frame.set(*dst, borrowed[i].clone());
+            // Clone the Rc so the immutable borrow of `frame` is released before `frame.set`.
+            let result = match frame.get(*arr)? {
+                Value::Array(rc) => {
+                    let rc = rc.clone();
+                    let i = to_usize(frame.get(*idx)?, "ArrayGet index")?;
+                    let borrowed = rc.borrow();
+                    if i >= borrowed.len() {
+                        bail!("array index {} out of bounds (len={})", i, borrowed.len());
+                    }
+                    borrowed[i].clone()
+                }
+                Value::Map(rc) => {
+                    let rc = rc.clone();
+                    let key = value_to_str(frame.get(*idx)?);
+                    let borrowed = rc.borrow();
+                    borrowed.get(&key).cloned().unwrap_or(Value::Null)
+                }
+                other => bail!("ArrayGet: expected array or map, got {:?}", other),
+            };
+            frame.set(*dst, result);
         }
 
         Instruction::ArraySet { arr, idx, val } => {
-            let i   = to_usize(frame.get(*idx)?, "ArraySet index")?;
-            let v   = frame.get(*val)?.clone();
-            let rc  = expect_array(frame.get(*arr)?, "ArraySet")?;
-            let mut borrowed = rc.borrow_mut();
-            if i >= borrowed.len() {
-                bail!("array index {} out of bounds (len={})", i, borrowed.len());
+            let v = frame.get(*val)?.clone();
+            // Clone the Rc so the immutable borrow of `frame` is released before interior mutation.
+            match frame.get(*arr)? {
+                Value::Array(rc) => {
+                    let rc = rc.clone();
+                    let i = to_usize(frame.get(*idx)?, "ArraySet index")?;
+                    let mut borrowed = rc.borrow_mut();
+                    if i >= borrowed.len() {
+                        bail!("array index {} out of bounds (len={})", i, borrowed.len());
+                    }
+                    borrowed[i] = v;
+                }
+                Value::Map(rc) => {
+                    let rc = rc.clone();
+                    let key = value_to_str(frame.get(*idx)?);
+                    rc.borrow_mut().insert(key, v);
+                }
+                other => bail!("ArraySet: expected array or map, got {:?}", other),
             }
-            borrowed[i] = v;
         }
 
         Instruction::ArrayLen { dst, arr } => {

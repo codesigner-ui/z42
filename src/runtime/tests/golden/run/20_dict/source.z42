@@ -1,0 +1,38 @@
+void main() {
+    // Basic put/get via indexing
+    var scores = new Dictionary<string, int>();
+    scores["alice"] = 95;
+    scores["bob"]   = 80;
+    scores["carol"] = 70;
+
+    Assert.Equal(95, scores["alice"]);
+    Assert.Equal(80, scores["bob"]);
+    Assert.Equal(70, scores["carol"]);
+
+    // Overwrite existing key
+    scores["bob"] = 99;
+    Assert.Equal(99, scores["bob"]);
+
+    // Count
+    Assert.Equal(3, scores.Count);
+
+    // ContainsKey
+    Assert.True(scores.ContainsKey("alice"));
+    Assert.False(scores.ContainsKey("dave"));
+
+    // Remove
+    scores.Remove("carol");
+    Assert.False(scores.ContainsKey("carol"));
+    Assert.Equal(2, scores.Count);
+
+    // int keys
+    var table = new Dictionary<int, string>();
+    table[1] = "one";
+    table[2] = "two";
+    Assert.Equal("one", table[1]);
+    Assert.Equal("two", table[2]);
+    Assert.True(table.ContainsKey(1));
+    Assert.False(table.ContainsKey(3));
+
+    Console.WriteLine("dict ok");
+}

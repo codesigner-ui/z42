@@ -78,6 +78,17 @@ public sealed partial class TypeChecker
                      : Z42Type.Unknown;
             }
 
+            case NullConditionalExpr nc:
+            {
+                var targetType = CheckExpr(nc.Target, env);
+                if (targetType is Z42ClassType ct)
+                {
+                    if (ct.Fields.TryGetValue(nc.Member, out var ft))  return ft;
+                    if (ct.Methods.TryGetValue(nc.Member, out var mt)) return mt.Ret;
+                }
+                return nc.Member is "Length" or "Count" ? Z42Type.Int : Z42Type.Unknown;
+            }
+
             case NullCoalesceExpr nc:
             {
                 var leftType  = CheckExpr(nc.Left,  env);

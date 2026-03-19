@@ -32,6 +32,8 @@ pub enum Value {
     Null,
     /// Heap-allocated dynamic array with reference semantics.
     Array(Rc<RefCell<Vec<Value>>>),
+    /// Heap-allocated dictionary with reference semantics (keys serialised to String).
+    Map(Rc<RefCell<HashMap<String, Value>>>),
     /// Heap-allocated user-defined class instance with reference semantics.
     Object(Rc<RefCell<ObjectData>>),
 }
@@ -53,9 +55,9 @@ impl PartialEq for Value {
             (Value::Char(a), Value::Char(b)) => a == b,
             (Value::Str(a),  Value::Str(b))  => a == b,
             (Value::Null,    Value::Null)    => true,
-            // Array equality is reference equality (same as C# reference semantics)
-            (Value::Array(a), Value::Array(b)) => Rc::ptr_eq(a, b),
-            // Object equality is reference equality
+            // Array/Map/Object equality is reference equality (same as C# reference semantics)
+            (Value::Array(a),  Value::Array(b))  => Rc::ptr_eq(a, b),
+            (Value::Map(a),    Value::Map(b))    => Rc::ptr_eq(a, b),
             (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }

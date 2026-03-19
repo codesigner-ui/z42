@@ -537,7 +537,8 @@ void OnUpdate(float dt) { ... }   // 热更新后下一次调用即生效
 | 字符串插值 | ✅ | ✅ | ✅ | ✅ | |
 | 数组 `T[]` | ✅ | ✅ | ✅ | ✅ | |
 | `List<T>` | ✅ | ✅ | ✅ | ✅ | pseudo-class 策略 |
-| `Dictionary<K,V>` | ✅ | — | — | — | 待实现 |
+| `Dictionary<K,V>` | ✅ | ✅ | ✅ | ✅ | pseudo-class 策略，key 序列化为 string |
+| `?.` 空条件访问 | ✅ | ✅ | ✅ | ✅ | 返回 null 若 target 为 null |
 | 类（字段、构造器、方法） | ✅ | ✅ | ✅ | ✅ | |
 | 枚举 `enum` | ✅ | ✅ | ✅ | ✅ | 值映射为 i64 |
 | 异常 try/catch/throw | ✅ | ✅ | ✅ | ✅ | |
@@ -591,6 +592,39 @@ end_lbl:
 | `list.Insert(i, v)` | `__list_insert` | 按位置插入 |
 
 内部存储复用 `Value::Array`（`Rc<RefCell<Vec<Value>>>`），`List<T>` 与 `T[]` 共享底层表示，仅在 IrGen 层区分调用方式。
+
+### `Dictionary<K,V>` 内置方法映射
+
+| z42 方法 | VM Builtin | 说明 |
+|---------|-----------|------|
+| `new Dictionary<K,V>()` | `__dict_new` | 创建空字典 |
+| `dict[key]` | `ArrayGet` (Map 分支) | 键读（key 转 String） |
+| `dict[key] = v` | `ArraySet` (Map 分支) | 键写（key 转 String） |
+| `dict.Count` | `__len` | 键值对个数 |
+| `dict.ContainsKey(k)` | `__dict_contains_key` | 是否含该键 |
+| `dict.Remove(k)` | `__dict_remove` | 删除键 |
+| `dict.Keys` | `__dict_keys` | 返回键数组 |
+| `dict.Values` | `__dict_values` | 返回值数组 |
+
+内部存储为 `Value::Map`（`Rc<RefCell<HashMap<String, Value>>>`），所有键在存储时序列化为 `String`。
+
+### `?.` 空条件访问 IR 映射
+
+```
+target?.member
+
+→  r0 = <target>
+   r_null = const null
+   r_cmp  = (r0 == r_null)        // EqInstr
+   BrCond r_cmp, null_lbl, nonnull_lbl
+nonnull_lbl:
+   result = FieldGet(r0, "member")  // or __len for Length/Count
+   Br end_lbl
+null_lbl:
+   result = const null
+   Br end_lbl
+end_lbl:
+```
 
 ### `enum` 编译策略
 

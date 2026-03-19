@@ -148,3 +148,6 @@ public sealed record ArrayLitExpr(TypeExpr ElemType, List<Expr> Elements, Span S
 public sealed record LambdaExpr(List<string> Params, Expr Body, Span Span) : Expr(Span);
 public sealed record SwitchExpr(Expr Subject, List<SwitchArm> Arms, Span Span) : Expr(Span);
 public sealed record SwitchArm(Expr? Pattern, Expr Body, Span Span);
+
+/// `target?.member` — returns null if target is null, otherwise accesses the member.
+public sealed record NullConditionalExpr(Expr Target, string Member, Span Span) : Expr(Span);

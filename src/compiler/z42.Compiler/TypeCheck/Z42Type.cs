@@ -49,7 +49,7 @@ public abstract record Z42Type
     public static bool IsBool(Z42Type t) => t == Bool;
 
     public static bool IsReferenceType(Z42Type t) =>
-        t is Z42PrimType { Name: "string" or "object" }
+        t is Z42PrimType { Name: "string" or "object" or "List" or "Dictionary" }
         or Z42ArrayType
         or Z42ClassType
         or Z42OptionType;

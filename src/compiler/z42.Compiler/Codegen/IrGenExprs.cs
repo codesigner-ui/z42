@@ -82,6 +82,9 @@ public sealed partial class IrGen
             case ConditionalExpr ternary:
                 return EmitTernary(ternary);
 
+            case NullConditionalExpr nc:
+                return EmitNullConditional(nc);
+
             case NullCoalesceExpr nc:
                 return EmitNullCoalesce(nc);
 
@@ -135,6 +138,14 @@ public sealed partial class IrGen
                 var elemRegs = al.Elements.Select(EmitExpr).ToList();
                 int dst = Alloc();
                 Emit(new ArrayNewLitInstr(dst, elemRegs));
+                return dst;
+            }
+
+            // new Dictionary<K,V>() → __dict_new builtin
+            case NewExpr newExpr when newExpr.Type is NamedType { Name: "Dictionary" }:
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__dict_new", []));
                 return dst;
             }
 
@@ -284,6 +295,45 @@ public sealed partial class IrGen
         return result;
     }
 
+    // ── Null-conditional ─────────────────────────────────────────────────────
+
+    /// `target?.member` — null if target is null, else `target.member`
+    private int EmitNullConditional(NullConditionalExpr nc)
+    {
+        int targetReg = EmitExpr(nc.Target);
+        int nullReg   = Alloc();
+        int cmpReg    = Alloc();
+        int result    = Alloc();
+
+        Emit(new ConstNullInstr(nullReg));
+        Emit(new EqInstr(cmpReg, targetReg, nullReg));
+
+        string nullLbl    = FreshLabel("nc_null");
+        string nonNullLbl = FreshLabel("nc_member");
+        string endLbl     = FreshLabel("nc_end");
+        EndBlock(new BrCondTerm(cmpReg, nullLbl, nonNullLbl));
+
+        // non-null path: result = target.member
+        StartBlock(nonNullLbl);
+        int memberReg = Alloc();
+        if (nc.Member is "Length" or "Count")
+            Emit(new BuiltinInstr(memberReg, "__len", [targetReg]));
+        else
+            Emit(new FieldGetInstr(memberReg, targetReg, nc.Member));
+        Emit(new CopyInstr(result, memberReg));
+        EndBlock(new BrTerm(endLbl));
+
+        // null path: result = null
+        StartBlock(nullLbl);
+        int nullResult = Alloc();
+        Emit(new ConstNullInstr(nullResult));
+        Emit(new CopyInstr(result, nullResult));
+        EndBlock(new BrTerm(endLbl));
+
+        StartBlock(endLbl);
+        return result;
+    }
+
     // ── Binary ────────────────────────────────────────────────────────────────
 
     private int EmitBinary(BinaryExpr bin)
@@ -365,6 +415,11 @@ public sealed partial class IrGen
             ["RemoveAt"] = "__list_remove_at",
             ["Clear"]    = "__list_clear",
             ["Insert"]   = "__list_insert",
+            // Dictionary<K,V>
+            ["ContainsKey"] = "__dict_contains_key",
+            ["Remove"]      = "__dict_remove",
+            ["Keys"]        = "__dict_keys",
+            ["Values"]      = "__dict_values",
         };
 
     // ── Call ─────────────────────────────────────────────────────────────────
