@@ -522,6 +522,85 @@ void OnUpdate(float dt) { ... }   // 热更新后下一次调用即生效
 
 ---
 
+## 实现状态（Phase 1）
+
+下表追踪各特性的编译器/VM 实现进度：
+
+| 特性 | Parser | TypeCheck | IrGen | VM | 备注 |
+|------|--------|-----------|-------|-----|------|
+| 基本类型、运算符 | ✅ | ✅ | ✅ | ✅ | |
+| if / while / for / foreach | ✅ | ✅ | ✅ | ✅ | |
+| `do-while` | ✅ | ✅ | ✅ | ✅ | |
+| switch 表达式 / 语句 | ✅ | ✅ | ✅ | ✅ | |
+| 三目运算符 `?:` | ✅ | ✅ | ✅ | ✅ | |
+| `??` 空合并运算符 | ✅ | ✅ | ✅ | ✅ | |
+| 字符串插值 | ✅ | ✅ | ✅ | ✅ | |
+| 数组 `T[]` | ✅ | ✅ | ✅ | ✅ | |
+| `List<T>` | ✅ | ✅ | ✅ | ✅ | pseudo-class 策略 |
+| `Dictionary<K,V>` | ✅ | — | — | — | 待实现 |
+| 类（字段、构造器、方法） | ✅ | ✅ | ✅ | ✅ | |
+| 枚举 `enum` | ✅ | ✅ | ✅ | ✅ | 值映射为 i64 |
+| 异常 try/catch/throw | ✅ | ✅ | ✅ | ✅ | |
+| Lambda 表达式 | ✅ | — | — | — | 待实现 |
+| 泛型 `<T>` | ✅ | — | — | — | 待实现 |
+| 接口 / 继承 | ✅ | — | — | — | 待实现 |
+| async / await | ✅ | — | — | — | 待实现 |
+| Math / Assert / Console | — | ✅ | ✅ | ✅ | pseudo-class |
+
+### `do-while` IR 映射
+
+```
+do { body } while (cond);
+
+→  body_lbl:
+     <body instructions>
+   cond_lbl:
+     <cond instructions>  → r0
+     BrCond r0, body_lbl, end_lbl
+   end_lbl:
+```
+
+### `??` 空合并运算符 IR 映射
+
+```
+expr ?? fallback
+
+→  r0 = <expr>
+   r1 = (r0 == null)           // EqInstr with ConstNull
+   BrCond r1, null_lbl, end_lbl
+null_lbl:
+   r2 = <fallback>
+   Copy result, r2
+   Br end_lbl
+end_lbl:
+   Copy result, r0              // non-null path
+```
+
+### `List<T>` 内置方法映射
+
+| z42 方法 | VM Builtin | 说明 |
+|---------|-----------|------|
+| `new List<T>()` | `__list_new` | 创建空列表 |
+| `list.Add(v)` | `__list_add` | 末尾追加 |
+| `list.Count` | `__list_count` | 元素个数（属性） |
+| `list[i]` | `ArrayGet` | 索引读（复用数组指令） |
+| `list[i] = v` | `ArraySet` | 索引写（复用数组指令） |
+| `list.RemoveAt(i)` | `__list_remove_at` | 按索引删除 |
+| `list.Contains(v)` | `__list_contains` | 是否包含 |
+| `list.Clear()` | `__list_clear` | 清空 |
+| `list.Insert(i, v)` | `__list_insert` | 按位置插入 |
+
+内部存储复用 `Value::Array`（`Rc<RefCell<Vec<Value>>>`），`List<T>` 与 `T[]` 共享底层表示，仅在 IrGen 层区分调用方式。
+
+### `enum` 编译策略
+
+- 枚举成员编译为 `i64` 常量（`ConstI64Instr`）
+- 带底层值的枚举（`enum Foo : int { A = 1 }`）直接使用指定值
+- 不带值的枚举从 0 开始自动编号
+- `EnumType.Member` 引用在 TypeChecker 的 `TypeEnv` 中注册为常量符号
+
+---
+
 ## Phase 2 改进预告（引入 Rust 思想）
 
 以下特性将在完成基础实现后引入：
