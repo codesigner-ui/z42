@@ -339,6 +339,19 @@ public sealed partial class IrGen
 
     private int EmitBinary(BinaryExpr bin)
     {
+        // `is` and `as` have a type name on the right, not a value
+        if (bin.Op is "is" or "as" && bin.Right is IdentExpr typeIdent)
+        {
+            int objReg  = EmitExpr(bin.Left);
+            int typeReg = Alloc();
+            // Qualify the class name with the namespace (e.g. "Circle" → "Demo.Circle")
+            var qualName = QualifyName(typeIdent.Name);
+            Emit(bin.Op == "is"
+                ? new IsInstanceInstr(typeReg, objReg, qualName)
+                : (IrInstr)new AsCastInstr(typeReg, objReg, qualName));
+            return typeReg;
+        }
+
         int a   = EmitExpr(bin.Left);
         int b   = EmitExpr(bin.Right);
         int dst = Alloc();

@@ -25,8 +25,10 @@ public sealed partial class IrGen
     private readonly List<string> _strings = new();
     // Namespace for the current compilation unit (null = no namespace declared)
     private string? _namespace;
-    // Class name → set of method names (populated during Generate to resolve method calls)
+    // Class name → set of instance method names (for call resolution)
     private Dictionary<string, HashSet<string>> _classMethods = new();
+    // Class name → set of static method names (for static call dispatch)
+    private Dictionary<string, HashSet<string>> _classStaticMethods = new();
     // Top-level function names (unqualified) — used to qualify free function calls
     private HashSet<string> _topLevelFunctionNames = new();
 
@@ -56,9 +58,12 @@ public sealed partial class IrGen
             foreach (var m in en.Members)
                 _enumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
 
-        // Build class method map for call resolution (keyed by qualified class name)
+        // Build class method maps for call resolution (keyed by qualified class name)
         foreach (var cls in cu.Classes)
-            _classMethods[QualifyName(cls.Name)] = cls.Methods.Select(m => m.Name).ToHashSet();
+        {
+            _classMethods[QualifyName(cls.Name)]       = cls.Methods.Where(m => !m.IsStatic).Select(m => m.Name).ToHashSet();
+            _classStaticMethods[QualifyName(cls.Name)] = cls.Methods.Where(m =>  m.IsStatic).Select(m => m.Name).ToHashSet();
+        }
 
         // Collect top-level function names for qualified call resolution
         _topLevelFunctionNames = cu.Functions.Select(f => f.Name).ToHashSet();
@@ -74,14 +79,20 @@ public sealed partial class IrGen
     private readonly Dictionary<string, long> _enumConstants = new();
 
     private IrClassDesc EmitClassDesc(ClassDecl cls) =>
-        new(QualifyName(cls.Name), cls.Fields.Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
+        new(QualifyName(cls.Name),
+            cls.BaseClass is null ? null : QualifyName(cls.BaseClass),
+            cls.Fields.Where(f => !f.IsStatic).Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
 
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
-        // `this` occupies register 0; declared params start at 1
-        _nextReg        = method.Params.Count + 1;
+        bool isStatic = method.IsStatic;
+        // Static methods: params start at 0; instance methods: `this` = reg 0, params start at 1
+        int paramOffset = isStatic ? 0 : 1;
+        _nextReg        = method.Params.Count + paramOffset;
         _nextLabelId    = 0;
-        _locals         = new Dictionary<string, int> { ["this"] = 0 };
+        _locals         = isStatic
+            ? new Dictionary<string, int>()
+            : new Dictionary<string, int> { ["this"] = 0 };
         _mutableVars    = new HashSet<string>();
         _blocks         = new List<IrBlock>();
         _exceptionTable = new List<IrExceptionEntry>();
@@ -90,18 +101,19 @@ public sealed partial class IrGen
         StartBlock("entry");
 
         for (int i = 0; i < method.Params.Count; i++)
-            _locals[method.Params[i].Name] = i + 1;
+            _locals[method.Params[i].Name] = i + paramOffset;
 
         EmitBlock(method.Body);
 
         if (!_blockEnded)
             EndBlock(new RetTerm(null));
 
-        bool isCtor = method.Name == className;
+        bool isCtor = !isStatic && method.Name == className;
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         string qualifiedName = $"{QualifyName(className)}.{method.Name}";
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
-        return new IrFunction(qualifiedName, method.Params.Count + 1, retType, "Interp", _blocks, excTable);
+        int paramCount = method.Params.Count + paramOffset;
+        return new IrFunction(qualifiedName, paramCount, retType, "Interp", _blocks, excTable);
     }
 
     // ── Function ────────────────────────────────────────────────────────────────

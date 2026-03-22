@@ -20,6 +20,8 @@ pub struct Module {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClassDesc {
     pub name: String,
+    #[serde(default)]
+    pub base_class: Option<String>,
     pub fields: Vec<FieldDesc>,
 }
 
@@ -132,6 +134,12 @@ pub enum Instruction {
     FieldGet { dst: Reg, obj: Reg, field_name: String },
     /// Store `val` into field `field_name` of object `obj`.
     FieldSet { obj: Reg, field_name: String, val: Reg },
+    /// Virtual dispatch: invoke `method` on runtime class of `obj`, walking base classes.
+    VCall    { dst: Reg, obj: Reg, method: String, args: Vec<Reg> },
+    /// `expr is ClassName` — dst = true if obj's runtime type is class_name or a subclass.
+    IsInstance { dst: Reg, obj: Reg, class_name: String },
+    /// `expr as ClassName` — dst = obj if it is an instance of class_name (or subclass), else null.
+    AsCast     { dst: Reg, obj: Reg, class_name: String },
 }
 
 /// Block terminator.

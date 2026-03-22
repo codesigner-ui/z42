@@ -105,6 +105,24 @@ internal static class Nuds
         return new NewExpr(ty, args, tok.Span);
     };
 
+    // ── typeof ───────────────────────────────────────────────────────────────
+
+    /// `typeof(T)` — desugars at parse time to a string literal with the type name.
+    public static readonly NudFn Typeof_ = (ctx, tok) =>
+    {
+        ctx.Expect(TokenKind.LParen);
+        var ty = ctx.ParseTypeExpr();
+        ctx.Expect(TokenKind.RParen);
+        var typeName = ty switch
+        {
+            NamedType  nt => nt.Name,
+            ArrayType  at => at.Element is NamedType ne ? $"{ne.Name}[]" : "array",
+            VoidType      => "void",
+            _             => ty.ToString() ?? "unknown",
+        };
+        return new LitStrExpr(typeName, tok.Span);
+    };
+
     // ── Grouped / cast ───────────────────────────────────────────────────────
 
     /// `(expr)` grouping OR `(TypeName)expr` cast.

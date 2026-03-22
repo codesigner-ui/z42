@@ -91,6 +91,8 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(FieldGetInstr),   "field_get")]
 [JsonDerivedType(typeof(FieldSetInstr),   "field_set")]
 [JsonDerivedType(typeof(VCallInstr),      "v_call")]
+[JsonDerivedType(typeof(IsInstanceInstr), "is_instance")]
+[JsonDerivedType(typeof(AsCastInstr),     "as_cast")]
 public abstract record IrInstr;
 
 public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
@@ -150,6 +152,10 @@ public sealed record FieldGetInstr(int Dst, int Obj, string FieldName)      : Ir
 public sealed record FieldSetInstr(int Obj, string FieldName, int Val)      : IrInstr;
 /// Virtual dispatch: call Method on the runtime class of Obj, walking base classes.
 public sealed record VCallInstr(int Dst, int Obj, string Method, List<int> Args) : IrInstr;
+/// `expr is ClassName` — returns bool (true if Obj's runtime type is ClassName or a subclass).
+public sealed record IsInstanceInstr(int Dst, int Obj, string ClassName) : IrInstr;
+/// `expr as ClassName` — returns the object if it is an instance of ClassName (or subclass), else null.
+public sealed record AsCastInstr(int Dst, int Obj, string ClassName) : IrInstr;
 
 // ── Terminators ───────────────────────────────────────────────────────────────
 

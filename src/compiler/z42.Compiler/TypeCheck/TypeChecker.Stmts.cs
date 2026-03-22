@@ -7,6 +7,7 @@ namespace Z42.Compiler.TypeCheck;
 /// Statement type-checking — part of the TypeChecker partial class.
 public sealed partial class TypeChecker
 {
+    private int _loopDepth = 0;
     // ── Block ─────────────────────────────────────────────────────────────────
 
     private void CheckBlock(BlockStmt block, TypeEnv parent, Z42Type retType)
@@ -49,11 +50,15 @@ public sealed partial class TypeChecker
 
             case WhileStmt w:
                 RequireBool(CheckExpr(w.Condition, env), w.Condition.Span, "while");
+                _loopDepth++;
                 CheckBlock(w.Body, env, retType);
+                _loopDepth--;
                 break;
 
             case DoWhileStmt dw:
+                _loopDepth++;
                 CheckBlock(dw.Body, env, retType);
+                _loopDepth--;
                 RequireBool(CheckExpr(dw.Condition, env), dw.Condition.Span, "do-while");
                 break;
 
@@ -63,7 +68,9 @@ public sealed partial class TypeChecker
                 if (f.Init != null)      CheckStmt(f.Init, forScope, retType);
                 if (f.Condition != null) RequireBool(CheckExpr(f.Condition, forScope), f.Condition.Span, "for");
                 if (f.Increment != null) CheckExpr(f.Increment, forScope);
+                _loopDepth++;
                 CheckBlock(f.Body, forScope, retType);
+                _loopDepth--;
                 break;
             }
 
@@ -72,13 +79,21 @@ public sealed partial class TypeChecker
                 var elemType = ElemTypeOf(CheckExpr(fe.Collection, env));
                 var feScope  = env.PushScope();
                 feScope.Define(fe.VarName, elemType);
+                _loopDepth++;
                 CheckBlock(fe.Body, feScope, retType);
+                _loopDepth--;
                 break;
             }
 
-            case BreakStmt:
-            case ContinueStmt:
-                break; // loop-context validation deferred
+            case BreakStmt bk:
+                if (_loopDepth == 0)
+                    _diags.Error(DiagnosticCodes.TypeMismatch, "`break` outside of loop", bk.Span);
+                break;
+
+            case ContinueStmt ck:
+                if (_loopDepth == 0)
+                    _diags.Error(DiagnosticCodes.TypeMismatch, "`continue` outside of loop", ck.Span);
+                break;
 
             case SwitchStmt sw:
             {

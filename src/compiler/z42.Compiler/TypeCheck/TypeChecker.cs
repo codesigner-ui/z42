@@ -31,6 +31,10 @@ public sealed partial class TypeChecker
     private          Dictionary<string, HashSet<string>>  _abstractMethods = new();
     /// set of abstract class names
     private          HashSet<string>                      _abstractClasses = new();
+    /// set of sealed class names (cannot be subclassed)
+    private          HashSet<string>                      _sealedClasses   = new();
+    /// class name → set of virtual/abstract method names (own only)
+    private          Dictionary<string, HashSet<string>>  _virtualMethods  = new();
     private readonly Dictionary<string, long>             _globalEnumConstants = new();
     private readonly HashSet<string>                      _enumTypes           = new();
     /// The class currently being type-checked (null when checking top-level functions).
@@ -114,8 +118,13 @@ public sealed partial class TypeChecker
             _classInterfaces[cls.Name] = cls.Interfaces.ToHashSet();
 
             if (cls.IsAbstract) _abstractClasses.Add(cls.Name);
+            if (cls.IsSealed)   _sealedClasses.Add(cls.Name);
             _abstractMethods[cls.Name] = cls.Methods
                 .Where(m => m.IsAbstract)
+                .Select(m => m.Name)
+                .ToHashSet();
+            _virtualMethods[cls.Name] = cls.Methods
+                .Where(m => m.IsVirtual || m.IsAbstract)
                 .Select(m => m.Name)
                 .ToHashSet();
         }
@@ -124,6 +133,28 @@ public sealed partial class TypeChecker
         foreach (var cls in cu.Classes)
         {
             if (cls.BaseClass == null) continue;
+
+            // sealed-class inheritance check
+            if (_sealedClasses.Contains(cls.BaseClass))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"cannot inherit from sealed class `{cls.BaseClass}`", cls.Span);
+
+            // override validation: each IsOverride method must exist as virtual/abstract in an ancestor
+            foreach (var m in cls.Methods.Where(m => m.IsOverride))
+            {
+                bool found = false;
+                var  cur   = cls.BaseClass;
+                while (cur != null)
+                {
+                    if (_virtualMethods.TryGetValue(cur, out var vset) && vset.Contains(m.Name))
+                    { found = true; break; }
+                    cur = _classes.TryGetValue(cur, out var ct) ? ct.BaseClassName : null;
+                }
+                if (!found)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"`{cls.Name}.{m.Name}`: no matching virtual or abstract method in base class", m.Span);
+            }
+
             if (!_classes.TryGetValue(cls.BaseClass, out var baseType)) continue;
             var derived = _classes[cls.Name];
 

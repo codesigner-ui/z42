@@ -392,26 +392,36 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
 
         // ── Objects ──────────────────────────────────────────────────────────
         Instruction::ObjNew { dst, class_name, args } => {
-            // Find the class descriptor to get field names.
-            let field_names: Vec<String> = module
-                .classes
-                .iter()
-                .find(|c| &c.name == class_name)
-                .map(|c| c.fields.iter().map(|f| f.name.clone()).collect())
-                .unwrap_or_default();
+            // Collect all fields by walking the class inheritance chain bottom-up,
+            // then top-down to get correct shadowing order (derived overrides base).
+            let mut chain: Vec<&crate::bytecode::ClassDesc> = Vec::new();
+            let mut cur = class_name.as_str();
+            loop {
+                if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
+                    chain.push(desc);
+                    match &desc.base_class {
+                        Some(b) => cur = b.as_str(),
+                        None    => break,
+                    }
+                } else {
+                    break;
+                }
+            }
+            // Merge: base fields first, then derived (derived wins on name collision)
+            let mut fields: HashMap<String, Value> = HashMap::new();
+            for desc in chain.iter().rev() {
+                for f in &desc.fields {
+                    fields.entry(f.name.clone()).or_insert(Value::Null);
+                }
+            }
 
-            // Allocate the object with all fields null-initialised.
-            let fields: HashMap<String, Value> =
-                field_names.into_iter().map(|n| (n, Value::Null)).collect();
             let obj_rc = Rc::new(RefCell::new(ObjectData {
                 class_name: class_name.clone(),
                 fields,
             }));
             let obj_val = Value::Object(obj_rc);
 
-            // If a constructor function exists, call it with [this, ...args].
-            // Convention: ctor name = "{qualified_class_name}.{simple_class_name}"
-            // e.g., "Point" → "Point.Point"; "Demo.Point" → "Demo.Point.Point"
+            // Call constructor: "{qualified_class_name}.{simple_class_name}"
             let simple_name = class_name.split('.').last().unwrap_or(class_name.as_str());
             let ctor_name = format!("{}.{}", class_name, simple_name);
             if let Some(ctor) = module.functions.iter().find(|f| f.name == ctor_name) {
@@ -445,6 +455,76 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
                 other => bail!("FieldSet: expected object, got {:?}", other),
             }
         }
+
+        Instruction::VCall { dst, obj, method, args } => {
+            // Get the runtime class of `obj`
+            let class_name = match frame.get(*obj)? {
+                Value::Object(rc) => rc.borrow().class_name.clone(),
+                other => bail!("VCall: expected object, got {:?}", other),
+            };
+            // Walk the class hierarchy to find the most-derived implementation
+            let func = resolve_virtual(module, &class_name, method)?;
+            let obj_val = frame.get(*obj)?.clone();
+            let mut call_args = vec![obj_val];
+            call_args.extend(collect_args(&frame.regs, args)?);
+            let ret = exec_function(module, func, &call_args)?;
+            frame.set(*dst, ret.unwrap_or(Value::Null));
+        }
+
+        Instruction::IsInstance { dst, obj, class_name } => {
+            let result = match frame.get(*obj)? {
+                Value::Object(rc) => {
+                    let runtime_class = rc.borrow().class_name.clone();
+                    is_subclass_or_eq(module, &runtime_class, class_name)
+                }
+                Value::Null => false,
+                _ => false,
+            };
+            frame.set(*dst, Value::Bool(result));
+        }
+
+        Instruction::AsCast { dst, obj, class_name } => {
+            let val = frame.get(*obj)?.clone();
+            let is_match = match &val {
+                Value::Object(rc) => {
+                    let runtime_class = rc.borrow().class_name.clone();
+                    is_subclass_or_eq(module, &runtime_class, class_name)
+                }
+                Value::Null => true, // null as T = null
+                _ => false,
+            };
+            frame.set(*dst, if is_match { val } else { Value::Null });
+        }
     }
     Ok(())
+}
+
+/// Returns true if `derived` equals `target` or is a subclass of `target`
+/// (walks the inheritance chain).
+fn is_subclass_or_eq(module: &crate::bytecode::Module, derived: &str, target: &str) -> bool {
+    let mut cur = derived;
+    loop {
+        if cur == target { return true; }
+        match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {
+            Some(base) => cur = base,
+            None => return false,
+        }
+    }
+}
+
+/// Walk the class hierarchy starting at `class_name` to find the first function
+/// named `{class}.{method}`. Returns an error if no implementation is found.
+fn resolve_virtual<'m>(module: &'m crate::bytecode::Module, class_name: &str, method: &str) -> Result<&'m crate::bytecode::Function> {
+    let mut cur = class_name;
+    loop {
+        let qualified = format!("{}.{}", cur, method);
+        if let Some(f) = module.functions.iter().find(|f| f.name == qualified) {
+            return Ok(f);
+        }
+        // Walk to base class
+        match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {
+            Some(base) => cur = base,
+            None => bail!("VCall: no implementation of `{}` found in class hierarchy of `{}`", method, class_name),
+        }
+    }
 }

@@ -56,6 +56,7 @@ public sealed record ClassDecl(
     string Name,
     bool IsStruct,
     bool IsAbstract,
+    bool IsSealed,
     Visibility Visibility,
     string? BaseClass,          // null = no explicit base class
     List<string> Interfaces,    // list of implemented interface names

@@ -1,0 +1,18 @@
+namespace Demo;
+
+class Animal {
+    string Speak() {
+        return "...";
+    }
+}
+
+class Dog : Animal {
+    override string Speak() {
+        // Speak() is not virtual in Animal — should be a compile error
+        return "woof";
+    }
+}
+
+void Main() {
+    var d = new Dog();
+}

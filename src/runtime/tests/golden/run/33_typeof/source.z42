@@ -1,0 +1,10 @@
+namespace Demo;
+
+void Main() {
+    var t1 = typeof(int);
+    var t2 = typeof(string);
+    var t3 = typeof(bool);
+    Console.WriteLine(t1);
+    Console.WriteLine(t2);
+    Console.WriteLine(t3);
+}

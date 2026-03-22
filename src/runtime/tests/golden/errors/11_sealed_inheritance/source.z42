@@ -1,0 +1,13 @@
+namespace Demo;
+
+sealed class Base {
+    int X;
+}
+
+class Derived : Base {
+    // Cannot inherit from sealed class — should be a compile error
+}
+
+void Main() {
+    var d = new Derived();
+}

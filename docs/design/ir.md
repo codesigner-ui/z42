@@ -154,14 +154,23 @@ Exception table row:
 
 JSON wire format (tag = `"op"`):
 ```json
-{"op": "obj_new",   "dst": 5, "class_name": "Point", "args": [1, 2]}
-{"op": "field_get", "dst": 6, "obj": 5, "field_name": "X"}
-{"op": "field_set",           "obj": 5, "field_name": "X", "val": 3}
+{"op": "obj_new",     "dst": 5, "class_name": "Demo.Point", "args": [1, 2]}
+{"op": "field_get",   "dst": 6, "obj": 5, "field_name": "X"}
+{"op": "field_set",             "obj": 5, "field_name": "X", "val": 3}
+{"op": "v_call",      "dst": 7, "obj": 5, "method": "Area", "args": []}
+{"op": "is_instance", "dst": 8, "obj": 5, "class_name": "Demo.Shape"}
+{"op": "as_cast",     "dst": 9, "obj": 5, "class_name": "Demo.Shape"}
 ```
 
 `obj_new` finds the constructor function `ClassName.ClassName` (if it exists) and calls it
 with `[this, ...args]`. The newly allocated object is GC-managed with reference semantics.
 Class descriptors in `IrModule.classes` provide the field layout for zero-initialisation.
+
+`v_call` walks the class hierarchy (most-derived first) to dispatch the correct method override.
+
+`is_instance` returns `bool` — true if the object's runtime class is `class_name` or a subclass.
+
+`as_cast` returns the object unchanged if it matches `class_name` (or a subclass), else `null`.
 
 ### Structs & Tuples
 ```

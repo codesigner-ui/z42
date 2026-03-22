@@ -129,6 +129,7 @@ internal static class ParseTable
             [TokenKind.Null]       = new(0, Nuds.NullLit,  null),
             [TokenKind.Identifier] = new(0, Nuds.Ident_,   null),
             [TokenKind.New]        = new(0, Nuds.New_,      null),
+            [TokenKind.Typeof]     = new(0, Nuds.Typeof_,   null),
         };
 
     internal static readonly IReadOnlyDictionary<TokenKind, StmtRule> StmtRules =
