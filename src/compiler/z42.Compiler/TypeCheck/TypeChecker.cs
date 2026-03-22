@@ -22,12 +22,15 @@ namespace Z42.Compiler.TypeCheck;
 public sealed partial class TypeChecker
 {
     private readonly DiagnosticBag             _diags;
-    private          Dictionary<string, Z42FuncType>  _funcs   = new();
-    private          Dictionary<string, Z42ClassType> _classes = new();
-    private readonly Dictionary<string, long>         _globalEnumConstants = new();
-    private readonly HashSet<string>                  _enumTypes           = new();
+    private          Dictionary<string, Z42FuncType>      _funcs      = new();
+    private          Dictionary<string, Z42ClassType>     _classes    = new();
+    private          Dictionary<string, Z42InterfaceType> _interfaces = new();
+    /// class name → set of interface names the class declares it implements
+    private          Dictionary<string, HashSet<string>>  _classInterfaces = new();
+    private readonly Dictionary<string, long>             _globalEnumConstants = new();
+    private readonly HashSet<string>                      _enumTypes           = new();
     /// The class currently being type-checked (null when checking top-level functions).
-    private          string?                          _currentClass        = null;
+    private          string?                              _currentClass        = null;
 
     public TypeChecker(DiagnosticBag diags) => _diags = diags;
 
@@ -36,6 +39,7 @@ public sealed partial class TypeChecker
     public void Check(CompilationUnit cu)
     {
         CollectEnums(cu);
+        CollectInterfaces(cu);
         CollectClasses(cu);
         CollectFunctions(cu);
         foreach (var cls in cu.Classes)   CheckClassMethods(cls);
@@ -54,7 +58,23 @@ public sealed partial class TypeChecker
         }
     }
 
-    // ── Pass 0b: class shapes ─────────────────────────────────────────────────
+    // ── Pass 0b: interface shapes ─────────────────────────────────────────────
+
+    private void CollectInterfaces(CompilationUnit cu)
+    {
+        foreach (var iface in cu.Interfaces)
+        {
+            var methods = new Dictionary<string, Z42FuncType>();
+            foreach (var m in iface.Methods)
+            {
+                var paramTypes = m.Params.Select(p => ResolveType(p.Type)).ToList();
+                methods[m.Name] = new Z42FuncType(paramTypes, ResolveType(m.ReturnType));
+            }
+            _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods);
+        }
+    }
+
+    // ── Pass 0c: class shapes ─────────────────────────────────────────────────
 
     private void CollectClasses(CompilationUnit cu)
     {
@@ -87,6 +107,7 @@ public sealed partial class TypeChecker
             _classes[cls.Name] = new Z42ClassType(
                 cls.Name, fields, methods, staticFields, staticMethods,
                 memberVis, cls.BaseClass);
+            _classInterfaces[cls.Name] = cls.Interfaces.ToHashSet();
         }
 
         // Second pass: merge inherited fields/methods from base class (single inheritance)
@@ -170,9 +191,9 @@ public sealed partial class TypeChecker
             "object"          => Z42Type.Object,
             "void"            => Z42Type.Void,
             "var"             => Z42Type.Unknown,
-            _                 => _classes.TryGetValue(nt.Name, out var ct)
-                                  ? ct
-                                  : new Z42PrimType(nt.Name),
+            _                 => _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
+                               : _interfaces.TryGetValue(nt.Name, out var it) ? it
+                               : new Z42PrimType(nt.Name),
         },
         _ => Z42Type.Unknown
     };
@@ -200,6 +221,9 @@ public sealed partial class TypeChecker
         // Inheritance: source class is a subtype of target class
         if (target is Z42ClassType targetCt && source is Z42ClassType sourceCt
             && IsSubclassOf(sourceCt.Name, targetCt.Name)) return;
+        // Interface: source class implements target interface
+        if (target is Z42InterfaceType targetIface && source is Z42ClassType sourceImplCt
+            && ImplementsInterface(sourceImplCt.Name, targetIface.Name)) return;
         _diags.Error(DiagnosticCodes.TypeMismatch,
             msg ?? $"cannot assign `{source}` to `{target}`", span);
     }
@@ -213,6 +237,21 @@ public sealed partial class TypeChecker
         {
             if (parentName == baseClass) return true;
             cur = parentName;
+        }
+        return false;
+    }
+
+    /// Returns true if <paramref name="className"/> (or any ancestor) declares it implements
+    /// <paramref name="interfaceName"/>.
+    private bool ImplementsInterface(string className, string interfaceName)
+    {
+        var cur = className;
+        while (true)
+        {
+            if (_classInterfaces.TryGetValue(cur, out var ifaces) && ifaces.Contains(interfaceName))
+                return true;
+            if (!_classes.TryGetValue(cur, out var ct) || ct.BaseClassName == null) break;
+            cur = ct.BaseClassName;
         }
         return false;
     }

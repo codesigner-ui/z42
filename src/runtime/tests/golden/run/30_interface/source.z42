@@ -1,0 +1,49 @@
+namespace Demo;
+
+interface IAnimal {
+    string Speak();
+    string Name();
+}
+
+class Dog : IAnimal {
+    string _name;
+
+    Dog(string name) {
+        this._name = name;
+    }
+
+    override string Speak() {
+        return "Woof";
+    }
+
+    override string Name() {
+        return this._name;
+    }
+}
+
+class Cat : IAnimal {
+    string _name;
+
+    Cat(string name) {
+        this._name = name;
+    }
+
+    override string Speak() {
+        return "Meow";
+    }
+
+    override string Name() {
+        return this._name;
+    }
+}
+
+void Describe(IAnimal a) {
+    Console.WriteLine($"{a.Name()} says {a.Speak()}");
+}
+
+void Main() {
+    var d = new Dog("Rex");
+    var c = new Cat("Whiskers");
+    Describe(d);
+    Describe(c);
+}

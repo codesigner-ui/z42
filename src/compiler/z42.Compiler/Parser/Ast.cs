@@ -18,6 +18,23 @@ public sealed record CompilationUnit(
     List<ClassDecl> Classes,
     List<FunctionDecl> Functions,
     List<EnumDecl> Enums,
+    List<InterfaceDecl> Interfaces,
+    Span Span);
+
+// ── Interface declaration ──────────────────────────────────────────────────────
+
+/// `interface IShape { string Area(); int Width { get; } }`
+public sealed record InterfaceDecl(
+    string Name,
+    Visibility Visibility,
+    List<MethodSignature> Methods,
+    Span Span);
+
+/// A method signature (no body) for use in interface declarations.
+public sealed record MethodSignature(
+    string Name,
+    List<Param> Params,
+    TypeExpr ReturnType,
     Span Span);
 
 // ── Enum declaration ──────────────────────────────────────────────────────────
@@ -39,12 +56,19 @@ public sealed record ClassDecl(
     string Name,
     bool IsStruct,
     Visibility Visibility,
+    string? BaseClass,          // null = no explicit base class
+    List<string> Interfaces,    // list of implemented interface names
     List<FieldDecl> Fields,
     List<FunctionDecl> Methods,
     Span Span);
 
 /// A field inside a class/struct: `int x;`
-public sealed record FieldDecl(string Name, TypeExpr Type, Visibility Visibility, Span Span);
+public sealed record FieldDecl(
+    string Name,
+    TypeExpr Type,
+    Visibility Visibility,
+    bool IsStatic,
+    Span Span);
 
 // ── Function declaration ──────────────────────────────────────────────────────
 
@@ -54,6 +78,9 @@ public sealed record FunctionDecl(
     TypeExpr ReturnType,
     BlockStmt Body,
     Visibility Visibility,
+    bool IsStatic,
+    bool IsVirtual,
+    bool IsOverride,
     Span Span);
 
 public sealed record Param(string Name, TypeExpr Type, Span Span);

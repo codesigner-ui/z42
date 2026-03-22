@@ -1,0 +1,23 @@
+namespace Demo;
+
+class Person {
+    public string Name { get; set; }
+    public int Age { get; set; }
+
+    Person(string name, int age) {
+        this.Name = name;
+        this.Age = age;
+    }
+
+    string Greet() {
+        return $"Hi, I'm {this.Name}, age {this.Age}";
+    }
+}
+
+void Main() {
+    var p = new Person("Alice", 30);
+    Console.WriteLine(p.Greet());
+    p.Name = "Bob";
+    p.Age = 25;
+    Console.WriteLine(p.Greet());
+}

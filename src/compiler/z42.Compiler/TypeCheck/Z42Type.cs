@@ -58,6 +58,7 @@ public abstract record Z42Type
         t is Z42PrimType { Name: "string" or "object" or "List" or "Dictionary" }
         or Z42ArrayType
         or Z42ClassType
+        or Z42InterfaceType
         or Z42OptionType;
 
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
@@ -114,12 +115,23 @@ public sealed record Z42OptionType(Z42Type Inner) : Z42Type
     public override string ToString() => $"{Inner}?";
 }
 
+/// Interface type (e.g. `IShape`).
+public sealed record Z42InterfaceType(
+    string Name,
+    IReadOnlyDictionary<string, Z42FuncType> Methods) : Z42Type
+{
+    public override string ToString() => Name;
+}
+
 /// User-defined class or struct type.
 public sealed record Z42ClassType(
     string Name,
     IReadOnlyDictionary<string, Z42Type>      Fields,
     IReadOnlyDictionary<string, Z42FuncType>  Methods,
-    IReadOnlyDictionary<string, Visibility>   MemberVisibility) : Z42Type
+    IReadOnlyDictionary<string, Z42Type>      StaticFields,
+    IReadOnlyDictionary<string, Z42FuncType>  StaticMethods,
+    IReadOnlyDictionary<string, Visibility>   MemberVisibility,
+    string? BaseClassName = null) : Z42Type
 {
     public override string ToString() => Name;
 }

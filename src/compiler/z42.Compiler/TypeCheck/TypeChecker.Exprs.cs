@@ -72,6 +72,11 @@ public sealed partial class TypeChecker
                         $"type `{ct.Name}` has no member `{m.Member}`", m.Span);
                     return Z42Type.Error;
                 }
+                // Interface member access
+                if (targetType is Z42InterfaceType ifaceType
+                    && ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
+                    return ifmt;
+
                 return m.Member switch
                 {
                     "Length" when targetType is Z42ArrayType  => Z42Type.Int,
@@ -164,6 +169,7 @@ public sealed partial class TypeChecker
         if (t != null) return t;
         if (_enumTypes.Contains(id.Name)) return Z42Type.Unknown; // enum type name
         if (_classes.ContainsKey(id.Name)) return Z42Type.Unknown; // class name used as static target
+        if (_interfaces.ContainsKey(id.Name)) return Z42Type.Unknown; // interface name
         _diags.UndefinedSymbol(id.Name, id.Span);
         return Z42Type.Error;
     }
@@ -324,6 +330,21 @@ public sealed partial class TypeChecker
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type `{ct.Name}` has no method `{mCallee.Member}`", call.Span);
+                return Z42Type.Error;
+            }
+
+            // Interface method call: iface.Method(args)
+            if (receiverType is Z42InterfaceType ifaceType)
+            {
+                if (ifaceType.Methods.TryGetValue(mCallee.Member, out var imt))
+                {
+                    if (argTypes.Count != imt.Params.Count)
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"expected {imt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+                    return imt.Ret;
+                }
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"interface `{ifaceType.Name}` has no method `{mCallee.Member}`", call.Span);
                 return Z42Type.Error;
             }
 

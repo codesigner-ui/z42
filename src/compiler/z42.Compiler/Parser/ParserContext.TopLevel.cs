@@ -28,20 +28,22 @@ internal sealed partial class ParserContext
             Match(TokenKind.Semicolon);
         }
 
-        var classes   = new List<ClassDecl>();
-        var functions = new List<FunctionDecl>();
-        var enums     = new List<EnumDecl>();
+        var classes    = new List<ClassDecl>();
+        var functions  = new List<FunctionDecl>();
+        var enums      = new List<EnumDecl>();
+        var interfaces = new List<InterfaceDecl>();
         while (!Check(TokenKind.Eof))
         {
             if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
             if (Check(TokenKind.Namespace)) { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
             if (Check(TokenKind.Using))     { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
             if (IsEnumDecl())               { enums.Add(ParseEnumDecl()); continue; }
+            if (IsInterfaceDecl())          { interfaces.Add(ParseInterfaceDecl()); continue; }
             if (IsClassOrStructDecl())      { classes.Add(ParseClassDecl()); continue; }
             functions.Add(ParseFunctionDecl(Visibility.Internal));
         }
 
-        return new CompilationUnit(ns, usings, classes, functions, enums, start);
+        return new CompilationUnit(ns, usings, classes, functions, enums, interfaces, start);
     }
 
     // ── Visibility helpers ────────────────────────────────────────────────────
@@ -71,12 +73,21 @@ internal sealed partial class ParserContext
         return vis;
     }
 
-    /// Skips non-visibility modifiers: static, abstract, sealed, virtual, override, async.
-    private void SkipNonVisibilityModifiers()
+    /// Parses non-visibility modifiers (static, abstract, sealed, virtual, override, async, new)
+    /// and returns which were present.
+    private (bool IsStatic, bool IsVirtual, bool IsOverride) ParseNonVisibilityModifiers()
     {
+        bool isStatic = false, isVirtual = false, isOverride = false;
         while (Current.Kind is TokenKind.Static or TokenKind.Abstract or TokenKind.Sealed
-                            or TokenKind.Virtual or TokenKind.Override or TokenKind.Async)
+                            or TokenKind.Virtual or TokenKind.Override or TokenKind.Async
+                            or TokenKind.New)
+        {
+            if (Current.Kind == TokenKind.Static)   isStatic   = true;
+            if (Current.Kind == TokenKind.Virtual)  isVirtual  = true;
+            if (Current.Kind == TokenKind.Override) isOverride = true;
             Advance();
+        }
+        return (isStatic, isVirtual, isOverride);
     }
 
     // ── Enum declaration ──────────────────────────────────────────────────────
@@ -95,7 +106,7 @@ internal sealed partial class ParserContext
     {
         var start = Current.Span;
         var vis = ParseVisibility(Visibility.Internal);
-        SkipNonVisibilityModifiers();
+        ParseNonVisibilityModifiers();
         Expect(TokenKind.Enum);
         var name = Expect(TokenKind.Identifier).Text;
         if (Match(TokenKind.Colon)) { Advance(); } // optional `: int` base type
@@ -131,6 +142,83 @@ internal sealed partial class ParserContext
         return new EnumDecl(name, vis, members, start);
     }
 
+    // ── Interface declaration ─────────────────────────────────────────────────
+
+    private bool IsInterfaceDecl()
+    {
+        int i = 0;
+        while (_pos + i < _tokens.Count &&
+               _tokens[_pos + i].Kind is TokenKind.Public or TokenKind.Private
+                   or TokenKind.Protected or TokenKind.Internal)
+            i++;
+        return _pos + i < _tokens.Count && _tokens[_pos + i].Kind == TokenKind.Interface;
+    }
+
+    private InterfaceDecl ParseInterfaceDecl()
+    {
+        var start = Current.Span;
+        var vis = ParseVisibility(Visibility.Internal);
+        ParseNonVisibilityModifiers(); // skip abstract, etc.
+        Expect(TokenKind.Interface);
+        var name = Expect(TokenKind.Identifier).Text;
+
+        // Skip generic parameters: interface IFoo<T>
+        if (Check(TokenKind.Lt))
+        {
+            Advance(); int depth = 1;
+            while (!Check(TokenKind.Eof) && depth > 0)
+            {
+                if (Check(TokenKind.Lt)) depth++;
+                if (Check(TokenKind.Gt)) depth--;
+                Advance();
+            }
+        }
+
+        // Skip base interfaces: interface IFoo : IBar, IBaz
+        if (Check(TokenKind.Colon))
+        {
+            Advance();
+            do { ParseQualifiedName(); } while (Match(TokenKind.Comma));
+        }
+
+        Expect(TokenKind.LBrace);
+
+        var methods = new List<MethodSignature>();
+        while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
+        {
+            if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
+            var mSpan = Current.Span;
+            ParseVisibility(Visibility.Public);
+            ParseNonVisibilityModifiers();
+            var mType = ParseTypeExpr();
+            var mName = Expect(TokenKind.Identifier).Text;
+
+            if (Check(TokenKind.LBrace))
+            {
+                SkipAutoPropBody(); // property signature — desugar to backing field concept
+                continue;
+            }
+
+            Expect(TokenKind.LParen);
+            var parms = new List<Param>();
+            while (!Check(TokenKind.RParen) && !Check(TokenKind.Eof))
+            {
+                var pSpan = Current.Span;
+                var pType = ParseTypeExpr();
+                var pName = Expect(TokenKind.Identifier).Text;
+                parms.Add(new Param(pName, pType, pSpan));
+                if (!Match(TokenKind.Comma)) break;
+            }
+            Expect(TokenKind.RParen);
+            Expect(TokenKind.Semicolon);
+
+            methods.Add(new MethodSignature(mName, parms, mType, mSpan));
+        }
+
+        Expect(TokenKind.RBrace);
+        return new InterfaceDecl(name, vis, methods, start);
+    }
+
     // ── Class / struct declaration ────────────────────────────────────────────
 
     private bool IsClassOrStructDecl()
@@ -149,7 +237,7 @@ internal sealed partial class ParserContext
     {
         var start = Current.Span;
         var vis = ParseVisibility(Visibility.Internal);
-        SkipNonVisibilityModifiers();
+        ParseNonVisibilityModifiers();
 
         bool isStruct = Current.Kind == TokenKind.Struct;
         Advance(); // consume 'class' or 'struct'
@@ -167,11 +255,35 @@ internal sealed partial class ParserContext
             }
         }
 
-        // Skip base types / interfaces: class Foo : Bar, IBaz
+        // Parse base class / interfaces: class Foo : Base, IFace1, IFace2
+        string? baseClass  = null;
+        var     interfaces = new List<string>();
         if (Match(TokenKind.Colon))
         {
-            ParseTypeExpr();
-            while (Match(TokenKind.Comma)) ParseTypeExpr();
+            // First name after ':' — could be base class or interface
+            var firstName = ParseQualifiedName();
+            // Convention: names starting with 'I' followed by uppercase are interfaces
+            if (firstName.Length > 1 && firstName[0] == 'I' && char.IsUpper(firstName[1]))
+                interfaces.Add(firstName);
+            else
+                baseClass = firstName;
+
+            while (Match(TokenKind.Comma))
+            {
+                var extra = ParseQualifiedName();
+                // Skip generic type args on interface names if present
+                if (Check(TokenKind.Lt))
+                {
+                    Advance(); int d = 1;
+                    while (!Check(TokenKind.Eof) && d > 0)
+                    {
+                        if (Check(TokenKind.Lt)) d++;
+                        if (Check(TokenKind.Gt)) d--;
+                        Advance();
+                    }
+                }
+                interfaces.Add(extra);
+            }
         }
 
         Expect(TokenKind.LBrace);
@@ -183,26 +295,31 @@ internal sealed partial class ParserContext
             if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
             if (IsFieldDecl())
             {
-                var fSpan = Current.Span;
-                var fVis  = ParseVisibility(Visibility.Internal);  // default: internal (Phase 1 compat)
-                SkipNonVisibilityModifiers();
-                var fType = ParseTypeExpr();
-                var fName = Expect(TokenKind.Identifier).Text;
-                Expr? fInit = Match(TokenKind.Eq) ? ParseExpr() : null;
-                Expect(TokenKind.Semicolon);
-                fields.Add(new FieldDecl(fName, fType, fVis, fSpan));
+                var fSpan  = Current.Span;
+                var fVis   = ParseVisibility(Visibility.Internal);
+                var (fStatic, _, _) = ParseNonVisibilityModifiers();
+                var fType  = ParseTypeExpr();
+                var fName  = Expect(TokenKind.Identifier).Text;
+                if (Check(TokenKind.LBrace))
+                    SkipAutoPropBody();  // auto-property: { get; set; } — desugar to backing field
+                else
+                {
+                    if (Match(TokenKind.Eq)) ParseExpr(); // skip optional initializer
+                    Expect(TokenKind.Semicolon);
+                }
+                fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fSpan));
             }
             else
             {
-                methods.Add(ParseFunctionDecl(Visibility.Internal));  // default: internal (Phase 1 compat)
+                methods.Add(ParseFunctionDecl(Visibility.Internal));
             }
         }
 
         Expect(TokenKind.RBrace);
-        return new ClassDecl(name, isStruct, vis, fields, methods, start);
+        return new ClassDecl(name, isStruct, vis, baseClass, interfaces, fields, methods, start);
     }
 
-    /// Field: [modifiers] Type Ident (= | ;)   vs   method: [modifiers] Type Ident (
+    /// Field: [modifiers] Type Ident (= | ; | { get/set })   vs   method: [modifiers] Type Ident (
     private bool IsFieldDecl()
     {
         int i = 0;
@@ -221,7 +338,22 @@ internal sealed partial class ParserContext
             return false;
         i++;
         if (_pos + i >= _tokens.Count) return false;
-        return _tokens[_pos + i].Kind is TokenKind.Semicolon or TokenKind.Eq;
+        // ; or = → regular field;  { → auto-property
+        return _tokens[_pos + i].Kind is TokenKind.Semicolon or TokenKind.Eq or TokenKind.LBrace;
+    }
+
+    /// Skips an auto-property accessor body: `{ get; set; }` or `{ get; }` etc.
+    private void SkipAutoPropBody()
+    {
+        Expect(TokenKind.LBrace);
+        int depth = 1;
+        while (!Check(TokenKind.Eof) && depth > 0)
+        {
+            if (Check(TokenKind.LBrace)) depth++;
+            else if (Check(TokenKind.RBrace)) { depth--; if (depth == 0) break; }
+            Advance();
+        }
+        Expect(TokenKind.RBrace);
     }
 
     // ── Function declaration ──────────────────────────────────────────────────
@@ -230,7 +362,7 @@ internal sealed partial class ParserContext
     {
         var start = Current.Span;
         var vis = ParseVisibility(defaultVis);
-        SkipNonVisibilityModifiers();
+        var (isStatic, isVirtual, isOverride) = ParseNonVisibilityModifiers();
 
         // Constructor pattern: Ident( — no explicit return type
         TypeExpr returnType;
@@ -259,7 +391,7 @@ internal sealed partial class ParserContext
         Expect(TokenKind.RParen);
 
         var body = ParseBlock();
-        return new FunctionDecl(name, parms, returnType, body, vis, start);
+        return new FunctionDecl(name, parms, returnType, body, vis, isStatic, isVirtual, isOverride, start);
     }
 
     // ── Type expressions ──────────────────────────────────────────────────────
