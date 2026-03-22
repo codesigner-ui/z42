@@ -1,0 +1,320 @@
+{
+  "name": "Demo",
+  "string_pool": [
+    "Hi, I\u0027m ",
+    ", age ",
+    "Alice",
+    "Bob"
+  ],
+  "classes": [
+    {
+      "name": "Demo.Point",
+      "fields": [
+        {
+          "name": "X",
+          "type": "int"
+        },
+        {
+          "name": "Y",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "name": "Demo.Person",
+      "fields": [
+        {
+          "name": "Name",
+          "type": "string"
+        },
+        {
+          "name": "Age",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "Demo.Point.Point",
+      "param_count": 3,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "X",
+              "val": 1
+            },
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "Y",
+              "val": 2
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Person.Person",
+      "param_count": 3,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "Name",
+              "val": 1
+            },
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "Age",
+              "val": 2
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Person.Greet",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 0
+            },
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "Name"
+            },
+            {
+              "op": "to_str",
+              "dst": 3,
+              "src": 2
+            },
+            {
+              "op": "const_str",
+              "dst": 4,
+              "idx": 1
+            },
+            {
+              "op": "field_get",
+              "dst": 5,
+              "obj": 0,
+              "field_name": "Age"
+            },
+            {
+              "op": "to_str",
+              "dst": 6,
+              "src": 5
+            },
+            {
+              "op": "str_concat",
+              "dst": 7,
+              "a": 1,
+              "b": 3
+            },
+            {
+              "op": "str_concat",
+              "dst": 8,
+              "a": 7,
+              "b": 4
+            },
+            {
+              "op": "str_concat",
+              "dst": 9,
+              "a": 8,
+              "b": 6
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 9
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 3
+            },
+            {
+              "op": "const_i64",
+              "dst": 1,
+              "val": 4
+            },
+            {
+              "op": "obj_new",
+              "dst": 2,
+              "class_name": "Demo.Point",
+              "args": [
+                0,
+                1
+              ]
+            },
+            {
+              "op": "store",
+              "var": "p",
+              "src": 2
+            },
+            {
+              "op": "load",
+              "dst": 3,
+              "var": "p"
+            },
+            {
+              "op": "field_get",
+              "dst": 4,
+              "obj": 3,
+              "field_name": "X"
+            },
+            {
+              "op": "builtin",
+              "dst": 5,
+              "name": "__println",
+              "args": [
+                4
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 6,
+              "var": "p"
+            },
+            {
+              "op": "field_get",
+              "dst": 7,
+              "obj": 6,
+              "field_name": "Y"
+            },
+            {
+              "op": "builtin",
+              "dst": 8,
+              "name": "__println",
+              "args": [
+                7
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 9,
+              "idx": 2
+            },
+            {
+              "op": "const_i64",
+              "dst": 10,
+              "val": 30
+            },
+            {
+              "op": "obj_new",
+              "dst": 11,
+              "class_name": "Demo.Person",
+              "args": [
+                9,
+                10
+              ]
+            },
+            {
+              "op": "store",
+              "var": "person",
+              "src": 11
+            },
+            {
+              "op": "load",
+              "dst": 12,
+              "var": "person"
+            },
+            {
+              "op": "v_call",
+              "dst": 13,
+              "obj": 12,
+              "method": "Greet",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 14,
+              "name": "__println",
+              "args": [
+                13
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 15,
+              "idx": 3
+            },
+            {
+              "op": "load",
+              "dst": 16,
+              "var": "person"
+            },
+            {
+              "op": "field_set",
+              "obj": 16,
+              "field_name": "Name",
+              "val": 15
+            },
+            {
+              "op": "load",
+              "dst": 17,
+              "var": "person"
+            },
+            {
+              "op": "v_call",
+              "dst": 18,
+              "obj": 17,
+              "method": "Greet",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 19,
+              "name": "__println",
+              "args": [
+                18
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

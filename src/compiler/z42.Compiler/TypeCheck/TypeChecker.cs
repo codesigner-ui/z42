@@ -27,6 +27,10 @@ public sealed partial class TypeChecker
     private          Dictionary<string, Z42InterfaceType> _interfaces = new();
     /// class name → set of interface names the class declares it implements
     private          Dictionary<string, HashSet<string>>  _classInterfaces = new();
+    /// class name → set of abstract method names (inherited + own)
+    private          Dictionary<string, HashSet<string>>  _abstractMethods = new();
+    /// set of abstract class names
+    private          HashSet<string>                      _abstractClasses = new();
     private readonly Dictionary<string, long>             _globalEnumConstants = new();
     private readonly HashSet<string>                      _enumTypes           = new();
     /// The class currently being type-checked (null when checking top-level functions).
@@ -108,6 +112,12 @@ public sealed partial class TypeChecker
                 cls.Name, fields, methods, staticFields, staticMethods,
                 memberVis, cls.BaseClass);
             _classInterfaces[cls.Name] = cls.Interfaces.ToHashSet();
+
+            if (cls.IsAbstract) _abstractClasses.Add(cls.Name);
+            _abstractMethods[cls.Name] = cls.Methods
+                .Where(m => m.IsAbstract)
+                .Select(m => m.Name)
+                .ToHashSet();
         }
 
         // Second pass: merge inherited fields/methods from base class (single inheritance)
@@ -124,6 +134,22 @@ public sealed partial class TypeChecker
             foreach (var kv in derived.Methods) mergedMethods[kv.Key] = kv.Value;
 
             _classes[cls.Name] = derived with { Fields = mergedFields, Methods = mergedMethods };
+
+            // Propagate abstract methods: derived inherits unimplemented abstract methods
+            var baseAbstract = _abstractMethods.GetValueOrDefault(cls.BaseClass, []);
+            var ownMethods   = cls.Methods.Select(m => m.Name).ToHashSet();
+            var remaining    = baseAbstract.Except(ownMethods).ToHashSet();
+            _abstractMethods[cls.Name] = [.._abstractMethods.GetValueOrDefault(cls.Name, []), ..remaining];
+        }
+
+        // Third pass: concrete classes must implement all inherited abstract methods
+        foreach (var cls in cu.Classes)
+        {
+            if (cls.IsAbstract) continue; // abstract classes may leave methods unimplemented
+            if (_abstractMethods.TryGetValue(cls.Name, out var unimpl) && unimpl.Count > 0)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"class `{cls.Name}` must implement abstract method(s): {string.Join(", ", unimpl.Select(m => $"`{m}`"))}",
+                    cls.Span);
         }
     }
 

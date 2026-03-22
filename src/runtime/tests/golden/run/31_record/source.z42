@@ -1,0 +1,20 @@
+namespace Demo;
+
+record Point(int X, int Y);
+
+record Person(string Name, int Age) {
+    string Greet() {
+        return $"Hi, I'm {this.Name}, age {this.Age}";
+    }
+}
+
+void Main() {
+    var p = new Point(3, 4);
+    Console.WriteLine(p.X);
+    Console.WriteLine(p.Y);
+
+    var person = new Person("Alice", 30);
+    Console.WriteLine(person.Greet());
+    person.Name = "Bob";
+    Console.WriteLine(person.Greet());
+}

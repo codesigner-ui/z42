@@ -125,8 +125,15 @@ public sealed partial class TypeChecker
                 return ResolveType(cast.TargetType);
 
             case NewExpr newExpr:
+            {
                 foreach (var arg in newExpr.Args) CheckExpr(arg, env);
-                return ResolveType(newExpr.Type);
+                var newType = ResolveType(newExpr.Type);
+                if (newExpr.Type is NamedType { Name: var newName }
+                    && _abstractClasses.Contains(newName))
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"cannot instantiate abstract class `{newName}`", newExpr.Span);
+                return newType;
+            }
 
             case ArrayCreateExpr ac:
             {

@@ -75,9 +75,9 @@ internal sealed partial class ParserContext
 
     /// Parses non-visibility modifiers (static, abstract, sealed, virtual, override, async, new)
     /// and returns which were present.
-    private (bool IsStatic, bool IsVirtual, bool IsOverride) ParseNonVisibilityModifiers()
+    private (bool IsStatic, bool IsVirtual, bool IsOverride, bool IsAbstract) ParseNonVisibilityModifiers()
     {
-        bool isStatic = false, isVirtual = false, isOverride = false;
+        bool isStatic = false, isVirtual = false, isOverride = false, isAbstract = false;
         while (Current.Kind is TokenKind.Static or TokenKind.Abstract or TokenKind.Sealed
                             or TokenKind.Virtual or TokenKind.Override or TokenKind.Async
                             or TokenKind.New)
@@ -85,9 +85,10 @@ internal sealed partial class ParserContext
             if (Current.Kind == TokenKind.Static)   isStatic   = true;
             if (Current.Kind == TokenKind.Virtual)  isVirtual  = true;
             if (Current.Kind == TokenKind.Override) isOverride = true;
+            if (Current.Kind == TokenKind.Abstract) isAbstract = true;
             Advance();
         }
-        return (isStatic, isVirtual, isOverride);
+        return (isStatic, isVirtual, isOverride, isAbstract);
     }
 
     // ── Enum declaration ──────────────────────────────────────────────────────
@@ -230,6 +231,8 @@ internal sealed partial class ParserContext
                    or TokenKind.Abstract or TokenKind.Sealed)
             i++;
         if (_pos + i >= _tokens.Count) return false;
+        // `record`, `record class`, `record struct`
+        if (_tokens[_pos + i].Kind == TokenKind.Record) return true;
         return _tokens[_pos + i].Kind is TokenKind.Class or TokenKind.Struct;
     }
 
@@ -237,10 +240,15 @@ internal sealed partial class ParserContext
     {
         var start = Current.Span;
         var vis = ParseVisibility(Visibility.Internal);
-        ParseNonVisibilityModifiers();
+        var (_, _, _, isAbstract) = ParseNonVisibilityModifiers();
+
+        // record, record class, record struct
+        bool isRecord = false;
+        if (Current.Kind == TokenKind.Record) { isRecord = true; Advance(); }
 
         bool isStruct = Current.Kind == TokenKind.Struct;
-        Advance(); // consume 'class' or 'struct'
+        // consume 'class', 'struct', or for bare `record Name(...)` the name comes next directly
+        if (Current.Kind is TokenKind.Class or TokenKind.Struct) Advance();
         var name = Expect(TokenKind.Identifier).Text;
 
         // Skip generic parameters: class Foo<T, U>
@@ -253,6 +261,42 @@ internal sealed partial class ParserContext
                 if (Check(TokenKind.Gt)) depth--;
                 Advance();
             }
+        }
+
+        // Positional record params: record Person(string Name, int Age)
+        // → desugar to public fields + a constructor method
+        var fields  = new List<FieldDecl>();
+        var methods = new List<FunctionDecl>();
+        if (isRecord && Check(TokenKind.LParen))
+        {
+            Advance(); // consume '('
+            var ctorParams = new List<Param>();
+            var ctorStmts  = new List<Stmt>();
+            while (!Check(TokenKind.RParen) && !Check(TokenKind.Eof))
+            {
+                var pSpan = Current.Span;
+                ParseVisibility(Visibility.Public); // consume optional modifier
+                var pType = ParseTypeExpr();
+                var pName = Expect(TokenKind.Identifier).Text;
+                ctorParams.Add(new Param(pName, pType, pSpan));
+                fields.Add(new FieldDecl(pName, pType, Visibility.Public, false, pSpan));
+                // this.Name = Name;
+                ctorStmts.Add(new ExprStmt(
+                    new AssignExpr(
+                        new MemberExpr(new IdentExpr("this", pSpan), pName, pSpan),
+                        new IdentExpr(pName, pSpan),
+                        pSpan),
+                    pSpan));
+                if (!Match(TokenKind.Comma)) break;
+            }
+            Expect(TokenKind.RParen);
+            // Synthesize constructor
+            var ctorBody = new BlockStmt(ctorStmts, start);
+            methods.Add(new FunctionDecl(name, ctorParams, new VoidType(start),
+                ctorBody, Visibility.Public, false, false, false, false, start));
+            // Optional ';' for bodyless record
+            if (Match(TokenKind.Semicolon))
+                return new ClassDecl(name, isStruct, isAbstract, vis, null, [], fields, methods, start);
         }
 
         // Parse base class / interfaces: class Foo : Base, IFace1, IFace2
@@ -288,8 +332,6 @@ internal sealed partial class ParserContext
 
         Expect(TokenKind.LBrace);
 
-        var fields  = new List<FieldDecl>();
-        var methods = new List<FunctionDecl>();
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
             if (Check(TokenKind.LBracket)) { SkipAttribute(); continue; }
@@ -297,7 +339,7 @@ internal sealed partial class ParserContext
             {
                 var fSpan  = Current.Span;
                 var fVis   = ParseVisibility(Visibility.Internal);
-                var (fStatic, _, _) = ParseNonVisibilityModifiers();
+                var (fStatic, _, _, _) = ParseNonVisibilityModifiers();
                 var fType  = ParseTypeExpr();
                 var fName  = Expect(TokenKind.Identifier).Text;
                 if (Check(TokenKind.LBrace))
@@ -316,7 +358,7 @@ internal sealed partial class ParserContext
         }
 
         Expect(TokenKind.RBrace);
-        return new ClassDecl(name, isStruct, vis, baseClass, interfaces, fields, methods, start);
+        return new ClassDecl(name, isStruct, isAbstract, vis, baseClass, interfaces, fields, methods, start);
     }
 
     /// Field: [modifiers] Type Ident (= | ; | { get/set })   vs   method: [modifiers] Type Ident (
@@ -362,7 +404,7 @@ internal sealed partial class ParserContext
     {
         var start = Current.Span;
         var vis = ParseVisibility(defaultVis);
-        var (isStatic, isVirtual, isOverride) = ParseNonVisibilityModifiers();
+        var (isStatic, isVirtual, isOverride, isAbstract) = ParseNonVisibilityModifiers();
 
         // Constructor pattern: Ident( — no explicit return type
         TypeExpr returnType;
@@ -390,8 +432,18 @@ internal sealed partial class ParserContext
         }
         Expect(TokenKind.RParen);
 
-        var body = ParseBlock();
-        return new FunctionDecl(name, parms, returnType, body, vis, isStatic, isVirtual, isOverride, start);
+        // Abstract methods have no body — just a semicolon
+        BlockStmt body;
+        if (isAbstract && Check(TokenKind.Semicolon))
+        {
+            Advance();
+            body = new BlockStmt([], start);
+        }
+        else
+        {
+            body = ParseBlock();
+        }
+        return new FunctionDecl(name, parms, returnType, body, vis, isStatic, isVirtual, isOverride, isAbstract, start);
     }
 
     // ── Type expressions ──────────────────────────────────────────────────────

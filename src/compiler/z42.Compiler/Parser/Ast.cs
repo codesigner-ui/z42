@@ -51,10 +51,11 @@ public sealed record EnumMember(string Name, long? Value, Span Span);
 
 // ── Class / struct declaration ────────────────────────────────────────────────
 
-/// `class Foo { ... }` or `struct Foo { ... }`
+/// `class Foo { ... }` or `struct Foo { ... }` or `record Foo(...) { ... }`
 public sealed record ClassDecl(
     string Name,
     bool IsStruct,
+    bool IsAbstract,
     Visibility Visibility,
     string? BaseClass,          // null = no explicit base class
     List<string> Interfaces,    // list of implemented interface names
@@ -81,6 +82,7 @@ public sealed record FunctionDecl(
     bool IsStatic,
     bool IsVirtual,
     bool IsOverride,
+    bool IsAbstract,
     Span Span);
 
 public sealed record Param(string Name, TypeExpr Type, Span Span);

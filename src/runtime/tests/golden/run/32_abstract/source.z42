@@ -1,0 +1,42 @@
+namespace Demo;
+
+abstract class Shape {
+    abstract string Describe();
+
+    string Label() {
+        return $"Shape: {this.Describe()}";
+    }
+}
+
+class Circle : Shape {
+    int Radius;
+
+    Circle(int r) {
+        this.Radius = r;
+    }
+
+    override string Describe() {
+        return $"circle(r={this.Radius})";
+    }
+}
+
+class Rectangle : Shape {
+    int W;
+    int H;
+
+    Rectangle(int w, int h) {
+        this.W = w;
+        this.H = h;
+    }
+
+    override string Describe() {
+        return $"rect({this.W}x{this.H})";
+    }
+}
+
+void Main() {
+    var c = new Circle(5);
+    var r = new Rectangle(3, 4);
+    Console.WriteLine(c.Label());
+    Console.WriteLine(r.Label());
+}

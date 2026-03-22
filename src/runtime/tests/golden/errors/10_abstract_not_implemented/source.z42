@@ -1,0 +1,13 @@
+namespace Demo;
+
+abstract class Animal {
+    abstract string Speak();
+}
+
+class Dog : Animal {
+    // Missing override of Speak() — should be a compile error
+}
+
+void Main() {
+    var d = new Dog();
+}
