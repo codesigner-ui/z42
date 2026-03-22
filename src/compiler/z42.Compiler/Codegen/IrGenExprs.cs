@@ -432,6 +432,18 @@ public sealed partial class IrGen
 
     private int EmitCall(CallExpr call)
     {
+        // ── Static user-defined class method call: ClassName.StaticMethod(args) ──
+        // Must be checked BEFORE instance builtins (e.g. "Add" is both a list builtin and a static method name)
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var staticCls }, Member: var staticMethod }
+            && _classStaticMethods.TryGetValue(QualifyName(staticCls), out var staticSet)
+            && staticSet.Contains(staticMethod))
+        {
+            var argRegs = call.Args.Select(EmitExpr).ToList();
+            int dst = Alloc();
+            Emit(new CallInstr(dst, $"{QualifyName(staticCls)}.{staticMethod}", argRegs));
+            return dst;
+        }
+
         // ── Pseudo-class static calls: Assert.X, Console.X, Math.X ──────────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var cls }, Member: var mStatic }
             && StaticBuiltins.TryGetValue($"{cls}.{mStatic}", out var staticBuiltin))
@@ -453,13 +465,13 @@ public sealed partial class IrGen
             return EmitBuiltin(instBuiltin, argRegs);
         }
 
-        // ── Class method call: obj.Method(args) ──────────────────────────────
+        // ── Instance method call via virtual dispatch: obj.Method(args) ─────
         if (call.Callee is MemberExpr mMethod)
         {
-            var argRegs = new List<int> { EmitExpr(mMethod.Target) };
-            argRegs.AddRange(call.Args.Select(EmitExpr));
+            int objReg  = EmitExpr(mMethod.Target);
+            var argRegs = call.Args.Select(EmitExpr).ToList();
             int dst = Alloc();
-            Emit(new CallInstr(dst, ResolveMethodName(mMethod.Member), argRegs));
+            Emit(new VCallInstr(dst, objReg, mMethod.Member, argRegs));
             return dst;
         }
 

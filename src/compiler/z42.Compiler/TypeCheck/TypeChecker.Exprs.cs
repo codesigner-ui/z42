@@ -163,6 +163,7 @@ public sealed partial class TypeChecker
         var t = env.LookupVar(id.Name) ?? env.LookupFunc(id.Name);
         if (t != null) return t;
         if (_enumTypes.Contains(id.Name)) return Z42Type.Unknown; // enum type name
+        if (_classes.ContainsKey(id.Name)) return Z42Type.Unknown; // class name used as static target
         _diags.UndefinedSymbol(id.Name, id.Span);
         return Z42Type.Error;
     }
@@ -286,6 +287,18 @@ public sealed partial class TypeChecker
         {
             foreach (var a in call.Args) CheckExpr(a, env);
             return Z42Type.Void;
+        }
+
+        // User-defined static class method calls: ClassName.StaticMethod(args)
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
+            && _classes.TryGetValue(clsName, out var staticCt)
+            && staticCt.StaticMethods.TryGetValue(staticMember, out var staticSig))
+        {
+            var argTs = call.Args.Select(a => CheckExpr(a, env)).ToList();
+            if (argTs.Count != staticSig.Params.Count)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"expected {staticSig.Params.Count} argument(s), got {argTs.Count}", call.Span);
+            return staticSig.Ret;
         }
 
         // Member method calls (instance methods or user-defined class methods)

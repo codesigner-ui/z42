@@ -13,7 +13,10 @@ public sealed record IrModule(
 
 // ── Class descriptor ──────────────────────────────────────────────────────────
 
-public sealed record IrClassDesc(string Name, List<IrFieldDesc> Fields);
+public sealed record IrClassDesc(
+    string Name,
+    [property: JsonPropertyName("base_class")] string? BaseClass,
+    List<IrFieldDesc> Fields);
 public sealed record IrFieldDesc(string Name, string Type);
 
 // ── Function ──────────────────────────────────────────────────────────────────
@@ -87,6 +90,7 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(ObjNewInstr),     "obj_new")]
 [JsonDerivedType(typeof(FieldGetInstr),   "field_get")]
 [JsonDerivedType(typeof(FieldSetInstr),   "field_set")]
+[JsonDerivedType(typeof(VCallInstr),      "v_call")]
 public abstract record IrInstr;
 
 public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
@@ -144,6 +148,8 @@ public sealed record ObjNewInstr(int Dst, string ClassName, List<int> Args) : Ir
 public sealed record FieldGetInstr(int Dst, int Obj, string FieldName)      : IrInstr;
 /// Store Val into field FieldName of object in register Obj.
 public sealed record FieldSetInstr(int Obj, string FieldName, int Val)      : IrInstr;
+/// Virtual dispatch: call Method on the runtime class of Obj, walking base classes.
+public sealed record VCallInstr(int Dst, int Obj, string Method, List<int> Args) : IrInstr;
 
 // ── Terminators ───────────────────────────────────────────────────────────────
 

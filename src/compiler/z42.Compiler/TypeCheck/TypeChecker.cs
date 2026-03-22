@@ -58,20 +58,51 @@ public sealed partial class TypeChecker
 
     private void CollectClasses(CompilationUnit cu)
     {
+        // First pass: collect own fields and methods, separated by IsStatic
         foreach (var cls in cu.Classes)
         {
-            var fields  = cls.Fields.ToDictionary(f => f.Name, f => ResolveType(f.Type));
-            var methods = new Dictionary<string, Z42FuncType>();
+            var fields        = new Dictionary<string, Z42Type>();
+            var staticFields  = new Dictionary<string, Z42Type>();
+            var methods       = new Dictionary<string, Z42FuncType>();
+            var staticMethods = new Dictionary<string, Z42FuncType>();
+
+            foreach (var f in cls.Fields)
+            {
+                var ft = ResolveType(f.Type);
+                if (f.IsStatic) staticFields[f.Name] = ft;
+                else            fields[f.Name]        = ft;
+            }
             foreach (var m in cls.Methods)
             {
                 var paramTypes = m.Params.Select(p => ResolveType(p.Type)).ToList();
                 var retType    = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
-                methods[m.Name] = new Z42FuncType(paramTypes, retType);
+                var sig        = new Z42FuncType(paramTypes, retType);
+                if (m.IsStatic) staticMethods[m.Name] = sig;
+                else            methods[m.Name]        = sig;
             }
             var memberVis = new Dictionary<string, Visibility>();
             foreach (var f in cls.Fields)  memberVis[f.Name] = f.Visibility;
             foreach (var m in cls.Methods) memberVis[m.Name] = m.Visibility;
-            _classes[cls.Name] = new Z42ClassType(cls.Name, fields, methods, memberVis);
+
+            _classes[cls.Name] = new Z42ClassType(
+                cls.Name, fields, methods, staticFields, staticMethods,
+                memberVis, cls.BaseClass);
+        }
+
+        // Second pass: merge inherited fields/methods from base class (single inheritance)
+        foreach (var cls in cu.Classes)
+        {
+            if (cls.BaseClass == null) continue;
+            if (!_classes.TryGetValue(cls.BaseClass, out var baseType)) continue;
+            var derived = _classes[cls.Name];
+
+            // Derived overrides base: start with base, then overlay derived own members
+            var mergedFields  = new Dictionary<string, Z42Type>(baseType.Fields);
+            var mergedMethods = new Dictionary<string, Z42FuncType>(baseType.Methods);
+            foreach (var kv in derived.Fields)  mergedFields[kv.Key]  = kv.Value;
+            foreach (var kv in derived.Methods) mergedMethods[kv.Key] = kv.Value;
+
+            _classes[cls.Name] = derived with { Fields = mergedFields, Methods = mergedMethods };
         }
     }
 
@@ -96,9 +127,13 @@ public sealed partial class TypeChecker
         {
             var env   = new TypeEnv(_funcs, _classes);
             var scope = env.PushScope();
-            scope.Define("this", classType);
-            foreach (var (fname, ftype) in classType.Fields)
-                scope.Define(fname, ftype);
+            if (!method.IsStatic)
+            {
+                // Instance method: `this` is in scope, as are instance fields
+                scope.Define("this", classType);
+                foreach (var (fname, ftype) in classType.Fields)
+                    scope.Define(fname, ftype);
+            }
             foreach (var p in method.Params)
                 scope.Define(p.Name, ResolveType(p.Type));
             bool isCtor = method.Name == cls.Name;
@@ -161,8 +196,24 @@ public sealed partial class TypeChecker
 
     private void RequireAssignable(Z42Type target, Z42Type source, Span span, string? msg = null)
     {
-        if (!Z42Type.IsAssignableTo(target, source))
-            _diags.Error(DiagnosticCodes.TypeMismatch,
-                msg ?? $"cannot assign `{source}` to `{target}`", span);
+        if (Z42Type.IsAssignableTo(target, source)) return;
+        // Inheritance: source class is a subtype of target class
+        if (target is Z42ClassType targetCt && source is Z42ClassType sourceCt
+            && IsSubclassOf(sourceCt.Name, targetCt.Name)) return;
+        _diags.Error(DiagnosticCodes.TypeMismatch,
+            msg ?? $"cannot assign `{source}` to `{target}`", span);
+    }
+
+    /// Returns true if <paramref name="derived"/> is a subclass of <paramref name="baseClass"/>
+    /// (walks the inheritance chain).
+    private bool IsSubclassOf(string derived, string baseClass)
+    {
+        var cur = derived;
+        while (_classes.TryGetValue(cur, out var ct) && ct.BaseClassName is { } parentName)
+        {
+            if (parentName == baseClass) return true;
+            cur = parentName;
+        }
+        return false;
     }
 }
