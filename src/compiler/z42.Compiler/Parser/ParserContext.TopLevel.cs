@@ -38,10 +38,45 @@ internal sealed partial class ParserContext
             if (Check(TokenKind.Using))     { Advance(); ParseQualifiedName(); Match(TokenKind.Semicolon); continue; }
             if (IsEnumDecl())               { enums.Add(ParseEnumDecl()); continue; }
             if (IsClassOrStructDecl())      { classes.Add(ParseClassDecl()); continue; }
-            functions.Add(ParseFunctionDecl());
+            functions.Add(ParseFunctionDecl(Visibility.Internal));
         }
 
         return new CompilationUnit(ns, usings, classes, functions, enums, start);
+    }
+
+    // ── Visibility helpers ────────────────────────────────────────────────────
+
+    /// Parses an optional access modifier; returns `defaultVis` if none present.
+    /// Throws if two visibility modifiers appear in a row (illegal combination).
+    private Visibility ParseVisibility(Visibility defaultVis)
+    {
+        if (Current.Kind is not (TokenKind.Public or TokenKind.Private
+                              or TokenKind.Protected or TokenKind.Internal))
+            return defaultVis;
+
+        var vis = Current.Kind switch
+        {
+            TokenKind.Public    => Visibility.Public,
+            TokenKind.Private   => Visibility.Private,
+            TokenKind.Protected => Visibility.Protected,
+            _                   => Visibility.Internal,   // TokenKind.Internal
+        };
+        Advance();
+
+        // Detect illegal combined visibility (e.g. "protected internal")
+        if (Current.Kind is TokenKind.Public or TokenKind.Private
+                         or TokenKind.Protected or TokenKind.Internal)
+            throw new ParseException("cannot combine access modifiers", Current.Span);
+
+        return vis;
+    }
+
+    /// Skips non-visibility modifiers: static, abstract, sealed, virtual, override, async.
+    private void SkipNonVisibilityModifiers()
+    {
+        while (Current.Kind is TokenKind.Static or TokenKind.Abstract or TokenKind.Sealed
+                            or TokenKind.Virtual or TokenKind.Override or TokenKind.Async)
+            Advance();
     }
 
     // ── Enum declaration ──────────────────────────────────────────────────────
@@ -59,9 +94,8 @@ internal sealed partial class ParserContext
     private EnumDecl ParseEnumDecl()
     {
         var start = Current.Span;
-        while (Current.Kind is TokenKind.Public or TokenKind.Private
-                             or TokenKind.Protected or TokenKind.Internal)
-            Advance();
+        var vis = ParseVisibility(Visibility.Internal);
+        SkipNonVisibilityModifiers();
         Expect(TokenKind.Enum);
         var name = Expect(TokenKind.Identifier).Text;
         if (Match(TokenKind.Colon)) { Advance(); } // optional `: int` base type
@@ -72,6 +106,11 @@ internal sealed partial class ParserContext
         while (!Check(TokenKind.RBrace) && !Check(TokenKind.Eof))
         {
             var mSpan = Current.Span;
+            // Enum members cannot have access modifiers
+            if (Current.Kind is TokenKind.Public or TokenKind.Private
+                              or TokenKind.Protected or TokenKind.Internal)
+                throw new ParseException(
+                    "enum members cannot have access modifiers", Current.Span);
             var mName = Expect(TokenKind.Identifier).Text;
             long? val;
             if (Match(TokenKind.Eq))
@@ -89,7 +128,7 @@ internal sealed partial class ParserContext
             if (!Match(TokenKind.Comma)) break;
         }
         Expect(TokenKind.RBrace);
-        return new EnumDecl(name, members, start);
+        return new EnumDecl(name, vis, members, start);
     }
 
     // ── Class / struct declaration ────────────────────────────────────────────
@@ -109,10 +148,8 @@ internal sealed partial class ParserContext
     private ClassDecl ParseClassDecl()
     {
         var start = Current.Span;
-        while (Current.Kind is TokenKind.Public or TokenKind.Private or TokenKind.Protected
-                             or TokenKind.Internal or TokenKind.Static or TokenKind.Abstract
-                             or TokenKind.Sealed)
-            Advance();
+        var vis = ParseVisibility(Visibility.Internal);
+        SkipNonVisibilityModifiers();
 
         bool isStruct = Current.Kind == TokenKind.Struct;
         Advance(); // consume 'class' or 'struct'
@@ -147,24 +184,22 @@ internal sealed partial class ParserContext
             if (IsFieldDecl())
             {
                 var fSpan = Current.Span;
-                while (Current.Kind is TokenKind.Public or TokenKind.Private
-                                    or TokenKind.Protected or TokenKind.Internal
-                                    or TokenKind.Static)
-                    Advance();
+                var fVis  = ParseVisibility(Visibility.Internal);  // default: internal (Phase 1 compat)
+                SkipNonVisibilityModifiers();
                 var fType = ParseTypeExpr();
                 var fName = Expect(TokenKind.Identifier).Text;
                 Expr? fInit = Match(TokenKind.Eq) ? ParseExpr() : null;
                 Expect(TokenKind.Semicolon);
-                fields.Add(new FieldDecl(fName, fType, fSpan));
+                fields.Add(new FieldDecl(fName, fType, fVis, fSpan));
             }
             else
             {
-                methods.Add(ParseFunctionDecl());
+                methods.Add(ParseFunctionDecl(Visibility.Internal));  // default: internal (Phase 1 compat)
             }
         }
 
         Expect(TokenKind.RBrace);
-        return new ClassDecl(name, isStruct, fields, methods, start);
+        return new ClassDecl(name, isStruct, vis, fields, methods, start);
     }
 
     /// Field: [modifiers] Type Ident (= | ;)   vs   method: [modifiers] Type Ident (
@@ -191,14 +226,11 @@ internal sealed partial class ParserContext
 
     // ── Function declaration ──────────────────────────────────────────────────
 
-    private FunctionDecl ParseFunctionDecl()
+    private FunctionDecl ParseFunctionDecl(Visibility defaultVis)
     {
         var start = Current.Span;
-        while (Current.Kind is TokenKind.Public or TokenKind.Private or TokenKind.Protected
-                             or TokenKind.Internal or TokenKind.Static or TokenKind.Async
-                             or TokenKind.Abstract or TokenKind.Override or TokenKind.Virtual
-                             or TokenKind.Sealed)
-            Advance();
+        var vis = ParseVisibility(defaultVis);
+        SkipNonVisibilityModifiers();
 
         // Constructor pattern: Ident( — no explicit return type
         TypeExpr returnType;
@@ -227,7 +259,7 @@ internal sealed partial class ParserContext
         Expect(TokenKind.RParen);
 
         var body = ParseBlock();
-        return new FunctionDecl(name, parms, returnType, body, start);
+        return new FunctionDecl(name, parms, returnType, body, vis, start);
     }
 
     // ── Type expressions ──────────────────────────────────────────────────────

@@ -49,8 +49,25 @@ public sealed partial class TypeChecker
                 var targetType = CheckExpr(m.Target, env);
                 if (targetType is Z42ClassType ct)
                 {
-                    if (ct.Fields.TryGetValue(m.Member, out var ft))  return ft;
-                    if (ct.Methods.TryGetValue(m.Member, out var mt)) return mt;
+                    bool insideClass = _currentClass == ct.Name;
+                    if (ct.Fields.TryGetValue(m.Member, out var ft))
+                    {
+                        if (!insideClass
+                            && ct.MemberVisibility.TryGetValue(m.Member, out var fv)
+                            && fv == Visibility.Private)
+                            _diags.Error(DiagnosticCodes.AccessViolation,
+                                $"field `{m.Member}` is private to `{ct.Name}`", m.Span);
+                        return ft;
+                    }
+                    if (ct.Methods.TryGetValue(m.Member, out var mt))
+                    {
+                        if (!insideClass
+                            && ct.MemberVisibility.TryGetValue(m.Member, out var mv)
+                            && mv == Visibility.Private)
+                            _diags.Error(DiagnosticCodes.AccessViolation,
+                                $"method `{m.Member}` is private to `{ct.Name}`", m.Span);
+                        return mt;
+                    }
                     _diags.Error(DiagnosticCodes.TypeMismatch,
                         $"type `{ct.Name}` has no member `{m.Member}`", m.Span);
                     return Z42Type.Error;
@@ -265,6 +282,12 @@ public sealed partial class TypeChecker
             {
                 if (ct.Methods.TryGetValue(mCallee.Member, out var mt))
                 {
+                    bool insideClass = _currentClass == ct.Name;
+                    if (!insideClass
+                        && ct.MemberVisibility.TryGetValue(mCallee.Member, out var mv)
+                        && mv == Visibility.Private)
+                        _diags.Error(DiagnosticCodes.AccessViolation,
+                            $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
                     if (argTypes.Count != mt.Params.Count)
                         _diags.Error(DiagnosticCodes.TypeMismatch,
                             $"expected {mt.Params.Count} argument(s), got {argTypes.Count}", call.Span);

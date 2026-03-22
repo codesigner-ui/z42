@@ -2,6 +2,13 @@ using Z42.Compiler.Lexer;
 
 namespace Z42.Compiler.Parser;
 
+// ── Access visibility ─────────────────────────────────────────────────────────
+
+/// Access visibility for a declaration.
+/// Phase 1 default: top-level and class members both default to Internal.
+/// Only explicit `private` is enforced by the TypeChecker in Phase 1.
+public enum Visibility { Private, Protected, Internal, Public }
+
 // ── Root ──────────────────────────────────────────────────────────────────────
 
 /// Top-level compilation unit produced by the parser.
@@ -18,6 +25,7 @@ public sealed record CompilationUnit(
 /// `enum Color { Red, Green = 2, Blue }`
 public sealed record EnumDecl(
     string Name,
+    Visibility Visibility,
     List<EnumMember> Members,
     Span Span);
 
@@ -30,12 +38,13 @@ public sealed record EnumMember(string Name, long? Value, Span Span);
 public sealed record ClassDecl(
     string Name,
     bool IsStruct,
+    Visibility Visibility,
     List<FieldDecl> Fields,
     List<FunctionDecl> Methods,
     Span Span);
 
 /// A field inside a class/struct: `int x;`
-public sealed record FieldDecl(string Name, TypeExpr Type, Span Span);
+public sealed record FieldDecl(string Name, TypeExpr Type, Visibility Visibility, Span Span);
 
 // ── Function declaration ──────────────────────────────────────────────────────
 
@@ -44,6 +53,7 @@ public sealed record FunctionDecl(
     List<Param> Params,
     TypeExpr ReturnType,
     BlockStmt Body,
+    Visibility Visibility,
     Span Span);
 
 public sealed record Param(string Name, TypeExpr Type, Span Span);

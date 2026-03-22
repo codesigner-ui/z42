@@ -1,0 +1,170 @@
+{
+  "name": "Demo",
+  "string_pool": [],
+  "classes": [
+    {
+      "name": "Demo.BankAccount",
+      "fields": [
+        {
+          "name": "balance",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "Demo.BankAccount.BankAccount",
+      "param_count": 2,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "balance",
+              "val": 1
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.BankAccount.Deposit",
+      "param_count": 2,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "balance"
+            },
+            {
+              "op": "add",
+              "dst": 3,
+              "a": 2,
+              "b": 1
+            },
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "balance",
+              "val": 3
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.BankAccount.GetBalance",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_get",
+              "dst": 1,
+              "obj": 0,
+              "field_name": "balance"
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 100
+            },
+            {
+              "op": "obj_new",
+              "dst": 1,
+              "class_name": "Demo.BankAccount",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "store",
+              "var": "acc",
+              "src": 1
+            },
+            {
+              "op": "load",
+              "dst": 2,
+              "var": "acc"
+            },
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 50
+            },
+            {
+              "op": "call",
+              "dst": 4,
+              "func": "Demo.BankAccount.Deposit",
+              "args": [
+                2,
+                3
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 5,
+              "var": "acc"
+            },
+            {
+              "op": "call",
+              "dst": 6,
+              "func": "Demo.BankAccount.GetBalance",
+              "args": [
+                5
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 7,
+              "name": "__println",
+              "args": [
+                6
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

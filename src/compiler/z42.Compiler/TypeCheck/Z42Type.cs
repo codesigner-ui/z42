@@ -1,3 +1,5 @@
+using Z42.Compiler.Parser;
+
 namespace Z42.Compiler.TypeCheck;
 
 // ── Semantic type hierarchy ────────────────────────────────────────────────────
@@ -111,8 +113,9 @@ public sealed record Z42OptionType(Z42Type Inner) : Z42Type
 /// User-defined class or struct type.
 public sealed record Z42ClassType(
     string Name,
-    IReadOnlyDictionary<string, Z42Type>     Fields,
-    IReadOnlyDictionary<string, Z42FuncType> Methods) : Z42Type
+    IReadOnlyDictionary<string, Z42Type>      Fields,
+    IReadOnlyDictionary<string, Z42FuncType>  Methods,
+    IReadOnlyDictionary<string, Visibility>   MemberVisibility) : Z42Type
 {
     public override string ToString() => Name;
 }

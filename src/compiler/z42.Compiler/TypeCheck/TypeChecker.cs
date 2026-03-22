@@ -26,6 +26,8 @@ public sealed partial class TypeChecker
     private          Dictionary<string, Z42ClassType> _classes = new();
     private readonly Dictionary<string, long>         _globalEnumConstants = new();
     private readonly HashSet<string>                  _enumTypes           = new();
+    /// The class currently being type-checked (null when checking top-level functions).
+    private          string?                          _currentClass        = null;
 
     public TypeChecker(DiagnosticBag diags) => _diags = diags;
 
@@ -66,7 +68,10 @@ public sealed partial class TypeChecker
                 var retType    = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
                 methods[m.Name] = new Z42FuncType(paramTypes, retType);
             }
-            _classes[cls.Name] = new Z42ClassType(cls.Name, fields, methods);
+            var memberVis = new Dictionary<string, Visibility>();
+            foreach (var f in cls.Fields)  memberVis[f.Name] = f.Visibility;
+            foreach (var m in cls.Methods) memberVis[m.Name] = m.Visibility;
+            _classes[cls.Name] = new Z42ClassType(cls.Name, fields, methods, memberVis);
         }
     }
 
@@ -86,6 +91,7 @@ public sealed partial class TypeChecker
     private void CheckClassMethods(ClassDecl cls)
     {
         if (!_classes.TryGetValue(cls.Name, out var classType)) return;
+        _currentClass = cls.Name;
         foreach (var method in cls.Methods)
         {
             var env   = new TypeEnv(_funcs, _classes);
@@ -98,6 +104,7 @@ public sealed partial class TypeChecker
             bool isCtor = method.Name == cls.Name;
             CheckBlock(method.Body, scope, isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
         }
+        _currentClass = null;
     }
 
     private void CheckFunction(FunctionDecl fn)

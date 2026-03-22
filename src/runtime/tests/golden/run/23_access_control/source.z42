@@ -1,0 +1,14 @@
+namespace Demo;
+
+class BankAccount {
+    private int balance;
+    public BankAccount(int initial) { this.balance = initial; }
+    public void Deposit(int amount) { this.balance = this.balance + amount; }
+    public int GetBalance() { return this.balance; }
+}
+
+void Main() {
+    var acc = new BankAccount(100);
+    acc.Deposit(50);
+    Console.WriteLine(acc.GetBalance());
+}

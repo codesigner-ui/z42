@@ -61,6 +61,8 @@ public static class DiagnosticCodes
     public const string UndefinedSymbol      = "Z0401";
     public const string TypeMismatch         = "Z0402";
     public const string MissingReturn        = "Z0403";
+    public const string AccessViolation      = "Z0404";  // private member accessed from outside class
+    public const string InvalidModifier      = "Z0405";  // illegal modifier (e.g. combined, or on enum member)
 
     // IrGen
     public const string UnsupportedSyntax    = "Z0501";

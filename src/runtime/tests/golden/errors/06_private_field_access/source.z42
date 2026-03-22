@@ -1,0 +1,12 @@
+namespace Demo;
+
+class Counter {
+    private int count;
+    Counter() { count = 0; }
+    void Increment() { count = count + 1; }
+}
+
+void Main() {
+    var c = new Counter();
+    Console.WriteLine(c.count);
+}

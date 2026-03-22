@@ -1,0 +1,11 @@
+namespace Demo;
+
+class Foo {
+    private void Secret() { Console.WriteLine("secret"); }
+    public void Public() { this.Secret(); }
+}
+
+void Main() {
+    var f = new Foo();
+    f.Secret();
+}
