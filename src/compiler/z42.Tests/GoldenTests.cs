@@ -51,6 +51,7 @@ public sealed class GoldenTests
         PropertyNamingPolicy   = JsonNamingPolicy.SnakeCaseLower,
         WriteIndented          = true,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     // ── Test discovery ─────────────────────────────────────────────────────
@@ -213,10 +214,52 @@ public sealed class GoldenTests
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
         ir.Should().NotBeNull();
 
-        // Step 2 — serialise the IR so the VM can read it
-        string irJson  = JsonSerializer.Serialize(ir, JsonOpts);
-        string irFile  = Path.Combine(Path.GetTempPath(), $"z42_run_{Path.GetRandomFileName()}.json");
-        File.WriteAllText(irFile, irJson);
+        // Step 2 — serialise artifact in the format requested by the test
+        //   Default: .zbc   (single-file bytecode, production path)
+        //   Override: emit_format.txt containing "zlib" uses .zlib assembly format
+        string emitFmt = "zbc";
+        string fmtFile = Path.Combine(dir, "emit_format.txt");
+        if (File.Exists(fmtFile))
+            emitFmt = File.ReadAllText(fmtFile).Trim().ToLowerInvariant();
+
+        var zbc = new ZbcFile(
+            ZbcVersion : ZbcFile.CurrentVersion,
+            SourceFile : Path.Combine(dir, "source.z42"),
+            SourceHash : "sha256:test",
+            Namespace  : ir!.Name,
+            Exports    : ir.Functions.Select(f => f.Name).ToList(),
+            Imports    : [],
+            Module     : ir
+        );
+
+        string artifactJson;
+        string ext;
+        if (emitFmt == "zlib")
+        {
+            var libExports = ir.Functions
+                .Select(f => new ZlibExport($"{ir.Name}.{f.Name}", "func"))
+                .ToList();
+            var zlib = new ZlibFile(
+                ZlibVersion  : ZlibFile.CurrentVersion,
+                Name         : ir.Name,
+                Version      : "0.1.0",
+                Kind         : ZmodKind.Exe,
+                Exports      : libExports,
+                Dependencies : [],
+                Modules      : [zbc],
+                Entry        : $"{ir.Name}.Main"
+            );
+            artifactJson = JsonSerializer.Serialize(zlib, JsonOpts);
+            ext = ".zlib";
+        }
+        else
+        {
+            artifactJson = JsonSerializer.Serialize(zbc, JsonOpts);
+            ext = ".zbc";
+        }
+
+        string irFile = Path.Combine(Path.GetTempPath(), $"z42_run_{Path.GetRandomFileName()}{ext}");
+        File.WriteAllText(irFile, artifactJson);
 
         try
         {

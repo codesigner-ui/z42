@@ -1,10 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::{Parser, ValueEnum};
 
 #[derive(Parser)]
 #[command(name = "z42vm", about = "z42 Virtual Machine", version)]
 struct Cli {
-    /// Bytecode file to execute (.z42ir.json for Phase 1, .z42bc for Phase 2)
+    /// Bytecode file to execute.
+    /// Accepted formats: .z42ir.json (debug IR), .zbc, .zmod, .zlib
     file: String,
 
     /// Execution mode override (default: use annotation in bytecode)
@@ -32,11 +33,8 @@ fn main() -> Result<()> {
 
     tracing::debug!("z42vm loading {}", cli.file);
 
-    let json_text = std::fs::read_to_string(&cli.file)
-        .with_context(|| format!("cannot read `{}`", cli.file))?;
-
-    let module: z42_vm::bytecode::Module = serde_json::from_str(&json_text)
-        .with_context(|| format!("cannot parse bytecode JSON in `{}`", cli.file))?;
+    // Load and merge the artifact (format detected by extension).
+    let artifact = z42_vm::metadata::load_artifact(&cli.file)?;
 
     let default_mode = match cli.mode {
         Some(ExecMode::Jit) => z42_vm::types::ExecMode::Jit,
@@ -44,6 +42,6 @@ fn main() -> Result<()> {
         _                   => z42_vm::types::ExecMode::Interp,
     };
 
-    let vm = z42_vm::vm::Vm::new(module, default_mode);
-    vm.run()
+    let vm = z42_vm::vm::Vm::new(artifact.module, default_mode);
+    vm.run(artifact.entry_hint.as_deref())
 }

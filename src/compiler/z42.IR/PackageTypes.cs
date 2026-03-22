@@ -37,8 +37,8 @@ public sealed record ZmodDep(
     [property: JsonPropertyName("version")] string? Version = null
 );
 
-/// Project kind.
-[JsonConverter(typeof(JsonStringEnumConverter<ZmodKind>))]
+/// Project kind.  Serialised as lowercase ("lib" / "exe") to match Rust serde rename_all = "lowercase".
+/// Relies on callers passing JsonStringEnumConverter(CamelCase) in their JsonSerializerOptions.
 public enum ZmodKind { Lib, Exe }
 
 /// The .zmod manifest — project-level index of .zbc files and dependencies.
