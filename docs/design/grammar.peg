@@ -216,15 +216,20 @@ assign_expr
     / ternary_expr
 
 assign_op   = "=" / "+=" / "-=" / "*=" / "/=" / "%=" / "&&=" / "||=" / "??="
+            / "&=" / "|=" / "^="                                               # [feat:bitwise]
 
 ternary_expr                               # [feat:ternary]
     = or_expr (S "?" S expr S ":" S expr)?
 
 or_expr     = and_expr  (S "||" S and_expr)*
-and_expr    = null_coalesce_expr (S "&&" S null_coalesce_expr)*  # [feat:null_coalesce] for ??
+and_expr    = bitor_expr (S "&&" S bitor_expr)*    # [feat:null_coalesce] for ??
 null_coalesce_expr = eq_expr (S "??" S eq_expr)*   # [feat:null_coalesce]
+bitor_expr  = bitxor_expr (S "|"  S bitxor_expr)*  # [feat:bitwise]
+bitxor_expr = bitand_expr (S "^"  S bitand_expr)*  # [feat:bitwise]
+bitand_expr = eq_expr     (S "&"  S eq_expr)*       # [feat:bitwise]
 eq_expr     = rel_expr  (S ("==" / "!=") S rel_expr)*
-rel_expr    = add_expr  (S ("<=" / ">=" / "<" / ">" / "is" / "as") S add_expr)*
+rel_expr    = shift_expr  (S ("<=" / ">=" / "<" / ">" / "is" / "as") S shift_expr)*
+shift_expr  = add_expr    (S ("<<" / ">>") S add_expr)*                        # [feat:bitwise]
 add_expr    = mul_expr  (S ("+" / "-") S mul_expr)*
 mul_expr    = unary_expr (S ("*" / "/" / "%") S unary_expr)*
 

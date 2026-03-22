@@ -214,6 +214,7 @@ public sealed partial class IrGen
         {
             "!" => (IrInstr)new NotInstr(dst, src),
             "-" => new NegInstr(dst, src),
+            "~" => new BitNotInstr(dst, src),
             _   => new NotInstr(dst, src)
         });
         return dst;
@@ -356,6 +357,11 @@ public sealed partial class IrGen
             ">=" => new GeInstr(dst, a, b),
             "&&" => new AndInstr(dst, a, b),
             "||" => new OrInstr(dst, a, b),
+            "&"  => new BitAndInstr(dst, a, b),
+            "|"  => new BitOrInstr(dst, a, b),
+            "^"  => new BitXorInstr(dst, a, b),
+            "<<" => new ShlInstr(dst, a, b),
+            ">>" => new ShrInstr(dst, a, b),
             _    => throw new NotSupportedException($"operator `{bin.Op}` not yet supported")
         };
         Emit(instr);

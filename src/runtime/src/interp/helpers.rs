@@ -93,6 +93,24 @@ pub(super) fn numeric_lt(regs_map: &HashMap<u32, Value>, a: u32, b: u32) -> Resu
     })
 }
 
+/// Integer-only binary operation (bitwise/shift).  Rejects floats.
+pub(super) fn int_bitop(
+    regs_map: &HashMap<u32, Value>,
+    a: u32,
+    b: u32,
+    op: impl Fn(i64, i64) -> i64,
+) -> Result<Value> {
+    let va = regs_map.get(&a).ok_or_else(|| anyhow::anyhow!("undefined register %{a}"))?;
+    let vb = regs_map.get(&b).ok_or_else(|| anyhow::anyhow!("undefined register %{b}"))?;
+    Ok(match (va, vb) {
+        (Value::I32(x), Value::I32(y)) => Value::I32(op(*x as i64, *y as i64) as i32),
+        (Value::I64(x), Value::I64(y)) => Value::I64(op(*x, *y)),
+        (Value::I32(x), Value::I64(y)) => Value::I64(op(*x as i64, *y)),
+        (Value::I64(x), Value::I32(y)) => Value::I64(op(*x, *y as i64)),
+        (a, b) => bail!("bitwise op requires integral operands, got {:?} and {:?}", a, b),
+    })
+}
+
 /// Convert a Value to a usize index/size, rejecting negative values.
 pub(super) fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
     match v {

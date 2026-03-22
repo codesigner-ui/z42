@@ -176,7 +176,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
             ';' => TokenKind.Semicolon,
             '?' => Peek('?') ? Eat(TokenKind.QuestionQuestion) : TokenKind.Question,
             '~' => TokenKind.Tilde,
-            '^' => TokenKind.Caret,
+            '^' => Peek('=') ? Eat(TokenKind.CaretEq) : TokenKind.Caret,
             '#' => TokenKind.Hash,
             '+' => Peek('+') ? Eat(TokenKind.PlusPlus) : Peek('=') ? Eat(TokenKind.PlusEq) : TokenKind.Plus,
             '-' => Peek('-') ? Eat(TokenKind.MinusMinus) : Peek('>') ? Eat(TokenKind.Arrow) : Peek('=') ? Eat(TokenKind.MinusEq) : TokenKind.Minus,
@@ -187,8 +187,8 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
             '!' => Peek('=') ? Eat(TokenKind.BangEq)    : TokenKind.Bang,
             '<' => Peek('<') ? Eat(TokenKind.LtLt) : Peek('=') ? Eat(TokenKind.LtEq) : TokenKind.Lt,
             '>' => Peek('>') ? Eat(TokenKind.GtGt) : Peek('=') ? Eat(TokenKind.GtEq) : TokenKind.Gt,
-            '&' => Peek('&') ? Eat(TokenKind.AmpAmp)    : TokenKind.Ampersand,
-            '|' => Peek('|') ? Eat(TokenKind.PipePipe)  : TokenKind.Pipe,
+            '&' => Peek('&') ? Eat(TokenKind.AmpAmp) : Peek('=') ? Eat(TokenKind.AmpEq) : TokenKind.Ampersand,
+            '|' => Peek('|') ? Eat(TokenKind.PipePipe) : Peek('=') ? Eat(TokenKind.PipeEq) : TokenKind.Pipe,
             _   => TokenKind.Error_Unknown,
         };
         return new Token(kind, source[startPos.._pos], MakeSpan(startPos, startLine, startCol));

@@ -46,19 +46,13 @@ public sealed class GrammarSyncTests
 
         Assert.NotEmpty(tags);   // sanity: grammar must have at least one feat tag
 
-        // For each feat name, try disabling it via WithOverrides and assert IsEnabled returns false.
-        // If the name is unknown, GetByName falls through to `_ => true` and the assert fails.
+        // Each feat name must appear in LanguageFeatures.KnownFeatureNames.
         var unrecognised = tags
-            .Where(name =>
-            {
-                var overrides = new Dictionary<string, bool> { [name] = false };
-                var disabled  = LanguageFeatures.Phase1.WithOverrides(overrides);
-                return disabled.IsEnabled(name);   // still true → name is unknown
-            })
+            .Where(name => !LanguageFeatures.KnownFeatureNames.Contains(name))
             .ToList();
 
         Assert.True(unrecognised.Count == 0,
-            $"These [feat:NAME] tags in grammar.peg are not handled by LanguageFeatures.GetByName:\n"
+            $"These [feat:NAME] tags in grammar.peg are not in LanguageFeatures.KnownFeatureNames:\n"
             + string.Join("\n", unrecognised.Select(n => $"  - {n}")));
     }
 }

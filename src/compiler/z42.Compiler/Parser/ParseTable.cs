@@ -29,13 +29,17 @@ internal sealed record StmtRule(
 
 // ── Parse table (single source of truth for operator precedence & feature gates) ─
 
-/// Binding power levels (spaced by 10 to allow future insertions):
+/// Binding power levels (spaced to allow future insertions):
 ///   10  assignment  (right-assoc)
 ///   20  ternary / null-coalesce
-///   30  logical-or
-///   40  logical-and
-///   50  equality
+///   30  logical-or  (||)
+///   40  logical-and (&&)
+///   44  bitwise-or  (|)       [feat:bitwise]
+///   46  bitwise-xor (^)       [feat:bitwise]
+///   48  bitwise-and (&)       [feat:bitwise]
+///   50  equality    (== !=)
 ///   60  relational / is / as
+///   65  bit-shifts  (<< >>)   [feat:bitwise]
 ///   70  additive
 ///   80  multiplicative
 ///   85  (conceptual unary right-operand floor — not a Led level)
@@ -52,6 +56,9 @@ internal static class ParseTable
             [TokenKind.StarEq]    = new(10, null, Leds.CompoundAssign("*")),
             [TokenKind.SlashEq]   = new(10, null, Leds.CompoundAssign("/")),
             [TokenKind.PercentEq] = new(10, null, Leds.CompoundAssign("%")),
+            [TokenKind.AmpEq]     = new(10, null, Leds.CompoundAssign("&"),  "bitwise"),
+            [TokenKind.PipeEq]    = new(10, null, Leds.CompoundAssign("|"),  "bitwise"),
+            [TokenKind.CaretEq]   = new(10, null, Leds.CompoundAssign("^"),  "bitwise"),
 
             // ── Ternary / null-conditional (bp=20; feature handled inside Led) ──
             [TokenKind.Question]         = new(20, null, Leds.QuestionLed),
@@ -61,6 +68,11 @@ internal static class ParseTable
             // ── Logical (bp=30/40) ────────────────────────────────────────────
             [TokenKind.PipePipe] = new(30, null, Leds.BinaryLeft("||", 30)),
             [TokenKind.AmpAmp]   = new(40, null, Leds.BinaryLeft("&&", 40)),
+
+            // ── Bitwise OR/XOR/AND (bp=44/46/48) ─────────────────────────────
+            [TokenKind.Pipe]      = new(44, null, Leds.BinaryLeft("|",  44), "bitwise"),
+            [TokenKind.Caret]     = new(46, null, Leds.BinaryLeft("^",  46), "bitwise"),
+            [TokenKind.Ampersand] = new(48, null, Leds.BinaryLeft("&",  48), "bitwise"),
 
             // ── Equality (bp=50) ──────────────────────────────────────────────
             [TokenKind.EqEq]   = new(50, null, Leds.BinaryLeft("==", 50)),
@@ -73,6 +85,10 @@ internal static class ParseTable
             [TokenKind.GtEq] = new(60, null, Leds.BinaryLeft(">=", 60)),
             [TokenKind.Is]   = new(60, null, Leds.BinaryLeft("is", 60)),
             [TokenKind.As]   = new(60, null, Leds.BinaryLeft("as", 60)),
+
+            // ── Bit-shifts (bp=65) — between relational (60) and additive (70) ─
+            [TokenKind.LtLt] = new(65, null, Leds.BinaryLeft("<<", 65), "bitwise"),
+            [TokenKind.GtGt] = new(65, null, Leds.BinaryLeft(">>", 65), "bitwise"),
 
             // ── Additive (bp=70) — Plus/Minus also have prefix Nud ───────────
             [TokenKind.Plus]  = new(70, Nuds.PrefixUnary("+"), Leds.BinaryLeft("+", 70)),

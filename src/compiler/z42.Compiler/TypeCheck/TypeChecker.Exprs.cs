@@ -225,6 +225,17 @@ public sealed partial class TypeChecker
             case "is" or "as":
                 return Z42Type.Bool;
 
+            case "&" or "|" or "^" or "<<" or ">>":
+                if (!Z42Type.IsIntegral(lt) && lt is not Z42UnknownType and not Z42ErrorType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires integral operand, got `{lt}`", bin.Left.Span);
+                if (!Z42Type.IsIntegral(rt) && rt is not Z42UnknownType and not Z42ErrorType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `{bin.Op}` requires integral operand, got `{rt}`", bin.Right.Span);
+                return (lt is Z42ErrorType || rt is Z42ErrorType)
+                    ? Z42Type.Error
+                    : Z42Type.ArithmeticResult(lt, rt);
+
             default:
                 return Z42Type.Unknown;
         }
@@ -252,6 +263,11 @@ public sealed partial class TypeChecker
                 if (!Z42Type.IsNumeric(t) && t is not Z42UnknownType)
                     _diags.Error(DiagnosticCodes.TypeMismatch,
                         $"operator `{u.Op}` requires numeric operand, got `{t}`", u.Operand.Span);
+                return t;
+            case "~":
+                if (!Z42Type.IsIntegral(t) && t is not Z42UnknownType)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"operator `~` requires integral operand, got `{t}`", u.Operand.Span);
                 return t;
             case "await":
                 return Z42Type.Unknown;

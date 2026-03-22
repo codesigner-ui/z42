@@ -22,7 +22,14 @@ internal static class Nuds
     public static readonly NudFn IntLit = (ctx, tok) =>
     {
         var text = tok.Text.Replace("_", "").TrimEnd('L', 'l', 'u', 'U');
-        return new LitIntExpr(long.Parse(text), tok.Span);
+        long value;
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+            value = Convert.ToInt64(text[2..], 16);
+        else if (text.StartsWith("0b", StringComparison.OrdinalIgnoreCase))
+            value = Convert.ToInt64(text[2..], 2);
+        else
+            value = long.Parse(text);
+        return new LitIntExpr(value, tok.Span);
     };
 
     public static readonly NudFn FloatLit = (ctx, tok) =>

@@ -70,12 +70,15 @@ entry:
 %r = div  <type> %a, %b
 %r = rem  <type> %a, %b
 %r = neg  <type> %a
-%r = and  <type> %a, %b
-%r = or   <type> %a, %b
-%r = xor  <type> %a, %b
-%r = shl  <type> %a, %b
-%r = shr  <type> %a, %b
-%r = not  bool  %a
+%r = and  bool  %a, %b       ; logical AND
+%r = or   bool  %a, %b       ; logical OR
+%r = not  bool  %a           ; logical NOT
+%r = bit_and  i32|i64  %a, %b
+%r = bit_or   i32|i64  %a, %b
+%r = bit_xor  i32|i64  %a, %b
+%r = bit_not  i32|i64  %a
+%r = shl      i32|i64  %a, %b
+%r = shr      i32|i64  %a, %b
 ```
 
 ### Comparison

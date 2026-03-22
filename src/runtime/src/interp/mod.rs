@@ -13,7 +13,7 @@ pub use helpers::value_to_str;
 use crate::bytecode::{Function, Instruction, Module, Terminator};
 use crate::types::{ObjectData, Value};
 use anyhow::{bail, Context, Result};
-use helpers::{bool_val, collect_args, int_binop, numeric_lt, str_val, to_usize};
+use helpers::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -258,6 +258,31 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
                 other => bail!("Neg: expected numeric, got {:?}", other),
             };
             frame.set(*dst, res);
+        }
+
+        // ── Bitwise ──────────────────────────────────────────────────────────
+        Instruction::BitAnd { dst, a, b } => {
+            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x & y)?);
+        }
+        Instruction::BitOr { dst, a, b } => {
+            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x | y)?);
+        }
+        Instruction::BitXor { dst, a, b } => {
+            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x ^ y)?);
+        }
+        Instruction::BitNot { dst, src } => {
+            let res = match frame.get(*src)? {
+                Value::I32(n) => Value::I32(!n),
+                Value::I64(n) => Value::I64(!n),
+                other => bail!("BitNot: expected integral, got {:?}", other),
+            };
+            frame.set(*dst, res);
+        }
+        Instruction::Shl { dst, a, b } => {
+            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x << (y & 63))?);
+        }
+        Instruction::Shr { dst, a, b } => {
+            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x >> (y & 63))?);
         }
 
         // ── Variable slots ───────────────────────────────────────────────────

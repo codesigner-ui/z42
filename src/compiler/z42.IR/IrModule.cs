@@ -71,6 +71,12 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(OrInstr),        "or")]
 [JsonDerivedType(typeof(NotInstr),       "not")]
 [JsonDerivedType(typeof(NegInstr),       "neg")]
+[JsonDerivedType(typeof(BitAndInstr),    "bit_and")]
+[JsonDerivedType(typeof(BitOrInstr),     "bit_or")]
+[JsonDerivedType(typeof(BitXorInstr),    "bit_xor")]
+[JsonDerivedType(typeof(BitNotInstr),    "bit_not")]
+[JsonDerivedType(typeof(ShlInstr),       "shl")]
+[JsonDerivedType(typeof(ShrInstr),       "shr")]
 [JsonDerivedType(typeof(StoreInstr),       "store")]
 [JsonDerivedType(typeof(LoadInstr),        "load")]
 [JsonDerivedType(typeof(ArrayNewInstr),    "array_new")]
@@ -111,6 +117,12 @@ public sealed record AndInstr(int Dst, int A, int B)         : IrInstr;
 public sealed record OrInstr(int Dst, int A, int B)          : IrInstr;
 public sealed record NotInstr(int Dst, int Src)              : IrInstr;
 public sealed record NegInstr(int Dst, int Src)              : IrInstr;
+public sealed record BitAndInstr(int Dst, int A, int B)      : IrInstr;
+public sealed record BitOrInstr(int Dst, int A, int B)       : IrInstr;
+public sealed record BitXorInstr(int Dst, int A, int B)      : IrInstr;
+public sealed record BitNotInstr(int Dst, int Src)           : IrInstr;
+public sealed record ShlInstr(int Dst, int A, int B)         : IrInstr;
+public sealed record ShrInstr(int Dst, int A, int B)         : IrInstr;
 public sealed record StoreInstr(string Var, int Src)         : IrInstr;
 public sealed record LoadInstr(int Dst, string Var)          : IrInstr;
 // ── Array instructions ────────────────────────────────────────────────────────

@@ -98,6 +98,13 @@ pub enum Instruction {
     Not { dst: Reg, src: Reg },
     // Unary arithmetic
     Neg { dst: Reg, src: Reg },
+    // Bitwise
+    BitAnd { dst: Reg, a: Reg, b: Reg },
+    BitOr  { dst: Reg, a: Reg, b: Reg },
+    BitXor { dst: Reg, a: Reg, b: Reg },
+    BitNot { dst: Reg, src: Reg },
+    Shl    { dst: Reg, a: Reg, b: Reg },
+    Shr    { dst: Reg, a: Reg, b: Reg },
     // Mutable variable slots (for locals that cross basic block boundaries)
     Store { var: String, src: Reg },
     Load  { dst: Reg, var: String },

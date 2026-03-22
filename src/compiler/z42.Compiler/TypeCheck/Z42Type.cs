@@ -48,6 +48,10 @@ public abstract record Z42Type
     public static bool IsNumeric(Z42Type t) =>
         t is Z42PrimType { Name: "int" or "long" or "float" or "double" };
 
+    /// True for integer types that support bitwise operations.
+    public static bool IsIntegral(Z42Type t) =>
+        t is Z42PrimType { Name: "int" or "long" };
+
     public static bool IsBool(Z42Type t) => t == Bool;
 
     public static bool IsReferenceType(Z42Type t) =>

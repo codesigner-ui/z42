@@ -49,6 +49,7 @@ public enum TokenKind
     AmpAmp, PipePipe,
     PlusEq, MinusEq, StarEq, SlashEq, PercentEq,
     PlusPlus, MinusMinus,   // ++ --
+    AmpEq, PipeEq, CaretEq, // &= |= ^=
 
     // ── Attributes ────────────────────────────────────────────────────────
     Hash, LBracketHash,
