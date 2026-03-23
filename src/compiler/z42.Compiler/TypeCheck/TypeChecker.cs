@@ -182,6 +182,33 @@ public sealed partial class TypeChecker
                     $"class `{cls.Name}` must implement abstract method(s): {string.Join(", ", unimpl.Select(m => $"`{m}`"))}",
                     cls.Span);
         }
+
+        // Fourth pass: verify interface implementation completeness.
+        // For each interface a class explicitly declares, all interface methods must be present
+        // (the merged class type already includes inherited methods from base classes).
+        foreach (var cls in cu.Classes)
+        {
+            if (cls.IsAbstract) continue; // abstract classes may defer interface methods
+            if (!_classInterfaces.TryGetValue(cls.Name, out var ifaces) || ifaces.Count == 0) continue;
+            if (!_classes.TryGetValue(cls.Name, out var classType)) continue;
+
+            foreach (var ifaceName in ifaces)
+            {
+                if (!_interfaces.TryGetValue(ifaceName, out var iface)) continue;
+                foreach (var (methodName, ifaceSig) in iface.Methods)
+                {
+                    if (!classType.Methods.TryGetValue(methodName, out var implSig))
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"class `{cls.Name}` does not implement interface method `{ifaceName}.{methodName}`",
+                            cls.Span);
+                    else if (implSig.Params.Count != ifaceSig.Params.Count)
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"class `{cls.Name}` method `{methodName}` has wrong parameter count for interface `{ifaceName}` " +
+                            $"(expected {ifaceSig.Params.Count}, got {implSig.Params.Count})",
+                            cls.Span);
+                }
+            }
+        }
     }
 
     // ── Pass 1: function signatures ───────────────────────────────────────────

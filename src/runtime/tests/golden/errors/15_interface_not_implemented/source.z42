@@ -1,0 +1,23 @@
+namespace Demo;
+
+interface IShape {
+    double Area();
+    string Name();
+}
+
+class Circle : IShape {
+    double _r;
+
+    Circle(double r) {
+        this._r = r;
+    }
+
+    // Missing Name() — should be a compile error
+    override double Area() {
+        return 3.14 * this._r * this._r;
+    }
+}
+
+void Main() {
+    var c = new Circle(5.0);
+}
