@@ -4,9 +4,7 @@
 
 use crate::types::Value;
 use anyhow::{bail, Result};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 /// Convert a Value to its string representation.
 pub fn value_to_str(v: &Value) -> String {
@@ -117,14 +115,6 @@ pub(super) fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
         Value::I32(n) if *n >= 0 => Ok(*n as usize),
         Value::I64(n) if *n >= 0 => Ok(*n as usize),
         other => bail!("{}: expected non-negative integer, got {:?}", ctx, other),
-    }
-}
-
-/// Unwrap an Array value, returning its Rc.
-pub(super) fn expect_array(v: &Value, ctx: &str) -> Result<Rc<RefCell<Vec<Value>>>> {
-    match v {
-        Value::Array(rc) => Ok(rc.clone()),
-        other => bail!("{}: expected array, got {:?}", ctx, other),
     }
 }
 
