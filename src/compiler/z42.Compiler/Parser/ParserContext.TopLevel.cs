@@ -3,6 +3,45 @@ using Z42.Compiler.Lexer;
 
 namespace Z42.Compiler.Parser;
 
+// ── Grammar (top-level declarations — z42 Phase 1, C#-compatible subset) ─────
+//
+// compilation_unit  := namespace_decl? using_decl* top_item*
+// top_item          := class_decl | func_decl | enum_decl | interface_decl
+//
+// class_decl     := visibility? modifier* 'record'? ('class'|'struct') IDENT
+//                   ('<' type_params '>')?  (':' base_list)?
+//                   '{' (field_decl | func_decl)* '}'
+//                 | visibility? modifier* 'record' IDENT '(' param_list ')' ';'?
+// field_decl     := visibility? 'static'? type IDENT ('=' expr)? ';'
+//                 | visibility? 'static'? type IDENT '{' auto_prop_body '}'
+// func_decl      := visibility? modifier* type IDENT '(' param_list ')' block
+//                 | visibility? modifier* IDENT      '(' param_list ')' block   // ctor
+//                 | visibility? 'abstract' type IDENT '(' param_list ')' ';'
+// param_list     := (type IDENT (',' type IDENT)*)?
+//
+// enum_decl      := visibility? 'enum' IDENT '{' enum_member (',' enum_member)* ','? '}'
+// enum_member    := IDENT ('=' int_lit)?
+//
+// interface_decl := visibility? modifier* 'interface' IDENT (':' name_list)?
+//                   '{' method_sig* '}'
+// method_sig     := visibility? modifier* type IDENT '(' param_list ')' ';'
+//
+// modifier       := 'static' | 'abstract' | 'sealed' | 'virtual' | 'override'
+//                 | 'async' | 'new'
+// visibility     := 'public' | 'private' | 'protected' | 'internal'
+// type           := primitive | IDENT | type '[]' | type '<' type_args '>' | type '?'
+//
+// Feature gates (see ParseTable.StmtRules / ExprRules and LanguageFeatures):
+//   control_flow   — if / while / do / for / foreach / break / continue
+//   exceptions     — try / catch / finally / throw
+//   pattern_match  — switch expression, switch statement
+//   oop            — class / interface / struct / record / new
+//   arrays         — array creation and indexing
+//   bitwise        — &, |, ^, ~, <<, >>
+//   null_coalesce  — ??
+//   (see LanguageFeatures.cs for the full list)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /// Top-level compilation unit parsing — part of the ParserContext partial class.
 /// Handles: namespace, using, class, struct, enum, function declarations, and types.
 internal sealed partial class ParserContext
@@ -68,7 +107,8 @@ internal sealed partial class ParserContext
         // Detect illegal combined visibility (e.g. "protected internal")
         if (Current.Kind is TokenKind.Public or TokenKind.Private
                          or TokenKind.Protected or TokenKind.Internal)
-            throw new ParseException("cannot combine access modifiers", Current.Span);
+            throw new ParseException(
+                $"cannot combine access modifiers{ContextSuffix()}", Current.Span);
 
         return vis;
     }
@@ -111,6 +151,7 @@ internal sealed partial class ParserContext
         ParseNonVisibilityModifiers();
         Expect(TokenKind.Enum);
         var name = Expect(TokenKind.Identifier).Text;
+        using var _ctx = EnterContext($"enum declaration `{name}`");
         if (Match(TokenKind.Colon)) { Advance(); } // optional `: int` base type
         Expect(TokenKind.LBrace);
 
@@ -163,6 +204,7 @@ internal sealed partial class ParserContext
         ParseNonVisibilityModifiers(); // skip abstract, etc.
         Expect(TokenKind.Interface);
         var name = Expect(TokenKind.Identifier).Text;
+        using var _ctx = EnterContext($"interface declaration `{name}`");
 
         // Skip generic parameters: interface IFoo<T>
         if (Check(TokenKind.Lt))
@@ -201,17 +243,21 @@ internal sealed partial class ParserContext
                 continue;
             }
 
+            using var _mCtx = EnterContext($"method signature `{mName}`");
             Expect(TokenKind.LParen);
             var parms = new List<Param>();
-            while (!Check(TokenKind.RParen) && !Check(TokenKind.Eof))
+            using (EnterContext("parameter list"))
             {
-                var pSpan = Current.Span;
-                var pType = ParseTypeExpr();
-                var pName = Expect(TokenKind.Identifier).Text;
-                parms.Add(new Param(pName, pType, pSpan));
-                if (!Match(TokenKind.Comma)) break;
+                while (!Check(TokenKind.RParen) && !Check(TokenKind.Eof))
+                {
+                    var pSpan = Current.Span;
+                    var pType = ParseTypeExpr();
+                    var pName = Expect(TokenKind.Identifier).Text;
+                    parms.Add(new Param(pName, pType, pSpan));
+                    if (!Match(TokenKind.Comma)) break;
+                }
+                Expect(TokenKind.RParen);
             }
-            Expect(TokenKind.RParen);
             Expect(TokenKind.Semicolon);
 
             methods.Add(new MethodSignature(mName, parms, mType, mSpan));
@@ -251,6 +297,7 @@ internal sealed partial class ParserContext
         // consume 'class', 'struct', or for bare `record Name(...)` the name comes next directly
         if (Current.Kind is TokenKind.Class or TokenKind.Struct) Advance();
         var name = Expect(TokenKind.Identifier).Text;
+        using var _ctx = EnterContext($"{(isRecord ? "record" : isStruct ? "struct" : "class")} declaration `{name}`");
 
         // Skip generic parameters: class Foo<T, U>
         if (Check(TokenKind.Lt))
@@ -420,18 +467,22 @@ internal sealed partial class ParserContext
             returnType = ParseTypeExpr();
             name       = Expect(TokenKind.Identifier).Text;
         }
+        using var _fnCtx = EnterContext($"function declaration `{name}`");
 
         Expect(TokenKind.LParen);
         var parms = new List<Param>();
-        while (!Check(TokenKind.RParen) && !Check(TokenKind.Eof))
+        using (EnterContext("parameter list"))
         {
-            var pSpan = Current.Span;
-            var pType = ParseTypeExpr();
-            var pName = Expect(TokenKind.Identifier).Text;
-            parms.Add(new Param(pName, pType, pSpan));
-            if (!Match(TokenKind.Comma)) break;
+            while (!Check(TokenKind.RParen) && !Check(TokenKind.Eof))
+            {
+                var pSpan = Current.Span;
+                var pType = ParseTypeExpr();
+                var pName = Expect(TokenKind.Identifier).Text;
+                parms.Add(new Param(pName, pType, pSpan));
+                if (!Match(TokenKind.Comma)) break;
+            }
+            Expect(TokenKind.RParen);
         }
-        Expect(TokenKind.RParen);
 
         // Abstract methods have no body — just a semicolon
         BlockStmt body;
@@ -474,7 +525,8 @@ internal sealed partial class ParserContext
             TokenKind.U8 or TokenKind.U16 or TokenKind.U32 or TokenKind.U64 or
             TokenKind.F32 or TokenKind.F64 => Advance().Text,
             TokenKind.Identifier => Advance().Text,
-            _ => throw new ParseException($"expected type name, got `{Current.Text}`", span)
+            _ => throw new ParseException(
+                 $"expected type name, got `{Current.Text}`{ContextSuffix()}", span)
         };
 
         TypeExpr ty = name == "void" ? new VoidType(span) : new NamedType(name, span);

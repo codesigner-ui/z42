@@ -16,6 +16,13 @@ internal sealed partial class ParserContext
     private readonly LanguageFeatures _feat;
     private int _pos;
 
+    // Parse context stack — each frame is a human-readable label pushed by major
+    // parse methods (e.g. "function declaration", "parameter list").  When
+    // Expect() fails, the stack is appended to the error message so the user
+    // sees WHERE in the grammar the error occurred, not just which token was
+    // unexpected.  This mirrors nom's context() combinator approach.
+    private readonly Stack<string> _parseCtx = new();
+
     internal ParserContext(List<Token> tokens, LanguageFeatures feat)
     {
         _tokens = tokens;
@@ -44,7 +51,9 @@ internal sealed partial class ParserContext
             string got = Current.Kind == TokenKind.Eof
                 ? "unexpected end of file"
                 : $"unexpected token `{Current.Text}`";
-            throw new ParseException($"{got}, expected `{KindName(kind)}`", Current.Span);
+            throw new ParseException(
+                $"{got}, expected `{KindName(kind)}`{ContextSuffix()}",
+                Current.Span);
         }
         return Advance();
     }
@@ -63,6 +72,33 @@ internal sealed partial class ParserContext
     {
         if (!_feat.IsEnabled(name))
             throw new ParseException($"feature `{name}` is disabled", span);
+    }
+
+    // ── Parse context (richer error messages) ─────────────────────────────────
+
+    /// Push a human-readable label onto the parse context stack.
+    /// Dispose the returned scope to pop it.  Use with `using var _ = EnterContext(…)`.
+    ///
+    /// Example error with context:
+    ///   unexpected token `}`, expected `)` (while parsing: class declaration `Foo` > parameter list)
+    internal ParseContextScope EnterContext(string label)
+    {
+        _parseCtx.Push(label);
+        return new ParseContextScope(_parseCtx);
+    }
+
+    /// Formats the current context stack as a parenthetical suffix for error messages.
+    /// Returns empty string when the stack is empty.
+    /// Example: " (while parsing: class declaration `Foo` > parameter list)"
+    private string ContextSuffix() =>
+        _parseCtx.Count == 0
+            ? ""
+            : $" (while parsing: {string.Join(" > ", _parseCtx.Reverse())})";
+
+    /// RAII scope that pops one frame from the parse context stack on dispose.
+    internal sealed class ParseContextScope(Stack<string> stack) : IDisposable
+    {
+        public void Dispose() { if (stack.Count > 0) stack.Pop(); }
     }
 
     // ── Block & statement parsing ─────────────────────────────────────────────
@@ -119,7 +155,8 @@ internal sealed partial class ParserContext
 
         // Nud: prefix or atom
         if (!ParseTable.ExprRules.TryGetValue(Current.Kind, out var nudRule) || nudRule.Nud == null)
-            throw new ParseException($"unexpected token `{Current.Text}` in expression", span);
+            throw new ParseException(
+                $"unexpected token `{Current.Text}` in expression{ContextSuffix()}", span);
 
         if (nudRule.Feature != null) RequireFeature(nudRule.Feature, span);
 

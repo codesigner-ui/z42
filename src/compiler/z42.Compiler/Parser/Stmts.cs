@@ -81,6 +81,7 @@ internal static class Stmts
 
     public static readonly StmtFn For_ = (ctx, kw) =>
     {
+        using var _ctx = ctx.EnterContext("for statement");
         ctx.Expect(TokenKind.LParen);
         Stmt? init = ctx.Current.Kind == TokenKind.Semicolon ? null : ctx.ParseStmt();
         Expr? cond = ctx.Current.Kind == TokenKind.Semicolon ? null : ctx.ParseExpr();
@@ -95,6 +96,7 @@ internal static class Stmts
 
     public static readonly StmtFn Foreach_ = (ctx, kw) =>
     {
+        using var _ctx = ctx.EnterContext("foreach statement");
         ctx.Expect(TokenKind.LParen);
         ctx.Match(TokenKind.Var);   // optional var keyword
         var vname      = ctx.Expect(TokenKind.Identifier).Text;
@@ -149,6 +151,7 @@ internal static class Stmts
 
     public static readonly StmtFn TryCatch_ = (ctx, kw) =>
     {
+        using var _ctx = ctx.EnterContext("try statement");
         var tryBody = ctx.ParseBlock();
 
         var catches = new List<CatchClause>();
