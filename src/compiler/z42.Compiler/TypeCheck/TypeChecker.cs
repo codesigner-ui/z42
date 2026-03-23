@@ -245,6 +245,7 @@ public sealed partial class TypeChecker
                 foreach (var (fname, ftype) in classType.Fields)
                     scope.Define(fname, ftype);
             }
+            CheckParamNames(method.Params);
             foreach (var p in method.Params)
                 scope.Define(p.Name, ResolveType(p.Type));
             bool isCtor = method.Name == cls.Name;
@@ -257,9 +258,20 @@ public sealed partial class TypeChecker
     {
         var env   = new TypeEnv(_funcs, _classes);
         var scope = env.PushScope();
+        CheckParamNames(fn.Params);
         foreach (var p in fn.Params)
             scope.Define(p.Name, ResolveType(p.Type));
         CheckBlock(fn.Body, scope, ResolveType(fn.ReturnType));
+    }
+
+    /// Reports an error for any duplicate parameter name in a function / method.
+    private void CheckParamNames(IEnumerable<Param> parms)
+    {
+        var seen = new HashSet<string>();
+        foreach (var p in parms)
+            if (!seen.Add(p.Name))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"duplicate parameter name `{p.Name}`", p.Span);
     }
 
     // ── Type resolution ───────────────────────────────────────────────────────
