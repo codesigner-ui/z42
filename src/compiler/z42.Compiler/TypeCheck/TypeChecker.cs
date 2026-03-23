@@ -86,12 +86,27 @@ public sealed partial class TypeChecker
 
     private void CollectClasses(CompilationUnit cu)
     {
-        // First pass: collect own fields and methods, separated by IsStatic
+        // Pre-pass: register every class name as an empty stub so that
+        // self-referential field types (e.g. `Node next;` inside class Node)
+        // resolve to a proper Z42ClassType instead of Z42PrimType.
         foreach (var cls in cu.Classes)
         {
             if (_classes.ContainsKey(cls.Name))
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"duplicate class declaration `{cls.Name}`", cls.Span);
+            else
+                _classes[cls.Name] = new Z42ClassType(
+                    cls.Name, new Dictionary<string, Z42Type>(),
+                    new Dictionary<string, Z42FuncType>(),
+                    new Dictionary<string, Z42Type>(),
+                    new Dictionary<string, Z42FuncType>(),
+                    new Dictionary<string, Visibility>(),
+                    cls.BaseClass);
+        }
+
+        // First pass: collect own fields and methods, separated by IsStatic
+        foreach (var cls in cu.Classes)
+        {
             var fields        = new Dictionary<string, Z42Type>();
             var staticFields  = new Dictionary<string, Z42Type>();
             var methods       = new Dictionary<string, Z42FuncType>();
@@ -324,6 +339,10 @@ public sealed partial class TypeChecker
     private void RequireAssignable(Z42Type target, Z42Type source, Span span, string? msg = null)
     {
         if (Z42Type.IsAssignableTo(target, source)) return;
+        // Same-named class types are identical even if the instances differ
+        // (can happen with self-referential fields: `Node next` inside class Node
+        //  resolves to a stub instance before the full type is registered).
+        if (target is Z42ClassType tc1 && source is Z42ClassType tc2 && tc1.Name == tc2.Name) return;
         // Inheritance: source class is a subtype of target class
         if (target is Z42ClassType targetCt && source is Z42ClassType sourceCt
             && IsSubclassOf(sourceCt.Name, targetCt.Name)) return;

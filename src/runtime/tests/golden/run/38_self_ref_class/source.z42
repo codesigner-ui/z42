@@ -1,0 +1,58 @@
+namespace Demo;
+
+// Self-referential class (linked list Node)
+class Node {
+    int value;
+    Node next;
+
+    Node(int v) {
+        value = v;
+        next = null;
+    }
+}
+
+// Stack using implicit this.field access (no explicit `this.`)
+class Stack {
+    Node top;
+    int size;
+
+    Stack() {
+        top = null;
+        size = 0;
+    }
+
+    void Push(int v) {
+        var n = new Node(v);
+        n.next = top;
+        top = n;
+        size++;
+    }
+
+    int Pop() {
+        var val = top.value;
+        top = top.next;
+        size--;
+        return val;
+    }
+
+    bool IsEmpty() {
+        return top == null;
+    }
+}
+
+void Main() {
+    var s = new Stack();
+    Assert.True(s.IsEmpty());
+
+    s.Push(10);
+    s.Push(20);
+    s.Push(30);
+    Assert.Equal(3, s.size);
+    Assert.False(s.IsEmpty());
+
+    Assert.Equal(30, s.Pop());
+    Assert.Equal(20, s.Pop());
+    Assert.Equal(10, s.Pop());
+    Assert.True(s.IsEmpty());
+    Assert.Equal(0, s.size);
+}

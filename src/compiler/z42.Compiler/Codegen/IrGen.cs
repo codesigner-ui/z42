@@ -29,6 +29,8 @@ public sealed partial class IrGen
     private Dictionary<string, HashSet<string>> _classMethods = new();
     // Class name → set of static method names (for static call dispatch)
     private Dictionary<string, HashSet<string>> _classStaticMethods = new();
+    // Class name → set of instance field names (qualified, for implicit this.field access)
+    private Dictionary<string, HashSet<string>> _classInstanceFields = new();
     // Top-level function names (unqualified) — used to qualify free function calls
     private HashSet<string> _topLevelFunctionNames = new();
 
@@ -37,6 +39,8 @@ public sealed partial class IrGen
     private int _nextLabelId;
     private Dictionary<string, int> _locals = new();  // parameter name → register
     private HashSet<string> _mutableVars = new();     // local variable names (use Load/Store)
+    // Instance field names for the current class method (enables implicit `this.field` access)
+    private HashSet<string> _instanceFields = new();
     private List<IrBlock> _blocks = new();
     private List<IrExceptionEntry> _exceptionTable = new();
     // Loop context: (breakLabel, continueLabel) for the innermost enclosing loop
@@ -58,11 +62,12 @@ public sealed partial class IrGen
             foreach (var m in en.Members)
                 _enumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
 
-        // Build class method maps for call resolution (keyed by qualified class name)
+        // Build class method/field maps for call resolution (keyed by qualified class name)
         foreach (var cls in cu.Classes)
         {
-            _classMethods[QualifyName(cls.Name)]       = cls.Methods.Where(m => !m.IsStatic).Select(m => m.Name).ToHashSet();
-            _classStaticMethods[QualifyName(cls.Name)] = cls.Methods.Where(m =>  m.IsStatic).Select(m => m.Name).ToHashSet();
+            _classMethods[QualifyName(cls.Name)]        = cls.Methods.Where(m => !m.IsStatic).Select(m => m.Name).ToHashSet();
+            _classStaticMethods[QualifyName(cls.Name)]  = cls.Methods.Where(m =>  m.IsStatic).Select(m => m.Name).ToHashSet();
+            _classInstanceFields[QualifyName(cls.Name)] = cls.Fields.Where(f => !f.IsStatic).Select(f => f.Name).ToHashSet();
         }
 
         // Collect top-level function names for qualified call resolution
@@ -97,6 +102,11 @@ public sealed partial class IrGen
         _blocks         = new List<IrBlock>();
         _exceptionTable = new List<IrExceptionEntry>();
         _loopStack      = new Stack<(string, string)>();
+        // Track instance field names so bare `fieldName` → `this.fieldName` in instance methods
+        _instanceFields = isStatic ? [] :
+            (_classMethods.ContainsKey(QualifyName(className))
+                ? GetClassInstanceFieldNames(className)
+                : []);
 
         StartBlock("entry");
 
@@ -124,6 +134,7 @@ public sealed partial class IrGen
         _nextLabelId    = 0;
         _locals         = new Dictionary<string, int>();
         _mutableVars    = new HashSet<string>();
+        _instanceFields = [];   // top-level functions have no implicit this
         _blocks         = new List<IrBlock>();
         _exceptionTable = new List<IrExceptionEntry>();
         _loopStack      = new Stack<(string, string)>();
@@ -170,6 +181,10 @@ public sealed partial class IrGen
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private int Alloc() => _nextReg++;
+
+    /// Returns instance field names for a class.
+    private HashSet<string> GetClassInstanceFieldNames(string className) =>
+        _classInstanceFields.TryGetValue(QualifyName(className), out var fields) ? fields : [];
 
     private int Intern(string s)
     {

@@ -62,6 +62,13 @@ public sealed partial class IrGen
                     Emit(new LoadInstr(dst, id.Name));
                     return dst;
                 }
+                // Implicit `this.fieldName` — bare field access inside an instance method
+                if (_instanceFields.Contains(id.Name))
+                {
+                    int dst = Alloc();
+                    Emit(new FieldGetInstr(dst, 0, id.Name));  // reg 0 = this
+                    return dst;
+                }
                 throw new InvalidOperationException($"undefined variable `{id.Name}`");
             }
 
@@ -185,6 +192,8 @@ public sealed partial class IrGen
         {
             if (_mutableVars.Contains(id.Name))
                 Emit(new StoreInstr(id.Name, valReg));
+            else if (_instanceFields.Contains(id.Name))
+                Emit(new FieldSetInstr(0, id.Name, valReg));  // reg 0 = this
             else
                 _locals[id.Name] = valReg;
         }
@@ -218,10 +227,7 @@ public sealed partial class IrGen
             Emit(new ConstI64Instr(one, 1));
             Emit(u.Op == "++" ? new AddInstr(newReg, oldReg, one)
                               : (IrInstr)new SubInstr(newReg, oldReg, one));
-            if (_mutableVars.Contains(prefixId.Name))
-                Emit(new StoreInstr(prefixId.Name, newReg));
-            else
-                _locals[prefixId.Name] = newReg;
+            WriteBackName(prefixId.Name, newReg);
             return newReg;   // prefix: return NEW value (differs from postfix)
         }
 
@@ -247,13 +253,21 @@ public sealed partial class IrGen
             Emit(new ConstI64Instr(one, 1));
             Emit(post.Op == "++" ? new AddInstr(newReg, oldReg, one)
                                  : (IrInstr)new SubInstr(newReg, oldReg, one));
-            if (_mutableVars.Contains(id.Name))
-                Emit(new StoreInstr(id.Name, newReg));
-            else
-                _locals[id.Name] = newReg;
+            WriteBackName(id.Name, newReg);
             return oldReg;
         }
         return EmitExpr(post.Operand);
+    }
+
+    /// Write a new value back to a named variable — mutable local, SSA local, or implicit this.field.
+    private void WriteBackName(string name, int valReg)
+    {
+        if (_mutableVars.Contains(name))
+            Emit(new StoreInstr(name, valReg));
+        else if (_instanceFields.Contains(name))
+            Emit(new FieldSetInstr(0, name, valReg));
+        else
+            _locals[name] = valReg;
     }
 
     private int EmitTernary(ConditionalExpr ternary)
