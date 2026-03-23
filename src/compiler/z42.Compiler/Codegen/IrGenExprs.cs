@@ -209,6 +209,22 @@ public sealed partial class IrGen
     {
         if (u.Op == "await") return EmitExpr(u.Operand);
 
+        // Prefix ++ / -- : increment/decrement operand, return new value.
+        if (u.Op is "++" or "--" && u.Operand is IdentExpr prefixId)
+        {
+            int oldReg = EmitExpr(u.Operand);
+            int one    = Alloc();
+            int newReg = Alloc();
+            Emit(new ConstI64Instr(one, 1));
+            Emit(u.Op == "++" ? new AddInstr(newReg, oldReg, one)
+                              : (IrInstr)new SubInstr(newReg, oldReg, one));
+            if (_mutableVars.Contains(prefixId.Name))
+                Emit(new StoreInstr(prefixId.Name, newReg));
+            else
+                _locals[prefixId.Name] = newReg;
+            return newReg;   // prefix: return NEW value (differs from postfix)
+        }
+
         int src = EmitExpr(u.Operand);
         int dst = Alloc();
         Emit(u.Op switch
@@ -216,7 +232,7 @@ public sealed partial class IrGen
             "!" => (IrInstr)new NotInstr(dst, src),
             "-" => new NegInstr(dst, src),
             "~" => new BitNotInstr(dst, src),
-            _   => new NotInstr(dst, src)
+            _   => new CopyInstr(dst, src)  // unary "+" is identity
         });
         return dst;
     }

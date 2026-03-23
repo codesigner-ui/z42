@@ -1,0 +1,18 @@
+void Main() {
+    var i = 0;
+    var j = ++i;       // prefix ++: returns NEW value (1)
+    Assert.Equal(1, i);
+    Assert.Equal(1, j);
+
+    var k = --i;       // prefix --: returns NEW value (0)
+    Assert.Equal(0, i);
+    Assert.Equal(0, k);
+
+    var x = 5;
+    Assert.Equal(6, ++x);  // prefix ++ in expression context
+    Assert.Equal(6, x);
+
+    // Unary + is identity
+    var n = +42;
+    Assert.Equal(42, n);
+}
