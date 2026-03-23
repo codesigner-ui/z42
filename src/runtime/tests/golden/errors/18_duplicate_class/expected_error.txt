@@ -1,0 +1,1 @@
+*source.z42*: error Z0402: *duplicate class declaration `Widget`*

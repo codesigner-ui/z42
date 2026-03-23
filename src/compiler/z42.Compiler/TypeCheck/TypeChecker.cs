@@ -89,6 +89,9 @@ public sealed partial class TypeChecker
         // First pass: collect own fields and methods, separated by IsStatic
         foreach (var cls in cu.Classes)
         {
+            if (_classes.ContainsKey(cls.Name))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"duplicate class declaration `{cls.Name}`", cls.Span);
             var fields        = new Dictionary<string, Z42Type>();
             var staticFields  = new Dictionary<string, Z42Type>();
             var methods       = new Dictionary<string, Z42FuncType>();
@@ -217,6 +220,9 @@ public sealed partial class TypeChecker
     {
         foreach (var fn in cu.Functions)
         {
+            if (_funcs.ContainsKey(fn.Name))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"duplicate function declaration `{fn.Name}`", fn.Span);
             var paramTypes = fn.Params.Select(p => ResolveType(p.Type)).ToList();
             _funcs[fn.Name] = new Z42FuncType(paramTypes, ResolveType(fn.ReturnType));
         }

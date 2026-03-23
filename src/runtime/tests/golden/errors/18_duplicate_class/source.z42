@@ -1,0 +1,9 @@
+class Widget {
+    Widget() {}
+}
+
+class Widget {   // duplicate — should be a compile error
+    Widget() {}
+}
+
+void Main() {}
