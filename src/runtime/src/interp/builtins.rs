@@ -182,6 +182,43 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(parts))))
         }
 
+        // ── String static built-ins ──────────────────────────────────────────
+
+        "__str_is_null_or_empty" => match args.first() {
+            Some(Value::Null) | None => Ok(Value::Bool(true)),
+            Some(Value::Str(s))      => Ok(Value::Bool(s.is_empty())),
+            Some(other) => bail!("string.IsNullOrEmpty: expected string or null, got {:?}", other),
+        },
+
+        "__str_is_null_or_whitespace" => match args.first() {
+            Some(Value::Null) | None => Ok(Value::Bool(true)),
+            Some(Value::Str(s))      => Ok(Value::Bool(s.trim().is_empty())),
+            Some(other) => bail!("string.IsNullOrWhiteSpace: expected string or null, got {:?}", other),
+        },
+
+        // ── int / double parse ────────────────────────────────────────────────
+
+        "__int_parse" => {
+            let s = require_str(args, 0, "int.Parse")?;
+            match s.trim().parse::<i64>() {
+                Ok(n)  => Ok(Value::I64(n)),
+                Err(_) => bail!("int.Parse: could not parse \"{}\" as int", s),
+            }
+        }
+
+        "__double_parse" => {
+            let s = require_str(args, 0, "double.Parse")?;
+            match s.trim().parse::<f64>() {
+                Ok(f)  => Ok(Value::F64(f)),
+                Err(_) => bail!("double.Parse: could not parse \"{}\" as double", s),
+            }
+        }
+
+        "__to_str" => match args.first() {
+            Some(v) => Ok(Value::Str(value_to_str(v))),
+            None    => Ok(Value::Str(String::new())),
+        },
+
         // ── Math built-ins ────────────────────────────────────────────────────
 
         "__math_abs" => match args.first() {

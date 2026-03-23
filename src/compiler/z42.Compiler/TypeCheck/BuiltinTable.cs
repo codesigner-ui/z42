@@ -46,6 +46,15 @@ internal static class BuiltinTable
             ["Console.WriteLine"] = new(null, Void, "__println"),
             ["Console.Write"]     = new(null, Void, "__print"),
 
+            // ── String static (capital S — not a keyword, usable as identifier) ─
+            ["String.IsNullOrEmpty"]      = new([Str], Bool, "__str_is_null_or_empty"),
+            ["String.IsNullOrWhiteSpace"] = new([Str], Bool, "__str_is_null_or_whitespace"),
+
+            // ── Convert ───────────────────────────────────────────────────────
+            ["Convert.ToInt32"]   = new([Any], Int,  "__int_parse"),
+            ["Convert.ToDouble"]  = new([Any], Dbl,  "__double_parse"),
+            ["Convert.ToString"]  = new([Any], Str,  "__to_str"),
+
             // ── Math ──────────────────────────────────────────────────────────
             ["Math.Abs"]     = new([Dbl],      Dbl,  "__math_abs"),
             ["Math.Max"]     = new([Dbl, Dbl], Dbl,  "__math_max"),

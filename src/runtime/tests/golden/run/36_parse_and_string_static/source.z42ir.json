@@ -1,0 +1,294 @@
+{
+  "name": "main",
+  "string_pool": [
+    "42",
+    "3.14",
+    "123",
+    "",
+    "hello",
+    "   ",
+    "hi"
+  ],
+  "classes": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 0,
+              "idx": 0
+            },
+            {
+              "op": "builtin",
+              "dst": 1,
+              "name": "__int_parse",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "store",
+              "var": "n",
+              "src": 1
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 42
+            },
+            {
+              "op": "load",
+              "dst": 3,
+              "var": "n"
+            },
+            {
+              "op": "builtin",
+              "dst": 4,
+              "name": "__assert_eq",
+              "args": [
+                2,
+                3
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 5,
+              "idx": 1
+            },
+            {
+              "op": "builtin",
+              "dst": 6,
+              "name": "__double_parse",
+              "args": [
+                5
+              ]
+            },
+            {
+              "op": "store",
+              "var": "d",
+              "src": 6
+            },
+            {
+              "op": "load",
+              "dst": 7,
+              "var": "d"
+            },
+            {
+              "op": "const_f64",
+              "dst": 8,
+              "val": 3
+            },
+            {
+              "op": "gt",
+              "dst": 9,
+              "a": 7,
+              "b": 8
+            },
+            {
+              "op": "load",
+              "dst": 10,
+              "var": "d"
+            },
+            {
+              "op": "const_f64",
+              "dst": 11,
+              "val": 4
+            },
+            {
+              "op": "lt",
+              "dst": 12,
+              "a": 10,
+              "b": 11
+            },
+            {
+              "op": "and",
+              "dst": 13,
+              "a": 9,
+              "b": 12
+            },
+            {
+              "op": "builtin",
+              "dst": 14,
+              "name": "__assert_true",
+              "args": [
+                13
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 15,
+              "val": 123
+            },
+            {
+              "op": "builtin",
+              "dst": 16,
+              "name": "__to_str",
+              "args": [
+                15
+              ]
+            },
+            {
+              "op": "store",
+              "var": "s",
+              "src": 16
+            },
+            {
+              "op": "const_str",
+              "dst": 17,
+              "idx": 2
+            },
+            {
+              "op": "load",
+              "dst": 18,
+              "var": "s"
+            },
+            {
+              "op": "builtin",
+              "dst": 19,
+              "name": "__assert_eq",
+              "args": [
+                17,
+                18
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 20,
+              "idx": 3
+            },
+            {
+              "op": "builtin",
+              "dst": 21,
+              "name": "__str_is_null_or_empty",
+              "args": [
+                20
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 22,
+              "name": "__assert_true",
+              "args": [
+                21
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 23,
+              "idx": 4
+            },
+            {
+              "op": "builtin",
+              "dst": 24,
+              "name": "__str_is_null_or_empty",
+              "args": [
+                23
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 25,
+              "name": "__assert_false",
+              "args": [
+                24
+              ]
+            },
+            {
+              "op": "const_null",
+              "dst": 26
+            },
+            {
+              "op": "builtin",
+              "dst": 27,
+              "name": "__str_is_null_or_empty",
+              "args": [
+                26
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 28,
+              "name": "__assert_true",
+              "args": [
+                27
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 29,
+              "idx": 5
+            },
+            {
+              "op": "builtin",
+              "dst": 30,
+              "name": "__str_is_null_or_whitespace",
+              "args": [
+                29
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 31,
+              "name": "__assert_true",
+              "args": [
+                30
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 32,
+              "idx": 3
+            },
+            {
+              "op": "builtin",
+              "dst": 33,
+              "name": "__str_is_null_or_whitespace",
+              "args": [
+                32
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 34,
+              "name": "__assert_true",
+              "args": [
+                33
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 35,
+              "idx": 6
+            },
+            {
+              "op": "builtin",
+              "dst": 36,
+              "name": "__str_is_null_or_whitespace",
+              "args": [
+                35
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 37,
+              "name": "__assert_false",
+              "args": [
+                36
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

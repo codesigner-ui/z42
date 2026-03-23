@@ -1,0 +1,22 @@
+void Main() {
+    // Convert.ToInt32 / Convert.ToDouble
+    var n = Convert.ToInt32("42");
+    Assert.Equal(42, n);
+
+    var d = Convert.ToDouble("3.14");
+    Assert.True(d > 3.0 && d < 4.0);
+
+    // Convert.ToString
+    var s = Convert.ToString(123);
+    Assert.Equal("123", s);
+
+    // String.IsNullOrEmpty (String with capital S — not a keyword)
+    Assert.True(String.IsNullOrEmpty(""));
+    Assert.False(String.IsNullOrEmpty("hello"));
+    Assert.True(String.IsNullOrEmpty(null));
+
+    // String.IsNullOrWhiteSpace
+    Assert.True(String.IsNullOrWhiteSpace("   "));
+    Assert.True(String.IsNullOrWhiteSpace(""));
+    Assert.False(String.IsNullOrWhiteSpace("hi"));
+}
