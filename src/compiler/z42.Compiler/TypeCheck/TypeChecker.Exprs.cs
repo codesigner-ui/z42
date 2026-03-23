@@ -291,6 +291,10 @@ public sealed partial class TypeChecker
             if (argTs.Count != staticSig.Params.Count)
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"expected {staticSig.Params.Count} argument(s), got {argTs.Count}", call.Span);
+            else
+                for (int i = 0; i < argTs.Count; i++)
+                    RequireAssignable(staticSig.Params[i], argTs[i], call.Args[i].Span,
+                        $"argument {i + 1}: expected `{staticSig.Params[i]}`, got `{argTs[i]}`");
             return staticSig.Ret;
         }
 
@@ -314,6 +318,10 @@ public sealed partial class TypeChecker
                     if (argTypes.Count != mt.Params.Count)
                         _diags.Error(DiagnosticCodes.TypeMismatch,
                             $"expected {mt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+                    else
+                        for (int i = 0; i < argTypes.Count; i++)
+                            RequireAssignable(mt.Params[i], argTypes[i], call.Args[i].Span,
+                                $"argument {i + 1}: expected `{mt.Params[i]}`, got `{argTypes[i]}`");
                     return mt.Ret;
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
@@ -329,6 +337,10 @@ public sealed partial class TypeChecker
                     if (argTypes.Count != imt.Params.Count)
                         _diags.Error(DiagnosticCodes.TypeMismatch,
                             $"expected {imt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+                    else
+                        for (int i = 0; i < argTypes.Count; i++)
+                            RequireAssignable(imt.Params[i], argTypes[i], call.Args[i].Span,
+                                $"argument {i + 1}: expected `{imt.Params[i]}`, got `{argTypes[i]}`");
                     return imt.Ret;
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,

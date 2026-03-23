@@ -1,0 +1,12 @@
+namespace Demo;
+
+class Calc {
+    int Add(int a, int b) {
+        return a + b;
+    }
+}
+
+void Main() {
+    var c = new Calc();
+    var r = c.Add("hello", 2);  // wrong type for argument 1
+}
