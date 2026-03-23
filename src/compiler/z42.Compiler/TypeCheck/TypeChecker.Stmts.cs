@@ -132,6 +132,10 @@ public sealed partial class TypeChecker
 
     private void CheckVarDecl(VarDeclStmt v, TypeEnv env)
     {
+        if (env.DefinedInCurrentScope(v.Name))
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"variable `{v.Name}` is already declared in this scope", v.Span);
+
         Z42Type varType;
         if (v.TypeAnnotation != null)
         {

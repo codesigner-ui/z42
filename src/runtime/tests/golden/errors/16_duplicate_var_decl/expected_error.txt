@@ -1,0 +1,1 @@
+*source.z42*: error Z0402: *variable `x` is already declared in this scope*

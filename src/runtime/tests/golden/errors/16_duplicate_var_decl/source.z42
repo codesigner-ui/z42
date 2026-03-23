@@ -1,0 +1,4 @@
+void Main() {
+    var x = 1;
+    var x = 2;  // duplicate declaration in same scope — should be a compile error
+}

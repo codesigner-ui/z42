@@ -46,8 +46,11 @@ internal sealed class TypeEnv
 
     // ── Variable operations ───────────────────────────────────────────────────
 
-    /// Define (or redefine) a variable in this scope.
+    /// Define a variable in this scope.
     internal void Define(string name, Z42Type type) => _vars[name] = type;
+
+    /// Returns true if <paramref name="name"/> is defined in THIS scope only (not parent scopes).
+    internal bool DefinedInCurrentScope(string name) => _vars.ContainsKey(name);
 
     /// Look up a variable type.
     /// Returns <see langword="null"/> if not found and not a known builtin class.
