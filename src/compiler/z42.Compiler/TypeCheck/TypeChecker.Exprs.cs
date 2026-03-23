@@ -1,4 +1,5 @@
 using Z42.Compiler.Diagnostics;
+using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 
 namespace Z42.Compiler.TypeCheck;
@@ -6,9 +7,6 @@ namespace Z42.Compiler.TypeCheck;
 /// Expression type inference — part of the TypeChecker partial class.
 public sealed partial class TypeChecker
 {
-    // ── Pseudo-classes whose calls are resolved at runtime, not type-checked ──
-    private static readonly HashSet<string> BuiltinPseudoClasses = ["Console", "Assert", "Math", "List"];
-
     // ── Expression dispatcher ─────────────────────────────────────────────────
 
     private Z42Type CheckExpr(Expr expr, TypeEnv env)
@@ -77,12 +75,13 @@ public sealed partial class TypeChecker
                     && ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
                     return ifmt;
 
-                return m.Member switch
-                {
-                    "Length" when targetType is Z42ArrayType  => Z42Type.Int,
-                    "Length" when targetType == Z42Type.String => Z42Type.Int,
-                    _ => Z42Type.Unknown
-                };
+                // Well-known members on built-in types
+                if (m.Member == "Length" && (targetType is Z42ArrayType || targetType == Z42Type.String))
+                    return Z42Type.Int;
+                if (m.Member == "Count")
+                    return Z42Type.Int;
+
+                return Z42Type.Unknown;
             }
 
             case IndexExpr ix:
@@ -202,57 +201,34 @@ public sealed partial class TypeChecker
         var rt = CheckExpr(bin.Right, env);
         if (lt is Z42ErrorType || rt is Z42ErrorType) return Z42Type.Error;
 
-        switch (bin.Op)
-        {
-            case "+" when lt == Z42Type.String || rt == Z42Type.String:
-                return Z42Type.String;
+        // "+" string concatenation: if either operand is string, no numeric constraint
+        if (bin.Op == "+" && (lt == Z42Type.String || rt == Z42Type.String))
+            return Z42Type.String;
 
-            case "+" or "-" or "*" or "/" or "%":
-                if (!Z42Type.IsNumeric(lt) && lt is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires numeric operand, got `{lt}`", bin.Left.Span);
-                else if (!Z42Type.IsNumeric(rt) && rt is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires numeric operand, got `{rt}`", bin.Right.Span);
-                return (lt is Z42ErrorType || rt is Z42ErrorType)
-                    ? Z42Type.Error
-                    : Z42Type.ArithmeticResult(lt, rt);
+        if (!BinaryTypeTable.Rules.TryGetValue(bin.Op, out var rule))
+            return Z42Type.Unknown;
 
-            case "<" or "<=" or ">" or ">=":
-                if (!Z42Type.IsNumeric(lt) && lt is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires numeric operand, got `{lt}`", bin.Left.Span);
-                return Z42Type.Bool;
+        CheckBinaryOperand(rule.LeftOk,  rule.Requirement, lt, bin.Left.Span,  bin.Op);
+        CheckBinaryOperand(rule.RightOk, rule.Requirement, rt, bin.Right.Span, bin.Op);
 
-            case "==" or "!=":
-                return Z42Type.Bool;
+        return (lt is Z42ErrorType || rt is Z42ErrorType)
+            ? Z42Type.Error
+            : rule.Output(lt, rt);
+    }
 
-            case "&&" or "||":
-                if (!Z42Type.IsBool(lt) && lt is not Z42UnknownType and not Z42ErrorType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires bool operand, got `{lt}`", bin.Left.Span);
-                if (!Z42Type.IsBool(rt) && rt is not Z42UnknownType and not Z42ErrorType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires bool operand, got `{rt}`", bin.Right.Span);
-                return Z42Type.Bool;
-
-            case "is" or "as":
-                return Z42Type.Bool;
-
-            case "&" or "|" or "^" or "<<" or ">>":
-                if (!Z42Type.IsIntegral(lt) && lt is not Z42UnknownType and not Z42ErrorType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires integral operand, got `{lt}`", bin.Left.Span);
-                if (!Z42Type.IsIntegral(rt) && rt is not Z42UnknownType and not Z42ErrorType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{bin.Op}` requires integral operand, got `{rt}`", bin.Right.Span);
-                return (lt is Z42ErrorType || rt is Z42ErrorType)
-                    ? Z42Type.Error
-                    : Z42Type.ArithmeticResult(lt, rt);
-
-            default:
-                return Z42Type.Unknown;
-        }
+    /// Validates one operand against a BinaryTypeRule constraint.
+    /// Does nothing if constraint is null or the type is an error/unknown sentinel.
+    private void CheckBinaryOperand(
+        Func<Z42Type, bool>? constraint,
+        string               requirement,
+        Z42Type              t,
+        Span                 span,
+        string               op)
+    {
+        if (constraint == null || t is Z42UnknownType or Z42ErrorType) return;
+        if (!constraint(t))
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"operator `{op}` requires {requirement} operand, got `{t}`", span);
     }
 
     // ── Unary ─────────────────────────────────────────────────────────────────
@@ -294,15 +270,19 @@ public sealed partial class TypeChecker
 
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {
-        // Pseudo-class static calls (Console.*, Assert.*, Math.*, List.*) — skip symbol resolution
-        if (call.Callee is MemberExpr { Target: IdentExpr pseudoId }
-            && BuiltinPseudoClasses.Contains(pseudoId.Name))
+        // ── Builtin static calls: Console.X, Assert.X, Math.X ────────────────
+        // BuiltinTable.Static provides both return type and arg-count validation.
+        if (call.Callee is MemberExpr { Target: IdentExpr builtinId, Member: var builtinMember }
+            && BuiltinTable.Static.TryGetValue($"{builtinId.Name}.{builtinMember}", out var staticEntry))
         {
-            foreach (var a in call.Args) CheckExpr(a, env);
-            return Z42Type.Void;
+            var argTypes = call.Args.Select(a => CheckExpr(a, env)).ToList();
+            if (staticEntry.Params != null && argTypes.Count != staticEntry.Params.Count)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"expected {staticEntry.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+            return staticEntry.Ret;
         }
 
-        // User-defined static class method calls: ClassName.StaticMethod(args)
+        // ── User-defined static class method: ClassName.StaticMethod(args) ────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
             && _classes.TryGetValue(clsName, out var staticCt)
             && staticCt.StaticMethods.TryGetValue(staticMember, out var staticSig))
@@ -314,12 +294,13 @@ public sealed partial class TypeChecker
             return staticSig.Ret;
         }
 
-        // Member method calls (instance methods or user-defined class methods)
+        // ── Member method calls: instance methods and builtin instance methods ─
         if (call.Callee is MemberExpr mCallee)
         {
             var receiverType = CheckExpr(mCallee.Target, env);
             var argTypes     = call.Args.Select(a => CheckExpr(a, env)).ToList();
 
+            // User-defined class instance method
             if (receiverType is Z42ClassType ct)
             {
                 if (ct.Methods.TryGetValue(mCallee.Member, out var mt))
@@ -340,7 +321,7 @@ public sealed partial class TypeChecker
                 return Z42Type.Error;
             }
 
-            // Interface method call: iface.Method(args)
+            // Interface method call
             if (receiverType is Z42InterfaceType ifaceType)
             {
                 if (ifaceType.Methods.TryGetValue(mCallee.Member, out var imt))
@@ -355,19 +336,20 @@ public sealed partial class TypeChecker
                 return Z42Type.Error;
             }
 
-            // String built-in methods
-            if (receiverType == Z42Type.String)
-                return mCallee.Member switch
-                {
-                    "Substring"                                => Z42Type.String,
-                    "Contains" or "StartsWith" or "EndsWith"  => Z42Type.Bool,
-                    _                                          => Z42Type.Unknown
-                };
+            // Builtin instance methods (string, List<T>, Dictionary<K,V>, etc.)
+            // BuiltinTable.Instance provides return types and arg-count validation.
+            if (BuiltinTable.Instance.TryGetValue(mCallee.Member, out var instEntry))
+            {
+                if (instEntry.Params != null && argTypes.Count != instEntry.Params.Count)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"expected {instEntry.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+                return instEntry.Ret;
+            }
 
-            return Z42Type.Unknown; // generic method call on unknown type
+            return Z42Type.Unknown; // method on unknown type
         }
 
-        // Free function call
+        // ── Free function call ────────────────────────────────────────────────
         var callArgTypes = call.Args.Select(a => CheckExpr(a, env)).ToList();
 
         Z42Type calleeType = call.Callee is IdentExpr funcId

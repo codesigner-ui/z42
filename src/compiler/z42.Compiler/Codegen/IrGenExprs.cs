@@ -1,4 +1,5 @@
 using Z42.Compiler.Parser;
+using Z42.Compiler.TypeCheck;
 using Z42.IR;
 
 namespace Z42.Compiler.Codegen;
@@ -381,67 +382,9 @@ public sealed partial class IrGen
         return dst;
     }
 
-    // ── Builtin dispatch tables ───────────────────────────────────────────────
-    //   To add a new pseudo-class static builtin: add one entry to StaticBuiltins.
-    //   To add a new instance method builtin:     add one entry to InstanceBuiltins.
-
-    /// Pseudo-class static calls: "ClassName.Method" → builtin name.
-    private static readonly IReadOnlyDictionary<string, string> StaticBuiltins =
-        new Dictionary<string, string>
-        {
-            // Assert
-            ["Assert.Equal"]    = "__assert_eq",
-            ["Assert.True"]     = "__assert_true",
-            ["Assert.False"]    = "__assert_false",
-            ["Assert.Contains"] = "__assert_contains",
-            ["Assert.Null"]     = "__assert_null",
-            ["Assert.NotNull"]  = "__assert_not_null",
-            // Console
-            ["Console.WriteLine"] = "__println",
-            ["Console.Write"]     = "__print",
-            // Math
-            ["Math.Abs"]     = "__math_abs",
-            ["Math.Max"]     = "__math_max",
-            ["Math.Min"]     = "__math_min",
-            ["Math.Pow"]     = "__math_pow",
-            ["Math.Sqrt"]    = "__math_sqrt",
-            ["Math.Floor"]   = "__math_floor",
-            ["Math.Ceiling"] = "__math_ceiling",
-            ["Math.Round"]   = "__math_round",
-        };
-
-    /// Instance method calls: method name → builtin name (receiver becomes first arg).
-    /// Contains dispatches at runtime so it works for both string and List<T>.
-    private static readonly IReadOnlyDictionary<string, string> InstanceBuiltins =
-        new Dictionary<string, string>
-        {
-            // String
-            ["Substring"]  = "__str_substring",
-            ["StartsWith"] = "__str_starts_with",
-            ["EndsWith"]   = "__str_ends_with",
-            ["IndexOf"]    = "__str_index_of",
-            ["Replace"]    = "__str_replace",
-            ["ToLower"]    = "__str_to_lower",
-            ["ToUpper"]    = "__str_to_upper",
-            ["Trim"]       = "__str_trim",
-            ["TrimStart"]  = "__str_trim_start",
-            ["TrimEnd"]    = "__str_trim_end",
-            ["Split"]      = "__str_split",
-            // Shared: string + List<T>
-            ["Contains"]   = "__contains",
-            // List<T>
-            ["Add"]      = "__list_add",
-            ["RemoveAt"] = "__list_remove_at",
-            ["Clear"]    = "__list_clear",
-            ["Insert"]   = "__list_insert",
-            // Dictionary<K,V>
-            ["ContainsKey"] = "__dict_contains_key",
-            ["Remove"]      = "__dict_remove",
-            ["Keys"]        = "__dict_keys",
-            ["Values"]      = "__dict_values",
-        };
-
     // ── Call ─────────────────────────────────────────────────────────────────
+    // Builtin IR names are read from BuiltinTable (shared with TypeChecker).
+    // To add a new builtin: add one line to BuiltinTable.Static or .Instance.
 
     private int EmitCall(CallExpr call)
     {
@@ -458,24 +401,26 @@ public sealed partial class IrGen
         }
 
         // ── Pseudo-class static calls: Assert.X, Console.X, Math.X ──────────
+        // IrName comes from BuiltinTable.Static (same table used by TypeChecker).
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var cls }, Member: var mStatic }
-            && StaticBuiltins.TryGetValue($"{cls}.{mStatic}", out var staticBuiltin))
+            && BuiltinTable.Static.TryGetValue($"{cls}.{mStatic}", out var staticEntry))
         {
             var argRegs = call.Args.Select(EmitExpr).ToList();
             // Console: concat multiple args into one string argument
             if (cls == "Console" && argRegs.Count != 1)
                 argRegs = [EmitConcat(argRegs)];
-            return EmitBuiltin(staticBuiltin, argRegs);
+            return EmitBuiltin(staticEntry.IrName, argRegs);
         }
 
         // ── Instance method calls: str.X(), list.X() ─────────────────────────
+        // IrName comes from BuiltinTable.Instance (same table used by TypeChecker).
         if (call.Callee is MemberExpr mInst
-            && InstanceBuiltins.TryGetValue(mInst.Member, out var instBuiltin))
+            && BuiltinTable.Instance.TryGetValue(mInst.Member, out var instEntry))
         {
             int targetReg = EmitExpr(mInst.Target);
             var argRegs   = new List<int> { targetReg };
             argRegs.AddRange(call.Args.Select(EmitExpr));
-            return EmitBuiltin(instBuiltin, argRegs);
+            return EmitBuiltin(instEntry.IrName, argRegs);
         }
 
         // ── Instance method call via virtual dispatch: obj.Method(args) ─────
