@@ -209,6 +209,10 @@ public sealed partial class TypeChecker
                             $"class `{cls.Name}` method `{methodName}` has wrong parameter count for interface `{ifaceName}` " +
                             $"(expected {ifaceSig.Params.Count}, got {implSig.Params.Count})",
                             cls.Span);
+                    else if (!Z42Type.IsAssignableTo(ifaceSig.Ret, implSig.Ret))
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"class `{cls.Name}` method `{methodName}` return type `{implSig.Ret}` does not match interface `{ifaceName}` return type `{ifaceSig.Ret}`",
+                            cls.Span);
                 }
             }
         }

@@ -1,0 +1,11 @@
+interface IValue {
+    int Get();
+}
+
+class Counter : IValue {
+    string Get() { return "bad"; }  // returns string but interface requires int
+}
+
+void Main() {
+    Counter c = new Counter();
+}

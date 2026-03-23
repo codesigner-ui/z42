@@ -320,4 +320,97 @@ public sealed class TypeCheckerTests
         diags.HasErrors.Should().BeTrue();
         diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
     }
+
+    // ── Duplicate declarations ────────────────────────────────────────────────
+
+    [Fact]
+    public void DuplicateVarDecl_SameScope_ReportsError()
+    {
+        var diags = CheckStmts("var x = 1; var x = 2;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    [Fact]
+    public void DuplicateVarDecl_DifferentScopes_NoError()
+    {
+        // Re-declaring in an inner scope is allowed (shadowing)
+        var diags = CheckStmts("var x = 1; if (true) { var x = 2; }");
+        diags.HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DuplicateClass_ReportsError()
+    {
+        var diags = Check("class Foo {} class Foo {} void Main() {}");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    [Fact]
+    public void DuplicateFunction_ReportsError()
+    {
+        var diags = Check("void Foo() {} void Foo() {}");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    [Fact]
+    public void DuplicateParam_ReportsError()
+    {
+        var diags = Check("int Add(int x, int x) { return x; }");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    // ── Interface implementation ──────────────────────────────────────────────
+
+    [Fact]
+    public void InterfaceNotImplemented_ReportsError()
+    {
+        var diags = Check(
+            "interface IFoo { int Value(); }" +
+            "class Bar : IFoo {}" +
+            "void Main() {}");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    [Fact]
+    public void InterfaceFullyImplemented_NoError()
+    {
+        var diags = Check(
+            "interface IFoo { int Value(); }" +
+            "class Bar : IFoo { int Value() { return 42; } }" +
+            "void Main() {}");
+        diags.HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void InterfaceWrongReturnType_ReportsError()
+    {
+        var diags = Check(
+            "interface IFoo { int Value(); }" +
+            "class Bar : IFoo { string Value() { return \"x\"; } }" +
+            "void Main() {}");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    // ── Function call argument types ──────────────────────────────────────────
+
+    [Fact]
+    public void FunctionCall_WrongArgType_ReportsError()
+    {
+        var diags = Check("void Greet(int n) {} void Main() { Greet(\"hello\"); }");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    [Fact]
+    public void FunctionCall_CorrectArgType_NoError()
+    {
+        var diags = Check("void Greet(int n) {} void Main() { Greet(42); }");
+        diags.HasErrors.Should().BeFalse();
+    }
 }
