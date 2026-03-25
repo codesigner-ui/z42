@@ -327,7 +327,7 @@ internal sealed partial class ParserContext
                 var pType = ParseTypeExpr();
                 var pName = Expect(TokenKind.Identifier).Text;
                 ctorParams.Add(new Param(pName, pType, pSpan));
-                fields.Add(new FieldDecl(pName, pType, Visibility.Public, false, pSpan));
+                fields.Add(new FieldDecl(pName, pType, Visibility.Public, false, null, pSpan));
                 // this.Name = Name;
                 ctorStmts.Add(new ExprStmt(
                     new AssignExpr(
@@ -390,14 +390,15 @@ internal sealed partial class ParserContext
                 var (fStatic, _, _, _, _) = ParseNonVisibilityModifiers();
                 var fType  = ParseTypeExpr();
                 var fName  = Expect(TokenKind.Identifier).Text;
+                Expr? fInit = null;
                 if (Check(TokenKind.LBrace))
                     SkipAutoPropBody();  // auto-property: { get; set; } — desugar to backing field
                 else
                 {
-                    if (Match(TokenKind.Eq)) ParseExpr(); // skip optional initializer
+                    if (Match(TokenKind.Eq)) fInit = ParseExpr();
                     Expect(TokenKind.Semicolon);
                 }
-                fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fSpan));
+                fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan));
             }
             else
             {

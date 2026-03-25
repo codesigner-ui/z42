@@ -1,0 +1,34 @@
+namespace Demo;
+
+class Animal {
+    string Name;
+
+    Animal(string name) {
+        this.Name = name;
+    }
+
+    string Describe() {
+        return $"Animal: {this.Name}";
+    }
+}
+
+class Dog : Animal {
+    string Breed;
+
+    Dog(string name, string breed) {
+        this.Name = name;
+        this.Breed = breed;
+    }
+
+    string Describe() {
+        return $"Dog: {this.Name} ({this.Breed})";
+    }
+}
+
+void Main() {
+    var a = new Animal("Cat");
+    var d = new Dog("Rex", "Husky");
+    Console.WriteLine(a.Describe());
+    Console.WriteLine(d.Describe());
+    Console.WriteLine(d.Name);
+}

@@ -1,0 +1,30 @@
+namespace Demo;
+
+class Counter {
+    static int count = 0;
+    int id;
+
+    Counter() {
+        Counter.count++;
+        id = Counter.count;
+    }
+
+    static int GetCount() {
+        return Counter.count;
+    }
+
+    int GetId() {
+        return id;
+    }
+}
+
+void Main() {
+    var a = new Counter();
+    var b = new Counter();
+    var c = new Counter();
+    Assert.Equal(3, Counter.GetCount());
+    Assert.Equal(1, a.GetId());
+    Assert.Equal(2, b.GetId());
+    Assert.Equal(3, c.GetId());
+    Console.WriteLine("Static fields work!");
+}

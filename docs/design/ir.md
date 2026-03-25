@@ -172,6 +172,22 @@ Class descriptors in `IrModule.classes` provide the field layout for zero-initia
 
 `as_cast` returns the object unchanged if it matches `class_name` (or a subclass), else `null`.
 
+### Static Fields
+```
+%r = static_get <QualifiedField>      # load module-level static field by "ClassName.fieldName"
+     static_set <QualifiedField>, %v  # store module-level static field
+```
+
+JSON wire format:
+```json
+{"op": "static_get", "dst": 3, "field": "Demo.Counter.count"}
+{"op": "static_set", "field": "Demo.Counter.count", "val": 3}
+```
+
+A module with static fields may contain a zero-argument function named
+`<namespace>.__static_init__` (e.g. `"Demo.__static_init__"`). The VM calls
+it once, before the entry point, to initialize all static fields.
+
 ### Structs & Tuples
 ```
 %r = struct.new <TypeName> { field0: %v0, field1: %v1 }

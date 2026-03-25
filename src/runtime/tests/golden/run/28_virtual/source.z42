@@ -1,0 +1,42 @@
+namespace Demo;
+
+class Shape {
+    virtual string Area() {
+        return "unknown";
+    }
+}
+
+class Circle : Shape {
+    int Radius;
+
+    Circle(int r) {
+        this.Radius = r;
+    }
+
+    override string Area() {
+        return $"circle r={this.Radius}";
+    }
+}
+
+class Square : Shape {
+    int Side;
+
+    Square(int s) {
+        this.Side = s;
+    }
+
+    override string Area() {
+        return $"square s={this.Side}";
+    }
+}
+
+void PrintArea(Shape s) {
+    Console.WriteLine(s.Area());
+}
+
+void Main() {
+    var c = new Circle(5);
+    var sq = new Square(3);
+    PrintArea(c);
+    PrintArea(sq);
+}

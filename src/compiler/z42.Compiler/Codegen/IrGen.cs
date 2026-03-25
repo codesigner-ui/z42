@@ -31,6 +31,8 @@ public sealed partial class IrGen
     private Dictionary<string, HashSet<string>> _classStaticMethods = new();
     // Class name → set of instance field names (qualified, for implicit this.field access)
     private Dictionary<string, HashSet<string>> _classInstanceFields = new();
+    // Qualified class name → static field name → initializer expr (null = default)
+    private Dictionary<string, Dictionary<string, Expr?>> _classStaticFieldInits = new();
     // Qualified class name → qualified base class name (for inherited field resolution)
     private Dictionary<string, string> _classBaseNames = new();
     // Top-level function names (unqualified) — used to qualify free function calls
@@ -74,11 +76,22 @@ public sealed partial class IrGen
                 _classBaseNames[QualifyName(cls.Name)] = QualifyName(cls.BaseClass);
         }
 
+        // Collect static fields with their initializers
+        foreach (var cls in cu.Classes)
+        {
+            var staticFields = cls.Fields.Where(f => f.IsStatic).ToDictionary(f => f.Name, f => f.Initializer);
+            if (staticFields.Count > 0)
+                _classStaticFieldInits[QualifyName(cls.Name)] = staticFields;
+        }
+
         // Collect top-level function names for qualified call resolution
         _topLevelFunctionNames = cu.Functions.Select(f => f.Name).ToHashSet();
 
         var classes   = cu.Classes.Select(EmitClassDesc).ToList();
         var functions = new List<IrFunction>();
+        // If any static fields exist, prepend the __static_init__ function
+        var staticInit = EmitStaticInit(cu);
+        if (staticInit != null) functions.Add(staticInit);
         foreach (var cls in cu.Classes)
             functions.AddRange(cls.Methods.Select(m => EmitMethod(cls.Name, m)));
         functions.AddRange(cu.Functions.Select(EmitFunction));
@@ -230,4 +243,63 @@ public sealed partial class IrGen
         ArrayType at  => TypeName(at.Element) + "[]",
         _             => "unknown"
     };
+
+    /// Emits a `__static_init__` function that initializes all static fields.
+    /// Returns null if there are no static fields.
+    private IrFunction? EmitStaticInit(CompilationUnit cu)
+    {
+        bool hasAny = cu.Classes.Any(cls => cls.Fields.Any(f => f.IsStatic));
+        if (!hasAny) return null;
+
+        _nextReg        = 0;
+        _nextLabelId    = 0;
+        _locals         = new Dictionary<string, int>();
+        _mutableVars    = new HashSet<string>();
+        _instanceFields = [];
+        _blocks         = new List<IrBlock>();
+        _exceptionTable = [];
+        _loopStack      = new Stack<(string, string)>();
+
+        StartBlock("entry");
+
+        foreach (var cls in cu.Classes)
+        {
+            foreach (var field in cls.Fields.Where(f => f.IsStatic))
+            {
+                string key = $"{QualifyName(cls.Name)}.{field.Name}";
+                int valReg;
+                if (field.Initializer != null)
+                {
+                    valReg = EmitExpr(field.Initializer);
+                }
+                else
+                {
+                    // Default value by type
+                    valReg = Alloc();
+                    IrInstr defaultInstr = field.Type switch
+                    {
+                        NamedType { Name: "int" or "long" or "short" or "byte" } => new ConstI64Instr(valReg, 0),
+                        NamedType { Name: "double" or "float" }                   => new ConstF64Instr(valReg, 0.0),
+                        NamedType { Name: "bool" }                                => new ConstBoolInstr(valReg, false),
+                        _                                                          => new ConstNullInstr(valReg),
+                    };
+                    Emit(defaultInstr);
+                }
+                Emit(new StaticSetInstr(key, valReg));
+            }
+        }
+
+        EndBlock(new RetTerm(null));
+        string initName = QualifyName("__static_init__");
+        return new IrFunction(initName, 0, "void", "Interp", _blocks);
+    }
+
+    /// Returns the qualified static field key "QualName.fieldName" if className is a class and fieldName is a static field.
+    internal string? TryGetStaticFieldKey(string className, string fieldName)
+    {
+        string qualName = QualifyName(className);
+        if (_classStaticFieldInits.TryGetValue(qualName, out var fields) && fields.ContainsKey(fieldName))
+            return $"{qualName}.{fieldName}";
+        return null;
+    }
 }

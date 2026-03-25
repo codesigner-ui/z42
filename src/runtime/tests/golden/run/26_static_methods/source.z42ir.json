@@ -1,0 +1,288 @@
+{
+  "name": "Demo",
+  "string_pool": [
+    "positive",
+    "negative",
+    "zero"
+  ],
+  "classes": [
+    {
+      "name": "Demo.MathHelper",
+      "fields": []
+    }
+  ],
+  "functions": [
+    {
+      "name": "Demo.MathHelper.Square",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "mul",
+              "dst": 1,
+              "a": 0,
+              "b": 0
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.MathHelper.Add",
+      "param_count": 2,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "add",
+              "dst": 2,
+              "a": 0,
+              "b": 1
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 2
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.MathHelper.Describe",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 1,
+              "val": 0
+            },
+            {
+              "op": "gt",
+              "dst": 2,
+              "a": 0,
+              "b": 1
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 2,
+            "true_label": "then_0",
+            "false_label": "end_1"
+          }
+        },
+        {
+          "label": "then_0",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 3,
+              "idx": 0
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 3
+          }
+        },
+        {
+          "label": "end_1",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 4,
+              "val": 0
+            },
+            {
+              "op": "lt",
+              "dst": 5,
+              "a": 0,
+              "b": 4
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 5,
+            "true_label": "then_2",
+            "false_label": "end_3"
+          }
+        },
+        {
+          "label": "then_2",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 6,
+              "idx": 1
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 6
+          }
+        },
+        {
+          "label": "end_3",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 7,
+              "idx": 2
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 7
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 5
+            },
+            {
+              "op": "call",
+              "dst": 1,
+              "func": "Demo.MathHelper.Square",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 2,
+              "name": "__println",
+              "args": [
+                1
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 3
+            },
+            {
+              "op": "const_i64",
+              "dst": 4,
+              "val": 7
+            },
+            {
+              "op": "call",
+              "dst": 5,
+              "func": "Demo.MathHelper.Add",
+              "args": [
+                3,
+                4
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 6,
+              "name": "__println",
+              "args": [
+                5
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 7,
+              "val": 4
+            },
+            {
+              "op": "neg",
+              "dst": 8,
+              "src": 7
+            },
+            {
+              "op": "call",
+              "dst": 9,
+              "func": "Demo.MathHelper.Describe",
+              "args": [
+                8
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 10,
+              "name": "__println",
+              "args": [
+                9
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 11,
+              "val": 0
+            },
+            {
+              "op": "call",
+              "dst": 12,
+              "func": "Demo.MathHelper.Describe",
+              "args": [
+                11
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 13,
+              "name": "__println",
+              "args": [
+                12
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 14,
+              "val": 9
+            },
+            {
+              "op": "call",
+              "dst": 15,
+              "func": "Demo.MathHelper.Describe",
+              "args": [
+                14
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 16,
+              "name": "__println",
+              "args": [
+                15
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

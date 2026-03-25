@@ -93,6 +93,8 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(VCallInstr),      "v_call")]
 [JsonDerivedType(typeof(IsInstanceInstr), "is_instance")]
 [JsonDerivedType(typeof(AsCastInstr),     "as_cast")]
+[JsonDerivedType(typeof(StaticGetInstr),  "static_get")]
+[JsonDerivedType(typeof(StaticSetInstr),  "static_set")]
 public abstract record IrInstr;
 
 public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
@@ -156,6 +158,10 @@ public sealed record VCallInstr(int Dst, int Obj, string Method, List<int> Args)
 public sealed record IsInstanceInstr(int Dst, int Obj, string ClassName) : IrInstr;
 /// `expr as ClassName` — returns the object if it is an instance of ClassName (or subclass), else null.
 public sealed record AsCastInstr(int Dst, int Obj, string ClassName) : IrInstr;
+/// Load the module-level static field named Field into Dst.
+public sealed record StaticGetInstr(int Dst, string Field) : IrInstr;
+/// Store Val into the module-level static field named Field.
+public sealed record StaticSetInstr(string Field, int Val) : IrInstr;
 
 // ── Terminators ───────────────────────────────────────────────────────────────
 

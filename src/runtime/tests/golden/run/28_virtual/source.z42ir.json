@@ -1,0 +1,289 @@
+{
+  "name": "Demo",
+  "string_pool": [
+    "unknown",
+    "circle r=",
+    "square s="
+  ],
+  "classes": [
+    {
+      "name": "Demo.Shape",
+      "fields": []
+    },
+    {
+      "name": "Demo.Circle",
+      "base_class": "Demo.Shape",
+      "fields": [
+        {
+          "name": "Radius",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "name": "Demo.Square",
+      "base_class": "Demo.Shape",
+      "fields": [
+        {
+          "name": "Side",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "Demo.Shape.Area",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 0
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Circle.Circle",
+      "param_count": 2,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "Radius",
+              "val": 1
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Circle.Area",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 1
+            },
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "Radius"
+            },
+            {
+              "op": "to_str",
+              "dst": 3,
+              "src": 2
+            },
+            {
+              "op": "str_concat",
+              "dst": 4,
+              "a": 1,
+              "b": 3
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Square.Square",
+      "param_count": 2,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "Side",
+              "val": 1
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Square.Area",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 2
+            },
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "Side"
+            },
+            {
+              "op": "to_str",
+              "dst": 3,
+              "src": 2
+            },
+            {
+              "op": "str_concat",
+              "dst": 4,
+              "a": 1,
+              "b": 3
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 4
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.PrintArea",
+      "param_count": 1,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "v_call",
+              "dst": 1,
+              "obj": 0,
+              "method": "Area",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 2,
+              "name": "__println",
+              "args": [
+                1
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 5
+            },
+            {
+              "op": "obj_new",
+              "dst": 1,
+              "class_name": "Demo.Circle",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "store",
+              "var": "c",
+              "src": 1
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 3
+            },
+            {
+              "op": "obj_new",
+              "dst": 3,
+              "class_name": "Demo.Square",
+              "args": [
+                2
+              ]
+            },
+            {
+              "op": "store",
+              "var": "sq",
+              "src": 3
+            },
+            {
+              "op": "load",
+              "dst": 4,
+              "var": "c"
+            },
+            {
+              "op": "call",
+              "dst": 5,
+              "func": "Demo.PrintArea",
+              "args": [
+                4
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 6,
+              "var": "sq"
+            },
+            {
+              "op": "call",
+              "dst": 7,
+              "func": "Demo.PrintArea",
+              "args": [
+                6
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

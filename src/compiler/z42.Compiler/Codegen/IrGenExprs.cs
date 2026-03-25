@@ -116,6 +116,15 @@ public sealed partial class IrGen
                 return dst;
             }
 
+            // Static field read: ClassName.fieldName
+            case MemberExpr m when m.Target is IdentExpr { Name: var clsName }
+                && TryGetStaticFieldKey(clsName, m.Member) is { } sfKey:
+            {
+                int dst = Alloc();
+                Emit(new StaticGetInstr(dst, sfKey));
+                return dst;
+            }
+
             case MemberExpr m:
             {
                 int objReg = EmitExpr(m.Target);
@@ -203,6 +212,11 @@ public sealed partial class IrGen
             int idxReg = EmitExpr(ix.Index);
             Emit(new ArraySetInstr(arrReg, idxReg, valReg));
         }
+        else if (assign.Target is MemberExpr { Target: IdentExpr { Name: var aClsName }, Member: var aField }
+            && TryGetStaticFieldKey(aClsName, aField) is { } sfKey)
+        {
+            Emit(new StaticSetInstr(sfKey, valReg));
+        }
         else if (assign.Target is MemberExpr fm)
         {
             int objReg = EmitExpr(fm.Target);
@@ -217,6 +231,18 @@ public sealed partial class IrGen
     private int EmitUnary(UnaryExpr u)
     {
         if (u.Op == "await") return EmitExpr(u.Operand);
+
+        // Prefix ++ / -- on static field: ClassName.field++
+        if (u.Op is "++" or "--" && u.Operand is MemberExpr { Target: IdentExpr { Name: var ucn }, Member: var ufn }
+            && TryGetStaticFieldKey(ucn, ufn) is { } uSfKey)
+        {
+            int oldReg = Alloc(); Emit(new StaticGetInstr(oldReg, uSfKey));
+            int one    = Alloc(); Emit(new ConstI64Instr(one, 1));
+            int newReg = Alloc();
+            Emit(u.Op == "++" ? new AddInstr(newReg, oldReg, one) : (IrInstr)new SubInstr(newReg, oldReg, one));
+            Emit(new StaticSetInstr(uSfKey, newReg));
+            return newReg;
+        }
 
         // Prefix ++ / -- : increment/decrement operand, return new value.
         if (u.Op is "++" or "--" && u.Operand is IdentExpr prefixId)
@@ -245,6 +271,18 @@ public sealed partial class IrGen
 
     private int EmitPostfix(PostfixExpr post)
     {
+        // Postfix ++ / -- on static field: ClassName.field++
+        if (post.Operand is MemberExpr { Target: IdentExpr { Name: var pcn }, Member: var pfn }
+            && TryGetStaticFieldKey(pcn, pfn) is { } pSfKey)
+        {
+            int oldReg = Alloc(); Emit(new StaticGetInstr(oldReg, pSfKey));
+            int one    = Alloc(); Emit(new ConstI64Instr(one, 1));
+            int newReg = Alloc();
+            Emit(post.Op == "++" ? new AddInstr(newReg, oldReg, one) : (IrInstr)new SubInstr(newReg, oldReg, one));
+            Emit(new StaticSetInstr(pSfKey, newReg));
+            return oldReg;  // postfix returns OLD value
+        }
+
         if (post.Operand is IdentExpr id)
         {
             int oldReg = EmitExpr(post.Operand);

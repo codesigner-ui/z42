@@ -26,6 +26,22 @@ thread_local! {
     static PENDING_EXCEPTION: RefCell<Option<Value>> = const { RefCell::new(None) };
 }
 
+thread_local! {
+    static STATIC_FIELDS: RefCell<HashMap<String, Value>> = RefCell::new(HashMap::new());
+}
+
+fn static_get(field: &str) -> Value {
+    STATIC_FIELDS.with(|sf| sf.borrow().get(field).cloned().unwrap_or(Value::Null))
+}
+
+fn static_set(field: &str, val: Value) {
+    STATIC_FIELDS.with(|sf| { sf.borrow_mut().insert(field.to_string(), val); });
+}
+
+fn static_fields_clear() {
+    STATIC_FIELDS.with(|sf| sf.borrow_mut().clear());
+}
+
 /// Lightweight sentinel: `Send + Sync + 'static` because it carries no payload.
 #[derive(Debug)]
 struct UserException;
@@ -53,6 +69,18 @@ fn user_exception_take() -> Option<Value> {
 /// Entry point: run a function with the given arguments.
 pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
     exec_function(module, func, args)?;
+    Ok(())
+}
+
+/// Run with static init: clears static fields, runs __static_init__ if present, then runs `func`.
+pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
+    static_fields_clear();
+    // Call __static_init__ if it exists
+    let init_name = format!("{}.__static_init__", module.name);
+    if let Some(init_fn) = module.functions.iter().find(|f| f.name == init_name) {
+        exec_function(module, init_fn, &[])?;
+    }
+    exec_function(module, func, &[])?;
     Ok(())
 }
 
@@ -494,6 +522,14 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
                 _ => false,
             };
             frame.set(*dst, if is_match { val } else { Value::Null });
+        }
+
+        Instruction::StaticGet { dst, field } => {
+            frame.set(*dst, static_get(field));
+        }
+        Instruction::StaticSet { field, val } => {
+            let v = frame.get(*val)?.clone();
+            static_set(field, v);
         }
     }
     Ok(())

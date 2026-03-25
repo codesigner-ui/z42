@@ -140,6 +140,10 @@ pub enum Instruction {
     IsInstance { dst: Reg, obj: Reg, class_name: String },
     /// `expr as ClassName` — dst = obj if it is an instance of class_name (or subclass), else null.
     AsCast     { dst: Reg, obj: Reg, class_name: String },
+    /// Load the module-level static field `field` into `dst`.
+    StaticGet { dst: Reg, field: String },
+    /// Store `val` into the module-level static field `field`.
+    StaticSet { field: String, val: Reg },
 }
 
 /// Block terminator.

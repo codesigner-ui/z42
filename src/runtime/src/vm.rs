@@ -32,7 +32,7 @@ impl Vm {
             .ok_or_else(|| anyhow::anyhow!("entry `{}` disappeared — this is a bug", entry_name))?;
 
         match self.default_mode {
-            ExecMode::Interp => crate::interp::run(&self.module, entry, &[]),
+            ExecMode::Interp => crate::interp::run_with_static_init(&self.module, entry),
             ExecMode::Jit    => bail!("JIT mode not yet implemented"),
             ExecMode::Aot    => bail!("AOT mode not yet implemented"),
         }

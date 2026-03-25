@@ -1,0 +1,5 @@
+25
+10
+negative
+zero
+positive

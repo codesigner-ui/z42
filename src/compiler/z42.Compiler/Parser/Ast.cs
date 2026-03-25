@@ -70,6 +70,7 @@ public sealed record FieldDecl(
     TypeExpr Type,
     Visibility Visibility,
     bool IsStatic,
+    Expr? Initializer,
     Span Span);
 
 // ── Function declaration ──────────────────────────────────────────────────────

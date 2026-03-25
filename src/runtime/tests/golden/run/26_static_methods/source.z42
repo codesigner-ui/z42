@@ -1,0 +1,25 @@
+namespace Demo;
+
+class MathHelper {
+    static int Square(int n) {
+        return n * n;
+    }
+
+    static int Add(int a, int b) {
+        return a + b;
+    }
+
+    static string Describe(int n) {
+        if (n > 0) return "positive";
+        if (n < 0) return "negative";
+        return "zero";
+    }
+}
+
+void Main() {
+    Console.WriteLine(MathHelper.Square(5));
+    Console.WriteLine(MathHelper.Add(3, 7));
+    Console.WriteLine(MathHelper.Describe(-4));
+    Console.WriteLine(MathHelper.Describe(0));
+    Console.WriteLine(MathHelper.Describe(9));
+}
