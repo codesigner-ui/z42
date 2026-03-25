@@ -364,6 +364,22 @@ public sealed partial class TypeChecker
         // ── Free function call ────────────────────────────────────────────────
         var callArgTypes = call.Args.Select(a => CheckExpr(a, env)).ToList();
 
+        // Bare name inside same class → check current class's static methods first.
+        if (call.Callee is IdentExpr { Name: var bareCallName }
+            && _currentClass != null
+            && _classes.TryGetValue(_currentClass, out var curCt)
+            && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSig))
+        {
+            if (callArgTypes.Count != bareSig.Params.Count)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"expected {bareSig.Params.Count} argument(s), got {callArgTypes.Count}", call.Span);
+            else
+                for (int i = 0; i < callArgTypes.Count; i++)
+                    RequireAssignable(bareSig.Params[i], callArgTypes[i], call.Args[i].Span,
+                        $"argument {i + 1}: expected `{bareSig.Params[i]}`, got `{callArgTypes[i]}`");
+            return bareSig.Ret;
+        }
+
         Z42Type calleeType = call.Callee is IdentExpr funcId
             ? (env.LookupFunc(funcId.Name) as Z42Type ?? CheckIdent(funcId, env))
             : CheckExpr(call.Callee, env);

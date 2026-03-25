@@ -37,6 +37,8 @@ public sealed partial class IrGen
     private Dictionary<string, string> _classBaseNames = new();
     // Top-level function names (unqualified) — used to qualify free function calls
     private HashSet<string> _topLevelFunctionNames = new();
+    // Class name of the method currently being emitted (null for top-level functions and __static_init__)
+    private string? _currentClassName;
 
     // Per-function state
     private int _nextReg;
@@ -108,6 +110,7 @@ public sealed partial class IrGen
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
         bool isStatic = method.IsStatic;
+        _currentClassName = className;
         // Static methods: params start at 0; instance methods: `this` = reg 0, params start at 1
         int paramOffset = isStatic ? 0 : 1;
         _nextReg        = method.Params.Count + paramOffset;
@@ -147,6 +150,7 @@ public sealed partial class IrGen
 
     private IrFunction EmitFunction(FunctionDecl fn)
     {
+        _currentClassName = null;  // top-level functions have no owning class
         _nextReg        = fn.Params.Count;
         _nextLabelId    = 0;
         _locals         = new Dictionary<string, int>();
@@ -251,6 +255,7 @@ public sealed partial class IrGen
         bool hasAny = cu.Classes.Any(cls => cls.Fields.Any(f => f.IsStatic));
         if (!hasAny) return null;
 
+        _currentClassName = null;
         _nextReg        = 0;
         _nextLabelId    = 0;
         _locals         = new Dictionary<string, int>();

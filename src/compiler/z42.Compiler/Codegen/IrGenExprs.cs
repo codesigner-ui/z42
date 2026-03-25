@@ -506,10 +506,16 @@ public sealed partial class IrGen
         {
             var argRegs = call.Args.Select(EmitExpr).ToList();
             int dst = Alloc();
-            // Qualify if it's a top-level function in the same compilation unit
-            string callName = _topLevelFunctionNames.Contains(funcId.Name)
-                ? QualifyName(funcId.Name)
-                : funcId.Name;
+            // Resolve call name: top-level fn → qualify; same-class static method → qualify; else keep bare
+            string callName;
+            if (_topLevelFunctionNames.Contains(funcId.Name))
+                callName = QualifyName(funcId.Name);
+            else if (_currentClassName is not null
+                && _classStaticMethods.TryGetValue(QualifyName(_currentClassName), out var curStaticSet)
+                && curStaticSet.Contains(funcId.Name))
+                callName = $"{QualifyName(_currentClassName)}.{funcId.Name}";
+            else
+                callName = funcId.Name;
             Emit(new CallInstr(dst, callName, argRegs));
             return dst;
         }

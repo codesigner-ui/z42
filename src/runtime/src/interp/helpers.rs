@@ -140,6 +140,8 @@ pub(super) fn require_usize(args: &[Value], idx: usize, ctx: &str) -> Result<usi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
 
     fn regs(pairs: &[(u32, Value)]) -> HashMap<u32, Value> {
         pairs.iter().cloned().collect()
