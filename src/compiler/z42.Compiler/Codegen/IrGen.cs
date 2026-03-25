@@ -31,6 +31,8 @@ public sealed partial class IrGen
     private Dictionary<string, HashSet<string>> _classStaticMethods = new();
     // Class name → set of instance field names (qualified, for implicit this.field access)
     private Dictionary<string, HashSet<string>> _classInstanceFields = new();
+    // Qualified class name → qualified base class name (for inherited field resolution)
+    private Dictionary<string, string> _classBaseNames = new();
     // Top-level function names (unqualified) — used to qualify free function calls
     private HashSet<string> _topLevelFunctionNames = new();
 
@@ -68,6 +70,8 @@ public sealed partial class IrGen
             _classMethods[QualifyName(cls.Name)]        = cls.Methods.Where(m => !m.IsStatic).Select(m => m.Name).ToHashSet();
             _classStaticMethods[QualifyName(cls.Name)]  = cls.Methods.Where(m =>  m.IsStatic).Select(m => m.Name).ToHashSet();
             _classInstanceFields[QualifyName(cls.Name)] = cls.Fields.Where(f => !f.IsStatic).Select(f => f.Name).ToHashSet();
+            if (cls.BaseClass is not null)
+                _classBaseNames[QualifyName(cls.Name)] = QualifyName(cls.BaseClass);
         }
 
         // Collect top-level function names for qualified call resolution
@@ -182,9 +186,19 @@ public sealed partial class IrGen
 
     private int Alloc() => _nextReg++;
 
-    /// Returns instance field names for a class.
-    private HashSet<string> GetClassInstanceFieldNames(string className) =>
-        _classInstanceFields.TryGetValue(QualifyName(className), out var fields) ? fields : [];
+    /// Returns instance field names for a class, including all inherited fields.
+    private HashSet<string> GetClassInstanceFieldNames(string className)
+    {
+        var result = new HashSet<string>();
+        var current = QualifyName(className);
+        while (current is not null)
+        {
+            if (_classInstanceFields.TryGetValue(current, out var fields))
+                result.UnionWith(fields);
+            _classBaseNames.TryGetValue(current, out current!);
+        }
+        return result;
+    }
 
     private int Intern(string s)
     {

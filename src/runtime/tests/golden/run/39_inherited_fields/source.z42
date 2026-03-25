@@ -1,0 +1,39 @@
+namespace Demo;
+
+class Animal {
+    string name;
+    int age;
+
+    Animal(string n, int a) {
+        name = n;
+        age = a;
+    }
+
+    string Describe() {
+        return $"{name} (age {age})";
+    }
+}
+
+class Dog : Animal {
+    string breed;
+
+    Dog(string n, int a, string b) {
+        name = n;
+        age = a;
+        breed = b;
+    }
+
+    string Info() {
+        // Access inherited fields (name, age) with bare names
+        return $"{name} is a {breed}, age {age}";
+    }
+}
+
+void Main() {
+    var a = new Animal("Cat", 3);
+    Assert.Equal("Cat (age 3)", a.Describe());
+
+    var d = new Dog("Rex", 5, "Labrador");
+    Assert.Equal("Rex is a Labrador, age 5", d.Info());
+    Assert.Equal("Rex (age 5)", d.Describe());
+}
