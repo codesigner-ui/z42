@@ -1,0 +1,304 @@
+{
+  "name": "main",
+  "string_pool": [
+    "try",
+    "finally",
+    "err",
+    "caught: ",
+    "finally2",
+    "no throw",
+    "never",
+    "finally3",
+    "done"
+  ],
+  "classes": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "try_start_0"
+          }
+        },
+        {
+          "label": "try_start_0",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 0,
+              "idx": 0
+            },
+            {
+              "op": "builtin",
+              "dst": 1,
+              "name": "__println",
+              "args": [
+                0
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "try_end_1"
+          }
+        },
+        {
+          "label": "try_end_1",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "finally_3"
+          }
+        },
+        {
+          "label": "finally_3",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 2,
+              "idx": 1
+            },
+            {
+              "op": "builtin",
+              "dst": 3,
+              "name": "__println",
+              "args": [
+                2
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "after_try_2"
+          }
+        },
+        {
+          "label": "after_try_2",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "try_start_4"
+          }
+        },
+        {
+          "label": "try_start_4",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 4,
+              "idx": 2
+            }
+          ],
+          "terminator": {
+            "op": "throw",
+            "reg": 4
+          }
+        },
+        {
+          "label": "try_end_5",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "finally_7"
+          }
+        },
+        {
+          "label": "catch_start_8",
+          "instructions": [
+            {
+              "op": "store",
+              "var": "e",
+              "src": 5
+            },
+            {
+              "op": "const_str",
+              "dst": 6,
+              "idx": 3
+            },
+            {
+              "op": "load",
+              "dst": 7,
+              "var": "e"
+            },
+            {
+              "op": "to_str",
+              "dst": 8,
+              "src": 7
+            },
+            {
+              "op": "str_concat",
+              "dst": 9,
+              "a": 6,
+              "b": 8
+            },
+            {
+              "op": "builtin",
+              "dst": 10,
+              "name": "__println",
+              "args": [
+                9
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "finally_7"
+          }
+        },
+        {
+          "label": "finally_7",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 11,
+              "idx": 4
+            },
+            {
+              "op": "builtin",
+              "dst": 12,
+              "name": "__println",
+              "args": [
+                11
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "after_try_6"
+          }
+        },
+        {
+          "label": "after_try_6",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "try_start_10"
+          }
+        },
+        {
+          "label": "try_start_10",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 13,
+              "idx": 5
+            },
+            {
+              "op": "builtin",
+              "dst": 14,
+              "name": "__println",
+              "args": [
+                13
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "try_end_11"
+          }
+        },
+        {
+          "label": "try_end_11",
+          "instructions": [],
+          "terminator": {
+            "op": "br",
+            "label": "finally_13"
+          }
+        },
+        {
+          "label": "catch_start_14",
+          "instructions": [
+            {
+              "op": "store",
+              "var": "e",
+              "src": 15
+            },
+            {
+              "op": "const_str",
+              "dst": 16,
+              "idx": 6
+            },
+            {
+              "op": "builtin",
+              "dst": 17,
+              "name": "__println",
+              "args": [
+                16
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "finally_13"
+          }
+        },
+        {
+          "label": "finally_13",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 18,
+              "idx": 7
+            },
+            {
+              "op": "builtin",
+              "dst": 19,
+              "name": "__println",
+              "args": [
+                18
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "after_try_12"
+          }
+        },
+        {
+          "label": "after_try_12",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 20,
+              "idx": 8
+            },
+            {
+              "op": "builtin",
+              "dst": 21,
+              "name": "__println",
+              "args": [
+                20
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ],
+      "exception_table": [
+        {
+          "try_start": "try_start_4",
+          "try_end": "try_end_5",
+          "catch_label": "catch_start_8",
+          "catch_type": "Exception",
+          "catch_reg": 5
+        },
+        {
+          "try_start": "try_start_10",
+          "try_end": "try_end_11",
+          "catch_label": "catch_start_14",
+          "catch_type": "Exception",
+          "catch_reg": 15
+        }
+      ]
+    }
+  ]
+}

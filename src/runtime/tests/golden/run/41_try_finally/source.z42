@@ -1,0 +1,28 @@
+void Main() {
+    // finally runs on normal exit
+    try {
+        Console.WriteLine("try");
+    } finally {
+        Console.WriteLine("finally");
+    }
+
+    // finally runs after catch
+    try {
+        throw "err";
+    } catch (Exception e) {
+        Console.WriteLine($"caught: {e}");
+    } finally {
+        Console.WriteLine("finally2");
+    }
+
+    // finally runs when no exception
+    try {
+        Console.WriteLine("no throw");
+    } catch (Exception e) {
+        Console.WriteLine("never");
+    } finally {
+        Console.WriteLine("finally3");
+    }
+
+    Console.WriteLine("done");
+}

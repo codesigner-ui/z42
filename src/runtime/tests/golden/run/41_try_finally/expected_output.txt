@@ -1,0 +1,7 @@
+try
+finally
+caught: err
+finally2
+no throw
+finally3
+done

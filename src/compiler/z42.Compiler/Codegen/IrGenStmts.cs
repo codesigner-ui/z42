@@ -95,6 +95,8 @@ public sealed partial class IrGen
         string tryStartLbl = FreshLabel("try_start");
         string tryEndLbl   = FreshLabel("try_end");
         string afterLbl    = FreshLabel("after_try");
+        // If there is a finally block, all paths go through it before afterLbl.
+        string finallyLbl  = tc.Finally != null ? FreshLabel("finally") : afterLbl;
 
         EndBlock(new BrTerm(tryStartLbl));
 
@@ -103,9 +105,9 @@ public sealed partial class IrGen
         EmitBlock(tc.TryBody);
         if (!_blockEnded) EndBlock(new BrTerm(tryEndLbl));
 
-        // try_end block: jump to after (normal exit from try)
+        // try_end block: jump to finally (or after if no finally)
         StartBlock(tryEndLbl);
-        EndBlock(new BrTerm(afterLbl));
+        EndBlock(new BrTerm(finallyLbl));
 
         // Catch clauses
         foreach (var clause in tc.Catches)
@@ -128,13 +130,13 @@ public sealed partial class IrGen
                 Emit(new StoreInstr(clause.VarName, catchReg));
             }
             EmitBlock(clause.Body);
-            if (!_blockEnded) EndBlock(new BrTerm(afterLbl));
+            if (!_blockEnded) EndBlock(new BrTerm(finallyLbl));
         }
 
         // Finally (run after try/catch regardless)
         if (tc.Finally != null)
         {
-            StartBlock(FreshLabel("finally"));
+            StartBlock(finallyLbl);
             EmitBlock(tc.Finally);
             if (!_blockEnded) EndBlock(new BrTerm(afterLbl));
         }
