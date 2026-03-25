@@ -345,6 +345,34 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             }
         }
 
+        "__list_sort" => {
+            match args.first() {
+                Some(Value::Array(arr)) => {
+                    let mut v = arr.borrow_mut();
+                    v.sort_by(|a, b| {
+                        match (a, b) {
+                            (Value::I64(x), Value::I64(y)) => x.cmp(y),
+                            (Value::F64(x), Value::F64(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+                            (Value::Str(x), Value::Str(y)) => x.cmp(y),
+                            _ => std::cmp::Ordering::Equal,
+                        }
+                    });
+                    Ok(Value::Null)
+                }
+                _ => bail!("List.Sort: first argument must be a List"),
+            }
+        }
+
+        "__list_reverse" => {
+            match args.first() {
+                Some(Value::Array(arr)) => {
+                    arr.borrow_mut().reverse();
+                    Ok(Value::Null)
+                }
+                _ => bail!("List.Reverse: first argument must be a List"),
+            }
+        }
+
         // ── Dictionary built-ins ──────────────────────────────────────────────
 
         "__dict_new" => {
@@ -359,13 +387,23 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             _ => bail!("Dictionary.ContainsKey: expected (Dictionary, key)"),
         },
 
+        // Polymorphic Remove: List<T>.Remove(value) or Dictionary<K,V>.Remove(key)
         "__dict_remove" => match (args.first(), args.get(1)) {
+            (Some(Value::Array(arr)), Some(item)) => {
+                let mut v = arr.borrow_mut();
+                if let Some(pos) = v.iter().position(|x| x == item) {
+                    v.remove(pos);
+                    Ok(Value::Bool(true))
+                } else {
+                    Ok(Value::Bool(false))
+                }
+            }
             (Some(Value::Map(rc)), Some(key)) => {
                 let key_str = value_to_str(key);
-                rc.borrow_mut().remove(&key_str);
-                Ok(Value::Null)
+                let removed = rc.borrow_mut().remove(&key_str).is_some();
+                Ok(Value::Bool(removed))
             }
-            _ => bail!("Dictionary.Remove: expected (Dictionary, key)"),
+            _ => bail!("Remove: expected (List, value) or (Dictionary, key)"),
         },
 
         "__dict_keys" => match args.first() {

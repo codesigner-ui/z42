@@ -91,6 +91,8 @@ internal static class BuiltinTable
             ["RemoveAt"]   = new([Int],        Void,   "__list_remove_at"),
             ["Clear"]      = new([],            Void,   "__list_clear"),
             ["Insert"]     = new([Int, Any],   Void,   "__list_insert"),
+            ["Sort"]       = new([],            Void,   "__list_sort"),
+            ["Reverse"]    = new([],            Void,   "__list_reverse"),
             // ── Dictionary<K,V> ───────────────────────────────────────────────
             ["ContainsKey"]= new([Any],        Bool,   "__dict_contains_key"),
             ["Remove"]     = new([Any],        Bool,   "__dict_remove"),

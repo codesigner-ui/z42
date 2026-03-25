@@ -1,0 +1,44 @@
+void Main() {
+    var list = new List<int>();
+    list.Add(1);
+    list.Add(2);
+    list.Add(3);
+    list.Add(4);
+    list.Add(5);
+
+    // Remove by value
+    var removed = list.Remove(3);
+    Assert.True(removed);
+    Assert.Equal(4, list.Count);
+
+    // Remove non-existent
+    var notRemoved = list.Remove(99);
+    Assert.False(notRemoved);
+
+    // Contains
+    Assert.False(list.Contains(3));
+    Assert.True(list.Contains(4));
+
+    // Sort
+    var nums = new List<int>();
+    nums.Add(5); nums.Add(2); nums.Add(8); nums.Add(1); nums.Add(9);
+    nums.Sort();
+    Assert.Equal(1, nums[0]);
+    Assert.Equal(2, nums[1]);
+    Assert.Equal(9, nums[4]);
+
+    // Reverse
+    nums.Reverse();
+    Assert.Equal(9, nums[0]);
+    Assert.Equal(1, nums[4]);
+
+    // foreach with break
+    int sum = 0;
+    foreach (var n in list) {
+        if (n > 3) break;
+        sum += n;
+    }
+    Assert.Equal(3, sum); // 1 + 2 = 3 (stops before 4)
+
+    Console.WriteLine("All passed");
+}
