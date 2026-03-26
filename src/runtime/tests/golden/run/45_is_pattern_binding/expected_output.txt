@@ -1,0 +1,5 @@
+circle radius: 5
+rect area: 12
+true
+false
+done

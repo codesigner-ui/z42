@@ -192,3 +192,7 @@ public sealed record SwitchArm(Expr? Pattern, Expr Body, Span Span);
 
 /// `target?.member` — returns null if target is null, otherwise accesses the member.
 public sealed record NullConditionalExpr(Expr Target, string Member, Span Span) : Expr(Span);
+
+/// `expr is TypeName binding` — type test with variable introduction.
+/// The Binding variable is introduced into the containing scope (available in the then-branch).
+public sealed record IsPatternExpr(Expr Target, string TypeName, string Binding, Span Span) : Expr(Span);

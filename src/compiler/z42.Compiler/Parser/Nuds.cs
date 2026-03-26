@@ -61,6 +61,11 @@ internal static class Nuds
     public static readonly NudFn Ident_ = (ctx, tok) =>
         new IdentExpr(tok.Text, tok.Span);
 
+    /// Treat a type keyword (string, int, double, …) as an identifier so that
+    /// static method calls like `string.Join(...)` or `int.Parse(...)` parse correctly.
+    public static NudFn TypeKeyword(string name) => (ctx, tok) =>
+        new IdentExpr(name, tok.Span);
+
     // ── new expression ───────────────────────────────────────────────────────
     //   new T(args)          — object constructor
     //   new T[] { e, ... }   — array literal   (ParseTypeExpr consumed "[]")

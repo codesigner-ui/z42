@@ -41,10 +41,23 @@ public sealed partial class TypeChecker
 
             case IfStmt i:
             {
-                RequireBool(CheckExpr(i.Condition, env), i.Condition.Span, "if");
-                CheckBlock(i.Then, env, retType);
-                if (i.Else is BlockStmt eb) CheckBlock(eb, env, retType);
-                else if (i.Else != null)    CheckStmt(i.Else, env, retType);
+                // For `is` pattern bindings, check the condition in a fresh scope
+                // so the binding variable is visible inside the then-block only.
+                if (i.Condition is IsPatternExpr)
+                {
+                    var patScope = env.PushScope();
+                    RequireBool(CheckExpr(i.Condition, patScope), i.Condition.Span, "if");
+                    CheckBlock(i.Then, patScope, retType);
+                    if (i.Else is BlockStmt eb) CheckBlock(eb, env, retType);
+                    else if (i.Else != null)    CheckStmt(i.Else, env, retType);
+                }
+                else
+                {
+                    RequireBool(CheckExpr(i.Condition, env), i.Condition.Span, "if");
+                    CheckBlock(i.Then, env, retType);
+                    if (i.Else is BlockStmt eb) CheckBlock(eb, env, retType);
+                    else if (i.Else != null)    CheckStmt(i.Else, env, retType);
+                }
                 break;
             }
 

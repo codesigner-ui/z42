@@ -119,6 +119,18 @@ public sealed partial class TypeChecker
                      : Z42Type.Unknown;
             }
 
+            case IsPatternExpr ipe:
+            {
+                CheckExpr(ipe.Target, env);
+                // Define the binding variable as the named type in the current env.
+                // (For proper branch-scoping the caller — IfStmt — may push a subscope.)
+                var bindType = _classes.TryGetValue(ipe.TypeName, out var ct)
+                    ? (Z42Type)ct
+                    : Z42Type.Unknown;
+                env.Define(ipe.Binding, bindType);
+                return Z42Type.Bool;
+            }
+
             case CastExpr cast:
                 CheckExpr(cast.Operand, env);
                 return ResolveType(cast.TargetType);

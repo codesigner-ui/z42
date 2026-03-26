@@ -96,6 +96,20 @@ public sealed partial class IrGen
             case NullCoalesceExpr nc:
                 return EmitNullCoalesce(nc);
 
+            // `expr is TypeName binding` — is_instance for bool + as_cast for binding
+            case IsPatternExpr ipe:
+            {
+                int objReg  = EmitExpr(ipe.Target);
+                int boolReg = Alloc();
+                var qualName = QualifyName(ipe.TypeName);
+                Emit(new IsInstanceInstr(boolReg, objReg, qualName));
+                // Also emit the as_cast and store to a local so the then-block can use it
+                int castReg = Alloc();
+                Emit(new AsCastInstr(castReg, objReg, qualName));
+                _locals[ipe.Binding] = castReg;
+                return boolReg;
+            }
+
             case CastExpr cast:
                 return EmitExpr(cast.Operand);
 
@@ -418,6 +432,16 @@ public sealed partial class IrGen
             Emit(bin.Op == "is"
                 ? new IsInstanceInstr(typeReg, objReg, qualName)
                 : (IrInstr)new AsCastInstr(typeReg, objReg, qualName));
+            return typeReg;
+        }
+
+        // `expr is TypeName binding` — evaluates to bool, also stores typed cast in binding
+        if (bin.Op == "is")
+        {
+            // Fallback: emit as plain is_instance (right might not be IdentExpr in edge cases)
+            int objReg  = EmitExpr(bin.Left);
+            int typeReg = Alloc();
+            Emit(new IsInstanceInstr(typeReg, objReg, bin.Right is IdentExpr ti ? QualifyName(ti.Name) : "__unknown"));
             return typeReg;
         }
 

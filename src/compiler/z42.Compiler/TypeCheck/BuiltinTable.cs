@@ -46,9 +46,23 @@ internal static class BuiltinTable
             ["Console.WriteLine"] = new(null, Void, "__println"),
             ["Console.Write"]     = new(null, Void, "__print"),
 
-            // ── String static (capital S — not a keyword, usable as identifier) ─
-            ["String.IsNullOrEmpty"]      = new([Str], Bool, "__str_is_null_or_empty"),
-            ["String.IsNullOrWhiteSpace"] = new([Str], Bool, "__str_is_null_or_whitespace"),
+            // ── String static — both capitalised and lowercase keyword variants ──
+            ["String.IsNullOrEmpty"]      = new([Str],  Bool, "__str_is_null_or_empty"),
+            ["String.IsNullOrWhiteSpace"] = new([Str],  Bool, "__str_is_null_or_whitespace"),
+            ["String.Join"]               = new(null,   Str,  "__str_join"),   // variadic: sep + array/list
+            ["String.Concat"]             = new(null,   Str,  "__str_concat"), // variadic
+            ["String.Format"]             = new(null,   Str,  "__str_format"), // variadic
+            ["string.IsNullOrEmpty"]      = new([Str],  Bool, "__str_is_null_or_empty"),
+            ["string.IsNullOrWhiteSpace"] = new([Str],  Bool, "__str_is_null_or_whitespace"),
+            ["string.Join"]               = new(null,   Str,  "__str_join"),
+            ["string.Concat"]             = new(null,   Str,  "__str_concat"),
+            ["string.Format"]             = new(null,   Str,  "__str_format"),
+
+            // ── int / long / double static parse ──────────────────────────────
+            ["int.Parse"]    = new([Str], Int, "__int_parse"),
+            ["long.Parse"]   = new([Str], Z42Type.Long, "__long_parse"),
+            ["double.Parse"] = new([Str], Dbl, "__double_parse"),
+            ["float.Parse"]  = new([Str], Dbl, "__double_parse"),   // treat float as double
 
             // ── Convert ───────────────────────────────────────────────────────
             ["Convert.ToInt32"]   = new([Any], Int,  "__int_parse"),

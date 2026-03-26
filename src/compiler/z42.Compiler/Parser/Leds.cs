@@ -120,4 +120,20 @@ internal static class Leds
         var right = ctx.ParseExpr(19);   // right-assoc
         return new NullCoalesceExpr(left, right, tok.Span);
     };
+
+    /// Handles `expr is TypeName` (plain) and `expr is TypeName binding` (pattern).
+    /// The `is` token has already been consumed; current token is the type name.
+    public static readonly LedFn Is_ = (ctx, left, tok) =>
+    {
+        // Type name — must be an identifier (not a keyword)
+        var typeTok = ctx.Expect(TokenKind.Identifier);
+        // Optional variable binding: `a is Dog d`
+        if (ctx.Current.Kind == TokenKind.Identifier)
+        {
+            var bindTok = ctx.Advance();
+            return new IsPatternExpr(left, typeTok.Text, bindTok.Text, left.Span);
+        }
+        // Plain `a is Dog` — keep as BinaryExpr for backwards compatibility
+        return new BinaryExpr("is", left, new IdentExpr(typeTok.Text, typeTok.Span), left.Span);
+    };
 }

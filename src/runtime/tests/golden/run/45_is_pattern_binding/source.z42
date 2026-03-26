@@ -1,0 +1,44 @@
+namespace Demo;
+
+abstract class Shape {
+    abstract string Describe();
+}
+
+class Circle : Shape {
+    int Radius;
+    Circle(int r) { this.Radius = r; }
+    override string Describe() { return $"circle(r={this.Radius})"; }
+    int GetRadius() { return this.Radius; }
+}
+
+class Rectangle : Shape {
+    int W;
+    int H;
+    Rectangle(int w, int h) { this.W = w; this.H = h; }
+    override string Describe() { return $"rect({this.W}x{this.H})"; }
+    int Area() { return this.W * this.H; }
+}
+
+void Main() {
+    Shape s1 = new Circle(5);
+    Shape s2 = new Rectangle(3, 4);
+
+    // is pattern with variable binding
+    if (s1 is Circle c) {
+        Console.WriteLine($"circle radius: {c.GetRadius()}");
+    }
+
+    if (s2 is Rectangle r) {
+        Console.WriteLine($"rect area: {r.Area()}");
+    }
+
+    // is without binding still works
+    Console.WriteLine(s1 is Circle);
+    Console.WriteLine(s1 is Rectangle);
+
+    // no match — body should not execute
+    if (s2 is Circle c2) {
+        Console.WriteLine("should not print");
+    }
+    Console.WriteLine("done");
+}

@@ -196,7 +196,56 @@ pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
             Some(other) => bail!("string.IsNullOrWhiteSpace: expected string or null, got {:?}", other),
         },
 
-        // ── int / double parse ────────────────────────────────────────────────
+        // ── String.Join / Concat / Format ────────────────────────────────────
+
+        "__str_join" => {
+            if args.is_empty() {
+                return Ok(Value::Str(String::new()));
+            }
+            let sep = match &args[0] {
+                Value::Str(s) => s.as_str(),
+                Value::Null   => "",
+                other => bail!("string.Join: separator must be string, got {:?}", other),
+            };
+            let items: Vec<String> = if args.len() == 2 {
+                match &args[1] {
+                    Value::Array(arr) => arr.borrow().iter().map(|v| value_to_str(v)).collect(),
+                    other             => vec![value_to_str(other)],
+                }
+            } else {
+                args[1..].iter().map(|v| value_to_str(v)).collect()
+            };
+            Ok(Value::Str(items.join(sep)))
+        }
+
+        "__str_concat" => {
+            let mut out = String::new();
+            for v in args { out.push_str(&value_to_str(v)); }
+            Ok(Value::Str(out))
+        }
+
+        "__str_format" => {
+            if args.is_empty() {
+                return Ok(Value::Str(String::new()));
+            }
+            let template = require_str(args, 0, "string.Format")?;
+            let mut result = template.to_string();
+            for (i, arg) in args[1..].iter().enumerate() {
+                result = result.replace(&format!("{{{}}}", i), &value_to_str(arg));
+            }
+            Ok(Value::Str(result))
+        }
+
+        // ── int / double / long parse ─────────────────────────────────────────
+
+        "__long_parse" => {
+            let s = require_str(args, 0, "long.Parse")?;
+            match s.trim().parse::<i64>() {
+                Ok(n)  => Ok(Value::I64(n)),
+                Err(_) => bail!("long.Parse: could not parse \"{}\" as long", s),
+            }
+        }
+
 
         "__int_parse" => {
             let s = require_str(args, 0, "int.Parse")?;

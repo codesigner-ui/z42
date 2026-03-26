@@ -83,7 +83,7 @@ internal static class ParseTable
             [TokenKind.LtEq] = new(60, null, Leds.BinaryLeft("<=", 60)),
             [TokenKind.Gt]   = new(60, null, Leds.BinaryLeft(">",  60)),
             [TokenKind.GtEq] = new(60, null, Leds.BinaryLeft(">=", 60)),
-            [TokenKind.Is]   = new(60, null, Leds.BinaryLeft("is", 60)),
+            [TokenKind.Is]   = new(60, null, Leds.Is_),
             [TokenKind.As]   = new(60, null, Leds.BinaryLeft("as", 60)),
 
             // ── Bit-shifts (bp=65) — between relational (60) and additive (70) ─
@@ -130,6 +130,15 @@ internal static class ParseTable
             [TokenKind.Identifier] = new(0, Nuds.Ident_,   null),
             [TokenKind.New]        = new(0, Nuds.New_,      null),
             [TokenKind.Typeof]     = new(0, Nuds.Typeof_,   null),
+
+            // ── Type keywords usable as static-call targets: string.Join, int.Parse, … ─
+            [TokenKind.String] = new(0, Nuds.TypeKeyword("string"), null),
+            [TokenKind.Int]    = new(0, Nuds.TypeKeyword("int"),    null),
+            [TokenKind.Long]   = new(0, Nuds.TypeKeyword("long"),   null),
+            [TokenKind.Double] = new(0, Nuds.TypeKeyword("double"), null),
+            [TokenKind.Float]  = new(0, Nuds.TypeKeyword("float"),  null),
+            [TokenKind.Bool]   = new(0, Nuds.TypeKeyword("bool"),   null),
+            [TokenKind.Char]   = new(0, Nuds.TypeKeyword("char"),   null),
         };
 
     internal static readonly IReadOnlyDictionary<TokenKind, StmtRule> StmtRules =

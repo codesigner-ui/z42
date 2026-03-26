@@ -1,0 +1,591 @@
+{
+  "name": "Demo",
+  "string_pool": [
+    "circle(r=",
+    ")",
+    "rect(",
+    "x",
+    "circle radius: ",
+    "rect area: ",
+    "should not print",
+    "done"
+  ],
+  "classes": [
+    {
+      "name": "Demo.Shape",
+      "fields": []
+    },
+    {
+      "name": "Demo.Circle",
+      "base_class": "Demo.Shape",
+      "fields": [
+        {
+          "name": "Radius",
+          "type": "int"
+        }
+      ]
+    },
+    {
+      "name": "Demo.Rectangle",
+      "base_class": "Demo.Shape",
+      "fields": [
+        {
+          "name": "W",
+          "type": "int"
+        },
+        {
+          "name": "H",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "Demo.Shape.Describe",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Circle.Circle",
+      "param_count": 2,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "Radius",
+              "val": 1
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Circle.Describe",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 0
+            },
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "Radius"
+            },
+            {
+              "op": "to_str",
+              "dst": 3,
+              "src": 2
+            },
+            {
+              "op": "const_str",
+              "dst": 4,
+              "idx": 1
+            },
+            {
+              "op": "str_concat",
+              "dst": 5,
+              "a": 1,
+              "b": 3
+            },
+            {
+              "op": "str_concat",
+              "dst": 6,
+              "a": 5,
+              "b": 4
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Circle.GetRadius",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_get",
+              "dst": 1,
+              "obj": 0,
+              "field_name": "Radius"
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Rectangle.Rectangle",
+      "param_count": 3,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "W",
+              "val": 1
+            },
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "H",
+              "val": 2
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Rectangle.Describe",
+      "param_count": 1,
+      "ret_type": "string",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 2
+            },
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "W"
+            },
+            {
+              "op": "to_str",
+              "dst": 3,
+              "src": 2
+            },
+            {
+              "op": "const_str",
+              "dst": 4,
+              "idx": 3
+            },
+            {
+              "op": "field_get",
+              "dst": 5,
+              "obj": 0,
+              "field_name": "H"
+            },
+            {
+              "op": "to_str",
+              "dst": 6,
+              "src": 5
+            },
+            {
+              "op": "const_str",
+              "dst": 7,
+              "idx": 1
+            },
+            {
+              "op": "str_concat",
+              "dst": 8,
+              "a": 1,
+              "b": 3
+            },
+            {
+              "op": "str_concat",
+              "dst": 9,
+              "a": 8,
+              "b": 4
+            },
+            {
+              "op": "str_concat",
+              "dst": 10,
+              "a": 9,
+              "b": 6
+            },
+            {
+              "op": "str_concat",
+              "dst": 11,
+              "a": 10,
+              "b": 7
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 11
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Rectangle.Area",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_get",
+              "dst": 1,
+              "obj": 0,
+              "field_name": "W"
+            },
+            {
+              "op": "field_get",
+              "dst": 2,
+              "obj": 0,
+              "field_name": "H"
+            },
+            {
+              "op": "mul",
+              "dst": 3,
+              "a": 1,
+              "b": 2
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 3
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 5
+            },
+            {
+              "op": "obj_new",
+              "dst": 1,
+              "class_name": "Demo.Circle",
+              "args": [
+                0
+              ]
+            },
+            {
+              "op": "store",
+              "var": "s1",
+              "src": 1
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 3
+            },
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 4
+            },
+            {
+              "op": "obj_new",
+              "dst": 4,
+              "class_name": "Demo.Rectangle",
+              "args": [
+                2,
+                3
+              ]
+            },
+            {
+              "op": "store",
+              "var": "s2",
+              "src": 4
+            },
+            {
+              "op": "load",
+              "dst": 5,
+              "var": "s1"
+            },
+            {
+              "op": "is_instance",
+              "dst": 6,
+              "obj": 5,
+              "class_name": "Demo.Circle"
+            },
+            {
+              "op": "as_cast",
+              "dst": 7,
+              "obj": 5,
+              "class_name": "Demo.Circle"
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 6,
+            "true_label": "then_0",
+            "false_label": "end_1"
+          }
+        },
+        {
+          "label": "then_0",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 8,
+              "idx": 4
+            },
+            {
+              "op": "v_call",
+              "dst": 9,
+              "obj": 7,
+              "method": "GetRadius",
+              "args": []
+            },
+            {
+              "op": "to_str",
+              "dst": 10,
+              "src": 9
+            },
+            {
+              "op": "str_concat",
+              "dst": 11,
+              "a": 8,
+              "b": 10
+            },
+            {
+              "op": "builtin",
+              "dst": 12,
+              "name": "__println",
+              "args": [
+                11
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_1"
+          }
+        },
+        {
+          "label": "end_1",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 13,
+              "var": "s2"
+            },
+            {
+              "op": "is_instance",
+              "dst": 14,
+              "obj": 13,
+              "class_name": "Demo.Rectangle"
+            },
+            {
+              "op": "as_cast",
+              "dst": 15,
+              "obj": 13,
+              "class_name": "Demo.Rectangle"
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 14,
+            "true_label": "then_2",
+            "false_label": "end_3"
+          }
+        },
+        {
+          "label": "then_2",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 16,
+              "idx": 5
+            },
+            {
+              "op": "v_call",
+              "dst": 17,
+              "obj": 15,
+              "method": "Area",
+              "args": []
+            },
+            {
+              "op": "to_str",
+              "dst": 18,
+              "src": 17
+            },
+            {
+              "op": "str_concat",
+              "dst": 19,
+              "a": 16,
+              "b": 18
+            },
+            {
+              "op": "builtin",
+              "dst": 20,
+              "name": "__println",
+              "args": [
+                19
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_3"
+          }
+        },
+        {
+          "label": "end_3",
+          "instructions": [
+            {
+              "op": "load",
+              "dst": 21,
+              "var": "s1"
+            },
+            {
+              "op": "is_instance",
+              "dst": 22,
+              "obj": 21,
+              "class_name": "Demo.Circle"
+            },
+            {
+              "op": "builtin",
+              "dst": 23,
+              "name": "__println",
+              "args": [
+                22
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 24,
+              "var": "s1"
+            },
+            {
+              "op": "is_instance",
+              "dst": 25,
+              "obj": 24,
+              "class_name": "Demo.Rectangle"
+            },
+            {
+              "op": "builtin",
+              "dst": 26,
+              "name": "__println",
+              "args": [
+                25
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 27,
+              "var": "s2"
+            },
+            {
+              "op": "is_instance",
+              "dst": 28,
+              "obj": 27,
+              "class_name": "Demo.Circle"
+            },
+            {
+              "op": "as_cast",
+              "dst": 29,
+              "obj": 27,
+              "class_name": "Demo.Circle"
+            }
+          ],
+          "terminator": {
+            "op": "br_cond",
+            "cond": 28,
+            "true_label": "then_4",
+            "false_label": "end_5"
+          }
+        },
+        {
+          "label": "then_4",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 30,
+              "idx": 6
+            },
+            {
+              "op": "builtin",
+              "dst": 31,
+              "name": "__println",
+              "args": [
+                30
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "br",
+            "label": "end_5"
+          }
+        },
+        {
+          "label": "end_5",
+          "instructions": [
+            {
+              "op": "const_str",
+              "dst": 32,
+              "idx": 7
+            },
+            {
+              "op": "builtin",
+              "dst": 33,
+              "name": "__println",
+              "args": [
+                32
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}
