@@ -41,8 +41,12 @@ z42/
             ├── package.rs    # ZbcFile / ZmodManifest / ZlibFile
             ├── project.rs    # Z42Proj / Z42Sln（z42.toml 模型）
             ├── types.rs      # Value、ExecMode
-            ├── interp.rs     # 解释器后端
-            ├── jit.rs        # JIT 存根
+            ├── interp/       # 解释器后端
+            ├── jit/          # JIT 后端（Cranelift）
+            │   ├── mod.rs        # 入口：compile_module / JitModule::run
+            │   ├── translate.rs  # IR → Cranelift CLIF 转译
+            │   ├── helpers.rs    # extern "C" helper 函数
+            │   └── frame.rs      # JitFrame / JitModuleCtx
             ├── aot.rs        # AOT 存根
             └── vm.rs         # 调度层
 ```
@@ -54,14 +58,30 @@ z42/
 dotnet build src/compiler/z42.slnx
 
 # 运行编译器
-dotnet run --project src/compiler/z42.Driver -- <file.z42> [--dump-tokens]
+dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc|zmod|zlib]
 
 # VM（Rust）
 cargo build --manifest-path src/runtime/Cargo.toml
 
 # 运行 VM
-cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|jit|aot]
+cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]
 ```
+
+## 测试命令
+
+```bash
+# 编译器 golden tests（295 个，含 parse/IR/run/error 用例）
+dotnet test src/compiler/z42.Tests/z42.Tests.csproj
+
+# VM golden tests — interp + JIT 两种模式（25 个 run 用例）
+./scripts/test-vm.sh           # 两种模式都跑
+
+./scripts/test-vm.sh interp    # 仅解释器
+./scripts/test-vm.sh jit       # 仅 JIT
+```
+
+> **注意**：修改编译器后，先用 `dotnet run ... --emit ir` 重新生成 `source.z42ir.json`，
+> 再运行 `./scripts/test-vm.sh` 验证 VM 行为。
 
 ## 实现阶段
 
@@ -71,8 +91,8 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42bc> [--mode interp|
 | 1 | 编译器：Lexer + Parser | ✅ 完成 |
 | 2 | 编译器：类型检查器 | 🚧 待实现 |
 | 3 | 编译器：IR Codegen → .z42bc | 🚧 待实现 |
-| 4 | Rust VM：解释器完整实现 | 🚧 待实现 |
-| 5 | Rust VM：JIT（Cranelift） | 📋 规划 |
+| 4 | Rust VM：解释器完整实现 | ✅ 完成 |
+| 5 | Rust VM：JIT（Cranelift） | ✅ 完成 |
 | 6 | Rust VM：AOT（LLVM/inkwell） | 📋 规划 |
 | 7 | 自举：用 z42 重写编译器和工具链 | 📋 规划 |
 
@@ -121,9 +141,11 @@ z42 **始终带 GC**，不引入所有权/借用。Phase 2 目标是借鉴 Rust/
 ```bash
 # 1. 编译（确保无错误）
 dotnet build src/compiler/z42.slnx
+cargo build --manifest-path src/runtime/Cargo.toml
 
 # 2. 跑 golden tests（确保全部通过）
-dotnet test tests/z42.Tests/z42.Tests.csproj
+dotnet test src/compiler/z42.Tests/z42.Tests.csproj
+./scripts/test-vm.sh
 
 # 3. 提交（tests 全通过后才能 commit）
 git add <changed files>
