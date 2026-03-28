@@ -1,59 +1,38 @@
 {
   "name": "Demo",
   "string_pool": [
-    "circle(r=",
+    "Animal: ",
+    "Dog: ",
+    " (",
     ")",
-    "rect(",
-    "x"
+    "Cat",
+    "Rex",
+    "Husky"
   ],
   "classes": [
     {
-      "name": "Demo.Shape",
-      "fields": []
-    },
-    {
-      "name": "Demo.Circle",
-      "base_class": "Demo.Shape",
+      "name": "Demo.Animal",
       "fields": [
         {
-          "name": "Radius",
-          "type": "int"
+          "name": "Name",
+          "type": "string"
         }
       ]
     },
     {
-      "name": "Demo.Rectangle",
-      "base_class": "Demo.Shape",
+      "name": "Demo.Dog",
+      "base_class": "Demo.Animal",
       "fields": [
         {
-          "name": "W",
-          "type": "int"
-        },
-        {
-          "name": "H",
-          "type": "int"
+          "name": "Breed",
+          "type": "string"
         }
       ]
     }
   ],
   "functions": [
     {
-      "name": "Demo.Shape.Describe",
-      "param_count": 1,
-      "ret_type": "string",
-      "exec_mode": "Interp",
-      "blocks": [
-        {
-          "label": "entry",
-          "instructions": [],
-          "terminator": {
-            "op": "ret"
-          }
-        }
-      ]
-    },
-    {
-      "name": "Demo.Circle.Circle",
+      "name": "Demo.Animal.Animal",
       "param_count": 2,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -64,7 +43,7 @@
             {
               "op": "field_set",
               "obj": 0,
-              "field_name": "Radius",
+              "field_name": "Name",
               "val": 1
             }
           ],
@@ -75,7 +54,7 @@
       ]
     },
     {
-      "name": "Demo.Circle.Describe",
+      "name": "Demo.Animal.Describe",
       "param_count": 1,
       "ret_type": "string",
       "exec_mode": "Interp",
@@ -92,7 +71,7 @@
               "op": "field_get",
               "dst": 2,
               "obj": 0,
-              "field_name": "Radius"
+              "field_name": "Name"
             },
             {
               "op": "to_str",
@@ -100,32 +79,21 @@
               "src": 2
             },
             {
-              "op": "const_str",
-              "dst": 4,
-              "idx": 1
-            },
-            {
               "op": "str_concat",
-              "dst": 5,
+              "dst": 4,
               "a": 1,
               "b": 3
-            },
-            {
-              "op": "str_concat",
-              "dst": 6,
-              "a": 5,
-              "b": 4
             }
           ],
           "terminator": {
             "op": "ret",
-            "reg": 6
+            "reg": 4
           }
         }
       ]
     },
     {
-      "name": "Demo.Rectangle.Rectangle",
+      "name": "Demo.Dog.Dog",
       "param_count": 3,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -136,13 +104,13 @@
             {
               "op": "field_set",
               "obj": 0,
-              "field_name": "W",
+              "field_name": "Name",
               "val": 1
             },
             {
               "op": "field_set",
               "obj": 0,
-              "field_name": "H",
+              "field_name": "Breed",
               "val": 2
             }
           ],
@@ -153,7 +121,7 @@
       ]
     },
     {
-      "name": "Demo.Rectangle.Describe",
+      "name": "Demo.Dog.Describe",
       "param_count": 1,
       "ret_type": "string",
       "exec_mode": "Interp",
@@ -164,13 +132,13 @@
             {
               "op": "const_str",
               "dst": 1,
-              "idx": 2
+              "idx": 1
             },
             {
               "op": "field_get",
               "dst": 2,
               "obj": 0,
-              "field_name": "W"
+              "field_name": "Name"
             },
             {
               "op": "to_str",
@@ -180,13 +148,13 @@
             {
               "op": "const_str",
               "dst": 4,
-              "idx": 3
+              "idx": 2
             },
             {
               "op": "field_get",
               "dst": 5,
               "obj": 0,
-              "field_name": "H"
+              "field_name": "Breed"
             },
             {
               "op": "to_str",
@@ -196,7 +164,7 @@
             {
               "op": "const_str",
               "dst": 7,
-              "idx": 1
+              "idx": 3
             },
             {
               "op": "str_concat",
@@ -240,37 +208,37 @@
           "label": "entry",
           "instructions": [
             {
-              "op": "const_i64",
+              "op": "const_str",
               "dst": 0,
-              "val": 5
+              "idx": 4
             },
             {
               "op": "obj_new",
               "dst": 1,
-              "class_name": "Demo.Circle",
+              "class_name": "Demo.Animal",
               "args": [
                 0
               ]
             },
             {
               "op": "store",
-              "var": "c",
+              "var": "a",
               "src": 1
             },
             {
-              "op": "const_i64",
+              "op": "const_str",
               "dst": 2,
-              "val": 3
+              "idx": 5
             },
             {
-              "op": "const_i64",
+              "op": "const_str",
               "dst": 3,
-              "val": 4
+              "idx": 6
             },
             {
               "op": "obj_new",
               "dst": 4,
-              "class_name": "Demo.Rectangle",
+              "class_name": "Demo.Dog",
               "args": [
                 2,
                 3
@@ -278,19 +246,20 @@
             },
             {
               "op": "store",
-              "var": "r",
+              "var": "d",
               "src": 4
             },
             {
               "op": "load",
               "dst": 5,
-              "var": "c"
+              "var": "a"
             },
             {
-              "op": "is_instance",
+              "op": "v_call",
               "dst": 6,
               "obj": 5,
-              "class_name": "Demo.Circle"
+              "method": "Describe",
+              "args": []
             },
             {
               "op": "builtin",
@@ -303,13 +272,14 @@
             {
               "op": "load",
               "dst": 8,
-              "var": "c"
+              "var": "d"
             },
             {
-              "op": "is_instance",
+              "op": "v_call",
               "dst": 9,
               "obj": 8,
-              "class_name": "Demo.Shape"
+              "method": "Describe",
+              "args": []
             },
             {
               "op": "builtin",
@@ -322,13 +292,13 @@
             {
               "op": "load",
               "dst": 11,
-              "var": "c"
+              "var": "d"
             },
             {
-              "op": "is_instance",
+              "op": "field_get",
               "dst": 12,
               "obj": 11,
-              "class_name": "Demo.Rectangle"
+              "field_name": "Name"
             },
             {
               "op": "builtin",
@@ -336,41 +306,6 @@
               "name": "__println",
               "args": [
                 12
-              ]
-            },
-            {
-              "op": "load",
-              "dst": 14,
-              "var": "c"
-            },
-            {
-              "op": "as_cast",
-              "dst": 15,
-              "obj": 14,
-              "class_name": "Demo.Shape"
-            },
-            {
-              "op": "store",
-              "var": "s",
-              "src": 15
-            },
-            {
-              "op": "load",
-              "dst": 16,
-              "var": "s"
-            },
-            {
-              "op": "is_instance",
-              "dst": 17,
-              "obj": 16,
-              "class_name": "Demo.Shape"
-            },
-            {
-              "op": "builtin",
-              "dst": 18,
-              "name": "__println",
-              "args": [
-                17
               ]
             }
           ],

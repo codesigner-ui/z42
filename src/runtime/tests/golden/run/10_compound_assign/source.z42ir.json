@@ -1,0 +1,325 @@
+{
+  "name": "main",
+  "string_pool": [],
+  "classes": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 10
+            },
+            {
+              "op": "store",
+              "var": "x",
+              "src": 0
+            },
+            {
+              "op": "load",
+              "dst": 1,
+              "var": "x"
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 5
+            },
+            {
+              "op": "add",
+              "dst": 3,
+              "a": 1,
+              "b": 2
+            },
+            {
+              "op": "store",
+              "var": "x",
+              "src": 3
+            },
+            {
+              "op": "const_i64",
+              "dst": 4,
+              "val": 15
+            },
+            {
+              "op": "load",
+              "dst": 5,
+              "var": "x"
+            },
+            {
+              "op": "builtin",
+              "dst": 6,
+              "name": "__assert_eq",
+              "args": [
+                4,
+                5
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 7,
+              "var": "x"
+            },
+            {
+              "op": "const_i64",
+              "dst": 8,
+              "val": 3
+            },
+            {
+              "op": "sub",
+              "dst": 9,
+              "a": 7,
+              "b": 8
+            },
+            {
+              "op": "store",
+              "var": "x",
+              "src": 9
+            },
+            {
+              "op": "const_i64",
+              "dst": 10,
+              "val": 12
+            },
+            {
+              "op": "load",
+              "dst": 11,
+              "var": "x"
+            },
+            {
+              "op": "builtin",
+              "dst": 12,
+              "name": "__assert_eq",
+              "args": [
+                10,
+                11
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 13,
+              "var": "x"
+            },
+            {
+              "op": "const_i64",
+              "dst": 14,
+              "val": 2
+            },
+            {
+              "op": "mul",
+              "dst": 15,
+              "a": 13,
+              "b": 14
+            },
+            {
+              "op": "store",
+              "var": "x",
+              "src": 15
+            },
+            {
+              "op": "const_i64",
+              "dst": 16,
+              "val": 24
+            },
+            {
+              "op": "load",
+              "dst": 17,
+              "var": "x"
+            },
+            {
+              "op": "builtin",
+              "dst": 18,
+              "name": "__assert_eq",
+              "args": [
+                16,
+                17
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 19,
+              "var": "x"
+            },
+            {
+              "op": "const_i64",
+              "dst": 20,
+              "val": 4
+            },
+            {
+              "op": "div",
+              "dst": 21,
+              "a": 19,
+              "b": 20
+            },
+            {
+              "op": "store",
+              "var": "x",
+              "src": 21
+            },
+            {
+              "op": "const_i64",
+              "dst": 22,
+              "val": 6
+            },
+            {
+              "op": "load",
+              "dst": 23,
+              "var": "x"
+            },
+            {
+              "op": "builtin",
+              "dst": 24,
+              "name": "__assert_eq",
+              "args": [
+                22,
+                23
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 25,
+              "var": "x"
+            },
+            {
+              "op": "const_i64",
+              "dst": 26,
+              "val": 4
+            },
+            {
+              "op": "rem",
+              "dst": 27,
+              "a": 25,
+              "b": 26
+            },
+            {
+              "op": "store",
+              "var": "x",
+              "src": 27
+            },
+            {
+              "op": "const_i64",
+              "dst": 28,
+              "val": 2
+            },
+            {
+              "op": "load",
+              "dst": 29,
+              "var": "x"
+            },
+            {
+              "op": "builtin",
+              "dst": 30,
+              "name": "__assert_eq",
+              "args": [
+                28,
+                29
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 31,
+              "val": 0
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 31
+            },
+            {
+              "op": "load",
+              "dst": 32,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 33,
+              "val": 1
+            },
+            {
+              "op": "add",
+              "dst": 34,
+              "a": 32,
+              "b": 33
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 34
+            },
+            {
+              "op": "load",
+              "dst": 35,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 36,
+              "val": 1
+            },
+            {
+              "op": "add",
+              "dst": 37,
+              "a": 35,
+              "b": 36
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 37
+            },
+            {
+              "op": "load",
+              "dst": 38,
+              "var": "i"
+            },
+            {
+              "op": "const_i64",
+              "dst": 39,
+              "val": 1
+            },
+            {
+              "op": "sub",
+              "dst": 40,
+              "a": 38,
+              "b": 39
+            },
+            {
+              "op": "store",
+              "var": "i",
+              "src": 40
+            },
+            {
+              "op": "const_i64",
+              "dst": 41,
+              "val": 1
+            },
+            {
+              "op": "load",
+              "dst": 42,
+              "var": "i"
+            },
+            {
+              "op": "builtin",
+              "dst": 43,
+              "name": "__assert_eq",
+              "args": [
+                41,
+                42
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

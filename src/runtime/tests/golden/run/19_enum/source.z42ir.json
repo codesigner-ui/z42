@@ -10,7 +10,7 @@
   "classes": [],
   "functions": [
     {
-      "name": "describe",
+      "name": "Test.describe",
       "param_count": 1,
       "ret_type": "string",
       "exec_mode": "Interp",
@@ -209,7 +209,7 @@
       ]
     },
     {
-      "name": "main",
+      "name": "Test.main",
       "param_count": 0,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -373,7 +373,7 @@
             {
               "op": "call",
               "dst": 24,
-              "func": "describe",
+              "func": "Test.describe",
               "args": [
                 23
               ]

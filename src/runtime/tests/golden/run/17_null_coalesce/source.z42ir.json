@@ -10,7 +10,7 @@
   "classes": [],
   "functions": [
     {
-      "name": "maybeNull",
+      "name": "Test.maybeNull",
       "param_count": 1,
       "ret_type": "string",
       "exec_mode": "Interp",
@@ -55,7 +55,7 @@
       ]
     },
     {
-      "name": "main",
+      "name": "Test.main",
       "param_count": 0,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -71,7 +71,7 @@
             {
               "op": "call",
               "dst": 1,
-              "func": "maybeNull",
+              "func": "Test.maybeNull",
               "args": [
                 0
               ]
@@ -162,7 +162,7 @@
             {
               "op": "call",
               "dst": 10,
-              "func": "maybeNull",
+              "func": "Test.maybeNull",
               "args": [
                 9
               ]

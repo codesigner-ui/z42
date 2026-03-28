@@ -1,0 +1,275 @@
+{
+  "name": "main",
+  "string_pool": [],
+  "classes": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 10
+            },
+            {
+              "op": "const_i64",
+              "dst": 1,
+              "val": 20
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 30
+            },
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 40
+            },
+            {
+              "op": "const_i64",
+              "dst": 4,
+              "val": 50
+            },
+            {
+              "op": "array_new_lit",
+              "dst": 5,
+              "elems": [
+                0,
+                1,
+                2,
+                3,
+                4
+              ]
+            },
+            {
+              "op": "store",
+              "var": "arr",
+              "src": 5
+            },
+            {
+              "op": "const_i64",
+              "dst": 6,
+              "val": 10
+            },
+            {
+              "op": "load",
+              "dst": 7,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 8,
+              "val": 0
+            },
+            {
+              "op": "array_get",
+              "dst": 9,
+              "arr": 7,
+              "idx": 8
+            },
+            {
+              "op": "builtin",
+              "dst": 10,
+              "name": "__assert_eq",
+              "args": [
+                6,
+                9
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 11,
+              "val": 50
+            },
+            {
+              "op": "load",
+              "dst": 12,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 13,
+              "val": 4
+            },
+            {
+              "op": "array_get",
+              "dst": 14,
+              "arr": 12,
+              "idx": 13
+            },
+            {
+              "op": "builtin",
+              "dst": 15,
+              "name": "__assert_eq",
+              "args": [
+                11,
+                14
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 16,
+              "val": 99
+            },
+            {
+              "op": "load",
+              "dst": 17,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 18,
+              "val": 2
+            },
+            {
+              "op": "array_set",
+              "arr": 17,
+              "idx": 18,
+              "val": 16
+            },
+            {
+              "op": "const_i64",
+              "dst": 19,
+              "val": 99
+            },
+            {
+              "op": "load",
+              "dst": 20,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 21,
+              "val": 2
+            },
+            {
+              "op": "array_get",
+              "dst": 22,
+              "arr": 20,
+              "idx": 21
+            },
+            {
+              "op": "builtin",
+              "dst": 23,
+              "name": "__assert_eq",
+              "args": [
+                19,
+                22
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 24,
+              "val": 5
+            },
+            {
+              "op": "load",
+              "dst": 25,
+              "var": "arr"
+            },
+            {
+              "op": "builtin",
+              "dst": 26,
+              "name": "__len",
+              "args": [
+                25
+              ]
+            },
+            {
+              "op": "builtin",
+              "dst": 27,
+              "name": "__assert_eq",
+              "args": [
+                24,
+                26
+              ]
+            },
+            {
+              "op": "load",
+              "dst": 28,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 29,
+              "val": 0
+            },
+            {
+              "op": "array_get",
+              "dst": 30,
+              "arr": 28,
+              "idx": 29
+            },
+            {
+              "op": "const_i64",
+              "dst": 31,
+              "val": 5
+            },
+            {
+              "op": "add",
+              "dst": 32,
+              "a": 30,
+              "b": 31
+            },
+            {
+              "op": "load",
+              "dst": 33,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 34,
+              "val": 0
+            },
+            {
+              "op": "array_set",
+              "arr": 33,
+              "idx": 34,
+              "val": 32
+            },
+            {
+              "op": "const_i64",
+              "dst": 35,
+              "val": 15
+            },
+            {
+              "op": "load",
+              "dst": 36,
+              "var": "arr"
+            },
+            {
+              "op": "const_i64",
+              "dst": 37,
+              "val": 0
+            },
+            {
+              "op": "array_get",
+              "dst": 38,
+              "arr": 36,
+              "idx": 37
+            },
+            {
+              "op": "builtin",
+              "dst": 39,
+              "name": "__assert_eq",
+              "args": [
+                35,
+                38
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}

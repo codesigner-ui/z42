@@ -1,20 +1,26 @@
 {
   "name": "Demo",
-  "string_pool": [],
+  "string_pool": [
+    "Hello, ",
+    "!",
+    "count=",
+    "world",
+    "namespace ok"
+  ],
   "classes": [
     {
-      "name": "Demo.BankAccount",
+      "name": "Demo.Greeter",
       "fields": [
         {
-          "name": "balance",
-          "type": "int"
+          "name": "name",
+          "type": "string"
         }
       ]
     }
   ],
   "functions": [
     {
-      "name": "Demo.BankAccount.BankAccount",
+      "name": "Demo.Greeter.Greeter",
       "param_count": 2,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -25,7 +31,7 @@
             {
               "op": "field_set",
               "obj": 0,
-              "field_name": "balance",
+              "field_name": "name",
               "val": 1
             }
           ],
@@ -36,58 +42,84 @@
       ]
     },
     {
-      "name": "Demo.BankAccount.Deposit",
-      "param_count": 2,
-      "ret_type": "void",
+      "name": "Demo.Greeter.Greet",
+      "param_count": 1,
+      "ret_type": "string",
       "exec_mode": "Interp",
       "blocks": [
         {
           "label": "entry",
           "instructions": [
             {
+              "op": "const_str",
+              "dst": 1,
+              "idx": 0
+            },
+            {
               "op": "field_get",
               "dst": 2,
               "obj": 0,
-              "field_name": "balance"
+              "field_name": "name"
             },
             {
-              "op": "add",
+              "op": "to_str",
               "dst": 3,
-              "a": 2,
-              "b": 1
+              "src": 2
             },
             {
-              "op": "field_set",
-              "obj": 0,
-              "field_name": "balance",
-              "val": 3
+              "op": "const_str",
+              "dst": 4,
+              "idx": 1
+            },
+            {
+              "op": "str_concat",
+              "dst": 5,
+              "a": 1,
+              "b": 3
+            },
+            {
+              "op": "str_concat",
+              "dst": 6,
+              "a": 5,
+              "b": 4
             }
           ],
           "terminator": {
-            "op": "ret"
+            "op": "ret",
+            "reg": 6
           }
         }
       ]
     },
     {
-      "name": "Demo.BankAccount.GetBalance",
+      "name": "Demo.FormatCount",
       "param_count": 1,
-      "ret_type": "int",
+      "ret_type": "string",
       "exec_mode": "Interp",
       "blocks": [
         {
           "label": "entry",
           "instructions": [
             {
-              "op": "field_get",
+              "op": "const_str",
               "dst": 1,
-              "obj": 0,
-              "field_name": "balance"
+              "idx": 2
+            },
+            {
+              "op": "to_str",
+              "dst": 2,
+              "src": 0
+            },
+            {
+              "op": "str_concat",
+              "dst": 3,
+              "a": 1,
+              "b": 2
             }
           ],
           "terminator": {
             "op": "ret",
-            "reg": 1
+            "reg": 3
           }
         }
       ]
@@ -102,53 +134,55 @@
           "label": "entry",
           "instructions": [
             {
-              "op": "const_i64",
+              "op": "const_str",
               "dst": 0,
-              "val": 100
+              "idx": 3
             },
             {
               "op": "obj_new",
               "dst": 1,
-              "class_name": "Demo.BankAccount",
+              "class_name": "Demo.Greeter",
               "args": [
                 0
               ]
             },
             {
               "op": "store",
-              "var": "acc",
+              "var": "g",
               "src": 1
             },
             {
               "op": "load",
               "dst": 2,
-              "var": "acc"
-            },
-            {
-              "op": "const_i64",
-              "dst": 3,
-              "val": 50
+              "var": "g"
             },
             {
               "op": "v_call",
-              "dst": 4,
+              "dst": 3,
               "obj": 2,
-              "method": "Deposit",
+              "method": "Greet",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 4,
+              "name": "__println",
               "args": [
                 3
               ]
             },
             {
-              "op": "load",
+              "op": "const_i64",
               "dst": 5,
-              "var": "acc"
+              "val": 42
             },
             {
-              "op": "v_call",
+              "op": "call",
               "dst": 6,
-              "obj": 5,
-              "method": "GetBalance",
-              "args": []
+              "func": "Demo.FormatCount",
+              "args": [
+                5
+              ]
             },
             {
               "op": "builtin",
@@ -156,6 +190,19 @@
               "name": "__println",
               "args": [
                 6
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 8,
+              "idx": 4
+            },
+            {
+              "op": "builtin",
+              "dst": 9,
+              "name": "__println",
+              "args": [
+                8
               ]
             }
           ],

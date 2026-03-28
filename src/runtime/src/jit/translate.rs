@@ -387,13 +387,14 @@ pub fn translate_function(
         }
 
         // After a helper call that returns u8: branch to catch or return 1 on error.
+        // Blocks are NOT sealed here; seal_all_blocks() is called once after all
+        // control-flow edges are established (handles back-edges in loops correctly).
         macro_rules! check {
             ($ret:expr) => {{
                 let ok_blk  = builder.create_block();
                 if let Some((catch_cl, catch_reg)) = catch_info {
                     let exc_blk = builder.create_block();
                     builder.ins().brif($ret, exc_blk, &[], ok_blk, &[]);
-                    builder.seal_block(exc_blk);
                     builder.switch_to_block(exc_blk);
                     let creg = ri!(catch_reg);
                     builder.ins().call(hr_install_catch, &[frame_val, creg]);
@@ -401,12 +402,10 @@ pub fn translate_function(
                 } else {
                     let exc_blk = builder.create_block();
                     builder.ins().brif($ret, exc_blk, &[], ok_blk, &[]);
-                    builder.seal_block(exc_blk);
                     builder.switch_to_block(exc_blk);
                     let one = builder.ins().iconst(types::I8, 1);
                     builder.ins().return_(&[one]);
                 }
-                builder.seal_block(ok_blk);
                 builder.switch_to_block(ok_blk);
             }};
         }
@@ -721,10 +720,9 @@ pub fn translate_function(
             }
         }
 
-        // Seal this block now that all predecessors have been added.
-        builder.seal_block(cl_blocks[block_idx]);
     }
 
+    builder.seal_all_blocks();
     builder.finalize();
 
     jit.define_function(func_id, &mut ctx)?;

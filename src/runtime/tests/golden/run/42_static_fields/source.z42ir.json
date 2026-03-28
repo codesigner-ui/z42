@@ -1,0 +1,298 @@
+{
+  "name": "Demo",
+  "string_pool": [
+    "Static fields work!"
+  ],
+  "classes": [
+    {
+      "name": "Demo.Counter",
+      "fields": [
+        {
+          "name": "id",
+          "type": "int"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "name": "Demo.__static_init__",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "const_i64",
+              "dst": 0,
+              "val": 0
+            },
+            {
+              "op": "static_set",
+              "field": "Demo.Counter.count",
+              "val": 0
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Counter.Counter",
+      "param_count": 1,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "static_get",
+              "dst": 1,
+              "field": "Demo.Counter.count"
+            },
+            {
+              "op": "const_i64",
+              "dst": 2,
+              "val": 1
+            },
+            {
+              "op": "add",
+              "dst": 3,
+              "a": 1,
+              "b": 2
+            },
+            {
+              "op": "static_set",
+              "field": "Demo.Counter.count",
+              "val": 3
+            },
+            {
+              "op": "static_get",
+              "dst": 4,
+              "field": "Demo.Counter.count"
+            },
+            {
+              "op": "field_set",
+              "obj": 0,
+              "field_name": "id",
+              "val": 4
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Counter.GetCount",
+      "param_count": 0,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "static_get",
+              "dst": 0,
+              "field": "Demo.Counter.count"
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Counter.GetId",
+      "param_count": 1,
+      "ret_type": "int",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "field_get",
+              "dst": 1,
+              "obj": 0,
+              "field_name": "id"
+            }
+          ],
+          "terminator": {
+            "op": "ret",
+            "reg": 1
+          }
+        }
+      ]
+    },
+    {
+      "name": "Demo.Main",
+      "param_count": 0,
+      "ret_type": "void",
+      "exec_mode": "Interp",
+      "blocks": [
+        {
+          "label": "entry",
+          "instructions": [
+            {
+              "op": "obj_new",
+              "dst": 0,
+              "class_name": "Demo.Counter",
+              "args": []
+            },
+            {
+              "op": "store",
+              "var": "a",
+              "src": 0
+            },
+            {
+              "op": "obj_new",
+              "dst": 1,
+              "class_name": "Demo.Counter",
+              "args": []
+            },
+            {
+              "op": "store",
+              "var": "b",
+              "src": 1
+            },
+            {
+              "op": "obj_new",
+              "dst": 2,
+              "class_name": "Demo.Counter",
+              "args": []
+            },
+            {
+              "op": "store",
+              "var": "c",
+              "src": 2
+            },
+            {
+              "op": "const_i64",
+              "dst": 3,
+              "val": 3
+            },
+            {
+              "op": "call",
+              "dst": 4,
+              "func": "Demo.Counter.GetCount",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 5,
+              "name": "__assert_eq",
+              "args": [
+                3,
+                4
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 6,
+              "val": 1
+            },
+            {
+              "op": "load",
+              "dst": 7,
+              "var": "a"
+            },
+            {
+              "op": "v_call",
+              "dst": 8,
+              "obj": 7,
+              "method": "GetId",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 9,
+              "name": "__assert_eq",
+              "args": [
+                6,
+                8
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 10,
+              "val": 2
+            },
+            {
+              "op": "load",
+              "dst": 11,
+              "var": "b"
+            },
+            {
+              "op": "v_call",
+              "dst": 12,
+              "obj": 11,
+              "method": "GetId",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 13,
+              "name": "__assert_eq",
+              "args": [
+                10,
+                12
+              ]
+            },
+            {
+              "op": "const_i64",
+              "dst": 14,
+              "val": 3
+            },
+            {
+              "op": "load",
+              "dst": 15,
+              "var": "c"
+            },
+            {
+              "op": "v_call",
+              "dst": 16,
+              "obj": 15,
+              "method": "GetId",
+              "args": []
+            },
+            {
+              "op": "builtin",
+              "dst": 17,
+              "name": "__assert_eq",
+              "args": [
+                14,
+                16
+              ]
+            },
+            {
+              "op": "const_str",
+              "dst": 18,
+              "idx": 0
+            },
+            {
+              "op": "builtin",
+              "dst": 19,
+              "name": "__println",
+              "args": [
+                18
+              ]
+            }
+          ],
+          "terminator": {
+            "op": "ret"
+          }
+        }
+      ]
+    }
+  ]
+}
