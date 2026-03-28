@@ -30,6 +30,13 @@ clap = { version = "4", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+# JIT backend — Cranelift
+cranelift-codegen = { version = "0.115", features = ["unwind"] }
+cranelift-frontend = "0.115"
+cranelift-jit      = "0.115"
+cranelift-module   = "0.115"
+cranelift-native   = "0.115"
+
 [dev-dependencies]
 
 [profile.release]

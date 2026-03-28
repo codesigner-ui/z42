@@ -33,7 +33,7 @@ impl Vm {
 
         match self.default_mode {
             ExecMode::Interp => crate::interp::run_with_static_init(&self.module, entry),
-            ExecMode::Jit    => bail!("JIT mode not yet implemented"),
+            ExecMode::Jit    => crate::jit::run(&self.module, &entry_name),
             ExecMode::Aot    => bail!("AOT mode not yet implemented"),
         }
     }

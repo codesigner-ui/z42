@@ -5,7 +5,7 @@
 /// • builtins.rs  — builtin function dispatch (__println, __len, __str_*, …)
 /// • helpers.rs   — value helpers (value_to_str, int_binop, numeric_lt, …)
 
-mod builtins;
+pub(crate) mod builtins;
 mod helpers;
 
 pub use helpers::value_to_str;
