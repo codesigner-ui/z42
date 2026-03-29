@@ -36,6 +36,20 @@ static void WriteFile(string path, string content)
 
 var argv = Environment.GetCommandLineArgs()[1..];
 
+// ── Diagnostic explain / list ─────────────────────────────────────────────────
+
+if (argv.Length >= 2 && argv[0] == "--explain")
+{
+    Console.WriteLine(DiagnosticCatalog.Explain(argv[1].ToUpperInvariant()));
+    return 0;
+}
+
+if (argv.Length >= 1 && argv[0] == "--list-errors")
+{
+    Console.WriteLine(DiagnosticCatalog.ListAll());
+    return 0;
+}
+
 if (argv.Length == 0)
 {
     Console.Error.WriteLine("""
@@ -47,6 +61,9 @@ if (argv.Length == 0)
         --emit zbc   write .zbc (single-file bytecode unit)
         --emit zmod  write .zmod manifest + per-file .zbc into .cache/
         --emit zlib  write .zlib assembly (all modules bundled)
+
+        --explain <code>   show detailed explanation for a diagnostic code (e.g. Z0402)
+        --list-errors      list all known diagnostic codes
         """);
     return 1;
 }
