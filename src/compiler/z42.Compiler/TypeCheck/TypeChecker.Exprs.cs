@@ -198,7 +198,15 @@ public sealed partial class TypeChecker
     {
         var targetType = CheckExpr(assign.Target, env);
         var valueType  = CheckExpr(assign.Value,  env);
-        RequireAssignable(targetType, valueType, assign.Value.Span);
+        var intLitVal = ExtractIntLiteralValue(assign.Value);
+        if (intLitVal != null)
+        {
+            var rangeOk = TryCheckIntLiteralRange(targetType, intLitVal.Value, assign.Value.Span);
+            if (rangeOk == null)
+                RequireAssignable(targetType, valueType, assign.Value.Span);
+        }
+        else
+            RequireAssignable(targetType, valueType, assign.Value.Span);
         // Narrow from Unknown after first assignment
         if (assign.Target is IdentExpr id && targetType is Z42UnknownType)
             env.Define(id.Name, valueType);

@@ -16,6 +16,14 @@ public abstract record Z42Type
     public static readonly Z42PrimType Char   = new("char");
     public static readonly Z42PrimType Object = new("object");
 
+    // Explicit-size integer singletons
+    public static readonly Z42PrimType I8  = new("i8");
+    public static readonly Z42PrimType I16 = new("i16");
+    public static readonly Z42PrimType U8  = new("u8");
+    public static readonly Z42PrimType U16 = new("u16");
+    public static readonly Z42PrimType U32 = new("u32");
+    public static readonly Z42PrimType U64 = new("u64");
+
     public static readonly Z42VoidType  Void    = new();
     public static readonly Z42NullType  Null    = new();
     /// Sentinel: propagated after a type error to suppress cascading diagnostics.
@@ -46,11 +54,27 @@ public abstract record Z42Type
     }
 
     public static bool IsNumeric(Z42Type t) =>
-        t is Z42PrimType { Name: "int" or "long" or "float" or "double" };
+        t is Z42PrimType { Name: "int" or "long" or "float" or "double"
+                                or "i8" or "i16" or "u8" or "u16" or "u32" or "u64"
+                                or "f32" or "f64" };
 
     /// True for integer types that support bitwise operations.
     public static bool IsIntegral(Z42Type t) =>
-        t is Z42PrimType { Name: "int" or "long" };
+        t is Z42PrimType { Name: "int" or "long" or "i8" or "i16" or "u8" or "u16" or "u32" or "u64" };
+
+    /// Returns the valid [min, max] range for an integer literal assigned to <paramref name="t"/>.
+    /// Returns null if the type has no constrained integer range (e.g. float, long, unknown).
+    public static (long Min, long Max)? IntLiteralRange(Z42Type t) => t switch
+    {
+        Z42PrimType { Name: "i8"  } => (sbyte.MinValue,  sbyte.MaxValue),
+        Z42PrimType { Name: "i16" } => (short.MinValue,  short.MaxValue),
+        Z42PrimType { Name: "int" or "i32" } => (int.MinValue, int.MaxValue),
+        Z42PrimType { Name: "u8"  } => (0, byte.MaxValue),
+        Z42PrimType { Name: "u16" } => (0, ushort.MaxValue),
+        Z42PrimType { Name: "u32" } => (0, uint.MaxValue),
+        // long/i64/u64: stored as long in AST; skip range check (long covers all long values; u64 would overflow)
+        _ => null
+    };
 
     public static bool IsBool(Z42Type t) => t == Bool;
 

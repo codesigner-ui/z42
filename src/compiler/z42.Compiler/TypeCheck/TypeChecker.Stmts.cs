@@ -153,7 +153,20 @@ public sealed partial class TypeChecker
         if (v.TypeAnnotation != null)
         {
             varType = ResolveType(v.TypeAnnotation);
-            if (v.Init != null) RequireAssignable(varType, CheckExpr(v.Init, env), v.Init.Span);
+            if (v.Init != null)
+            {
+                var intLitVal = ExtractIntLiteralValue(v.Init);
+                if (intLitVal != null)
+                {
+                    // Int literal (or negated int literal): range-check against explicit-size integer types.
+                    var rangeOk = TryCheckIntLiteralRange(varType, intLitVal.Value, v.Init.Span);
+                    if (rangeOk == null)
+                        RequireAssignable(varType, CheckExpr(v.Init, env), v.Init.Span);
+                    // rangeOk != null: range check handled (ok or error already emitted)
+                }
+                else
+                    RequireAssignable(varType, CheckExpr(v.Init, env), v.Init.Span);
+            }
         }
         else if (v.Init != null)
         {

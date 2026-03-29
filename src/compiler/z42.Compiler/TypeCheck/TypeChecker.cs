@@ -312,6 +312,12 @@ public sealed partial class TypeChecker
             "object"          => Z42Type.Object,
             "void"            => Z42Type.Void,
             "var"             => Z42Type.Unknown,
+            "i8"              => Z42Type.I8,
+            "i16"             => Z42Type.I16,
+            "u8"              => Z42Type.U8,
+            "u16"             => Z42Type.U16,
+            "u32"             => Z42Type.U32,
+            "u64"             => Z42Type.U64,
             _                 => _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : _interfaces.TryGetValue(nt.Name, out var it) ? it
                                : new Z42PrimType(nt.Name),
@@ -334,6 +340,30 @@ public sealed partial class TypeChecker
         if (!Z42Type.IsBool(actual))
             _diags.Error(DiagnosticCodes.TypeMismatch,
                 $"`{context}` condition must be `bool`, got `{actual}`", span);
+    }
+
+    /// Extracts the integer value from a literal expression.
+    /// Handles plain <c>LitIntExpr</c> and negated <c>UnaryExpr("-", LitIntExpr(x))</c>.
+    /// Returns null for any other expression kind.
+    private static long? ExtractIntLiteralValue(Expr expr) => expr switch
+    {
+        LitIntExpr lit                                     => lit.Value,
+        UnaryExpr { Op: "-", Operand: LitIntExpr negLit } => -negLit.Value,
+        _ => null
+    };
+
+    /// Checks whether an integer literal value fits into <paramref name="target"/>'s range.
+    /// Returns true  — value fits, caller can skip RequireAssignable.
+    /// Returns false — out of range, error already emitted.
+    /// Returns null  — target has no integer literal range; caller should use RequireAssignable.
+    private bool? TryCheckIntLiteralRange(Z42Type target, long value, Span span)
+    {
+        var range = Z42Type.IntLiteralRange(target);
+        if (range == null) return null;
+        if (value >= range.Value.Min && value <= range.Value.Max) return true;
+        _diags.Error(DiagnosticCodes.IntLiteralOutOfRange,
+            $"integer literal `{value}` overflows `{target}` (valid range: {range.Value.Min} to {range.Value.Max})", span);
+        return false;
     }
 
     private void RequireAssignable(Z42Type target, Z42Type source, Span span, string? msg = null)

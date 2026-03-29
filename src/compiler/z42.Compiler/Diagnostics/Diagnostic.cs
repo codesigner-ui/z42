@@ -63,6 +63,7 @@ public static class DiagnosticCodes
     public const string MissingReturn        = "Z0403";
     public const string AccessViolation      = "Z0404";  // private member accessed from outside class
     public const string InvalidModifier      = "Z0405";  // illegal modifier (e.g. combined, or on enum member)
+    public const string IntLiteralOutOfRange = "Z0406";  // integer literal exceeds target type's range
 
     // IrGen
     public const string UnsupportedSyntax    = "Z0501";

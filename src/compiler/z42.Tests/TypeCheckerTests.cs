@@ -413,4 +413,109 @@ public sealed class TypeCheckerTests
         var diags = Check("void Greet(int n) {} void Main() { Greet(42); }");
         diags.HasErrors.Should().BeFalse();
     }
+
+    // ── Integer literal range checking ────────────────────────────────────────
+
+    [Fact]
+    public void I8_LiteralInRange_NoError()
+    {
+        CheckStmts("i8 x = 127;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void I8_LiteralMinBound_NoError()
+    {
+        CheckStmts("i8 x = -128;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void I8_LiteralOverflow_ReportsError()
+    {
+        var diags = CheckStmts("i8 x = 128;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
+
+    [Fact]
+    public void I8_LiteralUnderflow_ReportsError()
+    {
+        var diags = CheckStmts("i8 x = -129;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
+
+    [Fact]
+    public void U8_LiteralInRange_NoError()
+    {
+        CheckStmts("u8 x = 255;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void U8_LiteralOverflow_ReportsError()
+    {
+        var diags = CheckStmts("u8 x = 256;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
+
+    [Fact]
+    public void U8_NegativeLiteral_ReportsError()
+    {
+        var diags = CheckStmts("u8 x = -1;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
+
+    [Fact]
+    public void I16_LiteralInRange_NoError()
+    {
+        CheckStmts("i16 x = 32767;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void I16_LiteralOverflow_ReportsError()
+    {
+        var diags = CheckStmts("i16 x = 32768;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
+
+    [Fact]
+    public void U32_LiteralInRange_NoError()
+    {
+        CheckStmts("u32 x = 4294967295;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void U32_LiteralOverflow_ReportsError()
+    {
+        // 4294967296 = uint.MaxValue + 1; stored as long in AST, fits in long but not u32
+        var diags = CheckStmts("u32 x = 4294967296;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
+
+    [Fact]
+    public void Int_LargePositiveLiteral_TreatedAsLong_RequiresLong()
+    {
+        // 2147483648 > int.MaxValue → literal typed as Long → int target → TypeMismatch via range check
+        var diags = CheckStmts("int x = 2147483648;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.IntLiteralOutOfRange || d.Code == DiagnosticCodes.TypeMismatch);
+    }
+
+    [Fact]
+    public void I8_AssignLiteralInRange_NoError()
+    {
+        CheckStmts("i8 x = 0; x = 50;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void I8_AssignLiteralOverflow_ReportsError()
+    {
+        var diags = CheckStmts("i8 x = 0; x = 200;");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
+    }
 }
