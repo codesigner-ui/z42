@@ -1,12 +1,21 @@
+using Z42.Compiler.Lexer.Core;
+
 namespace Z42.Compiler.Lexer;
 
-/// Single registration point for token metadata.
-/// When adding a new keyword or type keyword, only this file and TokenKind.cs need to change.
-/// Lexer, TypeParser, and Combinators all read from here.
+/// Single registration point for all token metadata and lexer rules.
+///
+/// Architecture:
+///   LC primitives (Char/Lit/Many/Opt/Seq/Or)
+///       ↓ compose into
+///   Base rules  (NumericRules / SymbolRules / StringRules)  ← defined here
+///       ↓ used by
+///   Lexer  (generic execution engine, no business if-else)
+///
+/// To add a new token: edit TokenKind.cs + one table in this file. Nothing else.
 internal static class TokenDefs
 {
     // ── Keywords ──────────────────────────────────────────────────────────────
-    // keyword text → TokenKind (used by Lexer)
+    // keyword text → TokenKind (used by Lexer.LexIdentOrKeyword)
 
     internal static readonly IReadOnlyDictionary<string, TokenKind> Keywords =
         new Dictionary<string, TokenKind>
@@ -145,4 +154,129 @@ internal static class TokenDefs
 
     internal static string Display(TokenKind k) =>
         s_display.TryGetValue(k, out var d) ? d : k.ToString().ToLower();
+
+    // ── Symbol rules ──────────────────────────────────────────────────────────
+    // Longest-match: multi-char entries must appear before their single-char prefixes.
+    // Used by Lexer.TryLexSymbol — no manual Peek() chains needed.
+
+    internal sealed record SymbolRule(string Text, TokenKind Kind);
+
+    internal static readonly IReadOnlyList<SymbolRule> SymbolRules =
+    [
+        // 3-char (none currently, placeholder for future)
+
+        // 2-char
+        new("++",  TokenKind.PlusPlus),
+        new("+=",  TokenKind.PlusEq),
+        new("--",  TokenKind.MinusMinus),
+        new("-=",  TokenKind.MinusEq),
+        new("->",  TokenKind.Arrow),
+        new("*=",  TokenKind.StarEq),
+        new("/=",  TokenKind.SlashEq),
+        new("%=",  TokenKind.PercentEq),
+        new("==",  TokenKind.EqEq),
+        new("=>",  TokenKind.FatArrow),
+        new("!=",  TokenKind.BangEq),
+        new("<=",  TokenKind.LtEq),
+        new("<<",  TokenKind.LtLt),
+        new(">=",  TokenKind.GtEq),
+        new(">>",  TokenKind.GtGt),
+        new("&&",  TokenKind.AmpAmp),
+        new("&=",  TokenKind.AmpEq),
+        new("||",  TokenKind.PipePipe),
+        new("|=",  TokenKind.PipeEq),
+        new("^=",  TokenKind.CaretEq),
+        new("??",  TokenKind.QuestionQuestion),
+        new("..",  TokenKind.DotDot),
+        new("::",  TokenKind.ColonColon),
+
+        // 1-char
+        new("+",   TokenKind.Plus),
+        new("-",   TokenKind.Minus),
+        new("*",   TokenKind.Star),
+        new("/",   TokenKind.Slash),
+        new("%",   TokenKind.Percent),
+        new("=",   TokenKind.Eq),
+        new("!",   TokenKind.Bang),
+        new("<",   TokenKind.Lt),
+        new(">",   TokenKind.Gt),
+        new("&",   TokenKind.Ampersand),
+        new("|",   TokenKind.Pipe),
+        new("^",   TokenKind.Caret),
+        new("~",   TokenKind.Tilde),
+        new("(",   TokenKind.LParen),
+        new(")",   TokenKind.RParen),
+        new("{",   TokenKind.LBrace),
+        new("}",   TokenKind.RBrace),
+        new("[",   TokenKind.LBracket),
+        new("]",   TokenKind.RBracket),
+        new(",",   TokenKind.Comma),
+        new(".",   TokenKind.Dot),
+        new(":",   TokenKind.Colon),
+        new(";",   TokenKind.Semicolon),
+        new("?",   TokenKind.Question),
+        new("#",   TokenKind.Hash),
+    ];
+
+    // Pre-indexed by first character for O(1) dispatch
+    internal static readonly IReadOnlyDictionary<char, IReadOnlyList<SymbolRule>> SymbolIndex =
+        SymbolRules
+            .GroupBy(r => r.Text[0])
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<SymbolRule>)g.ToList());
+
+    // ── Numeric rules ─────────────────────────────────────────────────────────
+    // Tried in order; first match wins. Rules built with LC combinators.
+
+    internal sealed record NumericRule(LexRule Rule, TokenKind Kind);
+
+    // Base digit predicates
+    private static readonly LexRule s_decDigits  = LC.Many1(char.IsAsciiDigit, '_');
+    private static readonly LexRule s_hexDigits  = LC.Many1(char.IsAsciiHexDigit, '_');
+    private static readonly LexRule s_binDigits  = LC.Many1(c => c is '0' or '1', '_');
+
+    // Decimal float: digits ( .digits )? ( [eE] [+-]? digits )?
+    // Must have at least one of fraction or exponent to be a float
+    private static readonly LexRule s_optFraction =
+        LC.Opt(LC.Seq(LC.Char('.'), s_decDigits));
+    private static readonly LexRule s_optExponent =
+        LC.Opt(LC.Seq(LC.OneOf('e', 'E'), LC.Opt(LC.OneOf('+', '-')), s_decDigits));
+    private static readonly LexRule s_decFloat =
+        LC.Seq(
+            s_decDigits,
+            LC.Or(
+                // fraction only
+                LC.Seq(LC.Char('.'), s_decDigits, s_optExponent),
+                // exponent only (no decimal point)
+                LC.Seq(LC.OneOf('e', 'E'), LC.Opt(LC.OneOf('+', '-')), s_decDigits)
+            )
+        );
+
+    internal static readonly IReadOnlyList<NumericRule> NumericRules =
+    [
+        new(LC.Seq(LC.LitI("0x"), s_hexDigits), TokenKind.IntLiteral),
+        new(LC.Seq(LC.LitI("0b"), s_binDigits), TokenKind.IntLiteral),
+        // To add octal: new(LC.Seq(LC.LitI("0o"), LC.Many1(c => c >= '0' && c <= '7', '_')), TokenKind.IntLiteral),
+        new(s_decFloat,                          TokenKind.FloatLiteral),
+        new(s_decDigits,                         TokenKind.IntLiteral),   // decimal int (fallback)
+    ];
+
+    // Characters that may follow a numeric literal as a suffix (L, u, f, d, …)
+    internal static readonly IReadOnlySet<char> NumericSuffixes =
+        new HashSet<char> { 'L', 'l', 'u', 'U', 'f', 'F', 'd', 'D', 'm', 'M' };
+
+    // ── String / char rules ───────────────────────────────────────────────────
+    // Prefix-matched in order (longest prefix first).
+    // The Lexer handles the actual character-by-character body lexing (escapes,
+    // interpolation nesting) — only prefix and result kind are configured here.
+
+    internal sealed record StringRule(string Prefix, TokenKind Kind,
+        bool IsChar = false, bool IsInterpolated = false);
+
+    internal static readonly IReadOnlyList<StringRule> StringRules =
+    [
+        new("$\"", TokenKind.InterpolatedStringLiteral, IsInterpolated: true),
+        new("\"",  TokenKind.StringLiteral),
+        new("'",   TokenKind.CharLiteral, IsChar: true),
+        // To add verbatim strings: new("@\"", TokenKind.RawStringLiteral),
+    ];
 }

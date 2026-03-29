@@ -66,3 +66,46 @@ paths:
 
 - 格式：`` expected `(` but got `{token}` ``
 - 面向语言使用者，不用内部枚举名（`` expected `(` `` 而非 `expected LParen`）
+
+## Lexer 架构（规则驱动，分层组合子）
+
+### 分层结构
+
+```
+LC primitives (Char/Lit/Many/Opt/Seq/Or)   Lexer/Core/LC.cs
+        ↓ 组合成
+Token rules (SymbolRules/NumericRules/      TokenDefs.cs
+             StringRules/Keywords)
+        ↓ 执行
+Lexer (通用引擎，无业务 if-else)             Lexer.cs
+```
+
+### 文件职责
+
+| 文件 | 职责 |
+|------|------|
+| `Lexer/Core/LC.cs` | `LexRule = (string, int) → int?` 委托 + 组合子 |
+| `Lexer/TokenDefs.cs` | 所有规则声明：Keywords / TypeKeywords / SymbolRules / NumericRules / StringRules / Display |
+| `Lexer/Lexer.cs` | 通用执行引擎，无业务规则 |
+
+### 新增规则说明
+
+| 新增什么 | 只改 TokenDefs.cs |
+|----------|-------------------|
+| 新关键字 | `Keywords` 加一行 |
+| 新符号运算符 | `SymbolRules` 加一行（自动最长匹配） |
+| 新数字格式（如八进制） | `NumericRules` 加一行 LC 组合子规则 |
+| 新字符串前缀（如 `@"`) | `StringRules` 加一行 |
+
+### LC 核心组合子
+
+```csharp
+LC.Char(pred)          // 匹配单个满足条件的字符
+LC.Lit(s) / LitI(s)   // 匹配字面量（大小写敏感/不敏感）
+LC.OneOf(chars)        // 匹配多选一字符
+LC.Many(pred, sep)     // 零或多（支持 _ 分隔符）
+LC.Many1(pred, sep)    // 一或多
+LC.Opt(rule)           // 可选（始终成功）
+LC.Seq(rules...)       // 顺序组合
+LC.Or(rules...)        // 有序选择（第一个匹配）
+```
