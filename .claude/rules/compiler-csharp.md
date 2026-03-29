@@ -28,7 +28,7 @@ paths:
 | `TokenCursor` (readonly struct) | 不可变游标；`Advance/Peek` 返回新游标，lookahead 直接用游标而非 `_pos+i` 算术 |
 | `ParseResult<T>` (readonly struct) | 成功: `Value + Remainder`；失败: `Error + ErrorSpan`；`.Unwrap(ref cursor)` 升级为异常 |
 | `Parser<T>` (delegate) | `TokenCursor → ParseResult<T>` 纯函数委托 |
-| `P` (static class) | 组合子：`Token / Or / Many / Optional / SeparatedBy / Between / Then / Select / Lazy` |
+| `Combinators` (static class) | 组合子：`Token / Or / Many / Optional / SeparatedBy / Between / Then / Select / Lazy` |
 
 ### 解析策略
 
@@ -55,7 +55,7 @@ paths:
 |------|------|
 | `Core/TokenCursor.cs` | 不可变游标 |
 | `Core/ParseResult.cs` | 结果类型 + `Unwrap(ref cursor)` |
-| `Core/P.cs` | 组合子（`Parser<T>` delegate + 扩展方法） |
+| `Core/Combinators.cs` | 组合子（`Parser<T>` delegate + 扩展方法） |
 | `TypeParser.cs` | 类型表达式，暴露 `Parser<TypeExpr> TypeExpr` 属性供组合子使用 |
 | `ExprParser.cs` | Pratt loop + NudTable + LedTable（NudFn/LedFn 显式传 cursor） |
 | `StmtParser.cs` | 语句解析（含 `ParseBlock`，返回 `ParseResult<BlockStmt>`） |

@@ -50,7 +50,7 @@ internal static class StmtParser
         }
         if (cursor.Current.Kind != TokenKind.RBrace)
             throw new ParseException(
-                $"unexpected end of block; expected `{P.KindDisplay(TokenKind.RBrace)}`",
+                $"unexpected end of block; expected `{Combinators.KindDisplay(TokenKind.RBrace)}`",
                 cursor.Current.Span);
         cursor = cursor.Advance();
         return ParseResult<BlockStmt>.Ok(new BlockStmt(stmts, span), cursor);
@@ -367,7 +367,7 @@ internal static class StmtParser
     {
         if (cursor.Current.Kind != kind)
             throw new ParseException(
-                $"expected `{P.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
+                $"expected `{Combinators.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
                 cursor.Current.Span);
         var tok = cursor.Current;
         cursor  = cursor.Advance();

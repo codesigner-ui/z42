@@ -450,7 +450,7 @@ internal static class ExprParser
     {
         if (cursor.Current.Kind != kind)
             throw new ParseException(
-                $"expected `{P.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
+                $"expected `{Combinators.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
                 cursor.Current.Span);
         cursor = cursor.Advance();
     }

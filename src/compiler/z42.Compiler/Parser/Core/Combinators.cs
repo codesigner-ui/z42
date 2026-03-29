@@ -8,7 +8,7 @@ internal delegate ParseResult<T> Parser<T>(TokenCursor cursor);
 
 /// Combinator library for building parsers from smaller pieces.
 /// All combinators are pure functions; no mutable state is used.
-internal static class P
+internal static class Combinators
 {
     // ── Primitives ────────────────────────────────────────────────────────────
 
