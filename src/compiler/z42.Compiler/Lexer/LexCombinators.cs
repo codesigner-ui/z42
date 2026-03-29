@@ -1,4 +1,4 @@
-namespace Z42.Compiler.Lexer.Core;
+namespace Z42.Compiler.Lexer;
 
 /// Lexer combinator: matches characters in a source string starting at `pos`.
 /// Returns the new position after the match, or null if the rule did not match.
@@ -7,7 +7,7 @@ internal delegate int? LexRule(string src, int pos);
 
 /// Primitive and combinator library for building lexer rules.
 /// All methods are pure functions — no mutable state.
-internal static class LC
+internal static class LexCombinators
 {
     // ── Primitives ────────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ internal static class LC
         while (pos < src.Length && pred(src[pos]))
         {
             pos++;
-            // consume separator only if a digit follows (avoids trailing sep)
+            // consume separator only if a matching char follows (avoids trailing sep)
             if (sep != '\0' && pos < src.Length && src[pos] == sep
                 && pos + 1 < src.Length && pred(src[pos + 1]))
                 pos++;
@@ -98,7 +98,7 @@ internal static class LC
 
     // ── Composition helpers ───────────────────────────────────────────────────
 
-    /// Run `rule` then optionally `tail`; succeeds only if `rule` matched.
+    /// Run `rule` then `tail`; succeeds only if both match.
     internal static LexRule Then(this LexRule rule, LexRule tail) =>
         Seq(rule, tail);
 

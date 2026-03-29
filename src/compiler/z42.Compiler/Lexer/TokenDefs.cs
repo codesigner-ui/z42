@@ -1,17 +1,12 @@
-using Z42.Compiler.Lexer.Core;
-
 namespace Z42.Compiler.Lexer;
 
-/// Single registration point for all token metadata and lexer rules.
+/// Static token metadata — no combinator dependency.
+/// Contains everything that is purely declarative: keyword maps, symbol tables,
+/// type-keyword sets, display names, and numeric suffix characters.
 ///
-/// Architecture:
-///   LC primitives (Char/Lit/Many/Opt/Seq/Or)
-///       ↓ compose into
-///   Base rules  (NumericRules / SymbolRules / StringRules)  ← defined here
-///       ↓ used by
-///   Lexer  (generic execution engine, no business if-else)
-///
-/// To add a new token: edit TokenKind.cs + one table in this file. Nothing else.
+/// To add a new keyword : add one entry to Keywords (+ TokenKind.cs).
+/// To add a new symbol  : add one entry to SymbolRules (longer variants first).
+/// For combinator-based rules (numbers, strings) see LexRules.cs.
 internal static class TokenDefs
 {
     // ── Keywords ──────────────────────────────────────────────────────────────
@@ -224,59 +219,9 @@ internal static class TokenDefs
             .GroupBy(r => r.Text[0])
             .ToDictionary(g => g.Key, g => (IReadOnlyList<SymbolRule>)g.ToList());
 
-    // ── Numeric rules ─────────────────────────────────────────────────────────
-    // Tried in order; first match wins. Rules built with LC combinators.
+    // ── Numeric suffixes ──────────────────────────────────────────────────────
+    // Characters that may follow a numeric literal as a type suffix (L, u, f, d, …)
 
-    internal sealed record NumericRule(LexRule Rule, TokenKind Kind);
-
-    // Base digit predicates
-    private static readonly LexRule s_decDigits  = LC.Many1(char.IsAsciiDigit, '_');
-    private static readonly LexRule s_hexDigits  = LC.Many1(char.IsAsciiHexDigit, '_');
-    private static readonly LexRule s_binDigits  = LC.Many1(c => c is '0' or '1', '_');
-
-    // Decimal float: digits ( .digits )? ( [eE] [+-]? digits )?
-    // Must have at least one of fraction or exponent to be a float
-    private static readonly LexRule s_optFraction =
-        LC.Opt(LC.Seq(LC.Char('.'), s_decDigits));
-    private static readonly LexRule s_optExponent =
-        LC.Opt(LC.Seq(LC.OneOf('e', 'E'), LC.Opt(LC.OneOf('+', '-')), s_decDigits));
-    private static readonly LexRule s_decFloat =
-        LC.Seq(
-            s_decDigits,
-            LC.Or(
-                // fraction only
-                LC.Seq(LC.Char('.'), s_decDigits, s_optExponent),
-                // exponent only (no decimal point)
-                LC.Seq(LC.OneOf('e', 'E'), LC.Opt(LC.OneOf('+', '-')), s_decDigits)
-            )
-        );
-
-    internal static readonly IReadOnlyList<NumericRule> NumericRules =
-    [
-        new(LC.Seq(LC.LitI("0x"), s_hexDigits), TokenKind.IntLiteral),
-        new(LC.Seq(LC.LitI("0b"), s_binDigits), TokenKind.IntLiteral),
-        // To add octal: new(LC.Seq(LC.LitI("0o"), LC.Many1(c => c >= '0' && c <= '7', '_')), TokenKind.IntLiteral),
-        new(s_decFloat,                          TokenKind.FloatLiteral),
-        new(s_decDigits,                         TokenKind.IntLiteral),   // decimal int (fallback)
-    ];
-
-    // Characters that may follow a numeric literal as a suffix (L, u, f, d, …)
     internal static readonly IReadOnlySet<char> NumericSuffixes =
         new HashSet<char> { 'L', 'l', 'u', 'U', 'f', 'F', 'd', 'D', 'm', 'M' };
-
-    // ── String / char rules ───────────────────────────────────────────────────
-    // Prefix-matched in order (longest prefix first).
-    // The Lexer handles the actual character-by-character body lexing (escapes,
-    // interpolation nesting) — only prefix and result kind are configured here.
-
-    internal sealed record StringRule(string Prefix, TokenKind Kind,
-        bool IsChar = false, bool IsInterpolated = false);
-
-    internal static readonly IReadOnlyList<StringRule> StringRules =
-    [
-        new("$\"", TokenKind.InterpolatedStringLiteral, IsInterpolated: true),
-        new("\"",  TokenKind.StringLiteral),
-        new("'",   TokenKind.CharLiteral, IsChar: true),
-        // To add verbatim strings: new("@\"", TokenKind.RawStringLiteral),
-    ];
 }

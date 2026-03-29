@@ -72,7 +72,7 @@ paths:
 ### 分层结构
 
 ```
-LC primitives (Char/Lit/Many/Opt/Seq/Or)   Lexer/Core/LC.cs
+LexCombinators (Char/Lit/Many/Opt/Seq/Or)  Lexer/LexCombinators.cs
         ↓ 组合成
 Token rules (SymbolRules/NumericRules/      TokenDefs.cs
              StringRules/Keywords)
@@ -84,7 +84,7 @@ Lexer (通用引擎，无业务 if-else)             Lexer.cs
 
 | 文件 | 职责 |
 |------|------|
-| `Lexer/Core/LC.cs` | `LexRule = (string, int) → int?` 委托 + 组合子 |
+| `Lexer/LexCombinators.cs` | `LexRule = (string, int) → int?` 委托 + 组合子 |
 | `Lexer/TokenDefs.cs` | 所有规则声明：Keywords / TypeKeywords / SymbolRules / NumericRules / StringRules / Display |
 | `Lexer/Lexer.cs` | 通用执行引擎，无业务规则 |
 
@@ -94,18 +94,20 @@ Lexer (通用引擎，无业务 if-else)             Lexer.cs
 |----------|-------------------|
 | 新关键字 | `Keywords` 加一行 |
 | 新符号运算符 | `SymbolRules` 加一行（自动最长匹配） |
-| 新数字格式（如八进制） | `NumericRules` 加一行 LC 组合子规则 |
+| 新数字格式（如八进制） | `NumericRules` 加一行组合子规则 |
 | 新字符串前缀（如 `@"`) | `StringRules` 加一行 |
 
-### LC 核心组合子
+### LexCombinators 核心组合子
+
+`TokenDefs.cs` 通过 `using static Z42.Compiler.Lexer.LexCombinators;` 导入，直接调用：
 
 ```csharp
-LC.Char(pred)          // 匹配单个满足条件的字符
-LC.Lit(s) / LitI(s)   // 匹配字面量（大小写敏感/不敏感）
-LC.OneOf(chars)        // 匹配多选一字符
-LC.Many(pred, sep)     // 零或多（支持 _ 分隔符）
-LC.Many1(pred, sep)    // 一或多
-LC.Opt(rule)           // 可选（始终成功）
-LC.Seq(rules...)       // 顺序组合
-LC.Or(rules...)        // 有序选择（第一个匹配）
+Char(pred)          // 匹配单个满足条件的字符
+Lit(s) / LitI(s)   // 匹配字面量（大小写敏感/不敏感）
+OneOf(chars)        // 匹配多选一字符
+Many(pred, sep)     // 零或多（支持 _ 分隔符）
+Many1(pred, sep)    // 一或多
+Opt(rule)           // 可选（始终成功）
+Seq(rules...)       // 顺序组合
+Or(rules...)        // 有序选择（第一个匹配）
 ```

@@ -4,8 +4,9 @@ namespace Z42.Compiler.Lexer;
 /// Hand-written lexer for z42 source code (Phase 1: C# syntax).
 /// Produces a flat list of tokens from a source string.
 ///
-/// All token rules (keywords, symbols, numbers, strings) are declared in
-/// TokenDefs.cs using LC combinators. This class is a generic execution engine.
+/// Static token metadata (keywords, symbols) is in TokenDefs.cs.
+/// Combinator-based rules (numbers, strings) are in LexRules.cs.
+/// This class is a generic execution engine with no business logic.
 /// </summary>
 public sealed class Lexer(string source, string fileName = "<unknown>")
 {
@@ -87,9 +88,9 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
 
     // ── String / char lexer ──────────────────────────────────────────────────
 
-    private bool TryMatchStringRule(out TokenDefs.StringRule? rule)
+    private bool TryMatchStringRule(out LexRules.StringRule? rule)
     {
-        foreach (var r in TokenDefs.StringRules)
+        foreach (var r in LexRules.StringRules)
         {
             if (_pos + r.Prefix.Length > source.Length) continue;
             if (source.AsSpan(_pos, r.Prefix.Length).SequenceEqual(r.Prefix.AsSpan()))
@@ -100,7 +101,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
     }
 
     private Token LexStringBody(
-        TokenDefs.StringRule rule, int startPos, int startLine, int startCol)
+        LexRules.StringRule rule, int startPos, int startLine, int startCol)
     {
         // Advance past the prefix ("\"", "$\"", or "'")
         for (int i = 0; i < rule.Prefix.Length; i++) Advance();
@@ -145,7 +146,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
 
     private Token LexNumber(int startPos, int startLine, int startCol)
     {
-        foreach (var rule in TokenDefs.NumericRules)
+        foreach (var rule in LexRules.NumericRules)
         {
             var end = rule.Rule(source, _pos);
             if (end == null) continue;
