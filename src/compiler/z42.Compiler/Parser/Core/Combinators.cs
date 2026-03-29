@@ -1,4 +1,5 @@
 using Z42.Compiler.Lexer;
+using static Z42.Compiler.Lexer.TokenDefs;
 
 namespace Z42.Compiler.Parser.Core;
 
@@ -159,22 +160,5 @@ internal static class Combinators
 
     // ── Display helper (used by error messages throughout the parser) ──────────
 
-    internal static string KindDisplay(TokenKind k) => k switch
-    {
-        TokenKind.LParen    => "(",
-        TokenKind.RParen    => ")",
-        TokenKind.LBrace    => "{",
-        TokenKind.RBrace    => "}",
-        TokenKind.LBracket  => "[",
-        TokenKind.RBracket  => "]",
-        TokenKind.Semicolon => ";",
-        TokenKind.Comma     => ",",
-        TokenKind.Colon     => ":",
-        TokenKind.Eq        => "=",
-        TokenKind.Dot       => ".",
-        TokenKind.Arrow     => "->",
-        TokenKind.FatArrow  => "=>",
-        TokenKind.Question  => "?",
-        _                   => k.ToString().ToLower(),
-    };
+    internal static string KindDisplay(TokenKind k) => Display(k);
 }

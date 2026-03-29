@@ -7,19 +7,7 @@ namespace Z42.Compiler.Parser;
 /// No feature gates — type syntax is always available.
 internal static class TypeParser
 {
-    private static readonly HashSet<TokenKind> TypeKinds =
-    [
-        TokenKind.Void,   TokenKind.String, TokenKind.Int,    TokenKind.Long,
-        TokenKind.Short,  TokenKind.Double, TokenKind.Float,  TokenKind.Byte,
-        TokenKind.Uint,   TokenKind.Ulong,  TokenKind.Ushort, TokenKind.Sbyte,
-        TokenKind.Object, TokenKind.Bool,   TokenKind.Char,
-        TokenKind.I8,  TokenKind.I16, TokenKind.I32, TokenKind.I64,
-        TokenKind.U8,  TokenKind.U16, TokenKind.U32, TokenKind.U64,
-        TokenKind.F32, TokenKind.F64,
-        TokenKind.Identifier,
-    ];
-
-    internal static bool IsTypeToken(TokenKind k) => TypeKinds.Contains(k);
+    internal static bool IsTypeToken(TokenKind k) => TokenDefs.TypeKeywords.Contains(k);
 
     /// Parser<TypeExpr> — usable in combinator chains (P.SeparatedBy, P.Between, …)
     internal static readonly Parser<TypeExpr> TypeExpr = Parse;
@@ -29,7 +17,7 @@ internal static class TypeParser
     internal static ParseResult<TypeExpr> Parse(TokenCursor cursor)
     {
         var span = cursor.Current.Span;
-        if (!TypeKinds.Contains(cursor.Current.Kind))
+        if (!TokenDefs.TypeKeywords.Contains(cursor.Current.Kind))
             return ParseResult<TypeExpr>.Fail(cursor,
                 $"expected type name, got `{cursor.Current.Text}`");
 

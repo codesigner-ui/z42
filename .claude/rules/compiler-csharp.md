@@ -13,7 +13,7 @@ paths:
 
 ## TokenKind
 
-- 新增 token 时，同时在 `Lexer.cs` 的 `Keywords` 字典或符号分支中处理
+- 新增关键字时，在 `TokenDefs.cs` 的 `Keywords` 字典注册；新增符号在 `Lexer.cs` 符号 switch 中处理
 - 关键字用 `TokenKind.Xxx`（PascalCase），符号用描述名（`LtEq`, `FatArrow` 等）
 - `Underscore` 是独立 token，不要把 `_` 识别为 identifier
 

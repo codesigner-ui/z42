@@ -10,90 +10,6 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
     private int _line = 1;
     private int _col  = 1;
 
-    private static readonly Dictionary<string, TokenKind> Keywords = new()
-    {
-        // C# keywords
-        ["namespace"] = TokenKind.Namespace,
-        ["using"]     = TokenKind.Using,
-        ["var"]       = TokenKind.Var,
-        ["static"]    = TokenKind.Static,
-        ["public"]    = TokenKind.Public,
-        ["private"]   = TokenKind.Private,
-        ["protected"] = TokenKind.Protected,
-        ["internal"]  = TokenKind.Internal,
-        ["class"]     = TokenKind.Class,
-        ["struct"]    = TokenKind.Struct,
-        ["enum"]      = TokenKind.Enum,
-        ["interface"] = TokenKind.Interface,
-        ["record"]    = TokenKind.Record,
-        ["abstract"]  = TokenKind.Abstract,
-        ["sealed"]    = TokenKind.Sealed,
-        ["override"]  = TokenKind.Override,
-        ["virtual"]   = TokenKind.Virtual,
-        ["new"]       = TokenKind.New,
-        ["async"]     = TokenKind.Async,
-        ["await"]     = TokenKind.Await,
-        ["return"]    = TokenKind.Return,
-        ["if"]        = TokenKind.If,
-        ["else"]      = TokenKind.Else,
-        ["while"]     = TokenKind.While,
-        ["for"]       = TokenKind.For,
-        ["foreach"]   = TokenKind.Foreach,
-        ["in"]        = TokenKind.In,
-        ["do"]        = TokenKind.Do,
-        ["break"]     = TokenKind.Break,
-        ["continue"]  = TokenKind.Continue,
-        ["switch"]    = TokenKind.Switch,
-        ["case"]      = TokenKind.Case,
-        ["default"]   = TokenKind.Default,
-        ["try"]       = TokenKind.Try,
-        ["catch"]     = TokenKind.Catch,
-        ["finally"]   = TokenKind.Finally,
-        ["throw"]     = TokenKind.Throw,
-        ["typeof"]    = TokenKind.Typeof,
-        ["is"]        = TokenKind.Is,
-        ["as"]        = TokenKind.As,
-        ["null"]      = TokenKind.Null,
-        ["true"]      = TokenKind.True,
-        ["false"]     = TokenKind.False,
-        // C# type names
-        ["string"]    = TokenKind.String,
-        ["int"]       = TokenKind.Int,
-        ["long"]      = TokenKind.Long,
-        ["short"]     = TokenKind.Short,
-        ["double"]    = TokenKind.Double,
-        ["float"]     = TokenKind.Float,
-        ["byte"]      = TokenKind.Byte,
-        ["uint"]      = TokenKind.Uint,
-        ["ulong"]     = TokenKind.Ulong,
-        ["ushort"]    = TokenKind.Ushort,
-        ["sbyte"]     = TokenKind.Sbyte,
-        ["object"]    = TokenKind.Object,
-        ["bool"]      = TokenKind.Bool,
-        ["char"]      = TokenKind.Char,
-        ["void"]      = TokenKind.Void,
-        // Explicit-size aliases
-        ["i8"]        = TokenKind.I8,
-        ["i16"]       = TokenKind.I16,
-        ["i32"]       = TokenKind.I32,
-        ["i64"]       = TokenKind.I64,
-        ["u8"]        = TokenKind.U8,
-        ["u16"]       = TokenKind.U16,
-        ["u32"]       = TokenKind.U32,
-        ["u64"]       = TokenKind.U64,
-        ["f32"]       = TokenKind.F32,
-        ["f64"]       = TokenKind.F64,
-        // Legacy z42 keywords
-        ["fn"]        = TokenKind.Fn,
-        ["let"]       = TokenKind.Let,
-        ["mut"]       = TokenKind.Mut,
-        ["trait"]     = TokenKind.Trait,
-        ["impl"]      = TokenKind.Impl,
-        ["use"]       = TokenKind.Use,
-        ["module"]    = TokenKind.Module,
-        ["spawn"]     = TokenKind.Spawn,
-        ["none"]      = TokenKind.None,
-    };
 
     public List<Token> Tokenize()
     {
@@ -299,7 +215,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         while (_pos < source.Length && (char.IsLetterOrDigit(source[_pos]) || source[_pos] == '_'))
             Advance();
         string text = source[startPos.._pos];
-        var kind = Keywords.TryGetValue(text, out var kw) ? kw : TokenKind.Identifier;
+        var kind = TokenDefs.Keywords.TryGetValue(text, out var kw) ? kw : TokenKind.Identifier;
         // _ is a special discard pattern
         if (text == "_") kind = TokenKind.Underscore;
         return new Token(kind, text, MakeSpan(startPos, startLine, startCol));
