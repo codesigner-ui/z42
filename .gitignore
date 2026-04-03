@@ -32,3 +32,10 @@ Thumbs.db
 # z42 build outputs
 *.z42c
 *.z42bc
+*.zbc
+*.zlib
+*.zmod
+*.zasm
+*.z42ir.json
+dist/
+.cache/
