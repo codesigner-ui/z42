@@ -3,7 +3,9 @@
   <ItemGroup>
     <ProjectReference Include="..\z42.Compiler\z42.Compiler.csproj" />
     <ProjectReference Include="..\z42.IR\z42.IR.csproj" />
+    <ProjectReference Include="..\z42.Build\z42.Build.csproj" />
   </ItemGroup>
+
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>

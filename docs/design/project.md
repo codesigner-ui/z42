@@ -1,268 +1,421 @@
-# z42 工程文件规范
+# z42 工程文件规范（<name>.z42.toml）
 
-## 概述
-
-z42 使用 **`z42.toml`** 作为统一的工程配置文件，格式为 TOML。
-一个目录下只能有一个 `z42.toml`，它通过顶层 table 的存在与否区分身份：
-
-| 顶层 table | 含义 |
-|-----------|------|
-| `[project]` | 单工程（库或可执行程序）|
-| `[workspace]` | 多工程工作区，聚合多个成员目录 |
-| 两者共存 | 工作区根目录同时也是一个工程 |
-
-```
-开发者编写        机器生成（勿手改）
-─────────────    ──────────────────
-z42.toml         .zmod   ← 增量索引
-                 .zbc    ← 单文件字节码
-                 .zlib   ← 程序集包
-```
+z42 使用 **`<name>.z42.toml`** 作为工程配置文件，格式为 TOML。
+一个目录下最多一个 `*.z42.toml`，支持单工程和多工程工作区两种形态。
 
 ---
 
-## 文件后缀汇总
+## 层次概览
 
-| 后缀 | 含义 | 类比 | 格式 | 谁写 |
-|------|------|------|------|------|
-| `z42.toml` | 工程 / 工作区配置 | `Cargo.toml` / `pyproject.toml` | TOML | 开发者 |
-| `.zmod` | 构建增量索引 | `project.assets.json` | JSON | 编译器生成 |
-| `.zbc` | 单文件字节码 | `.pyc` | 二进制/JSON | 编译器生成 |
-| `.zlib` | 程序集包 | `.dll` / `.jar` | 二进制/JSON | 编译器生成 |
+本文档按复杂度递进，分六个层次描述完整的 manifest 语义：
+
+| 层次 | 内容 | 场景 |
+|------|------|------|
+| L1 | 包身份 + 入口 | 最小可构建工程 |
+| L2 | 源文件配置 | 多文件工程 |
+| L3 | 构建产物配置 | 控制输出格式和目录 |
+| L4 | 运行时 Profile | debug / release 分离 |
+| L5 | 依赖管理 | 引用外部库 |
+| L6 | 工作区 | monorepo |
 
 ---
 
-## 工程文件（`[project]`）
+## L1 — 包身份（最小工程）
 
-### 最小示例
+每个工程必须有唯一标识和产物类型。
 
 ```toml
-[project]
-name    = "Hello"
+[package]
+name    = "hello"      # 工程名，kebab-case
+version = "0.1.0"      # SemVer
+kind    = "exe"        # exe | lib
+entry   = "Hello.main" # kind=exe 时必填，完全限定函数名
+```
+
+**字段说明：**
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | ✅ | kebab-case；作为输出文件基名 |
+| `version` | string | ✅ | SemVer，如 `"0.1.0"` |
+| `kind` | `"exe"` \| `"lib"` | ✅ | 可执行程序 or 类库 |
+| `entry` | string | exe 必填 | 完全限定入口函数，如 `"Hello.main"` |
+
+**`name` 与命名空间的关系：**
+
+`name = "hello-world"` → 默认根命名空间 `HelloWorld`（kebab 转 PascalCase）。
+需要定制时可显式指定：
+
+```toml
+[package]
+name      = "hello"
+namespace = "Demo.Hello"   # 覆盖默认推断
+```
+
+**`kind` 决定默认产物：**
+
+| kind | 默认 emit | 说明 |
+|------|-----------|------|
+| `exe` | `zbc` | 单文件可执行字节码 |
+| `lib` | `zlib` | 打包库（含所有模块）|
+
+**两种编译模式（职责分离）：**
+
+```bash
+# 项目模式 — 读取 <name>.z42.toml，用于正式构建和交付
+z42c build                      # 自动发现 *.z42.toml，profile.debug
+z42c build --release            # profile.release
+z42c build hello.z42.toml       # 显式指定工程文件
+
+# 单文件模式 — 不读取任何 .z42.toml，用于快速编译和调试
+z42c hello.z42                  # 编译单文件，默认 --emit ir
+z42c hello.z42 --emit zbc       # 指定产物格式
+z42c hello.z42 --dump-ast       # 调试：查看 AST
+```
+
+---
+
+## L2 — 源文件配置
+
+控制哪些 `.z42` 文件参与编译。
+
+```toml
+[package]
+name    = "mylib"
 version = "0.1.0"
-kind    = "exe"
-entry   = "Hello.Main"
-```
+kind    = "lib"
 
-### 完整示例
-
-```toml
-# z42.toml — Hello World 工程
-
-# ── 工程元数据 ──────────────────────────────────────────────────────────────
-[project]
-name        = "Hello"
-version     = "0.1.0"
-description = "Hello World demo"
-authors     = ["Alice <alice@example.com>"]
-license     = "MIT"
-namespace   = "Hello"       # 可选；默认取 name
-kind        = "exe"         # exe | lib
-entry       = "Hello.Main"  # kind=exe 时必填
-
-# ── 源文件 ──────────────────────────────────────────────────────────────────
 [sources]
-include = ["src/**/*.z42"]
-exclude = ["src/**/*_test.z42"]
+include = ["src/**/*.z42"]           # glob，相对于 z42.toml
+exclude = ["src/**/*_test.z42"]      # 排除测试文件
+```
 
-# ── 构建选项 ────────────────────────────────────────────────────────────────
-[build]
-emit        = "zlib"        # 默认输出粒度: ir | zbc | zmod | zlib
-mode        = "interp"      # 默认执行模式: interp | jit | aot
-incremental = true          # 启用增量编译（跳过 hash 未变文件）
-out_dir     = "dist"        # 输出目录（默认: dist/）
+**字段说明：**
 
-# ── 外部依赖 ────────────────────────────────────────────────────────────────
-[[dependency]]
-name    = "z42.stdlib"
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `include` | string[] | `["src/**/*.z42"]` | glob 模式列表 |
+| `exclude` | string[] | `[]` | 排除模式；优先于 include |
+
+**目录布局约定（无 `[sources]` 时的默认行为）：**
+
+```
+my-app/
+├── z42.toml
+└── src/
+    ├── main.z42      ← exe 默认入口文件
+    └── lib.z42       ← lib 默认根文件
+```
+
+---
+
+## L3 — 构建产物配置
+
+控制产物格式、输出目录和增量编译。
+
+```toml
+[package]
+name = "myapp"
 version = "0.1.0"
-path    = "../stdlib"       # 本地 z42.toml 所在目录
+kind = "exe"
+entry = "MyApp.main"
 
-[[dependency]]
-name    = "SomeLib"
-version = ">=1.2, <2.0"    # SemVer 范围（未来: registry 拉取）
+[build]
+out_dir     = "dist"       # 产物目录，默认 "dist/"
+emit        = "zbc"        # 覆盖默认产物格式
+incremental = true         # 启用增量编译，默认 true
+```
 
-# ── 编译配置（Profile）──────────────────────────────────────────────────────
-[profile.debug]             # z42c build（默认）
+**字段说明：**
+
+| 字段 | 类型 | 默认 | 说明 |
+|------|------|------|------|
+| `out_dir` | string | `"dist"` | 产物输出目录 |
+| `emit` | `ir\|zbc\|zmod\|zlib` | 按 kind 推断 | 覆盖默认产物格式 |
+| `incremental` | bool | `true` | 基于 source hash 跳过未改动文件 |
+
+**`emit` 格式说明：**
+
+| 值 | 产物 | 说明 |
+|----|------|------|
+| `ir` | `.z42ir.json` | 调试用 JSON IR，VM 可直接加载 |
+| `zbc` | `.zbc` | 单文件字节码（二进制）|
+| `zmod` | `.zmod` + `.cache/*.zbc` | 多文件增量索引 |
+| `zlib` | `.zlib` | 打包程序集，含所有模块 |
+
+**增量编译工作方式：**
+
+```
+z42c build
+  ├─ 读取 .zmod（若存在）
+  ├─ 对比每个 .z42 文件的 SHA-256 与记录值
+  │    ├─ 相同 → 跳过重编译
+  │    └─ 不同 → 重编译该文件，更新 .zbc 和 hash
+  └─ 重新打包 .zlib（若有改动）
+```
+
+**目录结构（含产物）：**
+
+```
+my-app/
+├── z42.toml
+├── src/
+│   └── main.z42
+├── dist/             ← out_dir（加入 .gitignore）
+│   └── my-app.zbc
+└── .cache/           ← 增量中间产物（加入 .gitignore）
+    └── src/main.zbc
+```
+
+---
+
+## L4 — 运行时 Profile
+
+区分开发和发布构建，覆盖执行模式和优化级别。
+
+```toml
+[package]
+name  = "myapp"
+version = "0.1.0"
+kind  = "exe"
+entry = "MyApp.main"
+
+[build]
+mode = "interp"        # 全局默认执行模式
+
+[profile.debug]        # z42c build（默认）
 mode     = "interp"
 optimize = 0
-debug    = true
+debug    = true        # 保留调试信息（zbc META section）
 
-[profile.release]           # z42c build --release
+[profile.release]      # z42c build --release
 mode     = "jit"
 optimize = 3
-strip    = true             # 剥除 debug info
+strip    = true        # 剥除 META section
 ```
 
-### 字段说明
-
-#### `[project]`
-
-| 字段 | 类型 | 必填 | 默认 | 说明 |
-|------|------|------|------|------|
-| `name` | string | ✅ | — | 工程名；同时作为输出文件基名 |
-| `version` | string | ✅ | — | SemVer，如 `"0.1.0"` |
-| `kind` | `"exe"` \| `"lib"` | ✅ | — | 可执行程序 or 类库 |
-| `entry` | string | exe 必填 | — | 完整限定入口，如 `"Hello.Main"` |
-| `namespace` | string | ❌ | 取 `name` | 根命名空间 |
-| `description` | string | ❌ | — | 简短描述 |
-| `authors` | string[] | ❌ | — | 作者列表 |
-| `license` | string | ❌ | — | SPDX 许可证标识符 |
-
-#### `[sources]`
-
-| 字段 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `include` | string[] | `["src/**/*.z42"]` | Glob 模式，相对于 `z42.toml` |
-| `exclude` | string[] | `[]` | 排除模式 |
-
-#### `[build]`
-
-| 字段 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `emit` | `ir\|zbc\|zmod\|zlib` | `"zlib"` | 默认输出格式 |
-| `mode` | `interp\|jit\|aot` | `"interp"` | 默认 VM 执行模式 |
-| `incremental` | bool | `true` | 启用 source hash 增量检查 |
-| `out_dir` | string | `"dist"` | 产物目录 |
-
-#### `[[dependency]]`
+**Profile 字段说明：**
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `name` | string | 依赖名称 |
-| `version` | string | SemVer 约束，如 `">=0.1"` |
-| `path` | string | 本地依赖目录（含 `z42.toml`）；与 version 互斥时优先 |
-
-#### `[profile.<name>]`
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `mode` | `interp\|jit\|aot` | 覆盖全局 exec mode |
+| `mode` | `interp\|jit\|aot` | 执行模式，覆盖 `[build].mode` |
 | `optimize` | 0–3 | 优化级别（0=无，3=最激进）|
-| `debug` | bool | 生成 debug info（默认 debug=true, release=false）|
-| `strip` | bool | 剥除 debug info（默认 false）|
+| `debug` | bool | 生成调试信息，默认 debug=true / release=false |
+| `strip` | bool | 剥除调试信息，默认 false |
+
+**执行模式三级优先级（高→低）：**
+
+```
+源码注解 @interp / @jit / @aot   ← 最高，作用于单个命名空间
+  ↓
+profile 中的 mode 字段
+  ↓
+[build].mode 全局默认             ← 最低
+```
+
+**构建命令：**
+
+```bash
+z42c build              # 使用 profile.debug
+z42c build --release    # 使用 profile.release
+z42c build --profile staging   # 使用自定义 profile（如有）
+```
 
 ---
 
-## 工作区文件（`[workspace]`）
+## L5 — 依赖管理
 
-管理多工程仓库，类似 Cargo workspace。
+引用外部 z42 库。
 
 ```toml
-# z42.toml（仓库根目录）
+[package]
+name    = "myapp"
+version = "0.1.0"
+kind    = "exe"
+entry   = "MyApp.main"
 
-[workspace]
-members = [
-    "libs/z42.stdlib",
-    "libs/z42.net",
-    "apps/hello",
-    "apps/demo",
-]
+[dependencies]
+z42-std  = { path = "../std" }               # 本地路径依赖
+z42-http = { version = ">=0.2, <1.0" }       # 版本约束（未来：注册中心）
+```
 
-# 工作区级共享依赖版本（各工程引用时写 version = "workspace"）
-[workspace.dependencies]
-"z42.stdlib" = { path = "libs/z42.stdlib", version = "0.1.0" }
+**依赖解析规则：**
 
-# 工作区级 profile 覆盖（被所有 member 继承）
+| 字段 | 说明 |
+|------|------|
+| `path` | 指向含 `z42.toml` 的本地目录，当前阶段支持 |
+| `version` | SemVer 约束；需注册中心支持（预留格式，暂不实现）|
+| `path` + `version` 同时存在 | `path` 优先，`version` 仅作文档说明 |
+
+**依赖对编译器的影响：**
+
+- TypeChecker：可见依赖库导出的类型和函数签名
+- IR Codegen：生成跨库调用的 `call` 指令（含模块引用）
+- VM 加载：按 `dependencies` 顺序加载 `.zlib`，合并符号表
+
+**完整示例（含依赖）：**
+
+```toml
+[package]
+name    = "hello"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Hello.main"
+
+[sources]
+include = ["src/**/*.z42"]
+
+[build]
+out_dir = "dist"
+
+[dependencies]
+z42-std = { path = "../z42-std" }
+
+[profile.debug]
+mode  = "interp"
+debug = true
+
 [profile.release]
 mode     = "jit"
 optimize = 3
 strip    = true
 ```
 
-工作区根目录同时也是一个工程时，`[project]` 与 `[workspace]` 共存：
+---
+
+## L6 — 工作区（Workspace）
+
+管理多工程 monorepo，统一构建和版本。
+
+```toml
+# monorepo 根目录的 z42.toml
+
+[workspace]
+members = [
+    "libs/z42-std",
+    "libs/z42-net",
+    "apps/hello",
+    "apps/demo",
+]
+
+# 工作区级共享依赖（成员用 version = "workspace" 引用）
+[workspace.dependencies]
+z42-std = { path = "libs/z42-std", version = "0.1.0" }
+
+# 工作区级 profile（被所有成员继承，可被成员覆盖）
+[profile.release]
+mode     = "jit"
+optimize = 3
+strip    = true
+```
+
+成员工程引用工作区共享依赖：
+
+```toml
+# apps/hello/z42.toml
+[package]
+name    = "hello"
+version = "0.1.0"
+kind    = "exe"
+entry   = "Hello.main"
+
+[dependencies]
+z42-std = { version = "workspace" }   # 版本由 workspace 统一管理
+```
+
+工作区根目录也是工程时，`[workspace]` 与 `[package]` 共存：
 
 ```toml
 [workspace]
-members = ["crates/parser", "crates/vm"]
+members = ["libs/parser", "libs/vm"]
 
-[project]
+[package]
 name    = "z42c"
 version = "0.1.0"
 kind    = "exe"
-entry   = "z42c.Main"
+entry   = "z42c.main"
 ```
 
-### `[workspace]` 字段说明
-
-| 字段 | 说明 |
-|------|------|
-| `workspace.members` | 相对路径列表，指向各成员目录（每个目录含 `z42.toml`）|
-| `workspace.dependencies` | 共享依赖；成员用 `version = "workspace"` 引用 |
-
----
-
-## 构建命令
+**构建命令：**
 
 ```bash
-# 开发构建（profile.debug）
-z42c build
-
-# 发布构建（profile.release）
-z42c build --release
-
-# 指定输出格式
-z42c build --emit zbc
-
-# 增量构建
-z42c build --incremental
-
-# 工作区：构建所有成员
-z42c build                    # 在工作区根运行
-
-# 工作区：只构建指定成员
-z42c build --project apps/hello
+z42c build                        # 构建所有 workspace members
+z42c build --package apps/hello   # 只构建指定成员
 ```
 
----
-
-## 目录布局约定
-
-```
-my-app/
-├── z42.toml          ← 工程配置（开发者维护）
-├── src/
-│   ├── main.z42
-│   └── lib.z42
-├── dist/             ← 编译产物（.gitignore）
-│   └── my-app.zlib
-└── .cache/           ← 增量中间产物（.gitignore）
-    ├── src/main.zbc
-    └── src/lib.zbc
-```
-
-多工程工作区：
+**目录结构：**
 
 ```
 monorepo/
-├── z42.toml          ← [workspace] 配置
+├── z42.workspace.toml    ← [workspace]
 ├── libs/
-│   └── z42.stdlib/
-│       ├── z42.toml  ← [project] lib
+│   ├── z42-std/
+│   │   ├── z42-std.z42.toml  ← [project] lib
+│   │   └── src/
+│   └── z42-net/
+│       ├── z42-net.z42.toml
 │       └── src/
 └── apps/
     └── hello/
-        ├── z42.toml  ← [project] exe
+        ├── hello.z42.toml  ← [project] exe
         └── src/
 ```
 
 ---
 
-## `z42.toml` vs `.zmod` 对比
+## 产物文件汇总
 
-| 维度 | `z42.toml` | `.zmod` |
-|------|-----------|---------|
-| 格式 | TOML | JSON |
-| 谁写 | 开发者手写 | 编译器生成 |
-| 纳入 VCS | ✅ 是 | ❌ 加入 .gitignore |
-| 源文件描述 | Glob 模式 | 已展开路径 + hash |
-| 依赖描述 | 版本约束 | 已解析的具体路径 |
-| 用途 | 构建入口 | 增量编译索引 |
+| 文件 | 含义 | 谁写 | 纳入 VCS |
+|------|------|------|---------|
+| `<name>.z42.toml` | 工程 / 工作区配置 | 开发者 | ✅ |
+| `.zmod` | 增量构建索引（展开路径 + hash）| 编译器 | ❌ |
+| `.cache/*.zbc` | 单文件增量字节码 | 编译器 | ❌ |
+| `dist/*.zbc` | 最终可执行字节码 | 编译器 | ❌ |
+| `dist/*.zlib` | 打包程序集 | 编译器 | ❌ |
+
+`.cache/` 和 `dist/` 加入 `.gitignore`。
 
 ---
 
-## 约定
+## 完整字段速查
 
-- 每个目录最多一个 `z42.toml`
-- `.cache/` 和 `dist/` 加入 `.gitignore`
-- `z42.toml` 中的路径均相对于该文件所在目录
+```toml
+[package]
+name        = "my-app"          # 必填
+version     = "0.1.0"           # 必填，SemVer
+kind        = "exe"             # 必填，exe | lib
+entry       = "MyApp.main"      # exe 必填
+namespace   = "MyApp"           # 可选，默认由 name 推断
+description = ""                # 可选
+authors     = []                # 可选
+license     = "MIT"             # 可选，SPDX
+
+[sources]
+include = ["src/**/*.z42"]      # 默认值
+exclude = []                    # 默认值
+
+[build]
+out_dir     = "dist"            # 默认值
+emit        = "zbc"             # 默认按 kind 推断
+incremental = true              # 默认 true
+mode        = "interp"          # 全局默认执行模式
+
+[dependencies]
+# name = { path = "..." }       # 本地依赖（当前阶段）
+# name = { version = "..." }    # 注册中心（预留）
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "jit"
+optimize = 3
+strip    = true
+
+[workspace]                     # L6，与 [package] 可共存
+members = []
+[workspace.dependencies]
+# name = { path = "...", version = "..." }
+```

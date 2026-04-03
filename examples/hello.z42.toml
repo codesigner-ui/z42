@@ -1,0 +1,24 @@
+# hello.z42.toml — Hello World demo project
+
+[project]
+version     = "0.1.0"
+description = "Hello World demo"
+kind        = "exe"
+entry       = "Hello.Main"
+# name 省略，自动从文件名推断为 "hello"
+
+[sources]
+include = ["*.z42"]
+
+[build]
+out_dir = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "jit"
+optimize = 3
+strip    = true
