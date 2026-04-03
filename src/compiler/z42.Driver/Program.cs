@@ -8,6 +8,7 @@ using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.Compiler.TypeCheck;
 using Z42.IR;
+using Z42.IR.BinaryFormat;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,20 +51,40 @@ if (argv.Length >= 1 && argv[0] == "--list-errors")
     return 0;
 }
 
+// ── --disassemble ──────────────────────────────────────────────────────────────
+
+if (argv.Length >= 2 && argv[0] == "--disassemble")
+{
+    string zbcFile = argv[1];
+    if (!File.Exists(zbcFile)) { Console.Error.WriteLine($"error: file not found: {zbcFile}"); return 1; }
+    try
+    {
+        var module = ZbcReader.Read(File.ReadAllBytes(zbcFile));
+        string zasm = ZasmWriter.Write(module);
+        string outPath = argv.Length >= 4 && argv[2] == "--out" ? argv[3]
+                       : Path.ChangeExtension(zbcFile, ".z42asm");
+        WriteFile(outPath, zasm);
+    }
+    catch (Exception ex) { Console.Error.WriteLine($"error: {ex.Message}"); return 1; }
+    return 0;
+}
+
 if (argv.Length == 0)
 {
     Console.Error.WriteLine("""
         Usage:
-          z42c <source.z42> [--emit ir|zbc|zmod|zlib] [--out <path>]
+          z42c <source.z42> [--emit ir|zbc|zasm|zmod|zlib] [--out <path>]
                [--dump-tokens] [--dump-ast] [--dump-ir]
 
-        --emit ir    (default) write .z42ir.json (debug IR)
-        --emit zbc   write .zbc (single-file bytecode unit)
+        --emit ir    write .z42ir.json (JSON debug IR, default for VM input)
+        --emit zbc   write .zbc (binary bytecode)
+        --emit zasm  write .z42asm (text assembly — human-readable zbc)
         --emit zmod  write .zmod manifest + per-file .zbc into .cache/
         --emit zlib  write .zlib assembly (all modules bundled)
 
-        --explain <code>   show detailed explanation for a diagnostic code (e.g. Z0402)
-        --list-errors      list all known diagnostic codes
+        --disassemble <file.zbc>   convert binary .zbc → .z42asm text
+        --explain <code>           show detailed explanation for a diagnostic code
+        --list-errors              list all known diagnostic codes
         """);
     return 1;
 }
@@ -144,17 +165,18 @@ switch (emitMode)
     // ── --emit zbc ──────────────────────────────────────────────────────────
     case "zbc":
     {
-        var zbc = new ZbcFile(
-            ZbcVersion : ZbcFile.CurrentVersion,
-            SourceFile : sourceFile,
-            SourceHash : sourceHash,
-            Namespace  : ns,
-            Exports    : exports,
-            Imports    : [],
-            Module     : irModule
-        );
         string outPath = Path.ChangeExtension(sourceFile, ".zbc");
-        WriteFile(outPath, JsonSerializer.Serialize(zbc, jsonOptions));
+        Directory.CreateDirectory(Path.GetDirectoryName(outPath) ?? ".");
+        File.WriteAllBytes(outPath, ZbcWriter.Write(irModule, exports));
+        Console.Error.WriteLine($"wrote → {outPath}");
+        break;
+    }
+
+    // ── --emit zasm ─────────────────────────────────────────────────────────
+    case "zasm":
+    {
+        string outPath = Path.ChangeExtension(sourceFile, ".z42asm");
+        WriteFile(outPath, ZasmWriter.Write(irModule));
         break;
     }
 
