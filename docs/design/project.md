@@ -38,8 +38,8 @@ entry   = "Hello.main" # kind=exe 时必填，完全限定函数名
 |------|------|------|------|
 | `name` | string | ✅ | kebab-case；作为输出文件基名 |
 | `version` | string | ✅ | SemVer，如 `"0.1.0"` |
-| `kind` | `"exe"` \| `"lib"` | ✅ | 可执行程序 or 类库 |
-| `entry` | string | exe 必填 | 完全限定入口函数，如 `"Hello.main"` |
+| `kind` | `"exe"` \| `"lib"` | 单目标必填；多目标用 `[[exe]]` 时省略 | 可执行程序 or 类库 |
+| `entry` | string | `kind="exe"` 时必填 | 完全限定入口函数，如 `"Hello.main"` |
 
 **`name` 与命名空间的关系：**
 
@@ -58,6 +58,41 @@ namespace = "Demo.Hello"   # 覆盖默认推断
 |------|-----------|------|
 | `exe` | `zbc` | 单文件可执行字节码 |
 | `lib` | `zlib` | 打包库（含所有模块）|
+
+**多可执行目标（`[[exe]]`）：**
+
+当一个工程需要产出多个可执行文件时，用 `[[exe]]` 数组表代替 `[project] kind = "exe"`：
+
+```toml
+[project]
+version = "0.1.0"
+# kind 省略 — 由 [[exe]] 推断
+
+[sources]
+include = ["src/**/*.z42"]   # 所有 exe 默认共享
+
+[[exe]]
+name  = "hello"              # 产物：dist/hello.zbc
+entry = "Hello.main"
+
+[[exe]]
+name  = "tool"               # 产物：dist/tool.zbc
+entry = "Tool.main"
+src   = ["src/tool/**/*.z42"] # 可选：覆盖共享 sources
+```
+
+| 字段 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | ✅ | exe 名，同时作为产物文件基名 |
+| `entry` | string | ✅ | 完全限定入口函数 |
+| `src` | string[] | ❌ | 独立 glob，覆盖 `[sources]`；省略则继承 `[sources]` |
+
+```bash
+z42c build               # 构建所有 [[exe]]
+z42c build --exe hello   # 只构建名为 hello 的目标
+```
+
+> `[[exe]]` 与 `[project] kind = "exe"` 不能共存，二选一。
 
 **两种编译模式（职责分离）：**
 

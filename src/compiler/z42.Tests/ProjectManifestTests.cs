@@ -179,4 +179,114 @@ public sealed class ProjectManifestTests : IDisposable
             "[project]\nkind=\"lib\"\nunknown_field=\"foo\"\n[extra_section]\nfoo=1");
         act.Should().NotThrow();
     }
+
+    // ── [[exe]] multi-target ──────────────────────────────────────────────────
+
+    [Fact]
+    public void Load_MultiExe_ParsesTwoTargets()
+    {
+        var m = Load("myapp.z42.toml", """
+            [project]
+            version = "0.1.0"
+
+            [[exe]]
+            name  = "hello"
+            entry = "Hello.main"
+
+            [[exe]]
+            name  = "tool"
+            entry = "Tool.main"
+            """);
+        m.Project.Kind.Should().Be(ProjectKind.Multi);
+        m.ExeTargets.Should().HaveCount(2);
+        m.ExeTargets[0].Name.Should().Be("hello");
+        m.ExeTargets[0].Entry.Should().Be("Hello.main");
+        m.ExeTargets[1].Name.Should().Be("tool");
+        m.ExeTargets[1].Entry.Should().Be("Tool.main");
+    }
+
+    [Fact]
+    public void Load_MultiExe_WithSrcOverride()
+    {
+        var m = Load("myapp.z42.toml", """
+            [project]
+            [[exe]]
+            name  = "tool"
+            entry = "Tool.main"
+            src   = ["src/tool/**/*.z42"]
+            """);
+        m.ExeTargets[0].Src.Should().Equal("src/tool/**/*.z42");
+    }
+
+    [Fact]
+    public void Load_MultiExe_WithoutSrc_InheritsSharedSources()
+    {
+        var m = Load("myapp.z42.toml", """
+            [project]
+            [sources]
+            include = ["lib/**/*.z42"]
+            [[exe]]
+            name  = "hello"
+            entry = "Hello.main"
+            """);
+        m.ExeTargets[0].Src.Should().BeNullOrEmpty();
+        m.Sources.Include.Should().Equal("lib/**/*.z42");
+    }
+
+    [Fact]
+    public void Load_MultiExe_MissingName_Throws()
+    {
+        var act = () => Load("myapp.z42.toml", """
+            [project]
+            [[exe]]
+            entry = "Hello.main"
+            """);
+        act.Should().Throw<ManifestException>().WithMessage("*missing required field 'name'*");
+    }
+
+    [Fact]
+    public void Load_MultiExe_MissingEntry_Throws()
+    {
+        var act = () => Load("myapp.z42.toml", """
+            [project]
+            [[exe]]
+            name = "hello"
+            """);
+        act.Should().Throw<ManifestException>().WithMessage("*missing required field 'entry'*");
+    }
+
+    [Fact]
+    public void Load_MultiExe_ConflictsWithKindExe_Throws()
+    {
+        var act = () => Load("myapp.z42.toml", """
+            [project]
+            kind  = "exe"
+            entry = "Hello.main"
+            [[exe]]
+            name  = "hello"
+            entry = "Hello.main"
+            """);
+        act.Should().Throw<ManifestException>().WithMessage("*cannot use [[exe]] together*");
+    }
+
+    [Fact]
+    public void Load_SingleExeTarget_Succeeds()
+    {
+        var m = Load("myapp.z42.toml", """
+            [project]
+            [[exe]]
+            name  = "hello"
+            entry = "Hello.main"
+            """);
+        m.Project.Kind.Should().Be(ProjectKind.Multi);
+        m.ExeTargets.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Load_KindExeWithoutExeTable_BackwardCompat()
+    {
+        var m = Load("hello.z42.toml", "[project]\nkind=\"exe\"\nentry=\"Hello.main\"");
+        m.Project.Kind.Should().Be(ProjectKind.Exe);
+        m.ExeTargets.Should().BeEmpty();
+    }
 }

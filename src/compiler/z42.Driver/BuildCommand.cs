@@ -16,10 +16,10 @@ static class BuildCommand
     public static int Run(string[] args, JsonSerializerOptions jsonOptions)
     {
         // ── Parse build flags ─────────────────────────────────────────────────
-        bool   useRelease   = false;
-        string? profileName = null;
+        bool    useRelease   = false;
         string? emitOverride = null;
         string? explicitToml = null;
+        string? exeFilter    = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -28,11 +28,11 @@ static class BuildCommand
                 case "--release":
                     useRelease = true;
                     break;
-                case "--profile" when i + 1 < args.Length:
-                    profileName = args[++i];
-                    break;
                 case "--emit" when i + 1 < args.Length:
                     emitOverride = args[++i];
+                    break;
+                case "--exe" when i + 1 < args.Length:
+                    exeFilter = args[++i];
                     break;
                 default:
                     if (args[i].EndsWith(".z42.toml", StringComparison.OrdinalIgnoreCase))
@@ -55,41 +55,90 @@ static class BuildCommand
             return 1;
         }
 
-        var profile = manifest.SelectProfile(useRelease);
-        string emit = emitOverride ?? manifest.Build.Emit;
-        string projectDir = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
-        string outDir = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
+        string profileLabel = useRelease ? "release" : "debug";
+        string emit         = emitOverride ?? manifest.Build.Emit;
+        string projectDir   = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
+        string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
 
-        // ── Resolve source files ──────────────────────────────────────────────
-        IReadOnlyList<string> sourceFiles;
-        try
+        // ── Route: multi-exe vs single-target ────────────────────────────────
+        if (manifest.Project.Kind == Z42.Build.ProjectKind.Multi)
+            return BuildMultiExe(manifest, projectDir, outDir, emit, profileLabel, exeFilter, jsonOptions);
+
+        // ── Single-target build ───────────────────────────────────────────────
+        if (exeFilter is not null)
         {
-            sourceFiles = manifest.ResolveSourceFiles(projectDir);
-        }
-        catch (ManifestException ex)
-        {
-            Console.Error.WriteLine(ex.Message);
+            Console.Error.WriteLine(
+                "error: --exe flag is only valid for projects with [[exe]] targets");
             return 1;
+        }
+
+        IReadOnlyList<string> sourceFiles;
+        try   { sourceFiles = manifest.ResolveSourceFiles(projectDir); }
+        catch (ManifestException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+
+        Console.Error.WriteLine(
+            $"Building {manifest.Project.Name} v{manifest.Project.Version} " +
+            $"[{profileLabel}] ({sourceFiles.Count} file(s))");
+
+        int errors = 0;
+        foreach (var sourceFile in sourceFiles)
+        {
+            if (CompileSingleFile(sourceFile, emit, outDir, manifest, jsonOptions) != 0)
+                errors++;
+        }
+
+        if (errors > 0) { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return 1; }
+        Console.Error.WriteLine($"Build succeeded → {outDir}");
+        return 0;
+    }
+
+    static int BuildMultiExe(
+        ProjectManifest manifest,
+        string projectDir,
+        string outDir,
+        string emit,
+        string profileLabel,
+        string? exeFilter,
+        JsonSerializerOptions jsonOptions)
+    {
+        var targets = manifest.ExeTargets;
+
+        // --exe filter
+        if (exeFilter is not null)
+        {
+            targets = targets.Where(t => t.Name == exeFilter).ToList();
+            if (targets.Count == 0)
+            {
+                Console.Error.WriteLine($"error: no [[exe]] named '{exeFilter}'");
+                return 1;
+            }
         }
 
         Console.Error.WriteLine(
             $"Building {manifest.Project.Name} v{manifest.Project.Version} " +
-            $"[{(useRelease ? "release" : "debug")}] ({sourceFiles.Count} file(s))");
+            $"[{profileLabel}] ({targets.Count} target(s))");
 
-        // ── Compile each source file ──────────────────────────────────────────
         int errors = 0;
-        foreach (var sourceFile in sourceFiles)
+        foreach (var target in targets)
         {
-            int result = CompileSingleFile(sourceFile, emit, outDir, manifest, jsonOptions);
-            if (result != 0) errors++;
+            Console.Error.WriteLine($"  Compiling {target.Name} ({target.Entry})");
+
+            IReadOnlyList<string> sourceFiles;
+            try   { sourceFiles = manifest.ResolveSourceFiles(projectDir, target); }
+            catch (ManifestException ex) { Console.Error.WriteLine(ex.Message); errors++; continue; }
+
+            // Each exe target gets its own output file: dist/<name>.zbc
+            string targetOutDir = outDir;
+            string targetEmit   = emit;
+
+            foreach (var sourceFile in sourceFiles)
+            {
+                if (CompileSingleFile(sourceFile, targetEmit, targetOutDir, manifest, jsonOptions, target.Name) != 0)
+                    errors++;
+            }
         }
 
-        if (errors > 0)
-        {
-            Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)");
-            return 1;
-        }
-
+        if (errors > 0) { Console.Error.WriteLine($"error: build failed ({errors} error(s))"); return 1; }
         Console.Error.WriteLine($"Build succeeded → {outDir}");
         return 0;
     }
@@ -101,7 +150,8 @@ static class BuildCommand
         string emitMode,
         string? outDir,
         ProjectManifest? manifest,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        string? outputBaseName = null)   // override output filename (used for [[exe]] targets)
     {
         string source;
         try   { source = File.ReadAllText(sourceFile); }
@@ -139,7 +189,7 @@ static class BuildCommand
         string ns         = cu.Namespace ?? "main";
         string sourceHash = SingleFileDriver.Sha256Hex(source);
         var    exports    = irModule.Functions.Select(f => f.Name).ToList();
-        string baseName   = Path.GetFileNameWithoutExtension(sourceFile);
+        string baseName   = outputBaseName ?? Path.GetFileNameWithoutExtension(sourceFile);
 
         string resolvedOutDir = outDir
             ?? Path.GetDirectoryName(sourceFile)

@@ -11,11 +11,12 @@ namespace Z42.Build;
 
 public sealed class ProjectManifest
 {
-    public ProjectSection  Project  { get; init; } = new();
-    public SourcesSection  Sources  { get; init; } = new();
-    public BuildSection    Build    { get; init; } = new();
-    public ProfileSection  Debug    { get; init; } = ProfileSection.DefaultDebug;
-    public ProfileSection  Release  { get; init; } = ProfileSection.DefaultRelease;
+    public ProjectSection       Project     { get; init; } = new();
+    public SourcesSection       Sources     { get; init; } = new();
+    public BuildSection         Build       { get; init; } = new();
+    public ProfileSection       Debug       { get; init; } = ProfileSection.DefaultDebug;
+    public ProfileSection       Release     { get; init; } = ProfileSection.DefaultRelease;
+    public IReadOnlyList<ExeTarget> ExeTargets { get; init; } = [];
 
     // ── Discovery ─────────────────────────────────────────────────────────────
 
@@ -50,29 +51,51 @@ public sealed class ProjectManifest
         var model   = TomlSerializer.Deserialize<TomlTable>(toml)
                       ?? throw new ManifestException($"error: failed to parse {tomlPath}");
 
-        var project = ParseProject(model, tomlPath);
-        var sources = ParseSources(model);
-        var build   = ParseBuild(model, project.Kind);
-        var debug   = ParseProfile(model, "debug",   ProfileSection.DefaultDebug);
-        var release = ParseProfile(model, "release", ProfileSection.DefaultRelease);
+        var exeTargets = ParseExeTargets(model);
+        var project    = ParseProject(model, tomlPath, exeTargets.Count > 0);
+        var sources    = ParseSources(model);
+        var build      = ParseBuild(model, project.Kind);
+        var debug      = ParseProfile(model, "debug",   ProfileSection.DefaultDebug);
+        var release    = ParseProfile(model, "release", ProfileSection.DefaultRelease);
 
         return new ProjectManifest
         {
-            Project = project,
-            Sources = sources,
-            Build   = build,
-            Debug   = debug,
-            Release = release,
+            Project    = project,
+            Sources    = sources,
+            Build      = build,
+            Debug      = debug,
+            Release    = release,
+            ExeTargets = exeTargets,
         };
     }
 
     // ── Source file resolution ─────────────────────────────────────────────────
 
-    public IReadOnlyList<string> ResolveSourceFiles(string projectDir)
+    /// Resolve source files for the project (shared sources).
+    public IReadOnlyList<string> ResolveSourceFiles(string projectDir) =>
+        ResolveSourceFiles(projectDir, null);
+
+    /// Resolve source files for a specific exe target.
+    /// Uses target's own src if specified, otherwise falls back to shared [sources].
+    public IReadOnlyList<string> ResolveSourceFiles(string projectDir, ExeTarget? target)
     {
+        IReadOnlyList<string> include;
+        IReadOnlyList<string> exclude;
+
+        if (target?.Src is { Count: > 0 } targetSrc)
+        {
+            include = targetSrc;
+            exclude = [];
+        }
+        else
+        {
+            include = Sources.Include;
+            exclude = Sources.Exclude;
+        }
+
         var matcher = new Matcher();
-        foreach (var pattern in Sources.Include) matcher.AddInclude(pattern);
-        foreach (var pattern in Sources.Exclude) matcher.AddExclude(pattern);
+        foreach (var pattern in include) matcher.AddInclude(pattern);
+        foreach (var pattern in exclude) matcher.AddExclude(pattern);
 
         var result = matcher.Execute(new DirectoryInfoWrapper(new DirectoryInfo(projectDir)));
         var files  = result.Files
@@ -82,7 +105,7 @@ public sealed class ProjectManifest
 
         if (files.Count == 0)
             throw new ManifestException(
-                $"error: no source files found (include: [{string.Join(", ", Sources.Include)}])");
+                $"error: no source files found (include: [{string.Join(", ", include)}])");
 
         return files;
     }
@@ -93,7 +116,7 @@ public sealed class ProjectManifest
 
     // ── Private parsers ────────────────────────────────────────────────────────
 
-    static ProjectSection ParseProject(TomlTable model, string tomlPath)
+    static ProjectSection ParseProject(TomlTable model, string tomlPath, bool hasExeTargets)
     {
         if (!model.TryGetValue("project", out var raw) || raw is not TomlTable t)
             throw new ManifestException("error: [project] section is required");
@@ -102,25 +125,69 @@ public sealed class ProjectManifest
         string inferredName = Path.GetFileName(tomlPath)
             .Replace(".z42.toml", "", StringComparison.OrdinalIgnoreCase);
 
-        string name      = t.TryGetString("name")      ?? inferredName;
-        string version   = t.TryGetString("version")   ?? "0.1.0";
-        string kindStr   = t.TryGetString("kind")       ?? "exe";
-        string? entry    = t.TryGetString("entry");
-        string? ns       = t.TryGetString("namespace");
-        string? desc     = t.TryGetString("description");
+        string  name    = t.TryGetString("name")        ?? inferredName;
+        string  version = t.TryGetString("version")     ?? "0.1.0";
+        string? kindStr = t.TryGetString("kind");
+        string? entry   = t.TryGetString("entry");
+        string? ns      = t.TryGetString("namespace");
+        string? desc    = t.TryGetString("description");
 
-        if (!Enum.TryParse<ProjectKind>(kindStr, ignoreCase: true, out var kind))
+        // [[exe]] and kind="exe" cannot coexist
+        if (hasExeTargets && kindStr == "exe")
             throw new ManifestException(
-                $"error: [project].kind must be 'exe' or 'lib', got '{kindStr}'");
+                "error: cannot use [[exe]] together with [project] kind = \"exe\"; use one or the other");
+
+        // When [[exe]] is used, kind defaults to Multi; otherwise default exe
+        ProjectKind kind;
+        if (hasExeTargets)
+        {
+            kind = ProjectKind.Multi;
+        }
+        else
+        {
+            string resolvedKindStr = kindStr ?? "exe";
+            if (!Enum.TryParse<ProjectKind>(resolvedKindStr, ignoreCase: true, out kind))
+                throw new ManifestException(
+                    $"error: [project].kind must be 'exe' or 'lib', got '{resolvedKindStr}'");
+        }
 
         if (kind == ProjectKind.Exe && string.IsNullOrWhiteSpace(entry))
             throw new ManifestException(
                 "error: [project].entry is required when kind = \"exe\"");
 
-        // Derive namespace: explicit > inferred from name (kebab → PascalCase)
         string resolvedNs = ns ?? KebabToPascal(name);
-
         return new ProjectSection(name, version, kind, entry, resolvedNs, desc);
+    }
+
+    static IReadOnlyList<ExeTarget> ParseExeTargets(TomlTable model)
+    {
+        if (!model.TryGetValue("exe", out var raw)) return [];
+
+        // [[exe]] is parsed by Tomlyn as TomlTableArray, not TomlArray
+        var tables = raw switch
+        {
+            TomlTableArray tba => tba.Cast<TomlTable>().ToList(),
+            TomlArray arr      => arr.OfType<TomlTable>().ToList(),
+            _                  => null,
+        };
+        if (tables is null) return [];
+
+        var targets = new List<ExeTarget>();
+        for (int i = 0; i < tables.Count; i++)
+        {
+            var t = tables[i];
+            string? name  = t.TryGetString("name");
+            string? entry = t.TryGetString("entry");
+
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ManifestException($"error: [[exe]] entry is missing required field 'name'");
+            if (string.IsNullOrWhiteSpace(entry))
+                throw new ManifestException($"error: [[exe]] '{name}' is missing required field 'entry'");
+
+            var src = t.TryGetStringArray("src");
+            targets.Add(new ExeTarget(name, entry, src));
+        }
+        return targets;
     }
 
     static SourcesSection ParseSources(TomlTable model)
@@ -168,7 +235,13 @@ public sealed class ProjectManifest
 
 // ── Section records ────────────────────────────────────────────────────────────
 
-public enum ProjectKind { Exe, Lib }
+public enum ProjectKind { Exe, Lib, Multi }
+
+public sealed record ExeTarget(
+    string                 Name,
+    string                 Entry,
+    IReadOnlyList<string>? Src    // null = inherit [sources]
+);
 
 public sealed record ProjectSection(
     string      Name,
