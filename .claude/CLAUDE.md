@@ -56,26 +56,15 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 **固定决策**：IR 是寄存器 SSA 形式；执行模式注解作用于命名空间级；`.z42bc` magic = `Z42\0`；z42 始终带 GC，不引入所有权/借用。
 
-## 改动验证流程（必须遵守）
+## 协作工作流（必须遵守）
 
-每次完成一批改动后，按顺序执行，不需要用户提醒：
+见 `.claude/rules/workflow.md`。核心要点：
 
-1. `dotnet build` + `cargo build` —— 确保无编译错误
-2. `dotnet test` + `./scripts/test-vm.sh` —— 确保全部测试通过
-3. `git add <changed files> && git commit -m "type(scope): 描述"`
-4. `git push origin main`
-
-- **禁止**在测试失败时 commit 或 push
-- 每个逻辑完整的改动单元单独提交，不积压
-
-## 新语法/特性开发流程（必须遵守）
-
-1. **起草规范**：在 `docs/design/` 新建或更新规范文档
-2. **确认**：取得用户明确确认后才开始实现
-3. **实现**：严格对齐已确认规范；发现偏差必须重走步骤 1–2
-4. **验证**：按改动验证流程通过后提交
-
-**禁止**在规范未确认时提前写实现代码。
+- **每次新对话**：Claude 自动读取当前阶段和 memory，主动说明状态和下一步
+- **需规范先行**（lang / ir / vm 类变更）：DRAFT → User 确认 → IMPL → GREEN → COMMIT
+- **轻量变更**（fix / refactor / test）：直接 IMPL → GREEN → COMMIT
+- **验证命令**（GREEN 标准）：`dotnet build && cargo build && dotnet test && ./scripts/test-vm.sh`
+- **提交格式**：`type(scope): 描述`，每个逻辑单元单独提交
 
 ## 文档同步（必须遵守）
 
