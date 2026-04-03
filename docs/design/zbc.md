@@ -2,7 +2,7 @@
 
 ## 设计目标
 
-1. **二进制 + 文本双形态**：`.zbc` 二进制与 `.z42asm` 文本一一对应，可互转，不丢信息
+1. **二进制 + 文本双形态**：`.zbc` 二进制与 `.zasm` 文本一一对应，可互转，不丢信息
 2. **解释器直接执行**：指令流即执行流，无须二次转换，解释器 fetch-decode-dispatch 即可跑
 3. **JIT 直接翻译**：每条指令携带类型信息，JIT 无须重新分析类型即可生成带类型的 CLIF
 4. **SSA Block 参数**（非 phi 节点）：分支携带实参，解释器传参、JIT 建立 CLIF block 参数均自然映射
@@ -41,7 +41,7 @@ loop(%i: i32):
 
 ---
 
-## 文本格式（`.z42asm`）
+## 文本格式（`.zasm`）
 
 文本格式是二进制的可读投影，可由 `z42c --dump-asm` 生成，也可被 `z42c --assemble` 读回二进制。
 
@@ -401,10 +401,10 @@ for each block in func.block_table:
 
 ```bash
 # 二进制 → 文本（反汇编）
-z42c --disassemble foo.zbc > foo.z42asm
+z42c --disassemble foo.zbc > foo.zasm
 
 # 文本 → 二进制（汇编）
-z42c --assemble foo.z42asm -o foo.zbc
+z42c --assemble foo.zasm -o foo.zbc
 ```
 
 文本格式保留所有信息（寄存器编号、类型标签、字符串池、异常表），互转无损。

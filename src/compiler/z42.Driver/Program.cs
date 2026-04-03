@@ -62,7 +62,7 @@ if (argv.Length >= 2 && argv[0] == "--disassemble")
         var module = ZbcReader.Read(File.ReadAllBytes(zbcFile));
         string zasm = ZasmWriter.Write(module);
         string outPath = argv.Length >= 4 && argv[2] == "--out" ? argv[3]
-                       : Path.ChangeExtension(zbcFile, ".z42asm");
+                       : Path.ChangeExtension(zbcFile, ".zasm");
         WriteFile(outPath, zasm);
     }
     catch (Exception ex) { Console.Error.WriteLine($"error: {ex.Message}"); return 1; }
@@ -78,11 +78,11 @@ if (argv.Length == 0)
 
         --emit ir    write .z42ir.json (JSON debug IR, default for VM input)
         --emit zbc   write .zbc (binary bytecode)
-        --emit zasm  write .z42asm (text assembly — human-readable zbc)
+        --emit zasm  write .zasm (text assembly — human-readable zbc)
         --emit zmod  write .zmod manifest + per-file .zbc into .cache/
         --emit zlib  write .zlib assembly (all modules bundled)
 
-        --disassemble <file.zbc>   convert binary .zbc → .z42asm text
+        --disassemble <file.zbc>   convert binary .zbc → .zasm text
         --explain <code>           show detailed explanation for a diagnostic code
         --list-errors              list all known diagnostic codes
         """);
@@ -175,7 +175,7 @@ switch (emitMode)
     // ── --emit zasm ─────────────────────────────────────────────────────────
     case "zasm":
     {
-        string outPath = Path.ChangeExtension(sourceFile, ".z42asm");
+        string outPath = Path.ChangeExtension(sourceFile, ".zasm");
         WriteFile(outPath, ZasmWriter.Write(irModule));
         break;
     }

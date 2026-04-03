@@ -3,7 +3,7 @@ using System.Text;
 namespace Z42.IR.BinaryFormat;
 
 /// <summary>
-/// Serializes an <see cref="IrModule"/> into human-readable z42 assembly (.z42asm).
+/// Serializes an <see cref="IrModule"/> into human-readable z42 assembly (.zasm).
 ///
 /// The text format is a 1-to-1 projection of the binary format — every field is
 /// visible, so a tool can reconstruct the binary from the text.
