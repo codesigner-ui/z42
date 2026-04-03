@@ -65,8 +65,11 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 - **轻量变更**（fix / refactor / test）：直接 IMPL → GREEN → COMMIT
 - **验证命令**（GREEN 标准）：`dotnet build && cargo build && dotnet test && ./scripts/test-vm.sh`
 - **提交格式**：`type(scope): 描述`，每个逻辑单元单独提交
+- **自动提交**：每次迭代完成后 Claude 自动 commit + push，`.claude/` 和 `openspec/` 必须纳入，无需 User 二次确认
 
 ## 文档同步（必须遵守）
+
+**核心规则：任何改变了外部可见行为、机制、规则或约定的迭代，归档前必须有对应文档落地。无文档 = 未完成。**
 
 | 改动类型 | 需要更新的文档 |
 |----------|--------------|
@@ -74,6 +77,9 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 | 新 IR 指令 | `docs/design/ir.md` |
 | 新 VM 行为 | `docs/design/<feature>.md` |
 | 新构建步骤 / CLI 参数 | `CLAUDE.md` 构建与测试部分 |
+| 新工程文件规则 / manifest 字段 | `docs/design/project.md` |
+| 新协作规则 / 工作流变更 | `.claude/rules/workflow.md` |
+| fix / refactor 涉及行为或机制变更 | 对应 `docs/design/` 文档 |
 | 规范偏差 | 以实现为准更新规范，不得描述不存在的行为 |
 
 ## 代码风格

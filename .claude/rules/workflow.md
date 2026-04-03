@@ -293,11 +293,30 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 1. 将 tasks.md 状态改为 `🟢 已完成`，更新日期
 2. 移动目录：`openspec/changes/<name>/` → `openspec/changes/archive/YYYY-MM-DD-<name>/`
-3. **同步到长期规范**（lang/ir/vm 类型必须执行）：
-   - 新语法 → `docs/design/language-overview.md`
-   - 新 IR 指令 → `docs/design/ir.md`
-   - 新 zbc 格式 → `docs/design/zbc.md`
-4. 提交：`git add ... && git commit -m "type(scope): 描述" && git push origin main`
+3. **同步到长期规范**（所有变更类型均需执行，按下表）：
+
+   | 变更类型 | 必须更新的文档 |
+   |---------|--------------|
+   | 新语法 / 语句 | `docs/design/language-overview.md` + `docs/design/<feature>.md` |
+   | 新 IR 指令 | `docs/design/ir.md` |
+   | 新 zbc / VM 行为 | `docs/design/<feature>.md` |
+   | 新构建步骤 / CLI 参数 / 工程文件规则 | `docs/design/project.md` 或 `CLAUDE.md` |
+   | fix / refactor（若涉及行为或机制变更） | 对应 `docs/design/` 文档必须更新 |
+   | 新协作规则 / 工作流规则 | `.claude/rules/workflow.md` |
+
+   > **规则：任何改变了外部可见行为、机制、规则或约定的迭代，归档前必须有对应文档落地。**
+   > 无文档 = 未完成，不得进入 commit 步骤。
+
+4. **自动提交（无需 User 确认）**，包含以下所有相关文件：
+   ```bash
+   git add src/ docs/ examples/ \
+           .claude/ openspec/ \
+           .gitignore *.md
+   git commit -m "type(scope): 描述"
+   git push origin main
+   ```
+   - `.claude/`（workflow、memory、规则变更）和 `openspec/`（proposal、design、spec、tasks、archive）**必须纳入提交**，不得遗漏。
+   - 每个逻辑单元单独提交，不积压。
 
 ---
 
@@ -338,7 +357,7 @@ User 说"继续"时，Claude 自动执行：
 ## 最小化模式（fix / refactor）
 
 ```
-openspec/changes/<name>/tasks.md   ← 仅此一个文件
+openspec/changes/<name>/tasks.md   ← 必须有
 ```
 
 tasks.md 顶部：
@@ -347,11 +366,15 @@ tasks.md 顶部：
 # Tasks: <名称>
 **变更说明：** [一句话]
 **原因：** [一句话]
+**文档影响：** [列出需要更新的文档，无则写"无"]
 
 - [ ] 1.1 [任务]
+- [ ] 1.x docs/design/ 或 workflow.md 更新（若有行为/机制变更）
 ```
 
 完成后直接进阶段 8（验证）→ 阶段 9（归档）。
+
+> **即使是 fix，只要改变了行为、机制或约定，就必须同步文档。** 只有纯内部实现调整（如重命名变量、提取方法、不改接口）才可跳过文档步骤。
 
 ---
 
