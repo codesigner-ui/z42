@@ -5,7 +5,7 @@ use clap::{Parser, ValueEnum};
 #[command(name = "z42vm", about = "z42 Virtual Machine", version)]
 struct Cli {
     /// Bytecode file to execute.
-    /// Accepted formats: .z42ir.json (debug IR), .zbc, .zmod, .zlib
+    /// Accepted formats: .z42ir.json (debug IR), .zbc, .zmod, .zbin
     file: String,
 
     /// Execution mode override (default: use annotation in bytecode)

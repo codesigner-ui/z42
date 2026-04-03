@@ -202,7 +202,7 @@ public sealed class ProjectManifest
 
     static BuildSection ParseBuild(TomlTable model, ProjectKind kind)
     {
-        string defaultEmit = kind == ProjectKind.Lib ? "zlib" : "zbc";
+        string defaultEmit = kind == ProjectKind.Lib ? "zbin" : "zbc";
 
         if (!model.TryGetValue("build", out var raw) || raw is not TomlTable t)
             return new BuildSection("dist", defaultEmit, "interp", true);

@@ -37,7 +37,7 @@ pub enum EmitKind {
     Zbc,
     /// Module manifest + per-file `.zbc` under `.cache/` (`.zmod`)
     Zmod,
-    /// Bundled assembly (`.zlib`)
+    /// Bundled assembly (`.zbin`)
     Zlib,
 }
 

@@ -11,8 +11,8 @@ use crate::bytecode::Module;
 /// Magic bytes for `.zbc` binary format (Phase 2): `"ZBC\0"`
 pub const ZBC_MAGIC: [u8; 4] = [0x5A, 0x42, 0x43, 0x00];
 
-/// Magic bytes for `.zlib` binary format (Phase 2): `"ZLB\0"`
-pub const ZLIB_MAGIC: [u8; 4] = [0x5A, 0x4C, 0x42, 0x00];
+/// Magic bytes for `.zbin` binary format (Phase 2): `"ZBN\0"`
+pub const ZBIN_MAGIC: [u8; 4] = [0x5A, 0x42, 0x4E, 0x00];
 
 // ── .zbc — single-file bytecode unit ─────────────────────────────────────────
 
@@ -120,48 +120,50 @@ impl ZmodManifest {
     }
 }
 
-// ── .zlib — assembly / library bundle ─────────────────────────────────────────
+// ── .zbin — binary bundle (exe or lib) ────────────────────────────────────────
 
-/// An exported symbol entry inside a `.zlib`.
+/// An exported symbol entry inside a `.zbin`.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZlibExport {
+pub struct ZbinExport {
     /// Fully-qualified name, e.g. `"Demo.Greet.Greet"`.
     pub symbol: String,
     /// `"func"`, `"type"`, or `"const"`.
     pub kind: String,
 }
 
-/// External dependency declared in a `.zlib`.
+/// External dependency declared in a `.zbin`.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZlibDep {
+pub struct ZbinDep {
     pub name: String,
     pub version: String,
 }
 
-/// A `.zlib` assembly — bundles all `.zbc` files of a project into one
-/// self-contained, distributable file.
+/// A `.zbin` bundle — packs all `.zbc` files of a project into one
+/// self-contained, distributable file.  Covers both exe and lib; the
+/// `kind` field in metadata distinguishes them.
 ///
-/// Analogy: C# `.dll` = PE envelope + metadata tables + IL sections.
+/// Analogy: C# `.dll` = PE envelope + metadata tables + IL sections,
+///          Java `.jar` = zip archive with manifest.
 ///
 /// Phase 1: JSON (all `ZbcFile`s inlined under `modules`).
-/// Phase 2: binary archive — `ZLIB_MAGIC` + MANIFEST + ZBC[n] sections.
+/// Phase 2: binary archive — `ZBIN_MAGIC` + MANIFEST + ZBC[n] sections.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZlibFile {
-    pub zlib_version: [u16; 2],
+pub struct ZbinFile {
+    pub zbin_version: [u16; 2],
     pub name: String,
     pub version: String,
     /// `"lib"` or `"exe"`.
     pub kind: ZmodKind,
     /// All public symbols across every bundled module.
-    pub exports: Vec<ZlibExport>,
+    pub exports: Vec<ZbinExport>,
     #[serde(default)]
-    pub dependencies: Vec<ZlibDep>,
+    pub dependencies: Vec<ZbinDep>,
     /// Inline bytecode for every source file (Phase 1 JSON form).
     pub modules: Vec<ZbcFile>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
 }
 
-impl ZlibFile {
+impl ZbinFile {
     pub const VERSION: [u16; 2] = [0, 1];
 }

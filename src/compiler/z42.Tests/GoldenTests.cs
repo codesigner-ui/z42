@@ -216,7 +216,7 @@ public sealed class GoldenTests
 
         // Step 2 — serialise artifact in the format requested by the test
         //   Default: .zbc   (single-file bytecode, production path)
-        //   Override: emit_format.txt containing "zlib" uses .zlib assembly format
+        //   Override: emit_format.txt containing "zbin" uses .zbin bundle format
         string emitFmt = "zbc";
         string fmtFile = Path.Combine(dir, "emit_format.txt");
         if (File.Exists(fmtFile))
@@ -234,23 +234,23 @@ public sealed class GoldenTests
 
         string artifactJson;
         string ext;
-        if (emitFmt == "zlib")
+        if (emitFmt == "zbin")
         {
-            var libExports = ir.Functions
-                .Select(f => new ZlibExport($"{ir.Name}.{f.Name}", "func"))
+            var binExports = ir.Functions
+                .Select(f => new ZbinExport($"{ir.Name}.{f.Name}", "func"))
                 .ToList();
-            var zlib = new ZlibFile(
-                ZlibVersion  : ZlibFile.CurrentVersion,
+            var zbin = new ZbinFile(
+                ZbinVersion  : ZbinFile.CurrentVersion,
                 Name         : ir.Name,
                 Version      : "0.1.0",
                 Kind         : ZmodKind.Exe,
-                Exports      : libExports,
+                Exports      : binExports,
                 Dependencies : [],
                 Modules      : [zbc],
                 Entry        : $"{ir.Name}.Main"
             );
-            artifactJson = JsonSerializer.Serialize(zlib, JsonOpts);
-            ext = ".zlib";
+            artifactJson = JsonSerializer.Serialize(zbin, JsonOpts);
+            ext = ".zbin";
         }
         else
         {

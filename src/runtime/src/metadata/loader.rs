@@ -5,13 +5,13 @@
 ///   `.z42ir.json` — legacy raw Module JSON (Phase 1 debug format, always supported)
 ///   `.zbc`        — ZbcFile envelope  (single source file)
 ///   `.zmod`       — ZmodManifest      (multi-file project; references .zbc on disk)
-///   `.zlib`       — ZlibFile          (self-contained assembly; .zbc inlined)
+///   `.zbin`       — ZbinFile          (self-contained bundle; .zbc inlined; exe or lib)
 use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
 use crate::bytecode::Module;
-use crate::metadata::formats::{ZbcFile, ZlibFile, ZmodManifest};
+use crate::metadata::formats::{ZbcFile, ZbinFile, ZmodManifest};
 use crate::metadata::merge::merge_modules;
 
 /// Result of loading a compiler artifact.
@@ -29,7 +29,7 @@ pub struct LoadedArtifact {
 /// - `.z42ir.json` / `.json` → raw `Module` (legacy)
 /// - `.zbc`                  → `ZbcFile`
 /// - `.zmod`                 → `ZmodManifest` (reads sibling `.zbc` files from disk)
-/// - `.zlib`                 → `ZlibFile`
+/// - `.zbin`                 → `ZbinFile` (exe or lib bundle)
 pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
     let lower = path.to_lowercase();
 
@@ -39,10 +39,10 @@ pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
         match Path::new(path).extension().and_then(|e| e.to_str()) {
             Some("zbc")  => load_zbc(path),
             Some("zmod") => load_zmod(path),
-            Some("zlib") => load_zlib(path),
+            Some("zbin") => load_zbin(path),
             ext => bail!(
                 "unrecognised artifact extension {:?} in `{}`; \
-                 expected .z42ir.json, .zbc, .zmod, or .zlib",
+                 expected .z42ir.json, .zbc, .zmod, or .zbin",
                 ext, path
             ),
         }
@@ -97,15 +97,16 @@ fn load_zmod(path: &str) -> Result<LoadedArtifact> {
     Ok(LoadedArtifact { module, entry_hint: manifest.entry })
 }
 
-/// `.zlib`: all `ZbcFile`s are inlined; extract and merge.
-fn load_zlib(path: &str) -> Result<LoadedArtifact> {
+/// `.zbin`: all `ZbcFile`s are inlined; extract and merge.
+/// Works for both exe (has entry) and lib (no entry) bundles.
+fn load_zbin(path: &str) -> Result<LoadedArtifact> {
     let json = read_file(path)?;
-    let zlib: ZlibFile = serde_json::from_str(&json)
-        .with_context(|| format!("cannot parse .zlib JSON in `{path}`"))?;
+    let zbin: ZbinFile = serde_json::from_str(&json)
+        .with_context(|| format!("cannot parse .zbin JSON in `{path}`"))?;
 
-    check_zlib_version(&zlib, path)?;
+    check_zbin_version(&zbin, path)?;
 
-    let modules: Vec<Module> = zlib
+    let modules: Vec<Module> = zbin
         .modules
         .into_iter()
         .enumerate()
@@ -117,7 +118,7 @@ fn load_zlib(path: &str) -> Result<LoadedArtifact> {
 
     let module = merge_modules(modules)
         .with_context(|| format!("merging modules from `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: zlib.entry })
+    Ok(LoadedArtifact { module, entry_hint: zbin.entry })
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -137,12 +138,12 @@ fn check_zbc_version(zbc: &ZbcFile, path: &str) -> Result<()> {
     Ok(())
 }
 
-fn check_zlib_version(zlib: &ZlibFile, path: &str) -> Result<()> {
-    if zlib.zlib_version[0] > ZlibFile::VERSION[0] {
+fn check_zbin_version(zbin: &ZbinFile, path: &str) -> Result<()> {
+    if zbin.zbin_version[0] > ZbinFile::VERSION[0] {
         bail!(
-            "unsupported .zlib major version {} in `{path}` (this VM supports <= {})",
-            zlib.zlib_version[0],
-            ZlibFile::VERSION[0]
+            "unsupported .zbin major version {} in `{path}` (this VM supports <= {})",
+            zbin.zbin_version[0],
+            ZbinFile::VERSION[0]
         );
     }
     Ok(())

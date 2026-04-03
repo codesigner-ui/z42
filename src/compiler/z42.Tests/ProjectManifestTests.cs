@@ -129,7 +129,7 @@ public sealed class ProjectManifestTests : IDisposable
     public void Load_LibEmitDefaultsToZlib()
     {
         var m = Load("mylib.z42.toml", "[project]\nkind=\"lib\"");
-        m.Build.Emit.Should().Be("zlib");
+        m.Build.Emit.Should().Be("zbin");
     }
 
     // ── sources defaults ──────────────────────────────────────────────────────

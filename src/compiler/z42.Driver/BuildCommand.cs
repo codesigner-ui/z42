@@ -234,14 +234,14 @@ static class BuildCommand
                 WriteFile(zmodPath, JsonSerializer.Serialize(zmod, jsonOptions));
                 break;
             }
-            case "zlib":
+            case "zbin":
             {
                 var zbc        = new ZbcFile(ZbcFile.CurrentVersion, sourceFile, sourceHash, ns, exports, [], irModule);
-                var libExports = exports.Select(e => new ZlibExport($"{ns}.{e}", "func")).ToList();
-                var zlib       = new ZlibFile(ZlibFile.CurrentVersion, ns, "0.1.0",
-                                     ZmodKind.Exe, libExports, [], [zbc], $"{ns}.Main");
-                string path    = Path.Combine(resolvedOutDir, baseName + ".zlib");
-                WriteFile(path, JsonSerializer.Serialize(zlib, jsonOptions));
+                var binExports = exports.Select(e => new ZbinExport($"{ns}.{e}", "func")).ToList();
+                var zbin       = new ZbinFile(ZbinFile.CurrentVersion, ns, "0.1.0",
+                                     ZmodKind.Exe, binExports, [], [zbc], $"{ns}.Main");
+                string path    = Path.Combine(resolvedOutDir, baseName + ".zbin");
+                WriteFile(path, JsonSerializer.Serialize(zbin, jsonOptions));
                 break;
             }
             default:

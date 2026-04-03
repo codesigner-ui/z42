@@ -57,7 +57,7 @@ namespace = "Demo.Hello"   # 覆盖默认推断
 | kind | 默认 emit | 说明 |
 |------|-----------|------|
 | `exe` | `zbc` | 单文件可执行字节码 |
-| `lib` | `zlib` | 打包库（含所有模块）|
+| `lib` | `zbin` | 打包库（含所有模块）|
 
 **多可执行目标（`[[exe]]`）：**
 
@@ -166,7 +166,7 @@ incremental = true         # 启用增量编译，默认 true
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `out_dir` | string | `"dist"` | 产物输出目录 |
-| `emit` | `ir\|zbc\|zmod\|zlib` | 按 kind 推断 | 覆盖默认产物格式 |
+| `emit` | `ir\|zbc\|zmod\|zbin` | 按 kind 推断 | 覆盖默认产物格式 |
 | `incremental` | bool | `true` | 基于 source hash 跳过未改动文件 |
 
 **`emit` 格式说明：**
@@ -176,7 +176,7 @@ incremental = true         # 启用增量编译，默认 true
 | `ir` | `.z42ir.json` | 调试用 JSON IR，VM 可直接加载 |
 | `zbc` | `.zbc` | 单文件字节码（二进制）|
 | `zmod` | `.zmod` + `.cache/*.zbc` | 多文件增量索引 |
-| `zlib` | `.zlib` | 打包程序集，含所有模块 |
+| `zbin` | `.zbin` | 打包程序集，含所有模块 |
 
 **增量编译工作方式：**
 
@@ -186,7 +186,7 @@ z42c build
   ├─ 对比每个 .z42 文件的 SHA-256 与记录值
   │    ├─ 相同 → 跳过重编译
   │    └─ 不同 → 重编译该文件，更新 .zbc 和 hash
-  └─ 重新打包 .zlib（若有改动）
+  └─ 重新打包 .zbin（若有改动）
 ```
 
 **目录结构（含产物）：**
@@ -286,7 +286,7 @@ z42-http = { version = ">=0.2, <1.0" }       # 版本约束（未来：注册中
 
 - TypeChecker：可见依赖库导出的类型和函数签名
 - IR Codegen：生成跨库调用的 `call` 指令（含模块引用）
-- VM 加载：按 `dependencies` 顺序加载 `.zlib`，合并符号表
+- VM 加载：按 `dependencies` 顺序加载 `.zbin`，合并符号表
 
 **完整示例（含依赖）：**
 
@@ -406,7 +406,7 @@ monorepo/
 | `.zmod` | 增量构建索引（展开路径 + hash）| 编译器 | ❌ |
 | `.cache/*.zbc` | 单文件增量字节码 | 编译器 | ❌ |
 | `dist/*.zbc` | 最终可执行字节码 | 编译器 | ❌ |
-| `dist/*.zlib` | 打包程序集 | 编译器 | ❌ |
+| `dist/*.zbin` | 打包程序集 | 编译器 | ❌ |
 
 `.cache/` 和 `dist/` 加入 `.gitignore`。
 

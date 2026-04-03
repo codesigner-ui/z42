@@ -1,6 +1,6 @@
 # z42 编译产物规范
 
-本文档定义两种编译输出粒度，以及它们的文件格式、工作流和工具命令。
+本文档定义编译输出粒度、文件格式、zbc 生成策略（Strategy D）和工具命令。
 
 ---
 
@@ -9,15 +9,53 @@
 ```
 .z42 源文件
    │
-   ▼ z42c 编译
+   ▼ z42c 编译（Phase 1：per-file）
    │
    ├─ 粒度 1（文件级）
-   │    每个 .z42 → 独立 .zbc（字节码单元）
+   │    每个 .z42 → 独立 .zbc（字节码单元，存放于 .cache/）
    │    工程级索引 → .zmod（模块清单）
    │
-   └─ 粒度 2（程序集级）
-        所有 .zbc 打包 → .zlib（可分发库 / 可执行程序集）
+   └─ 粒度 2（发布包级）
+        所有 .zbc 打包 → .zbin（可分发包，exe 或 lib）
 ```
+
+---
+
+## zbc 生成策略（Strategy D）
+
+**目标**：增量判断以源文件为粒度（简单），输出 zbc 以类为粒度（语义清晰）。
+
+### 两阶段编译
+
+```
+阶段 1 — 逐文件编译（当前 Phase 1/2 实现）
+  src/Hello.z42         → .cache/src/Hello.zbc
+  src/Hello.Partial.z42 → .cache/src/Hello.Partial.zbc
+  src/Helper.z42        → .cache/src/Helper.zbc
+
+阶段 2 — 链接合并（Phase 2 完成后实现）
+  检测到 partial class Hello（跨两个文件）
+  → 合并为 .cache/types/Hello.zbc
+  增量 key：任一源文件 hash 变化即重合并
+```
+
+### 输出路径约定
+
+| 产物 | 路径 | 说明 |
+|------|------|------|
+| 增量 zbc（开发态）| `.cache/<relative_source>.zbc` | 镜像源文件目录结构 |
+| 发布包（生产态）| `dist/<name>.zbin` | 所有 zbc 打包进单文件 |
+| 模块索引 | `dist/<name>.zmod` | 供 VM 按文件加载 |
+
+### 内部类规则
+
+**内部类（Inner Class）随外部类**：内部类的字节码包含在外部类的 `.zbc` 文件中，不单独输出。外部类改动 → 外部类 zbc 重编译，内部类一并更新。
+
+### Partial Class 规则（Phase 2）
+
+- Phase 1/2：每个 `.z42` 文件产出独立 `.zbc`（partial 片段分散）
+- Phase 2 完成后：TypeChecker 收集同名 partial 片段 → 链接阶段合并为单一 `.zbc`
+- `.zmod` 索引的是合并后的类级 zbc，`sources` 字段记录所有源文件片段
 
 ---
 
@@ -85,19 +123,19 @@
   "files": [
     {
       "source": "src/greet.z42",
-      "bytecode": ".cache/greet.zbc",
+      "bytecode": ".cache/src/greet.zbc",
       "source_hash": "sha256:e3b0c44298fc1c149...",
       "exports": ["Greet"]
     },
     {
       "source": "src/util.z42",
-      "bytecode": ".cache/util.zbc",
+      "bytecode": ".cache/src/util.zbc",
       "source_hash": "sha256:a665a45920422f9d4...",
       "exports": ["StringUtil"]
     }
   ],
   "dependencies": [
-    { "name": "z42.stdlib", "path": "../../stdlib/z42.stdlib.zlib", "version": ">=0.1" }
+    { "name": "z42.stdlib", "path": "../../stdlib/z42.stdlib.zbin", "version": ">=0.1" }
   ],
   "entry": "Demo.Greet.Main"
 }
@@ -108,15 +146,15 @@
 | 字段 | 说明 |
 |------|------|
 | `kind` | `"lib"` = 类库（无入口）；`"exe"` = 可执行（有 `entry`） |
-| `files[].bytecode` | 相对于 `.zmod` 文件的路径 |
+| `files[].bytecode` | 相对于 `.zmod` 文件的路径，指向 `.cache/` 下的 zbc |
 | `files[].source_hash` | 编译时记录；运行时可验证 |
 | `exports` | 该文件对外公开的符号，供 VM 和链接器快速查找 |
-| `dependencies` | 引用的外部 `.zlib`；路径可为本地或 registry URL |
+| `dependencies` | 引用的外部 `.zbin`；路径可为本地或 registry URL |
 
 **增量更新流程**：
 
 ```
-z42c --incremental MyLib.zmod
+z42c build
   │
   ├─ 读取 .zmod，遍历 files[]
   ├─ 对比每项 source_hash vs 磁盘文件 SHA-256
@@ -127,17 +165,20 @@ z42c --incremental MyLib.zmod
 
 ---
 
-## 粒度 2 — 程序集级：`.zlib`
+## 粒度 2 — 发布包级：`.zbin`
 
-`.zlib` 将一个工程的所有 `.zbc` 打包为**单一可分发文件**，类似 C# `.dll` / Java `.jar`。
+`.zbin` 将一个工程的所有 `.zbc` 打包为**单一可分发文件**。
 
-**类比**：C# 程序集（`.dll`）
+- `kind = "exe"`：含入口函数（`entry` 字段），可直接被 VM 执行
+- `kind = "lib"`：无入口，仅导出符号，供其他工程依赖
 
-### 2.1 Phase 1（JSON 调试格式）
+**类比**：C# `.dll`（exe 和 lib 都是 assembly，靠 metadata 区分）；Java `.jar`
+
+### Phase 1（JSON 调试格式）
 
 ```json
 {
-  "zlib_version": [0, 1],
+  "zbin_version": [0, 1],
   "name": "Demo.Greet",
   "version": "0.1.0",
   "kind": "lib",
@@ -154,16 +195,16 @@ z42c --incremental MyLib.zmod
 }
 ```
 
-### 2.2 Phase 2（二进制归档格式）
+### Phase 2（二进制归档格式）
 
 ```
-[4 bytes]  magic:        0x5A 0x4C 0x42 0x00  ("ZLB\0")
+[4 bytes]  magic:        0x5A 0x42 0x4E 0x00  ("ZBN\0")
 [2 bytes]  version_major
 [2 bytes]  version_minor
 [4 bytes]  flags         bit0=executable, bit1=debug_info
 [4 bytes]  section_count
 [sections...]
-  MANIFEST  — JSON 元数据（name, version, exports, dependencies）
+  MANIFEST  — JSON 元数据（name, version, kind, exports, dependencies）
   ZBC[0]    — 第 0 个 .zbc 文件的完整内容
   ZBC[1]    — 第 1 个 .zbc 文件的完整内容
   ...
@@ -181,8 +222,9 @@ z42c --incremental MyLib.zmod
 | `.z42` | 源代码 | — | 文本 |
 | `.z42ir.json` | 调试用 IR（Phase 1）| 文件 | JSON |
 | `.zbc` | 单文件字节码 | 文件 | 二进制（Phase 2）/ JSON（Phase 1）|
+| `.zasm` | 字节码文本反汇编 | 文件 | 文本 |
 | `.zmod` | 模块清单 / 索引 | 工程 | JSON（始终）|
-| `.zlib` | 程序集 / 库包 | 工程 | 二进制（Phase 2）/ JSON（Phase 1）|
+| `.zbin` | 发布包（exe 或 lib）| 工程 | 二进制（Phase 2）/ JSON（Phase 1）|
 
 ---
 
@@ -192,17 +234,17 @@ z42c --incremental MyLib.zmod
 # 单文件编译 → .zbc（JSON Phase 1）
 z42c src/greet.z42 --emit zbc
 
-# 工程编译 → 生成 .zmod + 所有 .zbc
-z42c --project MyLib.zmod
+# 工程构建（debug，读取 *.z42.toml）
+z42c build
 
-# 增量重编译（跳过 hash 未变文件）
-z42c --project MyLib.zmod --incremental
+# 工程构建（release）
+z42c build --release
 
-# 打包 → .zlib
-z42c --project MyLib.zmod --pack
+# 只构建指定 [[exe]] 目标
+z42c build --exe hello
 
-# 全量构建（增量 + 打包）
-z42c --project MyLib.zmod --incremental --pack
+# 单文件 → .zbin（打包格式）
+z42c src/greet.z42 --emit zbin
 ```
 
 ---
@@ -214,7 +256,7 @@ z42c --project MyLib.zmod --incremental --pack
 | `.z42ir.json` | 直接加载（Phase 1 调试，向前兼容）|
 | `.zbc` | 单文件字节码，自包含运行 |
 | `.zmod` | 按 `files[]` 顺序加载所有 `.zbc`，合并符号表 |
-| `.zlib` | 解包内嵌 ZBC sections，合并后执行 |
+| `.zbin` | 解包内嵌 ZBC sections，合并后执行；`kind` 字段区分 exe/lib |
 
 VM 入口选择优先级：`entry` 字段 > 名为 `Main` / `main` 的函数。
 
@@ -224,12 +266,12 @@ VM 入口选择优先级：`entry` 字段 > 名为 `Main` / `main` 的函数。
 
 1. 同文件内直接引用（已在单模块 IR 里解析）
 2. 同工程跨文件引用：通过 `.zmod` 的 `exports` 表快速查找
-3. 跨库引用：通过 `.zlib` 的 `EXPORTS` section + 重定位
+3. 跨库引用：通过 `.zbin` 的 `EXPORTS` section + 重定位
 
 ---
 
 ## 版本兼容性
 
-- `.zbc` / `.zlib` magic bytes 固定，版本字段用于前向兼容
+- `.zbc` / `.zbin` magic bytes 固定，版本字段用于前向兼容
 - VM 必须拒绝 `version_major` 高于自身支持版本的文件，并给出明确错误
 - `.zmod` 为 JSON，永远向前兼容（新字段旧 VM 忽略）

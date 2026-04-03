@@ -57,31 +57,32 @@ public sealed record ZmodManifest(
     public static readonly int[] CurrentVersion = [0, 1];
 }
 
-// ── .zlib — assembly / library bundle ─────────────────────────────────────────
+// ── .zbin — binary bundle (exe or lib) ────────────────────────────────────────
 
-/// Exported symbol inside a .zlib.
-public sealed record ZlibExport(
+/// Exported symbol inside a .zbin.
+public sealed record ZbinExport(
     [property: JsonPropertyName("symbol")] string Symbol,
     [property: JsonPropertyName("kind")]   string Kind
 );
 
-/// External dependency declared in a .zlib.
-public sealed record ZlibDep(
+/// External dependency declared in a .zbin.
+public sealed record ZbinDep(
     [property: JsonPropertyName("name")]    string Name,
     [property: JsonPropertyName("version")] string Version
 );
 
-/// A .zlib assembly — bundles all .zbc files of a project into one distributable.
+/// A .zbin bundle — packs all .zbc files of a project into one distributable.
+/// Covers both exe (has entry) and lib (no entry); kind field distinguishes them.
 /// Phase 1: JSON with inlined modules.
-/// Phase 2: binary ZLB_MAGIC + MANIFEST + ZBC[n] sections (see docs/design/compilation.md).
-/// Matches Rust <c>package::ZlibFile</c>.
-public sealed record ZlibFile(
-    [property: JsonPropertyName("zlib_version")]  int[]            ZlibVersion,
+/// Phase 2: binary ZBN_MAGIC + MANIFEST + ZBC[n] sections (see docs/design/compilation.md).
+/// Matches Rust <c>metadata::ZbinFile</c>.
+public sealed record ZbinFile(
+    [property: JsonPropertyName("zbin_version")]  int[]            ZbinVersion,
     [property: JsonPropertyName("name")]          string           Name,
     [property: JsonPropertyName("version")]       string           Version,
     [property: JsonPropertyName("kind")]          ZmodKind         Kind,
-    [property: JsonPropertyName("exports")]       List<ZlibExport> Exports,
-    [property: JsonPropertyName("dependencies")]  List<ZlibDep>    Dependencies,
+    [property: JsonPropertyName("exports")]       List<ZbinExport> Exports,
+    [property: JsonPropertyName("dependencies")]  List<ZbinDep>    Dependencies,
     [property: JsonPropertyName("modules")]       List<ZbcFile>    Modules,
     [property: JsonPropertyName("entry")]         string?          Entry = null
 )

@@ -68,7 +68,7 @@ if (argv.Length == 0)
           Options:
             --release              Use profile.release (default: profile.debug)
             --profile <name>       Use a named profile
-            --emit <format>        Override emit format (ir | zbc | zasm | zmod | zlib)
+            --emit <format>        Override emit format (ir | zbc | zasm | zmod | zbin)
 
           Examples:
             z42c build                    # auto-discover *.z42.toml, debug build
@@ -83,7 +83,7 @@ if (argv.Length == 0)
           z42c <source.z42> [options]
 
           Options:
-            --emit <format>        ir | zbc | zasm | zmod | zlib  (default: ir)
+            --emit <format>        ir | zbc | zasm | zmod | zbin  (default: ir)
             --out <path>           Output file path
             --dump-tokens          Print token stream and exit
             --dump-ast             Print AST and exit
@@ -213,18 +213,18 @@ switch (emitMode)
         SingleFileDriver.WriteFile(zmodPath, JsonSerializer.Serialize(zmod, jsonOptions));
         break;
     }
-    case "zlib":
+    case "zbin":
     {
         var zbc        = new ZbcFile(ZbcFile.CurrentVersion, sourceFile, sourceHash, ns, exports, [], irModule);
-        var libExports = exports.Select(e => new ZlibExport($"{ns}.{e}", "func")).ToList();
-        var zlib       = new ZlibFile(ZlibFile.CurrentVersion, ns, "0.1.0",
-                             ZmodKind.Exe, libExports, [], [zbc], $"{ns}.Main");
-        string path    = outPath ?? (defaultBase + ".zlib");
-        SingleFileDriver.WriteFile(path, JsonSerializer.Serialize(zlib, jsonOptions));
+        var binExports = exports.Select(e => new ZbinExport($"{ns}.{e}", "func")).ToList();
+        var zbin       = new ZbinFile(ZbinFile.CurrentVersion, ns, "0.1.0",
+                             ZmodKind.Exe, binExports, [], [zbc], $"{ns}.Main");
+        string path    = outPath ?? (defaultBase + ".zbin");
+        SingleFileDriver.WriteFile(path, JsonSerializer.Serialize(zbin, jsonOptions));
         break;
     }
     default:
-        Console.Error.WriteLine($"error: unknown --emit mode '{emitMode}' (ir | zbc | zmod | zlib)");
+        Console.Error.WriteLine($"error: unknown --emit mode '{emitMode}' (ir | zbc | zmod | zbin)");
         return 1;
 }
 

@@ -14,7 +14,7 @@ public static class Z42TomlFileName
 public enum ProjectKind { Exe, Lib }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EmitKind>))]
-public enum EmitKind { Ir, Zbc, Zmod, Zlib }
+public enum EmitKind { Ir, Zbc, Zmod, Zbin }
 
 [JsonConverter(typeof(JsonStringEnumConverter<ExecModeConfig>))]
 public enum ExecModeConfig { Interp, Jit, Aot }
@@ -49,7 +49,7 @@ public sealed class SourcesConfig
 /// `[build]` table.
 public sealed class BuildConfig
 {
-    public EmitKind       Emit        { get; set; } = EmitKind.Zlib;
+    public EmitKind       Emit        { get; set; } = EmitKind.Zbin;
     public ExecModeConfig Mode        { get; set; } = ExecModeConfig.Interp;
     public bool           Incremental { get; set; } = true;
     public string         OutDir      { get; set; } = "dist";

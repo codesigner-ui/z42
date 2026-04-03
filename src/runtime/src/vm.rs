@@ -16,7 +16,7 @@ impl Vm {
     /// Execute the module's entry point.
     ///
     /// Entry resolution order (first match wins):
-    ///   1. `hint`               — explicit name from artifact metadata (.zmod/.zlib `entry` field)
+    ///   1. `hint`               — explicit name from artifact metadata (.zmod/.zbin `entry` field)
     ///   2. `{module.name}.Main`
     ///   3. `{module.name}.main`
     ///   4. `Main`
