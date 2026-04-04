@@ -1,7 +1,8 @@
 # z42 Language Overview
 
-> 本文档描述 **L1（Bootstrap）** 阶段语法，对应 C# 9–12 子集。
-> 语言演进计划和实现进度见 [`docs/roadmap.md`](../roadmap.md)。
+> 本文档是 **L1（Bootstrap）** 阶段的语法实现参考，面向编译器开发者。
+> 语言设计决策（feature 层面）见 [`docs/features.md`](../features.md)。
+> 演进计划和实现进度见 [`docs/roadmap.md`](../roadmap.md)。
 
 ---
 
@@ -164,9 +165,6 @@ void Greet(string name, string prefix = "Hello") {
     Console.WriteLine($"{prefix}, {name}!");
 }
 
-// 命名参数
-Greet(name: "world", prefix: "Hi");
-
 // 可变参数
 int Sum(params int[] values) {
     int total = 0;
@@ -181,10 +179,6 @@ bool TryParse(string s, out int result) {
     return false;
 }
 
-// 泛型函数
-T Max<T>(T a, T b) where T : IComparable<T> {
-    return a.CompareTo(b) >= 0 ? a : b;
-}
 ```
 
 ---
@@ -365,60 +359,7 @@ if (s is Circle { Radius: > 10 } big) {
 
 ---
 
-## 12. 泛型
-
-```z42
-// 泛型类
-public class Stack<T> {
-    private readonly List<T> _items = new();
-
-    public void Push(T item) => _items.Add(item);
-
-    public T Pop() {
-        if (_items.Count == 0) throw new InvalidOperationException("Stack is empty");
-        var last = _items[^1];
-        _items.RemoveAt(_items.Count - 1);
-        return last;
-    }
-
-    public int Count => _items.Count;
-}
-
-// 泛型约束
-public T Min<T>(T a, T b) where T : IComparable<T> =>
-    a.CompareTo(b) <= 0 ? a : b;
-
-// 多约束
-public class Repository<T> where T : class, IEntity, new() {
-    // ...
-}
-```
-
----
-
-## 13. 委托与 Lambda
-
-```z42
-// 内置委托类型
-Func<int, int, int> add = (a, b) => a + b;
-Action<string> print = s => Console.WriteLine(s);
-Predicate<int> isEven = n => n % 2 == 0;
-
-// Lambda 捕获
-int multiplier = 3;
-Func<int, int> triple = x => x * multiplier;
-
-// LINQ 风格
-var numbers = new[] { 1, 2, 3, 4, 5, 6 };
-var result = numbers
-    .Where(n => n % 2 == 0)
-    .Select(n => n * n)
-    .ToList();   // [4, 16, 36]
-```
-
----
-
-## 14. 异常处理
+## 12. 异常处理
 
 ```z42
 // throw
@@ -446,39 +387,7 @@ public class Z42RuntimeException(string message, int errorCode)
 
 ---
 
-## 15. 异步编程
-
-```z42
-using System.Net.Http;
-
-// async / await（完全对齐 C#）
-async Task<string> FetchAsync(string url) {
-    using var client = new HttpClient();
-    return await client.GetStringAsync(url);
-}
-
-// async void（事件处理器）
-async void OnButtonClick() {
-    var content = await FetchAsync("https://example.com");
-    Console.WriteLine(content[..100]);
-}
-
-// Task.WhenAll 并行
-async Task<string[]> FetchAllAsync(string[] urls) {
-    var tasks = urls.Select(FetchAsync);
-    return await Task.WhenAll(tasks);
-}
-
-// ValueTask（低分配路径）
-async ValueTask<int> GetCachedAsync(string key) {
-    if (_cache.TryGetValue(key, out var v)) return v;
-    return await LoadFromDbAsync(key);
-}
-```
-
----
-
-## 16. 执行模式注解（z42 扩展）
+## 13. 执行模式注解（z42 扩展）
 
 z42 在 C# 基础上新增执行模式注解，对 VM 行为进行提示：
 
@@ -497,7 +406,7 @@ namespace Core.Crypto;
 
 ---
 
-## 17. 热更新注解（z42 扩展）
+## 14. 热更新注解（z42 扩展）
 
 `[HotReload]` 注解标记的命名空间支持运行时函数替换，无需重启 VM。面向游戏脚本等需要快速迭代的场景。
 

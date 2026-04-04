@@ -1,0 +1,246 @@
+# z42 Language Features
+
+> **This document defines language design decisions** — what the language IS, not how it is implemented.
+>
+> - Syntax grammar and code examples: [docs/design/language-overview.md](design/language-overview.md)
+> - Evolution phases and milestones: [docs/roadmap.md](roadmap.md)
+
+Each section states the design decision, rationale, and which phase it belongs to (L1 / L2 / L3).
+
+---
+
+## 1. Type System
+
+**Decision:** Statically typed with local type inference.
+
+- Primitive types: `int` (32-bit), `long` (64-bit), `float` (32-bit), `double` (64-bit), `bool`, `char` (32-bit Unicode), `string`, `void`
+- Numeric aliases for C# compatibility: `sbyte`, `short`, `byte`, `ushort`, `uint`, `ulong`
+- `var` infers the type of a local variable from its initializer
+- User-defined types: `class`, `struct`, `record`, `enum`, `interface`
+
+**Phase:** L1
+
+---
+
+## 2. Null Safety
+
+**Decision:** Nullable types use `T?` syntax (C# style). `Option<T>` is not part of the language.
+
+- Any type can be made nullable with a `?` suffix: `string?`, `int?`
+- `T` is implicitly assignable to `T?`
+- Null-coalescing operator `??` provides a fallback value
+- Null-conditional operator `?.` short-circuits on null
+
+**Rationale:** `T?` is familiar to C# developers and requires no new mental model. `Option<T>` adds expressive power for exhaustive null checking but increases complexity; it may be introduced as an opt-in in L3.
+
+**Phase:** L1 (`T?`, `?.`, `??`) | L3 (possible `Option<T>` addition)
+
+---
+
+## 3. Memory Management
+
+**Decision:** Garbage collected. No ownership, no borrowing, no lifetimes. Ever.
+
+z42 always runs with a GC. The ownership model (Rust-style) is permanently out of scope.
+
+**Rationale:** z42 prioritizes developer productivity and approachability. Ownership systems eliminate GC overhead but impose significant cognitive cost. z42 makes the opposite trade-off.
+
+**Phase:** L1 (fundamental invariant, does not change across phases)
+
+---
+
+## 4. Error Handling
+
+**Decision:** Exceptions in L1; `Result<T, E>` introduced as a complement in L3.
+
+- **L1:** `try` / `catch` / `finally` / `throw`. Custom exception classes via inheritance.
+- **L3:** `Result<T, E>` type with `?` propagation operator. Not a replacement — exceptions remain valid. The two styles coexist.
+
+**Rationale:** Exceptions are familiar and sufficient for L1 semantics. `Result` enables explicit, zero-overhead error paths where control flow via exceptions is undesirable, and fits well with the functional patterns introduced in L3.
+
+**Phase:** L1 (exceptions) | L3 (`Result<T, E>` + `?`)
+
+---
+
+## 5. Type Definitions
+
+### Classes — reference types
+`class` with fields, constructors, methods, auto-properties, and `static` members.
+Single-class inheritance. Multiple interface implementation.
+
+### Structs — value types
+`struct` — stack-allocated, copied on assignment. Intended for small, self-contained data (e.g. `Color`, `Vector2`).
+
+### Records — immutable data types
+`record class` (reference semantics) and `record struct` (value semantics).
+Auto-generated: structural equality, `ToString`, destructuring, and non-destructive update via `with`.
+
+### Interfaces — behavioral contracts
+`interface` defines a named set of method/property signatures. A type can implement multiple interfaces.
+- **L1/L2:** runtime virtual dispatch (vtable)
+- **L3:** `Trait` replaces `interface` as the primary abstraction for zero-overhead static dispatch. `interface` is retained for compatibility.
+
+### Enums
+Simple enums and enums with an explicit underlying integer type (`enum Foo : int`).
+
+### Discriminated unions
+- **L1:** simulated via `abstract record` hierarchy + `switch` pattern matching (no exhaustiveness enforced)
+- **L3:** native algebraic data type (ADT) with exhaustive `match`
+
+**Phase:** L1 (`class`, `struct`, `record`, `interface`, `enum`, abstract record pattern) | L3 (`Trait`, native ADT)
+
+---
+
+## 6. Functions
+
+**Decision:** Top-level functions are supported without a class wrapper. Expression-body shorthand (`=>`). Default parameter values.
+
+- Top-level and member functions
+- Expression body: `int Double(int x) => x * 2;`
+- Default parameter values (expanded at call site)
+- `params` variadic parameters
+
+**Phase:** L1
+
+### Named Parameters (L3)
+Call-site argument labeling: `Greet(name: "z42", prefix: "Hi")`.
+
+**Phase:** L3
+
+### Lambda & Closures (L3)
+Anonymous functions assigned to `Func<>` / `Action<>` delegate types. Closures capture variables from the enclosing scope.
+
+**Phase:** L3
+
+---
+
+## 7. Generics
+
+**Decision:** Type parameters with `where` constraints. Monomorphized at compile time.
+
+```z42
+T Max<T>(T a, T b) where T : IComparable<T> { ... }
+class Stack<T> { ... }
+```
+
+**Rationale:** Generics are required for type-safe collections and algorithms, but depend on a complete type inference and monomorphization pipeline. Deferred to L3 to keep L1 compiler scope manageable.
+
+**L1 workaround:** `List<T>` and `Dictionary<K, V>` are provided via a pseudo-class strategy (hardcoded handling in the type checker and IR codegen) until generic infrastructure is ready.
+
+**Phase:** L3
+
+---
+
+## 8. Collections
+
+**Decision:** `T[]`, `List<T>`, `Dictionary<K, V>` are built-in with language-level syntax support.
+
+| Type | Literal / Construction | Semantics |
+|------|----------------------|-----------|
+| `T[]` | `new T[n]` / `new[] { 1, 2, 3 }` | Fixed-size, contiguous |
+| `List<T>` | `new List<T>()` | Dynamic array |
+| `Dictionary<K, V>` | `new Dictionary<K, V>()` | Hash map |
+
+- L1/L2: pseudo-class implementation inside the compiler (no stdlib dependency)
+- L2 stdlib: `z42.collections` provides native implementations that replace pseudo-class
+
+**Phase:** L1 (syntax + pseudo-class) | L2 (native stdlib `z42.collections`)
+
+---
+
+## 9. Pattern Matching
+
+**Decision:** `switch` expression/statement in L1. Exhaustive `match` in L3.
+
+- **L1 `switch` expression:** supports relational patterns (`> 0`), type patterns (`is Circle c`), and a default arm (`_`). Exhaustiveness is not enforced.
+- **L3 `match` expression:** replaces `switch` for ADT values. All variants must be covered; the compiler rejects non-exhaustive matches.
+
+**Rationale:** Non-exhaustive switch is sufficient for L1 where ADTs are simulated. True exhaustiveness checking requires native ADT support, which is an L3 concern.
+
+**Phase:** L1 (`switch`) | L3 (`match`, exhaustive)
+
+---
+
+## 10. Concurrency
+
+**Decision:** `async` / `await` with `Task` / `ValueTask`. No manual thread management.
+
+- `async Task<T>` marks a function as asynchronous
+- `await` suspends execution until the task completes
+- `Task.WhenAll` / `Task.WhenAny` for structured parallel composition
+
+No raw thread primitives are exposed. Synchronization via `lock` for shared state.
+
+**Phase:** L3
+
+---
+
+## 11. Execution Model
+
+**Decision:** Execution mode is declared per namespace via the `[ExecMode]` annotation. Three modes are supported: `Interp`, `Jit`, `Aot`.
+
+```z42
+[ExecMode(Mode.Interp)]   namespace Scripts.Config;    // always interpreted
+[ExecMode(Mode.Jit)]      namespace Engine.Render;     // JIT compiled
+[ExecMode(Mode.Aot)]      namespace Core.Crypto;       // AOT compiled
+```
+
+Cross-mode calls are transparent — the caller does not need to know how the callee is compiled. The default mode is determined by VM startup configuration.
+
+**Phase:** L1 (annotation + `Interp` mode) | L1 (JIT, Cranelift) | L3 (AOT, LLVM)
+
+---
+
+## 12. Hot Reload
+
+**Decision:** `[HotReload]` annotation on a namespace enables runtime function replacement without restarting the VM.
+
+- Only valid when combined with `[ExecMode(Mode.Interp)]`
+- After a reload, the next call to an updated function executes the new version
+- Intended for game scripts, UI logic, or any scenario requiring rapid iteration
+
+**Phase:** L1 (annotation spec) | L2 (full VM implementation)
+
+---
+
+## 13. Module System
+
+**Decision:** File-scoped `namespace` declaration (C# 10+ style) with `using` imports. No module files separate from source files.
+
+```z42
+namespace Geometry;        // file-scoped, applies to entire file
+using System.Math;
+```
+
+- Each file declares exactly one namespace
+- `using` imports names from another namespace into scope
+- Circular dependencies between namespaces are not allowed
+
+Package distribution via `.zpkg` format is introduced in L2.
+
+**Phase:** L1 (namespace/using) | L2 (package system, `.zpkg`)
+
+---
+
+## 14. Mutability
+
+**Decision:** Variables are mutable by default in L1. Explicit immutability is introduced in L3.
+
+- **L1:** `var x = 42;` — mutable local. All locals are mutable.
+- **L3:** `let x = 42;` — immutable binding. `var` / `mut` for explicit mutability.
+
+**Rationale:** Mutable-by-default matches C# semantics and reduces L1 cognitive overhead. Immutability-by-default is a meaningful ergonomic improvement but depends on the broader L3 type system (particularly Trait and ADT designs settling first).
+
+**Phase:** L1 (mutable default) | L3 (`let` immutable, `mut` explicit)
+
+---
+
+## 15. String Model
+
+**Decision:** `string` is an immutable reference type. `char` is a 32-bit Unicode code point. String interpolation and raw string literals are supported.
+
+- Interpolation: `$"Hello, {name}!"` — expressions evaluated at runtime
+- Raw strings: `"""..."""` (C# 11+ style) — no escape processing
+- `string` is UTF-16 compatible internally; `char` is always a full Unicode scalar value
+
+**Phase:** L1

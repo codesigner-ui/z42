@@ -10,22 +10,23 @@ productivity and performance.
 
 - **Syntax: C# as the baseline** — familiar, structured, and battle-tested
 - **Garbage collected** — no manual memory management; focus on logic, not lifetimes
-- **Dynamic friendliness from Python** — single-file scripts, `eval`, interactive REPL, duck-typed APIs where it makes sense
-- **Best-of-Rust ergonomics** — algebraic enums (ADT), exhaustive `match`, expressive generics with trait-style constraints
 - **Strong static typing with inference** — catch errors at compile time, write less boilerplate
-- **First-class concurrency** — `async`/`await`, structured concurrency, `lock`
-- **Multiple execution modes** — Interpreted, JIT, AOT — mixed freely at the module/function level via `[ExecMode]`
+- **Multiple execution modes** — Interpreted, JIT, AOT — mixed freely at the namespace level via `[ExecMode]`
+- **Ergonomic extensions** — ADT, exhaustive `match`, `Result<T,E>`, Traits — introduced in later phases without breaking the familiar baseline
 
 ## Language At a Glance
 
-| Feature | Design Choice |
-|---------|--------------|
-| Syntax  | C# 9–12 subset (L1 baseline) |
-| Types   | `int`, `long`, `double`, `string`, `bool`, `char`, user-defined classes/structs/records |
-| Null safety | Nullable types `T?`, null-coalescing `??`, null-conditional `?.` |
-| Error handling | `try`/`catch`/`throw` |
+| Feature | Decision |
+|---------|----------|
+| Syntax baseline | C# 9–12 subset |
+| Type system | Static typing with `var` inference |
+| Null safety | `T?` nullable types, `??` coalescing, `?.` conditional |
+| Error handling | `try`/`catch`/`throw`; `Result<T,E>` in L3 |
 | Memory | Garbage collected — no ownership, no lifetimes |
-| Execution | Interpreter / JIT / AOT — mixed freely at namespace level via `[ExecMode]` |
+| Execution modes | `Interp` / `JIT` / `AOT` — per namespace via `[ExecMode]` |
+| Concurrency | `async`/`await` + `Task` — introduced in L3 |
+
+See [`docs/features.md`](docs/features.md) for the full language design decisions.
 
 ## Repository Layout
 
@@ -34,8 +35,9 @@ z42/
 ├── src/
 │   ├── compiler/     # Lexer, parser, type checker, IR codegen — C# (bootstrap)
 │   └── runtime/      # Virtual machine (interpreter + JIT + AOT) — Rust
-├── docs/roadmap.md   # Language evolution phases and milestones
-├── docs/design/      # Language specification documents
+├── docs/features.md  # Language design decisions (what the language IS)
+├── docs/roadmap.md   # Evolution phases and implementation milestones
+├── docs/design/      # Implementation reference (syntax grammar, IR mappings)
 └── examples/         # .z42 example source files
 ```
 
