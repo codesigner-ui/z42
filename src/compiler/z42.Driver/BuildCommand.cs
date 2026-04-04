@@ -1,85 +1,102 @@
+using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Z42.Project;
 using Z42.Compiler.Codegen;
 using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.Compiler.TypeCheck;
 using Z42.IR;
+using Z42.Project;
 
 namespace Z42.Driver;
 
 static class BuildCommand
 {
-    public static int Run(string[] args, JsonSerializerOptions jsonOptions)
+    // ── Command factories ─────────────────────────────────────────────────────
+
+    public static Command Create(JsonSerializerOptions jsonOptions)
     {
-        // ── Parse build flags ─────────────────────────────────────────────────
-        bool    useRelease   = false;
-        string? explicitToml = null;
-        string? exeFilter    = null;
+        var cmd         = new Command("build", "Build a z42 project from a manifest");
+        var manifestArg = ManifestArg();
+        var releaseOpt  = new Option<bool>("--release", "Build with the release profile");
+        var binOpt      = new Option<string?>("--bin", "Build only the named [[exe]] target");
 
-        for (int i = 0; i < args.Length; i++)
-        {
-            switch (args[i])
-            {
-                case "--release":
-                    useRelease = true;
-                    break;
-                case "--exe" when i + 1 < args.Length:
-                    exeFilter = args[++i];
-                    break;
-                default:
-                    if (args[i].EndsWith(".z42.toml", StringComparison.OrdinalIgnoreCase))
-                        explicitToml = args[i];
-                    break;
-            }
-        }
+        cmd.AddArgument(manifestArg);
+        cmd.AddOption(releaseOpt);
+        cmd.AddOption(binOpt);
 
-        // ── Discover & load manifest ──────────────────────────────────────────
-        string tomlPath;
-        ProjectManifest manifest;
-        try
+        cmd.SetHandler((InvocationContext ctx) =>
         {
-            tomlPath = ProjectManifest.Discover(Directory.GetCurrentDirectory(), explicitToml);
-            manifest = ProjectManifest.Load(tomlPath);
-        }
-        catch (ManifestException ex)
+            var manifest = ctx.ParseResult.GetValueForArgument(manifestArg);
+            var release  = ctx.ParseResult.GetValueForOption(releaseOpt);
+            var bin      = ctx.ParseResult.GetValueForOption(binOpt);
+            ctx.ExitCode = Run(manifest, release, bin, jsonOptions);
+        });
+
+        return cmd;
+    }
+
+    public static Command CreateCheck()
+    {
+        var cmd         = new Command("check", "Type-check a project without emitting artifacts");
+        var manifestArg = ManifestArg();
+        var binOpt      = new Option<string?>("--bin", "Check only the named [[exe]] target");
+
+        cmd.AddArgument(manifestArg);
+        cmd.AddOption(binOpt);
+
+        cmd.SetHandler((InvocationContext ctx) =>
         {
-            Console.Error.WriteLine(ex.Message);
-            return 1;
-        }
+            var manifest = ctx.ParseResult.GetValueForArgument(manifestArg);
+            var bin      = ctx.ParseResult.GetValueForOption(binOpt);
+            ctx.ExitCode = RunCheck(manifest, bin);
+        });
+
+        return cmd;
+    }
+
+    static Argument<string?> ManifestArg() =>
+        new("manifest", () => null, "Path to .z42.toml (auto-discovered if omitted)")
+        {
+            Arity = ArgumentArity.ZeroOrOne
+        };
+
+    // ── Build ─────────────────────────────────────────────────────────────────
+
+    public static int Run(
+        string?               explicitToml,
+        bool                  useRelease,
+        string?               binFilter,
+        JsonSerializerOptions jsonOptions)
+    {
+        if (!TryLoadManifest(explicitToml, out var tomlPath, out var manifest)) return 1;
 
         string profileLabel = useRelease ? "release" : "debug";
         string projectDir   = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
         string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
 
-        // ── Route: multi-exe vs single-target ────────────────────────────────
-        if (manifest.Project.Kind == Z42.Project.ProjectKind.Multi)
-            return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, exeFilter, jsonOptions);
+        if (manifest.Project.Kind == ProjectKind.Multi)
+            return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, binFilter, jsonOptions);
 
-        // ── Single-target build ───────────────────────────────────────────────
-        if (exeFilter is not null)
+        if (binFilter is not null)
         {
-            Console.Error.WriteLine(
-                "error: --exe flag is only valid for projects with [[exe]] targets");
+            Console.Error.WriteLine("error: --bin is only valid for projects with [[exe]] targets");
             return 1;
         }
 
-        IReadOnlyList<string> sourceFiles;
-        try   { sourceFiles = manifest.ResolveSourceFiles(projectDir); }
-        catch (ManifestException ex) { Console.Error.WriteLine(ex.Message); return 1; }
+        if (!TryResolveFiles(manifest, projectDir, null, out var sourceFiles)) return 1;
 
         Console.Error.WriteLine(
-            $"Building {manifest.Project.Name} v{manifest.Project.Version} " +
-            $"[{profileLabel}] ({sourceFiles.Count} file(s))");
+            $"   Compiling {manifest.Project.Name} v{manifest.Project.Version} [{profileLabel}]");
 
         bool pack = manifest.ResolvePack(useRelease);
         return BuildTarget(
             manifest.Project.Name,
             manifest.Project.Version,
-            manifest.Project.Kind == Z42.Project.ProjectKind.Lib ? ZpkgKind.Lib : ZpkgKind.Exe,
+            manifest.Project.Kind == ProjectKind.Lib ? ZpkgKind.Lib : ZpkgKind.Exe,
             manifest.Project.Entry,
             sourceFiles,
             pack,
@@ -88,61 +105,92 @@ static class BuildCommand
             jsonOptions);
     }
 
+    // ── Check ─────────────────────────────────────────────────────────────────
+
+    public static int RunCheck(string? explicitToml, string? binFilter)
+    {
+        if (!TryLoadManifest(explicitToml, out var tomlPath, out var manifest)) return 1;
+
+        string projectDir = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
+
+        Console.Error.WriteLine(
+            $"    Checking {manifest.Project.Name} v{manifest.Project.Version}");
+
+        var fileSets = new List<IReadOnlyList<string>>();
+
+        if (manifest.Project.Kind == ProjectKind.Multi)
+        {
+            var targets = manifest.ExeTargets;
+            if (binFilter is not null)
+            {
+                targets = targets.Where(t => t.Name == binFilter).ToList();
+                if (targets.Count == 0)
+                { Console.Error.WriteLine($"error: no [[exe]] named '{binFilter}'"); return 1; }
+            }
+            foreach (var t in targets)
+            {
+                if (!TryResolveFiles(manifest, projectDir, t, out var f)) return 1;
+                fileSets.Add(f);
+            }
+        }
+        else
+        {
+            if (binFilter is not null)
+            { Console.Error.WriteLine("error: --bin is only valid for projects with [[exe]] targets"); return 1; }
+            if (!TryResolveFiles(manifest, projectDir, null, out var f)) return 1;
+            fileSets.Add(f);
+        }
+
+        int errors = fileSets
+            .SelectMany(s => s)
+            .Count(file => !CheckFile(file));
+
+        if (errors > 0) { Console.Error.WriteLine($"error: check failed ({errors} file(s) with errors)"); return 1; }
+        Console.Error.WriteLine($"    Finished checking → ok");
+        return 0;
+    }
+
+    // ── Multi-exe build ───────────────────────────────────────────────────────
+
     static int BuildMultiExe(
-        ProjectManifest manifest,
-        string projectDir,
-        string outDir,
-        bool useRelease,
-        string profileLabel,
-        string? exeFilter,
+        ProjectManifest       manifest,
+        string                projectDir,
+        string                outDir,
+        bool                  useRelease,
+        string                profileLabel,
+        string?               binFilter,
         JsonSerializerOptions jsonOptions)
     {
         var targets = manifest.ExeTargets;
-
-        if (exeFilter is not null)
+        if (binFilter is not null)
         {
-            targets = targets.Where(t => t.Name == exeFilter).ToList();
+            targets = targets.Where(t => t.Name == binFilter).ToList();
             if (targets.Count == 0)
-            {
-                Console.Error.WriteLine($"error: no [[exe]] named '{exeFilter}'");
-                return 1;
-            }
+            { Console.Error.WriteLine($"error: no [[exe]] named '{binFilter}'"); return 1; }
         }
 
         Console.Error.WriteLine(
-            $"Building {manifest.Project.Name} v{manifest.Project.Version} " +
+            $"   Compiling {manifest.Project.Name} v{manifest.Project.Version} " +
             $"[{profileLabel}] ({targets.Count} target(s))");
 
         int errors = 0;
         foreach (var target in targets)
         {
-            Console.Error.WriteLine($"  Compiling {target.Name} ({target.Entry})");
-
-            IReadOnlyList<string> sourceFiles;
-            try   { sourceFiles = manifest.ResolveSourceFiles(projectDir, target); }
-            catch (ManifestException ex) { Console.Error.WriteLine(ex.Message); errors++; continue; }
-
+            Console.Error.WriteLine($"   Compiling {target.Name} ({target.Entry})");
+            if (!TryResolveFiles(manifest, projectDir, target, out var sourceFiles))
+            { errors++; continue; }
             bool pack = manifest.ResolvePack(useRelease, target.Pack);
-
-            if (BuildTarget(
-                    target.Name,
-                    manifest.Project.Version,
-                    ZpkgKind.Exe,
-                    target.Entry,
-                    sourceFiles,
-                    pack,
-                    projectDir,
-                    outDir,
-                    jsonOptions) != 0)
+            if (BuildTarget(target.Name, manifest.Project.Version, ZpkgKind.Exe,
+                    target.Entry, sourceFiles, pack, projectDir, outDir, jsonOptions) != 0)
                 errors++;
         }
 
         if (errors > 0) { Console.Error.WriteLine($"error: build failed ({errors} error(s))"); return 1; }
-        Console.Error.WriteLine($"Build succeeded → {outDir}");
+        Console.Error.WriteLine($"    Finished [{profileLabel}] → {outDir}");
         return 0;
     }
 
-    // ── Build a single named target → dist/<name>.zpkg ────────────────────────
+    // ── Single target build ───────────────────────────────────────────────────
 
     static int BuildTarget(
         string                name,
@@ -155,7 +203,7 @@ static class BuildCommand
         string                outDir,
         JsonSerializerOptions jsonOptions)
     {
-        var units = new List<CompiledUnit>();
+        var units  = new List<CompiledUnit>();
         int errors = 0;
 
         foreach (var sourceFile in sourceFiles)
@@ -166,12 +214,8 @@ static class BuildCommand
         }
 
         if (errors > 0)
-        {
-            Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)");
-            return 1;
-        }
+        { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return 1; }
 
-        // Assemble .zpkg
         string cacheDir = Path.Combine(projectDir, ".cache");
         var exports = units
             .SelectMany(u => u.Exports.Select(e => new ZpkgExport($"{u.Namespace}.{e}", "func")))
@@ -194,7 +238,6 @@ static class BuildCommand
         }
         else
         {
-            // Write per-file .zbc into .cache/
             var fileEntries = new List<ZpkgFileEntry>();
             foreach (var unit in units)
             {
@@ -225,11 +268,11 @@ static class BuildCommand
         string zpkgPath = Path.Combine(outDir, name + ".zpkg");
         File.WriteAllText(zpkgPath, JsonSerializer.Serialize(zpkg, jsonOptions));
         Console.Error.WriteLine($"wrote → {zpkgPath}");
-        Console.Error.WriteLine($"Build succeeded → {outDir}");
+        Console.Error.WriteLine($"    Finished → {outDir}");
         return 0;
     }
 
-    // ── Per-file compilation ──────────────────────────────────────────────────
+    // ── Per-file helpers ──────────────────────────────────────────────────────
 
     static CompiledUnit? CompileFile(string sourceFile)
     {
@@ -244,7 +287,7 @@ static class BuildCommand
         catch (ParseException ex)
         {
             Console.Error.WriteLine(
-                $"parse error at {ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
+                $"error[E0001]: {Path.GetFileName(sourceFile)}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
             return null;
         }
 
@@ -254,16 +297,77 @@ static class BuildCommand
 
         IrModule irModule;
         try   { irModule = new IrGen().Generate(cu); }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"codegen error: {ex.Message}");
-            return null;
-        }
+        catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return null; }
 
         string ns         = cu.Namespace ?? "main";
         string sourceHash = Sha256Hex(source);
         var    exports    = irModule.Functions.Select(f => f.Name).ToList();
         return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule);
+    }
+
+    static bool CheckFile(string sourceFile)
+    {
+        string source;
+        try   { source = File.ReadAllText(sourceFile); }
+        catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
+
+        var tokens = new Lexer(source, sourceFile).Tokenize();
+
+        CompilationUnit cu;
+        try   { cu = new Parser(tokens).ParseCompilationUnit(); }
+        catch (ParseException ex)
+        {
+            Console.Error.WriteLine(
+                $"error[E0001]: {Path.GetFileName(sourceFile)}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
+            return false;
+        }
+
+        var diags = new DiagnosticBag();
+        new TypeChecker(diags).Check(cu);
+        return !diags.PrintAll();
+    }
+
+    // ── Shared helpers ────────────────────────────────────────────────────────
+
+    static bool TryLoadManifest(
+        string? explicitToml,
+        out string tomlPath,
+        out ProjectManifest manifest)
+    {
+        try
+        {
+            tomlPath = ProjectManifest.Discover(Directory.GetCurrentDirectory(), explicitToml);
+            manifest = ProjectManifest.Load(tomlPath);
+            return true;
+        }
+        catch (ManifestException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            tomlPath = "";
+            manifest = null!;
+            return false;
+        }
+    }
+
+    static bool TryResolveFiles(
+        ProjectManifest manifest,
+        string projectDir,
+        ExeTarget? target,
+        out IReadOnlyList<string> files)
+    {
+        try
+        {
+            files = target is null
+                ? manifest.ResolveSourceFiles(projectDir)
+                : manifest.ResolveSourceFiles(projectDir, target);
+            return true;
+        }
+        catch (ManifestException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            files = [];
+            return false;
+        }
     }
 
     static string Sha256Hex(string text)
@@ -273,7 +377,7 @@ static class BuildCommand
     }
 }
 
-// ── Compiled unit (per-file result) ──────────────────────────────────────────
+// ── Compiled unit ─────────────────────────────────────────────────────────────
 
 sealed record CompiledUnit(
     string       SourceFile,

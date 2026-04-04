@@ -23,8 +23,17 @@ examples/       # .z42 示例源文件
 dotnet build src/compiler/z42.slnx
 cargo build --manifest-path src/runtime/Cargo.toml
 
-# 运行编译器
-dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc|zmod|zlib]
+# 运行编译器（单文件）
+dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc|zasm] [-o <out>]
+
+# 运行编译器（项目模式）
+dotnet run --project src/compiler/z42.Driver -- build [<name>.z42.toml] [--release] [--bin <name>]
+dotnet run --project src/compiler/z42.Driver -- check [<name>.z42.toml] [--bin <name>]
+
+# 其他工具命令
+dotnet run --project src/compiler/z42.Driver -- disasm <file.zbc> [-o <file.zasm>]
+dotnet run --project src/compiler/z42.Driver -- explain <ERROR_CODE>
+dotnet run --project src/compiler/z42.Driver -- errors
 
 # 运行 VM
 cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]

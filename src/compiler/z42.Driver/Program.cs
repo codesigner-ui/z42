@@ -1,13 +1,16 @@
+using System.CommandLine;
+using System.CommandLine.Invocation;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Z42.Compiler.Codegen;
 using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
+using Z42.Driver;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
-using Z42.Driver;
 
 var jsonOptions = new JsonSerializerOptions
 {
@@ -17,199 +20,188 @@ var jsonOptions = new JsonSerializerOptions
     Converters                = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
 };
 
-var argv = Environment.GetCommandLineArgs()[1..];
+// ── Root command ──────────────────────────────────────────────────────────────
 
-// ── --explain / --list-errors ─────────────────────────────────────────────────
+var rootCmd = new RootCommand("z42c — the z42 compiler");
 
-if (argv.Length >= 2 && argv[0] == "--explain")
+// ── Subcommands ───────────────────────────────────────────────────────────────
+
+rootCmd.AddCommand(BuildCommand.Create(jsonOptions));
+rootCmd.AddCommand(BuildCommand.CreateCheck());
+
+// disasm
 {
-    Console.WriteLine(DiagnosticCatalog.Explain(argv[1].ToUpperInvariant()));
-    return 0;
-}
-
-if (argv.Length >= 1 && argv[0] == "--list-errors")
-{
-    Console.WriteLine(DiagnosticCatalog.ListAll());
-    return 0;
-}
-
-// ── --disassemble ─────────────────────────────────────────────────────────────
-
-if (argv.Length >= 2 && argv[0] == "--disassemble")
-{
-    string zbcFile = argv[1];
-    if (!File.Exists(zbcFile)) { Console.Error.WriteLine($"error: file not found: {zbcFile}"); return 1; }
-    try
+    var disasmCmd = new Command("disasm", "Disassemble a .zbc file to z42 assembly (.zasm)");
+    var fileArg      = new Argument<FileInfo>("file", "The .zbc binary file to disassemble");
+    var disasmOutOpt = new Option<FileInfo?>(["-o", "--output"], "Output .zasm path (default: beside input)");
+    disasmCmd.AddArgument(fileArg);
+    disasmCmd.AddOption(disasmOutOpt);
+    disasmCmd.SetHandler((InvocationContext ctx) =>
     {
-        var module = ZbcReader.Read(File.ReadAllBytes(zbcFile));
-        string zasm     = ZasmWriter.Write(module);
-        string zasmPath = argv.Length >= 4 && argv[2] == "--out" ? argv[3]
-                        : Path.ChangeExtension(zbcFile, ".zasm");
-        SingleFileDriver.WriteFile(zasmPath, zasm);
-    }
-    catch (Exception ex) { Console.Error.WriteLine($"error: {ex.Message}"); return 1; }
-    return 0;
+        var zbcFile = ctx.ParseResult.GetValueForArgument(fileArg);
+        var outFile = ctx.ParseResult.GetValueForOption(disasmOutOpt);
+        if (!zbcFile.Exists)
+        {
+            Console.Error.WriteLine($"error: file not found: {zbcFile.FullName}");
+            ctx.ExitCode = 1;
+            return;
+        }
+        try
+        {
+            var    module  = ZbcReader.Read(File.ReadAllBytes(zbcFile.FullName));
+            string zasm    = ZasmWriter.Write(module);
+            string outPath = outFile?.FullName ?? Path.ChangeExtension(zbcFile.FullName, ".zasm");
+            SingleFileDriver.WriteFile(outPath, zasm);
+        }
+        catch (Exception ex) { Console.Error.WriteLine($"error: {ex.Message}"); ctx.ExitCode = 1; }
+    });
+    rootCmd.AddCommand(disasmCmd);
 }
 
-// ── No args: show help ────────────────────────────────────────────────────────
-
-if (argv.Length == 0)
+// explain
 {
-    Console.Error.WriteLine("""
-        z42c — z42 compiler
-
-        ╔══════════════════════════════════════════════════════════════════╗
-        ║  Project mode  —  build a complete project from z42.toml        ║
-        ║  Use this for: multi-file builds, profiles, output to dist/     ║
-        ╚══════════════════════════════════════════════════════════════════╝
-
-          z42c build [<name>.z42.toml] [options]
-
-          Options:
-            --release              Use profile.release (default: profile.debug)
-            --profile <name>       Use a named profile
-
-          Examples:
-            z42c build                    # auto-discover *.z42.toml, debug build (indexed .zpkg)
-            z42c build --release          # release build (packed .zpkg)
-            z42c build hello.z42.toml     # explicit project file
-
-        ╔══════════════════════════════════════════════════════════════════╗
-        ║  Single-file mode  —  compile one .z42 file directly            ║
-        ║  Use this for: quick tests, debugging, exploring the pipeline   ║
-        ╚══════════════════════════════════════════════════════════════════╝
-
-          z42c <source.z42> [options]
-
-          Options:
-            --emit <format>        ir | zbc | zasm  (default: ir)
-            --out <path>           Output file path
-            --dump-tokens          Print token stream and exit
-            --dump-ast             Print AST and exit
-            --dump-ir              Print IR as JSON
-
-          Examples:
-            z42c hello.z42                      # compile to .z42ir.json
-            z42c hello.z42 --emit zbc           # compile to binary bytecode
-            z42c hello.z42 --dump-tokens        # inspect lexer output
-
-        ╔══════════════════════════════════════════════════════════════════╗
-        ║  Toolchain utilities                                            ║
-        ╚══════════════════════════════════════════════════════════════════╝
-
-          z42c --disassemble <file.zbc> [--out <file.zasm>]
-          z42c --explain <ERROR_CODE>
-          z42c --list-errors
-        """);
-    return 1;
-}
-
-// ── Route: project mode ───────────────────────────────────────────────────────
-
-if (argv[0] == "build")
-    return BuildCommand.Run(argv[1..], jsonOptions);
-
-// ── Route: single-file mode ───────────────────────────────────────────────────
-
-string sourceFile = argv[0];
-if (!File.Exists(sourceFile))
-{
-    Console.Error.WriteLine($"error: file not found: {sourceFile}");
-    return 1;
-}
-
-// Parse flags
-string emitMode = "ir";
-string? outPath = null;
-for (int i = 1; i < argv.Length - 1; i++)
-{
-    if (argv[i] == "--emit") { emitMode = argv[i + 1]; }
-    if (argv[i] == "--out")  { outPath  = argv[i + 1]; }
-}
-
-string source = File.ReadAllText(sourceFile);
-
-// Lex
-var lexer  = new Lexer(source, sourceFile);
-var tokens = lexer.Tokenize();
-
-if (argv.Contains("--dump-tokens"))
-{
-    foreach (var tok in tokens) Console.WriteLine(tok);
-    return 0;
-}
-
-// Parse
-Z42.Compiler.Parser.CompilationUnit cu;
-try   { cu = new Z42.Compiler.Parser.Parser(tokens).ParseCompilationUnit(); }
-catch (ParseException ex)
-{
-    Console.Error.WriteLine($"parse error at {ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
-    return 1;
-}
-
-if (argv.Contains("--dump-ast")) { Console.WriteLine(cu); return 0; }
-
-// TypeCheck
-var diags = new Z42.Compiler.Diagnostics.DiagnosticBag();
-new Z42.Compiler.TypeCheck.TypeChecker(diags).Check(cu);
-if (diags.PrintAll()) return 1;
-
-// Codegen
-Z42.IR.IrModule irModule;
-try   { irModule = new Z42.Compiler.Codegen.IrGen().Generate(cu); }
-catch (Exception ex) { Console.Error.WriteLine($"codegen error: {ex.Message}"); return 1; }
-
-if (argv.Contains("--dump-ir"))
-    Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
-
-// Emit (single-file: output beside source file unless --out specified)
-string ns         = cu.Namespace ?? "main";
-string sourceHash = SingleFileDriver.Sha256Hex(source);
-var    exports    = irModule.Functions.Select(f => f.Name).ToList();
-
-string absSource   = Path.GetFullPath(sourceFile);
-string defaultBase = outPath is not null
-    ? Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outPath)) ?? ".", Path.GetFileNameWithoutExtension(outPath))
-    : Path.ChangeExtension(absSource, null);
-
-switch (emitMode)
-{
-    case "ir":
+    var explainCmd = new Command("explain", "Explain a diagnostic error code");
+    var codeArg    = new Argument<string>("code", "Error code to explain (e.g. E0001)");
+    explainCmd.AddArgument(codeArg);
+    explainCmd.SetHandler((InvocationContext ctx) =>
     {
-        string path = outPath ?? (defaultBase + ".z42ir.json");
-        SingleFileDriver.WriteFile(path, JsonSerializer.Serialize(irModule, jsonOptions));
-        break;
-    }
-    case "zbc":
-    {
-        string path = outPath ?? (defaultBase + ".zbc");
-        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-        File.WriteAllBytes(path, Z42.IR.BinaryFormat.ZbcWriter.Write(irModule, exports));
-        Console.Error.WriteLine($"wrote → {path}");
-        break;
-    }
-    case "zasm":
-    {
-        string path = outPath ?? (defaultBase + ".zasm");
-        SingleFileDriver.WriteFile(path, ZasmWriter.Write(irModule));
-        break;
-    }
-    default:
-        Console.Error.WriteLine($"error: unknown --emit mode '{emitMode}' (ir | zbc | zasm)");
-        return 1;
+        var code = ctx.ParseResult.GetValueForArgument(codeArg);
+        Console.WriteLine(DiagnosticCatalog.Explain(code.ToUpperInvariant()));
+    });
+    rootCmd.AddCommand(explainCmd);
 }
 
-return 0;
+// errors
+{
+    var errorsCmd = new Command("errors", "List all known diagnostic error codes");
+    errorsCmd.SetHandler(() => Console.WriteLine(DiagnosticCatalog.ListAll()));
+    rootCmd.AddCommand(errorsCmd);
+}
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
+// ── Root: single-file compilation ─────────────────────────────────────────────
+
+var sourceArg  = new Argument<FileInfo?>("source", () => null, "Source .z42 file to compile");
+sourceArg.Arity = ArgumentArity.ZeroOrOne;
+var emitOpt    = new Option<string>("--emit", () => "ir", "Output format: ir | zbc | zasm");
+var outOpt     = new Option<FileInfo?>(["-o", "--output"], "Output file path");
+var dumpTokOpt = new Option<bool>("--dump-tokens", "Print token stream and exit");
+var dumpAstOpt = new Option<bool>("--dump-ast",    "Print AST and exit");
+var dumpIrOpt  = new Option<bool>("--dump-ir",     "Print IR as JSON alongside emit");
+
+rootCmd.AddArgument(sourceArg);
+rootCmd.AddOption(emitOpt);
+rootCmd.AddOption(outOpt);
+rootCmd.AddOption(dumpTokOpt);
+rootCmd.AddOption(dumpAstOpt);
+rootCmd.AddOption(dumpIrOpt);
+
+rootCmd.SetHandler((InvocationContext ctx) =>
+{
+    var source = ctx.ParseResult.GetValueForArgument(sourceArg);
+    if (source is null)
+    {
+        Console.Error.WriteLine("error: no input file.\n\nRun `z42c --help` for usage.");
+        ctx.ExitCode = 1;
+        return;
+    }
+    if (!source.Exists)
+    {
+        Console.Error.WriteLine($"error[E0000]: file not found: {source.FullName}");
+        ctx.ExitCode = 1;
+        return;
+    }
+    var emit    = ctx.ParseResult.GetValueForOption(emitOpt)!;
+    var outFile = ctx.ParseResult.GetValueForOption(outOpt);
+    var dumpTok = ctx.ParseResult.GetValueForOption(dumpTokOpt);
+    var dumpAst = ctx.ParseResult.GetValueForOption(dumpAstOpt);
+    var dumpIr  = ctx.ParseResult.GetValueForOption(dumpIrOpt);
+    ctx.ExitCode = SingleFileDriver.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, jsonOptions);
+});
+
+return await rootCmd.InvokeAsync(args);
+
+// ── Single-file driver ────────────────────────────────────────────────────────
 
 static class SingleFileDriver
 {
-    public static string Sha256Hex(string text)
+    public static int Run(
+        FileInfo              source,
+        string                emit,
+        string?               outPath,
+        bool                  dumpTokens,
+        bool                  dumpAst,
+        bool                  dumpIr,
+        JsonSerializerOptions jsonOptions)
     {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-        return "sha256:" + Convert.ToHexString(bytes).ToLowerInvariant();
+        string sourceText;
+        try   { sourceText = File.ReadAllText(source.FullName); }
+        catch { Console.Error.WriteLine($"error: cannot read {source.FullName}"); return 1; }
+
+        var tokens = new Lexer(sourceText, source.FullName).Tokenize();
+        if (dumpTokens)
+        {
+            foreach (var tok in tokens) Console.WriteLine(tok);
+            return 0;
+        }
+
+        CompilationUnit cu;
+        try   { cu = new Parser(tokens).ParseCompilationUnit(); }
+        catch (ParseException ex)
+        {
+            Console.Error.WriteLine($"error[E0001]: {source.Name}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
+            return 1;
+        }
+
+        if (dumpAst) { Console.WriteLine(cu); return 0; }
+
+        var diags = new DiagnosticBag();
+        new Z42.Compiler.TypeCheck.TypeChecker(diags).Check(cu);
+        if (diags.PrintAll()) return 1;
+
+        IrModule irModule;
+        try   { irModule = new IrGen().Generate(cu); }
+        catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return 1; }
+
+        if (dumpIr) Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
+
+        string ns         = cu.Namespace ?? "main";
+        string sourceHash = Sha256Hex(sourceText);
+        var    exports    = irModule.Functions.Select(f => f.Name).ToList();
+
+        string defaultBase = outPath is not null
+            ? Path.Combine(
+                Path.GetDirectoryName(Path.GetFullPath(outPath)) ?? ".",
+                Path.GetFileNameWithoutExtension(outPath))
+            : Path.ChangeExtension(source.FullName, null);
+
+        switch (emit)
+        {
+            case "ir":
+            {
+                string path = outPath ?? (defaultBase + ".z42ir.json");
+                WriteFile(path, JsonSerializer.Serialize(irModule, jsonOptions));
+                break;
+            }
+            case "zbc":
+            {
+                string path = outPath ?? (defaultBase + ".zbc");
+                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
+                File.WriteAllBytes(path, ZbcWriter.Write(irModule, exports));
+                Console.Error.WriteLine($"wrote → {path}");
+                break;
+            }
+            case "zasm":
+            {
+                string path = outPath ?? (defaultBase + ".zasm");
+                WriteFile(path, ZasmWriter.Write(irModule));
+                break;
+            }
+            default:
+                Console.Error.WriteLine($"error: unknown --emit format '{emit}' (valid: ir | zbc | zasm)");
+                return 1;
+        }
+
+        return 0;
     }
 
     public static void WriteFile(string path, string content)
@@ -217,5 +209,11 @@ static class SingleFileDriver
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
         File.WriteAllText(path, content);
         Console.Error.WriteLine($"wrote → {path}");
+    }
+
+    static string Sha256Hex(string text)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
+        return "sha256:" + Convert.ToHexString(bytes).ToLowerInvariant();
     }
 }

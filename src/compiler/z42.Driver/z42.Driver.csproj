@@ -6,6 +6,10 @@
     <ProjectReference Include="..\z42.Project\z42.Project.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0-beta4.22272.1" />
+  </ItemGroup>
+
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
