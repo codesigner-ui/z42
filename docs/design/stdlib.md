@@ -171,12 +171,17 @@ Rules:
 ### stdlib Search Path (VM)
 
 When the VM needs to load a stdlib module it searches in order:
-1. `$Z42_STDLIB` environment variable (if set)
-2. `<vm-binary-dir>/stdlib/`
-3. `~/.z42/stdlib/`
+1. `$Z42_LIBS` environment variable (if set and directory exists)
+2. `<vm-binary-dir>/../libs/`  (adjacent layout: `artifacts/z42/bin/z42vm` → `artifacts/z42/libs/`)
+3. `<cwd>/artifacts/z42/libs/`  (development: `cargo run` from project root)
 
-Each path is expected to contain `.zbc` files named `<module-name>.zbc`
-(e.g., `z42.io.zbc`).
+Each path is expected to contain files named `<module-name>.zbc` or `<module-name>.zpkg`.
+Both formats are accepted; `.zpkg` (packed mode) is preferred when both exist as it
+carries version metadata.
+
+**Producing the `libs/` directory:** run `scripts/package.sh` from the project root.
+This builds the VM binary and populates `artifacts/z42/libs/` with stdlib artifacts.
+Until M7 (`[Native]` attribute support), the `.zbc`/`.zpkg` files are placeholders.
 
 ---
 

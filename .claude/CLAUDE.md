@@ -38,12 +38,17 @@ dotnet run --project src/compiler/z42.Driver -- errors
 # 运行 VM
 cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]
 
+# 打包（VM binary + stdlib libs 占位产物 → artifacts/z42/）
+./scripts/package.sh            # debug build
+./scripts/package.sh release    # release build
+
 # 测试（编译器 golden tests + VM interp/jit 两种模式）
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ./scripts/test-vm.sh
 ```
 
 > 修改编译器后，先 `--emit ir` 重新生成 `.z42ir.json`，再跑 `./scripts/test-vm.sh`。
+> `artifacts/z42/` 已在 `.gitignore` 中，不纳入版本控制。
 
 ## 实现计划
 
