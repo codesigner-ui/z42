@@ -158,13 +158,51 @@ public static class ExecModes
     };
 }
 
-/// <summary>Section tag constants (4-byte little-endian ASCII).</summary>
+/// <summary>
+/// Flags stored in the zbc file header at bytes[8..9].
+/// bit 0 STRIPPED: metadata (SIGS/EXPT/IMPT) moved to zpkg; file requires zpkg index.
+/// bit 1 HAS_DEBUG: file contains a DBUG section with source-map information.
+/// </summary>
+[Flags]
+public enum ZbcFlags : ushort
+{
+    None     = 0x00,
+    Stripped = 0x01,
+    HasDebug = 0x02,
+}
+
+/// <summary>
+/// Section tag constants (4-byte ASCII).
+///
+/// Section layout in a zbc file (all modes):
+///   NSPC  — namespace string; always first (fixed position for fast scan)
+///   STRS  — full string heap (full mode only)
+///   TYPE  — class descriptors (full mode only)
+///   SIGS  — function signature table (full mode only)
+///   IMPT  — import table (full mode only)
+///   EXPT  — export table (full mode only)
+///   FUNC  — function bodies, indexed by position (both modes)
+///   BSTR  — body-only string heap (stripped mode only, replaces STRS)
+///   DBUG  — debug info / source maps (optional, flags.HAS_DEBUG=1)
+/// </summary>
 public static class SectionTags
 {
-    public static readonly byte[] Strp = "STRP"u8.ToArray();
-    public static readonly byte[] Type = "TYPE"u8.ToArray();
-    public static readonly byte[] Func = "FUNC"u8.ToArray();
-    public static readonly byte[] Expo = "EXPO"u8.ToArray();
+    // ── Present in both modes ─────────────────────────────────────────────────
+    public static readonly byte[] Nspc = "NSPC"u8.ToArray();  // namespace (always first)
+    public static readonly byte[] Func = "FUNC"u8.ToArray();  // function bodies
+
+    // ── Full mode only ────────────────────────────────────────────────────────
+    public static readonly byte[] Strs = "STRS"u8.ToArray();  // string heap
+    public static readonly byte[] Type = "TYPE"u8.ToArray();  // class descriptors
+    public static readonly byte[] Sigs = "SIGS"u8.ToArray();  // function signatures
+    public static readonly byte[] Impt = "IMPT"u8.ToArray();  // import table
+    public static readonly byte[] Expt = "EXPT"u8.ToArray();  // export table
+
+    // ── Stripped mode only ────────────────────────────────────────────────────
+    public static readonly byte[] Bstr = "BSTR"u8.ToArray();  // body string heap
+
+    // ── Optional ─────────────────────────────────────────────────────────────
+    public static readonly byte[] Dbug = "DBUG"u8.ToArray();  // debug info
 
     public static bool Equals(ReadOnlySpan<byte> a, byte[] b) =>
         a.SequenceEqual(b);

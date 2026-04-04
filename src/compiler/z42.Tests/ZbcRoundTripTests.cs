@@ -215,7 +215,66 @@ public class ZbcRoundTripTests
         bytes[1].Should().Be((byte)'B');
         bytes[2].Should().Be((byte)'C');
         bytes[3].Should().Be(0);
-        bytes[4].Should().Be(0); // major
-        bytes[5].Should().Be(1); // minor
+        // v0.2 format: version is two u16-LE fields
+        BitConverter.ToUInt16(bytes, 4).Should().Be(ZbcWriter.VersionMajor); // major = 0
+        BitConverter.ToUInt16(bytes, 6).Should().Be(ZbcWriter.VersionMinor); // minor = 2
+        // flags = 0 (full mode, no debug)
+        BitConverter.ToUInt16(bytes, 8).Should().Be(0);
+    }
+
+    [Fact]
+    public void ZbcReader_ReadNamespace_ReturnsCorrectNamespace()
+    {
+        const string src = """
+            namespace Demo.Greet;
+
+            void Main() { }
+            """;
+
+        var module = Compile(src);
+        byte[] bytes = ZbcWriter.Write(module);
+
+        ZbcReader.ReadNamespace(bytes).Should().Be("Demo.Greet");
+    }
+
+    [Fact]
+    public void ZbcWriter_StrippedMode_FlagsSet()
+    {
+        const string src = """
+            namespace Demo;
+
+            void Main() { }
+            """;
+
+        var module   = Compile(src);
+        byte[] full  = ZbcWriter.Write(module, ZbcFlags.None);
+        byte[] stripped = ZbcWriter.Write(module, ZbcFlags.Stripped);
+
+        // Flags byte in header
+        ((ZbcFlags)BitConverter.ToUInt16(full,     8)).Should().Be(ZbcFlags.None);
+        ((ZbcFlags)BitConverter.ToUInt16(stripped, 8)).Should().Be(ZbcFlags.Stripped);
+
+        // Stripped should be smaller (no SIGS/IMPT/EXPT/STRS)
+        stripped.Length.Should().BeLessThan(full.Length);
+
+        // Namespace still readable from stripped
+        ZbcReader.ReadNamespace(stripped).Should().Be("Demo");
+    }
+
+    [Fact]
+    public void ZbcWriter_StrippedMode_ContentStable()
+    {
+        const string src = """
+            namespace Stable;
+
+            int Add(int a, int b) { return a + b; }
+            void Main() { var r = Add(1, 2); }
+            """;
+
+        var module = Compile(src);
+        byte[] first  = ZbcWriter.Write(module, ZbcFlags.Stripped);
+        byte[] second = ZbcWriter.Write(module, ZbcFlags.Stripped);
+
+        first.Should().Equal(second, "same source must produce identical stripped zbc bytes");
     }
 }

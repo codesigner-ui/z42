@@ -3,114 +3,191 @@ using System.Text;
 namespace Z42.IR.BinaryFormat;
 
 /// <summary>
-/// Serializes an <see cref="IrModule"/> into binary z42bc format.
+/// Serializes an <see cref="IrModule"/> into binary zbc format (v0.2).
 ///
 /// File layout:
-///   Header  (16 bytes)
-///   Section directory  (16 bytes × section_count)
-///   STRP data  — unified string pool
-///   TYPE data  — class descriptors
-///   FUNC data  — function bodies
-///   EXPO data  — export table
+///   Header  (16 bytes): magic[4] + major[2] + minor[2] + flags[2] + reserved[6]
+///
+///   Sections (sequential, no directory):
+///     tag[4] + length[4] + data[length]
+///
+///   Full mode (flags.STRIPPED = 0):
+///     NSPC  namespace string
+///     STRS  unified string heap
+///     TYPE  class descriptors
+///     SIGS  function signature table (name + params + ret + exec_mode)
+///     IMPT  import table (external symbol names)
+///     EXPT  export table
+///     FUNC  function bodies (indexed by position)
+///
+///   Stripped mode (flags.STRIPPED = 1):
+///     NSPC  namespace string
+///     BSTR  body-only string heap (subset of STRS)
+///     FUNC  function bodies (same format as full mode)
 /// </summary>
 public static class ZbcWriter
 {
+    public const ushort VersionMajor = 0;
+    public const ushort VersionMinor = 2;
+
     // ── Public API ─────────────────────────────────────────────────────────────
 
-    public static byte[] Write(IrModule module, IEnumerable<string>? exports = null)
+    /// <summary>
+    /// Serializes <paramref name="module"/> into binary zbc format.
+    /// Pass <see cref="ZbcFlags.Stripped"/> to produce a minimal .cache/ file
+    /// (metadata omitted; zpkg index required for dispatch).
+    /// </summary>
+    public static byte[] Write(
+        IrModule module,
+        ZbcFlags flags   = ZbcFlags.None,
+        IEnumerable<string>? exports = null)
     {
+        bool stripped = flags.HasFlag(ZbcFlags.Stripped);
+
         var exportSet = exports is null
             ? module.Functions.Select(f => f.Name).ToHashSet()
             : exports.ToHashSet();
 
-        // ── Pass 1: build unified string pool ─────────────────────────────
-        var pool = new StringPool();
-        pool.Intern(module.Name);
-
-        // Remap IrModule.StringPool indices → unified pool indices
+        // ── Build string pool ─────────────────────────────────────────────────
+        var pool    = new StringPool();
         var strRemap = new int[module.StringPool.Count];
-        for (int i = 0; i < module.StringPool.Count; i++)
-            strRemap[i] = pool.Intern(module.StringPool[i]);
+        InternPoolStrings(pool, module, strRemap, fullMode: !stripped);
 
-        foreach (var cls in module.Classes)
-        {
-            pool.Intern(cls.Name);
-            if (cls.BaseClass != null) pool.Intern(cls.BaseClass);
-            foreach (var fld in cls.Fields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
-        }
-
-        foreach (var fn in module.Functions)
-        {
-            pool.Intern(fn.Name);
-            pool.Intern(fn.RetType);
-            foreach (var block in fn.Blocks)
-            {
-                pool.Intern(block.Label);
-                foreach (var instr in block.Instructions) InternInstrStrings(pool, instr);
-            }
-            if (fn.ExceptionTable != null)
-                foreach (var exc in fn.ExceptionTable)
-                {
-                    pool.Intern(exc.TryStart); pool.Intern(exc.TryEnd);
-                    pool.Intern(exc.CatchLabel);
-                    if (exc.CatchType != null) pool.Intern(exc.CatchType);
-                }
-        }
-
-        // ── Pass 2: build sections ─────────────────────────────────────────
-        byte[] strpData = BuildStrpSection(pool);
-        byte[] typeData = BuildTypeSection(module.Classes, pool);
+        // ── Build sections ────────────────────────────────────────────────────
+        byte[] nspcData = BuildNspcSection(module.Name);
         byte[] funcData = BuildFuncSection(module.Functions, pool, strRemap);
-        byte[] expoData = BuildExpoSection(module.Functions, pool, exportSet);
-
-        // ── Pass 3: assemble file ──────────────────────────────────────────
-        var sections = new (byte[] tag, byte[] data)[]
-        {
-            (SectionTags.Strp, strpData),
-            (SectionTags.Type, typeData),
-            (SectionTags.Func, funcData),
-            (SectionTags.Expo, expoData),
-        };
 
         using var ms   = new MemoryStream();
         using var file = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
-        // Header (16 bytes)
-        file.Write((byte)'Z'); file.Write((byte)'B'); file.Write((byte)'C'); file.Write((byte)'\0');
-        file.Write((byte)0);                        // version_major
-        file.Write((byte)1);                        // version_minor
-        file.Write((ushort)0);                      // flags
-        file.Write((uint)pool.Idx(module.Name));    // name_str_idx
-        file.Write((uint)sections.Length);          // section_count
+        WriteHeader(file, flags);
 
-        // Section directory (16 bytes each)
-        uint dataOffset = (uint)(16 + sections.Length * 16);
-        foreach (var (tag, data) in sections)
+        if (stripped)
         {
-            file.Write(tag);
-            file.Write(dataOffset);
-            file.Write((uint)data.Length);
-            file.Write((uint)0); // flags
-            dataOffset += (uint)data.Length;
+            // Stripped: NSPC + BSTR + FUNC
+            WriteSection(file, SectionTags.Nspc, nspcData);
+            WriteSection(file, SectionTags.Bstr, BuildStrpSection(pool));
+            WriteSection(file, SectionTags.Func, funcData);
         }
-
-        // Section data
-        foreach (var (_, data) in sections)
-            file.Write(data);
+        else
+        {
+            // Full: NSPC + STRS + TYPE + SIGS + IMPT + EXPT + FUNC
+            WriteSection(file, SectionTags.Nspc, nspcData);
+            WriteSection(file, SectionTags.Strs, BuildStrpSection(pool));
+            WriteSection(file, SectionTags.Type, BuildTypeSection(module.Classes, pool));
+            WriteSection(file, SectionTags.Sigs, BuildSigsSection(module.Functions, pool));
+            WriteSection(file, SectionTags.Impt, BuildImptSection(module, pool));
+            WriteSection(file, SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet));
+            WriteSection(file, SectionTags.Func, funcData);
+        }
 
         file.Flush();
         return ms.ToArray();
     }
 
-    // ── STRP section ──────────────────────────────────────────────────────────
+    // ── Header ────────────────────────────────────────────────────────────────
+
+    private static void WriteHeader(BinaryWriter w, ZbcFlags flags)
+    {
+        // magic[4]
+        w.Write((byte)'Z'); w.Write((byte)'B'); w.Write((byte)'C'); w.Write((byte)'\0');
+        // version[2+2]
+        w.Write(VersionMajor);
+        w.Write(VersionMinor);
+        // flags[2]
+        w.Write((ushort)flags);
+        // reserved[6]
+        w.Write((uint)0); w.Write((ushort)0);
+    }
+
+    private static void WriteSection(BinaryWriter w, byte[] tag, byte[] data)
+    {
+        w.Write(tag);
+        w.Write((uint)data.Length);
+        w.Write(data);
+    }
+
+    // ── String pool ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Interns all strings needed for the chosen mode.
+    /// Full mode: every string in the module (names, types, instruction refs).
+    /// Stripped mode: only strings referenced inside function bodies.
+    /// </summary>
+    private static void InternPoolStrings(
+        StringPool pool, IrModule module, int[] strRemap, bool fullMode)
+    {
+        if (fullMode)
+        {
+            pool.Intern(module.Name);
+
+            for (int i = 0; i < module.StringPool.Count; i++)
+                strRemap[i] = pool.Intern(module.StringPool[i]);
+
+            foreach (var cls in module.Classes)
+            {
+                pool.Intern(cls.Name);
+                if (cls.BaseClass != null) pool.Intern(cls.BaseClass);
+                foreach (var fld in cls.Fields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
+            }
+
+            foreach (var fn in module.Functions)
+            {
+                pool.Intern(fn.Name);
+                pool.Intern(fn.RetType);
+                foreach (var block in fn.Blocks)
+                {
+                    pool.Intern(block.Label);
+                    foreach (var instr in block.Instructions) InternInstrStrings(pool, instr);
+                }
+                if (fn.ExceptionTable != null)
+                    foreach (var exc in fn.ExceptionTable)
+                    {
+                        pool.Intern(exc.TryStart); pool.Intern(exc.TryEnd);
+                        pool.Intern(exc.CatchLabel);
+                        if (exc.CatchType != null) pool.Intern(exc.CatchType);
+                    }
+            }
+        }
+        else
+        {
+            // Stripped mode: only body strings
+            for (int i = 0; i < module.StringPool.Count; i++)
+                strRemap[i] = pool.Intern(module.StringPool[i]);
+
+            foreach (var fn in module.Functions)
+            {
+                foreach (var block in fn.Blocks)
+                    foreach (var instr in block.Instructions) InternInstrStrings(pool, instr);
+
+                if (fn.ExceptionTable != null)
+                    foreach (var exc in fn.ExceptionTable)
+                        if (exc.CatchType != null) pool.Intern(exc.CatchType);
+            }
+        }
+    }
+
+    // ── NSPC section ──────────────────────────────────────────────────────────
+
+    private static byte[] BuildNspcSection(string ns)
+    {
+        var utf8 = Encoding.UTF8.GetBytes(ns);
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+        w.Write((ushort)utf8.Length);
+        w.Write(utf8);
+        return ms.ToArray();
+    }
+
+    // ── STRS / BSTR section (string heap) ────────────────────────────────────
 
     private static byte[] BuildStrpSection(StringPool pool)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
-        var strings   = pool.AllStrings;
-        var encoded   = strings.Select(Encoding.UTF8.GetBytes).ToArray();
+        var strings = pool.AllStrings;
+        var encoded = strings.Select(Encoding.UTF8.GetBytes).ToArray();
 
         w.Write((uint)encoded.Length);
 
@@ -147,7 +224,72 @@ public static class ZbcWriter
         return ms.ToArray();
     }
 
-    // ── FUNC section ──────────────────────────────────────────────────────────
+    // ── SIGS section (full mode: function signatures) ─────────────────────────
+
+    private static byte[] BuildSigsSection(List<IrFunction> functions, StringPool pool)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((uint)functions.Count);
+        foreach (var fn in functions)
+        {
+            w.Write((uint)pool.Idx(fn.Name));
+            w.Write((ushort)fn.ParamCount);
+            w.Write(TypeTags.FromString(fn.RetType));
+            w.Write(ExecModes.FromString(fn.ExecMode));
+        }
+
+        return ms.ToArray();
+    }
+
+    // ── IMPT section (full mode: import table) ────────────────────────────────
+
+    private static byte[] BuildImptSection(IrModule module, StringPool pool)
+    {
+        var definedNames = module.Functions.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+        var imports      = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var fn in module.Functions)
+            foreach (var block in fn.Blocks)
+                foreach (var instr in block.Instructions)
+                    switch (instr)
+                    {
+                        case CallInstr i when !definedNames.Contains(i.Func):
+                            imports.Add(i.Func); break;
+                        case BuiltinInstr i:
+                            imports.Add(i.Name); break;
+                    }
+
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((uint)imports.Count);
+        foreach (var imp in imports) w.Write((uint)pool.Idx(imp));
+
+        return ms.ToArray();
+    }
+
+    // ── EXPT section (full mode: export table) ────────────────────────────────
+
+    private static byte[] BuildExptSection(
+        List<IrFunction> functions, StringPool pool, HashSet<string> exportSet)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        var exported = functions.Where(f => exportSet.Contains(f.Name)).ToList();
+        w.Write((uint)exported.Count);
+        foreach (var fn in exported)
+        {
+            w.Write((uint)pool.Idx(fn.Name));
+            w.Write((byte)0); // kind: 0 = func
+        }
+
+        return ms.ToArray();
+    }
+
+    // ── FUNC section (function bodies, both modes) ────────────────────────────
 
     private static byte[] BuildFuncSection(
         List<IrFunction> functions, StringPool pool, int[] strRemap)
@@ -183,11 +325,7 @@ public static class ZbcWriter
             int excCount = fn.ExceptionTable?.Count ?? 0;
             int regCount = ComputeRegCount(fn);
 
-            // Function header
-            w.Write((uint)pool.Idx(fn.Name));
-            w.Write((byte)(0));                               // flags (exported determined separately)
-            w.Write(ExecModes.FromString(fn.ExecMode));
-            w.Write((ushort)fn.ParamCount);
+            // Function body header (no name/sig — those are in SIGS)
             w.Write((ushort)regCount);
             w.Write((ushort)fn.Blocks.Count);
             w.Write((uint)instrBytes.Length);
@@ -200,34 +338,15 @@ public static class ZbcWriter
             if (fn.ExceptionTable != null)
                 foreach (var exc in fn.ExceptionTable)
                 {
-                    w.Write(blockIdx.TryGetValue(exc.TryStart,  out var ts) ? ts : (ushort)0);
-                    w.Write(blockIdx.TryGetValue(exc.TryEnd,    out var te) ? te : (ushort)fn.Blocks.Count);
-                    w.Write(blockIdx.TryGetValue(exc.CatchLabel,out var cl) ? cl : (ushort)0);
+                    w.Write(blockIdx.TryGetValue(exc.TryStart,   out var ts) ? ts : (ushort)0);
+                    w.Write(blockIdx.TryGetValue(exc.TryEnd,     out var te) ? te : (ushort)fn.Blocks.Count);
+                    w.Write(blockIdx.TryGetValue(exc.CatchLabel, out var cl) ? cl : (ushort)0);
                     w.Write(exc.CatchType != null ? (uint)pool.Idx(exc.CatchType) : uint.MaxValue);
                     w.Write((ushort)exc.CatchReg);
                 }
 
             // Instruction stream
             w.Write(instrBytes);
-        }
-
-        return ms.ToArray();
-    }
-
-    // ── EXPO section ──────────────────────────────────────────────────────────
-
-    private static byte[] BuildExpoSection(
-        List<IrFunction> functions, StringPool pool, HashSet<string> exportSet)
-    {
-        using var ms = new MemoryStream();
-        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
-
-        var exported = functions.Where(f => exportSet.Contains(f.Name)).ToList();
-        w.Write((uint)exported.Count);
-        foreach (var fn in exported)
-        {
-            w.Write((uint)pool.Idx(fn.Name));
-            w.Write((byte)0); // kind: 0 = func
         }
 
         return ms.ToArray();
@@ -435,18 +554,18 @@ public static class ZbcWriter
     {
         switch (instr)
         {
-            case CallInstr i:     pool.Intern(i.Func); break;
-            case BuiltinInstr i:  pool.Intern(i.Name); break;
-            case VCallInstr i:    pool.Intern(i.Method); break;
-            case FieldGetInstr i: pool.Intern(i.FieldName); break;
-            case FieldSetInstr i: pool.Intern(i.FieldName); break;
-            case ObjNewInstr i:   pool.Intern(i.ClassName); break;
+            case CallInstr i:       pool.Intern(i.Func); break;
+            case BuiltinInstr i:    pool.Intern(i.Name); break;
+            case VCallInstr i:      pool.Intern(i.Method); break;
+            case FieldGetInstr i:   pool.Intern(i.FieldName); break;
+            case FieldSetInstr i:   pool.Intern(i.FieldName); break;
+            case ObjNewInstr i:     pool.Intern(i.ClassName); break;
             case IsInstanceInstr i: pool.Intern(i.ClassName); break;
-            case AsCastInstr i:   pool.Intern(i.ClassName); break;
-            case StaticGetInstr i: pool.Intern(i.Field); break;
-            case StaticSetInstr i: pool.Intern(i.Field); break;
-            case StoreInstr i:    pool.Intern(i.Var); break;
-            case LoadInstr i:     pool.Intern(i.Var); break;
+            case AsCastInstr i:     pool.Intern(i.ClassName); break;
+            case StaticGetInstr i:  pool.Intern(i.Field); break;
+            case StaticSetInstr i:  pool.Intern(i.Field); break;
+            case StoreInstr i:      pool.Intern(i.Var); break;
+            case LoadInstr i:       pool.Intern(i.Var); break;
         }
     }
 

@@ -217,6 +217,7 @@ static class BuildCommand
         { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return 1; }
 
         string cacheDir = Path.Combine(projectDir, ".cache");
+        var namespaces = units.Select(u => u.Namespace).Distinct().ToList();
         var exports = units
             .SelectMany(u => u.Exports.Select(e => new ZpkgExport($"{u.Namespace}.{e}", "func")))
             .ToList();
@@ -229,6 +230,7 @@ static class BuildCommand
                 Version:      version,
                 Kind:         kind,
                 Mode:         ZpkgMode.Packed,
+                Namespaces:   namespaces,
                 Exports:      exports,
                 Dependencies: [],
                 Files:        [],
@@ -244,7 +246,7 @@ static class BuildCommand
                 string relSrc  = Path.GetRelativePath(projectDir, unit.SourceFile);
                 string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
                 Directory.CreateDirectory(Path.GetDirectoryName(zbcPath)!);
-                File.WriteAllBytes(zbcPath, Z42.IR.BinaryFormat.ZbcWriter.Write(unit.Module, unit.Exports));
+                File.WriteAllBytes(zbcPath, Z42.IR.BinaryFormat.ZbcWriter.Write(unit.Module, exports: unit.Exports));
                 Console.Error.WriteLine($"wrote → {zbcPath}");
 
                 string zbcRel = Path.GetRelativePath(outDir, zbcPath);
@@ -256,6 +258,7 @@ static class BuildCommand
                 Version:      version,
                 Kind:         kind,
                 Mode:         ZpkgMode.Indexed,
+                Namespaces:   namespaces,
                 Exports:      exports,
                 Dependencies: [],
                 Files:        fileEntries,

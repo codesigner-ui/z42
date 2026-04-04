@@ -3,92 +3,148 @@ using System.Text;
 namespace Z42.IR.BinaryFormat;
 
 /// <summary>
-/// Deserializes binary z42bc data back into an <see cref="IrModule"/>.
+/// Deserializes binary zbc v0.2 data back into an <see cref="IrModule"/>.
 /// Mirrors the layout written by <see cref="ZbcWriter"/>.
+///
+/// Section order matches the writer: NSPC first, then mode-specific sections.
+/// Unknown sections are silently skipped (forward compatibility).
 /// </summary>
 public static class ZbcReader
 {
     // ── Public API ─────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Reads a full or stripped zbc file and reconstructs the <see cref="IrModule"/>.
+    /// Stripped zbc produces functions named "func#i" with unknown signatures —
+    /// suitable for VM execution (dispatch via zpkg SYIX), not for TypeChecker.
+    /// </summary>
     public static IrModule Read(byte[] data)
     {
         using var ms = new MemoryStream(data, writable: false);
         using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
 
-        // Header (16 bytes)
+        // ── Header (16 bytes) ─────────────────────────────────────────────────
         var magic = r.ReadBytes(4);
         if (magic[0] != 'Z' || magic[1] != 'B' || magic[2] != 'C' || magic[3] != 0)
-            throw new InvalidDataException("Not a z42bc file (bad magic)");
+            throw new InvalidDataException("Not a zbc file (bad magic)");
 
-        _ = r.ReadByte();    // version_major
-        _ = r.ReadByte();    // version_minor
-        _ = r.ReadUInt16();  // flags
-        uint nameIdx  = r.ReadUInt32();
-        uint secCount = r.ReadUInt32();
+        _ = r.ReadUInt16(); // version_major
+        _ = r.ReadUInt16(); // version_minor
+        var flags     = (ZbcFlags)r.ReadUInt16();
+        r.ReadBytes(6);     // reserved
 
-        // Section directory
-        var sections = new (byte[] tag, uint offset, uint size)[secCount];
-        for (int i = 0; i < secCount; i++)
-            sections[i] = (r.ReadBytes(4), r.ReadUInt32(), r.ReadUInt32() + 0 * r.ReadUInt32());
-        // Re-read properly (each entry is 16 bytes: tag(4)+offset(4)+size(4)+flags(4))
-        // The loop above consumed flags in size via the hack — do it correctly:
-        ms.Position = 16; // reset to after header
-        for (int i = 0; i < secCount; i++)
+        bool stripped = flags.HasFlag(ZbcFlags.Stripped);
+
+        // ── Read all sections sequentially ───────────────────────────────────
+        string   nspc      = string.Empty;
+        string[] pool      = [];
+        var      classes   = new List<IrClassDesc>();
+        var      sigs      = new List<(string name, ushort paramCount, string retType, string execMode)>();
+        var      funcBodies = new List<(int regCount, List<IrBlock> blocks, List<IrExceptionEntry>? excTable)>();
+
+        while (ms.Position < ms.Length)
         {
             var tag    = r.ReadBytes(4);
-            var offset = r.ReadUInt32();
-            var size   = r.ReadUInt32();
-            _          = r.ReadUInt32(); // section flags
-            sections[i] = (tag, offset, size);
-        }
+            uint len   = r.ReadUInt32();
+            var  sec   = r.ReadBytes((int)len);
 
-        // Load sections
-        string[] pool  = [];
-        var classes    = new List<IrClassDesc>();
-        var functions  = new List<IrFunction>();
-
-        foreach (var (tag, offset, size) in sections)
-        {
-            var sec = new byte[size];
-            Array.Copy(data, (int)offset, sec, 0, (int)size);
-
-            if (SectionTags.Equals(tag, SectionTags.Strp))
-                pool = ReadStrpSection(sec);
+            if (SectionTags.Equals(tag, SectionTags.Nspc))
+                nspc = ReadNspcSection(sec);
+            else if (SectionTags.Equals(tag, SectionTags.Strs) ||
+                     SectionTags.Equals(tag, SectionTags.Bstr))
+                pool = ReadStrsSection(sec);
             else if (SectionTags.Equals(tag, SectionTags.Type))
                 classes = ReadTypeSection(sec, pool);
+            else if (SectionTags.Equals(tag, SectionTags.Sigs))
+                sigs = ReadSigsSection(sec, pool);
             else if (SectionTags.Equals(tag, SectionTags.Func))
-                functions = ReadFuncSection(sec, pool);
+                funcBodies = ReadFuncSection(sec, pool);
+            // IMPT, EXPT, DBUG — skip (not needed for module reconstruction)
         }
 
-        string moduleName = nameIdx < pool.Length ? pool[nameIdx] : "unknown";
+        // ── Reconstruct functions ─────────────────────────────────────────────
+        var functions = new List<IrFunction>(funcBodies.Count);
+        for (int i = 0; i < funcBodies.Count; i++)
+        {
+            var (regCount, blocks, excTable) = funcBodies[i];
+            string name, retType, execMode;
+            ushort paramCount;
+
+            if (i < sigs.Count)
+            {
+                (name, paramCount, retType, execMode) = sigs[i];
+            }
+            else
+            {
+                // Stripped mode: no SIGS section
+                name       = $"func#{i}";
+                paramCount = 0;
+                retType    = "void";
+                execMode   = "Interp";
+            }
+
+            functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
+                excTable?.Count > 0 ? excTable : null));
+        }
+
+        string moduleName = nspc.Length > 0 ? nspc : "unknown";
         return new IrModule(moduleName, BuildStringPool(pool, functions), classes, functions);
     }
 
-    // ── Rebuild IrModule.StringPool ────────────────────────────────────────────
-
-    private static List<string> BuildStringPool(string[] unifiedPool, List<IrFunction> fns)
+    /// <summary>
+    /// Reads only the NSPC section from a zbc file.
+    /// Performs minimal IO — reads header (16 bytes) then first section tag/length/data.
+    /// Returns empty string if the file is malformed or has no NSPC section.
+    /// </summary>
+    public static string ReadNamespace(byte[] data)
     {
-        var result = new List<string>();
-        var seen   = new HashSet<int>();
+        if (data.Length < 16 + 8) return string.Empty;
 
-        foreach (var fn in fns)
-            foreach (var block in fn.Blocks)
-                foreach (var instr in block.Instructions)
-                    if (instr is ConstStrInstr cs && seen.Add(cs.Idx))
-                        result.Add(cs.Idx < unifiedPool.Length ? unifiedPool[cs.Idx] : "");
+        using var ms = new MemoryStream(data, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
 
-        return result;
+        var magic = r.ReadBytes(4);
+        if (magic[0] != 'Z' || magic[1] != 'B' || magic[2] != 'C' || magic[3] != 0)
+            return string.Empty;
+
+        r.ReadBytes(12); // skip rest of header (version + flags + reserved)
+
+        // First section must be NSPC
+        var tag  = r.ReadBytes(4);
+        uint len = r.ReadUInt32();
+        if (!SectionTags.Equals(tag, SectionTags.Nspc)) return string.Empty;
+
+        return ReadNspcSection(r.ReadBytes((int)len));
     }
 
-    // ── STRP section ──────────────────────────────────────────────────────────
+    /// <summary>
+    /// Reads the ZbcFlags from a zbc file header without parsing sections.
+    /// </summary>
+    public static ZbcFlags ReadFlags(byte[] data)
+    {
+        if (data.Length < 10) return ZbcFlags.None;
+        return (ZbcFlags)BitConverter.ToUInt16(data, 8);
+    }
 
-    private static string[] ReadStrpSection(byte[] data)
+    // ── NSPC section ──────────────────────────────────────────────────────────
+
+    private static string ReadNspcSection(byte[] data)
+    {
+        if (data.Length < 2) return string.Empty;
+        ushort len = BitConverter.ToUInt16(data, 0);
+        if (len == 0 || data.Length < 2 + len) return string.Empty;
+        return Encoding.UTF8.GetString(data, 2, len);
+    }
+
+    // ── STRS / BSTR section ───────────────────────────────────────────────────
+
+    private static string[] ReadStrsSection(byte[] data)
     {
         using var ms = new MemoryStream(data, writable: false);
         using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
 
-        uint count    = r.ReadUInt32();
-        var offsets   = new (uint off, uint len)[count];
+        uint count  = r.ReadUInt32();
+        var offsets = new (uint off, uint len)[count];
         for (int i = 0; i < count; i++)
             offsets[i] = (r.ReadUInt32(), r.ReadUInt32());
 
@@ -125,40 +181,61 @@ public static class ZbcReader
         return classes;
     }
 
-    // ── FUNC section ──────────────────────────────────────────────────────────
+    // ── SIGS section ──────────────────────────────────────────────────────────
 
-    private static List<IrFunction> ReadFuncSection(byte[] data, string[] pool)
+    private static List<(string, ushort, string, string)> ReadSigsSection(byte[] data, string[] pool)
     {
-        using var ms       = new MemoryStream(data, writable: false);
-        using var r        = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
-        uint funcCount     = r.ReadUInt32();
-        var functions      = new List<IrFunction>((int)funcCount);
+        using var ms = new MemoryStream(data, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+
+        uint count = r.ReadUInt32();
+        var result = new List<(string, ushort, string, string)>((int)count);
+
+        for (int i = 0; i < count; i++)
+        {
+            string name       = P(pool, r.ReadUInt32());
+            ushort paramCount = r.ReadUInt16();
+            string retType    = TypeTags.ToIrString(r.ReadByte());
+            string execMode   = ExecModes.ToIrString(r.ReadByte());
+            result.Add((name, paramCount, retType, execMode));
+        }
+        return result;
+    }
+
+    // ── FUNC section (bodies only) ────────────────────────────────────────────
+
+    private static List<(int, List<IrBlock>, List<IrExceptionEntry>?)> ReadFuncSection(
+        byte[] data, string[] pool)
+    {
+        using var ms   = new MemoryStream(data, writable: false);
+        using var r    = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+        uint funcCount = r.ReadUInt32();
+        var result     = new List<(int, List<IrBlock>, List<IrExceptionEntry>?)>((int)funcCount);
 
         for (int fi = 0; fi < funcCount; fi++)
         {
-            string name       = P(pool, r.ReadUInt32());
-            _                 = r.ReadByte();    // fn flags
-            byte execByte     = r.ReadByte();
-            ushort paramCount = r.ReadUInt16();
-            _                 = r.ReadUInt16();  // reg_count (not stored in IrFunction)
+            int    regCount   = r.ReadUInt16();
             ushort blockCount = r.ReadUInt16();
-            uint instrLen     = r.ReadUInt32();
+            uint   instrLen   = r.ReadUInt32();
             ushort excCount   = r.ReadUInt16();
 
-            var blockOffsets  = new uint[blockCount];
+            var blockOffsets = new uint[blockCount];
             for (int i = 0; i < blockCount; i++) blockOffsets[i] = r.ReadUInt32();
 
             var excTable = new List<IrExceptionEntry>(excCount);
             for (int i = 0; i < excCount; i++)
             {
-                ushort tryS  = r.ReadUInt16();
-                ushort tryE  = r.ReadUInt16();
+                ushort tryS   = r.ReadUInt16();
+                ushort tryE   = r.ReadUInt16();
                 ushort catchB = r.ReadUInt16();
-                uint catchT  = r.ReadUInt32();
+                uint catchT   = r.ReadUInt32();
                 ushort catchR = r.ReadUInt16();
                 excTable.Add(new IrExceptionEntry(
-                    BL(tryS), tryE < blockCount ? BL(tryE) : $"block_{blockCount}",
-                    BL(catchB), catchT == uint.MaxValue ? null : P(pool, catchT), catchR));
+                    BL(tryS),
+                    tryE < blockCount ? BL(tryE) : $"block_{blockCount}",
+                    BL(catchB),
+                    catchT == uint.MaxValue ? null : P(pool, catchT),
+                    catchR));
             }
 
             byte[] instrBytes = r.ReadBytes((int)instrLen);
@@ -172,7 +249,7 @@ public static class ZbcReader
                 blocks.Add(new IrBlock(bi == 0 ? "entry" : $"block_{bi}", instrs, term));
             }
 
-            // Remap exception table labels to resolved block labels
+            // Remap placeholder exception labels to resolved block labels
             List<IrExceptionEntry>? resolvedExc = null;
             if (excTable.Count > 0)
             {
@@ -183,11 +260,9 @@ public static class ZbcReader
                     .ToList();
             }
 
-            functions.Add(new IrFunction(name, paramCount, "void",
-                ExecModes.ToIrString(execByte), blocks,
-                resolvedExc?.Count > 0 ? resolvedExc : null));
+            result.Add((regCount, blocks, resolvedExc));
         }
-        return functions;
+        return result;
     }
 
     private static string Resolve(string raw, List<IrBlock> blocks)
@@ -230,13 +305,11 @@ public static class ZbcReader
         _              => throw new InvalidDataException($"Not a terminator: 0x{op:X2}"),
     };
 
-    // Instruction decoder — uses separate helper methods for multi-field instructions
-    // to guarantee left-to-right read order (switch expression arms don't guarantee order).
     private static IrInstr DecodeInstr(byte op, byte typ, int dst, BinaryReader r, string[] pool)
     {
         switch (op)
         {
-            case Opcodes.ConstStr:  return new ConstStrInstr (dst, (int)r.ReadUInt32());
+            case Opcodes.ConstStr:  return new ConstStrInstr(dst, (int)r.ReadUInt32());
             case Opcodes.ConstI when typ == TypeTags.I64:
                                     return new ConstI64Instr(dst, r.ReadInt64());
             case Opcodes.ConstI:    return new ConstI32Instr(dst, r.ReadInt32());
@@ -251,7 +324,7 @@ public static class ZbcReader
                 var src     = r.ReadUInt16();
                 return new StoreInstr(varName, src);
             }
-            case Opcodes.Load:      return new LoadInstr(dst, P(pool, r.ReadUInt32()));
+            case Opcodes.Load: return new LoadInstr(dst, P(pool, r.ReadUInt32()));
 
             case Opcodes.Add:    return new AddInstr   (dst, r.ReadUInt16(), r.ReadUInt16());
             case Opcodes.Sub:    return new SubInstr   (dst, r.ReadUInt16(), r.ReadUInt16());
@@ -353,13 +426,27 @@ public static class ZbcReader
         }
     }
 
+    // ── String pool reconstruction ────────────────────────────────────────────
+
+    private static List<string> BuildStringPool(string[] unifiedPool, List<IrFunction> fns)
+    {
+        var result = new List<string>();
+        var seen   = new HashSet<int>();
+
+        foreach (var fn in fns)
+            foreach (var block in fn.Blocks)
+                foreach (var instr in block.Instructions)
+                    if (instr is ConstStrInstr cs && seen.Add(cs.Idx))
+                        result.Add(cs.Idx < unifiedPool.Length ? unifiedPool[cs.Idx] : "");
+
+        return result;
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /// Pool string lookup (short alias for brevity).
     private static string P(string[] pool, uint idx) =>
         idx < pool.Length ? pool[idx] : $"<str#{idx}>";
 
-    /// Block label from index.
     private static string BL(ushort idx) => idx == 0 ? "entry" : $"block_{idx}";
 
     private static List<int> ReadArgs(BinaryReader r)

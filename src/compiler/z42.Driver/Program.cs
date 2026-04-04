@@ -186,7 +186,7 @@ static class SingleFileDriver
             {
                 string path = outPath ?? (defaultBase + ".zbc");
                 Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-                File.WriteAllBytes(path, ZbcWriter.Write(irModule, exports));
+                File.WriteAllBytes(path, ZbcWriter.Write(irModule, exports: exports));
                 Console.Error.WriteLine($"wrote → {path}");
                 break;
             }
