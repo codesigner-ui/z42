@@ -87,6 +87,7 @@
 - Golden test 覆盖所有 L1 特性（每特性至少：正常用例、边界用例、错误用例）
 - VM interp + JIT 双模式运行同一测试集，结果一致
 - CI 脚本稳定：`dotnet test` + `./scripts/test-vm.sh` 全绿为唯一合并门禁
+- 自动化测试，减少大模型AI去检索日志，降低token使用
 
 ### VM 质量
 - 类型元数据：type info、字段布局、方法表（为 L3 泛型/接口分发做准备）

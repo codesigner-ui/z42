@@ -6,9 +6,10 @@
     "world",
     "z42 version 0.1, the answer is "
   ],
+  "classes": [],
   "functions": [
     {
-      "name": "Greet",
+      "name": "Hello.Greet",
       "param_count": 1,
       "ret_type": "string",
       "exec_mode": "Interp",
@@ -52,7 +53,7 @@
       ]
     },
     {
-      "name": "Main",
+      "name": "Hello.Main",
       "param_count": 0,
       "ret_type": "void",
       "exec_mode": "Interp",
@@ -68,7 +69,7 @@
             {
               "op": "call",
               "dst": 1,
-              "func": "Greet",
+              "func": "Hello.Greet",
               "args": [
                 0
               ]
