@@ -1,7 +1,7 @@
-[package]
+[project]
 name    = "z42.collections"
 version = "0.1.0"
-type    = "lib"
+kind    = "lib"
 
 # NOTE: Full generic implementations of List<T> and Dictionary<K,V> are deferred
 # to L3 (requires generics). Until then, these types are handled by the compiler's

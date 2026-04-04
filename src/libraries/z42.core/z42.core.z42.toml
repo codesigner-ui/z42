@@ -1,7 +1,7 @@
-[package]
+[project]
 name    = "z42.core"
 version = "0.1.0"
-type    = "lib"
+kind    = "lib"
 
 # z42.core has no dependencies — it is the foundation of the stdlib.
 # It is loaded implicitly by the VM (no `using` required in user code).
