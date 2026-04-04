@@ -274,7 +274,7 @@ z42c build --profile staging   # 使用自定义 profile（如有）
 
 ## L5 — 依赖管理
 
-引用外部 z42 库。
+声明项目依赖的外部 `.zpkg` 库。
 
 ```toml
 [project]
@@ -284,23 +284,39 @@ kind    = "exe"
 entry   = "MyApp.main"
 
 [dependencies]
-z42-std  = { path = "../std" }               # 本地路径依赖
-z42-http = { version = ">=0.2, <1.0" }       # 版本约束（未来：注册中心）
+"my-utils" = "*"         # 在 libs/ 中找 name="my-utils" 的 .zpkg
+"my-http"  = "*"         # 版本约束目前只做存在性校验，不做 semver 比较
 ```
 
-**依赖解析规则：**
+**设计原则：命名空间与包名解耦**
 
-| 字段 | 说明 |
-|------|------|
-| `path` | 指向含 `z42.toml` 的本地目录，当前阶段支持 |
-| `version` | SemVer 约束；需注册中心支持（预留格式，暂不实现）|
-| `path` + `version` 同时存在 | `path` 优先，`version` 仅作文档说明 |
+`[dependencies]` 中填写的是 **zpkg 的 `[project] name` 字段**，而非命名空间名称。编译器在 libs/ 搜索路径中找到对应 zpkg 后，读取其 `namespaces` 字段，将导出的命名空间注册为可用。
 
-**依赖对编译器的影响：**
+```
+[dependencies] "my-http" = "*"
+  → 编译器在 libs/ 找 name="my-http" 的 .zpkg
+  → 读该 zpkg 的 namespaces: ["Http", "Http.Client"]
+  → 源码中 using Http; / using Http.Client; 均可解析
+```
+
+这意味着 `using` 语句中的命名空间名称与 `[dependencies]` 中的包名**无需一致**，由 zpkg 自身的 manifest 决定。
+
+**stdlib 无需声明：** `z42.core` 由 VM 启动时自动注入，其他 stdlib 模块（`z42.io`、`z42.math` 等）按需从 libs/ 自动加载，均不需要出现在 `[dependencies]` 中。
+
+**有 `[dependencies]` vs 无 `[dependencies]`：**
+
+| 情况 | 编译器行为 |
+|------|-----------|
+| 有 `[dependencies]` | 只扫描声明的包，libs/ 中其他 zpkg 不参与 `using` 解析 |
+| 无 `[dependencies]`（脚本/单文件模式）| 自动扫描 libs/ 全部 zpkg 和 Z42_PATH 全部 zbc |
+
+**依赖解析后的编译器行为：**
 
 - TypeChecker：可见依赖库导出的类型和函数签名
 - IR Codegen：生成跨库调用的 `call` 指令（含模块引用）
-- VM 加载：按 `dependencies` 顺序加载 `.zbin`，合并符号表
+- 输出 zpkg 的 `dependencies` 字段：记录编译期实际解析到的文件名和命名空间（不是 `[dependencies]` 的原样复制）
+
+**版本管理：** 目前不做 semver 比较，也不生成 lockfile。用户通过控制 libs/ 中实际存放的文件版本来锁定依赖。
 
 **完整示例（含依赖）：**
 
@@ -318,7 +334,7 @@ include = ["src/**/*.z42"]
 out_dir = "dist"
 
 [dependencies]
-z42-std = { path = "../z42-std" }
+"my-utils" = "*"
 
 [profile.debug]
 mode  = "interp"
@@ -448,8 +464,9 @@ incremental = true              # 默认 true
 mode        = "interp"          # 全局默认执行模式
 
 [dependencies]
-# name = { path = "..." }       # 本地依赖（当前阶段）
-# name = { version = "..." }    # 注册中心（预留）
+# "pkg-name" = "*"              # zpkg 包名（匹配 zpkg manifest 的 [project] name）
+# "pkg-name" = "1.2.0"         # 版本约束（目前仅做存在性校验）
+# stdlib 无需声明，由 VM 自动加载
 
 [profile.debug]
 mode     = "interp"

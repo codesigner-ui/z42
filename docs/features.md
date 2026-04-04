@@ -2,6 +2,8 @@
 
 > **This document defines language design decisions** — what the language IS, not how it is implemented.
 >
+> **Update trigger:** Only update this file when a language design decision changes (rationale, phase assignment, or fundamental behavior). Implementation progress is tracked in [docs/roadmap.md](roadmap.md), not here.
+>
 > - Syntax grammar and code examples: [docs/design/language-overview.md](design/language-overview.md)
 > - Evolution phases and milestones: [docs/roadmap.md](roadmap.md)
 
@@ -218,7 +220,27 @@ using System.Math;
 
 Package distribution via `.zpkg` format is introduced in L2.
 
-**Phase:** L1 (namespace/using) | L2 (package system, `.zpkg`)
+### Package Format: zbc and zpkg
+
+Two artifact formats with distinct responsibilities:
+
+| Format | Role | Self-contained | Use case |
+|--------|------|---------------|----------|
+| `.zbc` (fat) | Compilation unit | Yes — own string pool, type table | Single-file execution, incremental build cache |
+| `.zpkg` (indexed) | Dev package | References `.cache/*.zbc` files | Development, incremental updates |
+| `.zpkg` (packed) | Release package | Inlines optimized module entries | Distribution, patch downloads |
+
+**Deterministic zbc:** A `.zbc` file is a pure function of its source content + compiler version. If the source hash is unchanged, recompilation produces an identical `.zbc`. This enables content-addressed incremental builds (analogous to Python's `.pyc`).
+
+**Packed zpkg size optimization (L2):** When assembling a packed `.zpkg`, the build tool performs cross-module deduplication:
+- All string literals from all modules are merged into a **shared string pool** in the zpkg header
+- Type descriptors and namespace metadata are hoisted to a **shared type table**
+- Each module entry becomes a "thin" bytecode (references shared pool indices instead of embedding its own)
+- This reduces duplication significantly for packages with many files sharing common types and strings
+
+The raw `.cache/*.zbc` files (fat) remain unchanged; the packing step produces optimized thin entries only inside the zpkg. Standalone `z42vm file.zbc` always uses fat zbc.
+
+**Phase:** L1 (namespace/using) | L2 (package system, `.zpkg`, packed optimization)
 
 ---
 
@@ -276,3 +298,38 @@ This mirrors Python's `builtins` module and Rust's `std::prelude`. It provides:
 All other stdlib modules (`z42.io`, `z42.collections`, `z42.text`, `z42.math`) require an explicit `using` declaration and are loaded on demand.
 
 **Phase:** L2 (`z42.core`, `z42.io`, `z42.math`) | L3 (`z42.collections` generic impl, `z42.text.Regex`)
+
+---
+
+## 17. Script-Friendly Execution
+
+**Decision:** z42 supports lightweight, project-free execution modes in addition to full package-based deployment via `.zpkg`.
+
+| Mode | Invocation | Phase |
+|------|-----------|-------|
+| Bytecode direct | `z42vm file.zbc` | L1 |
+| Source file direct | `z42vm script.z42` | L3 |
+| Inline eval | `z42vm -c "Console.WriteLine(42);"` | L3 |
+
+- All modes are **project-free**: no `z42.toml`, no `.zpkg`, no manifest required
+- `z42.core` is always auto-injected; other stdlib modules resolve on-demand via `using`
+- `.zpkg` remains the standard format for application distribution and library packaging; these modes are for scripting and iteration
+
+### Module Resolution: Two Search Paths
+
+The VM maintains two independent search paths with fixed priority:
+
+| Path | Format | Env var | Default dirs | Priority |
+|------|--------|---------|--------------|---------|
+| **module path** | `.zbc` only | `Z42_PATH` | `<cwd>/`, `<cwd>/modules/` | High |
+| **libs path** | `.zpkg` only | `Z42_LIBS` | `<binary-dir>/../libs/`, `<cwd>/artifacts/z42/libs/` | Low |
+
+`using Foo` resolution: scan module path first (read namespace from zbc header), then libs path (read `namespaces` field from zpkg manifest). Module path wins — local zbc can override a stdlib zpkg.
+
+Conflict within the same tier (two files providing the same namespace) → compile error. Cross-tier override is valid and silent.
+
+Namespace → package mapping uses exported metadata, not file names: `using z42.io` matches whichever zpkg has `"z42.io"` in its `namespaces` field, regardless of the zpkg's filename.
+
+**Rationale:** Python-style accessibility — running a script or trying an idea should not require project setup. The project system (`z42.toml` + `.zpkg`) is for distribution; script modes are for iteration and embedding. Two separate paths make the format contract explicit: libs/ is for versioned packages, module path is for raw compiled units.
+
+**Phase:** L1 (`.zbc` direct execution) | L2 (dual search path, namespace resolution, dependency recording) | L3 (source file direct, inline eval)

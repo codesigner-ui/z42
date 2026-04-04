@@ -131,6 +131,7 @@
 | `match` 穷尽检查 | 强制覆盖所有分支，替代 `switch` |
 | 默认不可变变量 | `let` 不可变，`var`/`mut` 显式可变 |
 | 单文件脚本模式 | 无需 `z42.toml`，直接执行 `.z42` 文件 |
+| 内联 eval | `z42vm -c "..."` 字符串直接执行；嵌入 API（host 传入 source/bytecode） |
 | REPL | 交互式求值环境 |
 
 ---

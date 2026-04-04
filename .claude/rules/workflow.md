@@ -235,7 +235,8 @@ openspec/changes/<change-name>/
 - [ ] 3.2 dotnet test —— 全绿
 - [ ] 3.3 ./scripts/test-vm.sh —— 全绿
 - [ ] 3.4 spec scenarios 逐条覆盖确认
-- [ ] 3.5 docs/design/ 文档同步
+- [ ] 3.5 docs/design/ 文档同步（新语法 / IR / VM 行为）
+- [ ] 3.6 docs/roadmap.md 进度表更新（若有特性完成某 pipeline 阶段）
 
 ## 备注
 [实施中发现的问题 / 决策变更]
@@ -301,8 +302,10 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
    | 新 IR 指令 | `docs/design/ir.md` |
    | 新 zbc / VM 行为 | `docs/design/<feature>.md` |
    | 新构建步骤 / CLI 参数 / 工程文件规则 | `docs/design/project.md` 或 `CLAUDE.md` |
+   | 任意特性完成某个 pipeline 阶段（Parser / TypeCheck / IrGen / VM） | `docs/roadmap.md` Pipeline 实现进度表 |
    | fix / refactor（若涉及行为或机制变更） | 对应 `docs/design/` 文档必须更新 |
    | 新协作规则 / 工作流规则 | `.claude/rules/workflow.md` |
+   | 语言设计决策变更（设计目标、phase 归属、设计理由） | `docs/features.md` |
 
    > **规则：任何改变了外部可见行为、机制、规则或约定的迭代，归档前必须有对应文档落地。**
    > 无文档 = 未完成，不得进入 commit 步骤。
