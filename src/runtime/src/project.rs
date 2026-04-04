@@ -35,9 +35,9 @@ pub enum EmitKind {
     Ir,
     /// Per-file bytecode (`.zbc`)
     Zbc,
-    /// Module manifest + per-file `.zbc` under `.cache/` (`.zmod`)
+    /// Module manifest + per-file `.zbc` under `.cache/` (`.zpkg` indexed mode)
     Zmod,
-    /// Bundled assembly (`.zbin`)
+    /// Bundled assembly (`.zpkg` packed mode)
     Zlib,
 }
 

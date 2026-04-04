@@ -11,8 +11,8 @@ use crate::bytecode::Module;
 /// Magic bytes for `.zbc` binary format (Phase 2): `"ZBC\0"`
 pub const ZBC_MAGIC: [u8; 4] = [0x5A, 0x42, 0x43, 0x00];
 
-/// Magic bytes for `.zbin` binary format (Phase 2): `"ZBN\0"`
-pub const ZBIN_MAGIC: [u8; 4] = [0x5A, 0x42, 0x4E, 0x00];
+/// Magic bytes for `.zpkg` binary format (Phase 2): `"ZPK\0"`
+pub const ZPKG_MAGIC: [u8; 4] = [0x5A, 0x50, 0x4B, 0x00];
 
 // ── .zbc — single-file bytecode unit ─────────────────────────────────────────
 
@@ -44,11 +44,31 @@ impl ZbcFile {
     pub const VERSION: [u16; 2] = [0, 1];
 }
 
-// ── .zmod — module manifest / project index ───────────────────────────────────
+// ── .zpkg — unified project package (indexed or packed) ───────────────────────
 
-/// Per-file entry inside a `.zmod` manifest.
+/// Package kind — distinguishes executable packages from libraries.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZmodFileEntry {
+#[serde(rename_all = "lowercase")]
+pub enum ZpkgKind {
+    Exe,
+    Lib,
+}
+
+/// Package storage mode.
+///
+/// `indexed` — references `.zbc` files on disk (development / incremental mode).
+/// `packed`  — inlines all `.zbc` modules (distributable / release mode).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ZpkgMode {
+    Indexed,
+    Packed,
+}
+
+/// Per-file entry inside a `.zpkg` with `mode = "indexed"`.
+/// References a `.zbc` on disk; no inline bytecode.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ZpkgFileEntry {
     /// Relative path to the `.z42` source.
     pub source: String,
     /// Relative path to the compiled `.zbc` (under `.cache/` by default).
@@ -59,111 +79,54 @@ pub struct ZmodFileEntry {
     pub exports: Vec<String>,
 }
 
-/// External dependency declared in a `.zmod`.
+/// Exported symbol entry in a `.zpkg`.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZmodDep {
-    pub name: String,
-    /// Local path or registry URL pointing to a `.zlib`.
-    pub path: String,
-    /// SemVer constraint, e.g. `">=0.1"`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
-}
-
-/// Project kind — determines whether an `entry` function is required.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum ZmodKind {
-    Lib,
-    Exe,
-}
-
-/// The `.zmod` manifest — project-level index of `.zbc` files and dependencies.
-///
-/// Analogy: C# `.csproj` (declares source files, entry point, deps).
-///
-/// Always JSON; designed to be VCS-friendly (no binary blobs).
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ZmodManifest {
-    pub zmod_version: [u16; 2],
-    /// Project / library name.
-    pub name: String,
-    pub version: String,
-    /// `"lib"` (no entry point) or `"exe"` (has `entry`).
-    pub kind: ZmodKind,
-    /// All source files belonging to this project.
-    pub files: Vec<ZmodFileEntry>,
-    /// External `.zlib` dependencies.
-    #[serde(default)]
-    pub dependencies: Vec<ZmodDep>,
-    /// Qualified entry-point function for `kind = exe`, e.g. `"Hello.Main"`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub entry: Option<String>,
-}
-
-impl ZmodManifest {
-    pub const VERSION: [u16; 2] = [0, 1];
-
-    /// Returns the entries whose recorded `source_hash` differs from the
-    /// provided current hash list.  Caller supplies `(source_path, current_hash)` pairs.
-    pub fn stale_files<'a>(&'a self, current_hashes: &[(&str, &str)]) -> Vec<&'a ZmodFileEntry> {
-        self.files
-            .iter()
-            .filter(|f| {
-                current_hashes
-                    .iter()
-                    .find(|(src, _)| *src == f.source)
-                    .map(|(_, hash)| *hash != f.source_hash)
-                    .unwrap_or(true)
-            })
-            .collect()
-    }
-}
-
-// ── .zbin — binary bundle (exe or lib) ────────────────────────────────────────
-
-/// An exported symbol entry inside a `.zbin`.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ZbinExport {
-    /// Fully-qualified name, e.g. `"Demo.Greet.Greet"`.
+pub struct ZpkgExport {
+    /// Fully-qualified name, e.g. `"Demo.Greet.greet"`.
     pub symbol: String,
     /// `"func"`, `"type"`, or `"const"`.
     pub kind: String,
 }
 
-/// External dependency declared in a `.zbin`.
+/// External dependency declared in a `.zpkg`.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZbinDep {
+pub struct ZpkgDep {
     pub name: String,
-    pub version: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
 }
 
-/// A `.zbin` bundle — packs all `.zbc` files of a project into one
-/// self-contained, distributable file.  Covers both exe and lib; the
-/// `kind` field in metadata distinguishes them.
+/// A `.zpkg` package — unified format for both indexed and packed modes.
 ///
-/// Analogy: C# `.dll` = PE envelope + metadata tables + IL sections,
-///          Java `.jar` = zip archive with manifest.
+/// `mode = "indexed"`: `files` lists `.zbc` paths; `modules` is empty.
+/// `mode = "packed"`:  `modules` inlines all `ZbcFile`s; `files` is empty.
 ///
-/// Phase 1: JSON (all `ZbcFile`s inlined under `modules`).
-/// Phase 2: binary archive — `ZBIN_MAGIC` + MANIFEST + ZBC[n] sections.
+/// `kind = "exe"` has an `entry` function; `kind = "lib"` has `entry = null`.
+///
+/// Analogy: C# `.dll` / Java `.jar` (both exe and lib share the same envelope).
+///
+/// Phase 1: JSON.  Phase 2: binary `ZPKG_MAGIC` + sections.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ZbinFile {
-    pub zbin_version: [u16; 2],
+pub struct ZpkgFile {
     pub name: String,
     pub version: String,
-    /// `"lib"` or `"exe"`.
-    pub kind: ZmodKind,
+    /// `"exe"` or `"lib"`.
+    pub kind: ZpkgKind,
+    /// `"indexed"` or `"packed"`.
+    pub mode: ZpkgMode,
     /// All public symbols across every bundled module.
-    pub exports: Vec<ZbinExport>,
+    pub exports: Vec<ZpkgExport>,
     #[serde(default)]
-    pub dependencies: Vec<ZbinDep>,
-    /// Inline bytecode for every source file (Phase 1 JSON form).
+    pub dependencies: Vec<ZpkgDep>,
+    /// Non-empty when `mode = "indexed"`.
+    #[serde(default)]
+    pub files: Vec<ZpkgFileEntry>,
+    /// Non-empty when `mode = "packed"`.
+    #[serde(default)]
     pub modules: Vec<ZbcFile>,
+    /// Qualified entry-point function for `kind = exe`, e.g. `"Hello.main"`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
-}
-
-impl ZbinFile {
-    pub const VERSION: [u16; 2] = [0, 1];
 }

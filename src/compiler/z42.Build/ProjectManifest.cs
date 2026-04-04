@@ -11,11 +11,11 @@ namespace Z42.Build;
 
 public sealed class ProjectManifest
 {
-    public ProjectSection       Project     { get; init; } = new();
-    public SourcesSection       Sources     { get; init; } = new();
-    public BuildSection         Build       { get; init; } = new();
-    public ProfileSection       Debug       { get; init; } = ProfileSection.DefaultDebug;
-    public ProfileSection       Release     { get; init; } = ProfileSection.DefaultRelease;
+    public ProjectSection        Project    { get; init; } = new();
+    public SourcesSection        Sources    { get; init; } = new();
+    public BuildSection          Build      { get; init; } = new();
+    public ProfileSection        Debug      { get; init; } = ProfileSection.DefaultDebug;
+    public ProfileSection        Release    { get; init; } = ProfileSection.DefaultRelease;
     public IReadOnlyList<ExeTarget> ExeTargets { get; init; } = [];
 
     // ── Discovery ─────────────────────────────────────────────────────────────
@@ -54,7 +54,7 @@ public sealed class ProjectManifest
         var exeTargets = ParseExeTargets(model);
         var project    = ParseProject(model, tomlPath, exeTargets.Count > 0);
         var sources    = ParseSources(model);
-        var build      = ParseBuild(model, project.Kind);
+        var build      = ParseBuild(model);
         var debug      = ParseProfile(model, "debug",   ProfileSection.DefaultDebug);
         var release    = ParseProfile(model, "release", ProfileSection.DefaultRelease);
 
@@ -114,6 +114,24 @@ public sealed class ProjectManifest
 
     public ProfileSection SelectProfile(bool release) => release ? Release : Debug;
 
+    // ── Pack resolution (3-level priority) ────────────────────────────────────
+
+    /// Resolve the effective `pack` flag for a build.
+    ///
+    /// Priority (highest → lowest):
+    ///   1. [profile.debug/release].pack
+    ///   2. [[exe]].pack  (target-level override)
+    ///   3. [project].pack
+    ///   4. Built-in default: debug=false, release=true
+    public bool ResolvePack(bool releaseProfile, bool? targetPack = null)
+    {
+        var profile = SelectProfile(releaseProfile);
+        return profile.Pack
+            ?? targetPack
+            ?? Project.Pack
+            ?? releaseProfile;          // built-in default
+    }
+
     // ── Private parsers ────────────────────────────────────────────────────────
 
     static ProjectSection ParseProject(TomlTable model, string tomlPath, bool hasExeTargets)
@@ -131,6 +149,7 @@ public sealed class ProjectManifest
         string? entry   = t.TryGetString("entry");
         string? ns      = t.TryGetString("namespace");
         string? desc    = t.TryGetString("description");
+        bool?   pack    = t.TryGetBool("pack");
 
         // [[exe]] and kind="exe" cannot coexist
         if (hasExeTargets && kindStr == "exe")
@@ -156,7 +175,7 @@ public sealed class ProjectManifest
                 "error: [project].entry is required when kind = \"exe\"");
 
         string resolvedNs = ns ?? KebabToPascal(name);
-        return new ProjectSection(name, version, kind, entry, resolvedNs, desc);
+        return new ProjectSection(name, version, kind, entry, resolvedNs, desc, pack);
     }
 
     static IReadOnlyList<ExeTarget> ParseExeTargets(TomlTable model)
@@ -184,8 +203,9 @@ public sealed class ProjectManifest
             if (string.IsNullOrWhiteSpace(entry))
                 throw new ManifestException($"error: [[exe]] '{name}' is missing required field 'entry'");
 
-            var src = t.TryGetStringArray("src");
-            targets.Add(new ExeTarget(name, entry, src));
+            var src  = t.TryGetStringArray("src");
+            bool? pack = t.TryGetBool("pack");
+            targets.Add(new ExeTarget(name, entry, src, pack));
         }
         return targets;
     }
@@ -200,18 +220,15 @@ public sealed class ProjectManifest
         return new SourcesSection(include, exclude);
     }
 
-    static BuildSection ParseBuild(TomlTable model, ProjectKind kind)
+    static BuildSection ParseBuild(TomlTable model)
     {
-        string defaultEmit = kind == ProjectKind.Lib ? "zbin" : "zbc";
-
         if (!model.TryGetValue("build", out var raw) || raw is not TomlTable t)
-            return new BuildSection("dist", defaultEmit, "interp", true);
+            return new BuildSection("dist", "interp", true);
 
-        string outDir      = t.TryGetString("out_dir")  ?? "dist";
-        string emit        = t.TryGetString("emit")     ?? defaultEmit;
-        string mode        = t.TryGetString("mode")     ?? "interp";
+        string outDir      = t.TryGetString("out_dir") ?? "dist";
+        string mode        = t.TryGetString("mode")    ?? "interp";
         bool   incremental = t.TryGetBool("incremental") ?? true;
-        return new BuildSection(outDir, emit, mode, incremental);
+        return new BuildSection(outDir, mode, incremental);
     }
 
     static ProfileSection ParseProfile(TomlTable model, string name, ProfileSection defaults)
@@ -225,7 +242,8 @@ public sealed class ProjectManifest
         int    optimize = (int)(t.TryGetLong("optimize") ?? defaults.Optimize);
         bool   debug    = t.TryGetBool("debug")     ?? defaults.Debug;
         bool   strip    = t.TryGetBool("strip")     ?? defaults.Strip;
-        return new ProfileSection(mode, optimize, debug, strip);
+        bool?  pack     = t.TryGetBool("pack");
+        return new ProfileSection(mode, optimize, debug, strip, pack);
     }
 
     static string KebabToPascal(string kebab) =>
@@ -240,7 +258,8 @@ public enum ProjectKind { Exe, Lib, Multi }
 public sealed record ExeTarget(
     string                 Name,
     string                 Entry,
-    IReadOnlyList<string>? Src    // null = inherit [sources]
+    IReadOnlyList<string>? Src,   // null = inherit [sources]
+    bool?                  Pack   // null = inherit [project].pack
 );
 
 public sealed record ProjectSection(
@@ -249,10 +268,11 @@ public sealed record ProjectSection(
     ProjectKind Kind,
     string?     Entry,
     string      Namespace,
-    string?     Description
+    string?     Description,
+    bool?       Pack        // null = use profile/built-in default
 )
 {
-    public ProjectSection() : this("", "0.1.0", ProjectKind.Exe, null, "", null) { }
+    public ProjectSection() : this("", "0.1.0", ProjectKind.Exe, null, "", null, null) { }
 }
 
 public sealed record SourcesSection(
@@ -265,23 +285,23 @@ public sealed record SourcesSection(
 
 public sealed record BuildSection(
     string OutDir,
-    string Emit,
     string Mode,
     bool   Incremental
 )
 {
-    public BuildSection() : this("dist", "zbc", "interp", true) { }
+    public BuildSection() : this("dist", "interp", true) { }
 }
 
 public sealed record ProfileSection(
     string Mode,
     int    Optimize,
     bool   Debug,
-    bool   Strip
+    bool   Strip,
+    bool?  Pack     // null = not set at profile level
 )
 {
-    public static ProfileSection DefaultDebug   => new("interp", 0, true,  false);
-    public static ProfileSection DefaultRelease => new("jit",    3, false, true);
+    public static ProfileSection DefaultDebug   => new("interp", 0, true,  false, null);
+    public static ProfileSection DefaultRelease => new("jit",    3, false, true,  null);
 }
 
 // ── TOML helpers ──────────────────────────────────────────────────────────────

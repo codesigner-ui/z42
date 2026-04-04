@@ -116,20 +116,71 @@ public sealed class ProjectManifestTests : IDisposable
         act.Should().Throw<ManifestException>().WithMessage("*kind must be*");
     }
 
-    // ── emit inference ────────────────────────────────────────────────────────
+    // ── ResolvePack priority chain ────────────────────────────────────────────
 
     [Fact]
-    public void Load_ExeEmitDefaultsToZbc()
+    public void ResolvePack_NoConfig_DebugFalseRelaseTrue()
     {
         var m = Load("hello.z42.toml", "[project]\nkind=\"exe\"\nentry=\"Hello.main\"");
-        m.Build.Emit.Should().Be("zbc");
+        m.ResolvePack(releaseProfile: false).Should().BeFalse();
+        m.ResolvePack(releaseProfile: true).Should().BeTrue();
     }
 
     [Fact]
-    public void Load_LibEmitDefaultsToZlib()
+    public void ResolvePack_ProjectPackTrue_OverridesDefault()
     {
-        var m = Load("mylib.z42.toml", "[project]\nkind=\"lib\"");
-        m.Build.Emit.Should().Be("zbin");
+        var m = Load("hello.z42.toml", "[project]\nkind=\"exe\"\nentry=\"Hello.main\"\npack=true");
+        m.ResolvePack(releaseProfile: false).Should().BeTrue();
+        m.ResolvePack(releaseProfile: true).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolvePack_ProfilePackOverridesProject()
+    {
+        var m = Load("hello.z42.toml", """
+            [project]
+            kind  = "exe"
+            entry = "Hello.main"
+            pack  = true
+
+            [profile.debug]
+            pack = false
+            """);
+        m.ResolvePack(releaseProfile: false).Should().BeFalse();  // profile wins
+        m.ResolvePack(releaseProfile: true).Should().BeTrue();    // project default
+    }
+
+    [Fact]
+    public void ResolvePack_TargetPackOverridesProject()
+    {
+        var m = Load("myapp.z42.toml", """
+            [project]
+            pack = false
+
+            [[exe]]
+            name  = "tool"
+            entry = "Tool.main"
+            pack  = true
+            """);
+        var target = m.ExeTargets[0];
+        m.ResolvePack(releaseProfile: false, targetPack: target.Pack).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ResolvePack_ProfileOverridesTargetPack()
+    {
+        var m = Load("myapp.z42.toml", """
+            [project]
+            [[exe]]
+            name  = "tool"
+            entry = "Tool.main"
+            pack  = true
+
+            [profile.debug]
+            pack = false
+            """);
+        var target = m.ExeTargets[0];
+        m.ResolvePack(releaseProfile: false, targetPack: target.Pack).Should().BeFalse();
     }
 
     // ── sources defaults ──────────────────────────────────────────────────────

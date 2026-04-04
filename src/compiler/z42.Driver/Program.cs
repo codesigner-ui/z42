@@ -68,11 +68,10 @@ if (argv.Length == 0)
           Options:
             --release              Use profile.release (default: profile.debug)
             --profile <name>       Use a named profile
-            --emit <format>        Override emit format (ir | zbc | zasm | zmod | zbin)
 
           Examples:
-            z42c build                    # auto-discover *.z42.toml, debug build
-            z42c build --release          # release build
+            z42c build                    # auto-discover *.z42.toml, debug build (indexed .zpkg)
+            z42c build --release          # release build (packed .zpkg)
             z42c build hello.z42.toml     # explicit project file
 
         ╔══════════════════════════════════════════════════════════════════╗
@@ -83,7 +82,7 @@ if (argv.Length == 0)
           z42c <source.z42> [options]
 
           Options:
-            --emit <format>        ir | zbc | zasm | zmod | zbin  (default: ir)
+            --emit <format>        ir | zbc | zasm  (default: ir)
             --out <path>           Output file path
             --dump-tokens          Print token stream and exit
             --dump-ast             Print AST and exit
@@ -196,35 +195,8 @@ switch (emitMode)
         SingleFileDriver.WriteFile(path, ZasmWriter.Write(irModule));
         break;
     }
-    case "zmod":
-    {
-        string cacheDir = Path.Combine(Path.GetDirectoryName(absSource) ?? ".", ".cache");
-        string zbcName  = Path.GetFileNameWithoutExtension(absSource) + ".zbc";
-        string zbcPath  = Path.Combine(cacheDir, zbcName);
-        string zbcRel   = Path.GetRelativePath(Path.GetDirectoryName(absSource) ?? ".", zbcPath);
-
-        var zbc  = new ZbcFile(ZbcFile.CurrentVersion, sourceFile, sourceHash, ns, exports, [], irModule);
-        SingleFileDriver.WriteFile(zbcPath, JsonSerializer.Serialize(zbc, jsonOptions));
-
-        var entry = new ZmodFileEntry(sourceFile, zbcRel, sourceHash, exports);
-        var zmod  = new ZmodManifest(ZmodManifest.CurrentVersion, ns, "0.1.0",
-                        ZmodKind.Exe, [entry], [], $"{ns}.Main");
-        string zmodPath = outPath ?? (defaultBase + ".zmod");
-        SingleFileDriver.WriteFile(zmodPath, JsonSerializer.Serialize(zmod, jsonOptions));
-        break;
-    }
-    case "zbin":
-    {
-        var zbc        = new ZbcFile(ZbcFile.CurrentVersion, sourceFile, sourceHash, ns, exports, [], irModule);
-        var binExports = exports.Select(e => new ZbinExport($"{ns}.{e}", "func")).ToList();
-        var zbin       = new ZbinFile(ZbinFile.CurrentVersion, ns, "0.1.0",
-                             ZmodKind.Exe, binExports, [], [zbc], $"{ns}.Main");
-        string path    = outPath ?? (defaultBase + ".zbin");
-        SingleFileDriver.WriteFile(path, JsonSerializer.Serialize(zbin, jsonOptions));
-        break;
-    }
     default:
-        Console.Error.WriteLine($"error: unknown --emit mode '{emitMode}' (ir | zbc | zmod | zbin)");
+        Console.Error.WriteLine($"error: unknown --emit mode '{emitMode}' (ir | zbc | zasm)");
         return 1;
 }
 

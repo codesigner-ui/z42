@@ -14,7 +14,7 @@ public static class Z42TomlFileName
 public enum ProjectKind { Exe, Lib }
 
 [JsonConverter(typeof(JsonStringEnumConverter<EmitKind>))]
-public enum EmitKind { Ir, Zbc, Zmod, Zbin }
+public enum EmitKind { Ir, Zbc, Zasm }
 
 [JsonConverter(typeof(JsonStringEnumConverter<ExecModeConfig>))]
 public enum ExecModeConfig { Interp, Jit, Aot }
@@ -34,6 +34,8 @@ public sealed class ProjectMeta
     public string?      Description { get; set; }
     public List<string> Authors     { get; set; } = [];
     public string?      License     { get; set; }
+    /// Default pack mode for all targets. Overridable per [[exe]] and per [profile.*].
+    public bool?        Pack        { get; set; }
 
     public string EffectiveNamespace => Namespace ?? Name;
 }
@@ -49,7 +51,6 @@ public sealed class SourcesConfig
 /// `[build]` table.
 public sealed class BuildConfig
 {
-    public EmitKind       Emit        { get; set; } = EmitKind.Zbin;
     public ExecModeConfig Mode        { get; set; } = ExecModeConfig.Interp;
     public bool           Incremental { get; set; } = true;
     public string         OutDir      { get; set; } = "dist";
@@ -73,6 +74,8 @@ public sealed class ProfileConfig
     public int?            Optimize { get; set; }
     public bool?           Debug    { get; set; }
     public bool?           Strip    { get; set; }
+    /// Pack output into a single .zpkg (packed mode). Null = use lower-priority default.
+    public bool?           Pack     { get; set; }
 }
 
 /// Fully-resolved profile after merging [build] + [profile.<name>].

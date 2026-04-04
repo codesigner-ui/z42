@@ -223,8 +223,7 @@ z42c build
 | `.z42ir.json` | 调试用 IR（Phase 1）| 文件 | JSON |
 | `.zbc` | 单文件字节码 | 文件 | 二进制（Phase 2）/ JSON（Phase 1）|
 | `.zasm` | 字节码文本反汇编 | 文件 | 文本 |
-| `.zmod` | 模块清单 / 索引 | 工程 | JSON（始终）|
-| `.zbin` | 发布包（exe 或 lib）| 工程 | 二进制（Phase 2）/ JSON（Phase 1）|
+| `.zpkg` | 工程包（indexed 或 packed 模式）| 工程 | JSON（Phase 1）/ 二进制（Phase 2）|
 
 ---
 
@@ -234,17 +233,14 @@ z42c build
 # 单文件编译 → .zbc（JSON Phase 1）
 z42c src/greet.z42 --emit zbc
 
-# 工程构建（debug，读取 *.z42.toml）
+# 工程构建（debug，读取 *.z42.toml） → dist/<name>.zpkg (mode=indexed)
 z42c build
 
-# 工程构建（release）
+# 工程构建（release） → dist/<name>.zpkg (mode=packed)
 z42c build --release
 
 # 只构建指定 [[exe]] 目标
 z42c build --exe hello
-
-# 单文件 → .zbin（打包格式）
-z42c src/greet.z42 --emit zbin
 ```
 
 ---
@@ -255,8 +251,8 @@ z42c src/greet.z42 --emit zbin
 |------|---------|
 | `.z42ir.json` | 直接加载（Phase 1 调试，向前兼容）|
 | `.zbc` | 单文件字节码，自包含运行 |
-| `.zmod` | 按 `files[]` 顺序加载所有 `.zbc`，合并符号表 |
-| `.zbin` | 解包内嵌 ZBC sections，合并后执行；`kind` 字段区分 exe/lib |
+| `.zpkg` `mode=indexed` | 按 `files[]` 路径依次读取 `.zbc`，合并符号表后执行 |
+| `.zpkg` `mode=packed` | 解包 `modules[]` 内联 ZbcFile，合并后执行；`kind` 字段区分 exe/lib |
 
 VM 入口选择优先级：`entry` 字段 > 名为 `Main` / `main` 的函数。
 
@@ -265,13 +261,13 @@ VM 入口选择优先级：`entry` 字段 > 名为 `Main` / `main` 的函数。
 ## 符号解析规则
 
 1. 同文件内直接引用（已在单模块 IR 里解析）
-2. 同工程跨文件引用：通过 `.zmod` 的 `exports` 表快速查找
-3. 跨库引用：通过 `.zbin` 的 `EXPORTS` section + 重定位
+2. 同工程跨文件引用：通过 `.zpkg` 的 `exports` 表快速查找
+3. 跨库引用：通过 `.zpkg` 的 `EXPORTS` section + 重定位
 
 ---
 
 ## 版本兼容性
 
-- `.zbc` / `.zbin` magic bytes 固定，版本字段用于前向兼容
+- `.zbc` / `.zpkg` magic bytes 固定，版本字段用于前向兼容
 - VM 必须拒绝 `version_major` 高于自身支持版本的文件，并给出明确错误
-- `.zmod` 为 JSON，永远向前兼容（新字段旧 VM 忽略）
+- Phase 1 JSON 格式永远向前兼容（新字段旧 VM 忽略）

@@ -25,7 +25,7 @@ z42 使用 **`<name>.z42.toml`** 作为工程配置文件，格式为 TOML。
 每个工程必须有唯一标识和产物类型。
 
 ```toml
-[package]
+[project]
 name    = "hello"      # 工程名，kebab-case
 version = "0.1.0"      # SemVer
 kind    = "exe"        # exe | lib
@@ -47,7 +47,7 @@ entry   = "Hello.main" # kind=exe 时必填，完全限定函数名
 需要定制时可显式指定：
 
 ```toml
-[package]
+[project]
 name      = "hello"
 namespace = "Demo.Hello"   # 覆盖默认推断
 ```
@@ -115,7 +115,7 @@ z42c hello.z42 --dump-ast       # 调试：查看 AST
 控制哪些 `.z42` 文件参与编译。
 
 ```toml
-[package]
+[project]
 name    = "mylib"
 version = "0.1.0"
 kind    = "lib"
@@ -149,44 +149,57 @@ my-app/
 控制产物格式、输出目录和增量编译。
 
 ```toml
-[package]
+[project]
 name = "myapp"
 version = "0.1.0"
 kind = "exe"
 entry = "MyApp.main"
+pack = false           # 工程级 pack 默认值（最低优先级）
 
 [build]
-out_dir     = "dist"       # 产物目录，默认 "dist/"
-emit        = "zbc"        # 覆盖默认产物格式
-incremental = true         # 启用增量编译，默认 true
+out_dir     = "dist"   # 产物目录，默认 "dist/"
+incremental = true     # 启用增量编译，默认 true
+
+[profile.debug]
+pack = false           # debug build → indexed zpkg（.cache/*.zbc + dist/<name>.zpkg）
+
+[profile.release]
+pack = true            # release build → packed zpkg（单文件，dist/<name>.zpkg）
 ```
 
-**字段说明：**
+**`[build]` 字段说明：**
 
 | 字段 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `out_dir` | string | `"dist"` | 产物输出目录 |
-| `emit` | `ir\|zbc\|zmod\|zbin` | 按 kind 推断 | 覆盖默认产物格式 |
 | `incremental` | bool | `true` | 基于 source hash 跳过未改动文件 |
 
-**`emit` 格式说明：**
+**`pack` 字段说明（三层优先级，高→低）：**
 
-| 值 | 产物 | 说明 |
-|----|------|------|
-| `ir` | `.z42ir.json` | 调试用 JSON IR，VM 可直接加载 |
-| `zbc` | `.zbc` | 单文件字节码（二进制）|
-| `zmod` | `.zmod` + `.cache/*.zbc` | 多文件增量索引 |
-| `zbin` | `.zbin` | 打包程序集，含所有模块 |
+| 层次 | 位置 | 说明 |
+|------|------|------|
+| 最高 | `[profile.debug/release].pack` | 当前 profile 覆盖 |
+| 中 | `[[exe]].pack` | 单个可执行目标覆盖 |
+| 最低 | `[project].pack` | 工程级全局默认 |
 
-**增量编译工作方式：**
+**内置默认值（未显式配置时）：** `debug` → `false`（indexed），`release` → `true`（packed）
+
+**产物输出：**
+
+| pack 值 | 产物 | 说明 |
+|---------|------|------|
+| `false` | `dist/<name>.zpkg` (`mode=indexed`) + `.cache/*.zbc` | 开发态，支持增量更新 |
+| `true`  | `dist/<name>.zpkg` (`mode=packed`) | 发布态，单文件自包含 |
+
+**增量编译工作方式（pack=false）：**
 
 ```
 z42c build
-  ├─ 读取 .zmod（若存在）
+  ├─ 读取 dist/<name>.zpkg（若存在）
   ├─ 对比每个 .z42 文件的 SHA-256 与记录值
   │    ├─ 相同 → 跳过重编译
-  │    └─ 不同 → 重编译该文件，更新 .zbc 和 hash
-  └─ 重新打包 .zbin（若有改动）
+  │    └─ 不同 → 重编译该文件，更新 .cache/*.zbc 和 source_hash
+  └─ 更新 dist/<name>.zpkg 中变化项的 source_hash
 ```
 
 **目录结构（含产物）：**
@@ -196,10 +209,10 @@ my-app/
 ├── z42.toml
 ├── src/
 │   └── main.z42
-├── dist/             ← out_dir（加入 .gitignore）
-│   └── my-app.zbc
-└── .cache/           ← 增量中间产物（加入 .gitignore）
-    └── src/main.zbc
+├── dist/               ← out_dir（加入 .gitignore）
+│   └── my-app.zpkg     ← indexed 或 packed，取决于 pack 设置
+└── .cache/             ← 增量中间产物（加入 .gitignore）
+    └── src/main.zbc    ← 仅 pack=false 时生成
 ```
 
 ---
@@ -209,7 +222,7 @@ my-app/
 区分开发和发布构建，覆盖执行模式和优化级别。
 
 ```toml
-[package]
+[project]
 name  = "myapp"
 version = "0.1.0"
 kind  = "exe"
@@ -237,6 +250,7 @@ strip    = true        # 剥除 META section
 | `optimize` | 0–3 | 优化级别（0=无，3=最激进）|
 | `debug` | bool | 生成调试信息，默认 debug=true / release=false |
 | `strip` | bool | 剥除调试信息，默认 false |
+| `pack` | bool | 覆盖 `[[exe]]` 和 `[project].pack`；null = 不覆盖 |
 
 **执行模式三级优先级（高→低）：**
 
@@ -263,7 +277,7 @@ z42c build --profile staging   # 使用自定义 profile（如有）
 引用外部 z42 库。
 
 ```toml
-[package]
+[project]
 name    = "myapp"
 version = "0.1.0"
 kind    = "exe"
@@ -291,7 +305,7 @@ z42-http = { version = ">=0.2, <1.0" }       # 版本约束（未来：注册中
 **完整示例（含依赖）：**
 
 ```toml
-[package]
+[project]
 name    = "hello"
 version = "0.1.0"
 kind    = "exe"
@@ -348,7 +362,7 @@ strip    = true
 
 ```toml
 # apps/hello/z42.toml
-[package]
+[project]
 name    = "hello"
 version = "0.1.0"
 kind    = "exe"
@@ -358,13 +372,13 @@ entry   = "Hello.main"
 z42-std = { version = "workspace" }   # 版本由 workspace 统一管理
 ```
 
-工作区根目录也是工程时，`[workspace]` 与 `[package]` 共存：
+工作区根目录也是工程时，`[workspace]` 与 `[project]` 共存：
 
 ```toml
 [workspace]
 members = ["libs/parser", "libs/vm"]
 
-[package]
+[project]
 name    = "z42c"
 version = "0.1.0"
 kind    = "exe"
@@ -403,10 +417,8 @@ monorepo/
 | 文件 | 含义 | 谁写 | 纳入 VCS |
 |------|------|------|---------|
 | `<name>.z42.toml` | 工程 / 工作区配置 | 开发者 | ✅ |
-| `.zmod` | 增量构建索引（展开路径 + hash）| 编译器 | ❌ |
-| `.cache/*.zbc` | 单文件增量字节码 | 编译器 | ❌ |
-| `dist/*.zbc` | 最终可执行字节码 | 编译器 | ❌ |
-| `dist/*.zbin` | 打包程序集 | 编译器 | ❌ |
+| `.cache/*.zbc` | 单文件增量字节码（pack=false 时生成）| 编译器 | ❌ |
+| `dist/*.zpkg` | 工程包（indexed 或 packed）| 编译器 | ❌ |
 
 `.cache/` 和 `dist/` 加入 `.gitignore`。
 
@@ -415,7 +427,7 @@ monorepo/
 ## 完整字段速查
 
 ```toml
-[package]
+[project]
 name        = "my-app"          # 必填
 version     = "0.1.0"           # 必填，SemVer
 kind        = "exe"             # 必填，exe | lib
@@ -424,6 +436,7 @@ namespace   = "MyApp"           # 可选，默认由 name 推断
 description = ""                # 可选
 authors     = []                # 可选
 license     = "MIT"             # 可选，SPDX
+pack        = false             # 可选，工程级 pack 默认值
 
 [sources]
 include = ["src/**/*.z42"]      # 默认值
@@ -431,7 +444,6 @@ exclude = []                    # 默认值
 
 [build]
 out_dir     = "dist"            # 默认值
-emit        = "zbc"             # 默认按 kind 推断
 incremental = true              # 默认 true
 mode        = "interp"          # 全局默认执行模式
 
@@ -443,13 +455,15 @@ mode        = "interp"          # 全局默认执行模式
 mode     = "interp"
 optimize = 0
 debug    = true
+pack     = false                # → indexed zpkg（默认）
 
 [profile.release]
 mode     = "jit"
 optimize = 3
 strip    = true
+pack     = true                 # → packed zpkg（默认）
 
-[workspace]                     # L6，与 [package] 可共存
+[workspace]                     # L6，与 [project] 可共存
 members = []
 [workspace.dependencies]
 # name = { path = "...", version = "..." }

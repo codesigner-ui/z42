@@ -1,4 +1,4 @@
-/// Module merge logic: combine multiple IR modules into one for .zmod / .zlib loading.
+/// Module merge logic: combine multiple IR modules into one for .zpkg loading.
 ///
 /// The only complexity is the `string_pool` offset remap: each `ConstStr { dst, idx }`
 /// instruction references an index into its module's string pool. When N pools are
