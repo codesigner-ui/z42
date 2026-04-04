@@ -45,25 +45,9 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 > 修改编译器后，先 `--emit ir` 重新生成 `.z42ir.json`，再跑 `./scripts/test-vm.sh`。
 
-## 实现阶段
+## 实现计划
 
-| 阶段 | 内容 | 状态 |
-|------|------|------|
-| 1 | 编译器：Lexer + Parser | ✅ |
-| 2 | 编译器：类型检查器 | 🚧 |
-| 3 | 编译器：IR Codegen → .z42bc | 🚧 |
-| 4 | Rust VM：解释器 | ✅ |
-| 5 | Rust VM：JIT（Cranelift） | ✅ |
-| 6 | Rust VM：AOT（LLVM/inkwell） | 📋 |
-| 7 | 自举 | 📋 |
-
-## 语言设计策略
-
-- **Phase 1（当前）**：语法完全对齐 C# 9–12，尽快跑通完整 pipeline
-- **Phase 2**：编译器基础设施巩固（AST 配置化、错误体系、z42bc 二进制格式、VM 框架）
-- **Phase 3**：引入 Rust/Python 优点（Result、match、Trait、ADT）——Phase 1/2 完成前不讨论
-
-**固定决策**：IR 是寄存器 SSA 形式；执行模式注解作用于命名空间级；`.z42bc` magic = `Z42\0`；z42 始终带 GC，不引入所有权/借用。
+见 `docs/roadmap.md`。当前焦点：**M2 TypeChecker L1 全覆盖 → M3 IR Codegen L1 全覆盖**。
 
 ## 协作工作流（必须遵守）
 
@@ -86,6 +70,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 | 新 IR 指令 | `docs/design/ir.md` |
 | 新 VM 行为 | `docs/design/<feature>.md` |
 | 新构建步骤 / CLI 参数 | `CLAUDE.md` 构建与测试部分 |
+| 特性实现进度变更 | `docs/roadmap.md` L1 进度表 |
 | 新工程文件规则 / manifest 字段 | `docs/design/project.md` |
 | 新协作规则 / 工作流变更 | `.claude/rules/workflow.md` |
 | fix / refactor 涉及行为或机制变更 | 对应 `docs/design/` 文档 |
@@ -100,8 +85,8 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ## 注意事项
 
 - 自举完成前，不把编译器代码改写成 z42
-- 解释器全部测试通过前，不填充 JIT/AOT 实现
-- Phase 3 特性不在 Phase 1/2 阶段引入到规范或代码中
+- M4（解释器）全绿前，不填充 JIT/AOT 实现
+- L2/L3 特性（Result、Trait、ADT、泛型、Lambda、async 等）不在 L1 阶段引入到规范或代码中
 
 @docs/design/language-overview.md
 @docs/design/ir.md

@@ -20,14 +20,12 @@ productivity and performance.
 
 | Feature | Design Choice |
 |---------|--------------|
-| Syntax  | C# 9–12 subset as Phase 1 baseline |
+| Syntax  | C# 9–12 subset (L1 baseline) |
 | Types   | `int`, `long`, `double`, `string`, `bool`, `char`, user-defined classes/structs/records |
-| Enums   | Algebraic data types (Rust-style) with exhaustive `match` |
-| Generics | Type parameters with trait-style `where` constraints |
-| Error handling | `try`/`catch`/`throw` today; `Result<T,E>` + `?` operator in Phase 2 |
 | Null safety | Nullable types `T?`, null-coalescing `??`, null-conditional `?.` |
-| Scripting | Single-file execution without a project file; built-in `eval` |
+| Error handling | `try`/`catch`/`throw` |
 | Memory | Garbage collected — no ownership, no lifetimes |
+| Execution | Interpreter / JIT / AOT — mixed freely at namespace level via `[ExecMode]` |
 
 ## Repository Layout
 
@@ -35,25 +33,15 @@ productivity and performance.
 z42/
 ├── src/
 │   ├── compiler/     # Lexer, parser, type checker, IR codegen — C# (bootstrap)
-│   ├── runtime/      # Virtual machine (interpreter + JIT + AOT) — Rust
-│   ├── stdlib/       # Standard library — z42 (once self-hosting)
-│   └── tools/        # CLI driver, REPL, package manager — C#
-├── docs/design/            # Language specification documents
-├── docs/             # User-facing documentation
-└── tests/            # Test suite
+│   └── runtime/      # Virtual machine (interpreter + JIT + AOT) — Rust
+├── docs/roadmap.md   # Language evolution phases and milestones
+├── docs/design/      # Language specification documents
+└── examples/         # .z42 example source files
 ```
 
-## Implementation Phases
+## Roadmap
 
-| Phase | Goal |
-|-------|------|
-| 0 | Language spec, IR design, project skeleton |
-| 1 | Bootstrap compiler in C# (lexer → parser → type checker → IR) |
-| 2 | Rust VM — interpreter mode |
-| 3 | Rust VM — JIT mode (via Cranelift) |
-| 4 | Rust VM — AOT mode (via LLVM) |
-| 5 | Mixed execution: per-module/function mode selection |
-| 6 | Self-hosting — rewrite compiler and tools in z42 |
+See [`docs/roadmap.md`](docs/roadmap.md) for language evolution phases, implementation milestones, and feature progress.
 
 ## Getting Started
 
