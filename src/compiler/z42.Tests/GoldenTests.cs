@@ -245,6 +245,7 @@ public sealed class GoldenTests
                 Version:      "0.1.0",
                 Kind:         ZpkgKind.Exe,
                 Mode:         ZpkgMode.Packed,
+                Namespaces:   [ir.Name],
                 Exports:      pkgExports,
                 Dependencies: [],
                 Files:        [],

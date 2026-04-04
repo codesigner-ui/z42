@@ -45,11 +45,11 @@ public sealed record ZpkgExport(
     [property: JsonPropertyName("kind")]   string Kind
 );
 
-/// External dependency declared in a .zpkg.
+/// Resolved dependency entry recorded in a .zpkg at compile time.
+/// Records the actual file that provided the namespaces, not a declarative constraint.
 public sealed record ZpkgDep(
-    [property: JsonPropertyName("name")]    string  Name,
-    [property: JsonPropertyName("version")] string? Version = null,
-    [property: JsonPropertyName("path")]    string? Path    = null
+    [property: JsonPropertyName("file")]       string       File,
+    [property: JsonPropertyName("namespaces")] List<string> Namespaces
 );
 
 /// A .zpkg package — unified format for both indexed (incremental dev) and packed (distributable) modes.
@@ -58,15 +58,17 @@ public sealed record ZpkgDep(
 /// mode=packed:  modules[] inlines all ZbcFiles;                  files=[]
 ///
 /// kind=exe has entry; kind=lib has entry=null.
+/// namespaces[] lists all namespace names exported by this package (used by compiler for dependency scanning).
 /// Matches Rust <c>metadata::ZpkgFile</c>.
 public sealed record ZpkgFile(
-    [property: JsonPropertyName("name")]          string            Name,
-    [property: JsonPropertyName("version")]       string            Version,
-    [property: JsonPropertyName("kind")]          ZpkgKind          Kind,
-    [property: JsonPropertyName("mode")]          ZpkgMode          Mode,
-    [property: JsonPropertyName("exports")]       List<ZpkgExport>  Exports,
-    [property: JsonPropertyName("dependencies")]  List<ZpkgDep>     Dependencies,
+    [property: JsonPropertyName("name")]          string              Name,
+    [property: JsonPropertyName("version")]       string              Version,
+    [property: JsonPropertyName("kind")]          ZpkgKind            Kind,
+    [property: JsonPropertyName("mode")]          ZpkgMode            Mode,
+    [property: JsonPropertyName("namespaces")]    List<string>        Namespaces,
+    [property: JsonPropertyName("exports")]       List<ZpkgExport>    Exports,
+    [property: JsonPropertyName("dependencies")]  List<ZpkgDep>       Dependencies,
     [property: JsonPropertyName("files")]         List<ZpkgFileEntry> Files,
-    [property: JsonPropertyName("modules")]       List<ZbcFile>     Modules,
-    [property: JsonPropertyName("entry")]         string?           Entry = null
+    [property: JsonPropertyName("modules")]       List<ZbcFile>       Modules,
+    [property: JsonPropertyName("entry")]         string?             Entry = null
 );

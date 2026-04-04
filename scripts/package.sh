@@ -8,16 +8,11 @@
 # Output:
 #   artifacts/z42/
 #   ├── bin/z42vm
-#   └── libs/
-#       ├── z42.core.zbc        (placeholder until M7 build-stdlib)
-#       ├── z42.core.zpkg       (placeholder)
-#       ├── z42.io.zbc
+#   └── libs/              ← .zpkg only; libs/ does not contain .zbc files
+#       ├── z42.core.zpkg  (placeholder until M7 build-stdlib)
 #       ├── z42.io.zpkg
-#       ├── z42.math.zbc
 #       ├── z42.math.zpkg
-#       ├── z42.text.zbc
 #       ├── z42.text.zpkg
-#       ├── z42.collections.zbc
 #       └── z42.collections.zpkg
 
 set -euo pipefail
@@ -45,12 +40,12 @@ cp "$VM_BIN" "$ARTIFACTS/bin/z42vm"
 echo "  Copied z42vm → $ARTIFACTS/bin/z42vm"
 
 # ── 4. Stdlib placeholder files ────────────────────────────────────────────────
-# Real .zbc/.zpkg are produced by build-stdlib.sh once [Native] is supported (M7).
+# libs/ only contains .zpkg files. .zbc files are compilation units and do not
+# belong in libs/. Real .zpkg are produced by build-stdlib.sh (M7).
 echo "Populating libs/ (placeholder — M7 will replace with compiled stdlib)..."
 for mod in "${STDLIB_MODULES[@]}"; do
-    touch "$ARTIFACTS/libs/${mod}.zbc"
     touch "$ARTIFACTS/libs/${mod}.zpkg"
-    echo "  ${mod}.zbc  ${mod}.zpkg"
+    echo "  ${mod}.zpkg"
 done
 
 echo ""
