@@ -1,0 +1,18 @@
+namespace z42.io;
+
+public static class Path {
+    [Native("__path_join")]
+    public static string Join(string a, string b);
+
+    [Native("__path_get_extension")]
+    public static string GetExtension(string path);
+
+    [Native("__path_get_filename")]
+    public static string GetFileName(string path);
+
+    [Native("__path_get_directory")]
+    public static string GetDirectoryName(string path);
+
+    [Native("__path_get_filename_without_ext")]
+    public static string GetFileNameWithoutExtension(string path);
+}

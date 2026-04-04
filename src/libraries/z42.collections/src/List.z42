@@ -1,0 +1,18 @@
+namespace z42.collections;
+
+// TODO(L3): full generic implementation requires generics support.
+// Until then, List<T> is handled by the compiler's pseudo-class strategy.
+// This file is a placeholder that documents the intended API.
+//
+// public class List<T> {
+//     public int Count { get; }
+//     public void Add(T item);
+//     public void Insert(int index, T item);
+//     public void RemoveAt(int index);
+//     public bool Remove(T item);
+//     public bool Contains(T item);
+//     public void Clear();
+//     public void Sort();
+//     public void Reverse();
+//     public T this[int index] { get; set; }
+// }

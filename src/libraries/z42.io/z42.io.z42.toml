@@ -1,0 +1,7 @@
+[package]
+name    = "z42.io"
+version = "0.1.0"
+type    = "lib"
+
+[dependencies]
+"z42.core" = "0.1.0"

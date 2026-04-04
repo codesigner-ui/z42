@@ -1,0 +1,30 @@
+namespace z42.core;
+
+// Test assertion helpers.
+// Throws AssertionError (VM-level exception) on failure.
+public static class Assert {
+    [Native("__assert_eq")]
+    public static void Equal(object expected, object actual);
+
+    [Native("__assert_true")]
+    public static void True(bool condition);
+
+    [Native("__assert_false")]
+    public static void False(bool condition);
+
+    [Native("__assert_null")]
+    public static void Null(object? value);
+
+    [Native("__assert_not_null")]
+    public static void NotNull(object? value);
+
+    [Native("__assert_contains")]
+    public static void Contains(string expected, string actual);
+
+    public static void NotEqual(object expected, object actual) {
+        // Implemented as negation in z42; no separate intrinsic needed.
+        bool eq = false;
+        try { Equal(expected, actual); eq = true; } catch {}
+        if (eq) throw new Exception($"AssertionError: expected values to differ but both were {expected}");
+    }
+}

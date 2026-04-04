@@ -1,0 +1,6 @@
+namespace z42.core;
+
+// TODO(L3): requires generics.
+// interface IComparable<T> {
+//     int CompareTo(T other);
+// }

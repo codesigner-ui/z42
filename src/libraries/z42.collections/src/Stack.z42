@@ -1,0 +1,11 @@
+namespace z42.collections;
+
+// TODO(L3): requires generics.
+// public class Stack<T> {
+//     public int Count { get; }
+//     public void Push(T item);
+//     public T Pop();
+//     public T Peek();
+//     public bool Contains(T item);
+//     public void Clear();
+// }

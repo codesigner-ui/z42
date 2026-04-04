@@ -1,0 +1,24 @@
+namespace z42.core;
+
+// Type conversion helpers.
+// Native bindings delegate to VM intrinsics; overloads are pure z42.
+public static class Convert {
+    [Native("__int_parse")]
+    public static int ToInt32(string s);
+
+    [Native("__long_parse")]
+    public static long ToInt64(string s);
+
+    [Native("__double_parse")]
+    public static double ToDouble(string s);
+
+    [Native("__to_str")]
+    public static string ToString(object value);
+
+    public static int    ToInt32(double value)  => (int)value;
+    public static double ToDouble(int value)    => (double)value;
+    public static string ToString(int value)    => ToString((object)value);
+    public static string ToString(long value)   => ToString((object)value);
+    public static string ToString(double value) => ToString((object)value);
+    public static string ToString(bool value)   => value ? "True" : "False";
+}

@@ -1,0 +1,11 @@
+[package]
+name    = "z42.collections"
+version = "0.1.0"
+type    = "lib"
+
+# NOTE: Full generic implementations of List<T> and Dictionary<K,V> are deferred
+# to L3 (requires generics). Until then, these types are handled by the compiler's
+# pseudo-class strategy. This module provides non-generic helpers only.
+
+[dependencies]
+"z42.core" = "0.1.0"

@@ -1,0 +1,15 @@
+namespace z42.collections;
+
+// TODO(L3): full generic implementation requires generics support.
+// Until then, Dictionary<K,V> is handled by the compiler's pseudo-class strategy.
+// This file is a placeholder that documents the intended API.
+//
+// public class Dictionary<K, V> {
+//     public int Count { get; }
+//     public V this[K key] { get; set; }
+//     public bool ContainsKey(K key);
+//     public bool Remove(K key);
+//     public void Clear();
+//     public List<K> Keys { get; }
+//     public List<V> Values { get; }
+// }

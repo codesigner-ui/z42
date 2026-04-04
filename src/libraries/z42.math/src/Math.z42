@@ -1,0 +1,35 @@
+namespace z42.math;
+
+public static class Math {
+    // ── Constants ────────────────────────────────────────────────────────────
+    public static double PI  = 3.141592653589793;
+    public static double E   = 2.718281828459045;
+    public static double Tau = 6.283185307179586;
+
+    // ── Native bindings ──────────────────────────────────────────────────────
+    [Native("__math_abs")]    public static double Abs(double x);
+    [Native("__math_max")]    public static double Max(double a, double b);
+    [Native("__math_min")]    public static double Min(double a, double b);
+    [Native("__math_pow")]    public static double Pow(double base, double exp);
+    [Native("__math_sqrt")]   public static double Sqrt(double x);
+    [Native("__math_floor")]  public static double Floor(double x);
+    [Native("__math_ceiling")] public static double Ceiling(double x);
+    [Native("__math_round")]  public static double Round(double x);
+    [Native("__math_log")]    public static double Log(double x);
+    [Native("__math_log10")]  public static double Log10(double x);
+    [Native("__math_sin")]    public static double Sin(double x);
+    [Native("__math_cos")]    public static double Cos(double x);
+    [Native("__math_tan")]    public static double Tan(double x);
+    [Native("__math_atan2")]  public static double Atan2(double y, double x);
+    [Native("__math_exp")]    public static double Exp(double x);
+
+    // ── Pure z42 helpers ─────────────────────────────────────────────────────
+    public static int    Abs(int x)              => x < 0 ? -x : x;
+    public static int    Max(int a, int b)       => a > b ? a : b;
+    public static int    Min(int a, int b)       => a < b ? a : b;
+    public static double Clamp(double v, double lo, double hi) =>
+        v < lo ? lo : (v > hi ? hi : v);
+    public static int    Clamp(int v, int lo, int hi) =>
+        v < lo ? lo : (v > hi ? hi : v);
+    public static double Sign(double x) => x > 0.0 ? 1.0 : (x < 0.0 ? -1.0 : 0.0);
+}

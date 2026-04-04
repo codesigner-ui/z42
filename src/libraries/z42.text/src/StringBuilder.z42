@@ -1,0 +1,18 @@
+namespace z42.text;
+
+// Mutable string builder — avoids repeated string allocations.
+// Implemented in z42 using a List<string> internally.
+// TODO(L2): requires List<string> or native __sb_* intrinsics.
+public class StringBuilder {
+    // TODO(L2): implement using native intrinsics or List<string>.
+    // Placeholder — documents intended API.
+    //
+    // private List<string> _parts;
+    // public StringBuilder() { _parts = new List<string>(); }
+    // public StringBuilder Append(string value) { _parts.Add(value); return this; }
+    // public StringBuilder AppendLine(string value) { _parts.Add(value + "\n"); return this; }
+    // public StringBuilder AppendLine() { _parts.Add("\n"); return this; }
+    // public void Clear() { _parts.Clear(); }
+    // public int Length { get { ... } }
+    // public override string ToString() => string.Join("", _parts);
+}

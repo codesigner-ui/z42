@@ -1,0 +1,11 @@
+namespace z42.collections;
+
+// TODO(L3): requires generics.
+// public class Queue<T> {
+//     public int Count { get; }
+//     public void Enqueue(T item);
+//     public T Dequeue();
+//     public T Peek();
+//     public bool Contains(T item);
+//     public void Clear();
+// }

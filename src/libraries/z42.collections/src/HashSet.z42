@@ -1,0 +1,12 @@
+namespace z42.collections;
+
+// TODO(L3): requires generics.
+// public class HashSet<T> {
+//     public int Count { get; }
+//     public bool Add(T item);
+//     public bool Remove(T item);
+//     public bool Contains(T item);
+//     public void Clear();
+//     public void UnionWith(HashSet<T> other);
+//     public void IntersectWith(HashSet<T> other);
+// }

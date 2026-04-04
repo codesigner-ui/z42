@@ -1,0 +1,6 @@
+namespace z42.core;
+
+// TODO(L2): requires interface full implementation.
+// interface IDisposable {
+//     void Dispose();
+// }

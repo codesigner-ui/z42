@@ -1,0 +1,12 @@
+namespace z42.text;
+
+// TODO(L3): requires lambda/delegate support.
+// public class Regex {
+//     public Regex(string pattern);
+//     public bool IsMatch(string input);
+//     public string Match(string input);
+//     public string[] Matches(string input);
+//     public string Replace(string input, string replacement);
+//
+//     public static bool IsMatch(string input, string pattern);
+// }

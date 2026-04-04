@@ -1,0 +1,6 @@
+namespace z42.core;
+
+// TODO(L3): requires generics.
+// interface IEquatable<T> {
+//     bool Equals(T other);
+// }
