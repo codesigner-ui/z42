@@ -3,6 +3,7 @@ name    = "z42.core"
 version = "0.1.0"
 kind    = "lib"
 
-# z42.core has no dependencies — it is the foundation of the stdlib.
-# It is loaded implicitly by the VM (no `using` required in user code).
+# z42.core is the implicit prelude of every z42 program.
+# It is loaded automatically at VM startup — user projects must NOT declare
+# it as a dependency. The compiler and VM inject it unconditionally.
 [dependencies]

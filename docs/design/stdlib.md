@@ -27,6 +27,20 @@ The z42 standard library is organized into three layers:
 
 ---
 
+## Design Philosophy
+
+The z42 standard library takes the best from three reference languages:
+
+| Source | What we borrow |
+|--------|----------------|
+| **C#** | Naming conventions (`PascalCase` throughout), BCL module structure (`Console`, `File`, `Path`, `StringBuilder`, `Environment`), `IEquatable`/`IComparable` protocols, LINQ-style collection methods (L3) |
+| **Rust** | Trait-based protocol design (L3: `IEquatable` → `Trait`), `Result<T,E>` for error-returning I/O APIs (L3), iterator chaining, Platform HAL as a trait so the VM is host-agnostic |
+| **Python** | "Batteries included" — common tasks (file I/O, string ops, math, assertions) require no third-party packages; `assert` is a first-class tool; module names are short and readable |
+
+**Precedence rule when languages conflict:** C# wins on naming and structure; Rust wins on abstraction design; Python wins on defaults and ergonomics.
+
+---
+
 ## Layer 1 — VM Intrinsics
 
 Functions that cannot be implemented in z42 because they require direct Rust/OS access.
@@ -138,13 +152,21 @@ Rules:
 
 ### Module Auto-load Policy
 
-| Module | Load condition |
-|--------|---------------|
-| `z42.core` | Always loaded (implicit global using); no `using` required |
-| `z42.io` | Loaded when `using z42.io;` is present in the source file |
-| `z42.collections` | Loaded when `using z42.collections;` is present |
-| `z42.text` | Loaded when `using z42.text;` is present |
-| `z42.math` | Loaded when `using z42.math;` is present |
+`z42.core` is the **implicit prelude** — the default dependency of every z42 program.
+
+| Module | Load condition | Analogy |
+|--------|---------------|---------|
+| `z42.core` | **Always loaded at VM startup.** No `using` required. | Python `builtins`, Rust `std::prelude` |
+| `z42.io` | Loaded when `using z42.io;` is present | C# `System.IO` |
+| `z42.collections` | Loaded when `using z42.collections;` is present | C# `System.Collections.Generic` |
+| `z42.text` | Loaded when `using z42.text;` is present | C# `System.Text` |
+| `z42.math` | Loaded when `using z42.math;` is present | C# `System.Math` |
+
+**`z42.core` auto-load semantics:**
+- Loaded before the first instruction of any user module is executed.
+- All names exported by `z42.core` are available in every file without qualification.
+- It is a compile-time error to redeclare a top-level name that shadows a `z42.core` export without an explicit `using z42.core as ...` alias (L3).
+- User projects **must not** declare `z42.core` as an explicit dependency in their `.z42.toml`; it is injected automatically by the compiler and VM.
 
 ### stdlib Search Path (VM)
 
@@ -160,10 +182,11 @@ Each path is expected to contain `.zbc` files named `<module-name>.zbc`
 
 ## Module Catalog
 
-### `z42.core` — Foundation
+### `z42.core` — Foundation (Default Dependency)
 
 No platform dependency. Provides base protocols and type conversion helpers.
-Always loaded implicitly.
+**Always loaded at VM startup; implicit default dependency of every z42 project.**
+User `.z42.toml` files must NOT declare it — it is injected automatically.
 
 ```
 src/libraries/z42.core/src/

@@ -244,3 +244,35 @@ Package distribution via `.zpkg` format is introduced in L2.
 - `string` is UTF-16 compatible internally; `char` is always a full Unicode scalar value
 
 **Phase:** L1
+
+---
+
+## 16. Standard Library
+
+**Decision:** The standard library is organized into named modules (`z42.core`, `z42.io`, `z42.collections`, `z42.text`, `z42.math`). `z42.core` is a default dependency — always loaded at VM startup without any `using` declaration.
+
+### Design Philosophy: Best of Three Languages
+
+Each module's API design draws from Rust, C#, and Python:
+
+| Source | What we borrow |
+|--------|----------------|
+| **C#** | Naming conventions (`PascalCase`, `Console.WriteLine`, `List<T>`, `Dictionary<K,V>`), BCL structure, `IEquatable`/`IComparable` protocols, `StringBuilder`, LINQ-style collection methods (L3) |
+| **Rust** | Trait-based abstractions (`IEquatable` → Trait in L3), `Result<T,E>` for error-returning APIs (L3), iterator chaining, zero-cost abstractions as the design goal |
+| **Python** | "Batteries included" philosophy — common tasks should not require third-party packages; module names are readable and flat; `assert` is a first-class development tool |
+
+The goal is familiar ergonomics for C# developers, with Rust's discipline on abstraction boundaries and Python's accessibility.
+
+### `z42.core` — Default Dependency
+
+`z42.core` is the **implicit prelude** of z42. It is:
+- Loaded automatically at VM startup before any user code runs
+- Available in every source file without a `using` declaration
+- A compile-time error to explicitly shadow its names without qualification
+
+This mirrors Python's `builtins` module and Rust's `std::prelude`. It provides:
+`Object`, `Convert`, `Assert`, `IEquatable`, `IComparable`, `IDisposable`.
+
+All other stdlib modules (`z42.io`, `z42.collections`, `z42.text`, `z42.math`) require an explicit `using` declaration and are loaded on demand.
+
+**Phase:** L2 (`z42.core`, `z42.io`, `z42.math`) | L3 (`z42.collections` generic impl, `z42.text.Regex`)
