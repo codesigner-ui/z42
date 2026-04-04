@@ -5,7 +5,7 @@ using Tomlyn;
 using Tomlyn.Model;
 using Tomlyn.Syntax;
 
-namespace Z42.Build;
+namespace Z42.Project;
 
 // ── TOML model ────────────────────────────────────────────────────────────────
 

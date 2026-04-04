@@ -10,6 +10,7 @@ using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.Compiler.TypeCheck;
 using Z42.IR;
+using Z42.Project;
 
 namespace Z42.Tests;
 

@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Z42.Build;
+using Z42.Project;
 
 namespace Z42.Tests;
 

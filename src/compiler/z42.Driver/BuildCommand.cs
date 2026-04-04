@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Z42.Build;
+using Z42.Project;
 using Z42.Compiler.Codegen;
 using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Lexer;
@@ -56,7 +56,7 @@ static class BuildCommand
         string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
 
         // ── Route: multi-exe vs single-target ────────────────────────────────
-        if (manifest.Project.Kind == Z42.Build.ProjectKind.Multi)
+        if (manifest.Project.Kind == Z42.Project.ProjectKind.Multi)
             return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, exeFilter, jsonOptions);
 
         // ── Single-target build ───────────────────────────────────────────────
@@ -79,7 +79,7 @@ static class BuildCommand
         return BuildTarget(
             manifest.Project.Name,
             manifest.Project.Version,
-            manifest.Project.Kind == Z42.Build.ProjectKind.Lib ? ZpkgKind.Lib : ZpkgKind.Exe,
+            manifest.Project.Kind == Z42.Project.ProjectKind.Lib ? ZpkgKind.Lib : ZpkgKind.Exe,
             manifest.Project.Entry,
             sourceFiles,
             pack,

@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
+using Z42.IR;
 
-namespace Z42.IR;
+namespace Z42.Project;
 
 // ── .zbc — single-file bytecode ───────────────────────────────────────────────
 
