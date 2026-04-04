@@ -305,9 +305,11 @@ internal static class ExprParser
     private static ParseResult<Expr> ParseFloatLit(
         TokenCursor cursor, Token tok, LanguageFeatures _)
     {
-        var text = tok.Text.Replace("_", "").TrimEnd('f', 'F', 'd', 'D', 'm', 'M');
-        var val  = double.Parse(text, CultureInfo.InvariantCulture);
-        return Ok(new LitFloatExpr(val, tok.Span), cursor);
+        var raw     = tok.Text.Replace("_", "");
+        bool isFloat = raw.EndsWith('f') || raw.EndsWith('F');
+        var  text    = raw.TrimEnd('f', 'F', 'd', 'D', 'm', 'M');
+        var  val     = double.Parse(text, CultureInfo.InvariantCulture);
+        return Ok(new LitFloatExpr(val, isFloat, tok.Span), cursor);
     }
 
     private static ParseResult<Expr> ParseInterpolatedNud(

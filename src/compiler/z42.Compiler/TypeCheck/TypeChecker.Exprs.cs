@@ -15,7 +15,7 @@ public sealed partial class TypeChecker
         {
             // Literals
             case LitIntExpr lit:   return lit.Value is > int.MaxValue or < int.MinValue ? Z42Type.Long : Z42Type.Int;
-            case LitFloatExpr:     return Z42Type.Double;
+            case LitFloatExpr f:   return f.IsFloat ? Z42Type.Float : Z42Type.Double;
             case LitStrExpr:       return Z42Type.String;
             case LitBoolExpr:      return Z42Type.Bool;
             case LitNullExpr:      return Z42Type.Null;
@@ -114,8 +114,10 @@ public sealed partial class TypeChecker
             {
                 var leftType  = CheckExpr(nc.Left,  env);
                 var rightType = CheckExpr(nc.Right, env);
-                return Z42Type.IsAssignableTo(leftType, rightType) ? leftType
-                     : Z42Type.IsAssignableTo(rightType, leftType) ? rightType
+                // T? ?? T  →  T  (unwrap optional)
+                var innerLeft = leftType is Z42OptionType opt ? opt.Inner : leftType;
+                return Z42Type.IsAssignableTo(innerLeft, rightType) ? innerLeft
+                     : Z42Type.IsAssignableTo(rightType, innerLeft) ? rightType
                      : Z42Type.Unknown;
             }
 
@@ -308,9 +310,9 @@ public sealed partial class TypeChecker
             && staticCt.StaticMethods.TryGetValue(staticMember, out var staticSig))
         {
             var argTs = call.Args.Select(a => CheckExpr(a, env)).ToList();
-            if (argTs.Count != staticSig.Params.Count)
+            if (argTs.Count < staticSig.MinArgCount || argTs.Count > staticSig.Params.Count)
                 _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"expected {staticSig.Params.Count} argument(s), got {argTs.Count}", call.Span);
+                    $"expected {staticSig.MinArgCount}–{staticSig.Params.Count} argument(s), got {argTs.Count}", call.Span);
             else
                 for (int i = 0; i < argTs.Count; i++)
                     RequireAssignable(staticSig.Params[i], argTs[i], call.Args[i].Span,
@@ -335,9 +337,9 @@ public sealed partial class TypeChecker
                         && mv == Visibility.Private)
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
-                    if (argTypes.Count != mt.Params.Count)
+                    if (argTypes.Count < mt.MinArgCount || argTypes.Count > mt.Params.Count)
                         _diags.Error(DiagnosticCodes.TypeMismatch,
-                            $"expected {mt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+                            $"expected {mt.MinArgCount}–{mt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
                     else
                         for (int i = 0; i < argTypes.Count; i++)
                             RequireAssignable(mt.Params[i], argTypes[i], call.Args[i].Span,
@@ -354,9 +356,9 @@ public sealed partial class TypeChecker
             {
                 if (ifaceType.Methods.TryGetValue(mCallee.Member, out var imt))
                 {
-                    if (argTypes.Count != imt.Params.Count)
+                    if (argTypes.Count < imt.MinArgCount || argTypes.Count > imt.Params.Count)
                         _diags.Error(DiagnosticCodes.TypeMismatch,
-                            $"expected {imt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
+                            $"expected {imt.MinArgCount}–{imt.Params.Count} argument(s), got {argTypes.Count}", call.Span);
                     else
                         for (int i = 0; i < argTypes.Count; i++)
                             RequireAssignable(imt.Params[i], argTypes[i], call.Args[i].Span,
@@ -390,9 +392,9 @@ public sealed partial class TypeChecker
             && _classes.TryGetValue(_currentClass, out var curCt)
             && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSig))
         {
-            if (callArgTypes.Count != bareSig.Params.Count)
+            if (callArgTypes.Count < bareSig.MinArgCount || callArgTypes.Count > bareSig.Params.Count)
                 _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"expected {bareSig.Params.Count} argument(s), got {callArgTypes.Count}", call.Span);
+                    $"expected {bareSig.MinArgCount}–{bareSig.Params.Count} argument(s), got {callArgTypes.Count}", call.Span);
             else
                 for (int i = 0; i < callArgTypes.Count; i++)
                     RequireAssignable(bareSig.Params[i], callArgTypes[i], call.Args[i].Span,
@@ -406,9 +408,9 @@ public sealed partial class TypeChecker
 
         if (calleeType is Z42FuncType funcType)
         {
-            if (callArgTypes.Count != funcType.Params.Count)
+            if (callArgTypes.Count < funcType.MinArgCount || callArgTypes.Count > funcType.Params.Count)
                 _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"expected {funcType.Params.Count} argument(s), got {callArgTypes.Count}", call.Span);
+                    $"expected {funcType.MinArgCount}–{funcType.Params.Count} argument(s), got {callArgTypes.Count}", call.Span);
             else
                 for (int i = 0; i < callArgTypes.Count; i++)
                     RequireAssignable(funcType.Params[i], callArgTypes[i], call.Args[i].Span,

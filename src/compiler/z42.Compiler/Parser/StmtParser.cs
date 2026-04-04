@@ -353,11 +353,23 @@ internal static class StmtParser
         if (cursor.Peek(1).Kind == TokenKind.Identifier
             && cursor.Peek(2).Kind is TokenKind.Eq or TokenKind.Semicolon)
             return true;
+        // T? name = ...  or  T? name;
+        if (cursor.Peek(1).Kind == TokenKind.Question
+            && cursor.Peek(2).Kind == TokenKind.Identifier
+            && cursor.Peek(3).Kind is TokenKind.Eq or TokenKind.Semicolon)
+            return true;
         // T[] name = ...  or  T[] name;
         if (cursor.Peek(1).Kind == TokenKind.LBracket
             && cursor.Peek(2).Kind == TokenKind.RBracket
             && cursor.Peek(3).Kind == TokenKind.Identifier
             && cursor.Peek(4).Kind is TokenKind.Eq or TokenKind.Semicolon)
+            return true;
+        // T?[] name = ...  or  T?[] name;
+        if (cursor.Peek(1).Kind == TokenKind.Question
+            && cursor.Peek(2).Kind == TokenKind.LBracket
+            && cursor.Peek(3).Kind == TokenKind.RBracket
+            && cursor.Peek(4).Kind == TokenKind.Identifier
+            && cursor.Peek(5).Kind is TokenKind.Eq or TokenKind.Semicolon)
             return true;
         return false;
     }

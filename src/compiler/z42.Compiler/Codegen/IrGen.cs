@@ -37,6 +37,8 @@ public sealed partial class IrGen
     private Dictionary<string, string> _classBaseNames = new();
     // Top-level function names (unqualified) — used to qualify free function calls
     private HashSet<string> _topLevelFunctionNames = new();
+    // Qualified function name → param list (for default-value expansion at call sites)
+    private Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
     // Class name of the method currently being emitted (null for top-level functions and __static_init__)
     private string? _currentClassName;
 
@@ -88,6 +90,13 @@ public sealed partial class IrGen
 
         // Collect top-level function names for qualified call resolution
         _topLevelFunctionNames = cu.Functions.Select(f => f.Name).ToHashSet();
+
+        // Collect function param lists (including defaults) for call-site expansion
+        foreach (var fn in cu.Functions)
+            _funcParams[QualifyName(fn.Name)] = fn.Params;
+        foreach (var cls in cu.Classes)
+            foreach (var m in cls.Methods)
+                _funcParams[$"{QualifyName(cls.Name)}.{m.Name}"] = m.Params;
 
         var classes   = cu.Classes.Select(EmitClassDesc).ToList();
         var functions = new List<IrFunction>();

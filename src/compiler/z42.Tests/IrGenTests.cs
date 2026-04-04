@@ -365,4 +365,41 @@ public sealed class IrGenTests
         m.Functions.Should().HaveCount(2);
         m.Functions.Select(f => f.Name).Should().Contain("Add").And.Contain("Main");
     }
+
+    // ── Default parameter expansion ───────────────────────────────────────────
+
+    [Fact]
+    public void DefaultParam_Omitted_ExpandedAtCallSite()
+    {
+        // Greet("Alice") should expand to Greet("Alice", "Hello") in IR
+        var fn = GenModule("""
+            void Greet(string name, string greeting = "Hello") {}
+            void Main() { Greet("Alice"); }
+            """).Functions.Last(); // Main is last (Greet first)
+        var call = All(fn).OfType<CallInstr>().First();
+        call.Args.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void DefaultParam_AllOmitted_BothExpanded()
+    {
+        var fn = GenModule("""
+            void Reset(int x = 0, int y = 0) {}
+            void Main() { Reset(); }
+            """).Functions.Last();
+        var call = All(fn).OfType<CallInstr>().First();
+        call.Args.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void DefaultParam_Explicit_NotExpanded()
+    {
+        // Greet("Alice", "Hi") — no default should be inserted
+        var fn = GenModule("""
+            void Greet(string name, string greeting = "Hello") {}
+            void Main() { Greet("Alice", "Hi"); }
+            """).Functions.Last();
+        var call = All(fn).OfType<CallInstr>().First();
+        call.Args.Should().HaveCount(2);
+    }
 }

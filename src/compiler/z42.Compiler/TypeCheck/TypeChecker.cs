@@ -75,8 +75,7 @@ public sealed partial class TypeChecker
             var methods = new Dictionary<string, Z42FuncType>();
             foreach (var m in iface.Methods)
             {
-                var paramTypes = m.Params.Select(p => ResolveType(p.Type)).ToList();
-                methods[m.Name] = new Z42FuncType(paramTypes, ResolveType(m.ReturnType));
+                methods[m.Name] = BuildFuncType(m.Params, ResolveType(m.ReturnType));
             }
             _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods);
         }
@@ -120,9 +119,8 @@ public sealed partial class TypeChecker
             }
             foreach (var m in cls.Methods)
             {
-                var paramTypes = m.Params.Select(p => ResolveType(p.Type)).ToList();
-                var retType    = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
-                var sig        = new Z42FuncType(paramTypes, retType);
+                var retType = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
+                var sig     = BuildFuncType(m.Params, retType);
                 if (m.IsStatic) staticMethods[m.Name] = sig;
                 else            methods[m.Name]        = sig;
             }
@@ -242,8 +240,7 @@ public sealed partial class TypeChecker
             if (_funcs.ContainsKey(fn.Name))
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"duplicate function declaration `{fn.Name}`", fn.Span);
-            var paramTypes = fn.Params.Select(p => ResolveType(p.Type)).ToList();
-            _funcs[fn.Name] = new Z42FuncType(paramTypes, ResolveType(fn.ReturnType));
+            _funcs[fn.Name] = BuildFuncType(fn.Params, ResolveType(fn.ReturnType));
         }
     }
 
@@ -312,12 +309,20 @@ public sealed partial class TypeChecker
             "object"          => Z42Type.Object,
             "void"            => Z42Type.Void,
             "var"             => Z42Type.Unknown,
+            // IR names
             "i8"              => Z42Type.I8,
             "i16"             => Z42Type.I16,
             "u8"              => Z42Type.U8,
             "u16"             => Z42Type.U16,
             "u32"             => Z42Type.U32,
             "u64"             => Z42Type.U64,
+            // C# aliases → IR equivalents
+            "sbyte"           => Z42Type.I8,
+            "short"           => Z42Type.I16,
+            "byte"            => Z42Type.U8,
+            "ushort"          => Z42Type.U16,
+            "uint"            => Z42Type.U32,
+            "ulong"           => Z42Type.U64,
             _                 => _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : _interfaces.TryGetValue(nt.Name, out var it) ? it
                                : new Z42PrimType(nt.Name),
@@ -409,5 +414,34 @@ public sealed partial class TypeChecker
             cur = ct.BaseClassName;
         }
         return false;
+    }
+
+    /// Build a Z42FuncType from a parameter list, checking default value types and computing RequiredCount.
+    private Z42FuncType BuildFuncType(IReadOnlyList<Param> parms, Z42Type retType, TypeEnv? env = null)
+    {
+        var paramTypes    = parms.Select(p => ResolveType(p.Type)).ToList();
+        int requiredCount = parms.Count;
+
+        for (int i = 0; i < parms.Count; i++)
+        {
+            var p = parms[i];
+            if (p.Default != null)
+            {
+                if (i < requiredCount) requiredCount = i;
+                // Check default value type against parameter type
+                var defaultEnv   = env ?? new TypeEnv(_funcs, _classes);
+                var defaultType  = CheckExpr(p.Default, defaultEnv);
+                RequireAssignable(paramTypes[i], defaultType, p.Default.Span,
+                    $"default value for `{p.Name}`: cannot assign `{defaultType}` to `{paramTypes[i]}`");
+            }
+            else if (i >= requiredCount)
+            {
+                // Non-default parameter after a defaulted one — error
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"non-default parameter `{p.Name}` follows a default parameter", p.Span);
+            }
+        }
+
+        return new Z42FuncType(paramTypes, retType, requiredCount == parms.Count ? -1 : requiredCount);
     }
 }

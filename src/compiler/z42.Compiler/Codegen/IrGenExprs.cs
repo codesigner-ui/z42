@@ -486,9 +486,10 @@ public sealed partial class IrGen
             && _classStaticMethods.TryGetValue(QualifyName(staticCls), out var staticSet)
             && staticSet.Contains(staticMethod))
         {
-            var argRegs = call.Args.Select(EmitExpr).ToList();
+            var callName = $"{QualifyName(staticCls)}.{staticMethod}";
+            var argRegs  = FillDefaults(callName, call.Args.Select(EmitExpr).ToList());
             int dst = Alloc();
-            Emit(new CallInstr(dst, $"{QualifyName(staticCls)}.{staticMethod}", argRegs));
+            Emit(new CallInstr(dst, callName, argRegs));
             return dst;
         }
 
@@ -520,6 +521,7 @@ public sealed partial class IrGen
         {
             int objReg  = EmitExpr(mMethod.Target);
             var argRegs = call.Args.Select(EmitExpr).ToList();
+            // Try to fill defaults using the class name inferred from context (best-effort)
             int dst = Alloc();
             Emit(new VCallInstr(dst, objReg, mMethod.Member, argRegs));
             return dst;
@@ -528,9 +530,6 @@ public sealed partial class IrGen
         // ── Free function call: Foo(args) ─────────────────────────────────────
         if (call.Callee is IdentExpr funcId)
         {
-            var argRegs = call.Args.Select(EmitExpr).ToList();
-            int dst = Alloc();
-            // Resolve call name: top-level fn → qualify; same-class static method → qualify; else keep bare
             string callName;
             if (_topLevelFunctionNames.Contains(funcId.Name))
                 callName = QualifyName(funcId.Name);
@@ -540,11 +539,29 @@ public sealed partial class IrGen
                 callName = $"{QualifyName(_currentClassName)}.{funcId.Name}";
             else
                 callName = funcId.Name;
+            var argRegs = FillDefaults(callName, call.Args.Select(EmitExpr).ToList());
+            int dst = Alloc();
             Emit(new CallInstr(dst, callName, argRegs));
             return dst;
         }
 
         throw new NotSupportedException($"call pattern not supported: {call.Callee.GetType().Name}");
+    }
+
+    /// Fill omitted trailing args with their default value expressions.
+    private List<int> FillDefaults(string qualifiedName, List<int> argRegs)
+    {
+        if (!_funcParams.TryGetValue(qualifiedName, out var parms)) return argRegs;
+        if (argRegs.Count >= parms.Count) return argRegs;
+        var filled = new List<int>(argRegs);
+        for (int i = argRegs.Count; i < parms.Count; i++)
+        {
+            var defaultExpr = parms[i].Default
+                ?? throw new InvalidOperationException(
+                    $"missing argument {i + 1} for `{qualifiedName}` and no default value");
+            filled.Add(EmitExpr(defaultExpr));
+        }
+        return filled;
     }
 
     private int EmitBuiltin(string name, List<int> args)

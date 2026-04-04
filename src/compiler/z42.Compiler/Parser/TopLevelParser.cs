@@ -214,7 +214,7 @@ internal static class TopLevelParser
                 ParseVisibility(ref cursor, Visibility.Public);
                 var pType = TypeParser.Parse(cursor).Unwrap(ref cursor);
                 var pName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
-                ctorParams.Add(new Param(pName, pType, pSpan));
+                ctorParams.Add(new Param(pName, pType, null, pSpan));
                 fields.Add(new FieldDecl(pName, pType, Visibility.Public, false, null, pSpan));
                 ctorStmts.Add(new ExprStmt(
                     new AssignExpr(
@@ -345,10 +345,16 @@ internal static class TopLevelParser
         var parms = new List<Param>();
         while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
         {
-            var pSpan = cursor.Current.Span;
-            var pType = TypeParser.Parse(cursor).Unwrap(ref cursor);
-            var pName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
-            parms.Add(new Param(pName, pType, pSpan));
+            var pSpan    = cursor.Current.Span;
+            var pType    = TypeParser.Parse(cursor).Unwrap(ref cursor);
+            var pName    = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            Expr? pDefault = null;
+            if (cursor.Current.Kind == TokenKind.Eq)
+            {
+                cursor   = cursor.Advance();
+                pDefault = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            }
+            parms.Add(new Param(pName, pType, pDefault, pSpan));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
         }

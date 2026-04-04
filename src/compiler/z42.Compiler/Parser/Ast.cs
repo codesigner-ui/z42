@@ -87,7 +87,7 @@ public sealed record FunctionDecl(
     bool IsAbstract,
     Span Span);
 
-public sealed record Param(string Name, TypeExpr Type, Span Span);
+public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span);
 
 // ── Type expressions ──────────────────────────────────────────────────────────
 
@@ -155,7 +155,7 @@ public sealed record ThrowStmt(Expr Value, Span Span) : Stmt(Span);
 public abstract record Expr(Span Span);
 
 public sealed record LitIntExpr(long Value, Span Span)         : Expr(Span);
-public sealed record LitFloatExpr(double Value, Span Span)     : Expr(Span);
+public sealed record LitFloatExpr(double Value, bool IsFloat, Span Span) : Expr(Span);
 public sealed record LitStrExpr(string Value, Span Span)       : Expr(Span);
 public sealed record LitBoolExpr(bool Value, Span Span)        : Expr(Span);
 public sealed record LitNullExpr(Span Span)                    : Expr(Span);

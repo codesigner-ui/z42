@@ -518,4 +518,88 @@ public sealed class TypeCheckerTests
         diags.HasErrors.Should().BeTrue();
         diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntLiteralOutOfRange);
     }
+
+    // ── Default parameter values ──────────────────────────────────────────────
+
+    [Fact]
+    public void DefaultParam_DeclarationAndCall_NoErrors()
+    {
+        Check("void Greet(string name, string greeting = \"Hello\") {} void Main() { Greet(\"Alice\"); }")
+            .HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DefaultParam_ExplicitOverride_NoErrors()
+    {
+        Check("void Greet(string name, string greeting = \"Hello\") {} void Main() { Greet(\"Alice\", \"Hi\"); }")
+            .HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DefaultParam_AllDefaults_NoErrors()
+    {
+        Check("void Reset(int x = 0, int y = 0) {} void Main() { Reset(); }")
+            .HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void DefaultParam_MissingRequired_ReportsError()
+    {
+        Check("void Greet(string name, string greeting = \"Hello\") {} void Main() { Greet(); }")
+            .HasErrors.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DefaultParam_WrongDefaultType_ReportsError()
+    {
+        Check("void Foo(int n = \"bad\") {}")
+            .HasErrors.Should().BeTrue();
+    }
+
+    [Fact]
+    public void DefaultParam_NullableParam_NoErrors()
+    {
+        Check("void Foo(int x, string? label = null) {} void Main() { Foo(1); }")
+            .HasErrors.Should().BeFalse();
+    }
+
+    // ── C# type aliases ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void SbyteAlias_LiteralAssignment_NoErrors()
+    {
+        CheckStmts("sbyte sb = -128;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShortAlias_LiteralAssignment_NoErrors()
+    {
+        CheckStmts("short sh = 32000;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ByteAlias_LiteralAssignment_NoErrors()
+    {
+        CheckStmts("byte b = 255;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void FloatLiteral_TypeIsFloat_NoErrors()
+    {
+        CheckStmts("float f = 1.5f;").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void NullableString_StringAssignment_NoErrors()
+    {
+        CheckStmts("string? s = \"hello\";").HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void NullCoalesce_UnwrapsOptional()
+    {
+        // string? ?? string → string; assigning to string must succeed
+        CheckStmts("string? opt = null; string s = opt ?? \"default\";")
+            .HasErrors.Should().BeFalse();
+    }
 }

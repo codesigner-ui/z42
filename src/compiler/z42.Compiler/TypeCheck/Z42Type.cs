@@ -42,8 +42,10 @@ public abstract record Z42Type
         if (source is Z42ErrorType || target is Z42ErrorType) return true;
         // Unknown: we can't check, so allow
         if (source is Z42UnknownType || target is Z42UnknownType) return true;
-        // null is assignable to any reference type
-        if (source is Z42NullType && IsReferenceType(target)) return true;
+        // null is assignable to any reference type or optional type
+        if (source is Z42NullType && (IsReferenceType(target) || target is Z42OptionType)) return true;
+        // T is assignable to T? (implicit wrap)
+        if (target is Z42OptionType opt && IsAssignableTo(opt.Inner, source)) return true;
         // Numeric widening: int → long → float → double
         if (target == Long   && source == Int) return true;
         if (target == Float  && source == Int) return true;
@@ -72,7 +74,9 @@ public abstract record Z42Type
         Z42PrimType { Name: "u8"  } => (0, byte.MaxValue),
         Z42PrimType { Name: "u16" } => (0, ushort.MaxValue),
         Z42PrimType { Name: "u32" } => (0, uint.MaxValue),
-        // long/i64/u64: stored as long in AST; skip range check (long covers all long values; u64 would overflow)
+        // u64: stored as signed long in AST; permit non-negative values up to long.MaxValue
+        Z42PrimType { Name: "u64" } => (0, long.MaxValue),
+        // long/i64: no range check needed (long covers the full signed 64-bit range)
         _ => null
     };
 
@@ -121,8 +125,14 @@ public sealed record Z42UnknownType : Z42Type
 }
 
 /// Function / method type.
-public sealed record Z42FuncType(IReadOnlyList<Z42Type> Params, Z42Type Ret) : Z42Type
+public sealed record Z42FuncType(
+    IReadOnlyList<Z42Type> Params,
+    Z42Type Ret,
+    int RequiredCount = -1          // -1 means all params required (no defaults)
+) : Z42Type
 {
+    /// Number of parameters that must be supplied at every call site.
+    public int MinArgCount => RequiredCount < 0 ? Params.Count : RequiredCount;
     public override string ToString() =>
         $"({string.Join(", ", Params)}) -> {Ret}";
 }

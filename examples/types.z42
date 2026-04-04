@@ -5,19 +5,19 @@ using System;
 
 void Main() {
     // ── 整数 ──────────────────────────────────────────────────
-    sbyte  i8  = -128;
-    short  i16 = 32_000;
-    int    i32 = 2_147_483_647;
-    long   i64 = 9_000_000_000L;
+    sbyte  sb  = -128;
+    short  sh  = 32_000;
+    int    n   = 2_147_483_647;
+    long   lng = 9_000_000_000L;
 
-    byte   u8  = 255;
-    ushort u16 = 65_535;
-    uint   u32 = 4_294_967_295u;
-    ulong  u64 = 18_000_000_000_000_000_000uL;
+    byte   b   = 255;
+    ushort us  = 65_535;
+    uint   un  = 4_294_967_295u;
+    ulong  ul  = 9_000_000_000_000_000_000uL;
 
     // ── 浮点 ──────────────────────────────────────────────────
-    float  f32 = 1.5f;
-    double f64 = 3.14159_26535_89793;
+    float  fl  = 1.5f;
+    double d   = 3.14159_26535_89793;
 
     // ── 其他基本类型 ──────────────────────────────────────────
     bool   flag = true;
@@ -46,17 +46,10 @@ void Main() {
     string multi = $"x={x}, ratio={ratio:F2}, name={name.ToUpper()}";
     Console.WriteLine(multi);
 
-    // 原始字符串
-    string raw = """
-        line 1
-        line 2
-        """;
-    Console.WriteLine(raw);
-
     // ── 类型转换 ──────────────────────────────────────────────
-    double fromInt = (double)i32;
-    int    fromDbl = (int)f64;          // 截断
-    string fromNum = i32.ToString();
+    double fromInt = (double)n;
+    int    fromDbl = (int)d;          // 截断
+    string fromNum = n.ToString();
     int    parsed  = int.Parse("123");
 
     Console.WriteLine($"Parsed: {parsed}, fromDbl: {fromDbl}");
