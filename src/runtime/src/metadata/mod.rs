@@ -9,6 +9,7 @@
 
 pub mod types;
 pub mod bytecode;
+pub mod project;
 pub mod formats;
 pub mod loader;
 pub mod merge;

@@ -1,6 +1,8 @@
 pub mod metadata;
-pub mod project;
 pub mod corelib;
+pub mod gc;
+pub mod thread;
+pub mod exception;
 pub mod interp;
 pub mod jit;
 pub mod aot;
