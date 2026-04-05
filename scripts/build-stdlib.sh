@@ -12,13 +12,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 OUT_DIR="$ROOT/artifacts/z42/libs"
-BUILD_FLAG="${1:-}"
-
-if [[ "$BUILD_FLAG" == "release" ]]; then
-    RELEASE_ARG="--release"
-else
-    RELEASE_ARG=""
-fi
+# stdlib distribution always uses packed mode (--release) so the copied .zpkg
+# is self-contained and not dependent on relative .zbc paths.
+RELEASE_ARG="--release"
 
 mkdir -p "$OUT_DIR"
 

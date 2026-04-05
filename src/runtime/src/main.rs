@@ -209,14 +209,19 @@ fn main() -> Result<()> {
     }
 
     // 5.1e — push user module last, then merge everything.
+    // Preserve the user module's name so entry-point lookup resolves correctly
+    // (merge_modules takes the first module's name, which would be z42.core otherwise).
     let entry_hint = user_artifact.entry_hint.clone();
+    let user_module_name = user_artifact.module.name.clone();
     modules.push(user_artifact.module);
 
     let final_module = if modules.len() == 1 {
         modules.into_iter().next().unwrap()
     } else {
-        z42_vm::metadata::merge_modules(modules)
-            .with_context(|| format!("merging modules for `{}`", cli.file))?
+        let mut m = z42_vm::metadata::merge_modules(modules)
+            .with_context(|| format!("merging modules for `{}`", cli.file))?;
+        m.name = user_module_name;
+        m
     };
 
     let default_mode = match cli.mode {
