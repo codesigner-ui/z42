@@ -2,14 +2,14 @@ namespace z42.io;
 
 public static class Environment {
     [Native("__env_get")]
-    public static string? GetEnvironmentVariable(string name);
+    public static extern string? GetEnvironmentVariable(string name);
 
     [Native("__env_args")]
-    public static string[] GetCommandLineArgs();
+    public static extern string[] GetCommandLineArgs();
 
     [Native("__process_exit")]
-    public static void Exit(int code);
+    public static extern void Exit(int code);
 
     [Native("__time_now_ms")]
-    public static long GetCurrentTimeMs();
+    public static extern long GetCurrentTimeMs();
 }

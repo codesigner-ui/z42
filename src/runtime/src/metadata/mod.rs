@@ -12,3 +12,4 @@ pub mod merge;
 // Convenience re-exports for callers.
 pub use formats::{ZbcFile, ZpkgFile};
 pub use loader::{load_artifact, LoadedArtifact};
+pub use merge::merge_modules;

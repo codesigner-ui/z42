@@ -602,4 +602,82 @@ public sealed class TypeCheckerTests
         CheckStmts("string? opt = null; string s = opt ?? \"default\";")
             .HasErrors.Should().BeFalse();
     }
+
+    // ── [Native] / extern validation ─────────────────────────────────────────
+
+    [Fact]
+    public void ExternNativeMethod_KnownIntrinsic_NoErrors()
+    {
+        Check("""
+            class Console {
+                [Native("__println")]
+                public static extern void WriteLine(string value);
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ExternNativeMethod_UnknownIntrinsic_ReportsZ0901()
+    {
+        var diags = Check("""
+            class Foo {
+                [Native("__nonexistent")]
+                public static extern void Bar();
+            }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.UnknownIntrinsic);
+    }
+
+    [Fact]
+    public void ExternNativeMethod_ParamCountMismatch_ReportsZ0902()
+    {
+        // __println expects 1 param, but declared with 0
+        var diags = Check("""
+            class Foo {
+                [Native("__println")]
+                public static extern void WriteLine();
+            }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntrinsicParamCountMismatch);
+    }
+
+    [Fact]
+    public void ExternMethod_MissingNativeAttribute_ReportsZ0903()
+    {
+        var diags = Check("""
+            class Foo {
+                public static extern void Bar();
+            }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.ExternRequiresNative);
+    }
+
+    [Fact]
+    public void NativeAttribute_MissingExtern_ReportsZ0904()
+    {
+        // [Native] on a regular method with a body
+        var diags = Check("""
+            class Foo {
+                [Native("__println")]
+                public static void Bar(string s) { }
+            }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.NativeRequiresExtern);
+    }
+
+    [Fact]
+    public void ExternNativeMethod_VariadicIntrinsic_AnyParamCount_NoErrors()
+    {
+        // __str_format is variadic (ParamCount = -1), any count is valid
+        Check("""
+            class Str {
+                [Native("__str_format")]
+                public static extern string Format(string template, string a, string b);
+            }
+            """).HasErrors.Should().BeFalse();
+    }
 }

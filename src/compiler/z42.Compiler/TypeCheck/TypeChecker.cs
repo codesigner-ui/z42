@@ -1,6 +1,7 @@
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Parser;
+using Z42.IR;
 
 namespace Z42.Compiler.TypeCheck;
 
@@ -252,6 +253,7 @@ public sealed partial class TypeChecker
         _currentClass = cls.Name;
         foreach (var method in cls.Methods)
         {
+            if (ValidateNativeMethod(method)) continue; // extern: skip body check
             var env   = new TypeEnv(_funcs, _classes);
             var scope = env.PushScope();
             if (!method.IsStatic)
@@ -272,12 +274,52 @@ public sealed partial class TypeChecker
 
     private void CheckFunction(FunctionDecl fn)
     {
+        if (ValidateNativeMethod(fn)) return; // extern: skip body check
         var env   = new TypeEnv(_funcs, _classes);
         var scope = env.PushScope();
         CheckParamNames(fn.Params);
         foreach (var p in fn.Params)
             scope.Define(p.Name, ResolveType(p.Type));
         CheckBlock(fn.Body, scope, ResolveType(fn.ReturnType));
+    }
+
+    /// Validates [Native] / extern consistency.
+    /// Returns true if the method is a valid extern (body check should be skipped).
+    /// Returns false if it is a regular method (no extern/Native issues found, continue normal check).
+    private bool ValidateNativeMethod(FunctionDecl fn)
+    {
+        bool hasNative = fn.NativeIntrinsic != null;
+        bool isExtern  = fn.IsExtern;
+
+        if (isExtern && !hasNative)
+        {
+            _diags.Error(DiagnosticCodes.ExternRequiresNative,
+                $"extern method '{fn.Name}' requires a [Native(\"...\")]  attribute", fn.Span);
+            return true; // skip body check regardless
+        }
+        if (hasNative && !isExtern)
+        {
+            _diags.Error(DiagnosticCodes.NativeRequiresExtern,
+                $"[Native] attribute on '{fn.Name}' requires the extern modifier", fn.Span);
+            return false;
+        }
+        if (!isExtern) return false; // plain method, no native concerns
+
+        // Both isExtern and hasNative — validate against NativeTable
+        var name = fn.NativeIntrinsic!;
+        if (!Z42.IR.NativeTable.All.TryGetValue(name, out var entry))
+        {
+            _diags.Error(DiagnosticCodes.UnknownIntrinsic,
+                $"unknown intrinsic '{name}'", fn.Span);
+            return true;
+        }
+        if (entry.ParamCount >= 0 && fn.Params.Count != entry.ParamCount)
+        {
+            _diags.Error(DiagnosticCodes.IntrinsicParamCountMismatch,
+                $"intrinsic '{name}' expects {entry.ParamCount} parameter(s), got {fn.Params.Count}",
+                fn.Span);
+        }
+        return true; // valid extern — caller must skip body check
     }
 
     /// Reports an error for any duplicate parameter name in a function / method.

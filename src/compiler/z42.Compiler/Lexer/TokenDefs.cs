@@ -51,6 +51,7 @@ internal static class TokenDefs
         ["interface"] = TokenKind.Interface,
         ["record"]    = TokenKind.Record,
         ["abstract"]  = TokenKind.Abstract,
+        ["extern"]    = TokenKind.Extern,
         ["sealed"]    = TokenKind.Sealed,
         ["override"]  = TokenKind.Override,
         ["virtual"]   = TokenKind.Virtual,

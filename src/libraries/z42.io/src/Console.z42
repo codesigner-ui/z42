@@ -1,28 +1,12 @@
 namespace z42.io;
 
 public static class Console {
-    // ── Native bindings ──────────────────────────────────────────────────────
     [Native("__println")]
-    public static void WriteLine(string value);
+    public static extern void WriteLine(string value);
 
     [Native("__print")]
-    public static void Write(string value);
+    public static extern void Write(string value);
 
     [Native("__readline")]
-    public static string ReadLine();
-
-    // ── Typed overloads (pure z42) ───────────────────────────────────────────
-    public static void WriteLine()             => WriteLine("");
-    public static void WriteLine(int value)    => WriteLine(value.ToString());
-    public static void WriteLine(long value)   => WriteLine(value.ToString());
-    public static void WriteLine(double value) => WriteLine(value.ToString());
-    public static void WriteLine(float value)  => WriteLine(value.ToString());
-    public static void WriteLine(bool value)   => WriteLine(value ? "True" : "False");
-    public static void WriteLine(char value)   => WriteLine(value.ToString());
-
-    public static void Write(int value)    => Write(value.ToString());
-    public static void Write(long value)   => Write(value.ToString());
-    public static void Write(double value) => Write(value.ToString());
-    public static void Write(bool value)   => Write(value ? "True" : "False");
-    public static void Write(char value)   => Write(value.ToString());
+    public static extern string ReadLine();
 }

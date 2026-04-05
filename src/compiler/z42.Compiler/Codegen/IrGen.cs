@@ -118,6 +118,14 @@ public sealed partial class IrGen
 
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
+        if (method.IsExtern && method.NativeIntrinsic != null)
+            return EmitNativeStub(
+                $"{QualifyName(className)}.{method.Name}",
+                method.Params.Count + (method.IsStatic ? 0 : 1),
+                method.IsStatic ? 0 : 1,
+                method.NativeIntrinsic,
+                method.ReturnType is VoidType);
+
         bool isStatic = method.IsStatic;
         _currentClassName = className;
         // Static methods: params start at 0; instance methods: `this` = reg 0, params start at 1
@@ -159,6 +167,14 @@ public sealed partial class IrGen
 
     private IrFunction EmitFunction(FunctionDecl fn)
     {
+        if (fn.IsExtern && fn.NativeIntrinsic != null)
+            return EmitNativeStub(
+                QualifyName(fn.Name),
+                fn.Params.Count,
+                0,
+                fn.NativeIntrinsic,
+                fn.ReturnType is VoidType);
+
         _currentClassName = null;  // top-level functions have no owning class
         _nextReg        = fn.Params.Count;
         _nextLabelId    = 0;
@@ -182,6 +198,21 @@ public sealed partial class IrGen
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         return new IrFunction(QualifyName(fn.Name), fn.Params.Count, retType, "Interp", _blocks, excTable);
+    }
+
+    /// Emits a single-block function that forwards all parameters to a VM builtin.
+    /// paramOffset = 1 for instance methods (reg 0 = this), 0 for static.
+    private static IrFunction EmitNativeStub(
+        string qualifiedName, int totalParams, int paramOffset,
+        string intrinsicName, bool isVoid)
+    {
+        var args = Enumerable.Range(paramOffset, totalParams - paramOffset).ToList();
+        int dst  = totalParams; // first free register after params
+        var instrs = new List<IrInstr> { new BuiltinInstr(dst, intrinsicName, args) };
+        var term   = new RetTerm(isVoid ? null : dst);
+        var block  = new IrBlock("entry", instrs, term);
+        return new IrFunction(qualifiedName, totalParams, isVoid ? "void" : "object",
+            "Interp", [block], null);
     }
 
     // ── Block management ────────────────────────────────────────────────────────

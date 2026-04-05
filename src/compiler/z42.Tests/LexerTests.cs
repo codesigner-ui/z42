@@ -293,4 +293,18 @@ public sealed class LexerTests
             TokenKind.Identifier, TokenKind.In, TokenKind.Identifier,
             TokenKind.RParen);
     }
+
+    [Fact]
+    public void Extern_IsKeyword()
+    {
+        Kinds("extern").Should().Equal(TokenKind.Extern);
+    }
+
+    [Fact]
+    public void Extern_NotConfusedWithIdentifier()
+    {
+        Kinds("public static extern void Foo()").Should().Equal(
+            TokenKind.Public, TokenKind.Static, TokenKind.Extern,
+            TokenKind.Void, TokenKind.Identifier, TokenKind.LParen, TokenKind.RParen);
+    }
 }

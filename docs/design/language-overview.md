@@ -421,6 +421,47 @@ void OnUpdate(float dt) { ... }   // 热更新后下一次调用即生效
 
 详见 `specs/hot-reload.md`。
 
+## 15. InternalCall 互操作（`extern` + `[Native]`）
+
+z42 通过 `extern` 关键字 + `[Native("__intrinsic")]` 属性声明 VM 内建函数的绑定，实现标准库与 VM 的零开销互操作（InternalCall 机制）。
+
+```z42
+namespace z42.io;
+
+public static class Console {
+    // 声明：VM 实现，无 z42 函数体
+    [Native("__println")]
+    public static extern void WriteLine(string value);
+
+    [Native("__readline")]
+    public static extern string ReadLine();
+}
+```
+
+**规则：**
+
+- `extern` 方法必须同时带 `[Native("__name")]` 属性；缺少属性报 `Z0903`
+- `[Native("__name")]` 属性必须在 `extern` 方法上使用；缺少 `extern` 报 `Z0904`
+- `__name` 必须是 VM 已注册的内建名（见 `NativeTable.All`）；未知名报 `Z0901`
+- 参数数量必须与 `NativeTable` 中的定义一致；不符报 `Z0902`
+- `extern` 方法不允许有函数体（使用 `;` 代替 `{}`）
+
+**IR 映射：** 编译器将 `extern` 方法编译为单块函数，函数体为一条 `Builtin` 指令 + `Ret`：
+
+```
+function z42.io.Console.WriteLine(param_count=1) -> void
+  entry:
+    r1 = builtin "__println" [r0]
+    ret
+```
+
+**方法体语法糖（表达式体）：** 非 `extern` 方法支持 `=> expr;` 形式作为函数体简写：
+
+```z42
+public static void Log(string msg) => Console.WriteLine(msg);
+// 等价于 { Console.WriteLine(msg); }
+```
+
 ---
 
 > IR 映射细节（`do-while`、`??`、`?.`、`enum` 编译策略、`List<T>`/`Dictionary<K,V>` 内置方法）见 [`docs/design/ir.md`](ir.md)。

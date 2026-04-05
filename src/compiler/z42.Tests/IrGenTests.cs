@@ -402,4 +402,66 @@ public sealed class IrGenTests
         var call = All(fn).OfType<CallInstr>().First();
         call.Args.Should().HaveCount(2);
     }
+
+    // ── extern / [Native] ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void ExternMethod_EmitsSingleBuiltinInstr()
+    {
+        var module = GenModule("""
+            class Console {
+                [Native("__println")]
+                public static extern void WriteLine(string value);
+            }
+            """);
+        var fn = module.Functions.Should().ContainSingle().Subject;
+        fn.Name.Should().EndWith(".WriteLine");
+        var instrs = All(fn).ToList();
+        instrs.OfType<BuiltinInstr>().Should().ContainSingle(b => b.Name == "__println");
+        // args: [0] (param 0 = the 'value' string argument)
+        var builtin = instrs.OfType<BuiltinInstr>().Single();
+        builtin.Args.Should().Equal([0]);
+    }
+
+    [Fact]
+    public void ExternMethod_VoidReturn_RetTermHasNoReg()
+    {
+        var module = GenModule("""
+            class Console {
+                [Native("__println")]
+                public static extern void WriteLine(string value);
+            }
+            """);
+        var fn = module.Functions.Single();
+        fn.Blocks.Should().ContainSingle();
+        fn.Blocks[0].Terminator.Should().BeOfType<RetTerm>()
+            .Which.Reg.Should().BeNull();
+    }
+
+    [Fact]
+    public void ExternMethod_WithReturnValue_RetTermHasReg()
+    {
+        var module = GenModule("""
+            class Console {
+                [Native("__readline")]
+                public static extern string ReadLine();
+            }
+            """);
+        var fn = module.Functions.Single();
+        fn.Blocks[0].Terminator.Should().BeOfType<RetTerm>()
+            .Which.Reg.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ExternMethod_MultiParam_ArgsAreSequential()
+    {
+        var module = GenModule("""
+            class Assert {
+                [Native("__assert_eq")]
+                public static extern void Equal(object expected, object actual);
+            }
+            """);
+        var builtin = All(module.Functions.Single()).OfType<BuiltinInstr>().Single();
+        builtin.Args.Should().Equal([0, 1]);
+    }
 }

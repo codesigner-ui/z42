@@ -61,6 +61,8 @@
 | 默认参数值 | ✅ | ✅ | ✅ | ✅ | call site 展开 |
 | C# 数值类型别名 | ✅ | ✅ | ✅ | ✅ | |
 | Math / Assert / Console | — | ✅ | ✅ | ✅ | pseudo-class |
+| `extern` + `[Native]` InternalCall | ✅ | ✅ | ✅ | ✅ | stdlib interop |
+| 表达式体方法 `=> expr;` | ✅ | ✅ | ✅ | ✅ | TopLevelParser |
 | `struct` / `record` | ✅ | — | — | — | |
 | 接口 `interface` | ✅ | — | — | — | |
 | 继承 | ✅ | — | — | — | |
@@ -146,7 +148,7 @@
 | M4 | VM Interpreter（L1 特性全覆盖） | L1 | ✅ |
 | M5 | VM JIT（Cranelift，L1 特性） | L1 → L2 | ✅ |
 | M6 | 工程支持 + 测试体系 + `.z42bc` 格式稳定 | L2 | 📋 |
-| M7 | VM 元数据 + 标准库基础（core/io/collections） | L2 | 📋 |
+| M7 | VM 元数据 + 标准库基础（core/io/collections） | L2 | 🚧 |
 | M8 | TypeChecker + Codegen 扩展（L3 特性） | L3 | 📋 |
 | M9 | VM AOT（LLVM/inkwell） | L3 | 📋 |
 | M10 | 自举（Self-hosting） | L3+ | 📋 |

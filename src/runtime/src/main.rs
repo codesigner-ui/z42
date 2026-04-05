@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
 
@@ -156,16 +156,68 @@ fn main() -> Result<()> {
         log_module_paths(&module_paths);
     }
 
-    // Locate stdlib libs directory (log only; actual loading deferred to M7).
-    match resolve_libs_dir() {
-        Some(dir) => log_libs(&dir),
-        None => tracing::info!("libs dir: not found (set $Z42_LIBS or run package.sh)"),
-    }
-
     tracing::debug!("z42vm loading {}", cli.file);
 
-    // Load and merge the artifact (format detected by extension).
-    let artifact = z42_vm::metadata::load_artifact(&cli.file)?;
+    // Locate stdlib libs directory.
+    let libs_dir = resolve_libs_dir();
+    if cli.verbose {
+        match &libs_dir {
+            Some(dir) => log_libs(dir),
+            None => tracing::info!("libs dir: not found (set $Z42_LIBS or run package.sh)"),
+        }
+    }
+
+    let mut modules: Vec<z42_vm::bytecode::Module> = Vec::new();
+
+    // 5.1b — unconditionally try to load z42.core.zpkg if present.
+    if let Some(ref dir) = libs_dir {
+        let core_path = dir.join("z42.core.zpkg");
+        if core_path.exists() {
+            let core_str = core_path.to_string_lossy().into_owned();
+            match z42_vm::metadata::load_artifact(&core_str) {
+                Ok(a) => {
+                    tracing::debug!("loaded stdlib z42.core from {core_str}");
+                    modules.push(a.module);
+                }
+                Err(e) => tracing::warn!("failed to load z42.core: {e}"),
+            }
+        } else {
+            tracing::debug!("z42.core.zpkg not found in {}", dir.display());
+        }
+    }
+
+    // 5.1c — load the user artifact.
+    let user_artifact = z42_vm::metadata::load_artifact(&cli.file)?;
+
+    // 5.1d — load each declared dependency from libs_dir.
+    for dep in &user_artifact.dependencies {
+        if let Some(ref dir) = libs_dir {
+            let dep_path = dir.join(&dep.file);
+            if dep_path.exists() {
+                let dep_str = dep_path.to_string_lossy().into_owned();
+                match z42_vm::metadata::load_artifact(&dep_str) {
+                    Ok(a) => {
+                        tracing::debug!("loaded dependency {} from {dep_str}", dep.file);
+                        modules.push(a.module);
+                    }
+                    Err(e) => tracing::warn!("failed to load dependency {}: {e}", dep.file),
+                }
+            } else {
+                tracing::warn!("dependency {} not found in {}", dep.file, dir.display());
+            }
+        }
+    }
+
+    // 5.1e — push user module last, then merge everything.
+    let entry_hint = user_artifact.entry_hint.clone();
+    modules.push(user_artifact.module);
+
+    let final_module = if modules.len() == 1 {
+        modules.into_iter().next().unwrap()
+    } else {
+        z42_vm::metadata::merge_modules(modules)
+            .with_context(|| format!("merging modules for `{}`", cli.file))?
+    };
 
     let default_mode = match cli.mode {
         Some(ExecMode::Jit) => z42_vm::types::ExecMode::Jit,
@@ -173,6 +225,6 @@ fn main() -> Result<()> {
         _                   => z42_vm::types::ExecMode::Interp,
     };
 
-    let vm = z42_vm::vm::Vm::new(artifact.module, default_mode);
-    vm.run(artifact.entry_hint.as_deref())
+    let vm = z42_vm::vm::Vm::new(final_module, default_mode);
+    vm.run(entry_hint.as_deref())
 }

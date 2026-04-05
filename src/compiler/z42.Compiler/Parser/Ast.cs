@@ -85,6 +85,8 @@ public sealed record FunctionDecl(
     bool IsVirtual,
     bool IsOverride,
     bool IsAbstract,
+    bool IsExtern,
+    string? NativeIntrinsic,
     Span Span);
 
 public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span);

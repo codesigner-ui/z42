@@ -57,9 +57,10 @@ internal static class TopLevelParser
         var enums      = new List<EnumDecl>();
         var interfaces = new List<InterfaceDecl>();
 
+        string? pendingNative = null;
         while (!cursor.IsEnd)
         {
-            if (cursor.Current.Kind == TokenKind.LBracket) { SkipAttribute(ref cursor); continue; }
+            if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
             if (cursor.Current.Kind == TokenKind.Namespace)
             {
                 cursor = cursor.Advance();
@@ -74,10 +75,11 @@ internal static class TopLevelParser
                 if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
                 continue;
             }
-            if (IsEnumDecl(cursor))      { enums.Add(ParseEnumDecl(ref cursor)); continue; }
-            if (IsInterfaceDecl(cursor)) { interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
-            if (IsClassOrStructDecl(cursor)) { classes.Add(ParseClassDecl(ref cursor, feat)); continue; }
-            functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal));
+            if (IsEnumDecl(cursor))          { pendingNative = null; enums.Add(ParseEnumDecl(ref cursor)); continue; }
+            if (IsInterfaceDecl(cursor))      { pendingNative = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
+            if (IsClassOrStructDecl(cursor))  { pendingNative = null; classes.Add(ParseClassDecl(ref cursor, feat)); continue; }
+            functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative));
+            pendingNative = null;
         }
 
         return new CompilationUnit(ns, usings, classes, functions, enums, interfaces, start);
@@ -186,7 +188,7 @@ internal static class TopLevelParser
     {
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, Visibility.Internal);
-        var (_, _, _, isAbstract, isSealed) = ParseNonVisibilityModifiers(ref cursor);
+        var (_, _, _, isAbstract, isSealed, _) = ParseNonVisibilityModifiers(ref cursor);
 
         bool isRecord = false;
         if (cursor.Current.Kind == TokenKind.Record) { isRecord = true; cursor = cursor.Advance(); }
@@ -227,7 +229,7 @@ internal static class TopLevelParser
             ExpectKind(ref cursor, TokenKind.RParen);
             var ctorBody = new BlockStmt(ctorStmts, start);
             methods.Add(new FunctionDecl(name, ctorParams, new VoidType(start),
-                ctorBody, Visibility.Public, false, false, false, false, start));
+                ctorBody, Visibility.Public, false, false, false, false, false, null, start));
 
             if (cursor.Current.Kind == TokenKind.Semicolon)
             {
@@ -259,14 +261,16 @@ internal static class TopLevelParser
         }
 
         ExpectKind(ref cursor, TokenKind.LBrace);
+        string? pendingNative = null;
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
-            if (cursor.Current.Kind == TokenKind.LBracket) { SkipAttribute(ref cursor); continue; }
+            if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
             if (IsFieldDecl(cursor))
             {
+                pendingNative = null;
                 var fSpan = cursor.Current.Span;
                 var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
-                var (fStatic, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
+                var (fStatic, _, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
                 var fType = TypeParser.Parse(cursor).Unwrap(ref cursor);
                 var fName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
                 Expr? fInit = null;
@@ -285,7 +289,8 @@ internal static class TopLevelParser
             }
             else
             {
-                methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal));
+                methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative));
+                pendingNative = null;
             }
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
@@ -296,11 +301,12 @@ internal static class TopLevelParser
     // ── Function declaration ──────────────────────────────────────────────────
 
     internal static FunctionDecl ParseFunctionDecl(
-        ref TokenCursor cursor, LanguageFeatures feat, Visibility defaultVis)
+        ref TokenCursor cursor, LanguageFeatures feat, Visibility defaultVis,
+        string? nativeIntrinsic = null)
     {
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, defaultVis);
-        var (isStatic, isVirtual, isOverride, isAbstract, _) =
+        var (isStatic, isVirtual, isOverride, isAbstract, _, isExtern) =
             ParseNonVisibilityModifiers(ref cursor);
 
         // Constructor pattern: Ident( — no explicit return type
@@ -321,12 +327,23 @@ internal static class TopLevelParser
 
         var parms = ParseParamList(ref cursor, feat);
 
-        // Abstract methods: no body, just a semicolon
+        // Abstract / extern methods: no body, just a semicolon
         BlockStmt body;
-        if (isAbstract && cursor.Current.Kind == TokenKind.Semicolon)
+        if ((isAbstract || isExtern) && cursor.Current.Kind == TokenKind.Semicolon)
         {
             cursor = cursor.Advance();
             body   = new BlockStmt([], start);
+        }
+        else if (cursor.Current.Kind == TokenKind.FatArrow)
+        {
+            // Expression body: `=> expr;`
+            cursor = cursor.Advance();  // skip =>
+            var expr = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            ExpectKind(ref cursor, TokenKind.Semicolon);
+            Stmt stmt = returnType is VoidType
+                ? new ExprStmt(expr, expr.Span)
+                : new ReturnStmt(expr, expr.Span);
+            body = new BlockStmt([stmt], start);
         }
         else
         {
@@ -334,7 +351,7 @@ internal static class TopLevelParser
         }
 
         return new FunctionDecl(name, parms, returnType, body, vis,
-            isStatic, isVirtual, isOverride, isAbstract, start);
+            isStatic, isVirtual, isOverride, isAbstract, isExtern, nativeIntrinsic, start);
     }
 
     // ── Shared helpers ────────────────────────────────────────────────────────
@@ -383,24 +400,25 @@ internal static class TopLevelParser
     }
 
     private static (bool IsStatic, bool IsVirtual, bool IsOverride,
-                    bool IsAbstract, bool IsSealed)
+                    bool IsAbstract, bool IsSealed, bool IsExtern)
         ParseNonVisibilityModifiers(ref TokenCursor cursor)
     {
         bool isStatic = false, isVirtual = false, isOverride = false,
-             isAbstract = false, isSealed = false;
+             isAbstract = false, isSealed = false, isExtern = false;
         while (cursor.Current.Kind is TokenKind.Static or TokenKind.Abstract
                                    or TokenKind.Sealed  or TokenKind.Virtual
                                    or TokenKind.Override or TokenKind.Async
-                                   or TokenKind.New)
+                                   or TokenKind.New     or TokenKind.Extern)
         {
             if (cursor.Current.Kind == TokenKind.Static)   isStatic   = true;
             if (cursor.Current.Kind == TokenKind.Virtual)  isVirtual  = true;
             if (cursor.Current.Kind == TokenKind.Override) isOverride = true;
             if (cursor.Current.Kind == TokenKind.Abstract) isAbstract = true;
             if (cursor.Current.Kind == TokenKind.Sealed)   isSealed   = true;
+            if (cursor.Current.Kind == TokenKind.Extern)   isExtern   = true;
             cursor = cursor.Advance();
         }
-        return (isStatic, isVirtual, isOverride, isAbstract, isSealed);
+        return (isStatic, isVirtual, isOverride, isAbstract, isSealed, isExtern);
     }
 
     private static void SkipNonVisibilityModifiers(ref TokenCursor cursor) =>
@@ -428,6 +446,43 @@ internal static class TopLevelParser
             if (cursor.Current.Kind == TokenKind.Gt) depth--;
             cursor = cursor.Advance();
         }
+    }
+
+    /// Parses an attribute `[...]`.
+    /// Returns the intrinsic name string if it is `[Native("__name")]`; null otherwise.
+    /// Always advances the cursor past the closing `]`.
+    private static string? TryParseNativeAttribute(ref TokenCursor cursor)
+    {
+        ExpectKind(ref cursor, TokenKind.LBracket);
+
+        // Try to match: Native ( "<string>" )
+        string? intrinsic = null;
+        if (cursor.Current.Kind == TokenKind.Identifier
+            && cursor.Current.Text == "Native"
+            && cursor.Peek(1).Kind == TokenKind.LParen
+            && cursor.Peek(2).Kind == TokenKind.StringLiteral
+            && cursor.Peek(3).Kind == TokenKind.RParen
+            && cursor.Peek(4).Kind == TokenKind.RBracket)
+        {
+            cursor    = cursor.Advance(); // Native
+            cursor    = cursor.Advance(); // (
+            var lit   = cursor.Current.Text;
+            intrinsic = lit.Length >= 2 ? lit[1..^1] : lit; // strip surrounding quotes
+            cursor    = cursor.Advance(); // "<string>"
+            cursor    = cursor.Advance(); // )
+            cursor    = cursor.Advance(); // ]
+            return intrinsic;
+        }
+
+        // Not a Native attribute — skip balanced brackets.
+        int depth = 1;
+        while (!cursor.IsEnd && depth > 0)
+        {
+            if (cursor.Current.Kind == TokenKind.LBracket) depth++;
+            if (cursor.Current.Kind == TokenKind.RBracket) depth--;
+            cursor = cursor.Advance();
+        }
+        return null;
     }
 
     private static void SkipAttribute(ref TokenCursor cursor)

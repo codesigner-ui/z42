@@ -14,7 +14,7 @@ public enum TokenKind
     Namespace, Using, Var,
     Static, Public, Private, Protected, Internal,
     Class, Struct, Enum, Interface, Record,
-    Abstract, Sealed, Override, Virtual, New,
+    Abstract, Sealed, Override, Virtual, New, Extern,
     Async, Await,
     Return, If, Else, While, For, Foreach, In,
     Do, Break, Continue,

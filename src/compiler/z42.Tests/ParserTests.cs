@@ -388,4 +388,59 @@ public sealed class ParserTests
         Action act = () => ParseStmt("var x = @;");
         act.Should().Throw<ParseException>();
     }
+
+    // ── extern / [Native] ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void ExternMethod_ParsesIsExternAndNativeIntrinsic()
+    {
+        var cu = ParseCu("""
+            class Console {
+                [Native("__println")]
+                public static extern void WriteLine(string value);
+            }
+            """);
+        var m = cu.Classes.Should().ContainSingle().Subject
+                  .Methods.Should().ContainSingle().Subject;
+        m.IsExtern.Should().BeTrue();
+        m.NativeIntrinsic.Should().Be("__println");
+        m.Params.Should().ContainSingle().Which.Name.Should().Be("value");
+    }
+
+    [Fact]
+    public void ExternMethod_NoBody_SemicolonOnly()
+    {
+        var cu = ParseCu("""
+            class Foo {
+                [Native("__bar")]
+                public static extern void Bar();
+            }
+            """);
+        var m = cu.Classes[0].Methods[0];
+        m.IsExtern.Should().BeTrue();
+        m.Body.Stmts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ExternMethod_MultipleParams()
+    {
+        var cu = ParseCu("""
+            class Str {
+                [Native("__str_substring")]
+                public static extern string Substring(string s, int start, int length);
+            }
+            """);
+        var m = cu.Classes[0].Methods[0];
+        m.IsExtern.Should().BeTrue();
+        m.NativeIntrinsic.Should().Be("__str_substring");
+        m.Params.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void RegularMethod_IsExternFalse()
+    {
+        var fn = ParseCu("void Main() { }").Functions.Should().ContainSingle().Subject;
+        fn.IsExtern.Should().BeFalse();
+        fn.NativeIntrinsic.Should().BeNull();
+    }
 }

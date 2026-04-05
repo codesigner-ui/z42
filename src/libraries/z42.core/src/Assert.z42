@@ -4,22 +4,22 @@ namespace z42.core;
 // Throws AssertionError (VM-level exception) on failure.
 public static class Assert {
     [Native("__assert_eq")]
-    public static void Equal(object expected, object actual);
+    public static extern void Equal(object expected, object actual);
 
     [Native("__assert_true")]
-    public static void True(bool condition);
+    public static extern void True(bool condition);
 
     [Native("__assert_false")]
-    public static void False(bool condition);
+    public static extern void False(bool condition);
 
     [Native("__assert_null")]
-    public static void Null(object? value);
+    public static extern void Null(object? value);
 
     [Native("__assert_not_null")]
-    public static void NotNull(object? value);
+    public static extern void NotNull(object? value);
 
     [Native("__assert_contains")]
-    public static void Contains(string expected, string actual);
+    public static extern void Contains(string expected, string actual);
 
     public static void NotEqual(object expected, object actual) {
         // Implemented as negation in z42; no separate intrinsic needed.

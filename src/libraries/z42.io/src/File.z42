@@ -1,26 +1,18 @@
 namespace z42.io;
 
 public static class File {
-    // ── Native bindings ──────────────────────────────────────────────────────
     [Native("__file_read_text")]
-    public static string ReadAllText(string path);
+    public static extern string ReadAllText(string path);
 
     [Native("__file_write_text")]
-    public static void WriteAllText(string path, string content);
+    public static extern void WriteAllText(string path, string content);
 
     [Native("__file_append_text")]
-    public static void AppendAllText(string path, string content);
+    public static extern void AppendAllText(string path, string content);
 
     [Native("__file_exists")]
-    public static bool Exists(string path);
+    public static extern bool Exists(string path);
 
     [Native("__file_delete")]
-    public static void Delete(string path);
-
-    // ── Convenience helpers (pure z42) ───────────────────────────────────────
-    public static string[] ReadAllLines(string path) =>
-        ReadAllText(path).Split("\n");
-
-    public static void WriteAllLines(string path, string[] lines) =>
-        WriteAllText(path, string.Join("\n", lines));
+    public static extern void Delete(string path);
 }

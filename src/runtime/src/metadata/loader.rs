@@ -11,7 +11,7 @@ use anyhow::{bail, Context, Result};
 
 use crate::bytecode::Module;
 use crate::metadata::formats::{
-    read_zbc_namespace, zbc_is_stripped, ZBC_MAGIC, ZbcFile, ZpkgFile, ZpkgMode,
+    read_zbc_namespace, zbc_is_stripped, ZBC_MAGIC, ZbcFile, ZpkgDep, ZpkgFile, ZpkgMode,
 };
 use crate::metadata::merge::merge_modules;
 
@@ -22,6 +22,8 @@ pub struct LoadedArtifact {
     /// Entry-point function name from the artifact's metadata, if present.
     /// Falls back to the Vm's own lookup logic when `None`.
     pub entry_hint: Option<String>,
+    /// Resolved dependency list from the zpkg manifest (empty for .zbc / .z42ir.json).
+    pub dependencies: Vec<ZpkgDep>,
 }
 
 /// Load a compiler output artifact from `path`, returning a `LoadedArtifact`.
@@ -55,7 +57,7 @@ fn load_legacy_ir(path: &str) -> Result<LoadedArtifact> {
     let json = read_file(path)?;
     let module: Module = serde_json::from_str(&json)
         .with_context(|| format!("cannot parse IR JSON in `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: None })
+    Ok(LoadedArtifact { module, entry_hint: None, dependencies: vec![] })
 }
 
 /// `.zbc`: `ZbcFile` envelope → extract inner `Module`.
@@ -81,7 +83,7 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
         .with_context(|| format!("cannot parse .zbc JSON in `{path}`"))?;
     check_zbc_version(&zbc, path)?;
     // .zbc has no entry field; entry resolution falls back to Vm heuristics.
-    Ok(LoadedArtifact { module: zbc.module, entry_hint: None })
+    Ok(LoadedArtifact { module: zbc.module, entry_hint: None, dependencies: vec![] })
 }
 
 /// `.zpkg`: unified project package — handles both indexed and packed modes.
@@ -126,9 +128,10 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
         }
     };
 
+    let dependencies = zpkg.dependencies;
     let module = merge_modules(modules)
         .with_context(|| format!("merging modules from `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: zpkg.entry })
+    Ok(LoadedArtifact { module, entry_hint: zpkg.entry, dependencies })
 }
 
 // ── Namespace resolution ──────────────────────────────────────────────────────
