@@ -4,7 +4,7 @@
 /// See `docs/design/compilation.md` for the full spec.
 use serde::{Deserialize, Serialize};
 
-use crate::bytecode::Module;
+use super::bytecode::Module;
 
 // ── Magic bytes ───────────────────────────────────────────────────────────────
 

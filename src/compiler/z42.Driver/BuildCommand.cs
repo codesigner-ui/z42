@@ -306,59 +306,24 @@ static class BuildCommand
             .ToList();
 
         string cacheDir = Path.Combine(projectDir, ".cache");
-        var namespaces = units.Select(u => u.Namespace).Distinct().ToList();
-        var exports = units
-            .SelectMany(u => u.Exports.Select(e => new ZpkgExport($"{u.Namespace}.{e}", "func")))
-            .ToList();
+        var zbcFiles = units.Select(u => u.ToZbcFile()).ToList();
 
         ZpkgFile zpkg;
         if (pack)
         {
-            zpkg = new ZpkgFile(
-                Name:         name,
-                Version:      version,
-                Kind:         kind,
-                Mode:         ZpkgMode.Packed,
-                Namespaces:   namespaces,
-                Exports:      exports,
-                Dependencies: dependencies,
-                Files:        [],
-                Modules:      units.Select(u => u.ToZbcFile()).ToList(),
-                Entry:        entry
-            );
+            zpkg = ZpkgBuilder.BuildPacked(name, version, kind, entry, zbcFiles, dependencies);
         }
         else
         {
-            var fileEntries = new List<ZpkgFileEntry>();
-            foreach (var unit in units)
-            {
-                string relSrc  = Path.GetRelativePath(projectDir, unit.SourceFile);
-                string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
-                Directory.CreateDirectory(Path.GetDirectoryName(zbcPath)!);
-                File.WriteAllBytes(zbcPath, ZbcWriter.Write(unit.Module, ZbcFlags.Stripped));
-                Console.Error.WriteLine($"wrote → {zbcPath}");
-
-                string zbcRel = Path.GetRelativePath(outDir, zbcPath);
-                fileEntries.Add(new ZpkgFileEntry(unit.SourceFile, zbcRel, unit.SourceHash, unit.Exports));
-            }
-
-            zpkg = new ZpkgFile(
-                Name:         name,
-                Version:      version,
-                Kind:         kind,
-                Mode:         ZpkgMode.Indexed,
-                Namespaces:   namespaces,
-                Exports:      exports,
-                Dependencies: dependencies,
-                Files:        fileEntries,
-                Modules:      [],
-                Entry:        entry
-            );
+            var (indexedZpkg, writtenPaths) = ZpkgBuilder.BuildIndexed(
+                name, version, kind, entry, zbcFiles, dependencies,
+                projectDir, cacheDir, outDir);
+            foreach (var p in writtenPaths)
+                Console.Error.WriteLine($"wrote → {p}");
+            zpkg = indexedZpkg;
         }
 
-        Directory.CreateDirectory(outDir);
-        string zpkgPath = Path.Combine(outDir, name + ".zpkg");
-        File.WriteAllText(zpkgPath, JsonSerializer.Serialize(zpkg, jsonOptions));
+        string zpkgPath = ZpkgBuilder.WriteZpkg(zpkg, name, outDir, jsonOptions);
         Console.Error.WriteLine($"wrote → {zpkgPath}");
         Console.Error.WriteLine($"    Finished → {outDir}");
         return 0;

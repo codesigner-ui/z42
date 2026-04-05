@@ -11,7 +11,7 @@ mod frame;
 pub(crate) mod helpers;
 mod translate;
 
-use crate::bytecode::Module;
+use crate::metadata::Module;
 use anyhow::Result;
 use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_module::{FuncId, Linkage, Module as CraneliftModule};

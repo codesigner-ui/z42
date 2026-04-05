@@ -167,7 +167,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let mut modules: Vec<z42_vm::bytecode::Module> = Vec::new();
+    let mut modules: Vec<z42_vm::metadata::Module> = Vec::new();
 
     // 5.1b — unconditionally try to load z42.core.zpkg if present.
     if let Some(ref dir) = libs_dir {
@@ -225,9 +225,9 @@ fn main() -> Result<()> {
     };
 
     let default_mode = match cli.mode {
-        Some(ExecMode::Jit) => z42_vm::types::ExecMode::Jit,
-        Some(ExecMode::Aot) => z42_vm::types::ExecMode::Aot,
-        _                   => z42_vm::types::ExecMode::Interp,
+        Some(ExecMode::Jit) => z42_vm::metadata::ExecMode::Jit,
+        Some(ExecMode::Aot) => z42_vm::metadata::ExecMode::Aot,
+        _                   => z42_vm::metadata::ExecMode::Interp,
     };
 
     let vm = z42_vm::vm::Vm::new(final_module, default_mode);

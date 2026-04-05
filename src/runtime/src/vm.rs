@@ -1,5 +1,4 @@
-use crate::bytecode::Module;
-use crate::types::ExecMode;
+use crate::metadata::{ExecMode, Module};
 use anyhow::{bail, Result};
 
 /// Top-level VM: holds a merged IR module and dispatches to the appropriate backend.

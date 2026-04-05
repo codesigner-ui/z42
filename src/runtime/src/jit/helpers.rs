@@ -7,8 +7,8 @@
 //   Functions that cannot fail return ().
 #![allow(dangerous_implicit_autorefs)]
 
-use crate::interp::value_to_str;
-use crate::types::{ObjectData, Value};
+use crate::corelib::convert::value_to_str;
+use crate::metadata::{ObjectData, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -549,7 +549,7 @@ pub unsafe extern "C" fn jit_builtin(
         .map(|&r| frame_ref.regs[r as usize].clone())
         .collect();
 
-    match crate::interp::builtins::exec_builtin(name, &args) {
+    match crate::corelib::exec_builtin(name, &args) {
         Ok(v)  => { frame_ref.regs[dst as usize] = v; 0 }
         Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
     }
@@ -691,7 +691,7 @@ pub unsafe extern "C" fn jit_obj_new(
     let frame_ref = &mut *frame;
 
     // Build fields by walking inheritance chain
-    let mut chain: Vec<&crate::bytecode::ClassDesc> = Vec::new();
+    let mut chain: Vec<&crate::metadata::ClassDesc> = Vec::new();
     let mut cur = class_name.as_str();
     loop {
         if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
@@ -832,7 +832,7 @@ pub unsafe extern "C" fn jit_vcall(
 }
 
 /// Walk the class hierarchy to find the fully-qualified method name.
-fn resolve_virtual(module: &crate::bytecode::Module, class_name: &str, method: &str) -> anyhow::Result<String> {
+fn resolve_virtual(module: &crate::metadata::Module, class_name: &str, method: &str) -> anyhow::Result<String> {
     let mut cur = class_name;
     loop {
         let qualified = format!("{}.{}", cur, method);
@@ -850,7 +850,7 @@ fn resolve_virtual(module: &crate::bytecode::Module, class_name: &str, method: &
 // IsInstance / AsCast
 // ═════════════════════════════════════════════════════════════════════════════
 
-fn is_subclass_or_eq(module: &crate::bytecode::Module, derived: &str, target: &str) -> bool {
+fn is_subclass_or_eq(module: &crate::metadata::Module, derived: &str, target: &str) -> bool {
     let mut cur = derived;
     loop {
         if cur == target { return true; }

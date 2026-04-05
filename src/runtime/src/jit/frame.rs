@@ -4,7 +4,7 @@
 /// JIT-compiled function.  `JitModuleCtx` is the read-only module-level context
 /// that is shared across all calls within a single module execution.
 
-use crate::types::Value;
+use crate::metadata::Value;
 use std::collections::HashMap;
 
 // ── JitFrame ─────────────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ pub struct JitModuleCtx {
     pub fn_entries:  HashMap<String, FnEntry>,
     /// Back-pointer to the bytecode module for class descriptors, etc.
     /// SAFETY: the Module must outlive this ctx.
-    pub module:      *const crate::bytecode::Module,
+    pub module:      *const crate::metadata::Module,
 }
 
 // SAFETY: raw pointer — caller ensures Module outlives ctx.

@@ -1,4 +1,4 @@
-use crate::types::ExecMode;
+use super::types::ExecMode;
 use serde::{Deserialize, Serialize};
 
 /// Magic bytes for future binary .z42bc format: "Z42\0"

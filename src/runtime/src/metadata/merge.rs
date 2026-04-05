@@ -4,7 +4,7 @@
 /// instruction references an index into its module's string pool. When N pools are
 /// concatenated, every index from module i must be shifted by the cumulative length of
 /// pools 0..i-1.
-use crate::bytecode::{BasicBlock, Instruction, Module};
+use super::bytecode::{BasicBlock, Instruction, Module};
 use anyhow::Result;
 
 /// Merge an ordered sequence of IR modules into a single flat module.
@@ -44,7 +44,7 @@ pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
 
 /// Shift every `ConstStr.idx` inside `functions` by `offset`.
 /// All other instructions are unchanged.
-fn remap_functions(functions: &mut Vec<crate::bytecode::Function>, offset: u32) {
+fn remap_functions(functions: &mut Vec<super::bytecode::Function>, offset: u32) {
     if offset == 0 {
         return; // nothing to do
     }
@@ -68,8 +68,7 @@ fn remap_block(block: &mut BasicBlock, offset: u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bytecode::{BasicBlock, Function, Instruction, Module, Terminator};
-    use crate::types::ExecMode;
+    use crate::metadata::{BasicBlock, ExecMode, Function, Instruction, Module, Terminator};
 
     fn make_module(name: &str, strings: &[&str], const_str_idx: u32) -> Module {
         let instr = Instruction::ConstStr { dst: 0, idx: const_str_idx };

@@ -5,7 +5,7 @@
 /// (see `helpers.rs`).  Only branches, jumps, and function entry/exit are
 /// emitted as inline Cranelift instructions.
 
-use crate::bytecode::{Function, Instruction, Terminator};
+use crate::metadata::{Function, Instruction, Terminator};
 use anyhow::Result;
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::types;

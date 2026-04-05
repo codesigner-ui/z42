@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-use crate::bytecode::Module;
-use crate::metadata::formats::{
+use super::bytecode::Module;
+use super::formats::{
     read_zbc_namespace, zbc_is_stripped, ZBC_MAGIC, ZbcFile, ZpkgDep, ZpkgFile, ZpkgMode,
 };
 use crate::metadata::merge::merge_modules;

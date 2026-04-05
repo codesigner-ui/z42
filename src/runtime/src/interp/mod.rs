@@ -1,19 +1,15 @@
 /// Interpreter backend — tree-walking bytecode execution.
 ///
 /// Implementation is split across submodules:
-/// • mod.rs       — public API, Frame, core execution loop
-/// • builtins.rs  — builtin function dispatch (__println, __len, __str_*, …)
-/// • helpers.rs   — value helpers (value_to_str, int_binop, numeric_lt, …)
+/// • mod.rs  — public API, Frame, core execution loop
+/// • ops.rs  — register-level helpers (int_binop, numeric_lt, collect_args, …)
 
-pub(crate) mod builtins;
-mod helpers;
+mod ops;
 
-pub use helpers::value_to_str;
-
-use crate::bytecode::{Function, Instruction, Module, Terminator};
-use crate::types::{ObjectData, Value};
+pub use crate::corelib::convert::value_to_str;
+use crate::metadata::{ClassDesc, Function, Instruction, Module, ObjectData, Terminator, Value};
 use anyhow::{bail, Context, Result};
-use helpers::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
+use ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -49,7 +45,7 @@ struct UserException;
 impl std::fmt::Display for UserException {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let msg = PENDING_EXCEPTION.with(|p| {
-            p.borrow().as_ref().map(helpers::value_to_str).unwrap_or_default()
+            p.borrow().as_ref().map(value_to_str).unwrap_or_default()
         });
         write!(f, "uncaught exception: {msg}")
     }
@@ -346,7 +342,7 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
 
         Instruction::Builtin { dst, name, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;
-            let result = builtins::exec_builtin(name, &arg_vals)?;
+            let result = crate::corelib::exec_builtin(name, &arg_vals)?;
             frame.set(*dst, result);
         }
 
@@ -422,7 +418,7 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         Instruction::ObjNew { dst, class_name, args } => {
             // Collect all fields by walking the class inheritance chain bottom-up,
             // then top-down to get correct shadowing order (derived overrides base).
-            let mut chain: Vec<&crate::bytecode::ClassDesc> = Vec::new();
+            let mut chain: Vec<&ClassDesc> = Vec::new();
             let mut cur = class_name.as_str();
             loop {
                 if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
@@ -537,7 +533,7 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
 
 /// Returns true if `derived` equals `target` or is a subclass of `target`
 /// (walks the inheritance chain).
-fn is_subclass_or_eq(module: &crate::bytecode::Module, derived: &str, target: &str) -> bool {
+fn is_subclass_or_eq(module: &Module, derived: &str, target: &str) -> bool {
     let mut cur = derived;
     loop {
         if cur == target { return true; }
@@ -550,7 +546,7 @@ fn is_subclass_or_eq(module: &crate::bytecode::Module, derived: &str, target: &s
 
 /// Walk the class hierarchy starting at `class_name` to find the first function
 /// named `{class}.{method}`. Returns an error if no implementation is found.
-fn resolve_virtual<'m>(module: &'m crate::bytecode::Module, class_name: &str, method: &str) -> Result<&'m crate::bytecode::Function> {
+fn resolve_virtual<'m>(module: &'m Module, class_name: &str, method: &str) -> Result<&'m Function> {
     let mut cur = class_name;
     loop {
         let qualified = format!("{}.{}", cur, method);

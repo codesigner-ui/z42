@@ -1,0 +1,109 @@
+using System.Text.Json;
+using Z42.IR.BinaryFormat;
+
+namespace Z42.Project;
+
+/// Assembles a <see cref="ZpkgFile"/> from a collection of compiled <see cref="ZbcFile"/> units.
+///
+/// Two packaging modes are supported:
+///   <b>Packed</b>  — all ZbcFiles are inlined into the zpkg's <c>modules[]</c> array.
+///                    Produces a single self-contained artifact; used for release builds.
+///   <b>Indexed</b> — stripped .zbc files are written to <c>cacheDir</c>; the zpkg stores
+///                    relative path references in <c>files[]</c>.
+///                    Preferred for incremental debug builds.
+public static class ZpkgBuilder
+{
+    /// Build a packed <see cref="ZpkgFile"/> with all <paramref name="zbcFiles"/> inlined.
+    public static ZpkgFile BuildPacked(
+        string                    name,
+        string                    version,
+        ZpkgKind                  kind,
+        string?                   entry,
+        IReadOnlyList<ZbcFile>    zbcFiles,
+        IReadOnlyList<ZpkgDep>    dependencies)
+    {
+        var namespaces = zbcFiles.Select(z => z.Namespace).Distinct().ToList();
+        var exports    = BuildExports(zbcFiles);
+
+        return new ZpkgFile(
+            Name:         name,
+            Version:      version,
+            Kind:         kind,
+            Mode:         ZpkgMode.Packed,
+            Namespaces:   namespaces,
+            Exports:      exports,
+            Dependencies: dependencies.ToList(),
+            Files:        [],
+            Modules:      zbcFiles.ToList(),
+            Entry:        entry
+        );
+    }
+
+    /// Build an indexed <see cref="ZpkgFile"/>: writes stripped .zbc files to
+    /// <paramref name="cacheDir"/> and records their relative paths in the manifest.
+    ///
+    /// Returns the assembled <see cref="ZpkgFile"/> and the list of .zbc paths written.
+    public static (ZpkgFile Zpkg, IReadOnlyList<string> WrittenZbcPaths) BuildIndexed(
+        string                    name,
+        string                    version,
+        ZpkgKind                  kind,
+        string?                   entry,
+        IReadOnlyList<ZbcFile>    zbcFiles,
+        IReadOnlyList<ZpkgDep>    dependencies,
+        string                    projectDir,
+        string                    cacheDir,
+        string                    outDir)
+    {
+        var namespaces   = zbcFiles.Select(z => z.Namespace).Distinct().ToList();
+        var exports      = BuildExports(zbcFiles);
+        var fileEntries  = new List<ZpkgFileEntry>();
+        var writtenPaths = new List<string>();
+
+        foreach (var zbc in zbcFiles)
+        {
+            string relSrc  = Path.GetRelativePath(projectDir, zbc.SourceFile);
+            string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
+            Directory.CreateDirectory(Path.GetDirectoryName(zbcPath)!);
+            File.WriteAllBytes(zbcPath, ZbcWriter.Write(zbc.Module, ZbcFlags.Stripped));
+            writtenPaths.Add(zbcPath);
+
+            string zbcRel = Path.GetRelativePath(outDir, zbcPath);
+            fileEntries.Add(new ZpkgFileEntry(zbc.SourceFile, zbcRel, zbc.SourceHash, zbc.Exports));
+        }
+
+        var zpkg = new ZpkgFile(
+            Name:         name,
+            Version:      version,
+            Kind:         kind,
+            Mode:         ZpkgMode.Indexed,
+            Namespaces:   namespaces,
+            Exports:      exports,
+            Dependencies: dependencies.ToList(),
+            Files:        fileEntries,
+            Modules:      [],
+            Entry:        entry
+        );
+
+        return (zpkg, writtenPaths);
+    }
+
+    /// Serialise <paramref name="zpkg"/> to <c><paramref name="outDir"/>/<paramref name="name"/>.zpkg</c>.
+    /// Creates <paramref name="outDir"/> if it does not exist.
+    /// Returns the full path of the written file.
+    public static string WriteZpkg(ZpkgFile zpkg, string name, string outDir, JsonSerializerOptions options)
+    {
+        Directory.CreateDirectory(outDir);
+        string zpkgPath = Path.Combine(outDir, name + ".zpkg");
+        File.WriteAllText(zpkgPath, JsonSerializer.Serialize(zpkg, options));
+        return zpkgPath;
+    }
+
+    // ── Private helpers ───────────────────────────────────────────────────────
+
+    /// Build the flat ZpkgExport list from all ZbcFile exports, qualifying each
+    /// symbol with its namespace.
+    static List<ZpkgExport> BuildExports(IReadOnlyList<ZbcFile> zbcFiles) =>
+        zbcFiles
+            .SelectMany(z => z.Exports.Select(e => new ZpkgExport($"{z.Namespace}.{e}", "func")))
+            .ToList();
+}
