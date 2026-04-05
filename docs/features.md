@@ -333,3 +333,16 @@ Namespace → package mapping uses exported metadata, not file names: `using z42
 **Rationale:** Python-style accessibility — running a script or trying an idea should not require project setup. The project system (`z42.toml` + `.zpkg`) is for distribution; script modes are for iteration and embedding. Two separate paths make the format contract explicit: libs/ is for versioned packages, module path is for raw compiled units.
 
 **Phase:** L1 (`.zbc` direct execution) | L2 (dual search path, namespace resolution, dependency recording) | L3 (source file direct, inline eval)
+
+### zbc and zpkg File Roles
+
+| File | Used In | Mode | Roles |
+|------|---------|------|-------|
+| `.zbc` (full) | `Z42_PATH`, direct execution | `flags=0x00` | Self-contained module: namespace header + full metadata + function bodies |
+| `.zbc` (stripped) | zpkg `.cache/` only | `flags=0x01` | Compact cache: namespace header + body strings + function bodies; no SIGS/EXPT/IMPT |
+| `.zpkg` (indexed) | `libs/`, `Z42_LIBS` | dev | References `.cache/*.zbc`; symbol index in package manifest |
+| `.zpkg` (packed) | `libs/`, `Z42_LIBS` | release | Inlines all module bytecode; self-contained distributable |
+
+**Invariant:** A stripped zbc (`.zbc` with `STRIPPED=1` flag) must **never** appear in `Z42_PATH`. Loading a stripped zbc directly is an error — it lacks the metadata needed for standalone execution. Stripped zbcs live exclusively in `.cache/` and are only loaded via zpkg index.
+
+**namespace field:** Each zpkg manifest includes a top-level `namespaces: string[]` field listing all namespace names exported by the package. This allows the compiler and VM to resolve `using X` declarations by scanning package manifests without loading bytecode.

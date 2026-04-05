@@ -84,11 +84,76 @@ fn log_libs(libs_dir: &PathBuf) {
     }
 }
 
+/// Resolve module search paths from Z42_PATH, <cwd>/, and <cwd>/modules/.
+///
+/// Returns a deduplicated list of existing directories in priority order:
+///   1. Each entry in `Z42_PATH` (colon-separated on Unix)
+///   2. `<cwd>/`
+///   3. `<cwd>/modules/`
+fn resolve_module_paths() -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+
+    // 1. Z42_PATH entries
+    if let Ok(z42_path) = std::env::var("Z42_PATH") {
+        for part in z42_path.split(':') {
+            let p = PathBuf::from(part.trim());
+            if p.is_dir() && !paths.contains(&p) {
+                paths.push(p);
+            }
+        }
+    }
+
+    // 2. <cwd>/
+    if let Ok(cwd) = std::env::current_dir() {
+        if !paths.contains(&cwd) {
+            paths.push(cwd.clone());
+        }
+        // 3. <cwd>/modules/
+        let modules = cwd.join("modules");
+        if modules.is_dir() && !paths.contains(&modules) {
+            paths.push(modules);
+        }
+    }
+
+    paths
+}
+
+/// Log discovered module paths and .zbc files in verbose mode.
+fn log_module_paths(module_paths: &[PathBuf]) {
+    for dir in module_paths {
+        tracing::info!("module path: {}", dir.display());
+        match std::fs::read_dir(dir) {
+            Ok(entries) => {
+                let mut found = Vec::new();
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("zbc") {
+                        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                            found.push(name.to_owned());
+                        }
+                    }
+                }
+                found.sort();
+                for name in &found {
+                    tracing::info!("  module: {name}");
+                }
+            }
+            Err(e) => tracing::warn!("cannot read module path {}: {e}", dir.display()),
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.verbose {
         tracing_subscriber::fmt::init();
+    }
+
+    // Resolve module search paths (Z42_PATH + cwd + cwd/modules); log only for now.
+    let module_paths = resolve_module_paths();
+    if cli.verbose {
+        log_module_paths(&module_paths);
     }
 
     // Locate stdlib libs directory (log only; actual loading deferred to M7).

@@ -9,6 +9,7 @@ using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.Compiler.TypeCheck;
 using Z42.IR;
+using Z42.IR.BinaryFormat;
 using Z42.Project;
 
 namespace Z42.Driver;
@@ -203,6 +204,58 @@ static class BuildCommand
         string                outDir,
         JsonSerializerOptions jsonOptions)
     {
+        // ── 4.1: Scan .zpkg files in libs/ dirs for namespace → filename mapping ──
+        var nsMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var libsDirs = new[]
+        {
+            Path.Combine(projectDir, "libs"),
+            Path.Combine(projectDir, "artifacts", "z42", "libs"),
+        };
+        foreach (var libsDir in libsDirs)
+        {
+            if (!Directory.Exists(libsDir)) continue;
+            foreach (var zpkgFile in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+            {
+                try
+                {
+                    var text = File.ReadAllText(zpkgFile);
+                    var pkg  = JsonSerializer.Deserialize<ZpkgFile>(text, jsonOptions);
+                    if (pkg is null) continue;
+                    string fname = Path.GetFileName(zpkgFile);
+                    foreach (var ns in pkg.Namespaces)
+                        nsMap.TryAdd(ns, fname);
+                }
+                catch { /* skip malformed zpkg */ }
+            }
+        }
+
+        // ── 4.2: Scan .zbc files in Z42_PATH and cwd/modules/ (zbc overrides zpkg) ──
+        var zbcScanDirs = new List<string>();
+        var z42Path = Environment.GetEnvironmentVariable("Z42_PATH");
+        if (!string.IsNullOrEmpty(z42Path))
+            zbcScanDirs.AddRange(z42Path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries));
+        var cwd = Directory.GetCurrentDirectory();
+        zbcScanDirs.Add(cwd);
+        zbcScanDirs.Add(Path.Combine(cwd, "modules"));
+
+        foreach (var dir in zbcScanDirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var zbcFile in Directory.EnumerateFiles(dir, "*.zbc"))
+            {
+                try
+                {
+                    var bytes = File.ReadAllBytes(zbcFile);
+                    var ns    = ZbcReader.ReadNamespace(bytes);
+                    if (string.IsNullOrEmpty(ns)) continue;
+                    string fname = Path.GetFileName(zbcFile);
+                    nsMap[ns] = fname; // zbc overrides zpkg for same namespace
+                }
+                catch { /* skip malformed zbc */ }
+            }
+        }
+
+        // ── Compile all source files ──────────────────────────────────────────────
         var units  = new List<CompiledUnit>();
         int errors = 0;
 
@@ -215,6 +268,42 @@ static class BuildCommand
 
         if (errors > 0)
         { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return 1; }
+
+        // ── 4.3: Warn on unresolved namespaces in `using` declarations ───────────
+        if (nsMap.Count > 0)
+        {
+            foreach (var unit in units)
+            {
+                foreach (var usingNs in unit.Usings)
+                {
+                    if (!nsMap.ContainsKey(usingNs))
+                        Console.Error.WriteLine(
+                            $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
+                }
+            }
+        }
+
+        // ── 4.4: Build dependencies list from resolved usings ────────────────────
+        var depMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var unit in units)
+        {
+            foreach (var usingNs in unit.Usings)
+            {
+                if (nsMap.TryGetValue(usingNs, out var depFile))
+                {
+                    if (!depMap.TryGetValue(depFile, out var nsList))
+                    {
+                        nsList = [];
+                        depMap[depFile] = nsList;
+                    }
+                    if (!nsList.Contains(usingNs))
+                        nsList.Add(usingNs);
+                }
+            }
+        }
+        var dependencies = depMap
+            .Select(kv => new ZpkgDep(kv.Key, kv.Value))
+            .ToList();
 
         string cacheDir = Path.Combine(projectDir, ".cache");
         var namespaces = units.Select(u => u.Namespace).Distinct().ToList();
@@ -232,7 +321,7 @@ static class BuildCommand
                 Mode:         ZpkgMode.Packed,
                 Namespaces:   namespaces,
                 Exports:      exports,
-                Dependencies: [],
+                Dependencies: dependencies,
                 Files:        [],
                 Modules:      units.Select(u => u.ToZbcFile()).ToList(),
                 Entry:        entry
@@ -246,7 +335,7 @@ static class BuildCommand
                 string relSrc  = Path.GetRelativePath(projectDir, unit.SourceFile);
                 string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
                 Directory.CreateDirectory(Path.GetDirectoryName(zbcPath)!);
-                File.WriteAllBytes(zbcPath, Z42.IR.BinaryFormat.ZbcWriter.Write(unit.Module, exports: unit.Exports));
+                File.WriteAllBytes(zbcPath, ZbcWriter.Write(unit.Module, ZbcFlags.Stripped));
                 Console.Error.WriteLine($"wrote → {zbcPath}");
 
                 string zbcRel = Path.GetRelativePath(outDir, zbcPath);
@@ -260,7 +349,7 @@ static class BuildCommand
                 Mode:         ZpkgMode.Indexed,
                 Namespaces:   namespaces,
                 Exports:      exports,
-                Dependencies: [],
+                Dependencies: dependencies,
                 Files:        fileEntries,
                 Modules:      [],
                 Entry:        entry
@@ -305,7 +394,8 @@ static class BuildCommand
         string ns         = cu.Namespace ?? "main";
         string sourceHash = Sha256Hex(source);
         var    exports    = irModule.Functions.Select(f => f.Name).ToList();
-        return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule);
+        var    usings     = cu.Usings.ToList();
+        return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule, usings);
     }
 
     static bool CheckFile(string sourceFile)
@@ -387,7 +477,8 @@ sealed record CompiledUnit(
     string       Namespace,
     string       SourceHash,
     List<string> Exports,
-    IrModule     Module
+    IrModule     Module,
+    List<string> Usings
 )
 {
     public ZbcFile ToZbcFile() =>
