@@ -464,4 +464,55 @@ public sealed class IrGenTests
         var builtin = All(module.Functions.Single()).OfType<BuiltinInstr>().Single();
         builtin.Args.Should().Equal([0, 1]);
     }
+
+    // ── Object protocol native stubs ──────────────────────────────────────────
+
+    [Fact]
+    public void ExternInstanceMethod_GetType_ThisIsArg0()
+    {
+        // GetType() is an instance method with no z42-level params; this = reg 0.
+        var module = GenModule("""
+            class Object {
+                [Native("__obj_get_type")]
+                public extern Type GetType();
+            }
+            class Type {}
+            """);
+        var fn = module.Functions.Should().ContainSingle(f => f.Name.EndsWith(".GetType")).Subject;
+        var builtin = All(fn).OfType<BuiltinInstr>().Single();
+        builtin.Name.Should().Be("__obj_get_type");
+        builtin.Args.Should().Equal([0]); // reg 0 = this
+    }
+
+    [Fact]
+    public void ExternStaticMethod_ReferenceEquals_TwoArgs()
+    {
+        // Static method with two params — no implicit this.
+        var module = GenModule("""
+            class Object {
+                [Native("__obj_ref_eq")]
+                public static extern bool ReferenceEquals(object a, object b);
+            }
+            """);
+        var fn = module.Functions.Single();
+        var builtin = All(fn).OfType<BuiltinInstr>().Single();
+        builtin.Name.Should().Be("__obj_ref_eq");
+        builtin.Args.Should().Equal([0, 1]);
+    }
+
+    [Fact]
+    public void ExternVirtualInstanceMethod_GetHashCode_ThisIsArg0()
+    {
+        // virtual extern combines: emits native stub, this = reg 0.
+        var module = GenModule("""
+            class Object {
+                [Native("__obj_hash_code")]
+                public virtual extern int GetHashCode();
+            }
+            """);
+        var fn = module.Functions.Should().ContainSingle(f => f.Name.EndsWith(".GetHashCode")).Subject;
+        var builtin = All(fn).OfType<BuiltinInstr>().Single();
+        builtin.Name.Should().Be("__obj_hash_code");
+        builtin.Args.Should().Equal([0]);
+    }
 }

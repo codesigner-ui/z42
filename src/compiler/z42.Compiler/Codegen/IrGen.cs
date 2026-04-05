@@ -201,12 +201,13 @@ public sealed partial class IrGen
     }
 
     /// Emits a single-block function that forwards all parameters to a VM builtin.
-    /// paramOffset = 1 for instance methods (reg 0 = this), 0 for static.
+    /// For instance methods totalParams includes the implicit this (reg 0); all registers
+    /// are forwarded so that the builtin always receives [this, arg0, arg1, ...].
     private static IrFunction EmitNativeStub(
         string qualifiedName, int totalParams, int paramOffset,
         string intrinsicName, bool isVoid)
     {
-        var args = Enumerable.Range(paramOffset, totalParams - paramOffset).ToList();
+        var args = Enumerable.Range(0, totalParams).ToList();
         int dst  = totalParams; // first free register after params
         var instrs = new List<IrInstr> { new BuiltinInstr(dst, intrinsicName, args) };
         var term   = new RetTerm(isVoid ? null : dst);
