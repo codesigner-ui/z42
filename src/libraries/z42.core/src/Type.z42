@@ -1,0 +1,16 @@
+namespace z42.core;
+
+// Lightweight runtime type descriptor returned by Object.GetType().
+// Cannot be constructed from user code — the VM creates instances via __obj_get_type,
+// writing the private fields directly before returning the object.
+public sealed class Type {
+    // VM-filled backing fields (written by __obj_get_type builtin).
+    private string __name;
+    private string __fullName;
+
+    // Unqualified class name, e.g. "Circle".
+    public string Name => __name;
+
+    // Fully-qualified name including namespace, e.g. "geometry.Circle".
+    public string FullName => __fullName;
+}

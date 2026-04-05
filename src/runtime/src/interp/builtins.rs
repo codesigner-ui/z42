@@ -6,7 +6,7 @@
 ///       └─ dispatch_table()   ← OnceLock<HashMap>, built once at first call
 ///           └─ individual fn  ← one fn per intrinsic, all private
 
-use crate::types::Value;
+use crate::types::{ObjectData, Value};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -107,6 +107,10 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__env_args",     builtin_env_args);
         m.insert("__process_exit", builtin_process_exit);
         m.insert("__time_now_ms",  builtin_time_now_ms);
+        // Object protocol
+        m.insert("__obj_get_type",  builtin_obj_get_type);
+        m.insert("__obj_ref_eq",    builtin_obj_ref_eq);
+        m.insert("__obj_hash_code", builtin_obj_hash_code);
         m
     })
 }
@@ -674,6 +678,50 @@ fn builtin_time_now_ms(_args: &[Value]) -> Result<Value> {
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     Ok(Value::I64(ms))
+}
+
+// ── Object protocol ───────────────────────────────────────────────────────────
+
+/// Returns a `z42.core.Type` object whose `__name` and `__fullName` fields are
+/// derived from the runtime class tag of the argument object.
+fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
+    let class_name = match args.first() {
+        Some(Value::Object(rc)) => rc.borrow().class_name.clone(),
+        Some(Value::Null) => bail!("__obj_get_type: null reference"),
+        _ => bail!("__obj_get_type: expected an object"),
+    };
+    let simple_name = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
+    let mut fields = std::collections::HashMap::new();
+    fields.insert("__name".to_string(),     Value::Str(simple_name));
+    fields.insert("__fullName".to_string(), Value::Str(class_name));
+    Ok(Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ObjectData {
+        class_name: "z42.core.Type".to_string(),
+        fields,
+    }))))
+}
+
+/// Reference equality: true iff both arguments point to the same heap allocation,
+/// or both are null.
+fn builtin_obj_ref_eq(args: &[Value]) -> Result<Value> {
+    let result = match (args.first(), args.get(1)) {
+        (Some(Value::Object(a)), Some(Value::Object(b))) => std::rc::Rc::ptr_eq(a, b),
+        (Some(Value::Null), Some(Value::Null))           => true,
+        (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
+        _                                                => false,
+    };
+    Ok(Value::Bool(result))
+}
+
+/// Identity-based hash code derived from the Rc pointer address.
+fn builtin_obj_hash_code(args: &[Value]) -> Result<Value> {
+    match args.first() {
+        Some(Value::Object(rc)) => {
+            let addr = std::rc::Rc::as_ptr(rc) as i64;
+            Ok(Value::I32((addr & 0x7fff_ffff) as i32))
+        }
+        Some(Value::Null) => Ok(Value::I32(0)),
+        _ => bail!("__obj_hash_code: expected an object"),
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

@@ -104,5 +104,10 @@ public static class NativeTable
         ["__env_args"]     = new("__env_args",     0),
         ["__process_exit"] = new("__process_exit", 1),
         ["__time_now_ms"]  = new("__time_now_ms",  0),
+
+        // ── Object protocol ───────────────────────────────────────────────────
+        ["__obj_get_type"]  = new("__obj_get_type",  1), // (this) -> Type
+        ["__obj_ref_eq"]    = new("__obj_ref_eq",    2), // (a, b) -> bool
+        ["__obj_hash_code"] = new("__obj_hash_code", 1), // (this) -> int
     };
 }

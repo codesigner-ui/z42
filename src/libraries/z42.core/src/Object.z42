@@ -1,10 +1,26 @@
 namespace z42.core;
 
-// Base object protocol — every z42 type implicitly inherits these members.
-// The implementations here are stubs; the VM provides the real behavior
-// for primitive types. User-defined types may override them.
+// Base object protocol — every z42 reference type implicitly inherits these members.
+// Struct types do NOT inherit Object; the compiler synthesises value-semantic
+// Equals/GetHashCode/ToString for them directly (no boxing, no vtable).
 public class Object {
-    public virtual string ToString() => "";
-    public virtual bool Equals(Object other) => false;
-    public virtual int GetHashCode() => 0;
+    // Returns the runtime type descriptor for this object.
+    [Native("__obj_get_type")]
+    public extern Type GetType();
+
+    // Returns true iff a and b are the same heap object (or both null).
+    [Native("__obj_ref_eq")]
+    public static extern bool ReferenceEquals(Object? a, Object? b);
+
+    // Value equality — defaults to reference equality.
+    // Override together with GetHashCode() when the type has value semantics.
+    public virtual bool Equals(Object? other) => ReferenceEquals(this, other);
+
+    // Identity-based hash code by default.
+    // Must be overridden whenever Equals() is overridden.
+    [Native("__obj_hash_code")]
+    public virtual extern int GetHashCode();
+
+    // Human-readable representation — defaults to the unqualified type name.
+    public virtual string ToString() => GetType().Name;
 }
