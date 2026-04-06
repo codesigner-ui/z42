@@ -17,7 +17,12 @@
       "Bash(python3 -c \" import json, sys d = json.load\\(sys.stdin\\) print\\('kind:', d.get\\('kind'\\)\\) for m in d.get\\('modules',[]\\): for f in m.get\\('module',{}\\).get\\('functions',[]\\): print\\(f['name'], 'params:', f['param_count']\\) \")",
       "Bash(grep -n \"parse_int\\\\|parse_float\\\\|parse_double\\\\|parse_bool\" /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/src/corelib/*.rs)",
       "Bash(grep -v \"^$\")",
-      "Bash(./scripts/test-vm.sh)"
+      "Bash(./scripts/test-vm.sh)",
+      "Bash(chmod +x /Users/d.s.qiu/Documents/codesigner-ui/z42/scripts/regen-golden-tests.sh)",
+      "Bash(./scripts/regen-golden-tests.sh)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver.dll src/runtime/tests/golden/run/46_object_protocol/source.z42 --emit zbc -o /tmp/test46.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver.dll /tmp/test_ref.z42 --emit zbc -o /tmp/test_ref.zbc)",
+      "Bash(grep -n \"ZbcFile\\\\|ZpkgFile\\\\|ZpkgDep\\\\|CurrentVersion\\\\|record Zbc\\\\|record Zpkg\" /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Project/*.cs)"
     ]
   }
 }
