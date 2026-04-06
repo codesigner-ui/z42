@@ -44,6 +44,10 @@ public abstract record Z42Type
         if (source is Z42UnknownType || target is Z42UnknownType) return true;
         // null is assignable to any reference type or optional type
         if (source is Z42NullType && (IsReferenceType(target) || target is Z42OptionType)) return true;
+        // Same-name class types are compatible (handles two-pass TypeChecker where stubs
+        // may be different instances from fully-resolved types of the same class).
+        if (source is Z42ClassType srcCt && target is Z42ClassType tgtCt && srcCt.Name == tgtCt.Name)
+            return true;
         // T is assignable to T? (implicit wrap)
         if (target is Z42OptionType opt && IsAssignableTo(opt.Inner, source)) return true;
         // Numeric widening: int → long → float → double

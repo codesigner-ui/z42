@@ -26,9 +26,14 @@ public sealed partial class IrGen
     // Namespace for the current compilation unit (null = no namespace declared)
     private string? _namespace;
     // Class name → set of instance method names (for call resolution)
+    // Overloaded methods stored as "Name$N" where N = user param count (excluding this).
     private Dictionary<string, HashSet<string>> _classMethods = new();
     // Class name → set of static method names (for static call dispatch)
+    // Overloaded statics stored as "Name$N" where N = param count.
     private Dictionary<string, HashSet<string>> _classStaticMethods = new();
+    // (qualifiedClass, methodName) pairs that have arity-based overloads.
+    private HashSet<(string, string)> _overloadedInstanceMethods = new();
+    private HashSet<(string, string)> _overloadedStaticMethods   = new();
     // Class name → set of instance field names (qualified, for implicit this.field access)
     private Dictionary<string, HashSet<string>> _classInstanceFields = new();
     // Qualified class name → static field name → initializer expr (null = default)
@@ -70,14 +75,34 @@ public sealed partial class IrGen
             foreach (var m in en.Members)
                 _enumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
 
-        // Build class method/field maps for call resolution (keyed by qualified class name)
+        // Detect overloaded method names (same class, same static-ness, same name).
         foreach (var cls in cu.Classes)
         {
-            _classMethods[QualifyName(cls.Name)]        = cls.Methods.Where(m => !m.IsStatic).Select(m => m.Name).ToHashSet();
-            _classStaticMethods[QualifyName(cls.Name)]  = cls.Methods.Where(m =>  m.IsStatic).Select(m => m.Name).ToHashSet();
-            _classInstanceFields[QualifyName(cls.Name)] = cls.Fields.Where(f => !f.IsStatic).Select(f => f.Name).ToHashSet();
+            var qualName = QualifyName(cls.Name);
+            foreach (var grp in cls.Methods.Where(m => !m.IsStatic).GroupBy(m => m.Name).Where(g => g.Count() > 1))
+                _overloadedInstanceMethods.Add((qualName, grp.Key));
+            foreach (var grp in cls.Methods.Where(m =>  m.IsStatic).GroupBy(m => m.Name).Where(g => g.Count() > 1))
+                _overloadedStaticMethods.Add((qualName, grp.Key));
+        }
+
+        // Build class method/field maps for call resolution (keyed by qualified class name).
+        // Overloaded names are stored as "Name$N" where N = user param count.
+        foreach (var cls in cu.Classes)
+        {
+            var qualName = QualifyName(cls.Name);
+            _classMethods[qualName] = cls.Methods
+                .Where(m => !m.IsStatic)
+                .Select(m => _overloadedInstanceMethods.Contains((qualName, m.Name))
+                    ? $"{m.Name}${m.Params.Count}" : m.Name)
+                .ToHashSet();
+            _classStaticMethods[qualName] = cls.Methods
+                .Where(m =>  m.IsStatic)
+                .Select(m => _overloadedStaticMethods.Contains((qualName, m.Name))
+                    ? $"{m.Name}${m.Params.Count}" : m.Name)
+                .ToHashSet();
+            _classInstanceFields[qualName] = cls.Fields.Where(f => !f.IsStatic).Select(f => f.Name).ToHashSet();
             if (cls.BaseClass is not null)
-                _classBaseNames[QualifyName(cls.Name)] = QualifyName(cls.BaseClass);
+                _classBaseNames[qualName] = QualifyName(cls.BaseClass);
         }
 
         // Collect static fields with their initializers
@@ -91,12 +116,24 @@ public sealed partial class IrGen
         // Collect top-level function names for qualified call resolution
         _topLevelFunctionNames = cu.Functions.Select(f => f.Name).ToHashSet();
 
-        // Collect function param lists (including defaults) for call-site expansion
+        // Collect function param lists (including defaults) for call-site expansion.
+        // For overloaded methods, use the $N-qualified name.
         foreach (var fn in cu.Functions)
             _funcParams[QualifyName(fn.Name)] = fn.Params;
         foreach (var cls in cu.Classes)
+        {
+            var qualName = QualifyName(cls.Name);
             foreach (var m in cls.Methods)
-                _funcParams[$"{QualifyName(cls.Name)}.{m.Name}"] = m.Params;
+            {
+                bool isOverloaded = m.IsStatic
+                    ? _overloadedStaticMethods.Contains((qualName, m.Name))
+                    : _overloadedInstanceMethods.Contains((qualName, m.Name));
+                string key = isOverloaded
+                    ? $"{qualName}.{m.Name}${m.Params.Count}"
+                    : $"{qualName}.{m.Name}";
+                _funcParams[key] = m.Params;
+            }
+        }
 
         var classes   = cu.Classes.Select(EmitClassDesc).ToList();
         var functions = new List<IrFunction>();
@@ -118,9 +155,18 @@ public sealed partial class IrGen
 
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
+        // Determine the IR-qualified function name; append $N for overloaded methods.
+        var qualClass  = QualifyName(className);
+        bool overloaded = method.IsStatic
+            ? _overloadedStaticMethods.Contains((qualClass, method.Name))
+            : _overloadedInstanceMethods.Contains((qualClass, method.Name));
+        string methodIrName = overloaded
+            ? $"{qualClass}.{method.Name}${method.Params.Count}"
+            : $"{qualClass}.{method.Name}";
+
         if (method.IsExtern && method.NativeIntrinsic != null)
             return EmitNativeStub(
-                $"{QualifyName(className)}.{method.Name}",
+                methodIrName,
                 method.Params.Count + (method.IsStatic ? 0 : 1),
                 method.IsStatic ? 0 : 1,
                 method.NativeIntrinsic,
@@ -157,10 +203,9 @@ public sealed partial class IrGen
 
         bool isCtor = !isStatic && method.Name == className;
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
-        string qualifiedName = $"{QualifyName(className)}.{method.Name}";
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         int paramCount = method.Params.Count + paramOffset;
-        return new IrFunction(qualifiedName, paramCount, retType, "Interp", _blocks, excTable);
+        return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable);
     }
 
     // ── Function ────────────────────────────────────────────────────────────────

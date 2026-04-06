@@ -35,9 +35,9 @@
               "idx": 0
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 1,
-              "name": "__str_is_null_or_empty",
+              "func": "z42.core.String.IsNullOrEmpty",
               "args": [
                 0
               ]
@@ -56,9 +56,9 @@
               "idx": 1
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 4,
-              "name": "__str_is_null_or_empty",
+              "func": "z42.core.String.IsNullOrEmpty",
               "args": [
                 3
               ]
@@ -111,9 +111,9 @@
               "var": "parts"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 12,
-              "name": "__str_join",
+              "func": "z42.core.String.Join",
               "args": [
                 10,
                 11
@@ -148,14 +148,21 @@
               "idx": 9
             },
             {
-              "op": "builtin",
-              "dst": 18,
-              "name": "__str_join",
-              "args": [
-                14,
+              "op": "array_new_lit",
+              "dst": 38,
+              "elems": [
                 15,
                 16,
                 17
+              ]
+            },
+            {
+              "op": "call",
+              "dst": 18,
+              "func": "z42.core.String.Join",
+              "args": [
+                14,
+                38
               ]
             },
             {
@@ -182,12 +189,20 @@
               "idx": 11
             },
             {
-              "op": "builtin",
-              "dst": 23,
-              "name": "__str_concat",
+              "op": "call",
+              "dst": 39,
+              "func": "z42.core.String.Concat",
               "args": [
                 20,
-                21,
+                21
+              ]
+            },
+            {
+              "op": "call",
+              "dst": 23,
+              "func": "z42.core.String.Concat",
+              "args": [
+                39,
                 22
               ]
             },

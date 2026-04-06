@@ -14,7 +14,8 @@ public class Object {
 
     // Value equality — defaults to reference equality.
     // Override together with GetHashCode() when the type has value semantics.
-    public virtual bool Equals(Object? other) => ReferenceEquals(this, other);
+    [Native("__obj_equals")]
+    public virtual extern bool Equals(Object? other);
 
     // Identity-based hash code by default.
     // Must be overridden whenever Equals() is overridden.
@@ -22,5 +23,6 @@ public class Object {
     public virtual extern int GetHashCode();
 
     // Human-readable representation — defaults to the unqualified type name.
-    public virtual string ToString() => GetType().Name;
+    [Native("__obj_to_str")]
+    public virtual extern string ToString();
 }

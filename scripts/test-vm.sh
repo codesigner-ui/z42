@@ -37,12 +37,19 @@ for MODE in "${MODES[@]}"; do
 
     for dir in "$GOLDEN_DIR"/*/; do
         name=$(basename "$dir")
-        ir="$dir/source.z42ir.json"
         expected="$dir/expected_output.txt"
 
-        [ -f "$ir" ] && [ -f "$expected" ] || continue
+        # Artifact priority: source.z42ir.json (legacy) > source.zbc (new format)
+        artifact=""
+        if [ -f "$dir/source.z42ir.json" ]; then
+            artifact="$dir/source.z42ir.json"
+        elif [ -f "$dir/source.zbc" ]; then
+            artifact="$dir/source.zbc"
+        fi
 
-        actual=$(cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$ir" --mode "$MODE" 2>&1) || true
+        [ -n "$artifact" ] && [ -f "$expected" ] || continue
+
+        actual=$(cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$artifact" --mode "$MODE" 2>&1) || true
 
         if [ "$actual" = "$(cat "$expected")" ]; then
             PASS=$((PASS + 1))

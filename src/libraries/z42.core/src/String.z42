@@ -1,0 +1,68 @@
+namespace z42.core;
+
+// String class — wraps the built-in `string` primitive type.
+// All instance methods receive `this` (the string value) as the first argument
+// forwarded to the corresponding native builtin.
+//
+// Overloaded methods use the $N naming convention in IR (e.g. Substring$1, Substring$2).
+public static class String {
+    // ── Instance methods (this = reg 0, params = reg 1..) ────────────────────
+
+    [Native("__str_contains")]
+    public extern bool Contains(string value);
+
+    [Native("__str_starts_with")]
+    public extern bool StartsWith(string value);
+
+    [Native("__str_ends_with")]
+    public extern bool EndsWith(string value);
+
+    // Overload 1: Substring(start) — extracts from start to end of string.
+    [Native("__str_substring")]
+    public extern string Substring(int start);
+
+    // Overload 2: Substring(start, length) — extracts `length` characters from start.
+    [Native("__str_substring")]
+    public extern string Substring(int start, int length);
+
+    [Native("__str_index_of")]
+    public extern int IndexOf(string value);
+
+    [Native("__str_replace")]
+    public extern string Replace(string oldValue, string newValue);
+
+    [Native("__str_to_lower")]
+    public extern string ToLower();
+
+    [Native("__str_to_upper")]
+    public extern string ToUpper();
+
+    [Native("__str_trim")]
+    public extern string Trim();
+
+    [Native("__str_trim_start")]
+    public extern string TrimStart();
+
+    [Native("__str_trim_end")]
+    public extern string TrimEnd();
+
+    [Native("__str_split")]
+    public extern string[] Split(string separator);
+
+    // ── Static methods ────────────────────────────────────────────────────────
+
+    [Native("__str_is_null_or_empty")]
+    public static extern bool IsNullOrEmpty(string? value);
+
+    [Native("__str_is_null_or_whitespace")]
+    public static extern bool IsNullOrWhiteSpace(string? value);
+
+    [Native("__str_join")]
+    public static extern string Join(string separator, string[] values);
+
+    [Native("__str_concat")]
+    public static extern string Concat(string a, string b);
+
+    [Native("__str_format")]
+    public static extern string Format(string format, object arg0);
+}

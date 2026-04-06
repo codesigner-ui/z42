@@ -168,16 +168,20 @@ fn main() -> Result<()> {
     }
 
     let mut modules: Vec<z42_vm::metadata::Module> = Vec::new();
+    // Track canonical paths of loaded artifact files to prevent duplicate loading.
+    let mut loaded_paths: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
 
     // 5.1b — unconditionally try to load z42.core.zpkg if present.
     if let Some(ref dir) = libs_dir {
         let core_path = dir.join("z42.core.zpkg");
         if core_path.exists() {
+            let core_canonical = core_path.canonicalize().unwrap_or(core_path.clone());
             let core_str = core_path.to_string_lossy().into_owned();
             match z42_vm::metadata::load_artifact(&core_str) {
                 Ok(a) => {
                     tracing::debug!("loaded stdlib z42.core from {core_str}");
                     modules.push(a.module);
+                    loaded_paths.insert(core_canonical);
                 }
                 Err(e) => tracing::warn!("failed to load z42.core: {e}"),
             }
@@ -189,7 +193,7 @@ fn main() -> Result<()> {
     // 5.1c — load the user artifact.
     let user_artifact = z42_vm::metadata::load_artifact(&cli.file)?;
 
-    // 5.1d — load each declared dependency from libs_dir.
+    // 5.1d — load each declared dependency from the zpkg manifest.
     for dep in &user_artifact.dependencies {
         if let Some(ref dir) = libs_dir {
             let dep_path = dir.join(&dep.file);
@@ -204,6 +208,35 @@ fn main() -> Result<()> {
                 }
             } else {
                 tracing::warn!("dependency {} not found in {}", dep.file, dir.display());
+            }
+        }
+    }
+
+    // 5.1e — load dependencies inferred from .zbc import_namespaces.
+    // For each namespace declared in the zbc's imports (e.g. "z42.io"), look up the
+    // corresponding zpkg in libs_dir and load it (unless already loaded via 5.1b/5.1d).
+    for ns in &user_artifact.import_namespaces {
+        if let Some(ref dir) = libs_dir {
+            let libs_paths = vec![dir.clone()];
+            match z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) {
+                Ok(Some(zpkg_path)) => {
+                    let canonical = zpkg_path.canonicalize().unwrap_or(zpkg_path.clone());
+                    if loaded_paths.contains(&canonical) {
+                        tracing::debug!("skipping already-loaded namespace `{ns}`");
+                        continue;
+                    }
+                    let zpkg_str = zpkg_path.to_string_lossy().into_owned();
+                    match z42_vm::metadata::load_artifact(&zpkg_str) {
+                        Ok(a) => {
+                            tracing::debug!("loaded import namespace `{ns}` from {zpkg_str}");
+                            modules.push(a.module);
+                            loaded_paths.insert(canonical);
+                        }
+                        Err(e) => tracing::warn!("failed to load `{ns}`: {e}"),
+                    }
+                }
+                Ok(None) => tracing::debug!("import namespace `{ns}` not found in libs"),
+                Err(e)   => tracing::warn!("error resolving namespace `{ns}`: {e}"),
             }
         }
     }

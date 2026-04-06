@@ -306,18 +306,25 @@ public sealed partial class TypeChecker
 
         // ── User-defined static class method: ClassName.StaticMethod(args) ────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
-            && _classes.TryGetValue(clsName, out var staticCt)
-            && staticCt.StaticMethods.TryGetValue(staticMember, out var staticSig))
+            && _classes.TryGetValue(clsName, out var staticCt))
         {
-            var argTs = call.Args.Select(a => CheckExpr(a, env)).ToList();
-            if (argTs.Count < staticSig.MinArgCount || argTs.Count > staticSig.Params.Count)
-                _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"expected {staticSig.MinArgCount}–{staticSig.Params.Count} argument(s), got {argTs.Count}", call.Span);
-            else
-                for (int i = 0; i < argTs.Count; i++)
-                    RequireAssignable(staticSig.Params[i], argTs[i], call.Args[i].Span,
-                        $"argument {i + 1}: expected `{staticSig.Params[i]}`, got `{argTs[i]}`");
-            return staticSig.Ret;
+            // Try exact name, then arity-qualified name for overloaded methods.
+            var arityKey = $"{staticMember}${call.Args.Count}";
+            var staticSig = staticCt.StaticMethods.TryGetValue(staticMember, out var s1) ? s1
+                          : staticCt.StaticMethods.TryGetValue(arityKey,     out var s2) ? s2
+                          : null;
+            if (staticSig is not null)
+            {
+                var argTs = call.Args.Select(a => CheckExpr(a, env)).ToList();
+                if (argTs.Count < staticSig.MinArgCount || argTs.Count > staticSig.Params.Count)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"expected {staticSig.MinArgCount}–{staticSig.Params.Count} argument(s), got {argTs.Count}", call.Span);
+                else
+                    for (int i = 0; i < argTs.Count; i++)
+                        RequireAssignable(staticSig.Params[i], argTs[i], call.Args[i].Span,
+                            $"argument {i + 1}: expected `{staticSig.Params[i]}`, got `{argTs[i]}`");
+                return staticSig.Ret;
+            }
         }
 
         // ── Member method calls: instance methods and builtin instance methods ─
@@ -329,11 +336,18 @@ public sealed partial class TypeChecker
             // User-defined class instance method
             if (receiverType is Z42ClassType ct)
             {
-                if (ct.Methods.TryGetValue(mCallee.Member, out var mt))
+                // Try exact name, then arity-qualified name for overloaded methods.
+                var instArityKey = $"{mCallee.Member}${argTypes.Count}";
+                var mt = ct.Methods.TryGetValue(mCallee.Member, out var mt1) ? mt1
+                       : ct.Methods.TryGetValue(instArityKey,   out var mt2) ? mt2
+                       : null;
+                if (mt is not null)
                 {
                     bool insideClass = _currentClass == ct.Name;
+                    var visKey = ct.MemberVisibility.ContainsKey(mCallee.Member)
+                        ? mCallee.Member : instArityKey;
                     if (!insideClass
-                        && ct.MemberVisibility.TryGetValue(mCallee.Member, out var mv)
+                        && ct.MemberVisibility.TryGetValue(visKey, out var mv)
                         && mv == Visibility.Private)
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);

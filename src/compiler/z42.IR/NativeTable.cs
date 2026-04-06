@@ -109,5 +109,7 @@ public static class NativeTable
         ["__obj_get_type"]  = new("__obj_get_type",  1), // (this) -> Type
         ["__obj_ref_eq"]    = new("__obj_ref_eq",    2), // (a, b) -> bool
         ["__obj_hash_code"] = new("__obj_hash_code", 1), // (this) -> int
+        ["__obj_equals"]    = new("__obj_equals",    2), // (this, other) -> bool
+        ["__obj_to_str"]    = new("__obj_to_str",    1), // (this) -> string
     };
 }

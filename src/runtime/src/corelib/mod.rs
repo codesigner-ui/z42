@@ -135,6 +135,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__obj_get_type",  object::builtin_obj_get_type);
         m.insert("__obj_ref_eq",    object::builtin_obj_ref_eq);
         m.insert("__obj_hash_code", object::builtin_obj_hash_code);
+        m.insert("__obj_equals",    object::builtin_obj_equals);
+        m.insert("__obj_to_str",    object::builtin_obj_to_str);
 
         m
     })

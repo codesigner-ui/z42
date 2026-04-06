@@ -48,9 +48,9 @@
               "var": "s"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 3,
-              "name": "__str_to_lower",
+              "func": "z42.core.String.ToLower",
               "args": [
                 2
               ]
@@ -75,9 +75,9 @@
               "var": "s"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 7,
-              "name": "__str_to_upper",
+              "func": "z42.core.String.ToUpper",
               "args": [
                 6
               ]
@@ -102,9 +102,9 @@
               "var": "s"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 11,
-              "name": "__str_trim",
+              "func": "z42.core.String.Trim",
               "args": [
                 10
               ]
@@ -129,9 +129,9 @@
               "var": "s"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 15,
-              "name": "__str_trim_start",
+              "func": "z42.core.String.TrimStart",
               "args": [
                 14
               ]
@@ -156,9 +156,9 @@
               "var": "s"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 19,
-              "name": "__str_trim_end",
+              "func": "z42.core.String.TrimEnd",
               "args": [
                 18
               ]
@@ -198,9 +198,9 @@
               "idx": 6
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 25,
-              "name": "__str_index_of",
+              "func": "z42.core.String.IndexOf",
               "args": [
                 23,
                 24
@@ -236,9 +236,9 @@
               "idx": 7
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 31,
-              "name": "__str_index_of",
+              "func": "z42.core.String.IndexOf",
               "args": [
                 29,
                 30
@@ -274,9 +274,9 @@
               "idx": 9
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 37,
-              "name": "__str_replace",
+              "func": "z42.core.String.Replace",
               "args": [
                 34,
                 35,
@@ -313,9 +313,9 @@
               "idx": 11
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 42,
-              "name": "__str_split",
+              "func": "z42.core.String.Split",
               "args": [
                 40,
                 41

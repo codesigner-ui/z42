@@ -483,14 +483,21 @@ public sealed partial class IrGen
         // ── Static user-defined class method call: ClassName.StaticMethod(args) ──
         // Must be checked BEFORE instance builtins (e.g. "Add" is both a list builtin and a static method name)
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var staticCls }, Member: var staticMethod }
-            && _classStaticMethods.TryGetValue(QualifyName(staticCls), out var staticSet)
-            && staticSet.Contains(staticMethod))
+            && _classStaticMethods.TryGetValue(QualifyName(staticCls), out var staticSet))
         {
-            var callName = $"{QualifyName(staticCls)}.{staticMethod}";
-            var argRegs  = FillDefaults(callName, call.Args.Select(EmitExpr).ToList());
-            int dst = Alloc();
-            Emit(new CallInstr(dst, callName, argRegs));
-            return dst;
+            // Try exact name first, then arity-qualified name for overloaded methods.
+            var arityKey = $"{staticMethod}${call.Args.Count}";
+            var resolvedMethod = staticSet.Contains(staticMethod) ? staticMethod
+                               : staticSet.Contains(arityKey)     ? arityKey
+                               : null;
+            if (resolvedMethod is not null)
+            {
+                var callName = $"{QualifyName(staticCls)}.{resolvedMethod}";
+                var argRegs  = FillDefaults(callName, call.Args.Select(EmitExpr).ToList());
+                int dst = Alloc();
+                Emit(new CallInstr(dst, callName, argRegs));
+                return dst;
+            }
         }
 
         // ── Pseudo-class static calls: Assert.X, Console.X, Math.X ──────────

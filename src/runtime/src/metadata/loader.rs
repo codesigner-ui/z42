@@ -22,8 +22,11 @@ pub struct LoadedArtifact {
     /// Entry-point function name from the artifact's metadata, if present.
     /// Falls back to the Vm's own lookup logic when `None`.
     pub entry_hint: Option<String>,
-    /// Resolved dependency list from the zpkg manifest (empty for .zbc / .z42ir.json).
+    /// Resolved dependency list from the zpkg manifest (empty for .z42ir.json).
     pub dependencies: Vec<ZpkgDep>,
+    /// Namespace prefixes extracted from ZbcFile.imports (e.g. ["z42.core", "z42.io"]).
+    /// Populated by load_zbc; used by main.rs to load the corresponding zpkgs.
+    pub import_namespaces: Vec<String>,
 }
 
 /// Load a compiler output artifact from `path`, returning a `LoadedArtifact`.
@@ -57,7 +60,7 @@ fn load_legacy_ir(path: &str) -> Result<LoadedArtifact> {
     let json = read_file(path)?;
     let module: Module = serde_json::from_str(&json)
         .with_context(|| format!("cannot parse IR JSON in `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: None, dependencies: vec![] })
+    Ok(LoadedArtifact { module, entry_hint: None, dependencies: vec![], import_namespaces: vec![] })
 }
 
 /// `.zbc`: `ZbcFile` envelope → extract inner `Module`.
@@ -82,8 +85,10 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     let zbc: ZbcFile = serde_json::from_str(&json)
         .with_context(|| format!("cannot parse .zbc JSON in `{path}`"))?;
     check_zbc_version(&zbc, path)?;
+    // Extract unique namespace prefixes from the import table for dependency resolution.
+    let import_namespaces = extract_import_namespaces(&zbc.imports);
     // .zbc has no entry field; entry resolution falls back to Vm heuristics.
-    Ok(LoadedArtifact { module: zbc.module, entry_hint: None, dependencies: vec![] })
+    Ok(LoadedArtifact { module: zbc.module, entry_hint: None, dependencies: vec![], import_namespaces })
 }
 
 /// `.zpkg`: unified project package — handles both indexed and packed modes.
@@ -131,7 +136,7 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
     let dependencies = zpkg.dependencies;
     let module = merge_modules(modules)
         .with_context(|| format!("merging modules from `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: zpkg.entry, dependencies })
+    Ok(LoadedArtifact { module, entry_hint: zpkg.entry, dependencies, import_namespaces: vec![] })
 }
 
 // ── Namespace resolution ──────────────────────────────────────────────────────
@@ -245,6 +250,32 @@ fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<Path
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+/// Extract unique namespace prefixes from a list of import symbol names.
+///
+/// Each import is a fully-qualified symbol like `"z42.core.String.Contains"`.
+/// This function infers the package namespace from the first two dot-separated
+/// components (e.g. `"z42.core"`), deduplicates, and returns the result.
+///
+/// Single-component names (unlikely but defensive) are returned as-is.
+pub fn extract_import_namespaces(imports: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for import in imports {
+        // Namespace = first two components, or the whole string if fewer than two dots.
+        let ns = match import.find('.') {
+            None => import.as_str(),
+            Some(first_dot) => match import[first_dot + 1..].find('.') {
+                None => import.as_str(),  // only one dot → use full name
+                Some(rel) => &import[..first_dot + 1 + rel],
+            },
+        };
+        if seen.insert(ns.to_owned()) {
+            result.push(ns.to_owned());
+        }
+    }
+    result
+}
+
 fn read_file(path: &str) -> Result<String> {
     std::fs::read_to_string(path).with_context(|| format!("cannot read `{path}`"))
 }
@@ -261,6 +292,51 @@ fn check_zbc_version(zbc: &ZbcFile, path: &str) -> Result<()> {
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod import_ns_tests {
+    use super::extract_import_namespaces;
+
+    fn ns(imports: &[&str]) -> Vec<String> {
+        extract_import_namespaces(&imports.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn empty_imports_returns_empty() {
+        assert!(ns(&[]).is_empty());
+    }
+
+    #[test]
+    fn single_import_extracts_two_component_namespace() {
+        assert_eq!(ns(&["z42.core.String.Contains"]), vec!["z42.core"]);
+    }
+
+    #[test]
+    fn multiple_imports_same_namespace_deduplicated() {
+        assert_eq!(
+            ns(&["z42.core.String.Contains", "z42.core.Assert.Equal"]),
+            vec!["z42.core"]
+        );
+    }
+
+    #[test]
+    fn imports_from_different_namespaces_all_returned() {
+        let result = ns(&["z42.core.String.Contains", "z42.io.File.ReadText"]);
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"z42.core".to_owned()));
+        assert!(result.contains(&"z42.io".to_owned()));
+    }
+
+    #[test]
+    fn import_with_one_dot_uses_full_name() {
+        assert_eq!(ns(&["mylib.Foo"]), vec!["mylib.Foo"]);
+    }
+
+    #[test]
+    fn import_with_no_dot_uses_full_name() {
+        assert_eq!(ns(&["standalone"]), vec!["standalone"]);
+    }
+}
 
 #[cfg(test)]
 mod tests {

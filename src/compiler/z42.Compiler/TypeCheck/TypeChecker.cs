@@ -118,12 +118,19 @@ public sealed partial class TypeChecker
                 if (f.IsStatic) staticFields[f.Name] = ft;
                 else            fields[f.Name]        = ft;
             }
+            // Pre-count per (name, isStatic) to detect overloads.
+            var methodNameCount = cls.Methods
+                .GroupBy(m => (m.Name, m.IsStatic))
+                .ToDictionary(g => g.Key, g => g.Count());
             foreach (var m in cls.Methods)
             {
                 var retType = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
                 var sig     = BuildFuncType(m.Params, retType);
-                if (m.IsStatic) staticMethods[m.Name] = sig;
-                else            methods[m.Name]        = sig;
+                // Use "$N" suffix for overloaded names so all overloads are retained.
+                bool isOverloaded = methodNameCount[(m.Name, m.IsStatic)] > 1;
+                string regName = isOverloaded ? $"{m.Name}${m.Params.Count}" : m.Name;
+                if (m.IsStatic) staticMethods[regName] = sig;
+                else            methods[regName]        = sig;
             }
             var memberVis = new Dictionary<string, Visibility>();
             foreach (var f in cls.Fields)  memberVis[f.Name] = f.Visibility;
@@ -253,7 +260,7 @@ public sealed partial class TypeChecker
         _currentClass = cls.Name;
         foreach (var method in cls.Methods)
         {
-            if (ValidateNativeMethod(method)) continue; // extern: skip body check
+            if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue; // extern: skip body check
             var env   = new TypeEnv(_funcs, _classes);
             var scope = env.PushScope();
             if (!method.IsStatic)
@@ -274,7 +281,7 @@ public sealed partial class TypeChecker
 
     private void CheckFunction(FunctionDecl fn)
     {
-        if (ValidateNativeMethod(fn)) return; // extern: skip body check
+        if (ValidateNativeMethod(fn, isInstance: false)) return; // extern: skip body check
         var env   = new TypeEnv(_funcs, _classes);
         var scope = env.PushScope();
         CheckParamNames(fn.Params);
@@ -286,7 +293,8 @@ public sealed partial class TypeChecker
     /// Validates [Native] / extern consistency.
     /// Returns true if the method is a valid extern (body check should be skipped).
     /// Returns false if it is a regular method (no extern/Native issues found, continue normal check).
-    private bool ValidateNativeMethod(FunctionDecl fn)
+    /// <param name="isInstance">True for instance methods (adds 1 for implicit `this` when checking param count).</param>
+    private bool ValidateNativeMethod(FunctionDecl fn, bool isInstance = false)
     {
         bool hasNative = fn.NativeIntrinsic != null;
         bool isExtern  = fn.IsExtern;
@@ -305,7 +313,8 @@ public sealed partial class TypeChecker
         }
         if (!isExtern) return false; // plain method, no native concerns
 
-        // Both isExtern and hasNative — validate against NativeTable
+        // Both isExtern and hasNative — validate against NativeTable.
+        // For instance methods, 'this' is implicit so we add 1 to the declared param count.
         var name = fn.NativeIntrinsic!;
         if (!Z42.IR.NativeTable.All.TryGetValue(name, out var entry))
         {
@@ -313,10 +322,12 @@ public sealed partial class TypeChecker
                 $"unknown intrinsic '{name}'", fn.Span);
             return true;
         }
-        if (entry.ParamCount >= 0 && fn.Params.Count != entry.ParamCount)
+        int declaredTotal = fn.Params.Count + (isInstance ? 1 : 0);
+        if (entry.ParamCount >= 0 && declaredTotal != entry.ParamCount)
         {
             _diags.Error(DiagnosticCodes.IntrinsicParamCountMismatch,
-                $"intrinsic '{name}' expects {entry.ParamCount} parameter(s), got {fn.Params.Count}",
+                $"intrinsic '{name}' expects {entry.ParamCount} parameter(s), got {fn.Params.Count}" +
+                (isInstance ? " (+ implicit this)" : ""),
                 fn.Span);
         }
         return true; // valid extern — caller must skip body check

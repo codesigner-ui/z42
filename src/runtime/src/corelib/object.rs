@@ -46,6 +46,32 @@ pub fn builtin_obj_hash_code(args: &[Value]) -> Result<Value> {
     }
 }
 
+/// Value equality — defaults to reference equality (same as __obj_ref_eq).
+/// args: [this, other]
+pub fn builtin_obj_equals(args: &[Value]) -> Result<Value> {
+    let result = match (args.first(), args.get(1)) {
+        (Some(Value::Object(a)), Some(Value::Object(b))) => std::rc::Rc::ptr_eq(a, b),
+        (Some(Value::Null), Some(Value::Null))           => true,
+        (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
+        _                                                => false,
+    };
+    Ok(Value::Bool(result))
+}
+
+/// Human-readable representation — defaults to the unqualified type name.
+/// args: [this]
+pub fn builtin_obj_to_str(args: &[Value]) -> Result<Value> {
+    match args.first() {
+        Some(Value::Object(rc)) => {
+            let class_name = rc.borrow().class_name.clone();
+            let simple = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
+            Ok(Value::Str(simple))
+        }
+        Some(Value::Null) => Ok(Value::Str("null".into())),
+        _ => bail!("__obj_to_str: expected an object"),
+    }
+}
+
 // ── Assert ────────────────────────────────────────────────────────────────────
 
 pub fn builtin_assert_eq(args: &[Value]) -> Result<Value> {
