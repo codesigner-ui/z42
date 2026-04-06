@@ -55,6 +55,55 @@ public sealed class GoldenTests
         Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
+    // StdlibCallIndex loaded once from artifacts/z42/libs/ (if present).
+    private static readonly StdlibCallIndex StdlibIndex = LoadStdlibIndex();
+    // Absolute path to libs dir — passed to VM as Z42_LIBS so it finds stdlib regardless of cwd.
+    private static readonly string? StdlibLibsDir = FindStdlibLibsDir();
+
+    private static string? FindStdlibLibsDir()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate)) return candidate;
+            dir = dir.Parent;
+        }
+        return null;
+    }
+
+    private static StdlibCallIndex LoadStdlibIndex()
+    {
+        // Walk up to repo root and locate artifacts/z42/libs/
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate))
+                return BuildIndexFromDir(candidate);
+            dir = dir.Parent;
+        }
+        return StdlibCallIndex.Empty;
+    }
+
+    private static StdlibCallIndex BuildIndexFromDir(string libsDir)
+    {
+        var modules = new List<(IrModule Module, string Namespace)>();
+        foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+        {
+            try
+            {
+                var text = File.ReadAllText(zpkgPath);
+                var pkg  = JsonSerializer.Deserialize<ZpkgFile>(text, JsonOpts);
+                if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
+                foreach (var zbc in pkg.Modules)
+                    modules.Add((zbc.Module, zbc.Namespace));
+            }
+            catch { /* skip malformed */ }
+        }
+        return StdlibCallIndex.Build(modules);
+    }
+
     // ── Test discovery ─────────────────────────────────────────────────────
 
     public static IEnumerable<object[]> ParseTestCases() =>
@@ -151,7 +200,7 @@ public sealed class GoldenTests
         IrModule ir;
         try
         {
-            ir = new IrGen().Generate(cu);
+            ir = new IrGen(StdlibIndex).Generate(cu);
         }
         catch (Exception ex)
         {
@@ -223,13 +272,14 @@ public sealed class GoldenTests
         if (File.Exists(fmtFile))
             emitFmt = File.ReadAllText(fmtFile).Trim().ToLowerInvariant();
 
+        var usedNs = GetUsedStdlibNamespaces(ir!);
         var zbc = new ZbcFile(
             ZbcVersion : ZbcFile.CurrentVersion,
             SourceFile : Path.Combine(dir, "source.z42"),
             SourceHash : "sha256:test",
             Namespace  : ir!.Name,
             Exports    : ir.Functions.Select(f => f.Name).ToList(),
-            Imports    : [],
+            Imports    : usedNs,
             Module     : ir
         );
 
@@ -247,7 +297,7 @@ public sealed class GoldenTests
                 Mode:         ZpkgMode.Packed,
                 Namespaces:   [ir.Name],
                 Exports:      pkgExports,
-                Dependencies: [],
+                Dependencies: usedNs.Select(ns => new ZpkgDep($"{ns}.zpkg", [ns])).ToList(),
                 Files:        [],
                 Modules:      [zbc],
                 Entry:        $"{ir.Name}.Main"
@@ -281,6 +331,9 @@ public sealed class GoldenTests
                 RedirectStandardError  = true,
                 UseShellExecute        = false,
             };
+            // Tell the VM where to find stdlib zpkgs regardless of test runner cwd.
+            if (StdlibLibsDir != null)
+                psi.Environment["Z42_LIBS"] = StdlibLibsDir;
             using var proc = Process.Start(psi)!;
             string stdout = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit();
@@ -315,6 +368,19 @@ public sealed class GoldenTests
         }
         return null;
     }
+
+    /// Extract unique stdlib namespace prefixes (e.g. "z42.io") from all CallInstr targets
+    /// in the module that start with "z42.".
+    private static List<string> GetUsedStdlibNamespaces(IrModule ir) =>
+        ir.Functions
+          .SelectMany(f => f.Blocks)
+          .SelectMany(b => b.Instructions)
+          .OfType<CallInstr>()
+          .Select(c => c.Func)
+          .Where(f => f.StartsWith("z42.", StringComparison.Ordinal))
+          .Select(f => { var p = f.Split('.'); return p.Length >= 2 ? $"{p[0]}.{p[1]}" : f; })
+          .Distinct()
+          .ToList();
 
     private static void MatchDiagnosticLines(string expected, string actual, string name)
     {

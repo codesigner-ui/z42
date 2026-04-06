@@ -158,8 +158,11 @@ static class SingleFileDriver
         new Z42.Compiler.TypeCheck.TypeChecker(diags).Check(cu);
         if (diags.PrintAll()) return 1;
 
+        // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
+        var stdlibIndex = LocateStdlibIndex(source.FullName, jsonOptions);
+
         IrModule irModule;
-        try   { irModule = new IrGen().Generate(cu); }
+        try   { irModule = new IrGen(stdlibIndex).Generate(cu); }
         catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return 1; }
 
         if (dumpIr) Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
@@ -202,6 +205,20 @@ static class SingleFileDriver
         }
 
         return 0;
+    }
+
+    /// Walk up from the source file's directory to find artifacts/z42/libs/ and load stdlib.
+    public static StdlibCallIndex LocateStdlibIndex(string sourceFullPath, JsonSerializerOptions jsonOptions)
+    {
+        var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate))
+                return BuildCommand.BuildStdlibIndex([candidate], jsonOptions);
+            dir = dir.Parent;
+        }
+        return StdlibCallIndex.Empty;
     }
 
     public static void WriteFile(string path, string content)

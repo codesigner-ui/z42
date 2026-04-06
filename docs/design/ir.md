@@ -133,6 +133,29 @@ Exception table row:
 %r = call.virt %vtable_slot(%receiver, %arg0, ...)
 %r = call.async @<fn>(%args...)   -> task<T>
      await %task                  -> T
+%r = builtin "<name>"(%arg0, ...)
+```
+
+`builtin` invokes a VM-native built-in by name (e.g. `"__println"`, `"__list_add"`).
+Built-ins are registered in the VM's dispatch table and bypass the normal function call mechanism.
+They are used inside stdlib stub functions and for pseudo-class operations on `Array`/`Map` values
+(List/Dictionary) that cannot be dispatched via `v_call`.
+
+**Stdlib call chain** — user code emits `call` to a fully-qualified stdlib function
+(e.g. `z42.io.Console.WriteLine`); that stub function contains a `builtin` instruction
+which invokes the VM-native implementation (e.g. `__println`).  The compiler resolves
+stdlib call sites at build time via `StdlibCallIndex` and emits `call` instead of `builtin`
+so that the VM can correctly load and link the stdlib module.
+
+**Pseudo-class instance methods** — `List<T>` and `Dictionary<K,V>` are backed by `Array`
+and `Map` VM values, not by real class instances. The compiler emits `builtin` directly for
+their instance methods (e.g. `list.Add(x)` → `builtin "__list_add"`) because `v_call` cannot
+dispatch on non-object values.
+
+JSON wire format:
+```json
+{"op": "call",    "dst": 2, "func": "z42.io.Console.WriteLine", "args": [1]}
+{"op": "builtin", "dst": 3, "name": "__list_add",               "args": [0, 1]}
 ```
 
 ### Memory / Ownership

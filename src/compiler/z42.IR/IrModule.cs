@@ -27,7 +27,10 @@ public sealed record IrFunction(
     string RetType,
     string ExecMode,
     List<IrBlock> Blocks,
-    List<IrExceptionEntry>? ExceptionTable = null);
+    List<IrExceptionEntry>? ExceptionTable = null,
+    [property: JsonPropertyName("is_static")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    bool IsStatic = false);
 
 /// One entry in a function's exception table: covers blocks [TryStart, TryEnd)
 /// and redirects unhandled throws to CatchLabel, storing the exception in CatchReg.

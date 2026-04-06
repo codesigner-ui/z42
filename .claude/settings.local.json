@@ -7,7 +7,17 @@
       "Bash(dotnet new:*)",
       "Bash(dotnet sln:*)",
       "Bash(dotnet add:*)",
-      "Bash(cargo init:*)"
+      "Bash(cargo init:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(grep -l '\"builtin\"' /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/*/expected_ir.json /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/*/*/expected_ir.json)",
+      "Bash(grep '\"builtin\"' src/runtime/tests/golden/*/expected_ir.json src/runtime/tests/golden/*/*/expected_ir.json)",
+      "Bash(dotnet test:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('namespaces:', d.get\\('namespaces', []\\)\\)\")",
+      "Bash(python3 -c \" import json, sys d = json.load\\(sys.stdin\\) for m in d.get\\('modules',[]\\): for f in m.get\\('module',{}\\).get\\('functions',[]\\): print\\(f['name'], 'params:', f['param_count']\\) \")",
+      "Bash(python3 -c \" import json, sys d = json.load\\(sys.stdin\\) print\\('kind:', d.get\\('kind'\\)\\) for m in d.get\\('modules',[]\\): for f in m.get\\('module',{}\\).get\\('functions',[]\\): print\\(f['name'], 'params:', f['param_count']\\) \")",
+      "Bash(grep -n \"parse_int\\\\|parse_float\\\\|parse_double\\\\|parse_bool\" /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/src/corelib/*.rs)",
+      "Bash(grep -v \"^$\")",
+      "Bash(./scripts/test-vm.sh)"
     ]
   }
 }

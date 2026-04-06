@@ -139,9 +139,9 @@
               ]
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 2,
-              "name": "__println",
+              "func": "z42.io.Console.WriteLine",
               "args": [
                 1
               ]
@@ -165,9 +165,9 @@
               ]
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 6,
-              "name": "__println",
+              "func": "z42.io.Console.WriteLine",
               "args": [
                 5
               ]
@@ -186,9 +186,9 @@
               ]
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 9,
-              "name": "__println",
+              "func": "z42.io.Console.WriteLine",
               "args": [
                 8
               ]

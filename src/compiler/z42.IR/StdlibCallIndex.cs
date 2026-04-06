@@ -1,0 +1,165 @@
+namespace Z42.IR;
+
+/// An entry in the stdlib call index.
+/// QualifiedName  — fully qualified function name in the stdlib IR (e.g. "z42.io.Console.WriteLine")
+/// Namespace      — stdlib namespace that owns this function (e.g. "z42.io")
+public sealed record StdlibCallEntry(string QualifiedName, string Namespace);
+
+/// Index that maps short call-site names → stdlib qualified function names.
+///
+/// Populated by BuildCommand from pre-built stdlib .zpkg files; consumed by IrGen
+/// to emit CallInstr instead of BuiltinInstr when a call site resolves to a stdlib function.
+///
+/// Two lookup paths:
+///   • Static:   "ClassName.MethodName"  — for  Console.WriteLine(...), Math.Abs(...)
+///   • Instance: "MethodName"            — for  str.Substring(...),  str.ToLower()
+///               "MethodName$<arity>"    — arity-qualified variant for overloads
+///
+/// When a method name is ambiguous across multiple stdlib classes (e.g. "Contains" in
+/// both String and some other class), it is omitted from the instance index and the
+/// caller falls through to VCallInstr runtime dispatch.
+public sealed class StdlibCallIndex
+{
+    private readonly IReadOnlyDictionary<string, StdlibCallEntry> _staticIndex;
+    private readonly IReadOnlyDictionary<string, StdlibCallEntry> _instanceIndex;
+
+    private StdlibCallIndex(
+        IReadOnlyDictionary<string, StdlibCallEntry> staticIndex,
+        IReadOnlyDictionary<string, StdlibCallEntry> instanceIndex)
+    {
+        _staticIndex   = staticIndex;
+        _instanceIndex = instanceIndex;
+    }
+
+    // ── Lookups ────────────────────────────────────────────────────────────────
+
+    /// Try to find a static stdlib call for "ClassName.MethodName" (user writes Foo.Bar(...)).
+    public bool TryGetStatic(string cls, string method, out StdlibCallEntry entry) =>
+        _staticIndex.TryGetValue($"{cls}.{method}", out entry!);
+
+    /// Try to find an instance stdlib call for "MethodName" with the given user argument count
+    /// (i.e. excluding the implicit receiver).  Also tries the bare "MethodName" key.
+    public bool TryGetInstance(string method, int userArgCount, out StdlibCallEntry entry)
+    {
+        // Try arity-qualified key first, then bare name.
+        return _instanceIndex.TryGetValue($"{method}${userArgCount}", out entry!)
+            || _instanceIndex.TryGetValue(method, out entry!);
+    }
+
+    // ── Builder ────────────────────────────────────────────────────────────────
+
+    /// Build an index from a collection of stdlib IrModules.
+    ///
+    /// Each module's Name is used as the namespace prefix (e.g. "z42.io").
+    /// Functions whose names do not start with that prefix are skipped.
+    /// Functions named "__static_init__" are skipped.
+    /// The function name format is: namespace.ClassName.MethodName[[$arity]]
+    public static StdlibCallIndex Build(IEnumerable<(IrModule Module, string Namespace)> stdlibModules)
+    {
+        var staticBuf   = new Dictionary<string, StdlibCallEntry>(StringComparer.Ordinal);
+        // Track which instance keys are ambiguous (seen from >1 class).
+        var instanceBuf = new Dictionary<string, StdlibCallEntry>(StringComparer.Ordinal);
+        var ambiguous   = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (module, ns) in stdlibModules)
+        {
+            foreach (var fn in module.Functions)
+            {
+                string name = fn.Name;
+
+                // Skip VM-internal helpers.
+                if (name.EndsWith("__static_init__", StringComparison.Ordinal)) continue;
+                if (!name.StartsWith(ns + ".", StringComparison.Ordinal))       continue;
+
+                // Strip namespace prefix: "z42.io.Console.WriteLine" → "Console.WriteLine"
+                string withoutNs = name[(ns.Length + 1)..]; // "Console.WriteLine"
+
+                int dot = withoutNs.IndexOf('.');
+                if (dot < 0) continue; // no class prefix — skip
+
+                string shortClass  = withoutNs[..dot];         // "Console"
+                string methodPart  = withoutNs[(dot + 1)..];   // "WriteLine"  or  "Substring$1"
+
+                var entry = new StdlibCallEntry(name, ns);
+
+                // ── Static index ───────────────────────────────────────────────
+                // Key: "ClassName.MethodName"  (with any $arity suffix)
+                string staticKey = $"{shortClass}.{methodPart}";
+                staticBuf.TryAdd(staticKey, entry);
+
+                // Also add a bare (no-arity) static key when the method has an arity suffix.
+                if (methodPart.Contains('$'))
+                {
+                    string bareStaticKey = $"{shortClass}.{methodPart[..methodPart.IndexOf('$')]}";
+                    staticBuf.TryAdd(bareStaticKey, entry); // first arity wins for bare key
+                }
+
+                // ── Instance index ─────────────────────────────────────────────
+                // Static methods (is_static=true) are never called as instance methods:
+                // skip them here so they don't cause false ambiguity with instance methods
+                // of the same name (e.g. Assert.Contains vs String.Contains).
+                if (fn.IsStatic) continue;
+
+                // Key: "MethodName$<userArity>"  where userArity = paramCount - 1.
+                // If the function name already encodes arity (e.g. "Substring$1" from
+                // compiler-generated overload IR), use it directly — don't append again.
+                int userArity = fn.ParamCount - 1; // subtract implicit 'this'
+                if (userArity < 0) userArity = 0;
+
+                string bareMethod = methodPart.Contains('$')
+                    ? methodPart[..methodPart.IndexOf('$')]
+                    : methodPart;
+                // Already arity-encoded ("Substring$1") → use as-is; bare name → append userArity.
+                string arityKey = methodPart.Contains('$')
+                    ? methodPart
+                    : $"{methodPart}${userArity}";
+                RegisterInstance(instanceBuf, ambiguous, arityKey, entry);
+
+                RegisterInstance(instanceBuf, ambiguous, bareMethod, entry);
+            }
+        }
+
+        // Remove all ambiguous keys.
+        foreach (var key in ambiguous)
+            instanceBuf.Remove(key);
+
+        return new StdlibCallIndex(staticBuf, instanceBuf);
+    }
+
+    private static void RegisterInstance(
+        Dictionary<string, StdlibCallEntry> buf,
+        HashSet<string>                     ambiguous,
+        string                              key,
+        StdlibCallEntry                     entry)
+    {
+        if (ambiguous.Contains(key)) return;
+
+        if (buf.TryGetValue(key, out var existing))
+        {
+            // Different class → ambiguous; same class (e.g. arity-free vs arity-specific) → ok.
+            string existingClass = ExtrClass(existing.QualifiedName);
+            string newClass      = ExtrClass(entry.QualifiedName);
+            if (existingClass != newClass)
+                ambiguous.Add(key);
+        }
+        else
+        {
+            buf[key] = entry;
+        }
+    }
+
+    private static string ExtrClass(string qualifiedName)
+    {
+        // "z42.io.Console.WriteLine" → "Console"
+        int last   = qualifiedName.LastIndexOf('.');
+        if (last < 0) return qualifiedName;
+        int second = qualifiedName.LastIndexOf('.', last - 1);
+        return second < 0 ? qualifiedName[..last] : qualifiedName[(second + 1)..last];
+    }
+
+    // ── Empty sentinel ─────────────────────────────────────────────────────────
+
+    public static StdlibCallIndex Empty { get; } =
+        new(new Dictionary<string, StdlibCallEntry>(),
+            new Dictionary<string, StdlibCallEntry>());
+}

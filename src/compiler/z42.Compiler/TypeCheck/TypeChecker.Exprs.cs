@@ -292,18 +292,6 @@ public sealed partial class TypeChecker
 
     private Z42Type CheckCall(CallExpr call, TypeEnv env)
     {
-        // ── Builtin static calls: Console.X, Assert.X, Math.X ────────────────
-        // BuiltinTable.Static provides both return type and arg-count validation.
-        if (call.Callee is MemberExpr { Target: IdentExpr builtinId, Member: var builtinMember }
-            && BuiltinTable.Static.TryGetValue($"{builtinId.Name}.{builtinMember}", out var staticEntry))
-        {
-            var argTypes = call.Args.Select(a => CheckExpr(a, env)).ToList();
-            if (staticEntry.Params != null && argTypes.Count != staticEntry.Params.Count)
-                _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"expected {staticEntry.Params.Count} argument(s), got {argTypes.Count}", call.Span);
-            return staticEntry.Ret;
-        }
-
         // ── User-defined static class method: ClassName.StaticMethod(args) ────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
             && _classes.TryGetValue(clsName, out var staticCt))
@@ -330,6 +318,20 @@ public sealed partial class TypeChecker
         // ── Member method calls: instance methods and builtin instance methods ─
         if (call.Callee is MemberExpr mCallee)
         {
+            // If the target is a bare identifier not known to the user type system, treat it as
+            // a potential stdlib/external class (e.g. Console, Assert, Math).  Don't report
+            // UndefinedSymbol — resolution happens at IrGen time via StdlibCallIndex.
+            if (mCallee.Target is IdentExpr { Name: var tgtName }
+                && !_classes.ContainsKey(tgtName)
+                && !_interfaces.ContainsKey(tgtName)
+                && !_enumTypes.Contains(tgtName)
+                && env.LookupVar(tgtName) == null
+                && env.LookupFunc(tgtName) == null)
+            {
+                foreach (var a in call.Args) CheckExpr(a, env);
+                return Z42Type.Unknown;
+            }
+
             var receiverType = CheckExpr(mCallee.Target, env);
             var argTypes     = call.Args.Select(a => CheckExpr(a, env)).ToList();
 
@@ -384,17 +386,7 @@ public sealed partial class TypeChecker
                 return Z42Type.Error;
             }
 
-            // Builtin instance methods (string, List<T>, Dictionary<K,V>, etc.)
-            // BuiltinTable.Instance provides return types and arg-count validation.
-            if (BuiltinTable.Instance.TryGetValue(mCallee.Member, out var instEntry))
-            {
-                if (instEntry.Params != null && argTypes.Count != instEntry.Params.Count)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"expected {instEntry.Params.Count} argument(s), got {argTypes.Count}", call.Span);
-                return instEntry.Ret;
-            }
-
-            return Z42Type.Unknown; // method on unknown type
+            return Z42Type.Unknown; // method on unknown/primitive type — stdlib resolves at IrGen time
         }
 
         // ── Free function call ────────────────────────────────────────────────

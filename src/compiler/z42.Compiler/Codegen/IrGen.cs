@@ -22,6 +22,15 @@ namespace Z42.Compiler.Codegen;
 /// </summary>
 public sealed partial class IrGen
 {
+    private readonly StdlibCallIndex _stdlibIndex;
+
+    // Stdlib namespaces used by this compilation unit (populated during codegen).
+    private readonly HashSet<string> _usedStdlibNamespaces = new();
+
+    /// The set of stdlib namespaces that were actually called during this compilation.
+    /// Populated after Generate() returns; consumed by BuildCommand to record dependencies.
+    public IReadOnlySet<string> UsedStdlibNamespaces => _usedStdlibNamespaces;
+
     private readonly List<string> _strings = new();
     // Namespace for the current compilation unit (null = no namespace declared)
     private string? _namespace;
@@ -63,6 +72,13 @@ public sealed partial class IrGen
     private string _curLabel      = "entry";
     private List<IrInstr> _curInstrs = new();
     private bool _blockEnded;
+
+    // ── Constructor ────────────────────────────────────────────────────────────
+
+    public IrGen(StdlibCallIndex? stdlibIndex = null)
+    {
+        _stdlibIndex = stdlibIndex ?? StdlibCallIndex.Empty;
+    }
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -165,12 +181,15 @@ public sealed partial class IrGen
             : $"{qualClass}.{method.Name}";
 
         if (method.IsExtern && method.NativeIntrinsic != null)
-            return EmitNativeStub(
+        {
+            var stub = EmitNativeStub(
                 methodIrName,
                 method.Params.Count + (method.IsStatic ? 0 : 1),
                 method.IsStatic ? 0 : 1,
                 method.NativeIntrinsic,
                 method.ReturnType is VoidType);
+            return stub with { IsStatic = method.IsStatic };
+        }
 
         bool isStatic = method.IsStatic;
         _currentClassName = className;
@@ -205,7 +224,8 @@ public sealed partial class IrGen
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         int paramCount = method.Params.Count + paramOffset;
-        return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable);
+        return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
+            IsStatic: isStatic);
     }
 
     // ── Function ────────────────────────────────────────────────────────────────

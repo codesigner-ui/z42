@@ -45,6 +45,11 @@ pub struct Function {
     pub blocks: Vec<BasicBlock>,
     #[serde(default)]
     pub exception_table: Vec<ExceptionEntry>,
+    /// True for static class methods (no implicit `this` receiver).
+    /// Instance methods have `this` as reg 0 and should not be treated as
+    /// static-only entries in the StdlibCallIndex.
+    #[serde(default)]
+    pub is_static: bool,
 }
 
 /// One row in a function's exception table.

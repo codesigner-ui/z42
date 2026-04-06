@@ -150,9 +150,9 @@
               ]
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 2,
-              "name": "__println",
+              "func": "z42.io.Console.WriteLine",
               "args": [
                 1
               ]

@@ -1,9 +1,11 @@
+using System.Text.Json;
 using FluentAssertions;
 using Z42.Compiler.Codegen;
 using Z42.Compiler.Features;
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.IR;
+using Z42.Project;
 
 namespace Z42.Tests;
 
@@ -16,11 +18,57 @@ public sealed class IrGenTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy   = JsonNamingPolicy.SnakeCaseLower,
+        WriteIndented          = true,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+    };
+
+    private static readonly StdlibCallIndex StdlibIdx = LoadStdlibIdx();
+
+    private static StdlibCallIndex LoadStdlibIdx()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate)) return BuildStdlibIdxFromDir(candidate);
+            dir = dir.Parent;
+        }
+        return StdlibCallIndex.Empty;
+    }
+
+    private static StdlibCallIndex BuildStdlibIdxFromDir(string libsDir)
+    {
+        var modules = new List<(IrModule Module, string Namespace)>();
+        foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+        {
+            try
+            {
+                var pkg = JsonSerializer.Deserialize<ZpkgFile>(File.ReadAllText(zpkgPath), JsonOpts);
+                if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
+                foreach (var zbc in pkg.Modules)
+                    modules.Add((zbc.Module, zbc.Namespace));
+            }
+            catch { }
+        }
+        return StdlibCallIndex.Build(modules);
+    }
+
     private static IrModule GenModule(string src)
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
         return new IrGen().Generate(cu);
+    }
+
+    private static IrModule GenModuleWithStdlib(string src)
+    {
+        var tokens = new Lexer(src).Tokenize();
+        var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
+        return new IrGen(StdlibIdx).Generate(cu);
     }
 
     /// Generate a module from a void Main() wrapping the given statements.
@@ -284,13 +332,13 @@ public sealed class IrGenTests
     }
 
     [Fact]
-    public void BuiltinCall_EmitsBuiltinInstr()
+    public void StdlibCall_EmitsCallInstr()
     {
-        // Console.WriteLine maps to the __println builtin
-        var m = GenModule("void Main() { Console.WriteLine(\"hi\"); }");
+        // Console.WriteLine resolves to z42.io.Console.WriteLine in stdlib
+        var m = GenModuleWithStdlib("void Main() { Console.WriteLine(\"hi\"); }");
         var instrs = All(m.Functions[0]);
-        instrs.Any(i => i is BuiltinInstr b && b.Name == "__println")
-              .Should().BeTrue(because: "Console.WriteLine should emit __println builtin");
+        instrs.Any(i => i is CallInstr c && c.Func.StartsWith("z42.io", StringComparison.Ordinal))
+              .Should().BeTrue(because: "Console.WriteLine should emit a CallInstr to z42.io stdlib");
     }
 
     // ── Arrays ────────────────────────────────────────────────────────────────

@@ -127,9 +127,9 @@
               "var": "result"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 3,
-              "name": "__println",
+              "func": "z42.io.Console.WriteLine",
               "args": [
                 2
               ]

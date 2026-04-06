@@ -64,9 +64,9 @@
               "var": "i"
             },
             {
-              "op": "builtin",
+              "op": "call",
               "dst": 5,
-              "name": "__println",
+              "func": "z42.io.Console.WriteLine",
               "args": [
                 4
               ]

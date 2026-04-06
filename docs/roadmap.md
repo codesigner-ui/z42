@@ -62,6 +62,7 @@
 | C# 数值类型别名 | ✅ | ✅ | ✅ | ✅ | |
 | Math / Assert / Console | — | ✅ | ✅ | ✅ | pseudo-class |
 | `extern` + `[Native]` InternalCall | ✅ | ✅ | ✅ | ✅ | stdlib interop |
+| stdlib linking (StdlibCallIndex) | — | — | ✅ | ✅ | user code → CallInstr → stdlib stub → builtin |
 | 表达式体方法 `=> expr;` | ✅ | ✅ | ✅ | ✅ | TopLevelParser |
 | `struct` / `record` | ✅ | — | — | — | |
 | 接口 `interface` | ✅ | — | — | — | |

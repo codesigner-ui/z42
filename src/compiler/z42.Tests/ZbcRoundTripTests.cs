@@ -10,6 +10,7 @@ using Z42.Compiler.Parser;
 using Z42.Compiler.TypeCheck;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
+using Z42.Project;
 
 namespace Z42.Tests;
 
@@ -26,6 +27,39 @@ public class ZbcRoundTripTests
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         Converters             = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
+
+    // ── Stdlib index (loads once from artifacts/z42/libs/) ────────────────────
+
+    private static readonly StdlibCallIndex StdlibIndex = LoadStdlibIndex();
+
+    private static StdlibCallIndex LoadStdlibIndex()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate)) return BuildStdlibIndexFromDir(candidate);
+            dir = dir.Parent;
+        }
+        return StdlibCallIndex.Empty;
+    }
+
+    private static StdlibCallIndex BuildStdlibIndexFromDir(string libsDir)
+    {
+        var modules = new List<(IrModule Module, string Namespace)>();
+        foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+        {
+            try
+            {
+                var pkg = JsonSerializer.Deserialize<ZpkgFile>(File.ReadAllText(zpkgPath), JsonOpts);
+                if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
+                foreach (var zbc in pkg.Modules)
+                    modules.Add((zbc.Module, zbc.Namespace));
+            }
+            catch { }
+        }
+        return StdlibCallIndex.Build(modules);
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -47,7 +81,7 @@ public class ZbcRoundTripTests
             diags.PrintAll(sw);
             throw new InvalidOperationException("Type errors:\n" + sw);
         }
-        return new IrGen().Generate(cu);
+        return new IrGen(StdlibIndex).Generate(cu);
     }
 
     private static string ToJson(IrModule m) => JsonSerializer.Serialize(m, JsonOpts);

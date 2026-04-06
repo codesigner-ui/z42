@@ -1,7 +1,6 @@
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Parser;
-using Z42.IR;
 
 namespace Z42.Compiler.TypeCheck;
 
@@ -313,24 +312,9 @@ public sealed partial class TypeChecker
         }
         if (!isExtern) return false; // plain method, no native concerns
 
-        // Both isExtern and hasNative — validate against NativeTable.
-        // For instance methods, 'this' is implicit so we add 1 to the declared param count.
-        var name = fn.NativeIntrinsic!;
-        if (!Z42.IR.NativeTable.All.TryGetValue(name, out var entry))
-        {
-            _diags.Error(DiagnosticCodes.UnknownIntrinsic,
-                $"unknown intrinsic '{name}'", fn.Span);
-            return true;
-        }
-        int declaredTotal = fn.Params.Count + (isInstance ? 1 : 0);
-        if (entry.ParamCount >= 0 && declaredTotal != entry.ParamCount)
-        {
-            _diags.Error(DiagnosticCodes.IntrinsicParamCountMismatch,
-                $"intrinsic '{name}' expects {entry.ParamCount} parameter(s), got {fn.Params.Count}" +
-                (isInstance ? " (+ implicit this)" : ""),
-                fn.Span);
-        }
-        return true; // valid extern — caller must skip body check
+        // Both isExtern and hasNative — valid extern, skip body check.
+        // Intrinsic name validation is deferred to the VM (no NativeTable lookup).
+        return true;
     }
 
     /// Reports an error for any duplicate parameter name in a function / method.

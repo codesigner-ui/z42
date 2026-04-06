@@ -616,32 +616,6 @@ public sealed class TypeCheckerTests
             """).HasErrors.Should().BeFalse();
     }
 
-    [Fact]
-    public void ExternNativeMethod_UnknownIntrinsic_ReportsZ0901()
-    {
-        var diags = Check("""
-            class Foo {
-                [Native("__nonexistent")]
-                public static extern void Bar();
-            }
-            """);
-        diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.UnknownIntrinsic);
-    }
-
-    [Fact]
-    public void ExternNativeMethod_ParamCountMismatch_ReportsZ0902()
-    {
-        // __println expects 1 param, but declared with 0
-        var diags = Check("""
-            class Foo {
-                [Native("__println")]
-                public static extern void WriteLine();
-            }
-            """);
-        diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.IntrinsicParamCountMismatch);
-    }
 
     [Fact]
     public void ExternMethod_MissingNativeAttribute_ReportsZ0903()

@@ -229,6 +229,9 @@ static class BuildCommand
             }
         }
 
+        // ── 4.1b: Build StdlibCallIndex from lib-kind zpkgs ──────────────────────
+        var stdlibIndex = BuildStdlibIndex(libsDirs, jsonOptions);
+
         // ── 4.2: Scan .zbc files in Z42_PATH and cwd/modules/ (zbc overrides zpkg) ──
         var zbcScanDirs = new List<string>();
         var z42Path = Environment.GetEnvironmentVariable("Z42_PATH");
@@ -261,7 +264,7 @@ static class BuildCommand
 
         foreach (var sourceFile in sourceFiles)
         {
-            var unit = CompileFile(sourceFile);
+            var unit = CompileFile(sourceFile, stdlibIndex);
             if (unit is null) { errors++; continue; }
             units.Add(unit);
         }
@@ -283,23 +286,30 @@ static class BuildCommand
             }
         }
 
-        // ── 4.4: Build dependencies list from resolved usings ────────────────────
+        // ── 4.4: Build dependencies list from resolved usings + stdlib calls ────
         var depMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        void AddDepNs(string ns)
+        {
+            if (!nsMap.TryGetValue(ns, out var depFile)) return;
+            if (!depMap.TryGetValue(depFile, out var nsList))
+            {
+                nsList = [];
+                depMap[depFile] = nsList;
+            }
+            if (!nsList.Contains(ns))
+                nsList.Add(ns);
+        }
+
         foreach (var unit in units)
         {
+            // From explicit `using` declarations.
             foreach (var usingNs in unit.Usings)
-            {
-                if (nsMap.TryGetValue(usingNs, out var depFile))
-                {
-                    if (!depMap.TryGetValue(depFile, out var nsList))
-                    {
-                        nsList = [];
-                        depMap[depFile] = nsList;
-                    }
-                    if (!nsList.Contains(usingNs))
-                        nsList.Add(usingNs);
-                }
-            }
+                AddDepNs(usingNs);
+
+            // From stdlib calls detected by IrGen (no `using` needed by user).
+            foreach (var stdNs in unit.UsedStdlibNamespaces)
+                AddDepNs(stdNs);
         }
         var dependencies = depMap
             .Select(kv => new ZpkgDep(kv.Key, kv.Value))
@@ -331,7 +341,7 @@ static class BuildCommand
 
     // ── Per-file helpers ──────────────────────────────────────────────────────
 
-    static CompiledUnit? CompileFile(string sourceFile)
+    static CompiledUnit? CompileFile(string sourceFile, StdlibCallIndex stdlibIndex)
     {
         string source;
         try   { source = File.ReadAllText(sourceFile); }
@@ -352,15 +362,17 @@ static class BuildCommand
         new TypeChecker(diags).Check(cu);
         if (diags.PrintAll()) return null;
 
+        var    gen      = new IrGen(stdlibIndex);
         IrModule irModule;
-        try   { irModule = new IrGen().Generate(cu); }
+        try   { irModule = gen.Generate(cu); }
         catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return null; }
 
         string ns         = cu.Namespace ?? "main";
         string sourceHash = Sha256Hex(source);
         var    exports    = irModule.Functions.Select(f => f.Name).ToList();
         var    usings     = cu.Usings.ToList();
-        return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule, usings);
+        var    usedStdlib = gen.UsedStdlibNamespaces.ToList();
+        return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule, usings, usedStdlib);
     }
 
     static bool CheckFile(string sourceFile)
@@ -433,6 +445,30 @@ static class BuildCommand
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
         return "sha256:" + Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    /// Load lib-kind zpkgs from the given directories and build a StdlibCallIndex
+    /// from their packed modules.  Silently skips malformed or non-lib packages.
+    internal static StdlibCallIndex BuildStdlibIndex(string[] libsDirs, JsonSerializerOptions jsonOptions)
+    {
+        var modules = new List<(IrModule Module, string Namespace)>();
+        foreach (var dir in libsDirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var zpkgPath in Directory.EnumerateFiles(dir, "*.zpkg"))
+            {
+                try
+                {
+                    var text = File.ReadAllText(zpkgPath);
+                    var pkg  = JsonSerializer.Deserialize<ZpkgFile>(text, jsonOptions);
+                    if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
+                    foreach (var zbc in pkg.Modules)
+                        modules.Add((zbc.Module, zbc.Namespace));
+                }
+                catch { /* skip malformed */ }
+            }
+        }
+        return StdlibCallIndex.Build(modules);
+    }
 }
 
 // ── Compiled unit ─────────────────────────────────────────────────────────────
@@ -443,7 +479,8 @@ sealed record CompiledUnit(
     string       SourceHash,
     List<string> Exports,
     IrModule     Module,
-    List<string> Usings
+    List<string> Usings,
+    List<string> UsedStdlibNamespaces
 )
 {
     public ZbcFile ToZbcFile() =>

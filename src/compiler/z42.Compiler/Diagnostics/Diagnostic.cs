@@ -70,8 +70,6 @@ public static class DiagnosticCodes
     public const string UnsupportedSyntax    = "Z0501";
 
     // Native / InternalCall
-    public const string UnknownIntrinsic         = "Z0901"; // [Native("__unknown")] not in NativeTable
-    public const string IntrinsicParamCountMismatch = "Z0902"; // param count doesn't match NativeTable
     public const string ExternRequiresNative     = "Z0903"; // extern method missing [Native] attribute
     public const string NativeRequiresExtern     = "Z0904"; // [Native] attribute on non-extern method
 }

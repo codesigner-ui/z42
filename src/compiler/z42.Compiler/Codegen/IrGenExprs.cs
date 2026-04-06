@@ -1,5 +1,4 @@
 using Z42.Compiler.Parser;
-using Z42.Compiler.TypeCheck;
 using Z42.IR;
 
 namespace Z42.Compiler.Codegen;
@@ -475,8 +474,6 @@ public sealed partial class IrGen
     }
 
     // ── Call ─────────────────────────────────────────────────────────────────
-    // Builtin IR names are read from BuiltinTable (shared with TypeChecker).
-    // To add a new builtin: add one line to BuiltinTable.Static or .Instance.
 
     private int EmitCall(CallExpr call)
     {
@@ -500,27 +497,95 @@ public sealed partial class IrGen
             }
         }
 
-        // ── Pseudo-class static calls: Assert.X, Console.X, Math.X ──────────
-        // IrName comes from BuiltinTable.Static (same table used by TypeChecker).
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var cls }, Member: var mStatic }
-            && BuiltinTable.Static.TryGetValue($"{cls}.{mStatic}", out var staticEntry))
+        // ── Type-keyword static calls: string.X, int.X, double.X ────────────────
+        // z42 type keywords (lowercase) used as static class prefixes.
+        // Variadic methods (Join, Concat, Format with N args) emit BuiltinInstr directly
+        // because fixed-arity stdlib stubs cannot forward variable argument counts.
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var kwCls }, Member: var kwMethod }
+            && kwCls is "string" or "int" or "long" or "double" or "float" or "bool" or "char")
         {
-            var argRegs = call.Args.Select(EmitExpr).ToList();
-            // Console: concat multiple args into one string argument
-            if (cls == "Console" && argRegs.Count != 1)
-                argRegs = [EmitConcat(argRegs)];
-            return EmitBuiltin(staticEntry.IrName, argRegs);
+            var kwArgRegs = call.Args.Select(EmitExpr).ToList();
+            string? builtinName = (kwCls, kwMethod) switch {
+                ("string", "IsNullOrEmpty")       => "__str_is_null_or_empty",
+                ("string", "IsNullOrWhiteSpace")  => "__str_is_null_or_whitespace",
+                ("string", "Join")                => "__str_join",
+                ("string", "Concat")              => "__str_concat",
+                ("string", "Format")              => "__str_format",
+                ("int",    "Parse")               => "__int_parse",
+                ("long",   "Parse")               => "__long_parse",
+                ("double", "Parse")               => "__double_parse",
+                ("float",  "Parse")               => "__double_parse",
+                _ => null
+            };
+            if (builtinName != null)
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, builtinName, kwArgRegs));
+                return dst;
+            }
         }
 
-        // ── Instance method calls: str.X(), list.X() ─────────────────────────
-        // IrName comes from BuiltinTable.Instance (same table used by TypeChecker).
-        if (call.Callee is MemberExpr mInst
-            && BuiltinTable.Instance.TryGetValue(mInst.Member, out var instEntry))
+        // ── Stdlib static calls: Console.X, Assert.X, Math.X, String.IsNull... ─
+        // Resolved against the pre-loaded StdlibCallIndex; emits CallInstr to the
+        // fully-qualified stdlib function rather than a raw BuiltinInstr.
+        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var stdCls }, Member: var stdMethod }
+            && _stdlibIndex.TryGetStatic(stdCls, stdMethod, out var stdStaticEntry))
         {
-            int targetReg = EmitExpr(mInst.Target);
-            var argRegs   = new List<int> { targetReg };
+            var argRegs = call.Args.Select(EmitExpr).ToList();
+            // Console.Write* with >1 arg: concat all into a single string first.
+            if (stdCls == "Console" && argRegs.Count != 1)
+                argRegs = [EmitConcat(argRegs)];
+            _usedStdlibNamespaces.Add(stdStaticEntry.Namespace);
+            int dst = Alloc();
+            Emit(new CallInstr(dst, stdStaticEntry.QualifiedName, argRegs));
+            return dst;
+        }
+
+        // ── List / Dictionary pseudo-class instance methods ──────────────────
+        // List<T> and Dictionary<K,V> use Array/Map VM values; VCallInstr cannot dispatch
+        // on non-object values, so their methods must be routed to builtins directly.
+        // `Contains` is also intercepted here: __contains handles both strings and arrays,
+        // removing the Assert.Contains / String.Contains instance-index ambiguity entirely.
+        if (call.Callee is MemberExpr { Target: var collTarget, Member: var collMethod })
+        {
+            string? collBuiltin = collMethod switch {
+                "Add"         => "__list_add",
+                "RemoveAt"    => "__list_remove_at",
+                "Insert"      => "__list_insert",
+                "Clear"       => "__list_clear",
+                "Sort"        => "__list_sort",
+                "Reverse"     => "__list_reverse",
+                "ContainsKey" => "__dict_contains_key",
+                // Remove: handles both List.Remove(value) and Dictionary.Remove(key)
+                "Remove"      => "__dict_remove",
+                // Contains: __contains handles both String and Array receivers
+                "Contains"    => "__contains",
+                _             => null
+            };
+            if (collBuiltin != null)
+            {
+                int receiverReg = EmitExpr(collTarget);
+                var collArgRegs = new List<int> { receiverReg };
+                collArgRegs.AddRange(call.Args.Select(EmitExpr));
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, collBuiltin, collArgRegs));
+                return dst;
+            }
+        }
+
+        // ── Stdlib instance calls: str.Substring, str.ToLower, etc. ─────────
+        // For unambiguous instance method names, emit CallInstr([receiver, ...args]).
+        // Ambiguous names fall through to VCallInstr.
+        if (call.Callee is MemberExpr { Target: var instTarget, Member: var instMethod }
+            && _stdlibIndex.TryGetInstance(instMethod, call.Args.Count, out var stdInstEntry))
+        {
+            int receiverReg = EmitExpr(instTarget);
+            var argRegs     = new List<int> { receiverReg };
             argRegs.AddRange(call.Args.Select(EmitExpr));
-            return EmitBuiltin(instEntry.IrName, argRegs);
+            _usedStdlibNamespaces.Add(stdInstEntry.Namespace);
+            int dst = Alloc();
+            Emit(new CallInstr(dst, stdInstEntry.QualifiedName, argRegs));
+            return dst;
         }
 
         // ── Instance method call via virtual dispatch: obj.Method(args) ─────
