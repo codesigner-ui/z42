@@ -11,6 +11,7 @@ using Z42.Compiler.Parser;
 using Z42.Driver;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
+using Z42.Project;
 
 var jsonOptions = new JsonSerializerOptions
 {
@@ -193,6 +194,27 @@ static class SingleFileDriver
                 Console.Error.WriteLine($"wrote → {path}");
                 break;
             }
+            case "json-zbc":
+            {
+                string path = outPath ?? (defaultBase + ".zbc");
+                var usedNs = irModule.Functions
+                    .SelectMany(f => f.Blocks).SelectMany(b => b.Instructions)
+                    .OfType<CallInstr>()
+                    .Select(c => c.Func)
+                    .Where(f => f.StartsWith("z42.", StringComparison.Ordinal))
+                    .Select(f => { var p = f.Split('.'); return p.Length >= 2 ? $"{p[0]}.{p[1]}" : f; })
+                    .Distinct().ToList();
+                var zbc = new ZbcFile(
+                    ZbcVersion : ZbcFile.CurrentVersion,
+                    SourceFile : source.FullName,
+                    SourceHash : sourceHash,
+                    Namespace  : ns,
+                    Exports    : exports,
+                    Imports    : usedNs,
+                    Module     : irModule);
+                WriteFile(path, JsonSerializer.Serialize(zbc, jsonOptions));
+                break;
+            }
             case "zasm":
             {
                 string path = outPath ?? (defaultBase + ".zasm");
@@ -200,7 +222,7 @@ static class SingleFileDriver
                 break;
             }
             default:
-                Console.Error.WriteLine($"error: unknown --emit format '{emit}' (valid: ir | zbc | zasm)");
+                Console.Error.WriteLine($"error: unknown --emit format '{emit}' (valid: ir | zbc | json-zbc | zasm)");
                 return 1;
         }
 

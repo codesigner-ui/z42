@@ -1,0 +1,12 @@
+class MyClass {
+    string Describe() { return "MyClass"; }
+    bool SameAs(MyClass other) { return this == other; }
+}
+
+void Main() {
+    var a = new MyClass();
+    var b = new MyClass();
+    Assert.True(a.SameAs(a));
+    Assert.False(a.SameAs(b));
+    Assert.Equal("MyClass", a.Describe());
+}

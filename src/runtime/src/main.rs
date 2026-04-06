@@ -6,7 +6,7 @@ use std::path::PathBuf;
 #[command(name = "z42vm", about = "z42 Virtual Machine", version)]
 struct Cli {
     /// Bytecode file to execute.
-    /// Accepted formats: .z42ir.json (debug IR), .zbc, .zpkg
+    /// Accepted formats: .zbc (single-file), .zpkg (project package)
     file: String,
 
     /// Execution mode override (default: use annotation in bytecode)
@@ -243,7 +243,7 @@ fn main() -> Result<()> {
 
     // 5.1e — push user module last, then merge everything.
     // Preserve the user module's name so entry-point lookup resolves correctly
-    // (merge_modules takes the first module's name, which would be z42.core otherwise).
+    // (merge_modules uses the first module's name, which would be z42.core otherwise).
     let entry_hint = user_artifact.entry_hint.clone();
     let user_module_name = user_artifact.module.name.clone();
     modules.push(user_artifact.module);

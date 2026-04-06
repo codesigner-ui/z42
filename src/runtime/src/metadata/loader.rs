@@ -2,9 +2,8 @@
 /// deserialises it, and returns a merged `Module` plus an optional entry-point hint.
 ///
 /// Supported formats:
-///   `.z42ir.json` — legacy raw Module JSON (Phase 1 debug format, always supported)
-///   `.zbc`        — ZbcFile envelope  (single source file)
-///   `.zpkg`       — ZpkgFile          (project package; indexed or packed)
+///   `.zbc`  — ZbcFile envelope  (single source file)
+///   `.zpkg` — ZpkgFile          (project package; indexed or packed)
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -22,7 +21,7 @@ pub struct LoadedArtifact {
     /// Entry-point function name from the artifact's metadata, if present.
     /// Falls back to the Vm's own lookup logic when `None`.
     pub entry_hint: Option<String>,
-    /// Resolved dependency list from the zpkg manifest (empty for .z42ir.json).
+    /// Resolved dependency list from the zpkg manifest (empty for .zbc).
     pub dependencies: Vec<ZpkgDep>,
     /// Namespace prefixes extracted from ZbcFile.imports (e.g. ["z42.core", "z42.io"]).
     /// Populated by load_zbc; used by main.rs to load the corresponding zpkgs.
@@ -32,36 +31,20 @@ pub struct LoadedArtifact {
 /// Load a compiler output artifact from `path`, returning a `LoadedArtifact`.
 ///
 /// Format is determined by file extension (case-insensitive):
-/// - `.z42ir.json` / `.json` → raw `Module` (legacy)
-/// - `.zbc`                  → `ZbcFile`
-/// - `.zpkg`                 → `ZpkgFile` (indexed or packed)
+/// - `.zbc`  → `ZbcFile`
+/// - `.zpkg` → `ZpkgFile` (indexed or packed)
 pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
-    let lower = path.to_lowercase();
-
-    if lower.ends_with(".z42ir.json") || (lower.ends_with(".json") && !lower.ends_with(".zbc")) {
-        load_legacy_ir(path)
-    } else {
-        match Path::new(path).extension().and_then(|e| e.to_str()) {
-            Some("zbc")  => load_zbc(path),
-            Some("zpkg") => load_zpkg(path),
-            ext => bail!(
-                "unrecognised artifact extension {:?} in `{}`; \
-                 expected .z42ir.json, .zbc, or .zpkg",
-                ext, path
-            ),
-        }
+    match Path::new(path).extension().and_then(|e| e.to_str()) {
+        Some("zbc")  => load_zbc(path),
+        Some("zpkg") => load_zpkg(path),
+        ext => bail!(
+            "unrecognised artifact extension {:?} in `{}`; expected .zbc or .zpkg",
+            ext, path
+        ),
     }
 }
 
 // ── Format-specific loaders ───────────────────────────────────────────────────
-
-/// Legacy `.z42ir.json`: a bare `Module` with no envelope.
-fn load_legacy_ir(path: &str) -> Result<LoadedArtifact> {
-    let json = read_file(path)?;
-    let module: Module = serde_json::from_str(&json)
-        .with_context(|| format!("cannot parse IR JSON in `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: None, dependencies: vec![], import_namespaces: vec![] })
-}
 
 /// `.zbc`: `ZbcFile` envelope → extract inner `Module`.
 /// Also performs a major-version compatibility check.
