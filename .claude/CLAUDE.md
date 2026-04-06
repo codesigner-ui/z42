@@ -84,13 +84,25 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 | 新工程文件规则 / manifest 字段 | `docs/design/project.md` |
 | 新协作规则 / 工作流变更 | `.claude/rules/workflow.md` |
 | fix / refactor 涉及行为或机制变更 | 对应 `docs/design/` 文档 |
+| 语言设计决策变更（设计目标、phase 归属、设计理由） | `docs/features.md` |
 | 规范偏差 | 以实现为准更新规范，不得描述不存在的行为 |
 
 ## 代码风格
 
 **C#**：C# 12+ 特性；AST 节点用 `sealed record`；错误用异常（`ParseException`）；命名空间 `Z42.Compiler.*`
 
-**Rust**：`anyhow::Result` + `thiserror`；不用 `unwrap()`；公开类型加 `#[derive(Debug)]`
+**Rust**：`anyhow::Result` + `thiserror`；非测试代码不用 `unwrap()`；公开类型加 `#[derive(Debug)]`
+
+## 代码组织（必须遵守）
+
+详见 `.claude/rules/code-organization.md`。核心要点：
+
+- **目录 README.md**：每个功能目录有 `README.md`；Claude 读代码前先读该目录的 README
+- **文件行数**：软限制 300 行，硬限制 500 行（超出必须拆分）
+- **函数行数**：软限制 40 行，硬限制 60 行
+- **类型/impl 行数**：硬限制 200 行
+- **Rust 测试**：单元测试放独立 `<module>_tests.rs` 文件，不内联在实现文件中
+- **规范冲突**：发现文档冲突时立即停下指出，等 User 裁决后再继续
 
 ## 注意事项
 

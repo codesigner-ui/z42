@@ -10,7 +10,31 @@ paths:
 - 所有可能失败的函数返回 `anyhow::Result<T>`
 - 内部 VM 错误（非用户错误）用 `bail!("...")` 或 `anyhow::anyhow!(...)`
 - 领域错误类型（如 `BytecodeError`）用 `thiserror::Error` 定义
-- **禁止** `unwrap()` / `expect()` 在非测试代码中出现
+- **禁止** `unwrap()` / `expect()` 在非测试代码中出现；测试代码中允许使用
+
+## 测试文件组织
+
+**单元测试必须放到独立文件，不得内联在实现文件末尾。**
+
+规则：
+- 每个实现模块 `foo.rs` 的测试放在同级 `foo_tests.rs` 中
+- 在 `foo.rs` 末尾用条件编译引用：`#[cfg(test)] mod foo_tests;`
+- 集成测试放在 crate 级别 `src/runtime/tests/` 目录下
+- 测试文件命名：`<module>_tests.rs`（单元）或 `test_<feature>.rs`（集成）
+
+```rust
+// foo.rs（实现文件，末尾只有一行引用）
+#[cfg(test)]
+mod foo_tests;
+
+// foo_tests.rs（测试文件）
+use super::*;
+
+#[test]
+fn test_something() { ... }
+```
+
+**目的：** 减少阅读实现文件时的 token 消耗，实现与测试逻辑分离。
 
 ## 指令集扩展
 
