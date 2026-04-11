@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\z42.Core\z42.Core.csproj" />
+    <ProjectReference Include="..\z42.Syntax\z42.Syntax.csproj" />
+    <ProjectReference Include="..\z42.Semantics\z42.Semantics.csproj" />
+    <ProjectReference Include="..\z42.IR\z42.IR.csproj" />
+    <ProjectReference Include="..\z42.Project\z42.Project.csproj" />
+  </ItemGroup>
+
+</Project>

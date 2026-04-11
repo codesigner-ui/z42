@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using Xunit;
-using Z42.Compiler.Features;
+using Z42.Core.Features;
 
 namespace Z42.Tests;
 

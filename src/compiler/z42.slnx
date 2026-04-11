@@ -1,7 +1,10 @@
 <Solution>
-  <Project Path="z42.Project/z42.Project.csproj" />
-  <Project Path="z42.Compiler/z42.Compiler.csproj" />
-  <Project Path="z42.Driver/z42.Driver.csproj" />
+  <Project Path="z42.Core/z42.Core.csproj" />
+  <Project Path="z42.Syntax/z42.Syntax.csproj" />
+  <Project Path="z42.Semantics/z42.Semantics.csproj" />
   <Project Path="z42.IR/z42.IR.csproj" />
+  <Project Path="z42.Project/z42.Project.csproj" />
+  <Project Path="z42.Pipeline/z42.Pipeline.csproj" />
+  <Project Path="z42.Driver/z42.Driver.csproj" />
   <Project Path="z42.Tests\z42.Tests.csproj" />
 </Solution>

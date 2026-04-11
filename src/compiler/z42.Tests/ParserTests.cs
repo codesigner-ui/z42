@@ -1,7 +1,7 @@
 using FluentAssertions;
-using Z42.Compiler.Features;
-using Z42.Compiler.Lexer;
-using Z42.Compiler.Parser;
+using Z42.Core.Features;
+using Z42.Syntax.Lexer;
+using Z42.Syntax.Parser;
 
 namespace Z42.Tests;
 

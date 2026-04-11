@@ -1,9 +1,9 @@
 using FluentAssertions;
-using Z42.Compiler.Diagnostics;
-using Z42.Compiler.Features;
-using Z42.Compiler.Lexer;
-using Z42.Compiler.Parser;
-using Z42.Compiler.TypeCheck;
+using Z42.Core.Diagnostics;
+using Z42.Core.Features;
+using Z42.Syntax.Lexer;
+using Z42.Syntax.Parser;
+using Z42.Semantics.TypeCheck;
 
 namespace Z42.Tests;
 

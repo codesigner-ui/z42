@@ -1,16 +1,11 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Z42.Compiler.Codegen;
-using Z42.Compiler.Diagnostics;
-using Z42.Compiler.Lexer;
-using Z42.Compiler.Parser;
+using Z42.Core.Diagnostics;
 using Z42.Driver;
-using Z42.IR;
 using Z42.IR.BinaryFormat;
+using Z42.Pipeline;
 using Z42.Project;
 
 var jsonOptions = new JsonSerializerOptions
@@ -53,7 +48,6 @@ rootCmd.AddCommand(BuildCommand.CreateCheck());
             string ext  = inFile.Extension.ToLowerInvariant();
             if (ext == ".zpkg")
             {
-                // Dump each packed module as ZASM
                 var sb      = new System.Text.StringBuilder();
                 var modules = ZpkgReader.ReadModules(raw);
                 foreach (var (mod, ns) in modules)
@@ -61,15 +55,15 @@ rootCmd.AddCommand(BuildCommand.CreateCheck());
                     sb.AppendLine($"; === module: {ns} ===");
                     sb.AppendLine(ZasmWriter.Write(mod));
                 }
-                string outPath = outFile?.FullName ?? Path.ChangeExtension(inFile.FullName, ".zpkgd");
-                SingleFileDriver.WriteFile(outPath, sb.ToString());
+                string outPath = outFile?.FullName ?? System.IO.Path.ChangeExtension(inFile.FullName, ".zpkgd");
+                SingleFileCompiler.WriteFile(outPath, sb.ToString());
             }
             else
             {
                 var    module  = ZbcReader.Read(raw);
                 string zasm    = ZasmWriter.Write(module);
-                string outPath = outFile?.FullName ?? Path.ChangeExtension(inFile.FullName, ".zasm");
-                SingleFileDriver.WriteFile(outPath, zasm);
+                string outPath = outFile?.FullName ?? System.IO.Path.ChangeExtension(inFile.FullName, ".zasm");
+                SingleFileCompiler.WriteFile(outPath, zasm);
             }
         }
         catch (Exception ex) { Console.Error.WriteLine($"error: {ex.Message}"); ctx.ExitCode = 1; }
@@ -97,7 +91,7 @@ rootCmd.AddCommand(BuildCommand.CreateCheck());
     rootCmd.AddCommand(errorsCmd);
 }
 
-// ── Root: single-file compilation ─────────────────────────────────────────────
+// ── Root: single-file compilation ───────────────────────────────���─────────────
 
 var sourceArg  = new Argument<FileInfo?>("source", () => null, "Source .z42 file to compile");
 sourceArg.Arity = ArgumentArity.ZeroOrOne;
@@ -134,144 +128,7 @@ rootCmd.SetHandler((InvocationContext ctx) =>
     var dumpTok = ctx.ParseResult.GetValueForOption(dumpTokOpt);
     var dumpAst = ctx.ParseResult.GetValueForOption(dumpAstOpt);
     var dumpIr  = ctx.ParseResult.GetValueForOption(dumpIrOpt);
-    ctx.ExitCode = SingleFileDriver.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, jsonOptions);
-    // note: jsonOptions still used for --emit ir / json-zbc / --dump-ir
+    ctx.ExitCode = SingleFileCompiler.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, jsonOptions);
 });
 
 return await rootCmd.InvokeAsync(args);
-
-// ── Single-file driver ────────────────────────────────────────────────────────
-
-static class SingleFileDriver
-{
-    public static int Run(
-        FileInfo              source,
-        string                emit,
-        string?               outPath,
-        bool                  dumpTokens,
-        bool                  dumpAst,
-        bool                  dumpIr,
-        JsonSerializerOptions jsonOptions)
-    {
-        string sourceText;
-        try   { sourceText = File.ReadAllText(source.FullName); }
-        catch { Console.Error.WriteLine($"error: cannot read {source.FullName}"); return 1; }
-
-        var tokens = new Lexer(sourceText, source.FullName).Tokenize();
-        if (dumpTokens)
-        {
-            foreach (var tok in tokens) Console.WriteLine(tok);
-            return 0;
-        }
-
-        CompilationUnit cu;
-        try   { cu = new Parser(tokens).ParseCompilationUnit(); }
-        catch (ParseException ex)
-        {
-            Console.Error.WriteLine($"error[E0001]: {source.Name}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
-            return 1;
-        }
-
-        if (dumpAst) { Console.WriteLine(cu); return 0; }
-
-        var diags = new DiagnosticBag();
-        new Z42.Compiler.TypeCheck.TypeChecker(diags).Check(cu);
-        if (diags.PrintAll()) return 1;
-
-        // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
-        var stdlibIndex = LocateStdlibIndex(source.FullName);
-
-        IrModule irModule;
-        try   { irModule = new IrGen(stdlibIndex).Generate(cu); }
-        catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return 1; }
-
-        if (dumpIr) Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
-
-        string ns         = cu.Namespace ?? "main";
-        string sourceHash = Sha256Hex(sourceText);
-        var    exports    = irModule.Functions.Select(f => f.Name).ToList();
-
-        string defaultBase = outPath is not null
-            ? Path.Combine(
-                Path.GetDirectoryName(Path.GetFullPath(outPath)) ?? ".",
-                Path.GetFileNameWithoutExtension(outPath))
-            : Path.ChangeExtension(source.FullName, null);
-
-        switch (emit)
-        {
-            case "ir":
-            {
-                string path = outPath ?? (defaultBase + ".z42ir.json");
-                WriteFile(path, JsonSerializer.Serialize(irModule, jsonOptions));
-                break;
-            }
-            case "zbc":
-            {
-                string path = outPath ?? (defaultBase + ".zbc");
-                Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-                File.WriteAllBytes(path, ZbcWriter.Write(irModule, exports: exports));
-                Console.Error.WriteLine($"wrote → {path}");
-                break;
-            }
-            case "json-zbc":
-            {
-                string path = outPath ?? (defaultBase + ".zbc");
-                var usedNs = irModule.Functions
-                    .SelectMany(f => f.Blocks).SelectMany(b => b.Instructions)
-                    .OfType<CallInstr>()
-                    .Select(c => c.Func)
-                    .Where(f => f.StartsWith("z42.", StringComparison.Ordinal))
-                    .Select(f => { var p = f.Split('.'); return p.Length >= 2 ? $"{p[0]}.{p[1]}" : f; })
-                    .Distinct().ToList();
-                var zbc = new ZbcFile(
-                    ZbcVersion : ZbcFile.CurrentVersion,
-                    SourceFile : source.FullName,
-                    SourceHash : sourceHash,
-                    Namespace  : ns,
-                    Exports    : exports,
-                    Imports    : usedNs,
-                    Module     : irModule);
-                WriteFile(path, JsonSerializer.Serialize(zbc, jsonOptions));
-                break;
-            }
-            case "zasm":
-            {
-                string path = outPath ?? (defaultBase + ".zasm");
-                WriteFile(path, ZasmWriter.Write(irModule));
-                break;
-            }
-            default:
-                Console.Error.WriteLine($"error: unknown --emit format '{emit}' (valid: ir | zbc | json-zbc | zasm)");
-                return 1;
-        }
-
-        return 0;
-    }
-
-    /// Walk up from the source file's directory to find artifacts/z42/libs/ and load stdlib.
-    public static StdlibCallIndex LocateStdlibIndex(string sourceFullPath)
-    {
-        var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
-        while (dir != null)
-        {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate))
-                return BuildCommand.BuildStdlibIndex([candidate]);
-            dir = dir.Parent;
-        }
-        return StdlibCallIndex.Empty;
-    }
-
-    public static void WriteFile(string path, string content)
-    {
-        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? ".");
-        File.WriteAllText(path, content);
-        Console.Error.WriteLine($"wrote → {path}");
-    }
-
-    static string Sha256Hex(string text)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-        return "sha256:" + Convert.ToHexString(bytes).ToLowerInvariant();
-    }
-}

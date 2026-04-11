@@ -1,5 +1,5 @@
 using FluentAssertions;
-using Z42.Compiler.Lexer;
+using Z42.Syntax.Lexer;
 
 namespace Z42.Tests;
 
