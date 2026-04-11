@@ -17,7 +17,7 @@ pub fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
     fields.insert("__name".to_string(),     Value::Str(simple_name));
     fields.insert("__fullName".to_string(), Value::Str(class_name));
     Ok(Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ObjectData {
-        class_name: "z42.core.Type".to_string(),
+        class_name: "Std.Type".to_string(),
         fields,
     }))))
 }

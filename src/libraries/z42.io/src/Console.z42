@@ -1,4 +1,4 @@
-namespace z42.io;
+namespace Std.IO;
 
 public static class Console {
     [Native("__println")]

@@ -11,6 +11,7 @@ pub mod types;
 pub mod bytecode;
 pub mod project;
 pub mod formats;
+pub mod zbc_reader;
 pub mod loader;
 pub mod merge;
 

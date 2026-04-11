@@ -1,4 +1,4 @@
-namespace z42.collections;
+namespace Std.Collections;
 
 // TODO(L3): requires generics.
 // public class Queue<T> {

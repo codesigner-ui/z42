@@ -1,4 +1,4 @@
-namespace z42.text;
+namespace Std.Text;
 
 // TODO(L3): requires lambda/delegate support.
 // public class Regex {

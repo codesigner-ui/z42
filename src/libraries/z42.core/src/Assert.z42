@@ -1,4 +1,4 @@
-namespace z42.core;
+namespace Std;
 
 // Test assertion helpers.
 // Throws AssertionError (VM-level exception) on failure.

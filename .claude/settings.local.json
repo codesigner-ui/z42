@@ -22,7 +22,21 @@
       "Bash(./scripts/regen-golden-tests.sh)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver.dll src/runtime/tests/golden/run/46_object_protocol/source.z42 --emit zbc -o /tmp/test46.zbc)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver.dll /tmp/test_ref.z42 --emit zbc -o /tmp/test_ref.zbc)",
-      "Bash(grep -n \"ZbcFile\\\\|ZpkgFile\\\\|ZpkgDep\\\\|CurrentVersion\\\\|record Zbc\\\\|record Zpkg\" /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Project/*.cs)"
+      "Bash(grep -n \"ZbcFile\\\\|ZpkgFile\\\\|ZpkgDep\\\\|CurrentVersion\\\\|record Zbc\\\\|record Zpkg\" /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Project/*.cs)",
+      "Bash(sed -i '' 's/^namespace z42\\\\.math;$/namespace Std.Math;/' src/libraries/z42.math/src/*.z42)",
+      "Bash(sed -i '' 's/^namespace z42\\\\.text;$/namespace Std.Text;/' src/libraries/z42.text/src/*.z42)",
+      "Bash(sed -i '' 's/^namespace z42\\\\.collections;$/namespace Std.Collections;/' src/libraries/z42.collections/src/*.z42)",
+      "Bash(./scripts/build-stdlib.sh)",
+      "Bash(xargs sed:*)",
+      "Bash(xargs ls:*)",
+      "Bash(./scripts/test-vm.sh interp:*)",
+      "Bash(xxd)",
+      "Bash(xxd src/runtime/tests/golden/run/06_string_builtins/source.zbc)"
+    ],
+    "additionalDirectories": [
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.io/src",
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/01_hello"
     ]
   }
 }

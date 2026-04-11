@@ -36,21 +36,14 @@ entry   = "Hello.main" # kind=exe 时必填，完全限定函数名
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `name` | string | ✅ | kebab-case；作为输出文件基名 |
+| `name` | string | ✅ | kebab-case；作为输出文件基名和依赖引用键 |
 | `version` | string | ✅ | SemVer，如 `"0.1.0"` |
 | `kind` | `"exe"` \| `"lib"` | 单目标必填；多目标用 `[[exe]]` 时省略 | 可执行程序 or 类库 |
 | `entry` | string | `kind="exe"` 时必填 | 完全限定入口函数，如 `"Hello.main"` |
 
 **`name` 与命名空间的关系：**
 
-`name = "hello-world"` → 默认根命名空间 `HelloWorld`（kebab 转 PascalCase）。
-需要定制时可显式指定：
-
-```toml
-[project]
-name      = "hello"
-namespace = "Demo.Hello"   # 覆盖默认推断
-```
+`name` 是包的文件标识符，与命名空间**无关**。命名空间完全由源文件中的 `namespace xxx;` 声明决定，编译器在构建时从源文件中收集并写入 zpkg 的 `namespaces` 字段。`[dependencies]` 中填写的是包名（用于找文件），`using` 语句中填写的是命名空间（由源文件决定），两者无需一致。
 
 **`kind` 决定默认产物：**
 
@@ -448,7 +441,6 @@ name        = "my-app"          # 必填
 version     = "0.1.0"           # 必填，SemVer
 kind        = "exe"             # 必填，exe | lib
 entry       = "MyApp.main"      # exe 必填
-namespace   = "MyApp"           # 可选，默认由 name 推断
 description = ""                # 可选
 authors     = []                # 可选
 license     = "MIT"             # 可选，SPDX

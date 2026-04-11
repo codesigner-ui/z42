@@ -456,7 +456,7 @@ void OnUpdate(float dt) { ... }   // 热更新后下一次调用即生效
 z42 通过 `extern` 关键字 + `[Native("__intrinsic")]` 属性声明 VM 内建函数的绑定，实现标准库与 VM 的零开销互操作（InternalCall 机制）。
 
 ```z42
-namespace z42.io;
+namespace Std.IO;
 
 public static class Console {
     // 声明：VM 实现，无 z42 函数体

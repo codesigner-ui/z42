@@ -10,6 +10,7 @@ using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.Compiler.TypeCheck;
 using Z42.IR;
+using Z42.IR.BinaryFormat;
 using Z42.Project;
 
 namespace Z42.Tests;
@@ -20,13 +21,12 @@ namespace Z42.Tests;
 /// Layout under src/runtime/tests/golden/:
 ///   &lt;category&gt;/&lt;name&gt;/
 ///     source.z42          — z42 source input
-///     expected.txt        — expected stdout (for run tests)
-///     expected_ir.json    — expected IR JSON (optional, for codegen tests)
+///     expected.zasm       — expected ZASM output (for codegen tests)
+///     expected_output.txt — expected stdout (for run tests)
 ///     expected_error.txt  — expected diagnostic output (for error tests)
 ///     features.toml       — optional LanguageFeatures overrides
 ///
 /// Test discovery: every subdirectory that contains source.z42 is a test case.
-/// Category is inferred from the directory name prefix (errors/ → error test).
 /// </summary>
 public sealed class GoldenTests
 {
@@ -34,7 +34,6 @@ public sealed class GoldenTests
 
     private static string FindGoldenRoot()
     {
-        // Walk up from the test binary until we find the repo root (contains src/runtime/tests/golden)
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
@@ -42,7 +41,6 @@ public sealed class GoldenTests
             if (Directory.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }
-        // Fallback: relative from source (dev run)
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
             "..", "..", "..", "..", "..", "..", "runtime", "tests", "golden"));
     }
@@ -57,7 +55,6 @@ public sealed class GoldenTests
 
     // StdlibCallIndex loaded once from artifacts/z42/libs/ (if present).
     private static readonly StdlibCallIndex StdlibIndex = LoadStdlibIndex();
-    // Absolute path to libs dir — passed to VM as Z42_LIBS so it finds stdlib regardless of cwd.
     private static readonly string? StdlibLibsDir = FindStdlibLibsDir();
 
     private static string? FindStdlibLibsDir()
@@ -74,13 +71,11 @@ public sealed class GoldenTests
 
     private static StdlibCallIndex LoadStdlibIndex()
     {
-        // Walk up to repo root and locate artifacts/z42/libs/
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate))
-                return BuildIndexFromDir(candidate);
+            if (Directory.Exists(candidate)) return BuildIndexFromDir(candidate);
             dir = dir.Parent;
         }
         return StdlibCallIndex.Empty;
@@ -93,11 +88,11 @@ public sealed class GoldenTests
         {
             try
             {
-                var text = File.ReadAllText(zpkgPath);
-                var pkg  = JsonSerializer.Deserialize<ZpkgFile>(text, JsonOpts);
-                if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
-                foreach (var zbc in pkg.Modules)
-                    modules.Add((zbc.Module, zbc.Namespace));
+                var bytes = File.ReadAllBytes(zpkgPath);
+                var meta  = ZpkgReader.ReadMeta(bytes);
+                if (meta.Kind != ZpkgKind.Lib) continue;
+                foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
+                    modules.Add((mod, ns));
             }
             catch { /* skip malformed */ }
         }
@@ -107,7 +102,7 @@ public sealed class GoldenTests
     // ── Test discovery ─────────────────────────────────────────────────────
 
     public static IEnumerable<object[]> ParseTestCases() =>
-        DiscoverCases(hasExpectedIr: true);
+        DiscoverCases(hasExpectedZasm: true);
 
     public static IEnumerable<object[]> ErrorTestCases() =>
         DiscoverCases(errorCategory: true);
@@ -116,10 +111,9 @@ public sealed class GoldenTests
         DiscoverCases(runCategory: true);
 
     private static IEnumerable<object[]> DiscoverCases(
-        bool hasExpectedIr = false, bool errorCategory = false, bool runCategory = false)
+        bool hasExpectedZasm = false, bool errorCategory = false, bool runCategory = false)
     {
-        if (!Directory.Exists(GoldenRoot))
-            yield break;
+        if (!Directory.Exists(GoldenRoot)) yield break;
 
         foreach (var dir in Directory.EnumerateDirectories(GoldenRoot, "*", SearchOption.AllDirectories))
         {
@@ -132,8 +126,7 @@ public sealed class GoldenTests
 
             if (errorCategory != isErrorCase) continue;
             if (runCategory   != isRunCase)   continue;
-            if (hasExpectedIr && !File.Exists(Path.Combine(dir, "expected_ir.json"))) continue;
-            // expected_output.txt is optional: if absent, only the exit code is checked (Assert-based tests)
+            if (hasExpectedZasm && !File.Exists(Path.Combine(dir, "expected.zasm"))) continue;
 
             string name = Path.GetRelativePath(GoldenRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
             yield return [name, dir];
@@ -142,26 +135,21 @@ public sealed class GoldenTests
 
     // ── Features loader ────────────────────────────────────────────────────
 
-    /// Parses a minimal key=value TOML (features.toml) to override LanguageFeatures.
-    /// Lines starting with # or [ are ignored. Values must be true or false.
     private static LanguageFeatures LoadFeatures(string dir)
     {
         string tomlPath = Path.Combine(dir, "features.toml");
-        if (!File.Exists(tomlPath))
-            return LanguageFeatures.Phase1;
+        if (!File.Exists(tomlPath)) return LanguageFeatures.Phase1;
 
         var overrides = new Dictionary<string, bool>();
         foreach (var raw in File.ReadAllLines(tomlPath))
         {
             var line = raw.Trim();
-            if (string.IsNullOrEmpty(line) || line.StartsWith('#') || line.StartsWith('['))
-                continue;
+            if (string.IsNullOrEmpty(line) || line.StartsWith('#') || line.StartsWith('[')) continue;
             var eq = line.IndexOf('=');
             if (eq < 0) continue;
             var key = line[..eq].Trim().ToLowerInvariant();
             var val = line[(eq + 1)..].Trim().ToLowerInvariant();
-            if (bool.TryParse(val, out var b))
-                overrides[key] = b;
+            if (bool.TryParse(val, out var b)) overrides[key] = b;
         }
         return LanguageFeatures.Phase1.WithOverrides(overrides);
     }
@@ -172,14 +160,10 @@ public sealed class GoldenTests
     {
         string sourceFile = Path.Combine(dir, "source.z42");
         string source     = File.ReadAllText(sourceFile);
+        var features      = LoadFeatures(dir);
+        var diags         = new DiagnosticBag();
 
-        // Load feature overrides if present (features.toml: key = true/false lines)
-        var features = LoadFeatures(dir);
-
-        var diags = new DiagnosticBag();
-
-        var lexer  = new Lexer(source, sourceFile);
-        var tokens = lexer.Tokenize();
+        var tokens = new Lexer(source, sourceFile).Tokenize();
 
         CompilationUnit cu;
         try
@@ -204,15 +188,14 @@ public sealed class GoldenTests
         }
         catch (Exception ex)
         {
-            diags.Error(DiagnosticCodes.UnsupportedSyntax, ex.Message,
-                        new Span(0, 0, 0, 0, sourceFile));
+            diags.Error(DiagnosticCodes.UnsupportedSyntax, ex.Message, new Span(0, 0, 0, 0, sourceFile));
             return (null, diags);
         }
 
         return (ir, diags);
     }
 
-    // ── IR / codegen tests ─────────────────────────────────────────────────
+    // ── IR / codegen tests (compare ZASM output) ──────────────────────────
 
     [Theory]
     [MemberData(nameof(ParseTestCases))]
@@ -221,15 +204,13 @@ public sealed class GoldenTests
         var (ir, diags) = Compile(dir);
 
         diags.PrintAll();
-        diags.HasErrors.Should().BeFalse(
-            because: $"test '{name}' should compile without errors");
+        diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
         ir.Should().NotBeNull();
 
-        string expectedJson = File.ReadAllText(Path.Combine(dir, "expected_ir.json")).Trim();
-        string actualJson   = JsonSerializer.Serialize(ir, JsonOpts).Trim();
+        string expectedZasm = File.ReadAllText(Path.Combine(dir, "expected.zasm")).Trim();
+        string actualZasm   = ZasmWriter.Write(ir!).Trim();
 
-        // Use xUnit Assert.Equal to avoid FluentAssertions crashing on {} in JSON strings
-        Assert.Equal(expectedJson, actualJson);
+        Assert.Equal(expectedZasm, actualZasm);
     }
 
     // ── Error / diagnostic tests ───────────────────────────────────────────
@@ -244,11 +225,9 @@ public sealed class GoldenTests
         string expected     = File.ReadAllText(expectedFile).Trim();
 
         var sb = new StringBuilder();
-        foreach (var d in diags.All)
-            sb.AppendLine(d.ToString());
+        foreach (var d in diags.All) sb.AppendLine(d.ToString());
         string actual = sb.ToString().Trim();
 
-        // Match line-by-line, ignoring exact column in spans where marked with *
         MatchDiagnosticLines(expected, actual, name);
     }
 
@@ -258,15 +237,12 @@ public sealed class GoldenTests
     [MemberData(nameof(RunTestCases))]
     public void RunMatchesExpected(string name, string dir)
     {
-        // Step 1 — compile to IR JSON
         var (ir, diags) = Compile(dir);
         diags.PrintAll();
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
         ir.Should().NotBeNull();
 
-        // Step 2 — serialise artifact in the format requested by the test
-        //   Default: .zbc   (single-file bytecode, production path)
-        //   Override: emit_format.txt containing "zpkg" uses .zpkg packed bundle format
+        // Determine emit format
         string emitFmt = "zbc";
         string fmtFile = Path.Combine(dir, "emit_format.txt");
         if (File.Exists(fmtFile))
@@ -283,7 +259,8 @@ public sealed class GoldenTests
             Module     : ir
         );
 
-        string artifactJson;
+        // Write binary artifact to temp file
+        byte[] artifactBytes;
         string ext;
         if (emitFmt == "zpkg")
         {
@@ -302,38 +279,32 @@ public sealed class GoldenTests
                 Modules:      [zbc],
                 Entry:        $"{ir.Name}.Main"
             );
-            artifactJson = JsonSerializer.Serialize(zpkg, JsonOpts);
+            artifactBytes = ZpkgWriter.Write(zpkg);
             ext = ".zpkg";
         }
         else
         {
-            artifactJson = JsonSerializer.Serialize(zbc, JsonOpts);
+            artifactBytes = ZbcWriter.Write(ir, exports: ir.Functions.Select(f => f.Name));
             ext = ".zbc";
         }
 
         string irFile = Path.Combine(Path.GetTempPath(), $"z42_run_{Path.GetRandomFileName()}{ext}");
-        File.WriteAllText(irFile, artifactJson);
+        File.WriteAllBytes(irFile, artifactBytes);
 
         try
         {
-            // Step 3 — find the VM binary (built via `cargo build`)
             string? vmBin = FindVmBinary();
-            if (vmBin == null)
-            {
-                // VM not built: skip the test rather than fail
-                return;
-            }
+            if (vmBin == null) return; // VM not built: skip
 
-            // Step 4 — execute and capture stdout
             var psi = new ProcessStartInfo(vmBin, irFile)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError  = true,
                 UseShellExecute        = false,
             };
-            // Tell the VM where to find stdlib zpkgs regardless of test runner cwd.
             if (StdlibLibsDir != null)
                 psi.Environment["Z42_LIBS"] = StdlibLibsDir;
+
             using var proc = Process.Start(psi)!;
             string stdout = proc.StandardOutput.ReadToEnd();
             proc.WaitForExit();
@@ -341,7 +312,6 @@ public sealed class GoldenTests
             proc.ExitCode.Should().Be(0,
                 because: $"test '{name}' VM should exit cleanly (stderr: {proc.StandardError.ReadToEnd()})");
 
-            // Step 5 — compare output (if expected_output.txt present; otherwise exit code 0 suffices)
             string expectedFile = Path.Combine(dir, "expected_output.txt");
             if (File.Exists(expectedFile))
             {
@@ -358,7 +328,6 @@ public sealed class GoldenTests
 
     private static string? FindVmBinary()
     {
-        // Walk up from test binary to repo root, look for artifacts/rust/debug/z42vm
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
@@ -369,15 +338,13 @@ public sealed class GoldenTests
         return null;
     }
 
-    /// Extract unique stdlib namespace prefixes (e.g. "z42.io") from all CallInstr targets
-    /// in the module that start with "z42.".
     private static List<string> GetUsedStdlibNamespaces(IrModule ir) =>
         ir.Functions
           .SelectMany(f => f.Blocks)
           .SelectMany(b => b.Instructions)
           .OfType<CallInstr>()
           .Select(c => c.Func)
-          .Where(f => f.StartsWith("z42.", StringComparison.Ordinal))
+          .Where(f => f.StartsWith("Std.", StringComparison.Ordinal) || f == "Std")
           .Select(f => { var p = f.Split('.'); return p.Length >= 2 ? $"{p[0]}.{p[1]}" : f; })
           .Distinct()
           .ToList();
@@ -392,7 +359,6 @@ public sealed class GoldenTests
 
         for (int i = 0; i < expLines.Length; i++)
         {
-            // Lines that contain "*" as a wildcard segment are matched with Contains
             if (expLines[i].Contains('*'))
             {
                 var parts = expLines[i].Split('*');

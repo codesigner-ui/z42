@@ -68,22 +68,6 @@ public sealed class ProjectManifestTests : IDisposable
         m.Project.Name.Should().Be("override");
     }
 
-    // ── namespace inference ───────────────────────────────────────────────────
-
-    [Fact]
-    public void Load_NamespaceInferredFromKebabName()
-    {
-        var m = Load("my-cool-app.z42.toml", "[project]\nkind=\"lib\"");
-        m.Project.Namespace.Should().Be("MyCoolApp");
-    }
-
-    [Fact]
-    public void Load_NamespaceExplicitOverride()
-    {
-        var m = Load("hello.z42.toml", "[project]\nkind=\"lib\"\nnamespace=\"Demo.Hello\"");
-        m.Project.Namespace.Should().Be("Demo.Hello");
-    }
-
     // ── kind validation ───────────────────────────────────────────────────────
 
     [Fact]

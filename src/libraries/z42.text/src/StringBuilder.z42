@@ -1,4 +1,4 @@
-namespace z42.text;
+namespace Std.Text;
 
 // Mutable string builder — avoids repeated string allocations.
 // Implemented in z42 using a List<string> internally.

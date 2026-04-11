@@ -3,13 +3,12 @@ using System.Text;
 namespace Z42.IR.BinaryFormat;
 
 /// <summary>
-/// Serializes an <see cref="IrModule"/> into binary zbc format (v0.2).
+/// Serializes an <see cref="IrModule"/> into binary zbc format (v0.3).
 ///
 /// File layout:
-///   Header  (16 bytes): magic[4] + major[2] + minor[2] + flags[2] + reserved[6]
-///
-///   Sections (sequential, no directory):
-///     tag[4] + length[4] + data[length]
+///   Header  (16 bytes): magic[4] + major[2] + minor[2] + flags[2] + sec_count[2] + reserved[4]
+///   Directory (sec_count × 12 bytes): tag[4] + offset[4] + size[4]
+///   Sections (at absolute offsets recorded in directory):
 ///
 ///   Full mode (flags.STRIPPED = 0):
 ///     NSPC  namespace string
@@ -28,7 +27,7 @@ namespace Z42.IR.BinaryFormat;
 public static class ZbcWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 2;
+    public const ushort VersionMinor = 4;
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -38,8 +37,8 @@ public static class ZbcWriter
     /// (metadata omitted; zpkg index required for dispatch).
     /// </summary>
     public static byte[] Write(
-        IrModule module,
-        ZbcFlags flags   = ZbcFlags.None,
+        IrModule             module,
+        ZbcFlags             flags   = ZbcFlags.None,
         IEnumerable<string>? exports = null)
     {
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
@@ -49,62 +48,75 @@ public static class ZbcWriter
             : exports.ToHashSet();
 
         // ── Build string pool ─────────────────────────────────────────────────
-        var pool    = new StringPool();
+        var pool     = new StringPool();
         var strRemap = new int[module.StringPool.Count];
         InternPoolStrings(pool, module, strRemap, fullMode: !stripped);
 
         // ── Build sections ────────────────────────────────────────────────────
-        byte[] nspcData = BuildNspcSection(module.Name);
-        byte[] funcData = BuildFuncSection(module.Functions, pool, strRemap);
+        var sections = new List<(byte[] Tag, byte[] Data)>();
 
-        using var ms   = new MemoryStream();
-        using var file = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
-
-        WriteHeader(file, flags);
+        sections.Add((SectionTags.Nspc, BuildNspcSection(module.Name)));
 
         if (stripped)
         {
-            // Stripped: NSPC + BSTR + FUNC
-            WriteSection(file, SectionTags.Nspc, nspcData);
-            WriteSection(file, SectionTags.Bstr, BuildStrpSection(pool));
-            WriteSection(file, SectionTags.Func, funcData);
+            sections.Add((SectionTags.Bstr, BuildStrpSection(pool)));
+            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
         }
         else
         {
-            // Full: NSPC + STRS + TYPE + SIGS + IMPT + EXPT + FUNC
-            WriteSection(file, SectionTags.Nspc, nspcData);
-            WriteSection(file, SectionTags.Strs, BuildStrpSection(pool));
-            WriteSection(file, SectionTags.Type, BuildTypeSection(module.Classes, pool));
-            WriteSection(file, SectionTags.Sigs, BuildSigsSection(module.Functions, pool));
-            WriteSection(file, SectionTags.Impt, BuildImptSection(module, pool));
-            WriteSection(file, SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet));
-            WriteSection(file, SectionTags.Func, funcData);
+            sections.Add((SectionTags.Strs, BuildStrpSection(pool)));
+            sections.Add((SectionTags.Type, BuildTypeSection(module.Classes, pool)));
+            sections.Add((SectionTags.Sigs, BuildSigsSection(module.Functions, pool)));
+            sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
+            sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
+            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
         }
 
-        file.Flush();
+        return AssembleFile(flags, sections);
+    }
+
+    // ── File assembly (header + directory + sections) ─────────────────────────
+
+    /// Assembles a complete binary file: 16-byte header + section directory + section data.
+    /// All section offsets in the directory are absolute from file start.
+    internal static byte[] AssembleFile(ZbcFlags flags, List<(byte[] Tag, byte[] Data)> sections)
+    {
+        int headerSize = 16;
+        int dirSize    = sections.Count * 12; // tag[4] + offset[4] + size[4]
+        uint nextOffset = (uint)(headerSize + dirSize);
+
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        WriteHeader(w, flags, (ushort)sections.Count);
+
+        // Directory
+        foreach (var (tag, data) in sections)
+        {
+            w.Write(tag);
+            w.Write(nextOffset);
+            w.Write((uint)data.Length);
+            nextOffset += (uint)data.Length;
+        }
+
+        // Section data
+        foreach (var (_, data) in sections)
+            w.Write(data);
+
+        w.Flush();
         return ms.ToArray();
     }
 
     // ── Header ────────────────────────────────────────────────────────────────
 
-    private static void WriteHeader(BinaryWriter w, ZbcFlags flags)
+    private static void WriteHeader(BinaryWriter w, ZbcFlags flags, ushort secCount)
     {
-        // magic[4]
         w.Write((byte)'Z'); w.Write((byte)'B'); w.Write((byte)'C'); w.Write((byte)'\0');
-        // version[2+2]
         w.Write(VersionMajor);
         w.Write(VersionMinor);
-        // flags[2]
         w.Write((ushort)flags);
-        // reserved[6]
-        w.Write((uint)0); w.Write((ushort)0);
-    }
-
-    private static void WriteSection(BinaryWriter w, byte[] tag, byte[] data)
-    {
-        w.Write(tag);
-        w.Write((uint)data.Length);
-        w.Write(data);
+        w.Write(secCount);   // was reserved[2] in v0.2
+        w.Write((uint)0);    // reserved[4]
     }
 
     // ── String pool ───────────────────────────────────────────────────────────
@@ -114,7 +126,7 @@ public static class ZbcWriter
     /// Full mode: every string in the module (names, types, instruction refs).
     /// Stripped mode: only strings referenced inside function bodies.
     /// </summary>
-    private static void InternPoolStrings(
+    public static void InternPoolStrings(
         StringPool pool, IrModule module, int[] strRemap, bool fullMode)
     {
         if (fullMode)
@@ -169,7 +181,7 @@ public static class ZbcWriter
 
     // ── NSPC section ──────────────────────────────────────────────────────────
 
-    private static byte[] BuildNspcSection(string ns)
+    internal static byte[] BuildNspcSection(string ns)
     {
         var utf8 = Encoding.UTF8.GetBytes(ns);
         using var ms = new MemoryStream();
@@ -181,7 +193,7 @@ public static class ZbcWriter
 
     // ── STRS / BSTR section (string heap) ────────────────────────────────────
 
-    private static byte[] BuildStrpSection(StringPool pool)
+    public static byte[] BuildStrpSection(StringPool pool)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -203,7 +215,7 @@ public static class ZbcWriter
 
     // ── TYPE section ──────────────────────────────────────────────────────────
 
-    private static byte[] BuildTypeSection(List<IrClassDesc> classes, StringPool pool)
+    public static byte[] BuildTypeSection(List<IrClassDesc> classes, StringPool pool)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -226,7 +238,7 @@ public static class ZbcWriter
 
     // ── SIGS section (full mode: function signatures) ─────────────────────────
 
-    private static byte[] BuildSigsSection(List<IrFunction> functions, StringPool pool)
+    internal static byte[] BuildSigsSection(List<IrFunction> functions, StringPool pool)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -238,6 +250,7 @@ public static class ZbcWriter
             w.Write((ushort)fn.ParamCount);
             w.Write(TypeTags.FromString(fn.RetType));
             w.Write(ExecModes.FromString(fn.ExecMode));
+            w.Write((byte)(fn.IsStatic ? 1 : 0));  // is_static flag
         }
 
         return ms.ToArray();
@@ -291,7 +304,7 @@ public static class ZbcWriter
 
     // ── FUNC section (function bodies, both modes) ────────────────────────────
 
-    private static byte[] BuildFuncSection(
+    public static byte[] BuildFuncSection(
         List<IrFunction> functions, StringPool pool, int[] strRemap)
     {
         using var ms = new MemoryStream();
@@ -301,12 +314,10 @@ public static class ZbcWriter
 
         foreach (var fn in functions)
         {
-            // Build block-label → index map
             var blockIdx = new Dictionary<string, ushort>(fn.Blocks.Count);
             for (int i = 0; i < fn.Blocks.Count; i++)
                 blockIdx[fn.Blocks[i].Label] = (ushort)i;
 
-            // Build instruction stream + collect block byte offsets
             using var instrMs = new MemoryStream();
             using var iw      = new BinaryWriter(instrMs, Encoding.UTF8, leaveOpen: false);
 
@@ -325,16 +336,13 @@ public static class ZbcWriter
             int excCount = fn.ExceptionTable?.Count ?? 0;
             int regCount = ComputeRegCount(fn);
 
-            // Function body header (no name/sig — those are in SIGS)
             w.Write((ushort)regCount);
             w.Write((ushort)fn.Blocks.Count);
             w.Write((uint)instrBytes.Length);
             w.Write((ushort)excCount);
 
-            // Block offset table
             foreach (var off in blockOffsets) w.Write(off);
 
-            // Exception table
             if (fn.ExceptionTable != null)
                 foreach (var exc in fn.ExceptionTable)
                 {
@@ -345,7 +353,6 @@ public static class ZbcWriter
                     w.Write((ushort)exc.CatchReg);
                 }
 
-            // Instruction stream
             w.Write(instrBytes);
         }
 
@@ -363,7 +370,6 @@ public static class ZbcWriter
     {
         switch (instr)
         {
-            // Constants
             case ConstStrInstr i:
                 w.Write(Opcodes.ConstStr); w.Write(TypeTags.Str); w.Write((ushort)i.Dst);
                 w.Write((uint)strRemap[i.Idx]);
@@ -400,7 +406,6 @@ public static class ZbcWriter
                 w.Write((uint)pool.Idx(i.Var));
                 break;
 
-            // Binary arithmetic
             case AddInstr i:    WriteBin(w, Opcodes.Add,    i.Dst, i.A, i.B); break;
             case SubInstr i:    WriteBin(w, Opcodes.Sub,    i.Dst, i.A, i.B); break;
             case MulInstr i:    WriteBin(w, Opcodes.Mul,    i.Dst, i.A, i.B); break;
@@ -415,7 +420,6 @@ public static class ZbcWriter
             case ShrInstr i:    WriteBin(w, Opcodes.Shr,    i.Dst, i.A, i.B); break;
             case StrConcatInstr i: WriteBin(w, Opcodes.StrConcat, i.Dst, i.A, i.B); break;
 
-            // Comparison
             case EqInstr i: WriteBin(w, Opcodes.Eq, i.Dst, i.A, i.B); break;
             case NeInstr i: WriteBin(w, Opcodes.Ne, i.Dst, i.A, i.B); break;
             case LtInstr i: WriteBin(w, Opcodes.Lt, i.Dst, i.A, i.B); break;
@@ -423,14 +427,12 @@ public static class ZbcWriter
             case GtInstr i: WriteBin(w, Opcodes.Gt, i.Dst, i.A, i.B); break;
             case GeInstr i: WriteBin(w, Opcodes.Ge, i.Dst, i.A, i.B); break;
 
-            // Unary
             case NegInstr    i: WriteUn(w, Opcodes.Neg,    i.Dst, i.Src); break;
             case NotInstr    i: WriteUn(w, Opcodes.Not,    i.Dst, i.Src); break;
             case BitNotInstr i: WriteUn(w, Opcodes.BitNot, i.Dst, i.Src); break;
             case ToStrInstr  i: WriteUn(w, Opcodes.ToStr,  i.Dst, i.Src); break;
             case ArrayLenInstr i: WriteUn(w, Opcodes.ArrayLen, i.Dst, i.Arr); break;
 
-            // Calls
             case CallInstr i:
                 w.Write(Opcodes.Call); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
                 w.Write((uint)pool.Idx(i.Func));
@@ -447,7 +449,6 @@ public static class ZbcWriter
                 WriteArgs(w, i.Args);
                 break;
 
-            // Fields
             case FieldGetInstr i:
                 w.Write(Opcodes.FieldGet); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
                 w.Write((ushort)i.Obj); w.Write((uint)pool.Idx(i.FieldName));
@@ -465,7 +466,6 @@ public static class ZbcWriter
                 w.Write((uint)pool.Idx(i.Field)); w.Write((ushort)i.Val);
                 break;
 
-            // Objects
             case ObjNewInstr i:
                 w.Write(Opcodes.ObjNew); w.Write(TypeTags.Object); w.Write((ushort)i.Dst);
                 w.Write((uint)pool.Idx(i.ClassName));
@@ -480,7 +480,6 @@ public static class ZbcWriter
                 w.Write((ushort)i.Obj); w.Write((uint)pool.Idx(i.ClassName));
                 break;
 
-            // Arrays
             case ArrayNewInstr i:
                 w.Write(Opcodes.ArrayNew); w.Write(TypeTags.Array); w.Write((ushort)i.Dst);
                 w.Write((ushort)i.Size);
@@ -550,7 +549,7 @@ public static class ZbcWriter
         foreach (var a in args) w.Write((ushort)a);
     }
 
-    private static void InternInstrStrings(StringPool pool, IrInstr instr)
+    internal static void InternInstrStrings(StringPool pool, IrInstr instr)
     {
         switch (instr)
         {
@@ -572,9 +571,7 @@ public static class ZbcWriter
     private static int ComputeRegCount(IrFunction fn)
     {
         int max = fn.ParamCount - 1;
-
         void Visit(int r) { if (r >= 0 && r > max) max = r; }
-
         foreach (var block in fn.Blocks)
         {
             foreach (var instr in block.Instructions) VisitInstrRegs(instr, Visit);
@@ -650,7 +647,7 @@ public static class ZbcWriter
 
 // ── String pool ───────────────────────────────────────────────────────────────
 
-internal sealed class StringPool
+public sealed class StringPool
 {
     private readonly Dictionary<string, int> _index = new(StringComparer.Ordinal);
     private readonly List<string>            _list  = [];

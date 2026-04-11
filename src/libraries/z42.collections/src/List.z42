@@ -1,4 +1,4 @@
-namespace z42.collections;
+namespace Std.Collections;
 
 // TODO(L3): full generic implementation requires generics support.
 // Until then, List<T> is handled by the compiler's pseudo-class strategy.

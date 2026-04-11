@@ -1,4 +1,4 @@
-namespace z42.core;
+namespace Std;
 
 // Type conversion helpers.
 // Native bindings delegate to VM intrinsics.

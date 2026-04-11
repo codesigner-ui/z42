@@ -1,10 +1,10 @@
-using System.Text.Json;
 using FluentAssertions;
 using Z42.Compiler.Codegen;
 using Z42.Compiler.Features;
 using Z42.Compiler.Lexer;
 using Z42.Compiler.Parser;
 using Z42.IR;
+using Z42.IR.BinaryFormat;
 using Z42.Project;
 
 namespace Z42.Tests;
@@ -17,14 +17,6 @@ namespace Z42.Tests;
 public sealed class IrGenTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNamingPolicy   = JsonNamingPolicy.SnakeCaseLower,
-        WriteIndented          = true,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-        Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-    };
 
     private static readonly StdlibCallIndex StdlibIdx = LoadStdlibIdx();
 
@@ -47,10 +39,11 @@ public sealed class IrGenTests
         {
             try
             {
-                var pkg = JsonSerializer.Deserialize<ZpkgFile>(File.ReadAllText(zpkgPath), JsonOpts);
-                if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
-                foreach (var zbc in pkg.Modules)
-                    modules.Add((zbc.Module, zbc.Namespace));
+                var bytes = File.ReadAllBytes(zpkgPath);
+                var meta  = ZpkgReader.ReadMeta(bytes);
+                if (meta.Kind != ZpkgKind.Lib) continue;
+                foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
+                    modules.Add((mod, ns));
             }
             catch { }
         }
@@ -334,11 +327,11 @@ public sealed class IrGenTests
     [Fact]
     public void StdlibCall_EmitsCallInstr()
     {
-        // Console.WriteLine resolves to z42.io.Console.WriteLine in stdlib
+        // Console.WriteLine resolves to Std.IO.Console.WriteLine in stdlib
         var m = GenModuleWithStdlib("void Main() { Console.WriteLine(\"hi\"); }");
         var instrs = All(m.Functions[0]);
-        instrs.Any(i => i is CallInstr c && c.Func.StartsWith("z42.io", StringComparison.Ordinal))
-              .Should().BeTrue(because: "Console.WriteLine should emit a CallInstr to z42.io stdlib");
+        instrs.Any(i => i is CallInstr c && c.Func.StartsWith("Std.IO", StringComparison.Ordinal))
+              .Should().BeTrue(because: "Console.WriteLine should emit a CallInstr to Std.IO stdlib");
     }
 
     // ── Arrays ────────────────────────────────────────────────────────────────

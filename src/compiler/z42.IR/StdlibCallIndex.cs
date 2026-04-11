@@ -1,8 +1,8 @@
 namespace Z42.IR;
 
 /// An entry in the stdlib call index.
-/// QualifiedName  — fully qualified function name in the stdlib IR (e.g. "z42.io.Console.WriteLine")
-/// Namespace      — stdlib namespace that owns this function (e.g. "z42.io")
+/// QualifiedName  — fully qualified function name in the stdlib IR (e.g. "Std.IO.Console.WriteLine")
+/// Namespace      — stdlib namespace that owns this function (e.g. "Std.IO")
 public sealed record StdlibCallEntry(string QualifiedName, string Namespace);
 
 /// Index that maps short call-site names → stdlib qualified function names.
@@ -50,7 +50,7 @@ public sealed class StdlibCallIndex
 
     /// Build an index from a collection of stdlib IrModules.
     ///
-    /// Each module's Name is used as the namespace prefix (e.g. "z42.io").
+    /// Each module's Name is used as the namespace prefix (e.g. "Std.IO").
     /// Functions whose names do not start with that prefix are skipped.
     /// Functions named "__static_init__" are skipped.
     /// The function name format is: namespace.ClassName.MethodName[[$arity]]
@@ -71,7 +71,7 @@ public sealed class StdlibCallIndex
                 if (name.EndsWith("__static_init__", StringComparison.Ordinal)) continue;
                 if (!name.StartsWith(ns + ".", StringComparison.Ordinal))       continue;
 
-                // Strip namespace prefix: "z42.io.Console.WriteLine" → "Console.WriteLine"
+                // Strip namespace prefix: "Std.IO.Console.WriteLine" → "Console.WriteLine"
                 string withoutNs = name[(ns.Length + 1)..]; // "Console.WriteLine"
 
                 int dot = withoutNs.IndexOf('.');
@@ -99,6 +99,12 @@ public sealed class StdlibCallIndex
                 // skip them here so they don't cause false ambiguity with instance methods
                 // of the same name (e.g. Assert.Contains vs String.Contains).
                 if (fn.IsStatic) continue;
+
+                // Object virtual methods (ToString, Equals, GetHashCode, GetType) must
+                // always be dispatched via VCallInstr so user overrides work correctly.
+                // Putting them in the instance index would intercept all object.Method()
+                // calls before virtual dispatch can happen.
+                if (shortClass == "Object") continue;
 
                 // Key: "MethodName$<userArity>"  where userArity = paramCount - 1.
                 // If the function name already encodes arity (e.g. "Substring$1" from
@@ -150,7 +156,7 @@ public sealed class StdlibCallIndex
 
     private static string ExtrClass(string qualifiedName)
     {
-        // "z42.io.Console.WriteLine" → "Console"
+        // "Std.IO.Console.WriteLine" → "Console"
         int last   = qualifiedName.LastIndexOf('.');
         if (last < 0) return qualifiedName;
         int second = qualifiedName.LastIndexOf('.', last - 1);

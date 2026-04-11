@@ -328,7 +328,7 @@ The VM maintains two independent search paths with fixed priority:
 
 Conflict within the same tier (two files providing the same namespace) → compile error. Cross-tier override is valid and silent.
 
-Namespace → package mapping uses exported metadata, not file names: `using z42.io` matches whichever zpkg has `"z42.io"` in its `namespaces` field, regardless of the zpkg's filename.
+Namespace → package mapping uses exported metadata, not file names: `using Std.IO` matches whichever zpkg has `"Std.IO"` in its `namespaces` field, regardless of the zpkg's filename.
 
 **Rationale:** Python-style accessibility — running a script or trying an idea should not require project setup. The project system (`z42.toml` + `.zpkg`) is for distribution; script modes are for iteration and embedding. Two separate paths make the format contract explicit: libs/ is for versioned packages, module path is for raw compiled units.
 

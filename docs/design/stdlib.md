@@ -154,18 +154,18 @@ Rules:
 
 `z42.core` is the **implicit prelude** — the default dependency of every z42 program.
 
-| Module | Load condition | Analogy |
-|--------|---------------|---------|
-| `z42.core` | **Always loaded at VM startup.** No `using` required. | Python `builtins`, Rust `std::prelude` |
-| `z42.io` | Loaded when `using z42.io;` is present | C# `System.IO` |
-| `z42.collections` | Loaded when `using z42.collections;` is present | C# `System.Collections.Generic` |
-| `z42.text` | Loaded when `using z42.text;` is present | C# `System.Text` |
-| `z42.math` | Loaded when `using z42.math;` is present | C# `System.Math` |
+| Package | Namespace | Load condition | Analogy |
+|---------|-----------|---------------|---------|
+| `z42.core` | `Std` | **Always loaded at VM startup.** No `using` required. | Python `builtins`, Rust `std::prelude` |
+| `z42.io` | `Std.IO` | Loaded when `using Std.IO;` is present | C# `System.IO` |
+| `z42.collections` | `Std.Collections` | Loaded when `using Std.Collections;` is present | C# `System.Collections.Generic` |
+| `z42.text` | `Std.Text` | Loaded when `using Std.Text;` is present | C# `System.Text` |
+| `z42.math` | `Std.Math` | Loaded when `using Std.Math;` is present | C# `System.Math` |
 
 **`z42.core` auto-load semantics:**
 - Loaded before the first instruction of any user module is executed.
-- All names exported by `z42.core` are available in every file without qualification.
-- It is a compile-time error to redeclare a top-level name that shadows a `z42.core` export without an explicit `using z42.core as ...` alias (L3).
+- All names exported by `Std` (`z42.core`) are available in every file without qualification.
+- It is a compile-time error to redeclare a top-level name that shadows a `Std` export without an explicit alias (L3).
 - User projects **must not** declare `z42.core` as an explicit dependency in their `.z42.toml`; it is injected automatically by the compiler and VM.
 
 ### stdlib Search Path (VM)

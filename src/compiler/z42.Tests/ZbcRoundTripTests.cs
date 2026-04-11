@@ -51,10 +51,11 @@ public class ZbcRoundTripTests
         {
             try
             {
-                var pkg = JsonSerializer.Deserialize<ZpkgFile>(File.ReadAllText(zpkgPath), JsonOpts);
-                if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
-                foreach (var zbc in pkg.Modules)
-                    modules.Add((zbc.Module, zbc.Namespace));
+                var bytes = File.ReadAllBytes(zpkgPath);
+                var meta  = ZpkgReader.ReadMeta(bytes);
+                if (meta.Kind != ZpkgKind.Lib) continue;
+                foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
+                    modules.Add((mod, ns));
             }
             catch { }
         }

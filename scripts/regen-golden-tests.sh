@@ -48,7 +48,7 @@ for dir in "$GOLDEN_DIR"/*/; do
         continue
     fi
 
-    if dotnet "$DRIVER_DLL" "$source" --emit json-zbc -o "$output" 2>/dev/null; then
+    if dotnet "$DRIVER_DLL" "$source" --emit zbc -o "$output" 2>/dev/null; then
         echo "  OK:   $name"
         PASS=$((PASS + 1))
     else

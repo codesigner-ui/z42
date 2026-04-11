@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.CommandLine.Invocation;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Z42.Compiler.Codegen;
 using Z42.Compiler.Diagnostics;
 using Z42.Compiler.Lexer;
@@ -18,7 +17,7 @@ static class BuildCommand
 {
     // ── Command factories ─────────────────────────────────────────────────────
 
-    public static Command Create(JsonSerializerOptions jsonOptions)
+    public static Command Create()
     {
         var cmd         = new Command("build", "Build a z42 project from a manifest");
         var manifestArg = ManifestArg();
@@ -34,7 +33,7 @@ static class BuildCommand
             var manifest = ctx.ParseResult.GetValueForArgument(manifestArg);
             var release  = ctx.ParseResult.GetValueForOption(releaseOpt);
             var bin      = ctx.ParseResult.GetValueForOption(binOpt);
-            ctx.ExitCode = Run(manifest, release, bin, jsonOptions);
+            ctx.ExitCode = Run(manifest, release, bin);
         });
 
         return cmd;
@@ -70,8 +69,7 @@ static class BuildCommand
     public static int Run(
         string?               explicitToml,
         bool                  useRelease,
-        string?               binFilter,
-        JsonSerializerOptions jsonOptions)
+        string?               binFilter)
     {
         if (!TryLoadManifest(explicitToml, out var tomlPath, out var manifest)) return 1;
 
@@ -80,7 +78,7 @@ static class BuildCommand
         string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
 
         if (manifest.Project.Kind == ProjectKind.Multi)
-            return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, binFilter, jsonOptions);
+            return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, binFilter);
 
         if (binFilter is not null)
         {
@@ -102,8 +100,7 @@ static class BuildCommand
             sourceFiles,
             pack,
             projectDir,
-            outDir,
-            jsonOptions);
+            outDir);
     }
 
     // ── Check ─────────────────────────────────────────────────────────────────
@@ -159,8 +156,7 @@ static class BuildCommand
         string                outDir,
         bool                  useRelease,
         string                profileLabel,
-        string?               binFilter,
-        JsonSerializerOptions jsonOptions)
+        string?               binFilter)
     {
         var targets = manifest.ExeTargets;
         if (binFilter is not null)
@@ -182,7 +178,7 @@ static class BuildCommand
             { errors++; continue; }
             bool pack = manifest.ResolvePack(useRelease, target.Pack);
             if (BuildTarget(target.Name, manifest.Project.Version, ZpkgKind.Exe,
-                    target.Entry, sourceFiles, pack, projectDir, outDir, jsonOptions) != 0)
+                    target.Entry, sourceFiles, pack, projectDir, outDir) != 0)
                 errors++;
         }
 
@@ -201,8 +197,7 @@ static class BuildCommand
         IReadOnlyList<string> sourceFiles,
         bool                  pack,
         string                projectDir,
-        string                outDir,
-        JsonSerializerOptions jsonOptions)
+        string                outDir)
     {
         // ── 4.1: Scan .zpkg files in libs/ dirs for namespace → filename mapping ──
         var nsMap = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -218,19 +213,17 @@ static class BuildCommand
             {
                 try
                 {
-                    var text = File.ReadAllText(zpkgFile);
-                    var pkg  = JsonSerializer.Deserialize<ZpkgFile>(text, jsonOptions);
-                    if (pkg is null) continue;
+                    var bytes = File.ReadAllBytes(zpkgFile);
+                    var ns    = ZpkgReader.ReadNamespaces(bytes);
                     string fname = Path.GetFileName(zpkgFile);
-                    foreach (var ns in pkg.Namespaces)
-                        nsMap.TryAdd(ns, fname);
+                    foreach (var n in ns) nsMap.TryAdd(n, fname);
                 }
                 catch { /* skip malformed zpkg */ }
             }
         }
 
         // ── 4.1b: Build StdlibCallIndex from lib-kind zpkgs ──────────────────────
-        var stdlibIndex = BuildStdlibIndex(libsDirs, jsonOptions);
+        var stdlibIndex = BuildStdlibIndex(libsDirs);
 
         // ── 4.2: Scan .zbc files in Z42_PATH and cwd/modules/ (zbc overrides zpkg) ──
         var zbcScanDirs = new List<string>();
@@ -333,7 +326,7 @@ static class BuildCommand
             zpkg = indexedZpkg;
         }
 
-        string zpkgPath = ZpkgBuilder.WriteZpkg(zpkg, name, outDir, jsonOptions);
+        string zpkgPath = ZpkgBuilder.WriteZpkg(zpkg, name, outDir);
         Console.Error.WriteLine($"wrote → {zpkgPath}");
         Console.Error.WriteLine($"    Finished → {outDir}");
         return 0;
@@ -448,7 +441,7 @@ static class BuildCommand
 
     /// Load lib-kind zpkgs from the given directories and build a StdlibCallIndex
     /// from their packed modules.  Silently skips malformed or non-lib packages.
-    internal static StdlibCallIndex BuildStdlibIndex(string[] libsDirs, JsonSerializerOptions jsonOptions)
+    internal static StdlibCallIndex BuildStdlibIndex(string[] libsDirs)
     {
         var modules = new List<(IrModule Module, string Namespace)>();
         foreach (var dir in libsDirs)
@@ -458,11 +451,11 @@ static class BuildCommand
             {
                 try
                 {
-                    var text = File.ReadAllText(zpkgPath);
-                    var pkg  = JsonSerializer.Deserialize<ZpkgFile>(text, jsonOptions);
-                    if (pkg is null || pkg.Kind != ZpkgKind.Lib) continue;
-                    foreach (var zbc in pkg.Modules)
-                        modules.Add((zbc.Module, zbc.Namespace));
+                    var bytes = File.ReadAllBytes(zpkgPath);
+                    var meta  = ZpkgReader.ReadMeta(bytes);
+                    if (meta.Kind != ZpkgKind.Lib) continue;
+                    foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
+                        modules.Add((mod, ns));
                 }
                 catch { /* skip malformed */ }
             }

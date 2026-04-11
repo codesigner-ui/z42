@@ -1,4 +1,4 @@
-namespace z42.core;
+namespace Std;
 
 // String class — wraps the built-in `string` primitive type.
 // All instance methods receive `this` (the string value) as the first argument

@@ -135,7 +135,7 @@ fn assert_eq_failure() {
 fn obj_get_type_returns_type_object() {
     let result = exec_builtin("__obj_get_type", &[obj("Foo")]).unwrap();
     match result {
-        Value::Object(rc) => assert_eq!(rc.borrow().class_name, "z42.core.Type"),
+        Value::Object(rc) => assert_eq!(rc.borrow().class_name, "Std.Type"),
         other => panic!("expected Object, got {:?}", other),
     }
 }

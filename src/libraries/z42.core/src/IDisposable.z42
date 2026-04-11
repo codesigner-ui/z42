@@ -1,4 +1,4 @@
-namespace z42.core;
+namespace Std;
 
 // TODO(L2): requires interface full implementation.
 // interface IDisposable {

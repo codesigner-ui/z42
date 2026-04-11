@@ -147,7 +147,6 @@ public sealed class ProjectManifest
         string  version = t.TryGetString("version")     ?? "0.1.0";
         string? kindStr = t.TryGetString("kind");
         string? entry   = t.TryGetString("entry");
-        string? ns      = t.TryGetString("namespace");
         string? desc    = t.TryGetString("description");
         bool?   pack    = t.TryGetBool("pack");
 
@@ -174,8 +173,7 @@ public sealed class ProjectManifest
             throw new ManifestException(
                 "error: [project].entry is required when kind = \"exe\"");
 
-        string resolvedNs = ns ?? KebabToPascal(name);
-        return new ProjectSection(name, version, kind, entry, resolvedNs, desc, pack);
+        return new ProjectSection(name, version, kind, entry, desc, pack);
     }
 
     static IReadOnlyList<ExeTarget> ParseExeTargets(TomlTable model)
@@ -246,9 +244,6 @@ public sealed class ProjectManifest
         return new ProfileSection(mode, optimize, debug, strip, pack);
     }
 
-    static string KebabToPascal(string kebab) =>
-        string.Concat(kebab.Split('-').Select(w =>
-            w.Length == 0 ? w : char.ToUpperInvariant(w[0]) + w[1..]));
 }
 
 // ── Section records ────────────────────────────────────────────────────────────
@@ -267,12 +262,11 @@ public sealed record ProjectSection(
     string      Version,
     ProjectKind Kind,
     string?     Entry,
-    string      Namespace,
     string?     Description,
     bool?       Pack        // null = use profile/built-in default
 )
 {
-    public ProjectSection() : this("", "0.1.0", ProjectKind.Exe, null, "", null, null) { }
+    public ProjectSection() : this("", "0.1.0", ProjectKind.Exe, null, null, null) { }
 }
 
 public sealed record SourcesSection(

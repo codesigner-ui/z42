@@ -1,4 +1,4 @@
-namespace z42.core;
+namespace Std;
 
 // Base object protocol — every z42 reference type implicitly inherits these members.
 // Struct types do NOT inherit Object; the compiler synthesises value-semantic

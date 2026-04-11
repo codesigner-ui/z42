@@ -1,38 +1,36 @@
 /// Artifact loader: detects the format of a compiler output file by extension,
-/// deserialises it, and returns a merged `Module` plus an optional entry-point hint.
+/// deserialises it (binary only), and returns a merged `Module` plus metadata.
 ///
 /// Supported formats:
-///   `.zbc`  — ZbcFile envelope  (single source file)
-///   `.zpkg` — ZpkgFile          (project package; indexed or packed)
+///   `.zbc`  — ZbcFile binary (single source file, full mode)
+///   `.zpkg` — ZpkgFile binary (project package; packed mode only)
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
 use super::bytecode::Module;
-use super::formats::{
-    read_zbc_namespace, zbc_is_stripped, ZBC_MAGIC, ZbcFile, ZpkgDep, ZpkgFile, ZpkgMode,
-};
-use crate::metadata::merge::merge_modules;
+use super::formats::{ZpkgDep, ZBC_MAGIC, ZPKG_MAGIC};
+use super::merge::merge_modules;
+use super::zbc_reader::{read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces};
 
 /// Result of loading a compiler artifact.
 pub struct LoadedArtifact {
     /// The merged, flat IR module ready for the VM.
     pub module: Module,
     /// Entry-point function name from the artifact's metadata, if present.
-    /// Falls back to the Vm's own lookup logic when `None`.
     pub entry_hint: Option<String>,
     /// Resolved dependency list from the zpkg manifest (empty for .zbc).
     pub dependencies: Vec<ZpkgDep>,
-    /// Namespace prefixes extracted from ZbcFile.imports (e.g. ["z42.core", "z42.io"]).
-    /// Populated by load_zbc; used by main.rs to load the corresponding zpkgs.
+    /// Namespace prefixes extracted from the import table (populated by load_zbc).
+    /// Used by main.rs to load the corresponding zpkgs.
     pub import_namespaces: Vec<String>,
 }
 
 /// Load a compiler output artifact from `path`, returning a `LoadedArtifact`.
 ///
 /// Format is determined by file extension (case-insensitive):
-/// - `.zbc`  → `ZbcFile`
-/// - `.zpkg` → `ZpkgFile` (indexed or packed)
+/// - `.zbc`  → binary zbc (full mode)
+/// - `.zpkg` → binary zpkg (packed mode)
 pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
     match Path::new(path).extension().and_then(|e| e.to_str()) {
         Some("zbc")  => load_zbc(path),
@@ -46,80 +44,51 @@ pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
 
 // ── Format-specific loaders ───────────────────────────────────────────────────
 
-/// `.zbc`: `ZbcFile` envelope → extract inner `Module`.
-/// Also performs a major-version compatibility check.
-/// Returns an error if the file is a stripped zbc (must be loaded via zpkg index).
 fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     let raw = std::fs::read(path).with_context(|| format!("cannot read `{path}`"))?;
 
-    // 1c.4: Guard against loading stripped zbc directly.
-    if raw.len() >= 4 && &raw[0..4] == ZBC_MAGIC {
-        if zbc_is_stripped(&raw) {
-            bail!(
-                "cannot load stripped zbc directly: `{path}`; \
-                 stripped zbcs live in .cache/ and must be loaded via zpkg index"
-            );
-        }
-        // Binary zbc (v0.2+) — not yet fully supported for direct load; fall through to JSON parse.
-        // TODO(M-binary): implement binary zbc loading here once binary format is the default.
+    if raw.len() < 4 || &raw[0..4] != ZBC_MAGIC {
+        bail!("not a binary zbc file: `{path}`; expected ZBC magic bytes");
     }
 
-    let json = String::from_utf8(raw).with_context(|| format!("cannot read `{path}` as UTF-8"))?;
-    let zbc: ZbcFile = serde_json::from_str(&json)
-        .with_context(|| format!("cannot parse .zbc JSON in `{path}`"))?;
-    check_zbc_version(&zbc, path)?;
-    // Extract unique namespace prefixes from the import table for dependency resolution.
-    let import_namespaces = extract_import_namespaces(&zbc.imports);
-    // .zbc has no entry field; entry resolution falls back to Vm heuristics.
-    Ok(LoadedArtifact { module: zbc.module, entry_hint: None, dependencies: vec![], import_namespaces })
+    let module = read_zbc(&raw)
+        .with_context(|| format!("cannot parse binary zbc `{path}`"))?;
+
+    // Extract import namespaces from the module's ConstStr / Call instructions
+    // (approximation: namespace = first two components of any external call target)
+    let import_namespaces = extract_import_namespaces_from_module(&module);
+
+    Ok(LoadedArtifact {
+        module,
+        entry_hint: None,
+        dependencies: vec![],
+        import_namespaces,
+    })
 }
 
-/// `.zpkg`: unified project package — handles both indexed and packed modes.
 fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
-    let json = read_file(path)?;
-    let zpkg: ZpkgFile = serde_json::from_str(&json)
-        .with_context(|| format!("cannot parse .zpkg JSON in `{path}`"))?;
+    let raw = std::fs::read(path).with_context(|| format!("cannot read `{path}`"))?;
 
-    let modules = match zpkg.mode {
-        ZpkgMode::Packed => {
-            // All ZbcFiles are inlined in `modules[]`.
-            zpkg.modules
-                .into_iter()
-                .enumerate()
-                .map(|(i, zbc)| {
-                    check_zbc_version(&zbc, &format!("{path}#module[{i}]"))?;
-                    Ok(zbc.module)
-                })
-                .collect::<Result<Vec<_>>>()?
-        }
-        ZpkgMode::Indexed => {
-            // `files[]` references .zbc paths on disk, relative to the .zpkg file.
-            let base = Path::new(path)
-                .parent()
-                .unwrap_or(Path::new("."));
+    if raw.len() < 4 || &raw[0..4] != ZPKG_MAGIC {
+        bail!("not a binary zpkg file: `{path}`; expected ZPK magic bytes");
+    }
 
-            zpkg.files
-                .iter()
-                .map(|entry| {
-                    let zbc_path = base.join(&entry.bytecode);
-                    let zbc_str = zbc_path.to_string_lossy();
-                    let zbc_json = read_file(&zbc_str)
-                        .with_context(|| {
-                            format!("loading .zbc `{}` referenced from `{path}`", zbc_str)
-                        })?;
-                    let zbc: ZbcFile = serde_json::from_str(&zbc_json)
-                        .with_context(|| format!("cannot parse .zbc `{}`", zbc_str))?;
-                    check_zbc_version(&zbc, &zbc_str)?;
-                    Ok(zbc.module)
-                })
-                .collect::<Result<Vec<_>>>()?
-        }
-    };
+    let meta = read_zpkg_meta(&raw)
+        .with_context(|| format!("cannot read zpkg metadata from `{path}`"))?;
 
-    let dependencies = zpkg.dependencies;
+    let module_pairs = read_zpkg_modules(&raw)
+        .with_context(|| format!("cannot load modules from `{path}`"))?;
+
+    let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
     let module = merge_modules(modules)
         .with_context(|| format!("merging modules from `{path}`"))?;
-    Ok(LoadedArtifact { module, entry_hint: zpkg.entry, dependencies, import_namespaces: vec![] })
+
+    Ok(LoadedArtifact {
+        module,
+        entry_hint: meta.entry,
+        dependencies: meta.dependencies,
+        import_namespaces: vec![],
+    })
 }
 
 // ── Namespace resolution ──────────────────────────────────────────────────────
@@ -128,31 +97,19 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
 ///
 /// Search order (high → low priority):
 ///   1. `module_paths`: scan `.zbc` files (binary, read namespace from header)
-///   2. `libs_paths`:   scan `.zpkg` files (JSON, read `namespaces` field)
-///
-/// Within the same tier, having two files that provide the **same** namespace
-/// is an error (`AmbiguousNamespaceError`).  Cross-tier override (zbc wins over
-/// zpkg) is valid and silent.
-///
-/// Returns `Ok(None)` if no file provides the namespace.
+///   2. `libs_paths`:   scan `.zpkg` files (binary, read NSPC section)
 pub fn resolve_namespace(
     ns: &str,
     module_paths: &[PathBuf],
     libs_paths: &[PathBuf],
 ) -> Result<Option<PathBuf>> {
-    // Tier 1: module_paths (.zbc files)
     let zbc_match = find_namespace_in_zbc_dirs(ns, module_paths)?;
     if zbc_match.is_some() {
         return Ok(zbc_match);
     }
-
-    // Tier 2: libs_paths (.zpkg files)
-    let zpkg_match = find_namespace_in_zpkg_dirs(ns, libs_paths)?;
-    Ok(zpkg_match)
+    find_namespace_in_zpkg_dirs(ns, libs_paths)
 }
 
-/// Scan directories for `.zbc` files whose binary NSPC header matches `ns`.
-/// Returns an error if two files in the same set both provide `ns`.
 fn find_namespace_in_zbc_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathBuf>> {
     let mut found: Option<PathBuf> = None;
     for dir in dirs {
@@ -162,28 +119,15 @@ fn find_namespace_in_zbc_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathB
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("zbc") {
-                continue;
-            }
-            let data = match std::fs::read(&path) {
-                Ok(d) => d,
-                Err(_) => continue,
-            };
-            // Only inspect binary zbc files (starts with ZBC_MAGIC)
-            if data.len() < 4 || &data[0..4] != ZBC_MAGIC {
-                continue;
-            }
-            let file_ns = match read_zbc_namespace(&data) {
-                Ok(n) => n,
-                Err(_) => continue,
-            };
+            if path.extension().and_then(|e| e.to_str()) != Some("zbc") { continue; }
+            let data = match std::fs::read(&path) { Ok(d) => d, Err(_) => continue };
+            if data.len() < 4 || &data[0..4] != ZBC_MAGIC { continue; }
+            let file_ns = match read_zbc_namespace(&data) { Ok(n) => n, Err(_) => continue };
             if file_ns == ns {
                 if let Some(ref prev) = found {
                     bail!(
                         "AmbiguousNamespaceError: namespace '{}' provided by both '{}' and '{}'",
-                        ns,
-                        prev.display(),
-                        path.display()
+                        ns, prev.display(), path.display()
                     );
                 }
                 found = Some(path);
@@ -193,8 +137,6 @@ fn find_namespace_in_zbc_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathB
     Ok(found)
 }
 
-/// Scan directories for `.zpkg` files whose `namespaces` field contains `ns`.
-/// Returns an error if two files in the same set both provide `ns`.
 fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathBuf>> {
     let mut found: Option<PathBuf> = None;
     for dir in dirs {
@@ -204,24 +146,15 @@ fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<Path
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("zpkg") {
-                continue;
-            }
-            let text = match std::fs::read_to_string(&path) {
-                Ok(t) => t,
-                Err(_) => continue,
-            };
-            let pkg: ZpkgFile = match serde_json::from_str(&text) {
-                Ok(p) => p,
-                Err(_) => continue,
-            };
-            if pkg.namespaces.iter().any(|n| n == ns) {
+            if path.extension().and_then(|e| e.to_str()) != Some("zpkg") { continue; }
+            let data = match std::fs::read(&path) { Ok(d) => d, Err(_) => continue };
+            if data.len() < 4 || &data[0..4] != ZPKG_MAGIC { continue; }
+            let namespaces = match read_zpkg_namespaces(&data) { Ok(v) => v, Err(_) => continue };
+            if namespaces.iter().any(|n| n == ns) {
                 if let Some(ref prev) = found {
                     bail!(
                         "AmbiguousNamespaceError: namespace '{}' provided by both '{}' and '{}'",
-                        ns,
-                        prev.display(),
-                        path.display()
+                        ns, prev.display(), path.display()
                     );
                 }
                 found = Some(path);
@@ -233,45 +166,74 @@ fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<Path
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-/// Extract unique namespace prefixes from a list of import symbol names.
-///
-/// Each import is a fully-qualified symbol like `"z42.core.String.Contains"`.
-/// This function infers the package namespace from the first two dot-separated
-/// components (e.g. `"z42.core"`), deduplicates, and returns the result.
-///
-/// Single-component names (unlikely but defensive) are returned as-is.
-pub fn extract_import_namespaces(imports: &[String]) -> Vec<String> {
+/// Reads the namespace from a binary zbc buffer (NSPC section fast-path).
+pub fn read_zbc_namespace(data: &[u8]) -> Result<String> {
+    use super::formats::ZBC_MAGIC;
+    if data.len() < 16 { bail!("zbc buffer too short ({} bytes)", data.len()) }
+    if &data[0..4] != ZBC_MAGIC { bail!("not a zbc file (bad magic)") }
+
+    let sec_count = u16::from_le_bytes([data[10], data[11]]);
+    let dir = super::zbc_reader::read_directory_pub(data, sec_count)?;
+
+    match dir.get(b"NSPC") {
+        None => Ok(String::new()),
+        Some(&(off, size)) => {
+            if off + size > data.len() { bail!("NSPC section out of bounds") }
+            let sec = &data[off..off + size];
+            if sec.len() < 2 { return Ok(String::new()); }
+            let len = u16::from_le_bytes([sec[0], sec[1]]) as usize;
+            if len == 0 || sec.len() < 2 + len { return Ok(String::new()); }
+            Ok(std::str::from_utf8(&sec[2..2 + len])?.to_owned())
+        }
+    }
+}
+
+/// Extract unique namespace prefixes from a module's external calls.
+/// Namespace = first two dot-separated components of a Call target not defined locally.
+fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
+    use super::bytecode::Instruction;
+    let defined: std::collections::HashSet<&str> =
+        module.functions.iter().map(|f| f.name.as_str()).collect();
     let mut seen = std::collections::HashSet::new();
     let mut result = Vec::new();
-    for import in imports {
-        // Namespace = first two components, or the whole string if fewer than two dots.
-        let ns = match import.find('.') {
-            None => import.as_str(),
-            Some(first_dot) => match import[first_dot + 1..].find('.') {
-                None => import.as_str(),  // only one dot → use full name
-                Some(rel) => &import[..first_dot + 1 + rel],
-            },
-        };
-        if seen.insert(ns.to_owned()) {
-            result.push(ns.to_owned());
+    for func in &module.functions {
+        for block in &func.blocks {
+            for instr in &block.instructions {
+                let target = match instr {
+                    Instruction::Call { func, .. }    if !defined.contains(func.as_str()) => func,
+                    Instruction::Builtin { name, .. } => name,
+                    _ => continue,
+                };
+                let ns = infer_namespace(target);
+                if seen.insert(ns.to_owned()) {
+                    result.push(ns.to_owned());
+                }
+            }
         }
     }
     result
 }
 
-fn read_file(path: &str) -> Result<String> {
-    std::fs::read_to_string(path).with_context(|| format!("cannot read `{path}`"))
+/// Infer the namespace from a fully-qualified function name.
+/// Returns the first two dot-separated components, or the whole name.
+pub fn extract_import_namespaces(imports: &[String]) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut result = Vec::new();
+    for import in imports {
+        let ns = infer_namespace(import);
+        if seen.insert(ns.to_owned()) { result.push(ns.to_owned()); }
+    }
+    result
 }
 
-fn check_zbc_version(zbc: &ZbcFile, path: &str) -> Result<()> {
-    if zbc.zbc_version[0] > ZbcFile::VERSION[0] {
-        bail!(
-            "unsupported .zbc major version {} in `{path}` (this VM supports <= {})",
-            zbc.zbc_version[0],
-            ZbcFile::VERSION[0]
-        );
+fn infer_namespace(name: &str) -> &str {
+    match name.find('.') {
+        None => name,
+        Some(first) => match name[first + 1..].find('.') {
+            None => name,
+            Some(rel) => &name[..first + 1 + rel],
+        },
     }
-    Ok(())
 }
 
 #[cfg(test)]

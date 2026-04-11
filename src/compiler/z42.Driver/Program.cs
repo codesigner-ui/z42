@@ -27,32 +27,50 @@ var rootCmd = new RootCommand("z42c — the z42 compiler");
 
 // ── Subcommands ───────────────────────────────────────────────────────────────
 
-rootCmd.AddCommand(BuildCommand.Create(jsonOptions));
+rootCmd.AddCommand(BuildCommand.Create());
 rootCmd.AddCommand(BuildCommand.CreateCheck());
 
 // disasm
 {
-    var disasmCmd = new Command("disasm", "Disassemble a .zbc file to z42 assembly (.zasm)");
-    var fileArg      = new Argument<FileInfo>("file", "The .zbc binary file to disassemble");
-    var disasmOutOpt = new Option<FileInfo?>(["-o", "--output"], "Output .zasm path (default: beside input)");
+    var disasmCmd    = new Command("disasm", "Disassemble a .zbc or .zpkg file to text");
+    var fileArg      = new Argument<FileInfo>("file", "The .zbc or .zpkg binary file to disassemble");
+    var disasmOutOpt = new Option<FileInfo?>(["-o", "--output"], "Output path (default: beside input)");
     disasmCmd.AddArgument(fileArg);
     disasmCmd.AddOption(disasmOutOpt);
     disasmCmd.SetHandler((InvocationContext ctx) =>
     {
-        var zbcFile = ctx.ParseResult.GetValueForArgument(fileArg);
+        var inFile  = ctx.ParseResult.GetValueForArgument(fileArg);
         var outFile = ctx.ParseResult.GetValueForOption(disasmOutOpt);
-        if (!zbcFile.Exists)
+        if (!inFile.Exists)
         {
-            Console.Error.WriteLine($"error: file not found: {zbcFile.FullName}");
+            Console.Error.WriteLine($"error: file not found: {inFile.FullName}");
             ctx.ExitCode = 1;
             return;
         }
         try
         {
-            var    module  = ZbcReader.Read(File.ReadAllBytes(zbcFile.FullName));
-            string zasm    = ZasmWriter.Write(module);
-            string outPath = outFile?.FullName ?? Path.ChangeExtension(zbcFile.FullName, ".zasm");
-            SingleFileDriver.WriteFile(outPath, zasm);
+            var    raw  = File.ReadAllBytes(inFile.FullName);
+            string ext  = inFile.Extension.ToLowerInvariant();
+            if (ext == ".zpkg")
+            {
+                // Dump each packed module as ZASM
+                var sb      = new System.Text.StringBuilder();
+                var modules = ZpkgReader.ReadModules(raw);
+                foreach (var (mod, ns) in modules)
+                {
+                    sb.AppendLine($"; === module: {ns} ===");
+                    sb.AppendLine(ZasmWriter.Write(mod));
+                }
+                string outPath = outFile?.FullName ?? Path.ChangeExtension(inFile.FullName, ".zpkgd");
+                SingleFileDriver.WriteFile(outPath, sb.ToString());
+            }
+            else
+            {
+                var    module  = ZbcReader.Read(raw);
+                string zasm    = ZasmWriter.Write(module);
+                string outPath = outFile?.FullName ?? Path.ChangeExtension(inFile.FullName, ".zasm");
+                SingleFileDriver.WriteFile(outPath, zasm);
+            }
         }
         catch (Exception ex) { Console.Error.WriteLine($"error: {ex.Message}"); ctx.ExitCode = 1; }
     });
@@ -117,6 +135,7 @@ rootCmd.SetHandler((InvocationContext ctx) =>
     var dumpAst = ctx.ParseResult.GetValueForOption(dumpAstOpt);
     var dumpIr  = ctx.ParseResult.GetValueForOption(dumpIrOpt);
     ctx.ExitCode = SingleFileDriver.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, jsonOptions);
+    // note: jsonOptions still used for --emit ir / json-zbc / --dump-ir
 });
 
 return await rootCmd.InvokeAsync(args);
@@ -160,7 +179,7 @@ static class SingleFileDriver
         if (diags.PrintAll()) return 1;
 
         // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
-        var stdlibIndex = LocateStdlibIndex(source.FullName, jsonOptions);
+        var stdlibIndex = LocateStdlibIndex(source.FullName);
 
         IrModule irModule;
         try   { irModule = new IrGen(stdlibIndex).Generate(cu); }
@@ -230,14 +249,14 @@ static class SingleFileDriver
     }
 
     /// Walk up from the source file's directory to find artifacts/z42/libs/ and load stdlib.
-    public static StdlibCallIndex LocateStdlibIndex(string sourceFullPath, JsonSerializerOptions jsonOptions)
+    public static StdlibCallIndex LocateStdlibIndex(string sourceFullPath)
     {
         var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
             if (Directory.Exists(candidate))
-                return BuildCommand.BuildStdlibIndex([candidate], jsonOptions);
+                return BuildCommand.BuildStdlibIndex([candidate]);
             dir = dir.Parent;
         }
         return StdlibCallIndex.Empty;

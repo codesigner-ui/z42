@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Z42.IR.BinaryFormat;
 
 namespace Z42.Project;
@@ -87,14 +86,15 @@ public static class ZpkgBuilder
         return (zpkg, writtenPaths);
     }
 
-    /// Serialise <paramref name="zpkg"/> to <c><paramref name="outDir"/>/<paramref name="name"/>.zpkg</c>.
+    /// Serialise <paramref name="zpkg"/> to <c><paramref name="outDir"/>/<paramref name="name"/>.zpkg</c>
+    /// in binary format (ZPK_MAGIC + section directory + sections).
     /// Creates <paramref name="outDir"/> if it does not exist.
     /// Returns the full path of the written file.
-    public static string WriteZpkg(ZpkgFile zpkg, string name, string outDir, JsonSerializerOptions options)
+    public static string WriteZpkg(ZpkgFile zpkg, string name, string outDir)
     {
         Directory.CreateDirectory(outDir);
         string zpkgPath = Path.Combine(outDir, name + ".zpkg");
-        File.WriteAllText(zpkgPath, JsonSerializer.Serialize(zpkg, options));
+        File.WriteAllBytes(zpkgPath, ZpkgWriter.Write(zpkg));
         return zpkgPath;
     }
 

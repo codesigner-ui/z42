@@ -14,23 +14,23 @@ fn empty_imports_returns_empty() {
 
 #[test]
 fn single_import_extracts_two_component_namespace() {
-    assert_eq!(ns(&["z42.core.String.Contains"]), vec!["z42.core"]);
+    assert_eq!(ns(&["Std.IO.Console.WriteLine"]), vec!["Std.IO"]);
 }
 
 #[test]
 fn multiple_imports_same_namespace_deduplicated() {
     assert_eq!(
-        ns(&["z42.core.String.Contains", "z42.core.Assert.Equal"]),
-        vec!["z42.core"]
+        ns(&["Std.IO.Console.WriteLine", "Std.IO.File.ReadText"]),
+        vec!["Std.IO"]
     );
 }
 
 #[test]
 fn imports_from_different_namespaces_all_returned() {
-    let result = ns(&["z42.core.String.Contains", "z42.io.File.ReadText"]);
+    let result = ns(&["Std.IO.File.ReadText", "Std.Math.Math.Abs"]);
     assert_eq!(result.len(), 2);
-    assert!(result.contains(&"z42.core".to_owned()));
-    assert!(result.contains(&"z42.io".to_owned()));
+    assert!(result.contains(&"Std.IO".to_owned()));
+    assert!(result.contains(&"Std.Math".to_owned()));
 }
 
 #[test]
@@ -45,50 +45,116 @@ fn import_with_no_dot_uses_full_name() {
 
 // ── resolve_namespace ─────────────────────────────────────────────────────────
 
+/// Build a minimal binary zpkg (indexed, lib) with a STRS + NSPC section.
+/// Layout: header(16) + dir(sec_count×12) + META + STRS + NSPC sections.
 fn make_fake_zpkg(dir: &Path, filename: &str, namespaces: &[&str]) {
-    let content = serde_json::json!({
-        "name": "test",
-        "version": "0.1.0",
-        "kind": "lib",
-        "mode": "indexed",
-        "namespaces": namespaces,
-        "exports": [],
-        "dependencies": [],
-        "files": [],
-        "modules": []
-    });
-    let path = dir.join(filename);
-    std::fs::write(path, content.to_string()).expect("write test zpkg");
-}
+    use crate::metadata::formats::ZPKG_MAGIC;
 
-fn make_fake_zbc(dir: &Path, filename: &str, namespace: &str) {
-    use crate::metadata::formats::{ZBC_MAGIC, ZBC_VERSION};
-    // Minimal binary zbc: header (16 bytes) + NSPC section
-    let ns_bytes = namespace.as_bytes();
-    let ns_len = ns_bytes.len() as u16;
-    let sec_len = (2 + ns_bytes.len()) as u32;
+    // Build STRS section: one entry per namespace
+    let encoded: Vec<Vec<u8>> = namespaces.iter().map(|s| s.as_bytes().to_vec()).collect();
+    let mut strs_data: Vec<u8> = Vec::new();
+    // count[4]
+    strs_data.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+    // entry table: [offset:u32][len:u32]
+    let mut offset = 0u32;
+    for b in &encoded {
+        strs_data.extend_from_slice(&offset.to_le_bytes());
+        strs_data.extend_from_slice(&(b.len() as u32).to_le_bytes());
+        offset += b.len() as u32;
+    }
+    // raw data
+    for b in &encoded { strs_data.extend_from_slice(b); }
+
+    // Build NSPC section: count[4] + idx[4] per ns
+    let mut nspc_data: Vec<u8> = Vec::new();
+    nspc_data.extend_from_slice(&(namespaces.len() as u32).to_le_bytes());
+    for i in 0u32..namespaces.len() as u32 {
+        nspc_data.extend_from_slice(&i.to_le_bytes());
+    }
+
+    // Build META section: name, version, entry (each u16-len + bytes)
+    let mut meta_data: Vec<u8> = Vec::new();
+    for s in &["test", "0.1.0", ""] {
+        let b = s.as_bytes();
+        meta_data.extend_from_slice(&(b.len() as u16).to_le_bytes());
+        meta_data.extend_from_slice(b);
+    }
+
+    // Assemble: 3 sections (META, STRS, NSPC)
+    let sections: &[(&[u8; 4], &[u8])] = &[
+        (b"META", &meta_data),
+        (b"STRS", &strs_data),
+        (b"NSPC", &nspc_data),
+    ];
+    let sec_count = sections.len() as u16;
+    let header_size: usize = 16;
+    let dir_size: usize = sec_count as usize * 12;
+    let mut next_offset = (header_size + dir_size) as u32;
 
     let mut data: Vec<u8> = Vec::new();
-    // Header: magic[4] + major[2] + minor[2] + flags[2] + reserved[6]
-    data.extend_from_slice(&ZBC_MAGIC);
-    data.extend_from_slice(&ZBC_VERSION[0].to_le_bytes());
-    data.extend_from_slice(&ZBC_VERSION[1].to_le_bytes());
-    data.extend_from_slice(&0u16.to_le_bytes()); // flags = 0 (full)
-    data.extend_from_slice(&[0u8; 6]);           // reserved
-    // NSPC section: tag[4] + len[4] + u16(ns_len) + ns_bytes
-    data.extend_from_slice(b"NSPC");
-    data.extend_from_slice(&sec_len.to_le_bytes());
-    data.extend_from_slice(&ns_len.to_le_bytes());
-    data.extend_from_slice(ns_bytes);
+    // Header: magic[4] + major[2] + minor[2] + flags[2] + sec_count[2] + reserved[4]
+    data.extend_from_slice(&ZPKG_MAGIC);
+    data.extend_from_slice(&0u16.to_le_bytes()); // major
+    data.extend_from_slice(&1u16.to_le_bytes()); // minor
+    data.extend_from_slice(&0u16.to_le_bytes()); // flags: indexed, lib
+    data.extend_from_slice(&sec_count.to_le_bytes());
+    data.extend_from_slice(&0u32.to_le_bytes()); // reserved
 
-    let path = dir.join(filename);
-    std::fs::write(path, &data).expect("write test zbc");
+    // Directory
+    for (tag, sec) in sections {
+        data.extend_from_slice(*tag);
+        data.extend_from_slice(&next_offset.to_le_bytes());
+        data.extend_from_slice(&(sec.len() as u32).to_le_bytes());
+        next_offset += sec.len() as u32;
+    }
+
+    // Section data
+    for (_, sec) in sections { data.extend_from_slice(sec); }
+
+    std::fs::write(dir.join(filename), &data).expect("write test zpkg");
+}
+
+/// Build a minimal binary zbc with just a NSPC section (v0.3 format with directory).
+fn make_fake_zbc(dir: &Path, filename: &str, namespace: &str) {
+    use crate::metadata::formats::ZBC_MAGIC;
+    let ns_bytes = namespace.as_bytes();
+    // NSPC section payload: u16(len) + bytes
+    let nspc_payload: Vec<u8> = {
+        let mut v = Vec::new();
+        v.extend_from_slice(&(ns_bytes.len() as u16).to_le_bytes());
+        v.extend_from_slice(ns_bytes);
+        v
+    };
+
+    let sec_count: u16 = 1;
+    let header_size: usize = 16;
+    let dir_size: usize = sec_count as usize * 12;
+    let sec_offset = (header_size + dir_size) as u32;
+
+    let mut data: Vec<u8> = Vec::new();
+    // Header: magic[4] + major[2] + minor[2] + flags[2] + sec_count[2] + reserved[4]
+    data.extend_from_slice(&ZBC_MAGIC);
+    data.extend_from_slice(&0u16.to_le_bytes()); // major
+    data.extend_from_slice(&3u16.to_le_bytes()); // minor (v0.3)
+    data.extend_from_slice(&0u16.to_le_bytes()); // flags = 0 (full)
+    data.extend_from_slice(&sec_count.to_le_bytes());
+    data.extend_from_slice(&0u32.to_le_bytes()); // reserved
+
+    // Directory: NSPC entry
+    data.extend_from_slice(b"NSPC");
+    data.extend_from_slice(&sec_offset.to_le_bytes());
+    data.extend_from_slice(&(nspc_payload.len() as u32).to_le_bytes());
+
+    // NSPC section data
+    data.extend_from_slice(&nspc_payload);
+
+    std::fs::write(dir.join(filename), &data).expect("write test zbc");
 }
 
 /// resolve_namespace with empty paths returns Ok(None)
 #[test]
 fn test_resolve_namespace_empty_paths() {
-    let result = resolve_namespace("z42.io", &[], &[]);
+    let result = resolve_namespace("Std.IO", &[], &[]);
     assert!(result.is_ok());
     assert!(result.unwrap().is_none());
 }

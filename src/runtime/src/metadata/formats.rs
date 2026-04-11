@@ -17,7 +17,7 @@ pub const ZPKG_MAGIC: [u8; 4] = [0x5A, 0x50, 0x4B, 0x00];
 // ── zbc binary format constants ───────────────────────────────────────────────
 
 /// zbc format version written by this toolchain.
-pub const ZBC_VERSION: [u16; 2] = [0, 2];
+pub const ZBC_VERSION: [u16; 2] = [0, 4];
 
 /// `flags` bit 0: metadata (SIGS/EXPT/IMPT) has been stripped; requires zpkg index.
 pub const ZBC_FLAG_STRIPPED: u16 = 0x01;

@@ -1,4 +1,4 @@
-namespace z42.math;
+namespace Std.Math;
 
 public static class Math {
     // ── Constants ────────────────────────────────────────────────────────────
