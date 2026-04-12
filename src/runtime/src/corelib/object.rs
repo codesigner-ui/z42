@@ -1,24 +1,40 @@
-use crate::metadata::{ObjectData, Value};
+use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
 use anyhow::{bail, Result};
+use std::collections::HashMap;
+use std::sync::Arc;
 use super::convert::{require_str, value_to_str};
 
 // ── Object protocol ───────────────────────────────────────────────────────────
 
-/// Returns a `z42.core.Type` object whose `__name` and `__fullName` fields are
-/// derived from the runtime class tag of the argument object.
+/// Returns a `Std.Type` object with `__name` and `__fullName` derived from
+/// the runtime class of the argument.
 pub fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
     let class_name = match args.first() {
-        Some(Value::Object(rc)) => rc.borrow().class_name.clone(),
+        Some(Value::Object(rc)) => rc.borrow().type_desc.name.clone(),
         Some(Value::Null) => bail!("__obj_get_type: null reference"),
         _ => bail!("__obj_get_type: expected an object"),
     };
     let simple_name = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
-    let mut fields = std::collections::HashMap::new();
-    fields.insert("__name".to_string(),     Value::Str(simple_name));
-    fields.insert("__fullName".to_string(), Value::Str(class_name));
-    Ok(Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ObjectData {
-        class_name: "Std.Type".to_string(),
-        fields,
+
+    // Build a minimal Type object with __name and __fullName slots.
+    let mut field_index = HashMap::new();
+    field_index.insert("__name".to_string(), 0usize);
+    field_index.insert("__fullName".to_string(), 1usize);
+    let type_desc = Arc::new(TypeDesc {
+        name: "Std.Type".to_string(),
+        base_name: None,
+        fields: vec![
+            crate::metadata::FieldSlot { name: "__name".to_string() },
+            crate::metadata::FieldSlot { name: "__fullName".to_string() },
+        ],
+        field_index,
+        vtable: Vec::new(),
+        vtable_index: HashMap::new(),
+    });
+    Ok(Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ScriptObject {
+        type_desc,
+        slots: vec![Value::Str(simple_name), Value::Str(class_name)],
+        native: NativeData::None,
     }))))
 }
 
@@ -46,7 +62,7 @@ pub fn builtin_obj_hash_code(args: &[Value]) -> Result<Value> {
     }
 }
 
-/// Value equality — defaults to reference equality (same as __obj_ref_eq).
+/// Value equality — defaults to reference equality.
 /// args: [this, other]
 pub fn builtin_obj_equals(args: &[Value]) -> Result<Value> {
     let result = match (args.first(), args.get(1)) {
@@ -58,12 +74,12 @@ pub fn builtin_obj_equals(args: &[Value]) -> Result<Value> {
     Ok(Value::Bool(result))
 }
 
-/// Human-readable representation — defaults to the unqualified type name.
+/// Human-readable representation — returns the unqualified type name.
 /// args: [this]
 pub fn builtin_obj_to_str(args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Object(rc)) => {
-            let class_name = rc.borrow().class_name.clone();
+            let class_name = rc.borrow().type_desc.name.clone();
             let simple = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
             Ok(Value::Str(simple))
         }

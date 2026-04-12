@@ -186,14 +186,39 @@ JSON wire format (tag = `"op"`):
 ```
 
 `obj_new` finds the constructor function `ClassName.ClassName` (if it exists) and calls it
-with `[this, ...args]`. The newly allocated object is GC-managed with reference semantics.
-Class descriptors in `IrModule.classes` provide the field layout for zero-initialisation.
+with `[this, ...args]`. The allocated object is a `ScriptObject` with slot-indexed fields.
 
-`v_call` walks the class hierarchy (most-derived first) to dispatch the correct method override.
+`field_get` / `field_set` use pre-computed slot indices from the `TypeDesc` registry (O(1) per
+access). Virtual fields are also dispatched by `field_get` for built-in primitive types:
+- `Value::Str` — `"Length"` returns `I64` (Unicode scalar count, not byte length)
+- `Value::Array` — `"Length"` / `"Count"` returns `I64`
+- `Value::Map` — `"Length"` / `"Count"` returns `I64`
+
+`v_call` dispatches via the pre-computed vtable in `TypeDesc` (O(1)). The vtable is flattened
+at load time: base class methods appear first, derived overrides replace the corresponding slot.
 
 `is_instance` returns `bool` — true if the object's runtime class is `class_name` or a subclass.
+The check walks `TypeDesc.base_name` links in the pre-built registry (O(depth)).
 
 `as_cast` returns the object unchanged if it matches `class_name` (or a subclass), else `null`.
+
+#### ScriptObject / TypeDesc (VM internals)
+
+At load time `build_type_registry` topologically sorts all `ClassDesc` entries and for each
+class pre-computes a `TypeDesc`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | `String` | Fully-qualified class name (e.g. `"Demo.Circle"`) |
+| `base_name` | `Option<String>` | Direct base class name, or `None` |
+| `fields` | `Vec<FieldSlot>` | Flat field list (base fields first) |
+| `field_index` | `HashMap<String, usize>` | Name → slot index (O(1) lookup) |
+| `vtable` | `Vec<(String, String)>` | `(method_name, qualified_func_name)` |
+| `vtable_index` | `HashMap<String, usize>` | Method name → vtable slot (O(1) lookup) |
+
+Each `ScriptObject` instance holds an `Arc<TypeDesc>` (shared across all instances of the same
+class), a `Vec<Value>` of field slots, and a `NativeData` discriminant for built-in backing
+stores (`NativeData::StringBuilder(String)` for `Std.Text.StringBuilder`).
 
 ### Static Fields
 ```

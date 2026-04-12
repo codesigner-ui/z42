@@ -7,7 +7,7 @@
 mod ops;
 
 pub use crate::corelib::convert::value_to_str;
-use crate::metadata::{ClassDesc, Function, Instruction, Module, ObjectData, Terminator, Value};
+use crate::metadata::{Function, Instruction, Module, NativeData, ScriptObject, Terminator, TypeDesc, Value};
 use anyhow::{bail, Context, Result};
 use ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
 use std::cell::RefCell;
@@ -416,37 +416,26 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
 
         // ── Objects ──────────────────────────────────────────────────────────
         Instruction::ObjNew { dst, class_name, args } => {
-            // Collect all fields by walking the class inheritance chain bottom-up,
-            // then top-down to get correct shadowing order (derived overrides base).
-            let mut chain: Vec<&ClassDesc> = Vec::new();
-            let mut cur = class_name.as_str();
-            loop {
-                if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
-                    chain.push(desc);
-                    match &desc.base_class {
-                        Some(b) => cur = b.as_str(),
-                        None    => break,
-                    }
-                } else {
-                    break;
-                }
-            }
-            // Merge: base fields first, then derived (derived wins on name collision)
-            let mut fields: HashMap<String, Value> = HashMap::new();
-            for desc in chain.iter().rev() {
-                for f in &desc.fields {
-                    fields.entry(f.name.clone()).or_insert(Value::Null);
-                }
-            }
+            // Look up the pre-built TypeDesc for this class.
+            let type_desc = module.type_registry
+                .get(class_name)
+                .cloned()
+                .unwrap_or_else(|| {
+                    // Fallback: build a minimal TypeDesc for classes loaded without registry
+                    // (e.g. stdlib stubs that arrive pre-merged).
+                    std::sync::Arc::new(make_fallback_type_desc(module, class_name))
+                });
 
-            let obj_rc = Rc::new(RefCell::new(ObjectData {
-                class_name: class_name.clone(),
-                fields,
+            let slots = vec![Value::Null; type_desc.fields.len()];
+            let obj_rc = Rc::new(RefCell::new(ScriptObject {
+                type_desc,
+                slots,
+                native: NativeData::None,
             }));
             let obj_val = Value::Object(obj_rc);
 
             // Call constructor: "{qualified_class_name}.{simple_class_name}"
-            let simple_name = class_name.split('.').last().unwrap_or(class_name.as_str());
+            let simple_name = class_name.split('.').next_back().unwrap_or(class_name.as_str());
             let ctor_name = format!("{}.{}", class_name, simple_name);
             if let Some(ctor) = module.functions.iter().find(|f| f.name == ctor_name) {
                 let mut ctor_args = vec![obj_val.clone()];
@@ -459,13 +448,30 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
 
         Instruction::FieldGet { dst, obj, field_name } => {
             let val = match frame.get(*obj)? {
-                Value::Object(rc) => rc
-                    .borrow()
-                    .fields
-                    .get(field_name)
-                    .cloned()
-                    .unwrap_or(Value::Null),
-                other => bail!("FieldGet: expected object, got {:?}", other),
+                Value::Object(rc) => {
+                    let borrowed = rc.borrow();
+                    if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
+                        borrowed.slots.get(slot).cloned().unwrap_or(Value::Null)
+                    } else {
+                        Value::Null
+                    }
+                }
+                // Virtual fields on primitive string (CoreCLR: string.m_StringLength)
+                Value::Str(s) => match field_name.as_str() {
+                    "Length" => Value::I64(s.chars().count() as i64),
+                    other    => bail!("string has no field `{}`", other),
+                },
+                // Virtual fields on arrays / lists
+                Value::Array(rc) => match field_name.as_str() {
+                    "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
+                    other => bail!("array has no field `{}`", other),
+                },
+                // Virtual fields on dict/map
+                Value::Map(rc) => match field_name.as_str() {
+                    "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
+                    other => bail!("map has no field `{}`", other),
+                },
+                other => bail!("FieldGet: not an object or known value type, got {:?}", other),
             };
             frame.set(*dst, val);
         }
@@ -474,32 +480,44 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
             let v = frame.get(*val)?.clone();
             match frame.get(*obj)? {
                 Value::Object(rc) => {
-                    rc.borrow_mut().fields.insert(field_name.clone(), v);
+                    let mut borrowed = rc.borrow_mut();
+                    if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
+                        if slot < borrowed.slots.len() {
+                            borrowed.slots[slot] = v;
+                        }
+                    }
+                    // Silently ignore writes to unknown fields (e.g. during ctor on partial TypeDesc)
                 }
                 other => bail!("FieldSet: expected object, got {:?}", other),
             }
         }
 
         Instruction::VCall { dst, obj, method, args } => {
-            // Get the runtime class of `obj`
-            let class_name = match frame.get(*obj)? {
-                Value::Object(rc) => rc.borrow().class_name.clone(),
+            // O(1) vtable dispatch using pre-computed TypeDesc.
+            let (type_desc, obj_val) = match frame.get(*obj)? {
+                Value::Object(rc) => (rc.borrow().type_desc.clone(), frame.get(*obj)?.clone()),
                 other => bail!("VCall: expected object, got {:?}", other),
             };
-            // Walk the class hierarchy to find the most-derived implementation
-            let func = resolve_virtual(module, &class_name, method)?;
-            let obj_val = frame.get(*obj)?.clone();
+            let func_name = if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
+                type_desc.vtable[slot].1.clone()
+            } else {
+                // Fallback: walk module functions (handles stdlib stubs without full TypeDesc)
+                resolve_virtual(module, &type_desc.name, method)?.name.clone()
+            };
+            let callee = module.functions.iter()
+                .find(|f| f.name == func_name)
+                .with_context(|| format!("VCall: function `{}` not found", func_name))?;
             let mut call_args = vec![obj_val];
             call_args.extend(collect_args(&frame.regs, args)?);
-            let ret = exec_function(module, func, &call_args)?;
+            let ret = exec_function(module, callee, &call_args)?;
             frame.set(*dst, ret.unwrap_or(Value::Null));
         }
 
         Instruction::IsInstance { dst, obj, class_name } => {
             let result = match frame.get(*obj)? {
                 Value::Object(rc) => {
-                    let runtime_class = rc.borrow().class_name.clone();
-                    is_subclass_or_eq(module, &runtime_class, class_name)
+                    let runtime_class = rc.borrow().type_desc.name.clone();
+                    is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
                 }
                 Value::Null => false,
                 _ => false,
@@ -511,8 +529,8 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
             let val = frame.get(*obj)?.clone();
             let is_match = match &val {
                 Value::Object(rc) => {
-                    let runtime_class = rc.borrow().class_name.clone();
-                    is_subclass_or_eq(module, &runtime_class, class_name)
+                    let runtime_class = rc.borrow().type_desc.name.clone();
+                    is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
                 }
                 Value::Null => true, // null as T = null
                 _ => false,
@@ -531,21 +549,23 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
     Ok(())
 }
 
-/// Returns true if `derived` equals `target` or is a subclass of `target`
-/// (walks the inheritance chain).
-fn is_subclass_or_eq(module: &Module, derived: &str, target: &str) -> bool {
+/// Returns true if `derived` equals `target` or is a subclass via the TypeDesc registry.
+fn is_subclass_or_eq_td(
+    registry: &HashMap<String, std::sync::Arc<TypeDesc>>,
+    derived: &str,
+    target: &str,
+) -> bool {
     let mut cur = derived;
     loop {
         if cur == target { return true; }
-        match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {
+        match registry.get(cur).and_then(|td| td.base_name.as_deref()) {
             Some(base) => cur = base,
             None => return false,
         }
     }
 }
 
-/// Walk the class hierarchy starting at `class_name` to find the first function
-/// named `{class}.{method}`. Returns an error if no implementation is found.
+/// Fallback linear walk used when TypeDesc is missing (e.g. stdlib stubs).
 fn resolve_virtual<'m>(module: &'m Module, class_name: &str, method: &str) -> Result<&'m Function> {
     let mut cur = class_name;
     loop {
@@ -553,10 +573,46 @@ fn resolve_virtual<'m>(module: &'m Module, class_name: &str, method: &str) -> Re
         if let Some(f) = module.functions.iter().find(|f| f.name == qualified) {
             return Ok(f);
         }
-        // Walk to base class
         match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {
             Some(base) => cur = base,
-            None => bail!("VCall: no implementation of `{}` found in class hierarchy of `{}`", method, class_name),
+            None => bail!("VCall: no implementation of `{}` in hierarchy of `{}`", method, class_name),
         }
+    }
+}
+
+/// Build a minimal TypeDesc from the ClassDesc chain — used when the registry
+/// is absent (merged stdlib modules arrive without pre-built TypeDesc).
+fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
+    use crate::metadata::FieldSlot;
+    let mut fields: Vec<FieldSlot> = Vec::new();
+    let mut base_name: Option<String> = None;
+    let mut cur = class_name;
+    let mut chain: Vec<&crate::metadata::ClassDesc> = Vec::new();
+    loop {
+        if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
+            chain.push(desc);
+            match &desc.base_class {
+                Some(b) => { base_name = Some(b.clone()); cur = b.as_str(); }
+                None    => break,
+            }
+        } else {
+            break;
+        }
+    }
+    for desc in chain.iter().rev() {
+        for f in &desc.fields {
+            if !fields.iter().any(|s: &FieldSlot| s.name == f.name) {
+                fields.push(FieldSlot { name: f.name.clone() });
+            }
+        }
+    }
+    let field_index = fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
+    TypeDesc {
+        name: class_name.to_string(),
+        base_name,
+        fields,
+        field_index,
+        vtable: Vec::new(),
+        vtable_index: HashMap::new(),
     }
 }

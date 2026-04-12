@@ -16,7 +16,9 @@ pub mod loader;
 pub mod merge;
 
 // Re-exports: runtime value types
-pub use types::{ExecMode, ObjectData, Value};
+pub use types::{ExecMode, FieldSlot, NativeData, ScriptObject, TypeDesc, Value};
+#[allow(deprecated)]
+pub use types::ObjectData;
 
 // Re-exports: bytecode IR structures
 pub use bytecode::{BasicBlock, ClassDesc, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator};

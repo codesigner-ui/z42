@@ -122,14 +122,6 @@ public sealed partial class IrGen
                 return dst;
             }
 
-            case MemberExpr m when m.Member is "Length" or "Count":
-            {
-                int targetReg = EmitExpr(m.Target);
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, "__len", [targetReg]));
-                return dst;
-            }
-
             // Static field read: ClassName.fieldName
             case MemberExpr m when m.Target is IdentExpr { Name: var clsName }
                 && TryGetStaticFieldKey(clsName, m.Member) is { } sfKey:
@@ -411,10 +403,7 @@ public sealed partial class IrGen
         // non-null path: result = target.member
         StartBlock(nonNullLbl);
         int memberReg = Alloc();
-        if (nc.Member is "Length" or "Count")
-            Emit(new BuiltinInstr(memberReg, "__len", [targetReg]));
-        else
-            Emit(new FieldGetInstr(memberReg, targetReg, nc.Member));
+        Emit(new FieldGetInstr(memberReg, targetReg, nc.Member));
         Emit(new CopyInstr(result, memberReg));
         EndBlock(new BrTerm(endLbl));
 

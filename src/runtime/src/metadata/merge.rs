@@ -39,7 +39,7 @@ pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
         functions.extend(module.functions);
     }
 
-    Ok(Module { name, string_pool, classes, functions })
+    Ok(Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new() })
 }
 
 /// Shift every `ConstStr.idx` inside `functions` by `offset`.

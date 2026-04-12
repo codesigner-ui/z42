@@ -1,5 +1,7 @@
-use super::types::ExecMode;
+use super::types::{ExecMode, TypeDesc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 /// Magic bytes for future binary .z42bc format: "Z42\0"
 pub const MAGIC: [u8; 4] = [0x5A, 0x34, 0x32, 0x00];
@@ -14,6 +16,11 @@ pub struct Module {
     #[serde(default)]
     pub classes: Vec<ClassDesc>,
     pub functions: Vec<Function>,
+    /// Pre-built type descriptor registry — populated by the loader after
+    /// deserialisation, not stored on disk.  Maps fully-qualified class name
+    /// to the corresponding `TypeDesc` (field layout + vtable).
+    #[serde(skip)]
+    pub type_registry: HashMap<String, Arc<TypeDesc>>,
 }
 
 /// Class descriptor — field layout for object allocation.

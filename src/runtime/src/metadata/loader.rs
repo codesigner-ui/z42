@@ -4,13 +4,16 @@
 /// Supported formats:
 ///   `.zbc`  — ZbcFile binary (single source file, full mode)
 ///   `.zpkg` — ZpkgFile binary (project package; packed mode only)
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
 
 use super::bytecode::Module;
 use super::formats::{ZpkgDep, ZBC_MAGIC, ZPKG_MAGIC};
 use super::merge::merge_modules;
+use super::types::{FieldSlot, TypeDesc};
 use super::zbc_reader::{read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces};
 
 /// Result of loading a compiler artifact.
@@ -51,8 +54,10 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
         bail!("not a binary zbc file: `{path}`; expected ZBC magic bytes");
     }
 
-    let module = read_zbc(&raw)
+    let mut module = read_zbc(&raw)
         .with_context(|| format!("cannot parse binary zbc `{path}`"))?;
+
+    build_type_registry(&mut module);
 
     // Extract import namespaces from the module's ConstStr / Call instructions
     // (approximation: namespace = first two components of any external call target)
@@ -80,8 +85,10 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
         .with_context(|| format!("cannot load modules from `{path}`"))?;
 
     let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
-    let module = merge_modules(modules)
+    let mut module = merge_modules(modules)
         .with_context(|| format!("merging modules from `{path}`"))?;
+
+    build_type_registry(&mut module);
 
     Ok(LoadedArtifact {
         module,
@@ -234,6 +241,110 @@ fn infer_namespace(name: &str) -> &str {
             Some(rel) => &name[..first + 1 + rel],
         },
     }
+}
+
+// ── TypeDesc registry ─────────────────────────────────────────────────────────
+
+/// Pre-build a `TypeDesc` for every class in `module.classes` and store the
+/// results in `module.type_registry`.
+///
+/// Algorithm (CoreCLR-inspired):
+///   1. Topological sort: each class is processed after its base class.
+///   2. Field slots: base fields first (already in base TypeDesc), then derived.
+///   3. vtable: start with base vtable, override entries where derived defines
+///      the same method name, append new methods at the end.
+pub fn build_type_registry(module: &mut Module) {
+    let order = topo_sort_classes(module);
+    let mut registry: HashMap<String, Arc<TypeDesc>> = HashMap::new();
+
+    for class_name in &order {
+        let desc = match module.classes.iter().find(|c| &c.name == class_name) {
+            Some(d) => d,
+            None    => continue,
+        };
+
+        // ── Field slots: base first, then derived (no duplicate names) ────
+        let mut fields: Vec<FieldSlot> = desc.base_class
+            .as_deref()
+            .and_then(|b| registry.get(b))
+            .map(|td| td.fields.clone())
+            .unwrap_or_default();
+
+        for f in &desc.fields {
+            if !fields.iter().any(|s| s.name == f.name) {
+                fields.push(FieldSlot { name: f.name.clone() });
+            }
+        }
+
+        let field_index: HashMap<String, usize> = fields.iter().enumerate()
+            .map(|(i, f)| (f.name.clone(), i))
+            .collect();
+
+        // ── vtable: start from base, override/append for this class ───────
+        let (mut vtable, mut vtable_index): (Vec<(String, String)>, HashMap<String, usize>) =
+            desc.base_class
+                .as_deref()
+                .and_then(|b| registry.get(b))
+                .map(|td| (td.vtable.clone(), td.vtable_index.clone()))
+                .unwrap_or_default();
+
+        // Scan module functions for methods belonging to this class.
+        let prefix = format!("{}.", class_name);
+        for func in &module.functions {
+            if !func.name.starts_with(&prefix) { continue; }
+            let method = &func.name[prefix.len()..];
+            // Skip constructors (same name as class simple name) and __static_init__
+            let simple_name = class_name.split('.').next_back().unwrap_or(class_name.as_str());
+            if method == simple_name || method.starts_with("__") { continue; }
+            // Arity-overloaded names (Method$N) share the base slot with Method
+            let base_method = method.split('$').next().unwrap_or(method);
+            if let Some(&slot) = vtable_index.get(base_method) {
+                vtable[slot] = (base_method.to_string(), func.name.clone());
+            } else {
+                let slot = vtable.len();
+                vtable_index.insert(base_method.to_string(), slot);
+                vtable.push((base_method.to_string(), func.name.clone()));
+            }
+        }
+
+        registry.insert(class_name.clone(), Arc::new(TypeDesc {
+            name: class_name.clone(),
+            base_name: desc.base_class.clone(),
+            fields,
+            field_index,
+            vtable,
+            vtable_index,
+        }));
+    }
+
+    module.type_registry = registry;
+}
+
+/// Return class names in topological order (base before derived).
+fn topo_sort_classes(module: &Module) -> Vec<String> {
+    let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut order: Vec<String> = Vec::new();
+
+    fn visit(
+        name: &str,
+        module: &Module,
+        visited: &mut std::collections::HashSet<String>,
+        order: &mut Vec<String>,
+    ) {
+        if visited.contains(name) { return; }
+        visited.insert(name.to_string());
+        if let Some(desc) = module.classes.iter().find(|c| c.name == name) {
+            if let Some(base) = &desc.base_class {
+                visit(base, module, visited, order);
+            }
+        }
+        order.push(name.to_string());
+    }
+
+    for cls in &module.classes {
+        visit(&cls.name, module, &mut visited, &mut order);
+    }
+    order
 }
 
 #[cfg(test)]

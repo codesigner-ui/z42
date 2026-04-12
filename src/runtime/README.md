@@ -17,10 +17,10 @@
 ### src/metadata/ — IR 元数据与加载层
 | 文件 | 职责 |
 |------|------|
-| `types.rs` | 运行时值类型：`Value`、`ExecMode`、`ObjectData` |
+| `types.rs` | 运行时值类型：`Value`、`ExecMode`；对象模型：`ScriptObject`、`TypeDesc`、`NativeData`、`FieldSlot` |
 | `bytecode.rs` | IR 数据结构：`Module`、`Function`、`Instruction`、`Terminator` |
 | `formats.rs` | `.zbc`/`.zpkg` 磁盘格式数据结构（镜像 C# `PackageTypes.cs`） |
-| `loader.rs` | 统一加载入口：`load_artifact(path)` → `Module` |
+| `loader.rs` | 统一加载入口：`load_artifact(path)` → `Module`；`build_type_registry` 预构建 `TypeDesc` 注册表 |
 | `merge.rs` | 多模块合并：字符串池重映射 + 函数拼接 |
 | `project.rs` | 项目清单类型（`.z42.toml` Rust 侧类型） |
 
@@ -37,10 +37,11 @@
 |------|------|
 | `convert.rs` | `value_to_str`、`require_str/usize`、parse/to_str |
 | `io.rs` | `println`、`print`、`readline`、`concat`、`len` |
-| `string.rs` | `str_substring`、`str_split`、`str_join`、`str_format` 等 |
+| `string.rs` | `str_length`（`__str_length`）、`str_substring`、`str_split`、`str_join`、`str_format` 等 |
 | `math.rs` | `abs`、`max`、`min`、`pow`、`sqrt`、三角函数等 |
 | `collections.rs` | `list_*` / `dict_*` 集合操作 |
 | `fs.rs` | `file_*` / `path_*` / `env_*` / `process_exit` / `time_now_ms` |
+| `string_builder.rs` | `sb_new`/`sb_append`/`sb_append_line`/`sb_to_string`；`NativeData::StringBuilder` 作为后端存储 |
 | `object.rs` | `obj_get_type`、`obj_ref_eq`、`obj_hash_code`、`assert_*` |
 
 ### 桩模块（未实现）

@@ -1,11 +1,26 @@
 namespace Std;
 
 // String class — wraps the built-in `string` primitive type.
-// All instance methods receive `this` (the string value) as the first argument
-// forwarded to the corresponding native builtin.
+//
+// Member access pattern (CoreCLR-inspired):
+//   - `Length` is a native-backed extern property; the VM synthesises its value
+//     from the underlying Value::Str without boxing.
+//   - `IsEmpty` is implemented in z42 script: `Length == 0`.
+//   - All instance methods receive `this` (the string value) as reg 0.
 //
 // Overloaded methods use the $N naming convention in IR (e.g. Substring$1, Substring$2).
 public static class String {
+    // ── Properties ───────────────────────────────────────────────────────────
+
+    // Number of Unicode scalar values (characters) in this string.
+    // Backed by VM virtual field dispatch on Value::Str.
+    [Native("__str_length")]
+    public extern int Length { get; }
+
+    // True when the string contains no characters.
+    // Implemented in z42 script — no VM special-casing needed.
+    public bool IsEmpty { get { return Length == 0; } }
+
     // ── Instance methods (this = reg 0, params = reg 1..) ────────────────────
 
     [Native("__str_contains")]

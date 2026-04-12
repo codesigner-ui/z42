@@ -2,6 +2,13 @@ use crate::metadata::Value;
 use anyhow::{bail, Result};
 use super::convert::{require_str, require_usize, value_to_str};
 
+/// Returns the number of Unicode scalar values (characters) in the string.
+/// args: [this: str]
+pub fn builtin_str_length(args: &[Value]) -> Result<Value> {
+    let s = require_str(args, 0, "__str_length")?;
+    Ok(Value::I64(s.chars().count() as i64))
+}
+
 pub fn builtin_str_substring(args: &[Value]) -> Result<Value> {
     let s     = require_str(args, 0, "__str_substring")?;
     let start = require_usize(args, 1, "__str_substring")?;

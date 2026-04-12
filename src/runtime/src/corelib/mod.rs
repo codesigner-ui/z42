@@ -47,6 +47,7 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__contains", io::builtin_contains);
 
         // ── String ────────────────────────────────────────────────────────────
+        m.insert("__str_length",                string::builtin_str_length);
         m.insert("__str_substring",             string::builtin_str_substring);
         m.insert("__str_contains",              string::builtin_str_contains);
         m.insert("__str_starts_with",           string::builtin_str_starts_with);

@@ -361,12 +361,12 @@ public sealed class IrGenTests
     }
 
     [Fact]
-    public void ArrayLength_EmitsBuiltinLen()
+    public void ArrayLength_EmitsFieldGet()
     {
-        // .Length on an array/string maps to the __len builtin, not ArrayLenInstr
+        // .Length on an array emits FieldGetInstr("Length"), not a __len builtin
         var instrs = All(GenMain("int[] arr = new int[3]; var n = arr.Length;"));
-        instrs.Any(i => i is BuiltinInstr b && b.Name == "__len")
-              .Should().BeTrue(because: "arr.Length should emit __len builtin");
+        instrs.Any(i => i is FieldGetInstr f && f.FieldName == "Length")
+              .Should().BeTrue(because: "arr.Length should emit field_get \"Length\"");
     }
 
     // ── Foreach ───────────────────────────────────────────────────────────────

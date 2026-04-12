@@ -1,13 +1,24 @@
 use super::*;
-use crate::metadata::{ObjectData, Value};
+use crate::metadata::{FieldSlot, NativeData, ScriptObject, TypeDesc, Value};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 fn s(v: &str) -> Value { Value::Str(v.into()) }
 fn i(n: i32) -> Value { Value::I32(n) }
 fn i64(n: i64) -> Value { Value::I64(n) }
 fn obj(class_name: &str) -> Value {
-    Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ObjectData {
-        class_name: class_name.to_string(),
-        fields: std::collections::HashMap::new(),
+    let type_desc = Arc::new(TypeDesc {
+        name: class_name.to_string(),
+        base_name: None,
+        fields: Vec::new(),
+        field_index: HashMap::new(),
+        vtable: Vec::new(),
+        vtable_index: HashMap::new(),
+    });
+    Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ScriptObject {
+        type_desc,
+        slots: Vec::new(),
+        native: NativeData::None,
     })))
 }
 
@@ -135,7 +146,7 @@ fn assert_eq_failure() {
 fn obj_get_type_returns_type_object() {
     let result = exec_builtin("__obj_get_type", &[obj("Foo")]).unwrap();
     match result {
-        Value::Object(rc) => assert_eq!(rc.borrow().class_name, "Std.Type"),
+        Value::Object(rc) => assert_eq!(rc.borrow().type_desc.name, "Std.Type"),
         other => panic!("expected Object, got {:?}", other),
     }
 }
@@ -145,8 +156,8 @@ fn obj_get_type_simple_name_no_namespace() {
     let result = exec_builtin("__obj_get_type", &[obj("Foo")]).unwrap();
     let Value::Object(rc) = result else { panic!("expected Object") };
     let borrow = rc.borrow();
-    assert_eq!(borrow.fields["__name"],     Value::Str("Foo".into()));
-    assert_eq!(borrow.fields["__fullName"], Value::Str("Foo".into()));
+    assert_eq!(borrow.slots[0], Value::Str("Foo".into()));
+    assert_eq!(borrow.slots[1], Value::Str("Foo".into()));
 }
 
 #[test]
@@ -154,8 +165,8 @@ fn obj_get_type_namespaced_class_splits_name() {
     let result = exec_builtin("__obj_get_type", &[obj("geometry.Circle")]).unwrap();
     let Value::Object(rc) = result else { panic!("expected Object") };
     let borrow = rc.borrow();
-    assert_eq!(borrow.fields["__name"],     Value::Str("Circle".into()));
-    assert_eq!(borrow.fields["__fullName"], Value::Str("geometry.Circle".into()));
+    assert_eq!(borrow.slots[0], Value::Str("Circle".into()));
+    assert_eq!(borrow.slots[1], Value::Str("geometry.Circle".into()));
 }
 
 #[test]

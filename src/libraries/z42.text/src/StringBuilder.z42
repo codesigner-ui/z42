@@ -4,18 +4,14 @@ namespace Std.Text;
 //
 // IrGen treats `new StringBuilder()` as a pseudo-class (like List/Dict):
 // it intercepts the constructor and routes it to `__sb_new`, which creates a
-// Value::Object{class_name="Std.Text.StringBuilder", __data: ""} directly.
-// All methods are native-backed for consistent dispatch via the stdlib instance index.
+// ScriptObject with NativeData::StringBuilder("") as its backing store.
+// The internal buffer is NOT accessible as a z42 field (native-isolated).
 //
 // Note: Clear() is intentionally absent in L2.  The naming would conflict with
 // List.Clear() in the IrGen pseudo-class table; it will be added in L3 when
 // the type system can disambiguate call sites.
 public class StringBuilder {
-    private string __data;
-
-    public StringBuilder() {
-        this.__data = "";
-    }
+    public StringBuilder() { }
 
     // Append value and return this for chaining.
     [Native("__sb_append")]

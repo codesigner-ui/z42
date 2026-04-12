@@ -596,7 +596,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
 
     let name = if namespace.is_empty() { "unknown".to_owned() } else { namespace };
     let string_pool = rebuild_string_pool(&pool_raw, &mut functions);
-    Ok(Module { name, string_pool, classes, functions })
+    Ok(Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new() })
 }
 
 // ── zpkg public API ───────────────────────────────────────────────────────────
@@ -769,7 +769,7 @@ fn read_mods_section(
 
         let name = if namespace.is_empty() { "unknown".to_owned() } else { namespace.clone() };
         let string_pool = rebuild_string_pool(pool, &mut functions);
-        result.push((Module { name, string_pool, classes, functions }, namespace));
+        result.push((Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new() }, namespace));
 
         sig_offset += func_count;
         let _ = sig_offset; // used for validation if needed

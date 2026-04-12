@@ -8,7 +8,7 @@
 #![allow(dangerous_implicit_autorefs)]
 
 use crate::corelib::convert::value_to_str;
-use crate::metadata::{ObjectData, Value};
+use crate::metadata::{NativeData, ScriptObject, Value};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -690,28 +690,22 @@ pub unsafe extern "C" fn jit_obj_new(
     let module    = &*ctx_ref.module;
     let frame_ref = &mut *frame;
 
-    // Build fields by walking inheritance chain
-    let mut chain: Vec<&crate::metadata::ClassDesc> = Vec::new();
-    let mut cur = class_name.as_str();
-    loop {
-        if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
-            chain.push(desc);
-            match &desc.base_class {
-                Some(b) => cur = b.as_str(),
-                None    => break,
-            }
-        } else {
-            break;
-        }
-    }
-    let mut fields: HashMap<String, Value> = HashMap::new();
-    for desc in chain.iter().rev() {
-        for f in &desc.fields {
-            fields.entry(f.name.clone()).or_insert(Value::Null);
-        }
-    }
-
-    let obj_rc  = Rc::new(RefCell::new(ObjectData { class_name: class_name.clone(), fields }));
+    // Build ScriptObject using TypeDesc registry (or fallback)
+    let type_desc = module.type_registry
+        .get(&class_name)
+        .cloned()
+        .unwrap_or_else(|| {
+            std::sync::Arc::new(crate::metadata::TypeDesc {
+                name: class_name.clone(),
+                base_name: None,
+                fields: Vec::new(),
+                field_index: HashMap::new(),
+                vtable: Vec::new(),
+                vtable_index: HashMap::new(),
+            })
+        });
+    let slots = vec![Value::Null; type_desc.fields.len()];
+    let obj_rc  = Rc::new(RefCell::new(ScriptObject { type_desc, slots, native: NativeData::None }));
     let obj_val = Value::Object(obj_rc);
 
     // Collect constructor args
@@ -745,7 +739,14 @@ pub unsafe extern "C" fn jit_field_get(
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
         .unwrap_or("<invalid>");
     let val = match &(*frame).regs[obj as usize] {
-        Value::Object(rc) => rc.borrow().fields.get(field_name).cloned().unwrap_or(Value::Null),
+        Value::Object(rc) => {
+            let b = rc.borrow();
+            if let Some(&slot) = b.type_desc.field_index.get(field_name) {
+                b.slots.get(slot).cloned().unwrap_or(Value::Null)
+            } else {
+                Value::Null
+            }
+        }
         other => {
             set_exception(Value::Str(format!("FieldGet: expected object, got {:?}", other)));
             return 1;
@@ -769,7 +770,10 @@ pub unsafe extern "C" fn jit_field_set(
     let v = (*frame).regs[val as usize].clone();
     match &(*frame).regs[obj as usize] {
         Value::Object(rc) => {
-            rc.borrow_mut().fields.insert(field_name, v);
+            let mut b = rc.borrow_mut();
+            if let Some(&slot) = b.type_desc.field_index.get(&field_name) {
+                if slot < b.slots.len() { b.slots[slot] = v; }
+            }
             0
         }
         other => {
@@ -797,7 +801,7 @@ pub unsafe extern "C" fn jit_vcall(
     let frame_ref = &mut *frame;
 
     let class_name = match &frame_ref.regs[obj as usize] {
-        Value::Object(rc) => rc.borrow().class_name.clone(),
+        Value::Object(rc) => rc.borrow().type_desc.name.clone(),
         other => {
             set_exception(Value::Str(format!("VCall: expected object, got {:?}", other)));
             return 1;
@@ -875,7 +879,7 @@ pub unsafe extern "C" fn jit_is_instance(
     let module = &*(*ctx).module;
     let result = match &(*frame).regs[obj as usize] {
         Value::Object(rc) => {
-            let runtime = rc.borrow().class_name.clone();
+            let runtime = rc.borrow().type_desc.name.clone();
             is_subclass_or_eq(module, &runtime, class_name)
         }
         _ => false,
@@ -898,7 +902,7 @@ pub unsafe extern "C" fn jit_as_cast(
     let val    = (*frame).regs[obj as usize].clone();
     let is_match = match &val {
         Value::Object(rc) => {
-            let runtime = rc.borrow().class_name.clone();
+            let runtime = rc.borrow().type_desc.name.clone();
             is_subclass_or_eq(module, &runtime, class_name)
         }
         Value::Null => true,

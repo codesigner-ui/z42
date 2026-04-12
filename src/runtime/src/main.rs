@@ -254,6 +254,7 @@ fn main() -> Result<()> {
         let mut m = z42_vm::metadata::merge_modules(modules)
             .with_context(|| format!("merging modules for `{}`", cli.file))?;
         m.name = user_module_name;
+        z42_vm::metadata::loader::build_type_registry(&mut m);
         m
     };
 

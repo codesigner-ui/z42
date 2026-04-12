@@ -346,12 +346,18 @@ internal static class TopLevelParser
             ExpectKind(ref cursor, TokenKind.RParen);
         }
 
-        // Abstract / extern methods: no body, just a semicolon
+        // Abstract / extern methods: no body — semicolon or property accessor block { get; }
         BlockStmt body;
         if ((isAbstract || isExtern) && cursor.Current.Kind == TokenKind.Semicolon)
         {
             cursor = cursor.Advance();
             body   = new BlockStmt([], start);
+        }
+        else if (isExtern && cursor.Current.Kind == TokenKind.LBrace)
+        {
+            // extern property accessor body: { get; } or { get; set; }
+            SkipAutoPropBody(ref cursor);
+            body = new BlockStmt([], start);
         }
         else if (cursor.Current.Kind == TokenKind.FatArrow)
         {

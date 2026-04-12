@@ -1,19 +1,84 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
-/// Heap-allocated object with named fields and reference semantics.
-#[derive(Debug)]
-pub struct ObjectData {
-    pub class_name: String,
-    pub fields: HashMap<String, Value>,
+// ── TypeDesc — runtime type descriptor ──────────────────────────────────────
+//
+// Equivalent to CoreCLR's MethodTable: pre-built at module load time,
+// shared across all instances of a class via Arc.
+
+/// A single field slot in a class layout (runtime representation).
+#[derive(Debug, Clone)]
+pub struct FieldSlot {
+    pub name: String,
 }
+
+/// Pre-computed runtime type descriptor (CoreCLR MethodTable equivalent).
+///
+/// Built once per class at module load time; instances reference it via `Arc`.
+/// Includes the flattened inheritance chain for both fields and virtual methods.
+#[derive(Debug)]
+pub struct TypeDesc {
+    /// Fully-qualified class name (e.g. `"Demo.Point"`).
+    pub name: String,
+    /// Fully-qualified base class name, if any.
+    pub base_name: Option<String>,
+    /// Field slots in order (base fields first, then derived).
+    pub fields: Vec<FieldSlot>,
+    /// `field_name → slot index` — O(1) field lookup.
+    pub field_index: HashMap<String, usize>,
+    /// Virtual method table: slot → (simple_method_name, qualified_func_name).
+    /// Derived class overrides replace base entries at the same slot index.
+    pub vtable: Vec<(String, String)>,
+    /// `method_name → vtable slot index` — O(1) virtual dispatch.
+    pub vtable_index: HashMap<String, usize>,
+}
+
+// ── NativeData — native backing for built-in class types ────────────────────
+//
+// Analogous to CoreCLR's inline data in String/Array objects.
+// Provides a native backing store for classes that wrap VM primitives.
+
+/// Native backing data for built-in classes.
+///
+/// Used by `ScriptObject` to hold VM-managed state that should not be
+/// directly accessible as a z42 field (i.e. not visible in `slots`).
+#[derive(Debug, Clone)]
+pub enum NativeData {
+    /// No native backing — ordinary user-defined class.
+    None,
+    /// Backing buffer for `Std.Text.StringBuilder`.
+    StringBuilder(String),
+}
+
+// ── ScriptObject — unified managed object ───────────────────────────────────
+//
+// Replaces the old `ObjectData`. Every class instance is represented as a
+// `ScriptObject`, which combines:
+//   1. A type descriptor pointer (Arc<TypeDesc>) — the class identity
+//   2. A flat slot array (Vec<Value>)            — instance fields by index
+//   3. Optional native backing (NativeData)      — for built-in types
+
+/// Heap-allocated managed object with reference semantics (CoreCLR Object equivalent).
+#[derive(Debug)]
+pub struct ScriptObject {
+    /// Type descriptor shared across all instances of this class.
+    pub type_desc: Arc<TypeDesc>,
+    /// Field storage indexed by slot (see `TypeDesc.field_index`).
+    pub slots: Vec<Value>,
+    /// Native backing for built-in types (e.g. StringBuilder buffer).
+    pub native: NativeData,
+}
+
+// ── Value ────────────────────────────────────────────────────────────────────
 
 /// Primitive and heap value types that the VM operates on at runtime.
 ///
-/// `Array` uses `Rc<RefCell<Vec<Value>>>` to give reference semantics with
-/// interior mutability — assigning an array copies the reference, not the data.
-/// `Object` uses `Rc<RefCell<ObjectData>>` for the same reason.
+/// `Array` uses `Rc<RefCell<Vec<Value>>>` for reference semantics with
+/// interior mutability.  `Object` uses `Rc<RefCell<ScriptObject>>` for the
+/// same reason.  `Value::Str` remains a primitive for performance; member
+/// access on strings is handled via virtual field dispatch in the interpreter.
 #[derive(Debug, Clone)]
 pub enum Value {
     I8(i8),
@@ -28,14 +93,15 @@ pub enum Value {
     F64(f64),
     Bool(bool),
     Char(char),
+    /// Immutable string primitive.  `s.Length` → virtual field dispatch in FieldGet.
     Str(String),
     Null,
     /// Heap-allocated dynamic array with reference semantics.
     Array(Rc<RefCell<Vec<Value>>>),
     /// Heap-allocated dictionary with reference semantics (keys serialised to String).
     Map(Rc<RefCell<HashMap<String, Value>>>),
-    /// Heap-allocated user-defined class instance with reference semantics.
-    Object(Rc<RefCell<ObjectData>>),
+    /// Heap-allocated managed class instance with reference semantics.
+    Object(Rc<RefCell<ScriptObject>>),
 }
 
 impl PartialEq for Value {
@@ -80,3 +146,10 @@ impl Default for ExecMode {
         ExecMode::Interp
     }
 }
+
+// ── Backward compatibility alias ─────────────────────────────────────────────
+
+/// Deprecated alias kept so external code using `ObjectData` by name continues
+/// to compile during the transition.  New code should use `ScriptObject`.
+#[deprecated(note = "use ScriptObject instead")]
+pub type ObjectData = ScriptObject;
