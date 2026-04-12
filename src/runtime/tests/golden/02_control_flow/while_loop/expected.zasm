@@ -1,0 +1,36 @@
+.module "ControlFlow"
+
+.func @ControlFlow.Sum  params:1  ret:int  mode:Interp  ; %0=this
+  .block entry
+    %1 = const.i64  0
+    store  @total  %1
+    %2 = const.i64  1
+    store  @i  %2
+    br  cond_0
+
+  .block cond_0
+    %3 = load  @i
+    %4 = le  %3, %0
+    br.cond  %4  body_1  end_2
+
+  .block body_1
+    %5 = load  @total
+    %6 = load  @i
+    %7 = add  %5, %6
+    store  @total  %7
+    %8 = load  @i
+    %9 = const.i64  1
+    %10 = add  %8, %9
+    store  @i  %10
+    br  cond_0
+
+  .block end_2
+    %11 = load  @total
+    ret  %11
+
+.func @ControlFlow.Main  params:0  ret:void  mode:Interp
+  .block entry
+    %0 = const.i64  5
+    %1 = call  @ControlFlow.Sum  %0
+    %2 = call  @Std.IO.Console.WriteLine  %1
+    ret

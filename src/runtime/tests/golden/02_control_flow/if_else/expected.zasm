@@ -1,0 +1,49 @@
+.module "ControlFlow"
+
+.strings
+  s0  "positive"
+  s1  "negative"
+  s2  "zero"
+
+.func @ControlFlow.Sign  params:1  ret:string  mode:Interp  ; %0=this
+  .block entry
+    %1 = const.i64  0
+    %2 = gt  %0, %1
+    br.cond  %2  then_0  else_1
+
+  .block then_0
+    %3 = const.str  s0          ; "positive"
+    ret  %3
+
+  .block else_1
+    %4 = const.i64  0
+    %5 = lt  %0, %4
+    br.cond  %5  then_3  else_4
+
+  .block then_3
+    %6 = const.str  s1          ; "negative"
+    ret  %6
+
+  .block else_4
+    %7 = const.str  s2          ; "zero"
+    ret  %7
+
+  .block end_5
+    br  end_2
+
+  .block end_2
+    ret
+
+.func @ControlFlow.Main  params:0  ret:void  mode:Interp
+  .block entry
+    %0 = const.i64  1
+    %1 = call  @ControlFlow.Sign  %0
+    %2 = call  @Std.IO.Console.WriteLine  %1
+    %3 = const.i64  3
+    %4 = neg  %3
+    %5 = call  @ControlFlow.Sign  %4
+    %6 = call  @Std.IO.Console.WriteLine  %5
+    %7 = const.i64  0
+    %8 = call  @ControlFlow.Sign  %7
+    %9 = call  @Std.IO.Console.WriteLine  %8
+    ret

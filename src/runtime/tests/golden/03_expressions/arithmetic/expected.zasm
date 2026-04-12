@@ -1,0 +1,29 @@
+.module "Expr"
+
+.func @Expr.Fib  params:1  ret:int  mode:Interp  ; %0=this
+  .block entry
+    %1 = const.i64  1
+    %2 = le  %0, %1
+    br.cond  %2  then_0  end_1
+
+  .block then_0
+    ret  %0
+
+  .block end_1
+    %3 = const.i64  1
+    %4 = sub  %0, %3
+    %5 = call  @Expr.Fib  %4
+    %6 = const.i64  2
+    %7 = sub  %0, %6
+    %8 = call  @Expr.Fib  %7
+    %9 = add  %5, %8
+    ret  %9
+
+.func @Expr.Main  params:0  ret:void  mode:Interp
+  .block entry
+    %0 = const.i64  7
+    %1 = call  @Expr.Fib  %0
+    store  @result  %1
+    %2 = load  @result
+    %3 = call  @Std.IO.Console.WriteLine  %2
+    ret

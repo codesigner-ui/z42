@@ -16,7 +16,6 @@ namespace Z42.IR.BinaryFormat;
 ///     s1  "world"
 ///
 ///   .func @Demo.Greet.greet  params:1  ret:str  mode:Interp
-///     .regs 3
 ///     .block entry
 ///       %1 = const.str  s0          ; "Hello, "
 ///       %2 = call  @str.concat  %1, %0
@@ -55,7 +54,12 @@ public static class ZasmWriter
         foreach (var fn in module.Functions)
         {
             sb.AppendLine();
-            sb.AppendLine($".func @{fn.Name}  params:{fn.ParamCount}  ret:{fn.RetType}  mode:{fn.ExecMode}");
+            // Show static keyword and add helpful param comment
+            string staticSuffix = fn.IsStatic ? "  static" : "";
+            string paramComment = !fn.IsStatic && fn.ParamCount > 0
+                ? $"  ; %0=this" + (fn.ParamCount > 1 ? $", %1..%{fn.ParamCount - 1}=params" : "")
+                : "";
+            sb.AppendLine($".func @{fn.Name}  params:{fn.ParamCount}  ret:{fn.RetType}  mode:{fn.ExecMode}{staticSuffix}{paramComment}");
 
             // Exception table (if present)
             if (fn.ExceptionTable is { Count: > 0 })
@@ -69,9 +73,11 @@ public static class ZasmWriter
                 }
             }
 
-            // Blocks
-            foreach (var block in fn.Blocks)
+            // Blocks — separated by blank lines for readability
+            for (int bi = 0; bi < fn.Blocks.Count; bi++)
             {
+                var block = fn.Blocks[bi];
+                if (bi > 0) sb.AppendLine();  // blank line between blocks
                 sb.AppendLine($"  .block {block.Label}");
                 foreach (var instr in block.Instructions)
                     sb.AppendLine("    " + FormatInstr(instr, module.StringPool));
@@ -125,7 +131,8 @@ public static class ZasmWriter
 
             CallInstr    i => $"%{i.Dst} = call  @{i.Func}{FormatArgList(i.Args)}",
             BuiltinInstr i => $"%{i.Dst} = builtin  {i.Name}{FormatArgList(i.Args)}",
-            VCallInstr   i => $"%{i.Dst} = v_call  @{i.Method}  %{i.Obj}{FormatArgList(i.Args)}",
+            // Virtual call: %dst = v_call %obj.Method  args — reads like an instance method call
+            VCallInstr   i => $"%{i.Dst} = v_call  %{i.Obj}.{i.Method}{FormatArgList(i.Args)}",
 
             FieldGetInstr  i => $"%{i.Dst} = field.get  %{i.Obj}  @{i.FieldName}",
             FieldSetInstr  i => $"field.set  %{i.Obj}  @{i.FieldName}  %{i.Val}",

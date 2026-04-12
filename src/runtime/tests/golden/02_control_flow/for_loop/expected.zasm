@@ -1,0 +1,28 @@
+.module "ControlFlow"
+
+.func @ControlFlow.Main  params:0  ret:void  mode:Interp
+  .block entry
+    %0 = const.i64  0
+    store  @i  %0
+    br  cond_0
+
+  .block cond_0
+    %1 = load  @i
+    %2 = const.i64  3
+    %3 = lt  %1, %2
+    br.cond  %3  body_1  end_3
+
+  .block body_1
+    %4 = load  @i
+    %5 = call  @Std.IO.Console.WriteLine  %4
+    br  incr_2
+
+  .block incr_2
+    %6 = load  @i
+    %7 = const.i64  1
+    %8 = add  %6, %7
+    store  @i  %8
+    br  cond_0
+
+  .block end_3
+    ret
