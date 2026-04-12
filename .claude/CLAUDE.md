@@ -57,7 +57,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 ## 实现计划
 
-见 `docs/roadmap.md`。当前焦点：**M2 TypeChecker L1 全覆盖 → M3 IR Codegen L1 全覆盖**。
+见 `docs/roadmap.md`。当前焦点：**L2 阶段：M6（工程支持 + 测试体系 + 错误码）→ M7（VM 元数据 + 标准库）**。
 
 ## 协作工作流（必须遵守）
 

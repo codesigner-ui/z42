@@ -13,8 +13,8 @@
 
 | 阶段 | 目标 | 状态 |
 |------|------|------|
-| **L1** | C# 基础子集，跑通完整 pipeline（源码 → IR → VM 执行） | 🚧 进行中 |
-| **L2** | 基础设施完善（编译、工程、测试、VM 质量、标准库） | 📋 待开始 |
+| **L1** | C# 基础子集，跑通完整 pipeline（源码 → IR → VM 执行） | ✅ 已完成 |
+| **L2** | 基础设施完善（编译、工程、测试、VM 质量、标准库） | 🚧 进行中 |
 | **L3** | 高级语法扩展（泛型、Lambda、异步 + z42 特有特性） | 📋 待开始 |
 
 > 阶段严格串行：L1 pipeline 全通 → 启动 L2；L2 全完成 → 启动 L3。
@@ -64,9 +64,9 @@
 | `extern` + `[Native]` InternalCall | ✅ | ✅ | ✅ | ✅ | stdlib interop |
 | stdlib linking (StdlibCallIndex) | — | — | ✅ | ✅ | user code → CallInstr → stdlib stub → builtin |
 | 表达式体方法 `=> expr;` | ✅ | ✅ | ✅ | ✅ | TopLevelParser |
-| `struct` / `record` | ✅ | ✅ | — | — | struct 禁继承/实现接口；record 自动合成ctor |
-| 接口 `interface` | ✅ | ✅ | — | — | |
-| 继承 | ✅ | ✅ | — | — | base(...) 构造器链支持 |
+| `struct` / `record` | ✅ | ✅ | ✅ | ✅ | struct 复用 class 路径；record 自动合成ctor |
+| 接口 `interface` | ✅ | ✅ | ✅ | ✅ | 通过 VCallInstr 实现运行时分发 |
+| 继承 | ✅ | ✅ | ✅ | ✅ | base(...) 构造器链支持 |
 
 ---
 
@@ -144,8 +144,8 @@
 | 里程碑 | 内容 | 所属阶段 | 状态 |
 |--------|------|:-------:|:----:|
 | M1 | Lexer + Parser | L1 | ✅ |
-| M2 | TypeChecker（L1 特性全覆盖） | L1 → L2 | 🚧 |
-| M3 | IR Codegen → `.z42bc`（L1 特性全覆盖） | L1 → L2 | 📋 |
+| M2 | TypeChecker（L1 特性全覆盖） | L1 → L2 | ✅ |
+| M3 | IR Codegen → `.z42bc`（L1 特性全覆盖） | L1 → L2 | ✅ |
 | M4 | VM Interpreter（L1 特性全覆盖） | L1 | ✅ |
 | M5 | VM JIT（Cranelift，L1 特性） | L1 → L2 | ✅ |
 | M6 | 工程支持 + 测试体系 + `.z42bc` 格式稳定 | L2 | 📋 |
@@ -154,4 +154,4 @@
 | M9 | VM AOT（LLVM/inkwell） | L3 | 📋 |
 | M10 | 自举（Self-hosting） | L3+ | 📋 |
 
-**当前焦点：M3（IR Codegen L1 全覆盖）→ M6（工程支持 + 测试体系）**
+**当前焦点：M6（工程支持 + 测试体系 + 错误码体系）→ M7（VM 元数据 + 标准库）**

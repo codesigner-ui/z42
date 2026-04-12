@@ -1,1 +1,1 @@
-*source.z42*: error Z0402: *argument 1: expected `int`, got `string`*
+*source.z42*: error E0402: *argument 1: expected `int`, got `string`*

@@ -9,7 +9,7 @@ public enum DiagnosticSeverity { Error, Warning, Info }
 /// </summary>
 public sealed record Diagnostic(
     DiagnosticSeverity Severity,
-    string             Code,      // e.g. "Z0001"
+    string             Code,      // e.g. "E0001"
     string             Message,
     Span               Span
 )
@@ -34,42 +34,42 @@ public sealed record Diagnostic(
 
 /// <summary>
 /// Well-known diagnostic codes.
-/// Z01xx — Lexer
-/// Z02xx — Parser / syntax
-/// Z03xx — Features (gated syntax used when disabled)
-/// Z04xx — Type checker
-/// Z05xx — IrGen / code generator
-/// Z09xx — Native / InternalCall
-/// </summary>
+/// E01xx — Lexer
+/// E02xx — Parser / syntax
+/// E03xx — Features (gated syntax used when disabled)
+/// E04xx — Type checker
+/// E05xx — IrGen / code generator
+/// E09xx — Native / InternalCall
+///</summary>
 public static class DiagnosticCodes
 {
     // Lexer
-    public const string UnterminatedString   = "Z0101";
-    public const string InvalidEscape        = "Z0102";
-    public const string InvalidNumericLit    = "Z0103";
+    public const string UnterminatedString   = "E0101";
+    public const string InvalidEscape        = "E0102";
+    public const string InvalidNumericLit    = "E0103";
 
     // Parser
-    public const string UnexpectedToken      = "Z0201";
-    public const string ExpectedToken        = "Z0202";
-    public const string UnexpectedEof        = "Z0203";
-    public const string MissingReturnType    = "Z0204";
-    public const string AmbiguousExpression  = "Z0205";
+    public const string UnexpectedToken      = "E0201";
+    public const string ExpectedToken        = "E0202";
+    public const string UnexpectedEof        = "E0203";
+    public const string MissingReturnType    = "E0204";
+    public const string AmbiguousExpression  = "E0205";
 
     // Feature gates
-    public const string FeatureDisabled      = "Z0301";
+    public const string FeatureDisabled      = "E0301";
 
     // Type checker
-    public const string UndefinedSymbol      = "Z0401";
-    public const string TypeMismatch         = "Z0402";
-    public const string MissingReturn        = "Z0403";
-    public const string AccessViolation      = "Z0404";  // private member accessed from outside class
-    public const string InvalidModifier      = "Z0405";  // illegal modifier (e.g. combined, or on enum member)
-    public const string IntLiteralOutOfRange = "Z0406";  // integer literal exceeds target type's range
+    public const string UndefinedSymbol      = "E0401";
+    public const string TypeMismatch         = "E0402";
+    public const string MissingReturn        = "E0403";
+    public const string AccessViolation      = "E0404";  // private member accessed from outside class
+    public const string InvalidModifier      = "E0405";  // illegal modifier (e.g. combined, or on enum member)
+    public const string IntLiteralOutOfRange = "E0406";  // integer literal exceeds target type's range
 
     // IrGen
-    public const string UnsupportedSyntax    = "Z0501";
+    public const string UnsupportedSyntax    = "E0501";
 
     // Native / InternalCall
-    public const string ExternRequiresNative     = "Z0903"; // extern method missing [Native] attribute
-    public const string NativeRequiresExtern     = "Z0904"; // [Native] attribute on non-extern method
+    public const string ExternRequiresNative     = "E0903"; // extern method missing [Native] attribute
+    public const string NativeRequiresExtern     = "E0904"; // [Native] attribute on non-extern method
 }

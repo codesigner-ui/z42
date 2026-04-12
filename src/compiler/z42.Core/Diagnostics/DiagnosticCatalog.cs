@@ -168,7 +168,7 @@ public static class DiagnosticCatalog
         string? currentPrefix = null;
         foreach (var (code, entry) in All.OrderBy(kv => kv.Key))
         {
-            string prefix = code[..4]; // "Z01x", "Z02x", ...
+            string prefix = code[..4]; // "E010", "E020", ...
             if (prefix != currentPrefix)
             {
                 if (currentPrefix != null) sb.AppendLine();

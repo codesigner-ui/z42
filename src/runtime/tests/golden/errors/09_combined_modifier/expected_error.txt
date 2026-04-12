@@ -1,1 +1,1 @@
-*source.z42*: error Z0201: *cannot combine access modifiers*
+*source.z42*: error E0201: *cannot combine access modifiers*

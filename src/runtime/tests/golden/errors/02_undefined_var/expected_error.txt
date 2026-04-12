@@ -1,1 +1,1 @@
-*source.z42*: error Z0401: *undefinedVar*
+*source.z42*: error E0401: *undefinedVar*

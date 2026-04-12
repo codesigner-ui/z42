@@ -1,1 +1,1 @@
-*source.z42*: error Z0404: *field `count` is private to `Counter`*
+*source.z42*: error E0404: *field `count` is private to `Counter`*

@@ -1,1 +1,1 @@
-*source.z42*: error Z0402: *class `Dog` must implement abstract method*`Speak`*
+*source.z42*: error E0402: *class `Dog` must implement abstract method*`Speak`*
