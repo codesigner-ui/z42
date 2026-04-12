@@ -31,12 +31,17 @@
       "Bash(xargs ls:*)",
       "Bash(./scripts/test-vm.sh interp:*)",
       "Bash(xxd)",
-      "Bash(xxd src/runtime/tests/golden/run/06_string_builtins/source.zbc)"
+      "Bash(xxd src/runtime/tests/golden/run/06_string_builtins/source.zbc)",
+      "Skill(next-phase)",
+      "Skill(next-phase:*)",
+      "Bash(sed -n '465,480p' /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGenExprs.cs)",
+      "Bash(sed -n '615,625p' /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGenExprs.cs)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.io/src",
-      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/01_hello"
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/01_hello",
+      "/private/tmp"
     ]
   }
 }
