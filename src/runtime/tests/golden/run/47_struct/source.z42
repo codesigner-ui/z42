@@ -1,0 +1,48 @@
+namespace Demo;
+
+struct Point {
+    int X;
+    int Y;
+
+    Point(int x, int y) {
+        this.X = x;
+        this.Y = y;
+    }
+
+    int ManhattanDistance(Point other) {
+        int dx = this.X - other.X;
+        int dy = this.Y - other.Y;
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+        return dx + dy;
+    }
+}
+
+struct Color {
+    int R;
+    int G;
+    int B;
+
+    Color(int r, int g, int b) {
+        this.R = r;
+        this.G = g;
+        this.B = b;
+    }
+
+    bool IsGrayscale() {
+        return this.R == this.G && this.G == this.B;
+    }
+}
+
+void Main() {
+    var p1 = new Point(1, 2);
+    var p2 = new Point(4, 6);
+    Console.WriteLine(p1.X);
+    Console.WriteLine(p1.Y);
+    Console.WriteLine(p1.ManhattanDistance(p2));
+
+    var white = new Color(255, 255, 255);
+    var red   = new Color(255, 0, 0);
+    Console.WriteLine(white.IsGrayscale());
+    Console.WriteLine(red.IsGrayscale());
+}

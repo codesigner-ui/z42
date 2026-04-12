@@ -1,0 +1,8 @@
+Hello, Alice!
+Hi, Bob!
+111
+103
+6
+[INFO] started
+[INFO] EVENT
+[DEBUG] check

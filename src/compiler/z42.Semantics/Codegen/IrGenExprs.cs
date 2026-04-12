@@ -191,6 +191,9 @@ public sealed partial class IrGen
             case NewExpr newExpr when newExpr.Type is NamedType nt:
             {
                 var argRegs = newExpr.Args.Select(EmitExpr).ToList();
+                // Expand omitted constructor arguments using default values.
+                string ctorKey = $"{QualifyName(nt.Name)}.{nt.Name}";
+                argRegs = FillDefaults(ctorKey, argRegs);
                 int dst = Alloc();
                 Emit(new ObjNewInstr(dst, QualifyName(nt.Name), argRegs));
                 return dst;
@@ -594,7 +597,11 @@ public sealed partial class IrGen
         {
             int objReg  = EmitExpr(mMethod.Target);
             var argRegs = call.Args.Select(EmitExpr).ToList();
-            // Try to fill defaults using the class name inferred from context (best-effort)
+            // Fill default args: search _classMethods for a class that owns this method
+            // and use its _funcParams entry to expand omitted trailing arguments.
+            var vcallKey = FindVcallParamsKey(mMethod.Member, argRegs.Count);
+            if (vcallKey is not null)
+                argRegs = FillDefaults(vcallKey, argRegs);
             int dst = Alloc();
             Emit(new VCallInstr(dst, objReg, mMethod.Member, argRegs));
             return dst;

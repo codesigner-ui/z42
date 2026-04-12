@@ -418,6 +418,22 @@ public sealed partial class IrGen
         return new IrFunction(initName, 0, "void", "Interp", _blocks);
     }
 
+    /// Finds the _funcParams key for a virtual call to <paramref name="methodName"/> when only
+    /// <paramref name="suppliedArgCount"/> args have been supplied at the call site (default expansion needed).
+    /// Searches _classMethods for any class that has the method and whose _funcParams entry has
+    /// more params than supplied; returns the first match (non-overloaded methods only).
+    internal string? FindVcallParamsKey(string methodName, int suppliedArgCount)
+    {
+        foreach (var (cls, methods) in _classMethods)
+        {
+            if (!methods.Contains(methodName)) continue;
+            string key = $"{cls}.{methodName}";
+            if (_funcParams.TryGetValue(key, out var parms) && parms.Count > suppliedArgCount)
+                return key;
+        }
+        return null;
+    }
+
     /// Returns the qualified static field key "QualName.fieldName" if className is a class and fieldName is a static field.
     internal string? TryGetStaticFieldKey(string className, string fieldName)
     {

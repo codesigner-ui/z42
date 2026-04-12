@@ -1,0 +1,41 @@
+namespace Demo;
+
+string Greet(string name, string greeting = "Hello") {
+    return $"{greeting}, {name}!";
+}
+
+int Add(int a, int b = 10, int c = 100) {
+    return a + b + c;
+}
+
+class Logger {
+    string Prefix;
+
+    Logger(string prefix = "INFO") {
+        this.Prefix = prefix;
+    }
+
+    void Log(string msg, bool uppercase = false) {
+        if (uppercase) {
+            Console.WriteLine($"[{this.Prefix}] {msg.ToUpper()}");
+        } else {
+            Console.WriteLine($"[{this.Prefix}] {msg}");
+        }
+    }
+}
+
+void Main() {
+    Console.WriteLine(Greet("Alice"));
+    Console.WriteLine(Greet("Bob", "Hi"));
+
+    Console.WriteLine(Add(1));
+    Console.WriteLine(Add(1, 2));
+    Console.WriteLine(Add(1, 2, 3));
+
+    var log1 = new Logger();
+    log1.Log("started");
+    log1.Log("event", true);
+
+    var log2 = new Logger("DEBUG");
+    log2.Log("check");
+}
