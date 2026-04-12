@@ -172,6 +172,14 @@ public sealed partial class IrGen
                 return dst;
             }
 
+            // new StringBuilder() → __sb_new builtin (pseudo-class, like List/Dict)
+            case NewExpr when expr is NewExpr { Type: NamedType { Name: "StringBuilder" } }:
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__sb_new", []));
+                return dst;
+            }
+
             // new Dictionary<K,V>() → __dict_new builtin
             case NewExpr newExpr when newExpr.Type is NamedType { Name: "Dictionary" }:
             {

@@ -1,0 +1,34 @@
+namespace Demo;
+using Std.Text;
+
+void Main() {
+    // Basic append and ToString
+    var sb = new StringBuilder();
+    sb.Append("Hello");
+    sb.Append(", ");
+    sb.Append("world");
+    Console.WriteLine(sb.ToString());
+
+    // AppendLine with value
+    var sb2 = new StringBuilder();
+    sb2.AppendLine("line1");
+    sb2.AppendLine("line2");
+    Console.Write(sb2.ToString());
+
+    // Method chaining
+    var sb3 = new StringBuilder();
+    sb3.Append("a").Append("b").Append("c");
+    Console.WriteLine(sb3.ToString());
+
+    // GetLength
+    var sb4 = new StringBuilder();
+    sb4.Append("hello");
+    Console.WriteLine(sb4.GetLength());
+
+    // AppendLine without args
+    var sb5 = new StringBuilder();
+    sb5.Append("x");
+    sb5.AppendLine();
+    sb5.Append("y");
+    Console.WriteLine(sb5.ToString());
+}

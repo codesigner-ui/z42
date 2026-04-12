@@ -1,18 +1,39 @@
 namespace Std.Text;
 
-// Mutable string builder — avoids repeated string allocations.
-// Implemented in z42 using a List<string> internally.
-// TODO(L2): requires List<string> or native __sb_* intrinsics.
+// Mutable string builder — avoids O(n²) repeated allocation from + concatenation.
+//
+// IrGen treats `new StringBuilder()` as a pseudo-class (like List/Dict):
+// it intercepts the constructor and routes it to `__sb_new`, which creates a
+// Value::Object{class_name="Std.Text.StringBuilder", __data: ""} directly.
+// All methods are native-backed for consistent dispatch via the stdlib instance index.
+//
+// Note: Clear() is intentionally absent in L2.  The naming would conflict with
+// List.Clear() in the IrGen pseudo-class table; it will be added in L3 when
+// the type system can disambiguate call sites.
 public class StringBuilder {
-    // TODO(L2): implement using native intrinsics or List<string>.
-    // Placeholder — documents intended API.
-    //
-    // private List<string> _parts;
-    // public StringBuilder() { _parts = new List<string>(); }
-    // public StringBuilder Append(string value) { _parts.Add(value); return this; }
-    // public StringBuilder AppendLine(string value) { _parts.Add(value + "\n"); return this; }
-    // public StringBuilder AppendLine() { _parts.Add("\n"); return this; }
-    // public void Clear() { _parts.Clear(); }
-    // public int Length { get { ... } }
-    // public override string ToString() => string.Join("", _parts);
+    private string __data;
+
+    public StringBuilder() {
+        this.__data = "";
+    }
+
+    // Append value and return this for chaining.
+    [Native("__sb_append")]
+    public extern StringBuilder Append(string value);
+
+    // Append value followed by a newline.
+    [Native("__sb_append_line")]
+    public extern StringBuilder AppendLine(string value);
+
+    // Append only a newline.
+    [Native("__sb_append_newline")]
+    public extern StringBuilder AppendLine();
+
+    // Number of characters currently in the buffer.
+    [Native("__sb_length")]
+    public extern int GetLength();
+
+    // Return the accumulated string.
+    [Native("__sb_to_string")]
+    public extern string ToString();
 }

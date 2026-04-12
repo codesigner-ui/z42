@@ -12,11 +12,13 @@
 ///   `math`        — abs/max/min/pow/sqrt/trig …
 ///   `collections` — list_* / dict_*
 ///   `fs`          — file_* / path_* / env_* / process_exit / time_now_ms
+///   `string_builder` — sb_new/append/append_line/append_newline/length/to_string
 ///   `object`      — obj_get_type / obj_ref_eq / obj_hash_code / assert_*
 
 pub mod convert;
 pub mod io;
 pub mod string;
+pub mod string_builder;
 pub mod math;
 pub mod collections;
 pub mod fs;
@@ -130,6 +132,14 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__env_args",     fs::builtin_env_args);
         m.insert("__process_exit", fs::builtin_process_exit);
         m.insert("__time_now_ms",  fs::builtin_time_now_ms);
+
+        // ── StringBuilder ─────────────────────────────────────────────────────
+        m.insert("__sb_new",            string_builder::builtin_sb_new);
+        m.insert("__sb_append",         string_builder::builtin_sb_append);
+        m.insert("__sb_append_line",    string_builder::builtin_sb_append_line);
+        m.insert("__sb_append_newline", string_builder::builtin_sb_append_newline);
+        m.insert("__sb_length",         string_builder::builtin_sb_length);
+        m.insert("__sb_to_string",      string_builder::builtin_sb_to_string);
 
         // ── Object protocol ───────────────────────────────────────────────────
         m.insert("__obj_get_type",  object::builtin_obj_get_type);

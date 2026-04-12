@@ -100,10 +100,7 @@ public sealed class StdlibCallIndex
                 // of the same name (e.g. Assert.Contains vs String.Contains).
                 if (fn.IsStatic) continue;
 
-                // Object virtual methods (ToString, Equals, GetHashCode, GetType) must
-                // always be dispatched via VCallInstr so user overrides work correctly.
-                // Putting them in the instance index would intercept all object.Method()
-                // calls before virtual dispatch can happen.
+                // Object virtual methods are excluded from instance index (see below).
                 if (shortClass == "Object") continue;
 
                 // Key: "MethodName$<userArity>"  where userArity = paramCount - 1.
@@ -115,6 +112,12 @@ public sealed class StdlibCallIndex
                 string bareMethod = methodPart.Contains('$')
                     ? methodPart[..methodPart.IndexOf('$')]
                     : methodPart;
+
+                // Virtual protocol methods (ToString, Equals, GetHashCode, GetType) must
+                // always be dispatched via VCallInstr so user overrides work correctly.
+                // This applies to ALL stdlib classes, not just Object — e.g.,
+                // StringBuilder.ToString must also go via VCallInstr.
+                if (bareMethod is "ToString" or "Equals" or "GetHashCode" or "GetType") continue;
                 // Already arity-encoded ("Substring$1") → use as-is; bare name → append userArity.
                 string arityKey = methodPart.Contains('$')
                     ? methodPart
