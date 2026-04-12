@@ -235,7 +235,7 @@ internal static class TopLevelParser
             if (cursor.Current.Kind == TokenKind.Semicolon)
             {
                 cursor = cursor.Advance();
-                return new ClassDecl(name, isStruct, isAbstract, isSealed, vis,
+                return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
                     null, [], fields, methods, start);
             }
         }
@@ -295,7 +295,7 @@ internal static class TopLevelParser
             }
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
-        return new ClassDecl(name, isStruct, isAbstract, isSealed, vis,
+        return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
             baseClass, ifaces, fields, methods, start);
     }
 
@@ -328,6 +328,24 @@ internal static class TopLevelParser
 
         var parms = ParseParamList(ref cursor, feat);
 
+        // Constructor initializer: ClassName(...) : base(args)
+        List<Expr>? baseCtorArgs = null;
+        bool isCtor = returnType is VoidType && cursor.Current.Kind == TokenKind.Colon;
+        if (isCtor && cursor.Peek(1) is { Kind: TokenKind.Identifier, Text: "base" })
+        {
+            cursor = cursor.Advance(); // skip ':'
+            cursor = cursor.Advance(); // skip 'base'
+            ExpectKind(ref cursor, TokenKind.LParen);
+            baseCtorArgs = [];
+            while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
+            {
+                baseCtorArgs.Add(ExprParser.Parse(cursor, feat).Unwrap(ref cursor));
+                if (cursor.Current.Kind != TokenKind.Comma) break;
+                cursor = cursor.Advance();
+            }
+            ExpectKind(ref cursor, TokenKind.RParen);
+        }
+
         // Abstract / extern methods: no body, just a semicolon
         BlockStmt body;
         if ((isAbstract || isExtern) && cursor.Current.Kind == TokenKind.Semicolon)
@@ -352,7 +370,8 @@ internal static class TopLevelParser
         }
 
         return new FunctionDecl(name, parms, returnType, body, vis,
-            isStatic, isVirtual, isOverride, isAbstract, isExtern, nativeIntrinsic, start);
+            isStatic, isVirtual, isOverride, isAbstract, isExtern, nativeIntrinsic, start,
+            BaseCtorArgs: baseCtorArgs);
     }
 
     // ── Shared helpers ────────────────────────────────────────────────────────

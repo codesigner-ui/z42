@@ -64,9 +64,9 @@
 | `extern` + `[Native]` InternalCall | ✅ | ✅ | ✅ | ✅ | stdlib interop |
 | stdlib linking (StdlibCallIndex) | — | — | ✅ | ✅ | user code → CallInstr → stdlib stub → builtin |
 | 表达式体方法 `=> expr;` | ✅ | ✅ | ✅ | ✅ | TopLevelParser |
-| `struct` / `record` | ✅ | — | — | — | |
-| 接口 `interface` | ✅ | — | — | — | |
-| 继承 | ✅ | — | — | — | |
+| `struct` / `record` | ✅ | ✅ | — | — | struct 禁继承/实现接口；record 自动合成ctor |
+| 接口 `interface` | ✅ | ✅ | — | — | |
+| 继承 | ✅ | ✅ | — | — | base(...) 构造器链支持 |
 
 ---
 
@@ -154,4 +154,4 @@
 | M9 | VM AOT（LLVM/inkwell） | L3 | 📋 |
 | M10 | 自举（Self-hosting） | L3+ | 📋 |
 
-**当前焦点：M2（TypeChecker L1 全覆盖）→ M3（IR Codegen L1 全覆盖）**
+**当前焦点：M3（IR Codegen L1 全覆盖）→ M6（工程支持 + 测试体系）**

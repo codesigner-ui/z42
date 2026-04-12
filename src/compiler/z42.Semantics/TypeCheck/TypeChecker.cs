@@ -107,6 +107,14 @@ public sealed partial class TypeChecker
         // First pass: collect own fields and methods, separated by IsStatic
         foreach (var cls in cu.Classes)
         {
+            // struct cannot inherit from a base class or implement interfaces
+            if (cls.IsStruct && cls.BaseClass != null)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"struct `{cls.Name}` cannot inherit from a base class", cls.Span);
+            if (cls.IsStruct && cls.Interfaces.Count > 0)
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"struct `{cls.Name}` cannot implement interfaces", cls.Span);
+
             var fields        = new Dictionary<string, Z42Type>();
             var staticFields  = new Dictionary<string, Z42Type>();
             var methods       = new Dictionary<string, Z42FuncType>();

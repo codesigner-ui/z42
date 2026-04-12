@@ -158,7 +158,7 @@ public sealed partial class IrGen
         var staticInit = EmitStaticInit(cu);
         if (staticInit != null) functions.Add(staticInit);
         foreach (var cls in cu.Classes)
-            functions.AddRange(cls.Methods.Select(m => EmitMethod(cls.Name, m)));
+            functions.AddRange(cls.Methods.Where(m => !m.IsAbstract).Select(m => EmitMethod(cls.Name, m)));
         functions.AddRange(cu.Functions.Select(EmitFunction));
         return new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
     }
@@ -216,12 +216,24 @@ public sealed partial class IrGen
         for (int i = 0; i < method.Params.Count; i++)
             _locals[method.Params[i].Name] = i + paramOffset;
 
+        // Emit base constructor call at the start of derived constructors
+        bool isCtor = !isStatic && method.Name == className;
+        if (isCtor && method.BaseCtorArgs is { } baseArgs && _classBaseNames.TryGetValue(QualifyName(className), out var baseQual))
+        {
+            // base ctor IR name: "BaseClass.BaseClass" (unqualified ctor name = class simple name)
+            var baseSimpleName = baseQual.Contains('.') ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
+            var baseCtorIrName = $"{baseQual}.{baseSimpleName}";
+            var argRegs = new List<int> { 0 };  // reg 0 = this
+            argRegs.AddRange(baseArgs.Select(EmitExpr));
+            int dst = Alloc();
+            Emit(new CallInstr(dst, baseCtorIrName, argRegs));
+        }
+
         EmitBlock(method.Body);
 
         if (!_blockEnded)
             EndBlock(new RetTerm(null));
 
-        bool isCtor = !isStatic && method.Name == className;
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         int paramCount = method.Params.Count + paramOffset;

@@ -56,6 +56,7 @@ public sealed record EnumMember(string Name, long? Value, Span Span);
 public sealed record ClassDecl(
     string Name,
     bool IsStruct,
+    bool IsRecord,
     bool IsAbstract,
     bool IsSealed,
     Visibility Visibility,
@@ -88,7 +89,8 @@ public sealed record FunctionDecl(
     bool IsAbstract,
     bool IsExtern,
     string? NativeIntrinsic,
-    Span Span);
+    Span Span,
+    List<Expr>? BaseCtorArgs = null);  // non-null only on constructors with `: base(...)`
 
 public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span);
 
