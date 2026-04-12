@@ -24,6 +24,8 @@ var rootCmd = new RootCommand("z42c — the z42 compiler");
 
 rootCmd.AddCommand(BuildCommand.Create());
 rootCmd.AddCommand(BuildCommand.CreateCheck());
+rootCmd.AddCommand(BuildCommand.CreateRun());
+rootCmd.AddCommand(BuildCommand.CreateClean());
 
 // disasm
 {

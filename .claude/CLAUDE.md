@@ -29,6 +29,8 @@ dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc|zasm] 
 # 运行编译器（项目模式）
 dotnet run --project src/compiler/z42.Driver -- build [<name>.z42.toml] [--release] [--bin <name>]
 dotnet run --project src/compiler/z42.Driver -- check [<name>.z42.toml] [--bin <name>]
+dotnet run --project src/compiler/z42.Driver -- run   [<name>.z42.toml] [--release] [--bin <name>] [--mode interp|jit|aot]
+dotnet run --project src/compiler/z42.Driver -- clean [<name>.z42.toml]
 
 # 其他工具命令
 dotnet run --project src/compiler/z42.Driver -- disasm <file.zbc> [-o <file.zasm>]

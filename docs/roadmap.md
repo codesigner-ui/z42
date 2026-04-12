@@ -83,7 +83,7 @@
 
 ### 工程支持
 - `z42.toml` 项目清单：多 binary target、lib target、依赖声明
-- `build`/`check`/`run`/`clean` 子命令完整
+- `build`/`check`/`run`/`clean` 子命令完整 ✅
 - 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
 
 ### 测试体系
