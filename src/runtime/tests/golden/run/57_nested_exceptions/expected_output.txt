@@ -1,0 +1,10 @@
+outer try
+inner try
+inner caught: inner error
+outer continues
+inner: bubble up
+outer: rethrown
+inner caught: deep
+inner finally
+from helper: helper error
+all done

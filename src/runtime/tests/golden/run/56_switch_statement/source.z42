@@ -1,0 +1,53 @@
+namespace Demo;
+
+string DayName(int day) {
+    switch (day) {
+        case 1:
+            return "Monday";
+        case 2:
+            return "Tuesday";
+        case 3:
+            return "Wednesday";
+        default:
+            return "Other";
+    }
+}
+
+string Grade(int score) {
+    // Switch with ranges via multiple cases falling through to same result
+    switch (score) {
+        case 5:
+            return "A";
+        case 4:
+            return "B";
+        case 3:
+            return "C";
+        default:
+            return "F";
+    }
+}
+
+void Main() {
+    // Basic switch statement
+    Console.WriteLine(DayName(1));
+    Console.WriteLine(DayName(3));
+    Console.WriteLine(DayName(99));
+
+    // Switch with expressions in case
+    Console.WriteLine(Grade(5));
+    Console.WriteLine(Grade(3));
+    Console.WriteLine(Grade(0));
+
+    // Switch on string
+    var lang = "z42";
+    switch (lang) {
+        case "rust":
+            Console.WriteLine("systems");
+        case "z42":
+            Console.WriteLine("hybrid");
+        default:
+            Console.WriteLine("unknown");
+    }
+
+    Console.WriteLine("switch ok");
+}

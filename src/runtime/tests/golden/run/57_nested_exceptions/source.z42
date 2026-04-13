@@ -1,0 +1,55 @@
+namespace Demo;
+
+void Main() {
+    // Nested try/catch: inner catches, outer continues
+    try {
+        Console.WriteLine("outer try");
+        try {
+            Console.WriteLine("inner try");
+            throw "inner error";
+        } catch (Exception e) {
+            Console.WriteLine($"inner caught: {e}");
+        }
+        Console.WriteLine("outer continues");
+    } catch (Exception e) {
+        Console.WriteLine("outer caught (should not reach)");
+    }
+
+    // Nested: inner does NOT catch, outer catches
+    try {
+        try {
+            throw "bubble up";
+        } catch (Exception e) {
+            Console.WriteLine($"inner: {e}");
+            throw "rethrown";
+        }
+    } catch (Exception e) {
+        Console.WriteLine($"outer: {e}");
+    }
+
+    // try/catch/finally combined: finally runs with catch present
+    try {
+        try {
+            throw "deep";
+        } catch (Exception e) {
+            Console.WriteLine($"inner caught: {e}");
+        } finally {
+            Console.WriteLine("inner finally");
+        }
+    } catch (Exception e) {
+        Console.WriteLine("outer should not reach");
+    }
+
+    // Exception in function call
+    try {
+        ThrowHelper();
+    } catch (Exception e) {
+        Console.WriteLine($"from helper: {e}");
+    }
+
+    Console.WriteLine("all done");
+}
+
+void ThrowHelper() {
+    throw "helper error";
+}

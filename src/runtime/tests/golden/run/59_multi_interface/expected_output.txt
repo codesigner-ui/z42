@@ -1,0 +1,6 @@
+[Document: Report]
+title=Report
+[Document: Report]
+title=Report
+doc: Report
+multi interface ok

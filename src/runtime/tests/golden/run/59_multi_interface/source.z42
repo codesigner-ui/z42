@@ -1,0 +1,55 @@
+namespace Demo;
+
+interface IPrintable {
+    string Print();
+}
+
+interface ISerializable {
+    string Serialize();
+}
+
+// Implements two interfaces
+class Document : IPrintable, ISerializable {
+    string Title;
+
+    Document(string title) {
+        this.Title = title;
+    }
+
+    override string Print() {
+        return $"[Document: {this.Title}]";
+    }
+
+    override string Serialize() {
+        return "title=" + this.Title;
+    }
+
+    override string ToString() {
+        return this.Title;
+    }
+}
+
+void PrintIt(IPrintable p) {
+    Console.WriteLine(p.Print());
+}
+
+void SerializeIt(ISerializable s) {
+    Console.WriteLine(s.Serialize());
+}
+
+void Main() {
+    var doc = new Document("Report");
+
+    // Direct method calls
+    Console.WriteLine(doc.Print());
+    Console.WriteLine(doc.Serialize());
+
+    // Through interface-typed parameters (virtual dispatch)
+    PrintIt(doc);
+    SerializeIt(doc);
+
+    // ToString via implicit Object base
+    Console.WriteLine($"doc: {doc}");
+
+    Console.WriteLine("multi interface ok");
+}
