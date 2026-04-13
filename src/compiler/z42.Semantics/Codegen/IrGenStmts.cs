@@ -24,6 +24,11 @@ public sealed partial class IrGen
         {
             case VarDeclStmt v:
                 _mutableVars.Add(v.Name);   // mark as mutable local
+                // Track class instance vars for pseudo-class builtin disambiguation.
+                // Exclude pseudo-classes (List, Dictionary) — they map to Array/Map VM values.
+                if (v.Init is NewExpr { Type: NamedType nt }
+                    && !nt.Name.StartsWith("List") && !nt.Name.StartsWith("Dictionary"))
+                    _classInstanceVars.Add(v.Name);
                 if (v.Init != null)
                 {
                     int reg = EmitExpr(v.Init);

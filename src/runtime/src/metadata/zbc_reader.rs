@@ -26,6 +26,7 @@ const OP_CONST_BOOL: u8  = 0x02;
 const OP_CONST_STR: u8   = 0x03;
 const OP_CONST_NULL: u8  = 0x04;
 const OP_COPY: u8        = 0x05;
+const OP_CONST_CHAR: u8  = 0x08;
 const OP_STORE: u8       = 0x06;
 const OP_LOAD: u8        = 0x07;
 
@@ -385,6 +386,10 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
         OP_CONST_I    => Instruction::ConstI32 { dst, val: c.read_i32()? },
         OP_CONST_F    => Instruction::ConstF64 { dst, val: c.read_f64()? },
         OP_CONST_BOOL => Instruction::ConstBool { dst, val: c.read_u8()? != 0 },
+        OP_CONST_CHAR => {
+            let code_point = c.read_i32()? as u32;
+            Instruction::ConstChar { dst, val: char::from_u32(code_point).unwrap_or('\0') }
+        }
         OP_CONST_NULL => Instruction::ConstNull { dst },
         OP_COPY       => Instruction::Copy { dst, src: c.read_u16()? as u32 },
         OP_STORE      => {

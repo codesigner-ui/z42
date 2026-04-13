@@ -139,6 +139,11 @@ pub unsafe extern "C" fn jit_const_bool(frame: *mut JitFrame, dst: u32, val: u8)
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn jit_const_char(frame: *mut JitFrame, dst: u32, val: i32) {
+    (*frame).regs[dst as usize] = Value::Char(char::from_u32(val as u32).unwrap_or('\0'));
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn jit_const_null(frame: *mut JitFrame, dst: u32) {
     (*frame).regs[dst as usize] = Value::Null;
 }

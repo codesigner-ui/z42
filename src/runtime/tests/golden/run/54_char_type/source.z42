@@ -1,0 +1,21 @@
+namespace Demo;
+
+void Main() {
+    char c = 'A';
+    char d = 'z';
+
+    // char to string via interpolation
+    Console.WriteLine($"char: {c}");
+    Console.WriteLine($"char: {d}");
+
+    // char comparison
+    Assert.True(c == 'A');
+    Assert.True(c != 'B');
+
+    // Escape sequences
+    char newline = '\n';
+    char tab = '\t';
+    Console.WriteLine($"escape ok");
+
+    Console.WriteLine("char type ok");
+}

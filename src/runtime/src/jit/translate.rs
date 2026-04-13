@@ -24,6 +24,7 @@ pub struct HelperIds {
     pub const_i64:      FuncId,
     pub const_f64:      FuncId,
     pub const_bool:     FuncId,
+    pub const_char:     FuncId,
     pub const_null:     FuncId,
     pub const_str:      FuncId,
     pub copy:           FuncId,
@@ -98,6 +99,7 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         const_i64:     decl!("jit_const_i64",  [ptr, i32t, i64t],                    []),
         const_f64:     decl!("jit_const_f64",  [ptr, i32t, f64t],                    []),
         const_bool:    decl!("jit_const_bool", [ptr, i32t, i8t],                     []),
+        const_char:    decl!("jit_const_char", [ptr, i32t, i32t],                    []),
         const_null:    decl!("jit_const_null", [ptr, i32t],                           []),
         const_str:     decl!("jit_const_str",  [ptr, ptr, i32t, i32t],               [i8t]),
         copy:          decl!("jit_copy",       [ptr, i32t, i32t],                    []),
@@ -168,6 +170,7 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::ConstI64  { dst, .. } => Some(*dst),
                 Instruction::ConstF64  { dst, .. } => Some(*dst),
                 Instruction::ConstBool { dst, .. } => Some(*dst),
+                Instruction::ConstChar { dst, .. } => Some(*dst),
                 Instruction::ConstNull { dst }      => Some(*dst),
                 Instruction::Copy      { dst, .. }  => Some(*dst),
                 Instruction::Add       { dst, .. }  => Some(*dst),
@@ -281,6 +284,7 @@ pub fn translate_function(
     let hr_const_i64     = imp!(helper_ids.const_i64);
     let hr_const_f64     = imp!(helper_ids.const_f64);
     let hr_const_bool    = imp!(helper_ids.const_bool);
+    let hr_const_char    = imp!(helper_ids.const_char);
     let hr_const_null    = imp!(helper_ids.const_null);
     let hr_const_str     = imp!(helper_ids.const_str);
     let hr_copy          = imp!(helper_ids.copy);
@@ -428,6 +432,10 @@ pub fn translate_function(
                 Instruction::ConstBool { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I8, if *val { 1 } else { 0 });
                     builder.ins().call(hr_const_bool, &[frame_val, d, v]);
+                }
+                Instruction::ConstChar { dst, val } => {
+                    let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i32 as i64);
+                    builder.ins().call(hr_const_char, &[frame_val, d, v]);
                 }
                 Instruction::ConstNull { dst } => {
                     let d = ri!(*dst);

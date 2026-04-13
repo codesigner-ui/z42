@@ -12,6 +12,7 @@ public static class Opcodes
     public const byte Copy      = 0x05;
     public const byte Store     = 0x06;  // store to named mutable variable slot
     public const byte Load      = 0x07;  // load from named mutable variable slot
+    public const byte ConstChar = 0x08;
 
     // ── Arithmetic & Logic (0x10–0x1F) ────────────────────────────────────────
     public const byte Add    = 0x10;

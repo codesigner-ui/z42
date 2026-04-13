@@ -62,6 +62,9 @@ public sealed partial class IrGen
     private int _nextLabelId;
     private Dictionary<string, int> _locals = new();  // parameter name → register
     private HashSet<string> _mutableVars = new();     // local variable names (use Load/Store)
+    // Variables known to hold class instances (set when `var x = new ClassName(...)` is emitted).
+    // Used to disambiguate pseudo-class builtin dispatch (List.Add vs UserClass.Add).
+    private HashSet<string> _classInstanceVars = new();
     // Instance field names for the current class method (enables implicit `this.field` access)
     private HashSet<string> _instanceFields = new();
     private List<IrBlock> _blocks = new();
@@ -208,7 +211,8 @@ public sealed partial class IrGen
         _locals         = isStatic
             ? new Dictionary<string, int>()
             : new Dictionary<string, int> { ["this"] = 0 };
-        _mutableVars    = new HashSet<string>();
+        _mutableVars      = new HashSet<string>();
+        _classInstanceVars = new HashSet<string>();
         _blocks         = new List<IrBlock>();
         _exceptionTable = new List<IrExceptionEntry>();
         _loopStack      = new Stack<(string, string)>();
@@ -264,7 +268,8 @@ public sealed partial class IrGen
         _nextReg        = fn.Params.Count;
         _nextLabelId    = 0;
         _locals         = new Dictionary<string, int>();
-        _mutableVars    = new HashSet<string>();
+        _mutableVars      = new HashSet<string>();
+        _classInstanceVars = new HashSet<string>();
         _instanceFields = [];   // top-level functions have no implicit this
         _blocks         = new List<IrBlock>();
         _exceptionTable = new List<IrExceptionEntry>();
@@ -385,7 +390,8 @@ public sealed partial class IrGen
         _nextReg        = 0;
         _nextLabelId    = 0;
         _locals         = new Dictionary<string, int>();
-        _mutableVars    = new HashSet<string>();
+        _mutableVars      = new HashSet<string>();
+        _classInstanceVars = new HashSet<string>();
         _instanceFields = [];
         _blocks         = new List<IrBlock>();
         _exceptionTable = [];
@@ -423,6 +429,27 @@ public sealed partial class IrGen
         EndBlock(new RetTerm(null));
         string initName = QualifyName("__static_init__");
         return new IrFunction(initName, 0, "void", "Interp", _blocks);
+    }
+
+    /// Returns true if the receiver expression is known to be a user-defined class instance
+    /// (not a List/Array/Dict pseudo-class). Used to prevent pseudo-class builtin interception
+    /// for methods like Add/Remove/Contains on class instances.
+    internal bool IsReceiverClassInstance(Expr target, string methodName)
+    {
+        if (target is IdentExpr id)
+        {
+            // `this.Method(...)` — check current class
+            if (id.Name == "this" && _currentClassName != null)
+            {
+                var qcls = QualifyName(_currentClassName);
+                return _classMethods.TryGetValue(qcls, out var ms)
+                    && (ms.Contains(methodName) || ms.Any(m => m.StartsWith(methodName + "$")));
+            }
+            // `varName.Method(...)` — check if variable was assigned from `new ClassName(...)`
+            if (_classInstanceVars.Contains(id.Name))
+                return true;
+        }
+        return false;
     }
 
     /// Finds the _funcParams key for a virtual call to <paramref name="methodName"/> when only

@@ -56,6 +56,7 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(ConstI64Instr),  "const_i64")]
 [JsonDerivedType(typeof(ConstF64Instr),  "const_f64")]
 [JsonDerivedType(typeof(ConstBoolInstr), "const_bool")]
+[JsonDerivedType(typeof(ConstCharInstr), "const_char")]
 [JsonDerivedType(typeof(ConstNullInstr), "const_null")]
 [JsonDerivedType(typeof(CopyInstr),      "copy")]
 [JsonDerivedType(typeof(StrConcatInstr), "str_concat")]
@@ -105,6 +106,7 @@ public sealed record ConstI32Instr(int Dst, int Val)         : IrInstr;
 public sealed record ConstI64Instr(int Dst, long Val)        : IrInstr;
 public sealed record ConstF64Instr(int Dst, double Val)      : IrInstr;
 public sealed record ConstBoolInstr(int Dst, bool Val)       : IrInstr;
+public sealed record ConstCharInstr(int Dst, char Val)       : IrInstr;
 /// Loads a null value into Dst.
 public sealed record ConstNullInstr(int Dst)                 : IrInstr;
 /// Copies the value of register Src into Dst.

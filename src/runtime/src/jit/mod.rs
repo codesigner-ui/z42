@@ -84,6 +84,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     reg!("jit_const_i64",     helpers::jit_const_i64);
     reg!("jit_const_f64",     helpers::jit_const_f64);
     reg!("jit_const_bool",    helpers::jit_const_bool);
+    reg!("jit_const_char",    helpers::jit_const_char);
     reg!("jit_const_null",    helpers::jit_const_null);
     reg!("jit_const_str",     helpers::jit_const_str);
     reg!("jit_copy",          helpers::jit_copy);

@@ -1,0 +1,71 @@
+namespace Demo;
+
+class Animal {
+    string Name;
+
+    Animal(string name) {
+        this.Name = name;
+    }
+
+    virtual string Speak() {
+        return "...";
+    }
+
+    override string ToString() {
+        return $"{this.Name}: {this.Speak()}";
+    }
+}
+
+class Dog : Animal {
+    Dog(string name) : base(name) {}
+
+    override string Speak() {
+        return "Woof!";
+    }
+}
+
+// 3rd level: GoldenRetriever overrides Dog
+class GoldenRetriever : Dog {
+    GoldenRetriever(string name) : base(name) {}
+
+    override string Speak() {
+        return "Happy woof!";
+    }
+}
+
+// 3rd level: Puppy does NOT override Speak — inherits Dog's
+class Puppy : Dog {
+    Puppy(string name) : base(name) {}
+}
+
+void PrintAnimal(Animal a) {
+    // VCall dispatches through vtable — should pick the most-derived override
+    Console.WriteLine(a.ToString());
+}
+
+void Main() {
+    var a = new Animal("Generic");
+    var d = new Dog("Rex");
+    var g = new GoldenRetriever("Buddy");
+    var p = new Puppy("Tiny");
+
+    // Direct calls
+    Console.WriteLine(a.Speak());
+    Console.WriteLine(d.Speak());
+    Console.WriteLine(g.Speak());
+    Console.WriteLine(p.Speak());   // inherits Dog.Speak
+
+    // Virtual dispatch through base type
+    PrintAnimal(a);
+    PrintAnimal(d);
+    PrintAnimal(g);
+    PrintAnimal(p);
+
+    // is / as on deep hierarchy
+    Assert.True(g is Animal);
+    Assert.True(g is Dog);
+    Assert.True(p is Dog);
+    Assert.False(p is GoldenRetriever);
+
+    Console.WriteLine("multilevel ok");
+}

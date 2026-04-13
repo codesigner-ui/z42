@@ -204,6 +204,7 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),
         Instruction::ConstF64  { dst, val } => frame.set(*dst, Value::F64(*val)),
         Instruction::ConstBool { dst, val } => frame.set(*dst, Value::Bool(*val)),
+        Instruction::ConstChar { dst, val } => frame.set(*dst, Value::Char(*val)),
         Instruction::ConstNull { dst }      => frame.set(*dst, Value::Null),
         Instruction::Copy      { dst, src } => frame.set(*dst, frame.get(*src)?.clone()),
 

@@ -1,0 +1,4 @@
+char: A
+char: z
+escape ok
+char type ok

@@ -58,6 +58,7 @@ entry:
 %r = const.i32  <value>
 %r = const.f64  <value>
 %r = const.bool true|false
+%r = const.char '<char>'
 %r = const.str  "<utf8>"
 %r = const.null <type>
 ```

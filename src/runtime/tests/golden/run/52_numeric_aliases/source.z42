@@ -1,0 +1,24 @@
+namespace Demo;
+
+void Main() {
+    // C# numeric type aliases — all map to i32/i64 in the VM.
+    byte b = 255;
+    sbyte sb = -128;
+    short s = -32768;
+    ushort us = 65535;
+    uint u = 100;
+    ulong ul = 200;
+
+    Assert.Equal(255, b);
+    Assert.Equal(-128, sb);
+    Assert.Equal(-32768, s);
+    Assert.Equal(65535, us);
+    Assert.Equal(100, u);
+    Assert.Equal(200, ul);
+
+    // double
+    double d = 2.718;
+    Assert.True(d > 2.7);
+
+    Console.WriteLine("numeric aliases ok");
+}

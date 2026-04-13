@@ -1,0 +1,38 @@
+namespace Demo;
+
+// Top-level expression body function
+int Square(int x) => x * x;
+
+string Greet(string name) => $"Hello, {name}!";
+
+class Calculator {
+    int _base;
+
+    Calculator(int b) {
+        this._base = b;
+    }
+
+    // Instance expression body method
+    int Add(int x) => this._base + x;
+
+    // Static expression body method
+    static int Multiply(int a, int b) => a * b;
+
+    // Expression body with string interpolation
+    override string ToString() => $"Calculator(base={this._base})";
+}
+
+void Main() {
+    // Top-level expression body
+    Assert.Equal(25, Square(5));
+    Assert.Equal(0, Square(0));
+    Console.WriteLine(Greet("z42"));
+
+    // Class expression body methods
+    var calc = new Calculator(10);
+    Assert.Equal(15, calc.Add(5));
+    Assert.Equal(42, Calculator.Multiply(6, 7));
+    Console.WriteLine(calc.ToString());
+
+    Console.WriteLine("expression body ok");
+}

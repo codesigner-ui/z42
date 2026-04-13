@@ -20,6 +20,7 @@ const OP_CONST_BOOL: u8   = 0x02;
 const OP_CONST_STR: u8    = 0x03;
 const OP_CONST_NULL: u8   = 0x04;
 const OP_COPY: u8         = 0x05;
+const OP_CONST_CHAR: u8   = 0x08;
 const OP_STORE: u8        = 0x06;
 const OP_LOAD: u8         = 0x07;
 const OP_ADD: u8          = 0x10;
@@ -578,6 +579,11 @@ fn decode_instr(
         OP_CONST_I    => Instruction::ConstI32  { dst, val: r.i32()? },
         OP_CONST_F    => Instruction::ConstF64  { dst, val: r.f64()? },
         OP_CONST_BOOL => Instruction::ConstBool { dst, val: r.u8()? != 0 },
+        OP_CONST_CHAR => {
+            let code_point = r.i32()? as u32;
+            let val = char::from_u32(code_point).unwrap_or('\0');
+            Instruction::ConstChar { dst, val }
+        }
         OP_CONST_NULL => Instruction::ConstNull { dst },
         OP_COPY       => Instruction::Copy      { dst, src: r.u16()? as u32 },
         OP_STORE => {

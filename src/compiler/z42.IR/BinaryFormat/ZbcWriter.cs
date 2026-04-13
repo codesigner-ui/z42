@@ -390,6 +390,10 @@ public static class ZbcWriter
                 w.Write(Opcodes.ConstBool); w.Write(TypeTags.Bool); w.Write((ushort)i.Dst);
                 w.Write((byte)(i.Val ? 1 : 0));
                 break;
+            case ConstCharInstr i:
+                w.Write(Opcodes.ConstChar); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write((int)i.Val);
+                break;
             case ConstNullInstr i:
                 w.Write(Opcodes.ConstNull); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
                 break;
@@ -589,6 +593,7 @@ public static class ZbcWriter
             case ConstI64Instr i:  v(i.Dst); break;
             case ConstF64Instr i:  v(i.Dst); break;
             case ConstBoolInstr i: v(i.Dst); break;
+            case ConstCharInstr i: v(i.Dst); break;
             case ConstNullInstr i: v(i.Dst); break;
             case CopyInstr i:  v(i.Dst); v(i.Src); break;
             case StoreInstr i: v(i.Src); break;

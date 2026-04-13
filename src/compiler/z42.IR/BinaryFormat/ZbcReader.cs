@@ -338,6 +338,7 @@ public static class ZbcReader
             case Opcodes.ConstI:    return new ConstI32Instr(dst, r.ReadInt32());
             case Opcodes.ConstF:    return new ConstF64Instr(dst, r.ReadDouble());
             case Opcodes.ConstBool: return new ConstBoolInstr(dst, r.ReadByte() != 0);
+            case Opcodes.ConstChar: return new ConstCharInstr(dst, (char)r.ReadInt32());
             case Opcodes.ConstNull: return new ConstNullInstr(dst);
             case Opcodes.Copy:      return new CopyInstr(dst, r.ReadUInt16());
             case Opcodes.Store:

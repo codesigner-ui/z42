@@ -91,6 +91,7 @@ pub enum Instruction {
     ConstI64  { dst: Reg, val: i64 },
     ConstF64  { dst: Reg, val: f64 },
     ConstBool { dst: Reg, val: bool },
+    ConstChar { dst: Reg, val: char },
     ConstNull { dst: Reg },
     Copy      { dst: Reg, src: Reg },
     // Arithmetic

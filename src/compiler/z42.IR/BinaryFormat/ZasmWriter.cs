@@ -100,6 +100,7 @@ public static class ZasmWriter
             ConstI64Instr  i => $"%{i.Dst} = const.i64  {i.Val}",
             ConstF64Instr  i => $"%{i.Dst} = const.f64  {i.Val}",
             ConstBoolInstr i => $"%{i.Dst} = const.bool  {(i.Val ? "true" : "false")}",
+            ConstCharInstr i => $"%{i.Dst} = const.char  '{i.Val}'",
             ConstNullInstr i => $"%{i.Dst} = const.null",
             CopyInstr      i => $"%{i.Dst} = copy  %{i.Src}",
             StoreInstr     i => $"store  @{i.Var}  %{i.Src}",

@@ -8,6 +8,7 @@ pub fn value_to_str(v: &Value) -> String {
         Value::I64(n)  => n.to_string(),
         Value::F64(f)  => f.to_string(),
         Value::Bool(b) => b.to_string(),
+        Value::Char(c) => c.to_string(),
         Value::Str(s)  => s.clone(),
         Value::Null    => "null".to_string(),
         Value::Array(rc) => {

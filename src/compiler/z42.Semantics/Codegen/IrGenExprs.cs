@@ -49,7 +49,7 @@ public sealed partial class IrGen
             case LitCharExpr c:
             {
                 int dst = Alloc();
-                Emit(new ConstI32Instr(dst, (int)c.Value));
+                Emit(new ConstCharInstr(dst, c.Value));
                 return dst;
             }
             case IdentExpr id:
@@ -563,7 +563,11 @@ public sealed partial class IrGen
                 "Contains"    => "__contains",
                 _             => null
             };
-            if (collBuiltin != null)
+            // Skip builtin dispatch if the receiver is known to be a user-defined class instance.
+            // This prevents user-class methods like Add/Remove/Contains from being
+            // misrouted to pseudo-class builtins (__list_add, __dict_remove, etc.).
+            bool receiverIsClassInstance = IsReceiverClassInstance(collTarget, collMethod);
+            if (collBuiltin != null && !receiverIsClassInstance)
             {
                 int receiverReg = EmitExpr(collTarget);
                 var collArgRegs = new List<int> { receiverReg };
