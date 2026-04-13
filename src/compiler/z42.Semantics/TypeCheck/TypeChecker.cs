@@ -99,21 +99,26 @@ public sealed partial class TypeChecker
         // Pre-register Object's virtual methods and class shape so that:
         //   (a) override validation works for classes implicitly inheriting Object
         //   (b) inherited Object methods (ToString/Equals/GetHashCode) are visible on all classes
+        // Skip if the compilation unit itself defines Object (e.g. z42.core/Object.z42).
+        bool cuDefinesObject = cu.Classes.Any(c => IsObjectClass(c.Name));
         _virtualMethods["Object"] = ["ToString", "Equals", "GetHashCode"];
-        var objectMethods = new Dictionary<string, Z42FuncType>
+        if (!cuDefinesObject)
         {
-            ["ToString"]    = new([], Z42Type.String),
-            ["Equals"]      = new([Z42Type.Object], Z42Type.Bool),
-            ["GetHashCode"] = new([], Z42Type.Int),
-        };
-        _classes["Object"] = new Z42ClassType(
-            "Object",
-            new Dictionary<string, Z42Type>(),
-            objectMethods,
-            new Dictionary<string, Z42Type>(),
-            new Dictionary<string, Z42FuncType>(),
-            new Dictionary<string, Visibility>(),
-            null);
+            var objectMethods = new Dictionary<string, Z42FuncType>
+            {
+                ["ToString"]    = new([], Z42Type.String),
+                ["Equals"]      = new([Z42Type.Object], Z42Type.Bool),
+                ["GetHashCode"] = new([], Z42Type.Int),
+            };
+            _classes["Object"] = new Z42ClassType(
+                "Object",
+                new Dictionary<string, Z42Type>(),
+                objectMethods,
+                new Dictionary<string, Z42Type>(),
+                new Dictionary<string, Z42FuncType>(),
+                new Dictionary<string, Visibility>(),
+                null);
+        }
 
         // Pre-pass: register every class name as an empty stub so that
         // self-referential field types (e.g. `Node next;` inside class Node)
