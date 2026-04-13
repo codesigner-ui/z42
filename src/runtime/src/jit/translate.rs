@@ -127,7 +127,7 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         // jit_load(frame, dst, var_ptr, var_len)   -> u8
         load:          decl!("jit_load",       [ptr, i32t, ptr, i64t],               [i8t]),
         str_concat:    decl!("jit_str_concat", [ptr, i32t, i32t, i32t],              [i8t]),
-        to_str:        decl!("jit_to_str",     [ptr, i32t, i32t],                    []),
+        to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],               [i8t]),
         // jit_call(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8
         call:          decl!("jit_call",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t], [i8t]),
         // jit_builtin(frame, dst, name_ptr, name_len, args_ptr, argc) -> u8
@@ -577,7 +577,8 @@ pub fn translate_function(
                 }
                 Instruction::ToStr { dst, src } => {
                     let d = ri!(*dst); let s = ri!(*src);
-                    builder.ins().call(hr_to_str, &[frame_val, d, s]);
+                    let inst = builder.ins().call(hr_to_str, &[frame_val, ctx_val, d, s]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // Calls

@@ -324,7 +324,7 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
             frame.set(*dst, Value::Str(format!("{}{}", sa, sb)));
         }
         Instruction::ToStr { dst, src } => {
-            let s = value_to_str(frame.get(*src)?);
+            let s = obj_to_string(module, frame.get(*src)?)?;
             frame.set(*dst, Value::Str(s));
         }
 
@@ -493,9 +493,30 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
         }
 
         Instruction::VCall { dst, obj, method, args } => {
+            let obj_val = frame.get(*obj)?.clone();
+            let mut extra_args = collect_args(&frame.regs, args)?;
+
+            // Primitive types: dispatch via builtin name table.
+            let primitive_builtin: Option<&'static str> = match &obj_val {
+                Value::Str(_) => match method.as_str() {
+                    "ToString"    => Some("__str_to_string"),
+                    "Equals"      => Some("__str_equals"),
+                    "GetHashCode" => Some("__str_hash_code"),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(builtin_name) = primitive_builtin {
+                let mut call_args = vec![obj_val];
+                call_args.append(&mut extra_args);
+                let ret = crate::corelib::exec_builtin(builtin_name, &call_args)?;
+                frame.set(*dst, ret);
+                return Ok(());
+            }
+
             // O(1) vtable dispatch using pre-computed TypeDesc.
-            let (type_desc, obj_val) = match frame.get(*obj)? {
-                Value::Object(rc) => (rc.borrow().type_desc.clone(), frame.get(*obj)?.clone()),
+            let type_desc = match &obj_val {
+                Value::Object(rc) => rc.borrow().type_desc.clone(),
                 other => bail!("VCall: expected object, got {:?}", other),
             };
             let func_name = if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
@@ -508,7 +529,7 @@ fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result
                 .find(|f| f.name == func_name)
                 .with_context(|| format!("VCall: function `{}` not found", func_name))?;
             let mut call_args = vec![obj_val];
-            call_args.extend(collect_args(&frame.regs, args)?);
+            call_args.append(&mut extra_args);
             let ret = exec_function(module, callee, &call_args)?;
             frame.set(*dst, ret.unwrap_or(Value::Null));
         }
@@ -563,6 +584,34 @@ fn is_subclass_or_eq_td(
             None => return false,
         }
     }
+}
+
+/// Convert a value to its string representation, respecting `ToString()` overrides on objects.
+///
+/// For `Value::Object` we try to dispatch `ToString` via the vtable. If the class has no
+/// `ToString` method (e.g. it inherits the default from `Std.Object`) we fall back to the
+/// `__obj_to_str` builtin (simple name). All other value types use `value_to_str` directly.
+fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
+    if let Value::Object(rc) = val {
+        let type_desc = rc.borrow().type_desc.clone();
+        // Try vtable first (O(1))
+        let func_name_opt = type_desc.vtable_index.get("ToString")
+            .map(|&slot| type_desc.vtable[slot].1.clone());
+        if let Some(func_name) = func_name_opt {
+            if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
+                let ret = exec_function(module, callee, &[val.clone()])?;
+                return match ret {
+                    Some(Value::Str(s)) => Ok(s),
+                    Some(other)         => Ok(value_to_str(&other)),
+                    None                => Ok(String::new()),
+                };
+            }
+        }
+        // Fallback: builtin obj_to_str (unqualified type name)
+        return crate::corelib::exec_builtin("__obj_to_str", &[val.clone()])
+            .map(|v| match v { Value::Str(s) => s, other => value_to_str(&other) });
+    }
+    Ok(value_to_str(val))
 }
 
 /// Fallback linear walk used when TypeDesc is missing (e.g. stdlib stubs).

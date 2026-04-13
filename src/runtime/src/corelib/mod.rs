@@ -65,6 +65,9 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__str_join",                  string::builtin_str_join);
         m.insert("__str_concat",                string::builtin_str_concat);
         m.insert("__str_format",                string::builtin_str_format);
+        m.insert("__str_to_string",             string::builtin_str_to_string);
+        m.insert("__str_equals",                string::builtin_str_equals);
+        m.insert("__str_hash_code",             string::builtin_str_hash_code);
 
         // ── Parse / convert ───────────────────────────────────────────────────
         m.insert("__long_parse",   convert::builtin_long_parse);

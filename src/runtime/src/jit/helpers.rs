@@ -486,9 +486,42 @@ pub unsafe extern "C" fn jit_str_concat(frame: *mut JitFrame, dst: u32, a: u32, 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_to_str(frame: *mut JitFrame, dst: u32, src: u32) {
-    let s = value_to_str(&(*frame).regs[src as usize]);
-    (*frame).regs[dst as usize] = Value::Str(s);
+pub unsafe extern "C" fn jit_to_str(
+    frame: *mut JitFrame,
+    ctx:   *const JitModuleCtx,
+    dst:   u32,
+    src:   u32,
+) -> u8 {
+    let val = &(*frame).regs[src as usize];
+    if let Value::Object(rc) = val {
+        let type_desc = rc.borrow().type_desc.clone();
+        let func_name_opt = type_desc.vtable_index.get("ToString")
+            .map(|&slot| type_desc.vtable[slot].1.clone());
+        if let Some(func_name) = func_name_opt {
+            let ctx_ref = &*ctx;
+            if let Some(entry) = ctx_ref.fn_entries.get(&func_name) {
+                let mut callee = JitFrame::new(entry.max_reg, &[val.clone()]);
+                let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+                let r = jit_fn(&mut callee, ctx);
+                if r != 0 { return 1; }
+                let s = match callee.ret {
+                    Some(Value::Str(s)) => s,
+                    Some(ref other)     => value_to_str(other),
+                    None                => String::new(),
+                };
+                (*frame).regs[dst as usize] = Value::Str(s);
+                return 0;
+            }
+        }
+        // Fallback: builtin __obj_to_str
+        match crate::corelib::exec_builtin("__obj_to_str", &[val.clone()]) {
+            Ok(v) => { (*frame).regs[dst as usize] = Value::Str(match v { Value::Str(s) => s, ref o => value_to_str(o) }); }
+            Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+        }
+    } else {
+        (*frame).regs[dst as usize] = Value::Str(value_to_str(val));
+    }
+    0
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -800,7 +833,30 @@ pub unsafe extern "C" fn jit_vcall(
     let module    = &*ctx_ref.module;
     let frame_ref = &mut *frame;
 
-    let class_name = match &frame_ref.regs[obj as usize] {
+    let obj_val = frame_ref.regs[obj as usize].clone();
+    let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
+    let mut extra_args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
+
+    // Primitive types: dispatch via builtin name table.
+    let primitive_builtin: Option<&'static str> = match &obj_val {
+        Value::Str(_) => match method {
+            "ToString"    => Some("__str_to_string"),
+            "Equals"      => Some("__str_equals"),
+            "GetHashCode" => Some("__str_hash_code"),
+            _ => None,
+        },
+        _ => None,
+    };
+    if let Some(builtin_name) = primitive_builtin {
+        let mut call_args = vec![obj_val];
+        call_args.append(&mut extra_args);
+        match crate::corelib::exec_builtin(builtin_name, &call_args) {
+            Ok(ret) => { frame_ref.regs[dst as usize] = ret; return 0; }
+            Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+        }
+    }
+
+    let class_name = match &obj_val {
         Value::Object(rc) => rc.borrow().type_desc.name.clone(),
         other => {
             set_exception(Value::Str(format!("VCall: expected object, got {:?}", other)));
@@ -822,10 +878,8 @@ pub unsafe extern "C" fn jit_vcall(
         }
     };
 
-    let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
-    let obj_val  = frame_ref.regs[obj as usize].clone();
     let mut call_args: Vec<Value> = vec![obj_val];
-    call_args.extend(arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()));
+    call_args.append(&mut extra_args);
 
     let mut callee = JitFrame::new(entry.max_reg, &call_args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);

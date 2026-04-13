@@ -1,0 +1,33 @@
+namespace Demo;
+
+class Point {
+    int X;
+    int Y;
+
+    Point(int x, int y) {
+        this.X = x;
+        this.Y = y;
+    }
+
+    override string ToString() {
+        return $"({this.X}, {this.Y})";
+    }
+}
+
+void Main() {
+    var p = new Point(3, 4);
+
+    // ToString() override via vtable dispatch
+    Console.WriteLine(p.ToString());
+
+    // String interpolation calls ToStr instruction → vtable dispatch
+    Console.WriteLine($"Point is {p}");
+
+    // String.ToString() returns self
+    string s = "hello";
+    Console.WriteLine(s.ToString());
+
+    // String.Equals() value comparison
+    Console.WriteLine(s.Equals("hello"));
+    Console.WriteLine(s.Equals("world"));
+}

@@ -1,0 +1,5 @@
+(3, 4)
+Point is (3, 4)
+hello
+true
+false

@@ -21,6 +21,20 @@ public static class String {
     // Implemented in z42 script — no VM special-casing needed.
     public bool IsEmpty { get { return Length == 0; } }
 
+    // ── Object protocol overrides ────────────────────────────────────────────
+
+    // Returns the string itself.
+    [Native("__str_to_string")]
+    public extern string ToString();
+
+    // Value equality: compares by content, not reference.
+    [Native("__str_equals")]
+    public extern bool Equals(object? other);
+
+    // FNV-1a hash of the UTF-8 bytes.
+    [Native("__str_hash_code")]
+    public extern int GetHashCode();
+
     // ── Instance methods (this = reg 0, params = reg 1..) ────────────────────
 
     [Native("__str_contains")]

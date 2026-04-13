@@ -158,6 +158,23 @@ JSON wire format:
 {"op": "builtin", "dst": 3, "name": "__list_add",               "args": [0, 1]}
 ```
 
+### String Operations
+```
+%r = str.concat %a, %b          # concatenate two strings
+%r = to_str %src                 # convert any value to its string representation
+```
+
+`to_str` converts a value to string. For `Value::Object`, it dispatches `ToString()` via the
+vtable (same as `v_call %obj.ToString`). If no `ToString` override exists, it falls back to
+the `__obj_to_str` builtin (unqualified type name). All other value types use the built-in
+formatting directly (e.g. `I64` → decimal string, `Bool` → `"true"/"false"`).
+
+JSON wire format:
+```json
+{"op": "str_concat", "dst": 3, "a": 1, "b": 2}
+{"op": "to_str",     "dst": 4, "src": 1}
+```
+
 ### Memory / Ownership
 ```
 %r = alloc  <type>              # heap allocation, returns own<T>
@@ -196,6 +213,12 @@ access). Virtual fields are also dispatched by `field_get` for built-in primitiv
 
 `v_call` dispatches via the pre-computed vtable in `TypeDesc` (O(1)). The vtable is flattened
 at load time: base class methods appear first, derived overrides replace the corresponding slot.
+
+For primitive types that lack a `TypeDesc`, `v_call` dispatches to the built-in name table:
+- `Value::Str` — `ToString` → `__str_to_string`, `Equals` → `__str_equals`, `GetHashCode` → `__str_hash_code`
+
+This allows object-protocol methods (`ToString`/`Equals`/`GetHashCode`) to work uniformly on
+both class instances and primitive string values.
 
 `is_instance` returns `bool` — true if the object's runtime class is `class_name` or a subclass.
 The check walks `TypeDesc.base_name` links in the pre-built registry (O(depth)).

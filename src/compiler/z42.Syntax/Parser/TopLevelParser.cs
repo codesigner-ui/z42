@@ -326,6 +326,15 @@ internal static class TopLevelParser
             name       = ExpectKind(ref cursor, TokenKind.Identifier).Text;
         }
 
+        // Extern property: `extern T Name { get; }` — no parameter list
+        if (isExtern && cursor.Current.Kind == TokenKind.LBrace)
+        {
+            SkipAutoPropBody(ref cursor);
+            return new FunctionDecl(name, [], returnType,
+                new BlockStmt([], start), vis, isStatic, isVirtual, isOverride,
+                isAbstract, isExtern, nativeIntrinsic, start);
+        }
+
         var parms = ParseParamList(ref cursor, feat);
 
         // Constructor initializer: ClassName(...) : base(args)
@@ -346,18 +355,12 @@ internal static class TopLevelParser
             ExpectKind(ref cursor, TokenKind.RParen);
         }
 
-        // Abstract / extern methods: no body — semicolon or property accessor block { get; }
+        // Abstract / extern methods: no body — semicolon
         BlockStmt body;
         if ((isAbstract || isExtern) && cursor.Current.Kind == TokenKind.Semicolon)
         {
             cursor = cursor.Advance();
             body   = new BlockStmt([], start);
-        }
-        else if (isExtern && cursor.Current.Kind == TokenKind.LBrace)
-        {
-            // extern property accessor body: { get; } or { get; set; }
-            SkipAutoPropBody(ref cursor);
-            body = new BlockStmt([], start);
         }
         else if (cursor.Current.Kind == TokenKind.FatArrow)
         {

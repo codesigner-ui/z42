@@ -120,6 +120,38 @@ pub fn builtin_str_concat(args: &[Value]) -> Result<Value> {
     Ok(Value::Str(out))
 }
 
+// ── Object protocol overrides for string ─────────────────────────────────────
+
+/// string.ToString() — returns the string itself.
+/// args: [this: str]
+pub fn builtin_str_to_string(args: &[Value]) -> Result<Value> {
+    Ok(Value::Str(require_str(args, 0, "__str_to_string")?))
+}
+
+/// string.Equals(other) — value equality.
+/// args: [this: str, other: str | null]
+pub fn builtin_str_equals(args: &[Value]) -> Result<Value> {
+    let a = require_str(args, 0, "__str_equals")?;
+    let result = match args.get(1) {
+        Some(Value::Str(b)) => a == *b,
+        Some(Value::Null) | None => false,
+        _ => false,
+    };
+    Ok(Value::Bool(result))
+}
+
+/// string.GetHashCode() — FNV-1a hash of the UTF-8 bytes.
+/// args: [this: str]
+pub fn builtin_str_hash_code(args: &[Value]) -> Result<Value> {
+    let s = require_str(args, 0, "__str_hash_code")?;
+    let mut hash: u32 = 2_166_136_261;
+    for byte in s.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    Ok(Value::I32((hash & 0x7fff_ffff) as i32))
+}
+
 pub fn builtin_str_format(args: &[Value]) -> Result<Value> {
     if args.is_empty() { return Ok(Value::Str(String::new())); }
     let template = require_str(args, 0, "string.Format")?;
