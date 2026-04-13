@@ -1,18 +1,20 @@
 /// Interpreter backend — tree-walking bytecode execution.
 ///
 /// Implementation is split across submodules:
-/// • mod.rs  — public API, Frame, core execution loop
-/// • ops.rs  — register-level helpers (int_binop, numeric_lt, collect_args, …)
+/// • mod.rs      — public API, Frame, core execution loop
+/// • exec_instr.rs — instruction dispatch (one big match)
+/// • dispatch.rs — object dispatch helpers (vtable, ToString, static fields)
+/// • ops.rs      — register-level helpers (int_binop, numeric_lt, collect_args, …)
 
+mod dispatch;
+mod exec_instr;
 mod ops;
 
 pub use crate::corelib::convert::value_to_str;
-use crate::metadata::{Function, Instruction, Module, NativeData, ScriptObject, Terminator, TypeDesc, Value};
+use crate::metadata::{Function, Module, Terminator, Value};
 use anyhow::{bail, Context, Result};
-use ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 // ── User exception machinery ──────────────────────────────────────────────────
 
@@ -20,22 +22,6 @@ use std::rc::Rc;
 // Populated by `user_throw`, consumed by exception table handler lookup.
 thread_local! {
     static PENDING_EXCEPTION: RefCell<Option<Value>> = const { RefCell::new(None) };
-}
-
-thread_local! {
-    static STATIC_FIELDS: RefCell<HashMap<String, Value>> = RefCell::new(HashMap::new());
-}
-
-fn static_get(field: &str) -> Value {
-    STATIC_FIELDS.with(|sf| sf.borrow().get(field).cloned().unwrap_or(Value::Null))
-}
-
-fn static_set(field: &str, val: Value) {
-    STATIC_FIELDS.with(|sf| { sf.borrow_mut().insert(field.to_string(), val); });
-}
-
-fn static_fields_clear() {
-    STATIC_FIELDS.with(|sf| sf.borrow_mut().clear());
 }
 
 /// Lightweight sentinel: `Send + Sync + 'static` because it carries no payload.
@@ -62,6 +48,8 @@ fn user_exception_take() -> Option<Value> {
     PENDING_EXCEPTION.with(|p| p.borrow_mut().take())
 }
 
+// ── Public entry points ──────────────────────────────────────────────────────
+
 /// Entry point: run a function with the given arguments.
 pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
     exec_function(module, func, args)?;
@@ -70,7 +58,7 @@ pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
 
 /// Run with static init: clears static fields, runs __static_init__ if present, then runs `func`.
 pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
-    static_fields_clear();
+    dispatch::static_fields_clear();
     // Call __static_init__ if it exists
     let init_name = format!("{}.__static_init__", module.name);
     if let Some(init_fn) = module.functions.iter().find(|f| f.name == init_name) {
@@ -80,13 +68,15 @@ pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
     Ok(())
 }
 
-struct Frame {
-    regs: HashMap<u32, Value>,
-    vars: HashMap<String, Value>,  // mutable named variable slots
+// ── Frame ────────────────────────────────────────────────────────────────────
+
+pub(crate) struct Frame {
+    pub regs: HashMap<u32, Value>,
+    pub vars: HashMap<String, Value>,  // mutable named variable slots
 }
 
 impl Frame {
-    fn new(args: &[Value]) -> Self {
+    pub fn new(args: &[Value]) -> Self {
         let mut regs = HashMap::new();
         for (i, v) in args.iter().enumerate() {
             regs.insert(i as u32, v.clone());
@@ -94,23 +84,23 @@ impl Frame {
         Frame { regs, vars: HashMap::new() }
     }
 
-    fn set(&mut self, reg: u32, val: Value) {
+    pub fn set(&mut self, reg: u32, val: Value) {
         self.regs.insert(reg, val);
     }
 
-    fn get(&self, reg: u32) -> Result<&Value> {
+    pub fn get(&self, reg: u32) -> Result<&Value> {
         self.regs
             .get(&reg)
             .with_context(|| format!("undefined register %{reg}"))
     }
 
-    fn store_var(&mut self, name: &str, reg: u32) -> Result<()> {
+    pub fn store_var(&mut self, name: &str, reg: u32) -> Result<()> {
         let val = self.get(reg)?.clone();
         self.vars.insert(name.to_string(), val);
         Ok(())
     }
 
-    fn load_var(&mut self, dst: u32, name: &str) -> Result<()> {
+    pub fn load_var(&mut self, dst: u32, name: &str) -> Result<()> {
         let val = self.vars
             .get(name)
             .with_context(|| format!("undefined variable `{name}`"))?
@@ -120,7 +110,9 @@ impl Frame {
     }
 }
 
-fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Option<Value>> {
+// ── Core execution loop ──────────────────────────────────────────────────────
+
+pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Option<Value>> {
     let mut frame = Frame::new(args);
     let mut block_idx = 0usize;
 
@@ -131,7 +123,7 @@ fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Opt
             .with_context(|| format!("block index {block_idx} out of range"))?;
 
         for instr in &block.instructions {
-            if let Err(e) = exec_instr(module, &mut frame, instr) {
+            if let Err(e) = exec_instr::exec_instr(module, &mut frame, instr) {
                 if e.is::<UserException>() {
                     if let Some(entry_idx) = find_handler(func, block_idx) {
                         let thrown_val = user_exception_take().unwrap_or(Value::Null);
@@ -188,481 +180,4 @@ fn find_block(func: &Function, label: &str) -> Result<usize> {
         .iter()
         .position(|b| b.label == label)
         .with_context(|| format!("undefined block `{label}`"))
-}
-
-fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<()> {
-    match instr {
-        // ── Constants ────────────────────────────────────────────────────────
-        Instruction::ConstStr { dst, idx } => {
-            let s = module
-                .string_pool
-                .get(*idx as usize)
-                .with_context(|| format!("string pool index {idx} out of range"))?;
-            frame.set(*dst, Value::Str(s.clone()));
-        }
-        Instruction::ConstI32  { dst, val } => frame.set(*dst, Value::I32(*val)),
-        Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),
-        Instruction::ConstF64  { dst, val } => frame.set(*dst, Value::F64(*val)),
-        Instruction::ConstBool { dst, val } => frame.set(*dst, Value::Bool(*val)),
-        Instruction::ConstChar { dst, val } => frame.set(*dst, Value::Char(*val)),
-        Instruction::ConstNull { dst }      => frame.set(*dst, Value::Null),
-        Instruction::Copy      { dst, src } => frame.set(*dst, frame.get(*src)?.clone()),
-
-        // ── Arithmetic ───────────────────────────────────────────────────────
-        Instruction::Add { dst, a, b } => {
-            // String concatenation: if either operand is a string, concat.
-            let result = match (frame.get(*a)?, frame.get(*b)?) {
-                (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
-                (Value::Str(sa), vb)             => Value::Str(format!("{}{}", sa, value_to_str(vb))),
-                (va, Value::Str(sb))             => Value::Str(format!("{}{}", value_to_str(va), sb)),
-                _                                => int_binop(&frame.regs, *a, *b, |x, y| x + y, |x, y| x + y)?,
-            };
-            frame.set(*dst, result);
-        }
-        Instruction::Sub { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x - y, |x, y| x - y)?);
-        }
-        Instruction::Mul { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x * y, |x, y| x * y)?);
-        }
-        Instruction::Div { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x / y, |x, y| x / y)?);
-        }
-        Instruction::Rem { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x % y, |x, y| x % y)?);
-        }
-
-        // ── Comparison ───────────────────────────────────────────────────────
-        Instruction::Eq { dst, a, b } => {
-            let res = frame.get(*a)? == frame.get(*b)?;
-            frame.set(*dst, Value::Bool(res));
-        }
-        Instruction::Ne { dst, a, b } => {
-            let res = frame.get(*a)? != frame.get(*b)?;
-            frame.set(*dst, Value::Bool(res));
-        }
-        Instruction::Lt { dst, a, b } => {
-            let res = numeric_lt(&frame.regs, *a, *b)?;
-            frame.set(*dst, Value::Bool(res));
-        }
-        Instruction::Le { dst, a, b } => {
-            let res = numeric_lt(&frame.regs, *b, *a)?; // LE = NOT (b < a)
-            frame.set(*dst, Value::Bool(!res));
-        }
-        Instruction::Gt { dst, a, b } => {
-            let res = numeric_lt(&frame.regs, *b, *a)?; // GT = b < a
-            frame.set(*dst, Value::Bool(res));
-        }
-        Instruction::Ge { dst, a, b } => {
-            let res = numeric_lt(&frame.regs, *a, *b)?; // GE = NOT (a < b)
-            frame.set(*dst, Value::Bool(!res));
-        }
-
-        // ── Logical ──────────────────────────────────────────────────────────
-        Instruction::And { dst, a, b } => {
-            let va = bool_val(&frame.regs, *a)?;
-            let vb = bool_val(&frame.regs, *b)?;
-            frame.set(*dst, Value::Bool(va && vb));
-        }
-        Instruction::Or { dst, a, b } => {
-            let va = bool_val(&frame.regs, *a)?;
-            let vb = bool_val(&frame.regs, *b)?;
-            frame.set(*dst, Value::Bool(va || vb));
-        }
-        Instruction::Not { dst, src } => {
-            let v = bool_val(&frame.regs, *src)?;
-            frame.set(*dst, Value::Bool(!v));
-        }
-
-        // ── Unary arithmetic ─────────────────────────────────────────────────
-        Instruction::Neg { dst, src } => {
-            let res = match frame.get(*src)? {
-                Value::I32(n) => Value::I32(-n),
-                Value::I64(n) => Value::I64(-n),
-                Value::F64(f) => Value::F64(-f),
-                other => bail!("Neg: expected numeric, got {:?}", other),
-            };
-            frame.set(*dst, res);
-        }
-
-        // ── Bitwise ──────────────────────────────────────────────────────────
-        Instruction::BitAnd { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x & y)?);
-        }
-        Instruction::BitOr { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x | y)?);
-        }
-        Instruction::BitXor { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x ^ y)?);
-        }
-        Instruction::BitNot { dst, src } => {
-            let res = match frame.get(*src)? {
-                Value::I32(n) => Value::I32(!n),
-                Value::I64(n) => Value::I64(!n),
-                other => bail!("BitNot: expected integral, got {:?}", other),
-            };
-            frame.set(*dst, res);
-        }
-        Instruction::Shl { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x << (y & 63))?);
-        }
-        Instruction::Shr { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x >> (y & 63))?);
-        }
-
-        // ── Variable slots ───────────────────────────────────────────────────
-        Instruction::Store { var, src } => {
-            frame.store_var(var, *src)?;
-        }
-        Instruction::Load { dst, var } => {
-            frame.load_var(*dst, var)?;
-        }
-
-        // ── String ───────────────────────────────────────────────────────────
-        Instruction::StrConcat { dst, a, b } => {
-            let sa = str_val(&frame.regs, *a)?;
-            let sb = str_val(&frame.regs, *b)?;
-            frame.set(*dst, Value::Str(format!("{}{}", sa, sb)));
-        }
-        Instruction::ToStr { dst, src } => {
-            let s = obj_to_string(module, frame.get(*src)?)?;
-            frame.set(*dst, Value::Str(s));
-        }
-
-        // ── Calls ────────────────────────────────────────────────────────────
-        Instruction::Call { dst, func: fname, args } => {
-            let arg_vals = collect_args(&frame.regs, args)?;
-            let callee = module
-                .functions
-                .iter()
-                .find(|f| f.name == *fname)
-                .with_context(|| format!("undefined function `{fname}`"))?;
-            let ret = exec_function(module, callee, &arg_vals)?;
-            frame.set(*dst, ret.unwrap_or(Value::Null));
-        }
-
-        Instruction::Builtin { dst, name, args } => {
-            let arg_vals = collect_args(&frame.regs, args)?;
-            let result = crate::corelib::exec_builtin(name, &arg_vals)?;
-            frame.set(*dst, result);
-        }
-
-        // ── Arrays ───────────────────────────────────────────────────────────
-        Instruction::ArrayNew { dst, size } => {
-            let n = to_usize(frame.get(*size)?, "ArrayNew size")?;
-            let arr = Rc::new(RefCell::new(vec![Value::Null; n]));
-            frame.set(*dst, Value::Array(arr));
-        }
-
-        Instruction::ArrayNewLit { dst, elems } => {
-            let vals: Vec<Value> = elems
-                .iter()
-                .map(|r| frame.get(*r).map(|v| v.clone()))
-                .collect::<Result<_>>()?;
-            frame.set(*dst, Value::Array(Rc::new(RefCell::new(vals))));
-        }
-
-        Instruction::ArrayGet { dst, arr, idx } => {
-            // Clone the Rc so the immutable borrow of `frame` is released before `frame.set`.
-            let result = match frame.get(*arr)? {
-                Value::Array(rc) => {
-                    let rc = rc.clone();
-                    let i = to_usize(frame.get(*idx)?, "ArrayGet index")?;
-                    let borrowed = rc.borrow();
-                    if i >= borrowed.len() {
-                        bail!("array index {} out of bounds (len={})", i, borrowed.len());
-                    }
-                    borrowed[i].clone()
-                }
-                Value::Map(rc) => {
-                    let rc = rc.clone();
-                    let key = value_to_str(frame.get(*idx)?);
-                    let borrowed = rc.borrow();
-                    borrowed.get(&key).cloned().unwrap_or(Value::Null)
-                }
-                other => bail!("ArrayGet: expected array or map, got {:?}", other),
-            };
-            frame.set(*dst, result);
-        }
-
-        Instruction::ArraySet { arr, idx, val } => {
-            let v = frame.get(*val)?.clone();
-            // Clone the Rc so the immutable borrow of `frame` is released before interior mutation.
-            match frame.get(*arr)? {
-                Value::Array(rc) => {
-                    let rc = rc.clone();
-                    let i = to_usize(frame.get(*idx)?, "ArraySet index")?;
-                    let mut borrowed = rc.borrow_mut();
-                    if i >= borrowed.len() {
-                        bail!("array index {} out of bounds (len={})", i, borrowed.len());
-                    }
-                    borrowed[i] = v;
-                }
-                Value::Map(rc) => {
-                    let rc = rc.clone();
-                    let key = value_to_str(frame.get(*idx)?);
-                    rc.borrow_mut().insert(key, v);
-                }
-                other => bail!("ArraySet: expected array or map, got {:?}", other),
-            }
-        }
-
-        Instruction::ArrayLen { dst, arr } => {
-            let len = match frame.get(*arr)? {
-                Value::Array(rc) => rc.borrow().len() as i32,
-                other => bail!("ArrayLen: expected array, got {:?}", other),
-            };
-            frame.set(*dst, Value::I32(len));
-        }
-
-        // ── Objects ──────────────────────────────────────────────────────────
-        Instruction::ObjNew { dst, class_name, args } => {
-            // Look up the pre-built TypeDesc for this class.
-            let type_desc = module.type_registry
-                .get(class_name)
-                .cloned()
-                .unwrap_or_else(|| {
-                    // Fallback: build a minimal TypeDesc for classes loaded without registry
-                    // (e.g. stdlib stubs that arrive pre-merged).
-                    std::sync::Arc::new(make_fallback_type_desc(module, class_name))
-                });
-
-            let slots = vec![Value::Null; type_desc.fields.len()];
-            let obj_rc = Rc::new(RefCell::new(ScriptObject {
-                type_desc,
-                slots,
-                native: NativeData::None,
-            }));
-            let obj_val = Value::Object(obj_rc);
-
-            // Call constructor: "{qualified_class_name}.{simple_class_name}"
-            let simple_name = class_name.split('.').next_back().unwrap_or(class_name.as_str());
-            let ctor_name = format!("{}.{}", class_name, simple_name);
-            if let Some(ctor) = module.functions.iter().find(|f| f.name == ctor_name) {
-                let mut ctor_args = vec![obj_val.clone()];
-                ctor_args.extend(collect_args(&frame.regs, args)?);
-                exec_function(module, ctor, &ctor_args)?;
-            }
-
-            frame.set(*dst, obj_val);
-        }
-
-        Instruction::FieldGet { dst, obj, field_name } => {
-            let val = match frame.get(*obj)? {
-                Value::Object(rc) => {
-                    let borrowed = rc.borrow();
-                    if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
-                        borrowed.slots.get(slot).cloned().unwrap_or(Value::Null)
-                    } else {
-                        Value::Null
-                    }
-                }
-                // Virtual fields on primitive string (CoreCLR: string.m_StringLength)
-                Value::Str(s) => match field_name.as_str() {
-                    "Length" => Value::I64(s.chars().count() as i64),
-                    other    => bail!("string has no field `{}`", other),
-                },
-                // Virtual fields on arrays / lists
-                Value::Array(rc) => match field_name.as_str() {
-                    "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
-                    other => bail!("array has no field `{}`", other),
-                },
-                // Virtual fields on dict/map
-                Value::Map(rc) => match field_name.as_str() {
-                    "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
-                    other => bail!("map has no field `{}`", other),
-                },
-                other => bail!("FieldGet: not an object or known value type, got {:?}", other),
-            };
-            frame.set(*dst, val);
-        }
-
-        Instruction::FieldSet { obj, field_name, val } => {
-            let v = frame.get(*val)?.clone();
-            match frame.get(*obj)? {
-                Value::Object(rc) => {
-                    let mut borrowed = rc.borrow_mut();
-                    if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
-                        if slot < borrowed.slots.len() {
-                            borrowed.slots[slot] = v;
-                        }
-                    }
-                    // Silently ignore writes to unknown fields (e.g. during ctor on partial TypeDesc)
-                }
-                other => bail!("FieldSet: expected object, got {:?}", other),
-            }
-        }
-
-        Instruction::VCall { dst, obj, method, args } => {
-            let obj_val = frame.get(*obj)?.clone();
-            let mut extra_args = collect_args(&frame.regs, args)?;
-
-            // Primitive types: dispatch via builtin name table.
-            let primitive_builtin: Option<&'static str> = match &obj_val {
-                Value::Str(_) => match method.as_str() {
-                    "ToString"    => Some("__str_to_string"),
-                    "Equals"      => Some("__str_equals"),
-                    "GetHashCode" => Some("__str_hash_code"),
-                    _ => None,
-                },
-                _ => None,
-            };
-            if let Some(builtin_name) = primitive_builtin {
-                let mut call_args = vec![obj_val];
-                call_args.append(&mut extra_args);
-                let ret = crate::corelib::exec_builtin(builtin_name, &call_args)?;
-                frame.set(*dst, ret);
-                return Ok(());
-            }
-
-            // O(1) vtable dispatch using pre-computed TypeDesc.
-            let type_desc = match &obj_val {
-                Value::Object(rc) => rc.borrow().type_desc.clone(),
-                other => bail!("VCall: expected object, got {:?}", other),
-            };
-            let func_name = if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
-                type_desc.vtable[slot].1.clone()
-            } else {
-                // Fallback: walk module functions (handles stdlib stubs without full TypeDesc)
-                resolve_virtual(module, &type_desc.name, method)?.name.clone()
-            };
-            let callee = module.functions.iter()
-                .find(|f| f.name == func_name)
-                .with_context(|| format!("VCall: function `{}` not found", func_name))?;
-            let mut call_args = vec![obj_val];
-            call_args.append(&mut extra_args);
-            let ret = exec_function(module, callee, &call_args)?;
-            frame.set(*dst, ret.unwrap_or(Value::Null));
-        }
-
-        Instruction::IsInstance { dst, obj, class_name } => {
-            let result = match frame.get(*obj)? {
-                Value::Object(rc) => {
-                    let runtime_class = rc.borrow().type_desc.name.clone();
-                    is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
-                }
-                Value::Null => false,
-                _ => false,
-            };
-            frame.set(*dst, Value::Bool(result));
-        }
-
-        Instruction::AsCast { dst, obj, class_name } => {
-            let val = frame.get(*obj)?.clone();
-            let is_match = match &val {
-                Value::Object(rc) => {
-                    let runtime_class = rc.borrow().type_desc.name.clone();
-                    is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
-                }
-                Value::Null => true, // null as T = null
-                _ => false,
-            };
-            frame.set(*dst, if is_match { val } else { Value::Null });
-        }
-
-        Instruction::StaticGet { dst, field } => {
-            frame.set(*dst, static_get(field));
-        }
-        Instruction::StaticSet { field, val } => {
-            let v = frame.get(*val)?.clone();
-            static_set(field, v);
-        }
-    }
-    Ok(())
-}
-
-/// Returns true if `derived` equals `target` or is a subclass via the TypeDesc registry.
-fn is_subclass_or_eq_td(
-    registry: &HashMap<String, std::sync::Arc<TypeDesc>>,
-    derived: &str,
-    target: &str,
-) -> bool {
-    let mut cur = derived;
-    loop {
-        if cur == target { return true; }
-        match registry.get(cur).and_then(|td| td.base_name.as_deref()) {
-            Some(base) => cur = base,
-            None => return false,
-        }
-    }
-}
-
-/// Convert a value to its string representation, respecting `ToString()` overrides on objects.
-///
-/// For `Value::Object` we try to dispatch `ToString` via the vtable. If the class has no
-/// `ToString` method (e.g. it inherits the default from `Std.Object`) we fall back to the
-/// `__obj_to_str` builtin (simple name). All other value types use `value_to_str` directly.
-fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
-    if let Value::Object(rc) = val {
-        let type_desc = rc.borrow().type_desc.clone();
-        // Try vtable first (O(1))
-        let func_name_opt = type_desc.vtable_index.get("ToString")
-            .map(|&slot| type_desc.vtable[slot].1.clone());
-        if let Some(func_name) = func_name_opt {
-            if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
-                let ret = exec_function(module, callee, &[val.clone()])?;
-                return match ret {
-                    Some(Value::Str(s)) => Ok(s),
-                    Some(other)         => Ok(value_to_str(&other)),
-                    None                => Ok(String::new()),
-                };
-            }
-        }
-        // Fallback: builtin obj_to_str (unqualified type name)
-        return crate::corelib::exec_builtin("__obj_to_str", &[val.clone()])
-            .map(|v| match v { Value::Str(s) => s, other => value_to_str(&other) });
-    }
-    Ok(value_to_str(val))
-}
-
-/// Fallback linear walk used when TypeDesc is missing (e.g. stdlib stubs).
-fn resolve_virtual<'m>(module: &'m Module, class_name: &str, method: &str) -> Result<&'m Function> {
-    let mut cur = class_name;
-    loop {
-        let qualified = format!("{}.{}", cur, method);
-        if let Some(f) = module.functions.iter().find(|f| f.name == qualified) {
-            return Ok(f);
-        }
-        match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {
-            Some(base) => cur = base,
-            None => bail!("VCall: no implementation of `{}` in hierarchy of `{}`", method, class_name),
-        }
-    }
-}
-
-/// Build a minimal TypeDesc from the ClassDesc chain — used when the registry
-/// is absent (merged stdlib modules arrive without pre-built TypeDesc).
-fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
-    use crate::metadata::FieldSlot;
-    let mut fields: Vec<FieldSlot> = Vec::new();
-    let mut base_name: Option<String> = None;
-    let mut cur = class_name;
-    let mut chain: Vec<&crate::metadata::ClassDesc> = Vec::new();
-    loop {
-        if let Some(desc) = module.classes.iter().find(|c| c.name == cur) {
-            chain.push(desc);
-            match &desc.base_class {
-                Some(b) => { base_name = Some(b.clone()); cur = b.as_str(); }
-                None    => break,
-            }
-        } else {
-            break;
-        }
-    }
-    for desc in chain.iter().rev() {
-        for f in &desc.fields {
-            if !fields.iter().any(|s: &FieldSlot| s.name == f.name) {
-                fields.push(FieldSlot { name: f.name.clone() });
-            }
-        }
-    }
-    let field_index = fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
-    TypeDesc {
-        name: class_name.to_string(),
-        base_name,
-        fields,
-        field_index,
-        vtable: Vec::new(),
-        vtable_index: HashMap::new(),
-    }
 }
