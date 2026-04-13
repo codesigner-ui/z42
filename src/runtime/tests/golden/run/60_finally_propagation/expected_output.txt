@@ -1,0 +1,8 @@
+no throw
+finally normal
+throwing
+finally ran
+caught: from try
+inner finally
+outer caught: deep
+done

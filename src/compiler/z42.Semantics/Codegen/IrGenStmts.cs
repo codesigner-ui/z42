@@ -139,7 +139,28 @@ public sealed partial class IrGen
             if (!_blockEnded) EndBlock(new BrTerm(finallyLbl));
         }
 
-        // Finally (run after try/catch regardless)
+        // Synthesize a catch-all for finally-without-catch:
+        // If no explicit catch clause exists but there is a finally block, we need
+        // an exception table entry that catches any exception, runs the finally body,
+        // and re-throws. Without this, throw propagates past the finally.
+        if (tc.Catches.Count == 0 && tc.Finally != null)
+        {
+            int catchAllReg         = Alloc();
+            string catchAllStartLbl = FreshLabel("catch_finally");
+            string rethrowLbl       = FreshLabel("rethrow");
+
+            _exceptionTable.Add(new IrExceptionEntry(
+                tryStartLbl, tryEndLbl, catchAllStartLbl, "*", catchAllReg));
+
+            StartBlock(catchAllStartLbl);
+            EmitBlock(tc.Finally);
+            if (!_blockEnded) EndBlock(new BrTerm(rethrowLbl));
+
+            StartBlock(rethrowLbl);
+            EndBlock(new ThrowTerm(catchAllReg));
+        }
+
+        // Finally (run after try/catch regardless — normal path)
         if (tc.Finally != null)
         {
             StartBlock(finallyLbl);

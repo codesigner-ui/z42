@@ -1,0 +1,47 @@
+namespace Demo;
+
+void ThrowInTry() {
+    try {
+        Console.WriteLine("throwing");
+        throw "from try";
+    } finally {
+        Console.WriteLine("finally ran");
+    }
+}
+
+void NoThrow() {
+    try {
+        Console.WriteLine("no throw");
+    } finally {
+        Console.WriteLine("finally normal");
+    }
+}
+
+void NestedFinally() {
+    try {
+        try {
+            throw "deep";
+        } finally {
+            Console.WriteLine("inner finally");
+        }
+    } catch (Exception e) {
+        Console.WriteLine($"outer caught: {e}");
+    }
+}
+
+void Main() {
+    // finally runs on normal path (no throw)
+    NoThrow();
+
+    // finally runs when exception propagates (no catch)
+    try {
+        ThrowInTry();
+    } catch (Exception e) {
+        Console.WriteLine($"caught: {e}");
+    }
+
+    // nested: inner finally runs before outer catch
+    NestedFinally();
+
+    Console.WriteLine("done");
+}
