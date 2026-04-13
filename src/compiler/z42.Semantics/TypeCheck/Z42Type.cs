@@ -51,6 +51,8 @@ public abstract record Z42Type
             return true;
         // T is assignable to T? (implicit wrap)
         if (target is Z42OptionType opt && IsAssignableTo(opt.Inner, source)) return true;
+        // Any class type is assignable to `object` (implicit Object inheritance)
+        if (target == Object && source is Z42ClassType) return true;
         // Numeric widening: int → long → float → double
         if (target == Long   && source == Int) return true;
         if (target == Float  && source == Int) return true;

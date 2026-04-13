@@ -1,0 +1,8 @@
+plain: Plain
+Fancy[hello]
+fancy: Fancy[hello]
+SuperFancy[world, 99]
+super: SuperFancy[world, 99]
+true
+false
+true

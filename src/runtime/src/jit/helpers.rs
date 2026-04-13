@@ -771,7 +771,9 @@ pub unsafe extern "C" fn jit_field_get(
 ) -> u8 {
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
         .unwrap_or("<invalid>");
-    let val = match &(*frame).regs[obj as usize] {
+    let obj_val = &(*frame).regs[obj as usize];
+    // Virtual field dispatch for primitive types (mirrors interp FieldGet logic).
+    let val = match obj_val {
         Value::Object(rc) => {
             let b = rc.borrow();
             if let Some(&slot) = b.type_desc.field_index.get(field_name) {
@@ -780,6 +782,11 @@ pub unsafe extern "C" fn jit_field_get(
                 Value::Null
             }
         }
+        Value::Str(s) if field_name == "Length" => Value::I64(s.chars().count() as i64),
+        Value::Array(rc) if field_name == "Length" || field_name == "Count" =>
+            Value::I64(rc.borrow().len() as i64),
+        Value::Map(rc) if field_name == "Length" || field_name == "Count" =>
+            Value::I64(rc.borrow().len() as i64),
         other => {
             set_exception(Value::Str(format!("FieldGet: expected object, got {:?}", other)));
             return 1;

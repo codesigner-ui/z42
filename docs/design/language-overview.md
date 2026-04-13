@@ -187,18 +187,20 @@ bool TryParse(string s, out int result) {
 
 ### 6.1 Object 基类与 Type 描述符
 
-所有 z42 **引用类型**（`class`）均隐式继承 `z42.core.Object`。
-**值类型**（`struct`）不继承 Object，编译器为其自动合成值语义的 `Equals`/`GetHashCode`/`ToString`。
+所有 z42 **引用类型**（`class`）均隐式继承 `Std.Object`（对应 `z42.core/Object.z42`）。
+编译器在 TypeCheck 和 IrGen 阶段自动注入 `base_class: "Std.Object"`，VM 在 `build_type_registry`
+时将 Object 的虚方法（`ToString`/`Equals`/`GetHashCode`）加入 vtable，派生类可通过 `override` 重写。
+**值类型**（`struct`、`record`）不继承 Object，编译器为其自动合成值语义的 `Equals`/`GetHashCode`/`ToString`。
 
 `Object` 提供以下成员：
 
 | 成员 | 签名 | 行为 |
 |------|------|------|
-| `GetType()` | `extern Type GetType()` | 返回运行时 `Type` 描述符（VM 提供） |
+| `GetType()` | `extern Type GetType()` | 返回运行时 `Type` 描述符（VM 提供 `__obj_get_type`） |
 | `ReferenceEquals` | `static extern bool ReferenceEquals(Object? a, Object? b)` | 堆地址相等（两个 null 也为 true） |
-| `Equals` | `virtual bool Equals(Object? other)` | 默认委托 `ReferenceEquals`；子类可重写为值相等 |
-| `GetHashCode` | `virtual extern int GetHashCode()` | 基于 Rc 指针地址的 identity hash；重写 `Equals` 时必须同步重写 |
-| `ToString` | `virtual string ToString()` | 默认返回 `GetType().Name`（如 `"Circle"`）；子类通常应重写 |
+| `Equals` | `virtual extern bool Equals(Object? other)` | 默认引用相等（`__obj_equals`）；子类可重写为值相等 |
+| `GetHashCode` | `virtual extern int GetHashCode()` | 基于 Rc 指针地址的 identity hash（`__obj_hash_code`）；重写 `Equals` 时必须同步重写 |
+| `ToString` | `virtual extern string ToString()` | 默认返回不含命名空间的类名（`__obj_to_str`）；子类通常应重写 |
 
 `Type` 是轻量的运行时类型描述符，仅可通过 `GetType()` 获取，不可直接构造：
 

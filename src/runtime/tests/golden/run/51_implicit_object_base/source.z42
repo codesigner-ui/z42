@@ -1,0 +1,56 @@
+namespace Demo;
+
+// Class without explicit base — implicitly inherits Std.Object.
+class Plain {
+    int X;
+    Plain(int x) { this.X = x; }
+}
+
+// Class with ToString override (implicit Object base provides virtual method).
+class Fancy {
+    string Label;
+    Fancy(string label) { this.Label = label; }
+
+    override string ToString() {
+        return $"Fancy[{this.Label}]";
+    }
+}
+
+// Two-level inheritance: Fancy (implicit Object) → SuperFancy
+class SuperFancy : Fancy {
+    int Level;
+    SuperFancy(string label, int level) : base(label) {
+        this.Level = level;
+    }
+
+    override string ToString() {
+        return $"SuperFancy[{this.Label}, {this.Level}]";
+    }
+}
+
+void Main() {
+    var p = new Plain(42);
+    var f = new Fancy("hello");
+    var s = new SuperFancy("world", 99);
+
+    // Default ToString from Object — prints unqualified class name
+    Console.WriteLine($"plain: {p}");
+
+    // Override ToString via implicit Object base
+    Console.WriteLine(f.ToString());
+    Console.WriteLine($"fancy: {f}");
+
+    // Inherited override
+    Console.WriteLine(s.ToString());
+    Console.WriteLine($"super: {s}");
+
+    // Equals: default is reference equality (from Object)
+    var p2 = new Plain(42);
+    Console.WriteLine(p.Equals(p));   // same ref → true
+    Console.WriteLine(p.Equals(p2));  // different ref → false
+
+    // GetHashCode: identity-based (from Object)
+    int h1 = p.GetHashCode();
+    int h2 = p.GetHashCode();
+    Console.WriteLine(h1 == h2); // same object → same hash
+}
