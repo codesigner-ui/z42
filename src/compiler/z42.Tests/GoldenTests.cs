@@ -12,6 +12,7 @@ using Z42.Syntax.Parser;
 using Z42.Semantics.TypeCheck;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
+using Z42.Pipeline;
 using Z42.Project;
 
 namespace Z42.Tests;
@@ -76,28 +77,10 @@ public sealed class GoldenTests
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate)) return BuildIndexFromDir(candidate);
+            if (Directory.Exists(candidate)) return PackageCompiler.BuildStdlibIndex([candidate]);
             dir = dir.Parent;
         }
         return StdlibCallIndex.Empty;
-    }
-
-    private static StdlibCallIndex BuildIndexFromDir(string libsDir)
-    {
-        var modules = new List<(IrModule Module, string Namespace)>();
-        foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
-        {
-            try
-            {
-                var bytes = File.ReadAllBytes(zpkgPath);
-                var meta  = ZpkgReader.ReadMeta(bytes);
-                if (meta.Kind != ZpkgKind.Lib) continue;
-                foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
-                    modules.Add((mod, ns));
-            }
-            catch { /* skip malformed */ }
-        }
-        return StdlibCallIndex.Build(modules);
     }
 
     // ── Test discovery ─────────────────────────────────────────────────────
@@ -157,7 +140,7 @@ public sealed class GoldenTests
 
     // ── Compile helper ─────────────────────────────────────────────────────
 
-    private static (IrModule? ir, DiagnosticBag diags) Compile(string dir)
+    private static (IrModule? ir, DiagnosticBag diags, IReadOnlySet<string> usedStdlibNs) Compile(string dir)
     {
         string sourceFile = Path.Combine(dir, "source.z42");
         string source     = File.ReadAllText(sourceFile);
@@ -175,25 +158,27 @@ public sealed class GoldenTests
         catch (ParseException ex)
         {
             diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
-            return (null, diags);
+            return (null, diags, new HashSet<string>());
         }
 
         var typeChecker = new TypeChecker(diags);
         typeChecker.Check(cu);
-        if (diags.HasErrors) return (null, diags);
+        if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
+        IrGen gen;
         IrModule ir;
         try
         {
-            ir = new IrGen(StdlibIndex).Generate(cu);
+            gen = new IrGen(StdlibIndex);
+            ir = gen.Generate(cu);
         }
         catch (Exception ex)
         {
             diags.Error(DiagnosticCodes.UnsupportedSyntax, ex.Message, new Span(0, 0, 0, 0, sourceFile));
-            return (null, diags);
+            return (null, diags, new HashSet<string>());
         }
 
-        return (ir, diags);
+        return (ir, diags, gen.UsedStdlibNamespaces);
     }
 
     // ── IR / codegen tests (compare ZASM output) ──────────────────────────
@@ -202,7 +187,7 @@ public sealed class GoldenTests
     [MemberData(nameof(ParseTestCases))]
     public void IrMatchesExpected(string name, string dir)
     {
-        var (ir, diags) = Compile(dir);
+        var (ir, diags, _) = Compile(dir);
 
         diags.PrintAll();
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
@@ -220,7 +205,7 @@ public sealed class GoldenTests
     [MemberData(nameof(ErrorTestCases))]
     public void DiagnosticsMatchExpected(string name, string dir)
     {
-        var (_, diags) = Compile(dir);
+        var (_, diags, _) = Compile(dir);
 
         string expectedFile = Path.Combine(dir, "expected_error.txt");
         string expected     = File.ReadAllText(expectedFile).Trim();
@@ -238,7 +223,7 @@ public sealed class GoldenTests
     [MemberData(nameof(RunTestCases))]
     public void RunMatchesExpected(string name, string dir)
     {
-        var (ir, diags) = Compile(dir);
+        var (ir, diags, usedStdlibNs) = Compile(dir);
         diags.PrintAll();
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
         ir.Should().NotBeNull();
@@ -249,14 +234,13 @@ public sealed class GoldenTests
         if (File.Exists(fmtFile))
             emitFmt = File.ReadAllText(fmtFile).Trim().ToLowerInvariant();
 
-        var usedNs = GetUsedStdlibNamespaces(ir!);
         var zbc = new ZbcFile(
             ZbcVersion : ZbcFile.CurrentVersion,
             SourceFile : Path.Combine(dir, "source.z42"),
             SourceHash : "sha256:test",
             Namespace  : ir!.Name,
             Exports    : ir.Functions.Select(f => f.Name).ToList(),
-            Imports    : usedNs,
+            Imports    : usedStdlibNs.ToList(),
             Module     : ir
         );
 
@@ -275,7 +259,7 @@ public sealed class GoldenTests
                 Mode:         ZpkgMode.Packed,
                 Namespaces:   [ir.Name],
                 Exports:      pkgExports,
-                Dependencies: usedNs.Select(ns => new ZpkgDep($"{ns}.zpkg", [ns])).ToList(),
+                Dependencies: usedStdlibNs.Select(ns => new ZpkgDep($"{ns}.zpkg", [ns])).ToList(),
                 Files:        [],
                 Modules:      [zbc],
                 Entry:        $"{ir.Name}.Main"
@@ -338,17 +322,6 @@ public sealed class GoldenTests
         }
         return null;
     }
-
-    private static List<string> GetUsedStdlibNamespaces(IrModule ir) =>
-        ir.Functions
-          .SelectMany(f => f.Blocks)
-          .SelectMany(b => b.Instructions)
-          .OfType<CallInstr>()
-          .Select(c => c.Func)
-          .Where(f => f.StartsWith("Std.", StringComparison.Ordinal) || f == "Std")
-          .Select(f => { var p = f.Split('.'); return p.Length >= 2 ? $"{p[0]}.{p[1]}" : f; })
-          .Distinct()
-          .ToList();
 
     private static void MatchDiagnosticLines(string expected, string actual, string name)
     {

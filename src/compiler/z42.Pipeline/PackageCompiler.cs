@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Z42.Core.Diagnostics;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
@@ -382,11 +380,7 @@ public static class PackageCompiler
         }
     }
 
-    static string Sha256Hex(string text)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-        return "sha256:" + Convert.ToHexString(bytes).ToLowerInvariant();
-    }
+    static string Sha256Hex(string text) => CompilerUtils.Sha256Hex(text);
 
     /// Load lib-kind zpkgs from the given directories and build a StdlibCallIndex
     /// from their packed modules. Silently skips malformed or non-lib packages.

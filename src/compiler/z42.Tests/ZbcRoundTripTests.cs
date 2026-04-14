@@ -10,6 +10,7 @@ using Z42.Syntax.Parser;
 using Z42.Semantics.TypeCheck;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
+using Z42.Pipeline;
 using Z42.Project;
 
 namespace Z42.Tests;
@@ -38,28 +39,10 @@ public class ZbcRoundTripTests
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate)) return BuildStdlibIndexFromDir(candidate);
+            if (Directory.Exists(candidate)) return PackageCompiler.BuildStdlibIndex([candidate]);
             dir = dir.Parent;
         }
         return StdlibCallIndex.Empty;
-    }
-
-    private static StdlibCallIndex BuildStdlibIndexFromDir(string libsDir)
-    {
-        var modules = new List<(IrModule Module, string Namespace)>();
-        foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
-        {
-            try
-            {
-                var bytes = File.ReadAllBytes(zpkgPath);
-                var meta  = ZpkgReader.ReadMeta(bytes);
-                if (meta.Kind != ZpkgKind.Lib) continue;
-                foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
-                    modules.Add((mod, ns));
-            }
-            catch { }
-        }
-        return StdlibCallIndex.Build(modules);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

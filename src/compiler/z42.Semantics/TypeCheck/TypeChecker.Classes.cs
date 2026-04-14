@@ -1,5 +1,6 @@
 using Z42.Core.Text;
 using Z42.Core.Diagnostics;
+using Z42.IR;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -8,13 +9,9 @@ public sealed partial class TypeChecker
 {
     // ── Implicit Object base ─────────────────────────────────────────────────
 
-    /// Class names that are Object itself (user code uses short name, stdlib uses qualified).
-    private static bool IsObjectClass(string name) =>
-        name is "Object" or "Std.Object";
-
     /// True if the class should NOT implicitly inherit from Object.
     private static bool ExcludeFromImplicitObject(ClassDecl cls) =>
-        cls.IsStruct || cls.IsRecord || IsObjectClass(cls.Name);
+        cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name);
 
     // ── Pass 0c: class shapes ─────────────────────────────────────────────────
 
@@ -24,7 +21,7 @@ public sealed partial class TypeChecker
         //   (a) override validation works for classes implicitly inheriting Object
         //   (b) inherited Object methods (ToString/Equals/GetHashCode) are visible on all classes
         // Skip if the compilation unit itself defines Object (e.g. z42.core/Object.z42).
-        bool cuDefinesObject = cu.Classes.Any(c => IsObjectClass(c.Name));
+        bool cuDefinesObject = cu.Classes.Any(c => WellKnownNames.IsObjectClass(c.Name));
         _virtualMethods["Object"] = ["ToString", "Equals", "GetHashCode"];
         if (!cuDefinesObject)
         {

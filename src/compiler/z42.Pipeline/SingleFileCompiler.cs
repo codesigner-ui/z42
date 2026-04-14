@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using Z42.Core.Diagnostics;
 using Z42.IR;
@@ -53,8 +51,13 @@ public static class SingleFileCompiler
         // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
         var stdlibIndex = LocateStdlibIndex(source.FullName);
 
+        IrGen gen;
         IrModule irModule;
-        try   { irModule = new IrGen(stdlibIndex).Generate(cu); }
+        try
+        {
+            gen = new IrGen(stdlibIndex);
+            irModule = gen.Generate(cu);
+        }
         catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return 1; }
 
         if (dumpIr) Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
@@ -88,13 +91,7 @@ public static class SingleFileCompiler
             case "json-zbc":
             {
                 string path = outPath ?? (defaultBase + ".zbc");
-                var usedNs = irModule.Functions
-                    .SelectMany(f => f.Blocks).SelectMany(b => b.Instructions)
-                    .OfType<CallInstr>()
-                    .Select(c => c.Func)
-                    .Where(f => f.StartsWith("z42.", StringComparison.Ordinal))
-                    .Select(f => { var p = f.Split('.'); return p.Length >= 2 ? $"{p[0]}.{p[1]}" : f; })
-                    .Distinct().ToList();
+                var usedNs = gen.UsedStdlibNamespaces.ToList();
                 var zbc = new ZbcFile(
                     ZbcVersion : ZbcFile.CurrentVersion,
                     SourceFile : source.FullName,
@@ -141,9 +138,5 @@ public static class SingleFileCompiler
         Console.Error.WriteLine($"wrote → {path}");
     }
 
-    static string Sha256Hex(string text)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(text));
-        return "sha256:" + Convert.ToHexString(bytes).ToLowerInvariant();
-    }
+    static string Sha256Hex(string text) => CompilerUtils.Sha256Hex(text);
 }

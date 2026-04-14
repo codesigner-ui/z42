@@ -8,6 +8,7 @@
 |------|------|
 | `SingleFileCompiler.cs` | 单 `.z42` 文件完整编译：Lex → Parse → TypeCheck → Codegen → Emit（ir/zbc/zasm）|
 | `PackageCompiler.cs` | 包级别编译：加载清单 → 多文件编译 → 组装 `.zpkg`；包含 `CompiledUnit` DTO |
+| `CompilerUtils.cs` | 编译管线共享工具方法（如 `Sha256Hex`） |
 
 ## 入口点
 - `Z42.Pipeline.SingleFileCompiler.Run(...)` — 单文件编译，输出多种格式

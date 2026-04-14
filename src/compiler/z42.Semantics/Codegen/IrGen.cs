@@ -168,14 +168,12 @@ public sealed partial class IrGen
 
     private readonly Dictionary<string, long> _enumConstants = new();
 
-    private static bool IsObjectClass(string name) => name is "Object" or "Std.Object";
-
     private IrClassDesc EmitClassDesc(ClassDecl cls)
     {
         // Implicit Object inheritance: non-struct, non-record, non-Object classes get Std.Object as base.
         var baseClass = cls.BaseClass is not null
             ? QualifyName(cls.BaseClass)
-            : (cls.IsStruct || cls.IsRecord || IsObjectClass(cls.Name)) ? null : "Std.Object";
+            : (cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name)) ? null : "Std.Object";
         return new(QualifyName(cls.Name), baseClass,
             cls.Fields.Where(f => !f.IsStatic).Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
     }

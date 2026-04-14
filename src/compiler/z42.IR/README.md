@@ -10,6 +10,7 @@
 | 文件 | 职责 |
 |------|------|
 | `IrModule.cs` | 编译器输出 / VM 输入的核心 IR 数据结构（SSA 寄存器形式） |
+| `WellKnownNames.cs` | 跨编译阶段共享的知名名称判断（如 `IsObjectClass`） |
 | `PackageTypes.cs` | 编译产物数据模型：`ZbcFile`、`ZpkgFile`、`ZpkgKind`、`ZpkgMode` |
 | `NativeTable.cs` | Builtin 函数名枚举与查表工具 |
 
