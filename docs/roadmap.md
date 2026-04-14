@@ -104,6 +104,18 @@
 - `z42.collections`：`List<T>`、`Dictionary<K,V>` 原生实现（替代 pseudo-class 策略）
 - `z42.string`：字符串操作完整实现
 
+### 代码质量 Backlog（按触发条件执行）
+
+> 来源：2026-04-14 代码审查。批次 1–4 已完成，以下为剩余低优先级项。
+
+| 项目 | 触发条件 | 说明 |
+|------|---------|------|
+| `TypeEnv.BuiltinClasses` 动态注入 | L3 泛型设计启动时 | 当前硬编码集合；需 SemanticModel 架构（A1），与泛型一并设计 |
+| `IsReferenceType` 中 List/Dict 硬编码 | L3 泛型设计启动时 | List/Dict 应为 `Z42ClassType`，需泛型类型表示 |
+| `IrInstr` JsonDerivedType 自动注册 | 指令数超过 60 个时 | 当前 54 个注解，可考虑 Source Generator 方案 |
+| `exec_instr.rs` 按类别拆分辅助函数 | 文件超过 450 行时 | 当前 362 行，保持单 match 结构但提取 arm 实现 |
+| Golden Test 改用 `test.toml` 声明类别 | 测试目录结构变复杂时 | 当前路径约定 (`/errors/`, `/run/`) 工作正常 |
+
 ---
 
 ## L3 — Advanced（高级特性）
