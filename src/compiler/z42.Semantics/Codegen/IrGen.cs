@@ -247,7 +247,7 @@ public sealed partial class IrGen
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         int paramCount = method.Params.Count + paramOffset;
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
-            IsStatic: isStatic);
+            IsStatic: isStatic, MaxReg: _nextReg);
     }
 
     // ── Function ────────────────────────────────────────────────────────────────
@@ -285,7 +285,8 @@ public sealed partial class IrGen
 
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
-        return new IrFunction(QualifyName(fn.Name), fn.Params.Count, retType, "Interp", _blocks, excTable);
+        return new IrFunction(QualifyName(fn.Name), fn.Params.Count, retType, "Interp", _blocks, excTable,
+            MaxReg: _nextReg);
     }
 
     /// Emits a single-block function that forwards all parameters to a VM builtin.
@@ -301,7 +302,7 @@ public sealed partial class IrGen
         var term   = new RetTerm(isVoid ? null : dst);
         var block  = new IrBlock("entry", instrs, term);
         return new IrFunction(qualifiedName, totalParams, isVoid ? "void" : "object",
-            "Interp", [block], null);
+            "Interp", [block], null, MaxReg: totalParams + 1);
     }
 
     // ── Block management ────────────────────────────────────────────────────────
@@ -426,7 +427,7 @@ public sealed partial class IrGen
 
         EndBlock(new RetTerm(null));
         string initName = QualifyName("__static_init__");
-        return new IrFunction(initName, 0, "void", "Interp", _blocks);
+        return new IrFunction(initName, 0, "void", "Interp", _blocks, MaxReg: _nextReg);
     }
 
     /// Returns true if the receiver expression is known to be a user-defined class instance

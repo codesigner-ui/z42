@@ -71,26 +71,32 @@ pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
 // ── Frame ────────────────────────────────────────────────────────────────────
 
 pub(crate) struct Frame {
-    pub regs: HashMap<u32, Value>,
+    pub regs: Vec<Value>,
     pub vars: HashMap<String, Value>,  // mutable named variable slots
 }
 
 impl Frame {
-    pub fn new(args: &[Value]) -> Self {
-        let mut regs = HashMap::new();
+    pub fn new(args: &[Value], max_reg: u32) -> Self {
+        // Pre-allocate based on max_reg hint; fall back to args length if unknown (max_reg == 0).
+        let size = if max_reg > 0 { max_reg as usize } else { args.len() };
+        let mut regs = vec![Value::Null; size.max(args.len())];
         for (i, v) in args.iter().enumerate() {
-            regs.insert(i as u32, v.clone());
+            regs[i] = v.clone();
         }
         Frame { regs, vars: HashMap::new() }
     }
 
     pub fn set(&mut self, reg: u32, val: Value) {
-        self.regs.insert(reg, val);
+        let idx = reg as usize;
+        if idx >= self.regs.len() {
+            self.regs.resize(idx + 1, Value::Null);
+        }
+        self.regs[idx] = val;
     }
 
     pub fn get(&self, reg: u32) -> Result<&Value> {
         self.regs
-            .get(&reg)
+            .get(reg as usize)
             .with_context(|| format!("undefined register %{reg}"))
     }
 
@@ -105,7 +111,7 @@ impl Frame {
             .get(name)
             .with_context(|| format!("undefined variable `{name}`"))?
             .clone();
-        self.regs.insert(dst, val);
+        self.set(dst, val);
         Ok(())
     }
 }
@@ -113,7 +119,11 @@ impl Frame {
 // ── Core execution loop ──────────────────────────────────────────────────────
 
 pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Option<Value>> {
-    let mut frame = Frame::new(args);
+    let mut frame = Frame::new(args, func.max_reg);
+    // O(1) block lookup: build label → index map once per function call.
+    let block_map: HashMap<&str, usize> = func.blocks.iter().enumerate()
+        .map(|(i, b)| (b.label.as_str(), i))
+        .collect();
     let mut block_idx = 0usize;
 
     'exec: loop {
@@ -125,11 +135,12 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
         for instr in &block.instructions {
             if let Err(e) = exec_instr::exec_instr(module, &mut frame, instr) {
                 if e.is::<UserException>() {
-                    if let Some(entry_idx) = find_handler(func, block_idx) {
+                    if let Some(entry_idx) = find_handler(func, block_idx, &block_map) {
                         let thrown_val = user_exception_take().unwrap_or(Value::Null);
                         let entry = &func.exception_table[entry_idx];
                         frame.set(entry.catch_reg, thrown_val);
-                        block_idx = find_block(func, &entry.catch_label)?;
+                        block_idx = *block_map.get(entry.catch_label.as_str())
+                            .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
                         continue 'exec;
                     }
                 }
@@ -140,21 +151,26 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
         match &block.terminator {
             Terminator::Ret { reg: None }      => return Ok(None),
             Terminator::Ret { reg: Some(r) }   => return Ok(Some(frame.get(*r)?.clone())),
-            Terminator::Br  { label }          => block_idx = find_block(func, label)?,
+            Terminator::Br  { label }          => {
+                block_idx = *block_map.get(label.as_str())
+                    .with_context(|| format!("undefined block `{label}`"))?;
+            }
             Terminator::BrCond { cond, true_label, false_label } => {
                 let go_true = match frame.get(*cond)? {
                     Value::Bool(b) => *b,
                     other => bail!("BrCond expects bool, got {:?}", other),
                 };
                 let label = if go_true { true_label } else { false_label };
-                block_idx = find_block(func, label)?;
+                block_idx = *block_map.get(label.as_str())
+                    .with_context(|| format!("undefined block `{label}`"))?;
             }
             Terminator::Throw { reg } => {
                 let val = frame.get(*reg)?.clone();
-                if let Some(entry_idx) = find_handler(func, block_idx) {
+                if let Some(entry_idx) = find_handler(func, block_idx, &block_map) {
                     let entry = &func.exception_table[entry_idx];
                     frame.set(entry.catch_reg, val);
-                    block_idx = find_block(func, &entry.catch_label)?;
+                    block_idx = *block_map.get(entry.catch_label.as_str())
+                        .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
                 } else {
                     return Err(user_throw(val));
                 }
@@ -164,20 +180,13 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
 }
 
 /// Find the index into `func.exception_table` that covers the given block index.
-fn find_handler(func: &Function, block_idx: usize) -> Option<usize> {
+fn find_handler(func: &Function, block_idx: usize, block_map: &HashMap<&str, usize>) -> Option<usize> {
     for (i, entry) in func.exception_table.iter().enumerate() {
-        let start_idx = func.blocks.iter().position(|b| b.label == entry.try_start)?;
-        let end_idx   = func.blocks.iter().position(|b| b.label == entry.try_end)?;
+        let start_idx = *block_map.get(entry.try_start.as_str())?;
+        let end_idx   = *block_map.get(entry.try_end.as_str())?;
         if block_idx >= start_idx && block_idx < end_idx {
             return Some(i);
         }
     }
     None
-}
-
-fn find_block(func: &Function, label: &str) -> Result<usize> {
-    func.blocks
-        .iter()
-        .position(|b| b.label == label)
-        .with_context(|| format!("undefined block `{label}`"))
 }

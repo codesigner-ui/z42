@@ -30,7 +30,14 @@ public sealed record IrFunction(
     List<IrExceptionEntry>? ExceptionTable = null,
     [property: JsonPropertyName("is_static")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    bool IsStatic = false);
+    bool IsStatic = false,
+    /// <summary>
+    /// Total number of registers used by this function (size for Vec pre-allocation in the VM).
+    /// 0 means unknown (VM falls back to dynamic resizing).
+    /// </summary>
+    [property: JsonPropertyName("max_reg")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    int MaxReg = 0);
 
 /// One entry in a function's exception table: covers blocks [TryStart, TryEnd)
 /// and redirects unhandled throws to CatchLabel, storing the exception in CatchReg.

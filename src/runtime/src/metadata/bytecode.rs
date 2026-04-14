@@ -57,6 +57,9 @@ pub struct Function {
     /// static-only entries in the StdlibCallIndex.
     #[serde(default)]
     pub is_static: bool,
+    /// Total number of registers used (0 = unknown; VM falls back to dynamic sizing).
+    #[serde(default)]
+    pub max_reg: u32,
 }
 
 /// One row in a function's exception table.

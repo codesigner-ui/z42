@@ -596,6 +596,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             blocks:          body.blocks,
             exception_table: body.exception_table,
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
+            max_reg:         0,
         }
     }).collect();
 
@@ -769,6 +770,7 @@ fn read_mods_section(
                 blocks:          body.blocks,
                 exception_table: body.exception_table,
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
+                max_reg:         0,
             }
         }).collect();
 
