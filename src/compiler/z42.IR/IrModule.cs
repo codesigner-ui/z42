@@ -7,7 +7,7 @@ namespace Z42.IR;
 /// Root bytecode module — matches the Rust `bytecode::Module` JSON schema.
 public sealed record IrModule(
     string Name,
-    List<string> StringPool,
+    IReadOnlyList<string> StringPool,
     List<IrClassDesc> Classes,
     List<IrFunction> Functions);
 

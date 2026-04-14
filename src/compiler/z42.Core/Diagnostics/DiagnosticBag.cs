@@ -45,13 +45,12 @@ public sealed class DiagnosticBag
 
     // ── Output ────────────────────────────────────────────────────────────
 
-    /// Print all diagnostics to stderr; return true if there are errors.
-    public bool PrintAll(TextWriter? writer = null)
+    /// Print all diagnostics to stderr (sorted by file then line).
+    public void PrintAll(TextWriter? writer = null)
     {
         writer ??= Console.Error;
         foreach (var d in _items.OrderBy(d => d.Span.File).ThenBy(d => d.Span.Line))
             writer.WriteLine(d);
-        return HasErrors;
     }
 
     /// Throw a <see cref="CompilationException"/> if there are any errors.

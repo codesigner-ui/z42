@@ -43,6 +43,18 @@ public sealed partial class TypeChecker
 
     public TypeChecker(DiagnosticBag diags) => _diags = diags;
 
+    /// Sets <see cref="_currentClass"/> and returns a scope that clears it on disposal.
+    private IDisposable EnterClass(string name)
+    {
+        _currentClass = name;
+        return new ClassScope(this);
+    }
+
+    private sealed class ClassScope(TypeChecker tc) : IDisposable
+    {
+        public void Dispose() => tc._currentClass = null;
+    }
+
     // ── Public entry point ────────────────────────────────────────────────────
 
     public void Check(CompilationUnit cu)
@@ -102,7 +114,7 @@ public sealed partial class TypeChecker
     private void CheckClassMethods(ClassDecl cls)
     {
         if (!_classes.TryGetValue(cls.Name, out var classType)) return;
-        _currentClass = cls.Name;
+        using var _ = EnterClass(cls.Name);
         foreach (var method in cls.Methods)
         {
             if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue; // extern: skip body check
@@ -121,7 +133,6 @@ public sealed partial class TypeChecker
             bool isCtor = method.Name == cls.Name;
             CheckBlock(method.Body, scope, isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
         }
-        _currentClass = null;
     }
 
     private void CheckFunction(FunctionDecl fn)

@@ -329,7 +329,8 @@ public static class PackageCompiler
         }
 
         new TypeChecker(diags).Check(cu);
-        if (diags.PrintAll()) return false;
+        diags.PrintAll();
+        if (diags.HasErrors) return false;
         return true;
     }
 

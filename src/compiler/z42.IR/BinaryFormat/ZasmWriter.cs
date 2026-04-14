@@ -90,7 +90,7 @@ public static class ZasmWriter
 
     // ── Instruction formatting ────────────────────────────────────────────────
 
-    private static string FormatInstr(IrInstr instr, List<string> strPool)
+    private static string FormatInstr(IrInstr instr, IReadOnlyList<string> strPool)
     {
         return instr switch
         {

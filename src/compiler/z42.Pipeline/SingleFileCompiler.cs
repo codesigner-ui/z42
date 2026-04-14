@@ -46,7 +46,8 @@ public static class SingleFileCompiler
 
         var diags = new DiagnosticBag();
         new Z42.Semantics.TypeCheck.TypeChecker(diags).Check(cu);
-        if (diags.PrintAll()) return 1;
+        diags.PrintAll();
+        if (diags.HasErrors) return 1;
 
         // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
         var stdlibIndex = LocateStdlibIndex(source.FullName);
