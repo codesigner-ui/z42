@@ -1,0 +1,11 @@
+namespace Demo;
+
+// Function with a statement-level parse error; parser should recover and continue
+void Func1() {
+    var x = ;
+}
+
+// Second function with another statement-level parse error
+void Func2() {
+    var y = ;
+}

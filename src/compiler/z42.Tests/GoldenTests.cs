@@ -149,17 +149,10 @@ public sealed class GoldenTests
 
         var tokens = new Lexer(source, sourceFile).Tokenize();
 
-        CompilationUnit cu;
-        try
-        {
-            var parser = new Parser(tokens, features);
-            cu = parser.ParseCompilationUnit();
-        }
-        catch (ParseException ex)
-        {
-            diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
-            return (null, diags, new HashSet<string>());
-        }
+        var parser = new Parser(tokens, features);
+        var cu     = parser.ParseCompilationUnit();
+        foreach (var d in parser.Diagnostics.All) diags.Add(d);
+        if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
         var typeChecker = new TypeChecker(diags, features);
         typeChecker.Check(cu);

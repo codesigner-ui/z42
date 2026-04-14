@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Core.Diagnostics;
 using Z42.Core.Features;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser.Core;
@@ -35,7 +36,7 @@ internal static class StmtParser
     // ── Public entry points ───────────────────────────────────────────────────
 
     internal static ParseResult<BlockStmt> ParseBlock(
-        TokenCursor cursor, LanguageFeatures feat)
+        TokenCursor cursor, LanguageFeatures feat, DiagnosticBag? diags = null)
     {
         var span = cursor.Current.Span;
         if (cursor.Current.Kind != TokenKind.LBrace)
@@ -44,17 +45,67 @@ internal static class StmtParser
         var stmts = new List<Stmt>();
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
-            var r = ParseStmt(cursor, feat);
-            if (!r.IsOk) return r.AsFailure<BlockStmt>();
-            stmts.Add(r.Value);
-            cursor = r.Remainder;
+            try
+            {
+                var r = ParseStmt(cursor, feat);
+                if (!r.IsOk)
+                {
+                    if (diags != null)
+                    {
+                        diags.Error(DiagnosticCodes.UnexpectedToken, r.Error!, r.ErrorSpan);
+                        stmts.Add(new ErrorStmt(r.Error!, r.ErrorSpan));
+                        if (!cursor.IsEnd) cursor = cursor.Advance(); // always progress past failing token
+                        cursor = SkipToNextStmt(cursor);
+                        continue;
+                    }
+                    return r.AsFailure<BlockStmt>();
+                }
+                stmts.Add(r.Value);
+                cursor = r.Remainder;
+            }
+            catch (ParseException ex) when (diags != null)
+            {
+                diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+                stmts.Add(new ErrorStmt(ex.Message, ex.Span));
+                if (!cursor.IsEnd) cursor = cursor.Advance(); // always progress past failing token
+                cursor = SkipToNextStmt(cursor);
+            }
         }
         if (cursor.Current.Kind != TokenKind.RBrace)
-            throw new ParseException(
-                $"unexpected end of block; expected `{Combinators.KindDisplay(TokenKind.RBrace)}`",
-                cursor.Current.Span);
+        {
+            var errMsg = $"unexpected end of block; expected `{Combinators.KindDisplay(TokenKind.RBrace)}`";
+            if (diags != null)
+            {
+                diags.Error(DiagnosticCodes.UnexpectedToken, errMsg, cursor.Current.Span);
+                return ParseResult<BlockStmt>.Ok(new BlockStmt(stmts, span), cursor);
+            }
+            throw new ParseException(errMsg, cursor.Current.Span);
+        }
         cursor = cursor.Advance();
         return ParseResult<BlockStmt>.Ok(new BlockStmt(stmts, span), cursor);
+    }
+
+    /// Skip tokens until we reach a plausible start of the next statement.
+    private static TokenCursor SkipToNextStmt(TokenCursor cursor)
+    {
+        while (!cursor.IsEnd)
+        {
+            var kind = cursor.Current.Kind;
+            // After a semicolon, the next statement starts
+            if (kind == TokenKind.Semicolon) { cursor = cursor.Advance(); break; }
+            // Stop at `}` (end of block — don't consume it)
+            if (kind == TokenKind.RBrace) break;
+            // Stop at statement-starting keywords
+            if (kind is TokenKind.Var or TokenKind.Return
+                or TokenKind.If or TokenKind.While or TokenKind.Do
+                or TokenKind.For or TokenKind.Foreach
+                or TokenKind.Break or TokenKind.Continue
+                or TokenKind.Switch or TokenKind.Try or TokenKind.Throw
+                or TokenKind.LBrace)
+                break;
+            cursor = cursor.Advance();
+        }
+        return cursor;
     }
 
     internal static ParseResult<Stmt> ParseStmt(

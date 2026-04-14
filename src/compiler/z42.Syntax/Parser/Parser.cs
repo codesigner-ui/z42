@@ -1,5 +1,6 @@
 using Z42.Core.Text;
 using Z42.Core.Features;
+using Z42.Core.Diagnostics;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser.Core;
 
@@ -18,10 +19,20 @@ namespace Z42.Syntax.Parser;
 ///   ExprParser       — Pratt expression engine (NudTable / LedTable)
 ///   StmtParser       — statements and blocks
 ///   TopLevelParser   — compilation unit, class, function, enum, interface
+///
+/// Error recovery: the parser accumulates syntax errors into a DiagnosticBag
+/// and continues parsing. Statement and top-level declaration boundaries serve
+/// as recovery points. ErrorExpr/ErrorStmt placeholder nodes are inserted where
+/// parsing failed. Callers should check Diagnostics.HasErrors after parsing.
 public sealed class Parser
 {
     private readonly List<Token>      _tokens;
     private readonly LanguageFeatures _feat;
+    private readonly DiagnosticBag    _diags = new();
+
+    /// Syntax errors accumulated during parsing.
+    /// Check HasErrors after ParseCompilationUnit() instead of catching ParseException.
+    public DiagnosticBag Diagnostics => _diags;
 
     public Parser(List<Token> tokens, LanguageFeatures? features = null)
     {
@@ -32,7 +43,7 @@ public sealed class Parser
     public CompilationUnit ParseCompilationUnit()
     {
         var cursor = TokenCursor.From(_tokens);
-        return TopLevelParser.ParseCompilationUnit(cursor, _feat);
+        return TopLevelParser.ParseCompilationUnit(cursor, _feat, _diags);
     }
 
     public Expr ParseExpr()

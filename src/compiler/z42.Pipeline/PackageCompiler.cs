@@ -320,13 +320,10 @@ public static class PackageCompiler
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
 
         var tokens = new Lexer(source, sourceFile).Tokenize();
-        try { cu = new Parser(tokens).ParseCompilationUnit(); }
-        catch (ParseException ex)
-        {
-            diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
-            diags.PrintAll();
-            return false;
-        }
+        var parser = new Parser(tokens);
+        cu = parser.ParseCompilationUnit();
+        foreach (var d in parser.Diagnostics.All) diags.Add(d);
+        if (diags.HasErrors) { diags.PrintAll(); return false; }
 
         new TypeChecker(diags).Check(cu);
         diags.PrintAll();

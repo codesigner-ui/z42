@@ -177,6 +177,9 @@ public sealed partial class TypeChecker
                 return resultType;
             }
 
+            case ErrorExpr:
+                return Z42Type.Error;
+
             default:
                 return Z42Type.Unknown;
         }

@@ -1,5 +1,6 @@
 using Z42.Core.Text;
 using System.Text;
+using Z42.Core.Diagnostics;
 using Z42.Core.Features;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser.Core;
@@ -33,7 +34,7 @@ internal static class TopLevelParser
     // ── Compilation unit ──────────────────────────────────────────────────────
 
     internal static CompilationUnit ParseCompilationUnit(
-        TokenCursor cursor, LanguageFeatures feat)
+        TokenCursor cursor, LanguageFeatures feat, DiagnosticBag? diags = null)
     {
         var start = cursor.Current.Span;
         string? ns = null;
@@ -61,34 +62,67 @@ internal static class TopLevelParser
         string? pendingNative = null;
         while (!cursor.IsEnd)
         {
-            if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
-            if (cursor.Current.Kind == TokenKind.Namespace)
+            try
             {
-                cursor = cursor.Advance();
-                ParseQualifiedName(ref cursor);
-                if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
-                continue;
+                if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
+                if (cursor.Current.Kind == TokenKind.Namespace)
+                {
+                    cursor = cursor.Advance();
+                    ParseQualifiedName(ref cursor);
+                    if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
+                    continue;
+                }
+                if (cursor.Current.Kind == TokenKind.Using)
+                {
+                    cursor = cursor.Advance();
+                    ParseQualifiedName(ref cursor);
+                    if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
+                    continue;
+                }
+                if (IsEnumDecl(cursor))          { pendingNative = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
+                if (IsInterfaceDecl(cursor))      { pendingNative = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
+                if (IsClassOrStructDecl(cursor))  { pendingNative = null; classes.Add(ParseClassDecl(ref cursor, feat, diags)); continue; }
+                functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags));
+                pendingNative = null;
             }
-            if (cursor.Current.Kind == TokenKind.Using)
+            catch (ParseException ex) when (diags != null)
             {
-                cursor = cursor.Advance();
-                ParseQualifiedName(ref cursor);
-                if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
-                continue;
+                diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+                pendingNative = null;
+                cursor = SkipToNextDeclaration(cursor);
             }
-            if (IsEnumDecl(cursor))          { pendingNative = null; enums.Add(ParseEnumDecl(ref cursor)); continue; }
-            if (IsInterfaceDecl(cursor))      { pendingNative = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
-            if (IsClassOrStructDecl(cursor))  { pendingNative = null; classes.Add(ParseClassDecl(ref cursor, feat)); continue; }
-            functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative));
-            pendingNative = null;
         }
 
         return new CompilationUnit(ns, usings, classes, functions, enums, interfaces, start);
     }
 
+    /// Skip tokens until we reach a plausible start of a new top-level declaration.
+    private static TokenCursor SkipToNextDeclaration(TokenCursor cursor)
+    {
+        while (!cursor.IsEnd)
+        {
+            var kind = cursor.Current.Kind;
+            // Stop at tokens that start a new top-level declaration
+            if (kind is TokenKind.Class or TokenKind.Struct or TokenKind.Enum
+                or TokenKind.Interface or TokenKind.Namespace or TokenKind.Using
+                or TokenKind.Public or TokenKind.Private or TokenKind.Internal
+                or TokenKind.Protected or TokenKind.Abstract or TokenKind.Sealed
+                or TokenKind.Static or TokenKind.Virtual or TokenKind.Override
+                or TokenKind.LBracket)
+                break;
+            // Stop at type keywords that could start a function: `void Main()`, `int Foo()`
+            if (TokenDefs.TypeKeywords.Contains(kind))
+                break;
+            // Stop after `}` (end of previous declaration)
+            if (kind == TokenKind.RBrace) { cursor = cursor.Advance(); break; }
+            cursor = cursor.Advance();
+        }
+        return cursor;
+    }
+
     // ── Enum ──────────────────────────────────────────────────────────────────
 
-    private static EnumDecl ParseEnumDecl(ref TokenCursor cursor)
+    private static EnumDecl ParseEnumDecl(ref TokenCursor cursor, DiagnosticBag? diags = null)
     {
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, Visibility.Internal);
@@ -110,8 +144,20 @@ internal static class TopLevelParser
             var mSpan = cursor.Current.Span;
             if (cursor.Current.Kind is TokenKind.Public or TokenKind.Private
                                     or TokenKind.Protected or TokenKind.Internal)
+            {
+                if (diags != null)
+                {
+                    diags.Error(DiagnosticCodes.UnexpectedToken,
+                        "enum members cannot have access modifiers", cursor.Current.Span);
+                    while (!cursor.IsEnd && cursor.Current.Kind != TokenKind.Comma
+                                        && cursor.Current.Kind != TokenKind.RBrace)
+                        cursor = cursor.Advance();
+                    if (cursor.Current.Kind == TokenKind.Comma) cursor = cursor.Advance();
+                    continue;
+                }
                 throw new ParseException("enum members cannot have access modifiers",
                     cursor.Current.Span);
+            }
 
             var mName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
             long? val;
@@ -185,7 +231,8 @@ internal static class TopLevelParser
 
     // ── Class / struct / record ───────────────────────────────────────────────
 
-    private static ClassDecl ParseClassDecl(ref TokenCursor cursor, LanguageFeatures feat)
+    private static ClassDecl ParseClassDecl(ref TokenCursor cursor, LanguageFeatures feat,
+        DiagnosticBag? diags = null)
     {
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, Visibility.Internal);
@@ -265,33 +312,46 @@ internal static class TopLevelParser
         string? pendingNative = null;
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
-            if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
-            if (IsFieldDecl(cursor))
+            try
             {
-                pendingNative = null;
-                var fSpan = cursor.Current.Span;
-                var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
-                var (fStatic, _, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
-                var fType = TypeParser.Parse(cursor).Unwrap(ref cursor);
-                var fName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
-                Expr? fInit = null;
-                if (cursor.Current.Kind == TokenKind.LBrace)
-                    SkipAutoPropBody(ref cursor);
+                if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
+                if (IsFieldDecl(cursor))
+                {
+                    pendingNative = null;
+                    var fSpan = cursor.Current.Span;
+                    var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
+                    var (fStatic, _, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
+                    var fType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+                    var fName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+                    Expr? fInit = null;
+                    if (cursor.Current.Kind == TokenKind.LBrace)
+                        SkipAutoPropBody(ref cursor);
+                    else
+                    {
+                        if (cursor.Current.Kind == TokenKind.Eq)
+                        {
+                            cursor = cursor.Advance();
+                            fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1).Unwrap(ref cursor);
+                        }
+                        ExpectKind(ref cursor, TokenKind.Semicolon);
+                    }
+                    fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan));
+                }
                 else
                 {
-                    if (cursor.Current.Kind == TokenKind.Eq)
-                    {
-                        cursor = cursor.Advance();
-                        fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1).Unwrap(ref cursor);
-                    }
-                    ExpectKind(ref cursor, TokenKind.Semicolon);
+                    methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags));
+                    pendingNative = null;
                 }
-                fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan));
             }
-            else
+            catch (ParseException ex) when (diags != null)
             {
-                methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative));
+                diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
                 pendingNative = null;
+                if (!cursor.IsEnd) cursor = cursor.Advance();
+                while (!cursor.IsEnd && cursor.Current.Kind != TokenKind.RBrace
+                                     && cursor.Current.Kind != TokenKind.Semicolon)
+                    cursor = cursor.Advance();
+                if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
             }
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
@@ -303,7 +363,7 @@ internal static class TopLevelParser
 
     internal static FunctionDecl ParseFunctionDecl(
         ref TokenCursor cursor, LanguageFeatures feat, Visibility defaultVis,
-        string? nativeIntrinsic = null)
+        string? nativeIntrinsic = null, DiagnosticBag? diags = null)
     {
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, defaultVis);
@@ -375,7 +435,7 @@ internal static class TopLevelParser
         }
         else
         {
-            body = StmtParser.ParseBlock(cursor, feat).Unwrap(ref cursor);
+            body = StmtParser.ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         }
 
         return new FunctionDecl(name, parms, returnType, body, vis,

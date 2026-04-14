@@ -106,6 +106,9 @@ public sealed record ArrayType(TypeExpr Element, Span Span) : TypeExpr(Span);  /
 
 public abstract record Stmt(Span Span);
 
+/// Placeholder for a statement that failed to parse (error recovery).
+public sealed record ErrorStmt(string Message, Span Span) : Stmt(Span);
+
 /// var name = init;  or  Type name = init;
 public sealed record VarDeclStmt(
     string Name,
@@ -158,6 +161,9 @@ public sealed record ThrowStmt(Expr Value, Span Span) : Stmt(Span);
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 public abstract record Expr(Span Span);
+
+/// Placeholder for an expression that failed to parse (error recovery).
+public sealed record ErrorExpr(string Message, Span Span) : Expr(Span);
 
 public sealed record LitIntExpr(long Value, Span Span)         : Expr(Span);
 public sealed record LitFloatExpr(double Value, bool IsFloat, Span Span) : Expr(Span);

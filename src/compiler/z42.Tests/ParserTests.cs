@@ -368,10 +368,14 @@ public sealed class ParserTests
     // ── Error handling ────────────────────────────────────────────────────────
 
     [Fact]
-    public void MissingClosingBrace_ThrowsParseException()
+    public void MissingClosingBrace_ReportsDiagnostic()
     {
-        Action act = () => ParseCu("void Main() {");
-        act.Should().Throw<ParseException>();
+        var tokens = new Lexer("void Main() {").Tokenize();
+        var parser = new Parser(tokens, LanguageFeatures.Phase1);
+        parser.ParseCompilationUnit();
+        parser.Diagnostics.HasErrors.Should().BeTrue();
+        parser.Diagnostics.All.Should().ContainSingle()
+            .Which.Message.Should().Contain("expected `}`");
     }
 
     [Fact]
@@ -383,10 +387,12 @@ public sealed class ParserTests
     }
 
     [Fact]
-    public void UnknownTokenInExpr_ThrowsParseException()
+    public void UnknownTokenInExpr_ReportsDiagnostic()
     {
-        Action act = () => ParseStmt("var x = @;");
-        act.Should().Throw<ParseException>();
+        var tokens = new Lexer("void Main() { var x = @; }").Tokenize();
+        var parser = new Parser(tokens, LanguageFeatures.Phase1);
+        parser.ParseCompilationUnit();
+        parser.Diagnostics.HasErrors.Should().BeTrue();
     }
 
     // ── extern / [Native] ─────────────────────────────────────────────────────

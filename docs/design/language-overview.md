@@ -496,4 +496,34 @@ public static void Log(string msg) => Console.WriteLine(msg);
 
 ---
 
+---
+
+## 16. 编译器错误恢复
+
+z42 编译器支持**多错误报告**（error recovery）：解析器遇到语法错误后不立即停止，而是恢复到下一个恢复点并继续解析，从而在单次编译中报告多个错误。
+
+**恢复点层级（从粗到细）：**
+
+| 层级 | 恢复位置 | 说明 |
+|------|----------|------|
+| 顶层声明 | 下一个 `class`/`struct`/`enum`/`void`/类型关键字 | 一个声明解析失败后继续解析下一个 |
+| 类体成员 | 下一个 `;` 或 `}` | 一个字段/方法失败后继续解析下一个成员 |
+| 枚举成员 | 下一个 `,` 或 `}` | 枚举成员修饰符等错误后跳过该成员 |
+| 语句 | 下一个 `;` / `}` / 语句关键字 | 一条语句失败后继续解析同一块的后续语句 |
+
+**AST 占位节点：**
+- `ErrorExpr` — 表达式解析失败时插入，TypeChecker 将其类型推断为 `Error`，Codegen 生成空常量
+- `ErrorStmt` — 语句解析失败时插入，Codegen 跳过
+
+**调用方式：**
+```csharp
+// 推荐：不捕获异常，通过 Diagnostics 检查
+var cu = parser.ParseCompilationUnit();
+if (parser.Diagnostics.HasErrors) { /* 处理错误 */ }
+```
+
+> 错误恢复是尽力而为的机制，用于改善开发体验。级联错误（cascade errors）可能出现，但编译器保证不会因错误恢复陷入死循环。
+
+---
+
 > IR 映射细节（`do-while`、`??`、`?.`、`enum` 编译策略、`List<T>`/`Dictionary<K,V>` 内置方法）见 [`docs/design/ir.md`](ir.md)。

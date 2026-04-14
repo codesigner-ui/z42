@@ -34,11 +34,11 @@ public static class SingleFileCompiler
             return 0;
         }
 
-        CompilationUnit cu;
-        try   { cu = new Parser(tokens).ParseCompilationUnit(); }
-        catch (ParseException ex)
+        var parser = new Parser(tokens);
+        var cu     = parser.ParseCompilationUnit();
+        if (parser.Diagnostics.HasErrors)
         {
-            Console.Error.WriteLine($"error[E0001]: {source.Name}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
+            parser.Diagnostics.PrintAll();
             return 1;
         }
 

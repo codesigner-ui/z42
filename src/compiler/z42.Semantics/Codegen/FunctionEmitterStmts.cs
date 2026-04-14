@@ -88,6 +88,9 @@ internal sealed partial class FunctionEmitter
             case ThrowStmt th:
                 EndBlock(new ThrowTerm(EmitExpr(th.Value)));
                 break;
+
+            case ErrorStmt:
+                break;  // skip error recovery placeholders
         }
     }
 

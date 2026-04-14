@@ -194,6 +194,14 @@ internal sealed partial class FunctionEmitter
             case SwitchExpr sw:
                 return EmitSwitchExpr(sw);
 
+            case ErrorExpr:
+            {
+                // Error recovery placeholder — emit null constant
+                int dst = Alloc();
+                Emit(new ConstNullInstr(dst));
+                return dst;
+            }
+
             default:
                 throw new NotSupportedException(
                     $"expression type {expr.GetType().Name} not yet supported in IrGen");
