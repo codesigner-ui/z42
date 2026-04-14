@@ -6,13 +6,14 @@
 /// pools 0..i-1.
 use super::bytecode::{BasicBlock, Instruction, Module};
 use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 
 /// Merge an ordered sequence of IR modules into a single flat module.
 ///
 /// Merge rules:
 /// - `string_pool`: concatenated in order; `ConstStr.idx` remapped accordingly.
-/// - `classes`: concatenated (Phase 1 trusts the compiler for no duplicates).
-/// - `functions`: concatenated (qualified names keep them distinct across namespaces).
+/// - `classes`: idempotent merge by `name` (last definition wins).
+/// - `functions`: idempotent merge by `name` (last definition wins).
 /// - `name`: taken from the first module.
 pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
     if modules.is_empty() {
@@ -28,18 +29,33 @@ pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
 
     let name = modules[0].name.clone();
     let mut string_pool: Vec<String> = Vec::new();
+    let mut seen_classes: HashSet<String> = HashSet::new();
     let mut classes = Vec::new();
+    let mut seen_functions: HashSet<String> = HashSet::new();
     let mut functions = Vec::new();
 
     for mut module in modules {
         let offset = string_pool.len() as u32;
         string_pool.extend(module.string_pool);
-        classes.extend(module.classes);
+
+        // Idempotent class merge: keep first occurrence by name.
+        for cls in module.classes {
+            if seen_classes.insert(cls.name.clone()) {
+                classes.push(cls);
+            }
+        }
+
         remap_functions(&mut module.functions, offset);
-        functions.extend(module.functions);
+
+        // Idempotent function merge: keep first occurrence by name.
+        for func in module.functions {
+            if seen_functions.insert(func.name.clone()) {
+                functions.push(func);
+            }
+        }
     }
 
-    Ok(Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new() })
+    Ok(Module { name, string_pool, classes, functions, type_registry: HashMap::new() })
 }
 
 /// Shift every `ConstStr.idx` inside `functions` by `offset`.

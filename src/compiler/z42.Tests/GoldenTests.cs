@@ -161,7 +161,7 @@ public sealed class GoldenTests
             return (null, diags, new HashSet<string>());
         }
 
-        var typeChecker = new TypeChecker(diags);
+        var typeChecker = new TypeChecker(diags, features);
         typeChecker.Check(cu);
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
@@ -169,7 +169,7 @@ public sealed class GoldenTests
         IrModule ir;
         try
         {
-            gen = new IrGen(StdlibIndex);
+            gen = new IrGen(StdlibIndex, features);
             ir = gen.Generate(cu);
         }
         catch (Exception ex)

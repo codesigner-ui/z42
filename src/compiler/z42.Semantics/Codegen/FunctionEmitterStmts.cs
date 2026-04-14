@@ -1,11 +1,10 @@
-using Z42.Core.Text;
 using Z42.Syntax.Parser;
 using Z42.IR;
 
 namespace Z42.Semantics.Codegen;
 
-/// Statement and control flow emission — part of the IrGen partial class.
-public sealed partial class IrGen
+/// Statement and control flow emission — part of the FunctionEmitter partial class.
+internal sealed partial class FunctionEmitter
 {
     // ── Statements ────────────────────────────────────────────────────────────
 
@@ -13,7 +12,7 @@ public sealed partial class IrGen
     {
         foreach (var stmt in block.Stmts)
         {
-            if (_blockEnded) break;   // dead code after return/break/continue
+            if (_blockEnded) break;
             EmitStmt(stmt);
         }
     }
@@ -23,9 +22,7 @@ public sealed partial class IrGen
         switch (stmt)
         {
             case VarDeclStmt v:
-                _mutableVars.Add(v.Name);   // mark as mutable local
-                // Track class instance vars for pseudo-class builtin disambiguation.
-                // Exclude pseudo-classes (List, Dictionary) — they map to Array/Map VM values.
+                _mutableVars.Add(v.Name);
                 if (v.Init is NewExpr { Type: NamedType nt }
                     && !nt.Name.StartsWith("List") && !nt.Name.StartsWith("Dictionary"))
                     _classInstanceVars.Add(v.Name);
@@ -101,33 +98,24 @@ public sealed partial class IrGen
         string tryStartLbl = FreshLabel("try_start");
         string tryEndLbl   = FreshLabel("try_end");
         string afterLbl    = FreshLabel("after_try");
-        // If there is a finally block, all paths go through it before afterLbl.
         string finallyLbl  = tc.Finally != null ? FreshLabel("finally") : afterLbl;
 
         EndBlock(new BrTerm(tryStartLbl));
 
-        // Try body
         StartBlock(tryStartLbl);
         EmitBlock(tc.TryBody);
         if (!_blockEnded) EndBlock(new BrTerm(tryEndLbl));
 
-        // try_end block: jump to finally (or after if no finally)
         StartBlock(tryEndLbl);
         EndBlock(new BrTerm(finallyLbl));
 
-        // Catch clauses
         foreach (var clause in tc.Catches)
         {
-            int catchReg        = Alloc();
+            int catchReg         = Alloc();
             string catchStartLbl = FreshLabel("catch_start");
-            string catchEndLbl   = FreshLabel("catch_end");
 
             _exceptionTable.Add(new IrExceptionEntry(
-                tryStartLbl,
-                tryEndLbl,
-                catchStartLbl,
-                clause.ExceptionType,
-                catchReg));
+                tryStartLbl, tryEndLbl, catchStartLbl, clause.ExceptionType, catchReg));
 
             StartBlock(catchStartLbl);
             if (clause.VarName != null)
@@ -139,10 +127,6 @@ public sealed partial class IrGen
             if (!_blockEnded) EndBlock(new BrTerm(finallyLbl));
         }
 
-        // Synthesize a catch-all for finally-without-catch:
-        // If no explicit catch clause exists but there is a finally block, we need
-        // an exception table entry that catches any exception, runs the finally body,
-        // and re-throws. Without this, throw propagates past the finally.
         if (tc.Catches.Count == 0 && tc.Finally != null)
         {
             int catchAllReg         = Alloc();
@@ -160,7 +144,6 @@ public sealed partial class IrGen
             EndBlock(new ThrowTerm(catchAllReg));
         }
 
-        // Finally (run after try/catch regardless — normal path)
         if (tc.Finally != null)
         {
             StartBlock(finallyLbl);
@@ -173,13 +156,11 @@ public sealed partial class IrGen
 
     // ── Switch statement ──────────────────────────────────────────────────────
 
-    /// Compiles `switch (subject) { case p: stmts break; ... default: stmts }` as an if-else chain.
     private void EmitSwitchStmt(SwitchStmt sw)
     {
         int subjReg = EmitExpr(sw.Subject);
         string endLbl = FreshLabel("sw_end");
 
-        // Push to loop stack so `break` inside cases exits the switch
         string outerContinue = _loopStack.Count > 0 ? _loopStack.Peek().Continue : endLbl;
         _loopStack.Push((endLbl, outerContinue));
 
@@ -187,7 +168,6 @@ public sealed partial class IrGen
         {
             if (c.Pattern == null)
             {
-                // default: emit body unconditionally
                 foreach (var s in c.Body)
                 {
                     if (_blockEnded) break;
@@ -233,12 +213,10 @@ public sealed partial class IrGen
 
         EndBlock(new BrCondTerm(condReg, thenLbl, elseLbl));
 
-        // then branch
         StartBlock(thenLbl);
         EmitBlock(ifStmt.Then);
         if (!_blockEnded) EndBlock(new BrTerm(endLbl));
 
-        // else branch (optional)
         if (ifStmt.Else != null)
         {
             StartBlock(elseLbl);
@@ -246,7 +224,6 @@ public sealed partial class IrGen
             if (!_blockEnded) EndBlock(new BrTerm(endLbl));
         }
 
-        // merge / continuation
         StartBlock(endLbl);
     }
 
@@ -262,7 +239,6 @@ public sealed partial class IrGen
         int condReg = EmitExpr(ws.Condition);
         EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
-        // continue → re-check condition; break → exit
         _loopStack.Push((endLbl, condLbl));
         StartBlock(bodyLbl);
         EmitBlock(ws.Body);
@@ -280,7 +256,6 @@ public sealed partial class IrGen
 
         EndBlock(new BrTerm(bodyLbl));
 
-        // continue → re-check condition; break → exit
         _loopStack.Push((endLbl, condLbl));
         StartBlock(bodyLbl);
         EmitBlock(dw.Body);
@@ -313,10 +288,9 @@ public sealed partial class IrGen
         }
         else
         {
-            EndBlock(new BrTerm(bodyLbl));  // infinite loop
+            EndBlock(new BrTerm(bodyLbl));
         }
 
-        // continue → increment; break → exit
         _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
         EmitBlock(fs.Body);
@@ -332,13 +306,10 @@ public sealed partial class IrGen
 
     private void EmitForeach(ForeachStmt fe)
     {
-        // Evaluate collection once in the current (pre-loop) block
         int arrReg = EmitExpr(fe.Collection);
-
         int lenReg = Alloc();
         Emit(new ArrayLenInstr(lenReg, arrReg));
 
-        // Init counter variable
         string indexVar = $"__fe_i_{_nextLabelId}";
         _mutableVars.Add(indexVar);
         int zeroReg = Alloc();
@@ -352,7 +323,6 @@ public sealed partial class IrGen
 
         EndBlock(new BrTerm(condLbl));
 
-        // Condition: i < len
         StartBlock(condLbl);
         int iReg   = Alloc();
         Emit(new LoadInstr(iReg, indexVar));
@@ -360,8 +330,6 @@ public sealed partial class IrGen
         Emit(new LtInstr(cmpReg, iReg, lenReg));
         EndBlock(new BrCondTerm(cmpReg, bodyLbl, endLbl));
 
-        // Body: load element, bind loop variable, run body
-        // continue → increment block; break → end
         _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
         int iReg2   = Alloc();
@@ -374,7 +342,6 @@ public sealed partial class IrGen
         if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
         _loopStack.Pop();
 
-        // Increment: i = i + 1
         StartBlock(incrLbl);
         int iReg3   = Alloc();
         Emit(new LoadInstr(iReg3, indexVar));

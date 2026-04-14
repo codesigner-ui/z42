@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Core.Features;
 using Z42.Syntax.Lexer;
 using Z42.Core.Diagnostics;
 using Z42.Syntax.Parser;
@@ -23,6 +24,7 @@ namespace Z42.Semantics.TypeCheck;
 public sealed partial class TypeChecker
 {
     private readonly DiagnosticBag             _diags;
+    private readonly LanguageFeatures          _features;
     private          Dictionary<string, Z42FuncType>      _funcs      = new();
     private          Dictionary<string, Z42ClassType>     _classes    = new();
     private          Dictionary<string, Z42InterfaceType> _interfaces = new();
@@ -41,7 +43,11 @@ public sealed partial class TypeChecker
     /// The class currently being type-checked (null when checking top-level functions).
     private          string?                              _currentClass        = null;
 
-    public TypeChecker(DiagnosticBag diags) => _diags = diags;
+    public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null)
+    {
+        _diags    = diags;
+        _features = features ?? LanguageFeatures.Phase1;
+    }
 
     /// Sets <see cref="_currentClass"/> and returns a scope that clears it on disposal.
     private IDisposable EnterClass(string name)

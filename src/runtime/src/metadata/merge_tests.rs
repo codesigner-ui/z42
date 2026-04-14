@@ -2,25 +2,39 @@ use super::*;
 use crate::metadata::{BasicBlock, ExecMode, Function, Instruction, Module, Terminator};
 
 fn make_module(name: &str, strings: &[&str], const_str_idx: u32) -> Module {
+    make_module_with(name, strings, const_str_idx, vec![], vec![])
+}
+
+fn make_module_with(
+    name: &str,
+    strings: &[&str],
+    const_str_idx: u32,
+    classes: Vec<crate::metadata::ClassDesc>,
+    extra_functions: Vec<Function>,
+) -> Module {
     let instr = Instruction::ConstStr { dst: 0, idx: const_str_idx };
     let block = BasicBlock {
         label: "entry".to_string(),
         instructions: vec![instr],
         terminator: Terminator::Ret { reg: None },
     };
-    let func = Function {
+    let mut functions = vec![Function {
         name: format!("{}.Main", name),
         param_count: 0,
         ret_type: "void".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![block],
         exception_table: vec![],
-    };
+        is_static: false,
+        max_reg: 0,
+    }];
+    functions.extend(extra_functions);
     Module {
         name: name.to_string(),
         string_pool: strings.iter().map(|s| s.to_string()).collect(),
-        classes: vec![],
-        functions: vec![func],
+        classes,
+        functions,
+        type_registry: std::collections::HashMap::new(),
     }
 }
 
@@ -80,4 +94,54 @@ fn merge_three_modules_offsets_accumulate() {
 #[test]
 fn merge_empty_returns_error() {
     assert!(merge_modules(vec![]).is_err());
+}
+
+#[test]
+fn merge_deduplicates_classes_by_name() {
+    use crate::metadata::{ClassDesc, FieldDesc};
+
+    let cls = ClassDesc {
+        name: "Std.Object".to_string(),
+        base_class: None,
+        fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string() }],
+    };
+    let cls_dup = ClassDesc {
+        name: "Std.Object".to_string(),
+        base_class: None,
+        fields: vec![],
+    };
+    let m0 = make_module_with("A", &["a"], 0, vec![cls], vec![]);
+    let m1 = make_module_with("B", &["b"], 0, vec![cls_dup], vec![]);
+
+    let merged = merge_modules(vec![m0, m1]).unwrap();
+    // Only one Std.Object, the first one (with field "x")
+    let obj_classes: Vec<_> = merged.classes.iter().filter(|c| c.name == "Std.Object").collect();
+    assert_eq!(obj_classes.len(), 1);
+    assert_eq!(obj_classes[0].fields.len(), 1);
+}
+
+#[test]
+fn merge_deduplicates_functions_by_name() {
+    let dup_func = Function {
+        name: "A.Main".to_string(),
+        param_count: 0,
+        ret_type: "i32".to_string(), // different ret_type to distinguish
+        exec_mode: ExecMode::Interp,
+        blocks: vec![BasicBlock {
+            label: "entry".to_string(),
+            instructions: vec![Instruction::ConstStr { dst: 0, idx: 0 }],
+            terminator: Terminator::Ret { reg: None },
+        }],
+        exception_table: vec![],
+        is_static: false,
+        max_reg: 0,
+    };
+    let m0 = make_module("A", &["hello"], 0);
+    let m1 = make_module_with("B", &["world"], 0, vec![], vec![dup_func]);
+
+    let merged = merge_modules(vec![m0, m1]).unwrap();
+    // A.Main appears only once (the first one with ret_type "void")
+    let a_mains: Vec<_> = merged.functions.iter().filter(|f| f.name == "A.Main").collect();
+    assert_eq!(a_mains.len(), 1);
+    assert_eq!(a_mains[0].ret_type, "void");
 }
