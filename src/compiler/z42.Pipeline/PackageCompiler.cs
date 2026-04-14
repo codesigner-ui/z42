@@ -1,4 +1,5 @@
 using Z42.Core.Diagnostics;
+using Z42.Core.Text;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
@@ -149,114 +150,22 @@ public static class PackageCompiler
         string                projectDir,
         string                outDir)
     {
-        // ── Scan .zpkg files in libs/ dirs for namespace → filename mapping ──
-        var nsMap = new Dictionary<string, string>(StringComparer.Ordinal);
-        var libsDirs = new[]
-        {
+        var libsDirs    = new[] {
             Path.Combine(projectDir, "libs"),
             Path.Combine(projectDir, "artifacts", "z42", "libs"),
         };
-        foreach (var libsDir in libsDirs)
-        {
-            if (!Directory.Exists(libsDir)) continue;
-            foreach (var zpkgFile in Directory.EnumerateFiles(libsDir, "*.zpkg"))
-            {
-                try
-                {
-                    var bytes = File.ReadAllBytes(zpkgFile);
-                    var ns    = ZpkgReader.ReadNamespaces(bytes);
-                    string fname = Path.GetFileName(zpkgFile);
-                    foreach (var n in ns) nsMap.TryAdd(n, fname);
-                }
-                catch { /* skip malformed zpkg */ }
-            }
-        }
-
-        // ── Build StdlibCallIndex from lib-kind zpkgs ──
+        var nsMap       = ScanLibsForNamespaces(libsDirs);
         var stdlibIndex = BuildStdlibIndex(libsDirs);
+        ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
-        // ── Scan .zbc files in Z42_PATH and cwd/modules/ (zbc overrides zpkg) ──
-        var zbcScanDirs = new List<string>();
-        var z42Path = Environment.GetEnvironmentVariable("Z42_PATH");
-        if (!string.IsNullOrEmpty(z42Path))
-            zbcScanDirs.AddRange(z42Path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries));
-        var cwd = Directory.GetCurrentDirectory();
-        zbcScanDirs.Add(cwd);
-        zbcScanDirs.Add(Path.Combine(cwd, "modules"));
+        var units = TryCompileSourceFiles(sourceFiles, stdlibIndex);
+        if (units is null) return 1;
 
-        foreach (var dir in zbcScanDirs)
-        {
-            if (!Directory.Exists(dir)) continue;
-            foreach (var zbcFile in Directory.EnumerateFiles(dir, "*.zbc"))
-            {
-                try
-                {
-                    var bytes = File.ReadAllBytes(zbcFile);
-                    var ns    = ZbcReader.ReadNamespace(bytes);
-                    if (string.IsNullOrEmpty(ns)) continue;
-                    string fname = Path.GetFileName(zbcFile);
-                    nsMap[ns] = fname;
-                }
-                catch { /* skip malformed zbc */ }
-            }
-        }
+        WarnUnresolvedUsings(units, nsMap);
 
-        // ── Compile all source files ──
-        var units  = new List<CompiledUnit>();
-        int errors = 0;
-
-        foreach (var sourceFile in sourceFiles)
-        {
-            var unit = CompileFile(sourceFile, stdlibIndex);
-            if (unit is null) { errors++; continue; }
-            units.Add(unit);
-        }
-
-        if (errors > 0)
-        { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return 1; }
-
-        // ── Warn on unresolved namespaces in `using` declarations ──
-        if (nsMap.Count > 0)
-        {
-            foreach (var unit in units)
-            {
-                foreach (var usingNs in unit.Usings)
-                {
-                    if (!nsMap.ContainsKey(usingNs))
-                        Console.Error.WriteLine(
-                            $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
-                }
-            }
-        }
-
-        // ── Build dependencies list from resolved usings + stdlib calls ──
-        var depMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-
-        void AddDepNs(string ns)
-        {
-            if (!nsMap.TryGetValue(ns, out var depFile)) return;
-            if (!depMap.TryGetValue(depFile, out var nsList))
-            {
-                nsList = [];
-                depMap[depFile] = nsList;
-            }
-            if (!nsList.Contains(ns))
-                nsList.Add(ns);
-        }
-
-        foreach (var unit in units)
-        {
-            foreach (var usingNs in unit.Usings)
-                AddDepNs(usingNs);
-            foreach (var stdNs in unit.UsedStdlibNamespaces)
-                AddDepNs(stdNs);
-        }
-        var dependencies = depMap
-            .Select(kv => new ZpkgDep(kv.Key, kv.Value))
-            .ToList();
-
-        string cacheDir = Path.Combine(projectDir, ".cache");
-        var zbcFiles = units.Select(u => u.ToZbcFile()).ToList();
+        var dependencies = BuildDependencyMap(units, nsMap);
+        string cacheDir  = Path.Combine(projectDir, ".cache");
+        var zbcFiles     = units.Select(u => u.ToZbcFile()).ToList();
 
         ZpkgFile zpkg;
         if (pack)
@@ -279,30 +188,156 @@ public static class PackageCompiler
         return 0;
     }
 
+    // ── Build target sub-steps ────────────────────────────────────────────────
+
+    /// Scan .zpkg files in libs dirs and build a namespace → filename map.
+    static Dictionary<string, string> ScanLibsForNamespaces(string[] libsDirs)
+    {
+        var nsMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var libsDir in libsDirs)
+        {
+            if (!Directory.Exists(libsDir)) continue;
+            foreach (var zpkgFile in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+            {
+                try
+                {
+                    var bytes = File.ReadAllBytes(zpkgFile);
+                    var ns    = ZpkgReader.ReadNamespaces(bytes);
+                    string fname = Path.GetFileName(zpkgFile);
+                    foreach (var n in ns) nsMap.TryAdd(n, fname);
+                }
+                catch { /* skip malformed zpkg */ }
+            }
+        }
+        return nsMap;
+    }
+
+    /// Return the list of directories to scan for .zbc files (Z42_PATH + cwd + cwd/modules).
+    static List<string> BuildZbcScanDirs()
+    {
+        var dirs   = new List<string>();
+        var z42Path = Environment.GetEnvironmentVariable("Z42_PATH");
+        if (!string.IsNullOrEmpty(z42Path))
+            dirs.AddRange(z42Path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries));
+        var cwd = Directory.GetCurrentDirectory();
+        dirs.Add(cwd);
+        dirs.Add(Path.Combine(cwd, "modules"));
+        return dirs;
+    }
+
+    /// Scan .zbc files and add/override namespace → filename entries in <paramref name="nsMap"/>.
+    static void ScanZbcForNamespaces(IEnumerable<string> dirs, Dictionary<string, string> nsMap)
+    {
+        foreach (var dir in dirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var zbcFile in Directory.EnumerateFiles(dir, "*.zbc"))
+            {
+                try
+                {
+                    var bytes = File.ReadAllBytes(zbcFile);
+                    var ns    = ZbcReader.ReadNamespace(bytes);
+                    if (string.IsNullOrEmpty(ns)) continue;
+                    nsMap[ns] = Path.GetFileName(zbcFile);
+                }
+                catch { /* skip malformed zbc */ }
+            }
+        }
+    }
+
+    /// Compile all source files; returns null and prints an error count if any file fails.
+    static List<CompiledUnit>? TryCompileSourceFiles(
+        IReadOnlyList<string> sourceFiles,
+        StdlibCallIndex       stdlibIndex)
+    {
+        var units  = new List<CompiledUnit>();
+        int errors = 0;
+        foreach (var sourceFile in sourceFiles)
+        {
+            var unit = CompileFile(sourceFile, stdlibIndex);
+            if (unit is null) { errors++; continue; }
+            units.Add(unit);
+        }
+        if (errors > 0)
+        { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return null; }
+        return units;
+    }
+
+    /// Emit warnings for `using` declarations that cannot be resolved in <paramref name="nsMap"/>.
+    static void WarnUnresolvedUsings(
+        IReadOnlyList<CompiledUnit>  units,
+        Dictionary<string, string>   nsMap)
+    {
+        if (nsMap.Count == 0) return;
+        foreach (var unit in units)
+            foreach (var usingNs in unit.Usings)
+                if (!nsMap.ContainsKey(usingNs))
+                    Console.Error.WriteLine(
+                        $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
+    }
+
+    /// Build the dependency list (file → namespaces) from resolved usings and stdlib calls.
+    static List<ZpkgDep> BuildDependencyMap(
+        IReadOnlyList<CompiledUnit>  units,
+        Dictionary<string, string>   nsMap)
+    {
+        var depMap = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        void AddDepNs(string ns)
+        {
+            if (!nsMap.TryGetValue(ns, out var depFile)) return;
+            if (!depMap.TryGetValue(depFile, out var nsList))
+            {
+                nsList = [];
+                depMap[depFile] = nsList;
+            }
+            if (!nsList.Contains(ns)) nsList.Add(ns);
+        }
+
+        foreach (var unit in units)
+        {
+            foreach (var usingNs in unit.Usings)     AddDepNs(usingNs);
+            foreach (var stdNs in unit.UsedStdlibNamespaces) AddDepNs(stdNs);
+        }
+        return [.. depMap.Select(kv => new ZpkgDep(kv.Key, kv.Value))];
+    }
+
     // ── Per-file helpers ──────────────────────────────────────────────────────
+
+    /// Reads, lexes, parses and type-checks <paramref name="sourceFile"/>.
+    /// Prints diagnostics and returns false on any error.
+    static bool TryParseAndCheck(
+        string sourceFile,
+        out string source,
+        out CompilationUnit cu,
+        out DiagnosticBag diags)
+    {
+        source = "";
+        cu     = null!;
+        diags  = new DiagnosticBag();
+
+        try   { source = File.ReadAllText(sourceFile); }
+        catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
+
+        var tokens = new Lexer(source, sourceFile).Tokenize();
+        try { cu = new Parser(tokens).ParseCompilationUnit(); }
+        catch (ParseException ex)
+        {
+            diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+            diags.PrintAll();
+            return false;
+        }
+
+        new TypeChecker(diags).Check(cu);
+        if (diags.PrintAll()) return false;
+        return true;
+    }
 
     static CompiledUnit? CompileFile(string sourceFile, StdlibCallIndex stdlibIndex)
     {
-        string source;
-        try   { source = File.ReadAllText(sourceFile); }
-        catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return null; }
+        if (!TryParseAndCheck(sourceFile, out var source, out var cu, out _)) return null;
 
-        var tokens = new Lexer(source, sourceFile).Tokenize();
-
-        CompilationUnit cu;
-        try   { cu = new Parser(tokens).ParseCompilationUnit(); }
-        catch (ParseException ex)
-        {
-            Console.Error.WriteLine(
-                $"error[E0001]: {Path.GetFileName(sourceFile)}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
-            return null;
-        }
-
-        var diags = new DiagnosticBag();
-        new TypeChecker(diags).Check(cu);
-        if (diags.PrintAll()) return null;
-
-        var    gen      = new IrGen(stdlibIndex);
+        var gen = new IrGen(stdlibIndex);
         IrModule irModule;
         try   { irModule = gen.Generate(cu); }
         catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return null; }
@@ -315,27 +350,8 @@ public static class PackageCompiler
         return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule, usings, usedStdlib);
     }
 
-    static bool CheckFile(string sourceFile)
-    {
-        string source;
-        try   { source = File.ReadAllText(sourceFile); }
-        catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
-
-        var tokens = new Lexer(source, sourceFile).Tokenize();
-
-        CompilationUnit cu;
-        try   { cu = new Parser(tokens).ParseCompilationUnit(); }
-        catch (ParseException ex)
-        {
-            Console.Error.WriteLine(
-                $"error[E0001]: {Path.GetFileName(sourceFile)}:{ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
-            return false;
-        }
-
-        var diags = new DiagnosticBag();
-        new TypeChecker(diags).Check(cu);
-        return !diags.PrintAll();
-    }
+    static bool CheckFile(string sourceFile) =>
+        TryParseAndCheck(sourceFile, out _, out _, out _);
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 
