@@ -1,11 +1,8 @@
-using Z42.Core.Diagnostics;
 using Z42.Core.Text;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
 using Z42.Semantics.Codegen;
-using Z42.Semantics.TypeCheck;
-using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 
 namespace Z42.Pipeline;
@@ -304,54 +301,33 @@ public static class PackageCompiler
 
     // ── Per-file helpers ──────────────────────────────────────────────────────
 
-    /// Reads, lexes, parses and type-checks <paramref name="sourceFile"/>.
-    /// Prints diagnostics and returns false on any error.
-    static bool TryParseAndCheck(
-        string sourceFile,
-        out string source,
-        out CompilationUnit cu,
-        out DiagnosticBag diags,
-        out SemanticModel? sem)
+    static CompiledUnit? CompileFile(string sourceFile, StdlibCallIndex stdlibIndex)
     {
-        source = "";
-        cu     = null!;
-        diags  = new DiagnosticBag();
-        sem    = null;
+        string source;
+        try   { source = File.ReadAllText(sourceFile); }
+        catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return null; }
 
+        var result = PipelineCore.Compile(source, sourceFile, stdlibIndex);
+        result.Diags.PrintAll();
+        if (result.Diags.HasErrors || result.Module is null) return null;
+
+        string ns         = result.Namespace ?? "main";
+        string sourceHash = Sha256Hex(source);
+        var    exports    = result.Module.Functions.Select(f => f.Name).ToList();
+        return new CompiledUnit(sourceFile, ns, sourceHash, exports, result.Module,
+            result.Usings.ToList(), result.UsedStdlibNamespaces.ToList());
+    }
+
+    static bool CheckFile(string sourceFile)
+    {
+        string source;
         try   { source = File.ReadAllText(sourceFile); }
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
 
-        var tokens = new Lexer(source, sourceFile).Tokenize();
-        var parser = new Parser(tokens);
-        cu = parser.ParseCompilationUnit();
-        foreach (var d in parser.Diagnostics.All) diags.Add(d);
-        if (diags.HasErrors) { diags.PrintAll(); return false; }
-
-        sem = new TypeChecker(diags).Check(cu);
-        diags.PrintAll();
-        if (diags.HasErrors) return false;
-        return true;
+        var result = PipelineCore.Compile(source, sourceFile, StdlibCallIndex.Empty);
+        result.Diags.PrintAll();
+        return !result.Diags.HasErrors;
     }
-
-    static CompiledUnit? CompileFile(string sourceFile, StdlibCallIndex stdlibIndex)
-    {
-        if (!TryParseAndCheck(sourceFile, out var source, out var cu, out _, out var sem)) return null;
-
-        var gen = new IrGen(stdlibIndex, semanticModel: sem);
-        IrModule irModule;
-        try   { irModule = gen.Generate(cu); }
-        catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return null; }
-
-        string ns         = cu.Namespace ?? "main";
-        string sourceHash = Sha256Hex(source);
-        var    exports    = irModule.Functions.Select(f => f.Name).ToList();
-        var    usings     = cu.Usings.ToList();
-        var    usedStdlib = gen.UsedStdlibNamespaces.ToList();
-        return new CompiledUnit(sourceFile, ns, sourceHash, exports, irModule, usings, usedStdlib);
-    }
-
-    static bool CheckFile(string sourceFile) =>
-        TryParseAndCheck(sourceFile, out _, out _, out _, out _);
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 

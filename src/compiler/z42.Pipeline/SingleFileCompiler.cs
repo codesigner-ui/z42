@@ -1,9 +1,7 @@
 using System.Text.Json;
-using Z42.Core.Diagnostics;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
-using Z42.Semantics.Codegen;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 
@@ -44,26 +42,18 @@ public static class SingleFileCompiler
 
         if (dumpAst) { Console.WriteLine(cu); return 0; }
 
-        var diags = new DiagnosticBag();
-        var sem   = new Z42.Semantics.TypeCheck.TypeChecker(diags).Check(cu);
-        diags.PrintAll();
-        if (diags.HasErrors) return 1;
-
         // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
         var stdlibIndex = LocateStdlibIndex(source.FullName);
 
-        IrGen gen;
-        IrModule irModule;
-        try
-        {
-            gen = new IrGen(stdlibIndex, semanticModel: sem);
-            irModule = gen.Generate(cu);
-        }
-        catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return 1; }
+        var result = PipelineCore.CheckAndGenerate(cu, source.FullName, stdlibIndex);
+        result.Diags.PrintAll();
+        if (result.Diags.HasErrors || result.Module is null) return 1;
+
+        var irModule = result.Module;
 
         if (dumpIr) Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
 
-        string ns         = cu.Namespace ?? "main";
+        string ns         = result.Namespace ?? "main";
         string sourceHash = Sha256Hex(sourceText);
         var    exports    = irModule.Functions.Select(f => f.Name).ToList();
 
@@ -92,7 +82,7 @@ public static class SingleFileCompiler
             case "json-zbc":
             {
                 string path = outPath ?? (defaultBase + ".zbc");
-                var usedNs = gen.UsedStdlibNamespaces.ToList();
+                var usedNs = result.UsedStdlibNamespaces.ToList();
                 var zbc = new ZbcFile(
                     ZbcVersion : ZbcFile.CurrentVersion,
                     SourceFile : source.FullName,
