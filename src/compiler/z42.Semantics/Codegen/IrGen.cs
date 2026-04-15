@@ -2,6 +2,7 @@ using Z42.Core.Text;
 using Z42.Core.Features;
 using Z42.Syntax.Parser;
 using Z42.IR;
+using Z42.Semantics.TypeCheck;
 
 namespace Z42.Semantics.Codegen;
 
@@ -16,6 +17,8 @@ public sealed class IrGen
 {
     internal readonly StdlibCallIndex _stdlibIndex;
     internal readonly LanguageFeatures _features;
+    /// Semantic information produced by TypeChecker; null when running without type-check.
+    internal readonly SemanticModel? _semanticModel;
 
     // Stdlib namespaces used by this compilation unit (populated during codegen).
     internal readonly HashSet<string> _usedStdlibNamespaces = new();
@@ -39,10 +42,12 @@ public sealed class IrGen
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
-    public IrGen(StdlibCallIndex? stdlibIndex = null, LanguageFeatures? features = null)
+    public IrGen(StdlibCallIndex? stdlibIndex = null, LanguageFeatures? features = null,
+                 SemanticModel? semanticModel = null)
     {
-        _stdlibIndex = stdlibIndex ?? StdlibCallIndex.Empty;
-        _features    = features ?? LanguageFeatures.Phase1;
+        _stdlibIndex    = stdlibIndex ?? StdlibCallIndex.Empty;
+        _features       = features ?? LanguageFeatures.Phase1;
+        _semanticModel  = semanticModel;
     }
 
     // ── Public API ─────────────────────────────────────────────────────────────

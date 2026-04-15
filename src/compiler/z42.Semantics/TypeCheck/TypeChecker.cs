@@ -28,6 +28,9 @@ public sealed partial class TypeChecker
     private          Dictionary<string, Z42FuncType>      _funcs      = new();
     private          Dictionary<string, Z42ClassType>     _classes    = new();
     private          Dictionary<string, Z42InterfaceType> _interfaces = new();
+    /// Expression → inferred type, keyed by object identity (not structural equality).
+    private readonly Dictionary<Expr, Z42Type> _exprTypes =
+        new(ReferenceEqualityComparer.Instance);
     /// class name → set of interface names the class declares it implements
     private          Dictionary<string, HashSet<string>>  _classInterfaces = new();
     /// class name → set of abstract method names (inherited + own)
@@ -63,7 +66,7 @@ public sealed partial class TypeChecker
 
     // ── Public entry point ────────────────────────────────────────────────────
 
-    public void Check(CompilationUnit cu)
+    public SemanticModel Check(CompilationUnit cu)
     {
         CollectEnums(cu);
         CollectInterfaces(cu);
@@ -71,6 +74,8 @@ public sealed partial class TypeChecker
         CollectFunctions(cu);
         foreach (var cls in cu.Classes)   CheckClassMethods(cls);
         foreach (var fn  in cu.Functions) CheckFunction(fn);
+        return new SemanticModel(_classes, _funcs, _interfaces,
+            _globalEnumConstants, _enumTypes, _exprTypes);
     }
 
     // ── Pass 0a: enum constants ───────────────────────────────────────────────

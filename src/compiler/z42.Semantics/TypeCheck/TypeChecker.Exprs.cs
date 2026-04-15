@@ -10,7 +10,15 @@ public sealed partial class TypeChecker
 {
     // ── Expression dispatcher ─────────────────────────────────────────────────
 
+    /// Infer the type of <paramref name="expr"/> and record it in <see cref="_exprTypes"/>.
     private Z42Type CheckExpr(Expr expr, TypeEnv env)
+    {
+        var result = CheckExprCore(expr, env);
+        _exprTypes[expr] = result;
+        return result;
+    }
+
+    private Z42Type CheckExprCore(Expr expr, TypeEnv env)
     {
         switch (expr)
         {

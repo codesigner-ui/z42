@@ -155,14 +155,14 @@ public sealed class GoldenTests
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
         var typeChecker = new TypeChecker(diags, features);
-        typeChecker.Check(cu);
+        var sem = typeChecker.Check(cu);
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
         IrGen gen;
         IrModule ir;
         try
         {
-            gen = new IrGen(StdlibIndex, features);
+            gen = new IrGen(StdlibIndex, features, sem);
             ir = gen.Generate(cu);
         }
         catch (Exception ex)

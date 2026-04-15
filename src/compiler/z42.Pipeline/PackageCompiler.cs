@@ -310,11 +310,13 @@ public static class PackageCompiler
         string sourceFile,
         out string source,
         out CompilationUnit cu,
-        out DiagnosticBag diags)
+        out DiagnosticBag diags,
+        out SemanticModel? sem)
     {
         source = "";
         cu     = null!;
         diags  = new DiagnosticBag();
+        sem    = null;
 
         try   { source = File.ReadAllText(sourceFile); }
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
@@ -325,7 +327,7 @@ public static class PackageCompiler
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors) { diags.PrintAll(); return false; }
 
-        new TypeChecker(diags).Check(cu);
+        sem = new TypeChecker(diags).Check(cu);
         diags.PrintAll();
         if (diags.HasErrors) return false;
         return true;
@@ -333,9 +335,9 @@ public static class PackageCompiler
 
     static CompiledUnit? CompileFile(string sourceFile, StdlibCallIndex stdlibIndex)
     {
-        if (!TryParseAndCheck(sourceFile, out var source, out var cu, out _)) return null;
+        if (!TryParseAndCheck(sourceFile, out var source, out var cu, out _, out var sem)) return null;
 
-        var gen = new IrGen(stdlibIndex);
+        var gen = new IrGen(stdlibIndex, semanticModel: sem);
         IrModule irModule;
         try   { irModule = gen.Generate(cu); }
         catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return null; }
@@ -349,7 +351,7 @@ public static class PackageCompiler
     }
 
     static bool CheckFile(string sourceFile) =>
-        TryParseAndCheck(sourceFile, out _, out _, out _);
+        TryParseAndCheck(sourceFile, out _, out _, out _, out _);
 
     // ── Shared helpers ────────────────────────────────────────────────────────
 

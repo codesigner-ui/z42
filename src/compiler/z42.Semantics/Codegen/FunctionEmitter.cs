@@ -1,6 +1,7 @@
 using Z42.Core.Text;
 using Z42.Syntax.Parser;
 using Z42.IR;
+using Z42.Semantics.TypeCheck;
 
 namespace Z42.Semantics.Codegen;
 
@@ -164,8 +165,19 @@ internal sealed partial class FunctionEmitter
     };
 
     /// Returns true if the receiver is a user-defined class instance (not a pseudo-class).
+    ///
+    /// Uses SemanticModel.ExprTypes when available (A7): recognises class instances passed
+    /// as parameters or returned from calls, not just those initialised with a NewExpr.
+    /// Falls back to the _classInstanceVars heuristic when no type info is present.
     private bool IsReceiverClassInstance(Expr target, string methodName)
     {
+        // Type-guided check via SemanticModel (A7): any expression whose type is a
+        // user-defined class is a class instance — regardless of how it was introduced.
+        if (_gen._semanticModel != null
+            && _gen._semanticModel.ExprTypes.TryGetValue(target, out var receiverType)
+            && receiverType is Z42ClassType)
+            return true;
+
         if (target is IdentExpr id)
         {
             if (id.Name == "this" && _currentClassName != null)

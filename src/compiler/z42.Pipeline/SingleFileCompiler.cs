@@ -45,7 +45,7 @@ public static class SingleFileCompiler
         if (dumpAst) { Console.WriteLine(cu); return 0; }
 
         var diags = new DiagnosticBag();
-        new Z42.Semantics.TypeCheck.TypeChecker(diags).Check(cu);
+        var sem   = new Z42.Semantics.TypeCheck.TypeChecker(diags).Check(cu);
         diags.PrintAll();
         if (diags.HasErrors) return 1;
 
@@ -56,7 +56,7 @@ public static class SingleFileCompiler
         IrModule irModule;
         try
         {
-            gen = new IrGen(stdlibIndex);
+            gen = new IrGen(stdlibIndex, semanticModel: sem);
             irModule = gen.Generate(cu);
         }
         catch (Exception ex) { Console.Error.WriteLine($"error: codegen: {ex.Message}"); return 1; }
