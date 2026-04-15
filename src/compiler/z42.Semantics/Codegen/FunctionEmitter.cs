@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Semantics.Bound;
 using Z42.Syntax.Parser;
 using Z42.IR;
 using Z42.Semantics.TypeCheck;
@@ -9,6 +10,10 @@ namespace Z42.Semantics.Codegen;
 /// Emits IR for a single function/method body.
 /// Created fresh per function to naturally isolate function-level state,
 /// eliminating the risk of cross-function state pollution.
+///
+/// Entry points accept a pre-bound <see cref="BoundBlock"/> produced by
+/// the TypeChecker, so no ExprTypes lookup or _classInstanceVars heuristic
+/// is needed during emission.
 /// </summary>
 internal sealed partial class FunctionEmitter
 {
@@ -19,7 +24,6 @@ internal sealed partial class FunctionEmitter
     private int _nextLabelId;
     private Dictionary<string, int> _locals = new();
     private HashSet<string> _mutableVars = new();
-    private HashSet<string> _classInstanceVars = new();
     private HashSet<string> _instanceFields = new();
     private List<IrBlock> _blocks = new();
     private List<IrExceptionEntry> _exceptionTable = new();
@@ -33,7 +37,8 @@ internal sealed partial class FunctionEmitter
 
     // ── Entry points ─────────────────────────────────────────────────────────
 
-    internal IrFunction EmitMethod(string className, FunctionDecl method, string methodIrName)
+    internal IrFunction EmitMethod(
+        string className, FunctionDecl method, BoundBlock body, string methodIrName)
     {
         bool isStatic = method.IsStatic;
         _currentClassName = className;
@@ -55,12 +60,12 @@ internal sealed partial class FunctionEmitter
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
             var baseCtorIrName = $"{baseQual}.{baseSimpleName}";
             var argRegs = new List<int> { 0 };
-            argRegs.AddRange(baseArgs.Select(EmitExpr));
+            argRegs.AddRange(baseArgs.Select(EmitRawExpr));
             int dst = Alloc();
             Emit(new CallInstr(dst, baseCtorIrName, argRegs));
         }
 
-        EmitBlock(method.Body);
+        EmitBoundBlock(body);
         if (!_blockEnded) EndBlock(new RetTerm(null));
 
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
@@ -70,7 +75,7 @@ internal sealed partial class FunctionEmitter
             IsStatic: isStatic, MaxReg: _nextReg);
     }
 
-    internal IrFunction EmitFunction(FunctionDecl fn)
+    internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)
     {
         _currentClassName = null;
         _nextReg = fn.Params.Count;
@@ -79,7 +84,7 @@ internal sealed partial class FunctionEmitter
         for (int i = 0; i < fn.Params.Count; i++)
             _locals[fn.Params[i].Name] = i;
 
-        EmitBlock(fn.Body);
+        EmitBoundBlock(body);
         if (!_blockEnded) EndBlock(new RetTerm(null));
 
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
@@ -101,7 +106,7 @@ internal sealed partial class FunctionEmitter
                 int valReg;
                 if (field.Initializer != null)
                 {
-                    valReg = EmitExpr(field.Initializer);
+                    valReg = EmitRawExpr(field.Initializer);
                 }
                 else
                 {
@@ -163,35 +168,6 @@ internal sealed partial class FunctionEmitter
         ArrayType at  => TypeName(at.Element) + "[]",
         _             => "unknown"
     };
-
-    /// Returns true if the receiver is a user-defined class instance (not a pseudo-class).
-    ///
-    /// Uses SemanticModel.ExprTypes when available (A7): recognises class instances passed
-    /// as parameters or returned from calls, not just those initialised with a NewExpr.
-    /// Falls back to the _classInstanceVars heuristic when no type info is present.
-    private bool IsReceiverClassInstance(Expr target, string methodName)
-    {
-        // Type-guided check via SemanticModel (A7): any expression whose type is a
-        // user-defined class is a class instance — regardless of how it was introduced.
-        if (_gen._semanticModel != null
-            && _gen._semanticModel.ExprTypes.TryGetValue(target, out var receiverType)
-            && receiverType is Z42ClassType)
-            return true;
-
-        if (target is IdentExpr id)
-        {
-            if (id.Name == "this" && _currentClassName != null)
-            {
-                var qcls = _gen.QualifyName(_currentClassName);
-                return _gen._classMethods.TryGetValue(qcls, out var ms)
-                    && (ms.Contains(methodName)
-                        || ms.Any(m => m.StartsWith(methodName + "$")));
-            }
-            if (_classInstanceVars.Contains(id.Name))
-                return true;
-        }
-        return false;
-    }
 
     /// Write a new value back to a named variable.
     private void WriteBackName(string name, int valReg)

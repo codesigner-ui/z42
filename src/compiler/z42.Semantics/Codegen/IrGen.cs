@@ -1,5 +1,6 @@
 using Z42.Core.Text;
 using Z42.Core.Features;
+using Z42.Semantics.Bound;
 using Z42.Syntax.Parser;
 using Z42.IR;
 using Z42.Semantics.TypeCheck;
@@ -157,7 +158,8 @@ public sealed class IrGen
             return stub with { IsStatic = method.IsStatic };
         }
 
-        return new FunctionEmitter(this).EmitMethod(className, method, methodIrName);
+        var body = GetBoundBody(method);
+        return new FunctionEmitter(this).EmitMethod(className, method, body, methodIrName);
     }
 
     private IrFunction EmitFunction(FunctionDecl fn)
@@ -170,7 +172,19 @@ public sealed class IrGen
                 fn.NativeIntrinsic,
                 fn.ReturnType is VoidType);
 
-        return new FunctionEmitter(this).EmitFunction(fn);
+        var body = GetBoundBody(fn);
+        return new FunctionEmitter(this).EmitFunction(fn, body);
+    }
+
+    private BoundBlock GetBoundBody(FunctionDecl fn)
+    {
+        if (_semanticModel is null)
+            throw new InvalidOperationException(
+                "SemanticModel with BoundBodies is required for function body emission.");
+        if (!_semanticModel.BoundBodies.TryGetValue(fn, out var body))
+            throw new InvalidOperationException(
+                $"No BoundBody found for `{fn.Name}`; was it excluded from type-checking?");
+        return body;
     }
 
     // ── Class descriptors ────────────────────────────────────────────────────

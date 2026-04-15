@@ -1,5 +1,6 @@
 using Z42.Core.Text;
 using Z42.Core.Features;
+using Z42.Semantics.Bound;
 using Z42.Syntax.Lexer;
 using Z42.Core.Diagnostics;
 using Z42.Syntax.Parser;
@@ -28,9 +29,8 @@ public sealed partial class TypeChecker
     private          Dictionary<string, Z42FuncType>      _funcs      = new();
     private          Dictionary<string, Z42ClassType>     _classes    = new();
     private          Dictionary<string, Z42InterfaceType> _interfaces = new();
-    /// Expression → inferred type, keyed by object identity (not structural equality).
-    private readonly Dictionary<Expr, Z42Type> _exprTypes =
-        new(ReferenceEqualityComparer.Instance);
+    /// Bound bodies produced by BindBlock/BindFunction for each FunctionDecl.
+    private readonly Dictionary<FunctionDecl, BoundBlock> _boundBodies = new();
     /// class name → set of interface names the class declares it implements
     private          Dictionary<string, HashSet<string>>  _classInterfaces = new();
     /// class name → set of abstract method names (inherited + own)
@@ -72,10 +72,10 @@ public sealed partial class TypeChecker
         CollectInterfaces(cu);
         CollectClasses(cu);
         CollectFunctions(cu);
-        foreach (var cls in cu.Classes)   CheckClassMethods(cls);
-        foreach (var fn  in cu.Functions) CheckFunction(fn);
+        foreach (var cls in cu.Classes)   BindClassMethods(cls);
+        foreach (var fn  in cu.Functions) BindFunction(fn);
         return new SemanticModel(_classes, _funcs, _interfaces,
-            _globalEnumConstants, _enumTypes, _exprTypes);
+            _globalEnumConstants, _enumTypes, _boundBodies);
     }
 
     // ── Pass 0a: enum constants ───────────────────────────────────────────────
@@ -122,18 +122,17 @@ public sealed partial class TypeChecker
 
     // ── Body checking entry points ────────────────────────────────────────────
 
-    private void CheckClassMethods(ClassDecl cls)
+    private void BindClassMethods(ClassDecl cls)
     {
         if (!_classes.TryGetValue(cls.Name, out var classType)) return;
         using var _ = EnterClass(cls.Name);
         foreach (var method in cls.Methods)
         {
-            if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue; // extern: skip body check
+            if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
             var env   = new TypeEnv(_funcs, _classes);
             var scope = env.PushScope();
             if (!method.IsStatic)
             {
-                // Instance method: `this` is in scope, as are instance fields
                 scope.Define("this", classType);
                 foreach (var (fname, ftype) in classType.Fields)
                     scope.Define(fname, ftype);
@@ -142,19 +141,20 @@ public sealed partial class TypeChecker
             foreach (var p in method.Params)
                 scope.Define(p.Name, ResolveType(p.Type));
             bool isCtor = method.Name == cls.Name;
-            CheckBlock(method.Body, scope, isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
+            _boundBodies[method] = BindBlock(method.Body, scope,
+                isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
         }
     }
 
-    private void CheckFunction(FunctionDecl fn)
+    private void BindFunction(FunctionDecl fn)
     {
-        if (ValidateNativeMethod(fn, isInstance: false)) return; // extern: skip body check
+        if (ValidateNativeMethod(fn, isInstance: false)) return;
         var env   = new TypeEnv(_funcs, _classes);
         var scope = env.PushScope();
         CheckParamNames(fn.Params);
         foreach (var p in fn.Params)
             scope.Define(p.Name, ResolveType(p.Type));
-        CheckBlock(fn.Body, scope, ResolveType(fn.ReturnType));
+        _boundBodies[fn] = BindBlock(fn.Body, scope, ResolveType(fn.ReturnType));
     }
 
     /// Validates [Native] / extern consistency.
@@ -335,7 +335,7 @@ public sealed partial class TypeChecker
                 if (i < requiredCount) requiredCount = i;
                 // Check default value type against parameter type
                 var defaultEnv   = env ?? new TypeEnv(_funcs, _classes);
-                var defaultType  = CheckExpr(p.Default, defaultEnv);
+                var defaultType  = BindExpr(p.Default, defaultEnv).Type;
                 RequireAssignable(paramTypes[i], defaultType, p.Default.Span,
                     $"default value for `{p.Name}`: cannot assign `{defaultType}` to `{paramTypes[i]}`");
             }

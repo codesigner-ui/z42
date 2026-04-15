@@ -1,58 +1,59 @@
 using Z42.Core.Text;
-using Z42.Syntax.Parser;
+using Z42.Semantics.Bound;
+using Z42.Semantics.TypeCheck;
 using Z42.IR;
 
 namespace Z42.Semantics.Codegen;
 
-/// Expression emission — part of the FunctionEmitter partial class.
+/// Bound expression emission — part of FunctionEmitter.
 internal sealed partial class FunctionEmitter
 {
-    // ── Expressions ──────────────────────────────────────────────────────────
+    // ── Bound expression dispatcher ───────────────────────────────────────────
 
-    private int EmitExpr(Expr expr)
+    private int EmitExpr(BoundExpr expr)
     {
         switch (expr)
         {
-            case LitStrExpr s:
+            case BoundLitStr s:
             {
                 int dst = Alloc();
                 Emit(new ConstStrInstr(dst, _gen.Intern(s.Value)));
                 return dst;
             }
-            case LitIntExpr n:
+            case BoundLitInt n:
             {
                 int dst = Alloc();
                 Emit(new ConstI64Instr(dst, n.Value));
                 return dst;
             }
-            case LitFloatExpr f:
+            case BoundLitFloat f:
             {
                 int dst = Alloc();
                 Emit(new ConstF64Instr(dst, f.Value));
                 return dst;
             }
-            case LitBoolExpr b:
+            case BoundLitBool b:
             {
                 int dst = Alloc();
                 Emit(new ConstBoolInstr(dst, b.Value));
                 return dst;
             }
-            case LitNullExpr:
+            case BoundLitNull:
             {
                 int dst = Alloc();
                 Emit(new ConstNullInstr(dst));
                 return dst;
             }
-            case InterpolatedStrExpr interp:
-                return EmitInterpolation(interp);
-
-            case LitCharExpr c:
+            case BoundLitChar c:
             {
                 int dst = Alloc();
                 Emit(new ConstCharInstr(dst, c.Value));
                 return dst;
             }
-            case IdentExpr id:
+            case BoundInterpolatedStr interp:
+                return EmitInterpolation(interp);
+
+            case BoundIdent id:
             {
                 if (_locals.TryGetValue(id.Name, out int reg))
                     return reg;
@@ -71,31 +72,31 @@ internal sealed partial class FunctionEmitter
                 throw new InvalidOperationException($"undefined variable `{id.Name}`");
             }
 
-            case AssignExpr assign:
-                return EmitAssign(assign);
+            case BoundAssign assign:
+                return EmitBoundAssign(assign);
 
-            case CallExpr call:
-                return EmitCall(call);
+            case BoundCall call:
+                return EmitBoundCall(call);
 
-            case BinaryExpr bin:
-                return EmitBinary(bin);
+            case BoundBinary bin:
+                return EmitBoundBinary(bin);
 
-            case UnaryExpr u:
-                return EmitUnary(u);
+            case BoundUnary u:
+                return EmitBoundUnary(u);
 
-            case PostfixExpr post:
-                return EmitPostfix(post);
+            case BoundPostfix post:
+                return EmitBoundPostfix(post);
 
-            case ConditionalExpr ternary:
-                return EmitTernary(ternary);
+            case BoundConditional ternary:
+                return EmitBoundTernary(ternary);
 
-            case NullConditionalExpr nc:
-                return EmitNullConditional(nc);
+            case BoundNullConditional nc:
+                return EmitBoundNullConditional(nc);
 
-            case NullCoalesceExpr nc:
-                return EmitNullCoalesce(nc);
+            case BoundNullCoalesce nc:
+                return EmitBoundNullCoalesce(nc);
 
-            case IsPatternExpr ipe:
+            case BoundIsPattern ipe:
             {
                 int objReg  = EmitExpr(ipe.Target);
                 int boolReg = Alloc();
@@ -107,35 +108,13 @@ internal sealed partial class FunctionEmitter
                 return boolReg;
             }
 
-            case CastExpr cast:
-                return EmitExpr(cast.Operand);
+            case BoundCast cast:
+                return EmitExpr(cast.Operand); // cast is a no-op in IR
 
-            case MemberExpr m when m.Target is IdentExpr enumId
-                                && _gen._enumConstants.TryGetValue(
-                                    $"{enumId.Name}.{m.Member}", out long enumVal):
-            {
-                int dst = Alloc();
-                Emit(new ConstI64Instr(dst, enumVal));
-                return dst;
-            }
+            case BoundMember m:
+                return EmitBoundMember(m);
 
-            case MemberExpr m when m.Target is IdentExpr { Name: var clsName }
-                && _gen.TryGetStaticFieldKey(clsName, m.Member) is { } sfKey:
-            {
-                int dst = Alloc();
-                Emit(new StaticGetInstr(dst, sfKey));
-                return dst;
-            }
-
-            case MemberExpr m:
-            {
-                int objReg = EmitExpr(m.Target);
-                int dst = Alloc();
-                Emit(new FieldGetInstr(dst, objReg, m.Member));
-                return dst;
-            }
-
-            case IndexExpr ix:
+            case BoundIndex ix:
             {
                 int targetReg = EmitExpr(ix.Target);
                 int idxReg    = EmitExpr(ix.Index);
@@ -144,7 +123,7 @@ internal sealed partial class FunctionEmitter
                 return dst;
             }
 
-            case ArrayCreateExpr ac:
+            case BoundArrayCreate ac:
             {
                 int sizeReg = EmitExpr(ac.Size);
                 int dst = Alloc();
@@ -152,7 +131,7 @@ internal sealed partial class FunctionEmitter
                 return dst;
             }
 
-            case ArrayLitExpr al:
+            case BoundArrayLit al:
             {
                 var elemRegs = al.Elements.Select(EmitExpr).ToList();
                 int dst = Alloc();
@@ -160,43 +139,14 @@ internal sealed partial class FunctionEmitter
                 return dst;
             }
 
-            case NewExpr when expr is NewExpr { Type: NamedType { Name: "StringBuilder" } }:
-            {
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, "__sb_new", []));
-                return dst;
-            }
+            case BoundNew n:
+                return EmitBoundNew(n);
 
-            case NewExpr newExpr when newExpr.Type is NamedType { Name: "Dictionary" }:
-            {
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, "__dict_new", []));
-                return dst;
-            }
+            case BoundSwitchExpr sw:
+                return EmitBoundSwitchExpr(sw);
 
-            case NewExpr newExpr when newExpr.Type is NamedType { Name: "List" }:
+            case BoundError:
             {
-                int dst = Alloc();
-                Emit(new BuiltinInstr(dst, "__list_new", []));
-                return dst;
-            }
-
-            case NewExpr newExpr when newExpr.Type is NamedType nt:
-            {
-                var argRegs = newExpr.Args.Select(EmitExpr).ToList();
-                string ctorKey = $"{_gen.QualifyName(nt.Name)}.{nt.Name}";
-                argRegs = FillDefaults(ctorKey, argRegs);
-                int dst = Alloc();
-                Emit(new ObjNewInstr(dst, _gen.QualifyName(nt.Name), argRegs));
-                return dst;
-            }
-
-            case SwitchExpr sw:
-                return EmitSwitchExpr(sw);
-
-            case ErrorExpr:
-            {
-                // Error recovery placeholder — emit null constant
                 int dst = Alloc();
                 Emit(new ConstNullInstr(dst));
                 return dst;
@@ -204,17 +154,46 @@ internal sealed partial class FunctionEmitter
 
             default:
                 throw new NotSupportedException(
-                    $"expression type {expr.GetType().Name} not yet supported in IrGen");
+                    $"BoundExpr type {expr.GetType().Name} not yet supported in FunctionEmitter");
         }
     }
 
-    // ── Assignment ───────────────────────────────────────────────────────────
+    // ── Member access ─────────────────────────────────────────────────────────
 
-    private int EmitAssign(AssignExpr assign)
+    private int EmitBoundMember(BoundMember m)
+    {
+        // Enum constant: BoundIdent with unknown type + name in enum constants
+        if (m.Target is BoundIdent enumId
+            && _gen._enumConstants.TryGetValue($"{enumId.Name}.{m.MemberName}", out long enumVal))
+        {
+            int dst = Alloc();
+            Emit(new ConstI64Instr(dst, enumVal));
+            return dst;
+        }
+
+        // Static field: BoundIdent with unknown type + class name in static fields
+        if (m.Target is BoundIdent sfId
+            && _gen.TryGetStaticFieldKey(sfId.Name, m.MemberName) is { } sfKey)
+        {
+            int dst = Alloc();
+            Emit(new StaticGetInstr(dst, sfKey));
+            return dst;
+        }
+
+        // Instance field access
+        int objReg = EmitExpr(m.Target);
+        int dst2 = Alloc();
+        Emit(new FieldGetInstr(dst2, objReg, m.MemberName));
+        return dst2;
+    }
+
+    // ── Assignment ────────────────────────────────────────────────────────────
+
+    private int EmitBoundAssign(BoundAssign assign)
     {
         int valReg = EmitExpr(assign.Value);
 
-        if (assign.Target is IdentExpr id)
+        if (assign.Target is BoundIdent id)
         {
             if (_mutableVars.Contains(id.Name))
                 Emit(new StoreInstr(id.Name, valReg));
@@ -223,33 +202,39 @@ internal sealed partial class FunctionEmitter
             else
                 _locals[id.Name] = valReg;
         }
-        else if (assign.Target is IndexExpr ix)
+        else if (assign.Target is BoundIndex ix)
         {
             int arrReg = EmitExpr(ix.Target);
             int idxReg = EmitExpr(ix.Index);
             Emit(new ArraySetInstr(arrReg, idxReg, valReg));
         }
-        else if (assign.Target is MemberExpr { Target: IdentExpr { Name: var aClsName }, Member: var aField }
-            && _gen.TryGetStaticFieldKey(aClsName, aField) is { } sfKey)
+        else if (assign.Target is BoundMember fm)
         {
-            Emit(new StaticSetInstr(sfKey, valReg));
-        }
-        else if (assign.Target is MemberExpr fm)
-        {
-            int objReg = EmitExpr(fm.Target);
-            Emit(new FieldSetInstr(objReg, fm.Member, valReg));
+            // Static field assignment via BoundIdent target
+            if (fm.Target is BoundIdent { Name: var aClsName }
+                && _gen.TryGetStaticFieldKey(aClsName, fm.MemberName) is { } sfKey)
+            {
+                Emit(new StaticSetInstr(sfKey, valReg));
+            }
+            else
+            {
+                int objReg = EmitExpr(fm.Target);
+                Emit(new FieldSetInstr(objReg, fm.MemberName, valReg));
+            }
         }
 
         return valReg;
     }
 
-    // ── Unary / postfix ──────────────────────────────────────────────────────
+    // ── Unary / postfix ───────────────────────────────────────────────────────
 
-    private int EmitUnary(UnaryExpr u)
+    private int EmitBoundUnary(BoundUnary u)
     {
         if (u.Op == "await") return EmitExpr(u.Operand);
 
-        if (u.Op is "++" or "--" && u.Operand is MemberExpr { Target: IdentExpr { Name: var ucn }, Member: var ufn }
+        // Static field prefix ++ / --
+        if (u.Op is "++" or "--"
+            && u.Operand is BoundMember { Target: BoundIdent { Name: var ucn }, MemberName: var ufn }
             && _gen.TryGetStaticFieldKey(ucn, ufn) is { } uSfKey)
         {
             int oldReg = Alloc(); Emit(new StaticGetInstr(oldReg, uSfKey));
@@ -260,7 +245,8 @@ internal sealed partial class FunctionEmitter
             return newReg;
         }
 
-        if (u.Op is "++" or "--" && u.Operand is IdentExpr prefixId)
+        // Local variable prefix ++ / --
+        if (u.Op is "++" or "--" && u.Operand is BoundIdent prefixId)
         {
             int oldReg = EmitExpr(u.Operand);
             int one    = Alloc();
@@ -284,9 +270,10 @@ internal sealed partial class FunctionEmitter
         return dst;
     }
 
-    private int EmitPostfix(PostfixExpr post)
+    private int EmitBoundPostfix(BoundPostfix post)
     {
-        if (post.Operand is MemberExpr { Target: IdentExpr { Name: var pcn }, Member: var pfn }
+        // Static field postfix ++ / --
+        if (post.Operand is BoundMember { Target: BoundIdent { Name: var pcn }, MemberName: var pfn }
             && _gen.TryGetStaticFieldKey(pcn, pfn) is { } pSfKey)
         {
             int oldReg = Alloc(); Emit(new StaticGetInstr(oldReg, pSfKey));
@@ -298,7 +285,7 @@ internal sealed partial class FunctionEmitter
             return oldReg;
         }
 
-        if (post.Operand is IdentExpr id)
+        if (post.Operand is BoundIdent id)
         {
             int oldReg = EmitExpr(post.Operand);
             int one    = Alloc();
@@ -312,15 +299,14 @@ internal sealed partial class FunctionEmitter
         return EmitExpr(post.Operand);
     }
 
-    // ── Ternary / null operators ─────────────────────────────────────────────
+    // ── Ternary / null operators ──────────────────────────────────────────────
 
-    private int EmitTernary(ConditionalExpr ternary)
+    private int EmitBoundTernary(BoundConditional ternary)
     {
         int condReg    = EmitExpr(ternary.Cond);
         string thenLbl = FreshLabel("tern_then");
         string elseLbl = FreshLabel("tern_else");
         string endLbl  = FreshLabel("tern_end");
-
         int result = Alloc();
 
         EndBlock(new BrCondTerm(condReg, thenLbl, elseLbl));
@@ -339,7 +325,7 @@ internal sealed partial class FunctionEmitter
         return result;
     }
 
-    private int EmitNullCoalesce(NullCoalesceExpr nc)
+    private int EmitBoundNullCoalesce(BoundNullCoalesce nc)
     {
         int leftReg  = EmitExpr(nc.Left);
         int nullReg  = Alloc();
@@ -367,7 +353,7 @@ internal sealed partial class FunctionEmitter
         return result;
     }
 
-    private int EmitNullConditional(NullConditionalExpr nc)
+    private int EmitBoundNullConditional(BoundNullConditional nc)
     {
         int targetReg = EmitExpr(nc.Target);
         int nullReg   = Alloc();
@@ -384,7 +370,7 @@ internal sealed partial class FunctionEmitter
 
         StartBlock(nonNullLbl);
         int memberReg = Alloc();
-        Emit(new FieldGetInstr(memberReg, targetReg, nc.Member));
+        Emit(new FieldGetInstr(memberReg, targetReg, nc.MemberName));
         Emit(new CopyInstr(result, memberReg));
         EndBlock(new BrTerm(endLbl));
 
@@ -400,9 +386,9 @@ internal sealed partial class FunctionEmitter
 
     // ── Binary ────────────────────────────────────────────────────────────────
 
-    private int EmitBinary(BinaryExpr bin)
+    private int EmitBoundBinary(BoundBinary bin)
     {
-        if (bin.Op is "is" or "as" && bin.Right is IdentExpr typeIdent)
+        if (bin.Op is "is" or "as" && bin.Right is BoundIdent typeIdent)
         {
             int objReg  = EmitExpr(bin.Left);
             int typeReg = Alloc();
@@ -417,8 +403,8 @@ internal sealed partial class FunctionEmitter
         {
             int objReg  = EmitExpr(bin.Left);
             int typeReg = Alloc();
-            Emit(new IsInstanceInstr(typeReg, objReg,
-                bin.Right is IdentExpr ti ? _gen.QualifyName(ti.Name) : "__unknown"));
+            var qualName = bin.Right is BoundIdent ti ? _gen.QualifyName(ti.Name) : "__unknown";
+            Emit(new IsInstanceInstr(typeReg, objReg, qualName));
             return typeReg;
         }
 
@@ -449,5 +435,41 @@ internal sealed partial class FunctionEmitter
         };
         Emit(instr);
         return dst;
+    }
+
+    // ── New object ────────────────────────────────────────────────────────────
+
+    private int EmitBoundNew(BoundNew n)
+    {
+        switch (n.QualName)
+        {
+            case "StringBuilder":
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__sb_new", []));
+                return dst;
+            }
+            case "Dictionary":
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__dict_new", []));
+                return dst;
+            }
+            case "List":
+            {
+                int dst = Alloc();
+                Emit(new BuiltinInstr(dst, "__list_new", []));
+                return dst;
+            }
+            default:
+            {
+                var argRegs = n.Args.Select(EmitExpr).ToList();
+                string ctorKey = $"{_gen.QualifyName(n.QualName)}.{n.QualName}";
+                argRegs = FillDefaults(ctorKey, argRegs);
+                int dst = Alloc();
+                Emit(new ObjNewInstr(dst, _gen.QualifyName(n.QualName), argRegs));
+                return dst;
+            }
+        }
     }
 }

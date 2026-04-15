@@ -1,31 +1,30 @@
-using Z42.Syntax.Parser;
+using Z42.Semantics.Bound;
 using Z42.IR;
 
 namespace Z42.Semantics.Codegen;
 
-/// Statement and control flow emission — part of the FunctionEmitter partial class.
+/// Bound statement and control flow emission — part of FunctionEmitter.
 internal sealed partial class FunctionEmitter
 {
-    // ── Statements ────────────────────────────────────────────────────────────
+    // ── Block ─────────────────────────────────────────────────────────────────
 
-    private void EmitBlock(BlockStmt block)
+    private void EmitBoundBlock(BoundBlock block)
     {
         foreach (var stmt in block.Stmts)
         {
             if (_blockEnded) break;
-            EmitStmt(stmt);
+            EmitBoundStmt(stmt);
         }
     }
 
-    private void EmitStmt(Stmt stmt)
+    // ── Statements ────────────────────────────────────────────────────────────
+
+    private void EmitBoundStmt(BoundStmt stmt)
     {
         switch (stmt)
         {
-            case VarDeclStmt v:
+            case BoundVarDecl v:
                 _mutableVars.Add(v.Name);
-                if (v.Init is NewExpr { Type: NamedType nt }
-                    && !nt.Name.StartsWith("List") && !nt.Name.StartsWith("Dictionary"))
-                    _classInstanceVars.Add(v.Name);
                 if (v.Init != null)
                 {
                     int reg = EmitExpr(v.Init);
@@ -33,183 +32,69 @@ internal sealed partial class FunctionEmitter
                 }
                 break;
 
-            case ReturnStmt r:
+            case BoundReturn r:
                 EndBlock(r.Value != null
                     ? new RetTerm(EmitExpr(r.Value))
                     : new RetTerm(null));
                 break;
 
-            case ExprStmt e:
+            case BoundExprStmt e:
                 EmitExpr(e.Expr);
                 break;
 
-            case BlockStmt b:
-                EmitBlock(b);
+            case BoundBlockStmt b:
+                EmitBoundBlock(b.Block);
                 break;
 
-            case IfStmt ifStmt:
-                EmitIf(ifStmt);
+            case BoundIf ifStmt:
+                EmitBoundIf(ifStmt);
                 break;
 
-            case WhileStmt ws:
-                EmitWhile(ws);
+            case BoundWhile ws:
+                EmitBoundWhile(ws);
                 break;
 
-            case DoWhileStmt dw:
-                EmitDoWhile(dw);
+            case BoundDoWhile dw:
+                EmitBoundDoWhile(dw);
                 break;
 
-            case ForStmt fs:
-                EmitFor(fs);
+            case BoundFor fs:
+                EmitBoundFor(fs);
                 break;
 
-            case ForeachStmt fe:
-                EmitForeach(fe);
+            case BoundForeach fe:
+                EmitBoundForeach(fe);
                 break;
 
-            case BreakStmt:
+            case BoundBreak:
                 if (_loopStack.Count > 0)
                     EndBlock(new BrTerm(_loopStack.Peek().Break));
                 break;
 
-            case ContinueStmt:
+            case BoundContinue:
                 if (_loopStack.Count > 0)
                     EndBlock(new BrTerm(_loopStack.Peek().Continue));
                 break;
 
-            case SwitchStmt sw:
-                EmitSwitchStmt(sw);
+            case BoundSwitch sw:
+                EmitBoundSwitchStmt(sw);
                 break;
 
-            case TryCatchStmt tc:
-                EmitTryCatch(tc);
+            case BoundTryCatch tc:
+                EmitBoundTryCatch(tc);
                 break;
 
-            case ThrowStmt th:
+            case BoundThrow th:
                 EndBlock(new ThrowTerm(EmitExpr(th.Value)));
                 break;
-
-            case ErrorStmt:
-                break;  // skip error recovery placeholders
         }
-    }
-
-    // ── Try / catch ───────────────────────────────────────────────────────────
-
-    private void EmitTryCatch(TryCatchStmt tc)
-    {
-        string tryStartLbl = FreshLabel("try_start");
-        string tryEndLbl   = FreshLabel("try_end");
-        string afterLbl    = FreshLabel("after_try");
-        string finallyLbl  = tc.Finally != null ? FreshLabel("finally") : afterLbl;
-
-        EndBlock(new BrTerm(tryStartLbl));
-
-        StartBlock(tryStartLbl);
-        EmitBlock(tc.TryBody);
-        if (!_blockEnded) EndBlock(new BrTerm(tryEndLbl));
-
-        StartBlock(tryEndLbl);
-        EndBlock(new BrTerm(finallyLbl));
-
-        foreach (var clause in tc.Catches)
-        {
-            int catchReg         = Alloc();
-            string catchStartLbl = FreshLabel("catch_start");
-
-            _exceptionTable.Add(new IrExceptionEntry(
-                tryStartLbl, tryEndLbl, catchStartLbl, clause.ExceptionType, catchReg));
-
-            StartBlock(catchStartLbl);
-            if (clause.VarName != null)
-            {
-                _mutableVars.Add(clause.VarName);
-                Emit(new StoreInstr(clause.VarName, catchReg));
-            }
-            EmitBlock(clause.Body);
-            if (!_blockEnded) EndBlock(new BrTerm(finallyLbl));
-        }
-
-        if (tc.Catches.Count == 0 && tc.Finally != null)
-        {
-            int catchAllReg         = Alloc();
-            string catchAllStartLbl = FreshLabel("catch_finally");
-            string rethrowLbl       = FreshLabel("rethrow");
-
-            _exceptionTable.Add(new IrExceptionEntry(
-                tryStartLbl, tryEndLbl, catchAllStartLbl, "*", catchAllReg));
-
-            StartBlock(catchAllStartLbl);
-            EmitBlock(tc.Finally);
-            if (!_blockEnded) EndBlock(new BrTerm(rethrowLbl));
-
-            StartBlock(rethrowLbl);
-            EndBlock(new ThrowTerm(catchAllReg));
-        }
-
-        if (tc.Finally != null)
-        {
-            StartBlock(finallyLbl);
-            EmitBlock(tc.Finally);
-            if (!_blockEnded) EndBlock(new BrTerm(afterLbl));
-        }
-
-        StartBlock(afterLbl);
-    }
-
-    // ── Switch statement ──────────────────────────────────────────────────────
-
-    private void EmitSwitchStmt(SwitchStmt sw)
-    {
-        int subjReg = EmitExpr(sw.Subject);
-        string endLbl = FreshLabel("sw_end");
-
-        string outerContinue = _loopStack.Count > 0 ? _loopStack.Peek().Continue : endLbl;
-        _loopStack.Push((endLbl, outerContinue));
-
-        foreach (var c in sw.Cases)
-        {
-            if (c.Pattern == null)
-            {
-                foreach (var s in c.Body)
-                {
-                    if (_blockEnded) break;
-                    EmitStmt(s);
-                }
-                if (!_blockEnded) EndBlock(new BrTerm(endLbl));
-                break;
-            }
-
-            string bodyLbl = FreshLabel("sw_case");
-            string nextLbl = FreshLabel("sw_next");
-
-            int patReg = EmitExpr(c.Pattern);
-            int cmpReg = Alloc();
-            Emit(new EqInstr(cmpReg, subjReg, patReg));
-            EndBlock(new BrCondTerm(cmpReg, bodyLbl, nextLbl));
-
-            StartBlock(bodyLbl);
-            foreach (var s in c.Body)
-            {
-                if (_blockEnded) break;
-                EmitStmt(s);
-            }
-            if (!_blockEnded) EndBlock(new BrTerm(endLbl));
-
-            StartBlock(nextLbl);
-        }
-
-        _loopStack.Pop();
-
-        if (!_blockEnded) EndBlock(new BrTerm(endLbl));
-        StartBlock(endLbl);
     }
 
     // ── Control flow ──────────────────────────────────────────────────────────
 
-    private void EmitIf(IfStmt ifStmt)
+    private void EmitBoundIf(BoundIf ifStmt)
     {
-        int condReg    = EmitExpr(ifStmt.Condition);
+        int condReg    = EmitExpr(ifStmt.Cond);
         string thenLbl = FreshLabel("then");
         string elseLbl = FreshLabel(ifStmt.Else != null ? "else" : "end");
         string endLbl  = ifStmt.Else != null ? FreshLabel("end") : elseLbl;
@@ -217,20 +102,20 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrCondTerm(condReg, thenLbl, elseLbl));
 
         StartBlock(thenLbl);
-        EmitBlock(ifStmt.Then);
+        EmitBoundBlock(ifStmt.Then);
         if (!_blockEnded) EndBlock(new BrTerm(endLbl));
 
         if (ifStmt.Else != null)
         {
             StartBlock(elseLbl);
-            EmitStmt(ifStmt.Else);
+            EmitBoundStmt(ifStmt.Else);
             if (!_blockEnded) EndBlock(new BrTerm(endLbl));
         }
 
         StartBlock(endLbl);
     }
 
-    private void EmitWhile(WhileStmt ws)
+    private void EmitBoundWhile(BoundWhile ws)
     {
         string condLbl = FreshLabel("cond");
         string bodyLbl = FreshLabel("body");
@@ -239,19 +124,19 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(condLbl);
-        int condReg = EmitExpr(ws.Condition);
+        int condReg = EmitExpr(ws.Cond);
         EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
         _loopStack.Push((endLbl, condLbl));
         StartBlock(bodyLbl);
-        EmitBlock(ws.Body);
+        EmitBoundBlock(ws.Body);
         if (!_blockEnded) EndBlock(new BrTerm(condLbl));
         _loopStack.Pop();
 
         StartBlock(endLbl);
     }
 
-    private void EmitDoWhile(DoWhileStmt dw)
+    private void EmitBoundDoWhile(BoundDoWhile dw)
     {
         string bodyLbl = FreshLabel("do_body");
         string condLbl = FreshLabel("do_cond");
@@ -261,20 +146,20 @@ internal sealed partial class FunctionEmitter
 
         _loopStack.Push((endLbl, condLbl));
         StartBlock(bodyLbl);
-        EmitBlock(dw.Body);
+        EmitBoundBlock(dw.Body);
         if (!_blockEnded) EndBlock(new BrTerm(condLbl));
         _loopStack.Pop();
 
         StartBlock(condLbl);
-        int condReg = EmitExpr(dw.Condition);
+        int condReg = EmitExpr(dw.Cond);
         EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
         StartBlock(endLbl);
     }
 
-    private void EmitFor(ForStmt fs)
+    private void EmitBoundFor(BoundFor fs)
     {
-        if (fs.Init != null) EmitStmt(fs.Init);
+        if (fs.Init != null) EmitBoundStmt(fs.Init);
 
         string condLbl = FreshLabel("cond");
         string bodyLbl = FreshLabel("body");
@@ -284,9 +169,9 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(condLbl);
-        if (fs.Condition != null)
+        if (fs.Cond != null)
         {
-            int condReg = EmitExpr(fs.Condition);
+            int condReg = EmitExpr(fs.Cond);
             EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
         }
         else
@@ -296,7 +181,7 @@ internal sealed partial class FunctionEmitter
 
         _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
-        EmitBlock(fs.Body);
+        EmitBoundBlock(fs.Body);
         if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
         _loopStack.Pop();
 
@@ -307,7 +192,7 @@ internal sealed partial class FunctionEmitter
         StartBlock(endLbl);
     }
 
-    private void EmitForeach(ForeachStmt fe)
+    private void EmitBoundForeach(BoundForeach fe)
     {
         int arrReg = EmitExpr(fe.Collection);
         int lenReg = Alloc();
@@ -341,7 +226,7 @@ internal sealed partial class FunctionEmitter
         Emit(new ArrayGetInstr(elemReg, arrReg, iReg2));
         _mutableVars.Add(fe.VarName);
         Emit(new StoreInstr(fe.VarName, elemReg));
-        EmitBlock(fe.Body);
+        EmitBoundBlock(fe.Body);
         if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
         _loopStack.Pop();
 
@@ -356,5 +241,117 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(endLbl);
+    }
+
+    // ── Switch statement ──────────────────────────────────────────────────────
+
+    private void EmitBoundSwitchStmt(BoundSwitch sw)
+    {
+        int subjReg = EmitExpr(sw.Subject);
+        string endLbl = FreshLabel("sw_end");
+
+        string outerContinue = _loopStack.Count > 0 ? _loopStack.Peek().Continue : endLbl;
+        _loopStack.Push((endLbl, outerContinue));
+
+        foreach (var c in sw.Cases)
+        {
+            if (c.Pattern == null)
+            {
+                foreach (var s in c.Body)
+                {
+                    if (_blockEnded) break;
+                    EmitBoundStmt(s);
+                }
+                if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+                break;
+            }
+
+            string bodyLbl = FreshLabel("sw_case");
+            string nextLbl = FreshLabel("sw_next");
+
+            int patReg = EmitExpr(c.Pattern);
+            int cmpReg = Alloc();
+            Emit(new EqInstr(cmpReg, subjReg, patReg));
+            EndBlock(new BrCondTerm(cmpReg, bodyLbl, nextLbl));
+
+            StartBlock(bodyLbl);
+            foreach (var s in c.Body)
+            {
+                if (_blockEnded) break;
+                EmitBoundStmt(s);
+            }
+            if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+
+            StartBlock(nextLbl);
+        }
+
+        _loopStack.Pop();
+
+        if (!_blockEnded) EndBlock(new BrTerm(endLbl));
+        StartBlock(endLbl);
+    }
+
+    // ── Try / catch ───────────────────────────────────────────────────────────
+
+    private void EmitBoundTryCatch(BoundTryCatch tc)
+    {
+        string tryStartLbl = FreshLabel("try_start");
+        string tryEndLbl   = FreshLabel("try_end");
+        string afterLbl    = FreshLabel("after_try");
+        string finallyLbl  = tc.Finally != null ? FreshLabel("finally") : afterLbl;
+
+        EndBlock(new BrTerm(tryStartLbl));
+
+        StartBlock(tryStartLbl);
+        EmitBoundBlock(tc.TryBody);
+        if (!_blockEnded) EndBlock(new BrTerm(tryEndLbl));
+
+        StartBlock(tryEndLbl);
+        EndBlock(new BrTerm(finallyLbl));
+
+        foreach (var clause in tc.Catches)
+        {
+            int catchReg         = Alloc();
+            string catchStartLbl = FreshLabel("catch_start");
+
+            // ExceptionType is not stored in BoundCatchClause — use wildcard catch
+            _exceptionTable.Add(new IrExceptionEntry(
+                tryStartLbl, tryEndLbl, catchStartLbl, null, catchReg));
+
+            StartBlock(catchStartLbl);
+            if (clause.VarName != null)
+            {
+                _mutableVars.Add(clause.VarName);
+                Emit(new StoreInstr(clause.VarName, catchReg));
+            }
+            EmitBoundBlock(clause.Body);
+            if (!_blockEnded) EndBlock(new BrTerm(finallyLbl));
+        }
+
+        if (tc.Catches.Count == 0 && tc.Finally != null)
+        {
+            int catchAllReg         = Alloc();
+            string catchAllStartLbl = FreshLabel("catch_finally");
+            string rethrowLbl       = FreshLabel("rethrow");
+
+            _exceptionTable.Add(new IrExceptionEntry(
+                tryStartLbl, tryEndLbl, catchAllStartLbl, "*", catchAllReg));
+
+            StartBlock(catchAllStartLbl);
+            EmitBoundBlock(tc.Finally);
+            if (!_blockEnded) EndBlock(new BrTerm(rethrowLbl));
+
+            StartBlock(rethrowLbl);
+            EndBlock(new ThrowTerm(catchAllReg));
+        }
+
+        if (tc.Finally != null)
+        {
+            StartBlock(finallyLbl);
+            EmitBoundBlock(tc.Finally);
+            if (!_blockEnded) EndBlock(new BrTerm(afterLbl));
+        }
+
+        StartBlock(afterLbl);
     }
 }

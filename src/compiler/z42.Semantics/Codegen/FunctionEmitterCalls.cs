@@ -1,3 +1,5 @@
+using Z42.Semantics.Bound;
+using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Parser;
 using Z42.IR;
 
@@ -6,59 +8,102 @@ namespace Z42.Semantics.Codegen;
 /// Call, string interpolation, and switch expression emission — part of FunctionEmitter.
 internal sealed partial class FunctionEmitter
 {
-    // ── Call ─────────────────────────────────────────────────────────────────
+    // ── Bound call dispatcher ─────────────────────────────────────────────────
 
-    private int EmitCall(CallExpr call)
+    private int EmitBoundCall(BoundCall call)
     {
-        // ── Static user-defined class method call: ClassName.StaticMethod(args) ──
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var staticCls }, Member: var staticMethod }
-            && _gen._classStaticMethods.TryGetValue(_gen.QualifyName(staticCls), out var staticSet))
+        var argRegs = call.Args.Select(EmitExpr).ToList();
+
+        switch (call.Kind)
         {
-            var arityKey = $"{staticMethod}${call.Args.Count}";
-            var resolvedMethod = staticSet.Contains(staticMethod) ? staticMethod
-                               : staticSet.Contains(arityKey)     ? arityKey
-                               : null;
-            if (resolvedMethod is not null)
+            case BoundCallKind.Static:
             {
-                var callName = $"{_gen.QualifyName(staticCls)}.{resolvedMethod}";
-                var argRegs  = FillDefaults(callName, call.Args.Select(EmitExpr).ToList());
+                var qualClass = _gen.QualifyName(call.ReceiverClass!);
+                var arityKey  = $"{call.MethodName}${argRegs.Count}";
+                string resolved = call.MethodName!;
+                if (_gen._classStaticMethods.TryGetValue(qualClass, out var sSet))
+                    resolved = sSet.Contains(call.MethodName!) ? call.MethodName!
+                             : sSet.Contains(arityKey)         ? arityKey : call.MethodName!;
+                var callName = $"{qualClass}.{resolved}";
+                argRegs = FillDefaults(callName, argRegs);
                 int dst = Alloc();
                 Emit(new CallInstr(dst, callName, argRegs));
                 return dst;
             }
-        }
 
-        // ── Type-keyword static calls: string.X, int.X, double.X ────────────
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var kwCls }, Member: var kwMethod }
-            && kwCls is "string" or "int" or "long" or "double" or "float" or "bool" or "char")
+            case BoundCallKind.Instance:
+            case BoundCallKind.Virtual:
+            {
+                int objReg   = EmitExpr(call.Receiver!);
+                var vcallKey = _gen.FindVcallParamsKey(call.MethodName!, argRegs.Count);
+                if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
+                int dst = Alloc();
+                Emit(new VCallInstr(dst, objReg, call.MethodName!, argRegs));
+                return dst;
+            }
+
+            case BoundCallKind.Free:
+            {
+                string callName;
+                if (_gen._topLevelFunctionNames.Contains(call.CalleeName!))
+                    callName = _gen.QualifyName(call.CalleeName!);
+                else if (_currentClassName is not null
+                    && _gen._classStaticMethods.TryGetValue(
+                        _gen.QualifyName(_currentClassName), out var cSet)
+                    && cSet.Contains(call.CalleeName!))
+                    callName = $"{_gen.QualifyName(_currentClassName)}.{call.CalleeName!}";
+                else
+                    callName = call.CalleeName!;
+                argRegs = FillDefaults(callName, argRegs);
+                int dst = Alloc();
+                Emit(new CallInstr(dst, callName, argRegs));
+                return dst;
+            }
+
+            case BoundCallKind.Unresolved:
+                return EmitUnresolvedCall(call, argRegs);
+
+            default:
+                throw new NotSupportedException($"call kind {call.Kind}");
+        }
+    }
+
+    // ── Unresolved call — stdlib / builtin dispatch ───────────────────────────
+
+    private int EmitUnresolvedCall(BoundCall call, List<int> argRegs)
+    {
+        var receiverName = (call.Receiver as BoundIdent)?.Name;
+        var methodName   = call.MethodName;
+
+        // Type-keyword static: string.X, int.X, double.X, etc.
+        if (receiverName is "string" or "int" or "long" or "double" or "float" or "bool" or "char")
         {
-            var kwArgRegs = call.Args.Select(EmitExpr).ToList();
-            string? builtinName = (kwCls, kwMethod) switch {
-                ("string", "IsNullOrEmpty")       => "__str_is_null_or_empty",
-                ("string", "IsNullOrWhiteSpace")  => "__str_is_null_or_whitespace",
-                ("string", "Join")                => "__str_join",
-                ("string", "Concat")              => "__str_concat",
-                ("string", "Format")              => "__str_format",
-                ("int",    "Parse")               => "__int_parse",
-                ("long",   "Parse")               => "__long_parse",
-                ("double", "Parse")               => "__double_parse",
-                ("float",  "Parse")               => "__double_parse",
+            string? builtinName = (receiverName, methodName) switch
+            {
+                ("string", "IsNullOrEmpty")      => "__str_is_null_or_empty",
+                ("string", "IsNullOrWhiteSpace") => "__str_is_null_or_whitespace",
+                ("string", "Join")               => "__str_join",
+                ("string", "Concat")             => "__str_concat",
+                ("string", "Format")             => "__str_format",
+                ("int",    "Parse")              => "__int_parse",
+                ("long",   "Parse")              => "__long_parse",
+                ("double", "Parse")              => "__double_parse",
+                ("float",  "Parse")              => "__double_parse",
                 _ => null
             };
             if (builtinName != null)
             {
                 int dst = Alloc();
-                Emit(new BuiltinInstr(dst, builtinName, kwArgRegs));
+                Emit(new BuiltinInstr(dst, builtinName, argRegs));
                 return dst;
             }
         }
 
-        // ── Stdlib static calls: Console.X, Assert.X, Math.X ─────────────────
-        if (call.Callee is MemberExpr { Target: IdentExpr { Name: var stdCls }, Member: var stdMethod }
-            && _gen._stdlibIndex.TryGetStatic(stdCls, stdMethod, out var stdStaticEntry))
+        // Stdlib static: Console.X, Assert.X, Math.X, etc.
+        if (receiverName != null && methodName != null
+            && _gen._stdlibIndex.TryGetStatic(receiverName, methodName, out var stdStaticEntry))
         {
-            var argRegs = call.Args.Select(EmitExpr).ToList();
-            if (stdCls == "Console" && argRegs.Count != 1)
+            if (receiverName == "Console" && argRegs.Count != 1)
                 argRegs = [EmitConcat(argRegs)];
             _gen._usedStdlibNamespaces.Add(stdStaticEntry.Namespace);
             int dst = Alloc();
@@ -66,10 +111,12 @@ internal sealed partial class FunctionEmitter
             return dst;
         }
 
-        // ── List / Dictionary pseudo-class instance methods ──────────────────
-        if (call.Callee is MemberExpr { Target: var collTarget, Member: var collMethod })
+        // Collection/pseudo-class instance methods: Add, RemoveAt, etc.
+        // Kind=Unresolved means TypeChecker confirmed the receiver is NOT a user class.
+        if (methodName != null)
         {
-            string? collBuiltin = collMethod switch {
+            string? collBuiltin = methodName switch
+            {
                 "Add"         => "__list_add",
                 "RemoveAt"    => "__list_remove_at",
                 "Insert"      => "__list_insert",
@@ -79,66 +126,46 @@ internal sealed partial class FunctionEmitter
                 "ContainsKey" => "__dict_contains_key",
                 "Remove"      => "__dict_remove",
                 "Contains"    => "__contains",
-                _             => null
+                _ => null
             };
-            bool receiverIsClassInstance = IsReceiverClassInstance(collTarget, collMethod);
-            if (collBuiltin != null && !receiverIsClassInstance)
+            bool receiverIsClassInst = call.Receiver?.Type is Z42ClassType;
+            if (collBuiltin != null && !receiverIsClassInst && call.Receiver != null)
             {
-                int receiverReg = EmitExpr(collTarget);
-                var collArgRegs = new List<int> { receiverReg };
-                collArgRegs.AddRange(call.Args.Select(EmitExpr));
+                int receiverReg  = EmitExpr(call.Receiver);
+                var collArgRegs  = new List<int> { receiverReg };
+                collArgRegs.AddRange(argRegs);
                 int dst = Alloc();
                 Emit(new BuiltinInstr(dst, collBuiltin, collArgRegs));
                 return dst;
             }
         }
 
-        // ── Stdlib instance calls: str.Substring, str.ToLower, etc. ─────────
-        if (call.Callee is MemberExpr { Target: var instTarget, Member: var instMethod }
-            && _gen._stdlibIndex.TryGetInstance(instMethod, call.Args.Count, out var stdInstEntry))
+        // Stdlib instance: str.Substring, str.ToLower, etc.
+        if (methodName != null
+            && _gen._stdlibIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
         {
-            int receiverReg = EmitExpr(instTarget);
-            var argRegs     = new List<int> { receiverReg };
-            argRegs.AddRange(call.Args.Select(EmitExpr));
+            int receiverReg = call.Receiver != null ? EmitExpr(call.Receiver) : Alloc();
+            var fullArgRegs = new List<int> { receiverReg };
+            fullArgRegs.AddRange(argRegs);
             _gen._usedStdlibNamespaces.Add(stdInstEntry.Namespace);
             int dst = Alloc();
-            Emit(new CallInstr(dst, stdInstEntry.QualifiedName, argRegs));
+            Emit(new CallInstr(dst, stdInstEntry.QualifiedName, fullArgRegs));
             return dst;
         }
 
-        // ── Instance method call via virtual dispatch ────────────────────────
-        if (call.Callee is MemberExpr mMethod)
+        // Fallback: virtual dispatch if we have a receiver and method name
+        if (call.Receiver != null && methodName != null)
         {
-            int objReg  = EmitExpr(mMethod.Target);
-            var argRegs = call.Args.Select(EmitExpr).ToList();
-            var vcallKey = _gen.FindVcallParamsKey(mMethod.Member, argRegs.Count);
-            if (vcallKey is not null)
-                argRegs = FillDefaults(vcallKey, argRegs);
+            int receiverReg  = EmitExpr(call.Receiver);
+            var vcallKey     = _gen.FindVcallParamsKey(methodName, argRegs.Count);
+            if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
             int dst = Alloc();
-            Emit(new VCallInstr(dst, objReg, mMethod.Member, argRegs));
+            Emit(new VCallInstr(dst, receiverReg, methodName, argRegs));
             return dst;
         }
 
-        // ── Free function call: Foo(args) ─────────────────────────────────────
-        if (call.Callee is IdentExpr funcId)
-        {
-            string callName;
-            if (_gen._topLevelFunctionNames.Contains(funcId.Name))
-                callName = _gen.QualifyName(funcId.Name);
-            else if (_currentClassName is not null
-                && _gen._classStaticMethods.TryGetValue(
-                    _gen.QualifyName(_currentClassName), out var curStaticSet)
-                && curStaticSet.Contains(funcId.Name))
-                callName = $"{_gen.QualifyName(_currentClassName)}.{funcId.Name}";
-            else
-                callName = funcId.Name;
-            var argRegs = FillDefaults(callName, call.Args.Select(EmitExpr).ToList());
-            int dst = Alloc();
-            Emit(new CallInstr(dst, callName, argRegs));
-            return dst;
-        }
-
-        throw new NotSupportedException($"call pattern not supported: {call.Callee.GetType().Name}");
+        throw new NotSupportedException(
+            $"unresolved call to `{methodName ?? call.CalleeName ?? "unknown"}`");
     }
 
     /// Fill omitted trailing args with their default value expressions.
@@ -152,14 +179,14 @@ internal sealed partial class FunctionEmitter
             var defaultExpr = parms[i].Default
                 ?? throw new InvalidOperationException(
                     $"missing argument {i + 1} for `{qualifiedName}` and no default value");
-            filled.Add(EmitExpr(defaultExpr));
+            filled.Add(EmitRawExpr(defaultExpr));
         }
         return filled;
     }
 
     // ── String interpolation ──────────────────────────────────────────────────
 
-    private int EmitInterpolation(InterpolatedStrExpr interp)
+    private int EmitInterpolation(BoundInterpolatedStr interp)
     {
         if (interp.Parts.Count == 0)
         {
@@ -167,28 +194,28 @@ internal sealed partial class FunctionEmitter
             Emit(new ConstStrInstr(dst, _gen.Intern("")));
             return dst;
         }
-        var partRegs = interp.Parts.Select(EmitPart).ToList();
+        var partRegs = interp.Parts.Select(EmitBoundPart).ToList();
         return EmitConcat(partRegs);
     }
 
-    private int EmitPart(InterpolationPart part) => part switch
+    private int EmitBoundPart(BoundInterpolationPart part) => part switch
     {
-        TextPart tp => EmitTextPart(tp),
-        ExprPart ep => EmitExprPart(ep),
-        _           => throw new NotSupportedException(part.GetType().Name)
+        BoundTextPart tp => EmitBoundTextPart(tp),
+        BoundExprPart ep => EmitBoundExprPart(ep),
+        _ => throw new NotSupportedException(part.GetType().Name)
     };
 
-    private int EmitTextPart(TextPart tp)
+    private int EmitBoundTextPart(BoundTextPart tp)
     {
         int dst = Alloc();
         Emit(new ConstStrInstr(dst, _gen.Intern(tp.Text)));
         return dst;
     }
 
-    private int EmitExprPart(ExprPart ep)
+    private int EmitBoundExprPart(BoundExprPart ep)
     {
         int exprReg = EmitExpr(ep.Inner);
-        bool isStringLit = ep.Inner is LitStrExpr or InterpolatedStrExpr;
+        bool isStringLit = ep.Inner is BoundLitStr or BoundInterpolatedStr;
         if (!isStringLit)
         {
             int strReg = Alloc();
@@ -212,7 +239,7 @@ internal sealed partial class FunctionEmitter
 
     // ── Switch expression ─────────────────────────────────────────────────────
 
-    private int EmitSwitchExpr(SwitchExpr sw)
+    private int EmitBoundSwitchExpr(BoundSwitchExpr sw)
     {
         int subjReg = EmitExpr(sw.Subject);
         int result  = Alloc();

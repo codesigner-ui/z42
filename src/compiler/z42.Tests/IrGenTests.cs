@@ -1,5 +1,7 @@
 using FluentAssertions;
+using Z42.Core.Diagnostics;
 using Z42.Semantics.Codegen;
+using Z42.Semantics.TypeCheck;
 using Z42.Core.Features;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
@@ -54,14 +56,16 @@ public sealed class IrGenTests
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
-        return new IrGen().Generate(cu);
+        var model  = new TypeChecker(new DiagnosticBag()).Check(cu);
+        return new IrGen(semanticModel: model).Generate(cu);
     }
 
     private static IrModule GenModuleWithStdlib(string src)
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
-        return new IrGen(StdlibIdx).Generate(cu);
+        var model  = new TypeChecker(new DiagnosticBag()).Check(cu);
+        return new IrGen(StdlibIdx, semanticModel: model).Generate(cu);
     }
 
     /// Generate a module from a void Main() wrapping the given statements.

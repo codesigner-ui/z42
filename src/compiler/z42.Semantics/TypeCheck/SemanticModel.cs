@@ -1,4 +1,4 @@
-using System.Runtime.CompilerServices;
+using Z42.Semantics.Bound;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -10,9 +10,8 @@ namespace Z42.Semantics.TypeCheck;
 /// Produced by <see cref="TypeChecker.Check"/> and consumed by IrGen so that
 /// the code generator does not need to re-derive type information from the AST.
 ///
-/// ExprTypes uses reference equality (ReferenceEqualityComparer) so that the
-/// same AST node object maps to the type inferred during type-checking, even
-/// when two structurally equal expressions appear at different call sites.
+/// BoundBodies maps each FunctionDecl to its fully-bound BoundBlock, so that
+/// FunctionEmitter receives typed nodes and needs no ExprTypes dictionary lookup.
 /// </summary>
 public sealed class SemanticModel
 {
@@ -33,10 +32,9 @@ public sealed class SemanticModel
     /// Short names of declared enum types.
     public IReadOnlySet<string> EnumTypes { get; }
 
-    /// Expression → inferred Z42Type mapping.
-    /// Keyed by AST node reference identity (not structural equality).
-    /// Populated for every expression visited by the TypeChecker.
-    public IReadOnlyDictionary<Expr, Z42Type> ExprTypes { get; }
+    /// Bound bodies for each non-extern FunctionDecl (class methods + top-level functions).
+    /// Extern/native functions are absent; callers must check before accessing.
+    public IReadOnlyDictionary<FunctionDecl, BoundBlock> BoundBodies { get; }
 
     internal SemanticModel(
         Dictionary<string, Z42ClassType>     classes,
@@ -44,13 +42,13 @@ public sealed class SemanticModel
         Dictionary<string, Z42InterfaceType> interfaces,
         Dictionary<string, long>             enumConstants,
         HashSet<string>                      enumTypes,
-        Dictionary<Expr, Z42Type>            exprTypes)
+        Dictionary<FunctionDecl, BoundBlock> boundBodies)
     {
-        Classes       = classes;
-        Funcs         = funcs;
-        Interfaces    = interfaces;
+        Classes      = classes;
+        Funcs        = funcs;
+        Interfaces   = interfaces;
         EnumConstants = enumConstants;
-        EnumTypes     = enumTypes;
-        ExprTypes     = exprTypes;
+        EnumTypes    = enumTypes;
+        BoundBodies  = boundBodies;
     }
 }

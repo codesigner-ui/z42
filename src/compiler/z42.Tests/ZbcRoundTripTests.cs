@@ -58,14 +58,14 @@ public class ZbcRoundTripTests
             throw new InvalidOperationException(
                 $"Parse error at {ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
         }
-        new TypeChecker(diags).Check(cu);
+        var model = new TypeChecker(diags).Check(cu);
         if (diags.HasErrors)
         {
             var sw = new System.IO.StringWriter();
             diags.PrintAll(sw);
             throw new InvalidOperationException("Type errors:\n" + sw);
         }
-        return new IrGen(StdlibIndex).Generate(cu);
+        return new IrGen(StdlibIndex, semanticModel: model).Generate(cu);
     }
 
     private static string ToJson(IrModule m) => JsonSerializer.Serialize(m, JsonOpts);

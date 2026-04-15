@@ -1,156 +1,183 @@
 using Z42.Core.Text;
 using Z42.Core.Diagnostics;
+using Z42.Semantics.Bound;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
 
-/// Statement type-checking — part of the TypeChecker partial class.
+/// Statement binding — part of the TypeChecker partial class.
 public sealed partial class TypeChecker
 {
     private int _loopDepth = 0;
+
     // ── Block ─────────────────────────────────────────────────────────────────
 
-    private void CheckBlock(BlockStmt block, TypeEnv parent, Z42Type retType)
+    private BoundBlock BindBlock(BlockStmt block, TypeEnv parent, Z42Type retType)
     {
         var scope = parent.PushScope();
+        var stmts = new List<BoundStmt>(block.Stmts.Count);
         foreach (var stmt in block.Stmts)
-            CheckStmt(stmt, scope, retType);
+            stmts.Add(BindStmt(stmt, scope, retType));
+        return new BoundBlock(stmts, block.Span);
     }
 
     // ── Statements ────────────────────────────────────────────────────────────
 
-    private void CheckStmt(Stmt stmt, TypeEnv env, Z42Type retType)
+    private BoundStmt BindStmt(Stmt stmt, TypeEnv env, Z42Type retType)
     {
         switch (stmt)
         {
             case BlockStmt b:
-                CheckBlock(b, env, retType);
-                break;
+                return new BoundBlockStmt(BindBlock(b, env, retType), b.Span);
 
             case VarDeclStmt v:
-                CheckVarDecl(v, env);
-                break;
+                return BindVarDecl(v, env);
 
             case ReturnStmt r:
-                CheckReturn(r, env, retType);
-                break;
+                return BindReturn(r, env, retType);
 
             case ExprStmt e:
-                CheckExpr(e.Expr, env);
-                break;
+                return new BoundExprStmt(BindExpr(e.Expr, env), e.Span);
 
             case IfStmt i:
             {
-                // For `is` pattern bindings, check the condition in a fresh scope
-                // so the binding variable is visible inside the then-block only.
                 if (i.Condition is IsPatternExpr)
                 {
+                    // IsPattern: push scope so binding is visible only in then-block
                     var patScope = env.PushScope();
-                    RequireBool(CheckExpr(i.Condition, patScope), i.Condition.Span, "if");
-                    CheckBlock(i.Then, patScope, retType);
-                    if (i.Else is BlockStmt eb) CheckBlock(eb, env, retType);
-                    else if (i.Else != null)    CheckStmt(i.Else, env, retType);
+                    var cond     = BindExpr(i.Condition, patScope);
+                    RequireBool(cond.Type, i.Condition.Span, "if");
+                    var then = BindBlock(i.Then, patScope, retType);
+                    var els  = BindElse(i.Else, env, retType);
+                    return new BoundIf(cond, then, els, i.Span);
                 }
                 else
                 {
-                    RequireBool(CheckExpr(i.Condition, env), i.Condition.Span, "if");
-                    CheckBlock(i.Then, env, retType);
-                    if (i.Else is BlockStmt eb) CheckBlock(eb, env, retType);
-                    else if (i.Else != null)    CheckStmt(i.Else, env, retType);
+                    var cond = BindExpr(i.Condition, env);
+                    RequireBool(cond.Type, i.Condition.Span, "if");
+                    var then = BindBlock(i.Then, env, retType);
+                    var els  = BindElse(i.Else, env, retType);
+                    return new BoundIf(cond, then, els, i.Span);
                 }
-                break;
             }
 
             case WhileStmt w:
-                RequireBool(CheckExpr(w.Condition, env), w.Condition.Span, "while");
+            {
+                var cond = BindExpr(w.Condition, env);
+                RequireBool(cond.Type, w.Condition.Span, "while");
                 _loopDepth++;
-                CheckBlock(w.Body, env, retType);
+                var body = BindBlock(w.Body, env, retType);
                 _loopDepth--;
-                break;
+                return new BoundWhile(cond, body, w.Span);
+            }
 
             case DoWhileStmt dw:
+            {
                 _loopDepth++;
-                CheckBlock(dw.Body, env, retType);
+                var body = BindBlock(dw.Body, env, retType);
                 _loopDepth--;
-                RequireBool(CheckExpr(dw.Condition, env), dw.Condition.Span, "do-while");
-                break;
+                var cond = BindExpr(dw.Condition, env);
+                RequireBool(cond.Type, dw.Condition.Span, "do-while");
+                return new BoundDoWhile(body, cond, dw.Span);
+            }
 
             case ForStmt f:
             {
-                var forScope = env.PushScope();
-                if (f.Init != null)      CheckStmt(f.Init, forScope, retType);
-                if (f.Condition != null) RequireBool(CheckExpr(f.Condition, forScope), f.Condition.Span, "for");
-                if (f.Increment != null) CheckExpr(f.Increment, forScope);
+                var forScope  = env.PushScope();
+                var initBound = f.Init      != null ? BindStmt(f.Init, forScope, retType) : null;
+                var condBound = f.Condition != null ? BindExpr(f.Condition, forScope)     : null;
+                if (condBound != null)
+                    RequireBool(condBound.Type, f.Condition!.Span, "for");
+                var incrBound = f.Increment != null ? BindExpr(f.Increment, forScope)     : null;
                 _loopDepth++;
-                CheckBlock(f.Body, forScope, retType);
+                var body = BindBlock(f.Body, forScope, retType);
                 _loopDepth--;
-                break;
+                return new BoundFor(initBound, condBound, incrBound, body, f.Span);
             }
 
             case ForeachStmt fe:
             {
-                var elemType = ElemTypeOf(CheckExpr(fe.Collection, env));
+                var coll     = BindExpr(fe.Collection, env);
+                var elemType = ElemTypeOf(coll.Type);
                 var feScope  = env.PushScope();
                 feScope.Define(fe.VarName, elemType);
                 _loopDepth++;
-                CheckBlock(fe.Body, feScope, retType);
+                var body = BindBlock(fe.Body, feScope, retType);
                 _loopDepth--;
-                break;
+                return new BoundForeach(fe.VarName, elemType, coll, body, fe.Span);
             }
 
             case BreakStmt bk:
                 if (_loopDepth == 0)
                     _diags.Error(DiagnosticCodes.TypeMismatch, "`break` outside of loop", bk.Span);
-                break;
+                return new BoundBreak(bk.Span);
 
             case ContinueStmt ck:
                 if (_loopDepth == 0)
                     _diags.Error(DiagnosticCodes.TypeMismatch, "`continue` outside of loop", ck.Span);
-                break;
+                return new BoundContinue(ck.Span);
 
             case SwitchStmt sw:
             {
-                CheckExpr(sw.Subject, env);
+                var subject = BindExpr(sw.Subject, env);
+                var cases   = new List<BoundSwitchCase>(sw.Cases.Count);
                 foreach (var c in sw.Cases)
                 {
-                    if (c.Pattern != null) CheckExpr(c.Pattern, env);
+                    var pattern   = c.Pattern != null ? BindExpr(c.Pattern, env) : null;
                     var caseScope = env.PushScope();
-                    foreach (var s in c.Body) CheckStmt(s, caseScope, retType);
+                    var caseBody  = c.Body.Select(s => BindStmt(s, caseScope, retType)).ToList();
+                    cases.Add(new BoundSwitchCase(pattern, caseBody, c.Span));
                 }
-                break;
+                return new BoundSwitch(subject, cases, sw.Span);
             }
 
             case TryCatchStmt tc:
             {
-                CheckBlock(tc.TryBody, env, retType);
+                var tryBody = BindBlock(tc.TryBody, env, retType);
+                var catches = new List<BoundCatchClause>(tc.Catches.Count);
                 foreach (var clause in tc.Catches)
                 {
                     var catchScope = env.PushScope();
                     if (clause.VarName != null)
                         catchScope.Define(clause.VarName, Z42Type.Unknown);
-                    CheckBlock(clause.Body, catchScope, retType);
+                    catches.Add(new BoundCatchClause(clause.VarName,
+                        BindBlock(clause.Body, catchScope, retType), clause.Span));
                 }
-                if (tc.Finally != null) CheckBlock(tc.Finally, env, retType);
-                break;
+                var fin = tc.Finally != null ? BindBlock(tc.Finally, env, retType) : null;
+                return new BoundTryCatch(tryBody, catches, fin, tc.Span);
             }
 
             case ThrowStmt th:
-                CheckExpr(th.Value, env);
-                break;
-            // Unknown statement kinds silently skipped (future constructs).
+                return new BoundThrow(BindExpr(th.Value, env), th.Span);
+
+            default:
+                // Unknown future construct — emit a no-op break
+                return new BoundBreak(stmt.Span);
         }
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// Binds an optional else-branch (BlockStmt or another Stmt).
+    private BoundStmt? BindElse(Stmt? els, TypeEnv env, Z42Type retType) => els switch
+    {
+        null        => null,
+        BlockStmt b => new BoundBlockStmt(BindBlock(b, env, retType), b.Span),
+        _           => BindStmt(els, env, retType),
+    };
+
     // ── Variable declaration ──────────────────────────────────────────────────
 
-    private void CheckVarDecl(VarDeclStmt v, TypeEnv env)
+    private BoundVarDecl BindVarDecl(VarDeclStmt v, TypeEnv env)
     {
         if (env.DefinedInCurrentScope(v.Name))
             _diags.Error(DiagnosticCodes.TypeMismatch,
                 $"variable `{v.Name}` is already declared in this scope", v.Span);
 
         Z42Type varType;
+        BoundExpr? initBound = null;
+
         if (v.TypeAnnotation != null)
         {
             varType = ResolveType(v.TypeAnnotation);
@@ -159,19 +186,22 @@ public sealed partial class TypeChecker
                 var intLitVal = ExtractIntLiteralValue(v.Init);
                 if (intLitVal != null)
                 {
-                    // Int literal (or negated int literal): range-check against explicit-size integer types.
                     var rangeOk = TryCheckIntLiteralRange(varType, intLitVal.Value, v.Init.Span);
+                    initBound = BindExpr(v.Init, env, varType);
                     if (rangeOk == null)
-                        RequireAssignable(varType, CheckExpr(v.Init, env), v.Init.Span);
-                    // rangeOk != null: range check handled (ok or error already emitted)
+                        RequireAssignable(varType, initBound.Type, v.Init.Span);
                 }
                 else
-                    RequireAssignable(varType, CheckExpr(v.Init, env), v.Init.Span);
+                {
+                    initBound = BindExpr(v.Init, env);
+                    RequireAssignable(varType, initBound.Type, v.Init.Span);
+                }
             }
         }
         else if (v.Init != null)
         {
-            varType = CheckExpr(v.Init, env);
+            initBound = BindExpr(v.Init, env);
+            varType   = initBound.Type;
             if (varType is Z42VoidType)
             {
                 _diags.Error(DiagnosticCodes.TypeMismatch, "cannot assign void to variable", v.Span);
@@ -182,22 +212,25 @@ public sealed partial class TypeChecker
         {
             varType = Z42Type.Unknown;
         }
+
         env.Define(v.Name, varType);
+        return new BoundVarDecl(v.Name, varType, initBound, v.Span);
     }
 
-    // ── Return statement ──────────────────────────────────────────────────────
+    // ── Return ────────────────────────────────────────────────────────────────
 
-    private void CheckReturn(ReturnStmt r, TypeEnv env, Z42Type expectedRetType)
+    private BoundReturn BindReturn(ReturnStmt r, TypeEnv env, Z42Type expectedRetType)
     {
         if (r.Value == null)
         {
             if (expectedRetType is not Z42VoidType and not Z42UnknownType)
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"missing return value; function returns `{expectedRetType}`", r.Span);
-            return;
+            return new BoundReturn(null, r.Span);
         }
-        var actual = CheckExpr(r.Value, env);
-        RequireAssignable(expectedRetType, actual, r.Value.Span,
-            $"return type mismatch: expected `{expectedRetType}`, got `{actual}`");
+        var value = BindExpr(r.Value, env);
+        RequireAssignable(expectedRetType, value.Type, r.Value.Span,
+            $"return type mismatch: expected `{expectedRetType}`, got `{value.Type}`");
+        return new BoundReturn(value, r.Span);
     }
 }
