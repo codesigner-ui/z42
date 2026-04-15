@@ -31,6 +31,14 @@ public sealed partial class TypeChecker
     private          Dictionary<string, Z42InterfaceType> _interfaces = new();
     /// Bound bodies produced by BindBlock/BindFunction for each FunctionDecl.
     private readonly Dictionary<FunctionDecl, BoundBlock> _boundBodies = new();
+    /// Bound default-value expressions keyed by Param (reference equality).
+    private readonly Dictionary<Param, BoundExpr> _boundDefaults =
+        new(ReferenceEqualityComparer.Instance);
+    /// Bound static field initializers keyed by FieldDecl (reference equality).
+    private readonly Dictionary<FieldDecl, BoundExpr> _boundStaticInits =
+        new(ReferenceEqualityComparer.Instance);
+    /// Bound base-ctor arg lists keyed by constructor FunctionDecl.
+    private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
     /// class name → set of interface names the class declares it implements
     private          Dictionary<string, HashSet<string>>  _classInterfaces = new();
     /// class name → set of abstract method names (inherited + own)
@@ -72,10 +80,12 @@ public sealed partial class TypeChecker
         CollectInterfaces(cu);
         CollectClasses(cu);
         CollectFunctions(cu);
+        BindStaticFieldInits(cu);
         foreach (var cls in cu.Classes)   BindClassMethods(cls);
         foreach (var fn  in cu.Functions) BindFunction(fn);
         return new SemanticModel(_classes, _funcs, _interfaces,
-            _globalEnumConstants, _enumTypes, _boundBodies);
+            _globalEnumConstants, _enumTypes, _boundBodies,
+            _boundDefaults, _boundStaticInits, _boundBaseCtorArgs);
     }
 
     // ── Pass 0a: enum constants ───────────────────────────────────────────────
@@ -141,6 +151,8 @@ public sealed partial class TypeChecker
             foreach (var p in method.Params)
                 scope.Define(p.Name, ResolveType(p.Type));
             bool isCtor = method.Name == cls.Name;
+            if (isCtor && method.BaseCtorArgs is { } baseCtorArgs)
+                _boundBaseCtorArgs[method] = baseCtorArgs.Select(a => BindExpr(a, scope)).ToList();
             _boundBodies[method] = BindBlock(method.Body, scope,
                 isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
         }
@@ -193,6 +205,22 @@ public sealed partial class TypeChecker
             if (!seen.Add(p.Name))
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"duplicate parameter name `{p.Name}`", p.Span);
+    }
+
+    // ── Static field initializer binding ─────────────────────────────────────
+
+    private void BindStaticFieldInits(CompilationUnit cu)
+    {
+        foreach (var cls in cu.Classes)
+        {
+            var statics = cls.Fields.Where(f => f.IsStatic && f.Initializer != null).ToList();
+            if (statics.Count == 0) continue;
+            using var _ = EnterClass(cls.Name);
+            var env   = new TypeEnv(_funcs, _classes);
+            var scope = env.PushScope();
+            foreach (var field in statics)
+                _boundStaticInits[field] = BindExpr(field.Initializer!, scope);
+        }
     }
 
     // ── Type resolution ───────────────────────────────────────────────────────
@@ -333,11 +361,12 @@ public sealed partial class TypeChecker
             if (p.Default != null)
             {
                 if (i < requiredCount) requiredCount = i;
-                // Check default value type against parameter type
-                var defaultEnv   = env ?? new TypeEnv(_funcs, _classes);
-                var defaultType  = BindExpr(p.Default, defaultEnv).Type;
-                RequireAssignable(paramTypes[i], defaultType, p.Default.Span,
-                    $"default value for `{p.Name}`: cannot assign `{defaultType}` to `{paramTypes[i]}`");
+                // Check default value type against parameter type; store for codegen.
+                var defaultEnv  = env ?? new TypeEnv(_funcs, _classes);
+                var boundDefault = BindExpr(p.Default, defaultEnv);
+                _boundDefaults[p] = boundDefault;
+                RequireAssignable(paramTypes[i], boundDefault.Type, p.Default.Span,
+                    $"default value for `{p.Name}`: cannot assign `{boundDefault.Type}` to `{paramTypes[i]}`");
             }
             else if (i >= requiredCount)
             {

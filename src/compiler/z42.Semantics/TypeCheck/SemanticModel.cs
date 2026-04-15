@@ -12,6 +12,8 @@ namespace Z42.Semantics.TypeCheck;
 ///
 /// BoundBodies maps each FunctionDecl to its fully-bound BoundBlock, so that
 /// FunctionEmitter receives typed nodes and needs no ExprTypes dictionary lookup.
+/// BoundDefaults, BoundStaticInits, BoundBaseCtorArgs cover the remaining raw-AST
+/// expressions, eliminating the legacy EmitRawExpr fallback entirely.
 /// </summary>
 public sealed class SemanticModel
 {
@@ -36,19 +38,37 @@ public sealed class SemanticModel
     /// Extern/native functions are absent; callers must check before accessing.
     public IReadOnlyDictionary<FunctionDecl, BoundBlock> BoundBodies { get; }
 
+    /// Bound default-value expressions keyed by Param (reference equality).
+    /// Only populated for params that have a default (Param.Default != null).
+    public IReadOnlyDictionary<Param, BoundExpr> BoundDefaults { get; }
+
+    /// Bound static field initializers keyed by FieldDecl (reference equality).
+    /// Only populated for static fields that have an initializer (FieldDecl.Initializer != null).
+    public IReadOnlyDictionary<FieldDecl, BoundExpr> BoundStaticInits { get; }
+
+    /// Bound base-constructor argument lists, keyed by the constructor FunctionDecl.
+    /// Only populated for constructors that have a base-ctor call (FunctionDecl.BaseCtorArgs != null).
+    public IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> BoundBaseCtorArgs { get; }
+
     internal SemanticModel(
         Dictionary<string, Z42ClassType>     classes,
         Dictionary<string, Z42FuncType>      funcs,
         Dictionary<string, Z42InterfaceType> interfaces,
         Dictionary<string, long>             enumConstants,
         HashSet<string>                      enumTypes,
-        Dictionary<FunctionDecl, BoundBlock> boundBodies)
+        Dictionary<FunctionDecl, BoundBlock> boundBodies,
+        Dictionary<Param,        BoundExpr>  boundDefaults,
+        Dictionary<FieldDecl,    BoundExpr>  boundStaticInits,
+        Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs)
     {
-        Classes      = classes;
-        Funcs        = funcs;
-        Interfaces   = interfaces;
-        EnumConstants = enumConstants;
-        EnumTypes    = enumTypes;
-        BoundBodies  = boundBodies;
+        Classes           = classes;
+        Funcs             = funcs;
+        Interfaces        = interfaces;
+        EnumConstants     = enumConstants;
+        EnumTypes         = enumTypes;
+        BoundBodies       = boundBodies;
+        BoundDefaults     = boundDefaults;
+        BoundStaticInits  = boundStaticInits;
+        BoundBaseCtorArgs = boundBaseCtorArgs;
     }
 }

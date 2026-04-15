@@ -173,13 +173,14 @@ internal sealed partial class FunctionEmitter
     {
         if (!_gen._funcParams.TryGetValue(qualifiedName, out var parms)) return argRegs;
         if (argRegs.Count >= parms.Count) return argRegs;
-        var filled = new List<int>(argRegs);
+        var filled   = new List<int>(argRegs);
+        var defaults = _gen._semanticModel!.BoundDefaults;
         for (int i = argRegs.Count; i < parms.Count; i++)
         {
-            var defaultExpr = parms[i].Default
-                ?? throw new InvalidOperationException(
-                    $"missing argument {i + 1} for `{qualifiedName}` and no default value");
-            filled.Add(EmitRawExpr(defaultExpr));
+            if (!defaults.TryGetValue(parms[i], out var boundDefault))
+                throw new InvalidOperationException(
+                    $"missing argument {i + 1} for `{qualifiedName}` and no bound default");
+            filled.Add(EmitExpr(boundDefault));
         }
         return filled;
     }

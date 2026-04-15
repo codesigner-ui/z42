@@ -55,7 +55,7 @@ public sealed partial class TypeChecker
                     && operand.Type is not Z42ErrorType and not Z42UnknownType)
                     _diags.Error(DiagnosticCodes.TypeMismatch,
                         $"operator `{post.Op}` requires numeric operand, got `{operand.Type}`", post.Span);
-                return new BoundPostfix(post.Op, operand, operand.Type, post.Span);
+                return new BoundPostfix(ToPostfixOp(post.Op), operand, operand.Type, post.Span);
             }
 
             case CallExpr call:     return BindCall(call, env);
@@ -221,21 +221,22 @@ public sealed partial class TypeChecker
     {
         var left  = BindExpr(bin.Left,  env);
         var right = BindExpr(bin.Right, env);
+        var op    = ToBinaryOp(bin.Op);
         if (left.Type is Z42ErrorType || right.Type is Z42ErrorType)
-            return new BoundBinary(bin.Op, left, right, Z42Type.Error, bin.Span);
+            return new BoundBinary(op, left, right, Z42Type.Error, bin.Span);
 
         if (bin.Op == "+" && (left.Type == Z42Type.String || right.Type == Z42Type.String))
-            return new BoundBinary(bin.Op, left, right, Z42Type.String, bin.Span);
+            return new BoundBinary(op, left, right, Z42Type.String, bin.Span);
 
         if (!BinaryTypeTable.Rules.TryGetValue(bin.Op, out var rule))
-            return new BoundBinary(bin.Op, left, right, Z42Type.Unknown, bin.Span);
+            return new BoundBinary(op, left, right, Z42Type.Unknown, bin.Span);
 
         CheckBinaryOperand(rule.LeftOk,  rule.Requirement, left.Type,  bin.Left.Span,  bin.Op);
         CheckBinaryOperand(rule.RightOk, rule.Requirement, right.Type, bin.Right.Span, bin.Op);
 
         var outType = (left.Type is Z42ErrorType || right.Type is Z42ErrorType)
             ? Z42Type.Error : rule.Output(left.Type, right.Type);
-        return new BoundBinary(bin.Op, left, right, outType, bin.Span);
+        return new BoundBinary(op, left, right, outType, bin.Span);
     }
 
     private void CheckBinaryOperand(
@@ -253,8 +254,9 @@ public sealed partial class TypeChecker
     private BoundExpr BindUnary(UnaryExpr u, TypeEnv env)
     {
         var operand = BindExpr(u.Operand, env);
+        var op      = ToUnaryOp(u.Op);
         if (operand.Type is Z42ErrorType)
-            return new BoundUnary(u.Op, operand, Z42Type.Error, u.Span);
+            return new BoundUnary(op, operand, Z42Type.Error, u.Span);
         Z42Type outType;
         switch (u.Op)
         {
@@ -281,8 +283,43 @@ public sealed partial class TypeChecker
             default:
                 outType = u.Op == "await" ? Z42Type.Unknown : operand.Type; break;
         }
-        return new BoundUnary(u.Op, operand, outType, u.Span);
+        return new BoundUnary(op, operand, outType, u.Span);
     }
+
+    // ── Op converters (string AST → typed Bound enum) ─────────────────────────
+
+    private static BinaryOp ToBinaryOp(string op) => op switch
+    {
+        "+"  => BinaryOp.Add,  "-"  => BinaryOp.Sub,  "*"  => BinaryOp.Mul,
+        "/"  => BinaryOp.Div,  "%"  => BinaryOp.Rem,
+        "==" => BinaryOp.Eq,   "!=" => BinaryOp.Ne,
+        "<"  => BinaryOp.Lt,   "<=" => BinaryOp.Le,
+        ">"  => BinaryOp.Gt,   ">=" => BinaryOp.Ge,
+        "&&" => BinaryOp.And,  "||" => BinaryOp.Or,
+        "&"  => BinaryOp.BitAnd, "|" => BinaryOp.BitOr, "^" => BinaryOp.BitXor,
+        "<<" => BinaryOp.Shl,  ">>" => BinaryOp.Shr,
+        "is" => BinaryOp.Is,   "as" => BinaryOp.As,
+        _ => throw new InvalidOperationException($"unknown binary op `{op}`")
+    };
+
+    private static UnaryOp ToUnaryOp(string op) => op switch
+    {
+        "-"    => UnaryOp.Neg,
+        "+"    => UnaryOp.Plus,
+        "!"    => UnaryOp.Not,
+        "~"    => UnaryOp.BitNot,
+        "++"   => UnaryOp.PrefixInc,
+        "--"   => UnaryOp.PrefixDec,
+        "await" => UnaryOp.Await,
+        _ => throw new InvalidOperationException($"unknown unary op `{op}`")
+    };
+
+    private static PostfixOp ToPostfixOp(string op) => op switch
+    {
+        "++" => PostfixOp.Inc,
+        "--" => PostfixOp.Dec,
+        _ => throw new InvalidOperationException($"unknown postfix op `{op}`")
+    };
 
     // ── Member expression (non-call) ──────────────────────────────────────────
 

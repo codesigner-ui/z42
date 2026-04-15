@@ -38,6 +38,20 @@ public abstract record BoundInterpolationPart(Span Span);
 public sealed record BoundTextPart(string Text, Span Span) : BoundInterpolationPart(Span);
 public sealed record BoundExprPart(BoundExpr Inner, Span Span) : BoundInterpolationPart(Span);
 
+// ── Operator enums ────────────────────────────────────────────────────────────
+
+public enum BinaryOp
+{
+    Add, Sub, Mul, Div, Rem,
+    Eq, Ne, Lt, Le, Gt, Ge,
+    And, Or,
+    BitAnd, BitOr, BitXor, Shl, Shr,
+    Is, As,
+}
+
+public enum UnaryOp  { Neg, Plus, Not, BitNot, PrefixInc, PrefixDec, Await }
+public enum PostfixOp { Inc, Dec }
+
 // ── Core expressions ──────────────────────────────────────────────────────────
 
 public sealed record BoundIdent(string Name, Z42Type Type, Span Span)
@@ -46,13 +60,13 @@ public sealed record BoundIdent(string Name, Z42Type Type, Span Span)
 public sealed record BoundAssign(BoundExpr Target, BoundExpr Value, Z42Type Type, Span Span)
     : BoundExpr(Type, Span);
 
-public sealed record BoundBinary(string Op, BoundExpr Left, BoundExpr Right, Z42Type Type, Span Span)
+public sealed record BoundBinary(BinaryOp Op, BoundExpr Left, BoundExpr Right, Z42Type Type, Span Span)
     : BoundExpr(Type, Span);
 
-public sealed record BoundUnary(string Op, BoundExpr Operand, Z42Type Type, Span Span)
+public sealed record BoundUnary(UnaryOp Op, BoundExpr Operand, Z42Type Type, Span Span)
     : BoundExpr(Type, Span);
 
-public sealed record BoundPostfix(string Op, BoundExpr Operand, Z42Type Type, Span Span)
+public sealed record BoundPostfix(PostfixOp Op, BoundExpr Operand, Z42Type Type, Span Span)
     : BoundExpr(Type, Span);
 
 // ── Calls ─────────────────────────────────────────────────────────────────────

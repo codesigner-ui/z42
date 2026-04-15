@@ -230,30 +230,30 @@ internal sealed partial class FunctionEmitter
 
     private int EmitBoundUnary(BoundUnary u)
     {
-        if (u.Op == "await") return EmitExpr(u.Operand);
+        if (u.Op == UnaryOp.Await) return EmitExpr(u.Operand);
 
         // Static field prefix ++ / --
-        if (u.Op is "++" or "--"
+        if (u.Op is UnaryOp.PrefixInc or UnaryOp.PrefixDec
             && u.Operand is BoundMember { Target: BoundIdent { Name: var ucn }, MemberName: var ufn }
             && _gen.TryGetStaticFieldKey(ucn, ufn) is { } uSfKey)
         {
             int oldReg = Alloc(); Emit(new StaticGetInstr(oldReg, uSfKey));
             int one    = Alloc(); Emit(new ConstI64Instr(one, 1));
             int newReg = Alloc();
-            Emit(u.Op == "++" ? new AddInstr(newReg, oldReg, one) : (IrInstr)new SubInstr(newReg, oldReg, one));
+            Emit(u.Op == UnaryOp.PrefixInc ? new AddInstr(newReg, oldReg, one) : (IrInstr)new SubInstr(newReg, oldReg, one));
             Emit(new StaticSetInstr(uSfKey, newReg));
             return newReg;
         }
 
         // Local variable prefix ++ / --
-        if (u.Op is "++" or "--" && u.Operand is BoundIdent prefixId)
+        if (u.Op is UnaryOp.PrefixInc or UnaryOp.PrefixDec && u.Operand is BoundIdent prefixId)
         {
             int oldReg = EmitExpr(u.Operand);
             int one    = Alloc();
             int newReg = Alloc();
             Emit(new ConstI64Instr(one, 1));
-            Emit(u.Op == "++" ? new AddInstr(newReg, oldReg, one)
-                              : (IrInstr)new SubInstr(newReg, oldReg, one));
+            Emit(u.Op == UnaryOp.PrefixInc ? new AddInstr(newReg, oldReg, one)
+                                           : (IrInstr)new SubInstr(newReg, oldReg, one));
             WriteBackName(prefixId.Name, newReg);
             return newReg;
         }
@@ -262,10 +262,11 @@ internal sealed partial class FunctionEmitter
         int dst = Alloc();
         Emit(u.Op switch
         {
-            "!" => (IrInstr)new NotInstr(dst, src),
-            "-" => new NegInstr(dst, src),
-            "~" => new BitNotInstr(dst, src),
-            _   => new CopyInstr(dst, src)
+            UnaryOp.Not            => (IrInstr)new NotInstr(dst, src),
+            UnaryOp.Neg            => new NegInstr(dst, src),
+            UnaryOp.BitNot         => new BitNotInstr(dst, src),
+            UnaryOp.Plus           => new CopyInstr(dst, src),  // unary + is identity
+            _                      => new CopyInstr(dst, src)   // PrefixInc/Dec on non-addressable; Await unreachable
         });
         return dst;
     }
@@ -279,8 +280,8 @@ internal sealed partial class FunctionEmitter
             int oldReg = Alloc(); Emit(new StaticGetInstr(oldReg, pSfKey));
             int one    = Alloc(); Emit(new ConstI64Instr(one, 1));
             int newReg = Alloc();
-            Emit(post.Op == "++" ? new AddInstr(newReg, oldReg, one)
-                                 : (IrInstr)new SubInstr(newReg, oldReg, one));
+            Emit(post.Op == PostfixOp.Inc ? new AddInstr(newReg, oldReg, one)
+                                          : (IrInstr)new SubInstr(newReg, oldReg, one));
             Emit(new StaticSetInstr(pSfKey, newReg));
             return oldReg;
         }
@@ -291,8 +292,8 @@ internal sealed partial class FunctionEmitter
             int one    = Alloc();
             int newReg = Alloc();
             Emit(new ConstI64Instr(one, 1));
-            Emit(post.Op == "++" ? new AddInstr(newReg, oldReg, one)
-                                 : (IrInstr)new SubInstr(newReg, oldReg, one));
+            Emit(post.Op == PostfixOp.Inc ? new AddInstr(newReg, oldReg, one)
+                                          : (IrInstr)new SubInstr(newReg, oldReg, one));
             WriteBackName(id.Name, newReg);
             return oldReg;
         }
@@ -388,53 +389,45 @@ internal sealed partial class FunctionEmitter
 
     private int EmitBoundBinary(BoundBinary bin)
     {
-        if (bin.Op is "is" or "as" && bin.Right is BoundIdent typeIdent)
+        // is / as require the type name from the right operand
+        if (bin.Op is BinaryOp.Is or BinaryOp.As)
         {
-            int objReg  = EmitExpr(bin.Left);
-            int typeReg = Alloc();
-            var qualName = _gen.QualifyName(typeIdent.Name);
-            Emit(bin.Op == "is"
-                ? new IsInstanceInstr(typeReg, objReg, qualName)
-                : (IrInstr)new AsCastInstr(typeReg, objReg, qualName));
-            return typeReg;
-        }
-
-        if (bin.Op == "is")
-        {
-            int objReg  = EmitExpr(bin.Left);
-            int typeReg = Alloc();
+            int objReg   = EmitExpr(bin.Left);
             var qualName = bin.Right is BoundIdent ti ? _gen.QualifyName(ti.Name) : "__unknown";
-            Emit(new IsInstanceInstr(typeReg, objReg, qualName));
-            return typeReg;
+            int dst      = Alloc();
+            Emit(bin.Op == BinaryOp.Is
+                ? new IsInstanceInstr(dst, objReg, qualName)
+                : (IrInstr)new AsCastInstr(dst, objReg, qualName));
+            return dst;
         }
 
         int a   = EmitExpr(bin.Left);
         int b   = EmitExpr(bin.Right);
-        int dst = Alloc();
+        int dst2 = Alloc();
         IrInstr instr = bin.Op switch
         {
-            "+"  => new AddInstr(dst, a, b),
-            "-"  => new SubInstr(dst, a, b),
-            "*"  => new MulInstr(dst, a, b),
-            "/"  => new DivInstr(dst, a, b),
-            "%"  => new RemInstr(dst, a, b),
-            "==" => new EqInstr(dst, a, b),
-            "!=" => new NeInstr(dst, a, b),
-            "<"  => new LtInstr(dst, a, b),
-            "<=" => new LeInstr(dst, a, b),
-            ">"  => new GtInstr(dst, a, b),
-            ">=" => new GeInstr(dst, a, b),
-            "&&" => new AndInstr(dst, a, b),
-            "||" => new OrInstr(dst, a, b),
-            "&"  => new BitAndInstr(dst, a, b),
-            "|"  => new BitOrInstr(dst, a, b),
-            "^"  => new BitXorInstr(dst, a, b),
-            "<<" => new ShlInstr(dst, a, b),
-            ">>" => new ShrInstr(dst, a, b),
-            _    => throw new NotSupportedException($"operator `{bin.Op}` not yet supported")
+            BinaryOp.Add    => new AddInstr(dst2, a, b),
+            BinaryOp.Sub    => new SubInstr(dst2, a, b),
+            BinaryOp.Mul    => new MulInstr(dst2, a, b),
+            BinaryOp.Div    => new DivInstr(dst2, a, b),
+            BinaryOp.Rem    => new RemInstr(dst2, a, b),
+            BinaryOp.Eq     => new EqInstr(dst2, a, b),
+            BinaryOp.Ne     => new NeInstr(dst2, a, b),
+            BinaryOp.Lt     => new LtInstr(dst2, a, b),
+            BinaryOp.Le     => new LeInstr(dst2, a, b),
+            BinaryOp.Gt     => new GtInstr(dst2, a, b),
+            BinaryOp.Ge     => new GeInstr(dst2, a, b),
+            BinaryOp.And    => new AndInstr(dst2, a, b),
+            BinaryOp.Or     => new OrInstr(dst2, a, b),
+            BinaryOp.BitAnd => new BitAndInstr(dst2, a, b),
+            BinaryOp.BitOr  => new BitOrInstr(dst2, a, b),
+            BinaryOp.BitXor => new BitXorInstr(dst2, a, b),
+            BinaryOp.Shl    => new ShlInstr(dst2, a, b),
+            BinaryOp.Shr    => new ShrInstr(dst2, a, b),
+            BinaryOp.Is or BinaryOp.As => throw new InvalidOperationException("unreachable"),
         };
         Emit(instr);
-        return dst;
+        return dst2;
     }
 
     // ── New object ────────────────────────────────────────────────────────────

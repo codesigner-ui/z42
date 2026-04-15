@@ -53,14 +53,14 @@ internal sealed partial class FunctionEmitter
 
         // Emit base constructor call at the start of derived constructors
         bool isCtor = !isStatic && method.Name == className;
-        if (isCtor && method.BaseCtorArgs is { } baseArgs
+        if (isCtor && method.BaseCtorArgs is { }
             && _gen._classBaseNames.TryGetValue(_gen.QualifyName(className), out var baseQual))
         {
             var baseSimpleName = baseQual.Contains('.')
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
             var baseCtorIrName = $"{baseQual}.{baseSimpleName}";
             var argRegs = new List<int> { 0 };
-            argRegs.AddRange(baseArgs.Select(EmitRawExpr));
+            argRegs.AddRange(_gen._semanticModel!.BoundBaseCtorArgs[method].Select(EmitExpr));
             int dst = Alloc();
             Emit(new CallInstr(dst, baseCtorIrName, argRegs));
         }
@@ -106,7 +106,7 @@ internal sealed partial class FunctionEmitter
                 int valReg;
                 if (field.Initializer != null)
                 {
-                    valReg = EmitRawExpr(field.Initializer);
+                    valReg = EmitExpr(_gen._semanticModel!.BoundStaticInits[field]);
                 }
                 else
                 {
