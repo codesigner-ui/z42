@@ -389,6 +389,30 @@ internal sealed partial class FunctionEmitter
 
     // ── Binary ────────────────────────────────────────────────────────────────
 
+    /// Instruction factory: BinaryOp → constructor. One entry per arithmetic/comparison/logic op.
+    private static readonly Dictionary<BinaryOp, Func<TypedReg, TypedReg, TypedReg, IrInstr>>
+        BinFactory = new()
+    {
+        [BinaryOp.Add]    = (d, a, b) => new AddInstr(d, a, b),
+        [BinaryOp.Sub]    = (d, a, b) => new SubInstr(d, a, b),
+        [BinaryOp.Mul]    = (d, a, b) => new MulInstr(d, a, b),
+        [BinaryOp.Div]    = (d, a, b) => new DivInstr(d, a, b),
+        [BinaryOp.Rem]    = (d, a, b) => new RemInstr(d, a, b),
+        [BinaryOp.Eq]     = (d, a, b) => new EqInstr(d, a, b),
+        [BinaryOp.Ne]     = (d, a, b) => new NeInstr(d, a, b),
+        [BinaryOp.Lt]     = (d, a, b) => new LtInstr(d, a, b),
+        [BinaryOp.Le]     = (d, a, b) => new LeInstr(d, a, b),
+        [BinaryOp.Gt]     = (d, a, b) => new GtInstr(d, a, b),
+        [BinaryOp.Ge]     = (d, a, b) => new GeInstr(d, a, b),
+        [BinaryOp.And]    = (d, a, b) => new AndInstr(d, a, b),
+        [BinaryOp.Or]     = (d, a, b) => new OrInstr(d, a, b),
+        [BinaryOp.BitAnd] = (d, a, b) => new BitAndInstr(d, a, b),
+        [BinaryOp.BitOr]  = (d, a, b) => new BitOrInstr(d, a, b),
+        [BinaryOp.BitXor] = (d, a, b) => new BitXorInstr(d, a, b),
+        [BinaryOp.Shl]    = (d, a, b) => new ShlInstr(d, a, b),
+        [BinaryOp.Shr]    = (d, a, b) => new ShrInstr(d, a, b),
+    };
+
     private TypedReg EmitBoundBinary(BoundBinary bin)
     {
         // is / as require the type name from the right operand
@@ -406,29 +430,7 @@ internal sealed partial class FunctionEmitter
         var a   = EmitExpr(bin.Left);
         var b   = EmitExpr(bin.Right);
         var dst2 = Alloc(ToIrType(bin.Type));
-        IrInstr instr = bin.Op switch
-        {
-            BinaryOp.Add    => new AddInstr(dst2, a, b),
-            BinaryOp.Sub    => new SubInstr(dst2, a, b),
-            BinaryOp.Mul    => new MulInstr(dst2, a, b),
-            BinaryOp.Div    => new DivInstr(dst2, a, b),
-            BinaryOp.Rem    => new RemInstr(dst2, a, b),
-            BinaryOp.Eq     => new EqInstr(dst2, a, b),
-            BinaryOp.Ne     => new NeInstr(dst2, a, b),
-            BinaryOp.Lt     => new LtInstr(dst2, a, b),
-            BinaryOp.Le     => new LeInstr(dst2, a, b),
-            BinaryOp.Gt     => new GtInstr(dst2, a, b),
-            BinaryOp.Ge     => new GeInstr(dst2, a, b),
-            BinaryOp.And    => new AndInstr(dst2, a, b),
-            BinaryOp.Or     => new OrInstr(dst2, a, b),
-            BinaryOp.BitAnd => new BitAndInstr(dst2, a, b),
-            BinaryOp.BitOr  => new BitOrInstr(dst2, a, b),
-            BinaryOp.BitXor => new BitXorInstr(dst2, a, b),
-            BinaryOp.Shl    => new ShlInstr(dst2, a, b),
-            BinaryOp.Shr    => new ShrInstr(dst2, a, b),
-            BinaryOp.Is or BinaryOp.As => throw new InvalidOperationException("unreachable"),
-        };
-        Emit(instr);
+        Emit(BinFactory[bin.Op](dst2, a, b));
         return dst2;
     }
 

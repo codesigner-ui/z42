@@ -11,6 +11,15 @@ internal sealed record BinaryTypeRule(
     Func<Z42Type, Z42Type, Z42Type> Output,
     string                          Requirement);
 
+/// Per-operator type rule for unary/prefix/postfix expressions.
+///
+/// Constraint: null = no constraint; otherwise predicate + error word.
+/// Output: computes the result type from the operand type.
+internal sealed record UnaryTypeRule(
+    Func<Z42Type, bool>?    Constraint,
+    Func<Z42Type, Z42Type>  Output,
+    string                  Requirement);
+
 /// Static table mapping operator string → its type rule.
 ///
 /// Design: adding a new operator requires exactly ONE line here — no changes
@@ -64,5 +73,30 @@ internal static class BinaryTypeTable
             // ── Type tests: no operand constraint ─────────────────────────────
             ["is"] = new(null, null, BoolOut, ""),
             ["as"] = new(null, null, UnkOut,  ""),
+        };
+}
+
+/// Static table mapping unary operator string → its type rule.
+/// Parallel to BinaryTypeTable: adding a new unary op requires ONE line.
+internal static class UnaryTypeTable
+{
+    private static readonly Func<Z42Type, bool> Numeric  = Z42Type.IsNumeric;
+    private static readonly Func<Z42Type, bool> Integral = Z42Type.IsIntegral;
+    private static readonly Func<Z42Type, bool> BoolPred = Z42Type.IsBool;
+
+    private static Z42Type Passthrough(Z42Type t)  => t;
+    private static Z42Type BoolOut(Z42Type _)       => Z42Type.Bool;
+    private static Z42Type UnknownOut(Z42Type _)    => Z42Type.Unknown;
+
+    internal static readonly IReadOnlyDictionary<string, UnaryTypeRule> Rules =
+        new Dictionary<string, UnaryTypeRule>
+        {
+            ["!"]     = new(BoolPred, BoolOut,      "bool"),
+            ["-"]     = new(Numeric,  Passthrough,  "numeric"),
+            ["+"]     = new(Numeric,  Passthrough,  "numeric"),
+            ["~"]     = new(Integral, Passthrough,  "integral"),
+            ["++"]    = new(Numeric,  Passthrough,  "numeric"),
+            ["--"]    = new(Numeric,  Passthrough,  "numeric"),
+            ["await"] = new(null,     UnknownOut,   ""),
         };
 }

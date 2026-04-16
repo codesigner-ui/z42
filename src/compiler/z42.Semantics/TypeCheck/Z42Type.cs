@@ -62,39 +62,47 @@ public abstract record Z42Type
         return false;
     }
 
-    public static bool IsNumeric(Z42Type t) =>
-        t is Z42PrimType { Name: "int" or "long" or "float" or "double"
-                                or "i8" or "i16" or "u8" or "u16" or "u32" or "u64"
-                                or "f32" or "f64" };
+    // ── Primitive type metadata table (single source of truth) ──────────────
 
-    /// True for integer types that support bitwise operations.
-    public static bool IsIntegral(Z42Type t) =>
-        t is Z42PrimType { Name: "int" or "long" or "i8" or "i16" or "u8" or "u16" or "u32" or "u64" };
+    private sealed record PrimInfo(
+        bool Numeric, bool Integral, bool Reference, (long Min, long Max)? LitRange);
 
-    /// Returns the valid [min, max] range for an integer literal assigned to <paramref name="t"/>.
-    /// Returns null if the type has no constrained integer range (e.g. float, long, unknown).
-    public static (long Min, long Max)? IntLiteralRange(Z42Type t) => t switch
+    private static readonly Dictionary<string, PrimInfo> PrimTable = new()
     {
-        Z42PrimType { Name: "i8"  } => (sbyte.MinValue,  sbyte.MaxValue),
-        Z42PrimType { Name: "i16" } => (short.MinValue,  short.MaxValue),
-        Z42PrimType { Name: "int" or "i32" } => (int.MinValue, int.MaxValue),
-        Z42PrimType { Name: "u8"  } => (0, byte.MaxValue),
-        Z42PrimType { Name: "u16" } => (0, ushort.MaxValue),
-        Z42PrimType { Name: "u32" } => (0, uint.MaxValue),
-        // u64: stored as signed long in AST; permit non-negative values up to long.MaxValue
-        Z42PrimType { Name: "u64" } => (0, long.MaxValue),
-        // long/i64: no range check needed (long covers the full signed 64-bit range)
-        _ => null
+        ["int"]    = new(true,  true,  false, (int.MinValue,   int.MaxValue)),
+        ["i32"]    = new(true,  true,  false, (int.MinValue,   int.MaxValue)),
+        ["long"]   = new(true,  true,  false, null),   // no range check (covers full i64)
+        ["i64"]    = new(true,  true,  false, null),
+        ["i8"]     = new(true,  true,  false, (sbyte.MinValue, sbyte.MaxValue)),
+        ["i16"]    = new(true,  true,  false, (short.MinValue, short.MaxValue)),
+        ["u8"]     = new(true,  true,  false, (0, byte.MaxValue)),
+        ["u16"]    = new(true,  true,  false, (0, ushort.MaxValue)),
+        ["u32"]    = new(true,  true,  false, (0, uint.MaxValue)),
+        ["u64"]    = new(true,  true,  false, (0, long.MaxValue)),
+        ["float"]  = new(true,  false, false, null),
+        ["f32"]    = new(true,  false, false, null),
+        ["double"] = new(true,  false, false, null),
+        ["f64"]    = new(true,  false, false, null),
+        ["bool"]   = new(false, false, false, null),
+        ["char"]   = new(false, false, false, null),
+        ["string"] = new(false, false, true,  null),
+        ["object"] = new(false, false, true,  null),
     };
 
-    public static bool IsBool(Z42Type t) => t == Bool;
+    private static PrimInfo? LookupPrim(Z42Type t) =>
+        t is Z42PrimType { Name: var n } && PrimTable.TryGetValue(n, out var info) ? info : null;
+
+    // ── Type predicates (all delegate to PrimTable) ──────────────────────────
+
+    public static bool IsNumeric(Z42Type t)  => LookupPrim(t)?.Numeric == true;
+    public static bool IsIntegral(Z42Type t) => LookupPrim(t)?.Integral == true;
+    public static bool IsBool(Z42Type t)     => t == Bool;
+
+    public static (long Min, long Max)? IntLiteralRange(Z42Type t) => LookupPrim(t)?.LitRange;
 
     public static bool IsReferenceType(Z42Type t) =>
-        t is Z42PrimType { Name: "string" or "object" or "List" or "Dictionary" }
-        or Z42ArrayType
-        or Z42ClassType
-        or Z42InterfaceType
-        or Z42OptionType;
+        (LookupPrim(t)?.Reference == true)
+        || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType;
 
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
     public static Z42Type ArithmeticResult(Z42Type l, Z42Type r)

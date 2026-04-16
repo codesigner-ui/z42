@@ -50,11 +50,13 @@ public sealed partial class TypeChecker
             case PostfixExpr post:
             {
                 var operand = BindExpr(post.Operand, env);
-                if (post.Op is "++" or "--"
-                    && !Z42Type.IsNumeric(operand.Type)
-                    && operand.Type is not Z42ErrorType and not Z42UnknownType)
+                if (UnaryTypeTable.Rules.TryGetValue(post.Op, out var postRule)
+                    && postRule.Constraint != null
+                    && operand.Type is not Z42ErrorType and not Z42UnknownType
+                    && !postRule.Constraint(operand.Type))
                     _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{post.Op}` requires numeric operand, got `{operand.Type}`", post.Span);
+                        $"operator `{post.Op}` requires {postRule.Requirement} operand, got `{operand.Type}`",
+                        post.Span);
                 return new BoundPostfix(ToPostfixOp(post.Op), operand, operand.Type, post.Span);
             }
 
@@ -257,33 +259,18 @@ public sealed partial class TypeChecker
         var op      = ToUnaryOp(u.Op);
         if (operand.Type is Z42ErrorType)
             return new BoundUnary(op, operand, Z42Type.Error, u.Span);
-        Z42Type outType;
-        switch (u.Op)
-        {
-            case "!":
-                if (!Z42Type.IsBool(operand.Type) && operand.Type is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `!` requires bool, got `{operand.Type}`", u.Operand.Span);
-                outType = Z42Type.Bool; break;
-            case "-" or "+":
-                if (!Z42Type.IsNumeric(operand.Type) && operand.Type is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"unary `{u.Op}` requires numeric operand, got `{operand.Type}`", u.Operand.Span);
-                outType = operand.Type; break;
-            case "++" or "--":
-                if (!Z42Type.IsNumeric(operand.Type) && operand.Type is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `{u.Op}` requires numeric operand, got `{operand.Type}`", u.Operand.Span);
-                outType = operand.Type; break;
-            case "~":
-                if (!Z42Type.IsIntegral(operand.Type) && operand.Type is not Z42UnknownType)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"operator `~` requires integral operand, got `{operand.Type}`", u.Operand.Span);
-                outType = operand.Type; break;
-            default:
-                outType = u.Op == "await" ? Z42Type.Unknown : operand.Type; break;
-        }
-        return new BoundUnary(op, operand, outType, u.Span);
+
+        if (!UnaryTypeTable.Rules.TryGetValue(u.Op, out var rule))
+            return new BoundUnary(op, operand, operand.Type, u.Span);
+
+        if (rule.Constraint != null
+            && operand.Type is not Z42UnknownType
+            && !rule.Constraint(operand.Type))
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"operator `{u.Op}` requires {rule.Requirement} operand, got `{operand.Type}`",
+                u.Operand.Span);
+
+        return new BoundUnary(op, operand, rule.Output(operand.Type), u.Span);
     }
 
     // ── Op converters (string AST → typed Bound enum) ─────────────────────────

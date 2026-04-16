@@ -190,49 +190,42 @@ internal sealed partial class FunctionEmitter
             _locals[name] = valReg;
     }
 
+    // ── Z42Type / TypeExpr → IrType mapping ─────────────────────────────────
+
+    /// Name → IrType lookup table (shared by both overloads, single source of truth).
+    private static readonly Dictionary<string, IrType> IrTypeByName = new()
+    {
+        ["int"]    = IrType.I32,  ["i32"]    = IrType.I32,
+        ["long"]   = IrType.I64,  ["i64"]    = IrType.I64,
+        ["float"]  = IrType.F32,  ["f32"]    = IrType.F32,
+        ["double"] = IrType.F64,  ["f64"]    = IrType.F64,
+        ["bool"]   = IrType.Bool,
+        ["char"]   = IrType.Char,
+        ["string"] = IrType.Str,
+        ["object"] = IrType.Ref,
+        ["i8"]     = IrType.I8,   ["i16"]    = IrType.I16,
+        ["u8"]     = IrType.U8,   ["u16"]    = IrType.U16,
+        ["u32"]    = IrType.U32,  ["u64"]    = IrType.U64,
+        ["sbyte"]  = IrType.I8,   ["short"]  = IrType.I16,
+        ["byte"]   = IrType.U8,   ["ushort"] = IrType.U16,
+        ["uint"]   = IrType.U32,  ["ulong"]  = IrType.U64,
+    };
+
     /// Maps a Z42 semantic type to an IR type tag.
     internal static IrType ToIrType(Z42Type type) => type switch
     {
-        Z42PrimType { Name: "int" }    => IrType.I32,
-        Z42PrimType { Name: "long" }   => IrType.I64,
-        Z42PrimType { Name: "float" }  => IrType.F32,
-        Z42PrimType { Name: "double" } => IrType.F64,
-        Z42PrimType { Name: "bool" }   => IrType.Bool,
-        Z42PrimType { Name: "char" }   => IrType.Char,
-        Z42PrimType { Name: "string" } => IrType.Str,
-        Z42PrimType { Name: "i8" }     => IrType.I8,
-        Z42PrimType { Name: "i16" }    => IrType.I16,
-        Z42PrimType { Name: "u8" }     => IrType.U8,
-        Z42PrimType { Name: "u16" }    => IrType.U16,
-        Z42PrimType { Name: "u32" }    => IrType.U32,
-        Z42PrimType { Name: "u64" }    => IrType.U64,
-        Z42ArrayType   => IrType.Ref,
-        Z42ClassType   => IrType.Ref,
-        Z42OptionType  => IrType.Ref,
-        Z42VoidType    => IrType.Void,
-        Z42NullType    => IrType.Ref,
+        Z42PrimType { Name: var n } when IrTypeByName.TryGetValue(n, out var ir) => ir,
+        Z42ArrayType or Z42ClassType or Z42OptionType or Z42NullType => IrType.Ref,
+        Z42VoidType => IrType.Void,
         _ => IrType.Unknown,
     };
 
     /// Maps a parser TypeExpr to an IrType (used for parameters where no Z42Type is available).
     internal static IrType ToIrType(TypeExpr typeExpr) => typeExpr switch
     {
-        NamedType { Name: "int" }    => IrType.I32,
-        NamedType { Name: "long" }   => IrType.I64,
-        NamedType { Name: "float" }  => IrType.F32,
-        NamedType { Name: "double" } => IrType.F64,
-        NamedType { Name: "bool" }   => IrType.Bool,
-        NamedType { Name: "char" }   => IrType.Char,
-        NamedType { Name: "string" } => IrType.Str,
-        NamedType { Name: "i8" }     => IrType.I8,
-        NamedType { Name: "i16" }    => IrType.I16,
-        NamedType { Name: "u8" }     => IrType.U8,
-        NamedType { Name: "u16" }    => IrType.U16,
-        NamedType { Name: "u32" }    => IrType.U32,
-        NamedType { Name: "u64" }    => IrType.U64,
-        ArrayType  => IrType.Ref,
-        OptionType => IrType.Ref,
-        VoidType   => IrType.Void,
+        NamedType { Name: var n } when IrTypeByName.TryGetValue(n, out var ir) => ir,
+        ArrayType or OptionType => IrType.Ref,
+        VoidType => IrType.Void,
         _ => IrType.Unknown,
     };
 }
