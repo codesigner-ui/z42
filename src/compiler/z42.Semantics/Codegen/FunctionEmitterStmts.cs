@@ -1,4 +1,5 @@
 using Z42.Semantics.Bound;
+using Z42.Semantics.TypeCheck;
 using Z42.IR;
 
 namespace Z42.Semantics.Codegen;
@@ -27,7 +28,7 @@ internal sealed partial class FunctionEmitter
                 _mutableVars.Add(v.Name);
                 if (v.Init != null)
                 {
-                    int reg = EmitExpr(v.Init);
+                    var reg = EmitExpr(v.Init);
                     Emit(new StoreInstr(v.Name, reg));
                 }
                 break;
@@ -94,7 +95,7 @@ internal sealed partial class FunctionEmitter
 
     private void EmitBoundIf(BoundIf ifStmt)
     {
-        int condReg    = EmitExpr(ifStmt.Cond);
+        var condReg    = EmitExpr(ifStmt.Cond);
         string thenLbl = FreshLabel("then");
         string elseLbl = FreshLabel(ifStmt.Else != null ? "else" : "end");
         string endLbl  = ifStmt.Else != null ? FreshLabel("end") : elseLbl;
@@ -124,7 +125,7 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(condLbl);
-        int condReg = EmitExpr(ws.Cond);
+        var condReg = EmitExpr(ws.Cond);
         EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
         _loopStack.Push((endLbl, condLbl));
@@ -151,7 +152,7 @@ internal sealed partial class FunctionEmitter
         _loopStack.Pop();
 
         StartBlock(condLbl);
-        int condReg = EmitExpr(dw.Cond);
+        var condReg = EmitExpr(dw.Cond);
         EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
 
         StartBlock(endLbl);
@@ -171,7 +172,7 @@ internal sealed partial class FunctionEmitter
         StartBlock(condLbl);
         if (fs.Cond != null)
         {
-            int condReg = EmitExpr(fs.Cond);
+            var condReg = EmitExpr(fs.Cond);
             EndBlock(new BrCondTerm(condReg, bodyLbl, endLbl));
         }
         else
@@ -194,13 +195,13 @@ internal sealed partial class FunctionEmitter
 
     private void EmitBoundForeach(BoundForeach fe)
     {
-        int arrReg = EmitExpr(fe.Collection);
-        int lenReg = Alloc();
+        var arrReg = EmitExpr(fe.Collection);
+        var lenReg = Alloc(IrType.I32);
         Emit(new ArrayLenInstr(lenReg, arrReg));
 
         string indexVar = $"__fe_i_{_nextLabelId}";
         _mutableVars.Add(indexVar);
-        int zeroReg = Alloc();
+        var zeroReg = Alloc(IrType.I32);
         Emit(new ConstI32Instr(zeroReg, 0));
         Emit(new StoreInstr(indexVar, zeroReg));
 
@@ -212,17 +213,17 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(condLbl);
-        int iReg   = Alloc();
+        var iReg   = Alloc(IrType.I32);
         Emit(new LoadInstr(iReg, indexVar));
-        int cmpReg = Alloc();
+        var cmpReg = Alloc(IrType.Bool);
         Emit(new LtInstr(cmpReg, iReg, lenReg));
         EndBlock(new BrCondTerm(cmpReg, bodyLbl, endLbl));
 
         _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
-        int iReg2   = Alloc();
+        var iReg2   = Alloc(IrType.I32);
         Emit(new LoadInstr(iReg2, indexVar));
-        int elemReg = Alloc();
+        var elemReg = Alloc(ToIrType(fe.VarType));
         Emit(new ArrayGetInstr(elemReg, arrReg, iReg2));
         _mutableVars.Add(fe.VarName);
         Emit(new StoreInstr(fe.VarName, elemReg));
@@ -231,11 +232,11 @@ internal sealed partial class FunctionEmitter
         _loopStack.Pop();
 
         StartBlock(incrLbl);
-        int iReg3   = Alloc();
+        var iReg3   = Alloc(IrType.I32);
         Emit(new LoadInstr(iReg3, indexVar));
-        int oneReg  = Alloc();
+        var oneReg  = Alloc(IrType.I32);
         Emit(new ConstI32Instr(oneReg, 1));
-        int nextReg = Alloc();
+        var nextReg = Alloc(IrType.I32);
         Emit(new AddInstr(nextReg, iReg3, oneReg));
         Emit(new StoreInstr(indexVar, nextReg));
         EndBlock(new BrTerm(condLbl));
@@ -247,7 +248,7 @@ internal sealed partial class FunctionEmitter
 
     private void EmitBoundSwitchStmt(BoundSwitch sw)
     {
-        int subjReg = EmitExpr(sw.Subject);
+        var subjReg = EmitExpr(sw.Subject);
         string endLbl = FreshLabel("sw_end");
 
         string outerContinue = _loopStack.Count > 0 ? _loopStack.Peek().Continue : endLbl;
@@ -269,8 +270,8 @@ internal sealed partial class FunctionEmitter
             string bodyLbl = FreshLabel("sw_case");
             string nextLbl = FreshLabel("sw_next");
 
-            int patReg = EmitExpr(c.Pattern);
-            int cmpReg = Alloc();
+            var patReg = EmitExpr(c.Pattern);
+            var cmpReg = Alloc(IrType.Bool);
             Emit(new EqInstr(cmpReg, subjReg, patReg));
             EndBlock(new BrCondTerm(cmpReg, bodyLbl, nextLbl));
 
@@ -311,7 +312,7 @@ internal sealed partial class FunctionEmitter
 
         foreach (var clause in tc.Catches)
         {
-            int catchReg         = Alloc();
+            var catchReg         = Alloc(IrType.Ref);
             string catchStartLbl = FreshLabel("catch_start");
 
             // ExceptionType is not stored in BoundCatchClause — use wildcard catch
@@ -330,7 +331,7 @@ internal sealed partial class FunctionEmitter
 
         if (tc.Catches.Count == 0 && tc.Finally != null)
         {
-            int catchAllReg         = Alloc();
+            var catchAllReg         = Alloc(IrType.Ref);
             string catchAllStartLbl = FreshLabel("catch_finally");
             string rethrowLbl       = FreshLabel("rethrow");
 

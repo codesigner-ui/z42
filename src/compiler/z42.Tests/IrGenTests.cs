@@ -465,7 +465,7 @@ public sealed class IrGenTests
         instrs.OfType<BuiltinInstr>().Should().ContainSingle(b => b.Name == "__println");
         // args: [0] (param 0 = the 'value' string argument)
         var builtin = instrs.OfType<BuiltinInstr>().Single();
-        builtin.Args.Should().Equal([0]);
+        builtin.Args.Select(a => a.Id).Should().Equal([0]);
     }
 
     [Fact]
@@ -507,7 +507,7 @@ public sealed class IrGenTests
             }
             """);
         var builtin = All(module.Functions.Single()).OfType<BuiltinInstr>().Single();
-        builtin.Args.Should().Equal([0, 1]);
+        builtin.Args.Select(a => a.Id).Should().Equal([0, 1]);
     }
 
     // ── Object protocol native stubs ──────────────────────────────────────────
@@ -526,7 +526,7 @@ public sealed class IrGenTests
         var fn = module.Functions.Should().ContainSingle(f => f.Name.EndsWith(".GetType")).Subject;
         var builtin = All(fn).OfType<BuiltinInstr>().Single();
         builtin.Name.Should().Be("__obj_get_type");
-        builtin.Args.Should().Equal([0]); // reg 0 = this
+        builtin.Args.Select(a => a.Id).Should().Equal([0]); // reg 0 = this
     }
 
     [Fact]
@@ -542,7 +542,7 @@ public sealed class IrGenTests
         var fn = module.Functions.Single();
         var builtin = All(fn).OfType<BuiltinInstr>().Single();
         builtin.Name.Should().Be("__obj_ref_eq");
-        builtin.Args.Should().Equal([0, 1]);
+        builtin.Args.Select(a => a.Id).Should().Equal([0, 1]);
     }
 
     [Fact]
@@ -558,6 +558,6 @@ public sealed class IrGenTests
         var fn = module.Functions.Should().ContainSingle(f => f.Name.EndsWith(".GetHashCode")).Subject;
         var builtin = All(fn).OfType<BuiltinInstr>().Single();
         builtin.Name.Should().Be("__obj_hash_code");
-        builtin.Args.Should().Equal([0]);
+        builtin.Args.Select(a => a.Id).Should().Equal([0]);
     }
 }

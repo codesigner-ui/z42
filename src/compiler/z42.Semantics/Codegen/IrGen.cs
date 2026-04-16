@@ -205,8 +205,9 @@ public sealed class IrGen
         string qualifiedName, int totalParams, int paramOffset,
         string intrinsicName, bool isVoid)
     {
-        var args = Enumerable.Range(0, totalParams).ToList();
-        int dst  = totalParams;
+        var args = Enumerable.Range(0, totalParams)
+            .Select(i => new TypedReg(i, IrType.Unknown)).ToList();
+        var dst  = new TypedReg(totalParams, isVoid ? IrType.Void : IrType.Unknown);
         var instrs = new List<IrInstr> { new BuiltinInstr(dst, intrinsicName, args) };
         var term   = new RetTerm(isVoid ? null : dst);
         var block  = new IrBlock("entry", instrs, term);

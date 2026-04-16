@@ -1,5 +1,7 @@
 using System.Text;
 
+// ReSharper disable SwitchStatementHandlesSomeKnownEnumValuesWithDefault
+
 namespace Z42.IR.BinaryFormat;
 
 /// <summary>
@@ -350,7 +352,7 @@ public static class ZbcWriter
                     w.Write(blockIdx.TryGetValue(exc.TryEnd,     out var te) ? te : (ushort)fn.Blocks.Count);
                     w.Write(blockIdx.TryGetValue(exc.CatchLabel, out var cl) ? cl : (ushort)0);
                     w.Write(exc.CatchType != null ? (uint)pool.Idx(exc.CatchType) : uint.MaxValue);
-                    w.Write((ushort)exc.CatchReg);
+                    w.Write((ushort)exc.CatchReg.Id);
                 }
 
             w.Write(instrBytes);
@@ -371,42 +373,42 @@ public static class ZbcWriter
         switch (instr)
         {
             case ConstStrInstr i:
-                w.Write(Opcodes.ConstStr); w.Write(TypeTags.Str); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstStr); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)strRemap[i.Idx]);
                 break;
             case ConstI32Instr i:
-                w.Write(Opcodes.ConstI); w.Write(TypeTags.I32); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstI); w.Write(TypeTags.I32); WriteReg(w, i.Dst);
                 w.Write(i.Val);
                 break;
             case ConstI64Instr i:
-                w.Write(Opcodes.ConstI); w.Write(TypeTags.I64); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstI); w.Write(TypeTags.I64); WriteReg(w, i.Dst);
                 w.Write(i.Val);
                 break;
             case ConstF64Instr i:
-                w.Write(Opcodes.ConstF); w.Write(TypeTags.F64); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstF); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write(i.Val);
                 break;
             case ConstBoolInstr i:
-                w.Write(Opcodes.ConstBool); w.Write(TypeTags.Bool); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstBool); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((byte)(i.Val ? 1 : 0));
                 break;
             case ConstCharInstr i:
-                w.Write(Opcodes.ConstChar); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstChar); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((int)i.Val);
                 break;
             case ConstNullInstr i:
-                w.Write(Opcodes.ConstNull); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ConstNull); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 break;
             case CopyInstr i:
-                w.Write(Opcodes.Copy); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
-                w.Write((ushort)i.Src);
+                w.Write(Opcodes.Copy); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Src);
                 break;
             case StoreInstr i:
-                w.Write(Opcodes.Store); w.Write(TypeTags.Unknown); w.Write(NoReg);
-                w.Write((uint)pool.Idx(i.Var)); w.Write((ushort)i.Src);
+                w.Write(Opcodes.Store); w.Write(TypeTagFromIrType(i.Src.Type)); w.Write(NoReg);
+                w.Write((uint)pool.Idx(i.Var)); WriteReg(w, i.Src);
                 break;
             case LoadInstr i:
-                w.Write(Opcodes.Load); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.Load); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Var));
                 break;
 
@@ -438,67 +440,67 @@ public static class ZbcWriter
             case ArrayLenInstr i: WriteUn(w, Opcodes.ArrayLen, i.Dst, i.Arr); break;
 
             case CallInstr i:
-                w.Write(Opcodes.Call); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.Call); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Func));
                 WriteArgs(w, i.Args);
                 break;
             case BuiltinInstr i:
-                w.Write(Opcodes.Builtin); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.Builtin); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Name));
                 WriteArgs(w, i.Args);
                 break;
             case VCallInstr i:
-                w.Write(Opcodes.VCall); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
-                w.Write((uint)pool.Idx(i.Method)); w.Write((ushort)i.Obj);
+                w.Write(Opcodes.VCall); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                w.Write((uint)pool.Idx(i.Method)); WriteReg(w, i.Obj);
                 WriteArgs(w, i.Args);
                 break;
 
             case FieldGetInstr i:
-                w.Write(Opcodes.FieldGet); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
-                w.Write((ushort)i.Obj); w.Write((uint)pool.Idx(i.FieldName));
+                w.Write(Opcodes.FieldGet); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Obj); w.Write((uint)pool.Idx(i.FieldName));
                 break;
             case FieldSetInstr i:
-                w.Write(Opcodes.FieldSet); w.Write(TypeTags.Unknown); w.Write(NoReg);
-                w.Write((ushort)i.Obj); w.Write((uint)pool.Idx(i.FieldName)); w.Write((ushort)i.Val);
+                w.Write(Opcodes.FieldSet); w.Write(TypeTagFromIrType(i.Val.Type)); w.Write(NoReg);
+                WriteReg(w, i.Obj); w.Write((uint)pool.Idx(i.FieldName)); WriteReg(w, i.Val);
                 break;
             case StaticGetInstr i:
-                w.Write(Opcodes.StaticGet); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.StaticGet); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Field));
                 break;
             case StaticSetInstr i:
-                w.Write(Opcodes.StaticSet); w.Write(TypeTags.Unknown); w.Write(NoReg);
-                w.Write((uint)pool.Idx(i.Field)); w.Write((ushort)i.Val);
+                w.Write(Opcodes.StaticSet); w.Write(TypeTagFromIrType(i.Val.Type)); w.Write(NoReg);
+                w.Write((uint)pool.Idx(i.Field)); WriteReg(w, i.Val);
                 break;
 
             case ObjNewInstr i:
-                w.Write(Opcodes.ObjNew); w.Write(TypeTags.Object); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ObjNew); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.ClassName));
                 WriteArgs(w, i.Args);
                 break;
             case IsInstanceInstr i:
-                w.Write(Opcodes.IsInstance); w.Write(TypeTags.Bool); w.Write((ushort)i.Dst);
-                w.Write((ushort)i.Obj); w.Write((uint)pool.Idx(i.ClassName));
+                w.Write(Opcodes.IsInstance); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Obj); w.Write((uint)pool.Idx(i.ClassName));
                 break;
             case AsCastInstr i:
-                w.Write(Opcodes.AsCast); w.Write(TypeTags.Object); w.Write((ushort)i.Dst);
-                w.Write((ushort)i.Obj); w.Write((uint)pool.Idx(i.ClassName));
+                w.Write(Opcodes.AsCast); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Obj); w.Write((uint)pool.Idx(i.ClassName));
                 break;
 
             case ArrayNewInstr i:
-                w.Write(Opcodes.ArrayNew); w.Write(TypeTags.Array); w.Write((ushort)i.Dst);
-                w.Write((ushort)i.Size);
+                w.Write(Opcodes.ArrayNew); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Size);
                 break;
             case ArrayNewLitInstr i:
-                w.Write(Opcodes.ArrayNewLit); w.Write(TypeTags.Array); w.Write((ushort)i.Dst);
+                w.Write(Opcodes.ArrayNewLit); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 WriteArgs(w, i.Elems);
                 break;
             case ArrayGetInstr i:
-                w.Write(Opcodes.ArrayGet); w.Write(TypeTags.Unknown); w.Write((ushort)i.Dst);
-                w.Write((ushort)i.Arr); w.Write((ushort)i.Idx);
+                w.Write(Opcodes.ArrayGet); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Arr); WriteReg(w, i.Idx);
                 break;
             case ArraySetInstr i:
-                w.Write(Opcodes.ArraySet); w.Write(TypeTags.Unknown); w.Write(NoReg);
-                w.Write((ushort)i.Arr); w.Write((ushort)i.Idx); w.Write((ushort)i.Val);
+                w.Write(Opcodes.ArraySet); w.Write(TypeTagFromIrType(i.Val.Type)); w.Write(NoReg);
+                WriteReg(w, i.Arr); WriteReg(w, i.Idx); WriteReg(w, i.Val);
                 break;
 
             default:
@@ -514,19 +516,19 @@ public static class ZbcWriter
             case RetTerm { Reg: null }:
                 w.Write(Opcodes.Ret); w.Write(TypeTags.Unknown); w.Write(NoReg);
                 break;
-            case RetTerm { Reg: int r }:
-                w.Write(Opcodes.RetVal); w.Write(TypeTags.Unknown); w.Write((ushort)r);
+            case RetTerm { Reg: TypedReg r }:
+                w.Write(Opcodes.RetVal); w.Write(TypeTagFromIrType(r.Type)); w.Write((ushort)r.Id);
                 break;
             case BrTerm bt:
                 w.Write(Opcodes.Br); w.Write(TypeTags.Unknown); w.Write(NoReg);
                 w.Write(blockIdx[bt.Label]);
                 break;
             case BrCondTerm bc:
-                w.Write(Opcodes.BrCond); w.Write(TypeTags.Unknown); w.Write((ushort)bc.Cond);
+                w.Write(Opcodes.BrCond); w.Write(TypeTagFromIrType(bc.Cond.Type)); WriteReg(w, bc.Cond);
                 w.Write(blockIdx[bc.TrueLabel]); w.Write(blockIdx[bc.FalseLabel]);
                 break;
             case ThrowTerm tt:
-                w.Write(Opcodes.Throw); w.Write(TypeTags.Unknown); w.Write((ushort)tt.Reg);
+                w.Write(Opcodes.Throw); w.Write(TypeTagFromIrType(tt.Reg.Type)); WriteReg(w, tt.Reg);
                 break;
             default:
                 throw new InvalidOperationException($"ZbcWriter: unhandled terminator {term.GetType().Name}");
@@ -535,23 +537,46 @@ public static class ZbcWriter
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static void WriteBin(BinaryWriter w, byte op, int dst, int a, int b)
+    private static void WriteBin(BinaryWriter w, byte op, TypedReg dst, TypedReg a, TypedReg b)
     {
-        w.Write(op); w.Write(TypeTags.Unknown); w.Write((ushort)dst);
-        w.Write((ushort)a); w.Write((ushort)b);
+        w.Write(op); w.Write(TypeTagFromIrType(dst.Type)); w.Write((ushort)dst.Id);
+        w.Write((ushort)a.Id); w.Write((ushort)b.Id);
     }
 
-    private static void WriteUn(BinaryWriter w, byte op, int dst, int src)
+    private static void WriteUn(BinaryWriter w, byte op, TypedReg dst, TypedReg src)
     {
-        w.Write(op); w.Write(TypeTags.Unknown); w.Write((ushort)dst);
-        w.Write((ushort)src);
+        w.Write(op); w.Write(TypeTagFromIrType(dst.Type)); w.Write((ushort)dst.Id);
+        w.Write((ushort)src.Id);
     }
 
-    private static void WriteArgs(BinaryWriter w, List<int> args)
+    private static void WriteReg(BinaryWriter w, TypedReg reg) => w.Write((ushort)reg.Id);
+
+    private static void WriteArgs(BinaryWriter w, List<TypedReg> args)
     {
         w.Write((byte)args.Count);
-        foreach (var a in args) w.Write((ushort)a);
+        foreach (var a in args) w.Write((ushort)a.Id);
     }
+
+    internal static byte TypeTagFromIrType(IrType type) => type switch
+    {
+        IrType.Unknown => TypeTags.Unknown,
+        IrType.Bool    => TypeTags.Bool,
+        IrType.I8      => TypeTags.I8,
+        IrType.I16     => TypeTags.I16,
+        IrType.I32     => TypeTags.I32,
+        IrType.I64     => TypeTags.I64,
+        IrType.U8      => TypeTags.U8,
+        IrType.U16     => TypeTags.U16,
+        IrType.U32     => TypeTags.U32,
+        IrType.U64     => TypeTags.U64,
+        IrType.F32     => TypeTags.F32,
+        IrType.F64     => TypeTags.F64,
+        IrType.Char    => TypeTags.Char,
+        IrType.Str     => TypeTags.Str,
+        IrType.Ref     => TypeTags.Object,
+        IrType.Void    => TypeTags.Unknown,
+        _              => TypeTags.Unknown,
+    };
 
     internal static void InternInstrStrings(StringPool pool, IrInstr instr)
     {
@@ -575,7 +600,7 @@ public static class ZbcWriter
     private static int ComputeRegCount(IrFunction fn)
     {
         int max = fn.ParamCount - 1;
-        void Visit(int r) { if (r >= 0 && r > max) max = r; }
+        void Visit(TypedReg r) { if (r.Id >= 0 && r.Id > max) max = r.Id; }
         foreach (var block in fn.Blocks)
         {
             foreach (var instr in block.Instructions) VisitInstrRegs(instr, Visit);
@@ -584,7 +609,7 @@ public static class ZbcWriter
         return Math.Max(max + 1, fn.ParamCount);
     }
 
-    private static void VisitInstrRegs(IrInstr instr, Action<int> v)
+    private static void VisitInstrRegs(IrInstr instr, Action<TypedReg> v)
     {
         switch (instr)
         {
@@ -639,11 +664,11 @@ public static class ZbcWriter
         }
     }
 
-    private static void VisitTermRegs(IrTerminator term, Action<int> v)
+    private static void VisitTermRegs(IrTerminator term, Action<TypedReg> v)
     {
         switch (term)
         {
-            case RetTerm { Reg: int r }: v(r); break;
+            case RetTerm { Reg: TypedReg r }: v(r); break;
             case BrCondTerm bc: v(bc.Cond); break;
             case ThrowTerm tt:  v(tt.Reg); break;
         }

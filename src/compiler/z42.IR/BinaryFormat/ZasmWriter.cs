@@ -69,7 +69,7 @@ public static class ZasmWriter
                     string catchType = exc.CatchType ?? "*";
                     sb.AppendLine(
                         $"  .except  try:[{exc.TryStart}, {exc.TryEnd})  " +
-                        $"catch:{exc.CatchLabel}  type:{catchType}  reg:%{exc.CatchReg}");
+                        $"catch:{exc.CatchLabel}  type:{catchType}  reg:%{exc.CatchReg.Id}");
                 }
             }
 
@@ -94,62 +94,62 @@ public static class ZasmWriter
     {
         return instr switch
         {
-            ConstStrInstr  i => $"%{i.Dst} = const.str  s{i.Idx}" +
+            ConstStrInstr  i => $"%{i.Dst.Id} = const.str  s{i.Idx}" +
                                  (i.Idx < strPool.Count ? $"          ; \"{Escape(strPool[i.Idx])}\"" : ""),
-            ConstI32Instr  i => $"%{i.Dst} = const.i32  {i.Val}",
-            ConstI64Instr  i => $"%{i.Dst} = const.i64  {i.Val}",
-            ConstF64Instr  i => $"%{i.Dst} = const.f64  {i.Val}",
-            ConstBoolInstr i => $"%{i.Dst} = const.bool  {(i.Val ? "true" : "false")}",
-            ConstCharInstr i => $"%{i.Dst} = const.char  '{i.Val}'",
-            ConstNullInstr i => $"%{i.Dst} = const.null",
-            CopyInstr      i => $"%{i.Dst} = copy  %{i.Src}",
-            StoreInstr     i => $"store  @{i.Var}  %{i.Src}",
-            LoadInstr      i => $"%{i.Dst} = load  @{i.Var}",
+            ConstI32Instr  i => $"%{i.Dst.Id} = const.i32  {i.Val}",
+            ConstI64Instr  i => $"%{i.Dst.Id} = const.i64  {i.Val}",
+            ConstF64Instr  i => $"%{i.Dst.Id} = const.f64  {i.Val}",
+            ConstBoolInstr i => $"%{i.Dst.Id} = const.bool  {(i.Val ? "true" : "false")}",
+            ConstCharInstr i => $"%{i.Dst.Id} = const.char  '{i.Val}'",
+            ConstNullInstr i => $"%{i.Dst.Id} = const.null",
+            CopyInstr      i => $"%{i.Dst.Id} = copy  %{i.Src.Id}",
+            StoreInstr     i => $"store  @{i.Var}  %{i.Src.Id}",
+            LoadInstr      i => $"%{i.Dst.Id} = load  @{i.Var}",
 
-            AddInstr    i => $"%{i.Dst} = add  %{i.A}, %{i.B}",
-            SubInstr    i => $"%{i.Dst} = sub  %{i.A}, %{i.B}",
-            MulInstr    i => $"%{i.Dst} = mul  %{i.A}, %{i.B}",
-            DivInstr    i => $"%{i.Dst} = div  %{i.A}, %{i.B}",
-            RemInstr    i => $"%{i.Dst} = rem  %{i.A}, %{i.B}",
-            NegInstr    i => $"%{i.Dst} = neg  %{i.Src}",
-            AndInstr    i => $"%{i.Dst} = and  %{i.A}, %{i.B}",
-            OrInstr     i => $"%{i.Dst} = or  %{i.A}, %{i.B}",
-            NotInstr    i => $"%{i.Dst} = not  %{i.Src}",
-            BitAndInstr i => $"%{i.Dst} = bit_and  %{i.A}, %{i.B}",
-            BitOrInstr  i => $"%{i.Dst} = bit_or  %{i.A}, %{i.B}",
-            BitXorInstr i => $"%{i.Dst} = bit_xor  %{i.A}, %{i.B}",
-            BitNotInstr i => $"%{i.Dst} = bit_not  %{i.Src}",
-            ShlInstr    i => $"%{i.Dst} = shl  %{i.A}, %{i.B}",
-            ShrInstr    i => $"%{i.Dst} = shr  %{i.A}, %{i.B}",
-            ToStrInstr  i => $"%{i.Dst} = to_str  %{i.Src}",
+            AddInstr    i => $"%{i.Dst.Id} = add  %{i.A.Id}, %{i.B.Id}",
+            SubInstr    i => $"%{i.Dst.Id} = sub  %{i.A.Id}, %{i.B.Id}",
+            MulInstr    i => $"%{i.Dst.Id} = mul  %{i.A.Id}, %{i.B.Id}",
+            DivInstr    i => $"%{i.Dst.Id} = div  %{i.A.Id}, %{i.B.Id}",
+            RemInstr    i => $"%{i.Dst.Id} = rem  %{i.A.Id}, %{i.B.Id}",
+            NegInstr    i => $"%{i.Dst.Id} = neg  %{i.Src.Id}",
+            AndInstr    i => $"%{i.Dst.Id} = and  %{i.A.Id}, %{i.B.Id}",
+            OrInstr     i => $"%{i.Dst.Id} = or  %{i.A.Id}, %{i.B.Id}",
+            NotInstr    i => $"%{i.Dst.Id} = not  %{i.Src.Id}",
+            BitAndInstr i => $"%{i.Dst.Id} = bit_and  %{i.A.Id}, %{i.B.Id}",
+            BitOrInstr  i => $"%{i.Dst.Id} = bit_or  %{i.A.Id}, %{i.B.Id}",
+            BitXorInstr i => $"%{i.Dst.Id} = bit_xor  %{i.A.Id}, %{i.B.Id}",
+            BitNotInstr i => $"%{i.Dst.Id} = bit_not  %{i.Src.Id}",
+            ShlInstr    i => $"%{i.Dst.Id} = shl  %{i.A.Id}, %{i.B.Id}",
+            ShrInstr    i => $"%{i.Dst.Id} = shr  %{i.A.Id}, %{i.B.Id}",
+            ToStrInstr  i => $"%{i.Dst.Id} = to_str  %{i.Src.Id}",
 
-            EqInstr i => $"%{i.Dst} = eq  %{i.A}, %{i.B}",
-            NeInstr i => $"%{i.Dst} = ne  %{i.A}, %{i.B}",
-            LtInstr i => $"%{i.Dst} = lt  %{i.A}, %{i.B}",
-            LeInstr i => $"%{i.Dst} = le  %{i.A}, %{i.B}",
-            GtInstr i => $"%{i.Dst} = gt  %{i.A}, %{i.B}",
-            GeInstr i => $"%{i.Dst} = ge  %{i.A}, %{i.B}",
+            EqInstr i => $"%{i.Dst.Id} = eq  %{i.A.Id}, %{i.B.Id}",
+            NeInstr i => $"%{i.Dst.Id} = ne  %{i.A.Id}, %{i.B.Id}",
+            LtInstr i => $"%{i.Dst.Id} = lt  %{i.A.Id}, %{i.B.Id}",
+            LeInstr i => $"%{i.Dst.Id} = le  %{i.A.Id}, %{i.B.Id}",
+            GtInstr i => $"%{i.Dst.Id} = gt  %{i.A.Id}, %{i.B.Id}",
+            GeInstr i => $"%{i.Dst.Id} = ge  %{i.A.Id}, %{i.B.Id}",
 
-            CallInstr    i => $"%{i.Dst} = call  @{i.Func}{FormatArgList(i.Args)}",
-            BuiltinInstr i => $"%{i.Dst} = builtin  {i.Name}{FormatArgList(i.Args)}",
+            CallInstr    i => $"%{i.Dst.Id} = call  @{i.Func}{FormatArgList(i.Args)}",
+            BuiltinInstr i => $"%{i.Dst.Id} = builtin  {i.Name}{FormatArgList(i.Args)}",
             // Virtual call: %dst = v_call %obj.Method  args — reads like an instance method call
-            VCallInstr   i => $"%{i.Dst} = v_call  %{i.Obj}.{i.Method}{FormatArgList(i.Args)}",
+            VCallInstr   i => $"%{i.Dst.Id} = v_call  %{i.Obj.Id}.{i.Method}{FormatArgList(i.Args)}",
 
-            FieldGetInstr  i => $"%{i.Dst} = field.get  %{i.Obj}  @{i.FieldName}",
-            FieldSetInstr  i => $"field.set  %{i.Obj}  @{i.FieldName}  %{i.Val}",
-            StaticGetInstr i => $"%{i.Dst} = static.get  @{i.Field}",
-            StaticSetInstr i => $"static.set  @{i.Field}  %{i.Val}",
+            FieldGetInstr  i => $"%{i.Dst.Id} = field.get  %{i.Obj.Id}  @{i.FieldName}",
+            FieldSetInstr  i => $"field.set  %{i.Obj.Id}  @{i.FieldName}  %{i.Val.Id}",
+            StaticGetInstr i => $"%{i.Dst.Id} = static.get  @{i.Field}",
+            StaticSetInstr i => $"static.set  @{i.Field}  %{i.Val.Id}",
 
-            ObjNewInstr     i => $"%{i.Dst} = obj.new  @{i.ClassName}{FormatArgList(i.Args)}",
-            IsInstanceInstr i => $"%{i.Dst} = is_instance  %{i.Obj}  @{i.ClassName}",
-            AsCastInstr     i => $"%{i.Dst} = as_cast  %{i.Obj}  @{i.ClassName}",
+            ObjNewInstr     i => $"%{i.Dst.Id} = obj.new  @{i.ClassName}{FormatArgList(i.Args)}",
+            IsInstanceInstr i => $"%{i.Dst.Id} = is_instance  %{i.Obj.Id}  @{i.ClassName}",
+            AsCastInstr     i => $"%{i.Dst.Id} = as_cast  %{i.Obj.Id}  @{i.ClassName}",
 
-            ArrayNewInstr    i => $"%{i.Dst} = arr.new  %{i.Size}",
-            ArrayNewLitInstr i => $"%{i.Dst} = arr.new.lit{FormatArgList(i.Elems)}",
-            ArrayGetInstr    i => $"%{i.Dst} = arr.get  %{i.Arr}, %{i.Idx}",
-            ArraySetInstr    i => $"arr.set  %{i.Arr}, %{i.Idx}, %{i.Val}",
-            ArrayLenInstr    i => $"%{i.Dst} = arr.len  %{i.Arr}",
-            StrConcatInstr   i => $"%{i.Dst} = str.concat  %{i.A}, %{i.B}",
+            ArrayNewInstr    i => $"%{i.Dst.Id} = arr.new  %{i.Size.Id}",
+            ArrayNewLitInstr i => $"%{i.Dst.Id} = arr.new.lit{FormatArgList(i.Elems)}",
+            ArrayGetInstr    i => $"%{i.Dst.Id} = arr.get  %{i.Arr.Id}, %{i.Idx.Id}",
+            ArraySetInstr    i => $"arr.set  %{i.Arr.Id}, %{i.Idx.Id}, %{i.Val.Id}",
+            ArrayLenInstr    i => $"%{i.Dst.Id} = arr.len  %{i.Arr.Id}",
+            StrConcatInstr   i => $"%{i.Dst.Id} = str.concat  %{i.A.Id}, %{i.B.Id}",
 
             _ => $"; <unknown {instr.GetType().Name}>",
         };
@@ -157,16 +157,16 @@ public static class ZasmWriter
 
     private static string FormatTerminator(IrTerminator term) => term switch
     {
-        RetTerm { Reg: null }  => "ret",
-        RetTerm { Reg: int r } => $"ret  %{r}",
-        BrTerm bt              => $"br  {bt.Label}",
-        BrCondTerm bc          => $"br.cond  %{bc.Cond}  {bc.TrueLabel}  {bc.FalseLabel}",
-        ThrowTerm tt           => $"throw  %{tt.Reg}",
+        RetTerm { Reg: null }      => "ret",
+        RetTerm { Reg: TypedReg r } => $"ret  %{r.Id}",
+        BrTerm bt                   => $"br  {bt.Label}",
+        BrCondTerm bc               => $"br.cond  %{bc.Cond.Id}  {bc.TrueLabel}  {bc.FalseLabel}",
+        ThrowTerm tt                => $"throw  %{tt.Reg.Id}",
         _                      => $"; <unknown terminator {term.GetType().Name}>",
     };
 
-    private static string FormatArgList(List<int> args) =>
-        args.Count == 0 ? "" : "  " + string.Join(", ", args.Select(a => $"%{a}"));
+    private static string FormatArgList(List<TypedReg> args) =>
+        args.Count == 0 ? "" : "  " + string.Join(", ", args.Select(a => $"%{a.Id}"));
 
     private static string Escape(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");

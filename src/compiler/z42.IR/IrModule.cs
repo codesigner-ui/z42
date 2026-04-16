@@ -2,6 +2,24 @@ using System.Text.Json.Serialization;
 
 namespace Z42.IR;
 
+// ── IR type system ───────────────────────────────────────────────────────────
+
+/// Runtime type tag for each register value. Mapped from Z42Type during codegen.
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum IrType : byte
+{
+    Unknown = 0,
+    I8, I16, I32, I64,
+    U8, U16, U32, U64,
+    F32, F64,
+    Bool, Char, Str,
+    Ref,      // any heap object (class instance, array, list, dict, null)
+    Void,
+}
+
+/// A typed register reference: register ID + its static type.
+public readonly record struct TypedReg(int Id, IrType Type = IrType.Unknown);
+
 // ── Module ────────────────────────────────────────────────────────────────────
 
 /// Root bytecode module — matches the Rust `bytecode::Module` JSON schema.
@@ -46,7 +64,7 @@ public sealed record IrExceptionEntry(
     string TryEnd,
     string CatchLabel,
     string? CatchType,
-    int CatchReg);
+    TypedReg CatchReg);
 
 // ── Basic block ───────────────────────────────────────────────────────────────
 
@@ -108,74 +126,100 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(StaticSetInstr),  "static_set")]
 public abstract record IrInstr;
 
-public sealed record ConstStrInstr(int Dst, int Idx)         : IrInstr;
-public sealed record ConstI32Instr(int Dst, int Val)         : IrInstr;
-public sealed record ConstI64Instr(int Dst, long Val)        : IrInstr;
-public sealed record ConstF64Instr(int Dst, double Val)      : IrInstr;
-public sealed record ConstBoolInstr(int Dst, bool Val)       : IrInstr;
-public sealed record ConstCharInstr(int Dst, char Val)       : IrInstr;
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+public sealed record ConstStrInstr(TypedReg Dst, int Idx)         : IrInstr;
+public sealed record ConstI32Instr(TypedReg Dst, int Val)         : IrInstr;
+public sealed record ConstI64Instr(TypedReg Dst, long Val)        : IrInstr;
+public sealed record ConstF64Instr(TypedReg Dst, double Val)      : IrInstr;
+public sealed record ConstBoolInstr(TypedReg Dst, bool Val)       : IrInstr;
+public sealed record ConstCharInstr(TypedReg Dst, char Val)       : IrInstr;
 /// Loads a null value into Dst.
-public sealed record ConstNullInstr(int Dst)                 : IrInstr;
+public sealed record ConstNullInstr(TypedReg Dst)                 : IrInstr;
+
+// ── Data movement ─────────────────────────────────────────────────────────────
+
 /// Copies the value of register Src into Dst.
-public sealed record CopyInstr(int Dst, int Src)             : IrInstr;
-public sealed record StrConcatInstr(int Dst, int A, int B)   : IrInstr;
-public sealed record ToStrInstr(int Dst, int Src)            : IrInstr;
-public sealed record CallInstr(int Dst, string Func, List<int> Args) : IrInstr;
-public sealed record BuiltinInstr(int Dst, string Name, List<int> Args) : IrInstr;
-public sealed record AddInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record SubInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record MulInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record DivInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record RemInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record EqInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record NeInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record LtInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record LeInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record GtInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record GeInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record AndInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record OrInstr(int Dst, int A, int B)          : IrInstr;
-public sealed record NotInstr(int Dst, int Src)              : IrInstr;
-public sealed record NegInstr(int Dst, int Src)              : IrInstr;
-public sealed record BitAndInstr(int Dst, int A, int B)      : IrInstr;
-public sealed record BitOrInstr(int Dst, int A, int B)       : IrInstr;
-public sealed record BitXorInstr(int Dst, int A, int B)      : IrInstr;
-public sealed record BitNotInstr(int Dst, int Src)           : IrInstr;
-public sealed record ShlInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record ShrInstr(int Dst, int A, int B)         : IrInstr;
-public sealed record StoreInstr(string Var, int Src)         : IrInstr;
-public sealed record LoadInstr(int Dst, string Var)          : IrInstr;
-// ── Array instructions ────────────────────────────────────────────────────────
+public sealed record CopyInstr(TypedReg Dst, TypedReg Src)             : IrInstr;
+public sealed record StrConcatInstr(TypedReg Dst, TypedReg A, TypedReg B) : IrInstr;
+public sealed record ToStrInstr(TypedReg Dst, TypedReg Src)            : IrInstr;
+
+// ── Calls ─────────────────────────────────────────────────────────────────────
+
+public sealed record CallInstr(TypedReg Dst, string Func, List<TypedReg> Args) : IrInstr;
+public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args) : IrInstr;
+
+// ── Arithmetic ────────────────────────────────────────────────────────────────
+
+public sealed record AddInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+public sealed record SubInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+public sealed record MulInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+public sealed record DivInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+public sealed record RemInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+
+// ── Comparison ────────────────────────────────────────────────────────────────
+
+public sealed record EqInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+public sealed record NeInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+public sealed record LtInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+public sealed record LeInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+public sealed record GtInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+public sealed record GeInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+
+// ── Logical ───────────────────────────────────────────────────────────────────
+
+public sealed record AndInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+public sealed record OrInstr(TypedReg Dst, TypedReg A, TypedReg B)     : IrInstr;
+public sealed record NotInstr(TypedReg Dst, TypedReg Src)              : IrInstr;
+public sealed record NegInstr(TypedReg Dst, TypedReg Src)              : IrInstr;
+
+// ── Bitwise ───────────────────────────────────────────────────────────────────
+
+public sealed record BitAndInstr(TypedReg Dst, TypedReg A, TypedReg B) : IrInstr;
+public sealed record BitOrInstr(TypedReg Dst, TypedReg A, TypedReg B)  : IrInstr;
+public sealed record BitXorInstr(TypedReg Dst, TypedReg A, TypedReg B) : IrInstr;
+public sealed record BitNotInstr(TypedReg Dst, TypedReg Src)           : IrInstr;
+public sealed record ShlInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+public sealed record ShrInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
+
+// ── Variables ─────────────────────────────────────────────────────────────────
+
+public sealed record StoreInstr(string Var, TypedReg Src)              : IrInstr;
+public sealed record LoadInstr(TypedReg Dst, string Var)               : IrInstr;
+
+// ── Array instructions ───────────────────────────────────────────────────────
+
 /// Allocate a zero-initialized array of Size elements.
-public sealed record ArrayNewInstr(int Dst, int Size)              : IrInstr;
+public sealed record ArrayNewInstr(TypedReg Dst, TypedReg Size)              : IrInstr;
 /// Allocate an array from a list of element registers.
-public sealed record ArrayNewLitInstr(int Dst, List<int> Elems)    : IrInstr;
+public sealed record ArrayNewLitInstr(TypedReg Dst, List<TypedReg> Elems)    : IrInstr;
 /// Load element at index Idx from array Arr into Dst.
-public sealed record ArrayGetInstr(int Dst, int Arr, int Idx)      : IrInstr;
+public sealed record ArrayGetInstr(TypedReg Dst, TypedReg Arr, TypedReg Idx) : IrInstr;
 /// Store Val into array Arr at index Idx (no result register).
-public sealed record ArraySetInstr(int Arr, int Idx, int Val)      : IrInstr;
+public sealed record ArraySetInstr(TypedReg Arr, TypedReg Idx, TypedReg Val) : IrInstr;
 /// Get the length of array Arr as i32 into Dst.
-public sealed record ArrayLenInstr(int Dst, int Arr)               : IrInstr;
+public sealed record ArrayLenInstr(TypedReg Dst, TypedReg Arr)               : IrInstr;
 
-// ── Object instructions ───────────────────────────────────────────────────────
+// ── Object instructions ──────────────────────────────────────────────────────
+
 /// Allocate a new object of ClassName, calling its constructor with Args.
-public sealed record ObjNewInstr(int Dst, string ClassName, List<int> Args) : IrInstr;
+public sealed record ObjNewInstr(TypedReg Dst, string ClassName, List<TypedReg> Args) : IrInstr;
 /// Load field FieldName from object in register Obj into Dst.
-public sealed record FieldGetInstr(int Dst, int Obj, string FieldName)      : IrInstr;
+public sealed record FieldGetInstr(TypedReg Dst, TypedReg Obj, string FieldName)      : IrInstr;
 /// Store Val into field FieldName of object in register Obj.
-public sealed record FieldSetInstr(int Obj, string FieldName, int Val)      : IrInstr;
+public sealed record FieldSetInstr(TypedReg Obj, string FieldName, TypedReg Val)      : IrInstr;
 /// Virtual dispatch: call Method on the runtime class of Obj, walking base classes.
-public sealed record VCallInstr(int Dst, int Obj, string Method, List<int> Args) : IrInstr;
+public sealed record VCallInstr(TypedReg Dst, TypedReg Obj, string Method, List<TypedReg> Args) : IrInstr;
 /// `expr is ClassName` — returns bool (true if Obj's runtime type is ClassName or a subclass).
-public sealed record IsInstanceInstr(int Dst, int Obj, string ClassName) : IrInstr;
+public sealed record IsInstanceInstr(TypedReg Dst, TypedReg Obj, string ClassName) : IrInstr;
 /// `expr as ClassName` — returns the object if it is an instance of ClassName (or subclass), else null.
-public sealed record AsCastInstr(int Dst, int Obj, string ClassName) : IrInstr;
+public sealed record AsCastInstr(TypedReg Dst, TypedReg Obj, string ClassName) : IrInstr;
 /// Load the module-level static field named Field into Dst.
-public sealed record StaticGetInstr(int Dst, string Field) : IrInstr;
+public sealed record StaticGetInstr(TypedReg Dst, string Field) : IrInstr;
 /// Store Val into the module-level static field named Field.
-public sealed record StaticSetInstr(string Field, int Val) : IrInstr;
+public sealed record StaticSetInstr(string Field, TypedReg Val) : IrInstr;
 
-// ── Terminators ───────────────────────────────────────────────────────────────
+// ── Terminators ──────────────────────────────────────────────────────────────
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "op")]
 [JsonDerivedType(typeof(RetTerm),    "ret")]
@@ -184,8 +228,8 @@ public sealed record StaticSetInstr(string Field, int Val) : IrInstr;
 [JsonDerivedType(typeof(ThrowTerm),  "throw")]
 public abstract record IrTerminator;
 
-public sealed record RetTerm(int? Reg)                                         : IrTerminator;
-public sealed record BrTerm(string Label)                                      : IrTerminator;
-public sealed record BrCondTerm(int Cond, string TrueLabel, string FalseLabel) : IrTerminator;
+public sealed record RetTerm(TypedReg? Reg)                                           : IrTerminator;
+public sealed record BrTerm(string Label)                                             : IrTerminator;
+public sealed record BrCondTerm(TypedReg Cond, string TrueLabel, string FalseLabel)   : IrTerminator;
 /// Throw the value in Reg as an exception; handled by the function's exception table.
-public sealed record ThrowTerm(int Reg)                                        : IrTerminator;
+public sealed record ThrowTerm(TypedReg Reg)                                          : IrTerminator;

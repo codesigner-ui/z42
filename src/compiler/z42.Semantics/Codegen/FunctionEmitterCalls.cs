@@ -10,7 +10,7 @@ internal sealed partial class FunctionEmitter
 {
     // ── Bound call dispatcher ─────────────────────────────────────────────────
 
-    private int EmitBoundCall(BoundCall call)
+    private TypedReg EmitBoundCall(BoundCall call)
     {
         var argRegs = call.Args.Select(EmitExpr).ToList();
 
@@ -26,7 +26,7 @@ internal sealed partial class FunctionEmitter
                              : sSet.Contains(arityKey)         ? arityKey : call.MethodName!;
                 var callName = $"{qualClass}.{resolved}";
                 argRegs = FillDefaults(callName, argRegs);
-                int dst = Alloc();
+                var dst = Alloc(ToIrType(call.Type));
                 Emit(new CallInstr(dst, callName, argRegs));
                 return dst;
             }
@@ -34,10 +34,10 @@ internal sealed partial class FunctionEmitter
             case BoundCallKind.Instance:
             case BoundCallKind.Virtual:
             {
-                int objReg   = EmitExpr(call.Receiver!);
+                var objReg   = EmitExpr(call.Receiver!);
                 var vcallKey = _gen.FindVcallParamsKey(call.MethodName!, argRegs.Count);
                 if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
-                int dst = Alloc();
+                var dst = Alloc(ToIrType(call.Type));
                 Emit(new VCallInstr(dst, objReg, call.MethodName!, argRegs));
                 return dst;
             }
@@ -55,7 +55,7 @@ internal sealed partial class FunctionEmitter
                 else
                     callName = call.CalleeName!;
                 argRegs = FillDefaults(callName, argRegs);
-                int dst = Alloc();
+                var dst = Alloc(ToIrType(call.Type));
                 Emit(new CallInstr(dst, callName, argRegs));
                 return dst;
             }
@@ -70,7 +70,7 @@ internal sealed partial class FunctionEmitter
 
     // ── Unresolved call — stdlib / builtin dispatch ───────────────────────────
 
-    private int EmitUnresolvedCall(BoundCall call, List<int> argRegs)
+    private TypedReg EmitUnresolvedCall(BoundCall call, List<TypedReg> argRegs)
     {
         var receiverName = (call.Receiver as BoundIdent)?.Name;
         var methodName   = call.MethodName;
@@ -93,7 +93,7 @@ internal sealed partial class FunctionEmitter
             };
             if (builtinName != null)
             {
-                int dst = Alloc();
+                var dst = Alloc(ToIrType(call.Type));
                 Emit(new BuiltinInstr(dst, builtinName, argRegs));
                 return dst;
             }
@@ -106,7 +106,7 @@ internal sealed partial class FunctionEmitter
             if (receiverName == "Console" && argRegs.Count != 1)
                 argRegs = [EmitConcat(argRegs)];
             _gen._usedStdlibNamespaces.Add(stdStaticEntry.Namespace);
-            int dst = Alloc();
+            var dst = Alloc(ToIrType(call.Type));
             Emit(new CallInstr(dst, stdStaticEntry.QualifiedName, argRegs));
             return dst;
         }
@@ -131,10 +131,10 @@ internal sealed partial class FunctionEmitter
             bool receiverIsClassInst = call.Receiver?.Type is Z42ClassType;
             if (collBuiltin != null && !receiverIsClassInst && call.Receiver != null)
             {
-                int receiverReg  = EmitExpr(call.Receiver);
-                var collArgRegs  = new List<int> { receiverReg };
+                var receiverReg  = EmitExpr(call.Receiver);
+                var collArgRegs  = new List<TypedReg> { receiverReg };
                 collArgRegs.AddRange(argRegs);
-                int dst = Alloc();
+                var dst = Alloc(ToIrType(call.Type));
                 Emit(new BuiltinInstr(dst, collBuiltin, collArgRegs));
                 return dst;
             }
@@ -144,11 +144,11 @@ internal sealed partial class FunctionEmitter
         if (methodName != null
             && _gen._stdlibIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
         {
-            int receiverReg = call.Receiver != null ? EmitExpr(call.Receiver) : Alloc();
-            var fullArgRegs = new List<int> { receiverReg };
+            var receiverReg = call.Receiver != null ? EmitExpr(call.Receiver) : Alloc(IrType.Unknown);
+            var fullArgRegs = new List<TypedReg> { receiverReg };
             fullArgRegs.AddRange(argRegs);
             _gen._usedStdlibNamespaces.Add(stdInstEntry.Namespace);
-            int dst = Alloc();
+            var dst = Alloc(ToIrType(call.Type));
             Emit(new CallInstr(dst, stdInstEntry.QualifiedName, fullArgRegs));
             return dst;
         }
@@ -156,10 +156,10 @@ internal sealed partial class FunctionEmitter
         // Fallback: virtual dispatch if we have a receiver and method name
         if (call.Receiver != null && methodName != null)
         {
-            int receiverReg  = EmitExpr(call.Receiver);
+            var receiverReg  = EmitExpr(call.Receiver);
             var vcallKey     = _gen.FindVcallParamsKey(methodName, argRegs.Count);
             if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
-            int dst = Alloc();
+            var dst = Alloc(ToIrType(call.Type));
             Emit(new VCallInstr(dst, receiverReg, methodName, argRegs));
             return dst;
         }
@@ -169,11 +169,11 @@ internal sealed partial class FunctionEmitter
     }
 
     /// Fill omitted trailing args with their default value expressions.
-    private List<int> FillDefaults(string qualifiedName, List<int> argRegs)
+    private List<TypedReg> FillDefaults(string qualifiedName, List<TypedReg> argRegs)
     {
         if (!_gen._funcParams.TryGetValue(qualifiedName, out var parms)) return argRegs;
         if (argRegs.Count >= parms.Count) return argRegs;
-        var filled   = new List<int>(argRegs);
+        var filled   = new List<TypedReg>(argRegs);
         var defaults = _gen._semanticModel!.BoundDefaults;
         for (int i = argRegs.Count; i < parms.Count; i++)
         {
@@ -187,11 +187,11 @@ internal sealed partial class FunctionEmitter
 
     // ── String interpolation ──────────────────────────────────────────────────
 
-    private int EmitInterpolation(BoundInterpolatedStr interp)
+    private TypedReg EmitInterpolation(BoundInterpolatedStr interp)
     {
         if (interp.Parts.Count == 0)
         {
-            int dst = Alloc();
+            var dst = Alloc(IrType.Str);
             Emit(new ConstStrInstr(dst, _gen.Intern("")));
             return dst;
         }
@@ -199,39 +199,39 @@ internal sealed partial class FunctionEmitter
         return EmitConcat(partRegs);
     }
 
-    private int EmitBoundPart(BoundInterpolationPart part) => part switch
+    private TypedReg EmitBoundPart(BoundInterpolationPart part) => part switch
     {
         BoundTextPart tp => EmitBoundTextPart(tp),
         BoundExprPart ep => EmitBoundExprPart(ep),
         _ => throw new NotSupportedException(part.GetType().Name)
     };
 
-    private int EmitBoundTextPart(BoundTextPart tp)
+    private TypedReg EmitBoundTextPart(BoundTextPart tp)
     {
-        int dst = Alloc();
+        var dst = Alloc(IrType.Str);
         Emit(new ConstStrInstr(dst, _gen.Intern(tp.Text)));
         return dst;
     }
 
-    private int EmitBoundExprPart(BoundExprPart ep)
+    private TypedReg EmitBoundExprPart(BoundExprPart ep)
     {
-        int exprReg = EmitExpr(ep.Inner);
+        var exprReg = EmitExpr(ep.Inner);
         bool isStringLit = ep.Inner is BoundLitStr or BoundInterpolatedStr;
         if (!isStringLit)
         {
-            int strReg = Alloc();
+            var strReg = Alloc(IrType.Str);
             Emit(new ToStrInstr(strReg, exprReg));
             return strReg;
         }
         return exprReg;
     }
 
-    private int EmitConcat(List<int> regs)
+    private TypedReg EmitConcat(List<TypedReg> regs)
     {
-        int result = regs[0];
+        var result = regs[0];
         for (int i = 1; i < regs.Count; i++)
         {
-            int dst = Alloc();
+            var dst = Alloc(IrType.Str);
             Emit(new StrConcatInstr(dst, result, regs[i]));
             result = dst;
         }
@@ -240,17 +240,17 @@ internal sealed partial class FunctionEmitter
 
     // ── Switch expression ─────────────────────────────────────────────────────
 
-    private int EmitBoundSwitchExpr(BoundSwitchExpr sw)
+    private TypedReg EmitBoundSwitchExpr(BoundSwitchExpr sw)
     {
-        int subjReg = EmitExpr(sw.Subject);
-        int result  = Alloc();
+        var subjReg = EmitExpr(sw.Subject);
+        var result  = Alloc(ToIrType(sw.Type));
         string endLbl = FreshLabel("sw_end");
 
         foreach (var arm in sw.Arms)
         {
             if (arm.Pattern == null)
             {
-                int defReg = EmitExpr(arm.Body);
+                var defReg = EmitExpr(arm.Body);
                 Emit(new CopyInstr(result, defReg));
                 EndBlock(new BrTerm(endLbl));
                 break;
@@ -259,13 +259,13 @@ internal sealed partial class FunctionEmitter
             string thenLbl = FreshLabel("sw_arm");
             string nextLbl = FreshLabel("sw_next");
 
-            int patReg  = EmitExpr(arm.Pattern);
-            int cmpReg  = Alloc();
+            var patReg  = EmitExpr(arm.Pattern);
+            var cmpReg  = Alloc(IrType.Bool);
             Emit(new EqInstr(cmpReg, subjReg, patReg));
             EndBlock(new BrCondTerm(cmpReg, thenLbl, nextLbl));
 
             StartBlock(thenLbl);
-            int bodyReg = EmitExpr(arm.Body);
+            var bodyReg = EmitExpr(arm.Body);
             Emit(new CopyInstr(result, bodyReg));
             EndBlock(new BrTerm(endLbl));
 

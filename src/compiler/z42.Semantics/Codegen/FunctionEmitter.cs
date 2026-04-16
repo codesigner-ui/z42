@@ -22,7 +22,7 @@ internal sealed partial class FunctionEmitter
     // Per-function state — initialized by entry point methods, never carried across functions.
     private int _nextReg;
     private int _nextLabelId;
-    private Dictionary<string, int> _locals = new();
+    private Dictionary<string, TypedReg> _locals = new();
     private HashSet<string> _mutableVars = new();
     private HashSet<string> _instanceFields = new();
     private List<IrBlock> _blocks = new();
@@ -44,12 +44,12 @@ internal sealed partial class FunctionEmitter
         _currentClassName = className;
         int paramOffset = isStatic ? 0 : 1;
         _nextReg = method.Params.Count + paramOffset;
-        if (!isStatic) _locals["this"] = 0;
+        if (!isStatic) _locals["this"] = new TypedReg(0, IrType.Ref);
         _instanceFields = isStatic ? [] : _gen.GetClassInstanceFieldNames(className);
 
         StartBlock("entry");
         for (int i = 0; i < method.Params.Count; i++)
-            _locals[method.Params[i].Name] = i + paramOffset;
+            _locals[method.Params[i].Name] = new TypedReg(i + paramOffset, ToIrType(method.Params[i].Type));
 
         // Emit base constructor call at the start of derived constructors
         bool isCtor = !isStatic && method.Name == className;
@@ -59,9 +59,9 @@ internal sealed partial class FunctionEmitter
             var baseSimpleName = baseQual.Contains('.')
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
             var baseCtorIrName = $"{baseQual}.{baseSimpleName}";
-            var argRegs = new List<int> { 0 };
+            var argRegs = new List<TypedReg> { new(0, IrType.Ref) };
             argRegs.AddRange(_gen._semanticModel!.BoundBaseCtorArgs[method].Select(EmitExpr));
-            int dst = Alloc();
+            var dst = Alloc(IrType.Ref);
             Emit(new CallInstr(dst, baseCtorIrName, argRegs));
         }
 
@@ -82,7 +82,7 @@ internal sealed partial class FunctionEmitter
 
         StartBlock("entry");
         for (int i = 0; i < fn.Params.Count; i++)
-            _locals[fn.Params[i].Name] = i;
+            _locals[fn.Params[i].Name] = new TypedReg(i, ToIrType(fn.Params[i].Type));
 
         EmitBoundBlock(body);
         if (!_blockEnded) EndBlock(new RetTerm(null));
@@ -103,14 +103,24 @@ internal sealed partial class FunctionEmitter
             foreach (var field in cls.Fields.Where(f => f.IsStatic))
             {
                 string key = $"{_gen.QualifyName(cls.Name)}.{field.Name}";
-                int valReg;
+                TypedReg valReg;
                 if (field.Initializer != null)
                 {
                     valReg = EmitExpr(_gen._semanticModel!.BoundStaticInits[field]);
                 }
                 else
                 {
-                    valReg = Alloc();
+                    valReg = field.Type switch
+                    {
+                        NamedType { Name: "int" } => Alloc(IrType.I32),
+                        NamedType { Name: "long" } => Alloc(IrType.I64),
+                        NamedType { Name: "short" } => Alloc(IrType.I16),
+                        NamedType { Name: "byte" } => Alloc(IrType.U8),
+                        NamedType { Name: "double" } => Alloc(IrType.F64),
+                        NamedType { Name: "float" } => Alloc(IrType.F32),
+                        NamedType { Name: "bool" } => Alloc(IrType.Bool),
+                        _ => Alloc(IrType.Ref),
+                    };
                     IrInstr defaultInstr = field.Type switch
                     {
                         NamedType { Name: "int" or "long" or "short" or "byte" }
@@ -156,7 +166,7 @@ internal sealed partial class FunctionEmitter
             _curInstrs.Add(instr);
     }
 
-    private int Alloc() => _nextReg++;
+    private TypedReg Alloc(IrType type = IrType.Unknown) => new(_nextReg++, type);
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -170,13 +180,59 @@ internal sealed partial class FunctionEmitter
     };
 
     /// Write a new value back to a named variable.
-    private void WriteBackName(string name, int valReg)
+    private void WriteBackName(string name, TypedReg valReg)
     {
         if (_mutableVars.Contains(name))
             Emit(new StoreInstr(name, valReg));
         else if (_instanceFields.Contains(name))
-            Emit(new FieldSetInstr(0, name, valReg));
+            Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), name, valReg));
         else
             _locals[name] = valReg;
     }
+
+    /// Maps a Z42 semantic type to an IR type tag.
+    internal static IrType ToIrType(Z42Type type) => type switch
+    {
+        Z42PrimType { Name: "int" }    => IrType.I32,
+        Z42PrimType { Name: "long" }   => IrType.I64,
+        Z42PrimType { Name: "float" }  => IrType.F32,
+        Z42PrimType { Name: "double" } => IrType.F64,
+        Z42PrimType { Name: "bool" }   => IrType.Bool,
+        Z42PrimType { Name: "char" }   => IrType.Char,
+        Z42PrimType { Name: "string" } => IrType.Str,
+        Z42PrimType { Name: "i8" }     => IrType.I8,
+        Z42PrimType { Name: "i16" }    => IrType.I16,
+        Z42PrimType { Name: "u8" }     => IrType.U8,
+        Z42PrimType { Name: "u16" }    => IrType.U16,
+        Z42PrimType { Name: "u32" }    => IrType.U32,
+        Z42PrimType { Name: "u64" }    => IrType.U64,
+        Z42ArrayType   => IrType.Ref,
+        Z42ClassType   => IrType.Ref,
+        Z42OptionType  => IrType.Ref,
+        Z42VoidType    => IrType.Void,
+        Z42NullType    => IrType.Ref,
+        _ => IrType.Unknown,
+    };
+
+    /// Maps a parser TypeExpr to an IrType (used for parameters where no Z42Type is available).
+    internal static IrType ToIrType(TypeExpr typeExpr) => typeExpr switch
+    {
+        NamedType { Name: "int" }    => IrType.I32,
+        NamedType { Name: "long" }   => IrType.I64,
+        NamedType { Name: "float" }  => IrType.F32,
+        NamedType { Name: "double" } => IrType.F64,
+        NamedType { Name: "bool" }   => IrType.Bool,
+        NamedType { Name: "char" }   => IrType.Char,
+        NamedType { Name: "string" } => IrType.Str,
+        NamedType { Name: "i8" }     => IrType.I8,
+        NamedType { Name: "i16" }    => IrType.I16,
+        NamedType { Name: "u8" }     => IrType.U8,
+        NamedType { Name: "u16" }    => IrType.U16,
+        NamedType { Name: "u32" }    => IrType.U32,
+        NamedType { Name: "u64" }    => IrType.U64,
+        ArrayType  => IrType.Ref,
+        OptionType => IrType.Ref,
+        VoidType   => IrType.Void,
+        _ => IrType.Unknown,
+    };
 }

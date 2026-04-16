@@ -20,7 +20,6 @@
 | `Codegen/FunctionEmitterStmts.cs` | 语句 + 控制流 IR 生成（分部类，消费 BoundStmt）|
 | `Codegen/FunctionEmitterExprs.cs` | 表达式 IR 生成（分部类，消费 BoundExpr）|
 | `Codegen/FunctionEmitterCalls.cs` | 调用 + 字符串插值 + switch 表达式 IR 生成（分部类）|
-| `Codegen/FunctionEmitterRaw.cs` | 原始 AST 表达式发射器（用于静态字段初始化、默认参数）|
 
 ## 入口点
 - `Z42.Semantics.TypeCheck.TypeChecker` — `new TypeChecker(diags, features).Check(cu)` → `SemanticModel`

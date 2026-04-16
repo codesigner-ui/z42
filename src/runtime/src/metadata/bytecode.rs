@@ -6,6 +6,110 @@ use std::sync::Arc;
 /// Magic bytes for future binary .z42bc format: "Z42\0"
 pub const MAGIC: [u8; 4] = [0x5A, 0x34, 0x32, 0x00];
 
+// ── TypedReg-compatible serde helpers ────────────────────────────────────────
+//
+// The C# compiler now emits register references as `{"id": N, "type": "i32"}`
+// (TypedReg) instead of plain integers.  These helpers allow the Rust VM to
+// accept **both** formats so that old `.z42ir.json` files (plain int) and new
+// ones (TypedReg object) deserialize correctly.  On serialization we always
+// write a plain integer (the VM does not need the type tag at this stage).
+
+mod typed_reg_serde {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    /// Intermediate representation for a register that may be either a plain
+    /// integer or a `{"id": N, "type": "..."}` object.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RegOrTypedReg {
+        Plain(u32),
+        Typed { id: u32 },
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<u32, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match RegOrTypedReg::deserialize(deserializer)? {
+            RegOrTypedReg::Plain(v) => Ok(v),
+            RegOrTypedReg::Typed { id } => Ok(id),
+        }
+    }
+
+    pub fn serialize<S>(value: &u32, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_u32(*value)
+    }
+}
+
+mod typed_reg_vec_serde {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RegOrTypedReg {
+        Plain(u32),
+        Typed { id: u32 },
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u32>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let items: Vec<RegOrTypedReg> = Vec::deserialize(deserializer)?;
+        Ok(items.into_iter().map(|r| match r {
+            RegOrTypedReg::Plain(v) => v,
+            RegOrTypedReg::Typed { id } => id,
+        }).collect())
+    }
+
+    pub fn serialize<S>(value: &[u32], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeSeq;
+        let mut seq = serializer.serialize_seq(Some(value.len()))?;
+        for &v in value {
+            seq.serialize_element(&v)?;
+        }
+        seq.end()
+    }
+}
+
+mod typed_reg_opt_serde {
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum RegOrTypedReg {
+        Plain(u32),
+        Typed { id: u32 },
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let opt: Option<RegOrTypedReg> = Option::deserialize(deserializer)?;
+        Ok(opt.map(|r| match r {
+            RegOrTypedReg::Plain(v) => v,
+            RegOrTypedReg::Typed { id } => id,
+        }))
+    }
+
+    pub fn serialize<S>(value: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.serialize_u32(*v),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
 /// Top-level bytecode module.
 /// Phase 1: loaded from `.z42ir.json`
 /// Phase 2: loaded from `.z42bc` binary
@@ -69,6 +173,7 @@ pub struct ExceptionEntry {
     pub try_end:     String,
     pub catch_label: String,
     pub catch_type:  Option<String>,
+    #[serde(with = "typed_reg_serde")]
     pub catch_reg:   u32,
 }
 
@@ -85,90 +190,256 @@ pub type Reg = u32;
 
 /// SSA instructions.
 /// JSON wire format: {"op": "<snake_case_name>", <named fields...>}
+///
+/// Register fields accept both plain integers (`42`) and TypedReg objects
+/// (`{"id": 42, "type": "i32"}`) during JSON deserialization for backward
+/// compatibility with both old and new compiler output.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Instruction {
     // Constants
-    ConstStr  { dst: Reg, idx: u32 },
-    ConstI32  { dst: Reg, val: i32 },
-    ConstI64  { dst: Reg, val: i64 },
-    ConstF64  { dst: Reg, val: f64 },
-    ConstBool { dst: Reg, val: bool },
-    ConstChar { dst: Reg, val: char },
-    ConstNull { dst: Reg },
-    Copy      { dst: Reg, src: Reg },
+    ConstStr  { #[serde(with = "typed_reg_serde")] dst: Reg, idx: u32 },
+    ConstI32  { #[serde(with = "typed_reg_serde")] dst: Reg, val: i32 },
+    ConstI64  { #[serde(with = "typed_reg_serde")] dst: Reg, val: i64 },
+    ConstF64  { #[serde(with = "typed_reg_serde")] dst: Reg, val: f64 },
+    ConstBool { #[serde(with = "typed_reg_serde")] dst: Reg, val: bool },
+    ConstChar { #[serde(with = "typed_reg_serde")] dst: Reg, val: char },
+    ConstNull { #[serde(with = "typed_reg_serde")] dst: Reg },
+    Copy {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
     // Arithmetic
-    Add { dst: Reg, a: Reg, b: Reg },
-    Sub { dst: Reg, a: Reg, b: Reg },
-    Mul { dst: Reg, a: Reg, b: Reg },
-    Div { dst: Reg, a: Reg, b: Reg },
-    Rem { dst: Reg, a: Reg, b: Reg },
+    Add {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Sub {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Mul {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Div {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Rem {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
     // Comparison
-    Eq { dst: Reg, a: Reg, b: Reg },
-    Ne { dst: Reg, a: Reg, b: Reg },
-    Lt { dst: Reg, a: Reg, b: Reg },
-    Le { dst: Reg, a: Reg, b: Reg },
-    Gt { dst: Reg, a: Reg, b: Reg },
-    Ge { dst: Reg, a: Reg, b: Reg },
+    Eq {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Ne {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Lt {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Le {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Gt {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Ge {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
     // Logical
-    And { dst: Reg, a: Reg, b: Reg },
-    Or  { dst: Reg, a: Reg, b: Reg },
-    Not { dst: Reg, src: Reg },
+    And {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Or {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Not {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
     // Unary arithmetic
-    Neg { dst: Reg, src: Reg },
+    Neg {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
     // Bitwise
-    BitAnd { dst: Reg, a: Reg, b: Reg },
-    BitOr  { dst: Reg, a: Reg, b: Reg },
-    BitXor { dst: Reg, a: Reg, b: Reg },
-    BitNot { dst: Reg, src: Reg },
-    Shl    { dst: Reg, a: Reg, b: Reg },
-    Shr    { dst: Reg, a: Reg, b: Reg },
+    BitAnd {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    BitOr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    BitXor {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    BitNot {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
+    Shl {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    Shr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
     // Mutable variable slots (for locals that cross basic block boundaries)
-    Store { var: String, src: Reg },
-    Load  { dst: Reg, var: String },
+    Store {
+        var: String,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
+    Load {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        var: String,
+    },
     // String
-    StrConcat { dst: Reg, a: Reg, b: Reg },
-    ToStr     { dst: Reg, src: Reg },
+    StrConcat {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] a: Reg,
+        #[serde(with = "typed_reg_serde")] b: Reg,
+    },
+    ToStr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
     // Calls
-    Call    { dst: Reg, func: String, args: Vec<Reg> },
-    Builtin { dst: Reg, name: String, args: Vec<Reg> },
+    Call {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        func: String,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
+    Builtin {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        name: String,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
     // Arrays
     /// Allocate a zero-initialised array of `size` elements.
-    ArrayNew    { dst: Reg, size: Reg },
+    ArrayNew {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] size: Reg,
+    },
     /// Allocate an array from a literal list of element registers.
-    ArrayNewLit { dst: Reg, elems: Vec<Reg> },
+    ArrayNewLit {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_vec_serde")] elems: Vec<Reg>,
+    },
     /// Load element at `idx` from array `arr` into `dst`. Panics on out-of-bounds.
-    ArrayGet    { dst: Reg, arr: Reg, idx: Reg },
+    ArrayGet {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] arr: Reg,
+        #[serde(with = "typed_reg_serde")] idx: Reg,
+    },
     /// Store `val` into array `arr` at `idx`. Panics on out-of-bounds.
-    ArraySet    { arr: Reg, idx: Reg, val: Reg },
+    ArraySet {
+        #[serde(with = "typed_reg_serde")] arr: Reg,
+        #[serde(with = "typed_reg_serde")] idx: Reg,
+        #[serde(with = "typed_reg_serde")] val: Reg,
+    },
     /// Load the length of array `arr` as i32 into `dst`.
-    ArrayLen    { dst: Reg, arr: Reg },
+    ArrayLen {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] arr: Reg,
+    },
     // Objects
     /// Allocate a new object of `class_name`, calling its constructor with `args`.
-    ObjNew   { dst: Reg, class_name: String, args: Vec<Reg> },
+    ObjNew {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        class_name: String,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
     /// Load field `field_name` of object `obj` into `dst`.
-    FieldGet { dst: Reg, obj: Reg, field_name: String },
+    FieldGet {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] obj: Reg,
+        field_name: String,
+    },
     /// Store `val` into field `field_name` of object `obj`.
-    FieldSet { obj: Reg, field_name: String, val: Reg },
+    FieldSet {
+        #[serde(with = "typed_reg_serde")] obj: Reg,
+        field_name: String,
+        #[serde(with = "typed_reg_serde")] val: Reg,
+    },
     /// Virtual dispatch: invoke `method` on runtime class of `obj`, walking base classes.
-    VCall    { dst: Reg, obj: Reg, method: String, args: Vec<Reg> },
+    VCall {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] obj: Reg,
+        method: String,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
     /// `expr is ClassName` — dst = true if obj's runtime type is class_name or a subclass.
-    IsInstance { dst: Reg, obj: Reg, class_name: String },
+    IsInstance {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] obj: Reg,
+        class_name: String,
+    },
     /// `expr as ClassName` — dst = obj if it is an instance of class_name (or subclass), else null.
-    AsCast     { dst: Reg, obj: Reg, class_name: String },
+    AsCast {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] obj: Reg,
+        class_name: String,
+    },
     /// Load the module-level static field `field` into `dst`.
-    StaticGet { dst: Reg, field: String },
+    StaticGet {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        field: String,
+    },
     /// Store `val` into the module-level static field `field`.
-    StaticSet { field: String, val: Reg },
+    StaticSet {
+        field: String,
+        #[serde(with = "typed_reg_serde")] val: Reg,
+    },
 }
 
 /// Block terminator.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum Terminator {
-    Ret    { reg: Option<Reg> },
-    Br     { label: String },
-    BrCond { cond: Reg, true_label: String, false_label: String },
+    Ret {
+        #[serde(with = "typed_reg_opt_serde")]
+        reg: Option<Reg>,
+    },
+    Br { label: String },
+    BrCond {
+        #[serde(with = "typed_reg_serde")] cond: Reg,
+        true_label: String,
+        false_label: String,
+    },
     /// Throw the value in `reg` as an exception.
-    Throw  { reg: Reg },
+    Throw {
+        #[serde(with = "typed_reg_serde")] reg: Reg,
+    },
 }
