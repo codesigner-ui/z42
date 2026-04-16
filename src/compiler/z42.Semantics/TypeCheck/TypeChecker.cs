@@ -155,6 +155,15 @@ public sealed partial class TypeChecker
                 _boundBaseCtorArgs[method] = baseCtorArgs.Select(a => BindExpr(a, scope)).ToList();
             _boundBodies[method] = BindBlock(method.Body, scope,
                 isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
+            if (!method.IsAbstract)
+            {
+                var methodRetType = isCtor ? Z42Type.Void : ResolveType(method.ReturnType);
+                if (methodRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
+                    && !AlwaysReturns(_boundBodies[method]))
+                    _diags.Error(DiagnosticCodes.MissingReturn,
+                        $"not all code paths return a value in `{method.Name}`", method.Span);
+                CheckDefiniteAssignment(_boundBodies[method]);
+            }
         }
     }
 
@@ -167,6 +176,12 @@ public sealed partial class TypeChecker
         foreach (var p in fn.Params)
             scope.Define(p.Name, ResolveType(p.Type));
         _boundBodies[fn] = BindBlock(fn.Body, scope, ResolveType(fn.ReturnType));
+        var fnRetType = ResolveType(fn.ReturnType);
+        if (fnRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
+            && !AlwaysReturns(_boundBodies[fn]))
+            _diags.Error(DiagnosticCodes.MissingReturn,
+                $"not all code paths return a value in `{fn.Name}`", fn.Span);
+        CheckDefiniteAssignment(_boundBodies[fn]);
     }
 
     /// Validates [Native] / extern consistency.

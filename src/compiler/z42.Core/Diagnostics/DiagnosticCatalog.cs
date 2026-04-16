@@ -119,6 +119,13 @@ public static class DiagnosticCatalog
             "i8 x = 200;   // i8 range is -128 to 127\n" +
             "u8 y = -1;    // u8 range is 0 to 255"),
 
+        [DiagnosticCodes.UninitializedVariable] = new(
+            "Variable used before assignment",
+            "A local variable declared without an initializer was read before being assigned a value on all code paths. " +
+            "Either assign a value before the read or provide an initializer in the declaration.",
+            "int x;\n" +
+            "int y = x + 1;  // error: x may be used before being assigned"),
+
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

@@ -8,38 +8,36 @@ using Z42.Semantics.TypeCheck;
 namespace Z42.Semantics.Codegen;
 
 /// <summary>
-/// Code generator: walks the AST and emits an IrModule.
+/// Code generator: emits an IrModule from a CompilationUnit + SemanticModel.
 ///
-/// Module-level state (class/function maps, string pool, overload info) lives here.
-/// Per-function emission is delegated to <see cref="FunctionEmitter"/>, which is
-/// created fresh for each function to naturally isolate function-level state.
+/// Module-level state (class/function maps, string pool) lives here; most of it
+/// is now populated from <see cref="SemanticModel"/> rather than re-traversing
+/// the AST.  Per-function emission is delegated to <see cref="FunctionEmitter"/>.
 /// </summary>
 public sealed class IrGen
 {
     internal readonly StdlibCallIndex _stdlibIndex;
     internal readonly LanguageFeatures _features;
-    /// Semantic information produced by TypeChecker; null when running without type-check.
     internal readonly SemanticModel? _semanticModel;
 
     // Stdlib namespaces used by this compilation unit (populated during codegen).
     internal readonly HashSet<string> _usedStdlibNamespaces = new();
 
     /// The set of stdlib namespaces that were actually called during this compilation.
-    /// Populated after Generate() returns; consumed by BuildCommand to record dependencies.
     public IReadOnlySet<string> UsedStdlibNamespaces => _usedStdlibNamespaces;
 
     internal readonly List<string> _strings = new();
     internal string? _namespace;
+
+    // ── Derived from SemanticModel ───────────────────────────────────────────
     internal Dictionary<string, HashSet<string>> _classMethods = new();
     internal Dictionary<string, HashSet<string>> _classStaticMethods = new();
-    internal HashSet<(string, string)> _overloadedInstanceMethods = new();
-    internal HashSet<(string, string)> _overloadedStaticMethods   = new();
     internal Dictionary<string, HashSet<string>> _classInstanceFields = new();
-    internal Dictionary<string, Dictionary<string, Expr?>> _classStaticFieldInits = new();
     internal Dictionary<string, string> _classBaseNames = new();
     internal HashSet<string> _topLevelFunctionNames = new();
-    internal Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
     internal readonly Dictionary<string, long> _enumConstants = new();
+    // Param lists still come from AST (needed for FillDefaults BoundExpr lookup).
+    internal Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
@@ -57,80 +55,59 @@ public sealed class IrGen
     {
         _namespace = cu.Namespace;
 
-        // Collect enum constants: "EnumName.Member" → i64 value
-        foreach (var en in cu.Enums)
-            foreach (var m in en.Members)
-                _enumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
+        if (_semanticModel is null)
+            throw new InvalidOperationException(
+                "SemanticModel is required for code generation.");
 
-        // Detect overloaded method names (same class, same static-ness, same name).
-        foreach (var cls in cu.Classes)
+        // ── Populate from SemanticModel (no overload re-detection) ────────────
+
+        foreach (var (key, val) in _semanticModel.EnumConstants)
+            _enumConstants[key] = val;
+
+        foreach (var (shortName, ct) in _semanticModel.Classes)
         {
-            var qualName = QualifyName(cls.Name);
-            foreach (var grp in cls.Methods.Where(m => !m.IsStatic).GroupBy(m => m.Name).Where(g => g.Count() > 1))
-                _overloadedInstanceMethods.Add((qualName, grp.Key));
-            foreach (var grp in cls.Methods.Where(m =>  m.IsStatic).GroupBy(m => m.Name).Where(g => g.Count() > 1))
-                _overloadedStaticMethods.Add((qualName, grp.Key));
+            var qualName = QualifyName(shortName);
+            _classMethods[qualName]       = ct.Methods.Keys.ToHashSet();
+            _classStaticMethods[qualName] = ct.StaticMethods.Keys.ToHashSet();
+            _classInstanceFields[qualName] = ct.Fields.Keys.ToHashSet();
+            if (ct.BaseClassName is not null)
+                _classBaseNames[qualName] = QualifyName(ct.BaseClassName);
         }
 
-        // Build class method/field maps for call resolution (keyed by qualified class name).
-        foreach (var cls in cu.Classes)
-        {
-            var qualName = QualifyName(cls.Name);
-            _classMethods[qualName] = cls.Methods
-                .Where(m => !m.IsStatic)
-                .Select(m => _overloadedInstanceMethods.Contains((qualName, m.Name))
-                    ? $"{m.Name}${m.Params.Count}" : m.Name)
-                .ToHashSet();
-            _classStaticMethods[qualName] = cls.Methods
-                .Where(m =>  m.IsStatic)
-                .Select(m => _overloadedStaticMethods.Contains((qualName, m.Name))
-                    ? $"{m.Name}${m.Params.Count}" : m.Name)
-                .ToHashSet();
-            _classInstanceFields[qualName] = cls.Fields
-                .Where(f => !f.IsStatic).Select(f => f.Name).ToHashSet();
-            if (cls.BaseClass is not null)
-                _classBaseNames[qualName] = QualifyName(cls.BaseClass);
-        }
+        _topLevelFunctionNames = _semanticModel.Funcs.Keys.ToHashSet();
 
-        // Collect static fields with their initializers
-        foreach (var cls in cu.Classes)
-        {
-            var staticFields = cls.Fields.Where(f => f.IsStatic)
-                .ToDictionary(f => f.Name, f => f.Initializer);
-            if (staticFields.Count > 0)
-                _classStaticFieldInits[QualifyName(cls.Name)] = staticFields;
-        }
+        // ── Param lists from AST (for FillDefaults BoundExpr key lookup) ─────
 
-        // Collect top-level function names for qualified call resolution
-        _topLevelFunctionNames = cu.Functions.Select(f => f.Name).ToHashSet();
-
-        // Collect function param lists (including defaults) for call-site expansion.
         foreach (var fn in cu.Functions)
             _funcParams[QualifyName(fn.Name)] = fn.Params;
         foreach (var cls in cu.Classes)
         {
             var qualName = QualifyName(cls.Name);
+            var ct = _semanticModel.Classes.GetValueOrDefault(cls.Name);
             foreach (var m in cls.Methods)
             {
-                bool isOverloaded = m.IsStatic
-                    ? _overloadedStaticMethods.Contains((qualName, m.Name))
-                    : _overloadedInstanceMethods.Contains((qualName, m.Name));
+                string arityKey = $"{m.Name}${m.Params.Count}";
+                bool isOverloaded = ct != null && (m.IsStatic
+                    ? ct.StaticMethods.ContainsKey(arityKey)
+                    : ct.Methods.ContainsKey(arityKey));
                 string key = isOverloaded
-                    ? $"{qualName}.{m.Name}${m.Params.Count}"
+                    ? $"{qualName}.{arityKey}"
                     : $"{qualName}.{m.Name}";
                 _funcParams[key] = m.Params;
             }
         }
 
+        // ── Emit ──────────────────────────────────────────────────────────────
+
         var classes   = cu.Classes.Select(EmitClassDesc).ToList();
         var functions = new List<IrFunction>();
 
-        // If any static fields exist, prepend the __static_init__ function
         if (cu.Classes.Any(cls => cls.Fields.Any(f => f.IsStatic)))
             functions.Add(new FunctionEmitter(this).EmitStaticInit(cu));
 
         foreach (var cls in cu.Classes)
-            functions.AddRange(cls.Methods.Where(m => !m.IsAbstract).Select(m => EmitMethod(cls.Name, m)));
+            functions.AddRange(cls.Methods.Where(m => !m.IsAbstract)
+                .Select(m => EmitMethod(cls.Name, m)));
         functions.AddRange(cu.Functions.Select(EmitFunction));
         return new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
     }
@@ -139,12 +116,14 @@ public sealed class IrGen
 
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
-        var qualClass  = QualifyName(className);
+        var qualClass = QualifyName(className);
+        // Overload detection via SemanticModel method keys (already $N suffixed).
+        string arityKey = $"{method.Name}${method.Params.Count}";
         bool overloaded = method.IsStatic
-            ? _overloadedStaticMethods.Contains((qualClass, method.Name))
-            : _overloadedInstanceMethods.Contains((qualClass, method.Name));
+            ? _classStaticMethods.TryGetValue(qualClass, out var sSet) && sSet.Contains(arityKey)
+            : _classMethods.TryGetValue(qualClass, out var mSet) && mSet.Contains(arityKey);
         string methodIrName = overloaded
-            ? $"{qualClass}.{method.Name}${method.Params.Count}"
+            ? $"{qualClass}.{arityKey}"
             : $"{qualClass}.{method.Name}";
 
         if (method.IsExtern && method.NativeIntrinsic != null)
@@ -178,10 +157,7 @@ public sealed class IrGen
 
     private BoundBlock GetBoundBody(FunctionDecl fn)
     {
-        if (_semanticModel is null)
-            throw new InvalidOperationException(
-                "SemanticModel with BoundBodies is required for function body emission.");
-        if (!_semanticModel.BoundBodies.TryGetValue(fn, out var body))
+        if (!_semanticModel!.BoundBodies.TryGetValue(fn, out var body))
             throw new InvalidOperationException(
                 $"No BoundBody found for `{fn.Name}`; was it excluded from type-checking?");
         return body;
@@ -258,10 +234,9 @@ public sealed class IrGen
     /// Returns the qualified static field key if className has a static field named fieldName.
     internal string? TryGetStaticFieldKey(string className, string fieldName)
     {
-        string qualName = QualifyName(className);
-        if (_classStaticFieldInits.TryGetValue(qualName, out var fields)
-            && fields.ContainsKey(fieldName))
-            return $"{qualName}.{fieldName}";
+        if (_semanticModel!.Classes.TryGetValue(className, out var ct)
+            && ct.StaticFields.ContainsKey(fieldName))
+            return $"{QualifyName(className)}.{fieldName}";
         return null;
     }
 

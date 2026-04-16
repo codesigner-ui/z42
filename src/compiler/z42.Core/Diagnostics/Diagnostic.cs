@@ -65,6 +65,7 @@ public static class DiagnosticCodes
     public const string AccessViolation      = "E0404";  // private member accessed from outside class
     public const string InvalidModifier      = "E0405";  // illegal modifier (e.g. combined, or on enum member)
     public const string IntLiteralOutOfRange = "E0406";  // integer literal exceeds target type's range
+    public const string UninitializedVariable = "E0407";  // variable used before assignment
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

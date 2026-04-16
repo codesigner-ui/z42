@@ -114,6 +114,9 @@
 | A10: `PackageCompiler` → 可注入 `BuildPipeline` | 需要 mock 文件系统做编译器单元测试时 | 当前 static class 可用，低优先级 |
 | `TypeEnv.BuiltinClasses` 动态注入 | L3 泛型设计启动时 | 当前硬编码集合；与泛型一并设计 |
 | `IsReferenceType` 中 List/Dict 硬编码 | L3 泛型设计启动时 | List/Dict 应为 `Z42ClassType`，需泛型类型表示 |
+| switch 穷举检查（exhaustiveness） | enum switch 场景增多时 | switch on enum 不检查是否覆盖所有成员 |
+| 死代码警告 | IDE 集成或用户反馈时 | return 后语句静默丢弃，应发 warning |
+| 隐式窄化转换拒绝 | 数值精度 bug 出现时 | `int x = someLong` 应报错要求显式 cast |
 | `IrInstr` JsonDerivedType 自动注册 | 指令数超过 60 个时 | 当前 54 个注解，可考虑 Source Generator 方案 |
 | `exec_instr.rs` 按类别拆分辅助函数 | 文件超过 450 行时 | 当前 362 行，保持单 match 结构但提取 arm 实现 |
 | Golden Test 改用 `test.toml` 声明类别 | 测试目录结构变复杂时 | 当前路径约定 (`/errors/`, `/run/`) 工作正常 |
