@@ -22,6 +22,10 @@ public sealed class SymbolTable
     public IReadOnlySet<string> SealedClasses { get; }
     public IReadOnlyDictionary<string, HashSet<string>> VirtualMethods { get; }
 
+    /// Names of classes that were imported from dependency zpkgs (not locally defined).
+    /// Used by TypeChecker to give best-effort type checking for imported types.
+    public IReadOnlySet<string> ImportedClassNames { get; }
+
     internal SymbolTable(
         Dictionary<string, Z42ClassType> classes,
         Dictionary<string, Z42FuncType> functions,
@@ -32,7 +36,8 @@ public sealed class SymbolTable
         Dictionary<string, HashSet<string>> abstractMethods,
         HashSet<string> abstractClasses,
         HashSet<string> sealedClasses,
-        Dictionary<string, HashSet<string>> virtualMethods)
+        Dictionary<string, HashSet<string>> virtualMethods,
+        HashSet<string>? importedClassNames = null)
     {
         Classes = classes;
         Functions = functions;
@@ -44,6 +49,7 @@ public sealed class SymbolTable
         AbstractClasses = abstractClasses;
         SealedClasses = sealedClasses;
         VirtualMethods = virtualMethods;
+        ImportedClassNames = importedClassNames ?? new HashSet<string>();
     }
 
     /// Resolve a TypeExpr to a Z42Type using the frozen symbol table.

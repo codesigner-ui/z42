@@ -63,10 +63,10 @@ public sealed partial class TypeChecker : ITypeInferrer
     // ── Public entry points ─────────────────────────────────────────────────
 
     /// Convenience: runs all 3 phases (Pass 0 + Pass 1 + Pass 2) in one call.
-    public SemanticModel Check(CompilationUnit cu)
+    public SemanticModel Check(CompilationUnit cu, ImportedSymbols? imported = null)
     {
-        ISymbolBinder binder = new SymbolCollector(_diags);
-        var symbols = binder.Collect(cu);
+        var binder  = new SymbolCollector(_diags);
+        var symbols = binder.Collect(cu, imported);
         return Infer(cu, symbols);
     }
 
@@ -116,7 +116,7 @@ public sealed partial class TypeChecker : ITypeInferrer
         foreach (var method in cls.Methods)
         {
             if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
-            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes);
+            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
             var scope = env.PushScope();
             if (!method.IsStatic)
             {
@@ -148,7 +148,7 @@ public sealed partial class TypeChecker : ITypeInferrer
     private void BindFunction(FunctionDecl fn)
     {
         if (ValidateNativeMethod(fn, isInstance: false)) return;
-        var env   = new TypeEnv(_symbols.Functions, _symbols.Classes);
+        var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
         var scope = env.PushScope();
         CheckParamNames(fn.Params);
         foreach (var p in fn.Params)
@@ -217,7 +217,7 @@ public sealed partial class TypeChecker : ITypeInferrer
             var statics = cls.Fields.Where(f => f.IsStatic && f.Initializer != null).ToList();
             if (statics.Count == 0) continue;
             using var _ = EnterClass(cls.Name);
-            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes);
+            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
             var scope = env.PushScope();
             foreach (var field in statics)
                 _boundStaticInits[field] = BindExpr(field.Initializer!, scope);

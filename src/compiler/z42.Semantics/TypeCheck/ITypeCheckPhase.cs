@@ -9,7 +9,7 @@ namespace Z42.Semantics.TypeCheck;
 /// </summary>
 public interface ISymbolBinder
 {
-    SymbolTable Collect(CompilationUnit cu);
+    SymbolTable Collect(CompilationUnit cu, ImportedSymbols? imported = null);
 }
 
 /// <summary>

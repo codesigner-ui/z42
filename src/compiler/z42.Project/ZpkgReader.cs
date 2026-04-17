@@ -267,6 +267,143 @@ public static class ZpkgReader
         return [];
     }
 
+    // ── TSIG section (type signatures for reference compilation) ────────────
+
+    /// <summary>Read exported type signatures from the TSIG section.</summary>
+    public static List<ExportedModule> ReadTsig(byte[] data)
+    {
+        var (_, dir) = ParseHeaderAndDirectory(data);
+        string[] pool = ReadStrs(data, dir);
+        return ReadTsigSection(data, dir, pool);
+    }
+
+    private static List<ExportedModule> ReadTsigSection(
+        byte[] data, Dictionary<string, (int Offset, int Size)> dir, string[] pool)
+    {
+        if (!dir.TryGetValue("TSIG", out var e)) return [];
+        using var ms = new MemoryStream(data, e.Offset, e.Size, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+
+        ushort modCount = r.ReadUInt16();
+        var result = new List<ExportedModule>(modCount);
+
+        for (int mi = 0; mi < modCount; mi++)
+        {
+            string ns = P(pool, r.ReadUInt32());
+
+            // Classes
+            ushort clsCount = r.ReadUInt16();
+            var classes = new List<ExportedClassDef>(clsCount);
+            for (int ci = 0; ci < clsCount; ci++)
+            {
+                string name    = P(pool, r.ReadUInt32());
+                uint baseRaw   = r.ReadUInt32();
+                string? baseCls = baseRaw == uint.MaxValue ? null : P(pool, baseRaw);
+                byte flags     = r.ReadByte();
+                bool isAbstract = (flags & 0x01) != 0;
+                bool isSealed   = (flags & 0x02) != 0;
+                bool isStatic   = (flags & 0x04) != 0;
+
+                ushort fldCount = r.ReadUInt16();
+                var fields = new List<ExportedFieldDef>(fldCount);
+                for (int fi = 0; fi < fldCount; fi++)
+                {
+                    string fn = P(pool, r.ReadUInt32());
+                    string ft = P(pool, r.ReadUInt32());
+                    string fv = P(pool, r.ReadUInt32());
+                    bool   fs = r.ReadByte() != 0;
+                    fields.Add(new ExportedFieldDef(fn, ft, fv, fs));
+                }
+
+                ushort mthCount = r.ReadUInt16();
+                var methods = new List<ExportedMethodDef>(mthCount);
+                for (int mi2 = 0; mi2 < mthCount; mi2++)
+                    methods.Add(ReadMethodDef(r, pool));
+
+                ushort ifaceCount = r.ReadUInt16();
+                var ifaces = new List<string>(ifaceCount);
+                for (int ii = 0; ii < ifaceCount; ii++)
+                    ifaces.Add(P(pool, r.ReadUInt32()));
+
+                classes.Add(new ExportedClassDef(name, baseCls, isAbstract, isSealed, isStatic,
+                    fields, methods, ifaces));
+            }
+
+            // Interfaces
+            ushort ifcCount = r.ReadUInt16();
+            var interfaces = new List<ExportedInterfaceDef>(ifcCount);
+            for (int ii = 0; ii < ifcCount; ii++)
+            {
+                string name     = P(pool, r.ReadUInt32());
+                ushort mthCount = r.ReadUInt16();
+                var methods = new List<ExportedMethodDef>(mthCount);
+                for (int mi2 = 0; mi2 < mthCount; mi2++)
+                    methods.Add(ReadMethodDef(r, pool));
+                interfaces.Add(new ExportedInterfaceDef(name, methods));
+            }
+
+            // Enums
+            ushort enumCount = r.ReadUInt16();
+            var enums = new List<ExportedEnumDef>(enumCount);
+            for (int ei = 0; ei < enumCount; ei++)
+            {
+                string name     = P(pool, r.ReadUInt32());
+                ushort memCount = r.ReadUInt16();
+                var members = new List<ExportedEnumMember>(memCount);
+                for (int mi2 = 0; mi2 < memCount; mi2++)
+                {
+                    string mn = P(pool, r.ReadUInt32());
+                    long   mv = r.ReadInt64();
+                    members.Add(new ExportedEnumMember(mn, mv));
+                }
+                enums.Add(new ExportedEnumDef(name, members));
+            }
+
+            // Functions
+            ushort fnCount = r.ReadUInt16();
+            var functions = new List<ExportedFuncDef>(fnCount);
+            for (int fi = 0; fi < fnCount; fi++)
+            {
+                string name    = P(pool, r.ReadUInt32());
+                string retType = P(pool, r.ReadUInt32());
+                ushort minArgs = r.ReadUInt16();
+                byte paramCnt  = r.ReadByte();
+                var parms = new List<ExportedParamDef>(paramCnt);
+                for (int pi = 0; pi < paramCnt; pi++)
+                {
+                    string pn = P(pool, r.ReadUInt32());
+                    string pt = P(pool, r.ReadUInt32());
+                    parms.Add(new ExportedParamDef(pn, pt));
+                }
+                functions.Add(new ExportedFuncDef(name, parms, retType, minArgs));
+            }
+
+            result.Add(new ExportedModule(ns, classes, interfaces, enums, functions));
+        }
+        return result;
+    }
+
+    private static ExportedMethodDef ReadMethodDef(BinaryReader r, string[] pool)
+    {
+        string name    = P(pool, r.ReadUInt32());
+        string retType = P(pool, r.ReadUInt32());
+        string vis     = P(pool, r.ReadUInt32());
+        byte flags     = r.ReadByte();
+        bool isStatic   = (flags & 0x01) != 0;
+        bool isVirtual  = (flags & 0x02) != 0;
+        bool isAbstract = (flags & 0x04) != 0;
+        ushort minArgs  = r.ReadUInt16();
+        byte paramCnt   = r.ReadByte();
+        var parms = new List<ExportedParamDef>(paramCnt);
+        for (int pi = 0; pi < paramCnt; pi++)
+        {
+            string pn = P(pool, r.ReadUInt32());
+            string pt = P(pool, r.ReadUInt32());
+            parms.Add(new ExportedParamDef(pn, pt));
+        }
+        return new ExportedMethodDef(name, parms, retType, vis, isStatic, isVirtual, isAbstract, minArgs);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static string P(string[] pool, uint idx) =>

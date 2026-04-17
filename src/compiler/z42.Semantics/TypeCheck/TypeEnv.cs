@@ -8,35 +8,32 @@ namespace Z42.Semantics.TypeCheck;
 /// </summary>
 internal sealed class TypeEnv
 {
-    // ── Known built-in class / namespace names (never local variables) ───────
-    private static readonly HashSet<string> BuiltinClasses = new(StringComparer.Ordinal)
-    {
-        "Console", "Math", "String", "Convert", "Environment",
-        "StringBuilder", "Enumerable", "List", "Array", "Dictionary",
-        "File", "Path", "Directory", "Stream", "Regex",
-        "GC", "Thread", "Task", "DateTime", "TimeSpan",
-    };
-
     // ── State ────────────────────────────────────────────────────────────────
 
     private readonly TypeEnv?                                       _parent;
     private readonly IReadOnlyDictionary<string, Z42FuncType>      _funcs;    // global function table
     private readonly IReadOnlyDictionary<string, Z42ClassType>     _classes;  // global class table
+    private readonly IReadOnlySet<string>                           _importedClassNames;
     private readonly Dictionary<string, Z42Type>                    _vars = new();
 
     // Root env: owns both function and class tables.
-    internal TypeEnv(IReadOnlyDictionary<string, Z42FuncType> funcs, IReadOnlyDictionary<string, Z42ClassType> classes)
+    internal TypeEnv(
+        IReadOnlyDictionary<string, Z42FuncType> funcs,
+        IReadOnlyDictionary<string, Z42ClassType> classes,
+        IReadOnlySet<string>? importedClassNames = null)
     {
-        _parent  = null;
-        _funcs   = funcs;
-        _classes = classes;
+        _parent             = null;
+        _funcs              = funcs;
+        _classes            = classes;
+        _importedClassNames = importedClassNames ?? new HashSet<string>();
     }
 
     private TypeEnv(TypeEnv parent)
     {
-        _parent  = parent;
-        _funcs   = parent._funcs;
-        _classes = parent._classes;
+        _parent             = parent;
+        _funcs              = parent._funcs;
+        _classes            = parent._classes;
+        _importedClassNames = parent._importedClassNames;
     }
 
     // ── Scope management ─────────────────────────────────────────────────────
@@ -58,8 +55,13 @@ internal sealed class TypeEnv
     {
         if (_vars.TryGetValue(name, out var t)) return t;
         if (_parent != null) return _parent.LookupVar(name);
-        // Builtin classes are always "in scope" with unknown type
-        if (BuiltinClasses.Contains(name)) return Z42Type.Unknown;
+        // Class names (both local and imported) are recognizable as type references.
+        // Return Z42Type.Unknown to maintain backward compatibility with existing
+        // member access and call resolution paths (static field access, constructor calls, etc.).
+        if (_classes.ContainsKey(name)) return Z42Type.Unknown;
+        // Imported class names that are not in _classes (kept out to avoid
+        // ResolveType picking them up as Z42ClassType).
+        if (_importedClassNames.Contains(name)) return Z42Type.Unknown;
         return null;
     }
 

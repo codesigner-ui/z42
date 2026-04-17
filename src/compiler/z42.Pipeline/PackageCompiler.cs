@@ -3,6 +3,7 @@ using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
 using Z42.Semantics.Codegen;
+using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Parser;
 
 namespace Z42.Pipeline;
@@ -153,9 +154,10 @@ public static class PackageCompiler
         };
         var nsMap       = ScanLibsForNamespaces(libsDirs);
         var stdlibIndex = BuildStdlibIndex(libsDirs);
+        var allTsig     = LoadAllTsig(libsDirs);
         ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
-        var units = TryCompileSourceFiles(sourceFiles, stdlibIndex);
+        var units = TryCompileSourceFiles(sourceFiles, stdlibIndex, allTsig);
         if (units is null) return 1;
 
         WarnUnresolvedUsings(units, nsMap);
@@ -248,14 +250,15 @@ public static class PackageCompiler
 
     /// Compile all source files; returns null and prints an error count if any file fails.
     static List<CompiledUnit>? TryCompileSourceFiles(
-        IReadOnlyList<string> sourceFiles,
-        StdlibCallIndex       stdlibIndex)
+        IReadOnlyList<string>     sourceFiles,
+        StdlibCallIndex           stdlibIndex,
+        List<ExportedModule>?     allTsig = null)
     {
         var units  = new List<CompiledUnit>();
         int errors = 0;
         foreach (var sourceFile in sourceFiles)
         {
-            var unit = CompileFile(sourceFile, stdlibIndex);
+            var unit = CompileFile(sourceFile, stdlibIndex, allTsig);
             if (unit is null) { errors++; continue; }
             units.Add(unit);
         }
@@ -305,13 +308,24 @@ public static class PackageCompiler
 
     // ── Per-file helpers ──────────────────────────────────────────────────────
 
-    static CompiledUnit? CompileFile(string sourceFile, StdlibCallIndex stdlibIndex)
+    static CompiledUnit? CompileFile(
+        string sourceFile, StdlibCallIndex stdlibIndex,
+        List<ExportedModule>? allTsig = null)
     {
         string source;
         try   { source = File.ReadAllText(sourceFile); }
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return null; }
 
-        var result = PipelineCore.Compile(source, sourceFile, stdlibIndex);
+        // Pre-parse to extract using declarations for TSIG filtering.
+        // PipelineCore.Compile does the full lex+parse internally, so we do a
+        // lightweight pre-scan for `using` lines. This avoids double-parsing by
+        // extracting usings from the source text directly.
+        var usings = ExtractUsings(source);
+        ImportedSymbols? imported = null;
+        if (allTsig is { Count: > 0 })
+            imported = ImportedSymbolLoader.Load(allTsig, usings);
+
+        var result = PipelineCore.Compile(source, sourceFile, stdlibIndex, imported: imported);
         result.Diags.PrintAll();
         if (result.Diags.HasErrors || result.Module is null) return null;
 
@@ -377,6 +391,46 @@ public static class PackageCompiler
     }
 
     static string Sha256Hex(string text) => CompilerUtils.Sha256Hex(text);
+
+    /// Load all TSIG sections from lib zpkgs for reference compilation.
+    static List<ExportedModule> LoadAllTsig(string[] libsDirs)
+    {
+        var result = new List<ExportedModule>();
+        foreach (var dir in libsDirs)
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var zpkgPath in Directory.EnumerateFiles(dir, "*.zpkg"))
+            {
+                try
+                {
+                    var bytes = File.ReadAllBytes(zpkgPath);
+                    var meta  = ZpkgReader.ReadMeta(bytes);
+                    if (meta.Kind != ZpkgKind.Lib) continue;
+                    result.AddRange(ZpkgReader.ReadTsig(bytes));
+                }
+                catch { /* skip malformed */ }
+            }
+        }
+        return result;
+    }
+
+    /// Lightweight extraction of `using Ns.Name;` declarations from source text.
+    /// Avoids full lex/parse — just scans line-by-line for `using` statements.
+    static List<string> ExtractUsings(string source)
+    {
+        var result = new List<string>();
+        foreach (var rawLine in source.Split('\n'))
+        {
+            var line = rawLine.Trim();
+            if (line.StartsWith("using ") && line.EndsWith(";"))
+            {
+                var ns = line[6..^1].Trim();
+                if (ns.Length > 0 && !ns.Contains(' '))
+                    result.Add(ns);
+            }
+        }
+        return result;
+    }
 
     /// Load lib-kind zpkgs from the given directories and build a StdlibCallIndex
     /// from their packed modules. Silently skips malformed or non-lib packages.

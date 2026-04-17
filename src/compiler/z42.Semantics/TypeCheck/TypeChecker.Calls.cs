@@ -13,18 +13,21 @@ public sealed partial class TypeChecker
     private BoundCall BindCall(CallExpr call, TypeEnv env)
     {
         // ── User-defined static class method: ClassName.Method(args) ──────────
+        // Skip imported classes — they resolve via the Unresolved → StdlibCallIndex path
+        // in IrGen, which correctly qualifies names with the stdlib namespace.
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
-            && _symbols.Classes.TryGetValue(clsName, out var staticCt))
+            && _symbols.Classes.TryGetValue(clsName, out var staticCt)
+            && !_symbols.ImportedClassNames.Contains(clsName))
         {
             var arityKey  = $"{staticMember}${call.Args.Count}";
             var staticSig = staticCt.StaticMethods.TryGetValue(staticMember, out var s1) ? s1
                           : staticCt.StaticMethods.TryGetValue(arityKey,     out var s2) ? s2 : null;
             if (staticSig is not null)
             {
-                var args = BindAndCheckArgs(call.Args, env, staticSig.Params,
+                var checkedArgs = BindAndCheckArgs(call.Args, env, staticSig.Params,
                     staticSig.MinArgCount, call.Span);
                 return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
-                    null, args, staticSig.Ret, call.Span);
+                    null, checkedArgs, staticSig.Ret, call.Span);
             }
         }
 

@@ -45,7 +45,8 @@ public static class PipelineCore
         string            source,
         string            fileName,
         StdlibCallIndex   stdlibIndex,
-        LanguageFeatures? features = null)
+        LanguageFeatures? features = null,
+        ImportedSymbols?  imported = null)
     {
         var feats  = features ?? LanguageFeatures.Phase1;
         var diags  = new DiagnosticBag();
@@ -55,7 +56,7 @@ public static class PipelineCore
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
-        return CheckAndGenerate(cu, fileName, stdlibIndex, feats, diags);
+        return CheckAndGenerate(cu, fileName, stdlibIndex, feats, diags, imported);
     }
 
     /// <summary>
@@ -78,9 +79,10 @@ public static class PipelineCore
         string          fileName,
         StdlibCallIndex stdlibIndex,
         LanguageFeatures feats,
-        DiagnosticBag   diags)
+        DiagnosticBag   diags,
+        ImportedSymbols? imported = null)
     {
-        var sem = new TypeChecker(diags, feats).Check(cu);
+        var sem = new TypeChecker(diags, feats).Check(cu, imported);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
         try

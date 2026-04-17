@@ -24,6 +24,7 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     internal readonly HashSet<string>                      _abstractClasses = new();
     internal readonly HashSet<string>                      _sealedClasses   = new();
     internal readonly Dictionary<string, HashSet<string>>  _virtualMethods  = new();
+    internal readonly HashSet<string>                      _importedClassNames = new();
 
     internal SymbolCollector(DiagnosticBag diags)
     {
@@ -33,8 +34,12 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     /// <summary>
     /// Run all collection passes and return a frozen SymbolTable.
     /// </summary>
-    public SymbolTable Collect(CompilationUnit cu)
+    public SymbolTable Collect(CompilationUnit cu, ImportedSymbols? imported = null)
     {
+        // Merge imported symbols before local collection (locals override imports).
+        if (imported != null)
+            MergeImported(imported);
+
         CollectEnums(cu);
         CollectInterfaces(cu);
         CollectClasses(cu);
@@ -44,7 +49,26 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             _classes, _funcs, _interfaces,
             _globalEnumConstants, _enumTypes,
             _classInterfaces, _abstractMethods,
-            _abstractClasses, _sealedClasses, _virtualMethods);
+            _abstractClasses, _sealedClasses, _virtualMethods,
+            _importedClassNames);
+    }
+
+    /// Merge imported symbols from dependency zpkgs.
+    /// Imported class names are tracked for TypeEnv recognition (LookupVar → Unknown),
+    /// but NOT added to _classes — this ensures ResolveType returns Z42PrimType for
+    /// imported classes, keeping the Unresolved → StdlibCallIndex path intact.
+    private void MergeImported(ImportedSymbols imported)
+    {
+        foreach (var name in imported.Classes.Keys)
+            _importedClassNames.Add(name);
+        foreach (var (name, ft) in imported.Functions)
+            _funcs.TryAdd(name, ft);
+        foreach (var (name, it) in imported.Interfaces)
+            _interfaces.TryAdd(name, it);
+        foreach (var (key, val) in imported.EnumConstants)
+            _globalEnumConstants.TryAdd(key, val);
+        foreach (var name in imported.EnumTypes)
+            _enumTypes.Add(name);
     }
 
     // ── Pass 0a: enum constants ───────────────────────────────────────────────

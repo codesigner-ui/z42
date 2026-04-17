@@ -55,9 +55,10 @@ public sealed class GoldenTests
         Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    // StdlibCallIndex loaded once from artifacts/z42/libs/ (if present).
+    // StdlibCallIndex and TSIG loaded once from artifacts/z42/libs/ (if present).
     private static readonly StdlibCallIndex StdlibIndex = LoadStdlibIndex();
     private static readonly string? StdlibLibsDir = FindStdlibLibsDir();
+    private static readonly List<ExportedModule> AllTsig = LoadAllTsig();
 
     private static string? FindStdlibLibsDir()
     {
@@ -81,6 +82,25 @@ public sealed class GoldenTests
             dir = dir.Parent;
         }
         return StdlibCallIndex.Empty;
+    }
+
+    private static List<ExportedModule> LoadAllTsig()
+    {
+        var result = new List<ExportedModule>();
+        var libsDir = FindStdlibLibsDir();
+        if (libsDir is null) return result;
+        foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+        {
+            try
+            {
+                var bytes = File.ReadAllBytes(zpkgPath);
+                var meta  = ZpkgReader.ReadMeta(bytes);
+                if (meta.Kind != ZpkgKind.Lib) continue;
+                result.AddRange(ZpkgReader.ReadTsig(bytes));
+            }
+            catch { /* skip malformed */ }
+        }
+        return result;
     }
 
     // ── Test discovery ─────────────────────────────────────────────────────
@@ -154,9 +174,20 @@ public sealed class GoldenTests
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
+        // Build imported symbols from stdlib TSIG, using all available namespaces
+        // (golden tests don't have explicit `using` declarations).
+        var allNs = AllTsig.Select(m => m.Namespace).Distinct().ToList();
+        var imported = AllTsig.Count > 0
+            ? ImportedSymbolLoader.Load(AllTsig, allNs)
+            : null;
+
         var typeChecker = new TypeChecker(diags, features);
-        var sem = typeChecker.Check(cu);
-        if (diags.HasErrors) return (null, diags, new HashSet<string>());
+        var sem = typeChecker.Check(cu, imported);
+        if (diags.HasErrors)
+        {
+            diags.PrintAll();
+            return (null, diags, new HashSet<string>());
+        }
 
         IrGen gen;
         IrModule ir;
@@ -217,8 +248,8 @@ public sealed class GoldenTests
     public void RunMatchesExpected(string name, string dir)
     {
         var (ir, diags, usedStdlibNs) = Compile(dir);
-        diags.PrintAll();
-        diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
+        var diagStr = string.Join("\n", diags.All.Select(d => d.ToString()));
+        diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors.\nDiagnostics:\n{diagStr}");
         ir.Should().NotBeNull();
 
         // Determine emit format
