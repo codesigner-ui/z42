@@ -92,10 +92,10 @@ public sealed partial class TypeChecker
             _classInterfaces, _abstractMethods,
             _abstractClasses, _sealedClasses, _virtualMethods);
 
-        // ── Pass 1: bind bodies ─────────────────────────────────────────────
+        // ── Pass 1: bind bodies (function-level error isolation) ────────────
         BindStaticFieldInits(cu);
-        foreach (var cls in cu.Classes)   BindClassMethods(cls);
-        foreach (var fn  in cu.Functions) BindFunction(fn);
+        foreach (var cls in cu.Classes)   TryBindClassMethods(cls);
+        foreach (var fn  in cu.Functions) TryBindFunction(fn);
 
         return new SemanticModel(_classes, _funcs, _interfaces,
             _globalEnumConstants, _enumTypes, _boundBodies,
@@ -144,7 +144,31 @@ public sealed partial class TypeChecker
         }
     }
 
-    // ── Body checking entry points ────────────────────────────────────────────
+    // ── Body checking entry points (error-isolated) ────────────────────────────
+
+    /// Binds all methods in a class; catches unexpected exceptions so one class
+    /// doesn't prevent the rest from being checked.
+    private void TryBindClassMethods(ClassDecl cls)
+    {
+        try { BindClassMethods(cls); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _diags.Error(DiagnosticCodes.UnsupportedSyntax,
+                $"internal error checking class `{cls.Name}`: {ex.Message}", cls.Span);
+        }
+    }
+
+    /// Binds a top-level function; catches unexpected exceptions so one function
+    /// doesn't prevent the rest from being checked.
+    private void TryBindFunction(FunctionDecl fn)
+    {
+        try { BindFunction(fn); }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _diags.Error(DiagnosticCodes.UnsupportedSyntax,
+                $"internal error checking function `{fn.Name}`: {ex.Message}", fn.Span);
+        }
+    }
 
     private void BindClassMethods(ClassDecl cls)
     {
