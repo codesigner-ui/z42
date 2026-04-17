@@ -16,15 +16,15 @@ namespace Z42.Semantics.Codegen;
 /// </summary>
 public sealed class IrGen : IEmitterContext
 {
-    private readonly StdlibCallIndex _stdlibIndex;
+    private readonly DependencyIndex _depIndex;
     internal readonly LanguageFeatures _features;
     private SemanticModel? _semanticModel;
 
-    // Stdlib namespaces used by this compilation unit (populated during codegen).
-    private readonly HashSet<string> _usedStdlibNamespaces = new();
+    // Dependency namespaces used by this compilation unit (populated during codegen).
+    private readonly HashSet<string> _usedDepNamespaces = new();
 
-    /// The set of stdlib namespaces that were actually called during this compilation.
-    public IReadOnlySet<string> UsedStdlibNamespaces => _usedStdlibNamespaces;
+    /// The set of dependency namespaces that were actually called during this compilation.
+    public IReadOnlySet<string> UsedDepNamespaces => _usedDepNamespaces;
 
     private readonly List<string> _strings = new();
     private readonly Dictionary<string, int> _stringIndex = new(StringComparer.Ordinal);
@@ -43,8 +43,8 @@ public sealed class IrGen : IEmitterContext
     HashSet<string> IEmitterContext.TopLevelFunctionNames => _topLevelFunctionNames;
     IReadOnlyDictionary<string, long> IEmitterContext.EnumConstants => _enumConstants;
     IReadOnlyDictionary<string, IReadOnlyList<Param>> IEmitterContext.FuncParams => _funcParams;
-    StdlibCallIndex IEmitterContext.StdlibIndex => _stdlibIndex;
-    void IEmitterContext.TrackStdlibNamespace(string ns) => _usedStdlibNamespaces.Add(ns);
+    DependencyIndex IEmitterContext.DepIndex => _depIndex;
+    void IEmitterContext.TrackDepNamespace(string ns) => _usedDepNamespaces.Add(ns);
     string IEmitterContext.QualifyName(string name) => QualifyName(name);
     int IEmitterContext.Intern(string s) => Intern(s);
     HashSet<string> IEmitterContext.GetClassInstanceFieldNames(string className) =>
@@ -56,10 +56,10 @@ public sealed class IrGen : IEmitterContext
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
-    public IrGen(StdlibCallIndex? stdlibIndex = null, LanguageFeatures? features = null,
+    public IrGen(DependencyIndex? depIndex = null, LanguageFeatures? features = null,
                  SemanticModel? semanticModel = null)
     {
-        _stdlibIndex    = stdlibIndex ?? StdlibCallIndex.Empty;
+        _depIndex       = depIndex ?? DependencyIndex.Empty;
         _features       = features ?? LanguageFeatures.Phase1;
         _semanticModel  = semanticModel;
     }

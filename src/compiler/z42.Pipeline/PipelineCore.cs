@@ -18,7 +18,7 @@ namespace Z42.Pipeline;
 public sealed record SourceCompileResult(
     IrModule?             Module,
     DiagnosticBag         Diags,
-    IReadOnlySet<string>  UsedStdlibNamespaces,
+    IReadOnlySet<string>  UsedDepNamespaces,
     string?               Namespace,
     IReadOnlyList<string> Usings,
     ExportedModule?       ExportedTypes = null);
@@ -44,7 +44,7 @@ public static class PipelineCore
     public static SourceCompileResult Compile(
         string            source,
         string            fileName,
-        StdlibCallIndex   stdlibIndex,
+        DependencyIndex   depIndex,
         LanguageFeatures? features = null,
         ImportedSymbols?  imported = null)
     {
@@ -56,7 +56,7 @@ public static class PipelineCore
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
-        return CheckAndGenerate(cu, fileName, stdlibIndex, feats, diags, imported);
+        return CheckAndGenerate(cu, fileName, depIndex, feats, diags, imported);
     }
 
     /// <summary>
@@ -67,9 +67,9 @@ public static class PipelineCore
     public static SourceCompileResult CheckAndGenerate(
         CompilationUnit   cu,
         string            fileName,
-        StdlibCallIndex   stdlibIndex,
+        DependencyIndex   depIndex,
         LanguageFeatures? features = null)
-        => CheckAndGenerate(cu, fileName, stdlibIndex,
+        => CheckAndGenerate(cu, fileName, depIndex,
                             features ?? LanguageFeatures.Phase1, new DiagnosticBag());
 
     // ── Shared implementation ─────────────────────────────────────────────────
@@ -77,7 +77,7 @@ public static class PipelineCore
     private static SourceCompileResult CheckAndGenerate(
         CompilationUnit cu,
         string          fileName,
-        StdlibCallIndex stdlibIndex,
+        DependencyIndex depIndex,
         LanguageFeatures feats,
         DiagnosticBag   diags,
         ImportedSymbols? imported = null)
@@ -87,11 +87,11 @@ public static class PipelineCore
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
         try
         {
-            var gen = new IrGen(stdlibIndex, feats, sem);
+            var gen = new IrGen(depIndex, feats, sem);
             var ir  = gen.Generate(cu);
             ir = new IrPassManager().RunAll(ir);
             var exported = ExportedTypeExtractor.Extract(sem, cu.Namespace ?? "main");
-            return new(ir, diags, gen.UsedStdlibNamespaces, cu.Namespace, cu.Usings, exported);
+            return new(ir, diags, gen.UsedDepNamespaces, cu.Namespace, cu.Usings, exported);
         }
         catch (Exception ex)
         {

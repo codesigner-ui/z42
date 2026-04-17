@@ -17,7 +17,7 @@
 - `Z42.Pipeline.SingleFileCompiler.Run(...)` — 单文件编译，输出多种格式
 - `Z42.Pipeline.PackageCompiler.Run(...)` — 项目构建
 - `Z42.Pipeline.PackageCompiler.RunCheck(...)` — 项目类型检查（不输出产物）
-- `Z42.Pipeline.PackageCompiler.BuildStdlibIndex(...)` — 加载标准库索引
+- `Z42.Pipeline.PackageCompiler.BuildDepIndex(...)` — 加载依赖索引
 
 ## 依赖关系
 → z42.Core（DiagnosticBag）

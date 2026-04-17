@@ -1,31 +1,31 @@
 namespace Z42.IR;
 
-/// An entry in the stdlib call index.
-/// QualifiedName  — fully qualified function name in the stdlib IR (e.g. "Std.IO.Console.WriteLine")
-/// Namespace      — stdlib namespace that owns this function (e.g. "Std.IO")
-public sealed record StdlibCallEntry(string QualifiedName, string Namespace);
+/// An entry in the dependency call index.
+/// QualifiedName  — fully qualified function name in the dependency IR (e.g. "Std.IO.Console.WriteLine")
+/// Namespace      — dependency namespace that owns this function (e.g. "Std.IO")
+public sealed record DepCallEntry(string QualifiedName, string Namespace);
 
-/// Index that maps short call-site names → stdlib qualified function names.
+/// Index that maps short call-site names → dependency qualified function names.
 ///
 /// Populated by BuildCommand from pre-built stdlib .zpkg files; consumed by IrGen
-/// to emit CallInstr instead of BuiltinInstr when a call site resolves to a stdlib function.
+/// to emit CallInstr instead of BuiltinInstr when a call site resolves to a dependency function.
 ///
 /// Two lookup paths:
 ///   • Static:   "ClassName.MethodName"  — for  Console.WriteLine(...), Math.Abs(...)
 ///   • Instance: "MethodName"            — for  str.Substring(...),  str.ToLower()
 ///               "MethodName$<arity>"    — arity-qualified variant for overloads
 ///
-/// When a method name is ambiguous across multiple stdlib classes (e.g. "Contains" in
+/// When a method name is ambiguous across multiple dependency classes (e.g. "Contains" in
 /// both String and some other class), it is omitted from the instance index and the
 /// caller falls through to VCallInstr runtime dispatch.
-public sealed class StdlibCallIndex
+public sealed class DependencyIndex
 {
-    private readonly IReadOnlyDictionary<string, StdlibCallEntry> _staticIndex;
-    private readonly IReadOnlyDictionary<string, StdlibCallEntry> _instanceIndex;
+    private readonly IReadOnlyDictionary<string, DepCallEntry> _staticIndex;
+    private readonly IReadOnlyDictionary<string, DepCallEntry> _instanceIndex;
 
-    private StdlibCallIndex(
-        IReadOnlyDictionary<string, StdlibCallEntry> staticIndex,
-        IReadOnlyDictionary<string, StdlibCallEntry> instanceIndex)
+    private DependencyIndex(
+        IReadOnlyDictionary<string, DepCallEntry> staticIndex,
+        IReadOnlyDictionary<string, DepCallEntry> instanceIndex)
     {
         _staticIndex   = staticIndex;
         _instanceIndex = instanceIndex;
@@ -33,13 +33,13 @@ public sealed class StdlibCallIndex
 
     // ── Lookups ────────────────────────────────────────────────────────────────
 
-    /// Try to find a static stdlib call for "ClassName.MethodName" (user writes Foo.Bar(...)).
-    public bool TryGetStatic(string cls, string method, out StdlibCallEntry entry) =>
+    /// Try to find a static dependency call for "ClassName.MethodName" (user writes Foo.Bar(...)).
+    public bool TryGetStatic(string cls, string method, out DepCallEntry entry) =>
         _staticIndex.TryGetValue($"{cls}.{method}", out entry!);
 
-    /// Try to find an instance stdlib call for "MethodName" with the given user argument count
+    /// Try to find an instance dependency call for "MethodName" with the given user argument count
     /// (i.e. excluding the implicit receiver).  Also tries the bare "MethodName" key.
-    public bool TryGetInstance(string method, int userArgCount, out StdlibCallEntry entry)
+    public bool TryGetInstance(string method, int userArgCount, out DepCallEntry entry)
     {
         // Try arity-qualified key first, then bare name.
         return _instanceIndex.TryGetValue($"{method}${userArgCount}", out entry!)
@@ -48,20 +48,20 @@ public sealed class StdlibCallIndex
 
     // ── Builder ────────────────────────────────────────────────────────────────
 
-    /// Build an index from a collection of stdlib IrModules.
+    /// Build an index from a collection of dependency IrModules.
     ///
     /// Each module's Name is used as the namespace prefix (e.g. "Std.IO").
     /// Functions whose names do not start with that prefix are skipped.
     /// Functions named "__static_init__" are skipped.
     /// The function name format is: namespace.ClassName.MethodName[[$arity]]
-    public static StdlibCallIndex Build(IEnumerable<(IrModule Module, string Namespace)> stdlibModules)
+    public static DependencyIndex Build(IEnumerable<(IrModule Module, string Namespace)> depModules)
     {
-        var staticBuf   = new Dictionary<string, StdlibCallEntry>(StringComparer.Ordinal);
+        var staticBuf   = new Dictionary<string, DepCallEntry>(StringComparer.Ordinal);
         // Track which instance keys are ambiguous (seen from >1 class).
-        var instanceBuf = new Dictionary<string, StdlibCallEntry>(StringComparer.Ordinal);
+        var instanceBuf = new Dictionary<string, DepCallEntry>(StringComparer.Ordinal);
         var ambiguous   = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var (module, ns) in stdlibModules)
+        foreach (var (module, ns) in depModules)
         {
             foreach (var fn in module.Functions)
             {
@@ -80,7 +80,7 @@ public sealed class StdlibCallIndex
                 string shortClass  = withoutNs[..dot];         // "Console"
                 string methodPart  = withoutNs[(dot + 1)..];   // "WriteLine"  or  "Substring$1"
 
-                var entry = new StdlibCallEntry(name, ns);
+                var entry = new DepCallEntry(name, ns);
 
                 // ── Static index ───────────────────────────────────────────────
                 // Key: "ClassName.MethodName"  (with any $arity suffix)
@@ -132,14 +132,14 @@ public sealed class StdlibCallIndex
         foreach (var key in ambiguous)
             instanceBuf.Remove(key);
 
-        return new StdlibCallIndex(staticBuf, instanceBuf);
+        return new DependencyIndex(staticBuf, instanceBuf);
     }
 
     private static void RegisterInstance(
-        Dictionary<string, StdlibCallEntry> buf,
-        HashSet<string>                     ambiguous,
-        string                              key,
-        StdlibCallEntry                     entry)
+        Dictionary<string, DepCallEntry> buf,
+        HashSet<string>                  ambiguous,
+        string                           key,
+        DepCallEntry                     entry)
     {
         if (ambiguous.Contains(key)) return;
 
@@ -168,7 +168,7 @@ public sealed class StdlibCallIndex
 
     // ── Empty sentinel ─────────────────────────────────────────────────────────
 
-    public static StdlibCallIndex Empty { get; } =
-        new(new Dictionary<string, StdlibCallEntry>(),
-            new Dictionary<string, StdlibCallEntry>());
+    public static DependencyIndex Empty { get; } =
+        new(new Dictionary<string, DepCallEntry>(),
+            new Dictionary<string, DepCallEntry>());
 }

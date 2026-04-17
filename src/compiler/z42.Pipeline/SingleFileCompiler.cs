@@ -42,10 +42,10 @@ public static class SingleFileCompiler
 
         if (dumpAst) { Console.WriteLine(cu); return 0; }
 
-        // Load stdlib: scan up from the source file's directory to find artifacts/z42/libs/
-        var stdlibIndex = LocateStdlibIndex(source.FullName);
+        // Load dependencies: scan up from the source file's directory to find artifacts/z42/libs/
+        var depIndex = LocateDepIndex(source.FullName);
 
-        var result = PipelineCore.CheckAndGenerate(cu, source.FullName, stdlibIndex);
+        var result = PipelineCore.CheckAndGenerate(cu, source.FullName, depIndex);
         result.Diags.PrintAll();
         if (result.Diags.HasErrors || result.Module is null) return 1;
 
@@ -82,7 +82,7 @@ public static class SingleFileCompiler
             case "json-zbc":
             {
                 string path = outPath ?? (defaultBase + ".zbc");
-                var usedNs = result.UsedStdlibNamespaces.ToList();
+                var usedNs = result.UsedDepNamespaces.ToList();
                 var zbc = new ZbcFile(
                     ZbcVersion : ZbcFile.CurrentVersion,
                     SourceFile : source.FullName,
@@ -108,18 +108,18 @@ public static class SingleFileCompiler
         return 0;
     }
 
-    /// Walk up from the source file's directory to find artifacts/z42/libs/ and load stdlib.
-    public static StdlibCallIndex LocateStdlibIndex(string sourceFullPath)
+    /// Walk up from the source file's directory to find artifacts/z42/libs/ and load dependencies.
+    public static DependencyIndex LocateDepIndex(string sourceFullPath)
     {
         var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
             if (Directory.Exists(candidate))
-                return PackageCompiler.BuildStdlibIndex([candidate]);
+                return PackageCompiler.BuildDepIndex([candidate]);
             dir = dir.Parent;
         }
-        return StdlibCallIndex.Empty;
+        return DependencyIndex.Empty;
     }
 
     public static void WriteFile(string path, string content)

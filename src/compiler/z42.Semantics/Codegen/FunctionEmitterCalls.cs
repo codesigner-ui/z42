@@ -99,13 +99,13 @@ internal sealed partial class FunctionEmitter
             }
         }
 
-        // Stdlib static: Console.X, Assert.X, Math.X, etc.
+        // Dependency static: Console.X, Assert.X, Math.X, etc.
         if (receiverName != null && methodName != null
-            && _ctx.StdlibIndex.TryGetStatic(receiverName, methodName, out var stdStaticEntry))
+            && _ctx.DepIndex.TryGetStatic(receiverName, methodName, out var stdStaticEntry))
         {
             if (receiverName == "Console" && argRegs.Count != 1)
                 argRegs = [EmitConcat(argRegs)];
-            _ctx.TrackStdlibNamespace(stdStaticEntry.Namespace);
+            _ctx.TrackDepNamespace(stdStaticEntry.Namespace);
             var dst = Alloc(ToIrType(call.Type));
             Emit(new CallInstr(dst, stdStaticEntry.QualifiedName, argRegs));
             return dst;
@@ -140,14 +140,14 @@ internal sealed partial class FunctionEmitter
             }
         }
 
-        // Stdlib instance: str.Substring, str.ToLower, etc.
+        // Dependency instance: str.Substring, str.ToLower, etc.
         if (methodName != null
-            && _ctx.StdlibIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
+            && _ctx.DepIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
         {
             var receiverReg = call.Receiver != null ? EmitExpr(call.Receiver) : Alloc(IrType.Unknown);
             var fullArgRegs = new List<TypedReg> { receiverReg };
             fullArgRegs.AddRange(argRegs);
-            _ctx.TrackStdlibNamespace(stdInstEntry.Namespace);
+            _ctx.TrackDepNamespace(stdInstEntry.Namespace);
             var dst = Alloc(ToIrType(call.Type));
             Emit(new CallInstr(dst, stdInstEntry.QualifiedName, fullArgRegs));
             return dst;

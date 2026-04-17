@@ -13,7 +13,7 @@ public sealed partial class TypeChecker
     private BoundCall BindCall(CallExpr call, TypeEnv env)
     {
         // ── User-defined static class method: ClassName.Method(args) ──────────
-        // Skip imported classes — they resolve via the Unresolved → StdlibCallIndex path
+        // Skip imported classes — they resolve via the Unresolved → DependencyIndex path
         // in IrGen, which correctly qualifies names with the stdlib namespace.
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
             && _symbols.Classes.TryGetValue(clsName, out var staticCt)

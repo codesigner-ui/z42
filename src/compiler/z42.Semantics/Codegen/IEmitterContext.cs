@@ -32,7 +32,7 @@ internal interface IEmitterContext
     IReadOnlyDictionary<string, long> EnumConstants { get; }
     IReadOnlyDictionary<string, IReadOnlyList<Param>> FuncParams { get; }
 
-    // ── Stdlib resolution ────────────────────────────────────────────────────
-    StdlibCallIndex StdlibIndex { get; }
-    void TrackStdlibNamespace(string ns);
+    // ── Dependency resolution ────────────────────────────────────────────────
+    DependencyIndex DepIndex { get; }
+    void TrackDepNamespace(string ns);
 }

@@ -27,7 +27,7 @@
 
 ## 入口点
 - `Z42.Semantics.TypeCheck.TypeChecker` — `new TypeChecker(diags, features).Check(cu)` → `SemanticModel`
-- `Z42.Semantics.Codegen.IrGen` — `new IrGen(stdlibIndex, features, semanticModel).Generate(cu)` → `IrModule`
+- `Z42.Semantics.Codegen.IrGen` — `new IrGen(depIndex, features, semanticModel).Generate(cu)` → `IrModule`
 
 ## 依赖关系
 → z42.Core（Diagnostics、Span、LanguageFeatures）

@@ -8,7 +8,7 @@ namespace Z42.Project;
 /// Deserializes binary zpkg v0.1 data.
 ///
 /// Provides two focused entry points:
-///   <see cref="ReadModules"/>    — returns IrModule + namespace pairs (for StdlibCallIndex, VM loading)
+///   <see cref="ReadModules"/>    — returns IrModule + namespace pairs (for DependencyIndex, VM loading)
 ///   <see cref="ReadNamespaces"/> — returns namespace list only (for fast dependency scanning)
 ///   <see cref="ReadMeta"/>       — returns package metadata (name, version, namespaces, deps, entry)
 /// </summary>

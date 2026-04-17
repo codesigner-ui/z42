@@ -29,20 +29,20 @@ public class ZbcRoundTripTests
         Converters             = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    // ── Stdlib index (loads once from artifacts/z42/libs/) ────────────────────
+    // ── Dependency index (loads once from artifacts/z42/libs/) ────────────────
 
-    private static readonly StdlibCallIndex StdlibIndex = LoadStdlibIndex();
+    private static readonly DependencyIndex DepIndex = LoadDepIndex();
 
-    private static StdlibCallIndex LoadStdlibIndex()
+    private static DependencyIndex LoadDepIndex()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate)) return PackageCompiler.BuildStdlibIndex([candidate]);
+            if (Directory.Exists(candidate)) return PackageCompiler.BuildDepIndex([candidate]);
             dir = dir.Parent;
         }
-        return StdlibCallIndex.Empty;
+        return DependencyIndex.Empty;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ public class ZbcRoundTripTests
             diags.PrintAll(sw);
             throw new InvalidOperationException("Type errors:\n" + sw);
         }
-        return new IrGen(StdlibIndex, semanticModel: model).Generate(cu);
+        return new IrGen(DepIndex, semanticModel: model).Generate(cu);
     }
 
     private static string ToJson(IrModule m) => JsonSerializer.Serialize(m, JsonOpts);

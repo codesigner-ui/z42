@@ -153,11 +153,11 @@ public static class PackageCompiler
             Path.Combine(projectDir, "artifacts", "z42", "libs"),
         };
         var nsMap       = ScanLibsForNamespaces(libsDirs);
-        var stdlibIndex = BuildStdlibIndex(libsDirs);
+        var depIndex    = BuildDepIndex(libsDirs);
         var allTsig     = LoadAllTsig(libsDirs);
         ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
-        var units = TryCompileSourceFiles(sourceFiles, stdlibIndex, allTsig);
+        var units = TryCompileSourceFiles(sourceFiles, depIndex, allTsig);
         if (units is null) return 1;
 
         WarnUnresolvedUsings(units, nsMap);
@@ -251,14 +251,14 @@ public static class PackageCompiler
     /// Compile all source files; returns null and prints an error count if any file fails.
     static List<CompiledUnit>? TryCompileSourceFiles(
         IReadOnlyList<string>     sourceFiles,
-        StdlibCallIndex           stdlibIndex,
+        DependencyIndex           depIndex,
         List<ExportedModule>?     allTsig = null)
     {
         var units  = new List<CompiledUnit>();
         int errors = 0;
         foreach (var sourceFile in sourceFiles)
         {
-            var unit = CompileFile(sourceFile, stdlibIndex, allTsig);
+            var unit = CompileFile(sourceFile, depIndex, allTsig);
             if (unit is null) { errors++; continue; }
             units.Add(unit);
         }
@@ -280,7 +280,7 @@ public static class PackageCompiler
                         $"warning: using '{usingNs}' in {Path.GetFileName(unit.SourceFile)}: namespace not found in any library");
     }
 
-    /// Build the dependency list (file → namespaces) from resolved usings and stdlib calls.
+    /// Build the dependency list (file → namespaces) from resolved usings and dependency calls.
     static List<ZpkgDep> BuildDependencyMap(
         IReadOnlyList<CompiledUnit>  units,
         Dictionary<string, string>   nsMap)
@@ -301,7 +301,7 @@ public static class PackageCompiler
         foreach (var unit in units)
         {
             foreach (var usingNs in unit.Usings)     AddDepNs(usingNs);
-            foreach (var stdNs in unit.UsedStdlibNamespaces) AddDepNs(stdNs);
+            foreach (var stdNs in unit.UsedDepNamespaces) AddDepNs(stdNs);
         }
         return [.. depMap.Select(kv => new ZpkgDep(kv.Key, kv.Value))];
     }
@@ -309,7 +309,7 @@ public static class PackageCompiler
     // ── Per-file helpers ──────────────────────────────────────────────────────
 
     static CompiledUnit? CompileFile(
-        string sourceFile, StdlibCallIndex stdlibIndex,
+        string sourceFile, DependencyIndex depIndex,
         List<ExportedModule>? allTsig = null)
     {
         string source;
@@ -325,7 +325,7 @@ public static class PackageCompiler
         if (allTsig is { Count: > 0 })
             imported = ImportedSymbolLoader.Load(allTsig, usings);
 
-        var result = PipelineCore.Compile(source, sourceFile, stdlibIndex, imported: imported);
+        var result = PipelineCore.Compile(source, sourceFile, depIndex, imported: imported);
         result.Diags.PrintAll();
         if (result.Diags.HasErrors || result.Module is null) return null;
 
@@ -333,7 +333,7 @@ public static class PackageCompiler
         string sourceHash = Sha256Hex(source);
         var    exports    = result.Module.Functions.Select(f => f.Name).ToList();
         return new CompiledUnit(sourceFile, ns, sourceHash, exports, result.Module,
-            result.Usings.ToList(), result.UsedStdlibNamespaces.ToList(), result.ExportedTypes);
+            result.Usings.ToList(), result.UsedDepNamespaces.ToList(), result.ExportedTypes);
     }
 
     static bool CheckFile(string sourceFile)
@@ -342,7 +342,7 @@ public static class PackageCompiler
         try   { source = File.ReadAllText(sourceFile); }
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return false; }
 
-        var result = PipelineCore.Compile(source, sourceFile, StdlibCallIndex.Empty);
+        var result = PipelineCore.Compile(source, sourceFile, DependencyIndex.Empty);
         result.Diags.PrintAll();
         return !result.Diags.HasErrors;
     }
@@ -432,9 +432,9 @@ public static class PackageCompiler
         return result;
     }
 
-    /// Load lib-kind zpkgs from the given directories and build a StdlibCallIndex
+    /// Load lib-kind zpkgs from the given directories and build a DependencyIndex
     /// from their packed modules. Silently skips malformed or non-lib packages.
-    public static StdlibCallIndex BuildStdlibIndex(string[] libsDirs)
+    public static DependencyIndex BuildDepIndex(string[] libsDirs)
     {
         var modules = new List<(IrModule Module, string Namespace)>();
         foreach (var dir in libsDirs)
@@ -453,7 +453,7 @@ public static class PackageCompiler
                 catch { /* skip malformed */ }
             }
         }
-        return StdlibCallIndex.Build(modules);
+        return DependencyIndex.Build(modules);
     }
 }
 
@@ -466,7 +466,7 @@ public sealed record CompiledUnit(
     List<string>    Exports,
     IrModule        Module,
     List<string>    Usings,
-    List<string>    UsedStdlibNamespaces,
+    List<string>    UsedDepNamespaces,
     ExportedModule? ExportedTypes = null
 )
 {

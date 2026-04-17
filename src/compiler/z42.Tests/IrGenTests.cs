@@ -20,21 +20,21 @@ public sealed class IrGenTests
 {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static readonly StdlibCallIndex StdlibIdx = LoadStdlibIdx();
+    private static readonly DependencyIndex DepIdx = LoadDepIdx();
 
-    private static StdlibCallIndex LoadStdlibIdx()
+    private static DependencyIndex LoadDepIdx()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate)) return BuildStdlibIdxFromDir(candidate);
+            if (Directory.Exists(candidate)) return BuildDepIdxFromDir(candidate);
             dir = dir.Parent;
         }
-        return StdlibCallIndex.Empty;
+        return DependencyIndex.Empty;
     }
 
-    private static StdlibCallIndex BuildStdlibIdxFromDir(string libsDir)
+    private static DependencyIndex BuildDepIdxFromDir(string libsDir)
     {
         var modules = new List<(IrModule Module, string Namespace)>();
         foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
@@ -49,7 +49,7 @@ public sealed class IrGenTests
             }
             catch { }
         }
-        return StdlibCallIndex.Build(modules);
+        return DependencyIndex.Build(modules);
     }
 
     private static IrModule GenModule(string src)
@@ -60,12 +60,12 @@ public sealed class IrGenTests
         return new IrGen(semanticModel: model).Generate(cu);
     }
 
-    private static IrModule GenModuleWithStdlib(string src)
+    private static IrModule GenModuleWithDeps(string src)
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
         var model  = new TypeChecker(new DiagnosticBag()).Check(cu);
-        return new IrGen(StdlibIdx, semanticModel: model).Generate(cu);
+        return new IrGen(DepIdx, semanticModel: model).Generate(cu);
     }
 
     /// Generate a module from a void Main() wrapping the given statements.
@@ -329,10 +329,10 @@ public sealed class IrGenTests
     }
 
     [Fact]
-    public void StdlibCall_EmitsCallInstr()
+    public void DepCall_EmitsCallInstr()
     {
         // Console.WriteLine resolves to Std.IO.Console.WriteLine in stdlib
-        var m = GenModuleWithStdlib("void Main() { Console.WriteLine(\"hi\"); }");
+        var m = GenModuleWithDeps("void Main() { Console.WriteLine(\"hi\"); }");
         var instrs = All(m.Functions[0]);
         instrs.Any(i => i is CallInstr c && c.Func.StartsWith("Std.IO", StringComparison.Ordinal))
               .Should().BeTrue(because: "Console.WriteLine should emit a CallInstr to Std.IO stdlib");

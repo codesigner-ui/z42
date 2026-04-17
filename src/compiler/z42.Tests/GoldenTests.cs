@@ -55,8 +55,8 @@ public sealed class GoldenTests
         Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    // StdlibCallIndex and TSIG loaded once from artifacts/z42/libs/ (if present).
-    private static readonly StdlibCallIndex StdlibIndex = LoadStdlibIndex();
+    // DependencyIndex and TSIG loaded once from artifacts/z42/libs/ (if present).
+    private static readonly DependencyIndex DepIndex = LoadDepIndex();
     private static readonly string? StdlibLibsDir = FindStdlibLibsDir();
     private static readonly List<ExportedModule> AllTsig = LoadAllTsig();
 
@@ -72,16 +72,16 @@ public sealed class GoldenTests
         return null;
     }
 
-    private static StdlibCallIndex LoadStdlibIndex()
+    private static DependencyIndex LoadDepIndex()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
             string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate)) return PackageCompiler.BuildStdlibIndex([candidate]);
+            if (Directory.Exists(candidate)) return PackageCompiler.BuildDepIndex([candidate]);
             dir = dir.Parent;
         }
-        return StdlibCallIndex.Empty;
+        return DependencyIndex.Empty;
     }
 
     private static List<ExportedModule> LoadAllTsig()
@@ -160,7 +160,7 @@ public sealed class GoldenTests
 
     // ── Compile helper ─────────────────────────────────────────────────────
 
-    private static (IrModule? ir, DiagnosticBag diags, IReadOnlySet<string> usedStdlibNs) Compile(string dir)
+    private static (IrModule? ir, DiagnosticBag diags, IReadOnlySet<string> usedDepNs) Compile(string dir)
     {
         string sourceFile = Path.Combine(dir, "source.z42");
         string source     = File.ReadAllText(sourceFile);
@@ -193,7 +193,7 @@ public sealed class GoldenTests
         IrModule ir;
         try
         {
-            gen = new IrGen(StdlibIndex, features, sem);
+            gen = new IrGen(DepIndex, features, sem);
             ir = gen.Generate(cu);
         }
         catch (Exception ex)
@@ -202,7 +202,7 @@ public sealed class GoldenTests
             return (null, diags, new HashSet<string>());
         }
 
-        return (ir, diags, gen.UsedStdlibNamespaces);
+        return (ir, diags, gen.UsedDepNamespaces);
     }
 
     // ── IR / codegen tests (compare ZASM output) ──────────────────────────
@@ -247,7 +247,7 @@ public sealed class GoldenTests
     [MemberData(nameof(RunTestCases))]
     public void RunMatchesExpected(string name, string dir)
     {
-        var (ir, diags, usedStdlibNs) = Compile(dir);
+        var (ir, diags, usedDepNs) = Compile(dir);
         var diagStr = string.Join("\n", diags.All.Select(d => d.ToString()));
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors.\nDiagnostics:\n{diagStr}");
         ir.Should().NotBeNull();
@@ -264,7 +264,7 @@ public sealed class GoldenTests
             SourceHash : "sha256:test",
             Namespace  : ir!.Name,
             Exports    : ir.Functions.Select(f => f.Name).ToList(),
-            Imports    : usedStdlibNs.ToList(),
+            Imports    : usedDepNs.ToList(),
             Module     : ir
         );
 
@@ -283,7 +283,7 @@ public sealed class GoldenTests
                 Mode:         ZpkgMode.Packed,
                 Namespaces:   [ir.Name],
                 Exports:      pkgExports,
-                Dependencies: usedStdlibNs.Select(ns => new ZpkgDep($"{ns}.zpkg", [ns])).ToList(),
+                Dependencies: usedDepNs.Select(ns => new ZpkgDep($"{ns}.zpkg", [ns])).ToList(),
                 Files:        [],
                 Modules:      [zbc],
                 Entry:        $"{ir.Name}.Main"

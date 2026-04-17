@@ -78,7 +78,7 @@ z42.Semantics ────────────────→ z42.IR
 | `IrModule.cs` | IR 数据结构（SSA 寄存器形式），编译器输出 / VM 输入 |
 | `PackageTypes.cs` | `ZbcFile` / `ZpkgFile` / `ZpkgKind` / `ZpkgMode` 数据模型 |
 | `ProjectTypes.cs` | `.z42.toml` 反序列化目标类型（`Z42Proj` / `Z42Sln` 等）|
-| `StdlibCallIndex.cs` | 标准库命名空间 → 函数签名索引 |
+| `DependencyIndex.cs` | 依赖命名空间 → 函数签名索引 |
 | `BinaryFormat/` | `Opcodes`、`ZbcWriter`、`ZbcReader`、`ZasmWriter` |
 
 ---

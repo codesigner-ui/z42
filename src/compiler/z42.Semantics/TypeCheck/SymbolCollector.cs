@@ -56,7 +56,7 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     /// Merge imported symbols from dependency zpkgs.
     /// Imported class names are tracked for TypeEnv recognition (LookupVar → Unknown),
     /// but NOT added to _classes — this ensures ResolveType returns Z42PrimType for
-    /// imported classes, keeping the Unresolved → StdlibCallIndex path intact.
+    /// imported classes, keeping the Unresolved → DependencyIndex path intact.
     private void MergeImported(ImportedSymbols imported)
     {
         foreach (var name in imported.Classes.Keys)
