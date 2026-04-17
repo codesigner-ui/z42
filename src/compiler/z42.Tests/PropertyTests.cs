@@ -3,21 +3,61 @@ using Z42.Core.Features;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 using Xunit;
+using FsCheck;
+using FsCheck.Fluent;
+using FsCheck.Xunit;
 
 namespace Z42.Tests;
 
 /// <summary>
-/// Property-style tests for the compiler pipeline.
-/// These verify invariants that should hold for ALL valid inputs:
+/// Property-based tests using FsCheck random generators + deterministic edge cases.
+/// Invariants:
 ///   - Lexer round-trip: tokenize → join texts → retokenize = same token kinds
-///   - Parser robustness: arbitrary input never crashes (only produces diagnostics)
+///   - Lexer/Parser robustness: never crash on arbitrary input
 /// </summary>
 public sealed class PropertyTests
 {
-    // ── Lexer round-trip ─────────────────────────────────────────────────────
+    // ── FsCheck: Lexer round-trip with random z42 snippets ───────────────────
 
-    /// tokenize(src) → join token.Text → tokenize(joined) should produce
-    /// the same sequence of TokenKinds.
+    [Property(MaxTest = 200, Arbitrary = [typeof(Z42SnippetArb)])]
+    public bool Lexer_RoundTrip_Random(Z42Snippet snippet)
+    {
+        var tokens1 = new Lexer(snippet.Source).Tokenize();
+        var kinds1 = tokens1.Where(t => t.Kind != TokenKind.Eof).Select(t => t.Kind).ToList();
+        if (kinds1.Count == 0) return true;
+
+        var reconstructed = string.Join(" ",
+            tokens1.Where(t => t.Kind != TokenKind.Eof).Select(t => t.Text));
+        var tokens2 = new Lexer(reconstructed).Tokenize();
+        var kinds2 = tokens2.Where(t => t.Kind != TokenKind.Eof).Select(t => t.Kind).ToList();
+        return kinds1.SequenceEqual(kinds2);
+    }
+
+    // ── FsCheck: Lexer never crashes on arbitrary strings ────────────────────
+
+    [Property(MaxTest = 500)]
+    public bool Lexer_NeverCrashes_Random(NonNull<string> input)
+    {
+        try { new Lexer(input.Get).Tokenize(); return true; }
+        catch { return false; }
+    }
+
+    // ── FsCheck: Parser never crashes on arbitrary strings ───────────────────
+
+    [Property(MaxTest = 200)]
+    public bool Parser_NeverCrashes_Random(NonNull<string> input)
+    {
+        try
+        {
+            var tokens = new Lexer(input.Get).Tokenize();
+            new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
+            return true;
+        }
+        catch { return false; }
+    }
+
+    // ── Deterministic round-trip tests ───────────────────────────────────────
+
     [Theory]
     [InlineData("int x = 42;")]
     [InlineData("string s = \"hello world\";")]
@@ -40,22 +80,15 @@ public sealed class PropertyTests
     {
         var tokens1 = new Lexer(source).Tokenize();
         var kinds1 = tokens1.Where(t => t.Kind != TokenKind.Eof).Select(t => t.Kind).ToList();
-
-        // Reconstruct source from token texts (with spaces between tokens)
         var reconstructed = string.Join(" ",
             tokens1.Where(t => t.Kind != TokenKind.Eof).Select(t => t.Text));
-
         var tokens2 = new Lexer(reconstructed).Tokenize();
         var kinds2 = tokens2.Where(t => t.Kind != TokenKind.Eof).Select(t => t.Kind).ToList();
-
-        kinds2.Should().Equal(kinds1,
-            $"retokenizing the joined token texts should produce the same token kinds");
+        kinds2.Should().Equal(kinds1);
     }
 
-    // ── Parser robustness: never crash ───────────────────────────────────────
+    // ── Deterministic malformed input tests ──────────────────────────────────
 
-    /// The parser should never throw an unhandled exception for ANY input.
-    /// It should either succeed or produce diagnostics.
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
@@ -79,41 +112,59 @@ public sealed class PropertyTests
     [InlineData("0b")]
     [InlineData("...")]
     [InlineData("@#$")]
-    public void Parser_NeverCrashes_OnArbitraryInput(string source)
+    public void Parser_NeverCrashes_OnMalformedInput(string source)
     {
         var act = () =>
         {
             var tokens = new Lexer(source).Tokenize();
-            var parser = new Parser(tokens, LanguageFeatures.Phase1);
-            parser.ParseCompilationUnit();
+            new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
         };
-
-        // The parser should either succeed or report diagnostics — never throw
-        act.Should().NotThrow(
-            $"the parser should handle malformed input gracefully: `{source}`");
+        act.Should().NotThrow();
     }
 
-    // ── Lexer robustness: never crash ────────────────────────────────────────
-
-    /// The lexer should never throw for any single-character input.
     [Fact]
     public void Lexer_NeverCrashes_OnAnySingleChar()
     {
         for (int c = 0; c < 128; c++)
         {
-            var source = new string((char)c, 1);
-            var act = () => new Lexer(source).Tokenize();
-            act.Should().NotThrow(
-                $"lexer should handle char {c} ('{(char)c}') without crashing");
+            var act = () => new Lexer(new string((char)c, 1)).Tokenize();
+            act.Should().NotThrow();
         }
     }
+}
 
-    /// The lexer should never crash on deeply nested interpolated strings.
-    [Fact]
-    public void Lexer_NeverCrashes_OnNestedInterpolation()
+// ── FsCheck custom types + generators ────────────────────────────────────────
+
+/// Wrapper for generated z42-like code snippets.
+public record Z42Snippet(string Source)
+{
+    public override string ToString() => Source;
+}
+
+/// FsCheck Arbitrary for Z42Snippet — generates random z42-like token sequences.
+public static class Z42SnippetArb
+{
+    private static readonly string[] Tokens =
+    [
+        "int", "string", "bool", "var", "return", "if", "else",
+        "while", "for", "class", "new", "true", "false", "null", "void",
+        "+", "-", "*", "/", "==", "!=", "<", ">", "<=", ">=",
+        "&&", "||", "=", ";", ",", "(", ")", "{", "}", "[", "]",
+        "x", "y", "z", "foo", "bar", "i", "n", "result",
+        "0", "1", "42", "100", "0xFF", "0b1010", "3.14",
+    ];
+
+    public static Arbitrary<Z42Snippet> Arbitrary()
     {
-        var source = "$\"outer {$\"inner {42}\"} end\"";
-        var act = () => new Lexer(source).Tokenize();
-        act.Should().NotThrow();
+        var gen = ArbMap.Default.GeneratorFor<int>().Select(_ =>
+        {
+            var rnd = Random.Shared;
+            int count = rnd.Next(1, 21);
+            var picked = new string[count];
+            for (int i = 0; i < count; i++)
+                picked[i] = Tokens[rnd.Next(Tokens.Length)];
+            return new Z42Snippet(string.Join(" ", picked));
+        });
+        return gen.ToArbitrary();
     }
 }

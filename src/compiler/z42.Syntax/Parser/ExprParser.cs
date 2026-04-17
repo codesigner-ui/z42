@@ -42,8 +42,8 @@ internal static class ExprParser
     private delegate ParseResult<Expr> LedFn(
         TokenCursor cursor, Expr left, Token tok, LanguageFeatures feat);
 
-    private sealed record NudEntry(NudFn Fn, string? Feature = null);
-    private sealed record LedEntry(int Bp, LedFn Fn, string? Feature = null);
+    private sealed record NudEntry(NudFn Fn, LanguageFeature? Feature = null);
+    private sealed record LedEntry(int Bp, LedFn Fn, LanguageFeature? Feature = null);
 
     // ── Entry point ───────────────────────────────────────────────────────────
 
@@ -58,7 +58,7 @@ internal static class ExprParser
                 $"unexpected token `{cursor.Current.Text}` in expression");
 
         if (nudEntry.Feature is { } nf && !feat.IsEnabled(nf))
-            throw new ParseException($"feature `{nf}` is disabled", span);
+            throw new ParseException($"feature `{LanguageFeatures.Metadata[nf].Name}` is disabled", span);
 
         var nudTok = cursor.Current;
         cursor = cursor.Advance();
@@ -139,8 +139,8 @@ internal static class ExprParser
             return Ok(new NullConditionalExpr(left, member, left.Span), cursor);
         }
         // ternary: cond ? then : else
-        if (!feat.IsEnabled("ternary"))
-            throw new ParseException("feature `ternary` is disabled", tok.Span);
+        if (!feat.IsEnabled(LanguageFeature.Ternary))
+            throw new ParseException($"feature `{LanguageFeatures.Metadata[LanguageFeature.Ternary].Name}` is disabled", tok.Span);
         var thenR = Parse(cursor, feat);
         if (!thenR.IsOk) return thenR;
         cursor = thenR.Remainder;
@@ -227,7 +227,7 @@ internal static class ExprParser
         [TokenKind.Plus]       = new(PrefixUnary("+",      BpUnary)),
         [TokenKind.Minus]      = new(PrefixUnary("-",      BpUnary)),
         [TokenKind.Bang]       = new(PrefixUnary("!",      BpUnary)),
-        [TokenKind.Tilde]      = new(PrefixUnary("~",      BpUnary), "bitwise"),
+        [TokenKind.Tilde]      = new(PrefixUnary("~",      BpUnary), LanguageFeature.Bitwise),
         [TokenKind.Await]      = new(PrefixUnary("await",  BpUnary)),
         [TokenKind.PlusPlus]   = new(PrefixUnary("++",     BpUnary)),
         [TokenKind.MinusMinus] = new(PrefixUnary("--",     BpUnary)),
@@ -240,69 +240,50 @@ internal static class ExprParser
 
     // ── Led table ─────────────────────────────────────────────────────────────
 
-    private static readonly Dictionary<TokenKind, LedEntry> s_ledTable = new()
+    private static readonly Dictionary<TokenKind, LedEntry> s_ledTable = BuildLedTable();
+
+    private static Dictionary<TokenKind, LedEntry> BuildLedTable()
     {
-        // Assignment (right-assoc: right parsed at BpAssign-1)
-        [TokenKind.Eq]        = new(BpAssign, Assign),
-        [TokenKind.PlusEq]    = new(BpAssign, CompoundAssign("+")),
-        [TokenKind.MinusEq]   = new(BpAssign, CompoundAssign("-")),
-        [TokenKind.StarEq]    = new(BpAssign, CompoundAssign("*")),
-        [TokenKind.SlashEq]   = new(BpAssign, CompoundAssign("/")),
-        [TokenKind.PercentEq] = new(BpAssign, CompoundAssign("%")),
-        [TokenKind.AmpEq]     = new(BpAssign, CompoundAssign("&"), "bitwise"),
-        [TokenKind.PipeEq]    = new(BpAssign, CompoundAssign("|"), "bitwise"),
-        [TokenKind.CaretEq]   = new(BpAssign, CompoundAssign("^"), "bitwise"),
+        var table = new Dictionary<TokenKind, LedEntry>
+        {
+            // Assignment (right-assoc: right parsed at BpAssign-1)
+            [TokenKind.Eq]        = new(BpAssign, Assign),
+            [TokenKind.PlusEq]    = new(BpAssign, CompoundAssign("+")),
+            [TokenKind.MinusEq]   = new(BpAssign, CompoundAssign("-")),
+            [TokenKind.StarEq]    = new(BpAssign, CompoundAssign("*")),
+            [TokenKind.SlashEq]   = new(BpAssign, CompoundAssign("/")),
+            [TokenKind.PercentEq] = new(BpAssign, CompoundAssign("%")),
+            [TokenKind.AmpEq]     = new(BpAssign, CompoundAssign("&"), LanguageFeature.Bitwise),
+            [TokenKind.PipeEq]    = new(BpAssign, CompoundAssign("|"), LanguageFeature.Bitwise),
+            [TokenKind.CaretEq]   = new(BpAssign, CompoundAssign("^"), LanguageFeature.Bitwise),
 
-        // Ternary / null-conditional
-        [TokenKind.Question]         = new(BpTernary, QuestionLed),
-        [TokenKind.QuestionQuestion] = new(BpTernary, NullCoalesce, "null_coalesce"),
+            // Ternary / null-conditional
+            [TokenKind.Question]         = new(BpTernary, QuestionLed),
+            [TokenKind.QuestionQuestion] = new(BpTernary, NullCoalesce, LanguageFeature.NullCoalesce),
 
-        // Logical
-        [TokenKind.PipePipe] = new(BpLogicalOr,  BinaryLeft("||", BpLogicalOr)),
-        [TokenKind.AmpAmp]   = new(BpLogicalAnd, BinaryLeft("&&", BpLogicalAnd)),
+            // is / as (relational but with special handlers)
+            [TokenKind.Is] = new(BpRelational, IsLed),
+            [TokenKind.As] = new(BpRelational, BinaryLeft("as", BpRelational)),
 
-        // Bitwise OR / XOR / AND
-        [TokenKind.Pipe]      = new(BpBitwiseOr,  BinaryLeft("|",  BpBitwiseOr),  "bitwise"),
-        [TokenKind.Caret]     = new(BpBitwiseXor, BinaryLeft("^",  BpBitwiseXor), "bitwise"),
-        [TokenKind.Ampersand] = new(BpBitwiseAnd, BinaryLeft("&",  BpBitwiseAnd), "bitwise"),
+            // Postfix ++ / -- (tighter than unary)
+            [TokenKind.PlusPlus]   = new(BpPostfix, Postfix("++")),
+            [TokenKind.MinusMinus] = new(BpPostfix, Postfix("--")),
 
-        // Equality
-        [TokenKind.EqEq]   = new(BpEquality, BinaryLeft("==", BpEquality)),
-        [TokenKind.BangEq] = new(BpEquality, BinaryLeft("!=", BpEquality)),
+            // Call / member / index
+            [TokenKind.LParen]   = new(BpPostfix, CallLed),
+            [TokenKind.Dot]      = new(BpPostfix, MemberAccessLed),
+            [TokenKind.LBracket] = new(BpPostfix, IndexAccessLed),
 
-        // Relational / type tests
-        [TokenKind.Lt]   = new(BpRelational, BinaryLeft("<",  BpRelational)),
-        [TokenKind.LtEq] = new(BpRelational, BinaryLeft("<=", BpRelational)),
-        [TokenKind.Gt]   = new(BpRelational, BinaryLeft(">",  BpRelational)),
-        [TokenKind.GtEq] = new(BpRelational, BinaryLeft(">=", BpRelational)),
-        [TokenKind.Is]   = new(BpRelational, IsLed),
-        [TokenKind.As]   = new(BpRelational, BinaryLeft("as", BpRelational)),
+            // Switch expression (feature-gated)
+            [TokenKind.Switch] = new(BpSwitch, SwitchExprLed, LanguageFeature.PatternMatch),
+        };
 
-        // Bit-shifts (between relational and additive)
-        [TokenKind.LtLt] = new(BpShift, BinaryLeft("<<", BpShift), "bitwise"),
-        [TokenKind.GtGt] = new(BpShift, BinaryLeft(">>", BpShift), "bitwise"),
+        // Binary operators — generated from OperatorDefs single source of truth
+        foreach (var def in OperatorDefs.BinaryOps)
+            table[def.Token] = new LedEntry(def.Bp, BinaryLeft(def.OpStr, def.Bp), def.Feature);
 
-        // Additive — Plus/Minus also have a Nud entry
-        [TokenKind.Plus]  = new(BpAdditive, BinaryLeft("+", BpAdditive)),
-        [TokenKind.Minus] = new(BpAdditive, BinaryLeft("-", BpAdditive)),
-
-        // Multiplicative
-        [TokenKind.Star]    = new(BpMultiply, BinaryLeft("*", BpMultiply)),
-        [TokenKind.Slash]   = new(BpMultiply, BinaryLeft("/", BpMultiply)),
-        [TokenKind.Percent] = new(BpMultiply, BinaryLeft("%", BpMultiply)),
-
-        // Postfix ++ / -- (tighter than unary)
-        [TokenKind.PlusPlus]   = new(BpPostfix, Postfix("++")),
-        [TokenKind.MinusMinus] = new(BpPostfix, Postfix("--")),
-
-        // Call / member / index
-        [TokenKind.LParen]   = new(BpPostfix, CallLed),
-        [TokenKind.Dot]      = new(BpPostfix, MemberAccessLed),
-        [TokenKind.LBracket] = new(BpPostfix, IndexAccessLed),
-
-        // Switch expression (feature-gated)
-        [TokenKind.Switch] = new(BpSwitch, SwitchExprLed, "pattern_match"),
-    };
+        return table;
+    }
 
     // ── Nud implementations ───────────────────────────────────────────────────
 

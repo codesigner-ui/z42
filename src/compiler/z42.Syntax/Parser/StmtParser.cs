@@ -15,22 +15,22 @@ internal static class StmtParser
     private delegate ParseResult<Stmt> StmtFn(
         TokenCursor cursor, Token kw, LanguageFeatures feat);
 
-    private sealed record StmtEntry(StmtFn Fn, string? Feature = null);
+    private sealed record StmtEntry(StmtFn Fn, LanguageFeature? Feature = null);
 
     private static readonly Dictionary<TokenKind, StmtEntry> s_table = new()
     {
         [TokenKind.Var]      = new(ParseVarDecl),
         [TokenKind.Return]   = new(ParseReturn),
-        [TokenKind.If]       = new(ParseIf,       "control_flow"),
-        [TokenKind.While]    = new(ParseWhile,    "control_flow"),
-        [TokenKind.Do]       = new(ParseDoWhile,  "control_flow"),
-        [TokenKind.For]      = new(ParseFor,      "control_flow"),
-        [TokenKind.Foreach]  = new(ParseForeach,  "control_flow"),
-        [TokenKind.Break]    = new(ParseBreak,    "control_flow"),
-        [TokenKind.Continue] = new(ParseContinue, "control_flow"),
-        [TokenKind.Switch]   = new(ParseSwitch,   "pattern_match"),
-        [TokenKind.Try]      = new(ParseTryCatch, "exceptions"),
-        [TokenKind.Throw]    = new(ParseThrow,    "exceptions"),
+        [TokenKind.If]       = new(ParseIf,       LanguageFeature.ControlFlow),
+        [TokenKind.While]    = new(ParseWhile,    LanguageFeature.ControlFlow),
+        [TokenKind.Do]       = new(ParseDoWhile,  LanguageFeature.ControlFlow),
+        [TokenKind.For]      = new(ParseFor,      LanguageFeature.ControlFlow),
+        [TokenKind.Foreach]  = new(ParseForeach,  LanguageFeature.ControlFlow),
+        [TokenKind.Break]    = new(ParseBreak,    LanguageFeature.ControlFlow),
+        [TokenKind.Continue] = new(ParseContinue, LanguageFeature.ControlFlow),
+        [TokenKind.Switch]   = new(ParseSwitch,   LanguageFeature.PatternMatch),
+        [TokenKind.Try]      = new(ParseTryCatch, LanguageFeature.Exceptions),
+        [TokenKind.Throw]    = new(ParseThrow,    LanguageFeature.Exceptions),
     };
 
     // ── Public entry points ───────────────────────────────────────────────────
@@ -117,7 +117,7 @@ internal static class StmtParser
         if (s_table.TryGetValue(cursor.Current.Kind, out var entry))
         {
             if (entry.Feature is { } f && !feat.IsEnabled(f))
-                throw new ParseException($"feature `{f}` is disabled", span);
+                throw new ParseException($"feature `{LanguageFeatures.Metadata[f].Name}` is disabled", span);
             var kw = cursor.Current;
             cursor = cursor.Advance();
             return entry.Fn(cursor, kw, feat);

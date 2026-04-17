@@ -64,6 +64,10 @@ internal static class TopLevelParser
         {
             try
             {
+                if (IsPhase2ReservedKeyword(cursor.Current.Kind))
+                    throw new ParseException(
+                        $"`{cursor.Current.Text}` is a keyword reserved for Phase 2 and cannot be used yet",
+                        cursor.Current.Span);
                 if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
                 if (cursor.Current.Kind == TokenKind.Namespace)
                 {
@@ -660,4 +664,10 @@ internal static class TopLevelParser
         cursor  = cursor.Advance();
         return tok;
     }
+
+    /// Returns true if the token kind is a Phase 2 reserved keyword (fn, let, mut, etc.).
+    private static bool IsPhase2ReservedKeyword(TokenKind kind) => kind is
+        TokenKind.Fn or TokenKind.Let or TokenKind.Mut or TokenKind.Trait or
+        TokenKind.Impl or TokenKind.Use or TokenKind.Module or
+        TokenKind.Spawn or TokenKind.None;
 }
