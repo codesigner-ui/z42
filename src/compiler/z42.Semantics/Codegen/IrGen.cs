@@ -83,13 +83,15 @@ public sealed class IrGen
         foreach (var cls in cu.Classes)
         {
             var qualName = QualifyName(cls.Name);
-            var ct = _semanticModel.Classes.GetValueOrDefault(cls.Name);
+            if (!_semanticModel.Classes.TryGetValue(cls.Name, out var ct))
+                throw new InvalidOperationException(
+                    $"IrGen: class `{cls.Name}` not found in SemanticModel (TypeChecker bug)");
             foreach (var m in cls.Methods)
             {
                 string arityKey = $"{m.Name}${m.Params.Count}";
-                bool isOverloaded = ct != null && (m.IsStatic
+                bool isOverloaded = m.IsStatic
                     ? ct.StaticMethods.ContainsKey(arityKey)
-                    : ct.Methods.ContainsKey(arityKey));
+                    : ct.Methods.ContainsKey(arityKey);
                 string key = isOverloaded
                     ? $"{qualName}.{arityKey}"
                     : $"{qualName}.{m.Name}";

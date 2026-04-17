@@ -44,6 +44,8 @@ internal sealed partial class FunctionEmitter
         _currentClassName = className;
         int paramOffset = isStatic ? 0 : 1;
         _nextReg = method.Params.Count + paramOffset;
+        // `this` is always IrType.Ref: all z42 classes are heap-allocated reference types.
+        // If value-type classes (structs on stack) are introduced, this must use the actual class IR type.
         if (!isStatic) _locals["this"] = new TypedReg(0, IrType.Ref);
         _instanceFields = isStatic ? [] : _gen.GetClassInstanceFieldNames(className);
 
@@ -54,13 +56,14 @@ internal sealed partial class FunctionEmitter
         // Emit base constructor call at the start of derived constructors
         bool isCtor = !isStatic && method.Name == className;
         if (isCtor && method.BaseCtorArgs is { }
-            && _gen._classBaseNames.TryGetValue(_gen.QualifyName(className), out var baseQual))
+            && _gen._classBaseNames.TryGetValue(_gen.QualifyName(className), out var baseQual)
+            && _gen._semanticModel!.BoundBaseCtorArgs.TryGetValue(method, out var boundBaseArgs))
         {
             var baseSimpleName = baseQual.Contains('.')
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
             var baseCtorIrName = $"{baseQual}.{baseSimpleName}";
             var argRegs = new List<TypedReg> { new(0, IrType.Ref) };
-            argRegs.AddRange(_gen._semanticModel!.BoundBaseCtorArgs[method].Select(EmitExpr));
+            argRegs.AddRange(boundBaseArgs.Select(EmitExpr));
             var dst = Alloc(IrType.Ref);
             Emit(new CallInstr(dst, baseCtorIrName, argRegs));
         }
