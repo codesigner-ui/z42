@@ -163,11 +163,15 @@ public static class PackageCompiler
         var dependencies = BuildDependencyMap(units, nsMap);
         string cacheDir  = Path.Combine(projectDir, ".cache");
         var zbcFiles     = units.Select(u => u.ToZbcFile()).ToList();
+        var exportedModules = units
+            .Where(u => u.ExportedTypes != null)
+            .Select(u => u.ExportedTypes!)
+            .ToList();
 
         ZpkgFile zpkg;
         if (pack)
         {
-            zpkg = ZpkgBuilder.BuildPacked(name, version, kind, entry, zbcFiles, dependencies);
+            zpkg = ZpkgBuilder.BuildPacked(name, version, kind, entry, zbcFiles, dependencies, exportedModules);
         }
         else
         {
@@ -315,7 +319,7 @@ public static class PackageCompiler
         string sourceHash = Sha256Hex(source);
         var    exports    = result.Module.Functions.Select(f => f.Name).ToList();
         return new CompiledUnit(sourceFile, ns, sourceHash, exports, result.Module,
-            result.Usings.ToList(), result.UsedStdlibNamespaces.ToList());
+            result.Usings.ToList(), result.UsedStdlibNamespaces.ToList(), result.ExportedTypes);
     }
 
     static bool CheckFile(string sourceFile)
@@ -402,13 +406,14 @@ public static class PackageCompiler
 // ── Compiled unit ─────────────────────────────────────────────────────────────
 
 public sealed record CompiledUnit(
-    string       SourceFile,
-    string       Namespace,
-    string       SourceHash,
-    List<string> Exports,
-    IrModule     Module,
-    List<string> Usings,
-    List<string> UsedStdlibNamespaces
+    string          SourceFile,
+    string          Namespace,
+    string          SourceHash,
+    List<string>    Exports,
+    IrModule        Module,
+    List<string>    Usings,
+    List<string>    UsedStdlibNamespaces,
+    ExportedModule? ExportedTypes = null
 )
 {
     public ZbcFile ToZbcFile() =>

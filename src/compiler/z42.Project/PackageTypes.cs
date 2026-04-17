@@ -70,5 +70,7 @@ public sealed record ZpkgFile(
     [property: JsonPropertyName("dependencies")]  List<ZpkgDep>       Dependencies,
     [property: JsonPropertyName("files")]         List<ZpkgFileEntry> Files,
     [property: JsonPropertyName("modules")]       List<ZbcFile>       Modules,
-    [property: JsonPropertyName("entry")]         string?             Entry = null
+    [property: JsonPropertyName("entry")]         string?             Entry = null,
+    [property: JsonIgnore]
+    List<ExportedModule>?                                             ExportedModules = null
 );

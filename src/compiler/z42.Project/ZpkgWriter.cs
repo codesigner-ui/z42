@@ -1,4 +1,5 @@
 using System.Text;
+using Z42.IR;
 using Z42.IR.BinaryFormat;
 
 namespace Z42.Project;
@@ -85,6 +86,9 @@ public static class ZpkgWriter
             (ZpkgTags.Mods, BuildModsSection(zpkg.Modules, pool, remaps)),
         };
 
+        if (zpkg.ExportedModules is { Count: > 0 })
+            sections.Add((ZpkgTags.Tsig, BuildTsigSection(zpkg.ExportedModules, pool)));
+
         ushort flags = FlagPacked;
         if (zpkg.Kind == ZpkgKind.Exe) flags |= FlagExe;
         return AssembleFile(flags, sections);
@@ -131,6 +135,43 @@ public static class ZpkgWriter
             pool.Intern(dep.File);
             foreach (var ns in dep.Namespaces) pool.Intern(ns);
         }
+        if (zpkg.ExportedModules != null)
+            foreach (var mod in zpkg.ExportedModules)
+                InternTsigStrings(pool, mod);
+    }
+
+    private static void InternTsigStrings(StringPool pool, ExportedModule mod)
+    {
+        pool.Intern(mod.Namespace);
+        foreach (var cls in mod.Classes)
+        {
+            pool.Intern(cls.Name);
+            if (cls.BaseClass != null) pool.Intern(cls.BaseClass);
+            foreach (var iface in cls.Interfaces) pool.Intern(iface);
+            foreach (var f in cls.Fields)  { pool.Intern(f.Name); pool.Intern(f.TypeName); pool.Intern(f.Visibility); }
+            foreach (var m in cls.Methods) InternMethodStrings(pool, m);
+        }
+        foreach (var iface in mod.Interfaces)
+        {
+            pool.Intern(iface.Name);
+            foreach (var m in iface.Methods) InternMethodStrings(pool, m);
+        }
+        foreach (var en in mod.Enums)
+        {
+            pool.Intern(en.Name);
+            foreach (var m in en.Members) pool.Intern(m.Name);
+        }
+        foreach (var fn in mod.Functions)
+        {
+            pool.Intern(fn.Name); pool.Intern(fn.ReturnType);
+            foreach (var p in fn.Params) { pool.Intern(p.Name); pool.Intern(p.TypeName); }
+        }
+    }
+
+    private static void InternMethodStrings(StringPool pool, ExportedMethodDef m)
+    {
+        pool.Intern(m.Name); pool.Intern(m.ReturnType); pool.Intern(m.Visibility);
+        foreach (var p in m.Params) { pool.Intern(p.Name); pool.Intern(p.TypeName); }
     }
 
     // ── META section ─────────────────────────────────────────────────────────
@@ -285,6 +326,109 @@ public static class ZpkgWriter
         return ms.ToArray();
     }
 
+    // ── TSIG section (type signatures for reference compilation) ────────────
+
+    private static byte[] BuildTsigSection(List<ExportedModule> modules, StringPool pool)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((ushort)modules.Count);
+        foreach (var mod in modules)
+        {
+            w.Write((uint)pool.Idx(mod.Namespace));
+
+            // Classes
+            w.Write((ushort)mod.Classes.Count);
+            foreach (var cls in mod.Classes)
+            {
+                w.Write((uint)pool.Idx(cls.Name));
+                w.Write(cls.BaseClass != null ? (uint)pool.Idx(cls.BaseClass) : uint.MaxValue);
+                byte flags = 0;
+                if (cls.IsAbstract) flags |= 0x01;
+                if (cls.IsSealed)   flags |= 0x02;
+                if (cls.IsStatic)   flags |= 0x04;
+                w.Write(flags);
+
+                w.Write((ushort)cls.Fields.Count);
+                foreach (var f in cls.Fields)
+                {
+                    w.Write((uint)pool.Idx(f.Name));
+                    w.Write((uint)pool.Idx(f.TypeName));
+                    w.Write((uint)pool.Idx(f.Visibility));
+                    w.Write((byte)(f.IsStatic ? 1 : 0));
+                }
+
+                w.Write((ushort)cls.Methods.Count);
+                foreach (var m in cls.Methods)
+                    WriteMethodDef(w, m, pool);
+
+                w.Write((ushort)cls.Interfaces.Count);
+                foreach (var iface in cls.Interfaces)
+                    w.Write((uint)pool.Idx(iface));
+            }
+
+            // Interfaces
+            w.Write((ushort)mod.Interfaces.Count);
+            foreach (var iface in mod.Interfaces)
+            {
+                w.Write((uint)pool.Idx(iface.Name));
+                w.Write((ushort)iface.Methods.Count);
+                foreach (var m in iface.Methods)
+                    WriteMethodDef(w, m, pool);
+            }
+
+            // Enums
+            w.Write((ushort)mod.Enums.Count);
+            foreach (var en in mod.Enums)
+            {
+                w.Write((uint)pool.Idx(en.Name));
+                w.Write((ushort)en.Members.Count);
+                foreach (var m in en.Members)
+                {
+                    w.Write((uint)pool.Idx(m.Name));
+                    w.Write(m.Value);
+                }
+            }
+
+            // Functions
+            w.Write((ushort)mod.Functions.Count);
+            foreach (var fn in mod.Functions)
+            {
+                w.Write((uint)pool.Idx(fn.Name));
+                w.Write((uint)pool.Idx(fn.ReturnType));
+                w.Write((ushort)fn.MinArgCount);
+                w.Write((byte)fn.Params.Count);
+                foreach (var p in fn.Params)
+                {
+                    w.Write((uint)pool.Idx(p.Name));
+                    w.Write((uint)pool.Idx(p.TypeName));
+                }
+            }
+        }
+
+        return ms.ToArray();
+    }
+
+    private static void WriteMethodDef(BinaryWriter w, ExportedMethodDef m, StringPool pool)
+    {
+        w.Write((uint)pool.Idx(m.Name));
+        w.Write((uint)pool.Idx(m.ReturnType));
+        w.Write((uint)pool.Idx(m.Visibility));
+        byte flags = 0;
+        if (m.IsStatic)   flags |= 0x01;
+        if (m.IsVirtual)  flags |= 0x02;
+        if (m.IsAbstract) flags |= 0x04;
+        w.Write(flags);
+        w.Write((ushort)m.MinArgCount);
+        w.Write((byte)m.Params.Count);
+        foreach (var p in m.Params)
+        {
+            w.Write((uint)pool.Idx(p.Name));
+            w.Write((uint)pool.Idx(p.TypeName));
+        }
+    }
+
     // ── File assembly ─────────────────────────────────────────────────────────
 
     private static byte[] AssembleFile(ushort flags, List<(byte[] Tag, byte[] Data)> sections)
@@ -334,4 +478,5 @@ internal static class ZpkgTags
     public static readonly byte[] Sigs = "SIGS"u8.ToArray();
     public static readonly byte[] Mods = "MODS"u8.ToArray();
     public static readonly byte[] File = "FILE"u8.ToArray();
+    public static readonly byte[] Tsig = "TSIG"u8.ToArray();
 }

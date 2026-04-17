@@ -1,3 +1,4 @@
+using Z42.IR;
 using Z42.IR.BinaryFormat;
 
 namespace Z42.Project;
@@ -19,22 +20,24 @@ public static class ZpkgBuilder
         ZpkgKind                  kind,
         string?                   entry,
         IReadOnlyList<ZbcFile>    zbcFiles,
-        IReadOnlyList<ZpkgDep>    dependencies)
+        IReadOnlyList<ZpkgDep>    dependencies,
+        List<ExportedModule>?     exportedModules = null)
     {
         var namespaces = zbcFiles.Select(z => z.Namespace).Distinct().ToList();
         var exports    = BuildExports(zbcFiles);
 
         return new ZpkgFile(
-            Name:         name,
-            Version:      version,
-            Kind:         kind,
-            Mode:         ZpkgMode.Packed,
-            Namespaces:   namespaces,
-            Exports:      exports,
-            Dependencies: dependencies.ToList(),
-            Files:        [],
-            Modules:      zbcFiles.ToList(),
-            Entry:        entry
+            Name:            name,
+            Version:         version,
+            Kind:            kind,
+            Mode:            ZpkgMode.Packed,
+            Namespaces:      namespaces,
+            Exports:         exports,
+            Dependencies:    dependencies.ToList(),
+            Files:           [],
+            Modules:         zbcFiles.ToList(),
+            Entry:           entry,
+            ExportedModules: exportedModules
         );
     }
 

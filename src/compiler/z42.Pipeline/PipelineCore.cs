@@ -7,6 +7,8 @@ using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 
+// ExportedModule lives in z42.IR; ExportedTypeExtractor lives in z42.Semantics
+
 namespace Z42.Pipeline;
 
 /// <summary>
@@ -18,7 +20,8 @@ public sealed record SourceCompileResult(
     DiagnosticBag         Diags,
     IReadOnlySet<string>  UsedStdlibNamespaces,
     string?               Namespace,
-    IReadOnlyList<string> Usings);
+    IReadOnlyList<string> Usings,
+    ExportedModule?       ExportedTypes = null);
 
 /// <summary>
 /// Pure compilation core — no file I/O, no console output.
@@ -85,7 +88,8 @@ public static class PipelineCore
             var gen = new IrGen(stdlibIndex, feats, sem);
             var ir  = gen.Generate(cu);
             ir = new IrPassManager().RunAll(ir);
-            return new(ir, diags, gen.UsedStdlibNamespaces, cu.Namespace, cu.Usings);
+            var exported = ExportedTypeExtractor.Extract(sem, cu.Namespace ?? "main");
+            return new(ir, diags, gen.UsedStdlibNamespaces, cu.Namespace, cu.Usings, exported);
         }
         catch (Exception ex)
         {
