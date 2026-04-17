@@ -162,6 +162,18 @@ public static class DiagnosticCatalog
             "This is a compiler limitation rather than a user error; " +
             "the construct may become supported in a future compiler version.",
             null),
+
+        // ── Z09xx: Native / InternalCall ─────────────────────────────────────
+
+        [DiagnosticCodes.ExternRequiresNative] = new(
+            "Extern method requires [Native] attribute",
+            "A method declared `extern` must also have a `[Native]` attribute specifying the runtime intrinsic name.",
+            "extern int ReadByte();  // missing [Native(\"...\")]"),
+
+        [DiagnosticCodes.NativeRequiresExtern] = new(
+            "Native attribute on non-extern method",
+            "The `[Native]` attribute can only be applied to methods declared with the `extern` keyword.",
+            "[Native(\"file_read\")] int ReadByte() { return 0; }  // not extern"),
     };
 
     // ── Public API ────────────────────────────────────────────────────────────
