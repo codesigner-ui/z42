@@ -9,7 +9,7 @@ namespace Z42.Semantics.TypeCheck;
 ///
 /// Does NOT bind expression bodies or default values — that is BodyBinder / TypeChecker's job.
 /// </summary>
-internal sealed partial class SymbolCollector
+internal sealed partial class SymbolCollector : ISymbolBinder
 {
     private readonly DiagnosticBag _diags;
 
@@ -33,7 +33,7 @@ internal sealed partial class SymbolCollector
     /// <summary>
     /// Run all collection passes and return a frozen SymbolTable.
     /// </summary>
-    internal SymbolTable Collect(CompilationUnit cu)
+    public SymbolTable Collect(CompilationUnit cu)
     {
         CollectEnums(cu);
         CollectInterfaces(cu);

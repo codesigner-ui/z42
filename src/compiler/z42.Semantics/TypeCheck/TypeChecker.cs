@@ -20,7 +20,7 @@ namespace Z42.Semantics.TypeCheck;
 /// • TypeChecker.Stmts.cs — statement binding
 /// • TypeChecker.Exprs.cs — expression type inference
 /// </summary>
-public sealed partial class TypeChecker
+public sealed partial class TypeChecker : ITypeInferrer
 {
     private readonly DiagnosticBag   _diags;
     private readonly LanguageFeatures _features;
@@ -60,13 +60,20 @@ public sealed partial class TypeChecker
     /// The frozen symbol table, available after Check() begins Pass 1.
     internal SymbolTable Symbols => _symbols;
 
-    // ── Public entry point ────────────────────────────────────────────────────
+    // ── Public entry points ─────────────────────────────────────────────────
 
+    /// Convenience: runs all 3 phases (Pass 0 + Pass 1 + Pass 2) in one call.
     public SemanticModel Check(CompilationUnit cu)
     {
-        // ── Pass 0: collect type shapes (SymbolCollector) ───────────────────
-        var collector = new SymbolCollector(_diags);
-        _symbols = collector.Collect(cu);
+        ISymbolBinder binder = new SymbolCollector(_diags);
+        var symbols = binder.Collect(cu);
+        return Infer(cu, symbols);
+    }
+
+    /// ITypeInferrer: Pass 1 only — bind bodies using an already-collected SymbolTable.
+    public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols)
+    {
+        _symbols = symbols;
 
         // ── Pass 1: bind bodies (function-level error isolation) ────────────
         BindStaticFieldInits(cu);

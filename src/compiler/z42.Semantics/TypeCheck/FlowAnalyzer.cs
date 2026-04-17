@@ -6,9 +6,19 @@ namespace Z42.Semantics.TypeCheck;
 /// <summary>
 /// Post-binding flow analysis passes — reachability and definite assignment.
 /// Operates on already-bound BoundBlocks; no type-checking state needed.
+/// Implements <see cref="IFlowAnalyzer"/> for testability; static methods retained for convenience.
 /// </summary>
-internal static class FlowAnalyzer
+internal sealed class FlowAnalyzer : IFlowAnalyzer
 {
+    /// Singleton instance for interface-based usage.
+    internal static readonly FlowAnalyzer Instance = new();
+
+    // ── IFlowAnalyzer implementation ─────────────────────────────────────────
+
+    bool IFlowAnalyzer.AlwaysReturns(BoundBlock block) => AlwaysReturns(block);
+    void IFlowAnalyzer.CheckDefiniteAssignment(BoundBlock block, DiagnosticBag diags) =>
+        CheckDefiniteAssignment(block, diags);
+
     // ── Reachability analysis ────────────────────────────────────────────────
 
     /// Returns true if ALL control-flow paths through the block reach a return/throw.
