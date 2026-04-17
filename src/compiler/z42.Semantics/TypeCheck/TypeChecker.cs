@@ -8,51 +8,36 @@ using Z42.Syntax.Parser;
 namespace Z42.Semantics.TypeCheck;
 
 /// <summary>
-/// Phase 1 type checker.
+/// Phase 1 type checker — orchestrator + body binder.
 ///
-/// Two-pass design:
-///   Pass 0  — collect enum constants, class shapes, function signatures.
-///   Pass 1  — walk each function body, infer expression types, check compatibility.
+/// Three-phase design:
+///   Pass 0  — <see cref="SymbolCollector"/>: collect shapes → <see cref="SymbolTable"/>
+///   Pass 1  — TypeChecker (this class): bind function bodies using SymbolTable
+///   Pass 2  — <see cref="FlowAnalyzer"/>: reachability + definite assignment
 ///
-/// Errors are reported to the DiagnosticBag; the checker continues after errors
-/// using Z42Type.Error as a sentinel to suppress cascading diagnostics.
-///
-/// Implementation is split across partial class files:
-/// • TypeChecker.cs       — entry point, collection passes, type resolution, helpers
-/// • TypeChecker.Stmts.cs — statement checking
+/// Body binding is split across partial class files:
+/// • TypeChecker.cs       — orchestration, body entry points, helpers
+/// • TypeChecker.Stmts.cs — statement binding
 /// • TypeChecker.Exprs.cs — expression type inference
 /// </summary>
 public sealed partial class TypeChecker
 {
-    private readonly DiagnosticBag             _diags;
-    private readonly LanguageFeatures          _features;
-    private          Dictionary<string, Z42FuncType>      _funcs      = new();
-    private          Dictionary<string, Z42ClassType>     _classes    = new();
-    private          Dictionary<string, Z42InterfaceType> _interfaces = new();
-    /// Bound bodies produced by BindBlock/BindFunction for each FunctionDecl.
+    private readonly DiagnosticBag   _diags;
+    private readonly LanguageFeatures _features;
+
+    // ── Readonly symbol table (populated by SymbolCollector, consumed here) ───
+    private SymbolTable _symbols = null!;
+
+    // ── Binding outputs ──────────────────────────────────────────────────────
     private readonly Dictionary<FunctionDecl, BoundBlock> _boundBodies = new();
-    /// Bound default-value expressions keyed by Param (reference equality).
     private readonly Dictionary<Param, BoundExpr> _boundDefaults =
         new(ReferenceEqualityComparer.Instance);
-    /// Bound static field initializers keyed by FieldDecl (reference equality).
     private readonly Dictionary<FieldDecl, BoundExpr> _boundStaticInits =
         new(ReferenceEqualityComparer.Instance);
-    /// Bound base-ctor arg lists keyed by constructor FunctionDecl.
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
-    /// class name → set of interface names the class declares it implements
-    private          Dictionary<string, HashSet<string>>  _classInterfaces = new();
-    /// class name → set of abstract method names (inherited + own)
-    private          Dictionary<string, HashSet<string>>  _abstractMethods = new();
-    /// set of abstract class names
-    private          HashSet<string>                      _abstractClasses = new();
-    /// set of sealed class names (cannot be subclassed)
-    private          HashSet<string>                      _sealedClasses   = new();
-    /// class name → set of virtual/abstract method names (own only)
-    private          Dictionary<string, HashSet<string>>  _virtualMethods  = new();
-    private readonly Dictionary<string, long>             _globalEnumConstants = new();
-    private readonly HashSet<string>                      _enumTypes           = new();
-    /// The class currently being type-checked (null when checking top-level functions).
-    private          string?                              _currentClass        = null;
+
+    // ── Binding state ────────────────────────────────────────────────────────
+    private string? _currentClass;
 
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null)
     {
@@ -72,82 +57,31 @@ public sealed partial class TypeChecker
         public void Dispose() => tc._currentClass = null;
     }
 
-    // ── Public entry point ────────────────────────────────────────────────────
+    /// The frozen symbol table, available after Check() begins Pass 1.
+    internal SymbolTable Symbols => _symbols;
 
-    /// Readonly symbol table snapshot, available after Pass 0 completes.
-    internal SymbolTable? Symbols { get; private set; }
+    // ── Public entry point ────────────────────────────────────────────────────
 
     public SemanticModel Check(CompilationUnit cu)
     {
-        // ── Pass 0: collect type shapes ─────────────────────────────────────
-        CollectEnums(cu);
-        CollectInterfaces(cu);
-        CollectClasses(cu);
-        CollectFunctions(cu);
-
-        // Snapshot collected shapes into readonly SymbolTable.
-        Symbols = new SymbolTable(
-            _classes, _funcs, _interfaces,
-            _globalEnumConstants, _enumTypes,
-            _classInterfaces, _abstractMethods,
-            _abstractClasses, _sealedClasses, _virtualMethods);
+        // ── Pass 0: collect type shapes (SymbolCollector) ───────────────────
+        var collector = new SymbolCollector(_diags);
+        _symbols = collector.Collect(cu);
 
         // ── Pass 1: bind bodies (function-level error isolation) ────────────
         BindStaticFieldInits(cu);
         foreach (var cls in cu.Classes)   TryBindClassMethods(cls);
         foreach (var fn  in cu.Functions) TryBindFunction(fn);
 
-        return new SemanticModel(_classes, _funcs, _interfaces,
-            _globalEnumConstants, _enumTypes, _boundBodies,
-            _boundDefaults, _boundStaticInits, _boundBaseCtorArgs);
+        // ── Assemble SemanticModel from frozen symbols + bound results ──────
+        return new SemanticModel(
+            _symbols.Classes, _symbols.Functions, _symbols.Interfaces,
+            _symbols.EnumConstants, _symbols.EnumTypes,
+            _boundBodies, _boundDefaults, _boundStaticInits, _boundBaseCtorArgs);
     }
 
-    // ── Pass 0a: enum constants ───────────────────────────────────────────────
+    // ── Body binding entry points (error-isolated) ──────────────────────────
 
-    private void CollectEnums(CompilationUnit cu)
-    {
-        foreach (var en in cu.Enums)
-        {
-            foreach (var m in en.Members)
-                _globalEnumConstants[$"{en.Name}.{m.Name}"] = m.Value ?? 0;
-            _enumTypes.Add(en.Name);
-        }
-    }
-
-    // ── Pass 0b: interface shapes ─────────────────────────────────────────────
-
-    private void CollectInterfaces(CompilationUnit cu)
-    {
-        foreach (var iface in cu.Interfaces)
-        {
-            var methods = new Dictionary<string, Z42FuncType>();
-            foreach (var m in iface.Methods)
-            {
-                methods[m.Name] = BuildFuncType(m.Params, ResolveType(m.ReturnType));
-            }
-            _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods);
-        }
-    }
-
-    // ── Pass 0c: class shapes — see TypeChecker.Classes.cs ──────────────────
-
-    // ── Pass 1: function signatures ───────────────────────────────────────────
-
-    private void CollectFunctions(CompilationUnit cu)
-    {
-        foreach (var fn in cu.Functions)
-        {
-            if (_funcs.ContainsKey(fn.Name))
-                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
-                    $"duplicate function declaration `{fn.Name}`", fn.Span);
-            _funcs[fn.Name] = BuildFuncType(fn.Params, ResolveType(fn.ReturnType));
-        }
-    }
-
-    // ── Body checking entry points (error-isolated) ────────────────────────────
-
-    /// Binds all methods in a class; catches unexpected exceptions so one class
-    /// doesn't prevent the rest from being checked.
     private void TryBindClassMethods(ClassDecl cls)
     {
         try { BindClassMethods(cls); }
@@ -158,8 +92,6 @@ public sealed partial class TypeChecker
         }
     }
 
-    /// Binds a top-level function; catches unexpected exceptions so one function
-    /// doesn't prevent the rest from being checked.
     private void TryBindFunction(FunctionDecl fn)
     {
         try { BindFunction(fn); }
@@ -172,12 +104,12 @@ public sealed partial class TypeChecker
 
     private void BindClassMethods(ClassDecl cls)
     {
-        if (!_classes.TryGetValue(cls.Name, out var classType)) return;
+        if (!_symbols.Classes.TryGetValue(cls.Name, out var classType)) return;
         using var _ = EnterClass(cls.Name);
         foreach (var method in cls.Methods)
         {
             if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
-            var env   = new TypeEnv(_funcs, _classes);
+            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes);
             var scope = env.PushScope();
             if (!method.IsStatic)
             {
@@ -187,15 +119,16 @@ public sealed partial class TypeChecker
             }
             CheckParamNames(method.Params);
             foreach (var p in method.Params)
-                scope.Define(p.Name, ResolveType(p.Type));
+                scope.Define(p.Name, _symbols.ResolveType(p.Type));
+            BindParamDefaults(method.Params, scope);
             bool isCtor = method.Name == cls.Name;
             if (isCtor && method.BaseCtorArgs is { } baseCtorArgs)
                 _boundBaseCtorArgs[method] = baseCtorArgs.Select(a => BindExpr(a, scope)).ToList();
             _boundBodies[method] = BindBlock(method.Body, scope,
-                isCtor ? Z42Type.Void : ResolveType(method.ReturnType));
+                isCtor ? Z42Type.Void : _symbols.ResolveType(method.ReturnType));
             if (!method.IsAbstract)
             {
-                var methodRetType = isCtor ? Z42Type.Void : ResolveType(method.ReturnType);
+                var methodRetType = isCtor ? Z42Type.Void : _symbols.ResolveType(method.ReturnType);
                 if (methodRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
                     && !FlowAnalyzer.AlwaysReturns(_boundBodies[method]))
                     _diags.Error(DiagnosticCodes.MissingReturn,
@@ -208,13 +141,14 @@ public sealed partial class TypeChecker
     private void BindFunction(FunctionDecl fn)
     {
         if (ValidateNativeMethod(fn, isInstance: false)) return;
-        var env   = new TypeEnv(_funcs, _classes);
+        var env   = new TypeEnv(_symbols.Functions, _symbols.Classes);
         var scope = env.PushScope();
         CheckParamNames(fn.Params);
         foreach (var p in fn.Params)
-            scope.Define(p.Name, ResolveType(p.Type));
-        _boundBodies[fn] = BindBlock(fn.Body, scope, ResolveType(fn.ReturnType));
-        var fnRetType = ResolveType(fn.ReturnType);
+            scope.Define(p.Name, _symbols.ResolveType(p.Type));
+        BindParamDefaults(fn.Params, scope);
+        _boundBodies[fn] = BindBlock(fn.Body, scope, _symbols.ResolveType(fn.ReturnType));
+        var fnRetType = _symbols.ResolveType(fn.ReturnType);
         if (fnRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
             && !FlowAnalyzer.AlwaysReturns(_boundBodies[fn]))
             _diags.Error(DiagnosticCodes.MissingReturn,
@@ -222,20 +156,32 @@ public sealed partial class TypeChecker
         FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags);
     }
 
-    /// Validates [Native] / extern consistency.
-    /// Returns true if the method is a valid extern (body check should be skipped).
-    /// Returns false if it is a regular method (no extern/Native issues found, continue normal check).
-    /// <param name="isInstance">True for instance methods (adds 1 for implicit `this` when checking param count).</param>
+    // ── Default parameter binding (Pass 1, not during collection) ───────────
+
+    /// Bind default value expressions and check their types against parameter types.
+    private void BindParamDefaults(IReadOnlyList<Param> parms, TypeEnv env)
+    {
+        for (int i = 0; i < parms.Count; i++)
+        {
+            var p = parms[i];
+            if (p.Default == null) continue;
+            var paramType    = _symbols.ResolveType(p.Type);
+            var boundDefault = BindExpr(p.Default, env);
+            _boundDefaults[p] = boundDefault;
+            RequireAssignable(paramType, boundDefault.Type, p.Default.Span,
+                $"default value for `{p.Name}`: cannot assign `{boundDefault.Type}` to `{paramType}`");
+        }
+    }
+
     private bool ValidateNativeMethod(FunctionDecl fn, bool isInstance = false)
     {
         bool hasNative = fn.NativeIntrinsic != null;
         bool isExtern  = fn.IsExtern;
-
         if (isExtern && !hasNative)
         {
             _diags.Error(DiagnosticCodes.ExternRequiresNative,
                 $"extern method '{fn.Name}' requires a [Native(\"...\")]  attribute", fn.Span);
-            return true; // skip body check regardless
+            return true;
         }
         if (hasNative && !isExtern)
         {
@@ -243,14 +189,9 @@ public sealed partial class TypeChecker
                 $"[Native] attribute on '{fn.Name}' requires the extern modifier", fn.Span);
             return false;
         }
-        if (!isExtern) return false; // plain method, no native concerns
-
-        // Both isExtern and hasNative — valid extern, skip body check.
-        // Intrinsic name validation is deferred to the VM (no NativeTable lookup).
-        return true;
+        return isExtern;
     }
 
-    /// Reports an error for any duplicate parameter name in a function / method.
     private void CheckParamNames(IEnumerable<Param> parms)
     {
         var seen = new HashSet<string>();
@@ -269,52 +210,16 @@ public sealed partial class TypeChecker
             var statics = cls.Fields.Where(f => f.IsStatic && f.Initializer != null).ToList();
             if (statics.Count == 0) continue;
             using var _ = EnterClass(cls.Name);
-            var env   = new TypeEnv(_funcs, _classes);
+            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes);
             var scope = env.PushScope();
             foreach (var field in statics)
                 _boundStaticInits[field] = BindExpr(field.Initializer!, scope);
         }
     }
 
-    // ── Type resolution ───────────────────────────────────────────────────────
+    // ── Type resolution (delegates to SymbolTable) ───────────────────────────
 
-    private Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
-    {
-        VoidType      => Z42Type.Void,
-        OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
-        ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
-        NamedType  nt => nt.Name switch
-        {
-            "int"    or "i32" => Z42Type.Int,
-            "long"   or "i64" => Z42Type.Long,
-            "float"  or "f32" => Z42Type.Float,
-            "double" or "f64" => Z42Type.Double,
-            "bool"            => Z42Type.Bool,
-            "string"          => Z42Type.String,
-            "char"            => Z42Type.Char,
-            "object"          => Z42Type.Object,
-            "void"            => Z42Type.Void,
-            "var"             => Z42Type.Unknown,
-            // IR names
-            "i8"              => Z42Type.I8,
-            "i16"             => Z42Type.I16,
-            "u8"              => Z42Type.U8,
-            "u16"             => Z42Type.U16,
-            "u32"             => Z42Type.U32,
-            "u64"             => Z42Type.U64,
-            // C# aliases → IR equivalents
-            "sbyte"           => Z42Type.I8,
-            "short"           => Z42Type.I16,
-            "byte"            => Z42Type.U8,
-            "ushort"          => Z42Type.U16,
-            "uint"            => Z42Type.U32,
-            "ulong"           => Z42Type.U64,
-            _                 => _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
-                               : _interfaces.TryGetValue(nt.Name, out var it) ? it
-                               : new Z42PrimType(nt.Name),
-        },
-        _ => Z42Type.Unknown
-    };
+    private Z42Type ResolveType(TypeExpr typeExpr) => _symbols.ResolveType(typeExpr);
 
     private static Z42Type ElemTypeOf(Z42Type t) => t switch
     {
@@ -333,9 +238,6 @@ public sealed partial class TypeChecker
                 $"`{context}` condition must be `bool`, got `{actual}`", span);
     }
 
-    /// Extracts the integer value from a literal expression.
-    /// Handles plain <c>LitIntExpr</c> and negated <c>UnaryExpr("-", LitIntExpr(x))</c>.
-    /// Returns null for any other expression kind.
     private static long? ExtractIntLiteralValue(Expr expr) => expr switch
     {
         LitIntExpr lit                                     => lit.Value,
@@ -343,10 +245,6 @@ public sealed partial class TypeChecker
         _ => null
     };
 
-    /// Checks whether an integer literal value fits into <paramref name="target"/>'s range.
-    /// Returns true  — value fits, caller can skip RequireAssignable.
-    /// Returns false — out of range, error already emitted.
-    /// Returns null  — target has no integer literal range; caller should use RequireAssignable.
     private bool? TryCheckIntLiteralRange(Z42Type target, long value, Span span)
     {
         var range = Z42Type.IntLiteralRange(target);
@@ -360,77 +258,18 @@ public sealed partial class TypeChecker
     private void RequireAssignable(Z42Type target, Z42Type source, Span span, string? msg = null)
     {
         if (Z42Type.IsAssignableTo(target, source)) return;
-        // Same-named class types are identical even if the instances differ
-        // (can happen with self-referential fields: `Node next` inside class Node
-        //  resolves to a stub instance before the full type is registered).
         if (target is Z42ClassType tc1 && source is Z42ClassType tc2 && tc1.Name == tc2.Name) return;
-        // Inheritance: source class is a subtype of target class
         if (target is Z42ClassType targetCt && source is Z42ClassType sourceCt
-            && IsSubclassOf(sourceCt.Name, targetCt.Name)) return;
-        // Interface: source class implements target interface
+            && _symbols.IsSubclassOf(sourceCt.Name, targetCt.Name)) return;
         if (target is Z42InterfaceType targetIface && source is Z42ClassType sourceImplCt
-            && ImplementsInterface(sourceImplCt.Name, targetIface.Name)) return;
+            && _symbols.ImplementsInterface(sourceImplCt.Name, targetIface.Name)) return;
         _diags.Error(DiagnosticCodes.TypeMismatch,
             msg ?? $"cannot assign `{source}` to `{target}`", span);
     }
 
-    /// Returns true if <paramref name="derived"/> is a subclass of <paramref name="baseClass"/>.
-    /// Delegates to SymbolTable if available, otherwise uses mutable _classes (during collection).
-    private bool IsSubclassOf(string derived, string baseClass)
-    {
-        if (Symbols != null) return Symbols.IsSubclassOf(derived, baseClass);
-        var cur = derived;
-        while (_classes.TryGetValue(cur, out var ct) && ct.BaseClassName is { } parentName)
-        {
-            if (parentName == baseClass) return true;
-            cur = parentName;
-        }
-        return false;
-    }
+    private bool IsSubclassOf(string derived, string baseClass) =>
+        _symbols.IsSubclassOf(derived, baseClass);
 
-    /// Returns true if <paramref name="className"/> implements <paramref name="interfaceName"/>.
-    /// Delegates to SymbolTable if available, otherwise uses mutable state (during collection).
-    private bool ImplementsInterface(string className, string interfaceName)
-    {
-        if (Symbols != null) return Symbols.ImplementsInterface(className, interfaceName);
-        var cur = className;
-        while (true)
-        {
-            if (_classInterfaces.TryGetValue(cur, out var ifaces) && ifaces.Contains(interfaceName))
-                return true;
-            if (!_classes.TryGetValue(cur, out var ct) || ct.BaseClassName == null) break;
-            cur = ct.BaseClassName;
-        }
-        return false;
-    }
-
-    /// Build a Z42FuncType from a parameter list, checking default value types and computing RequiredCount.
-    private Z42FuncType BuildFuncType(IReadOnlyList<Param> parms, Z42Type retType, TypeEnv? env = null)
-    {
-        var paramTypes    = parms.Select(p => ResolveType(p.Type)).ToList();
-        int requiredCount = parms.Count;
-
-        for (int i = 0; i < parms.Count; i++)
-        {
-            var p = parms[i];
-            if (p.Default != null)
-            {
-                if (i < requiredCount) requiredCount = i;
-                // Check default value type against parameter type; store for codegen.
-                var defaultEnv  = env ?? new TypeEnv(_funcs, _classes);
-                var boundDefault = BindExpr(p.Default, defaultEnv);
-                _boundDefaults[p] = boundDefault;
-                RequireAssignable(paramTypes[i], boundDefault.Type, p.Default.Span,
-                    $"default value for `{p.Name}`: cannot assign `{boundDefault.Type}` to `{paramTypes[i]}`");
-            }
-            else if (i >= requiredCount)
-            {
-                // Non-default parameter after a defaulted one — error
-                _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"non-default parameter `{p.Name}` follows a default parameter (parameter ordering)", p.Span);
-            }
-        }
-
-        return new Z42FuncType(paramTypes, retType, requiredCount == parms.Count ? -1 : requiredCount);
-    }
+    private bool ImplementsInterface(string className, string interfaceName) =>
+        _symbols.ImplementsInterface(className, interfaceName);
 }

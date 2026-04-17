@@ -19,13 +19,13 @@ internal sealed class TypeEnv
 
     // ── State ────────────────────────────────────────────────────────────────
 
-    private readonly TypeEnv?                             _parent;
-    private readonly Dictionary<string, Z42FuncType>      _funcs;    // global function table
-    private readonly Dictionary<string, Z42ClassType>     _classes;  // global class table
-    private readonly Dictionary<string, Z42Type>           _vars = new();
+    private readonly TypeEnv?                                       _parent;
+    private readonly IReadOnlyDictionary<string, Z42FuncType>      _funcs;    // global function table
+    private readonly IReadOnlyDictionary<string, Z42ClassType>     _classes;  // global class table
+    private readonly Dictionary<string, Z42Type>                    _vars = new();
 
     // Root env: owns both function and class tables.
-    internal TypeEnv(Dictionary<string, Z42FuncType> funcs, Dictionary<string, Z42ClassType> classes)
+    internal TypeEnv(IReadOnlyDictionary<string, Z42FuncType> funcs, IReadOnlyDictionary<string, Z42ClassType> classes)
     {
         _parent  = null;
         _funcs   = funcs;

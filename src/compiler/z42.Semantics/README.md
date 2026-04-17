@@ -6,9 +6,10 @@
 ## 核心文件
 | 文件 | 职责 |
 |------|------|
-| `TypeCheck/TypeChecker.cs` | 两遍类型检查器（Pass 0：收集类型形状→SymbolTable；Pass 1：绑定函数体为 BoundBlock）|
-| `TypeCheck/SymbolTable.cs` | 类型形状只读快照（classes/interfaces/funcs/enums），Pass 0→Pass 1 的显式数据边界 |
-| `TypeCheck/FlowAnalyzer.cs` | 独立的后绑定分析（可达性分析 + 确定赋值分析），无类型检查状态依赖 |
+| `TypeCheck/SymbolCollector.cs` | Pass 0：收集枚举/接口/类/函数签名，输出 SymbolTable |
+| `TypeCheck/SymbolCollector.Classes.cs` | Pass 0c：类形状收集（字段、方法、继承、接口验证）|
+| `TypeCheck/SymbolTable.cs` | 类型形状只读快照 + ResolveType + 继承/接口查询方法 |
+| `TypeCheck/TypeChecker.cs` | Pass 1 编排：接收 SymbolTable，绑定函数体，输出 SemanticModel |
 | `TypeCheck/TypeChecker.Stmts.cs` | 语句绑定（`BindStmt/Block` 返回 BoundStmt/BoundBlock）|
 | `TypeCheck/TypeChecker.Exprs.cs` | 表达式绑定（`BindExpr` 返回携带 Z42Type 的 BoundExpr）|
 | `TypeCheck/SemanticModel.cs` | TypeChecker 输出：`BoundBodies: Dictionary<FunctionDecl, BoundBlock>` |

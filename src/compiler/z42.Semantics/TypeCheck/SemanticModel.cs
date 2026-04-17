@@ -51,15 +51,15 @@ public sealed class SemanticModel
     public IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> BoundBaseCtorArgs { get; }
 
     internal SemanticModel(
-        Dictionary<string, Z42ClassType>     classes,
-        Dictionary<string, Z42FuncType>      funcs,
-        Dictionary<string, Z42InterfaceType> interfaces,
-        Dictionary<string, long>             enumConstants,
-        HashSet<string>                      enumTypes,
-        Dictionary<FunctionDecl, BoundBlock> boundBodies,
-        Dictionary<Param,        BoundExpr>  boundDefaults,
-        Dictionary<FieldDecl,    BoundExpr>  boundStaticInits,
-        Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs)
+        IReadOnlyDictionary<string, Z42ClassType>     classes,
+        IReadOnlyDictionary<string, Z42FuncType>      funcs,
+        IReadOnlyDictionary<string, Z42InterfaceType> interfaces,
+        IReadOnlyDictionary<string, long>             enumConstants,
+        IReadOnlySet<string>                          enumTypes,
+        IReadOnlyDictionary<FunctionDecl, BoundBlock> boundBodies,
+        IReadOnlyDictionary<Param,        BoundExpr>  boundDefaults,
+        IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundStaticInits,
+        IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs)
     {
         Classes           = classes;
         Funcs             = funcs;

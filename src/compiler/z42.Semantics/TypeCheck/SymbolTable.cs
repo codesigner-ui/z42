@@ -1,3 +1,5 @@
+using Z42.Syntax.Parser;
+
 namespace Z42.Semantics.TypeCheck;
 
 /// <summary>
@@ -43,6 +45,43 @@ public sealed class SymbolTable
         SealedClasses = sealedClasses;
         VirtualMethods = virtualMethods;
     }
+
+    /// Resolve a TypeExpr to a Z42Type using the frozen symbol table.
+    public Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
+    {
+        VoidType      => Z42Type.Void,
+        OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
+        ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
+        NamedType  nt => nt.Name switch
+        {
+            "int"    or "i32" => Z42Type.Int,
+            "long"   or "i64" => Z42Type.Long,
+            "float"  or "f32" => Z42Type.Float,
+            "double" or "f64" => Z42Type.Double,
+            "bool"            => Z42Type.Bool,
+            "string"          => Z42Type.String,
+            "char"            => Z42Type.Char,
+            "object"          => Z42Type.Object,
+            "void"            => Z42Type.Void,
+            "var"             => Z42Type.Unknown,
+            "i8"              => Z42Type.I8,
+            "i16"             => Z42Type.I16,
+            "u8"              => Z42Type.U8,
+            "u16"             => Z42Type.U16,
+            "u32"             => Z42Type.U32,
+            "u64"             => Z42Type.U64,
+            "sbyte"           => Z42Type.I8,
+            "short"           => Z42Type.I16,
+            "byte"            => Z42Type.U8,
+            "ushort"          => Z42Type.U16,
+            "uint"            => Z42Type.U32,
+            "ulong"           => Z42Type.U64,
+            _                 => Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
+                               : Interfaces.TryGetValue(nt.Name, out var it) ? it
+                               : new Z42PrimType(nt.Name),
+        },
+        _ => Z42Type.Unknown
+    };
 
     /// Query: is <paramref name="derived"/> a subclass of <paramref name="baseClass"/>?
     public bool IsSubclassOf(string derived, string baseClass)

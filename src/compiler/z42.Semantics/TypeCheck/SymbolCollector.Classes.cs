@@ -1,26 +1,18 @@
-using Z42.Core.Text;
 using Z42.Core.Diagnostics;
 using Z42.IR;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
 
-public sealed partial class TypeChecker
+internal sealed partial class SymbolCollector
 {
-    // ── Implicit Object base ─────────────────────────────────────────────────
-
     /// True if the class should NOT implicitly inherit from Object.
     private static bool ExcludeFromImplicitObject(ClassDecl cls) =>
         cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name);
 
-    // ── Pass 0c: class shapes ─────────────────────────────────────────────────
-
     private void CollectClasses(CompilationUnit cu)
     {
-        // Pre-register Object's virtual methods and class shape so that:
-        //   (a) override validation works for classes implicitly inheriting Object
-        //   (b) inherited Object methods (ToString/Equals/GetHashCode) are visible on all classes
-        // Skip if the compilation unit itself defines Object (e.g. z42.core/Object.z42).
+        // Pre-register Object's virtual methods and class shape
         bool cuDefinesObject = cu.Classes.Any(c => WellKnownNames.IsObjectClass(c.Name));
         _virtualMethods["Object"] = ["ToString", "Equals", "GetHashCode"];
         if (!cuDefinesObject)
@@ -41,12 +33,9 @@ public sealed partial class TypeChecker
                 null);
         }
 
-        // Pre-pass: register every class name as an empty stub so that
-        // self-referential field types (e.g. `Node next;` inside class Node)
-        // resolve to a proper Z42ClassType instead of Z42PrimType.
+        // Pre-pass: register every class name as an empty stub
         foreach (var cls in cu.Classes)
         {
-            // Implicit Object inheritance: class without explicit base (except struct/record/Object)
             var effectiveBase = cls.BaseClass
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
 
@@ -63,10 +52,9 @@ public sealed partial class TypeChecker
                     effectiveBase);
         }
 
-        // First pass: collect own fields and methods, separated by IsStatic
+        // First pass: collect own fields and methods
         foreach (var cls in cu.Classes)
         {
-            // struct cannot inherit from a base class or implement interfaces
             if (cls.IsStruct && cls.BaseClass != null)
                 _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"struct `{cls.Name}` cannot inherit from a base class", cls.Span);
@@ -85,15 +73,13 @@ public sealed partial class TypeChecker
                 if (f.IsStatic) staticFields[f.Name] = ft;
                 else            fields[f.Name]        = ft;
             }
-            // Pre-count per (name, isStatic) to detect overloads.
             var methodNameCount = cls.Methods
                 .GroupBy(m => (m.Name, m.IsStatic))
                 .ToDictionary(g => g.Key, g => g.Count());
             foreach (var m in cls.Methods)
             {
                 var retType = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
-                var sig     = BuildFuncType(m.Params, retType);
-                // Use "$N" suffix for overloaded names so all overloads are retained.
+                var sig     = BuildFuncSignature(m.Params, retType);
                 bool isOverloaded = methodNameCount[(m.Name, m.IsStatic)] > 1;
                 string regName = isOverloaded ? $"{m.Name}${m.Params.Count}" : m.Name;
                 if (m.IsStatic) staticMethods[regName] = sig;
@@ -113,33 +99,25 @@ public sealed partial class TypeChecker
             if (cls.IsAbstract) _abstractClasses.Add(cls.Name);
             if (cls.IsSealed)   _sealedClasses.Add(cls.Name);
             _abstractMethods[cls.Name] = cls.Methods
-                .Where(m => m.IsAbstract)
-                .Select(m => m.Name)
-                .ToHashSet();
+                .Where(m => m.IsAbstract).Select(m => m.Name).ToHashSet();
             _virtualMethods[cls.Name] = cls.Methods
-                .Where(m => m.IsVirtual || m.IsAbstract)
-                .Select(m => m.Name)
-                .ToHashSet();
+                .Where(m => m.IsVirtual || m.IsAbstract).Select(m => m.Name).ToHashSet();
         }
 
-        // Second pass: merge inherited fields/methods from base class (single inheritance)
+        // Second pass: merge inherited fields/methods
         foreach (var cls in cu.Classes)
         {
             var effectiveBase3 = cls.BaseClass
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
             if (effectiveBase3 == null) continue;
 
-            // sealed-class inheritance check
             if (_sealedClasses.Contains(effectiveBase3))
                 _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"cannot inherit from sealed class `{effectiveBase3}`", cls.Span);
 
-            // override validation: each IsOverride method must exist as virtual/abstract
-            // in an ancestor class or in an implemented interface.
             foreach (var m in cls.Methods.Where(m => m.IsOverride))
             {
                 bool found = false;
-                // Check base class chain
                 var  cur   = effectiveBase3;
                 while (cur != null)
                 {
@@ -147,7 +125,6 @@ public sealed partial class TypeChecker
                     { found = true; break; }
                     cur = _classes.TryGetValue(cur, out var ct) ? ct.BaseClassName : null;
                 }
-                // Check implemented interfaces
                 if (!found && _classInterfaces.TryGetValue(cls.Name, out var ifaces))
                 {
                     foreach (var iface in ifaces)
@@ -161,26 +138,21 @@ public sealed partial class TypeChecker
                         $"`{cls.Name}.{m.Name}`: no matching virtual or abstract method in base class", m.Span);
             }
 
-            // Object is a stdlib-only class — skip field/method merging for implicit base
             if (!_classes.TryGetValue(effectiveBase3, out var baseType)) continue;
             var derived = _classes[cls.Name];
-
-            // Derived overrides base: start with base, then overlay derived own members
             var mergedFields  = new Dictionary<string, Z42Type>(baseType.Fields);
             var mergedMethods = new Dictionary<string, Z42FuncType>(baseType.Methods);
             foreach (var kv in derived.Fields)  mergedFields[kv.Key]  = kv.Value;
             foreach (var kv in derived.Methods) mergedMethods[kv.Key] = kv.Value;
-
             _classes[cls.Name] = derived with { Fields = mergedFields, Methods = mergedMethods };
 
-            // Propagate abstract methods: derived inherits unimplemented abstract methods
             var baseAbstract = _abstractMethods.GetValueOrDefault(effectiveBase3, []);
             var ownMethods   = cls.Methods.Select(m => m.Name).ToHashSet();
             var remaining    = baseAbstract.Except(ownMethods).ToHashSet();
             _abstractMethods[cls.Name] = [.._abstractMethods.GetValueOrDefault(cls.Name, []), ..remaining];
         }
 
-        // Third pass: concrete classes must implement all inherited abstract methods
+        // Third pass: concrete classes must implement all abstract methods
         foreach (var cls in cu.Classes)
         {
             if (cls.IsAbstract) continue;
@@ -190,7 +162,7 @@ public sealed partial class TypeChecker
                     cls.Span);
         }
 
-        // Fourth pass: verify interface implementation completeness.
+        // Fourth pass: verify interface implementation completeness
         foreach (var cls in cu.Classes)
         {
             if (cls.IsAbstract) continue;

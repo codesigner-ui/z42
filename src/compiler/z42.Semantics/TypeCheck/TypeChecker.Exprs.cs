@@ -110,7 +110,7 @@ public sealed partial class TypeChecker
             case IsPatternExpr ipe:
             {
                 var target   = BindExpr(ipe.Target, env);
-                var bindType = _classes.TryGetValue(ipe.TypeName, out var ct)
+                var bindType = _symbols.Classes.TryGetValue(ipe.TypeName, out var ct)
                     ? (Z42Type)ct : Z42Type.Unknown;
                 env.Define(ipe.Binding, bindType);
                 return new BoundIsPattern(target, ipe.TypeName, ipe.Binding, bindType, ipe.Span);
@@ -128,7 +128,7 @@ public sealed partial class TypeChecker
                 var args    = newExpr.Args.Select(a => BindExpr(a, env)).ToList();
                 var newType = ResolveType(newExpr.Type);
                 if (newExpr.Type is NamedType { Name: var newName }
-                    && _abstractClasses.Contains(newName))
+                    && _symbols.AbstractClasses.Contains(newName))
                     _diags.Error(DiagnosticCodes.TypeMismatch,
                         $"cannot instantiate abstract class `{newName}`", newExpr.Span);
                 var qualName = newExpr.Type is NamedType nt ? nt.Name : newType.ToString()!;
@@ -185,9 +185,9 @@ public sealed partial class TypeChecker
     {
         var t = env.LookupVar(id.Name) ?? env.LookupFunc(id.Name);
         if (t != null) return new BoundIdent(id.Name, t, id.Span);
-        if (_enumTypes.Contains(id.Name))    return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
-        if (_classes.ContainsKey(id.Name))   return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
-        if (_interfaces.ContainsKey(id.Name)) return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
+        if (_symbols.EnumTypes.Contains(id.Name))    return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
+        if (_symbols.Classes.ContainsKey(id.Name))   return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
+        if (_symbols.Interfaces.ContainsKey(id.Name)) return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
         _diags.UndefinedSymbol(id.Name, id.Span);
         return new BoundError($"undefined `{id.Name}`", Z42Type.Error, id.Span);
     }
@@ -354,7 +354,7 @@ public sealed partial class TypeChecker
     {
         // ── User-defined static class method: ClassName.Method(args) ──────────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
-            && _classes.TryGetValue(clsName, out var staticCt))
+            && _symbols.Classes.TryGetValue(clsName, out var staticCt))
         {
             var arityKey  = $"{staticMember}${call.Args.Count}";
             var staticSig = staticCt.StaticMethods.TryGetValue(staticMember, out var s1) ? s1
@@ -373,8 +373,8 @@ public sealed partial class TypeChecker
         {
             // Unknown target: stdlib/external class (e.g. Console, Assert, Math)
             if (mCallee.Target is IdentExpr { Name: var tgtName }
-                && !_classes.ContainsKey(tgtName) && !_interfaces.ContainsKey(tgtName)
-                && !_enumTypes.Contains(tgtName)
+                && !_symbols.Classes.ContainsKey(tgtName) && !_symbols.Interfaces.ContainsKey(tgtName)
+                && !_symbols.EnumTypes.Contains(tgtName)
                 && env.LookupVar(tgtName) == null && env.LookupFunc(tgtName) == null)
             {
                 var recv = new BoundIdent(tgtName, Z42Type.Unknown, mCallee.Target.Span);
@@ -403,7 +403,7 @@ public sealed partial class TypeChecker
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
                     CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, mt.Params);
-                    bool isVirtual = _virtualMethods.TryGetValue(ct.Name, out var vmSet)
+                    bool isVirtual = _symbols.VirtualMethods.TryGetValue(ct.Name, out var vmSet)
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
                         isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,
@@ -441,7 +441,7 @@ public sealed partial class TypeChecker
         // Bare name inside current class's static methods
         if (call.Callee is IdentExpr { Name: var bareCallName }
             && _currentClass != null
-            && _classes.TryGetValue(_currentClass, out var curCt)
+            && _symbols.Classes.TryGetValue(_currentClass, out var curCt)
             && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSig))
         {
             CheckArgCount(freeArgs.Count, bareSig.MinArgCount, bareSig.Params.Count, call.Span);
