@@ -17,7 +17,7 @@ namespace Z42.Semantics.Codegen;
 /// </summary>
 internal sealed partial class FunctionEmitter
 {
-    private readonly IrGen _gen;
+    private readonly IEmitterContext _ctx;
 
     // Per-function state — initialized by entry point methods, never carried across functions.
     private int _nextReg;
@@ -33,7 +33,7 @@ internal sealed partial class FunctionEmitter
     private bool _blockEnded;
     private string? _currentClassName;
 
-    internal FunctionEmitter(IrGen gen) => _gen = gen;
+    internal FunctionEmitter(IEmitterContext ctx) => _ctx = ctx;
 
     // ── Entry points ─────────────────────────────────────────────────────────
 
@@ -47,7 +47,7 @@ internal sealed partial class FunctionEmitter
         // `this` is always IrType.Ref: all z42 classes are heap-allocated reference types.
         // If value-type classes (structs on stack) are introduced, this must use the actual class IR type.
         if (!isStatic) _locals["this"] = new TypedReg(0, IrType.Ref);
-        _instanceFields = isStatic ? [] : _gen.GetClassInstanceFieldNames(className);
+        _instanceFields = isStatic ? [] : _ctx.GetClassInstanceFieldNames(className);
 
         StartBlock("entry");
         for (int i = 0; i < method.Params.Count; i++)
@@ -56,8 +56,9 @@ internal sealed partial class FunctionEmitter
         // Emit base constructor call at the start of derived constructors
         bool isCtor = !isStatic && method.Name == className;
         if (isCtor && method.BaseCtorArgs is { }
-            && _gen._classBaseNames.TryGetValue(_gen.QualifyName(className), out var baseQual)
-            && _gen._semanticModel!.BoundBaseCtorArgs.TryGetValue(method, out var boundBaseArgs))
+            && _ctx.ClassRegistry.TryGetBaseClassName(_ctx.QualifyName(className), out var baseQual)
+            && baseQual is not null
+            && _ctx.SemanticModel.BoundBaseCtorArgs.TryGetValue(method, out var boundBaseArgs))
         {
             var baseSimpleName = baseQual.Contains('.')
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
@@ -92,7 +93,7 @@ internal sealed partial class FunctionEmitter
 
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
-        return new IrFunction(_gen.QualifyName(fn.Name), fn.Params.Count, retType,
+        return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
             "Interp", _blocks, excTable, MaxReg: _nextReg);
     }
 
@@ -110,11 +111,11 @@ internal sealed partial class FunctionEmitter
         {
             foreach (var field in cls.Fields.Where(f => f.IsStatic))
             {
-                string key = $"{_gen.QualifyName(cls.Name)}.{field.Name}";
+                string key = $"{_ctx.QualifyName(cls.Name)}.{field.Name}";
                 TypedReg valReg;
                 if (field.Initializer != null)
                 {
-                    valReg = EmitExpr(_gen._semanticModel!.BoundStaticInits[field]);
+                    valReg = EmitExpr(_ctx.SemanticModel.BoundStaticInits[field]);
                 }
                 else
                 {
@@ -146,7 +147,7 @@ internal sealed partial class FunctionEmitter
         }
 
         EndBlock(new RetTerm(null));
-        string initName = _gen.QualifyName("__static_init__");
+        string initName = _ctx.QualifyName("__static_init__");
         return new IrFunction(initName, 0, "void", "Interp", _blocks, MaxReg: _nextReg);
     }
 
@@ -259,7 +260,7 @@ internal sealed partial class FunctionEmitter
             var clsDeps = new HashSet<string>();
             foreach (var field in cls.Fields.Where(f => f.IsStatic))
             {
-                if (_gen._semanticModel!.BoundStaticInits.TryGetValue(field, out var initExpr))
+                if (_ctx.SemanticModel.BoundStaticInits.TryGetValue(field, out var initExpr))
                     CollectClassRefs(initExpr, classNames, cls.Name, clsDeps);
             }
             deps[cls.Name] = clsDeps;

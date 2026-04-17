@@ -18,10 +18,10 @@ internal sealed partial class FunctionEmitter
         {
             case BoundCallKind.Static:
             {
-                var qualClass = _gen.QualifyName(call.ReceiverClass!);
+                var qualClass = _ctx.QualifyName(call.ReceiverClass!);
                 var arityKey  = $"{call.MethodName}${argRegs.Count}";
                 string resolved = call.MethodName!;
-                if (_gen._classStaticMethods.TryGetValue(qualClass, out var sSet))
+                if (_ctx.ClassRegistry.TryGetStaticMethods(qualClass, out var sSet))
                     resolved = sSet.Contains(call.MethodName!) ? call.MethodName!
                              : sSet.Contains(arityKey)         ? arityKey : call.MethodName!;
                 var callName = $"{qualClass}.{resolved}";
@@ -35,7 +35,7 @@ internal sealed partial class FunctionEmitter
             case BoundCallKind.Virtual:
             {
                 var objReg   = EmitExpr(call.Receiver!);
-                var vcallKey = _gen.FindVcallParamsKey(call.MethodName!, argRegs.Count);
+                var vcallKey = _ctx.FindVcallParamsKey(call.MethodName!, argRegs.Count);
                 if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
                 var dst = Alloc(ToIrType(call.Type));
                 Emit(new VCallInstr(dst, objReg, call.MethodName!, argRegs));
@@ -45,13 +45,13 @@ internal sealed partial class FunctionEmitter
             case BoundCallKind.Free:
             {
                 string callName;
-                if (_gen._topLevelFunctionNames.Contains(call.CalleeName!))
-                    callName = _gen.QualifyName(call.CalleeName!);
+                if (_ctx.TopLevelFunctionNames.Contains(call.CalleeName!))
+                    callName = _ctx.QualifyName(call.CalleeName!);
                 else if (_currentClassName is not null
-                    && _gen._classStaticMethods.TryGetValue(
-                        _gen.QualifyName(_currentClassName), out var cSet)
+                    && _ctx.ClassRegistry.TryGetStaticMethods(
+                        _ctx.QualifyName(_currentClassName), out var cSet)
                     && cSet.Contains(call.CalleeName!))
-                    callName = $"{_gen.QualifyName(_currentClassName)}.{call.CalleeName!}";
+                    callName = $"{_ctx.QualifyName(_currentClassName)}.{call.CalleeName!}";
                 else
                     callName = call.CalleeName!;
                 argRegs = FillDefaults(callName, argRegs);
@@ -101,11 +101,11 @@ internal sealed partial class FunctionEmitter
 
         // Stdlib static: Console.X, Assert.X, Math.X, etc.
         if (receiverName != null && methodName != null
-            && _gen._stdlibIndex.TryGetStatic(receiverName, methodName, out var stdStaticEntry))
+            && _ctx.StdlibIndex.TryGetStatic(receiverName, methodName, out var stdStaticEntry))
         {
             if (receiverName == "Console" && argRegs.Count != 1)
                 argRegs = [EmitConcat(argRegs)];
-            _gen._usedStdlibNamespaces.Add(stdStaticEntry.Namespace);
+            _ctx.TrackStdlibNamespace(stdStaticEntry.Namespace);
             var dst = Alloc(ToIrType(call.Type));
             Emit(new CallInstr(dst, stdStaticEntry.QualifiedName, argRegs));
             return dst;
@@ -142,12 +142,12 @@ internal sealed partial class FunctionEmitter
 
         // Stdlib instance: str.Substring, str.ToLower, etc.
         if (methodName != null
-            && _gen._stdlibIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
+            && _ctx.StdlibIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
         {
             var receiverReg = call.Receiver != null ? EmitExpr(call.Receiver) : Alloc(IrType.Unknown);
             var fullArgRegs = new List<TypedReg> { receiverReg };
             fullArgRegs.AddRange(argRegs);
-            _gen._usedStdlibNamespaces.Add(stdInstEntry.Namespace);
+            _ctx.TrackStdlibNamespace(stdInstEntry.Namespace);
             var dst = Alloc(ToIrType(call.Type));
             Emit(new CallInstr(dst, stdInstEntry.QualifiedName, fullArgRegs));
             return dst;
@@ -157,7 +157,7 @@ internal sealed partial class FunctionEmitter
         if (call.Receiver != null && methodName != null)
         {
             var receiverReg  = EmitExpr(call.Receiver);
-            var vcallKey     = _gen.FindVcallParamsKey(methodName, argRegs.Count);
+            var vcallKey     = _ctx.FindVcallParamsKey(methodName, argRegs.Count);
             if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
             var dst = Alloc(ToIrType(call.Type));
             Emit(new VCallInstr(dst, receiverReg, methodName, argRegs));
@@ -171,10 +171,10 @@ internal sealed partial class FunctionEmitter
     /// Fill omitted trailing args with their default value expressions.
     private List<TypedReg> FillDefaults(string qualifiedName, List<TypedReg> argRegs)
     {
-        if (!_gen._funcParams.TryGetValue(qualifiedName, out var parms)) return argRegs;
+        if (!_ctx.FuncParams.TryGetValue(qualifiedName, out var parms)) return argRegs;
         if (argRegs.Count >= parms.Count) return argRegs;
         var filled   = new List<TypedReg>(argRegs);
-        var defaults = _gen._semanticModel!.BoundDefaults;
+        var defaults = _ctx.SemanticModel.BoundDefaults;
         for (int i = argRegs.Count; i < parms.Count; i++)
         {
             if (!defaults.TryGetValue(parms[i], out var boundDefault))
@@ -192,7 +192,7 @@ internal sealed partial class FunctionEmitter
         if (interp.Parts.Count == 0)
         {
             var dst = Alloc(IrType.Str);
-            Emit(new ConstStrInstr(dst, _gen.Intern("")));
+            Emit(new ConstStrInstr(dst, _ctx.Intern("")));
             return dst;
         }
         var partRegs = interp.Parts.Select(EmitBoundPart).ToList();
@@ -209,7 +209,7 @@ internal sealed partial class FunctionEmitter
     private TypedReg EmitBoundTextPart(BoundTextPart tp)
     {
         var dst = Alloc(IrType.Str);
-        Emit(new ConstStrInstr(dst, _gen.Intern(tp.Text)));
+        Emit(new ConstStrInstr(dst, _ctx.Intern(tp.Text)));
         return dst;
     }
 

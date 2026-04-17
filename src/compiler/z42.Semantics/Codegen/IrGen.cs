@@ -14,30 +14,45 @@ namespace Z42.Semantics.Codegen;
 /// is now populated from <see cref="SemanticModel"/> rather than re-traversing
 /// the AST.  Per-function emission is delegated to <see cref="FunctionEmitter"/>.
 /// </summary>
-public sealed class IrGen
+public sealed class IrGen : IEmitterContext
 {
-    internal readonly StdlibCallIndex _stdlibIndex;
+    private readonly StdlibCallIndex _stdlibIndex;
     internal readonly LanguageFeatures _features;
-    internal readonly SemanticModel? _semanticModel;
+    private SemanticModel? _semanticModel;
 
     // Stdlib namespaces used by this compilation unit (populated during codegen).
-    internal readonly HashSet<string> _usedStdlibNamespaces = new();
+    private readonly HashSet<string> _usedStdlibNamespaces = new();
 
     /// The set of stdlib namespaces that were actually called during this compilation.
     public IReadOnlySet<string> UsedStdlibNamespaces => _usedStdlibNamespaces;
 
-    internal readonly List<string> _strings = new();
-    internal string? _namespace;
+    private readonly List<string> _strings = new();
+    private readonly Dictionary<string, int> _stringIndex = new(StringComparer.Ordinal);
+    private string? _namespace;
 
     // ── Derived from SemanticModel ───────────────────────────────────────────
-    internal Dictionary<string, HashSet<string>> _classMethods = new();
-    internal Dictionary<string, HashSet<string>> _classStaticMethods = new();
-    internal Dictionary<string, HashSet<string>> _classInstanceFields = new();
-    internal Dictionary<string, string> _classBaseNames = new();
-    internal HashSet<string> _topLevelFunctionNames = new();
-    internal readonly Dictionary<string, long> _enumConstants = new();
+    private readonly ClassRegistry _classRegistry = new();
+    private HashSet<string> _topLevelFunctionNames = new();
+    private readonly Dictionary<string, long> _enumConstants = new();
     // Param lists still come from AST (needed for FillDefaults BoundExpr lookup).
-    internal Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
+    private Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
+
+    // ── IEmitterContext explicit implementation ──────────────────────────────
+    ClassRegistry IEmitterContext.ClassRegistry => _classRegistry;
+    SemanticModel IEmitterContext.SemanticModel => _semanticModel!;
+    HashSet<string> IEmitterContext.TopLevelFunctionNames => _topLevelFunctionNames;
+    IReadOnlyDictionary<string, long> IEmitterContext.EnumConstants => _enumConstants;
+    IReadOnlyDictionary<string, IReadOnlyList<Param>> IEmitterContext.FuncParams => _funcParams;
+    StdlibCallIndex IEmitterContext.StdlibIndex => _stdlibIndex;
+    void IEmitterContext.TrackStdlibNamespace(string ns) => _usedStdlibNamespaces.Add(ns);
+    string IEmitterContext.QualifyName(string name) => QualifyName(name);
+    int IEmitterContext.Intern(string s) => Intern(s);
+    HashSet<string> IEmitterContext.GetClassInstanceFieldNames(string className) =>
+        GetClassInstanceFieldNames(className);
+    string? IEmitterContext.FindVcallParamsKey(string methodName, int suppliedArgCount) =>
+        FindVcallParamsKey(methodName, suppliedArgCount);
+    string? IEmitterContext.TryGetStaticFieldKey(string className, string fieldName) =>
+        TryGetStaticFieldKey(className, fieldName);
 
     // ── Constructor ────────────────────────────────────────────────────────────
 
@@ -67,11 +82,8 @@ public sealed class IrGen
         foreach (var (shortName, ct) in _semanticModel.Classes)
         {
             var qualName = QualifyName(shortName);
-            _classMethods[qualName]       = ct.Methods.Keys.ToHashSet();
-            _classStaticMethods[qualName] = ct.StaticMethods.Keys.ToHashSet();
-            _classInstanceFields[qualName] = ct.Fields.Keys.ToHashSet();
-            if (ct.BaseClassName is not null)
-                _classBaseNames[qualName] = QualifyName(ct.BaseClassName);
+            var qualBase = ct.BaseClassName is not null ? QualifyName(ct.BaseClassName) : null;
+            _classRegistry.Register(qualName, ct, qualBase);
         }
 
         _topLevelFunctionNames = _semanticModel.Funcs.Keys.ToHashSet();
@@ -124,8 +136,8 @@ public sealed class IrGen
         // Overload detection via SemanticModel method keys (already $N suffixed).
         string arityKey = $"{method.Name}${method.Params.Count}";
         bool overloaded = method.IsStatic
-            ? _classStaticMethods.TryGetValue(qualClass, out var sSet) && sSet.Contains(arityKey)
-            : _classMethods.TryGetValue(qualClass, out var mSet) && mSet.Contains(arityKey);
+            ? _classRegistry.TryGetStaticMethods(qualClass, out var sSet) && sSet.Contains(arityKey)
+            : _classRegistry.TryGetMethods(qualClass, out var mSet) && mSet.Contains(arityKey);
         string methodIrName = overloaded
             ? $"{qualClass}.{arityKey}"
             : $"{qualClass}.{method.Name}";
@@ -202,38 +214,20 @@ public sealed class IrGen
 
     internal int Intern(string s)
     {
-        int idx = _strings.IndexOf(s);
-        if (idx >= 0) return idx;
+        if (_stringIndex.TryGetValue(s, out int idx)) return idx;
+        idx = _strings.Count;
         _strings.Add(s);
-        return _strings.Count - 1;
+        _stringIndex[s] = idx;
+        return idx;
     }
 
     /// Returns instance field names for a class, including all inherited fields.
-    internal HashSet<string> GetClassInstanceFieldNames(string className)
-    {
-        var result = new HashSet<string>();
-        var current = QualifyName(className);
-        while (current is not null)
-        {
-            if (_classInstanceFields.TryGetValue(current, out var fields))
-                result.UnionWith(fields);
-            _classBaseNames.TryGetValue(current, out current!);
-        }
-        return result;
-    }
+    internal HashSet<string> GetClassInstanceFieldNames(string className) =>
+        _classRegistry.GetAllInstanceFields(QualifyName(className));
 
     /// Finds the _funcParams key for a virtual call default expansion.
-    internal string? FindVcallParamsKey(string methodName, int suppliedArgCount)
-    {
-        foreach (var (cls, methods) in _classMethods)
-        {
-            if (!methods.Contains(methodName)) continue;
-            string key = $"{cls}.{methodName}";
-            if (_funcParams.TryGetValue(key, out var parms) && parms.Count > suppliedArgCount)
-                return key;
-        }
-        return null;
-    }
+    internal string? FindVcallParamsKey(string methodName, int suppliedArgCount) =>
+        _classRegistry.FindVcallParamsKey(methodName, suppliedArgCount, _funcParams);
 
     /// Returns the qualified static field key if className has a static field named fieldName.
     internal string? TryGetStaticFieldKey(string className, string fieldName)

@@ -17,7 +17,7 @@ internal sealed partial class FunctionEmitter
             case BoundLitStr s:
             {
                 var dst = Alloc(IrType.Str);
-                Emit(new ConstStrInstr(dst, _gen.Intern(s.Value)));
+                Emit(new ConstStrInstr(dst, _ctx.Intern(s.Value)));
                 return dst;
             }
             case BoundLitInt n:
@@ -102,7 +102,7 @@ internal sealed partial class FunctionEmitter
             {
                 var objReg  = EmitExpr(ipe.Target);
                 var boolReg = Alloc(IrType.Bool);
-                var qualName = _gen.QualifyName(ipe.TypeName);
+                var qualName = _ctx.QualifyName(ipe.TypeName);
                 Emit(new IsInstanceInstr(boolReg, objReg, qualName));
                 var castReg = Alloc(IrType.Ref);
                 Emit(new AsCastInstr(castReg, objReg, qualName));
@@ -166,7 +166,7 @@ internal sealed partial class FunctionEmitter
     {
         // Enum constant: BoundIdent with unknown type + name in enum constants
         if (m.Target is BoundIdent enumId
-            && _gen._enumConstants.TryGetValue($"{enumId.Name}.{m.MemberName}", out long enumVal))
+            && _ctx.EnumConstants.TryGetValue($"{enumId.Name}.{m.MemberName}", out long enumVal))
         {
             var dst = Alloc(IrType.I64);
             Emit(new ConstI64Instr(dst, enumVal));
@@ -175,7 +175,7 @@ internal sealed partial class FunctionEmitter
 
         // Static field: BoundIdent with unknown type + class name in static fields
         if (m.Target is BoundIdent sfId
-            && _gen.TryGetStaticFieldKey(sfId.Name, m.MemberName) is { } sfKey)
+            && _ctx.TryGetStaticFieldKey(sfId.Name, m.MemberName) is { } sfKey)
         {
             var dst = Alloc(ToIrType(m.Type));
             Emit(new StaticGetInstr(dst, sfKey));
@@ -214,7 +214,7 @@ internal sealed partial class FunctionEmitter
         {
             // Static field assignment via BoundIdent target
             if (fm.Target is BoundIdent { Name: var aClsName }
-                && _gen.TryGetStaticFieldKey(aClsName, fm.MemberName) is { } sfKey)
+                && _ctx.TryGetStaticFieldKey(aClsName, fm.MemberName) is { } sfKey)
             {
                 Emit(new StaticSetInstr(sfKey, valReg));
             }
@@ -237,7 +237,7 @@ internal sealed partial class FunctionEmitter
         // Static field prefix ++ / --
         if (u.Op is UnaryOp.PrefixInc or UnaryOp.PrefixDec
             && u.Operand is BoundMember { Target: BoundIdent { Name: var ucn }, MemberName: var ufn }
-            && _gen.TryGetStaticFieldKey(ucn, ufn) is { } uSfKey)
+            && _ctx.TryGetStaticFieldKey(ucn, ufn) is { } uSfKey)
         {
             var oldReg = Alloc(ToIrType(u.Type)); Emit(new StaticGetInstr(oldReg, uSfKey));
             var one    = Alloc(ToIrType(u.Type)); Emit(new ConstI64Instr(one, 1));
@@ -277,7 +277,7 @@ internal sealed partial class FunctionEmitter
     {
         // Static field postfix ++ / --
         if (post.Operand is BoundMember { Target: BoundIdent { Name: var pcn }, MemberName: var pfn }
-            && _gen.TryGetStaticFieldKey(pcn, pfn) is { } pSfKey)
+            && _ctx.TryGetStaticFieldKey(pcn, pfn) is { } pSfKey)
         {
             var oldReg = Alloc(ToIrType(post.Type)); Emit(new StaticGetInstr(oldReg, pSfKey));
             var one    = Alloc(ToIrType(post.Type)); Emit(new ConstI64Instr(one, 1));
@@ -419,7 +419,7 @@ internal sealed partial class FunctionEmitter
         if (bin.Op is BinaryOp.Is or BinaryOp.As)
         {
             var objReg   = EmitExpr(bin.Left);
-            var qualName = bin.Right is BoundIdent ti ? _gen.QualifyName(ti.Name) : "__unknown";
+            var qualName = bin.Right is BoundIdent ti ? _ctx.QualifyName(ti.Name) : "__unknown";
             var dst      = Alloc(bin.Op == BinaryOp.Is ? IrType.Bool : IrType.Ref);
             Emit(bin.Op == BinaryOp.Is
                 ? new IsInstanceInstr(dst, objReg, qualName)
@@ -461,10 +461,10 @@ internal sealed partial class FunctionEmitter
             default:
             {
                 var argRegs = n.Args.Select(EmitExpr).ToList();
-                string ctorKey = $"{_gen.QualifyName(n.QualName)}.{n.QualName}";
+                string ctorKey = $"{_ctx.QualifyName(n.QualName)}.{n.QualName}";
                 argRegs = FillDefaults(ctorKey, argRegs);
                 var dst = Alloc(IrType.Ref);
-                Emit(new ObjNewInstr(dst, _gen.QualifyName(n.QualName), argRegs));
+                Emit(new ObjNewInstr(dst, _ctx.QualifyName(n.QualName), argRegs));
                 return dst;
             }
         }
