@@ -1,114 +1,125 @@
+using Z42.Core.Features;
+
 namespace Z42.Syntax.Lexer;
 
 /// Static token metadata — no combinator dependency.
 /// Contains everything that is purely declarative: keyword maps, symbol tables,
 /// type-keyword sets, display names, and numeric suffix characters.
 ///
-/// To add a new keyword : add one entry to Keywords (+ TokenKind.cs).
+/// To add a new keyword : add one entry to KeywordDefs (+ TokenKind.cs).
 /// To add a new symbol  : add one entry to SymbolRules (longer variants first).
 /// For combinator-based rules (numbers, strings) see LexRules.cs.
 internal static class TokenDefs
 {
+    // ── Keyword definitions (single source of truth) ─────────────────────────
+    // Each keyword is annotated with its language phase.
+    // Phase1 = available in current compiler; Phase2 = reserved for future use.
+
+    internal sealed record KeywordDef(string Text, TokenKind Kind, LanguagePhase Phase);
+
+    internal static readonly IReadOnlyList<KeywordDef> KeywordDefs =
+    [
+        // Control flow (Phase 1)
+        new("return",   TokenKind.Return,   LanguagePhase.Phase1),
+        new("if",       TokenKind.If,       LanguagePhase.Phase1),
+        new("else",     TokenKind.Else,     LanguagePhase.Phase1),
+        new("while",    TokenKind.While,    LanguagePhase.Phase1),
+        new("for",      TokenKind.For,      LanguagePhase.Phase1),
+        new("foreach",  TokenKind.Foreach,  LanguagePhase.Phase1),
+        new("in",       TokenKind.In,       LanguagePhase.Phase1),
+        new("do",       TokenKind.Do,       LanguagePhase.Phase1),
+        new("break",    TokenKind.Break,    LanguagePhase.Phase1),
+        new("continue", TokenKind.Continue, LanguagePhase.Phase1),
+        new("switch",   TokenKind.Switch,   LanguagePhase.Phase1),
+        new("case",     TokenKind.Case,     LanguagePhase.Phase1),
+        new("default",  TokenKind.Default,  LanguagePhase.Phase1),
+
+        // Exceptions (Phase 1)
+        new("try",     TokenKind.Try,     LanguagePhase.Phase1),
+        new("catch",   TokenKind.Catch,   LanguagePhase.Phase1),
+        new("finally", TokenKind.Finally, LanguagePhase.Phase1),
+        new("throw",   TokenKind.Throw,   LanguagePhase.Phase1),
+
+        // Declarations (Phase 1)
+        new("namespace", TokenKind.Namespace, LanguagePhase.Phase1),
+        new("using",     TokenKind.Using,     LanguagePhase.Phase1),
+        new("var",       TokenKind.Var,       LanguagePhase.Phase1),
+        new("static",    TokenKind.Static,    LanguagePhase.Phase1),
+        new("public",    TokenKind.Public,    LanguagePhase.Phase1),
+        new("private",   TokenKind.Private,   LanguagePhase.Phase1),
+        new("protected", TokenKind.Protected, LanguagePhase.Phase1),
+        new("internal",  TokenKind.Internal,  LanguagePhase.Phase1),
+        new("class",     TokenKind.Class,     LanguagePhase.Phase1),
+        new("struct",    TokenKind.Struct,    LanguagePhase.Phase1),
+        new("enum",      TokenKind.Enum,      LanguagePhase.Phase1),
+        new("interface", TokenKind.Interface, LanguagePhase.Phase1),
+        new("record",    TokenKind.Record,    LanguagePhase.Phase1),
+        new("abstract",  TokenKind.Abstract,  LanguagePhase.Phase1),
+        new("extern",    TokenKind.Extern,    LanguagePhase.Phase1),
+        new("sealed",    TokenKind.Sealed,    LanguagePhase.Phase1),
+        new("override",  TokenKind.Override,  LanguagePhase.Phase1),
+        new("virtual",   TokenKind.Virtual,   LanguagePhase.Phase1),
+        new("new",       TokenKind.New,       LanguagePhase.Phase1),
+        new("async",     TokenKind.Async,     LanguagePhase.Phase1),
+        new("await",     TokenKind.Await,     LanguagePhase.Phase1),
+
+        // Type tests / conversions (Phase 1)
+        new("typeof", TokenKind.Typeof, LanguagePhase.Phase1),
+        new("is",     TokenKind.Is,     LanguagePhase.Phase1),
+        new("as",     TokenKind.As,     LanguagePhase.Phase1),
+
+        // Literals (Phase 1)
+        new("null",  TokenKind.Null,  LanguagePhase.Phase1),
+        new("true",  TokenKind.True,  LanguagePhase.Phase1),
+        new("false", TokenKind.False, LanguagePhase.Phase1),
+
+        // C# type names (Phase 1)
+        new("string", TokenKind.String, LanguagePhase.Phase1),
+        new("int",    TokenKind.Int,    LanguagePhase.Phase1),
+        new("long",   TokenKind.Long,   LanguagePhase.Phase1),
+        new("short",  TokenKind.Short,  LanguagePhase.Phase1),
+        new("double", TokenKind.Double, LanguagePhase.Phase1),
+        new("float",  TokenKind.Float,  LanguagePhase.Phase1),
+        new("byte",   TokenKind.Byte,   LanguagePhase.Phase1),
+        new("uint",   TokenKind.Uint,   LanguagePhase.Phase1),
+        new("ulong",  TokenKind.Ulong,  LanguagePhase.Phase1),
+        new("ushort", TokenKind.Ushort, LanguagePhase.Phase1),
+        new("sbyte",  TokenKind.Sbyte,  LanguagePhase.Phase1),
+        new("object", TokenKind.Object, LanguagePhase.Phase1),
+        new("bool",   TokenKind.Bool,   LanguagePhase.Phase1),
+        new("char",   TokenKind.Char,   LanguagePhase.Phase1),
+        new("void",   TokenKind.Void,   LanguagePhase.Phase1),
+
+        // Explicit-size aliases (Phase 1)
+        new("i8",  TokenKind.I8,  LanguagePhase.Phase1),
+        new("i16", TokenKind.I16, LanguagePhase.Phase1),
+        new("i32", TokenKind.I32, LanguagePhase.Phase1),
+        new("i64", TokenKind.I64, LanguagePhase.Phase1),
+        new("u8",  TokenKind.U8,  LanguagePhase.Phase1),
+        new("u16", TokenKind.U16, LanguagePhase.Phase1),
+        new("u32", TokenKind.U32, LanguagePhase.Phase1),
+        new("u64", TokenKind.U64, LanguagePhase.Phase1),
+        new("f32", TokenKind.F32, LanguagePhase.Phase1),
+        new("f64", TokenKind.F64, LanguagePhase.Phase1),
+
+        // z42-native keywords (reserved — Phase 2)
+        new("fn",     TokenKind.Fn,     LanguagePhase.Phase2),
+        new("let",    TokenKind.Let,    LanguagePhase.Phase2),
+        new("mut",    TokenKind.Mut,    LanguagePhase.Phase2),
+        new("trait",  TokenKind.Trait,  LanguagePhase.Phase2),
+        new("impl",   TokenKind.Impl,   LanguagePhase.Phase2),
+        new("use",    TokenKind.Use,    LanguagePhase.Phase2),
+        new("module", TokenKind.Module, LanguagePhase.Phase2),
+        new("spawn",  TokenKind.Spawn,  LanguagePhase.Phase2),
+        new("none",   TokenKind.None,   LanguagePhase.Phase2),
+    ];
+
     // ── Keywords ──────────────────────────────────────────────────────────────
-    // keyword text → TokenKind (used by Lexer.LexIdentOrKeyword)
+    // Derived lookup: keyword text → TokenKind (used by Lexer.LexIdentOrKeyword).
+    // Includes ALL phases — reserved keywords are always lexed as keywords, never identifiers.
 
     internal static readonly IReadOnlyDictionary<string, TokenKind> Keywords =
-        new Dictionary<string, TokenKind>
-    {
-        // Control flow
-        ["return"]   = TokenKind.Return,
-        ["if"]       = TokenKind.If,
-        ["else"]     = TokenKind.Else,
-        ["while"]    = TokenKind.While,
-        ["for"]      = TokenKind.For,
-        ["foreach"]  = TokenKind.Foreach,
-        ["in"]       = TokenKind.In,
-        ["do"]       = TokenKind.Do,
-        ["break"]    = TokenKind.Break,
-        ["continue"] = TokenKind.Continue,
-        ["switch"]   = TokenKind.Switch,
-        ["case"]     = TokenKind.Case,
-        ["default"]  = TokenKind.Default,
-
-        // Exceptions
-        ["try"]     = TokenKind.Try,
-        ["catch"]   = TokenKind.Catch,
-        ["finally"] = TokenKind.Finally,
-        ["throw"]   = TokenKind.Throw,
-
-        // Declarations
-        ["namespace"] = TokenKind.Namespace,
-        ["using"]     = TokenKind.Using,
-        ["var"]       = TokenKind.Var,
-        ["static"]    = TokenKind.Static,
-        ["public"]    = TokenKind.Public,
-        ["private"]   = TokenKind.Private,
-        ["protected"] = TokenKind.Protected,
-        ["internal"]  = TokenKind.Internal,
-        ["class"]     = TokenKind.Class,
-        ["struct"]    = TokenKind.Struct,
-        ["enum"]      = TokenKind.Enum,
-        ["interface"] = TokenKind.Interface,
-        ["record"]    = TokenKind.Record,
-        ["abstract"]  = TokenKind.Abstract,
-        ["extern"]    = TokenKind.Extern,
-        ["sealed"]    = TokenKind.Sealed,
-        ["override"]  = TokenKind.Override,
-        ["virtual"]   = TokenKind.Virtual,
-        ["new"]       = TokenKind.New,
-        ["async"]     = TokenKind.Async,
-        ["await"]     = TokenKind.Await,
-
-        // Type tests / conversions
-        ["typeof"] = TokenKind.Typeof,
-        ["is"]     = TokenKind.Is,
-        ["as"]     = TokenKind.As,
-
-        // Literals
-        ["null"]  = TokenKind.Null,
-        ["true"]  = TokenKind.True,
-        ["false"] = TokenKind.False,
-
-        // C# type names
-        ["string"] = TokenKind.String,
-        ["int"]    = TokenKind.Int,
-        ["long"]   = TokenKind.Long,
-        ["short"]  = TokenKind.Short,
-        ["double"] = TokenKind.Double,
-        ["float"]  = TokenKind.Float,
-        ["byte"]   = TokenKind.Byte,
-        ["uint"]   = TokenKind.Uint,
-        ["ulong"]  = TokenKind.Ulong,
-        ["ushort"] = TokenKind.Ushort,
-        ["sbyte"]  = TokenKind.Sbyte,
-        ["object"] = TokenKind.Object,
-        ["bool"]   = TokenKind.Bool,
-        ["char"]   = TokenKind.Char,
-        ["void"]   = TokenKind.Void,
-
-        // Explicit-size aliases
-        ["i8"]  = TokenKind.I8,
-        ["i16"] = TokenKind.I16,
-        ["i32"] = TokenKind.I32,
-        ["i64"] = TokenKind.I64,
-        ["u8"]  = TokenKind.U8,
-        ["u16"] = TokenKind.U16,
-        ["u32"] = TokenKind.U32,
-        ["u64"] = TokenKind.U64,
-        ["f32"] = TokenKind.F32,
-        ["f64"] = TokenKind.F64,
-
-        // Legacy z42 keywords (reserved for Phase 2)
-        ["fn"]     = TokenKind.Fn,
-        ["let"]    = TokenKind.Let,
-        ["mut"]    = TokenKind.Mut,
-        ["trait"]  = TokenKind.Trait,
-        ["impl"]   = TokenKind.Impl,
-        ["use"]    = TokenKind.Use,
-        ["module"] = TokenKind.Module,
-        ["spawn"]  = TokenKind.Spawn,
-        ["none"]   = TokenKind.None,
-    };
+        KeywordDefs.ToDictionary(d => d.Text, d => d.Kind);
 
     // ── Type keywords ─────────────────────────────────────────────────────────
     // Which TokenKinds are valid as the start of a type expression (used by TypeParser)

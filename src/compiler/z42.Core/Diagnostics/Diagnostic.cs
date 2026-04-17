@@ -59,13 +59,18 @@ public static class DiagnosticCodes
     public const string FeatureDisabled      = "E0301";
 
     // Type checker
-    public const string UndefinedSymbol      = "E0401";
-    public const string TypeMismatch         = "E0402";
-    public const string MissingReturn        = "E0403";
-    public const string AccessViolation      = "E0404";  // private member accessed from outside class
-    public const string InvalidModifier      = "E0405";  // illegal modifier (e.g. combined, or on enum member)
-    public const string IntLiteralOutOfRange = "E0406";  // integer literal exceeds target type's range
+    public const string UndefinedSymbol       = "E0401";
+    public const string TypeMismatch          = "E0402";  // genuine type incompatibility (assignment, operator, condition, arity)
+    public const string MissingReturn         = "E0403";
+    public const string AccessViolation       = "E0404";  // private member accessed from outside class
+    public const string InvalidModifier       = "E0405";  // illegal modifier (e.g. combined, or on enum member)
+    public const string IntLiteralOutOfRange  = "E0406";  // integer literal exceeds target type's range
     public const string UninitializedVariable = "E0407";  // variable used before assignment
+    public const string DuplicateDeclaration  = "E0408";  // duplicate function, class, variable, or parameter name
+    public const string VoidAssignment        = "E0409";  // cannot assign void to variable
+    public const string InvalidBreakContinue  = "E0410";  // break/continue outside of loop
+    public const string InvalidInheritance    = "E0411";  // sealed class, struct base, missing abstract impl, override without virtual
+    public const string InterfaceMismatch     = "E0412";  // interface method missing or wrong signature
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

@@ -1,1 +1,1 @@
-*source.z42*: error E0402: *cannot inherit from sealed class `Base`*
+*source.z42*: error E0411: *cannot inherit from sealed class `Base`*

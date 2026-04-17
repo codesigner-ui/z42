@@ -110,12 +110,12 @@ public sealed partial class TypeChecker
 
             case BreakStmt bk:
                 if (_loopDepth == 0)
-                    _diags.Error(DiagnosticCodes.TypeMismatch, "`break` outside of loop", bk.Span);
+                    _diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", bk.Span);
                 return new BoundBreak(bk.Span);
 
             case ContinueStmt ck:
                 if (_loopDepth == 0)
-                    _diags.Error(DiagnosticCodes.TypeMismatch, "`continue` outside of loop", ck.Span);
+                    _diags.Error(DiagnosticCodes.InvalidBreakContinue, "`continue` outside of loop", ck.Span);
                 return new BoundContinue(ck.Span);
 
             case SwitchStmt sw:
@@ -172,7 +172,7 @@ public sealed partial class TypeChecker
     private BoundVarDecl BindVarDecl(VarDeclStmt v, TypeEnv env)
     {
         if (env.DefinedInCurrentScope(v.Name))
-            _diags.Error(DiagnosticCodes.TypeMismatch,
+            _diags.Error(DiagnosticCodes.DuplicateDeclaration,
                 $"variable `{v.Name}` is already declared in this scope", v.Span);
 
         Z42Type varType;
@@ -204,7 +204,7 @@ public sealed partial class TypeChecker
             varType   = initBound.Type;
             if (varType is Z42VoidType)
             {
-                _diags.Error(DiagnosticCodes.TypeMismatch, "cannot assign void to variable", v.Span);
+                _diags.Error(DiagnosticCodes.VoidAssignment, "cannot assign void to variable", v.Span);
                 varType = Z42Type.Error;
             }
         }

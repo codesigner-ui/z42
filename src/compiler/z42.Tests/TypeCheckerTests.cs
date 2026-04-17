@@ -318,7 +318,7 @@ public sealed class TypeCheckerTests
     {
         var diags = Check("void Noop() {} void Main() { var x = Noop(); }");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.VoidAssignment);
     }
 
     // ── Duplicate declarations ────────────────────────────────────────────────
@@ -328,7 +328,7 @@ public sealed class TypeCheckerTests
     {
         var diags = CheckStmts("var x = 1; var x = 2;");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.DuplicateDeclaration);
     }
 
     [Fact]
@@ -344,7 +344,7 @@ public sealed class TypeCheckerTests
     {
         var diags = Check("class Foo {} class Foo {} void Main() {}");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.DuplicateDeclaration);
     }
 
     [Fact]
@@ -352,7 +352,7 @@ public sealed class TypeCheckerTests
     {
         var diags = Check("void Foo() {} void Foo() {}");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.DuplicateDeclaration);
     }
 
     [Fact]
@@ -360,7 +360,7 @@ public sealed class TypeCheckerTests
     {
         var diags = Check("int Add(int x, int x) { return x; }");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.DuplicateDeclaration);
     }
 
     // ── Interface implementation ──────────────────────────────────────────────
@@ -373,7 +373,7 @@ public sealed class TypeCheckerTests
             "class Bar : IFoo {}" +
             "void Main() {}");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.InterfaceMismatch);
     }
 
     [Fact]
@@ -394,7 +394,7 @@ public sealed class TypeCheckerTests
             "class Bar : IFoo { string Value() { return \"x\"; } }" +
             "void Main() {}");
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.TypeMismatch);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.InterfaceMismatch);
     }
 
     // ── Function call argument types ──────────────────────────────────────────

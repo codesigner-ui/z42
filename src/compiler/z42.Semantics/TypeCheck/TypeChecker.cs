@@ -124,7 +124,7 @@ public sealed partial class TypeChecker
         foreach (var fn in cu.Functions)
         {
             if (_funcs.ContainsKey(fn.Name))
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
                     $"duplicate function declaration `{fn.Name}`", fn.Span);
             _funcs[fn.Name] = BuildFuncType(fn.Params, ResolveType(fn.ReturnType));
         }
@@ -218,7 +218,7 @@ public sealed partial class TypeChecker
         var seen = new HashSet<string>();
         foreach (var p in parms)
             if (!seen.Add(p.Name))
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
                     $"duplicate parameter name `{p.Name}`", p.Span);
     }
 
@@ -387,7 +387,7 @@ public sealed partial class TypeChecker
             {
                 // Non-default parameter after a defaulted one — error
                 _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"non-default parameter `{p.Name}` follows a default parameter", p.Span);
+                    $"non-default parameter `{p.Name}` follows a default parameter (parameter ordering)", p.Span);
             }
         }
 

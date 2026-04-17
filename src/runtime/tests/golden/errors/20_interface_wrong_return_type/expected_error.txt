@@ -1,1 +1,1 @@
-*source.z42*: error E0402: *class `Counter` method `Get` return type `string` does not match interface `IValue` return type `int`*
+*source.z42*: error E0412: *class `Counter` method `Get` return type `string` does not match interface `IValue` return type `int`*

@@ -51,7 +51,7 @@ public sealed partial class TypeChecker
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
 
             if (_classes.ContainsKey(cls.Name))
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
                     $"duplicate class declaration `{cls.Name}`", cls.Span);
             else
                 _classes[cls.Name] = new Z42ClassType(
@@ -68,10 +68,10 @@ public sealed partial class TypeChecker
         {
             // struct cannot inherit from a base class or implement interfaces
             if (cls.IsStruct && cls.BaseClass != null)
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"struct `{cls.Name}` cannot inherit from a base class", cls.Span);
             if (cls.IsStruct && cls.Interfaces.Count > 0)
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"struct `{cls.Name}` cannot implement interfaces", cls.Span);
 
             var fields        = new Dictionary<string, Z42Type>();
@@ -131,7 +131,7 @@ public sealed partial class TypeChecker
 
             // sealed-class inheritance check
             if (_sealedClasses.Contains(effectiveBase3))
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"cannot inherit from sealed class `{effectiveBase3}`", cls.Span);
 
             // override validation: each IsOverride method must exist as virtual/abstract
@@ -157,7 +157,7 @@ public sealed partial class TypeChecker
                     }
                 }
                 if (!found)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                    _diags.Error(DiagnosticCodes.InvalidInheritance,
                         $"`{cls.Name}.{m.Name}`: no matching virtual or abstract method in base class", m.Span);
             }
 
@@ -185,7 +185,7 @@ public sealed partial class TypeChecker
         {
             if (cls.IsAbstract) continue;
             if (_abstractMethods.TryGetValue(cls.Name, out var unimpl) && unimpl.Count > 0)
-                _diags.Error(DiagnosticCodes.TypeMismatch,
+                _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"class `{cls.Name}` must implement abstract method(s): {string.Join(", ", unimpl.Select(m => $"`{m}`"))}",
                     cls.Span);
         }
@@ -203,16 +203,16 @@ public sealed partial class TypeChecker
                 foreach (var (methodName, ifaceSig) in iface.Methods)
                 {
                     if (!classType.Methods.TryGetValue(methodName, out var implSig))
-                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
                             $"class `{cls.Name}` does not implement interface method `{ifaceName}.{methodName}`",
                             cls.Span);
                     else if (implSig.Params.Count != ifaceSig.Params.Count)
-                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
                             $"class `{cls.Name}` method `{methodName}` has wrong parameter count for interface `{ifaceName}` " +
                             $"(expected {ifaceSig.Params.Count}, got {implSig.Params.Count})",
                             cls.Span);
                     else if (!Z42Type.IsAssignableTo(ifaceSig.Ret, implSig.Ret))
-                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
                             $"class `{cls.Name}` method `{methodName}` return type `{implSig.Ret}` does not match interface `{ifaceName}` return type `{ifaceSig.Ret}`",
                             cls.Span);
                 }

@@ -1,1 +1,1 @@
-*source.z42*: error E0402: *`Dog.Speak`: no matching virtual or abstract method in base class*
+*source.z42*: error E0411: *`Dog.Speak`: no matching virtual or abstract method in base class*

@@ -90,8 +90,8 @@ public static class DiagnosticCatalog
         [DiagnosticCodes.TypeMismatch] = new(
             "Type mismatch",
             "A value of an incompatible type was used where a different type is required. " +
-            "This code also covers: arity mismatches in calls, non-bool conditions, " +
-            "void assigned to a variable, break/continue outside a loop, and duplicate declarations.",
+            "This covers: assignment type incompatibility, operator type mismatches, " +
+            "non-bool conditions, arity mismatches in calls, and return type mismatches.",
             "int x = \"hello\";  // cannot assign string to int"),
 
         [DiagnosticCodes.MissingReturn] = new(
@@ -125,6 +125,34 @@ public static class DiagnosticCatalog
             "Either assign a value before the read or provide an initializer in the declaration.",
             "int x;\n" +
             "int y = x + 1;  // error: x may be used before being assigned"),
+
+        [DiagnosticCodes.DuplicateDeclaration] = new(
+            "Duplicate declaration",
+            "A function, class, variable, or parameter with the same name is already declared in the current scope.",
+            "int x = 1;\nint x = 2;  // duplicate variable 'x'"),
+
+        [DiagnosticCodes.VoidAssignment] = new(
+            "Void assigned to variable",
+            "A void-returning expression was used as an initializer for a variable. " +
+            "Void values cannot be stored in variables.",
+            "void Greet() { }\nvar x = Greet();  // cannot assign void to variable"),
+
+        [DiagnosticCodes.InvalidBreakContinue] = new(
+            "Break/continue outside of loop",
+            "A `break` or `continue` statement was used outside of a loop body (while, for, foreach, do-while).",
+            "void Main() { break; }  // break outside of loop"),
+
+        [DiagnosticCodes.InvalidInheritance] = new(
+            "Invalid inheritance",
+            "A class or struct violates inheritance rules: inheriting from a sealed class, " +
+            "struct with a base class, override without matching virtual/abstract, or missing abstract implementations.",
+            "sealed class Base {}\nclass Derived : Base {}  // cannot inherit from sealed class"),
+
+        [DiagnosticCodes.InterfaceMismatch] = new(
+            "Interface implementation mismatch",
+            "A class declares that it implements an interface but is missing one or more required methods, " +
+            "or a method has a different signature than the interface declaration.",
+            "interface IFoo { void Bar(); }\nclass Foo : IFoo {}  // Foo does not implement Bar()"),
 
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 

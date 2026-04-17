@@ -35,13 +35,25 @@
       "Skill(next-phase)",
       "Skill(next-phase:*)",
       "Bash(sed -n '465,480p' /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGenExprs.cs)",
-      "Bash(sed -n '615,625p' /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGenExprs.cs)"
+      "Bash(sed -n '615,625p' /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGenExprs.cs)",
+      "Bash(./scripts/test-vm.sh jit:*)",
+      "Bash(git stash:*)",
+      "Bash(wc -l src/runtime/tests/golden/run/*/source.z42)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver.dll src/runtime/tests/golden/run/59_multi_interface/source.z42 --emit zbc -o /dev/null)",
+      "Bash(sed -i '' 's/状态：🟡 进行中/状态：🟢 已完成/' /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/refactor-package-compiler-batch2/tasks.md)",
+      "Bash(sed -i '' 's/- \\\\[ \\\\] 2\\\\./- [x] 2./' /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/refactor-package-compiler-batch2/tasks.md)",
+      "Bash(sed -i '' 's/- \\\\[ \\\\] 3\\\\./- [x] 3./' /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/refactor-package-compiler-batch2/tasks.md)",
+      "Bash(sed -i '' 's/- \\\\[ \\\\] 4\\\\./- [x] 4./' /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/refactor-package-compiler-batch2/tasks.md)",
+      "Bash(wc -l /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGen*.cs)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver src/runtime/tests/golden/errors/21_multi_error/source.z42 --emit zasm)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.io/src",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/01_hello",
-      "/private/tmp"
+      "/private/tmp",
+      "/tmp"
     ]
   }
 }

@@ -84,6 +84,7 @@ public static class PipelineCore
         {
             var gen = new IrGen(stdlibIndex, feats, sem);
             var ir  = gen.Generate(cu);
+            ir = new IrPassManager().RunAll(ir);
             return new(ir, diags, gen.UsedStdlibNamespaces, cu.Namespace, cu.Usings);
         }
         catch (Exception ex)

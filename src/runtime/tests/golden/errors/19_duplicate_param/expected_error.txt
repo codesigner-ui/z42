@@ -1,1 +1,1 @@
-*source.z42*: error E0402: *duplicate parameter name `x`*
+*source.z42*: error E0408: *duplicate parameter name `x`*

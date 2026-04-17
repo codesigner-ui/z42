@@ -98,7 +98,12 @@ internal sealed partial class FunctionEmitter
         _currentClassName = null;
         StartBlock("entry");
 
-        foreach (var cls in cu.Classes)
+        // Topologically sort classes by static field initialization dependencies.
+        // If class A's static initializer references class B's static field,
+        // B must be initialized before A.
+        var sortedClasses = TopologicalSortStaticInits(cu);
+
+        foreach (var cls in sortedClasses)
         {
             foreach (var field in cls.Fields.Where(f => f.IsStatic))
             {
@@ -228,4 +233,102 @@ internal sealed partial class FunctionEmitter
         VoidType => IrType.Void,
         _ => IrType.Unknown,
     };
+
+    // ── Static init topological sort ─────────────────────────────────────────
+
+    /// Sort classes by static field initialization dependencies.
+    /// If class A's static initializer references class B, B appears before A.
+    /// Falls back to declaration order if no dependencies exist.
+    private IReadOnlyList<ClassDecl> TopologicalSortStaticInits(CompilationUnit cu)
+    {
+        var classesWithStatic = cu.Classes
+            .Where(c => c.Fields.Any(f => f.IsStatic))
+            .ToList();
+
+        if (classesWithStatic.Count <= 1) return classesWithStatic;
+
+        var classNames = new HashSet<string>(classesWithStatic.Select(c => c.Name));
+
+        // Build dependency graph: className → set of classes it depends on
+        var deps = new Dictionary<string, HashSet<string>>();
+        foreach (var cls in classesWithStatic)
+        {
+            var clsDeps = new HashSet<string>();
+            foreach (var field in cls.Fields.Where(f => f.IsStatic))
+            {
+                if (_gen._semanticModel!.BoundStaticInits.TryGetValue(field, out var initExpr))
+                    CollectClassRefs(initExpr, classNames, cls.Name, clsDeps);
+            }
+            deps[cls.Name] = clsDeps;
+        }
+
+        // Kahn's algorithm for topological sort
+        var inDegree = classesWithStatic.ToDictionary(c => c.Name, _ => 0);
+        foreach (var (cls, clsDeps) in deps)
+            foreach (var dep in clsDeps)
+                if (inDegree.ContainsKey(dep))
+                    inDegree[cls]++;
+
+        var queue = new Queue<string>(inDegree.Where(kv => kv.Value == 0).Select(kv => kv.Key));
+        var sorted = new List<ClassDecl>();
+        var byName = classesWithStatic.ToDictionary(c => c.Name);
+
+        while (queue.Count > 0)
+        {
+            var name = queue.Dequeue();
+            sorted.Add(byName[name]);
+            // For each class that depends on `name`, reduce in-degree
+            foreach (var (cls, clsDeps) in deps)
+            {
+                if (clsDeps.Contains(name))
+                {
+                    inDegree[cls]--;
+                    if (inDegree[cls] == 0)
+                        queue.Enqueue(cls);
+                }
+            }
+        }
+
+        // If cycle detected, fall back to declaration order (cycle is a user bug,
+        // but we don't want to crash the compiler — the runtime will handle it)
+        return sorted.Count == classesWithStatic.Count ? sorted : classesWithStatic;
+    }
+
+    /// Recursively scan a BoundExpr for references to other classes' static members.
+    private static void CollectClassRefs(
+        BoundExpr expr, HashSet<string> classNames, string self, HashSet<string> refs)
+    {
+        switch (expr)
+        {
+            case BoundMember m:
+                // member access: if target resolves to a class with static fields, record dep
+                if (m.Target is BoundIdent id && classNames.Contains(id.Name) && id.Name != self)
+                    refs.Add(id.Name);
+                CollectClassRefs(m.Target, classNames, self, refs);
+                break;
+            case BoundCall c:
+                if (c.Receiver != null) CollectClassRefs(c.Receiver, classNames, self, refs);
+                foreach (var a in c.Args) CollectClassRefs(a, classNames, self, refs);
+                break;
+            case BoundBinary b:
+                CollectClassRefs(b.Left, classNames, self, refs);
+                CollectClassRefs(b.Right, classNames, self, refs);
+                break;
+            case BoundUnary u:
+                CollectClassRefs(u.Operand, classNames, self, refs);
+                break;
+            case BoundConditional cond:
+                CollectClassRefs(cond.Cond, classNames, self, refs);
+                CollectClassRefs(cond.Then, classNames, self, refs);
+                CollectClassRefs(cond.Else, classNames, self, refs);
+                break;
+            case BoundCast cast:
+                CollectClassRefs(cast.Operand, classNames, self, refs);
+                break;
+            case BoundInterpolatedStr interp:
+                foreach (var part in interp.Parts)
+                    if (part is BoundExprPart ep) CollectClassRefs(ep.Inner, classNames, self, refs);
+                break;
+        }
+    }
 }

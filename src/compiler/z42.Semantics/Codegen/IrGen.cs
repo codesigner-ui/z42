@@ -109,7 +109,9 @@ public sealed class IrGen
             functions.AddRange(cls.Methods.Where(m => !m.IsAbstract)
                 .Select(m => EmitMethod(cls.Name, m)));
         functions.AddRange(cu.Functions.Select(EmitFunction));
-        return new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
+        var module = new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
+        IrVerifier.VerifyOrThrow(module);
+        return module;
     }
 
     // ── Per-function delegation ──────────────────────────────────────────────

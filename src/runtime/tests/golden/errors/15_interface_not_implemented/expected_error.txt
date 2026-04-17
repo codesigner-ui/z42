@@ -1,1 +1,1 @@
-*source.z42*: error E0402: *class `Circle` does not implement interface method `IShape.Name`*
+*source.z42*: error E0412: *class `Circle` does not implement interface method `IShape.Name`*

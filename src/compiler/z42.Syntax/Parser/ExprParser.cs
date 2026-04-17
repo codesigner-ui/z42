@@ -12,6 +12,26 @@ namespace Z42.Syntax.Parser;
 /// NudFn / LedFn receive the cursor explicitly (no mutable ParserContext).
 internal static class ExprParser
 {
+    // ── Binding-power constants ──────────────────────────────────────────────
+    // Single source of truth for operator precedence.
+    // Values are spaced to leave room for future operators between levels.
+
+    private const int BpAssign      = 10;  // = += -= *= /= %= &= |= ^= (right-assoc)
+    private const int BpTernary     = 20;  // ? : / ?? / ?.
+    private const int BpLogicalOr   = 30;  // ||
+    private const int BpLogicalAnd  = 40;  // &&
+    private const int BpBitwiseOr   = 44;  // |
+    private const int BpBitwiseXor  = 46;  // ^
+    private const int BpBitwiseAnd  = 48;  // &
+    private const int BpEquality    = 50;  // == !=
+    private const int BpRelational  = 60;  // < <= > >= is as
+    private const int BpShift       = 65;  // << >>
+    private const int BpAdditive    = 70;  // + -
+    private const int BpMultiply    = 80;  // * / %
+    private const int BpSwitch      = 85;  // switch expr (postfix)
+    private const int BpUnary       = 85;  // prefix + - ! ~ await ++ --
+    private const int BpPostfix     = 90;  // postfix ++ -- call . []
+
     // ── Delegate types ────────────────────────────────────────────────────────
 
     /// Prefix / atom handler: triggering token already consumed; `cursor` is after it.
@@ -70,10 +90,10 @@ internal static class ExprParser
         Parse(cursor, feat, bp).Map(right => (Expr)new BinaryExpr(op, left, right, left.Span));
 
     private static readonly LedFn Assign = (cursor, left, tok, feat) =>
-        Parse(cursor, feat, 9).Map(right => (Expr)new AssignExpr(left, right, left.Span));
+        Parse(cursor, feat, BpAssign - 1).Map(right => (Expr)new AssignExpr(left, right, left.Span));
 
     private static LedFn CompoundAssign(string binOp) => (cursor, left, tok, feat) =>
-        Parse(cursor, feat, 9).Map(right =>
+        Parse(cursor, feat, BpAssign - 1).Map(right =>
             (Expr)new AssignExpr(left, new BinaryExpr(binOp, left, right, left.Span), left.Span));
 
     private static LedFn Postfix(string op) => (cursor, left, tok, feat) =>
@@ -130,7 +150,7 @@ internal static class ExprParser
     };
 
     private static readonly LedFn NullCoalesce = (cursor, left, tok, feat) =>
-        Parse(cursor, feat, 19).Map(right => (Expr)new NullCoalesceExpr(left, right, tok.Span));
+        Parse(cursor, feat, BpTernary - 1).Map(right => (Expr)new NullCoalesceExpr(left, right, tok.Span));
 
     private static readonly LedFn IsLed = (cursor, left, tok, feat) =>
     {
@@ -167,10 +187,10 @@ internal static class ExprParser
             }
             else
             {
-                pattern = Parse(cursor, feat, 11).Unwrap(ref cursor);
+                pattern = Parse(cursor, feat, BpAssign + 1).Unwrap(ref cursor);
             }
             Expect(ref cursor, TokenKind.FatArrow);
-            var body = Parse(cursor, feat, 11).Unwrap(ref cursor);
+            var body = Parse(cursor, feat, BpAssign + 1).Unwrap(ref cursor);
             arms.Add(new SwitchArm(pattern, body, aSpan));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
@@ -203,14 +223,14 @@ internal static class ExprParser
         [TokenKind.Bool]       = new((c, t, _) => Ok(new IdentExpr("bool",     t.Span), c)),
         [TokenKind.Char]       = new((c, t, _) => Ok(new IdentExpr("char",     t.Span), c)),
 
-        // Prefix unary (bp=85 so postfix at 90 binds tighter)
-        [TokenKind.Plus]       = new(PrefixUnary("+",      85)),
-        [TokenKind.Minus]      = new(PrefixUnary("-",      85)),
-        [TokenKind.Bang]       = new(PrefixUnary("!",      85)),
-        [TokenKind.Tilde]      = new(PrefixUnary("~",      85), "bitwise"),
-        [TokenKind.Await]      = new(PrefixUnary("await",  85)),
-        [TokenKind.PlusPlus]   = new(PrefixUnary("++",     85)),
-        [TokenKind.MinusMinus] = new(PrefixUnary("--",     85)),
+        // Prefix unary (BpUnary so postfix at BpPostfix binds tighter)
+        [TokenKind.Plus]       = new(PrefixUnary("+",      BpUnary)),
+        [TokenKind.Minus]      = new(PrefixUnary("-",      BpUnary)),
+        [TokenKind.Bang]       = new(PrefixUnary("!",      BpUnary)),
+        [TokenKind.Tilde]      = new(PrefixUnary("~",      BpUnary), "bitwise"),
+        [TokenKind.Await]      = new(PrefixUnary("await",  BpUnary)),
+        [TokenKind.PlusPlus]   = new(PrefixUnary("++",     BpUnary)),
+        [TokenKind.MinusMinus] = new(PrefixUnary("--",     BpUnary)),
 
         // Complex atoms
         [TokenKind.New]    = new(ParseNew),
@@ -222,66 +242,66 @@ internal static class ExprParser
 
     private static readonly Dictionary<TokenKind, LedEntry> s_ledTable = new()
     {
-        // Assignment (right-assoc: right parsed at bp=9)
-        [TokenKind.Eq]        = new(10, Assign),
-        [TokenKind.PlusEq]    = new(10, CompoundAssign("+")),
-        [TokenKind.MinusEq]   = new(10, CompoundAssign("-")),
-        [TokenKind.StarEq]    = new(10, CompoundAssign("*")),
-        [TokenKind.SlashEq]   = new(10, CompoundAssign("/")),
-        [TokenKind.PercentEq] = new(10, CompoundAssign("%")),
-        [TokenKind.AmpEq]     = new(10, CompoundAssign("&"), "bitwise"),
-        [TokenKind.PipeEq]    = new(10, CompoundAssign("|"), "bitwise"),
-        [TokenKind.CaretEq]   = new(10, CompoundAssign("^"), "bitwise"),
+        // Assignment (right-assoc: right parsed at BpAssign-1)
+        [TokenKind.Eq]        = new(BpAssign, Assign),
+        [TokenKind.PlusEq]    = new(BpAssign, CompoundAssign("+")),
+        [TokenKind.MinusEq]   = new(BpAssign, CompoundAssign("-")),
+        [TokenKind.StarEq]    = new(BpAssign, CompoundAssign("*")),
+        [TokenKind.SlashEq]   = new(BpAssign, CompoundAssign("/")),
+        [TokenKind.PercentEq] = new(BpAssign, CompoundAssign("%")),
+        [TokenKind.AmpEq]     = new(BpAssign, CompoundAssign("&"), "bitwise"),
+        [TokenKind.PipeEq]    = new(BpAssign, CompoundAssign("|"), "bitwise"),
+        [TokenKind.CaretEq]   = new(BpAssign, CompoundAssign("^"), "bitwise"),
 
-        // Ternary / null-conditional (bp=20)
-        [TokenKind.Question]         = new(20, QuestionLed),
-        [TokenKind.QuestionQuestion] = new(20, NullCoalesce, "null_coalesce"),
+        // Ternary / null-conditional
+        [TokenKind.Question]         = new(BpTernary, QuestionLed),
+        [TokenKind.QuestionQuestion] = new(BpTernary, NullCoalesce, "null_coalesce"),
 
-        // Logical (bp=30/40)
-        [TokenKind.PipePipe] = new(30, BinaryLeft("||", 30)),
-        [TokenKind.AmpAmp]   = new(40, BinaryLeft("&&", 40)),
+        // Logical
+        [TokenKind.PipePipe] = new(BpLogicalOr,  BinaryLeft("||", BpLogicalOr)),
+        [TokenKind.AmpAmp]   = new(BpLogicalAnd, BinaryLeft("&&", BpLogicalAnd)),
 
-        // Bitwise OR/XOR/AND (bp=44/46/48)
-        [TokenKind.Pipe]      = new(44, BinaryLeft("|",  44), "bitwise"),
-        [TokenKind.Caret]     = new(46, BinaryLeft("^",  46), "bitwise"),
-        [TokenKind.Ampersand] = new(48, BinaryLeft("&",  48), "bitwise"),
+        // Bitwise OR / XOR / AND
+        [TokenKind.Pipe]      = new(BpBitwiseOr,  BinaryLeft("|",  BpBitwiseOr),  "bitwise"),
+        [TokenKind.Caret]     = new(BpBitwiseXor, BinaryLeft("^",  BpBitwiseXor), "bitwise"),
+        [TokenKind.Ampersand] = new(BpBitwiseAnd, BinaryLeft("&",  BpBitwiseAnd), "bitwise"),
 
-        // Equality (bp=50)
-        [TokenKind.EqEq]   = new(50, BinaryLeft("==", 50)),
-        [TokenKind.BangEq] = new(50, BinaryLeft("!=", 50)),
+        // Equality
+        [TokenKind.EqEq]   = new(BpEquality, BinaryLeft("==", BpEquality)),
+        [TokenKind.BangEq] = new(BpEquality, BinaryLeft("!=", BpEquality)),
 
-        // Relational / type tests (bp=60)
-        [TokenKind.Lt]   = new(60, BinaryLeft("<",  60)),
-        [TokenKind.LtEq] = new(60, BinaryLeft("<=", 60)),
-        [TokenKind.Gt]   = new(60, BinaryLeft(">",  60)),
-        [TokenKind.GtEq] = new(60, BinaryLeft(">=", 60)),
-        [TokenKind.Is]   = new(60, IsLed),
-        [TokenKind.As]   = new(60, BinaryLeft("as", 60)),
+        // Relational / type tests
+        [TokenKind.Lt]   = new(BpRelational, BinaryLeft("<",  BpRelational)),
+        [TokenKind.LtEq] = new(BpRelational, BinaryLeft("<=", BpRelational)),
+        [TokenKind.Gt]   = new(BpRelational, BinaryLeft(">",  BpRelational)),
+        [TokenKind.GtEq] = new(BpRelational, BinaryLeft(">=", BpRelational)),
+        [TokenKind.Is]   = new(BpRelational, IsLed),
+        [TokenKind.As]   = new(BpRelational, BinaryLeft("as", BpRelational)),
 
-        // Bit-shifts (bp=65, between relational and additive)
-        [TokenKind.LtLt] = new(65, BinaryLeft("<<", 65), "bitwise"),
-        [TokenKind.GtGt] = new(65, BinaryLeft(">>", 65), "bitwise"),
+        // Bit-shifts (between relational and additive)
+        [TokenKind.LtLt] = new(BpShift, BinaryLeft("<<", BpShift), "bitwise"),
+        [TokenKind.GtGt] = new(BpShift, BinaryLeft(">>", BpShift), "bitwise"),
 
-        // Additive (bp=70) — Plus/Minus also have a Nud entry
-        [TokenKind.Plus]  = new(70, BinaryLeft("+", 70)),
-        [TokenKind.Minus] = new(70, BinaryLeft("-", 70)),
+        // Additive — Plus/Minus also have a Nud entry
+        [TokenKind.Plus]  = new(BpAdditive, BinaryLeft("+", BpAdditive)),
+        [TokenKind.Minus] = new(BpAdditive, BinaryLeft("-", BpAdditive)),
 
-        // Multiplicative (bp=80)
-        [TokenKind.Star]    = new(80, BinaryLeft("*", 80)),
-        [TokenKind.Slash]   = new(80, BinaryLeft("/", 80)),
-        [TokenKind.Percent] = new(80, BinaryLeft("%", 80)),
+        // Multiplicative
+        [TokenKind.Star]    = new(BpMultiply, BinaryLeft("*", BpMultiply)),
+        [TokenKind.Slash]   = new(BpMultiply, BinaryLeft("/", BpMultiply)),
+        [TokenKind.Percent] = new(BpMultiply, BinaryLeft("%", BpMultiply)),
 
-        // Postfix ++ / -- (bp=90, tighter than unary at 85)
-        [TokenKind.PlusPlus]   = new(90, Postfix("++")),
-        [TokenKind.MinusMinus] = new(90, Postfix("--")),
+        // Postfix ++ / -- (tighter than unary)
+        [TokenKind.PlusPlus]   = new(BpPostfix, Postfix("++")),
+        [TokenKind.MinusMinus] = new(BpPostfix, Postfix("--")),
 
-        // Call / member / index (bp=90)
-        [TokenKind.LParen]   = new(90, CallLed),
-        [TokenKind.Dot]      = new(90, MemberAccessLed),
-        [TokenKind.LBracket] = new(90, IndexAccessLed),
+        // Call / member / index
+        [TokenKind.LParen]   = new(BpPostfix, CallLed),
+        [TokenKind.Dot]      = new(BpPostfix, MemberAccessLed),
+        [TokenKind.LBracket] = new(BpPostfix, IndexAccessLed),
 
-        // Switch expression (bp=85, feature-gated)
-        [TokenKind.Switch] = new(85, SwitchExprLed, "pattern_match"),
+        // Switch expression (feature-gated)
+        [TokenKind.Switch] = new(BpSwitch, SwitchExprLed, "pattern_match"),
     };
 
     // ── Nud implementations ───────────────────────────────────────────────────
@@ -374,7 +394,7 @@ internal static class ExprParser
             if (tyR.IsOk && tyR.Remainder.Current.Kind == TokenKind.RParen)
             {
                 var afterClose = tyR.Remainder.Advance();
-                var operandR   = Parse(afterClose, feat, 85);
+                var operandR   = Parse(afterClose, feat, BpUnary);
                 if (operandR.IsOk)
                     return Ok(new CastExpr(tyR.Value, operandR.Value, tok.Span),
                               operandR.Remainder);
