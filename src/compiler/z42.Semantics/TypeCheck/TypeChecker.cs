@@ -74,15 +74,29 @@ public sealed partial class TypeChecker
 
     // ── Public entry point ────────────────────────────────────────────────────
 
+    /// Readonly symbol table snapshot, available after Pass 0 completes.
+    internal SymbolTable? Symbols { get; private set; }
+
     public SemanticModel Check(CompilationUnit cu)
     {
+        // ── Pass 0: collect type shapes ─────────────────────────────────────
         CollectEnums(cu);
         CollectInterfaces(cu);
         CollectClasses(cu);
         CollectFunctions(cu);
+
+        // Snapshot collected shapes into readonly SymbolTable.
+        Symbols = new SymbolTable(
+            _classes, _funcs, _interfaces,
+            _globalEnumConstants, _enumTypes,
+            _classInterfaces, _abstractMethods,
+            _abstractClasses, _sealedClasses, _virtualMethods);
+
+        // ── Pass 1: bind bodies ─────────────────────────────────────────────
         BindStaticFieldInits(cu);
         foreach (var cls in cu.Classes)   BindClassMethods(cls);
         foreach (var fn  in cu.Functions) BindFunction(fn);
+
         return new SemanticModel(_classes, _funcs, _interfaces,
             _globalEnumConstants, _enumTypes, _boundBodies,
             _boundDefaults, _boundStaticInits, _boundBaseCtorArgs);
@@ -159,10 +173,10 @@ public sealed partial class TypeChecker
             {
                 var methodRetType = isCtor ? Z42Type.Void : ResolveType(method.ReturnType);
                 if (methodRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
-                    && !AlwaysReturns(_boundBodies[method]))
+                    && !FlowAnalyzer.AlwaysReturns(_boundBodies[method]))
                     _diags.Error(DiagnosticCodes.MissingReturn,
                         $"not all code paths return a value in `{method.Name}`", method.Span);
-                CheckDefiniteAssignment(_boundBodies[method]);
+                FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags);
             }
         }
     }
@@ -178,10 +192,10 @@ public sealed partial class TypeChecker
         _boundBodies[fn] = BindBlock(fn.Body, scope, ResolveType(fn.ReturnType));
         var fnRetType = ResolveType(fn.ReturnType);
         if (fnRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
-            && !AlwaysReturns(_boundBodies[fn]))
+            && !FlowAnalyzer.AlwaysReturns(_boundBodies[fn]))
             _diags.Error(DiagnosticCodes.MissingReturn,
                 $"not all code paths return a value in `{fn.Name}`", fn.Span);
-        CheckDefiniteAssignment(_boundBodies[fn]);
+        FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags);
     }
 
     /// Validates [Native] / extern consistency.
@@ -336,10 +350,11 @@ public sealed partial class TypeChecker
             msg ?? $"cannot assign `{source}` to `{target}`", span);
     }
 
-    /// Returns true if <paramref name="derived"/> is a subclass of <paramref name="baseClass"/>
-    /// (walks the inheritance chain).
+    /// Returns true if <paramref name="derived"/> is a subclass of <paramref name="baseClass"/>.
+    /// Delegates to SymbolTable if available, otherwise uses mutable _classes (during collection).
     private bool IsSubclassOf(string derived, string baseClass)
     {
+        if (Symbols != null) return Symbols.IsSubclassOf(derived, baseClass);
         var cur = derived;
         while (_classes.TryGetValue(cur, out var ct) && ct.BaseClassName is { } parentName)
         {
@@ -349,10 +364,11 @@ public sealed partial class TypeChecker
         return false;
     }
 
-    /// Returns true if <paramref name="className"/> (or any ancestor) declares it implements
-    /// <paramref name="interfaceName"/>.
+    /// Returns true if <paramref name="className"/> implements <paramref name="interfaceName"/>.
+    /// Delegates to SymbolTable if available, otherwise uses mutable state (during collection).
     private bool ImplementsInterface(string className, string interfaceName)
     {
+        if (Symbols != null) return Symbols.ImplementsInterface(className, interfaceName);
         var cur = className;
         while (true)
         {
