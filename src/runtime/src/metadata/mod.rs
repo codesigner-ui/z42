@@ -13,6 +13,7 @@ pub mod project;
 pub mod formats;
 pub mod zbc_reader;
 pub mod loader;
+pub mod lazy_loader;
 pub mod merge;
 
 // Re-exports: runtime value types

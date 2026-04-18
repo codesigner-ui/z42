@@ -141,11 +141,16 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;
-            let callee = module.functions.iter()
-                .find(|f| f.name == *fname)
-                .with_context(|| format!("undefined function `{fname}`"))?;
-            let ret = super::exec_function(module, callee, &arg_vals)?;
-            frame.set(*dst, ret.unwrap_or(Value::Null));
+            if let Some(callee) = module.functions.iter().find(|f| f.name == *fname) {
+                let ret = super::exec_function(module, callee, &arg_vals)?;
+                frame.set(*dst, ret.unwrap_or(Value::Null));
+            } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(fname) {
+                // Lazy-loaded dependency function (e.g. Std.IO.Console.WriteLine)
+                let ret = super::exec_function(module, lazy_fn.as_ref(), &arg_vals)?;
+                frame.set(*dst, ret.unwrap_or(Value::Null));
+            } else {
+                bail!("undefined function `{fname}`");
+            }
         }
 
         Instruction::Builtin { dst, name, args } => {
@@ -311,18 +316,27 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                 Value::Object(rc) => rc.borrow().type_desc.clone(),
                 other => bail!("VCall: expected object, got {:?}", other),
             };
+            // Compute qualified name: try vtable first; fall back to
+            // `${class}.${method}` direct composition (lazy-loaded deps may
+            // lack a populated vtable in their TypeDesc stub).
             let func_name = if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
                 type_desc.vtable[slot].1.clone()
+            } else if let Ok(f) = resolve_virtual(module, &type_desc.name, method) {
+                f.name.clone()
             } else {
-                resolve_virtual(module, &type_desc.name, method)?.name.clone()
+                format!("{}.{}", type_desc.name, method)
             };
-            let callee = module.functions.iter()
-                .find(|f| f.name == func_name)
-                .with_context(|| format!("VCall: function `{}` not found", func_name))?;
             let mut call_args = vec![obj_val];
             call_args.append(&mut extra_args);
-            let ret = super::exec_function(module, callee, &call_args)?;
-            frame.set(*dst, ret.unwrap_or(Value::Null));
+            if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
+                let ret = super::exec_function(module, callee, &call_args)?;
+                frame.set(*dst, ret.unwrap_or(Value::Null));
+            } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
+                let ret = super::exec_function(module, lazy_fn.as_ref(), &call_args)?;
+                frame.set(*dst, ret.unwrap_or(Value::Null));
+            } else {
+                bail!("VCall: function `{}` not found", func_name);
+            }
         }
 
         Instruction::IsInstance { dst, obj, class_name } => {

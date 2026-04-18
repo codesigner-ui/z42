@@ -7,19 +7,18 @@ namespace Std.Text;
 // ScriptObject with NativeData::StringBuilder("") as its backing store.
 // The internal buffer is NOT accessible as a z42 field (native-isolated).
 //
-// Note: Clear() is intentionally absent in L2.  The naming would conflict with
-// List.Clear() in the IrGen pseudo-class table; it will be added in L3 when
-// the type system can disambiguate call sites.
+// Append methods accept `object` — the type system's universal assignability to
+// object + the VM's value_to_str polymorphism means callers can pass any value.
 public class StringBuilder {
     public StringBuilder() { }
 
     // Append value and return this for chaining.
     [Native("__sb_append")]
-    public extern StringBuilder Append(string value);
+    public extern StringBuilder Append(object value);
 
     // Append value followed by a newline.
     [Native("__sb_append_line")]
-    public extern StringBuilder AppendLine(string value);
+    public extern StringBuilder AppendLine(object value);
 
     // Append only a newline.
     [Native("__sb_append_newline")]

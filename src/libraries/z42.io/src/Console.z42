@@ -1,11 +1,14 @@
 namespace Std.IO;
 
+// All methods accept `object` — the type system's universal assignability to
+// object (primitives auto-box at the VM level via value_to_str) means user code
+// can pass any type: Console.WriteLine(42), Console.Write(true), etc.
 public static class Console {
     [Native("__println")]
-    public static extern void WriteLine(string value);
+    public static extern void WriteLine(object value);
 
     [Native("__print")]
-    public static extern void Write(string value);
+    public static extern void Write(object value);
 
     [Native("__readline")]
     public static extern string ReadLine();

@@ -322,14 +322,17 @@ public static class PackageCompiler
         try   { source = File.ReadAllText(sourceFile); }
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return null; }
 
-        // Extract using declarations and load TSIG on demand.
-        var usings = ExtractUsings(source);
+        // Stdlib is always visible at compile time (no `using` needed).
+        // DEPS section records only actually-called namespaces via UsedDepNamespaces.
         ImportedSymbols? imported = null;
         if (tsigCache != null)
         {
-            var tsigModules = tsigCache.LoadForUsings(usings);
+            var tsigModules = tsigCache.LoadAll();
             if (tsigModules.Count > 0)
-                imported = ImportedSymbolLoader.Load(tsigModules, usings);
+            {
+                var allNs = tsigModules.Select(m => m.Namespace).Distinct().ToList();
+                imported = ImportedSymbolLoader.Load(tsigModules, allNs);
+            }
         }
 
         var result = PipelineCore.Compile(source, sourceFile, depIndex, imported: imported);

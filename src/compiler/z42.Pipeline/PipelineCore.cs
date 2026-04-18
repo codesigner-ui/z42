@@ -68,9 +68,10 @@ public static class PipelineCore
         CompilationUnit   cu,
         string            fileName,
         DependencyIndex   depIndex,
-        LanguageFeatures? features = null)
+        LanguageFeatures? features = null,
+        ImportedSymbols?  imported = null)
         => CheckAndGenerate(cu, fileName, depIndex,
-                            features ?? LanguageFeatures.Phase1, new DiagnosticBag());
+                            features ?? LanguageFeatures.Phase1, new DiagnosticBag(), imported);
 
     // ── Shared implementation ─────────────────────────────────────────────────
 

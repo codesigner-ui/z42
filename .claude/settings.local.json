@@ -46,7 +46,10 @@
       "Bash(sed -i '' 's/- \\\\[ \\\\] 4\\\\./- [x] 4./' /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/refactor-package-compiler-batch2/tasks.md)",
       "Bash(wc -l /Users/d.s.qiu/Documents/codesigner-ui/z42/src/compiler/z42.Semantics/Codegen/IrGen*.cs)",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver src/runtime/tests/golden/errors/21_multi_error/source.z42 --emit zasm)"
+      "Bash(artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42.Driver src/runtime/tests/golden/errors/21_multi_error/source.z42 --emit zasm)",
+      "Bash(grep -r \"extern.*string value\\\\|extern.*string s\\\\b\" src/libraries/*/src/*.z42)",
+      "Bash(grep -n \"undefined function\\\\|function.*not found\" src/runtime/src/interp/*.rs)",
+      "Bash(grep -n \"ObjNew\\\\|type_registry.get\" src/runtime/src/interp/*.rs)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

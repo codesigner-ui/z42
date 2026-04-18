@@ -23,11 +23,8 @@ public sealed partial class TypeChecker
             if (staticSig is not null)
             {
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
-                if (!isImported)
-                {
-                    CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, args, staticSig.Params);
-                }
+                CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
+                CheckArgTypes(call.Args, args, staticSig.Params);
                 return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
                     null, args, staticSig.Ret, call.Span);
             }
@@ -75,16 +72,13 @@ public sealed partial class TypeChecker
                     bool insideClass = _currentClass == ct.Name;
                     var visKey = ct.MemberVisibility.ContainsKey(mCallee.Member)
                         ? mCallee.Member : instArityKey;
-                    if (!insideClass && !isImportedCls
+                    if (!insideClass
                         && ct.MemberVisibility.TryGetValue(visKey, out var mv)
                         && mv == Visibility.Private)
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
-                    if (!isImportedCls)
-                    {
-                        CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
-                        CheckArgTypes(call.Args, argBound, mt.Params);
-                    }
+                    CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, argBound, mt.Params);
                     bool isVirtual = _symbols.VirtualMethods.TryGetValue(ct.Name, out var vmSet)
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(

@@ -193,50 +193,41 @@ fn main() -> Result<()> {
     // 5.1c — load the user artifact.
     let user_artifact = z42_vm::metadata::load_artifact(&cli.file)?;
 
-    // 5.1d — load each declared dependency from the zpkg manifest.
-    for dep in &user_artifact.dependencies {
-        if let Some(ref dir) = libs_dir {
-            let dep_path = dir.join(&dep.file);
-            if dep_path.exists() {
-                let dep_str = dep_path.to_string_lossy().into_owned();
-                match z42_vm::metadata::load_artifact(&dep_str) {
-                    Ok(a) => {
-                        tracing::debug!("loaded dependency {} from {dep_str}", dep.file);
+    // 5.1d — dependency loading strategy:
+    //   Interp mode → pure lazy. Zpkgs are loaded on demand when the
+    //     interpreter encounters a Call to an unresolved function
+    //     (see interp/exec_instr.rs + metadata/lazy_loader.rs).
+    //   JIT/AOT mode → eager. JIT requires all callee functions to be
+    //     pre-compiled, so we pre-load all declared deps at startup.
+    z42_vm::metadata::lazy_loader::install(libs_dir.clone());
+
+    let is_eager = matches!(cli.mode, Some(ExecMode::Jit) | Some(ExecMode::Aot));
+    if is_eager {
+        // Eager: load all declared dependencies (DEPS) and import namespaces.
+        for dep in &user_artifact.dependencies {
+            if let Some(ref dir) = libs_dir {
+                let dep_path = dir.join(&dep.file);
+                if dep_path.exists() {
+                    let dep_str = dep_path.to_string_lossy().into_owned();
+                    if let Ok(a) = z42_vm::metadata::load_artifact(&dep_str) {
                         modules.push(a.module);
                     }
-                    Err(e) => tracing::warn!("failed to load dependency {}: {e}", dep.file),
                 }
-            } else {
-                tracing::warn!("dependency {} not found in {}", dep.file, dir.display());
             }
         }
-    }
-
-    // 5.1e — load dependencies inferred from .zbc import_namespaces.
-    // For each namespace declared in the zbc's imports (e.g. "z42.io"), look up the
-    // corresponding zpkg in libs_dir and load it (unless already loaded via 5.1b/5.1d).
-    for ns in &user_artifact.import_namespaces {
-        if let Some(ref dir) = libs_dir {
-            let libs_paths = vec![dir.clone()];
-            match z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) {
-                Ok(Some(zpkg_path)) => {
+        for ns in &user_artifact.import_namespaces {
+            if let Some(ref dir) = libs_dir {
+                let libs_paths = vec![dir.clone()];
+                if let Ok(Some(zpkg_path)) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) {
                     let canonical = zpkg_path.canonicalize().unwrap_or(zpkg_path.clone());
-                    if loaded_paths.contains(&canonical) {
-                        tracing::debug!("skipping already-loaded namespace `{ns}`");
-                        continue;
-                    }
-                    let zpkg_str = zpkg_path.to_string_lossy().into_owned();
-                    match z42_vm::metadata::load_artifact(&zpkg_str) {
-                        Ok(a) => {
-                            tracing::debug!("loaded import namespace `{ns}` from {zpkg_str}");
+                    if !loaded_paths.contains(&canonical) {
+                        let zpkg_str = zpkg_path.to_string_lossy().into_owned();
+                        if let Ok(a) = z42_vm::metadata::load_artifact(&zpkg_str) {
                             modules.push(a.module);
                             loaded_paths.insert(canonical);
                         }
-                        Err(e) => tracing::warn!("failed to load `{ns}`: {e}"),
                     }
                 }
-                Ok(None) => tracing::debug!("import namespace `{ns}` not found in libs"),
-                Err(e)   => tracing::warn!("error resolving namespace `{ns}`: {e}"),
             }
         }
     }

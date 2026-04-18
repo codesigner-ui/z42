@@ -2,6 +2,7 @@ using System.Text.Json;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
+using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 
@@ -45,7 +46,11 @@ public static class SingleFileCompiler
         // Load dependencies: scan up from the source file's directory to find artifacts/z42/libs/
         var depIndex = LocateDepIndex(source.FullName);
 
-        var result = PipelineCore.CheckAndGenerate(cu, source.FullName, depIndex);
+        // Load stdlib TSIG so that Console/Assert/Math etc. are visible at compile time
+        // without requiring explicit `using` declarations.
+        var imported = LocateImportedSymbols(source.FullName);
+
+        var result = PipelineCore.CheckAndGenerate(cu, source.FullName, depIndex, imported: imported);
         result.Diags.PrintAll();
         if (result.Diags.HasErrors || result.Module is null) return 1;
 
@@ -120,6 +125,40 @@ public static class SingleFileCompiler
             dir = dir.Parent;
         }
         return DependencyIndex.Empty;
+    }
+
+    /// Load stdlib TSIG for reference compilation (single-file mode).
+    /// Makes all stdlib classes (Console, Assert, Math, ...) visible at compile time
+    /// without requiring `using` declarations — matching the project build behavior.
+    public static ImportedSymbols? LocateImportedSymbols(string sourceFullPath)
+    {
+        var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate))
+            {
+                var cache = new TsigCache();
+                foreach (var zpkgPath in Directory.EnumerateFiles(candidate, "*.zpkg"))
+                {
+                    try
+                    {
+                        var bytes = File.ReadAllBytes(zpkgPath);
+                        var meta  = ZpkgReader.ReadMeta(bytes);
+                        if (meta.Kind != ZpkgKind.Lib) continue;
+                        foreach (var ns in meta.Namespaces)
+                            cache.RegisterNamespace(ns, zpkgPath);
+                    }
+                    catch { /* skip malformed */ }
+                }
+                var modules = cache.LoadAll();
+                if (modules.Count == 0) return null;
+                var allNs = modules.Select(m => m.Namespace).Distinct().ToList();
+                return ImportedSymbolLoader.Load(modules, allNs);
+            }
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     public static void WriteFile(string path, string content)
