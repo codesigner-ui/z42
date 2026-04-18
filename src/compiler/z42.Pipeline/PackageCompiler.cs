@@ -152,12 +152,12 @@ public static class PackageCompiler
             Path.Combine(projectDir, "libs"),
             Path.Combine(projectDir, "artifacts", "z42", "libs"),
         };
-        var nsMap       = ScanLibsForNamespaces(libsDirs);
+        var tsigCache   = new TsigCache();
+        var nsMap       = ScanLibsForNamespaces(libsDirs, tsigCache);
         var depIndex    = BuildDepIndex(libsDirs);
-        var allTsig     = LoadAllTsig(libsDirs);
         ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
-        var units = TryCompileSourceFiles(sourceFiles, depIndex, allTsig);
+        var units = TryCompileSourceFiles(sourceFiles, depIndex, tsigCache);
         if (units is null) return 1;
 
         WarnUnresolvedUsings(units, nsMap);
@@ -194,7 +194,9 @@ public static class PackageCompiler
     // ── Build target sub-steps ────────────────────────────────────────────────
 
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
-    static Dictionary<string, string> ScanLibsForNamespaces(string[] libsDirs)
+    /// Also populates the TsigCache with namespace → zpkg path mappings for on-demand loading.
+    static Dictionary<string, string> ScanLibsForNamespaces(
+        string[] libsDirs, TsigCache? tsigCache = null)
     {
         var nsMap = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var libsDir in libsDirs)
@@ -207,7 +209,11 @@ public static class PackageCompiler
                     var bytes = File.ReadAllBytes(zpkgFile);
                     var ns    = ZpkgReader.ReadNamespaces(bytes);
                     string fname = Path.GetFileName(zpkgFile);
-                    foreach (var n in ns) nsMap.TryAdd(n, fname);
+                    foreach (var n in ns)
+                    {
+                        nsMap.TryAdd(n, fname);
+                        tsigCache?.RegisterNamespace(n, zpkgFile);
+                    }
                 }
                 catch { /* skip malformed zpkg */ }
             }
@@ -252,13 +258,13 @@ public static class PackageCompiler
     static List<CompiledUnit>? TryCompileSourceFiles(
         IReadOnlyList<string>     sourceFiles,
         DependencyIndex           depIndex,
-        List<ExportedModule>?     allTsig = null)
+        TsigCache?                tsigCache = null)
     {
         var units  = new List<CompiledUnit>();
         int errors = 0;
         foreach (var sourceFile in sourceFiles)
         {
-            var unit = CompileFile(sourceFile, depIndex, allTsig);
+            var unit = CompileFile(sourceFile, depIndex, tsigCache);
             if (unit is null) { errors++; continue; }
             units.Add(unit);
         }
@@ -310,20 +316,21 @@ public static class PackageCompiler
 
     static CompiledUnit? CompileFile(
         string sourceFile, DependencyIndex depIndex,
-        List<ExportedModule>? allTsig = null)
+        TsigCache? tsigCache = null)
     {
         string source;
         try   { source = File.ReadAllText(sourceFile); }
         catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return null; }
 
-        // Pre-parse to extract using declarations for TSIG filtering.
-        // PipelineCore.Compile does the full lex+parse internally, so we do a
-        // lightweight pre-scan for `using` lines. This avoids double-parsing by
-        // extracting usings from the source text directly.
+        // Extract using declarations and load TSIG on demand.
         var usings = ExtractUsings(source);
         ImportedSymbols? imported = null;
-        if (allTsig is { Count: > 0 })
-            imported = ImportedSymbolLoader.Load(allTsig, usings);
+        if (tsigCache != null)
+        {
+            var tsigModules = tsigCache.LoadForUsings(usings);
+            if (tsigModules.Count > 0)
+                imported = ImportedSymbolLoader.Load(tsigModules, usings);
+        }
 
         var result = PipelineCore.Compile(source, sourceFile, depIndex, imported: imported);
         result.Diags.PrintAll();
@@ -392,30 +399,10 @@ public static class PackageCompiler
 
     static string Sha256Hex(string text) => CompilerUtils.Sha256Hex(text);
 
-    /// Load all TSIG sections from lib zpkgs for reference compilation.
-    static List<ExportedModule> LoadAllTsig(string[] libsDirs)
-    {
-        var result = new List<ExportedModule>();
-        foreach (var dir in libsDirs)
-        {
-            if (!Directory.Exists(dir)) continue;
-            foreach (var zpkgPath in Directory.EnumerateFiles(dir, "*.zpkg"))
-            {
-                try
-                {
-                    var bytes = File.ReadAllBytes(zpkgPath);
-                    var meta  = ZpkgReader.ReadMeta(bytes);
-                    if (meta.Kind != ZpkgKind.Lib) continue;
-                    result.AddRange(ZpkgReader.ReadTsig(bytes));
-                }
-                catch { /* skip malformed */ }
-            }
-        }
-        return result;
-    }
-
     /// Lightweight extraction of `using Ns.Name;` declarations from source text.
     /// Avoids full lex/parse — just scans line-by-line for `using` statements.
+    public static List<string> ExtractUsingsPublic(string source) => ExtractUsings(source);
+
     static List<string> ExtractUsings(string source)
     {
         var result = new List<string>();
@@ -472,4 +459,68 @@ public sealed record CompiledUnit(
 {
     public ZbcFile ToZbcFile() =>
         new ZbcFile(ZbcFile.CurrentVersion, SourceFile, SourceHash, Namespace, Exports, [], Module);
+}
+
+// ── On-demand TSIG loader with caching ───────────────────────────────────────
+
+/// <summary>
+/// Caches zpkg TSIG sections. Loaded on demand when a source file's <c>using</c>
+/// references a namespace provided by a zpkg. Each zpkg is read at most once.
+/// </summary>
+public sealed class TsigCache
+{
+    // namespace → zpkg full path (populated during ScanLibsForNamespaces)
+    private readonly Dictionary<string, string> _nsToPath = new(StringComparer.Ordinal);
+    // zpkg path → cached TSIG modules (loaded on first access)
+    private readonly Dictionary<string, List<ExportedModule>> _cache = new(StringComparer.Ordinal);
+
+    /// Register a namespace → zpkg path mapping (called during lib scanning).
+    public void RegisterNamespace(string ns, string zpkgPath)
+    {
+        _nsToPath.TryAdd(ns, zpkgPath);
+    }
+
+    /// Load all registered TSIG modules (used by tests that need all namespaces).
+    public List<ExportedModule> LoadAll()
+    {
+        var allPaths = new HashSet<string>(_nsToPath.Values, StringComparer.Ordinal);
+        var result = new List<ExportedModule>();
+        foreach (var path in allPaths)
+            result.AddRange(LoadZpkg(path));
+        return result;
+    }
+
+    /// Load TSIG modules for the given using declarations. Only reads zpkg files
+    /// that provide at least one of the requested namespaces; caches results.
+    public List<ExportedModule> LoadForUsings(IReadOnlyList<string> usings)
+    {
+        var needed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var ns in usings)
+            if (_nsToPath.TryGetValue(ns, out var path))
+                needed.Add(path);
+
+        var result = new List<ExportedModule>();
+        foreach (var path in needed)
+            result.AddRange(LoadZpkg(path));
+        return result;
+    }
+
+    private List<ExportedModule> LoadZpkg(string zpkgPath)
+    {
+        if (_cache.TryGetValue(zpkgPath, out var cached)) return cached;
+        try
+        {
+            var bytes   = File.ReadAllBytes(zpkgPath);
+            var meta    = ZpkgReader.ReadMeta(bytes);
+            if (meta.Kind != ZpkgKind.Lib) { _cache[zpkgPath] = []; return []; }
+            var modules = ZpkgReader.ReadTsig(bytes);
+            _cache[zpkgPath] = modules;
+            return modules;
+        }
+        catch
+        {
+            _cache[zpkgPath] = [];
+            return [];
+        }
+    }
 }

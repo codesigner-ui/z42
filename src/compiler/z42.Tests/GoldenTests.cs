@@ -55,10 +55,10 @@ public sealed class GoldenTests
         Converters             = { new System.Text.Json.Serialization.JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    // DependencyIndex and TSIG loaded once from artifacts/z42/libs/ (if present).
+    // DependencyIndex and TSIG cache loaded once from artifacts/z42/libs/ (if present).
     private static readonly DependencyIndex DepIndex = LoadDepIndex();
     private static readonly string? StdlibLibsDir = FindStdlibLibsDir();
-    private static readonly List<ExportedModule> AllTsig = LoadAllTsig();
+    private static readonly TsigCache TsigCacheInstance = BuildTsigCache();
 
     private static string? FindStdlibLibsDir()
     {
@@ -84,23 +84,23 @@ public sealed class GoldenTests
         return DependencyIndex.Empty;
     }
 
-    private static List<ExportedModule> LoadAllTsig()
+    private static TsigCache BuildTsigCache()
     {
-        var result = new List<ExportedModule>();
+        var cache = new TsigCache();
         var libsDir = FindStdlibLibsDir();
-        if (libsDir is null) return result;
+        if (libsDir is null) return cache;
         foreach (var zpkgPath in Directory.EnumerateFiles(libsDir, "*.zpkg"))
         {
             try
             {
                 var bytes = File.ReadAllBytes(zpkgPath);
-                var meta  = ZpkgReader.ReadMeta(bytes);
-                if (meta.Kind != ZpkgKind.Lib) continue;
-                result.AddRange(ZpkgReader.ReadTsig(bytes));
+                var ns    = ZpkgReader.ReadNamespaces(bytes);
+                foreach (var n in ns)
+                    cache.RegisterNamespace(n, zpkgPath);
             }
             catch { /* skip malformed */ }
         }
-        return result;
+        return cache;
     }
 
     // ── Test discovery ─────────────────────────────────────────────────────
@@ -174,12 +174,21 @@ public sealed class GoldenTests
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
-        // Build imported symbols from stdlib TSIG, using all available namespaces
-        // (golden tests don't have explicit `using` declarations).
-        var allNs = AllTsig.Select(m => m.Namespace).Distinct().ToList();
-        var imported = AllTsig.Count > 0
-            ? ImportedSymbolLoader.Load(AllTsig, allNs)
-            : null;
+        // Golden tests may lack explicit `using` declarations but reference stdlib types.
+        // Extract usings from the source; if none found, use all available namespaces
+        // so that Console/Assert/Math etc. are always visible in golden tests.
+        var usings = cu.Usings.Count > 0
+            ? cu.Usings.ToList()
+            : PackageCompiler.ExtractUsingsPublic(source);
+        var tsigModules = TsigCacheInstance.LoadAll();
+        ImportedSymbols? imported = null;
+        if (tsigModules.Count > 0)
+        {
+            var nsFilter = usings.Count > 0
+                ? usings
+                : tsigModules.Select(m => m.Namespace).Distinct().ToList();
+            imported = ImportedSymbolLoader.Load(tsigModules, nsFilter);
+        }
 
         var typeChecker = new TypeChecker(diags, features);
         var sem = typeChecker.Check(cu, imported);
