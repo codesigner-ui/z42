@@ -1,3 +1,4 @@
+using System;
 using Z42.Core.Diagnostics;
 using Z42.Core.Features;
 using Z42.Core.Text;
@@ -94,11 +95,14 @@ public static class PipelineCore
             var exported = ExportedTypeExtractor.Extract(sem, cu.Namespace ?? "main");
             return new(ir, diags, gen.UsedDepNamespaces, cu.Namespace, cu.Usings, exported);
         }
-        catch (Exception ex)
+        catch (CompilationException)
         {
-            diags.Error(DiagnosticCodes.UnsupportedSyntax, ex.Message,
-                        new Span(0, 0, 0, 0, fileName));
+            // Expected: compilation failed with reported diagnostics.
+            // DiagnosticBag.ThrowIfErrors() threw this with the error list already attached.
+            // Return null module and let the caller report the diagnostics.
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
         }
+        // All other exceptions (NullReferenceException, InvalidOperationException, etc.)
+        // are compiler internal errors (ICE) and propagate with full stack trace for debugging.
     }
 }

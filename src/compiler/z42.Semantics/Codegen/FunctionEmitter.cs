@@ -221,30 +221,12 @@ internal sealed partial class FunctionEmitter
     }
 
     // ── Z42Type / TypeExpr → IrType mapping ─────────────────────────────────
-
-    /// Name → IrType lookup table (shared by both overloads, single source of truth).
-    private static readonly Dictionary<string, IrType> IrTypeByName = new()
-    {
-        ["int"]    = IrType.I32,  ["i32"]    = IrType.I32,
-        ["long"]   = IrType.I64,  ["i64"]    = IrType.I64,
-        ["float"]  = IrType.F32,  ["f32"]    = IrType.F32,
-        ["double"] = IrType.F64,  ["f64"]    = IrType.F64,
-        ["bool"]   = IrType.Bool,
-        ["char"]   = IrType.Char,
-        ["string"] = IrType.Str,
-        ["object"] = IrType.Ref,
-        ["i8"]     = IrType.I8,   ["i16"]    = IrType.I16,
-        ["u8"]     = IrType.U8,   ["u16"]    = IrType.U16,
-        ["u32"]    = IrType.U32,  ["u64"]    = IrType.U64,
-        ["sbyte"]  = IrType.I8,   ["short"]  = IrType.I16,
-        ["byte"]   = IrType.U8,   ["ushort"] = IrType.U16,
-        ["uint"]   = IrType.U32,  ["ulong"]  = IrType.U64,
-    };
+    // All mappings now come from TypeRegistry (single source of truth).
 
     /// Maps a Z42 semantic type to an IR type tag.
     internal static IrType ToIrType(Z42Type type) => type switch
     {
-        Z42PrimType { Name: var n } when IrTypeByName.TryGetValue(n, out var ir) => ir,
+        Z42PrimType { Name: var n } => TypeRegistry.GetIrType(n),
         Z42ArrayType or Z42ClassType or Z42OptionType or Z42NullType => IrType.Ref,
         Z42VoidType => IrType.Void,
         _ => IrType.Unknown,
@@ -253,7 +235,7 @@ internal sealed partial class FunctionEmitter
     /// Maps a parser TypeExpr to an IrType (used for parameters where no Z42Type is available).
     internal static IrType ToIrType(TypeExpr typeExpr) => typeExpr switch
     {
-        NamedType { Name: var n } when IrTypeByName.TryGetValue(n, out var ir) => ir,
+        NamedType { Name: var n } => TypeRegistry.GetIrType(n),
         ArrayType or OptionType => IrType.Ref,
         VoidType => IrType.Void,
         _ => IrType.Unknown,

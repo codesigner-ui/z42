@@ -65,31 +65,11 @@ public sealed class SymbolTable
         ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
         NamedType  nt => nt.Name switch
         {
-            "int"    or "i32" => Z42Type.Int,
-            "long"   or "i64" => Z42Type.Long,
-            "float"  or "f32" => Z42Type.Float,
-            "double" or "f64" => Z42Type.Double,
-            "bool"            => Z42Type.Bool,
-            "string"          => Z42Type.String,
-            "char"            => Z42Type.Char,
-            "object"          => Z42Type.Object,
-            "void"            => Z42Type.Void,
             "var"             => Z42Type.Unknown,
-            "i8"              => Z42Type.I8,
-            "i16"             => Z42Type.I16,
-            "u8"              => Z42Type.U8,
-            "u16"             => Z42Type.U16,
-            "u32"             => Z42Type.U32,
-            "u64"             => Z42Type.U64,
-            "sbyte"           => Z42Type.I8,
-            "short"           => Z42Type.I16,
-            "byte"            => Z42Type.U8,
-            "ushort"          => Z42Type.U16,
-            "uint"            => Z42Type.U32,
-            "ulong"           => Z42Type.U64,
-            _                 => Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
+            _                 => TypeRegistry.GetZ42Type(nt.Name) ??
+                               (Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : Interfaces.TryGetValue(nt.Name, out var it) ? it
-                               : new Z42PrimType(nt.Name),
+                               : new Z42PrimType(nt.Name)),
         },
         _ => Z42Type.Unknown
     };

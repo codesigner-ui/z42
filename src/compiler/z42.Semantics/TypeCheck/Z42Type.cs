@@ -63,46 +63,21 @@ public abstract record Z42Type
         return false;
     }
 
-    // ── Primitive type metadata table (single source of truth) ──────────────
+    // ── Primitive type metadata (now sourced from TypeRegistry) ──────────────
 
-    private sealed record PrimInfo(
-        bool Numeric, bool Integral, bool Reference, (long Min, long Max)? LitRange);
+    private static (bool IsNumeric, bool IsIntegral, bool IsReference, (long Min, long Max)? Range)? LookupPrim(Z42Type t) =>
+        t is Z42PrimType { Name: var n } ? TypeRegistry.GetPrimMetadata(n) : null;
 
-    private static readonly Dictionary<string, PrimInfo> PrimTable = new()
-    {
-        ["int"]    = new(true,  true,  false, (int.MinValue,   int.MaxValue)),
-        ["i32"]    = new(true,  true,  false, (int.MinValue,   int.MaxValue)),
-        ["long"]   = new(true,  true,  false, null),   // no range check (covers full i64)
-        ["i64"]    = new(true,  true,  false, null),
-        ["i8"]     = new(true,  true,  false, (sbyte.MinValue, sbyte.MaxValue)),
-        ["i16"]    = new(true,  true,  false, (short.MinValue, short.MaxValue)),
-        ["u8"]     = new(true,  true,  false, (0, byte.MaxValue)),
-        ["u16"]    = new(true,  true,  false, (0, ushort.MaxValue)),
-        ["u32"]    = new(true,  true,  false, (0, uint.MaxValue)),
-        ["u64"]    = new(true,  true,  false, (0, long.MaxValue)),
-        ["float"]  = new(true,  false, false, null),
-        ["f32"]    = new(true,  false, false, null),
-        ["double"] = new(true,  false, false, null),
-        ["f64"]    = new(true,  false, false, null),
-        ["bool"]   = new(false, false, false, null),
-        ["char"]   = new(false, false, false, null),
-        ["string"] = new(false, false, true,  null),
-        ["object"] = new(false, false, true,  null),
-    };
+    // ── Type predicates (all delegate to TypeRegistry) ──────────────────────
 
-    private static PrimInfo? LookupPrim(Z42Type t) =>
-        t is Z42PrimType { Name: var n } && PrimTable.TryGetValue(n, out var info) ? info : null;
-
-    // ── Type predicates (all delegate to PrimTable) ──────────────────────────
-
-    public static bool IsNumeric(Z42Type t)  => LookupPrim(t)?.Numeric == true;
-    public static bool IsIntegral(Z42Type t) => LookupPrim(t)?.Integral == true;
+    public static bool IsNumeric(Z42Type t)  => LookupPrim(t)?.IsNumeric == true;
+    public static bool IsIntegral(Z42Type t) => LookupPrim(t)?.IsIntegral == true;
     public static bool IsBool(Z42Type t)     => t == Bool;
 
-    public static (long Min, long Max)? IntLiteralRange(Z42Type t) => LookupPrim(t)?.LitRange;
+    public static (long Min, long Max)? IntLiteralRange(Z42Type t) => LookupPrim(t)?.Range;
 
     public static bool IsReferenceType(Z42Type t) =>
-        (LookupPrim(t)?.Reference == true)
+        (LookupPrim(t)?.IsReference == true)
         || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType;
 
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
