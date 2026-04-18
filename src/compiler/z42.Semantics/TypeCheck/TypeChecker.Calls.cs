@@ -93,7 +93,7 @@ public sealed partial class TypeChecker
                 bool isImportedCls = _symbols.ImportedClassNames.Contains(ct.Name);
                 if (mt is not null)
                 {
-                    bool insideClass = _currentClass == ct.Name;
+                    bool insideClass = env.CurrentClass == ct.Name;
                     var visKey = ct.MemberVisibility.ContainsKey(mCallee.Member)
                         ? mCallee.Member : instArityKey;
                     if (!insideClass
@@ -169,13 +169,13 @@ public sealed partial class TypeChecker
 
         // Bare name inside current class's static methods
         if (call.Callee is IdentExpr { Name: var bareCallName }
-            && _currentClass != null
-            && _symbols.Classes.TryGetValue(_currentClass, out var curCt)
+            && env.CurrentClass != null
+            && _symbols.Classes.TryGetValue(env.CurrentClass, out var curCt)
             && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSig))
         {
             CheckArgCount(freeArgs.Count, bareSig.MinArgCount, bareSig.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, bareSig.Params);
-            return new BoundCall(BoundCallKind.Static, null, _currentClass, bareCallName,
+            return new BoundCall(BoundCallKind.Static, null, env.CurrentClass, bareCallName,
                 null, freeArgs, bareSig.Ret, call.Span);
         }
 

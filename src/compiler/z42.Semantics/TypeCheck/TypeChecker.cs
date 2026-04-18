@@ -38,26 +38,11 @@ public sealed partial class TypeChecker : ITypeInferrer
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
 
-    // ── Binding state ────────────────────────────────────────────────────────
-    private string? _currentClass;
-
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
     {
         _diags    = diags;
         _features = features ?? LanguageFeatures.Phase1;
         _depIndex = depIndex;
-    }
-
-    /// Sets <see cref="_currentClass"/> and returns a scope that clears it on disposal.
-    private IDisposable EnterClass(string name)
-    {
-        _currentClass = name;
-        return new ClassScope(this);
-    }
-
-    private sealed class ClassScope(TypeChecker tc) : IDisposable
-    {
-        public void Dispose() => tc._currentClass = null;
     }
 
     /// The frozen symbol table, available after Check() begins Pass 1.
@@ -119,12 +104,11 @@ public sealed partial class TypeChecker : ITypeInferrer
     private void BindClassMethods(ClassDecl cls)
     {
         if (!_symbols.Classes.TryGetValue(cls.Name, out var classType)) return;
-        using var _ = EnterClass(cls.Name);
         foreach (var method in cls.Methods)
         {
             if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
             var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
-            var scope = env.PushScope();
+            var scope = env.WithClass(cls.Name);
             if (!method.IsStatic)
             {
                 scope.Define("this", classType);
@@ -223,9 +207,8 @@ public sealed partial class TypeChecker : ITypeInferrer
         {
             var statics = cls.Fields.Where(f => f.IsStatic && f.Initializer != null).ToList();
             if (statics.Count == 0) continue;
-            using var _ = EnterClass(cls.Name);
             var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
-            var scope = env.PushScope();
+            var scope = env.WithClass(cls.Name);
             foreach (var field in statics)
                 _boundStaticInits[field] = BindExpr(field.Initializer!, scope);
         }

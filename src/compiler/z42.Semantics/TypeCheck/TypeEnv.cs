@@ -16,6 +16,10 @@ internal sealed class TypeEnv
     private readonly IReadOnlySet<string>                           _importedClassNames;
     private readonly Dictionary<string, Z42Type>                    _vars = new();
 
+    /// The class currently being checked, or null for top-level functions.
+    /// Immutable per scope — when entering a class, create a new env via <see cref="WithClass"/>.
+    internal string? CurrentClass { get; }
+
     // Root env: owns both function and class tables.
     internal TypeEnv(
         IReadOnlyDictionary<string, Z42FuncType> funcs,
@@ -28,18 +32,22 @@ internal sealed class TypeEnv
         _importedClassNames = importedClassNames ?? new HashSet<string>();
     }
 
-    private TypeEnv(TypeEnv parent)
+    private TypeEnv(TypeEnv parent, string? currentClass = null)
     {
         _parent             = parent;
         _funcs              = parent._funcs;
         _classes            = parent._classes;
         _importedClassNames = parent._importedClassNames;
+        CurrentClass        = currentClass ?? parent.CurrentClass;
     }
 
     // ── Scope management ─────────────────────────────────────────────────────
 
-    /// Returns a new child scope.
+    /// Returns a new child scope (inherits CurrentClass).
     internal TypeEnv PushScope() => new(this);
+
+    /// Returns a new child scope with the given class name set.
+    internal TypeEnv WithClass(string className) => new(this, className);
 
     // ── Variable operations ───────────────────────────────────────────────────
 
@@ -50,20 +58,21 @@ internal sealed class TypeEnv
     internal bool DefinedInCurrentScope(string name) => _vars.ContainsKey(name);
 
     /// Look up a variable type.
-    /// Returns <see langword="null"/> if not found and not a known builtin class.
+    /// Returns <see langword="null"/> if the name is not a variable (including class names).
+    /// Class names are NOT returned here — callers should use
+    /// <see cref="IsClassName"/> to distinguish "undefined" from "this is a type".
     internal Z42Type? LookupVar(string name)
     {
         if (_vars.TryGetValue(name, out var t)) return t;
         if (_parent != null) return _parent.LookupVar(name);
-        // Class names (both local and imported) are recognizable as type references.
-        // Return Z42Type.Unknown to maintain backward compatibility with existing
-        // member access and call resolution paths (static field access, constructor calls, etc.).
-        if (_classes.ContainsKey(name)) return Z42Type.Unknown;
-        // Imported class names that are not in _classes (kept out to avoid
-        // ResolveType picking them up as Z42ClassType).
-        if (_importedClassNames.Contains(name)) return Z42Type.Unknown;
         return null;
     }
+
+    /// Returns true if <paramref name="name"/> refers to a class (local or imported).
+    /// Use this to distinguish "undefined variable" from "this is a type reference"
+    /// when <see cref="LookupVar"/> returns null.
+    internal bool IsClassName(string name)
+        => _classes.ContainsKey(name) || _importedClassNames.Contains(name);
 
     // ── Function operations ───────────────────────────────────────────────────
 

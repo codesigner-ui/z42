@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-19（已完成改进：11 项，进行中：0 项）  
+> 最后更新：2026-04-19（已完成改进：13 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -19,6 +19,8 @@
 - ✅ **BoundError → Codegen 防护（5.1）** — BoundError 到达 Codegen 时抛出 ICE 而非静默生成 null
 - ✅ **删除未使用的 Visitor 接口（1.5）** — 移除 IBoundExprVisitor/IBoundStmtVisitor 和所有 Accept 方法，统一用 switch 模式匹配
 - ✅ **FunctionDecl FunctionModifiers flags（4.2）** — 5 个 bool 替换为 `[Flags] enum FunctionModifiers`，便捷属性保持 API 兼容
+- ✅ **LookupVar 语义清理（1.3）** — LookupVar 不再为类名返回 Unknown，新增 IsClassName 方法区分变量/类型
+- ✅ **_currentClass → TypeEnv.CurrentClass（1.4）** — 消除共享可变状态，改为不可变 env 属性，通过 WithClass() 传递
 
 ---
 
@@ -374,9 +376,9 @@ BoundError err => throw new InvalidOperationException(
 | 🟠 P1 | `Value` 枚举合并整数类型，减少大小（3.1） | 内存/缓存性能 | 中 |
 | ✅ ~~P1~~ | ~~`exec_function` 预计算 `block_index`（3.3）~~ | 解释器调用性能 | 小 | **已完成** |
 | ✅ ~~P1~~ | ~~`IsSubclassOf` 预计算祖先集合（5.2）~~ | 类型检查性能 | 小 | **已完成** |
-| 🟡 P2 | `TypeEnv.LookupVar` 区分变量/类名（1.3） | 类型检查正确性 | 小 |
+| ✅ ~~P2~~ | ~~`TypeEnv.LookupVar` 区分变量/类名（1.3）~~ | 类型检查正确性 | 小 | **已完成** |
 | ✅ ~~P2~~ | ~~统一 BoundExpr 遍历方式，去除 Visitor/switch 双重路径（1.5）~~ | 可扩展性 | 中 | **已完成** |
-| 🟡 P2 | `TypeChecker._currentClass` 改为 `BindContext` 参数传递（1.4） | 并发安全性 | 中 |
+| ✅ ~~P2~~ | ~~`TypeChecker._currentClass` → `TypeEnv.CurrentClass`（1.4）~~ | 并发安全性 | 中 | **已完成** |
 | 🟡 P2 | 用户异常改用 `ExecSignal` 避免 `anyhow` 传播（3.2） | 异常处理性能 | 中 |
 | ✅ ~~P2~~ | ~~`FunctionDecl` 引入 `FunctionModifiers` flags（4.2）~~ | 代码健壮性 | 小 | **已完成** |
 | 🟢 P3 | IR 序列化与内存模型解耦（2.1） | 架构清洁度 | 中 |
@@ -478,7 +480,8 @@ BoundError err => throw new InvalidOperationException(
 | 改进项 | 状态 | 说明 |
 |--------|------|------|
 | 1.2 类型兼容性规则 | ⏳ 部分缓解 | 整数统一为 I64，小整数问题暂时规避 |
-| 1.3 LookupVar Unknown | 🟢 改进 | 通过完全消除 Unresolved 使语义更清晰 |
+| 1.3 LookupVar Unknown | ✅ 已完成 | LookupVar 只返回变量类型，新增 IsClassName 区分；BindIdent 增加 ImportedClassNames 检查 |
+| 1.4 _currentClass | ✅ 已完成 | 消除共享可变状态，改为 TypeEnv.CurrentClass 不可变属性 |
 | 1.5 Visitor vs switch | ✅ 已完成 | 删除 IBoundVisitor 接���和所有 Accept 方法，统一用 switch |
 | 2.2 消除命名变量槽 | 🟢 进展 | Instance 方法分派确保了 stdlib 方法不使用虚方法开销 |
 | 3.3 block_index 预计算 | ✅ 已完成 | loader.rs 模块加载时预计算 block_index |

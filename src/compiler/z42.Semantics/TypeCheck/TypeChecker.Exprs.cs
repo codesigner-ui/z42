@@ -185,9 +185,13 @@ public sealed partial class TypeChecker
     {
         var t = env.LookupVar(id.Name) ?? env.LookupFunc(id.Name);
         if (t != null) return new BoundIdent(id.Name, t, id.Span);
-        if (_symbols.EnumTypes.Contains(id.Name))    return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
-        if (_symbols.Classes.ContainsKey(id.Name))   return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
-        if (_symbols.Interfaces.ContainsKey(id.Name)) return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
+        // Type references (class, enum, interface, imported class) are not variables;
+        // return BoundIdent with Unknown type so downstream member/call resolution handles them.
+        if (_symbols.EnumTypes.Contains(id.Name)
+            || _symbols.Classes.ContainsKey(id.Name)
+            || _symbols.Interfaces.ContainsKey(id.Name)
+            || _symbols.ImportedClassNames.Contains(id.Name))
+            return new BoundIdent(id.Name, Z42Type.Unknown, id.Span);
         _diags.UndefinedSymbol(id.Name, id.Span);
         return new BoundError($"undefined `{id.Name}`", Z42Type.Error, id.Span);
     }
@@ -315,7 +319,7 @@ public sealed partial class TypeChecker
         var target = BindExpr(m.Target, env);
         if (target.Type is Z42ClassType ct)
         {
-            bool insideClass = _currentClass == ct.Name;
+            bool insideClass = env.CurrentClass == ct.Name;
             if (ct.Fields.TryGetValue(m.Member, out var ft))
             {
                 if (!insideClass
