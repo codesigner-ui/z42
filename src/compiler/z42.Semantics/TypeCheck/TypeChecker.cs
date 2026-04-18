@@ -97,20 +97,22 @@ public sealed partial class TypeChecker : ITypeInferrer
     private void TryBindClassMethods(ClassDecl cls)
     {
         try { BindClassMethods(cls); }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (CompilationException) { /* diagnostics already reported */ }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
-            _diags.Error(DiagnosticCodes.UnsupportedSyntax,
-                $"internal error checking class `{cls.Name}`: {ex.Message}", cls.Span);
+            _diags.Error(DiagnosticCodes.InternalCompilerError,
+                $"ICE while checking class `{cls.Name}`: [{ex.GetType().Name}] {ex.Message}", cls.Span);
         }
     }
 
     private void TryBindFunction(FunctionDecl fn)
     {
         try { BindFunction(fn); }
-        catch (Exception ex) when (ex is not OutOfMemoryException)
+        catch (CompilationException) { /* diagnostics already reported */ }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
         {
-            _diags.Error(DiagnosticCodes.UnsupportedSyntax,
-                $"internal error checking function `{fn.Name}`: {ex.Message}", fn.Span);
+            _diags.Error(DiagnosticCodes.InternalCompilerError,
+                $"ICE while checking function `{fn.Name}`: [{ex.GetType().Name}] {ex.Message}", fn.Span);
         }
     }
 

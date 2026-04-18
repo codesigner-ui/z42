@@ -29,6 +29,10 @@ public sealed class SymbolTable
     /// Used by IrGen to qualify imported class calls with the correct dependency namespace.
     public IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
 
+    /// Precomputed ancestor sets: for each class, the set of all its ancestor class names.
+    /// Enables O(1) subclass checks instead of walking the inheritance chain.
+    private readonly Dictionary<string, HashSet<string>> _ancestors;
+
     internal SymbolTable(
         Dictionary<string, Z42ClassType> classes,
         Dictionary<string, Z42FuncType> functions,
@@ -55,6 +59,35 @@ public sealed class SymbolTable
         VirtualMethods = virtualMethods;
         ImportedClassNames = importedClassNames ?? new HashSet<string>();
         ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
+        _ancestors = BuildAncestorSets(classes);
+    }
+
+    /// Build ancestor set for each class by walking the inheritance chain once per class.
+    private static Dictionary<string, HashSet<string>> BuildAncestorSets(
+        Dictionary<string, Z42ClassType> classes)
+    {
+        var result = new Dictionary<string, HashSet<string>>(classes.Count);
+        foreach (var name in classes.Keys)
+            GetOrBuildAncestors(name, classes, result);
+        return result;
+    }
+
+    private static HashSet<string> GetOrBuildAncestors(
+        string name,
+        Dictionary<string, Z42ClassType> classes,
+        Dictionary<string, HashSet<string>> cache)
+    {
+        if (cache.TryGetValue(name, out var cached)) return cached;
+        var ancestors = new HashSet<string>();
+        cache[name] = ancestors; // store early to handle cycles
+        if (classes.TryGetValue(name, out var ct) && ct.BaseClassName is { } baseName)
+        {
+            ancestors.Add(baseName);
+            // Merge parent's ancestors (recursively built if needed)
+            var parentAncestors = GetOrBuildAncestors(baseName, classes, cache);
+            ancestors.UnionWith(parentAncestors);
+        }
+        return ancestors;
     }
 
     /// Resolve a TypeExpr to a Z42Type using the frozen symbol table.
@@ -75,19 +108,10 @@ public sealed class SymbolTable
     };
 
     /// Query: is <paramref name="derived"/> a subclass of <paramref name="baseClass"/>?
+    /// O(1) lookup using precomputed ancestor sets.
     public bool IsSubclassOf(string derived, string baseClass)
     {
-        var cur = derived;
-        while (cur != null)
-        {
-            if (Classes.TryGetValue(cur, out var ct))
-            {
-                cur = ct.BaseClassName;
-                if (cur == baseClass) return true;
-            }
-            else break;
-        }
-        return false;
+        return _ancestors.TryGetValue(derived, out var ancestors) && ancestors.Contains(baseClass);
     }
 
     /// Query: does <paramref name="className"/> implement <paramref name="ifaceName"/>?

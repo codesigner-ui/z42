@@ -163,6 +163,15 @@ public static class DiagnosticCatalog
             "the construct may become supported in a future compiler version.",
             null),
 
+        // ── Z09xx: Internal compiler error ──────────────────────────────────
+
+        [DiagnosticCodes.InternalCompilerError] = new(
+            "Internal compiler error (ICE)",
+            "An unexpected error occurred inside the compiler. " +
+            "This is a compiler bug, not a user error. " +
+            "Please report this issue with the full error message and source file.",
+            null),
+
         // ── Z09xx: Native / InternalCall ─────────────────────────────────────
 
         [DiagnosticCodes.ExternRequiresNative] = new(

@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-18（已完成改进：4 项，进行中：2 项）  
+> 最后更新：2026-04-18（已完成改进：8 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -10,6 +10,10 @@
 - ✅ **内置类型静态方法映射** — `string.IsNullOrEmpty()` 正确映射到 `Std.String.IsNullOrEmpty()`
 - ✅ **后缀操作符返回值修复** — 确保 `i++` 返回旧值，不被后续 copy 指令覆盖
 - ✅ **完全消除 BoundCallKind.Unresolved** — 所有 stdlib 调用在编译时解析为 Static/Instance/Virtual/Free
+- ✅ **区分 ICE 与用户错误（4.1）** — TryBind* 方法区分 CompilationException 与编译器内部错误，新增 E0900 ICE 诊断码
+- ✅ **统一类型名映射 TypeRegistry（4.3）** — 已有 TypeRegistry.cs 作为唯一数据源
+- ✅ **IsSubclassOf 预计算祖先集合（5.2）** — SymbolTable 构造时预计算所有类的祖先集合，O(1) 查找
+- ✅ **exec_function 预计算 block_index（3.3）** — loader.rs 在模块加载时预计算 block_index
 
 ---
 
@@ -359,12 +363,12 @@ BoundError err => throw new InvalidOperationException(
 
 | 优先级 | 改进项 | 影响 | 工作量 |
 |--------|--------|------|--------|
-| 🔴 P0 | 区分 ICE 与用户错误，避免掩盖编译器 Bug（4.1） | 编译器可靠性 | 小 |
+| ✅ ~~P0~~ | ~~区分 ICE 与用户错误，避免掩盖编译器 Bug（4.1）~~ | 编译器可靠性 | 小 | **已完成** |
 | 🔴 P0 | 消除 `StoreInstr`/`LoadInstr`，变量用寄存器 ID（2.2） | 运行时性能 | 中 |
-| 🟠 P1 | 统一类型名映射为 `TypeRegistry`（5.3） | 可维护性 | 小 |
+| ✅ ~~P1~~ | ~~统一类型名映射为 `TypeRegistry`（4.3）~~ | 可维护性 | 小 | **已完成** |
 | 🟠 P1 | `Value` 枚举合并整数类型，减少大小（3.1） | 内存/缓存性能 | 中 |
-| 🟠 P1 | `exec_function` 预计算 `block_index`（3.3） | 解释器调用性能 | 小 |
-| 🟠 P1 | `IsSubclassOf` 预计算祖先集合（5.2） | 类型检查性能 | 小 |
+| ✅ ~~P1~~ | ~~`exec_function` 预计算 `block_index`（3.3）~~ | 解释器调用性能 | 小 | **已完成** |
+| ✅ ~~P1~~ | ~~`IsSubclassOf` 预计算祖先集合（5.2）~~ | 类型检查性能 | 小 | **已完成** |
 | 🟡 P2 | `TypeEnv.LookupVar` 区分变量/类名（1.3） | 类型检查正确性 | 小 |
 | 🟡 P2 | 统一 BoundExpr 遍历方式，去除 Visitor/switch 双重路径（1.5） | 可扩展性 | 中 |
 | 🟡 P2 | `TypeChecker._currentClass` 改为 `BindContext` 参数传递（1.4） | 并发安全性 | 中 |
@@ -472,9 +476,11 @@ BoundError err => throw new InvalidOperationException(
 | 1.3 LookupVar Unknown | 🟢 改进 | 通过完全消除 Unresolved 使语义更清晰 |
 | 1.5 Visitor vs switch | 无影响 | 改进与本项正交 |
 | 2.2 消除命名变量槽 | 🟢 进展 | Instance 方法分派确保了 stdlib 方法不使用虚方法开销 |
-| 4.1 ICE 区分 | 🟢 改进 | Unresolved 消除后，BoundError 的流向更清晰 |
-| 4.3 类型名映射 | ✅ 部分实现 | 内置类型映射实现了 TypeRegistry 的子集 |
+| 3.3 block_index 预计算 | ✅ 已完成 | loader.rs 模块加载时预计算 block_index |
+| 4.1 ICE 区分 | ✅ 已完成 | TryBind* 区分 CompilationException 与 ICE，E0900 诊断码 |
+| 4.3 类型名映射 | ✅ 已完成 | TypeRegistry.cs 作为唯一数据源 |
 | 5.1 BoundError → Codegen | 🟢 改进 | 现在不会有 Unresolved 到达 Codegen |
+| 5.2 IsSubclassOf 预计算 | ✅ 已完成 | SymbolTable 构造时预计算祖先集合，O(1) 查找 |
 
 ---
 
@@ -484,26 +490,24 @@ BoundError err => throw new InvalidOperationException(
 
 ### 🔴 最高优先级（应立即推进）
 
-1. **区分 ICE 与用户错误（4.1）** — 30 分钟工作量
-   - **为什么：** 编译器 Bug 被掩盖，极难定位根本原因
-   - **工作：** 修改 `PipelineCore.cs` 的异常捕获策略
-   - **验收：** `catch (Exception)` → `catch (LanguageFeatureException)` + 编译器 Bug 表现为明确的 ICE 消息
+1. ~~**区分 ICE 与用户错误（4.1）**~~ ✅ **已完成**
+   - TypeChecker.TryBind* 区分 CompilationException 与 ICE，新增 E0900 诊断码
+   - PipelineCore 已正确只捕获 CompilationException，其他异常传播
 
 2. **消除 `StoreInstr`/`LoadInstr`（2.2）** — 中等工作量
    - **为什么：** 命名变量槽破坏寄存器机不变式，JIT 实现时会成为瓶颈
    - **工作：** IR 代码生成阶段为每个变量分配寄存器 ID，删除 `StoreInstr`/`LoadInstr`
    - **验收：** Frame 结构去掉 `HashMap<String, Value>`，golden tests 全绿
 
-3. **统一类型名映射（4.3）** — 30 分钟工作量
-   - **为什么：** DRY 原则，新增类型需同步三处容易漏
-   - **工作：** 新建 `TypeRegistry.cs`，三个地方均从它派生查找表
-   - **验收：** `SymbolTable`/`FunctionEmitter`/`Z42Type` 的类型映射均来自唯一数据源
+3. ~~**统一类型名映射（4.3）**~~ ✅ **已完成**
+   - TypeRegistry.cs 作为所有原始类型映射的唯一数据源
+   - SymbolTable.ResolveType 和 FunctionEmitter.ToIrType 均从 TypeRegistry 派生
 
 ### 🟡 次优先级（下个迭代）
 
 - `Value` 枚举合并整数类型（3.1）— 内存/缓存性能跃升
-- `IsSubclassOf` 预计算祖先集合（5.2）— 类型检查加速
-- `exec_function` 预计算 `block_index`（3.3）— 解释器调用加速
+- ~~`IsSubclassOf` 预计算祖先集合（5.2）~~  ✅ **已完成** — SymbolTable 构造时预计算
+- ~~`exec_function` 预计算 `block_index`（3.3）~~ ✅ **已完成** — loader.rs 模块加载时预计算
 
 ---
 
@@ -513,9 +517,9 @@ BoundError err => throw new InvalidOperationException(
 
 | 改进项 | M6（当前） | M7+ | 说明 |
 |--------|-----------|-----|------|
-| 4.1（ICE 区分） | ✅ 应做 | — | 编译器可靠性，阶段无关 |
+| 4.1（ICE 区分） | ✅ **已完成** | — | E0900 ICE 诊断码 |
 | 2.2（消除命名槽） | ✅ 必做 | — | JIT 实现的前置条件 |
-| 4.3（类型注册表） | ✅ 应做 | — | 可维护性，工作量小 |
+| 4.3（类型注册表） | ✅ **已完成** | — | TypeRegistry.cs |
 | 1.4（BindContext） | ⏳ 可做 | ✅ 必做 | 并发编译的前置，M7+ 并行编译时强制 |
 | 3.1（Value 布局） | ⏳ 可做 | ✅ 建议做 | 性能优化，M7 后期或 M8 |
 | 3.2（异常信号） | ⏳ 可做 | ✅ 建议做 | 性能优化，与 JIT 协同 |

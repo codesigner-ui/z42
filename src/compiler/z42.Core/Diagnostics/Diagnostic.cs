@@ -75,6 +75,9 @@ public static class DiagnosticCodes
     // IrGen
     public const string UnsupportedSyntax    = "E0501";
 
+    // Internal compiler error
+    public const string InternalCompilerError = "E0900";
+
     // Native / InternalCall
     public const string ExternRequiresNative     = "E0903"; // extern method missing [Native] attribute
     public const string NativeRequiresExtern     = "E0904"; // [Native] attribute on non-extern method
