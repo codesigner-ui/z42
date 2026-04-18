@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-19（已完成改进：13 项，进行中：0 项）  
+> 最后更新：2026-04-19（已完成改进：14 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -21,6 +21,7 @@
 - ✅ **FunctionDecl FunctionModifiers flags（4.2）** — 5 个 bool 替换为 `[Flags] enum FunctionModifiers`，便捷属性保持 API 兼容
 - ✅ **LookupVar 语义清理（1.3）** — LookupVar 不再为类名返回 Unknown，新增 IsClassName 方法区分变量/类型
 - ✅ **_currentClass → TypeEnv.CurrentClass（1.4）** — 消除共享可变状态，改为不可变 env 属性，通过 WithClass() 传递
+- ✅ **ExecSignal 替代 anyhow 传播（3.2）** — 用户异常走 ExecOutcome::Thrown 值传递，不再经 thread_local + anyhow 堆分配
 
 ---
 
@@ -379,7 +380,7 @@ BoundError err => throw new InvalidOperationException(
 | ✅ ~~P2~~ | ~~`TypeEnv.LookupVar` 区分变量/类名（1.3）~~ | 类型检查正确性 | 小 | **已完成** |
 | ✅ ~~P2~~ | ~~统一 BoundExpr 遍历方式，去除 Visitor/switch 双重路径（1.5）~~ | 可扩展性 | 中 | **已完成** |
 | ✅ ~~P2~~ | ~~`TypeChecker._currentClass` → `TypeEnv.CurrentClass`（1.4）~~ | 并发安全性 | 中 | **已完成** |
-| 🟡 P2 | 用户异常改用 `ExecSignal` 避免 `anyhow` 传播（3.2） | 异常处理性能 | 中 |
+| ✅ ~~P2~~ | ~~用户异常改用 `ExecOutcome` 值传播（3.2）~~ | 异常处理性能 | 中 | **已完成** |
 | ✅ ~~P2~~ | ~~`FunctionDecl` 引入 `FunctionModifiers` flags（4.2）~~ | 代码健壮性 | 小 | **已完成** |
 | 🟢 P3 | IR 序列化与内存模型解耦（2.1） | 架构清洁度 | 中 |
 | 🟢 P3 | `IrVerifier` 增加 CFG dominance 验证（2.3） | 编译器正确性 | 大 |

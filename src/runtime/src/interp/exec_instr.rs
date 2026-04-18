@@ -13,9 +13,14 @@ use super::dispatch::{
     static_get, static_set, value_to_str,
 };
 use super::ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
-use super::Frame;
+use super::{ExecOutcome, Frame};
 
-pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<()> {
+/// Execute a single instruction.
+/// Returns:
+///   Ok(None)       — normal completion
+///   Ok(Some(val))  — a callee threw a user exception (value-based propagation)
+///   Err(e)         — internal VM error
+pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<Option<Value>> {
     match instr {
         // ── Constants ────────────────────────────────────────────────────────
         Instruction::ConstStr { dst, idx } => {
@@ -142,15 +147,17 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;
-            if let Some(callee) = module.functions.iter().find(|f| f.name == *fname) {
-                let ret = super::exec_function(module, callee, &arg_vals)?;
-                frame.set(*dst, ret.unwrap_or(Value::Null));
+            let callee_fn = module.functions.iter().find(|f| f.name == *fname);
+            let outcome = if let Some(callee) = callee_fn {
+                super::exec_function(module, callee, &arg_vals)?
             } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(fname) {
-                // Lazy-loaded dependency function (e.g. Std.IO.Console.WriteLine)
-                let ret = super::exec_function(module, lazy_fn.as_ref(), &arg_vals)?;
-                frame.set(*dst, ret.unwrap_or(Value::Null));
+                super::exec_function(module, lazy_fn.as_ref(), &arg_vals)?
             } else {
                 bail!("undefined function `{fname}`");
+            };
+            match outcome {
+                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                ExecOutcome::Thrown(val) => return Ok(Some(val)),
             }
         }
 
@@ -309,7 +316,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                 call_args.append(&mut extra_args);
                 let ret = crate::corelib::exec_builtin(builtin_name, &call_args)?;
                 frame.set(*dst, ret);
-                return Ok(());
+                return Ok(None);
             }
 
             // O(1) vtable dispatch using pre-computed TypeDesc.
@@ -329,14 +336,16 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             };
             let mut call_args = vec![obj_val];
             call_args.append(&mut extra_args);
-            if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
-                let ret = super::exec_function(module, callee, &call_args)?;
-                frame.set(*dst, ret.unwrap_or(Value::Null));
+            let outcome = if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
+                super::exec_function(module, callee, &call_args)?
             } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
-                let ret = super::exec_function(module, lazy_fn.as_ref(), &call_args)?;
-                frame.set(*dst, ret.unwrap_or(Value::Null));
+                super::exec_function(module, lazy_fn.as_ref(), &call_args)?
             } else {
                 bail!("VCall: function `{}` not found", func_name);
+            };
+            match outcome {
+                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                ExecOutcome::Thrown(val) => return Ok(Some(val)),
             }
         }
 
@@ -373,5 +382,5 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             static_set(field, v);
         }
     }
-    Ok(())
+    Ok(None)
 }

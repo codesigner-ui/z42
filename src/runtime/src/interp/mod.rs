@@ -16,15 +16,27 @@ use anyhow::{bail, Context, Result};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-// ── User exception machinery ──────────────────────────────────────────────────
+// ── Execution outcome ────────────────────────────────────────────────────────
 
-// Thread-local slot: holds the currently-in-flight user exception value.
-// Populated by `user_throw`, consumed by exception table handler lookup.
+/// Outcome of executing a function.
+/// User exceptions are value-based (no heap allocation), not anyhow errors.
+#[derive(Debug)]
+pub(crate) enum ExecOutcome {
+    /// Normal return (with optional return value).
+    Returned(Option<Value>),
+    /// User exception thrown and not caught within this function.
+    Thrown(Value),
+}
+
+// ── User exception machinery (kept for JIT compatibility) ────────────────────
+
+// Thread-local slot: used by JIT helpers that need extern "C" ABI.
+// The interpreter path no longer uses this; it propagates via ExecOutcome::Thrown.
 thread_local! {
     static PENDING_EXCEPTION: RefCell<Option<Value>> = const { RefCell::new(None) };
 }
 
-/// Lightweight sentinel: `Send + Sync + 'static` because it carries no payload.
+/// Lightweight sentinel for JIT path: `Send + Sync + 'static`.
 #[derive(Debug)]
 struct UserException;
 
@@ -39,12 +51,14 @@ impl std::fmt::Display for UserException {
 
 impl std::error::Error for UserException {}
 
-fn user_throw(val: Value) -> anyhow::Error {
+/// JIT-only: store exception value and return anyhow sentinel.
+#[allow(dead_code)]
+pub(crate) fn user_throw(val: Value) -> anyhow::Error {
     PENDING_EXCEPTION.with(|p| *p.borrow_mut() = Some(val));
     anyhow::Error::new(UserException)
 }
 
-fn user_exception_take() -> Option<Value> {
+pub(crate) fn user_exception_take() -> Option<Value> {
     PENDING_EXCEPTION.with(|p| p.borrow_mut().take())
 }
 
@@ -52,20 +66,26 @@ fn user_exception_take() -> Option<Value> {
 
 /// Entry point: run a function with the given arguments.
 pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
-    exec_function(module, func, args)?;
-    Ok(())
+    match exec_function(module, func, args)? {
+        ExecOutcome::Returned(_) => Ok(()),
+        ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
+    }
 }
 
 /// Run with static init: clears static fields, runs __static_init__ if present, then runs `func`.
 pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
     dispatch::static_fields_clear();
-    // Call __static_init__ if it exists
     let init_name = format!("{}.__static_init__", module.name);
     if let Some(init_fn) = module.functions.iter().find(|f| f.name == init_name) {
-        exec_function(module, init_fn, &[])?;
+        match exec_function(module, init_fn, &[])? {
+            ExecOutcome::Returned(_) => {}
+            ExecOutcome::Thrown(val) => bail!("uncaught exception in static init: {}", value_to_str(&val)),
+        }
     }
-    exec_function(module, func, &[])?;
-    Ok(())
+    match exec_function(module, func, &[])? {
+        ExecOutcome::Returned(_) => Ok(()),
+        ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
+    }
 }
 
 // ── Frame ────────────────────────────────────────────────────────────────────
@@ -76,7 +96,6 @@ pub(crate) struct Frame {
 
 impl Frame {
     pub fn new(args: &[Value], max_reg: u32) -> Self {
-        // Pre-allocate based on max_reg hint; fall back to args length if unknown (max_reg == 0).
         let size = if max_reg > 0 { max_reg as usize } else { args.len() };
         let mut regs = vec![Value::Null; size.max(args.len())];
         for (i, v) in args.iter().enumerate() {
@@ -102,8 +121,6 @@ impl Frame {
 
 // ── Debug: source line resolution ─────────────────────────────────────────────
 
-/// Look up the source line number for a given (block, instruction) position
-/// from the function's line_table. Returns the last entry whose position is ≤ current.
 fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, instr: u32) -> u32 {
     let mut line = 0u32;
     for entry in table {
@@ -115,9 +132,8 @@ fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, inst
 
 // ── Core execution loop ──────────────────────────────────────────────────────
 
-pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Option<Value>> {
+pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
     let mut frame = Frame::new(args, func.max_reg);
-    // O(1) block lookup: use precomputed block_index from module load time.
     let block_map = &func.block_index;
     let mut block_idx = 0usize;
 
@@ -128,26 +144,47 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
             .with_context(|| format!("block index {block_idx} out of range"))?;
 
         for (instr_idx, instr) in block.instructions.iter().enumerate() {
-            if let Err(e) = exec_instr::exec_instr(module, &mut frame, instr) {
-                if e.is::<UserException>() {
-                    if let Some(entry_idx) = find_handler(func, block_idx, &block_map) {
-                        let thrown_val = user_exception_take().unwrap_or(Value::Null);
+            // exec_instr returns:
+            //   Ok(None)       — normal instruction completion
+            //   Ok(Some(val))  — a callee threw an exception (value-based propagation)
+            //   Err(e)         — internal VM error
+            match exec_instr::exec_instr(module, &mut frame, instr) {
+                Ok(None) => {}
+                Ok(Some(thrown_val)) => {
+                    // User exception from a callee — try to find a local handler
+                    if let Some(entry_idx) = find_handler(func, block_idx, block_map) {
                         let entry = &func.exception_table[entry_idx];
                         frame.set(entry.catch_reg, thrown_val);
                         block_idx = *block_map.get(entry.catch_label.as_str())
                             .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
                         continue 'exec;
                     }
+                    // No handler — propagate up as ExecOutcome::Thrown (no anyhow allocation)
+                    return Ok(ExecOutcome::Thrown(thrown_val));
                 }
-                // Enrich error with source location from line table
-                let loc = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
-                return Err(e.context(format!("  at {} (line {})", func.name, loc)));
+                Err(e) => {
+                    // JIT path: check if this is a UserException from JIT helpers
+                    if e.is::<UserException>() {
+                        let thrown_val = user_exception_take().unwrap_or(Value::Null);
+                        if let Some(entry_idx) = find_handler(func, block_idx, block_map) {
+                            let entry = &func.exception_table[entry_idx];
+                            frame.set(entry.catch_reg, thrown_val);
+                            block_idx = *block_map.get(entry.catch_label.as_str())
+                                .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
+                            continue 'exec;
+                        }
+                        return Ok(ExecOutcome::Thrown(thrown_val));
+                    }
+                    // Internal error — enrich with source location
+                    let loc = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
+                    return Err(e.context(format!("  at {} (line {})", func.name, loc)));
+                }
             }
         }
 
         match &block.terminator {
-            Terminator::Ret { reg: None }      => return Ok(None),
-            Terminator::Ret { reg: Some(r) }   => return Ok(Some(frame.get(*r)?.clone())),
+            Terminator::Ret { reg: None }      => return Ok(ExecOutcome::Returned(None)),
+            Terminator::Ret { reg: Some(r) }   => return Ok(ExecOutcome::Returned(Some(frame.get(*r)?.clone()))),
             Terminator::Br  { label }          => {
                 block_idx = *block_map.get(label.as_str())
                     .with_context(|| format!("undefined block `{label}`"))?;
@@ -163,13 +200,14 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
             }
             Terminator::Throw { reg } => {
                 let val = frame.get(*reg)?.clone();
-                if let Some(entry_idx) = find_handler(func, block_idx, &block_map) {
+                if let Some(entry_idx) = find_handler(func, block_idx, block_map) {
                     let entry = &func.exception_table[entry_idx];
                     frame.set(entry.catch_reg, val);
                     block_idx = *block_map.get(entry.catch_label.as_str())
                         .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
                 } else {
-                    return Err(user_throw(val));
+                    // No local handler — propagate via value, not anyhow
+                    return Ok(ExecOutcome::Thrown(val));
                 }
             }
         }

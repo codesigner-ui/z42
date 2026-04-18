@@ -58,11 +58,12 @@ pub fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
             .map(|&slot| type_desc.vtable[slot].1.clone());
         if let Some(func_name) = func_name_opt {
             if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
-                let ret = super::exec_function(module, callee, &[val.clone()])?;
-                return match ret {
-                    Some(Value::Str(s)) => Ok(s),
-                    Some(other)         => Ok(value_to_str(&other)),
-                    None                => Ok(String::new()),
+                let outcome = super::exec_function(module, callee, &[val.clone()])?;
+                return match outcome {
+                    super::ExecOutcome::Returned(Some(Value::Str(s))) => Ok(s),
+                    super::ExecOutcome::Returned(Some(other))         => Ok(value_to_str(&other)),
+                    super::ExecOutcome::Returned(None)                => Ok(String::new()),
+                    super::ExecOutcome::Thrown(v)                     => Ok(format!("<exception: {}>", value_to_str(&v))),
                 };
             }
         }
