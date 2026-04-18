@@ -53,7 +53,8 @@
       "Bash(xxd artifacts/z42/libs/z42.core.zpkg)",
       "Bash(xxd /tmp/multi-ns-test/dist/multi-ns-test.zpkg)",
       "Bash(grep -c \"DiagnosticCodes\\\\.\" src/compiler/z42.Semantics/**/*.cs)",
-      "Bash(grep -c 'public const string' src/compiler/z42.Core/Diagnostics/*.cs src/compiler/z42.Semantics/**/*.cs)"
+      "Bash(grep -c 'public const string' src/compiler/z42.Core/Diagnostics/*.cs src/compiler/z42.Semantics/**/*.cs)",
+      "Bash(ls src/compiler/z42.Tests/*.cs)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

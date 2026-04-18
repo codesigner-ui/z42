@@ -324,4 +324,55 @@ public sealed class ProjectManifestTests : IDisposable
         m.Project.Kind.Should().Be(ProjectKind.Exe);
         m.ExeTargets.Should().BeEmpty();
     }
+
+    // ── [dependencies] ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Load_NoDependencies_AutoScanMode()
+    {
+        var m = Load("hello.z42.toml", "[project]\nkind=\"lib\"");
+        m.Dependencies.IsDeclared.Should().BeFalse();
+        m.Dependencies.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Load_EmptyDependencies_DeclaredButEmpty()
+    {
+        var m = Load("hello.z42.toml", "[project]\nkind=\"lib\"\n[dependencies]");
+        m.Dependencies.IsDeclared.Should().BeTrue();
+        m.Dependencies.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Load_WithDependencies_ParsesNameAndVersion()
+    {
+        var m = Load("hello.z42.toml", """
+            [project]
+            kind = "exe"
+            entry = "Hello.main"
+            [dependencies]
+            "my-utils" = "*"
+            "my-http"  = "1.2.0"
+            """);
+        m.Dependencies.IsDeclared.Should().BeTrue();
+        m.Dependencies.Entries.Should().HaveCount(2);
+        m.Dependencies.Entries[0].Name.Should().Be("my-utils");
+        m.Dependencies.Entries[0].Version.Should().Be("*");
+        m.Dependencies.Entries[1].Name.Should().Be("my-http");
+        m.Dependencies.Entries[1].Version.Should().Be("1.2.0");
+    }
+
+    [Fact]
+    public void Load_StdlibDependency_ParsedNormally()
+    {
+        var m = Load("mylib.z42.toml", """
+            [project]
+            kind = "lib"
+            [dependencies]
+            "z42.core" = "0.1.0"
+            """);
+        m.Dependencies.IsDeclared.Should().BeTrue();
+        m.Dependencies.Entries.Should().ContainSingle()
+            .Which.Name.Should().Be("z42.core");
+    }
 }

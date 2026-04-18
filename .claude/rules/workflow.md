@@ -393,6 +393,25 @@ tasks.md 顶部：
 
 ---
 
+## 测试要求（必须遵守）
+
+**每次新增需求或迭代（非纯文档/纯注释变更），必须包含对应的测试用例。无测试 = 未完成。**
+
+| 变更类型 | 测试要求 |
+|---------|---------|
+| 新功能 / 新 pipeline 阶段 | 至少 1 个正常用例 + 1 个边界/异常用例的单元测试或 golden test |
+| Bug fix | 至少 1 个回归测试，覆盖修复的 bug 场景 |
+| 新 IR 指令 / VM 行为 | golden test (run/) 验证端到端执行结果 |
+| 新 CLI 命令 / 工程文件字段 | 单元测试验证解析正确性 + 错误输入报错 |
+| refactor | 确保已有测试仍覆盖（不新增测试即可，但不得删除测试） |
+
+**测试位置：**
+- C# 编译器：`src/compiler/z42.Tests/` 下对应测试类
+- Rust VM：`src/runtime/tests/golden/run/` 或 `src/runtime/src/*_tests.rs`
+- 跨语言端到端：golden test（source.z42 + expected_output.txt）
+
+---
+
 ## 禁止行为
 
 - Spec 未经 User 确认前写实现代码
