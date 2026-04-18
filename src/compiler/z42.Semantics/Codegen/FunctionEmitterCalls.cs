@@ -47,13 +47,11 @@ internal sealed partial class FunctionEmitter
             }
 
             case BoundCallKind.Instance:
-            case BoundCallKind.Virtual:
             {
                 var objReg = EmitExpr(call.Receiver!);
 
-                // Try DepIndex for stdlib instance methods
-                if (call.Kind == BoundCallKind.Instance
-                    && _ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
+                // Instance methods: try DepIndex first (stdlib methods take priority)
+                if (_ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
                 {
                     var fullArgRegs = new List<TypedReg> { objReg };
                     fullArgRegs.AddRange(argRegs);
@@ -63,12 +61,24 @@ internal sealed partial class FunctionEmitter
                     return dst;
                 }
 
-                // Fall back to virtual dispatch
+                // User-defined class instance methods: fall back to virtual dispatch
                 var vcallKey = _ctx.FindVcallParamsKey(call.MethodName!, argRegs.Count);
                 if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
                 var dst2 = Alloc(ToIrType(call.Type));
                 Emit(new VCallInstr(dst2, objReg, call.MethodName!, argRegs));
                 return dst2;
+            }
+
+            case BoundCallKind.Virtual:
+            {
+                var objReg = EmitExpr(call.Receiver!);
+
+                // Virtual dispatch for interface/abstract methods
+                var vcallKey = _ctx.FindVcallParamsKey(call.MethodName!, argRegs.Count);
+                if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
+                var dst = Alloc(ToIrType(call.Type));
+                Emit(new VCallInstr(dst, objReg, call.MethodName!, argRegs));
+                return dst;
             }
 
             case BoundCallKind.Free:

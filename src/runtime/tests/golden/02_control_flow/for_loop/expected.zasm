@@ -16,9 +16,10 @@
     br  incr_2
 
   .block incr_2
-    %5 = const.i64  1
-    %6 = add  %1, %5
-    %1 = copy  %6
+    %5 = copy  %1
+    %6 = const.i64  1
+    %7 = add  %1, %6
+    %1 = copy  %7
     br  cond_0
 
   .block end_3

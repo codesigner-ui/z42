@@ -281,13 +281,17 @@ internal sealed partial class FunctionEmitter
         if (post.Operand is BoundIdent id)
         {
             var oldReg = EmitExpr(post.Operand);
+            // Save the old value to a new register before WriteBackName overwrites it
+            var savedOldReg = Alloc(ToIrType(post.Type));
+            Emit(new CopyInstr(savedOldReg, oldReg));
+
             var one    = Alloc(ToIrType(post.Type));
             var newReg = Alloc(ToIrType(post.Type));
             Emit(new ConstI64Instr(one, 1));
             Emit(post.Op == PostfixOp.Inc ? new AddInstr(newReg, oldReg, one)
                                           : (IrInstr)new SubInstr(newReg, oldReg, one));
             WriteBackName(id.Name, newReg);
-            return oldReg;
+            return savedOldReg;  // Return the saved old value, not the variable register
         }
         return EmitExpr(post.Operand);
     }

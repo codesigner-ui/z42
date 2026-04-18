@@ -47,22 +47,34 @@ public sealed partial class TypeChecker
         // ── Member call ───────────────────────────────────────────────────────
         if (call.Callee is MemberExpr mCallee)
         {
-            // Unknown target: stdlib/external class (e.g. Console, Assert, Math)
+            // Unknown target: stdlib/external class (e.g. Console, Assert, Math, string, int, double)
             if (mCallee.Target is IdentExpr { Name: var tgtName }
                 && !_symbols.Classes.ContainsKey(tgtName) && !_symbols.Interfaces.ContainsKey(tgtName)
                 && !_symbols.EnumTypes.Contains(tgtName)
                 && env.LookupVar(tgtName) == null && env.LookupFunc(tgtName) == null)
             {
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
+
+                // Map built-in type names to stdlib class names
+                string resolvedClassName = tgtName switch
+                {
+                    "string" => "Std.String",
+                    "int" => "Std.Int",
+                    "double" => "Std.Double",
+                    "bool" => "Std.Bool",
+                    _ => tgtName
+                };
+
                 // Try to resolve via DepIndex (static method on stdlib class)
-                if (_depIndex?.TryGetStatic(tgtName, mCallee.Member, out var depUnknownEntry) == true)
+                if (_depIndex?.TryGetStatic(resolvedClassName, mCallee.Member, out var depUnknownEntry) == true)
                 {
                     var retType = IrTypeToZ42Type(depUnknownEntry.RetType);
-                    return new BoundCall(BoundCallKind.Static, null, tgtName, mCallee.Member,
+                    return new BoundCall(BoundCallKind.Static, null, resolvedClassName, mCallee.Member,
                         null, args, retType, call.Span);
                 }
-                // Not found in DepIndex — return Unknown type, IrGen will attempt to resolve
-                return new BoundCall(BoundCallKind.Static, null, tgtName, mCallee.Member,
+                // Not found in DepIndex — return Unknown type with resolved class name
+                // so that IrGen can still use the correct qualified name if available
+                return new BoundCall(BoundCallKind.Static, null, resolvedClassName, mCallee.Member,
                     null, args, Z42Type.Unknown, call.Span);
             }
 
