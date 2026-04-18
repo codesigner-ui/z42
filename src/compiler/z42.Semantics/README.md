@@ -16,9 +16,8 @@
 | `TypeCheck/Z42Type.cs` | 语义类型层次（`Z42IntType`、`Z42ClassType` 等）|
 | `TypeCheck/TypeEnv.cs` | 词法作用域符号表 |
 | `TypeCheck/BinaryTypeTable.cs` | 二元运算符类型规则表 |
-| `Bound/BoundExpr.cs` | 携带类型的表达式绑定节点（25 种，含 BoundCallKind 枚举，均支持 Accept visitor）|
-| `Bound/BoundStmt.cs` | 绑定语句节点（14 种 BoundStmt + BoundBlock，均支持 Accept visitor）|
-| `Bound/IBoundVisitor.cs` | `IBoundExprVisitor<T>` + `IBoundStmtVisitor<T>` 接口，新增节点编译期强制补全 |
+| `Bound/BoundExpr.cs` | 携带类型的表达式绑定节点（25 种 sealed record，含 BoundCallKind 枚举）|
+| `Bound/BoundStmt.cs` | 绑定语句节点（14 种 BoundStmt + BoundBlock），遍历统一用 switch 模式匹配 |
 | `Codegen/IrGen.cs` | 代码生成器：模块级状态、公开 API、函数分派 |
 | `Codegen/FunctionEmitter.cs` | 函数级 IR 生成器：块管理、入口点、辅助方法 |
 | `Codegen/FunctionEmitterStmts.cs` | 语句 + 控制流 IR 生成（分部类，消费 BoundStmt）|

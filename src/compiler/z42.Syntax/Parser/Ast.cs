@@ -75,6 +75,22 @@ public sealed record FieldDecl(
     Expr? Initializer,
     Span Span);
 
+// ── Function modifiers ────────────────────────────────────────────────────────
+
+/// Modifier flags for function declarations.
+/// Replaces scattered bool fields; mutually-exclusive combinations
+/// (e.g. Abstract + Static) are validated at construction time.
+[Flags]
+public enum FunctionModifiers
+{
+    None     = 0,
+    Static   = 1 << 0,
+    Virtual  = 1 << 1,
+    Override = 1 << 2,
+    Abstract = 1 << 3,
+    Extern   = 1 << 4,
+}
+
 // ── Function declaration ──────────────────────────────────────────────────────
 
 public sealed record FunctionDecl(
@@ -83,14 +99,18 @@ public sealed record FunctionDecl(
     TypeExpr ReturnType,
     BlockStmt Body,
     Visibility Visibility,
-    bool IsStatic,
-    bool IsVirtual,
-    bool IsOverride,
-    bool IsAbstract,
-    bool IsExtern,
+    FunctionModifiers Modifiers,
     string? NativeIntrinsic,
     Span Span,
-    List<Expr>? BaseCtorArgs = null);  // non-null only on constructors with `: base(...)`
+    List<Expr>? BaseCtorArgs = null)  // non-null only on constructors with `: base(...)`
+{
+    // Convenience accessors — keep read sites concise
+    public bool IsStatic   => Modifiers.HasFlag(FunctionModifiers.Static);
+    public bool IsVirtual  => Modifiers.HasFlag(FunctionModifiers.Virtual);
+    public bool IsOverride => Modifiers.HasFlag(FunctionModifiers.Override);
+    public bool IsAbstract => Modifiers.HasFlag(FunctionModifiers.Abstract);
+    public bool IsExtern   => Modifiers.HasFlag(FunctionModifiers.Extern);
+}
 
 public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span);
 

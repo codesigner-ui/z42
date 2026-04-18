@@ -281,7 +281,7 @@ internal static partial class TopLevelParser
             ExpectKind(ref cursor, TokenKind.RParen);
             var ctorBody = new BlockStmt(ctorStmts, start);
             methods.Add(new FunctionDecl(name, ctorParams, new VoidType(start),
-                ctorBody, Visibility.Public, false, false, false, false, false, null, start));
+                ctorBody, Visibility.Public, FunctionModifiers.None, null, start));
 
             if (cursor.Current.Kind == TokenKind.Semicolon)
             {
@@ -395,8 +395,8 @@ internal static partial class TopLevelParser
         {
             SkipAutoPropBody(ref cursor);
             return new FunctionDecl(name, [], returnType,
-                new BlockStmt([], start), vis, isStatic, isVirtual, isOverride,
-                isAbstract, isExtern, nativeIntrinsic, start);
+                new BlockStmt([], start), vis, BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
+                nativeIntrinsic, start);
         }
 
         var parms = ParseParamList(ref cursor, feat);
@@ -443,8 +443,21 @@ internal static partial class TopLevelParser
         }
 
         return new FunctionDecl(name, parms, returnType, body, vis,
-            isStatic, isVirtual, isOverride, isAbstract, isExtern, nativeIntrinsic, start,
-            BaseCtorArgs: baseCtorArgs);
+            BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
+            nativeIntrinsic, start, BaseCtorArgs: baseCtorArgs);
+    }
+
+    /// Build FunctionModifiers flags from individual booleans parsed from source.
+    private static FunctionModifiers BuildModifiers(
+        bool isStatic, bool isVirtual, bool isOverride, bool isAbstract, bool isExtern)
+    {
+        var m = FunctionModifiers.None;
+        if (isStatic)   m |= FunctionModifiers.Static;
+        if (isVirtual)  m |= FunctionModifiers.Virtual;
+        if (isOverride) m |= FunctionModifiers.Override;
+        if (isAbstract) m |= FunctionModifiers.Abstract;
+        if (isExtern)   m |= FunctionModifiers.Extern;
+        return m;
     }
 
 }

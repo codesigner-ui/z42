@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-18（已完成改进：8 项，进行中：0 项）  
+> 最后更新：2026-04-19（已完成改进：11 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -14,6 +14,11 @@
 - ✅ **统一类型名映射 TypeRegistry（4.3）** — 已有 TypeRegistry.cs 作为唯一数据源
 - ✅ **IsSubclassOf 预计算祖先集合（5.2）** — SymbolTable 构造时预计算所有类的祖先集合，O(1) 查找
 - ✅ **exec_function 预计算 block_index（3.3）** — loader.rs 在模块加载时预计算 block_index
+
+**新完成的改进（2026-04-19）：**
+- ✅ **BoundError → Codegen 防护（5.1）** — BoundError 到达 Codegen 时抛出 ICE 而非静默生成 null
+- ✅ **删除未使用的 Visitor 接口（1.5）** — 移除 IBoundExprVisitor/IBoundStmtVisitor 和所有 Accept 方法，统一用 switch 模式匹配
+- ✅ **FunctionDecl FunctionModifiers flags（4.2）** — 5 个 bool 替换为 `[Flags] enum FunctionModifiers`，便捷属性保持 API 兼容
 
 ---
 
@@ -370,10 +375,10 @@ BoundError err => throw new InvalidOperationException(
 | ✅ ~~P1~~ | ~~`exec_function` 预计算 `block_index`（3.3）~~ | 解释器调用性能 | 小 | **已完成** |
 | ✅ ~~P1~~ | ~~`IsSubclassOf` 预计算祖先集合（5.2）~~ | 类型检查性能 | 小 | **已完成** |
 | 🟡 P2 | `TypeEnv.LookupVar` 区分变量/类名（1.3） | 类型检查正确性 | 小 |
-| 🟡 P2 | 统一 BoundExpr 遍历方式，去除 Visitor/switch 双重路径（1.5） | 可扩展性 | 中 |
+| ✅ ~~P2~~ | ~~统一 BoundExpr 遍历方式，去除 Visitor/switch 双重路径（1.5）~~ | 可扩展性 | 中 | **已完成** |
 | 🟡 P2 | `TypeChecker._currentClass` 改为 `BindContext` 参数传递（1.4） | 并发安全性 | 中 |
 | 🟡 P2 | 用户异常改用 `ExecSignal` 避免 `anyhow` 传播（3.2） | 异常处理性能 | 中 |
-| 🟡 P2 | `FunctionDecl` 引入 `FunctionModifiers` flags（4.2） | 代码健壮性 | 小 |
+| ✅ ~~P2~~ | ~~`FunctionDecl` 引入 `FunctionModifiers` flags（4.2）~~ | 代码健壮性 | 小 | **已完成** |
 | 🟢 P3 | IR 序列化与内存模型解耦（2.1） | 架构清洁度 | 中 |
 | 🟢 P3 | `IrVerifier` 增加 CFG dominance 验证（2.3） | 编译器正确性 | 大 |
 | 🟢 P3 | 统一 `TypeConversion` 枚举，完善类型兼容性规则（1.2） | 类型系统完整性 | 中 |
@@ -474,12 +479,13 @@ BoundError err => throw new InvalidOperationException(
 |--------|------|------|
 | 1.2 类型兼容性规则 | ⏳ 部分缓解 | 整数统一为 I64，小整数问题暂时规避 |
 | 1.3 LookupVar Unknown | 🟢 改进 | 通过完全消除 Unresolved 使语义更清晰 |
-| 1.5 Visitor vs switch | 无影响 | 改进与本项正交 |
+| 1.5 Visitor vs switch | ✅ 已完成 | 删除 IBoundVisitor 接���和所有 Accept 方法，统一用 switch |
 | 2.2 消除命名变量槽 | 🟢 进展 | Instance 方法分派确保了 stdlib 方法不使用虚方法开销 |
 | 3.3 block_index 预计算 | ✅ 已完成 | loader.rs 模块加载时预计算 block_index |
 | 4.1 ICE 区分 | ✅ 已完成 | TryBind* 区分 CompilationException 与 ICE，E0900 诊断码 |
+| 4.2 FunctionModifiers | ✅ 已完成 | 5 个 bool 替换为 `[Flags] enum FunctionModifiers` |
 | 4.3 类型名映射 | ✅ 已完成 | TypeRegistry.cs 作为唯一数据源 |
-| 5.1 BoundError → Codegen | 🟢 改进 | 现在不会有 Unresolved 到达 Codegen |
+| 5.1 BoundError → Codegen | ✅ 已完成 | BoundError 到达 Codegen 时抛出 ICE |
 | 5.2 IsSubclassOf 预计算 | ✅ 已完成 | SymbolTable 构造时预计算祖先集合，O(1) 查找 |
 
 ---

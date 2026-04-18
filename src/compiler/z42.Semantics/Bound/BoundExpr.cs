@@ -5,44 +5,35 @@ namespace Z42.Semantics.Bound;
 
 // ── Bound expression hierarchy ────────────────────────────────────────────────
 // Every BoundExpr carries its inferred Z42Type; no dictionary lookup needed.
+// All traversals use C# switch pattern matching (exhaustive by convention).
 
-public abstract record BoundExpr(Z42Type Type, Span Span)
-{
-    public abstract TResult Accept<TResult>(IBoundExprVisitor<TResult> visitor);
-}
+public abstract record BoundExpr(Z42Type Type, Span Span);
 
 // ── Literals ──────────────────────────────────────────────────────────────────
 
 public sealed record BoundLitInt(long Value, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitLitInt(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundLitFloat(double Value, bool IsFloat, Span Span)
-    : BoundExpr(IsFloat ? Z42Type.Float : Z42Type.Double, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitLitFloat(this); }
+    : BoundExpr(IsFloat ? Z42Type.Float : Z42Type.Double, Span);
 
 public sealed record BoundLitStr(string Value, Span Span)
-    : BoundExpr(Z42Type.String, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitLitStr(this); }
+    : BoundExpr(Z42Type.String, Span);
 
 public sealed record BoundLitBool(bool Value, Span Span)
-    : BoundExpr(Z42Type.Bool, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitLitBool(this); }
+    : BoundExpr(Z42Type.Bool, Span);
 
 public sealed record BoundLitNull(Span Span)
-    : BoundExpr(Z42Type.Null, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitLitNull(this); }
+    : BoundExpr(Z42Type.Null, Span);
 
 public sealed record BoundLitChar(char Value, Span Span)
-    : BoundExpr(Z42Type.Char, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitLitChar(this); }
+    : BoundExpr(Z42Type.Char, Span);
 
 // ── Interpolated string ───────────────────────────────────────────────────────
 
 public sealed record BoundInterpolatedStr(
     IReadOnlyList<BoundInterpolationPart> Parts,
-    Span Span) : BoundExpr(Z42Type.String, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitInterpolatedStr(this); }
+    Span Span) : BoundExpr(Z42Type.String, Span);
 
 public abstract record BoundInterpolationPart(Span Span);
 public sealed record BoundTextPart(string Text, Span Span) : BoundInterpolationPart(Span);
@@ -65,24 +56,19 @@ public enum PostfixOp { Inc, Dec }
 // ── Core expressions ──────────────────────────────────────────────────────────
 
 public sealed record BoundIdent(string Name, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitIdent(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundAssign(BoundExpr Target, BoundExpr Value, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitAssign(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundBinary(BinaryOp Op, BoundExpr Left, BoundExpr Right, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitBinary(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundUnary(UnaryOp Op, BoundExpr Operand, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitUnary(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundPostfix(PostfixOp Op, BoundExpr Operand, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitPostfix(this); }
+    : BoundExpr(Type, Span);
 
 // ── Calls ─────────────────────────────────────────────────────────────────────
 
@@ -105,76 +91,63 @@ public sealed record BoundCall(
     string? CalleeName,
     IReadOnlyList<BoundExpr> Args,
     Z42Type RetType,
-    Span Span) : BoundExpr(RetType, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitCall(this); }
+    Span Span) : BoundExpr(RetType, Span);
 
 // ── Member and index access ───────────────────────────────────────────────────
 
 public sealed record BoundMember(BoundExpr Target, string MemberName, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitMember(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundIndex(BoundExpr Target, BoundExpr Index, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitIndex(this); }
+    : BoundExpr(Type, Span);
 
 // ── Type operations ───────────────────────────────────────────────────────────
 
 public sealed record BoundCast(BoundExpr Operand, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitCast(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundNew(
     string QualName,
     IReadOnlyList<BoundExpr> Args,
     Z42Type Type,
-    Span Span) : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitNew(this); }
+    Span Span) : BoundExpr(Type, Span);
 
 public sealed record BoundArrayCreate(BoundExpr Size, Z42Type ElemType, Span Span)
-    : BoundExpr(new Z42ArrayType(ElemType), Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitArrayCreate(this); }
+    : BoundExpr(new Z42ArrayType(ElemType), Span);
 
 public sealed record BoundArrayLit(
     IReadOnlyList<BoundExpr> Elements,
     Z42Type ElemType,
-    Span Span) : BoundExpr(new Z42ArrayType(ElemType), Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitArrayLit(this); }
+    Span Span) : BoundExpr(new Z42ArrayType(ElemType), Span);
 
 // ── Control-flow expressions ──────────────────────────────────────────────────
 
 public sealed record BoundConditional(
     BoundExpr Cond, BoundExpr Then, BoundExpr Else, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitConditional(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundNullCoalesce(BoundExpr Left, BoundExpr Right, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitNullCoalesce(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundNullConditional(BoundExpr Target, string MemberName, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitNullConditional(this); }
+    : BoundExpr(Type, Span);
 
 public sealed record BoundIsPattern(
     BoundExpr Target,
     string TypeName,
     string Binding,
     Z42Type BindType,
-    Span Span) : BoundExpr(Z42Type.Bool, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitIsPattern(this); }
+    Span Span) : BoundExpr(Z42Type.Bool, Span);
 
 public sealed record BoundSwitchExpr(
     BoundExpr Subject,
     IReadOnlyList<BoundSwitchArm> Arms,
     Z42Type Type,
-    Span Span) : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitSwitchExpr(this); }
+    Span Span) : BoundExpr(Type, Span);
 
 public sealed record BoundSwitchArm(BoundExpr? Pattern, BoundExpr Body, Span Span);
 
 // ── Error sentinel ────────────────────────────────────────────────────────────
 
 public sealed record BoundError(string Message, Z42Type Type, Span Span)
-    : BoundExpr(Type, Span)
-{ public override TResult Accept<TResult>(IBoundExprVisitor<TResult> v) => v.VisitError(this); }
+    : BoundExpr(Type, Span);

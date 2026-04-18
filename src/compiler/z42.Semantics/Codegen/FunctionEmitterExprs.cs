@@ -142,12 +142,12 @@ internal sealed partial class FunctionEmitter
             case BoundSwitchExpr sw:
                 return EmitBoundSwitchExpr(sw);
 
-            case BoundError:
-            {
-                var dst = Alloc(IrType.Ref);
-                Emit(new ConstNullInstr(dst));
-                return dst;
-            }
+            case BoundError err:
+                // BoundError should never reach Codegen — PipelineCore checks diags.HasErrors
+                // after TypeCheck and bails out. If we get here, it's a compiler bug (ICE).
+                throw new InvalidOperationException(
+                    $"BoundError reached codegen (ICE): {err.Message}. " +
+                    "TypeChecker should have reported an error and pipeline should have stopped.");
 
             default:
                 throw new NotSupportedException(
