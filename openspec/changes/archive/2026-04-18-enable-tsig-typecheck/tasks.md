@@ -21,6 +21,8 @@
 - [ ] 2.4 导入类方法调用的参数类型暂不检查（等 B 阶段补齐 stdlib 重载后再开启）
 - [ ] 2.5 验证全绿
 
-## A3: 清理 EmitUnresolvedCall
+## A3: 清理 EmitUnresolvedCall（推迟到 B 阶段后）
 - [ ] 3.1 已由 TypeChecker 解析的 stdlib 调用不再走 Unresolved 路径
 - [ ] 3.2 验证全绿
+
+> A3 依赖 B（stdlib 补齐重载）才能完全清理。当前 Unresolved 路径仍作为 TSIG 不完整时的降级方案。
