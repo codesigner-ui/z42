@@ -262,33 +262,71 @@ openspec/changes/<change-name>/
 
 **规范偏差时：** 立刻停，不猜，不绕过。列出冲突 → User 裁决 → 更新 Spec → 继续。已验证部分不回头重写。
 
+**实施过程中的验证要求：**
+
+- 每个 refactor / fix / feature 实施后，立即在本地运行编译 + 测试
+- 发现任何测试失败：
+  - ✅ 若是当前变更导致 → 立即修复
+  - ✅ 若是 pre-existing 失败 → 在本迭代修复，或明确说明原因后 User 确认
+  - ⚠️ 若与当前 Scope 无关 → 记入 tasks.md 备注，新建独立 issue
+- 不得跳过任何测试失败后继续实施下一个任务
+- 整个阶段 7 完成后，进阶段 8 前必须全绿
+
 ---
 
 ## 阶段 8：验证（Verify）
 
+**绿色标准（GREEN 定义）：**
+
+任何迭代进阶段 9 前，必须通过以下全部验证步骤，且 **所有测试全部通过**：
+
 ```bash
+# 1. 编译验证（无编译错误）
 dotnet build src/compiler/z42.slnx
 cargo build --manifest-path src/runtime/Cargo.toml
+
+# 2. 编译器测试（必须 100% 通过）
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
+
+# 3. VM 测试（必须 100% 通过）
 ./scripts/test-vm.sh
 ```
 
-**验证报告（Claude 输出）：**
+**测试失败处理规则：**
+
+| 情况 | 处理方式 |
+|------|---------|
+| **当前变更导致的新失败** | ❌ 必须在本迭代修复，不得 commit |
+| **当前变更触发的隐藏 bug** | ❌ 必须修复，或明确说明理由后 User 确认 |
+| **Pre-existing 失败（变更前已存在）** | ⚠️ 必须在 **同一迭代** 修复，或单独 issue 跟踪 |
+| 发现的问题与当前 Scope 无关 | ✅ 记入 tasks.md，新建独立变更，不阻塞本迭代 |
+
+**验证报告（Claude 必须输出）：**
 
 ```markdown
 ## 验证报告
 
-### Spec 覆盖
-| Scenario | 实现位置 | 状态 |
-|----------|---------|------|
-| [场景名] | File.cs:行号 | ✅ / ❌ |
+### 编译状态
+- ✅ dotnet build src/compiler/z42.slnx
+- ✅ cargo build --manifest-path src/runtime/Cargo.toml
+
+### 测试结果
+- ✅ dotnet test: N/N 通过
+  - 若有失败：❌ 失败列表与修复说明
+- ✅ ./scripts/test-vm.sh: M/M 通过
+  - 若有失败：❌ 失败列表与修复说明
+
+### Spec 覆盖（若有 spec）
+| Scenario | 实现位置 | 验证方式 | 状态 |
+|----------|---------|---------|------|
+| [场景名] | File.cs:行号 | [单元/golden/端到端] | ✅ |
 
 ### Tasks 完成度：N/N ✅
 
-### 结论：✅ 可以归档 / ❌ 待修复：[列出]
+### 结论：✅ 全绿，可以归档 / ❌ 未全绿，待修复：[列出]
 ```
 
-**全绿才能进阶段 9。**
+**全绿才能进阶段 9。** 任何未全绿的状态不得 commit / push。
 
 ---
 
@@ -414,11 +452,34 @@ tasks.md 顶部：
 
 ## 禁止行为
 
-- Spec 未经 User 确认前写实现代码
-- 验证未全绿时 commit / push
-- 顺手修复 Scope 外问题
-- 用"我理解你的意思是…"绕过歧义，而不是停下确认
-- interp 未全绿时填 JIT / AOT 实现
-- Phase 3 特性混入 Phase 1/2
-- 单次提交积压多个逻辑单元
-- 未经 User 确认擅自采用临时方案代替最终解决方案
+**必须遵守，违反即为严重工作流缺陷：**
+
+- **Spec 未经 User 确认前写实现代码**
+  - 规范驱动：所有非平凡变更必须先有 Spec（proposal + design），User 批准后才开始代码
+
+- **验证未全绿时 commit / push**
+  - 🔴 **任何测试失败都不得进入 commit**
+  - 包括 pre-existing 失败：发现后必须修复，或新建单独 issue + 说明
+  - 验证命令必须完整运行：`dotnet build && cargo build && dotnet test && ./scripts/test-vm.sh`
+  - 全绿的定义：所有编译无错，所有测试 100% 通过
+
+- **顺手修复 Scope 外问题**
+  - Scope 内改动优先完成 + 验证
+  - 发现的外部问题记入 tasks.md 备注，新建独立变更，不阻塞本迭代
+
+- **用"我理解你的意思是…"绕过歧义**
+  - 存在歧义时停下来询问，而不是主观推断
+
+- **interp 未全绿时填 JIT / AOT 实现**
+  - VM 实现严格按顺序：interp ✅ → JIT → AOT
+
+- **Phase 3 特性混入 Phase 1/2**
+  - 检查 docs/features.md，确认当前 phase 限制
+
+- **单次提交积压多个逻辑单元**
+  - 每个 openspec/changes/ 变更对应一个 commit
+  - 不得在一个 commit 中混合多个独立的功能或修复
+
+- **未经 User 确认擅自采用临时方案**
+  - 存在"临时"与"最终"方案时，默认实施最终方案
+  - 若条件不允许（依赖未就绪、工作量超出 Scope），必须先向 User 说明 + 得到确认

@@ -68,7 +68,14 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 - **每次新对话**：Claude 自动读取当前阶段和 memory，主动说明状态和下一步
 - **需规范先行**（lang / ir / vm 类变更）：DRAFT → User 确认 → IMPL → GREEN → COMMIT
 - **轻量变更**（fix / refactor / test）：直接 IMPL → GREEN → COMMIT
-- **验证命令**（GREEN 标准）：`dotnet build && cargo build && dotnet test && ./scripts/test-vm.sh`
+- **GREEN 标准**（所有迭代必须满足）：
+  ```bash
+  dotnet build src/compiler/z42.slnx       # 无编译错误
+  cargo build --manifest-path src/runtime/Cargo.toml
+  dotnet test src/compiler/z42.Tests/z42.Tests.csproj        # 100% 通过
+  ./scripts/test-vm.sh                     # 100% 通过
+  ```
+  **重点：任何测试失败都不得 commit / push。Pre-existing 失败必须在本迭代修复。**
 - **提交格式**：`type(scope): 描述`，每个逻辑单元单独提交
 - **自动提交**：每次迭代完成后 Claude 自动 commit + push，`.claude/` 和 `openspec/` 必须纳入，无需 User 二次确认
 
