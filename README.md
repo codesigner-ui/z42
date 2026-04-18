@@ -1,6 +1,6 @@
 # z42
 
-A **full-stack systems programming language**: static typing, garbage collected, with bytecode-native execution (Interpreter/JIT/AOT), seamless native interop, and language-level customization.
+A **full-stack systems programming language** designed for productivity and performance.
 
 - **z** — the last letter, standing for the final evolution
 - **42** — the answer to the ultimate question
