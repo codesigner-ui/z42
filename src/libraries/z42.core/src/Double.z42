@@ -1,0 +1,8 @@
+namespace Std;
+
+// Double type helper class — provides static Parse method.
+public static class Double {
+    // Parses a string to a double.
+    [Native("__double_parse")]
+    public static extern double Parse(string s);
+}

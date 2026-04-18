@@ -147,15 +147,20 @@ public sealed partial class TypeChecker
                     null, argBound, Z42Type.Error, call.Span);
             }
 
-            // Unknown/primitive type (string, int, etc.) — try DepIndex
+            // Primitive/unknown type (e.g. List, Dictionary, Array, string, int, etc.)
+            // For known builtin collection types, pass ReceiverClass so Codegen can use BuiltinInstr
+            string? primitiveClassName = null;
+            if (recvExpr.Type is Z42PrimType pt && IsBuiltinCollectionType(pt.Name))
+                primitiveClassName = pt.Name;
+
             if (_depIndex?.TryGetInstance(mCallee.Member, argBound.Count, out var depPrimitiveEntry) == true)
             {
                 var retType = IrTypeToZ42Type(depPrimitiveEntry.RetType);
-                return new BoundCall(BoundCallKind.Instance, recvExpr, null, mCallee.Member,
+                return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName, mCallee.Member,
                     null, argBound, retType, call.Span);
             }
             // Still unresolved — virtual dispatch fallback
-            return new BoundCall(BoundCallKind.Instance, recvExpr, null, mCallee.Member,
+            return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName, mCallee.Member,
                 null, argBound, Z42Type.Unknown, call.Span);
         }
 
@@ -217,6 +222,12 @@ public sealed partial class TypeChecker
         CheckArgCount(bound.Count, minArgCount, paramTypes.Count, callSpan);
         CheckArgTypes(args, bound, paramTypes);
         return bound;
+    }
+
+    /// Check if a type name is a builtin collection type (NOT string, int, etc.)
+    private bool IsBuiltinCollectionType(string typeName)
+    {
+        return typeName is "List" or "Dictionary" or "Array" or "StringBuilder";
     }
 
     private void CheckArgCount(int actual, int min, int max, Span span)

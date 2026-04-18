@@ -1,0 +1,8 @@
+namespace Std;
+
+// Integer type helper class — provides static Parse method.
+public static class Int {
+    // Parses a string to an integer.
+    [Native("__int_parse")]
+    public static extern int Parse(string s);
+}

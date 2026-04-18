@@ -50,21 +50,11 @@ internal sealed partial class FunctionEmitter
             {
                 var objReg = EmitExpr(call.Receiver!);
 
-                // Instance methods: try DepIndex first (stdlib methods take priority)
-                if (_ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
-                {
-                    var fullArgRegs = new List<TypedReg> { objReg };
-                    fullArgRegs.AddRange(argRegs);
-                    _ctx.TrackDepNamespace(depEntry.Namespace);
-                    var dst = Alloc(ToIrType(call.Type));
-                    Emit(new CallInstr(dst, depEntry.QualifiedName, fullArgRegs));
-                    return dst;
-                }
-
-                // Builtin type method: List, Dictionary, Array
-                // Only try builtin methods if the receiver class is unknown (null).
-                // If we know the receiver class, use virtual dispatch instead.
-                if (call.ReceiverClass is null)
+                // Builtin type method: List, Dictionary, Array, StringBuilder
+                // Only try builtin methods when ReceiverClass is explicitly a builtin collection type.
+                // When ReceiverClass is null, rely on DepIndex to distinguish between
+                // different method implementations (e.g., String.Contains vs List.Contains)
+                if (IsBuiltinCollectionType(call.ReceiverClass))
                 {
                     string? builtinName = ResolveBuiltinMethod(call.MethodName!, argRegs.Count);
                     if (builtinName is not null)
@@ -75,6 +65,19 @@ internal sealed partial class FunctionEmitter
                         Emit(new BuiltinInstr(dst, builtinName, fullArgRegs));
                         return dst;
                     }
+                }
+
+                // For non-builtin-collection types, just try DepIndex
+
+                // Instance methods: try DepIndex next (for stdlib methods not in builtin resolution)
+                if (_ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
+                {
+                    var fullArgRegs = new List<TypedReg> { objReg };
+                    fullArgRegs.AddRange(argRegs);
+                    _ctx.TrackDepNamespace(depEntry.Namespace);
+                    var dst = Alloc(ToIrType(call.Type));
+                    Emit(new CallInstr(dst, depEntry.QualifiedName, fullArgRegs));
+                    return dst;
                 }
 
                 // User-defined class instance methods: fall back to virtual dispatch
@@ -120,13 +123,18 @@ internal sealed partial class FunctionEmitter
         }
     }
 
+    /// Check if a class name refers to a builtin collection type.
+    private bool IsBuiltinCollectionType(string? className)
+    {
+        return className is "List" or "Dictionary" or "Array" or "StringBuilder";
+    }
+
     /// Map method names on builtin types to their BuiltinInstr function names.
     /// Only maps methods that are UNIQUE to builtin types and not ambiguous with stdlib.
+    /// For ambiguous methods like Contains, this is only called when ReceiverClass is explicitly a builtin type.
     /// Returns null if the method is not a known builtin type method.
     private string? ResolveBuiltinMethod(string method, int userArgCount)
     {
-        // Only map methods that are unique to builtin types, not ambiguous methods
-        // like Contains (exists in both List and String), ToString, etc.
         return method switch
         {
             // List/Array-specific methods
@@ -137,6 +145,7 @@ internal sealed partial class FunctionEmitter
             "Clear"         => "__list_clear",
             "Sort"          => "__list_sort",
             "Reverse"       => "__list_reverse",
+            "Contains"      => "__list_contains",  // Only used when ReceiverClass is explicitly "List"
             // Dictionary-specific methods
             "ContainsKey"   => "__dict_contains_key",
             "TryGetValue"   => "__dict_try_get_value",
