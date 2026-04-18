@@ -40,22 +40,27 @@ dotnet run --project src/compiler/z42.Driver -- errors
 # 运行 VM
 cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]
 
-# 打包（VM binary + stdlib libs 占位产物 → artifacts/z42/）
-./scripts/package.sh            # debug build
+# 打包（compiler + VM binary + stdlib libs → artifacts/z42/）
+./scripts/package.sh            # debug build（z42c single-file + z42vm）
 ./scripts/package.sh release    # release build
 
 # 编译标准库（src/libraries/**/*.z42 → artifacts/z42/libs/*.zpkg）
-./scripts/build-stdlib.sh           # debug build
-./scripts/build-stdlib.sh release   # release build
+./scripts/build-stdlib.sh              # 使用 dotnet run 编译
+./scripts/build-stdlib.sh --use-dist   # 使用打包后的 z42c 编译
 
 # 测试（编译器 golden tests + VM interp/jit 两种模式）
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ./scripts/test-vm.sh
+
+# 发行包端到端测试（使用 artifacts/z42/bin/ 的 z42c + z42vm）
+./scripts/test-dist.sh              # 编译+运行 golden tests（interp + jit）
+./scripts/test-dist.sh interp       # 仅 interp 模式
 ```
 
 > 修改编译器后，先 `--emit ir` 重新生成 `.z42ir.json`，再跑 `./scripts/test-vm.sh`。
 > `artifacts/z42/` 已在 `.gitignore` 中，不纳入版本控制。
 > 修改标准库源文件后需重新运行 `./scripts/build-stdlib.sh` 更新 zpkg 产物。
+> 发行包测试全流程：`package.sh` → `build-stdlib.sh --use-dist` → `test-dist.sh`。
 
 ## 实现计划
 
