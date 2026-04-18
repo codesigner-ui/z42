@@ -58,6 +58,7 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
         .with_context(|| format!("cannot parse binary zbc `{path}`"))?;
 
     build_type_registry(&mut module);
+    build_block_indices(&mut module);
 
     // Extract import namespaces from the module's ConstStr / Call instructions
     // (approximation: namespace = first two components of any external call target)
@@ -89,6 +90,7 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
         .with_context(|| format!("merging modules from `{path}`"))?;
 
     build_type_registry(&mut module);
+    build_block_indices(&mut module);
 
     Ok(LoadedArtifact {
         module,
@@ -318,6 +320,18 @@ pub fn build_type_registry(module: &mut Module) {
     }
 
     module.type_registry = registry;
+}
+
+/// Precompute block label → index mapping for all functions in the module.
+/// This eliminates the O(n) HashMap construction in every exec_function call.
+pub fn build_block_indices(module: &mut Module) {
+    for func in &mut module.functions {
+        func.block_index = func.blocks
+            .iter()
+            .enumerate()
+            .map(|(i, b)| (b.label.clone(), i))
+            .collect();
+    }
 }
 
 /// Return class names in topological order (base before derived).

@@ -49,8 +49,6 @@ pub struct HelperIds {
     pub bit_not:        FuncId,
     pub shl:            FuncId,
     pub shr:            FuncId,
-    pub store:          FuncId,
-    pub load:           FuncId,
     pub str_concat:     FuncId,
     pub to_str:         FuncId,
     pub call:           FuncId,
@@ -124,10 +122,6 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         bit_not:       decl!("jit_bit_not",    [ptr, i32t, i32t],                    [i8t]),
         shl:           decl!("jit_shl",        [ptr, i32t, i32t, i32t],              [i8t]),
         shr:           decl!("jit_shr",        [ptr, i32t, i32t, i32t],              [i8t]),
-        // jit_store(frame, var_ptr, var_len, src)  -> void
-        store:         decl!("jit_store",      [ptr, ptr, i64t, i32t],               []),
-        // jit_load(frame, dst, var_ptr, var_len)   -> u8
-        load:          decl!("jit_load",       [ptr, i32t, ptr, i64t],               [i8t]),
         str_concat:    decl!("jit_str_concat", [ptr, i32t, i32t, i32t],              [i8t]),
         to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],               [i8t]),
         // jit_call(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8

@@ -27,8 +27,6 @@ const OP_CONST_STR: u8   = 0x03;
 const OP_CONST_NULL: u8  = 0x04;
 const OP_COPY: u8        = 0x05;
 const OP_CONST_CHAR: u8  = 0x08;
-const OP_STORE: u8       = 0x06;
-const OP_LOAD: u8        = 0x07;
 
 const OP_ADD: u8         = 0x10;
 const OP_SUB: u8         = 0x11;
@@ -606,6 +604,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
             line_table:      body.line_table,
+            block_index:     std::collections::HashMap::new(),  // Will be populated by build_block_indices
         }
     }).collect();
 
@@ -781,6 +780,7 @@ fn read_mods_section(
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
                 line_table:      body.line_table,
+                block_index:     std::collections::HashMap::new(),  // Will be populated by build_block_indices
             }
         }).collect();
 

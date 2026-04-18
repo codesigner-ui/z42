@@ -117,10 +117,8 @@ fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, inst
 
 pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Option<Value>> {
     let mut frame = Frame::new(args, func.max_reg);
-    // O(1) block lookup: build label → index map once per function call.
-    let block_map: HashMap<&str, usize> = func.blocks.iter().enumerate()
-        .map(|(i, b)| (b.label.as_str(), i))
-        .collect();
+    // O(1) block lookup: use precomputed block_index from module load time.
+    let block_map = &func.block_index;
     let mut block_idx = 0usize;
 
     'exec: loop {
@@ -179,10 +177,10 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
 }
 
 /// Find the index into `func.exception_table` that covers the given block index.
-fn find_handler(func: &Function, block_idx: usize, block_map: &HashMap<&str, usize>) -> Option<usize> {
+fn find_handler(func: &Function, block_idx: usize, block_map: &HashMap<String, usize>) -> Option<usize> {
     for (i, entry) in func.exception_table.iter().enumerate() {
-        let start_idx = *block_map.get(entry.try_start.as_str())?;
-        let end_idx   = *block_map.get(entry.try_end.as_str())?;
+        let start_idx = *block_map.get(&entry.try_start)?;
+        let end_idx   = *block_map.get(&entry.try_end)?;
         if block_idx >= start_idx && block_idx < end_idx {
             return Some(i);
         }

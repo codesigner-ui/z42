@@ -4,10 +4,30 @@
 >
 > **Update trigger:** Only update this file when a language design decision changes (rationale, phase assignment, or fundamental behavior). Implementation progress is tracked in [docs/roadmap.md](roadmap.md), not here.
 >
+> **Design philosophy:** See [docs/design/philosophy.md](design/philosophy.md) for the core principles, target audience, and positioning of z42 as a full-stack systems programming language with GC, multi-threading, high performance, and developer-friendly features.
+>
 > - Syntax grammar and code examples: [docs/design/language-overview.md](design/language-overview.md)
 > - Evolution phases and milestones: [docs/roadmap.md](roadmap.md)
+> - Detailed design docs: [docs/design/](design/)
 
 Each section states the design decision, rationale, and which phase it belongs to (L1 / L2 / L3).
+
+---
+
+## Design Positioning
+
+**z42 is a static, garbage-collected systems programming language combining:**
+
+- **Syntax:** C# baseline (familiar, structured, readable)
+- **Type safety:** Static typing with type inference (catch errors early)
+- **Memory model:** Always GC, no ownership/lifetimes (productivity)
+- **Concurrency:** Multi-threading with structured safety (async/await in L3)
+- **Performance:** Bytecode-first with interp/JIT/AOT mixing (flexibility + speed)
+- **Embedding:** Zero-overhead native interop, C-compatible data layout (systems integration)
+- **Customization:** Language-level feature toggles (adapt to any environment)
+- **Dynamics:** eval(), hot reload, REPL support (iteration + production readiness)
+
+**Use cases:** Game engines, servers, embedded systems, DevOps tools, scientific computing — anywhere you'd use C#, Java, or Go, but want better systems integration and deployment flexibility.
 
 ---
 
