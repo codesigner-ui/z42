@@ -42,8 +42,21 @@ public sealed class DependencyIndex
     // ── Lookups ────────────────────────────────────────────────────────────────
 
     /// Try to find a static dependency call for "ClassName.MethodName" (user writes Foo.Bar(...)).
-    public bool TryGetStatic(string cls, string method, out DepCallEntry entry) =>
-        _staticIndex.TryGetValue($"{cls}.{method}", out entry!);
+    /// Also handles namespace-qualified class names (e.g. "Std.String" → tries "String.Method" key).
+    public bool TryGetStatic(string cls, string method, out DepCallEntry entry)
+    {
+        // Try full key first: "Std.String.Join"
+        if (_staticIndex.TryGetValue($"{cls}.{method}", out entry!))
+            return true;
+        // If cls contains a namespace prefix (e.g. "Std.String"), strip it and try short key: "String.Join"
+        int lastDot = cls.LastIndexOf('.');
+        if (lastDot >= 0)
+        {
+            string shortCls = cls[(lastDot + 1)..];
+            return _staticIndex.TryGetValue($"{shortCls}.{method}", out entry!);
+        }
+        return false;
+    }
 
     /// Try to find an instance dependency call for "MethodName" with the given user argument count
     /// (i.e. excluding the implicit receiver).  Also tries the bare "MethodName" key.

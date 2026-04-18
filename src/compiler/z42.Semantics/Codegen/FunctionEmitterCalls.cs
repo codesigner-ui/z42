@@ -19,7 +19,11 @@ internal sealed partial class FunctionEmitter
             case BoundCallKind.Static:
             {
                 // Try DepIndex first (for stdlib methods)
-                if (_ctx.DepIndex.TryGetStatic(call.ReceiverClass!, call.MethodName!, out var depEntry))
+                // Try arity-qualified name first, then bare name for overloaded methods
+                var arityMethod = $"{call.MethodName}${argRegs.Count}";
+                if (!_ctx.DepIndex.TryGetStatic(call.ReceiverClass!, arityMethod, out var depEntry))
+                    _ctx.DepIndex.TryGetStatic(call.ReceiverClass!, call.MethodName!, out depEntry);
+                if (depEntry is not null)
                 {
                     if (call.ReceiverClass == "Console" && argRegs.Count != 1)
                         argRegs = [EmitConcat(argRegs)];

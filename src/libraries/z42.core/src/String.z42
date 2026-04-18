@@ -89,9 +89,18 @@ public static class String {
     [Native("__str_join")]
     public static extern string Join(string separator, string[] values);
 
+    [Native("__str_join")]
+    public static extern string Join(string separator, string a, string b, string c);
+
     [Native("__str_concat")]
     public static extern string Concat(string a, string b);
 
+    [Native("__str_concat")]
+    public static extern string Concat(string a, string b, string c);
+
     [Native("__str_format")]
     public static extern string Format(string format, object arg0);
+
+    [Native("__str_format")]
+    public static extern string Format(string format, object arg0, object arg1);
 }
