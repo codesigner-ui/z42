@@ -61,6 +61,22 @@ internal sealed partial class FunctionEmitter
                     return dst;
                 }
 
+                // Builtin type method: List, Dictionary, Array
+                // Only try builtin methods if the receiver class is unknown (null).
+                // If we know the receiver class, use virtual dispatch instead.
+                if (call.ReceiverClass is null)
+                {
+                    string? builtinName = ResolveBuiltinMethod(call.MethodName!, argRegs.Count);
+                    if (builtinName is not null)
+                    {
+                        var fullArgRegs = new List<TypedReg> { objReg };
+                        fullArgRegs.AddRange(argRegs);
+                        var dst = Alloc(ToIrType(call.Type));
+                        Emit(new BuiltinInstr(dst, builtinName, fullArgRegs));
+                        return dst;
+                    }
+                }
+
                 // User-defined class instance methods: fall back to virtual dispatch
                 var vcallKey = _ctx.FindVcallParamsKey(call.MethodName!, argRegs.Count);
                 if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
@@ -102,6 +118,36 @@ internal sealed partial class FunctionEmitter
             default:
                 throw new NotSupportedException($"call kind {call.Kind}");
         }
+    }
+
+    /// Map method names on builtin types to their BuiltinInstr function names.
+    /// Only maps methods that are UNIQUE to builtin types and not ambiguous with stdlib.
+    /// Returns null if the method is not a known builtin type method.
+    private string? ResolveBuiltinMethod(string method, int userArgCount)
+    {
+        // Only map methods that are unique to builtin types, not ambiguous methods
+        // like Contains (exists in both List and String), ToString, etc.
+        return method switch
+        {
+            // List/Array-specific methods
+            "Add"           => "__list_add",
+            "RemoveAt"      => "__list_remove_at",
+            "Insert"        => "__list_insert",
+            "Remove"        => "__dict_remove",  // handles both List and Dictionary
+            "Clear"         => "__list_clear",
+            "Sort"          => "__list_sort",
+            "Reverse"       => "__list_reverse",
+            // Dictionary-specific methods
+            "ContainsKey"   => "__dict_contains_key",
+            "TryGetValue"   => "__dict_try_get_value",
+            "Keys"          => "__dict_keys",
+            "Values"        => "__dict_values",
+            // StringBuilder-specific methods
+            "Append"        => "__sb_append",
+            "AppendLine"    => "__sb_append_line",
+            "AppendNewLine" => "__sb_append_newline",
+            _ => null
+        };
     }
 
     /// Fill omitted trailing args with their default value expressions.

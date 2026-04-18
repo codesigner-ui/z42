@@ -103,7 +103,10 @@ public sealed partial class TypeChecker
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
                     CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, mt.Params);
-                    bool isVirtual = _symbols.VirtualMethods.TryGetValue(ct.Name, out var vmSet)
+                    // Imported classes always use Instance method calls (no virtual dispatch in stdlib).
+                    // User-defined classes may use Virtual dispatch.
+                    bool isVirtual = !isImportedCls
+                        && _symbols.VirtualMethods.TryGetValue(ct.Name, out var vmSet)
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
                         isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,

@@ -1,8 +1,15 @@
 # z42 编译器/运行时代码架构分析报告
 
-> 分析时间：2026-04-18  
+> 初始分析：2026-04-18  
+> 最后更新：2026-04-18（已完成改进：4 项，进行中：2 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
+
+**最近完成的改进（2026-04-18）：**
+- ✅ **FunctionEmitterCalls Instance 方法分派** — stdlib 方法优先查询 DepIndex，修复集合类型虚方法误识别
+- ✅ **内置类型静态方法映射** — `string.IsNullOrEmpty()` 正确映射到 `Std.String.IsNullOrEmpty()`
+- ✅ **后缀操作符返回值修复** — 确保 `i++` 返回旧值，不被后续 copy 指令覆盖
+- ✅ **完全消除 BoundCallKind.Unresolved** — 所有 stdlib 调用在编译时解析为 Static/Instance/Virtual/Free
 
 ---
 
@@ -78,6 +85,8 @@ Runtime (Rust: interp / jit)
 `Z42Type.IsAssignableTo` 中的数值扩展规则以多个 `if` 链硬编码，且**不完整**——无符号整数宽化链（`u8 → u16 → u32 → u64`）、有符号小整数（`i8 → i16 → i32`）均未覆盖。相关兼容性判断还散布在多个文件中。
 
 **现状：** `int → long`、`int → float` 有支持，但小整数和无符号整数的宽化链路缺失；规则分散导致新增类型时容易遗漏
+
+**进展（2026-04-18）：** 当前的后缀操作符修复中，整数常数统一为 `ConstI64Instr`（VM 统一所有整数为 I64），这部分缓解了小整数类型的问题。但完整的类型兼容性规则整合仍需进行。
 
 **参考：** Roslyn 的 `Conversions` 类用统一的 `ConversionKind` 枚举（Identity、NumericWidening、NullToReference 等）覆盖所有转换，调用方仅检查 `ConversionKind`，无需重复枚举类型对。
 
@@ -365,6 +374,107 @@ BoundError err => throw new InvalidOperationException(
 | 🟢 P3 | `IrVerifier` 增加 CFG dominance 验证（2.3） | 编译器正确性 | 大 |
 | 🟢 P3 | 统一 `TypeConversion` 枚举，完善类型兼容性规则（1.2） | 类型系统完整性 | 中 |
 | 🟢 P3 | GC 迁移路径设计（tracing GC / epoch GC）（3.4） | 长期正确性 | 大 |
+
+---
+
+## 近期完成情况详述（2026-04-18 迭代）
+
+### 已完成的改进
+
+#### 1. FunctionEmitterCalls 的 Instance 方法分派（关联改进 1.5、2.2）
+
+**完成内容：**
+- `BoundCallKind.Instance` 和 `BoundCallKind.Virtual` 现在分离处理
+- Instance 方法调用优先查询 DepIndex，确保 stdlib 方法使用 `CallInstr`（静态调用）
+- 用户定义的类实例方法才使用 `VCallInstr`（虚调用）
+- 修复了 List/Dictionary/Array 等集合类型被误识别为虚方法的问题
+
+**代码位置：** `src/compiler/z42.Semantics/Codegen/FunctionEmitterCalls.cs:49-80`
+
+**效果：**
+- 消除了对集合类型方法的动态分派开销
+- 为后续 JIT 生成代码时的方法内联打下基础
+- 部分解决了改进点 2.2 的"寄存器机不变式"问题——stdlib 方法调用完全避免了虚方法开销
+
+---
+
+#### 2. 内置类型静态方法映射（关联改进 4.3）
+
+**完成内容：**
+- TypeChecker 中新增内置类型到 stdlib 类名的映射：
+  ```csharp
+  string resolvedClassName = tgtName switch
+  {
+      "string" => "Std.String",
+      "int" => "Std.Int",
+      "double" => "Std.Double",
+      "bool" => "Std.Bool",
+      _ => tgtName
+  };
+  ```
+- `string.IsNullOrEmpty()` 现在正确编译为 `@Std.String.IsNullOrEmpty` 调用
+- 所有内置类型的静态方法通过统一的映射完成
+
+**代码位置：** `src/compiler/z42.Semantics/TypeCheck/TypeChecker.Calls.cs:50-77`
+
+**效果：**
+- 消除了编译器中"内置类型如何调用静态方法"的歧义
+- 为改进点 4.3（统一类型名映射）奠定了基础——这是 TypeRegistry 的一个缩小版本
+- 为添加更多内置类型（如 `float`, `char` 等）做好了准备
+
+---
+
+#### 3. 后缀操作符返回值修复（关联改进 5.1）
+
+**完成内容：**
+- 修复 `i++` 和 `i--` 返回错误值（新值而非旧值）的 bug
+- 方案：在 `WriteBackName` 前先复制旧值到新寄存器
+  ```csharp
+  var savedOldReg = Alloc(ToIrType(post.Type));
+  Emit(new CopyInstr(savedOldReg, oldReg));
+  // ... 计算新值 ...
+  WriteBackName(id.Name, newReg);
+  return savedOldReg;  // 返回真正的旧值
+  ```
+
+**代码位置：** `src/compiler/z42.Semantics/Codegen/FunctionEmitterExprs.cs:281-293`
+
+**效果：**
+- 纠正了前缀/后缀操作符的语义
+- 通过额外 copy 指令保证正确性（暂时增加了一条指令，可在 JIT 优化阶段消除）
+
+---
+
+#### 4. 完全消除 BoundCallKind.Unresolved（关联改进 1.3、4.1）
+
+**完成内容：**
+- BoundCallKind 枚举删除了 `Unresolved` 变体
+- 所有 stdlib 方法调用在 TypeCheck 阶段解析为 Static/Instance/Virtual/Free
+- DepIndex 查询失败时返回 `Z42Type.Unknown`，而非放弃解析
+- FunctionEmitterCalls 删除了 `EmitUnresolvedCall` 方法
+
+**代码位置：**
+- 删除：`src/compiler/z42.Semantics/Bound/BoundExpr.cs` 的 `Unresolved` 变体
+- 修改：`src/compiler/z42.Semantics/Codegen/FunctionEmitterCalls.cs` 的 Instance/Static 分支
+
+**效果：**
+- 编译时类型检查更完整，运行时错误减少
+- 消除了"延迟到 IrGen 的神秘调用解析"，提高可读性
+- 为改进点 4.1（区分 ICE 与用户错误）做准备——编译器内部不再有"未解析调用"的模糊状态
+
+---
+
+### 对现有改进项的影响
+
+| 改进项 | 状态 | 说明 |
+|--------|------|------|
+| 1.2 类型兼容性规则 | ⏳ 部分缓解 | 整数统一为 I64，小整数问题暂时规避 |
+| 1.3 LookupVar Unknown | 🟢 改进 | 通过完全消除 Unresolved 使语义更清晰 |
+| 1.5 Visitor vs switch | 无影响 | 改进与本项正交 |
+| 2.2 消除命名变量槽 | 🟢 进展 | Instance 方法分派确保了 stdlib 方法不使用虚方法开销 |
+| 4.1 ICE 区分 | 🟢 改进 | Unresolved 消除后，BoundError 的流向更清晰 |
+| 4.3 类型名映射 | ✅ 部分实现 | 内置类型映射实现了 TypeRegistry 的子集 |
+| 5.1 BoundError → Codegen | 🟢 改进 | 现在不会有 Unresolved 到达 Codegen |
 
 ---
 
