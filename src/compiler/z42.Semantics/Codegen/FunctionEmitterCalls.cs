@@ -18,7 +18,10 @@ internal sealed partial class FunctionEmitter
         {
             case BoundCallKind.Static:
             {
-                var qualClass = _ctx.QualifyName(call.ReceiverClass!);
+                var qualClass = _ctx.QualifyClassName(call.ReceiverClass!);
+                // Track dependency namespace for imported class calls
+                if (_ctx.ImportedClassNamespaces.TryGetValue(call.ReceiverClass!, out var depNs))
+                    _ctx.TrackDepNamespace(depNs);
                 var arityKey  = $"{call.MethodName}${argRegs.Count}";
                 string resolved = call.MethodName!;
                 if (_ctx.ClassRegistry.TryGetStaticMethods(qualClass, out var sSet))

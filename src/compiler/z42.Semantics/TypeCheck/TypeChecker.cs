@@ -84,7 +84,9 @@ public sealed partial class TypeChecker : ITypeInferrer
         return new SemanticModel(
             _symbols.Classes, _symbols.Functions, _symbols.Interfaces,
             _symbols.EnumConstants, _symbols.EnumTypes,
-            _boundBodies, _boundDefaults, _boundStaticInits, _boundBaseCtorArgs);
+            _boundBodies, _boundDefaults, _boundStaticInits, _boundBaseCtorArgs,
+            _symbols.ImportedClassNamespaces as Dictionary<string, string>
+                ?? new Dictionary<string, string>(_symbols.ImportedClassNamespaces));
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────

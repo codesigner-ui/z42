@@ -50,6 +50,10 @@ public sealed class SemanticModel
     /// Only populated for constructors that have a base-ctor call (FunctionDecl.BaseCtorArgs != null).
     public IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> BoundBaseCtorArgs { get; }
 
+    /// Maps imported class short name → dependency namespace (e.g. "Console" → "Std.IO").
+    /// Used by IrGen to qualify imported class calls with the correct namespace.
+    public IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
+
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,
         IReadOnlyDictionary<string, Z42FuncType>      funcs,
@@ -59,16 +63,18 @@ public sealed class SemanticModel
         IReadOnlyDictionary<FunctionDecl, BoundBlock> boundBodies,
         IReadOnlyDictionary<Param,        BoundExpr>  boundDefaults,
         IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundStaticInits,
-        IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs)
+        IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs,
+        IReadOnlyDictionary<string, string>? importedClassNamespaces = null)
     {
-        Classes           = classes;
-        Funcs             = funcs;
-        Interfaces        = interfaces;
-        EnumConstants     = enumConstants;
-        EnumTypes         = enumTypes;
-        BoundBodies       = boundBodies;
-        BoundDefaults     = boundDefaults;
-        BoundStaticInits  = boundStaticInits;
-        BoundBaseCtorArgs = boundBaseCtorArgs;
+        Classes                 = classes;
+        Funcs                   = funcs;
+        Interfaces              = interfaces;
+        EnumConstants           = enumConstants;
+        EnumTypes               = enumTypes;
+        BoundBodies             = boundBodies;
+        BoundDefaults           = boundDefaults;
+        BoundStaticInits        = boundStaticInits;
+        BoundBaseCtorArgs       = boundBaseCtorArgs;
+        ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
     }
 }

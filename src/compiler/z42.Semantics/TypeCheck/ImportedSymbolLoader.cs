@@ -18,12 +18,13 @@ public static class ImportedSymbolLoader
         IReadOnlyList<ExportedModule> modules,
         IReadOnlyList<string> usings)
     {
-        var allowedNs = new HashSet<string>(usings, StringComparer.Ordinal);
+        var allowedNs  = new HashSet<string>(usings, StringComparer.Ordinal);
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
         var funcs      = new Dictionary<string, Z42FuncType>(StringComparer.Ordinal);
         var interfaces = new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal);
         var enumConsts = new Dictionary<string, long>(StringComparer.Ordinal);
         var enumTypes  = new HashSet<string>(StringComparer.Ordinal);
+        var classNs    = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var mod in modules)
         {
@@ -31,7 +32,10 @@ public static class ImportedSymbolLoader
 
             foreach (var cls in mod.Classes)
                 if (!classes.ContainsKey(cls.Name))
+                {
                     classes[cls.Name] = RebuildClassType(cls);
+                    classNs[cls.Name] = mod.Namespace;
+                }
 
             foreach (var iface in mod.Interfaces)
                 if (!interfaces.ContainsKey(iface.Name))
@@ -49,7 +53,7 @@ public static class ImportedSymbolLoader
                     funcs[fn.Name] = RebuildFuncType(fn.Params, fn.ReturnType, fn.MinArgCount);
         }
 
-        return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes);
+        return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs);
     }
 
     private static Z42ClassType RebuildClassType(ExportedClassDef cls)
@@ -148,4 +152,8 @@ public sealed record ImportedSymbols(
     Dictionary<string, Z42FuncType>      Functions,
     Dictionary<string, Z42InterfaceType> Interfaces,
     Dictionary<string, long>             EnumConstants,
-    HashSet<string>                      EnumTypes);
+    HashSet<string>                      EnumTypes,
+    /// Maps short class name (e.g. "Console") to its original namespace (e.g. "Std.IO").
+    /// Used by IrGen to qualify imported class names with the correct dependency namespace
+    /// instead of the local file's namespace.
+    Dictionary<string, string>           ClassNamespaces);

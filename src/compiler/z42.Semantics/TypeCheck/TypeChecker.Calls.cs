@@ -12,22 +12,33 @@ public sealed partial class TypeChecker
 
     private BoundCall BindCall(CallExpr call, TypeEnv env)
     {
-        // ── User-defined static class method: ClassName.Method(args) ──────────
-        // Skip imported classes — they resolve via the Unresolved → DependencyIndex path
-        // in IrGen, which correctly qualifies names with the stdlib namespace.
+        // ── Static class method: ClassName.Method(args) ──────────────────────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
-            && _symbols.Classes.TryGetValue(clsName, out var staticCt)
-            && !_symbols.ImportedClassNames.Contains(clsName))
+            && _symbols.Classes.TryGetValue(clsName, out var staticCt))
         {
+            bool isImported = _symbols.ImportedClassNames.Contains(clsName);
             var arityKey  = $"{staticMember}${call.Args.Count}";
             var staticSig = staticCt.StaticMethods.TryGetValue(staticMember, out var s1) ? s1
                           : staticCt.StaticMethods.TryGetValue(arityKey,     out var s2) ? s2 : null;
             if (staticSig is not null)
             {
-                var checkedArgs = BindAndCheckArgs(call.Args, env, staticSig.Params,
-                    staticSig.MinArgCount, call.Span);
+                var args = call.Args.Select(a => BindExpr(a, env)).ToList();
+                if (!isImported)
+                {
+                    CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, args, staticSig.Params);
+                }
                 return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
-                    null, checkedArgs, staticSig.Ret, call.Span);
+                    null, args, staticSig.Ret, call.Span);
+            }
+            // Imported class: method not found → fall through to Unresolved
+            // (DependencyIndex may resolve it via builtin dispatch at IrGen time)
+            if (isImported)
+            {
+                var args = call.Args.Select(a => BindExpr(a, env)).ToList();
+                return new BoundCall(BoundCallKind.Unresolved,
+                    new BoundIdent(clsName, Z42Type.Unknown, call.Callee.Span),
+                    null, staticMember, null, args, Z42Type.Unknown, call.Span);
             }
         }
 
@@ -52,26 +63,38 @@ public sealed partial class TypeChecker
             if (recvExpr.Type is Z42ClassType ct)
             {
                 var instArityKey = $"{mCallee.Member}${argBound.Count}";
-                var mt = ct.Methods.TryGetValue(mCallee.Member, out var mt1) ? mt1
-                       : ct.Methods.TryGetValue(instArityKey,   out var mt2) ? mt2 : null;
+                bool byBare  = ct.Methods.TryGetValue(mCallee.Member, out var mt1);
+                Z42FuncType? mt2 = null;
+                bool byArity = !byBare && ct.Methods.TryGetValue(instArityKey, out mt2);
+                var mt = byBare ? mt1 : byArity ? mt2 : null;
+                // Use arity-suffixed name when the method was resolved via arity key
+                string resolvedMethodName = byArity ? instArityKey : mCallee.Member;
+                bool isImportedCls = _symbols.ImportedClassNames.Contains(ct.Name);
                 if (mt is not null)
                 {
                     bool insideClass = _currentClass == ct.Name;
                     var visKey = ct.MemberVisibility.ContainsKey(mCallee.Member)
                         ? mCallee.Member : instArityKey;
-                    if (!insideClass
+                    if (!insideClass && !isImportedCls
                         && ct.MemberVisibility.TryGetValue(visKey, out var mv)
                         && mv == Visibility.Private)
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
-                    CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, mt.Params);
+                    if (!isImportedCls)
+                    {
+                        CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
+                        CheckArgTypes(call.Args, argBound, mt.Params);
+                    }
                     bool isVirtual = _symbols.VirtualMethods.TryGetValue(ct.Name, out var vmSet)
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
                         isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,
-                        recvExpr, ct.Name, mCallee.Member, null, argBound, mt.Ret, call.Span);
+                        recvExpr, ct.Name, resolvedMethodName, null, argBound, mt.Ret, call.Span);
                 }
+                // Imported class: method not found → Unresolved (no error)
+                if (isImportedCls)
+                    return new BoundCall(BoundCallKind.Unresolved, recvExpr, null, mCallee.Member,
+                        null, argBound, Z42Type.Unknown, call.Span);
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type `{ct.Name}` has no method `{mCallee.Member}`", call.Span);
                 return new BoundCall(BoundCallKind.Unresolved, recvExpr, null, mCallee.Member,

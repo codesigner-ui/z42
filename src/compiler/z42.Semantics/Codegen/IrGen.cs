@@ -53,6 +53,11 @@ public sealed class IrGen : IEmitterContext
         FindVcallParamsKey(methodName, suppliedArgCount);
     string? IEmitterContext.TryGetStaticFieldKey(string className, string fieldName) =>
         TryGetStaticFieldKey(className, fieldName);
+    IReadOnlyDictionary<string, string> IEmitterContext.ImportedClassNamespaces =>
+        _semanticModel?.ImportedClassNamespaces ?? new Dictionary<string, string>();
+    string IEmitterContext.QualifyClassName(string className) =>
+        _semanticModel?.ImportedClassNamespaces.TryGetValue(className, out var ns) == true
+            ? $"{ns}.{className}" : QualifyName(className);
 
     // ── Constructor ────────────────────────────────────────────────────────────
 

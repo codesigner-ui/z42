@@ -25,6 +25,7 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     internal readonly HashSet<string>                      _sealedClasses   = new();
     internal readonly Dictionary<string, HashSet<string>>  _virtualMethods  = new();
     internal readonly HashSet<string>                      _importedClassNames = new();
+    internal Dictionary<string, string>                    _importedClassNamespaces = new();
 
     internal SymbolCollector(DiagnosticBag diags)
     {
@@ -50,17 +51,20 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             _globalEnumConstants, _enumTypes,
             _classInterfaces, _abstractMethods,
             _abstractClasses, _sealedClasses, _virtualMethods,
-            _importedClassNames);
+            _importedClassNames, _importedClassNamespaces);
     }
 
     /// Merge imported symbols from dependency zpkgs.
-    /// Imported class names are tracked for TypeEnv recognition (LookupVar → Unknown),
-    /// but NOT added to _classes — this ensures ResolveType returns Z42PrimType for
-    /// imported classes, keeping the Unresolved → DependencyIndex path intact.
+    /// Imported classes are added to _classes so TypeChecker can resolve methods/fields.
+    /// ImportedClassNames tracks which classes came from imports (for lenient arg checking
+    /// and correct namespace qualification in IrGen).
     private void MergeImported(ImportedSymbols imported)
     {
-        foreach (var name in imported.Classes.Keys)
-            _importedClassNames.Add(name);
+        foreach (var (name, ct) in imported.Classes)
+        {
+            if (_classes.TryAdd(name, ct))
+                _importedClassNames.Add(name);
+        }
         foreach (var (name, ft) in imported.Functions)
             _funcs.TryAdd(name, ft);
         foreach (var (name, it) in imported.Interfaces)
@@ -69,6 +73,8 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             _globalEnumConstants.TryAdd(key, val);
         foreach (var name in imported.EnumTypes)
             _enumTypes.Add(name);
+        foreach (var (name, ns) in imported.ClassNamespaces)
+            _importedClassNamespaces.TryAdd(name, ns);
     }
 
     // ── Pass 0a: enum constants ───────────────────────────────────────────────

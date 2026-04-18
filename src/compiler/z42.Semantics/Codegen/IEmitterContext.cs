@@ -35,4 +35,9 @@ internal interface IEmitterContext
     // ── Dependency resolution ────────────────────────────────────────────────
     DependencyIndex DepIndex { get; }
     void TrackDepNamespace(string ns);
+
+    /// Qualify a class name using its imported namespace if available, else local namespace.
+    string QualifyClassName(string className);
+    /// Maps imported class short names to their dependency namespaces.
+    IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
 }
