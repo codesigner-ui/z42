@@ -55,7 +55,24 @@ public sealed record IrFunction(
     /// </summary>
     [property: JsonPropertyName("max_reg")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    int MaxReg = 0);
+    int MaxReg = 0,
+    /// <summary>
+    /// Source-line mapping table. Each entry records the source line number
+    /// at a given (block, instruction) position. Only emits an entry when
+    /// the line changes (run-length encoded). Used by the VM to show source
+    /// locations in error messages and stack traces.
+    /// </summary>
+    [property: JsonPropertyName("line_table")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<IrLineEntry>? LineTable = null);
+
+/// An entry in a function's line number table.
+/// "From (BlockIdx, InstrIdx) onward, the source line is Line in File."
+public sealed record IrLineEntry(
+    [property: JsonPropertyName("block")] int BlockIdx,
+    [property: JsonPropertyName("instr")] int InstrIdx,
+    [property: JsonPropertyName("line")]  int Line,
+    [property: JsonPropertyName("file")]  string? File = null);
 
 /// One entry in a function's exception table: covers blocks [TryStart, TryEnd)
 /// and redirects unhandled throws to CatchLabel, storing the exception in CatchReg.

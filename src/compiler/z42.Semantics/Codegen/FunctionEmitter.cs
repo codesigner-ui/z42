@@ -33,6 +33,11 @@ internal sealed partial class FunctionEmitter
     private bool _blockEnded;
     private string? _currentClassName;
 
+    // ── Debug line tracking ──────────────────────────────────────────────────
+    private List<IrLineEntry> _lineTable = new();
+    private int _lastLine = -1;
+    private string? _sourceFile;
+
     internal FunctionEmitter(IEmitterContext ctx) => _ctx = ctx;
 
     // ── Entry points ─────────────────────────────────────────────────────────
@@ -42,6 +47,7 @@ internal sealed partial class FunctionEmitter
     {
         bool isStatic = method.IsStatic;
         _currentClassName = className;
+        _sourceFile = method.Span.File;
         int paramOffset = isStatic ? 0 : 1;
         _nextReg = method.Params.Count + paramOffset;
         // `this` is always IrType.Ref: all z42 classes are heap-allocated reference types.
@@ -74,14 +80,16 @@ internal sealed partial class FunctionEmitter
 
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
+        var lineTable = _lineTable.Count > 0 ? _lineTable : null;
         int paramCount = method.Params.Count + paramOffset;
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
-            IsStatic: isStatic, MaxReg: _nextReg);
+            IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable);
     }
 
     internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)
     {
         _currentClassName = null;
+        _sourceFile = fn.Span.File;
         _nextReg = fn.Params.Count;
 
         StartBlock("entry");
@@ -93,8 +101,9 @@ internal sealed partial class FunctionEmitter
 
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
+        var lineTable = _lineTable.Count > 0 ? _lineTable : null;
         return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
-            "Interp", _blocks, excTable, MaxReg: _nextReg);
+            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable);
     }
 
     internal IrFunction EmitStaticInit(CompilationUnit cu)
@@ -173,6 +182,18 @@ internal sealed partial class FunctionEmitter
     {
         if (!_blockEnded)
             _curInstrs.Add(instr);
+    }
+
+    /// Record a source location before emitting instructions for a node.
+    /// Only emits a line table entry when the line number changes (RLE compression).
+    private void TrackLine(Core.Text.Span span)
+    {
+        if (span.Line <= 0 || span.Line == _lastLine) return;
+        _lastLine = span.Line;
+        int blockIdx = _blocks.Count; // current block = next to be sealed
+        int instrIdx = _curInstrs.Count;
+        string? file = span.File != _sourceFile ? span.File : null;
+        _lineTable.Add(new IrLineEntry(blockIdx, instrIdx, span.Line, file));
     }
 
     private TypedReg Alloc(IrType type = IrType.Unknown) => new(_nextReg++, type);

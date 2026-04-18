@@ -22,6 +22,7 @@ internal sealed partial class FunctionEmitter
 
     private void EmitBoundStmt(BoundStmt stmt)
     {
+        TrackLine(stmt.Span);
         switch (stmt)
         {
             case BoundVarDecl v:

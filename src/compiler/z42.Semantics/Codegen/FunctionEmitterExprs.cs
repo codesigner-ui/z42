@@ -12,6 +12,7 @@ internal sealed partial class FunctionEmitter
 
     private TypedReg EmitExpr(BoundExpr expr)
     {
+        TrackLine(expr.Span);
         switch (expr)
         {
             case BoundLitStr s:

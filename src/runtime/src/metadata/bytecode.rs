@@ -164,6 +164,20 @@ pub struct Function {
     /// Total number of registers used (0 = unknown; VM falls back to dynamic sizing).
     #[serde(default)]
     pub max_reg: u32,
+    /// Source-line mapping table (run-length encoded).
+    /// Each entry: from (block_idx, instr_idx) onward, the source line is `line`.
+    #[serde(default)]
+    pub line_table: Vec<LineEntry>,
+}
+
+/// An entry in a function's source-line mapping table.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LineEntry {
+    pub block: u32,
+    pub instr: u32,
+    pub line:  u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file:  Option<String>,
 }
 
 /// One row in a function's exception table.

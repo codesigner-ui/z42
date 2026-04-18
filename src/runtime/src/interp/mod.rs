@@ -116,6 +116,19 @@ impl Frame {
     }
 }
 
+// ── Debug: source line resolution ─────────────────────────────────────────────
+
+/// Look up the source line number for a given (block, instruction) position
+/// from the function's line_table. Returns the last entry whose position is ≤ current.
+fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, instr: u32) -> u32 {
+    let mut line = 0u32;
+    for entry in table {
+        if entry.block > block || (entry.block == block && entry.instr > instr) { break; }
+        line = entry.line;
+    }
+    line
+}
+
 // ── Core execution loop ──────────────────────────────────────────────────────
 
 pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<Option<Value>> {
@@ -132,7 +145,7 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
             .get(block_idx)
             .with_context(|| format!("block index {block_idx} out of range"))?;
 
-        for instr in &block.instructions {
+        for (instr_idx, instr) in block.instructions.iter().enumerate() {
             if let Err(e) = exec_instr::exec_instr(module, &mut frame, instr) {
                 if e.is::<UserException>() {
                     if let Some(entry_idx) = find_handler(func, block_idx, &block_map) {
@@ -144,7 +157,9 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
                         continue 'exec;
                     }
                 }
-                return Err(e);
+                // Enrich error with source location from line table
+                let loc = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
+                return Err(e.context(format!("  at {} (line {})", func.name, loc)));
             }
         }
 
