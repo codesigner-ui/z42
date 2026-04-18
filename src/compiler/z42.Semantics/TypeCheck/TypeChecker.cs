@@ -4,6 +4,7 @@ using Z42.Semantics.Bound;
 using Z42.Syntax.Lexer;
 using Z42.Core.Diagnostics;
 using Z42.Syntax.Parser;
+using Z42.IR;
 
 namespace Z42.Semantics.TypeCheck;
 
@@ -24,6 +25,7 @@ public sealed partial class TypeChecker : ITypeInferrer
 {
     private readonly DiagnosticBag   _diags;
     private readonly LanguageFeatures _features;
+    private readonly DependencyIndex? _depIndex;
 
     // ── Readonly symbol table (populated by SymbolCollector, consumed here) ───
     private SymbolTable _symbols = null!;
@@ -39,10 +41,11 @@ public sealed partial class TypeChecker : ITypeInferrer
     // ── Binding state ────────────────────────────────────────────────────────
     private string? _currentClass;
 
-    public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null)
+    public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
     {
         _diags    = diags;
         _features = features ?? LanguageFeatures.Phase1;
+        _depIndex = depIndex;
     }
 
     /// Sets <see cref="_currentClass"/> and returns a scope that clears it on disposal.
@@ -229,6 +232,27 @@ public sealed partial class TypeChecker : ITypeInferrer
     // ── Type resolution (delegates to SymbolTable) ───────────────────────────
 
     private Z42Type ResolveType(TypeExpr typeExpr) => _symbols.ResolveType(typeExpr);
+
+    /// Convert IrType string (from DependencyIndex) to Z42Type.
+    /// Maps IR type names like "Str", "I32", "Void" to semantic types.
+    private static Z42Type IrTypeToZ42Type(string irType) => irType switch
+    {
+        "Str"     => Z42Type.String,
+        "Bool"    => Z42Type.Bool,
+        "Char"    => Z42Type.Char,
+        "I8"      => Z42Type.I8,
+        "I16"     => Z42Type.I16,
+        "I32"     => Z42Type.Int,
+        "I64"     => Z42Type.Long,
+        "U8"      => Z42Type.U8,
+        "U16"     => Z42Type.U16,
+        "U32"     => Z42Type.U32,
+        "U64"     => Z42Type.U64,
+        "F32"     => Z42Type.Float,
+        "F64"     => Z42Type.Double,
+        "Void"    => Z42Type.Void,
+        _         => Z42Type.Unknown  // Unrecognized type defaults to Unknown
+    };
 
     private static Z42Type ElemTypeOf(Z42Type t) => t switch
     {

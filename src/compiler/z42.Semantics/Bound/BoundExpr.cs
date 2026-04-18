@@ -87,8 +87,8 @@ public sealed record BoundPostfix(PostfixOp Op, BoundExpr Operand, Z42Type Type,
 // ── Calls ─────────────────────────────────────────────────────────────────────
 
 /// Classifies how a call was resolved by the TypeChecker.
-/// Unresolved = stdlib / builtin; FunctionEmitter resolves via DependencyIndex.
-public enum BoundCallKind { Free, Static, Instance, Virtual, Unresolved }
+/// All calls are fully resolved at TypeCheck time (stdlib methods resolved via DepIndex).
+public enum BoundCallKind { Free, Static, Instance, Virtual }
 
 /// A fully-bound call expression.
 ///
@@ -97,7 +97,6 @@ public enum BoundCallKind { Free, Static, Instance, Virtual, Unresolved }
 ///   Static     — ReceiverClass = class, MethodName = method, Receiver = null
 ///   Instance   — Receiver = bound receiver, ReceiverClass = class, MethodName = method
 ///   Virtual    — Receiver = bound receiver, ReceiverClass = class, MethodName = method
-///   Unresolved — Receiver = bound receiver (may be null for bare calls), MethodName = member name
 public sealed record BoundCall(
     BoundCallKind Kind,
     BoundExpr? Receiver,

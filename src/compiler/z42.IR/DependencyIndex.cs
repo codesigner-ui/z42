@@ -1,9 +1,17 @@
 namespace Z42.IR;
 
 /// An entry in the dependency call index.
-/// QualifiedName  — fully qualified function name in the dependency IR (e.g. "Std.IO.Console.WriteLine")
-/// Namespace      — dependency namespace that owns this function (e.g. "Std.IO")
-public sealed record DepCallEntry(string QualifiedName, string Namespace);
+/// QualifiedName     — fully qualified function name in the dependency IR (e.g. "Std.IO.Console.WriteLine")
+/// Namespace         — dependency namespace that owns this function (e.g. "Std.IO")
+/// ParamTypes        — parameter type strings (e.g. ["Str", "I32"]; empty if no params)
+/// RetType           — return type string (e.g. "Str", "Void")
+/// ParamCount        — total parameter count (for instance methods: includes implicit 'this')
+public sealed record DepCallEntry(
+    string QualifiedName,
+    string Namespace,
+    IReadOnlyList<string> ParamTypes,
+    string RetType,
+    int ParamCount);
 
 /// Index that maps short call-site names → dependency qualified function names.
 ///
@@ -80,7 +88,10 @@ public sealed class DependencyIndex
                 string shortClass  = withoutNs[..dot];         // "Console"
                 string methodPart  = withoutNs[(dot + 1)..];   // "WriteLine"  or  "Substring$1"
 
-                var entry = new DepCallEntry(name, ns);
+                // Extract type information: for now, parameters are an empty list (will be Unknown in TypeChecker).
+                // If IrFunction adds parameter type info in the future, we can populate this here.
+                var paramTypes = new List<string>();
+                var entry = new DepCallEntry(name, ns, paramTypes, fn.RetType, fn.ParamCount);
 
                 // ── Static index ───────────────────────────────────────────────
                 // Key: "ClassName.MethodName"  (with any $arity suffix)

@@ -84,7 +84,7 @@ public static class PipelineCore
         DiagnosticBag   diags,
         ImportedSymbols? imported = null)
     {
-        var sem = new TypeChecker(diags, feats).Check(cu, imported);
+        var sem = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
         try

@@ -190,7 +190,7 @@ public sealed class GoldenTests
             imported = ImportedSymbolLoader.Load(tsigModules, nsFilter);
         }
 
-        var typeChecker = new TypeChecker(diags, features);
+        var typeChecker = new TypeChecker(diags, features, DepIndex);
         var sem = typeChecker.Check(cu, imported);
         if (diags.HasErrors)
         {

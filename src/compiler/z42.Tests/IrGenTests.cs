@@ -94,7 +94,7 @@ public sealed class IrGenTests
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
-        var model  = new TypeChecker(new DiagnosticBag()).Check(cu, Imported);
+        var model  = new TypeChecker(new DiagnosticBag(), depIndex: DepIdx).Check(cu, Imported);
         return new IrGen(DepIdx, semanticModel: model).Generate(cu);
     }
 
@@ -216,10 +216,10 @@ public sealed class IrGenTests
     public void VarDecl_AllocatesRegister()
     {
         // Variables are now allocated registers on first assignment (pure register-based).
-        // When a variable is used, we need at least a ConstI32 for the literal.
+        // When a variable is used, we need at least a ConstI64 for the literal (VM unifies all ints as I64).
         var instrs = All(GenMain("var x = 42; var y = x;"));
-        // Should have at least the ConstI32 for literal 42 and a Copy for reading x
-        instrs.OfType<ConstI32Instr>().Should().NotBeEmpty(because: "expected ConstI32 for literal 42");
+        // Should have at least the ConstI64 for literal 42 and Copies for variable operations
+        instrs.OfType<ConstI64Instr>().Should().NotBeEmpty(because: "expected ConstI64 for literal 42");
         instrs.OfType<CopyInstr>().Should().NotBeEmpty(because: "expected Copy for variable read");
     }
 

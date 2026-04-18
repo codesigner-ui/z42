@@ -18,6 +18,18 @@ internal sealed partial class FunctionEmitter
         {
             case BoundCallKind.Static:
             {
+                // Try DepIndex first (for stdlib methods)
+                if (_ctx.DepIndex.TryGetStatic(call.ReceiverClass!, call.MethodName!, out var depEntry))
+                {
+                    if (call.ReceiverClass == "Console" && argRegs.Count != 1)
+                        argRegs = [EmitConcat(argRegs)];
+                    _ctx.TrackDepNamespace(depEntry.Namespace);
+                    var dst = Alloc(ToIrType(call.Type));
+                    Emit(new CallInstr(dst, depEntry.QualifiedName, argRegs));
+                    return dst;
+                }
+
+                // Fall back to user-defined static methods
                 var qualClass = _ctx.QualifyClassName(call.ReceiverClass!);
                 // Track dependency namespace for imported class calls
                 if (_ctx.ImportedClassNamespaces.TryGetValue(call.ReceiverClass!, out var depNs))
@@ -29,20 +41,34 @@ internal sealed partial class FunctionEmitter
                              : sSet.Contains(arityKey)         ? arityKey : call.MethodName!;
                 var callName = $"{qualClass}.{resolved}";
                 argRegs = FillDefaults(callName, argRegs);
-                var dst = Alloc(ToIrType(call.Type));
-                Emit(new CallInstr(dst, callName, argRegs));
-                return dst;
+                var dst2 = Alloc(ToIrType(call.Type));
+                Emit(new CallInstr(dst2, callName, argRegs));
+                return dst2;
             }
 
             case BoundCallKind.Instance:
             case BoundCallKind.Virtual:
             {
-                var objReg   = EmitExpr(call.Receiver!);
+                var objReg = EmitExpr(call.Receiver!);
+
+                // Try DepIndex for stdlib instance methods
+                if (call.Kind == BoundCallKind.Instance
+                    && _ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
+                {
+                    var fullArgRegs = new List<TypedReg> { objReg };
+                    fullArgRegs.AddRange(argRegs);
+                    _ctx.TrackDepNamespace(depEntry.Namespace);
+                    var dst = Alloc(ToIrType(call.Type));
+                    Emit(new CallInstr(dst, depEntry.QualifiedName, fullArgRegs));
+                    return dst;
+                }
+
+                // Fall back to virtual dispatch
                 var vcallKey = _ctx.FindVcallParamsKey(call.MethodName!, argRegs.Count);
                 if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
-                var dst = Alloc(ToIrType(call.Type));
-                Emit(new VCallInstr(dst, objReg, call.MethodName!, argRegs));
-                return dst;
+                var dst2 = Alloc(ToIrType(call.Type));
+                Emit(new VCallInstr(dst2, objReg, call.MethodName!, argRegs));
+                return dst2;
             }
 
             case BoundCallKind.Free:
@@ -63,112 +89,9 @@ internal sealed partial class FunctionEmitter
                 return dst;
             }
 
-            case BoundCallKind.Unresolved:
-                return EmitUnresolvedCall(call, argRegs);
-
             default:
                 throw new NotSupportedException($"call kind {call.Kind}");
         }
-    }
-
-    // ── Unresolved call — stdlib / builtin dispatch ───────────────────────────
-
-    private TypedReg EmitUnresolvedCall(BoundCall call, List<TypedReg> argRegs)
-    {
-        var receiverName = (call.Receiver as BoundIdent)?.Name;
-        var methodName   = call.MethodName;
-
-        // Type-keyword static: string.X, int.X, double.X, etc.
-        if (receiverName is "string" or "int" or "long" or "double" or "float" or "bool" or "char")
-        {
-            string? builtinName = (receiverName, methodName) switch
-            {
-                ("string", "IsNullOrEmpty")      => "__str_is_null_or_empty",
-                ("string", "IsNullOrWhiteSpace") => "__str_is_null_or_whitespace",
-                ("string", "Join")               => "__str_join",
-                ("string", "Concat")             => "__str_concat",
-                ("string", "Format")             => "__str_format",
-                ("int",    "Parse")              => "__int_parse",
-                ("long",   "Parse")              => "__long_parse",
-                ("double", "Parse")              => "__double_parse",
-                ("float",  "Parse")              => "__double_parse",
-                _ => null
-            };
-            if (builtinName != null)
-            {
-                var dst = Alloc(ToIrType(call.Type));
-                Emit(new BuiltinInstr(dst, builtinName, argRegs));
-                return dst;
-            }
-        }
-
-        // Dependency static: Console.X, Assert.X, Math.X, etc.
-        if (receiverName != null && methodName != null
-            && _ctx.DepIndex.TryGetStatic(receiverName, methodName, out var stdStaticEntry))
-        {
-            if (receiverName == "Console" && argRegs.Count != 1)
-                argRegs = [EmitConcat(argRegs)];
-            _ctx.TrackDepNamespace(stdStaticEntry.Namespace);
-            var dst = Alloc(ToIrType(call.Type));
-            Emit(new CallInstr(dst, stdStaticEntry.QualifiedName, argRegs));
-            return dst;
-        }
-
-        // Collection/pseudo-class instance methods: Add, RemoveAt, etc.
-        // Kind=Unresolved means TypeChecker confirmed the receiver is NOT a user class.
-        if (methodName != null)
-        {
-            string? collBuiltin = methodName switch
-            {
-                "Add"         => "__list_add",
-                "RemoveAt"    => "__list_remove_at",
-                "Insert"      => "__list_insert",
-                "Clear"       => "__list_clear",
-                "Sort"        => "__list_sort",
-                "Reverse"     => "__list_reverse",
-                "ContainsKey" => "__dict_contains_key",
-                "Remove"      => "__dict_remove",
-                "Contains"    => "__contains",
-                _ => null
-            };
-            bool receiverIsClassInst = call.Receiver?.Type is Z42ClassType;
-            if (collBuiltin != null && !receiverIsClassInst && call.Receiver != null)
-            {
-                var receiverReg  = EmitExpr(call.Receiver);
-                var collArgRegs  = new List<TypedReg> { receiverReg };
-                collArgRegs.AddRange(argRegs);
-                var dst = Alloc(ToIrType(call.Type));
-                Emit(new BuiltinInstr(dst, collBuiltin, collArgRegs));
-                return dst;
-            }
-        }
-
-        // Dependency instance: str.Substring, str.ToLower, etc.
-        if (methodName != null
-            && _ctx.DepIndex.TryGetInstance(methodName, call.Args.Count, out var stdInstEntry))
-        {
-            var receiverReg = call.Receiver != null ? EmitExpr(call.Receiver) : Alloc(IrType.Unknown);
-            var fullArgRegs = new List<TypedReg> { receiverReg };
-            fullArgRegs.AddRange(argRegs);
-            _ctx.TrackDepNamespace(stdInstEntry.Namespace);
-            var dst = Alloc(ToIrType(call.Type));
-            Emit(new CallInstr(dst, stdInstEntry.QualifiedName, fullArgRegs));
-            return dst;
-        }
-
-        // Fallback: virtual dispatch if we have a receiver and method name
-        if (call.Receiver != null && methodName != null)
-        {
-            var receiverReg  = EmitExpr(call.Receiver);
-            var vcallKey     = _ctx.FindVcallParamsKey(methodName, argRegs.Count);
-            if (vcallKey is not null) argRegs = FillDefaults(vcallKey, argRegs);
-            var dst = Alloc(ToIrType(call.Type));
-            Emit(new VCallInstr(dst, receiverReg, methodName, argRegs));
-            return dst;
-        }
-
-        throw new NotSupportedException(
-            $"unresolved call to `{methodName ?? call.CalleeName ?? "unknown"}`");
     }
 
     /// Fill omitted trailing args with their default value expressions.

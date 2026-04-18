@@ -88,7 +88,7 @@ public class ZbcRoundTripTests
             throw new InvalidOperationException(
                 $"Parse error at {ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
         }
-        var model = new TypeChecker(diags).Check(cu, Imported);
+        var model = new TypeChecker(diags, depIndex: DepIndex).Check(cu, Imported);
         if (diags.HasErrors)
         {
             var sw = new System.IO.StringWriter();

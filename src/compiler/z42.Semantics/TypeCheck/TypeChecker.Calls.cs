@@ -28,14 +28,19 @@ public sealed partial class TypeChecker
                 return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
                     null, args, staticSig.Ret, call.Span);
             }
-            // Imported class: method not found → fall through to Unresolved
-            // (DependencyIndex may resolve it via builtin dispatch at IrGen time)
+            // Imported class: method not found → try DepIndex, or defer to IrGen
             if (isImported)
             {
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
-                return new BoundCall(BoundCallKind.Unresolved,
-                    new BoundIdent(clsName, Z42Type.Unknown, call.Callee.Span),
-                    null, staticMember, null, args, Z42Type.Unknown, call.Span);
+                if (_depIndex?.TryGetStatic(clsName, staticMember, out var depStaticEntry) == true)
+                {
+                    var retType = IrTypeToZ42Type(depStaticEntry.RetType);
+                    return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
+                        null, args, retType, call.Span);
+                }
+                // Method not found in DepIndex either — return Unknown type, IrGen will resolve
+                return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
+                    null, args, Z42Type.Unknown, call.Span);
             }
         }
 
@@ -48,9 +53,16 @@ public sealed partial class TypeChecker
                 && !_symbols.EnumTypes.Contains(tgtName)
                 && env.LookupVar(tgtName) == null && env.LookupFunc(tgtName) == null)
             {
-                var recv = new BoundIdent(tgtName, Z42Type.Unknown, mCallee.Target.Span);
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
-                return new BoundCall(BoundCallKind.Unresolved, recv, null, mCallee.Member,
+                // Try to resolve via DepIndex (static method on stdlib class)
+                if (_depIndex?.TryGetStatic(tgtName, mCallee.Member, out var depUnknownEntry) == true)
+                {
+                    var retType = IrTypeToZ42Type(depUnknownEntry.RetType);
+                    return new BoundCall(BoundCallKind.Static, null, tgtName, mCallee.Member,
+                        null, args, retType, call.Span);
+                }
+                // Not found in DepIndex — return Unknown type, IrGen will attempt to resolve
+                return new BoundCall(BoundCallKind.Static, null, tgtName, mCallee.Member,
                     null, args, Z42Type.Unknown, call.Span);
             }
 
@@ -85,13 +97,23 @@ public sealed partial class TypeChecker
                         isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,
                         recvExpr, ct.Name, resolvedMethodName, null, argBound, mt.Ret, call.Span);
                 }
-                // Imported class: method not found → Unresolved (no error)
+                // Imported class: method not found → try DepIndex, or defer to IrGen
                 if (isImportedCls)
-                    return new BoundCall(BoundCallKind.Unresolved, recvExpr, null, mCallee.Member,
+                {
+                    // Try instance method lookup: paramCount = argBound.Count (user args, excluding 'this')
+                    if (_depIndex?.TryGetInstance(mCallee.Member, argBound.Count, out var depInstanceEntry) == true)
+                    {
+                        var retType = IrTypeToZ42Type(depInstanceEntry.RetType);
+                        return new BoundCall(BoundCallKind.Instance, recvExpr, ct.Name, mCallee.Member,
+                            null, argBound, retType, call.Span);
+                    }
+                    // Not found in DepIndex — return Unknown type, IrGen will attempt to resolve
+                    return new BoundCall(BoundCallKind.Instance, recvExpr, ct.Name, mCallee.Member,
                         null, argBound, Z42Type.Unknown, call.Span);
+                }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type `{ct.Name}` has no method `{mCallee.Member}`", call.Span);
-                return new BoundCall(BoundCallKind.Unresolved, recvExpr, null, mCallee.Member,
+                return new BoundCall(BoundCallKind.Instance, recvExpr, ct.Name, mCallee.Member,
                     null, argBound, Z42Type.Error, call.Span);
             }
 
@@ -106,12 +128,19 @@ public sealed partial class TypeChecker
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"interface `{ifaceType.Name}` has no method `{mCallee.Member}`", call.Span);
-                return new BoundCall(BoundCallKind.Unresolved, recvExpr, null, mCallee.Member,
+                return new BoundCall(BoundCallKind.Virtual, recvExpr, ifaceType.Name, mCallee.Member,
                     null, argBound, Z42Type.Error, call.Span);
             }
 
-            // Unknown/primitive type — stdlib resolves at IrGen time
-            return new BoundCall(BoundCallKind.Unresolved, recvExpr, null, mCallee.Member,
+            // Unknown/primitive type (string, int, etc.) — try DepIndex
+            if (_depIndex?.TryGetInstance(mCallee.Member, argBound.Count, out var depPrimitiveEntry) == true)
+            {
+                var retType = IrTypeToZ42Type(depPrimitiveEntry.RetType);
+                return new BoundCall(BoundCallKind.Instance, recvExpr, null, mCallee.Member,
+                    null, argBound, retType, call.Span);
+            }
+            // Still unresolved — virtual dispatch fallback
+            return new BoundCall(BoundCallKind.Instance, recvExpr, null, mCallee.Member,
                 null, argBound, Z42Type.Unknown, call.Span);
         }
 
@@ -140,10 +169,12 @@ public sealed partial class TypeChecker
                 return new BoundCall(BoundCallKind.Free, null, null, null,
                     funcId.Name, freeArgs, ft.Ret, call.Span);
             }
-            // Unknown function — report and return Unresolved
+            // Unknown function — report error
             BindIdent(funcId, env);
-            return new BoundCall(BoundCallKind.Unresolved, null, null, null,
-                funcId.Name, freeArgs, Z42Type.Unknown, call.Span);
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"undefined function or variable `{funcId.Name}`", funcId.Span);
+            return new BoundCall(BoundCallKind.Free, null, null, null,
+                funcId.Name, freeArgs, Z42Type.Error, call.Span);
         }
 
         // Non-identifier callee (rare)
@@ -152,9 +183,13 @@ public sealed partial class TypeChecker
         {
             CheckArgCount(freeArgs.Count, ft2.MinArgCount, ft2.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, ft2.Params);
+            return new BoundCall(BoundCallKind.Free, null, null, null,
+                null, freeArgs, ft2.Ret, call.Span);
         }
-        return new BoundCall(BoundCallKind.Unresolved, calleeExpr, null, null,
-            null, freeArgs, calleeExpr.Type is Z42FuncType ft3 ? ft3.Ret : Z42Type.Unknown, call.Span);
+        _diags.Error(DiagnosticCodes.TypeMismatch,
+            $"cannot call non-function type `{calleeExpr.Type}`", call.Callee.Span);
+        return new BoundCall(BoundCallKind.Free, null, null, null,
+            null, freeArgs, Z42Type.Error, call.Span);
     }
 
     // ── Call helpers ──────────────────────────────────────────────────────────
