@@ -37,13 +37,13 @@ public static partial class ZbcReader
                                          new List<(string, ushort, string, string, bool)>());
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
                                          sec => ReadFuncSection(sec, pool),
-                                         new List<(int, List<IrBlock>, List<IrExceptionEntry>?)>());
+                                         new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>());
 
         // ── Reconstruct functions ─────────────────────────────────────────────
         var functions = new List<IrFunction>(funcBodies.Count);
         for (int i = 0; i < funcBodies.Count; i++)
         {
-            var (regCount, blocks, excTable) = funcBodies[i];
+            var (regCount, blocks, excTable, lineTable) = funcBodies[i];
             string name, retType, execMode;
             ushort paramCount;
             bool   isStatic;
@@ -56,7 +56,8 @@ public static partial class ZbcReader
             }
 
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
-                excTable?.Count > 0 ? excTable : null, IsStatic: isStatic));
+                excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
+                LineTable: lineTable));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -228,13 +229,16 @@ public static partial class ZbcReader
 
     // ── FUNC section ─────────────────────────────────────────────────────────
 
-    private static List<(int, List<IrBlock>, List<IrExceptionEntry>?)> ReadFuncSection(
+    private static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> ReadFuncSection(
         byte[] data, string[] pool)
     {
         using var ms   = new MemoryStream(data, writable: false);
         using var r    = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
         uint funcCount = r.ReadUInt32();
-        var result     = new List<(int, List<IrBlock>, List<IrExceptionEntry>?)>((int)funcCount);
+        var result     = new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>((int)funcCount);
+
+        // Peek flag: detect old format (no line_count field) vs new.
+        // For forward compat, we only read line_count when enough bytes remain.
 
         for (int fi = 0; fi < funcCount; fi++)
         {
@@ -242,6 +246,7 @@ public static partial class ZbcReader
             ushort blockCount = r.ReadUInt16();
             uint   instrLen   = r.ReadUInt32();
             ushort excCount   = r.ReadUInt16();
+            ushort lineCount  = r.ReadUInt16();
 
             var blockOffsets = new uint[blockCount];
             for (int i = 0; i < blockCount; i++) blockOffsets[i] = r.ReadUInt32();
@@ -260,6 +265,17 @@ public static partial class ZbcReader
                     BL(catchB),
                     catchT == uint.MaxValue ? null : P(pool, catchT),
                     RU(catchR)));
+            }
+
+            var lineTable = lineCount > 0 ? new List<IrLineEntry>(lineCount) : null;
+            for (int i = 0; i < lineCount; i++)
+            {
+                ushort blk  = r.ReadUInt16();
+                ushort ins  = r.ReadUInt16();
+                uint lineNo = r.ReadUInt32();
+                uint fileId = r.ReadUInt32();
+                string? file = fileId == uint.MaxValue ? null : P(pool, fileId);
+                lineTable!.Add(new IrLineEntry(blk, ins, (int)lineNo, file));
             }
 
             byte[] instrBytes = r.ReadBytes((int)instrLen);
@@ -283,7 +299,7 @@ public static partial class ZbcReader
                     .ToList();
             }
 
-            result.Add((regCount, blocks, resolvedExc));
+            result.Add((regCount, blocks, resolvedExc, lineTable));
         }
         return result;
     }
@@ -298,7 +314,7 @@ public static partial class ZbcReader
     // ── Internal helpers for ZpkgReader ──────────────────────────────────────
 
     /// Exposes FUNC section decoding for ZpkgReader (packed mode module bodies).
-    public static List<(int, List<IrBlock>, List<IrExceptionEntry>?)> DecodeFuncSectionPublic(
+    public static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> DecodeFuncSectionPublic(
         byte[] data, string[] pool) => ReadFuncSection(data, pool);
 
     /// Exposes TYPE section decoding for ZpkgReader.

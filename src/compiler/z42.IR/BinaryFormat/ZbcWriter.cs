@@ -161,6 +161,9 @@ public static partial class ZbcWriter
                         pool.Intern(exc.CatchLabel);
                         if (exc.CatchType != null) pool.Intern(exc.CatchType);
                     }
+                if (fn.LineTable != null)
+                    foreach (var le in fn.LineTable)
+                        if (le.File != null) pool.Intern(le.File);
             }
         }
         else
@@ -335,13 +338,15 @@ public static partial class ZbcWriter
             iw.Flush();
             var instrBytes = instrMs.ToArray();
 
-            int excCount = fn.ExceptionTable?.Count ?? 0;
-            int regCount = ComputeRegCount(fn);
+            int excCount  = fn.ExceptionTable?.Count ?? 0;
+            int lineCount = fn.LineTable?.Count ?? 0;
+            int regCount  = ComputeRegCount(fn);
 
             w.Write((ushort)regCount);
             w.Write((ushort)fn.Blocks.Count);
             w.Write((uint)instrBytes.Length);
             w.Write((ushort)excCount);
+            w.Write((ushort)lineCount);
 
             foreach (var off in blockOffsets) w.Write(off);
 
@@ -353,6 +358,15 @@ public static partial class ZbcWriter
                     w.Write(blockIdx.TryGetValue(exc.CatchLabel, out var cl) ? cl : (ushort)0);
                     w.Write(exc.CatchType != null ? (uint)pool.Idx(exc.CatchType) : uint.MaxValue);
                     w.Write((ushort)exc.CatchReg.Id);
+                }
+
+            if (fn.LineTable != null)
+                foreach (var le in fn.LineTable)
+                {
+                    w.Write((ushort)le.BlockIdx);
+                    w.Write((ushort)le.InstrIdx);
+                    w.Write((uint)le.Line);
+                    w.Write(le.File != null ? (uint)pool.Idx(le.File) : uint.MaxValue);
                 }
 
             w.Write(instrBytes);

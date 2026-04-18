@@ -280,6 +280,7 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
 struct FuncBody {
     blocks: Vec<BasicBlock>,
     exception_table: Vec<ExceptionEntry>,
+    line_table: Vec<crate::metadata::bytecode::LineEntry>,
 }
 
 fn read_func(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
@@ -292,6 +293,7 @@ fn read_func(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
         let block_count = c.read_u16()? as usize;
         let instr_len   = c.read_u32()? as usize;
         let exc_count   = c.read_u16()? as usize;
+        let line_count  = c.read_u16()? as usize;
 
         let mut block_offsets = Vec::with_capacity(block_count);
         for _ in 0..block_count {
@@ -306,6 +308,18 @@ fn read_func(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
             let catch_type = c.read_u32()?;
             let catch_reg  = c.read_u16()?;
             raw_exc.push((try_start, try_end, catch_blk, catch_type, catch_reg));
+        }
+
+        let mut line_table = Vec::with_capacity(line_count);
+        for _ in 0..line_count {
+            let blk  = c.read_u16()? as u32;
+            let ins  = c.read_u16()? as u32;
+            let line = c.read_u32()?;
+            let file_id = c.read_u32()?;
+            let file = if file_id == u32::MAX { None } else {
+                pool.get(file_id as usize).cloned()
+            };
+            line_table.push(crate::metadata::bytecode::LineEntry { block: blk, instr: ins, line, file });
         }
 
         let instr_bytes = c.read_bytes(instr_len)?;
@@ -335,7 +349,7 @@ fn read_func(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
             ExceptionEntry { try_start, try_end, catch_label, catch_type, catch_reg: cr as u32 }
         }).collect();
 
-        bodies.push(FuncBody { blocks, exception_table });
+        bodies.push(FuncBody { blocks, exception_table, line_table });
     }
     Ok(bodies)
 }
@@ -597,7 +611,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             exception_table: body.exception_table,
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
-            line_table:      Vec::new(),
+            line_table:      body.line_table,
         }
     }).collect();
 
@@ -772,7 +786,7 @@ fn read_mods_section(
                 exception_table: body.exception_table,
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
-                line_table:      Vec::new(),
+                line_table:      body.line_table,
             }
         }).collect();
 

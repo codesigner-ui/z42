@@ -21,6 +21,7 @@ public sealed class IrGenTests
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static readonly DependencyIndex DepIdx = LoadDepIdx();
+    private static readonly ImportedSymbols? Imported = LoadImported();
 
     private static DependencyIndex LoadDepIdx()
     {
@@ -32,6 +33,35 @@ public sealed class IrGenTests
             dir = dir.Parent;
         }
         return DependencyIndex.Empty;
+    }
+
+    private static ImportedSymbols? LoadImported()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate))
+            {
+                var cache = new Z42.Pipeline.TsigCache();
+                foreach (var zpkg in Directory.EnumerateFiles(candidate, "*.zpkg"))
+                {
+                    try
+                    {
+                        var bytes = File.ReadAllBytes(zpkg);
+                        foreach (var ns in ZpkgReader.ReadNamespaces(bytes))
+                            cache.RegisterNamespace(ns, zpkg);
+                    }
+                    catch { }
+                }
+                var modules = cache.LoadAll();
+                if (modules.Count == 0) return null;
+                var allNs = modules.Select(m => m.Namespace).Distinct().ToList();
+                return ImportedSymbolLoader.Load(modules, allNs);
+            }
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     private static DependencyIndex BuildDepIdxFromDir(string libsDir)
@@ -56,7 +86,7 @@ public sealed class IrGenTests
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
-        var model  = new TypeChecker(new DiagnosticBag()).Check(cu);
+        var model  = new TypeChecker(new DiagnosticBag()).Check(cu, Imported);
         return new IrGen(semanticModel: model).Generate(cu);
     }
 
@@ -64,7 +94,7 @@ public sealed class IrGenTests
     {
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
-        var model  = new TypeChecker(new DiagnosticBag()).Check(cu);
+        var model  = new TypeChecker(new DiagnosticBag()).Check(cu, Imported);
         return new IrGen(DepIdx, semanticModel: model).Generate(cu);
     }
 

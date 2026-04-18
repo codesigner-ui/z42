@@ -222,9 +222,10 @@ public static class ZpkgReader
                     ? sigs[sigIdx]
                     : ($"func#{fi}", (ushort)0, "void", "Interp", false);
 
-                var (regCount, blocks, excTable) = funcBodies[fi];
+                var (regCount, blocks, excTable, lineTable) = funcBodies[fi];
                 functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
-                    excTable?.Count > 0 ? excTable : null, IsStatic: isStatic));
+                    excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
+                    LineTable: lineTable));
             }
 
             var strPool = ZbcReader.RebuildStringPoolPublic(pool, functions);

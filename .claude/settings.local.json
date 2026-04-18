@@ -54,7 +54,9 @@
       "Bash(xxd /tmp/multi-ns-test/dist/multi-ns-test.zpkg)",
       "Bash(grep -c \"DiagnosticCodes\\\\.\" src/compiler/z42.Semantics/**/*.cs)",
       "Bash(grep -c 'public const string' src/compiler/z42.Core/Diagnostics/*.cs src/compiler/z42.Semantics/**/*.cs)",
-      "Bash(ls src/compiler/z42.Tests/*.cs)"
+      "Bash(ls src/compiler/z42.Tests/*.cs)",
+      "Bash(ls scripts/regen*.sh)",
+      "Bash(xxd src/runtime/tests/golden/run/01_hello/source.zbc)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

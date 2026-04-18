@@ -335,7 +335,7 @@ fn read_zpkg_sigs_section(
 
 // ── FUNC section ─────────────────────────────────────────────────────────────
 
-type FuncBody = (Vec<BasicBlock>, Vec<ExceptionEntry>);
+type FuncBody = (Vec<BasicBlock>, Vec<ExceptionEntry>, Vec<crate::metadata::bytecode::LineEntry>);
 
 fn read_func_section(
     data: &[u8],
@@ -359,6 +359,7 @@ fn decode_func_section(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
         let block_count = r.u16()? as usize;
         let instr_len   = r.u32()? as usize;
         let exc_count   = r.u16()? as usize;
+        let line_count  = r.u16()? as usize;
 
         let mut block_offsets = Vec::with_capacity(block_count);
         for _ in 0..block_count {
@@ -373,6 +374,18 @@ fn decode_func_section(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
             let catch_t  = r.u32()?;
             let catch_r  = r.u16()?;
             raw_exc.push((try_s, try_e, catch_b, catch_t, catch_r));
+        }
+
+        let mut line_table = Vec::with_capacity(line_count);
+        for _ in 0..line_count {
+            let blk  = r.u16()? as u32;
+            let ins  = r.u16()? as u32;
+            let line = r.u32()?;
+            let file_id = r.u32()?;
+            let file = if file_id == u32::MAX { None } else {
+                pool.get(file_id as usize).cloned()
+            };
+            line_table.push(crate::metadata::bytecode::LineEntry { block: blk, instr: ins, line, file });
         }
 
         let instr_bytes = r.bytes(instr_len)?;
@@ -401,7 +414,7 @@ fn decode_func_section(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
             })
             .collect();
 
-        result.push((blocks, exc_table));
+        result.push((blocks, exc_table, line_table));
     }
     Ok(result)
 }
@@ -465,7 +478,7 @@ fn assemble_module(
     let mut used_str_indices: Vec<bool> = vec![false; pool.len()];
 
     let functions: Vec<Function> = sigs.into_iter().zip(bodies).map(
-        |((name, param_count, ret_type, exec_mode), (blocks, exception_table))| {
+        |((name, param_count, ret_type, exec_mode), (blocks, exception_table, line_table))| {
             // Mark strings used by ConstStr instructions
             for block in &blocks {
                 for instr in &block.instructions {
@@ -484,6 +497,8 @@ fn assemble_module(
                 blocks,
                 exception_table,
                 is_static: false,
+                max_reg: 0,
+                line_table,
             }
         }
     ).collect();

@@ -29,9 +29,10 @@ public class ZbcRoundTripTests
         Converters             = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
-    // ── Dependency index (loads once from artifacts/z42/libs/) ────────────────
+    // ── Dependency index + imported TSIG (loads once from artifacts/z42/libs/) ────
 
     private static readonly DependencyIndex DepIndex = LoadDepIndex();
+    private static readonly ImportedSymbols? Imported = LoadImported();
 
     private static DependencyIndex LoadDepIndex()
     {
@@ -43,6 +44,35 @@ public class ZbcRoundTripTests
             dir = dir.Parent;
         }
         return DependencyIndex.Empty;
+    }
+
+    private static ImportedSymbols? LoadImported()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null)
+        {
+            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate))
+            {
+                var cache = new TsigCache();
+                foreach (var zpkg in Directory.EnumerateFiles(candidate, "*.zpkg"))
+                {
+                    try
+                    {
+                        var bytes = File.ReadAllBytes(zpkg);
+                        foreach (var ns in ZpkgReader.ReadNamespaces(bytes))
+                            cache.RegisterNamespace(ns, zpkg);
+                    }
+                    catch { }
+                }
+                var modules = cache.LoadAll();
+                if (modules.Count == 0) return null;
+                var allNs = modules.Select(m => m.Namespace).Distinct().ToList();
+                return ImportedSymbolLoader.Load(modules, allNs);
+            }
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -58,7 +88,7 @@ public class ZbcRoundTripTests
             throw new InvalidOperationException(
                 $"Parse error at {ex.Span.Line}:{ex.Span.Column}: {ex.Message}");
         }
-        var model = new TypeChecker(diags).Check(cu);
+        var model = new TypeChecker(diags).Check(cu, Imported);
         if (diags.HasErrors)
         {
             var sw = new System.IO.StringWriter();
@@ -294,5 +324,73 @@ public class ZbcRoundTripTests
         byte[] second = ZbcWriter.Write(module, ZbcFlags.Stripped);
 
         first.Should().Equal(second, "same source must produce identical stripped zbc bytes");
+    }
+
+    // ── Debug line table round-trip ─────────────────────────────────────────
+
+    [Fact]
+    public void LineTable_IsGeneratedByEmitter()
+    {
+        const string src = """
+            namespace demo;
+
+            void Main() {
+                int x = 10;
+                int y = 20;
+                int z = x + y;
+            }
+            """;
+
+        var module = Compile(src);
+        var main   = module.Functions.Should().ContainSingle(f => f.Name.EndsWith("Main")).Subject;
+
+        main.LineTable.Should().NotBeNull();
+        main.LineTable!.Count.Should().BeGreaterThanOrEqualTo(3,
+            "three statements should produce three line-table entries");
+
+        // Lines should be strictly monotonically increasing (each stmt emits its own line)
+        var lines = main.LineTable.Select(e => e.Line).ToList();
+        lines.Should().BeInAscendingOrder();
+    }
+
+    [Fact]
+    public void LineTable_SurvivesBinaryRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            int Compute() {
+                int a = 1;
+                int b = 2;
+                return a + b;
+            }
+
+            void Main() {
+                var r = Compute();
+            }
+            """;
+
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        for (int i = 0; i < original.Functions.Count; i++)
+        {
+            var o = original.Functions[i];
+            var r = restored.Functions[i];
+            if (o.LineTable is null)
+            {
+                r.LineTable.Should().BeNull($"function {o.Name} had no line table");
+                continue;
+            }
+            r.LineTable.Should().NotBeNull($"function {o.Name} must preserve line table");
+            r.LineTable!.Count.Should().Be(o.LineTable.Count,
+                $"function {o.Name} line table entry count must round-trip");
+            for (int k = 0; k < o.LineTable.Count; k++)
+            {
+                r.LineTable[k].BlockIdx.Should().Be(o.LineTable[k].BlockIdx);
+                r.LineTable[k].InstrIdx.Should().Be(o.LineTable[k].InstrIdx);
+                r.LineTable[k].Line.Should().Be(o.LineTable[k].Line);
+            }
+        }
     }
 }
