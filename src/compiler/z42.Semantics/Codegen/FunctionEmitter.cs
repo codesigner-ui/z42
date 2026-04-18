@@ -23,7 +23,6 @@ internal sealed partial class FunctionEmitter
     private int _nextReg;
     private int _nextLabelId;
     private Dictionary<string, TypedReg> _locals = new();
-    private HashSet<string> _mutableVars = new();
     private HashSet<string> _instanceFields = new();
     private List<IrBlock> _blocks = new();
     private List<IrExceptionEntry> _exceptionTable = new();
@@ -209,15 +208,26 @@ internal sealed partial class FunctionEmitter
         _             => "unknown"
     };
 
-    /// Write a new value back to a named variable.
+    /// Write a new value back to a named variable (now pure register-based).
     private void WriteBackName(string name, TypedReg valReg)
     {
-        if (_mutableVars.Contains(name))
-            Emit(new StoreInstr(name, valReg));
-        else if (_instanceFields.Contains(name))
+        if (_instanceFields.Contains(name))
+        {
             Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), name, valReg));
+        }
         else
-            _locals[name] = valReg;
+        {
+            // All local variables (mutable or not) now have a register ID
+            if (!_locals.TryGetValue(name, out var varReg))
+            {
+                // First assignment to this variable: allocate a new register
+                varReg = new TypedReg(_nextReg++, valReg.Type);
+                _locals[name] = varReg;
+            }
+            // Copy the value to the variable's register
+            if (varReg.Id != valReg.Id)
+                Emit(new CopyInstr(varReg, valReg));
+        }
     }
 
     // ── Z42Type / TypeExpr → IrType mapping ─────────────────────────────────

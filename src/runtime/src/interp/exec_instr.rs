@@ -128,10 +128,6 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x >> (y & 63))?);
         }
 
-        // ── Variable slots ───────────────────────────────────────────────────
-        Instruction::Store { var, src } => frame.store_var(var, *src)?,
-        Instruction::Load { dst, var }  => frame.load_var(*dst, var)?,
-
         // ── String ───────────────────────────────────────────────────────────
         Instruction::StrConcat { dst, a, b } => {
             let sa = str_val(&frame.regs, *a)?;

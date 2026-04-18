@@ -170,7 +170,6 @@ public static class IrVerifier
         BitNotInstr     i => i.Dst,
         ShlInstr        i => i.Dst,
         ShrInstr        i => i.Dst,
-        LoadInstr       i => i.Dst,
         ArrayNewInstr   i => i.Dst,
         ArrayNewLitInstr i => i.Dst,
         ArrayGetInstr   i => i.Dst,
@@ -181,7 +180,7 @@ public static class IrVerifier
         IsInstanceInstr i => i.Dst,
         AsCastInstr     i => i.Dst,
         StaticGetInstr  i => i.Dst,
-        // No Dst: StoreInstr, ArraySetInstr, FieldSetInstr, StaticSetInstr
+        // No Dst: ArraySetInstr, FieldSetInstr, StaticSetInstr
         _ => null,
     };
 
@@ -213,7 +212,6 @@ public static class IrVerifier
         BitNotInstr     i => [i.Src],
         ShlInstr        i => [i.A, i.B],
         ShrInstr        i => [i.A, i.B],
-        StoreInstr      i => [i.Src],
         ArrayNewInstr   i => [i.Size],
         ArrayNewLitInstr i => i.Elems,
         ArrayGetInstr   i => [i.Arr, i.Idx],
@@ -226,7 +224,7 @@ public static class IrVerifier
         IsInstanceInstr i => [i.Obj],
         AsCastInstr     i => [i.Obj],
         StaticSetInstr  i => [i.Val],
-        // No uses: ConstXxx, LoadInstr, StaticGetInstr
+        // No uses: ConstXxx, StaticGetInstr
         _ => [],
     };
 

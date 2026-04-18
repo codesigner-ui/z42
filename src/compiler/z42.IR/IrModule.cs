@@ -126,8 +126,6 @@ public sealed record IrBlock(
 [JsonDerivedType(typeof(BitNotInstr),    "bit_not")]
 [JsonDerivedType(typeof(ShlInstr),       "shl")]
 [JsonDerivedType(typeof(ShrInstr),       "shr")]
-[JsonDerivedType(typeof(StoreInstr),       "store")]
-[JsonDerivedType(typeof(LoadInstr),        "load")]
 [JsonDerivedType(typeof(ArrayNewInstr),    "array_new")]
 [JsonDerivedType(typeof(ArrayNewLitInstr), "array_new_lit")]
 [JsonDerivedType(typeof(ArrayGetInstr),    "array_get")]
@@ -198,11 +196,6 @@ public sealed record BitXorInstr(TypedReg Dst, TypedReg A, TypedReg B) : IrInstr
 public sealed record BitNotInstr(TypedReg Dst, TypedReg Src)           : IrInstr;
 public sealed record ShlInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
 public sealed record ShrInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr;
-
-// ── Variables ─────────────────────────────────────────────────────────────────
-
-public sealed record StoreInstr(string Var, TypedReg Src)              : IrInstr;
-public sealed record LoadInstr(TypedReg Dst, string Var)               : IrInstr;
 
 // ── Array instructions ───────────────────────────────────────────────────────
 

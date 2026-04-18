@@ -60,12 +60,6 @@ internal sealed partial class FunctionEmitter
             {
                 if (_locals.TryGetValue(id.Name, out var reg))
                     return reg;
-                if (_mutableVars.Contains(id.Name))
-                {
-                    var dst = Alloc(ToIrType(id.Type));
-                    Emit(new LoadInstr(dst, id.Name));
-                    return dst;
-                }
                 if (_instanceFields.Contains(id.Name))
                 {
                     var dst = Alloc(ToIrType(id.Type));
@@ -198,12 +192,7 @@ internal sealed partial class FunctionEmitter
 
         if (assign.Target is BoundIdent id)
         {
-            if (_mutableVars.Contains(id.Name))
-                Emit(new StoreInstr(id.Name, valReg));
-            else if (_instanceFields.Contains(id.Name))
-                Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), id.Name, valReg));
-            else
-                _locals[id.Name] = valReg;
+            WriteBackName(id.Name, valReg);
         }
         else if (assign.Target is BoundIndex ix)
         {

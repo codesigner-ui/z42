@@ -53,13 +53,6 @@ public static partial class ZbcReader
             case Opcodes.ConstChar: return new ConstCharInstr(d, (char)r.ReadInt32());
             case Opcodes.ConstNull: return new ConstNullInstr(d);
             case Opcodes.Copy:      return new CopyInstr(d, RU(r.ReadUInt16()));
-            case Opcodes.Store:
-            {
-                var varName = P(pool, r.ReadUInt32());
-                var src     = RU(r.ReadUInt16());
-                return new StoreInstr(varName, src);
-            }
-            case Opcodes.Load: return new LoadInstr(d, P(pool, r.ReadUInt32()));
 
             case Opcodes.Add:    return new AddInstr   (d, RU(r.ReadUInt16()), RU(r.ReadUInt16()));
             case Opcodes.Sub:    return new SubInstr   (d, RU(r.ReadUInt16()), RU(r.ReadUInt16()));

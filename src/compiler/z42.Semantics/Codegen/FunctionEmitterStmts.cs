@@ -26,12 +26,13 @@ internal sealed partial class FunctionEmitter
         switch (stmt)
         {
             case BoundVarDecl v:
-                _mutableVars.Add(v.Name);
                 if (v.Init != null)
                 {
                     var reg = EmitExpr(v.Init);
-                    Emit(new StoreInstr(v.Name, reg));
+                    // WriteBackName will allocate a register for this variable on first assignment
+                    WriteBackName(v.Name, reg);
                 }
+                // If no initializer, variable will get a register on first assignment
                 break;
 
             case BoundReturn r:
@@ -201,10 +202,9 @@ internal sealed partial class FunctionEmitter
         Emit(new ArrayLenInstr(lenReg, arrReg));
 
         string indexVar = $"__fe_i_{_nextLabelId}";
-        _mutableVars.Add(indexVar);
         var zeroReg = Alloc(IrType.I32);
         Emit(new ConstI32Instr(zeroReg, 0));
-        Emit(new StoreInstr(indexVar, zeroReg));
+        WriteBackName(indexVar, zeroReg);
 
         string condLbl = FreshLabel("fe_cond");
         string bodyLbl = FreshLabel("fe_body");
@@ -214,32 +214,31 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(condLbl);
-        var iReg   = Alloc(IrType.I32);
-        Emit(new LoadInstr(iReg, indexVar));
+        var iReg   = _locals[indexVar];  // Direct access to loop index register
         var cmpReg = Alloc(IrType.Bool);
         Emit(new LtInstr(cmpReg, iReg, lenReg));
         EndBlock(new BrCondTerm(cmpReg, bodyLbl, endLbl));
 
         _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
-        var iReg2   = Alloc(IrType.I32);
-        Emit(new LoadInstr(iReg2, indexVar));
+        // Read loop index variable (now pure register-based)
+        var indexReg = _locals[indexVar];
         var elemReg = Alloc(ToIrType(fe.VarType));
-        Emit(new ArrayGetInstr(elemReg, arrReg, iReg2));
-        _mutableVars.Add(fe.VarName);
-        Emit(new StoreInstr(fe.VarName, elemReg));
+        Emit(new ArrayGetInstr(elemReg, arrReg, indexReg));
+        // Assign loop variable (WriteBackName will allocate register)
+        WriteBackName(fe.VarName, elemReg);
         EmitBoundBlock(fe.Body);
         if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
         _loopStack.Pop();
 
         StartBlock(incrLbl);
-        var iReg3   = Alloc(IrType.I32);
-        Emit(new LoadInstr(iReg3, indexVar));
+        // Increment loop index (now pure register-based)
+        var indexReg2 = _locals[indexVar];
         var oneReg  = Alloc(IrType.I32);
         Emit(new ConstI32Instr(oneReg, 1));
         var nextReg = Alloc(IrType.I32);
-        Emit(new AddInstr(nextReg, iReg3, oneReg));
-        Emit(new StoreInstr(indexVar, nextReg));
+        Emit(new AddInstr(nextReg, indexReg2, oneReg));
+        WriteBackName(indexVar, nextReg);
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(endLbl);
@@ -323,8 +322,8 @@ internal sealed partial class FunctionEmitter
             StartBlock(catchStartLbl);
             if (clause.VarName != null)
             {
-                _mutableVars.Add(clause.VarName);
-                Emit(new StoreInstr(clause.VarName, catchReg));
+                // Exception variable binding (now pure register-based)
+                WriteBackName(clause.VarName, catchReg);
             }
             EmitBoundBlock(clause.Body);
             if (!_blockEnded) EndBlock(new BrTerm(finallyLbl));

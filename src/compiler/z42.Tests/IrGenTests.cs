@@ -210,22 +210,26 @@ public sealed class IrGenTests
         HasInstr<ConstStrInstr>(All(GenMain("var s = \"world\";")));
     }
 
-    // ── Variable store / load ─────────────────────────────────────────────────
+    // ── Variable allocation (pure register-based) ─────────────────────────────
 
     [Fact]
-    public void VarDecl_EmitsStore()
+    public void VarDecl_AllocatesRegister()
     {
-        var instrs = All(GenMain("var x = 42;"));
-        instrs.Any(i => i is StoreInstr s && s.Var == "x")
-              .Should().BeTrue(because: "expected Store to variable 'x'");
+        // Variables are now allocated registers on first assignment (pure register-based).
+        // When a variable is used, we need at least a ConstI32 for the literal.
+        var instrs = All(GenMain("var x = 42; var y = x;"));
+        // Should have at least the ConstI32 for literal 42 and a Copy for reading x
+        instrs.OfType<ConstI32Instr>().Should().NotBeEmpty(because: "expected ConstI32 for literal 42");
+        instrs.OfType<CopyInstr>().Should().NotBeEmpty(because: "expected Copy for variable read");
     }
 
     [Fact]
-    public void VarRead_EmitsLoad()
+    public void VarRead_UsesRegisterDirectly()
     {
+        // Variables are now stored in registers. Reading a variable uses the register directly
+        // without a separate Load instruction.
         var instrs = All(GenMain("var x = 1; var y = x;"));
-        instrs.Any(i => i is LoadInstr l && l.Var == "x")
-              .Should().BeTrue(because: "expected Load from variable 'x'");
+        instrs.OfType<CopyInstr>().Should().NotBeEmpty(because: "expected Copy instruction for variable read");
     }
 
     // ── Arithmetic ────────────────────────────────────────────────────────────

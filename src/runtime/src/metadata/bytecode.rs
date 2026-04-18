@@ -330,15 +330,6 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] a: Reg,
         #[serde(with = "typed_reg_serde")] b: Reg,
     },
-    // Mutable variable slots (for locals that cross basic block boundaries)
-    Store {
-        var: String,
-        #[serde(with = "typed_reg_serde")] src: Reg,
-    },
-    Load {
-        #[serde(with = "typed_reg_serde")] dst: Reg,
-        var: String,
-    },
     // String
     StrConcat {
         #[serde(with = "typed_reg_serde")] dst: Reg,

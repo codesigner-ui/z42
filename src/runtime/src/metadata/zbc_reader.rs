@@ -406,12 +406,6 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
         }
         OP_CONST_NULL => Instruction::ConstNull { dst },
         OP_COPY       => Instruction::Copy { dst, src: c.read_u16()? as u32 },
-        OP_STORE      => {
-            let var = pool_str_owned(pool, c.read_u32()?)?;
-            let src = c.read_u16()? as u32;
-            Instruction::Store { var, src }
-        }
-        OP_LOAD => Instruction::Load { dst, var: pool_str_owned(pool, c.read_u32()?)? },
 
         OP_ADD     => { let (a,b) = read_ab(c)?; Instruction::Add { dst, a, b } }
         OP_SUB     => { let (a,b) = read_ab(c)?; Instruction::Sub { dst, a, b } }

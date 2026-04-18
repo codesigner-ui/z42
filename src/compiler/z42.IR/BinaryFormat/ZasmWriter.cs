@@ -103,8 +103,6 @@ public static class ZasmWriter
             ConstCharInstr i => $"%{i.Dst.Id} = const.char  '{i.Val}'",
             ConstNullInstr i => $"%{i.Dst.Id} = const.null",
             CopyInstr      i => $"%{i.Dst.Id} = copy  %{i.Src.Id}",
-            StoreInstr     i => $"store  @{i.Var}  %{i.Src.Id}",
-            LoadInstr      i => $"%{i.Dst.Id} = load  @{i.Var}",
 
             AddInstr    i => $"%{i.Dst.Id} = add  %{i.A.Id}, %{i.B.Id}",
             SubInstr    i => $"%{i.Dst.Id} = sub  %{i.A.Id}, %{i.B.Id}",

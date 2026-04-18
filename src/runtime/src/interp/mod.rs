@@ -72,7 +72,6 @@ pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
 
 pub(crate) struct Frame {
     pub regs: Vec<Value>,
-    pub vars: HashMap<String, Value>,  // mutable named variable slots
 }
 
 impl Frame {
@@ -83,7 +82,7 @@ impl Frame {
         for (i, v) in args.iter().enumerate() {
             regs[i] = v.clone();
         }
-        Frame { regs, vars: HashMap::new() }
+        Frame { regs }
     }
 
     pub fn set(&mut self, reg: u32, val: Value) {
@@ -98,21 +97,6 @@ impl Frame {
         self.regs
             .get(reg as usize)
             .with_context(|| format!("undefined register %{reg}"))
-    }
-
-    pub fn store_var(&mut self, name: &str, reg: u32) -> Result<()> {
-        let val = self.get(reg)?.clone();
-        self.vars.insert(name.to_string(), val);
-        Ok(())
-    }
-
-    pub fn load_var(&mut self, dst: u32, name: &str) -> Result<()> {
-        let val = self.vars
-            .get(name)
-            .with_context(|| format!("undefined variable `{name}`"))?
-            .clone();
-        self.set(dst, val);
-        Ok(())
     }
 }
 

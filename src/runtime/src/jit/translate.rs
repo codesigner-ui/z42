@@ -194,8 +194,6 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::BitNot    { dst, .. }  => Some(*dst),
                 Instruction::Shl       { dst, .. }  => Some(*dst),
                 Instruction::Shr       { dst, .. }  => Some(*dst),
-                Instruction::Store     { .. }        => None,
-                Instruction::Load      { dst, .. }  => Some(*dst),
                 Instruction::StrConcat { dst, .. }  => Some(*dst),
                 Instruction::ToStr     { dst, .. }  => Some(*dst),
                 Instruction::Call      { dst, .. }  => Some(*dst),
@@ -309,8 +307,6 @@ pub fn translate_function(
     let hr_bit_not       = imp!(helper_ids.bit_not);
     let hr_shl           = imp!(helper_ids.shl);
     let hr_shr           = imp!(helper_ids.shr);
-    let hr_store         = imp!(helper_ids.store);
-    let hr_load          = imp!(helper_ids.load);
     let hr_str_concat    = imp!(helper_ids.str_concat);
     let hr_to_str        = imp!(helper_ids.to_str);
     let hr_call          = imp!(helper_ids.call);
@@ -561,19 +557,6 @@ pub fn translate_function(
                 Instruction::Shr { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
                     let inst = builder.ins().call(hr_shr, &[frame_val, d, av, bv]);
-                    let ret  = builder.inst_results(inst)[0]; check!(ret);
-                }
-
-                // Variable slots
-                Instruction::Store { var, src } => {
-                    let (sptr, slen) = str_val!(var);
-                    let sv = ri!(*src);
-                    builder.ins().call(hr_store, &[frame_val, sptr, slen, sv]);
-                }
-                Instruction::Load { dst, var } => {
-                    let d = ri!(*dst);
-                    let (vptr, vlen) = str_val!(var);
-                    let inst = builder.ins().call(hr_load, &[frame_val, d, vptr, vlen]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 

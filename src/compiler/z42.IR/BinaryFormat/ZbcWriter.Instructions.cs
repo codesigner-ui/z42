@@ -47,14 +47,6 @@ public static partial class ZbcWriter
                 w.Write(Opcodes.Copy); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 WriteReg(w, i.Src);
                 break;
-            case StoreInstr i:
-                w.Write(Opcodes.Store); w.Write(TypeTagFromIrType(i.Src.Type)); w.Write(NoReg);
-                w.Write((uint)pool.Idx(i.Var)); WriteReg(w, i.Src);
-                break;
-            case LoadInstr i:
-                w.Write(Opcodes.Load); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                w.Write((uint)pool.Idx(i.Var));
-                break;
 
             case AddInstr i:    WriteBin(w, Opcodes.Add,    i.Dst, i.A, i.B); break;
             case SubInstr i:    WriteBin(w, Opcodes.Sub,    i.Dst, i.A, i.B); break;
@@ -236,8 +228,6 @@ public static partial class ZbcWriter
             case AsCastInstr i:     pool.Intern(i.ClassName); break;
             case StaticGetInstr i:  pool.Intern(i.Field); break;
             case StaticSetInstr i:  pool.Intern(i.Field); break;
-            case StoreInstr i:      pool.Intern(i.Var); break;
-            case LoadInstr i:       pool.Intern(i.Var); break;
         }
     }
 
@@ -265,8 +255,6 @@ public static partial class ZbcWriter
             case ConstCharInstr i: v(i.Dst); break;
             case ConstNullInstr i: v(i.Dst); break;
             case CopyInstr i:  v(i.Dst); v(i.Src); break;
-            case StoreInstr i: v(i.Src); break;
-            case LoadInstr i:  v(i.Dst); break;
             case AddInstr i:    v(i.Dst); v(i.A); v(i.B); break;
             case SubInstr i:    v(i.Dst); v(i.A); v(i.B); break;
             case MulInstr i:    v(i.Dst); v(i.A); v(i.B); break;
