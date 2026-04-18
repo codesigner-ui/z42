@@ -11,12 +11,14 @@ namespace Z42.Project;
 
 public sealed class ProjectManifest
 {
-    public ProjectSection        Project    { get; init; } = new();
-    public SourcesSection        Sources    { get; init; } = new();
-    public BuildSection          Build      { get; init; } = new();
-    public ProfileSection        Debug      { get; init; } = ProfileSection.DefaultDebug;
-    public ProfileSection        Release    { get; init; } = ProfileSection.DefaultRelease;
+    public ProjectSection        Project      { get; init; } = new();
+    public SourcesSection        Sources      { get; init; } = new();
+    public BuildSection          Build        { get; init; } = new();
+    public ProfileSection        Debug        { get; init; } = ProfileSection.DefaultDebug;
+    public ProfileSection        Release      { get; init; } = ProfileSection.DefaultRelease;
     public IReadOnlyList<ExeTarget> ExeTargets { get; init; } = [];
+    /// Declared dependencies from `[dependencies]`. Empty list = no section (auto-scan mode).
+    public DependencySection     Dependencies { get; init; } = new();
 
     // ── Discovery ─────────────────────────────────────────────────────────────
 
@@ -51,21 +53,23 @@ public sealed class ProjectManifest
         var model   = TomlSerializer.Deserialize<TomlTable>(toml)
                       ?? throw new ManifestException($"error: failed to parse {tomlPath}");
 
-        var exeTargets = ParseExeTargets(model);
-        var project    = ParseProject(model, tomlPath, exeTargets.Count > 0);
-        var sources    = ParseSources(model);
-        var build      = ParseBuild(model);
-        var debug      = ParseProfile(model, "debug",   ProfileSection.DefaultDebug);
-        var release    = ParseProfile(model, "release", ProfileSection.DefaultRelease);
+        var exeTargets  = ParseExeTargets(model);
+        var project     = ParseProject(model, tomlPath, exeTargets.Count > 0);
+        var sources     = ParseSources(model);
+        var build       = ParseBuild(model);
+        var debug       = ParseProfile(model, "debug",   ProfileSection.DefaultDebug);
+        var release     = ParseProfile(model, "release", ProfileSection.DefaultRelease);
+        var deps        = ParseDependencies(model);
 
         return new ProjectManifest
         {
-            Project    = project,
-            Sources    = sources,
-            Build      = build,
-            Debug      = debug,
-            Release    = release,
-            ExeTargets = exeTargets,
+            Project      = project,
+            Sources      = sources,
+            Build        = build,
+            Debug        = debug,
+            Release      = release,
+            ExeTargets   = exeTargets,
+            Dependencies = deps,
         };
     }
 
@@ -244,6 +248,20 @@ public sealed class ProjectManifest
         return new ProfileSection(mode, optimize, debug, strip, pack);
     }
 
+    static DependencySection ParseDependencies(TomlTable model)
+    {
+        if (!model.TryGetValue("dependencies", out var raw) || raw is not TomlTable t)
+            return new DependencySection([], false);
+
+        var entries = new List<DeclaredDep>();
+        foreach (var kv in t)
+        {
+            string name    = kv.Key;
+            string version = kv.Value is string s ? s : "*";
+            entries.Add(new DeclaredDep(name, version));
+        }
+        return new DependencySection(entries, true);
+    }
 }
 
 // ── Section records ────────────────────────────────────────────────────────────
@@ -284,6 +302,19 @@ public sealed record BuildSection(
 )
 {
     public BuildSection() : this("dist", "interp", true) { }
+}
+
+/// A single declared dependency entry: `"pkg-name" = "version"`.
+public sealed record DeclaredDep(string Name, string Version);
+
+/// Parsed `[dependencies]` section.
+/// When `IsDeclared` is true, only the listed packages are visible to the compiler
+/// (besides implicit stdlib). When false (no `[dependencies]`), auto-scan mode.
+public sealed record DependencySection(
+    IReadOnlyList<DeclaredDep> Entries,
+    bool IsDeclared)
+{
+    public DependencySection() : this([], false) { }
 }
 
 public sealed record ProfileSection(

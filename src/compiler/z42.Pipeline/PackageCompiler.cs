@@ -49,7 +49,8 @@ public static class PackageCompiler
             sourceFiles,
             pack,
             projectDir,
-            outDir);
+            outDir,
+            manifest.Dependencies);
     }
 
     // ── Check ─────────────────────────────────────────────────────────────────
@@ -127,7 +128,8 @@ public static class PackageCompiler
             { errors++; continue; }
             bool pack = manifest.ResolvePack(useRelease, target.Pack);
             if (BuildTarget(target.Name, manifest.Project.Version, ZpkgKind.Exe,
-                    target.Entry, sourceFiles, pack, projectDir, outDir) != 0)
+                    target.Entry, sourceFiles, pack, projectDir, outDir,
+                    manifest.Dependencies) != 0)
                 errors++;
         }
 
@@ -146,15 +148,16 @@ public static class PackageCompiler
         IReadOnlyList<string> sourceFiles,
         bool                  pack,
         string                projectDir,
-        string                outDir)
+        string                outDir,
+        DependencySection?    declaredDeps = null)
     {
         var libsDirs    = new[] {
             Path.Combine(projectDir, "libs"),
             Path.Combine(projectDir, "artifacts", "z42", "libs"),
         };
         var tsigCache   = new TsigCache();
-        var nsMap       = ScanLibsForNamespaces(libsDirs, tsigCache);
-        var depIndex    = BuildDepIndex(libsDirs);
+        var nsMap       = ScanLibsForNamespaces(libsDirs, tsigCache, declaredDeps);
+        var depIndex    = BuildDepIndex(libsDirs, declaredDeps);
         ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
         var units = TryCompileSourceFiles(sourceFiles, depIndex, tsigCache);
@@ -195,9 +198,15 @@ public static class PackageCompiler
 
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
     /// Also populates the TsigCache with namespace → zpkg path mappings for on-demand loading.
+    /// When `declaredDeps` has entries, only declared packages + stdlib (z42.*) are visible.
     static Dictionary<string, string> ScanLibsForNamespaces(
-        string[] libsDirs, TsigCache? tsigCache = null)
+        string[] libsDirs, TsigCache? tsigCache = null,
+        DependencySection? declaredDeps = null)
     {
+        var allowedPkgs = declaredDeps is { IsDeclared: true }
+            ? declaredDeps.Entries.Select(d => d.Name).ToHashSet(StringComparer.Ordinal)
+            : null; // null = auto-scan (allow all)
+
         var nsMap = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var libsDir in libsDirs)
         {
@@ -207,9 +216,14 @@ public static class PackageCompiler
                 try
                 {
                     var bytes = File.ReadAllBytes(zpkgFile);
-                    var ns    = ZpkgReader.ReadNamespaces(bytes);
+                    var meta  = ZpkgReader.ReadMeta(bytes);
+                    // Filter: stdlib (z42.*) always visible; third-party only if declared.
+                    bool isStdlib = meta.Name.StartsWith("z42.", StringComparison.Ordinal);
+                    if (allowedPkgs != null && !isStdlib && !allowedPkgs.Contains(meta.Name))
+                        continue;
+
                     string fname = Path.GetFileName(zpkgFile);
-                    foreach (var n in ns)
+                    foreach (var n in meta.Namespaces)
                     {
                         nsMap.TryAdd(n, fname);
                         tsigCache?.RegisterNamespace(n, zpkgFile);
@@ -424,8 +438,14 @@ public static class PackageCompiler
 
     /// Load lib-kind zpkgs from the given directories and build a DependencyIndex
     /// from their packed modules. Silently skips malformed or non-lib packages.
-    public static DependencyIndex BuildDepIndex(string[] libsDirs)
+    /// When `declaredDeps` has entries, only declared packages + stdlib are loaded.
+    public static DependencyIndex BuildDepIndex(
+        string[] libsDirs, DependencySection? declaredDeps = null)
     {
+        var allowedPkgs = declaredDeps is { IsDeclared: true }
+            ? declaredDeps.Entries.Select(d => d.Name).ToHashSet(StringComparer.Ordinal)
+            : null;
+
         var modules = new List<(IrModule Module, string Namespace)>();
         foreach (var dir in libsDirs)
         {
@@ -437,6 +457,9 @@ public static class PackageCompiler
                     var bytes = File.ReadAllBytes(zpkgPath);
                     var meta  = ZpkgReader.ReadMeta(bytes);
                     if (meta.Kind != ZpkgKind.Lib) continue;
+                    bool isStdlib = meta.Name.StartsWith("z42.", StringComparison.Ordinal);
+                    if (allowedPkgs != null && !isStdlib && !allowedPkgs.Contains(meta.Name))
+                        continue;
                     foreach (var (mod, ns) in ZpkgReader.ReadModules(bytes))
                         modules.Add((mod, ns));
                 }
