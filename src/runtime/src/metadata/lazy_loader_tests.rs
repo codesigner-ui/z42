@@ -15,7 +15,7 @@ fn namespace_prefix_of_shallow_name() {
 
 #[test]
 fn install_then_uninstall_is_clean() {
-    install(None);
+    install(None, 0);
     assert!(try_lookup_function("Std.IO.Console.WriteLine").is_none());
     uninstall();
 }

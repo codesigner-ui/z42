@@ -199,8 +199,6 @@ fn main() -> Result<()> {
     //     (see interp/exec_instr.rs + metadata/lazy_loader.rs).
     //   JIT/AOT mode → eager. JIT requires all callee functions to be
     //     pre-compiled, so we pre-load all declared deps at startup.
-    z42_vm::metadata::lazy_loader::install(libs_dir.clone());
-
     let is_eager = matches!(cli.mode, Some(ExecMode::Jit) | Some(ExecMode::Aot));
     if is_eager {
         // Eager: load all declared dependencies (DEPS) and import namespaces.
@@ -248,6 +246,10 @@ fn main() -> Result<()> {
         z42_vm::metadata::loader::build_type_registry(&mut m);
         m
     };
+
+    // Install lazy loader now that the final module's string pool size is known.
+    // Lazy-loaded zpkgs will have their ConstStr indices offset past this length.
+    z42_vm::metadata::lazy_loader::install(libs_dir.clone(), final_module.string_pool.len());
 
     let default_mode = match cli.mode {
         Some(ExecMode::Jit) => z42_vm::metadata::ExecMode::Jit,

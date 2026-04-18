@@ -4,7 +4,7 @@
 /// helpers live in `dispatch.rs`; register-level numeric helpers in `ops.rs`.
 
 use crate::metadata::{Instruction, Module, NativeData, ScriptObject, Value};
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -19,11 +19,16 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
     match instr {
         // ── Constants ────────────────────────────────────────────────────────
         Instruction::ConstStr { dst, idx } => {
-            let s = module
-                .string_pool
-                .get(*idx as usize)
-                .with_context(|| format!("string pool index {idx} out of range"))?;
-            frame.set(*dst, Value::Str(s.clone()));
+            let i = *idx as usize;
+            let s = if let Some(s) = module.string_pool.get(i) {
+                s.clone()
+            } else if let Some(s) = crate::metadata::lazy_loader::try_lookup_string(i) {
+                // ConstStr from a lazily-loaded function — idx is offset past main pool.
+                s
+            } else {
+                bail!("string pool index {idx} out of range");
+            };
+            frame.set(*dst, Value::Str(s));
         }
         Instruction::ConstI32  { dst, val } => frame.set(*dst, Value::I32(*val)),
         Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),

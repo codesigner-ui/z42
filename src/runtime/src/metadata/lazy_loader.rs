@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
-use super::bytecode::Function;
+use super::bytecode::{Function, Instruction};
 use super::loader::load_artifact;
 use super::types::TypeDesc;
 
@@ -27,10 +27,11 @@ thread_local! {
     static STATE: RefCell<Option<LazyLoader>> = RefCell::new(None);
 }
 
-/// Install the lazy loader with the given libs directory.
-/// Called once at VM startup after locating the stdlib libs dir.
-pub fn install(libs_dir: Option<PathBuf>) {
-    STATE.with(|s| *s.borrow_mut() = Some(LazyLoader::new(libs_dir)));
+/// Install the lazy loader with the given libs directory and main module's
+/// string pool length. ConstStr indices at `>= main_pool_len` will be resolved
+/// against the lazy loader's own merged string pool.
+pub fn install(libs_dir: Option<PathBuf>, main_pool_len: usize) {
+    STATE.with(|s| *s.borrow_mut() = Some(LazyLoader::new(libs_dir, main_pool_len)));
 }
 
 /// Clear the lazy loader (used in tests to reset state between runs).
@@ -59,26 +60,49 @@ pub fn try_lookup_type(class_name: &str) -> Option<Arc<TypeDesc>> {
     })
 }
 
+/// Resolve an "overflow" ConstStr index — one that falls past the main module's
+/// string pool. Returns the merged lazy-pool string if available.
+pub fn try_lookup_string(absolute_idx: usize) -> Option<String> {
+    STATE.with(|s| {
+        let state = s.borrow();
+        let loader = state.as_ref()?;
+        let rel = absolute_idx.checked_sub(loader.main_pool_len)?;
+        loader.string_pool.get(rel).cloned()
+    })
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 struct LazyLoader {
     libs_dir: Option<PathBuf>,
+    /// Length of the main (user) module's string pool.
+    /// ConstStr indices < `main_pool_len` resolve against the main module's pool;
+    /// indices >= `main_pool_len` resolve against `string_pool` below
+    /// (at relative offset `idx - main_pool_len`).
+    main_pool_len: usize,
     /// Namespaces that have already been resolved (either successfully or not).
     /// Prevents repeated zpkg-search attempts for the same namespace.
     attempted: HashSet<String>,
     /// Functions loaded from lazily-resolved zpkgs, indexed by fully-qualified name.
+    /// ConstStr indices in these functions have been remapped to absolute indices
+    /// (offset by `main_pool_len` + cumulative lazy pool size).
     function_table: HashMap<String, Arc<Function>>,
     /// Type descriptors from lazily-resolved zpkgs, indexed by class name.
     type_registry: HashMap<String, Arc<TypeDesc>>,
+    /// Aggregated string pool from all lazy-loaded zpkgs.
+    /// Accessed via `try_lookup_string` at offset `absolute_idx - main_pool_len`.
+    string_pool: Vec<String>,
 }
 
 impl LazyLoader {
-    fn new(libs_dir: Option<PathBuf>) -> Self {
+    fn new(libs_dir: Option<PathBuf>, main_pool_len: usize) -> Self {
         Self {
             libs_dir,
+            main_pool_len,
             attempted: HashSet::new(),
             function_table: HashMap::new(),
             type_registry: HashMap::new(),
+            string_pool: Vec::new(),
         }
     }
 
@@ -111,8 +135,17 @@ impl LazyLoader {
         let path_str = zpkg_path.to_string_lossy().into_owned();
         let artifact = load_artifact(&path_str)?;
 
-        // Merge functions + type registry into lazy state
-        for fn_ in artifact.module.functions {
+        // Compute the offset for this zpkg's strings in the aggregated lazy pool.
+        // Its ConstStr indices (0-based into its own pool) need to be remapped to
+        // absolute indices: `main_pool_len + current_lazy_pool_len + original_idx`.
+        let offset = self.main_pool_len + self.string_pool.len();
+
+        // Append this zpkg's strings to the lazy pool
+        self.string_pool.extend(artifact.module.string_pool.iter().cloned());
+
+        // Remap ConstStr indices in each function and cache
+        for mut fn_ in artifact.module.functions {
+            remap_const_str(&mut fn_, offset);
             self.function_table.insert(fn_.name.clone(), Arc::new(fn_));
         }
         for (name, desc) in artifact.module.type_registry {
@@ -120,6 +153,18 @@ impl LazyLoader {
         }
         tracing::debug!("lazy-loaded dependency `{ns}` from {path_str}");
         Ok(())
+    }
+}
+
+/// Rewrite all ConstStr `idx` values in a function's blocks by adding `offset`,
+/// so the resulting indices point into the merged main+lazy string pool.
+fn remap_const_str(fn_: &mut Function, offset: usize) {
+    for block in fn_.blocks.iter_mut() {
+        for instr in block.instructions.iter_mut() {
+            if let Instruction::ConstStr { idx, .. } = instr {
+                *idx += offset as u32;
+            }
+        }
     }
 }
 

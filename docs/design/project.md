@@ -45,6 +45,27 @@ entry   = "Hello.main" # kind=exe 时必填，完全限定函数名
 
 `name` 是包的文件标识符，与命名空间**无关**。命名空间完全由源文件中的 `namespace xxx;` 声明决定，编译器在构建时从源文件中收集并写入 zpkg 的 `namespaces` 字段。`[dependencies]` 中填写的是包名（用于找文件），`using` 语句中填写的是命名空间（由源文件决定），两者无需一致。
 
+**一个 zpkg 可包含多个命名空间（C# 风格）：**
+
+一个 zpkg 不限定只含单一命名空间。像 C# 程序集一样，一个 lib 包内不同 `.z42` 源文件可以属于不同命名空间，所有命名空间都会被收集到 zpkg 的 `namespaces` 字段中。
+
+```
+# 包 my-sdk 的源文件结构：
+my-sdk/src/
+  Client.z42       → namespace Company.Sdk;
+  ClientBuilder.z42 → namespace Company.Sdk;
+  Internal.z42     → namespace Company.Sdk.Internal;
+  Testing.z42      → namespace Company.Sdk.Testing;
+
+# 构建产物：
+dist/my-sdk.zpkg  namespaces = ["Company.Sdk", "Company.Sdk.Internal", "Company.Sdk.Testing"]
+```
+
+命名空间解析规则：
+- 编译器的依赖加载：读 zpkg 的 `namespaces` 列表，所有列出的命名空间均可见（无需在 `[dependencies]` 中逐一声明）
+- VM 的 lazy loader：通过 `namespaces.iter().any(|n| n == requested_ns)` 判断 zpkg 是否提供某命名空间
+- 同一命名空间不允许被两个不同 zpkg 同时提供（`AmbiguousNamespaceError`）
+
 **`kind` 决定默认产物：**
 
 | kind | 默认 emit | 说明 |
