@@ -25,11 +25,13 @@ public sealed record CompilationUnit(
 // ── Interface declaration ──────────────────────────────────────────────────────
 
 /// `interface IShape { string Area(); int Width { get; } }`
+/// `interface IComparable<T> { int CompareTo(T other); }`
 public sealed record InterfaceDecl(
     string Name,
     Visibility Visibility,
     List<MethodSignature> Methods,
-    Span Span);
+    Span Span,
+    List<string>? TypeParams = null);
 
 /// A method signature (no body) for use in interface declarations.
 public sealed record MethodSignature(
@@ -64,7 +66,8 @@ public sealed record ClassDecl(
     List<string> Interfaces,    // list of implemented interface names
     List<FieldDecl> Fields,
     List<FunctionDecl> Methods,
-    Span Span);
+    Span Span,
+    List<string>? TypeParams = null);
 
 /// A field inside a class/struct: `int x;`
 public sealed record FieldDecl(
@@ -102,7 +105,8 @@ public sealed record FunctionDecl(
     FunctionModifiers Modifiers,
     string? NativeIntrinsic,
     Span Span,
-    List<Expr>? BaseCtorArgs = null)  // non-null only on constructors with `: base(...)`
+    List<Expr>? BaseCtorArgs = null,  // non-null only on constructors with `: base(...)`
+    List<string>? TypeParams = null)  // generic type parameters: <T>, <K,V>
 {
     // Convenience accessors — keep read sites concise
     public bool IsStatic   => Modifiers.HasFlag(FunctionModifiers.Static);
@@ -121,6 +125,7 @@ public sealed record NamedType(string Name, Span Span)   : TypeExpr(Span);
 public sealed record OptionType(TypeExpr Inner, Span Span) : TypeExpr(Span);   // T?
 public sealed record VoidType(Span Span)                 : TypeExpr(Span);
 public sealed record ArrayType(TypeExpr Element, Span Span) : TypeExpr(Span);  // T[]
+public sealed record GenericType(string Name, List<TypeExpr> TypeArgs, Span Span) : TypeExpr(Span);  // Box<int>, Dict<K,V>
 
 // ── Statements ────────────────────────────────────────────────────────────────
 

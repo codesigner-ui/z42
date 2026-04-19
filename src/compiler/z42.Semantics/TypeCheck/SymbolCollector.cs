@@ -153,6 +153,14 @@ internal sealed partial class SymbolCollector : ISymbolBinder
                                : _interfaces.TryGetValue(nt.Name, out var it) ? it
                                : new Z42PrimType(nt.Name),
         },
+        GenericType gt => gt.Name switch
+        {
+            "List"       => new Z42PrimType("List"),
+            "Dictionary" => new Z42PrimType("Dictionary"),
+            _            => _classes.TryGetValue(gt.Name, out var ct) ? (Z42Type)ct
+                          : _interfaces.TryGetValue(gt.Name, out var it) ? it
+                          : new Z42PrimType(gt.Name),
+        },
         _ => Z42Type.Unknown
     };
 

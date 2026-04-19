@@ -96,6 +96,7 @@ public sealed class SymbolTable
         VoidType      => Z42Type.Void,
         OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
         ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
+        GenericType gt => ResolveGenericType(gt),
         NamedType  nt => nt.Name switch
         {
             "var"             => Z42Type.Unknown,
@@ -106,6 +107,19 @@ public sealed class SymbolTable
         },
         _ => Z42Type.Unknown
     };
+
+    /// Resolve GenericType — handles pseudo-class (List<T>, Dictionary<K,V>) and user-defined generics.
+    private Z42Type ResolveGenericType(GenericType gt)
+    {
+        // Pseudo-class compatibility: List<T> and Dictionary<K,V> map to built-in types
+        if (gt.Name is "List") return TypeRegistry.GetZ42Type("List") ?? new Z42PrimType("List");
+        if (gt.Name is "Dictionary") return TypeRegistry.GetZ42Type("Dictionary") ?? new Z42PrimType("Dictionary");
+
+        // User-defined generic class: resolve as class type (code sharing — same class, different type_args)
+        if (Classes.TryGetValue(gt.Name, out var ct)) return ct;
+        if (Interfaces.TryGetValue(gt.Name, out var it)) return it;
+        return new Z42PrimType(gt.Name);
+    }
 
     /// Query: is <paramref name="derived"/> a subclass of <paramref name="baseClass"/>?
     /// O(1) lookup using precomputed ancestor sets.

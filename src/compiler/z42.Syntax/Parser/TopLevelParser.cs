@@ -199,8 +199,8 @@ internal static partial class TopLevelParser
         ExpectKind(ref cursor, TokenKind.Interface);
         var name = ExpectKind(ref cursor, TokenKind.Identifier).Text;
 
-        // Skip generic params: interface IFoo<T>
-        SkipGenericParams(ref cursor);
+        // Generic params: interface IFoo<T>
+        var typeParams = ParseTypeParams(ref cursor);
 
         // Skip base interfaces: interface IFoo : IBar, IBaz
         if (cursor.Current.Kind == TokenKind.Colon)
@@ -232,7 +232,7 @@ internal static partial class TopLevelParser
             methods.Add(new MethodSignature(mName, parms, mType, mSpan));
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
-        return new InterfaceDecl(name, vis, methods, start);
+        return new InterfaceDecl(name, vis, methods, start, typeParams);
     }
 
     // ── Class / struct / record ───────────────────────────────────────────────
@@ -252,8 +252,8 @@ internal static partial class TopLevelParser
 
         var name = ExpectKind(ref cursor, TokenKind.Identifier).Text;
 
-        // Skip generic params
-        SkipGenericParams(ref cursor);
+        // Generic params: class Foo<T>, struct Pair<K,V>
+        var typeParams = ParseTypeParams(ref cursor);
 
         var fields  = new List<FieldDecl>();
         var methods = new List<FunctionDecl>();
@@ -289,7 +289,7 @@ internal static partial class TopLevelParser
             {
                 cursor = cursor.Advance();
                 return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
-                    null, [], fields, methods, start);
+                    null, [], fields, methods, start, typeParams);
             }
         }
 
@@ -362,7 +362,7 @@ internal static partial class TopLevelParser
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
         return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
-            baseClass, ifaces, fields, methods, start);
+            baseClass, ifaces, fields, methods, start, typeParams);
     }
 
     // ── Function declaration ──────────────────────────────────────────────────
@@ -379,6 +379,7 @@ internal static partial class TopLevelParser
         // Constructor pattern: Ident( — no explicit return type
         TypeExpr returnType;
         string   name;
+        List<string>? funcTypeParams = null;
         if (cursor.Current.Kind == TokenKind.Identifier
             && cursor.Peek(1).Kind == TokenKind.LParen)
         {
@@ -390,6 +391,8 @@ internal static partial class TopLevelParser
         {
             returnType = TypeParser.Parse(cursor).Unwrap(ref cursor);
             name       = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            // Generic function: T Max<T>(T a, T b)
+            funcTypeParams = ParseTypeParams(ref cursor);
         }
 
         // Extern property: `extern T Name { get; }` — no parameter list
@@ -446,7 +449,7 @@ internal static partial class TopLevelParser
 
         return new FunctionDecl(name, parms, returnType, body, vis,
             BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
-            nativeIntrinsic, start, BaseCtorArgs: baseCtorArgs);
+            nativeIntrinsic, start, BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams);
     }
 
     /// Build FunctionModifiers flags from individual booleans parsed from source.

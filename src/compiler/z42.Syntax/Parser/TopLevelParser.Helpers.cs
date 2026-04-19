@@ -92,6 +92,23 @@ internal static partial class TopLevelParser
         return sb.ToString();
     }
 
+    /// Parse `<T>` or `<K, V>` type parameter list. Returns null if no `<` found.
+    private static List<string>? ParseTypeParams(ref TokenCursor cursor)
+    {
+        if (cursor.Current.Kind != TokenKind.Lt) return null;
+        cursor = cursor.Advance(); // skip <
+        var typeParams = new List<string>();
+        while (cursor.Current.Kind != TokenKind.Gt && !cursor.IsEnd)
+        {
+            typeParams.Add(ExpectKind(ref cursor, TokenKind.Identifier).Text);
+            if (cursor.Current.Kind != TokenKind.Comma) break;
+            cursor = cursor.Advance(); // skip ,
+        }
+        ExpectKind(ref cursor, TokenKind.Gt);
+        return typeParams.Count > 0 ? typeParams : null;
+    }
+
+    /// Skip generic parameters without collecting them (e.g. in base class / interface lists).
     private static void SkipGenericParams(ref TokenCursor cursor)
     {
         if (cursor.Current.Kind != TokenKind.Lt) return;

@@ -35,17 +35,23 @@ internal static class TypeParser
             cursor = cursor.Advance(2);
             ty = new ArrayType(ty, span);
         }
-        // T<U, V> — generic type args (skipped, not tracked in AST for Phase 1)
+        // T<U, V> — generic type arguments → GenericType node
         else if (cursor.Current.Kind == TokenKind.Lt)
         {
-            cursor = cursor.Advance();
-            int depth = 1;
-            while (!cursor.IsEnd && depth > 0)
+            cursor = cursor.Advance(); // skip <
+            var typeArgs = new List<TypeExpr>();
+            while (cursor.Current.Kind != TokenKind.Gt && !cursor.IsEnd)
             {
-                if (cursor.Current.Kind == TokenKind.Lt) depth++;
-                if (cursor.Current.Kind == TokenKind.Gt) depth--;
-                cursor = cursor.Advance();
+                var argResult = Parse(cursor);
+                if (!argResult.IsOk) break;
+                typeArgs.Add(argResult.Value);
+                cursor = argResult.Remainder;
+                if (cursor.Current.Kind != TokenKind.Comma) break;
+                cursor = cursor.Advance(); // skip ,
             }
+            if (cursor.Current.Kind == TokenKind.Gt)
+                cursor = cursor.Advance(); // skip >
+            ty = new GenericType(name, typeArgs, span);
         }
 
         // T? — nullable / option type

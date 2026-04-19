@@ -131,7 +131,12 @@ public sealed partial class TypeChecker
                     && _symbols.AbstractClasses.Contains(newName))
                     _diags.Error(DiagnosticCodes.TypeMismatch,
                         $"cannot instantiate abstract class `{newName}`", newExpr.Span);
-                var qualName = newExpr.Type is NamedType nt ? nt.Name : newType.ToString()!;
+                var qualName = newExpr.Type switch
+                {
+                    NamedType nt   => nt.Name,
+                    GenericType gt => gt.Name,
+                    _              => newType.ToString()!,
+                };
                 return new BoundNew(qualName, args, newType, newExpr.Span);
             }
 
