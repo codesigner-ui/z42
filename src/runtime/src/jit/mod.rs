@@ -42,6 +42,7 @@ impl JitModule {
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
         let r = unsafe { f(&mut frame, &*self.ctx) };
+        frame.recycle();
         if r != 0 { return Err(take_exception_error()); }
         Ok(())
     }
@@ -57,6 +58,7 @@ impl JitModule {
             let mut frame = JitFrame::new(entry.max_reg, &[]);
             let f: JitFn  = unsafe { std::mem::transmute(entry.ptr) };
             let r = unsafe { f(&mut frame, &*self.ctx) };
+            frame.recycle();
             if r != 0 { return Err(take_exception_error()); }
         }
 

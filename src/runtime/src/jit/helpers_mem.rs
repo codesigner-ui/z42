@@ -91,12 +91,13 @@ pub unsafe extern "C" fn jit_to_str(
                 let mut callee = JitFrame::new(entry.max_reg, &[val.clone()]);
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                 let r = jit_fn(&mut callee, ctx);
-                if r != 0 { return 1; }
-                let s = match callee.ret {
+                if r != 0 { callee.recycle(); return 1; }
+                let s = match callee.ret.take() {
                     Some(Value::Str(s)) => s,
                     Some(ref other)     => value_to_str(other),
                     None                => String::new(),
                 };
+                callee.recycle();
                 (*frame).regs[dst as usize] = Value::Str(s);
                 return 0;
             }

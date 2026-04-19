@@ -5,6 +5,7 @@
 /// that is shared across all calls within a single module execution.
 
 use crate::metadata::Value;
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 // ── JitFrame ─────────────────────────────────────────────────────────────────
@@ -23,7 +24,7 @@ impl JitFrame {
     /// The first `args.len()` registers are initialised with the call arguments.
     pub fn new(max_reg: usize, args: &[Value]) -> Self {
         let size = max_reg + 1;
-        let mut regs = vec![Value::Null; size];
+        let mut regs = take_pooled_regs(size);
         for (i, v) in args.iter().enumerate() {
             if i < size {
                 regs[i] = v.clone();
@@ -31,6 +32,47 @@ impl JitFrame {
         }
         JitFrame { regs, ret: None }
     }
+
+    /// Return the register Vec to the pool for reuse.
+    pub fn recycle(self) {
+        return_pooled_regs(self.regs);
+    }
+}
+
+// ── Frame pool ──────────────────────────────────────────────────────────────
+
+const POOL_MAX: usize = 32;
+
+thread_local! {
+    static FRAME_POOL: RefCell<Vec<Vec<Value>>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Take a Vec<Value> from the pool (or allocate a new one), sized to `size`.
+fn take_pooled_regs(size: usize) -> Vec<Value> {
+    FRAME_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if let Some(mut regs) = pool.pop() {
+            // Reset to Null and resize
+            for v in regs.iter_mut() { *v = Value::Null; }
+            regs.resize(size, Value::Null);
+            regs
+        } else {
+            vec![Value::Null; size]
+        }
+    })
+}
+
+/// Return a Vec<Value> to the pool for future reuse.
+fn return_pooled_regs(mut regs: Vec<Value>) {
+    // Drop all values to release Rc references before pooling
+    for v in regs.iter_mut() { *v = Value::Null; }
+    FRAME_POOL.with(|pool| {
+        let mut pool = pool.borrow_mut();
+        if pool.len() < POOL_MAX {
+            pool.push(regs);
+        }
+        // else: drop regs (pool is full)
+    });
 }
 
 // ── FnEntry ──────────────────────────────────────────────────────────────────

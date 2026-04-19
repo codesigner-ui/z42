@@ -34,8 +34,9 @@ pub unsafe extern "C" fn jit_call(
     let mut callee_frame = JitFrame::new(entry.max_reg, &args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
     let result = jit_fn(&mut callee_frame, ctx);
-    if result != 0 { return 1; }
-    frame_ref.regs[dst as usize] = callee_frame.ret.unwrap_or(Value::Null);
+    if result != 0 { callee_frame.recycle(); return 1; }
+    frame_ref.regs[dst as usize] = callee_frame.ret.take().unwrap_or(Value::Null);
+    callee_frame.recycle();
     0
 }
 
@@ -177,6 +178,7 @@ pub unsafe extern "C" fn jit_obj_new(
         let mut callee = JitFrame::new(entry.max_reg, &ctor_args);
         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
         let r = jit_fn(&mut callee, ctx);
+        callee.recycle();
         if r != 0 { return 1; }
     }
     frame_ref.regs[dst as usize] = obj_val;
@@ -282,8 +284,9 @@ pub unsafe extern "C" fn jit_vcall(
     let mut callee = JitFrame::new(entry.max_reg, &call_args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
     let r = jit_fn(&mut callee, ctx);
-    if r != 0 { return 1; }
-    frame_ref.regs[dst as usize] = callee.ret.unwrap_or(Value::Null);
+    if r != 0 { callee.recycle(); return 1; }
+    frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
+    callee.recycle();
     0
 }
 

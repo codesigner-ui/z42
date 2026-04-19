@@ -10,9 +10,14 @@ use crate::corelib::convert::value_to_str;
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_add(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
-    let fa = &*frame;
-    let va = fa.regs[a as usize].clone();
-    let vb = fa.regs[b as usize].clone();
+    // Fast path: both I64
+    let regs = &(*frame).regs;
+    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+        (*frame).regs[dst as usize] = Value::I64(x + y);
+        return 0;
+    }
+    let va = regs[a as usize].clone();
+    let vb = regs[b as usize].clone();
     let result = match (&va, &vb) {
         (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
         (Value::Str(sa), vb) => Value::Str(format!("{}{}", sa, value_to_str(vb))),
@@ -30,8 +35,15 @@ macro_rules! arith_op {
     ($name:ident, $int_op:expr, $float_op:expr) => {
         #[no_mangle]
         pub unsafe extern "C" fn $name(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
-            let va = (*frame).regs[a as usize].clone();
-            let vb = (*frame).regs[b as usize].clone();
+            // Fast path: both I64 — no clone, no match dispatch
+            let regs = &(*frame).regs;
+            if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+                let int_op: fn(i64, i64) -> i64 = $int_op;
+                (*frame).regs[dst as usize] = Value::I64(int_op(*x, *y));
+                return 0;
+            }
+            let va = regs[a as usize].clone();
+            let vb = regs[b as usize].clone();
             match int_binop_helper(&va, &vb, $int_op, $float_op) {
                 Ok(r)  => { (*frame).regs[dst as usize] = r; 0 }
                 Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
@@ -49,57 +61,58 @@ arith_op!(jit_rem, |x, y| x % y, |x, y| x % y);
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_eq(frame: *mut JitFrame, dst: u32, a: u32, b: u32) {
-    let va = (*frame).regs[a as usize].clone();
-    let vb = (*frame).regs[b as usize].clone();
+    let regs = &(*frame).regs;
+    // Fast path: both I64
+    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+        (*frame).regs[dst as usize] = Value::Bool(x == y);
+        return;
+    }
+    let va = regs[a as usize].clone();
+    let vb = regs[b as usize].clone();
     (*frame).regs[dst as usize] = Value::Bool(va == vb);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_ne(frame: *mut JitFrame, dst: u32, a: u32, b: u32) {
-    let va = (*frame).regs[a as usize].clone();
-    let vb = (*frame).regs[b as usize].clone();
+    let regs = &(*frame).regs;
+    // Fast path: both I64
+    if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+        (*frame).regs[dst as usize] = Value::Bool(x != y);
+        return;
+    }
+    let va = regs[a as usize].clone();
+    let vb = regs[b as usize].clone();
     (*frame).regs[dst as usize] = Value::Bool(va != vb);
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn jit_lt(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
-    let va = (*frame).regs[a as usize].clone();
-    let vb = (*frame).regs[b as usize].clone();
-    match numeric_lt_helper(&va, &vb) {
-        Ok(r)  => { (*frame).regs[dst as usize] = Value::Bool(r); 0 }
-        Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
-    }
+macro_rules! cmp_op {
+    ($name:ident, $i64_op:expr, $lt_swap:expr, $negate:expr) => {
+        #[no_mangle]
+        pub unsafe extern "C" fn $name(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
+            let regs = &(*frame).regs;
+            // Fast path: both I64
+            if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
+                let cmp: fn(&i64, &i64) -> bool = $i64_op;
+                (*frame).regs[dst as usize] = Value::Bool(cmp(x, y));
+                return 0;
+            }
+            let (va, vb) = if $lt_swap {
+                (regs[b as usize].clone(), regs[a as usize].clone())
+            } else {
+                (regs[a as usize].clone(), regs[b as usize].clone())
+            };
+            match numeric_lt_helper(&va, &vb) {
+                Ok(r)  => { (*frame).regs[dst as usize] = Value::Bool(if $negate { !r } else { r }); 0 }
+                Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
+            }
+        }
+    };
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn jit_le(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
-    let va = (*frame).regs[a as usize].clone();
-    let vb = (*frame).regs[b as usize].clone();
-    match numeric_lt_helper(&vb, &va) {
-        Ok(r)  => { (*frame).regs[dst as usize] = Value::Bool(!r); 0 }
-        Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn jit_gt(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
-    let va = (*frame).regs[a as usize].clone();
-    let vb = (*frame).regs[b as usize].clone();
-    match numeric_lt_helper(&vb, &va) {
-        Ok(r)  => { (*frame).regs[dst as usize] = Value::Bool(r); 0 }
-        Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn jit_ge(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
-    let va = (*frame).regs[a as usize].clone();
-    let vb = (*frame).regs[b as usize].clone();
-    match numeric_lt_helper(&va, &vb) {
-        Ok(r)  => { (*frame).regs[dst as usize] = Value::Bool(!r); 0 }
-        Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
-    }
-}
+cmp_op!(jit_lt, |x: &i64, y: &i64| x < y,  false, false);
+cmp_op!(jit_le, |x: &i64, y: &i64| x <= y, true,  true);
+cmp_op!(jit_gt, |x: &i64, y: &i64| x > y,  true,  false);
+cmp_op!(jit_ge, |x: &i64, y: &i64| x >= y, false, true);
 
 // ── Logical ──────────────────────────────────────────────────────────────────
 
