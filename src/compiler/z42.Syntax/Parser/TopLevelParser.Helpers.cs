@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Core.Diagnostics;
 using System.Text;
 using Z42.Core.Features;
 using Z42.Syntax.Lexer;
@@ -50,7 +51,8 @@ internal static partial class TopLevelParser
         // Detect illegal combined visibility
         if (cursor.Current.Kind is TokenKind.Public or TokenKind.Private
                                  or TokenKind.Protected or TokenKind.Internal)
-            throw new ParseException("cannot combine access modifiers", cursor.Current.Span);
+            throw new ParseException("cannot combine access modifiers", cursor.Current.Span,
+                DiagnosticCodes.InvalidModifier);
         return vis.Value;
     }
 
@@ -221,7 +223,8 @@ internal static partial class TopLevelParser
         if (cursor.Current.Kind != kind)
             throw new ParseException(
                 $"expected `{Combinators.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
-                cursor.Current.Span);
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
         var tok = cursor.Current;
         cursor  = cursor.Advance();
         return tok;

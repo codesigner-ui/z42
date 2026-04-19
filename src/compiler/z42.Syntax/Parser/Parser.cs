@@ -55,7 +55,8 @@ public sealed class Parser
 
 /// Raised when the parser encounters an unrecoverable syntax error.
 /// Carries the source location (Span) for accurate error reporting.
-public sealed class ParseException(string message, Span span) : Exception(message)
+public sealed class ParseException(string message, Span span, string? code = null) : Exception(message)
 {
-    public Span Span { get; } = span;
+    public Span    Span { get; } = span;
+    public string? Code { get; } = code;
 }

@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Core.Diagnostics;
 using System.Globalization;
 using System.Text;
 using Z42.Core.Features;
@@ -58,7 +59,8 @@ internal static class ExprParser
                 $"unexpected token `{cursor.Current.Text}` in expression");
 
         if (nudEntry.Feature is { } nf && !feat.IsEnabled(nf))
-            throw new ParseException($"feature `{LanguageFeatures.Metadata[nf].Name}` is disabled", span);
+            throw new ParseException($"feature `{LanguageFeatures.Metadata[nf].Name}` is disabled", span,
+                DiagnosticCodes.FeatureDisabled);
 
         var nudTok = cursor.Current;
         cursor = cursor.Advance();
@@ -111,7 +113,8 @@ internal static class ExprParser
         if (cursor.Current.Kind != TokenKind.Identifier)
             throw new ParseException(
                 $"expected member name, got `{cursor.Current.Text}`",
-                cursor.Current.Span);
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
         var member = cursor.Current.Text;
         cursor = cursor.Advance();
         return Ok(new MemberExpr(left, member, left.Span), cursor);
@@ -133,14 +136,16 @@ internal static class ExprParser
         {
             cursor = cursor.Advance();
             if (cursor.Current.Kind != TokenKind.Identifier)
-                throw new ParseException("expected member name after `?.`", cursor.Current.Span);
+                throw new ParseException("expected member name after `?.`", cursor.Current.Span,
+                    DiagnosticCodes.ExpectedToken);
             var member = cursor.Current.Text;
             cursor = cursor.Advance();
             return Ok(new NullConditionalExpr(left, member, left.Span), cursor);
         }
         // ternary: cond ? then : else
         if (!feat.IsEnabled(LanguageFeature.Ternary))
-            throw new ParseException($"feature `{LanguageFeatures.Metadata[LanguageFeature.Ternary].Name}` is disabled", tok.Span);
+            throw new ParseException($"feature `{LanguageFeatures.Metadata[LanguageFeature.Ternary].Name}` is disabled", tok.Span,
+                DiagnosticCodes.FeatureDisabled);
         var thenR = Parse(cursor, feat);
         if (!thenR.IsOk) return thenR;
         cursor = thenR.Remainder;
@@ -157,7 +162,8 @@ internal static class ExprParser
         if (cursor.Current.Kind != TokenKind.Identifier)
             throw new ParseException(
                 $"expected type name after `is`, got `{cursor.Current.Text}`",
-                cursor.Current.Span);
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
         var typeTok = cursor.Current;
         cursor = cursor.Advance();
         // Optional variable binding: `a is Dog d`
@@ -455,7 +461,8 @@ internal static class ExprParser
         if (cursor.Current.Kind != kind)
             throw new ParseException(
                 $"expected `{Combinators.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
-                cursor.Current.Span);
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
         cursor = cursor.Advance();
     }
 }

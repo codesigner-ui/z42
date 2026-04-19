@@ -67,7 +67,8 @@ internal static partial class TopLevelParser
                 if (IsPhase2ReservedKeyword(cursor.Current.Kind))
                     throw new ParseException(
                         $"`{cursor.Current.Text}` is a keyword reserved for Phase 2 and cannot be used yet",
-                        cursor.Current.Span);
+                        cursor.Current.Span,
+                        DiagnosticCodes.FeatureDisabled);
                 if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
                 if (cursor.Current.Kind == TokenKind.Namespace)
                 {
@@ -91,7 +92,7 @@ internal static partial class TopLevelParser
             }
             catch (ParseException ex) when (diags != null)
             {
-                diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+                diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
                 pendingNative = null;
                 cursor = SkipToNextDeclaration(cursor);
             }
@@ -151,7 +152,7 @@ internal static partial class TopLevelParser
             {
                 if (diags != null)
                 {
-                    diags.Error(DiagnosticCodes.UnexpectedToken,
+                    diags.Error(DiagnosticCodes.InvalidModifier,
                         "enum members cannot have access modifiers", cursor.Current.Span);
                     while (!cursor.IsEnd && cursor.Current.Kind != TokenKind.Comma
                                         && cursor.Current.Kind != TokenKind.RBrace)
@@ -160,7 +161,8 @@ internal static partial class TopLevelParser
                     continue;
                 }
                 throw new ParseException("enum members cannot have access modifiers",
-                    cursor.Current.Span);
+                    cursor.Current.Span,
+                    DiagnosticCodes.InvalidModifier);
             }
 
             var mName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
@@ -349,7 +351,7 @@ internal static partial class TopLevelParser
             }
             catch (ParseException ex) when (diags != null)
             {
-                diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+                diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
                 pendingNative = null;
                 if (!cursor.IsEnd) cursor = cursor.Advance();
                 while (!cursor.IsEnd && cursor.Current.Kind != TokenKind.RBrace

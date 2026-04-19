@@ -1,1 +1,1 @@
-*source.z42*: error E0201: *enum members cannot have access modifiers*
+*source.z42*: error E0405: *enum members cannot have access modifiers*

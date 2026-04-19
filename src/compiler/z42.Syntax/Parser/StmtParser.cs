@@ -65,7 +65,7 @@ internal static class StmtParser
             }
             catch (ParseException ex) when (diags != null)
             {
-                diags.Error(DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+                diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
                 stmts.Add(new ErrorStmt(ex.Message, ex.Span));
                 if (!cursor.IsEnd) cursor = cursor.Advance(); // always progress past failing token
                 cursor = SkipToNextStmt(cursor);
@@ -79,7 +79,8 @@ internal static class StmtParser
                 diags.Error(DiagnosticCodes.UnexpectedToken, errMsg, cursor.Current.Span);
                 return ParseResult<BlockStmt>.Ok(new BlockStmt(stmts, span), cursor);
             }
-            throw new ParseException(errMsg, cursor.Current.Span);
+            throw new ParseException(errMsg, cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
         }
         cursor = cursor.Advance();
         return ParseResult<BlockStmt>.Ok(new BlockStmt(stmts, span), cursor);
@@ -117,7 +118,8 @@ internal static class StmtParser
         if (s_table.TryGetValue(cursor.Current.Kind, out var entry))
         {
             if (entry.Feature is { } f && !feat.IsEnabled(f))
-                throw new ParseException($"feature `{LanguageFeatures.Metadata[f].Name}` is disabled", span);
+                throw new ParseException($"feature `{LanguageFeatures.Metadata[f].Name}` is disabled", span,
+                    DiagnosticCodes.FeatureDisabled);
             var kw = cursor.Current;
             cursor = cursor.Advance();
             return entry.Fn(cursor, kw, feat);
@@ -432,7 +434,8 @@ internal static class StmtParser
         if (cursor.Current.Kind != kind)
             throw new ParseException(
                 $"expected `{Combinators.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
-                cursor.Current.Span);
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
         var tok = cursor.Current;
         cursor  = cursor.Advance();
         return tok;
