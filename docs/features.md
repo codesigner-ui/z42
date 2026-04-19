@@ -366,3 +366,151 @@ Namespace → package mapping uses exported metadata, not file names: `using Std
 **Invariant:** A stripped zbc (`.zbc` with `STRIPPED=1` flag) must **never** appear in `Z42_PATH`. Loading a stripped zbc directly is an error — it lacks the metadata needed for standalone execution. Stripped zbcs live exclusively in `.cache/` and are only loaded via zpkg index.
 
 **namespace field:** Each zpkg manifest includes a top-level `namespaces: string[]` field listing all namespace names exported by the package. This allows the compiler and VM to resolve `using X` declarations by scanning package manifests without loading bytecode.
+
+---
+
+## 18. Modular Runtime & Minimal Subset
+
+**Decision:** z42 VM 是组件化的，标准库可裁剪，语言特性可按项目粒度开关。支持从完整运行时到最小嵌入式子集的连续谱。
+
+### VM 组件化
+
+VM 的功能按组件划分，构建时可按需组合：
+
+| 组件 | 功能 | 可裁剪？ |
+|------|------|---------|
+| `core` | 字节码加载、寄存器机、基本类型 | 必需（最小集） |
+| `interp` | 解释执行引擎 | 至少保留 interp 或 jit/aot 之一 |
+| `jit` | Cranelift JIT 编译 | 可移除（嵌入式场景） |
+| `aot` | LLVM AOT 编译 | 可移除（脚本场景） |
+| `gc` | 垃圾回收器 | 可替换（引用计数 / 分代 / 外部 GC） |
+| `exceptions` | try/catch/finally 异常机制 | 可移除（纯函数式子集） |
+| `corelib` | 内置函数（I/O、集合、数学） | 可裁剪到最小集（仅 print + assert） |
+| `debug` | 行号映射、栈回溯、调试器接口 | 可移除（release 构建） |
+
+**最小子集示例 — 嵌入式 / WebAssembly：**
+
+```toml
+# z42.toml — IoT 控制器配置
+[runtime]
+components = ["core", "interp", "gc-refcount"]
+# 无 JIT、无异常、无调试信息 → VM 体积 < 200KB
+```
+
+### 标准库可裁剪（Tree-shaking）
+
+标准库按模块粒度裁剪，构建工具自动分析 `using` 依赖图，只打包实际引用的模块：
+
+```
+z42.core         ← 始终包含（隐式 prelude）
+z42.io           ← 仅在 using Std.IO 时包含
+z42.math         ← 仅在 using Std.Math 时包含
+z42.collections  ← 仅在使用 List/Dictionary 时包含
+z42.text         ← 仅在 using Std.Text 时包含
+```
+
+**zpkg 打包时的 dead-code elimination：**
+- 模块级：未引用的 zpkg 整个跳过
+- 函数级（L3）：未调用的导出函数从 packed zpkg 中移除
+- 字符串池（L3）：未引用的字符串常量不打入共享池
+
+### 语法特性开关
+
+通过 `z42.toml` 的 `[language]` 节控制语言子集，编译器在解析/类型检查阶段强制执行：
+
+```toml
+[language]
+# 安全子集 — 适合沙箱脚本
+allow_extern = false          # 禁止 extern（无 native 调用）
+allow_unsafe_cast = false     # 禁止 as 强制类型转换
+allow_nullable = false        # 禁止 T?（所有类型非空）
+require_exhaustive_switch = true  # switch 必须穷举
+
+# 嵌入式子集 — 最小语言
+allow_exceptions = false      # 禁止 try/catch/throw
+allow_classes = false         # 禁止 class（仅 struct + 函数）
+allow_inheritance = false     # 禁止继承
+max_call_depth = 64           # 限制调用栈深度
+```
+
+**设计理由：** 一门语言的适用范围由其"最小可用子集"决定。通过组件化 VM + 可裁剪标准库 + 特性开关，z42 可以覆盖从 IoT 固件（~200KB runtime）到云端微服务（完整 GC + JIT）的全部场景，而不是为每个场景设计不同的语言。
+
+**Phase:** L1 (feature gate 基础设施) | L2 (stdlib 模块化裁剪) | L3 (VM 组件化构建、函数级 tree-shaking)
+
+---
+
+## 19. NativeAOT — 单文件原生部署
+
+**Decision:** z42 支持将字节码 + VM 运行时 + 标准库编译为单个原生可执行文件，类似 C# NativeAOT / GraalVM native-image。
+
+### 编译模型
+
+```
+z42 源码
+  │  z42c 编译
+  ▼
+.zpkg 字节码包
+  │  z42-aot 链接
+  ▼
+┌────────────────────────────┐
+│  单文件原生可执行文件         │
+│  ┌──────────────────┐       │
+│  │ AOT 编译的用户代码 │      │
+│  │ (LLVM → machine)  │      │
+│  └──────────────────┘       │
+│  ┌──────────────────┐       │
+│  │ 嵌入的 VM runtime │      │
+│  │ (GC + corelib)    │      │
+│  └──────────────────┘       │
+│  ┌──────────────────┐       │
+│  │ 嵌入的 stdlib     │      │
+│  │ (tree-shaken)     │      │
+│  └──────────────────┘       │
+└────────────────────────────┘
+```
+
+### 部署模型对比
+
+| 模式 | 产物 | 启动时间 | 文件大小 | 动态能力 |
+|------|------|---------|---------|---------|
+| **Interp** | .zpkg + z42vm | ~10ms | 小（字节码） | eval, hot reload ✅ |
+| **JIT** | .zpkg + z42vm | ~50ms（首次编译） | 小 + JIT 编译器 | eval ✅, hot reload ✅ |
+| **NativeAOT** | 单个 ELF/Mach-O/PE | ~1ms | 中（含 runtime） | eval ❌, hot reload ❌ |
+
+### NativeAOT 技术路线
+
+1. **字节码 → LLVM IR 翻译**：将 z42 IR 指令映射为 LLVM IR（基本块 1:1 对应）
+2. **Runtime 静态链接**：GC、corelib、异常处理编译为 `.a` 静态库，与用户代码链接
+3. **Stdlib 嵌入**：tree-shaken 后的标准库函数编译为原生代码，嵌入可执行文件
+4. **Metadata 保留**：类型信息、异常表以数据段形式嵌入，支持运行时反射（可选移除）
+
+### 限制
+
+NativeAOT 产物是静态编译的，以下动态特性不可用：
+
+- `eval()` — 无运行时编译器
+- `[HotReload]` — 无字节码替换能力
+- 运行时加载 `.zpkg` — 所有依赖必须在编译时确定
+- 反射（默认关闭）— 可通过 `[Preserve]` 注解保留特定类型的元数据
+
+### 混合部署
+
+对于需要同时具备原生性能和动态能力的场景，z42 支持混合部署：
+
+```
+┌──────────────────────────────────┐
+│  原生宿主（NativeAOT）            │
+│  ┌─────────────┐ ┌────────────┐  │
+│  │ 核心引擎     │ │ 嵌入式 VM  │  │
+│  │ (AOT 编译)   │ │ (interp)   │  │
+│  └─────────────┘ └────────────┘  │
+│                    ↑ 加载脚本     │
+│                    .zpkg          │
+└──────────────────────────────────┘
+```
+
+核心逻辑编译为原生代码（高性能），同时嵌入轻量解释器用于加载和执行脚本（灵活性）。
+
+**设计理由：** 参考 C# NativeAOT 和 GraalVM native-image 的成功经验。NativeAOT 解决的核心问题是**部署简化**（单文件、无依赖）和**启动性能**（~1ms vs ~50ms JIT 预热）。结合 §18 的组件化设计，NativeAOT 可以生成极小的二进制文件（仅包含实际使用的 VM 组件和标准库函数）。
+
+**Phase:** L3 (LLVM AOT 后端 + 静态链接 + tree-shaking)
