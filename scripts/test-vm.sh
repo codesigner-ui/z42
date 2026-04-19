@@ -14,6 +14,11 @@
 
 set -euo pipefail
 
+# Resolve project root regardless of working directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$SCRIPT_DIR/.."
+cd "$ROOT"
+
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
 GOLDEN_DIR="src/runtime/tests/golden/run"
 MODES=("interp" "jit")

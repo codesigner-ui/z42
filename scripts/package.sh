@@ -19,6 +19,11 @@
 
 set -euo pipefail
 
+# Resolve project root regardless of working directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$SCRIPT_DIR/.."
+cd "$ROOT"
+
 PROFILE="${1:-debug}"
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
 COMPILER_PROJECT="src/compiler/z42.Driver/z42.Driver.csproj"
