@@ -92,8 +92,6 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     reg!("jit_const_null",    helpers_mem::jit_const_null);
     reg!("jit_const_str",     helpers_mem::jit_const_str);
     reg!("jit_copy",          helpers_mem::jit_copy);
-    reg!("jit_store",         helpers_mem::jit_store);
-    reg!("jit_load",          helpers_mem::jit_load);
     reg!("jit_str_concat",    helpers_mem::jit_str_concat);
     reg!("jit_to_str",        helpers_mem::jit_to_str);
     reg!("jit_get_bool",      helpers_mem::jit_get_bool);

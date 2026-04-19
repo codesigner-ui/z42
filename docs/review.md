@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-19（已完成改进：14 项，进行中：0 项）  
+> 最后更新：2026-04-19（已完成改进：15 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -22,6 +22,7 @@
 - ✅ **LookupVar 语义清理（1.3）** — LookupVar 不再为类名返回 Unknown，新增 IsClassName 方法区分变量/类型
 - ✅ **_currentClass → TypeEnv.CurrentClass（1.4）** — 消除共享可变状态，改为不可变 env 属性，通过 WithClass() 传递
 - ✅ **ExecSignal 替代 anyhow 传播（3.2）** — 用户异常走 ExecOutcome::Thrown 值传递，不再经 thread_local + anyhow 堆分配
+- ✅ **消除命名变量槽残留代码（2.2）** — 删除 JitFrame.vars HashMap + jit_store/jit_load 死代码，确认 IR 已是纯寄存器机
 
 ---
 
@@ -372,7 +373,7 @@ BoundError err => throw new InvalidOperationException(
 | 优先级 | 改进项 | 影响 | 工作量 |
 |--------|--------|------|--------|
 | ✅ ~~P0~~ | ~~区分 ICE 与用户错误，避免掩盖编译器 Bug（4.1）~~ | 编译器可靠性 | 小 | **已完成** |
-| 🔴 P0 | 消除 `StoreInstr`/`LoadInstr`，变量用寄存器 ID（2.2） | 运行时性能 | 中 |
+| ✅ ~~P0~~ | ~~消除命名变量槽残留代码（2.2）~~ | 运行时性能 | 小 | **已完成（IR 已是纯寄存器机）** |
 | ✅ ~~P1~~ | ~~统一类型名映射为 `TypeRegistry`（4.3）~~ | 可维护性 | 小 | **已完成** |
 | 🟠 P1 | `Value` 枚举合并整数类型，减少大小（3.1） | 内存/缓存性能 | 中 |
 | ✅ ~~P1~~ | ~~`exec_function` 预计算 `block_index`（3.3）~~ | 解释器调用性能 | 小 | **已完成** |

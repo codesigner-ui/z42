@@ -60,30 +60,6 @@ pub unsafe extern "C" fn jit_copy(frame: *mut JitFrame, dst: u32, src: u32) {
     (*frame).regs[dst as usize] = v;
 }
 
-// ── Variable slots ───────────────────────────────────────────────────────────
-
-#[no_mangle]
-pub unsafe extern "C" fn jit_store(
-    frame: *mut JitFrame, var_ptr: *const u8, var_len: usize, src: u32,
-) {
-    let name = std::str::from_utf8(std::slice::from_raw_parts(var_ptr, var_len))
-        .unwrap_or("<invalid>");
-    let val = (*frame).regs[src as usize].clone();
-    (*frame).vars.insert(name.to_string(), val);
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn jit_load(
-    frame: *mut JitFrame, dst: u32, var_ptr: *const u8, var_len: usize,
-) -> u8 {
-    let name = std::str::from_utf8(std::slice::from_raw_parts(var_ptr, var_len))
-        .unwrap_or("<invalid>");
-    match (*frame).vars.get(name).cloned() {
-        Some(v) => { (*frame).regs[dst as usize] = v; 0 }
-        None    => { set_exception(Value::Str(format!("undefined variable `{}`", name))); 1 }
-    }
-}
-
 // ── String ───────────────────────────────────────────────────────────────────
 
 #[no_mangle]

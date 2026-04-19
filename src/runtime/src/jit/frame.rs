@@ -10,11 +10,10 @@ use std::collections::HashMap;
 // ── JitFrame ─────────────────────────────────────────────────────────────────
 
 /// Runtime stack frame for a JIT-compiled function.
+/// Pure register machine — all variables use integer register IDs, no named slots.
 pub struct JitFrame {
     /// Register file indexed by SSA register number.
     pub regs: Vec<Value>,
-    /// Named mutable variable slots (Store / Load instructions).
-    pub vars: HashMap<String, Value>,
     /// Return value written by `jit_set_ret` before the function returns.
     pub ret:  Option<Value>,
 }
@@ -30,7 +29,7 @@ impl JitFrame {
                 regs[i] = v.clone();
             }
         }
-        JitFrame { regs, vars: HashMap::new(), ret: None }
+        JitFrame { regs, ret: None }
     }
 }
 
