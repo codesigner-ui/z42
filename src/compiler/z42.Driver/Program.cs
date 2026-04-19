@@ -97,11 +97,11 @@ rootCmd.AddCommand(BuildCommand.CreateClean());
 
 var sourceArg  = new Argument<FileInfo?>("source", () => null, "Source .z42 file to compile");
 sourceArg.Arity = ArgumentArity.ZeroOrOne;
-var emitOpt    = new Option<string>("--emit", () => "ir", "Output format: ir | zbc | zasm");
+var emitOpt    = new Option<string>("--emit", () => "ir", "Output format: ir (ZASM text) | zbc (binary)");
 var outOpt     = new Option<FileInfo?>(["-o", "--output"], "Output file path");
 var dumpTokOpt = new Option<bool>("--dump-tokens", "Print token stream and exit");
 var dumpAstOpt = new Option<bool>("--dump-ast",    "Print AST and exit");
-var dumpIrOpt  = new Option<bool>("--dump-ir",     "Print IR as JSON alongside emit");
+var dumpIrOpt  = new Option<bool>("--dump-ir",     "Print IR (ZASM) to stdout alongside emit");
 
 rootCmd.AddArgument(sourceArg);
 rootCmd.AddOption(emitOpt);

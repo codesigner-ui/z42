@@ -24,7 +24,7 @@ dotnet build src/compiler/z42.slnx
 cargo build --manifest-path src/runtime/Cargo.toml
 
 # 运行编译器（单文件）
-dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc|zasm] [-o <out>]
+dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc] [-o <out>]
 
 # 运行编译器（项目模式）
 dotnet run --project src/compiler/z42.Driver -- build [<name>.z42.toml] [--release] [--bin <name>]
@@ -57,7 +57,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ./scripts/test-dist.sh interp       # 仅 interp 模式
 ```
 
-> 修改编译器后，先 `--emit ir` 重新生成 `.z42ir.json`，再跑 `./scripts/test-vm.sh`。
+> 修改编译器后，先 `--emit zbc` 重新生成 `.zbc`，再跑 `./scripts/test-vm.sh`。`--emit ir` 输��� ZASM 文本格式，用于调试查看。
 > `artifacts/z42/` 已在 `.gitignore` 中，不纳入版本控制。
 > 修改标准库源文件后需重新运行 `./scripts/build-stdlib.sh` 更新 zpkg 产物。
 > 发行包测试全流程：`package.sh` → `build-stdlib.sh --use-dist` → `test-dist.sh`。

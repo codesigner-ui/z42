@@ -56,10 +56,8 @@ public static class SingleFileCompiler
 
         var irModule = result.Module;
 
-        if (dumpIr) Console.WriteLine(JsonSerializer.Serialize(irModule, jsonOptions));
+        if (dumpIr) Console.WriteLine(ZasmWriter.Write(irModule));
 
-        string ns         = result.Namespace ?? "main";
-        string sourceHash = Sha256Hex(sourceText);
         var    exports    = irModule.Functions.Select(f => f.Name).ToList();
 
         string defaultBase = outPath is not null
@@ -72,8 +70,8 @@ public static class SingleFileCompiler
         {
             case "ir":
             {
-                string path = outPath ?? (defaultBase + ".z42ir.json");
-                WriteFile(path, JsonSerializer.Serialize(irModule, jsonOptions));
+                string path = outPath ?? (defaultBase + ".zasm");
+                WriteFile(path, ZasmWriter.Write(irModule));
                 break;
             }
             case "zbc":
@@ -84,29 +82,8 @@ public static class SingleFileCompiler
                 Console.Error.WriteLine($"wrote → {path}");
                 break;
             }
-            case "json-zbc":
-            {
-                string path = outPath ?? (defaultBase + ".zbc");
-                var usedNs = result.UsedDepNamespaces.ToList();
-                var zbc = new ZbcFile(
-                    ZbcVersion : ZbcFile.CurrentVersion,
-                    SourceFile : source.FullName,
-                    SourceHash : sourceHash,
-                    Namespace  : ns,
-                    Exports    : exports,
-                    Imports    : usedNs,
-                    Module     : irModule);
-                WriteFile(path, JsonSerializer.Serialize(zbc, jsonOptions));
-                break;
-            }
-            case "zasm":
-            {
-                string path = outPath ?? (defaultBase + ".zasm");
-                WriteFile(path, ZasmWriter.Write(irModule));
-                break;
-            }
             default:
-                Console.Error.WriteLine($"error: unknown --emit format '{emit}' (valid: ir | zbc | json-zbc | zasm)");
+                Console.Error.WriteLine($"error: unknown --emit format '{emit}' (valid: ir | zbc)");
                 return 1;
         }
 

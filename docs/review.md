@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-19（已完成改进：16 项，进行中：0 项）  
+> 最后更新：2026-04-19（已完成改进：17 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -24,6 +24,7 @@
 - ✅ **ExecSignal 替代 anyhow 传播（3.2）** — 用户异常走 ExecOutcome::Thrown 值传递，不再经 thread_local + anyhow 堆分配
 - ✅ **消除命名变量槽残留代码（2.2）** — 删除 JitFrame.vars HashMap + jit_store/jit_load 死代码，确认 IR 已是纯寄存器机
 - ✅ **Value 枚举合并整数类型（3.1）** — 删除 I8/I16/I32/U8/U16/U32/U64/F32 共 8 个变体，统一为 I64+F64
+- ✅ **IR 序列化与内存模型解耦（2.1）** — 删除 54 个 JsonDerivedType 注解；`--emit ir` 改为输出 ZASM 文本；删除 `--emit zasm` 重复命令
 
 ---
 
@@ -384,7 +385,7 @@ BoundError err => throw new InvalidOperationException(
 | ✅ ~~P2~~ | ~~`TypeChecker._currentClass` → `TypeEnv.CurrentClass`（1.4）~~ | 并发安全性 | 中 | **已完成** |
 | ✅ ~~P2~~ | ~~用户异常改用 `ExecOutcome` 值传播（3.2）~~ | 异常处理性能 | 中 | **已完成** |
 | ✅ ~~P2~~ | ~~`FunctionDecl` 引入 `FunctionModifiers` flags（4.2）~~ | 代码健壮性 | 小 | **已完成** |
-| 🟢 P3 | IR 序列化与内存模型解耦（2.1） | 架构清洁度 | 中 |
+| ✅ ~~P3~~ | ~~IR 序列化与内存模型解耦（2.1）~~ | 架构清洁度 | 中 | **已完成** |
 | 🟢 P3 | `IrVerifier` 增加 CFG dominance 验证（2.3） | 编译器正确性 | 大 |
 | 🟢 P3 | 统一 `TypeConversion` 枚举，完善类型兼容性规则（1.2） | 类型系统完整性 | 中 |
 | 🟢 P3 | GC 迁移路径设计（tracing GC / epoch GC）（3.4） | 长期正确性 | 大 |

@@ -90,55 +90,8 @@ public sealed record IrBlock(
     List<IrInstr> Instructions,
     IrTerminator Terminator);
 
-// ── Instructions (discriminated union via JsonPolymorphic) ─────────────────
+// ── Instructions ──────────────────────────────────────────────────────────
 
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "op")]
-[JsonDerivedType(typeof(ConstStrInstr),  "const_str")]
-[JsonDerivedType(typeof(ConstI32Instr),  "const_i32")]
-[JsonDerivedType(typeof(ConstI64Instr),  "const_i64")]
-[JsonDerivedType(typeof(ConstF64Instr),  "const_f64")]
-[JsonDerivedType(typeof(ConstBoolInstr), "const_bool")]
-[JsonDerivedType(typeof(ConstCharInstr), "const_char")]
-[JsonDerivedType(typeof(ConstNullInstr), "const_null")]
-[JsonDerivedType(typeof(CopyInstr),      "copy")]
-[JsonDerivedType(typeof(StrConcatInstr), "str_concat")]
-[JsonDerivedType(typeof(ToStrInstr),     "to_str")]
-[JsonDerivedType(typeof(CallInstr),      "call")]
-[JsonDerivedType(typeof(BuiltinInstr),   "builtin")]
-[JsonDerivedType(typeof(AddInstr),       "add")]
-[JsonDerivedType(typeof(SubInstr),       "sub")]
-[JsonDerivedType(typeof(MulInstr),       "mul")]
-[JsonDerivedType(typeof(DivInstr),       "div")]
-[JsonDerivedType(typeof(RemInstr),       "rem")]
-[JsonDerivedType(typeof(EqInstr),        "eq")]
-[JsonDerivedType(typeof(NeInstr),        "ne")]
-[JsonDerivedType(typeof(LtInstr),        "lt")]
-[JsonDerivedType(typeof(LeInstr),        "le")]
-[JsonDerivedType(typeof(GtInstr),        "gt")]
-[JsonDerivedType(typeof(GeInstr),        "ge")]
-[JsonDerivedType(typeof(AndInstr),       "and")]
-[JsonDerivedType(typeof(OrInstr),        "or")]
-[JsonDerivedType(typeof(NotInstr),       "not")]
-[JsonDerivedType(typeof(NegInstr),       "neg")]
-[JsonDerivedType(typeof(BitAndInstr),    "bit_and")]
-[JsonDerivedType(typeof(BitOrInstr),     "bit_or")]
-[JsonDerivedType(typeof(BitXorInstr),    "bit_xor")]
-[JsonDerivedType(typeof(BitNotInstr),    "bit_not")]
-[JsonDerivedType(typeof(ShlInstr),       "shl")]
-[JsonDerivedType(typeof(ShrInstr),       "shr")]
-[JsonDerivedType(typeof(ArrayNewInstr),    "array_new")]
-[JsonDerivedType(typeof(ArrayNewLitInstr), "array_new_lit")]
-[JsonDerivedType(typeof(ArrayGetInstr),    "array_get")]
-[JsonDerivedType(typeof(ArraySetInstr),    "array_set")]
-[JsonDerivedType(typeof(ArrayLenInstr),    "array_len")]
-[JsonDerivedType(typeof(ObjNewInstr),     "obj_new")]
-[JsonDerivedType(typeof(FieldGetInstr),   "field_get")]
-[JsonDerivedType(typeof(FieldSetInstr),   "field_set")]
-[JsonDerivedType(typeof(VCallInstr),      "v_call")]
-[JsonDerivedType(typeof(IsInstanceInstr), "is_instance")]
-[JsonDerivedType(typeof(AsCastInstr),     "as_cast")]
-[JsonDerivedType(typeof(StaticGetInstr),  "static_get")]
-[JsonDerivedType(typeof(StaticSetInstr),  "static_set")]
 public abstract record IrInstr;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -231,11 +184,8 @@ public sealed record StaticSetInstr(string Field, TypedReg Val) : IrInstr;
 
 // ── Terminators ──────────────────────────────────────────────────────────────
 
-[JsonPolymorphic(TypeDiscriminatorPropertyName = "op")]
-[JsonDerivedType(typeof(RetTerm),    "ret")]
-[JsonDerivedType(typeof(BrTerm),     "br")]
-[JsonDerivedType(typeof(BrCondTerm), "br_cond")]
-[JsonDerivedType(typeof(ThrowTerm),  "throw")]
+// ── Terminators ──────────────────────────────────────────────────────────
+
 public abstract record IrTerminator;
 
 public sealed record RetTerm(TypedReg? Reg)                                           : IrTerminator;
