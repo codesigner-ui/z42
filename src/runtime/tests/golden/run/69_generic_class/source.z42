@@ -1,0 +1,37 @@
+// Test: generic class — code sharing, type param in fields and methods
+
+class Box<T> {
+    T value;
+    Box(T v) {
+        this.value = v;
+    }
+    T Get() {
+        return this.value;
+    }
+}
+
+class Pair<A, B> {
+    A first;
+    B second;
+    Pair(A a, B b) {
+        this.first = a;
+        this.second = b;
+    }
+}
+
+void Main() {
+    // Box with int
+    var b1 = new Box(42);
+    Assert.Equal(42, b1.Get());
+
+    // Box with string
+    var b2 = new Box("hello");
+    Assert.Equal("hello", b2.Get());
+
+    // Pair with mixed types
+    var p = new Pair(1, "one");
+    Assert.Equal(1, p.first);
+    Assert.Equal("one", p.second);
+
+    Console.WriteLine("generic class ok");
+}
