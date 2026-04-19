@@ -7,23 +7,31 @@
   s3  "z42 version 0.1, the answer is "
 
 .func @Hello.Greet  params:1  ret:string  mode:Interp  ; %0=this
+  .linetable
+    block:0  instr:0  line:5
+    block:0  instr:1  line:1
   .block entry
-    %1 = const.str  s0          ; "Hello, "
-    %2 = to_str  %0
-    %3 = const.str  s1          ; "!"
-    %4 = str.concat  %1, %2
-    %5 = str.concat  %4, %3
-    ret  %5
+    %1:str = const.str  s0          ; "Hello, "
+    %2:str = to_str  %0:str
+    %3:str = const.str  s1          ; "!"
+    %4:str = str.concat  %1:str, %2:str
+    %5:str = str.concat  %4:str, %3:str
+    ret  %5:str
 
 .func @Hello.Main  params:0  ret:void  mode:Interp
+  .linetable
+    block:0  instr:0  line:9
+    block:0  instr:3  line:10
+    block:0  instr:4  line:11
+    block:0  instr:5  line:1
   .block entry
-    %0 = const.str  s2          ; "world"
-    %1 = call  @Hello.Greet  %0
-    %2 = copy  %1
-    %3 = call  @Std.IO.Console.WriteLine  %2
-    %4 = const.str  s3          ; "z42 version 0.1, the answer is "
-    %5 = const.i64  42
-    %6 = to_str  %5
-    %7 = str.concat  %4, %6
-    %8 = call  @Std.IO.Console.WriteLine  %7
+    %0:str = const.str  s2          ; "world"
+    %1:str = call  @Hello.Greet  %0:str
+    %2:str = copy  %1:str
+    %3 = call  @Std.IO.Console.WriteLine  %2:str
+    %4:str = const.str  s3          ; "z42 version 0.1, the answer is "
+    %5:i32 = const.i64  42
+    %6:str = to_str  %5:i32
+    %7:str = str.concat  %4:str, %6:str
+    %8 = call  @Std.IO.Console.WriteLine  %7:str
     ret

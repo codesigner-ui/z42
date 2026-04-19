@@ -1,25 +1,29 @@
 .module "ControlFlow"
 
 .func @ControlFlow.Main  params:0  ret:void  mode:Interp
+  .linetable
+    block:0  instr:0  line:4
+    block:2  instr:0  line:5
+    block:3  instr:0  line:4
   .block entry
-    %0 = const.i64  0
-    %1 = copy  %0
+    %0:i32 = const.i64  0
+    %1:i32 = copy  %0:i32
     br  cond_0
 
   .block cond_0
-    %2 = const.i64  3
-    %3 = lt  %1, %2
-    br.cond  %3  body_1  end_3
+    %2:i32 = const.i64  3
+    %3:bool = lt  %1:i32, %2:i32
+    br.cond  %3:bool  body_1  end_3
 
   .block body_1
-    %4 = call  @Std.IO.Console.WriteLine  %1
+    %4:void = call  @Std.IO.Console.WriteLine  %1:i32
     br  incr_2
 
   .block incr_2
-    %5 = copy  %1
-    %6 = const.i64  1
-    %7 = add  %1, %6
-    %1 = copy  %7
+    %5:i32 = copy  %1:i32
+    %6:i32 = const.i64  1
+    %7:i32 = add  %1:i32, %6:i32
+    %1:i32 = copy  %7:i32
     br  cond_0
 
   .block end_3

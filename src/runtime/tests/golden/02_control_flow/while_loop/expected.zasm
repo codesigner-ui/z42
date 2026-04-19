@@ -1,31 +1,40 @@
 .module "ControlFlow"
 
 .func @ControlFlow.Sum  params:1  ret:int  mode:Interp  ; %0=this
+  .linetable
+    block:0  instr:0  line:4
+    block:0  instr:2  line:5
+    block:0  instr:4  line:6
+    block:2  instr:0  line:7
+    block:2  instr:2  line:8
+    block:3  instr:0  line:10
   .block entry
-    %1 = const.i64  0
-    %2 = copy  %1
-    %3 = const.i64  1
-    %4 = copy  %3
+    %1:i32 = const.i64  0
+    %2:i32 = copy  %1:i32
+    %3:i32 = const.i64  1
+    %4:i32 = copy  %3:i32
     br  cond_0
 
   .block cond_0
-    %5 = le  %4, %0
-    br.cond  %5  body_1  end_2
+    %5:bool = le  %4:i32, %0:i32
+    br.cond  %5:bool  body_1  end_2
 
   .block body_1
-    %6 = add  %2, %4
-    %2 = copy  %6
-    %7 = const.i64  1
-    %8 = add  %4, %7
-    %4 = copy  %8
+    %6:i32 = add  %2:i32, %4:i32
+    %2:i32 = copy  %6:i32
+    %7:i32 = const.i64  1
+    %8:i32 = add  %4:i32, %7:i32
+    %4:i32 = copy  %8:i32
     br  cond_0
 
   .block end_2
-    ret  %2
+    ret  %2:i32
 
 .func @ControlFlow.Main  params:0  ret:void  mode:Interp
+  .linetable
+    block:0  instr:0  line:14
   .block entry
-    %0 = const.i64  5
-    %1 = call  @ControlFlow.Sum  %0
-    %2 = call  @Std.IO.Console.WriteLine  %1
+    %0:i32 = const.i64  5
+    %1:i32 = call  @ControlFlow.Sum  %0:i32
+    %2:void = call  @Std.IO.Console.WriteLine  %1:i32
     ret
