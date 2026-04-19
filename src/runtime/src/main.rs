@@ -244,6 +244,8 @@ fn main() -> Result<()> {
             .with_context(|| format!("merging modules for `{}`", cli.file))?;
         m.name = user_module_name;
         z42_vm::metadata::loader::build_type_registry(&mut m);
+        z42_vm::metadata::loader::build_block_indices(&mut m);
+        z42_vm::metadata::loader::build_func_index(&mut m);
         m
     };
 

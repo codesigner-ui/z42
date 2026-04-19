@@ -145,7 +145,8 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;
-            let callee_fn = module.functions.iter().find(|f| f.name == *fname);
+            let callee_fn = module.func_index.get(fname.as_str())
+                .and_then(|&idx| module.functions.get(idx));
             let outcome = if let Some(callee) = callee_fn {
                 super::exec_function(module, callee, &arg_vals)?
             } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(fname) {
@@ -334,7 +335,9 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             };
             let mut call_args = vec![obj_val];
             call_args.append(&mut extra_args);
-            let outcome = if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
+            let callee_fn = module.func_index.get(func_name.as_str())
+                .and_then(|&idx| module.functions.get(idx));
+            let outcome = if let Some(callee) = callee_fn {
                 super::exec_function(module, callee, &call_args)?
             } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
                 super::exec_function(module, lazy_fn.as_ref(), &call_args)?

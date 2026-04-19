@@ -122,6 +122,10 @@ pub struct Module {
     /// to the corresponding `TypeDesc` (field layout + vtable).
     #[serde(skip)]
     pub type_registry: HashMap<String, Arc<TypeDesc>>,
+    /// Pre-built function name → index mapping for O(1) call dispatch.
+    /// Populated by the loader after deserialisation.
+    #[serde(skip)]
+    pub func_index: HashMap<String, usize>,
 }
 
 /// Class descriptor — field layout for object allocation.

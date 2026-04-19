@@ -35,6 +35,7 @@ fn make_module_with(
         classes,
         functions,
         type_registry: std::collections::HashMap::new(),
+        func_index: std::collections::HashMap::new(),
     }
 }
 

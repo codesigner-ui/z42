@@ -112,10 +112,14 @@ impl Frame {
         self.regs[idx] = val;
     }
 
+    #[inline(always)]
     pub fn get(&self, reg: u32) -> Result<&Value> {
-        self.regs
-            .get(reg as usize)
-            .with_context(|| format!("undefined register %{reg}"))
+        let idx = reg as usize;
+        if idx < self.regs.len() {
+            Ok(&self.regs[idx])
+        } else {
+            anyhow::bail!("undefined register %{reg}")
+        }
     }
 }
 

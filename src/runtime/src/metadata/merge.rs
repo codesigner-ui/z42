@@ -55,7 +55,7 @@ pub fn merge_modules(modules: Vec<Module>) -> Result<Module> {
         }
     }
 
-    Ok(Module { name, string_pool, classes, functions, type_registry: HashMap::new() })
+    Ok(Module { name, string_pool, classes, functions, type_registry: HashMap::new(), func_index: HashMap::new() })
 }
 
 /// Shift every `ConstStr.idx` inside `functions` by `offset`.

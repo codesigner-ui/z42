@@ -57,7 +57,9 @@ pub fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
         let func_name_opt = type_desc.vtable_index.get("ToString")
             .map(|&slot| type_desc.vtable[slot].1.clone());
         if let Some(func_name) = func_name_opt {
-            if let Some(callee) = module.functions.iter().find(|f| f.name == func_name) {
+            let callee = module.func_index.get(func_name.as_str())
+                .and_then(|&idx| module.functions.get(idx));
+            if let Some(callee) = callee {
                 let outcome = super::exec_function(module, callee, &[val.clone()])?;
                 return match outcome {
                     super::ExecOutcome::Returned(Some(Value::Str(s))) => Ok(s),
@@ -81,7 +83,7 @@ pub fn resolve_virtual<'m>(module: &'m Module, class_name: &str, method: &str) -
     let mut cur = class_name;
     loop {
         let qualified = format!("{}.{}", cur, method);
-        if let Some(f) = module.functions.iter().find(|f| f.name == qualified) {
+        if let Some(f) = module.func_index.get(qualified.as_str()).and_then(|&i| module.functions.get(i)) {
             return Ok(f);
         }
         match module.classes.iter().find(|c| c.name == cur).and_then(|c| c.base_class.as_deref()) {

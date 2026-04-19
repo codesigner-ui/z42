@@ -59,6 +59,7 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
 
     build_type_registry(&mut module);
     build_block_indices(&mut module);
+    build_func_index(&mut module);
 
     // Extract import namespaces from the module's ConstStr / Call instructions
     // (approximation: namespace = first two components of any external call target)
@@ -91,6 +92,7 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
 
     build_type_registry(&mut module);
     build_block_indices(&mut module);
+    build_func_index(&mut module);
 
     Ok(LoadedArtifact {
         module,
@@ -332,6 +334,15 @@ pub fn build_block_indices(module: &mut Module) {
             .map(|(i, b)| (b.label.clone(), i))
             .collect();
     }
+}
+
+/// Precompute function name → index mapping for O(1) call dispatch.
+pub fn build_func_index(module: &mut Module) {
+    module.func_index = module.functions
+        .iter()
+        .enumerate()
+        .map(|(i, f)| (f.name.clone(), i))
+        .collect();
 }
 
 /// Return class names in topological order (base before derived).
