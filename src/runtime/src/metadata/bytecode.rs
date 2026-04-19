@@ -3,8 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-/// Magic bytes for future binary .z42bc format: "Z42\0"
-pub const MAGIC: [u8; 4] = [0x5A, 0x34, 0x32, 0x00];
 
 // ── TypedReg-compatible serde helpers ────────────────────────────────────────
 //
@@ -111,8 +109,7 @@ mod typed_reg_opt_serde {
 }
 
 /// Top-level bytecode module.
-/// Phase 1: loaded from `.z42ir.json`
-/// Phase 2: loaded from `.z42bc` binary
+/// Loaded from `.zbc` binary (or legacy `.z42ir.json`).
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Module {
     pub name: String,

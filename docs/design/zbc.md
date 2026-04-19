@@ -1,4 +1,4 @@
-# z42bc 二进制格式规范
+# zbc 二进制格式规范
 
 ## 设计目标
 
@@ -14,14 +14,14 @@
 ### 用 Block 参数替代 Phi 节点
 
 传统 SSA phi 节点在解释器中处理笨拙（需要"在块入口提前求值"）。
-z42bc 采用 **Cranelift / MLIR 风格的 Block 参数**：
+zbc 采用 **Cranelift / MLIR 风格的 Block 参数**：
 
 ```
 ; 旧风格（phi 节点）
 loop:
   %i = phi [entry: %i0] [loop: %i_next]
 
-; z42bc 风格（block 参数）
+; zbc 风格（block 参数）
 loop(%i: i32):
   ...
   br loop(%i_next)          ; 传递下一迭代的值
@@ -366,9 +366,9 @@ loop {
 
 ## JIT 翻译模型（Cranelift）
 
-z42bc → Cranelift CLIF 的映射直接、无歧义：
+zbc → Cranelift CLIF 的映射直接、无歧义：
 
-| z42bc 概念 | Cranelift 映射 |
+| zbc 概念 | Cranelift 映射 |
 |-----------|---------------|
 | 函数 | `FunctionBuilder` |
 | Block（带参数）| `Block` + `append_block_param` |

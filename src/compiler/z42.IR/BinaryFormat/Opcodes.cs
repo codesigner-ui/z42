@@ -1,6 +1,6 @@
 namespace Z42.IR.BinaryFormat;
 
-/// <summary>Opcode bytes for z42bc binary instruction stream.</summary>
+/// <summary>Opcode bytes for zbc binary instruction stream.</summary>
 public static class Opcodes
 {
     // ── Constants (0x00–0x0F) ─────────────────────────────────────────────────

@@ -5,7 +5,7 @@
 - **GC**：z42 始终带 GC，不引入所有权/借用（降低上手成本）
 - **IR**：寄存器 SSA 形式
 - **执行模式注解**：作用于命名空间级
-- **`.z42bc` magic**：`Z42\0`
+- **`.zbc` magic**：`ZBC\0`
 
 ---
 
@@ -78,7 +78,7 @@
 - TypeChecker 完整覆盖 L1 所有特性（struct、record、interface、inheritance）
 - IR Codegen 完整覆盖 L1 所有特性
 - 错误体系完善：统一错误码（`E####`）、友好错误消息、`explain <CODE>` 命令
-- `.z42bc` 二进制格式稳定（magic、版本号、section layout 固定）
+- `.zbc` 二进制格式稳定（magic、版本号、section layout 固定）
 - `disasm` 反汇编输出可读性
 
 ### 工程支持
@@ -162,10 +162,10 @@
 |--------|------|:-------:|:----:|
 | M1 | Lexer + Parser | L1 | ✅ |
 | M2 | TypeChecker（L1 特性全覆盖） | L1 → L2 | ✅ |
-| M3 | IR Codegen → `.z42bc`（L1 特性全覆盖） | L1 → L2 | ✅ |
+| M3 | IR Codegen → `.zbc`（L1 特性全覆盖） | L1 → L2 | ✅ |
 | M4 | VM Interpreter（L1 特性全覆盖） | L1 | ✅ |
 | M5 | VM JIT（Cranelift，L1 特性） | L1 → L2 | ✅ |
-| M6 | 工程支持 + 测试体系 + `.z42bc` 格式稳定 | L2 | 📋 |
+| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | 📋 |
 | M7 | VM 元数据 + 标准库基础（core/io/collections） | L2 | 🚧 |
 | M8 | TypeChecker + Codegen 扩展（L3 特性） | L3 | 📋 |
 | M9 | VM AOT（LLVM/inkwell） | L3 | 📋 |

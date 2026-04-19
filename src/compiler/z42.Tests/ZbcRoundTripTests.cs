@@ -16,7 +16,7 @@ using Z42.Project;
 namespace Z42.Tests;
 
 /// <summary>
-/// Tests for binary z42bc format: write → read → compare.
+/// Tests for binary zbc format: write → read → compare.
 /// We compare IrModules via their JSON representation for structural equality.
 /// </summary>
 public class ZbcRoundTripTests

@@ -33,7 +33,7 @@ grep -rn "TODO" src/
 
 2. **IR Codegen**（`Z42.Compiler/Codegen/`）
    - AST → SSA IR
-   - 发射 `.z42bc` 二进制文件（使用 `docs/design/ir.md` 中的格式）
+   - 发射 `.zbc` 二进制文件（使用 `docs/design/zbc.md` 中的格式）
 
 3. **解释器完整实现**（`src/runtime/src/interp.rs`）
    - 完整指令集覆盖
