@@ -73,6 +73,14 @@ public static class ZasmWriter
                 }
             }
 
+            // Local variable table (if present)
+            if (fn.LocalVarTable is { Count: > 0 })
+            {
+                sb.AppendLine("  .locals");
+                foreach (var lv in fn.LocalVarTable)
+                    sb.AppendLine($"    %{lv.RegId} = {lv.Name}");
+            }
+
             // Line table (if present)
             if (fn.LineTable is { Count: > 0 })
             {

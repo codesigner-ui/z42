@@ -1,6 +1,8 @@
 .module "Expr"
 
 .func @Expr.Fib  params:1  ret:int  mode:Interp  ; %0=this
+  .locals
+    %0 = n
   .linetable
     block:0  instr:0  line:4
     block:1  instr:0  line:5
@@ -24,6 +26,8 @@
     ret  %9:i32
 
 .func @Expr.Main  params:0  ret:void  mode:Interp
+  .locals
+    %2 = result
   .linetable
     block:0  instr:0  line:11
     block:0  instr:3  line:12

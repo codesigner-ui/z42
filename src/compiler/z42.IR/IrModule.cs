@@ -64,7 +64,19 @@ public sealed record IrFunction(
     /// </summary>
     [property: JsonPropertyName("line_table")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    List<IrLineEntry>? LineTable = null);
+    List<IrLineEntry>? LineTable = null,
+    /// <summary>
+    /// Debug info: maps register IDs to source-level variable names.
+    /// Used by the VM to show meaningful names in error messages.
+    /// </summary>
+    [property: JsonPropertyName("local_var_table")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<IrLocalVarEntry>? LocalVarTable = null);
+
+/// An entry in a function's local variable table: register RegId holds variable Name.
+public sealed record IrLocalVarEntry(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("reg")]  int RegId);
 
 /// An entry in a function's line number table.
 /// "From (BlockIdx, InstrIdx) onward, the source line is Line in File."

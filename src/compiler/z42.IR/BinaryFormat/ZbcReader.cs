@@ -38,6 +38,9 @@ public static partial class ZbcReader
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
                                          sec => ReadFuncSection(sec, pool),
                                          new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>());
+        var dbugVarTables  = ReadSection(data, dir, SectionTags.Dbug,
+                                         sec => ReadDbugSection(sec, pool),
+                                         new List<List<IrLocalVarEntry>?>());
 
         // ── Reconstruct functions ─────────────────────────────────────────────
         var functions = new List<IrFunction>(funcBodies.Count);
@@ -55,9 +58,10 @@ public static partial class ZbcReader
                 name = $"func#{i}"; paramCount = 0; retType = "void"; execMode = "Interp"; isStatic = false;
             }
 
+            var localVars = i < dbugVarTables.Count ? dbugVarTables[i] : null;
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                 excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
-                LineTable: lineTable));
+                LineTable: lineTable, LocalVarTable: localVars));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -350,6 +354,33 @@ public static partial class ZbcReader
                     if (block.Instructions[i] is ConstStrInstr cs && seen.TryGetValue(cs.Idx, out int local))
                         block.Instructions[i] = new ConstStrInstr(cs.Dst, local);
 
+        return result;
+    }
+
+    // ── DBUG section (local variable names) ──────────────────────────────────
+
+    private static List<List<IrLocalVarEntry>?> ReadDbugSection(
+        ReadOnlySpan<byte> sec, string[] pool)
+    {
+        int pos = 0;
+        uint funcCount = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+
+        var result = new List<List<IrLocalVarEntry>?>((int)funcCount);
+        for (int f = 0; f < (int)funcCount; f++)
+        {
+            ushort varCount = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+            if (varCount == 0) { result.Add(null); continue; }
+
+            var vars = new List<IrLocalVarEntry>(varCount);
+            for (int v = 0; v < varCount; v++)
+            {
+                uint nameIdx = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+                ushort regId = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+                string name  = nameIdx < pool.Length ? pool[nameIdx] : $"?{nameIdx}";
+                vars.Add(new IrLocalVarEntry(name, regId));
+            }
+            result.Add(vars);
+        }
         return result;
     }
 }

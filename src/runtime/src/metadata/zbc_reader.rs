@@ -356,6 +356,27 @@ fn block_label(idx: usize) -> String {
     if idx == 0 { "entry".to_owned() } else { format!("block_{idx}") }
 }
 
+// ── DBUG section (local variable names) ──────────────────────────────────────
+
+fn read_dbug(sec: &[u8], pool: &[String]) -> Result<Vec<Vec<crate::metadata::bytecode::LocalVar>>> {
+    let mut c = Cursor::new(sec);
+    let func_count = c.read_u32()? as usize;
+    let mut result = Vec::with_capacity(func_count);
+
+    for _ in 0..func_count {
+        let var_count = c.read_u16()? as usize;
+        let mut vars = Vec::with_capacity(var_count);
+        for _ in 0..var_count {
+            let name_idx = c.read_u32()? as usize;
+            let reg = c.read_u16()?;
+            let name = pool.get(name_idx).cloned().unwrap_or_else(|| format!("?{name_idx}"));
+            vars.push(crate::metadata::bytecode::LocalVar { name, reg });
+        }
+        result.push(vars);
+    }
+    Ok(result)
+}
+
 // ── Block decoding ────────────────────────────────────────────────────────────
 
 fn decode_block(data: &[u8], pool: &[String]) -> Result<(Vec<Instruction>, Terminator)> {
@@ -591,9 +612,15 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
         .transpose()?
         .unwrap_or_default();
 
-    // Assemble functions from SIGS + FUNC
+    let dbug_vars = get_section(data, &dir, b"DBUG")
+        .map(|s| read_dbug(s, &pool_raw))
+        .transpose()?
+        .unwrap_or_default();
+
+    // Assemble functions from SIGS + FUNC + DBUG
     let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {
         let sig = sigs.get(i);
+        let local_vars = dbug_vars.get(i).cloned().unwrap_or_default();
         Function {
             name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
             param_count:     sig.map(|s| s.param_count).unwrap_or(0),
@@ -604,6 +631,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
             line_table:      body.line_table,
+            local_vars,
             block_index:     std::collections::HashMap::new(),  // Will be populated by build_block_indices
         }
     }).collect();
@@ -780,7 +808,8 @@ fn read_mods_section(
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
                 line_table:      body.line_table,
-                block_index:     std::collections::HashMap::new(),  // Will be populated by build_block_indices
+                local_vars:      vec![],  // zpkg (stripped) has no DBUG section
+                block_index:     std::collections::HashMap::new(),
             }
         }).collect();
 

@@ -7,6 +7,8 @@
   s3  "z42 version 0.1, the answer is "
 
 .func @Hello.Greet  params:1  ret:string  mode:Interp  ; %0=this
+  .locals
+    %0 = name
   .linetable
     block:0  instr:0  line:5
     block:0  instr:1  line:1
@@ -19,6 +21,8 @@
     ret  %5:str
 
 .func @Hello.Main  params:0  ret:void  mode:Interp
+  .locals
+    %2 = msg
   .linetable
     block:0  instr:0  line:9
     block:0  instr:3  line:10

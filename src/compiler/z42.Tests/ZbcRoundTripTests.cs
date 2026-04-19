@@ -393,4 +393,43 @@ public class ZbcRoundTripTests
             }
         }
     }
+
+    [Fact]
+    public void LocalVarTable_SurvivesBinaryRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            int Add(int a, int b) {
+                var sum = a + b;
+                return sum;
+            }
+
+            void Main() {
+                var result = Add(3, 4);
+            }
+            """;
+
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        for (int i = 0; i < original.Functions.Count; i++)
+        {
+            var o = original.Functions[i];
+            var r = restored.Functions[i];
+            if (o.LocalVarTable is null)
+            {
+                r.LocalVarTable.Should().BeNull($"function {o.Name} had no local var table");
+                continue;
+            }
+            r.LocalVarTable.Should().NotBeNull($"function {o.Name} must preserve local var table");
+            r.LocalVarTable!.Count.Should().Be(o.LocalVarTable.Count,
+                $"function {o.Name} local var count must round-trip");
+            for (int k = 0; k < o.LocalVarTable.Count; k++)
+            {
+                r.LocalVarTable[k].Name.Should().Be(o.LocalVarTable[k].Name);
+                r.LocalVarTable[k].RegId.Should().Be(o.LocalVarTable[k].RegId);
+            }
+        }
+    }
 }

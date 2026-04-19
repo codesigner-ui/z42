@@ -165,9 +165,19 @@ pub struct Function {
     /// Each entry: from (block_idx, instr_idx) onward, the source line is `line`.
     #[serde(default)]
     pub line_table: Vec<LineEntry>,
+    /// Debug info: maps register IDs to source-level variable names.
+    #[serde(default)]
+    pub local_vars: Vec<LocalVar>,
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,
+}
+
+/// An entry in a function's local variable table: register `reg` holds variable `name`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocalVar {
+    pub name: String,
+    pub reg:  u16,
 }
 
 /// An entry in a function's source-line mapping table.

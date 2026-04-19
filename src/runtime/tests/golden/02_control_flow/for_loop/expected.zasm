@@ -1,6 +1,8 @@
 .module "ControlFlow"
 
 .func @ControlFlow.Main  params:0  ret:void  mode:Interp
+  .locals
+    %1 = i
   .linetable
     block:0  instr:0  line:4
     block:2  instr:0  line:5

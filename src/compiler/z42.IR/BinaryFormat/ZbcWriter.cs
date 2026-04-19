@@ -72,6 +72,15 @@ public static partial class ZbcWriter
             sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
             sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
             sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
+
+            // DBUG section: line table + local variable names
+            bool hasDebug = module.Functions.Any(f =>
+                f.LineTable is { Count: > 0 } || f.LocalVarTable is { Count: > 0 });
+            if (hasDebug)
+            {
+                flags |= ZbcFlags.HasDebug;
+                sections.Add((SectionTags.Dbug, BuildDbugSection(module.Functions, pool)));
+            }
         }
 
         return AssembleFile(flags, sections);
@@ -164,6 +173,9 @@ public static partial class ZbcWriter
                 if (fn.LineTable != null)
                     foreach (var le in fn.LineTable)
                         if (le.File != null) pool.Intern(le.File);
+                if (fn.LocalVarTable != null)
+                    foreach (var lv in fn.LocalVarTable)
+                        pool.Intern(lv.Name);
             }
         }
         else
@@ -370,6 +382,30 @@ public static partial class ZbcWriter
                 }
 
             w.Write(instrBytes);
+        }
+
+        return ms.ToArray();
+    }
+
+    // ── DBUG section (debug info: local variable names) ──────────────────────
+
+    private static byte[] BuildDbugSection(List<IrFunction> functions, StringPool pool)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((uint)functions.Count);
+
+        foreach (var fn in functions)
+        {
+            int varCount = fn.LocalVarTable?.Count ?? 0;
+            w.Write((ushort)varCount);
+            if (fn.LocalVarTable != null)
+                foreach (var lv in fn.LocalVarTable)
+                {
+                    w.Write((uint)pool.Idx(lv.Name));
+                    w.Write((ushort)lv.RegId);
+                }
         }
 
         return ms.ToArray();

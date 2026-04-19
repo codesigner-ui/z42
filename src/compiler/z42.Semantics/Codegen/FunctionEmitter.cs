@@ -80,9 +80,10 @@ internal sealed partial class FunctionEmitter
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         var lineTable = _lineTable.Count > 0 ? _lineTable : null;
+        var localVars = SnapshotLocalVarTable();
         int paramCount = method.Params.Count + paramOffset;
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
-            IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable);
+            IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars);
     }
 
     internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)
@@ -101,8 +102,9 @@ internal sealed partial class FunctionEmitter
         var retType = fn.ReturnType is VoidType ? "void" : TypeName(fn.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         var lineTable = _lineTable.Count > 0 ? _lineTable : null;
+        var localVars = SnapshotLocalVarTable();
         return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
-            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable);
+            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars);
     }
 
     internal IrFunction EmitStaticInit(CompilationUnit cu)
@@ -228,6 +230,17 @@ internal sealed partial class FunctionEmitter
             if (varReg.Id != valReg.Id)
                 Emit(new CopyInstr(varReg, valReg));
         }
+    }
+
+    // ── Debug: local variable table snapshot ─────────────────────────────────
+
+    private List<IrLocalVarEntry>? SnapshotLocalVarTable()
+    {
+        if (_locals.Count == 0) return null;
+        return _locals
+            .Select(kv => new IrLocalVarEntry(kv.Key, kv.Value.Id))
+            .OrderBy(e => e.RegId)
+            .ToList();
     }
 
     // ── Z42Type / TypeExpr → IrType mapping ─────────────────────────────────

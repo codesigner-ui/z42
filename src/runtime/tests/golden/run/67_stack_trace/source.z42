@@ -1,0 +1,19 @@
+// Test: multi-level function calls — verify stack trace on exception
+
+string Inner() {
+    throw "inner error";
+    return "unreachable";
+}
+
+string Middle() {
+    return Inner();
+}
+
+void Main() {
+    try {
+        var result = Middle();
+    } catch {
+        Console.WriteLine("caught");
+    }
+    Console.WriteLine("done");
+}

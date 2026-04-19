@@ -1,6 +1,10 @@
 .module "ControlFlow"
 
 .func @ControlFlow.Sum  params:1  ret:int  mode:Interp  ; %0=this
+  .locals
+    %0 = n
+    %2 = total
+    %4 = i
   .linetable
     block:0  instr:0  line:4
     block:0  instr:2  line:5
