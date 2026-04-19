@@ -55,9 +55,9 @@ pub fn builtin_obj_hash_code(args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Object(rc)) => {
             let addr = std::rc::Rc::as_ptr(rc) as i64;
-            Ok(Value::I32((addr & 0x7fff_ffff) as i32))
+            Ok(Value::I64((addr & 0x7fff_ffff) as i64))
         }
-        Some(Value::Null) => Ok(Value::I32(0)),
+        Some(Value::Null) => Ok(Value::I64(0)),
         _ => bail!("__obj_hash_code: expected an object"),
     }
 }

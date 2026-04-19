@@ -77,7 +77,6 @@ pub fn builtin_env_args(_args: &[Value]) -> Result<Value> {
 pub fn builtin_process_exit(args: &[Value]) -> Result<Value> {
     let code = match args.first() {
         Some(Value::I64(n)) => *n as i32,
-        Some(Value::I32(n)) => *n,
         _ => 0,
     };
     std::process::exit(code);

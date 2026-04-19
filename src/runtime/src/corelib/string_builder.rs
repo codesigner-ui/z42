@@ -100,7 +100,7 @@ pub fn builtin_sb_length(args: &[Value]) -> Result<Value> {
         NativeData::StringBuilder(buf) => buf.chars().count() as i32,
         _ => bail!("__sb_length: native buffer corrupted"),
     };
-    Ok(Value::I32(len))
+    Ok(Value::I64(len as i64))
 }
 
 /// Returns the accumulated string.

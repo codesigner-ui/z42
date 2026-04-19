@@ -71,15 +71,10 @@ pub(super) fn int_binop_helper(
     int_op: impl Fn(i64, i64) -> i64, float_op: impl Fn(f64, f64) -> f64,
 ) -> anyhow::Result<Value> {
     Ok(match (va, vb) {
-        (Value::I32(x), Value::I32(y)) => Value::I32(int_op(*x as i64, *y as i64) as i32),
         (Value::I64(x), Value::I64(y)) => Value::I64(int_op(*x, *y)),
-        (Value::I32(x), Value::I64(y)) => Value::I64(int_op(*x as i64, *y)),
-        (Value::I64(x), Value::I32(y)) => Value::I64(int_op(*x, *y as i64)),
         (Value::F64(x), Value::F64(y)) => Value::F64(float_op(*x, *y)),
         (Value::F64(x), Value::I64(y)) => Value::F64(float_op(*x, *y as f64)),
         (Value::I64(x), Value::F64(y)) => Value::F64(float_op(*x as f64, *y)),
-        (Value::F64(x), Value::I32(y)) => Value::F64(float_op(*x, *y as f64)),
-        (Value::I32(x), Value::F64(y)) => Value::F64(float_op(*x as f64, *y)),
         (a, b) => anyhow::bail!("type mismatch in arithmetic: {:?} vs {:?}", a, b),
     })
 }
@@ -88,25 +83,17 @@ pub(super) fn int_bitop_helper(
     va: &Value, vb: &Value, op: impl Fn(i64, i64) -> i64,
 ) -> anyhow::Result<Value> {
     Ok(match (va, vb) {
-        (Value::I32(x), Value::I32(y)) => Value::I32(op(*x as i64, *y as i64) as i32),
         (Value::I64(x), Value::I64(y)) => Value::I64(op(*x, *y)),
-        (Value::I32(x), Value::I64(y)) => Value::I64(op(*x as i64, *y)),
-        (Value::I64(x), Value::I32(y)) => Value::I64(op(*x, *y as i64)),
         (a, b) => anyhow::bail!("bitwise op requires integral operands, got {:?} and {:?}", a, b),
     })
 }
 
 pub(super) fn numeric_lt_helper(va: &Value, vb: &Value) -> anyhow::Result<bool> {
     Ok(match (va, vb) {
-        (Value::I32(x), Value::I32(y)) => x < y,
         (Value::I64(x), Value::I64(y)) => x < y,
-        (Value::I32(x), Value::I64(y)) => (*x as i64) < *y,
-        (Value::I64(x), Value::I32(y)) => *x < (*y as i64),
         (Value::F64(x), Value::F64(y)) => x < y,
         (Value::F64(x), Value::I64(y)) => *x < (*y as f64),
         (Value::I64(x), Value::F64(y)) => (*x as f64) < *y,
-        (Value::F64(x), Value::I32(y)) => *x < (*y as f64),
-        (Value::I32(x), Value::F64(y)) => (*x as f64) < *y,
         (a, b) => anyhow::bail!("type mismatch in comparison: {:?} vs {:?}", a, b),
     })
 }

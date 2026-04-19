@@ -62,7 +62,7 @@ pub unsafe extern "C" fn jit_builtin(
 #[no_mangle]
 pub unsafe extern "C" fn jit_array_new(frame: *mut JitFrame, dst: u32, size: u32) -> u8 {
     let n = match &(*frame).regs[size as usize] {
-        Value::I32(n) if *n >= 0 => *n as usize,
+        Value::I64(n) if *n >= 0 => *n as usize,
         Value::I64(n) if *n >= 0 => *n as usize,
         other => { set_exception(Value::Str(format!("ArrayNew: expected non-negative int, got {:?}", other))); return 1; }
     };
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn jit_array_get(frame: *mut JitFrame, dst: u32, arr: u32,
     let result = match &arr_val {
         Value::Array(rc) => {
             let i = match &idx_val {
-                Value::I32(n) if *n >= 0 => *n as usize,
+                Value::I64(n) if *n >= 0 => *n as usize,
                 Value::I64(n) if *n >= 0 => *n as usize,
                 other => { set_exception(Value::Str(format!("ArrayGet: bad index {:?}", other))); return 1; }
             };
@@ -115,7 +115,7 @@ pub unsafe extern "C" fn jit_array_set(frame: *mut JitFrame, arr: u32, idx: u32,
     match &arr_val {
         Value::Array(rc) => {
             let i = match &idx_val {
-                Value::I32(n) if *n >= 0 => *n as usize,
+                Value::I64(n) if *n >= 0 => *n as usize,
                 Value::I64(n) if *n >= 0 => *n as usize,
                 other => { set_exception(Value::Str(format!("ArraySet: bad index {:?}", other))); return 1; }
             };
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn jit_array_set(frame: *mut JitFrame, arr: u32, idx: u32,
 #[no_mangle]
 pub unsafe extern "C" fn jit_array_len(frame: *mut JitFrame, dst: u32, arr: u32) -> u8 {
     match &(*frame).regs[arr as usize] {
-        Value::Array(rc) => { (*frame).regs[dst as usize] = Value::I32(rc.borrow().len() as i32); 0 }
+        Value::Array(rc) => { (*frame).regs[dst as usize] = Value::I64(rc.borrow().len() as i64); 0 }
         other => { set_exception(Value::Str(format!("ArrayLen: expected array, got {:?}", other))); 1 }
     }
 }

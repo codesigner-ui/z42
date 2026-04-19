@@ -149,7 +149,7 @@ pub fn builtin_str_hash_code(args: &[Value]) -> Result<Value> {
         hash ^= byte as u32;
         hash = hash.wrapping_mul(16_777_619);
     }
-    Ok(Value::I32((hash & 0x7fff_ffff) as i32))
+    Ok(Value::I64((hash & 0x7fff_ffff) as i64))
 }
 
 pub fn builtin_str_format(args: &[Value]) -> Result<Value> {

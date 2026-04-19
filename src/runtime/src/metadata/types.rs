@@ -75,21 +75,17 @@ pub struct ScriptObject {
 
 /// Primitive and heap value types that the VM operates on at runtime.
 ///
+/// Integer types are unified as I64 (all integer arithmetic is 64-bit internally).
+/// The compiler emits ConstI32/ConstI64 which the VM widens to I64.
+/// Floating-point is unified as F64 (double precision).
+///
 /// `Array` uses `Rc<RefCell<Vec<Value>>>` for reference semantics with
 /// interior mutability.  `Object` uses `Rc<RefCell<ScriptObject>>` for the
 /// same reason.  `Value::Str` remains a primitive for performance; member
 /// access on strings is handled via virtual field dispatch in the interpreter.
 #[derive(Debug, Clone)]
 pub enum Value {
-    I8(i8),
-    I16(i16),
-    I32(i32),
     I64(i64),
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
-    F32(f32),
     F64(f64),
     Bool(bool),
     Char(char),
@@ -107,15 +103,7 @@ pub enum Value {
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Value::I8(a),   Value::I8(b))   => a == b,
-            (Value::I16(a),  Value::I16(b))  => a == b,
-            (Value::I32(a),  Value::I32(b))  => a == b,
             (Value::I64(a),  Value::I64(b))  => a == b,
-            (Value::U8(a),   Value::U8(b))   => a == b,
-            (Value::U16(a),  Value::U16(b))  => a == b,
-            (Value::U32(a),  Value::U32(b))  => a == b,
-            (Value::U64(a),  Value::U64(b))  => a == b,
-            (Value::F32(a),  Value::F32(b))  => a == b,
             (Value::F64(a),  Value::F64(b))  => a == b,
             (Value::Bool(a), Value::Bool(b)) => a == b,
             (Value::Char(a), Value::Char(b)) => a == b,

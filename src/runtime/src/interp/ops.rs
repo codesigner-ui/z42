@@ -43,15 +43,10 @@ pub(super) fn int_binop(
     let va = regs.get(a as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{a}"))?;
     let vb = regs.get(b as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{b}"))?;
     Ok(match (va, vb) {
-        (Value::I32(x), Value::I32(y)) => Value::I32(int_op(*x as i64, *y as i64) as i32),
         (Value::I64(x), Value::I64(y)) => Value::I64(int_op(*x, *y)),
-        (Value::I32(x), Value::I64(y)) => Value::I64(int_op(*x as i64, *y)),
-        (Value::I64(x), Value::I32(y)) => Value::I64(int_op(*x, *y as i64)),
         (Value::F64(x), Value::F64(y)) => Value::F64(float_op(*x, *y)),
         (Value::F64(x), Value::I64(y)) => Value::F64(float_op(*x, *y as f64)),
         (Value::I64(x), Value::F64(y)) => Value::F64(float_op(*x as f64, *y)),
-        (Value::F64(x), Value::I32(y)) => Value::F64(float_op(*x, *y as f64)),
-        (Value::I32(x), Value::F64(y)) => Value::F64(float_op(*x as f64, *y)),
         (a, b) => bail!("type mismatch in arithmetic: {:?} vs {:?}", a, b),
     })
 }
@@ -66,10 +61,7 @@ pub(super) fn int_bitop(
     let va = regs.get(a as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{a}"))?;
     let vb = regs.get(b as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{b}"))?;
     Ok(match (va, vb) {
-        (Value::I32(x), Value::I32(y)) => Value::I32(op(*x as i64, *y as i64) as i32),
         (Value::I64(x), Value::I64(y)) => Value::I64(op(*x, *y)),
-        (Value::I32(x), Value::I64(y)) => Value::I64(op(*x as i64, *y)),
-        (Value::I64(x), Value::I32(y)) => Value::I64(op(*x, *y as i64)),
         (a, b) => bail!("bitwise op requires integral operands, got {:?} and {:?}", a, b),
     })
 }
@@ -79,15 +71,10 @@ pub(super) fn numeric_lt(regs: &[Value], a: u32, b: u32) -> Result<bool> {
     let va = regs.get(a as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{a}"))?;
     let vb = regs.get(b as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{b}"))?;
     Ok(match (va, vb) {
-        (Value::I32(x), Value::I32(y)) => x < y,
         (Value::I64(x), Value::I64(y)) => x < y,
-        (Value::I32(x), Value::I64(y)) => (*x as i64) < *y,
-        (Value::I64(x), Value::I32(y)) => *x < (*y as i64),
         (Value::F64(x), Value::F64(y)) => x < y,
         (Value::F64(x), Value::I64(y)) => *x < (*y as f64),
         (Value::I64(x), Value::F64(y)) => (*x as f64) < *y,
-        (Value::F64(x), Value::I32(y)) => *x < (*y as f64),
-        (Value::I32(x), Value::F64(y)) => (*x as f64) < *y,
         (a, b) => bail!("type mismatch in comparison: {:?} vs {:?}", a, b),
     })
 }
@@ -95,7 +82,6 @@ pub(super) fn numeric_lt(regs: &[Value], a: u32, b: u32) -> Result<bool> {
 /// Convert a Value to a usize index/size, rejecting negative values.
 pub(super) fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
     match v {
-        Value::I32(n) if *n >= 0 => Ok(*n as usize),
         Value::I64(n) if *n >= 0 => Ok(*n as usize),
         other => bail!("{}: expected non-negative integer, got {:?}", ctx, other),
     }

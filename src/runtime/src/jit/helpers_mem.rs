@@ -10,12 +10,12 @@ use super::helpers::{set_exception, take_exception, JitFn};
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_const_i32(frame: *mut JitFrame, dst: u32, val: i32) {
-    (*frame).regs[dst as usize] = Value::I32(val);
+    (*frame).regs[dst as usize] = Value::I64(val as i64);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_const_i64(frame: *mut JitFrame, dst: u32, val: i64) {
-    (*frame).regs[dst as usize] = Value::I64(val);
+    (*frame).regs[dst as usize] = Value::I64(val as i64);
 }
 
 #[no_mangle]

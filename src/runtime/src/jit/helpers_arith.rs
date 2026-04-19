@@ -132,7 +132,6 @@ pub unsafe extern "C" fn jit_not(frame: *mut JitFrame, dst: u32, src: u32) -> u8
 #[no_mangle]
 pub unsafe extern "C" fn jit_neg(frame: *mut JitFrame, dst: u32, src: u32) -> u8 {
     let result = match &(*frame).regs[src as usize] {
-        Value::I32(n) => Value::I32(-n),
         Value::I64(n) => Value::I64(-n),
         Value::F64(f) => Value::F64(-f),
         other => { set_exception(Value::Str(format!("Neg: expected numeric, got {:?}", other))); return 1; }
@@ -166,7 +165,6 @@ bitwise_op!(jit_shr,     |x, y| x >> (y & 63));
 #[no_mangle]
 pub unsafe extern "C" fn jit_bit_not(frame: *mut JitFrame, dst: u32, src: u32) -> u8 {
     let result = match &(*frame).regs[src as usize] {
-        Value::I32(n) => Value::I32(!n),
         Value::I64(n) => Value::I64(!n),
         other => { set_exception(Value::Str(format!("BitNot: expected integral, got {:?}", other))); return 1; }
     };

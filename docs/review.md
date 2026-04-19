@@ -1,7 +1,7 @@
 # z42 编译器/运行时代码架构分析报告
 
 > 初始分析：2026-04-18  
-> 最后更新：2026-04-19（已完成改进：15 项，进行中：0 项）  
+> 最后更新：2026-04-19（已完成改进：16 项，进行中：0 项）  
 > 分析范围：`src/compiler`（C# 编译器前端）+ `src/runtime`（Rust 运行时）  
 > 参考对象：Roslyn、rustc、LLVM、JVM（HotSpot）、LuaJIT、V8
 
@@ -23,6 +23,7 @@
 - ✅ **_currentClass → TypeEnv.CurrentClass（1.4）** — 消除共享可变状态，改为不可变 env 属性，通过 WithClass() 传递
 - ✅ **ExecSignal 替代 anyhow 传播（3.2）** — 用户异常走 ExecOutcome::Thrown 值传递，不再经 thread_local + anyhow 堆分配
 - ✅ **消除命名变量槽残留代码（2.2）** — 删除 JitFrame.vars HashMap + jit_store/jit_load 死代码，确认 IR 已是纯寄存器机
+- ✅ **Value 枚举合并整数类型（3.1）** — 删除 I8/I16/I32/U8/U16/U32/U64/F32 共 8 个变体，统一为 I64+F64
 
 ---
 
@@ -375,7 +376,7 @@ BoundError err => throw new InvalidOperationException(
 | ✅ ~~P0~~ | ~~区分 ICE 与用户错误，避免掩盖编译器 Bug（4.1）~~ | 编译器可靠性 | 小 | **已完成** |
 | ✅ ~~P0~~ | ~~消除命名变量槽残留代码（2.2）~~ | 运行时性能 | 小 | **已完成（IR 已是纯寄存器机）** |
 | ✅ ~~P1~~ | ~~统一类型名映射为 `TypeRegistry`（4.3）~~ | 可维护性 | 小 | **已完成** |
-| 🟠 P1 | `Value` 枚举合并整数类型，减少大小（3.1） | 内存/缓存性能 | 中 |
+| ✅ ~~P1~~ | ~~`Value` 枚举合并为 I64+F64（3.1）~~ | 内存/缓存性能 | 中 | **已完成** |
 | ✅ ~~P1~~ | ~~`exec_function` 预计算 `block_index`（3.3）~~ | 解释器调用性能 | 小 | **已完成** |
 | ✅ ~~P1~~ | ~~`IsSubclassOf` 预计算祖先集合（5.2）~~ | 类型检查性能 | 小 | **已完成** |
 | ✅ ~~P2~~ | ~~`TypeEnv.LookupVar` 区分变量/类名（1.3）~~ | 类型检查正确性 | 小 | **已完成** |

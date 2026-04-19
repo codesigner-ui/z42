@@ -4,7 +4,6 @@ use anyhow::{bail, Result};
 /// Convert a Value to its string representation.
 pub fn value_to_str(v: &Value) -> String {
     match v {
-        Value::I32(n)  => n.to_string(),
         Value::I64(n)  => n.to_string(),
         Value::F64(f)  => f.to_string(),
         Value::Bool(b) => b.to_string(),
@@ -40,7 +39,7 @@ pub fn require_usize(args: &[Value], idx: usize, ctx: &str) -> Result<usize> {
 /// Convert a Value to a usize index/size, rejecting negative values.
 pub fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
     match v {
-        Value::I32(n) if *n >= 0 => Ok(*n as usize),
+        Value::I64(n) if *n >= 0 => Ok(*n as usize),
         Value::I64(n) if *n >= 0 => Ok(*n as usize),
         other => bail!("{}: expected non-negative integer, got {:?}", ctx, other),
     }

@@ -35,7 +35,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             };
             frame.set(*dst, Value::Str(s));
         }
-        Instruction::ConstI32  { dst, val } => frame.set(*dst, Value::I32(*val)),
+        Instruction::ConstI32  { dst, val } => frame.set(*dst, Value::I64(*val as i64)),
         Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),
         Instruction::ConstF64  { dst, val } => frame.set(*dst, Value::F64(*val)),
         Instruction::ConstBool { dst, val } => frame.set(*dst, Value::Bool(*val)),
@@ -100,7 +100,6 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         // ── Unary arithmetic ─────────────────────────────────────────────────
         Instruction::Neg { dst, src } => {
             let res = match frame.get(*src)? {
-                Value::I32(n) => Value::I32(-n),
                 Value::I64(n) => Value::I64(-n),
                 Value::F64(f) => Value::F64(-f),
                 other => bail!("Neg: expected numeric, got {:?}", other),
@@ -120,7 +119,6 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         }
         Instruction::BitNot { dst, src } => {
             let res = match frame.get(*src)? {
-                Value::I32(n) => Value::I32(!n),
                 Value::I64(n) => Value::I64(!n),
                 other => bail!("BitNot: expected integral, got {:?}", other),
             };
@@ -224,7 +222,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                 Value::Array(rc) => rc.borrow().len() as i32,
                 other => bail!("ArrayLen: expected array, got {:?}", other),
             };
-            frame.set(*dst, Value::I32(len));
+            frame.set(*dst, Value::I64(len as i64));
         }
 
         // ── Objects ──────────────────────────────────────────────────────────

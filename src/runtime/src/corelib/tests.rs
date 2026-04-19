@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 fn s(v: &str) -> Value { Value::Str(v.into()) }
-fn i(n: i32) -> Value { Value::I32(n) }
+fn i(n: i64) -> Value { Value::I64(n) }
 fn i64(n: i64) -> Value { Value::I64(n) }
 fn obj(class_name: &str) -> Value {
     let type_desc = Arc::new(TypeDesc {
@@ -223,7 +223,7 @@ fn obj_ref_eq_one_null_is_false() {
 #[test]
 fn obj_hash_code_returns_i32() {
     let result = exec_builtin("__obj_hash_code", &[obj("Foo")]).unwrap();
-    assert!(matches!(result, Value::I32(_)));
+    assert!(matches!(result, Value::I64(_)));
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn obj_hash_code_same_object_is_consistent() {
 fn obj_hash_code_null_is_zero() {
     assert_eq!(
         exec_builtin("__obj_hash_code", &[Value::Null]).unwrap(),
-        Value::I32(0)
+        Value::I64(0)
     );
 }
 
