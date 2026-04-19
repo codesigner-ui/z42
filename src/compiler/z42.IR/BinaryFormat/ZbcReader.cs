@@ -34,7 +34,7 @@ public static partial class ZbcReader
                                          new List<IrClassDesc>());
         var sigs           = ReadSection(data, dir, SectionTags.Sigs,
                                          sec => ReadSigsSection(sec, pool),
-                                         new List<(string, ushort, string, string, bool)>());
+                                         new List<SigEntry>());
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
                                          sec => ReadFuncSection(sec, pool),
                                          new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>());
@@ -47,21 +47,18 @@ public static partial class ZbcReader
         for (int i = 0; i < funcBodies.Count; i++)
         {
             var (regCount, blocks, excTable, lineTable) = funcBodies[i];
-            string name, retType, execMode;
-            ushort paramCount;
-            bool   isStatic;
-
-            if (i < sigs.Count)
-                (name, paramCount, retType, execMode, isStatic) = sigs[i];
-            else
-            {
-                name = $"func#{i}"; paramCount = 0; retType = "void"; execMode = "Interp"; isStatic = false;
-            }
+            var sig = i < sigs.Count ? sigs[i] : null;
+            string name     = sig?.Name     ?? $"func#{i}";
+            ushort paramCount = sig?.ParamCount ?? 0;
+            string retType  = sig?.RetType  ?? "void";
+            string execMode = sig?.ExecMode ?? "Interp";
+            bool   isStatic = sig?.IsStatic ?? false;
+            var typeParams  = sig?.TypeParams;
 
             var localVars = i < dbugVarTables.Count ? dbugVarTables[i] : null;
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                 excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
-                LineTable: lineTable, LocalVarTable: localVars));
+                LineTable: lineTable, LocalVarTable: localVars, TypeParams: typeParams));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -211,13 +208,15 @@ public static partial class ZbcReader
 
     // ── SIGS section ──────────────────────────────────────────────────────────
 
-    private static List<(string, ushort, string, string, bool)> ReadSigsSection(byte[] data, string[] pool)
+    private record SigEntry(string Name, ushort ParamCount, string RetType, string ExecMode, bool IsStatic, List<string>? TypeParams);
+
+    private static List<SigEntry> ReadSigsSection(byte[] data, string[] pool)
     {
         using var ms = new MemoryStream(data, writable: false);
         using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
 
         uint count = r.ReadUInt32();
-        var result = new List<(string, ushort, string, string, bool)>((int)count);
+        var result = new List<SigEntry>((int)count);
 
         for (int i = 0; i < count; i++)
         {
@@ -226,7 +225,16 @@ public static partial class ZbcReader
             string retType    = TypeTags.ToIrString(r.ReadByte());
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
-            result.Add((name, paramCount, retType, execMode, isStatic));
+            // Generic type parameters (v0.5+)
+            byte tpCount = (ms.Position < ms.Length) ? r.ReadByte() : (byte)0;
+            List<string>? typeParams = null;
+            if (tpCount > 0)
+            {
+                typeParams = new List<string>(tpCount);
+                for (int t = 0; t < tpCount; t++)
+                    typeParams.Add(P(pool, r.ReadUInt32()));
+            }
+            result.Add(new SigEntry(name, paramCount, retType, execMode, isStatic, typeParams));
         }
         return result;
     }

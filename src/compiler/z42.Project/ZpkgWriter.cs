@@ -262,6 +262,12 @@ public static class ZpkgWriter
                 w.Write(TypeTags.FromString(fn.RetType));
                 w.Write(ExecModes.FromString(fn.ExecMode));
                 w.Write((byte)(fn.IsStatic ? 1 : 0));
+                // Generic type parameters
+                byte tpCount = (byte)(fn.TypeParams?.Count ?? 0);
+                w.Write(tpCount);
+                if (fn.TypeParams != null)
+                    foreach (var tp in fn.TypeParams)
+                        w.Write((uint)pool.Idx(tp));
             }
 
         return ms.ToArray();

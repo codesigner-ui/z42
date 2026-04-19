@@ -33,6 +33,11 @@ pub struct TypeDesc {
     pub vtable: Vec<(String, String)>,
     /// `method_name → vtable slot index` — O(1) virtual dispatch.
     pub vtable_index: HashMap<String, usize>,
+    /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
+    pub type_params: Vec<String>,
+    /// Concrete type arguments for an instantiated generic class: ["int"], ["string", "int"].
+    /// Empty for non-generic classes and uninstantiated generic definitions.
+    pub type_args: Vec<String>,
 }
 
 // ── NativeData — native backing for built-in class types ────────────────────

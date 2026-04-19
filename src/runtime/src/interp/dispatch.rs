@@ -127,6 +127,6 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
         fields,
         field_index,
         vtable: Vec::new(),
-        vtable_index: HashMap::new(),
+        vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
     }
 }

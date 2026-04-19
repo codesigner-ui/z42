@@ -61,6 +61,10 @@ public static class ZasmWriter
                 : "";
             sb.AppendLine($".func @{fn.Name}  params:{fn.ParamCount}  ret:{fn.RetType}  mode:{fn.ExecMode}{staticSuffix}{paramComment}");
 
+            // Type parameters (if present)
+            if (fn.TypeParams is { Count: > 0 })
+                sb.AppendLine($"  .type_params  {string.Join(", ", fn.TypeParams)}");
+
             // Exception table (if present)
             if (fn.ExceptionTable is { Count: > 0 })
             {

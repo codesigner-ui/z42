@@ -244,12 +244,14 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
 
 // ── SIGS section ─────────────────────────────────────────────────────────────
 
+#[allow(dead_code)]  // type_params used by future generic instantiation
 struct FuncSig {
     name: String,
     param_count: usize,
     ret_type: String,
     exec_mode: ExecMode,
     is_static: bool,
+    type_params: Vec<String>,
 }
 
 fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<FuncSig>> {
@@ -262,12 +264,20 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
         let ret_tag     = c.read_u8()?;
         let mode_byte   = c.read_u8()?;
         let is_static   = if has_is_static { c.read_u8()? != 0 } else { false };
+        // Generic type params (added after is_static)
+        let tp_count    = if has_is_static { c.read_u8()? as usize } else { 0 };
+        let mut type_params = Vec::with_capacity(tp_count);
+        for _ in 0..tp_count {
+            let tp_idx = c.read_u32()?;
+            type_params.push(c.pool_str(pool, tp_idx)?.to_owned());
+        }
         sigs.push(FuncSig {
             name: c.pool_str(pool, name_idx)?.to_owned(),
             param_count,
             ret_type: type_tag_to_str(ret_tag).to_owned(),
             exec_mode: exec_mode_from_byte(mode_byte),
             is_static,
+            type_params,
         });
     }
     Ok(sigs)

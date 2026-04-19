@@ -83,7 +83,8 @@ internal sealed partial class FunctionEmitter
         var localVars = SnapshotLocalVarTable();
         int paramCount = method.Params.Count + paramOffset;
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
-            IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars);
+            IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
+            TypeParams: method.TypeParams);
     }
 
     internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)
@@ -104,7 +105,8 @@ internal sealed partial class FunctionEmitter
         var lineTable = _lineTable.Count > 0 ? _lineTable : null;
         var localVars = SnapshotLocalVarTable();
         return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
-            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars);
+            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
+            TypeParams: fn.TypeParams);
     }
 
     internal IrFunction EmitStaticInit(CompilationUnit cu)

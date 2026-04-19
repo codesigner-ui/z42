@@ -71,7 +71,14 @@ public sealed record IrFunction(
     /// </summary>
     [property: JsonPropertyName("local_var_table")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    List<IrLocalVarEntry>? LocalVarTable = null);
+    List<IrLocalVarEntry>? LocalVarTable = null,
+    /// <summary>
+    /// Generic type parameter names: ["T"], ["K", "V"], etc.
+    /// Null for non-generic functions.
+    /// </summary>
+    [property: JsonPropertyName("type_params")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<string>? TypeParams = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
 public sealed record IrLocalVarEntry(

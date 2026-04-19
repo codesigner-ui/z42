@@ -176,6 +176,9 @@ public static partial class ZbcWriter
                 if (fn.LocalVarTable != null)
                     foreach (var lv in fn.LocalVarTable)
                         pool.Intern(lv.Name);
+                if (fn.TypeParams != null)
+                    foreach (var tp in fn.TypeParams)
+                        pool.Intern(tp);
             }
         }
         else
@@ -268,6 +271,12 @@ public static partial class ZbcWriter
             w.Write(TypeTags.FromString(fn.RetType));
             w.Write(ExecModes.FromString(fn.ExecMode));
             w.Write((byte)(fn.IsStatic ? 1 : 0));  // is_static flag
+            // Generic type parameters
+            byte tpCount = (byte)(fn.TypeParams?.Count ?? 0);
+            w.Write(tpCount);
+            if (fn.TypeParams != null)
+                foreach (var tp in fn.TypeParams)
+                    w.Write((uint)pool.Idx(tp));
         }
 
         return ms.ToArray();
