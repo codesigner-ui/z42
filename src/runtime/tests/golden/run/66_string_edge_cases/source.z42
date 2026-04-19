@@ -1,0 +1,50 @@
+// Test: string edge cases
+
+void Main() {
+    // Empty string
+    string empty = "";
+    Assert.Equal(0, empty.Length);
+    Assert.Equal("", empty);
+
+    // String concatenation with +
+    var hello = "hello" + " " + "world";
+    Assert.Equal("hello world", hello);
+
+    // String interpolation with expressions
+    var x = 10;
+    var y = 20;
+    var msg = $"{x} + {y} = {x + y}";
+    Assert.Equal("10 + 20 = 30", msg);
+
+    // String interpolation with method calls
+    var name = "alice";
+    var upper = $"Name: {name.ToUpper()}";
+    Assert.Equal("Name: ALICE", upper);
+
+    // Nested string interpolation
+    var a = 5;
+    var result = $"Result: {$"{a} squared is {a * a}"}";
+    Assert.Equal("Result: 5 squared is 25", result);
+
+    // String with special content
+    var spaces = "   ";
+    Assert.Equal(3, spaces.Length);
+
+    // String equality
+    var s1 = "test";
+    var s2 = "test";
+    Assert.Equal(true, s1 == s2);
+
+    var s3 = "Test";
+    Assert.Equal(false, s1 == s3);
+
+    // String Contains
+    Assert.Equal(true, "hello world".Contains("world"));
+    Assert.Equal(false, "hello world".Contains("xyz"));
+
+    // Multi-line string content via interpolation
+    var line = $"Line 1 and Line 2";
+    Assert.Equal("Line 1 and Line 2", line);
+
+    Console.WriteLine("string edge cases ok");
+}

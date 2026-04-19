@@ -1,0 +1,46 @@
+// Test: type conversions and numeric promotion
+
+void Main() {
+    // int to long (widening)
+    int i = 42;
+    long l = i;
+    Assert.Equal(42, l);
+
+    // Negative int to long
+    int neg = -999;
+    long negL = neg;
+    Assert.Equal(-999, negL);
+
+    // Large long values
+    long big = 9000000000;
+    Assert.True(big > 8999999999);
+
+    // int arithmetic yielding long
+    int a = 1000000;
+    long bigVal = a;
+    Assert.Equal(1000000, bigVal);
+
+    // Arithmetic promotion: int + double → double
+    var sum = 5 + 2.5;
+    Assert.True(sum > 7.4);
+    Assert.True(sum < 7.6);
+
+    // int * double
+    var product = 3 * 1.5;
+    Assert.True(product > 4.4);
+    Assert.True(product < 4.6);
+
+    // double arithmetic
+    double x = 10.0;
+    double y = 3.0;
+    var div = x / y;
+    Assert.True(div > 3.3);
+    Assert.True(div < 3.4);
+
+    // float literal
+    float f = 2.5f;
+    Assert.True(f > 2.4);
+    Assert.True(f < 2.6);
+
+    Console.WriteLine("type conversions ok");
+}

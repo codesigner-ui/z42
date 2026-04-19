@@ -1,0 +1,8 @@
+namespace Demo;
+
+void DoNothing() {
+}
+
+void Main() {
+    var x = DoNothing();
+}

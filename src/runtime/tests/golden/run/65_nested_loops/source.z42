@@ -1,0 +1,65 @@
+// Test: nested loops with break/continue edge cases
+
+void Main() {
+    // Nested for loops
+    var count = 0;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 3; j++) {
+            count = count + 1;
+        }
+    }
+    Assert.Equal(9, count);
+
+    // Break in inner loop only
+    count = 0;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 10; j++) {
+            if (j >= 2) {
+                break;
+            }
+            count = count + 1;
+        }
+    }
+    Assert.Equal(6, count);  // 3 * 2
+
+    // Continue in inner loop
+    count = 0;
+    for (int i = 0; i < 3; i++) {
+        for (int j = 0; j < 5; j++) {
+            if (j == 2) {
+                continue;
+            }
+            count = count + 1;
+        }
+    }
+    Assert.Equal(12, count);  // 3 * 4 (skip j==2)
+
+    // Nested while with break
+    var sum = 0;
+    int outer = 0;
+    while (outer < 5) {
+        int inner = 0;
+        while (inner < 5) {
+            if (inner == 3) {
+                break;
+            }
+            sum = sum + 1;
+            inner = inner + 1;
+        }
+        outer = outer + 1;
+    }
+    Assert.Equal(15, sum);  // 5 * 3
+
+    // For-while nesting
+    count = 0;
+    for (int i = 0; i < 4; i++) {
+        var j = 0;
+        while (j < i) {
+            count = count + 1;
+            j = j + 1;
+        }
+    }
+    Assert.Equal(6, count);  // 0 + 1 + 2 + 3
+
+    Console.WriteLine("nested loops ok");
+}

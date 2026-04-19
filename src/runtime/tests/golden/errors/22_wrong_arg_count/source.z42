@@ -1,0 +1,9 @@
+namespace Demo;
+
+int Add(int a, int b) {
+    return a + b;
+}
+
+void Main() {
+    var x = Add(1, 2, 3);
+}

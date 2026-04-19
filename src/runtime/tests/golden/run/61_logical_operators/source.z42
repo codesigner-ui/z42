@@ -1,0 +1,43 @@
+// Test: logical operators (&&, ||, !) and short-circuit evaluation
+
+void Main() {
+    // Basic logical AND
+    Assert.Equal(true, true && true);
+    Assert.Equal(false, true && false);
+    Assert.Equal(false, false && true);
+    Assert.Equal(false, false && false);
+
+    // Basic logical OR
+    Assert.Equal(true, true || true);
+    Assert.Equal(true, true || false);
+    Assert.Equal(true, false || true);
+    Assert.Equal(false, false || false);
+
+    // Logical NOT
+    Assert.Equal(false, !true);
+    Assert.Equal(true, !false);
+    Assert.Equal(true, !!true);
+
+    // Combined expressions with precedence
+    // && binds tighter than ||
+    Assert.Equal(true, true && true || false);
+    Assert.Equal(true, false || true && true);
+    Assert.Equal(false, !(true || false));
+
+    // With comparison operators
+    var x = 10;
+    Assert.Equal(true, x > 5 && x < 20);
+    Assert.Equal(false, x > 5 && x < 8);
+    Assert.Equal(true, x < 5 || x > 8);
+    Assert.Equal(false, x < 5 || x > 15);
+
+    // Nested logical
+    var a = true;
+    var b = false;
+    var c = true;
+    Assert.Equal(true, (a || b) && c);
+    Assert.Equal(false, a && b && c);
+    Assert.Equal(true, a || b || c);
+
+    Console.WriteLine("All logical operator tests passed");
+}

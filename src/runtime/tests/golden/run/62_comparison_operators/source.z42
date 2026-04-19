@@ -1,0 +1,56 @@
+// Test: comparison operators (==, !=, <, >, <=, >=) across types
+
+void Main() {
+    // Integer comparisons
+    Assert.Equal(true, 5 == 5);
+    Assert.Equal(false, 5 == 3);
+    Assert.Equal(true, 5 != 3);
+    Assert.Equal(false, 5 != 5);
+    Assert.Equal(true, 3 < 5);
+    Assert.Equal(false, 5 < 3);
+    Assert.Equal(false, 5 < 5);
+    Assert.Equal(true, 5 > 3);
+    Assert.Equal(false, 3 > 5);
+    Assert.Equal(false, 5 > 5);
+    Assert.Equal(true, 5 <= 5);
+    Assert.Equal(true, 3 <= 5);
+    Assert.Equal(false, 7 <= 5);
+    Assert.Equal(true, 5 >= 5);
+    Assert.Equal(true, 7 >= 5);
+    Assert.Equal(false, 3 >= 5);
+
+    // Double comparisons
+    Assert.Equal(true, 3.14 == 3.14);
+    Assert.Equal(true, 3.14 != 2.71);
+    Assert.Equal(true, 2.71 < 3.14);
+    Assert.Equal(true, 3.14 > 2.71);
+    Assert.Equal(true, 3.14 <= 3.14);
+    Assert.Equal(true, 3.14 >= 3.14);
+
+    // Bool comparisons
+    Assert.Equal(true, true == true);
+    Assert.Equal(true, false == false);
+    Assert.Equal(true, true != false);
+    Assert.Equal(false, true == false);
+
+    // String comparisons
+    Assert.Equal(true, "hello" == "hello");
+    Assert.Equal(false, "hello" == "world");
+    Assert.Equal(true, "hello" != "world");
+    Assert.Equal(false, "hello" != "hello");
+
+    // Negative numbers
+    Assert.Equal(true, -5 < 0);
+    Assert.Equal(true, 0 > -5);
+    Assert.Equal(true, -10 < -5);
+    Assert.Equal(true, -5 > -10);
+
+    // Boundary: zero
+    Assert.Equal(true, 0 == 0);
+    Assert.Equal(true, 0 <= 0);
+    Assert.Equal(true, 0 >= 0);
+    Assert.Equal(false, 0 < 0);
+    Assert.Equal(false, 0 > 0);
+
+    Console.WriteLine("All comparison operator tests passed");
+}

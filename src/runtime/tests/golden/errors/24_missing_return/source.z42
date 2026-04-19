@@ -1,0 +1,9 @@
+namespace Demo;
+
+int GetValue() {
+    var x = 42;
+}
+
+void Main() {
+    var v = GetValue();
+}
