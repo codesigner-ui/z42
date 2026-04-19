@@ -10,6 +10,20 @@ use std::rc::Rc;
 use super::frame::{FnEntry, JitFrame, JitModuleCtx};
 use super::helpers::{set_exception, JitFn};
 
+/// Convert PascalCase to snake_case: "StartsWith" → "starts_with"
+fn to_snake_case_jit(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.chars().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 { result.push('_'); }
+            result.push(ch.to_lowercase().next().unwrap());
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
 // ── Calls ────────────────────────────────────────────────────────────────────
 
 #[no_mangle]
@@ -245,22 +259,33 @@ pub unsafe extern "C" fn jit_vcall(
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
     let mut extra_args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
 
-    // Primitive types: dispatch via builtin name table.
-    let primitive_builtin: Option<&'static str> = match &obj_val {
-        Value::Str(_) => match method {
-            "ToString"    => Some("__str_to_string"),
-            "Equals"      => Some("__str_equals"),
-            "GetHashCode" => Some("__str_hash_code"),
-            _ => None,
-        },
-        _ => None,
-    };
-    if let Some(builtin_name) = primitive_builtin {
+    // Primitive string type: dispatch all methods via builtins.
+    if let Value::Str(_) = &obj_val {
+        let builtin_name = match method {
+            "ToString"    => "__str_to_string".to_owned(),
+            "Equals"      => "__str_equals".to_owned(),
+            "GetHashCode" => "__str_hash_code".to_owned(),
+            other => format!("__str_{}", to_snake_case_jit(other)),
+        };
         let mut call_args = vec![obj_val];
         call_args.append(&mut extra_args);
-        match crate::corelib::exec_builtin(builtin_name, &call_args) {
+        match crate::corelib::exec_builtin(&builtin_name, &call_args) {
             Ok(ret) => { frame_ref.regs[dst as usize] = ret; return 0; }
-            Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+            Err(_) => {
+                // Fallback: try stdlib function
+                let func_name = format!("Std.String.{method}");
+                if let Some(entry) = ctx_ref.fn_entries.get(&func_name) {
+                    let mut callee = JitFrame::new(entry.max_reg, &call_args);
+                    let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+                    let r = jit_fn(&mut callee, ctx);
+                    if r != 0 { callee.recycle(); return 1; }
+                    frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
+                    callee.recycle();
+                    return 0;
+                }
+                set_exception(Value::Str(format!("VCall: string method `{method}` not found")));
+                return 1;
+            }
         }
     }
 
