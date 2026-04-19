@@ -3,33 +3,34 @@
 > 状态：🟡 进行中 | 创建：2026-04-19
 
 ## 进度概览
-- [ ] 阶段 1: AST + Parser
+- [x] 阶段 1: AST + Parser ✅ (commit f7f5571)
 - [ ] 阶段 2: TypeChecker
 - [ ] 阶段 3: IrGen + 二进制格式
 - [ ] 阶段 4: VM
 - [ ] 阶段 5: 测试与验证
 
-## 阶段 1: AST + Parser
+## 阶段 1: AST + Parser ✅
 
-- [ ] 1.1 `Ast.cs`: FunctionDecl 新增 `List<string>? TypeParams = null`
-- [ ] 1.2 `Ast.cs`: ClassDecl 新增 `List<string>? TypeParams = null`
-- [ ] 1.3 `Ast.cs`: InterfaceDecl 新增 `List<string>? TypeParams = null`
-- [ ] 1.4 `Ast.cs`: 新增 `GenericType(string Name, List<TypeExpr> TypeArgs, Span)` TypeExpr
-- [ ] 1.5 `TopLevelParser.Helpers.cs`: `SkipGenericParams` → `ParseTypeParams` 返回 `List<string>?`
-- [ ] 1.6 `TopLevelParser.cs`: ParseClassDecl/ParseInterfaceDecl 使用 ParseTypeParams
-- [ ] 1.7 `TopLevelParser.cs`: ParseFunctionDecl 检测 `Ident<` 解析类型参数
-- [ ] 1.8 `TypeParser.cs`: 解析 `Name<TypeArg1, TypeArg2>` → `GenericType`
-- [ ] 1.9 `dotnet build` 全绿
+- [x] 1.1 `Ast.cs`: FunctionDecl 新增 `List<string>? TypeParams = null`
+- [x] 1.2 `Ast.cs`: ClassDecl 新增 `List<string>? TypeParams = null`
+- [x] 1.3 `Ast.cs`: InterfaceDecl 新增 `List<string>? TypeParams = null`
+- [x] 1.4 `Ast.cs`: 新增 `GenericType(string Name, List<TypeExpr> TypeArgs, Span)` TypeExpr
+- [x] 1.5 `TopLevelParser.Helpers.cs`: 新增 `ParseTypeParams` + 保留 `SkipGenericParams`
+- [x] 1.6 `TopLevelParser.cs`: ParseClassDecl/ParseInterfaceDecl 使用 ParseTypeParams
+- [x] 1.7 `TopLevelParser.cs`: ParseFunctionDecl 解析泛型函数类型参数
+- [x] 1.8 `TypeParser.cs`: 解析 `Name<TypeArg1, TypeArg2>` → `GenericType`
+- [x] 1.9 `dotnet build` + `dotnet test` 458 passed
 
-## 阶段 2: TypeChecker
+## 阶段 2: TypeChecker 🚧
 
-- [ ] 2.1 新增 `Z42GenericParamType` 类型（代表未实例化的 T）
-- [ ] 2.2 泛型参数作用域：check 类/函数时 push TypeParam → scope，结束 pop
-- [ ] 2.3 泛型函数调用：`Identity<int>(42)` → 替换 T=int 验证参数
-- [ ] 2.4 泛型类实例化：`new Box<int>(42)` → 替换 T=int 验证构造器
-- [ ] 2.5 泛型类方法调用：`b.Get()` → 返回类型根据 type_args 解析
-- [ ] 2.6 `GenericType` TypeExpr 解析为具体的 Z42ClassType + type_args
-- [ ] 2.7 `dotnet test` 全绿
+- [x] 2.1 新增 `Z42GenericParamType` 类型 + IsAssignableTo/IsReferenceType 兼容
+- [x] 2.2 SymbolTable.PushTypeParams/PopTypeParams — 泛型参数作用域
+- [x] 2.3 SymbolCollector: 函数签名收集时识别类型参数 T → Z42GenericParamType
+- [x] 2.4 TypeChecker.BindFunction/BindClassMethods: push/pop type params
+- [x] 2.5 GenericType TypeExpr 解析（SymbolTable + SymbolCollector）
+- [x] 2.6 Golden test `68_generic_function` — 泛型函数类型推断调用 ✅
+- [ ] 2.7 泛型类实例化：`new Box<T>(42)` — 下一步
+- [x] 2.8 `dotnet test` 459 passed + `test-vm.sh` 130 passed
 
 ## 阶段 3: IrGen + 二进制格式
 

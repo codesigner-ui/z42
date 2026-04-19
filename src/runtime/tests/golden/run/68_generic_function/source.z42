@@ -1,0 +1,29 @@
+// Test: basic generic function — code sharing, type inferred from arguments
+
+T Identity<T>(T x) {
+    return x;
+}
+
+T First<T>(T a, T b) {
+    return a;
+}
+
+void Main() {
+    // int argument
+    var r1 = Identity(42);
+    Assert.Equal(42, r1);
+
+    // string argument
+    var r2 = Identity("hello");
+    Assert.Equal("hello", r2);
+
+    // bool argument
+    var r3 = Identity(true);
+    Assert.Equal(true, r3);
+
+    // Two params, same type
+    var r4 = First(10, 20);
+    Assert.Equal(10, r4);
+
+    Console.WriteLine("generic function ok");
+}

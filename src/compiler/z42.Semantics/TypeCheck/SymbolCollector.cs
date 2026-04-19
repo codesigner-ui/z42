@@ -113,9 +113,14 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             if (_funcs.ContainsKey(fn.Name))
                 _diags.Error(DiagnosticCodes.DuplicateDeclaration,
                     $"duplicate function declaration `{fn.Name}`", fn.Span);
+            if (fn.TypeParams != null) _activeTypeParams = new HashSet<string>(fn.TypeParams);
             _funcs[fn.Name] = BuildFuncSignature(fn.Params, ResolveType(fn.ReturnType));
+            _activeTypeParams = null;
         }
     }
+
+    /// Active generic type parameters — set during signature collection so T resolves to Z42GenericParamType.
+    private HashSet<string>? _activeTypeParams;
 
     // ── Type resolution (collection phase) ───────────────────────────────────
 
@@ -125,6 +130,8 @@ internal sealed partial class SymbolCollector : ISymbolBinder
         VoidType      => Z42Type.Void,
         OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
         ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
+        NamedType  nt when _activeTypeParams?.Contains(nt.Name) == true
+                      => new Z42GenericParamType(nt.Name),
         NamedType  nt => nt.Name switch
         {
             "int"    or "i32" => Z42Type.Int,

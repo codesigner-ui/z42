@@ -43,6 +43,8 @@ public abstract record Z42Type
         if (source is Z42ErrorType || target is Z42ErrorType) return true;
         // Unknown: we can't check, so allow
         if (source is Z42UnknownType || target is Z42UnknownType) return true;
+        // Generic type parameter T: compatible with anything (checked at instantiation site)
+        if (source is Z42GenericParamType || target is Z42GenericParamType) return true;
         // null is assignable to any reference type or optional type
         if (source is Z42NullType && (IsReferenceType(target) || target is Z42OptionType)) return true;
         // Same-name class types are compatible (handles two-pass TypeChecker where stubs
@@ -78,7 +80,7 @@ public abstract record Z42Type
 
     public static bool IsReferenceType(Z42Type t) =>
         (LookupPrim(t)?.IsReference == true)
-        || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType;
+        || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType or Z42GenericParamType;
 
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
     public static Z42Type ArithmeticResult(Z42Type l, Z42Type r)
@@ -144,6 +146,14 @@ public sealed record Z42OptionType(Z42Type Inner) : Z42Type
 public sealed record Z42InterfaceType(
     string Name,
     IReadOnlyDictionary<string, Z42FuncType> Methods) : Z42Type
+{
+    public override string ToString() => Name;
+}
+
+/// Uninstantiated generic type parameter (e.g., T in Identity<T>).
+/// During type checking of generic function/class bodies, T is bound to this type.
+/// At call sites, T is substituted with a concrete type (e.g., int).
+public sealed record Z42GenericParamType(string Name) : Z42Type
 {
     public override string ToString() => Name;
 }

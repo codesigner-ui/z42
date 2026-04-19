@@ -90,6 +90,17 @@ public sealed class SymbolTable
         return ancestors;
     }
 
+    // ── Active type parameters (set by TypeChecker during generic body checking) ──
+
+    private HashSet<string>? _activeTypeParams;
+
+    /// Push type parameter names into scope for the duration of a generic body check.
+    public void PushTypeParams(IEnumerable<string> typeParams) =>
+        _activeTypeParams = new HashSet<string>(typeParams);
+
+    /// Clear type parameter scope.
+    public void PopTypeParams() => _activeTypeParams = null;
+
     /// Resolve a TypeExpr to a Z42Type using the frozen symbol table.
     public Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
     {
@@ -100,6 +111,8 @@ public sealed class SymbolTable
         NamedType  nt => nt.Name switch
         {
             "var"             => Z42Type.Unknown,
+            _ when _activeTypeParams?.Contains(nt.Name) == true
+                              => new Z42GenericParamType(nt.Name),
             _                 => TypeRegistry.GetZ42Type(nt.Name) ??
                                (Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : Interfaces.TryGetValue(nt.Name, out var it) ? it

@@ -104,6 +104,9 @@ public sealed partial class TypeChecker : ITypeInferrer
     private void BindClassMethods(ClassDecl cls)
     {
         if (!_symbols.Classes.TryGetValue(cls.Name, out var classType)) return;
+        if (cls.TypeParams != null) _symbols.PushTypeParams(cls.TypeParams);
+        try
+        {
         foreach (var method in cls.Methods)
         {
             if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
@@ -134,24 +137,32 @@ public sealed partial class TypeChecker : ITypeInferrer
                 FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags);
             }
         }
+        }
+        finally { if (cls.TypeParams != null) _symbols.PopTypeParams(); }
     }
 
     private void BindFunction(FunctionDecl fn)
     {
         if (ValidateNativeMethod(fn, isInstance: false)) return;
-        var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
-        var scope = env.PushScope();
-        CheckParamNames(fn.Params);
-        foreach (var p in fn.Params)
-            scope.Define(p.Name, _symbols.ResolveType(p.Type));
-        BindParamDefaults(fn.Params, scope);
-        _boundBodies[fn] = BindBlock(fn.Body, scope, _symbols.ResolveType(fn.ReturnType));
-        var fnRetType = _symbols.ResolveType(fn.ReturnType);
-        if (fnRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
-            && !FlowAnalyzer.AlwaysReturns(_boundBodies[fn]))
-            _diags.Error(DiagnosticCodes.MissingReturn,
-                $"not all code paths return a value in `{fn.Name}`", fn.Span);
-        FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags);
+        if (fn.TypeParams != null) _symbols.PushTypeParams(fn.TypeParams);
+        try
+        {
+            var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
+            var scope = env.PushScope();
+            CheckParamNames(fn.Params);
+            foreach (var p in fn.Params)
+                scope.Define(p.Name, _symbols.ResolveType(p.Type));
+            BindParamDefaults(fn.Params, scope);
+            _boundBodies[fn] = BindBlock(fn.Body, scope, _symbols.ResolveType(fn.ReturnType));
+            var fnRetType = _symbols.ResolveType(fn.ReturnType);
+            if (fnRetType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
+                && fnRetType is not Z42GenericParamType
+                && !FlowAnalyzer.AlwaysReturns(_boundBodies[fn]))
+                _diags.Error(DiagnosticCodes.MissingReturn,
+                    $"not all code paths return a value in `{fn.Name}`", fn.Span);
+            FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags);
+        }
+        finally { if (fn.TypeParams != null) _symbols.PopTypeParams(); }
     }
 
     // ── Default parameter binding (Pass 1, not during collection) ───────────
