@@ -250,6 +250,9 @@ public static class ZpkgReader
             string retType    = TypeTags.ToIrString(r.ReadByte());
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
+            // Skip generic type parameters (tp_count + name indices)
+            byte tpCount = r.ReadByte();
+            for (int t = 0; t < tpCount; t++) r.ReadUInt32();
             result.Add((name, paramCount, retType, execMode, isStatic));
         }
         return result;
