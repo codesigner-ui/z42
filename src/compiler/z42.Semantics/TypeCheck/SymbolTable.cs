@@ -93,13 +93,27 @@ public sealed class SymbolTable
     // ── Active type parameters (set by TypeChecker during generic body checking) ──
 
     private HashSet<string>? _activeTypeParams;
+    /// Constraints attached to each active type parameter (L3-G2). Empty / missing = no constraint.
+    private Dictionary<string, IReadOnlyList<Z42InterfaceType>>? _activeTypeParamConstraints;
 
     /// Push type parameter names into scope for the duration of a generic body check.
-    public void PushTypeParams(IEnumerable<string> typeParams) =>
+    /// Optionally attach per-param interface constraints for `where T: I + J` lookup.
+    public void PushTypeParams(
+        IEnumerable<string> typeParams,
+        IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>? constraints = null)
+    {
         _activeTypeParams = new HashSet<string>(typeParams);
+        _activeTypeParamConstraints = constraints == null
+            ? null
+            : new Dictionary<string, IReadOnlyList<Z42InterfaceType>>(constraints);
+    }
 
     /// Clear type parameter scope.
-    public void PopTypeParams() => _activeTypeParams = null;
+    public void PopTypeParams()
+    {
+        _activeTypeParams = null;
+        _activeTypeParamConstraints = null;
+    }
 
     /// Resolve a TypeExpr to a Z42Type using the frozen symbol table.
     public Z42Type ResolveType(TypeExpr typeExpr) => typeExpr switch
@@ -112,7 +126,7 @@ public sealed class SymbolTable
         {
             "var"             => Z42Type.Unknown,
             _ when _activeTypeParams?.Contains(nt.Name) == true
-                              => new Z42GenericParamType(nt.Name),
+                              => new Z42GenericParamType(nt.Name, LookupConstraints(nt.Name)),
             _                 => TypeRegistry.GetZ42Type(nt.Name) ??
                                (Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : Interfaces.TryGetValue(nt.Name, out var it) ? it
@@ -120,6 +134,16 @@ public sealed class SymbolTable
         },
         _ => Z42Type.Unknown
     };
+
+    private IReadOnlyList<Z42InterfaceType>? LookupConstraints(string typeParam) =>
+        _activeTypeParamConstraints != null && _activeTypeParamConstraints.TryGetValue(typeParam, out var cs)
+            ? cs : null;
+
+    /// Look up the active constraint list for a named type parameter (if any).
+    /// Used by body binding to "upgrade" a pre-resolved Z42GenericParamType (stored without
+    /// constraints in Fields/Methods tables) to one carrying the current where-clause constraints.
+    public IReadOnlyList<Z42InterfaceType>? LookupActiveTypeParamConstraints(string typeParam) =>
+        LookupConstraints(typeParam);
 
     /// Resolve GenericType — handles pseudo-class (List<T>, Dictionary<K,V>) and user-defined generics.
     private Z42Type ResolveGenericType(GenericType gt)

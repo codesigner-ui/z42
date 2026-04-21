@@ -1,0 +1,7 @@
+namespace Demo;
+
+void F<T>(T a) {
+    a.CompareTo(a);
+}
+
+void Main() { }

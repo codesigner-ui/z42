@@ -207,12 +207,16 @@ internal static partial class TopLevelParser
         {
             cursor = cursor.Advance();
             ParseQualifiedName(ref cursor);
+            SkipGenericParams(ref cursor);
             while (cursor.Current.Kind == TokenKind.Comma)
             {
                 cursor = cursor.Advance();
                 ParseQualifiedName(ref cursor);
+                SkipGenericParams(ref cursor);
             }
         }
+
+        var whereClause = ParseWhereClause(ref cursor);
 
         ExpectKind(ref cursor, TokenKind.LBrace);
         var methods = new List<MethodSignature>();
@@ -232,7 +236,7 @@ internal static partial class TopLevelParser
             methods.Add(new MethodSignature(mName, parms, mType, mSpan));
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
-        return new InterfaceDecl(name, vis, methods, start, typeParams);
+        return new InterfaceDecl(name, vis, methods, start, typeParams, whereClause);
     }
 
     // ── Class / struct / record ───────────────────────────────────────────────
@@ -289,7 +293,7 @@ internal static partial class TopLevelParser
             {
                 cursor = cursor.Advance();
                 return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
-                    null, [], fields, methods, start, typeParams);
+                    null, [], fields, methods, start, typeParams, Where: null);
             }
         }
 
@@ -300,6 +304,7 @@ internal static partial class TopLevelParser
         {
             cursor = cursor.Advance();
             var firstName = ParseQualifiedName(ref cursor);
+            SkipGenericParams(ref cursor);
             if (firstName.Length > 1 && firstName[0] == 'I' && char.IsUpper(firstName[1]))
                 ifaces.Add(firstName);
             else
@@ -313,6 +318,8 @@ internal static partial class TopLevelParser
                 ifaces.Add(extra);
             }
         }
+
+        var classWhereClause = ParseWhereClause(ref cursor);
 
         ExpectKind(ref cursor, TokenKind.LBrace);
         string? pendingNative = null;
@@ -362,7 +369,7 @@ internal static partial class TopLevelParser
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
         return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
-            baseClass, ifaces, fields, methods, start, typeParams);
+            baseClass, ifaces, fields, methods, start, typeParams, classWhereClause);
     }
 
     // ── Function declaration ──────────────────────────────────────────────────
@@ -424,6 +431,9 @@ internal static partial class TopLevelParser
             ExpectKind(ref cursor, TokenKind.RParen);
         }
 
+        // Where clause: T Max<T>(...) where T: I + J { ... }
+        var whereClause = ParseWhereClause(ref cursor);
+
         // Abstract / extern methods: no body — semicolon
         BlockStmt body;
         if ((isAbstract || isExtern) && cursor.Current.Kind == TokenKind.Semicolon)
@@ -449,7 +459,8 @@ internal static partial class TopLevelParser
 
         return new FunctionDecl(name, parms, returnType, body, vis,
             BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
-            nativeIntrinsic, start, BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams);
+            nativeIntrinsic, start,
+            BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams, Where: whereClause);
     }
 
     /// Build FunctionModifiers flags from individual booleans parsed from source.

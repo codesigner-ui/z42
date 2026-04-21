@@ -274,12 +274,53 @@ type_instantiation_cache: HashMap<(String, Vec<String>), Arc<TypeDesc>>
 
 ## 实施路线
 
-| 子阶段 | 内容 | 涉及模块 | 前置 |
-|--------|------|---------|------|
-| **L3-G1** | 泛型函数 + 泛型类（无约束） | Parser → TypeChecker → IrGen → VM | — |
-| **L3-G2** | 接口约束（`where T: I + J`） | TypeChecker 约束验证 | L3-G1 |
-| **L3-G3** | 关联类型（`type Output; Output=T`） | 接口声明 + TypeChecker | L3-G2 |
-| **L3-G4** | 泛型标准库（`List<T>`、`Dict<K,V>` 原生化） | stdlib 重构 | L3-G2 |
+| 子阶段 | 内容 | 涉及模块 | 状态 |
+|--------|------|---------|:----:|
+| **L3-G1** | 泛型函数 + 泛型类（无约束） | Parser → TypeChecker → IrGen → VM | ✅ |
+| **L3-G2** | 接口约束（`where T: I + J`） | Parser + TypeChecker + stdlib | ✅ |
+| **L3-G3** | 关联类型 + zbc 格式扩展 + VM 运行时约束校验 + 反射 | 接口声明 + TypeChecker + VM loader | 📋 |
+| **L3-G4** | 泛型标准库（`List<T>`、`Dict<K,V>` 原生化 + primitive 接口实现） | stdlib 重构 | 📋 |
+
+## L3-G2 落地细节（2026-04-22）
+
+### 语法：`where` 子句
+
+放在签名尾部、`{` / `=>` 前：
+
+```z42
+T Max<T>(T a, T b) where T: IComparable<T> { ... }
+
+class Sorted<T> where T: IComparable<T> + IEquatable<T> { ... }
+
+void Copy<K, V>(K k, V v) where K: IHashable, V: ICloneable { ... }
+```
+
+- `+` 组合单参数上的多约束（Rust 风格）
+- `,` 分隔不同类型参数的约束项（C# 熟悉感）
+
+### 语义
+
+- `Z42GenericParamType(Name, Constraints)` 携带约束接口列表
+- 泛型体内 `t.Method()` 在 constraint 接口的方法表中查找，dispatch 为 VCall
+- 调用点（泛型函数 / `new Class<T>(...)`）编译期校验类型参数实现所有约束
+- 未约束的 T 上任何方法调用直接报错（E0402）
+- 自由函数调用时 T 从实参推断后做约束校验；返回类型也按推断做 T → 具体类型替换（`Max<T>(T, T) → T` 调用时返回类型替换为推断出的 T）
+
+### 限制（本阶段）
+
+- primitive 类型（int/string/...）**未**实现 interface，`Max<int>(1, 2)` 暂不可用（L3-G4 配合 stdlib 泛型化同步放开）
+- 约束不写入 zbc 二进制（仅编译期使用），VM 不做运行时校验（**L3-G3 必须补齐**）
+- 基础约束（`class` / `struct` / `new()`）未实现
+
+### L3-G3 必做项（VM 侧前瞻）
+
+用户要求记录，避免遗漏：
+
+1. **zbc 二进制扩展**：SIGS / TYPE / TSIG section 追加 `constraint_count + constraint_type_idx[]` 字段
+2. **VM loader**：读取约束到 `TypeDesc.constraints` / `Function.constraints`
+3. **VM 运行时校验**：ObjNew / 泛型函数 Call 时校验 type_args 实现约束（untrusted zbc 场景）
+4. **反射接口**：`type.Constraints` / `t is IComparable<T>` 运行时依据元数据判断
+5. **跨 zpkg TypeChecker**：外部依赖的泛型签名携带约束，消费方编译期校验
 
 ### L3-G1 详细 pipeline
 

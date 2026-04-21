@@ -1,6 +1,7 @@
 namespace Std;
 
-// TODO(L3): requires generics.
-// interface IComparable<T> {
-//     int CompareTo(T other);
-// }
+// Generic comparison interface (L3-G2).
+// Returns negative / 0 / positive per C#/Rust convention.
+public interface IComparable<T> {
+    int CompareTo(T other);
+}

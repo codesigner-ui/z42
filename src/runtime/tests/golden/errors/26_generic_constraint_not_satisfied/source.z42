@@ -1,0 +1,14 @@
+namespace Demo;
+
+interface IComparable<T> { int CompareTo(T other); }
+
+class Box<T> where T: IComparable<T> {
+    T item;
+    Box(T x) { this.item = x; }
+}
+
+class Plain { int v; Plain(int x) { this.v = x; } }
+
+void Main() {
+    var b = new Box<Plain>(new Plain(1));
+}

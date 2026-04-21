@@ -108,6 +108,33 @@ internal static partial class TopLevelParser
         return typeParams.Count > 0 ? typeParams : null;
     }
 
+    /// Parse `where T: I [+ J]* [, K: I2]*` clause if present.
+    /// Called immediately before the declaration body (`{` or `=>`).
+    /// Returns null when there is no `where` keyword.
+    private static WhereClause? ParseWhereClause(ref TokenCursor cursor)
+    {
+        if (cursor.Current.Kind != TokenKind.Where) return null;
+        var startSpan = cursor.Current.Span;
+        cursor = cursor.Advance(); // skip `where`
+        var entries = new List<GenericConstraint>();
+        while (true)
+        {
+            var entrySpan = cursor.Current.Span;
+            var paramName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            ExpectKind(ref cursor, TokenKind.Colon);
+            var types = new List<TypeExpr> { TypeParser.Parse(cursor).Unwrap(ref cursor) };
+            while (cursor.Current.Kind == TokenKind.Plus)
+            {
+                cursor = cursor.Advance();
+                types.Add(TypeParser.Parse(cursor).Unwrap(ref cursor));
+            }
+            entries.Add(new GenericConstraint(paramName, types, entrySpan));
+            if (cursor.Current.Kind != TokenKind.Comma) break;
+            cursor = cursor.Advance(); // skip , — next `K: I` entry
+        }
+        return new WhereClause(entries, startSpan);
+    }
+
     /// Skip generic parameters without collecting them (e.g. in base class / interface lists).
     private static void SkipGenericParams(ref TokenCursor cursor)
     {

@@ -1,6 +1,6 @@
 namespace Std;
 
-// TODO(L3): requires generics.
-// interface IEquatable<T> {
-//     bool Equals(T other);
-// }
+// Generic equality interface (L3-G2).
+public interface IEquatable<T> {
+    bool Equals(T other);
+}

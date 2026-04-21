@@ -22,6 +22,25 @@ public sealed record CompilationUnit(
     List<InterfaceDecl> Interfaces,
     Span Span);
 
+// ── Generic constraints (L3-G2) ────────────────────────────────────────────────
+
+/// `where T: IFoo + IBar`
+///
+/// `TypeParam` names the constrained type parameter (must match one declared in
+/// the enclosing TypeParams list); `Constraints` lists the interfaces/types it
+/// must implement (multiple combined with `+`).
+public sealed record GenericConstraint(
+    string TypeParam,
+    List<TypeExpr> Constraints,
+    Span Span);
+
+/// `where T: I [+ J]* [, K: I2]*`
+///
+/// Attaches to FunctionDecl, ClassDecl, and InterfaceDecl.
+public sealed record WhereClause(
+    List<GenericConstraint> Constraints,
+    Span Span);
+
 // ── Interface declaration ──────────────────────────────────────────────────────
 
 /// `interface IShape { string Area(); int Width { get; } }`
@@ -31,7 +50,8 @@ public sealed record InterfaceDecl(
     Visibility Visibility,
     List<MethodSignature> Methods,
     Span Span,
-    List<string>? TypeParams = null);
+    List<string>? TypeParams = null,
+    WhereClause? Where = null);
 
 /// A method signature (no body) for use in interface declarations.
 public sealed record MethodSignature(
@@ -67,7 +87,8 @@ public sealed record ClassDecl(
     List<FieldDecl> Fields,
     List<FunctionDecl> Methods,
     Span Span,
-    List<string>? TypeParams = null);
+    List<string>? TypeParams = null,
+    WhereClause? Where = null);  // L3-G2 generic constraints
 
 /// A field inside a class/struct: `int x;`
 public sealed record FieldDecl(
@@ -106,7 +127,8 @@ public sealed record FunctionDecl(
     string? NativeIntrinsic,
     Span Span,
     List<Expr>? BaseCtorArgs = null,  // non-null only on constructors with `: base(...)`
-    List<string>? TypeParams = null)  // generic type parameters: <T>, <K,V>
+    List<string>? TypeParams = null,  // generic type parameters: <T>, <K,V>
+    WhereClause? Where = null)        // L3-G2 generic constraints
 {
     // Convenience accessors — keep read sites concise
     public bool IsStatic   => Modifiers.HasFlag(FunctionModifiers.Static);

@@ -132,11 +132,12 @@
 | 子阶段 | 内容 | Parser | TypeCheck | IrGen | VM | 状态 |
 |--------|------|:------:|:---------:|:-----:|:--:|:----:|
 | **L3-G1** | 泛型函数 + 泛型类（无约束） | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **L3-G2** | 接口约束（`where T: I + J`） | — | — | — | — | 📋 |
-| **L3-G3** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
-| **L3-G4** | 泛型标准库（List/Dict 原生化） | — | — | — | — | 📋 |
+| **L3-G2** | 接口约束（`where T: I + J`） | ✅ | ✅ | — | — | ✅ |
+| **L3-G3** | 关联类型 + zbc 约束元数据 + VM 运行时校验 + 反射 | — | — | — | — | 📋 |
+| **L3-G4** | 泛型标准库（List/Dict 原生化 + primitive 接口） | — | — | — | — | 📋 |
 
-> L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享（一份字节码）、SIGS/TYPE section 携带 `type_params` 元数据。策略采用 **代码共享 + Rust 风格约束**（详见 `docs/design/generics.md`）。
+> L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。
+> L3-G2 已实现：`where T: I + J` / `where K: I, V: J` 语法、约束方法查找、调用点校验、返回类型按推断替换；启用 `IComparable<T>` / `IEquatable<T>` stdlib 接口。约束不写入 zbc（L3-G3 补齐 VM 运行时校验 + 反射）。
 
 ### 高级语法（从 L1 推迟）
 

@@ -153,7 +153,12 @@ public sealed record Z42InterfaceType(
 /// Uninstantiated generic type parameter (e.g., T in Identity<T>).
 /// During type checking of generic function/class bodies, T is bound to this type.
 /// At call sites, T is substituted with a concrete type (e.g., int).
-public sealed record Z42GenericParamType(string Name) : Z42Type
+///
+/// `Constraints` (L3-G2) lists interfaces T must implement. Inside a generic body,
+/// `t.Method()` on a constrained T resolves via these interfaces' method tables.
+public sealed record Z42GenericParamType(
+    string Name,
+    IReadOnlyList<Z42InterfaceType>? Constraints = null) : Z42Type
 {
     public override string ToString() => Name;
 }

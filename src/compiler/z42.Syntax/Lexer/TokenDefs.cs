@@ -68,6 +68,9 @@ internal static class TokenDefs
         new("is",     TokenKind.Is,     LanguagePhase.Phase1),
         new("as",     TokenKind.As,     LanguagePhase.Phase1),
 
+        // Generic constraints (Phase 1 — L3-G2)
+        new("where",  TokenKind.Where,  LanguagePhase.Phase1),
+
         // Literals (Phase 1)
         new("null",  TokenKind.Null,  LanguagePhase.Phase1),
         new("true",  TokenKind.True,  LanguagePhase.Phase1),

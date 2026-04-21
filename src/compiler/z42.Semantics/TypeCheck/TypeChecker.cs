@@ -38,6 +38,13 @@ public sealed partial class TypeChecker : ITypeInferrer
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
 
+    /// Resolved generic constraints keyed by declaration name. (L3-G2)
+    /// Populated in Pass 0.5 after SymbolCollector; consumed at body binding and call sites.
+    private readonly Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>>
+        _funcConstraints = new();
+    private readonly Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>>
+        _classConstraints = new();
+
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
     {
         _diags    = diags;
@@ -62,6 +69,9 @@ public sealed partial class TypeChecker : ITypeInferrer
     public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols)
     {
         _symbols = symbols;
+
+        // ── Pass 0.5: resolve generic constraints from `where` clauses (L3-G2) ──
+        ResolveAllWhereConstraints(cu);
 
         // ── Pass 1: bind bodies (function-level error isolation) ────────────
         BindStaticFieldInits(cu);
@@ -104,7 +114,8 @@ public sealed partial class TypeChecker : ITypeInferrer
     private void BindClassMethods(ClassDecl cls)
     {
         if (!_symbols.Classes.TryGetValue(cls.Name, out var classType)) return;
-        if (cls.TypeParams != null) _symbols.PushTypeParams(cls.TypeParams);
+        if (cls.TypeParams != null)
+            _symbols.PushTypeParams(cls.TypeParams, _classConstraints.GetValueOrDefault(cls.Name));
         try
         {
         foreach (var method in cls.Methods)
@@ -144,7 +155,8 @@ public sealed partial class TypeChecker : ITypeInferrer
     private void BindFunction(FunctionDecl fn)
     {
         if (ValidateNativeMethod(fn, isInstance: false)) return;
-        if (fn.TypeParams != null) _symbols.PushTypeParams(fn.TypeParams);
+        if (fn.TypeParams != null)
+            _symbols.PushTypeParams(fn.TypeParams, _funcConstraints.GetValueOrDefault(fn.Name));
         try
         {
             var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
@@ -163,6 +175,111 @@ public sealed partial class TypeChecker : ITypeInferrer
             FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags);
         }
         finally { if (fn.TypeParams != null) _symbols.PopTypeParams(); }
+    }
+
+    // ── Generic constraints (L3-G2) ─────────────────────────────────────────
+
+    /// Validate that each type argument satisfies the constraints declared in `where`
+    /// on the owning decl. `declName` keys into the constraint map; `typeParams` and
+    /// `typeArgs` must have matching counts. Reports `TypeMismatch` per unmet constraint.
+    internal void ValidateGenericConstraints(
+        string declName,
+        IReadOnlyList<string> typeParams,
+        IReadOnlyList<Z42Type> typeArgs,
+        Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>> constraintMap,
+        Span callSpan)
+    {
+        if (!constraintMap.TryGetValue(declName, out var constraints)) return;
+        for (int i = 0; i < typeParams.Count && i < typeArgs.Count; i++)
+        {
+            if (!constraints.TryGetValue(typeParams[i], out var ifaces)) continue;
+            var typeArg = typeArgs[i];
+            foreach (var iface in ifaces)
+            {
+                if (!TypeSatisfiesInterface(typeArg, iface))
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `{iface.Name}` on `{declName}`",
+                        callSpan);
+            }
+        }
+    }
+
+    /// Does `typeArg` satisfy the interface constraint `iface`?
+    /// - Class type: via SymbolTable.ImplementsInterface (walks hierarchy).
+    /// - Interface type: same-name match (interface extending not tracked yet — L3-G3).
+    /// - Generic param: accept if one of its own constraints is this interface (propagate).
+    /// - Everything else (primitive, array, etc.): false for now (primitives handled in L3-G4).
+    private bool TypeSatisfiesInterface(Z42Type typeArg, Z42InterfaceType iface) => typeArg switch
+    {
+        Z42ClassType ct       => _symbols.ImplementsInterface(ct.Name, iface.Name),
+        Z42InterfaceType it   => it.Name == iface.Name,
+        Z42GenericParamType g => g.Constraints?.Any(c => c.Name == iface.Name) == true,
+        Z42ErrorType          => true, // don't cascade errors
+        Z42UnknownType        => true,
+        _                     => false,
+    };
+
+    /// Pass 0.5: resolve every `where` clause in the CU into cached constraint maps
+    /// consulted by body binding (`PushTypeParams`) and call-site validation.
+    private void ResolveAllWhereConstraints(CompilationUnit cu)
+    {
+        foreach (var fn in cu.Functions)
+        {
+            if (fn.TypeParams == null) continue;
+            var map = ResolveWhereConstraints(fn.Where, fn.TypeParams, fn.Span);
+            if (map != null) _funcConstraints[fn.Name] = map;
+        }
+        foreach (var cls in cu.Classes)
+        {
+            if (cls.TypeParams != null)
+            {
+                var map = ResolveWhereConstraints(cls.Where, cls.TypeParams, cls.Span);
+                if (map != null) _classConstraints[cls.Name] = map;
+            }
+            foreach (var m in cls.Methods)
+            {
+                if (m.TypeParams == null) continue;
+                var map = ResolveWhereConstraints(m.Where, m.TypeParams, m.Span);
+                if (map != null) _funcConstraints[$"{cls.Name}.{m.Name}"] = map;
+            }
+        }
+    }
+
+    /// Resolve a `where T: I + J` clause into a map `TypeParam → [InterfaceType]`.
+    /// Type expressions in constraints see T as a generic param via a transient
+    /// type-param scope (so `where T: IComparable<T>` works self-referentially).
+    /// Reports diagnostics for: unknown type params, non-interface constraints,
+    /// and type params referenced in `where` but not in the decl's TypeParams list.
+    private IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>? ResolveWhereConstraints(
+        WhereClause? where, IReadOnlyList<string> declaredTypeParams, Span declSpan)
+    {
+        if (where == null || where.Constraints.Count == 0) return null;
+
+        _symbols.PushTypeParams(declaredTypeParams); // transient, no constraints yet
+        try
+        {
+            var result = new Dictionary<string, IReadOnlyList<Z42InterfaceType>>();
+            foreach (var entry in where.Constraints)
+            {
+                if (!declaredTypeParams.Contains(entry.TypeParam))
+                {
+                    _diags.Error(DiagnosticCodes.UndefinedSymbol,
+                        $"`where` refers to unknown type parameter `{entry.TypeParam}`", entry.Span);
+                    continue;
+                }
+                var ifaces = new List<Z42InterfaceType>();
+                foreach (var tx in entry.Constraints)
+                {
+                    var resolved = _symbols.ResolveType(tx);
+                    if (resolved is Z42InterfaceType iface) ifaces.Add(iface);
+                    else _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"constraint on `{entry.TypeParam}` must be an interface, got `{resolved}`", tx.Span);
+                }
+                if (ifaces.Count > 0) result[entry.TypeParam] = ifaces;
+            }
+            return result.Count > 0 ? result : null;
+        }
+        finally { _symbols.PopTypeParams(); }
     }
 
     // ── Default parameter binding (Pass 1, not during collection) ───────────

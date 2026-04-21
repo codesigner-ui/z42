@@ -706,4 +706,162 @@ public sealed class TypeCheckerTests
             void Main() { var r = Identity(42); }
             """).HasErrors.Should().BeFalse();
     }
+
+    // ── Generic constraints (L3-G2) ─────────────────────────────────────────
+
+    [Fact]
+    public void Generic_SingleConstraint_MethodCallOk()
+    {
+        // a.CompareTo(b) must resolve via constraint interface.
+        Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            T Max<T>(T a, T b) where T: IComparable<T> {
+                return a.CompareTo(b) > 0 ? a : b;
+            }
+
+            class Num : IComparable<Num> {
+                int v;
+                Num(int x) { this.v = x; }
+                public int CompareTo(Num other) { return this.v - other.v; }
+            }
+
+            void Main() {
+                var a = new Num(1);
+                var b = new Num(2);
+                var m = Max(a, b);
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_MultiConstraint_BothMethodsOk()
+    {
+        Check("""
+            interface IDisplay { string Show(); }
+            interface IEquatable<T> { bool Equals(T other); }
+
+            void Describe<T>(T a, T b) where T: IDisplay + IEquatable<T> {
+                a.Show();
+                a.Equals(b);
+            }
+
+            class Item : IDisplay, IEquatable<Item> {
+                public string Show() { return "item"; }
+                public bool Equals(Item other) { return true; }
+            }
+
+            void Main() {
+                Describe(new Item(), new Item());
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_CrossParamConstraint_Ok()
+    {
+        Check("""
+            interface IHashable { int Hash(); }
+            interface ICloneable { int Clone(); }
+
+            void Copy<K, V>(K k, V v) where K: IHashable, V: ICloneable {
+                k.Hash();
+                v.Clone();
+            }
+
+            class A : IHashable { public int Hash() { return 1; } }
+            class B : ICloneable { public int Clone() { return 2; } }
+
+            void Main() { Copy(new A(), new B()); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_CallSite_TypeArgImplements_Ok()
+    {
+        Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            class Box<T> where T: IComparable<T> {
+                T item;
+                Box(T x) { this.item = x; }
+            }
+
+            class Num : IComparable<Num> {
+                int v;
+                Num(int x) { this.v = x; }
+                public int CompareTo(Num other) { return this.v - other.v; }
+            }
+
+            void Main() { var b = new Box<Num>(new Num(1)); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_CallSite_TypeArgMissing_Error()
+    {
+        var diags = Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            class Box<T> where T: IComparable<T> {
+                T item;
+                Box(T x) { this.item = x; }
+            }
+
+            class Plain { int v; Plain(int x) { this.v = x; } }
+
+            void Main() { var b = new Box<Plain>(new Plain(1)); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("does not satisfy constraint")
+            && d.Message.Contains("IComparable"));
+    }
+
+    [Fact]
+    public void Generic_MethodOnUnconstrainedT_Error()
+    {
+        var diags = Check("""
+            void F<T>(T a) { a.CompareTo(a); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Message.Contains("CompareTo"));
+    }
+
+    [Fact]
+    public void Generic_ClassField_ConstraintMethodCall_Ok()
+    {
+        Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            class Sorted<T> where T: IComparable<T> {
+                T first;
+                Sorted(T x) { this.first = x; }
+                int Rank(T other) { return this.first.CompareTo(other); }
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_Inferred_ConstraintSatisfied_Ok()
+    {
+        // Max(a, b) with inferred T=Num — constraint validated from arg types.
+        Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            T Max<T>(T a, T b) where T: IComparable<T> {
+                return a.CompareTo(b) > 0 ? a : b;
+            }
+
+            class Num : IComparable<Num> {
+                int v;
+                Num(int x) { this.v = x; }
+                public int CompareTo(Num other) { return this.v - other.v; }
+            }
+
+            void Main() { var m = Max(new Num(3), new Num(7)); }
+            """).HasErrors.Should().BeFalse();
+    }
 }

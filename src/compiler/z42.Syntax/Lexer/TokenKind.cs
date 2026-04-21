@@ -22,6 +22,7 @@ public enum TokenKind
     Try, Catch, Finally, Throw,
     Typeof, Is, As,
     Null,
+    Where,          // L3-G2 generic constraints: `where T: I + J`
 
     // Legacy / z42-specific keywords (kept for future use)
     Fn, Let, Mut, Trait, Impl, Use, Module, Spawn, None, Error,

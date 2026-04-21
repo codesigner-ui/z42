@@ -147,6 +147,35 @@ public sealed partial class TypeChecker
                     null, argBound, Z42Type.Error, call.Span);
             }
 
+            // L3-G2: generic type parameter receiver — dispatch via constraint interface.
+            if (recvExpr.Type is Z42GenericParamType gp)
+            {
+                // Field-stored T may have Constraints=null; consult active where-clause scope.
+                var constraints = gp.Constraints
+                    ?? _symbols.LookupActiveTypeParamConstraints(gp.Name);
+                if (constraints != null && constraints.Count > 0)
+                {
+                    foreach (var iface in constraints)
+                    {
+                        if (!iface.Methods.TryGetValue(mCallee.Member, out var gmt)) continue;
+                        CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
+                        CheckArgTypes(call.Args, argBound, gmt.Params);
+                        return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
+                            mCallee.Member, null, argBound, gmt.Ret, call.Span);
+                    }
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"type parameter `{gp.Name}` has no method `{mCallee.Member}` in its constraints", call.Span);
+                }
+                else
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"unconstrained type parameter `{gp.Name}` has no method `{mCallee.Member}`; add a `where {gp.Name}: ...` clause",
+                        call.Span);
+                }
+                return new BoundCall(BoundCallKind.Virtual, recvExpr, gp.Name, mCallee.Member,
+                    null, argBound, Z42Type.Error, call.Span);
+            }
+
             // Primitive/unknown type (e.g. List, Dictionary, Array, string, int, etc.)
             // For known builtin collection types, pass ReceiverClass so Codegen can use BuiltinInstr
             string? primitiveClassName = null;
@@ -186,8 +215,13 @@ public sealed partial class TypeChecker
             {
                 CheckArgCount(freeArgs.Count, ft.MinArgCount, ft.Params.Count, call.Span);
                 CheckArgTypes(call.Args, freeArgs, ft.Params);
+                // L3-G2: if the function has a constraint map, infer type args from params and validate.
+                if (_funcConstraints.ContainsKey(funcId.Name))
+                    InferAndValidateFuncConstraints(funcId.Name, ft, freeArgs, call.Span);
+                // Infer type args from params for return type substitution (T → concrete).
+                var retType = SubstituteGenericReturn(ft, freeArgs);
                 return new BoundCall(BoundCallKind.Free, null, null, null,
-                    funcId.Name, freeArgs, ft.Ret, call.Span);
+                    funcId.Name, freeArgs, retType, call.Span);
             }
             // Unknown function — report error
             BindIdent(funcId, env);
@@ -246,5 +280,44 @@ public sealed partial class TypeChecker
         for (int i = 0; i < n; i++)
             RequireAssignable(paramTypes[i], boundArgs[i].Type, origArgs[i].Span,
                 $"argument {i + 1}: expected `{paramTypes[i]}`, got `{boundArgs[i].Type}`");
+    }
+
+    /// L3-G2: infer type args for a generic function from its argument types,
+    /// then validate each satisfies the corresponding `where` constraint.
+    /// Inference algorithm (single-level, sufficient for L3-G2):
+    ///   for each parameter i whose signature type is `Z42GenericParamType(T)`,
+    ///   bind T to `boundArgs[i].Type` (first binding wins; conflicts ignored for now).
+    private void InferAndValidateFuncConstraints(
+        string funcName, Z42FuncType ft, IReadOnlyList<BoundExpr> boundArgs, Span callSpan)
+    {
+        var inferred = InferFuncTypeArgs(ft, boundArgs);
+        if (inferred.Count == 0) return;
+        var typeParams = inferred.Keys.ToList();
+        var typeArgs   = typeParams.Select(k => inferred[k]).ToList();
+        ValidateGenericConstraints(funcName, typeParams, typeArgs, _funcConstraints, callSpan);
+    }
+
+    /// Infer T → concrete-type map by scanning parameter positions of generic type T.
+    /// First occurrence wins.
+    private static Dictionary<string, Z42Type> InferFuncTypeArgs(
+        Z42FuncType ft, IReadOnlyList<BoundExpr> boundArgs)
+    {
+        var inferred = new Dictionary<string, Z42Type>(StringComparer.Ordinal);
+        int n = Math.Min(boundArgs.Count, ft.Params.Count);
+        for (int i = 0; i < n; i++)
+        {
+            if (ft.Params[i] is Z42GenericParamType gp && !inferred.ContainsKey(gp.Name))
+                inferred[gp.Name] = boundArgs[i].Type;
+        }
+        return inferred;
+    }
+
+    /// Substitute generic params in return type using args inferred from parameter positions.
+    /// Returns `ft.Ret` unchanged when no substitution applies (non-generic, no match).
+    private static Z42Type SubstituteGenericReturn(Z42FuncType ft, IReadOnlyList<BoundExpr> boundArgs)
+    {
+        if (ft.Ret is not Z42GenericParamType retGp) return ft.Ret;
+        var inferred = InferFuncTypeArgs(ft, boundArgs);
+        return inferred.TryGetValue(retGp.Name, out var concrete) ? concrete : ft.Ret;
     }
 }

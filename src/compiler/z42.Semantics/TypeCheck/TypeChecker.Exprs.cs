@@ -139,11 +139,20 @@ public sealed partial class TypeChecker
                 // Validate explicit type argument count matches class type parameter count
                 if (newExpr.Type is GenericType gt2
                     && _symbols.Classes.TryGetValue(gt2.Name, out var clsType)
-                    && clsType.TypeParams != null
-                    && gt2.TypeArgs.Count != clsType.TypeParams.Count)
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"generic class `{gt2.Name}` expects {clsType.TypeParams.Count} type argument(s), " +
-                        $"but got {gt2.TypeArgs.Count}", newExpr.Span);
+                    && clsType.TypeParams != null)
+                {
+                    if (gt2.TypeArgs.Count != clsType.TypeParams.Count)
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"generic class `{gt2.Name}` expects {clsType.TypeParams.Count} type argument(s), " +
+                            $"but got {gt2.TypeArgs.Count}", newExpr.Span);
+                    else
+                    {
+                        // L3-G2: validate each explicit type arg satisfies the class's where constraints.
+                        var resolved = gt2.TypeArgs.Select(ResolveType).ToList();
+                        ValidateGenericConstraints(gt2.Name, clsType.TypeParams, resolved,
+                            _classConstraints, newExpr.Span);
+                    }
+                }
                 return new BoundNew(qualName, args, newType, newExpr.Span);
             }
 
@@ -357,6 +366,25 @@ public sealed partial class TypeChecker
         if (target.Type is Z42InterfaceType ifaceType
             && ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
             return new BoundMember(target, m.Member, ifmt, m.Span);
+        // L3-G2: type parameter member access — resolve via constraint interfaces, else error.
+        if (target.Type is Z42GenericParamType gp)
+        {
+            if (gp.Constraints is { Count: > 0 } cs)
+            {
+                foreach (var iface in cs)
+                    if (iface.Methods.TryGetValue(m.Member, out var cfmt))
+                        return new BoundMember(target, m.Member, cfmt, m.Span);
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type parameter `{gp.Name}` has no method `{m.Member}` in its constraints", m.Span);
+            }
+            else
+            {
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"unconstrained type parameter `{gp.Name}` has no method `{m.Member}`; add a `where {gp.Name}: ...` clause",
+                    m.Span);
+            }
+            return new BoundError($"no method `{m.Member}` on `{gp.Name}`", Z42Type.Error, m.Span);
+        }
         if (m.Member is "Length" && (target.Type is Z42ArrayType || target.Type == Z42Type.String))
             return new BoundMember(target, m.Member, Z42Type.Int, m.Span);
         if (m.Member == "Count")
