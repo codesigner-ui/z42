@@ -289,7 +289,13 @@ fn decode_type_section(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             let ftype = type_tag_to_str(r.u8()?).to_owned();
             fields.push(FieldDesc { name: fname, type_tag: ftype });
         }
-        classes.push(ClassDesc { name, base_class: base, fields });
+        // Generic type parameters
+        let tp_count = r.u8()? as usize;
+        let mut type_params = Vec::with_capacity(tp_count);
+        for _ in 0..tp_count {
+            type_params.push(pool_str(pool, r.u32()? as usize)?.to_owned());
+        }
+        classes.push(ClassDesc { name, base_class: base, fields, type_params });
     }
     Ok(classes)
 }
@@ -499,6 +505,9 @@ fn assemble_module(
                 is_static: false,
                 max_reg: 0,
                 line_table,
+                local_vars: vec![],
+                type_params: vec![],
+                block_index: std::collections::HashMap::new(),
             }
         }
     ).collect();

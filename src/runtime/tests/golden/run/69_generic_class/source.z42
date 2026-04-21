@@ -20,18 +20,27 @@ class Pair<A, B> {
 }
 
 void Main() {
-    // Box with int
+    // Box with int (type inference)
     var b1 = new Box(42);
     Assert.Equal(42, b1.Get());
 
-    // Box with string
+    // Box with string (type inference)
     var b2 = new Box("hello");
     Assert.Equal("hello", b2.Get());
 
-    // Pair with mixed types
+    // Explicit type args: new Box<int>(...)
+    var b3 = new Box<int>(99);
+    Assert.Equal(99, b3.Get());
+
+    // Pair with mixed types (type inference)
     var p = new Pair(1, "one");
     Assert.Equal(1, p.first);
     Assert.Equal("one", p.second);
+
+    // Explicit type args: new Pair<int, string>(...)
+    var p2 = new Pair<int, string>(2, "two");
+    Assert.Equal(2, p2.first);
+    Assert.Equal("two", p2.second);
 
     Console.WriteLine("generic class ok");
 }

@@ -27,8 +27,8 @@ fi
 echo "Building compiler (${BUILD_CONFIG})..."
 dotnet build -q "$COMPILER_SLN" -c "$BUILD_CONFIG"
 
-# Locate the driver DLL.
-DRIVER_DLL="artifacts/compiler/z42.Driver/bin/${BUILD_CONFIG}/net10.0/z42.Driver.dll"
+# Locate the driver DLL (output name is z42c.dll per z42.Driver.csproj).
+DRIVER_DLL="artifacts/compiler/z42.Driver/bin/${BUILD_CONFIG}/net10.0/z42c.dll"
 if [ ! -f "$DRIVER_DLL" ]; then
     echo "error: driver DLL not found at $DRIVER_DLL"
     exit 1

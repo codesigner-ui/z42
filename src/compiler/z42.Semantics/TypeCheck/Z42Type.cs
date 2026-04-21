@@ -166,7 +166,8 @@ public sealed record Z42ClassType(
     IReadOnlyDictionary<string, Z42Type>      StaticFields,
     IReadOnlyDictionary<string, Z42FuncType>  StaticMethods,
     IReadOnlyDictionary<string, Visibility>   MemberVisibility,
-    string? BaseClassName = null) : Z42Type
+    string? BaseClassName = null,
+    IReadOnlyList<string>? TypeParams = null) : Z42Type
 {
     public override string ToString() => Name;
 }

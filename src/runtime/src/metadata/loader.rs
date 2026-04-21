@@ -318,7 +318,7 @@ pub fn build_type_registry(module: &mut Module) {
             field_index,
             vtable,
             vtable_index,
-            type_params: vec![],
+            type_params: desc.type_params.clone(),
             type_args: vec![],
         }));
     }

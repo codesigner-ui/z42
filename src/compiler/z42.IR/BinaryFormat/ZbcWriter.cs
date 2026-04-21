@@ -251,6 +251,12 @@ public static partial class ZbcWriter
                 w.Write((uint)pool.Idx(fld.Name));
                 w.Write(TypeTags.FromString(fld.Type));
             }
+            // Generic type parameters for this class
+            var tpCount = (byte)(cls.TypeParams?.Count ?? 0);
+            w.Write(tpCount);
+            if (cls.TypeParams != null)
+                foreach (var tp in cls.TypeParams)
+                    w.Write((uint)pool.Idx(tp));
         }
 
         return ms.ToArray();

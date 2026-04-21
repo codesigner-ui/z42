@@ -34,7 +34,10 @@ public sealed record IrModule(
 public sealed record IrClassDesc(
     string Name,
     [property: JsonPropertyName("base_class")] string? BaseClass,
-    List<IrFieldDesc> Fields);
+    List<IrFieldDesc> Fields,
+    [property: JsonPropertyName("type_params")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<string>? TypeParams = null);
 public sealed record IrFieldDesc(string Name, string Type);
 
 // ── Function ──────────────────────────────────────────────────────────────────

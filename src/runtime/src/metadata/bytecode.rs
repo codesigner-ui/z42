@@ -135,6 +135,9 @@ pub struct ClassDesc {
     #[serde(default)]
     pub base_class: Option<String>,
     pub fields: Vec<FieldDesc>,
+    /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
+    #[serde(default)]
+    pub type_params: Vec<String>,
 }
 
 /// A single field in a class descriptor.
@@ -172,6 +175,9 @@ pub struct Function {
     /// Debug info: maps register IDs to source-level variable names.
     #[serde(default)]
     pub local_vars: Vec<LocalVar>,
+    /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic functions.
+    #[serde(default)]
+    pub type_params: Vec<String>,
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,

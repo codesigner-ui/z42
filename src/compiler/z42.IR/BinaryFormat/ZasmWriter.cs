@@ -46,6 +46,8 @@ public static class ZasmWriter
             sb.Append($".class {cls.Name}");
             if (cls.BaseClass != null) sb.Append($"  .base {cls.BaseClass}");
             sb.AppendLine();
+            if (cls.TypeParams is { Count: > 0 })
+                sb.AppendLine($"  .type_params  {string.Join(", ", cls.TypeParams)}");
             foreach (var fld in cls.Fields)
                 sb.AppendLine($"  .field {fld.Name}: {fld.Type}");
         }

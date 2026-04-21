@@ -62,6 +62,9 @@ internal sealed partial class SymbolCollector
                 _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"struct `{cls.Name}` cannot implement interfaces", cls.Span);
 
+            // Activate generic type params so T resolves to Z42GenericParamType in fields/methods
+            if (cls.TypeParams != null) _activeTypeParams = new HashSet<string>(cls.TypeParams);
+
             var fields        = new Dictionary<string, Z42Type>();
             var staticFields  = new Dictionary<string, Z42Type>();
             var methods       = new Dictionary<string, Z42FuncType>();
@@ -85,6 +88,9 @@ internal sealed partial class SymbolCollector
                 if (m.IsStatic) staticMethods[regName] = sig;
                 else            methods[regName]        = sig;
             }
+
+            _activeTypeParams = null;
+
             var memberVis = new Dictionary<string, Visibility>();
             foreach (var f in cls.Fields)  memberVis[f.Name] = f.Visibility;
             foreach (var m in cls.Methods) memberVis[m.Name] = m.Visibility;
@@ -93,7 +99,7 @@ internal sealed partial class SymbolCollector
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
             _classes[cls.Name] = new Z42ClassType(
                 cls.Name, fields, methods, staticFields, staticMethods,
-                memberVis, effectiveBase2);
+                memberVis, effectiveBase2, cls.TypeParams?.AsReadOnly());
             _classInterfaces[cls.Name] = cls.Interfaces.ToHashSet();
 
             if (cls.IsAbstract) _abstractClasses.Add(cls.Name);

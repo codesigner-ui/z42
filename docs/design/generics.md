@@ -327,3 +327,4 @@ void Print<T>(T item) where T: Display {
 | L3-G4 | `List<T>` → 真正的泛型类（替代 pseudo-class） |
 | L3-G4 | `Dictionary<K,V>` → 真正的泛型类 |
 | L3-G4 | Queue/Stack/HashSet → 新增泛型集合 |
+| L3-G4 | 标准库接口类改成泛型的(IComparable, IEquatable等) |

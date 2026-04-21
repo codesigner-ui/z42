@@ -105,11 +105,13 @@ fn merge_deduplicates_classes_by_name() {
         name: "Std.Object".to_string(),
         base_class: None,
         fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string() }],
+        type_params: vec![],
     };
     let cls_dup = ClassDesc {
         name: "Std.Object".to_string(),
         base_class: None,
         fields: vec![],
+        type_params: vec![],
     };
     let m0 = make_module_with("A", &["a"], 0, vec![cls], vec![]);
     let m1 = make_module_with("B", &["b"], 0, vec![cls_dup], vec![]);

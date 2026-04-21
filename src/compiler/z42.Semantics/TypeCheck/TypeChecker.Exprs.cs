@@ -127,16 +127,23 @@ public sealed partial class TypeChecker
             {
                 var args    = newExpr.Args.Select(a => BindExpr(a, env)).ToList();
                 var newType = ResolveType(newExpr.Type);
-                if (newExpr.Type is NamedType { Name: var newName }
-                    && _symbols.AbstractClasses.Contains(newName))
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"cannot instantiate abstract class `{newName}`", newExpr.Span);
                 var qualName = newExpr.Type switch
                 {
                     NamedType nt   => nt.Name,
                     GenericType gt => gt.Name,
                     _              => newType.ToString()!,
                 };
+                if (_symbols.AbstractClasses.Contains(qualName))
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"cannot instantiate abstract class `{qualName}`", newExpr.Span);
+                // Validate explicit type argument count matches class type parameter count
+                if (newExpr.Type is GenericType gt2
+                    && _symbols.Classes.TryGetValue(gt2.Name, out var clsType)
+                    && clsType.TypeParams != null
+                    && gt2.TypeArgs.Count != clsType.TypeParams.Count)
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"generic class `{gt2.Name}` expects {clsType.TypeParams.Count} type argument(s), " +
+                        $"but got {gt2.TypeArgs.Count}", newExpr.Span);
                 return new BoundNew(qualName, args, newType, newExpr.Span);
             }
 

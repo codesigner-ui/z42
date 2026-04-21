@@ -237,14 +237,20 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
                 type_tag: type_tag_to_str(type_tag).to_owned(),
             });
         }
-        classes.push(ClassDesc { name, base_class, fields });
+        // Generic type parameters
+        let tp_count = c.read_u8()? as usize;
+        let mut type_params = Vec::with_capacity(tp_count);
+        for _ in 0..tp_count {
+            let tp_idx = c.read_u32()?;
+            type_params.push(c.pool_str(pool, tp_idx)?.to_owned());
+        }
+        classes.push(ClassDesc { name, base_class, fields, type_params });
     }
     Ok(classes)
 }
 
 // ── SIGS section ─────────────────────────────────────────────────────────────
 
-#[allow(dead_code)]  // type_params used by future generic instantiation
 struct FuncSig {
     name: String,
     param_count: usize,
@@ -642,7 +648,8 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             max_reg:         0,
             line_table:      body.line_table,
             local_vars,
-            block_index:     std::collections::HashMap::new(),  // Will be populated by build_block_indices
+            type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
+            block_index:     std::collections::HashMap::new(),
         }
     }).collect();
 
@@ -818,7 +825,8 @@ fn read_mods_section(
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
                 line_table:      body.line_table,
-                local_vars:      vec![],  // zpkg (stripped) has no DBUG section
+                local_vars:      vec![],
+                type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
                 block_index:     std::collections::HashMap::new(),
             }
         }).collect();

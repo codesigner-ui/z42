@@ -394,6 +394,52 @@ public class ZbcRoundTripTests
         }
     }
 
+    // ── Generics (L3-G1) round-trip ──────────────────────────────────────────
+
+    [Fact]
+    public void TypeParams_OnGenericClass_SurvivesBinaryRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            class Box<T> {
+                T value;
+                Box(T v) { this.value = v; }
+                T Get() { return this.value; }
+            }
+
+            void Main() { var b = new Box(42); }
+            """;
+
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var origBox = original.Classes.Single(c => c.Name.EndsWith("Box"));
+        var restBox = restored.Classes.Single(c => c.Name.EndsWith("Box"));
+        restBox.TypeParams.Should().NotBeNull();
+        restBox.TypeParams!.Should().Equal(origBox.TypeParams!);
+    }
+
+    [Fact]
+    public void TypeParams_OnGenericFunction_SurvivesBinaryRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            T Identity<T>(T x) { return x; }
+
+            void Main() { var r = Identity(42); }
+            """;
+
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var origFn = original.Functions.Single(f => f.Name.EndsWith("Identity"));
+        var restFn = restored.Functions.Single(f => f.Name.EndsWith("Identity"));
+        restFn.TypeParams.Should().NotBeNull();
+        restFn.TypeParams!.Should().Equal(origFn.TypeParams!);
+    }
+
     [Fact]
     public void LocalVarTable_SurvivesBinaryRoundTrip()
     {

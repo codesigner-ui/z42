@@ -654,4 +654,56 @@ public sealed class TypeCheckerTests
             }
             """).HasErrors.Should().BeFalse();
     }
+
+    // ── Generics ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void GenericClass_InferredTypeArgs_NoErrors()
+    {
+        Check("""
+            class Box<T> {
+                T value;
+                Box(T v) { this.value = v; }
+                T Get() { return this.value; }
+            }
+            void Main() { var b = new Box(42); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GenericClass_ExplicitTypeArgs_NoErrors()
+    {
+        Check("""
+            class Box<T> {
+                T value;
+                Box(T v) { this.value = v; }
+            }
+            void Main() { var b = new Box<int>(42); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GenericClass_WrongTypeArgCount_Error()
+    {
+        var diags = Check("""
+            class Box<T> {
+                T value;
+                Box(T v) { this.value = v; }
+            }
+            void Main() { var b = new Box<int, string>(42); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("expects 1 type argument(s)"));
+    }
+
+    [Fact]
+    public void GenericFunction_NoErrors()
+    {
+        Check("""
+            T Identity<T>(T x) { return x; }
+            void Main() { var r = Identity(42); }
+            """).HasErrors.Should().BeFalse();
+    }
 }

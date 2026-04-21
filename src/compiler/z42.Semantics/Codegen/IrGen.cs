@@ -194,7 +194,8 @@ public sealed class IrGen : IEmitterContext
                 ? null : "Std.Object";
         return new(QualifyName(cls.Name), baseClass,
             cls.Fields.Where(f => !f.IsStatic)
-                .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList());
+                .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList(),
+            cls.TypeParams?.ToList());
     }
 
     /// Emits a single-block function that forwards all parameters to a VM builtin.

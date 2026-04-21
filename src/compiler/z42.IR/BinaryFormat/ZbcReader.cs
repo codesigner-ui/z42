@@ -201,7 +201,12 @@ public static partial class ZbcReader
             var fields      = new List<IrFieldDesc>(fldCount);
             for (int f = 0; f < fldCount; f++)
                 fields.Add(new IrFieldDesc(P(pool, r.ReadUInt32()), TypeTags.ToIrString(r.ReadByte())));
-            classes.Add(new IrClassDesc(name, baseCls, fields));
+            // Generic type parameters
+            byte tpCount = r.ReadByte();
+            List<string>? typeParams = tpCount > 0 ? new(tpCount) : null;
+            for (int t = 0; t < tpCount; t++)
+                typeParams!.Add(P(pool, r.ReadUInt32()));
+            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams));
         }
         return classes;
     }
