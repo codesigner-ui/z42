@@ -154,13 +154,25 @@ public sealed record Z42InterfaceType(
 /// During type checking of generic function/class bodies, T is bound to this type.
 /// At call sites, T is substituted with a concrete type (e.g., int).
 ///
-/// `Constraints` (L3-G2) lists interfaces T must implement. Inside a generic body,
-/// `t.Method()` on a constrained T resolves via these interfaces' method tables.
+/// Constraints (L3-G2, L3-G2.5):
+/// - `InterfaceConstraints`: interfaces T must implement (multi-allowed via `+`).
+/// - `BaseClassConstraint`: at most one base class T must inherit from (or equal).
+/// Inside a generic body, `t.Method()` resolves against base class first, then interfaces.
 public sealed record Z42GenericParamType(
     string Name,
-    IReadOnlyList<Z42InterfaceType>? Constraints = null) : Z42Type
+    IReadOnlyList<Z42InterfaceType>? InterfaceConstraints = null,
+    Z42ClassType? BaseClassConstraint = null) : Z42Type
 {
     public override string ToString() => Name;
+}
+
+/// Resolved constraints for one type parameter. (L3-G2, L3-G2.5)
+public sealed record GenericConstraintBundle(
+    Z42ClassType? BaseClass,
+    IReadOnlyList<Z42InterfaceType> Interfaces)
+{
+    public static readonly GenericConstraintBundle Empty = new(null, []);
+    public bool IsEmpty => BaseClass is null && Interfaces.Count == 0;
 }
 
 /// User-defined class or struct type.

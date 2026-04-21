@@ -133,11 +133,38 @@
 |--------|------|:------:|:---------:|:-----:|:--:|:----:|
 | **L3-G1** | 泛型函数 + 泛型类（无约束） | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **L3-G2** | 接口约束（`where T: I + J`） | ✅ | ✅ | — | — | ✅ |
-| **L3-G3** | 关联类型 + zbc 约束元数据 + VM 运行时校验 + 反射 | — | — | — | — | 📋 |
+| **L3-G2.5** | 约束范式补充：基类 ✅ / 构造器 / class / struct / notnull 等 | 🟡 | 🟡 | — | — | 🟡 |
+| **L3-G3a** | zbc 约束元数据 + VM loader + 运行时校验 | — | — | — | — | 📋 |
+| **L3-G3b** | 反射接口（`type.Constraints` / `t is IComparable<T>`） | — | — | — | — | 📋 |
+| **L3-G3c** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
+| **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | — | — | — | 📋 |
 | **L3-G4** | 泛型标准库（List/Dict 原生化 + primitive 接口） | — | — | — | — | 📋 |
 
 > L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。
 > L3-G2 已实现：`where T: I + J` / `where K: I, V: J` 语法、约束方法查找、调用点校验、返回类型按推断替换；启用 `IComparable<T>` / `IEquatable<T>` stdlib 接口。约束不写入 zbc（L3-G3 补齐 VM 运行时校验 + 反射）。
+
+### L3-G2.5：约束范式扩展（计划）
+
+L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立规格：
+
+| 约束 | 语法 | 语义 | 优先级 / 状态 |
+|------|------|------|:------:|
+| **基类约束** | `where T: BaseClass` | T 必须继承自指定类；可访问基类字段/方法 | ✅ 已完成（2026-04-22） |
+| **构造器约束** | `where T: new()` | T 必须有无参构造器；支持 `new T()` 泛型体内实例化 | 高 |
+| **引用类型约束** | `where T: class` | T 为引用类型（排除 struct/primitive） | 中 |
+| **值类型约束** | `where T: struct` | T 为值类型 | 中 |
+| **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 中 |
+| **接口继承约束** | `where T: I<U>, U: J` | 跨参数约束链（已部分支持，补齐校验） | 中 |
+| **裸类型参数约束** | `where T: U` | T 必须是 U 的子类型/实现 | 低 |
+| **委托/函数约束** | `where T: Func<...>` | 可调用约束（依赖 Lambda L3 其他子阶段） | 低 |
+| **枚举约束** | `where T: enum` | T 为枚举类型 | 低 |
+| **变型标注** | `interface IFoo<in T>` / `<out T>` | 协变/逆变 | 延后 L3 后期 |
+| **默认类型参数** | `class Box<T = int>` | 省略时默认值 | 延后 L3 后期 |
+
+**实现策略**：
+- 基类 + 构造器约束复用现有 interface 约束框架（Z42GenericParamType 的 Constraints 扩展为 union: Interface / BaseClass / ConstructorReq / ValueKind）
+- `class`/`struct`/`notnull` 作为 "flags" 附加在 GenericParam 上
+- 每个范式独立 openspec change，共享 L3-G3a 的约束元数据 zbc 扩展
 
 ### 高级语法（从 L1 推迟）
 

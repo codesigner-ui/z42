@@ -38,11 +38,11 @@ public sealed partial class TypeChecker : ITypeInferrer
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
 
-    /// Resolved generic constraints keyed by declaration name. (L3-G2)
+    /// Resolved generic constraints keyed by declaration name. (L3-G2, L3-G2.5)
     /// Populated in Pass 0.5 after SymbolCollector; consumed at body binding and call sites.
-    private readonly Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>>
+    private readonly Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
         _funcConstraints = new();
-    private readonly Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>>
+    private readonly Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
         _classConstraints = new();
 
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
@@ -186,15 +186,20 @@ public sealed partial class TypeChecker : ITypeInferrer
         string declName,
         IReadOnlyList<string> typeParams,
         IReadOnlyList<Z42Type> typeArgs,
-        Dictionary<string, IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>> constraintMap,
+        Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>> constraintMap,
         Span callSpan)
     {
         if (!constraintMap.TryGetValue(declName, out var constraints)) return;
         for (int i = 0; i < typeParams.Count && i < typeArgs.Count; i++)
         {
-            if (!constraints.TryGetValue(typeParams[i], out var ifaces)) continue;
+            if (!constraints.TryGetValue(typeParams[i], out var bundle)) continue;
             var typeArg = typeArgs[i];
-            foreach (var iface in ifaces)
+            if (bundle.BaseClass is { } baseClass
+                && !TypeSatisfiesClassConstraint(typeArg, baseClass))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `{baseClass.Name}` on `{declName}`",
+                    callSpan);
+            foreach (var iface in bundle.Interfaces)
             {
                 if (!TypeSatisfiesInterface(typeArg, iface))
                     _diags.Error(DiagnosticCodes.TypeMismatch,
@@ -213,8 +218,23 @@ public sealed partial class TypeChecker : ITypeInferrer
     {
         Z42ClassType ct       => _symbols.ImplementsInterface(ct.Name, iface.Name),
         Z42InterfaceType it   => it.Name == iface.Name,
-        Z42GenericParamType g => g.Constraints?.Any(c => c.Name == iface.Name) == true,
+        Z42GenericParamType g => g.InterfaceConstraints?.Any(c => c.Name == iface.Name) == true,
         Z42ErrorType          => true, // don't cascade errors
+        Z42UnknownType        => true,
+        _                     => false,
+    };
+
+    /// Does `typeArg` satisfy the base-class constraint `baseClass`? (L3-G2.5)
+    /// Accepts same class or any subclass; propagates through generic params that already
+    /// carry a matching base-class constraint.
+    private bool TypeSatisfiesClassConstraint(Z42Type typeArg, Z42ClassType baseClass) => typeArg switch
+    {
+        Z42ClassType ct       => ct.Name == baseClass.Name
+                                 || _symbols.IsSubclassOf(ct.Name, baseClass.Name),
+        Z42GenericParamType g => g.BaseClassConstraint != null
+                                 && (g.BaseClassConstraint.Name == baseClass.Name
+                                     || _symbols.IsSubclassOf(g.BaseClassConstraint.Name, baseClass.Name)),
+        Z42ErrorType          => true,
         Z42UnknownType        => true,
         _                     => false,
     };
@@ -245,12 +265,13 @@ public sealed partial class TypeChecker : ITypeInferrer
         }
     }
 
-    /// Resolve a `where T: I + J` clause into a map `TypeParam → [InterfaceType]`.
-    /// Type expressions in constraints see T as a generic param via a transient
-    /// type-param scope (so `where T: IComparable<T>` works self-referentially).
-    /// Reports diagnostics for: unknown type params, non-interface constraints,
-    /// and type params referenced in `where` but not in the decl's TypeParams list.
-    private IReadOnlyDictionary<string, IReadOnlyList<Z42InterfaceType>>? ResolveWhereConstraints(
+    /// Resolve a `where T: BaseClass + I + J, K: I2` clause into a map
+    /// `TypeParam → GenericConstraintBundle`. Type expressions in constraints see T as a
+    /// generic param via a transient type-param scope (so `where T: IComparable<T>` works
+    /// self-referentially).
+    /// Reports diagnostics for: unknown type params, invalid constraints (not class/interface),
+    /// multiple base classes, or a base class appearing after an interface in the `+` list.
+    private IReadOnlyDictionary<string, GenericConstraintBundle>? ResolveWhereConstraints(
         WhereClause? where, IReadOnlyList<string> declaredTypeParams, Span declSpan)
     {
         if (where == null || where.Constraints.Count == 0) return null;
@@ -258,7 +279,7 @@ public sealed partial class TypeChecker : ITypeInferrer
         _symbols.PushTypeParams(declaredTypeParams); // transient, no constraints yet
         try
         {
-            var result = new Dictionary<string, IReadOnlyList<Z42InterfaceType>>();
+            var result = new Dictionary<string, GenericConstraintBundle>();
             foreach (var entry in where.Constraints)
             {
                 if (!declaredTypeParams.Contains(entry.TypeParam))
@@ -267,15 +288,39 @@ public sealed partial class TypeChecker : ITypeInferrer
                         $"`where` refers to unknown type parameter `{entry.TypeParam}`", entry.Span);
                     continue;
                 }
+                Z42ClassType? baseClass = null;
                 var ifaces = new List<Z42InterfaceType>();
                 foreach (var tx in entry.Constraints)
                 {
                     var resolved = _symbols.ResolveType(tx);
-                    if (resolved is Z42InterfaceType iface) ifaces.Add(iface);
-                    else _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"constraint on `{entry.TypeParam}` must be an interface, got `{resolved}`", tx.Span);
+                    switch (resolved)
+                    {
+                        case Z42ClassType cc when baseClass != null:
+                            _diags.Error(DiagnosticCodes.TypeMismatch,
+                                $"generic parameter `{entry.TypeParam}` cannot have multiple class constraints",
+                                tx.Span);
+                            break;
+                        case Z42ClassType cc when ifaces.Count > 0:
+                            _diags.Error(DiagnosticCodes.TypeMismatch,
+                                $"class constraint `{cc.Name}` must appear first in constraint list for `{entry.TypeParam}`",
+                                tx.Span);
+                            baseClass = cc; // still record to avoid cascading errors
+                            break;
+                        case Z42ClassType cc:
+                            baseClass = cc;
+                            break;
+                        case Z42InterfaceType iface:
+                            ifaces.Add(iface);
+                            break;
+                        default:
+                            _diags.Error(DiagnosticCodes.TypeMismatch,
+                                $"constraint on `{entry.TypeParam}` must be a class or interface, got `{resolved}`",
+                                tx.Span);
+                            break;
+                    }
                 }
-                if (ifaces.Count > 0) result[entry.TypeParam] = ifaces;
+                if (baseClass != null || ifaces.Count > 0)
+                    result[entry.TypeParam] = new GenericConstraintBundle(baseClass, ifaces);
             }
             return result.Count > 0 ? result : null;
         }

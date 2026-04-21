@@ -147,31 +147,37 @@ public sealed partial class TypeChecker
                     null, argBound, Z42Type.Error, call.Span);
             }
 
-            // L3-G2: generic type parameter receiver — dispatch via constraint interface.
+            // L3-G2 / G2.5: generic type parameter receiver — dispatch via base class first, then interfaces.
             if (recvExpr.Type is Z42GenericParamType gp)
             {
-                // Field-stored T may have Constraints=null; consult active where-clause scope.
-                var constraints = gp.Constraints
-                    ?? _symbols.LookupActiveTypeParamConstraints(gp.Name);
-                if (constraints != null && constraints.Count > 0)
+                // Field-stored T may carry null constraints; consult active where-clause scope.
+                var bundle = (gp.BaseClassConstraint, gp.InterfaceConstraints) switch
                 {
-                    foreach (var iface in constraints)
-                    {
-                        if (!iface.Methods.TryGetValue(mCallee.Member, out var gmt)) continue;
-                        CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
-                        CheckArgTypes(call.Args, argBound, gmt.Params);
-                        return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
-                            mCallee.Member, null, argBound, gmt.Ret, call.Span);
-                    }
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"type parameter `{gp.Name}` has no method `{mCallee.Member}` in its constraints", call.Span);
-                }
-                else
+                    (null, null) => _symbols.LookupActiveTypeParamConstraints(gp.Name),
+                    _            => new GenericConstraintBundle(gp.BaseClassConstraint,
+                                        gp.InterfaceConstraints ?? []),
+                };
+                if (bundle.BaseClass is { } bc
+                    && bc.Methods.TryGetValue(mCallee.Member, out var bcMt))
                 {
-                    _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"unconstrained type parameter `{gp.Name}` has no method `{mCallee.Member}`; add a `where {gp.Name}: ...` clause",
-                        call.Span);
+                    CheckArgCount(argBound.Count, bcMt.MinArgCount, bcMt.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, argBound, bcMt.Params);
+                    return new BoundCall(BoundCallKind.Virtual, recvExpr, bc.Name,
+                        mCallee.Member, null, argBound, bcMt.Ret, call.Span);
                 }
+                foreach (var iface in bundle.Interfaces)
+                {
+                    if (!iface.Methods.TryGetValue(mCallee.Member, out var gmt)) continue;
+                    CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, argBound, gmt.Params);
+                    return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
+                        mCallee.Member, null, argBound, gmt.Ret, call.Span);
+                }
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    bundle.IsEmpty
+                        ? $"unconstrained type parameter `{gp.Name}` has no method `{mCallee.Member}`; add a `where {gp.Name}: ...` clause"
+                        : $"type parameter `{gp.Name}` has no method `{mCallee.Member}` in its constraints",
+                    call.Span);
                 return new BoundCall(BoundCallKind.Virtual, recvExpr, gp.Name, mCallee.Member,
                     null, argBound, Z42Type.Error, call.Span);
             }

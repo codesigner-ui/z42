@@ -1,0 +1,13 @@
+namespace Demo;
+
+class Animal { }
+class Vehicle { }
+
+class Box<T> where T: Animal {
+    T item;
+    Box(T x) { this.item = x; }
+}
+
+void Main() {
+    var b = new Box<Vehicle>(new Vehicle());
+}

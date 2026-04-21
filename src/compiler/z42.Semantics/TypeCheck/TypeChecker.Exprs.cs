@@ -366,24 +366,33 @@ public sealed partial class TypeChecker
         if (target.Type is Z42InterfaceType ifaceType
             && ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
             return new BoundMember(target, m.Member, ifmt, m.Span);
-        // L3-G2: type parameter member access — resolve via constraint interfaces, else error.
+        // L3-G2 / G2.5: type parameter member access — resolve via base class first, then constraint interfaces.
         if (target.Type is Z42GenericParamType gp)
         {
-            if (gp.Constraints is { Count: > 0 } cs)
+            // Field-stored T may have null constraints; consult active where-clause scope.
+            var bundle = (gp.BaseClassConstraint, gp.InterfaceConstraints) switch
             {
-                foreach (var iface in cs)
-                    if (iface.Methods.TryGetValue(m.Member, out var cfmt))
-                        return new BoundMember(target, m.Member, cfmt, m.Span);
-                _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"type parameter `{gp.Name}` has no method `{m.Member}` in its constraints", m.Span);
-            }
-            else
+                (null, null) => _symbols.LookupActiveTypeParamConstraints(gp.Name),
+                _            => new GenericConstraintBundle(gp.BaseClassConstraint,
+                                    gp.InterfaceConstraints ?? []),
+            };
+            if (bundle.BaseClass is { } bc)
             {
-                _diags.Error(DiagnosticCodes.TypeMismatch,
-                    $"unconstrained type parameter `{gp.Name}` has no method `{m.Member}`; add a `where {gp.Name}: ...` clause",
-                    m.Span);
+                if (bc.Fields.TryGetValue(m.Member, out var ft))
+                    return new BoundMember(target, m.Member, ft, m.Span);
+                if (bc.Methods.TryGetValue(m.Member, out var mt))
+                    return new BoundMember(target, m.Member, mt, m.Span);
             }
-            return new BoundError($"no method `{m.Member}` on `{gp.Name}`", Z42Type.Error, m.Span);
+            foreach (var iface in bundle.Interfaces)
+                if (iface.Methods.TryGetValue(m.Member, out var cfmt))
+                    return new BoundMember(target, m.Member, cfmt, m.Span);
+
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                bundle.IsEmpty
+                    ? $"unconstrained type parameter `{gp.Name}` has no member `{m.Member}`; add a `where {gp.Name}: ...` clause"
+                    : $"type parameter `{gp.Name}` has no member `{m.Member}` in its constraints",
+                m.Span);
+            return new BoundError($"no member `{m.Member}` on `{gp.Name}`", Z42Type.Error, m.Span);
         }
         if (m.Member is "Length" && (target.Type is Z42ArrayType || target.Type == Z42Type.String))
             return new BoundMember(target, m.Member, Z42Type.Int, m.Span);

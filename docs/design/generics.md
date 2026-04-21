@@ -310,7 +310,40 @@ void Copy<K, V>(K k, V v) where K: IHashable, V: ICloneable { ... }
 
 - primitive 类型（int/string/...）**未**实现 interface，`Max<int>(1, 2)` 暂不可用（L3-G4 配合 stdlib 泛型化同步放开）
 - 约束不写入 zbc 二进制（仅编译期使用），VM 不做运行时校验（**L3-G3 必须补齐**）
-- 基础约束（`class` / `struct` / `new()`）未实现
+- 其他约束范式排期见 L3-G2.5 子迭代（见下）
+
+## L3-G2.5 基类约束（2026-04-22 增量）
+
+在 L3-G2 interface 约束基础上补齐基类约束：
+
+```z42
+class Animal { public int legs; }
+class Dog : Animal { ... }
+
+void Introduce<T>(T pet) where T: Animal {
+    Console.WriteLine(pet.legs);   // 基类字段
+    pet.Describe();                // 基类方法（VCall）
+}
+
+// 组合基类 + 接口
+void F<T>(T x) where T: Animal + IDisplay { ... }
+```
+
+### 语义约定
+
+- **基类唯一**：单继承模型，`where T: A + B` 其中 A B 都是类 → 报错
+- **基类必首位**：`where T: IFoo + Animal` → 报错（遵循 C# 惯例，简化解析）
+- **成员查找顺序**：先基类字段/方法，后接口方法（声明顺序）
+- **调用点校验**：typeArg 须等于或继承自基类；复用 `SymbolTable.IsSubclassOf`（O(1) 祖先集）
+- **VM 行为**：不区分约束类型 — 方法调用一律 VCall，按 T 实际 TypeDesc.vtable 分发
+
+### 其他约束范式排期
+
+见 `docs/roadmap.md` L3-G2.5 表：
+
+- `new()` — 依赖 VM 运行时类型参数（L3-G3a 之后）
+- `class` / `struct` / `notnull` — flag 形式，后续小迭代
+- `where T: U`（裸类型参数）— 低优先级
 
 ### L3-G3 必做项（VM 侧前瞻）
 

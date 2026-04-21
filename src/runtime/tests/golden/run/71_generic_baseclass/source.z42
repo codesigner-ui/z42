@@ -1,0 +1,21 @@
+// Test: L3-G2.5 base class constraint — where T: Animal
+
+class Animal {
+    public int legs;
+    Animal(int n) { this.legs = n; }
+    public virtual string Describe() { return "animal"; }
+}
+
+class Dog : Animal {
+    Dog() : base(4) { }
+    public override string Describe() { return "dog"; }
+}
+
+void Introduce<T>(T pet) where T: Animal {
+    Console.WriteLine(pet.legs);
+    Console.WriteLine(pet.Describe());
+}
+
+void Main() {
+    Introduce(new Dog());
+}

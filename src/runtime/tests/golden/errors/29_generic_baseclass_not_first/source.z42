@@ -1,0 +1,8 @@
+namespace Demo;
+
+interface IFoo { void M(); }
+class Animal { }
+
+void F<T>(T x) where T: IFoo + Animal { }
+
+void Main() { }
