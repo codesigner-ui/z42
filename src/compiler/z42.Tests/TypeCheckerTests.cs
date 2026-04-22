@@ -30,6 +30,64 @@ public sealed class TypeCheckerTests
     private static DiagnosticBag CheckExpr(string expr)
         => CheckStmts($"var _x = {expr};");
 
+    // ── L3-G2.5 constructor constraint ───────────────────────────────────────
+
+    // `where T: new()` accepts a class with an explicit no-arg constructor.
+    [Fact]
+    public void CtorConstraint_ClassWithNoArgCtor_Passes()
+    {
+        var src = @"
+class Factory<T> where T: new() { T t; Factory() { this.t = null; } }
+class Widget { int x; Widget() { this.x = 0; } }
+void Main() { var f = new Factory<Widget>(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // `where T: new()` rejects a class whose only constructor takes args.
+    [Fact]
+    public void CtorConstraint_ClassWithoutNoArgCtor_Rejected()
+    {
+        var src = @"
+class Factory<T> where T: new() { T t; Factory() { this.t = null; } }
+class NeedsArg { int x; NeedsArg(int v) { this.x = v; } }
+void Main() { var f = new Factory<NeedsArg>(); }";
+        var diags = Check(src);
+        diags.HasErrors.Should().BeTrue(because: "NeedsArg has no parameterless ctor");
+    }
+
+    // Primitives are always default-constructible → accepted.
+    [Fact]
+    public void CtorConstraint_Primitive_Passes()
+    {
+        var src = @"
+class Factory<T> where T: new() { T t; Factory() { this.t = null; } }
+void Main() { var f = new Factory<int>(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // Interfaces are not default-constructible → rejected.
+    [Fact]
+    public void CtorConstraint_Interface_Rejected()
+    {
+        var src = @"
+interface IShape { int Area(); }
+class Factory<T> where T: new() { T t; Factory() { this.t = null; } }
+void Main() { var f = new Factory<IShape>(); }";
+        var diags = Check(src);
+        diags.HasErrors.Should().BeTrue(because: "IShape interface is not instantiable");
+    }
+
+    // Combined with class constraint: `where T: class + new()` — both must hold.
+    [Fact]
+    public void CtorConstraint_Combined_ClassAndCtor_Passes()
+    {
+        var src = @"
+class Factory<T> where T: class + new() { T t; Factory() { this.t = null; } }
+class Widget { int x; Widget() { this.x = 0; } }
+void Main() { var f = new Factory<Widget>(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
     // ── L3-G2.5 chain constraint validation ──────────────────────────────────
 
     // `where T: IEquatable<T>` with T=int — self-referential primitive case, must pass.

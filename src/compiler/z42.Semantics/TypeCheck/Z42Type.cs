@@ -200,17 +200,20 @@ public sealed record Z42GenericParamType(
 ///
 /// `TypeParamConstraint` (L3-G2.5 bare-typeparam) records the name of another
 /// type parameter in the same decl that this one must be a subtype of.
+/// `RequiresConstructor` (L3-G2.5 ctor) demands a no-arg constructor.
 public sealed record GenericConstraintBundle(
     Z42ClassType? BaseClass,
     IReadOnlyList<Z42InterfaceType> Interfaces,
     bool RequiresClass = false,
     bool RequiresStruct = false,
-    string? TypeParamConstraint = null)
+    string? TypeParamConstraint = null,
+    bool RequiresConstructor = false)
 {
     public static readonly GenericConstraintBundle Empty = new(null, []);
     public bool IsEmpty => BaseClass is null && Interfaces.Count == 0
                            && !RequiresClass && !RequiresStruct
-                           && TypeParamConstraint is null;
+                           && TypeParamConstraint is null
+                           && !RequiresConstructor;
 }
 
 /// User-defined class or struct type.

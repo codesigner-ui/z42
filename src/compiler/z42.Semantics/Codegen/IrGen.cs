@@ -230,7 +230,8 @@ public sealed class IrGen : IEmitterContext
                 result.Add(new IrConstraintBundle(
                     b.RequiresClass, b.RequiresStruct,
                     b.BaseClass?.Name, b.Interfaces.Select(i => i.Name).ToList(),
-                    b.TypeParamConstraint));
+                    b.TypeParamConstraint,
+                    b.RequiresConstructor));
             else
                 result.Add(EmptyBundle());
         }

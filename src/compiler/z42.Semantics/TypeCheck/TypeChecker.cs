@@ -234,6 +234,11 @@ public sealed partial class TypeChecker : ITypeInferrer
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `struct` on `{declName}`",
                     callSpan);
+            // L3-G2.5 ctor: `where T: new()` — type arg must have a no-arg constructor.
+            if (bundle.RequiresConstructor && !HasNoArgConstructor(typeArg))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `new()` on `{declName}`",
+                    callSpan);
             // L3-G2.5 bare-typeparam: `where U: T` — typeArg[U] must be subtype of typeArg[T].
             if (bundle.TypeParamConstraint is { } otherTp
                 && typeArgByName.TryGetValue(otherTp, out var otherArg)
@@ -254,6 +259,47 @@ public sealed partial class TypeChecker : ITypeInferrer
         if (sup is Z42ErrorType or Z42UnknownType) return true;
         if (sub is Z42ClassType cs && sup is Z42ClassType cp)
             return cs.Name == cp.Name || _symbols.IsSubclassOf(cs.Name, cp.Name);
+        return false;
+    }
+
+    /// L3-G2.5 ctor: does `typeArg` satisfy `where T: new()`?
+    /// - Class: has a 0-arg constructor (ctor name matches class, with 0 params, bare or `$0`).
+    /// - Struct / primitive: always OK (default-constructible).
+    /// - Generic param: propagate only if T itself has the RequiresConstructor constraint.
+    /// - Interface / array / option / func: rejected.
+    private bool HasNoArgConstructor(Z42Type t)
+    {
+        switch (t)
+        {
+            case Z42ErrorType:
+            case Z42UnknownType:
+                return true; // don't cascade
+            case Z42PrimType:
+                return true; // default-constructible
+            case Z42ClassType ct:
+                if (ct.IsStruct) return true;
+                return ClassHasNoArgCtor(ct.Name);
+            case Z42InstantiatedType inst:
+                if (inst.Definition.IsStruct) return true;
+                return ClassHasNoArgCtor(inst.Definition.Name);
+            case Z42GenericParamType gp:
+                // If T carries `new()` transitively (via active where scope), accept.
+                return _symbols.LookupEffectiveConstraints(gp.Name).RequiresConstructor;
+            default:
+                return false; // interfaces / arrays / options / funcs
+        }
+    }
+
+    private bool ClassHasNoArgCtor(string className)
+    {
+        if (!_symbols.Classes.TryGetValue(className, out var ct)) return false;
+        // Z42 stores constructors as methods keyed by class name; overloads get $arity suffix.
+        // A no-arg ctor appears as either bare name (single ctor) or `Name$0` (overloaded).
+        if (ct.Methods.TryGetValue(className, out var bare) && bare.Params.Count == 0) return true;
+        if (ct.Methods.TryGetValue($"{className}$0", out _)) return true;
+        // Imported classes may not have constructor in Methods map — look for any method whose
+        // name starts with the class name followed by empty params (TSIG stores ctors this way).
+        // For now, conservative: require explicit ctor presence.
         return false;
     }
 
@@ -404,7 +450,8 @@ public sealed partial class TypeChecker : ITypeInferrer
                 && _symbols.Classes.TryGetValue(c.BaseClass, out var bc) ? bc : null;
             result[c.TypeParam] = new GenericConstraintBundle(
                 baseCls, ifaces,
-                c.RequiresClass, c.RequiresStruct, c.TypeParamRef);
+                c.RequiresClass, c.RequiresStruct, c.TypeParamRef,
+                c.RequiresConstructor);
         }
         return result;
     }
@@ -507,6 +554,7 @@ public sealed partial class TypeChecker : ITypeInferrer
                 // L3-G2.5 refvalue: translate class/struct flags and enforce mutual exclusion.
                 bool reqClass  = entry.Kinds.HasFlag(GenericConstraintKind.Class);
                 bool reqStruct = entry.Kinds.HasFlag(GenericConstraintKind.Struct);
+                bool reqCtor   = entry.Kinds.HasFlag(GenericConstraintKind.Constructor);
                 if (reqClass && reqStruct)
                 {
                     _diags.Error(DiagnosticCodes.TypeMismatch,
@@ -515,9 +563,9 @@ public sealed partial class TypeChecker : ITypeInferrer
                     reqClass = reqStruct = false; // don't cascade
                 }
                 if (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct
-                    || typeParamConstraint != null)
+                    || typeParamConstraint != null || reqCtor)
                     result[entry.TypeParam] = new GenericConstraintBundle(
-                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint);
+                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint, reqCtor);
             }
             return result.Count > 0 ? result : null;
         }

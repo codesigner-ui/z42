@@ -458,7 +458,8 @@ public static class ZpkgWriter
     /// L3-G3d: append `where` constraint block for a class or function.
     /// Layout: u8 count, { u32 tpName, u8 flags, u8 ifaceCount, u32* ifaceNames,
     ///                     [u32 baseCls?], [u32 tpRef?] }.
-    /// Flags: 0x01 RequiresClass, 0x02 RequiresStruct, 0x04 HasBaseClass, 0x08 HasTpRef.
+    /// Flags: 0x01 RequiresClass, 0x02 RequiresStruct, 0x04 HasBaseClass, 0x08 HasTpRef,
+    ///        0x10 RequiresConstructor (L3-G2.5 ctor).
     private static void WriteTpConstraints(
         BinaryWriter w,
         List<ExportedTypeParamConstraint>? constraints,
@@ -478,6 +479,7 @@ public static class ZpkgWriter
             if (c.RequiresStruct)          flags |= 0x02;
             if (c.BaseClass != null)       flags |= 0x04;
             if (c.TypeParamRef != null)    flags |= 0x08;
+            if (c.RequiresConstructor)     flags |= 0x10;
             w.Write(flags);
             w.Write((byte)c.Interfaces.Count);
             foreach (var iname in c.Interfaces)

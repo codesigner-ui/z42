@@ -1,11 +1,8 @@
-using System.Text.Json.Serialization;
-
 namespace Z42.IR;
 
 // ── IR type system ───────────────────────────────────────────────────────────
 
 /// Runtime type tag for each register value. Mapped from Z42Type during codegen.
-[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum IrType : byte
 {
     Unknown = 0,
@@ -22,7 +19,7 @@ public readonly record struct TypedReg(int Id, IrType Type = IrType.Unknown);
 
 // ── Module ────────────────────────────────────────────────────────────────────
 
-/// Root bytecode module — matches the Rust `bytecode::Module` JSON schema.
+/// Root bytecode module — serialized to zbc binary format.
 public sealed record IrModule(
     string Name,
     IReadOnlyList<string> StringPool,
@@ -33,40 +30,31 @@ public sealed record IrModule(
 
 public sealed record IrClassDesc(
     string Name,
-    [property: JsonPropertyName("base_class")] string? BaseClass,
+    string? BaseClass,
     List<IrFieldDesc> Fields,
-    [property: JsonPropertyName("type_params")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     List<string>? TypeParams = null,
-    [property: JsonPropertyName("type_param_constraints")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     List<IrConstraintBundle>? TypeParamConstraints = null);
+
 public sealed record IrFieldDesc(string Name, string Type);
 
 /// Resolved constraint bundle for one generic type parameter.
 /// Mirrors `GenericConstraintBundle` from the semantic layer but uses plain strings
-/// for serialization. (L3-G3a)
+/// for serialization. (L3-G3a, L3-G2.5)
 public sealed record IrConstraintBundle(
-    [property: JsonPropertyName("requires_class")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     bool RequiresClass,
-    [property: JsonPropertyName("requires_struct")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     bool RequiresStruct,
-    [property: JsonPropertyName("base_class")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? BaseClass,
-    [property: JsonPropertyName("interfaces")]
     List<string> Interfaces,
     /// L3-G2.5 bare-typeparam: name of another type parameter in the same decl
     /// that this parameter must be a subtype of. Null when no such constraint.
-    [property: JsonPropertyName("type_param_constraint")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? TypeParamConstraint = null)
+    string? TypeParamConstraint = null,
+    /// L3-G2.5 ctor: `where T: new()` — T must have a no-arg constructor.
+    bool RequiresConstructor = false)
 {
     public bool IsEmpty => !RequiresClass && !RequiresStruct
                            && BaseClass is null && Interfaces.Count == 0
-                           && TypeParamConstraint is null;
+                           && TypeParamConstraint is null
+                           && !RequiresConstructor;
 }
 
 // ── Function ──────────────────────────────────────────────────────────────────
@@ -78,60 +66,29 @@ public sealed record IrFunction(
     string ExecMode,
     List<IrBlock> Blocks,
     List<IrExceptionEntry>? ExceptionTable = null,
-    [property: JsonPropertyName("is_static")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     bool IsStatic = false,
-    /// <summary>
     /// Total number of registers used by this function (size for Vec pre-allocation in the VM).
     /// 0 means unknown (VM falls back to dynamic resizing).
-    /// </summary>
-    [property: JsonPropertyName("max_reg")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     int MaxReg = 0,
-    /// <summary>
     /// Source-line mapping table. Each entry records the source line number
-    /// at a given (block, instruction) position. Only emits an entry when
-    /// the line changes (run-length encoded). Used by the VM to show source
-    /// locations in error messages and stack traces.
-    /// </summary>
-    [property: JsonPropertyName("line_table")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    /// at a given (block, instruction) position. Run-length encoded (entry only
+    /// when the line changes). Used by the VM to show source locations in errors.
     List<IrLineEntry>? LineTable = null,
-    /// <summary>
     /// Debug info: maps register IDs to source-level variable names.
-    /// Used by the VM to show meaningful names in error messages.
-    /// </summary>
-    [property: JsonPropertyName("local_var_table")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     List<IrLocalVarEntry>? LocalVarTable = null,
-    /// <summary>
-    /// Generic type parameter names: ["T"], ["K", "V"], etc.
-    /// Null for non-generic functions.
-    /// </summary>
-    [property: JsonPropertyName("type_params")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    /// Generic type parameter names: ["T"], ["K", "V"], etc. Null for non-generic functions.
     List<string>? TypeParams = null,
-    /// <summary>
     /// Resolved constraints per type parameter (L3-G3a). Aligned by index with
     /// `TypeParams` when both are non-null. Each entry may be "empty" (no flags/base/interfaces)
-    /// to signal that the parameter is unconstrained. Null when the function has no type params.
-    /// </summary>
-    [property: JsonPropertyName("type_param_constraints")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    /// to signal that the parameter is unconstrained.
     List<IrConstraintBundle>? TypeParamConstraints = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
-public sealed record IrLocalVarEntry(
-    [property: JsonPropertyName("name")] string Name,
-    [property: JsonPropertyName("reg")]  int RegId);
+public sealed record IrLocalVarEntry(string Name, int RegId);
 
 /// An entry in a function's line number table.
 /// "From (BlockIdx, InstrIdx) onward, the source line is Line in File."
-public sealed record IrLineEntry(
-    [property: JsonPropertyName("block")] int BlockIdx,
-    [property: JsonPropertyName("instr")] int InstrIdx,
-    [property: JsonPropertyName("line")]  int Line,
-    [property: JsonPropertyName("file")]  string? File = null);
+public sealed record IrLineEntry(int BlockIdx, int InstrIdx, int Line, string? File = null);
 
 /// One entry in a function's exception table: covers blocks [TryStart, TryEnd)
 /// and redirects unhandled throws to CatchLabel, storing the exception in CatchReg.

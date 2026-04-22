@@ -139,7 +139,8 @@ internal static partial class TopLevelParser
         return new WhereClause(entries, startSpan);
     }
 
-    /// Parse one constraint entry: either a flag keyword (`class` / `struct`) or a type expression.
+    /// Parse one constraint entry: flag keyword (`class` / `struct` / `new()`)
+    /// or a type expression.
     private static void ParseOneConstraint(
         ref TokenCursor cursor, List<TypeExpr> types, ref GenericConstraintKind kinds)
     {
@@ -152,6 +153,13 @@ internal static partial class TopLevelParser
             case TokenKind.Struct:
                 kinds |= GenericConstraintKind.Struct;
                 cursor = cursor.Advance();
+                break;
+            // L3-G2.5 constructor: `where T: new()` — no type args permitted on `new` here.
+            case TokenKind.New:
+                cursor = cursor.Advance();
+                ExpectKind(ref cursor, TokenKind.LParen);
+                ExpectKind(ref cursor, TokenKind.RParen);
+                kinds |= GenericConstraintKind.Constructor;
                 break;
             default:
                 types.Add(TypeParser.Parse(cursor).Unwrap(ref cursor));

@@ -25,13 +25,14 @@ public sealed record CompilationUnit(
 // ── Generic constraints (L3-G2 / G2.5) ─────────────────────────────────────────
 
 /// Flag constraints that live outside the type expression grammar.
-/// (L3-G2.5 refvalue: class/struct; future: new(), notnull, ...)
+/// (L3-G2.5 refvalue: class/struct; constructor: new(); future: notnull, ...)
 [Flags]
 public enum GenericConstraintKind
 {
-    None   = 0,
-    Class  = 1 << 0,  // `where T: class`  — T must be a reference type
-    Struct = 1 << 1,  // `where T: struct` — T must be a value type
+    None        = 0,
+    Class       = 1 << 0,  // `where T: class`  — T must be a reference type
+    Struct      = 1 << 1,  // `where T: struct` — T must be a value type
+    Constructor = 1 << 2,  // `where T: new()`  — T must have a no-arg constructor
 }
 
 /// `where T: IFoo + IBar` or `where T: BaseClass` or `where T: class`

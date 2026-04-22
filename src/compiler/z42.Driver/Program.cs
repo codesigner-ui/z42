@@ -1,20 +1,10 @@
 using System.CommandLine;
 using System.CommandLine.Invocation;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Z42.Core.Diagnostics;
 using Z42.Driver;
 using Z42.IR.BinaryFormat;
 using Z42.Pipeline;
 using Z42.Project;
-
-var jsonOptions = new JsonSerializerOptions
-{
-    PropertyNamingPolicy      = JsonNamingPolicy.SnakeCaseLower,
-    WriteIndented             = true,
-    DefaultIgnoreCondition    = JsonIgnoreCondition.WhenWritingNull,
-    Converters                = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
-};
 
 // ── Root command ──────────────────────────────────────────────────────────────
 
@@ -130,7 +120,7 @@ rootCmd.SetHandler((InvocationContext ctx) =>
     var dumpTok = ctx.ParseResult.GetValueForOption(dumpTokOpt);
     var dumpAst = ctx.ParseResult.GetValueForOption(dumpAstOpt);
     var dumpIr  = ctx.ParseResult.GetValueForOption(dumpIrOpt);
-    ctx.ExitCode = SingleFileCompiler.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, jsonOptions);
+    ctx.ExitCode = SingleFileCompiler.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr);
 });
 
 return await rootCmd.InvokeAsync(args);

@@ -472,7 +472,8 @@ public static class ZpkgReader
             string? tpRef   = (flags & 0x08) != 0 ? P(pool, r.ReadUInt32()) : null;
             result.Add(new ExportedTypeParamConstraint(
                 tp, ifaces, baseCls, tpRef,
-                (flags & 0x01) != 0, (flags & 0x02) != 0));
+                (flags & 0x01) != 0, (flags & 0x02) != 0,
+                (flags & 0x10) != 0));
         }
         return result;
     }

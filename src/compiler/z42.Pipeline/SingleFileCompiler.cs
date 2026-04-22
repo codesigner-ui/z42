@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
@@ -14,13 +13,12 @@ namespace Z42.Pipeline;
 public static class SingleFileCompiler
 {
     public static int Run(
-        FileInfo              source,
-        string                emit,
-        string?               outPath,
-        bool                  dumpTokens,
-        bool                  dumpAst,
-        bool                  dumpIr,
-        JsonSerializerOptions jsonOptions)
+        FileInfo source,
+        string   emit,
+        string?  outPath,
+        bool     dumpTokens,
+        bool     dumpAst,
+        bool     dumpIr)
     {
         string sourceText;
         try   { sourceText = File.ReadAllText(source.FullName); }

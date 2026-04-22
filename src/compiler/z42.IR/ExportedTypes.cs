@@ -34,13 +34,15 @@ public sealed record ExportedClassDef(
 /// Serialized `where` bundle for a single type parameter. (L3-G3d)
 /// Interface / base-class references stored by name only (no type args); matches
 /// the TypeChecker's current validation granularity for cross-zpkg usage.
+/// L3-G2.5 ctor: `RequiresConstructor` carries `where T: new()`.
 public sealed record ExportedTypeParamConstraint(
     string TypeParam,
     List<string> Interfaces,
     string? BaseClass,
     string? TypeParamRef,
     bool RequiresClass,
-    bool RequiresStruct);
+    bool RequiresStruct,
+    bool RequiresConstructor = false);
 
 /// Exported interface definition.
 public sealed record ExportedInterfaceDef(

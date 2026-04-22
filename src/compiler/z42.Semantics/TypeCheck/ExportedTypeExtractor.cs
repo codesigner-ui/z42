@@ -142,7 +142,8 @@ public static class ExportedTypeExtractor
                 bundle.BaseClass?.Name,
                 bundle.TypeParamConstraint,
                 bundle.RequiresClass,
-                bundle.RequiresStruct));
+                bundle.RequiresStruct,
+                bundle.RequiresConstructor));
         }
         return list.Count == 0 ? null : list;
     }
