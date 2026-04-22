@@ -1127,4 +1127,73 @@ public sealed class TypeCheckerTests
             d.Code == DiagnosticCodes.TypeMismatch
             && d.Message.Contains("multiple type-param constraints"));
     }
+
+    // ── Instantiated generic type substitution (L3-G4a) ─────────────────────
+
+    [Fact]
+    public void Generic_Instantiated_MethodReturnSubstituted_Ok()
+    {
+        // b.Get() returns T; with Box<int>, T=int, so result can be added to int.
+        Check("""
+            class Box<T> {
+                T value;
+                Box(T v) { this.value = v; }
+                T Get() { return this.value; }
+            }
+            void Main() {
+                var b = new Box<int>(42);
+                int x = b.Get();
+                int y = x + 1;
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_Instantiated_FieldAccessSubstituted_Ok()
+    {
+        Check("""
+            class Box<T> {
+                public T value;
+                Box(T v) { this.value = v; }
+            }
+            void Main() {
+                var b = new Box<int>(42);
+                int x = b.value;
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_Instantiated_WrongTypeAssignment_Error()
+    {
+        var diags = Check("""
+            class Box<T> {
+                T value;
+                Box(T v) { this.value = v; }
+                T Get() { return this.value; }
+            }
+            void Main() {
+                var b = new Box<int>(42);
+                string s = b.Get();
+            }
+            """);
+        diags.HasErrors.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Generic_Instantiated_MultipleTypeArgs_Ok()
+    {
+        Check("""
+            class Pair<A, B> {
+                public A first;
+                public B second;
+                Pair(A a, B b) { this.first = a; this.second = b; }
+            }
+            void Main() {
+                var p = new Pair<int, string>(1, "hi");
+                int i = p.first;
+                string s = p.second;
+            }
+            """).HasErrors.Should().BeFalse();
+    }
 }

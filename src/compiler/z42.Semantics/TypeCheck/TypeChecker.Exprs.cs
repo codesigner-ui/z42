@@ -338,6 +338,34 @@ public sealed partial class TypeChecker
     private BoundExpr BindMemberExpr(MemberExpr m, TypeEnv env)
     {
         var target = BindExpr(m.Target, env);
+        // L3-G4a: substitute Z42InstantiatedType fields/methods with concrete TypeArgs.
+        if (target.Type is Z42InstantiatedType inst)
+        {
+            var subMap = BuildSubstitutionMap(inst);
+            var def    = inst.Definition;
+            bool insideClass = env.CurrentClass == def.Name;
+            if (def.Fields.TryGetValue(m.Member, out var ft))
+            {
+                if (!insideClass
+                    && def.MemberVisibility.TryGetValue(m.Member, out var fv)
+                    && fv == Visibility.Private)
+                    _diags.Error(DiagnosticCodes.AccessViolation,
+                        $"field `{m.Member}` is private to `{def.Name}`", m.Span);
+                return new BoundMember(target, m.Member, SubstituteTypeParams(ft, subMap), m.Span);
+            }
+            if (def.Methods.TryGetValue(m.Member, out var mt))
+            {
+                if (!insideClass
+                    && def.MemberVisibility.TryGetValue(m.Member, out var mv)
+                    && mv == Visibility.Private)
+                    _diags.Error(DiagnosticCodes.AccessViolation,
+                        $"method `{m.Member}` is private to `{def.Name}`", m.Span);
+                return new BoundMember(target, m.Member, (Z42FuncType)SubstituteTypeParams(mt, subMap), m.Span);
+            }
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"type `{inst}` has no member `{m.Member}`", m.Span);
+            return new BoundError($"no member `{m.Member}`", Z42Type.Error, m.Span);
+        }
         if (target.Type is Z42ClassType ct)
         {
             bool insideClass = env.CurrentClass == ct.Name;

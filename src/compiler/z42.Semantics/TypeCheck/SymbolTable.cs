@@ -170,6 +170,9 @@ public sealed class SymbolTable
     }
 
     /// Resolve GenericType — handles pseudo-class (List<T>, Dictionary<K,V>) and user-defined generics.
+    /// (L3-G4a) For user-defined generics with matching type-arg arity, produce Z42InstantiatedType
+    /// so member/method types can be substituted downstream. Falls back to bare Z42ClassType when
+    /// type args are missing or arity mismatches (existing L3-G1 behaviour preserved).
     private Z42Type ResolveGenericType(GenericType gt)
     {
         // Pseudo-class compatibility: List<T> and Dictionary<K,V> map to built-in types
@@ -177,7 +180,15 @@ public sealed class SymbolTable
         if (gt.Name is "Dictionary") return TypeRegistry.GetZ42Type("Dictionary") ?? new Z42PrimType("Dictionary");
 
         // User-defined generic class: resolve as class type (code sharing — same class, different type_args)
-        if (Classes.TryGetValue(gt.Name, out var ct)) return ct;
+        if (Classes.TryGetValue(gt.Name, out var ct))
+        {
+            if (ct.TypeParams is { Count: > 0 } tps && gt.TypeArgs.Count == tps.Count)
+            {
+                var resolvedArgs = gt.TypeArgs.Select(ResolveType).ToList();
+                return new Z42InstantiatedType(ct, resolvedArgs);
+            }
+            return ct;
+        }
         if (Interfaces.TryGetValue(gt.Name, out var it)) return it;
         return new Z42PrimType(gt.Name);
     }

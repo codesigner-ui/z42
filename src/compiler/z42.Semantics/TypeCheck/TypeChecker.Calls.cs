@@ -81,6 +81,42 @@ public sealed partial class TypeChecker
             var recvExpr = BindExpr(mCallee.Target, env);
             var argBound = call.Args.Select(a => BindExpr(a, env)).ToList();
 
+            // L3-G4a: method call on instantiated generic class — substitute type params in sig.
+            if (recvExpr.Type is Z42InstantiatedType inst)
+            {
+                var subMap = BuildSubstitutionMap(inst);
+                var def    = inst.Definition;
+                var instArityKey = $"{mCallee.Member}${argBound.Count}";
+                bool byBare  = def.Methods.TryGetValue(mCallee.Member, out var mt1);
+                Z42FuncType? mt2 = null;
+                bool byArity = !byBare && def.Methods.TryGetValue(instArityKey, out mt2);
+                var mtRaw = byBare ? mt1 : byArity ? mt2 : null;
+                string resolvedMethodName = byArity ? instArityKey : mCallee.Member;
+                if (mtRaw is not null)
+                {
+                    bool insideClass = env.CurrentClass == def.Name;
+                    var visKey = def.MemberVisibility.ContainsKey(mCallee.Member)
+                        ? mCallee.Member : instArityKey;
+                    if (!insideClass
+                        && def.MemberVisibility.TryGetValue(visKey, out var mv)
+                        && mv == Visibility.Private)
+                        _diags.Error(DiagnosticCodes.AccessViolation,
+                            $"method `{mCallee.Member}` is private to `{def.Name}`", call.Span);
+                    var mtSub = (Z42FuncType)SubstituteTypeParams(mtRaw, subMap);
+                    CheckArgCount(argBound.Count, mtSub.MinArgCount, mtSub.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, argBound, mtSub.Params);
+                    bool isVirtual = _symbols.VirtualMethods.TryGetValue(def.Name, out var vmSet)
+                        && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
+                    return new BoundCall(
+                        isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,
+                        recvExpr, def.Name, resolvedMethodName, null, argBound, mtSub.Ret, call.Span);
+                }
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type `{inst}` has no method `{mCallee.Member}`", call.Span);
+                return new BoundCall(BoundCallKind.Instance, recvExpr, def.Name, mCallee.Member,
+                    null, argBound, Z42Type.Error, call.Span);
+            }
+
             if (recvExpr.Type is Z42ClassType ct)
             {
                 var instArityKey = $"{mCallee.Member}${argBound.Count}";

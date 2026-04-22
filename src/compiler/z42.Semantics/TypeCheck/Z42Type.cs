@@ -51,6 +51,17 @@ public abstract record Z42Type
         // may be different instances from fully-resolved types of the same class).
         if (source is Z42ClassType srcCt && target is Z42ClassType tgtCt && srcCt.Name == tgtCt.Name)
             return true;
+        // L3-G4a: instantiated generic types — compare underlying definition + type args
+        if (source is Z42InstantiatedType si && target is Z42InstantiatedType ti
+            && si.Definition.Name == ti.Definition.Name
+            && si.TypeArgs.Count == ti.TypeArgs.Count
+            && Enumerable.Range(0, si.TypeArgs.Count).All(i => IsAssignableTo(ti.TypeArgs[i], si.TypeArgs[i])))
+            return true;
+        // Instantiated → base definition (ignoring type args) and vice-versa
+        if (source is Z42InstantiatedType si2 && target is Z42ClassType tc && si2.Definition.Name == tc.Name)
+            return true;
+        if (source is Z42ClassType sc && target is Z42InstantiatedType ti2 && sc.Name == ti2.Definition.Name)
+            return true;
         // T is assignable to T? (implicit wrap)
         if (target is Z42OptionType opt && IsAssignableTo(opt.Inner, source)) return true;
         // Everything is assignable to `object` (universal base type — primitives auto-box at runtime).
@@ -80,7 +91,8 @@ public abstract record Z42Type
 
     public static bool IsReferenceType(Z42Type t) =>
         (LookupPrim(t)?.IsReference == true)
-        || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType or Z42GenericParamType;
+        || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType
+           or Z42GenericParamType or Z42InstantiatedType;
 
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
     public static Z42Type ArithmeticResult(Z42Type l, Z42Type r)
@@ -196,4 +208,21 @@ public sealed record Z42ClassType(
     bool IsStruct = false) : Z42Type
 {
     public override string ToString() => Name;
+}
+
+/// Instantiated generic class type. (L3-G4a)
+///
+/// Produced by `new GenericClass<A, B>(...)` or explicit `GenericClass<A, B>` type expressions.
+/// Holds a reference to the generic definition (`Z42ClassType` with `TypeParams`) and the
+/// concrete type arguments aligned by index with those type params.
+///
+/// TypeChecker substitutes type params with these args when binding member access or method
+/// calls; IR layer erases the distinction (code sharing — one IR serves all instantiations).
+public sealed record Z42InstantiatedType(
+    Z42ClassType Definition,
+    IReadOnlyList<Z42Type> TypeArgs) : Z42Type
+{
+    public string Name => Definition.Name;
+    public override string ToString() =>
+        $"{Definition.Name}<{string.Join(", ", TypeArgs)}>";
 }

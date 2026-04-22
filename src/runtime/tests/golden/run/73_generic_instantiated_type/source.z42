@@ -1,0 +1,32 @@
+// Test: L3-G4a instantiated generic type substitution
+
+class Box<T> {
+    T value;
+    Box(T v) { this.value = v; }
+    T Get() { return this.value; }
+}
+
+class Pair<A, B> {
+    public A first;
+    public B second;
+    Pair(A a, B b) { this.first = a; this.second = b; }
+}
+
+void Main() {
+    // Box<int>.Get() returns int, usable in arithmetic
+    var bi = new Box<int>(42);
+    int n = bi.Get() + 1;
+    Console.WriteLine(n);
+
+    // Box<string>.Get() returns string
+    var bs = new Box<string>("hi");
+    string s = bs.Get();
+    Console.WriteLine(s);
+
+    // Pair<int, string> field access substituted
+    var p = new Pair<int, string>(7, "seven");
+    int i = p.first;
+    string name = p.second;
+    Console.WriteLine(i);
+    Console.WriteLine(name);
+}

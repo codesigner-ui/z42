@@ -470,6 +470,41 @@ public sealed partial class TypeChecker : ITypeInferrer
 
     private Z42Type ResolveType(TypeExpr typeExpr) => _symbols.ResolveType(typeExpr);
 
+    // ── L3-G4a: type parameter substitution helpers ─────────────────────────
+
+    /// Build substitution map from an instantiated generic type: { TypeParam[i] → TypeArgs[i] }.
+    internal static IReadOnlyDictionary<string, Z42Type>? BuildSubstitutionMap(Z42InstantiatedType inst)
+    {
+        var tps = inst.Definition.TypeParams;
+        if (tps is null || tps.Count == 0 || tps.Count != inst.TypeArgs.Count) return null;
+        var map = new Dictionary<string, Z42Type>(tps.Count, StringComparer.Ordinal);
+        for (int i = 0; i < tps.Count; i++)
+            map[tps[i]] = inst.TypeArgs[i];
+        return map;
+    }
+
+    /// Recursively substitute Z42GenericParamType references in `t` with their concrete
+    /// types from `map`. Handles arrays, options, function types, and nested instantiated
+    /// types. Returns the input unchanged when no substitution applies.
+    internal static Z42Type SubstituteTypeParams(Z42Type t, IReadOnlyDictionary<string, Z42Type>? map)
+    {
+        if (map is null || map.Count == 0) return t;
+        return t switch
+        {
+            Z42GenericParamType gp   => map.TryGetValue(gp.Name, out var concrete) ? concrete : gp,
+            Z42ArrayType arr         => new Z42ArrayType(SubstituteTypeParams(arr.Element, map)),
+            Z42OptionType opt        => new Z42OptionType(SubstituteTypeParams(opt.Inner, map)),
+            Z42FuncType fn           => new Z42FuncType(
+                                             fn.Params.Select(p => SubstituteTypeParams(p, map)).ToList(),
+                                             SubstituteTypeParams(fn.Ret, map),
+                                             fn.RequiredCount),
+            Z42InstantiatedType inst => new Z42InstantiatedType(
+                                             inst.Definition,
+                                             inst.TypeArgs.Select(a => SubstituteTypeParams(a, map)).ToList()),
+            _ => t,
+        };
+    }
+
     /// Convert IrType string (from DependencyIndex) to Z42Type.
     /// Maps IR type names like "Str", "I32", "Void" to semantic types.
     private static Z42Type IrTypeToZ42Type(string irType) => irType switch
