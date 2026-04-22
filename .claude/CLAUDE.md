@@ -12,6 +12,8 @@ z42 是一门融合 C#、Rust、Python 优点的系统编程语言。
 ```
 src/compiler/   # C# Bootstrap 编译器（z42.IR / z42.Compiler / z42.Driver）
 src/runtime/    # Rust VM（interp / jit / aot）
+src/libraries/  # 标准库 .z42 源码（编译后产出 .zpkg）
+src/toolchain/  # 配套工具链（host / debugger / packager / workload，均为占位）
 docs/design/    # 语言规范（language-overview.md, ir.md, ...）
 examples/       # .z42 示例源文件
 ```

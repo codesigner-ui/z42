@@ -5,6 +5,8 @@ A **full-stack systems programming language** designed for productivity and perf
 - **z** — the last letter, standing for the final evolution
 - **42** — the answer to the ultimate question
 
+> 🚧 **z42 is under active, relentless iteration.** The language, compiler, VM, and toolchain are evolving rapidly and not yet stable for production use. What's landing here is being built with uncompromising taste — expect the final result to be **genuinely stunning**. Star the repo and watch it unfold.
+
 ---
 
 ## Why z42?
@@ -81,7 +83,8 @@ z42/
 ├── src/
 │   ├── compiler/          # C# bootstrap compiler
 │   ├── runtime/           # Rust VM (interp / JIT / AOT)
-│   └── libraries/         # Standard library (.z42 source)
+│   ├── libraries/         # Standard library (.z42 source)
+│   └── toolchain/         # Companion toolchain (host / debugger / packager / workload)
 ├── docs/design/           # Language design documents
 ├── examples/              # Example programs
 └── .claude/               # Collaboration docs (CLAUDE.md, workflow rules)
