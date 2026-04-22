@@ -222,6 +222,107 @@ internal static partial class TopLevelParser
         }
     }
 
+    // ── L3-G4e: indexer ───────────────────────────────────────────────────────
+
+    /// Detects `<vis>? <type> this [` in a class body — the indexer signature.
+    /// Lookahead only; does not consume.
+    private static bool IsIndexerDecl(TokenCursor cursor)
+    {
+        cursor = cursor.SkipWhile(t => t.Kind is
+            TokenKind.Public    or TokenKind.Private or TokenKind.Protected
+            or TokenKind.Internal or TokenKind.Static or TokenKind.Sealed);
+        if (!TypeParser.IsTypeToken(cursor.Current.Kind)) return false;
+        cursor = cursor.Advance();
+        // Optional [] for array element type
+        if (cursor.Current.Kind == TokenKind.LBracket
+            && cursor.Peek(1).Kind == TokenKind.RBracket)
+            cursor = cursor.Advance(2);
+        // Optional <TypeArgs> (for generic return type like `T`)
+        if (cursor.Current.Kind == TokenKind.Lt)
+        {
+            int depth = 1; cursor = cursor.Advance();
+            while (!cursor.IsEnd && depth > 0)
+            {
+                if (cursor.Current.Kind == TokenKind.Lt) depth++;
+                else if (cursor.Current.Kind == TokenKind.Gt) depth--;
+                cursor = cursor.Advance();
+            }
+        }
+        // Optional ? for nullable
+        if (cursor.Current.Kind == TokenKind.Question) cursor = cursor.Advance();
+        // Must be `this [`
+        return cursor.Current is { Kind: TokenKind.Identifier, Text: "this" }
+            && cursor.Peek(1).Kind == TokenKind.LBracket;
+    }
+
+    /// Parse an indexer declaration and desugar into two synthetic FunctionDecls:
+    /// one for `get` (named `get_Item`) and one for `set` (named `set_Item`, with
+    /// implicit `value` parameter of the indexer's element type).
+    /// Either accessor may be absent; at least one must be present.
+    private static IEnumerable<FunctionDecl> ParseIndexerDecl(
+        ref TokenCursor cursor, LanguageFeatures feat, DiagnosticBag? diags)
+    {
+        var start   = cursor.Current.Span;
+        var vis     = ParseVisibility(ref cursor, Visibility.Internal);
+        ParseNonVisibilityModifiers(ref cursor); // no static-indexer in L3-G4e; ignored
+        var elemType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+        // Consume `this`
+        var thisTok = ExpectKind(ref cursor, TokenKind.Identifier);
+        if (thisTok.Text != "this")
+            throw new ParseException(
+                $"expected `this` in indexer declaration, got `{thisTok.Text}`",
+                thisTok.Span, DiagnosticCodes.UnexpectedToken);
+        // Params: [int i] or [int row, int col]
+        ExpectKind(ref cursor, TokenKind.LBracket);
+        var indexParams = new List<Param>();
+        while (cursor.Current.Kind != TokenKind.RBracket && !cursor.IsEnd)
+        {
+            var pSpan = cursor.Current.Span;
+            var pType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+            var pName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            indexParams.Add(new Param(pName, pType, null, pSpan));
+            if (cursor.Current.Kind != TokenKind.Comma) break;
+            cursor = cursor.Advance();
+        }
+        ExpectKind(ref cursor, TokenKind.RBracket);
+        // Body: { get { ... } [set { ... }] } — order-insensitive, at least one required.
+        ExpectKind(ref cursor, TokenKind.LBrace);
+        BlockStmt? getBody = null;
+        BlockStmt? setBody = null;
+        Span       getSpan = start, setSpan = start;
+        while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
+        {
+            ParseVisibility(ref cursor, vis); // accessor visibility ignored in L3-G4e
+            var kw = cursor.Current;
+            if (kw.Kind != TokenKind.Identifier || (kw.Text != "get" && kw.Text != "set"))
+                throw new ParseException(
+                    $"expected `get` or `set` in indexer body, got `{kw.Text}`",
+                    kw.Span, DiagnosticCodes.UnexpectedToken);
+            cursor = cursor.Advance();
+            var body = StmtParser.ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
+            if (kw.Text == "get") { getBody = body; getSpan = kw.Span; }
+            else                  { setBody = body; setSpan = kw.Span; }
+        }
+        ExpectKind(ref cursor, TokenKind.RBrace);
+        if (getBody is null && setBody is null)
+            throw new ParseException(
+                "indexer must declare at least one of `get` or `set`",
+                start, DiagnosticCodes.UnexpectedToken);
+        var result = new List<FunctionDecl>();
+        if (getBody is not null)
+            result.Add(new FunctionDecl("get_Item", indexParams, elemType, getBody,
+                vis, FunctionModifiers.None, null, getSpan));
+        if (setBody is not null)
+        {
+            var setParams = new List<Param>(indexParams) {
+                new Param("value", elemType, null, setSpan)
+            };
+            result.Add(new FunctionDecl("set_Item", setParams, new VoidType(setSpan), setBody,
+                vis, FunctionModifiers.None, null, setSpan));
+        }
+        return result;
+    }
+
     private static void SkipAutoPropBody(ref TokenCursor cursor)
     {
         ExpectKind(ref cursor, TokenKind.LBrace);

@@ -67,6 +67,9 @@ public sealed partial class TypeChecker
             {
                 var target = BindExpr(ix.Target, env);
                 var index  = BindExpr(ix.Index,  env);
+                // L3-G4e: user-defined indexer — dispatch to get_Item on class receivers.
+                if (TryBindIndexerGet(target, index, ix.Span) is { } getCall)
+                    return getCall;
                 return new BoundIndex(target, index, ElemTypeOf(target.Type), ix.Span);
             }
 
@@ -221,25 +224,89 @@ public sealed partial class TypeChecker
 
     private BoundExpr BindAssign(AssignExpr assign, TypeEnv env)
     {
+        // L3-G4e: `obj[i] = v` on a class receiver with set_Item → dispatch to setter.
+        // Detect BEFORE binding target (which would go through get_Item for class receiver).
+        if (assign.Target is IndexExpr ixTgt)
+        {
+            var recv   = BindExpr(ixTgt.Target, env);
+            var idx    = BindExpr(ixTgt.Index,  env);
+            if (TryFindSetter(recv.Type, out var setter, out var className))
+            {
+                var value = BindExpr(assign.Value, env);
+                RequireAssignable(setter!.Params[^1], value.Type, assign.Value.Span);
+                var args = new List<BoundExpr> { idx, value };
+                return new BoundCall(BoundCallKind.Virtual, recv, className, "set_Item",
+                    null, args, value.Type, assign.Span);
+            }
+        }
+
         var target    = BindExpr(assign.Target, env);
         var intLitVal = ExtractIntLiteralValue(assign.Value);
-        BoundExpr value;
+        BoundExpr value2;
         if (intLitVal != null)
         {
             var rangeOk = TryCheckIntLiteralRange(target.Type, intLitVal.Value, assign.Value.Span);
-            value = BindExpr(assign.Value, env, target.Type);
+            value2 = BindExpr(assign.Value, env, target.Type);
             if (rangeOk == null)
-                RequireAssignable(target.Type, value.Type, assign.Value.Span);
+                RequireAssignable(target.Type, value2.Type, assign.Value.Span);
         }
         else
         {
-            value = BindExpr(assign.Value, env);
-            RequireAssignable(target.Type, value.Type, assign.Value.Span);
+            value2 = BindExpr(assign.Value, env);
+            RequireAssignable(target.Type, value2.Type, assign.Value.Span);
         }
         // Narrow from Unknown after first assignment
         if (assign.Target is IdentExpr id && target.Type is Z42UnknownType)
-            env.Define(id.Name, value.Type);
-        return new BoundAssign(target, value, value.Type, assign.Span);
+            env.Define(id.Name, value2.Type);
+        return new BoundAssign(target, value2, value2.Type, assign.Span);
+    }
+
+    /// L3-G4e: if `recvType` is a class/instantiated class with `get_Item`, bind
+    /// `obj[idx]` as a Virtual call to that method (with type-param substitution
+    /// for instantiated generics). Returns null otherwise.
+    private BoundExpr? TryBindIndexerGet(BoundExpr recv, BoundExpr index, Span span)
+    {
+        if (TryFindIndexer(recv.Type, "get_Item", out var mt, out var className, out var subMap))
+        {
+            var retType = SubstituteTypeParams(mt!.Ret, subMap);
+            return new BoundCall(BoundCallKind.Virtual, recv, className, "get_Item",
+                null, new List<BoundExpr> { index }, retType, span);
+        }
+        return null;
+    }
+
+    /// Tries to locate a `set_Item` on a class/instantiated class receiver, returning
+    /// the substituted param list's value type via `setter.Params[^1]`.
+    private bool TryFindSetter(Z42Type recvType,
+                               out Z42FuncType? setter,
+                               out string? className)
+    {
+        if (TryFindIndexer(recvType, "set_Item", out var mt, out var cls, out var subMap))
+        {
+            setter    = (Z42FuncType)SubstituteTypeParams(mt!, subMap);
+            className = cls;
+            return true;
+        }
+        setter = null; className = null; return false;
+    }
+
+    private bool TryFindIndexer(Z42Type recvType, string name,
+                                out Z42FuncType? method,
+                                out string? className,
+                                out IReadOnlyDictionary<string, Z42Type>? subMap)
+    {
+        method = null; className = null; subMap = null;
+        Z42ClassType? def = null;
+        switch (recvType)
+        {
+            case Z42ClassType ct:        def = ct; break;
+            case Z42InstantiatedType it: def = it.Definition; subMap = BuildSubstitutionMap(it); break;
+        }
+        if (def is null) return false;
+        if (!def.Methods.TryGetValue(name, out var mt)) return false;
+        method = mt;
+        className = def.Name;
+        return true;
     }
 
     // ── Binary ────────────────────────────────────────────────────────────────

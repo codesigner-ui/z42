@@ -1,0 +1,61 @@
+// Test: L3-G4e indexer — get/set via `obj[i]` on a user-defined generic class.
+
+class MyList<T> {
+    T[] items;
+    int count;
+    int capacity;
+
+    MyList() {
+        this.capacity = 4;
+        this.items = new T[4];
+        this.count = 0;
+    }
+
+    int Count() { return this.count; }
+
+    void Add(T item) {
+        if (this.count == this.capacity) this.Grow();
+        this.items[this.count] = item;
+        this.count = this.count + 1;
+    }
+
+    public T this[int i] {
+        get { return this.items[i]; }
+        set { this.items[i] = value; }
+    }
+
+    void Grow() {
+        int newCap = this.capacity * 2;
+        T[] bigger = new T[newCap];
+        int i = 0;
+        while (i < this.count) {
+            bigger[i] = this.items[i];
+            i = i + 1;
+        }
+        this.items = bigger;
+        this.capacity = newCap;
+    }
+}
+
+void Main() {
+    var xs = new MyList<int>();
+    xs.Add(10);
+    xs.Add(20);
+    xs.Add(30);
+
+    // Indexer get
+    Console.WriteLine(xs[0]);   // 10
+    Console.WriteLine(xs[2]);   // 30
+
+    // Indexer set
+    xs[1] = 99;
+    Console.WriteLine(xs[1]);   // 99
+
+    // Works with string T too
+    var ss = new MyList<string>();
+    ss.Add("a");
+    ss.Add("b");
+    ss[0] = "X";
+    Console.WriteLine(ss[0]);   // X
+    Console.WriteLine(ss[1]);   // b
+}

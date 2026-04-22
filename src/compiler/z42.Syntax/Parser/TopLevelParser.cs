@@ -328,6 +328,15 @@ internal static partial class TopLevelParser
             try
             {
                 if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
+                // L3-G4e: indexer `<vis>? <type> this [params] { get {..} set {..} }`
+                // desugars to `get_Item(params) → type` + `set_Item(params, type value) → void`
+                if (IsIndexerDecl(cursor))
+                {
+                    pendingNative = null;
+                    foreach (var m in ParseIndexerDecl(ref cursor, feat, diags))
+                        methods.Add(m);
+                    continue;
+                }
                 if (IsFieldDecl(cursor))
                 {
                     pendingNative = null;
