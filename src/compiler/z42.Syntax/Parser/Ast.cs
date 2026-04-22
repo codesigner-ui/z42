@@ -22,17 +22,28 @@ public sealed record CompilationUnit(
     List<InterfaceDecl> Interfaces,
     Span Span);
 
-// ── Generic constraints (L3-G2) ────────────────────────────────────────────────
+// ── Generic constraints (L3-G2 / G2.5) ─────────────────────────────────────────
 
-/// `where T: IFoo + IBar`
+/// Flag constraints that live outside the type expression grammar.
+/// (L3-G2.5 refvalue: class/struct; future: new(), notnull, ...)
+[Flags]
+public enum GenericConstraintKind
+{
+    None   = 0,
+    Class  = 1 << 0,  // `where T: class`  — T must be a reference type
+    Struct = 1 << 1,  // `where T: struct` — T must be a value type
+}
+
+/// `where T: IFoo + IBar` or `where T: BaseClass` or `where T: class`
 ///
 /// `TypeParam` names the constrained type parameter (must match one declared in
-/// the enclosing TypeParams list); `Constraints` lists the interfaces/types it
-/// must implement (multiple combined with `+`).
+/// the enclosing TypeParams list); `Constraints` lists the class/interface
+/// types combined with `+`; `Kinds` carries keyword flags (class/struct).
 public sealed record GenericConstraint(
     string TypeParam,
     List<TypeExpr> Constraints,
-    Span Span);
+    Span Span,
+    GenericConstraintKind Kinds = GenericConstraintKind.None);
 
 /// `where T: I [+ J]* [, K: I2]*`
 ///

@@ -337,12 +337,27 @@ void F<T>(T x) where T: Animal + IDisplay { ... }
 - **调用点校验**：typeArg 须等于或继承自基类；复用 `SymbolTable.IsSubclassOf`（O(1) 祖先集）
 - **VM 行为**：不区分约束类型 — 方法调用一律 VCall，按 T 实际 TypeDesc.vtable 分发
 
+### 引用 / 值类型约束（L3-G2.5 refvalue，2026-04-22）
+
+```z42
+T Default<T>() where T: class { return null; }                // T 限引用类型
+void LogValue<T>(T v) where T: struct { Console.WriteLine(v); } // T 限值类型
+```
+
+**实现要点**：
+- `GenericConstraint.Kinds: [Flags] GenericConstraintKind`（Class / Struct），与类型约束 `Constraints: List<TypeExpr>` 并列
+- `GenericConstraintBundle.RequiresClass / RequiresStruct` 传到 ValidateGenericConstraints
+- `class` 满足：`Z42ClassType && !IsStruct` 或 `IsReferenceType(t) == true`（含 interface / array / option / string）
+- `struct` 满足：`Z42ClassType && IsStruct` 或 `Z42PrimType && !IsReferenceType`（int/bool/float/double/char）
+- 互斥：`where T: class + struct` → 编译期报错
+- 组合：`where T: class + IFoo` / `where T: struct + IBar` / `where T: BaseClass + class` 都允许
+
 ### 其他约束范式排期
 
 见 `docs/roadmap.md` L3-G2.5 表：
 
 - `new()` — 依赖 VM 运行时类型参数（L3-G3a 之后）
-- `class` / `struct` / `notnull` — flag 形式，后续小迭代
+- `notnull` — 后续小迭代（与 z42 可空性语义协同设计）
 - `where T: U`（裸类型参数）— 低优先级
 
 ### L3-G3 必做项（VM 侧前瞻）

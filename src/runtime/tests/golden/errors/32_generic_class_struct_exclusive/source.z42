@@ -1,0 +1,5 @@
+namespace Demo;
+
+void F<T>(T x) where T: class + struct { }
+
+void Main() { }

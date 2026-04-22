@@ -108,7 +108,9 @@ internal static partial class TopLevelParser
         return typeParams.Count > 0 ? typeParams : null;
     }
 
-    /// Parse `where T: I [+ J]* [, K: I2]*` clause if present.
+    /// Parse `where T: I [+ J]* [, K: I2]*` clause if present. Supports:
+    /// - Type constraints: interface / class (go into `Constraints: List<TypeExpr>`)
+    /// - Flag keywords: `class` / `struct` (go into `Kinds: GenericConstraintKind`)
     /// Called immediately before the declaration body (`{` or `=>`).
     /// Returns null when there is no `where` keyword.
     private static WhereClause? ParseWhereClause(ref TokenCursor cursor)
@@ -122,17 +124,39 @@ internal static partial class TopLevelParser
             var entrySpan = cursor.Current.Span;
             var paramName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
             ExpectKind(ref cursor, TokenKind.Colon);
-            var types = new List<TypeExpr> { TypeParser.Parse(cursor).Unwrap(ref cursor) };
+            var types = new List<TypeExpr>();
+            var kinds = GenericConstraintKind.None;
+            ParseOneConstraint(ref cursor, types, ref kinds);
             while (cursor.Current.Kind == TokenKind.Plus)
             {
                 cursor = cursor.Advance();
-                types.Add(TypeParser.Parse(cursor).Unwrap(ref cursor));
+                ParseOneConstraint(ref cursor, types, ref kinds);
             }
-            entries.Add(new GenericConstraint(paramName, types, entrySpan));
+            entries.Add(new GenericConstraint(paramName, types, entrySpan, kinds));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance(); // skip , — next `K: I` entry
         }
         return new WhereClause(entries, startSpan);
+    }
+
+    /// Parse one constraint entry: either a flag keyword (`class` / `struct`) or a type expression.
+    private static void ParseOneConstraint(
+        ref TokenCursor cursor, List<TypeExpr> types, ref GenericConstraintKind kinds)
+    {
+        switch (cursor.Current.Kind)
+        {
+            case TokenKind.Class:
+                kinds |= GenericConstraintKind.Class;
+                cursor = cursor.Advance();
+                break;
+            case TokenKind.Struct:
+                kinds |= GenericConstraintKind.Struct;
+                cursor = cursor.Advance();
+                break;
+            default:
+                types.Add(TypeParser.Parse(cursor).Unwrap(ref cursor));
+                break;
+        }
     }
 
     /// Skip generic parameters without collecting them (e.g. in base class / interface lists).

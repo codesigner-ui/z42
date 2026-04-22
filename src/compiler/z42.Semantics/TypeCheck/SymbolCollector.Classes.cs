@@ -99,7 +99,8 @@ internal sealed partial class SymbolCollector
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
             _classes[cls.Name] = new Z42ClassType(
                 cls.Name, fields, methods, staticFields, staticMethods,
-                memberVis, effectiveBase2, cls.TypeParams?.AsReadOnly());
+                memberVis, effectiveBase2, cls.TypeParams?.AsReadOnly(),
+                IsStruct: cls.IsStruct);
             _classInterfaces[cls.Name] = cls.Interfaces.ToHashSet();
 
             if (cls.IsAbstract) _abstractClasses.Add(cls.Name);

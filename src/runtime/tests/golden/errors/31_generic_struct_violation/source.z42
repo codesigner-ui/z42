@@ -1,0 +1,9 @@
+namespace Demo;
+
+class Foo { }
+
+void F<T>(T x) where T: struct { }
+
+void Main() {
+    F(new Foo());
+}

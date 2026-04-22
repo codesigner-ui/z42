@@ -206,8 +206,33 @@ public sealed partial class TypeChecker : ITypeInferrer
                         $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `{iface.Name}` on `{declName}`",
                         callSpan);
             }
+            if (bundle.RequiresClass && !IsClassArg(typeArg))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `class` on `{declName}`",
+                    callSpan);
+            if (bundle.RequiresStruct && !IsStructArg(typeArg))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `struct` on `{declName}`",
+                    callSpan);
         }
     }
+
+    /// L3-G2.5 refvalue: is `typeArg` a reference type (for `where T: class`)?
+    private static bool IsClassArg(Z42Type t) => t switch
+    {
+        Z42ClassType ct               => !ct.IsStruct,
+        Z42ErrorType or Z42UnknownType => true, // don't cascade
+        _                             => Z42Type.IsReferenceType(t),
+    };
+
+    /// L3-G2.5 refvalue: is `typeArg` a value type (for `where T: struct`)?
+    private static bool IsStructArg(Z42Type t) => t switch
+    {
+        Z42ClassType ct               => ct.IsStruct,
+        Z42PrimType                   => !Z42Type.IsReferenceType(t), // int/bool/float/...
+        Z42ErrorType or Z42UnknownType => true,
+        _                             => false,
+    };
 
     /// Does `typeArg` satisfy the interface constraint `iface`?
     /// - Class type: via SymbolTable.ImplementsInterface (walks hierarchy).
@@ -319,8 +344,18 @@ public sealed partial class TypeChecker : ITypeInferrer
                             break;
                     }
                 }
-                if (baseClass != null || ifaces.Count > 0)
-                    result[entry.TypeParam] = new GenericConstraintBundle(baseClass, ifaces);
+                // L3-G2.5 refvalue: translate class/struct flags and enforce mutual exclusion.
+                bool reqClass  = entry.Kinds.HasFlag(GenericConstraintKind.Class);
+                bool reqStruct = entry.Kinds.HasFlag(GenericConstraintKind.Struct);
+                if (reqClass && reqStruct)
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"generic parameter `{entry.TypeParam}` cannot be both `class` and `struct`",
+                        entry.Span);
+                    reqClass = reqStruct = false; // don't cascade
+                }
+                if (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct)
+                    result[entry.TypeParam] = new GenericConstraintBundle(baseClass, ifaces, reqClass, reqStruct);
             }
             return result.Count > 0 ? result : null;
         }

@@ -169,10 +169,13 @@ public sealed record Z42GenericParamType(
 /// Resolved constraints for one type parameter. (L3-G2, L3-G2.5)
 public sealed record GenericConstraintBundle(
     Z42ClassType? BaseClass,
-    IReadOnlyList<Z42InterfaceType> Interfaces)
+    IReadOnlyList<Z42InterfaceType> Interfaces,
+    bool RequiresClass = false,
+    bool RequiresStruct = false)
 {
     public static readonly GenericConstraintBundle Empty = new(null, []);
-    public bool IsEmpty => BaseClass is null && Interfaces.Count == 0;
+    public bool IsEmpty => BaseClass is null && Interfaces.Count == 0
+                           && !RequiresClass && !RequiresStruct;
 }
 
 /// User-defined class or struct type.
@@ -184,7 +187,8 @@ public sealed record Z42ClassType(
     IReadOnlyDictionary<string, Z42FuncType>  StaticMethods,
     IReadOnlyDictionary<string, Visibility>   MemberVisibility,
     string? BaseClassName = null,
-    IReadOnlyList<string>? TypeParams = null) : Z42Type
+    IReadOnlyList<string>? TypeParams = null,
+    bool IsStruct = false) : Z42Type
 {
     public override string ToString() => Name;
 }

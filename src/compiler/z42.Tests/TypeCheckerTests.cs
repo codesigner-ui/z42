@@ -978,4 +978,76 @@ public sealed class TypeCheckerTests
             d.Code == DiagnosticCodes.TypeMismatch
             && d.Message.Contains("must appear first"));
     }
+
+    // ── Reference / Value type flag constraints (L3-G2.5 refvalue) ──────────
+
+    [Fact]
+    public void Generic_ClassConstraint_Reference_Ok()
+    {
+        Check("""
+            class Foo { }
+            void F<T>(T x) where T: class { }
+            void Main() { F(new Foo()); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_ClassConstraint_Primitive_Error()
+    {
+        var diags = Check("""
+            void F<T>(T x) where T: class { }
+            void Main() { F(42); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("does not satisfy constraint `class`"));
+    }
+
+    [Fact]
+    public void Generic_StructConstraint_Primitive_Ok()
+    {
+        Check("""
+            void F<T>(T x) where T: struct { }
+            void Main() { F(42); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_StructConstraint_RefType_Error()
+    {
+        var diags = Check("""
+            class Foo { }
+            void F<T>(T x) where T: struct { }
+            void Main() { F(new Foo()); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("does not satisfy constraint `struct`"));
+    }
+
+    [Fact]
+    public void Generic_ClassAndStruct_Exclusive_Error()
+    {
+        var diags = Check("""
+            void F<T>(T x) where T: class + struct { }
+            void Main() { }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("cannot be both `class` and `struct`"));
+    }
+
+    [Fact]
+    public void Generic_ClassAndInterface_Combo_Ok()
+    {
+        Check("""
+            interface IDisplay { string Show(); }
+            void F<T>(T x) where T: class + IDisplay { x.Show(); }
+            class Item : IDisplay { public string Show() { return "item"; } }
+            void Main() { F(new Item()); }
+            """).HasErrors.Should().BeFalse();
+    }
 }
