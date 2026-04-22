@@ -154,25 +154,49 @@
 
 ### L3-G2.5：约束范式扩展（计划）
 
-L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立规格：
+L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立规格。
+**设计决策**：约束合取使用 `+`（Rust 风格）而非 C# `,`；**不支持** OR 约束 `T: A | B`
+（主流语言都无；见 `docs/design/generics.md` 设计决策小节）。
+
+#### 已完成 / 已规划
 
 | 约束 | 语法 | 语义 | 优先级 / 状态 |
 |------|------|------|:------:|
 | **基类约束** | `where T: BaseClass` | T 必须继承自指定类；可访问基类字段/方法 | ✅ 已完成（2026-04-22） |
-| **构造器约束** | `where T: new()` | T 必须有无参构造器（`new T()` body 实例化待 L3-R runtime type_args） | ✅ 校验已完成（2026-04-23） |
+| **构造器约束** | `where T: new()` | T 必须有无参构造器（`new T()` body 实例化待 L3-R） | ✅ 校验已完成（2026-04-23） |
 | **引用类型约束** | `where T: class` | T 为引用类型（排除 struct/primitive） | ✅ 已完成（2026-04-22） |
 | **值类型约束** | `where T: struct` | T 为值类型 | ✅ 已完成（2026-04-22） |
-| **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 中 |
-| **接口继承约束** | `where T: I<U>, U: J` | 跨参数约束链（已部分支持，补齐校验） | ✅ 已完成（2026-04-23） |
+| **接口继承约束** | `where T: I<U>, U: J` | 跨参数约束链（带 TypeArgs 替换校验） | ✅ 已完成（2026-04-23） |
 | **裸类型参数约束** | `where U: T` | U 必须是 T 的子类型（T 为同 decl 其他 type param） | ✅ 已完成（2026-04-22） |
-| **委托/函数约束** | `where T: Func<...>` | 可调用约束（依赖 Lambda L3 其他子阶段） | 低 |
-| **枚举约束** | `where T: enum` | T 为枚举类型 | 低 |
-| **变型标注** | `interface IFoo<in T>` / `<out T>` | 协变/逆变 | 延后 L3 后期 |
-| **默认类型参数** | `class Box<T = int>` | 省略时默认值 | 延后 L3 后期 |
+
+#### 后续迭代
+
+| 约束 | 语法 | 语义 | 优先级 | 难度 |
+|------|------|------|:-----:|:----:|
+| **枚举约束** | `where T: enum` | T 为枚举类型；支持 flags/解析工具泛化 | 🔥 高 | 低（z42 原生 enum） |
+| **数值约束** | `where T: INumber<T>` | T 支持 `+ - * /`，算法泛化（`Sum<T>`、向量/矩阵） | 🔥 高 | 中（主要 stdlib 工作：`INumber` / `IAdditive`） |
+| **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 🟡 中 | 低（待可空性方案收敛） |
+| **无托管约束** | `where T: unmanaged` | T 是无托管引用的值类型（FFI / SIMD / buffer 池） | 🟡 中 | 中（需区分 struct 含 ref 字段） |
+| **具象化约束** | `reified T` | body 内可用 `T::class` / `is T`（Kotlin 风格） | 🟡 中 | 高（**依赖 L3-R** runtime type_args） |
+| **委托/函数约束** | `where T: Func<...>` | 可调用约束（`Fn/FnMut/FnOnce` 等价） | 🟠 低 | 高（**依赖 lambda**） |
+| **关联类型链** | `where T: Iter, T::Item: Clone` | 深度泛型（Rust 迭代器链） | 🟠 低 | 很高（**依赖 L3-G3c**） |
+| **变型标注** | `interface IFoo<in T>` / `<out T>` | 协变/逆变 | 延后 L3 后期 | 中 |
+| **默认类型参数** | `class Box<T = int>` | 省略时默认值 | 延后 L3 后期 | 低 |
+
+#### 明确不做（与 z42 模型不契合）
+
+| 约束 | 理由 |
+|------|------|
+| **`T: Copy`** | z42 是 GC 语言；class = ref、struct = value 已自动区分，无须显式 Copy trait |
+| **`T: ?Sized`** | z42 所有对象定长（GC 托管）；DST / slice / trait object 概念不适用 |
+| **OR 约束 `T: A \| B`** | 主流语言都无；body 只能用 A ∩ B 交集方法，实用性差。替代方案（共同基接口 / 重载 / ADT）更清晰 |
 
 **实现策略**：
-- 基类 + 构造器约束复用现有 interface 约束框架（Z42GenericParamType 的 Constraints 扩展为 union: Interface / BaseClass / ConstructorReq / ValueKind）
-- `class`/`struct`/`notnull` 作为 "flags" 附加在 GenericParam 上
+- 基类 + 构造器约束复用现有 interface 约束框架（`Z42GenericParamType` 的 Constraints
+  扩展为 union: Interface / BaseClass / ConstructorReq / ValueKind）
+- `class` / `struct` / `notnull` / `unmanaged` / `enum` / `new()` 作为 flag 附加在
+  GenericParam 上，共享 zbc flags 字节（现有已用 bits 0x01–0x10，留 0x20–0x80 给后续）
+- `reified` / `T::Output` 类关联功能和 L3-R / L3-G3c 合批
 - 每个范式独立 openspec change，共享 L3-G3a 的约束元数据 zbc 扩展
 
 ### L3-R：反射与运行时类型信息（统一批次，延后）
