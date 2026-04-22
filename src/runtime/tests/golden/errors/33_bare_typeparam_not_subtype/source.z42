@@ -1,0 +1,12 @@
+namespace Demo;
+
+class Animal { }
+class Vehicle { }
+
+class Container<T, U> where U: T {
+    Container() { }
+}
+
+void Main() {
+    var c = new Container<Animal, Vehicle>();
+}

@@ -513,6 +513,30 @@ public class ZbcRoundTripTests
     }
 
     [Fact]
+    public void Constraints_BareTypeParam_SurvivesRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            class Animal { }
+            class Dog : Animal { }
+            class Container<T, U> where U: T {
+                Container() { }
+            }
+            void Main() { var c = new Container<Animal, Dog>(); }
+            """;
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var container = restored.Classes.Single(c => c.Name.EndsWith(".Container"));
+        container.TypeParamConstraints.Should().NotBeNull();
+        container.TypeParamConstraints!.Should().HaveCount(2);
+        // T (index 0) is unconstrained; U (index 1) bears TypeParamConstraint="T".
+        container.TypeParamConstraints[0].TypeParamConstraint.Should().BeNull();
+        container.TypeParamConstraints[1].TypeParamConstraint.Should().Be("T");
+    }
+
+    [Fact]
     public void Constraints_GenericClassBaseAndInterface_SurvivesRoundTrip()
     {
         const string src = """

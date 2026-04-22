@@ -192,6 +192,11 @@ public sealed partial class TypeChecker : ITypeInferrer
         Span callSpan)
     {
         if (!constraintMap.TryGetValue(declName, out var constraints)) return;
+        // Build a name→typeArg map once for bare-typeparam constraint checks.
+        var typeArgByName = new Dictionary<string, Z42Type>(StringComparer.Ordinal);
+        for (int i = 0; i < typeParams.Count && i < typeArgs.Count; i++)
+            typeArgByName[typeParams[i]] = typeArgs[i];
+
         for (int i = 0; i < typeParams.Count && i < typeArgs.Count; i++)
         {
             if (!constraints.TryGetValue(typeParams[i], out var bundle)) continue;
@@ -216,7 +221,27 @@ public sealed partial class TypeChecker : ITypeInferrer
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `struct` on `{declName}`",
                     callSpan);
+            // L3-G2.5 bare-typeparam: `where U: T` — typeArg[U] must be subtype of typeArg[T].
+            if (bundle.TypeParamConstraint is { } otherTp
+                && typeArgByName.TryGetValue(otherTp, out var otherArg)
+                && !TypeArgSubsumedBy(typeArg, otherArg))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` is not a subtype of `{otherArg}` (required by `{typeParams[i]}: {otherTp}` on `{declName}`)",
+                    callSpan);
         }
+    }
+
+    /// L3-G2.5 bare-typeparam: is `sub` a subtype of `sup`?
+    /// - Same type → true; Z42ClassType via IsSubclassOf; error/unknown don't cascade.
+    /// - Non-class types only satisfy via equality (primitives / interfaces / arrays).
+    private bool TypeArgSubsumedBy(Z42Type sub, Z42Type sup)
+    {
+        if (sub == sup) return true;
+        if (sub is Z42ErrorType or Z42UnknownType) return true;
+        if (sup is Z42ErrorType or Z42UnknownType) return true;
+        if (sub is Z42ClassType cs && sup is Z42ClassType cp)
+            return cs.Name == cp.Name || _symbols.IsSubclassOf(cs.Name, cp.Name);
+        return false;
     }
 
     /// L3-G2.5 refvalue: is `typeArg` a reference type (for `where T: class`)?
@@ -317,8 +342,23 @@ public sealed partial class TypeChecker : ITypeInferrer
                 }
                 Z42ClassType? baseClass = null;
                 var ifaces = new List<Z42InterfaceType>();
+                string? typeParamConstraint = null;
                 foreach (var tx in entry.Constraints)
                 {
+                    // L3-G2.5 bare-typeparam: NamedType matching another active type param
+                    // is recorded as a subtype constraint (resolved before class/interface fallback).
+                    if (tx is NamedType nt
+                        && declaredTypeParams.Contains(nt.Name)
+                        && nt.Name != entry.TypeParam) // self-reference handled elsewhere (L3-G2 IComparable<T>)
+                    {
+                        if (typeParamConstraint != null)
+                            _diags.Error(DiagnosticCodes.TypeMismatch,
+                                $"generic parameter `{entry.TypeParam}` cannot have multiple type-param constraints",
+                                tx.Span);
+                        else
+                            typeParamConstraint = nt.Name;
+                        continue;
+                    }
                     var resolved = _symbols.ResolveType(tx);
                     switch (resolved)
                     {
@@ -356,8 +396,10 @@ public sealed partial class TypeChecker : ITypeInferrer
                         entry.Span);
                     reqClass = reqStruct = false; // don't cascade
                 }
-                if (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct)
-                    result[entry.TypeParam] = new GenericConstraintBundle(baseClass, ifaces, reqClass, reqStruct);
+                if (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct
+                    || typeParamConstraint != null)
+                    result[entry.TypeParam] = new GenericConstraintBundle(
+                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint);
             }
             return result.Count > 0 ? result : null;
         }

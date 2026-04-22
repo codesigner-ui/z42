@@ -144,7 +144,7 @@ pub struct ClassDesc {
     pub type_param_constraints: Vec<ConstraintBundle>,
 }
 
-/// Resolved constraint bundle for one generic type parameter. (L3-G3a)
+/// Resolved constraint bundle for one generic type parameter. (L3-G3a, L3-G2.5 bare-tp)
 /// Mirrors the C# `GenericConstraintBundle` on the semantic layer.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct ConstraintBundle {
@@ -156,12 +156,17 @@ pub struct ConstraintBundle {
     pub base_class: Option<String>,
     #[serde(default)]
     pub interfaces: Vec<String>,
+    /// L3-G2.5 bare-typeparam: name of another type parameter in the same decl
+    /// that this parameter must be a subtype of. None when no such constraint.
+    #[serde(default)]
+    pub type_param_constraint: Option<String>,
 }
 
 impl ConstraintBundle {
     pub fn is_empty(&self) -> bool {
         !self.requires_class && !self.requires_struct
             && self.base_class.is_none() && self.interfaces.is_empty()
+            && self.type_param_constraint.is_none()
     }
 }
 

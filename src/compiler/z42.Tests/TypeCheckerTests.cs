@@ -1050,4 +1050,81 @@ public sealed class TypeCheckerTests
             void Main() { F(new Item()); }
             """).HasErrors.Should().BeFalse();
     }
+
+    // ── Bare type parameter constraint (L3-G2.5) ────────────────────────────
+    // NOTE: z42 supports explicit type args only on `new GenericClass<T>(...)`, not on
+    // function calls. Tests below use generic classes to verify call-site subtype checks.
+
+    [Fact]
+    public void Generic_BareTypeParam_SubclassArg_Ok()
+    {
+        Check("""
+            class Animal { }
+            class Dog : Animal { }
+            class Container<T, U> where U: T {
+                Container() { }
+            }
+            void Main() { var c = new Container<Animal, Dog>(); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_BareTypeParam_SiblingArg_Error()
+    {
+        var diags = Check("""
+            class Animal { }
+            class Vehicle { }
+            class Container<T, U> where U: T {
+                Container() { }
+            }
+            void Main() { var c = new Container<Animal, Vehicle>(); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("not a subtype"));
+    }
+
+    [Fact]
+    public void Generic_BareTypeParam_SameArg_Ok()
+    {
+        Check("""
+            class Animal { }
+            class Container<T, U> where U: T {
+                Container() { }
+            }
+            void Main() { var c = new Container<Animal, Animal>(); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_BareTypeParam_InClass_ReturnAssign_Ok()
+    {
+        Check("""
+            class Animal { }
+            class Dog : Animal { }
+            class Container<T, U> where U: T {
+                T Get(U child) { return child; }
+            }
+            void Main() {
+                var c = new Container<Animal, Dog>();
+                var a = c.Get(new Dog());
+            }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_BareTypeParam_MultipleBare_Error()
+    {
+        var diags = Check("""
+            class A { }
+            class B { }
+            void F<T, U, V>(T t, U u, V v) where V: T + U { }
+            void Main() { }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("multiple type-param constraints"));
+    }
 }

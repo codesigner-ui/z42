@@ -167,15 +167,20 @@ public sealed record Z42GenericParamType(
 }
 
 /// Resolved constraints for one type parameter. (L3-G2, L3-G2.5)
+///
+/// `TypeParamConstraint` (L3-G2.5 bare-typeparam) records the name of another
+/// type parameter in the same decl that this one must be a subtype of.
 public sealed record GenericConstraintBundle(
     Z42ClassType? BaseClass,
     IReadOnlyList<Z42InterfaceType> Interfaces,
     bool RequiresClass = false,
-    bool RequiresStruct = false)
+    bool RequiresStruct = false,
+    string? TypeParamConstraint = null)
 {
     public static readonly GenericConstraintBundle Empty = new(null, []);
     public bool IsEmpty => BaseClass is null && Interfaces.Count == 0
-                           && !RequiresClass && !RequiresStruct;
+                           && !RequiresClass && !RequiresStruct
+                           && TypeParamConstraint is null;
 }
 
 /// User-defined class or struct type.

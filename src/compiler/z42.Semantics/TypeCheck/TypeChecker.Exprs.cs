@@ -370,11 +370,14 @@ public sealed partial class TypeChecker
         if (target.Type is Z42GenericParamType gp)
         {
             // Field-stored T may have null constraints; consult active where-clause scope.
+            // L3-G2.5 bare-typeparam: LookupEffectiveConstraints merges one hop through U: T.
             var bundle = (gp.BaseClassConstraint, gp.InterfaceConstraints) switch
             {
-                (null, null) => _symbols.LookupActiveTypeParamConstraints(gp.Name),
-                _            => new GenericConstraintBundle(gp.BaseClassConstraint,
-                                    gp.InterfaceConstraints ?? []),
+                (null, null) => _symbols.LookupEffectiveConstraints(gp.Name),
+                _            => _symbols.LookupEffectiveConstraints(gp.Name) is { IsEmpty: false } scoped
+                                ? scoped  // active scope wins when it exists (may have TypeParamConstraint hop)
+                                : new GenericConstraintBundle(gp.BaseClassConstraint,
+                                      gp.InterfaceConstraints ?? []),
             };
             if (bundle.BaseClass is { } bc)
             {

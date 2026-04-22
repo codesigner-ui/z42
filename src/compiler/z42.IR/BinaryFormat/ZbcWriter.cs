@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 5;   // L3-G3a: SIGS/TYPE per-tp constraint metadata
+    public const ushort VersionMinor = 6;   // L3-G2.5 bare-typeparam: constraint bundle adds type_param_constraint
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -316,22 +316,28 @@ public static partial class ZbcWriter
         if (b is null) return;
         if (b.BaseClass is not null) pool.Intern(b.BaseClass);
         foreach (var i in b.Interfaces) pool.Intern(i);
+        if (b.TypeParamConstraint is not null) pool.Intern(b.TypeParamConstraint);
     }
 
     /// Encodes one constraint bundle. Null input is treated as fully empty
     /// (flags=0, interface_count=0).
+    /// Layout (v0.6): flags u8, [if bit2] base_class u32, [if bit3] type_param_constraint u32,
+    ///                interface_count u8, interface_name_idx[] u32.
     internal static void WriteConstraintBundle(BinaryWriter w, StringPool pool, IrConstraintBundle? b)
     {
         byte flags = 0;
         if (b is not null)
         {
-            if (b.RequiresClass)  flags |= 0x01;
-            if (b.RequiresStruct) flags |= 0x02;
-            if (b.BaseClass is not null) flags |= 0x04;
+            if (b.RequiresClass)               flags |= 0x01;
+            if (b.RequiresStruct)              flags |= 0x02;
+            if (b.BaseClass is not null)       flags |= 0x04;
+            if (b.TypeParamConstraint is not null) flags |= 0x08;
         }
         w.Write(flags);
         if (b is not null && b.BaseClass is not null)
             w.Write((uint)pool.Idx(b.BaseClass));
+        if (b is not null && b.TypeParamConstraint is not null)
+            w.Write((uint)pool.Idx(b.TypeParamConstraint));
         int interfaceCount = b?.Interfaces.Count ?? 0;
         w.Write((byte)interfaceCount);
         if (b is not null)

@@ -219,7 +219,8 @@ public sealed class IrGen : IEmitterContext
             if (bundles.TryGetValue(tp, out var b))
                 result.Add(new IrConstraintBundle(
                     b.RequiresClass, b.RequiresStruct,
-                    b.BaseClass?.Name, b.Interfaces.Select(i => i.Name).ToList()));
+                    b.BaseClass?.Name, b.Interfaces.Select(i => i.Name).ToList(),
+                    b.TypeParamConstraint));
             else
                 result.Add(EmptyBundle());
         }

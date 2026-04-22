@@ -150,6 +150,25 @@ public sealed class SymbolTable
         _activeTypeParamConstraints != null && _activeTypeParamConstraints.TryGetValue(typeParam, out var b)
             ? b : GenericConstraintBundle.Empty;
 
+    /// L3-G2.5 bare-typeparam: resolve U's effective constraint set including one hop
+    /// through `TypeParamConstraint` (e.g. U: T means U also bears T's interfaces/base class
+    /// for member-lookup purposes). Limited to a single hop to avoid cycles.
+    public GenericConstraintBundle LookupEffectiveConstraints(string typeParam)
+    {
+        var b = LookupActiveTypeParamConstraints(typeParam);
+        if (b.TypeParamConstraint is not { } upstream) return b;
+        var up = LookupActiveTypeParamConstraints(upstream);
+        var mergedIfaces = new List<Z42InterfaceType>(b.Interfaces);
+        foreach (var i in up.Interfaces)
+            if (!mergedIfaces.Any(x => x.Name == i.Name)) mergedIfaces.Add(i);
+        return new GenericConstraintBundle(
+            b.BaseClass ?? up.BaseClass,
+            mergedIfaces,
+            b.RequiresClass  || up.RequiresClass,
+            b.RequiresStruct || up.RequiresStruct,
+            b.TypeParamConstraint);
+    }
+
     /// Resolve GenericType — handles pseudo-class (List<T>, Dictionary<K,V>) and user-defined generics.
     private Z42Type ResolveGenericType(GenericType gt)
     {

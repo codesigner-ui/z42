@@ -211,7 +211,7 @@ public static class ZasmWriter
     private static string Escape(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
 
-    /// (L3-G3a) Emit `.constraint T: Base + IFoo + class` lines for non-empty bundles.
+    /// (L3-G3a + L3-G2.5 bare-tp) Emit `.constraint T: Base + IFoo + class` lines for non-empty bundles.
     private static void AppendConstraintLines(
         StringBuilder sb,
         IReadOnlyList<string>? typeParams,
@@ -225,6 +225,7 @@ public static class ZasmWriter
             if (b.IsEmpty) continue;
             var parts = new List<string>();
             if (b.BaseClass is not null) parts.Add(b.BaseClass);
+            if (b.TypeParamConstraint is not null) parts.Add(b.TypeParamConstraint);
             parts.AddRange(b.Interfaces);
             if (b.RequiresClass)  parts.Add("class");
             if (b.RequiresStruct) parts.Add("struct");

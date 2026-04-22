@@ -108,6 +108,31 @@ fn verify_allows_std_namespace_reference() {
 }
 
 #[test]
+fn loader_preserves_type_param_constraint() {
+    // L3-G2.5 bare-typeparam: constraint `U: T` stored as type_param_constraint.
+    let mut cls = simple_class("Container");
+    cls.type_params = vec!["T".into(), "U".into()];
+    cls.type_param_constraints = vec![
+        ConstraintBundle::default(),
+        ConstraintBundle {
+            type_param_constraint: Some("T".into()),
+            ..Default::default()
+        },
+    ];
+    let mut m = empty_module("demo");
+    m.classes = vec![cls];
+    build_type_registry(&mut m);
+
+    let td = m.type_registry.get("Container").expect("Container in registry");
+    assert_eq!(td.type_param_constraints.len(), 2);
+    assert_eq!(td.type_param_constraints[0].type_param_constraint, None);
+    assert_eq!(td.type_param_constraints[1].type_param_constraint.as_deref(), Some("T"));
+
+    // verify pass passes through bare-tp constraints without registry lookup.
+    verify_constraints(&m).expect("bare typeparam is local-only, no registry lookup needed");
+}
+
+#[test]
 fn verify_allows_interface_like_name() {
     // Interfaces aren't stored in the class type_registry; soft-allow names starting with "I<Upper>".
     let mut m = empty_module("demo");

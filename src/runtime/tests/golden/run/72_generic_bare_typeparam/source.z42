@@ -1,0 +1,15 @@
+// Test: L3-G2.5 bare type parameter constraint — where U: T (call-site check)
+
+class Animal { }
+class Dog : Animal { }
+
+class Container<T, U> where U: T {
+    public string label;
+    Container(string name) { this.label = name; }
+}
+
+void Main() {
+    // Dog is subclass of Animal, so Container<Animal, Dog> satisfies U: T
+    var c = new Container<Animal, Dog>("ok");
+    Console.WriteLine(c.label);
+}

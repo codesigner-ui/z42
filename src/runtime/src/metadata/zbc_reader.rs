@@ -253,14 +253,20 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
     Ok(classes)
 }
 
-/// Decode one constraint bundle. Mirrors ZbcWriter.WriteConstraintBundle.
-/// Layout: `flags: u8, [if bit2] base_class_idx: u32, interface_count: u8, iface_idx[]: u32`.
+/// Decode one constraint bundle. Mirrors ZbcWriter.WriteConstraintBundle (v0.6).
+/// Layout: `flags: u8, [if bit2] base_class_idx: u32, [if bit3] type_param_constraint_idx: u32,
+///          interface_count: u8, iface_idx[]: u32`.
 fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintBundle> {
     let flags = c.read_u8()?;
-    let requires_class  = (flags & 0x01) != 0;
-    let requires_struct = (flags & 0x02) != 0;
-    let has_base        = (flags & 0x04) != 0;
+    let requires_class   = (flags & 0x01) != 0;
+    let requires_struct  = (flags & 0x02) != 0;
+    let has_base         = (flags & 0x04) != 0;
+    let has_type_param   = (flags & 0x08) != 0;
     let base_class = if has_base {
+        let idx = c.read_u32()?;
+        Some(c.pool_str(pool, idx)?.to_owned())
+    } else { None };
+    let type_param_constraint = if has_type_param {
         let idx = c.read_u32()?;
         Some(c.pool_str(pool, idx)?.to_owned())
     } else { None };
@@ -270,7 +276,9 @@ fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintB
         let idx = c.read_u32()?;
         interfaces.push(c.pool_str(pool, idx)?.to_owned());
     }
-    Ok(ConstraintBundle { requires_class, requires_struct, base_class, interfaces })
+    Ok(ConstraintBundle {
+        requires_class, requires_struct, base_class, interfaces, type_param_constraint,
+    })
 }
 
 // ── SIGS section ─────────────────────────────────────────────────────────────

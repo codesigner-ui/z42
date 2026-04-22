@@ -57,10 +57,16 @@ public sealed record IrConstraintBundle(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? BaseClass,
     [property: JsonPropertyName("interfaces")]
-    List<string> Interfaces)
+    List<string> Interfaces,
+    /// L3-G2.5 bare-typeparam: name of another type parameter in the same decl
+    /// that this parameter must be a subtype of. Null when no such constraint.
+    [property: JsonPropertyName("type_param_constraint")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TypeParamConstraint = null)
 {
     public bool IsEmpty => !RequiresClass && !RequiresStruct
-                           && BaseClass is null && Interfaces.Count == 0;
+                           && BaseClass is null && Interfaces.Count == 0
+                           && TypeParamConstraint is null;
 }
 
 // ── Function ──────────────────────────────────────────────────────────────────

@@ -224,15 +224,17 @@ public static partial class ZbcReader
     private static IrConstraintBundle ReadConstraintBundle(BinaryReader r, string[] pool)
     {
         byte flags = r.ReadByte();
-        bool reqClass  = (flags & 0x01) != 0;
-        bool reqStruct = (flags & 0x02) != 0;
-        bool hasBase   = (flags & 0x04) != 0;
+        bool reqClass     = (flags & 0x01) != 0;
+        bool reqStruct    = (flags & 0x02) != 0;
+        bool hasBase      = (flags & 0x04) != 0;
+        bool hasTypeParam = (flags & 0x08) != 0;
         string? baseClass = hasBase ? P(pool, r.ReadUInt32()) : null;
+        string? typeParamConstraint = hasTypeParam ? P(pool, r.ReadUInt32()) : null;
         byte ifaceCount = r.ReadByte();
         var ifaces = new List<string>(ifaceCount);
         for (int i = 0; i < ifaceCount; i++)
             ifaces.Add(P(pool, r.ReadUInt32()));
-        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces);
+        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces, typeParamConstraint);
     }
 
     // ── SIGS section ──────────────────────────────────────────────────────────

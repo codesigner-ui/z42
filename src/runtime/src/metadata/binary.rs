@@ -304,13 +304,17 @@ fn decode_type_section(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
     Ok(classes)
 }
 
-/// Decode one constraint bundle from the TYPE/SIGS reader cursor.
+/// Decode one constraint bundle from the TYPE/SIGS reader cursor (v0.6).
 fn decode_constraint_bundle(r: &mut Reader, pool: &[String]) -> Result<ConstraintBundle> {
     let flags = r.u8()?;
-    let requires_class  = (flags & 0x01) != 0;
-    let requires_struct = (flags & 0x02) != 0;
-    let has_base        = (flags & 0x04) != 0;
+    let requires_class   = (flags & 0x01) != 0;
+    let requires_struct  = (flags & 0x02) != 0;
+    let has_base         = (flags & 0x04) != 0;
+    let has_type_param   = (flags & 0x08) != 0;
     let base_class = if has_base {
+        Some(pool_str(pool, r.u32()? as usize)?.to_owned())
+    } else { None };
+    let type_param_constraint = if has_type_param {
         Some(pool_str(pool, r.u32()? as usize)?.to_owned())
     } else { None };
     let iface_count = r.u8()? as usize;
@@ -318,7 +322,9 @@ fn decode_constraint_bundle(r: &mut Reader, pool: &[String]) -> Result<Constrain
     for _ in 0..iface_count {
         interfaces.push(pool_str(pool, r.u32()? as usize)?.to_owned());
     }
-    Ok(ConstraintBundle { requires_class, requires_struct, base_class, interfaces })
+    Ok(ConstraintBundle {
+        requires_class, requires_struct, base_class, interfaces, type_param_constraint,
+    })
 }
 
 // ── SIGS section ──────────────────────────────────────────────────────────────

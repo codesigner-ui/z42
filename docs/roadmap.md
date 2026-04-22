@@ -135,10 +135,10 @@
 | **L3-G2** | 接口约束（`where T: I + J`） | ✅ | ✅ | — | — | ✅ |
 | **L3-G2.5** | 约束范式补充：基类 ✅ / 构造器 / class / struct / notnull 等 | 🟡 | 🟡 | — | — | 🟡 |
 | **L3-G3a** | zbc 约束元数据 + VM loader + 加载时校验 | — | — | ✅ | ✅ | ✅ |
-| **L3-G3b** | 反射接口 + 运行时 Call/ObjNew 约束校验 | — | — | — | — | 📋 |
 | **L3-G3c** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
 | **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | — | — | — | 📋 |
 | **L3-G4** | 泛型标准库（List/Dict 原生化 + primitive 接口） | — | — | — | — | 📋 |
+| **L3-R** | 反射与运行时类型信息 — 见下独立小节（统一批次，延后） | — | — | — | — | 📋 |
 
 > L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。
 > L3-G2 已实现：`where T: I + J` / `where K: I, V: J` 语法、约束方法查找、调用点校验、返回类型按推断替换；启用 `IComparable<T>` / `IEquatable<T>` stdlib 接口。
@@ -156,7 +156,7 @@ L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立
 | **值类型约束** | `where T: struct` | T 为值类型 | ✅ 已完成（2026-04-22） |
 | **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 中 |
 | **接口继承约束** | `where T: I<U>, U: J` | 跨参数约束链（已部分支持，补齐校验） | 中 |
-| **裸类型参数约束** | `where T: U` | T 必须是 U 的子类型/实现 | 低 |
+| **裸类型参数约束** | `where U: T` | U 必须是 T 的子类型（T 为同 decl 其他 type param） | ✅ 已完成（2026-04-22） |
 | **委托/函数约束** | `where T: Func<...>` | 可调用约束（依赖 Lambda L3 其他子阶段） | 低 |
 | **枚举约束** | `where T: enum` | T 为枚举类型 | 低 |
 | **变型标注** | `interface IFoo<in T>` / `<out T>` | 协变/逆变 | 延后 L3 后期 |
@@ -166,6 +166,34 @@ L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立
 - 基类 + 构造器约束复用现有 interface 约束框架（Z42GenericParamType 的 Constraints 扩展为 union: Interface / BaseClass / ConstructorReq / ValueKind）
 - `class`/`struct`/`notnull` 作为 "flags" 附加在 GenericParam 上
 - 每个范式独立 openspec change，共享 L3-G3a 的约束元数据 zbc 扩展
+
+### L3-R：反射与运行时类型信息（统一批次，延后）
+
+把原 L3-G3b（反射接口 + 运行时约束校验）与其他反射需求合并成独立轨道，一次性规划
+VM 运行时类型系统。多项特性联动，单独做不如合并。
+
+| 子项 | 内容 | 依赖 |
+|------|------|------|
+| **R-1 核心 Type API** | `typeof(T)` / `t.GetType()` / `Type.Name` / `Type.TypeParams` / `Type.TypeArgs` | L3-G3a（元数据已就绪） |
+| **R-2 约束反射** | `Type.Constraints` / `Type.BaseClass` / `Type.Interfaces` | R-1 |
+| **R-3 is/as 运行时判断** | `t is IComparable<T>` / `t as SomeBase` 基于 TypeDesc.vtable + constraints | R-1 + R-2 |
+| **R-4 运行时 Call/ObjNew 约束校验** | 泛型函数 Call / `new T(...)` 时校验 type_args 满足约束（untrusted zbc 兜底） | R-1 + type_args 传递机制 |
+| **R-5 运行时 type_args 传递** | 泛型实例化信息通过隐式参数 / thread-local / TypeDesc 引用传到 callee | 需 VM 架构决策 |
+| **R-6 `new T()` 支持** | 依赖 R-5 拿到 T 的 TypeDesc，ObjNew 时用实际类名 | R-5 |
+| **R-7 `Activator.CreateInstance<T>(args)`** | 反射式泛型实例化 | R-5 + R-6 |
+| **R-8 Module / Assembly 反射** | `Module.GetTypes()` / `Type.GetMethods()` | R-1 |
+| **R-9 关联类型反射** | `Type.AssocTypes["Output"]` | L3-G3c |
+| **R-10 IDE / 工具 元数据** | 供外部工具（LSP / REPL）读取 TypeDesc 完整结构 | R-1 |
+
+**设计挑战（为什么合并）**：
+- R-5 运行时 type_args 传递是最核心的架构决策 — 决定 R-4/R-6/R-7 能否实现
+- 单独做 R-1/R-2 意义有限（应用场景少，ROI 低）；和 R-4/R-5 一起才产生价值
+- zbc 格式扩展若需要为 R-2/R-9 补字段，与 L3-G3a 的约束字段可一次设计完
+
+**先决条件**：
+- L3-G3a 已完成（元数据管道打通）✅
+- L3-G3c 关联类型（R-9 依赖）
+- VM 架构决策：type_args 如何在代码共享前提下运行时可得
 
 ### 高级语法（从 L1 推迟）
 

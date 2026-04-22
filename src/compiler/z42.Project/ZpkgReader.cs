@@ -250,13 +250,14 @@ public static class ZpkgReader
             string retType    = TypeTags.ToIrString(r.ReadByte());
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
-            // Skip generic type parameters + per-tp constraints (L3-G1 + L3-G3a)
+            // Skip generic type parameters + per-tp constraints (L3-G1 + L3-G3a + L3-G2.5 bare-tp)
             byte tpCount = r.ReadByte();
             for (int t = 0; t < tpCount; t++)
             {
                 r.ReadUInt32();                       // type-param name idx
                 byte flags = r.ReadByte();            // constraint flags
                 if ((flags & 0x04) != 0) r.ReadUInt32();  // base class idx
+                if ((flags & 0x08) != 0) r.ReadUInt32();  // type_param_constraint idx
                 byte ifaceCount = r.ReadByte();
                 for (int k = 0; k < ifaceCount; k++) r.ReadUInt32();
             }
