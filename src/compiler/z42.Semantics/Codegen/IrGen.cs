@@ -195,7 +195,37 @@ public sealed class IrGen : IEmitterContext
         return new(QualifyName(cls.Name), baseClass,
             cls.Fields.Where(f => !f.IsStatic)
                 .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList(),
-            cls.TypeParams?.ToList());
+            cls.TypeParams?.ToList(),
+            BuildConstraintList(cls.Name, cls.TypeParams, _semanticModel?.ClassConstraints));
+    }
+
+    /// (L3-G3a) Build a parallel list of IrConstraintBundle aligned with `typeParams`.
+    /// Returns null when the decl has no type params; returns a list with one entry per type
+    /// param (empty bundle for unconstrained ones) otherwise.
+    internal static List<IrConstraintBundle>? BuildConstraintList(
+        string declName,
+        IReadOnlyList<string>? typeParams,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? map)
+    {
+        if (typeParams is null || typeParams.Count == 0) return null;
+        if (map is null || !map.TryGetValue(declName, out var bundles))
+        {
+            // Emit explicit empty bundles so reader/VM get aligned slots.
+            return typeParams.Select(_ => EmptyBundle()).ToList();
+        }
+        var result = new List<IrConstraintBundle>(typeParams.Count);
+        foreach (var tp in typeParams)
+        {
+            if (bundles.TryGetValue(tp, out var b))
+                result.Add(new IrConstraintBundle(
+                    b.RequiresClass, b.RequiresStruct,
+                    b.BaseClass?.Name, b.Interfaces.Select(i => i.Name).ToList()));
+            else
+                result.Add(EmptyBundle());
+        }
+        return result;
+
+        static IrConstraintBundle EmptyBundle() => new(false, false, null, new List<string>());
     }
 
     /// Emits a single-block function that forwards all parameters to a VM builtin.

@@ -30,6 +30,7 @@ pub fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
         field_index,
         vtable: Vec::new(),
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
+        type_param_constraints: vec![],
     });
     Ok(Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ScriptObject {
         type_desc,

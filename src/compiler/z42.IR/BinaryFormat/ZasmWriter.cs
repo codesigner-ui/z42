@@ -48,6 +48,7 @@ public static class ZasmWriter
             sb.AppendLine();
             if (cls.TypeParams is { Count: > 0 })
                 sb.AppendLine($"  .type_params  {string.Join(", ", cls.TypeParams)}");
+            AppendConstraintLines(sb, cls.TypeParams, cls.TypeParamConstraints);
             foreach (var fld in cls.Fields)
                 sb.AppendLine($"  .field {fld.Name}: {fld.Type}");
         }
@@ -66,6 +67,7 @@ public static class ZasmWriter
             // Type parameters (if present)
             if (fn.TypeParams is { Count: > 0 })
                 sb.AppendLine($"  .type_params  {string.Join(", ", fn.TypeParams)}");
+            AppendConstraintLines(sb, fn.TypeParams, fn.TypeParamConstraints);
 
             // Exception table (if present)
             if (fn.ExceptionTable is { Count: > 0 })
@@ -208,4 +210,25 @@ public static class ZasmWriter
 
     private static string Escape(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
+
+    /// (L3-G3a) Emit `.constraint T: Base + IFoo + class` lines for non-empty bundles.
+    private static void AppendConstraintLines(
+        StringBuilder sb,
+        IReadOnlyList<string>? typeParams,
+        IReadOnlyList<IrConstraintBundle>? bundles)
+    {
+        if (typeParams is null || bundles is null) return;
+        int n = Math.Min(typeParams.Count, bundles.Count);
+        for (int i = 0; i < n; i++)
+        {
+            var b = bundles[i];
+            if (b.IsEmpty) continue;
+            var parts = new List<string>();
+            if (b.BaseClass is not null) parts.Add(b.BaseClass);
+            parts.AddRange(b.Interfaces);
+            if (b.RequiresClass)  parts.Add("class");
+            if (b.RequiresStruct) parts.Add("struct");
+            sb.AppendLine($"  .constraint  {typeParams[i]}: {string.Join(" + ", parts)}");
+        }
+    }
 }

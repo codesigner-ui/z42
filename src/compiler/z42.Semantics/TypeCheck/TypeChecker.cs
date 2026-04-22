@@ -84,7 +84,9 @@ public sealed partial class TypeChecker : ITypeInferrer
             _symbols.EnumConstants, _symbols.EnumTypes,
             _boundBodies, _boundDefaults, _boundStaticInits, _boundBaseCtorArgs,
             _symbols.ImportedClassNamespaces as Dictionary<string, string>
-                ?? new Dictionary<string, string>(_symbols.ImportedClassNamespaces));
+                ?? new Dictionary<string, string>(_symbols.ImportedClassNamespaces),
+            funcConstraints:  _funcConstraints,
+            classConstraints: _classConstraints);
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────

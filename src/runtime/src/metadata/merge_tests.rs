@@ -27,6 +27,11 @@ fn make_module_with(
         exception_table: vec![],
         is_static: false,
         max_reg: 0,
+        line_table: vec![],
+        local_vars: vec![],
+        type_params: vec![],
+        type_param_constraints: vec![],
+        block_index: std::collections::HashMap::new(),
     }];
     functions.extend(extra_functions);
     Module {
@@ -106,12 +111,14 @@ fn merge_deduplicates_classes_by_name() {
         base_class: None,
         fields: vec![FieldDesc { name: "x".to_string(), type_tag: "i32".to_string() }],
         type_params: vec![],
+        type_param_constraints: vec![],
     };
     let cls_dup = ClassDesc {
         name: "Std.Object".to_string(),
         base_class: None,
         fields: vec![],
         type_params: vec![],
+        type_param_constraints: vec![],
     };
     let m0 = make_module_with("A", &["a"], 0, vec![cls], vec![]);
     let m1 = make_module_with("B", &["b"], 0, vec![cls_dup], vec![]);
@@ -138,6 +145,11 @@ fn merge_deduplicates_functions_by_name() {
         exception_table: vec![],
         is_static: false,
         max_reg: 0,
+        line_table: vec![],
+        local_vars: vec![],
+        type_params: vec![],
+        type_param_constraints: vec![],
+        block_index: std::collections::HashMap::new(),
     };
     let m0 = make_module("A", &["hello"], 0);
     let m1 = make_module_with("B", &["world"], 0, vec![], vec![dup_func]);

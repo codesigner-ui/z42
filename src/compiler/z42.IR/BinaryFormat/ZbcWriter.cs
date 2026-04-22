@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 4;
+    public const ushort VersionMinor = 5;   // L3-G3a: SIGS/TYPE per-tp constraint metadata
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -152,6 +152,12 @@ public static partial class ZbcWriter
                 pool.Intern(cls.Name);
                 if (cls.BaseClass != null) pool.Intern(cls.BaseClass);
                 foreach (var fld in cls.Fields) { pool.Intern(fld.Name); pool.Intern(fld.Type); }
+                if (cls.TypeParams != null)
+                    foreach (var tp in cls.TypeParams)
+                        pool.Intern(tp);
+                if (cls.TypeParamConstraints != null)
+                    foreach (var b in cls.TypeParamConstraints)
+                        InternConstraintBundle(pool, b);
             }
 
             foreach (var fn in module.Functions)
@@ -179,6 +185,9 @@ public static partial class ZbcWriter
                 if (fn.TypeParams != null)
                     foreach (var tp in fn.TypeParams)
                         pool.Intern(tp);
+                if (fn.TypeParamConstraints != null)
+                    foreach (var b in fn.TypeParamConstraints)
+                        InternConstraintBundle(pool, b);
             }
         }
         else
@@ -251,12 +260,17 @@ public static partial class ZbcWriter
                 w.Write((uint)pool.Idx(fld.Name));
                 w.Write(TypeTags.FromString(fld.Type));
             }
-            // Generic type parameters for this class
+            // Generic type parameters for this class (L3-G1) + per-tp constraints (L3-G3a)
             var tpCount = (byte)(cls.TypeParams?.Count ?? 0);
             w.Write(tpCount);
             if (cls.TypeParams != null)
-                foreach (var tp in cls.TypeParams)
-                    w.Write((uint)pool.Idx(tp));
+                for (int i = 0; i < cls.TypeParams.Count; i++)
+                {
+                    w.Write((uint)pool.Idx(cls.TypeParams[i]));
+                    var b = cls.TypeParamConstraints != null && i < cls.TypeParamConstraints.Count
+                        ? cls.TypeParamConstraints[i] : null;
+                    WriteConstraintBundle(w, pool, b);
+                }
         }
 
         return ms.ToArray();
@@ -277,15 +291,52 @@ public static partial class ZbcWriter
             w.Write(TypeTags.FromString(fn.RetType));
             w.Write(ExecModes.FromString(fn.ExecMode));
             w.Write((byte)(fn.IsStatic ? 1 : 0));  // is_static flag
-            // Generic type parameters
+            // Generic type parameters (L3-G1) + per-tp constraints (L3-G3a)
             byte tpCount = (byte)(fn.TypeParams?.Count ?? 0);
             w.Write(tpCount);
             if (fn.TypeParams != null)
-                foreach (var tp in fn.TypeParams)
-                    w.Write((uint)pool.Idx(tp));
+                for (int i = 0; i < fn.TypeParams.Count; i++)
+                {
+                    w.Write((uint)pool.Idx(fn.TypeParams[i]));
+                    var b = fn.TypeParamConstraints != null && i < fn.TypeParamConstraints.Count
+                        ? fn.TypeParamConstraints[i] : null;
+                    WriteConstraintBundle(w, pool, b);
+                }
         }
 
         return ms.ToArray();
+    }
+
+    // ── Constraint bundle codec (L3-G3a) ──────────────────────────────────────
+
+    /// Interns all strings referenced by a constraint bundle so they land in the pool
+    /// before SIGS / TYPE encoding. Null-safe.
+    internal static void InternConstraintBundle(StringPool pool, IrConstraintBundle? b)
+    {
+        if (b is null) return;
+        if (b.BaseClass is not null) pool.Intern(b.BaseClass);
+        foreach (var i in b.Interfaces) pool.Intern(i);
+    }
+
+    /// Encodes one constraint bundle. Null input is treated as fully empty
+    /// (flags=0, interface_count=0).
+    internal static void WriteConstraintBundle(BinaryWriter w, StringPool pool, IrConstraintBundle? b)
+    {
+        byte flags = 0;
+        if (b is not null)
+        {
+            if (b.RequiresClass)  flags |= 0x01;
+            if (b.RequiresStruct) flags |= 0x02;
+            if (b.BaseClass is not null) flags |= 0x04;
+        }
+        w.Write(flags);
+        if (b is not null && b.BaseClass is not null)
+            w.Write((uint)pool.Idx(b.BaseClass));
+        int interfaceCount = b?.Interfaces.Count ?? 0;
+        w.Write((byte)interfaceCount);
+        if (b is not null)
+            foreach (var iface in b.Interfaces)
+                w.Write((uint)pool.Idx(iface));
     }
 
     // ── IMPT section (full mode: import table) ────────────────────────────────

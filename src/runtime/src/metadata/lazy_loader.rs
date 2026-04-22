@@ -187,4 +187,5 @@ fn namespace_prefix(func_name: &str) -> Option<String> {
 }
 
 #[cfg(test)]
+#[path = "lazy_loader_tests.rs"]
 mod lazy_loader_tests;

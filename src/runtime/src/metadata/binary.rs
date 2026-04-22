@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 
 use super::bytecode::{
-    BasicBlock, ClassDesc, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator,
+    BasicBlock, ClassDesc, ConstraintBundle, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator,
 };
 use super::formats::{ZBC_MAGIC, ZPKG_MAGIC};
 use super::types::ExecMode;
@@ -289,15 +289,36 @@ fn decode_type_section(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
             let ftype = type_tag_to_str(r.u8()?).to_owned();
             fields.push(FieldDesc { name: fname, type_tag: ftype });
         }
-        // Generic type parameters
+        // Generic type parameters + per-tp constraints (L3-G3a)
         let tp_count = r.u8()? as usize;
         let mut type_params = Vec::with_capacity(tp_count);
+        let mut type_param_constraints = Vec::with_capacity(tp_count);
         for _ in 0..tp_count {
             type_params.push(pool_str(pool, r.u32()? as usize)?.to_owned());
+            type_param_constraints.push(decode_constraint_bundle(&mut r, pool)?);
         }
-        classes.push(ClassDesc { name, base_class: base, fields, type_params });
+        classes.push(ClassDesc {
+            name, base_class: base, fields, type_params, type_param_constraints,
+        });
     }
     Ok(classes)
+}
+
+/// Decode one constraint bundle from the TYPE/SIGS reader cursor.
+fn decode_constraint_bundle(r: &mut Reader, pool: &[String]) -> Result<ConstraintBundle> {
+    let flags = r.u8()?;
+    let requires_class  = (flags & 0x01) != 0;
+    let requires_struct = (flags & 0x02) != 0;
+    let has_base        = (flags & 0x04) != 0;
+    let base_class = if has_base {
+        Some(pool_str(pool, r.u32()? as usize)?.to_owned())
+    } else { None };
+    let iface_count = r.u8()? as usize;
+    let mut interfaces = Vec::with_capacity(iface_count);
+    for _ in 0..iface_count {
+        interfaces.push(pool_str(pool, r.u32()? as usize)?.to_owned());
+    }
+    Ok(ConstraintBundle { requires_class, requires_struct, base_class, interfaces })
 }
 
 // ── SIGS section ──────────────────────────────────────────────────────────────
@@ -507,6 +528,7 @@ fn assemble_module(
                 line_table,
                 local_vars: vec![],
                 type_params: vec![],
+                type_param_constraints: vec![],
                 block_index: std::collections::HashMap::new(),
             }
         }

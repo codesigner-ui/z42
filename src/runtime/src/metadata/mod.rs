@@ -16,6 +16,10 @@ pub mod loader;
 pub mod lazy_loader;
 pub mod merge;
 
+#[cfg(test)]
+#[path = "constraint_tests.rs"]
+mod constraint_tests;
+
 // Re-exports: runtime value types
 pub use types::{ExecMode, FieldSlot, NativeData, ScriptObject, TypeDesc, Value};
 #[allow(deprecated)]

@@ -138,6 +138,31 @@ pub struct ClassDesc {
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
     #[serde(default)]
     pub type_params: Vec<String>,
+    /// L3-G3a: constraint bundle per type parameter. When non-empty must align with
+    /// `type_params` by index. Absent entries in old zbc deserialise as empty Vec.
+    #[serde(default)]
+    pub type_param_constraints: Vec<ConstraintBundle>,
+}
+
+/// Resolved constraint bundle for one generic type parameter. (L3-G3a)
+/// Mirrors the C# `GenericConstraintBundle` on the semantic layer.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ConstraintBundle {
+    #[serde(default)]
+    pub requires_class: bool,
+    #[serde(default)]
+    pub requires_struct: bool,
+    #[serde(default)]
+    pub base_class: Option<String>,
+    #[serde(default)]
+    pub interfaces: Vec<String>,
+}
+
+impl ConstraintBundle {
+    pub fn is_empty(&self) -> bool {
+        !self.requires_class && !self.requires_struct
+            && self.base_class.is_none() && self.interfaces.is_empty()
+    }
 }
 
 /// A single field in a class descriptor.
@@ -178,6 +203,9 @@ pub struct Function {
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic functions.
     #[serde(default)]
     pub type_params: Vec<String>,
+    /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
+    #[serde(default)]
+    pub type_param_constraints: Vec<ConstraintBundle>,
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,

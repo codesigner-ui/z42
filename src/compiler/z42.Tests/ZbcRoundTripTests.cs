@@ -440,6 +440,104 @@ public class ZbcRoundTripTests
         restFn.TypeParams!.Should().Equal(origFn.TypeParams!);
     }
 
+    // ── L3-G3a: constraint bundle round-trip ────────────────────────────────
+
+    [Fact]
+    public void Constraints_InterfaceOnly_SurvivesRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            interface IComparable<T> { int CompareTo(T other); }
+
+            T Max<T>(T a, T b) where T: IComparable<T> {
+                return a.CompareTo(b) > 0 ? a : b;
+            }
+
+            class Num : IComparable<Num> {
+                int v; Num(int x) { this.v = x; }
+                public int CompareTo(Num other) { return this.v - other.v; }
+            }
+
+            void Main() { var m = Max(new Num(1), new Num(2)); }
+            """;
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var maxFn = restored.Functions.Single(f => f.Name.EndsWith(".Max"));
+        maxFn.TypeParamConstraints.Should().NotBeNull();
+        maxFn.TypeParamConstraints!.Should().HaveCount(1);
+        var b = maxFn.TypeParamConstraints[0];
+        b.BaseClass.Should().BeNull();
+        b.Interfaces.Should().ContainSingle().Which.Should().Be("IComparable");
+        b.RequiresClass.Should().BeFalse();
+        b.RequiresStruct.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Constraints_BaseClass_SurvivesRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            class Animal { public int legs; }
+            void F<T>(T x) where T: Animal { }
+            class Dog : Animal { }
+            void Main() { F(new Dog()); }
+            """;
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var fn = restored.Functions.Single(f => f.Name.EndsWith(".F"));
+        fn.TypeParamConstraints.Should().NotBeNull();
+        fn.TypeParamConstraints![0].BaseClass.Should().Be("Animal");
+        fn.TypeParamConstraints[0].Interfaces.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Constraints_ClassFlag_SurvivesRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            class Foo { }
+            void F<T>(T x) where T: class { }
+            void Main() { F(new Foo()); }
+            """;
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var fn = restored.Functions.Single(f => f.Name.EndsWith(".F"));
+        fn.TypeParamConstraints![0].RequiresClass.Should().BeTrue();
+        fn.TypeParamConstraints[0].RequiresStruct.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Constraints_GenericClassBaseAndInterface_SurvivesRoundTrip()
+    {
+        const string src = """
+            namespace demo;
+
+            interface IDisplay { string Show(); }
+            class Animal { public int legs; }
+            class Box<T> where T: Animal + IDisplay {
+                T item; Box(T x) { this.item = x; }
+            }
+            class Dog : Animal, IDisplay {
+                public string Show() { return "dog"; }
+            }
+            void Main() { var b = new Box<Dog>(new Dog()); }
+            """;
+        var original = Compile(src);
+        var restored = RoundTrip(original);
+
+        var box = restored.Classes.Single(c => c.Name.EndsWith(".Box"));
+        box.TypeParamConstraints.Should().NotBeNull();
+        var b = box.TypeParamConstraints![0];
+        b.BaseClass.Should().Be("Animal");
+        b.Interfaces.Should().ContainSingle().Which.Should().Be("IDisplay");
+    }
+
     [Fact]
     public void LocalVarTable_SurvivesBinaryRoundTrip()
     {

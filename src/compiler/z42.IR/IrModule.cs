@@ -37,8 +37,31 @@ public sealed record IrClassDesc(
     List<IrFieldDesc> Fields,
     [property: JsonPropertyName("type_params")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    List<string>? TypeParams = null);
+    List<string>? TypeParams = null,
+    [property: JsonPropertyName("type_param_constraints")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<IrConstraintBundle>? TypeParamConstraints = null);
 public sealed record IrFieldDesc(string Name, string Type);
+
+/// Resolved constraint bundle for one generic type parameter.
+/// Mirrors `GenericConstraintBundle` from the semantic layer but uses plain strings
+/// for serialization. (L3-G3a)
+public sealed record IrConstraintBundle(
+    [property: JsonPropertyName("requires_class")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    bool RequiresClass,
+    [property: JsonPropertyName("requires_struct")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    bool RequiresStruct,
+    [property: JsonPropertyName("base_class")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? BaseClass,
+    [property: JsonPropertyName("interfaces")]
+    List<string> Interfaces)
+{
+    public bool IsEmpty => !RequiresClass && !RequiresStruct
+                           && BaseClass is null && Interfaces.Count == 0;
+}
 
 // ── Function ──────────────────────────────────────────────────────────────────
 
@@ -81,7 +104,15 @@ public sealed record IrFunction(
     /// </summary>
     [property: JsonPropertyName("type_params")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    List<string>? TypeParams = null);
+    List<string>? TypeParams = null,
+    /// <summary>
+    /// Resolved constraints per type parameter (L3-G3a). Aligned by index with
+    /// `TypeParams` when both are non-null. Each entry may be "empty" (no flags/base/interfaces)
+    /// to signal that the parameter is unconstrained. Null when the function has no type params.
+    /// </summary>
+    [property: JsonPropertyName("type_param_constraints")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    List<IrConstraintBundle>? TypeParamConstraints = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
 public sealed record IrLocalVarEntry(

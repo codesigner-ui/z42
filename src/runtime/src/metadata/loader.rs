@@ -58,6 +58,8 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
         .with_context(|| format!("cannot parse binary zbc `{path}`"))?;
 
     build_type_registry(&mut module);
+    verify_constraints(&module)
+        .with_context(|| format!("constraint verification failed for module `{}`", module.name))?;
     build_block_indices(&mut module);
     build_func_index(&mut module);
 
@@ -91,6 +93,8 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
         .with_context(|| format!("merging modules from `{path}`"))?;
 
     build_type_registry(&mut module);
+    verify_constraints(&module)
+        .with_context(|| format!("constraint verification failed for module `{}`", module.name))?;
     build_block_indices(&mut module);
     build_func_index(&mut module);
 
@@ -320,10 +324,62 @@ pub fn build_type_registry(module: &mut Module) {
             vtable_index,
             type_params: desc.type_params.clone(),
             type_args: vec![],
+            type_param_constraints: desc.type_param_constraints.clone(),
         }));
     }
 
     module.type_registry = registry;
+}
+
+// ── L3-G3a: constraint verification pass ───────────────────────────────────
+
+/// Run after `build_type_registry` to validate that every constraint reference
+/// (base class or interface) resolves to a known class/interface in the type
+/// registry, or (for `Std.*` names) is left to the lazy loader to resolve later.
+///
+/// Reports the first unresolved reference and aborts load, surfacing the name
+/// in the error message so zbc tampering is flagged clearly.
+pub fn verify_constraints(module: &Module) -> Result<()> {
+    for cls in module.type_registry.values() {
+        for bundle in &cls.type_param_constraints {
+            check_constraint_refs(bundle, &module.type_registry, &cls.name)?;
+        }
+    }
+    for f in &module.functions {
+        for bundle in &f.type_param_constraints {
+            check_constraint_refs(bundle, &module.type_registry, &f.name)?;
+        }
+    }
+    Ok(())
+}
+
+fn check_constraint_refs(
+    b: &crate::metadata::bytecode::ConstraintBundle,
+    registry: &std::collections::HashMap<String, Arc<TypeDesc>>,
+    owner: &str,
+) -> Result<()> {
+    check_one(b.base_class.as_deref(), registry, owner)?;
+    for iface in &b.interfaces {
+        check_one(Some(iface), registry, owner)?;
+    }
+    Ok(())
+}
+
+fn check_one(
+    name: Option<&str>,
+    registry: &std::collections::HashMap<String, Arc<TypeDesc>>,
+    owner: &str,
+) -> Result<()> {
+    let Some(n) = name else { return Ok(()); };
+    if registry.contains_key(n) { return Ok(()); }
+    // Std.* references are resolved by the lazy zpkg loader after module load.
+    if n.starts_with("Std.") { return Ok(()); }
+    // Interface-only bundles may reference interfaces not yet in the type_registry
+    // (which currently holds classes only). Soft-allow; strict interface tracking lands in L3-G3b.
+    if n.starts_with('I') && n.chars().nth(1).is_some_and(|c| c.is_ascii_uppercase()) {
+        return Ok(());
+    }
+    bail!("InvalidConstraintReference: `{n}` on `{owner}` not found in type registry")
 }
 
 /// Precompute block label → index mapping for all functions in the module.

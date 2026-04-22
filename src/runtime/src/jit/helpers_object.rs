@@ -177,6 +177,7 @@ pub unsafe extern "C" fn jit_obj_new(
             name: class_name.clone(), base_name: None,
             fields: Vec::new(), field_index: HashMap::new(),
             vtable: Vec::new(), vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
+            type_param_constraints: vec![],
         }));
     let slots = vec![Value::Null; type_desc.fields.len()];
     let obj_rc  = Rc::new(RefCell::new(ScriptObject { type_desc, slots, native: NativeData::None }));

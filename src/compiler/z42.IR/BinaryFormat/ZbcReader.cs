@@ -54,11 +54,13 @@ public static partial class ZbcReader
             string execMode = sig?.ExecMode ?? "Interp";
             bool   isStatic = sig?.IsStatic ?? false;
             var typeParams  = sig?.TypeParams;
+            var typeParamConstraints = sig?.TypeParamConstraints;
 
             var localVars = i < dbugVarTables.Count ? dbugVarTables[i] : null;
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                 excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
-                LineTable: lineTable, LocalVarTable: localVars, TypeParams: typeParams));
+                LineTable: lineTable, LocalVarTable: localVars,
+                TypeParams: typeParams, TypeParamConstraints: typeParamConstraints));
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
@@ -201,19 +203,43 @@ public static partial class ZbcReader
             var fields      = new List<IrFieldDesc>(fldCount);
             for (int f = 0; f < fldCount; f++)
                 fields.Add(new IrFieldDesc(P(pool, r.ReadUInt32()), TypeTags.ToIrString(r.ReadByte())));
-            // Generic type parameters
+            // Generic type parameters (L3-G1) + per-tp constraints (L3-G3a)
             byte tpCount = r.ReadByte();
             List<string>? typeParams = tpCount > 0 ? new(tpCount) : null;
+            List<IrConstraintBundle>? typeParamConstraints = tpCount > 0
+                ? new List<IrConstraintBundle>(tpCount) : null;
             for (int t = 0; t < tpCount; t++)
+            {
                 typeParams!.Add(P(pool, r.ReadUInt32()));
-            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams));
+                typeParamConstraints!.Add(ReadConstraintBundle(r, pool));
+            }
+            classes.Add(new IrClassDesc(name, baseCls, fields, typeParams, typeParamConstraints));
         }
         return classes;
     }
 
+    // ── Constraint bundle codec (L3-G3a) ─────────────────────────────────────
+
+    /// Decodes one constraint bundle (matches ZbcWriter.WriteConstraintBundle layout).
+    private static IrConstraintBundle ReadConstraintBundle(BinaryReader r, string[] pool)
+    {
+        byte flags = r.ReadByte();
+        bool reqClass  = (flags & 0x01) != 0;
+        bool reqStruct = (flags & 0x02) != 0;
+        bool hasBase   = (flags & 0x04) != 0;
+        string? baseClass = hasBase ? P(pool, r.ReadUInt32()) : null;
+        byte ifaceCount = r.ReadByte();
+        var ifaces = new List<string>(ifaceCount);
+        for (int i = 0; i < ifaceCount; i++)
+            ifaces.Add(P(pool, r.ReadUInt32()));
+        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces);
+    }
+
     // ── SIGS section ──────────────────────────────────────────────────────────
 
-    private record SigEntry(string Name, ushort ParamCount, string RetType, string ExecMode, bool IsStatic, List<string>? TypeParams);
+    private record SigEntry(
+        string Name, ushort ParamCount, string RetType, string ExecMode, bool IsStatic,
+        List<string>? TypeParams, List<IrConstraintBundle>? TypeParamConstraints);
 
     private static List<SigEntry> ReadSigsSection(byte[] data, string[] pool)
     {
@@ -230,16 +256,22 @@ public static partial class ZbcReader
             string retType    = TypeTags.ToIrString(r.ReadByte());
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
-            // Generic type parameters (v0.5+)
+            // Generic type parameters (v0.3+) + per-tp constraints (v0.5+)
             byte tpCount = (ms.Position < ms.Length) ? r.ReadByte() : (byte)0;
             List<string>? typeParams = null;
+            List<IrConstraintBundle>? typeParamConstraints = null;
             if (tpCount > 0)
             {
                 typeParams = new List<string>(tpCount);
+                typeParamConstraints = new List<IrConstraintBundle>(tpCount);
                 for (int t = 0; t < tpCount; t++)
+                {
                     typeParams.Add(P(pool, r.ReadUInt32()));
+                    typeParamConstraints.Add(ReadConstraintBundle(r, pool));
+                }
             }
-            result.Add(new SigEntry(name, paramCount, retType, execMode, isStatic, typeParams));
+            result.Add(new SigEntry(name, paramCount, retType, execMode, isStatic,
+                typeParams, typeParamConstraints));
         }
         return result;
     }

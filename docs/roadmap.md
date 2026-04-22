@@ -134,14 +134,15 @@
 | **L3-G1** | 泛型函数 + 泛型类（无约束） | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **L3-G2** | 接口约束（`where T: I + J`） | ✅ | ✅ | — | — | ✅ |
 | **L3-G2.5** | 约束范式补充：基类 ✅ / 构造器 / class / struct / notnull 等 | 🟡 | 🟡 | — | — | 🟡 |
-| **L3-G3a** | zbc 约束元数据 + VM loader + 运行时校验 | — | — | — | — | 📋 |
-| **L3-G3b** | 反射接口（`type.Constraints` / `t is IComparable<T>`） | — | — | — | — | 📋 |
+| **L3-G3a** | zbc 约束元数据 + VM loader + 加载时校验 | — | — | ✅ | ✅ | ✅ |
+| **L3-G3b** | 反射接口 + 运行时 Call/ObjNew 约束校验 | — | — | — | — | 📋 |
 | **L3-G3c** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
 | **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | — | — | — | 📋 |
 | **L3-G4** | 泛型标准库（List/Dict 原生化 + primitive 接口） | — | — | — | — | 📋 |
 
 > L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。
-> L3-G2 已实现：`where T: I + J` / `where K: I, V: J` 语法、约束方法查找、调用点校验、返回类型按推断替换；启用 `IComparable<T>` / `IEquatable<T>` stdlib 接口。约束不写入 zbc（L3-G3 补齐 VM 运行时校验 + 反射）。
+> L3-G2 已实现：`where T: I + J` / `where K: I, V: J` 语法、约束方法查找、调用点校验、返回类型按推断替换；启用 `IComparable<T>` / `IEquatable<T>` stdlib 接口。
+> L3-G3a 已实现：zbc 版本 0.4 → 0.5，SIGS/TYPE per-tp 约束元数据；Rust VM loader 读取到 `TypeDesc.type_param_constraints` / `Function.type_param_constraints`；加载时 `verify_constraints` pass 校验约束引用的 class/interface 存在（`Std.*` 前缀放行给 lazy loader）。**不**做运行时 Call/ObjNew 校验（留给 L3-G3b 配合反射）。
 
 ### L3-G2.5：约束范式扩展（计划）
 

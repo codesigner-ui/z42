@@ -56,7 +56,12 @@
       "Bash(grep -c 'public const string' src/compiler/z42.Core/Diagnostics/*.cs src/compiler/z42.Semantics/**/*.cs)",
       "Bash(ls src/compiler/z42.Tests/*.cs)",
       "Bash(ls scripts/regen*.sh)",
-      "Bash(xxd src/runtime/tests/golden/run/01_hello/source.zbc)"
+      "Bash(xxd src/runtime/tests/golden/run/01_hello/source.zbc)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 commit -m ' *)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 log --oneline --diff-filter=A -- src/runtime/src/metadata/lazy_loader_tests.rs)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 stash)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 diff .claude/settings.local.json)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add .claude/)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

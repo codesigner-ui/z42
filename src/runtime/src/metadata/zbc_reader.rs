@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use anyhow::{bail, Result};
 
 use super::bytecode::{
-    BasicBlock, ClassDesc, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator,
+    BasicBlock, ClassDesc, ConstraintBundle, ExceptionEntry, FieldDesc, Function, Instruction, Module, Terminator,
 };
 use super::formats::{ZpkgDep, ZPKG_MAGIC, ZBC_MAGIC};
 use super::types::ExecMode;
@@ -237,16 +237,40 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
                 type_tag: type_tag_to_str(type_tag).to_owned(),
             });
         }
-        // Generic type parameters
+        // Generic type parameters + per-tp constraints (L3-G3a)
         let tp_count = c.read_u8()? as usize;
         let mut type_params = Vec::with_capacity(tp_count);
+        let mut type_param_constraints = Vec::with_capacity(tp_count);
         for _ in 0..tp_count {
             let tp_idx = c.read_u32()?;
             type_params.push(c.pool_str(pool, tp_idx)?.to_owned());
+            type_param_constraints.push(read_constraint_bundle(&mut c, pool)?);
         }
-        classes.push(ClassDesc { name, base_class, fields, type_params });
+        classes.push(ClassDesc {
+            name, base_class, fields, type_params, type_param_constraints,
+        });
     }
     Ok(classes)
+}
+
+/// Decode one constraint bundle. Mirrors ZbcWriter.WriteConstraintBundle.
+/// Layout: `flags: u8, [if bit2] base_class_idx: u32, interface_count: u8, iface_idx[]: u32`.
+fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintBundle> {
+    let flags = c.read_u8()?;
+    let requires_class  = (flags & 0x01) != 0;
+    let requires_struct = (flags & 0x02) != 0;
+    let has_base        = (flags & 0x04) != 0;
+    let base_class = if has_base {
+        let idx = c.read_u32()?;
+        Some(c.pool_str(pool, idx)?.to_owned())
+    } else { None };
+    let iface_count = c.read_u8()? as usize;
+    let mut interfaces = Vec::with_capacity(iface_count);
+    for _ in 0..iface_count {
+        let idx = c.read_u32()?;
+        interfaces.push(c.pool_str(pool, idx)?.to_owned());
+    }
+    Ok(ConstraintBundle { requires_class, requires_struct, base_class, interfaces })
 }
 
 // ── SIGS section ─────────────────────────────────────────────────────────────
@@ -258,6 +282,7 @@ struct FuncSig {
     exec_mode: ExecMode,
     is_static: bool,
     type_params: Vec<String>,
+    type_param_constraints: Vec<ConstraintBundle>,
 }
 
 fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<FuncSig>> {
@@ -270,12 +295,14 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
         let ret_tag     = c.read_u8()?;
         let mode_byte   = c.read_u8()?;
         let is_static   = if has_is_static { c.read_u8()? != 0 } else { false };
-        // Generic type params (added after is_static)
+        // Generic type params (added after is_static) + per-tp constraints (L3-G3a)
         let tp_count    = if has_is_static { c.read_u8()? as usize } else { 0 };
         let mut type_params = Vec::with_capacity(tp_count);
+        let mut type_param_constraints = Vec::with_capacity(tp_count);
         for _ in 0..tp_count {
             let tp_idx = c.read_u32()?;
             type_params.push(c.pool_str(pool, tp_idx)?.to_owned());
+            type_param_constraints.push(read_constraint_bundle(&mut c, pool)?);
         }
         sigs.push(FuncSig {
             name: c.pool_str(pool, name_idx)?.to_owned(),
@@ -284,6 +311,7 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
             exec_mode: exec_mode_from_byte(mode_byte),
             is_static,
             type_params,
+            type_param_constraints,
         });
     }
     Ok(sigs)
@@ -649,6 +677,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             line_table:      body.line_table,
             local_vars,
             type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
+            type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default(),
             block_index:     std::collections::HashMap::new(),
         }
     }).collect();
@@ -827,6 +856,7 @@ fn read_mods_section(
                 line_table:      body.line_table,
                 local_vars:      vec![],
                 type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
+                type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default(),
                 block_index:     std::collections::HashMap::new(),
             }
         }).collect();

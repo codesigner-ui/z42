@@ -38,6 +38,9 @@ pub struct TypeDesc {
     /// Concrete type arguments for an instantiated generic class: ["int"], ["string", "int"].
     /// Empty for non-generic classes and uninstantiated generic definitions.
     pub type_args: Vec<String>,
+    /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
+    /// Empty for non-generic classes; inner bundle may be empty for unconstrained params.
+    pub type_param_constraints: Vec<super::bytecode::ConstraintBundle>,
 }
 
 // ── NativeData — native backing for built-in class types ────────────────────

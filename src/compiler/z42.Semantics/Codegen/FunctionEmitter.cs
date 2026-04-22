@@ -82,9 +82,13 @@ internal sealed partial class FunctionEmitter
         var lineTable = _lineTable.Count > 0 ? _lineTable : null;
         var localVars = SnapshotLocalVarTable();
         int paramCount = method.Params.Count + paramOffset;
+        // L3-G3a: method constraint lookup uses `{ClassName}.{MethodName}` key
+        var constraints = IrGen.BuildConstraintList(
+            $"{className}.{method.Name}", method.TypeParams, _ctx.SemanticModel?.FuncConstraints);
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
             IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
-            TypeParams: method.TypeParams);
+            TypeParams: method.TypeParams,
+            TypeParamConstraints: constraints);
     }
 
     internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)
@@ -104,9 +108,12 @@ internal sealed partial class FunctionEmitter
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         var lineTable = _lineTable.Count > 0 ? _lineTable : null;
         var localVars = SnapshotLocalVarTable();
+        var constraints = IrGen.BuildConstraintList(
+            fn.Name, fn.TypeParams, _ctx.SemanticModel?.FuncConstraints);
         return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
             "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
-            TypeParams: fn.TypeParams);
+            TypeParams: fn.TypeParams,
+            TypeParamConstraints: constraints);
     }
 
     internal IrFunction EmitStaticInit(CompilationUnit cu)

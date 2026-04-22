@@ -36,6 +36,7 @@ fn sb_type_desc() -> Arc<TypeDesc> {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
+        type_param_constraints: vec![],
     })
 }
 

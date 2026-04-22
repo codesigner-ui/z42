@@ -54,6 +54,16 @@ public sealed class SemanticModel
     /// Used by IrGen to qualify imported class calls with the correct namespace.
     public IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
 
+    /// Resolved generic constraints per top-level function name. (L3-G3a)
+    /// Inner dict keys = type-param name; value = bundle. Absent entries → no constraints.
+    /// Consumed by IrGen to emit zbc constraint metadata.
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
+        FuncConstraints { get; }
+
+    /// Resolved generic constraints per class name. (L3-G3a)
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
+        ClassConstraints { get; }
+
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,
         IReadOnlyDictionary<string, Z42FuncType>      funcs,
@@ -64,7 +74,9 @@ public sealed class SemanticModel
         IReadOnlyDictionary<Param,        BoundExpr>  boundDefaults,
         IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundStaticInits,
         IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs,
-        IReadOnlyDictionary<string, string>? importedClassNamespaces = null)
+        IReadOnlyDictionary<string, string>? importedClassNamespaces = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? funcConstraints = null,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null)
     {
         Classes                 = classes;
         Funcs                   = funcs;
@@ -76,5 +88,7 @@ public sealed class SemanticModel
         BoundStaticInits        = boundStaticInits;
         BoundBaseCtorArgs       = boundBaseCtorArgs;
         ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
+        FuncConstraints         = funcConstraints  ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
+        ClassConstraints        = classConstraints ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
     }
 }
