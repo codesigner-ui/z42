@@ -1,0 +1,52 @@
+// Test: L3-G4h step2 — duck-typed `foreach` on user classes with Count + indexer.
+// Lowers to `for (int i=0; i<c.Count(); i++) var e = c[i]`; exercises ArrayList + custom class.
+
+class Ring<T> {
+    T[] items;
+    int n;
+
+    Ring() { this.items = new T[8]; this.n = 0; }
+
+    public int Count() { return this.n; }
+
+    public T this[int i] { get { return this.items[i]; } set { this.items[i] = value; } }
+
+    public void Add(T v) { this.items[this.n] = v; this.n = this.n + 1; }
+}
+
+void Main() {
+    // Custom generic class
+    var r = new Ring<int>();
+    r.Add(10); r.Add(20); r.Add(30);
+
+    int sum = 0;
+    foreach (var x in r) { sum = sum + x; }
+    Console.WriteLine(sum);           // 60
+
+    // break still works
+    int hit = 0;
+    foreach (var x in r) {
+        if (x == 20) { hit = x; break; }
+    }
+    Console.WriteLine(hit);           // 20
+
+    // continue still works
+    int odd = 0;
+    foreach (var x in r) {
+        if (x == 20) continue;
+        odd = odd + x;
+    }
+    Console.WriteLine(odd);           // 40
+
+    // stdlib ArrayList
+    var xs = new ArrayList<int>();
+    xs.Add(1); xs.Add(2); xs.Add(3); xs.Add(4); xs.Add(5);
+    int total = 0;
+    foreach (var v in xs) { total = total + v; }
+    Console.WriteLine(total);         // 15
+
+    // ArrayList<string>
+    var ss = new ArrayList<string>();
+    ss.Add("a"); ss.Add("b"); ss.Add("c");
+    foreach (var s in ss) { Console.WriteLine(s); }  // a / b / c
+}

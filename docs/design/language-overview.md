@@ -146,11 +146,16 @@ for (int i = 0; i < 10; i++) {
     Console.WriteLine(i);
 }
 
-// foreach
+// foreach —— 支持数组、字符串、以及任意实现 `int Count()` + `T get_Item(int)` 的类
 var numbers = new[] { 1, 2, 3, 4, 5 };
 foreach (var n in numbers) {
     Console.WriteLine(n);
 }
+
+// 用户类容器（duck-typed 协议，无需显式实现 IEnumerable）
+var xs = new ArrayList<int>();
+xs.Add(1); xs.Add(2);
+foreach (var v in xs) { Console.WriteLine(v); }
 
 // switch 表达式（C# 8+）
 string label = x switch {

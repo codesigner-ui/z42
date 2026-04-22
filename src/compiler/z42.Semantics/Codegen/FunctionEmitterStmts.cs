@@ -197,14 +197,23 @@ internal sealed partial class FunctionEmitter
 
     private void EmitBoundForeach(BoundForeach fe)
     {
-        var arrReg = EmitExpr(fe.Collection);
-        var lenReg = Alloc(IrType.I32);
-        Emit(new ArrayLenInstr(lenReg, arrReg));
+        var collReg = EmitExpr(fe.Collection);
+
+        // Duck-typed source-class iteration: if collection is a class with
+        // `Count()` + `get_Item(int)`, lower via VCall instead of array ops.
+        var (classDef, isClassIter) = ClassIterTarget(fe.Collection.Type);
 
         string indexVar = $"__fe_i_{_nextLabelId}";
         var zeroReg = Alloc(IrType.I32);
         Emit(new ConstI32Instr(zeroReg, 0));
         WriteBackName(indexVar, zeroReg);
+
+        // Compute length once before the loop.
+        var lenReg = Alloc(IrType.I32);
+        if (isClassIter)
+            Emit(new VCallInstr(lenReg, collReg, "Count", new List<TypedReg>()));
+        else
+            Emit(new ArrayLenInstr(lenReg, collReg));
 
         string condLbl = FreshLabel("fe_cond");
         string bodyLbl = FreshLabel("fe_body");
@@ -214,25 +223,25 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(condLbl);
-        var iReg   = _locals[indexVar];  // Direct access to loop index register
+        var iReg   = _locals[indexVar];
         var cmpReg = Alloc(IrType.Bool);
         Emit(new LtInstr(cmpReg, iReg, lenReg));
         EndBlock(new BrCondTerm(cmpReg, bodyLbl, endLbl));
 
         _loopStack.Push((endLbl, incrLbl));
         StartBlock(bodyLbl);
-        // Read loop index variable (now pure register-based)
         var indexReg = _locals[indexVar];
         var elemReg = Alloc(ToIrType(fe.VarType));
-        Emit(new ArrayGetInstr(elemReg, arrReg, indexReg));
-        // Assign loop variable (WriteBackName will allocate register)
+        if (isClassIter)
+            Emit(new VCallInstr(elemReg, collReg, "get_Item", new List<TypedReg> { indexReg }));
+        else
+            Emit(new ArrayGetInstr(elemReg, collReg, indexReg));
         WriteBackName(fe.VarName, elemReg);
         EmitBoundBlock(fe.Body);
         if (!_blockEnded) EndBlock(new BrTerm(incrLbl));
         _loopStack.Pop();
 
         StartBlock(incrLbl);
-        // Increment loop index (now pure register-based)
         var indexReg2 = _locals[indexVar];
         var oneReg  = Alloc(IrType.I32);
         Emit(new ConstI32Instr(oneReg, 1));
@@ -242,6 +251,24 @@ internal sealed partial class FunctionEmitter
         EndBlock(new BrTerm(condLbl));
 
         StartBlock(endLbl);
+    }
+
+    /// Detect a class-typed foreach target with `Count` + `get_Item` — returns the
+    /// underlying class definition when eligible. Pseudo-class `List`/`Dictionary`
+    /// are excluded so they stick to the builtin iterator path in interp/jit.
+    private static (Z42ClassType? def, bool isClassIter) ClassIterTarget(Z42Type t)
+    {
+        Z42ClassType? def = t switch
+        {
+            Z42InstantiatedType inst => inst.Definition,
+            Z42ClassType ct          => ct,
+            _                        => null,
+        };
+        if (def is null) return (null, false);
+        if (def.Name is "List" or "Dictionary") return (null, false);
+        if (!def.Methods.ContainsKey("Count")) return (null, false);
+        if (!def.Methods.ContainsKey("get_Item")) return (null, false);
+        return (def, true);
     }
 
     // ── Switch statement ──────────────────────────────────────────────────────

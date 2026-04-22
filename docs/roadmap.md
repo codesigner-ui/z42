@@ -144,7 +144,7 @@
 | **L3-G4e** | 索引器语法 `T this[int] { get; set; }` — desugar 到 get_Item/set_Item | ✅ | ✅ | — | — | ✅ |
 | **L3-G4f** | 源码级 ArrayList<T> ✅；HashMap 放到 G4g | — | 🟡 | — | — | 🟡 |
 | **L3-G4g** | 跨命名空间约束解析 ✅ + ArrayList.Contains/IndexOf ✅ + HashMap<K,V> ✅ + TSIG 不重导入 ✅ | — | ✅ | — | — | ✅ |
-| **L3-G4h** | step1 `&&`/`||` 短路求值 ✅；step2 foreach iterator protocol；step3 真正移除 pseudo-class List/Dict | — | — | ✅ | ✅ | 🟡 |
+| **L3-G4h** | step1 `&&`/`||` 短路求值 ✅；step2 foreach 鸭子协议 ✅；step3 真正移除 pseudo-class List/Dict | — | ✅ | ✅ | ✅ | 🟡 |
 | **L3-G4** | 泛型标准库（已细拆为 G4a/G4b/G4c/G4d，保留总指标） | — | 🟡 | — | 🟡 | 🟡 |
 | **L3-R** | 反射与运行时类型信息 — 见下独立小节（统一批次，延后） | — | — | — | — | 📋 |
 

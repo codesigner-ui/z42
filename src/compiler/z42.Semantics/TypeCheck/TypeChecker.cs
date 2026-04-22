@@ -554,8 +554,30 @@ public sealed partial class TypeChecker : ITypeInferrer
     {
         Z42ArrayType  at => at.Element,
         Z42OptionType ot => ot.Inner,
+        // L3-G4h step2: duck-typed `foreach` — class with `get_Item(int)` indexer
+        // yields elements of the indexer's return type (with type-param substitution
+        // for instantiated generics).
+        Z42InstantiatedType inst when FindIndexerRet(inst.Definition, BuildSubMap(inst)) is { } rt => rt,
+        Z42ClassType ct when FindIndexerRet(ct, null) is { } rt => rt,
         _                => Z42Type.Unknown
     };
+
+    private static Z42Type? FindIndexerRet(Z42ClassType ct,
+                                           IReadOnlyDictionary<string, Z42Type>? sub)
+    {
+        if (!ct.Methods.TryGetValue("get_Item", out var mt)) return null;
+        return SubstituteTypeParams(mt.Ret, sub);
+    }
+
+    private static IReadOnlyDictionary<string, Z42Type> BuildSubMap(Z42InstantiatedType inst)
+    {
+        var map = new Dictionary<string, Z42Type>();
+        var tps = inst.Definition.TypeParams;
+        if (tps is not null)
+            for (int i = 0; i < tps.Count && i < inst.TypeArgs.Count; i++)
+                map[tps[i]] = inst.TypeArgs[i];
+        return map;
+    }
 
     // ── Diagnostic helpers ────────────────────────────────────────────────────
 
