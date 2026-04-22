@@ -25,6 +25,11 @@ public static class ExportedTypeExtractor
         foreach (var (name, ct) in sem.Classes)
         {
             if (name == "Object") continue; // skip synthetic Object stub
+            // L3-G4g: do NOT re-export imported classes. Previously sem.Classes contained
+            // both local + imported (SymbolCollector merges imports into `_classes`), so
+            // TSIG picked up e.g. Std.Collections.HashMap when compiling Std.Text. The
+            // owning consumer of that TSIG then mis-routed `new HashMap<...>()` to Std.Text.
+            if (sem.ImportedClassNames.Contains(name)) continue;
 
             var fields = new List<ExportedFieldDef>();
             foreach (var (fn, ft) in ct.Fields)

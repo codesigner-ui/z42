@@ -62,7 +62,8 @@
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 stash)",
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 diff .claude/settings.local.json)",
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add .claude/)",
-      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add src/runtime/tests/golden/run/74_generic_stack/)"
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add src/runtime/tests/golden/run/74_generic_stack/)",
+      "Bash(mv /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/add-generics-g4f-source-containers/* /Users/d.s.qiu/Documents/codesigner-ui/z42/openspec/changes/archive/2026-04-22-add-generics-g4f-source-containers/)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

@@ -1,15 +1,10 @@
 namespace Std.Collections;
 
-// TODO(L3): full generic implementation requires generics support.
-// Until then, Dictionary<K,V> is handled by the compiler's pseudo-class strategy.
-// This file is a placeholder that documents the intended API.
+// `Dictionary<K,V>` is still provided by the compiler's pseudo-class fast path
+// for L1/L2 backward compatibility (string-keyed only; `foreach` supported).
+// A real source-level generic hash map is available as
+// `Std.Collections.HashMap<K,V>` — see `HashMap.z42` for the implementation.
 //
-// public class Dictionary<K, V> {
-//     public int Count { get; }
-//     public V this[K key] { get; set; }
-//     public bool ContainsKey(K key);
-//     public bool Remove(K key);
-//     public void Clear();
-//     public List<K> Keys { get; }
-//     public List<V> Values { get; }
-// }
+// The pseudo-class will be removed once the language grows a foreach iterator
+// protocol (L3-G4h) so the stdlib source version can serve both call-site and
+// iteration needs without special compiler support.

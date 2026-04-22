@@ -1,12 +1,11 @@
 namespace Std.Collections;
 
-// Generic dynamic-array list (L3-G4f — source-level alternative to pseudo-class List<T>).
-// Amortised O(1) Add, O(1) indexer, O(n) RemoveAt / Insert.
+// Generic dynamic-array list (L3-G4f / L3-G4g — source-level alternative to pseudo-class List<T>).
+// Amortised O(1) Add + indexer, O(n) RemoveAt / Insert / Contains / IndexOf.
 //
-// NOTE: Contains / IndexOf intentionally omitted in this iteration — they require
-// `where T: IEquatable<T>` constraint which currently doesn't resolve cleanly across
-// Std.Collections → Std namespace boundary. Add them when that resolution is tightened.
-public class ArrayList<T> {
+// T equality for Contains / IndexOf uses `.Equals(item)`; primitive types route through
+// VM builtins; user types must implement IEquatable<T>.
+public class ArrayList<T> where T: IEquatable<T> {
     T[] items;
     int count;
     int capacity;
@@ -49,6 +48,19 @@ public class ArrayList<T> {
             i = i + 1;
         }
         this.count = this.count - 1;
+    }
+
+    public bool Contains(T item) {
+        return this.IndexOf(item) >= 0;
+    }
+
+    public int IndexOf(T item) {
+        int i = 0;
+        while (i < this.count) {
+            if (this.items[i].Equals(item)) return i;
+            i = i + 1;
+        }
+        return -1;
     }
 
     public void Clear() {

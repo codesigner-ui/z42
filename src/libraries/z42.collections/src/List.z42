@@ -1,18 +1,10 @@
 namespace Std.Collections;
 
-// TODO(L3): full generic implementation requires generics support.
-// Until then, List<T> is handled by the compiler's pseudo-class strategy.
-// This file is a placeholder that documents the intended API.
+// `List<T>` is still provided by the compiler's pseudo-class fast path for L1/L2
+// backward compatibility (including `foreach` support).  A real source-level
+// generic container is available as `Std.Collections.ArrayList<T>` — see
+// `ArrayList.z42` for the implementation.
 //
-// public class List<T> {
-//     public int Count { get; }
-//     public void Add(T item);
-//     public void Insert(int index, T item);
-//     public void RemoveAt(int index);
-//     public bool Remove(T item);
-//     public bool Contains(T item);
-//     public void Clear();
-//     public void Sort();
-//     public void Reverse();
-//     public T this[int index] { get; set; }
-// }
+// The pseudo-class will be removed once the language grows a foreach iterator
+// protocol (L3-G4h) so the stdlib source version can serve both call-site and
+// iteration needs without special compiler support.

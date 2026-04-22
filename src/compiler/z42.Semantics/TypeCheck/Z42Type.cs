@@ -45,6 +45,17 @@ public abstract record Z42Type
         if (source is Z42UnknownType || target is Z42UnknownType) return true;
         // Generic type parameter T: compatible with anything (checked at instantiation site)
         if (source is Z42GenericParamType || target is Z42GenericParamType) return true;
+        // L3-G4g: Array element of generic parameter — same-named T with different
+        // constraint sets (field-stored `T[]` may have no constraints; method-local
+        // `T[]` may have active where-clause constraints). Compare element name only.
+        if (source is Z42ArrayType sArr && target is Z42ArrayType tArr)
+        {
+            if (sArr.Element is Z42GenericParamType sg && tArr.Element is Z42GenericParamType tg
+                && sg.Name == tg.Name)
+                return true;
+            // Fall back to element-wise IsAssignableTo for non-generic arrays
+            if (IsAssignableTo(tArr.Element, sArr.Element)) return true;
+        }
         // null is assignable to any reference type or optional type
         if (source is Z42NullType && (IsReferenceType(target) || target is Z42OptionType)) return true;
         // Same-name class types are compatible (handles two-pass TypeChecker where stubs

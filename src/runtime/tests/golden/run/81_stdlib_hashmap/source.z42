@@ -1,0 +1,44 @@
+// Test: L3-G4g stdlib Std.Collections.HashMap<K,V> — source-level generic hash map.
+
+void Main() {
+    // HashMap<string, int>
+    var m = new HashMap<string, int>();
+    m.Set("alpha", 1);
+    m.Set("beta", 2);
+    m.Set("gamma", 3);
+    Console.WriteLine(m.Count());          // 3
+    Console.WriteLine(m.Get("alpha"));     // 1
+    Console.WriteLine(m.Get("gamma"));     // 3
+    Console.WriteLine(m.ContainsKey("beta"));    // true
+    Console.WriteLine(m.ContainsKey("delta"));   // false
+
+    // Indexer
+    m["alpha"] = 99;
+    Console.WriteLine(m["alpha"]);         // 99
+    m["omega"] = 26;
+    Console.WriteLine(m.Count());          // 4
+    Console.WriteLine(m["omega"]);         // 26
+
+    // Remove
+    Console.WriteLine(m.Remove("beta"));   // true
+    Console.WriteLine(m.ContainsKey("beta"));  // false
+    Console.WriteLine(m.Count());          // 3
+    Console.WriteLine(m.Remove("ghost"));  // false
+
+    // HashMap<int, string>
+    var n = new HashMap<int, string>();
+    n[1] = "one";
+    n[2] = "two";
+    n[3] = "three";
+    Console.WriteLine(n.Count());          // 3
+    Console.WriteLine(n[2]);               // two
+
+    // Collision / grow: insert many, verify count + sample reads
+    var big = new HashMap<int, int>();
+    int i = 0;
+    while (i < 20) { big[i] = i * i; i = i + 1; }
+    Console.WriteLine(big.Count());        // 20
+    Console.WriteLine(big[0]);             // 0
+    Console.WriteLine(big[10]);            // 100
+    Console.WriteLine(big[19]);            // 361
+}

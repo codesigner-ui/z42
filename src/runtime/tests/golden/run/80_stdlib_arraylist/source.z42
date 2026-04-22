@@ -27,6 +27,12 @@ void Main() {
     Console.WriteLine(xs[1]);          // 100
     Console.WriteLine(xs[2]);          // 99 (was index 1)
 
+    // Contains / IndexOf (L3-G4g — constraint-aware)
+    Console.WriteLine(xs.Contains(99));  // true (xs[2] = 99)
+    Console.WriteLine(xs.Contains(1000));// false
+    Console.WriteLine(xs.IndexOf(99));   // 2
+    Console.WriteLine(xs.IndexOf(1000)); // -1
+
     // Clear
     xs.Clear();
     Console.WriteLine(xs.Count());     // 0
@@ -41,4 +47,6 @@ void Main() {
     Console.WriteLine(ss[1]);          // beta
     ss[1] = "BETA";
     Console.WriteLine(ss[1]);          // BETA
+    Console.WriteLine(ss.Contains("gamma")); // true
+    Console.WriteLine(ss.IndexOf("gamma"));  // 2
 }

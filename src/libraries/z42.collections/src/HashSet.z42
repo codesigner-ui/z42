@@ -1,12 +1,17 @@
 namespace Std.Collections;
 
-// TODO(L3): requires generics.
-// public class HashSet<T> {
-//     public int Count { get; }
-//     public bool Add(T item);
-//     public bool Remove(T item);
-//     public bool Contains(T item);
-//     public void Clear();
-//     public void UnionWith(HashSet<T> other);
-//     public void IntersectWith(HashSet<T> other);
-// }
+// TODO(L3-G4 future): generic HashSet<T> — a source-level set built on top of
+// `Std.Collections.HashMap<T, int>` (value = 1 as placeholder). Left as a
+// future iteration since the most common use case is already covered by
+// `HashMap<K,V>` for key-only lookups.
+//
+// Planned API (mirrors C#):
+//   public class HashSet<T> where T: IEquatable<T> {
+//       public int Count();
+//       public bool Add(T item);       // returns false if already present
+//       public bool Remove(T item);
+//       public bool Contains(T item);
+//       public void Clear();
+//       public void UnionWith(HashSet<T> other);
+//       public void IntersectWith(HashSet<T> other);
+//   }

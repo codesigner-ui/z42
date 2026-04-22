@@ -151,10 +151,11 @@ public static class PackageCompiler
         string                outDir,
         DependencySection?    declaredDeps = null)
     {
-        var libsDirs    = new[] {
-            Path.Combine(projectDir, "libs"),
-            Path.Combine(projectDir, "artifacts", "z42", "libs"),
-        };
+        // L3-G4g: libsDirs includes projectDir/libs, projectDir/artifacts/z42/libs,
+        // plus a walk-up search for the repo-level `artifacts/z42/libs` so stdlib
+        // packages compiling against each other (e.g. z42.collections → z42.core)
+        // can resolve their dependencies.
+        var libsDirs    = BuildLibsDirs(projectDir);
         var tsigCache   = new TsigCache();
         var nsMap       = ScanLibsForNamespaces(libsDirs, tsigCache, declaredDeps);
         var depIndex    = BuildDepIndex(libsDirs, declaredDeps);
@@ -197,6 +198,28 @@ public static class PackageCompiler
     // ── Build target sub-steps ────────────────────────────────────────────────
 
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
+    /// Build the list of directories to scan for dependency `.zpkg` files.
+    /// Includes project-local `libs/` and `artifacts/z42/libs/`, plus a walk-up search
+    /// for the repo-level `artifacts/z42/libs/` (so stdlib packages built one after
+    /// another can see each other).
+    static string[] BuildLibsDirs(string projectDir)
+    {
+        var dirs = new List<string>
+        {
+            Path.Combine(projectDir, "libs"),
+            Path.Combine(projectDir, "artifacts", "z42", "libs"),
+        };
+        var dir = new DirectoryInfo(projectDir).Parent;
+        while (dir != null)
+        {
+            var candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            if (Directory.Exists(candidate) && !dirs.Contains(candidate))
+                dirs.Add(candidate);
+            dir = dir.Parent;
+        }
+        return dirs.ToArray();
+    }
+
     /// Also populates the TsigCache with namespace → zpkg path mappings for on-demand loading.
     /// When `declaredDeps` has entries, only declared packages + stdlib (z42.*) are visible.
     static Dictionary<string, string> ScanLibsForNamespaces(
