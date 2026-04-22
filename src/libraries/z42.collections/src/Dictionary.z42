@@ -1,10 +1,116 @@
 namespace Std.Collections;
 
-// `Dictionary<K,V>` is still provided by the compiler's pseudo-class fast path
-// for L1/L2 backward compatibility (string-keyed only; `foreach` supported).
-// A real source-level generic hash map is available as
-// `Std.Collections.HashMap<K,V>` — see `HashMap.z42` for the implementation.
+// `Dictionary<K,V>` — 开放寻址哈希表（L3-G4h step 3：取代 pseudo-class 实现）。
 //
-// The pseudo-class will be removed once the language grows a foreach iterator
-// protocol (L3-G4h) so the stdlib source version can serve both call-site and
-// iteration needs without special compiler support.
+// 线性探测，负载因子 > 0.75 时 2 倍扩容；摊还 O(1) 平均操作。
+// 约束：K 必须 hashable + equatable。primitive K 通过 VM builtin 路由 GetHashCode / Equals；
+// 用户自定义 K 必须实现 IEquatable<K> —— GetHashCode 走 Object 协议。
+public class Dictionary<K, V> where K: IEquatable<K> {
+    K[] keys;
+    V[] values;
+    bool[] occupied;
+    public int Count;
+    int capacity;
+
+    public Dictionary() {
+        this.capacity = 8;
+        this.keys = new K[8];
+        this.values = new V[8];
+        this.occupied = new bool[8];
+        // VM 默认初始化 bool[] 为 Null；显式置 false。
+        int i = 0;
+        while (i < 8) { this.occupied[i] = false; i = i + 1; }
+        this.Count = 0;
+    }
+
+    public bool IsEmpty() { return this.Count == 0; }
+
+    public V this[K key] {
+        get { return this.Get(key); }
+        set { this.Set(key, value); }
+    }
+
+    public void Set(K key, V value) {
+        // 负载因子 > 0.75 即扩容（count * 4 > capacity * 3）
+        if (this.Count * 4 > this.capacity * 3) this.Grow();
+        int slot = this.FindSlot(key);
+        if (!this.occupied[slot]) {
+            this.occupied[slot] = true;
+            this.Count = this.Count + 1;
+        }
+        this.keys[slot] = key;
+        this.values[slot] = value;
+    }
+
+    public V Get(K key) {
+        int slot = this.FindSlot(key);
+        // 不存在时返回 default (null)；调用方应先 ContainsKey。
+        return this.values[slot];
+    }
+
+    public bool ContainsKey(K key) {
+        int slot = this.FindSlot(key);
+        return this.occupied[slot];
+    }
+
+    public bool Remove(K key) {
+        int slot = this.FindSlot(key);
+        if (!this.occupied[slot]) return false;
+        this.occupied[slot] = false;
+        this.Count = this.Count - 1;
+        // 重新插入探测链剩余项以避免空洞。
+        int j = (slot + 1) % this.capacity;
+        while (this.occupied[j]) {
+            K k = this.keys[j];
+            V v = this.values[j];
+            this.occupied[j] = false;
+            this.Count = this.Count - 1;
+            this.Set(k, v);
+            j = (j + 1) % this.capacity;
+        }
+        return true;
+    }
+
+    public void Clear() {
+        int i = 0;
+        while (i < this.capacity) {
+            this.occupied[i] = false;
+            i = i + 1;
+        }
+        this.Count = 0;
+    }
+
+    // 线性探测：返回 key 所在槽（若 occupied）或应放入的空槽。
+    public int FindSlot(K key) {
+        int h = key.GetHashCode();
+        if (h < 0) h = -h;
+        int slot = h % this.capacity;
+        while (this.occupied[slot] && !this.keys[slot].Equals(key)) {
+            slot = (slot + 1) % this.capacity;
+        }
+        return slot;
+    }
+
+    public void Grow() {
+        int newCap = this.capacity * 2;
+        K[] newKeys = new K[newCap];
+        V[] newValues = new V[newCap];
+        bool[] newOccupied = new bool[newCap];
+        int j = 0;
+        while (j < newCap) { newOccupied[j] = false; j = j + 1; }
+        K[] oldKeys = this.keys;
+        V[] oldValues = this.values;
+        bool[] oldOccupied = this.occupied;
+        int oldCap = this.capacity;
+        this.keys = newKeys;
+        this.values = newValues;
+        this.occupied = newOccupied;
+        this.capacity = newCap;
+        this.Count = 0;
+        int i = 0;
+        while (i < oldCap) {
+            if (oldOccupied[i]) this.Set(oldKeys[i], oldValues[i]);
+            i = i + 1;
+        }
+    }
+}

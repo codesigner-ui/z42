@@ -38,15 +38,15 @@ void Main() {
     }
     Console.WriteLine(odd);           // 40
 
-    // stdlib ArrayList
-    var xs = new ArrayList<int>();
+    // stdlib List
+    var xs = new List<int>();
     xs.Add(1); xs.Add(2); xs.Add(3); xs.Add(4); xs.Add(5);
     int total = 0;
     foreach (var v in xs) { total = total + v; }
     Console.WriteLine(total);         // 15
 
-    // ArrayList<string>
-    var ss = new ArrayList<string>();
+    // List<string>
+    var ss = new List<string>();
     ss.Add("a"); ss.Add("b"); ss.Add("c");
     foreach (var s in ss) { Console.WriteLine(s); }  // a / b / c
 }

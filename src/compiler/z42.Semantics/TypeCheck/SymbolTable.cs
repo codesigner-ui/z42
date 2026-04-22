@@ -169,16 +169,16 @@ public sealed class SymbolTable
             b.TypeParamConstraint);
     }
 
-    /// Resolve GenericType — handles pseudo-class (List<T>, Dictionary<K,V>) and user-defined generics.
+    /// Resolve GenericType — user-defined generic classes / interfaces.
     /// (L3-G4a) For user-defined generics with matching type-arg arity, produce Z42InstantiatedType
     /// so member/method types can be substituted downstream. Falls back to bare Z42ClassType when
     /// type args are missing or arity mismatches (existing L3-G1 behaviour preserved).
+    ///
+    /// L3-G4h step3: pseudo-class `List<T>` / `Dictionary<K,V>` removed —— 现在 `new List<T>()`
+    /// 路由到 stdlib `Std.Collections.List<T>` 源码类。旧的 `__list_*` / `__dict_*` VM builtin
+    /// 不再由编译器发射。
     private Z42Type ResolveGenericType(GenericType gt)
     {
-        // Pseudo-class compatibility: List<T> and Dictionary<K,V> map to built-in types
-        if (gt.Name is "List") return TypeRegistry.GetZ42Type("List") ?? new Z42PrimType("List");
-        if (gt.Name is "Dictionary") return TypeRegistry.GetZ42Type("Dictionary") ?? new Z42PrimType("Dictionary");
-
         // User-defined generic class: resolve as class type (code sharing — same class, different type_args)
         if (Classes.TryGetValue(gt.Name, out var ct))
         {

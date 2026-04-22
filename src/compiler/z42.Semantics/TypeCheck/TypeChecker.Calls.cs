@@ -303,10 +303,10 @@ public sealed partial class TypeChecker
         return bound;
     }
 
-    /// Check if a type name is a builtin collection type (NOT string, int, etc.)
+    /// L3-G4h step3: List/Dictionary 已迁移到源码类；仅 Array/StringBuilder 保留 pseudo 路径。
     private bool IsBuiltinCollectionType(string typeName)
     {
-        return typeName is "List" or "Dictionary" or "Array" or "StringBuilder";
+        return typeName is "Array" or "StringBuilder";
     }
 
     private void CheckArgCount(int actual, int min, int max, Span span)

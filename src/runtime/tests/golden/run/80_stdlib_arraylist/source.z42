@@ -1,14 +1,15 @@
-// Test: L3-G4f stdlib Std.Collections.ArrayList<T> — source-level generic container.
+// Test: L3-G4h step3 stdlib Std.Collections.List<T> — source-level generic list
+// (previously ArrayList; consolidated to canonical `List<T>` name).
 
 void Main() {
-    // ArrayList<int>
-    var xs = new ArrayList<int>();
+    // List<int>
+    var xs = new List<int>();
     xs.Add(1);
     xs.Add(2);
     xs.Add(3);
     xs.Add(4);
     xs.Add(5);           // triggers Grow (capacity 4 → 8)
-    Console.WriteLine(xs.Count());     // 5
+    Console.WriteLine(xs.Count);       // 5
     Console.WriteLine(xs[0]);          // 1
     Console.WriteLine(xs[4]);          // 5
 
@@ -18,16 +19,16 @@ void Main() {
 
     // RemoveAt
     xs.RemoveAt(0);
-    Console.WriteLine(xs.Count());     // 4
+    Console.WriteLine(xs.Count);       // 4
     Console.WriteLine(xs[0]);          // 2
 
     // Insert
     xs.Insert(1, 100);
-    Console.WriteLine(xs.Count());     // 5
+    Console.WriteLine(xs.Count);       // 5
     Console.WriteLine(xs[1]);          // 100
     Console.WriteLine(xs[2]);          // 99 (was index 1)
 
-    // Contains / IndexOf (L3-G4g — constraint-aware)
+    // Contains / IndexOf
     Console.WriteLine(xs.Contains(99));  // true (xs[2] = 99)
     Console.WriteLine(xs.Contains(1000));// false
     Console.WriteLine(xs.IndexOf(99));   // 2
@@ -35,15 +36,15 @@ void Main() {
 
     // Clear
     xs.Clear();
-    Console.WriteLine(xs.Count());     // 0
+    Console.WriteLine(xs.Count);       // 0
     Console.WriteLine(xs.IsEmpty());   // true
 
-    // ArrayList<string>
-    var ss = new ArrayList<string>();
+    // List<string>
+    var ss = new List<string>();
     ss.Add("alpha");
     ss.Add("beta");
     ss.Add("gamma");
-    Console.WriteLine(ss.Count());     // 3
+    Console.WriteLine(ss.Count);       // 3
     Console.WriteLine(ss[1]);          // beta
     ss[1] = "BETA";
     Console.WriteLine(ss[1]);          // BETA

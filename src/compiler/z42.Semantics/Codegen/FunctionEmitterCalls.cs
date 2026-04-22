@@ -134,34 +134,18 @@ internal sealed partial class FunctionEmitter
         }
     }
 
-    /// Check if a class name refers to a builtin collection type.
+    /// L3-G4h step3: pseudo-class List/Dictionary removed —— 仅 StringBuilder / Array
+    /// 仍走 BuiltinInstr fast path。
     private bool IsBuiltinCollectionType(string? className)
     {
-        return className is "List" or "Dictionary" or "Array" or "StringBuilder";
+        return className is "Array" or "StringBuilder";
     }
 
-    /// Map method names on builtin types to their BuiltinInstr function names.
-    /// Only maps methods that are UNIQUE to builtin types and not ambiguous with stdlib.
-    /// For ambiguous methods like Contains, this is only called when ReceiverClass is explicitly a builtin type.
-    /// Returns null if the method is not a known builtin type method.
+    /// Map builtin type method names to their BuiltinInstr function name.
     private string? ResolveBuiltinMethod(string method, int userArgCount)
     {
         return method switch
         {
-            // List/Array-specific methods
-            "Add"           => "__list_add",
-            "RemoveAt"      => "__list_remove_at",
-            "Insert"        => "__list_insert",
-            "Remove"        => "__dict_remove",  // handles both List and Dictionary
-            "Clear"         => "__list_clear",
-            "Sort"          => "__list_sort",
-            "Reverse"       => "__list_reverse",
-            "Contains"      => "__list_contains",  // Only used when ReceiverClass is explicitly "List"
-            // Dictionary-specific methods
-            "ContainsKey"   => "__dict_contains_key",
-            "TryGetValue"   => "__dict_try_get_value",
-            "Keys"          => "__dict_keys",
-            "Values"        => "__dict_values",
             // StringBuilder-specific methods
             "Append"        => "__sb_append",
             "AppendLine"    => "__sb_append_line",

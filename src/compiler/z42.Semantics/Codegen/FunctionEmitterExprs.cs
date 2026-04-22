@@ -478,18 +478,8 @@ internal sealed partial class FunctionEmitter
                 Emit(new BuiltinInstr(dst, "__sb_new", []));
                 return dst;
             }
-            case "Dictionary":
-            {
-                var dst = Alloc(IrType.Ref);
-                Emit(new BuiltinInstr(dst, "__dict_new", []));
-                return dst;
-            }
-            case "List":
-            {
-                var dst = Alloc(IrType.Ref);
-                Emit(new BuiltinInstr(dst, "__list_new", []));
-                return dst;
-            }
+            // L3-G4h step3: `new List<T>()` / `new Dictionary<K,V>()` 走普通 ObjNew 路径
+            // 到 stdlib `Std.Collections.List` / `Std.Collections.Dictionary`（见 default 分支）。
             default:
             {
                 // L3-G4d: QualifyClassName honours imports so `new Stack<int>()` can

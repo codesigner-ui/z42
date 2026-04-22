@@ -200,8 +200,9 @@ internal sealed partial class FunctionEmitter
         var collReg = EmitExpr(fe.Collection);
 
         // Duck-typed source-class iteration: if collection is a class with
-        // `Count()` + `get_Item(int)`, lower via VCall instead of array ops.
-        var (classDef, isClassIter) = ClassIterTarget(fe.Collection.Type);
+        // `get_Item(int)` + (`Count` field OR `Count()` method), lower via VCall/FieldGet
+        // instead of array ops.
+        var (classDef, isClassIter, countIsField) = ClassIterTarget(fe.Collection.Type);
 
         string indexVar = $"__fe_i_{_nextLabelId}";
         var zeroReg = Alloc(IrType.I32);
@@ -211,7 +212,12 @@ internal sealed partial class FunctionEmitter
         // Compute length once before the loop.
         var lenReg = Alloc(IrType.I32);
         if (isClassIter)
-            Emit(new VCallInstr(lenReg, collReg, "Count", new List<TypedReg>()));
+        {
+            if (countIsField)
+                Emit(new FieldGetInstr(lenReg, collReg, "Count"));
+            else
+                Emit(new VCallInstr(lenReg, collReg, "Count", new List<TypedReg>()));
+        }
         else
             Emit(new ArrayLenInstr(lenReg, collReg));
 
@@ -253,10 +259,12 @@ internal sealed partial class FunctionEmitter
         StartBlock(endLbl);
     }
 
-    /// Detect a class-typed foreach target with `Count` + `get_Item` — returns the
-    /// underlying class definition when eligible. Pseudo-class `List`/`Dictionary`
-    /// are excluded so they stick to the builtin iterator path in interp/jit.
-    private static (Z42ClassType? def, bool isClassIter) ClassIterTarget(Z42Type t)
+    /// Detect a class-typed foreach target with `get_Item` + count source —
+    /// returns the class definition and whether Count is a field (true) or method (false).
+    /// Pseudo-class `List`/`Dictionary` are excluded so they stick to the builtin
+    /// iterator path in interp/jit while L3-G4h step3 migration is in flight.
+    private static (Z42ClassType? def, bool isClassIter, bool countIsField)
+        ClassIterTarget(Z42Type t)
     {
         Z42ClassType? def = t switch
         {
@@ -264,11 +272,11 @@ internal sealed partial class FunctionEmitter
             Z42ClassType ct          => ct,
             _                        => null,
         };
-        if (def is null) return (null, false);
-        if (def.Name is "List" or "Dictionary") return (null, false);
-        if (!def.Methods.ContainsKey("Count")) return (null, false);
-        if (!def.Methods.ContainsKey("get_Item")) return (null, false);
-        return (def, true);
+        if (def is null) return (null, false, false);
+        if (!def.Methods.ContainsKey("get_Item")) return (null, false, false);
+        if (def.Fields.ContainsKey("Count"))   return (def, true,  true);
+        if (def.Methods.ContainsKey("Count"))  return (def, true,  false);
+        return (null, false, false);
     }
 
     // ── Switch statement ──────────────────────────────────────────────────────
