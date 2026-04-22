@@ -1,0 +1,62 @@
+// Test: L3-G4h short-circuit `&&` / `||` — RHS skipped when LHS decides.
+
+class Probe {
+    static int andCalls = 0;
+    static int orCalls = 0;
+
+    // Returns `r`; records that RHS was evaluated.
+    static bool AndRhs(bool r) {
+        Probe.andCalls = Probe.andCalls + 1;
+        return r;
+    }
+
+    static bool OrRhs(bool r) {
+        Probe.orCalls = Probe.orCalls + 1;
+        return r;
+    }
+}
+
+void Main() {
+    Probe.andCalls = 0;
+    Probe.orCalls = 0;
+
+    // `&&` short-circuits on false LHS: RHS never called.
+    bool a = false && Probe.AndRhs(true);
+    Console.WriteLine(a);                    // false
+    Console.WriteLine(Probe.andCalls);       // 0
+
+    // `&&` with true LHS evaluates RHS.
+    bool b = true && Probe.AndRhs(false);
+    Console.WriteLine(b);                    // false
+    Console.WriteLine(Probe.andCalls);       // 1
+
+    // `||` short-circuits on true LHS: RHS never called.
+    bool c = true || Probe.OrRhs(false);
+    Console.WriteLine(c);                    // true
+    Console.WriteLine(Probe.orCalls);        // 0
+
+    // `||` with false LHS evaluates RHS.
+    bool d = false || Probe.OrRhs(true);
+    Console.WriteLine(d);                    // true
+    Console.WriteLine(Probe.orCalls);        // 1
+
+    // Null-guard idiom: `arr != null && arr[0] > 0` must not index when null.
+    int[] empty = null;
+    bool safe = empty != null && empty[0] > 0;
+    Console.WriteLine(safe);                 // false (no crash)
+
+    int[] nums = new int[3];
+    nums[0] = 7;
+    bool hit = nums != null && nums[0] > 0;
+    Console.WriteLine(hit);                  // true
+
+    // Chained: a && b && c, a || b || c
+    Console.WriteLine(true && true && true);   // true
+    Console.WriteLine(true && false && true);  // false
+    Console.WriteLine(false || false || true); // true
+    Console.WriteLine(false || false || false);// false
+
+    // Mixed precedence: && binds tighter than ||
+    Console.WriteLine(false && true || true);  // true  ((false && true) || true)
+    Console.WriteLine(true || false && false); // true  (true || (false && false))
+}

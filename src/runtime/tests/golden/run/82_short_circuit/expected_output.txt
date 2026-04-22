@@ -1,0 +1,16 @@
+false
+0
+false
+1
+true
+0
+true
+1
+false
+true
+true
+false
+true
+false
+true
+true

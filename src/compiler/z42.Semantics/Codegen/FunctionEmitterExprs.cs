@@ -421,11 +421,49 @@ internal sealed partial class FunctionEmitter
             return dst;
         }
 
+        // Short-circuit `&&` / `||`: right side only evaluated when left doesn't decide.
+        if (bin.Op is BinaryOp.And or BinaryOp.Or)
+            return EmitShortCircuit(bin);
+
         var a   = EmitExpr(bin.Left);
         var b   = EmitExpr(bin.Right);
         var dst2 = Alloc(ToIrType(bin.Type));
         Emit(BinFactory[bin.Op](dst2, a, b));
         return dst2;
+    }
+
+    /// Desugar `a && b` / `a || b` into BrCond blocks so `b` is skipped when `a` decides.
+    /// `a && b` : if a then eval b else false.
+    /// `a || b` : if a then true else eval b.
+    private TypedReg EmitShortCircuit(BoundBinary bin)
+    {
+        bool isAnd = bin.Op == BinaryOp.And;
+        string tag = isAnd ? "and" : "or";
+        string rhsLbl   = FreshLabel($"{tag}_rhs");
+        string shortLbl = FreshLabel($"{tag}_short");
+        string endLbl   = FreshLabel($"{tag}_end");
+        var result = Alloc(IrType.Bool);
+
+        var leftReg = EmitExpr(bin.Left);
+        // And: truthy → evaluate RHS; falsy → short-circuit to false.
+        // Or : truthy → short-circuit to true; falsy → evaluate RHS.
+        EndBlock(isAnd
+            ? new BrCondTerm(leftReg, rhsLbl, shortLbl)
+            : new BrCondTerm(leftReg, shortLbl, rhsLbl));
+
+        StartBlock(rhsLbl);
+        var rightReg = EmitExpr(bin.Right);
+        Emit(new CopyInstr(result, rightReg));
+        EndBlock(new BrTerm(endLbl));
+
+        StartBlock(shortLbl);
+        var constReg = Alloc(IrType.Bool);
+        Emit(new ConstBoolInstr(constReg, !isAnd));
+        Emit(new CopyInstr(result, constReg));
+        EndBlock(new BrTerm(endLbl));
+
+        StartBlock(endLbl);
+        return result;
     }
 
     // ── New object ────────────────────────────────────────────────────────────

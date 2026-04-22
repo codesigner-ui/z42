@@ -83,15 +83,11 @@ public class HashMap<K, V> where K: IEquatable<K> {
     }
 
     // Linear probing: returns the slot index where `key` is (occupied) or should go (empty).
-    // Note: we use nested if because z42 `&&` does not short-circuit at the IR level;
-    // the naïve `occupied[slot] && !keys[slot].Equals(key)` would VCall .Equals on
-    // a Null key for uninitialised slots.
     public int FindSlot(K key) {
         int h = key.GetHashCode();
         if (h < 0) h = -h;
         int slot = h % this.capacity;
-        while (this.occupied[slot]) {
-            if (this.keys[slot].Equals(key)) return slot;
+        while (this.occupied[slot] && !this.keys[slot].Equals(key)) {
             slot = (slot + 1) % this.capacity;
         }
         return slot;

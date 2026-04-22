@@ -280,16 +280,26 @@ public sealed class IrGenTests
 
     // ── Logical ───────────────────────────────────────────────────────────────
 
+    // L3-G4h: `&&` / `||` desugar to BrCond control flow for short-circuit semantics;
+    // AndInstr/OrInstr are no longer emitted for bool operands.
     [Fact]
-    public void LogicalAnd_EmitsAndInstr()
+    public void LogicalAnd_EmitsShortCircuitBranch()
     {
-        HasInstr<AndInstr>(All(GenMain("var r = true && false;")));
+        var fn = GenMain("var r = true && false;");
+        fn.Blocks.Any(b => b.Terminator is BrCondTerm)
+          .Should().BeTrue(because: "short-circuit && should emit a conditional branch");
+        All(fn).Any(i => i is AndInstr)
+               .Should().BeFalse(because: "bool && no longer lowers to AndInstr");
     }
 
     [Fact]
-    public void LogicalOr_EmitsOrInstr()
+    public void LogicalOr_EmitsShortCircuitBranch()
     {
-        HasInstr<OrInstr>(All(GenMain("var r = true || false;")));
+        var fn = GenMain("var r = true || false;");
+        fn.Blocks.Any(b => b.Terminator is BrCondTerm)
+          .Should().BeTrue(because: "short-circuit || should emit a conditional branch");
+        All(fn).Any(i => i is OrInstr)
+               .Should().BeFalse(because: "bool || no longer lowers to OrInstr");
     }
 
     [Fact]
