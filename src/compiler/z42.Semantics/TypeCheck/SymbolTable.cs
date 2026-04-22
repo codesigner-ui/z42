@@ -189,7 +189,14 @@ public sealed class SymbolTable
             }
             return ct;
         }
-        if (Interfaces.TryGetValue(gt.Name, out var it)) return it;
+        // L3-G2.5 chain: carry type args for generic interfaces so constraint
+        // validation can verify `where T: IEquatable<U>` with cross-param substitution.
+        if (Interfaces.TryGetValue(gt.Name, out var it))
+        {
+            if (gt.TypeArgs.Count == 0) return it;
+            var resolvedArgs = gt.TypeArgs.Select(ResolveType).ToList();
+            return new Z42InterfaceType(it.Name, it.Methods, resolvedArgs);
+        }
         return new Z42PrimType(gt.Name);
     }
 

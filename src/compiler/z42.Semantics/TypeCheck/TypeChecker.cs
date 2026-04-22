@@ -218,9 +218,12 @@ public sealed partial class TypeChecker : ITypeInferrer
                     callSpan);
             foreach (var iface in bundle.Interfaces)
             {
-                if (!TypeSatisfiesInterface(typeArg, iface))
+                // L3-G2.5 chain: substitute cross-param type-args before checking
+                // (e.g. `T: IEquatable<U>` with U=string → verify `T` satisfies `IEquatable<string>`).
+                var substitutedIface = SubstituteInterfaceTypeArgs(iface, typeArgByName);
+                if (!TypeSatisfiesInterface(typeArg, substitutedIface))
                     _diags.Error(DiagnosticCodes.TypeMismatch,
-                        $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `{iface.Name}` on `{declName}`",
+                        $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `{substitutedIface}` on `{declName}`",
                         callSpan);
             }
             if (bundle.RequiresClass && !IsClassArg(typeArg))
@@ -275,18 +278,66 @@ public sealed partial class TypeChecker : ITypeInferrer
     /// - Class type: via SymbolTable.ImplementsInterface (walks hierarchy).
     /// - Interface type: same-name match (interface extending not tracked yet — L3-G3).
     /// - Generic param: accept if one of its own constraints is this interface (propagate).
-    /// - Everything else (primitive, array, etc.): false for now (primitives handled in L3-G4).
+    /// - Primitive: routed via L3-G4b `PrimitiveImplementsInterface`. L3-G2.5 chain
+    ///   additionally requires `iface.TypeArgs` (if present) to equal the primitive
+    ///   itself — primitives only satisfy the self-referential form (int → IEquatable<int>).
     private bool TypeSatisfiesInterface(Z42Type typeArg, Z42InterfaceType iface) => typeArg switch
     {
         Z42ClassType ct          => _symbols.ImplementsInterface(ct.Name, iface.Name),
         Z42InstantiatedType inst => _symbols.ImplementsInterface(inst.Definition.Name, iface.Name),
         Z42InterfaceType it      => it.Name == iface.Name,
-        Z42GenericParamType g    => g.InterfaceConstraints?.Any(c => c.Name == iface.Name) == true,
-        Z42PrimType pt           => PrimitiveImplementsInterface(pt.Name, iface.Name),  // L3-G4b
+        Z42GenericParamType g    => GenericParamSatisfies(g, iface),
+        Z42PrimType pt           => PrimitiveSatisfies(pt, iface),
         Z42ErrorType             => true, // don't cascade errors
         Z42UnknownType           => true,
         _                        => false,
     };
+
+    /// L3-G2.5 chain: a primitive `int` satisfies `IEquatable<int>` but not
+    /// `IEquatable<string>` — when the constraint's TypeArgs are present, the sole
+    /// type arg must equal the primitive itself (self-referential only).
+    private static bool PrimitiveSatisfies(Z42PrimType pt, Z42InterfaceType iface)
+    {
+        if (!PrimitiveImplementsInterface(pt.Name, iface.Name)) return false;
+        if (iface.TypeArgs is not { Count: > 0 } args) return true;
+        return args.All(a => a is Z42PrimType p && p.Name == pt.Name);
+    }
+
+    /// L3-G2.5 chain: generic param T satisfies `I<X>` if one of T's own interface
+    /// constraints is `I<X>` (name AND args match after substitution).
+    private static bool GenericParamSatisfies(Z42GenericParamType g, Z42InterfaceType iface)
+    {
+        if (g.InterfaceConstraints is null) return false;
+        foreach (var c in g.InterfaceConstraints)
+        {
+            if (c.Name != iface.Name) continue;
+            if (iface.TypeArgs is null || iface.TypeArgs.Count == 0) return true;
+            if (c.TypeArgs is null || c.TypeArgs.Count != iface.TypeArgs.Count) continue;
+            bool argsMatch = true;
+            for (int i = 0; i < c.TypeArgs.Count; i++)
+                if (!c.TypeArgs[i].Equals(iface.TypeArgs[i])) { argsMatch = false; break; }
+            if (argsMatch) return true;
+        }
+        return false;
+    }
+
+    /// L3-G2.5 chain: substitute type-param references inside an interface's
+    /// TypeArgs using the current call-site `typeArg` map. `T: IEquatable<U>` with
+    /// U=string becomes `IEquatable<string>` before the satisfies check.
+    private static Z42InterfaceType SubstituteInterfaceTypeArgs(
+        Z42InterfaceType iface, IReadOnlyDictionary<string, Z42Type> typeArgByName)
+    {
+        if (iface.TypeArgs is not { Count: > 0 } args) return iface;
+        var substituted = new List<Z42Type>(args.Count);
+        foreach (var a in args)
+        {
+            if (a is Z42GenericParamType gp && typeArgByName.TryGetValue(gp.Name, out var concrete))
+                substituted.Add(concrete);
+            else
+                substituted.Add(a);
+        }
+        return new Z42InterfaceType(iface.Name, iface.Methods, substituted);
+    }
 
     /// L3-G4b: primitive types (int / double / bool / char / string / ...) satisfy
     /// `IComparable<T>` and `IEquatable<T>` (bool only satisfies IEquatable).

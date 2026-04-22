@@ -30,6 +30,52 @@ public sealed class TypeCheckerTests
     private static DiagnosticBag CheckExpr(string expr)
         => CheckStmts($"var _x = {expr};");
 
+    // ── L3-G2.5 chain constraint validation ──────────────────────────────────
+
+    // `where T: IEquatable<T>` with T=int — self-referential primitive case, must pass.
+    [Fact]
+    public void ChainConstraint_SelfReferential_Primitive_Passes()
+    {
+        var src = @"
+class Box<T> where T: IEquatable<T> {
+    T value;
+    Box(T v) { this.value = v; }
+}
+interface IEquatable<T> { bool Equals(T other); }
+void Main() { var b = new Box<int>(0); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // `where T: IEquatable<U>, U: IEquatable<U>` instantiated with <int, string>
+    // must reject: int does not implement IEquatable<string>.
+    [Fact]
+    public void ChainConstraint_CrossParam_Primitive_Mismatch_Rejected()
+    {
+        var src = @"
+class Foo<T, U> where T: IEquatable<U>, U: IEquatable<U> {
+    T t; U u;
+    Foo(T t, U u) { this.t = t; this.u = u; }
+}
+interface IEquatable<T> { bool Equals(T other); }
+void Main() { var f = new Foo<int, string>(0, ""x""); }";
+        var diags = Check(src);
+        diags.HasErrors.Should().BeTrue(because: "int only satisfies IEquatable<int>, not IEquatable<string>");
+    }
+
+    // Same decl, matched args `<int, int>` — both params self-referential, must pass.
+    [Fact]
+    public void ChainConstraint_CrossParam_Primitive_Match_Passes()
+    {
+        var src = @"
+class Foo<T, U> where T: IEquatable<U>, U: IEquatable<U> {
+    T t; U u;
+    Foo(T t, U u) { this.t = t; this.u = u; }
+}
+interface IEquatable<T> { bool Equals(T other); }
+void Main() { var f = new Foo<int, int>(0, 0); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
     // ── Valid programs ────────────────────────────────────────────────────────
 
     [Fact]

@@ -165,12 +165,19 @@ public sealed record Z42OptionType(Z42Type Inner) : Z42Type
     public override string ToString() => $"{Inner}?";
 }
 
-/// Interface type (e.g. `IShape`).
+/// Interface type (e.g. `IShape`). L3-G2.5 chain: `TypeArgs` carries the
+/// instantiation of a generic interface reference (`IEquatable<T>` → TypeArgs=[T])
+/// so constraint validation can substitute type params across parameter chains.
+/// TypeArgs=null means either a non-generic interface or a bare reference used
+/// where args are not yet resolved (legacy path).
 public sealed record Z42InterfaceType(
     string Name,
-    IReadOnlyDictionary<string, Z42FuncType> Methods) : Z42Type
+    IReadOnlyDictionary<string, Z42FuncType> Methods,
+    IReadOnlyList<Z42Type>? TypeArgs = null) : Z42Type
 {
-    public override string ToString() => Name;
+    public override string ToString() => TypeArgs is { Count: > 0 } args
+        ? $"{Name}<{string.Join(", ", args)}>"
+        : Name;
 }
 
 /// Uninstantiated generic type parameter (e.g., T in Identity<T>).
