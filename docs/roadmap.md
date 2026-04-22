@@ -139,8 +139,9 @@
 | **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | — | — | — | 📋 |
 | **L3-G4a** | 泛型类实例化类型替换（call-site T → 具体类型） | — | ✅ | — | — | ✅ |
 | **L3-G4b** | Primitive 类型实现 interface（`Max<int>` 可用） | — | ✅ | — | ✅ | ✅ |
-| **L3-G4c** | List<T> / Dictionary<K,V> pseudo-class → 真泛型源码 | — | — | — | — | 📋 |
-| **L3-G4** | 泛型标准库（已细拆为 G4a/G4b/G4c，保留总指标） | — | 🟡 | — | 🟡 | 🟡 |
+| **L3-G4c** | User-level 泛型容器源码实现（MyList<T> 端到端 demo） | — | ✅ | — | ✅ | ✅ |
+| **L3-G4d** | stdlib 导出泛型类（Std.Collections.Stack / Queue / List 启用） | — | — | — | — | 📋 |
+| **L3-G4** | 泛型标准库（已细拆为 G4a/G4b/G4c/G4d，保留总指标） | — | 🟡 | — | 🟡 | 🟡 |
 | **L3-R** | 反射与运行时类型信息 — 见下独立小节（统一批次，延后） | — | — | — | — | 📋 |
 
 > L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。

@@ -1,0 +1,9 @@
+10
+0
+81
+9
+1
+100
+alpha
+beta
+gamma

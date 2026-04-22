@@ -1,0 +1,93 @@
+// Test: L3-G4c — User-defined generic List<T> with dynamic resize, iteration by index,
+// removal. Demonstrates that real container types can be written in pure z42 source
+// (no pseudo-class). Parallels the stdlib MyList<T> design.
+
+class MyList<T> {
+    T[] items;
+    int count;
+    int capacity;
+
+    MyList() {
+        this.capacity = 4;
+        this.items = new T[4];
+        this.count = 0;
+    }
+
+    int Count() { return this.count; }
+
+    void Add(T item) {
+        if (this.count == this.capacity) this.Grow();
+        this.items[this.count] = item;
+        this.count = this.count + 1;
+    }
+
+    T Get(int index) {
+        return this.items[index];
+    }
+
+    void Set(int index, T value) {
+        this.items[index] = value;
+    }
+
+    void RemoveAt(int index) {
+        int i = index;
+        while (i < this.count - 1) {
+            this.items[i] = this.items[i + 1];
+            i = i + 1;
+        }
+        this.count = this.count - 1;
+    }
+
+    void Grow() {
+        int newCap = this.capacity * 2;
+        T[] bigger = new T[newCap];
+        int i = 0;
+        while (i < this.count) {
+            bigger[i] = this.items[i];
+            i = i + 1;
+        }
+        this.items = bigger;
+        this.capacity = newCap;
+    }
+}
+
+void PrintAllInts(MyList<int> xs) {
+    int i = 0;
+    while (i < xs.Count()) {
+        Console.WriteLine(xs.Get(i));
+        i = i + 1;
+    }
+}
+
+void Main() {
+    // int list with growth (capacity 4 → 8 → 16)
+    var xs = new MyList<int>();
+    int n = 0;
+    while (n < 10) {
+        xs.Add(n * n);
+        n = n + 1;
+    }
+    Console.WriteLine(xs.Count());  // 10
+    Console.WriteLine(xs.Get(0));   // 0
+    Console.WriteLine(xs.Get(9));   // 81
+
+    // RemoveAt shifts elements
+    xs.RemoveAt(0);
+    Console.WriteLine(xs.Count());  // 9
+    Console.WriteLine(xs.Get(0));   // 1 (was at index 1)
+
+    // Set modifies
+    xs.Set(0, 100);
+    Console.WriteLine(xs.Get(0));   // 100
+
+    // string list — primitive T works
+    var ss = new MyList<string>();
+    ss.Add("alpha");
+    ss.Add("beta");
+    ss.Add("gamma");
+    int k = 0;
+    while (k < ss.Count()) {
+        Console.WriteLine(ss.Get(k));
+        k = k + 1;
+    }
+}

@@ -1,11 +1,27 @@
 namespace Std.Collections;
 
-// TODO(L3): requires generics.
+// Reference implementation of `Std.Collections.Stack<T>` is kept commented below.
+// z42 generics (L3-G1/G2/G4a/G4b) can already express this shape — see the
+// user-level demo at `src/runtime/tests/golden/run/74_generic_stack/`.
+//
+// Enabling this as a real stdlib export is L3-G4d's work: requires name-resolution
+// fix so user code writing `new Stack<int>()` doesn't clash with local `Stack`
+// declarations, plus imported generic class type-arg propagation.
+//
 // public class Stack<T> {
-//     public int Count { get; }
-//     public void Push(T item);
-//     public T Pop();
-//     public T Peek();
-//     public bool Contains(T item);
-//     public void Clear();
+//     T[] items; int count; int capacity;
+//     public Stack() { this.capacity = 4; this.items = new T[4]; this.count = 0; }
+//     public int Count() { return this.count; }
+//     public bool IsEmpty() { return this.count == 0; }
+//     public void Push(T item) { if (this.count == this.capacity) this.Grow();
+//                                this.items[this.count] = item; this.count = this.count + 1; }
+//     public T Pop() { this.count = this.count - 1; return this.items[this.count]; }
+//     public T Peek() { return this.items[this.count - 1]; }
+//     public void Clear() { this.count = 0; }
+//     public void Grow() {
+//         int newCap = this.capacity * 2;
+//         T[] bigger = new T[newCap];
+//         int i = 0; while (i < this.count) { bigger[i] = this.items[i]; i = i + 1; }
+//         this.items = bigger; this.capacity = newCap;
+//     }
 // }
