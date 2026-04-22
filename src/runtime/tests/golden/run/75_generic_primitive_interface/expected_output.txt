@@ -1,0 +1,6 @@
+7
+banana
+2.5
+true
+false
+true

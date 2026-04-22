@@ -7,7 +7,7 @@
 /// • ops.rs      — register-level helpers (int_binop, numeric_lt, collect_args, …)
 
 mod dispatch;
-mod exec_instr;
+pub(crate) mod exec_instr;
 mod ops;
 
 pub use crate::corelib::convert::value_to_str;

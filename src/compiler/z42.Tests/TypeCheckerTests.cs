@@ -1196,4 +1196,60 @@ public sealed class TypeCheckerTests
             }
             """).HasErrors.Should().BeFalse();
     }
+
+    // ── Primitive interface implementation (L3-G4b) ─────────────────────────
+
+    [Fact]
+    public void Generic_PrimitiveInt_SatisfiesIComparable_Ok()
+    {
+        // int implements IComparable<int> — Max<int> should type-check.
+        Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            T Max<T>(T a, T b) where T: IComparable<T> {
+                return a.CompareTo(b) > 0 ? a : b;
+            }
+
+            void Main() { var m = Max(3, 5); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_PrimitiveString_SatisfiesIComparable_Ok()
+    {
+        Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+
+            T Max<T>(T a, T b) where T: IComparable<T> {
+                return a.CompareTo(b) > 0 ? a : b;
+            }
+
+            void Main() { var m = Max("a", "b"); }
+            """).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Generic_PrimitiveBool_NoIComparable_Error()
+    {
+        // bool only satisfies IEquatable, not IComparable.
+        var diags = Check("""
+            interface IComparable<T> { int CompareTo(T other); }
+            void F<T>(T a, T b) where T: IComparable<T> { }
+            void Main() { F(true, false); }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.TypeMismatch
+            && d.Message.Contains("does not satisfy constraint"));
+    }
+
+    [Fact]
+    public void Generic_PrimitiveBool_SatisfiesIEquatable_Ok()
+    {
+        Check("""
+            interface IEquatable<T> { bool Equals(T other); }
+            bool AreEqual<T>(T a, T b) where T: IEquatable<T> { return a.Equals(b); }
+            void Main() { var r = AreEqual(true, false); }
+            """).HasErrors.Should().BeFalse();
+    }
 }

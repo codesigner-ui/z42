@@ -138,7 +138,9 @@
 | **L3-G3c** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
 | **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | — | — | — | 📋 |
 | **L3-G4a** | 泛型类实例化类型替换（call-site T → 具体类型） | — | ✅ | — | — | ✅ |
-| **L3-G4** | 泛型标准库（List/Dict 原生化 + primitive 接口） | — | — | — | — | 📋 |
+| **L3-G4b** | Primitive 类型实现 interface（`Max<int>` 可用） | — | ✅ | — | ✅ | ✅ |
+| **L3-G4c** | List<T> / Dictionary<K,V> pseudo-class → 真泛型源码 | — | — | — | — | 📋 |
+| **L3-G4** | 泛型标准库（已细拆为 G4a/G4b/G4c，保留总指标） | — | 🟡 | — | 🟡 | 🟡 |
 | **L3-R** | 反射与运行时类型信息 — 见下独立小节（统一批次，延后） | — | — | — | — | 📋 |
 
 > L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。

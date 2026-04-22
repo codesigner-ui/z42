@@ -29,6 +29,31 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
+/// (L3-G4b) Map a primitive VCall receiver + method name to a corelib builtin name,
+/// or None if no mapping applies. Called before the string / object dispatch paths.
+/// Shared between the interpreter and the JIT backend.
+pub(crate) fn primitive_method_builtin(obj: &Value, method: &str) -> Option<&'static str> {
+    match (obj, method) {
+        (Value::I64(_),  "CompareTo")   => Some("__int_compare_to"),
+        (Value::I64(_),  "Equals")      => Some("__int_equals"),
+        (Value::I64(_),  "GetHashCode") => Some("__int_hash_code"),
+        (Value::I64(_),  "ToString")    => Some("__int_to_string"),
+        (Value::F64(_),  "CompareTo")   => Some("__double_compare_to"),
+        (Value::F64(_),  "Equals")      => Some("__double_equals"),
+        (Value::F64(_),  "GetHashCode") => Some("__double_hash_code"),
+        (Value::F64(_),  "ToString")    => Some("__double_to_string"),
+        (Value::Bool(_), "Equals")      => Some("__bool_equals"),
+        (Value::Bool(_), "GetHashCode") => Some("__bool_hash_code"),
+        (Value::Bool(_), "ToString")    => Some("__bool_to_string"),
+        (Value::Char(_), "CompareTo")   => Some("__char_compare_to"),
+        (Value::Char(_), "Equals")      => Some("__char_equals"),
+        (Value::Char(_), "GetHashCode") => Some("__char_hash_code"),
+        (Value::Char(_), "ToString")    => Some("__char_to_string"),
+        (Value::Str(_),  "CompareTo")   => Some("__str_compare_to"),
+        _ => None,
+    }
+}
+
 /// Execute a single instruction.
 /// Returns:
 ///   Ok(None)       — normal completion
@@ -313,6 +338,16 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         Instruction::VCall { dst, obj, method, args } => {
             let obj_val = frame.get(*obj)?.clone();
             let mut extra_args = collect_args(&frame.regs, args)?;
+
+            // L3-G4b: primitive IComparable / IEquatable dispatch for i64/f64/bool/char.
+            // Each primitive routes its standard-interface methods to a matching builtin.
+            if let Some(builtin_name) = primitive_method_builtin(&obj_val, method.as_str()) {
+                let mut call_args = vec![obj_val];
+                call_args.append(&mut extra_args);
+                let ret = crate::corelib::exec_builtin(builtin_name, &call_args)?;
+                frame.set(*dst, ret);
+                return Ok(None);
+            }
 
             // Primitive string type: dispatch all methods via builtins.
             if let Value::Str(_) = &obj_val {

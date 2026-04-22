@@ -268,13 +268,35 @@ public sealed partial class TypeChecker : ITypeInferrer
     /// - Everything else (primitive, array, etc.): false for now (primitives handled in L3-G4).
     private bool TypeSatisfiesInterface(Z42Type typeArg, Z42InterfaceType iface) => typeArg switch
     {
-        Z42ClassType ct       => _symbols.ImplementsInterface(ct.Name, iface.Name),
-        Z42InterfaceType it   => it.Name == iface.Name,
-        Z42GenericParamType g => g.InterfaceConstraints?.Any(c => c.Name == iface.Name) == true,
-        Z42ErrorType          => true, // don't cascade errors
-        Z42UnknownType        => true,
-        _                     => false,
+        Z42ClassType ct          => _symbols.ImplementsInterface(ct.Name, iface.Name),
+        Z42InstantiatedType inst => _symbols.ImplementsInterface(inst.Definition.Name, iface.Name),
+        Z42InterfaceType it      => it.Name == iface.Name,
+        Z42GenericParamType g    => g.InterfaceConstraints?.Any(c => c.Name == iface.Name) == true,
+        Z42PrimType pt           => PrimitiveImplementsInterface(pt.Name, iface.Name),  // L3-G4b
+        Z42ErrorType             => true, // don't cascade errors
+        Z42UnknownType           => true,
+        _                        => false,
     };
+
+    /// L3-G4b: primitive types (int / double / bool / char / string / ...) satisfy
+    /// `IComparable<T>` and `IEquatable<T>` (bool only satisfies IEquatable).
+    /// VCall on a primitive receiver is routed to a corelib builtin by the VM.
+    private static bool PrimitiveImplementsInterface(string primName, string ifaceName) =>
+        (primName, ifaceName) switch
+        {
+            // Integral numerics
+            ("int" or "long" or "short" or "byte" or "sbyte" or "ushort" or "uint" or "ulong"
+             or "i8" or "i16" or "i32" or "i64" or "u8" or "u16" or "u32" or "u64",
+                "IComparable" or "IEquatable") => true,
+            // Floating point
+            ("float" or "double" or "f32" or "f64",
+                "IComparable" or "IEquatable") => true,
+            // String / char
+            ("string" or "char", "IComparable" or "IEquatable") => true,
+            // Bool: equality only
+            ("bool", "IEquatable") => true,
+            _ => false,
+        };
 
     /// Does `typeArg` satisfy the base-class constraint `baseClass`? (L3-G2.5)
     /// Accepts same class or any subclass; propagates through generic params that already

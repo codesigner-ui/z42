@@ -260,6 +260,16 @@ pub unsafe extern "C" fn jit_vcall(
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
     let mut extra_args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
 
+    // L3-G4b: primitive IComparable / IEquatable dispatch for i64/f64/bool/char.
+    if let Some(builtin_name) = crate::interp::exec_instr::primitive_method_builtin(&obj_val, method) {
+        let mut call_args = vec![obj_val];
+        call_args.append(&mut extra_args);
+        match crate::corelib::exec_builtin(builtin_name, &call_args) {
+            Ok(ret) => { frame_ref.regs[dst as usize] = ret; return 0; }
+            Err(e)  => { set_exception(Value::Str(e.to_string())); return 1; }
+        }
+    }
+
     // Primitive string type: dispatch all methods via builtins.
     if let Value::Str(_) = &obj_val {
         let builtin_name = match method {

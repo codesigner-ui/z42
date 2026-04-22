@@ -75,6 +75,24 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__double_parse", convert::builtin_double_parse);
         m.insert("__to_str",       convert::builtin_to_str);
 
+        // ── Primitive IComparable / IEquatable (L3-G4b) ───────────────────────
+        m.insert("__int_compare_to",    convert::builtin_int_compare_to);
+        m.insert("__int_equals",        convert::builtin_int_equals);
+        m.insert("__int_hash_code",     convert::builtin_int_hash_code);
+        m.insert("__int_to_string",     convert::builtin_int_to_string);
+        m.insert("__double_compare_to", convert::builtin_double_compare_to);
+        m.insert("__double_equals",     convert::builtin_double_equals);
+        m.insert("__double_hash_code",  convert::builtin_double_hash_code);
+        m.insert("__double_to_string",  convert::builtin_double_to_string);
+        m.insert("__bool_equals",       convert::builtin_bool_equals);
+        m.insert("__bool_hash_code",    convert::builtin_bool_hash_code);
+        m.insert("__bool_to_string",    convert::builtin_bool_to_string);
+        m.insert("__char_compare_to",   convert::builtin_char_compare_to);
+        m.insert("__char_equals",       convert::builtin_char_equals);
+        m.insert("__char_hash_code",    convert::builtin_char_hash_code);
+        m.insert("__char_to_string",    convert::builtin_char_to_string);
+        m.insert("__str_compare_to",    convert::builtin_str_compare_to);
+
         // ── Assert ────────────────────────────────────────────────────────────
         m.insert("__assert_eq",       object::builtin_assert_eq);
         m.insert("__assert_true",     object::builtin_assert_true);
