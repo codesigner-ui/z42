@@ -10,6 +10,14 @@ internal sealed partial class SymbolCollector
     private static bool ExcludeFromImplicitObject(ClassDecl cls) =>
         cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name);
 
+    /// Extract short name from an interface-position `TypeExpr` fallback.
+    private static string IfaceNameFromTypeExpr(TypeExpr t) => t switch
+    {
+        NamedType nt   => nt.Name,
+        GenericType gt => gt.Name,
+        _              => "<unknown>",
+    };
+
     private void CollectClasses(CompilationUnit cu)
     {
         // Pre-register Object's virtual methods and class shape
@@ -118,7 +126,23 @@ internal sealed partial class SymbolCollector
                 cls.Name, fields, methods, staticFields, staticMethods,
                 memberVis, effectiveBase2, cls.TypeParams?.AsReadOnly(),
                 IsStruct: cls.IsStruct);
-            _classInterfaces[cls.Name] = cls.Interfaces.ToHashSet();
+            // L3-G2.5 chain: resolve each interface TypeExpr to a Z42InterfaceType
+            // (with TypeArgs for generic interface references). Failures fall back to
+            // name-only stubs to avoid cascading diagnostics.
+            if (cls.TypeParams != null) _activeTypeParams = new HashSet<string>(cls.TypeParams);
+            var resolvedIfaces = new List<Z42InterfaceType>(cls.Interfaces.Count);
+            foreach (var ifaceTy in cls.Interfaces)
+            {
+                var resolved = ResolveType(ifaceTy);
+                if (resolved is Z42InterfaceType it)
+                    resolvedIfaces.Add(it);
+                else
+                    resolvedIfaces.Add(new Z42InterfaceType(
+                        IfaceNameFromTypeExpr(ifaceTy),
+                        new Dictionary<string, Z42FuncType>()));
+            }
+            _activeTypeParams = null;
+            _classInterfaces[cls.Name] = resolvedIfaces;
 
             if (cls.IsAbstract) _abstractClasses.Add(cls.Name);
             if (cls.IsSealed)   _sealedClasses.Add(cls.Name);
@@ -153,7 +177,7 @@ internal sealed partial class SymbolCollector
                 {
                     foreach (var iface in ifaces)
                     {
-                        if (_interfaces.TryGetValue(iface, out var it) && it.Methods.ContainsKey(m.Name))
+                        if (_interfaces.TryGetValue(iface.Name, out var it) && it.Methods.ContainsKey(m.Name))
                         { found = true; break; }
                     }
                 }
@@ -193,8 +217,9 @@ internal sealed partial class SymbolCollector
             if (!_classInterfaces.TryGetValue(cls.Name, out var ifaces) || ifaces.Count == 0) continue;
             if (!_classes.TryGetValue(cls.Name, out var classType)) continue;
 
-            foreach (var ifaceName in ifaces)
+            foreach (var ifaceTy in ifaces)
             {
+                var ifaceName = ifaceTy.Name;
                 if (!_interfaces.TryGetValue(ifaceName, out var iface)) continue;
                 foreach (var (methodName, ifaceSig) in iface.Methods)
                 {

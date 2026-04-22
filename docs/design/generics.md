@@ -440,9 +440,34 @@ void Main() {
 }
 ```
 
-**留待后续**：class 声明的 `Interfaces` 当前仅存名字（不含 args），所以
-`class MyClass: IEquatable<string>` 对 `where T: IEquatable<U>` 的校验仍只看名字。
-完整 class-级 TypeArg 跟踪是独立迭代。
+### 类侧 TypeArg 跟踪（L3-G2.5 chain class-ifaces，2026-04-23）
+
+Class 声明的接口列表升级后：
+
+- AST `ClassDecl.Interfaces` 从 `List<string>` 改为 `List<TypeExpr>`（parser 用
+  `TypeParser.Parse` 代替 skip-generic-params）
+- `SymbolTable.ClassInterfaces` 从 `Dictionary<string, HashSet<string>>` 改为
+  `Dictionary<string, List<Z42InterfaceType>>`，每个条目携带完整 TypeArgs
+- `ClassSatisfiesInterface` 走类继承链，对齐 name + args（Instantiated 类通过
+  `BuildSubstitutionMap` 做 typeparam 替换）
+- `TypeArgEquals` 辅助：class / prim / generic-param 按**名字**比对（避免 record
+  结构相等在 collection phase stub vs full 间错配）
+
+```z42
+interface IEquatable<T> { bool Equals(T other); }
+class IntEq : IEquatable<int> { ... }          // 存 [int]
+class Pair<U> : IEquatable<U> { ... }          // 存 [U]
+
+class Foo<T> where T: IEquatable<int> { ... }
+
+new Foo<IntEq>()         // ✅ IntEq 的 IEquatable<int> 精确匹配
+new Foo<Pair<int>>()     // ✅ U→int 替换后 IEquatable<int> 匹配
+new Foo<Pair<string>>()  // ❌ 实际是 IEquatable<string>
+```
+
+**留待独立迭代**：TSIG 当前只按名字序列化 imported 类的 interface
+（`ExportedClassDef.Interfaces: List<string>`）；跨 zpkg 消费 `class Foo: IEquatable<int>`
+时 args 丢失。本地类 arg-aware 检查 100% 生效，imported 类走 lenient 路径。
 
 ### 跨 zpkg 约束消费（L3-G3d，2026-04-23）
 

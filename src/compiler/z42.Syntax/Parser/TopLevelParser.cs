@@ -297,25 +297,27 @@ internal static partial class TopLevelParser
             }
         }
 
-        // Base class / interfaces: class Foo : Base, IFace
+        // Base class / interfaces: class Foo : Base, IFace<T>, IBar
+        // First entry may be a base class (non-`I`-prefix) or an interface;
+        // subsequent entries are all interfaces. L3-G2.5 chain: interface
+        // type args are preserved in the AST (parsed as full TypeExpr).
         string? baseClass   = null;
-        var     ifaces      = new List<string>();
+        var     ifaces      = new List<TypeExpr>();
         if (cursor.Current.Kind == TokenKind.Colon)
         {
             cursor = cursor.Advance();
-            var firstName = ParseQualifiedName(ref cursor);
-            SkipGenericParams(ref cursor);
+            var firstSpan = cursor.Current.Span;
+            var firstTy   = TypeParser.Parse(cursor).Unwrap(ref cursor);
+            var firstName = ExtractTypeName(firstTy);
             if (firstName.Length > 1 && firstName[0] == 'I' && char.IsUpper(firstName[1]))
-                ifaces.Add(firstName);
+                ifaces.Add(firstTy);
             else
                 baseClass = firstName;
 
             while (cursor.Current.Kind == TokenKind.Comma)
             {
                 cursor = cursor.Advance();
-                var extra = ParseQualifiedName(ref cursor);
-                SkipGenericParams(ref cursor);
-                ifaces.Add(extra);
+                ifaces.Add(TypeParser.Parse(cursor).Unwrap(ref cursor));
             }
         }
 

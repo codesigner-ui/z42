@@ -94,8 +94,8 @@ public sealed record ClassDecl(
     bool IsAbstract,
     bool IsSealed,
     Visibility Visibility,
-    string? BaseClass,          // null = no explicit base class
-    List<string> Interfaces,    // list of implemented interface names
+    string? BaseClass,              // null = no explicit base class
+    List<TypeExpr> Interfaces,      // implemented interface types (may carry generic args, e.g. IEquatable<int>)
     List<FieldDecl> Fields,
     List<FunctionDecl> Methods,
     Span Span,

@@ -16,7 +16,9 @@ public sealed class SymbolTable
     public IReadOnlyDictionary<string, Z42InterfaceType> Interfaces { get; }
     public IReadOnlyDictionary<string, long> EnumConstants { get; }
     public IReadOnlySet<string> EnumTypes { get; }
-    public IReadOnlyDictionary<string, HashSet<string>> ClassInterfaces { get; }
+    /// L3-G2.5 chain: per-class list of implemented interfaces with TypeArgs preserved.
+    /// `class Foo: IEquatable<int>` stores `Z42InterfaceType("IEquatable", ..., [Int])`.
+    public IReadOnlyDictionary<string, List<Z42InterfaceType>> ClassInterfaces { get; }
     public IReadOnlyDictionary<string, HashSet<string>> AbstractMethods { get; }
     public IReadOnlySet<string> AbstractClasses { get; }
     public IReadOnlySet<string> SealedClasses { get; }
@@ -39,7 +41,7 @@ public sealed class SymbolTable
         Dictionary<string, Z42InterfaceType> interfaces,
         Dictionary<string, long> enumConstants,
         HashSet<string> enumTypes,
-        Dictionary<string, HashSet<string>> classInterfaces,
+        Dictionary<string, List<Z42InterfaceType>> classInterfaces,
         Dictionary<string, HashSet<string>> abstractMethods,
         HashSet<string> abstractClasses,
         HashSet<string> sealedClasses,
@@ -208,15 +210,25 @@ public sealed class SymbolTable
     }
 
     /// Query: does <paramref name="className"/> implement <paramref name="ifaceName"/>?
+    /// Name-only match; walks base class chain. Kept for back-compat with pre-chain paths.
     public bool ImplementsInterface(string className, string ifaceName)
+    {
+        foreach (var _ in ImplementedInterfacesByName(className, ifaceName)) return true;
+        return false;
+    }
+
+    /// L3-G2.5 chain: enumerate all declared interface instances on <paramref name="className"/>
+    /// (walking up the base chain) whose name matches <paramref name="ifaceName"/>.
+    /// Consumers can then compare TypeArgs for arg-aware checks.
+    public IEnumerable<Z42InterfaceType> ImplementedInterfacesByName(string className, string ifaceName)
     {
         var cur = className;
         while (cur != null)
         {
-            if (ClassInterfaces.TryGetValue(cur, out var ifaces) && ifaces.Contains(ifaceName))
-                return true;
+            if (ClassInterfaces.TryGetValue(cur, out var ifaces))
+                foreach (var it in ifaces)
+                    if (it.Name == ifaceName) yield return it;
             cur = Classes.TryGetValue(cur, out var ct) ? ct.BaseClassName : null;
         }
-        return false;
     }
 }

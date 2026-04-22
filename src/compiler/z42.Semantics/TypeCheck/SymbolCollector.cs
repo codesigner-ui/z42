@@ -19,7 +19,7 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     internal readonly Dictionary<string, Z42InterfaceType> _interfaces = new();
     internal readonly Dictionary<string, long>             _globalEnumConstants = new();
     internal readonly HashSet<string>                      _enumTypes           = new();
-    internal readonly Dictionary<string, HashSet<string>>  _classInterfaces = new();
+    internal readonly Dictionary<string, List<Z42InterfaceType>> _classInterfaces = new();
     internal readonly Dictionary<string, HashSet<string>>  _abstractMethods = new();
     internal readonly HashSet<string>                      _abstractClasses = new();
     internal readonly HashSet<string>                      _sealedClasses   = new();
@@ -164,8 +164,14 @@ internal sealed partial class SymbolCollector : ISymbolBinder
         {
             "List"       => new Z42PrimType("List"),
             "Dictionary" => new Z42PrimType("Dictionary"),
+            // L3-G2.5 chain: generic interface references preserve TypeArgs so
+            // downstream arg-aware checks can compare `IEquatable<int>` precisely.
             _            => _classes.TryGetValue(gt.Name, out var ct) ? (Z42Type)ct
-                          : _interfaces.TryGetValue(gt.Name, out var it) ? it
+                          : _interfaces.TryGetValue(gt.Name, out var it)
+                              ? (gt.TypeArgs.Count > 0
+                                    ? new Z42InterfaceType(it.Name, it.Methods,
+                                          gt.TypeArgs.Select(ResolveType).ToList())
+                                    : it)
                           : new Z42PrimType(gt.Name),
         },
         _ => Z42Type.Unknown

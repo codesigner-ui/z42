@@ -88,6 +88,51 @@ void Main() { var f = new Factory<Widget>(); }";
         Check(src).HasErrors.Should().BeFalse();
     }
 
+    // ── L3-G2.5 chain (class-side TypeArgs) ───────────────────────────────────
+
+    // Class that implements `IEquatable<int>` satisfies `where T: IEquatable<int>`.
+    [Fact]
+    public void ChainConstraint_ClassIfaceArgs_Match_Passes()
+    {
+        var src = @"
+interface IEquatable<T> { bool Equals(T other); }
+class IntEq : IEquatable<int> { bool Equals(int other) { return false; } }
+class Foo<T> where T: IEquatable<int> { T t; Foo() { this.t = null; } }
+void Main() { var f = new Foo<IntEq>(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // Class that implements `IEquatable<int>` does NOT satisfy `where T: IEquatable<string>`.
+    [Fact]
+    public void ChainConstraint_ClassIfaceArgs_Mismatch_Rejected()
+    {
+        var src = @"
+interface IEquatable<T> { bool Equals(T other); }
+class IntEq : IEquatable<int> { bool Equals(int other) { return false; } }
+class Foo<T> where T: IEquatable<string> { T t; Foo() { this.t = null; } }
+void Main() { var f = new Foo<IntEq>(); }";
+        var diags = Check(src);
+        diags.HasErrors.Should().BeTrue(
+            because: "IntEq implements IEquatable<int>, not IEquatable<string>");
+    }
+
+    // Instantiated-class substitution: `Pair<int>` implements `IEquatable<int>` →
+    // satisfies `where T: IEquatable<int>`.
+    [Fact]
+    public void ChainConstraint_InstantiatedClass_Substitution()
+    {
+        var src = @"
+interface IEquatable<T> { bool Equals(T other); }
+class Pair<U> : IEquatable<U> {
+    U u;
+    Pair() { this.u = null; }
+    bool Equals(U other) { return false; }
+}
+class Foo<T> where T: IEquatable<int> { T t; Foo() { this.t = null; } }
+void Main() { var f = new Foo<Pair<int>>(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
     // ── L3-G2.5 chain constraint validation ──────────────────────────────────
 
     // `where T: IEquatable<T>` with T=int — self-referential primitive case, must pass.

@@ -92,6 +92,16 @@ internal static partial class TopLevelParser
         return sb.ToString();
     }
 
+    /// L3-G2.5 chain: extract the short name from a parsed `TypeExpr`
+    /// (for base class / interface list entries). `NamedType` → .Name;
+    /// `GenericType` → .Name (args carried separately on the TypeExpr).
+    internal static string ExtractTypeName(TypeExpr t) => t switch
+    {
+        NamedType nt   => nt.Name,
+        GenericType gt => gt.Name,
+        _              => "<unknown>",
+    };
+
     /// Parse `<T>` or `<K, V>` type parameter list. Returns null if no `<` found.
     private static List<string>? ParseTypeParams(ref TokenCursor cursor)
     {

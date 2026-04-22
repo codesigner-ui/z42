@@ -329,15 +329,82 @@ public sealed partial class TypeChecker : ITypeInferrer
     ///   itself — primitives only satisfy the self-referential form (int → IEquatable<int>).
     private bool TypeSatisfiesInterface(Z42Type typeArg, Z42InterfaceType iface) => typeArg switch
     {
-        Z42ClassType ct          => _symbols.ImplementsInterface(ct.Name, iface.Name),
-        Z42InstantiatedType inst => _symbols.ImplementsInterface(inst.Definition.Name, iface.Name),
-        Z42InterfaceType it      => it.Name == iface.Name,
+        Z42ClassType ct          => ClassSatisfiesInterface(ct.Name, null, iface),
+        Z42InstantiatedType inst => ClassSatisfiesInterface(inst.Definition.Name,
+                                        BuildSubstitutionMap(inst), iface),
+        Z42InterfaceType it      => InterfacesEqual(it, iface),
         Z42GenericParamType g    => GenericParamSatisfies(g, iface),
         Z42PrimType pt           => PrimitiveSatisfies(pt, iface),
         Z42ErrorType             => true, // don't cascade errors
         Z42UnknownType           => true,
         _                        => false,
     };
+
+    /// L3-G2.5 chain: class-level interface check with TypeArg matching.
+    /// Walks the base-class chain; for each declared `Z42InterfaceType` with a matching
+    /// name, compares TypeArgs (after substituting instantiated class type params).
+    /// When the constraint has no TypeArgs, name match is sufficient.
+    private bool ClassSatisfiesInterface(
+        string className,
+        IReadOnlyDictionary<string, Z42Type>? classSubstitution,
+        Z42InterfaceType constraintIface)
+    {
+        foreach (var declared in _symbols.ImplementedInterfacesByName(className, constraintIface.Name))
+        {
+            // No args on the constraint → name match is enough (backward compat).
+            if (constraintIface.TypeArgs is null || constraintIface.TypeArgs.Count == 0)
+                return true;
+            // Declared side missing args → be lenient (likely imported w/o args tracking).
+            if (declared.TypeArgs is null || declared.TypeArgs.Count != constraintIface.TypeArgs.Count)
+                return true;
+            bool allMatch = true;
+            for (int i = 0; i < constraintIface.TypeArgs.Count; i++)
+            {
+                var declaredArg = classSubstitution is null
+                    ? declared.TypeArgs[i]
+                    : SubstituteTypeParams(declared.TypeArgs[i], classSubstitution);
+                if (!TypeArgEquals(declaredArg, constraintIface.TypeArgs[i]))
+                { allMatch = false; break; }
+            }
+            if (allMatch) return true;
+        }
+        return false;
+    }
+
+    /// Full interface equality including TypeArgs (length & element-wise).
+    private static bool InterfacesEqual(Z42InterfaceType a, Z42InterfaceType b)
+    {
+        if (a.Name != b.Name) return false;
+        if (a.TypeArgs is null && b.TypeArgs is null) return true;
+        if (a.TypeArgs is null || b.TypeArgs is null) return true; // lenient
+        if (a.TypeArgs.Count != b.TypeArgs.Count) return false;
+        for (int i = 0; i < a.TypeArgs.Count; i++)
+            if (!TypeArgEquals(a.TypeArgs[i], b.TypeArgs[i])) return false;
+        return true;
+    }
+
+    /// L3-G2.5 chain: equality for TypeArg comparison. Z42 records use structural
+    /// equality; for class types we use name-based equality because stubs vs fully
+    /// collected class instances would otherwise mismatch (same `Num` at different
+    /// collection phases has different inner dictionaries).
+    private static bool TypeArgEquals(Z42Type a, Z42Type b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is Z42ClassType ac && b is Z42ClassType bc) return ac.Name == bc.Name;
+        if (a is Z42PrimType ap && b is Z42PrimType bp)   return ap.Name == bp.Name;
+        if (a is Z42GenericParamType ag && b is Z42GenericParamType bg) return ag.Name == bg.Name;
+        if (a is Z42InstantiatedType ai && b is Z42InstantiatedType bi)
+        {
+            if (ai.Definition.Name != bi.Definition.Name) return false;
+            if (ai.TypeArgs.Count != bi.TypeArgs.Count) return false;
+            for (int i = 0; i < ai.TypeArgs.Count; i++)
+                if (!TypeArgEquals(ai.TypeArgs[i], bi.TypeArgs[i])) return false;
+            return true;
+        }
+        if (a is Z42ArrayType aa && b is Z42ArrayType ba) return TypeArgEquals(aa.Element, ba.Element);
+        if (a is Z42OptionType ao && b is Z42OptionType bo) return TypeArgEquals(ao.Inner, bo.Inner);
+        return a.Equals(b);
+    }
 
     /// L3-G2.5 chain: a primitive `int` satisfies `IEquatable<int>` but not
     /// `IEquatable<string>` — when the constraint's TypeArgs are present, the sole
@@ -361,7 +428,8 @@ public sealed partial class TypeChecker : ITypeInferrer
             if (c.TypeArgs is null || c.TypeArgs.Count != iface.TypeArgs.Count) continue;
             bool argsMatch = true;
             for (int i = 0; i < c.TypeArgs.Count; i++)
-                if (!c.TypeArgs[i].Equals(iface.TypeArgs[i])) { argsMatch = false; break; }
+                if (!TypeArgEquals(c.TypeArgs[i], iface.TypeArgs[i]))
+                { argsMatch = false; break; }
             if (argsMatch) return true;
         }
         return false;
