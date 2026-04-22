@@ -15,6 +15,8 @@ public sealed record ExportedModule(
     List<ExportedFuncDef>      Functions);
 
 /// Exported class/struct/record definition with full member signatures.
+/// L3-G4d: `TypeParams` carries generic parameter names for `class Foo<T, U>` so
+/// imported classes can be instantiated with type arguments from consumer code.
 public sealed record ExportedClassDef(
     string Name,
     string? BaseClass,
@@ -23,7 +25,8 @@ public sealed record ExportedClassDef(
     bool IsStatic,
     List<ExportedFieldDef>  Fields,
     List<ExportedMethodDef> Methods,
-    List<string> Interfaces);
+    List<string> Interfaces,
+    List<string>? TypeParams = null);
 
 /// Exported interface definition.
 public sealed record ExportedInterfaceDef(

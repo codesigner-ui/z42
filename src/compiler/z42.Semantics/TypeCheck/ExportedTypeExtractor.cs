@@ -46,10 +46,13 @@ public static class ExportedTypeExtractor
             foreach (var (mn, mt) in ct.StaticMethods)
                 methods.Add(FuncToMethod(mn, mt, true, ct.MemberVisibility));
 
+            // L3-G4d: propagate generic type parameters so consumers can
+            // instantiate imported generic classes with type arguments.
+            var typeParams = ct.TypeParams?.ToList();
             result.Add(new ExportedClassDef(
                 name, ct.BaseClassName,
                 false, false, false,
-                fields, methods, []));
+                fields, methods, [], typeParams));
         }
         return result;
     }

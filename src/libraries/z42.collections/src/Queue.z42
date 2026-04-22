@@ -1,37 +1,62 @@
 namespace Std.Collections;
 
-// Reference implementation of `Std.Collections.Queue<T>` is kept commented below.
-// See note in Stack.z42 — enabling as real stdlib export is L3-G4d.
-//
-// public class Queue<T> {
-//     T[] items; int head; int tail; int count; int capacity;
-//     public Queue() { this.capacity = 4; this.items = new T[4];
-//                      this.head = 0; this.tail = 0; this.count = 0; }
-//     public int Count() { return this.count; }
-//     public bool IsEmpty() { return this.count == 0; }
-//     public void Enqueue(T item) {
-//         if (this.count == this.capacity) this.Grow();
-//         this.items[this.tail] = item;
-//         this.tail = (this.tail + 1) % this.capacity;
-//         this.count = this.count + 1;
-//     }
-//     public T Dequeue() {
-//         T item = this.items[this.head];
-//         this.head = (this.head + 1) % this.capacity;
-//         this.count = this.count - 1;
-//         return item;
-//     }
-//     public T Peek() { return this.items[this.head]; }
-//     public void Clear() { this.head = 0; this.tail = 0; this.count = 0; }
-//     public void Grow() {
-//         int newCap = this.capacity * 2;
-//         T[] bigger = new T[newCap];
-//         int i = 0; int src = this.head;
-//         while (i < this.count) {
-//             bigger[i] = this.items[src];
-//             src = (src + 1) % this.capacity; i = i + 1;
-//         }
-//         this.items = bigger; this.capacity = newCap;
-//         this.head = 0; this.tail = this.count;
-//     }
-// }
+// Generic FIFO queue (L3-G4d — stdlib generic export).
+// Ring-buffer over T[] with amortised O(1) Enqueue/Dequeue.
+public class Queue<T> {
+    T[] items;
+    int head;
+    int tail;
+    int count;
+    int capacity;
+
+    public Queue() {
+        this.capacity = 4;
+        this.items = new T[4];
+        this.head = 0;
+        this.tail = 0;
+        this.count = 0;
+    }
+
+    public int Count() { return this.count; }
+    public bool IsEmpty() { return this.count == 0; }
+
+    public void Enqueue(T item) {
+        if (this.count == this.capacity) this.Grow();
+        this.items[this.tail] = item;
+        this.tail = (this.tail + 1) % this.capacity;
+        this.count = this.count + 1;
+    }
+
+    public T Dequeue() {
+        T item = this.items[this.head];
+        this.head = (this.head + 1) % this.capacity;
+        this.count = this.count - 1;
+        return item;
+    }
+
+    public T Peek() {
+        return this.items[this.head];
+    }
+
+    public void Clear() {
+        this.head = 0;
+        this.tail = 0;
+        this.count = 0;
+    }
+
+    public void Grow() {
+        int newCap = this.capacity * 2;
+        T[] bigger = new T[newCap];
+        int i = 0;
+        int src = this.head;
+        while (i < this.count) {
+            bigger[i] = this.items[src];
+            src = (src + 1) % this.capacity;
+            i = i + 1;
+        }
+        this.items = bigger;
+        this.capacity = newCap;
+        this.head = 0;
+        this.tail = this.count;
+    }
+}

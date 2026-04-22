@@ -81,8 +81,12 @@ public static class ImportedSymbolLoader
             memberVis.TryAdd(visKey, ParseVisibility(m.Visibility));
         }
 
+        // L3-G4d: preserve TypeParams so imported generic classes remain generic
+        // (e.g. new Std.Collections.Stack<int>() works on consumer side).
+        IReadOnlyList<string>? typeParams = cls.TypeParams is { Count: > 0 }
+            ? cls.TypeParams.AsReadOnly() : null;
         return new Z42ClassType(cls.Name, fields, methods, staticFields, staticMethods,
-            memberVis, cls.BaseClass);
+            memberVis, cls.BaseClass, typeParams);
     }
 
     private static Z42InterfaceType RebuildInterfaceType(ExportedInterfaceDef iface)

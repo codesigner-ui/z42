@@ -53,10 +53,23 @@ pub fn try_lookup_function(func_name: &str) -> Option<Arc<Function>> {
 /// Look up a type descriptor (class) by fully-qualified name.
 /// Consulted by VCall / ObjNew when the class isn't in the primary module's
 /// type registry (e.g. a class from a lazily-loaded dependency).
+/// L3-G4d: also triggers the zpkg load for the owning namespace so the first
+/// `new Stack<int>()` on an imported generic class resolves (previously only
+/// function calls triggered lazy load, leaving ObjNew with a blank TypeDesc).
 pub fn try_lookup_type(class_name: &str) -> Option<Arc<TypeDesc>> {
     STATE.with(|s| {
-        let state = s.borrow();
-        state.as_ref()?.type_registry.get(class_name).cloned()
+        let mut state = s.borrow_mut();
+        let loader = state.as_mut()?;
+        if let Some(td) = loader.type_registry.get(class_name) {
+            return Some(Arc::clone(td));
+        }
+        // Attempt to load the owning namespace (strip trailing ".ClassName").
+        let ns = class_name.rsplit_once('.').map(|(ns, _)| ns.to_string())?;
+        if !loader.attempted.insert(ns.clone()) {
+            return None;
+        }
+        loader.load_namespace(&ns).ok()?;
+        loader.type_registry.get(class_name).cloned()
     })
 }
 

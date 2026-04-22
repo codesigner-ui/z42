@@ -73,8 +73,15 @@ internal sealed partial class FunctionEmitter
 
                 // For non-builtin-collection types, just try DepIndex
 
-                // Instance methods: try DepIndex next (for stdlib methods not in builtin resolution)
-                if (_ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
+                // Instance methods: try DepIndex next (for stdlib methods not in builtin resolution).
+                // L3-G4d: only consult DepIndex when the receiver is an imported class
+                // (or unknown). A locally-defined class with the same short name as a stdlib
+                // class must dispatch to its OWN method, not be hijacked by a DepIndex match
+                // on method-name+arity alone (e.g. user `class Stack` vs `Std.Collections.Stack`).
+                bool receiverIsLocalClass = call.ReceiverClass is not null
+                    && !_ctx.ImportedClassNamespaces.ContainsKey(call.ReceiverClass);
+                if (!receiverIsLocalClass
+                    && _ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
                 {
                     var fullArgRegs = new List<TypedReg> { objReg };
                     fullArgRegs.AddRange(argRegs);

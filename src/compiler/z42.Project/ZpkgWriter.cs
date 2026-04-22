@@ -150,6 +150,9 @@ public static class ZpkgWriter
             foreach (var iface in cls.Interfaces) pool.Intern(iface);
             foreach (var f in cls.Fields)  { pool.Intern(f.Name); pool.Intern(f.TypeName); pool.Intern(f.Visibility); }
             foreach (var m in cls.Methods) InternMethodStrings(pool, m);
+            // L3-G4d: TypeParams
+            if (cls.TypeParams != null)
+                foreach (var tp in cls.TypeParams) pool.Intern(tp);
         }
         foreach (var iface in mod.Interfaces)
         {
@@ -372,6 +375,13 @@ public static class ZpkgWriter
                 w.Write((ushort)cls.Interfaces.Count);
                 foreach (var iface in cls.Interfaces)
                     w.Write((uint)pool.Idx(iface));
+
+                // L3-G4d: generic type parameter names
+                byte tpCount = (byte)(cls.TypeParams?.Count ?? 0);
+                w.Write(tpCount);
+                if (cls.TypeParams != null)
+                    foreach (var tp in cls.TypeParams)
+                        w.Write((uint)pool.Idx(tp));
             }
 
             // Interfaces

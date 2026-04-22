@@ -54,6 +54,10 @@ public sealed class SemanticModel
     /// Used by IrGen to qualify imported class calls with the correct namespace.
     public IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
 
+    /// (L3-G4d) Short names of classes imported from dependencies (not locally defined).
+    /// Consumed by `IrGen.QualifyClassName` so local classes win over same-named imports.
+    public IReadOnlySet<string> ImportedClassNames { get; }
+
     /// Resolved generic constraints per top-level function name. (L3-G3a)
     /// Inner dict keys = type-param name; value = bundle. Absent entries → no constraints.
     /// Consumed by IrGen to emit zbc constraint metadata.
@@ -76,7 +80,8 @@ public sealed class SemanticModel
         IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs,
         IReadOnlyDictionary<string, string>? importedClassNamespaces = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? funcConstraints = null,
-        IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null)
+        IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null,
+        IReadOnlySet<string>? importedClassNames = null)
     {
         Classes                 = classes;
         Funcs                   = funcs;
@@ -90,5 +95,6 @@ public sealed class SemanticModel
         ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
         FuncConstraints         = funcConstraints  ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
         ClassConstraints        = classConstraints ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
+        ImportedClassNames      = importedClassNames ?? new HashSet<string>();
     }
 }

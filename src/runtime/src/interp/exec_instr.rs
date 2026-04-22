@@ -267,9 +267,13 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
 
         // ── Objects ──────────────────────────────────────────────────────────
         Instruction::ObjNew { dst, class_name, args } => {
+            // L3-G4d: for imported classes (e.g. Std.Collections.Stack) the TypeDesc
+            // may only exist in the lazy loader until first use; probe it before
+            // falling back to a blank synthetic descriptor.
             let type_desc = module.type_registry
                 .get(class_name)
                 .cloned()
+                .or_else(|| crate::metadata::lazy_loader::try_lookup_type(class_name))
                 .unwrap_or_else(|| {
                     std::sync::Arc::new(make_fallback_type_desc(module, class_name))
                 });
@@ -284,10 +288,17 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
 
             let simple_name = class_name.split('.').next_back().unwrap_or(class_name.as_str());
             let ctor_name = format!("{}.{}", class_name, simple_name);
-            if let Some(ctor) = module.functions.iter().find(|f| f.name == ctor_name) {
+            // L3-G4d: fall back to lazy loader when the ctor lives in a stdlib zpkg
+            // (imported generic class ctor isn't in the main module's function table).
+            let ctor_fn = module.functions.iter().find(|f| f.name == ctor_name);
+            if let Some(ctor) = ctor_fn {
                 let mut ctor_args = vec![obj_val.clone()];
                 ctor_args.extend(collect_args(&frame.regs, args)?);
                 super::exec_function(module, ctor, &ctor_args)?;
+            } else if let Some(lazy_ctor) = crate::metadata::lazy_loader::try_lookup_function(&ctor_name) {
+                let mut ctor_args = vec![obj_val.clone()];
+                ctor_args.extend(collect_args(&frame.regs, args)?);
+                super::exec_function(module, lazy_ctor.as_ref(), &ctor_args)?;
             }
 
             frame.set(*dst, obj_val);

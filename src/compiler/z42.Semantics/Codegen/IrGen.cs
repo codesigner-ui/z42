@@ -55,9 +55,19 @@ public sealed class IrGen : IEmitterContext
         TryGetStaticFieldKey(className, fieldName);
     IReadOnlyDictionary<string, string> IEmitterContext.ImportedClassNamespaces =>
         _semanticModel?.ImportedClassNamespaces ?? new Dictionary<string, string>();
-    string IEmitterContext.QualifyClassName(string className) =>
-        _semanticModel?.ImportedClassNamespaces.TryGetValue(className, out var ns) == true
+    string IEmitterContext.QualifyClassName(string className)
+    {
+        // L3-G4d: local classes shadow imported ones. If a class exists in the semantic
+        // model AND is not flagged as imported, use the current module namespace. Only
+        // fall back to the imported namespace when the name truly refers to an import.
+        var sem = _semanticModel;
+        if (sem is not null
+            && sem.Classes.ContainsKey(className)
+            && !sem.ImportedClassNames.Contains(className))
+            return QualifyName(className);
+        return sem?.ImportedClassNamespaces.TryGetValue(className, out var ns) == true
             ? $"{ns}.{className}" : QualifyName(className);
+    }
 
     // ── Constructor ────────────────────────────────────────────────────────────
 

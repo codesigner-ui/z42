@@ -86,7 +86,9 @@ public sealed partial class TypeChecker : ITypeInferrer
             _symbols.ImportedClassNamespaces as Dictionary<string, string>
                 ?? new Dictionary<string, string>(_symbols.ImportedClassNamespaces),
             funcConstraints:  _funcConstraints,
-            classConstraints: _classConstraints);
+            classConstraints: _classConstraints,
+            importedClassNames: _symbols.ImportedClassNames as IReadOnlySet<string>
+                                ?? new HashSet<string>(_symbols.ImportedClassNames));
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────

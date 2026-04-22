@@ -1,0 +1,17 @@
+// L3-G4d: user-defined `class Stack` shadows `Std.Collections.Stack<T>`.
+// Invoke local methods, confirm stdlib version is NOT routed.
+
+class Stack {
+    int value;
+    Stack() { this.value = 0; }
+    public void Push(int v) { this.value = this.value + v; }
+    public int Get() { return this.value; }
+}
+
+void Main() {
+    var s = new Stack();       // local Stack
+    s.Push(10);
+    s.Push(20);
+    s.Push(5);
+    Console.WriteLine(s.Get()); // 35 — sum, local behaviour (stdlib Stack has no Get)
+}

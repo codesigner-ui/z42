@@ -1,0 +1,36 @@
+// L3-G4d: use Std.Collections.Stack<T> / Queue<T> directly from stdlib.
+
+void Main() {
+    // Stack<int> — LIFO
+    var s = new Stack<int>();
+    s.Push(1);
+    s.Push(2);
+    s.Push(3);
+    Console.WriteLine(s.Count());   // 3
+    int top = s.Pop();
+    Console.WriteLine(top);          // 3
+    Console.WriteLine(s.Count());   // 2
+
+    // Queue<string> — FIFO
+    var q = new Queue<string>();
+    q.Enqueue("first");
+    q.Enqueue("second");
+    q.Enqueue("third");
+    Console.WriteLine(q.Count());   // 3
+    string head = q.Dequeue();
+    Console.WriteLine(head);         // first
+    Console.WriteLine(q.Count());   // 2
+
+    // Ring-buffer wrap: push 8, dequeue 2, enqueue 2 more
+    var q2 = new Queue<int>();
+    int i = 0;
+    while (i < 8) { q2.Enqueue(i); i = i + 1; }
+    int a = q2.Dequeue();            // 0
+    int b = q2.Dequeue();            // 1
+    q2.Enqueue(100);
+    q2.Enqueue(101);
+    Console.WriteLine(q2.Count());  // 8
+    Console.WriteLine(q2.Dequeue()); // 2
+    Console.WriteLine(a);            // 0
+    Console.WriteLine(b);            // 1
+}

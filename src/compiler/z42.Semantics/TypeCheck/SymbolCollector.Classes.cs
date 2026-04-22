@@ -40,8 +40,25 @@ internal sealed partial class SymbolCollector
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
 
             if (_classes.ContainsKey(cls.Name))
-                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
-                    $"duplicate class declaration `{cls.Name}`", cls.Span);
+            {
+                // L3-G4d: a local class with the same short name as an imported one
+                // shadows the import. Drop the imported record silently; duplicate
+                // check still fires for local-local conflicts.
+                if (_importedClassNames.Remove(cls.Name))
+                {
+                    _importedClassNamespaces.Remove(cls.Name);
+                    _classes[cls.Name] = new Z42ClassType(
+                        cls.Name, new Dictionary<string, Z42Type>(),
+                        new Dictionary<string, Z42FuncType>(),
+                        new Dictionary<string, Z42Type>(),
+                        new Dictionary<string, Z42FuncType>(),
+                        new Dictionary<string, Visibility>(),
+                        effectiveBase);
+                }
+                else
+                    _diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                        $"duplicate class declaration `{cls.Name}`", cls.Span);
+            }
             else
                 _classes[cls.Name] = new Z42ClassType(
                     cls.Name, new Dictionary<string, Z42Type>(),

@@ -454,11 +454,15 @@ internal sealed partial class FunctionEmitter
             }
             default:
             {
+                // L3-G4d: QualifyClassName honours imports so `new Stack<int>()` can
+                // resolve to `Std.Collections.Stack` when only the stdlib version is in
+                // scope. Local classes win over same-named imports (handled in QualifyClassName).
                 var argRegs = n.Args.Select(EmitExpr).ToList();
-                string ctorKey = $"{_ctx.QualifyName(n.QualName)}.{n.QualName}";
+                string qualCls = _ctx.QualifyClassName(n.QualName);
+                string ctorKey = $"{qualCls}.{n.QualName}";
                 argRegs = FillDefaults(ctorKey, argRegs);
                 var dst = Alloc(IrType.Ref);
-                Emit(new ObjNewInstr(dst, _ctx.QualifyName(n.QualName), argRegs));
+                Emit(new ObjNewInstr(dst, qualCls, argRegs));
                 return dst;
             }
         }

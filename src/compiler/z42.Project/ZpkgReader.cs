@@ -337,8 +337,22 @@ public static class ZpkgReader
                 for (int ii = 0; ii < ifaceCount; ii++)
                     ifaces.Add(P(pool, r.ReadUInt32()));
 
+                // L3-G4d: generic type parameters (forward-compatible: older zpkg
+                // sections may end here; we guard on remaining bytes before reading).
+                List<string>? typeParams = null;
+                if (ms.Position < ms.Length)
+                {
+                    byte tpCount = r.ReadByte();
+                    if (tpCount > 0)
+                    {
+                        typeParams = new List<string>(tpCount);
+                        for (int ti = 0; ti < tpCount; ti++)
+                            typeParams.Add(P(pool, r.ReadUInt32()));
+                    }
+                }
+
                 classes.Add(new ExportedClassDef(name, baseCls, isAbstract, isSealed, isStatic,
-                    fields, methods, ifaces));
+                    fields, methods, ifaces, typeParams));
             }
 
             // Interfaces
