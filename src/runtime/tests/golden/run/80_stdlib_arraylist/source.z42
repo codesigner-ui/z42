@@ -1,0 +1,44 @@
+// Test: L3-G4f stdlib Std.Collections.ArrayList<T> — source-level generic container.
+
+void Main() {
+    // ArrayList<int>
+    var xs = new ArrayList<int>();
+    xs.Add(1);
+    xs.Add(2);
+    xs.Add(3);
+    xs.Add(4);
+    xs.Add(5);           // triggers Grow (capacity 4 → 8)
+    Console.WriteLine(xs.Count());     // 5
+    Console.WriteLine(xs[0]);          // 1
+    Console.WriteLine(xs[4]);          // 5
+
+    // Indexer set
+    xs[2] = 99;
+    Console.WriteLine(xs[2]);          // 99
+
+    // RemoveAt
+    xs.RemoveAt(0);
+    Console.WriteLine(xs.Count());     // 4
+    Console.WriteLine(xs[0]);          // 2
+
+    // Insert
+    xs.Insert(1, 100);
+    Console.WriteLine(xs.Count());     // 5
+    Console.WriteLine(xs[1]);          // 100
+    Console.WriteLine(xs[2]);          // 99 (was index 1)
+
+    // Clear
+    xs.Clear();
+    Console.WriteLine(xs.Count());     // 0
+    Console.WriteLine(xs.IsEmpty());   // true
+
+    // ArrayList<string>
+    var ss = new ArrayList<string>();
+    ss.Add("alpha");
+    ss.Add("beta");
+    ss.Add("gamma");
+    Console.WriteLine(ss.Count());     // 3
+    Console.WriteLine(ss[1]);          // beta
+    ss[1] = "BETA";
+    Console.WriteLine(ss[1]);          // BETA
+}

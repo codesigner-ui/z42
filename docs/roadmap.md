@@ -142,7 +142,9 @@
 | **L3-G4c** | User-level 泛型容器源码实现（MyList<T> 端到端 demo） | — | ✅ | — | ✅ | ✅ |
 | **L3-G4d** | stdlib 导出泛型类（Std.Collections.Stack / Queue 启用 + 名称冲突裁决 + 懒加载 ctor） | — | ✅ | ✅ | ✅ | ✅ |
 | **L3-G4e** | 索引器语法 `T this[int] { get; set; }` — desugar 到 get_Item/set_Item | ✅ | ✅ | — | — | ✅ |
-| **L3-G4f** | List<T> / Dictionary<K,V> pseudo-class → 源码实现 | — | — | — | — | 📋 |
+| **L3-G4f** | 源码级 ArrayList<T> ✅（HashMap 📋 — 等跨命名空间约束解析修好） | — | 🟡 | — | — | 🟡 |
+| **L3-G4g** | 跨命名空间约束解析 + ArrayList.Contains/IndexOf + HashMap<K,V> | — | — | — | — | 📋 |
+| **L3-G4h** | foreach iterator protocol → 真正移除 pseudo-class List/Dict | — | — | — | — | 📋 |
 | **L3-G4** | 泛型标准库（已细拆为 G4a/G4b/G4c/G4d，保留总指标） | — | 🟡 | — | 🟡 | 🟡 |
 | **L3-R** | 反射与运行时类型信息 — 见下独立小节（统一批次，延后） | — | — | — | — | 📋 |
 
