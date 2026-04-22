@@ -1,0 +1,40 @@
+// Test: generic class with T[] array field — exercise L3-G4a + T-array usage
+
+class Stack<T> {
+    T[] items;
+    int count;
+
+    Stack(int capacity) {
+        this.items = new T[capacity];
+        this.count = 0;
+    }
+
+    void Push(T item) {
+        this.items[this.count] = item;
+        this.count = this.count + 1;
+    }
+
+    T Pop() {
+        this.count = this.count - 1;
+        return this.items[this.count];
+    }
+
+    int Size() { return this.count; }
+}
+
+void Main() {
+    var s = new Stack<int>(4);
+    s.Push(1);
+    s.Push(2);
+    s.Push(3);
+    Console.WriteLine(s.Size());
+    int top = s.Pop();
+    Console.WriteLine(top);
+    Console.WriteLine(s.Size());
+
+    var ss = new Stack<string>(4);
+    ss.Push("a");
+    ss.Push("b");
+    string last = ss.Pop();
+    Console.WriteLine(last);
+}
