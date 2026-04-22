@@ -350,9 +350,11 @@ public static class ZpkgReader
                             typeParams.Add(P(pool, r.ReadUInt32()));
                     }
                 }
+                // L3-G3d: where-clause constraints (forward-compatible).
+                var tpConstraints = ReadTpConstraints(r, ms, pool);
 
                 classes.Add(new ExportedClassDef(name, baseCls, isAbstract, isSealed, isStatic,
-                    fields, methods, ifaces, typeParams));
+                    fields, methods, ifaces, typeParams, tpConstraints));
             }
 
             // Interfaces
@@ -401,7 +403,21 @@ public static class ZpkgReader
                     string pt = P(pool, r.ReadUInt32());
                     parms.Add(new ExportedParamDef(pn, pt));
                 }
-                functions.Add(new ExportedFuncDef(name, parms, retType, minArgs));
+                // L3-G3d: generic type params + where-clause constraints (forward-compat).
+                List<string>? fnTypeParams = null;
+                if (ms.Position < ms.Length)
+                {
+                    byte fnTpCount = r.ReadByte();
+                    if (fnTpCount > 0)
+                    {
+                        fnTypeParams = new List<string>(fnTpCount);
+                        for (int ti = 0; ti < fnTpCount; ti++)
+                            fnTypeParams.Add(P(pool, r.ReadUInt32()));
+                    }
+                }
+                var fnConstraints = ReadTpConstraints(r, ms, pool);
+                functions.Add(new ExportedFuncDef(name, parms, retType, minArgs,
+                    fnTypeParams, fnConstraints));
             }
 
             result.Add(new ExportedModule(ns, classes, interfaces, enums, functions));
@@ -434,6 +450,32 @@ public static class ZpkgReader
 
     private static string P(string[] pool, uint idx) =>
         idx < pool.Length ? pool[idx] : $"<str#{idx}>";
+
+    /// L3-G3d: read `where` constraint block (written by ZpkgWriter.WriteTpConstraints).
+    /// Returns null when block is absent (older zpkg) or when the count byte is 0.
+    private static List<ExportedTypeParamConstraint>? ReadTpConstraints(
+        BinaryReader r, MemoryStream ms, string[] pool)
+    {
+        if (ms.Position >= ms.Length) return null;
+        byte count = r.ReadByte();
+        if (count == 0) return null;
+        var result = new List<ExportedTypeParamConstraint>(count);
+        for (int i = 0; i < count; i++)
+        {
+            string tp = P(pool, r.ReadUInt32());
+            byte flags = r.ReadByte();
+            byte ifaceCount = r.ReadByte();
+            var ifaces = new List<string>(ifaceCount);
+            for (int j = 0; j < ifaceCount; j++)
+                ifaces.Add(P(pool, r.ReadUInt32()));
+            string? baseCls = (flags & 0x04) != 0 ? P(pool, r.ReadUInt32()) : null;
+            string? tpRef   = (flags & 0x08) != 0 ? P(pool, r.ReadUInt32()) : null;
+            result.Add(new ExportedTypeParamConstraint(
+                tp, ifaces, baseCls, tpRef,
+                (flags & 0x01) != 0, (flags & 0x02) != 0));
+        }
+        return result;
+    }
 }
 
 // ── Package metadata record ────────────────────────────────────────────────────

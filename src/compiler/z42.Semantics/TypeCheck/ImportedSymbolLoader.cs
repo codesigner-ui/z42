@@ -25,6 +25,11 @@ public static class ImportedSymbolLoader
         var enumConsts = new Dictionary<string, long>(StringComparer.Ordinal);
         var enumTypes  = new HashSet<string>(StringComparer.Ordinal);
         var classNs    = new Dictionary<string, string>(StringComparer.Ordinal);
+        // L3-G3d: raw serialized constraints — resolved to bundles later by TypeChecker
+        // (bundles need Z42InterfaceType / Z42ClassType references that only exist
+        // after all modules are loaded).
+        var classConstraints = new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal);
+        var funcConstraints  = new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal);
 
         foreach (var mod in modules)
         {
@@ -35,6 +40,8 @@ public static class ImportedSymbolLoader
                 {
                     classes[cls.Name] = RebuildClassType(cls);
                     classNs[cls.Name] = mod.Namespace;
+                    if (cls.TypeParamConstraints is { Count: > 0 } cc)
+                        classConstraints[cls.Name] = cc;
                 }
 
             foreach (var iface in mod.Interfaces)
@@ -50,10 +57,15 @@ public static class ImportedSymbolLoader
 
             foreach (var fn in mod.Functions)
                 if (!funcs.ContainsKey(fn.Name))
+                {
                     funcs[fn.Name] = RebuildFuncType(fn.Params, fn.ReturnType, fn.MinArgCount);
+                    if (fn.TypeParamConstraints is { Count: > 0 } fc)
+                        funcConstraints[fn.Name] = fc;
+                }
         }
 
-        return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs);
+        return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
+            classConstraints, funcConstraints);
     }
 
     private static Z42ClassType RebuildClassType(ExportedClassDef cls)
@@ -160,4 +172,9 @@ public sealed record ImportedSymbols(
     /// Maps short class name (e.g. "Console") to its original namespace (e.g. "Std.IO").
     /// Used by IrGen to qualify imported class names with the correct dependency namespace
     /// instead of the local file's namespace.
-    Dictionary<string, string>           ClassNamespaces);
+    Dictionary<string, string>           ClassNamespaces,
+    /// L3-G3d: raw serialized `where` constraints keyed by decl short name.
+    /// Consumer TypeChecker resolves these to `GenericConstraintBundle` after all
+    /// imported interfaces / classes are available, then merges into its constraint maps.
+    Dictionary<string, List<ExportedTypeParamConstraint>>? ClassConstraints = null,
+    Dictionary<string, List<ExportedTypeParamConstraint>>? FuncConstraints  = null);

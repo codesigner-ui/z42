@@ -62,8 +62,13 @@ public sealed partial class TypeChecker : ITypeInferrer
     {
         var binder  = new SymbolCollector(_diags);
         var symbols = binder.Collect(cu, imported);
+        // L3-G3d: rehydrate imported `where` constraints so ValidateGenericConstraints
+        // fires for `new ImportedGeneric<T>()` / imported generic func calls.
+        _imported = imported;
         return Infer(cu, symbols);
     }
+
+    private ImportedSymbols? _imported;
 
     /// ITypeInferrer: Pass 1 only — bind bodies using an already-collected SymbolTable.
     public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols)
@@ -72,6 +77,9 @@ public sealed partial class TypeChecker : ITypeInferrer
 
         // ── Pass 0.5: resolve generic constraints from `where` clauses (L3-G2) ──
         ResolveAllWhereConstraints(cu);
+        // L3-G3d: merge imported `where` constraints from zpkg TSIG so call-site
+        // validation covers `new ImportedGeneric<T>()` / imported generic calls.
+        MergeImportedConstraints();
 
         // ── Pass 1: bind bodies (function-level error isolation) ────────────
         BindStaticFieldInits(cu);
@@ -314,6 +322,41 @@ public sealed partial class TypeChecker : ITypeInferrer
         Z42UnknownType        => true,
         _                     => false,
     };
+
+    /// L3-G3d: convert imported `ExportedTypeParamConstraint` lists into
+    /// `GenericConstraintBundle` maps and merge into `_classConstraints` /
+    /// `_funcConstraints`. Local constraints (already resolved in Pass 0.5) win.
+    private void MergeImportedConstraints()
+    {
+        if (_imported is null) return;
+        if (_imported.ClassConstraints is { } cc)
+            foreach (var (declName, raw) in cc)
+                if (!_classConstraints.ContainsKey(declName))
+                    _classConstraints[declName] = RehydrateConstraints(raw);
+        if (_imported.FuncConstraints is { } fc)
+            foreach (var (declName, raw) in fc)
+                if (!_funcConstraints.ContainsKey(declName))
+                    _funcConstraints[declName] = RehydrateConstraints(raw);
+    }
+
+    private IReadOnlyDictionary<string, GenericConstraintBundle> RehydrateConstraints(
+        List<ExportedTypeParamConstraint> raw)
+    {
+        var result = new Dictionary<string, GenericConstraintBundle>(raw.Count);
+        foreach (var c in raw)
+        {
+            var ifaces = new List<Z42InterfaceType>(c.Interfaces.Count);
+            foreach (var iname in c.Interfaces)
+                if (_symbols.Interfaces.TryGetValue(iname, out var it))
+                    ifaces.Add(it);
+            Z42ClassType? baseCls = c.BaseClass != null
+                && _symbols.Classes.TryGetValue(c.BaseClass, out var bc) ? bc : null;
+            result[c.TypeParam] = new GenericConstraintBundle(
+                baseCls, ifaces,
+                c.RequiresClass, c.RequiresStruct, c.TypeParamRef);
+        }
+        return result;
+    }
 
     /// Pass 0.5: resolve every `where` clause in the CU into cached constraint maps
     /// consulted by body binding (`PushTypeParams`) and call-site validation.

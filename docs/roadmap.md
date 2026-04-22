@@ -136,7 +136,7 @@
 | **L3-G2.5** | 约束范式补充：基类 ✅ / 构造器 / class / struct / notnull 等 | 🟡 | 🟡 | — | — | 🟡 |
 | **L3-G3a** | zbc 约束元数据 + VM loader + 加载时校验 | — | — | ✅ | ✅ | ✅ |
 | **L3-G3c** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
-| **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | — | — | — | 📋 |
+| **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | ✅ | ✅ | — | ✅ |
 | **L3-G4a** | 泛型类实例化类型替换（call-site T → 具体类型） | — | ✅ | — | — | ✅ |
 | **L3-G4b** | Primitive 类型实现 interface（`Max<int>` 可用） | — | ✅ | — | ✅ | ✅ |
 | **L3-G4c** | User-level 泛型容器源码实现（MyList<T> 端到端 demo） | — | ✅ | — | ✅ | ✅ |

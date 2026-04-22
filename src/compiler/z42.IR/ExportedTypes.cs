@@ -17,6 +17,8 @@ public sealed record ExportedModule(
 /// Exported class/struct/record definition with full member signatures.
 /// L3-G4d: `TypeParams` carries generic parameter names for `class Foo<T, U>` so
 /// imported classes can be instantiated with type arguments from consumer code.
+/// L3-G3d: `TypeParamConstraints` carries `where` clauses so the consumer
+/// TypeChecker can validate `new ImportedGeneric<T>()` at compile time.
 public sealed record ExportedClassDef(
     string Name,
     string? BaseClass,
@@ -26,7 +28,19 @@ public sealed record ExportedClassDef(
     List<ExportedFieldDef>  Fields,
     List<ExportedMethodDef> Methods,
     List<string> Interfaces,
-    List<string>? TypeParams = null);
+    List<string>? TypeParams = null,
+    List<ExportedTypeParamConstraint>? TypeParamConstraints = null);
+
+/// Serialized `where` bundle for a single type parameter. (L3-G3d)
+/// Interface / base-class references stored by name only (no type args); matches
+/// the TypeChecker's current validation granularity for cross-zpkg usage.
+public sealed record ExportedTypeParamConstraint(
+    string TypeParam,
+    List<string> Interfaces,
+    string? BaseClass,
+    string? TypeParamRef,
+    bool RequiresClass,
+    bool RequiresStruct);
 
 /// Exported interface definition.
 public sealed record ExportedInterfaceDef(
@@ -41,11 +55,14 @@ public sealed record ExportedEnumDef(
 public sealed record ExportedEnumMember(string Name, long Value);
 
 /// Exported top-level function definition.
+/// L3-G3d: `TypeParamConstraints` mirrors the class variant for generic functions.
 public sealed record ExportedFuncDef(
     string Name,
     List<ExportedParamDef> Params,
     string ReturnType,
-    int MinArgCount);
+    int MinArgCount,
+    List<string>? TypeParams = null,
+    List<ExportedTypeParamConstraint>? TypeParamConstraints = null);
 
 /// Exported method (class instance/static method, interface method).
 public sealed record ExportedMethodDef(

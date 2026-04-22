@@ -153,6 +153,8 @@ public static class ZpkgWriter
             // L3-G4d: TypeParams
             if (cls.TypeParams != null)
                 foreach (var tp in cls.TypeParams) pool.Intern(tp);
+            // L3-G3d: TypeParamConstraints
+            InternTpConstraints(pool, cls.TypeParamConstraints);
         }
         foreach (var iface in mod.Interfaces)
         {
@@ -168,6 +170,23 @@ public static class ZpkgWriter
         {
             pool.Intern(fn.Name); pool.Intern(fn.ReturnType);
             foreach (var p in fn.Params) { pool.Intern(p.Name); pool.Intern(p.TypeName); }
+            // L3-G3d: generic type params + constraints
+            if (fn.TypeParams != null)
+                foreach (var tp in fn.TypeParams) pool.Intern(tp);
+            InternTpConstraints(pool, fn.TypeParamConstraints);
+        }
+    }
+
+    private static void InternTpConstraints(
+        StringPool pool, List<ExportedTypeParamConstraint>? constraints)
+    {
+        if (constraints is null) return;
+        foreach (var c in constraints)
+        {
+            pool.Intern(c.TypeParam);
+            foreach (var i in c.Interfaces) pool.Intern(i);
+            if (c.BaseClass    != null) pool.Intern(c.BaseClass);
+            if (c.TypeParamRef != null) pool.Intern(c.TypeParamRef);
         }
     }
 
@@ -382,6 +401,9 @@ public static class ZpkgWriter
                 if (cls.TypeParams != null)
                     foreach (var tp in cls.TypeParams)
                         w.Write((uint)pool.Idx(tp));
+
+                // L3-G3d: per-type-param `where` constraints
+                WriteTpConstraints(w, cls.TypeParamConstraints, pool);
             }
 
             // Interfaces
@@ -420,10 +442,51 @@ public static class ZpkgWriter
                     w.Write((uint)pool.Idx(p.Name));
                     w.Write((uint)pool.Idx(p.TypeName));
                 }
+                // L3-G3d: generic type parameter names + `where` constraints.
+                byte fnTpCount = (byte)(fn.TypeParams?.Count ?? 0);
+                w.Write(fnTpCount);
+                if (fn.TypeParams != null)
+                    foreach (var tp in fn.TypeParams)
+                        w.Write((uint)pool.Idx(tp));
+                WriteTpConstraints(w, fn.TypeParamConstraints, pool);
             }
         }
 
         return ms.ToArray();
+    }
+
+    /// L3-G3d: append `where` constraint block for a class or function.
+    /// Layout: u8 count, { u32 tpName, u8 flags, u8 ifaceCount, u32* ifaceNames,
+    ///                     [u32 baseCls?], [u32 tpRef?] }.
+    /// Flags: 0x01 RequiresClass, 0x02 RequiresStruct, 0x04 HasBaseClass, 0x08 HasTpRef.
+    private static void WriteTpConstraints(
+        BinaryWriter w,
+        List<ExportedTypeParamConstraint>? constraints,
+        StringPool pool)
+    {
+        if (constraints is null || constraints.Count == 0)
+        {
+            w.Write((byte)0);
+            return;
+        }
+        w.Write((byte)constraints.Count);
+        foreach (var c in constraints)
+        {
+            w.Write((uint)pool.Idx(c.TypeParam));
+            byte flags = 0;
+            if (c.RequiresClass)           flags |= 0x01;
+            if (c.RequiresStruct)          flags |= 0x02;
+            if (c.BaseClass != null)       flags |= 0x04;
+            if (c.TypeParamRef != null)    flags |= 0x08;
+            w.Write(flags);
+            w.Write((byte)c.Interfaces.Count);
+            foreach (var iname in c.Interfaces)
+                w.Write((uint)pool.Idx(iname));
+            if (c.BaseClass != null)
+                w.Write((uint)pool.Idx(c.BaseClass));
+            if (c.TypeParamRef != null)
+                w.Write((uint)pool.Idx(c.TypeParamRef));
+        }
     }
 
     private static void WriteMethodDef(BinaryWriter w, ExportedMethodDef m, StringPool pool)

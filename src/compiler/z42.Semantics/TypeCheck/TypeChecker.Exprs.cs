@@ -151,6 +151,7 @@ public sealed partial class TypeChecker
                     else
                     {
                         // L3-G2: validate each explicit type arg satisfies the class's where constraints.
+                        // L3-G3d: _classConstraints also covers imported classes via TSIG.
                         var resolved = gt2.TypeArgs.Select(ResolveType).ToList();
                         ValidateGenericConstraints(gt2.Name, clsType.TypeParams, resolved,
                             _classConstraints, newExpr.Span);

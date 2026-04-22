@@ -54,10 +54,14 @@ public static class ExportedTypeExtractor
             // L3-G4d: propagate generic type parameters so consumers can
             // instantiate imported generic classes with type arguments.
             var typeParams = ct.TypeParams?.ToList();
+            // L3-G3d: propagate `where` bundles so consumer TypeChecker can
+            // validate type args at call sites without relying on VM loader fallback.
+            var constraints = ExtractTypeParamConstraints(
+                sem.ClassConstraints.GetValueOrDefault(name));
             result.Add(new ExportedClassDef(
                 name, ct.BaseClassName,
                 false, false, false,
-                fields, methods, [], typeParams));
+                fields, methods, [], typeParams, constraints));
         }
         return result;
     }
@@ -108,9 +112,39 @@ public static class ExportedTypeExtractor
         {
             var parms = ft.Params.Select((p, i) =>
                 new ExportedParamDef($"p{i}", TypeToString(p))).ToList();
-            result.Add(new ExportedFuncDef(name, parms, TypeToString(ft.Ret), ft.MinArgCount));
+            // L3-G3d: propagate generic type params and where-clause constraints
+            // for imported free functions (stdlib-defined generic helpers).
+            var constraints = ExtractTypeParamConstraints(
+                sem.FuncConstraints.GetValueOrDefault(name));
+            List<string>? typeParams = null;
+            if (sem.FuncConstraints.TryGetValue(name, out var cMap))
+                typeParams = cMap.Keys.ToList();
+            result.Add(new ExportedFuncDef(name, parms, TypeToString(ft.Ret), ft.MinArgCount,
+                typeParams, constraints));
         }
         return result;
+    }
+
+    /// Convert a (possibly-null) constraint map to the serializable list form.
+    /// L3-G3d: interfaces / base class stored by name only; inner type-args of
+    /// generic interfaces (e.g. `IEquatable<T>`) are recoverable via type-param context.
+    private static List<ExportedTypeParamConstraint>? ExtractTypeParamConstraints(
+        IReadOnlyDictionary<string, GenericConstraintBundle>? map)
+    {
+        if (map is null || map.Count == 0) return null;
+        var list = new List<ExportedTypeParamConstraint>(map.Count);
+        foreach (var (tp, bundle) in map)
+        {
+            if (bundle.IsEmpty) continue;
+            list.Add(new ExportedTypeParamConstraint(
+                tp,
+                bundle.Interfaces.Select(i => i.Name).ToList(),
+                bundle.BaseClass?.Name,
+                bundle.TypeParamConstraint,
+                bundle.RequiresClass,
+                bundle.RequiresStruct));
+        }
+        return list.Count == 0 ? null : list;
     }
 
     private static ExportedMethodDef FuncToMethod(
