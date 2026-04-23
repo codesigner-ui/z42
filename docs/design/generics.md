@@ -455,6 +455,63 @@ void Main() {
 - `enum + new()` 允许（enum 天然 default-constructible）
 - `enum + IXxx<...>` 允许；enum 暂不能 implements interface（待 L3-R）
 
+### primitive-as-struct（L3-G4b 重构，2026-04-23）
+
+**设计目标**：消除 `PrimitiveImplementsInterface`（C# 编译器内）和
+`primitive_method_builtin`（Rust VM 内）两张硬编码桥接表 — 让 `int` / `double` /
+`bool` / `char` / `string` 通过 **stdlib 的 struct 声明** 来声明接口实现
+（参考 C# BCL 模型：`System.Int32` 是一个 struct，带 `IComparable<int>` 等接口）。
+
+#### stdlib 声明
+
+```z42
+// z42.core/src/Int.z42
+namespace Std;
+
+public struct int : IComparable<int>, IEquatable<int> {
+    [Native("__int_parse")]      public static extern int Parse(string s);
+    [Native("__int_compare_to")] public extern int CompareTo(int other);
+    [Native("__int_equals")]     public extern bool Equals(int other);
+    [Native("__int_hash_code")]  public extern int GetHashCode();
+    [Native("__int_to_string")]  public extern string ToString();
+}
+```
+
+同样方式为 `double` / `bool` / `char` 声明 struct。`string` 继续使用 uppercase
+`class String` 但追加 `IComparable<string>` / `IEquatable<string>`（规范化映射）。
+
+#### 三个支撑层改动
+
+| 层 | 原硬编码 | 现在 |
+|----|---------|------|
+| **Parser** | 不允许 primitive 关键字作 struct 名 | `ExpectTypeDeclName` 接受 `int`/`double`/... 作为声明名 |
+| **TypeChecker** | `PrimitiveImplementsInterface` switch 表（20+ 条） | 数据驱动：查 `SymbolTable.ClassInterfaces[canonical]`（别名 `i32/sbyte/...` 归一为 `int`） |
+| **VM** | `primitive_method_builtin` 方法-内置名映射（17 条） | `primitive_class_name` 仅 5 条变体→类名映射；实际方法派发走 `module.func_index["Std.int.CompareTo"]` → stdlib 生成的 extern stub 调 `__int_compare_to` builtin |
+
+#### 类型身份保守
+
+**`Z42PrimType("int")` 仍然是 int 在类型系统里的身份** —— 不切换为 `Z42ClassType`。
+避免 `IsAssignableTo` / `IsReferenceType` / 全局 `== Z42Type.Int` 比较面临
+大面积审计。仅 "接口实现查询" 和 "方法派发查询" 两条路径改走数据驱动。
+
+#### TSIG 扩展
+
+新增 `ImportedSymbols.ClassInterfaces: Dictionary<string, List<string>>`
+承载 "class X 声明了哪些接口" 的导出数据。`ExportedTypeExtractor` 从
+`SemanticModel.ClassInterfaces` 读取；消费者 `SymbolCollector.MergeImported`
+填充 `_classInterfaces` 以供 `PrimitiveImplementsInterface` 查询。
+
+#### struct 现在可实现接口
+
+C# 对齐：删除了 `struct X cannot implement interfaces` 硬性禁令。struct 可以
+`: IComparable<T>` 等，既支持 primitive-as-struct，也允许用户 value type 表达
+协议一致性（如 2D 坐标 `struct Point : IEquatable<Point>`）。
+
+#### 未来：INumber 等新接口如何加
+
+只需在 stdlib 写 `struct int : ..., INumber<int>` 多加 5 个 extern 方法即可。
+**零编译器 / VM 改动** —— primitive 新接口支持从"改硬编码表"变成"纯 stdlib 声明"。
+
 ### 跨参数约束链校验（L3-G2.5 chain，2026-04-23）
 
 接口约束的 TypeArgs 现在参与校验而不仅仅是名字匹配：

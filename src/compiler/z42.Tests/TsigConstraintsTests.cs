@@ -133,13 +133,25 @@ void Main() {
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName: null,
             TypeParams: new List<string> { "T" });
+        // L3-G4b primitive-as-struct: stdlib normally declares `struct int : IEquatable<int>`;
+        // synthetic imports must carry the same interface list so data-driven
+        // `PrimitiveImplementsInterface` accepts `int` as conforming.
+        var intStruct = new Z42ClassType(
+            Name: "int",
+            Fields: new Dictionary<string, Z42Type>(),
+            Methods: new Dictionary<string, Z42FuncType>(),
+            StaticFields: new Dictionary<string, Z42Type>(),
+            StaticMethods: new Dictionary<string, Z42FuncType>(),
+            MemberVisibility: new Dictionary<string, Visibility>(),
+            BaseClassName: null,
+            IsStruct: true);
         var imported = new ImportedSymbols(
-            Classes: new() { ["Box"] = box },
+            Classes: new() { ["Box"] = box, ["int"] = intStruct },
             Functions: new(),
             Interfaces: new() { ["IEquatable"] = ieq },
             EnumConstants: new(),
             EnumTypes: [],
-            ClassNamespaces: new() { ["Box"] = "Demo.Lib" },
+            ClassNamespaces: new() { ["Box"] = "Demo.Lib", ["int"] = "Std" },
             ClassConstraints: new()
             {
                 ["Box"] = [
@@ -152,9 +164,10 @@ void Main() {
                         RequiresStruct: false)
                 ]
             },
-            FuncConstraints: null);
+            FuncConstraints: null,
+            ClassInterfaces: new() { ["int"] = ["IEquatable"] });
 
-        // int implements IEquatable via primitive protocol.
+        // int implements IEquatable via the stdlib-declared struct (imported above).
         const string src = @"void Main() { var b = new Box<int>(); }";
         var tokens = new Lexer(src).Tokenize();
         var cu     = new Parser(tokens).ParseCompilationUnit();

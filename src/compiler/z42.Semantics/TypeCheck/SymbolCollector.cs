@@ -75,6 +75,22 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             _enumTypes.Add(name);
         foreach (var (name, ns) in imported.ClassNamespaces)
             _importedClassNamespaces.TryAdd(name, ns);
+        // L3-G4b primitive-as-struct: import stdlib `struct int : IComparable<int>` etc.
+        // into the classInterfaces registry so `PrimitiveImplementsInterface` can answer
+        // "int satisfies IComparable" by reading TSIG instead of a hardcoded switch.
+        if (imported.ClassInterfaces is { } ciMap)
+            foreach (var (name, ifaceNames) in ciMap)
+            {
+                if (_classInterfaces.ContainsKey(name)) continue;
+                var list = new List<Z42InterfaceType>(ifaceNames.Count);
+                foreach (var ifaceName in ifaceNames)
+                    if (_interfaces.TryGetValue(ifaceName, out var it))
+                        list.Add(it);
+                    else
+                        list.Add(new Z42InterfaceType(ifaceName,
+                            new Dictionary<string, Z42FuncType>()));
+                _classInterfaces[name] = list;
+            }
     }
 
     // ── Pass 0a: enum constants ───────────────────────────────────────────────

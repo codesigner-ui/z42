@@ -30,6 +30,7 @@ public static class ImportedSymbolLoader
         // after all modules are loaded).
         var classConstraints = new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal);
         var funcConstraints  = new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal);
+        var classInterfaces  = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
         foreach (var mod in modules)
         {
@@ -42,6 +43,11 @@ public static class ImportedSymbolLoader
                     classNs[cls.Name] = mod.Namespace;
                     if (cls.TypeParamConstraints is { Count: > 0 } cc)
                         classConstraints[cls.Name] = cc;
+                    // L3-G4b primitive-as-struct: preserve the class's declared interface
+                    // list so the TypeChecker can answer "does stdlib struct int implement
+                    // IComparable?" via data-driven lookup.
+                    if (cls.Interfaces.Count > 0)
+                        classInterfaces[cls.Name] = new List<string>(cls.Interfaces);
                 }
 
             foreach (var iface in mod.Interfaces)
@@ -65,7 +71,7 @@ public static class ImportedSymbolLoader
         }
 
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
-            classConstraints, funcConstraints);
+            classConstraints, funcConstraints, classInterfaces);
     }
 
     private static Z42ClassType RebuildClassType(ExportedClassDef cls)
@@ -177,4 +183,8 @@ public sealed record ImportedSymbols(
     /// Consumer TypeChecker resolves these to `GenericConstraintBundle` after all
     /// imported interfaces / classes are available, then merges into its constraint maps.
     Dictionary<string, List<ExportedTypeParamConstraint>>? ClassConstraints = null,
-    Dictionary<string, List<ExportedTypeParamConstraint>>? FuncConstraints  = null);
+    Dictionary<string, List<ExportedTypeParamConstraint>>? FuncConstraints  = null,
+    /// L3-G4b primitive-as-struct: imported class → declared interface list
+    /// (by short name). Enables data-driven `PrimitiveImplementsInterface`
+    /// to work when stdlib `struct int : IComparable<int>` is loaded from a zpkg.
+    Dictionary<string, List<string>>?    ClassInterfaces = null);

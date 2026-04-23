@@ -58,10 +58,16 @@ public static class ExportedTypeExtractor
             // validate type args at call sites without relying on VM loader fallback.
             var constraints = ExtractTypeParamConstraints(
                 sem.ClassConstraints.GetValueOrDefault(name));
+            // L3-G4b primitive-as-struct: export the class's declared interface list
+            // so consumer TypeChecker can answer "does int satisfy IComparable?" via
+            // data-driven lookup (replaces hardcoded PrimitiveImplementsInterface).
+            var ifaceNames = sem.ClassInterfaces.TryGetValue(name, out var ifaceList)
+                ? ifaceList.Select(i => i.Name).ToList()
+                : new List<string>();
             result.Add(new ExportedClassDef(
                 name, ct.BaseClassName,
                 false, false, false,
-                fields, methods, [], typeParams, constraints));
+                fields, methods, ifaceNames, typeParams, constraints));
         }
         return result;
     }

@@ -1,0 +1,9 @@
+namespace Std;
+
+// L3-G4b primitive-as-struct: declares char's interface conformance.
+public struct char : IComparable<char>, IEquatable<char> {
+    [Native("__char_compare_to")] public extern int CompareTo(char other);
+    [Native("__char_equals")]     public extern bool Equals(char other);
+    [Native("__char_hash_code")]  public extern int GetHashCode();
+    [Native("__char_to_string")]  public extern string ToString();
+}

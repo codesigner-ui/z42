@@ -83,9 +83,9 @@ internal sealed partial class SymbolCollector
             if (cls.IsStruct && cls.BaseClass != null)
                 _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"struct `{cls.Name}` cannot inherit from a base class", cls.Span);
-            if (cls.IsStruct && cls.Interfaces.Count > 0)
-                _diags.Error(DiagnosticCodes.InvalidInheritance,
-                    $"struct `{cls.Name}` cannot implement interfaces", cls.Span);
+            // L3-G4b primitive-as-struct: structs may implement interfaces (C# parity).
+            // stdlib declares `struct int : IComparable<int>` etc. for data-driven
+            // primitive interface satisfaction.
 
             // Activate generic type params so T resolves to Z42GenericParamType in fields/methods
             if (cls.TypeParams != null) _activeTypeParams = new HashSet<string>(cls.TypeParams);

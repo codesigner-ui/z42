@@ -9,7 +9,7 @@ namespace Std;
 //   - All instance methods receive `this` (the string value) as reg 0.
 //
 // Overloaded methods use the $N naming convention in IR (e.g. Substring$1, Substring$2).
-public static class String {
+public static class String : IComparable<string>, IEquatable<string> {
     // ── Properties ───────────────────────────────────────────────────────────
 
     // Number of Unicode scalar values (characters) in this string.
@@ -30,6 +30,14 @@ public static class String {
     // Value equality: compares by content, not reference.
     [Native("__str_equals")]
     public extern bool Equals(object? other);
+
+    // L3-G4b primitive-as-struct: typed equality for IEquatable<string>.
+    [Native("__str_equals")]
+    public extern bool Equals(string other);
+
+    // L3-G4b primitive-as-struct: ordering for IComparable<string>.
+    [Native("__str_compare_to")]
+    public extern int CompareTo(string other);
 
     // FNV-1a hash of the UTF-8 bytes.
     [Native("__str_hash_code")]

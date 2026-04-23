@@ -68,6 +68,10 @@ public sealed class SemanticModel
     public IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
         ClassConstraints { get; }
 
+    /// L3-G4b primitive-as-struct: class short name → declared interface types.
+    /// Exposed so ExportedTypeExtractor can write TSIG `ExportedClassDef.Interfaces`.
+    public IReadOnlyDictionary<string, List<Z42InterfaceType>> ClassInterfaces { get; }
+
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,
         IReadOnlyDictionary<string, Z42FuncType>      funcs,
@@ -81,7 +85,8 @@ public sealed class SemanticModel
         IReadOnlyDictionary<string, string>? importedClassNamespaces = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? funcConstraints = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null,
-        IReadOnlySet<string>? importedClassNames = null)
+        IReadOnlySet<string>? importedClassNames = null,
+        IReadOnlyDictionary<string, List<Z42InterfaceType>>? classInterfaces = null)
     {
         Classes                 = classes;
         Funcs                   = funcs;
@@ -96,5 +101,6 @@ public sealed class SemanticModel
         FuncConstraints         = funcConstraints  ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
         ClassConstraints        = classConstraints ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
         ImportedClassNames      = importedClassNames ?? new HashSet<string>();
+        ClassInterfaces         = classInterfaces ?? new Dictionary<string, List<Z42InterfaceType>>();
     }
 }

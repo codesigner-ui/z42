@@ -449,4 +449,30 @@ public sealed class ParserTests
         fn.IsExtern.Should().BeFalse();
         fn.NativeIntrinsic.Should().BeNull();
     }
+
+    // ── L3-G4b primitive-as-struct: primitive keyword as struct name ─────────
+
+    [Fact]
+    public void StructDecl_PrimitiveName_Int()
+    {
+        var cu = ParseCu("struct int { } void Main() { }");
+        var cls = cu.Classes.Should().ContainSingle().Subject;
+        cls.Name.Should().Be("int");
+        cls.IsStruct.Should().BeTrue();
+    }
+
+    [Fact]
+    public void StructDecl_PrimitiveName_DoubleWithInterface()
+    {
+        var cu = ParseCu(@"
+interface IComparable<T> { int CompareTo(T other); }
+public struct double : IComparable<double> {
+    [Native(""__double_compare_to"")] public extern int CompareTo(double other);
+}
+void Main() { }");
+        var cls = cu.Classes.Should().ContainSingle().Subject;
+        cls.Name.Should().Be("double");
+        cls.IsStruct.Should().BeTrue();
+        cls.Interfaces.Should().ContainSingle();
+    }
 }

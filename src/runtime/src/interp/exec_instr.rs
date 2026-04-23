@@ -29,27 +29,20 @@ fn to_snake_case(s: &str) -> String {
     result
 }
 
-/// (L3-G4b) Map a primitive VCall receiver + method name to a corelib builtin name,
-/// or None if no mapping applies. Called before the string / object dispatch paths.
-/// Shared between the interpreter and the JIT backend.
-pub(crate) fn primitive_method_builtin(obj: &Value, method: &str) -> Option<&'static str> {
-    match (obj, method) {
-        (Value::I64(_),  "CompareTo")   => Some("__int_compare_to"),
-        (Value::I64(_),  "Equals")      => Some("__int_equals"),
-        (Value::I64(_),  "GetHashCode") => Some("__int_hash_code"),
-        (Value::I64(_),  "ToString")    => Some("__int_to_string"),
-        (Value::F64(_),  "CompareTo")   => Some("__double_compare_to"),
-        (Value::F64(_),  "Equals")      => Some("__double_equals"),
-        (Value::F64(_),  "GetHashCode") => Some("__double_hash_code"),
-        (Value::F64(_),  "ToString")    => Some("__double_to_string"),
-        (Value::Bool(_), "Equals")      => Some("__bool_equals"),
-        (Value::Bool(_), "GetHashCode") => Some("__bool_hash_code"),
-        (Value::Bool(_), "ToString")    => Some("__bool_to_string"),
-        (Value::Char(_), "CompareTo")   => Some("__char_compare_to"),
-        (Value::Char(_), "Equals")      => Some("__char_equals"),
-        (Value::Char(_), "GetHashCode") => Some("__char_hash_code"),
-        (Value::Char(_), "ToString")    => Some("__char_to_string"),
-        (Value::Str(_),  "CompareTo")   => Some("__str_compare_to"),
+/// L3-G4b primitive-as-struct: maps a primitive `Value` variant to its stdlib
+/// struct's qualified class name (e.g. `Value::I64` → `"Std.int"`). The VM
+/// dispatches primitive method calls by constructing `{class}.{method}` and
+/// looking up the function in `module.func_index` — replacing the old
+/// hardcoded `(Value, method)` → builtin-name switch.
+///
+/// Returns None for non-primitive values (objects, arrays, null, etc.).
+pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
+    match obj {
+        Value::I64(_)  => Some("Std.int"),
+        Value::F64(_)  => Some("Std.double"),
+        Value::Bool(_) => Some("Std.bool"),
+        Value::Char(_) => Some("Std.char"),
+        Value::Str(_)  => Some("Std.String"),  // String retains uppercase class in stdlib
         _ => None,
     }
 }
@@ -350,14 +343,35 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             let obj_val = frame.get(*obj)?.clone();
             let mut extra_args = collect_args(&frame.regs, args)?;
 
-            // L3-G4b: primitive IComparable / IEquatable dispatch for i64/f64/bool/char.
-            // Each primitive routes its standard-interface methods to a matching builtin.
-            if let Some(builtin_name) = primitive_method_builtin(&obj_val, method.as_str()) {
-                let mut call_args = vec![obj_val];
+            // L3-G4b primitive-as-struct: primitives dispatch through their stdlib
+            // struct's method (e.g. `Value::I64.CompareTo` → call `Std.int.CompareTo`
+            // IR function, which contains a BuiltinInstr for `__int_compare_to`).
+            // This replaces the old hardcoded `(Value, method) → builtin` table —
+            // method-to-native binding is now entirely data-driven via stdlib source.
+            if let Some(class_name) = primitive_class_name(&obj_val) {
+                let func_name = format!("{}.{}", class_name, method);
+                let mut call_args = vec![obj_val.clone()];
                 call_args.append(&mut extra_args);
-                let ret = crate::corelib::exec_builtin(builtin_name, &call_args)?;
-                frame.set(*dst, ret);
-                return Ok(None);
+                if let Some(&idx) = module.func_index.get(func_name.as_str()) {
+                    if let Some(callee) = module.functions.get(idx) {
+                        let outcome = super::exec_function(module, callee, &call_args)?;
+                        match outcome {
+                            ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                            ExecOutcome::Thrown(val) => return Ok(Some(val)),
+                        }
+                        return Ok(None);
+                    }
+                }
+                if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
+                    let outcome = super::exec_function(module, lazy_fn.as_ref(), &call_args)?;
+                    match outcome {
+                        ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                        ExecOutcome::Thrown(val) => return Ok(Some(val)),
+                    }
+                    return Ok(None);
+                }
+                // Restore args for fallback paths below (call_args consumed obj_val).
+                extra_args = call_args.into_iter().skip(1).collect();
             }
 
             // Primitive string type: dispatch all methods via builtins.

@@ -260,14 +260,40 @@ pub unsafe extern "C" fn jit_vcall(
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
     let mut extra_args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
 
-    // L3-G4b: primitive IComparable / IEquatable dispatch for i64/f64/bool/char.
-    if let Some(builtin_name) = crate::interp::exec_instr::primitive_method_builtin(&obj_val, method) {
-        let mut call_args = vec![obj_val];
+    // L3-G4b primitive-as-struct: primitives dispatch through their stdlib struct's
+    // method — construct `{Std.int | Std.double | ...}.{method}` and invoke via the
+    // JIT entry cache. Replaces the old hardcoded `(Value, method) → builtin` table.
+    if let Some(class_name) = crate::interp::exec_instr::primitive_class_name(&obj_val) {
+        let func_name = format!("{}.{}", class_name, method);
+        let mut call_args = vec![obj_val.clone()];
         call_args.append(&mut extra_args);
-        match crate::corelib::exec_builtin(builtin_name, &call_args) {
-            Ok(ret) => { frame_ref.regs[dst as usize] = ret; return 0; }
-            Err(e)  => { set_exception(Value::Str(e.to_string())); return 1; }
+        if let Some(entry) = ctx_ref.fn_entries.get(&func_name) {
+            let mut callee = JitFrame::new(entry.max_reg, &call_args);
+            let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+            let r = jit_fn(&mut callee, ctx);
+            if r != 0 { callee.recycle(); return 1; }
+            frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
+            callee.recycle();
+            return 0;
         }
+        // Lazy loader fallback — call via interpreter.
+        if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
+            match crate::interp::exec_function(module, lazy_fn.as_ref(), &call_args) {
+                Ok(outcome) => match outcome {
+                    crate::interp::ExecOutcome::Returned(ret) => {
+                        frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);
+                        return 0;
+                    }
+                    crate::interp::ExecOutcome::Thrown(val) => {
+                        set_exception(val);
+                        return 1;
+                    }
+                },
+                Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+            }
+        }
+        // Restore args for fallback paths.
+        extra_args = call_args.into_iter().skip(1).collect();
     }
 
     // Primitive string type: dispatch all methods via builtins.

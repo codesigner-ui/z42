@@ -209,11 +209,12 @@ void Main() { var f = new Foo<Pair<int>>(); }";
     public void ChainConstraint_SelfReferential_Primitive_Passes()
     {
         var src = @"
+interface IEquatable<T> { bool Equals(T other); }
+struct int : IEquatable<int> { [Native(""__int_equals"")] public extern bool Equals(int other); }
 class Box<T> where T: IEquatable<T> {
     T value;
     Box(T v) { this.value = v; }
 }
-interface IEquatable<T> { bool Equals(T other); }
 void Main() { var b = new Box<int>(0); }";
         Check(src).HasErrors.Should().BeFalse();
     }
@@ -239,11 +240,12 @@ void Main() { var f = new Foo<int, string>(0, ""x""); }";
     public void ChainConstraint_CrossParam_Primitive_Match_Passes()
     {
         var src = @"
+interface IEquatable<T> { bool Equals(T other); }
+struct int : IEquatable<int> { [Native(""__int_equals"")] public extern bool Equals(int other); }
 class Foo<T, U> where T: IEquatable<U>, U: IEquatable<U> {
     T t; U u;
     Foo(T t, U u) { this.t = t; this.u = u; }
 }
-interface IEquatable<T> { bool Equals(T other); }
 void Main() { var f = new Foo<int, int>(0, 0); }";
         Check(src).HasErrors.Should().BeFalse();
     }
@@ -1417,33 +1419,46 @@ void Main() { var f = new Foo<int, int>(0, 0); }";
 
     // ── Primitive interface implementation (L3-G4b) ─────────────────────────
 
+    // L3-G4b primitive-as-struct: tests inline-declare the primitive struct so
+    // `PrimitiveImplementsInterface` (now data-driven) has the interface list to consult.
+    // In production compilation stdlib provides these automatically.
+    private const string InlinePrimitiveStructs = @"
+interface IComparable<T> { int CompareTo(T other); }
+interface IEquatable<T> { bool Equals(T other); }
+struct int : IComparable<int>, IEquatable<int> {
+    [Native(""__int_compare_to"")] public extern int CompareTo(int other);
+    [Native(""__int_equals"")]     public extern bool Equals(int other);
+}
+struct String : IComparable<string>, IEquatable<string> {
+    [Native(""__str_compare_to"")] public extern int CompareTo(string other);
+    [Native(""__str_equals"")]     public extern bool Equals(string other);
+}
+struct bool : IEquatable<bool> {
+    [Native(""__bool_equals"")] public extern bool Equals(bool other);
+}
+";
+
     [Fact]
     public void Generic_PrimitiveInt_SatisfiesIComparable_Ok()
     {
         // int implements IComparable<int> — Max<int> should type-check.
-        Check("""
-            interface IComparable<T> { int CompareTo(T other); }
+        Check(InlinePrimitiveStructs + @"
+T Max<T>(T a, T b) where T: IComparable<T> {
+    return a.CompareTo(b) > 0 ? a : b;
+}
 
-            T Max<T>(T a, T b) where T: IComparable<T> {
-                return a.CompareTo(b) > 0 ? a : b;
-            }
-
-            void Main() { var m = Max(3, 5); }
-            """).HasErrors.Should().BeFalse();
+void Main() { var m = Max(3, 5); }").HasErrors.Should().BeFalse();
     }
 
     [Fact]
     public void Generic_PrimitiveString_SatisfiesIComparable_Ok()
     {
-        Check("""
-            interface IComparable<T> { int CompareTo(T other); }
+        Check(InlinePrimitiveStructs + @"
+T Max<T>(T a, T b) where T: IComparable<T> {
+    return a.CompareTo(b) > 0 ? a : b;
+}
 
-            T Max<T>(T a, T b) where T: IComparable<T> {
-                return a.CompareTo(b) > 0 ? a : b;
-            }
-
-            void Main() { var m = Max("a", "b"); }
-            """).HasErrors.Should().BeFalse();
+void Main() { var m = Max(""a"", ""b""); }").HasErrors.Should().BeFalse();
     }
 
     [Fact]
@@ -1464,10 +1479,8 @@ void Main() { var f = new Foo<int, int>(0, 0); }";
     [Fact]
     public void Generic_PrimitiveBool_SatisfiesIEquatable_Ok()
     {
-        Check("""
-            interface IEquatable<T> { bool Equals(T other); }
-            bool AreEqual<T>(T a, T b) where T: IEquatable<T> { return a.Equals(b); }
-            void Main() { var r = AreEqual(true, false); }
-            """).HasErrors.Should().BeFalse();
+        Check(InlinePrimitiveStructs + @"
+bool AreEqual<T>(T a, T b) where T: IEquatable<T> { return a.Equals(b); }
+void Main() { var r = AreEqual(true, false); }").HasErrors.Should().BeFalse();
     }
 }

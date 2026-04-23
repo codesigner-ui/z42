@@ -1,8 +1,13 @@
 namespace Std;
 
-// Integer type helper class — provides static Parse method.
-public static class Int {
-    // Parses a string to an integer.
-    [Native("__int_parse")]
-    public static extern int Parse(string s);
+// L3-G4b primitive-as-struct: `int` declared as a struct (C# BCL parity).
+// Semantic type system still uses Z42PrimType("int") for identity; this struct
+// is consulted by TypeChecker to answer "does int satisfy IComparable<int>?"
+// and by the VM to dispatch methods on Value::I64 receivers.
+public struct int : IComparable<int>, IEquatable<int> {
+    [Native("__int_parse")]      public static extern int Parse(string s);
+    [Native("__int_compare_to")] public extern int CompareTo(int other);
+    [Native("__int_equals")]     public extern bool Equals(int other);
+    [Native("__int_hash_code")]  public extern int GetHashCode();
+    [Native("__int_to_string")]  public extern string ToString();
 }

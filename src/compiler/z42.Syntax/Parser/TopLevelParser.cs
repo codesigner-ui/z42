@@ -254,7 +254,8 @@ internal static partial class TopLevelParser
         bool isStruct = cursor.Current.Kind == TokenKind.Struct;
         if (cursor.Current.Kind is TokenKind.Class or TokenKind.Struct) cursor = cursor.Advance();
 
-        var name = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+        // L3-G4b primitive-as-struct: allow `struct int { ... }`, `struct double { ... }` etc.
+        var name = ExpectTypeDeclName(ref cursor).Text;
 
         // Generic params: class Foo<T>, struct Pair<K,V>
         var typeParams = ParseTypeParams(ref cursor);

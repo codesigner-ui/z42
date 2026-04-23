@@ -47,21 +47,33 @@ public sealed partial class TypeChecker
         // ── Member call ───────────────────────────────────────────────────────
         if (call.Callee is MemberExpr mCallee)
         {
-            // Unknown target: stdlib/external class (e.g. Console, Assert, Math, string, int, double)
+            // Unknown target: stdlib/external class (e.g. Console, Assert, Math, string, int, double).
+            // Primitive keywords (int/double/bool/string/...) are force-routed through this branch
+            // even when a struct with the same short name is registered — they're compiler-magic
+            // identifiers, and the DepIndex holds their static methods under the stdlib class name.
+            bool isPrimitiveIdent = mCallee.Target is IdentExpr { Name: var pn }
+                && pn is "int" or "long" or "short" or "byte" or "sbyte"
+                        or "uint" or "ulong" or "ushort"
+                        or "double" or "float" or "bool" or "char" or "string";
             if (mCallee.Target is IdentExpr { Name: var tgtName }
-                && !_symbols.Classes.ContainsKey(tgtName) && !_symbols.Interfaces.ContainsKey(tgtName)
-                && !_symbols.EnumTypes.Contains(tgtName)
-                && env.LookupVar(tgtName) == null && env.LookupFunc(tgtName) == null)
+                && (isPrimitiveIdent
+                    || (!_symbols.Classes.ContainsKey(tgtName) && !_symbols.Interfaces.ContainsKey(tgtName)
+                        && !_symbols.EnumTypes.Contains(tgtName)
+                        && env.LookupVar(tgtName) == null && env.LookupFunc(tgtName) == null)))
             {
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
 
-                // Map built-in type names to stdlib class names
+                // Map built-in type names to stdlib class names.
+                // L3-G4b primitive-as-struct: int / double now live as `struct int` / `struct double`
+                // in Std namespace (lowercase). `bool` / `string` still resolve to uppercase helpers
+                // for backward compat with Std.Bool / Std.String static members (IsNullOrEmpty, etc.).
                 string resolvedClassName = tgtName switch
                 {
                     "string" => "Std.String",
-                    "int" => "Std.Int",
-                    "double" => "Std.Double",
-                    "bool" => "Std.Bool",
+                    "int"    => "Std.int",
+                    "double" => "Std.double",
+                    "bool"   => "Std.bool",
+                    "char"   => "Std.char",
                     _ => tgtName
                 };
 

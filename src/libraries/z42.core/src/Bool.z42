@@ -1,0 +1,9 @@
+namespace Std;
+
+// L3-G4b primitive-as-struct: declares bool's interface conformance.
+// bool only satisfies IEquatable (ordering has no natural definition).
+public struct bool : IEquatable<bool> {
+    [Native("__bool_equals")]     public extern bool Equals(bool other);
+    [Native("__bool_hash_code")]  public extern int GetHashCode();
+    [Native("__bool_to_string")]  public extern string ToString();
+}

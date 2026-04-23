@@ -422,6 +422,35 @@ internal static partial class TopLevelParser
         return tok;
     }
 
+    /// L3-G4b primitive-as-struct: allow primitive type keywords (`int`, `long`, `double`, ...)
+    /// as declaration names so stdlib can write `struct int : IComparable<int> { ... }`.
+    /// Returns the token (with `.Text` = source spelling e.g. "int").
+    /// Accepts `TokenKind.Identifier` as well.
+    private static Token ExpectTypeDeclName(ref TokenCursor cursor)
+    {
+        var kind = cursor.Current.Kind;
+        bool ok = kind == TokenKind.Identifier || IsPrimitiveTypeKeyword(kind);
+        if (!ok)
+            throw new ParseException(
+                $"expected type name, got `{cursor.Current.Text}`",
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
+        var tok = cursor.Current;
+        cursor  = cursor.Advance();
+        return tok;
+    }
+
+    /// Primitive scalar type keyword that may appear as a struct/class declaration name.
+    /// Excludes `void` / `object` (special) and generic-arg markers.
+    private static bool IsPrimitiveTypeKeyword(TokenKind kind) => kind is
+        TokenKind.Int    or TokenKind.Long   or TokenKind.Short  or TokenKind.Byte   or
+        TokenKind.Sbyte  or TokenKind.Ushort or TokenKind.Uint   or TokenKind.Ulong  or
+        TokenKind.Float  or TokenKind.Double or TokenKind.Bool   or TokenKind.Char   or
+        TokenKind.String or
+        TokenKind.I8 or TokenKind.I16 or TokenKind.I32 or TokenKind.I64 or
+        TokenKind.U8 or TokenKind.U16 or TokenKind.U32 or TokenKind.U64 or
+        TokenKind.F32 or TokenKind.F64;
+
     /// Returns true if the token kind is a Phase 2 reserved keyword (fn, let, mut, etc.).
     private static bool IsPhase2ReservedKeyword(TokenKind kind) => kind is
         TokenKind.Fn or TokenKind.Let or TokenKind.Mut or TokenKind.Trait or

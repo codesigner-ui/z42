@@ -96,7 +96,8 @@ public sealed partial class TypeChecker : ITypeInferrer
             funcConstraints:  _funcConstraints,
             classConstraints: _classConstraints,
             importedClassNames: _symbols.ImportedClassNames as IReadOnlySet<string>
-                                ?? new HashSet<string>(_symbols.ImportedClassNames));
+                                ?? new HashSet<string>(_symbols.ImportedClassNames),
+            classInterfaces: _symbols.ClassInterfaces);
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────
@@ -429,7 +430,7 @@ public sealed partial class TypeChecker : ITypeInferrer
     /// L3-G2.5 chain: a primitive `int` satisfies `IEquatable<int>` but not
     /// `IEquatable<string>` — when the constraint's TypeArgs are present, the sole
     /// type arg must equal the primitive itself (self-referential only).
-    private static bool PrimitiveSatisfies(Z42PrimType pt, Z42InterfaceType iface)
+    private bool PrimitiveSatisfies(Z42PrimType pt, Z42InterfaceType iface)
     {
         if (!PrimitiveImplementsInterface(pt.Name, iface.Name)) return false;
         if (iface.TypeArgs is not { Count: > 0 } args) return true;
@@ -473,25 +474,32 @@ public sealed partial class TypeChecker : ITypeInferrer
         return new Z42InterfaceType(iface.Name, iface.Methods, substituted);
     }
 
-    /// L3-G4b: primitive types (int / double / bool / char / string / ...) satisfy
-    /// `IComparable<T>` and `IEquatable<T>` (bool only satisfies IEquatable).
-    /// VCall on a primitive receiver is routed to a corelib builtin by the VM.
-    private static bool PrimitiveImplementsInterface(string primName, string ifaceName) =>
-        (primName, ifaceName) switch
+    /// L3-G4b primitive-as-struct: primitive types satisfy interfaces via stdlib
+    /// `struct int : IComparable<int> { ... }` declarations (see z42.core/src/Int.z42
+    /// etc.). No hardcoded table — consults the symbol-level `ClassInterfaces` registry.
+    ///
+    /// Size-alias primitive names (i32, i64, short, byte, ushort, uint, ulong, f32, ...) are
+    /// normalized to their canonical stdlib struct name (int/long/double/float) before lookup,
+    /// so `Max<i8>(...)` reuses `struct int`'s interface list.
+    private bool PrimitiveImplementsInterface(string primName, string ifaceName)
+    {
+        string canonical = primName switch
         {
-            // Integral numerics
-            ("int" or "long" or "short" or "byte" or "sbyte" or "ushort" or "uint" or "ulong"
-             or "i8" or "i16" or "i32" or "i64" or "u8" or "u16" or "u32" or "u64",
-                "IComparable" or "IEquatable") => true,
-            // Floating point
-            ("float" or "double" or "f32" or "f64",
-                "IComparable" or "IEquatable") => true,
-            // String / char
-            ("string" or "char", "IComparable" or "IEquatable") => true,
-            // Bool: equality only
-            ("bool", "IEquatable") => true,
-            _ => false,
+            "i8" or "i16" or "i32" or "u8" or "u16" or "u32"
+            or "sbyte" or "short" or "byte" or "ushort" or "uint" => "int",
+            "i64" or "u64" or "ulong"                             => "long",
+            "f32"                                                  => "float",
+            "f64"                                                  => "double",
+            // stdlib retains legacy uppercase `class String`; map primitive `string` to it
+            // until String is migrated to a `struct string` declaration.
+            "string"                                               => "String",
+            _                                                      => primName,
         };
+        if (!_symbols.ClassInterfaces.TryGetValue(canonical, out var ifaces)) return false;
+        foreach (var iface in ifaces)
+            if (iface.Name == ifaceName) return true;
+        return false;
+    }
 
     /// Does `typeArg` satisfy the base-class constraint `baseClass`? (L3-G2.5)
     /// Accepts same class or any subclass; propagates through generic params that already
