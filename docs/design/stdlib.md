@@ -39,6 +39,36 @@ The z42 standard library takes the best from three reference languages:
 
 **Precedence rule when languages conflict:** C# wins on naming and structure; Rust wins on abstraction design; Python wins on defaults and ergonomics.
 
+### Script-First Placement Rule
+
+> **见 `philosophy.md` §8 "Script-First, Performance-Driven Specialization" 的权威表述。**
+
+新增一个 stdlib 方法时按此顺序决定落点：
+
+1. **Layer 3（z42 源码）先写** — 除非以下条件之一成立
+2. **Layer 1（VM builtin）只有在**：
+   - 必须访问 OS / platform / native 资源（文件 / 时间 / 内存）；或
+   - 有测量依据的性能热点，且**没有对应的 IR 指令**可以 codegen 特化
+3. **Codegen 特化（L3-G4b 模式）**：如果 primitive 调用能直接映射到 IR 指令
+   （算术、比较、短路等），在 IrGen 识别并替换为 IR 指令，**不**经过 VM
+   dispatch，也**不**新增 builtin
+
+**例子：**
+
+| 调用 | 落点 | 理由 |
+|------|------|------|
+| `x.op_Add(y)` on int/long/double | Codegen 特化 → `AddInstr` | IR 已有，对 primitive 零开销 |
+| `x.CompareTo(y)` on int | VM builtin `__int_compare_to` | 无对应 IR 指令；相对少见，builtin OK |
+| `"abc".Substring(1, 2)` | VM builtin `__str_substring` | 字符串操作需要 Rust UTF-8 处理 |
+| `new List<T>().Add(x)` | Layer 3（z42 ArrayList 源码）| 能用脚本实现；无特殊性能需求 |
+| `Math.Sqrt(x)` | VM builtin `__math_sqrt` | 需要 libm 的 native 精度 |
+| `File.ReadAllText(path)` | VM builtin → Platform HAL | 必须走 OS API |
+
+**反例**（不推荐走 builtin）：
+- `List<T>.Count` — 脚本字段读取即可
+- 用户类的 equality / comparison — 脚本实现，不要为每个用户类加 builtin
+- 泛型算法（Max / Min / Sum）— 走约束 + 脚本
+
 ---
 
 ## Layer 1 — VM Intrinsics

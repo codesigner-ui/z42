@@ -204,7 +204,66 @@ async Task RenderFrame() {
 
 ---
 
-### 8. **Performance: CPU & Memory Efficiency**
+### 8. **Simplicity First — 语法 / 编译器 / VM 全栈从简**
+
+> **核心准则**：语法、编译器、VM 的实现都**尽量简单**。不为偶发需求增加永久复杂度；
+> 每项新特性都要回答"能否用已有机制做到？"优先使用已有能力，再考虑新增。
+
+**三层简化方向：**
+
+| 层 | 简化原则 | 反例（禁止） |
+|----|---------|------------|
+| **语法** | 少关键字、少歧义点；新语法必须有现有机制做不到的刚需 | 为 ergonomic 糖加新 token（除非高频用例证明）|
+| **编译器** | 优先简单变换（desugar、单次遍历）；避免复杂 dataflow 分析 | 为一个小特性写专门的 IR pass |
+| **VM** | 保持 IR 指令集小；primitive 路径走已有指令；少 builtin | 每个 stdlib 方法都加一个 Rust 特化实现 |
+
+**最重要的推论：Script-First, Performance-Driven Specialization**
+
+默认在 z42 脚本（stdlib `.z42` 源码）里实现逻辑；只在测量到性能瓶颈时考虑编译器 / VM 特化。
+
+**三层递进（按首选顺序）：**
+
+| 层次 | 何时使用 | 代价 |
+|------|---------|------|
+| **1. z42 脚本（stdlib `.z42`）** | **默认路径** — 所有逻辑先在 z42 源码里写 | 经普通 IR / VM 执行 |
+| **2. 编译器 Codegen 特化** | 模式能直接映射到现有 IR 指令（典型：primitive 算子）| 代码生成期识别 + 替换，**零运行时开销**、零新 VM 机制 |
+| **3. VM 内置 builtin** | 无直接 IR 对应，且脚本实现已测量无法满足性能 | 新 Rust 实现 + `[Native("__name")]` extern 绑定 |
+
+**应用示例：INumber 的 `op_Add` 方法**
+
+```z42
+interface INumber<T> { T op_Add(T other); ... }
+```
+
+- **User class** `struct Vec2 : INumber<Vec2> { Vec2 op_Add(Vec2 other) { return new Vec2(...); } }`
+  → 层次 1（脚本实现），vtable 派发
+- **Primitive int** 的 `x.op_Add(y)`
+  → **层次 2（codegen 特化）**：对 int 的 `op_Add` 在 IR 生成期**直接降级为 `AddInstr dst x y`**，
+    与 `x + y` 走同一条路径。**不**需要 stdlib `[Native("__int_op_add")]`，
+    **不**需要新 VM builtin。**对 int 而言 `op_Add` 就是 `+` 操作符的泛型视图**
+- **primitive 的 `"hello".Contains("ell")`**（字符串操作，无 IR 指令对应）
+  → 层次 3（VM builtin），`__str_contains` 用 Rust 实现
+
+**反例（不推荐）：**
+- 给 primitive 每个 `op_*` 加 Rust builtin — **层次 3 泛滥**，重复造 IR 已有能力
+- 为语言糖加新关键字（除非没有等价替代）
+- 编译器加复杂 pass 支持一个小特性
+
+**升级触发条件（从层次 1 到 2/3）：**
+1. 基线测量：脚本实现在真实负载下跑不动
+2. 优先走层次 2（codegen 特化）— 零 VM 改动
+3. 只有层次 2 不可行（无对应 IR 指令）才走层次 3（VM builtin）
+4. 特化本身独立迭代，不与功能开发混合
+
+**全栈简化的收益：**
+- stdlib 代码量保持最小；VM 表面积收敛
+- 编译器复杂度可控，易于自举
+- 调试与 hot reload 友好：脚本实现可 step-through / 替换
+- 跨 runtime 一致：interp / jit / aot 执行同一份脚本
+
+---
+
+### 9. **Performance: CPU & Memory Efficiency**
 
 z42 is not a "fast language" in the sense of C; it's a **well-optimized managed language with competitive performance for its class.**
 
