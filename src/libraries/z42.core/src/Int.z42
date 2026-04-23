@@ -4,10 +4,17 @@ namespace Std;
 // Semantic type system still uses Z42PrimType("int") for identity; this struct
 // is consulted by TypeChecker to answer "does int satisfy IComparable<int>?"
 // and by the VM to dispatch methods on Value::I64 receivers.
-public struct int : IComparable<int>, IEquatable<int> {
+public struct int : IComparable<int>, IEquatable<int>, INumber<int> {
     [Native("__int_parse")]      public static extern int Parse(string s);
     [Native("__int_compare_to")] public extern int CompareTo(int other);
     [Native("__int_equals")]     public extern bool Equals(int other);
     [Native("__int_hash_code")]  public extern int GetHashCode();
     [Native("__int_to_string")]  public extern string ToString();
+
+    // INumber<int> — pure-script arithmetic; compiles to IR Add/Sub/Mul/Div/Rem instructions.
+    public int op_Add(int other)      { return this + other; }
+    public int op_Subtract(int other) { return this - other; }
+    public int op_Multiply(int other) { return this * other; }
+    public int op_Divide(int other)   { return this / other; }
+    public int op_Modulo(int other)   { return this % other; }
 }

@@ -49,7 +49,11 @@ public sealed record ExportedTypeParamConstraint(
 /// Exported interface definition.
 public sealed record ExportedInterfaceDef(
     string Name,
-    List<ExportedMethodDef> Methods);
+    List<ExportedMethodDef> Methods,
+    /// Generic type parameter names (e.g. `["T"]` for `INumber<T>`). Used on the
+    /// consumer side to restore method-signature occurrences of `T` as
+    /// `Z42GenericParamType` rather than falling back to `Z42PrimType("T")`.
+    List<string>? TypeParams = null);
 
 /// Exported enum definition.
 public sealed record ExportedEnumDef(

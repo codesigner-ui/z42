@@ -10,10 +10,10 @@ namespace Z42.Semantics.TypeCheck;
 public static class ExportedTypeExtractor
 {
     /// Build an ExportedModule from the SemanticModel of a compiled source file.
-    public static ExportedModule Extract(SemanticModel sem, string ns)
+    public static ExportedModule Extract(SemanticModel sem, string ns, CompilationUnit? cu = null)
     {
         var classes    = ExtractClasses(sem);
-        var interfaces = ExtractInterfaces(sem);
+        var interfaces = ExtractInterfaces(sem, cu);
         var enums      = ExtractEnums(sem);
         var functions  = ExtractFunctions(sem);
         return new ExportedModule(ns, classes, interfaces, enums, functions);
@@ -72,7 +72,7 @@ public static class ExportedTypeExtractor
         return result;
     }
 
-    private static List<ExportedInterfaceDef> ExtractInterfaces(SemanticModel sem)
+    private static List<ExportedInterfaceDef> ExtractInterfaces(SemanticModel sem, CompilationUnit? cu)
     {
         var result = new List<ExportedInterfaceDef>();
         foreach (var (name, it) in sem.Interfaces)
@@ -86,7 +86,11 @@ public static class ExportedTypeExtractor
                     mn, parms, TypeToString(mt.Ret),
                     "public", false, true, true, mt.MinArgCount));
             }
-            result.Add(new ExportedInterfaceDef(name, methods));
+            // Preserve interface's TypeParams so consumer can restore `T` in method
+            // signatures as Z42GenericParamType (required for interfaces like
+            // `INumber<T> { T op_Add(T other); }` where T appears in return position).
+            var tps = cu?.Interfaces.FirstOrDefault(i => i.Name == name)?.TypeParams?.ToList();
+            result.Add(new ExportedInterfaceDef(name, methods, tps));
         }
         return result;
     }

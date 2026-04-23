@@ -1,0 +1,28 @@
+// Test: L3 INumber iteration 1 — generic numeric algorithms via where T: INumber<T>.
+// primitive int / double implement INumber via pure-script body methods
+// (e.g. `public int op_Add(int other) { return this + other; }`).
+// `return this + other` compiles to IR AddInstr — zero VM builtin, zero codegen special.
+
+T Double<T>(T x) where T: INumber<T> {
+    return x.op_Add(x);
+}
+
+T Product3<T>(T a, T b, T c) where T: INumber<T> {
+    return a.op_Multiply(b).op_Multiply(c);
+}
+
+T DivMod<T>(T a, T b) where T: INumber<T> {
+    return a.op_Divide(b).op_Subtract(a.op_Modulo(b));
+}
+
+void Main() {
+    Console.WriteLine(Double(21));           // 42
+    Console.WriteLine(Double(1.5));          // 3
+
+    Console.WriteLine(Product3(2, 3, 4));    // 24
+    Console.WriteLine(Product3(1.5, 2.0, 3.0)); // 9
+
+    Console.WriteLine(DivMod(17, 5));        // 17/5 - 17%5 = 3 - 2 = 1
+    Console.WriteLine(DivMod(20, 6));        // 20/6 - 20%6 = 3 - 2 = 1
+    Console.WriteLine("ok");
+}

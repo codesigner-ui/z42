@@ -492,6 +492,76 @@ string Greet<T>(T t) where T: IGreet { return t.Hello(); }
 
 **诊断**：新错误码 `E0413 InvalidImpl`（target 非 class/struct、trait 非 interface、签名不匹配、漏方法、重复方法）。
 
+### INumber 数值约束（L3-G2.5 INumber 迭代 1，2026-04-23）
+
+**目标**：泛型数值算法（`Sum<T>`、向量、矩阵、通用算术）通过
+`where T: INumber<T>` 约束泛化；primitive（int / long / float / double）
+原生参与。
+
+**设计原则对齐**：完全遵循 **Script-First**（philosophy.md §8）:
+primitive 的 `op_Add` 等方法**用纯脚本 body 实现**，body 内的 `+`/`-`/...
+编译为 IR AddInstr 等指令。**零新 VM builtin**，**零 codegen 特化**。
+
+```z42
+// z42.core/src/INumber.z42
+public interface INumber<T> {
+    T op_Add(T other);
+    T op_Subtract(T other);
+    T op_Multiply(T other);
+    T op_Divide(T other);
+    T op_Modulo(T other);
+}
+
+// z42.core/src/Int.z42
+public struct int : IComparable<int>, IEquatable<int>, INumber<int> {
+    ...
+    public int op_Add(int other)      { return this + other; }
+    public int op_Subtract(int other) { return this - other; }
+    ...
+}
+```
+
+用户类：
+
+```z42
+struct Vec2 : INumber<Vec2> {
+    int x; int y;
+    public Vec2 op_Add(Vec2 other) { return new Vec2(this.x + other.x, this.y + other.y); }
+    ...
+}
+
+T Sum3<T>(T a, T b, T c) where T: INumber<T> {
+    return a.op_Add(b).op_Add(c);
+}
+```
+
+**选址决策**（为什么 INumber 放 z42.core 而非 z42.numerics）：
+- `struct int : INumber<int>` 在 z42.core 声明，所以 INumber 必须 z42.core
+  可见
+- 反向（INumber 在 z42.numerics）会让 z42.core 反向依赖 z42.numerics，循环
+- INumber 接口本身仅 ~10 行，不构成 z42.core 体积问题
+- 未来若有更高级数值抽象（IAdditive / IVector 等）再放 z42.numerics，
+  不强依赖 INumber
+
+**TypeChecker 两个小修复**（本次一并完成）：
+
+1. `CollectInterfaces`：设置 `_activeTypeParams` 让接口方法里的 `T` 解析为
+   `Z42GenericParamType`（此前对返回位置的 T 会 fallback 为 `Z42PrimType("T")`；
+   IComparable/IEquatable 的返回类型都是具体的 int/bool，未触发此 bug）
+2. `BindClassMethods` / `BindImplMethods`：primitive struct 的方法体内 `this`
+   绑定为 `Z42PrimType`（调 `TypeRegistry.GetZ42Type(className)` 优先），
+   让 `this + other` 在 primitive struct 里类型检查通过
+3. TSIG `ExportedInterfaceDef` 新增 `TypeParams` 字段，跨文件 / 跨 zpkg
+   消费时 `RebuildInterfaceType` 根据 TypeParams 把方法签名里的 T 还原为
+   `Z42GenericParamType`（此前还原成 PrimType 导致对比失败）
+
+**Scope 限制**（留给后续迭代）：
+- bool / char 不实现 INumber（数值语义不适用）
+- 未来测量到性能问题可加 IrGen 特化（primitive 的 `op_Add` 直接替换为 AddInstr，
+  省掉函数调用开销）；当前纯 script 完全工作
+- operator `+` → `op_Add` 自动 desugar（`Sum` 用户可写 `a + b` 而非 `a.op_Add(b)`）—
+  独立迭代，见后续 L3 规划
+
 ### primitive-as-struct（L3-G4b 重构，2026-04-23）
 
 **设计目标**：消除 `PrimitiveImplementsInterface`（C# 编译器内）和

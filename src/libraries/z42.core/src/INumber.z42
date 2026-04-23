@@ -1,0 +1,16 @@
+namespace Std;
+
+// Generic numeric interface — arithmetic operators as methods.
+// primitive types (int / long / float / double) implement via pure-script body
+// methods (`return this + other;` etc.), which compile to the corresponding IR
+// arithmetic instructions. No VM builtin, no extern. Pure Script-First.
+//
+// Comparison goes through IComparable<T>; equality through IEquatable<T>.
+// Mixed-type arithmetic is not supported (T + T → T only).
+public interface INumber<T> {
+    T op_Add(T other);
+    T op_Subtract(T other);
+    T op_Multiply(T other);
+    T op_Divide(T other);
+    T op_Modulo(T other);
+}

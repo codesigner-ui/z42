@@ -112,10 +112,17 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     {
         foreach (var iface in cu.Interfaces)
         {
+            // Activate the interface's own type params so `T` inside method signatures
+            // resolves to Z42GenericParamType instead of falling back to Z42PrimType("T").
+            // Required for interfaces like `INumber<T> { T op_Add(T other); }` where T
+            // appears in return position (not just params).
+            if (iface.TypeParams is { Count: > 0 } tps)
+                _activeTypeParams = new HashSet<string>(tps);
             var methods = new Dictionary<string, Z42FuncType>();
             foreach (var m in iface.Methods)
                 methods[m.Name] = BuildFuncSignature(m.Params, ResolveType(m.ReturnType));
             _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods);
+            _activeTypeParams = null;
         }
     }
 

@@ -367,7 +367,16 @@ public static class ZpkgReader
                 var methods = new List<ExportedMethodDef>(mthCount);
                 for (int mi2 = 0; mi2 < mthCount; mi2++)
                     methods.Add(ReadMethodDef(r, pool));
-                interfaces.Add(new ExportedInterfaceDef(name, methods));
+                // L3 primitive-as-struct: read interface TypeParams (may be 0).
+                byte tpCount = (ms.Position < ms.Length) ? r.ReadByte() : (byte)0;
+                List<string>? tps = null;
+                if (tpCount > 0)
+                {
+                    tps = new List<string>(tpCount);
+                    for (int ti = 0; ti < tpCount; ti++)
+                        tps.Add(P(pool, r.ReadUInt32()));
+                }
+                interfaces.Add(new ExportedInterfaceDef(name, methods, tps));
             }
 
             // Enums

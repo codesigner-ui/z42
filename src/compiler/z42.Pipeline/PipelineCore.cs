@@ -92,7 +92,7 @@ public static class PipelineCore
             var gen = new IrGen(depIndex, feats, sem);
             var ir  = gen.Generate(cu);
             ir = new IrPassManager().RunAll(ir);
-            var exported = ExportedTypeExtractor.Extract(sem, cu.Namespace ?? "main");
+            var exported = ExportedTypeExtractor.Extract(sem, cu.Namespace ?? "main", cu);
             return new(ir, diags, gen.UsedDepNamespaces, cu.Namespace, cu.Usings, exported);
         }
         catch (CompilationException)

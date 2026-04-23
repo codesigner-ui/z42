@@ -154,7 +154,10 @@ public sealed partial class TypeChecker : ITypeInferrer
                 var scope = env.WithClass(targetNt.Name);
                 if (!method.IsStatic)
                 {
-                    scope.Define("this", targetClass);
+                    // L3 primitive-as-struct: `this` uses primitive type for stdlib's
+                    // `impl Trait for int { ... }` so in-body arithmetic type-checks.
+                    var thisType = TypeRegistry.GetZ42Type(targetNt.Name) ?? (Z42Type)targetClass;
+                    scope.Define("this", thisType);
                     foreach (var (fname, ftype) in targetClass.Fields)
                         scope.Define(fname, ftype);
                 }
@@ -194,7 +197,11 @@ public sealed partial class TypeChecker : ITypeInferrer
             var scope = env.WithClass(cls.Name);
             if (!method.IsStatic)
             {
-                scope.Define("this", classType);
+                // L3 primitive-as-struct: for stdlib `struct int { ... }` etc., `this`
+                // inside method bodies should be the primitive type (Z42PrimType), not
+                // the class type — so `this + other` and similar arithmetic type-check.
+                var thisType = TypeRegistry.GetZ42Type(cls.Name) ?? (Z42Type)classType;
+                scope.Define("this", thisType);
                 foreach (var (fname, ftype) in classType.Fields)
                     scope.Define(fname, ftype);
             }

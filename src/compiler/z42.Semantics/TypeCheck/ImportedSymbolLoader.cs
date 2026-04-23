@@ -109,27 +109,35 @@ public static class ImportedSymbolLoader
 
     private static Z42InterfaceType RebuildInterfaceType(ExportedInterfaceDef iface)
     {
+        // L3 primitive-as-struct: restore interface's type params so `T` in method
+        // signatures (e.g. `T op_Add(T other)` in `INumber<T>`) resolves to
+        // Z42GenericParamType on the consumer side rather than `Z42PrimType("T")`.
+        var tpSet = iface.TypeParams is { Count: > 0 } tps
+            ? new HashSet<string>(tps) : null;
         var methods = new Dictionary<string, Z42FuncType>();
         foreach (var m in iface.Methods)
-            methods[m.Name] = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount);
+            methods[m.Name] = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet);
         return new Z42InterfaceType(iface.Name, methods);
     }
 
     private static Z42FuncType RebuildFuncType(
-        List<ExportedParamDef> parms, string retType, int minArgCount)
+        List<ExportedParamDef> parms, string retType, int minArgCount,
+        HashSet<string>? genericParams = null)
     {
-        var paramTypes = parms.Select(p => ResolveTypeName(p.TypeName)).ToList();
-        return new Z42FuncType(paramTypes, ResolveTypeName(retType),
+        var paramTypes = parms.Select(p => ResolveTypeName(p.TypeName, genericParams)).ToList();
+        return new Z42FuncType(paramTypes, ResolveTypeName(retType, genericParams),
             minArgCount == paramTypes.Count ? -1 : minArgCount);
     }
 
     /// Resolve a type name string (as serialized in TSIG) back to a Z42Type.
-    internal static Z42Type ResolveTypeName(string name)
+    internal static Z42Type ResolveTypeName(string name, HashSet<string>? genericParams = null)
     {
         if (name.EndsWith("[]"))
-            return new Z42ArrayType(ResolveTypeName(name[..^2]));
+            return new Z42ArrayType(ResolveTypeName(name[..^2], genericParams));
         if (name.EndsWith("?"))
-            return new Z42OptionType(ResolveTypeName(name[..^1]));
+            return new Z42OptionType(ResolveTypeName(name[..^1], genericParams));
+        if (genericParams != null && genericParams.Contains(name))
+            return new Z42GenericParamType(name);
 
         return name switch
         {

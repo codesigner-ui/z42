@@ -176,7 +176,7 @@ L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立
 
 | 约束 | 语法 | 语义 | 优先级 | 难度 |
 |------|------|------|:-----:|:----:|
-| **数值约束** | `where T: INumber<T>` | T 支持 `+ - * /`，算法泛化（`Sum<T>`、向量/矩阵） | 🔥 高 | 中（主要 stdlib 工作：`INumber` / `IAdditive`） |
+| **数值约束** | `where T: INumber<T>` | stdlib 声明 + primitive struct 纯脚本 body 实现；Script-First | ✅ 已完成（2026-04-23） |
 | **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 🟡 中 | 低（待可空性方案收敛） |
 | **无托管约束** | `where T: unmanaged` | T 是无托管引用的值类型（FFI / SIMD / buffer 池） | 🟡 中 | 中（需区分 struct 含 ref 字段） |
 | **具象化约束** | `reified T` | body 内可用 `T::class` / `is T`（Kotlin 风格） | 🟡 中 | 高（**依赖 L3-R** runtime type_args） |

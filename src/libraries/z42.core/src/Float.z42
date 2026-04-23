@@ -1,0 +1,18 @@
+namespace Std;
+
+// L3 primitive-as-struct: `float` (32-bit floating point) with arithmetic + comparison.
+// VM represents both float and double as Value::F64 at runtime; builtin names reuse
+// the `__double_*` implementations.
+public struct float : IComparable<float>, IEquatable<float>, INumber<float> {
+    [Native("__double_compare_to")] public extern int CompareTo(float other);
+    [Native("__double_equals")]     public extern bool Equals(float other);
+    [Native("__double_hash_code")]  public extern int GetHashCode();
+    [Native("__double_to_string")]  public extern string ToString();
+
+    // INumber<float> — pure-script arithmetic.
+    public float op_Add(float other)      { return this + other; }
+    public float op_Subtract(float other) { return this - other; }
+    public float op_Multiply(float other) { return this * other; }
+    public float op_Divide(float other)   { return this / other; }
+    public float op_Modulo(float other)   { return this % other; }
+}

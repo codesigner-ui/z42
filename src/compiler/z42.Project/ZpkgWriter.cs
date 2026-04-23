@@ -160,6 +160,8 @@ public static class ZpkgWriter
         {
             pool.Intern(iface.Name);
             foreach (var m in iface.Methods) InternMethodStrings(pool, m);
+            if (iface.TypeParams is { } itp)
+                foreach (var tpName in itp) pool.Intern(tpName);
         }
         foreach (var en in mod.Enums)
         {
@@ -414,6 +416,13 @@ public static class ZpkgWriter
                 w.Write((ushort)iface.Methods.Count);
                 foreach (var m in iface.Methods)
                     WriteMethodDef(w, m, pool);
+                // L3 primitive-as-struct: interface's own type params (e.g. `T` for
+                // `INumber<T>`) — consumer side restores T occurrences as generic.
+                int tpCount = iface.TypeParams?.Count ?? 0;
+                w.Write((byte)tpCount);
+                if (iface.TypeParams is { } itp)
+                    foreach (var tpName in itp)
+                        w.Write((uint)pool.Idx(tpName));
             }
 
             // Enums

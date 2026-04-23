@@ -1,0 +1,16 @@
+namespace Std;
+
+// L3 primitive-as-struct: `long` (64-bit integer) with arithmetic + comparison.
+public struct long : IComparable<long>, IEquatable<long>, INumber<long> {
+    [Native("__int_compare_to")] public extern int CompareTo(long other);
+    [Native("__int_equals")]     public extern bool Equals(long other);
+    [Native("__int_hash_code")]  public extern int GetHashCode();
+    [Native("__int_to_string")]  public extern string ToString();
+
+    // INumber<long> — pure-script arithmetic.
+    public long op_Add(long other)      { return this + other; }
+    public long op_Subtract(long other) { return this - other; }
+    public long op_Multiply(long other) { return this * other; }
+    public long op_Divide(long other)   { return this / other; }
+    public long op_Modulo(long other)   { return this % other; }
+}
