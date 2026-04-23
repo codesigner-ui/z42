@@ -452,8 +452,9 @@ internal static partial class TopLevelParser
         TokenKind.F32 or TokenKind.F64;
 
     /// Returns true if the token kind is a Phase 2 reserved keyword (fn, let, mut, etc.).
+    /// `impl` promoted to Phase 1 for L3 extern impl block.
     private static bool IsPhase2ReservedKeyword(TokenKind kind) => kind is
         TokenKind.Fn or TokenKind.Let or TokenKind.Mut or TokenKind.Trait or
-        TokenKind.Impl or TokenKind.Use or TokenKind.Module or
+        TokenKind.Use or TokenKind.Module or
         TokenKind.Spawn or TokenKind.None;
 }

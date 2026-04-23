@@ -1,0 +1,26 @@
+// Test: L3 extern impl (Change 1) — user class adds interface via `impl Trait for Type`.
+
+interface IGreet {
+    string Hello();
+}
+
+class Robot {
+    string name;
+    Robot(string n) { this.name = n; }
+}
+
+impl IGreet for Robot {
+    public string Hello() {
+        return "beep from " + this.name;
+    }
+}
+
+string Greet<T>(T target) where T: IGreet {
+    return target.Hello();
+}
+
+void Main() {
+    var r = new Robot("R2");
+    Console.WriteLine(Greet(r));
+    Console.WriteLine("ok");
+}

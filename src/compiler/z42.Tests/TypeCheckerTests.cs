@@ -157,6 +157,100 @@ void Main() { var p = new Parser<Color>(); }";
         Check(src).HasErrors.Should().BeTrue(because: "class and enum are mutually exclusive");
     }
 
+    // ── L3 extern impl (Change 1) ─────────────────────────────────────────────
+
+    [Fact]
+    public void ImplBlock_Basic_Passes()
+    {
+        var src = @"
+interface IGreet { string Hello(); }
+class Foo { int x; Foo() { this.x = 1; } }
+impl IGreet for Foo {
+    public string Hello() { return ""hi""; }
+}
+void Main() { var f = new Foo(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ImplBlock_SatisfiesInterfaceConstraint()
+    {
+        var src = @"
+interface IGreet { string Hello(); }
+class Foo { int x; Foo() { this.x = 1; } }
+impl IGreet for Foo {
+    public string Hello() { return ""hi""; }
+}
+string Greet<T>(T t) where T: IGreet { return t.Hello(); }
+void Main() { var f = new Foo(); var s = Greet(f); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ImplBlock_GenericTrait_Passes()
+    {
+        var src = @"
+interface IMatches<T> { bool MatchesValue(T other); }
+class Box { int v; Box() { this.v = 0; } }
+impl IMatches<int> for Box {
+    public bool MatchesValue(int other) { return this.v == other; }
+}
+void Use<T>(T t) where T: IMatches<int> { }
+void Main() { var b = new Box(); Use(b); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ImplBlock_NonUserTarget_Rejected()
+    {
+        var src = @"
+interface IGreet { string Hello(); }
+impl IGreet for NotAClass {
+    public string Hello() { return ""x""; }
+}
+void Main() { }";
+        Check(src).HasErrors.Should().BeTrue(because: "NotAClass is not a known class");
+    }
+
+    [Fact]
+    public void ImplBlock_MissingMethod_Rejected()
+    {
+        var src = @"
+interface IPair { int First(); int Second(); }
+class P { int a; P() { this.a = 1; } }
+impl IPair for P {
+    public int First() { return this.a; }
+}
+void Main() { }";
+        Check(src).HasErrors.Should().BeTrue(because: "IPair.Second missing from impl");
+    }
+
+    [Fact]
+    public void ImplBlock_SignatureMismatch_Rejected()
+    {
+        var src = @"
+interface IEq<T> { bool Equals(T other); }
+class Box { int v; Box() { this.v = 0; } }
+impl IEq<int> for Box {
+    public bool Equals(int a, int b) { return a == b; }
+}
+void Main() { }";
+        Check(src).HasErrors.Should().BeTrue(because: "Equals has arity mismatch");
+    }
+
+    [Fact]
+    public void ImplBlock_DuplicateWithClassMethod_Rejected()
+    {
+        var src = @"
+interface IGreet { string Hello(); }
+class Foo { int x; Foo() { this.x = 1; } public string Hello() { return ""x""; } }
+impl IGreet for Foo {
+    public string Hello() { return ""y""; }
+}
+void Main() { }";
+        Check(src).HasErrors.Should().BeTrue(because: "Foo already declared Hello directly");
+    }
+
     // ── L3-G2.5 chain (class-side TypeArgs) ───────────────────────────────────
 
     // Class that implements `IEquatable<int>` satisfies `where T: IEquatable<int>`.

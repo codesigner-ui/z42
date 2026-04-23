@@ -455,6 +455,43 @@ void Main() {
 - `enum + new()` 允许（enum 天然 default-constructible）
 - `enum + IXxx<...>` 允许；enum 暂不能 implements interface（待 L3-R）
 
+### extern impl — 追溯接口实现（L3，Change 1，2026-04-23）
+
+**动机**：在类型定义之外声明接口实现，支持组织性分离 + stdlib 模块化扩展（下一阶段接通 extern 方法 + TSIG 后，z42.numerics 可为 z42.core 的 `int` 追加 `INumber<int>`）。
+
+**Change 1 语法**：
+
+```z42
+interface IGreet { string Hello(); }
+
+class Robot { string name; Robot(string n) { this.name = n; } }
+
+// impl 块在 class body 之外声明接口实现
+impl IGreet for Robot {
+    public string Hello() { return "beep from " + this.name; }
+}
+
+string Greet<T>(T t) where T: IGreet { return t.Hello(); }
+```
+
+**等价性**：`impl Trait for Type { ... }` 等价于 class 头部 `: Trait` + body 方法。SymbolCollector 把 trait 合并到 target 的 `InterfaceTypes`，方法合并到 `Methods`。
+
+**Change 1 限制**（已完成）：
+- Target 接受 user class / struct + primitive struct（int/double/bool/char）+ 导入的 class
+- Trait 必须是 interface（本地或导入）
+- **impl 方法必须有 body** — `extern [Native(...)]` 留给后续迭代
+- 孤儿规则宽松：允许 impl 出现，不做跨 zpkg 严格检查
+- **不含** TSIG Impls 字段；impl 仅在当前 CU 生效，下游消费者看不到（后续迭代补全）
+
+**后续迭代规划**：
+- **+extern 方法**：允许 impl 方法用 `[Native(...)] public extern`，支撑
+  stdlib 为 primitive 追加接口（如 z42.numerics 为 int 实现 INumber，op_Add 绑定 `__int_op_add`）
+- **+跨 zpkg（TSIG Impls）**：IMPL section 承载"外部 impl 对 target 的追加"，
+  消费者 ImportedSymbolLoader 合并到本地 class 记录
+- **+孤儿规则收紧**：Rust 风完整规则 — impl 必须与 Trait OR Target 同 zpkg
+
+**诊断**：新错误码 `E0413 InvalidImpl`（target 非 class/struct、trait 非 interface、签名不匹配、漏方法、重复方法）。
+
 ### primitive-as-struct（L3-G4b 重构，2026-04-23）
 
 **设计目标**：消除 `PrimitiveImplementsInterface`（C# 编译器内）和

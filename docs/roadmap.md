@@ -139,6 +139,8 @@
 | **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | ✅ | ✅ | — | ✅ |
 | **L3-G4a** | 泛型类实例化类型替换（call-site T → 具体类型） | — | ✅ | — | — | ✅ |
 | **L3-G4b** | Primitive-as-struct: stdlib `struct int : IComparable<int>` 驱动；删除 `PrimitiveImplementsInterface` / `primitive_method_builtin` 硬编码 | ✅ | ✅ | — | ✅ | ✅ |
+| **L3-Impl1** | extern impl Change 1：`impl Trait for Type { ... }` 块（body 方法；同 CU 合并）| ✅ | ✅ | ✅ | ✅ | ✅ |
+| **L3-Impl2** | extern impl Change 2：extern 方法绑定 + TSIG Impls section（跨 zpkg 传播、stdlib 模块化扩展）| — | — | — | — | 📋 |
 | **L3-G4c** | User-level 泛型容器源码实现（MyList<T> 端到端 demo） | — | ✅ | — | ✅ | ✅ |
 | **L3-G4d** | stdlib 导出泛型类（Std.Collections.Stack / Queue 启用 + 名称冲突裁决 + 懒加载 ctor） | — | ✅ | ✅ | ✅ | ✅ |
 | **L3-G4e** | 索引器语法 `T this[int] { get; set; }` — desugar 到 get_Item/set_Item | ✅ | ✅ | — | — | ✅ |

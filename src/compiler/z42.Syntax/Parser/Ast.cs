@@ -20,6 +20,21 @@ public sealed record CompilationUnit(
     List<FunctionDecl> Functions,
     List<EnumDecl> Enums,
     List<InterfaceDecl> Interfaces,
+    List<ImplDecl> Impls,
+    Span Span);
+
+// ── Extern impl block ─────────────────────────────────────────────────────────
+
+/// `impl <TraitType> for <TargetType> { <methods> }` — Rust-style extern impl.
+///
+/// L3 extern impl core (Change 1): TargetType is a user class/struct or
+/// primitive struct (int/double/bool/char), TraitType is an interface.
+/// SymbolCollector merges trait into target's InterfaceTypes and methods into
+/// target's Methods map. Methods must have a body (extern deferred).
+public sealed record ImplDecl(
+    TypeExpr TraitType,
+    TypeExpr TargetType,
+    List<FunctionDecl> Methods,
     Span Span);
 
 // ── Generic constraints (L3-G2 / G2.5) ─────────────────────────────────────────

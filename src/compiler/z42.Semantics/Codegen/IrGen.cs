@@ -125,6 +125,14 @@ public sealed class IrGen : IEmitterContext
                 _funcParams[key] = m.Params;
             }
         }
+        // L3 extern impl (Change 1): register impl methods under the target class's qualified name.
+        foreach (var impl in cu.Impls)
+        {
+            if (impl.TargetType is not NamedType targetNt) continue;
+            var qualName = QualifyName(targetNt.Name);
+            foreach (var m in impl.Methods)
+                _funcParams[$"{qualName}.{m.Name}"] = m.Params;
+        }
 
         // ── Emit ──────────────────────────────────────────────────────────────
 
@@ -137,6 +145,13 @@ public sealed class IrGen : IEmitterContext
         foreach (var cls in cu.Classes)
             functions.AddRange(cls.Methods.Where(m => !m.IsAbstract)
                 .Select(m => EmitMethod(cls.Name, m)));
+        // L3 extern impl (Change 1): emit impl method bodies under the target class.
+        foreach (var impl in cu.Impls)
+        {
+            if (impl.TargetType is not NamedType implTargetNt) continue;
+            functions.AddRange(impl.Methods.Where(m => !m.IsAbstract)
+                .Select(m => EmitMethod(implTargetNt.Name, m)));
+        }
         functions.AddRange(cu.Functions.Select(EmitFunction));
         var module = new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
         IrVerifier.VerifyOrThrow(module);
