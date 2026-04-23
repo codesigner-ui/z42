@@ -26,7 +26,7 @@ done
 
 mkdir -p "$OUT_DIR"
 
-LIBS=(z42.core z42.io z42.math z42.numerics z42.text z42.collections)
+LIBS=(z42.core z42.io z42.math z42.text z42.collections)
 
 # Determine compiler invocation
 if [ "$USE_DIST" = true ]; then

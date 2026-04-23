@@ -12,7 +12,6 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `z42.collections/` | `z42.collections` | 集合类型：`List`、`Dictionary`、`HashSet`、`Queue`、`Stack` |
 | `z42.io/` | `z42.io` | IO 类型：`Console`、`File`、`Path`、`Environment` |
 | `z42.math/` | `z42.math` | 数学函数：`Math` |
-| `z42.numerics/` | `z42.numerics` | 泛型数值抽象：`INumber<T>`（L3-G2.5 数值约束） |
 | `z42.text/` | `z42.text` | 文本处理：`StringBuilder`、`Regex` |
 
 ## 构建

@@ -475,8 +475,6 @@ public sealed partial class TypeChecker : ITypeInferrer
 
     /// L3-G4b: primitive types (int / double / bool / char / string / ...) satisfy
     /// `IComparable<T>` and `IEquatable<T>` (bool only satisfies IEquatable).
-    /// L3-G2.5 INumber: numeric primitives also satisfy `INumber<T>`
-    /// (iteration 1 — method-dispatch only; VM routes op_Add etc. to corelib builtins).
     /// VCall on a primitive receiver is routed to a corelib builtin by the VM.
     private static bool PrimitiveImplementsInterface(string primName, string ifaceName) =>
         (primName, ifaceName) switch
@@ -484,10 +482,10 @@ public sealed partial class TypeChecker : ITypeInferrer
             // Integral numerics
             ("int" or "long" or "short" or "byte" or "sbyte" or "ushort" or "uint" or "ulong"
              or "i8" or "i16" or "i32" or "i64" or "u8" or "u16" or "u32" or "u64",
-                "IComparable" or "IEquatable" or "INumber") => true,
+                "IComparable" or "IEquatable") => true,
             // Floating point
             ("float" or "double" or "f32" or "f64",
-                "IComparable" or "IEquatable" or "INumber") => true,
+                "IComparable" or "IEquatable") => true,
             // String / char
             ("string" or "char", "IComparable" or "IEquatable") => true,
             // Bool: equality only

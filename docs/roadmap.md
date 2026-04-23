@@ -170,13 +170,11 @@ L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立
 | **裸类型参数约束** | `where U: T` | U 必须是 T 的子类型（T 为同 decl 其他 type param） | ✅ 已完成（2026-04-22） |
 | **枚举约束** | `where T: enum` | T 必须是 enum 类型（校验层完整；反射操作待 L3-R） | ✅ 已完成（2026-04-23） |
 
-| **数值约束（迭代 1 方法派发）** | `where T: INumber<T>` + `x.op_Add(y)` | stdlib `z42.numerics.INumber<T>` + primitive 桥接 + VM builtin | ✅ 已完成（2026-04-23） |
-
 #### 后续迭代
 
 | 约束 | 语法 | 语义 | 优先级 | 难度 |
 |------|------|------|:-----:|:----:|
-| **数值约束（迭代 2 binop desugar）** | `where T: INumber<T>` + `a + b` | `CheckBinary` 自动 desugar 到 `a.op_Add(b)` | 🔥 高 | 低（纯人体工学） |
+| **数值约束** | `where T: INumber<T>` | T 支持 `+ - * /`，算法泛化（`Sum<T>`、向量/矩阵） | 🔥 高 | 中（主要 stdlib 工作：`INumber` / `IAdditive`） |
 | **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 🟡 中 | 低（待可空性方案收敛） |
 | **无托管约束** | `where T: unmanaged` | T 是无托管引用的值类型（FFI / SIMD / buffer 池） | 🟡 中 | 中（需区分 struct 含 ref 字段） |
 | **具象化约束** | `reified T` | body 内可用 `T::class` / `is T`（Kotlin 风格） | 🟡 中 | 高（**依赖 L3-R** runtime type_args） |
