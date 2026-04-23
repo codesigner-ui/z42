@@ -135,7 +135,7 @@
 | **L3-G2** | 接口约束（`where T: I + J`） | ✅ | ✅ | — | — | ✅ |
 | **L3-G2.5** | 约束范式补充：基类 ✅ / ctor ✅ / class ✅ / struct ✅ / enum ✅ / notnull 等 | ✅ | 🟡 | ✅ | ✅ | 🟡 |
 | **L3-G3a** | zbc 约束元数据 + VM loader + 加载时校验 | — | — | ✅ | ✅ | ✅ |
-| **L3-G3c** | 关联类型（`type Output; Output=T`） | — | — | — | — | 📋 |
+| **L3-G3c** | 关联类型（`type Output; Output=T`）— **决策：跳过，等真正用例驱动**（迭代器 trait / async Future 等）。当前 `where T: I<T>` 自引用约束已覆盖 90% 数值场景；C# 不带关联类型也很成功 | — | — | — | — | ⏸ 延后 |
 | **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | ✅ | ✅ | — | ✅ |
 | **L3-G4a** | 泛型类实例化类型替换（call-site T → 具体类型） | — | ✅ | — | — | ✅ |
 | **L3-G4b** | Primitive-as-struct: stdlib `struct int : IComparable<int>` 驱动；删除 `PrimitiveImplementsInterface` / `primitive_method_builtin` 硬编码 | ✅ | ✅ | — | ✅ | ✅ |
