@@ -1,0 +1,13 @@
+// Test: L3-G2.5 enum constraint — where T: enum
+
+enum Color { Red = 10, Green = 20, Blue = 30 }
+
+T Identity<T>(T x) where T: enum {
+    return x;
+}
+
+void Main() {
+    var c = Identity(Color.Green);
+    Console.WriteLine(c);
+    Console.WriteLine("ok");
+}

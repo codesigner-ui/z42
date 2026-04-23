@@ -35,6 +35,7 @@ public sealed record ExportedClassDef(
 /// Interface / base-class references stored by name only (no type args); matches
 /// the TypeChecker's current validation granularity for cross-zpkg usage.
 /// L3-G2.5 ctor: `RequiresConstructor` carries `where T: new()`.
+/// L3-G2.5 enum: `RequiresEnum` carries `where T: enum`.
 public sealed record ExportedTypeParamConstraint(
     string TypeParam,
     List<string> Interfaces,
@@ -42,7 +43,8 @@ public sealed record ExportedTypeParamConstraint(
     string? TypeParamRef,
     bool RequiresClass,
     bool RequiresStruct,
-    bool RequiresConstructor = false);
+    bool RequiresConstructor = false,
+    bool RequiresEnum = false);
 
 /// Exported interface definition.
 public sealed record ExportedInterfaceDef(

@@ -258,10 +258,12 @@ fn read_type(sec: &[u8], pool: &[String]) -> Result<Vec<ClassDesc>> {
 ///          interface_count: u8, iface_idx[]: u32`.
 fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintBundle> {
     let flags = c.read_u8()?;
-    let requires_class   = (flags & 0x01) != 0;
-    let requires_struct  = (flags & 0x02) != 0;
-    let has_base         = (flags & 0x04) != 0;
-    let has_type_param   = (flags & 0x08) != 0;
+    let requires_class       = (flags & 0x01) != 0;
+    let requires_struct      = (flags & 0x02) != 0;
+    let has_base             = (flags & 0x04) != 0;
+    let has_type_param       = (flags & 0x08) != 0;
+    let requires_constructor = (flags & 0x10) != 0;
+    let requires_enum        = (flags & 0x20) != 0;
     let base_class = if has_base {
         let idx = c.read_u32()?;
         Some(c.pool_str(pool, idx)?.to_owned())
@@ -278,6 +280,7 @@ fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintB
     }
     Ok(ConstraintBundle {
         requires_class, requires_struct, base_class, interfaces, type_param_constraint,
+        requires_constructor, requires_enum,
     })
 }
 

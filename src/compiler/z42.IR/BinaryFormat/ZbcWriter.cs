@@ -322,7 +322,8 @@ public static partial class ZbcWriter
     /// Encodes one constraint bundle. Null input is treated as fully empty
     /// (flags=0, interface_count=0).
     /// Layout (v0.7): flags u8 (bit0 class, bit1 struct, bit2 HasBaseClass,
-    ///                bit3 HasTypeParamConstraint, bit4 RequiresConstructor),
+    ///                bit3 HasTypeParamConstraint, bit4 RequiresConstructor,
+    ///                bit5 RequiresEnum),
     ///                [if bit2] base_class u32, [if bit3] type_param_constraint u32,
     ///                interface_count u8, interface_name_idx[] u32.
     internal static void WriteConstraintBundle(BinaryWriter w, StringPool pool, IrConstraintBundle? b)
@@ -335,6 +336,7 @@ public static partial class ZbcWriter
             if (b.BaseClass is not null)           flags |= 0x04;
             if (b.TypeParamConstraint is not null) flags |= 0x08;
             if (b.RequiresConstructor)             flags |= 0x10;
+            if (b.RequiresEnum)                    flags |= 0x20;
         }
         w.Write(flags);
         if (b is not null && b.BaseClass is not null)

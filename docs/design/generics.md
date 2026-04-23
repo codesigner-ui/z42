@@ -108,6 +108,7 @@ interface IEnumerable<T> {
 | 引用类型 | `where T: class` | T 必须是引用类型 |
 | 值类型 | `where T: struct` | T 必须是值类型 |
 | 构造器 | `where T: new()` | T 必须有无参构造器 |
+| enum | `where T: enum` | T 必须是 enum 类型 |
 
 ### Rust 风格增强
 
@@ -419,6 +420,40 @@ void Main() {
 - **不支持 OR 约束 `T: A | B`**：主流语言都没有（C# / Java / Rust / Swift / Scala），
   核心困难是函数 body 只能调用 A ∩ B 的方法交集，实用价值低；替代方案（共同基接口 /
   方法重载 / 和类型 ADT）更清晰。z42 遵循主流约定，不做 OR 约束
+
+### enum 约束（L3-G2.5 enum，2026-04-23）
+
+`where T: enum` — 要求类型实参是 z42 原生 enum 类型。用于泛化 flags、解析器、
+序列化工具（`Parse<T: enum>(string) -> T`、`AllValues<T: enum>() -> T[]` 等场景）。
+
+```z42
+enum Color { Red = 10, Green = 20, Blue = 30 }
+
+T Identity<T>(T x) where T: enum {
+    return x;   // body 内 T 被擦除为 i64，enum 反射式操作待 L3-R
+}
+
+void Main() {
+    var c = Identity(Color.Green);   // ✅ Color 是 enum
+    // Identity(42);                  // ❌ int 不是 enum
+    // Identity<IShape>(...);         // ❌ interface 不是 enum
+}
+```
+
+**实现范围**：
+- 语义层新增 `Z42EnumType : Z42Type`（`SymbolCollector` / `SymbolTable` 的
+  `ResolveType` 在 enum 名查到时发射 `Z42EnumType` 而非 fallback 到 `Z42PrimType`）
+- 编译期校验完整（`TypeChecker.IsEnumArg`）；`Z42EnumType` 满足 `struct` 约束
+  （enum 是值类型），不满足 `class` 约束
+- body 内 `T.Values` / `T.Parse` / flags 位运算等反射式操作**依赖 L3-R**
+  运行时 type_args 传递；本迭代只做约束校验
+- zbc / TSIG flags bit `0x20` 承载 `RequiresEnum`
+
+**互斥规则**：
+- `class + enum` 被拒（enum 是值类型）
+- `struct + enum` 允许但冗余（enum 已隐含 struct 语义）
+- `enum + new()` 允许（enum 天然 default-constructible）
+- `enum + IXxx<...>` 允许；enum 暂不能 implements interface（待 L3-R）
 
 ### 跨参数约束链校验（L3-G2.5 chain，2026-04-23）
 

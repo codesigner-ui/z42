@@ -88,6 +88,75 @@ void Main() { var f = new Factory<Widget>(); }";
         Check(src).HasErrors.Should().BeFalse();
     }
 
+    // ── L3-G2.5 enum constraint ───────────────────────────────────────────────
+
+    // `where T: enum` accepts user-defined enum types.
+    [Fact]
+    public void EnumConstraint_EnumArg_Passes()
+    {
+        var src = @"
+enum Color { Red, Green, Blue }
+class Parser<T> where T: enum { Parser() { } }
+void Main() { var p = new Parser<Color>(); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // `where T: enum` rejects class types.
+    [Fact]
+    public void EnumConstraint_ClassArg_Rejected()
+    {
+        var src = @"
+class Widget { int x; Widget() { this.x = 0; } }
+class Parser<T> where T: enum { Parser() { } }
+void Main() { var p = new Parser<Widget>(); }";
+        Check(src).HasErrors.Should().BeTrue(because: "Widget is a class, not an enum");
+    }
+
+    // `where T: enum` rejects struct types.
+    [Fact]
+    public void EnumConstraint_StructArg_Rejected()
+    {
+        var src = @"
+struct Point { int x; int y; Point() { this.x = 0; this.y = 0; } }
+class Parser<T> where T: enum { Parser() { } }
+void Main() { var p = new Parser<Point>(); }";
+        Check(src).HasErrors.Should().BeTrue(because: "Point is a struct, not an enum");
+    }
+
+    // `where T: enum` rejects primitive types.
+    [Fact]
+    public void EnumConstraint_Primitive_Rejected()
+    {
+        var src = @"
+class Parser<T> where T: enum { Parser() { } }
+void Main() { var p = new Parser<int>(); }";
+        Check(src).HasErrors.Should().BeTrue(because: "int is primitive, not an enum");
+    }
+
+    // `where T: enum` rejects interface types.
+    [Fact]
+    public void EnumConstraint_Interface_Rejected()
+    {
+        var src = @"
+interface IShape { int Area(); }
+class Parser<T> where T: enum { Parser() { } }
+void Main() { var p = new Parser<IShape>(); }";
+        Check(src).HasErrors.Should().BeTrue(because: "IShape is an interface, not an enum");
+    }
+
+    // Combined with interface constraint: `where T: enum + IComparable<T>` — both must hold.
+    // Enum currently cannot implement interfaces (no-op: interface part is trivially consumed
+    // once enums gain IComparable via L3-R); for now the enum arm alone fires.
+    [Fact]
+    public void EnumConstraint_ClassAndEnum_Mutex_Rejected()
+    {
+        var src = @"
+enum Color { Red, Green, Blue }
+class Parser<T> where T: class + enum { Parser() { } }
+void Main() { var p = new Parser<Color>(); }";
+        Check(src).HasErrors.Should().BeTrue(because: "class and enum are mutually exclusive");
+    }
+
     // ── L3-G2.5 chain (class-side TypeArgs) ───────────────────────────────────
 
     // Class that implements `IEquatable<int>` satisfies `where T: IEquatable<int>`.

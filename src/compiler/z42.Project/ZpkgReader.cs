@@ -473,7 +473,8 @@ public static class ZpkgReader
             result.Add(new ExportedTypeParamConstraint(
                 tp, ifaces, baseCls, tpRef,
                 (flags & 0x01) != 0, (flags & 0x02) != 0,
-                (flags & 0x10) != 0));
+                (flags & 0x10) != 0,
+                (flags & 0x20) != 0));
         }
         return result;
     }

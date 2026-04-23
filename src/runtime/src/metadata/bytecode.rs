@@ -160,6 +160,12 @@ pub struct ConstraintBundle {
     /// that this parameter must be a subtype of. None when no such constraint.
     #[serde(default)]
     pub type_param_constraint: Option<String>,
+    /// L3-G2.5 ctor: `where T: new()` — type arg must have a no-arg constructor.
+    #[serde(default)]
+    pub requires_constructor: bool,
+    /// L3-G2.5 enum: `where T: enum` — type arg must be an enum type.
+    #[serde(default)]
+    pub requires_enum: bool,
 }
 
 impl ConstraintBundle {
@@ -167,6 +173,8 @@ impl ConstraintBundle {
         !self.requires_class && !self.requires_struct
             && self.base_class.is_none() && self.interfaces.is_empty()
             && self.type_param_constraint.is_none()
+            && !self.requires_constructor
+            && !self.requires_enum
     }
 }
 

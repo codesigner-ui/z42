@@ -171,6 +171,11 @@ internal static partial class TopLevelParser
                 ExpectKind(ref cursor, TokenKind.RParen);
                 kinds |= GenericConstraintKind.Constructor;
                 break;
+            // L3-G2.5 enum: `where T: enum` — T must be a user-defined enum type.
+            case TokenKind.Enum:
+                kinds |= GenericConstraintKind.Enum;
+                cursor = cursor.Advance();
+                break;
             default:
                 types.Add(TypeParser.Parse(cursor).Unwrap(ref cursor));
                 break;

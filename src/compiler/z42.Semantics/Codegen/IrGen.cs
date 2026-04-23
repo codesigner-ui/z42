@@ -231,7 +231,8 @@ public sealed class IrGen : IEmitterContext
                     b.RequiresClass, b.RequiresStruct,
                     b.BaseClass?.Name, b.Interfaces.Select(i => i.Name).ToList(),
                     b.TypeParamConstraint,
-                    b.RequiresConstructor));
+                    b.RequiresConstructor,
+                    b.RequiresEnum));
             else
                 result.Add(EmptyBundle());
         }

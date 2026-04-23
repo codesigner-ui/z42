@@ -156,7 +156,8 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             "ushort"          => Z42Type.U16,
             "uint"            => Z42Type.U32,
             "ulong"           => Z42Type.U64,
-            _                 => _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
+            _                 => _enumTypes.Contains(nt.Name)                 ? new Z42EnumType(nt.Name)
+                               : _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : _interfaces.TryGetValue(nt.Name, out var it) ? it
                                : new Z42PrimType(nt.Name),
         },

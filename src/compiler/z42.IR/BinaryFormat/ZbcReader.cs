@@ -229,13 +229,14 @@ public static partial class ZbcReader
         bool hasBase      = (flags & 0x04) != 0;
         bool hasTypeParam = (flags & 0x08) != 0;
         bool reqCtor      = (flags & 0x10) != 0;  // L3-G2.5 ctor
+        bool reqEnum      = (flags & 0x20) != 0;  // L3-G2.5 enum
         string? baseClass = hasBase ? P(pool, r.ReadUInt32()) : null;
         string? typeParamConstraint = hasTypeParam ? P(pool, r.ReadUInt32()) : null;
         byte ifaceCount = r.ReadByte();
         var ifaces = new List<string>(ifaceCount);
         for (int i = 0; i < ifaceCount; i++)
             ifaces.Add(P(pool, r.ReadUInt32()));
-        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces, typeParamConstraint, reqCtor);
+        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces, typeParamConstraint, reqCtor, reqEnum);
     }
 
     // ── SIGS section ──────────────────────────────────────────────────────────

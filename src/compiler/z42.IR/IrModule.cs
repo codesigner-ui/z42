@@ -49,12 +49,15 @@ public sealed record IrConstraintBundle(
     /// that this parameter must be a subtype of. Null when no such constraint.
     string? TypeParamConstraint = null,
     /// L3-G2.5 ctor: `where T: new()` — T must have a no-arg constructor.
-    bool RequiresConstructor = false)
+    bool RequiresConstructor = false,
+    /// L3-G2.5 enum: `where T: enum` — T must be an enum type.
+    bool RequiresEnum = false)
 {
     public bool IsEmpty => !RequiresClass && !RequiresStruct
                            && BaseClass is null && Interfaces.Count == 0
                            && TypeParamConstraint is null
-                           && !RequiresConstructor;
+                           && !RequiresConstructor
+                           && !RequiresEnum;
 }
 
 // ── Function ──────────────────────────────────────────────────────────────────

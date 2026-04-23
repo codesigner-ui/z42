@@ -201,19 +201,34 @@ public sealed record Z42GenericParamType(
 /// `TypeParamConstraint` (L3-G2.5 bare-typeparam) records the name of another
 /// type parameter in the same decl that this one must be a subtype of.
 /// `RequiresConstructor` (L3-G2.5 ctor) demands a no-arg constructor.
+/// `RequiresEnum` (L3-G2.5 enum) demands the type argument be an enum.
 public sealed record GenericConstraintBundle(
     Z42ClassType? BaseClass,
     IReadOnlyList<Z42InterfaceType> Interfaces,
     bool RequiresClass = false,
     bool RequiresStruct = false,
     string? TypeParamConstraint = null,
-    bool RequiresConstructor = false)
+    bool RequiresConstructor = false,
+    bool RequiresEnum = false)
 {
     public static readonly GenericConstraintBundle Empty = new(null, []);
     public bool IsEmpty => BaseClass is null && Interfaces.Count == 0
                            && !RequiresClass && !RequiresStruct
                            && TypeParamConstraint is null
-                           && !RequiresConstructor;
+                           && !RequiresConstructor
+                           && !RequiresEnum;
+}
+
+/// User-defined enum type (e.g., `enum Color { Red, Green, Blue }`).
+///
+/// Enum values are i64-backed at the IR / VM layer (see `EnumConstants` in SemanticModel);
+/// this semantic record only flows during TypeCheck to identify enum types in constraint
+/// validation (`where T: enum`) and future reflection. Enum values accessed via
+/// `Color.Red` currently bind with `Z42Type.Unknown` type and emit as ConstI64 — that
+/// path is unchanged by this record.
+public sealed record Z42EnumType(string Name) : Z42Type
+{
+    public override string ToString() => Name;
 }
 
 /// User-defined class or struct type.

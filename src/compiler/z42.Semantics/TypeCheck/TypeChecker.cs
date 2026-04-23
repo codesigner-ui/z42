@@ -239,6 +239,11 @@ public sealed partial class TypeChecker : ITypeInferrer
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `new()` on `{declName}`",
                     callSpan);
+            // L3-G2.5 enum: `where T: enum` — type arg must be an enum type.
+            if (bundle.RequiresEnum && !IsEnumArg(typeArg))
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `enum` on `{declName}`",
+                    callSpan);
             // L3-G2.5 bare-typeparam: `where U: T` — typeArg[U] must be subtype of typeArg[T].
             if (bundle.TypeParamConstraint is { } otherTp
                 && typeArgByName.TryGetValue(otherTp, out var otherArg)
@@ -312,11 +317,26 @@ public sealed partial class TypeChecker : ITypeInferrer
     };
 
     /// L3-G2.5 refvalue: is `typeArg` a value type (for `where T: struct`)?
-    private static bool IsStructArg(Z42Type t) => t switch
+    private bool IsStructArg(Z42Type t) => t switch
     {
         Z42ClassType ct               => ct.IsStruct,
         Z42PrimType                   => !Z42Type.IsReferenceType(t), // int/bool/float/...
+        Z42EnumType                   => true,                        // enum is a value type
+        Z42GenericParamType gp        => _symbols.LookupEffectiveConstraints(gp.Name).RequiresStruct
+                                         || _symbols.LookupEffectiveConstraints(gp.Name).RequiresEnum,
         Z42ErrorType or Z42UnknownType => true,
+        _                             => false,
+    };
+
+    /// L3-G2.5 enum: is `typeArg` an enum type (for `where T: enum`)?
+    /// - Z42EnumType: direct match.
+    /// - Generic param: propagate only if T itself carries `RequiresEnum`.
+    /// - Everything else (class / struct / primitive / interface / array): rejected.
+    private bool IsEnumArg(Z42Type t) => t switch
+    {
+        Z42EnumType                   => true,
+        Z42GenericParamType gp        => _symbols.LookupEffectiveConstraints(gp.Name).RequiresEnum,
+        Z42ErrorType or Z42UnknownType => true, // don't cascade
         _                             => false,
     };
 
@@ -519,7 +539,8 @@ public sealed partial class TypeChecker : ITypeInferrer
             result[c.TypeParam] = new GenericConstraintBundle(
                 baseCls, ifaces,
                 c.RequiresClass, c.RequiresStruct, c.TypeParamRef,
-                c.RequiresConstructor);
+                c.RequiresConstructor,
+                c.RequiresEnum);
         }
         return result;
     }
@@ -623,6 +644,7 @@ public sealed partial class TypeChecker : ITypeInferrer
                 bool reqClass  = entry.Kinds.HasFlag(GenericConstraintKind.Class);
                 bool reqStruct = entry.Kinds.HasFlag(GenericConstraintKind.Struct);
                 bool reqCtor   = entry.Kinds.HasFlag(GenericConstraintKind.Constructor);
+                bool reqEnum   = entry.Kinds.HasFlag(GenericConstraintKind.Enum);
                 if (reqClass && reqStruct)
                 {
                     _diags.Error(DiagnosticCodes.TypeMismatch,
@@ -630,10 +652,19 @@ public sealed partial class TypeChecker : ITypeInferrer
                         entry.Span);
                     reqClass = reqStruct = false; // don't cascade
                 }
+                // L3-G2.5 enum: mutually exclusive with `class` (enum is value type).
+                // `enum` + `struct` is allowed but redundant (enum already implies value type).
+                if (reqEnum && reqClass)
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"generic parameter `{entry.TypeParam}` cannot be both `enum` and `class`",
+                        entry.Span);
+                    reqEnum = reqClass = false;
+                }
                 if (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct
-                    || typeParamConstraint != null || reqCtor)
+                    || typeParamConstraint != null || reqCtor || reqEnum)
                     result[entry.TypeParam] = new GenericConstraintBundle(
-                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint, reqCtor);
+                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint, reqCtor, reqEnum);
             }
             return result.Count > 0 ? result : null;
         }

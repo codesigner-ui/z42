@@ -459,7 +459,7 @@ public static class ZpkgWriter
     /// Layout: u8 count, { u32 tpName, u8 flags, u8 ifaceCount, u32* ifaceNames,
     ///                     [u32 baseCls?], [u32 tpRef?] }.
     /// Flags: 0x01 RequiresClass, 0x02 RequiresStruct, 0x04 HasBaseClass, 0x08 HasTpRef,
-    ///        0x10 RequiresConstructor (L3-G2.5 ctor).
+    ///        0x10 RequiresConstructor (L3-G2.5 ctor), 0x20 RequiresEnum (L3-G2.5 enum).
     private static void WriteTpConstraints(
         BinaryWriter w,
         List<ExportedTypeParamConstraint>? constraints,
@@ -480,6 +480,7 @@ public static class ZpkgWriter
             if (c.BaseClass != null)       flags |= 0x04;
             if (c.TypeParamRef != null)    flags |= 0x08;
             if (c.RequiresConstructor)     flags |= 0x10;
+            if (c.RequiresEnum)            flags |= 0x20;
             w.Write(flags);
             w.Write((byte)c.Interfaces.Count);
             foreach (var iname in c.Interfaces)

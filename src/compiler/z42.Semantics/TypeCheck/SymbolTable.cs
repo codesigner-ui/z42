@@ -131,7 +131,8 @@ public sealed class SymbolTable
             _ when _activeTypeParams?.Contains(nt.Name) == true
                               => MakeTypeParam(nt.Name),
             _                 => TypeRegistry.GetZ42Type(nt.Name) ??
-                               (Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
+                               (EnumTypes.Contains(nt.Name)                  ? new Z42EnumType(nt.Name)
+                               : Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : Interfaces.TryGetValue(nt.Name, out var it) ? it
                                : new Z42PrimType(nt.Name)),
         },

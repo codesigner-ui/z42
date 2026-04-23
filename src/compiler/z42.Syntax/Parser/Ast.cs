@@ -33,6 +33,7 @@ public enum GenericConstraintKind
     Class       = 1 << 0,  // `where T: class`  — T must be a reference type
     Struct      = 1 << 1,  // `where T: struct` — T must be a value type
     Constructor = 1 << 2,  // `where T: new()`  — T must have a no-arg constructor
+    Enum        = 1 << 3,  // `where T: enum`   — T must be an enum type
 }
 
 /// `where T: IFoo + IBar` or `where T: BaseClass` or `where T: class`
