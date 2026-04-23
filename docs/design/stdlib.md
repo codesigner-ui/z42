@@ -69,6 +69,48 @@ The z42 standard library takes the best from three reference languages:
 - 用户类的 equality / comparison — 脚本实现，不要为每个用户类加 builtin
 - 泛型算法（Max / Min / Sum）— 走约束 + 脚本
 
+### Per-Package Extern Budget（每包 extern 预算）
+
+> **规则**：stdlib 包**只有 `z42.core` 或直接依赖 native 第三方库**的才允许使用
+> `extern` + `[Native]`。其他包**必须**纯脚本实现。
+
+**允许使用 extern 的场景：**
+
+| 包 | 理由 |
+|----|------|
+| `z42.core` | 语言基石：primitive 方法、核心字符串操作、Object 协议必须由 VM 提供 |
+| `z42.io` | 依赖 native OS API（文件系统、标准流、时间、环境变量）|
+| `z42.math` | 依赖 libm（Sqrt / Log / 三角函数等需要 native 精度）|
+| 未来 `z42.compression` / `z42.crypto` 等 | 封装第三方 native 库（zlib / OpenSSL 等）|
+
+**禁止使用 extern 的场景：**
+
+- 纯逻辑操作（集合、字符串构建、算法）— 用脚本实现
+- Rust 内部优化（例如 `StringBuilder` 用 Rust 可变 String 加速）—
+  **不是合法理由**；这属于"内部优化"而非"native 库依赖"
+- "这样写更快" 作为单独理由 — 必须有实测性能证据且符合上面的 3 层升级规则
+
+**判定原则：**
+- "依赖 native 库" = 依赖**外部的** C / Rust 库（系统或第三方），不是 VM 内部实现
+- VM 内部 Rust 函数不算 native 库 — 如果需求能用 z42 源码表达就应该这样写
+
+**当前违规（需后续迁移）：**
+
+| 包 | 违规项 | 迁移方向 |
+|----|-------|---------|
+| `z42.text` | `StringBuilder` 用 `__sb_*` builtins（内部 Rust String 优化）| 迁移到纯脚本（`char[]` / `string[]` 动态数组），接受性能退化 |
+
+### Layer 3 Package Allowed-Extern Summary
+
+```
+z42.core         ✅ extern 允许（语言基石）
+z42.io           ✅ extern 允许（OS 依赖）
+z42.math         ✅ extern 允许（libm 依赖）
+z42.text         ⚠️  目前违规（StringBuilder），待迁移到纯脚本
+z42.collections  ✅ 已纯脚本（L3-G4h 完成）
+z42.numerics     ✅ 未来必须纯脚本（无 native 依赖）
+```
+
 ---
 
 ## Layer 1 — VM Intrinsics

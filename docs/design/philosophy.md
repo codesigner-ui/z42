@@ -261,6 +261,17 @@ interface INumber<T> { T op_Add(T other); ... }
 - 调试与 hot reload 友好：脚本实现可 step-through / 替换
 - 跨 runtime 一致：interp / jit / aot 执行同一份脚本
 
+**Per-package extern 预算（重要）：**
+
+stdlib **只有 `z42.core` 或直接依赖 native 第三方库**（比如 `z42.io`、`z42.math`
+分别依赖 OS API 和 libm；未来 `z42.compression` 依赖 zlib）**才允许**使用
+`extern` + `[Native]`。其他包**必须**纯脚本实现。
+
+判定口诀：**"依赖 native 库"指外部 C/Rust 库；VM 内部 Rust 函数不算 native 库。**
+纯逻辑操作（集合、字符串构建、泛型算法）一律走脚本，即使 Rust 能写得更快。
+
+详见 `stdlib.md` → "Per-Package Extern Budget"。
+
 ---
 
 ### 9. **Performance: CPU & Memory Efficiency**
