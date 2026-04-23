@@ -44,6 +44,7 @@ internal sealed partial class SymbolCollector : ISymbolBinder
         CollectEnums(cu);
         CollectInterfaces(cu);
         CollectClasses(cu);
+        CollectImpls(cu);
         CollectFunctions(cu);
 
         return new SymbolTable(

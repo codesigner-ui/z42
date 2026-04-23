@@ -455,6 +455,50 @@ void Main() {
 - `enum + new()` 允许（enum 天然 default-constructible）
 - `enum + IXxx<...>` 允许；enum 暂不能 implements interface（待 L3-R）
 
+### extern impl — 追溯接口实现（L3-G2.5，Change 1，2026-04-23）
+
+**动机**：在 class 头部之外为类型追加接口实现。既为用户代码提供 "按需组装"
+接口的灵活性，也为未来让 primitive 类型（int/double）通过 stdlib 的
+`impl INumber<int> for int` 等声明**数据驱动**地满足接口，取代当前
+`PrimitiveImplementsInterface` 硬编码表（Change 2 目标）。
+
+**语法（Rust 风格）**：
+
+```z42
+interface IGreet { string Hello(); }
+
+class Robot { string name; Robot(string n) { this.name = n; } }
+
+impl IGreet for Robot {
+    public string Hello() { return "beep from " + this.name; }
+}
+
+string Greet<T>(T t) where T: IGreet { return t.Hello(); }
+```
+
+**等价性**：`impl Trait for Type { methods }` 等价于在 class 头部写
+`: Trait` + 在 class body 里实现这些方法。语义层合并：trait 加入
+`Z42ClassType.InterfaceTypes`，方法加入 `Methods` 表。
+
+**Change 1 限制**（已完成）：
+- TargetType 必须是**同一 zpkg 内的 user class/struct**（简化版孤儿规则）
+- TraitType 可带类型实参（`IEquatable<int>` 形式）
+- impl 方法必须有 body；暂不接受 `extern` + `[Native(...)]`
+- 不含 IMPL zbc section、TSIG Impls 字段
+- 不触碰 `PrimitiveImplementsInterface` 硬编码表
+
+**Change 2 规划**（独立迭代）：
+- 放开 TargetType 接受 primitive（`impl INumber<int> for int`）
+- 允许 `extern` + `[Native(...)]` impl 方法（primitive 绑定 VM builtin）
+- 孤儿规则放宽到 Rust 完整版：impl 所在 zpkg 必须是 Trait **或** Target 之一
+- 新增 IMPL zbc section + TSIG Impls 字段承载跨 zpkg 消费
+- **移除** `PrimitiveImplementsInterface` 硬编码与 VM 硬编码 builtin 路由
+- stdlib 迁移：IComparable / IEquatable / INumber 的 primitive 实现改为
+  extern impl 声明
+
+**诊断**：新错误码 `E0413 InvalidImpl` 覆盖 6 类场景（target 非 user class /
+trait 非 interface / 同 zpkg 违规 / 签名不匹配 / 漏方法 / 重复方法）。
+
 ### 跨参数约束链校验（L3-G2.5 chain，2026-04-23）
 
 接口约束的 TypeArgs 现在参与校验而不仅仅是名字匹配：

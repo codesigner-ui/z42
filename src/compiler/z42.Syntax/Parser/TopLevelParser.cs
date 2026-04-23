@@ -58,6 +58,7 @@ internal static partial class TopLevelParser
         var functions  = new List<FunctionDecl>();
         var enums      = new List<EnumDecl>();
         var interfaces = new List<InterfaceDecl>();
+        var impls      = new List<ImplDecl>();
 
         string? pendingNative = null;
         while (!cursor.IsEnd)
@@ -87,6 +88,8 @@ internal static partial class TopLevelParser
                 if (IsEnumDecl(cursor))          { pendingNative = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
                 if (IsInterfaceDecl(cursor))      { pendingNative = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
                 if (IsClassOrStructDecl(cursor))  { pendingNative = null; classes.Add(ParseClassDecl(ref cursor, feat, diags)); continue; }
+                if (cursor.Current.Kind == TokenKind.Impl)
+                                                  { pendingNative = null; impls.Add(ParseImplDecl(ref cursor, feat, diags)); continue; }
                 functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags));
                 pendingNative = null;
             }
@@ -98,7 +101,7 @@ internal static partial class TopLevelParser
             }
         }
 
-        return new CompilationUnit(ns, usings, classes, functions, enums, interfaces, start);
+        return new CompilationUnit(ns, usings, classes, functions, enums, interfaces, impls, start);
     }
 
     /// Skip tokens until we reach a plausible start of a new top-level declaration.
@@ -109,7 +112,7 @@ internal static partial class TopLevelParser
             var kind = cursor.Current.Kind;
             // Stop at tokens that start a new top-level declaration
             if (kind is TokenKind.Class or TokenKind.Struct or TokenKind.Enum
-                or TokenKind.Interface or TokenKind.Namespace or TokenKind.Using
+                or TokenKind.Interface or TokenKind.Impl or TokenKind.Namespace or TokenKind.Using
                 or TokenKind.Public or TokenKind.Private or TokenKind.Internal
                 or TokenKind.Protected or TokenKind.Abstract or TokenKind.Sealed
                 or TokenKind.Static or TokenKind.Virtual or TokenKind.Override
@@ -381,6 +384,42 @@ internal static partial class TopLevelParser
         ExpectKind(ref cursor, TokenKind.RBrace);
         return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
             baseClass, ifaces, fields, methods, start, typeParams, classWhereClause);
+    }
+
+    // ── Extern impl block ─────────────────────────────────────────────────────
+
+    /// Parse `impl <TraitType> for <TargetType> { <methods> }` — L3-G2.5 Change 1.
+    /// SymbolCollector merges trait/methods into the target class; this parser only
+    /// builds the AST and validates syntactic shape.
+    private static ImplDecl ParseImplDecl(ref TokenCursor cursor, LanguageFeatures feat,
+        DiagnosticBag? diags = null)
+    {
+        var start = cursor.Current.Span;
+        ExpectKind(ref cursor, TokenKind.Impl);
+        var traitType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+        ExpectKind(ref cursor, TokenKind.For);
+        var targetType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+
+        var methods = new List<FunctionDecl>();
+        ExpectKind(ref cursor, TokenKind.LBrace);
+        while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
+        {
+            try
+            {
+                methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Public, null, diags));
+            }
+            catch (ParseException ex) when (diags != null)
+            {
+                diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+                if (!cursor.IsEnd) cursor = cursor.Advance();
+                while (!cursor.IsEnd && cursor.Current.Kind != TokenKind.RBrace
+                                     && cursor.Current.Kind != TokenKind.Semicolon)
+                    cursor = cursor.Advance();
+                if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
+            }
+        }
+        ExpectKind(ref cursor, TokenKind.RBrace);
+        return new ImplDecl(traitType, targetType, methods, start);
     }
 
     // ── Function declaration ──────────────────────────────────────────────────

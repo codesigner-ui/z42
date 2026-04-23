@@ -154,6 +154,13 @@ public static class DiagnosticCatalog
             "or a method has a different signature than the interface declaration.",
             "interface IFoo { void Bar(); }\nclass Foo : IFoo {}  // Foo does not implement Bar()"),
 
+        [DiagnosticCodes.InvalidImpl] = new(
+            "Invalid extern impl block",
+            "An `impl Trait for Type { ... }` block violates extern impl rules: target must be a " +
+            "user class/struct in the same zpkg, trait must be an interface, methods must match the " +
+            "interface signature, and no duplicate or missing methods are allowed.",
+            "impl IFoo for int { ... }  // primitive targets not supported until Change 2"),
+
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

@@ -110,7 +110,7 @@ internal static class TokenDefs
         new("let",    TokenKind.Let,    LanguagePhase.Phase2),
         new("mut",    TokenKind.Mut,    LanguagePhase.Phase2),
         new("trait",  TokenKind.Trait,  LanguagePhase.Phase2),
-        new("impl",   TokenKind.Impl,   LanguagePhase.Phase2),
+        new("impl",   TokenKind.Impl,   LanguagePhase.Phase1),
         new("use",    TokenKind.Use,    LanguagePhase.Phase2),
         new("module", TokenKind.Module, LanguagePhase.Phase2),
         new("spawn",  TokenKind.Spawn,  LanguagePhase.Phase2),
