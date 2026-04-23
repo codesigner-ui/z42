@@ -20,21 +20,6 @@ public sealed record CompilationUnit(
     List<FunctionDecl> Functions,
     List<EnumDecl> Enums,
     List<InterfaceDecl> Interfaces,
-    List<ImplDecl> Impls,
-    Span Span);
-
-// ── Extern impl block ─────────────────────────────────────────────────────────
-
-/// `impl <TraitType> for <TargetType> { <methods> }` — Rust-style extern impl.
-///
-/// Change 1 (L3-G2.5 extern impl user-classes): TargetType must be a user
-/// class/struct in the same zpkg; TraitType must be an interface (possibly with
-/// type args, e.g. `IEquatable<int>`). SymbolCollector merges trait into
-/// target's InterfaceTypes and methods into target's Methods map.
-public sealed record ImplDecl(
-    TypeExpr TraitType,
-    TypeExpr TargetType,
-    List<FunctionDecl> Methods,
     Span Span);
 
 // ── Generic constraints (L3-G2 / G2.5) ─────────────────────────────────────────

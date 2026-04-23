@@ -423,9 +423,8 @@ internal static partial class TopLevelParser
     }
 
     /// Returns true if the token kind is a Phase 2 reserved keyword (fn, let, mut, etc.).
-    /// `impl` was promoted to Phase 1 for the L3-G2.5 extern-impl iteration.
     private static bool IsPhase2ReservedKeyword(TokenKind kind) => kind is
         TokenKind.Fn or TokenKind.Let or TokenKind.Mut or TokenKind.Trait or
-        TokenKind.Use or TokenKind.Module or
+        TokenKind.Impl or TokenKind.Use or TokenKind.Module or
         TokenKind.Spawn or TokenKind.None;
 }

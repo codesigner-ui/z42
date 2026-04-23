@@ -83,9 +83,8 @@ public sealed partial class TypeChecker : ITypeInferrer
 
         // ── Pass 1: bind bodies (function-level error isolation) ────────────
         BindStaticFieldInits(cu);
-        foreach (var cls  in cu.Classes)   TryBindClassMethods(cls);
-        foreach (var impl in cu.Impls)     TryBindImplMethods(impl);
-        foreach (var fn   in cu.Functions) TryBindFunction(fn);
+        foreach (var cls in cu.Classes)   TryBindClassMethods(cls);
+        foreach (var fn  in cu.Functions) TryBindFunction(fn);
 
         // ── Assemble SemanticModel from frozen symbols + bound results ──────
         return new SemanticModel(
@@ -121,62 +120,6 @@ public sealed partial class TypeChecker : ITypeInferrer
         {
             _diags.Error(DiagnosticCodes.InternalCompilerError,
                 $"ICE while checking function `{fn.Name}`: [{ex.GetType().Name}] {ex.Message}", fn.Span);
-        }
-    }
-
-    /// L3-G2.5 extern impl (Change 1): bind method bodies inside `impl Trait for Target { ... }`.
-    /// Reuses the class-method binding environment: `this` bound to the target class,
-    /// fields + type params in scope.
-    private void TryBindImplMethods(ImplDecl impl)
-    {
-        try { BindImplMethods(impl); }
-        catch (CompilationException) { /* diagnostics already reported */ }
-        catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
-        {
-            _diags.Error(DiagnosticCodes.InternalCompilerError,
-                $"ICE while checking impl block: [{ex.GetType().Name}] {ex.Message}", impl.Span);
-        }
-    }
-
-    private void BindImplMethods(ImplDecl impl)
-    {
-        if (impl.TargetType is not Syntax.Parser.NamedType targetNt) return;
-        if (!_symbols.Classes.TryGetValue(targetNt.Name, out var targetClass)) return;
-        var targetTypeParams = targetClass.TypeParams;
-        if (targetTypeParams is { Count: > 0 })
-            _symbols.PushTypeParams(targetTypeParams, _classConstraints.GetValueOrDefault(targetNt.Name));
-        try
-        {
-            foreach (var method in impl.Methods)
-            {
-                if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
-                var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
-                var scope = env.WithClass(targetNt.Name);
-                if (!method.IsStatic)
-                {
-                    scope.Define("this", targetClass);
-                    foreach (var (fname, ftype) in targetClass.Fields)
-                        scope.Define(fname, ftype);
-                }
-                CheckParamNames(method.Params);
-                foreach (var p in method.Params)
-                    scope.Define(p.Name, _symbols.ResolveType(p.Type));
-                BindParamDefaults(method.Params, scope);
-                var retType = _symbols.ResolveType(method.ReturnType);
-                _boundBodies[method] = BindBlock(method.Body, scope, retType);
-                if (!method.IsAbstract)
-                {
-                    if (retType is not Z42VoidType and not Z42UnknownType and not Z42ErrorType
-                        && !FlowAnalyzer.AlwaysReturns(_boundBodies[method]))
-                        _diags.Error(DiagnosticCodes.MissingReturn,
-                            $"not all code paths return a value in `{method.Name}`", method.Span);
-                    FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags);
-                }
-            }
-        }
-        finally
-        {
-            if (targetTypeParams is { Count: > 0 }) _symbols.PopTypeParams();
         }
     }
 

@@ -71,7 +71,6 @@ public static class DiagnosticCodes
     public const string InvalidBreakContinue  = "E0410";  // break/continue outside of loop
     public const string InvalidInheritance    = "E0411";  // sealed class, struct base, missing abstract impl, override without virtual
     public const string InterfaceMismatch     = "E0412";  // interface method missing or wrong signature
-    public const string InvalidImpl           = "E0413";  // extern impl: target not user class, trait not interface, orphan violation, signature mismatch
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";
