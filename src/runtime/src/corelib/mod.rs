@@ -93,6 +93,18 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__char_to_string",    convert::builtin_char_to_string);
         m.insert("__str_compare_to",    convert::builtin_str_compare_to);
 
+        // ── Primitive INumber arithmetic (L3-G2.5 iteration 1) ───────────────
+        m.insert("__int_op_add",        convert::builtin_int_op_add);
+        m.insert("__int_op_subtract",   convert::builtin_int_op_subtract);
+        m.insert("__int_op_multiply",   convert::builtin_int_op_multiply);
+        m.insert("__int_op_divide",     convert::builtin_int_op_divide);
+        m.insert("__int_op_modulo",     convert::builtin_int_op_modulo);
+        m.insert("__double_op_add",        convert::builtin_double_op_add);
+        m.insert("__double_op_subtract",   convert::builtin_double_op_subtract);
+        m.insert("__double_op_multiply",   convert::builtin_double_op_multiply);
+        m.insert("__double_op_divide",     convert::builtin_double_op_divide);
+        m.insert("__double_op_modulo",     convert::builtin_double_op_modulo);
+
         // ── Assert ────────────────────────────────────────────────────────────
         m.insert("__assert_eq",       object::builtin_assert_eq);
         m.insert("__assert_true",     object::builtin_assert_true);

@@ -157,6 +157,71 @@ void Main() { var p = new Parser<Color>(); }";
         Check(src).HasErrors.Should().BeTrue(because: "class and enum are mutually exclusive");
     }
 
+    // ── L3-G2.5 INumber constraint (iteration 1: method dispatch) ────────────
+
+    // Shared inline INumber declaration — TypeChecker unit tests do not load stdlib;
+    // interface shape must be re-declared in-test (same pattern as IEquatable tests below).
+    private const string InlineINumber = @"
+interface INumber<T> {
+    T op_Add(T other);
+    T op_Subtract(T other);
+    T op_Multiply(T other);
+    T op_Divide(T other);
+    T op_Modulo(T other);
+}
+";
+
+    // int satisfies INumber<int> — via PrimitiveImplementsInterface + self-referential args.
+    [Fact]
+    public void INumberConstraint_Int_Passes()
+    {
+        var src = InlineINumber + @"
+T Dbl<T>(T x) where T: INumber<T> { return x.op_Add(x); }
+void Main() { var r = Dbl(21); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // double satisfies INumber<double>.
+    [Fact]
+    public void INumberConstraint_Double_Passes()
+    {
+        var src = InlineINumber + @"
+T Dbl<T>(T x) where T: INumber<T> { return x.op_Add(x); }
+void Main() { var r = Dbl(1.5); }";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    // string does NOT satisfy INumber (only IComparable / IEquatable).
+    [Fact]
+    public void INumberConstraint_String_Rejected()
+    {
+        var src = InlineINumber + @"
+T Dbl<T>(T x) where T: INumber<T> { return x.op_Add(x); }
+void Main() { var r = Dbl(""hi""); }";
+        Check(src).HasErrors.Should().BeTrue(because: "string is not numeric");
+    }
+
+    // Class without INumber impl is rejected.
+    [Fact]
+    public void INumberConstraint_ClassWithoutImpl_Rejected()
+    {
+        var src = InlineINumber + @"
+class Widget { int x; Widget() { this.x = 0; } }
+T Dbl<T>(T x) where T: INumber<T> { return x.op_Add(x); }
+void Main() { var w = new Widget(); var r = Dbl(w); }";
+        Check(src).HasErrors.Should().BeTrue(because: "Widget does not implement INumber");
+    }
+
+    // Self-referential args only: int satisfies INumber<int> but NOT INumber<long>.
+    [Fact]
+    public void INumberConstraint_MismatchedTypeArg_Rejected()
+    {
+        var src = InlineINumber + @"
+T Dbl<T>(T x) where T: INumber<long> { return x.op_Add(x); }
+void Main() { var r = Dbl(21); }";
+        Check(src).HasErrors.Should().BeTrue(because: "int satisfies INumber<int>, not INumber<long>");
+    }
+
     // ── L3-G2.5 chain (class-side TypeArgs) ───────────────────────────────────
 
     // Class that implements `IEquatable<int>` satisfies `where T: IEquatable<int>`.

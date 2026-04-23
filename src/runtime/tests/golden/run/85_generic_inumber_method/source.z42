@@ -1,0 +1,31 @@
+// Test: L3-G2.5 INumber iteration 1 — explicit method dispatch via op_Add/op_* on
+// primitives inside a generic body. Binary-op desugaring (a + b) lands in iteration 2.
+
+T Double<T>(T x) where T: INumber<T> {
+    return x.op_Add(x);
+}
+
+T AddThenScale<T>(T a, T b, T k) where T: INumber<T> {
+    return a.op_Add(b).op_Multiply(k);
+}
+
+T DivMod<T>(T a, T b) where T: INumber<T> {
+    // Exercises op_Subtract / op_Divide / op_Modulo in one expression.
+    return a.op_Divide(b).op_Subtract(a.op_Modulo(b));
+}
+
+void Main() {
+    int  i = Double(21);               // 42
+    long l = Double(1000);             // 2000 (long flows as i64 at runtime)
+    double d = Double(1.5);            // 3.0
+
+    Console.WriteLine(i);
+    Console.WriteLine(l);
+    Console.WriteLine(d);
+
+    Console.WriteLine(AddThenScale(3, 4, 10));     // 70
+    Console.WriteLine(AddThenScale(1.5, 0.5, 2.0)); // 4.0
+
+    Console.WriteLine(DivMod(17, 5));   // 3 - 2 = 1
+    Console.WriteLine(DivMod(20, 6));   // 3 - 2 = 1
+}

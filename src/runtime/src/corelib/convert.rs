@@ -120,6 +120,36 @@ pub fn builtin_int_to_string(args: &[Value]) -> Result<Value> {
     Ok(Value::Str(a.to_string()))
 }
 
+// L3-G2.5 INumber (iteration 1): primitive arithmetic method dispatch.
+// Integer ops use wrapping arithmetic to match existing Add/Sub/Mul IR semantics.
+pub fn builtin_int_op_add(args: &[Value]) -> Result<Value> {
+    let a = require_i64(args, 0, "int.op_Add")?;
+    let b = require_i64(args, 1, "int.op_Add")?;
+    Ok(Value::I64(a.wrapping_add(b)))
+}
+pub fn builtin_int_op_subtract(args: &[Value]) -> Result<Value> {
+    let a = require_i64(args, 0, "int.op_Subtract")?;
+    let b = require_i64(args, 1, "int.op_Subtract")?;
+    Ok(Value::I64(a.wrapping_sub(b)))
+}
+pub fn builtin_int_op_multiply(args: &[Value]) -> Result<Value> {
+    let a = require_i64(args, 0, "int.op_Multiply")?;
+    let b = require_i64(args, 1, "int.op_Multiply")?;
+    Ok(Value::I64(a.wrapping_mul(b)))
+}
+pub fn builtin_int_op_divide(args: &[Value]) -> Result<Value> {
+    let a = require_i64(args, 0, "int.op_Divide")?;
+    let b = require_i64(args, 1, "int.op_Divide")?;
+    if b == 0 { anyhow::bail!("int.op_Divide: division by zero"); }
+    Ok(Value::I64(a.wrapping_div(b)))
+}
+pub fn builtin_int_op_modulo(args: &[Value]) -> Result<Value> {
+    let a = require_i64(args, 0, "int.op_Modulo")?;
+    let b = require_i64(args, 1, "int.op_Modulo")?;
+    if b == 0 { anyhow::bail!("int.op_Modulo: modulo by zero"); }
+    Ok(Value::I64(a.wrapping_rem(b)))
+}
+
 pub fn builtin_double_compare_to(args: &[Value]) -> Result<Value> {
     let a = require_f64(args, 0, "double.CompareTo")?;
     let b = require_f64(args, 1, "double.CompareTo")?;
@@ -137,6 +167,34 @@ pub fn builtin_double_hash_code(args: &[Value]) -> Result<Value> {
 pub fn builtin_double_to_string(args: &[Value]) -> Result<Value> {
     let a = require_f64(args, 0, "double.ToString")?;
     Ok(Value::Str(a.to_string()))
+}
+
+// L3-G2.5 INumber (iteration 1): floating-point arithmetic method dispatch.
+// Follows standard IEEE 754 semantics (Inf / NaN on div-by-zero).
+pub fn builtin_double_op_add(args: &[Value]) -> Result<Value> {
+    let a = require_f64(args, 0, "double.op_Add")?;
+    let b = require_f64(args, 1, "double.op_Add")?;
+    Ok(Value::F64(a + b))
+}
+pub fn builtin_double_op_subtract(args: &[Value]) -> Result<Value> {
+    let a = require_f64(args, 0, "double.op_Subtract")?;
+    let b = require_f64(args, 1, "double.op_Subtract")?;
+    Ok(Value::F64(a - b))
+}
+pub fn builtin_double_op_multiply(args: &[Value]) -> Result<Value> {
+    let a = require_f64(args, 0, "double.op_Multiply")?;
+    let b = require_f64(args, 1, "double.op_Multiply")?;
+    Ok(Value::F64(a * b))
+}
+pub fn builtin_double_op_divide(args: &[Value]) -> Result<Value> {
+    let a = require_f64(args, 0, "double.op_Divide")?;
+    let b = require_f64(args, 1, "double.op_Divide")?;
+    Ok(Value::F64(a / b))
+}
+pub fn builtin_double_op_modulo(args: &[Value]) -> Result<Value> {
+    let a = require_f64(args, 0, "double.op_Modulo")?;
+    let b = require_f64(args, 1, "double.op_Modulo")?;
+    Ok(Value::F64(a % b))
 }
 
 pub fn builtin_bool_equals(args: &[Value]) -> Result<Value> {

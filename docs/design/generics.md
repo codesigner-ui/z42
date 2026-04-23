@@ -455,6 +455,71 @@ void Main() {
 - `enum + new()` 允许（enum 天然 default-constructible）
 - `enum + IXxx<...>` 允许；enum 暂不能 implements interface（待 L3-R）
 
+### INumber 数值约束（L3-G2.5 INumber 迭代 1，2026-04-23）
+
+**接口形态**：`Std.Numerics.INumber<T>`（独立在 `z42.numerics` 包，与 `z42.core`
+解耦，按需引入，不给核心库加体积）。
+
+```z42
+// z42.numerics/src/INumber.z42
+public interface INumber<T> {
+    T op_Add(T other);
+    T op_Subtract(T other);
+    T op_Multiply(T other);
+    T op_Divide(T other);
+    T op_Modulo(T other);
+}
+```
+
+**关键结论**：INumber **不是新约束 kind**，就是普通接口约束 —— 走 L3-G2 既有
+的 `where T: I<T>` 机制。与 `enum` 约束（flag 关键字、新 GenericConstraintKind
+bit、新语义类型）本质不同：INumber 零新语法 / 零新 AST / 零新 bundle 字段。
+
+**Primitive 桥接**（L3-G4b 既有表的 1 行扩展）：
+
+```csharp
+// TypeChecker.PrimitiveImplementsInterface
+("int" or "long" or ..., "IComparable" or "IEquatable" or "INumber") => true,
+("float" or "double" or ..., "IComparable" or "IEquatable" or "INumber") => true,
+```
+
+primitive `int` / `long` / `float` / `double` 自动满足 `INumber<T>`（self-referential，
+与 IComparable 一致；`int` 满足 `INumber<int>` 而非 `INumber<long>`）。
+
+**VM 运行时路由**（与 `.CompareTo()` 同机制）：
+
+```rust
+// primitive_method_builtin
+(Value::I64(_), "op_Add")  => Some("__int_op_add"),
+(Value::F64(_), "op_Add")  => Some("__double_op_add"),
+// ... Subtract / Multiply / Divide / Modulo 对称
+```
+
+整数走 `wrapping_*` 与现有 `AddInstr` 一致；浮点走 IEEE 754（Inf/NaN on div-by-zero）。
+
+**调用点**（迭代 1 — 显式方法调用）：
+
+```z42
+T Double<T>(T x) where T: INumber<T> {
+    return x.op_Add(x);    // 显式；迭代 2 加 `x + x` 自动 desugar
+}
+
+void Main() {
+    Console.WriteLine(Double(21));    // 42
+    Console.WriteLine(Double(1.5));   // 3.0
+}
+```
+
+**Scope 限制与后续迭代**：
+
+- 迭代 1（已完成）：5 个算术方法 + 4 主流数值类型 + stdlib 接口定义
+- 迭代 2（规划）：`CheckBinary` 检测 `Z42GenericParamType + INumber<T>` 操作数，
+  将 `a + b` 自动 desugar 到 `a.op_Add(b)`；零新语法，零用户类重写
+- 未来 operator 重载：新 `operator` 关键字，编译为同名 `op_Add` 方法，
+  INumber 接口不变。**前向兼容，无 rework**
+- 明确不做：混合类型算术（`int + double`）、checked 算术（溢出抛异常）、
+  BigInteger / Decimal
+
 ### 跨参数约束链校验（L3-G2.5 chain，2026-04-23）
 
 接口约束的 TypeArgs 现在参与校验而不仅仅是名字匹配：
