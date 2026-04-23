@@ -71,6 +71,9 @@ internal static class TokenDefs
         // Generic constraints (Phase 1 — L3-G2)
         new("where",  TokenKind.Where,  LanguagePhase.Phase1),
 
+        // Operator overloading (Phase 1 — L3)
+        new("operator", TokenKind.Operator, LanguagePhase.Phase1),
+
         // Literals (Phase 1)
         new("null",  TokenKind.Null,  LanguagePhase.Phase1),
         new("true",  TokenKind.True,  LanguagePhase.Phase1),

@@ -492,6 +492,58 @@ string Greet<T>(T t) where T: IGreet { return t.Hello(); }
 
 **诊断**：新错误码 `E0413 InvalidImpl`（target 非 class/struct、trait 非 interface、签名不匹配、漏方法、重复方法）。
 
+### Operator 重载（L3 operator-overload，2026-04-24）
+
+**目标**：C# 风 `operator` 关键字，支持二元算术 `+ - * / %` 的运算符重载。
+包括异构算子（`Vec2 * int`）。静态方法形式；编译器 desugar `a + b` 为
+`Type.op_Add(a, b)` 静态调用。
+
+**语法（C# 对齐）**：
+
+```z42
+public struct Vec2 {
+    int x; int y;
+    public static Vec2 operator +(Vec2 a, Vec2 b) { return new Vec2(a.x+b.x, a.y+b.y); }
+    public static Vec2 operator *(Vec2 v, int s) { return new Vec2(v.x*s, v.y*s); }
+}
+
+var c = a + b;    // desugars to Vec2.op_Add(a, b)
+var d = v * 10;   // Vec2.op_Multiply(v, 10) — heterogeneous OK
+```
+
+**运算符 → 方法映射**：
+
+| 运算符 | 方法名 | 与 INumber 对齐 |
+|--------|--------|:---:|
+| `+` | `op_Add` | ✅ |
+| `-` | `op_Subtract` | ✅ |
+| `*` | `op_Multiply` | ✅ |
+| `/` | `op_Divide` | ✅ |
+| `%` | `op_Modulo` | ✅ |
+
+方法名与 `INumber<T>` 的实例方法名相同（非 C# IL 的 `op_Addition`），确保两套机制
+互不冲突且可共存。
+
+**Desugar 优先级**（`TryBindOperatorCall` in `TypeChecker.Exprs.cs`）：
+1. Primitive 双方（int + int 等）→ **早退，走 BinaryTypeTable / AddInstr 快路径**
+2. 静态 `op_Add(L, R)` on left.Type 或 right.Type（签名匹配）→ Static call
+3. 实例 `left.op_Add(R)` — user class method 或 generic T 的 INumber constraint 方法
+   → Virtual call
+4. 全未命中 → 原 "requires numeric operand" 错误
+
+**Scope（本迭代）**：
+- 5 个二元算术运算符
+- 静态 operator 方法（C# 规则）
+- 类型签名匹配（含异构）
+- 与 INumber instance 方法可共存
+
+**后续迭代规划**：
+- 比较运算符 `<` / `<=` / `>` / `>=`（走 IComparable）
+- 相等运算符 `==` / `!=`（走 IEquatable）
+- 一元运算符 `-x` / `!x` / `~x`
+- 复合赋值 `+=` 等（纯语法糖）
+- 跨 zpkg 泛型路径的完整 INumber 端到端 demo
+
 ### INumber 数值约束（L3-G2.5 INumber 迭代 1，2026-04-23）
 
 **目标**：泛型数值算法（`Sum<T>`、向量、矩阵、通用算术）通过

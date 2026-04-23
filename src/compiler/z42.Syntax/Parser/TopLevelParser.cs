@@ -453,9 +453,20 @@ internal static partial class TopLevelParser
         else
         {
             returnType = TypeParser.Parse(cursor).Unwrap(ref cursor);
-            name       = ExpectKind(ref cursor, TokenKind.Identifier).Text;
-            // Generic function: T Max<T>(T a, T b)
-            funcTypeParams = ParseTypeParams(ref cursor);
+            // L3 operator overload: `public static T operator +(T a, T b) { ... }`.
+            // The `operator` keyword stands in for the method name; the following token
+            // is the operator symbol, mangled into an `op_*` method name.
+            if (cursor.Current.Kind == TokenKind.Operator)
+            {
+                cursor = cursor.Advance(); // consume 'operator'
+                name   = ParseOperatorSymbolAsMethodName(ref cursor);
+            }
+            else
+            {
+                name = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+                // Generic function: T Max<T>(T a, T b)
+                funcTypeParams = ParseTypeParams(ref cursor);
+            }
         }
 
         // Extern property: `extern T Name { get; }` — no parameter list

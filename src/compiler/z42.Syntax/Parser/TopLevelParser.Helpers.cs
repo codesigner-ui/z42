@@ -457,4 +457,26 @@ internal static partial class TopLevelParser
         TokenKind.Fn or TokenKind.Let or TokenKind.Mut or TokenKind.Trait or
         TokenKind.Use or TokenKind.Module or
         TokenKind.Spawn or TokenKind.None;
+
+    /// L3 operator overload: parse the operator symbol following the `operator` keyword
+    /// and return its mangled method name (`op_Add` / `op_Subtract` / ...).
+    /// Supports 5 binary arithmetic operators. Names align with `INumber<T>` interface.
+    private static string ParseOperatorSymbolAsMethodName(ref TokenCursor cursor)
+    {
+        var kind = cursor.Current.Kind;
+        string name = kind switch
+        {
+            TokenKind.Plus    => "op_Add",
+            TokenKind.Minus   => "op_Subtract",
+            TokenKind.Star    => "op_Multiply",
+            TokenKind.Slash   => "op_Divide",
+            TokenKind.Percent => "op_Modulo",
+            _ => throw new ParseException(
+                $"expected binary arithmetic operator (+ - * / %) after `operator`, got `{cursor.Current.Text}`",
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken),
+        };
+        cursor = cursor.Advance();
+        return name;
+    }
 }

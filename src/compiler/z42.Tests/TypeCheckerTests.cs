@@ -251,6 +251,63 @@ void Main() { }";
         Check(src).HasErrors.Should().BeTrue(because: "Foo already declared Hello directly");
     }
 
+    // ── L3 operator overload (C# `operator` keyword) ──────────────────────────
+
+    [Fact]
+    public void OpOverload_BinaryPlus_OnUserStruct()
+    {
+        var src = @"
+public struct Vec2 {
+    int x; int y;
+    Vec2(int a, int b) { this.x = a; this.y = b; }
+    public static Vec2 operator +(Vec2 a, Vec2 b) { return new Vec2(a.x + b.x, a.y + b.y); }
+}
+void Main() {
+    var a = new Vec2(1, 2);
+    var b = new Vec2(3, 4);
+    var c = a + b;
+}";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void OpOverload_Heterogeneous_StructTimesInt()
+    {
+        var src = @"
+public struct Vec2 {
+    int x; int y;
+    Vec2(int a, int b) { this.x = a; this.y = b; }
+    public static Vec2 operator *(Vec2 v, int s) { return new Vec2(v.x * s, v.y * s); }
+}
+void Main() {
+    var v = new Vec2(1, 2);
+    var scaled = v * 10;
+}";
+        Check(src).HasErrors.Should().BeFalse();
+    }
+
+    [Fact]
+    public void OpOverload_TypeMismatch_Rejected()
+    {
+        // Vec2 + int with no matching static operator → falls back to BinaryTypeTable,
+        // which rejects non-numeric left operand.
+        var src = @"
+public struct Vec2 {
+    int x; int y;
+    Vec2(int a, int b) { this.x = a; this.y = b; }
+    public static Vec2 operator +(Vec2 a, Vec2 b) { return new Vec2(a.x + b.x, a.y + b.y); }
+}
+void Main() {
+    var v = new Vec2(1, 2);
+    var bad = v + 42;
+}";
+        Check(src).HasErrors.Should().BeTrue(because: "Vec2 has no operator +(Vec2, int)");
+    }
+
+    // Note: generic instance operator path (`a + b` on T: INumber<T>) works when
+    // the interface + primitive struct are inline-declared; separate end-to-end
+    // demo via stdlib INumber is deferred to a follow-up iteration.
+
     // ── L3-G2.5 chain (class-side TypeArgs) ───────────────────────────────────
 
     // Class that implements `IEquatable<int>` satisfies `where T: IEquatable<int>`.

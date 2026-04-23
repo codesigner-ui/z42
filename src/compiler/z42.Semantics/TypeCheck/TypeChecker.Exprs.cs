@@ -323,6 +323,11 @@ public sealed partial class TypeChecker
         if (bin.Op == "+" && (left.Type == Z42Type.String || right.Type == Z42Type.String))
             return new BoundBinary(op, left, right, Z42Type.String, bin.Span);
 
+        // L3 operator overload: `a + b` → call static `op_Add(a, b)` on a class/struct
+        // or instance `a.op_Add(b)` on generic-param / class when static form absent.
+        if (TryBindOperatorCall(bin.Op, left, right, bin.Span) is { } opCall)
+            return opCall;
+
         if (!BinaryTypeTable.Rules.TryGetValue(bin.Op, out var rule))
             return new BoundBinary(op, left, right, Z42Type.Unknown, bin.Span);
 
@@ -333,6 +338,126 @@ public sealed partial class TypeChecker
             ? Z42Type.Error : rule.Output(left.Type, right.Type);
         return new BoundBinary(op, left, right, outType, bin.Span);
     }
+
+    /// L3 operator overload: try resolving `a <op> b` to an operator method call.
+    /// Priority:
+    ///   1. Static `op_<Name>(a, b)` on left.Type (or right.Type) — C# operator overload
+    ///   2. Instance `a.op_<Name>(b)` via left.Type's Methods / constraint interfaces —
+    ///      INumber / user-class instance operator
+    /// Returns null when neither form matches; caller falls back to BinaryTypeTable.
+    private BoundExpr? TryBindOperatorCall(string op, BoundExpr left, BoundExpr right, Span span)
+    {
+        string? methodName = op switch
+        {
+            "+" => "op_Add",
+            "-" => "op_Subtract",
+            "*" => "op_Multiply",
+            "/" => "op_Divide",
+            "%" => "op_Modulo",
+            _   => null,
+        };
+        if (methodName is null) return null;
+
+        // Skip overload when both sides are plain primitive numeric — let BinaryTypeTable
+        // emit the IR AddInstr fast path (no method dispatch).
+        if (left.Type is Z42PrimType && right.Type is Z42PrimType
+            && Z42Type.IsNumeric(left.Type) && Z42Type.IsNumeric(right.Type))
+            return null;
+
+        // 1. Static operator method on either side's class. Signature must match (L, R).
+        if (TryLookupStaticOperator(left.Type, methodName, left.Type, right.Type) is { } ls)
+            return new BoundCall(BoundCallKind.Static, null, ls.ClassName, methodName,
+                null, [left, right], ls.ReturnType, span);
+        if (TryLookupStaticOperator(right.Type, methodName, left.Type, right.Type) is { } rs)
+            return new BoundCall(BoundCallKind.Static, null, rs.ClassName, methodName,
+                null, [left, right], rs.ReturnType, span);
+
+        // 2. Instance op_<Name> on left.Type — covers user classes implementing INumber
+        //    directly, and generic params whose constraints supply op_<Name>.
+        if (TryLookupInstanceOperator(left.Type, methodName, right.Type) is { } li)
+            return new BoundCall(BoundCallKind.Virtual, left, li.ClassName, methodName,
+                null, [right], li.ReturnType, span);
+
+        return null;
+    }
+
+    private (string ClassName, Z42Type ReturnType)? TryLookupStaticOperator(
+        Z42Type t, string methodName, Z42Type leftArg, Z42Type rightArg)
+    {
+        string? className = t switch
+        {
+            Z42ClassType ct         => ct.Name,
+            Z42InstantiatedType inst => inst.Definition.Name,
+            _                        => null,
+        };
+        if (className is null) return null;
+        if (!_symbols.Classes.TryGetValue(className, out var classType)) return null;
+        if (!classType.StaticMethods.TryGetValue(methodName, out var sig)) return null;
+        if (sig.Params.Count != 2) return null;
+        // Signature match: both arguments must be assignable to the declared params.
+        if (!Z42Type.IsAssignableTo(sig.Params[0], leftArg)) return null;
+        if (!Z42Type.IsAssignableTo(sig.Params[1], rightArg)) return null;
+        return (className, ResolveStubType(sig.Ret));
+    }
+
+    /// Normalize a stub Z42ClassType (returned during first-pass signature collection,
+    /// before class shapes were populated) to the fully-populated Z42ClassType from
+    /// `_symbols.Classes`. Needed when operator method signatures reference their
+    /// own enclosing class as return type.
+    private Z42Type ResolveStubType(Z42Type t) =>
+        t is Z42ClassType ct && _symbols.Classes.TryGetValue(ct.Name, out var full) ? full : t;
+
+    private (string ClassName, Z42Type ReturnType)? TryLookupInstanceOperator(
+        Z42Type t, string methodName, Z42Type rightArg)
+    {
+        // Concrete class / struct — instance method takes 1 param (other).
+        if (t is Z42ClassType ct
+            && _symbols.Classes.TryGetValue(ct.Name, out var classType)
+            && classType.Methods.TryGetValue(methodName, out var mt)
+            && mt.Params.Count == 1
+            && Z42Type.IsAssignableTo(mt.Params[0], rightArg))
+            return (ct.Name, ResolveStubType(mt.Ret));
+        if (t is Z42InstantiatedType inst
+            && inst.Definition.Methods.TryGetValue(methodName, out var instMt)
+            && instMt.Params.Count == 1)
+        {
+            var subMap = BuildSubstitutionMap(inst);
+            var substParam = SubstituteTypeParams(instMt.Params[0], subMap);
+            if (!Z42Type.IsAssignableTo(substParam, rightArg)) return null;
+            return (inst.Definition.Name, SubstituteTypeParams(instMt.Ret, subMap));
+        }
+        // Generic parameter — look through interface constraints (INumber<T> etc.)
+        // For `a + b` where a: T, b: T (homogeneous), the constraint interface's
+        // method takes T and returns T; signature check is trivially satisfied.
+        if (t is Z42GenericParamType gp)
+        {
+            // Collect both the type-param's own InterfaceConstraints (built during
+            // class/function signature collection) and the active where-clause bundle.
+            var ifaces = new List<Z42InterfaceType>();
+            if (gp.InterfaceConstraints is { } direct) ifaces.AddRange(direct);
+            var bundle = _symbols.LookupEffectiveConstraints(gp.Name);
+            foreach (var iface in bundle.Interfaces)
+                if (!ifaces.Any(i => i.Name == iface.Name)) ifaces.Add(iface);
+
+            foreach (var iface in ifaces)
+                if (iface.Methods.TryGetValue(methodName, out var gmt) && gmt.Params.Count == 1)
+                    // Substitute `T` → `gp` in return type (e.g. INumber<T>.op_Add returns T,
+                    // which should become the generic param itself in the caller scope).
+                    return (iface.Name, SubstituteGenericReturnType(gmt.Ret, gp));
+        }
+        return null;
+    }
+
+    /// For `where T: INumber<T>` and `a.op_Add(b)` with ret `T`, substitute T → caller's
+    /// generic param reference. For interface method return types that are Z42GenericParamType
+    /// or Z42PrimType("T"), replace with the caller's generic-param instance.
+    private static Z42Type SubstituteGenericReturnType(Z42Type ret, Z42GenericParamType callerGp) =>
+        ret switch
+        {
+            Z42GenericParamType          => callerGp,
+            Z42PrimType p when p.Name == callerGp.Name => callerGp,
+            _                             => ret,
+        };
 
     private void CheckBinaryOperand(
         Func<Z42Type, bool>? constraint, string requirement,

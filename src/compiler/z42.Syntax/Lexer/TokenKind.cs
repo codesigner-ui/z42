@@ -23,6 +23,7 @@ public enum TokenKind
     Typeof, Is, As,
     Null,
     Where,          // L3-G2 generic constraints: `where T: I + J`
+    Operator,       // L3 operator overloading: `public static T operator +(T a, T b)`
 
     // Legacy / z42-specific keywords (kept for future use)
     Fn, Let, Mut, Trait, Impl, Use, Module, Spawn, None, Error,
