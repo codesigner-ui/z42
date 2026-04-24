@@ -201,7 +201,7 @@ L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立
 - `class` / `struct` / `notnull` / `unmanaged` / `enum` / `new()` 作为 flag 附加在
   GenericParam 上，共享 zbc flags 字节（现有已用 bits 0x01–0x10，留 0x20–0x80 给后续）
 - `reified` / `T::Output` 类关联功能和 L3-R / L3-G3c 合批
-- 每个范式独立 openspec change，共享 L3-G3a 的约束元数据 zbc 扩展
+- 每个范式独立 spec change，共享 L3-G3a 的约束元数据 zbc 扩展
 
 ### L3-R：反射与运行时类型信息（统一批次，延后）
 

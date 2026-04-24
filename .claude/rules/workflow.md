@@ -21,7 +21,7 @@ Think First → Spec It → Build It → Archive It
 | 角色 | 职责 |
 |------|------|
 | **User** | 定方向、审批规范、裁决分歧 |
-| **Spec**（`docs/design/` + `openspec/`）| 人机合同，实现的唯一依据 |
+| **Spec**（`docs/design/` + `spec/`）| 人机合同，实现的唯一依据 |
 | **Claude** | 自驱执行各阶段；不超 Scope；不猜测歧义 |
 
 **User 介入点只有两个：** ① 规范审批（Proposal + Spec）；② 规范分歧裁决。其余全部 Claude 自驱。
@@ -31,7 +31,7 @@ Think First → Spec It → Build It → Archive It
 ## 目录结构
 
 ```
-openspec/
+spec/
 ├── changes/
 │   ├── <change-name>/          ← 进行中的变更（kebab-case）
 │   │   ├── proposal.md         ← Why：动机与范围
@@ -44,7 +44,7 @@ openspec/
 │       └── YYYY-MM-DD-<name>/  ← 已归档变更
 ```
 
-长期规范（新语法、IR 指令、VM 行为）最终同步到 `docs/design/`，不存在 `openspec/` 中。
+长期规范（新语法、IR 指令、VM 行为）最终同步到 `docs/design/`，不存在 `spec/` 中。
 
 ---
 
@@ -72,10 +72,10 @@ openspec/
 **在写第一行实现代码之前，Claude 必须通过以下 self-check**：
 
 ```
-[ ] openspec/changes/<name>/proposal.md 存在且 User 已确认
-[ ] openspec/changes/<name>/specs/<capability>/spec.md 存在且 User 已确认
-[ ] openspec/changes/<name>/design.md 存在且 User 已确认
-[ ] openspec/changes/<name>/tasks.md 存在
+[ ] spec/changes/<name>/proposal.md 存在且 User 已确认
+[ ] spec/changes/<name>/specs/<capability>/spec.md 存在且 User 已确认
+[ ] spec/changes/<name>/design.md 存在且 User 已确认
+[ ] spec/changes/<name>/tasks.md 存在
 [ ] 阶段 6.5 实施前确认 gate 已通过（User 明确说"没问题 / 可以开始"）
 ```
 
@@ -83,7 +83,7 @@ openspec/
 
 **常见反例（皆为违规）**：
 - ❌ 只有 `docs/design/<feature>.md`（长期规范）就开始写代码
-  → 长期规范 ≠ openspec proposal/spec/design；两者都必须有
+  → 长期规范 ≠ `spec/changes/<name>/` 的 proposal/specs/design；两者都必须有
 - ❌ "因为迭代中与 User 逐步沟通了方案，所以跳过 proposal/specs"
   → 对话中的确认不替代 spec；User 审批的是文档，不是聊天记录
 - ❌ 只建 `tasks.md` 就开工（除非明确是 fix / refactor 类型）
@@ -138,7 +138,7 @@ Claude 执行（不创建文件，仅输出）：
 ## 阶段 2：创建变更容器
 
 ```
-openspec/changes/<change-name>/
+spec/changes/<change-name>/
 ├── proposal.md
 ├── design.md
 ├── specs/<capability>/spec.md
@@ -395,7 +395,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ## 阶段 9：归档（Archive）
 
 1. 将 tasks.md 状态改为 `🟢 已完成`，更新日期
-2. 移动目录：`openspec/changes/<name>/` → `openspec/changes/archive/YYYY-MM-DD-<name>/`
+2. 移动目录：`spec/changes/<name>/` → `spec/archive/YYYY-MM-DD-<name>/`
 3. **同步到长期规范**（所有变更类型均需执行，按下表）：
 
    | 变更类型 | 必须更新的文档 |
@@ -415,12 +415,12 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 4. **自动提交（无需 User 确认）**，包含以下所有相关文件：
    ```bash
    git add src/ docs/ examples/ \
-           .claude/ openspec/ \
+           .claude/ spec/ \
            .gitignore *.md
    git commit -m "type(scope): 描述"
    git push origin main
    ```
-   - `.claude/`（workflow、memory、规则变更）和 `openspec/`（proposal、design、spec、tasks、archive）**必须纳入提交**，不得遗漏。
+   - `.claude/`（workflow、memory、规则变更）和 `spec/`（proposal、design、spec、tasks、archive）**必须纳入提交**，不得遗漏。
    - 每个逻辑单元单独提交，不积压。
 
 ---
@@ -429,7 +429,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 User 说"继续"时，Claude 自动执行：
 
-1. 扫描 `openspec/changes/`（排除 `archive/`）
+1. 扫描 `spec/changes/`（排除 `archive/`）
 2. 读取进行中变更的 `tasks.md`，找到第一个未勾选任务
 3. 读取 `CLAUDE.md` → 当前阶段约束
 4. 读取 `memory/` → 跨会话决策
@@ -462,7 +462,7 @@ User 说"继续"时，Claude 自动执行：
 ## 最小化模式（fix / refactor）
 
 ```
-openspec/changes/<name>/tasks.md   ← 必须有
+spec/changes/<name>/tasks.md   ← 必须有
 ```
 
 tasks.md 顶部：
@@ -521,7 +521,7 @@ tasks.md 顶部：
   - 参见本文件顶部 **🔴 Spec-First Self-Check** 小节 — lang/ir/vm 变更开工前逐项核对
   - **反例**（曾在 2026-04-24 静态抽象接口成员变更中发生）：只建 `tasks.md` +
     `docs/design/<feature>.md` 就开始实施，把聊天中的逐步确认当作 spec 审批；
-    归档时被发现违规。纠正：`docs/design/` 长期规范与 `openspec/changes/<name>/`
+    归档时被发现违规。纠正：`docs/design/` 长期规范与 `spec/changes/<name>/`
     变更规范是**两份独立文档**，lang/ir/vm 变更两者都必须存在
 
 - **验证未全绿时 commit / push**
@@ -544,7 +544,7 @@ tasks.md 顶部：
   - 检查 docs/features.md，确认当前 phase 限制
 
 - **单次提交积压多个逻辑单元**
-  - 每个 openspec/changes/ 变更对应一个 commit
+  - 每个 spec/changes/ 变更对应一个 commit
   - 不得在一个 commit 中混合多个独立的功能或修复
 
 - **未经 User 确认擅自采用临时方案**
