@@ -95,12 +95,13 @@ pub fn sum<T>(xs: &[T]) -> T where T: Num + Add<Output = T> + Copy {
 
 | C# 11 问题 | z42 调整 |
 |----------|---------|
-| 实例 DIM（C# 8）历史包袱复杂（钻石问题、可见性） | **z42 不支持实例 DIM**（iter 1；独立特性未来再议） |
-| 静态默认实现通过 `static virtual` 表达，被证明很有用 | **z42 支持 `static virtual`**（见 §3.5）—— 接口可以提供"由基本运算组合出的"便捷静态方法 |
-| `static abstract` 双关键字冗长 | **保留双关键字**以保持 C# 语法兼容，便于 C# 用户迁移 |
-| `T.StaticMember` 访问依赖 JIT 运行时类型参数 | **z42 采用值驱动派发**作为主模式（对 operator 场景足够）；类型级访问 `T.Zero` 延后到 L3-R 反射子集 |
-| CRTP 约束 `where T : INumber<T>` 语法冗余但必要 | **同样保留**，这是类型安全的代价 |
+| 实例 DIM（C# 8）历史包袱复杂（钻石问题、可见性） | **z42 不支持实例 DIM**（iter 1；iter 2+ 独立特性） |
+| 静态默认实现通过 `static virtual`（无需实现端 `override`） | **z42 对齐 class 继承模型：接口声明 `static virtual`，实现端必须 `static override`**（双端显式、防拼写漂移） |
+| `static abstract` 双关键字冗长 | **保留**（与 C# 语法兼容） |
+| `T.StaticMember` 访问依赖 JIT 运行时类型参数 | **z42 采用值驱动派发**作为主模式（对 operator 场景足够）；类型级访问 `T.Zero` 延后到 iter 2 |
+| CRTP 约束 `where T : INumber<T>` 语法冗余但必要 | **保留**，类型安全代价 |
 | 没有关联类型 | **z42 同不支持**（与 C# 一致；等 L3-G3c） |
+| `sealed` / `new` 修饰方法（C# 有）| **iter 1 不引入**；默认"不可 override"无需 `sealed` 修饰（与 class 实例方法同规则） |
 
 ---
 
@@ -185,82 +186,104 @@ void Main() {
 
 完全兼容 —— C# 11 的运算符声明语法和 C# 1-10 一致。用户写的 `public static Vec2 operator +(Vec2, Vec2)` **既是 C# 标准运算符重载，也满足 `INumber<Vec2>` 契约**。一处声明两用。
 
-### 3.5 静态默认实现（`static virtual`）
+### 3.5 三档静态成员 + `override` 显式（方案 D1'）
 
-**动机**：接口可以提供"由基本运算组合出的"便捷静态方法，实现者**无需**提供，但
-**可以** override。让契约又小又强：实现者只需提供基本原语，复合操作随接口提供。
+**核心规则**：接口静态成员分三档，**与 class 实例方法 `abstract`/`virtual`/无修饰完全同构**。实现端 override 必须用 **`static override`** 关键字（强显式、防拼写漂移）。
+
+#### 接口端三档
 
 ```z42
 public interface INumber<T> where T : INumber<T> {
-    // 基本原语 — 实现者必须提供
+    // 档 1：抽象 — 必须 override
     static abstract T operator +(T a, T b);
     static abstract T operator *(T a, T b);
-    static abstract T Zero { get; }
 
-    // 默认实现 — 实现者可选 override
-    static virtual T Double(T x) {
-        return x + x;            // 使用接口自己的 static abstract operator +
-    }
+    // 档 2：虚 + 默认 body — 可选 override；若不 override 则继承接口默认
+    static virtual T Double(T x) { return x + x; }
+    static virtual T AddThrice(T x, T y, T z) { return x + y + z; }
 
-    static virtual T Negate(T x) {
-        return T.Zero - x;       // 注：需要类型级访问 T.Zero，iter 2 能力
-    }
-
-    static virtual T Sum(T[] xs) {
-        T acc = T.Zero;           // 同上，iter 2
-        foreach (var x in xs) acc = acc + x;
-        return acc;
-    }
-
-    // 仅用 "操作数输入" 的默认，iter 1 即可支持
-    static virtual T AddThrice(T x, T y, T z) {
-        return x + y + z;        // 只靠 operand，不需要 T.Zero
-    }
-}
-
-public struct MyInt : INumber<MyInt> {
-    int v;
-    public static MyInt operator +(MyInt a, MyInt b) { return new MyInt(a.v + b.v); }
-    public static MyInt operator *(MyInt a, MyInt b) { return new MyInt(a.v * b.v); }
-    public static MyInt Zero { get { return new MyInt(0); } }
-
-    // Double / Negate / Sum / AddThrice 都自动获得（接口的默认实现）
-    // 如要优化可 override：
-    public static MyInt Double(MyInt x) { return new MyInt(x.v * 2); }  // override
+    // 档 3：具体（无修饰）— 不可 override，sealed by default
+    static T VersionTag() { return 1; }
 }
 ```
 
-**语法规则**：
-- `static virtual <ret> <name>(<params>) { <body> }` — 有 body，可被 override
-- `static abstract <ret> <name>(<params>);` — 无 body，必须被提供
-- 一个接口内可混合 static abstract + static virtual + instance methods
+| 档 | 关键字 | body | 实现端要求 |
+|---|------|:---:|-------|
+| 1 | `static abstract` | ❌ | **必须** `static override`，否则 E0412 |
+| 2 | `static virtual` | ✅ | **可选** `static override`（不 override 则用默认）|
+| 3 | `static`（无 virtual/abstract）| ✅ | **不可** override（E04xx CannotOverrideSealed）|
 
-**Override 规则**（实现者端）：
-- 对 `static virtual`：可提供同名 static 方法（**无需**显式 `override` 关键字，C# 11 也如此）
-- 对 `static abstract`：**必须**提供（否则 E0412）
-- 提供时签名必须匹配（T substitution 后）
+**与 class 实例方法规则完全同构**：
 
-**运行时派发**（值驱动）：
-- `T.Double(x)` where x: T 是具体值
-  1. 取 x 的 concrete type → 例如 `Std.int`
-  2. 查 `Std.int.StaticMethods["Double"]` — 实现者 override 了？
-  3. 找到 → 调用实现者的 Double
-  4. 没找到 → 回退到 **接口的默认实现**（从 INumber 的元数据里）
-  5. 执行接口默认 body，body 内部 `x + x` 又是值驱动派发（回到 Std.int.op_Add）
+| Class 实例方法 | Interface 静态成员 |
+|--------------|----------------|
+| `public abstract void M();` | `static abstract T M();` |
+| `public virtual void M() { ... }` | `static virtual T M() { ... }` |
+| `public void M() { ... }`（无 virtual） | `static T M() { ... }`（无 virtual）|
 
-**Iter 1 限制**：
-- 默认 body **只能用 operand-input 的 operator**（需要 value 来驱动派发）
-- **不能**用 `T.Zero` / `T.Parse(s)` 这类 type-level 访问（iter 2）
-- 即：`static virtual T Double(T x) { return x + x; }` ✅
-- 即：`static virtual T Zero2 { get { return T.Zero; } }` ❌（iter 2）
-- 即：`static virtual T Sum(T[] xs) { T acc = T.Zero; ... }` ❌（iter 2）
+#### 实现端：`override` 必显式
 
-**编译器职责**：
-- 解析 `static virtual` → method 带 body
-- 存储：接口的 static methods 区分 abstract / virtual（加 `IsDefault: bool` 字段）
-- 验证：实现者可省略 virtual 方法；override 时签名检查
-- Codegen：默认 body 生成为 **独立函数** `{InterfaceFullName}.{MethodName}`（如 `Std.Numerics.INumber.Double`），可被 VM 按名调用
-- 运行时 `static_call_via_iface`：如果 concrete type 没有方法，回退查询接口默认
+```z42
+public struct MyInt : INumber<MyInt> {
+    int v;
+    MyInt(int n) { this.v = n; }
+
+    // 实现抽象：必须 override
+    public static override MyInt operator +(MyInt a, MyInt b) { return new MyInt(a.v + b.v); }
+    public static override MyInt operator *(MyInt a, MyInt b) { return new MyInt(a.v * b.v); }
+
+    // 覆盖虚默认：必须 override
+    public static override MyInt Double(MyInt x) { return new MyInt(x.v * 2); }
+
+    // AddThrice 不 override → 使用接口默认 x + y + z
+    // VersionTag 不可 override → 若声明 `public static MyInt VersionTag()` 直接报错
+}
+```
+
+**规则**：
+- override 抽象 / 虚 → 必须 `static override`
+- 省略 `static override` 的同名静态方法 → 编译错（提示应加 `override` 或重命名）
+- 拼写拼错（方法名不存在于接口） → 编译错（没有可 override 的目标）—— **防御"静默变新方法"**
+
+#### 运行时派发（值驱动 + 默认回退）
+
+参数中任意 T 类型的值都带有 concrete type 信息。VM 派发算法：
+
+```
+static_call_via_iface "INumber" "Double" [x]:
+  concrete = resolve_concrete_class(x)          // e.g., "MyInt"
+  fn_name = "{concrete}.Double"                 // "MyInt.Double"
+  if module has fn_name:
+      call module[fn_name]                      // override 胜出
+  else:
+      fallback = "INumber.Double"
+      if module has fallback:
+          call module[fallback]                 // 接口默认
+      else:
+          error
+```
+
+示例：`T.Double(myInt)` where T=MyInt → 查 `MyInt.Double` → 找到 → 执行 override
+反之：`T.AddThrice(a, b, c)` where T=MyInt（没 override）→ 查 `MyInt.AddThrice` → 未找到 → 回退 `INumber.AddThrice`（接口默认 body `a + b + c`）→ 执行，内部的 `+` 又是值驱动派发
+
+#### Iter 1 Scope 限制
+
+- 默认 body **只能使用 operand-input 的调用**（参数中至少有一个 T 值）
+- **不能**使用无操作数的类型级访问：`T.Zero` / `T.Parse(s)` / `T.MaxValue`（iter 2+）
+- ✅ 可以：`static virtual T Double(T x) { return x + x; }`
+- ❌ 暂不可：`static virtual T Sum(T[] xs) { T acc = T.Zero; ... }`（用了 T.Zero）
+- ❌ 暂不可：`static virtual T Zero2 { get { return T.Zero; } }`（静态属性 + 类型级访问）
+
+#### 编译器职责
+
+- Parser：识别三档 `static abstract` / `static virtual` / `static`；实现端识别 `static override`
+- SymbolCollector：`Z42InterfaceType` 分别存三档静态成员
+- TypeChecker：
+  - 实现者对 abstract 必须 override；对 virtual 可选；对具体 sealed 不许 override
+  - override 的签名必须匹配（T → self-type 替换后）
+  - 拼写不匹配（没找到 override 目标）→ 报错
+- Codegen：默认 body 编译为 `{InterfaceFullName}.{MethodName}` 独立函数
+- 运行时 `static_call_via_iface`：实现者优先 → 接口默认回退
 
 ---
 
@@ -268,22 +291,26 @@ public struct MyInt : INumber<MyInt> {
 
 ### 4.1 存储结构
 
-`Z42InterfaceType` 增加 `StaticMethods` 存储静态抽象 / 静态虚成员：
+`Z42InterfaceType` 存储三档静态成员，用 `StaticMemberKind` 枚举区分：
 
 ```csharp
+public enum StaticMemberKind { Abstract, Virtual, Concrete }
+
+public sealed record Z42StaticMember(string Name, Z42FuncType Signature, StaticMemberKind Kind);
+
 public sealed record Z42InterfaceType(
     string Name,
-    IReadOnlyDictionary<string, Z42FuncType> Methods,      // instance
+    IReadOnlyDictionary<string, Z42FuncType> Methods,      // instance abstract
     IReadOnlyList<Z42Type>? TypeArgs = null,
-    IReadOnlyDictionary<string, Z42FuncType>? StaticMethods = null,     // static abstract + virtual
-    IReadOnlySet<string>? StaticVirtualNames = null,                   // subset with default impl
-    IReadOnlyDictionary<string, Z42Type>? StaticProperties = null       // iter 2+
+    IReadOnlyDictionary<string, Z42StaticMember>? StaticMembers = null
+    // iter 2+: IReadOnlyDictionary<string, Z42Type>? StaticProperties,
+    //         IReadOnlyDictionary<string, Z42FuncType>? InstanceDefaults  (DIMs)
 );
 ```
 
-`StaticVirtualNames` 是 `StaticMethods` 的子集，标识哪些有默认实现（而非纯抽象）。
-默认实现的函数体由 IrGen 生成独立 IrFunction `{InterfaceFullName}.{MethodName}`，
-VM 派发时按名调用。
+- `Kind == Abstract`：无 body（实现者必须 override）
+- `Kind == Virtual`：有 body（实现者可选 override；默认 body 编译成 `{InterfaceFullName}.{MethodName}` 独立函数）
+- `Kind == Concrete`：有 body（实现者不可 override；可以直接 `INumber.VersionTag()` 调用）
 
 ### 4.2 实现者验证
 
@@ -291,14 +318,23 @@ VM 派发时按名调用。
 
 ```
 对 class C : INumber<C>：
-  查 INumber.StaticMethods 每一条 (name, sig)：
-    把 sig 里的 T 替换为 C（self-substitution）→ 期望 class sig
-    若 name ∈ StaticVirtualNames（有默认实现）：
-       class 可以不提供（走接口默认）
-       若 class 提供了，签名必须匹配 → 算 override
-    若 name 是 static abstract（无默认）：
-       class **必须**提供 C.StaticMethods[name]，签名匹配
-       不匹配 → E0412 InterfaceMismatch
+  查 C 上每个 static 方法 (name, sig)：
+    若 name 存在于 INumber.StaticMembers：
+      要求 C 的声明带 `static override` 修饰
+      不带 override → E04xx MissingOverride
+      若 iface Kind == Concrete → E04xx CannotOverrideSealed
+      签名必须匹配（T → C 替换后）→ 不匹配 E0412 InterfaceMismatch
+    若 name 不在 INumber.StaticMembers 且 C 声明带 `override`：
+      → E04xx NoOverrideTarget（拼写防护）
+
+  查 INumber.StaticMembers 每一条 (name, sig, kind)：
+    若 kind == Abstract：
+      C 必须提供 `static override` → 否则 E0412
+    若 kind == Virtual：
+      C 可选 override（不提供则继承接口默认）
+    若 kind == Concrete：
+      C 不允许同名 static 方法（见上）
+
   查 INumber.Methods（instance）每一条：同 L3-G2 现有逻辑
 ```
 
@@ -488,23 +524,38 @@ public struct int : ..., INumber<int> {
 ## 9. 明确的 Scope
 
 ### iter 1 **包含**：
-- 接口 `static abstract` 运算符（5 个：+ - * / %）
-- 接口 `static abstract` 方法（非运算符、非属性）
-- **接口 `static virtual` 默认实现**（仅 operand-input 调用形式；不含 T.Zero 等类型级）
-- 实现者静态成员验证（含默认 override 检测）
+- 接口三档静态成员：`static abstract` / `static virtual` / `static`（无修饰）
+- 实现端 `static override` 关键字（必显式）
+- 5 个二元算术运算符（`+ - * / %`）的静态抽象 / 虚 / 具体形式
+- 非运算符的静态抽象 / 虚 / 具体方法
+- 实现者签名验证 + 拼写防护（override 目标必须存在）
 - 泛型 `a + b` on `T: INumber<T>` 派发（InterfaceStaticCall IR + VM）
-- 默认实现回退：VM 找不到 concrete class 的静态方法时，回退接口的默认
+- 默认实现回退：VM 找不到 concrete class 的静态方法时回退接口 virtual 默认
 - stdlib INumber / primitive struct 迁移
 - TSIG 跨 zpkg（含默认实现元数据）
 
-### iter 1 **不包含**（iter 2+ 做）：
-- 静态抽象 / 静态虚**属性** `T Zero { get; }`
-- 类型级访问 `T.Zero` / `T.Parse(s)` / `T.MaxValue`
-- **实例** DIMs（C# 8 风格）—— 独立特性
-- 静态抽象**字段**（C# 也不支持）
-- 静态抽象**构造器**（C# 也不支持）
-- 接口继承 `interface I : J`
-- 一元运算符、比较运算符、相等运算符（独立迭代）
+### iter 2（记录，不做）：
+| 特性 | 说明 | 依赖 |
+|------|------|------|
+| **静态抽象 / 虚属性** | `T Zero { get; }` 在接口声明 | 需要 property AST + 静态属性 IR |
+| **类型级访问** | `T.Zero` / `T.Parse(s)` / `T.MaxValue` 在泛型体内 | 需要 runtime type_args 传递（L3-R 子集） |
+| **`sealed override`** | 实现者可 `public static sealed override ...` 终止进一步 override 链 | class 继承链 > 2 层 |
+| **`new` 修饰符** | 实现者可 `public static new T M()` 声明同名但不参与 override | 需明确"隐藏 vs 覆盖"语义 |
+| **接口继承** | `interface INumber<T> : IArithmetic<T>` | 接口多继承 + 静态成员传递 |
+| **默认 body 中的类型级访问** | `static virtual T Sum(T[] xs) { T acc = T.Zero; ... }` | 依赖"类型级访问" |
+| **静态抽象字段** | C# 不支持；z42 亦不 | — |
+| **静态抽象构造器** | C# 不支持；z42 亦不 | — |
+
+### iter 3+（更远）：
+| 特性 | 说明 |
+|------|------|
+| **实例 DIMs（C# 8 风格）** | `interface I { void M() { default; } }` 实例方法默认实现 |
+| **一元运算符重载** | `operator -x` / `!x` / `~x` |
+| **比较 / 相等运算符** | `<` `<=` `>` `>=` `==` `!=`（走 IComparable / IEquatable）|
+| **复合赋值运算符** | `+=` / `-=` 等（纯语法糖） |
+| **自定义运算符** | 用户定义运算符符号（Scala / Haskell 风格），z42 **明确不做** |
+| **Primitive 泛型 IR 特化** | `a + b` on T=int 编译期降为 AddInstr（当前走函数调用）|
+| **关联类型** | `type Output;` + `where T: Add<Output = U>` 依赖 L3-G3c |
 
 ---
 
@@ -520,12 +571,29 @@ public struct int : ..., INumber<int> {
 - C# 11 有这个特性，与目标对齐
 - 实现代价：只需在 VM 派发时多一步"回退接口默认"查询
 - 限制明确：默认 body 只能用 operand-input 调用，不能用 T.Zero（留 iter 2）
-- 用户心智简单：无需 `override` 关键字，同名 static 方法自动覆盖
+
+### 为什么 override 必须显式（`static override`）？
+- **对齐 z42 class 继承模型**：class 实例方法 override 已要求 `override` 关键字
+- 一条规则覆盖实例和静态场景，无双标
+- **防拼写漂移**：拼错方法名时 → 没有可 override 目标 → 编译错（防"静默变新方法"）
+- **意图显式**：读代码者无需跳到接口看契约，立刻知道是 override
+
+### 为什么三档不需要 `sealed` 关键字？
+- C# 里 `sealed` 只与 `override` 组合（`sealed override`），表示"终止进一步 override 链"
+- 无修饰的普通方法**本来就不可 override**（不在 override 链里）
+- 所以档 3（无修饰 + body）=> 默认 sealed，无需显式
+- 完全对齐 class 实例方法默认规则
 
 ### 为什么暂不支持实例 DIMs（C# 8 风格）？
 - 钻石问题 / 可见性规则复杂
 - z42 当前 interface 只有 instance 抽象方法，加 DIMs 影响面大
-- 独立特性，未来单独迭代
+- 独立特性，未来单独迭代（iter 3+）
+
+### 为什么暂不支持 `sealed override` / `new`？
+- class 继承链 > 2 层的 override 情况 z42 目前极少
+- 静态方法不形成传统的继承链（不同 class 的静态方法命名空间独立）
+- 无真实用例触发 → 延后到 iter 2+
+- **前兆**：一旦 class 继承深度增加 或 用户出现"隐藏 vs 覆盖"的真实场景，立刻加
 
 ### 为什么保留 `static abstract` 双关键字？
 - 与 C# 11 一致
