@@ -86,6 +86,23 @@ public static class ExportedTypeExtractor
                     mn, parms, TypeToString(mt.Ret),
                     "public", false, true, true, mt.MinArgCount));
             }
+            // L3 static abstract interface members (C# 11 alignment): export
+            // three-tier static members so the consumer can answer
+            // "does class C static-override INumber.op_Add?" via TSIG.
+            if (it.StaticMembers is { } staticMap)
+            {
+                foreach (var (mn, member) in staticMap)
+                {
+                    var mt = member.Signature;
+                    var parms = mt.Params.Select((p, i) =>
+                        new ExportedParamDef($"p{i}", TypeToString(p))).ToList();
+                    bool isAbstract = member.Kind == StaticMemberKind.Abstract;
+                    bool isVirtual  = member.Kind == StaticMemberKind.Virtual;
+                    methods.Add(new ExportedMethodDef(
+                        mn, parms, TypeToString(mt.Ret),
+                        "public", true, isVirtual, isAbstract, mt.MinArgCount));
+                }
+            }
             // Preserve interface's TypeParams so consumer can restore `T` in method
             // signatures as Z42GenericParamType (required for interfaces like
             // `INumber<T> { T op_Add(T other); }` where T appears in return position).

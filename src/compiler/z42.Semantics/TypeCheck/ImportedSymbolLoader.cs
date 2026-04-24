@@ -114,10 +114,27 @@ public static class ImportedSymbolLoader
         // Z42GenericParamType on the consumer side rather than `Z42PrimType("T")`.
         var tpSet = iface.TypeParams is { Count: > 0 } tps
             ? new HashSet<string>(tps) : null;
-        var methods = new Dictionary<string, Z42FuncType>();
+        var methods       = new Dictionary<string, Z42FuncType>();
+        var staticMembers = new Dictionary<string, Z42StaticMember>();
         foreach (var m in iface.Methods)
-            methods[m.Name] = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet);
-        return new Z42InterfaceType(iface.Name, methods);
+        {
+            var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet);
+            if (m.IsStatic)
+            {
+                // L3 static abstract tier (C# 11 alignment): reconstruct Kind from
+                // (IsAbstract, IsVirtual) pair exactly as exported.
+                var kind = m.IsAbstract ? StaticMemberKind.Abstract
+                         : m.IsVirtual  ? StaticMemberKind.Virtual
+                         : StaticMemberKind.Concrete;
+                staticMembers[m.Name] = new Z42StaticMember(m.Name, sig, kind);
+            }
+            else
+            {
+                methods[m.Name] = sig;
+            }
+        }
+        return new Z42InterfaceType(iface.Name, methods,
+            StaticMembers: staticMembers.Count > 0 ? staticMembers : null);
     }
 
     private static Z42FuncType RebuildFuncType(

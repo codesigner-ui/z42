@@ -258,12 +258,17 @@ internal sealed partial class SymbolCollector
             if (!_classInterfaces.TryGetValue(cls.Name, out var ifaces)) continue;
 
             // Build combined static-member map from all implemented interfaces.
-            // Iter 1: name collisions across interfaces are not expected; last-wins.
+            // `anyKnownStatic` tracks whether we saw any interface declaration
+            // with static members — when every iface is unknown (imported
+            // without TSIG info, or sibling file not yet compiled), we skip
+            // "no matching override target" diagnostics (can't判断 without data).
             var ifaceStatic = new Dictionary<string, (string Iface, Z42StaticMember Member)>();
+            bool anyKnownStatic = false;
             foreach (var ifaceTy in ifaces)
             {
                 if (!_interfaces.TryGetValue(ifaceTy.Name, out var iface)) continue;
                 if (iface.StaticMembers is null) continue;
+                anyKnownStatic = true;
                 foreach (var (name, member) in iface.StaticMembers)
                     ifaceStatic[name] = (iface.Name, member);
             }
@@ -276,9 +281,11 @@ internal sealed partial class SymbolCollector
                 {
                     if (!ifaceStatic.TryGetValue(m.Name, out var target))
                     {
-                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
-                            $"`{cls.Name}.{m.Name}`: no matching `static abstract` / `static virtual` member in any implemented interface",
-                            m.Span);
+                        if (anyKnownStatic)
+                            _diags.Error(DiagnosticCodes.InterfaceMismatch,
+                                $"`{cls.Name}.{m.Name}`: no matching `static abstract` / `static virtual` member in any implemented interface",
+                                m.Span);
+                        // else: no known interface has static info; trust the `override`.
                         continue;
                     }
                     if (target.Member.Kind == StaticMemberKind.Concrete)
