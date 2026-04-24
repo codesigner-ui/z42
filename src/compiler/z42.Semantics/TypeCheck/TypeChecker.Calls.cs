@@ -254,10 +254,40 @@ public sealed partial class TypeChecker
             if (recvExpr.Type is Z42PrimType pt && IsBuiltinCollectionType(pt.Name))
                 primitiveClassName = pt.Name;
 
+            // L3 primitive-as-struct: when recvExpr is a primitive (e.g. string) and
+            // a same-package stdlib class exists (String), consult its method table
+            // so intra-package calls like `this.Substring(start, n)` resolve to the
+            // correct overload `Substring$2` before the VM tries string-method lookup.
+            if (recvExpr.Type is Z42PrimType primT
+                && _symbols.Classes.TryGetValue(CapitalizeFirst(primT.Name), out var primClsType))
+            {
+                var primArityKey = $"{mCallee.Member}${argBound.Count}";
+                bool primBare  = primClsType.Methods.TryGetValue(mCallee.Member, out var pmt1);
+                Z42FuncType? pmt2 = null;
+                bool primArity = !primBare && primClsType.Methods.TryGetValue(primArityKey, out pmt2);
+                var pmt = primBare ? pmt1 : primArity ? pmt2 : null;
+                if (pmt is not null)
+                {
+                    string resolved = primArity ? primArityKey : mCallee.Member;
+                    CheckArgCount(argBound.Count, pmt.MinArgCount, pmt.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, argBound, pmt.Params);
+                    return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName,
+                        resolved, null, argBound, pmt.Ret, call.Span);
+                }
+            }
+
             if (_depIndex?.TryGetInstance(mCallee.Member, argBound.Count, out var depPrimitiveEntry) == true)
             {
                 var retType = IrTypeToZ42Type(depPrimitiveEntry.RetType);
-                return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName, mCallee.Member,
+                // If the imported signature is overloaded (QualifiedName ends in $N),
+                // forward the arity-qualified method name so IR-level VCall hits the
+                // right stdlib function (e.g. Std.String.Substring$2 not Substring).
+                int lastDot = depPrimitiveEntry.QualifiedName.LastIndexOf('.');
+                string resolvedName = lastDot >= 0
+                    && depPrimitiveEntry.QualifiedName[(lastDot + 1)..].Contains('$')
+                        ? depPrimitiveEntry.QualifiedName[(lastDot + 1)..]
+                        : mCallee.Member;
+                return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName, resolvedName,
                     null, argBound, retType, call.Span);
             }
             // Still unresolved — virtual dispatch fallback
@@ -353,6 +383,11 @@ public sealed partial class TypeChecker
             RequireAssignable(paramTypes[i], boundArgs[i].Type, origArgs[i].Span,
                 $"argument {i + 1}: expected `{paramTypes[i]}`, got `{boundArgs[i].Type}`");
     }
+
+    /// Uppercase first character ("string" → "String") for mapping a primitive
+    /// type name to its stdlib class name (`struct int` / `class String` etc).
+    private static string CapitalizeFirst(string name) =>
+        name.Length == 0 ? name : char.ToUpperInvariant(name[0]) + name[1..];
 
     /// L3-G2: infer type args for a generic function from its argument types,
     /// then validate each satisfies the corresponding `where` constraint.

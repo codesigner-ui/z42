@@ -2,8 +2,15 @@ namespace Std;
 
 // L3-G4b primitive-as-struct: declares char's interface conformance.
 public struct char : IComparable<char>, IEquatable<char> {
-    [Native("__char_compare_to")] public extern int CompareTo(char other);
-    [Native("__char_equals")]     public extern bool Equals(char other);
-    [Native("__char_hash_code")]  public extern int GetHashCode();
-    [Native("__char_to_string")]  public extern string ToString();
+    [Native("__char_compare_to")]     public extern int  CompareTo(char other);
+    [Native("__char_equals")]         public extern bool Equals(char other);
+    [Native("__char_hash_code")]      public extern int  GetHashCode();
+    [Native("__char_to_string")]      public extern string ToString();
+
+    // 2026-04-24 simplify-string-stdlib: primitive helpers that back script-side
+    // string operations (Trim / ToLower / ToUpper). Casing uses ASCII rules;
+    // locale-sensitive casing (Turkish I etc.) deferred to L3 CultureInfo.
+    [Native("__char_is_whitespace")]  public extern bool IsWhiteSpace();
+    [Native("__char_to_lower")]       public extern char ToLower();
+    [Native("__char_to_upper")]       public extern char ToUpper();
 }

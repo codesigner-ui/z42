@@ -23,6 +23,7 @@ pub mod math;
 pub mod collections;
 pub mod fs;
 pub mod object;
+pub mod char;
 
 use crate::metadata::Value;
 use anyhow::Result;
@@ -46,28 +47,26 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__len",      io::builtin_len);
         m.insert("__contains", io::builtin_contains);
 
-        // ── String ────────────────────────────────────────────────────────────
-        m.insert("__str_length",                string::builtin_str_length);
-        m.insert("__str_substring",             string::builtin_str_substring);
-        m.insert("__str_contains",              string::builtin_str_contains);
-        m.insert("__str_starts_with",           string::builtin_str_starts_with);
-        m.insert("__str_ends_with",             string::builtin_str_ends_with);
-        m.insert("__str_index_of",              string::builtin_str_index_of);
-        m.insert("__str_replace",               string::builtin_str_replace);
-        m.insert("__str_to_lower",              string::builtin_str_to_lower);
-        m.insert("__str_to_upper",              string::builtin_str_to_upper);
-        m.insert("__str_trim",                  string::builtin_str_trim);
-        m.insert("__str_trim_start",            string::builtin_str_trim_start);
-        m.insert("__str_trim_end",              string::builtin_str_trim_end);
-        m.insert("__str_is_null_or_empty",      string::builtin_str_is_null_or_empty);
-        m.insert("__str_is_null_or_whitespace", string::builtin_str_is_null_or_whitespace);
-        m.insert("__str_split",                 string::builtin_str_split);
-        m.insert("__str_join",                  string::builtin_str_join);
-        m.insert("__str_concat",                string::builtin_str_concat);
-        m.insert("__str_format",                string::builtin_str_format);
-        m.insert("__str_to_string",             string::builtin_str_to_string);
-        m.insert("__str_equals",                string::builtin_str_equals);
-        m.insert("__str_hash_code",             string::builtin_str_hash_code);
+        // ── String (minimal intrinsic core; most methods are script-side now) ─
+        // 2026-04-24 simplify-string-stdlib: removed 11 str builtins (contains /
+        // starts_with / ends_with / index_of / replace / to_lower / to_upper /
+        // trim / trim_start / trim_end / is_null_or_empty / is_null_or_whitespace /
+        // substring). Script methods in Std.String.z42 now use char_at + from_chars.
+        m.insert("__str_length",     string::builtin_str_length);
+        m.insert("__str_char_at",    string::builtin_str_char_at);
+        m.insert("__str_from_chars", string::builtin_str_from_chars);
+        m.insert("__str_split",      string::builtin_str_split);
+        m.insert("__str_join",       string::builtin_str_join);
+        m.insert("__str_concat",     string::builtin_str_concat);
+        m.insert("__str_format",     string::builtin_str_format);
+        m.insert("__str_to_string",  string::builtin_str_to_string);
+        m.insert("__str_equals",     string::builtin_str_equals);
+        m.insert("__str_hash_code",  string::builtin_str_hash_code);
+
+        // ── Char (L3 char primitive helpers for script-side string ops) ──────
+        m.insert("__char_is_whitespace", char::builtin_char_is_whitespace);
+        m.insert("__char_to_lower",      char::builtin_char_to_lower);
+        m.insert("__char_to_upper",      char::builtin_char_to_upper);
 
         // ── Parse / convert ───────────────────────────────────────────────────
         m.insert("__long_parse",   convert::builtin_long_parse);

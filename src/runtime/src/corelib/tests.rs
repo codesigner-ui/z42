@@ -40,81 +40,67 @@ fn len_missing_arg_errors() {
     assert!(exec_builtin("__len", &[]).is_err());
 }
 
-// ── __str_substring ───────────────────────────────────────────────────────────
+// ── __str_char_at (new in simplify-string-stdlib 2026-04-24) ──────────────────
 
 #[test]
-fn substring_one_arg() {
-    assert_eq!(
-        exec_builtin("__str_substring", &[s("Hello, World!"), i(7)]).unwrap(),
-        s("World!")
-    );
+fn char_at_returns_nth_scalar() {
+    assert_eq!(exec_builtin("__str_char_at", &[s("hello"), i(1)]).unwrap(), Value::Char('e'));
+    assert_eq!(exec_builtin("__str_char_at", &[s("hello"), i(0)]).unwrap(), Value::Char('h'));
+    assert_eq!(exec_builtin("__str_char_at", &[s("hello"), i(4)]).unwrap(), Value::Char('o'));
 }
 
 #[test]
-fn substring_two_args() {
-    assert_eq!(
-        exec_builtin("__str_substring", &[s("Hello, World!"), i(7), i(5)]).unwrap(),
-        s("World")
-    );
+fn char_at_out_of_range_errors() {
+    assert!(exec_builtin("__str_char_at", &[s("abc"), i(5)]).is_err());
 }
 
 #[test]
-fn substring_out_of_range_errors() {
-    assert!(exec_builtin("__str_substring", &[s("hi"), i(10)]).is_err());
+fn char_at_unicode_scalar_index() {
+    // "α" is one scalar but 2 UTF-8 bytes; script-level API treats it as one unit.
+    assert_eq!(exec_builtin("__str_char_at", &[s("αβγ"), i(1)]).unwrap(), Value::Char('β'));
 }
 
-// ── __str_contains ────────────────────────────────────────────────────────────
+// ── __str_from_chars (new in simplify-string-stdlib 2026-04-24) ──────────────
 
 #[test]
-fn contains_true() {
-    assert_eq!(
-        exec_builtin("__str_contains", &[s("Hello, World!"), s("World")]).unwrap(),
-        Value::Bool(true)
-    );
-}
-
-#[test]
-fn contains_false() {
-    assert_eq!(
-        exec_builtin("__str_contains", &[s("Hello"), s("world")]).unwrap(),
-        Value::Bool(false)
-    );
-}
-
-// ── __str_starts_with ─────────────────────────────────────────────────────────
-
-#[test]
-fn starts_with_true() {
-    assert_eq!(
-        exec_builtin("__str_starts_with", &[s("Hello, World!"), s("Hello")]).unwrap(),
-        Value::Bool(true)
-    );
+fn from_chars_builds_string() {
+    use std::{cell::RefCell, rc::Rc};
+    let arr = Value::Array(Rc::new(RefCell::new(vec![
+        Value::Char('h'), Value::Char('i'),
+    ])));
+    assert_eq!(exec_builtin("__str_from_chars", &[arr]).unwrap(), s("hi"));
 }
 
 #[test]
-fn starts_with_false() {
-    assert_eq!(
-        exec_builtin("__str_starts_with", &[s("Hello"), s("World")]).unwrap(),
-        Value::Bool(false)
-    );
+fn from_chars_empty_array() {
+    use std::{cell::RefCell, rc::Rc};
+    let arr = Value::Array(Rc::new(RefCell::new(vec![])));
+    assert_eq!(exec_builtin("__str_from_chars", &[arr]).unwrap(), s(""));
 }
 
-// ── __str_ends_with ───────────────────────────────────────────────────────────
+// ── __char_is_whitespace / __char_to_lower / __char_to_upper ─────────────────
 
 #[test]
-fn ends_with_true() {
-    assert_eq!(
-        exec_builtin("__str_ends_with", &[s("Hello, World!"), s("!")]).unwrap(),
-        Value::Bool(true)
-    );
+fn char_is_whitespace_ascii() {
+    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char(' ')]).unwrap(), Value::Bool(true));
+    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char('\t')]).unwrap(), Value::Bool(true));
+    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char('\n')]).unwrap(), Value::Bool(true));
+    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char('a')]).unwrap(), Value::Bool(false));
 }
 
 #[test]
-fn ends_with_false() {
-    assert_eq!(
-        exec_builtin("__str_ends_with", &[s("Hello"), s("World")]).unwrap(),
-        Value::Bool(false)
-    );
+fn char_to_lower_ascii_only() {
+    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('A')]).unwrap(), Value::Char('a'));
+    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('Z')]).unwrap(), Value::Char('z'));
+    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('1')]).unwrap(), Value::Char('1'));
+    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('a')]).unwrap(), Value::Char('a'));
+}
+
+#[test]
+fn char_to_upper_ascii_only() {
+    assert_eq!(exec_builtin("__char_to_upper", &[Value::Char('a')]).unwrap(), Value::Char('A'));
+    assert_eq!(exec_builtin("__char_to_upper", &[Value::Char('z')]).unwrap(), Value::Char('Z'));
+    assert_eq!(exec_builtin("__char_to_upper", &[Value::Char('!')]).unwrap(), Value::Char('!'));
 }
 
 // ── dispatch table coverage ───────────────────────────────────────────────────

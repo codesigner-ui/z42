@@ -2,113 +2,222 @@ namespace Std;
 
 // String class — wraps the built-in `string` primitive type.
 //
-// Member access pattern (CoreCLR-inspired):
-//   - `Length` is a native-backed extern property; the VM synthesises its value
-//     from the underlying Value::Str without boxing.
-//   - `IsEmpty` is implemented in z42 script: `Length == 0`.
-//   - All instance methods receive `this` (the string value) as reg 0.
+// Minimal intrinsic core (extern): Length / CharAt / FromChars / Equals /
+// CompareTo / GetHashCode / ToString / Split / Join / Concat / Format.
+// All other methods (Contains / StartsWith / EndsWith / IndexOf / Replace /
+// Substring / ToLower / ToUpper / Trim* / IsNullOr*) are pure z42 scripts
+// that loop via CharAt + primitive char operations, mirroring the C# BCL
+// pattern where `string.Length` and `string[i]` are intrinsics and the rest
+// is managed code.
 //
-// Overloaded methods use the $N naming convention in IR (e.g. Substring$1, Substring$2).
+// 2026-04-24 simplify-string-stdlib: migrated 11 methods from Rust builtins to
+// scripts. Index / length / slice semantics uniformly use Unicode scalar (char)
+// count — no UTF-8 byte offsets exposed.
 public static class String : IComparable<string>, IEquatable<string> {
-    // ── Properties ───────────────────────────────────────────────────────────
+    // ── Intrinsic core (extern) ──────────────────────────────────────────────
 
     // Number of Unicode scalar values (characters) in this string.
-    // Backed by VM virtual field dispatch on Value::Str.
-    [Native("__str_length")]
-    public extern int Length { get; }
+    [Native("__str_length")]    public extern int Length { get; }
 
-    // True when the string contains no characters.
-    // Implemented in z42 script — no VM special-casing needed.
-    public bool IsEmpty { get { return Length == 0; } }
+    // Returns the char at the given scalar index. Traps on out-of-range.
+    [Native("__str_char_at")]   public extern char CharAt(int index);
+
+    // Builds a string from a char[] array. Empty array → empty string.
+    [Native("__str_from_chars")] public static extern string FromChars(char[] chars);
 
     // ── Object protocol overrides ────────────────────────────────────────────
 
-    // Returns the string itself.
-    [Native("__str_to_string")]
-    public extern string ToString();
+    [Native("__str_to_string")] public extern string ToString();
+    [Native("__str_equals")]    public extern bool   Equals(object? other);
+    [Native("__str_equals")]    public extern bool   Equals(string other);
+    [Native("__str_compare_to")] public extern int   CompareTo(string other);
+    [Native("__str_hash_code")] public extern int    GetHashCode();
 
-    // Value equality: compares by content, not reference.
-    [Native("__str_equals")]
-    public extern bool Equals(object? other);
+    // ── Script-side methods (loop via CharAt) ────────────────────────────────
 
-    // L3-G4b primitive-as-struct: typed equality for IEquatable<string>.
-    [Native("__str_equals")]
-    public extern bool Equals(string other);
+    // True when the string contains no characters.
+    public bool IsEmpty { get { return Length == 0; } }
 
-    // L3-G4b primitive-as-struct: ordering for IComparable<string>.
-    [Native("__str_compare_to")]
-    public extern int CompareTo(string other);
+    // True iff `value` occurs anywhere in `this`.
+    public bool Contains(string value) {
+        return this.IndexOf(value) >= 0;
+    }
 
-    // FNV-1a hash of the UTF-8 bytes.
-    [Native("__str_hash_code")]
-    public extern int GetHashCode();
+    // True iff `this` starts with `prefix`. Empty prefix → always true.
+    public bool StartsWith(string prefix) {
+        int pn = prefix.Length;
+        if (pn == 0) return true;
+        if (pn > this.Length) return false;
+        for (int i = 0; i < pn; i++) {
+            if (this.CharAt(i) != prefix.CharAt(i)) return false;
+        }
+        return true;
+    }
 
-    // ── Instance methods (this = reg 0, params = reg 1..) ────────────────────
+    // True iff `this` ends with `suffix`. Empty suffix → always true.
+    public bool EndsWith(string suffix) {
+        int sn = suffix.Length;
+        int tn = this.Length;
+        if (sn == 0) return true;
+        if (sn > tn) return false;
+        int offset = tn - sn;
+        for (int i = 0; i < sn; i++) {
+            if (this.CharAt(offset + i) != suffix.CharAt(i)) return false;
+        }
+        return true;
+    }
 
-    [Native("__str_contains")]
-    public extern bool Contains(string value);
+    // First index of `value` (scalar units), or -1 if not found.
+    // Naive O(n·m) two-pointer scan; acceptable for Phase 1.
+    public int IndexOf(string value) {
+        int vn = value.Length;
+        int tn = this.Length;
+        if (vn == 0) return 0;
+        if (vn > tn) return -1;
+        int limit = tn - vn;
+        for (int i = 0; i <= limit; i++) {
+            bool match = true;
+            for (int j = 0; j < vn; j++) {
+                if (this.CharAt(i + j) != value.CharAt(j)) { match = false; break; }
+            }
+            if (match) return i;
+        }
+        return -1;
+    }
 
-    [Native("__str_starts_with")]
-    public extern bool StartsWith(string value);
+    // Replace all occurrences of `oldValue` with `newValue`.
+    // Throws Exception when oldValue is empty (aligns with C# ArgumentException).
+    public string Replace(string oldValue, string newValue) {
+        if (oldValue.Length == 0) {
+            throw new Exception("Replace: oldValue cannot be empty");
+        }
+        int tn = this.Length;
+        int on = oldValue.Length;
+        int nn = newValue.Length;
+        // Pass 1: count matches to compute result length (no List<T> available:
+        // List<T> lives in z42.collections which depends on z42.core).
+        int matches = 0;
+        int i = 0;
+        while (i <= tn - on) {
+            bool hit = true;
+            for (int j = 0; j < on; j++) {
+                if (this.CharAt(i + j) != oldValue.CharAt(j)) { hit = false; break; }
+            }
+            if (hit) { matches = matches + 1; i = i + on; }
+            else     { i = i + 1; }
+        }
+        int resultLen = tn + matches * (nn - on);
+        char[] result = new char[resultLen];
+        // Pass 2: copy, substituting on hit.
+        int r = 0;
+        int k = 0;
+        while (k < tn) {
+            bool hit = false;
+            if (k <= tn - on) {
+                hit = true;
+                for (int j = 0; j < on; j++) {
+                    if (this.CharAt(k + j) != oldValue.CharAt(j)) { hit = false; break; }
+                }
+            }
+            if (hit) {
+                for (int j = 0; j < nn; j++) { result[r] = newValue.CharAt(j); r = r + 1; }
+                k = k + on;
+            } else {
+                result[r] = this.CharAt(k);
+                r = r + 1;
+                k = k + 1;
+            }
+        }
+        return String.FromChars(result);
+    }
 
-    [Native("__str_ends_with")]
-    public extern bool EndsWith(string value);
+    // Substring(start): [start, Length).
+    public string Substring(int start) {
+        return this.Substring(start, this.Length - start);
+    }
 
-    // Overload 1: Substring(start) — extracts from start to end of string.
-    [Native("__str_substring")]
-    public extern string Substring(int start);
+    // Substring(start, length): [start, start+length).
+    public string Substring(int start, int length) {
+        if (length == 0) return "";
+        char[] result = new char[length];
+        for (int i = 0; i < length; i++) {
+            result[i] = this.CharAt(start + i);
+        }
+        return String.FromChars(result);
+    }
 
-    // Overload 2: Substring(start, length) — extracts `length` characters from start.
-    [Native("__str_substring")]
-    public extern string Substring(int start, int length);
+    // ASCII-rule lowercase conversion. Non-ASCII letters are unchanged.
+    // Locale-sensitive casing deferred to L3 CultureInfo.
+    public string ToLower() {
+        int n = this.Length;
+        char[] result = new char[n];
+        for (int i = 0; i < n; i++) {
+            result[i] = this.CharAt(i).ToLower();
+        }
+        return String.FromChars(result);
+    }
 
-    [Native("__str_index_of")]
-    public extern int IndexOf(string value);
+    // ASCII-rule uppercase conversion.
+    public string ToUpper() {
+        int n = this.Length;
+        char[] result = new char[n];
+        for (int i = 0; i < n; i++) {
+            result[i] = this.CharAt(i).ToUpper();
+        }
+        return String.FromChars(result);
+    }
 
-    [Native("__str_replace")]
-    public extern string Replace(string oldValue, string newValue);
+    // Trim leading + trailing whitespace.
+    public string Trim() {
+        int n = this.Length;
+        int s = 0;
+        while (s < n && this.CharAt(s).IsWhiteSpace()) { s = s + 1; }
+        if (s == n) return "";
+        int e = n - 1;
+        while (e > s && this.CharAt(e).IsWhiteSpace()) { e = e - 1; }
+        return this.Substring(s, e - s + 1);
+    }
 
-    [Native("__str_to_lower")]
-    public extern string ToLower();
+    public string TrimStart() {
+        int n = this.Length;
+        int s = 0;
+        while (s < n && this.CharAt(s).IsWhiteSpace()) { s = s + 1; }
+        return this.Substring(s, n - s);
+    }
 
-    [Native("__str_to_upper")]
-    public extern string ToUpper();
+    public string TrimEnd() {
+        int n = this.Length;
+        if (n == 0) return "";
+        int e = n - 1;
+        while (e >= 0 && this.CharAt(e).IsWhiteSpace()) { e = e - 1; }
+        return this.Substring(0, e + 1);
+    }
 
-    [Native("__str_trim")]
-    public extern string Trim();
+    // ── Static helpers (script-side) ─────────────────────────────────────────
 
-    [Native("__str_trim_start")]
-    public extern string TrimStart();
+    public static bool IsNullOrEmpty(string? value) {
+        return value == null || value.Length == 0;
+    }
 
-    [Native("__str_trim_end")]
-    public extern string TrimEnd();
+    public static bool IsNullOrWhiteSpace(string? value) {
+        if (value == null) return true;
+        int n = value.Length;
+        for (int i = 0; i < n; i++) {
+            if (!value.CharAt(i).IsWhiteSpace()) return false;
+        }
+        return true;
+    }
 
-    [Native("__str_split")]
-    public extern string[] Split(string separator);
+    // ── Remaining intrinsic-backed methods (complex / perf-sensitive) ───────
 
-    // ── Static methods ────────────────────────────────────────────────────────
+    // Instance: `csv.Split(",")` — VCall prepends receiver to builtin args.
+    [Native("__str_split")]  public extern string[] Split(string separator);
 
-    [Native("__str_is_null_or_empty")]
-    public static extern bool IsNullOrEmpty(string? value);
-
-    [Native("__str_is_null_or_whitespace")]
-    public static extern bool IsNullOrWhiteSpace(string? value);
-
-    [Native("__str_join")]
-    public static extern string Join(string separator, string[] values);
-
-    [Native("__str_join")]
-    public static extern string Join(string separator, string a, string b, string c);
-
-    [Native("__str_concat")]
-    public static extern string Concat(string a, string b);
-
-    [Native("__str_concat")]
-    public static extern string Concat(string a, string b, string c);
-
-    [Native("__str_format")]
-    public static extern string Format(string format, object arg0);
-
-    [Native("__str_format")]
-    public static extern string Format(string format, object arg0, object arg1);
+    // Static: namespaced as String.Join / String.Concat / String.Format.
+    [Native("__str_join")]   public static extern string Join(string separator, string[] values);
+    [Native("__str_join")]   public static extern string Join(string separator, string a, string b, string c);
+    [Native("__str_concat")] public static extern string Concat(string a, string b);
+    [Native("__str_concat")] public static extern string Concat(string a, string b, string c);
+    [Native("__str_format")] public static extern string Format(string format, object arg0);
+    [Native("__str_format")] public static extern string Format(string format, object arg0, object arg1);
 }

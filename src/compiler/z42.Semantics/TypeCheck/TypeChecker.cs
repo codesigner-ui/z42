@@ -156,7 +156,10 @@ public sealed partial class TypeChecker : ITypeInferrer
                 {
                     // L3 primitive-as-struct: `this` uses primitive type for stdlib's
                     // `impl Trait for int { ... }` so in-body arithmetic type-checks.
-                    var thisType = TypeRegistry.GetZ42Type(targetNt.Name) ?? (Z42Type)targetClass;
+                    // PascalCase class names (String / Char etc.) also map to primitives.
+                    var thisType = TypeRegistry.GetZ42Type(targetNt.Name)
+                                ?? TypeRegistry.GetZ42Type(targetNt.Name.ToLowerInvariant())
+                                ?? (Z42Type)targetClass;
                     scope.Define("this", thisType);
                     foreach (var (fname, ftype) in targetClass.Fields)
                         scope.Define(fname, ftype);
@@ -200,7 +203,11 @@ public sealed partial class TypeChecker : ITypeInferrer
                 // L3 primitive-as-struct: for stdlib `struct int { ... }` etc., `this`
                 // inside method bodies should be the primitive type (Z42PrimType), not
                 // the class type — so `this + other` and similar arithmetic type-check.
-                var thisType = TypeRegistry.GetZ42Type(cls.Name) ?? (Z42Type)classType;
+                // Also accept PascalCase class names (e.g. `class String` → primitive
+                // `string`) so script-side instance methods can use `this.Length` etc.
+                var thisType = TypeRegistry.GetZ42Type(cls.Name)
+                            ?? TypeRegistry.GetZ42Type(cls.Name.ToLowerInvariant())
+                            ?? (Z42Type)classType;
                 scope.Define("this", thisType);
                 foreach (var (fname, ftype) in classType.Fields)
                     scope.Define(fname, ftype);
