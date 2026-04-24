@@ -178,6 +178,7 @@ L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立
 |------|------|------|:-----:|:----:|
 | **数值约束** | `where T: INumber<T>` | stdlib 声明 + primitive struct 纯脚本 body 实现；Script-First | ✅ 已完成（2026-04-23） |
 | **Operator 重载（C# 风）** | `public static T operator +(T, T)` | desugar 到 `op_Add` 静态调用；支持异构算子；5 个二元算术 | ✅ 已完成（2026-04-24） |
+| **静态抽象接口成员（C# 11 对齐）** | `interface INumber<T> where T: INumber<T> { static abstract T operator +(T, T); static abstract T Zero { get; } }` | 接口声明 static abstract 成员；实现者类型提供 static 方法；泛型 `a + b` / `T.Zero` 通过约束派发。**一套机制统一 operator 重载 + INumber + Rust trait 等价物**。当前 INumber 实例方法版将被此替代 | 🔥 高 | 高（接口语法+存储+约束派发+运行时 type_args） |
 | **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 🟡 中 | 低（待可空性方案收敛） |
 | **无托管约束** | `where T: unmanaged` | T 是无托管引用的值类型（FFI / SIMD / buffer 池） | 🟡 中 | 中（需区分 struct 含 ref 字段） |
 | **具象化约束** | `reified T` | body 内可用 `T::class` / `is T`（Kotlin 风格） | 🟡 中 | 高（**依赖 L3-R** runtime type_args） |
