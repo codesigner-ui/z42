@@ -1,6 +1,6 @@
 # Tasks: 静态抽象接口成员（C# 11 对齐）
 
-> 状态：🟡 进行中 | 创建：2026-04-24
+> 状态：🟡 进行中（Phase 1–3 + TSIG 完成） | 创建：2026-04-24 | 更新：2026-04-24
 
 **变更说明：** 按 C# 11 的 static abstract interface members 扩展 z42 接口系统。
 接口可声明 `static abstract` 方法、运算符和属性；实现者类型必须提供匹配的静态成员；
@@ -41,71 +41,81 @@ T Sum<T>(T[] xs) where T : INumber<T> {
 
 ## 分阶段实施
 
-### 阶段 1：Parser + AST — 接口允许 static abstract 成员
-- [ ] 1.1 `MethodSignature` AST 加 `IsStatic: bool` / `IsAbstract: bool`（或用 FunctionModifiers）
-- [ ] 1.2 `InterfaceDecl` 容纳 static 抽象方法和属性（可能需要 `PropertySignature` AST）
-- [ ] 1.3 `ParseInterfaceDecl`：接受 `static abstract T operator +(T, T);`、
-      `static abstract T Zero { get; }`、`static abstract T Parse(string);`
-- [ ] 1.4 验证：interface body 内不允许 instance method 与 static 混合声明冲突
-- [ ] 1.5 Parser 单元测试
+### 阶段 1：Parser + AST — 接口允许 static abstract 成员 ✅
+- [x] 1.1 `MethodSignature` AST 增加 `IsVirtual` + `Body`（三档编码）
+- [x] 1.2 `ParseInterfaceDecl`：识别 `static abstract / static virtual / static`
+      三档；`operator +` 符号 → `op_Add` 名字；tier ↔ body 强一致性校验
+- [x] 1.3 拒绝 `override` 于接口 body 内；拒绝 `abstract + virtual` 组合；
+      拒绝 instance body（iter 1 不支持 DIM）
+- [ ] 1.4 Properties / `T Zero { get; }` 静态抽象属性 — iter 2 延后
 
-### 阶段 2：语义层 — Z42InterfaceType 存储静态成员
-- [ ] 2.1 `Z42InterfaceType` 加 `StaticMethods: Dictionary<string, Z42FuncType>`
-      / `StaticProperties: Dictionary<string, Z42Type>`
-- [ ] 2.2 `CollectInterfaces`：填充静态成员
-- [ ] 2.3 `ExportedInterfaceDef` / TSIG 导出 / 导入静态成员
+### 阶段 2：语义层 — Z42InterfaceType 三档存储 ✅
+- [x] 2.1 `Z42InterfaceType.StaticMembers: Dict<string, Z42StaticMember>`
+      + `enum StaticMemberKind { Abstract, Virtual, Concrete }`
+- [x] 2.2 `CollectInterfaces`：按 (IsVirtual, Body is null) 推导 Kind
+- [x] 2.3 `ExportedTypeExtractor`：TSIG 导出静态成员（IsStatic + IsAbstract + IsVirtual）
+- [x] 2.4 `ImportedSymbolLoader`：TSIG 还原 StaticMembers + Kind
 
-### 阶段 3：TypeChecker — 实现者验证
-- [ ] 3.1 `SymbolCollector.Classes.cs` 第四遍接口验证：
-      对 class 的 `: INumber<T>` 约束，要求 class 提供所有 interface 的 static abstract 成员
-      （名字 + 签名匹配 + IsStatic 一致）
-- [ ] 3.2 类型参数替换：`static abstract T operator +(T, T)` 在 `INumber<int>` 实现里
-      应匹配 `static int operator +(int, int)`
-- [ ] 3.3 错误码 E0412（InterfaceMismatch）扩展覆盖静态成员漏缺 / 签名不匹配
+### 阶段 3：TypeChecker — 实现者验证 ✅
+- [x] 3.1 `SymbolCollector.Classes.cs` 第五遍 `VerifyStaticOverrides`：
+      - `static override` 须对应接口的 abstract/virtual 成员
+      - 缺 `override` 的同名 static 方法 → 错
+      - override 目标不存在 → 拼写防护错
+      - override Concrete 档 → sealed 错
+      - 抽象档无 override → 漏缺错
+- [x] 3.2 宽容规则：当 class 的所有接口都未知（同包 sibling / TSIG 无静态信息）
+      跳过 override 目标检查
+- [x] 3.3 TypeCheckerTests 5 个新用例覆盖正常+4 种错误路径
+- [ ] 3.4 签名严格匹配（T → self-type 替换后的参数/返回类型精确校验）— 迭代 2
 
-### 阶段 4：stdlib 重构 — INumber 迁移到 static abstract
-- [ ] 4.1 `z42.core/INumber.z42` 改写：5 个 `static abstract T operator op(T, T)` + `Zero` 属性
-- [ ] 4.2 `Int.z42`：`public struct int : INumber<int>` 提供 5 个 static operator + Zero
-      （删除原实例 `op_Add` 等 body 方法）
+### 阶段 4：stdlib 重构 — INumber 迁移到 static abstract ⏸
+- [ ] 4.1 `z42.core/INumber.z42` 改写：5 个 `static abstract T operator op(T, T)`
+- [ ] 4.2 `Int.z42`：`static override int operator +(int, int) { return a + b; }` 等
 - [ ] 4.3 同步 `Long.z42` / `Float.z42` / `Double.z42`
 - [ ] 4.4 `./scripts/build-stdlib.sh` 通过
+- 依赖阶段 5 完成（否则 golden test 87 挂）
 
-### 阶段 5：泛型调用派发 — `a + b` 和 `T.Member` on T: INumber<T>
-- [ ] 5.1 `TryBindOperatorCall` 扩展：Z42GenericParamType 查约束接口的
-      `StaticMethods[op_*]`（不是 Methods）
-- [ ] 5.2 BoundCall 生成：新 kind `InterfaceStatic` 或复用 Static 并在 class name
-      位置记录"通过 T 派发" 语义
-- [ ] 5.3 新 AST / Bound 节点？或者 `BoundTypeParamMember`？用于 `T.Zero` 这种
-      静态属性访问（`T.`当前解析不支持）
-- [ ] 5.4 IrGen 策略：编译期 monomorphize 生成 site-specific 调用？或 VM 运行时
-      用接收者的值类型 + 接口契约查找？
-      **这是本迭代难点**，需要根据 z42 的 code-sharing 模型决定
+### 阶段 5：泛型调用派发 — `a + b` on T: INumber<T> ⏸
+- [ ] 5.1 `TryLookupInstanceOperator` 扩展：除了查 `iface.Methods`，也查
+      `iface.StaticMembers[op_*]`（Kind ∈ {Abstract, Virtual}）
+- [ ] 5.2 新 BoundCall kind `InterfaceStaticCall(iface, method, args)` 或
+      复用 Static + 特殊 class 名（`__iface/{Name}`）承载 "泛型派发" 意图
+- [ ] 5.3 `T.Zero` / `T.Parse(s)` 类型级访问 — 延后到迭代 2（需 L3-R 子集）
 
-### 阶段 6：VM 运行时支持
-- [ ] 6.1 primitive + class 的 static method dispatch 已有基础（primitive_class_name）
-- [ ] 6.2 需要：泛型调用点传递 type_args 到 callee（依赖 L3-R 子集）
-      **或者**：值-驱动 dispatch（`a + b` 时从 a 的运行时类型反查静态 operator）
-      —— 取决于阶段 5 的策略
+### 阶段 6：IR + VM 运行时支持 ⏸
+- [ ] 6.1 新 IR 指令 `static_call_via_iface iface method args` 或
+      VCall 扩展 kind 字段
+- [ ] 6.2 VM 执行：
+      - `resolve_concrete_class(args[0])` 取第一操作数运行时类型
+      - 查 `{class}.{method}`；找不到则回退 `{iface}.{method}` 的默认 body
+      - 调用并返回
+- [ ] 6.3 primitive class_name 复用既有 `primitive_class_name`
 
-### 阶段 7：用户层兼容 & 运算符路径合并
-- [ ] 7.1 `12a3854` 添加的"static operator + 存 StaticMethods" 机制保留
-- [ ] 7.2 当前"实例 op_Add 兜底 desugar"移除或保留？
-      目标：唯一机制是"接口静态抽象 + 实现者静态"，但非泛型场景下 `a + b`
-      on concrete Vec2 仍走 Vec2's static op_Add（同一路径）
-- [ ] 7.3 移除 `TryLookupInstanceOperator` 中的 Z42GenericParamType 实例方法查询
-      （改为只查接口 StaticMethods）
+### 阶段 7：用户层兼容 & 运算符路径合并 ⏸
+- [ ] 7.1 `12a3854` 静态 operator 机制保留；非泛型 `a + b` on Vec2 仍走 BoundCall(Static)
+- [ ] 7.2 移除 `TryLookupInstanceOperator` 里的 Z42GenericParamType 实例方法查询
+      （改为只查接口 StaticMembers）
 
-### 阶段 8：测试 + Golden + 文档 + 归档
-- [ ] 8.1 `TypeCheckerTests` 新增用例：
-      - 基础静态抽象接口声明 ✅
-      - 实现者漏缺 static abstract 成员 ✘
-      - 实现者签名不匹配 ✘
-      - 泛型 `a + b` 通过约束派发 ✅
-      - 泛型 `T.Zero` 通过约束派发 ✅（如 Phase 5 完成）
+### 阶段 8：测试 + Golden + 文档 + 归档 🟡
+- [x] 8.1 TypeCheckerTests 5 个用例（Phase 3）
 - [ ] 8.2 Golden test `89_static_abstract_interface`（interp + jit）
-- [ ] 8.3 `docs/design/generics.md` 新增大节 "静态抽象接口成员"
+- [ ] 8.3 `docs/design/generics.md` 新增 "静态抽象接口成员" 章节
 - [ ] 8.4 `docs/roadmap.md` 标记 ✅
 - [ ] 8.5 归档
+
+## 已完成 commit 点
+
+- `66571fb`：Phase 1 + 2 + 3 Parser / AST / SymbolCollector 三档 + TypeCheckerTests
+- `3a33147`：Phase 2.3 + 2.4 TSIG 导出/导入 + 宽容验证
+
+## 待续（独立后续迭代）
+
+阶段 4–7 涉及新 IR 指令、VM 派发路径和 stdlib 迁移，规模较大，
+独立成一次迭代推进。届时：
+1. 先做阶段 5 + 6（泛型 a+b 派发 + VM StaticCallViaIface 指令）
+2. 改写 golden test 87 为 `a + b` 形式
+3. 迁移 stdlib INumber + primitive struct
+4. 全绿后归档此 change
 
 ## 关键设计决策
 
