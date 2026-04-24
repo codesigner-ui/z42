@@ -65,6 +65,36 @@ openspec/
 
 ---
 
+## 🔴 Spec-First Self-Check（lang / ir / vm 变更强制）
+
+**触发条件**：任何变更涉及新语法、新 IR 指令、新 VM 行为、新关键字、新类型系统规则、新约束机制、新接口契约。
+
+**在写第一行实现代码之前，Claude 必须通过以下 self-check**：
+
+```
+[ ] openspec/changes/<name>/proposal.md 存在且 User 已确认
+[ ] openspec/changes/<name>/specs/<capability>/spec.md 存在且 User 已确认
+[ ] openspec/changes/<name>/design.md 存在且 User 已确认
+[ ] openspec/changes/<name>/tasks.md 存在
+[ ] 阶段 6.5 实施前确认 gate 已通过（User 明确说"没问题 / 可以开始"）
+```
+
+**任一未达成 → 停，回到阶段 1–6 补齐，不得推进代码。**
+
+**常见反例（皆为违规）**：
+- ❌ 只有 `docs/design/<feature>.md`（长期规范）就开始写代码
+  → 长期规范 ≠ openspec proposal/spec/design；两者都必须有
+- ❌ "因为迭代中与 User 逐步沟通了方案，所以跳过 proposal/specs"
+  → 对话中的确认不替代 spec；User 审批的是文档，不是聊天记录
+- ❌ 只建 `tasks.md` 就开工（除非明确是 fix / refactor 类型）
+  → lang/ir/vm 类型不能走最小化模式
+- ❌ 写完代码后再补 proposal/specs
+  → spec 的作用是在实施前定义边界，事后补齐只剩文档价值、失去约束价值
+
+**如果拿不准变更类型**：优先按严格模式走（完整流程）。多写 3 个文档的代价远小于跳过 spec 造成的返工和边界漂移。
+
+---
+
 ## 阶段 0：意图识别
 
 Claude 读到以下关键词时自动触发对应动作：
@@ -73,12 +103,18 @@ Claude 读到以下关键词时自动触发对应动作：
 |--------|-----------|
 | "我想做 X" / "实现 Y" | 阶段 1（探索）开始 |
 | "继续" / "下一步" | 状态恢复协议 |
-| "直接做" / "快速开始" | 最小化模式：只写 tasks.md |
+| "直接做" / "快速开始" | 最小化模式：只写 tasks.md（**仅 fix/refactor 类型适用**） |
 | "开始写代码" / "实施" | 阶段 7（须先通过阶段 6.5 确认）|
 | "没问题" / "可以开始" | 阶段 6.5 通过 → 进入阶段 7 |
 | "验证一下" | 阶段 8 |
 | "归档" / "完成了" | 阶段 9 |
 | "分析一下" / "探索" | 阶段 1，不创建任何文件 |
+
+**词汇警报（lang/ir/vm 关键词触发强制完整流程）**：
+检测到 "新语法 / 新关键字 / 新 IR 指令 / 新约束 / 新接口契约 / 新类型规则 /
+新 VM 行为" 等描述时，**不论用户用什么语气**（即便说"快速开始"/"直接做"），
+都必须走阶段 1–9 完整流程，创建 proposal + specs + design + tasks，不得
+降级到最小化模式。
 
 ---
 
@@ -481,7 +517,12 @@ tasks.md 顶部：
 **必须遵守，违反即为严重工作流缺陷：**
 
 - **Spec 未经 User 确认前写实现代码**
-  - 规范驱动：所有非平凡变更必须先有 Spec（proposal + design），User 批准后才开始代码
+  - 规范驱动：所有非平凡变更必须先有 Spec（proposal + specs/<capability>/spec.md + design），User 批准后才开始代码
+  - 参见本文件顶部 **🔴 Spec-First Self-Check** 小节 — lang/ir/vm 变更开工前逐项核对
+  - **反例**（曾在 2026-04-24 静态抽象接口成员变更中发生）：只建 `tasks.md` +
+    `docs/design/<feature>.md` 就开始实施，把聊天中的逐步确认当作 spec 审批；
+    归档时被发现违规。纠正：`docs/design/` 长期规范与 `openspec/changes/<name>/`
+    变更规范是**两份独立文档**，lang/ir/vm 变更两者都必须存在
 
 - **验证未全绿时 commit / push**
   - 🔴 **任何测试失败都不得进入 commit**
