@@ -3,9 +3,9 @@ name    = "z42.collections"
 version = "0.1.0"
 kind    = "lib"
 
-# NOTE: Full generic implementations of List<T> and Dictionary<K,V> are deferred
-# to L3 (requires generics). Until then, these types are handled by the compiler's
-# pseudo-class strategy. This module provides non-generic helpers only.
+# NOTE: `List<T>` / `Dictionary<K,V>` 已迁至 `z42.core` 包（2026-04-25 reorganize-stdlib-packages
+# W1）— 作为"最基础泛型集合三件套"进入隐式 prelude 范围。本包保留次级集合
+# （Queue / Stack + 未来 LinkedList / SortedDictionary / PriorityQueue）。
 
 [dependencies]
 "z42.core" = "0.1.0"

@@ -230,7 +230,7 @@ Rules:
 |---------|-----------|---------------|---------|
 | `z42.core` | `Std` | **Always loaded at VM startup.** No `using` required. | Python `builtins`, Rust `std::prelude` |
 | `z42.io` | `Std.IO` | Loaded when `using Std.IO;` is present | C# `System.IO` |
-| `z42.collections` | `Std.Collections` | Loaded when `using Std.Collections;` is present | C# `System.Collections.Generic` |
+| `z42.collections` | `Std.Collections` | Loaded when `using Std.Collections;` is present（**仅覆盖 Queue/Stack 等次级集合**；`List<T>` / `Dictionary<K,V>` 虽属同 namespace，但物理驻留 `z42.core`，随 prelude 一起加载）| C# `System.Collections.Generic`（非基础部分） |
 | `z42.text` | `Std.Text` | Loaded when `using Std.Text;` is present | C# `System.Text` |
 | `z42.math` | `Std.Math` | Loaded when `using Std.Math;` is present | C# `System.Math` |
 
@@ -267,13 +267,27 @@ User `.z42.toml` files must NOT declare it — it is injected automatically.
 
 ```
 src/libraries/z42.core/src/
-├── Object.z42        # ToString, Equals, GetHashCode stubs
-├── Convert.z42       # Convert.ToInt32, Convert.ToDouble, Convert.ToString
-├── Assert.z42        # Assert.Equal, Assert.True, Assert.Null, …
-├── IEquatable.z42    # interface IEquatable<T>  (L3 generics required)
-├── IComparable.z42   # interface IComparable<T> (L3 generics required)
-└── IDisposable.z42   # interface IDisposable
+├── Object.z42          # ToString, Equals, GetHashCode stubs
+├── String.z42 + primitive structs (Int/Long/Double/Float/Bool/Char)
+├── Type.z42            # runtime type object (typeof result)
+├── Convert.z42         # Convert.ToInt32, Convert.ToDouble, Convert.ToString
+├── Assert.z42          # Assert.Equal, Assert.True, Assert.Null, …
+├── IEquatable.z42      # interface IEquatable<T>
+├── IComparable.z42     # interface IComparable<T>
+├── IDisposable.z42     # interface IDisposable
+├── INumber.z42         # interface INumber<T> (op_Add / op_Subtract / …)
+└── Collections/        # 基础泛型集合三件套（namespace Std.Collections）
+    ├── List.z42        # List<T>       — 纯脚本动态数组
+    ├── Dictionary.z42  # Dictionary<K,V> — 纯脚本开放寻址哈希表
+    └── HashSet.z42     # （未来实现）
 ```
+
+**2026-04-25 reorganize-stdlib-packages W1 调整**：
+最基础三件套 `List<T>` / `Dictionary<K,V>` / `HashSet<T>` 从 `z42.collections`
+包迁至 `z42.core/src/Collections/`，对齐 C# BCL（`System.Collections.Generic` 位于
+`System.Private.CoreLib` assembly）。`sources.include` 默认递归通配
+`src/**/*.z42`，子目录自动拾取。namespace 仍为 `Std.Collections`（物理包位置与
+namespace 分层解耦；用户代码需 `using Std.Collections;`）。
 
 `Convert` and `Assert` replace the current pseudo-class implementations once the
 `[Native]` attribute is supported by the compiler.
@@ -293,20 +307,20 @@ src/libraries/z42.io/src/
 `Console` provides typed overloads (int, bool, double, …) as pure z42 methods
 wrapping the native `string` overload.
 
-### `z42.collections` — Collections
+### `z42.collections` — 次级集合（非基础三件套）
 
-> **Note:** `List<T>` and `Dictionary<K,V>` require generics (L3).
-> Until L3 is available these types remain as pseudo-class (compiler-internal).
-> This module provides non-generic helpers and is a placeholder for the L3 migration.
+> **2026-04-25 重组**：基础三件套 `List<T>` / `Dictionary<K,V>` / `HashSet<T>`
+> 已上提至 `z42.core/src/Collections/`，与核心类型共享隐式 prelude 包。本包
+> 仅保留次级集合（需要显式 `using Std.Collections;` 触发加载）。
 
 ```
 src/libraries/z42.collections/src/
-├── List.z42          # placeholder; full impl deferred to L3
-├── Dictionary.z42    # placeholder; full impl deferred to L3
-├── Queue.z42
-├── Stack.z42
-└── HashSet.z42
+├── Queue.z42         # Queue<T>  — FIFO（L3 源码实现）
+└── Stack.z42         # Stack<T>  — LIFO（L3 源码实现）
 ```
+
+**未来扩展（L2/L3 按需补齐）**：`LinkedList<T>` / `SortedDictionary<K,V>`
+/ `PriorityQueue<T>`。
 
 ### `z42.text` — Text Utilities
 

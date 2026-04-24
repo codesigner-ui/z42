@@ -24,6 +24,32 @@
 | `IDisposable.z42` | 资源释放接口 |
 | `INumber.z42` | 数值约束接口（`op_Add` / `op_Subtract` / `op_Multiply` / `op_Divide` / `op_Modulo`）|
 
+## src/Collections/ — 基础泛型集合三件套
+
+| 文件 | 内容 |
+|------|------|
+| `Collections/List.z42` | `List<T>` — 泛型动态数组（纯脚本实现） |
+| `Collections/Dictionary.z42` | `Dictionary<K,V>` — 泛型哈希映射（纯脚本实现） |
+| `Collections/HashSet.z42` | _（未来实现；暂缺）_ |
+
+### 设计决策（2026-04-25 reorganize-stdlib-packages W1）
+
+C# BCL 对齐：`List<T>` / `Dictionary<K,V>` 作为"最基础泛型集合"物理驻留
+在 `z42.core` 包的 `Collections/` 子目录（与 core 基础类型共享隐式 prelude 包），
+namespace 仍是 `Std.Collections`（逻辑上与 `Queue` / `Stack` 等次级集合同
+namespace）。
+
+包位置（物理） vs namespace（逻辑）解耦对齐：
+- **包**：`z42.core`（隐式加载，无需用户声明依赖）
+- **源码目录**：`z42.core/src/Collections/`（与 core 扁平层的基础类型分目录）
+- **namespace**：`Std.Collections`（仍需用户写 `using Std.Collections;` 才能无限定访问）
+
+类比 C# BCL：`System.Collections.Generic.List<T>` 物理在 `System.Private.CoreLib`
+assembly，源码在 `System/Collections/Generic/List.cs`，namespace 独立分层。
+
+> `sources.include` 默认是 `src/**/*.z42`（递归通配），无需修改 manifest
+> 即可自动拾取子目录源文件。
+
 ### primitive-as-struct 设计（L3-G4b 重构）
 
 `int` / `long` / `double` / `float` / `bool` / `char` 以 **`struct <小写名>`** 形式

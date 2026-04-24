@@ -101,7 +101,8 @@
 ### 标准库（基础）
 - `z42.core`：基础类型协议（ToString、Equals、GetHashCode）
 - `z42.io`：文件读写、标准输入输出
-- `z42.collections`：`List<T>`、`Dictionary<K,V>` 原生实现（替代 pseudo-class 策略）
+- `z42.core/Collections/`：`List<T>`、`Dictionary<K,V>` 纯脚本实现（L3-G4h step3 ✅ 完成；2026-04-25 W1 从 `z42.collections` 上提到 `z42.core` 包子目录，对齐 C# BCL）
+- `z42.collections`：次级集合 `Queue<T>` / `Stack<T>`（未来 `LinkedList` / `SortedDictionary` / `PriorityQueue`）
 - `z42.string`：字符串操作完整实现
 
 ### 代码质量 Backlog（按触发条件执行）
