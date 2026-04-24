@@ -518,21 +518,33 @@ public sealed record CompiledUnit(
 /// </summary>
 public sealed class TsigCache
 {
-    // namespace → zpkg full path (populated during ScanLibsForNamespaces)
-    private readonly Dictionary<string, string> _nsToPath = new(StringComparer.Ordinal);
+    // namespace → zpkg full paths (C# assembly model: a namespace may be
+    // declared by multiple zpkgs, e.g. `Std.Collections` is split across
+    // `z42.core.zpkg` (List/Dictionary) and `z42.collections.zpkg` (Queue/Stack)
+    // after the 2026-04-25 stdlib reorganisation).
+    private readonly Dictionary<string, List<string>> _nsToPaths = new(StringComparer.Ordinal);
     // zpkg path → cached TSIG modules (loaded on first access)
     private readonly Dictionary<string, List<ExportedModule>> _cache = new(StringComparer.Ordinal);
 
     /// Register a namespace → zpkg path mapping (called during lib scanning).
+    /// Multiple zpkgs may register the same namespace — all paths are preserved
+    /// so callers see the union of their exported types.
     public void RegisterNamespace(string ns, string zpkgPath)
     {
-        _nsToPath.TryAdd(ns, zpkgPath);
+        if (!_nsToPaths.TryGetValue(ns, out var list))
+        {
+            list = new List<string>();
+            _nsToPaths[ns] = list;
+        }
+        if (!list.Contains(zpkgPath)) list.Add(zpkgPath);
     }
 
     /// Load all registered TSIG modules (used by tests that need all namespaces).
     public List<ExportedModule> LoadAll()
     {
-        var allPaths = new HashSet<string>(_nsToPath.Values, StringComparer.Ordinal);
+        var allPaths = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var paths in _nsToPaths.Values)
+            foreach (var p in paths) allPaths.Add(p);
         var result = new List<ExportedModule>();
         foreach (var path in allPaths)
             result.AddRange(LoadZpkg(path));
@@ -545,8 +557,8 @@ public sealed class TsigCache
     {
         var needed = new HashSet<string>(StringComparer.Ordinal);
         foreach (var ns in usings)
-            if (_nsToPath.TryGetValue(ns, out var path))
-                needed.Add(path);
+            if (_nsToPaths.TryGetValue(ns, out var paths))
+                foreach (var p in paths) needed.Add(p);
 
         var result = new List<ExportedModule>();
         foreach (var path in needed)

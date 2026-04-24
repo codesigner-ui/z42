@@ -108,25 +108,49 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
 
 // ── Namespace resolution ──────────────────────────────────────────────────────
 
-/// Resolve which file provides a given namespace.
+/// Resolve which files provide a given namespace.
 ///
-/// Search order (high → low priority):
+/// Multiple zpkgs may legitimately declare the same namespace (C# assembly
+/// model). Returns **all** matching files sorted by search tier:
 ///   1. `module_paths`: scan `.zbc` files (binary, read namespace from header)
 ///   2. `libs_paths`:   scan `.zpkg` files (binary, read NSPC section)
+///
+/// If a `.zbc` file in `module_paths` matches, `.zpkg` files in `libs_paths`
+/// are **not** scanned (module-path override). This preserves the historical
+/// override behaviour without coupling it to single-result semantics.
+///
+/// Used by compiler tooling and diagnostics. The VM's lazy loader no longer
+/// routes by namespace; it uses zpkg file names (`resolve_dependency`).
 pub fn resolve_namespace(
     ns: &str,
     module_paths: &[PathBuf],
     libs_paths: &[PathBuf],
-) -> Result<Option<PathBuf>> {
-    let zbc_match = find_namespace_in_zbc_dirs(ns, module_paths)?;
-    if zbc_match.is_some() {
-        return Ok(zbc_match);
+) -> Result<Vec<PathBuf>> {
+    let zbc_matches = find_namespace_in_zbc_dirs(ns, module_paths)?;
+    if !zbc_matches.is_empty() {
+        return Ok(zbc_matches);
     }
     find_namespace_in_zpkg_dirs(ns, libs_paths)
 }
 
-fn find_namespace_in_zbc_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathBuf>> {
-    let mut found: Option<PathBuf> = None;
+/// Resolve a zpkg dependency by its file name (e.g. `"z42.collections.zpkg"`).
+/// Searches `libs_paths` in order and returns the first match. Used by the
+/// lazy loader to locate declared dependencies for on-demand load.
+pub fn resolve_dependency(
+    zpkg_file: &str,
+    libs_paths: &[PathBuf],
+) -> Result<Option<PathBuf>> {
+    for dir in libs_paths {
+        let path = dir.join(zpkg_file);
+        if path.is_file() {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+fn find_namespace_in_zbc_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut found: Vec<PathBuf> = Vec::new();
     for dir in dirs {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
@@ -138,22 +162,16 @@ fn find_namespace_in_zbc_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathB
             let data = match std::fs::read(&path) { Ok(d) => d, Err(_) => continue };
             if data.len() < 4 || &data[0..4] != ZBC_MAGIC { continue; }
             let file_ns = match read_zbc_namespace(&data) { Ok(n) => n, Err(_) => continue };
-            if file_ns == ns {
-                if let Some(ref prev) = found {
-                    bail!(
-                        "AmbiguousNamespaceError: namespace '{}' provided by both '{}' and '{}'",
-                        ns, prev.display(), path.display()
-                    );
-                }
-                found = Some(path);
+            if file_ns == ns && !found.contains(&path) {
+                found.push(path);
             }
         }
     }
     Ok(found)
 }
 
-fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<PathBuf>> {
-    let mut found: Option<PathBuf> = None;
+fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    let mut found: Vec<PathBuf> = Vec::new();
     for dir in dirs {
         let entries = match std::fs::read_dir(dir) {
             Ok(e) => e,
@@ -165,14 +183,8 @@ fn find_namespace_in_zpkg_dirs(ns: &str, dirs: &[PathBuf]) -> Result<Option<Path
             let data = match std::fs::read(&path) { Ok(d) => d, Err(_) => continue };
             if data.len() < 4 || &data[0..4] != ZPKG_MAGIC { continue; }
             let namespaces = match read_zpkg_namespaces(&data) { Ok(v) => v, Err(_) => continue };
-            if namespaces.iter().any(|n| n == ns) {
-                if let Some(ref prev) = found {
-                    bail!(
-                        "AmbiguousNamespaceError: namespace '{}' provided by both '{}' and '{}'",
-                        ns, prev.display(), path.display()
-                    );
-                }
-                found = Some(path);
+            if namespaces.iter().any(|n| n == ns) && !found.contains(&path) {
+                found.push(path);
             }
         }
     }

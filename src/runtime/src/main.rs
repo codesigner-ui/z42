@@ -143,6 +143,81 @@ fn log_module_paths(module_paths: &[PathBuf]) {
     }
 }
 
+/// Build the declared-but-not-loaded zpkg candidate set for the lazy loader.
+///
+/// Sources (in order, deduped by zpkg file name):
+///   1. `.zpkg` main artifact's `dependencies` (DEPS section)
+///   2. `.zbc`  main artifact's `import_namespaces` — reverse-lookup into
+///      `libs_dir` for zpkgs declaring each namespace
+///
+/// Entries whose file name is already in `initially_loaded` (e.g. `z42.core.zpkg`
+/// eager-loaded at startup, or JIT-mode deps already merged) are excluded.
+fn build_declared_candidates(
+    user_artifact: &z42_vm::metadata::LoadedArtifact,
+    libs_dir:      &Option<PathBuf>,
+    initially_loaded: &[String],
+) -> Vec<(String, z42_vm::metadata::lazy_loader::ZpkgCandidate)> {
+    let mut declared: Vec<(String, z42_vm::metadata::lazy_loader::ZpkgCandidate)> = Vec::new();
+    let Some(dir) = libs_dir else { return declared };
+
+    let loaded_has = |name: &str| initially_loaded.iter().any(|f| f == name);
+    let declared_has = |d: &[(String, _)], name: &str| d.iter().any(|(f, _)| f == name);
+
+    let libs_paths = vec![dir.clone()];
+
+    // .zpkg dependencies (DEPS): file field is authoritative; fall back to
+    // the sibling `namespaces` field if the literal filename does not resolve
+    // (e.g. GoldenTests writes `${ns}.zpkg` which will not match real stdlib
+    // package filenames like `z42.collections.zpkg`).
+    for dep in &user_artifact.dependencies {
+        if loaded_has(&dep.file) || declared_has(&declared, &dep.file) { continue; }
+        if let Ok(cand) = z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &dep.file) {
+            declared.push((dep.file.clone(), cand));
+            continue;
+        }
+        // Fallback: reverse lookup by namespaces.
+        for ns in &dep.namespaces {
+            let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else {
+                continue;
+            };
+            for zpkg_path in zpkg_paths {
+                let Some(file_name) = zpkg_path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(str::to_owned)
+                else { continue };
+                if loaded_has(&file_name) || declared_has(&declared, &file_name) { continue; }
+                match z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+                    Ok(cand) => declared.push((file_name, cand)),
+                    Err(e)   => tracing::warn!("cannot read zpkg meta `{}`: {e}", file_name),
+                }
+            }
+        }
+    }
+
+    // .zbc import_namespaces — reverse lookup
+    for ns in &user_artifact.import_namespaces {
+        let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else {
+            continue;
+        };
+        for zpkg_path in zpkg_paths {
+            let Some(file_name) = zpkg_path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(str::to_owned)
+            else { continue };
+            if loaded_has(&file_name) { continue; }
+            if declared_has(&declared, &file_name) { continue; }
+            match z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+                Ok(cand) => declared.push((file_name, cand)),
+                Err(e)   => tracing::warn!("cannot read zpkg meta `{}`: {e}", file_name),
+            }
+        }
+    }
+
+    declared
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -170,6 +245,9 @@ fn main() -> Result<()> {
     let mut modules: Vec<z42_vm::metadata::Module> = Vec::new();
     // Track canonical paths of loaded artifact files to prevent duplicate loading.
     let mut loaded_paths: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
+    // Track zpkg file names loaded eagerly at startup (initially_loaded input
+    // for the lazy loader — these are excluded from on-demand candidate set).
+    let mut initially_loaded_zpkgs: Vec<String> = Vec::new();
 
     // 5.1b — unconditionally try to load z42.core.zpkg if present.
     if let Some(ref dir) = libs_dir {
@@ -182,6 +260,7 @@ fn main() -> Result<()> {
                     tracing::debug!("loaded stdlib z42.core from {core_str}");
                     modules.push(a.module);
                     loaded_paths.insert(core_canonical);
+                    initially_loaded_zpkgs.push("z42.core.zpkg".to_string());
                 }
                 Err(e) => tracing::warn!("failed to load z42.core: {e}"),
             }
@@ -209,6 +288,9 @@ fn main() -> Result<()> {
                     let dep_str = dep_path.to_string_lossy().into_owned();
                     if let Ok(a) = z42_vm::metadata::load_artifact(&dep_str) {
                         modules.push(a.module);
+                        let canonical = dep_path.canonicalize().unwrap_or(dep_path.clone());
+                        loaded_paths.insert(canonical);
+                        initially_loaded_zpkgs.push(dep.file.clone());
                     }
                 }
             }
@@ -216,19 +298,30 @@ fn main() -> Result<()> {
         for ns in &user_artifact.import_namespaces {
             if let Some(ref dir) = libs_dir {
                 let libs_paths = vec![dir.clone()];
-                if let Ok(Some(zpkg_path)) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) {
+                let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
+                for zpkg_path in zpkg_paths {
                     let canonical = zpkg_path.canonicalize().unwrap_or(zpkg_path.clone());
-                    if !loaded_paths.contains(&canonical) {
-                        let zpkg_str = zpkg_path.to_string_lossy().into_owned();
-                        if let Ok(a) = z42_vm::metadata::load_artifact(&zpkg_str) {
-                            modules.push(a.module);
-                            loaded_paths.insert(canonical);
+                    if loaded_paths.contains(&canonical) { continue; }
+                    let zpkg_str = zpkg_path.to_string_lossy().into_owned();
+                    if let Ok(a) = z42_vm::metadata::load_artifact(&zpkg_str) {
+                        modules.push(a.module);
+                        loaded_paths.insert(canonical);
+                        if let Some(name) = zpkg_path.file_name().and_then(|n| n.to_str()) {
+                            initially_loaded_zpkgs.push(name.to_string());
                         }
                     }
                 }
             }
         }
     }
+
+    // Build declared-but-not-loaded zpkg candidate set for the lazy loader,
+    // BEFORE moving `user_artifact.module` into `modules` (partial-move).
+    let declared_candidates = build_declared_candidates(
+        &user_artifact,
+        &libs_dir,
+        &initially_loaded_zpkgs,
+    );
 
     // 5.1e — push user module last, then merge everything.
     // Preserve the user module's name so entry-point lookup resolves correctly
@@ -253,7 +346,15 @@ fn main() -> Result<()> {
 
     // Install lazy loader now that the final module's string pool size is known.
     // Lazy-loaded zpkgs will have their ConstStr indices offset past this length.
-    z42_vm::metadata::lazy_loader::install(libs_dir.clone(), final_module.string_pool.len());
+    // In interp mode `declared_candidates` drives on-demand loading; in JIT
+    // mode deps are already merged into `modules` during 5.1d so `declared`
+    // is typically empty and the lazy loader is effectively a no-op.
+    z42_vm::metadata::lazy_loader::install_with_deps(
+        libs_dir.clone(),
+        final_module.string_pool.len(),
+        declared_candidates,
+        initially_loaded_zpkgs,
+    );
 
     let default_mode = match cli.mode {
         Some(ExecMode::Jit) => z42_vm::metadata::ExecMode::Jit,

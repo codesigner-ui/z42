@@ -30,5 +30,5 @@ pub use bytecode::{BasicBlock, ClassDesc, ExceptionEntry, FieldDesc, Function, I
 
 // Re-exports: package format types and artifact loading
 pub use formats::{ZbcFile, ZpkgFile};
-pub use loader::{load_artifact, resolve_namespace, extract_import_namespaces, LoadedArtifact};
+pub use loader::{load_artifact, resolve_namespace, resolve_dependency, extract_import_namespaces, LoadedArtifact};
 pub use merge::merge_modules;

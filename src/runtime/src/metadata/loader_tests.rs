@@ -151,17 +151,19 @@ fn make_fake_zbc(dir: &Path, filename: &str, namespace: &str) {
     std::fs::write(dir.join(filename), &data).expect("write test zbc");
 }
 
-/// resolve_namespace with empty paths returns Ok(None)
+/// resolve_namespace with empty paths returns an empty vec
 #[test]
 fn test_resolve_namespace_empty_paths() {
     let result = resolve_namespace("Std.IO", &[], &[]);
     assert!(result.is_ok());
-    assert!(result.unwrap().is_none());
+    assert!(result.unwrap().is_empty());
 }
 
-/// Two zpkg files in the same libs tier providing the same namespace → error
+/// Two zpkg files in the same libs tier providing the same namespace
+/// → both are returned (legit under C# assembly model; disambiguation
+/// happens at the lazy-load layer by zpkg file name).
 #[test]
-fn test_resolve_namespace_ambiguous_same_tier() {
+fn test_resolve_namespace_ambiguous_returns_both() {
     let tmp = std::env::temp_dir().join(format!("z42_test_{}", std::process::id()));
     std::fs::create_dir_all(&tmp).unwrap();
 
@@ -171,14 +173,19 @@ fn test_resolve_namespace_ambiguous_same_tier() {
     let result = resolve_namespace("z42.conflict", &[], &[tmp.clone()]);
     std::fs::remove_dir_all(&tmp).ok();
 
-    assert!(result.is_err(), "expected ambiguous namespace error");
-    let msg = result.unwrap_err().to_string();
-    assert!(msg.contains("AmbiguousNamespaceError"), "error message: {msg}");
-    assert!(msg.contains("z42.conflict"), "error message: {msg}");
+    assert!(result.is_ok(), "unexpected error: {:?}", result.err());
+    let paths = result.unwrap();
+    assert_eq!(paths.len(), 2, "both zpkgs should be reported; got {paths:?}");
+    let names: std::collections::HashSet<String> = paths
+        .iter()
+        .filter_map(|p| p.file_name().and_then(|n| n.to_str()).map(str::to_owned))
+        .collect();
+    assert!(names.contains("libA.zpkg"));
+    assert!(names.contains("libB.zpkg"));
 }
 
 /// A zbc in module_paths and a zpkg in libs_paths both provide the same namespace
-/// → zbc (module_paths) wins.
+/// → module_paths wins (zpkg tier is skipped when zbc tier has matches).
 #[test]
 fn test_resolve_namespace_cross_tier_override() {
     let tmp = std::env::temp_dir().join(format!("z42_test_ct_{}", std::process::id()));
@@ -194,11 +201,29 @@ fn test_resolve_namespace_cross_tier_override() {
     std::fs::remove_dir_all(&tmp).ok();
 
     assert!(result.is_ok(), "unexpected error: {:?}", result.err());
-    let path = result.unwrap().expect("expected Some(path)");
+    let paths = result.unwrap();
+    assert_eq!(paths.len(), 1, "only zbc should match (zpkg tier skipped)");
+    let path = &paths[0];
     assert_eq!(
         path.parent().unwrap(),
         zbc_dir.as_path(),
         "expected zbc from module_paths to win over zpkg in libs_paths"
     );
     assert_eq!(path.extension().and_then(|e| e.to_str()), Some("zbc"));
+}
+
+/// resolve_dependency locates a zpkg by file name in the libs_paths.
+#[test]
+fn test_resolve_dependency_by_file_name() {
+    let tmp = std::env::temp_dir().join(format!("z42_test_dep_{}", std::process::id()));
+    std::fs::create_dir_all(&tmp).unwrap();
+    make_fake_zpkg(&tmp, "z42.fake.zpkg", &["z42.fake"]);
+
+    let hit = crate::metadata::loader::resolve_dependency("z42.fake.zpkg", &[tmp.clone()]).unwrap();
+    let miss = crate::metadata::loader::resolve_dependency("does.not.exist.zpkg", &[tmp.clone()]).unwrap();
+    std::fs::remove_dir_all(&tmp).ok();
+
+    assert!(hit.is_some());
+    assert_eq!(hit.unwrap().file_name().and_then(|n| n.to_str()), Some("z42.fake.zpkg"));
+    assert!(miss.is_none());
 }

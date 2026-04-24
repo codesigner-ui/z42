@@ -101,7 +101,11 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 | 新协作规则 / 工作流变更 | `.claude/rules/workflow.md` |
 | fix / refactor 涉及行为或机制变更 | 对应 `docs/design/` 文档 |
 | 语言设计决策变更（设计目标、phase 归属、设计理由） | `docs/features.md` |
+| **编译器内部实现原理变更**（符号解析、依赖加载、TsigCache、pipeline 流程等） | `docs/design/compiler-architecture.md` |
+| **VM 内部实现原理变更**（LazyLoader、VCall 分发、ObjNew 类型注册、interp/JIT 架构等） | `docs/design/vm-architecture.md` |
 | 规范偏差 | 以实现为准更新规范，不得描述不存在的行为 |
+
+> **实现原理文档规则（2026-04-25 新增）**：涉及编译器或 VM 的**内部机制 / 架构策略**的变更（不只是对外行为），必须把"实现原理"（数据结构、算法、加载策略、决策权衡）同步到 `docs/design/compiler-architecture.md` 或 `docs/design/vm-architecture.md`，使新接手者不必阅读大量源码即可理解"为什么这样设计"。
 
 ## 代码风格
 
