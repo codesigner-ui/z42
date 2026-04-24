@@ -534,7 +534,7 @@ public sealed partial class TypeChecker : ITypeInferrer
             else
                 substituted.Add(a);
         }
-        return new Z42InterfaceType(iface.Name, iface.Methods, substituted);
+        return new Z42InterfaceType(iface.Name, iface.Methods, substituted, iface.StaticMembers);
     }
 
     /// L3-G4b primitive-as-struct: primitive types satisfy interfaces via stdlib

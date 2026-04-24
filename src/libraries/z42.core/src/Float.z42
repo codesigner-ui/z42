@@ -9,10 +9,10 @@ public struct float : IComparable<float>, IEquatable<float>, INumber<float> {
     [Native("__double_hash_code")]  public extern int GetHashCode();
     [Native("__double_to_string")]  public extern string ToString();
 
-    // INumber<float> — pure-script arithmetic.
-    public float op_Add(float other)      { return this + other; }
-    public float op_Subtract(float other) { return this - other; }
-    public float op_Multiply(float other) { return this * other; }
-    public float op_Divide(float other)   { return this / other; }
-    public float op_Modulo(float other)   { return this % other; }
+    // INumber<float> static override.
+    public static override float op_Add(float a, float b)      { return a + b; }
+    public static override float op_Subtract(float a, float b) { return a - b; }
+    public static override float op_Multiply(float a, float b) { return a * b; }
+    public static override float op_Divide(float a, float b)   { return a / b; }
+    public static override float op_Modulo(float a, float b)   { return a % b; }
 }

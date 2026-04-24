@@ -209,11 +209,15 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             "Dictionary" => new Z42PrimType("Dictionary"),
             // L3-G2.5 chain: generic interface references preserve TypeArgs so
             // downstream arg-aware checks can compare `IEquatable<int>` precisely.
+            // L3 static abstract (C# 11): also preserve StaticMembers so generic
+            // constraint references like `where T: INumber<T>` keep access to
+            // the interface's static abstract / virtual members.
             _            => _classes.TryGetValue(gt.Name, out var ct) ? (Z42Type)ct
                           : _interfaces.TryGetValue(gt.Name, out var it)
                               ? (gt.TypeArgs.Count > 0
                                     ? new Z42InterfaceType(it.Name, it.Methods,
-                                          gt.TypeArgs.Select(ResolveType).ToList())
+                                          gt.TypeArgs.Select(ResolveType).ToList(),
+                                          it.StaticMembers)
                                     : it)
                           : new Z42PrimType(gt.Name),
         },

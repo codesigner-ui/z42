@@ -193,17 +193,21 @@ public static class ExportedTypeExtractor
     /// Convert a Z42Type to its string representation for TSIG serialization.
     internal static string TypeToString(Z42Type type) => type switch
     {
-        Z42PrimType pt      => pt.Name,
-        Z42VoidType         => "void",
-        Z42ArrayType at     => $"{TypeToString(at.Element)}[]",
-        Z42OptionType ot    => $"{TypeToString(ot.Inner)}?",
-        Z42ClassType ct     => ct.Name,
-        Z42InterfaceType it => it.Name,
-        Z42NullType         => "null",
-        Z42ErrorType        => "error",
-        Z42UnknownType      => "unknown",
-        Z42FuncType         => "func",
-        _                   => "unknown",
+        Z42PrimType pt         => pt.Name,
+        // L3 generic: serialize the param name (e.g. "T"); consumer restores as
+        // Z42GenericParamType when tpSet matches — critical for `INumber<T>`'s
+        // `static abstract T op_Add(T a, T b)` round-trip.
+        Z42GenericParamType gp => gp.Name,
+        Z42VoidType            => "void",
+        Z42ArrayType at        => $"{TypeToString(at.Element)}[]",
+        Z42OptionType ot       => $"{TypeToString(ot.Inner)}?",
+        Z42ClassType ct        => ct.Name,
+        Z42InterfaceType it    => it.Name,
+        Z42NullType            => "null",
+        Z42ErrorType           => "error",
+        Z42UnknownType         => "unknown",
+        Z42FuncType            => "func",
+        _                      => "unknown",
     };
 
     private static string VisToString(Visibility vis) => vis switch

@@ -1,7 +1,8 @@
-// Test: L3 INumber iteration 1 — generic numeric algorithms via where T: INumber<T>.
-// primitive int / double implement INumber via pure-script body methods
-// (e.g. `public int op_Add(int other) { return this + other; }`).
-// `return this + other` compiles to IR AddInstr — zero VM builtin, zero codegen special.
+// Test: L3 静态抽象接口 — generic numeric algorithms via where T: INumber<T>.
+// INumber<T> declares `static abstract T op_Add(T a, T b)` etc. (C# 11 alignment).
+// primitive int/double/etc. implement via `public static override T op_Add(T a, T b) { return a + b; }`.
+// Generic `x.op_Add(x)` lowers to VCall, which dispatches on x's runtime class
+// to the concrete `Std.int.op_Add(a, b)` — zero VM builtin, zero codegen special.
 
 T Double<T>(T x) where T: INumber<T> {
     return x.op_Add(x);

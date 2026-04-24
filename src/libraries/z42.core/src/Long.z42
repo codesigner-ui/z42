@@ -7,10 +7,10 @@ public struct long : IComparable<long>, IEquatable<long>, INumber<long> {
     [Native("__int_hash_code")]  public extern int GetHashCode();
     [Native("__int_to_string")]  public extern string ToString();
 
-    // INumber<long> — pure-script arithmetic.
-    public long op_Add(long other)      { return this + other; }
-    public long op_Subtract(long other) { return this - other; }
-    public long op_Multiply(long other) { return this * other; }
-    public long op_Divide(long other)   { return this / other; }
-    public long op_Modulo(long other)   { return this % other; }
+    // INumber<long> static override.
+    public static override long op_Add(long a, long b)      { return a + b; }
+    public static override long op_Subtract(long a, long b) { return a - b; }
+    public static override long op_Multiply(long a, long b) { return a * b; }
+    public static override long op_Divide(long a, long b)   { return a / b; }
+    public static override long op_Modulo(long a, long b)   { return a % b; }
 }

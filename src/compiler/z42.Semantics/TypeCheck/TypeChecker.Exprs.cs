@@ -440,10 +440,20 @@ public sealed partial class TypeChecker
                 if (!ifaces.Any(i => i.Name == iface.Name)) ifaces.Add(iface);
 
             foreach (var iface in ifaces)
+            {
+                // Path A: instance abstract method — `T op_Add(T other)` (1 param).
                 if (iface.Methods.TryGetValue(methodName, out var gmt) && gmt.Params.Count == 1)
                     // Substitute `T` → `gp` in return type (e.g. INumber<T>.op_Add returns T,
                     // which should become the generic param itself in the caller scope).
                     return (iface.Name, SubstituteGenericReturnType(gmt.Ret, gp));
+                // Path B (L3 static abstract interface members): `static abstract T op_Add(T a, T b)`
+                // (2 params). IR-level BoundCall(Virtual) prepends receiver, so VCall dispatches
+                // (left, right) into the implementer's `static op_Add(a, b)` — 2 args.
+                if (iface.StaticMembers is { } sm
+                    && sm.TryGetValue(methodName, out var staticMember)
+                    && staticMember.Signature.Params.Count == 2)
+                    return (iface.Name, SubstituteGenericReturnType(staticMember.Signature.Ret, gp));
+            }
         }
         return null;
     }

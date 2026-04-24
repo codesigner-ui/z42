@@ -1,6 +1,6 @@
 # Tasks: 静态抽象接口成员（C# 11 对齐）
 
-> 状态：🟡 进行中（Phase 1–3 + TSIG 完成） | 创建：2026-04-24 | 更新：2026-04-24
+> 状态：🟢 已完成（iter 1） | 创建：2026-04-24 | 更新：2026-04-24
 
 **变更说明：** 按 C# 11 的 static abstract interface members 扩展 z42 接口系统。
 接口可声明 `static abstract` 方法、运算符和属性；实现者类型必须提供匹配的静态成员；
@@ -68,54 +68,57 @@ T Sum<T>(T[] xs) where T : INumber<T> {
 - [x] 3.3 TypeCheckerTests 5 个新用例覆盖正常+4 种错误路径
 - [ ] 3.4 签名严格匹配（T → self-type 替换后的参数/返回类型精确校验）— 迭代 2
 
-### 阶段 4：stdlib 重构 — INumber 迁移到 static abstract ⏸
-- [ ] 4.1 `z42.core/INumber.z42` 改写：5 个 `static abstract T operator op(T, T)`
-- [ ] 4.2 `Int.z42`：`static override int operator +(int, int) { return a + b; }` 等
-- [ ] 4.3 同步 `Long.z42` / `Float.z42` / `Double.z42`
-- [ ] 4.4 `./scripts/build-stdlib.sh` 通过
-- 依赖阶段 5 完成（否则 golden test 87 挂）
+### 阶段 4：stdlib 重构 — INumber 迁移到 static abstract ✅
+- [x] 4.1 `z42.core/INumber.z42` 改写：5 个 `static abstract T op_Add(T, T)` 等
+- [x] 4.2 `Int.z42`：`static override int op_Add(int a, int b) { return a + b; }` 等
+- [x] 4.3 同步 `Long.z42` / `Float.z42` / `Double.z42`
+- [x] 4.4 `./scripts/build-stdlib.sh` 通过
 
-### 阶段 5：泛型调用派发 — `a + b` on T: INumber<T> ⏸
-- [ ] 5.1 `TryLookupInstanceOperator` 扩展：除了查 `iface.Methods`，也查
-      `iface.StaticMembers[op_*]`（Kind ∈ {Abstract, Virtual}）
-- [ ] 5.2 新 BoundCall kind `InterfaceStaticCall(iface, method, args)` 或
-      复用 Static + 特殊 class 名（`__iface/{Name}`）承载 "泛型派发" 意图
-- [ ] 5.3 `T.Zero` / `T.Parse(s)` 类型级访问 — 延后到迭代 2（需 L3-R 子集）
+### 阶段 5：泛型调用派发 — `a + b` on T: INumber<T> ✅
+- [x] 5.1 `TryLookupInstanceOperator` 扩展：Path A 查 `iface.Methods`（保留），
+      Path B 查 `iface.StaticMembers[op_*]`（Kind ∈ {Abstract, Virtual, Concrete}）
+- [x] 5.2 方案：**复用 BoundCallKind.Virtual + 现有 VCall IR 指令**
+      （VCall 的运行时接收者派发天然对应值驱动派发 — 见阶段 6 说明）
+- [x] 5.3 `x.op_Add(y)` 方法调用形式 — TypeChecker.Calls 也添加 StaticMembers 分支
+- [ ] 5.4 `T.Zero` / `T.Parse(s)` 类型级访问 — 延后到迭代 2（需 L3-R 子集）
 
-### 阶段 6：IR + VM 运行时支持 ⏸
-- [ ] 6.1 新 IR 指令 `static_call_via_iface iface method args` 或
-      VCall 扩展 kind 字段
-- [ ] 6.2 VM 执行：
-      - `resolve_concrete_class(args[0])` 取第一操作数运行时类型
-      - 查 `{class}.{method}`；找不到则回退 `{iface}.{method}` 的默认 body
-      - 调用并返回
-- [ ] 6.3 primitive class_name 复用既有 `primitive_class_name`
+### 阶段 6：IR + VM 运行时支持 ✅（复用 VCall，无新指令）
+- [x] 6.1 **不需要新 IR 指令**：`BoundCall(Virtual)` → VCallInstr → VM 已有的 VCall 派发
+      天然满足语义（接收者运行时类型 → `{primitive_class}.{method}`）
+- [x] 6.2 VM 执行路径既有：`primitive_class_name(obj)` 解析原语类；
+      对象走 vtable → 找不到则 fallback `{class}.{method}` 直接拼接
+- [x] 6.3 VCall 传参约定 (receiver, ...extras) 正好匹配 2 参静态 op 的 (a, b) 签名
 
-### 阶段 7：用户层兼容 & 运算符路径合并 ⏸
-- [ ] 7.1 `12a3854` 静态 operator 机制保留；非泛型 `a + b` on Vec2 仍走 BoundCall(Static)
+### 阶段 7：用户层兼容 & 运算符路径合并 🟡
+- [x] 7.1 `12a3854` 静态 operator 机制保留；非泛型 `a + b` on Vec2 仍走 BoundCall(Static)
 - [ ] 7.2 移除 `TryLookupInstanceOperator` 里的 Z42GenericParamType 实例方法查询
-      （改为只查接口 StaticMembers）
+      — 目前保留 Path A 以支持历史实例 op_Add 形式（不影响新代码）
 
-### 阶段 8：测试 + Golden + 文档 + 归档 🟡
+### 阶段 8：测试 + Golden + 文档 + 归档 ✅
 - [x] 8.1 TypeCheckerTests 5 个用例（Phase 3）
-- [ ] 8.2 Golden test `89_static_abstract_interface`（interp + jit）
-- [ ] 8.3 `docs/design/generics.md` 新增 "静态抽象接口成员" 章节
-- [ ] 8.4 `docs/roadmap.md` 标记 ✅
-- [ ] 8.5 归档
+- [x] 8.2 Golden test `89_static_abstract_operator`（interp + jit；
+      涵盖 Add/Sub/Mul + chain `a + b + c`）
+- [x] 8.3 golden test `87_generic_inumber` 注释更新为 static abstract 语义
+- [ ] 8.4 `docs/design/generics.md` 新增 "静态抽象接口成员" 章节 — **本次提交完成**
+- [ ] 8.5 `docs/roadmap.md` 标记 ✅ — **本次提交完成**
+- [ ] 8.6 归档
 
 ## 已完成 commit 点
 
 - `66571fb`：Phase 1 + 2 + 3 Parser / AST / SymbolCollector 三档 + TypeCheckerTests
 - `3a33147`：Phase 2.3 + 2.4 TSIG 导出/导入 + 宽容验证
+- 本次提交：Phase 4 + 5 + 6 + 7（stdlib 迁移 + 泛型 a+b 派发 + golden test 89）
 
-## 待续（独立后续迭代）
+## 关键决策：值驱动派发 = VCall
 
-阶段 4–7 涉及新 IR 指令、VM 派发路径和 stdlib 迁移，规模较大，
-独立成一次迭代推进。届时：
-1. 先做阶段 5 + 6（泛型 a+b 派发 + VM StaticCallViaIface 指令）
-2. 改写 golden test 87 为 `a + b` 形式
-3. 迁移 stdlib INumber + primitive struct
-4. 全绿后归档此 change
+**不需要新 IR 指令** — 设计文档原计划 `StaticCallViaIface`，实际实现用 VCall 复用：
+- VCall 已按接收者运行时类型派发（primitive_class_name + vtable）
+- 2 参静态 op_Add 签名 `(T, T) -> T` 与 VCall 调用约定 `(obj, extras)` 兼容
+- TypeChecker 只需把 Z42GenericParamType 的 `a + b` 翻译为 `BoundCall(Virtual, a, iface, op_Add, [b])`
+- IrGen 按现有 Virtual 分支生成 VCallInstr
+- VM interp / JIT 无需改动
+
+这种极简设计本质上符合 z42 "代码共享 + 值驱动" 哲学。
 
 ## 关键设计决策
 

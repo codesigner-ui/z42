@@ -8,10 +8,10 @@ public struct double : IComparable<double>, IEquatable<double>, INumber<double> 
     [Native("__double_hash_code")]  public extern int GetHashCode();
     [Native("__double_to_string")]  public extern string ToString();
 
-    // INumber<double> — pure-script arithmetic; IR Add/Sub/Mul/Div/Rem.
-    public double op_Add(double other)      { return this + other; }
-    public double op_Subtract(double other) { return this - other; }
-    public double op_Multiply(double other) { return this * other; }
-    public double op_Divide(double other)   { return this / other; }
-    public double op_Modulo(double other)   { return this % other; }
+    // INumber<double> static override — primitive float add/sub/mul/div/rem.
+    public static override double op_Add(double a, double b)      { return a + b; }
+    public static override double op_Subtract(double a, double b) { return a - b; }
+    public static override double op_Multiply(double a, double b) { return a * b; }
+    public static override double op_Divide(double a, double b)   { return a / b; }
+    public static override double op_Modulo(double a, double b)   { return a % b; }
 }

@@ -81,10 +81,16 @@ public static class ImportedSymbolLoader
         var methods       = new Dictionary<string, Z42FuncType>();
         var staticMethods = new Dictionary<string, Z42FuncType>();
         var memberVis     = new Dictionary<string, Visibility>();
+        // L3 generic: propagate class's TypeParams so field/method signatures
+        // containing `T` restore as Z42GenericParamType (not Z42PrimType("T")).
+        // Previously TypeToString emitted "unknown" for generic params, so this
+        // wasn't needed; fixing that serialization makes this round-trip matter.
+        var tpSet = cls.TypeParams is { Count: > 0 } tps
+            ? new HashSet<string>(tps) : null;
 
         foreach (var f in cls.Fields)
         {
-            var ft = ResolveTypeName(f.TypeName);
+            var ft = ResolveTypeName(f.TypeName, tpSet);
             if (f.IsStatic) staticFields[f.Name] = ft;
             else            fields[f.Name]        = ft;
             memberVis[f.Name] = ParseVisibility(f.Visibility);
@@ -92,7 +98,7 @@ public static class ImportedSymbolLoader
 
         foreach (var m in cls.Methods)
         {
-            var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount);
+            var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet);
             if (m.IsStatic) staticMethods[m.Name] = sig;
             else            methods[m.Name]        = sig;
             string visKey = m.Name.Contains('$') ? m.Name[..m.Name.IndexOf('$')] : m.Name;

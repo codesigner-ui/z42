@@ -1,16 +1,19 @@
 namespace Std;
 
-// Generic numeric interface — arithmetic operators as methods.
-// primitive types (int / long / float / double) implement via pure-script body
-// methods (`return this + other;` etc.), which compile to the corresponding IR
-// arithmetic instructions. No VM builtin, no extern. Pure Script-First.
+// Generic numeric interface (C# 11 static abstract alignment).
+// Declares 5 binary arithmetic operators as `static abstract`. Implementers
+// (primitive structs, user structs/classes) must provide `static override`
+// counterparts. Generic code `where T: INumber<T>` writes `a + b` (or the
+// mangled form `T.op_Add(a, b)`) and the compiler dispatches to the concrete
+// implementer via value-driven VCall — receiver's runtime class determines
+// which `op_Add` to run.
 //
 // Comparison goes through IComparable<T>; equality through IEquatable<T>.
 // Mixed-type arithmetic is not supported (T + T → T only).
-public interface INumber<T> {
-    T op_Add(T other);
-    T op_Subtract(T other);
-    T op_Multiply(T other);
-    T op_Divide(T other);
-    T op_Modulo(T other);
+public interface INumber<T> where T : INumber<T> {
+    static abstract T op_Add(T a, T b);
+    static abstract T op_Subtract(T a, T b);
+    static abstract T op_Multiply(T a, T b);
+    static abstract T op_Divide(T a, T b);
+    static abstract T op_Modulo(T a, T b);
 }

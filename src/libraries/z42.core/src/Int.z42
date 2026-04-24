@@ -11,10 +11,11 @@ public struct int : IComparable<int>, IEquatable<int>, INumber<int> {
     [Native("__int_hash_code")]  public extern int GetHashCode();
     [Native("__int_to_string")]  public extern string ToString();
 
-    // INumber<int> — pure-script arithmetic; compiles to IR Add/Sub/Mul/Div/Rem instructions.
-    public int op_Add(int other)      { return this + other; }
-    public int op_Subtract(int other) { return this - other; }
-    public int op_Multiply(int other) { return this * other; }
-    public int op_Divide(int other)   { return this / other; }
-    public int op_Modulo(int other)   { return this % other; }
+    // INumber<int> static override (C# 11 static abstract). VCall passes
+    // (receiver, extra) as (a, b); `a + b` is primitive add (skip-overload fast path).
+    public static override int op_Add(int a, int b)      { return a + b; }
+    public static override int op_Subtract(int a, int b) { return a - b; }
+    public static override int op_Multiply(int a, int b) { return a * b; }
+    public static override int op_Divide(int a, int b)   { return a / b; }
+    public static override int op_Modulo(int a, int b)   { return a % b; }
 }

@@ -198,7 +198,7 @@ public sealed class SymbolTable
         {
             if (gt.TypeArgs.Count == 0) return it;
             var resolvedArgs = gt.TypeArgs.Select(ResolveType).ToList();
-            return new Z42InterfaceType(it.Name, it.Methods, resolvedArgs);
+            return new Z42InterfaceType(it.Name, it.Methods, resolvedArgs, it.StaticMembers);
         }
         return new Z42PrimType(gt.Name);
     }

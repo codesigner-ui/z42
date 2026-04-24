@@ -492,6 +492,96 @@ string Greet<T>(T t) where T: IGreet { return t.Hello(); }
 
 **诊断**：新错误码 `E0413 InvalidImpl`（target 非 class/struct、trait 非 interface、签名不匹配、漏方法、重复方法）。
 
+### 静态抽象接口成员（L3 static-abstract，2026-04-24）
+
+**目标**：C# 11 对齐。接口声明 `static abstract / static virtual / static` 三档
+静态成员；实现者类型用 `static override` 提供具体实现；泛型代码 `where T : I<T>`
+以 `a + b` 或 `x.op_Add(y)` 形式调用，编译器+VM 值驱动派发到实现者的 static 方法。
+
+**接口端三档（D1'）**：
+
+```z42
+public interface INumber<T> where T : INumber<T> {
+    // 抽象：实现者必须 static override
+    static abstract T op_Add(T a, T b);
+
+    // 虚：带默认 body，实现者可选 override（iter 2+ 完整落地）
+    static virtual T Double(T x) { return x; }
+
+    // 具体（sealed by default）：实现者不可 override
+    static T VersionTag(T x) { return x; }
+}
+```
+
+**实现者端 `static override`**：
+
+```z42
+public struct int : INumber<int> {
+    public static override int op_Add(int a, int b) { return a + b; }
+    // ...
+}
+```
+
+**三档 Kind 编码**（`Z42StaticMember.Kind`）：
+
+| 档 | 关键字 | Body | 实现者要求 |
+|---|------|:---:|-------|
+| 1 | `static abstract` | ❌ | **必须** `static override`（否则 E0412） |
+| 2 | `static virtual` | ✅ | 可选 `static override`（省略时继承默认） |
+| 3 | `static`（无 virtual/abstract） | ✅ | 不可 override（E0412 sealed） |
+
+**关键实现决策：值驱动派发 = VCall**（非新 IR 指令）
+
+对 `a + b` where a,b: `T where T: INumber<T>`：
+
+1. **TypeChecker**（`TryLookupInstanceOperator` in `TypeChecker.Exprs.cs`）：
+   - Path A：`iface.Methods[op_Add]` 1 参（历史实例形式）
+   - Path B：`iface.StaticMembers[op_Add]` 2 参（本迭代新增）
+   - 两者统一生成 `BoundCall(Virtual, left, iface, op_Add, [right])`
+
+2. **IrGen**：BoundCall(Virtual) → `VCallInstr(obj=left, method=op_Add, args=[right])`
+   （复用现有虚派发通路）
+
+3. **VM interp / JIT**：
+   - `primitive_class_name(obj)` 解析原语类 → 调 `Std.int.op_Add(a, b)`
+   - 对象走 vtable → 找不到则 fallback `{class}.{method}` 直接拼接
+   - VCall 调用约定 `(obj, ...extras)` 与 2 参静态 op 的 `(a, b)` 签名天然匹配
+
+**没有新 IR 指令 / 没有 VM 改动** — 极简设计。
+
+**TSIG 跨 zpkg 支持**（`ExportedTypeExtractor` + `ImportedSymbolLoader`）：
+
+- 接口静态成员串行化为 `ExportedMethodDef { IsStatic=true, IsAbstract, IsVirtual, ... }`
+- `Z42GenericParamType` 序列化为其 Name（"T"）；消费端 `tpSet` 恢复为泛型参
+  （避免 Z42UnknownType 污染签名）
+- 类级 TypeParams 也参与 ResolveTypeName 的 tpSet，确保 `List<T>.Add(T)` 等
+  泛型类方法签名跨 zpkg 完整往返
+
+**SymbolCollector 第五遍验证**（`VerifyStaticOverrides` in `SymbolCollector.Classes.cs`）：
+
+| 场景 | 诊断 |
+|------|-----|
+| 抽象档无 `static override` | E0412 InterfaceMismatch（漏缺） |
+| `static override` 无目标 | E0412（拼写防护，`NoOverrideTarget`） |
+| override Concrete 档 | E0412（sealed，`CannotOverrideSealed`） |
+| 同名 static 但无 override 关键字 | E0412（隐藏接口成员） |
+
+**宽容模式**：当 class 实现的所有接口都未在 `_interfaces` 中（同包 sibling 未编译 /
+TSIG 缺失），`VerifyStaticOverrides` 跳过 "no target" 诊断，避免误报。
+
+**iter 1 Scope**：
+- ✅ 5 个二元算术 operator 静态抽象（op_Add/Sub/Mul/Div/Mod）
+- ✅ 泛型 `a + b` 和 `x.op_Add(y)` 两种形式
+- ✅ stdlib INumber + int/long/float/double 迁移
+- ✅ Golden test `89_static_abstract_operator` + 原 test 87 更新
+- ⏸ 静态属性 `static abstract T Zero { get; }` — iter 2
+- ⏸ 类型级访问 `T.Zero` / `T.Parse(s)` — iter 2（需 L3-R runtime type_args）
+- ⏸ 一元 / 比较运算符 — iter 3
+- ⏸ `sealed override` / `new` — iter 2+
+
+**相关**：`docs/design/static-abstract-interface.md`（完整设计书），
+`openspec/changes/archive/2026-04-24-add-static-abstract-interface/`
+
 ### Operator 重载（L3 operator-overload，2026-04-24）
 
 **目标**：C# 风 `operator` 关键字，支持二元算术 `+ - * / %` 的运算符重载。

@@ -1,0 +1,20 @@
+// Test: L3 静态抽象接口 — generic operator dispatch `a + b` on T: INumber<T>.
+// Complements 87 (which tests `x.op_Add(x)` method syntax) by exercising the
+// operator-sugar path: TryBindOperatorCall sees a Z42GenericParamType and
+// finds the static abstract member in the constraint interface, then emits
+// BoundCall(Virtual) whose IR VCall dispatches at runtime to the concrete type.
+
+T Add<T>(T a, T b) where T: INumber<T> { return a + b; }
+T Sub<T>(T a, T b) where T: INumber<T> { return a - b; }
+T Mul<T>(T a, T b) where T: INumber<T> { return a * b; }
+T Chain3<T>(T a, T b, T c) where T: INumber<T> { return a + b + c; }
+
+void Main() {
+    Console.WriteLine(Add(20, 22));              // 42
+    Console.WriteLine(Add(1.5, 0.5));            // 2
+    Console.WriteLine(Sub(100, 58));             // 42
+    Console.WriteLine(Mul(6, 7));                // 42
+    Console.WriteLine(Mul(2.5, 4.0));            // 10
+    Console.WriteLine(Chain3(10, 20, 12));       // 42
+    Console.WriteLine("ok");
+}

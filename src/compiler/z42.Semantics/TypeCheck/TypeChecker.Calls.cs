@@ -218,11 +218,26 @@ public sealed partial class TypeChecker
                 }
                 foreach (var iface in bundle.Interfaces)
                 {
-                    if (!iface.Methods.TryGetValue(mCallee.Member, out var gmt)) continue;
-                    CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, gmt.Params);
-                    return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
-                        mCallee.Member, null, argBound, gmt.Ret, call.Span);
+                    if (iface.Methods.TryGetValue(mCallee.Member, out var gmt))
+                    {
+                        CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
+                        CheckArgTypes(call.Args, argBound, gmt.Params);
+                        return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
+                            mCallee.Member, null, argBound, gmt.Ret, call.Span);
+                    }
+                    // L3 static abstract interface members: `x.op_Add(y)` on generic T
+                    // whose constraint declares `static abstract T op_Add(T a, T b)`.
+                    // VCall prepends receiver, so (x, y) args match the 2-param static sig.
+                    if (iface.StaticMembers is { } sm
+                        && sm.TryGetValue(mCallee.Member, out var staticMbr)
+                        && staticMbr.Signature.Params.Count == argBound.Count + 1)
+                    {
+                        CheckArgTypes(call.Args, argBound,
+                            staticMbr.Signature.Params.Skip(1).ToList());
+                        var retType = SubstituteGenericReturnType(staticMbr.Signature.Ret, gp);
+                        return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
+                            mCallee.Member, null, argBound, retType, call.Span);
+                    }
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     bundle.IsEmpty
