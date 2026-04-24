@@ -95,7 +95,8 @@ pub fn sum<T>(xs: &[T]) -> T where T: Num + Add<Output = T> + Copy {
 
 | C# 11 问题 | z42 调整 |
 |----------|---------|
-| 默认接口方法 (DIM) 历史包袱复杂 | **z42 不支持 DIM**（至少初版不支持），所有接口方法都是抽象的 |
+| 实例 DIM（C# 8）历史包袱复杂（钻石问题、可见性） | **z42 不支持实例 DIM**（iter 1；独立特性未来再议） |
+| 静态默认实现通过 `static virtual` 表达，被证明很有用 | **z42 支持 `static virtual`**（见 §3.5）—— 接口可以提供"由基本运算组合出的"便捷静态方法 |
 | `static abstract` 双关键字冗长 | **保留双关键字**以保持 C# 语法兼容，便于 C# 用户迁移 |
 | `T.StaticMember` 访问依赖 JIT 运行时类型参数 | **z42 采用值驱动派发**作为主模式（对 operator 场景足够）；类型级访问 `T.Zero` 延后到 L3-R 反射子集 |
 | CRTP 约束 `where T : INumber<T>` 语法冗余但必要 | **同样保留**，这是类型安全的代价 |
@@ -184,23 +185,105 @@ void Main() {
 
 完全兼容 —— C# 11 的运算符声明语法和 C# 1-10 一致。用户写的 `public static Vec2 operator +(Vec2, Vec2)` **既是 C# 标准运算符重载，也满足 `INumber<Vec2>` 契约**。一处声明两用。
 
+### 3.5 静态默认实现（`static virtual`）
+
+**动机**：接口可以提供"由基本运算组合出的"便捷静态方法，实现者**无需**提供，但
+**可以** override。让契约又小又强：实现者只需提供基本原语，复合操作随接口提供。
+
+```z42
+public interface INumber<T> where T : INumber<T> {
+    // 基本原语 — 实现者必须提供
+    static abstract T operator +(T a, T b);
+    static abstract T operator *(T a, T b);
+    static abstract T Zero { get; }
+
+    // 默认实现 — 实现者可选 override
+    static virtual T Double(T x) {
+        return x + x;            // 使用接口自己的 static abstract operator +
+    }
+
+    static virtual T Negate(T x) {
+        return T.Zero - x;       // 注：需要类型级访问 T.Zero，iter 2 能力
+    }
+
+    static virtual T Sum(T[] xs) {
+        T acc = T.Zero;           // 同上，iter 2
+        foreach (var x in xs) acc = acc + x;
+        return acc;
+    }
+
+    // 仅用 "操作数输入" 的默认，iter 1 即可支持
+    static virtual T AddThrice(T x, T y, T z) {
+        return x + y + z;        // 只靠 operand，不需要 T.Zero
+    }
+}
+
+public struct MyInt : INumber<MyInt> {
+    int v;
+    public static MyInt operator +(MyInt a, MyInt b) { return new MyInt(a.v + b.v); }
+    public static MyInt operator *(MyInt a, MyInt b) { return new MyInt(a.v * b.v); }
+    public static MyInt Zero { get { return new MyInt(0); } }
+
+    // Double / Negate / Sum / AddThrice 都自动获得（接口的默认实现）
+    // 如要优化可 override：
+    public static MyInt Double(MyInt x) { return new MyInt(x.v * 2); }  // override
+}
+```
+
+**语法规则**：
+- `static virtual <ret> <name>(<params>) { <body> }` — 有 body，可被 override
+- `static abstract <ret> <name>(<params>);` — 无 body，必须被提供
+- 一个接口内可混合 static abstract + static virtual + instance methods
+
+**Override 规则**（实现者端）：
+- 对 `static virtual`：可提供同名 static 方法（**无需**显式 `override` 关键字，C# 11 也如此）
+- 对 `static abstract`：**必须**提供（否则 E0412）
+- 提供时签名必须匹配（T substitution 后）
+
+**运行时派发**（值驱动）：
+- `T.Double(x)` where x: T 是具体值
+  1. 取 x 的 concrete type → 例如 `Std.int`
+  2. 查 `Std.int.StaticMethods["Double"]` — 实现者 override 了？
+  3. 找到 → 调用实现者的 Double
+  4. 没找到 → 回退到 **接口的默认实现**（从 INumber 的元数据里）
+  5. 执行接口默认 body，body 内部 `x + x` 又是值驱动派发（回到 Std.int.op_Add）
+
+**Iter 1 限制**：
+- 默认 body **只能用 operand-input 的 operator**（需要 value 来驱动派发）
+- **不能**用 `T.Zero` / `T.Parse(s)` 这类 type-level 访问（iter 2）
+- 即：`static virtual T Double(T x) { return x + x; }` ✅
+- 即：`static virtual T Zero2 { get { return T.Zero; } }` ❌（iter 2）
+- 即：`static virtual T Sum(T[] xs) { T acc = T.Zero; ... }` ❌（iter 2）
+
+**编译器职责**：
+- 解析 `static virtual` → method 带 body
+- 存储：接口的 static methods 区分 abstract / virtual（加 `IsDefault: bool` 字段）
+- 验证：实现者可省略 virtual 方法；override 时签名检查
+- Codegen：默认 body 生成为 **独立函数** `{InterfaceFullName}.{MethodName}`（如 `Std.Numerics.INumber.Double`），可被 VM 按名调用
+- 运行时 `static_call_via_iface`：如果 concrete type 没有方法，回退查询接口默认
+
 ---
 
 ## 4. 语义与类型检查
 
 ### 4.1 存储结构
 
-`Z42InterfaceType` 增加 `StaticMethods` 和 `StaticProperties`（可暂合为一个 dict）：
+`Z42InterfaceType` 增加 `StaticMethods` 存储静态抽象 / 静态虚成员：
 
 ```csharp
 public sealed record Z42InterfaceType(
     string Name,
     IReadOnlyDictionary<string, Z42FuncType> Methods,      // instance
     IReadOnlyList<Z42Type>? TypeArgs = null,
-    IReadOnlyDictionary<string, Z42FuncType>? StaticMethods = null,   // static abstract methods + operators
-    IReadOnlyDictionary<string, Z42Type>?     StaticProperties = null // iter 2+
+    IReadOnlyDictionary<string, Z42FuncType>? StaticMethods = null,     // static abstract + virtual
+    IReadOnlySet<string>? StaticVirtualNames = null,                   // subset with default impl
+    IReadOnlyDictionary<string, Z42Type>? StaticProperties = null       // iter 2+
 );
 ```
+
+`StaticVirtualNames` 是 `StaticMethods` 的子集，标识哪些有默认实现（而非纯抽象）。
+默认实现的函数体由 IrGen 生成独立 IrFunction `{InterfaceFullName}.{MethodName}`，
+VM 派发时按名调用。
 
 ### 4.2 实现者验证
 
@@ -210,8 +293,12 @@ public sealed record Z42InterfaceType(
 对 class C : INumber<C>：
   查 INumber.StaticMethods 每一条 (name, sig)：
     把 sig 里的 T 替换为 C（self-substitution）→ 期望 class sig
-    检查 C.StaticMethods[name] 匹配期望 sig
-    不匹配 → E0412 InterfaceMismatch
+    若 name ∈ StaticVirtualNames（有默认实现）：
+       class 可以不提供（走接口默认）
+       若 class 提供了，签名必须匹配 → 算 override
+    若 name 是 static abstract（无默认）：
+       class **必须**提供 C.StaticMethods[name]，签名匹配
+       不匹配 → E0412 InterfaceMismatch
   查 INumber.Methods（instance）每一条：同 L3-G2 现有逻辑
 ```
 
@@ -261,17 +348,26 @@ public sealed record Z42InterfaceType(
 %ret = static_call_via_iface  "INumber"  "op_Add"  %a  %b
 ```
 
-VM 执行：
+VM 执行（含默认实现回退）：
 
 ```rust
 Instruction::StaticCallViaIface { dst, iface_name, method, args } => {
     let receiver = frame.get(args[0])?;
-    // 查 receiver 的 class name（primitive 走 primitive_class_name，Object 走 type_desc.name）
-    let class_name = resolve_concrete_class(receiver)?;
-    // 静态方法名约定：{class}.{method}
-    let fn_name = format!("{}.{}", class_name, method);
-    let callee  = module.lookup_function(&fn_name)?;
-    exec_function(module, callee, &collected_args)?
+    let class_name = resolve_concrete_class(receiver)?;   // primitive / Object
+
+    // Step 1: 查实现者的静态方法
+    let impl_name = format!("{}.{}", class_name, method);
+    if let Some(callee) = module.lookup_function(&impl_name) {
+        return exec_function(module, callee, &collected_args);
+    }
+
+    // Step 2: 回退接口默认实现（static virtual）
+    let default_name = format!("{}.{}", iface_name, method);
+    if let Some(callee) = module.lookup_function(&default_name) {
+        return exec_function(module, callee, &collected_args);
+    }
+
+    bail!("no implementation for {}.{} on {}", iface_name, method, class_name);
 }
 ```
 
@@ -394,17 +490,19 @@ public struct int : ..., INumber<int> {
 ### iter 1 **包含**：
 - 接口 `static abstract` 运算符（5 个：+ - * / %）
 - 接口 `static abstract` 方法（非运算符、非属性）
-- 实现者静态成员验证
+- **接口 `static virtual` 默认实现**（仅 operand-input 调用形式；不含 T.Zero 等类型级）
+- 实现者静态成员验证（含默认 override 检测）
 - 泛型 `a + b` on `T: INumber<T>` 派发（InterfaceStaticCall IR + VM）
+- 默认实现回退：VM 找不到 concrete class 的静态方法时，回退接口的默认
 - stdlib INumber / primitive struct 迁移
-- TSIG 跨 zpkg
+- TSIG 跨 zpkg（含默认实现元数据）
 
 ### iter 1 **不包含**（iter 2+ 做）：
-- 静态抽象**属性** `T Zero { get; }`
-- 类型级访问 `T.Zero` / `T.Parse(s)`
+- 静态抽象 / 静态虚**属性** `T Zero { get; }`
+- 类型级访问 `T.Zero` / `T.Parse(s)` / `T.MaxValue`
+- **实例** DIMs（C# 8 风格）—— 独立特性
 - 静态抽象**字段**（C# 也不支持）
 - 静态抽象**构造器**（C# 也不支持）
-- 默认接口方法（DIMs）
 - 接口继承 `interface I : J`
 - 一元运算符、比较运算符、相等运算符（独立迭代）
 
@@ -416,6 +514,18 @@ public struct int : ..., INumber<int> {
 - z42 的代码共享哲学：一份字节码服务所有 T
 - 运算符场景下 receiver (args[0]) 始终可用 → 值驱动足够
 - 类型参数传递需要 L3-R 完整支持，规模大 → 延后
+
+### 为什么 iter 1 支持 `static virtual` 默认实现？
+- 让接口"契约小而能力强"：实现者只提供原语，复合操作接口提供
+- C# 11 有这个特性，与目标对齐
+- 实现代价：只需在 VM 派发时多一步"回退接口默认"查询
+- 限制明确：默认 body 只能用 operand-input 调用，不能用 T.Zero（留 iter 2）
+- 用户心智简单：无需 `override` 关键字，同名 static 方法自动覆盖
+
+### 为什么暂不支持实例 DIMs（C# 8 风格）？
+- 钻石问题 / 可见性规则复杂
+- z42 当前 interface 只有 instance 抽象方法，加 DIMs 影响面大
+- 独立特性，未来单独迭代
 
 ### 为什么保留 `static abstract` 双关键字？
 - 与 C# 11 一致
