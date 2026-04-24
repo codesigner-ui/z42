@@ -304,10 +304,6 @@ void Main() {
         Check(src).HasErrors.Should().BeTrue(because: "Vec2 has no operator +(Vec2, int)");
     }
 
-    // Note: generic instance operator path (`a + b` on T: INumber<T>) works when
-    // the interface + primitive struct are inline-declared; separate end-to-end
-    // demo via stdlib INumber is deferred to a follow-up iteration.
-
     // ── L3-G2.5 chain (class-side TypeArgs) ───────────────────────────────────
 
     // Class that implements `IEquatable<int>` satisfies `where T: IEquatable<int>`.

@@ -341,10 +341,14 @@ public sealed partial class TypeChecker
 
     /// L3 operator overload: try resolving `a <op> b` to an operator method call.
     /// Priority:
-    ///   1. Static `op_<Name>(a, b)` on left.Type (or right.Type) — C# operator overload
-    ///   2. Instance `a.op_<Name>(b)` via left.Type's Methods / constraint interfaces —
-    ///      INumber / user-class instance operator
-    /// Returns null when neither form matches; caller falls back to BinaryTypeTable.
+    ///   1. Primitive numeric pair — early exit to BinaryTypeTable (IR AddInstr etc.)
+    ///   2. Static `op_<Name>(a, b)` on left.Type or right.Type (C# 11 operator /
+    ///      static abstract interface member)
+    ///   3. Generic param T with `where T: I<T>` interface declaring a 2-param
+    ///      `static abstract op_<Name>` — VCall value-driven dispatch
+    ///   4. User-class instance method `left.op_<Name>(right)` (non-INumber;
+    ///      users can still define instance-form operators on concrete classes)
+    /// Returns null when none match; caller falls back to BinaryTypeTable.
     private BoundExpr? TryBindOperatorCall(string op, BoundExpr left, BoundExpr right, Span span)
     {
         string? methodName = op switch
@@ -372,8 +376,11 @@ public sealed partial class TypeChecker
             return new BoundCall(BoundCallKind.Static, null, rs.ClassName, methodName,
                 null, [left, right], rs.ReturnType, span);
 
-        // 2. Instance op_<Name> on left.Type — covers user classes implementing INumber
-        //    directly, and generic params whose constraints supply op_<Name>.
+        // 2. Virtual dispatch on left.Type. Covers:
+        //    - Generic param T: looked up through constraint interface's static abstract
+        //      members (value-driven VCall — receiver's runtime class decides).
+        //    - Concrete user class / struct: user-defined instance `op_<Name>(R)` method
+        //      (non-INumber; pattern for classes that prefer instance-form operators).
         if (TryLookupInstanceOperator(left.Type, methodName, right.Type) is { } li)
             return new BoundCall(BoundCallKind.Virtual, left, li.ClassName, methodName,
                 null, [right], li.ReturnType, span);
@@ -427,8 +434,9 @@ public sealed partial class TypeChecker
             return (inst.Definition.Name, SubstituteTypeParams(instMt.Ret, subMap));
         }
         // Generic parameter — look through interface constraints (INumber<T> etc.)
-        // For `a + b` where a: T, b: T (homogeneous), the constraint interface's
-        // method takes T and returns T; signature check is trivially satisfied.
+        // for a `static abstract T op_Add(T a, T b)` declaration. IR-level
+        // BoundCall(Virtual) prepends receiver, so VCall dispatches (left, right)
+        // into the implementer's `static op_Add(a, b)` — 2 args match perfectly.
         if (t is Z42GenericParamType gp)
         {
             // Collect both the type-param's own InterfaceConstraints (built during
@@ -440,27 +448,18 @@ public sealed partial class TypeChecker
                 if (!ifaces.Any(i => i.Name == iface.Name)) ifaces.Add(iface);
 
             foreach (var iface in ifaces)
-            {
-                // Path A: instance abstract method — `T op_Add(T other)` (1 param).
-                if (iface.Methods.TryGetValue(methodName, out var gmt) && gmt.Params.Count == 1)
-                    // Substitute `T` → `gp` in return type (e.g. INumber<T>.op_Add returns T,
-                    // which should become the generic param itself in the caller scope).
-                    return (iface.Name, SubstituteGenericReturnType(gmt.Ret, gp));
-                // Path B (L3 static abstract interface members): `static abstract T op_Add(T a, T b)`
-                // (2 params). IR-level BoundCall(Virtual) prepends receiver, so VCall dispatches
-                // (left, right) into the implementer's `static op_Add(a, b)` — 2 args.
                 if (iface.StaticMembers is { } sm
                     && sm.TryGetValue(methodName, out var staticMember)
                     && staticMember.Signature.Params.Count == 2)
                     return (iface.Name, SubstituteGenericReturnType(staticMember.Signature.Ret, gp));
-            }
         }
         return null;
     }
 
-    /// For `where T: INumber<T>` and `a.op_Add(b)` with ret `T`, substitute T → caller's
-    /// generic param reference. For interface method return types that are Z42GenericParamType
-    /// or Z42PrimType("T"), replace with the caller's generic-param instance.
+    /// For `where T: I<T>` dispatch, substitute the interface's T in the return
+    /// type with the caller's generic-param reference. Handles both
+    /// `Z42GenericParamType` (modern static abstract signatures) and
+    /// `Z42PrimType("T")` (legacy pre-TSIG-fix signatures).
     private static Z42Type SubstituteGenericReturnType(Z42Type ret, Z42GenericParamType callerGp) =>
         ret switch
         {

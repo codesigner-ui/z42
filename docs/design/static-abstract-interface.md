@@ -490,17 +490,22 @@ public struct int : ..., INumber<int> {
 }
 ```
 
-### 7.2 对 commit `12a3854` operator 重载的影响
+### 7.2 对 commit `12a3854` operator 重载的影响 ✅
 
 `12a3854` 的 TypeChecker desugar 逻辑分两支：
 1. 静态 operator → BoundCall(Static) —— **保留**
-2. 实例 op_Add（泛型 / 类直接实现）→ BoundCall(Virtual) —— **本次改写**
+2. 实例 op_Add（泛型 / 类直接实现）→ BoundCall(Virtual) —— **已改写**
 
-改写后：
-- 泛型 T 约束 → InterfaceStaticCall 新路径
-- 用户类直接 `a + b` → 仍用静态 operator BoundCall
-
-最终**移除 TryLookupInstanceOperator 路径**（iter 1 结束时）。
+改写后（实施结果）：
+- 泛型 T 约束 → `TryLookupInstanceOperator` 的 Z42GenericParamType 分支
+  查 `iface.StaticMembers`（2 参静态）→ BoundCall(Virtual) → VCallInstr。
+  **未引入新 IR 指令**：VCall 值驱动派发天然匹配 `(receiver, ...extras)` 调用
+  约定与 `(T, T) -> T` 静态签名。
+- 用户类直接 `a + b`（Vec2 等）→ 仍走静态 operator BoundCall
+- 用户类实例方法形式 `left.op_Add(R)`（非 INumber）→ 仍经
+  `TryLookupInstanceOperator` 的 Z42ClassType 分支 → BoundCall(Virtual)
+- **已移除**（2026-04-24 cleanup）：泛型 T 约束的 1 参实例方法查询
+  （Path A on Z42GenericParamType）。stdlib INumber 全静态后此路径永远不触发。
 
 ### 7.3 golden test 影响
 

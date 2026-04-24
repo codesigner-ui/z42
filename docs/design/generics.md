@@ -616,25 +616,31 @@ var d = v * 10;   // Vec2.op_Multiply(v, 10) — heterogeneous OK
 
 **Desugar 优先级**（`TryBindOperatorCall` in `TypeChecker.Exprs.cs`）：
 1. Primitive 双方（int + int 等）→ **早退，走 BinaryTypeTable / AddInstr 快路径**
-2. 静态 `op_Add(L, R)` on left.Type 或 right.Type（签名匹配）→ Static call
-3. 实例 `left.op_Add(R)` — user class method 或 generic T 的 INumber constraint 方法
-   → Virtual call
+2. 静态 `op_Add(L, R)` on left.Type 或 right.Type（签名匹配）→ Static call；
+   2026-04-24 起也覆盖 generic T 的静态抽象接口派发（VCall 值驱动）
+3. 用户类（非 INumber）的实例 `left.op_Add(R)` 方法 → Virtual call
 4. 全未命中 → 原 "requires numeric operand" 错误
 
 **Scope（本迭代）**：
 - 5 个二元算术运算符
 - 静态 operator 方法（C# 规则）
 - 类型签名匹配（含异构）
-- 与 INumber instance 方法可共存
 
 **后续迭代规划**：
 - 比较运算符 `<` / `<=` / `>` / `>=`（走 IComparable）
 - 相等运算符 `==` / `!=`（走 IEquatable）
 - 一元运算符 `-x` / `!x` / `~x`
 - 复合赋值 `+=` 等（纯语法糖）
-- 跨 zpkg 泛型路径的完整 INumber 端到端 demo
 
-### INumber 数值约束（L3-G2.5 INumber 迭代 1，2026-04-23）
+### INumber 数值约束（L3-G2.5 INumber 迭代 1，2026-04-23 — **已废弃，2026-04-24**）
+
+> ⚠️ **DEPRECATED**：本小节描述 INumber 实例方法形式（`T op_Add(T other)`），
+> 已被 "静态抽象接口成员"（本文档前面小节，2026-04-24）全面替代。stdlib INumber
+> + int/long/float/double 全部迁移到 `static abstract T op_Add(T a, T b)` 形式；
+> `TryLookupInstanceOperator` 的泛型参 Path A（1 参实例查询）已移除。
+> 本节文字保留作为历史脉络；**新代码不得再按本节模式实现**。
+
+---
 
 **目标**：泛型数值算法（`Sum<T>`、向量、矩阵、通用算术）通过
 `where T: INumber<T>` 约束泛化；primitive（int / long / float / double）
