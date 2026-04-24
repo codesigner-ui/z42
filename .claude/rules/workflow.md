@@ -32,19 +32,31 @@ Think First → Spec It → Build It → Archive It
 
 ```
 spec/
-├── changes/
-│   ├── <change-name>/          ← 进行中的变更（kebab-case）
-│   │   ├── proposal.md         ← Why：动机与范围
-│   │   ├── design.md           ← How：技术方案与决策
-│   │   ├── specs/
-│   │   │   └── <capability>/
-│   │   │       └── spec.md     ← What：可验证的场景
-│   │   └── tasks.md            ← 实施清单（checkbox）
-│   └── archive/
-│       └── YYYY-MM-DD-<name>/  ← 已归档变更
+├── changes/                    ← 进行中的变更提案
+│   └── <change-name>/          ← kebab-case，动词开头
+│       ├── proposal.md         ← Why：动机与范围
+│       ├── design.md           ← How：技术方案与决策
+│       ├── specs/
+│       │   └── <capability>/
+│       │       └── spec.md     ← What：可验证的场景（本变更的 delta）
+│       └── tasks.md            ← 实施清单（checkbox）
+└── archive/                    ← 已归档变更（与 changes/ 并列）
+    └── YYYY-MM-DD-<name>/
 ```
 
 长期规范（新语法、IR 指令、VM 行为）最终同步到 `docs/design/`，不存在 `spec/` 中。
+
+### 与 OpenSpec 原版的偏离（z42 本地约定）
+
+本工作流脱胎于 [OpenSpec](https://openspec.dev/) 社区方法论，但有三处显式偏离：
+
+| 维度 | OpenSpec 原版 | z42 本地 | 偏离理由 |
+|------|-------------|--------|--------|
+| **目录名** | `openspec/` | `spec/` | 去掉方法论品牌暗示，名字更中性 |
+| **archive 位置** | `changes/archive/` 子目录 | `archive/` 与 `changes/` 并列 | archive 不是一个 change；并列使 "进行中 vs 历史" 语义清晰，扫描活跃变更不需排除子目录 |
+| **顶层 specs 库** | `openspec/specs/<capability>/spec.md` 作为系统当前行为的 SoT | 无顶层 `spec/specs/`，长期规范改为 `docs/design/<feature>.md` | z42 的语言/IR/VM 规范用人类可读的叙事文档组织（给语言使用者读），而非结构化 capability spec；变更归档时人肉 merge 到 `docs/design/` |
+
+这些偏离一经明确，不得在未经讨论的情况下回改 OpenSpec 原版结构。
 
 ---
 
