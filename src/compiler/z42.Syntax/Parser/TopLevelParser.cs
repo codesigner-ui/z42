@@ -228,15 +228,61 @@ internal static partial class TopLevelParser
             if (cursor.Current.Kind == TokenKind.LBracket) { SkipAttribute(ref cursor); continue; }
             var mSpan = cursor.Current.Span;
             ParseVisibility(ref cursor, Visibility.Public);
-            SkipNonVisibilityModifiers(ref cursor);
+            // L3 三档静态成员：static abstract / static virtual / static（无修饰）
+            var (isStatic, isVirtual, isOverride, isAbstract, _, _) = ParseNonVisibilityModifiers(ref cursor);
+            if (isOverride)
+                throw new ParseException(
+                    "`override` is not valid in interface body — implementers use `static override` at the class",
+                    mSpan, DiagnosticCodes.InvalidModifier);
+            if (isAbstract && isVirtual)
+                throw new ParseException(
+                    "`abstract` and `virtual` cannot be combined", mSpan,
+                    DiagnosticCodes.InvalidModifier);
             var mType = TypeParser.Parse(cursor).Unwrap(ref cursor);
-            var mName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            // L3 operator overload in interface: `static abstract T operator +(T, T)`
+            string mName;
+            if (cursor.Current.Kind == TokenKind.Operator)
+            {
+                cursor = cursor.Advance();
+                mName = ParseOperatorSymbolAsMethodName(ref cursor);
+            }
+            else
+            {
+                mName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            }
 
-            if (cursor.Current.Kind == TokenKind.LBrace) { SkipAutoPropBody(ref cursor); continue; }
+            // Property-like `T Name { get; }` — iter 1 skip（properties 属于 iter 2）
+            if (cursor.Current.Kind == TokenKind.LBrace
+                && cursor.Peek(1).Kind != TokenKind.RBrace  // not empty body; property body `{ get; }`
+                && cursor.Peek(1).Text == "get")
+            { SkipAutoPropBody(ref cursor); continue; }
 
             var parms = ParseParamList(ref cursor, feat);
-            ExpectKind(ref cursor, TokenKind.Semicolon);
-            methods.Add(new MethodSignature(mName, parms, mType, mSpan));
+            // L3 三档静态：有 body 的 static 方法（virtual 或 concrete）parse body；否则 `;`
+            BlockStmt? body = null;
+            if (cursor.Current.Kind == TokenKind.LBrace)
+            {
+                body = StmtParser.ParseBlock(cursor, feat).Unwrap(ref cursor);
+            }
+            else
+            {
+                ExpectKind(ref cursor, TokenKind.Semicolon);
+            }
+            // Tier validation: abstract 禁有 body；virtual 必须有 body；
+            // instance（非 static）iter 1 不支持 default body。
+            if (isAbstract && body != null)
+                throw new ParseException(
+                    "`abstract` interface member cannot have a body", mSpan,
+                    DiagnosticCodes.InvalidModifier);
+            if (isVirtual && body == null)
+                throw new ParseException(
+                    "`virtual` interface member must provide a default body", mSpan,
+                    DiagnosticCodes.InvalidModifier);
+            if (!isStatic && body != null)
+                throw new ParseException(
+                    "instance default interface methods are not supported in this iteration — use `static virtual` instead",
+                    mSpan, DiagnosticCodes.InvalidModifier);
+            methods.Add(new MethodSignature(mName, parms, mType, mSpan, isStatic, isVirtual, body));
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
         return new InterfaceDecl(name, vis, methods, start, typeParams, whereClause);

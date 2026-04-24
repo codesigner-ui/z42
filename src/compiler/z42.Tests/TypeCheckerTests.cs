@@ -1634,4 +1634,101 @@ void Main() { var m = Max(""a"", ""b""); }").HasErrors.Should().BeFalse();
 bool AreEqual<T>(T a, T b) where T: IEquatable<T> { return a.Equals(b); }
 void Main() { var r = AreEqual(true, false); }").HasErrors.Should().BeFalse();
     }
+
+    // ── L3 Static abstract interface members (C# 11 alignment) ───────────────
+
+    // Interface declares `static abstract T M(T)`; implementer provides
+    // `static override T M(T)` — accepted.
+    [Fact]
+    public void StaticAbstract_Implementer_WithOverride_Passes()
+    {
+        Check(@"
+interface INumber<T> {
+    static abstract T op_Add(T a, T b);
+}
+class MyInt : INumber<MyInt> {
+    int v;
+    MyInt() { this.v = 0; }
+    public static override MyInt op_Add(MyInt a, MyInt b) { return a; }
+}
+void Main() { }").HasErrors.Should().BeFalse();
+    }
+
+    // Interface declares `static abstract`; implementer omits it → missing override.
+    [Fact]
+    public void StaticAbstract_Implementer_Missing_Rejected()
+    {
+        var diags = Check(@"
+interface INumber<T> {
+    static abstract T op_Add(T a, T b);
+}
+class MyInt : INumber<MyInt> {
+    int v;
+    MyInt() { this.v = 0; }
+}
+void Main() { }");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.InterfaceMismatch
+            && d.Message.Contains("static override"));
+    }
+
+    // `override` targeting a name that doesn't exist on any implemented
+    // interface → spelling防护 error.
+    [Fact]
+    public void StaticOverride_NoInterfaceTarget_Rejected()
+    {
+        var diags = Check(@"
+interface INumber<T> {
+    static abstract T op_Add(T a, T b);
+}
+class MyInt : INumber<MyInt> {
+    int v;
+    MyInt() { this.v = 0; }
+    public static override MyInt op_Add(MyInt a, MyInt b) { return a; }
+    public static override MyInt op_Addd(MyInt a, MyInt b) { return a; }
+}
+void Main() { }");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.InterfaceMismatch
+            && d.Message.Contains("op_Addd"));
+    }
+
+    // `static virtual` default body — implementer may skip override (inherits default).
+    [Fact]
+    public void StaticVirtual_Implementer_CanSkip_Passes()
+    {
+        Check(@"
+interface INumber<T> {
+    static abstract T op_Add(T a, T b);
+    static virtual T op_Double(T x) { return x; }
+}
+class MyInt : INumber<MyInt> {
+    int v;
+    MyInt() { this.v = 0; }
+    public static override MyInt op_Add(MyInt a, MyInt b) { return a; }
+}
+void Main() { }").HasErrors.Should().BeFalse();
+    }
+
+    // `static` (no virtual/abstract) is sealed — override rejected.
+    [Fact]
+    public void StaticConcrete_Implementer_Override_Rejected()
+    {
+        var diags = Check(@"
+interface INumber<T> {
+    static T Tag(T x) { return x; }
+}
+class MyInt : INumber<MyInt> {
+    int v;
+    MyInt() { this.v = 0; }
+    public static override MyInt Tag(MyInt x) { return x; }
+}
+void Main() { }");
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.InterfaceMismatch
+            && d.Message.Contains("sealed"));
+    }
 }

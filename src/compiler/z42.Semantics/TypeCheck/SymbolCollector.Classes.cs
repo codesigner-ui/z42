@@ -163,7 +163,9 @@ internal sealed partial class SymbolCollector
                 _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"cannot inherit from sealed class `{effectiveBase3}`", cls.Span);
 
-            foreach (var m in cls.Methods.Where(m => m.IsOverride))
+            // Static override goes through VerifyStaticOverrides (interface static members);
+            // here we only verify instance override targets base virtual/abstract or interface instance methods.
+            foreach (var m in cls.Methods.Where(m => m.IsOverride && !m.IsStatic))
             {
                 bool found = false;
                 var  cur   = effectiveBase3;
@@ -237,6 +239,82 @@ internal sealed partial class SymbolCollector
                             $"class `{cls.Name}` method `{methodName}` return type `{implSig.Ret}` does not match interface `{ifaceName}` return type `{ifaceSig.Ret}`",
                             cls.Span);
                 }
+            }
+        }
+
+        // Fifth pass (L3 static abstract interface members): verify `static override`
+        // on the class implementer side — spelling防护 + sealed检查 + 漏缺检查.
+        VerifyStaticOverrides(cu);
+    }
+
+    /// L3 static abstract interface members (C# 11 alignment): check that every
+    /// `static override` method on a class targets an interface static member
+    /// and obeys its tier rules; check that every abstract interface static
+    /// member is overridden by a non-abstract implementer.
+    private void VerifyStaticOverrides(CompilationUnit cu)
+    {
+        foreach (var cls in cu.Classes)
+        {
+            if (!_classInterfaces.TryGetValue(cls.Name, out var ifaces)) continue;
+
+            // Build combined static-member map from all implemented interfaces.
+            // Iter 1: name collisions across interfaces are not expected; last-wins.
+            var ifaceStatic = new Dictionary<string, (string Iface, Z42StaticMember Member)>();
+            foreach (var ifaceTy in ifaces)
+            {
+                if (!_interfaces.TryGetValue(ifaceTy.Name, out var iface)) continue;
+                if (iface.StaticMembers is null) continue;
+                foreach (var (name, member) in iface.StaticMembers)
+                    ifaceStatic[name] = (iface.Name, member);
+            }
+
+            // 1) For each class static method: classify by (IsOverride, target exists).
+            var classOverrides = new HashSet<string>();
+            foreach (var m in cls.Methods.Where(mm => mm.IsStatic))
+            {
+                if (m.IsOverride)
+                {
+                    if (!ifaceStatic.TryGetValue(m.Name, out var target))
+                    {
+                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
+                            $"`{cls.Name}.{m.Name}`: no matching `static abstract` / `static virtual` member in any implemented interface",
+                            m.Span);
+                        continue;
+                    }
+                    if (target.Member.Kind == StaticMemberKind.Concrete)
+                    {
+                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
+                            $"`{cls.Name}.{m.Name}`: interface `{target.Iface}.{m.Name}` is sealed (no `virtual`/`abstract`), cannot be overridden",
+                            m.Span);
+                        continue;
+                    }
+                    // Signature check: param count + return assignability with T-tolerance
+                    var ifaceSig = target.Member.Signature;
+                    if (m.Params.Count != ifaceSig.Params.Count)
+                        _diags.Error(DiagnosticCodes.InterfaceMismatch,
+                            $"`{cls.Name}.{m.Name}` has wrong parameter count overriding `{target.Iface}.{m.Name}` " +
+                            $"(expected {ifaceSig.Params.Count}, got {m.Params.Count})", m.Span);
+                    classOverrides.Add(m.Name);
+                }
+                else if (ifaceStatic.TryGetValue(m.Name, out var targetNoOv)
+                      && targetNoOv.Member.Kind != StaticMemberKind.Concrete)
+                {
+                    // User wrote `static T op_X(...)` without `override` but an interface
+                    // member with the same name exists → missing override keyword.
+                    _diags.Error(DiagnosticCodes.InterfaceMismatch,
+                        $"`{cls.Name}.{m.Name}` hides interface member `{targetNoOv.Iface}.{m.Name}` — add `override` or rename",
+                        m.Span);
+                }
+            }
+
+            // 2) Check abstract interface statics are all overridden.
+            if (cls.IsAbstract) continue;
+            foreach (var (name, (ifaceName, member)) in ifaceStatic)
+            {
+                if (member.Kind == StaticMemberKind.Abstract && !classOverrides.Contains(name))
+                    _diags.Error(DiagnosticCodes.InterfaceMismatch,
+                        $"class `{cls.Name}` must `static override` abstract member `{ifaceName}.{name}`",
+                        cls.Span);
             }
         }
     }

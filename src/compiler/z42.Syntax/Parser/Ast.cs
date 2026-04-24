@@ -81,12 +81,21 @@ public sealed record InterfaceDecl(
     List<string>? TypeParams = null,
     WhereClause? Where = null);
 
-/// A method signature (no body) for use in interface declarations.
+/// A method signature for use in interface declarations.
+///
+/// L3 三档静态成员（方案 D1'）：
+/// - `static abstract`：`IsStatic=true`, `IsVirtual=false`, `Body=null`（实现者必须 override）
+/// - `static virtual`：`IsStatic=true`, `IsVirtual=true`,  `Body!=null`（可选 override，不 override 则用默认）
+/// - `static`（无修饰）：`IsStatic=true`, `IsVirtual=false`, `Body!=null`（不可 override，sealed）
+/// - instance abstract：`IsStatic=false`, `IsVirtual=false`, `Body=null`（原 interface 方法）
 public sealed record MethodSignature(
     string Name,
     List<Param> Params,
     TypeExpr ReturnType,
-    Span Span);
+    Span Span,
+    bool IsStatic = false,
+    bool IsVirtual = false,
+    BlockStmt? Body = null);
 
 // ── Enum declaration ──────────────────────────────────────────────────────────
 

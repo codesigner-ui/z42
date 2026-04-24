@@ -165,6 +165,19 @@ public sealed record Z42OptionType(Z42Type Inner) : Z42Type
     public override string ToString() => $"{Inner}?";
 }
 
+/// L3 static abstract interface members (C# 11 alignment): which tier a
+/// static interface member is declared in.
+/// - Abstract: no body; implementer MUST provide `static override`
+/// - Virtual:  default body; implementer MAY override (or inherit default)
+/// - Concrete: default body; implementer MUST NOT override (sealed by default)
+public enum StaticMemberKind { Abstract, Virtual, Concrete }
+
+/// A static member declared on an interface: its signature plus tier.
+public sealed record Z42StaticMember(
+    string Name,
+    Z42FuncType Signature,
+    StaticMemberKind Kind);
+
 /// Interface type (e.g. `IShape`). L3-G2.5 chain: `TypeArgs` carries the
 /// instantiation of a generic interface reference (`IEquatable<T>` → TypeArgs=[T])
 /// so constraint validation can substitute type params across parameter chains.
@@ -173,8 +186,22 @@ public sealed record Z42OptionType(Z42Type Inner) : Z42Type
 public sealed record Z42InterfaceType(
     string Name,
     IReadOnlyDictionary<string, Z42FuncType> Methods,
-    IReadOnlyList<Z42Type>? TypeArgs = null) : Z42Type
+    IReadOnlyList<Z42Type>? TypeArgs = null,
+    /// L3 static abstract interface members (C# 11 alignment): static methods /
+    /// operators declared in the interface that implementers must provide or
+    /// inherit. Three tiers (abstract / virtual / concrete) encoded via
+    /// `Z42StaticMember.Kind`.
+    IReadOnlyDictionary<string, Z42StaticMember>? StaticMembers = null) : Z42Type
 {
+    /// Convenience: signature-only view of static members (back-compat for
+    /// callers that only need the Z42FuncType).
+    public IReadOnlyDictionary<string, Z42FuncType> StaticMethods =>
+        StaticMembers is null
+            ? _emptyStatics
+            : StaticMembers.ToDictionary(kv => kv.Key, kv => kv.Value.Signature);
+    private static readonly IReadOnlyDictionary<string, Z42FuncType> _emptyStatics =
+        new Dictionary<string, Z42FuncType>();
+
     public override string ToString() => TypeArgs is { Count: > 0 } args
         ? $"{Name}<{string.Join(", ", args)}>"
         : Name;

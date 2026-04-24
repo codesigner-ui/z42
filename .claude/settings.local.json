@@ -69,7 +69,18 @@
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll /Users/d.s.qiu/Documents/codesigner-ui/z42/examples/g3d_test.z42 --emit zbc -o /tmp/z42_g3d_test/test.zbc)",
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 diff .claude/CLAUDE.md README.md)",
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 log --oneline -10)",
-      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add .claude/CLAUDE.md README.md src/toolchain/)"
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add .claude/CLAUDE.md README.md src/toolchain/)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 diff --stat HEAD)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add docs/design/generics.md docs/roadmap.md scripts/build-stdlib.sh src/compiler/z42.Semantics/TypeCheck/TypeChecker.cs src/compiler/z42.Tests/TypeCheckerTests.cs src/libraries/README.md src/libraries/z42.numerics/ src/runtime/src/corelib/ src/runtime/src/interp/exec_instr.rs src/runtime/tests/golden/run/85_generic_inumber_method/ openspec/changes/archive/2026-04-23-add-generics-g2.5-inumber-method-dispatch/)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 log --oneline -3)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 revert af814f2 --no-edit)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add docs/design/generics.md docs/roadmap.md src/compiler/z42.Core/Diagnostics/ src/compiler/z42.Semantics/ src/compiler/z42.Syntax/ src/compiler/z42.Tests/ src/runtime/tests/golden/run/86_extern_impl_user_class/ openspec/changes/archive/2026-04-23-add-extern-impl-user-classes/)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 revert 20f60d0 --no-edit)",
+      "Bash(./scripts/build-stdlib.sh --use-dist)",
+      "Bash(./scripts/test-dist.sh)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add docs/design/generics.md docs/roadmap.md src/compiler/z42.Semantics/ src/compiler/z42.Syntax/ src/compiler/z42.Tests/ src/libraries/z42.core/ src/runtime/src/interp/exec_instr.rs src/runtime/src/jit/helpers_object.rs openspec/changes/archive/2026-04-23-add-primitive-as-struct/)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add docs/roadmap.md)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 add docs/design/static-abstract-interface.md)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

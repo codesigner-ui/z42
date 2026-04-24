@@ -114,14 +114,32 @@ internal sealed partial class SymbolCollector : ISymbolBinder
         {
             // Activate the interface's own type params so `T` inside method signatures
             // resolves to Z42GenericParamType instead of falling back to Z42PrimType("T").
-            // Required for interfaces like `INumber<T> { T op_Add(T other); }` where T
-            // appears in return position (not just params).
             if (iface.TypeParams is { Count: > 0 } tps)
                 _activeTypeParams = new HashSet<string>(tps);
-            var methods = new Dictionary<string, Z42FuncType>();
+            var methods       = new Dictionary<string, Z42FuncType>();
+            var staticMembers = new Dictionary<string, Z42StaticMember>();
             foreach (var m in iface.Methods)
-                methods[m.Name] = BuildFuncSignature(m.Params, ResolveType(m.ReturnType));
-            _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods);
+            {
+                var sig = BuildFuncSignature(m.Params, ResolveType(m.ReturnType));
+                if (m.IsStatic)
+                {
+                    // Tier derivation: Parser already validated abstract↔no-body /
+                    // virtual↔body combos. So here:
+                    //   IsVirtual=true → Virtual (body present)
+                    //   Body=null      → Abstract
+                    //   otherwise      → Concrete (sealed)
+                    var kind = m.IsVirtual ? StaticMemberKind.Virtual
+                             : m.Body is null ? StaticMemberKind.Abstract
+                             : StaticMemberKind.Concrete;
+                    staticMembers[m.Name] = new Z42StaticMember(m.Name, sig, kind);
+                }
+                else
+                {
+                    methods[m.Name] = sig;
+                }
+            }
+            _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods,
+                StaticMembers: staticMembers.Count > 0 ? staticMembers : null);
             _activeTypeParams = null;
         }
     }
