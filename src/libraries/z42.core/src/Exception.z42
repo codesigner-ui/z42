@@ -1,0 +1,33 @@
+namespace Std;
+
+// `Exception` — 所有异常类型的推荐基类（2026-04-25 Wave 2）。
+//
+// throw 语法 Phase 1 仍接受任意值（`throw "str"` 合法，保持 L1 兼容），
+// 但 stdlib 抛出 + 新用户代码推荐统一继承 Exception，为 catch 过滤 /
+// Inner 链 / 未来 stack trace 打基础。
+//
+// 字段：
+//   Message         异常消息（必填）
+//   StackTrace      调用栈快照（Phase 1 恒为 null，留字段给未来填充）
+//   InnerException  原始异常（wrapping pattern；无则 null）
+public class Exception {
+    public string Message;
+    public string StackTrace;      // reference type defaults to null (Phase 1)
+    public Exception InnerException;
+
+    public Exception(string message) {
+        this.Message = message;
+        // StackTrace / InnerException default to null (reference type 初始化)
+    }
+
+    // Wrapping pattern (Phase 1: VM 不支持 ctor 重载，统一用 setter 链)：
+    //
+    //     var inner = new Exception("root cause");
+    //     var outer = new Exception("wrap"); outer.InnerException = inner;
+    //
+    // 未来 ObjNew 支持 arity suffix 查找后会补 `Exception(msg, inner)` 重载。
+
+    override string ToString() {
+        return "Exception: " + this.Message;
+    }
+}

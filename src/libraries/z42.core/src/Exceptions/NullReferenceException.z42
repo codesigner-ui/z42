@@ -1,0 +1,10 @@
+namespace Std;
+
+// 解引用 null（字段访问 / 方法调用 receiver 为 null）。
+public class NullReferenceException : Exception {
+    public NullReferenceException(string message) : base(message) {}
+
+    override string ToString() {
+        return "NullReferenceException: " + this.Message;
+    }
+}

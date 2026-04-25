@@ -1,0 +1,5 @@
+ArgumentException: bad input
+InvalidOperationException: queue empty
+KeyNotFoundException: missing key
+NotImplementedException: todo
+done

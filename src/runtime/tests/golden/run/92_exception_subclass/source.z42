@@ -1,0 +1,33 @@
+// Wave 2: Exception subclasses — throw / catch + ToString.
+
+void Main() {
+    // ArgumentException
+    try {
+        throw new ArgumentException("bad input");
+    } catch (Exception e) {
+        Console.WriteLine(e.ToString());   // ArgumentException: bad input
+    }
+
+    // InvalidOperationException
+    try {
+        throw new InvalidOperationException("queue empty");
+    } catch (Exception e) {
+        Console.WriteLine(e.ToString());   // InvalidOperationException: queue empty
+    }
+
+    // KeyNotFoundException
+    try {
+        throw new KeyNotFoundException("missing key");
+    } catch (Exception e) {
+        Console.WriteLine(e.ToString());   // KeyNotFoundException: missing key
+    }
+
+    // NotImplementedException
+    try {
+        throw new NotImplementedException("todo");
+    } catch (Exception e) {
+        Console.WriteLine(e.ToString());   // NotImplementedException: todo
+    }
+
+    Console.WriteLine("done");
+}

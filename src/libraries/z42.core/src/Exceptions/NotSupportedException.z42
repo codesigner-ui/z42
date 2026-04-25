@@ -1,0 +1,10 @@
+namespace Std;
+
+// 方法不支持当前场景（如对只读集合调 Add）。
+public class NotSupportedException : Exception {
+    public NotSupportedException(string message) : base(message) {}
+
+    override string ToString() {
+        return "NotSupportedException: " + this.Message;
+    }
+}

@@ -1,0 +1,10 @@
+namespace Std;
+
+// 索引超出有效范围（数组 / List 越界访问）。
+public class IndexOutOfRangeException : Exception {
+    public IndexOutOfRangeException(string message) : base(message) {}
+
+    override string ToString() {
+        return "IndexOutOfRangeException: " + this.Message;
+    }
+}

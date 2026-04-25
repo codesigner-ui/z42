@@ -1,0 +1,16 @@
+// Wave 2: Exception base class — construction, field access, ToString.
+
+void Main() {
+    // Simple ctor
+    var e1 = new Exception("oops");
+    Console.WriteLine(e1.Message);           // oops
+    Console.WriteLine(e1.ToString());        // Exception: oops
+
+    // Throw + catch — Exception can flow through Phase 1 any-value channel
+    try {
+        throw new Exception("thrown");
+    } catch (Exception e) {
+        // `Exception` in catch is legacy catch-any; e binds to the thrown value
+        Console.WriteLine("caught");
+    }
+}

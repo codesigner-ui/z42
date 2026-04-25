@@ -1,6 +1,10 @@
 namespace Std;
 
-// TODO(L2): requires interface full implementation.
-// interface IDisposable {
-//     void Dispose();
-// }
+// Resource cleanup contract — types holding unmanaged / external resources
+// implement Dispose() for deterministic release.
+//
+// Used by L2/L3 stdlib types (FileStream, RegexEngine, etc.) and as a base
+// of IEnumerator<T> so foreach can release iterator state.
+public interface IDisposable {
+    void Dispose();
+}

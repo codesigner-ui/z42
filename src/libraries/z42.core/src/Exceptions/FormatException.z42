@@ -1,0 +1,10 @@
+namespace Std;
+
+// 字符串解析失败（int.Parse / 格式化 / 模板）。
+public class FormatException : Exception {
+    public FormatException(string message) : base(message) {}
+
+    override string ToString() {
+        return "FormatException: " + this.Message;
+    }
+}

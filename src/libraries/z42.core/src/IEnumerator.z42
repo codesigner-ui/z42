@@ -1,0 +1,20 @@
+namespace Std;
+
+// Forward iterator contract (C# 风格).
+//
+// Pattern:
+//     while (it.MoveNext()) {
+//         var x = it.Current();
+//         ...
+//     }
+//     it.Dispose();
+//
+// Inherits IDisposable so foreach 升级路径（未来 codegen）可统一调
+// Dispose 释放迭代状态。
+//
+// 注意：Phase 1 parser 暂不接受接口 property 声明（`T Current { get; }`），
+// `Current` 退化为方法形式。L3 接口 property 全支持后可补齐。
+public interface IEnumerator<T> : IDisposable {
+    bool MoveNext();
+    T Current();
+}

@@ -1,0 +1,10 @@
+namespace Std;
+
+// 参数非法（值或参数组合不符合方法要求）。
+public class ArgumentException : Exception {
+    public ArgumentException(string message) : base(message) {}
+
+    override string ToString() {
+        return "ArgumentException: " + this.Message;
+    }
+}

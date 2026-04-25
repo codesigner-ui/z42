@@ -1,0 +1,14 @@
+namespace Std;
+
+// "可迭代" 契约 — 集合类型实现此接口表明它能产出 IEnumerator<T>。
+//
+// 当前 foreach 使用索引鸭子协议（Count + get_Item），不强制要求
+// IEnumerable 实现。本接口主要用途：
+//   1. 泛型约束 `where T: IEnumerable<U>` — 算法在抽象层依赖"可迭代"
+//   2. 显式类型契约 — `class List<T> : IEnumerable<T>` 自我声明
+//   3. 未来 LINQ / iterator chain 的协议层入口
+//
+// foreach codegen 升级（识别 IEnumerator 路径）是独立后续工作。
+public interface IEnumerable<T> {
+    IEnumerator<T> GetEnumerator();
+}

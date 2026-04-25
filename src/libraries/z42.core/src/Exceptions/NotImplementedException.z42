@@ -1,0 +1,10 @@
+namespace Std;
+
+// 方法已声明但未实现（占位 / 未完成的代码路径）。
+public class NotImplementedException : Exception {
+    public NotImplementedException(string message) : base(message) {}
+
+    override string ToString() {
+        return "NotImplementedException: " + this.Message;
+    }
+}

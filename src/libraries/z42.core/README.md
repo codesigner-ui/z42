@@ -21,8 +21,27 @@
 | `Convert.z42` | 类型转换工具 |
 | `IEquatable.z42` | 相等性接口 |
 | `IComparable.z42` | 比较接口 |
-| `IDisposable.z42` | 资源释放接口 |
+| `IDisposable.z42` | 资源释放接口（`void Dispose()`）|
+| `IEnumerable.z42` | 可迭代契约（`IEnumerator<T> GetEnumerator()`）|
+| `IEnumerator.z42` | 前向迭代器契约（`bool MoveNext()` + `T Current()`）|
 | `INumber.z42` | 数值约束接口（`op_Add` / `op_Subtract` / `op_Multiply` / `op_Divide` / `op_Modulo`）|
+| `Exception.z42` | 异常基类（`Message` / `StackTrace` / `InnerException`）|
+
+## src/Exceptions/ — 标准异常子类（Wave 2 2026-04-25）
+
+| 文件 | 继承自 | 语义 |
+|------|--------|------|
+| `ArgumentException.z42` | Exception | 参数非法 |
+| `ArgumentNullException.z42` | ArgumentException | 参数为 null |
+| `InvalidOperationException.z42` | Exception | 对象状态不允许此操作 |
+| `NullReferenceException.z42` | Exception | 解引用 null |
+| `IndexOutOfRangeException.z42` | Exception | 索引越界 |
+| `KeyNotFoundException.z42` | Exception | 字典查找键不存在 |
+| `FormatException.z42` | Exception | 字符串解析失败 |
+| `NotImplementedException.z42` | Exception | 方法未实现 |
+| `NotSupportedException.z42` | Exception | 方法不支持当前场景 |
+
+详见 `docs/design/exceptions.md`。
 
 ## src/Collections/ — 基础泛型集合三件套
 

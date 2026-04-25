@@ -1,0 +1,10 @@
+namespace Std;
+
+// 字典 / Map 查找的键不存在。
+public class KeyNotFoundException : Exception {
+    public KeyNotFoundException(string message) : base(message) {}
+
+    override string ToString() {
+        return "KeyNotFoundException: " + this.Message;
+    }
+}

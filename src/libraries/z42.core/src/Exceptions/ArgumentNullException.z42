@@ -1,0 +1,10 @@
+namespace Std;
+
+// 参数为 null，但方法要求非空。继承 ArgumentException（C# BCL 对齐）。
+public class ArgumentNullException : ArgumentException {
+    public ArgumentNullException(string message) : base(message) {}
+
+    override string ToString() {
+        return "ArgumentNullException: " + this.Message;
+    }
+}
