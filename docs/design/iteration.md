@@ -49,9 +49,9 @@ public interface IEnumerable<T> {
 
 **当前限制：**
 - foreach 不识别 IEnumerable 路径 —— 必须同时提供 Count + get_Item 才能
-  foreach
-- `T Current { get; }` property 形式 parser 暂未支持，本 Wave 退化为
-  `T Current()` 方法形式
+  foreach（独立 change 升级 codegen）
+- ~~`T Current { get; }` property 形式 parser 暂未支持~~ —— 已支持（2026-04-26
+  add-auto-property-syntax）；IEnumerator 已恢复 C# 标准 property 形式
 
 ## 设计权衡
 

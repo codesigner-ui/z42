@@ -251,11 +251,17 @@ internal static partial class TopLevelParser
                 mName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
             }
 
-            // Property-like `T Name { get; }` — iter 1 skip（properties 属于 iter 2）
+            // Property in interface body: `T Name { get; [set;] }` desugars to
+            // method signatures (no body). 取 vis=Public 作为 interface member 默认。
             if (cursor.Current.Kind == TokenKind.LBrace
-                && cursor.Peek(1).Kind != TokenKind.RBrace  // not empty body; property body `{ get; }`
+                && cursor.Peek(1).Kind != TokenKind.RBrace
                 && cursor.Peek(1).Text == "get")
-            { SkipAutoPropBody(ref cursor); continue; }
+            {
+                var propSigs = SynthesizeInterfaceAutoProp(
+                    ref cursor, Visibility.Public, isStatic, mType, mName, mSpan);
+                methods.AddRange(propSigs);
+                continue;
+            }
 
             var parms = ParseParamList(ref cursor, feat);
             // L3 三档静态：有 body 的 static 方法（virtual 或 concrete）parse body；否则 `;`
@@ -399,16 +405,20 @@ internal static partial class TopLevelParser
                     var fName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
                     Expr? fInit = null;
                     if (cursor.Current.Kind == TokenKind.LBrace)
-                        SkipAutoPropBody(ref cursor);
-                    else
                     {
-                        if (cursor.Current.Kind == TokenKind.Eq)
-                        {
-                            cursor = cursor.Advance();
-                            fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1).Unwrap(ref cursor);
-                        }
-                        ExpectKind(ref cursor, TokenKind.Semicolon);
+                        // Auto-property: synthesize backing field + accessors.
+                        var (backing, accessors) = SynthesizeClassAutoProp(
+                            ref cursor, fVis, fStatic, fType, fName, fSpan);
+                        fields.Add(backing);
+                        foreach (var acc in accessors) methods.Add(acc);
+                        continue;
                     }
+                    if (cursor.Current.Kind == TokenKind.Eq)
+                    {
+                        cursor = cursor.Advance();
+                        fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1).Unwrap(ref cursor);
+                    }
+                    ExpectKind(ref cursor, TokenKind.Semicolon);
                     fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan));
                 }
                 else
@@ -515,12 +525,19 @@ internal static partial class TopLevelParser
             }
         }
 
-        // Extern property: `extern T Name { get; }` — no parameter list
+        // Extern property: `extern T Name { get; }` — desugars to `extern T get_Name()`.
+        // Setter (`set;`) on extern property currently rejected (no stdlib use case;
+        // VM intrinsics are uniformly read-only properties).
         if (isExtern && cursor.Current.Kind == TokenKind.LBrace)
         {
-            SkipAutoPropBody(ref cursor);
-            return new FunctionDecl(name, [], returnType,
-                new BlockStmt([], start), vis, BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
+            var (_, hasSet) = ParseAutoPropAccessors(ref cursor, vis, start);
+            if (hasSet)
+                throw new ParseException(
+                    "extern property setter is not supported (only `extern T Name { get; }`)",
+                    start, DiagnosticCodes.UnexpectedToken);
+            return new FunctionDecl($"get_{name}", [], returnType,
+                new BlockStmt([], start), vis,
+                BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
                 nativeIntrinsic, start);
         }
 

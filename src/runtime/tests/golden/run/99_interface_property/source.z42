@@ -1,0 +1,35 @@
+// Interface property + class implementation.
+
+interface IShape {
+    int Area { get; }
+    string Name { get; }
+}
+
+class Square : IShape {
+    int side;
+
+    Square(int s) {
+        this.side = s;
+    }
+
+    int get_Area() {
+        return this.side * this.side;
+    }
+
+    string get_Name() {
+        return "Square";
+    }
+}
+
+void PrintShape(IShape s) {
+    Console.WriteLine(s.Name);
+    Console.WriteLine(s.Area);
+}
+
+void Main() {
+    var sq = new Square(5);
+    Console.WriteLine(sq.Area);   // 25
+    Console.WriteLine(sq.Name);   // Square
+
+    PrintShape(sq);                // Square / 25
+}

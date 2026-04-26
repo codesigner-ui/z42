@@ -36,7 +36,11 @@ public static class String : IComparable<string>, IEquatable<string> {
     // ── Script-side methods (loop via CharAt) ────────────────────────────────
 
     // True when the string contains no characters.
-    public bool IsEmpty { get { return Length == 0; } }
+    // Note: 当前 z42 auto-property 仅支持 `{ get; [set;] }` 形式（无 body）。
+    // 自定义 body property 推迟，按方法形式 surface。
+    public bool IsEmpty() {
+        return this.Length == 0;
+    }
 
     // True iff `value` occurs anywhere in `this`.
     public bool Contains(string value) {

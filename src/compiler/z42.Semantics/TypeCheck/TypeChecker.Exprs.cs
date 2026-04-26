@@ -242,6 +242,23 @@ public sealed partial class TypeChecker
             }
         }
 
+        // Auto-property setter dispatch: `obj.Name = v` on a class/instantiated/interface
+        // receiver with `set_<Name>` method → BoundCall to setter.
+        // Detect BEFORE binding target (which would go through get_<Name> for property).
+        if (assign.Target is MemberExpr memTgt)
+        {
+            var recv = BindExpr(memTgt.Target, env);
+            if (TryFindPropertySetter(recv.Type, memTgt.Member,
+                    out var propSetter, out var propClassName))
+            {
+                var value = BindExpr(assign.Value, env);
+                RequireAssignable(propSetter!.Params[0], value.Type, assign.Value.Span);
+                return new BoundCall(BoundCallKind.Virtual, recv, propClassName!,
+                    $"set_{memTgt.Member}", null,
+                    new List<BoundExpr> { value }, Z42Type.Void, assign.Span);
+            }
+        }
+
         var target    = BindExpr(assign.Target, env);
         var intLitVal = ExtractIntLiteralValue(assign.Value);
         BoundExpr value2;
@@ -288,6 +305,36 @@ public sealed partial class TypeChecker
             setter    = (Z42FuncType)SubstituteTypeParams(mt!, subMap);
             className = cls;
             return true;
+        }
+        setter = null; className = null; return false;
+    }
+
+    /// Auto-property setter lookup: `set_<propName>(value)` on class /
+    /// instantiated class / interface receiver. Substitutes type params for
+    /// instantiated generics. Returns false if no setter exists (readonly
+    /// property or no property at all).
+    private bool TryFindPropertySetter(Z42Type recvType, string propName,
+                                       out Z42FuncType? setter,
+                                       out string? className)
+    {
+        var setterName = $"set_{propName}";
+        switch (recvType)
+        {
+            case Z42ClassType ct
+                when ct.Methods.TryGetValue(setterName, out var mt)
+                  && mt.Params.Count == 1:
+                setter = mt; className = ct.Name; return true;
+            case Z42InstantiatedType it
+                when it.Definition.Methods.TryGetValue(setterName, out var mt)
+                  && mt.Params.Count == 1:
+                var subMap = BuildSubstitutionMap(it);
+                setter = (Z42FuncType)SubstituteTypeParams(mt, subMap);
+                className = it.Definition.Name;
+                return true;
+            case Z42InterfaceType ifa
+                when ifa.Methods.TryGetValue(setterName, out var mt)
+                  && mt.Params.Count == 1:
+                setter = mt; className = ifa.Name; return true;
         }
         setter = null; className = null; return false;
     }
@@ -556,6 +603,19 @@ public sealed partial class TypeChecker
                         $"field `{m.Member}` is private to `{def.Name}`", m.Span);
                 return new BoundMember(target, m.Member, SubstituteTypeParams(ft, subMap), m.Span);
             }
+            // Auto-property getter dispatch on instantiated generic class
+            if (def.Methods.TryGetValue($"get_{m.Member}", out var instGetter)
+                && instGetter.Params.Count == 0)
+            {
+                if (!insideClass
+                    && def.MemberVisibility.TryGetValue($"get_{m.Member}", out var pv)
+                    && pv == Visibility.Private)
+                    _diags.Error(DiagnosticCodes.AccessViolation,
+                        $"property `{m.Member}` getter is private to `{def.Name}`", m.Span);
+                var subRet = SubstituteTypeParams(instGetter.Ret, subMap);
+                return new BoundCall(BoundCallKind.Virtual, target, def.Name,
+                    $"get_{m.Member}", null, new List<BoundExpr>(), subRet, m.Span);
+            }
             if (def.Methods.TryGetValue(m.Member, out var mt))
             {
                 if (!insideClass
@@ -581,6 +641,19 @@ public sealed partial class TypeChecker
                         $"field `{m.Member}` is private to `{ct.Name}`", m.Span);
                 return new BoundMember(target, m.Member, ft, m.Span);
             }
+            // Auto-property getter dispatch: 字段缺失但 method `get_<Member>` 存在
+            // → 转 BoundCall(Virtual, target, get_<Member>, []) 调用 getter。
+            if (ct.Methods.TryGetValue($"get_{m.Member}", out var getter)
+                && getter.Params.Count == 0)
+            {
+                if (!insideClass
+                    && ct.MemberVisibility.TryGetValue($"get_{m.Member}", out var pv)
+                    && pv == Visibility.Private)
+                    _diags.Error(DiagnosticCodes.AccessViolation,
+                        $"property `{m.Member}` getter is private to `{ct.Name}`", m.Span);
+                return new BoundCall(BoundCallKind.Virtual, target, ct.Name,
+                    $"get_{m.Member}", null, new List<BoundExpr>(), getter.Ret, m.Span);
+            }
             if (ct.Methods.TryGetValue(m.Member, out var mt))
             {
                 if (!insideClass
@@ -594,9 +667,18 @@ public sealed partial class TypeChecker
                 $"type `{ct.Name}` has no member `{m.Member}`", m.Span);
             return new BoundError($"no member `{m.Member}`", Z42Type.Error, m.Span);
         }
-        if (target.Type is Z42InterfaceType ifaceType
-            && ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
-            return new BoundMember(target, m.Member, ifmt, m.Span);
+        if (target.Type is Z42InterfaceType ifaceType)
+        {
+            // Auto-property getter dispatch on interface receiver
+            if (ifaceType.Methods.TryGetValue($"get_{m.Member}", out var ifaceGetter)
+                && ifaceGetter.Params.Count == 0)
+            {
+                return new BoundCall(BoundCallKind.Virtual, target, ifaceType.Name,
+                    $"get_{m.Member}", null, new List<BoundExpr>(), ifaceGetter.Ret, m.Span);
+            }
+            if (ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
+                return new BoundMember(target, m.Member, ifmt, m.Span);
+        }
         // L3-G2 / G2.5: type parameter member access — resolve via base class first, then constraint interfaces.
         if (target.Type is Z42GenericParamType gp)
         {

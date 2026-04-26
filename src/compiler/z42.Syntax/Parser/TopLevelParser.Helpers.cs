@@ -346,17 +346,95 @@ internal static partial class TopLevelParser
         return result;
     }
 
-    private static void SkipAutoPropBody(ref TokenCursor cursor)
+    /// Parse auto-property accessor block `{ get; [set;] }` (order-insensitive).
+    /// Returns (hasGet, hasSet). At least one accessor must be present.
+    /// Accessor visibility (`public get; private set;`) parsed but ignored
+    /// — uniform with indexer (L3-G4e).
+    private static (bool hasGet, bool hasSet) ParseAutoPropAccessors(
+        ref TokenCursor cursor, Visibility memberVis, Span propSpan)
     {
         ExpectKind(ref cursor, TokenKind.LBrace);
-        int depth = 1;
-        while (!cursor.IsEnd && depth > 0)
+        bool hasGet = false, hasSet = false;
+        while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
-            if (cursor.Current.Kind == TokenKind.LBrace) depth++;
-            else if (cursor.Current.Kind == TokenKind.RBrace) { depth--; if (depth == 0) break; }
+            ParseVisibility(ref cursor, memberVis); // accessor vis ignored
+            var kw = cursor.Current;
+            if (kw.Kind != TokenKind.Identifier || (kw.Text != "get" && kw.Text != "set"))
+                throw new ParseException(
+                    $"expected `get` or `set` in auto-property body, got `{kw.Text}`",
+                    kw.Span, DiagnosticCodes.UnexpectedToken);
             cursor = cursor.Advance();
+            ExpectKind(ref cursor, TokenKind.Semicolon);
+            if (kw.Text == "get") hasGet = true; else hasSet = true;
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
+        if (!hasGet)
+            throw new ParseException(
+                "auto-property must declare `get` (set-only properties are not supported)",
+                propSpan, DiagnosticCodes.UnexpectedToken);
+        return (hasGet, hasSet);
+    }
+
+    /// Synthesise (FieldDecl, getter, [setter]) for a class auto-property
+    /// `<vis>? <type> <name> { get; [set;] }`. Returns:
+    ///   - backing FieldDecl: `private <type> __prop_<name>;`
+    ///   - getter: `<vis> <type> get_<name>() { return this.__prop_<name>; }`
+    ///   - setter (if hasSet): `<vis> void set_<name>(<type> value) { this.__prop_<name> = value; }`
+    internal static (FieldDecl backing, List<FunctionDecl> accessors)
+    SynthesizeClassAutoProp(
+        ref TokenCursor cursor, Visibility memberVis, bool isStatic,
+        TypeExpr propType, string propName, Span propSpan)
+    {
+        var (_, hasSet) = ParseAutoPropAccessors(ref cursor, memberVis, propSpan);
+
+        var bfName  = $"__prop_{propName}";
+        var backing = new FieldDecl(bfName, propType, Visibility.Private, isStatic, null, propSpan);
+
+        var mods = isStatic ? FunctionModifiers.Static : FunctionModifiers.None;
+
+        // getter body: return this.__prop_<name>;
+        var thisExpr = new IdentExpr("this", propSpan);
+        var bfRead   = new MemberExpr(thisExpr, bfName, propSpan);
+        var getBody  = new BlockStmt(new List<Stmt> { new ReturnStmt(bfRead, propSpan) }, propSpan);
+        var getter   = new FunctionDecl($"get_{propName}",
+            new List<Param>(), propType, getBody, memberVis, mods, null, propSpan);
+
+        var accessors = new List<FunctionDecl> { getter };
+
+        if (hasSet)
+        {
+            // setter body: this.__prop_<name> = value;
+            var valExpr  = new IdentExpr("value", propSpan);
+            var bfWrite  = new MemberExpr(thisExpr, bfName, propSpan);
+            var assign   = new AssignExpr(bfWrite, valExpr, propSpan);
+            var setBody  = new BlockStmt(new List<Stmt> { new ExprStmt(assign, propSpan) }, propSpan);
+            var setter   = new FunctionDecl($"set_{propName}",
+                new List<Param> { new Param("value", propType, null, propSpan) },
+                new VoidType(propSpan), setBody, memberVis, mods, null, propSpan);
+            accessors.Add(setter);
+        }
+        return (backing, accessors);
+    }
+
+    /// Parse auto-property in an interface body — produces method signatures only
+    /// (no backing field, no body).
+    /// Returns (getter [+ setter] MethodSignatures).
+    internal static List<MethodSignature> SynthesizeInterfaceAutoProp(
+        ref TokenCursor cursor, Visibility memberVis, bool isStatic,
+        TypeExpr propType, string propName, Span propSpan)
+    {
+        var (_, hasSet) = ParseAutoPropAccessors(ref cursor, memberVis, propSpan);
+        var result = new List<MethodSignature>
+        {
+            new MethodSignature($"get_{propName}", new List<Param>(), propType, propSpan, isStatic, false, null),
+        };
+        if (hasSet)
+        {
+            var setParams = new List<Param> { new Param("value", propType, null, propSpan) };
+            result.Add(new MethodSignature($"set_{propName}", setParams, new VoidType(propSpan),
+                propSpan, isStatic, false, null));
+        }
+        return result;
     }
 
     // ── Lookahead helpers (clean cursor-based, no _pos+i arithmetic) ──────────

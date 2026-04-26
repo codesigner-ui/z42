@@ -1,0 +1,28 @@
+// Auto-property: get-set + readonly forms.
+
+class Box {
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public string Label { get; }   // readonly
+
+    Box(int w, int h, string label) {
+        this.Width  = w;
+        this.Height = h;
+        // Label is read-only externally; ctor can still write the backing field.
+        this.__prop_Label = label;
+    }
+}
+
+void Main() {
+    var b = new Box(3, 4, "first");
+    Console.WriteLine(b.Width);   // 3
+    Console.WriteLine(b.Height);  // 4
+    Console.WriteLine(b.Label);   // first
+
+    // Setter dispatch
+    b.Width = 10;
+    Console.WriteLine(b.Width);   // 10
+
+    // Property in expression
+    Console.WriteLine(b.Width + b.Height);  // 14
+}
