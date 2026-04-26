@@ -1,6 +1,6 @@
 # Tasks: 扩展 z42.toml workspace manifest schema（C1）
 
-> 状态：🟡 进行中 | 创建：2026-04-26
+> 状态：🟢 已完成 | 创建：2026-04-26 | 归档：2026-04-26 | GREEN: dotnet 643/643 + cargo OK + VM 188/188
 
 ## 进度概览
 - [ ] 阶段 1: Manifest 数据模型与错误码骨架

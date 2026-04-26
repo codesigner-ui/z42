@@ -364,81 +364,198 @@ strip    = true
 
 ## L6 — 工作区（Workspace）
 
-管理多工程 monorepo，统一构建和版本。
+管理多工程 monorepo，统一构建、版本与共享元数据。
+
+> **C1 落地范围（2026-04-26）**：本节描述 schema 与共享继承的最终形态。
+> include 机制（C2）、policy 强制（C3）、CLI 工具链（C4）见后续章节。
+
+### L6.1 文件名与角色
+
+| 文件 | 数量 | 角色 |
+|---|---|---|
+| `z42.workspace.toml` | workspace 根目录唯一一份 | virtual manifest：协调 + 共享配置 |
+| `<name>.z42.toml` | 每个 member 一份 | member 自身配置 |
+
+`z42.workspace.toml` 是 **virtual manifest**：仅含 `[workspace.*]` / `[profile.*]` /
+`[policy]` 段，**不允许**有 `[project]` 段（违反报 `WS036`）。`[workspace]` 段也只能
+出现在文件名为 `z42.workspace.toml` 的文件中（违反报 `WS030`）。
+
+### L6.2 顶层结构
 
 ```toml
-# monorepo 根目录的 z42.toml
+# z42.workspace.toml — virtual manifest
 
 [workspace]
-members = [
-    "libs/z42-std",
-    "libs/z42-net",
-    "apps/hello",
-    "apps/demo",
-]
+members         = ["libs/*", "apps/*"]   # glob 与显式路径混用
+exclude         = ["libs/sandbox-*"]     # 从 glob 结果排除
+default-members = ["apps/hello"]         # 不带 -p 时的默认编译子集
+resolver        = "1"
 
-# 工作区级共享依赖（成员用 version = "workspace" 引用）
-[workspace.dependencies]
-z42-std = { path = "libs/z42-std", version = "0.1.0" }
+[workspace.project]                      # 共享元数据（D5：仅以下 4 个字段可共享）
+version     = "0.1.0"
+authors     = ["z42 team"]
+license     = "MIT"
+description = "..."
 
-# 工作区级 profile（被所有成员继承，可被成员覆盖）
+[workspace.dependencies]                 # 中央版本声明
+"my-utils" = { path = "libs/my-utils", version = "0.1.0" }
+
+[workspace.build]                        # 集中产物（C3 落地实际行为）
+out_dir   = "dist"
+cache_dir = ".cache"
+
+[policy]                                 # 强制策略（C3 落地）
+"build.out_dir" = "dist"
+
+[profile.debug]                          # 集中 profile（成员不可覆盖）
+mode  = "interp"
+debug = true
+
 [profile.release]
 mode     = "jit"
 optimize = 3
 strip    = true
 ```
 
-成员工程引用工作区共享依赖：
+### L6.3 Member 引用 workspace 共享
 
 ```toml
-# apps/hello/z42.toml
+# apps/hello/hello.z42.toml
+
 [project]
-name    = "hello"
-version = "0.1.0"
-kind    = "exe"
-entry   = "Hello.main"
+name              = "hello"              # 身份字段必须 member 自己声明
+kind              = "exe"
+entry             = "Hello.main"
+version.workspace = true                 # ← Cargo 风格：引用 workspace.project.version
+license.workspace = true
+
+[sources]
+include = ["src/**/*.z42"]
 
 [dependencies]
-z42-std = { version = "workspace" }   # 版本由 workspace 统一管理
+"my-utils".workspace = true              # ← 引用 workspace.dependencies."my-utils"
+"my-http"  = { workspace = true, optional = true }   # 局部修饰
 ```
 
-工作区根目录也是工程时，`[workspace]` 与 `[project]` 共存：
+**身份字段 vs 共享字段（D5）：**
+
+| 字段 | 共享 | 备注 |
+|---|---|---|
+| `name` / `kind` / `entry` | ❌ | member 必须自己声明（防止意外冲突） |
+| `version` / `authors` / `license` / `description` | ✅ | 可用 `xxx.workspace = true` 引用 |
+
+**禁用旧语法：** `version = "workspace"` 不再支持（报 `WS035`），改为 key 层面
+`xxx.workspace = true` 或 `{ workspace = true }`。
+
+### L6.4 Members 展开
 
 ```toml
-[workspace]
-members = ["libs/parser", "libs/vm"]
+members = ["libs/*", "apps/main", "experiments/foo"]
+exclude = ["libs/sandbox-*"]
+```
 
+- glob 仅匹配**目录**，目录内必须恰好一份 `*.z42.toml`（多份 → `WS005`）
+- 显式路径与 glob 可混用
+- exclude 优先于 members
+- `default-members` 必须是展开结果的子集（否则 `WS031`）
+
+orphan member（子树有 manifest 但未被 `members` 命中）→ `WS007`（warning，不阻塞构建）。
+
+### L6.5 Member 段限制
+
+Member `<name>.z42.toml` **不允许**以下段（违反报 `WS003`）：
+
+- `[workspace]` / `[workspace.*]` —— 全仓共享必须从根下发
+- `[policy]` —— 治理一致性
+- `[profile.*]` —— profile 集中在 workspace 根
+
+### L6.6 路径模板变量（D8）
+
+路径字段允许 4 个内置只读变量：
+
+| 变量 | 含义 |
+|---|---|
+| `${workspace_dir}` | workspace 根绝对路径 |
+| `${member_dir}` | 当前 member 目录绝对路径 |
+| `${member_name}` | 当前 member `[project].name` |
+| `${profile}` | 当前激活 profile 名 |
+
+**语法**：
+- 占位 `${name}`；字面量 `$` 写 `$$`
+- 嵌套 / 未闭合 / 非法字符 → `WS038`
+- 未知变量（含 `${env:NAME}` 暂不支持）→ `WS037`
+
+**允许字段白名单**（其他字段出现 `${...}` 报 `WS039`）：
+
+- `include` 数组各元素（C2 用）
+- `[workspace.build] out_dir` / `cache_dir`（C3 用）
+- `[workspace.dependencies] xxx.path` / `[dependencies] xxx.path`
+- `[sources] include / exclude`
+
+**禁止字段**：标量元数据（`version` / `name` / `kind` / `entry` / `description` /
+`license` / `authors`）以及 `members` glob 模式。
+
+```toml
+# 合法
+[workspace.build]
+out_dir = "dist/${profile}"               # 展开 → dist/release
+
+# 非法（WS039）
 [project]
-name    = "z42c"
-version = "0.1.0"
-kind    = "exe"
-entry   = "z42c.main"
+version = "${profile}"                    # 标量字段不允许变量
 ```
 
-**构建命令：**
+### L6.7 配置生效顺序
 
-```bash
-z42c build                        # 构建所有 workspace members
-z42c build --package apps/hello   # 只构建指定成员
+```
+最终 member 配置 = 以下层按顺序合并：
+
+1. workspace 根 [workspace.project] / [workspace.build] / [workspace.dependencies]   (C1 默认)
+2. member 的 include 链按声明顺序展开 + 合并                                          (C2)
+3. member 自身 *.z42.toml 字段                                                       (C1 member 覆盖)
+4. workspace 根 [policy] 段                                                          (C3 强制覆盖)
+5. CLI flag（--release / --profile X / --no-incremental 等）                          (C4 最终覆盖)
 ```
 
-**目录结构：**
+C1 仅落实步骤 1 + 3（含路径模板展开）；C2 加 2；C3 加 4；C4 加 5。
+
+### L6.8 错误码索引（C1 范围）
+
+| 码 | 含义 | 级别 |
+|---|---|---|
+| WS003 | Member 内出现禁用段（`[workspace.*]` / `[policy]` / `[profile.*]`） | error |
+| WS005 | 同目录两份 `*.z42.toml` 引发歧义 | error |
+| WS007 | Manifest 在 workspace 子树内但未被 members 命中 | warning |
+| WS030 | `[workspace]` 段出现在非 `z42.workspace.toml` 文件 | error |
+| WS031 | `default-members` 含未匹配项 | error |
+| WS032 | Member 引用 workspace 共享字段，但根未声明 | error |
+| WS033 | `[workspace.project]` 字段类型错误 / 不可共享字段被声明 | error |
+| WS034 | Member 引用未声明的 workspace 依赖 | error |
+| WS035 | 出现已废弃的 `version = "workspace"` 语法 | error |
+| WS036 | Workspace 根 manifest 同时含 `[workspace]` 与 `[project]` | error |
+| WS037 | 路径模板含未知变量 | error |
+| WS038 | 路径模板语法非法 | error |
+| WS039 | 模板变量出现在不允许的字段 | error |
+
+> WS001/002/004/006/010-024 为 C2/C3/C4 范围，本阶段未启用。
+
+### L6.9 目录结构样板
 
 ```
 monorepo/
-├── z42.workspace.toml    ← [workspace]
+├── z42.workspace.toml
 ├── libs/
-│   ├── z42-std/
-│   │   ├── z42-std.z42.toml  ← [project] lib
+│   ├── greeter/
+│   │   ├── greeter.z42.toml          ← member（kind=lib）
 │   │   └── src/
-│   └── z42-net/
-│       ├── z42-net.z42.toml
-│       └── src/
+│   └── ...
 └── apps/
     └── hello/
-        ├── hello.z42.toml  ← [project] exe
+        ├── hello.z42.toml            ← member（kind=exe）
         └── src/
 ```
+
+**完整可解析示例**：见 `examples/workspace-basic/`。
 
 ---
 
@@ -492,6 +609,29 @@ mode     = "jit"
 optimize = 3
 strip    = true
 pack     = true                 # → packed zpkg（默认）
+
+# ── workspace 模式（仅 z42.workspace.toml 中合法） ─────────────────────────
+[workspace]
+members         = ["libs/*", "apps/*"]
+exclude         = []
+default-members = []
+resolver        = "1"
+
+[workspace.project]              # 共享元数据；成员用 xxx.workspace = true 引用
+version     = "0.1.0"
+authors     = []
+license     = "MIT"
+description = ""
+
+[workspace.dependencies]         # 中央版本声明；成员用 dep.workspace = true 引用
+# "pkg-name" = { path = "...", version = "0.1.0" }
+
+[workspace.build]                # 集中产物（C3 实施实际行为）
+out_dir   = "dist"
+cache_dir = ".cache"
+
+[policy]                         # 强制策略（C3 实施）
+# "build.out_dir" = "dist"
 
 [workspace]                     # L6，与 [project] 可共存
 members = []

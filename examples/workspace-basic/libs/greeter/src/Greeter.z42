@@ -1,0 +1,8 @@
+// libs/greeter/src/Greeter.z42 — 共享问候逻辑
+namespace Greeter;
+
+public static class Greeter {
+    public static string greet(string name) {
+        return "Hello, " + name + "!";
+    }
+}

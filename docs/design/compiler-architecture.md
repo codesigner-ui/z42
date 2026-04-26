@@ -33,6 +33,83 @@ source.z42
 单文件模式走 `SingleFileCompiler`；项目模式（`.z42.toml`）走 `PackageCompiler`，
 两者共享 `PipelineCore` 的 TypeCheck + Codegen 阶段。
 
+Workspace 模式（`z42.workspace.toml`）走 `ManifestLoader` 发现 + 共享继承（C1）→
+后续 `WorkspaceBuildOrchestrator` 拓扑编译（C4）。
+
+---
+
+## ManifestLoader（C1，2026-04-26）
+
+位置：`src/compiler/z42.Project/`
+
+**职责**：解析 `z42.workspace.toml` + member `<name>.z42.toml` 文件，
+应用 workspace 共享继承，输出每个 member 的 `ResolvedManifest`（含字段来源链）。
+
+### 核心模块
+
+| 模块 | 职责 |
+|---|---|
+| `ManifestLoader` | 入口：发现 workspace 根（向上找）→ 加载 + 合并 + 校验 |
+| `WorkspaceManifest` | `z42.workspace.toml` 数据模型（`[workspace.*]` / `[profile.*]` / `[policy]`）|
+| `MemberManifest` | member `<name>.z42.toml` 数据模型，含 `FieldRef<T>` 表达 `xxx.workspace = true` 引用 |
+| `ResolvedManifest` | 合并后最终配置 + `Origins` 字典（每字段记录来源） |
+| `GlobExpander` | members 的 `*` / `**` 目录级 glob 展开 |
+| `PathTemplateExpander` | 4 内置变量（`${workspace_dir}` / `${member_dir}` / `${member_name}` / `${profile}`）展开 + `$$` 转义 |
+| `ManifestErrors` | 错误码工厂（WS003 / WS005 / WS007 / WS030-039） |
+
+### 加载流程（C1 范围）
+
+```
+ManifestLoader.LoadWorkspace(ctx, profile)
+  ├─ 1. WorkspaceManifest.Load()
+  │     - 强制文件名 z42.workspace.toml （WS030）
+  │     - 检查 virtual manifest（WS036）
+  │     - 解析 [workspace.project] 字段集合（WS033）
+  │     - 解析 [workspace.dependencies] / [workspace.build] / [policy] / [profile.*]
+  ├─ 2. GlobExpander.Expand()
+  │     - members glob → 目录列表
+  │     - exclude 过滤
+  │     - 同目录两 manifest → WS005
+  ├─ 3. default-members 校验（WS031）
+  ├─ 4. 对每个 member：
+  │     - MemberManifest.Load()（含 WS003 段限制 + WS035 旧语法检测）
+  │     - ResolveMember()：展开 .workspace = true 引用（WS032/WS034）
+  │     - PathTemplateExpander 应用到路径字段（WS037/038/039）
+  │     - 输出 ResolvedManifest + Origins
+  └─ 5. orphan 检测（WS007 warning）
+```
+
+### 字段来源链（Origins）
+
+`ResolvedManifest.Origins` 是 `Dictionary<string, FieldOrigin>`，记录每个字段的最终来源：
+
+| OriginKind | 含义 | C 阶段 |
+|---|---|---|
+| `MemberDirect` | 由 member 自身 manifest 直接声明 | C1 |
+| `WorkspaceProject` | 通过 `xxx.workspace = true` 引用 `[workspace.project]` | C1 |
+| `WorkspaceDependency` | 通过 `xxx.workspace = true` 引用 `[workspace.dependencies]` | C1 |
+| `IncludePreset` | 由 include 链中某 preset 提供 | C2 |
+| `PolicyLocked` | 被 workspace `[policy]` 锁定 | C3 |
+
+C4 的 `z42c info --resolved` 直接消费此字段输出"字段 + 来源 + 🔒 标记"。
+
+### 与现有 ProjectManifest 的关系
+
+- 现有 `ProjectManifest`（单工程 `.z42.toml` 路径）保留**不动**，行为与之前一致
+- 新增 workspace 路径并行存在：CLI 入口判断"是否含 `z42.workspace.toml`"决定走哪条
+- `ManifestException` 复用现有类型；C1 的工厂方法 `Z42Errors.*` 在 message 中携带 `WSxxx` 码 + 上下文，不破坏现有调用方
+
+### 设计决策
+
+详见 `spec/archive/2026-04-26-extend-workspace-manifest/design.md`：
+
+- **D1**：workspace 根文件名固定 `z42.workspace.toml`
+- **D2**：virtual manifest 强制（root 不可兼任 member）
+- **D3**：依赖语法对齐 Cargo（`xxx.workspace = true`）
+- **D4**：members 支持 glob + exclude
+- **D5**：`[workspace.project]` 仅 4 字段可共享（`version` / `authors` / `license` / `description`）
+- **D6**：路径字段支持有限模板变量（4 内置只读，禁止用户自定义）
+
 ---
 
 ## TSIG 与跨包符号导入
