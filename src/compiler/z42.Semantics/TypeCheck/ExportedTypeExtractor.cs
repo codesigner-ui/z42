@@ -105,8 +105,16 @@ public static class ExportedTypeExtractor
             }
             // Preserve interface's TypeParams so consumer can restore `T` in method
             // signatures as Z42GenericParamType (required for interfaces like
-            // `INumber<T> { T op_Add(T other); }` where T appears in return position).
-            var tps = cu?.Interfaces.FirstOrDefault(i => i.Name == name)?.TypeParams?.ToList();
+            // `INumber<T> { T op_Add(T other); }` where T appears in return position),
+            // AND so generic interface dispatch (`IEquatable<int>.Equals(T)` →
+            // `Equals(int)`) can substitute via TypeParams ↔ TypeArgs map.
+            //
+            // Source priority: `it.TypeParams` (Z42InterfaceType field, set by
+            // SymbolCollector.CollectInterfaces from local InterfaceDecl, or by
+            // ImportedSymbolLoader.BuildInterfaceSkeleton from imported TSIG).
+            // Fallback to cu lookup for legacy paths where it.TypeParams isn't set.
+            var tps = it.TypeParams?.ToList()
+                   ?? cu?.Interfaces.FirstOrDefault(i => i.Name == name)?.TypeParams?.ToList();
             result.Add(new ExportedInterfaceDef(name, methods, tps));
         }
         return result;

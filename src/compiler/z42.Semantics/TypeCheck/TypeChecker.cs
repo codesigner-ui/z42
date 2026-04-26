@@ -541,7 +541,25 @@ public sealed partial class TypeChecker : ITypeInferrer
             else
                 substituted.Add(a);
         }
-        return new Z42InterfaceType(iface.Name, iface.Methods, substituted, iface.StaticMembers);
+        return new Z42InterfaceType(iface.Name, iface.Methods, substituted,
+            iface.StaticMembers, iface.TypeParams);
+    }
+
+    /// 构造 Z42InterfaceType 实例的 TypeParams ↔ TypeArgs substitution map。
+    /// 用于把 interface 内部 generic param 形式的 method signature substitute 为
+    /// 具体类型（`IEquatable<int>.Equals(T)` → `Equals(int)`）。
+    ///
+    /// 返回 null 表示非泛型接口或缺少 TypeParams / TypeArgs，caller 应跳过 substitute.
+    internal static IReadOnlyDictionary<string, Z42Type>?
+    BuildInterfaceSubstitutionMap(Z42InterfaceType iface)
+    {
+        if (iface.TypeParams is null || iface.TypeArgs is null) return null;
+        if (iface.TypeParams.Count != iface.TypeArgs.Count) return null;
+        if (iface.TypeParams.Count == 0) return null;
+        var map = new Dictionary<string, Z42Type>(StringComparer.Ordinal);
+        for (int i = 0; i < iface.TypeParams.Count; i++)
+            map[iface.TypeParams[i]] = iface.TypeArgs[i];
+        return map;
     }
 
     /// L3-G4b primitive-as-struct: primitive types satisfy interfaces via stdlib
@@ -931,10 +949,38 @@ public sealed partial class TypeChecker : ITypeInferrer
         if (target is Z42ClassType tc1 && source is Z42ClassType tc2 && tc1.Name == tc2.Name) return;
         if (target is Z42ClassType targetCt && source is Z42ClassType sourceCt
             && _symbols.IsSubclassOf(sourceCt.Name, targetCt.Name)) return;
-        if (target is Z42InterfaceType targetIface && source is Z42ClassType sourceImplCt
-            && _symbols.ImplementsInterface(sourceImplCt.Name, targetIface.Name)) return;
+        // ClassType → InterfaceType: TypeArgs-aware match via declared interfaces.
+        if (target is Z42InterfaceType tIface && source is Z42ClassType srcCt
+            && ClassImplementsInterfaceWithArgs(srcCt.Name, null, tIface)) return;
+        // InstantiatedType → InterfaceType: substitute class TypeArgs into declared
+        // interface TypeArgs, then compare. (`MyList<int>` → `IEnumerable<int>`.)
+        if (target is Z42InterfaceType tIface2 && source is Z42InstantiatedType srcInst
+            && ClassImplementsInterfaceWithArgs(
+                srcInst.Definition.Name, BuildSubstitutionMap(srcInst), tIface2)) return;
         _diags.Error(DiagnosticCodes.TypeMismatch,
             msg ?? $"cannot assign `{source}` to `{target}`", span);
+    }
+
+    /// 检查 `className`（含可选实例化 substitution）是否声明实现了
+    /// `target` 接口（含 TypeArgs 比较）。复用现有
+    /// `ImplementedInterfacesByName` + `InterfacesEqual`。
+    /// 当 target.TypeArgs 为 null 时退化为 name-only 兼容（向后兼容非泛型接口）。
+    private bool ClassImplementsInterfaceWithArgs(
+        string className,
+        IReadOnlyDictionary<string, Z42Type>? classSub,
+        Z42InterfaceType target)
+    {
+        bool targetHasArgs = target.TypeArgs is { Count: > 0 };
+        foreach (var declared in _symbols.ImplementedInterfacesByName(className, target.Name))
+        {
+            if (!targetHasArgs) return true;  // non-generic interface: name-only
+            // 把 declared 的 TypeArgs 按 class subMap substitute，再与 target 比较
+            var declaredEffective = classSub is null
+                ? declared
+                : SubstituteInterfaceTypeArgs(declared, classSub);
+            if (InterfacesEqual(declaredEffective, target)) return true;
+        }
+        return false;
     }
 
     private bool IsSubclassOf(string derived, string baseClass) =>

@@ -191,7 +191,12 @@ public sealed record Z42InterfaceType(
     /// operators declared in the interface that implementers must provide or
     /// inherit. Three tiers (abstract / virtual / concrete) encoded via
     /// `Z42StaticMember.Kind`.
-    IReadOnlyDictionary<string, Z42StaticMember>? StaticMembers = null) : Z42Type
+    IReadOnlyDictionary<string, Z42StaticMember>? StaticMembers = null,
+    /// 接口声明的类型参数名（"T", "K, V" 等）。与 TypeArgs 按 index 配对，
+    /// 用于把 Methods 字典里 generic param 形式的方法签名 substitute 为
+    /// 具体类型，支持 `IEquatable<int>` 实例上的 method dispatch（2026-04-26
+    /// fix-generic-interface-dispatch）。
+    IReadOnlyList<string>? TypeParams = null) : Z42Type
 {
     /// Convenience: signature-only view of static members (back-compat for
     /// callers that only need the Z42FuncType).

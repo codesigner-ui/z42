@@ -669,12 +669,16 @@ public sealed partial class TypeChecker
         }
         if (target.Type is Z42InterfaceType ifaceType)
         {
-            // Auto-property getter dispatch on interface receiver
+            // Auto-property getter dispatch on interface receiver — substitute
+            // generic param return type per ifaceType TypeArgs (e.g. IEnumerator<int>.Current → int).
             if (ifaceType.Methods.TryGetValue($"get_{m.Member}", out var ifaceGetter)
                 && ifaceGetter.Params.Count == 0)
             {
+                var subMap = BuildInterfaceSubstitutionMap(ifaceType);
+                var subRet = subMap is null ? ifaceGetter.Ret
+                                            : SubstituteTypeParams(ifaceGetter.Ret, subMap);
                 return new BoundCall(BoundCallKind.Virtual, target, ifaceType.Name,
-                    $"get_{m.Member}", null, new List<BoundExpr>(), ifaceGetter.Ret, m.Span);
+                    $"get_{m.Member}", null, new List<BoundExpr>(), subRet, m.Span);
             }
             if (ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
                 return new BoundMember(target, m.Member, ifmt, m.Span);

@@ -146,11 +146,14 @@ public static class ImportedSymbolLoader
 
     private static Z42InterfaceType BuildInterfaceSkeleton(ExportedInterfaceDef iface)
     {
+        IReadOnlyList<string>? typeParams = iface.TypeParams is { Count: > 0 } tps
+            ? tps.AsReadOnly() : null;
         return new Z42InterfaceType(
             iface.Name,
             Methods:       new Dictionary<string, Z42FuncType>(),
             TypeArgs:      null,
-            StaticMembers: null);
+            StaticMembers: null,
+            TypeParams:    typeParams);
     }
 
     // ── Phase 2 helpers: 填充成员（in-place 修改 Phase 1 骨架的 mutable dict）──
@@ -232,7 +235,8 @@ public static class ImportedSymbolLoader
         // 的方法引用仍然有效。
         if (staticMembers is null) return skeleton;
         return new Z42InterfaceType(iface.Name, skeleton.Methods,
-            TypeArgs: skeleton.TypeArgs, StaticMembers: staticMembers);
+            TypeArgs: skeleton.TypeArgs, StaticMembers: staticMembers,
+            TypeParams: skeleton.TypeParams);
     }
 
     private static Z42FuncType RebuildFuncType(

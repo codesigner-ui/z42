@@ -199,6 +199,54 @@ TSIG 解码失败、namespace 过滤不含其 namespace 等），fallback 到
 
 ---
 
+## 泛型接口 dispatch — Z42InterfaceType.TypeParams（2026-04-26 fix-generic-interface-dispatch）
+
+### 背景
+
+调用泛型接口方法时（`IEquatable<int>.Equals(T other)`），TypeChecker 必须
+把方法签名里的 type-param `T` 替换成具体 TypeArg `int`，否则 arg 类型检查
+会用未替换的 `T` 与实参 `int` 比较失败 → 报"argument type mismatch"。
+
+C#/Java 的做法：泛型接口持有 TypeParams（声明列表）+ TypeArgs（实例化值），
+dispatch 时构造 `TypeParams[i] → TypeArgs[i]` map，对方法签名做
+`SubstituteTypeParams`。
+
+### 关键结构
+
+```csharp
+public sealed record Z42InterfaceType(
+    string Name,
+    IReadOnlyDictionary<string, Z42FuncType> Methods,
+    IReadOnlyList<Z42Type>? TypeArgs = null,            // 实例化时填
+    IReadOnlyDictionary<string, Z42StaticMember>? StaticMembers = null,
+    IReadOnlyList<string>? TypeParams = null);          // 声明列表
+```
+
+`TypeParams` 在所有构造点都必须从源头填入：
+
+- `SymbolCollector.CollectInterfaces` — 从 `InterfaceDecl.TypeParams`
+- `ImportedSymbolLoader.BuildInterfaceSkeleton` — 从 `ExportedInterfaceDef.TypeParams`
+- `ExportedTypeExtractor.ExtractInterfaces` — 从 `Z42InterfaceType.TypeParams` 反向写入 TSIG
+- `SymbolTable.ResolveGenericType` — 实例化时**保留 def.TypeParams**
+
+### dispatch substitute
+
+- `TypeChecker.BuildInterfaceSubstitutionMap(ifaceType)` — 由 TypeParams ↔
+  TypeArgs 构造 substitution map
+- `TypeChecker.Calls.cs` 接口方法调用分支：`imt → SubstituteTypeParams(imt, subMap)`
+  再做 arg/ret 类型检查
+- `TypeChecker.Exprs.cs` 接口属性 getter 同步替换返回类型
+
+### 赋值兼容（TypeArgs-aware）
+
+`Z42ClassType / Z42InstantiatedType → Z42InterfaceType` 路径不能仅按
+**接口名** 比较 —— 必须比较 TypeArgs。`ClassImplementsInterfaceWithArgs`
+通过 `_classInterfaces` 取出 class 实现的具体 `Z42InterfaceType`（含
+TypeArgs），再用 `InterfacesEqual` 名 + 全部 TypeArg 类型比对。这避免
+`class Foo : IEquatable<int>` 错误地被当作 `IEquatable<string>`。
+
+---
+
 ## 多 CU 包内 symbol 共享（2026-04-26 fix-package-compiler-cross-file）
 
 ### 背景

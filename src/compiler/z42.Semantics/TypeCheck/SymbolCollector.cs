@@ -154,8 +154,10 @@ public sealed partial class SymbolCollector : ISymbolBinder
                     methods[m.Name] = sig;
                 }
             }
+            var ifaceTpList = iface.TypeParams is { Count: > 0 } iTps ? iTps.AsReadOnly() : null;
             _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods,
-                StaticMembers: staticMembers.Count > 0 ? staticMembers : null);
+                StaticMembers: staticMembers.Count > 0 ? staticMembers : null,
+                TypeParams:    ifaceTpList);
             _activeTypeParams = null;
         }
     }
@@ -233,7 +235,7 @@ public sealed partial class SymbolCollector : ISymbolBinder
                               ? (gt.TypeArgs.Count > 0
                                     ? new Z42InterfaceType(it.Name, it.Methods,
                                           gt.TypeArgs.Select(ResolveType).ToList(),
-                                          it.StaticMembers)
+                                          it.StaticMembers, it.TypeParams)
                                     : it)
                           : new Z42PrimType(gt.Name),
         },

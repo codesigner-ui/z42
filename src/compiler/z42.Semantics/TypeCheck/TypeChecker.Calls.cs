@@ -184,10 +184,15 @@ public sealed partial class TypeChecker
             {
                 if (ifaceType.Methods.TryGetValue(mCallee.Member, out var imt))
                 {
-                    CheckArgCount(argBound.Count, imt.MinArgCount, imt.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, imt.Params);
+                    // Substitute generic interface T → concrete TypeArgs for method
+                    // dispatch. `IEquatable<int>.Equals(T)` → `Equals(int)` etc.
+                    var subMap = BuildInterfaceSubstitutionMap(ifaceType);
+                    var imtSub = subMap is null ? imt
+                                                : (Z42FuncType)SubstituteTypeParams(imt, subMap);
+                    CheckArgCount(argBound.Count, imtSub.MinArgCount, imtSub.Params.Count, call.Span);
+                    CheckArgTypes(call.Args, argBound, imtSub.Params);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, ifaceType.Name,
-                        mCallee.Member, null, argBound, imt.Ret, call.Span);
+                        mCallee.Member, null, argBound, imtSub.Ret, call.Span);
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"interface `{ifaceType.Name}` has no method `{mCallee.Member}`", call.Span);
