@@ -7,12 +7,26 @@ namespace Z42.IR;
 /// </summary>
 
 /// A collection of exported type signatures from a single namespace within a zpkg.
+/// L3-Impl2: `Impls` carries cross-zpkg `impl Trait for Type { ... }` declarations so
+/// downstream TypeCheckers see methods/traits added to imported types.
 public sealed record ExportedModule(
     string Namespace,
     List<ExportedClassDef>     Classes,
     List<ExportedInterfaceDef> Interfaces,
     List<ExportedEnumDef>      Enums,
-    List<ExportedFuncDef>      Functions);
+    List<ExportedFuncDef>      Functions,
+    List<ExportedImplDef>?     Impls = null);
+
+/// L3-Impl2: serialized `impl Trait for Target { ... }` block.
+/// `TargetFqName` and `TraitFqName` are fully-qualified (e.g. `Std.int`,
+/// `Std.INumber`) so consumers across zpkg boundaries can find target/trait
+/// in the merged imported symbol table. Method bodies are NOT in this record —
+/// they live in the regular MODS section under `{TargetFqName}.{Method}`.
+public sealed record ExportedImplDef(
+    string TargetFqName,
+    string TraitFqName,
+    List<string> TraitTypeArgs,
+    List<ExportedMethodDef> Methods);
 
 /// Exported class/struct/record definition with full member signatures.
 /// L3-G4d: `TypeParams` carries generic parameter names for `class Foo<T, U>` so

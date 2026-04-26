@@ -502,9 +502,14 @@ string Greet<T>(T t) where T: IGreet { return t.Hello(); }
 
 Parser 在 `impl` 块见到 `extern` 修饰符直接报错（`TopLevelParser.ParseImplDecl`）。
 
+**已落地（L3-Impl2，2026-04-26 cross-zpkg-impl-propagation）**：
+- zpkg 加 `IMPL` section（zbc v0.7 → v0.8），承载本 CU 所有
+  `impl Trait for Type` 声明（仅签名，方法 body 仍在 MODS）
+- 消费者 `ImportedSymbolLoader` 增加 Phase 3 合并：把 impl 方法 TryAdd
+  到 imported `Z42ClassType.Methods`，trait 加进 `ClassInterfaces[target]`
+- 详细机制见 `docs/design/compiler-architecture.md` "跨 zpkg impl 块传播"
+
 **后续迭代规划**：
-- **L3-Impl2 跨 zpkg（TSIG Impls）**：IMPL section 承载"外部 impl 对 target 的追加"，
-  消费者 ImportedSymbolLoader 合并到本地 class 记录（仅脚本 body）
 - **+孤儿规则收紧**：Rust 风完整规则 — impl 必须与 Trait OR Target 同 zpkg
 
 **诊断**：新错误码 `E0413 InvalidImpl`（target 非 class/struct、trait 非 interface、签名不匹配、漏方法、重复方法）。

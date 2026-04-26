@@ -87,7 +87,13 @@ public static class ZpkgWriter
         };
 
         if (zpkg.ExportedModules is { Count: > 0 })
+        {
             sections.Add((ZpkgTags.Tsig, BuildTsigSection(zpkg.ExportedModules, pool)));
+            // L3-Impl2: IMPL section emitted whenever there are exported modules,
+            // even if no impl blocks (writes empty record list — small fixed overhead).
+            // This keeps decoder logic uniform: TSIG present ⇒ IMPL present.
+            sections.Add((ZpkgTags.Impl, BuildImplSection(zpkg.ExportedModules, pool)));
+        }
 
         ushort flags = FlagPacked;
         if (zpkg.Kind == ZpkgKind.Exe) flags |= FlagExe;
@@ -177,6 +183,15 @@ public static class ZpkgWriter
                 foreach (var tp in fn.TypeParams) pool.Intern(tp);
             InternTpConstraints(pool, fn.TypeParamConstraints);
         }
+        // L3-Impl2: intern strings used by IMPL section
+        if (mod.Impls != null)
+            foreach (var impl in mod.Impls)
+            {
+                pool.Intern(impl.TargetFqName);
+                pool.Intern(impl.TraitFqName);
+                foreach (var arg in impl.TraitTypeArgs) pool.Intern(arg);
+                foreach (var m in impl.Methods) InternMethodStrings(pool, m);
+            }
     }
 
     private static void InternTpConstraints(
@@ -501,6 +516,37 @@ public static class ZpkgWriter
         }
     }
 
+    // ── IMPL section (L3-Impl2: cross-zpkg `impl Trait for Type` declarations) ──
+
+    /// Layout: u16 module count, per module: u32 namespace, u16 impl count,
+    /// per impl: u32 targetFq, u32 traitFq, u8 traitArgCount, u32* traitArgs,
+    ///           u16 methodCount, methodDef*. Mirrors TSIG module ordering.
+    private static byte[] BuildImplSection(List<ExportedModule> modules, StringPool pool)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((ushort)modules.Count);
+        foreach (var mod in modules)
+        {
+            w.Write((uint)pool.Idx(mod.Namespace));
+            var impls = mod.Impls ?? new List<ExportedImplDef>();
+            w.Write((ushort)impls.Count);
+            foreach (var impl in impls)
+            {
+                w.Write((uint)pool.Idx(impl.TargetFqName));
+                w.Write((uint)pool.Idx(impl.TraitFqName));
+                w.Write((byte)impl.TraitTypeArgs.Count);
+                foreach (var arg in impl.TraitTypeArgs)
+                    w.Write((uint)pool.Idx(arg));
+                w.Write((ushort)impl.Methods.Count);
+                foreach (var m in impl.Methods)
+                    WriteMethodDef(w, m, pool);
+            }
+        }
+        return ms.ToArray();
+    }
+
     private static void WriteMethodDef(BinaryWriter w, ExportedMethodDef m, StringPool pool)
     {
         w.Write((uint)pool.Idx(m.Name));
@@ -570,4 +616,5 @@ internal static class ZpkgTags
     public static readonly byte[] Mods = "MODS"u8.ToArray();
     public static readonly byte[] File = "FILE"u8.ToArray();
     public static readonly byte[] Tsig = "TSIG"u8.ToArray();
+    public static readonly byte[] Impl = "IMPL"u8.ToArray();
 }

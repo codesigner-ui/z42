@@ -1,12 +1,20 @@
 {
   "permissions": {
+    "allow": [
+      "Bash(rm -f artifacts/z42/libs/*.zpkg)",
+      "Bash(rm -rf src/libraries/*/dist)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/87_generic_inumber/source.z42 --emit zbc -o /tmp/foo.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll --version)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll --help)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm artifacts/z42/libs/z42.core.zpkg)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/91_exception_base/source.z42 --emit zbc -o /tmp/ex.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/ex.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/91_exception_base/source.z42 --emit zbc -o /tmp/ex_baseline.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/ex_baseline.zbc)"
+    ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/z42/libs"
-    ],
-    "allow": [
-      "Bash(rm -f artifacts/z42/libs/*.zpkg)",
-      "Bash(rm -rf src/libraries/*/dist)"
     ]
   }
 }

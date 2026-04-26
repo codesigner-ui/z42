@@ -122,8 +122,81 @@ public static class ImportedSymbolLoader
                 }
         }
 
+        // ── Phase 3: 合并跨 zpkg `impl Trait for Type` 块 (L3-Impl2) ──
+        // For each ExportedImplDef, look up target class by FQ name, append impl
+        // methods to its Methods dict (first-wins), and add trait to classInterfaces.
+        // Methods/traits added here are visible to TypeChecker downstream — VM dispatch
+        // works via func_index in the impl-providing zpkg's MODS section (no VM change).
+        MergeImpls(modules, allowedNs, classes, interfaces, classNs, classInterfaces);
+
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
             classConstraints, funcConstraints, classInterfaces);
+    }
+
+    /// L3-Impl2 Phase 3: merge `impl Trait for Target` declarations into the
+    /// target's imported Z42ClassType. Mutates classes/classInterfaces dicts in place.
+    private static void MergeImpls(
+        IReadOnlyList<ExportedModule>              modules,
+        HashSet<string>                            allowedNs,
+        Dictionary<string, Z42ClassType>           classes,
+        Dictionary<string, Z42InterfaceType>       interfaces,
+        Dictionary<string, string>                 classNs,
+        Dictionary<string, List<string>>           classInterfaces)
+    {
+        foreach (var mod in modules)
+        {
+            if (!allowedNs.Contains(mod.Namespace)) continue;
+            if (mod.Impls is null) continue;
+            foreach (var impl in mod.Impls)
+            {
+                // FQ "Std.int" → short "int". Skip if target unknown to import set.
+                var (targetNs, targetShort) = SplitFqName(impl.TargetFqName);
+                if (targetShort is null) continue;
+                if (!classes.TryGetValue(targetShort, out var targetClass)) continue;
+                // Only merge if namespace matches (avoid name collision across zpkgs).
+                if (classNs.TryGetValue(targetShort, out var existingNs)
+                    && targetNs != null
+                    && existingNs != targetNs)
+                    continue;
+
+                var (_, traitShort) = SplitFqName(impl.TraitFqName);
+                if (traitShort is null) continue;
+                if (!interfaces.ContainsKey(traitShort)) continue;
+
+                // First-wins method merge into target.Methods.
+                var methodsDict = (Dictionary<string, Z42FuncType>)targetClass.Methods;
+                foreach (var m in impl.Methods)
+                {
+                    var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount,
+                        genericParams: null, classes, interfaces);
+                    if (m.IsStatic)
+                    {
+                        var staticDict = (Dictionary<string, Z42FuncType>)targetClass.StaticMethods;
+                        staticDict.TryAdd(m.Name, sig);
+                    }
+                    else
+                    {
+                        methodsDict.TryAdd(m.Name, sig);
+                    }
+                }
+
+                // Add trait to classInterfaces[targetShort] (dedupe by name).
+                if (!classInterfaces.TryGetValue(targetShort, out var ifList))
+                    classInterfaces[targetShort] = ifList = new List<string>();
+                if (!ifList.Contains(traitShort))
+                    ifList.Add(traitShort);
+            }
+        }
+    }
+
+    /// Split a fully-qualified type name (e.g. "Std.int") into (namespace, shortName).
+    /// Returns (null, name) when there's no dot.
+    private static (string? Namespace, string? ShortName) SplitFqName(string fq)
+    {
+        if (string.IsNullOrEmpty(fq)) return (null, null);
+        int dot = fq.LastIndexOf('.');
+        if (dot < 0) return (null, fq);
+        return (fq[..dot], fq[(dot + 1)..]);
     }
 
     // ── Phase 1 helpers: 骨架构造 ──────────────────────────────────────────────

@@ -281,12 +281,15 @@ public static class ZpkgReader
 
     // ── TSIG section (type signatures for reference compilation) ────────────
 
-    /// <summary>Read exported type signatures from the TSIG section.</summary>
+    /// <summary>Read exported type signatures from the TSIG section.
+    /// L3-Impl2: also reads IMPL section if present and attaches Impls list per module.</summary>
     public static List<ExportedModule> ReadTsig(byte[] data)
     {
         var (_, dir) = ParseHeaderAndDirectory(data);
         string[] pool = ReadStrs(data, dir);
-        return ReadTsigSection(data, dir, pool);
+        var modules = ReadTsigSection(data, dir, pool);
+        ReadImplSection(data, dir, pool, modules);
+        return modules;
     }
 
     private static List<ExportedModule> ReadTsigSection(
@@ -432,6 +435,47 @@ public static class ZpkgReader
             result.Add(new ExportedModule(ns, classes, interfaces, enums, functions));
         }
         return result;
+    }
+
+    // ── IMPL section (L3-Impl2: cross-zpkg `impl Trait for Type`) ─────────────
+
+    /// Read IMPL section and attach `Impls` list to each ExportedModule by index.
+    /// IMPL section emits one record per ExportedModule in the same order as TSIG;
+    /// positional matching is required because multiple modules can share a
+    /// namespace (z42.core has many .z42 files all in `Std`).
+    /// Older zpkg (pre-0.8) lacks IMPL section — modules left with `Impls = null`.
+    private static void ReadImplSection(
+        byte[] data, Dictionary<string, (int Offset, int Size)> dir,
+        string[] pool, List<ExportedModule> modules)
+    {
+        if (!dir.TryGetValue("IMPL", out var e)) return;
+        using var ms = new MemoryStream(data, e.Offset, e.Size, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+
+        ushort modCount = r.ReadUInt16();
+        for (int mi = 0; mi < modCount; mi++)
+        {
+            // Namespace pool idx — informational, not used for matching (positional).
+            r.ReadUInt32();
+            ushort implCount = r.ReadUInt16();
+            var impls = new List<ExportedImplDef>(implCount);
+            for (int ii = 0; ii < implCount; ii++)
+            {
+                string targetFq = P(pool, r.ReadUInt32());
+                string traitFq  = P(pool, r.ReadUInt32());
+                byte argCount   = r.ReadByte();
+                var args = new List<string>(argCount);
+                for (int ai = 0; ai < argCount; ai++)
+                    args.Add(P(pool, r.ReadUInt32()));
+                ushort mthCount = r.ReadUInt16();
+                var methods = new List<ExportedMethodDef>(mthCount);
+                for (int mi2 = 0; mi2 < mthCount; mi2++)
+                    methods.Add(ReadMethodDef(r, pool));
+                impls.Add(new ExportedImplDef(targetFq, traitFq, args, methods));
+            }
+            if (mi < modules.Count && impls.Count > 0)
+                modules[mi] = modules[mi] with { Impls = impls };
+        }
     }
 
     private static ExportedMethodDef ReadMethodDef(BinaryReader r, string[] pool)

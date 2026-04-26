@@ -16,8 +16,76 @@ public static class ExportedTypeExtractor
         var interfaces = ExtractInterfaces(sem, cu);
         var enums      = ExtractEnums(sem);
         var functions  = ExtractFunctions(sem);
-        return new ExportedModule(ns, classes, interfaces, enums, functions);
+        var impls      = cu is null ? null : ExtractImpls(sem, cu, ns);
+        return new ExportedModule(ns, classes, interfaces, enums, functions, impls);
     }
+
+    /// L3-Impl2: extract `impl Trait for Target { ... }` blocks for cross-zpkg
+    /// propagation. target/trait names are fully-qualified using the imported
+    /// namespace map (when target is imported) or the current package namespace
+    /// (when target is local).
+    private static List<ExportedImplDef>? ExtractImpls(
+        SemanticModel sem, CompilationUnit cu, string currentNs)
+    {
+        if (cu.Impls.Count == 0) return null;
+        var result = new List<ExportedImplDef>(cu.Impls.Count);
+        foreach (var impl in cu.Impls)
+        {
+            var (targetName, _) = ExtractTypeName(impl.TargetType);
+            if (targetName is null) continue;
+            var (traitName, traitArgs) = ExtractTypeName(impl.TraitType);
+            if (traitName is null) continue;
+
+            string targetFq = sem.ImportedClassNamespaces.TryGetValue(targetName, out var tns)
+                ? $"{tns}.{targetName}"
+                : $"{currentNs}.{targetName}";
+            // Trait FQ: interfaces follow the same imported-namespace map (interfaces
+            // are stored under sem.Interfaces by short name; namespace lookup goes
+            // through ImportedClassNamespaces which doubles for interfaces today).
+            string traitFq = sem.ImportedClassNamespaces.TryGetValue(traitName, out var ins)
+                ? $"{ins}.{traitName}"
+                : $"{currentNs}.{traitName}";
+
+            var argStrs = traitArgs.Select(TypeExprToString).ToList();
+            var methods = new List<ExportedMethodDef>(impl.Methods.Count);
+            foreach (var m in impl.Methods)
+            {
+                var parms = m.Params.Select(p =>
+                    new ExportedParamDef(p.Name, TypeExprToString(p.Type))).ToList();
+                int minArgCount = parms.Count;
+                for (int i = 0; i < m.Params.Count; i++)
+                    if (m.Params[i].Default != null) { minArgCount = i; break; }
+                methods.Add(new ExportedMethodDef(
+                    m.Name, parms, TypeExprToString(m.ReturnType),
+                    VisToString(m.Visibility), m.IsStatic, m.IsVirtual, m.IsAbstract,
+                    minArgCount == m.Params.Count ? -1 : minArgCount));
+            }
+            result.Add(new ExportedImplDef(targetFq, traitFq, argStrs, methods));
+        }
+        return result.Count > 0 ? result : null;
+    }
+
+    /// Pull short name + type-arg list from a TypeExpr; returns (null, []) when
+    /// the form is not a simple Named/Generic type.
+    private static (string? Name, IReadOnlyList<TypeExpr> Args) ExtractTypeName(TypeExpr t) => t switch
+    {
+        NamedType nt   => (nt.Name, Array.Empty<TypeExpr>()),
+        GenericType gt => (gt.Name, gt.TypeArgs),
+        _              => (null, Array.Empty<TypeExpr>()),
+    };
+
+    /// Best-effort TypeExpr → string for impl trait args / param types.
+    /// Mirrors TypeToString style: simple short name for primitives/named,
+    /// `Name<Arg, ...>` for generics, suffix `[]` / `?` for arrays/options.
+    private static string TypeExprToString(TypeExpr t) => t switch
+    {
+        NamedType nt    => nt.Name,
+        GenericType gt  => $"{gt.Name}<{string.Join(",", gt.TypeArgs.Select(TypeExprToString))}>",
+        ArrayType at    => TypeExprToString(at.Element) + "[]",
+        OptionType ot   => TypeExprToString(ot.Inner) + "?",
+        VoidType        => "void",
+        _               => "<unknown>",
+    };
 
     private static List<ExportedClassDef> ExtractClasses(SemanticModel sem)
     {

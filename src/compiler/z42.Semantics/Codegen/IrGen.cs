@@ -126,10 +126,14 @@ public sealed class IrGen : IEmitterContext
             }
         }
         // L3 extern impl (Change 1): register impl methods under the target class's qualified name.
+        // L3-Impl2: use QualifyClassName so imported targets (e.g. `int` from z42.core)
+        // get registered under their source namespace (`Std.int.op_Add`), not the
+        // current package namespace. Local targets are unaffected (QualifyClassName
+        // returns QualifyName when class is local).
         foreach (var impl in cu.Impls)
         {
             if (impl.TargetType is not NamedType targetNt) continue;
-            var qualName = QualifyName(targetNt.Name);
+            var qualName = ((IEmitterContext)this).QualifyClassName(targetNt.Name);
             foreach (var m in impl.Methods)
                 _funcParams[$"{qualName}.{m.Name}"] = m.Params;
         }
@@ -162,7 +166,9 @@ public sealed class IrGen : IEmitterContext
 
     private IrFunction EmitMethod(string className, FunctionDecl method)
     {
-        var qualClass = QualifyName(className);
+        // L3-Impl2: QualifyClassName routes imported impl targets to source namespace.
+        // For local classes (cu.Classes path) this returns the same as QualifyName.
+        var qualClass = ((IEmitterContext)this).QualifyClassName(className);
         // Overload detection via SemanticModel method keys (already $N suffixed).
         string arityKey = $"{method.Name}${method.Params.Count}";
         bool overloaded = method.IsStatic

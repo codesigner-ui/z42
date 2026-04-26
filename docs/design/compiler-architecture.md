@@ -199,6 +199,84 @@ TSIG 解码失败、namespace 过滤不含其 namespace 等），fallback 到
 
 ---
 
+## 跨 zpkg `impl` 块传播 — IMPL section + Phase 3 merge（2026-04-26 cross-zpkg-impl-propagation）
+
+### 背景
+
+L3-Impl1 让 `impl Trait for Type { ... }` 在同 CU 内工作（SymbolCollector 把
+impl 方法合并进 target class 的 `Methods` 字典 + trait 加到
+`_classInterfaces[target]`），但**跨 zpkg 不可见**：z42.numerics 给 z42.core
+的 `int` 实现 `INumber<int>`，下游消费者读 z42.core TSIG 看不到这个 trait
+→ `where T: INumber<int>` + `int` 类型实参编译报错。
+
+### IMPL section（zpkg v0.8）
+
+zpkg 加新 section `IMPL`：每个 ExportedModule 携带本 CU 的 `impl Trait for Type`
+列表（仅 declarations，方法 body 仍走 MODS section）。
+
+```
+IMPL section layout
+─────────────────────
+[Module Count: u16]
+For each module:
+    [Namespace pool idx: u32]   ← 与 TSIG 模块顺序一致（positional matching）
+    [Impl Count: u16]
+    For each impl:
+        [Target FQ name pool idx: u32]   ← 例如 "Std.int"
+        [Trait FQ name pool idx: u32]    ← 例如 "Std.INumber"
+        [Trait TypeArg Count: u8]
+        For each trait type arg: [Type string pool idx: u32]
+        [Method Count: u16]
+        For each method: WriteMethodDef(...)   ← 复用 TSIG 的 MethodDef 序列化
+```
+
+**重要**：IMPL 模块顺序与 TSIG 模块顺序一致（positional matching），不能按
+namespace 索引 —— 一个包内多个 .z42 文件可能共享 namespace（z42.core 的所有
+文件都用 `Std`），按 namespace 唯一索引会撞键。
+
+### ImportedSymbolLoader Phase 3
+
+`ImportedSymbolLoader.Load` 由两阶段扩展为三阶段：
+
+```
+Phase 1 — 骨架登记                ← 已有
+Phase 2 — 成员填充                ← 已有
+Phase 3 — impl merge (NEW)
+  foreach module.Impls:
+    targetClass = classes[short_name(impl.TargetFqName)]
+    foreach method in impl.Methods:
+      targetClass.Methods.TryAdd(method.Name, method.Sig)   // first-wins
+    classInterfaces[short_name].Add(impl.TraitName)         // dedupe
+```
+
+冲突策略：first-wins（与 SymbolCollector.MergeImported `TryAdd` 一致）。
+`target` FQ 名通过 `SplitFqName` 拆 `Std.int` → namespace `Std` + short `int`，
+仅在 namespace 匹配 `classNs[short]` 时才合并（避免不同包同名类污染）。
+
+### IrGen — QualifyClassName 对齐 imported target
+
+`IrGen.cs` 早先用 `QualifyName(targetNt.Name)` 给 impl 方法注册 funcParams
+和生成方法 body 的 IR 函数符号。当 target 是 imported（如 z42.numerics 给
+z42.core `int` 加方法），这会把方法生成到错误命名空间（`numerics.int.op_Add`
+而非 `Std.int.op_Add`），导致 VM `func_index` 注册符号与消费者 VCall 期望
+不一致。修复：改用 `((IEmitterContext)this).QualifyClassName(...)`，imported
+target 走 source namespace，local target 行为不变（等同 QualifyName）。
+
+### VM 端零改动
+
+方法 body 走 z42.numerics 自己的 MODS section，函数符号 `Std.int.op_Add`。
+当用户代码 `using z42.numerics`，lazy loader 注册该 zpkg 所有函数到 `func_index`，
+VCall(int_obj, "op_Add") 通过 `primitive_class_name(I64) = "Std.int"` + method
+拼出 `Std.int.op_Add` → 命中 z42.numerics body。VM decoder 不需要解析 IMPL
+section（基于 tag 查找天然跳过未识别 section）。
+
+### 兼容性
+
+zbc version 0.7 → 0.8。pre-1.0 规则：旧 zbc 不可读，需要 `regen-golden-tests.sh`
+重生。
+
+---
+
 ## 泛型接口 dispatch — Z42InterfaceType.TypeParams（2026-04-26 fix-generic-interface-dispatch）
 
 ### 背景

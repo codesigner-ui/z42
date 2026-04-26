@@ -145,4 +145,96 @@ public sealed class ImportedSymbolLoaderTests
             because: "在 generic class 内部，同名 T 应作为 generic param，不被 class T 覆盖")
             .Which.Name.Should().Be("T");
     }
+
+    // ── L3-Impl2: cross-zpkg `impl` Phase 3 merge ────────────────────────────
+
+    [Fact]
+    public void Load_Impl_AddsMethodToImportedClass()
+    {
+        // 模拟两包：z42.core 导出 class Robot；z42.greet 通过 impl IGreet for Robot 加方法。
+        var coreMod = new ExportedModule("Core",
+            new List<ExportedClassDef> { Class("Robot", baseClass: null) },
+            new List<ExportedInterfaceDef> { Iface("IGreet", Method("Hello", "string")) },
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>());
+        var greetMod = new ExportedModule("Greet",
+            new List<ExportedClassDef>(),
+            new List<ExportedInterfaceDef>(),
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>(),
+            Impls: new List<ExportedImplDef>
+            {
+                new("Core.Robot", "Core.IGreet",
+                    new List<string>(),
+                    new List<ExportedMethodDef> { Method("Hello", "string") })
+            });
+
+        var loaded = ImportedSymbolLoader.Load(new[] { coreMod, greetMod }, new[] { "Core", "Greet" });
+
+        loaded.Classes.Should().ContainKey("Robot");
+        loaded.Classes["Robot"].Methods.Should().ContainKey("Hello",
+            because: "impl 块声明的方法必须合并进 imported Robot 的 Methods 字典");
+        loaded.ClassInterfaces.Should().ContainKey("Robot");
+        loaded.ClassInterfaces!["Robot"].Should().Contain("IGreet",
+            because: "impl 的 trait 必须加入 ClassInterfaces[Robot]");
+    }
+
+    [Fact]
+    public void Load_Impl_TargetMissing_SilentSkip()
+    {
+        // impl 引用一个不存在的 target —— 直接跳过，不抛异常。
+        var greetMod = new ExportedModule("Greet",
+            new List<ExportedClassDef>(),
+            new List<ExportedInterfaceDef>(),
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>(),
+            Impls: new List<ExportedImplDef>
+            {
+                new("Core.GhostClass", "Core.IGhostTrait",
+                    new List<string>(),
+                    new List<ExportedMethodDef> { Method("DoNothing", "void") })
+            });
+
+        // 不抛异常；loaded 不含 GhostClass
+        var loaded = ImportedSymbolLoader.Load(new[] { greetMod }, new[] { "Greet" });
+        loaded.Classes.Should().NotContainKey("GhostClass");
+    }
+
+    [Fact]
+    public void Load_Impl_ConflictMethod_FirstWins()
+    {
+        // class Robot 已声明 Hello() 自身方法；impl IGreet for Robot 试图再加 Hello() —
+        // 应保留 Robot 自身原版方法，impl 那条 silent skip。
+        var coreMod = new ExportedModule("Core",
+            new List<ExportedClassDef>
+            {
+                new("Robot", null, false, false, false,
+                    Fields:  new List<ExportedFieldDef>(),
+                    Methods: new List<ExportedMethodDef> { Method("Hello", "string") },
+                    Interfaces: new List<string>())
+            },
+            new List<ExportedInterfaceDef> { Iface("IGreet", Method("Hello", "string")) },
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>());
+        var greetMod = new ExportedModule("Greet",
+            new List<ExportedClassDef>(),
+            new List<ExportedInterfaceDef>(),
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>(),
+            Impls: new List<ExportedImplDef>
+            {
+                new("Core.Robot", "Core.IGreet",
+                    new List<string>(),
+                    new List<ExportedMethodDef>
+                    {
+                        // 不同的返回类型，验证 first-wins (原版的 string，不被改成 int)
+                        Method("Hello", "int")
+                    })
+            });
+
+        var loaded = ImportedSymbolLoader.Load(new[] { coreMod, greetMod }, new[] { "Core", "Greet" });
+
+        loaded.Classes["Robot"].Methods["Hello"].Ret.Should().Be(Z42Type.String,
+            because: "Robot 已声明 Hello —— impl 的同名方法被 first-wins 跳过");
+    }
 }

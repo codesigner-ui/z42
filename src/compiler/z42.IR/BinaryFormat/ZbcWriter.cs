@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 7;   // 2026-04-26 add-objnew-ctor-name: OP_OBJ_NEW carries ctor_name pool idx
+    public const ushort VersionMinor = 8;   // 2026-04-26 cross-zpkg-impl-propagation: zpkg IMPL section carries cross-zpkg `impl Trait for Type` declarations
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
