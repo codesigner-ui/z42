@@ -10,7 +10,12 @@
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/91_exception_base/source.z42 --emit zbc -o /tmp/ex.zbc)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/ex.zbc)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/91_exception_base/source.z42 --emit zbc -o /tmp/ex_baseline.zbc)",
-      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/ex_baseline.zbc)"
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/ex_baseline.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm src/runtime/tests/golden/run/49_stringbuilder/source.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm src/runtime/tests/golden/run/49_stringbuilder/source.zbc -o /tmp/sb.zasm)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm artifacts/z42/libs/z42.text.zpkg -o /tmp/text.zasm)",
+      "Bash(dotnet ../../../artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll check z42.text.z42.toml)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll check src/libraries/z42.text/z42.text.z42.toml)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

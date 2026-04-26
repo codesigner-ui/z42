@@ -338,6 +338,39 @@ public sealed class ParserTests
     }
 
     [Fact]
+    public void StringLiteral_EscapeNewline()
+    {
+        ((LitStrExpr)ParseExpr("\"a\\nb\"")).Value.Should().Be("a\nb",
+            because: "`\\n` 转义应解码成单个换行字符 (lexer 跳过转义后 parser 必须 unescape)");
+    }
+
+    [Fact]
+    public void StringLiteral_EscapeTabAndQuote()
+    {
+        ((LitStrExpr)ParseExpr("\"\\t\\\"x\\\"\"")).Value.Should().Be("\t\"x\"",
+            because: "tab + 嵌入的双引号应正确解码");
+    }
+
+    [Fact]
+    public void StringLiteral_EscapeBackslash()
+    {
+        ((LitStrExpr)ParseExpr("\"\\\\n\"")).Value.Should().Be("\\n",
+            because: "`\\\\` → 单个反斜杠，后面的 n 保持字面");
+    }
+
+    [Fact]
+    public void CharLiteral_EscapeNewline()
+    {
+        ((LitCharExpr)ParseExpr("'\\n'")).Value.Should().Be('\n');
+    }
+
+    [Fact]
+    public void CharLiteral_EscapeTab()
+    {
+        ((LitCharExpr)ParseExpr("'\\t'")).Value.Should().Be('\t');
+    }
+
+    [Fact]
     public void NullLiteral_ParsedCorrectly()
     {
         ParseExpr("null").Should().BeOfType<LitNullExpr>();

@@ -212,8 +212,8 @@ internal static class ExprParser
         // Literals
         [TokenKind.IntLiteral]                = new(ParseIntLit),
         [TokenKind.FloatLiteral]              = new(ParseFloatLit),
-        [TokenKind.StringLiteral]             = new((c, t, _) => Ok(new LitStrExpr(t.Text[1..^1], t.Span), c)),
-        [TokenKind.CharLiteral]               = new((c, t, _) => Ok(new LitCharExpr(t.Text.Length >= 3 ? t.Text[1] : '\0', t.Span), c)),
+        [TokenKind.StringLiteral]             = new((c, t, _) => Ok(new LitStrExpr(UnescapeString(t.Text[1..^1]), t.Span), c)),
+        [TokenKind.CharLiteral]               = new((c, t, _) => Ok(new LitCharExpr(UnescapeChar(t.Text), t.Span), c)),
         [TokenKind.InterpolatedStringLiteral] = new(ParseInterpolatedNud),
         [TokenKind.True]                      = new((c, t, _) => Ok(new LitBoolExpr(true,  t.Span), c)),
         [TokenKind.False]                     = new((c, t, _) => Ok(new LitBoolExpr(false, t.Span), c)),
@@ -410,7 +410,7 @@ internal static class ExprParser
         {
             if (body[i] == '{')
             {
-                if (sb.Length > 0) { parts.Add(new TextPart(sb.ToString(), tok.Span)); sb.Clear(); }
+                if (sb.Length > 0) { parts.Add(new TextPart(UnescapeString(sb.ToString()), tok.Span)); sb.Clear(); }
                 i++;
                 int depth   = 1;
                 var exprSrc = new StringBuilder();
@@ -431,7 +431,7 @@ internal static class ExprParser
                 sb.Append(body[i++]);
             }
         }
-        if (sb.Length > 0) parts.Add(new TextPart(sb.ToString(), tok.Span));
+        if (sb.Length > 0) parts.Add(new TextPart(UnescapeString(sb.ToString()), tok.Span));
         return new InterpolatedStrExpr(parts, tok.Span);
     }
 
@@ -464,5 +464,49 @@ internal static class ExprParser
                 cursor.Current.Span,
                 DiagnosticCodes.ExpectedToken);
         cursor = cursor.Advance();
+    }
+
+    /// Decode standard escape sequences in a string literal body
+    /// (lexer captures them as raw 2-char `\n`, `\t` etc.; parser converts here).
+    /// Recognised: `\n` `\t` `\r` `\0` `\\` `\"` `\'`. Unknown escape kept literal.
+    /// 2026-04-26 fix-string-literal-escape：将 lexer 跳过但未解码的转义序列还原。
+    internal static string UnescapeString(string raw)
+    {
+        if (raw.IndexOf('\\') < 0) return raw;
+        var sb = new System.Text.StringBuilder(raw.Length);
+        for (int i = 0; i < raw.Length; i++)
+        {
+            char c = raw[i];
+            if (c == '\\' && i + 1 < raw.Length)
+            {
+                char next = raw[++i];
+                sb.Append(next switch
+                {
+                    'n'  => '\n',
+                    't'  => '\t',
+                    'r'  => '\r',
+                    '0'  => '\0',
+                    '\\' => '\\',
+                    '"'  => '"',
+                    '\'' => '\'',
+                    _    => next, // unknown escape: keep next char literal (drop the `\`)
+                });
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// Decode a char literal token text `'X'` or `'\X'` to a single char.
+    private static char UnescapeChar(string tokenText)
+    {
+        // Strip surrounding quotes: `'\n'` → `\n`, `'a'` → `a`.
+        if (tokenText.Length < 3) return '\0';
+        var inner = tokenText[1..^1];
+        var unescaped = UnescapeString(inner);
+        return unescaped.Length > 0 ? unescaped[0] : '\0';
     }
 }
