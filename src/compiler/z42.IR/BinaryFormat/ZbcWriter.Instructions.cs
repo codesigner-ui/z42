@@ -111,6 +111,7 @@ public static partial class ZbcWriter
             case ObjNewInstr i:
                 w.Write(Opcodes.ObjNew); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.ClassName));
+                w.Write((uint)pool.Idx(i.CtorName));
                 WriteArgs(w, i.Args);
                 break;
             case IsInstanceInstr i:
@@ -223,7 +224,7 @@ public static partial class ZbcWriter
             case VCallInstr i:      pool.Intern(i.Method); break;
             case FieldGetInstr i:   pool.Intern(i.FieldName); break;
             case FieldSetInstr i:   pool.Intern(i.FieldName); break;
-            case ObjNewInstr i:     pool.Intern(i.ClassName); break;
+            case ObjNewInstr i:     pool.Intern(i.ClassName); pool.Intern(i.CtorName); break;
             case IsInstanceInstr i: pool.Intern(i.ClassName); break;
             case AsCastInstr i:     pool.Intern(i.ClassName); break;
             case StaticGetInstr i:  pool.Intern(i.Field); break;

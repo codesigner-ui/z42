@@ -168,6 +168,25 @@ module。`initially_loaded_zpkgs` 含 `"z42.core.zpkg"`，所以 LazyLoader
 
 ## VCall 分发与 TypeDesc
 
+### ObjNew dispatch（与 VCall 对称）
+
+`Instruction::ObjNew { dst, class_name, ctor_name, args }`：
+
+```
+1. type_desc = module.type_registry[class_name] | lazy_loader.try_lookup_type(class_name)
+            | make_fallback_type_desc(...)
+2. allocate ScriptObject(type_desc, slots=fields.len() × Null)
+3. ctor_fn = module.func_index[ctor_name] | lazy_loader.try_lookup_function(ctor_name)
+4. if ctor_fn: exec_function(ctor_fn, [obj, ...args])
+   else:       skip ctor call（默认无参 ctor 语义；TypeChecker 已确保
+               有显式 ctor 时 ctor_name 命中）
+5. frame[dst] = obj
+```
+
+**与 VCall 对齐的核心**：编译期完整 overload resolution，VM 直查 `ctor_name`，
+不再做 `${class}.${simple}` 名字推断（2026-04-26 add-objnew-ctor-name 重构）。
+`ctor_name` 含 `$N` arity suffix（重载场景）；单 ctor 时无 suffix。
+
 ### TypeDesc 结构
 
 ```rust

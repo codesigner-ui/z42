@@ -441,10 +441,13 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] arr: Reg,
     },
     // Objects
-    /// Allocate a new object of `class_name`, calling its constructor with `args`.
+    /// Allocate a new object of `class_name`, calling overload-resolved
+    /// ctor `ctor_name` (FQ, 含 `$N` suffix 如有) with `args`. VM 不再做
+    /// `${class}.${simple}` 名字推断 — 直查 `func_index[ctor_name]`.
     ObjNew {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         class_name: String,
+        ctor_name: String,
         #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
     },
     /// Load field `field_name` of object `obj` into `dst`.

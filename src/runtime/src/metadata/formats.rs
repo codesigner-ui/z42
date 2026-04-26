@@ -17,7 +17,12 @@ pub const ZPKG_MAGIC: [u8; 4] = [0x5A, 0x50, 0x4B, 0x00];
 // ── zbc binary format constants ───────────────────────────────────────────────
 
 /// zbc format version written by this toolchain.
-pub const ZBC_VERSION: [u16; 2] = [0, 4];
+///
+/// 0.7 (2026-04-26): OP_OBJ_NEW carries an additional ctor_name pool index
+/// (after class_name idx). Required for ctor-overload dispatch in the VM
+/// (see `add-objnew-ctor-name` change). No backwards-compat path — older
+/// 0.x zbc must be regenerated via `regen-golden-tests.sh`.
+pub const ZBC_VERSION: [u16; 2] = [0, 7];
 
 /// `flags` bit 0: metadata (SIGS/EXPT/IMPT) has been stripped; requires zpkg index.
 pub const ZBC_FLAG_STRIPPED: u16 = 0x01;

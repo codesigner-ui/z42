@@ -188,14 +188,15 @@ JSON wire format:
 
 ### Objects (Phase 1 — class instances)
 ```
-%r = obj_new  <ClassName>(%arg0, %arg1, ...)   # allocate + call constructor
-%r = field_get %obj, <field>                   # load a field
-     field_set %obj, <field>, %value           # store a field
+%r = obj_new  <ClassName> ctor=<CtorName>(%arg0, %arg1, ...)
+                                                # allocate + call overload-resolved ctor
+%r = field_get %obj, <field>                    # load a field
+     field_set %obj, <field>, %value            # store a field
 ```
 
 JSON wire format (tag = `"op"`):
 ```json
-{"op": "obj_new",     "dst": 5, "class_name": "Demo.Point", "args": [1, 2]}
+{"op": "obj_new",     "dst": 5, "class_name": "Demo.Point", "ctor_name": "Demo.Point.Point$2", "args": [1, 2]}
 {"op": "field_get",   "dst": 6, "obj": 5, "field_name": "X"}
 {"op": "field_set",             "obj": 5, "field_name": "X", "val": 3}
 {"op": "v_call",      "dst": 7, "obj": 5, "method": "Area", "args": []}
@@ -203,8 +204,17 @@ JSON wire format (tag = `"op"`):
 {"op": "as_cast",     "dst": 9, "obj": 5, "class_name": "Demo.Shape"}
 ```
 
-`obj_new` finds the constructor function `ClassName.ClassName` (if it exists) and calls it
-with `[this, ...args]`. The allocated object is a `ScriptObject` with slot-indexed fields.
+`obj_new` 调用 **TypeChecker 编译期 overload-resolve 选定的具体 ctor 函数**
+（`ctor_name` 字段直查），与 `call` 指令对齐 — VM 不做名字推断。命名约定：
+
+- 单 ctor：`{ClassName}.{SimpleName}`（无 suffix），如 `Demo.Point.Point`
+- 重载：`{ClassName}.{SimpleName}${N}`（1-based 声明序），如 `Demo.Point.Point$2`
+- 类无显式 ctor：`ctor_name` 取单 ctor 形式占位，VM lookup 失败时跳过 ctor
+  调用（默认无参 ctor 语义）
+
+`obj_new` 分配 `ScriptObject`（slot-indexed 字段）后用 `[this, ...args]`
+调用。0.7 起 `ctor_name` 字段必备，0.6 及更早 zbc 不再被支持
+（按 `.claude/rules/workflow.md "不为旧版本提供兼容"`）。
 
 `field_get` / `field_set` use pre-computed slot indices from the `TypeDesc` registry (O(1) per
 access). Virtual fields are also dispatched by `field_get` for built-in primitive types:

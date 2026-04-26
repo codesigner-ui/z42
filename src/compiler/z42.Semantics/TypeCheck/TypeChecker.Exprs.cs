@@ -157,7 +157,8 @@ public sealed partial class TypeChecker
                             _classConstraints, newExpr.Span);
                     }
                 }
-                return new BoundNew(qualName, args, newType, newExpr.Span);
+                var ctorName = ResolveCtorName(qualName, args.Count, newExpr.Span);
+                return new BoundNew(qualName, ctorName, args, newType, newExpr.Span);
             }
 
             case ArrayCreateExpr ac:
@@ -634,4 +635,66 @@ public sealed partial class TypeChecker
         return new BoundMember(target, m.Member, Z42Type.Unknown, m.Span);
     }
 
+    /// Overload-resolve a constructor for `new ClassName(...args)` and return
+    /// the method-table key (without class prefix). Codegen prepends the
+    /// qualified class namespace to form the FQ ctor function name.
+    ///
+    /// Naming convention (matches stdlib emit):
+    ///   - Single ctor: `"ClassName"` (no `$N` suffix)
+    ///   - Overloaded:  `"ClassName$N"` (1-based by declaration order)
+    ///
+    /// Returns the method key. Special cases:
+    ///   - Class has **no explicit ctor**: return `className` (VM skips ctor
+    ///     call — preserves legacy "default no-arg ctor" semantics for classes
+    ///     declared without a body ctor).
+    ///   - Class has explicit ctor(s) but none match `argCount`: emit
+    ///     diagnostic and return `className` as graceful fallback.
+    private string ResolveCtorName(string className, int argCount, Span span)
+    {
+        Z42ClassType? cls = null;
+        if (_symbols.Classes.TryGetValue(className, out var local))
+            cls = local;
+        else if (_imported?.Classes.TryGetValue(className, out var imp) == true)
+            cls = imp;
+
+        if (cls is null) return className; // 类未找到（下游报错）
+
+        bool hasSingle      = cls.Methods.ContainsKey(className);
+        var  overloadKeys   = cls.Methods.Keys
+            .Where(k => k.StartsWith(className + "$"))
+            .ToList();
+        bool hasExplicitCtor = hasSingle || overloadKeys.Count > 0;
+
+        // 无显式 ctor → 默认无参 ctor 语义；VM 跳过 ctor 调用。
+        if (!hasExplicitCtor) return className;
+
+        // arity 匹配判定（含 default params）：argCount 在 [MinArgCount, Params.Count] 闭区间。
+        bool ArityMatches(Z42FuncType sig) =>
+            argCount >= sig.MinArgCount && argCount <= sig.Params.Count;
+
+        // 单 ctor: arity 检查（Z42FuncType.Params 不含 this）
+        if (hasSingle && overloadKeys.Count == 0)
+        {
+            var sig = cls.Methods[className];
+            if (ArityMatches(sig))
+                return className;
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"constructor of `{className}` expects {sig.MinArgCount}..{sig.Params.Count} argument(s), got {argCount}", span);
+            return className;
+        }
+
+        // 重载: 按 arity 选
+        foreach (var key in overloadKeys)
+        {
+            if (ArityMatches(cls.Methods[key]))
+                return key;
+        }
+        // 单 ctor 与重载并存的情况（罕见）：单 ctor 也比一下
+        if (hasSingle && ArityMatches(cls.Methods[className]))
+            return className;
+
+        _diags.Error(DiagnosticCodes.TypeMismatch,
+            $"no constructor of `{className}` matches {argCount} argument(s)", span);
+        return className;
+    }
 }

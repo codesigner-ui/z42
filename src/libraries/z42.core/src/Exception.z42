@@ -20,12 +20,13 @@ public class Exception {
         // StackTrace / InnerException default to null (reference type 初始化)
     }
 
-    // Wrapping pattern (Phase 1: VM 不支持 ctor 重载，统一用 setter 链)：
-    //
-    //     var inner = new Exception("root cause");
-    //     var outer = new Exception("wrap"); outer.InnerException = inner;
-    //
-    // 未来 ObjNew 支持 arity suffix 查找后会补 `Exception(msg, inner)` 重载。
+    // 包裹现有异常 (wrapping pattern)：
+    //     var inner = new Exception("cause");
+    //     var outer = new Exception("wrap", inner);
+    public Exception(string message, Exception inner) {
+        this.Message = message;
+        this.InnerException = inner;
+    }
 
     override string ToString() {
         return "Exception: " + this.Message;

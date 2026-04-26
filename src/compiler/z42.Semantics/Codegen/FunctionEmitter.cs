@@ -67,7 +67,12 @@ internal sealed partial class FunctionEmitter
         {
             var baseSimpleName = baseQual.Contains('.')
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
-            var baseCtorIrName = $"{baseQual}.{baseSimpleName}";
+            // Overload-resolve base ctor by arity（Z42FuncType.Params 不含 this）。
+            // SemanticModel.Classes 已含 local + imported；查 base class 的 Methods
+            // 字典选 `baseSimpleName` (单 ctor) 或 `baseSimpleName$N` (重载)。
+            var baseCtorKey = ResolveBaseCtorKey(
+                baseSimpleName, boundBaseArgs.Count, baseQual);
+            var baseCtorIrName = $"{baseQual}.{baseCtorKey}";
             var argRegs = new List<TypedReg> { new(0, IrType.Ref) };
             argRegs.AddRange(boundBaseArgs.Select(EmitExpr));
             var dst = Alloc(IrType.Ref);
@@ -89,6 +94,36 @@ internal sealed partial class FunctionEmitter
             IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: method.TypeParams,
             TypeParamConstraints: constraints);
+    }
+
+    /// 选择 base ctor 的 method-table key（base class 的 Methods 字典里）。
+    /// 单 ctor: `baseSimpleName`；重载: `baseSimpleName$N` 按 arity 选
+    /// （Z42FuncType.Params 不含 this，含 default params 时按 [Min, Total] 闭区间）。
+    private string ResolveBaseCtorKey(string baseSimpleName, int argCount, string baseQual)
+    {
+        // baseQual 形如 "Std.Exception" → 在 SemanticModel.Classes 查 short name
+        // 因为 Classes 字典 keys 是 short name（"Exception"）。
+        var shortKey = baseQual.Contains('.')
+            ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
+        if (!_ctx.SemanticModel.Classes.TryGetValue(shortKey, out var cls))
+            return baseSimpleName; // base class 未找到 → fallback (下游报 undefined)
+
+        bool ArityMatches(Z42FuncType sig) =>
+            argCount >= sig.MinArgCount && argCount <= sig.Params.Count;
+
+        // 单 ctor
+        if (cls.Methods.TryGetValue(baseSimpleName, out var single) && ArityMatches(single))
+            return baseSimpleName;
+
+        // 重载
+        foreach (var (key, sig) in cls.Methods)
+        {
+            if (key.StartsWith(baseSimpleName + "$") && ArityMatches(sig))
+                return key;
+        }
+
+        // 无匹配：单 ctor 兜底
+        return baseSimpleName;
     }
 
     internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)

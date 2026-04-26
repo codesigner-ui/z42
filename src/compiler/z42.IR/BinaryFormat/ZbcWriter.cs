@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 6;   // L3-G2.5 bare-typeparam: constraint bundle adds type_param_constraint
+    public const ushort VersionMinor = 7;   // 2026-04-26 add-objnew-ctor-name: OP_OBJ_NEW carries ctor_name pool idx
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

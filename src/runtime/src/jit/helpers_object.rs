@@ -163,10 +163,14 @@ pub unsafe extern "C" fn jit_array_len(frame: *mut JitFrame, dst: u32, arr: u32)
 #[no_mangle]
 pub unsafe extern "C" fn jit_obj_new(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
-    dst: u32, cls_name_ptr: *const u8, cls_name_len: usize,
+    dst: u32,
+    cls_name_ptr: *const u8, cls_name_len: usize,
+    ctor_name_ptr: *const u8, ctor_name_len: usize,
     args_ptr: *const u32, argc: usize,
 ) -> u8 {
     let class_name = std::str::from_utf8(std::slice::from_raw_parts(cls_name_ptr, cls_name_len))
+        .unwrap_or("<invalid>").to_string();
+    let ctor_name = std::str::from_utf8(std::slice::from_raw_parts(ctor_name_ptr, ctor_name_len))
         .unwrap_or("<invalid>").to_string();
     let ctx_ref   = &*ctx;
     let module    = &*ctx_ref.module;
@@ -187,8 +191,7 @@ pub unsafe extern "C" fn jit_obj_new(
     let mut ctor_args: Vec<Value> = vec![obj_val.clone()];
     ctor_args.extend(arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()));
 
-    let simple_name = class_name.split('.').last().unwrap_or(class_name.as_str());
-    let ctor_name   = format!("{}.{}", class_name, simple_name);
+    // 直查 ctor_name (TypeChecker 已 overload-resolve)；无名字推断。
     if let Some(entry) = ctx_ref.fn_entries.get(&ctor_name) {
         let mut callee = JitFrame::new(entry.max_reg, &ctor_args);
         let jit_fn: JitFn = std::mem::transmute(entry.ptr);

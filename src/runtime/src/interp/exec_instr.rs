@@ -259,7 +259,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         }
 
         // ── Objects ──────────────────────────────────────────────────────────
-        Instruction::ObjNew { dst, class_name, args } => {
+        Instruction::ObjNew { dst, class_name, ctor_name, args } => {
             // L3-G4d: for imported classes (e.g. Std.Collections.Stack) the TypeDesc
             // may only exist in the lazy loader until first use; probe it before
             // falling back to a blank synthetic descriptor.
@@ -279,16 +279,16 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             }));
             let obj_val = Value::Object(obj_rc);
 
-            let simple_name = class_name.split('.').next_back().unwrap_or(class_name.as_str());
-            let ctor_name = format!("{}.{}", class_name, simple_name);
+            // 直查 ctor_name (TypeChecker 已 overload-resolve)；无名字推断。
             // L3-G4d: fall back to lazy loader when the ctor lives in a stdlib zpkg
             // (imported generic class ctor isn't in the main module's function table).
-            let ctor_fn = module.functions.iter().find(|f| f.name == ctor_name);
+            let ctor_fn = module.func_index.get(ctor_name.as_str())
+                .and_then(|&i| module.functions.get(i));
             if let Some(ctor) = ctor_fn {
                 let mut ctor_args = vec![obj_val.clone()];
                 ctor_args.extend(collect_args(&frame.regs, args)?);
                 super::exec_function(module, ctor, &ctor_args)?;
-            } else if let Some(lazy_ctor) = crate::metadata::lazy_loader::try_lookup_function(&ctor_name) {
+            } else if let Some(lazy_ctor) = crate::metadata::lazy_loader::try_lookup_function(ctor_name) {
                 let mut ctor_args = vec![obj_val.clone()];
                 ctor_args.extend(collect_args(&frame.regs, args)?);
                 super::exec_function(module, lazy_ctor.as_ref(), &ctor_args)?;

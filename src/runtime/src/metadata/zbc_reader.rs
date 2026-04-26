@@ -542,8 +542,9 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
         }
         OP_OBJ_NEW => {
             let class_name = pool_str_owned(pool, c.read_u32()?)?;
+            let ctor_name  = pool_str_owned(pool, c.read_u32()?)?;
             let args       = read_args(c)?;
-            Instruction::ObjNew { dst, class_name, args }
+            Instruction::ObjNew { dst, class_name, ctor_name, args }
         }
         OP_IS_INSTANCE => {
             let obj        = c.read_u16()? as u32;

@@ -6,6 +6,12 @@ void Main() {
     Console.WriteLine(e1.Message);           // oops
     Console.WriteLine(e1.ToString());        // Exception: oops
 
+    // Inner exception chain via 双 ctor 重载 (#2 解锁)
+    var inner = new Exception("root cause");
+    var outer = new Exception("wrapped", inner);
+    Console.WriteLine(outer.Message);                  // wrapped
+    Console.WriteLine(outer.InnerException.Message);   // root cause
+
     // Throw + catch — Exception can flow through Phase 1 any-value channel
     try {
         throw new Exception("thrown");

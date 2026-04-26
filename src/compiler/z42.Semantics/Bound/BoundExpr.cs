@@ -108,6 +108,11 @@ public sealed record BoundCast(BoundExpr Operand, Z42Type Type, Span Span)
 
 public sealed record BoundNew(
     string QualName,
+    /// FQ ctor function name selected by overload resolution.
+    /// Single ctor: `"ClassName.SimpleName"` (no suffix);
+    /// overloaded:  `"ClassName.SimpleName$N"`. Codegen passes this verbatim
+    /// to ObjNewInstr.CtorName so VM can dispatch without name inference.
+    string CtorName,
     IReadOnlyList<BoundExpr> Args,
     Z42Type Type,
     Span Span) : BoundExpr(Type, Span);

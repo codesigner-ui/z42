@@ -118,8 +118,9 @@ public static partial class ZbcReader
             case Opcodes.ObjNew:
             {
                 var cls  = P(pool, r.ReadUInt32());
+                var ctor = P(pool, r.ReadUInt32());
                 var args = ReadArgs(r);
-                return new ObjNewInstr(d, cls, args);
+                return new ObjNewInstr(d, cls, ctor, args);
             }
             case Opcodes.IsInstance:
             {

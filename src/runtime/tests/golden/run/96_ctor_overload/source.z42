@@ -1,0 +1,42 @@
+// Verify ObjNew dispatches to overload-resolved ctor (Class.Class$N).
+
+class Box {
+    public int Width;
+    public int Height;
+    public string Label;
+
+    Box(int size) {
+        this.Width  = size;
+        this.Height = size;
+        this.Label  = "square";
+    }
+
+    Box(int w, int h) {
+        this.Width  = w;
+        this.Height = h;
+        this.Label  = "rect";
+    }
+
+    Box(int w, int h, string label) {
+        this.Width  = w;
+        this.Height = h;
+        this.Label  = label;
+    }
+}
+
+void Main() {
+    var a = new Box(7);
+    Console.WriteLine(a.Width);   // 7
+    Console.WriteLine(a.Height);  // 7
+    Console.WriteLine(a.Label);   // square
+
+    var b = new Box(3, 4);
+    Console.WriteLine(b.Width);   // 3
+    Console.WriteLine(b.Height);  // 4
+    Console.WriteLine(b.Label);   // rect
+
+    var c = new Box(5, 6, "named");
+    Console.WriteLine(c.Width);   // 5
+    Console.WriteLine(c.Height);  // 6
+    Console.WriteLine(c.Label);   // named
+}

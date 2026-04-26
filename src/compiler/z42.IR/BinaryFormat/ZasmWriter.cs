@@ -180,7 +180,7 @@ public static class ZasmWriter
             StaticGetInstr i => $"{Reg(i.Dst)} = static.get  @{i.Field}",
             StaticSetInstr i => $"static.set  @{i.Field}  {Reg(i.Val)}",
 
-            ObjNewInstr     i => $"{Reg(i.Dst)} = obj.new  @{i.ClassName}{FormatArgList(i.Args)}",
+            ObjNewInstr     i => FormatObjNew(i),
             IsInstanceInstr i => $"{Reg(i.Dst)} = is_instance  {Reg(i.Obj)}  @{i.ClassName}",
             AsCastInstr     i => $"{Reg(i.Dst)} = as_cast  {Reg(i.Obj)}  @{i.ClassName}",
 
@@ -207,6 +207,17 @@ public static class ZasmWriter
 
     private static string FormatArgList(List<TypedReg> args) =>
         args.Count == 0 ? "" : "  " + string.Join(", ", args.Select(a => Reg(a)));
+
+    /// Emit `obj.new` in compact form (single ctor) or with `ctor=` annotation
+    /// (overloaded ctor, where CtorName != ClassName + "." + simple).
+    private static string FormatObjNew(ObjNewInstr i)
+    {
+        int dot = i.ClassName.LastIndexOf('.');
+        string simple = dot < 0 ? i.ClassName : i.ClassName[(dot + 1)..];
+        string defaultCtor = $"{i.ClassName}.{simple}";
+        string ctorAnnot = i.CtorName == defaultCtor ? "" : $"  ctor={i.CtorName}";
+        return $"{Reg(i.Dst)} = obj.new  @{i.ClassName}{ctorAnnot}{FormatArgList(i.Args)}";
+    }
 
     private static string Escape(string s) =>
         s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");

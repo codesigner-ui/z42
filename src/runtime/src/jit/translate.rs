@@ -133,8 +133,8 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         array_get:     decl!("jit_array_get",     [ptr, i32t, i32t, i32t],           [i8t]),
         array_set:     decl!("jit_array_set",     [ptr, i32t, i32t, i32t],           [i8t]),
         array_len:     decl!("jit_array_len",     [ptr, i32t, i32t],                 [i8t]),
-        // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, args_ptr, argc) -> u8
-        obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t], [i8t]),
+        // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc) -> u8
+        obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
         field_get:     decl!("jit_field_get",  [ptr, i32t, i32t, ptr, i64t],          [i8t]),
         field_set:     decl!("jit_field_set",  [ptr, i32t, ptr, i64t, i32t],          [i8t]),
         // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc) -> u8
@@ -610,11 +610,12 @@ pub fn translate_function(
                 }
 
                 // Objects
-                Instruction::ObjNew { dst, class_name, args } => {
+                Instruction::ObjNew { dst, class_name, ctor_name, args } => {
                     let d = ri!(*dst);
                     let (cp, cl) = str_val!(class_name);
+                    let (kp, kl) = str_val!(ctor_name);
                     let (ap, al) = regs_val!(args);
-                    let inst = builder.ins().call(hr_obj_new, &[frame_val, ctx_val, d, cp, cl, ap, al]);
+                    let inst = builder.ins().call(hr_obj_new, &[frame_val, ctx_val, d, cp, cl, kp, kl, ap, al]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::FieldGet { dst, obj, field_name } => {

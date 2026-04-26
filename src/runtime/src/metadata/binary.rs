@@ -711,8 +711,9 @@ fn decode_instr(
         }
         OP_OBJ_NEW => {
             let class_name = pool_str(pool, r.u32()? as usize)?.to_owned();
+            let ctor_name  = pool_str(pool, r.u32()? as usize)?.to_owned();
             let args       = read_args(r)?;
-            Instruction::ObjNew { dst, class_name, args }
+            Instruction::ObjNew { dst, class_name, ctor_name, args }
         }
         OP_IS_INSTANCE => {
             let obj        = r.u16()? as u32;

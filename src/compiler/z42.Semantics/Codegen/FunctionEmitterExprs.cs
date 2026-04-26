@@ -487,10 +487,12 @@ internal sealed partial class FunctionEmitter
                 // scope. Local classes win over same-named imports (handled in QualifyClassName).
                 var argRegs = n.Args.Select(EmitExpr).ToList();
                 string qualCls = _ctx.QualifyClassName(n.QualName);
-                string ctorKey = $"{qualCls}.{n.QualName}";
-                argRegs = FillDefaults(ctorKey, argRegs);
+                // FQ ctor name = "{qualifiedClass}.{methodKey}" — TypeChecker
+                // 已在 BoundNew.CtorName 提供 method key（含 $N suffix 如有）。
+                string fqCtor = $"{qualCls}.{n.CtorName}";
+                argRegs = FillDefaults(fqCtor, argRegs);
                 var dst = Alloc(IrType.Ref);
-                Emit(new ObjNewInstr(dst, qualCls, argRegs));
+                Emit(new ObjNewInstr(dst, qualCls, fqCtor, argRegs));
                 return dst;
             }
         }

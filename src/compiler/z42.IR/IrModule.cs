@@ -184,8 +184,10 @@ public sealed record ArrayLenInstr(TypedReg Dst, TypedReg Arr)               : I
 
 // ── Object instructions ──────────────────────────────────────────────────────
 
-/// Allocate a new object of ClassName, calling its constructor with Args.
-public sealed record ObjNewInstr(TypedReg Dst, string ClassName, List<TypedReg> Args) : IrInstr;
+/// Allocate a new object of ClassName, calling specific overload-resolved
+/// constructor `CtorName` (含 `$N` arity suffix 如有，对齐 Call 指令的
+/// FQ 函数名约定）with Args. VM 不再做名字推断，直查 ctor_name。
+public sealed record ObjNewInstr(TypedReg Dst, string ClassName, string CtorName, List<TypedReg> Args) : IrInstr;
 /// Load field FieldName from object in register Obj into Dst.
 public sealed record FieldGetInstr(TypedReg Dst, TypedReg Obj, string FieldName)      : IrInstr;
 /// Store Val into field FieldName of object in register Obj.
