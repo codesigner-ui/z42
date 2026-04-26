@@ -1,9 +1,12 @@
+using Z42.Core.Diagnostics;
+using Z42.Core.Features;
 using Z42.Core.Text;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
 using Z42.Semantics.Codegen;
 using Z42.Semantics.TypeCheck;
+using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
 
 namespace Z42.Pipeline;
@@ -297,17 +300,96 @@ public static class PackageCompiler
         DependencyIndex           depIndex,
         TsigCache?                tsigCache = null)
     {
-        var units  = new List<CompiledUnit>();
-        int errors = 0;
+        // ── Load external imports (cross-package, from already-built zpkgs) ──
+        var externalImported = LoadExternalImported(tsigCache);
+
+        // ── Phase 1: parse all + Pass-0 collect intra-package declarations ──
+        // Same package's files reference each other (e.g. z42.core's List.z42 uses
+        // IEquatable.z42 via `where T: IEquatable<T>`). Without intra-package
+        // sharing, a fresh build with no zpkg cache fails because those refs
+        // can't be resolved. fix-package-compiler-cross-file (2026-04-26) adds
+        // this two-phase pre-collection.
+        //
+        // A SHARED SymbolCollector is reused across all CUs so cross-CU
+        // inheritance (e.g. ArgumentNullException → ArgumentException → Exception
+        // spread across three files) sees its full base chain. After all CUs are
+        // collected, FinalizeInheritance() runs a global topological merge to
+        // handle out-of-order CU processing.
+        var parsedCus = new List<(string file, string source, CompilationUnit cu, string ns)>();
+        int parseErrors = 0;
+        var sharedDiags     = new DiagnosticBag();
+        var sharedCollector = new SymbolCollector(sharedDiags);
+        SymbolTable? sharedSymbols = null;
         foreach (var sourceFile in sourceFiles)
         {
-            var unit = CompileFile(sourceFile, depIndex, tsigCache);
+            string source;
+            try   { source = File.ReadAllText(sourceFile); }
+            catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); parseErrors++; continue; }
+
+            var diags  = new DiagnosticBag();
+            var tokens = new Lexer(source, sourceFile).Tokenize();
+            var parser = new Parser(tokens, LanguageFeatures.Phase1);
+            CompilationUnit cu;
+            try   { cu = parser.ParseCompilationUnit(); }
+            catch { /* parse error printed in Phase 2's diagnostics */ continue; }
+            foreach (var d in parser.Diagnostics.All) diags.Add(d);
+            if (diags.HasErrors)
+            {
+                // Defer printing to Phase 2 (which will re-parse and print);
+                // skip pre-collection for malformed CUs.
+                continue;
+            }
+            string ns = cu.Namespace ?? "main";
+            parsedCus.Add((sourceFile, source, cu, ns));
+
+            // Accumulate into shared collector — externalImported is idempotent
+            // via TryAdd, so passing it on every call is safe.
+            sharedSymbols = sharedCollector.Collect(cu, externalImported);
+            // Diagnostics from Pass 0 are tentative (cross-file refs may not yet
+            // be available); deferred to Phase 2 where the full picture is in scope.
+        }
+        if (parseErrors > 0)
+        {
+            Console.Error.WriteLine($"error: build failed ({parseErrors} unreadable file(s))");
+            return null;
+        }
+
+        // Global inheritance merge: ensures derived classes carry their full
+        // base-chain Fields/Methods regardless of CU processing order.
+        sharedCollector.FinalizeInheritance();
+        // Re-snapshot SymbolTable so ExtractIntraSymbols sees finalized classes.
+        // FinalizeInheritance mutates _classes in place; the SymbolTable returned
+        // from the last Collect() call holds references to the same dictionaries,
+        // but to be explicit we extract from a fresh snapshot.
+        var intraSymbols = sharedSymbols is null
+            ? ImportedSymbolLoader.Empty()
+            : sharedSymbols.ExtractIntraSymbols(parsedCus.FirstOrDefault().ns ?? "main");
+
+        // ── Phase 2: full compile each CU with combined imports ──
+        var combined = ImportedSymbolLoader.Combine(externalImported, intraSymbols);
+
+        var units  = new List<CompiledUnit>();
+        int errors = 0;
+        foreach (var (sourceFile, source, _, _) in parsedCus)
+        {
+            var unit = CompileFile(sourceFile, depIndex, source, combined);
             if (unit is null) { errors++; continue; }
             units.Add(unit);
         }
         if (errors > 0)
         { Console.Error.WriteLine($"error: build failed ({errors} file(s) with errors)"); return null; }
         return units;
+    }
+
+    /// 加载所有外部 zpkg 的 ImportedSymbols（来自 tsigCache）。
+    /// Phase 1 需要它作为 Pass-0 collect 的 base；Phase 2 与 intraSymbols 合并。
+    private static ImportedSymbols LoadExternalImported(TsigCache? tsigCache)
+    {
+        if (tsigCache == null) return ImportedSymbolLoader.Empty();
+        var tsigModules = tsigCache.LoadAll();
+        if (tsigModules.Count == 0) return ImportedSymbolLoader.Empty();
+        var allNs = tsigModules.Select(m => m.Namespace).Distinct().ToList();
+        return ImportedSymbolLoader.Load(tsigModules, allNs);
     }
 
     /// Emit warnings for `using` declarations that cannot be resolved in <paramref name="nsMap"/>.
@@ -351,27 +433,14 @@ public static class PackageCompiler
 
     // ── Per-file helpers ──────────────────────────────────────────────────────
 
+    /// 编译单个源文件，使用调用方提供的合并后 imported（外部 zpkg + 同包内
+    /// intraSymbols）。`source` 由调用方从磁盘预读，避免重复 I/O。
     static CompiledUnit? CompileFile(
-        string sourceFile, DependencyIndex depIndex,
-        TsigCache? tsigCache = null)
+        string           sourceFile,
+        DependencyIndex  depIndex,
+        string           source,
+        ImportedSymbols? imported)
     {
-        string source;
-        try   { source = File.ReadAllText(sourceFile); }
-        catch { Console.Error.WriteLine($"error: cannot read {sourceFile}"); return null; }
-
-        // Stdlib is always visible at compile time (no `using` needed).
-        // DEPS section records only actually-called namespaces via UsedDepNamespaces.
-        ImportedSymbols? imported = null;
-        if (tsigCache != null)
-        {
-            var tsigModules = tsigCache.LoadAll();
-            if (tsigModules.Count > 0)
-            {
-                var allNs = tsigModules.Select(m => m.Namespace).Distinct().ToList();
-                imported = ImportedSymbolLoader.Load(tsigModules, allNs);
-            }
-        }
-
         var result = PipelineCore.Compile(source, sourceFile, depIndex, imported: imported);
         result.Diags.PrintAll();
         if (result.Diags.HasErrors || result.Module is null) return null;

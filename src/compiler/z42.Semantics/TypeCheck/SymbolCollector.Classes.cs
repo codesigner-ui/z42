@@ -4,7 +4,7 @@ using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
 
-internal sealed partial class SymbolCollector
+public sealed partial class SymbolCollector
 {
     /// True if the class should NOT implicitly inherit from Object.
     private static bool ExcludeFromImplicitObject(ClassDecl cls) =>
@@ -324,5 +324,36 @@ internal sealed partial class SymbolCollector
                         cls.Span);
             }
         }
+    }
+
+    /// Globally re-run inheritance field/method merge for every class in `_classes`,
+    /// in topological order (base → derived). Idempotent.
+    ///
+    /// Per-CU `CollectClasses` second pass only sees classes registered up to that
+    /// point; when CUs are processed out of inheritance order (e.g. derived
+    /// `ArgumentNullException.z42` before its base `ArgumentException.z42`), the
+    /// per-CU merge silently skips because the base isn't in `_classes` yet.
+    /// This pass walks every class's base chain and merges, ensuring all derived
+    /// classes carry their full inherited Fields/Methods regardless of CU order.
+    /// (fix-package-compiler-cross-file 引入 — 修复多 CU 包内多级继承。)
+    public void FinalizeInheritance()
+    {
+        var done = new HashSet<string>();
+        foreach (var name in _classes.Keys.ToList())
+            FinalizeInheritanceOne(name, done);
+    }
+
+    private void FinalizeInheritanceOne(string name, HashSet<string> done)
+    {
+        if (!done.Add(name)) return;
+        if (!_classes.TryGetValue(name, out var ct)) return;
+        if (ct.BaseClassName is not { } baseName) return;
+        FinalizeInheritanceOne(baseName, done);
+        if (!_classes.TryGetValue(baseName, out var baseType)) return;
+        var mergedFields  = new Dictionary<string, Z42Type>(baseType.Fields);
+        var mergedMethods = new Dictionary<string, Z42FuncType>(baseType.Methods);
+        foreach (var kv in ct.Fields)  mergedFields[kv.Key]  = kv.Value;
+        foreach (var kv in ct.Methods) mergedMethods[kv.Key] = kv.Value;
+        _classes[name] = ct with { Fields = mergedFields, Methods = mergedMethods };
     }
 }

@@ -3,7 +3,7 @@ using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
 
-internal sealed partial class SymbolCollector
+public sealed partial class SymbolCollector
 {
     /// L3 extern impl (Change 1): merge `impl Trait for Target { ... }` blocks into
     /// the target class's InterfaceTypes + Methods. Target can be a user class/struct

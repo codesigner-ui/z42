@@ -316,6 +316,62 @@ public static class ImportedSymbolLoader
         "internal"  => Visibility.Internal,
         _           => Visibility.Public,
     };
+
+    /// 空 ImportedSymbols。Used as start state for `Combine(...)` 折叠。
+    public static ImportedSymbols Empty() => new(
+        Classes:                new Dictionary<string, Z42ClassType>(StringComparer.Ordinal),
+        Functions:              new Dictionary<string, Z42FuncType>(StringComparer.Ordinal),
+        Interfaces:             new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal),
+        EnumConstants:          new Dictionary<string, long>(StringComparer.Ordinal),
+        EnumTypes:              new HashSet<string>(StringComparer.Ordinal),
+        ClassNamespaces:        new Dictionary<string, string>(StringComparer.Ordinal),
+        ClassConstraints:       new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal),
+        FuncConstraints:        new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal),
+        ClassInterfaces:        new Dictionary<string, List<string>>(StringComparer.Ordinal));
+
+    /// 合并两个 ImportedSymbols。`high` 优先（同名条目覆盖 `low`）。
+    /// 用于 PackageCompiler 多 CU 编译时把同包内 intraSymbols (high) 与
+    /// 外部 zpkg externalImported (low) 合并：本包内 declarations 总是覆盖
+    /// 外部同名（防 stale zpkg 干扰）。
+    public static ImportedSymbols Combine(ImportedSymbols low, ImportedSymbols high)
+    {
+        var classes = new Dictionary<string, Z42ClassType>(low.Classes, StringComparer.Ordinal);
+        foreach (var (k, v) in high.Classes) classes[k] = v;
+
+        var funcs = new Dictionary<string, Z42FuncType>(low.Functions, StringComparer.Ordinal);
+        foreach (var (k, v) in high.Functions) funcs[k] = v;
+
+        var interfaces = new Dictionary<string, Z42InterfaceType>(low.Interfaces, StringComparer.Ordinal);
+        foreach (var (k, v) in high.Interfaces) interfaces[k] = v;
+
+        var enumConsts = new Dictionary<string, long>(low.EnumConstants, StringComparer.Ordinal);
+        foreach (var (k, v) in high.EnumConstants) enumConsts[k] = v;
+
+        var enumTypes = new HashSet<string>(low.EnumTypes, StringComparer.Ordinal);
+        foreach (var t in high.EnumTypes) enumTypes.Add(t);
+
+        var classNs = new Dictionary<string, string>(low.ClassNamespaces, StringComparer.Ordinal);
+        foreach (var (k, v) in high.ClassNamespaces) classNs[k] = v;
+
+        var classConstraints = MergeNullable(low.ClassConstraints, high.ClassConstraints);
+        var funcConstraints  = MergeNullable(low.FuncConstraints,  high.FuncConstraints);
+        var classInterfaces  = MergeNullable(low.ClassInterfaces,  high.ClassInterfaces);
+
+        return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
+            classConstraints, funcConstraints, classInterfaces);
+    }
+
+    private static Dictionary<string, T>? MergeNullable<T>(
+        Dictionary<string, T>? low, Dictionary<string, T>? high)
+    {
+        if (low is null && high is null) return null;
+        var result = low is null
+            ? new Dictionary<string, T>(StringComparer.Ordinal)
+            : new Dictionary<string, T>(low, StringComparer.Ordinal);
+        if (high is not null)
+            foreach (var (k, v) in high) result[k] = v;
+        return result;
+    }
 }
 
 /// Imported symbols from dependency zpkg TSIG sections, ready to be merged

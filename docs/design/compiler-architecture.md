@@ -199,6 +199,82 @@ TSIG 解码失败、namespace 过滤不含其 namespace 等），fallback 到
 
 ---
 
+## 多 CU 包内 symbol 共享（2026-04-26 fix-package-compiler-cross-file）
+
+### 背景
+
+`PackageCompiler` 编译一个 zpkg 时通常涉及多个源文件（CU）。同包内的 CU
+互相引用（`z42.core/src/Exceptions/ArgumentNullException.z42` 继承
+`Exceptions/ArgumentException.z42`，再继承 `Exception.z42`）。早期实现中
+每个 CU 独立 `CompileFile`，`MergeImported` 仅加载 **外部已 build 的
+zpkg**（`tsigCache.LoadAll()`），同包内未编译完的文件互不可见。开发者本地
+有残留 zpkg cache 时偶然能跑通；清空 cache 后 stdlib 自启动失败：
+
+```
+ArgumentNullException.z42(8,44): error E0402:
+  type `ArgumentNullException` has no member `Message`
+```
+
+### 两阶段编译
+
+`PackageCompiler.TryCompileSourceFiles`（`src/compiler/z42.Pipeline/PackageCompiler.cs`）：
+
+```
+Phase 1 — 同包 declarations 预收集
+  externalImported = ImportedSymbolLoader.Load(tsigCache.LoadAll(), allNs)
+  sharedCollector  = new SymbolCollector(...)
+  foreach cu in parsedCus:
+    sharedCollector.Collect(cu, externalImported)   // Pass-0 only，无 body bind
+  sharedCollector.FinalizeInheritance()             // 全局拓扑合并继承字段/方法
+  intraSymbols = sharedSymbols.ExtractIntraSymbols(ns)  // 仅本包 declarations
+
+Phase 2 — 完整编译
+  combined = ImportedSymbolLoader.Combine(externalImported, intraSymbols)
+             // intraSymbols 优先（本包覆盖外部同名）
+  foreach cu in parsedCus:
+    CompileFile(cu, combined)   // TypeCheck + IR + zbc，body binding 全做
+```
+
+### 关键不变量
+
+- 每个 CU 的 sem 仍独立（body binding / IR 各自做）
+- intraSymbols 仅含 declarations（class shape、interface methods sig、enum、
+  free function sig），不含具体方法 body 或 IR
+- 跨 CU 同名声明：first-wins（与现有 ImportedSymbols 合并语义一致）
+- intraSymbols 不写入 zpkg TSIG（仅本次 build 使用，next build 从 zpkg 加载）
+- 本包优先：`Combine(externalImported, intraSymbols)` 时 intraSymbols 覆盖
+  externalImported 的同名条目（防止 stale zpkg 提供旧版 declaration）
+
+### SymbolCollector.FinalizeInheritance
+
+`Collect` 的 per-CU 第二阶段（`SymbolCollector.Classes.cs`）只能合并已经在
+`_classes` 中的 base class 字段；当 CU 处理顺序与继承顺序不一致（按文件名
+字母序：`Exceptions/ArgumentNullException.z42` 早于 `Exception.z42`），
+派生类的 base 还没注册 → 合并被静默跳过 → intraSymbols 中派生类的 Fields
+不含继承字段。多级继承（`ArgumentNullException → ArgumentException →
+Exception`）会因任意一级断链而丢失 `Message` 字段。
+
+`FinalizeInheritance()` 在 Phase 1 全部 CU 收集完成后做一次 **全局拓扑
+合并**：递归 `FinalizeInheritanceOne(name)` 先处理 base 再合并 self，用
+`done` HashSet 保证幂等。运行后 `_classes` 中每个 class 的 Fields/Methods
+都已展开完整继承链，与单 CU + cached zpkg 路径一致。
+
+### SymbolTable.ExtractIntraSymbols
+
+`SymbolCollector` / `SymbolTable` 跟踪 `ImportedClassNames` /
+`ImportedInterfaceNames` / `ImportedFuncNames` / `ImportedEnumNames`
+（`MergeImported` 时 TryAdd 成功即记入），`ExtractIntraSymbols(ns)` 据此
+过滤掉外部 imported 的条目，只输出本包 declarations。返回的
+`ImportedSymbols` 直接喂给 Phase 2 的 `Combine`。
+
+### 兼容性
+
+- 仅在 PackageCompiler 路径生效；`SingleFileCompiler` 保持原样
+- Cross-package 引用仍走 `tsigCache` 加载 zpkg（外部依赖不变）
+- `intraSymbols` 不写盘，每次 build 重新计算
+
+---
+
 ## DependencyIndex 与 Import 解析
 
 位置：`src/compiler/z42.IR/DependencyIndex.cs`

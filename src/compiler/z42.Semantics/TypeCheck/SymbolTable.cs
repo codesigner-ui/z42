@@ -31,6 +31,13 @@ public sealed class SymbolTable
     /// Used by IrGen to qualify imported class calls with the correct dependency namespace.
     public IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
 
+    /// Names of interfaces / functions / enums imported from dependency zpkgs.
+    /// 与 ImportedClassNames 对称；用于 `ExtractIntraSymbols` 区分本包 declarations.
+    /// (fix-package-compiler-cross-file 引入。)
+    public IReadOnlySet<string> ImportedInterfaceNames { get; }
+    public IReadOnlySet<string> ImportedFuncNames      { get; }
+    public IReadOnlySet<string> ImportedEnumNames      { get; }
+
     /// Precomputed ancestor sets: for each class, the set of all its ancestor class names.
     /// Enables O(1) subclass checks instead of walking the inheritance chain.
     private readonly Dictionary<string, HashSet<string>> _ancestors;
@@ -47,7 +54,10 @@ public sealed class SymbolTable
         HashSet<string> sealedClasses,
         Dictionary<string, HashSet<string>> virtualMethods,
         HashSet<string>? importedClassNames = null,
-        Dictionary<string, string>? importedClassNamespaces = null)
+        Dictionary<string, string>? importedClassNamespaces = null,
+        HashSet<string>? importedInterfaceNames = null,
+        HashSet<string>? importedFuncNames = null,
+        HashSet<string>? importedEnumNames = null)
     {
         Classes = classes;
         Functions = functions;
@@ -61,7 +71,75 @@ public sealed class SymbolTable
         VirtualMethods = virtualMethods;
         ImportedClassNames = importedClassNames ?? new HashSet<string>();
         ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
+        ImportedInterfaceNames  = importedInterfaceNames  ?? new HashSet<string>();
+        ImportedFuncNames       = importedFuncNames       ?? new HashSet<string>();
+        ImportedEnumNames       = importedEnumNames       ?? new HashSet<string>();
         _ancestors = BuildAncestorSets(classes);
+    }
+
+    /// 抽出本包内（非 imported）declarations，返回 ImportedSymbols 形式。
+    /// 用于 PackageCompiler 多 CU 编译时把同包内每个 cu 的 Pass-0 收集结果
+    /// 合并成 intraSymbols，供 Phase 2 完整编译时作为额外 imported 注入。
+    /// (fix-package-compiler-cross-file 引入。)
+    public ImportedSymbols ExtractIntraSymbols(string namespaceName)
+    {
+        var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
+        var classNs    = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (name, ct) in Classes)
+        {
+            if (ImportedClassNames.Contains(name)) continue;
+            if (name == "Object") continue; // synthetic stub
+            classes[name] = ct;
+            classNs[name] = namespaceName;
+        }
+
+        var interfaces = new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal);
+        foreach (var (name, it) in Interfaces)
+        {
+            if (ImportedInterfaceNames.Contains(name)) continue;
+            interfaces[name] = it;
+        }
+
+        var funcs = new Dictionary<string, Z42FuncType>(StringComparer.Ordinal);
+        foreach (var (name, ft) in Functions)
+        {
+            if (ImportedFuncNames.Contains(name)) continue;
+            funcs[name] = ft;
+        }
+
+        var enumTypes  = new HashSet<string>(StringComparer.Ordinal);
+        var enumConsts = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (var t in EnumTypes)
+        {
+            if (ImportedEnumNames.Contains(t)) continue;
+            enumTypes.Add(t);
+        }
+        foreach (var (key, val) in EnumConstants)
+        {
+            int dot = key.IndexOf('.');
+            if (dot < 0) continue;
+            var en = key[..dot];
+            if (enumTypes.Contains(en)) enumConsts[key] = val;
+        }
+
+        // ClassInterfaces: 仅含本包内 class 的 interface 列表（按短名）
+        var classInterfaces = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var (className, ifList) in ClassInterfaces)
+        {
+            if (ImportedClassNames.Contains(className)) continue;
+            classInterfaces[className] = ifList.Select(i => i.Name).ToList();
+        }
+
+        return new ImportedSymbols(
+            Classes:          classes,
+            Functions:        funcs,
+            Interfaces:       interfaces,
+            EnumConstants:    enumConsts,
+            EnumTypes:        enumTypes,
+            ClassNamespaces:  classNs,
+            ClassConstraints: null,    // intra-package 不传约束（local 会重新 collect）
+            FuncConstraints:  null,
+            ClassInterfaces:  classInterfaces);
     }
 
     /// Build ancestor set for each class by walking the inheritance chain once per class.

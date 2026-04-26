@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "additionalDirectories": [
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/z42/libs"
+    ],
+    "allow": [
+      "Bash(rm -f artifacts/z42/libs/*.zpkg)",
+      "Bash(rm -rf src/libraries/*/dist)"
+    ]
+  }
+}

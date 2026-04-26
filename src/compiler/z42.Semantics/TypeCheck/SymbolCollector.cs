@@ -9,7 +9,7 @@ namespace Z42.Semantics.TypeCheck;
 ///
 /// Does NOT bind expression bodies or default values — that is BodyBinder / TypeChecker's job.
 /// </summary>
-internal sealed partial class SymbolCollector : ISymbolBinder
+public sealed partial class SymbolCollector : ISymbolBinder
 {
     private readonly DiagnosticBag _diags;
 
@@ -26,8 +26,14 @@ internal sealed partial class SymbolCollector : ISymbolBinder
     internal readonly Dictionary<string, HashSet<string>>  _virtualMethods  = new();
     internal readonly HashSet<string>                      _importedClassNames = new();
     internal Dictionary<string, string>                    _importedClassNamespaces = new();
+    /// 跟踪 imported (来自 zpkg) interface / func / enum names，用于
+    /// `SymbolTable.ExtractIntraSymbols()` 区分本包 declarations。
+    /// (与 _importedClassNames 对称。fix-package-compiler-cross-file 引入。)
+    internal readonly HashSet<string>                      _importedInterfaceNames = new();
+    internal readonly HashSet<string>                      _importedFuncNames      = new();
+    internal readonly HashSet<string>                      _importedEnumNames      = new();
 
-    internal SymbolCollector(DiagnosticBag diags)
+    public SymbolCollector(DiagnosticBag diags)
     {
         _diags = diags;
     }
@@ -52,7 +58,8 @@ internal sealed partial class SymbolCollector : ISymbolBinder
             _globalEnumConstants, _enumTypes,
             _classInterfaces, _abstractMethods,
             _abstractClasses, _sealedClasses, _virtualMethods,
-            _importedClassNames, _importedClassNamespaces);
+            _importedClassNames, _importedClassNamespaces,
+            _importedInterfaceNames, _importedFuncNames, _importedEnumNames);
     }
 
     /// Merge imported symbols from dependency zpkgs.
@@ -67,13 +74,22 @@ internal sealed partial class SymbolCollector : ISymbolBinder
                 _importedClassNames.Add(name);
         }
         foreach (var (name, ft) in imported.Functions)
-            _funcs.TryAdd(name, ft);
+        {
+            if (_funcs.TryAdd(name, ft))
+                _importedFuncNames.Add(name);
+        }
         foreach (var (name, it) in imported.Interfaces)
-            _interfaces.TryAdd(name, it);
+        {
+            if (_interfaces.TryAdd(name, it))
+                _importedInterfaceNames.Add(name);
+        }
         foreach (var (key, val) in imported.EnumConstants)
             _globalEnumConstants.TryAdd(key, val);
         foreach (var name in imported.EnumTypes)
-            _enumTypes.Add(name);
+        {
+            if (_enumTypes.Add(name))
+                _importedEnumNames.Add(name);
+        }
         foreach (var (name, ns) in imported.ClassNamespaces)
             _importedClassNamespaces.TryAdd(name, ns);
         // L3-G4b primitive-as-struct: import stdlib `struct int : IComparable<int>` etc.
