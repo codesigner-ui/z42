@@ -263,7 +263,16 @@ public static class PackageCompiler
         ZpkgFile zpkg;
         if (pack)
         {
-            zpkg = ZpkgBuilder.BuildPacked(name, version, kind, entry, zbcFiles, dependencies, exportedModules);
+            // packed 模式同时写 zbc 散文件到 cache（增量编译物质基础；zpkg 内仍 inline）
+            zpkg = ZpkgBuilder.BuildPacked(
+                name, version, kind, entry, zbcFiles, dependencies, exportedModules,
+                projectDir: projectDir, cacheDir: cacheDir);
+            foreach (var zbc in zbcFiles)
+            {
+                string relSrc  = Path.GetRelativePath(projectDir, zbc.SourceFile);
+                string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
+                Console.Error.WriteLine($"cached → {zbcPath}");
+            }
         }
         else
         {

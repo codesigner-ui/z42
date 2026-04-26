@@ -192,7 +192,8 @@ public static partial class ZbcWriter
         }
         else
         {
-            // Stripped mode: only body strings
+            // Stripped mode: body strings + 运行时仍需要的 LineTable.File（用于异常 stack trace）。
+            // BuildFuncSection 无条件写 LineTable（含 File），所以 stripped 模式也必须 intern。
             for (int i = 0; i < module.StringPool.Count; i++)
                 strRemap[i] = pool.Intern(module.StringPool[i]);
 
@@ -204,6 +205,11 @@ public static partial class ZbcWriter
                 if (fn.ExceptionTable != null)
                     foreach (var exc in fn.ExceptionTable)
                         if (exc.CatchType != null) pool.Intern(exc.CatchType);
+
+                // 与 fullMode 分支保持一致：LineTable.File 必须 intern
+                if (fn.LineTable != null)
+                    foreach (var le in fn.LineTable)
+                        if (le.File != null) pool.Intern(le.File);
             }
         }
     }

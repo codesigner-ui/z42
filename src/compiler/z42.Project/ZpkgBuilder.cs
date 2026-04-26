@@ -11,9 +11,14 @@ namespace Z42.Project;
 ///   <b>Indexed</b> — stripped .zbc files are written to <c>cacheDir</c>; the zpkg stores
 ///                    relative path references in <c>files[]</c>.
 ///                    Preferred for incremental debug builds.
+///
+/// 中间产物：两种模式下都把 .zbc 散文件写到 <c>cacheDir</c>（packed 仅写文件，
+/// 不在 zpkg 中引用；indexed 写文件并在 zpkg.files[] 中引用）。这是后续真正
+/// 增量编译（查 source_hash 跳过未变文件）的物质基础。
 public static class ZpkgBuilder
 {
     /// Build a packed <see cref="ZpkgFile"/> with all <paramref name="zbcFiles"/> inlined.
+    /// 同时把 zbc 散文件写到 cacheDir（如提供）以支持后续增量编译。
     public static ZpkgFile BuildPacked(
         string                    name,
         string                    version,
@@ -21,10 +26,25 @@ public static class ZpkgBuilder
         string?                   entry,
         IReadOnlyList<ZbcFile>    zbcFiles,
         IReadOnlyList<ZpkgDep>    dependencies,
-        List<ExportedModule>?     exportedModules = null)
+        List<ExportedModule>?     exportedModules = null,
+        string?                   projectDir = null,
+        string?                   cacheDir = null)
     {
         var namespaces = zbcFiles.Select(z => z.Namespace).Distinct().ToList();
         var exports    = BuildExports(zbcFiles);
+
+        // 中间 zbc 写到 cache（仅当 caller 提供 projectDir + cacheDir 时；与
+        // indexed 模式行为一致，但 zpkg 里仍 inline 到 modules[]）。
+        if (projectDir is not null && cacheDir is not null)
+        {
+            foreach (var zbc in zbcFiles)
+            {
+                string relSrc  = Path.GetRelativePath(projectDir, zbc.SourceFile);
+                string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
+                Directory.CreateDirectory(Path.GetDirectoryName(zbcPath)!);
+                File.WriteAllBytes(zbcPath, ZbcWriter.Write(zbc.Module, ZbcFlags.Stripped));
+            }
+        }
 
         return new ZpkgFile(
             Name:            name,
