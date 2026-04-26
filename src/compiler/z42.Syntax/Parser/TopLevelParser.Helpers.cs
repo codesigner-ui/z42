@@ -474,6 +474,34 @@ internal static partial class TopLevelParser
         // Must start with a type token
         if (!TypeParser.IsTypeToken(cursor.Current.Kind)) return false;
         cursor = cursor.Advance();
+        // Optional generic suffix <...> — depth-counted scan to handle multiple
+        // type args (e.g. `Dictionary<int, string>`). Note: nested generics
+        // `List<List<int>>` are blocked by TypeParser's `>>` (GtGt) handling
+        // (separate bug); IsFieldDecl returns false for that and lets the
+        // parser produce its usual diagnostic.
+        if (cursor.Current.Kind == TokenKind.Lt)
+        {
+            int depth = 1;
+            cursor = cursor.Advance();
+            while (!cursor.IsEnd && depth > 0)
+            {
+                switch (cursor.Current.Kind)
+                {
+                    case TokenKind.Lt:    depth++; break;
+                    case TokenKind.Gt:    depth--; break;
+                    // Bail on tokens that can't appear inside a type-arg list —
+                    // probably means we mis-identified `<` as generic.
+                    case TokenKind.Semicolon:
+                    case TokenKind.LBrace:
+                    case TokenKind.RBrace:
+                    case TokenKind.LParen:
+                    case TokenKind.RParen:
+                        return false;
+                }
+                cursor = cursor.Advance();
+            }
+            if (depth != 0) return false;
+        }
         // Optional array suffix []
         if (cursor.Current.Kind == TokenKind.LBracket
             && cursor.Peek(1).Kind == TokenKind.RBracket)

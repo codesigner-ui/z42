@@ -398,6 +398,32 @@ public sealed class ParserTests
         fn.ReturnType.Should().BeOfType<VoidType>();
     }
 
+    // ── Field declarations with generic types (parser-generic-field, 2026-04-26) ─
+
+    [Fact]
+    public void FieldDecl_GenericTypeRecognised()
+    {
+        // `List<string> _parts;` was previously misidentified as a method decl
+        // because IsFieldDecl didn't skip the `<...>` suffix. Verify it parses
+        // as a field with the correct generic type.
+        var cu  = ParseCu("class Box { List<string> _parts; }");
+        var cls = cu.Classes.Should().ContainSingle().Subject;
+        cls.Fields.Should().ContainSingle()
+            .Which.Name.Should().Be("_parts");
+        cls.Fields[0].Type.Should().BeOfType<GenericType>()
+            .Which.Name.Should().Be("List");
+    }
+
+    [Fact]
+    public void FieldDecl_TwoTypeArgGeneric()
+    {
+        // Two-arg generic with comma — `Dictionary<int, string> _map;`
+        var cu  = ParseCu("class Box { Dictionary<int, string> _map; }");
+        var cls = cu.Classes.Should().ContainSingle().Subject;
+        cls.Fields.Should().ContainSingle()
+            .Which.Name.Should().Be("_map");
+    }
+
     // ── Error handling ────────────────────────────────────────────────────────
 
     [Fact]
