@@ -92,17 +92,22 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | WS023 | IncludePathNotFound              | Include 指向的文件不存在 |
 | WS024 | IncludePathNotAllowed            | Include 路径含绝对系统路径 / URL / glob 模式 |
 
-### C3/C4 占位（未启用）
+### C3 已启用（2026-04-26）
+
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| WS010 | PolicyViolation                  | Member 显式声明的字段值与 workspace `[policy]` 锁定值冲突 |
+| WS011 | PolicyFieldPathNotFound          | `[policy]` 段含未知字段路径（附 fuzzy 建议） |
+
+### C4 占位（未启用）
 
 | Code  | 计划阶段 | Title |
 |-------|---------|-------|
 | WS001 | C4 | DuplicateMemberName |
 | WS002 | C4 | ExcludedMemberSelected |
 | WS006 | C4 | CircularDependency |
-| WS010 | C3 | PolicyViolation |
-| WS011 | C3 | PolicyFieldPathNotFound |
 
-> WS004 在 C3 阶段标记废弃，C4 归档时彻底移除（归并入 WS010）。
+> WS004 在 C3 阶段标记 `[Obsolete]`，C4 归档时彻底移除（归并入 WS010）。
 
 ---
 

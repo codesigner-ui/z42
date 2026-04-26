@@ -3,8 +3,13 @@ namespace Z42.Project;
 /// <summary>
 /// Member 经过 workspace 共享继承（C1）+ include 链合并（C2）+ policy 应用（C3）后的最终配置。
 ///
-/// C1 范围只产出 MemberDirect / WorkspaceProject / WorkspaceDependency 三种 Origin；
-/// C2 增 IncludePreset；C3 增 PolicyLocked。
+/// Origin 类型：
+///   C1: MemberDirect / WorkspaceProject / WorkspaceDependency
+///   C2: + IncludePreset
+///   C3: + PolicyLocked
+///
+/// C3 新增字段：IsCentralized / EffectiveOutDir / EffectiveCacheDir / EffectiveProductPath，
+/// workspace 模式下由 CentralizedBuildLayout 派生；单工程模式下回退到 member-local。
 /// </summary>
 public sealed record ResolvedManifest(
     string                            MemberName,
@@ -20,7 +25,18 @@ public sealed record ResolvedManifest(
     IReadOnlyList<ResolvedDependency> Dependencies,
     IReadOnlyDictionary<string, FieldOrigin> Origins,
     string                            ManifestPath,
-    string?                           WorkspaceRoot);
+    string?                           WorkspaceRoot)
+{
+    // ── C3 集中产物字段 ──────────────────────────────────────────────────────
+    /// <summary>true = workspace 模式（产物集中到 workspace 根）；false = 单工程模式。</summary>
+    public bool   IsCentralized        { get; init; }
+    /// <summary>产物绝对路径目录（已经过 ${profile} 等模板展开）。</summary>
+    public string EffectiveOutDir      { get; init; } = "";
+    /// <summary>中间产物绝对路径目录（按 member 分子目录）。</summary>
+    public string EffectiveCacheDir    { get; init; } = "";
+    /// <summary>该 member 产物完整路径（&lt;EffectiveOutDir&gt;/&lt;name&gt;.zpkg）。</summary>
+    public string EffectiveProductPath { get; init; } = "";
+}
 
 /// <summary>合并后的依赖项（含 workspace 引用展开）。</summary>
 public sealed record ResolvedDependency(

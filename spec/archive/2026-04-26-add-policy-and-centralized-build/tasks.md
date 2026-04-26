@@ -1,6 +1,15 @@
 # Tasks: Policy 与集中产物布局（C3）
 
-> 状态：🟡 待实施 | 创建：2026-04-26 | 依赖：C1 + C2 落地
+> 状态：🟢 已完成 | 创建：2026-04-26 | 归档：2026-04-26 | GREEN: dotnet 672/672 + cargo OK + VM 188/188
+
+## Scope 调整说明（2026-04-26 实施时）
+
+**原 spec 的 PackageCompiler 修改延后到 C4。** PackageCompiler 是单工程模式入口
+（走 ProjectManifest 路径），workspace 模式编译需要 WorkspaceBuildOrchestrator
+（C4 范围）。C3 仅在 ResolvedManifest 提供 EffectiveProductPath / EffectiveOutDir
+等字段供 C4 消费，不动 PackageCompiler。
+
+这是 Scope **收紧**（非扩张），按 workflow.md 在备注记录而非中断询问。
 
 ## 进度概览
 - [ ] 阶段 1: PolicyFieldPath + WorkspaceManifest 数据模型扩展

@@ -1,0 +1,16 @@
+# 演示 [policy] 强制策略 + [workspace.build] 集中产物。
+
+[workspace]
+members = ["libs/*"]
+
+[workspace.project]
+version = "0.1.0"
+
+[workspace.build]
+out_dir   = "dist/${profile}"     # 按 profile 派生（debug/release 各自子目录）
+cache_dir = ".cache"
+
+[policy]
+# 默认锁定 build.out_dir / build.cache_dir（无需显式声明）
+# 显式锁定其他字段：所有 release 产物必须 strip
+"profile.release.strip" = true

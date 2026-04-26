@@ -30,6 +30,13 @@ public static class Z42Errors
     public const string WS023 = "WS023";  // IncludePathNotFound
     public const string WS024 = "WS024";  // IncludePathNotAllowed
 
+    // ── C3 错误码（policy 与集中产物）───────────────────────────────────────
+    public const string WS010 = "WS010";  // PolicyViolation
+    public const string WS011 = "WS011";  // PolicyFieldPathNotFound
+
+    [Obsolete("C3 deprecated; merged into WS010. Will be removed in C4 archive.")]
+    public const string WS004 = "WS004";  // BuildSettingOverridden（废弃）
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     public static ManifestException ForbiddenSectionInMember(string memberPath, string sectionName) =>
@@ -136,4 +143,24 @@ public static class Z42Errors
             $"  declared in: {declaredIn}\n" +
             $"  include:     {includePath}\n" +
             $"  reason:      {reason}");
+
+    // ── C3 工厂方法（policy 与集中产物）─────────────────────────────────────
+
+    public static ManifestException PolicyViolation(
+        string fieldPath,
+        object? lockedValue,
+        object? memberValue,
+        string lockedFromFile,
+        string memberFromFile) =>
+        new($"error[{WS010}]: policy violation: field '{fieldPath}' is locked by workspace\n" +
+            $"  --> {memberFromFile}\n" +
+            $"  member sets:    {memberValue ?? "null"}\n" +
+            $"  workspace lock: {lockedValue ?? "null"} (at {lockedFromFile})\n" +
+            $"  help: remove this line or align value with workspace policy");
+
+    public static ManifestException PolicyFieldPathNotFound(string fieldPath, string? suggestion)
+    {
+        string help = suggestion is null ? "" : $"\n  help: did you mean '{suggestion}'?";
+        return new($"error[{WS011}]: policy field path '{fieldPath}' is not a known field{help}");
+    }
 }

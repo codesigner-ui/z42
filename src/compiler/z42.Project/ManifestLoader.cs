@@ -168,11 +168,22 @@ public sealed class ManifestLoader
         var sourcesInclude = ExpandPathArray(sourcesView.Include, ctx, member.ManifestPath, "[sources].include");
         var sourcesExclude = ExpandPathArray(sourcesView.Exclude, ctx, member.ManifestPath, "[sources].exclude");
 
-        // [build]：member 自己的（C1 不集中处理；C3 改）
-        var build = member.Build ?? new BuildSection("dist", "interp", true);
-        // build 字段路径展开（C1 仅 out_dir 路径）
-        string buildOutDir = _expander.Expand(build.OutDir, ctx, member.ManifestPath, "[build].out_dir", PathTemplateExpander.FieldKind.Path);
-        build = build with { OutDir = buildOutDir };
+        // [build]：member 自己的或默认；记录 origin 以便 C3 PolicyEnforcer 区分"显式声明"
+        BuildSection build;
+        bool buildDeclared = member.Build is not null;
+        if (buildDeclared)
+        {
+            build = member.Build!;
+            string outDir = _expander.Expand(build.OutDir, ctx, member.ManifestPath, "[build].out_dir", PathTemplateExpander.FieldKind.Path);
+            build = build with { OutDir = outDir };
+            // 记录每个显式声明字段的来源（PolicyEnforcer 用此判断 member 是否要被检查）
+            origins["build.out_dir"] = new FieldOrigin(member.ManifestPath, "build.out_dir", OriginKind.MemberDirect);
+            origins["build.mode"]    = new FieldOrigin(member.ManifestPath, "build.mode",    OriginKind.MemberDirect);
+        }
+        else
+        {
+            build = new BuildSection("dist", "interp", true);
+        }
 
         // [dependencies]：合并（含 workspace 引用展开）
         var resolvedDeps = ResolveDependencies(member, workspace, origins, presetOrigins);
@@ -180,7 +191,17 @@ public sealed class ManifestLoader
         // Kind 默认 Exe（与 ProjectManifest 行为一致）
         var resolvedKind = member.Project.Kind ?? ProjectKind.Exe;
 
-        return new ResolvedManifest(
+        // C3: 计算集中产物布局
+        var layout = new CentralizedBuildLayout().Resolve(
+            workspace:        workspace?.Manifest,
+            workspaceRoot:    workspace?.Manifest.RootDirectory ?? memberDir,
+            memberName:       member.Project.Name,
+            memberDir:        memberDir,
+            profile:          profile,
+            memberLocalBuild: build,
+            expander:         _expander);
+
+        var resolved = new ResolvedManifest(
             MemberName:    member.Project.Name,
             Kind:          resolvedKind,
             Entry:         member.Project.Entry,
@@ -194,7 +215,16 @@ public sealed class ManifestLoader
             Dependencies:  resolvedDeps,
             Origins:       origins,
             ManifestPath:  member.ManifestPath,
-            WorkspaceRoot: workspace?.Manifest.RootDirectory);
+            WorkspaceRoot: workspace?.Manifest.RootDirectory)
+        {
+            IsCentralized        = layout.IsCentralized,
+            EffectiveOutDir      = layout.EffectiveOutDir,
+            EffectiveCacheDir    = layout.EffectiveCacheDir,
+            EffectiveProductPath = layout.EffectiveProductPath,
+        };
+
+        // C3: 应用 workspace policy（默认锁定 + 显式锁定）
+        return new PolicyEnforcer().Enforce(resolved, workspace?.Manifest, origins);
     }
 
     string? ResolveSharedField(
