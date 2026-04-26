@@ -112,6 +112,55 @@ IR 生成 bare 名 `Stack` 而非 FQ 名 `Std.Collections.Stack`，运行时 VCa
 **冲突策略（first-wins）**：`if (!classes.ContainsKey(cls.Name))` —— 不同 zpkg 同名类保留先加载的。
 预期同名冲突不应发生；若出现只在编译器层面 silent，运行时仍按 zbc func name 走。
 
+### 两阶段加载（2026-04-26 fix-imported-type-two-phase-resolution）
+
+`ImportedSymbolLoader.Load` 内部分两阶段处理类与接口，消除 self / forward
+reference 的"未知名 → Z42PrimType 降级"。
+
+```
+Phase 1 — 骨架登记
+  对每个 ExportedClass / ExportedInterface 创建空成员 Z42ClassType /
+  Z42InterfaceType，仅填 Name + TypeParams + BaseClassName；登记进
+  classes / interfaces 字典。Phase 1 内部不调 ResolveTypeName，
+  没有跨类型 reference 解析。
+
+Phase 2 — 成员填充（in-place mutate）
+  对每个骨架，调 FillClassMembersInPlace / FillInterfaceMembersInPlace，
+  解析 Fields / Methods 签名时通过 ResolveTypeName 在 Phase 1 完整字典里
+  lookup —— 命中 → 返回真实 Z42ClassType / Z42InterfaceType；未命中 →
+  Z42PrimType（真未知，TypeChecker 后续报错）。
+
+  关键点：成员字典是 mutable Dictionary，Phase 2 直接 Add 进同一字典实例，
+  不替换 Z42ClassType record。Phase 2 内 ResolveTypeName 拿到的 ClassType
+  与最终 ImportedSymbols 输出的 ClassType 是同一引用 —— 字段填充后所有持有
+  该引用的位置都看到完整 Fields / Methods（C# record 的 immutability 不
+  影响 dict 内容）。
+```
+
+**为什么需要两阶段？**
+
+旧实现单阶段：`RebuildClassType(cls)` 解析 cls.Fields 时，classes 字典还
+没填到 cls 自己。`Exception.InnerException: Exception` 字段类型在
+ResolveTypeName 里走 `_ => new Z42PrimType(name)` fallback，被降级。
+下游 IsAssignableTo 比较 `Z42ClassType vs Z42PrimType` same-name 不通过 →
+用户代码 `outer.InnerException = inner` 报 E0402。
+
+按 [.claude/rules/workflow.md "修复必须从根因出发"](.claude/rules/workflow.md#修复必须从根因出发-2026-04-26-强化)，
+**禁止在 IsAssignableTo 加 PrimType↔ClassType 同名兼容分支**（症状级补丁）。
+两阶段加载是经典 C# / Java 编译器的"先建骨架再填字段"做法，从源头物理消除降级。
+
+**ResolveTypeName 签名**：
+
+```csharp
+internal static Z42Type ResolveTypeName(
+    string                                         name,
+    HashSet<string>?                               genericParams = null,
+    IReadOnlyDictionary<string, Z42ClassType>?     classes       = null,  // Phase 2 必传
+    IReadOnlyDictionary<string, Z42InterfaceType>? interfaces    = null); // Phase 2 必传
+```
+
+Lookup 优先级：suffix (`[]` / `?`) > generic param > 内置 prim > classes > interfaces > Z42PrimType fallback。
+
 ### QualifyClassName
 
 位置：`src/compiler/z42.Semantics/Codegen/IrGen.cs:58`

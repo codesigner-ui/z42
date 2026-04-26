@@ -1,0 +1,20 @@
+// Verify two-phase ImportedSymbolLoader: user code can assign same-typed
+// instance to a class's self-reference field (was E0402 before fix).
+
+void Main() {
+    var inner = new Exception("root cause");
+    var outer = new Exception("wrapped");
+
+    // Same-class self-reference field assignment (the regression target).
+    outer.InnerException = inner;
+
+    Console.WriteLine(outer.Message);                  // wrapped
+    Console.WriteLine(outer.InnerException.Message);   // root cause
+
+    // Chain length 2
+    var middle = new Exception("middle");
+    middle.InnerException = inner;
+    outer.InnerException = middle;
+    Console.WriteLine(outer.InnerException.Message);                  // middle
+    Console.WriteLine(outer.InnerException.InnerException.Message);   // root cause
+}
