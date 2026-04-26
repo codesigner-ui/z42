@@ -1,30 +1,50 @@
 namespace Std;
 
 // Test assertion helpers.
-// Throws AssertionError (VM-level exception) on failure.
+// Throws Exception with "AssertionError: ..." message on failure.
+//
+// 2026-04-27 wave1-assert-script: 全部 6 个方法从 [Native] 迁脚本（BCL/Rust 对标 —
+// `Debug.Assert` / `assert!` 都是脚本实现）。错误消息格式与原 __assert_* builtin 等价。
 public static class Assert {
-    [Native("__assert_eq")]
-    public static extern void Equal(object expected, object actual);
+    public static void Equal(object expected, object actual) {
+        if (!expected.Equals(actual)) {
+            throw new Exception($"AssertionError: expected {expected} but got {actual}");
+        }
+    }
 
-    [Native("__assert_true")]
-    public static extern void True(bool condition);
+    public static void True(bool condition) {
+        if (!condition) {
+            throw new Exception("AssertionError: expected true but got False");
+        }
+    }
 
-    [Native("__assert_false")]
-    public static extern void False(bool condition);
+    public static void False(bool condition) {
+        if (condition) {
+            throw new Exception("AssertionError: expected false but got True");
+        }
+    }
 
-    [Native("__assert_null")]
-    public static extern void Null(object? value);
+    public static void Null(object? value) {
+        if (value != null) {
+            throw new Exception($"AssertionError: expected null but got {value}");
+        }
+    }
 
-    [Native("__assert_not_null")]
-    public static extern void NotNull(object? value);
+    public static void NotNull(object? value) {
+        if (value == null) {
+            throw new Exception("AssertionError: expected non-null but got null");
+        }
+    }
 
-    [Native("__assert_contains")]
-    public static extern void Contains(string expected, string actual);
+    public static void Contains(string expected, string actual) {
+        if (!actual.Contains(expected)) {
+            throw new Exception($"AssertionError: expected \"{actual}\" to contain \"{expected}\"");
+        }
+    }
 
     public static void NotEqual(object expected, object actual) {
-        // Implemented as negation in z42; no separate intrinsic needed.
-        bool eq = false;
-        try { Equal(expected, actual); eq = true; } catch {}
-        if (eq) throw new Exception($"AssertionError: expected values to differ but both were {expected}");
+        if (expected.Equals(actual)) {
+            throw new Exception($"AssertionError: expected values to differ but both were {expected}");
+        }
     }
 }

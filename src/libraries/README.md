@@ -175,11 +175,11 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `__char_equals` / `__char_hash_code` / `__char_to_string` (3) | 🟢 | Char primitive ABI |
 | `__str_compare_to`（已计入 String 区）| — | — |
 
-### Assert — 6 项
+### Assert — 0 项（2026-04-27 wave1-assert-script 全部迁出）
 
 | Builtin | 状态 | 备注 |
 |---|---|---|
-| `__assert_eq` / `__assert_true` / `__assert_false` / `__assert_null` / `__assert_not_null` / `__assert_contains` | 🟡 | BCL `Debug.Assert` / Rust `assert!` 都是脚本：`if (!cond) throw`。一旦 `throw new Exception(...)` 通畅即可整体迁出 |
+| ~~`__assert_eq` / `__assert_true` / `__assert_false` / `__assert_null` / `__assert_not_null` / `__assert_contains`~~ | ✅ 已删 | 脚本实现见 [z42.core/src/Assert.z42](z42.core/src/Assert.z42) — 纯 `if (!cond) throw new Exception(...)`，与 BCL/Rust 一致 |
 
 ### Math — 15 项
 
@@ -207,18 +207,22 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 
 | Wave | 数量 | 处置 |
 |---|---|---|
-| Wave 0（dead code）| 13 | 本变更删除 |
-| Wave 1（feature → 脚本）| 19 | 待按包独立 spec：6 assert + 3 bool + 3 math + 5 path + 2 str split/join |
+| Wave 0（dead code）| 13 | ✅ 已完成（extern-audit-wave0）|
+| Wave 1（feature → 脚本）| 19 → **13 剩余** | 6 assert ✅ 已迁；待迁：3 bool + 3 math + 5 path + 2 str split/join |
 | Wave 2（codegen 特化）| 3 | 待 spec：3 个 `*_compare_to` |
 | Wave 3（需要新基础设施）| 2-3 | `__str_concat` / `__str_format` 等 |
 | 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
-| **当前总计** | **~80** | **长期目标 ~45** |
+| **当前总计** | **~61** | **长期目标 ~45** |
 
 ### Wave 进度
 
 | Wave | 状态 | 完成日期 |
 |---|---|---|
-| Wave 0 | 🟡 进行中（extern-audit-wave0） | — |
-| Wave 1 | ⚪ 待启动 | — |
+| Wave 0 | ✅ 已完成（extern-audit-wave0）| 2026-04-26 |
+| Wave 1.1 Assert | ✅ 已完成（wave1-assert-script）| 2026-04-27 |
+| Wave 1.2 Bool 三件套 | ⚪ 待启动 | — |
+| Wave 1.3 Math abs/max/min | ⚪ 待启动 | — |
+| Wave 1.4 Path 五件套 | ⚪ 待启动 | — |
+| Wave 1.5 String split/join | ⚪ 待启动 | — |
 | Wave 2 | ⚪ 待启动 | — |
 | Wave 3 | ⚪ 待启动 | — |

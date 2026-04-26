@@ -2,7 +2,6 @@ use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use super::convert::{require_str, value_to_str};
 
 // ── Object protocol ───────────────────────────────────────────────────────────
 
@@ -89,48 +88,5 @@ pub fn builtin_obj_to_str(args: &[Value]) -> Result<Value> {
     }
 }
 
-// ── Assert ────────────────────────────────────────────────────────────────────
-
-pub fn builtin_assert_eq(args: &[Value]) -> Result<Value> {
-    let expected = args.first().cloned().unwrap_or(Value::Null);
-    let actual   = args.get(1).cloned().unwrap_or(Value::Null);
-    if expected != actual {
-        bail!("AssertionError: expected {} but got {}",
-            value_to_str(&expected), value_to_str(&actual));
-    }
-    Ok(Value::Null)
-}
-pub fn builtin_assert_true(args: &[Value]) -> Result<Value> {
-    match args.first() {
-        Some(Value::Bool(true)) => Ok(Value::Null),
-        Some(other) => bail!("AssertionError: expected true but got {}", value_to_str(other)),
-        None        => bail!("AssertionError: __assert_true missing argument"),
-    }
-}
-pub fn builtin_assert_false(args: &[Value]) -> Result<Value> {
-    match args.first() {
-        Some(Value::Bool(false)) => Ok(Value::Null),
-        Some(other) => bail!("AssertionError: expected false but got {}", value_to_str(other)),
-        None        => bail!("AssertionError: __assert_false missing argument"),
-    }
-}
-pub fn builtin_assert_null(args: &[Value]) -> Result<Value> {
-    match args.first() {
-        Some(Value::Null) | None => Ok(Value::Null),
-        Some(other) => bail!("AssertionError: expected null but got {}", value_to_str(other)),
-    }
-}
-pub fn builtin_assert_not_null(args: &[Value]) -> Result<Value> {
-    match args.first() {
-        Some(Value::Null) | None => bail!("AssertionError: expected non-null but got null"),
-        Some(_) => Ok(Value::Null),
-    }
-}
-pub fn builtin_assert_contains(args: &[Value]) -> Result<Value> {
-    let sub = require_str(args, 0, "__assert_contains")?;
-    let s   = require_str(args, 1, "__assert_contains")?;
-    if !s.contains(sub.as_str()) {
-        bail!("AssertionError: expected {:?} to contain {:?}", s, sub);
-    }
-    Ok(Value::Null)
-}
+// 2026-04-27 wave1-assert-script: 6 `builtin_assert_*` functions removed.
+// `Std.Assert` is now pure z42 script in `z42.core/src/Assert.z42`.

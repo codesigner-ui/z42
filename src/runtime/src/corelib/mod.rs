@@ -20,6 +20,10 @@
 /// 2026-04-26 extern-audit-wave0: removed `collections` module (13 builtins)
 /// — `Std.Collections.List<T>` / `Dictionary<K,V>` are pure z42 scripts atop
 /// `T[]`; compiler stopped emitting `__list_*` / `__dict_*` after L3-G4h step3.
+///
+/// 2026-04-27 wave1-assert-script: removed 6 `__assert_*` builtins —
+/// `Std.Assert` methods are now pure z42 scripts (`if (!cond) throw new
+/// Exception(...)`), matching BCL `Debug.Assert` / Rust `assert!`.
 
 pub mod convert;
 pub mod io;
@@ -95,14 +99,6 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__char_hash_code",    convert::builtin_char_hash_code);
         m.insert("__char_to_string",    convert::builtin_char_to_string);
         m.insert("__str_compare_to",    convert::builtin_str_compare_to);
-
-        // ── Assert ────────────────────────────────────────────────────────────
-        m.insert("__assert_eq",       object::builtin_assert_eq);
-        m.insert("__assert_true",     object::builtin_assert_true);
-        m.insert("__assert_false",    object::builtin_assert_false);
-        m.insert("__assert_null",     object::builtin_assert_null);
-        m.insert("__assert_not_null", object::builtin_assert_not_null);
-        m.insert("__assert_contains", object::builtin_assert_contains);
 
         // ── Math ──────────────────────────────────────────────────────────────
         m.insert("__math_abs",     math::builtin_math_abs);
