@@ -10,19 +10,21 @@
 ///   `io`          — println, print, readline, concat, len, contains
 ///   `string`      — str_substring/contains/split/join/format …
 ///   `math`        — abs/max/min/pow/sqrt/trig …
-///   `collections` — list_* / dict_*
 ///   `fs`          — file_* / path_* / env_* / process_exit / time_now_ms
 ///   `object`      — obj_get_type / obj_ref_eq / obj_hash_code / assert_*
 ///
 /// 2026-04-26 script-first-stringbuilder: removed `string_builder` module —
 /// `Std.Text.StringBuilder` is now a pure z42 script in `z42.text`,
 /// backed by `List<string>` + `String.FromChars` (no VM intrinsic needed).
+///
+/// 2026-04-26 extern-audit-wave0: removed `collections` module (13 builtins)
+/// — `Std.Collections.List<T>` / `Dictionary<K,V>` are pure z42 scripts atop
+/// `T[]`; compiler stopped emitting `__list_*` / `__dict_*` after L3-G4h step3.
 
 pub mod convert;
 pub mod io;
 pub mod string;
 pub mod math;
-pub mod collections;
 pub mod fs;
 pub mod object;
 pub mod char;
@@ -118,23 +120,6 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__math_tan",     math::builtin_math_tan);
         m.insert("__math_atan2",   math::builtin_math_atan2);
         m.insert("__math_exp",     math::builtin_math_exp);
-
-        // ── List ──────────────────────────────────────────────────────────────
-        m.insert("__list_new",       collections::builtin_list_new);
-        m.insert("__list_add",       collections::builtin_list_add);
-        m.insert("__list_remove_at", collections::builtin_list_remove_at);
-        m.insert("__list_contains",  collections::builtin_list_contains);
-        m.insert("__list_clear",     collections::builtin_list_clear);
-        m.insert("__list_insert",    collections::builtin_list_insert);
-        m.insert("__list_sort",      collections::builtin_list_sort);
-        m.insert("__list_reverse",   collections::builtin_list_reverse);
-
-        // ── Dictionary ────────────────────────────────────────────────────────
-        m.insert("__dict_new",          collections::builtin_dict_new);
-        m.insert("__dict_contains_key", collections::builtin_dict_contains_key);
-        m.insert("__dict_remove",       collections::builtin_dict_remove);
-        m.insert("__dict_keys",         collections::builtin_dict_keys);
-        m.insert("__dict_values",       collections::builtin_dict_values);
 
         // ── File I/O ──────────────────────────────────────────────────────────
         m.insert("__file_read_text",   fs::builtin_file_read_text);

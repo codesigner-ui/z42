@@ -29,6 +29,12 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 - 只有真正无法用脚本表达的原语才保留 extern：内存布局 / 原子指令 / 底层
   分配 / 与 VM ABI 绑定的协议方法（`Equals` / `GetHashCode` / `ToString`）。
 
+> **判定准则（BCL/Rust 对标，2026-04-26）**：
+> Runtime 提供 **primitive**（JIT 无法消除的硬能力：syscall / libm / GC barrier /
+> 类型元数据 / UTF-8 codepoint 访问 / 数值字面量 parse），**feature**（集合 / 算法 /
+> 格式化 / Assert / Path 字符串操作 / 算术辅助）一律脚本实现。
+> 详见 [docs/design/stdlib-organization.md "Primitive vs Feature (BCL/Rust 对标)"](../../docs/design/stdlib-organization.md)。
+
 ### 2. VM 接口集中在 z42.core
 
 **VM 提供的 extern / intrinsic 接口只能出现在 `z42.core`。**
@@ -105,3 +111,114 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 - ❌ Reflection-heavy 序列化（XmlSerializer 等）：等 L3-R 反射完成后再考虑，且只做 JSON
 - ❌ AppDomain / 卸载：与 z42 lazy-loader 模型不契合
 - ❌ 静态类反射创建（`Activator.CreateInstance`）：等 L3-R
+
+---
+
+## Extern 现状审计表
+
+> **2026-04-26 起维护**。每次 stdlib 改动起手必看；新增 extern 必须在 PR 描述里
+> 回答"BCL/Rust 把它当 primitive 吗？" —— 回答不出 → 拒绝。
+>
+> **状态枚举**：
+> - 🟢 **Primitive 必须保留** —— BCL/Rust 同样是 intrinsic / extern / syscall
+> - 🟡 **Wave 1 待迁** —— 纯脚本可表达，无需新基础设施
+> - 🔵 **Wave 2 待迁** —— 走 codegen 特化（不是脚本，是 IR 直降）
+> - ⚫ **Wave 3 待迁** —— 需要先补一个底层原语
+> - ❌ **Dead code 待删** —— 编译器已不 emit
+
+### Wave 0（dead code）— 13 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__list_new` / `__list_add` / `__list_remove_at` / `__list_contains` / `__list_clear` / `__list_insert` / `__list_sort` / `__list_reverse` (8) | ❌ | L3-G4h step3 后 List<T> 已纯脚本 atop `T[]`，编译器不再 emit |
+| `__dict_new` / `__dict_contains_key` / `__dict_remove` / `__dict_keys` / `__dict_values` (5) | ❌ | 同上，Dictionary<K,V> 已纯脚本 |
+
+### I/O — 6 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__println` / `__print` / `__readline` | 🟢 | host FFI（OS stdout/stdin） |
+| `__concat` | 🟡 | 候选走 codegen 特化为 IR 字符串拼接 |
+| `__len` | 🟢 | 通用长度（数组 / 字符串），UTF-8 byte vs char 由 VM 决定 |
+| `__contains` | 🟡 | 字符串 / 列表通用，可拆为 per-type 脚本实现 |
+
+### String — 10 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__str_length` / `__str_char_at` / `__str_from_chars` | 🟢 | UTF-8 codepoint 访问，BCL `string.Length` / Rust `str::chars` 同级 |
+| `__str_split` / `__str_join` | 🟡 | BCL/Rust 都是脚本；用 char_at + from_chars 重写 |
+| `__str_concat` / `__str_format` | ⚫ | concat 走 codegen 特化；format 等 `IFormattable` 协议 |
+| `__str_to_string` / `__str_equals` / `__str_hash_code` / `__str_compare_to` | 🟢 | Object 协议方法，VM ABI 绑定 |
+
+### Char — 3 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__char_is_whitespace` / `__char_to_lower` / `__char_to_upper` | 🟢 | Unicode 分类表，BCL/Rust 同样 native |
+
+### Convert / Parse — 4 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__int_parse` / `__long_parse` / `__double_parse` | 🟢 | Rust 数值解析；BCL `int.Parse` / Rust `str::parse` 同级 |
+| `__to_str` | 🟢 | 通用动态值 → 字符串，VM 元数据依赖 |
+
+### Primitive 协议 — 17 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__int_compare_to` / `__double_compare_to` / `__char_compare_to` (3) | 🔵 | 走 codegen 特化（IR Sub + 符号位），philosophy §8 第 2 层 |
+| `__int_equals` / `__int_hash_code` / `__int_to_string` (3) | 🟢 | Object 协议 ABI |
+| `__double_equals` / `__double_hash_code` / `__double_to_string` (3) | 🟢 | 同上 |
+| `__bool_equals` / `__bool_hash_code` / `__bool_to_string` (3) | 🟡 | BCL/Rust 都是脚本：`==` / `value ? 1 : 0` / 字面量 |
+| `__char_equals` / `__char_hash_code` / `__char_to_string` (3) | 🟢 | Char primitive ABI |
+| `__str_compare_to`（已计入 String 区）| — | — |
+
+### Assert — 6 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__assert_eq` / `__assert_true` / `__assert_false` / `__assert_null` / `__assert_not_null` / `__assert_contains` | 🟡 | BCL `Debug.Assert` / Rust `assert!` 都是脚本：`if (!cond) throw`。一旦 `throw new Exception(...)` 通畅即可整体迁出 |
+
+### Math — 15 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__math_abs` / `__math_max` / `__math_min` (3) | 🟡 | BCL/Rust 都是脚本：三元 if，int + double 各一份 |
+| `__math_pow` / `__math_sqrt` / `__math_log` / `__math_log10` / `__math_sin` / `__math_cos` / `__math_tan` / `__math_atan2` / `__math_exp` (9) | 🟢 | libm FPU 指令，BCL/Rust 都是 extern |
+| `__math_floor` / `__math_ceiling` / `__math_round` (3) | 🟢 | libm 一致性；技术上脚本可表达，但保 libm 行为以匹配 BCL/Rust |
+
+### File / Path / Env — 14 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__file_read_text` / `__file_write_text` / `__file_append_text` / `__file_exists` / `__file_delete` (5) | 🟢 | syscall，BCL/Rust 同级 |
+| `__path_join` / `__path_get_extension` / `__path_get_filename` / `__path_get_directory` / `__path_get_filename_without_ext` (5) | 🟡 | BCL `Path.*` / Rust `Path::*` 都是脚本；需新增 `Path.Separator` 平台常量 |
+| `__env_get` / `__env_args` / `__process_exit` / `__time_now_ms` (4) | 🟢 | syscall / process state |
+
+### Object 协议 — 5 项
+
+| Builtin | 状态 | 备注 |
+|---|---|---|
+| `__obj_get_type` / `__obj_ref_eq` / `__obj_hash_code` / `__obj_equals` / `__obj_to_str` | 🟢 | VM 类型元数据，BCL `RuntimeHelpers` / Rust `TypeId` 同级 |
+
+### 汇总
+
+| Wave | 数量 | 处置 |
+|---|---|---|
+| Wave 0（dead code）| 13 | 本变更删除 |
+| Wave 1（feature → 脚本）| 19 | 待按包独立 spec：6 assert + 3 bool + 3 math + 5 path + 2 str split/join |
+| Wave 2（codegen 特化）| 3 | 待 spec：3 个 `*_compare_to` |
+| Wave 3（需要新基础设施）| 2-3 | `__str_concat` / `__str_format` 等 |
+| 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
+| **当前总计** | **~80** | **长期目标 ~45** |
+
+### Wave 进度
+
+| Wave | 状态 | 完成日期 |
+|---|---|---|
+| Wave 0 | 🟡 进行中（extern-audit-wave0） | — |
+| Wave 1 | ⚪ 待启动 | — |
+| Wave 2 | ⚪ 待启动 | — |
+| Wave 3 | ⚪ 待启动 | — |

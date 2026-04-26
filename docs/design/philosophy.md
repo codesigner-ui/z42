@@ -272,6 +272,18 @@ stdlib **只有 `z42.core` 或直接依赖 native 第三方库**（比如 `z42.i
 
 详见 `stdlib.md` → "Per-Package Extern Budget"。
 
+**BCL/Rust 对标准则（2026-04-26）：**
+
+> **Runtime 提供 primitive，feature 一律脚本实现。** Primitive = JIT 无法消除的硬能力
+> （syscall / libm / GC barrier / 类型元数据 / UTF-8 codepoint 访问 / 数值字面量 parse）；
+> feature（集合 / 算法 / 格式化 / Assert / Path 字符串操作 / 算术辅助）一律脚本。
+
+**stdlib 改动起手必读**：先看 [src/libraries/README.md "Extern 现状审计表"](../../src/libraries/README.md)。
+第一选择是消减一个 extern，而不是新增。新增 extern 必须在 PR 描述里回答
+"BCL/Rust 把它当 primitive 吗？" —— 回答不出 → 拒绝。
+
+详见 `stdlib-organization.md` → "Primitive vs Feature (BCL/Rust 对标)"。
+
 ---
 
 ### 9. **Performance: CPU & Memory Efficiency**

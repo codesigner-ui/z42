@@ -94,11 +94,7 @@ The z42 standard library takes the best from three reference languages:
 - "依赖 native 库" = 依赖**外部的** C / Rust 库（系统或第三方），不是 VM 内部实现
 - VM 内部 Rust 函数不算 native 库 — 如果需求能用 z42 源码表达就应该这样写
 
-**当前违规（需后续迁移）：**
-
-| 包 | 违规项 | 迁移方向 |
-|----|-------|---------|
-| `z42.text` | `StringBuilder` 用 `__sb_*` builtins（内部 Rust String 优化）| 迁移到纯脚本（`char[]` / `string[]` 动态数组），接受性能退化 |
+**当前违规：** 无（2026-04-26 起；`StringBuilder` 已纯脚本化、`__list_*` / `__dict_*` 已删除）。
 
 ### Layer 3 Package Allowed-Extern Summary
 
@@ -106,7 +102,7 @@ The z42 standard library takes the best from three reference languages:
 z42.core         ✅ extern 允许（语言基石）
 z42.io           ✅ extern 允许（OS 依赖）
 z42.math         ✅ extern 允许（libm 依赖）
-z42.text         ⚠️  目前违规（StringBuilder），待迁移到纯脚本
+z42.text         ✅ 已纯脚本（StringBuilder 2026-04-26 迁移完成）
 z42.collections  ✅ 已纯脚本（L3-G4h 完成）
 z42.numerics     ✅ 未来必须纯脚本（无 native 依赖）
 ```
@@ -118,35 +114,28 @@ z42.numerics     ✅ 未来必须纯脚本（无 native 依赖）
 Functions that cannot be implemented in z42 because they require direct Rust/OS access.
 Exposed to script code via the `Builtin` IR instruction (`__name` convention).
 
-**File layout:**
+**File layout（实际目录 `src/runtime/src/corelib/`）：**
 
 ```
-src/runtime/src/interp/
-├── builtins/
-│   ├── mod.rs          ← dispatch entry: exec_builtin(name, args)
-│   ├── string.rs       ← __str_* (substring, contains, split, …)
-│   ├── io.rs           ← __println, __print, __readline (→ Platform HAL)
-│   ├── collections.rs  ← __list_*, __dict_*
-│   ├── math.rs         ← __math_abs/max/min/pow/sqrt/…
-│   └── convert.rs      ← __int_parse, __long_parse, __double_parse, __to_str
+src/runtime/src/corelib/
+├── mod.rs        ← dispatch entry: exec_builtin(name, args)
+├── string.rs     ← __str_length / __str_char_at / __str_from_chars / …
+├── char.rs       ← __char_is_whitespace / __char_to_lower / __char_to_upper
+├── io.rs         ← __println, __print, __readline, __concat, __len, __contains
+├── math.rs       ← __math_abs / __math_max / __math_min / __math_pow / __math_sqrt / …
+├── convert.rs    ← __int_parse / __long_parse / __double_parse / __to_str
+├── fs.rs         ← __file_* / __path_* / __env_* / __process_exit / __time_now_ms
+└── object.rs     ← __obj_get_type / __obj_ref_eq / __obj_hash_code / __assert_*
 ```
 
 **Naming convention:** all intrinsic names start with `__`, are lowercase with underscores.
 
-**Current intrinsics (L1):**
-
-| Category    | Names |
-|-------------|-------|
-| I/O         | `__println`, `__print` |
-| String      | `__concat`, `__len`, `__str_substring`, `__str_contains`, `__str_starts_with`, `__str_ends_with`, `__str_index_of`, `__str_replace`, `__str_to_lower`, `__str_to_upper`, `__str_trim`, `__str_trim_start`, `__str_trim_end`, `__str_split`, `__str_is_null_or_empty`, `__str_is_null_or_whitespace`, `__str_join`, `__str_concat`, `__str_format` |
-| Collections | `__contains`, `__list_add`, `__list_remove_at`, `__list_clear`, `__list_insert`, `__list_sort`, `__list_reverse`, `__dict_contains_key`, `__dict_remove`, `__dict_keys`, `__dict_values` |
-| Math        | `__math_abs`, `__math_max`, `__math_min`, `__math_pow`, `__math_sqrt`, `__math_floor`, `__math_ceiling`, `__math_round` |
-| Convert     | `__int_parse`, `__long_parse`, `__double_parse`, `__to_str` |
-| Assert      | `__assert_eq`, `__assert_true`, `__assert_false`, `__assert_contains`, `__assert_null`, `__assert_not_null` |
+**Current intrinsics (SoT)：** 由 [src/libraries/README.md "Extern 现状审计表"](../../src/libraries/README.md)
+维护，每次 stdlib 改动起手必看。本文不再重复列出（避免 bit-rot）。
 
 **Adding a new intrinsic requires changes in three places (enforced rule):**
-1. `builtins/<module>.rs` — implementation
-2. `builtins/mod.rs` — dispatch branch
+1. `corelib/<module>.rs` — implementation
+2. `corelib/mod.rs` — dispatch entry
 3. `src/compiler/z42.Compiler/TypeCheck/BuiltinTable.cs` — type signature
 
 ---
