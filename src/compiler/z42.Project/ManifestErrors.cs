@@ -23,6 +23,13 @@ public static class Z42Errors
     public const string WS038 = "WS038";  // InvalidTemplateSyntax
     public const string WS039 = "WS039";  // TemplateVariableNotAllowed
 
+    // ── C2 错误码（include 机制）────────────────────────────────────────────
+    public const string WS020 = "WS020";  // CircularInclude
+    public const string WS021 = "WS021";  // ForbiddenSectionInPreset
+    public const string WS022 = "WS022";  // IncludeTooDeep
+    public const string WS023 = "WS023";  // IncludePathNotFound
+    public const string WS024 = "WS024";  // IncludePathNotAllowed
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     public static ManifestException ForbiddenSectionInMember(string memberPath, string sectionName) =>
@@ -102,4 +109,31 @@ public static class Z42Errors
             $"  --> {filePath}\n" +
             $"  field: {fieldPath}\n" +
             $"  allowed in: {string.Join(", ", allowedFields)}");
+
+    // ── C2 工厂方法（include 机制）──────────────────────────────────────────
+
+    public static ManifestException CircularInclude(IReadOnlyList<string> cycle) =>
+        new($"error[{WS020}]: circular include detected\n" +
+            $"  cycle: {string.Join(" -> ", cycle)}");
+
+    public static ManifestException ForbiddenSectionInPreset(string presetPath, string sectionName) =>
+        new($"error[{WS021}]: forbidden section '[{sectionName}]' in preset file\n" +
+            $"  --> {presetPath}\n" +
+            $"  note: presets may not contain '[workspace.*]', '[policy]', '[profile.*]', '[project].name', or '[project].entry'");
+
+    public static ManifestException IncludeTooDeep(IReadOnlyList<string> chain, int limit) =>
+        new($"error[{WS022}]: include nesting depth exceeds limit ({limit})\n" +
+            $"  chain: {string.Join(" -> ", chain)}");
+
+    public static ManifestException IncludePathNotFound(string declaredIn, string includePath, string resolvedPath) =>
+        new($"error[{WS023}]: include path not found\n" +
+            $"  declared in: {declaredIn}\n" +
+            $"  include:     {includePath}\n" +
+            $"  resolved:    {resolvedPath}");
+
+    public static ManifestException IncludePathNotAllowed(string declaredIn, string includePath, string reason) =>
+        new($"error[{WS024}]: include path not allowed\n" +
+            $"  declared in: {declaredIn}\n" +
+            $"  include:     {includePath}\n" +
+            $"  reason:      {reason}");
 }

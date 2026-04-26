@@ -82,7 +82,17 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | WS038 | InvalidTemplateSyntax            | 模板嵌套 / 未闭合 / 非法字符 |
 | WS039 | TemplateVariableNotAllowed       | 模板变量出现在不允许的字段（如 `version`） |
 
-### C2/C3/C4 占位（未启用）
+### C2 已启用（2026-04-26）
+
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| WS020 | CircularInclude                  | Include 链含直接或间接循环（A→A 或 A→B→A） |
+| WS021 | ForbiddenSectionInPreset         | Preset 文件含 `[workspace.*]` / `[policy]` / `[profile.*]` / `[project].name` / `[project].entry` |
+| WS022 | IncludeTooDeep                   | Include 嵌套深度超过 8 层 |
+| WS023 | IncludePathNotFound              | Include 指向的文件不存在 |
+| WS024 | IncludePathNotAllowed            | Include 路径含绝对系统路径 / URL / glob 模式 |
+
+### C3/C4 占位（未启用）
 
 | Code  | 计划阶段 | Title |
 |-------|---------|-------|
@@ -91,11 +101,6 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | WS006 | C4 | CircularDependency |
 | WS010 | C3 | PolicyViolation |
 | WS011 | C3 | PolicyFieldPathNotFound |
-| WS020 | C2 | CircularInclude |
-| WS021 | C2 | ForbiddenSectionInPreset |
-| WS022 | C2 | IncludeTooDeep |
-| WS023 | C2 | IncludePathNotFound |
-| WS024 | C2 | IncludePathNotAllowed |
 
 > WS004 在 C3 阶段标记废弃，C4 归档时彻底移除（归并入 WS010）。
 

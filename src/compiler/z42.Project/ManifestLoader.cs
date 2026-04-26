@@ -97,6 +97,32 @@ public sealed class ManifestLoader
         string memberDir = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
         string workspaceDir = workspace?.Manifest.RootDirectory ?? memberDir;
 
+        // C2: include 链展开 + 合并
+        var ctxForInclude = new PathTemplateExpander.Context(
+            WorkspaceDir: workspaceDir,
+            MemberDir:    memberDir,
+            MemberName:   member.Project.Name ?? "",
+            Profile:      profile);
+        var includeResolver = new IncludeResolver(_expander, ctxForInclude);
+        var presets = includeResolver.Resolve(member);
+
+        Dictionary<string, string> presetOrigins;
+        if (presets.Count > 0)
+        {
+            var merger = new ManifestMerger();
+            var mergeResult = merger.Merge(presets, member);
+            member = mergeResult.Merged;
+            presetOrigins = (Dictionary<string, string>)mergeResult.PresetOrigins;
+        }
+        else
+        {
+            presetOrigins = new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        // member.Project.Name 必须在合并后存在（否则身份字段缺失）
+        if (string.IsNullOrEmpty(member.Project.Name))
+            throw new ManifestException($"error: [project].name is required in {member.ManifestPath}");
+
         var ctx = new PathTemplateExpander.Context(
             WorkspaceDir: workspaceDir,
             MemberDir:    memberDir,
@@ -107,28 +133,29 @@ public sealed class ManifestLoader
         string version = ResolveSharedField(
             member.Project.Version, "version",
             workspace?.Manifest.WorkspaceProject?.Version,
-            workspace, member.ManifestPath, origins) ?? "0.1.0";
+            workspace, member.ManifestPath, origins, presetOrigins) ?? "0.1.0";
 
         var authors = ResolveSharedListField(
             member.Project.Authors, "authors",
             workspace?.Manifest.WorkspaceProject?.Authors,
-            workspace, member.ManifestPath, origins) ?? Array.Empty<string>();
+            workspace, member.ManifestPath, origins, presetOrigins) ?? Array.Empty<string>();
 
         string? license = ResolveSharedField(
             member.Project.License, "license",
             workspace?.Manifest.WorkspaceProject?.License,
-            workspace, member.ManifestPath, origins);
+            workspace, member.ManifestPath, origins, presetOrigins);
 
         string? description = ResolveSharedField(
             member.Project.Description, "description",
             workspace?.Manifest.WorkspaceProject?.Description,
-            workspace, member.ManifestPath, origins);
+            workspace, member.ManifestPath, origins, presetOrigins);
 
         // [project] 标量字段（非可共享）：name / kind / entry / pack
-        TrackOrigin(origins, "[project].name",  member.ManifestPath, OriginKind.MemberDirect);
-        TrackOrigin(origins, "[project].kind",  member.ManifestPath, OriginKind.MemberDirect);
+        // 来源标注：若来自 preset 则 IncludePreset，否则 MemberDirect
+        StampOrigin(origins, "[project].name",  member.ManifestPath, OriginKind.MemberDirect);
+        StampOriginWithPresetOrSelf(origins, presetOrigins, "[project].kind",  member.ManifestPath);
         if (member.Project.Entry is not null)
-            TrackOrigin(origins, "[project].entry", member.ManifestPath, OriginKind.MemberDirect);
+            StampOrigin(origins, "[project].entry", member.ManifestPath, OriginKind.MemberDirect);
 
         // 名字、kind、entry 的标量值不允许变量替换（WS039 由 expander 守卫）
         _ = _expander.Expand(member.Project.Name,    ctx, member.ManifestPath, "[project].name", PathTemplateExpander.FieldKind.Scalar);
@@ -136,9 +163,10 @@ public sealed class ManifestLoader
             _ = _expander.Expand(member.Project.Entry, ctx, member.ManifestPath, "[project].entry", PathTemplateExpander.FieldKind.Scalar);
         _ = _expander.Expand(version, ctx, member.ManifestPath, "[project].version", PathTemplateExpander.FieldKind.Scalar);
 
-        // [sources] include / exclude：路径字段，允许模板
-        var sourcesInclude = ExpandPathArray(member.Sources.Include, ctx, member.ManifestPath, "[sources].include");
-        var sourcesExclude = ExpandPathArray(member.Sources.Exclude, ctx, member.ManifestPath, "[sources].exclude");
+        // [sources] include / exclude：路径字段，允许模板。member.Sources 为 null → 默认值
+        var sourcesView = member.Sources ?? new SourcesSection(["src/**/*.z42"], []);
+        var sourcesInclude = ExpandPathArray(sourcesView.Include, ctx, member.ManifestPath, "[sources].include");
+        var sourcesExclude = ExpandPathArray(sourcesView.Exclude, ctx, member.ManifestPath, "[sources].exclude");
 
         // [build]：member 自己的（C1 不集中处理；C3 改）
         var build = member.Build ?? new BuildSection("dist", "interp", true);
@@ -147,11 +175,14 @@ public sealed class ManifestLoader
         build = build with { OutDir = buildOutDir };
 
         // [dependencies]：合并（含 workspace 引用展开）
-        var resolvedDeps = ResolveDependencies(member, workspace, origins);
+        var resolvedDeps = ResolveDependencies(member, workspace, origins, presetOrigins);
+
+        // Kind 默认 Exe（与 ProjectManifest 行为一致）
+        var resolvedKind = member.Project.Kind ?? ProjectKind.Exe;
 
         return new ResolvedManifest(
             MemberName:    member.Project.Name,
-            Kind:          member.Project.Kind,
+            Kind:          resolvedKind,
             Entry:         member.Project.Entry,
             Version:       version,
             Authors:       authors,
@@ -172,7 +203,8 @@ public sealed class ManifestLoader
         string? workspaceValue,
         WorkspaceContext? workspace,
         string memberPath,
-        Dictionary<string, FieldOrigin> origins)
+        Dictionary<string, FieldOrigin> origins,
+        IReadOnlyDictionary<string, string> presetOrigins)
     {
         string fieldPath = $"[project].{fieldName}";
         if (memberRef is null) return null;
@@ -186,7 +218,8 @@ public sealed class ManifestLoader
             return workspaceValue;
         }
 
-        origins[fieldPath] = new FieldOrigin(memberPath, fieldPath, OriginKind.MemberDirect);
+        // 直接值：来自 preset 还是 self?
+        StampOriginWithPresetOrSelf(origins, presetOrigins, fieldPath, memberPath);
         return memberRef.Value;
     }
 
@@ -196,7 +229,8 @@ public sealed class ManifestLoader
         IReadOnlyList<string>? workspaceValue,
         WorkspaceContext? workspace,
         string memberPath,
-        Dictionary<string, FieldOrigin> origins)
+        Dictionary<string, FieldOrigin> origins,
+        IReadOnlyDictionary<string, string> presetOrigins)
     {
         string fieldPath = $"[project].{fieldName}";
         if (memberRef is null) return null;
@@ -209,16 +243,18 @@ public sealed class ManifestLoader
             return workspaceValue;
         }
 
-        origins[fieldPath] = new FieldOrigin(memberPath, fieldPath, OriginKind.MemberDirect);
+        StampOriginWithPresetOrSelf(origins, presetOrigins, fieldPath, memberPath);
         return memberRef.Value;
     }
 
     IReadOnlyList<ResolvedDependency> ResolveDependencies(
         MemberManifest member,
         WorkspaceContext? workspace,
-        Dictionary<string, FieldOrigin> origins)
+        Dictionary<string, FieldOrigin> origins,
+        IReadOnlyDictionary<string, string> presetOrigins)
     {
         var result = new List<ResolvedDependency>();
+        if (member.Dependencies is null) return result;
         foreach (var dep in member.Dependencies)
         {
             string fieldPath = $"[dependencies].{dep.Name}";
@@ -240,7 +276,15 @@ public sealed class ManifestLoader
             }
             else
             {
-                origins[fieldPath] = new FieldOrigin(member.ManifestPath, fieldPath, OriginKind.MemberDirect);
+                // 检查是否来自 preset（来自 IncludePreset 来源）
+                if (presetOrigins.TryGetValue(fieldPath, out var presetPath))
+                {
+                    origins[fieldPath] = new FieldOrigin(presetPath, fieldPath, OriginKind.IncludePreset);
+                }
+                else
+                {
+                    origins[fieldPath] = new FieldOrigin(member.ManifestPath, fieldPath, OriginKind.MemberDirect);
+                }
                 result.Add(new ResolvedDependency(
                     Name:          dep.Name,
                     Version:       dep.DirectVersion ?? "*",
@@ -270,6 +314,25 @@ public sealed class ManifestLoader
     static void TrackOrigin(Dictionary<string, FieldOrigin> origins, string fieldPath, string filePath, OriginKind kind)
     {
         origins[fieldPath] = new FieldOrigin(filePath, fieldPath, kind);
+    }
+
+    static void StampOrigin(Dictionary<string, FieldOrigin> origins, string fieldPath, string filePath, OriginKind kind)
+        => TrackOrigin(origins, fieldPath, filePath, kind);
+
+    static void StampOriginWithPresetOrSelf(
+        Dictionary<string, FieldOrigin> origins,
+        IReadOnlyDictionary<string, string> presetOrigins,
+        string fieldPath,
+        string memberPath)
+    {
+        if (presetOrigins.TryGetValue(fieldPath, out var presetPath))
+        {
+            origins[fieldPath] = new FieldOrigin(presetPath, fieldPath, OriginKind.IncludePreset);
+        }
+        else
+        {
+            origins[fieldPath] = new FieldOrigin(memberPath, fieldPath, OriginKind.MemberDirect);
+        }
     }
 
     void DetectOrphans(

@@ -15,11 +15,14 @@ namespace Z42.Project;
 public sealed class MemberManifest
 {
     public required MemberProject       Project      { get; init; }
-    public required SourcesSection      Sources      { get; init; }
-    public required BuildSection?       Build        { get; init; }   // 可选
-    public required IReadOnlyList<MemberDependency> Dependencies { get; init; }
-    public required IReadOnlyList<string> Include    { get; init; }   // C1 占位（C2 实施合并语义）
+    public required SourcesSection?     Sources      { get; init; }   // nullable: null = 未声明
+    public required BuildSection?       Build        { get; init; }   // null = 未声明
+    public required IReadOnlyList<MemberDependency>? Dependencies { get; init; }  // null = 未声明
+    public required IReadOnlyList<string> Include    { get; init; }
     public required string              ManifestPath { get; init; }
+
+    /// <summary>是否为 preset 文件（C2 合并使用；preset 段限制更严）。</summary>
+    public bool IsPreset { get; init; }
 
     // ── 可共享元数据字段（C1 范围）────────────────────────────────────────────
     /// <summary>workspace.project 中允许共享的字段集合（D5 决策）。</summary>
@@ -29,19 +32,19 @@ public sealed class MemberManifest
     };
 
     /// <summary>从 toml 文件加载 member manifest（不进行 workspace 共享继承，仅原始字段）。</summary>
-    public static MemberManifest Load(string tomlPath)
+    public static MemberManifest Load(string tomlPath, bool isPreset = false)
     {
         string toml  = File.ReadAllText(tomlPath);
         var    model = TomlSerializer.Deserialize<TomlTable>(toml)
                        ?? throw new ManifestException($"error: failed to parse {tomlPath}");
 
-        // 段限制：member 不允许 [workspace.*] / [policy] / [profile.*]（C1 WS003）
-        EnsureNoForbiddenSections(model, tomlPath);
+        // 段限制：member 不允许 [workspace.*] / [policy] / [profile.*]（C1 WS003 / C2 WS021）
+        EnsureNoForbiddenSections(model, tomlPath, isPreset);
 
-        var project = ParseMemberProject(model, tomlPath);
-        var sources = ParseSources(model);
+        var project = ParseMemberProject(model, tomlPath, isPreset);
+        var sources = ParseSourcesNullable(model);
         var build   = ParseOptionalBuild(model);
-        var deps    = ParseDependencies(model, tomlPath);
+        var deps    = ParseDependenciesNullable(model, tomlPath);
         var include = ParseIncludeArray(model);
 
         return new MemberManifest
@@ -52,36 +55,64 @@ public sealed class MemberManifest
             Dependencies = deps,
             Include      = include,
             ManifestPath = tomlPath,
+            IsPreset     = isPreset,
         };
     }
 
-    static void EnsureNoForbiddenSections(TomlTable model, string memberPath)
+    static void EnsureNoForbiddenSections(TomlTable model, string memberPath, bool isPreset)
     {
+        // member 与 preset 都不允许的段
         if (model.ContainsKey("workspace"))
-            throw Z42Errors.ForbiddenSectionInMember(memberPath, "workspace");
+        {
+            throw isPreset
+                ? Z42Errors.ForbiddenSectionInPreset(memberPath, "workspace")
+                : Z42Errors.ForbiddenSectionInMember(memberPath, "workspace");
+        }
         if (model.ContainsKey("policy"))
-            throw Z42Errors.ForbiddenSectionInMember(memberPath, "policy");
+        {
+            throw isPreset
+                ? Z42Errors.ForbiddenSectionInPreset(memberPath, "policy")
+                : Z42Errors.ForbiddenSectionInMember(memberPath, "policy");
+        }
         if (model.TryGetValue("profile", out var profileRaw) && profileRaw is TomlTable)
-            throw Z42Errors.ForbiddenSectionInMember(memberPath, "profile");
+        {
+            throw isPreset
+                ? Z42Errors.ForbiddenSectionInPreset(memberPath, "profile")
+                : Z42Errors.ForbiddenSectionInMember(memberPath, "profile");
+        }
     }
 
-    static MemberProject ParseMemberProject(TomlTable model, string tomlPath)
+    static MemberProject ParseMemberProject(TomlTable model, string tomlPath, bool isPreset)
     {
+        // preset 可省略 [project] 段（preset 仅做共享）
         if (!model.TryGetValue("project", out var raw) || raw is not TomlTable t)
+        {
+            if (isPreset) return MemberProject.Empty();
             throw new ManifestException($"error: [project] section is required in {tomlPath}");
+        }
+
+        // preset 不允许 [project] 身份字段（name / entry）
+        if (isPreset)
+        {
+            if (t.ContainsKey("name"))
+                throw Z42Errors.ForbiddenSectionInPreset(tomlPath, "project.name");
+            if (t.ContainsKey("entry"))
+                throw Z42Errors.ForbiddenSectionInPreset(tomlPath, "project.entry");
+        }
 
         // name 由 member 自己声明（不可共享，D5）；缺失从文件名推断（与现行 ProjectManifest 一致）
         string inferred = Path.GetFileName(tomlPath).Replace(".z42.toml", "", StringComparison.OrdinalIgnoreCase);
-        string name    = t.TryGetString("name") ?? inferred;
+        string? name   = isPreset ? null : (t.TryGetString("name") ?? inferred);
         string? kindS  = t.TryGetString("kind");
         string? entry  = t.TryGetString("entry");
         bool?  pack    = t.TryGetBool("pack");
 
-        ProjectKind kind = ProjectKind.Exe;
+        ProjectKind? kind = null;
         if (kindS is not null)
         {
-            if (!Enum.TryParse<ProjectKind>(kindS, ignoreCase: true, out kind))
+            if (!Enum.TryParse<ProjectKind>(kindS, ignoreCase: true, out var k))
                 throw new ManifestException($"error: [project].kind must be 'exe' or 'lib', got '{kindS}'");
+            kind = k;
         }
 
         // 可共享字段：检测是否声明为 .workspace = true
@@ -134,10 +165,10 @@ public sealed class MemberManifest
         throw Z42Errors.InvalidWorkspaceProjectField(key, "string array or { workspace = true }", raw.GetType().Name);
     }
 
-    static SourcesSection ParseSources(TomlTable model)
+    static SourcesSection? ParseSourcesNullable(TomlTable model)
     {
         if (!model.TryGetValue("sources", out var raw) || raw is not TomlTable t)
-            return new SourcesSection(["src/**/*.z42"], []);
+            return null;
         var include = t.TryGetStringArray("include") ?? ["src/**/*.z42"];
         var exclude = t.TryGetStringArray("exclude") ?? [];
         return new SourcesSection(include, exclude);
@@ -152,9 +183,9 @@ public sealed class MemberManifest
         return new BuildSection(outDir, mode, inc);
     }
 
-    static IReadOnlyList<MemberDependency> ParseDependencies(TomlTable model, string tomlPath)
+    static IReadOnlyList<MemberDependency>? ParseDependenciesNullable(TomlTable model, string tomlPath)
     {
-        if (!model.TryGetValue("dependencies", out var raw) || raw is not TomlTable t) return [];
+        if (!model.TryGetValue("dependencies", out var raw) || raw is not TomlTable t) return null;
 
         var deps = new List<MemberDependency>();
         foreach (var kv in t)
@@ -201,16 +232,19 @@ public sealed class MemberManifest
     }
 }
 
-/// <summary>Member 的 [project] 段，含可共享字段的引用标记。</summary>
+/// <summary>Member 的 [project] 段，含可共享字段的引用标记。preset 中 Name/Kind 可为 null。</summary>
 public sealed record MemberProject(
-    string                                          Name,
-    ProjectKind                                     Kind,
+    string?                                         Name,
+    ProjectKind?                                    Kind,
     string?                                         Entry,
     bool?                                           Pack,
     FieldRef<string>?                               Version,
     FieldRef<IReadOnlyList<string>>?                Authors,
     FieldRef<string>?                               License,
-    FieldRef<string>?                               Description);
+    FieldRef<string>?                               Description)
+{
+    public static MemberProject Empty() => new(null, null, null, null, null, null, null, null);
+}
 
 /// <summary>
 /// 字段值引用：要么直接值（Value 非 null），要么引用 workspace 共享（UsesWorkspace = true）。

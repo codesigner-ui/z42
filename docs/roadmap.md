@@ -84,7 +84,8 @@
 
 ### 工程支持
 - `z42.toml` 项目清单：多 binary target、lib target、依赖声明
-- **Workspace 模型（C1 ✅ 2026-04-26）**：`z42.workspace.toml` virtual manifest、glob members、`[workspace.project]` 共享元数据、`xxx.workspace = true` 引用语法、4 个内置路径模板变量。include 机制（C2）/ policy + 集中产物（C3）/ z42c 工具链（C4）排队中。
+- **Workspace 模型（C1 ✅ 2026-04-26）**：`z42.workspace.toml` virtual manifest、glob members、`[workspace.project]` 共享元数据、`xxx.workspace = true` 引用语法、4 个内置路径模板变量。
+- **Workspace include 机制（C2 ✅ 2026-04-26）**：`include` 字段 + preset 合并语义（标量覆盖 / 表合并 / 数组整体覆盖）、循环检测、嵌套深度上限 8、菱形去重。policy + 集中产物（C3）/ z42c 工具链（C4）排队中。
 - `build`/`check`/`run`/`clean` 子命令完整 ✅
 - 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
 
