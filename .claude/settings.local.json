@@ -87,7 +87,8 @@
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.io/src",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/01_hello",
       "/private/tmp",
-      "/tmp"
+      "/tmp",
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/cross-zpkg/01_impl_propagation/*"
     ]
   }
 }

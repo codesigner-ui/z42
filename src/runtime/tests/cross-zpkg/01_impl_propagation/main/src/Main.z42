@@ -1,0 +1,14 @@
+namespace Demo.App;
+
+using Demo.Target;
+using Demo.Greeter;
+
+// Without `using Demo.Greeter;`, TypeChecker would not see Robot's
+// IGreet impl and `r.Hello()` would fail. With it, IMPL section from
+// demo.greeter.zpkg merges into the imported Robot class — `r.Hello()`
+// type-checks and dispatches to `Demo.Target.Robot.Hello` (body in
+// demo.greeter.zpkg's MODS section).
+void Main() {
+    var r = new Robot("R2");
+    Console.WriteLine(r.Hello());
+}

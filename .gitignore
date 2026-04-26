@@ -38,3 +38,6 @@ Thumbs.db
 *.z42ir.json
 dist/
 .cache/
+
+# Cross-zpkg e2e test build artifacts (per-package libs/ populated by test driver).
+src/runtime/tests/cross-zpkg/*/*/libs/

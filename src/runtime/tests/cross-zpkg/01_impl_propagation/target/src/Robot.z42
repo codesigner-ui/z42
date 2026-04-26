@@ -1,0 +1,15 @@
+namespace Demo.Target;
+
+// Target package: defines a class + an interface, but does NOT impl the
+// interface for the class. The actual `impl IGreet for Robot` lives in
+// the ext package and reaches Robot via cross-zpkg propagation.
+public class Robot {
+    public string name;
+    public Robot(string n) {
+        this.name = n;
+    }
+}
+
+public interface IGreet {
+    string Hello();
+}

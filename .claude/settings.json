@@ -18,7 +18,16 @@
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll check src/libraries/z42.text/z42.text.z42.toml)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll explain E0411)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll errors)",
-      "Bash(grep -nE \"Lt,|Gt,|^\\\\s+Lt$|^\\\\s+Gt$\" src/compiler/z42.Syntax/Lexer/TokenKind.cs)"
+      "Bash(grep -nE \"Lt,|Gt,|^\\\\s+Lt$|^\\\\s+Gt$\" src/compiler/z42.Syntax/Lexer/TokenKind.cs)",
+      "Bash(chmod +x scripts/test-cross-zpkg.sh)",
+      "Bash(./scripts/test-cross-zpkg.sh)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll build src/runtime/tests/cross-zpkg/01_impl_propagation/ext/z42.toml)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm src/runtime/tests/cross-zpkg/01_impl_propagation/ext/libs/demo.target.zpkg -o /tmp/tg.zasm)",
+      "Bash(dd if=src/runtime/tests/cross-zpkg/01_impl_propagation/ext/libs/demo.target.zpkg bs=1 skip=88 count=80)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll build --help)",
+      "Bash(xargs -r rm -rf)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll build src/runtime/tests/cross-zpkg/01_impl_propagation/main/z42.toml)",
+      "Bash(grep -c \"^Main$\")"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

@@ -55,10 +55,13 @@ public static class ExportedTypeExtractor
                 int minArgCount = parms.Count;
                 for (int i = 0; i < m.Params.Count; i++)
                     if (m.Params[i].Default != null) { minArgCount = i; break; }
+                // Serialize as Params.Count when all required (matches existing TSIG
+                // method-def convention via Z42FuncType.MinArgCount property; the -1
+                // sentinel is in-memory only and would be (ushort)-1 = 65535 on disk).
                 methods.Add(new ExportedMethodDef(
                     m.Name, parms, TypeExprToString(m.ReturnType),
                     VisToString(m.Visibility), m.IsStatic, m.IsVirtual, m.IsAbstract,
-                    minArgCount == m.Params.Count ? -1 : minArgCount));
+                    minArgCount));
             }
             result.Add(new ExportedImplDef(targetFq, traitFq, argStrs, methods));
         }

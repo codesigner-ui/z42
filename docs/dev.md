@@ -63,9 +63,14 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 # VM 测试（interp + jit 双模式）
 ./scripts/test-vm.sh
+
+# 跨 zpkg 端到端测试（target lib + ext lib + main app 三方协作）
+./scripts/test-cross-zpkg.sh
 ```
 
 > 修改编译器后，先 `--emit zbc` 重新生成 `.zbc`，再跑 `./scripts/test-vm.sh`。
+> `test-cross-zpkg.sh` 用例放在 `src/runtime/tests/cross-zpkg/`，
+> 详见该目录的 README。
 
 ---
 

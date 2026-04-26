@@ -170,9 +170,20 @@ public sealed partial class SymbolCollector : ISymbolBinder
     {
         foreach (var fn in cu.Functions)
         {
+            // L3-Impl2 / cross-CU Phase 1: a local function name may already be in
+            // `_funcs` because it was injected via `MergeImported` from intraSymbols
+            // (same package's pre-collected declarations). In that case, the local
+            // declaration shadows the import — drop the imported entry silently and
+            // fall through to the normal registration. Only error on **local-local**
+            // collisions (same name declared twice within the local source).
             if (_funcs.ContainsKey(fn.Name))
-                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
-                    $"duplicate function declaration `{fn.Name}`", fn.Span);
+            {
+                if (_importedFuncNames.Remove(fn.Name))
+                    _funcs.Remove(fn.Name); // shed the import; about to re-add as local
+                else
+                    _diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                        $"duplicate function declaration `{fn.Name}`", fn.Span);
+            }
             if (fn.TypeParams != null) _activeTypeParams = new HashSet<string>(fn.TypeParams);
             _funcs[fn.Name] = BuildFuncSignature(fn.Params, ResolveType(fn.ReturnType));
             _activeTypeParams = null;

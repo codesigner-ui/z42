@@ -1,0 +1,13 @@
+namespace Demo.Greeter;
+
+using Demo.Target;
+
+// Cross-zpkg `impl Trait for Type` block: gives `Robot` (defined in
+// demo.target) an `IGreet` implementation. L3-Impl2 IMPL section makes
+// this declaration visible to the consumer's TypeChecker; method body
+// is emitted in this zpkg's MODS section under func name "Demo.Target.Robot.Hello".
+impl IGreet for Robot {
+    public string Hello() {
+        return "hi from " + this.name;
+    }
+}
