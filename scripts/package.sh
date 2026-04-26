@@ -95,14 +95,22 @@ mkdir -p "$ARTIFACTS/bin" "$ARTIFACTS/libs"
 cp "$VM_BIN" "$ARTIFACTS/bin/z42vm"
 echo "  Copied z42vm → $ARTIFACTS/bin/z42vm"
 
-# ── 5. Stdlib placeholder files ───────────────────────────────────────────────
-# libs/ only contains .zpkg files. Real .zpkg are produced by build-stdlib.sh.
-echo "Populating libs/ (placeholder — run build-stdlib.sh for compiled stdlib)..."
+# ── 5. Stdlib：从 artifacts/libraries/<lib>/dist/<lib>.zpkg 拷贝到分发版扁平布局 ───
+# C4c+ 后 build-stdlib.sh 仅产 artifacts/libraries/<lib>/dist/<lib>.zpkg；
+# package.sh 在打包阶段统一拷到 artifacts/z42/libs/<lib>.zpkg（VM 加载约定 +
+# 分发版扁平布局）。如果没有 workspace 产物则建占位 .zpkg（test-dist 失败前提示）。
+echo "Populating libs/ from artifacts/libraries/..."
+LIBRARIES_ROOT="$ROOT/artifacts/libraries"
 for mod in "${STDLIB_MODULES[@]}"; do
-    # Only create placeholder if the file doesn't already exist
-    if [ ! -s "$ARTIFACTS/libs/${mod}.zpkg" ]; then
-        touch "$ARTIFACTS/libs/${mod}.zpkg"
-        echo "  ${mod}.zpkg (placeholder)"
+    src="$LIBRARIES_ROOT/$mod/dist/$mod.zpkg"
+    dst="$ARTIFACTS/libs/$mod.zpkg"
+    if [ -f "$src" ] && [ -s "$src" ]; then
+        cp "$src" "$dst"
+        size=$(wc -c < "$dst" | tr -d ' ')
+        echo "  ${mod}.zpkg ($size bytes) ← $src"
+    elif [ ! -s "$dst" ]; then
+        touch "$dst"
+        echo "  ${mod}.zpkg (placeholder — run build-stdlib.sh first)"
     else
         echo "  ${mod}.zpkg (existing, kept)"
     fi
@@ -114,5 +122,6 @@ echo "  Compiler: $ARTIFACTS/bin/z42c"
 echo "  VM:       $ARTIFACTS/bin/z42vm"
 echo ""
 echo "Next steps:"
-echo "  ./scripts/build-stdlib.sh    # compile stdlib packages"
+echo "  ./scripts/build-stdlib.sh    # compile stdlib (writes to artifacts/libraries/<lib>/dist/)"
+echo "  ./scripts/package.sh         # re-run to copy stdlib into artifacts/z42/libs/"
 echo "  ./scripts/test-dist.sh       # run end-to-end tests with packaged binaries"

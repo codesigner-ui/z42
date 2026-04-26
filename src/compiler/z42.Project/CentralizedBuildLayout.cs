@@ -42,7 +42,7 @@ public sealed class CentralizedBuildLayout
                 EffectiveProductPath: Path.Combine(localOut, $"{memberName}.zpkg"));
         }
 
-        // workspace 模式：从 [workspace.build] 派生
+        // workspace 模式：从 [workspace.build] 派生（用户用 ${member_name} 等模板控制布局）
         var ctx = new PathTemplateExpander.Context(
             WorkspaceDir: workspaceRoot,
             MemberDir:    memberDir,
@@ -63,8 +63,14 @@ public sealed class CentralizedBuildLayout
             ? Path.GetFullPath(cacheExpanded)
             : Path.GetFullPath(Path.Combine(workspaceRoot, cacheExpanded));
 
+        // cache_dir 由用户通过 ${member_name} 模板控制按 member 隔离；
+        // 若用户未在模板中含 ${member_name}（避免不同 member 的同名源文件互相覆盖），
+        // 则自动追加 memberName 子目录作为兜底
+        string memberCache = cacheDirRaw.Contains("${member_name}")
+            ? cacheAbs
+            : Path.Combine(cacheAbs, memberName);
+
         string product = Path.Combine(outAbs, $"{memberName}.zpkg");
-        string memberCache = Path.Combine(cacheAbs, memberName);
 
         return new Layout(
             IsCentralized:        true,

@@ -2,29 +2,28 @@
 # build-stdlib.sh — compile z42 standard library packages via workspace mode.
 #
 # Workspace 配置：src/libraries/z42.workspace.toml
-#   - 集中产物到 artifacts/libraries/<lib>.zpkg
-#   - 集中 cache 到 artifacts/libraries/.cache/<lib>/
+#   - 每个 member 子目录布局：artifacts/libraries/<lib>/dist/<lib>.zpkg
+#                             + artifacts/libraries/<lib>/cache/<file>.zbc
 #   - 拓扑顺序自动（z42.core 先编，其余依赖它的后编）
 #
-# 同时复制到 artifacts/z42/libs/ 维持现有 VM 加载路径与分发产物兼容
-# （artifacts/z42/libs 用于 package.sh 等下游消费；artifacts/libraries
-# 是 workspace 直接产物）。
+# 不复制到 artifacts/z42/libs/——拷贝步骤移到 package.sh（仅打包分发版时执行）。
+# 编译 stdlib 间互相依赖（如 z42.collections → z42.core）通过 PackageCompiler.
+# BuildLibsDirs 扫一层 <member>/dist/ 子目录解决，无需扁平布局。
 #
 # Usage:
 #   ./scripts/build-stdlib.sh                 # release build, uses dotnet run
 #   ./scripts/build-stdlib.sh --use-dist      # uses packaged z42c from artifacts/z42/bin/
 #
 # Output:
-#   artifacts/libraries/<lib>.zpkg     (workspace 直接产物)
-#   artifacts/z42/libs/<lib>.zpkg      (复制以维持 VM 加载约定)
+#   artifacts/libraries/<lib>/dist/<lib>.zpkg   (workspace 直接产物)
+#   artifacts/libraries/<lib>/cache/...         (中间产物)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 WS_DIR="$ROOT/src/libraries"
-DIST_DIR="$ROOT/artifacts/libraries"          # workspace 集中产物
-LEGACY_DIR="$ROOT/artifacts/z42/libs"         # VM / 分发版加载路径
+DIST_ROOT="$ROOT/artifacts/libraries"
 
 USE_DIST=false
 for arg in "$@"; do
@@ -32,8 +31,6 @@ for arg in "$@"; do
         USE_DIST=true
     fi
 done
-
-mkdir -p "$LEGACY_DIR"
 
 if [ "$USE_DIST" = true ]; then
     Z42C="$ROOT/artifacts/z42/bin/z42c"
@@ -56,25 +53,24 @@ LIBS=(z42.core z42.io z42.math z42.text z42.collections)
 echo "  building stdlib workspace (release, all members)"
 ( cd "$WS_DIR" && "${COMPILER_CMD[@]}" build --workspace --release )
 
-# 把 artifacts/libraries/<lib>.zpkg 复制到 artifacts/z42/libs（兼容现有 VM）
+# 校验产物存在
 ok=0
 fail=0
 for lib in "${LIBS[@]}"; do
-    src="$DIST_DIR/$lib.zpkg"
-    dst="$LEGACY_DIR/$lib.zpkg"
-    if [[ -f "$src" && -s "$src" ]]; then
-        cp "$src" "$dst"
-        size=$(wc -c < "$dst" | tr -d ' ')
-        echo "    ✓ $lib.zpkg ($size bytes) → $dst"
+    zpkg="$DIST_ROOT/$lib/dist/$lib.zpkg"
+    if [[ -f "$zpkg" && -s "$zpkg" ]]; then
+        size=$(wc -c < "$zpkg" | tr -d ' ')
+        echo "    ✓ $lib.zpkg ($size bytes) → $zpkg"
         ((ok++)) || true
     else
-        echo "    ✗ $lib.zpkg — workspace product missing at $src"
+        echo "    ✗ $lib.zpkg — workspace product missing at $zpkg"
         ((fail++)) || true
     fi
 done
 
 echo ""
 echo "build-stdlib: $ok succeeded, $fail failed"
+echo "(distribution copy 已移到 package.sh，仅打包分发版时同步到 artifacts/z42/libs/)"
 if [[ $fail -gt 0 ]]; then
     exit 1
 fi

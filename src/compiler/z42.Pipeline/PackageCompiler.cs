@@ -97,6 +97,10 @@ public static class PackageCompiler
         // 构造一个最小 DependencySection 供 BuildTarget 使用（已声明依赖列表）
         var declaredDeps = ResolvedDependenciesToDeclared(member.Dependencies);
 
+        // workspace 模式：传 EffectiveCacheDir（artifacts/libraries/<member>/cache）；
+        // 单工程 fallback：传 null 让 BuildTarget 用默认 projectDir/.cache
+        string? cacheDir = member.IsCentralized ? member.EffectiveCacheDir : null;
+
         return BuildTarget(
             member.MemberName,
             member.Version,
@@ -106,7 +110,8 @@ public static class PackageCompiler
             pack,
             memberDir,
             outDir,
-            declaredDeps);
+            declaredDeps,
+            explicitCacheDir: cacheDir);
     }
 
     static IReadOnlyList<string> ResolveSourceFilesFromResolved(ResolvedManifest member, string memberDir)
@@ -228,7 +233,8 @@ public static class PackageCompiler
         bool                  pack,
         string                projectDir,
         string                outDir,
-        DependencySection?    declaredDeps = null)
+        DependencySection?    declaredDeps = null,
+        string?               explicitCacheDir = null)
     {
         // L3-G4g: libsDirs includes projectDir/libs, projectDir/artifacts/z42/libs,
         // plus a walk-up search for the repo-level `artifacts/z42/libs` so stdlib
@@ -246,7 +252,8 @@ public static class PackageCompiler
         WarnUnresolvedUsings(units, nsMap);
 
         var dependencies = BuildDependencyMap(units, nsMap);
-        string cacheDir  = Path.Combine(projectDir, ".cache");
+        // C4c+: workspace 模式由 caller 传 EffectiveCacheDir；单工程模式默认 projectDir/.cache
+        string cacheDir  = explicitCacheDir ?? Path.Combine(projectDir, ".cache");
         var zbcFiles     = units.Select(u => u.ToZbcFile()).ToList();
         var exportedModules = units
             .Where(u => u.ExportedTypes != null)
@@ -278,31 +285,49 @@ public static class PackageCompiler
 
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
     /// Build the list of directories to scan for dependency `.zpkg` files.
-    /// Includes project-local `libs/`, `artifacts/z42/libs/` (legacy stdlib output),
-    /// and `artifacts/libraries/` (workspace stdlib output, C4c+). Walks up the tree
-    /// so stdlib packages built one after another can resolve each other.
+    ///
+    /// 搜索路径包括：
+    ///   - project-local `libs/`
+    ///   - `artifacts/z42/libs/`（legacy + 分发版扁平布局）
+    ///   - `artifacts/libraries/`（workspace 扁平布局兼容；C4c 旧）
+    ///   - `artifacts/libraries/&lt;member&gt;/dist/`（workspace 子目录布局；C4c+ 当前）
+    ///
+    /// 沿目录树向上搜索，让 stdlib 包先后编译时能找到上游 zpkg。
     static string[] BuildLibsDirs(string projectDir)
     {
-        var dirs = new List<string>
+        var dirs = new List<string>();
+
+        void AddCandidate(string baseDir)
         {
-            Path.Combine(projectDir, "libs"),
-            Path.Combine(projectDir, "artifacts", "z42", "libs"),
-            Path.Combine(projectDir, "artifacts", "libraries"),
-        };
+            // 直接加 baseDir（兼容旧扁平布局）
+            if (Directory.Exists(baseDir) && !dirs.Contains(baseDir))
+                dirs.Add(baseDir);
+            // 子目录布局：扫一层，加每个 <member>/dist/
+            if (Directory.Exists(baseDir))
+            {
+                foreach (var sub in Directory.EnumerateDirectories(baseDir))
+                {
+                    string distSub = Path.Combine(sub, "dist");
+                    if (Directory.Exists(distSub) && !dirs.Contains(distSub))
+                        dirs.Add(distSub);
+                }
+            }
+        }
+
+        // project-local
+        AddCandidate(Path.Combine(projectDir, "libs"));
+        AddCandidate(Path.Combine(projectDir, "artifacts", "z42", "libs"));
+        AddCandidate(Path.Combine(projectDir, "artifacts", "libraries"));
+
+        // walk-up search
         var dir = new DirectoryInfo(projectDir).Parent;
         while (dir != null)
         {
-            foreach (var candidate in new[]
-            {
-                Path.Combine(dir.FullName, "artifacts", "z42", "libs"),
-                Path.Combine(dir.FullName, "artifacts", "libraries"),
-            })
-            {
-                if (Directory.Exists(candidate) && !dirs.Contains(candidate))
-                    dirs.Add(candidate);
-            }
+            AddCandidate(Path.Combine(dir.FullName, "artifacts", "z42", "libs"));
+            AddCandidate(Path.Combine(dir.FullName, "artifacts", "libraries"));
             dir = dir.Parent;
         }
+
         return dirs.ToArray();
     }
 

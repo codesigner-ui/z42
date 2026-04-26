@@ -28,5 +28,9 @@ version = "0.1.0"
 license = "MIT"
 
 [workspace.build]
-out_dir   = "../../artifacts/libraries"
-cache_dir = "../../artifacts/libraries/.cache"
+# 每个 member 在 artifacts/libraries 下有自己的子目录，含 dist/ 与 cache/。
+# 例：artifacts/libraries/z42.core/dist/z42.core.zpkg
+#     artifacts/libraries/z42.core/cache/<file>.zbc
+# package.sh 在打包时把 <member>/dist/<name>.zpkg 复制到 artifacts/z42/libs/<name>.zpkg。
+out_dir   = "../../artifacts/libraries/${member_name}/dist"
+cache_dir = "../../artifacts/libraries/${member_name}/cache"

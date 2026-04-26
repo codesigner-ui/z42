@@ -37,11 +37,11 @@ cargo build -q --manifest-path "$RUNTIME_MANIFEST"
 echo ""
 
 # Locate stdlib zpkgs (workspace stdlib output, C4c+).
-# build-stdlib.sh 同时把产物拷到 artifacts/z42/libs/（用于 package.sh 分发），但开发
-# 期我们直接读 workspace 集中产物 artifacts/libraries/，绕开拷贝步骤的不确定性。
-STDLIB_DIR="$ROOT/artifacts/libraries"
-# 仅按 .zpkg 是否存在判断（artifacts/libraries/ 还含 .cache/ 子目录）
-if ! ls "$STDLIB_DIR"/*.zpkg >/dev/null 2>&1; then
+# 子目录布局：artifacts/libraries/<lib>/dist/<lib>.zpkg
+# 不再依赖 artifacts/z42/libs（那个由 package.sh 分发版打包时填充）。
+STDLIB_ROOT="$ROOT/artifacts/libraries"
+# 检查至少一个 <lib>/dist/<lib>.zpkg 存在
+if ! ls "$STDLIB_ROOT"/*/dist/*.zpkg >/dev/null 2>&1; then
     echo "Building stdlib (required for cross-zpkg tests)..."
     "$SCRIPT_DIR/build-stdlib.sh" >/dev/null
     echo ""
@@ -117,7 +117,8 @@ for dir in "$TESTS_DIR"/*/; do
         FAIL=$((FAIL + 1)); FAILURES+=("$name (no zpkg)"); continue
     fi
     test_libs=$(mktemp -d)
-    cp "$STDLIB_DIR"/*.zpkg "$test_libs/" 2>/dev/null || true
+    # 收集 stdlib：每个 <lib>/dist/<lib>.zpkg 都要拷
+    cp "$STDLIB_ROOT"/*/dist/*.zpkg "$test_libs/" 2>/dev/null || true
     cp "$dir/target/dist"/*.zpkg "$test_libs/" 2>/dev/null || true
     cp "$dir/ext/dist"/*.zpkg    "$test_libs/" 2>/dev/null || true
     actual=$(Z42_LIBS="$test_libs" cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$main_zpkg" --mode "$MODE" 2>&1) || true

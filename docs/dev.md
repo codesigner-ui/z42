@@ -81,13 +81,16 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ./scripts/package.sh            # debug build（z42c single-file + z42vm）
 ./scripts/package.sh release    # release build
 
-# 编译标准库：src/libraries/ workspace 模式 → artifacts/libraries/*.zpkg
-#                                            → artifacts/z42/libs/*.zpkg（兼容拷贝）
+# 编译标准库：src/libraries/ workspace 模式 → artifacts/libraries/<lib>/dist/<lib>.zpkg
+#                                            → artifacts/libraries/<lib>/cache/<file>.zbc (debug 模式时)
 ./scripts/build-stdlib.sh              # 使用 dotnet run 编译
 ./scripts/build-stdlib.sh --use-dist   # 使用打包后的 z42c 编译
 
 # 直接走 z42c workspace 模式编译 stdlib（等价于 build-stdlib.sh 中间步骤）：
 ( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
+
+# 打包分发：把 artifacts/libraries/<lib>/dist/<lib>.zpkg 拷到 artifacts/z42/libs/<lib>.zpkg
+./scripts/package.sh         # 必要时再跑 build-stdlib.sh，然后再 package.sh 拷贝
 
 # 发行包端到端测试（使用 artifacts/z42/bin/ 的 z42c + z42vm）
 ./scripts/test-dist.sh              # 编译+运行 golden tests（interp + jit）
@@ -98,9 +101,13 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 > 修改标准库源文件后需重新运行 `./scripts/build-stdlib.sh` 更新 zpkg 产物。
 
 > **artifacts 目录分工**：
-> - `artifacts/libraries/` — workspace 模式 stdlib **构建中间产物**（含 .cache/）
-> - `artifacts/z42/libs/` — 分发版 stdlib（package.sh + build-stdlib.sh 拷贝目标）
+> - `artifacts/libraries/<lib>/dist/` — workspace 模式 stdlib **构建产物**（每 lib 一个子目录）
+> - `artifacts/libraries/<lib>/cache/` — 中间产物 .zbc（debug/indexed 模式时生成）
+> - `artifacts/z42/libs/` — 分发版 stdlib 扁平布局（package.sh 拷贝目标）
 > - `artifacts/z42/bin/` — 分发版 z42c / z42vm 单文件 binary
+>
+> `build-stdlib.sh` 仅写 `artifacts/libraries/`；`package.sh` 在打包阶段把
+> `<lib>/dist/<lib>.zpkg` 拷到 `artifacts/z42/libs/<lib>.zpkg`。
 > 发行包测试全流程：`package.sh` → `build-stdlib.sh --use-dist` → `test-dist.sh`。
 
 ---
