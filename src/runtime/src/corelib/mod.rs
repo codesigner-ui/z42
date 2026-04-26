@@ -91,9 +91,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__double_equals",     convert::builtin_double_equals);
         m.insert("__double_hash_code",  convert::builtin_double_hash_code);
         m.insert("__double_to_string",  convert::builtin_double_to_string);
-        m.insert("__bool_equals",       convert::builtin_bool_equals);
-        m.insert("__bool_hash_code",    convert::builtin_bool_hash_code);
-        m.insert("__bool_to_string",    convert::builtin_bool_to_string);
+        // 2026-04-27 wave1-bool-script: removed __bool_equals / _hash_code /
+        // _to_string — `Std.bool` methods are now pure z42 script.
         m.insert("__char_compare_to",   convert::builtin_char_compare_to);
         m.insert("__char_equals",       convert::builtin_char_equals);
         m.insert("__char_hash_code",    convert::builtin_char_hash_code);

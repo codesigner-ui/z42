@@ -171,7 +171,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `__int_compare_to` / `__double_compare_to` / `__char_compare_to` (3) | 🔵 | 走 codegen 特化（IR Sub + 符号位），philosophy §8 第 2 层 |
 | `__int_equals` / `__int_hash_code` / `__int_to_string` (3) | 🟢 | Object 协议 ABI |
 | `__double_equals` / `__double_hash_code` / `__double_to_string` (3) | 🟢 | 同上 |
-| `__bool_equals` / `__bool_hash_code` / `__bool_to_string` (3) | 🟡 | BCL/Rust 都是脚本：`==` / `value ? 1 : 0` / 字面量 |
+| ~~`__bool_equals` / `__bool_hash_code` / `__bool_to_string` (3)~~ | ✅ 已删 | 2026-04-27 wave1-bool-script — 脚本实现见 [z42.core/src/Bool.z42](z42.core/src/Bool.z42)，`ToString` 输出 `"true"/"false"` 小写（与 Rust 一致）|
 | `__char_equals` / `__char_hash_code` / `__char_to_string` (3) | 🟢 | Char primitive ABI |
 | `__str_compare_to`（已计入 String 区）| — | — |
 
@@ -208,11 +208,11 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave | 数量 | 处置 |
 |---|---|---|
 | Wave 0（dead code）| 13 | ✅ 已完成（extern-audit-wave0）|
-| Wave 1（feature → 脚本）| 19 → **13 剩余** | 6 assert ✅ 已迁；待迁：3 bool + 3 math + 5 path + 2 str split/join |
+| Wave 1（feature → 脚本）| 19 → **10 剩余** | 6 assert ✅ + 3 bool ✅ 已迁；待迁：3 math + 5 path + 2 str split/join |
 | Wave 2（codegen 特化）| 3 | 待 spec：3 个 `*_compare_to` |
 | Wave 3（需要新基础设施）| 2-3 | `__str_concat` / `__str_format` 等 |
 | 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
-| **当前总计** | **~61** | **长期目标 ~45** |
+| **当前总计** | **~58** | **长期目标 ~45** |
 
 ### Wave 进度
 
@@ -220,7 +220,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 |---|---|---|
 | Wave 0 | ✅ 已完成（extern-audit-wave0）| 2026-04-26 |
 | Wave 1.1 Assert | ✅ 已完成（wave1-assert-script）| 2026-04-27 |
-| Wave 1.2 Bool 三件套 | ⚪ 待启动 | — |
+| Wave 1.2 Bool 三件套 | ✅ 已完成（wave1-bool-script）| 2026-04-27 |
 | Wave 1.3 Math abs/max/min | ⚪ 待启动 | — |
 | Wave 1.4 Path 五件套 | ⚪ 待启动 | — |
 | Wave 1.5 String split/join | ⚪ 待启动 | — |

@@ -86,13 +86,6 @@ fn require_f64(args: &[Value], idx: usize, ctx: &str) -> Result<f64> {
         None => bail!("{}: missing arg {}", ctx, idx),
     }
 }
-fn require_bool(args: &[Value], idx: usize, ctx: &str) -> Result<bool> {
-    match args.get(idx) {
-        Some(Value::Bool(b)) => Ok(*b),
-        Some(other) => bail!("{}: arg {} expected bool, got {:?}", ctx, idx, other),
-        None => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
 fn require_char(args: &[Value], idx: usize, ctx: &str) -> Result<char> {
     match args.get(idx) {
         Some(Value::Char(c)) => Ok(*c),
@@ -139,19 +132,8 @@ pub fn builtin_double_to_string(args: &[Value]) -> Result<Value> {
     Ok(Value::Str(a.to_string()))
 }
 
-pub fn builtin_bool_equals(args: &[Value]) -> Result<Value> {
-    let a = require_bool(args, 0, "bool.Equals")?;
-    let b = require_bool(args, 1, "bool.Equals")?;
-    Ok(Value::Bool(a == b))
-}
-pub fn builtin_bool_hash_code(args: &[Value]) -> Result<Value> {
-    let a = require_bool(args, 0, "bool.GetHashCode")?;
-    Ok(Value::I64(if a { 1 } else { 0 }))
-}
-pub fn builtin_bool_to_string(args: &[Value]) -> Result<Value> {
-    let a = require_bool(args, 0, "bool.ToString")?;
-    Ok(Value::Str(a.to_string()))
-}
+// 2026-04-27 wave1-bool-script: 3 `builtin_bool_*` removed.
+// `Std.bool.Equals` / `GetHashCode` / `ToString` 现在是 z42 脚本实现。
 
 pub fn builtin_char_compare_to(args: &[Value]) -> Result<Value> {
     let a = require_char(args, 0, "char.CompareTo")?;
