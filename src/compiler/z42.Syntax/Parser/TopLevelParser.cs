@@ -446,8 +446,12 @@ internal static partial class TopLevelParser
     // ── Extern impl block ─────────────────────────────────────────────────────
 
     /// Parse `impl <TraitType> for <TargetType> { <methods> }`.
-    /// Change 1 scope: methods must have body (extern deferred); target can be
-    /// user class/struct, primitive struct (int/double/...), or imported class.
+    /// Methods must have a body — `extern` is intentionally NOT allowed inside
+    /// impl blocks. `extern` (`[Native]`) binds VM intrinsics / host FFI and
+    /// belongs at the type-definition site (e.g. `Int.z42`'s struct body), not
+    /// in cross-cutting impl extensions. `impl` exists for organizational
+    /// separation + cross-package extension via script body that wraps existing
+    /// type APIs. (Decision 2026-04-26 — see docs/design/generics.md.)
     private static ImplDecl ParseImplDecl(ref TokenCursor cursor, LanguageFeatures feat,
         DiagnosticBag? diags = null)
     {
@@ -466,7 +470,7 @@ internal static partial class TopLevelParser
                 var m = ParseFunctionDecl(ref cursor, feat, Visibility.Public, null, diags);
                 if (m.IsExtern)
                     throw new ParseException(
-                        $"extern methods in impl blocks are not yet supported (Change 1 scope)",
+                        "extern methods are not allowed in impl blocks; native bindings belong in the type definition",
                         m.Span, DiagnosticCodes.FeatureDisabled);
                 methods.Add(m);
             }

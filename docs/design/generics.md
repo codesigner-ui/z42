@@ -476,18 +476,35 @@ string Greet<T>(T t) where T: IGreet { return t.Hello(); }
 
 **等价性**：`impl Trait for Type { ... }` 等价于 class 头部 `: Trait` + body 方法。SymbolCollector 把 trait 合并到 target 的 `InterfaceTypes`，方法合并到 `Methods`。
 
-**Change 1 限制**（已完成）：
+**Change 1 限制**：
 - Target 接受 user class / struct + primitive struct（int/double/bool/char）+ 导入的 class
 - Trait 必须是 interface（本地或导入）
-- **impl 方法必须有 body** — `extern [Native(...)]` 留给后续迭代
 - 孤儿规则宽松：允许 impl 出现，不做跨 zpkg 严格检查
-- **不含** TSIG Impls 字段；impl 仅在当前 CU 生效，下游消费者看不到（后续迭代补全）
+- **不含** TSIG Impls 字段；impl 仅在当前 CU 生效，下游消费者看不到（L3-Impl2 补全跨包传播）
+
+**永久禁止：impl 块内 `extern` 方法**（Decision 2026-04-26）：
+
+`extern` 关键字的语义是"VM intrinsic / host FFI 绑定"，是类型本身的一部分（与
+类型同生命周期）。`int.op_Add` 的 native 绑定属于 [Int.z42](../../src/libraries/z42.core/src/Int.z42)
+的 struct body，**不应该被任何外部包通过 impl 块追加**。
+
+理由：
+1. **语义边界清晰**：extern = 类型与 VM ABI 的契约，与类型定义不可分割
+2. **impl 的动机已被脚本 body 覆盖**：组织性分离 + 跨包扩展接口 → 包装现有 extern + 用接口暴露即可：
+   ```z42
+   // z42.numerics（未来包）：给 int 加 INumber<int>
+   impl INumber<int> for int {
+       public static int op_Add(int a, int b) { return a + b; }  // + 走 Int.z42 已有 extern
+   }
+   ```
+3. **避免复杂度爆炸**：允许 extern in impl 会让孤儿规则 + 跨包传播额外处理"native binding 谁注册 / 重复注册冲突"
+4. **真要给 primitive 加 VM intrinsic**：直接在 z42.core 对应类型 body 加 `[Native]` extern method，stdlib 内部调整即可
+
+Parser 在 `impl` 块见到 `extern` 修饰符直接报错（`TopLevelParser.ParseImplDecl`）。
 
 **后续迭代规划**：
-- **+extern 方法**：允许 impl 方法用 `[Native(...)] public extern`，支撑
-  stdlib 为 primitive 追加接口（如 z42.numerics 为 int 实现 INumber，op_Add 绑定 `__int_op_add`）
-- **+跨 zpkg（TSIG Impls）**：IMPL section 承载"外部 impl 对 target 的追加"，
-  消费者 ImportedSymbolLoader 合并到本地 class 记录
+- **L3-Impl2 跨 zpkg（TSIG Impls）**：IMPL section 承载"外部 impl 对 target 的追加"，
+  消费者 ImportedSymbolLoader 合并到本地 class 记录（仅脚本 body）
 - **+孤儿规则收紧**：Rust 风完整规则 — impl 必须与 Trait OR Target 同 zpkg
 
 **诊断**：新错误码 `E0413 InvalidImpl`（target 非 class/struct、trait 非 interface、签名不匹配、漏方法、重复方法）。
