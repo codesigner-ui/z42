@@ -60,3 +60,48 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 ## 修改后
 
 修改任意 `.z42` 源文件后必须重新运行 `build-stdlib.sh` 更新 zpkg 产物。
+
+---
+
+## 未来计划（按需补齐，无空目录占位）
+
+> 仅作 roadmap 备忘。**实际拉新包时再建目录** — 避免半成品占位包污染构建。
+
+### 已规划但未启动
+
+| 包 | 内容 | 阶段 | 触发条件 |
+|----|------|------|---------|
+| `z42.diagnostics` | `Debug` / `Trace` / `Stopwatch` / `Assert*` 扩展 | L2 | 性能调优 / 调试日志需求出现 |
+| `z42.threading` | `Thread` / `Mutex` / `Atomic*` / `Channel` | L3 | 并发模型设计完成（`Rc<RefCell>` → `Arc<Mutex>` 配套）|
+| `z42.async` | `Task<T>` / `async`/`await` runtime / `ValueTask` | L3 | 关键字 `async` / `await` parser 完成 |
+| `z42.net` | `Socket` / `HttpClient` / `Url` | L3+ | 异步运行时就绪后 |
+| `z42.json` | `JsonReader` / `JsonWriter` / `JsonNode` | L3+ | 反射 (L3-R) 完成（自动序列化）|
+| `z42.test` | `Test` 注解 / `Assert*` / Runner | L2/L3 | 用户脚本测试需求 |
+| `z42.linq` | `Where` / `Select` / `OrderBy` 扩展（基于 `IEnumerable<T>`）| L3 | Lambda + IEnumerable codegen 升级 |
+| `z42.numerics` | `BigInteger` / `Complex` / 矩阵基础 | L3 | 数值计算需求 |
+| `z42.crypto` | 哈希 / 对称加密 / 签名（封装 native 库）| L3+ | 安全场景需求 |
+| `z42.compression` | gzip / zstd 封装 | L3+ | 文件 / 网络压缩需求 |
+
+### 既有包的扩展计划
+
+| 包 | 待补齐 |
+|----|--------|
+| `z42.core` | `Nullable<T>` 显式类型（暂用语言级 `T?`，独立类型留待系统设计）<br>`KeyValuePair<K,V>`（Dictionary 实现 `IEnumerable` 需要）<br>`Range` / `Index`（C# 8 风切片）<br>`Tuple<...>`（多返回值；当前 z42 无 tuple 类型）|
+| `z42.collections` | `LinkedList<T>` / `SortedDictionary<K,V>` / `PriorityQueue<T>` / `ImmutableArray<T>`<br>List / Dictionary 实现 `IEnumerable<T>`（端到端 foreach IEnumerator 路径）|
+| `z42.io` | `Stream` / `BufferedStream` / `MemoryStream`<br>`TextReader` / `TextWriter` 抽象类<br>`Directory` / `FileInfo` / `DirectoryInfo`<br>`Encoding` (UTF-8 / UTF-16)|
+| `z42.math` | `Random`（PRNG，Mersenne Twister 或 PCG）<br>`Complex` / `Vector*`（如不拆 `z42.numerics`）|
+| `z42.text` | `Encoding` 体系（与 `z42.io` 协调）<br>`StringReader` / `StringWriter`<br>`Regex` 完整实现（当前占位）|
+
+### 跨包 backlog
+
+- `IComparer<T>` / `IEqualityComparer<T>` 接入 List.Sort / Dictionary ctor 重载
+- `IEnumerable<T>` 接入 foreach codegen（当前 codegen 仅识别 Count + get_Item 鸭子协议）
+- `IFormattable` 接入 `string.Format` / `$"{x:format}"` 字符串插值格式说明符
+- 通用 generic interface dispatch 修复（TypeChecker 不识别 `IComparer<int>` 等的 TypeArgs，阻塞接口变量直接调用）
+
+### 不规划做的（明确否决）
+
+- ❌ "完整 BCL 移植"：z42 仅取 C# BCL **常用 80%**，避开 LINQ-to-SQL / WPF / WCF / Remoting 等历史包袱
+- ❌ Reflection-heavy 序列化（XmlSerializer 等）：等 L3-R 反射完成后再考虑，且只做 JSON
+- ❌ AppDomain / 卸载：与 z42 lazy-loader 模型不契合
+- ❌ 静态类反射创建（`Activator.CreateInstance`）：等 L3-R
