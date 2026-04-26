@@ -1,34 +1,85 @@
 namespace Std.Text;
 
-// Mutable string builder — avoids O(n²) repeated allocation from + concatenation.
-//
-// IrGen treats `new StringBuilder()` as a pseudo-class (like List/Dict):
-// it intercepts the constructor and routes it to `__sb_new`, which creates a
-// ScriptObject with NativeData::StringBuilder("") as its backing store.
-// The internal buffer is NOT accessible as a z42 field (native-isolated).
-//
-// Append methods accept `object` — the type system's universal assignability to
-// object + the VM's value_to_str polymorphism means callers can pass any value.
-public class StringBuilder {
-    public StringBuilder() { }
+using Std;
 
-    // Append value and return this for chaining.
-    [Native("__sb_append")]
-    public extern StringBuilder Append(object value);
+// Mutable string builder — Script-First 实现，基于 z42.core 原语
+// (`string[]` + manual grow + `String.FromChars`).
+//
+// 内部把 Append 的字符串收集到 `string[]` buffer（按 2× 扩容），ToString
+// 时一次性合并到 char[] 再 String.FromChars 出来，避免每次 Append 都拼接
+// 的 O(n²) 开销。
+//
+// 不用 `List<string>` 是因为 stdlib 字段类型暂不支持泛型实例化语法
+// (`List<string> _parts;` 在 parser 当前实现下被误识别为 method header)。
+//
+// 2026-04-26 script-first-stringbuilder：从 5 个 VM extern intrinsic 迁移
+// 到纯脚本实现，符合 z42.text "no VM extern" + Script-First 规则。
+public class StringBuilder {
+    string[] _parts;
+    int _count;
+    int _capacity;
+    int _length;
+
+    public StringBuilder() {
+        this._capacity = 4;
+        this._parts = new string[4];
+        this._count = 0;
+        this._length = 0;
+    }
+
+    // Append value (any type) and return this for chaining.
+    public StringBuilder Append(object value) {
+        string s = Convert.ToString(value);
+        if (this._count == this._capacity) {
+            this.Grow();
+        }
+        this._parts[this._count] = s;
+        this._count = this._count + 1;
+        this._length = this._length + s.Length;
+        return this;
+    }
 
     // Append value followed by a newline.
-    [Native("__sb_append_line")]
-    public extern StringBuilder AppendLine(object value);
+    public StringBuilder AppendLine(object value) {
+        this.Append(value);
+        return this.Append("\n");
+    }
 
     // Append only a newline.
-    [Native("__sb_append_newline")]
-    public extern StringBuilder AppendLine();
+    public StringBuilder AppendLine() {
+        return this.Append("\n");
+    }
 
     // Number of characters currently in the buffer.
-    [Native("__sb_length")]
-    public extern int GetLength();
+    public int GetLength() {
+        return this._length;
+    }
 
-    // Return the accumulated string.
-    [Native("__sb_to_string")]
-    public extern string ToString();
+    // Materialize the accumulated string. O(total_length) one-shot copy
+    // to avoid repeated O(n) Concat chains.
+    override string ToString() {
+        if (this._length == 0) return "";
+        char[] buffer = new char[this._length];
+        int pos = 0;
+        for (int i = 0; i < this._count; i++) {
+            string s = this._parts[i];
+            int sn = s.Length;
+            for (int j = 0; j < sn; j++) {
+                buffer[pos] = s.CharAt(j);
+                pos = pos + 1;
+            }
+        }
+        return String.FromChars(buffer);
+    }
+
+    // 2× capacity grow strategy (mirrors List<T>.Grow).
+    void Grow() {
+        int newCap = this._capacity * 2;
+        string[] bigger = new string[newCap];
+        for (int i = 0; i < this._count; i++) {
+            bigger[i] = this._parts[i];
+        }
+        this._parts = bigger;
+        this._capacity = newCap;
+    }
 }

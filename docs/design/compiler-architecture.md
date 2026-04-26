@@ -190,12 +190,16 @@ TSIG 解码失败、namespace 过滤不含其 namespace 等），fallback 到
 历史上 `Console` / `Math` / `Assert` / `Convert` / `String.*` 方法、`List<T>` / `Dictionary<K,V>`
 由编译器的 **pseudo-class 机制**（`BuiltinTable.cs`）直接解析到 VM builtin，绕过 stdlib 加载。
 
-**现状（2026-04-25）**：
+**现状（2026-04-26）**：
 - `Console` / `Math` / `Assert` / `Convert` / `String.*`：已迁移到 stdlib `.z42` 源码（L2 M7）
 - `List<T>` / `Dictionary<K,V>`：已迁移到 `z42.core/src/Collections/`（L3-G4h step3）
+- `StringBuilder`：已迁移到 `z42.text/StringBuilder.z42` 纯脚本实现
+  （2026-04-26 script-first-stringbuilder）— 移除 IrGen `case "StringBuilder"`
+  特例 + VM `__sb_*` 6 个 builtins + `NativeData::StringBuilder` 变体
 - **残留兜底**：`SymbolCollector.cs:208-209` 仍有 `"List" => Z42PrimType("List")` 和
   `"Dictionary" => Z42PrimType("Dictionary")` 硬编码映射 —— 作为"TypeEnv.BuiltinClasses
   动态注入"未完成前的 bridge，计划在 L3-G 泛型类型表示扩展时清理（roadmap L2 backlog）
+- **仅剩 pseudo-class**：`Array`（VM 原生 Value variant，不是 z42 class，不计入迁移目标）
 
 ---
 

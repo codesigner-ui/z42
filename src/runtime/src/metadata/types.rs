@@ -56,8 +56,9 @@ pub struct TypeDesc {
 pub enum NativeData {
     /// No native backing — ordinary user-defined class.
     None,
-    /// Backing buffer for `Std.Text.StringBuilder`.
-    StringBuilder(String),
+    // 2026-04-26 script-first-stringbuilder: removed `StringBuilder(String)` —
+    // `Std.Text.StringBuilder` is now a pure z42 script. Variant slot kept open
+    // for future native-backed types (Stream / FileHandle / etc.).
 }
 
 // ── ScriptObject — unified managed object ───────────────────────────────────

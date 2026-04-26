@@ -470,31 +470,21 @@ internal sealed partial class FunctionEmitter
 
     private TypedReg EmitBoundNew(BoundNew n)
     {
-        switch (n.QualName)
-        {
-            case "StringBuilder":
-            {
-                var dst = Alloc(IrType.Ref);
-                Emit(new BuiltinInstr(dst, "__sb_new", []));
-                return dst;
-            }
-            // L3-G4h step3: `new List<T>()` / `new Dictionary<K,V>()` 走普通 ObjNew 路径
-            // 到 stdlib `Std.Collections.List` / `Std.Collections.Dictionary`（见 default 分支）。
-            default:
-            {
-                // L3-G4d: QualifyClassName honours imports so `new Stack<int>()` can
-                // resolve to `Std.Collections.Stack` when only the stdlib version is in
-                // scope. Local classes win over same-named imports (handled in QualifyClassName).
-                var argRegs = n.Args.Select(EmitExpr).ToList();
-                string qualCls = _ctx.QualifyClassName(n.QualName);
-                // FQ ctor name = "{qualifiedClass}.{methodKey}" — TypeChecker
-                // 已在 BoundNew.CtorName 提供 method key（含 $N suffix 如有）。
-                string fqCtor = $"{qualCls}.{n.CtorName}";
-                argRegs = FillDefaults(fqCtor, argRegs);
-                var dst = Alloc(IrType.Ref);
-                Emit(new ObjNewInstr(dst, qualCls, fqCtor, argRegs));
-                return dst;
-            }
-        }
+        // L3-G4h step3: `new List<T>()` / `new Dictionary<K,V>()` 走普通 ObjNew 路径
+        // 到 stdlib `Std.Collections.List` / `Std.Collections.Dictionary`.
+        // L3-Impl2-followup (2026-04-26 script-first-stringbuilder): `new StringBuilder()`
+        // 也走普通路径 — 不再拦截到 __sb_new builtin（StringBuilder 现在是纯脚本类）。
+        // L3-G4d: QualifyClassName honours imports so `new Stack<int>()` can
+        // resolve to `Std.Collections.Stack` when only the stdlib version is in
+        // scope. Local classes win over same-named imports (handled in QualifyClassName).
+        var argRegs = n.Args.Select(EmitExpr).ToList();
+        string qualCls = _ctx.QualifyClassName(n.QualName);
+        // FQ ctor name = "{qualifiedClass}.{methodKey}" — TypeChecker
+        // 已在 BoundNew.CtorName 提供 method key（含 $N suffix 如有）。
+        string fqCtor = $"{qualCls}.{n.CtorName}";
+        argRegs = FillDefaults(fqCtor, argRegs);
+        var dst = Alloc(IrType.Ref);
+        Emit(new ObjNewInstr(dst, qualCls, fqCtor, argRegs));
+        return dst;
     }
 }

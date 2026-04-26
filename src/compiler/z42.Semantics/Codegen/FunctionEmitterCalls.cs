@@ -54,10 +54,10 @@ internal sealed partial class FunctionEmitter
             {
                 var objReg = EmitExpr(call.Receiver!);
 
-                // Builtin type method: List, Dictionary, Array, StringBuilder
-                // Only try builtin methods when ReceiverClass is explicitly a builtin collection type.
-                // When ReceiverClass is null, rely on DepIndex to distinguish between
-                // different method implementations (e.g., String.Contains vs List.Contains)
+                // Builtin type method: Array
+                // 2026-04-26 script-first-stringbuilder: StringBuilder removed from
+                // pseudo-class list (now pure z42 script). Only Array remains as
+                // pseudo-class (its methods like .Length live on built-in array values).
                 if (IsBuiltinCollectionType(call.ReceiverClass))
                 {
                     string? builtinName = ResolveBuiltinMethod(call.MethodName!, argRegs.Count);
@@ -134,24 +134,19 @@ internal sealed partial class FunctionEmitter
         }
     }
 
-    /// L3-G4h step3: pseudo-class List/Dictionary removed —— 仅 StringBuilder / Array
-    /// 仍走 BuiltinInstr fast path。
+    /// L3-G4h step3 + 2026-04-26 script-first-stringbuilder: pseudo-class List /
+    /// Dictionary / StringBuilder removed —— 仅 Array 仍走 BuiltinInstr fast path
+    /// (.Length / .Resize 直接作用于 VM 的 Array Value)。
     private bool IsBuiltinCollectionType(string? className)
     {
-        return className is "Array" or "StringBuilder";
+        return className == "Array";
     }
 
     /// Map builtin type method names to their BuiltinInstr function name.
+    /// 当前无 Array 实例方法走这条路径（Array.Length 通过 builtin 但不经由此处）。
     private string? ResolveBuiltinMethod(string method, int userArgCount)
     {
-        return method switch
-        {
-            // StringBuilder-specific methods
-            "Append"        => "__sb_append",
-            "AppendLine"    => "__sb_append_line",
-            "AppendNewLine" => "__sb_append_newline",
-            _ => null
-        };
+        return null;
     }
 
     /// Fill omitted trailing args with their default value expressions.

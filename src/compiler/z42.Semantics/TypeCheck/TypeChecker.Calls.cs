@@ -365,10 +365,12 @@ public sealed partial class TypeChecker
         return bound;
     }
 
-    /// L3-G4h step3: List/Dictionary 已迁移到源码类；仅 Array/StringBuilder 保留 pseudo 路径。
+    /// L3-G4h step3: List/Dictionary 已迁移到源码类；2026-04-26 script-first-stringbuilder
+    /// 把 StringBuilder 也迁到源码类。仅 Array 保留 pseudo 路径
+    /// (Array 是 VM 原生 Value variant，不是 z42 class)。
     private bool IsBuiltinCollectionType(string typeName)
     {
-        return typeName is "Array" or "StringBuilder";
+        return typeName == "Array";
     }
 
     private void CheckArgCount(int actual, int min, int max, Span span)
