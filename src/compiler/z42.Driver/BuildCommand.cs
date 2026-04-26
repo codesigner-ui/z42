@@ -16,17 +16,32 @@ static class BuildCommand
         var manifestArg = ManifestArg();
         var releaseOpt  = new Option<bool>("--release", "Build with the release profile");
         var binOpt      = new Option<string?>("--bin", "Build only the named [[exe]] target");
+        var packagesOpt = new Option<string[]>(["-p", "--package"], "Build only the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
+        var workspaceOpt = new Option<bool>("--workspace", "Build all members of the workspace");
+        var excludeOpt  = new Option<string[]>("--exclude", "Exclude the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
+        var noWorkspaceOpt = new Option<bool>("--no-workspace", "Force standalone mode, ignoring workspace");
 
         cmd.AddArgument(manifestArg);
         cmd.AddOption(releaseOpt);
         cmd.AddOption(binOpt);
+        cmd.AddOption(packagesOpt);
+        cmd.AddOption(workspaceOpt);
+        cmd.AddOption(excludeOpt);
+        cmd.AddOption(noWorkspaceOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
             var manifest = ctx.ParseResult.GetValueForArgument(manifestArg);
             var release  = ctx.ParseResult.GetValueForOption(releaseOpt);
             var bin      = ctx.ParseResult.GetValueForOption(binOpt);
-            ctx.ExitCode = PackageCompiler.Run(manifest, release, bin);
+            var packages = ctx.ParseResult.GetValueForOption(packagesOpt) ?? [];
+            var workspace = ctx.ParseResult.GetValueForOption(workspaceOpt);
+            var exclude  = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
+            var noWs     = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
+
+            // Workspace 模式判断（C4a）：显式 path / --no-workspace → 走单工程
+            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false)
+                            ?? PackageCompiler.Run(manifest, release, bin);
         });
 
         return cmd;
@@ -37,15 +52,29 @@ static class BuildCommand
         var cmd         = new Command("check", "Type-check a project without emitting artifacts");
         var manifestArg = ManifestArg();
         var binOpt      = new Option<string?>("--bin", "Check only the named [[exe]] target");
+        var packagesOpt = new Option<string[]>(["-p", "--package"], "Check only the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
+        var workspaceOpt = new Option<bool>("--workspace", "Check all workspace members");
+        var excludeOpt  = new Option<string[]>("--exclude", "Exclude the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
+        var noWorkspaceOpt = new Option<bool>("--no-workspace", "Force standalone mode");
 
         cmd.AddArgument(manifestArg);
         cmd.AddOption(binOpt);
+        cmd.AddOption(packagesOpt);
+        cmd.AddOption(workspaceOpt);
+        cmd.AddOption(excludeOpt);
+        cmd.AddOption(noWorkspaceOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
             var manifest = ctx.ParseResult.GetValueForArgument(manifestArg);
             var bin      = ctx.ParseResult.GetValueForOption(binOpt);
-            ctx.ExitCode = PackageCompiler.RunCheck(manifest, bin);
+            var packages = ctx.ParseResult.GetValueForOption(packagesOpt) ?? [];
+            var workspace = ctx.ParseResult.GetValueForOption(workspaceOpt);
+            var exclude  = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
+            var noWs     = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
+
+            ctx.ExitCode = TryRunWorkspace(release: false, packages, workspace, exclude, noWs, manifest, checkOnly: true)
+                            ?? PackageCompiler.RunCheck(manifest, bin);
         });
 
         return cmd;
@@ -228,4 +257,73 @@ static class BuildCommand
         {
             Arity = ArgumentArity.ZeroOrOne
         };
+
+    // ── Workspace mode dispatch (C4a) ─────────────────────────────────────────
+
+    /// <summary>
+    /// 判断是否走 workspace 模式：CWD 含 z42.workspace.toml 祖先 + 未指定 --no-workspace +
+    /// 未显式给出 manifest 路径 → 走 orchestrator；否则返回 null 让 caller 走单工程路径。
+    /// </summary>
+    static int? TryRunWorkspace(
+        bool release,
+        string[] packages,
+        bool allWorkspace,
+        string[] exclude,
+        bool noWorkspace,
+        string? explicitManifest,
+        bool checkOnly)
+    {
+        if (noWorkspace) return null;
+        if (explicitManifest is not null) return null;       // 显式 path → 单工程
+
+        try
+        {
+            var loader = new ManifestLoader();
+            var ws = loader.DiscoverWorkspaceRoot(Directory.GetCurrentDirectory());
+            if (ws is null) return null;                     // 无 workspace → fallback 单工程
+
+            string profile = release ? "release" : "debug";
+            var result = loader.LoadWorkspace(ws, profile);
+
+            // 输出 orphan warnings（W7）
+            foreach (var warn in result.Warnings)
+                Console.Error.WriteLine(warn.Message);
+
+            // 如果在 member 子目录运行（CWD 在某 member 下），自动加为 -p 默认
+            if (packages.Length == 0 && !allWorkspace)
+            {
+                var memberInCwd = result.Members.FirstOrDefault(m =>
+                    Directory.GetCurrentDirectory().StartsWith(
+                        Path.GetDirectoryName(Path.GetFullPath(m.ManifestPath))!,
+                        StringComparison.Ordinal));
+                if (memberInCwd is not null)
+                    packages = [memberInCwd.MemberName];
+            }
+
+            var orchestrator = new WorkspaceBuildOrchestrator();
+            var opts = new WorkspaceBuildOrchestrator.BuildOptions(
+                Selected:     packages,
+                Excluded:     exclude,
+                AllWorkspace: allWorkspace,
+                CheckOnly:    checkOnly,
+                Release:      release);
+
+            var report = orchestrator.Build(result, ws.Manifest.DefaultMembers, opts);
+
+            // 报告
+            if (report.Succeeded.Count > 0)
+                Console.Error.WriteLine($"    Built {report.Succeeded.Count} member(s): {string.Join(", ", report.Succeeded)}");
+            if (report.Failed.Count > 0)
+                Console.Error.WriteLine($"error: {report.Failed.Count} member(s) failed: {string.Join(", ", report.Failed)}");
+            if (report.Blocked.Count > 0)
+                Console.Error.WriteLine($"warning: {report.Blocked.Count} member(s) blocked: {string.Join(", ", report.Blocked)}");
+
+            return report.ExitCode;
+        }
+        catch (ManifestException ex)
+        {
+            Console.Error.WriteLine(ex.Message);
+            return 1;
+        }
+    }
 }

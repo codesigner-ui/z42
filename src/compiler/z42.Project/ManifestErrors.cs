@@ -37,6 +37,11 @@ public static class Z42Errors
     [Obsolete("C3 deprecated; merged into WS010. Will be removed in C4 archive.")]
     public const string WS004 = "WS004";  // BuildSettingOverridden（废弃）
 
+    // ── C4a 错误码（workspace 编译运行时）────────────────────────────────────
+    public const string WS001 = "WS001";  // DuplicateMemberName
+    public const string WS002 = "WS002";  // ExcludedMemberSelected
+    public const string WS006 = "WS006";  // CircularDependency
+
     // ── 工厂方法 ──────────────────────────────────────────────────────────────
 
     public static ManifestException ForbiddenSectionInMember(string memberPath, string sectionName) =>
@@ -163,4 +168,19 @@ public static class Z42Errors
         string help = suggestion is null ? "" : $"\n  help: did you mean '{suggestion}'?";
         return new($"error[{WS011}]: policy field path '{fieldPath}' is not a known field{help}");
     }
+
+    // ── C4a 工厂方法（workspace 编译运行时）─────────────────────────────────
+
+    public static ManifestException DuplicateMemberName(string name, IEnumerable<string> paths) =>
+        new($"error[{WS001}]: duplicate member name '{name}'\n" +
+            $"  members:\n" +
+            string.Join("\n", paths.Select(p => $"    {p}")));
+
+    public static ManifestException ExcludedMemberSelected(string name) =>
+        new($"error[{WS002}]: member '{name}' is both selected (-p) and excluded (--exclude)\n" +
+            $"  help: remove conflicting flag");
+
+    public static ManifestException CircularDependency(IReadOnlyList<string> cycle) =>
+        new($"error[{WS006}]: circular dependency between workspace members\n" +
+            $"  cycle: {string.Join(" -> ", cycle)}");
 }

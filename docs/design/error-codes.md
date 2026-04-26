@@ -99,15 +99,19 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | WS010 | PolicyViolation                  | Member 显式声明的字段值与 workspace `[policy]` 锁定值冲突 |
 | WS011 | PolicyFieldPathNotFound          | `[policy]` 段含未知字段路径（附 fuzzy 建议） |
 
-### C4 占位（未启用）
+### C4a 已启用（2026-04-26）
 
-| Code  | 计划阶段 | Title |
-|-------|---------|-------|
-| WS001 | C4 | DuplicateMemberName |
-| WS002 | C4 | ExcludedMemberSelected |
-| WS006 | C4 | CircularDependency |
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| WS001 | DuplicateMemberName              | 两个 members 声明同一 `[project] name` |
+| WS002 | ExcludedMemberSelected           | `-p` 与 `--exclude` 同时指定同一 member |
+| WS006 | CircularDependency               | Member 间依赖图含环（DFS 三色检测） |
 
-> WS004 在 C3 阶段标记 `[Obsolete]`，C4 归档时彻底移除（归并入 WS010）。
+### C4b/C4c 占位
+
+C4b 不新增 WSxxx；C4c 移除 WS004 残留。
+
+> WS004 在 C3 阶段标记 `[Obsolete]`，C4c 归档时彻底移除（归并入 WS010）。
 
 ---
 

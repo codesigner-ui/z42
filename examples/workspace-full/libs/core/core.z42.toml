@@ -1,0 +1,5 @@
+[project]
+name              = "core"
+kind              = "lib"
+version.workspace = true
+license.workspace = true

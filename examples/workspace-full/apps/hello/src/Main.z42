@@ -1,0 +1,10 @@
+namespace Hello;
+
+using Utils;
+
+public static class Hello {
+    public static int main() {
+        Console.println("doubled answer = " + Utils.doubled().toString());
+        return 0;
+    }
+}

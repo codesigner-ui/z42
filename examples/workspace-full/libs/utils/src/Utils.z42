@@ -1,0 +1,9 @@
+namespace Utils;
+
+using Core;
+
+public static class Utils {
+    public static int doubled() {
+        return Core.answer() * 2;
+    }
+}

@@ -56,6 +56,82 @@ public static class PackageCompiler
             manifest.Dependencies);
     }
 
+    // ── Workspace mode entry (C4a) ────────────────────────────────────────────
+
+    /// <summary>
+    /// 编译一个 workspace member。基于 ResolvedManifest（已应用 workspace 共享 + include +
+    /// policy + 集中产物布局）。供 WorkspaceBuildOrchestrator 调用。
+    /// </summary>
+    public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly)
+    {
+        string profileLabel = useRelease ? "release" : "debug";
+        string memberDir    = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
+        string outDir       = member.IsCentralized ? member.EffectiveOutDir : Path.GetFullPath(Path.Combine(memberDir, member.Build.OutDir));
+
+        Console.Error.WriteLine(
+            checkOnly
+                ? $"    Checking {member.MemberName} v{member.Version}"
+                : $"   Compiling {member.MemberName} v{member.Version} [{profileLabel}]");
+
+        // 解析源文件（基于 ResolvedManifest.Sources）
+        var sourceFiles = ResolveSourceFilesFromResolved(member, memberDir);
+        if (sourceFiles.Count == 0)
+        {
+            Console.Error.WriteLine(
+                $"error: no source files found in member '{member.MemberName}' " +
+                $"(include: [{string.Join(", ", member.Sources.Include)}])");
+            return 1;
+        }
+
+        if (checkOnly)
+        {
+            int errors = sourceFiles.Count(file => !CheckFile(file));
+            if (errors > 0) { Console.Error.WriteLine($"error: check failed ({errors} file(s) with errors)"); return 1; }
+            return 0;
+        }
+
+        // pack: workspace 模式默认随 profile（debug=false / release=true），可被 member.Pack 覆盖
+        bool pack = member.Pack ?? useRelease;
+        var kind = member.Kind == ProjectKind.Lib ? ZpkgKind.Lib : ZpkgKind.Exe;
+
+        // 构造一个最小 DependencySection 供 BuildTarget 使用（已声明依赖列表）
+        var declaredDeps = ResolvedDependenciesToDeclared(member.Dependencies);
+
+        return BuildTarget(
+            member.MemberName,
+            member.Version,
+            kind,
+            member.Entry,
+            sourceFiles,
+            pack,
+            memberDir,
+            outDir,
+            declaredDeps);
+    }
+
+    static IReadOnlyList<string> ResolveSourceFilesFromResolved(ResolvedManifest member, string memberDir)
+    {
+        var matcher = new Microsoft.Extensions.FileSystemGlobbing.Matcher();
+        foreach (var p in member.Sources.Include) matcher.AddInclude(p);
+        foreach (var p in member.Sources.Exclude) matcher.AddExclude(p);
+
+        var result = matcher.Execute(
+            new Microsoft.Extensions.FileSystemGlobbing.Abstractions.DirectoryInfoWrapper(
+                new DirectoryInfo(memberDir)));
+
+        return result.Files
+            .Select(f => Path.GetFullPath(Path.Combine(memberDir, f.Path)))
+            .OrderBy(f => f)
+            .ToList();
+    }
+
+    static DependencySection ResolvedDependenciesToDeclared(IReadOnlyList<ResolvedDependency> deps)
+    {
+        if (deps.Count == 0) return new DependencySection([], false);
+        var entries = deps.Select(d => new DeclaredDep(d.Name, d.Version)).ToList();
+        return new DependencySection(entries, true);
+    }
+
     // ── Check ─────────────────────────────────────────────────────────────────
 
     public static int RunCheck(string? explicitToml, string? binFilter)

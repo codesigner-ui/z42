@@ -1,6 +1,16 @@
 # Tasks: workspace 编译核心运行时（C4a）
 
-> 状态：🟡 待实施 | 创建：2026-04-26 | 依赖：C1+C2+C3 落地
+> 状态：🟢 已完成 | 创建：2026-04-26 | 归档：2026-04-26 | GREEN: dotnet 695/695 + cargo OK + VM 188/188
+
+## Scope 调整说明
+
+**1. CommandContext + IZ42Command 接口推迟**：现有 BuildCommand.cs 是 static class
+（System.CommandLine 风格）。直接修改现有 BuildCommand.cs 加 workspace 路由更小破坏；
+IZ42Command 接口推迟到 C4b 引入新命令时再评估。
+
+**2. 模块归位**：MemberDependencyGraph / WorkspaceBuildOrchestrator 放在
+`z42.Pipeline/` 而非 spec 中提及的 `z42.Compiler/`（z42.Compiler 项目不存在，
+与 PackageCompiler 同级是更合理的位置）。
 
 ## 进度概览
 - [ ] 阶段 1: CommandContext + IZ42Command 接口
