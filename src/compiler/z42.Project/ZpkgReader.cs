@@ -40,6 +40,72 @@ public static class ZpkgReader
         return ReadNspcSection(data, dir, pool);
     }
 
+    /// <summary>
+    /// 读取每个 source file 的 SourceHash + Namespace（不解码 IR module bodies）。
+    /// indexed 模式从 FILE section 读；packed 模式从 MODS section 读（仅 header，跳过 funcData/typeData）。
+    /// 用于增量编译命中判定（IncrementalBuild）。
+    /// </summary>
+    public static IReadOnlyList<(string SourceFile, string SourceHash, string Namespace)>
+        ReadSourceHashes(byte[] data)
+    {
+        var (flags, dir) = ParseHeaderAndDirectory(data);
+        string[] pool    = ReadStrs(data, dir);
+        bool packed      = (flags & 0x01) != 0;
+
+        if (packed)
+        {
+            if (!dir.TryGetValue("MODS", out var modsEntry)) return [];
+            using var ms = new MemoryStream(data, modsEntry.Offset, modsEntry.Size, writable: false);
+            using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+
+            uint modCount = r.ReadUInt32();
+            var result    = new List<(string, string, string)>((int)modCount);
+            for (int i = 0; i < modCount; i++)
+            {
+                string ns          = P(pool, r.ReadUInt32());
+                string sourceFile  = P(pool, r.ReadUInt32());
+                string sourceHash  = P(pool, r.ReadUInt32());
+                /*ushort funcCount*/  r.ReadUInt16();
+                /*uint firstSigIdx*/  r.ReadUInt32();
+                uint funcBodySize  = r.ReadUInt32();
+                r.BaseStream.Seek(funcBodySize, SeekOrigin.Current);
+                uint typeBodySize  = r.ReadUInt32();
+                r.BaseStream.Seek(typeBodySize, SeekOrigin.Current);
+                result.Add((sourceFile, sourceHash, ns));
+            }
+            return result;
+        }
+        else
+        {
+            // indexed: FILE section 含 source/source_hash；NSPC 仅含 namespaces 列表
+            // 每文件的 namespace 从 MODS 单独取（indexed 模式 MODS 也存在，含 ns 信息但无 IR body）
+            // 简化：indexed 暂时无 namespace 信息（IncrementalBuild 调用方按需匹配 ExportedModules）
+            return ReadFileEntries(data, dir, pool);
+        }
+    }
+
+    static IReadOnlyList<(string SourceFile, string SourceHash, string Namespace)>
+        ReadFileEntries(byte[] data, Dictionary<string, (int Offset, int Size)> dir, string[] pool)
+    {
+        if (!dir.TryGetValue("FILE", out var entry)) return [];
+        using var ms = new MemoryStream(data, entry.Offset, entry.Size, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+
+        uint count = r.ReadUInt32();
+        var result = new List<(string, string, string)>((int)count);
+        for (int i = 0; i < count; i++)
+        {
+            string source     = P(pool, r.ReadUInt32());
+            /*string bytecode*/ r.ReadUInt32();
+            string sourceHash = P(pool, r.ReadUInt32());
+            ushort expCount   = r.ReadUInt16();
+            for (int j = 0; j < expCount; j++) r.ReadUInt32();   // skip exports
+            // indexed FILE 不直接含 namespace；调用方需结合 ExportedModules 匹配
+            result.Add((source, sourceHash, ""));
+        }
+        return result;
+    }
+
     /// <summary>Returns basic package metadata without decoding module bodies.</summary>
     public static ZpkgMeta ReadMeta(byte[] data)
     {

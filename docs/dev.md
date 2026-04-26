@@ -89,6 +89,10 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 # 直接走 z42c workspace 模式编译 stdlib（等价于 build-stdlib.sh 中间步骤）：
 ( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
 
+# 增量编译（C5，默认开启）：第二次构建跳过未变文件
+( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )           # cached: N/N
+( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release --no-incremental )   # 强制全量
+
 # 打包分发：把 artifacts/libraries/<lib>/dist/<lib>.zpkg 拷到 artifacts/z42/libs/<lib>.zpkg
 ./scripts/package.sh         # 必要时再跑 build-stdlib.sh，然后再 package.sh 拷贝
 

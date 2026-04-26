@@ -33,8 +33,10 @@ public static class ZpkgBuilder
         var namespaces = zbcFiles.Select(z => z.Namespace).Distinct().ToList();
         var exports    = BuildExports(zbcFiles);
 
-        // 中间 zbc 写到 cache（仅当 caller 提供 projectDir + cacheDir 时；与
-        // indexed 模式行为一致，但 zpkg 里仍 inline 到 modules[]）。
+        // 中间 zbc 写到 cache：用 fullMode（含 STRS/TYPE/SIGS/EXPT/IMPT 完整 sections），
+        // 让 ZbcReader.Read 能独立反序列化为完整 IrModule（含 fn.Name / TypeParams 等）。
+        // BuildIndexed 的 zbc 是 stripped（被 zpkg.files[] 引用，VM 通过 zpkg 全局 SIGS 加载）；
+        // packed 模式 cache zbc 仅给增量编译用，与 zpkg 内 inline 的 ZbcFile 副本独立。
         if (projectDir is not null && cacheDir is not null)
         {
             foreach (var zbc in zbcFiles)
@@ -42,7 +44,7 @@ public static class ZpkgBuilder
                 string relSrc  = Path.GetRelativePath(projectDir, zbc.SourceFile);
                 string zbcPath = Path.Combine(cacheDir, Path.ChangeExtension(relSrc, ".zbc"));
                 Directory.CreateDirectory(Path.GetDirectoryName(zbcPath)!);
-                File.WriteAllBytes(zbcPath, ZbcWriter.Write(zbc.Module, ZbcFlags.Stripped));
+                File.WriteAllBytes(zbcPath, ZbcWriter.Write(zbc.Module, ZbcFlags.None));
             }
         }
 

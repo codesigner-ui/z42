@@ -205,16 +205,36 @@ pack = true            # release build → packed zpkg（单文件，dist/<name>
 | `false` | `dist/<name>.zpkg` (`mode=indexed`) + `.cache/*.zbc` | 开发态，支持增量更新 |
 | `true`  | `dist/<name>.zpkg` (`mode=packed`) | 发布态，单文件自包含 |
 
-**增量编译工作方式（pack=false）：**
+**增量编译工作方式（C5 落地，2026-04-27）：**
+
+跨 packed/indexed 两种模式都支持：
 
 ```
 z42c build
-  ├─ 读取 dist/<name>.zpkg（若存在）
-  ├─ 对比每个 .z42 文件的 SHA-256 与记录值
-  │    ├─ 相同 → 跳过重编译
-  │    └─ 不同 → 重编译该文件，更新 .cache/*.zbc 和 source_hash
-  └─ 更新 dist/<name>.zpkg 中变化项的 source_hash
+  ├─ IncrementalBuild.Probe(sourceFiles, lastZpkg, cacheDir)
+  │    ├─ 读取 dist/<name>.zpkg（若存在；不存在则全 fresh）
+  │    ├─ 对每个 .z42:
+  │    │    ├─ SHA-256 == zpkg 记录 ✓
+  │    │    ├─ cache/<rel>.zbc 存在 ✓
+  │    │    ├─ zpkg.ExportedModules[ns] 存在 ✓
+  │    │    └─ 全满足 → cached；否则 fresh
+  │    └─ 同时读出上次 zpkg.Dependencies（cached CU 重建用）
+  ├─ TryCompileSourceFiles(freshFiles, cachedExports)
+  │    └─ Phase 1+2 仅处理 fresh；cachedExports 注入 sharedCollector 的 externalImported
+  ├─ 重建 cached CU：ZbcReader.Read(zbcBytes) + 上次 zpkg.ExportedModules + Dependencies
+  └─ BuildPacked / BuildIndexed 合并 freshUnits + cachedUnits 写新 zpkg
 ```
+
+**编译日志输出**：`cached: N/M files`（命中率）。`--no-incremental` 强制全量。
+
+**cache zbc 格式区分**：
+
+| 路径 | 模式 | 内容 |
+|---|---|---|
+| `<cache>/<rel>.zbc`（packed 模式） | **fullMode** | 含 STRS/TYPE/SIGS/EXPT/IMPT — 单独 ZbcReader.Read 即可恢复完整 IrModule |
+| `<cache>/<rel>.zbc`（indexed 模式 = `<dist>/<rel>.zbc`） | **stripped** | 仅 BSTR/FUNC，被 zpkg.files[] 引用，VM 通过 zpkg 全局 SIGS 加载 |
+
+**调试**：设环境变量 `Z42_INCR_DEBUG=1` 可看到每个文件 cached / miss 详情（miss 原因：no-record / hash-diff / no-zbc / no-export-mod）。
 
 **目录结构（含产物）：**
 

@@ -20,6 +20,7 @@ static class BuildCommand
         var workspaceOpt = new Option<bool>("--workspace", "Build all members of the workspace");
         var excludeOpt  = new Option<string[]>("--exclude", "Exclude the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
         var noWorkspaceOpt = new Option<bool>("--no-workspace", "Force standalone mode, ignoring workspace");
+        var noIncrOpt      = new Option<bool>("--no-incremental", "Disable incremental cache (full rebuild)");
 
         cmd.AddArgument(manifestArg);
         cmd.AddOption(releaseOpt);
@@ -28,6 +29,7 @@ static class BuildCommand
         cmd.AddOption(workspaceOpt);
         cmd.AddOption(excludeOpt);
         cmd.AddOption(noWorkspaceOpt);
+        cmd.AddOption(noIncrOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
@@ -38,10 +40,11 @@ static class BuildCommand
             var workspace = ctx.ParseResult.GetValueForOption(workspaceOpt);
             var exclude  = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
             var noWs     = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
+            var noIncr   = ctx.ParseResult.GetValueForOption(noIncrOpt);
 
             // Workspace 模式判断（C4a）：显式 path / --no-workspace → 走单工程
-            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false)
-                            ?? PackageCompiler.Run(manifest, release, bin);
+            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false, incremental: !noIncr)
+                            ?? PackageCompiler.Run(manifest, release, bin, useIncremental: !noIncr);
         });
 
         return cmd;
@@ -56,6 +59,7 @@ static class BuildCommand
         var workspaceOpt = new Option<bool>("--workspace", "Check all workspace members");
         var excludeOpt  = new Option<string[]>("--exclude", "Exclude the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
         var noWorkspaceOpt = new Option<bool>("--no-workspace", "Force standalone mode");
+        var noIncrOpt      = new Option<bool>("--no-incremental", "Disable incremental cache");
 
         cmd.AddArgument(manifestArg);
         cmd.AddOption(binOpt);
@@ -63,6 +67,7 @@ static class BuildCommand
         cmd.AddOption(workspaceOpt);
         cmd.AddOption(excludeOpt);
         cmd.AddOption(noWorkspaceOpt);
+        cmd.AddOption(noIncrOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
@@ -72,8 +77,9 @@ static class BuildCommand
             var workspace = ctx.ParseResult.GetValueForOption(workspaceOpt);
             var exclude  = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
             var noWs     = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
+            var noIncr   = ctx.ParseResult.GetValueForOption(noIncrOpt);
 
-            ctx.ExitCode = TryRunWorkspace(release: false, packages, workspace, exclude, noWs, manifest, checkOnly: true)
+            ctx.ExitCode = TryRunWorkspace(release: false, packages, workspace, exclude, noWs, manifest, checkOnly: true, incremental: !noIncr)
                             ?? PackageCompiler.RunCheck(manifest, bin);
         });
 
@@ -346,7 +352,8 @@ static class BuildCommand
         string[] exclude,
         bool noWorkspace,
         string? explicitManifest,
-        bool checkOnly)
+        bool checkOnly,
+        bool incremental = true)
     {
         if (noWorkspace) return null;
         if (explicitManifest is not null) return null;       // 显式 path → 单工程
@@ -381,7 +388,8 @@ static class BuildCommand
                 Excluded:     exclude,
                 AllWorkspace: allWorkspace,
                 CheckOnly:    checkOnly,
-                Release:      release);
+                Release:      release,
+                Incremental:  incremental);
 
             var report = orchestrator.Build(result, ws.Manifest.DefaultMembers, opts);
 

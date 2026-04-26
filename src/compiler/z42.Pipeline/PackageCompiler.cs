@@ -21,7 +21,8 @@ public static class PackageCompiler
     public static int Run(
         string?               explicitToml,
         bool                  useRelease,
-        string?               binFilter)
+        string?               binFilter,
+        bool                  useIncremental = true)
     {
         if (!TryLoadManifest(explicitToml, out var tomlPath, out var manifest)) return 1;
 
@@ -53,7 +54,8 @@ public static class PackageCompiler
             pack,
             projectDir,
             outDir,
-            manifest.Dependencies);
+            manifest.Dependencies,
+            useIncremental: useIncremental);
     }
 
     // ── Workspace mode entry (C4a) ────────────────────────────────────────────
@@ -62,7 +64,7 @@ public static class PackageCompiler
     /// 编译一个 workspace member。基于 ResolvedManifest（已应用 workspace 共享 + include +
     /// policy + 集中产物布局）。供 WorkspaceBuildOrchestrator 调用。
     /// </summary>
-    public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly)
+    public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly, bool useIncremental = true)
     {
         string profileLabel = useRelease ? "release" : "debug";
         string memberDir    = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
@@ -111,7 +113,8 @@ public static class PackageCompiler
             memberDir,
             outDir,
             declaredDeps,
-            explicitCacheDir: cacheDir);
+            explicitCacheDir: cacheDir,
+            useIncremental: useIncremental);
     }
 
     static IReadOnlyList<string> ResolveSourceFilesFromResolved(ResolvedManifest member, string memberDir)
@@ -234,7 +237,8 @@ public static class PackageCompiler
         string                projectDir,
         string                outDir,
         DependencySection?    declaredDeps = null,
-        string?               explicitCacheDir = null)
+        string?               explicitCacheDir = null,
+        bool                  useIncremental = true)
     {
         // L3-G4g: libsDirs includes projectDir/libs, projectDir/artifacts/z42/libs,
         // plus a walk-up search for the repo-level `artifacts/z42/libs` so stdlib
@@ -246,14 +250,44 @@ public static class PackageCompiler
         var depIndex    = BuildDepIndex(libsDirs, declaredDeps);
         ScanZbcForNamespaces(BuildZbcScanDirs(), nsMap);
 
-        var units = TryCompileSourceFiles(sourceFiles, depIndex, tsigCache);
-        if (units is null) return 1;
+        // C5: 增量编译查询 —— 比对上次 zpkg 与 cache zbc 的 source_hash
+        string cacheDir  = explicitCacheDir ?? Path.Combine(projectDir, ".cache");
+        string lastZpkg  = Path.Combine(outDir, $"{name}.zpkg");
+        var probe = useIncremental
+            ? new IncrementalBuild().Probe(sourceFiles, projectDir, cacheDir, lastZpkg)
+            : IncrementalBuild.ProbeResult.AllFresh(sourceFiles);
+
+        Console.Error.WriteLine($"cached: {probe.CachedCount}/{probe.TotalCount} files");
+
+        // 仅 fresh files 走完整 parse + typecheck + irgen；cached 注入 ExportedModule
+        var freshUnits = TryCompileSourceFiles(probe.FreshFiles, depIndex, tsigCache, probe.CachedExportsByNs);
+        if (freshUnits is null) return 1;
+
+        // 重建 cached CU：cache zbc 是 fullMode（含 STRS/TYPE/SIGS/EXPT/IMPT 完整 sections），
+        // ZbcReader.Read 直接反序列化为完整 IrModule。UsedDepNamespaces 从上次 zpkg.Dependencies
+        // 恢复（让 BuildDependencyMap 能回填 deps；否则 cached path 写出的 zpkg dependencies 为空，
+        // VM 找不到外部 zpkg 中的函数）。
+        var lastDepNs = probe.LastZpkgDepNamespaces.ToList();
+        var cachedUnits = new List<CompiledUnit>(probe.CachedZbcByFile.Count);
+        foreach (var (sourceFile, zbcBytes) in probe.CachedZbcByFile)
+        {
+            var module = ZbcReader.Read(zbcBytes);
+            string ns  = probe.CachedNamespaceByFile[sourceFile];
+            var exportedMod = probe.CachedExportsByNs.TryGetValue(ns, out var em) ? em : null;
+            var exports = module.Functions.Select(f => f.Name).ToList();
+            string sourceHash;
+            try { sourceHash = Sha256Hex(File.ReadAllText(sourceFile)); }
+            catch { sourceHash = ""; }
+            cachedUnits.Add(new CompiledUnit(
+                sourceFile, ns, sourceHash, exports, module,
+                Usings: [], UsedDepNamespaces: lastDepNs, ExportedTypes: exportedMod));
+        }
+
+        var units = freshUnits.Concat(cachedUnits).ToList();
 
         WarnUnresolvedUsings(units, nsMap);
 
         var dependencies = BuildDependencyMap(units, nsMap);
-        // C4c+: workspace 模式由 caller 传 EffectiveCacheDir；单工程模式默认 projectDir/.cache
-        string cacheDir  = explicitCacheDir ?? Path.Combine(projectDir, ".cache");
         var zbcFiles     = units.Select(u => u.ToZbcFile()).ToList();
         var exportedModules = units
             .Where(u => u.ExportedTypes != null)
@@ -412,13 +446,16 @@ public static class PackageCompiler
     }
 
     /// Compile all source files; returns null and prints an error count if any file fails.
+    /// <paramref name="cachedExports"/> 当 IncrementalBuild 命中 cache 时由 caller 提供，
+    /// 用于把 cached CU 的 ExportedModule 注入 sharedCollector（与跨包 imports 同路径）。
     static List<CompiledUnit>? TryCompileSourceFiles(
         IReadOnlyList<string>     sourceFiles,
         DependencyIndex           depIndex,
-        TsigCache?                tsigCache = null)
+        TsigCache?                tsigCache = null,
+        IReadOnlyDictionary<string, ExportedModule>? cachedExports = null)
     {
-        // ── Load external imports (cross-package, from already-built zpkgs) ──
-        var externalImported = LoadExternalImported(tsigCache);
+        // ── Load external imports (cross-package + cached intra-package) ──
+        var externalImported = LoadExternalImported(tsigCache, cachedExports);
 
         // ── Phase 1: parse all + Pass-0 collect intra-package declarations ──
         // Same package's files reference each other (e.g. z42.core's List.z42 uses
@@ -500,10 +537,20 @@ public static class PackageCompiler
 
     /// 加载所有外部 zpkg 的 ImportedSymbols（来自 tsigCache）。
     /// Phase 1 需要它作为 Pass-0 collect 的 base；Phase 2 与 intraSymbols 合并。
-    private static ImportedSymbols LoadExternalImported(TsigCache? tsigCache)
+    private static ImportedSymbols LoadExternalImported(
+        TsigCache? tsigCache,
+        IReadOnlyDictionary<string, ExportedModule>? cachedExports = null)
     {
-        if (tsigCache == null) return ImportedSymbolLoader.Empty();
-        var tsigModules = tsigCache.LoadAll();
+        var tsigModules = tsigCache?.LoadAll().ToList() ?? new List<ExportedModule>();
+        if (cachedExports is not null)
+        {
+            // cached intra-package modules：去重后追加（同 namespace 优先用 cached）
+            foreach (var (ns, exp) in cachedExports)
+            {
+                tsigModules.RemoveAll(m => string.Equals(m.Namespace, ns, StringComparison.Ordinal));
+                tsigModules.Add(exp);
+            }
+        }
         if (tsigModules.Count == 0) return ImportedSymbolLoader.Empty();
         var allNs = tsigModules.Select(m => m.Namespace).Distinct().ToList();
         return ImportedSymbolLoader.Load(tsigModules, allNs);

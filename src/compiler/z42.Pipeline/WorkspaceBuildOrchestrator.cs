@@ -18,7 +18,8 @@ public sealed class WorkspaceBuildOrchestrator
         IReadOnlyList<string> Excluded,        // --exclude
         bool                  AllWorkspace,    // --workspace
         bool                  CheckOnly,       // --check-only / 'check' 命令
-        bool                  Release);
+        bool                  Release,
+        bool                  Incremental = true);   // --no-incremental → false
 
     public sealed record BuildReport(
         IReadOnlyList<string> Succeeded,
@@ -147,7 +148,7 @@ public sealed class WorkspaceBuildOrchestrator
 
     static int DefaultCompile(ResolvedManifest member, BuildOptions opts)
     {
-        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly);
+        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental);
     }
 
     static string RelativePath(WorkspaceLoadResult workspace, ResolvedManifest m)

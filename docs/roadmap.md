@@ -90,6 +90,7 @@
 - **z42c workspace 编译运行时（C4a ✅ 2026-04-26）**：CWD 无关 workspace 发现、`-p` / `--workspace` / `--exclude` / `--no-workspace` flags、跨 member 依赖图（DFS 三色环检测）、拓扑串行编译、上游失败 → 下游 blocked、WS001/002/006 错误码。
 - **z42c workspace 查询命令（C4b ✅ 2026-04-26）**：`info` / `info --resolved -p` / `info --include-graph -p` / `metadata --format json`（schema_version=1）/ `tree` / `lint-manifest`；CliOutputFormatter 带 ANSI 颜色的友好错误输出（自动 NO_COLOR 检测）。
 - **z42c workspace 脚手架 + 清理（C4c ✅ 2026-04-26）**：`new --workspace` 生成完整 monorepo 骨架（z42.workspace.toml + presets/ + libs/ + apps/ + .gitignore）；`new -p <name> --kind lib|exe` 在 workspace 内新增 member；`init` 升级单 manifest 为 workspace；`fmt` 格式化所有 manifest（Tomlyn round-trip）；`clean` workspace 模式集中清理 + `-p` per-member。WS004 已彻底移除（归并入 WS010）。
+- **source_hash 增量编译（C5 ✅ 2026-04-27）**：`IncrementalBuild.Probe` 比对 SHA-256 与上次 zpkg 记录、cache zbc 存在性、ExportedModule 可用性，命中则跳过 parse + typecheck + irgen；cached CU 通过 `externalImported` 注入 sharedCollector，让 fresh CU 引用 cached CU 类型。BuildPacked 写 fullMode cache zbc 让单文件自含；UsedDepNamespaces 从上次 zpkg.Dependencies 回填保证 cross-zpkg 引用正确。`--no-incremental` 强制全量。预期：stdlib 第二次 build 命中率 100%。
 - `build`/`check`/`run`/`clean` 子命令完整 ✅
 - 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
 
