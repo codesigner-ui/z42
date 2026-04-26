@@ -1,0 +1,32 @@
+# z42 标准库 workspace
+#
+# 5 个 stdlib 包作为 workspace member 集中编译；产物与 cache 统一落到
+# 仓库根的 artifacts/libraries/ 目录（与单 lib 模式的 src/libraries/<lib>/dist/
+# 分开）。
+#
+# 使用：
+#   cd src/libraries && z42c build --workspace --release
+#   产物：artifacts/libraries/z42.core.zpkg / z42.collections.zpkg / ...
+#   cache： artifacts/libraries/.cache/<lib>/...
+#
+# stdlib 互相依赖（z42.collections → z42.core 等）通过编译器的 libsDirs
+# 自动发现：BuildLibsDirs 在仓库子树内搜索 artifacts/libraries/ 与
+# artifacts/z42/libs/，stdlib 编译时各 member 能找到先前编译的产物。
+
+[workspace]
+members = ["*"]
+default-members = [
+    "z42.core",
+    "z42.collections",
+    "z42.io",
+    "z42.math",
+    "z42.text",
+]
+
+[workspace.project]
+version = "0.1.0"
+license = "MIT"
+
+[workspace.build]
+out_dir   = "../../artifacts/libraries"
+cache_dir = "../../artifacts/libraries/.cache"

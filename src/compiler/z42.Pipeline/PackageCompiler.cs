@@ -278,22 +278,29 @@ public static class PackageCompiler
 
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
     /// Build the list of directories to scan for dependency `.zpkg` files.
-    /// Includes project-local `libs/` and `artifacts/z42/libs/`, plus a walk-up search
-    /// for the repo-level `artifacts/z42/libs/` (so stdlib packages built one after
-    /// another can see each other).
+    /// Includes project-local `libs/`, `artifacts/z42/libs/` (legacy stdlib output),
+    /// and `artifacts/libraries/` (workspace stdlib output, C4c+). Walks up the tree
+    /// so stdlib packages built one after another can resolve each other.
     static string[] BuildLibsDirs(string projectDir)
     {
         var dirs = new List<string>
         {
             Path.Combine(projectDir, "libs"),
             Path.Combine(projectDir, "artifacts", "z42", "libs"),
+            Path.Combine(projectDir, "artifacts", "libraries"),
         };
         var dir = new DirectoryInfo(projectDir).Parent;
         while (dir != null)
         {
-            var candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate) && !dirs.Contains(candidate))
-                dirs.Add(candidate);
+            foreach (var candidate in new[]
+            {
+                Path.Combine(dir.FullName, "artifacts", "z42", "libs"),
+                Path.Combine(dir.FullName, "artifacts", "libraries"),
+            })
+            {
+                if (Directory.Exists(candidate) && !dirs.Contains(candidate))
+                    dirs.Add(candidate);
+            }
             dir = dir.Parent;
         }
         return dirs.ToArray();

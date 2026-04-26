@@ -1,21 +1,30 @@
 #!/usr/bin/env bash
-# build-stdlib.sh — compile z42 standard library packages to artifacts/z42/libs/
+# build-stdlib.sh — compile z42 standard library packages via workspace mode.
+#
+# Workspace 配置：src/libraries/z42.workspace.toml
+#   - 集中产物到 artifacts/libraries/<lib>.zpkg
+#   - 集中 cache 到 artifacts/libraries/.cache/<lib>/
+#   - 拓扑顺序自动（z42.core 先编，其余依赖它的后编）
+#
+# 同时复制到 artifacts/z42/libs/ 维持现有 VM 加载路径与分发产物兼容
+# （artifacts/z42/libs 用于 package.sh 等下游消费；artifacts/libraries
+# 是 workspace 直接产物）。
 #
 # Usage:
-#   ./scripts/build-stdlib.sh                 # debug build, uses dotnet run
-#   ./scripts/build-stdlib.sh release         # release build, uses dotnet run
+#   ./scripts/build-stdlib.sh                 # release build, uses dotnet run
 #   ./scripts/build-stdlib.sh --use-dist      # uses packaged z42c from artifacts/z42/bin/
 #
-# Output: artifacts/z42/libs/<lib>.zpkg (non-zero size, compiled from source)
+# Output:
+#   artifacts/libraries/<lib>.zpkg     (workspace 直接产物)
+#   artifacts/z42/libs/<lib>.zpkg      (复制以维持 VM 加载约定)
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
-OUT_DIR="$ROOT/artifacts/z42/libs"
-# stdlib distribution always uses packed mode (--release) so the copied .zpkg
-# is self-contained and not dependent on relative .zbc paths.
-RELEASE_ARG="--release"
+WS_DIR="$ROOT/src/libraries"
+DIST_DIR="$ROOT/artifacts/libraries"          # workspace 集中产物
+LEGACY_DIR="$ROOT/artifacts/z42/libs"         # VM / 分发版加载路径
 
 USE_DIST=false
 for arg in "$@"; do
@@ -24,11 +33,8 @@ for arg in "$@"; do
     fi
 done
 
-mkdir -p "$OUT_DIR"
+mkdir -p "$LEGACY_DIR"
 
-LIBS=(z42.core z42.io z42.math z42.text z42.collections)
-
-# Determine compiler invocation
 if [ "$USE_DIST" = true ]; then
     Z42C="$ROOT/artifacts/z42/bin/z42c"
     if [ ! -x "$Z42C" ]; then
@@ -43,30 +49,26 @@ else
     COMPILER_CMD=(dotnet run --project "$ROOT/src/compiler/z42.Driver" --)
 fi
 
+LIBS=(z42.core z42.io z42.math z42.text z42.collections)
+
+# Workspace 模式：cd 到 src/libraries 触发 workspace 发现；
+# z42c build --workspace --release 编译所有 default-members
+echo "  building stdlib workspace (release, all members)"
+( cd "$WS_DIR" && "${COMPILER_CMD[@]}" build --workspace --release )
+
+# 把 artifacts/libraries/<lib>.zpkg 复制到 artifacts/z42/libs（兼容现有 VM）
 ok=0
 fail=0
-
 for lib in "${LIBS[@]}"; do
-    toml="$ROOT/src/libraries/$lib/$lib.z42.toml"
-    if [[ ! -f "$toml" ]]; then
-        echo "  [skip] $lib — manifest not found: $toml"
-        continue
-    fi
-    dist="$ROOT/src/libraries/$lib/dist/$lib.zpkg"
-    out="$OUT_DIR/$lib.zpkg"
-    echo "  building $lib"
-    if "${COMPILER_CMD[@]}" build "$toml" $RELEASE_ARG 2>&1; then
-        if [[ -f "$dist" && -s "$dist" ]]; then
-            cp "$dist" "$out"
-            size=$(wc -c < "$out" | tr -d ' ')
-            echo "    ✓ $lib.zpkg ($size bytes) → $out"
-            ((ok++)) || true
-        else
-            echo "    ✗ $lib.zpkg — dist file missing or empty"
-            ((fail++)) || true
-        fi
+    src="$DIST_DIR/$lib.zpkg"
+    dst="$LEGACY_DIR/$lib.zpkg"
+    if [[ -f "$src" && -s "$src" ]]; then
+        cp "$src" "$dst"
+        size=$(wc -c < "$dst" | tr -d ' ')
+        echo "    ✓ $lib.zpkg ($size bytes) → $dst"
+        ((ok++)) || true
     else
-        echo "    ✗ $lib — build failed"
+        echo "    ✗ $lib.zpkg — workspace product missing at $src"
         ((fail++)) || true
     fi
 done

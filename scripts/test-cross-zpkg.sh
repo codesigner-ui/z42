@@ -36,9 +36,12 @@ dotnet build src/compiler/z42.slnx >/tmp/test-cross-zpkg-build.log 2>&1 || {
 cargo build -q --manifest-path "$RUNTIME_MANIFEST"
 echo ""
 
-# Locate stdlib zpkgs (z42c needs them via libs lookup walking up to artifacts/z42/libs).
-STDLIB_DIR="$ROOT/artifacts/z42/libs"
-if [ ! -d "$STDLIB_DIR" ] || [ -z "$(ls -A "$STDLIB_DIR" 2>/dev/null)" ]; then
+# Locate stdlib zpkgs (workspace stdlib output, C4c+).
+# build-stdlib.sh 同时把产物拷到 artifacts/z42/libs/（用于 package.sh 分发），但开发
+# 期我们直接读 workspace 集中产物 artifacts/libraries/，绕开拷贝步骤的不确定性。
+STDLIB_DIR="$ROOT/artifacts/libraries"
+# 仅按 .zpkg 是否存在判断（artifacts/libraries/ 还含 .cache/ 子目录）
+if ! ls "$STDLIB_DIR"/*.zpkg >/dev/null 2>&1; then
     echo "Building stdlib (required for cross-zpkg tests)..."
     "$SCRIPT_DIR/build-stdlib.sh" >/dev/null
     echo ""
