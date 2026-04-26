@@ -20,49 +20,7 @@ examples/       # .z42 示例源文件
 
 ## 构建与测试
 
-```bash
-# 构建
-dotnet build src/compiler/z42.slnx
-cargo build --manifest-path src/runtime/Cargo.toml
-
-# 运行编译器（单文件）
-dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc] [-o <out>]
-
-# 运行编译器（项目模式）
-dotnet run --project src/compiler/z42.Driver -- build [<name>.z42.toml] [--release] [--bin <name>]
-dotnet run --project src/compiler/z42.Driver -- check [<name>.z42.toml] [--bin <name>]
-dotnet run --project src/compiler/z42.Driver -- run   [<name>.z42.toml] [--release] [--bin <name>] [--mode interp|jit|aot]
-dotnet run --project src/compiler/z42.Driver -- clean [<name>.z42.toml]
-
-# 其他工具命令
-dotnet run --project src/compiler/z42.Driver -- disasm <file.zbc> [-o <file.zasm>]
-dotnet run --project src/compiler/z42.Driver -- explain <ERROR_CODE>
-dotnet run --project src/compiler/z42.Driver -- errors
-
-# 运行 VM
-cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]
-
-# 打包（compiler + VM binary + stdlib libs → artifacts/z42/）
-./scripts/package.sh            # debug build（z42c single-file + z42vm）
-./scripts/package.sh release    # release build
-
-# 编译标准库（src/libraries/**/*.z42 → artifacts/z42/libs/*.zpkg）
-./scripts/build-stdlib.sh              # 使用 dotnet run 编译
-./scripts/build-stdlib.sh --use-dist   # 使用打包后的 z42c 编译
-
-# 测试（编译器 golden tests + VM interp/jit 两种模式）
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj
-./scripts/test-vm.sh
-
-# 发行包端到端测试（使用 artifacts/z42/bin/ 的 z42c + z42vm）
-./scripts/test-dist.sh              # 编译+运行 golden tests（interp + jit）
-./scripts/test-dist.sh interp       # 仅 interp 模式
-```
-
-> 修改编译器后，先 `--emit zbc` 重新生成 `.zbc`，再跑 `./scripts/test-vm.sh`。`--emit ir` 输��� ZASM 文本格式，用于调试查看。
-> `artifacts/z42/` 已在 `.gitignore` 中，不纳入版本控制。
-> 修改标准库源文件后需重新运行 `./scripts/build-stdlib.sh` 更新 zpkg 产物。
-> 发行包测试全流程：`package.sh` → `build-stdlib.sh --use-dist` → `test-dist.sh`。
+所有构建、编译、测试、打包命令见 [docs/dev.md](../docs/dev.md)。
 
 ## 实现计划
 
@@ -70,19 +28,12 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 ## 协作工作流（必须遵守）
 
-见 `.claude/rules/workflow.md`。核心要点：
+完整流程见 `.claude/rules/workflow.md`。核心要点：
 
-- **每次新对话**：Claude 自动读取当前阶段和 memory，主动说明状态和下一步
+- **每次新对话**：Claude 自动读取 `.claude/projects/<project>/memory/MEMORY.md` 和当前阶段，主动说明状态和下一步
 - **需规范先行**（lang / ir / vm 类变更）：DRAFT → User 确认 → IMPL → GREEN → COMMIT
 - **轻量变更**（fix / refactor / test）：直接 IMPL → GREEN → COMMIT
-- **GREEN 标准**（所有迭代必须满足）：
-  ```bash
-  dotnet build src/compiler/z42.slnx       # 无编译错误
-  cargo build --manifest-path src/runtime/Cargo.toml
-  dotnet test src/compiler/z42.Tests/z42.Tests.csproj        # 100% 通过
-  ./scripts/test-vm.sh                     # 100% 通过
-  ```
-  **重点：任何测试失败都不得 commit / push。Pre-existing 失败必须在本迭代修复。**
+- **全绿（GREEN）标准**：定义见 [workflow.md 阶段 8](rules/workflow.md)；任何测试失败（含 pre-existing）都不得 commit / push
 - **提交格式**：`type(scope): 描述`，每个逻辑单元单独提交
 - **自动提交**：每次迭代完成后 Claude 自动 commit + push，`.claude/` 和 `spec/` 必须纳入，无需 User 二次确认
 
@@ -90,22 +41,9 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 **核心规则：任何改变了外部可见行为、机制、规则或约定的迭代，归档前必须有对应文档落地。无文档 = 未完成。**
 
-| 改动类型 | 需要更新的文档 |
-|----------|--------------|
-| 新语法 / 语句 | `docs/design/language-overview.md` + `docs/design/<feature>.md` |
-| 新 IR 指令 | `docs/design/ir.md` |
-| 新 VM 行为 | `docs/design/<feature>.md` |
-| 新构建步骤 / CLI 参数 | `CLAUDE.md` 构建与测试部分 |
-| 特性实现进度变更 | `docs/roadmap.md` L1 进度表 |
-| 新工程文件规则 / manifest 字段 | `docs/design/project.md` |
-| 新协作规则 / 工作流变更 | `.claude/rules/workflow.md` |
-| fix / refactor 涉及行为或机制变更 | 对应 `docs/design/` 文档 |
-| 语言设计决策变更（设计目标、phase 归属、设计理由） | `docs/features.md` |
-| **编译器内部实现原理变更**（符号解析、依赖加载、TsigCache、pipeline 流程等） | `docs/design/compiler-architecture.md` |
-| **VM 内部实现原理变更**（LazyLoader、VCall 分发、ObjNew 类型注册、interp/JIT 架构等） | `docs/design/vm-architecture.md` |
-| 规范偏差 | 以实现为准更新规范，不得描述不存在的行为 |
+具体的"改动类型 → 需更新文档"映射表见 [workflow.md 阶段 9](rules/workflow.md)。
 
-> **实现原理文档规则（2026-04-25 新增）**：涉及编译器或 VM 的**内部机制 / 架构策略**的变更（不只是对外行为），必须把"实现原理"（数据结构、算法、加载策略、决策权衡）同步到 `docs/design/compiler-architecture.md` 或 `docs/design/vm-architecture.md`，使新接手者不必阅读大量源码即可理解"为什么这样设计"。
+> **实现原理文档规则（2026-04-25）**：涉及编译器或 VM 的**内部机制 / 架构策略**的变更（不只是对外行为），必须把"实现原理"（数据结构、算法、加载策略、决策权衡）同步到 `docs/design/compiler-architecture.md` 或 `docs/design/vm-architecture.md`，使新接手者不必阅读大量源码即可理解"为什么这样设计"。
 
 ## 代码风格
 
@@ -115,13 +53,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 ## 代码组织（必须遵守）
 
-详见 `.claude/rules/code-organization.md`。核心要点：
-
-- **目录 README.md**：每个功能目录有 `README.md`；Claude 读代码前先读该目录的 README
-- **文件行数**：软限制 300 行，硬限制 500 行（超出必须拆分）
-- **函数行数**：软限制 40 行，硬限制 60 行
-- **类型/impl 行数**：硬限制 200 行
-- **Rust 测试**：单元测试放独立 `<module>_tests.rs` 文件，不内联在实现文件中
+完整规则见 `.claude/rules/code-organization.md`（目录 README、文件/函数/类型行数限制、Rust 测试拆分等）。
 
 ## 规范冲突检测（必须遵守）
 

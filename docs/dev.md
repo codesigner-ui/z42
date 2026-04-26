@@ -1,0 +1,105 @@
+# z42 开发指南
+
+> 本文档收录 z42 项目的所有构建、编译、测试、打包命令。
+> 工作流规则见 [.claude/rules/workflow.md](../.claude/rules/workflow.md)。
+
+---
+
+## 构建
+
+```bash
+# 编译器（C# bootstrap）
+dotnet build src/compiler/z42.slnx
+
+# 运行时（Rust VM）
+cargo build --manifest-path src/runtime/Cargo.toml
+```
+
+---
+
+## 编译器命令
+
+### 单文件模式
+
+```bash
+dotnet run --project src/compiler/z42.Driver -- <file.z42> [--emit ir|zbc] [-o <out>]
+```
+
+- `--emit zbc`：产出 `.zbc` 字节码（VM 可直接执行）
+- `--emit ir`：产出 ZASM 文本（调试查看用）
+
+### 项目模式（`.z42.toml`）
+
+```bash
+dotnet run --project src/compiler/z42.Driver -- build [<name>.z42.toml] [--release] [--bin <name>]
+dotnet run --project src/compiler/z42.Driver -- check [<name>.z42.toml] [--bin <name>]
+dotnet run --project src/compiler/z42.Driver -- run   [<name>.z42.toml] [--release] [--bin <name>] [--mode interp|jit|aot]
+dotnet run --project src/compiler/z42.Driver -- clean [<name>.z42.toml]
+```
+
+### 工具命令
+
+```bash
+dotnet run --project src/compiler/z42.Driver -- disasm <file.zbc> [-o <file.zasm>]
+dotnet run --project src/compiler/z42.Driver -- explain <ERROR_CODE>
+dotnet run --project src/compiler/z42.Driver -- errors
+```
+
+---
+
+## 运行 VM
+
+```bash
+cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]
+```
+
+---
+
+## 测试
+
+```bash
+# 编译器 golden tests
+dotnet test src/compiler/z42.Tests/z42.Tests.csproj
+
+# VM 测试（interp + jit 双模式）
+./scripts/test-vm.sh
+```
+
+> 修改编译器后，先 `--emit zbc` 重新生成 `.zbc`，再跑 `./scripts/test-vm.sh`。
+
+---
+
+## 打包与发行
+
+```bash
+# 打包：compiler + VM binary + stdlib libs → artifacts/z42/
+./scripts/package.sh            # debug build（z42c single-file + z42vm）
+./scripts/package.sh release    # release build
+
+# 编译标准库：src/libraries/**/*.z42 → artifacts/z42/libs/*.zpkg
+./scripts/build-stdlib.sh              # 使用 dotnet run 编译
+./scripts/build-stdlib.sh --use-dist   # 使用打包后的 z42c 编译
+
+# 发行包端到端测试（使用 artifacts/z42/bin/ 的 z42c + z42vm）
+./scripts/test-dist.sh              # 编译+运行 golden tests（interp + jit）
+./scripts/test-dist.sh interp       # 仅 interp 模式
+```
+
+> `artifacts/z42/` 已在 `.gitignore` 中，不纳入版本控制。
+> 修改标准库源文件后需重新运行 `./scripts/build-stdlib.sh` 更新 zpkg 产物。
+> 发行包测试全流程：`package.sh` → `build-stdlib.sh --use-dist` → `test-dist.sh`。
+
+---
+
+## 全绿（GREEN）标准
+
+完整定义见 [.claude/rules/workflow.md 阶段 8](../.claude/rules/workflow.md)。简言之：
+
+```bash
+dotnet build src/compiler/z42.slnx                          # 无编译错误
+cargo build --manifest-path src/runtime/Cargo.toml          # 无编译错误
+dotnet test src/compiler/z42.Tests/z42.Tests.csproj         # 100% 通过
+./scripts/test-vm.sh                                        # 100% 通过
+```
+
+任何测试失败（含 pre-existing）都不得 commit / push。

@@ -109,6 +109,9 @@ spec/
 
 ## 阶段 0：意图识别
 
+**每次新对话首条消息触发：** Claude 自动读取 `.claude/projects/<project>/memory/MEMORY.md`
+和当前阶段（roadmap + `spec/changes/` 进行中变更），主动汇报状态和下一步，再处理用户输入。
+
 Claude 读到以下关键词时自动触发对应动作：
 
 | 用户说 | Claude 做 |
@@ -350,7 +353,7 @@ spec/changes/<change-name>/
 
 ## 阶段 8：验证（Verify）
 
-**绿色标准（GREEN 定义）：**
+**全绿（GREEN）标准：**
 
 任何迭代进阶段 9 前，必须通过以下全部验证步骤，且 **所有测试全部通过**：
 

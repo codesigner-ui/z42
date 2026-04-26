@@ -35,27 +35,18 @@ A **full-stack systems programming language** designed for productivity and perf
 
 ## Quick Start
 
-**Build the compiler and runtime:**
-
 ```bash
-# Compiler (C# bootstrap)
+# Build compiler + runtime
 dotnet build src/compiler/z42.slnx
-
-# Runtime (Rust VM)
 cargo build --manifest-path src/runtime/Cargo.toml
-```
 
-**Compile and run a program:**
-
-```bash
-# Compile to bytecode
+# Compile and run
 dotnet run --project src/compiler/z42.Driver -- hello.z42 --emit zbc -o hello.zbc
-
-# Run on the VM
 cargo run --manifest-path src/runtime/Cargo.toml -- hello.zbc
 ```
 
-See [CLAUDE.md](.claude/CLAUDE.md) for detailed build and workflow commands.
+Full build / test / packaging commands: [docs/dev.md](docs/dev.md).
+Collaboration workflow: [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
 ---
 

@@ -56,7 +56,8 @@
 | `Dictionary<K,V>` | ✅ | ✅ | ✅ | ✅ | pseudo-class，key→string |
 | 可空类型 `T?`（隐式包装） | ✅ | ✅ | ✅ | ✅ | |
 | 枚举 `enum` | ✅ | ✅ | ✅ | ✅ | 成员值映射为 i64 |
-| 类（字段、构造器、方法） | ✅ | ✅ | ✅ | ✅ | |
+| 类（字段、构造器、方法） | ✅ | ✅ | ✅ | ✅ | ctor 重载（ObjNew 携带 ctor 名）|
+| auto-property（class / interface / extern） | ✅ | ✅ | ✅ | ✅ | desugar 到 backing field + getter/setter |
 | 异常 `try`/`catch`/`throw` | ✅ | ✅ | ✅ | ✅ | |
 | 默认参数值 | ✅ | ✅ | ✅ | ✅ | call site 展开 |
 | C# 数值类型别名 | ✅ | ✅ | ✅ | ✅ | |

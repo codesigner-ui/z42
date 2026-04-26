@@ -12,22 +12,7 @@
 
 Each section states the design decision, rationale, and which phase it belongs to (L1 / L2 / L3).
 
----
-
-## Design Positioning
-
-**z42 is a static, garbage-collected systems programming language combining:**
-
-- **Syntax:** C# baseline (familiar, structured, readable)
-- **Type safety:** Static typing with type inference (catch errors early)
-- **Memory model:** Always GC, no ownership/lifetimes (productivity)
-- **Concurrency:** Multi-threading with structured safety (async/await in L3)
-- **Performance:** Bytecode-first with interp/JIT/AOT mixing (flexibility + speed)
-- **Embedding:** Zero-overhead native interop, C-compatible data layout (systems integration)
-- **Customization:** Language-level feature toggles (adapt to any environment)
-- **Dynamics:** eval(), hot reload, REPL support (iteration + production readiness)
-
-**Use cases:** Game engines, servers, embedded systems, DevOps tools, scientific computing — anywhere you'd use C#, Java, or Go, but want better systems integration and deployment flexibility.
+> Design positioning, target audience, and core principles: see [docs/design/philosophy.md](design/philosophy.md).
 
 ---
 
