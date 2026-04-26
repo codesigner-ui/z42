@@ -23,7 +23,10 @@
 | `IComparable.z42` | 比较接口 |
 | `IDisposable.z42` | 资源释放接口（`void Dispose()`）|
 | `IEnumerable.z42` | 可迭代契约（`IEnumerator<T> GetEnumerator()`）|
-| `IEnumerator.z42` | 前向迭代器契约（`bool MoveNext()` + `T Current()`）|
+| `IEnumerator.z42` | 前向迭代器契约（`bool MoveNext()` + `T Current { get; }`）|
+| `IComparer.z42` | 双参数比较器契约（Wave 3）|
+| `IEqualityComparer.z42` | 双参数相等性 + 哈希契约（Wave 3）|
+| `IFormattable.z42` | 自定义格式化契约（Wave 3）|
 | `INumber.z42` | 数值约束接口（`op_Add` / `op_Subtract` / `op_Multiply` / `op_Divide` / `op_Modulo`）|
 | `Exception.z42` | 异常基类（`Message` / `StackTrace` / `InnerException`）|
 

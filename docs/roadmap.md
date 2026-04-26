@@ -104,6 +104,7 @@
 - `z42.core/Collections/`：`List<T>`、`Dictionary<K,V>` 纯脚本实现（L3-G4h step3 ✅ 完成；2026-04-25 W1 从 `z42.collections` 上提到 `z42.core` 包子目录，对齐 C# BCL）
 - `z42.collections`：次级集合 `Queue<T>` / `Stack<T>`（未来 `LinkedList` / `SortedDictionary` / `PriorityQueue`）
 - `z42.core` Wave 2（2026-04-25）：`Exception` 基类 + 9 个标准子类（`ArgumentException` 等）+ `IDisposable` / `IEnumerable<T>` / `IEnumerator<T>` 接口契约；详见 `docs/design/exceptions.md`、`docs/design/iteration.md`
+- `z42.core` Wave 3（2026-04-26）：`IComparer<T>` / `IEqualityComparer<T>` / `IFormattable` 接口契约（Script-First 纯定义，无 implementer）
 - `z42.string`：字符串操作完整实现
 
 ### 代码质量 Backlog（按触发条件执行）
