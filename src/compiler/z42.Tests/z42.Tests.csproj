@@ -29,6 +29,7 @@
     <ProjectReference Include="..\z42.IR\z42.IR.csproj" />
     <ProjectReference Include="..\z42.Project\z42.Project.csproj" />
     <ProjectReference Include="..\z42.Pipeline\z42.Pipeline.csproj" />
+    <ProjectReference Include="..\z42.Driver\z42.Driver.csproj" />
   </ItemGroup>
 
 </Project>

@@ -582,6 +582,22 @@ core ← utils ← hello
 
 完整跨 member 依赖示例见 `examples/workspace-full/`：含 core / utils / hello 三层依赖。
 
+#### 查询命令（C4b，2026-04-26）
+
+```bash
+z42c info                       # 列出 workspace 概览（members/kinds/默认 profile）
+z42c info --resolved -p hello   # hello 的最终生效配置 + 每字段来源标注
+z42c info --include-graph -p X  # 显示 member X 的 include 链（preset 展开树）
+z42c metadata --format json     # 机读 JSON（含 schema_version: "1" + dependency_graph）
+z42c tree                       # ASCII 显示跨 member 依赖树
+z42c lint-manifest              # 静态校验所有 manifest（不编译；返回 WSxxx 报告）
+```
+
+错误输出（含 WSxxx 前缀）经 `CliOutputFormatter` 格式化：
+- 默认彩色（red error / yellow warning / dim help|note）
+- 检测到 `NO_COLOR` 环境变量或 stderr 重定向时自动禁用
+- ManifestException 原 message 内容完整保留
+
 ---
 
 ### L6.7 Policy 与集中产物（C3，2026-04-26）

@@ -1,6 +1,15 @@
 # Tasks: workspace 查询命令 + CliOutputFormatter（C4b）
 
-> 状态：🟡 待实施 | 创建：2026-04-26 | 依赖：C4a 落地
+> 状态：🟢 已完成 | 创建：2026-04-26 | 归档：2026-04-26 | GREEN: dotnet 703/703 + cargo OK + VM 188/188
+
+## Scope 调整说明
+
+C4b 4 个查询命令实现合并到单文件 `src/compiler/z42.Driver/QueryCommands.cs`
+（static class 风格，与 BuildCommand.cs 一致），而非 spec 中提到的 4 个独立
+Commands/<Name>Command.cs 文件。理由：保持与现有代码风格一致，避免引入
+IZ42Command 接口。
+
+z42.Tests 项目新增 ProjectReference 到 z42.Driver（用于测 CliOutputFormatter）。
 
 ## 进度概览
 - [ ] 阶段 1: CliOutputFormatter

@@ -16,6 +16,10 @@ rootCmd.AddCommand(BuildCommand.Create());
 rootCmd.AddCommand(BuildCommand.CreateCheck());
 rootCmd.AddCommand(BuildCommand.CreateRun());
 rootCmd.AddCommand(BuildCommand.CreateClean());
+rootCmd.AddCommand(QueryCommands.CreateInfo());
+rootCmd.AddCommand(QueryCommands.CreateMetadata());
+rootCmd.AddCommand(QueryCommands.CreateTree());
+rootCmd.AddCommand(QueryCommands.CreateLintManifest());
 
 // disasm
 {

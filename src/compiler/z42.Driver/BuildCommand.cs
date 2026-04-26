@@ -322,7 +322,7 @@ static class BuildCommand
         }
         catch (ManifestException ex)
         {
-            Console.Error.WriteLine(ex.Message);
+            Console.Error.WriteLine(CliOutputFormatter.Format(ex, pretty: true));
             return 1;
         }
     }
