@@ -107,18 +107,93 @@ static class BuildCommand
 
     public static Command CreateClean()
     {
-        var cmd         = new Command("clean", "Remove build artifacts for a z42 project");
+        var cmd         = new Command("clean", "Remove build artifacts for a z42 project or workspace");
         var manifestArg = ManifestArg();
+        var packagesOpt = new Option<string?>(["-p", "--package"], "Clean only the named workspace member");
+        var noWsOpt     = new Option<bool>("--no-workspace", "Force standalone mode");
 
         cmd.AddArgument(manifestArg);
+        cmd.AddOption(packagesOpt);
+        cmd.AddOption(noWsOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
             var manifestPath = ctx.ParseResult.GetValueForArgument(manifestArg);
-            ctx.ExitCode = CleanProject(manifestPath);
+            var pkg          = ctx.ParseResult.GetValueForOption(packagesOpt);
+            var noWs         = ctx.ParseResult.GetValueForOption(noWsOpt);
+
+            // C4c: workspace 模式优先（除非 --no-workspace 或显式 manifest）
+            int? wsResult = TryCleanWorkspace(pkg, noWs, manifestPath);
+            ctx.ExitCode = wsResult ?? CleanProject(manifestPath);
         });
 
         return cmd;
+    }
+
+    static int? TryCleanWorkspace(string? pkg, bool noWorkspace, string? explicitManifest)
+    {
+        if (noWorkspace) return null;
+        if (explicitManifest is not null) return null;
+
+        try
+        {
+            var loader = new ManifestLoader();
+            var ws = loader.DiscoverWorkspaceRoot(Directory.GetCurrentDirectory());
+            if (ws is null) return null;
+
+            var result = loader.LoadWorkspace(ws);
+
+            int removed = 0;
+            if (pkg is null)
+            {
+                // 全 workspace clean：删除 [workspace.build] out_dir + cache_dir
+                string outAbs = Path.IsPathRooted(ws.Manifest.WorkspaceBuild.OutDir)
+                    ? ws.Manifest.WorkspaceBuild.OutDir
+                    : Path.GetFullPath(Path.Combine(ws.Manifest.RootDirectory, ws.Manifest.WorkspaceBuild.OutDir));
+                string cacheAbs = Path.IsPathRooted(ws.Manifest.WorkspaceBuild.CacheDir)
+                    ? ws.Manifest.WorkspaceBuild.CacheDir
+                    : Path.GetFullPath(Path.Combine(ws.Manifest.RootDirectory, ws.Manifest.WorkspaceBuild.CacheDir));
+
+                foreach (var dir in new[] { outAbs, cacheAbs })
+                {
+                    if (!Directory.Exists(dir)) continue;
+                    Directory.Delete(dir, recursive: true);
+                    Console.Error.WriteLine($"   Removed {Path.GetRelativePath(ws.Manifest.RootDirectory, dir)}/");
+                    removed++;
+                }
+            }
+            else
+            {
+                // per-member clean
+                var member = result.Members.FirstOrDefault(m => m.MemberName == pkg);
+                if (member is null)
+                {
+                    Console.Error.WriteLine($"error: member '{pkg}' not found");
+                    return 1;
+                }
+
+                if (File.Exists(member.EffectiveProductPath))
+                {
+                    File.Delete(member.EffectiveProductPath);
+                    Console.Error.WriteLine($"   Removed {Path.GetRelativePath(ws.Manifest.RootDirectory, member.EffectiveProductPath)}");
+                    removed++;
+                }
+                if (Directory.Exists(member.EffectiveCacheDir))
+                {
+                    Directory.Delete(member.EffectiveCacheDir, recursive: true);
+                    Console.Error.WriteLine($"   Removed {Path.GetRelativePath(ws.Manifest.RootDirectory, member.EffectiveCacheDir)}/");
+                    removed++;
+                }
+            }
+
+            Console.Error.WriteLine(removed == 0 ? "   Nothing to clean." : $"    Finished cleaning workspace");
+            return 0;
+        }
+        catch (ManifestException ex)
+        {
+            Console.Error.WriteLine(CliOutputFormatter.Format(ex, pretty: true));
+            return 1;
+        }
     }
 
     // ── Implementations ───────────────────────────────────────────────────────

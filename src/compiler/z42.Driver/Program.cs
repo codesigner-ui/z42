@@ -20,6 +20,9 @@ rootCmd.AddCommand(QueryCommands.CreateInfo());
 rootCmd.AddCommand(QueryCommands.CreateMetadata());
 rootCmd.AddCommand(QueryCommands.CreateTree());
 rootCmd.AddCommand(QueryCommands.CreateLintManifest());
+rootCmd.AddCommand(ScaffoldCommands.CreateNew());
+rootCmd.AddCommand(ScaffoldCommands.CreateInit());
+rootCmd.AddCommand(ScaffoldCommands.CreateFmt());
 
 // disasm
 {

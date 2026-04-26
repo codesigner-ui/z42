@@ -107,11 +107,9 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | WS002 | ExcludedMemberSelected           | `-p` 与 `--exclude` 同时指定同一 member |
 | WS006 | CircularDependency               | Member 间依赖图含环（DFS 三色检测） |
 
-### C4b/C4c 占位
+### C4b/C4c 状态
 
-C4b 不新增 WSxxx；C4c 移除 WS004 残留。
-
-> WS004 在 C3 阶段标记 `[Obsolete]`，C4c 归档时彻底移除（归并入 WS010）。
+C4b 不新增 WSxxx；C4c 已移除 WS004（归并入 WS010）。
 
 ---
 

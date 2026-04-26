@@ -1,6 +1,16 @@
 # Tasks: workspace 脚手架 + 清理 + WS004 移除（C4c）
 
-> 状态：🟡 待实施 | 创建：2026-04-26 | 依赖：C4a + C4b 落地
+> 状态：🟢 已完成 | 创建：2026-04-26 | 归档：2026-04-26 | GREEN: dotnet 712/712 + cargo OK + VM 188/188
+
+## Scope 调整说明
+
+new / init / fmt 三命令合并到单文件 `src/compiler/z42.Driver/ScaffoldCommands.cs`
+（与 BuildCommand / QueryCommands 风格一致）；clean 命令直接扩展现有
+`BuildCommand.CreateClean()`（已有 standalone 模式实现），新增 `TryCleanWorkspace`
+辅助函数走 workspace 路径。
+
+C4c 完成后 spec/changes/ 目录清空，workspace 演进规划（C1+C2+C3+C4a+C4b+C4c）
+全部归档到 spec/archive/。
 
 ## 进度概览
 - [ ] 阶段 1: CleanCommand

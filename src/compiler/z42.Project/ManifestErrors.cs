@@ -34,9 +34,6 @@ public static class Z42Errors
     public const string WS010 = "WS010";  // PolicyViolation
     public const string WS011 = "WS011";  // PolicyFieldPathNotFound
 
-    [Obsolete("C3 deprecated; merged into WS010. Will be removed in C4 archive.")]
-    public const string WS004 = "WS004";  // BuildSettingOverridden（废弃）
-
     // ── C4a 错误码（workspace 编译运行时）────────────────────────────────────
     public const string WS001 = "WS001";  // DuplicateMemberName
     public const string WS002 = "WS002";  // ExcludedMemberSelected

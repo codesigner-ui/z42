@@ -88,7 +88,8 @@
 - **Workspace include 机制（C2 ✅ 2026-04-26）**：`include` 字段 + preset 合并语义（标量覆盖 / 表合并 / 数组整体覆盖）、循环检测、嵌套深度上限 8、菱形去重。
 - **Workspace policy + 集中产物（C3 ✅ 2026-04-26）**：`[policy]` 字段路径锁定（默认锁定 `build.out_dir` / `build.cache_dir`）、`[workspace.build]` 集中产物（`dist/<member>.zpkg` + cache 按 member 分目录）、`${profile}` 派生路径。
 - **z42c workspace 编译运行时（C4a ✅ 2026-04-26）**：CWD 无关 workspace 发现、`-p` / `--workspace` / `--exclude` / `--no-workspace` flags、跨 member 依赖图（DFS 三色环检测）、拓扑串行编译、上游失败 → 下游 blocked、WS001/002/006 错误码。
-- **z42c workspace 查询命令（C4b ✅ 2026-04-26）**：`info` / `info --resolved -p` / `info --include-graph -p` / `metadata --format json`（schema_version=1）/ `tree` / `lint-manifest`；CliOutputFormatter 带 ANSI 颜色的友好错误输出（自动 NO_COLOR 检测）。脚手架 + 清理（C4c）排队中。
+- **z42c workspace 查询命令（C4b ✅ 2026-04-26）**：`info` / `info --resolved -p` / `info --include-graph -p` / `metadata --format json`（schema_version=1）/ `tree` / `lint-manifest`；CliOutputFormatter 带 ANSI 颜色的友好错误输出（自动 NO_COLOR 检测）。
+- **z42c workspace 脚手架 + 清理（C4c ✅ 2026-04-26）**：`new --workspace` 生成完整 monorepo 骨架（z42.workspace.toml + presets/ + libs/ + apps/ + .gitignore）；`new -p <name> --kind lib|exe` 在 workspace 内新增 member；`init` 升级单 manifest 为 workspace；`fmt` 格式化所有 manifest（Tomlyn round-trip）；`clean` workspace 模式集中清理 + `-p` per-member。WS004 已彻底移除（归并入 WS010）。
 - `build`/`check`/`run`/`clean` 子命令完整 ✅
 - 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
 
