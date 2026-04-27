@@ -1,6 +1,6 @@
 use crate::metadata::Value;
 use anyhow::{anyhow, bail, Result};
-use super::convert::{require_str, require_usize, value_to_str};
+use super::convert::{require_str, require_usize};
 
 /// Returns the number of Unicode scalar values (characters) in the string.
 /// args: [this: str]
@@ -77,12 +77,5 @@ pub fn builtin_str_hash_code(args: &[Value]) -> Result<Value> {
     Ok(Value::I64((hash & 0x7fff_ffff) as i64))
 }
 
-pub fn builtin_str_format(args: &[Value]) -> Result<Value> {
-    if args.is_empty() { return Ok(Value::Str(String::new())); }
-    let template = require_str(args, 0, "string.Format")?;
-    let mut result = template.to_string();
-    for (i, arg) in args[1..].iter().enumerate() {
-        result = result.replace(&format!("{{{}}}", i), &value_to_str(arg));
-    }
-    Ok(Value::Str(result))
-}
+// 2026-04-27 wave3b-str-format-script: builtin_str_format removed.
+// `Std.String.Format` 现在是 z42 脚本（用 string.Replace + Convert.ToString）。

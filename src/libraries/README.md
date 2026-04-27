@@ -154,7 +154,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `__str_length` / `__str_char_at` / `__str_from_chars` | 🟢 | UTF-8 codepoint 访问，BCL `string.Length` / Rust `str::chars` 同级 |
 | ~~`__str_split` / `__str_join` (2)~~ | ✅ 已删 | 2026-04-27 wave1-string-script — 脚本基于 `CharAt` + `Substring` 两遍扫描 |
 | ~~`__str_concat`~~ | ✅ 已删 | 2026-04-27 wave3a-str-concat-script — `Std.String.Concat` 用 `+` 即 IR StrConcatInstr |
-| `__str_format` | ⚫ | 等 `IFormattable` 协议（Wave 3b）|
+| ~~`__str_format`~~ | ✅ 已删 | 2026-04-27 wave3b-str-format-script — `Std.String.Format` 用链式 `Replace` + `Convert.ToString`。原计划等 IFormattable，实测无需（builtin 只做 `{0}` 字面替换） |
 | `__str_to_string` / `__str_equals` / `__str_hash_code` / `__str_compare_to` | 🟢 | Object 协议方法，VM ABI 绑定 |
 
 ### Char — 3 项
@@ -217,9 +217,9 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave 1（feature → 脚本）| 19 | ✅ 全部完成（assert 6 + bool 3 + math 3 + path 5 + str split/join 2）|
 | Wave 2（codegen 特化 → 实际纯脚本）| 3 | ✅ 完成（wave2-compare-to-script）。原计划 codegen 特化，实测 `<`/`>` 走 IR cmp+jmp 已足够 |
 | Wave 3a（str_concat → 脚本）| 1 | ✅ 完成（wave3a-str-concat-script），原计划 codegen，实测 `+` 已是 IR 指令 |
-| Wave 3b（需要新基础设施）| 1 | `__str_format` 等 `IFormattable` 协议 |
+| Wave 3b（str_format → 脚本）| 1 | ✅ 完成（wave3b-str-format-script），用 Replace + Convert.ToString 替代；IFormattable 等真正需要格式说明符再独立 spec |
 | 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
-| **当前总计** | **~44** | **长期目标 ~45 ✅ 已超越** |
+| **当前总计** | **~43** | **长期目标 ~45 ✅ 超越** |
 
 ### Wave 进度
 
@@ -233,4 +233,4 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave 1.5 String split/join | ✅ 已完成（wave1-string-script）| 2026-04-27 |
 | Wave 2 | ✅ 已完成（wave2-compare-to-script）| 2026-04-27 |
 | Wave 3a str_concat | ✅ 已完成（wave3a-str-concat-script）| 2026-04-27 |
-| Wave 3b str_format | ⚪ 待启动（依赖 IFormattable 协议）| — |
+| Wave 3b str_format | ✅ 已完成（wave3b-str-format-script）| 2026-04-27 |
