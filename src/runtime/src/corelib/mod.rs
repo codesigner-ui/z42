@@ -65,7 +65,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__str_from_chars", string::builtin_str_from_chars);
         // 2026-04-27 wave1-string-script: removed __str_split / __str_join —
         // `Std.String.Split` / `Join` 现在是脚本（基于 CharAt + Substring）。
-        m.insert("__str_concat",     string::builtin_str_concat);
+        // 2026-04-27 wave3a-str-concat-script: removed __str_concat —
+        // `Std.String.Concat` 现在是脚本（用 `+` IR StrConcatInstr）。
         m.insert("__str_format",     string::builtin_str_format);
         m.insert("__str_to_string",  string::builtin_str_to_string);
         m.insert("__str_equals",     string::builtin_str_equals);

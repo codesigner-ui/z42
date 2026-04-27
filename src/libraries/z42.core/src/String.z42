@@ -273,8 +273,15 @@ public static class String : IComparable<string>, IEquatable<string> {
     }
 
     // ── Remaining intrinsic-backed methods (perf-sensitive / 协议依赖) ───────
-    [Native("__str_concat")] public static extern string Concat(string a, string b);
-    [Native("__str_concat")] public static extern string Concat(string a, string b, string c);
+    // 2026-04-27 wave3a-str-concat-script: 脚本实现 —— `+` 编译为 IR
+    // `StrConcatInstr` 指令（见 FunctionEmitterCalls.EmitConcat），与原
+    // `__str_concat` builtin 等价，无需 builtin。
+    public static string Concat(string a, string b) {
+        return a + b;
+    }
+    public static string Concat(string a, string b, string c) {
+        return a + b + c;
+    }
     [Native("__str_format")] public static extern string Format(string format, object arg0);
     [Native("__str_format")] public static extern string Format(string format, object arg0, object arg1);
 }

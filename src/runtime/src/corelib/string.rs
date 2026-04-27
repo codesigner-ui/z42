@@ -42,11 +42,8 @@ pub fn builtin_str_from_chars(args: &[Value]) -> Result<Value> {
 // 2026-04-27 wave1-string-script: builtin_str_split + builtin_str_join removed.
 // `Std.String.Split` / `Join` 现在是 z42 脚本，基于 CharAt + Substring。
 
-pub fn builtin_str_concat(args: &[Value]) -> Result<Value> {
-    let mut out = String::new();
-    for v in args { out.push_str(&value_to_str(v)); }
-    Ok(Value::Str(out))
-}
+// 2026-04-27 wave3a-str-concat-script: builtin_str_concat removed.
+// `Std.String.Concat` 现在是 z42 脚本（用 `+` 即 IR StrConcatInstr）。
 
 // ── Object protocol overrides for string ─────────────────────────────────────
 
