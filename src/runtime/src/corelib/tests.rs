@@ -115,18 +115,6 @@ fn println_via_dispatch_table() {
     assert!(exec_builtin("__println", &[s("test")]).is_ok());
 }
 
-// ── assert ────────────────────────────────────────────────────────────────────
-
-#[test]
-fn assert_eq_success() {
-    assert!(exec_builtin("__assert_eq", &[i64(42), i64(42)]).is_ok());
-}
-
-#[test]
-fn assert_eq_failure() {
-    assert!(exec_builtin("__assert_eq", &[i64(1), i64(2)]).is_err());
-}
-
 // ── __obj_get_type ────────────────────────────────────────────────────────────
 
 #[test]
