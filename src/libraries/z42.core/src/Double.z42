@@ -3,10 +3,17 @@ namespace Std;
 // L3-G4b primitive-as-struct: `double` declared as a struct (C# BCL parity).
 public struct double : IComparable<double>, IEquatable<double>, INumber<double> {
     [Native("__double_parse")]      public static extern double Parse(string s);
-    [Native("__double_compare_to")] public extern int CompareTo(double other);
     [Native("__double_equals")]     public extern bool Equals(double other);
     [Native("__double_hash_code")]  public extern int GetHashCode();
     [Native("__double_to_string")]  public extern string ToString();
+
+    // 2026-04-27 wave2-compare-to-script: NaN 自动落到 return 0
+    // (`<` / `>` 对 NaN 都返回 false)，与 Rust `partial_cmp.unwrap_or(0)` 等价。
+    public int CompareTo(double other) {
+        if (this < other) return -1;
+        if (this > other) return 1;
+        return 0;
+    }
 
     // INumber<double> static override — primitive float add/sub/mul/div/rem.
     public static override double op_Add(double a, double b)      { return a + b; }

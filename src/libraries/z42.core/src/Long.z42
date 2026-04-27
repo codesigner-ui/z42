@@ -2,10 +2,16 @@ namespace Std;
 
 // L3 primitive-as-struct: `long` (64-bit integer) with arithmetic + comparison.
 public struct long : IComparable<long>, IEquatable<long>, INumber<long> {
-    [Native("__int_compare_to")] public extern int CompareTo(long other);
     [Native("__int_equals")]     public extern bool Equals(long other);
     [Native("__int_hash_code")]  public extern int GetHashCode();
     [Native("__int_to_string")]  public extern string ToString();
+
+    // 2026-04-27 wave2-compare-to-script: 脚本实现。
+    public int CompareTo(long other) {
+        if (this < other) return -1;
+        if (this > other) return 1;
+        return 0;
+    }
 
     // INumber<long> static override.
     public static override long op_Add(long a, long b)      { return a + b; }

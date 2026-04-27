@@ -2,10 +2,21 @@ namespace Std;
 
 // L3-G4b primitive-as-struct: declares char's interface conformance.
 public struct char : IComparable<char>, IEquatable<char> {
-    [Native("__char_compare_to")]     public extern int  CompareTo(char other);
     [Native("__char_equals")]         public extern bool Equals(char other);
     [Native("__char_hash_code")]      public extern int  GetHashCode();
     [Native("__char_to_string")]      public extern string ToString();
+
+    // 2026-04-27 wave2-compare-to-script: 脚本实现。
+    // char 类型暂不支持直接 `<`/`>`（TypeChecker 仅允许 numeric operand）；
+    // 借 `GetHashCode()` 拿 codepoint 整数后再比较。当 TypeChecker 支持 char
+    // 比较运算时（backlog），可改为 `if (this < other) return -1;` 直接形式。
+    public int CompareTo(char other) {
+        int a = this.GetHashCode();
+        int b = other.GetHashCode();
+        if (a < b) return -1;
+        if (a > b) return 1;
+        return 0;
+    }
 
     // 2026-04-24 simplify-string-stdlib: primitive helpers that back script-side
     // string operations (Trim / ToLower / ToUpper). Casing uses ASCII rules;

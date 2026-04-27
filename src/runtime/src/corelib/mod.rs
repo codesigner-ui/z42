@@ -83,17 +83,17 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__to_str",       convert::builtin_to_str);
 
         // ── Primitive IComparable / IEquatable (L3-G4b) ───────────────────────
-        m.insert("__int_compare_to",    convert::builtin_int_compare_to);
+        // 2026-04-27 wave2-compare-to-script: removed __int_compare_to /
+        // __double_compare_to / __char_compare_to — primitive `CompareTo`
+        // 现在是脚本（用 IR `<` / `>`，与 Rust `partial_cmp.unwrap_or(0)` 等价）。
         m.insert("__int_equals",        convert::builtin_int_equals);
         m.insert("__int_hash_code",     convert::builtin_int_hash_code);
         m.insert("__int_to_string",     convert::builtin_int_to_string);
-        m.insert("__double_compare_to", convert::builtin_double_compare_to);
         m.insert("__double_equals",     convert::builtin_double_equals);
         m.insert("__double_hash_code",  convert::builtin_double_hash_code);
         m.insert("__double_to_string",  convert::builtin_double_to_string);
         // 2026-04-27 wave1-bool-script: removed __bool_equals / _hash_code /
         // _to_string — `Std.bool` methods are now pure z42 script.
-        m.insert("__char_compare_to",   convert::builtin_char_compare_to);
         m.insert("__char_equals",       convert::builtin_char_equals);
         m.insert("__char_hash_code",    convert::builtin_char_hash_code);
         m.insert("__char_to_string",    convert::builtin_char_to_string);

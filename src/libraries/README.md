@@ -172,7 +172,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 
 | Builtin | 状态 | 备注 |
 |---|---|---|
-| `__int_compare_to` / `__double_compare_to` / `__char_compare_to` (3) | 🔵 | 走 codegen 特化（IR Sub + 符号位），philosophy §8 第 2 层 |
+| ~~`__int_compare_to` / `__double_compare_to` / `__char_compare_to` (3)~~ | ✅ 已删 | 2026-04-27 wave2-compare-to-script — 5 个 primitive (int/long/double/float/char) 的 `CompareTo` 全脚本：`if (this < other) return -1; if (this > other) return 1; return 0;` 用 IR `<`/`>`，与 Rust `partial_cmp.unwrap_or(0)` 等价（NaN → 0 自然落到 return 0）|
 | `__int_equals` / `__int_hash_code` / `__int_to_string` (3) | 🟢 | Object 协议 ABI |
 | `__double_equals` / `__double_hash_code` / `__double_to_string` (3) | 🟢 | 同上 |
 | ~~`__bool_equals` / `__bool_hash_code` / `__bool_to_string` (3)~~ | ✅ 已删 | 2026-04-27 wave1-bool-script — 脚本实现见 [z42.core/src/Bool.z42](z42.core/src/Bool.z42)，`ToString` 输出 `"true"/"false"` 小写（与 Rust 一致）|
@@ -213,10 +213,10 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 |---|---|---|
 | Wave 0（dead code）| 13 | ✅ 已完成（extern-audit-wave0）|
 | Wave 1（feature → 脚本）| 19 | ✅ 全部完成（assert 6 + bool 3 + math 3 + path 5 + str split/join 2）|
-| Wave 2（codegen 特化）| 3 | 待 spec：3 个 `*_compare_to` |
+| Wave 2（codegen 特化 → 实际纯脚本）| 3 | ✅ 完成（wave2-compare-to-script）。原计划 codegen 特化，实测 `<`/`>` 走 IR cmp+jmp 已足够 |
 | Wave 3（需要新基础设施）| 2-3 | `__str_concat` / `__str_format` 等 |
 | 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
-| **当前总计** | **~48** | **长期目标 ~45**（接近达成）|
+| **当前总计** | **~45** | **长期目标 ~45 ✅ 已达成** |
 
 ### Wave 进度
 
@@ -228,5 +228,5 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave 1.3 Math abs/max/min | ✅ 已完成（wave1-math-script）| 2026-04-27 |
 | Wave 1.4 Path 五件套 | ✅ 已完成（wave1-path-script）| 2026-04-27 |
 | Wave 1.5 String split/join | ✅ 已完成（wave1-string-script）| 2026-04-27 |
-| Wave 2 | ⚪ 待启动 | — |
+| Wave 2 | ✅ 已完成（wave2-compare-to-script）| 2026-04-27 |
 | Wave 3 | ⚪ 待启动 | — |

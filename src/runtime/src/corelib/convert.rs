@@ -94,11 +94,9 @@ fn require_char(args: &[Value], idx: usize, ctx: &str) -> Result<char> {
     }
 }
 
-pub fn builtin_int_compare_to(args: &[Value]) -> Result<Value> {
-    let a = require_i64(args, 0, "int.CompareTo")?;
-    let b = require_i64(args, 1, "int.CompareTo")?;
-    Ok(Value::I64(a.cmp(&b) as i64))
-}
+// 2026-04-27 wave2-compare-to-script: builtin_int_compare_to removed.
+// `Std.int.CompareTo` / `Std.long.CompareTo` 现在是脚本（用 IR `<`/`>`）。
+
 pub fn builtin_int_equals(args: &[Value]) -> Result<Value> {
     let a = require_i64(args, 0, "int.Equals")?;
     let b = require_i64(args, 1, "int.Equals")?;
@@ -113,11 +111,9 @@ pub fn builtin_int_to_string(args: &[Value]) -> Result<Value> {
     Ok(Value::Str(a.to_string()))
 }
 
-pub fn builtin_double_compare_to(args: &[Value]) -> Result<Value> {
-    let a = require_f64(args, 0, "double.CompareTo")?;
-    let b = require_f64(args, 1, "double.CompareTo")?;
-    Ok(Value::I64(a.partial_cmp(&b).map(|o| o as i64).unwrap_or(0)))
-}
+// 2026-04-27 wave2-compare-to-script: builtin_double_compare_to removed.
+// `Std.double.CompareTo` / `Std.float.CompareTo` 现在是脚本（NaN → 0 由 `<`/`>` 自然返回 false 实现）。
+
 pub fn builtin_double_equals(args: &[Value]) -> Result<Value> {
     let a = require_f64(args, 0, "double.Equals")?;
     let b = require_f64(args, 1, "double.Equals")?;
@@ -135,11 +131,9 @@ pub fn builtin_double_to_string(args: &[Value]) -> Result<Value> {
 // 2026-04-27 wave1-bool-script: 3 `builtin_bool_*` removed.
 // `Std.bool.Equals` / `GetHashCode` / `ToString` 现在是 z42 脚本实现。
 
-pub fn builtin_char_compare_to(args: &[Value]) -> Result<Value> {
-    let a = require_char(args, 0, "char.CompareTo")?;
-    let b = require_char(args, 1, "char.CompareTo")?;
-    Ok(Value::I64(a.cmp(&b) as i64))
-}
+// 2026-04-27 wave2-compare-to-script: builtin_char_compare_to removed.
+// `Std.char.CompareTo` 现在是脚本（codepoint `<`/`>` 比较）。
+
 pub fn builtin_char_equals(args: &[Value]) -> Result<Value> {
     let a = require_char(args, 0, "char.Equals")?;
     let b = require_char(args, 1, "char.Equals")?;
