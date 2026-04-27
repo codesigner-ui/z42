@@ -280,6 +280,11 @@ public static class ExportedTypeExtractor
         Z42VoidType            => "void",
         Z42ArrayType at        => $"{TypeToString(at.Element)}[]",
         Z42OptionType ot       => $"{TypeToString(ot.Inner)}?",
+        // 2026-04-28 fix-generic-type-roundtrip：`KeyValuePair<K, V>` 等
+        // instantiated 泛型类需要保留 type-args，否则跨 zpkg 后退化为 unknown，
+        // 用户代码 `entries[m].Value` 拿到 generic param 而非具体类型。
+        Z42InstantiatedType inst =>
+            $"{inst.Definition.Name}<{string.Join(", ", inst.TypeArgs.Select(TypeToString))}>",
         Z42ClassType ct        => ct.Name,
         Z42InterfaceType it    => it.Name,
         Z42NullType            => "null",

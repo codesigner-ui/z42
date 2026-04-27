@@ -500,9 +500,33 @@ Exception`）会因任意一级断链而丢失 `Message` 字段。
 
 `SymbolCollector` / `SymbolTable` 跟踪 `ImportedClassNames` /
 `ImportedInterfaceNames` / `ImportedFuncNames` / `ImportedEnumNames`
-（`MergeImported` 时 TryAdd 成功即记入），`ExtractIntraSymbols(ns)` 据此
-过滤掉外部 imported 的条目，只输出本包 declarations。返回的
+（`MergeImported` 时 TryAdd 成功即记入），`ExtractIntraSymbols(ns, classNamespaces?)`
+据此过滤掉外部 imported 的条目，只输出本包 declarations。返回的
 `ImportedSymbols` 直接喂给 Phase 2 的 `Combine`。
+
+**Per-class namespace（fix-generic-type-roundtrip 2026-04-28 引入）：**
+同一个 package 可以包含多个 namespace（例：`z42.core` 同时含 `Std`、
+`Std.Collections`、`Std.IO`）。`ExtractIntraSymbols` 接受可选
+`classNamespaces` map（class 短名 → 该 class 实际声明所在 namespace），
+按 class 单独写入 `ImportedSymbols.ClassNamespaces`；缺省时回退到
+`ns` 参数（向后兼容单 namespace package）。
+
+PackageCompiler 在 Phase 1 收集所有 CU 后扫描 `cu.Classes` 构建该 map：
+
+```csharp
+var classNamespaces = new Dictionary<string, string>(...);
+foreach (var (_, _, cu, ns) in parsedCus)
+    foreach (var cls in cu.Classes)
+        classNamespaces.TryAdd(cls.Name, ns);
+intraSymbols = sharedSymbols.ExtractIntraSymbols(firstNs, classNamespaces);
+```
+
+**为何重要**：`IrGen.QualifyClassName` 用 `ImportedClassNamespaces[name]`
+拼 obj.new / vcall 的 fully-qualified target。错误的 namespace prefix（例：
+`Std.KeyValuePair` vs 正确的 `Std.Collections.KeyValuePair`）会让 runtime
+找不到类型，构造器静默不写字段、`.Value` 全是 null。修复前 z42.core
+内 `Dictionary.Entries()` 调 `new KeyValuePair<K,V>(...)` 即触发该 bug；
+修复后跨 namespace 同包引用走对前缀。
 
 ### 兼容性
 

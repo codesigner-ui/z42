@@ -3,3 +3,4 @@ sum=6
 sum2=6
 kv=hello/42
 entries_len=3
+sum3=6

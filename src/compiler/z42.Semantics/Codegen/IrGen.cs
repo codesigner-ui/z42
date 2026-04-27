@@ -319,6 +319,8 @@ public sealed class IrGen : IEmitterContext
         VoidType      => "void",
         OptionType ot => TypeName(ot.Inner) + "?",
         ArrayType at  => TypeName(at.Element) + "[]",
+        // 2026-04-28 fix-generic-type-roundtrip：保留 generic type-args
+        GenericType gt => $"{gt.Name}<{string.Join(", ", gt.TypeArgs.Select(TypeName))}>",
         _             => "unknown"
     };
 }

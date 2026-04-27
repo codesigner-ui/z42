@@ -356,6 +356,26 @@ public static class ImportedSymbolLoader
             return new Z42ArrayType(ResolveTypeName(name[..^2], genericParams, classes, interfaces));
         if (name.EndsWith("?"))
             return new Z42OptionType(ResolveTypeName(name[..^1], genericParams, classes, interfaces));
+        // 2026-04-28 fix-generic-type-roundtrip：识别 `Foo<X, Y, ...>` 字符串，
+        // 重建为 `Z42InstantiatedType { Definition = Foo, TypeArgs = [X, Y, ...] }`。
+        // 否则 `KeyValuePair<K, V>` 当 unknown class 处理 → 跨 zpkg 后退化为
+        // PrimType("KeyValuePair<K, V>")，用户访问 `.Value` 拿到 generic V。
+        if (name.EndsWith(">"))
+        {
+            int lt = FindGenericOpenLt(name);
+            if (lt > 0)
+            {
+                string baseName = name[..lt];
+                string argsStr  = name[(lt + 1)..^1];
+                if (classes is not null && classes.TryGetValue(baseName, out var defCls))
+                {
+                    var args = SplitGenericArgs(argsStr)
+                        .Select(s => ResolveTypeName(s.Trim(), genericParams, classes, interfaces))
+                        .ToList();
+                    return new Z42InstantiatedType(defCls, args);
+                }
+            }
+        }
         if (genericParams != null && genericParams.Contains(name))
             return new Z42GenericParamType(name);
 
@@ -390,6 +410,45 @@ public static class ImportedSymbolLoader
 
         // Fallback: Phase 1 占位 / 真正未知名（拼写错误等，TypeChecker 后续报错）
         return new Z42PrimType(name);
+    }
+
+    /// 找到 `Foo<X, Bar<Y, Z>>` 字符串里最外层 `<` 的 index。深度计数处理嵌套
+    /// generic（按 `<` `>` 平衡 + 跟最右 `>` 配对）。无匹配返回 -1。
+    private static int FindGenericOpenLt(string name)
+    {
+        if (name.Length == 0 || name[^1] != '>') return -1;
+        int depth = 0;
+        for (int i = name.Length - 1; i >= 0; i--)
+        {
+            if      (name[i] == '>') depth++;
+            else if (name[i] == '<')
+            {
+                depth--;
+                if (depth == 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    /// 切分 `K, V`、`K, Foo<X, Y>` 等 generic-args 字符串，按顶层 `,` 分隔。
+    /// 嵌套 `<>` 内的 `,` 不切。
+    private static IEnumerable<string> SplitGenericArgs(string args)
+    {
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < args.Length; i++)
+        {
+            switch (args[i])
+            {
+                case '<': depth++; break;
+                case '>': depth--; break;
+                case ',' when depth == 0:
+                    yield return args[start..i];
+                    start = i + 1;
+                    break;
+            }
+        }
+        if (start <= args.Length) yield return args[start..];
     }
 
     private static Visibility ParseVisibility(string vis) => vis switch

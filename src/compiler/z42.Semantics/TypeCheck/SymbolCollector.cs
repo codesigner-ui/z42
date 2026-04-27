@@ -241,7 +241,16 @@ public sealed partial class SymbolCollector : ISymbolBinder
             // L3 static abstract (C# 11): also preserve StaticMembers so generic
             // constraint references like `where T: INumber<T>` keep access to
             // the interface's static abstract / virtual members.
-            _            => _classes.TryGetValue(gt.Name, out var ct) ? (Z42Type)ct
+            // 2026-04-28 fix-generic-type-roundtrip: 同样为 generic 类引用保留
+            // TypeArgs，构造 Z42InstantiatedType。否则 `KeyValuePair<K, V>` 在
+            // SymbolCollector 阶段被退化为 bare Z42ClassType，TSIG 序列化丢失
+            // type-args，消费端 `dict.Entries()[m].Value` 拿到 generic param V。
+            _            => _classes.TryGetValue(gt.Name, out var ct)
+                              ? (gt.TypeArgs.Count > 0 && ct.TypeParams is { Count: > 0 } tps
+                                  && gt.TypeArgs.Count == tps.Count
+                                    ? (Z42Type)new Z42InstantiatedType(ct,
+                                          gt.TypeArgs.Select(ResolveType).ToList())
+                                    : (Z42Type)ct)
                           : _interfaces.TryGetValue(gt.Name, out var it)
                               ? (gt.TypeArgs.Count > 0
                                     ? new Z42InterfaceType(it.Name, it.Methods,

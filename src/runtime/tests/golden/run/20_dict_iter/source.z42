@@ -34,10 +34,15 @@ void Main() {
     var kv = new KeyValuePair<string, int>("hello", 42);
     Console.WriteLine($"kv={kv.Key}/{kv.Value}");  // hello/42
 
-    // dict.Entries() 返回 KeyValuePair<K,V>[]；仅验证长度（KeyValuePair 字段
-    // 类型是 generic param V，访问 .Value 拿到的是 V 而非 int —— 类型系统
-    // 暂未做 generic-param substitution on member access on instantiated array
-    // element，待独立 spec 修复后再加 .Value 累加断言）。
+    // dict.Entries() 返回 KeyValuePair<K,V>[]，访问 .Value 应拿到具体类型 int
+    // (fix-generic-type-roundtrip 修复后)。
     var entries = dict.Entries();
     Console.WriteLine($"entries_len={entries.Length}");  // 3
+    int total3 = 0;
+    int m = 0;
+    while (m < entries.Length) {
+        total3 = total3 + entries[m].Value;
+        m = m + 1;
+    }
+    Console.WriteLine($"sum3={total3}");  // 6 (1+2+3)
 }

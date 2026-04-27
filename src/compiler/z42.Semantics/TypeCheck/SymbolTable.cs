@@ -81,7 +81,17 @@ public sealed class SymbolTable
     /// 用于 PackageCompiler 多 CU 编译时把同包内每个 cu 的 Pass-0 收集结果
     /// 合并成 intraSymbols，供 Phase 2 完整编译时作为额外 imported 注入。
     /// (fix-package-compiler-cross-file 引入。)
-    public ImportedSymbols ExtractIntraSymbols(string namespaceName)
+    ///
+    /// 2026-04-28 fix-intra-package-namespace：包内多 CU 各自带不同 namespace
+    /// （如 z42.core 同时含 `Std`、`Std.Collections`、`Std.IO`），原先把所有
+    /// class 都标成首个 CU 的 namespace 会导致跨 namespace 的同包引用走错前缀
+    /// （如 Dictionary.Entries() 内 `new KeyValuePair<K,V>(...)` 被发射成
+    /// `Std.KeyValuePair` 而非 `Std.Collections.KeyValuePair`，运行期找不到
+    /// 类型，构造器不写字段，`.Value` 全是 null）。修复：传入 per-class
+    /// namespace map，缺省时回退到 namespaceName。
+    public ImportedSymbols ExtractIntraSymbols(
+        string namespaceName,
+        IReadOnlyDictionary<string, string>? classNamespaces = null)
     {
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
         var classNs    = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -90,7 +100,9 @@ public sealed class SymbolTable
             if (ImportedClassNames.Contains(name)) continue;
             if (name == "Object") continue; // synthetic stub
             classes[name] = ct;
-            classNs[name] = namespaceName;
+            classNs[name] = classNamespaces is not null
+                            && classNamespaces.TryGetValue(name, out var perClassNs)
+                ? perClassNs : namespaceName;
         }
 
         var interfaces = new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal);

@@ -251,6 +251,10 @@ internal sealed partial class FunctionEmitter
         VoidType      => "void",
         OptionType ot => TypeName(ot.Inner) + "?",
         ArrayType at  => TypeName(at.Element) + "[]",
+        // 2026-04-28 fix-generic-type-roundtrip：保留 generic type-args（之前
+        // 落到 "unknown"），让 KeyValuePair<K, V>[] 等返回类型在 IR FUNC.RetType
+        // 字段里保持完整名字，下游 TypeChecker 能正确还原 instantiation 关系。
+        GenericType gt => $"{gt.Name}<{string.Join(", ", gt.TypeArgs.Select(TypeName))}>",
         _             => "unknown"
     };
 

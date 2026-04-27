@@ -547,9 +547,18 @@ public static class PackageCompiler
         // FinalizeInheritance mutates _classes in place; the SymbolTable returned
         // from the last Collect() call holds references to the same dictionaries,
         // but to be explicit we extract from a fresh snapshot.
+        // 2026-04-28 fix-intra-package-namespace：构建 per-class namespace map，
+        // 同包多 namespace（z42.core 同时含 `Std` / `Std.Collections` / `Std.IO`）
+        // 时各 class 携带其本身的 namespace，否则跨 namespace 的同包 `new T(...)`
+        // 会被发射成错误前缀（runtime 找不到类型，构造器不写字段）。
+        var classNamespaces = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (_, _, cu, ns) in parsedCus)
+            foreach (var cls in cu.Classes)
+                classNamespaces.TryAdd(cls.Name, ns);
         var intraSymbols = sharedSymbols is null
             ? ImportedSymbolLoader.Empty()
-            : sharedSymbols.ExtractIntraSymbols(parsedCus.FirstOrDefault().ns ?? "main");
+            : sharedSymbols.ExtractIntraSymbols(
+                parsedCus.FirstOrDefault().ns ?? "main", classNamespaces);
 
         // ── Phase 2: full compile each CU with combined imports ──
         var combined = ImportedSymbolLoader.Combine(externalImported, intraSymbols);
