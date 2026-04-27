@@ -1,0 +1,3 @@
+count=2
+stack_top=20
+queue_front=first

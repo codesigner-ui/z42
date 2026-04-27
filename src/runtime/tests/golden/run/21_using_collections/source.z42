@@ -1,0 +1,25 @@
+// Test: `using Std.Collections;` + Dictionary<K,V> 约束验证 (fix-using-prelude-include, 2026-04-27)
+//
+// 修前：用户显式写 `using Std.Collections;` 后，TypeChecker 只看 Std.Collections
+// 命名空间，丢失 Std 命名空间的 IEquatable，导致 Dictionary 的 `where K:
+// IEquatable<K>` 约束验证失败。
+// 修后：Std 命名空间自动作为隐式 prelude 包含。
+
+using Std.Collections;
+
+void Main() {
+    var d = new Dictionary<string, int>();
+    d["alpha"] = 1;
+    d["beta"]  = 2;
+    Console.WriteLine($"count={d.Count}");
+
+    var s = new Stack<int>();
+    s.Push(10);
+    s.Push(20);
+    Console.WriteLine($"stack_top={s.Peek()}");
+
+    var q = new Queue<string>();
+    q.Enqueue("first");
+    q.Enqueue("second");
+    Console.WriteLine($"queue_front={q.Peek()}");
+}

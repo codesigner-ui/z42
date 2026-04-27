@@ -32,6 +32,13 @@ public static class ImportedSymbolLoader
         IReadOnlyList<string> usings)
     {
         var allowedNs  = new HashSet<string>(usings, StringComparer.Ordinal);
+        // 2026-04-27 fix-using-prelude-include：`Std` 是 z42.core 的隐式 prelude
+        // （见 docs/design/stdlib.md "z42.core auto-load semantics"）。无论用户
+        // 写什么 using，IEquatable / Object / Exception 等基础类型都应可见。
+        // 缺这个会导致 `using Std.Collections;` + `Dictionary<string,int>` 报
+        // "string does not satisfy IEquatable on Dictionary"（Dictionary 约束
+        // 引用 IEquatable，但 IEquatable 在 Std 命名空间被过滤掉了）。
+        allowedNs.Add("Std");
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
         var funcs      = new Dictionary<string, Z42FuncType>(StringComparer.Ordinal);
         var interfaces = new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal);
