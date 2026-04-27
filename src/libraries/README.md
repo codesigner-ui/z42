@@ -13,6 +13,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `z42.io/` | `z42.io` | IO 类型：`Console`、`File`、`Path`、`Environment` |
 | `z42.math/` | `z42.math` | 数学函数：`Math` |
 | `z42.text/` | `z42.text` | 文本处理：`StringBuilder`、`Regex` |
+| `z42.test/` | `z42.test` | 单元测试运行时（v0 imperative TestRunner；lambda 就绪后升级 v1）|
 
 ## 实现规范（必须遵守）
 
@@ -86,7 +87,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `z42.async` | `Task<T>` / `async`/`await` runtime / `ValueTask` | L3 | 关键字 `async` / `await` parser 完成 |
 | `z42.net` | `Socket` / `HttpClient` / `Url` | L3+ | 异步运行时就绪后 |
 | `z42.json` | `JsonReader` / `JsonWriter` / `JsonNode` | L3+ | 反射 (L3-R) 完成（自动序列化）|
-| `z42.test` | `Test` 注解 / `Assert*` / Runner | L2/L3 | 用户脚本测试需求 |
+| ~~`z42.test`~~ | ✅ v0 已落地（imperative `TestRunner`）—— v1 等 lambda、v2 等 [Test] attribute + reflection | — | 2026-04-27 |
 | `z42.linq` | `Where` / `Select` / `OrderBy` 扩展（基于 `IEnumerable<T>`）| L3 | Lambda + IEnumerable codegen 升级 |
 | `z42.numerics` | `BigInteger` / `Complex` / 矩阵基础 | L3 | 数值计算需求 |
 | `z42.crypto` | 哈希 / 对称加密 / 签名（封装 native 库）| L3+ | 安全场景需求 |

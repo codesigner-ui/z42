@@ -1,0 +1,12 @@
+══════════════════════════════════════
+ DemoSuite
+══════════════════════════════════════
+  ✓ Addition
+  ✓ Concatenation
+  ✗ FAIL: DeliberateFail
+          AssertionError: expected 1 but got 2
+  ✓ AfterFail
+──────────────────────────────────────
+ Result: 3 passed, 1 failed
+══════════════════════════════════════
+failed = 1

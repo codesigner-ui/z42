@@ -21,6 +21,7 @@ default-members = [
     "z42.io",
     "z42.math",
     "z42.text",
+    "z42.test",
 ]
 
 [workspace.project]

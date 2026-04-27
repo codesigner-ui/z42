@@ -47,7 +47,7 @@ else
     COMPILER_CMD=(dotnet run --project "$ROOT/src/compiler/z42.Driver" --)
 fi
 
-LIBS=(z42.core z42.io z42.math z42.text z42.collections)
+LIBS=(z42.core z42.io z42.math z42.text z42.collections z42.test)
 
 # Workspace 模式：cd 到 src/libraries 触发 workspace 发现；
 # z42c build --workspace --release 编译所有 default-members
