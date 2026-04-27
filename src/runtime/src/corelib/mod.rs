@@ -100,9 +100,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__str_compare_to",    convert::builtin_str_compare_to);
 
         // ── Math ──────────────────────────────────────────────────────────────
-        m.insert("__math_abs",     math::builtin_math_abs);
-        m.insert("__math_max",     math::builtin_math_max);
-        m.insert("__math_min",     math::builtin_math_min);
+        // 2026-04-27 wave1-math-script: removed __math_abs / _max / _min —
+        // `Std.Math.Math.Abs/Max/Min` 现在是脚本（int + double overload）。
         m.insert("__math_pow",     math::builtin_math_pow);
         m.insert("__math_sqrt",    math::builtin_math_sqrt);
         m.insert("__math_floor",   math::builtin_math_floor);

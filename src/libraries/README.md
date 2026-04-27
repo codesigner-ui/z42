@@ -185,7 +185,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 
 | Builtin | 状态 | 备注 |
 |---|---|---|
-| `__math_abs` / `__math_max` / `__math_min` (3) | 🟡 | BCL/Rust 都是脚本：三元 if，int + double 各一份 |
+| ~~`__math_abs` / `__math_max` / `__math_min` (3)~~ | ✅ 已删 | 2026-04-27 wave1-math-script — int + double overload 脚本，见 [z42.math/src/Math.z42](z42.math/src/Math.z42) |
 | `__math_pow` / `__math_sqrt` / `__math_log` / `__math_log10` / `__math_sin` / `__math_cos` / `__math_tan` / `__math_atan2` / `__math_exp` (9) | 🟢 | libm FPU 指令，BCL/Rust 都是 extern |
 | `__math_floor` / `__math_ceiling` / `__math_round` (3) | 🟢 | libm 一致性；技术上脚本可表达，但保 libm 行为以匹配 BCL/Rust |
 
@@ -208,11 +208,11 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave | 数量 | 处置 |
 |---|---|---|
 | Wave 0（dead code）| 13 | ✅ 已完成（extern-audit-wave0）|
-| Wave 1（feature → 脚本）| 19 → **10 剩余** | 6 assert ✅ + 3 bool ✅ 已迁；待迁：3 math + 5 path + 2 str split/join |
+| Wave 1（feature → 脚本）| 19 → **7 剩余** | 6 assert ✅ + 3 bool ✅ + 3 math ✅ 已迁；待迁：5 path + 2 str split/join |
 | Wave 2（codegen 特化）| 3 | 待 spec：3 个 `*_compare_to` |
 | Wave 3（需要新基础设施）| 2-3 | `__str_concat` / `__str_format` 等 |
 | 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
-| **当前总计** | **~58** | **长期目标 ~45** |
+| **当前总计** | **~55** | **长期目标 ~45** |
 
 ### Wave 进度
 
@@ -221,7 +221,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave 0 | ✅ 已完成（extern-audit-wave0）| 2026-04-26 |
 | Wave 1.1 Assert | ✅ 已完成（wave1-assert-script）| 2026-04-27 |
 | Wave 1.2 Bool 三件套 | ✅ 已完成（wave1-bool-script）| 2026-04-27 |
-| Wave 1.3 Math abs/max/min | ⚪ 待启动 | — |
+| Wave 1.3 Math abs/max/min | ✅ 已完成（wave1-math-script）| 2026-04-27 |
 | Wave 1.4 Path 五件套 | ⚪ 待启动 | — |
 | Wave 1.5 String split/join | ⚪ 待启动 | — |
 | Wave 2 | ⚪ 待启动 | — |

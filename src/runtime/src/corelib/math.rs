@@ -1,28 +1,9 @@
 use crate::metadata::Value;
 use anyhow::{bail, Result};
 
-pub fn builtin_math_abs(args: &[Value]) -> Result<Value> {
-    match args.first() {
-        Some(Value::I64(n)) => Ok(Value::I64(n.abs())),
-        Some(Value::F64(f)) => Ok(Value::F64(f.abs())),
-        Some(other) => bail!("Math.Abs: unsupported type {:?}", other),
-        None => bail!("Math.Abs: missing argument"),
-    }
-}
-pub fn builtin_math_max(args: &[Value]) -> Result<Value> {
-    match (args.first(), args.get(1)) {
-        (Some(Value::I64(a)), Some(Value::I64(b))) => Ok(Value::I64(*a.max(b))),
-        (Some(Value::F64(a)), Some(Value::F64(b))) => Ok(Value::F64(a.max(*b))),
-        _ => bail!("Math.Max: expected two numeric arguments"),
-    }
-}
-pub fn builtin_math_min(args: &[Value]) -> Result<Value> {
-    match (args.first(), args.get(1)) {
-        (Some(Value::I64(a)), Some(Value::I64(b))) => Ok(Value::I64(*a.min(b))),
-        (Some(Value::F64(a)), Some(Value::F64(b))) => Ok(Value::F64(a.min(*b))),
-        _ => bail!("Math.Min: expected two numeric arguments"),
-    }
-}
+// 2026-04-27 wave1-math-script: builtin_math_abs/_max/_min removed.
+// `Std.Math.Math.Abs/Max/Min` 现在是 z42 脚本（int + double overload）。
+
 pub fn builtin_math_pow(args: &[Value]) -> Result<Value> {
     match (args.first(), args.get(1)) {
         (Some(Value::I64(base)), Some(Value::I64(exp))) => Ok(Value::I64(base.pow(*exp as u32))),
