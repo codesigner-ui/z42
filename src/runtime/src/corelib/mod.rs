@@ -63,8 +63,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__str_length",     string::builtin_str_length);
         m.insert("__str_char_at",    string::builtin_str_char_at);
         m.insert("__str_from_chars", string::builtin_str_from_chars);
-        m.insert("__str_split",      string::builtin_str_split);
-        m.insert("__str_join",       string::builtin_str_join);
+        // 2026-04-27 wave1-string-script: removed __str_split / __str_join —
+        // `Std.String.Split` / `Join` 现在是脚本（基于 CharAt + Substring）。
         m.insert("__str_concat",     string::builtin_str_concat);
         m.insert("__str_format",     string::builtin_str_format);
         m.insert("__str_to_string",  string::builtin_str_to_string);

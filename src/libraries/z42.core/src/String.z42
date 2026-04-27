@@ -212,14 +212,67 @@ public static class String : IComparable<string>, IEquatable<string> {
         return true;
     }
 
-    // ── Remaining intrinsic-backed methods (complex / perf-sensitive) ───────
+    // ── Split / Join (Wave 1.5, 2026-04-27 wave1-string-script) ─────────────
+    // 从 [Native] 迁纯脚本（BCL `string.Split` / Rust `str::split` 都是源码）。
+    // 两遍扫描：先数 split 个数，再分配 string[] 一次性填充。
 
-    // Instance: `csv.Split(",")` — VCall prepends receiver to builtin args.
-    [Native("__str_split")]  public extern string[] Split(string separator);
+    // Split this string by `separator` into segments. Empty separator throws.
+    public string[] Split(string separator) {
+        int sepLen = separator.Length;
+        if (sepLen == 0) {
+            throw new Exception("string.Split: separator must not be empty");
+        }
+        int n = this.Length;
+        // Pass 1: count parts (matches + 1)
+        int count = 1;
+        int i = 0;
+        while (i <= n - sepLen) {
+            bool hit = true;
+            for (int j = 0; j < sepLen; j++) {
+                if (this.CharAt(i + j) != separator.CharAt(j)) { hit = false; break; }
+            }
+            if (hit) { count = count + 1; i = i + sepLen; }
+            else     { i = i + 1; }
+        }
+        // Pass 2: extract parts
+        string[] result = new string[count];
+        int idx = 0;
+        int start = 0;
+        int k = 0;
+        while (k <= n - sepLen) {
+            bool hit = true;
+            for (int j = 0; j < sepLen; j++) {
+                if (this.CharAt(k + j) != separator.CharAt(j)) { hit = false; break; }
+            }
+            if (hit) {
+                result[idx] = this.Substring(start, k - start);
+                idx = idx + 1;
+                k = k + sepLen;
+                start = k;
+            } else {
+                k = k + 1;
+            }
+        }
+        result[idx] = this.Substring(start, n - start);
+        return result;
+    }
 
-    // Static: namespaced as String.Join / String.Concat / String.Format.
-    [Native("__str_join")]   public static extern string Join(string separator, string[] values);
-    [Native("__str_join")]   public static extern string Join(string separator, string a, string b, string c);
+    // Static: namespaced as String.Join.
+    public static string Join(string separator, string[] values) {
+        int n = values.Length;
+        if (n == 0) return "";
+        string result = values[0];
+        for (int i = 1; i < n; i++) {
+            result = result + separator + values[i];
+        }
+        return result;
+    }
+
+    public static string Join(string separator, string a, string b, string c) {
+        return a + separator + b + separator + c;
+    }
+
+    // ── Remaining intrinsic-backed methods (perf-sensitive / 协议依赖) ───────
     [Native("__str_concat")] public static extern string Concat(string a, string b);
     [Native("__str_concat")] public static extern string Concat(string a, string b, string c);
     [Native("__str_format")] public static extern string Format(string format, object arg0);

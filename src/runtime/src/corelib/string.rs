@@ -39,32 +39,8 @@ pub fn builtin_str_from_chars(args: &[Value]) -> Result<Value> {
     Ok(Value::Str(out))
 }
 
-pub fn builtin_str_split(args: &[Value]) -> Result<Value> {
-    let s   = require_str(args, 0, "__str_split")?;
-    let sep = require_str(args, 1, "__str_split")?;
-    let parts: Vec<Value> = s.split(sep.as_str())
-        .map(|p| Value::Str(p.to_string()))
-        .collect();
-    Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(parts))))
-}
-
-pub fn builtin_str_join(args: &[Value]) -> Result<Value> {
-    if args.is_empty() { return Ok(Value::Str(String::new())); }
-    let sep = match &args[0] {
-        Value::Str(s) => s.as_str(),
-        Value::Null   => "",
-        other => bail!("string.Join: separator must be string, got {:?}", other),
-    };
-    let items: Vec<String> = if args.len() == 2 {
-        match &args[1] {
-            Value::Array(arr) => arr.borrow().iter().map(|v| value_to_str(v)).collect(),
-            other             => vec![value_to_str(other)],
-        }
-    } else {
-        args[1..].iter().map(|v| value_to_str(v)).collect()
-    };
-    Ok(Value::Str(items.join(sep)))
-}
+// 2026-04-27 wave1-string-script: builtin_str_split + builtin_str_join removed.
+// `Std.String.Split` / `Join` 现在是 z42 脚本，基于 CharAt + Substring。
 
 pub fn builtin_str_concat(args: &[Value]) -> Result<Value> {
     let mut out = String::new();
