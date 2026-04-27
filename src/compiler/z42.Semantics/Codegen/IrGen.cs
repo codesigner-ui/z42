@@ -300,11 +300,16 @@ public sealed class IrGen : IEmitterContext
         _classRegistry.FindVcallParamsKey(methodName, suppliedArgCount, _funcParams);
 
     /// Returns the qualified static field key if className has a static field named fieldName.
+    ///
+    /// 2026-04-27 fix-static-field-access：使用 `QualifyClassName` 而非 `QualifyName`，
+    /// 这样 imported class（如 `Math` from `z42.math`）的字段会拿到正确的 import
+    /// namespace（`Std.Math.Math.PI`），与 zpkg 内 `__static_init__` 写入的 key
+    /// 一致；否则用户代码 emit `@Math.PI`，VM HashMap 找不到 → 返回 null。
     internal string? TryGetStaticFieldKey(string className, string fieldName)
     {
         if (_semanticModel!.Classes.TryGetValue(className, out var ct)
             && ct.StaticFields.ContainsKey(fieldName))
-            return $"{QualifyName(className)}.{fieldName}";
+            return $"{((IEmitterContext)this).QualifyClassName(className)}.{fieldName}";
         return null;
     }
 

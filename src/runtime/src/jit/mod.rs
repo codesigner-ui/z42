@@ -30,8 +30,9 @@ pub struct JitModule {
     /// Keeps the JITModule alive so the machine code pages remain valid.
     _jit: JITModule,
     ctx:  Box<JitModuleCtx>,
-    /// Module name (used to locate __static_init__ and entry points).
-    name: String,
+    // 2026-04-27 fix-static-field-access: removed `name: String` —
+    // 之前用来 format `"{name}.__static_init__"`，新版扫描所有
+    // `*.__static_init__` 函数，不再需要主模块名。
 }
 
 impl JitModule {
@@ -47,14 +48,24 @@ impl JitModule {
         Ok(())
     }
 
-    /// Run with static initialisation: clears static fields, calls __static_init__ if
-    /// present, then calls the given entry function.
+    /// Run with static initialisation: clears static fields, calls **all**
+    /// `*.__static_init__` functions (sorted) — including imported zpkgs —
+    /// then calls the given entry function.
+    ///
+    /// 2026-04-27 fix-static-field-access: 与 interp 的 `run_with_static_init`
+    /// 对称修复。修前只跑主模块 init，导入 zpkg（如 z42.math 的
+    /// `Std.Math.__static_init__`）虽然 link 但永不被调用。
     pub fn run(&self, entry_name: &str) -> Result<()> {
         static_fields_clear();
 
-        // Call __static_init__ if compiled.
-        let init_name = format!("{}.__static_init__", self.name);
-        if let Some(entry) = self.ctx.fn_entries.get(&init_name) {
+        // Collect all __static_init__ entries; sort by name for determinism.
+        let mut init_names: Vec<&String> = self.ctx.fn_entries.keys()
+            .filter(|n| n.ends_with(".__static_init__"))
+            .collect();
+        init_names.sort();
+
+        for init_name in init_names {
+            let entry = &self.ctx.fn_entries[init_name];
             let mut frame = JitFrame::new(entry.max_reg, &[]);
             let f: JitFn  = unsafe { std::mem::transmute(entry.ptr) };
             let r = unsafe { f(&mut frame, &*self.ctx) };
@@ -187,7 +198,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
         module: module as *const Module,
     });
 
-    Ok(JitModule { _jit: jit, ctx, name: module.name.clone() })
+    Ok(JitModule { _jit: jit, ctx })
 }
 
 // ─── Public entry point called from vm.rs ───────────────────────────────────

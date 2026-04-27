@@ -130,6 +130,26 @@ pub fn try_lookup_string(absolute_idx: usize) -> Option<String> {
     })
 }
 
+/// Returns all namespaces declared by lazy-loadable zpkgs (both already loaded
+/// and not-yet-loaded). Used by `run_with_static_init` to discover
+/// `<ns>.__static_init__` functions in imported stdlib modules.
+///
+/// 2026-04-27 fix-static-field-access: 没这个 API 之前，VM 启动时只跑
+/// 主模块的 __static_init__，导入 zpkg（如 z42.math）的常量字段（PI / E / Tau）
+/// 永远不被赋值 → `Math.PI` 返回 null。
+pub fn declared_namespaces() -> Vec<String> {
+    STATE.with(|s| {
+        let state = s.borrow();
+        let Some(loader) = state.as_ref() else { return Vec::new(); };
+        let mut all: Vec<String> = loader.declared_zpkgs.values()
+            .flat_map(|c| c.namespaces.iter().cloned())
+            .collect();
+        all.sort();
+        all.dedup();
+        all
+    })
+}
+
 // ── State ─────────────────────────────────────────────────────────────────────
 
 struct LazyLoader {

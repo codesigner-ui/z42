@@ -72,16 +72,54 @@ pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
     }
 }
 
-/// Run with static init: clears static fields, runs __static_init__ if present, then runs `func`.
+/// Run with static init: clears static fields, runs ALL `*.__static_init__`
+/// functions (both eager-loaded in `module.functions` and lazy-loadable from
+/// declared zpkgs), then runs `func`.
+///
+/// 2026-04-27 fix-static-field-access: 修前只跑 `{module.name}.__static_init__`
+/// (主模块)，导入的 zpkg（如 z42.math 的 `Std.Math.__static_init__`）虽然 link 进
+/// merged module 但永不被调用 → `Math.PI` 等常量永远 `null`。
+///
+/// interp 模式下 stdlib 是 lazy-loaded，启动时除 z42.core 外都不在
+/// `module.functions`。所以同时需要：
+///   1. 扫主模块 functions（拿到 eagerly-loaded 的 init，含 main 自己 + z42.core）
+///   2. 通过 `lazy_loader::declared_namespaces()` 拿到所有声明但未加载的命名空间，
+///      调用 `try_lookup_function("<ns>.__static_init__")` 触发 lazy load
+///   3. 合并 + 按 FQN 字母序去重 + 逐一调用
+///
+/// 副作用：所有声明的 stdlib zpkg 都会被 eagerly 加载（不再纯 lazy）。
+/// 在当前 stdlib 规模（~50KB / 5 包）下成本可忽略，换取静态常量可用。
 pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
     dispatch::static_fields_clear();
-    let init_name = format!("{}.__static_init__", module.name);
-    if let Some(init_fn) = module.functions.iter().find(|f| f.name == init_name) {
+
+    // 1. Eager-loaded init functions (in main + z42.core).
+    let mut eager_inits: Vec<&Function> = module.functions.iter()
+        .filter(|f| f.name.ends_with(".__static_init__"))
+        .collect();
+    eager_inits.sort_by(|a, b| a.name.cmp(&b.name));
+    for init_fn in &eager_inits {
         match exec_function(module, init_fn, &[])? {
             ExecOutcome::Returned(_) => {}
-            ExecOutcome::Thrown(val) => bail!("uncaught exception in static init: {}", value_to_str(&val)),
+            ExecOutcome::Thrown(val) =>
+                bail!("uncaught exception in static init `{}`: {}", init_fn.name, value_to_str(&val)),
         }
     }
+
+    // 2. Lazy-loadable init functions (from declared but not-yet-loaded zpkgs).
+    let mut lazy_init_names: Vec<String> = crate::metadata::lazy_loader::declared_namespaces()
+        .into_iter()
+        .map(|ns| format!("{ns}.__static_init__"))
+        .collect();
+    lazy_init_names.sort();
+    for init_name in lazy_init_names {
+        let Some(init_fn) = crate::metadata::lazy_loader::try_lookup_function(&init_name) else { continue };
+        match exec_function(module, init_fn.as_ref(), &[])? {
+            ExecOutcome::Returned(_) => {}
+            ExecOutcome::Thrown(val) =>
+                bail!("uncaught exception in static init `{}`: {}", init_name, value_to_str(&val)),
+        }
+    }
+
     match exec_function(module, func, &[])? {
         ExecOutcome::Returned(_) => Ok(()),
         ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),

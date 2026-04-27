@@ -215,8 +215,16 @@ pub fn read_zbc_namespace(data: &[u8]) -> Result<String> {
     }
 }
 
-/// Extract unique namespace prefixes from a module's external calls.
-/// Namespace = first two dot-separated components of a Call target not defined locally.
+/// Extract unique namespace prefixes from a module's external calls and static
+/// field accesses.
+///
+/// Namespace = first two dot-separated components of a Call / static.get target
+/// not defined locally.
+///
+/// 2026-04-27 fix-static-field-access: 加上 StaticGet 扫描。修前 user code
+/// `Math.PI` 编译为 `static.get @Std.Math.Math.PI`，但 namespace 提取只看 Call/
+/// Builtin → 不发现 Std.Math 依赖 → 不 lazy-load z42.math → __static_init__ 不
+/// 跑 → 字段永远 null。
 fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
     use super::bytecode::Instruction;
     let defined: std::collections::HashSet<&str> =
@@ -229,6 +237,8 @@ fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
                 let target = match instr {
                     Instruction::Call { func, .. }    if !defined.contains(func.as_str()) => func,
                     Instruction::Builtin { name, .. } => name,
+                    Instruction::StaticGet { field, .. } => field,
+                    Instruction::StaticSet { field, .. } => field,
                     _ => continue,
                 };
                 let ns = infer_namespace(target);
