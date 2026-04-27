@@ -97,4 +97,4 @@ See [docs/roadmap.md](docs/roadmap.md) for detailed milestones.
 
 ## License
 
-TBD
+z42 is released under the [MIT License](LICENSE).

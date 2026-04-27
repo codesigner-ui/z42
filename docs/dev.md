@@ -50,8 +50,11 @@ dotnet run --project src/compiler/z42.Driver -- errors
 ## 运行 VM
 
 ```bash
-cargo run --manifest-path src/runtime/Cargo.toml -- <file.z42ir.json> [--mode interp|jit|aot]
+cargo run --manifest-path src/runtime/Cargo.toml -- <file.zbc | file.zpkg> [--mode interp|jit|aot]
 ```
+
+> VM 通过文件扩展名分发：`.zbc` 走 `load_zbc`、`.zpkg` 走 `load_zpkg`（见
+> `src/runtime/src/metadata/loader.rs::load_artifact`）。
 
 ---
 
