@@ -98,6 +98,11 @@ public abstract record Z42Type
     public static bool IsIntegral(Z42Type t) => LookupPrim(t)?.IsIntegral == true;
     public static bool IsBool(Z42Type t)     => t == Bool;
 
+    /// 2026-04-27 add-char-comparison：可全序比较的类型，用于 `<` / `<=` /
+    /// `>` / `>=`。numeric 加 char（char 在 VM 内是 i32 codepoint，比较语义
+    /// 等同 int）。算术运算符仍用 IsNumeric（char 不参与算术）。
+    public static bool IsOrderable(Z42Type t) => IsNumeric(t) || t == Char;
+
     public static (long Min, long Max)? IntLiteralRange(Z42Type t) => LookupPrim(t)?.Range;
 
     public static bool IsReferenceType(Z42Type t) =>

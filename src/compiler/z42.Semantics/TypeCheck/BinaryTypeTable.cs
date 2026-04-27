@@ -31,9 +31,10 @@ internal sealed record UnaryTypeRule(
 ///   TypeChecker.CheckBinary handles this as a pre-check before table lookup.
 internal static class BinaryTypeTable
 {
-    private static readonly Func<Z42Type, bool> Numeric  = Z42Type.IsNumeric;
-    private static readonly Func<Z42Type, bool> Integral = Z42Type.IsIntegral;
-    private static readonly Func<Z42Type, bool> Bool     = Z42Type.IsBool;
+    private static readonly Func<Z42Type, bool> Numeric   = Z42Type.IsNumeric;
+    private static readonly Func<Z42Type, bool> Integral  = Z42Type.IsIntegral;
+    private static readonly Func<Z42Type, bool> Orderable = Z42Type.IsOrderable;
+    private static readonly Func<Z42Type, bool> Bool      = Z42Type.IsBool;
 
     private static Z42Type BoolOut (Z42Type _,  Z42Type __) => Z42Type.Bool;
     private static Z42Type ArithOut(Z42Type l,  Z42Type r)  => Z42Type.ArithmeticResult(l, r);
@@ -49,11 +50,11 @@ internal static class BinaryTypeTable
             ["/"]  = new(Numeric,  Numeric,  ArithOut, "numeric"),
             ["%"]  = new(Numeric,  Numeric,  ArithOut, "numeric"),
 
-            // ── Relational: left numeric → bool ───────────────────────────────
-            ["<"]  = new(Numeric,  null, BoolOut, "numeric"),
-            ["<="] = new(Numeric,  null, BoolOut, "numeric"),
-            [">"]  = new(Numeric,  null, BoolOut, "numeric"),
-            [">="] = new(Numeric,  null, BoolOut, "numeric"),
+            // ── Relational: left orderable (numeric | char) → bool ──────────────
+            ["<"]  = new(Orderable,  null, BoolOut, "orderable (numeric or char)"),
+            ["<="] = new(Orderable,  null, BoolOut, "orderable (numeric or char)"),
+            [">"]  = new(Orderable,  null, BoolOut, "orderable (numeric or char)"),
+            [">="] = new(Orderable,  null, BoolOut, "orderable (numeric or char)"),
 
             // ── Equality: no constraint → bool ────────────────────────────────
             ["=="] = new(null, null, BoolOut, ""),
