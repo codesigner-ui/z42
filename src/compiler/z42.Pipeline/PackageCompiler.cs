@@ -485,12 +485,27 @@ public static class PackageCompiler
             var parser = new Parser(tokens, LanguageFeatures.Phase1);
             CompilationUnit cu;
             try   { cu = parser.ParseCompilationUnit(); }
-            catch { /* parse error printed in Phase 2's diagnostics */ continue; }
+            catch (Exception ex)
+            {
+                // Parser threw — surface immediately so the package build halts.
+                // Older code did `continue` here on the assumption Phase 2 would
+                // re-parse and print; but Phase 2 only iterates `parsedCus`, so
+                // a thrown file would silently disappear (build report claimed
+                // success while the source file was never compiled into the zpkg —
+                // discovered 2026-04-27 wave1-path-script when Path.z42 with
+                // brace-less `while` errors slipped through).
+                Console.Error.WriteLine($"error: parse failed in {sourceFile}: {ex.Message}");
+                parseErrors++;
+                continue;
+            }
             foreach (var d in parser.Diagnostics.All) diags.Add(d);
             if (diags.HasErrors)
             {
-                // Defer printing to Phase 2 (which will re-parse and print);
-                // skip pre-collection for malformed CUs.
+                // Phase-1 parser diagnostics — surface them now (same reason as
+                // the `catch` branch above).
+                foreach (var d in diags.All)
+                    Console.Error.WriteLine(d.ToString());
+                parseErrors++;
                 continue;
             }
             string ns = cu.Namespace ?? "main";
@@ -504,7 +519,7 @@ public static class PackageCompiler
         }
         if (parseErrors > 0)
         {
-            Console.Error.WriteLine($"error: build failed ({parseErrors} unreadable file(s))");
+            Console.Error.WriteLine($"error: build failed ({parseErrors} file(s) with parse errors)");
             return null;
         }
 

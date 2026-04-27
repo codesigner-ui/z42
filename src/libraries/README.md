@@ -61,11 +61,15 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 ./scripts/build-stdlib.sh release   # release
 ```
 
-产物输出到 `artifacts/z42/libs/*.zpkg`（已在 `.gitignore` 中，不纳入版本控制）。
+每次构建会：
+1. 通过 workspace 模式编译每个 member → `artifacts/libraries/<lib>/dist/<lib>.zpkg`
+2. **自动同步**到 VM 加载路径 `artifacts/z42/libs/<lib>.zpkg`
+
+两个目录都已在 `.gitignore` 中，不纳入版本控制。
 
 ## 修改后
 
-修改任意 `.z42` 源文件后必须重新运行 `build-stdlib.sh` 更新 zpkg 产物。
+修改任意 `.z42` 源文件后重跑 `build-stdlib.sh` 即可 —— 无需再手动 `package.sh` 或 `cp` 同步（这是 wave1-path-script 实施时反复踩到的坑，已修）。
 
 ---
 
