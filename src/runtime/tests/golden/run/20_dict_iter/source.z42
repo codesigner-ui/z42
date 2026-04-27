@@ -1,0 +1,39 @@
+// Test: Dictionary.Keys() / Values() iteration + KeyValuePair 类型可用性
+// (add-keyvaluepair-and-dict-entries, 2026-04-27)
+//
+// 真正的 `foreach (var kv in dict)` / dict.Entries() 待 generic-param-
+// instantiation-in-generic-body 修复后再开 spec。本测试验证最小可行的
+// dict 迭代路径：dict.Keys() + dict[key]。
+
+void Main() {
+    var dict = new Dictionary<string, int>();
+    dict["alpha"] = 1;
+    dict["beta"]  = 2;
+    dict["gamma"] = 3;
+
+    Console.WriteLine($"count={dict.Count}");
+
+    // Sum values via Keys() + indexer
+    var keys = dict.Keys();
+    int total = 0;
+    int i = 0;
+    while (i < keys.Length) {
+        total = total + dict[keys[i]];
+        i = i + 1;
+    }
+    Console.WriteLine($"sum={total}");  // 1+2+3=6
+
+    // Sum values via Values() directly
+    var vals = dict.Values();
+    int total2 = 0;
+    int j = 0;
+    while (j < vals.Length) {
+        total2 = total2 + vals[j];
+        j = j + 1;
+    }
+    Console.WriteLine($"sum2={total2}");  // 6
+
+    // KeyValuePair 类型作为独立类型可用
+    var kv = new KeyValuePair<string, int>("hello", 42);
+    Console.WriteLine($"kv={kv.Key}/{kv.Value}");  // hello/42
+}

@@ -59,12 +59,14 @@ public sealed class IncrementalBuildIntegrationTests
         var (code1, _, err1) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code1.Should().Be(0, err1);
         err1.Should().Contain("cached: 0/");
-        err1.Should().NotContain("cached: 32/");   // 第一次必然不命中
+        err1.Should().NotContain("cached: 33/");   // 第一次必然不命中
 
-        // 第二次：全 cached
+        // 第二次：全 cached（33 = z42.core 文件数；如果新增 / 删除 stdlib 文件
+        // 需同步更新此处。fix-incremental-cache-invalidation 引入 "preserved
+        // existing zpkg" 行，但 "cached: 33/33" 仍打印）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 32/32");
+        err2.Should().Contain("cached: 33/33");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 4/4");
     }
@@ -79,9 +81,9 @@ public sealed class IncrementalBuildIntegrationTests
         var (code1, _, _) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code1.Should().Be(0);
 
-        // --no-incremental：仍 0/N 即使 cache 存在
+        // --no-incremental：仍 0/N 即使 cache 存在（33 = z42.core 文件数）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/32");
+        err2.Should().Contain("cached: 0/33");
     }
 }

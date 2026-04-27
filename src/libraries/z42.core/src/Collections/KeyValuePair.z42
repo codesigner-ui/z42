@@ -1,0 +1,17 @@
+namespace Std.Collections;
+
+// `KeyValuePair<K, V>` — 不可变键值对，主要用作 `Dictionary<K, V>.Entries()`
+// 的元素类型，让用户用 `foreach (var kv in dict.Entries())` 遍历字典。
+//
+// 选 class 而非 struct：z42 泛型 struct 当前验证不充分，class 形式更稳；
+// 字段公开为 readonly-by-convention（z42 暂无 readonly 修饰符，靠不写 setter
+// 表达"创建后不应修改"语义）。
+public class KeyValuePair<K, V> {
+    public K Key;
+    public V Value;
+
+    public KeyValuePair(K key, V value) {
+        this.Key = key;
+        this.Value = value;
+    }
+}

@@ -80,6 +80,46 @@ public class Dictionary<K, V> where K: IEquatable<K> {
         this.Count = 0;
     }
 
+    // 2026-04-27 add-keyvaluepair-and-dict-entries：返回所有 key/value/entry
+    // 的快照数组，供用户 `foreach (var k in dict.Keys()) { ... }` 等使用。
+    // 顺序由 capacity 扫描顺序决定，**不保证稳定**（hash 分布相关）。
+    public K[] Keys() {
+        K[] result = new K[this.Count];
+        int idx = 0;
+        int i = 0;
+        while (i < this.capacity) {
+            if (this.occupied[i]) {
+                result[idx] = this.keys[i];
+                idx = idx + 1;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    public V[] Values() {
+        V[] result = new V[this.Count];
+        int idx = 0;
+        int i = 0;
+        while (i < this.capacity) {
+            if (this.occupied[i]) {
+                result[idx] = this.values[i];
+                idx = idx + 1;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // 注：Entries() 返回 `KeyValuePair<K,V>[]` 暂不可用 —— z42 当前不支持
+    // 在泛型类内部 `new GenericType<K, V>(...)` instantiate 自己的泛型参数。
+    // 用户用 `dict.Keys()` + `dict[key]` 配合迭代：
+    //   foreach (var k in dict.Keys()) {
+    //       var v = dict[k];
+    //       ...
+    //   }
+    // 等 generic-param-instantiation-in-generic-body 修复后独立 spec 加 Entries()。
+
     // 线性探测：返回 key 所在槽（若 occupied）或应放入的空槽。
     public int FindSlot(K key) {
         int h = key.GetHashCode();
