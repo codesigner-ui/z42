@@ -1,0 +1,53 @@
+namespace Std.Math;
+
+// Pseudorandom number generator — Park-Miller MINSTD LCG。
+//
+// 算法：state = (state * 48271) % 2147483647（mod 2^31-1，prime modulus）。
+// 周期 2^31-2，state 必须 ≠ 0（0 是定点）。
+//
+// 选 long 作为返回类型而非 int —— 因 z42 暂无显式 long→int narrowing cast，
+// 用户代码用 long 接收：`long roll = r.Next(6) + 1;`。
+//
+// 严肃统计 / 加密用途待 L3+ 引入更好的 PRNG（PCG / Xoshiro / ChaCha）。
+//
+// 设计：不提供无参构造（避免 z42.math 引入 z42.io 依赖只为读时间种子）。
+// 用户提供固定 seed → 序列可重现，便于测试。
+public class Random {
+    long state;
+
+    public Random(long seed) {
+        // Park-Miller 不允许 state == 0；自动归一到 1。
+        if (seed == 0) {
+            this.state = 1;
+        } else {
+            this.state = seed;
+        }
+    }
+
+    // Returns next non-negative pseudorandom long in [1, 2147483646].
+    public long Next() {
+        this.state = (this.state * 48271) % 2147483647;
+        return this.state;
+    }
+
+    // Returns long in [0, max). Throws when max <= 0.
+    public long Next(long max) {
+        if (max <= 0) {
+            throw new Exception("Random.Next: max must be positive");
+        }
+        return this.Next() % max;
+    }
+
+    // Returns long in [min, max). Throws when max <= min.
+    public long Next(long min, long max) {
+        if (max <= min) {
+            throw new Exception("Random.Next: max must be greater than min");
+        }
+        return min + this.Next(max - min);
+    }
+
+    // Returns double in [0.0, 1.0).
+    public double NextDouble() {
+        return this.Next() / 2147483647.0;
+    }
+}

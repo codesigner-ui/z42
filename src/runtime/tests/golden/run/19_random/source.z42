@@ -1,0 +1,45 @@
+// Test: Std.Math.Random (add-std-random, 2026-04-27)
+// 固定 seed → 可重现序列；锁定 Park-Miller LCG 行为基准。
+
+using Std.Math;
+
+void Main() {
+    // 固定种子 42 → 序列可重现
+    var r = new Random(42);
+    Console.WriteLine(r.Next());          // 42 * 48271 % 2147483647 = 2027382
+    Console.WriteLine(r.Next());          // step 2
+    Console.WriteLine(r.Next());          // step 3
+
+    // Next(max) 范围测试 [0, max)
+    var r2 = new Random(123);
+    long valid = 0;
+    long i = 0;
+    while (i < 10) {
+        long dice = r2.Next(6) + 1;       // 1..6
+        if (dice >= 1 && dice <= 6) valid = valid + 1;
+        i = i + 1;
+    }
+    Console.WriteLine($"valid_rolls={valid}");
+
+    // Next(min, max) 范围测试 [min, max)
+    var r3 = new Random(7);
+    long hits = 0;
+    long j = 0;
+    while (j < 10) {
+        long v = r3.Next(100, 200);
+        if (v >= 100 && v < 200) hits = hits + 1;
+        j = j + 1;
+    }
+    Console.WriteLine($"in_range={hits}");
+
+    // NextDouble 范围测试 [0.0, 1.0)
+    var r4 = new Random(99);
+    long ok = 0;
+    long k = 0;
+    while (k < 10) {
+        double d = r4.NextDouble();
+        if (d >= 0.0 && d < 1.0) ok = ok + 1;
+        k = k + 1;
+    }
+    Console.WriteLine($"doubles_in_range={ok}");
+}

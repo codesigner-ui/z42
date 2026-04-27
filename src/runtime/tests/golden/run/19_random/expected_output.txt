@@ -1,0 +1,6 @@
+2027382
+1226992407
+551494037
+valid_rolls=10
+in_range=10
+doubles_in_range=10
