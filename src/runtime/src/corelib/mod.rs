@@ -123,11 +123,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__file_delete",      fs::builtin_file_delete);
 
         // ── Path ──────────────────────────────────────────────────────────────
-        m.insert("__path_join",                     fs::builtin_path_join);
-        m.insert("__path_get_extension",            fs::builtin_path_get_extension);
-        m.insert("__path_get_filename",             fs::builtin_path_get_filename);
-        m.insert("__path_get_directory",            fs::builtin_path_get_directory);
-        m.insert("__path_get_filename_without_ext", fs::builtin_path_get_filename_without_ext);
+        // 2026-04-27 wave1-path-script: removed 5 __path_* — `Std.IO.Path`
+        // 现在是脚本实现（Unix `/` 语义；详见 src/libraries/z42.io/src/Path.z42）。
 
         // ── Environment / Process ─────────────────────────────────────────────
         m.insert("__env_get",      fs::builtin_env_get);

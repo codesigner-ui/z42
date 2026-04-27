@@ -1,0 +1,37 @@
+// Test: Std.IO.Path 5 个方法的脚本实现 (Wave 1.4 wave1-path-script)
+// 行为锁定基准 — Unix `/` 语义。
+
+using Std.IO;
+
+void Main() {
+    // ── Join ──────────────────────────────────────────────────────────────
+    Console.WriteLine(Path.Join("/foo", "bar"));         // /foo/bar
+    Console.WriteLine(Path.Join("/foo/", "bar"));        // /foo/bar  (no double)
+    Console.WriteLine(Path.Join("/foo", "/abs"));        // /abs       (b 是绝对路径)
+    Console.WriteLine(Path.Join("", "bar"));             // bar
+    Console.WriteLine(Path.Join("foo", ""));             // foo
+
+    // ── GetFileName ───────────────────────────────────────────────────────
+    Console.WriteLine(Path.GetFileName("/foo/bar.txt")); // bar.txt
+    Console.WriteLine(Path.GetFileName("bar.txt"));      // bar.txt
+    Console.WriteLine(Path.GetFileName("/foo/"));        // foo  (跳过末尾 /)
+    Console.WriteLine(Path.GetFileName("/"));            // ""
+
+    // ── GetExtension ──────────────────────────────────────────────────────
+    Console.WriteLine(Path.GetExtension("foo.txt"));     // txt
+    Console.WriteLine(Path.GetExtension("foo.tar.gz"));  // gz
+    Console.WriteLine(Path.GetExtension("foo"));         // ""
+    Console.WriteLine(Path.GetExtension(".bashrc"));     // ""  (leading dot 不算)
+
+    // ── GetFileNameWithoutExtension ───────────────────────────────────────
+    Console.WriteLine(Path.GetFileNameWithoutExtension("/foo/bar.txt"));  // bar
+    Console.WriteLine(Path.GetFileNameWithoutExtension("foo.tar.gz"));    // foo.tar
+    Console.WriteLine(Path.GetFileNameWithoutExtension(".bashrc"));       // .bashrc
+    Console.WriteLine(Path.GetFileNameWithoutExtension("foo"));           // foo
+
+    // ── GetDirectoryName ──────────────────────────────────────────────────
+    Console.WriteLine(Path.GetDirectoryName("/foo/bar.txt"));  // /foo
+    Console.WriteLine(Path.GetDirectoryName("/foo/bar/"));     // /foo
+    Console.WriteLine(Path.GetDirectoryName("foo.txt"));       // ""
+    Console.WriteLine(Path.GetDirectoryName("/foo"));          // /
+}

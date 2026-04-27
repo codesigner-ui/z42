@@ -33,33 +33,9 @@ pub fn builtin_file_delete(args: &[Value]) -> Result<Value> {
     Ok(Value::Null)
 }
 
-// ── Path ──────────────────────────────────────────────────────────────────────
-
-pub fn builtin_path_join(args: &[Value]) -> Result<Value> {
-    let a = require_str(args, 0, "__path_join")?;
-    let b = require_str(args, 1, "__path_join")?;
-    Ok(Value::Str(std::path::Path::new(a.as_str()).join(b.as_str()).to_string_lossy().into_owned()))
-}
-pub fn builtin_path_get_extension(args: &[Value]) -> Result<Value> {
-    let p = require_str(args, 0, "__path_get_extension")?;
-    Ok(Value::Str(std::path::Path::new(p.as_str()).extension()
-        .and_then(|e| e.to_str()).unwrap_or("").to_string()))
-}
-pub fn builtin_path_get_filename(args: &[Value]) -> Result<Value> {
-    let p = require_str(args, 0, "__path_get_filename")?;
-    Ok(Value::Str(std::path::Path::new(p.as_str()).file_name()
-        .and_then(|n| n.to_str()).unwrap_or("").to_string()))
-}
-pub fn builtin_path_get_directory(args: &[Value]) -> Result<Value> {
-    let p = require_str(args, 0, "__path_get_directory")?;
-    Ok(Value::Str(std::path::Path::new(p.as_str()).parent()
-        .and_then(|d| d.to_str()).unwrap_or("").to_string()))
-}
-pub fn builtin_path_get_filename_without_ext(args: &[Value]) -> Result<Value> {
-    let p = require_str(args, 0, "__path_get_filename_without_ext")?;
-    Ok(Value::Str(std::path::Path::new(p.as_str()).file_stem()
-        .and_then(|n| n.to_str()).unwrap_or("").to_string()))
-}
+// 2026-04-27 wave1-path-script: 5 builtin_path_* removed.
+// `Std.IO.Path` 现在是 z42 脚本（Unix `/` 语义），见
+// src/libraries/z42.io/src/Path.z42。
 
 // ── Environment / Process ─────────────────────────────────────────────────────
 

@@ -194,7 +194,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Builtin | 状态 | 备注 |
 |---|---|---|
 | `__file_read_text` / `__file_write_text` / `__file_append_text` / `__file_exists` / `__file_delete` (5) | 🟢 | syscall，BCL/Rust 同级 |
-| `__path_join` / `__path_get_extension` / `__path_get_filename` / `__path_get_directory` / `__path_get_filename_without_ext` (5) | 🟡 | BCL `Path.*` / Rust `Path::*` 都是脚本；需新增 `Path.Separator` 平台常量 |
+| ~~`__path_join` / `__path_get_extension` / `__path_get_filename` / `__path_get_directory` / `__path_get_filename_without_ext` (5)~~ | ✅ 已删 | 2026-04-27 wave1-path-script — Unix `/` 语义脚本，见 [z42.io/src/Path.z42](z42.io/src/Path.z42) + golden test [16_path](../runtime/tests/golden/run/16_path/)。`Path.Separator` 常量待静态字段访问支持（L3+）|
 | `__env_get` / `__env_args` / `__process_exit` / `__time_now_ms` (4) | 🟢 | syscall / process state |
 
 ### Object 协议 — 5 项
@@ -208,11 +208,11 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave | 数量 | 处置 |
 |---|---|---|
 | Wave 0（dead code）| 13 | ✅ 已完成（extern-audit-wave0）|
-| Wave 1（feature → 脚本）| 19 → **7 剩余** | 6 assert ✅ + 3 bool ✅ + 3 math ✅ 已迁；待迁：5 path + 2 str split/join |
+| Wave 1（feature → 脚本）| 19 → **2 剩余** | 6 assert ✅ + 3 bool ✅ + 3 math ✅ + 5 path ✅ 已迁；待迁：2 str split/join |
 | Wave 2（codegen 特化）| 3 | 待 spec：3 个 `*_compare_to` |
 | Wave 3（需要新基础设施）| 2-3 | `__str_concat` / `__str_format` 等 |
 | 🟢 Primitive 必须保留 | ~42 | 与 BCL/Rust 标杆一致 |
-| **当前总计** | **~55** | **长期目标 ~45** |
+| **当前总计** | **~50** | **长期目标 ~45** |
 
 ### Wave 进度
 
@@ -222,7 +222,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Wave 1.1 Assert | ✅ 已完成（wave1-assert-script）| 2026-04-27 |
 | Wave 1.2 Bool 三件套 | ✅ 已完成（wave1-bool-script）| 2026-04-27 |
 | Wave 1.3 Math abs/max/min | ✅ 已完成（wave1-math-script）| 2026-04-27 |
-| Wave 1.4 Path 五件套 | ⚪ 待启动 | — |
+| Wave 1.4 Path 五件套 | ✅ 已完成（wave1-path-script）| 2026-04-27 |
 | Wave 1.5 String split/join | ⚪ 待启动 | — |
 | Wave 2 | ⚪ 待启动 | — |
 | Wave 3 | ⚪ 待启动 | — |

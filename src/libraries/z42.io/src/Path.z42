@@ -1,18 +1,103 @@
 namespace Std.IO;
 
+// Path manipulation — pure string operations on `/`-separated paths.
+//
+// 2026-04-27 wave1-path-script: 5 个方法从 [Native] 迁纯脚本（BCL/Rust 对标 —
+// `System.IO.Path` / `std::path::Path` 都是字符串扫描）。
+//
+// **L1 限定 Unix 语义**：只识别 `/` 作为分隔符，Windows `\\` 留给 L3+。
+//
+// TODO(L3+)：暴露 `Path.Separator` 常量（与 BCL `Path.DirectorySeparatorChar`
+// 对应）。当前 z42 不支持静态字段访问语法（`Class.Field`），只支持静态方法
+// 调用，所以暂不引入。
 public static class Path {
-    [Native("__path_join")]
-    public static extern string Join(string a, string b);
+    // 拼接两段路径。如果 b 是绝对路径（以 `/` 开头）则替换 a；
+    // 否则用 `/` 分隔（已有尾随 `/` 时不重复）。
+    public static string Join(string a, string b) {
+        if (b.Length == 0) return a;
+        if (b.CharAt(0) == '/') return b;
+        if (a.Length == 0) return b;
+        if (a.CharAt(a.Length - 1) == '/') return a + b;
+        return a + "/" + b;
+    }
 
-    [Native("__path_get_extension")]
-    public static extern string GetExtension(string path);
+    // 返回路径最后一段（filename）。末尾 `/` 视为目录分隔符，被跳过。
+    // 路径全是 `/` 时返回 ""。
+    public static string GetFileName(string path) {
+        int n = path.Length;
+        if (n == 0) return "";
+        int end = n;
+        while (end > 0 && path.CharAt(end - 1) == '/') {
+            end = end - 1;
+        }
+        if (end == 0) return "";
+        int start = end;
+        while (start > 0 && path.CharAt(start - 1) != '/') {
+            start = start - 1;
+        }
+        return Path.Slice(path, start, end);
+    }
 
-    [Native("__path_get_filename")]
-    public static extern string GetFileName(string path);
+    // 返回 filename 中最后一个 `.` 之后的部分（不含 `.`）。
+    // ".bashrc" / "foo" / "" → ""（leading dot 不算扩展名）
+    public static string GetExtension(string path) {
+        string name = Path.GetFileName(path);
+        int n = name.Length;
+        int dot = -1;
+        for (int i = n - 1; i > 0; i = i - 1) {
+            if (name.CharAt(i) == '.') {
+                dot = i;
+                break;
+            }
+        }
+        if (dot < 0) return "";
+        return Path.Slice(name, dot + 1, n);
+    }
 
-    [Native("__path_get_directory")]
-    public static extern string GetDirectoryName(string path);
+    // 返回 filename 去除最后扩展名（保留 leading dot 的整体名）。
+    public static string GetFileNameWithoutExtension(string path) {
+        string name = Path.GetFileName(path);
+        int n = name.Length;
+        int dot = -1;
+        for (int i = n - 1; i > 0; i = i - 1) {
+            if (name.CharAt(i) == '.') {
+                dot = i;
+                break;
+            }
+        }
+        if (dot < 0) return name;
+        return Path.Slice(name, 0, dot);
+    }
 
-    [Native("__path_get_filename_without_ext")]
-    public static extern string GetFileNameWithoutExtension(string path);
+    // 返回路径父目录。无 `/` 时返回 ""；以 `/` 开头时根目录返回 "/"。
+    public static string GetDirectoryName(string path) {
+        int n = path.Length;
+        if (n == 0) return "";
+        int end = n;
+        while (end > 0 && path.CharAt(end - 1) == '/') {
+            end = end - 1;
+        }
+        if (end == 0) return "";
+        int sep = end - 1;
+        while (sep >= 0 && path.CharAt(sep) != '/') {
+            sep = sep - 1;
+        }
+        if (sep < 0) return "";
+        int dirEnd = sep;
+        while (dirEnd > 0 && path.CharAt(dirEnd - 1) == '/') {
+            dirEnd = dirEnd - 1;
+        }
+        if (dirEnd == 0) return "/";
+        return Path.Slice(path, 0, dirEnd);
+    }
+
+    // 内部 helper：切片 [start, end)。
+    static string Slice(string s, int start, int end) {
+        int len = end - start;
+        char[] chars = new char[len];
+        for (int i = 0; i < len; i = i + 1) {
+            chars[i] = s.CharAt(start + i);
+        }
+        return String.FromChars(chars);
+    }
 }
