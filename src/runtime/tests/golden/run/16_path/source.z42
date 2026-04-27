@@ -4,6 +4,9 @@
 using Std.IO;
 
 void Main() {
+    // ── Separator ─────────────────────────────────────────────────────────
+    Console.WriteLine(Path.Separator);                   // /
+
     // ── Join ──────────────────────────────────────────────────────────────
     Console.WriteLine(Path.Join("/foo", "bar"));         // /foo/bar
     Console.WriteLine(Path.Join("/foo/", "bar"));        // /foo/bar  (no double)

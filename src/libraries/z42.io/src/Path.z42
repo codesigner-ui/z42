@@ -6,11 +6,14 @@ namespace Std.IO;
 // `System.IO.Path` / `std::path::Path` 都是字符串扫描）。
 //
 // **L1 限定 Unix 语义**：只识别 `/` 作为分隔符，Windows `\\` 留给 L3+。
-//
-// TODO(L3+)：暴露 `Path.Separator` 常量（与 BCL `Path.DirectorySeparatorChar`
-// 对应）。当前 z42 不支持静态字段访问语法（`Class.Field`），只支持静态方法
-// 调用，所以暂不引入。
 public static class Path {
+    // 平台分隔符常量（对应 BCL `Path.DirectorySeparatorChar`）。
+    // L1 硬编码 `/`；L3+ 引入 Windows 支持时，可改由 platform HAL 注入。
+    //
+    // 2026-04-27 add-path-separator: fix-static-field-access 之前导入静态字段
+    // 不可用，本常量引入被推迟；现在 `Math.PI` 等已能访问，路径打通。
+    public static char Separator = '/';
+
     // 拼接两段路径。如果 b 是绝对路径（以 `/` 开头）则替换 a；
     // 否则用 `/` 分隔（已有尾随 `/` 时不重复）。
     public static string Join(string a, string b) {
