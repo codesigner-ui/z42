@@ -28,15 +28,13 @@ internal static class TypeParser
 
         TypeExpr ty = isVoid ? new VoidType(span) : new NamedType(name, span);
 
-        // T[] — array type
-        if (cursor.Current.Kind == TokenKind.LBracket
-            && cursor.Peek(1).Kind == TokenKind.RBracket)
-        {
-            cursor = cursor.Advance(2);
-            ty = new ArrayType(ty, span);
-        }
+        // 2026-04-27 fix-generic-array-type-parsing：原版用 `if [] else if <>`
+        // 互斥结构，遗漏 `T<U,V>[]` 复合形式（解析后 `[` `]` 残留 → 后续语句
+        // 报"expected identifier got ["）。改为按顺序处理 `<...>` → `[]`，
+        // 让两者可以叠加。`?` 仍在最后单独处理（合理，`T<U>?` / `T[]?` 都允许）。
+
         // T<U, V> — generic type arguments → GenericType node
-        else if (cursor.Current.Kind == TokenKind.Lt)
+        if (cursor.Current.Kind == TokenKind.Lt)
         {
             cursor = cursor.Advance(); // skip <
             var typeArgs = new List<TypeExpr>();
@@ -52,6 +50,14 @@ internal static class TypeParser
             if (cursor.Current.Kind == TokenKind.Gt)
                 cursor = cursor.Advance(); // skip >
             ty = new GenericType(name, typeArgs, span);
+        }
+
+        // T[] — array type（generic 之后也允许，以支持 `T<U,V>[]`）
+        if (cursor.Current.Kind == TokenKind.LBracket
+            && cursor.Peek(1).Kind == TokenKind.RBracket)
+        {
+            cursor = cursor.Advance(2);
+            ty = new ArrayType(ty, span);
         }
 
         // T? — nullable / option type

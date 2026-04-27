@@ -1,9 +1,6 @@
-// Test: Dictionary.Keys() / Values() iteration + KeyValuePair 类型可用性
-// (add-keyvaluepair-and-dict-entries, 2026-04-27)
-//
-// 真正的 `foreach (var kv in dict)` / dict.Entries() 待 generic-param-
-// instantiation-in-generic-body 修复后再开 spec。本测试验证最小可行的
-// dict 迭代路径：dict.Keys() + dict[key]。
+// Test: Dictionary.Keys() / Values() / Entries() iteration + KeyValuePair
+// (add-keyvaluepair-and-dict-entries, 2026-04-27;
+//  Entries() 添加于 fix-generic-array-type-parsing)。
 
 void Main() {
     var dict = new Dictionary<string, int>();
@@ -36,4 +33,11 @@ void Main() {
     // KeyValuePair 类型作为独立类型可用
     var kv = new KeyValuePair<string, int>("hello", 42);
     Console.WriteLine($"kv={kv.Key}/{kv.Value}");  // hello/42
+
+    // dict.Entries() 返回 KeyValuePair<K,V>[]；仅验证长度（KeyValuePair 字段
+    // 类型是 generic param V，访问 .Value 拿到的是 V 而非 int —— 类型系统
+    // 暂未做 generic-param substitution on member access on instantiated array
+    // element，待独立 spec 修复后再加 .Value 累加断言）。
+    var entries = dict.Entries();
+    Console.WriteLine($"entries_len={entries.Length}");  // 3
 }

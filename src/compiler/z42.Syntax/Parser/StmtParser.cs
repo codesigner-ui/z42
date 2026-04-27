@@ -403,29 +403,32 @@ internal static class StmtParser
     private static bool IsTypeAnnotatedVarDecl(TokenCursor cursor)
     {
         if (!TypeParser.IsTypeToken(cursor.Current.Kind)) return false;
-        // T name = ...  or  T name;
-        if (cursor.Peek(1).Kind == TokenKind.Identifier
-            && cursor.Peek(2).Kind is TokenKind.Eq or TokenKind.Semicolon)
-            return true;
-        // T? name = ...  or  T? name;
-        if (cursor.Peek(1).Kind == TokenKind.Question
-            && cursor.Peek(2).Kind == TokenKind.Identifier
-            && cursor.Peek(3).Kind is TokenKind.Eq or TokenKind.Semicolon)
-            return true;
-        // T[] name = ...  or  T[] name;
-        if (cursor.Peek(1).Kind == TokenKind.LBracket
-            && cursor.Peek(2).Kind == TokenKind.RBracket
-            && cursor.Peek(3).Kind == TokenKind.Identifier
-            && cursor.Peek(4).Kind is TokenKind.Eq or TokenKind.Semicolon)
-            return true;
-        // T?[] name = ...  or  T?[] name;
-        if (cursor.Peek(1).Kind == TokenKind.Question
-            && cursor.Peek(2).Kind == TokenKind.LBracket
-            && cursor.Peek(3).Kind == TokenKind.RBracket
-            && cursor.Peek(4).Kind == TokenKind.Identifier
-            && cursor.Peek(5).Kind is TokenKind.Eq or TokenKind.Semicolon)
-            return true;
-        return false;
+        // 2026-04-27 fix-generic-array-type-parsing：扫过类型表达式（含 `<...>`、
+        // `[]`、`?` 任意组合），停在第一个非类型 token；若后接 `Identifier`
+        // + (`=` | `;`) 即为带类型注解的 var decl。
+        int i = 1;
+        // 可选 `<T1, T2, ...>` —— 用深度计数支持嵌套泛型
+        if (cursor.Peek(i).Kind == TokenKind.Lt)
+        {
+            int depth = 1;
+            i++;
+            while (depth > 0 && cursor.Peek(i).Kind != TokenKind.Eof)
+            {
+                var k = cursor.Peek(i).Kind;
+                if      (k == TokenKind.Lt) depth++;
+                else if (k == TokenKind.Gt) depth--;
+                i++;
+            }
+            if (depth != 0) return false;
+        }
+        // 可选 `?` 或 `[]`（顺序：先 `?` 再 `[]`，或仅一种）
+        if (cursor.Peek(i).Kind == TokenKind.Question) i++;
+        if (cursor.Peek(i).Kind == TokenKind.LBracket
+            && cursor.Peek(i + 1).Kind == TokenKind.RBracket)
+            i += 2;
+        // 终态：Identifier + (= | ;)
+        return cursor.Peek(i).Kind == TokenKind.Identifier
+            && cursor.Peek(i + 1).Kind is TokenKind.Eq or TokenKind.Semicolon;
     }
 
     /// Consume an expected token or throw ParseException.
