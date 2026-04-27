@@ -56,6 +56,15 @@ public sealed class IncrementalBuild
         if (!File.Exists(lastZpkgPath))
             return ProbeResult.AllFresh(sourceFiles);
 
+        // 2026-04-27 fix-incremental-cache-invalidation：上游 zpkg 内容变化
+        // → 全失效。原因：cached 文件的 ExportedTypes 来自上次的 zpkg，记录的
+        // dep 类型签名（impl 关系、typeparam 约束等）可能与新版上游不一致。
+        //
+        // 表现：touch z42.core/String.z42 → z42.core 重建 → z42.io 全部 4 文件
+        // cached（自身没改） → z42.io.zpkg 用旧 ExportedTypes 重写 → TypeChecker
+        // 加载新 z42.io.zpkg 时 Path 类等元数据丢失（"undefined symbol Path"）。
+        //
+
         byte[] zpkgBytes;
         try { zpkgBytes = File.ReadAllBytes(lastZpkgPath); }
         catch { return ProbeResult.AllFresh(sourceFiles); }
@@ -173,6 +182,24 @@ public sealed class IncrementalBuild
             if (debug) Console.Error.WriteLine($"  [hit] {sourceFile} ns='{ns}' impls={exportedMod.Impls?.Count ?? 0}");
         }
 
+        // 2026-04-27 fix-incremental-cache-invalidation: 如果有任何 fresh 文件，
+        // 整包失效。原因：cached 文件的 ExportedTypes 来自上次 zpkg 的 per-namespace
+        // 模块，与同 namespace 的 fresh 文件本次产生的 ExportedTypes 合并时有
+        // 不一致风险（fresh CU 的 IR 用新版 dep 的 string-pool 索引、impl 关系等
+        // 已变化）。表现：touch String.z42 后 16_path 等 6 个测试 compile-time
+        // 报 "undefined symbol Path" 即使 Path 源码完全没动。
+        //
+        // 简化方案：per-package "any fresh → all fresh"，在不损害"零修改 100%
+        // cached 命中"性能的同时消除混合 cached/fresh 的正确性风险。后续若要
+        // 恢复细粒度 cached/fresh 混合，需要：
+        //   (a) per-file ExportedTypes（不再 per-namespace）
+        //   (b) 跨包 dep zpkg checksum 跟踪 + 上游变更失效下游
+        if (freshFiles.Count > 0 && cachedZbcByFile.Count > 0)
+        {
+            if (debug) Console.Error.WriteLine($"  [package-invalidate] {freshFiles.Count} fresh + {cachedZbcByFile.Count} cached → 全失效");
+            return ProbeResult.AllFresh(sourceFiles);
+        }
+
         return new ProbeResult(
             CachedZbcByFile:       cachedZbcByFile,
             CachedExportsByNs:     cachedExportsByNs,
@@ -187,4 +214,5 @@ public sealed class IncrementalBuild
 
     /// 复用 CompilerUtils.Sha256Hex 保证与 ZpkgBuilder 写入的格式一致（"sha256:<hex>"）。
     static string Sha256Hex(string text) => CompilerUtils.Sha256Hex(text);
+
 }

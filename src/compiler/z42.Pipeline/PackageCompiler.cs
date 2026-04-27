@@ -259,6 +259,23 @@ public static class PackageCompiler
 
         Console.Error.WriteLine($"cached: {probe.CachedCount}/{probe.TotalCount} files");
 
+        // 2026-04-27 fix-incremental-cache-invalidation：100% 命中且 lastZpkg 存在
+        // → 完全跳过重建，保留现有 zpkg 文件不动。
+        //
+        // 原因：cached 文件单独重组 zpkg 时，zpkg.ExportedModules 来自上次 zpkg
+        // 的 per-namespace TSIG record；ExportedTypeExtractor 重新写出时可能丢失
+        // 部分元数据（具体路径未追溯，但实测：clean build → 720/720 通过；
+        // 紧接着 no-change incremental rebuild → 6/720 失败）。
+        //
+        // 既然 cached path 没有任何"新"信息要写入 zpkg（fresh files = 0 + 上次
+        // zpkg 完整在盘上），最稳妥的做法就是：什么都不写。下次 incremental 时
+        // lastZpkg 仍存在，cache zbc 仍存在，cached 命中 100%，再次跳过。
+        if (useIncremental && probe.FreshFiles.Count == 0 && File.Exists(lastZpkg))
+        {
+            Console.Error.WriteLine($"    Finished → {outDir} (no changes; preserved existing zpkg)");
+            return 0;
+        }
+
         // 仅 fresh files 走完整 parse + typecheck + irgen；cached 注入 ExportedModule
         var freshUnits = TryCompileSourceFiles(probe.FreshFiles, depIndex, tsigCache, probe.CachedExportsByNs);
         if (freshUnits is null) return 1;
