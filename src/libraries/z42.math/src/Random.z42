@@ -1,22 +1,26 @@
 namespace Std.Math;
 
-// Pseudorandom number generator — Park-Miller MINSTD LCG。
+// Pseudorandom number generator — xorshift64* (Marsaglia/Vigna)。
 //
-// 算法：state = (state * 48271) % 2147483647（mod 2^31-1，prime modulus）。
-// 周期 2^31-2，state 必须 ≠ 0（0 是定点）。
+// 算法：
+//   state = state ^ (state << 13)
+//   state = state ^ (state >> 7)
+//   state = state ^ (state << 17)
+//   return state * 2685821657736338717   // multiplier 散布化输出
 //
-// 选 long 作为返回类型而非 int —— 因 z42 暂无显式 long→int narrowing cast，
-// 用户代码用 long 接收：`long roll = r.Next(6) + 1;`。
+// 周期 2^64-1（state 不能为 0），统计性比 LCG 好得多（通过大部分 BigCrush）。
+// 严肃统计 / 加密用途仍待 L3+ 引入 PCG / Xoshiro / ChaCha；xorshift64*
+// 对 demo / 游戏 / stdlib 自身测试足够。
 //
-// 严肃统计 / 加密用途待 L3+ 引入更好的 PRNG（PCG / Xoshiro / ChaCha）。
+// 历史：v1 (2026-04-27) 用 Park-Miller LCG（避开 i32/i64 multiply panic-on-overflow）。
+// v2 (2026-04-28 vm-wrapping-int-arith) VM 改 wrapping 算术后，可用更好的 xorshift64*。
 //
 // 设计：不提供无参构造（避免 z42.math 引入 z42.io 依赖只为读时间种子）。
-// 用户提供固定 seed → 序列可重现，便于测试。
 public class Random {
     long state;
 
     public Random(long seed) {
-        // Park-Miller 不允许 state == 0；自动归一到 1。
+        // xorshift 不允许 state == 0；自动归一到 1。
         if (seed == 0) {
             this.state = 1;
         } else {
@@ -24,10 +28,15 @@ public class Random {
         }
     }
 
-    // Returns next non-negative pseudorandom long in [1, 2147483646].
+    // Returns next pseudorandom long. Full 64-bit range（含负数）。
     public long Next() {
-        this.state = (this.state * 48271) % 2147483647;
-        return this.state;
+        long x = this.state;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        this.state = x;
+        // multiplier 来自 Vigna 的论文，散布化高位
+        return x * 2685821657736338717;
     }
 
     // Returns long in [0, max). Throws when max <= 0.
@@ -35,7 +44,11 @@ public class Random {
         if (max <= 0) {
             throw new Exception("Random.Next: max must be positive");
         }
-        return this.Next() % max;
+        long n = this.Next();
+        if (n < 0) n = -n;
+        // -i64::MIN 仍是负数（i64 上溢回 i64::MIN），处理一下
+        if (n < 0) n = 0;
+        return n % max;
     }
 
     // Returns long in [min, max). Throws when max <= min.
@@ -47,7 +60,13 @@ public class Random {
     }
 
     // Returns double in [0.0, 1.0).
+    // 用 Next() 高 53 位（IEEE-754 双精度尾数宽度）除以 2^53 得到双精度浮点。
     public double NextDouble() {
-        return this.Next() / 2147483647.0;
+        long n = this.Next();
+        if (n < 0) n = -n;
+        if (n < 0) n = 0;
+        // 取 53 位
+        long bits = n % 9007199254740992;  // 2^53
+        return bits / 9007199254740992.0;
     }
 }

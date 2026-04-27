@@ -8,12 +8,16 @@ use crate::corelib::convert::value_to_str;
 
 // ── Arithmetic ───────────────────────────────────────────────────────────────
 
+// 2026-04-28 vm-wrapping-int-arith: Add/Sub/Mul 用 wrapping，与 interp 对齐 +
+// C# unchecked / Java int / Rust release default 一致。Div/Rem 不变（panic
+// on /0 是不同语义）。
+
 #[no_mangle]
 pub unsafe extern "C" fn jit_add(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
     // Fast path: both I64
     let regs = &(*frame).regs;
     if let (Value::I64(x), Value::I64(y)) = (&regs[a as usize], &regs[b as usize]) {
-        (*frame).regs[dst as usize] = Value::I64(x + y);
+        (*frame).regs[dst as usize] = Value::I64(x.wrapping_add(*y));
         return 0;
     }
     let va = regs[a as usize].clone();
@@ -22,7 +26,7 @@ pub unsafe extern "C" fn jit_add(frame: *mut JitFrame, dst: u32, a: u32, b: u32)
         (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
         (Value::Str(sa), vb) => Value::Str(format!("{}{}", sa, value_to_str(vb))),
         (va, Value::Str(sb)) => Value::Str(format!("{}{}", value_to_str(va), sb)),
-        _ => match int_binop_helper(&va, &vb, |x, y| x + y, |x, y| x + y) {
+        _ => match int_binop_helper(&va, &vb, i64::wrapping_add, |x, y| x + y) {
             Ok(r)  => r,
             Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
         }
@@ -52,8 +56,8 @@ macro_rules! arith_op {
     };
 }
 
-arith_op!(jit_sub, |x, y| x - y, |x, y| x - y);
-arith_op!(jit_mul, |x, y| x * y, |x, y| x * y);
+arith_op!(jit_sub, i64::wrapping_sub, |x, y| x - y);
+arith_op!(jit_mul, i64::wrapping_mul, |x, y| x * y);
 arith_op!(jit_div, |x, y| x / y, |x, y| x / y);
 arith_op!(jit_rem, |x, y| x % y, |x, y| x % y);
 

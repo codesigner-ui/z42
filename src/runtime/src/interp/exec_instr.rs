@@ -81,15 +81,17 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                 (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
                 (Value::Str(sa), vb)             => Value::Str(format!("{}{}", sa, value_to_str(vb))),
                 (va, Value::Str(sb))             => Value::Str(format!("{}{}", value_to_str(va), sb)),
-                _                                => int_binop(&frame.regs, *a, *b, |x, y| x + y, |x, y| x + y)?,
+                // 2026-04-28 vm-wrapping-int-arith: wrapping_add（与 Rust release build /
+                // C# unchecked int / Java int 一致），解锁 hash / PRNG / 校验和算法
+                _ => int_binop(&frame.regs, *a, *b, i64::wrapping_add, |x, y| x + y)?,
             };
             frame.set(*dst, result);
         }
         Instruction::Sub { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x - y, |x, y| x - y)?);
+            frame.set(*dst, int_binop(&frame.regs, *a, *b, i64::wrapping_sub, |x, y| x - y)?);
         }
         Instruction::Mul { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x * y, |x, y| x * y)?);
+            frame.set(*dst, int_binop(&frame.regs, *a, *b, i64::wrapping_mul, |x, y| x * y)?);
         }
         Instruction::Div { dst, a, b } => {
             frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x / y, |x, y| x / y)?);
