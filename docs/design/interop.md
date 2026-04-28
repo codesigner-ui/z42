@@ -1,26 +1,567 @@
 # Native Interoperability (FFI)
 
-> This document describes how z42 code calls native (Rust/C) code and vice versa, including calling conventions, performance guarantees, and memory safety boundaries.
+> **Status**: §1–§10 describe the long-term L2+ design (three-tier ABI). §11 documents the current L1 interim mechanism. §11.5 covers the migration plan.
 
 ---
 
-## Overview
+## §1 Overview & Design Principles
 
-z42 is designed to be **embedded in and callable from** native applications. The FFI (Foreign Function Interface) is not an afterthought — it's a core concern, with strict performance and safety rules.
+z42 is designed to be **embedded in and callable from** native applications. FFI is a core concern, not an afterthought.
 
-**Three layers of interop:**
+Five design pillars (derived from analysis of Python C API, C# P/Invoke, and Rust extern):
 
-1. **z42 → Rust VM:** `extern` methods bind directly to Rust impl functions
-2. **Rust VM ↔ Host App:** C ABI for embedding (load VM, call functions, pass data)
-3. **Memory boundary:** Struct layout is C-compatible; GC pointers don't cross boundaries
+1. **Zero marshal** — cross-FFI data is 100% blittable. No automatic conversion. High-level types (`String`, `Array<T>`) cross via `pinned` blocks (see §6.3), not by copying.
+2. **Native-defined script types** — native libraries can register complete z42 classes (fields, methods, ctor/dtor, trait impls). They participate in the z42 type system as first-class citizens. This closes C#'s biggest interop gap; Python C API does this, C# does not.
+3. **Three-tier ABI** — stable C foundation + ergonomic Rust frontend + compile-time source generator. Each upper tier is sugar over the lower.
+4. **Compile-time binding resolution** — bindings resolved at z42 compile time via `.z42abi` manifests; no runtime reflection. AOT-friendly. Errors caught at compile time.
+5. **Strict safety boundary** — `unsafe` block required for raw FFI; native types managed by z42 RC; no GC-pointer leakage; panic does not cross the FFI line.
 
 ---
 
-## Layer 1: z42 → VM (InternalCall)
+## §2 Three-Tier ABI Architecture
 
-### Declaring Native Functions
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Tier 3: Source Generator (compile-time bindings)            │
+│    z42 compiler reads .z42abi manifest → emits IR vtable    │
+│    Analogous to C# 11+ [LibraryImport] source generator      │
+├──────────────────────────────────────────────────────────────┤
+│  Tier 2: Rust Registration API (ergonomic frontend)          │
+│    #[derive(Z42Type)] + #[z42::methods] + z42::module!      │
+│    proc macros emit Tier 1 descriptors + extern "C" shims   │
+├──────────────────────────────────────────────────────────────┤
+│  Tier 1: C ABI (stable foundation)                          │
+│    Z42TypeDescriptor_v1 + z42_register_type                 │
+│    Cross-language portable; all upper tiers reduce to this  │
+└──────────────────────────────────────────────────────────────┘
+                              ↓
+                    z42 VM TypeRegistry
+```
 
-z42 code calls native VM functions via `extern` + `[Native]`:
+**Layering principle**: anything an upper tier expresses is achievable by hand-writing the lower. This guarantees:
+
+- Tier 1 stays small and ABI-stable
+- Tier 2/3 evolve independently without breaking Tier 1 consumers
+- Languages without Rust support (C, C++, Zig, Go cgo) target Tier 1 directly
+
+---
+
+## §3 Tier 1: C ABI (Stable Foundation)
+
+### 3.1 Type Descriptor
+
+```c
+// z42_abi.h — versioned; new fields only appended
+
+typedef struct Z42TypeDescriptor_v1 {
+    uint32_t  abi_version;          // = 1
+    uint32_t  flags;                // VALUE_TYPE | SEALED | ABSTRACT | TRACEABLE
+    const char* module_name;        // e.g. "numz42"
+    const char* type_name;          // e.g. "Tensor"
+    size_t    instance_size;
+    size_t    instance_align;
+
+    // Lifecycle
+    void*   (*alloc)(void);
+    void    (*ctor)(void* self, const Z42Args* args);
+    void    (*dtor)(void* self);
+    void    (*dealloc)(void* self);
+    void    (*retain)(void* self);     // default: atomic inc on rc field
+    void    (*release)(void* self);    // default: atomic dec; on zero -> dtor + dealloc
+
+    // Methods
+    size_t                method_count;
+    const Z42MethodDesc*  methods;
+
+    // Fields (optional exposure)
+    size_t                field_count;
+    const Z42FieldDesc*   fields;
+
+    // Trait implementations
+    size_t                trait_impl_count;
+    const Z42TraitImpl*   trait_impls;
+} Z42TypeDescriptor_v1;
+
+typedef struct Z42MethodDesc {
+    const char* name;
+    const char* signature;     // "(&Self, i64) -> Self" — parsed by compiler
+    void*       fn_ptr;        // extern "C" shim, z42 calling convention
+    uint32_t    flags;         // STATIC | VIRTUAL | OVERRIDE | CTOR
+} Z42MethodDesc;
+
+typedef struct Z42FieldDesc {
+    const char* name;
+    const char* type_name;     // "i64", "*const Self", etc.
+    size_t      offset;
+    uint32_t    flags;         // READONLY | INTERNAL
+} Z42FieldDesc;
+```
+
+### 3.2 VM-Exposed API
+
+```c
+// Native lib calls these
+Z42TypeRef z42_register_type(const Z42TypeDescriptor_v1* desc);
+Z42Value   z42_invoke(Z42TypeRef ty, const char* method, Z42Value* args, size_t n);
+Z42Value   z42_invoke_method(Z42Value receiver, const char* method, Z42Value* args, size_t n);
+Z42TypeRef z42_resolve_type(const char* module, const char* name);
+Z42Error   z42_last_error(void);
+```
+
+### 3.3 ABI Evolution Rules
+
+Lessons from CPython's `PyTypeObject` evolution:
+
+- `abi_version` is the first field; new versions only **append** fields
+- VM reads descriptor by `abi_version`-aware size, never assumes layout
+- All access through `z42_*` functions, never direct struct manipulation
+- Major version bump = explicit break (acknowledged in semver)
+
+### 3.4 Typical Users
+
+- Direct C library bindings (sqlite3, ffmpeg, openssl)
+- z42 bindings authored from non-Rust hosts
+- Foundation under Tier 2/3 (everything reduces here)
+
+---
+
+## §4 Tier 2: Rust Registration API
+
+VM is implemented in Rust. The Rust ecosystem (regex, serde, tokio, polars, reqwest, tracing, …) is the primary source of high-quality libraries to expose to z42. Tier 2 makes wrapping Rust crates mechanical.
+
+### 4.1 Crate Layout (Planned)
+
+```
+z42-rs/
+├── z42-abi/        ← Tier 1 in Rust types (FFI bindings; no_std-friendly)
+├── z42-rs/         ← User-facing crate (re-exports + helpers)
+└── z42-macros/     ← proc macros: Z42Type derive, methods attr, module! macro
+```
+
+### 4.2 User-Side Authoring
+
+```rust
+use z42::prelude::*;
+
+#[derive(Z42Type)]
+#[z42(module = "numz42", name = "Tensor")]
+pub struct Tensor {
+    #[z42(field, readonly)]
+    rank: u32,
+    shape: Vec<i64>,    // not exposed to z42
+    data:  Vec<f64>,
+}
+
+#[z42::methods]
+impl Tensor {
+    #[z42(ctor)]
+    pub fn new(shape: &[i64]) -> Self {
+        Tensor { rank: shape.len() as u32,
+                 shape: shape.to_vec(),
+                 data:  vec![0.0; shape.iter().product::<i64>() as usize] }
+    }
+
+    pub fn ndim(&self) -> usize { self.rank as usize }
+
+    pub fn dot(&self, other: &Tensor) -> Tensor { /* ... */ }
+}
+
+#[z42::trait_impl("z42.core::Display")]
+impl Tensor {
+    fn fmt(&self) -> z42::Str {
+        format!("Tensor[rank={}]", self.rank).into()
+    }
+}
+
+z42::module! {
+    name:    "numz42",
+    version: "0.1.0",
+    types:   [Tensor],
+}
+```
+
+### 4.3 Macro Responsibilities
+
+| Macro | Generates |
+|---|---|
+| `#[derive(Z42Type)]` | static `Z42TypeDescriptor_v1`; `impl Z42Type for T`; field accessors |
+| `#[z42::methods]` | `extern "C"` shim per method (catches panic → `Z42Error`) |
+| `#[z42::trait_impl]` | `Z42TraitImpl` entry registered to descriptor's `trait_impls` |
+| `z42::module!` | `#[ctor]` registration entry; emits `<module>.z42abi` manifest at build |
+
+### 4.4 Type Mapping (Rust ↔ ABI)
+
+| Rust type | ABI form | Notes |
+|---|---|---|
+| `i8..i64`, `u8..u64`, `f32`, `f64`, `bool` | same | direct |
+| `&T` where `T: Z42Type` | `*const T` | borrow |
+| `&mut T` | `*mut T` | exclusive borrow |
+| `Box<T>` | `*mut T` (owned) | ownership transfer |
+| `&[T]` (T blittable) | pinned slice (`ptr+len`) | zero-copy; see §6.3 |
+| `&str` | pinned UTF-8 slice | zero-copy |
+| `Self` / `impl Z42Type` | `Z42TypeRef` | |
+| `Result<T, E>` | tagged union split at ABI | error path |
+| `()` | void | |
+
+### 4.5 Ecosystem Leverage
+
+Wrapping a Rust crate becomes a thin shell:
+
+```rust
+#[derive(Z42Type)]
+#[z42(module = "z42.regex", name = "Regex")]
+pub struct Regex(::regex::Regex);
+
+#[z42::methods]
+impl Regex {
+    #[z42(ctor)]
+    pub fn new(pattern: &str) -> Result<Self, RegexError> {
+        ::regex::Regex::new(pattern).map(Regex).map_err(Into::into)
+    }
+    pub fn is_match(&self, s: &str) -> bool { self.0.is_match(s) }
+}
+```
+
+Expected package families:
+
+- `z42-std-*` (official) — regex, serde, tokio, reqwest, tracing, polars
+- `z42-ext-*` (community)
+
+---
+
+## §5 Tier 3: Source Generator (Compile-Time Bindings)
+
+### 5.1 z42-Side Declaration
+
+Two forms:
+
+```z42
+// Form A: implicit import (recommended)
+import Tensor from "numz42";
+
+// Form B: explicit declaration (when manifest unavailable, or for a curated subset)
+[Native(lib = "numz42", type = "Tensor")]
+extern class Tensor {
+    fn new(shape: *const i64, n: usize) -> Tensor;
+    fn ndim(&self) -> usize;
+    fn dot(&self, other: &Tensor) -> Tensor;
+}
+```
+
+### 5.2 Compile-Time Flow
+
+```
+Compile time (z42c)
+  1. Parse [Native(lib=…)] / `import T from "lib"`
+  2. Locate <lib>.z42abi (search: $LD_LIBRARY_PATH, $Z42_PATH, ./target/)
+  3. Parse manifest → resolve full type descriptor
+  4. Validate user declaration against manifest (signature match)
+  5. Emit IR:
+     - TypeDef Tensor with vtable [new, ndim, dot]
+     - Call sites become `CallNativeVtable <slot>`
+  6. Record link dependency (libnumz42.dylib)
+
+Run time
+  1. VM startup → dlopen all link dependencies
+  2. Native lib's #[ctor] calls z42_register_type
+  3. VM resolves vtable slots to function pointers
+  4. User code → indirect call → extern "C" shim → real impl
+```
+
+### 5.3 Why Compile-Time Resolution
+
+Inspired by C# 11+ `[LibraryImport]` (which replaced the old reflection-based `[DllImport]`):
+
+| Aspect | Runtime (`dlopen`+`dlsym`) | Compile-time (Source Gen) |
+|---|---|---|
+| AOT compatibility | Poor | Native |
+| First-call cost | dlsym + signature lookup | Zero |
+| Signature mismatch | Crash at runtime | Compile error |
+| Missing type | Crash at runtime | Compile error |
+| ABI version mismatch | Runtime panic | Compile error |
+| Debugger symbols | Often missing | Proper |
+
+z42 commits to compile-time resolution from day one — no historical baggage.
+
+---
+
+## §6 Type System at the Boundary
+
+### 6.1 Blittable Types
+
+Allowed at `[Extern]` and native-method signatures:
+
+| z42 | C ABI | Notes |
+|---|---|---|
+| `i8/i16/i32/i64`, `u8/u16/u32/u64` | `int*_t` / `uint*_t` | direct |
+| `f32`, `f64` | `float`, `double` | direct |
+| `bool` | `uint8_t` | 1 byte |
+| `*const T`, `*mut T` | `T*` | raw pointer |
+| `CStr` | `const char*` | borrowed, NUL-terminated |
+| enum (integer repr) | `int32_t` | |
+| `Option<*T>` | `T*` (NULL = None) | |
+| struct `[Layout(C)]` (all blittable fields) | C struct | |
+| static fn pointer | fn pointer | |
+| Native-class ref (`*Self`) | `*mut T` | reference to native type instance |
+
+**Disallowed**: `String`, `Array<T>` (use `pinned`), `Tuple`, closures, plain z42 class. Compiler enforces at signature check.
+
+### 6.2 Struct Layout Control
+
+```z42
+[Layout(kind = Sequential, pack = 4)]
+struct sockaddr_in {
+    family: u16, port: u16, addr: u32, zero: [u8; 8],
+}
+
+[Layout(kind = Explicit, size = 16)]
+struct Variant {
+    [FieldOffset(0)]  tag:    u8,
+    [FieldOffset(8)]  as_int: i64,
+    [FieldOffset(8)]  as_ptr: *mut void,   // union
+}
+
+[Layout(kind = C)]   // = Rust #[repr(C)]
+struct Point { x: f64, y: f64 }
+```
+
+### 6.3 Pinned/Fixed: Zero-Copy String / Array
+
+`String` and `Array<T>` (T blittable) cannot directly cross FFI. Instead, the `pinned` block borrows the internal buffer pointer:
+
+```z42
+fn write_native(s: String) -> i32 {
+    pinned p = s {                  // borrow s.buf as raw view
+        unsafe { c_write(p.ptr, p.len) }
+    }
+    // p lifetime ends; s usable again
+}
+
+fn process_array(data: Array<u8>) {
+    pinned p = data {
+        unsafe { c_process(p.ptr, p.len) }
+    }
+}
+```
+
+**Semantics**:
+
+- `pinned p = X { ... }` is a scope. Within: `X` is immutable (no append/resize/move); `p.ptr` and `p.len` form a raw view.
+- Compiler emits `PinPtr` / `UnpinPtr` IR opcodes around the block.
+- Under RC backend: pin is a no-op (no relocation possible).
+- Under future moving GC backend: pin prevents relocation during compaction.
+- Only blittable-element `Array<T>` and `String` (UTF-8) may be pinned (compile-time check).
+
+**Comparison with C# `fixed`**: same intent. Narrower (z42 only on `String` / `Array`; C# accepts any blittable lvalue). Strictly typed: `p.ptr` is `*const u8` for `String` / `*const T` for `Array<T>`, never an opaque pointer.
+
+### 6.4 Native Types as First-Class
+
+The most important departure from C#. Native libraries register **complete z42 classes** via Tier 1/2:
+
+```z42
+let t = Tensor::new([3i64, 4, 5]);
+print(t.rank);                  // field access
+let t2 = t.dot(&t);             // method call
+print(t.fmt());                 // native impl of z42.core::Display
+```
+
+Capabilities of native-defined types:
+
+- ctor / dtor / instance + static methods
+- Fields (readonly or read-write)
+- Trait implementations (full participation in z42 dispatch)
+- RC participation (`retain` / `release` / cycle traversal)
+
+**Comparison**:
+
+| Capability | Python C API | C# P/Invoke | z42 |
+|---|---|---|---|
+| Native function callable from script | ✓ | ✓ | ✓ |
+| Native-defined complete type | ✓ (`PyTypeObject`) | ✗ (only opaque `IntPtr` wrappers) | ✓ |
+| Type participates in `is`/`isinstance` checks | ✓ | ✗ | ✓ |
+| Native trait/protocol implementation | ✓ (duck-typed) | ✗ | ✓ (vtable) |
+| ABI stability | ⚠ (occasional breaks) | N/A | ✓ versioned |
+
+This unlocks "numpy / torch / lxml" style libraries in z42: high-performance native cores exposed as ergonomic z42 types.
+
+---
+
+## §7 Calling Conventions
+
+### 7.1 z42 → Native Method
+
+Convention (z42 private ABI; not platform C ABI):
+
+```
+fn(self: *mut Self, arg1, arg2, …, argN) -> ret
+                              ↑
+              all blittable; lowered to platform C calling convention
+```
+
+- No implicit context arg (no GIL handle, no thread context)
+- Errors: `Result<T, E>` split into `(tag: u8, payload: union)` at ABI; methods marked `nothrow` return value directly
+- Panics caught at the `extern "C"` shim boundary, converted to `Z42Error` (or `Abort` per `[UnmanagedCallback(on_panic = Abort)]`)
+
+VM dispatch:
+
+| Backend | Dispatch |
+|---|---|
+| Interp | libffi (cached `ffi_cif` per signature) |
+| JIT | emit direct `call` after vtable slot resolution |
+| AOT | linker resolves at link time |
+
+Hot path: indirect call only. **No marshal stub** (zero-marshal principle).
+
+### 7.2 Native → z42 (Reverse Calls)
+
+Native code creates / invokes z42 objects via Tier 1 API:
+
+```c
+Z42TypeRef ListType = z42_resolve_type("z42.core", "List");
+Z42Value list = z42_invoke(ListType, "::new", NULL, 0);
+
+Z42Value args[1] = { z42_int(42) };
+z42_invoke_method(list, "push", args, 1);
+```
+
+z42-side panics surface as `Z42Error` via `z42_last_error()`.
+
+### 7.3 Reverse Callbacks (z42 fn passed to native lib)
+
+```z42
+[UnmanagedCallback(conv = C, on_panic = Abort)]
+fn my_compare(a: *const void, b: *const void) -> i32 {
+    let pa = a as *const i32; let pb = b as *const i32;
+    *pa - *pb
+}
+
+unsafe { qsort(arr.ptr, arr.len, 4, my_compare); }
+```
+
+**Constraints**: no captures, blittable args/return. Compiler emits a stable `extern "C"` entry.
+
+Closure callbacks (with captures) require explicit trampoline:
+
+```z42
+let captured = 42;
+let cb = make_trampoline(|x| x + captured);   // returns (fn_ptr, user_data)
+register_callback(cb.fn_ptr, cb.user_data);
+// cb owns trampoline memory; drop releases it
+```
+
+---
+
+## §8 Memory Management
+
+### 8.1 RC Model + Native Dealloc
+
+```
+z42 holds Tensor ref:
+  let t  = Tensor::new(...);   rc = 1
+  let t2 = t;                  retain → rc = 2
+  drop(t2);                    release → rc = 1
+  drop(t);                     release → rc = 0 → dtor → dealloc
+```
+
+Native lib provides `retain` / `release`. Default impl: `AtomicUsize::fetch_add` / `fetch_sub` on the instance's first field. Custom impls allowed for shared backing or pooling.
+
+### 8.2 Cycle Collection
+
+Native types may opt in by implementing `Z42Traceable` and setting `flags |= TRACEABLE`. The `#[derive(Z42Type)]` macro auto-generates traversal for fields whose types implement `Z42Traceable` — strictly better than CPython's manual `tp_traverse` (which is the source of most numpy refcount bugs).
+
+### 8.3 Pin Protocol
+
+Encoded by IR opcodes:
+
+- `PinPtr <local>` — set pin flag on container (or register in pin set)
+- `UnpinPtr <local>` — clear flag
+
+Backends:
+
+- RC: no-op (no relocation possible)
+- Future moving GC: pinned objects skipped during compaction
+
+### 8.4 Cross-Boundary Lifetime Rules
+
+- `*const T` / `*mut T` from z42 → native: **borrowed for call duration only**; native MUST NOT store
+- Owned native handles (`[NativeHandle]`): managed by z42 RC; dtor invoked at refcount zero
+- z42 closure passed to native: requires trampoline (§7.3); native MUST release explicitly when no longer needed
+
+---
+
+## §9 Manifest Format (`<module>.z42abi`)
+
+Machine-readable native library metadata, **published alongside the `.so` / `.dylib`** (analogous to Rust `.rmeta` or C# XML doc + metadata).
+
+**Format**: JSON during development, FlatBuffer for production distribution (decision §12).
+
+```json
+{
+  "abi_version": 1,
+  "module": "numz42",
+  "version": "0.1.0",
+  "library_name": "numz42",
+  "types": [
+    {
+      "name": "Tensor",
+      "size": 56, "align": 8,
+      "flags": ["sealed"],
+      "fields": [
+        { "name": "rank", "type": "u32", "offset": 0, "readonly": true }
+      ],
+      "methods": [
+        { "name": "new",  "kind": "ctor",
+          "symbol": "__shim_Tensor_new",
+          "params": [{"name":"shape","type":"&[i64]"}], "ret": "Self" },
+        { "name": "ndim", "kind": "method",
+          "symbol": "__shim_Tensor_ndim",
+          "params": [], "ret": "usize" },
+        { "name": "dot",  "kind": "method",
+          "symbol": "__shim_Tensor_dot",
+          "params": [{"name":"other","type":"&Self"}], "ret": "Self" }
+      ],
+      "trait_impls": [
+        { "trait": "z42.core::Display",
+          "methods": [{"name":"fmt","symbol":"__shim_Tensor_fmt"}] }
+      ]
+    }
+  ]
+}
+```
+
+**Generation**:
+
+- Rust: `z42::module!` macro emits `OUT_DIR/<module>.z42abi`; build script copies to target dir
+- C: `z42-bindgen-c <header.h> -o lib.z42abi` tool (analog of `cbindgen`)
+
+**Consumption**: z42 compiler integrates a manifest reader; lazy-loads type descriptors only for imported types (manifest summary read first, full type resolved on use).
+
+---
+
+## §10 Roadmap
+
+| Stage | Content | Depends on |
+|---|---|---|
+| **L2.M8** | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp) | New IR opcode `CallNative` |
+| **L2.M9** | Tier 1 PoC: handwritten `numz42-c` demo | M8 |
+| **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | M8 |
+| **L2.M11** | `#[derive(Z42Type)]` + `#[z42::methods]` + `numz42-rs` PoC | M10 |
+| **L2.M12** | `pinned` block syntax + String/Array borrow | type system |
+| **L2.M13** | `.z42abi` manifest format + compiler reader | M11 |
+| **L2.M14** | Source gen: `import` auto-syncs manifest + compile-time validation | M13 |
+| **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |
+| **L3.M16** | JIT/AOT direct vtable call emission (bypass libffi) | JIT backend |
+| **L3.M17** | Cycle collector ↔ native `Z42Traceable` integration | cycle GC |
+
+---
+
+## §11 Current L1 Implementation (Legacy)
+
+> **Status**: This section describes the L1 stub mechanism currently in use. It will be **superseded by Tier 1/2/3** during L2.M8–M14. New L1 builtins should still follow the conventions below until migration begins.
+
+The L1 mechanism is a simplified interim FFI: a fixed `dispatch_table` in the Rust VM exposes a curated set of stdlib-backing functions, called from z42 via `extern` + `[Native("__name")]` annotations.
+
+### 11.1 Declaration
 
 ```z42
 namespace Std.IO;
@@ -28,450 +569,98 @@ namespace Std.IO;
 public static class Console {
     [Native("__println")]
     public static extern void WriteLine(string value);
-
-    [Native("__readline")]
-    public static extern string ReadLine();
 }
 
 namespace Std.Math;
 
 public static class Math {
-    [Native("__sqrt")]
+    [Native("__math_sqrt")]
     public static extern double Sqrt(double x);
-    
-    [Native("__abs")]
-    public static extern double Abs(double x);
 }
 ```
 
-**Rules:**
+Compile-time rules:
 
-- `extern` method **must** have `[Native("__name")]` attribute
-- Missing `[Native]` → compile error `Z0903`
-- Missing `extern` on `[Native]` method → compile error `Z0904`
-- Function **cannot** have a body (use `;` not `{}`)
-- `__name` **must** be registered in VM's `NativeTable` (see VM docs)
-- Unregistered name → compile error `Z0901`
-- Parameter count must match `NativeTable` definition; mismatch → `Z0902`
+- `extern` requires `[Native("__name")]`, else error `Z0903`
+- `[Native]` requires `extern`, else error `Z0904`
+- Body forbidden (`;` only)
+- Name must exist in `dispatch_table`, else `Z0901`
+- Param count must match, else `Z0902`
 
-### Native Function Naming Convention
+### 11.2 Naming Convention (`__<area>_<verb>[_<modifier>]`)
 
-Native function names (the string passed to `[Native("...")]` and used as the
-dispatch key in `corelib/mod.rs::dispatch_table`) follow a fixed format. New
-builtins **must** comply; existing exceptions are legacy and not to be imitated.
+| Area | Domain | Examples |
+|---|---|---|
+| `str`     | string ops on `Std.String` | `__str_length`, `__str_char_at` |
+| `char`    | `Std.char` ops | `__char_to_upper`, `__char_is_whitespace` |
+| `int` / `long` / `double` | primitive ops (parse / hash / equals / to_string) | `__int_parse`, `__double_to_string` |
+| `math`    | `Std.Math.Math` static methods | `__math_sqrt`, `__math_atan2` |
+| `obj`     | universal object protocol | `__obj_get_type`, `__obj_hash_code` |
+| `file`    | `Std.IO.File` static methods | `__file_read_text`, `__file_exists` |
+| `env`     | environment / process | `__env_get`, `__env_args` |
+| `time`    | clock / measurement | `__time_now_ms` |
+| `process` | host process control | `__process_exit` |
 
-#### Format
+New domain → add to this table + pick a short single-word identifier (no inner underscores).
 
-```
-__<area>_<verb>[_<modifier>]
-```
+**Legacy bare names** (do **not** add new ones): `__println`, `__print`, `__readline`, `__concat`, `__contains`, `__len`, `__to_str`, `__time_now_ms`, `__process_exit`. These predate the convention; retained for backward compatibility. Migrate opportunistically when the implementing module reorganizes.
 
-- **`__` prefix** — marks the symbol as VM-internal dispatch key; reserves the
-  namespace from user-defined code (which never starts identifiers with `__`).
-- **`<area>`** — domain prefix; required. ASCII lowercase, single word.
-  Allowed values:
+### 11.3 Dispatch
 
-  | Area | Domain | Examples |
-  |------|--------|----------|
-  | `str` | string operations on `Std.String` | `__str_length`, `__str_char_at`, `__str_from_chars` |
-  | `char` | `Std.char` operations | `__char_to_upper`, `__char_is_whitespace` |
-  | `int` / `long` / `double` | primitive type ops (parse / hash / equals / to_string) | `__int_parse`, `__double_to_string` |
-  | `math` | `Std.Math.Math` static methods | `__math_sqrt`, `__math_atan2` |
-  | `obj` | universal object protocol | `__obj_get_type`, `__obj_ref_eq`, `__obj_hash_code` |
-  | `file` | `Std.IO.File` static methods | `__file_read_text`, `__file_exists` |
-  | `env` | environment / process | `__env_get`, `__env_args` |
-  | `time` | clock / measurement | `__time_now_ms` |
-  | `process` | host process control | `__process_exit` |
-
-  When introducing a builtin in a **new domain**, add the area prefix to this
-  table and pick a short, single-word identifier (no underscores inside the
-  area).
-- **`<verb>`** — snake_case action; required. Multi-word OK
-  (`__str_starts_with`, `__file_read_text`).
-- **`<modifier>`** (optional) — disambiguates overloads or units, e.g.
-  `__time_now_ms` (units), `__math_log10` (variant). Avoid unless necessary.
-
-#### Examples
+z42 compiler emits `Builtin(native_id, args)` IR; VM `dispatch_table` maps id → Rust fn pointer; called directly without marshaling.
 
 ```rust
-// ✅ Conform — area prefix + verb
-m.insert("__str_length",       string::builtin_length);
-m.insert("__math_sqrt",        math::builtin_sqrt);
-m.insert("__obj_get_type",     object::builtin_get_type);
-m.insert("__file_read_text",   fs::builtin_file_read_text);
-
-// ❌ Legacy bare verb — do NOT add new ones
-m.insert("__println",   io::builtin_println);     // historical (since L1)
-m.insert("__readline",  io::builtin_readline);
-m.insert("__concat",    io::builtin_concat);
-m.insert("__len",       io::builtin_len);
-m.insert("__contains",  io::builtin_contains);
-m.insert("__to_str",    convert::builtin_to_str);
-```
-
-#### Why the convention matters
-
-- **stdlib maintainability** — anyone reading `__str_*` knows it backs string
-  operations; bare `__concat` requires reading the implementation to know which
-  type it operates on.
-- **dispatch table grouping** — `corelib/mod.rs::dispatch_table` registers
-  builtins in area-grouped sections; the naming convention keeps the file
-  visually organized.
-- **collision avoidance** — adding `__hash` would conflict across domains;
-  `__str_hash_code` / `__int_hash_code` / `__char_hash_code` / `__obj_hash_code`
-  coexist trivially.
-
-#### Legacy bare names (do not add)
-
-The following 9 bare-verb names predate the convention and are retained for
-backward compatibility:
-
-`__println`, `__print`, `__readline`, `__concat`, `__contains`, `__len`,
-`__to_str`, `__time_now_ms`, `__process_exit`.
-
-When migrating these is convenient (e.g. their implementing module reorganises),
-prefer renaming to `__io_writeline` / `__io_readline` / `__io_concat` etc.
-Otherwise they may stay as-is —— but **no new bare names**.
-
-### Calling Convention
-
-When z42 code calls a native function:
-
-```z42
-string result = Console.ReadLine();  // ← compiled to Builtin instruction
-```
-
-**Compilation:**
-
-```
-// IR:
-r0 = builtin "__readline" []
-// ↓
-// zbc: Builtin(native_id=12, args=[])
-```
-
-**Runtime (Interpreter):**
-
-1. Interpreter executes `Builtin` instruction
-2. Looks up `native_id` in `NativeTable`
-3. Calls the Rust function **directly** (no marshaling, no wrapper)
-4. Returns result to r0
-
-**Performance:** ≤ 1 virtual call dispatch overhead (typically negligible vs. the function's work).
-
-### Native Function Signature Mapping
-
-z42 types map directly to Rust types:
-
-| z42 Type | Rust Type | Notes |
-|----------|-----------|-------|
-| `int` | `i32` | 32-bit signed |
-| `long` | `i64` | 64-bit signed |
-| `float` | `f32` | 32-bit float |
-| `double` | `f64` | 64-bit float |
-| `bool` | `bool` | Byte-sized, but used as bool |
-| `char` | `u32` | Unicode code point (32-bit) |
-| `string` | `GcHandle<String>` | Reference to GC'd string |
-| `T[]` | `GcHandle<Array<T>>` | Reference to GC'd array |
-| `List<T>` | `GcHandle<List<T>>` | Reference to GC'd list |
-| Value type / `struct` | `<struct>` (by value) | C-compatible layout |
-| Class instance | `GcHandle<Type>` | Reference to GC'd object |
-| `T?` (nullable) | `Option<T>` | Rust enum: Some(t) or None |
-
-**Example in Rust (`NativeTable`):**
-
-```rust
-// src/runtime/src/native_table.rs
-
-pub fn println(s: GcHandle<String>) {
-    let str_val = s.as_ref().unwrap().data.clone();
-    println!("{}", str_val);
-}
-
-pub fn sqrt(x: f64) -> f64 {
-    x.sqrt()
-}
-
-pub fn abs(x: f64) -> f64 {
-    x.abs()
-}
+pub fn println(s: GcHandle<String>) { /* ... */ }
+pub fn sqrt(x: f64) -> f64 { x.sqrt() }
 
 pub static NATIVE_TABLE: &[(&str, usize, NativeFn)] = &[
-    ("__println", 1, native_impl::println as NativeFn),
-    ("__sqrt", 1, native_impl::sqrt as NativeFn),
-    ("__abs", 1, native_impl::abs as NativeFn),
-    // ...
+    ("__println",   1, native_impl::println as NativeFn),
+    ("__math_sqrt", 1, native_impl::sqrt    as NativeFn),
 ];
 ```
 
----
+### 11.4 Type Mapping (Current)
 
-## Layer 2: Rust VM ↔ Host Application
+| z42 | Rust | Notes |
+|---|---|---|
+| `int` / `long` | `i32` / `i64` | |
+| `float` / `double` | `f32` / `f64` | |
+| `bool` | `bool` | byte-sized |
+| `char` | `u32` | Unicode code point |
+| `string` | `GcHandle<String>` | GC ref |
+| `T[]` / `List<T>` | `GcHandle<Array<T>>` | GC ref |
+| value struct | `<struct>` by value | C-compatible layout |
+| class instance | `GcHandle<Class>` | GC ref |
 
-### Embedding the z42 VM
+### 11.5 Migration Path L1 → L2+
 
-Host applications (C, Rust, Python, Go) can instantiate and run z42 code via the VM's C ABI.
+L1 functions and naming conventions remain valid throughout L2.M8–M14. Migration plan:
 
-**Example (Rust embedder):**
+1. **L2.M8–M10** — Tier 1 C ABI lands alongside L1; new functionality may use either path
+2. **L2.M11–M13** — stdlib-backing builtins gradually re-implemented as Tier 2 native types (`Std.String`, `Std.IO.File`, etc. become native-defined classes)
+3. **L2.M14** — source generator subsumes both `[Native]` and `[Extern]` declarations
+4. **L3.M15+** — legacy `__name` dispatch table removed once all stdlib migrated
 
-```rust
-use z42_vm::{VM, VMConfig};
-
-fn main() {
-    let mut vm = VM::new(VMConfig::default());
-    
-    // Load bytecode
-    let bytecode = std::fs::read("script.zbc").unwrap();
-    vm.load_module("script", bytecode).unwrap();
-    
-    // Call a function
-    let result = vm.call("script::main", &[]).unwrap();
-    println!("Result: {:?}", result);
-}
-```
-
-**Example (C embedder):**
-
-```c
-#include "z42_vm.h"
-
-int main() {
-    Z42VM* vm = Z42_VM_Create();
-    
-    // Load bytecode
-    Z42_VM_LoadModule(vm, "script", bytecode, bytecode_len);
-    
-    // Call function
-    Z42Value result = Z42_VM_Call(vm, "script::main", NULL, 0);
-    printf("Result: %ld\n", result.as_i64);
-    
-    Z42_VM_Destroy(vm);
-    return 0;
-}
-```
-
-### Data Exchange at the Boundary
-
-#### Simple Values
-
-Primitives (`int`, `float`, `bool`, `double`) pass through registers or C structs with no overhead.
-
-#### Strings and Arrays
-
-Strings and arrays are **GC pointers**. When crossing the boundary:
-
-- **z42 → Rust:** Pass `GcHandle<String>`, Rust code reads it (no copy).
-- **Rust → z42:** Rust allocates via VM heap allocator, returns `GcHandle<String>`.
-- **Host ↔ VM:** Host must use VM's string API to create/read strings.
-
-**Example (create a string in VM for z42 to read):**
-
-```rust
-let my_str = vm.create_string("Hello from Rust");
-vm.call("process_string", &[my_str])?;
-```
-
-#### Structs
-
-Structs with `[StructLayout(LayoutKind.Sequential)]` (or Rust `#[repr(C)]`) are passed by value.
-
-```z42
-// In z42:
-public struct Point {
-    public int X;
-    public int Y;
-}
-
-[Native("__process_point")]
-public static extern void ProcessPoint(Point p);
-```
-
-```rust
-// In Rust (NativeTable):
-#[repr(C)]
-pub struct Point {
-    pub x: i32,
-    pub y: i32,
-}
-
-pub fn process_point(p: Point) {
-    println!("Point: ({}, {})", p.x, p.y);
-}
-```
-
-#### Objects
-
-Class instances are always **GC references**. The host never directly accesses object memory:
-
-```z42
-public class Circle {
-    public double Radius { get; set; }
-}
-
-[Native("__get_area")]
-public static extern double GetArea(Circle c);
-```
-
-```rust
-// In Rust:
-pub fn get_area(c: GcHandle<Class>) -> f64 {
-    let circle = c.as_ref().unwrap();
-    let radius = circle.get_field("Radius").as_f64;
-    std::f64::consts::PI * radius * radius
-}
-```
+During the transition, both styles coexist; the compiler accepts both. No automated migration tool — stdlib reorg is manual, one capability at a time, each as its own `spec/changes/` proposal.
 
 ---
 
-## Layer 3: Memory Safety Boundaries
+## §12 Open Decisions
 
-### The Safety Contract
-
-z42 enforces a **strict boundary** between managed and native code:
-
-1. **Managed side (z42 code):** No null pointers, no buffer overruns, type-safe access.
-2. **Native side (Rust VM impl):** Responsible for its own safety (Rust compiler enforces this).
-3. **Boundary crossing:** The VM translates types and validates data passing in both directions.
-
-**Invariant:** Native code cannot directly corrupt z42's heap.
-
-### What Native Code CAN'T Do
-
-- **Write to GC-managed objects directly.** Native code reads object fields via the VM's API (e.g., `get_field`, `set_field`).
-- **Hold onto GcHandles across VM calls.** If a handle escapes the native function and is used after GC, it's undefined behavior (but such cases must be prevented at the language level).
-- **Use raw memory pointers.** z42 has no unsafe pointers; native code must use the VM's object API.
-
-### Struct Memory Layout
-
-Structs are C-compatible:
-
-```z42
-public struct Color {
-    public byte R;
-    public byte G;
-    public byte B;
-    public byte A;
-}
-```
-
-Memory layout (little-endian, no padding):
-
-```
-Offset  Field   Type
-0       R       byte (1 byte)
-1       G       byte (1 byte)
-2       B       byte (1 byte)
-3       A       byte (1 byte)
-Total: 4 bytes
-```
-
-This struct can be passed to C code expecting `struct { uint8_t r, g, b, a }`.
+| # | Question | Default leaning |
+|---|---|---|
+| 1 | Manifest format: JSON (dev) → FlatBuffer (prod), or single-format z42 binary (`.zpkg`-style)? | JSON dev / FlatBuffer prod; decide before M13 |
+| 2 | `.z42abi` distribution: same dir as `.so` / embedded as ELF section / package registry? | Same dir initially; registry post-1.0 |
+| 3 | `import T from "lib"` resolution: library name (filesystem) or package name (registry)? | Library name in L2; registry in L3 |
+| 4 | Tier 1 ABI stability commitment: post-1.0 break-change rules? | TBD; defer until Tier 1 has external users |
+| 5 | Cycle collection trait: opt-in (`#[derive(Z42Traceable)]`) or default-on for native types? | Opt-in (perf-conscious; matches Rust convention) |
 
 ---
 
-## Performance Guarantees
+## §13 Related Documents
 
-### Zero-Overhead Abstractions
-
-- **native → z42:** Calling a z42 function from native code has the same overhead as calling any VM function (function lookup + argument setup).
-- **z42 → native (extern):** Direct native call; no marshaling, no wrapper trampolines. Overhead ≤ 1 indirect jump.
-- **Struct passing:** By-value, no allocation, same as C.
-- **Primitive arguments:** Register passing (x64 calling convention).
-
-### What Has Overhead
-
-- **GC pointers crossing boundaries:** Validation that the pointer is still valid (1 lookup in handle table).
-- **Dynamic field access:** Native code reading object fields via `get_field` API (similar to reflection; use sparingly for hot paths).
-- **String creation:** Allocating a new string in the VM heap (normal allocation cost).
-
-### Best Practices for Performance
-
-- Use `extern` functions for **hot paths** (physics, rendering, crypto).
-- Use `extern` for **bulk operations** (prefer one large call over many small calls).
-- Avoid calling z42 from native in tight loops; instead, call native from z42's hot loop.
-- Pass structs by value when possible (cheaper than GC pointers).
-
----
-
-## Example: Game Engine Integration
-
-### Scenario
-
-A game engine written in Rust needs to call z42 game logic.
-
-**Rust side (host):**
-
-```rust
-// engine/src/main.rs
-use z42_vm::VM;
-
-fn main() {
-    let mut vm = VM::new(VMConfig::default());
-    let bytecode = std::fs::read("game_logic.zbc")?;
-    vm.load_module("game", bytecode)?;
-    
-    let mut game_state = GameState { player_x: 0.0, player_y: 0.0 };
-    
-    // Frame loop
-    for frame in 0..1000 {
-        let dt = 0.016;  // 60 FPS
-        
-        // Call z42 script to update game logic
-        vm.call("game::on_update", &[Value::from_f64(dt)])?;
-        
-        // Render
-        render(&game_state);
-    }
-}
-```
-
-**z42 side (game script):**
-
-```z42
-// game_logic.z42
-namespace Game;
-
-[ExecMode(Mode.Interp)]  // Fast startup, hot reload support
-[HotReload]              // Can reload without restarting Rust engine
-public class GameLogic {
-    public static float PlayerX;
-    public static float PlayerY;
-    
-    [Native("__physics_step")]
-    public static extern void PhysicsStep(float dt);
-    
-    public static void OnUpdate(float dt) {
-        PhysicsStep(dt);  // Call Rust physics engine
-        
-        // Update game state (in z42)
-        PlayerX += 0.5f * dt;
-        PlayerY += 0.3f * dt;
-    }
-}
-```
-
-The **physics engine** (`PhysicsStep`) is written in Rust for performance; game logic is in z42 for fast iteration.
-
----
-
-## Limitations & Constraints
-
-### Currently Not Supported
-
-- **Async across boundary:** z42 `async`/`await` (L3) cannot bridge to native async without explicit glue code.
-- **Callbacks:** Native code cannot directly call z42 functions by pointer; must go through the VM's call API.
-- **Generic FFI:** `extern` methods don't support generics (L1 doesn't have generics anyway).
-
-### Future (L3+)
-
-- **Typed FFI:** Generate C bindings from z42 extern declarations.
-- **Async callback:** Native code can queue callbacks to be executed by z42.
-- **Zero-copy iteration:** Iterate over z42 arrays in native code without copying.
-
----
-
-## Related Documents
-
-- [philosophy.md](philosophy.md) — Embedding-first design principle
-- [language-overview.md](language-overview.md) — InternalCall syntax (`extern`, `[Native]`)
-- [ir.md](ir.md) — Builtin instruction and native function dispatch
+- [philosophy.md](philosophy.md) — embedding-first design principle
+- [language-overview.md](language-overview.md) — `extern` / `[Native]` syntax (L1)
+- [ir.md](ir.md) — `Builtin` instruction (L1) and future `CallNative` / `CallNativeVtable` opcodes
+- [vm-architecture.md](vm-architecture.md) — VM dispatch path
+- [compiler-architecture.md](compiler-architecture.md) — type checker for FFI signatures
