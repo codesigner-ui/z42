@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3-G4e indexer — get/set via `obj[i]` on a user-defined generic class.
 
 class MyList<T> {

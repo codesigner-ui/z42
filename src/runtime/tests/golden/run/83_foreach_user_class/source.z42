@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3-G4h step2 — duck-typed `foreach` on user classes with Count + indexer.
 // Lowers to `for (int i=0; i<c.Count(); i++) var e = c[i]`; exercises ArrayList + custom class.
 

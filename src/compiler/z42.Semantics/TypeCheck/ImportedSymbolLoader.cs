@@ -1,3 +1,4 @@
+using Z42.Core;
 using Z42.IR;
 using Z42.Syntax.Parser;
 
@@ -24,27 +25,47 @@ namespace Z42.Semantics.TypeCheck;
 public static class ImportedSymbolLoader
 {
     /// <summary>
-    /// Load exported modules and produce a merged SymbolTable containing
-    /// all imported types filtered by the given <paramref name="usings"/>.
+    /// 兼容入口：按 namespace 字符串过滤（无 package 概念）。
+    /// 主要给单元测试 / GoldenTests 用，每个 namespace 独立形成一个虚拟 package。
+    /// 生产代码（PackageCompiler / SingleFileCompiler）应改用四参版本，按
+    /// activated/prelude package 过滤（strict-using-resolution，2026-04-28）。
     /// </summary>
     public static ImportedSymbols Load(
         IReadOnlyList<ExportedModule> modules,
         IReadOnlyList<string> usings)
     {
-        var allowedNs  = new HashSet<string>(usings, StringComparer.Ordinal);
-        // 2026-04-27 fix-using-prelude-include：`Std` 是 z42.core 的隐式 prelude
-        // （见 docs/design/stdlib.md "z42.core auto-load semantics"）。无论用户
-        // 写什么 using，IEquatable / Object / Exception 等基础类型都应可见。
-        // 缺这个会导致 `using Std.Collections;` + `Dictionary<string,int>` 报
-        // "string does not satisfy IEquatable on Dictionary"（Dictionary 约束
-        // 引用 IEquatable，但 IEquatable 在 Std 命名空间被过滤掉了）。
-        allowedNs.Add("Std");
+        // 把每个 namespace 视作一个虚拟 package（同名）。
+        // tests 写 `Module("Std", ...)` + `usings=["Std"]` → "Std" 被激活。
+        var packageOf = new Dictionary<ExportedModule, string>();
+        foreach (var m in modules) packageOf[m] = m.Namespace;
+        var activated = new HashSet<string>(usings, StringComparer.Ordinal);
+        return Load(modules, packageOf, activated, preludePackages: new HashSet<string>());
+    }
+
+    /// <summary>
+    /// 主 API：按 (package, namespace, class) 三元组组织 modules，
+    /// 仅 `package ∈ activated ∪ prelude` 的类进入返回值。
+    /// 同 (namespace, class-name) 跨多 activated package → Collisions 列表。
+    /// </summary>
+    public static ImportedSymbols Load(
+        IReadOnlyList<ExportedModule>                     modules,
+        IReadOnlyDictionary<ExportedModule, string>       packageOf,
+        IReadOnlyCollection<string>                       activatedPackages,
+        IReadOnlyCollection<string>?                      preludePackages = null)
+    {
+        preludePackages ??= PreludePackages.Names;
+        var allowedPkgs = new HashSet<string>(activatedPackages, StringComparer.Ordinal);
+        allowedPkgs.UnionWith(preludePackages);
+
+        // (namespace, class-name) → 已贡献该名字的 package 集合（用于冲突检测）
+        var contributors = new Dictionary<(string Ns, string Name), List<string>>();
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
         var funcs      = new Dictionary<string, Z42FuncType>(StringComparer.Ordinal);
         var interfaces = new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal);
         var enumConsts = new Dictionary<string, long>(StringComparer.Ordinal);
         var enumTypes  = new HashSet<string>(StringComparer.Ordinal);
         var classNs    = new Dictionary<string, string>(StringComparer.Ordinal);
+        var classPkg   = new Dictionary<string, string>(StringComparer.Ordinal);
         // L3-G3d: raw serialized constraints — resolved to bundles later by TypeChecker.
         var classConstraints = new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal);
         var funcConstraints  = new Dictionary<string, List<ExportedTypeParamConstraint>>(StringComparer.Ordinal);
@@ -56,16 +77,29 @@ public static class ImportedSymbolLoader
 
         // ── Phase 1: 骨架登记 ──
         // 遍历 modules，对每个新名字创建空成员的骨架；first-wins on duplicates.
+        // 同时记录每个 (ns, class-name) 被哪些 package 贡献，用于冲突检测。
         foreach (var mod in modules)
         {
-            if (!allowedNs.Contains(mod.Namespace)) continue;
+            var pkg = packageOf.TryGetValue(mod, out var p) ? p : "";
+            if (!allowedPkgs.Contains(pkg)) continue;
 
             foreach (var cls in mod.Classes)
+            {
+                var key = (mod.Namespace, cls.Name);
+                if (!contributors.TryGetValue(key, out var list))
+                {
+                    list = new List<string>();
+                    contributors[key] = list;
+                }
+                if (!list.Contains(pkg)) list.Add(pkg);
+
                 if (!classes.ContainsKey(cls.Name))
                 {
                     classes[cls.Name] = BuildClassSkeleton(cls);
+                    classPkg[cls.Name] = pkg;
                     selectedClasses.Add((mod, cls));
                 }
+            }
 
             foreach (var iface in mod.Interfaces)
                 if (!interfaces.ContainsKey(iface.Name))
@@ -109,7 +143,8 @@ public static class ImportedSymbolLoader
         // processed in a single pass alongside Phase 2.
         foreach (var mod in modules)
         {
-            if (!allowedNs.Contains(mod.Namespace)) continue;
+            var pkg = packageOf.TryGetValue(mod, out var p) ? p : "";
+            if (!allowedPkgs.Contains(pkg)) continue;
 
             foreach (var en in mod.Enums)
             {
@@ -134,25 +169,38 @@ public static class ImportedSymbolLoader
         // methods to its Methods dict (first-wins), and add trait to classInterfaces.
         // Methods/traits added here are visible to TypeChecker downstream — VM dispatch
         // works via func_index in the impl-providing zpkg's MODS section (no VM change).
-        MergeImpls(modules, allowedNs, classes, interfaces, classNs, classInterfaces);
+        MergeImpls(modules, packageOf, allowedPkgs, classes, interfaces, classNs, classInterfaces);
+
+        // ── Phase 4: 抽取 collisions 列表（同 (ns, name) 多 package 贡献）──
+        List<NamespaceCollision>? collisions = null;
+        foreach (var ((ns, name), pkgs) in contributors)
+        {
+            if (pkgs.Count >= 2)
+            {
+                collisions ??= new List<NamespaceCollision>();
+                collisions.Add(new NamespaceCollision(ns, name, pkgs));
+            }
+        }
 
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
-            classConstraints, funcConstraints, classInterfaces);
+            classConstraints, funcConstraints, classInterfaces, classPkg, collisions);
     }
 
     /// L3-Impl2 Phase 3: merge `impl Trait for Target` declarations into the
     /// target's imported Z42ClassType. Mutates classes/classInterfaces dicts in place.
     private static void MergeImpls(
-        IReadOnlyList<ExportedModule>              modules,
-        HashSet<string>                            allowedNs,
-        Dictionary<string, Z42ClassType>           classes,
-        Dictionary<string, Z42InterfaceType>       interfaces,
-        Dictionary<string, string>                 classNs,
-        Dictionary<string, List<string>>           classInterfaces)
+        IReadOnlyList<ExportedModule>                  modules,
+        IReadOnlyDictionary<ExportedModule, string>    packageOf,
+        HashSet<string>                                allowedPkgs,
+        Dictionary<string, Z42ClassType>               classes,
+        Dictionary<string, Z42InterfaceType>           interfaces,
+        Dictionary<string, string>                     classNs,
+        Dictionary<string, List<string>>               classInterfaces)
     {
         foreach (var mod in modules)
         {
-            if (!allowedNs.Contains(mod.Namespace)) continue;
+            var pkg = packageOf.TryGetValue(mod, out var p) ? p : "";
+            if (!allowedPkgs.Contains(pkg)) continue;
             if (mod.Impls is null) continue;
             foreach (var impl in mod.Impls)
             {
@@ -499,9 +547,21 @@ public static class ImportedSymbolLoader
         var classConstraints = MergeNullable(low.ClassConstraints, high.ClassConstraints);
         var funcConstraints  = MergeNullable(low.FuncConstraints,  high.FuncConstraints);
         var classInterfaces  = MergeNullable(low.ClassInterfaces,  high.ClassInterfaces);
+        var classPackages    = MergeNullable(low.ClassPackages,    high.ClassPackages);
+
+        // strict-using-resolution: 合并 collisions（intraSymbols 端理论无冲突，
+        // 但保留 low 端的 collisions 以免 PackageCompiler 路径丢信息）。
+        IReadOnlyList<NamespaceCollision>? collisions = null;
+        if (low.Collisions is { Count: > 0 } lc || high.Collisions is { Count: > 0 } hc)
+        {
+            var merged = new List<NamespaceCollision>();
+            if (low.Collisions  is not null) merged.AddRange(low.Collisions);
+            if (high.Collisions is not null) merged.AddRange(high.Collisions);
+            collisions = merged;
+        }
 
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
-            classConstraints, funcConstraints, classInterfaces);
+            classConstraints, funcConstraints, classInterfaces, classPackages, collisions);
     }
 
     private static Dictionary<string, T>? MergeNullable<T>(
@@ -537,4 +597,17 @@ public sealed record ImportedSymbols(
     /// L3-G4b primitive-as-struct: imported class → declared interface list
     /// (by short name). Enables data-driven `PrimitiveImplementsInterface`
     /// to work when stdlib `struct int : IComparable<int>` is loaded from a zpkg.
-    Dictionary<string, List<string>>?    ClassInterfaces = null);
+    Dictionary<string, List<string>>?    ClassInterfaces = null,
+    /// strict-using-resolution (2026-04-28): per-class source package, for
+    /// "did you forget `using <ns>;`?" hints + collision diagnostics.
+    Dictionary<string, string>?          ClassPackages   = null,
+    /// strict-using-resolution: collision records — same (namespace, class-name)
+    /// claimed by 2+ activated packages. TypeChecker emits E0601 from this list.
+    /// Each entry: (namespace, className, packageNames[]).
+    IReadOnlyList<NamespaceCollision>?   Collisions      = null);
+
+/// strict-using-resolution: 跨包同 (ns, name) 冲突描述。
+public sealed record NamespaceCollision(
+    string                Namespace,
+    string                ClassName,
+    IReadOnlyList<string> Packages);

@@ -63,12 +63,53 @@ public sealed partial class TypeChecker : ITypeInferrer
     /// Convenience: runs all 3 phases (Pass 0 + Pass 1 + Pass 2) in one call.
     public SemanticModel Check(CompilationUnit cu, ImportedSymbols? imported = null)
     {
+        // strict-using-resolution (2026-04-28): emit E0601 for cross-package
+        // (namespace, class-name) collisions; E0602 for `using <ns>;` that no
+        // loaded package provides.
+        if (imported is not null)
+        {
+            EmitImportDiagnostics(cu, imported);
+        }
         var binder  = new SymbolCollector(_diags);
         var symbols = binder.Collect(cu, imported);
         // L3-G3d: rehydrate imported `where` constraints so ValidateGenericConstraints
         // fires for `new ImportedGeneric<T>()` / imported generic func calls.
         _imported = imported;
         return Infer(cu, symbols);
+    }
+
+    /// strict-using-resolution: emit E0601 (collisions) + E0602 (unresolved using).
+    private void EmitImportDiagnostics(CompilationUnit cu, ImportedSymbols imported)
+    {
+        // E0601 — every collision becomes an error, attached to the file's first
+        // line span (no per-using span yet; future: thread span through ImportedSymbols).
+        if (imported.Collisions is { Count: > 0 } cols)
+        {
+            var span = new Z42.Core.Text.Span(0, 0, 0, 0, "");
+            foreach (var c in cols)
+            {
+                _diags.Error(DiagnosticCodes.NamespaceCollision,
+                    $"class `{c.Namespace}.{c.ClassName}` is provided by multiple packages: " +
+                    $"[{string.Join(", ", c.Packages)}]; rename or restrict using",
+                    span);
+            }
+        }
+
+        // E0602 — using points to no loaded namespace.
+        // Resolved namespaces = ImportedSymbols.ClassNamespaces values + intra-package own namespace.
+        if (cu.Usings.Count == 0) return;
+        var resolvedNs = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var v in imported.ClassNamespaces.Values) resolvedNs.Add(v);
+        // 同包文件相互 using 也应该被认为已解析（intraSymbols 通过 ClassNamespaces 注入）
+        if (cu.Namespace is { } ownNs) resolvedNs.Add(ownNs);
+        var unresolvedSpan = new Z42.Core.Text.Span(0, 0, 0, 0, "");
+        foreach (var u in cu.Usings)
+        {
+            if (!resolvedNs.Contains(u))
+                _diags.Error(DiagnosticCodes.UnresolvedUsing,
+                    $"using `{u}`: no loaded package provides this namespace",
+                    unresolvedSpan);
+        }
     }
 
     private ImportedSymbols? _imported;

@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: Std.Math.Random (add-std-random, 2026-04-27)
 // 固定 seed → 可重现序列；锁定 Park-Miller LCG 行为基准。
 

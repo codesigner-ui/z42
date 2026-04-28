@@ -1,5 +1,5 @@
 namespace Hello;
-using System;
+using Std.IO;
 
 string Greet(string name) {
     return $"Hello, {name}!";

@@ -229,6 +229,27 @@ Rules:
 - It is a compile-time error to redeclare a top-level name that shadows a `Std` export without an explicit alias (L3).
 - User projects **must not** declare `z42.core` as an explicit dependency in their `.z42.toml`; it is injected automatically by the compiler and VM.
 
+### strict-using-resolution (2026-04-28)
+
+The compiler enforces strict package-based using resolution
+（[namespace-using.md](namespace-using.md#strict-using-resolution-2026-04-28)）：
+
+- **Prelude whitelist**：硬编码 `Z42.Core.PreludePackages.Names = { "z42.core" }`。
+  仅 z42.core 的 namespace 默认可见；扩展需 spec proposal。
+- **using 必须激活包**：使用 `Console`、`Math`、`Queue`、`StringBuilder`、`Random`
+  等非 prelude 类型，必须写对应 using（`Std.IO` / `Std.Math` / `Std.Collections`
+  / `Std.Text` / `Std.Math`）。
+- **多包同 namespace 允许**：例 `Std.Collections` 由 z42.core (List/Dictionary)
+  与 z42.collections (Queue/Stack) 共同提供 — 合法，前提是类型名不冲突。
+  同 (namespace, class-name) 多包提供 → E0601。
+- **保留前缀**：第三方包（不以 `z42.` 开头）声明 `Std` / `Std.*` namespace →
+  W0603 软警告，不阻断（避免阻止外部包临时调试）。
+
+**诊断码**（[error-codes.md](error-codes.md)）：
+- E0601 NamespaceCollision — 跨包同 (ns, name) 冲突
+- E0602 UnresolvedUsing — using 指向未加载的 namespace
+- W0603 ReservedNamespace — 非 stdlib 包占用 Std.* 前缀
+
 ### stdlib Search Path (VM)
 
 When the VM needs to load a stdlib module it searches in order:

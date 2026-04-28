@@ -237,4 +237,99 @@ public sealed class ImportedSymbolLoaderTests
         loaded.Classes["Robot"].Methods["Hello"].Ret.Should().Be(Z42Type.String,
             because: "Robot 已声明 Hello —— impl 的同名方法被 first-wins 跳过");
     }
+
+    // ── strict-using-resolution (2026-04-28) ─────────────────────────────────
+
+    [Fact]
+    public void Load_PreludePackage_AlwaysActivated()
+    {
+        // z42.core 导出 namespace Std 的 Object；不写 using 也应能看到。
+        var coreMod = Module("Std", Class("Object", baseClass: null));
+        var packageOf = new Dictionary<ExportedModule, string> { [coreMod] = "z42.core" };
+
+        var loaded = ImportedSymbolLoader.Load(
+            new[] { coreMod }, packageOf,
+            activatedPackages: new HashSet<string>(),    // 用户没写 using
+            preludePackages:   new HashSet<string> { "z42.core" });
+
+        loaded.Classes.Should().ContainKey("Object",
+            because: "prelude 包的类型默认可见");
+    }
+
+    [Fact]
+    public void Load_NonPreludePackage_NotVisibleWithoutActivation()
+    {
+        // z42.io 不在 prelude；不写 using 不应看到 Console。
+        var ioMod = Module("Std.IO", Class("Console", baseClass: null));
+        var packageOf = new Dictionary<ExportedModule, string> { [ioMod] = "z42.io" };
+
+        var loaded = ImportedSymbolLoader.Load(
+            new[] { ioMod }, packageOf,
+            activatedPackages: new HashSet<string>(),
+            preludePackages:   new HashSet<string> { "z42.core" });
+
+        loaded.Classes.Should().NotContainKey("Console",
+            because: "非 prelude 包未激活时其类型不可见");
+    }
+
+    [Fact]
+    public void Load_NonPreludePackage_VisibleWhenActivated()
+    {
+        var ioMod = Module("Std.IO", Class("Console", baseClass: null));
+        var packageOf = new Dictionary<ExportedModule, string> { [ioMod] = "z42.io" };
+
+        var loaded = ImportedSymbolLoader.Load(
+            new[] { ioMod }, packageOf,
+            activatedPackages: new HashSet<string> { "z42.io" },
+            preludePackages:   new HashSet<string> { "z42.core" });
+
+        loaded.Classes.Should().ContainKey("Console",
+            because: "user using 激活包后类型可见");
+    }
+
+    [Fact]
+    public void Load_TwoPackagesSameClassName_RecordsCollision()
+    {
+        // packageA 与 packageB 同时在 namespace Foo 下声明 class Util。
+        var modA = Module("Foo", Class("Util", baseClass: null));
+        var modB = Module("Foo", Class("Util", baseClass: null));
+        var packageOf = new Dictionary<ExportedModule, string>
+        {
+            [modA] = "packageA",
+            [modB] = "packageB",
+        };
+
+        var loaded = ImportedSymbolLoader.Load(
+            new[] { modA, modB }, packageOf,
+            activatedPackages: new HashSet<string> { "packageA", "packageB" },
+            preludePackages:   new HashSet<string>());
+
+        loaded.Collisions.Should().NotBeNullOrEmpty(
+            because: "同 (ns, class-name) 跨多 activated 包应记录冲突");
+        var col = loaded.Collisions!.Single();
+        col.Namespace.Should().Be("Foo");
+        col.ClassName.Should().Be("Util");
+        col.Packages.Should().BeEquivalentTo(new[] { "packageA", "packageB" });
+    }
+
+    [Fact]
+    public void Load_PackageOf_TracksSourcePackage()
+    {
+        var coreMod = Module("Std", Class("Object", baseClass: null));
+        var ioMod   = Module("Std.IO", Class("Console", baseClass: null));
+        var packageOf = new Dictionary<ExportedModule, string>
+        {
+            [coreMod] = "z42.core",
+            [ioMod]   = "z42.io",
+        };
+
+        var loaded = ImportedSymbolLoader.Load(
+            new[] { coreMod, ioMod }, packageOf,
+            activatedPackages: new HashSet<string> { "z42.io" },
+            preludePackages:   new HashSet<string> { "z42.core" });
+
+        loaded.ClassPackages.Should().NotBeNull();
+        loaded.ClassPackages!["Object"].Should().Be("z42.core");
+        loaded.ClassPackages!["Console"].Should().Be("z42.io");
+    }
 }

@@ -98,7 +98,20 @@
       "Bash(echo \"--- exit $? ---\")",
       "Bash(dotnet /Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll /Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.test/src/TestRunner.z42 --emit zbc -o /tmp/tr.zbc)",
       "Bash(dotnet /Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/run/18_test_runner/source.z42 --emit zbc -o /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/run/18_test_runner/source.zbc)",
-      "Bash(cargo clean *)"
+      "Bash(cargo clean *)",
+      "Bash(grep -nC 2 \"PackageName\\\\|packageName\" src/compiler/z42.Project/ZpkgReader.cs src/compiler/z42.Project/PackageTypes.cs)",
+      "Bash(grep -nC 3 \"ReadMeta\\\\|ZpkgMeta\\\\|PackageId\\\\|name.*package\" src/compiler/z42.Project/ZpkgReader.cs)",
+      "Bash(grep -nC 2 \"TsigCache\\\\|RegisterNamespace\\\\|_nsToPaths\" src/compiler/z42.Pipeline/PackageCompiler.cs)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/17_math_constants/source.z42 --emit zbc -o /tmp/x.zbc)",
+      "Bash(artifacts/rust/release/z42vm src/runtime/tests/golden/run/77_stdlib_stack_queue/source.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll /tmp/test77_with_using.z42 --emit zbc -o /tmp/test77.zbc)",
+      "Bash(artifacts/rust/release/z42vm /tmp/test77.zbc)",
+      "Bash(chmod +x scripts/audit-missing-usings.sh)",
+      "Bash(bash scripts/audit-missing-usings.sh)",
+      "Bash(bash --version)",
+      "Bash(xargs bash *)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/01_hello/source.z42 --emit ir -o /tmp/01.zasm)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/01_hello/source.z42 --emit ir -o src/runtime/tests/golden/01_hello/expected.zasm)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3-G2.5 enum constraint — where T: enum
 
 enum Color { Red = 10, Green = 20, Blue = 30 }

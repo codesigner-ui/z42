@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3-G4h step3 stdlib Std.Collections.Dictionary<K,V> — source-level generic hash map
 // (previously HashMap; consolidated to canonical `Dictionary<K,V>` name).
 

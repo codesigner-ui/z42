@@ -171,6 +171,31 @@ public static class DiagnosticCatalog
             "the construct may become supported in a future compiler version.",
             null),
 
+        // ── E06xx: Package / import resolution ────────────────────────────────
+
+        [DiagnosticCodes.NamespaceCollision] = new(
+            "Type name collision across packages",
+            "Two activated packages declare the same type name in the same namespace. " +
+            "Rename one of them, or restrict your `using` declarations so only one package is activated. " +
+            "(strict-using-resolution, 2026-04-28)",
+            "// packageA declares Foo.Util\n" +
+            "// packageB declares Foo.Util\n" +
+            "using Foo;  // E0601: `Foo.Util` provided by both `packageA` and `packageB`"),
+
+        [DiagnosticCodes.UnresolvedUsing] = new(
+            "Unresolved `using` namespace",
+            "A `using` declaration references a namespace that no loaded package provides. " +
+            "Check the spelling, or add the providing package as a dependency in z42.toml.",
+            "using NoSuch.Pkg;  // E0602: no loaded package provides `NoSuch.Pkg`"),
+
+        [DiagnosticCodes.ReservedNamespace] = new(
+            "Package declares reserved namespace",
+            "A non-prelude package declares a namespace under the reserved `Std` / `Std.*` prefix. " +
+            "These prefixes are reserved for the standard library (z42.core, z42.io, ...). " +
+            "Rename your namespace to avoid future conflicts. This is a warning, not an error.",
+            "// in some-third-party.zpkg:\n" +
+            "namespace Std.Acme;  // W0603: `Std` is reserved"),
+
         // ── Z09xx: Internal compiler error ──────────────────────────────────
 
         [DiagnosticCodes.InternalCompilerError] = new(

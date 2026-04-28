@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3 静态抽象接口 — generic numeric algorithms via where T: INumber<T>.
 // INumber<T> declares `static abstract T op_Add(T a, T b)` etc. (C# 11 alignment).
 // primitive int/double/etc. implement via `public static override T op_Add(T a, T b) { return a + b; }`.

@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: string edge cases
 
 void Main() {

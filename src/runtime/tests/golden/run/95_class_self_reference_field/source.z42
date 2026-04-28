@@ -1,3 +1,4 @@
+using Std.IO;
 // Verify two-phase ImportedSymbolLoader: user code can assign same-typed
 // instance to a class's self-reference field (was E0402 before fix).
 

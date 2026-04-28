@@ -1,3 +1,4 @@
+using Std.IO;
 // Wave 2: Exception base class — construction, field access, ToString.
 
 void Main() {

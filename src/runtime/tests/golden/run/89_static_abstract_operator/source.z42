@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3 静态抽象接口 — generic operator dispatch `a + b` on T: INumber<T>.
 // Complements 87 (which tests `x.op_Add(x)` method syntax) by exercising the
 // operator-sugar path: TryBindOperatorCall sees a Z42GenericParamType and

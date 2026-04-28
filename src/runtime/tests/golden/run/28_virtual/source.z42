@@ -1,4 +1,5 @@
 namespace Demo;
+using Std.IO;
 
 class Shape {
     virtual string Area() {

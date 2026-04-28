@@ -1,3 +1,4 @@
+using Z42.Core;
 using Z42.Core.Text;
 using System.Diagnostics;
 using System.Text;
@@ -174,20 +175,23 @@ public sealed class GoldenTests
         foreach (var d in parser.Diagnostics.All) diags.Add(d);
         if (diags.HasErrors) return (null, diags, new HashSet<string>());
 
-        // Golden tests may lack explicit `using` declarations but reference stdlib types.
-        // Extract usings from the source; if none found, use all available namespaces
-        // so that Console/Assert/Math etc. are always visible in golden tests.
+        // strict-using-resolution (2026-04-28): activate prelude packages
+        // (z42.core) + packages providing namespaces in cu.Usings. Types from
+        // non-activated packages are not visible. Mirrors PackageCompiler /
+        // SingleFileCompiler runtime path.
         var usings = cu.Usings.Count > 0
             ? cu.Usings.ToList()
             : PackageCompiler.ExtractUsingsPublic(source);
-        var tsigModules = TsigCacheInstance.LoadAll();
         ImportedSymbols? imported = null;
+        var activatedPkgs = new HashSet<string>(PreludePackages.Names, StringComparer.Ordinal);
+        foreach (var ns in usings)
+            foreach (var pkg in TsigCacheInstance.PackagesProvidingNamespace(ns))
+                activatedPkgs.Add(pkg);
+        var (tsigModules, packageOf) = TsigCacheInstance.LoadForPackages(activatedPkgs);
         if (tsigModules.Count > 0)
         {
-            var nsFilter = usings.Count > 0
-                ? usings
-                : tsigModules.Select(m => m.Namespace).Distinct().ToList();
-            imported = ImportedSymbolLoader.Load(tsigModules, nsFilter);
+            imported = ImportedSymbolLoader.Load(tsigModules, packageOf, activatedPkgs,
+                preludePackages: PreludePackages.Names);
         }
 
         var typeChecker = new TypeChecker(diags, features, DepIndex);

@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3-G4a instantiated generic type substitution
 
 class Box<T> {

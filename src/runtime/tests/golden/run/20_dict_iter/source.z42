@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: Dictionary.Keys() / Values() / Entries() iteration + KeyValuePair
 // (add-keyvaluepair-and-dict-entries, 2026-04-27;
 //  Entries() 添加于 fix-generic-array-type-parsing)。

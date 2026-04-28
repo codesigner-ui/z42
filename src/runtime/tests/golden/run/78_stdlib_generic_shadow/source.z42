@@ -1,3 +1,5 @@
+using Std.IO;
+using Std.Collections;
 // L3-G4d: user-defined `class Stack` shadows `Std.Collections.Stack<T>`.
 // Invoke local methods, confirm stdlib version is NOT routed.
 

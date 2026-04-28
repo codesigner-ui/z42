@@ -4,9 +4,9 @@
   .locals
     %1 = i
   .linetable
-    block:0  instr:0  line:4
-    block:2  instr:0  line:5
-    block:3  instr:0  line:4
+    block:0  instr:0  line:5
+    block:2  instr:0  line:6
+    block:3  instr:0  line:5
   .block entry
     %0:i32 = const.i64  0
     %1:i32 = copy  %0:i32

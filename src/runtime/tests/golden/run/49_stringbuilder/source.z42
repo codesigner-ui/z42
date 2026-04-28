@@ -1,4 +1,5 @@
 namespace Demo;
+using Std.IO;
 using Std.Text;
 
 void Main() {

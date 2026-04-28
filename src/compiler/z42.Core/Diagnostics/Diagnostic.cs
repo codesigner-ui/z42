@@ -39,6 +39,7 @@ public sealed record Diagnostic(
 /// E03xx — Features (gated syntax used when disabled)
 /// E04xx — Type checker
 /// E05xx — IrGen / code generator
+/// E06xx — Package / import resolution（using/namespace 解析、跨包冲突）
 /// E09xx — Native / InternalCall
 ///</summary>
 public static class DiagnosticCodes
@@ -75,6 +76,11 @@ public static class DiagnosticCodes
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";
+
+    // Package / import resolution (strict-using-resolution, 2026-04-28)
+    public const string NamespaceCollision   = "E0601";  // 两个包同 (ns, class-name) 同时激活
+    public const string UnresolvedUsing      = "E0602";  // using 指向不存在的 namespace
+    public const string ReservedNamespace    = "W0603";  // 非 prelude 包声明 Std.* 前缀（warn-only）
 
     // Internal compiler error
     public const string InternalCompilerError = "E0900";

@@ -1,3 +1,5 @@
+using Std.IO;
+using Std.Collections;
 // L3-G4d: use Std.Collections.Stack<T> / Queue<T> directly from stdlib.
 
 void Main() {

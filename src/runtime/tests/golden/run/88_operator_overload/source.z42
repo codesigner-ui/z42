@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: L3 operator overload (C# style `operator` keyword).
 // User struct Vec2 declares static operator + / - / * (with heterogeneous `Vec2 * int`).
 // Compiler desugars `a + b` / `v * 10` to Vec2.op_Add(a,b) / Vec2.op_Multiply(v, 10) static calls.

@@ -1,3 +1,4 @@
+using Std.IO;
 // Test: `using Std.Collections;` + Dictionary<K,V> 约束验证 (fix-using-prelude-include, 2026-04-27)
 //
 // 修前：用户显式写 `using Std.Collections;` 后，TypeChecker 只看 Std.Collections

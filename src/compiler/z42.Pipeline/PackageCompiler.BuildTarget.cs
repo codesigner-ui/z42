@@ -1,3 +1,4 @@
+using Z42.Core;
 using Z42.Core.Diagnostics;
 using Z42.Core.Features;
 using Z42.IR;
@@ -209,6 +210,15 @@ public static partial class PackageCompiler
                     {
                         nsMap.TryAdd(n, fname);
                         tsigCache?.RegisterNamespace(n, zpkgFile);
+                        // strict-using-resolution: W0603 reserved-prefix warning.
+                        // 非 stdlib 包（非 z42.* 开头）声明 Std / Std.* 命名空间 → warn-only。
+                        if (!PreludePackages.IsStdlibPackage(meta.Name)
+                            && PreludePackages.IsReservedNamespace(n))
+                        {
+                            Console.Error.WriteLine(
+                                $"warning W0603: package `{meta.Name}` declares reserved namespace `{n}`; " +
+                                $"`Std` / `Std.*` is reserved for stdlib");
+                        }
                     }
                 }
                 catch { /* skip malformed zpkg */ }
@@ -253,32 +263,19 @@ public static partial class PackageCompiler
     /// Compile all source files; returns null and prints an error count if any file fails.
     /// <paramref name="cachedExports"/> 当 IncrementalBuild 命中 cache 时由 caller 提供，
     /// 用于把 cached CU 的 ExportedModule 注入 sharedCollector（与跨包 imports 同路径）。
+    ///
+    /// strict-using-resolution (2026-04-28): 重构为"先 parse all → 收集 cu.Usings →
+    /// LoadExternalImported(activated)"两步，让 Pass-0 collect 看到的 imported 是
+    /// 按用户 using 严格过滤后的（prelude + activated 包），与运行时语义一致。
     static List<CompiledUnit>? TryCompileSourceFiles(
         IReadOnlyList<string>     sourceFiles,
         DependencyIndex           depIndex,
         TsigCache?                tsigCache = null,
         IReadOnlyDictionary<string, ExportedModule>? cachedExports = null)
     {
-        // ── Load external imports (cross-package + cached intra-package) ──
-        var externalImported = LoadExternalImported(tsigCache, cachedExports);
-
-        // ── Phase 1: parse all + Pass-0 collect intra-package declarations ──
-        // Same package's files reference each other (e.g. z42.core's List.z42 uses
-        // IEquatable.z42 via `where T: IEquatable<T>`). Without intra-package
-        // sharing, a fresh build with no zpkg cache fails because those refs
-        // can't be resolved. fix-package-compiler-cross-file (2026-04-26) adds
-        // this two-phase pre-collection.
-        //
-        // A SHARED SymbolCollector is reused across all CUs so cross-CU
-        // inheritance (e.g. ArgumentNullException → ArgumentException → Exception
-        // spread across three files) sees its full base chain. After all CUs are
-        // collected, FinalizeInheritance() runs a global topological merge to
-        // handle out-of-order CU processing.
+        // ── Phase 0: parse all source files (no Collect yet, need cu.Usings first) ──
         var parsedCus = new List<(string file, string source, CompilationUnit cu, string ns)>();
         int parseErrors = 0;
-        var sharedDiags     = new DiagnosticBag();
-        var sharedCollector = new SymbolCollector(sharedDiags);
-        SymbolTable? sharedSymbols = null;
         foreach (var sourceFile in sourceFiles)
         {
             string source;
@@ -292,13 +289,6 @@ public static partial class PackageCompiler
             try   { cu = parser.ParseCompilationUnit(); }
             catch (Exception ex)
             {
-                // Parser threw — surface immediately so the package build halts.
-                // Older code did `continue` here on the assumption Phase 2 would
-                // re-parse and print; but Phase 2 only iterates `parsedCus`, so
-                // a thrown file would silently disappear (build report claimed
-                // success while the source file was never compiled into the zpkg —
-                // discovered 2026-04-27 wave1-path-script when Path.z42 with
-                // brace-less `while` errors slipped through).
                 Console.Error.WriteLine($"error: parse failed in {sourceFile}: {ex.Message}");
                 parseErrors++;
                 continue;
@@ -306,8 +296,6 @@ public static partial class PackageCompiler
             foreach (var d in parser.Diagnostics.All) diags.Add(d);
             if (diags.HasErrors)
             {
-                // Phase-1 parser diagnostics — surface them now (same reason as
-                // the `catch` branch above).
                 foreach (var d in diags.All)
                     Console.Error.WriteLine(d.ToString());
                 parseErrors++;
@@ -315,17 +303,29 @@ public static partial class PackageCompiler
             }
             string ns = cu.Namespace ?? "main";
             parsedCus.Add((sourceFile, source, cu, ns));
-
-            // Accumulate into shared collector — externalImported is idempotent
-            // via TryAdd, so passing it on every call is safe.
-            sharedSymbols = sharedCollector.Collect(cu, externalImported);
-            // Diagnostics from Pass 0 are tentative (cross-file refs may not yet
-            // be available); deferred to Phase 2 where the full picture is in scope.
         }
         if (parseErrors > 0)
         {
             Console.Error.WriteLine($"error: build failed ({parseErrors} file(s) with parse errors)");
             return null;
+        }
+
+        // 收集所有 CU 的 using 声明，得到本次编译需激活的 namespace 全集。
+        var allUserUsings = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (_, _, cu, _) in parsedCus)
+            foreach (var u in cu.Usings)
+                allUserUsings.Add(u);
+
+        // ── Load external imports filtered by activated packages (prelude + user usings) ──
+        var externalImported = LoadExternalImported(tsigCache, allUserUsings, cachedExports);
+
+        // ── Phase 1: Pass-0 collect intra-package declarations ──
+        var sharedDiags     = new DiagnosticBag();
+        var sharedCollector = new SymbolCollector(sharedDiags);
+        SymbolTable? sharedSymbols = null;
+        foreach (var (_, _, cu, _) in parsedCus)
+        {
+            sharedSymbols = sharedCollector.Collect(cu, externalImported);
         }
 
         // Global inheritance merge: ensures derived classes carry their full
@@ -364,25 +364,45 @@ public static partial class PackageCompiler
         return units;
     }
 
-    /// 加载所有外部 zpkg 的 ImportedSymbols（来自 tsigCache）。
-    /// Phase 1 需要它作为 Pass-0 collect 的 base；Phase 2 与 intraSymbols 合并。
+    /// 加载所有外部 zpkg 的 ImportedSymbols（来自 tsigCache），按用户 using 严格过滤。
+    ///
+    /// strict-using-resolution (2026-04-28): 只激活
+    ///   - prelude 包（PreludePackages.Names，当前仅 z42.core）
+    ///   - 用户 using 指向的 namespace 所在的所有包
+    /// 其他包的类型不进入 ImportedSymbols；TypeChecker 引用时报 E0401。
+    /// 同 (namespace, class-name) 多 package → 写入 ImportedSymbols.Collisions，
+    /// TypeChecker 报 E0601。
     private static ImportedSymbols LoadExternalImported(
-        TsigCache? tsigCache,
+        TsigCache?                                  tsigCache,
+        IReadOnlyCollection<string>                 userUsings,
         IReadOnlyDictionary<string, ExportedModule>? cachedExports = null)
     {
-        var tsigModules = tsigCache?.LoadAll().ToList() ?? new List<ExportedModule>();
+        if (tsigCache is null) return ImportedSymbolLoader.Empty();
+
+        // 计算激活包：prelude ∪ (用户 using 指向的 namespace 所在的所有包)
+        var activatedPkgs = new HashSet<string>(PreludePackages.Names, StringComparer.Ordinal);
+        foreach (var ns in userUsings)
+            foreach (var pkg in tsigCache.PackagesProvidingNamespace(ns))
+                activatedPkgs.Add(pkg);
+
+        var (tsigModules, packageOf) = tsigCache.LoadForPackages(activatedPkgs);
         if (cachedExports is not null)
         {
-            // cached intra-package modules：去重后追加（同 namespace 优先用 cached）
+            // cached intra-package modules：去重后追加。cached 模块没有具体 zpkg
+            // 来源（同包 fresh build），用 "<intra>" 占位作为 packageName，确保
+            // 进入 activated 集合（intra 包永远是"prelude 之外的当前包"）。
+            const string IntraPkg = "<intra>";
+            activatedPkgs.Add(IntraPkg);
             foreach (var (ns, exp) in cachedExports)
             {
                 tsigModules.RemoveAll(m => string.Equals(m.Namespace, ns, StringComparison.Ordinal));
                 tsigModules.Add(exp);
+                packageOf[exp] = IntraPkg;
             }
         }
         if (tsigModules.Count == 0) return ImportedSymbolLoader.Empty();
-        var allNs = tsigModules.Select(m => m.Namespace).Distinct().ToList();
-        return ImportedSymbolLoader.Load(tsigModules, allNs);
+        return ImportedSymbolLoader.Load(tsigModules, packageOf, activatedPkgs,
+            preludePackages: PreludePackages.Names);
     }
 
     /// Emit warnings for `using` declarations that cannot be resolved in <paramref name="nsMap"/>.

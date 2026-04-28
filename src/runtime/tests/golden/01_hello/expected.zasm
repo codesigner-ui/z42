@@ -32,10 +32,10 @@
     %0:str = const.str  s2          ; "world"
     %1:str = call  @Hello.Greet  %0:str
     %2:str = copy  %1:str
-    %3 = call  @Std.IO.Console.WriteLine  %2:str
+    %3:void = call  @Std.IO.Console.WriteLine  %2:str
     %4:str = const.str  s3          ; "z42 version 0.1, the answer is "
     %5:i32 = const.i64  42
     %6:str = to_str  %5:i32
     %7:str = str.concat  %4:str, %6:str
-    %8 = call  @Std.IO.Console.WriteLine  %7:str
+    %8:void = call  @Std.IO.Console.WriteLine  %7:str
     ret

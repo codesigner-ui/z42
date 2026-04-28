@@ -4,9 +4,9 @@
   .locals
     %0 = n
   .linetable
-    block:0  instr:0  line:4
-    block:1  instr:0  line:5
-    block:2  instr:0  line:7
+    block:0  instr:0  line:5
+    block:1  instr:0  line:6
+    block:2  instr:0  line:8
   .block entry
     %1:i32 = const.i64  1
     %2:bool = le  %0:i32, %1:i32
@@ -29,8 +29,8 @@
   .locals
     %2 = result
   .linetable
-    block:0  instr:0  line:11
-    block:0  instr:3  line:12
+    block:0  instr:0  line:12
+    block:0  instr:3  line:13
   .block entry
     %0:i32 = const.i64  7
     %1:i32 = call  @Expr.Fib  %0:i32

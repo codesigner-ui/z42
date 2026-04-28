@@ -60,6 +60,18 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 
 ---
 
+## E06xx — Package / Import Resolution（strict-using-resolution，2026-04-28）
+
+由 TypeChecker 在导入符号过滤后报出（参见 [namespace-using.md](namespace-using.md#strict-using-resolution-2026-04-28)）。
+
+| Code   | Title                                | When it occurs |
+|--------|--------------------------------------|----------------|
+| E0601  | Type name collision across packages  | 两个被激活的包在同一 namespace 下声明同名 class（first-wins 已禁用） |
+| E0602  | Unresolved `using` namespace         | `using <ns>;` 声明的 namespace 没有任何已加载包提供 |
+| W0603  | Package declares reserved namespace  | 非 stdlib 包（不以 `z42.` 开头）声明 `Std` / `Std.*` 命名空间（warn-only） |
+
+---
+
 ## WSxxx — Workspace Manifest（C1，2026-04-26）
 
 由 `Z42Errors` 工厂方法（`src/compiler/z42.Project/ManifestErrors.cs`）抛出，message 中含 `error[WSxxx]:` 或 `warning[WSxxx]:` 前缀。

@@ -1,3 +1,5 @@
+using Std.IO;
+using Std.Collections;
 // Test: generic class with T[] array field — exercise L3-G4a + T-array usage
 
 class Stack<T> {

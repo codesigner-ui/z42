@@ -1,4 +1,5 @@
 namespace Demo;
+using Std.IO;
 
 // Class without explicit base — implicitly inherits Std.Object.
 class Plain {

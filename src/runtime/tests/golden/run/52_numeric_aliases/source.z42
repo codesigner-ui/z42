@@ -1,4 +1,5 @@
 namespace Demo;
+using Std.IO;
 
 void Main() {
     // C# numeric type aliases — all map to i32/i64 in the VM.

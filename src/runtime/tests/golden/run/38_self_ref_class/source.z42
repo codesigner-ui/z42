@@ -1,4 +1,5 @@
 namespace Demo;
+using Std.Collections;
 
 // Self-referential class (linked list Node)
 class Node {

@@ -54,10 +54,14 @@ public sealed class IrGenTests
                     }
                     catch { }
                 }
-                var modules = cache.LoadAll();
+                // strict-using-resolution: IR/zbc round-trip tests need full visibility;
+                // activate all discovered packages.
+                var allPkgs = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var (_, pkg) in cache.AllPackages()) allPkgs.Add(pkg);
+                var (modules, packageOf) = cache.LoadForPackages(allPkgs);
                 if (modules.Count == 0) return null;
-                var allNs = modules.Select(m => m.Namespace).Distinct().ToList();
-                return ImportedSymbolLoader.Load(modules, allNs);
+                return ImportedSymbolLoader.Load(modules, packageOf, allPkgs,
+                    preludePackages: Z42.Core.PreludePackages.Names);
             }
             dir = dir.Parent;
         }

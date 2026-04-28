@@ -85,7 +85,10 @@
       "Bash(grep -rnC 3 \"z42/libs\\\\|Std.Collections\" src/compiler/z42.Driver/ src/compiler/z42.Pipeline/)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/_dbg/source.z42 --emit zbc -o /tmp/dbg.zbc)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm artifacts/libraries/z42.core/dist/z42.core.zpkg -o /tmp/zcore.zpkgd)",
-      "Bash(bash scripts/test-vm.sh)"
+      "Bash(bash scripts/test-vm.sh)",
+      "Bash(git config *)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 log --oneline -5)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 status --short docs/)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

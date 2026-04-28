@@ -9,12 +9,12 @@
   .locals
     %0 = n
   .linetable
-    block:0  instr:0  line:4
-    block:1  instr:0  line:5
-    block:2  instr:0  line:6
-    block:3  instr:0  line:7
-    block:4  instr:0  line:8
+    block:0  instr:0  line:5
+    block:1  instr:0  line:6
+    block:2  instr:0  line:7
+    block:3  instr:0  line:8
     block:4  instr:0  line:9
+    block:4  instr:0  line:10
   .block entry
     %1:i32 = const.i64  0
     %2:bool = gt  %0:i32, %1:i32
@@ -45,9 +45,9 @@
 
 .func @ControlFlow.Main  params:0  ret:void  mode:Interp
   .linetable
-    block:0  instr:0  line:14
-    block:0  instr:3  line:15
-    block:0  instr:7  line:16
+    block:0  instr:0  line:15
+    block:0  instr:3  line:16
+    block:0  instr:7  line:17
   .block entry
     %0:i32 = const.i64  1
     %1:str = call  @ControlFlow.Sign  %0:i32

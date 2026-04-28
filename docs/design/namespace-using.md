@@ -41,14 +41,17 @@ void Helper() { ... }
 - `Helper` 的 qualified name = `Demo.Helper`
 - IrModule.Namespace = `"Demo"`
 
-### Using 导入（单文件中不影响解析，仅记录）
+### Using 导入
 
 ```z42
-using System;
-using MyLib.Utils;
+using Std.IO;
+using MyCorp.Utils;
 ```
 
-Phase 1 中 `using` 仅被 parser 记录到 `CompilationUnit.Usings`，TypeChecker 和 IrGen 不做跨文件解析（单文件模式下无其他文件可导入）。
+`using` 声明激活对应 namespace 提供的**包**：
+- 隐式 prelude（`z42.core`）始终激活，无需 using
+- 其他包（含 stdlib `z42.io` / `z42.collections` 等）必须显式 using
+- 见下方 [strict-using-resolution](#strict-using-resolution-2026-04-28)
 
 ### Using 别名
 
@@ -86,14 +89,65 @@ Driver 按以下顺序查找入口函数：
 
 ---
 
-## 多文件编译（Phase 1 预留，暂未实现）
+## 多文件 / 多包编译（生效语义）
 
-- Driver 接受多个 `.z42` 文件或一个目录
-- 每个文件独立 parse，得到各自的 `CompilationUnit`
-- Linker 合并 `CompilationUnit` 列表：
-  - 将所有 `Classes`、`Functions`、`Enums` 合并到一个 `CompilationUnit`
-  - 保留各文件的 `Namespace`，用于 qualified name 生成
-- 多文件场景下 `using Foo.Bar;` 将解析为：把命名空间 `Foo.Bar` 下的所有顶层符号导入当前文件作用域
+PackageCompiler 把每个源文件作为一个 CU 处理：
+
+1. **Phase 0 – Parse all**：所有 CU 解析到 AST，收集每个 cu.Usings
+2. **Phase 1 – Pass-0 collect**：用激活包过滤后的 `ImportedSymbols` 收集
+   每个 CU 的类/接口/函数 shape
+3. **Phase 2 – TypeCheck + IrGen**：身体绑定；遇到未激活包的类型 → E0401
+   "undefined symbol"
+
+**激活包计算**：
+- prelude 包 (`z42.core`) 总是激活
+- 用户每条 `using <ns>;` 激活该 namespace 提供的所有包
+- 同包内多 CU 通过 intraSymbols 互见，无需相互 using
+
+---
+
+## strict-using-resolution (2026-04-28)
+
+**核心规则**：
+
+1. `z42.core` 是唯一隐式 prelude（硬编码，扩展需 spec proposal）
+2. 其他所有包（含 stdlib `z42.io` / `z42.collections` / `z42.text` /
+   `z42.math` / `z42.test`）必须显式 `using <namespace>;` 才能激活
+3. `using X;` 激活所有声明了 namespace `X` 中类型的非 prelude 包
+4. 同 `(namespace, class-name)` 跨多激活包 → 编译错误 E0601
+5. `using <ns>;` 无任何已加载包提供 → 编译错误 E0602
+6. 非 stdlib 包（不以 `z42.` 开头）声明 `Std` / `Std.*` namespace →
+   软警告 W0603（不阻断构建）
+
+**典型场景**：
+
+| 用户代码 | 行为 |
+|---------|------|
+| `new Object()` (无 using) | OK — Object 在 z42.core (prelude) |
+| `new List<int>()` (无 using) | OK — List 在 z42.core 的 Std.Collections |
+| `Console.WriteLine(...)` (无 using) | E0401 — Console 在 z42.io 未激活 |
+| `Console.WriteLine(...)` + `using Std.IO;` | OK |
+| `new Queue<int>()` (无 using) | E0401 — Queue 在 z42.collections 未激活 |
+| `new Queue<int>()` + `using Std.Collections;` | OK |
+| `using NoSuch.Pkg;` | E0602 |
+| `using System;` | E0602（z42 没有 System namespace） |
+
+**实现接入点**：
+
+- `Z42.Core.PreludePackages` — prelude 名单 + reserved-prefix 检测
+- `Z42.Pipeline.TsigCache.LoadForPackages(activated)` — 按包过滤加载
+- `Z42.Semantics.TypeCheck.ImportedSymbolLoader.Load(modules, packageOf,
+  activated, prelude)` — 主 API，输出包含 `PackageOf` + `Collisions`
+- `Z42.Semantics.TypeCheck.TypeChecker.EmitImportDiagnostics` — 报 E0601/E0602
+- `Z42.Pipeline.PackageCompiler.LoadExternalImported(tsigCache, userUsings, ...)` —
+  生产路径
+- `Z42.Pipeline.SingleFileCompiler.LocateImportedSymbols(path, userUsings)` —
+  单文件路径
+
+**迁移工具**：
+
+`scripts/audit-missing-usings.sh` — 扫描 source.z42 按使用类型推断需要的
+using，自动 patch（一次性工具）。
 
 ---
 
@@ -140,7 +194,7 @@ void Main() {
 
 ```z42
 namespace App;
-using MyUtils;
+using Std.IO;
 using Pt = Demo.Point;
 
 void Main() {
