@@ -77,30 +77,27 @@ where the receiver is unknown at compile time, etc.
    `Foo{...}`); used when a class doesn't override `ToString` (it inherits
    `Std.Object.ToString` which the stdlib script implements via this builtin).
 
-### Path 2 — `Value::Str`: hardcoded shortcut
+### Path 2 — `Value::Str`: same unified path (with overload-suffix retry)
 
-In `exec_instr.rs::Instruction::VCall` (line ~380), when the receiver is
-`Value::Str`, method dispatch is hardcoded:
+`Value::Str` follows the **same unified path** as Path 3 (other primitives) —
+it's routed through `primitive_class_name` → `"Std.String"` → looked up as
+`Std.String.<method>` IR function (extern stub or script body).
 
-```rust
-let builtin_name = match method.as_str() {
-    "ToString"    => "__str_to_string",   // identity (returns self)
-    "Equals"      => "__str_equals",
-    "GetHashCode" => "__str_hash_code",
-    other => /* snake_case → __str_<snake> stdlib builtin */
-};
-```
+**Overload-suffix retry**: when `<method>` doesn't resolve directly (e.g.
+`Equals` is overloaded as `Equals(object?)` + `Equals(string)` and IrGen
+emits `Std.String.Equals$1`), the dispatcher retries with `Std.String.<method>$<arity>`.
+This is required because the IR carries the unmangled method name when the
+receiver type is statically `object` (`Std.Assert.Equal(object, object)` ⇒
+`expected.Equals(actual)` ⇒ VCall with method = `"Equals"`), but IrGen always
+mangles overloads at decl site.
 
-`Value::Str.ToString()` is **not** routed through `dispatch.rs::obj_to_string`
-— instead it goes through the VCall hardcoded switch above.
-
-> ⚠️ **Asymmetry note** (review2 §2.2): every other primitive (`Value::I64`,
-> `Value::F64`, ...) routes through stdlib script via `primitive_class_name` →
-> `Std.<type>.ToString`, but `Value::Str` retains a hardcoded VCall path. This
-> is a known migration gap from the "primitive → stdlib script" effort. See
-> P1-2 in the project review backlog. Until that is closed, `Value::Str` is
-> the only primitive whose protocol methods cannot be overridden via stdlib
-> script.
+> **Resolved asymmetry** (review2 §2.2 / C2 in review backlog, 2026-04-28):
+> the legacy hardcoded `match method { "ToString" => "__str_to_string", ... }`
+> block is gone from both `interp::exec_instr.rs::VCall` and
+> `jit::helpers_object.rs::jit_vcall`. `Value::Str` now uses the same
+> machinery as `Value::I64` / `Value::F64` / etc. The `__str_*` builtins are
+> reached via the IR `extern` stubs that IrGen emits for each `[Native]`-
+> attributed declaration in `Std.String`.
 
 ### Path 3 — Other primitives: `value_to_str` (basic Display)
 
@@ -162,12 +159,14 @@ History:
    `__obj_to_str`, the path naturally emerged from "look up vtable; if missing,
    invoke fallback builtin".
 
-2. **`Value::Str` hardcoded** (Path 2) predates the script-first migration.
-   Strings used to have *all* methods as VM intrinsics. Migration moved most
-   of them to scripts (see [`stdlib.md`](stdlib.md)) but `ToString` /
-   `Equals` / `GetHashCode` were not yet migrated — and fixing this requires
-   `Std.String` to declare these methods as scripts that delegate to the
-   underlying builtin (a small but currently uncompleted PR).
+2. **`Value::Str` unified** (Path 2, post-C2) — strings used to have a
+   hardcoded VCall switch (predating the script-first migration where
+   strings had *all* methods as VM intrinsics). The C2 refactor (2026-04-28)
+   removed the hardcoded block in favour of the same unified path other
+   primitives use, gated only by overload-suffix retry. The intrinsic
+   `__str_*` builtins are reached via the IR `extern` stub IrGen emits for
+   each `[Native]` declaration in `Std.String` — same pattern as `Std.int`
+   / `Std.double`.
 
 3. **`value_to_str` fallback** (Path 3) covers `ToStr` IR instructions on
    primitives where the receiver type is statically `Value::I64` etc. and the

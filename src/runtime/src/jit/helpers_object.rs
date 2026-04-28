@@ -10,20 +10,6 @@ use std::rc::Rc;
 use super::frame::{FnEntry, JitFrame, JitModuleCtx};
 use super::helpers::{set_exception, JitFn};
 
-/// Convert PascalCase to snake_case: "StartsWith" → "starts_with"
-fn to_snake_case_jit(s: &str) -> String {
-    let mut result = String::with_capacity(s.len() + 4);
-    for (i, ch) in s.chars().enumerate() {
-        if ch.is_uppercase() {
-            if i > 0 { result.push('_'); }
-            result.push(ch.to_lowercase().next().unwrap());
-        } else {
-            result.push(ch);
-        }
-    }
-    result
-}
-
 // ── Calls ────────────────────────────────────────────────────────────────────
 
 #[no_mangle]
@@ -266,67 +252,48 @@ pub unsafe extern "C" fn jit_vcall(
     // L3-G4b primitive-as-struct: primitives dispatch through their stdlib struct's
     // method — construct `{Std.int | Std.double | ...}.{method}` and invoke via the
     // JIT entry cache. Replaces the old hardcoded `(Value, method) → builtin` table.
+    //
+    // Overload resolution: when the receiver type is statically `object` the IR
+    // carries the unmangled method name (e.g. `Equals`), but IrGen emits overloaded
+    // methods with a `$<arity>` suffix (e.g. `Std.String.Equals$1`). When the
+    // unmangled lookup misses we retry with the arity-suffixed name. Mirrors
+    // `interp/exec_instr.rs::Instruction::VCall`. Subsumes the legacy `Value::Str`
+    // hardcoded `__str_*` fallback (review2 §2.2).
     if let Some(class_name) = crate::interp::exec_instr::primitive_class_name(&obj_val) {
-        let func_name = format!("{}.{}", class_name, method);
         let mut call_args = vec![obj_val.clone()];
         call_args.append(&mut extra_args);
-        if let Some(entry) = ctx_ref.fn_entries.get(&func_name) {
-            let mut callee = JitFrame::new(entry.max_reg, &call_args);
-            let jit_fn: JitFn = std::mem::transmute(entry.ptr);
-            let r = jit_fn(&mut callee, ctx);
-            if r != 0 { callee.recycle(); return 1; }
-            frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
-            callee.recycle();
-            return 0;
-        }
-        // Lazy loader fallback — call via interpreter.
-        if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
-            match crate::interp::exec_function(module, lazy_fn.as_ref(), &call_args) {
-                Ok(outcome) => match outcome {
-                    crate::interp::ExecOutcome::Returned(ret) => {
-                        frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);
-                        return 0;
-                    }
-                    crate::interp::ExecOutcome::Thrown(val) => {
-                        set_exception(val);
-                        return 1;
-                    }
-                },
-                Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+        let arity = call_args.len() - 1; // exclude `this`
+        let primary = format!("{}.{}", class_name, method);
+        let overload = format!("{}.{}${}", class_name, method, arity);
+        for func_name in [primary.as_str(), overload.as_str()] {
+            if let Some(entry) = ctx_ref.fn_entries.get(func_name) {
+                let mut callee = JitFrame::new(entry.max_reg, &call_args);
+                let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+                let r = jit_fn(&mut callee, ctx);
+                if r != 0 { callee.recycle(); return 1; }
+                frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
+                callee.recycle();
+                return 0;
+            }
+            // Lazy loader fallback — call via interpreter.
+            if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(func_name) {
+                match crate::interp::exec_function(module, lazy_fn.as_ref(), &call_args) {
+                    Ok(outcome) => match outcome {
+                        crate::interp::ExecOutcome::Returned(ret) => {
+                            frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);
+                            return 0;
+                        }
+                        crate::interp::ExecOutcome::Thrown(val) => {
+                            set_exception(val);
+                            return 1;
+                        }
+                    },
+                    Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+                }
             }
         }
         // Restore args for fallback paths.
         extra_args = call_args.into_iter().skip(1).collect();
-    }
-
-    // Primitive string type: dispatch all methods via builtins.
-    if let Value::Str(_) = &obj_val {
-        let builtin_name = match method {
-            "ToString"    => "__str_to_string".to_owned(),
-            "Equals"      => "__str_equals".to_owned(),
-            "GetHashCode" => "__str_hash_code".to_owned(),
-            other => format!("__str_{}", to_snake_case_jit(other)),
-        };
-        let mut call_args = vec![obj_val];
-        call_args.append(&mut extra_args);
-        match crate::corelib::exec_builtin(&builtin_name, &call_args) {
-            Ok(ret) => { frame_ref.regs[dst as usize] = ret; return 0; }
-            Err(_) => {
-                // Fallback: try stdlib function
-                let func_name = format!("Std.String.{method}");
-                if let Some(entry) = ctx_ref.fn_entries.get(&func_name) {
-                    let mut callee = JitFrame::new(entry.max_reg, &call_args);
-                    let jit_fn: JitFn = std::mem::transmute(entry.ptr);
-                    let r = jit_fn(&mut callee, ctx);
-                    if r != 0 { callee.recycle(); return 1; }
-                    frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
-                    callee.recycle();
-                    return 0;
-                }
-                set_exception(Value::Str(format!("VCall: string method `{method}` not found")));
-                return 1;
-            }
-        }
     }
 
     let class_name = match &obj_val {

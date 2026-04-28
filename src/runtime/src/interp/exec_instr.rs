@@ -337,13 +337,34 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             // IR function, which contains a BuiltinInstr for `__int_compare_to`).
             // This replaces the old hardcoded `(Value, method) → builtin` table —
             // method-to-native binding is now entirely data-driven via stdlib source.
+            //
+            // Overload resolution: when the receiver type is statically `object`
+            // (e.g. `Std.Assert.Equal(object, object)` calling `expected.Equals(actual)`),
+            // the C# emit can't pick an overload at compile time; the IR carries the
+            // unmangled method name `Equals`. But IrGen emits overloaded methods with
+            // a `$N` arity suffix (e.g. `Std.String.Equals$1`). We retry with `$<arity>`
+            // when the unmangled lookup misses — covers `Equals` (arity 1) and any
+            // other overloaded primitive method without per-Value-type special cases.
+            // This subsumes the legacy `Value::Str` hardcoded block (review2 §2.2).
             if let Some(class_name) = primitive_class_name(&obj_val) {
-                let func_name = format!("{}.{}", class_name, method);
                 let mut call_args = vec![obj_val.clone()];
                 call_args.append(&mut extra_args);
-                if let Some(&idx) = module.func_index.get(func_name.as_str()) {
-                    if let Some(callee) = module.functions.get(idx) {
-                        let outcome = super::exec_function(module, callee, &call_args)?;
+                let arity = call_args.len() - 1; // exclude `this`
+                let primary = format!("{}.{}", class_name, method);
+                let overload = format!("{}.{}${}", class_name, method, arity);
+                for func_name in [primary.as_str(), overload.as_str()] {
+                    if let Some(&idx) = module.func_index.get(func_name) {
+                        if let Some(callee) = module.functions.get(idx) {
+                            let outcome = super::exec_function(module, callee, &call_args)?;
+                            match outcome {
+                                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                                ExecOutcome::Thrown(val) => return Ok(Some(val)),
+                            }
+                            return Ok(None);
+                        }
+                    }
+                    if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(func_name) {
+                        let outcome = super::exec_function(module, lazy_fn.as_ref(), &call_args)?;
                         match outcome {
                             ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
                             ExecOutcome::Thrown(val) => return Ok(Some(val)),
@@ -351,56 +372,8 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                         return Ok(None);
                     }
                 }
-                if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
-                    let outcome = super::exec_function(module, lazy_fn.as_ref(), &call_args)?;
-                    match outcome {
-                        ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                        ExecOutcome::Thrown(val) => return Ok(Some(val)),
-                    }
-                    return Ok(None);
-                }
                 // Restore args for fallback paths below (call_args consumed obj_val).
                 extra_args = call_args.into_iter().skip(1).collect();
-            }
-
-            // Primitive string type: dispatch all methods via builtins.
-            //
-            // Hot path note: the seven `__str_*` builtins below are the
-            // EXHAUSTIVE list of native methods on `string` (see
-            // `src/libraries/z42.core/src/String.z42`). Any other method
-            // name is a stdlib script (`Std.String.<Method>`), so we go
-            // directly to the script path — this avoids the per-call
-            // `to_snake_case` + `format!("__str_{snake}")` allocation that
-            // earlier code paid even for known-script methods.
-            if let Value::Str(_) = &obj_val {
-                let builtin_name = match method.as_str() {
-                    "ToString"    => Some("__str_to_string"),
-                    "Equals"      => Some("__str_equals"),
-                    "GetHashCode" => Some("__str_hash_code"),
-                    "CharAt"      => Some("__str_char_at"),
-                    "CompareTo"   => Some("__str_compare_to"),
-                    _             => None,
-                };
-                let mut call_args = vec![obj_val];
-                call_args.append(&mut extra_args);
-                if let Some(name) = builtin_name {
-                    let ret = crate::corelib::exec_builtin(name, &call_args)?;
-                    frame.set(*dst, ret);
-                    return Ok(None);
-                }
-                // Script fallback: Std.String.<Method>
-                let func_name = format!("Std.String.{method}");
-                let callee = module.func_index.get(func_name.as_str())
-                    .and_then(|&idx| module.functions.get(idx));
-                if let Some(callee) = callee {
-                    let outcome = super::exec_function(module, callee, &call_args)?;
-                    match outcome {
-                        ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                        ExecOutcome::Thrown(val) => return Ok(Some(val)),
-                    }
-                    return Ok(None);
-                }
-                bail!("VCall: string method `{method}` not found");
             }
 
             // O(1) vtable dispatch using pre-computed TypeDesc.
