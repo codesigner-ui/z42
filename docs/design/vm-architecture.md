@@ -349,48 +349,64 @@ ConstStr 索引相对自己 pool。合并时若不重映射，懒加载函数里
 
 ---
 
-## GC 子系统 —— MagrGC（2026-04-29）
+## GC 子系统 —— MagrGC（最近更新 2026-04-29 expand-magrgc-mmtk-interface）
 
-### 接口形状
+### 接口形状（嵌入式宿主友好版）
 
-z42 VM 的 GC 抽象由 `crate::gc::MagrGC` trait 定义，参考 [MMTk](https://www.mmtk.io/)
-`VMBinding` porting contract（OpenJDK / V8 / Julia / Ruby / RustPython 的事实
-标准接口形状）：
+z42 VM 的 GC 抽象由 `crate::gc::MagrGC` trait 定义，全面对齐
+[MMTk](https://www.mmtk.io/) `VMBinding` porting contract（OpenJDK / V8 / Julia /
+Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力组"组织
+~30 个方法，未来如需切割成 sub-trait（参考 MMTk 的 `ObjectModel` /
+`Scanning` / `Collection` / `ReferenceGlue` 拆分）切割面清晰。
 
-```rust
-pub trait MagrGC: std::fmt::Debug {
-    fn alloc_object(&self, td: Arc<TypeDesc>, slots: Vec<Value>, native: NativeData) -> Value;
-    fn alloc_array(&self, elems: Vec<Value>) -> Value;
-    fn write_barrier(&self, _owner: &Value, _slot: usize, _new: &Value) {}
-    fn collect(&self) {}
-    fn collect_cycles(&self) {}
-    fn stats(&self) -> HeapStats;
-}
-```
+| 能力组 | 主要方法 | 用途 |
+|-------|---------|------|
+| 1. Allocation | `alloc_object` / `alloc_array` | 脚本驱动堆分配 |
+| 2. Roots | `pin_root` / `unpin_root` / `enter_frame` / `leave_frame` / `for_each_root` | host pin + frame scope + GC scan |
+| 3. Write barriers | `write_barrier_field` / `write_barrier_array_elem` | Phase 2+ 用，默认 no-op |
+| 4. Object Model | `object_size_bytes` / `scan_object_refs` | trace / snapshot 基础设施 |
+| 5. Collection | `collect` / `collect_cycles` / `force_collect` / `pause` / `resume` | GC 控制 |
+| 6. Heap config | `set_max_heap_bytes` / `used_bytes` | 堆上限 / 用量 |
+| 7. Finalization | `register_finalizer` / `cancel_finalizer` | 析构回调（Phase 1 仅注册不触发）|
+| 8. Weak refs | `make_weak` / `upgrade_weak` | 弱引用 |
+| 9. Observers | `add_observer` / `remove_observer` | GcEvent 订阅（Before/After Collect / NearHeapLimit / OOM）|
+| 10. Profiler | `set_alloc_sampler` / `take_snapshot` / `iterate_live_objects` | 分配采样 + 堆快照 + 存活遍历 |
+| 11. Stats | `stats` | HeapStats 快照（7 字段）|
 
 `VmContext` 持有 `Box<dyn MagrGC>`（与 `static_fields` / `lazy_loader` 同 ownership
 模型）；所有脚本驱动分配走 `ctx.heap().alloc_*(...)`；JIT helper 通过
-`vm_ctx_ref(ctx).heap().alloc_*(...)` 调用同一接口。
+`vm_ctx_ref(ctx).heap().alloc_*(...)` 调用同一接口；嵌入 host 通过同一
+`heap()` 入口访问 root / observer / profiler 等所有能力。
 
 命名 **MagrGC** 取自《银河系漫游指南》中的 **Magrathea** —— 那颗专门建造
 定制行星的传奇世界，与"管理对象生命周期"主题契合。
 
 ### Phase 1：RcMagrGC（已落地）
 
-`crate::gc::RcMagrGC` 是 Phase 1 默认后端，行为等价迁移前的直接
-`Rc::new(RefCell::new(...))` 构造：
+`crate::gc::RcMagrGC` 是 Phase 1 默认后端，**底层引用计数行为等价迁移前的直接
+`Rc::new(RefCell::new(...))` 构造**，但 host-side 嵌入接口完整：
 
-- `Value::Object` / `Value::Array` / `Value::Map` 形状不变
+- `Value::Object` / `Value::Array` 形状不变
 - `Rc::ptr_eq` 引用相等语义保留
 - `RefCell` 运行时借用检查保留
-- `write_barrier` / `collect` 是 no-op；`collect_cycles` 仅递增 stats counter
+- 内部状态由 `RefCell<RcHeapInner>` 持有：roots HashMap、frame_pins 栈、
+  observer 列表、finalizer 表、alloc_sampler、pause counter、ID 生成器等
+- `alloc_*` 通用通路 `record_alloc`：bump stats → 压力检查 → sampler 触发
+- 事件分发：先 snapshot observer 列表再调用，避免回调重入引发 borrow 冲突
 
-**已知限制**：
+**已知限制（Phase 1 RC 模式）**：
 
 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
 2. **corelib 直构未迁移**：`corelib/object.rs:34`（`__obj_get_type`）、
    `corelib/fs.rs:51`（`__env_args`）、`corelib/tests.rs` 仍直接 `Rc::new(RefCell::new(...))`
    → Phase 1.5 配合 NativeFn 签名扩展一并处理
+3. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅累加 `finalizers_pending`
+   计数 → Phase 3 mark-sweep 调度真实触发
+4. **`take_snapshot` / `iterate_live_objects` 仅覆盖 pinned roots 可达对象**：
+   RC 无全堆枚举 → snapshot 标记 `coverage = ReachableFromPinnedRoots`，Phase 3
+   trace 后自动升级 `Full`
+5. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
+6. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
 
 > **2026-04-29 remove-dead-value-map**：原 Phase 1 限制 #3（`alloc_map()` 占位）
 > 与 `Value::Map` variant 一并删除 —— 自从 2026-04-26 extern-audit-wave0 把
@@ -401,10 +417,11 @@ pub trait MagrGC: std::fmt::Debug {
 
 | Phase | 内容 | 状态 |
 |-------|------|------|
-| **Phase 1** | trait MagrGC 接口 + RcMagrGC 实现 + 6 个脚本驱动 callsite 收口 | ✅ 2026-04-29 |
+| **Phase 1** | trait MagrGC 接口 + RcMagrGC 实现 + 6 个脚本驱动 callsite 收口 | ✅ 2026-04-29 add-magrgc-heap-interface |
+| **Phase 1 (扩展)** | trait 全面对齐 MMTk porting contract（10 能力组 ~30 方法）+ host-side 嵌入接口完整实现 | ✅ 2026-04-29 expand-magrgc-mmtk-interface |
 | **Phase 1.5** | corelib `NativeFn` 签名扩展带 `&VmContext` + corelib 内剩余 Rc::new 迁移 | 📋 待立项 |
 | **Phase 2** | 环检测真实实现（dumpster 2.0 集成 / 自研 Bacon-Rajan 二选一） | 📋 待立项 |
-| **Phase 3** | Mark-Sweep + RootScope + 真实 write_barrier + Cranelift stack maps；`Value::Array/Map/Object` 改用 `GcRef<T>` | 📋 待立项 |
+| **Phase 3** | Mark-Sweep + RootScope 真实 trace + 真实 write_barrier + Cranelift stack maps；`Value::Array/Object` 改用 `GcRef<T>`；finalizer 真实调度；snapshot 升级 Full coverage | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |
 
 ### 字符串脚本化的未来动机

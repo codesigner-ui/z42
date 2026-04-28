@@ -1,45 +1,59 @@
-//! `MagrGC` —— z42 VM 的 GC 抽象接口。
+//! `MagrGC` —— z42 VM 的 GC 抽象接口（嵌入式宿主友好版）。
 //!
 //! 命名取自《银河系漫游指南》中的 **Magrathea** —— 那颗专门建造定制行星的传奇
-//! 世界，与"管理对象生命周期"主题契合。
+//! 世界。
 //!
 //! # 设计
 //!
-//! trait 形状参考 [MMTk](https://www.mmtk.io/) 的 `VMBinding` porting contract：
-//! `alloc_*` / `write_barrier` / `collect` / `stats`。这是 OpenJDK / V8 / Julia /
-//! Ruby / RustPython 的事实标准接口形状，便于未来切换实现而无需改动 callsite。
+//! trait 形状对齐 [MMTk](https://www.mmtk.io/) 的 `VMBinding` porting contract
+//! —— OpenJDK / V8 / Julia / Ruby / RustPython 的事实标准 GC 抽象。把
+//! MMTk 拆分的 sub-trait（`ObjectModel` / `Scanning` / `Collection` /
+//! `ReferenceGlue` / ...）合到一个 trait 里按"能力组"分段，让 z42 体量下
+//! 接口更易读，未来如需拆 sub-trait 切割面清晰。
 //!
-//! # Phase 路线（详见 `docs/design/vm-architecture.md`）
+//! # 能力组
 //!
-//! - **Phase 1（本文件 + `rc_heap.rs`）**：接口定义 + `RcMagrGC` 等价当前
-//!   `Rc<RefCell<...>>` 行为；环引用仍泄漏（已知限制）。
-//! - **Phase 2**：`collect_cycles()` 真实实现（Bacon-Rajan / dumpster 2.0）。
-//! - **Phase 3**：Mark-Sweep + 真实 `write_barrier` + `Value::Array/Map/Object`
-//!   改用 `GcRef<T>` + Cranelift stack maps。
-//! - **Phase 4+**：分代 / 并发 / MMTk 集成。
+//! 1. **Allocation** —— 堆分配入口
+//! 2. **Roots** —— host-side 显式 pin/unpin + frame scope + GC-side scan
+//! 3. **Write barriers** —— 字段 / 数组元素写屏障（Phase 2+ 用，默认 no-op）
+//! 4. **Object Model** —— 对象尺寸 / 引用扫描 helper（用于 trace / snapshot）
+//! 5. **Collection control** —— collect / cycles / force / pause / resume
+//! 6. **Heap config** —— max_bytes / used_bytes
+//! 7. **Finalization** —— register / cancel finalizer
+//! 8. **Weak references** —— make / upgrade weak
+//! 9. **Event observers** —— add / remove observer + GcEvent
+//! 10. **Profiler** —— alloc sampler / heap snapshot / iterate live
+//! 11. **Stats** —— HeapStats 快照
+//!
+//! # Phase 路线
+//!
+//! 见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md)
+//! "GC 子系统" 段。
 
 use std::sync::Arc;
 
 use crate::metadata::{NativeData, TypeDesc, Value};
 
+pub use super::types::{
+    AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
+    GcEvent, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats, ObserverId,
+    RootHandle, SnapshotCoverage, WeakRef,
+};
 
-
-/// 堆统计信息。Phase 1 暴露基础计数；Phase 2+ 扩展存活对象数 / 暂停时长等。
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct HeapStats {
-    /// Total allocation count since heap creation.
-    pub allocations: u64,
-    /// Number of `collect_cycles()` invocations.
-    pub gc_cycles: u64,
-}
-
-/// MagrGC —— z42 VM 的 GC 抽象接口。
+/// MagrGC —— z42 VM 的 GC 抽象接口（host-friendly）。
 ///
-/// 所有实现必须保证：
-/// - `alloc_*` 返回的 `Value` 与对应 variant 一致（Object / Array / Map）
-/// - 多次 `alloc_*` 返回的堆对象互相独立（`Rc::ptr_eq` / `GcRef::ptr_eq` 为 false）
-/// - 实现自己负责 `&self` 接口背后的内部可变性（如计数器需 `RefCell`）
+/// # 实现契约
+///
+/// - `alloc_*` 返回的 `Value` 与对应 variant 一致（Object / Array）
+/// - 多次 `alloc_*` 返回的堆对象互相独立（`Rc::ptr_eq` 为 false）
+/// - `pin_root` 返回的 `RootHandle` 在该 heap 内唯一，且 `unpin_root(h)` 后该
+///   handle 不再有效
+/// - `for_each_root` 必须遍历**所有当前活跃**的 pinned root（含 frame 内）
+/// - `enter_frame` 与 `leave_frame` 必须严格配对（栈式）
+/// - 实现自负 `&self` 接口背后的内部可变性
 pub trait MagrGC: std::fmt::Debug {
+    // ── 1. Allocation ────────────────────────────────────────────────────────
+
     /// 分配一个 `ScriptObject` 并以 `Value::Object` 返回。
     fn alloc_object(
         &self,
@@ -51,20 +65,122 @@ pub trait MagrGC: std::fmt::Debug {
     /// 分配一个 `Vec<Value>` 数组并以 `Value::Array` 返回。
     fn alloc_array(&self, elems: Vec<Value>) -> Value;
 
+    // ── 2. Roots ─────────────────────────────────────────────────────────────
+
+    /// 把一个 value 加入 root set，host 持有返回的 `RootHandle` 期间该值
+    /// 不会被 GC 回收。等价于 V8 `Persistent<T>` / .NET `GCHandle.Alloc(Normal)`。
+    fn pin_root(&self, value: Value) -> RootHandle;
+
+    /// 释放 `pin_root` 返回的 handle。释放后的 handle 不应再次使用。
+    fn unpin_root(&self, handle: RootHandle);
+
+    /// 进入一个 root scope frame。同 frame 内所有 `pin_root` 在
+    /// `leave_frame(mark)` 时自动 unpin（无需逐个调 `unpin_root`）。
+    fn enter_frame(&self) -> FrameMark;
+
+    /// 离开 frame，丢弃自 `enter_frame` 起 pin 的所有 root。
+    fn leave_frame(&self, mark: FrameMark);
+
+    /// 遍历当前所有活跃 root（`pin_root` + frame pins）。GC 实现 trace 时使用。
+    fn for_each_root(&self, visitor: &mut dyn FnMut(&Value));
+
+    // ── 3. Write barriers ────────────────────────────────────────────────────
+
     /// 写屏障：当 `owner` 对象的 `slot` 字段被赋为 `new` 时通知 GC。
-    ///
-    /// Phase 2+ 用于 generational / concurrent GC 的卡表 / SATB 维护；
-    /// Phase 1 默认 no-op。
-    fn write_barrier(&self, _owner: &Value, _slot: usize, _new: &Value) {}
+    /// Phase 2+ 用于 generational / SATB；Phase 1 默认 no-op。
+    fn write_barrier_field(&self, _owner: &Value, _slot: usize, _new: &Value) {}
+
+    /// 数组元素写屏障；同 `write_barrier_field`。
+    fn write_barrier_array_elem(&self, _arr: &Value, _idx: usize, _new: &Value) {}
+
+    // ── 4. Object Model ──────────────────────────────────────────────────────
+
+    /// 估计对象的浅尺寸（不递归 nested values）。Phase 1 实现给出 enum tag +
+    /// 容器自身的合理估计；Phase 3 trace 时会被精确化。
+    fn object_size_bytes(&self, value: &Value) -> usize;
+
+    /// 访问 `value` 中所有引用类型的内嵌 Value。
+    /// - `Value::Object` → 每个 slot
+    /// - `Value::Array`  → 每个元素
+    /// - 原子值（I64/F64/Bool/Char/Str/Null）→ 不调 visitor
+    fn scan_object_refs(&self, value: &Value, visitor: &mut dyn FnMut(&Value));
+
+    // ── 5. Collection control ────────────────────────────────────────────────
 
     /// 触发完整 GC（stop-the-world tracing）。Phase 1 默认 no-op。
     fn collect(&self) {}
 
     /// 触发环引用检测与回收。Phase 1 默认 no-op（仅递增 stats counter
-    /// 以便观察接口被调用）。
+    /// 与发 GcEvent）。
     fn collect_cycles(&self) {}
 
-    /// 当前堆统计。
+    /// 强制立即回收，返回本次 GC 的统计。返回 `kind: None` 表示被
+    /// `pause()` 跳过。
+    fn force_collect(&self) -> CollectStats;
+
+    /// 暂停 GC（关键区使用，如 host 在采样热路径时不希望 GC 介入）。
+    /// 暂停期间 `force_collect` / `collect_cycles` 跳过实际工作但仍返回
+    /// 一致结果。
+    fn pause(&self);
+
+    /// 恢复 GC 工作。`pause` / `resume` 嵌套调用，需配对。
+    fn resume(&self);
+
+    // ── 6. Heap config ───────────────────────────────────────────────────────
+
+    /// 设置堆字节上限（`None` = 不限制）。超过 75% 触发 `AllocationPressure`，
+    /// 超过 90% 触发 `NearHeapLimit`，越界触发 `OutOfMemory`（Phase 1 仍允许
+    /// 分配，仅通知；Phase 3 tracing GC 可拒绝）。
+    fn set_max_heap_bytes(&self, max: Option<u64>);
+
+    /// 已用字节数（同 `stats().used_bytes`）。
+    fn used_bytes(&self) -> u64;
+
+    // ── 7. Finalization ──────────────────────────────────────────────────────
+
+    /// 注册一个 finalizer，当 `value` 不可达时触发。
+    ///
+    /// **Phase 1 RC 模式限制**：注册被记录（`stats().finalizers_pending` 加 1），
+    /// 但 callback **不会被自动调用** —— `Rc<RefCell<T>>` Drop 不可拦截。
+    /// Phase 3 mark-sweep 调度真实触发。
+    fn register_finalizer(&self, value: &Value, finalizer: FinalizerFn);
+
+    /// 取消之前注册的 finalizer。
+    fn cancel_finalizer(&self, value: &Value);
+
+    // ── 8. Weak references ───────────────────────────────────────────────────
+
+    /// 创建对 `value` 的弱引用。原子值（I64/Str/Null/...）返回 `None`。
+    fn make_weak(&self, value: &Value) -> Option<WeakRef>;
+
+    /// 尝试从弱引用恢复强引用。若目标已被回收（无强引用持有）返回 `None`。
+    fn upgrade_weak(&self, weak: &WeakRef) -> Option<Value>;
+
+    // ── 9. Event observers ───────────────────────────────────────────────────
+
+    /// 注册一个 GC 事件观察者。
+    fn add_observer(&self, observer: Arc<dyn GcObserver>) -> ObserverId;
+
+    /// 移除一个观察者。
+    fn remove_observer(&self, id: ObserverId);
+
+    // ── 10. Profiler ─────────────────────────────────────────────────────────
+
+    /// 安装分配采样器（每次 `alloc_*` 触发回调），传 `None` 卸载。
+    fn set_alloc_sampler(&self, sampler: Option<AllocSamplerFn>);
+
+    /// 拍下堆快照（按 type_desc.name 聚合）。
+    ///
+    /// **Phase 1 RC 模式**：snapshot 仅覆盖**从 pinned roots 可达**的对象，
+    /// `coverage = SnapshotCoverage::ReachableFromPinnedRoots`。Phase 3 trace
+    /// 实现后自动升级 `Full`。
+    fn take_snapshot(&self) -> HeapSnapshot;
+
+    /// 遍历当前所有存活对象（同 snapshot 的覆盖范围限制）。
+    fn iterate_live_objects(&self, visitor: &mut dyn FnMut(&Value));
+
+    // ── 11. Stats ────────────────────────────────────────────────────────────
+
     fn stats(&self) -> HeapStats;
 }
 

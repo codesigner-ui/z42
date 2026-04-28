@@ -7,15 +7,23 @@ use crate::gc::{HeapStats, MagrGC, RcMagrGC};
 use crate::metadata::Value;
 
 #[test]
-fn default_write_barrier_is_noop() {
+fn default_write_barrier_field_is_noop() {
     let heap = RcMagrGC::new();
     let owner = heap.alloc_array(vec![Value::I64(1)]);
     let new   = Value::I64(42);
     let stats_before = heap.stats();
-    heap.write_barrier(&owner, 0, &new);
-    // Phase 1: 默认实现 no-op，不应改变 allocations / gc_cycles。
-    assert_eq!(heap.stats().allocations, stats_before.allocations);
-    assert_eq!(heap.stats().gc_cycles,   stats_before.gc_cycles);
+    heap.write_barrier_field(&owner, 0, &new);
+    assert_eq!(heap.stats(), stats_before);
+}
+
+#[test]
+fn default_write_barrier_array_elem_is_noop() {
+    let heap = RcMagrGC::new();
+    let arr  = heap.alloc_array(vec![Value::I64(0); 3]);
+    let new  = Value::I64(99);
+    let stats_before = heap.stats();
+    heap.write_barrier_array_elem(&arr, 1, &new);
+    assert_eq!(heap.stats(), stats_before);
 }
 
 #[test]
@@ -24,13 +32,17 @@ fn default_collect_is_noop() {
     let _    = heap.alloc_array(vec![]);
     let stats_before = heap.stats();
     heap.collect();
-    assert_eq!(heap.stats().allocations, stats_before.allocations);
-    assert_eq!(heap.stats().gc_cycles,   stats_before.gc_cycles);
+    assert_eq!(heap.stats(), stats_before);
 }
 
 #[test]
 fn heap_stats_default_is_zero() {
     let s = HeapStats::default();
-    assert_eq!(s.allocations, 0);
-    assert_eq!(s.gc_cycles,   0);
+    assert_eq!(s.allocations,        0);
+    assert_eq!(s.gc_cycles,          0);
+    assert_eq!(s.used_bytes,         0);
+    assert_eq!(s.max_bytes,          None);
+    assert_eq!(s.roots_pinned,       0);
+    assert_eq!(s.finalizers_pending, 0);
+    assert_eq!(s.observers,          0);
 }
