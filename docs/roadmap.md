@@ -105,7 +105,7 @@
 - 调试符号：行号映射、局部变量名（支持基础调试体验）
 - Interpreter 基础优化：指令 dispatch 效率、对象分配路径
 - JIT 基础优化：热点函数识别、简单内联、常量折叠
-- **MagrGC 子系统（Phase 1 ✅ 2026-04-29）**：`trait MagrGC` 接口收口（参考 MMTk porting contract）+ `RcMagrGC` 默认后端（行为等价 `Rc<RefCell<...>>`）+ 6 个脚本驱动 callsite 迁移（interp 3 + JIT 3）；环引用泄漏作为已知限制，由 Phase 2 修复。详见 `docs/design/vm-architecture.md` "GC 子系统" 段。
+- **MagrGC 子系统（Phase 1 / 1.5 / 3a / 3b / 3c ✅ 2026-04-29）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` 不透明句柄 + heap_registry Full coverage + **Trial-deletion 环回收器（Bacon-Rajan）真实回收环引用泄漏**。详见 `docs/design/vm-architecture.md` "GC 子系统" 段。
 
 ### Native Interop / 三层 ABI
 

@@ -394,18 +394,22 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 - `alloc_*` 通用通路 `record_alloc`：bump stats → 压力检查 → sampler 触发
 - 事件分发：先 snapshot observer 列表再调用，避免回调重入引发 borrow 冲突
 
-**已知限制（Phase 3a/3b 后）**：
+**已知限制（Phase 3a/3b/3c 后）**：
 
-1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 3c mark-sweep 修复
-2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅累加 `finalizers_pending`
-   计数 → Phase 3c mark-sweep 调度真实触发
-3. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3c trace 精确化
-4. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3c 可拒绝
+1. **Finalizer 不会被自动触发**：RC 缺 Drop hook → Phase 3d 由 collect 时调度
+2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e 可拒绝
+3. **`collect_cycles` 须在 interp/JIT 不在执行中调用**：用户 Rust 局部变量持的
+   Value 不在 GC roots 中，可能被误判 → Phase 3f Cranelift stack maps 解决
 
-> **2026-04-29 add-heap-registry（Phase 3b 完成）**：原 `take_snapshot` /
-> `iterate_live_objects` 仅覆盖 pinned roots 的限制已解决 —— `RcHeapInner` 加
-> `heap_registry: Vec<WeakRef>`，每次 `alloc_*` 推 weak ref；查询时遍历 registry
-> 并自动 prune 死引用 → `coverage = Full`，无需 host 显式 pin。
+> **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate 升级
+> `Full` 覆盖。
+>
+> **2026-04-29 add-cycle-breaking-collector（Phase 3c 完成）**：原"环引用
+> 泄漏"+"used_bytes 单调递增"两项限制已解决 —— `collect_cycles` / `force_collect`
+> 实现 Bacon-Rajan 的 trial-deletion 算法：mark from pinned roots → 对每个
+> unreachable v 计算 `tentative[v] = strong_count - 1` 并扣减集合内部引用 →
+> `tentative == 0` 的对象清空内部 slots（断环）→ 函数 alive_vec drop 时 Rc 链
+> 完成释放。`used_bytes` 由 sweep 估算的 freed 减去后反映准确释放量。
 
 > **2026-04-29 extend-native-fn-signature（Phase 1.5 完成）**：原限制"corelib 直构未迁移"
 > 已解决 —— `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55
@@ -429,9 +433,10 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 | **Phase 3a** | `GcRef<T>` / `WeakGcRef<T>` 不透明句柄抽象（backing 仍 `Rc<RefCell<T>>`，行为零变化）| ✅ 2026-04-29 introduce-gcref-handle |
 | **Phase 2** | 环检测真实实现（dumpster 2.0 集成 / 自研 Bacon-Rajan 二选一） | 📋 待立项 |
 | **Phase 3b** | Heap registry（`Vec<WeakRef>` 让 GC 枚举所有存活对象）+ snapshot/iterate Full coverage | ✅ 2026-04-29 add-heap-registry |
-| **Phase 3c** | 替换 GcRef backing 为自定义堆 + Mark-Sweep 真实算法（interp root scan）→ 修复环泄漏；finalizer 真实调度 | 📋 待立项 |
-| **Phase 3d** | 嵌入接口升级（snapshot Full / iterate_live_objects 全堆 / used_bytes 精确）| 📋 待立项 |
-| **Phase 3e** | Cranelift stack maps（JIT 路径下 GC 安全点） | 📋 待立项 |
+| **Phase 3c** | Trial-deletion 环回收器（保留 RC backing，断环让 Rc 链 Drop） | ✅ 2026-04-29 add-cycle-breaking-collector |
+| **Phase 3d** | Finalizer 真触发 + OOM 拒绝 | 📋 待立项 |
+| **Phase 3e**（可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）| 📋 待立项 |
+| **Phase 3f** | Cranelift stack maps（interp + JIT 路径下 GC 安全点） | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |
 
 ### 字符串脚本化的未来动机

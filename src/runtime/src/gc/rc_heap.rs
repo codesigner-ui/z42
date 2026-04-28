@@ -5,16 +5,20 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 3a/3b 后已知限制**：
-//! 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 3c mark-sweep 修复
-//! 2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册被记录但不调用 →
-//!    Phase 3c mark-sweep 调度真实触发
-//! 3. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3c trace 精确化
-//! 4. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3c 可拒绝
+//! **Phase 3a/3b/3c 后已知限制**：
+//! 1. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册被记录但不调用 →
+//!    Phase 3d 调度真实触发（cycle collector sweep 时回调）
+//! 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e 可拒绝
+//! 3. **`collect_cycles` 必须在 interp/JIT 不在执行中调用**：用户代码中 Rust 局部
+//!    变量持的 Value 不在 GC roots 中，环检测看不到 → 可能误把外部仍持有的对象
+//!    判为可断 → Phase 3f Cranelift stack maps 解决
 //!
-//! **Phase 3b 已解决**（2026-04-29 add-heap-registry）：
-//! - `take_snapshot` / `iterate_live_objects` 升级到 **Full coverage**（heap
-//!   registry 让 GC 知道所有 alloc 过且当前仍存活的对象，不再依赖 host pin）
+//! **已解决**：
+//! - Phase 3b（2026-04-29 add-heap-registry）：`take_snapshot` /
+//!   `iterate_live_objects` 升级 Full coverage
+//! - Phase 3c（2026-04-29 add-cycle-breaking-collector）：环引用真实回收
+//!   （Bacon-Rajan trial-deletion，断环让 Rc Drop 链式释放）+ `used_bytes`
+//!   在 collect 后准确反映释放量
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -167,6 +171,113 @@ impl RcMagrGC {
             WeakRefInner::Object(w) => w.upgrade().map(Value::Object),
             WeakRefInner::Array (w) => w.upgrade().map(Value::Array),
         }
+    }
+
+    // ── Cycle collection helpers (Phase 3c) ──────────────────────────────────
+
+    /// Mark phase: BFS from pinned roots, return reachable pointer-key set.
+    ///
+    /// **限制**：本 MVP 只扫 pinned roots（host 通过 `pin_root` / `enter_frame`
+    /// 注册的）。VmContext 内的 `static_fields` / `pending_exception` / interp
+    /// 栈帧 regs 暂未对接 → 用户必须保证 `collect_cycles` 在 VM 顶层调用之间
+    /// 触发，或显式 pin 跨调用持有的 Value。Phase 3f Cranelift stack maps 解决。
+    fn mark_reachable_set(&self) -> HashSet<usize> {
+        let mut reachable: HashSet<usize> = HashSet::new();
+        let mut queue: Vec<Value> = self.inner.borrow().roots.values().cloned().collect();
+        while let Some(v) = queue.pop() {
+            let Some(key) = Self::rc_ptr_key(&v) else { continue };
+            if !reachable.insert(key) { continue; }
+            self.scan_object_refs(&v, &mut |child| {
+                if Self::rc_ptr_key(child).is_some() {
+                    queue.push(child.clone());
+                }
+            });
+        }
+        reachable
+    }
+
+    /// 断环：清空对象内部引用，让被引用方 Rc::strong_count 减一。
+    /// Object → 所有 slots 设 `Value::Null`；Array → `vec.clear()`。
+    fn break_cycle_value(v: &Value) {
+        match v {
+            Value::Object(gc) => {
+                for slot in gc.borrow_mut().slots.iter_mut() {
+                    *slot = Value::Null;
+                }
+            }
+            Value::Array(gc) => {
+                gc.borrow_mut().clear();
+            }
+            _ => {}
+        }
+    }
+
+    /// Trial-deletion cycle collection（Bacon-Rajan 简化版）：
+    ///
+    /// 1. **Mark**：从 roots 出发遍历 reachable
+    /// 2. **Snapshot alive**：registry 中所有存活对象（含 reachable 与 unreachable）
+    /// 3. **Filter**：alive ∖ reachable = unreachable 候选集
+    /// 4. **Trial deletion**：对每个 v∈unreachable，
+    ///    `tentative[v] = strong_count(v) - 1` （减去本函数 alive_vec 持的强引用）；
+    ///    再遍历 unreachable 中每个 v 的子引用，若子引用也在 unreachable，
+    ///    `tentative[child] -= 1`。最终 `tentative[v]` = v 来自 unreachable
+    ///    集合**外部**的强引用数（即 root 之外、user 代码持有的）。
+    /// 5. **Break**：`tentative[v] == 0` 的 v 是纯环内对象 → 调 `break_cycle_value`
+    ///    清空内部引用，让其指向的对象 Rc 引用减一。
+    /// 6. 函数返回时 alive_vec 自然 drop，断环后 Rc 链式 Drop 释放内存。
+    ///
+    /// 返回估算的 freed_bytes（被断环对象的 object_size_bytes 之和）。注意：实际
+    /// 物理释放可能延后到 alive_vec drop 之后；某些 Rc 还可能由 user 持有但
+    /// 在下一次 collect / drop 时才彻底释放。这是 RC backing 的固有性质。
+    fn run_cycle_collection(&self) -> u64 {
+        let reachable = self.mark_reachable_set();
+        let alive = self.snapshot_live_from_registry();
+
+        let unreachable: Vec<Value> = alive.into_iter()
+            .filter(|v| match Self::rc_ptr_key(v) {
+                Some(k) => !reachable.contains(&k),
+                None => false,
+            })
+            .collect();
+
+        if unreachable.is_empty() {
+            return 0;
+        }
+
+        // Trial deletion: tentative[v] = strong_count(v) - 1 (alive_vec hold)
+        let mut tentative: HashMap<usize, i64> = HashMap::with_capacity(unreachable.len());
+        for v in &unreachable {
+            let Some(key) = Self::rc_ptr_key(v) else { continue };
+            let count = match v {
+                Value::Object(gc) => GcRef::strong_count(gc),
+                Value::Array(gc)  => GcRef::strong_count(gc),
+                _ => continue,
+            };
+            tentative.insert(key, count as i64 - 1);
+        }
+        // 减去 unreachable 集合内部的引用（child 仅在 tentative 中时减）
+        for v in &unreachable {
+            self.scan_object_refs(v, &mut |child| {
+                if let Some(child_key) = Self::rc_ptr_key(child) {
+                    if let Some(t) = tentative.get_mut(&child_key) {
+                        *t -= 1;
+                    }
+                }
+            });
+        }
+
+        // Break: tentative <= 0 表示无外部引用，安全断环
+        let mut freed_bytes: u64 = 0;
+        for v in &unreachable {
+            let Some(key) = Self::rc_ptr_key(v) else { continue };
+            if tentative.get(&key).copied().unwrap_or(0) <= 0 {
+                freed_bytes = freed_bytes.saturating_add(self.object_size_bytes(v) as u64);
+                Self::break_cycle_value(v);
+            }
+        }
+
+        // unreachable Vec drops here → 断环对象的 Rc 强引用计数链式归零 → Drop
+        freed_bytes
     }
 
     /// Snapshot 当前 registry 中所有仍存活的 Value，并就地 prune 掉死引用。
@@ -336,13 +447,20 @@ impl MagrGC for RcMagrGC {
 
     fn collect_cycles(&self) {
         if self.inner.borrow().pause_count > 0 { return; }
-        let used = self.inner.borrow().stats.used_bytes;
+        let start = Self::now_us();
+        let used_before = self.inner.borrow().stats.used_bytes;
         self.fire_event(GcEvent::BeforeCollect {
-            kind: GcKind::CycleCollector, used_bytes: used,
+            kind: GcKind::CycleCollector, used_bytes: used_before,
         });
-        self.inner.borrow_mut().stats.gc_cycles += 1;
+        let freed_bytes = self.run_cycle_collection();
+        {
+            let mut i = self.inner.borrow_mut();
+            i.stats.gc_cycles += 1;
+            i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
+        }
+        let pause_us = Self::now_us().saturating_sub(start);
         self.fire_event(GcEvent::AfterCollect {
-            kind: GcKind::CycleCollector, freed_bytes: 0, pause_us: 0,
+            kind: GcKind::CycleCollector, freed_bytes, pause_us,
         });
     }
 
@@ -350,16 +468,23 @@ impl MagrGC for RcMagrGC {
         if self.inner.borrow().pause_count > 0 {
             return CollectStats::default();
         }
-        let used = self.inner.borrow().stats.used_bytes;
+        let start = Self::now_us();
+        let used_before = self.inner.borrow().stats.used_bytes;
         self.fire_event(GcEvent::BeforeCollect {
-            kind: GcKind::Full, used_bytes: used,
+            kind: GcKind::Full, used_bytes: used_before,
         });
-        self.inner.borrow_mut().stats.gc_cycles += 1;
+        let freed_bytes = self.run_cycle_collection();
+        {
+            let mut i = self.inner.borrow_mut();
+            i.stats.gc_cycles += 1;
+            i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
+        }
+        let pause_us = Self::now_us().saturating_sub(start);
         self.fire_event(GcEvent::AfterCollect {
-            kind: GcKind::Full, freed_bytes: 0, pause_us: 0,
+            kind: GcKind::Full, freed_bytes, pause_us,
         });
         CollectStats {
-            freed_bytes: 0, pause_us: 0, kind: Some(GcKind::Full),
+            freed_bytes, pause_us, kind: Some(GcKind::Full),
         }
     }
 

@@ -458,6 +458,162 @@ fn iterate_live_objects_full_coverage_includes_unpinned() {
     assert_eq!(count, 2);
 }
 
+// ── Cycle collection (Phase 3c) ──────────────────────────────────────────────
+
+fn alive_count(heap: &RcMagrGC) -> usize {
+    let mut n = 0;
+    heap.iterate_live_objects(&mut |_| n += 1);
+    n
+}
+
+#[test]
+fn simple_two_node_cycle_is_freed_after_collect() {
+    let heap = RcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a);
+    drop(b);
+    assert_eq!(alive_count(&heap), 2, "cycle keeps both alive before collect");
+
+    heap.collect_cycles();
+
+    assert_eq!(alive_count(&heap), 0, "cycle collector frees both nodes");
+}
+
+#[test]
+fn self_reference_cycle_is_freed() {
+    let heap = RcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("Self"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        a_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a);
+    assert_eq!(alive_count(&heap), 1);
+
+    heap.collect_cycles();
+
+    assert_eq!(alive_count(&heap), 0, "self-reference cycle freed");
+}
+
+#[test]
+fn cycle_with_external_user_ref_is_not_broken_yet() {
+    let heap = RcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    let user_a = a.clone();
+    drop(a);
+    drop(b);
+
+    heap.collect_cycles();
+
+    // 用户外部还持 a，所以 a 不被断（tentative > 0）；b 被断后仍由 a.slots[0] 持有 → 仍存活
+    assert_eq!(alive_count(&heap), 2, "external user ref keeps both alive");
+
+    // 用户释放后第二次 collect（实际上不需要 collect，普通 Drop 链就够了）
+    drop(user_a);
+    // 此时 a.count → 0 → drop a → drop a.slots[0] 即 b 的 Rc → b.count → 0 → drop b
+    assert_eq!(alive_count(&heap), 0, "after user drops, RC drop chain finishes the release");
+}
+
+#[test]
+fn pinned_root_cycle_is_not_broken() {
+    let heap = RcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    let _root = heap.pin_root(a.clone());
+
+    heap.collect_cycles();
+
+    // a / b 都是 reachable from pinned root → 不被破坏
+    assert_eq!(alive_count(&heap), 2, "pinned cycle survives collect");
+    let Value::Object(a_gc) = &a else { panic!() };
+    // a.slots[0] 还是 b 的引用，不是 Null
+    assert!(matches!(a_gc.borrow().slots[0], Value::Object(_)));
+}
+
+#[test]
+fn unrelated_alive_object_is_not_affected_by_collect() {
+    let heap = RcMagrGC::new();
+    let _alive = heap.alloc_object(dummy_type_desc("Alive"), vec![Value::I64(42)], NativeData::None);
+    // 不构造环；_alive 由当前作用域强引用持有
+
+    heap.collect_cycles();
+
+    assert_eq!(alive_count(&heap), 1, "non-cycle object not affected");
+    let Value::Object(gc) = &_alive else { panic!() };
+    assert_eq!(gc.borrow().slots[0], Value::I64(42), "data intact");
+}
+
+#[test]
+fn multiple_disjoint_cycles_all_freed() {
+    let heap = RcMagrGC::new();
+    // 第一个环 a-b
+    let a = heap.alloc_object(dummy_type_desc("A1"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B1"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &a else { panic!() };
+        g.borrow_mut().slots[0] = b.clone();
+        let Value::Object(g) = &b else { panic!() };
+        g.borrow_mut().slots[0] = a.clone();
+    }
+    // 第二个环 c-d
+    let c = heap.alloc_object(dummy_type_desc("C2"), vec![Value::Null], NativeData::None);
+    let d = heap.alloc_object(dummy_type_desc("D2"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &c else { panic!() };
+        g.borrow_mut().slots[0] = d.clone();
+        let Value::Object(g) = &d else { panic!() };
+        g.borrow_mut().slots[0] = c.clone();
+    }
+    drop(a); drop(b); drop(c); drop(d);
+    assert_eq!(alive_count(&heap), 4);
+
+    heap.collect_cycles();
+
+    assert_eq!(alive_count(&heap), 0, "both cycles independently freed");
+}
+
+#[test]
+fn collect_cycles_freed_bytes_observable() {
+    let heap = RcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &a else { panic!() };
+        g.borrow_mut().slots[0] = b.clone();
+        let Value::Object(g) = &b else { panic!() };
+        g.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a);
+    drop(b);
+
+    let used_before = heap.used_bytes();
+    let stats = heap.force_collect();
+    assert_eq!(stats.kind, Some(GcKind::Full));
+    assert!(stats.freed_bytes > 0, "force_collect should report freed bytes for cycle");
+    let used_after = heap.used_bytes();
+    assert!(used_after < used_before, "used_bytes decreases after cycle collection");
+}
+
 #[test]
 fn registry_prunes_dropped_objects() {
     // Phase 3b: 对象 drop 后 registry 自动清掉（下次 iterate / snapshot 时 prune）。

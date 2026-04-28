@@ -16,10 +16,11 @@
 //! | 1.5（已落地）| corelib NativeFn 签名带 `&VmContext` + 剩余 Rc::new 迁移 |
 //! | 2（**跳过**）| 环检测中间方案（直奔 Phase 3 mark-sweep） |
 //! | 3a（已落地）| `GcRef<T>` 不透明句柄抽象（backing 仍 Rc<RefCell<T>>，行为零变化） |
-//! | 3b（已落地）| Heap registry + snapshot/iterate Full coverage（registry 让 GC 枚举所有存活对象） |
-//! | 3c（计划）| 替换 GcRef backing 为自定义堆 + Mark-Sweep 真实算法 → 修复环泄漏 |
-//! | 3d（计划）| 嵌入接口升级（snapshot Full / finalizer 真触发 / used_bytes 精确）|
-//! | 3e（计划）| Cranelift stack maps（JIT 路径下 GC 安全）|
+//! | 3b（已落地）| Heap registry + snapshot/iterate Full coverage |
+//! | 3c（已落地）| **Trial-deletion 环回收器** —— `collect_cycles` 真实回收环引用 |
+//! | 3d（计划）| Finalizer 真触发 + OOM 拒绝 |
+//! | 3e（计划，可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）|
+//! | 3f（计划）| Cranelift stack maps（GC 安全点）|
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |
 
 pub mod heap;

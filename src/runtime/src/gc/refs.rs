@@ -65,6 +65,16 @@ impl<T> GcRef<T> {
     pub fn downgrade(this: &Self) -> WeakGcRef<T> {
         WeakGcRef { inner: Rc::downgrade(&this.inner) }
     }
+
+    /// Strong reference count of the underlying allocation.
+    ///
+    /// Used internally by the cycle collector (Phase 3c) to compute external
+    /// reference counts. Pub(crate) since it leaks an implementation detail
+    /// of the Phase 3a Rc backing — Phase 3e+ may replace this with a
+    /// generation-counter scheme.
+    pub(crate) fn strong_count(this: &Self) -> usize {
+        Rc::strong_count(&this.inner)
+    }
 }
 
 impl<T> Clone for GcRef<T> {

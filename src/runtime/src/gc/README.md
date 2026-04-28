@@ -61,17 +61,22 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b 后）**：
+**已知限制（Phase 3a/3b/3c 后）**：
 
-1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 3c mark-sweep 修复
-2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅记录到 `finalizers_pending` 计数 → Phase 3c mark-sweep 调度真实触发
-3. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3c trace 精确化
-4. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3c 可拒绝
+1. **Finalizer 不会被自动触发**：RC 缺 Drop hook → Phase 3d 由 collect 时调度
+2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e 可拒绝
+3. **`collect_cycles` 须在 interp/JIT 不在执行中调用**：用户 Rust 局部变量持的
+   Value 不在 GC roots 中，可能被误判 → Phase 3f Cranelift stack maps 解决
 
-> **2026-04-29 add-heap-registry（Phase 3b 完成）**：原 `take_snapshot` /
-> `iterate_live_objects` 仅 `ReachableFromPinnedRoots` 限制已解决 —— RcHeapInner
-> 加 `heap_registry: Vec<WeakRef>`，每次 alloc 推 weak ref，snapshot 与 iterate
-> 直接遍历 registry 并自动 prune 死引用 → coverage = `Full`（不依赖 host pin）。
+> **2026-04-29 add-heap-registry（Phase 3b 完成）**：`take_snapshot` /
+> `iterate_live_objects` 升级 Full coverage（RcHeapInner heap_registry +
+> 自动 prune）。
+>
+> **2026-04-29 add-cycle-breaking-collector（Phase 3c 完成）**：环引用真实
+> 回收。`collect_cycles` / `force_collect` 实现 Bacon-Rajan 的 trial-deletion
+> 算法 —— mark phase 从 pinned roots 出发，sweep phase 对纯环内对象（外部
+> 引用为 0）调 `break_cycle_value` 清空内部 slots，让 Rc Drop 链自然完成
+> 释放。`used_bytes` 在 collect 后反映准确释放量。
 
 > **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
 > `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin
