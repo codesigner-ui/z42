@@ -16,6 +16,7 @@ pub mod zbc_reader;
 pub mod loader;
 pub mod lazy_loader;
 pub mod merge;
+pub mod well_known_names;
 
 #[cfg(test)]
 #[path = "constraint_tests.rs"]

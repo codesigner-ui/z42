@@ -70,7 +70,9 @@ pub fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
             }
         }
         // Fallback: builtin obj_to_str (unqualified type name)
-        return crate::corelib::exec_builtin("__obj_to_str", &[val.clone()])
+        return crate::corelib::exec_builtin(
+                crate::metadata::well_known_names::BUILTIN_OBJ_TO_STR,
+                &[val.clone()])
             .map(|v| match v { Value::Str(s) => s, other => value_to_str(&other) });
     }
     Ok(value_to_str(val))

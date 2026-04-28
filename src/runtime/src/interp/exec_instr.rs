@@ -37,12 +37,13 @@ fn to_snake_case(s: &str) -> String {
 ///
 /// Returns None for non-primitive values (objects, arrays, null, etc.).
 pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
+    use crate::metadata::well_known_names::*;
     match obj {
-        Value::I64(_)  => Some("Std.int"),
-        Value::F64(_)  => Some("Std.double"),
-        Value::Bool(_) => Some("Std.bool"),
-        Value::Char(_) => Some("Std.char"),
-        Value::Str(_)  => Some("Std.String"),  // String retains uppercase class in stdlib
+        Value::I64(_)  => Some(STD_INT),
+        Value::F64(_)  => Some(STD_DOUBLE),
+        Value::Bool(_) => Some(STD_BOOL),
+        Value::Char(_) => Some(STD_CHAR),
+        Value::Str(_)  => Some(STD_STRING),  // capitalised — stdlib retains `class String`
         _ => None,
     }
 }

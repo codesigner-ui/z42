@@ -20,7 +20,7 @@ pub fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
     field_index.insert("__name".to_string(), 0usize);
     field_index.insert("__fullName".to_string(), 1usize);
     let type_desc = Arc::new(TypeDesc {
-        name: "Std.Type".to_string(),
+        name: crate::metadata::well_known_names::STD_TYPE.to_string(),
         base_name: None,
         fields: vec![
             crate::metadata::FieldSlot { name: "__name".to_string() },
