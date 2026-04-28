@@ -394,16 +394,18 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 - `alloc_*` 通用通路 `record_alloc`：bump stats → 压力检查 → sampler 触发
 - 事件分发：先 snapshot observer 列表再调用，避免回调重入引发 borrow 冲突
 
-**已知限制（Phase 1 RC 模式）**：
+**已知限制（Phase 3a/3b 后）**：
 
-1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
+1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 3c mark-sweep 修复
 2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅累加 `finalizers_pending`
-   计数 → Phase 3 mark-sweep 调度真实触发
-3. **`take_snapshot` / `iterate_live_objects` 仅覆盖 pinned roots 可达对象**：
-   RC 无全堆枚举 → snapshot 标记 `coverage = ReachableFromPinnedRoots`，Phase 3
-   trace 后自动升级 `Full`
-4. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
-5. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+   计数 → Phase 3c mark-sweep 调度真实触发
+3. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3c trace 精确化
+4. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3c 可拒绝
+
+> **2026-04-29 add-heap-registry（Phase 3b 完成）**：原 `take_snapshot` /
+> `iterate_live_objects` 仅覆盖 pinned roots 的限制已解决 —— `RcHeapInner` 加
+> `heap_registry: Vec<WeakRef>`，每次 `alloc_*` 推 weak ref；查询时遍历 registry
+> 并自动 prune 死引用 → `coverage = Full`，无需 host 显式 pin。
 
 > **2026-04-29 extend-native-fn-signature（Phase 1.5 完成）**：原限制"corelib 直构未迁移"
 > 已解决 —— `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55
@@ -426,8 +428,8 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 | **Phase 2** | （**跳过**）—— 直接进 Phase 3 mark-sweep，避免双重智能指针 churn | ⏭ 跳过 |
 | **Phase 3a** | `GcRef<T>` / `WeakGcRef<T>` 不透明句柄抽象（backing 仍 `Rc<RefCell<T>>`，行为零变化）| ✅ 2026-04-29 introduce-gcref-handle |
 | **Phase 2** | 环检测真实实现（dumpster 2.0 集成 / 自研 Bacon-Rajan 二选一） | 📋 待立项 |
-| **Phase 3b** | 自定义堆 allocator（bump pointer / region + mark bits） | 📋 待立项 |
-| **Phase 3c** | Mark-Sweep 真实算法（interp root scan）→ 修复环泄漏；finalizer 真实调度 | 📋 待立项 |
+| **Phase 3b** | Heap registry（`Vec<WeakRef>` 让 GC 枚举所有存活对象）+ snapshot/iterate Full coverage | ✅ 2026-04-29 add-heap-registry |
+| **Phase 3c** | 替换 GcRef backing 为自定义堆 + Mark-Sweep 真实算法（interp root scan）→ 修复环泄漏；finalizer 真实调度 | 📋 待立项 |
 | **Phase 3d** | 嵌入接口升级（snapshot Full / iterate_live_objects 全堆 / used_bytes 精确）| 📋 待立项 |
 | **Phase 3e** | Cranelift stack maps（JIT 路径下 GC 安全点） | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |

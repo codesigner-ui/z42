@@ -61,13 +61,17 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 1 RC 模式）**：
+**已知限制（Phase 3a/3b 后）**：
 
-1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
-2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅记录到 `finalizers_pending` 计数 → Phase 3 mark-sweep 调度真实触发
-3. **`take_snapshot` / `iterate_live_objects` 仅覆盖 reachable from pinned roots**：RC 无全堆枚举能力 → Phase 3 trace 后 `coverage` 自动升级 `Full`
-4. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
-5. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 3c mark-sweep 修复
+2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅记录到 `finalizers_pending` 计数 → Phase 3c mark-sweep 调度真实触发
+3. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3c trace 精确化
+4. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3c 可拒绝
+
+> **2026-04-29 add-heap-registry（Phase 3b 完成）**：原 `take_snapshot` /
+> `iterate_live_objects` 仅 `ReachableFromPinnedRoots` 限制已解决 —— RcHeapInner
+> 加 `heap_registry: Vec<WeakRef>`，每次 alloc 推 weak ref，snapshot 与 iterate
+> 直接遍历 registry 并自动 prune 死引用 → coverage = `Full`（不依赖 host pin）。
 
 > **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
 > `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin

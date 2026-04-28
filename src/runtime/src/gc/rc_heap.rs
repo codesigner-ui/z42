@@ -5,14 +5,16 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 1 已知限制**：
-//! 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
+//! **Phase 3a/3b 后已知限制**：
+//! 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 3c mark-sweep 修复
 //! 2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册被记录但不调用 →
-//!    Phase 3 mark-sweep 调度真实触发
-//! 3. **`take_snapshot` / `iterate_live_objects` 仅覆盖 reachable from pinned
-//!    roots**：RC 无全堆枚举能力 → Phase 3 trace 后自动升级 Full
-//! 4. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
-//! 5. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+//!    Phase 3c mark-sweep 调度真实触发
+//! 3. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3c trace 精确化
+//! 4. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3c 可拒绝
+//!
+//! **Phase 3b 已解决**（2026-04-29 add-heap-registry）：
+//! - `take_snapshot` / `iterate_live_objects` 升级到 **Full coverage**（heap
+//!   registry 让 GC 知道所有 alloc 过且当前仍存活的对象，不再依赖 host pin）
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -46,6 +48,11 @@ struct RcHeapInner {
     next_observer_id:  u64,
     /// 防止 NearHeapLimit 事件刷屏（RC 模式 used_bytes 单调，这个 flag 也单调）。
     near_limit_warned: bool,
+    /// **Phase 3b: heap registry** —— 每次 `alloc_*` 推入对应 WeakRef，让 GC
+    /// 能枚举所有"曾经分配且当前可能存活"的堆对象。这是 Phase 3c mark-sweep
+    /// 的物理前置：mark 阶段需要候选集（roots 之外的所有对象）。
+    /// 不阻止对象回收（Weak 不持 strong refcount）。
+    heap_registry:     Vec<WeakRef>,
 }
 
 impl std::fmt::Debug for RcHeapInner {
@@ -59,6 +66,7 @@ impl std::fmt::Debug for RcHeapInner {
             .field("alloc_sampler",     &self.alloc_sampler.is_some())
             .field("pause_count",       &self.pause_count)
             .field("near_limit_warned", &self.near_limit_warned)
+            .field("registry_size",     &self.heap_registry.len())
             .finish()
     }
 }
@@ -115,8 +123,12 @@ impl RcMagrGC {
         }
     }
 
-    /// alloc 通用通路：bump stats + 检查压力 + 触发 sampler。
-    fn record_alloc(&self, kind: AllocKind, size: usize) {
+    /// alloc 通用通路：注册到 registry + bump stats + 检查压力 + 触发 sampler。
+    fn record_alloc(&self, value: &Value, kind: AllocKind, size: usize) {
+        // 0. 注册到 heap_registry（Phase 3b）
+        if let Some(weak) = self.make_weak_internal(value) {
+            self.inner.borrow_mut().heap_registry.push(weak);
+        }
         // 1. 更新 stats（先借再放，避免后续触发事件时 borrow 冲突）
         {
             let mut i = self.inner.borrow_mut();
@@ -134,6 +146,49 @@ impl RcMagrGC {
                 timestamp_us: Self::now_us(),
             });
         }
+    }
+
+    /// 内部版 make_weak —— 复制 trait 实现避免在 trait dispatch 路径递归借用。
+    fn make_weak_internal(&self, value: &Value) -> Option<WeakRef> {
+        match value {
+            Value::Object(gc) => Some(WeakRef {
+                inner: WeakRefInner::Object(GcRef::downgrade(gc)),
+            }),
+            Value::Array(gc) => Some(WeakRef {
+                inner: WeakRefInner::Array(GcRef::downgrade(gc)),
+            }),
+            _ => None,
+        }
+    }
+
+    /// 内部版 upgrade_weak。
+    fn upgrade_weak_internal(weak: &WeakRef) -> Option<Value> {
+        match &weak.inner {
+            WeakRefInner::Object(w) => w.upgrade().map(Value::Object),
+            WeakRefInner::Array (w) => w.upgrade().map(Value::Array),
+        }
+    }
+
+    /// Snapshot 当前 registry 中所有仍存活的 Value，并就地 prune 掉死引用。
+    /// 返回值已去重（同一对象只出现一次）。
+    fn snapshot_live_from_registry(&self) -> Vec<Value> {
+        let mut i = self.inner.borrow_mut();
+        let mut alive: Vec<Value> = Vec::with_capacity(i.heap_registry.len());
+        let mut visited: HashSet<usize> = HashSet::new();
+        // 同步 prune：retain 只保留还能 upgrade 的项
+        i.heap_registry.retain(|weak| {
+            if let Some(v) = Self::upgrade_weak_internal(weak) {
+                if let Some(key) = Self::rc_ptr_key(&v) {
+                    if visited.insert(key) {
+                        alive.push(v);
+                    }
+                }
+                true
+            } else {
+                false
+            }
+        });
+        alive
     }
 
     fn check_pressure(&self, requested: u64) {
@@ -180,7 +235,7 @@ impl MagrGC for RcMagrGC {
             type_desc, slots, native,
         }));
         let size = self.object_size_bytes(&value);
-        self.record_alloc(AllocKind::Object { class }, size);
+        self.record_alloc(&value, AllocKind::Object { class }, size);
         value
     }
 
@@ -188,7 +243,7 @@ impl MagrGC for RcMagrGC {
         let elem_count = elems.len();
         let value      = Value::Array(GcRef::new(elems));
         let size       = self.object_size_bytes(&value);
-        self.record_alloc(AllocKind::Array { elem_count }, size);
+        self.record_alloc(&value, AllocKind::Array { elem_count }, size);
         value
     }
 
@@ -387,17 +442,14 @@ impl MagrGC for RcMagrGC {
     }
 
     fn take_snapshot(&self) -> HeapSnapshot {
+        // Phase 3b: 直接遍历 heap_registry，覆盖范围升级为 Full（所有 alloc 过且
+        // 当前仍 strong-reachable 的对象，不依赖 host pin）。
         let mut snapshot = HeapSnapshot {
-            coverage:     SnapshotCoverage::ReachableFromPinnedRoots,
+            coverage:     SnapshotCoverage::Full,
             timestamp_us: Self::now_us(),
             ..Default::default()
         };
-        let mut visited: HashSet<usize> = HashSet::new();
-        let mut queue: Vec<Value> = self.inner.borrow().roots.values().cloned().collect();
-
-        while let Some(v) = queue.pop() {
-            let Some(key) = Self::rc_ptr_key(&v) else { continue };
-            if !visited.insert(key) { continue }
+        for v in self.snapshot_live_from_registry() {
             let size = self.object_size_bytes(&v) as u64;
             let Some(type_name) = Self::type_name_of(&v) else { continue };
             let entry = snapshot.objects_by_type.entry(type_name).or_default();
@@ -405,27 +457,15 @@ impl MagrGC for RcMagrGC {
             entry.bytes += size;
             snapshot.total_objects += 1;
             snapshot.total_bytes   += size;
-            self.scan_object_refs(&v, &mut |child| {
-                if Self::rc_ptr_key(child).is_some() {
-                    queue.push(child.clone());
-                }
-            });
         }
         snapshot
     }
 
     fn iterate_live_objects(&self, visitor: &mut dyn FnMut(&Value)) {
-        let mut visited: HashSet<usize> = HashSet::new();
-        let mut queue: Vec<Value> = self.inner.borrow().roots.values().cloned().collect();
-        while let Some(v) = queue.pop() {
-            let Some(key) = Self::rc_ptr_key(&v) else { continue };
-            if !visited.insert(key) { continue }
+        // Phase 3b: registry-driven Full coverage. 同对象只访问一次（registry
+        // snapshot 内部去重 by GcRef::as_ptr）。
+        for v in self.snapshot_live_from_registry() {
             visitor(&v);
-            self.scan_object_refs(&v, &mut |child| {
-                if Self::rc_ptr_key(child).is_some() {
-                    queue.push(child.clone());
-                }
-            });
         }
     }
 

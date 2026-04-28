@@ -430,10 +430,45 @@ fn set_alloc_sampler_none_clears_sampler() {
 }
 
 #[test]
-fn snapshot_coverage_is_reachable_from_pinned_roots_in_rc_mode() {
+fn snapshot_coverage_is_full_after_phase_3b_registry() {
+    // Phase 3b: heap registry 升级 coverage 到 Full（不依赖 host pin）。
     let heap = RcMagrGC::new();
     let snap = heap.take_snapshot();
-    assert_eq!(snap.coverage, SnapshotCoverage::ReachableFromPinnedRoots);
+    assert_eq!(snap.coverage, SnapshotCoverage::Full);
+}
+
+#[test]
+fn snapshot_includes_unpinned_alive_object() {
+    // Phase 3b: 没 pin 也能在 snapshot 里看到（只要还存活）。
+    let heap = RcMagrGC::new();
+    let _alive = heap.alloc_object(dummy_type_desc("UnpinnedFoo"), vec![], NativeData::None);
+    let snap = heap.take_snapshot();
+    assert!(snap.objects_by_type.contains_key("UnpinnedFoo"));
+    assert!(snap.total_objects >= 1);
+}
+
+#[test]
+fn iterate_live_objects_full_coverage_includes_unpinned() {
+    // Phase 3b: alloc 但没 pin 的对象，iterate_live_objects 也能找到。
+    let heap = RcMagrGC::new();
+    let _a = heap.alloc_array(vec![]);
+    let _b = heap.alloc_object(dummy_type_desc("Foo"), vec![], NativeData::None);
+    let mut count = 0;
+    heap.iterate_live_objects(&mut |_| count += 1);
+    assert_eq!(count, 2);
+}
+
+#[test]
+fn registry_prunes_dropped_objects() {
+    // Phase 3b: 对象 drop 后 registry 自动清掉（下次 iterate / snapshot 时 prune）。
+    let heap = RcMagrGC::new();
+    {
+        let _ephemeral = heap.alloc_array(vec![]);
+        // _ephemeral 出 scope drop
+    }
+    let mut count = 0;
+    heap.iterate_live_objects(&mut |_| count += 1);
+    assert_eq!(count, 0);
 }
 
 #[test]
