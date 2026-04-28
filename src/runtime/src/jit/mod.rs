@@ -19,8 +19,9 @@ use anyhow::Result;
 use cranelift_codegen::ir::{AbiParam, types};
 use cranelift_module::{FuncId, Linkage, Module as CraneliftModule};
 use cranelift_jit::{JITBuilder, JITModule};
+use crate::vm_context::VmContext;
 use frame::{FnEntry, JitFrame, JitModuleCtx};
-use helpers::{take_exception_error, static_fields_clear, JitFn};
+use helpers::{take_exception_error, sync_in_from_ctx, sync_out_to_ctx, JitFn};
 use std::collections::HashMap;
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -37,13 +38,22 @@ pub struct JitModule {
 
 impl JitModule {
     /// Run a specific entry function by name (no static-init).
-    pub fn run_fn(&self, entry_name: &str) -> Result<()> {
+    ///
+    /// `ctx` is the canonical state holder; we wire its raw pointer into
+    /// `JitModuleCtx.vm_ctx` for the duration of this call so JIT helpers
+    /// (which receive `*const JitModuleCtx`) can reach VmContext through it.
+    pub fn run_fn(&mut self, ctx: &mut VmContext, entry_name: &str) -> Result<()> {
         let entry = self.ctx.fn_entries.get(entry_name)
             .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?;
+        // Sync ctx → JIT thread_local slots before entry; sync back after.
+        sync_in_from_ctx(ctx);
+        self.ctx.vm_ctx = ctx as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
         let r = unsafe { f(&mut frame, &*self.ctx) };
         frame.recycle();
+        self.ctx.vm_ctx = std::ptr::null_mut();
+        sync_out_to_ctx(ctx);
         if r != 0 { return Err(take_exception_error()); }
         Ok(())
     }
@@ -55,25 +65,23 @@ impl JitModule {
     /// 2026-04-27 fix-static-field-access: 与 interp 的 `run_with_static_init`
     /// 对称修复。修前只跑主模块 init，导入 zpkg（如 z42.math 的
     /// `Std.Math.__static_init__`）虽然 link 但永不被调用。
-    pub fn run(&self, entry_name: &str) -> Result<()> {
-        static_fields_clear();
+    pub fn run(&mut self, ctx: &mut VmContext, entry_name: &str) -> Result<()> {
+        ctx.static_fields_clear();
 
         // Collect all __static_init__ entries; sort by name for determinism.
-        let mut init_names: Vec<&String> = self.ctx.fn_entries.keys()
-            .filter(|n| n.ends_with(".__static_init__"))
-            .collect();
-        init_names.sort();
+        let init_names: Vec<String> = {
+            let mut v: Vec<&String> = self.ctx.fn_entries.keys()
+                .filter(|n| n.ends_with(".__static_init__"))
+                .collect();
+            v.sort();
+            v.into_iter().cloned().collect()
+        };
 
         for init_name in init_names {
-            let entry = &self.ctx.fn_entries[init_name];
-            let mut frame = JitFrame::new(entry.max_reg, &[]);
-            let f: JitFn  = unsafe { std::mem::transmute(entry.ptr) };
-            let r = unsafe { f(&mut frame, &*self.ctx) };
-            frame.recycle();
-            if r != 0 { return Err(take_exception_error()); }
+            self.run_fn(ctx, &init_name)?;
         }
 
-        self.run_fn(entry_name)
+        self.run_fn(ctx, entry_name)
     }
 }
 
@@ -196,6 +204,9 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
         string_pool: module.string_pool.clone(),
         fn_entries,
         module: module as *const Module,
+        // Set by JitModule::run for the duration of an entry call; null
+        // outside that window.
+        vm_ctx: std::ptr::null_mut(),
     });
 
     Ok(JitModule { _jit: jit, ctx })
@@ -204,7 +215,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
 // ─── Public entry point called from vm.rs ───────────────────────────────────
 
 /// Called by `Vm::run` when the execution mode is JIT.
-pub fn run(module: &Module, entry_name: &str) -> Result<()> {
-    let jit_module = compile_module(module)?;
-    jit_module.run(entry_name)
+pub fn run(ctx: &mut VmContext, module: &Module, entry_name: &str) -> Result<()> {
+    let mut jit_module = compile_module(module)?;
+    jit_module.run(ctx, entry_name)
 }

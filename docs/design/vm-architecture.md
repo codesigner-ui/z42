@@ -8,6 +8,29 @@
 
 ---
 
+## VmContext —— 运行时状态归口（2026-04-28）
+
+宿主代码运行 VM 的标准流程：
+
+```rust
+let mut ctx = VmContext::new();
+ctx.install_lazy_loader_with_deps(libs_dir, main_pool_len, declared, loaded);
+let vm = Vm::new(module, ExecMode::Interp);
+vm.run(&mut ctx, hint)?;
+```
+
+`VmContext` 持有：
+
+- `static_fields: RefCell<HashMap<String, Value>>` — 用户类 static 字段
+- `pending_exception: RefCell<Option<Value>>` — JIT extern "C" 边界异常槽位
+- `lazy_loader: RefCell<Option<LazyLoader>>` — 按需 zpkg 加载器
+
+API 方法都用 `&self`（内部 RefCell），调用方代码风格基本不变。多 VmContext
+实例完全隔离 —— 这是 review2 §3 的设计目标兑现。详见
+[`object-protocol.md`](object-protocol.md) 与 review2 §3 / §5.5 / §5.2。
+
+---
+
 ## VM 启动流程
 
 ```
@@ -277,15 +300,34 @@ builtin 按功能分 submodule：`string.rs` / `io.rs` / `math.rs` / `collection
 - **已知限制**：`Rc` 是 `!Send`，阻塞跨线程传值。L3 async / 线程模型时会
   重新设计（L2 backlog A6）
 
-### 为什么懒加载用 thread_local
+### 为什么懒加载现在归 VmContext 持有（2026-04-28 consolidate-vm-state）
 
-```rust
-thread_local! { static STATE: RefCell<Option<LazyLoader>> = ... }
-```
+**之前**：`lazy_loader::STATE` thread_local + `install` / `uninstall` /
+`try_lookup_*` 自由函数集合。简单但带来的问题：
 
-- **避免 Mutex**：懒加载是编译期或 run-to-completion 路径，不需要跨线程共享
-- **测试友好**：`install` / `uninstall` 成对使用，测试隔离性由 thread_local
-  自动保证
+- 同一进程跑多个 VM 实例时 STATE 互串（多 VM-per-process 卖点失效）
+- 测试间状态污染靠手动 `uninstall`，遗漏即漂移
+- 与 README 第 7 行 "Multi-threaded: GC-safe concurrency" 设计目标矛盾
+
+**现在**：`VmContext.lazy_loader: RefCell<Option<LazyLoader>>` 持有，
+`ctx.install_lazy_loader_with_deps(...)` / `ctx.try_lookup_function(name)` /
+`ctx.declared_namespaces()` 等方法委托到 `LazyLoader` struct（保留逻辑不变）。
+两个 ctx 实例的 lazy_loader 完全隔离，跨 ctx 切换不污染。
+
+同时迁移到 VmContext 的还有：
+
+| 状态 | 之前 | 现在 |
+|------|------|------|
+| 用户类静态字段 (interp) | `interp/dispatch.rs::STATIC_FIELDS` thread_local | `ctx.static_fields` |
+| Pending exception (interp) | `interp/mod.rs::PENDING_EXCEPTION` thread_local + `UserException` sentinel + `user_throw`/`user_exception_take` | 删除 — interp 全程走 `ExecOutcome::Thrown(Value)` |
+| Pending exception (JIT) | `jit/helpers.rs::PENDING_EXCEPTION` thread_local | thread_local 保留（extern "C" ABI）；`JitModule::run` 在边界与 `ctx.pending_exception` sync |
+| 静态字段 (JIT) | `jit/helpers.rs::STATIC_FIELDS` thread_local | thread_local 保留；同样 sync 机制 |
+
+> JIT 端 2 个 thread_local 保留是因为 ~30 个 extern "C" arith/bool helper
+> 签名不带 `JitModuleCtx`，要全部加 ctx 参数需改 ABI + Cranelift 生成端。
+> 那是后续 `extend-jit-helper-abi` spec 的工作。当前 sync 模式在外部
+> 观察上等价（serial 多 ctx 互不污染），代价是同线程并发 JIT 调用未支持
+> （但 `JitModule::run` 是同步的，结构上不可能并发）。
 
 ### 为什么不预加载所有 stdlib
 

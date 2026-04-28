@@ -344,12 +344,17 @@ fn main() -> Result<()> {
         m
     };
 
-    // Install lazy loader now that the final module's string pool size is known.
-    // Lazy-loaded zpkgs will have their ConstStr indices offset past this length.
-    // In interp mode `declared_candidates` drives on-demand loading; in JIT
-    // mode deps are already merged into `modules` during 5.1d so `declared`
-    // is typically empty and the lazy loader is effectively a no-op.
-    z42_vm::metadata::lazy_loader::install_with_deps(
+    // Construct the VmContext (consolidate-vm-state, 2026-04-28). The ctx
+    // owns static-fields / pending-exception / lazy_loader; previously these
+    // lived in thread_local slots scattered across interp/ and jit/.
+    //
+    // Lazy-loaded zpkgs will have their ConstStr indices offset past this
+    // module's string-pool length. In interp mode `declared_candidates`
+    // drives on-demand loading; in JIT mode deps are already merged into
+    // `modules` during 5.1d so `declared` is typically empty and the lazy
+    // loader is effectively a no-op.
+    let mut ctx = z42_vm::vm_context::VmContext::new();
+    ctx.install_lazy_loader_with_deps(
         libs_dir.clone(),
         final_module.string_pool.len(),
         declared_candidates,
@@ -363,5 +368,5 @@ fn main() -> Result<()> {
     };
 
     let vm = z42_vm::vm::Vm::new(final_module, default_mode);
-    vm.run(entry_hint.as_deref())
+    vm.run(&mut ctx, entry_hint.as_deref())
 }

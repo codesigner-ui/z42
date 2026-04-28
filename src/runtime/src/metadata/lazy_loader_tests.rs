@@ -30,23 +30,6 @@ fn namespace_prefix_of_shallow_name() {
     assert_eq!(namespace_prefix("main"), None);
 }
 
-// ── install / uninstall ───────────────────────────────────────────────────────
-
-#[test]
-fn install_then_uninstall_is_clean() {
-    install(None, 0);
-    assert!(try_lookup_function("Std.IO.Console.WriteLine").is_none());
-    uninstall();
-}
-
-#[test]
-fn install_with_deps_no_libs_no_declared_returns_none() {
-    install_with_deps(None, 0, Vec::new(), Vec::new());
-    assert!(try_lookup_function("Std.Anything.F").is_none());
-    assert!(try_lookup_type("Std.Anything").is_none());
-    uninstall();
-}
-
 // ── candidates_for_namespace (strategy C routing) ────────────────────────────
 
 fn fake_candidate(namespaces: &[&str]) -> ZpkgCandidate {
@@ -171,4 +154,24 @@ fn candidates_excludes_subsequently_loaded() {
     // After marking loaded, no longer a candidate (Decision 4 idempotency).
     loader.loaded_zpkgs.insert("a.zpkg".to_string());
     assert!(loader.candidates_for_namespace("Std.Collections").is_empty());
+}
+
+// ── VmContext-based install / uninstall (replaces former thread_local API) ───
+
+#[test]
+fn vm_context_install_then_uninstall_is_clean() {
+    let ctx = crate::vm_context::VmContext::new();
+    ctx.install_lazy_loader(None, 0);
+    assert!(ctx.try_lookup_function("Std.IO.Console.WriteLine").is_none());
+    ctx.uninstall_lazy_loader();
+    assert!(ctx.try_lookup_function("Anything.Foo").is_none());
+}
+
+#[test]
+fn vm_context_install_with_deps_no_libs_no_declared_returns_none() {
+    let ctx = crate::vm_context::VmContext::new();
+    ctx.install_lazy_loader_with_deps(None, 0, Vec::new(), Vec::new());
+    assert!(ctx.try_lookup_function("Std.Anything.F").is_none());
+    assert!(ctx.try_lookup_type("Std.Anything").is_none());
+    ctx.uninstall_lazy_loader();
 }

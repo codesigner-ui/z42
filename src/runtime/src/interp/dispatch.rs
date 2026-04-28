@@ -1,29 +1,14 @@
-/// Object dispatch helpers — vtable resolution, ToString protocol, type checks, static fields.
+/// Object dispatch helpers — vtable resolution, ToString protocol, type checks.
+///
+/// Static-field storage moved to `VmContext::static_fields` (consolidate-vm-state,
+/// 2026-04-28). Call sites now use `ctx.static_get(field)` / `ctx.static_set(...)`.
 
 use crate::metadata::{ClassDesc, FieldSlot, Function, Module, TypeDesc, Value};
+use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 pub use crate::corelib::convert::value_to_str;
-
-// ── Static fields (thread-local) ─────────────────────────────────────────────
-
-thread_local! {
-    static STATIC_FIELDS: RefCell<HashMap<String, Value>> = RefCell::new(HashMap::new());
-}
-
-pub fn static_get(field: &str) -> Value {
-    STATIC_FIELDS.with(|sf| sf.borrow().get(field).cloned().unwrap_or(Value::Null))
-}
-
-pub fn static_set(field: &str, val: Value) {
-    STATIC_FIELDS.with(|sf| { sf.borrow_mut().insert(field.to_string(), val); });
-}
-
-pub fn static_fields_clear() {
-    STATIC_FIELDS.with(|sf| sf.borrow_mut().clear());
-}
 
 // ── Subclass check ───────────────────────────────────────────────────────────
 
@@ -50,7 +35,7 @@ pub fn is_subclass_or_eq_td(
 /// For `Value::Object` we try to dispatch `ToString` via the vtable. If the class has no
 /// `ToString` method (e.g. it inherits the default from `Std.Object`) we fall back to the
 /// `__obj_to_str` builtin (simple name). All other value types use `value_to_str` directly.
-pub fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
+pub fn obj_to_string(ctx: &VmContext, module: &Module, val: &Value) -> Result<String> {
     if let Value::Object(rc) = val {
         let type_desc = rc.borrow().type_desc.clone();
         // Try vtable first (O(1))
@@ -60,7 +45,7 @@ pub fn obj_to_string(module: &Module, val: &Value) -> Result<String> {
             let callee = module.func_index.get(func_name.as_str())
                 .and_then(|&idx| module.functions.get(idx));
             if let Some(callee) = callee {
-                let outcome = super::exec_function(module, callee, &[val.clone()])?;
+                let outcome = super::exec_function(ctx, module, callee, &[val.clone()])?;
                 return match outcome {
                     super::ExecOutcome::Returned(Some(Value::Str(s))) => Ok(s),
                     super::ExecOutcome::Returned(Some(other))         => Ok(value_to_str(&other)),

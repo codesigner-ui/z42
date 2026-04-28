@@ -276,8 +276,11 @@ pub unsafe extern "C" fn jit_vcall(
                 return 0;
             }
             // Lazy loader fallback — call via interpreter.
-            if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(func_name) {
-                match crate::interp::exec_function(module, lazy_fn.as_ref(), &call_args) {
+            // Reach VmContext through the JIT module ctx pointer (set by
+            // JitModule::run for the duration of this entry call).
+            let vm_ctx = unsafe { &*((*ctx).vm_ctx) };
+            if let Some(lazy_fn) = vm_ctx.try_lookup_function(func_name) {
+                match crate::interp::exec_function(vm_ctx, module, lazy_fn.as_ref(), &call_args) {
                     Ok(outcome) => match outcome {
                         crate::interp::ExecOutcome::Returned(ret) => {
                             frame_ref.regs[dst as usize] = ret.unwrap_or(Value::Null);

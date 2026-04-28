@@ -1,4 +1,5 @@
 use crate::metadata::{ExecMode, Module};
+use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 
 /// Top-level VM: holds a merged IR module and dispatches to the appropriate backend.
@@ -14,13 +15,17 @@ impl Vm {
 
     /// Execute the module's entry point.
     ///
+    /// `ctx` carries the runtime-mutable state (static fields, lazy loader,
+    /// pending exception). Caller is responsible for `ctx.install_lazy_loader`
+    /// before calling `run` if dependencies need to be lazy-loaded.
+    ///
     /// Entry resolution order (first match wins):
     ///   1. `hint`               — explicit name from artifact metadata (.zpkg `entry` field)
     ///   2. `{module.name}.Main`
     ///   3. `{module.name}.main`
     ///   4. `Main`
     ///   5. `main`
-    pub fn run(&self, hint: Option<&str>) -> Result<()> {
+    pub fn run(&self, ctx: &mut VmContext, hint: Option<&str>) -> Result<()> {
         let entry_name = self.resolve_entry(hint)?;
 
         let entry = self
@@ -31,8 +36,8 @@ impl Vm {
             .ok_or_else(|| anyhow::anyhow!("entry `{}` disappeared — this is a bug", entry_name))?;
 
         match self.default_mode {
-            ExecMode::Interp => crate::interp::run_with_static_init(&self.module, entry),
-            ExecMode::Jit    => crate::jit::run(&self.module, &entry_name),
+            ExecMode::Interp => crate::interp::run_with_static_init(ctx, &self.module, entry),
+            ExecMode::Jit    => crate::jit::run(ctx, &self.module, &entry_name),
             ExecMode::Aot    => bail!(
                 "AOT mode is not implemented yet (planned: roadmap M9 — L3 \
                  phase, LLVM/inkwell). Switch to `--mode interp` or \

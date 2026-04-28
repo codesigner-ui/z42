@@ -4,13 +4,13 @@
 /// helpers live in `dispatch.rs`; register-level numeric helpers in `ops.rs`.
 
 use crate::metadata::{Instruction, Module, NativeData, ScriptObject, Value};
+use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::dispatch::{
-    is_subclass_or_eq_td, make_fallback_type_desc, obj_to_string, resolve_virtual,
-    static_get, static_set, value_to_str,
+    is_subclass_or_eq_td, make_fallback_type_desc, obj_to_string, resolve_virtual, value_to_str,
 };
 use super::ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
 use super::{ExecOutcome, Frame};
@@ -39,14 +39,14 @@ pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
 ///   Ok(None)       — normal completion
 ///   Ok(Some(val))  — a callee threw a user exception (value-based propagation)
 ///   Err(e)         — internal VM error
-pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<Option<Value>> {
+pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<Option<Value>> {
     match instr {
         // ── Constants ────────────────────────────────────────────────────────
         Instruction::ConstStr { dst, idx } => {
             let i = *idx as usize;
             let s = if let Some(s) = module.string_pool.get(i) {
                 s.clone()
-            } else if let Some(s) = crate::metadata::lazy_loader::try_lookup_string(i) {
+            } else if let Some(s) = ctx.try_lookup_string(i) {
                 // ConstStr from a lazily-loaded function — idx is offset past main pool.
                 s
             } else {
@@ -159,7 +159,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             frame.set(*dst, Value::Str(format!("{}{}", sa, sb)));
         }
         Instruction::ToStr { dst, src } => {
-            let s = obj_to_string(module, frame.get(*src)?)?;
+            let s = obj_to_string(ctx, module, frame.get(*src)?)?;
             frame.set(*dst, Value::Str(s));
         }
 
@@ -169,9 +169,9 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             let callee_fn = module.func_index.get(fname.as_str())
                 .and_then(|&idx| module.functions.get(idx));
             let outcome = if let Some(callee) = callee_fn {
-                super::exec_function(module, callee, &arg_vals)?
-            } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(fname) {
-                super::exec_function(module, lazy_fn.as_ref(), &arg_vals)?
+                super::exec_function(ctx, module, callee, &arg_vals)?
+            } else if let Some(lazy_fn) = ctx.try_lookup_function(fname) {
+                super::exec_function(ctx, module, lazy_fn.as_ref(), &arg_vals)?
             } else {
                 bail!("undefined function `{fname}`");
             };
@@ -255,7 +255,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             let type_desc = module.type_registry
                 .get(class_name)
                 .cloned()
-                .or_else(|| crate::metadata::lazy_loader::try_lookup_type(class_name))
+                .or_else(|| ctx.try_lookup_type(class_name))
                 .unwrap_or_else(|| {
                     std::sync::Arc::new(make_fallback_type_desc(module, class_name))
                 });
@@ -276,11 +276,11 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             if let Some(ctor) = ctor_fn {
                 let mut ctor_args = vec![obj_val.clone()];
                 ctor_args.extend(collect_args(&frame.regs, args)?);
-                super::exec_function(module, ctor, &ctor_args)?;
-            } else if let Some(lazy_ctor) = crate::metadata::lazy_loader::try_lookup_function(ctor_name) {
+                super::exec_function(ctx, module, ctor, &ctor_args)?;
+            } else if let Some(lazy_ctor) = ctx.try_lookup_function(ctor_name) {
                 let mut ctor_args = vec![obj_val.clone()];
                 ctor_args.extend(collect_args(&frame.regs, args)?);
-                super::exec_function(module, lazy_ctor.as_ref(), &ctor_args)?;
+                super::exec_function(ctx, module, lazy_ctor.as_ref(), &ctor_args)?;
             }
 
             frame.set(*dst, obj_val);
@@ -355,7 +355,7 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                 for func_name in [primary.as_str(), overload.as_str()] {
                     if let Some(&idx) = module.func_index.get(func_name) {
                         if let Some(callee) = module.functions.get(idx) {
-                            let outcome = super::exec_function(module, callee, &call_args)?;
+                            let outcome = super::exec_function(ctx, module, callee, &call_args)?;
                             match outcome {
                                 ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
                                 ExecOutcome::Thrown(val) => return Ok(Some(val)),
@@ -363,8 +363,8 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
                             return Ok(None);
                         }
                     }
-                    if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(func_name) {
-                        let outcome = super::exec_function(module, lazy_fn.as_ref(), &call_args)?;
+                    if let Some(lazy_fn) = ctx.try_lookup_function(func_name) {
+                        let outcome = super::exec_function(ctx, module, lazy_fn.as_ref(), &call_args)?;
                         match outcome {
                             ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
                             ExecOutcome::Thrown(val) => return Ok(Some(val)),
@@ -396,9 +396,9 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             let callee_fn = module.func_index.get(func_name.as_str())
                 .and_then(|&idx| module.functions.get(idx));
             let outcome = if let Some(callee) = callee_fn {
-                super::exec_function(module, callee, &call_args)?
-            } else if let Some(lazy_fn) = crate::metadata::lazy_loader::try_lookup_function(&func_name) {
-                super::exec_function(module, lazy_fn.as_ref(), &call_args)?
+                super::exec_function(ctx, module, callee, &call_args)?
+            } else if let Some(lazy_fn) = ctx.try_lookup_function(&func_name) {
+                super::exec_function(ctx, module, lazy_fn.as_ref(), &call_args)?
             } else {
                 bail!("VCall: function `{}` not found", func_name);
             };
@@ -434,11 +434,11 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
         }
 
         Instruction::StaticGet { dst, field } => {
-            frame.set(*dst, static_get(field));
+            frame.set(*dst, ctx.static_get(field));
         }
         Instruction::StaticSet { field, val } => {
             let v = frame.get(*val)?.clone();
-            static_set(field, v);
+            ctx.static_set(field, v);
         }
     }
     Ok(None)

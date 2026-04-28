@@ -100,6 +100,14 @@ pub struct JitModuleCtx {
     /// Back-pointer to the bytecode module for class descriptors, etc.
     /// SAFETY: the Module must outlive this ctx.
     pub module:      *const crate::metadata::Module,
+    /// Mutable VM state (static fields, pending exception, lazy loader).
+    /// Set by `JitModule::run` for the duration of one entry-point invocation;
+    /// reset to null on return. JIT helpers reach mutable VM state via this
+    /// pointer — replaces the previous `thread_local!` slots in
+    /// `jit/helpers.rs` (consolidate-vm-state, 2026-04-28).
+    /// SAFETY: the VmContext must outlive `JitModule::run` and be unique
+    /// (no concurrent JIT entry on the same JitModule).
+    pub vm_ctx:      *mut crate::vm_context::VmContext,
 }
 
 // SAFETY: raw pointer — caller ensures Module outlives ctx.

@@ -12,8 +12,8 @@ mod ops;
 
 pub use crate::corelib::convert::value_to_str;
 use crate::metadata::{Function, Module, Terminator, Value};
+use crate::vm_context::VmContext;
 use anyhow::{bail, Context, Result};
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 // ── Execution outcome ────────────────────────────────────────────────────────
@@ -28,45 +28,11 @@ pub(crate) enum ExecOutcome {
     Thrown(Value),
 }
 
-// ── User exception machinery (kept for JIT compatibility) ────────────────────
-
-// Thread-local slot: used by JIT helpers that need extern "C" ABI.
-// The interpreter path no longer uses this; it propagates via ExecOutcome::Thrown.
-thread_local! {
-    static PENDING_EXCEPTION: RefCell<Option<Value>> = const { RefCell::new(None) };
-}
-
-/// Lightweight sentinel for JIT path: `Send + Sync + 'static`.
-#[derive(Debug)]
-struct UserException;
-
-impl std::fmt::Display for UserException {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let msg = PENDING_EXCEPTION.with(|p| {
-            p.borrow().as_ref().map(value_to_str).unwrap_or_default()
-        });
-        write!(f, "uncaught exception: {msg}")
-    }
-}
-
-impl std::error::Error for UserException {}
-
-/// JIT-only: store exception value and return anyhow sentinel.
-#[allow(dead_code)]
-pub(crate) fn user_throw(val: Value) -> anyhow::Error {
-    PENDING_EXCEPTION.with(|p| *p.borrow_mut() = Some(val));
-    anyhow::Error::new(UserException)
-}
-
-pub(crate) fn user_exception_take() -> Option<Value> {
-    PENDING_EXCEPTION.with(|p| p.borrow_mut().take())
-}
-
 // ── Public entry points ──────────────────────────────────────────────────────
 
 /// Entry point: run a function with the given arguments.
-pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
-    match exec_function(module, func, args)? {
+pub fn run(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<()> {
+    match exec_function(ctx, module, func, args)? {
         ExecOutcome::Returned(_) => Ok(()),
         ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
     }
@@ -89,8 +55,8 @@ pub fn run(module: &Module, func: &Function, args: &[Value]) -> Result<()> {
 ///
 /// 副作用：所有声明的 stdlib zpkg 都会被 eagerly 加载（不再纯 lazy）。
 /// 在当前 stdlib 规模（~50KB / 5 包）下成本可忽略，换取静态常量可用。
-pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
-    dispatch::static_fields_clear();
+pub fn run_with_static_init(ctx: &VmContext, module: &Module, func: &Function) -> Result<()> {
+    ctx.static_fields_clear();
 
     // 1. Eager-loaded init functions (in main + z42.core).
     let mut eager_inits: Vec<&Function> = module.functions.iter()
@@ -98,7 +64,7 @@ pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
         .collect();
     eager_inits.sort_by(|a, b| a.name.cmp(&b.name));
     for init_fn in &eager_inits {
-        match exec_function(module, init_fn, &[])? {
+        match exec_function(ctx, module, init_fn, &[])? {
             ExecOutcome::Returned(_) => {}
             ExecOutcome::Thrown(val) =>
                 bail!("uncaught exception in static init `{}`: {}", init_fn.name, value_to_str(&val)),
@@ -106,21 +72,21 @@ pub fn run_with_static_init(module: &Module, func: &Function) -> Result<()> {
     }
 
     // 2. Lazy-loadable init functions (from declared but not-yet-loaded zpkgs).
-    let mut lazy_init_names: Vec<String> = crate::metadata::lazy_loader::declared_namespaces()
+    let mut lazy_init_names: Vec<String> = ctx.declared_namespaces()
         .into_iter()
         .map(|ns| format!("{ns}.__static_init__"))
         .collect();
     lazy_init_names.sort();
     for init_name in lazy_init_names {
-        let Some(init_fn) = crate::metadata::lazy_loader::try_lookup_function(&init_name) else { continue };
-        match exec_function(module, init_fn.as_ref(), &[])? {
+        let Some(init_fn) = ctx.try_lookup_function(&init_name) else { continue };
+        match exec_function(ctx, module, init_fn.as_ref(), &[])? {
             ExecOutcome::Returned(_) => {}
             ExecOutcome::Thrown(val) =>
                 bail!("uncaught exception in static init `{}`: {}", init_name, value_to_str(&val)),
         }
     }
 
-    match exec_function(module, func, &[])? {
+    match exec_function(ctx, module, func, &[])? {
         ExecOutcome::Returned(_) => Ok(()),
         ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
     }
@@ -174,7 +140,7 @@ fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, inst
 
 // ── Core execution loop ──────────────────────────────────────────────────────
 
-pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
+pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
     let mut frame = Frame::new(args, func.max_reg);
     let block_map = &func.block_index;
     let mut block_idx = 0usize;
@@ -190,7 +156,7 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
             //   Ok(None)       — normal instruction completion
             //   Ok(Some(val))  — a callee threw an exception (value-based propagation)
             //   Err(e)         — internal VM error
-            match exec_instr::exec_instr(module, &mut frame, instr) {
+            match exec_instr::exec_instr(ctx, module, &mut frame, instr) {
                 Ok(None) => {}
                 Ok(Some(thrown_val)) => {
                     // User exception from a callee — try to find a local handler
@@ -205,19 +171,11 @@ pub(crate) fn exec_function(module: &Module, func: &Function, args: &[Value]) ->
                     return Ok(ExecOutcome::Thrown(thrown_val));
                 }
                 Err(e) => {
-                    // JIT path: check if this is a UserException from JIT helpers
-                    if e.is::<UserException>() {
-                        let thrown_val = user_exception_take().unwrap_or(Value::Null);
-                        if let Some(entry_idx) = find_handler(func, block_idx, block_map) {
-                            let entry = &func.exception_table[entry_idx];
-                            frame.set(entry.catch_reg, thrown_val);
-                            block_idx = *block_map.get(entry.catch_label.as_str())
-                                .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
-                            continue 'exec;
-                        }
-                        return Ok(ExecOutcome::Thrown(thrown_val));
-                    }
-                    // Internal error — enrich with source location
+                    // Internal error — enrich with source location.
+                    // (consolidate-vm-state, 2026-04-28: removed legacy
+                    // UserException sentinel branch — JIT helpers now report
+                    // exceptions via `ctx.set_exception` + extern-C return code,
+                    // not via `anyhow::Error` wrapping.)
                     let loc = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
                     return Err(e.context(format!("  at {} (line {})", func.name, loc)));
                 }

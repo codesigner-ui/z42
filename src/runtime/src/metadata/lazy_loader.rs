@@ -19,7 +19,14 @@
 /// Multiple zpkgs may legitimately declare the same namespace — the lookup
 /// visits them one by one and `first-wins` on function/type name collisions
 /// (Decision 6).
-use std::cell::RefCell;
+///
+/// ## State ownership (consolidate-vm-state, 2026-04-28)
+///
+/// Previously `LazyLoader` lived in a `thread_local!` slot. Now an instance
+/// is owned by `VmContext::lazy_loader`; all `try_lookup_*` /
+/// `declared_namespaces` calls go through `VmContext` methods which delegate
+/// here. `LazyLoader` itself remains usable directly by tests / advanced
+/// embedders.
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -30,11 +37,6 @@ use super::bytecode::{Function, Instruction};
 use super::loader::load_artifact;
 use super::types::TypeDesc;
 use super::zbc_reader::read_zpkg_meta;
-
-// Per-thread lazy loader state. Initialised by `install(...)` at VM startup.
-thread_local! {
-    static STATE: RefCell<Option<LazyLoader>> = const { RefCell::new(None) };
-}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -61,98 +63,10 @@ impl ZpkgCandidate {
     }
 }
 
-/// Install the lazy loader with no declared dependencies (tests / single-file
-/// scripts without any stdlib references). Backwards-compatible signature.
-pub fn install(libs_dir: Option<PathBuf>, main_pool_len: usize) {
-    install_with_deps(libs_dir, main_pool_len, Vec::new(), Vec::new());
-}
-
-/// Install the lazy loader with the given declared dependencies.
-///
-/// `declared` — (zpkg_file_name, candidate) pairs that are referenced by the
-/// main module (directly or transitively). These zpkgs may be loaded on
-/// demand when the interpreter encounters an unresolved `Call` / `ObjNew`.
-///
-/// `initially_loaded` — zpkg file names already merged into the main module
-/// at startup (e.g. `["z42.core.zpkg"]` from the implicit prelude path).
-/// These are excluded from the declared-but-not-loaded candidate set.
-pub fn install_with_deps(
-    libs_dir: Option<PathBuf>,
-    main_pool_len: usize,
-    declared: Vec<(String, ZpkgCandidate)>,
-    initially_loaded: Vec<String>,
-) {
-    STATE.with(|s| {
-        *s.borrow_mut() = Some(LazyLoader::new(
-            libs_dir,
-            main_pool_len,
-            declared,
-            initially_loaded,
-        ));
-    });
-}
-
-/// Clear the lazy loader (used in tests to reset state between runs).
-pub fn uninstall() {
-    STATE.with(|s| *s.borrow_mut() = None);
-}
-
-/// Look up a function by fully-qualified name. Returns `Some(Function)` if
-/// the function was found either in the already-loaded table or after
-/// triggering a lazy load.
-pub fn try_lookup_function(func_name: &str) -> Option<Arc<Function>> {
-    STATE.with(|s| {
-        let mut state = s.borrow_mut();
-        let loader = state.as_mut()?;
-        loader.resolve_function(func_name)
-    })
-}
-
-/// Look up a type descriptor (class) by fully-qualified name.
-/// L3-G4d: also triggers the zpkg load for the owning namespace so the first
-/// `new Stack<int>()` on an imported generic class resolves.
-pub fn try_lookup_type(class_name: &str) -> Option<Arc<TypeDesc>> {
-    STATE.with(|s| {
-        let mut state = s.borrow_mut();
-        let loader = state.as_mut()?;
-        loader.resolve_type(class_name)
-    })
-}
-
-/// Resolve an "overflow" ConstStr index — one that falls past the main
-/// module's string pool. Returns the merged lazy-pool string if available.
-pub fn try_lookup_string(absolute_idx: usize) -> Option<String> {
-    STATE.with(|s| {
-        let state = s.borrow();
-        let loader = state.as_ref()?;
-        let rel = absolute_idx.checked_sub(loader.main_pool_len)?;
-        loader.string_pool.get(rel).cloned()
-    })
-}
-
-/// Returns all namespaces declared by lazy-loadable zpkgs (both already loaded
-/// and not-yet-loaded). Used by `run_with_static_init` to discover
-/// `<ns>.__static_init__` functions in imported stdlib modules.
-///
-/// 2026-04-27 fix-static-field-access: 没这个 API 之前，VM 启动时只跑
-/// 主模块的 __static_init__，导入 zpkg（如 z42.math）的常量字段（PI / E / Tau）
-/// 永远不被赋值 → `Math.PI` 返回 null。
-pub fn declared_namespaces() -> Vec<String> {
-    STATE.with(|s| {
-        let state = s.borrow();
-        let Some(loader) = state.as_ref() else { return Vec::new(); };
-        let mut all: Vec<String> = loader.declared_zpkgs.values()
-            .flat_map(|c| c.namespaces.iter().cloned())
-            .collect();
-        all.sort();
-        all.dedup();
-        all
-    })
-}
-
 // ── State ─────────────────────────────────────────────────────────────────────
 
-struct LazyLoader {
+/// Lazy-loaded dependency state. Owned by `VmContext::lazy_loader`.
+pub struct LazyLoader {
     libs_dir:       Option<PathBuf>,
     /// Length of the main (user) module's string pool.
     /// ConstStr indices < `main_pool_len` resolve against the main module's
@@ -165,10 +79,10 @@ struct LazyLoader {
     /// zpkg file names that have been loaded (either eagerly at startup or
     /// by a previous lazy-load). Used for de-duplication and cycle-cutting
     /// (Decision 4: pre-inserted before load to break cycles).
-    loaded_zpkgs:   HashSet<String>,
+    pub(crate) loaded_zpkgs:   HashSet<String>,
     /// zpkg file names that are declared as dependencies (direct or
     /// transitive) but have not yet been loaded. Lookup candidates.
-    declared_zpkgs: HashMap<String, ZpkgCandidate>,
+    pub(crate) declared_zpkgs: HashMap<String, ZpkgCandidate>,
 
     /// Functions loaded from lazily-resolved zpkgs, indexed by FQ name.
     /// ConstStr indices have been remapped to absolute indices.
@@ -178,7 +92,7 @@ struct LazyLoader {
 }
 
 impl LazyLoader {
-    fn new(
+    pub fn new(
         libs_dir: Option<PathBuf>,
         main_pool_len: usize,
         declared: Vec<(String, ZpkgCandidate)>,
@@ -200,7 +114,8 @@ impl LazyLoader {
         }
     }
 
-    fn resolve_function(&mut self, func_name: &str) -> Option<Arc<Function>> {
+    /// Look up a function by FQ name; triggers lazy load if needed.
+    pub fn resolve_function(&mut self, func_name: &str) -> Option<Arc<Function>> {
         if let Some(f) = self.function_table.get(func_name) {
             return Some(Arc::clone(f));
         }
@@ -223,7 +138,10 @@ impl LazyLoader {
         None
     }
 
-    fn resolve_type(&mut self, class_name: &str) -> Option<Arc<TypeDesc>> {
+    /// Look up a class TypeDesc by FQ name; triggers lazy load if needed.
+    /// L3-G4d: also triggers the zpkg load for the owning namespace so the
+    /// first `new Stack<int>()` on an imported generic class resolves.
+    pub fn resolve_type(&mut self, class_name: &str) -> Option<Arc<TypeDesc>> {
         if let Some(td) = self.type_registry.get(class_name) {
             return Some(Arc::clone(td));
         }
@@ -245,10 +163,33 @@ impl LazyLoader {
         None
     }
 
+    /// Resolve an "overflow" ConstStr index — one that falls past the main
+    /// module's string pool. Returns the merged lazy-pool string if available.
+    pub fn try_lookup_string(&self, absolute_idx: usize) -> Option<String> {
+        let rel = absolute_idx.checked_sub(self.main_pool_len)?;
+        self.string_pool.get(rel).cloned()
+    }
+
+    /// Returns all namespaces declared by lazy-loadable zpkgs (both already
+    /// loaded and not-yet-loaded). Used by `run_with_static_init` to discover
+    /// `<ns>.__static_init__` functions in imported stdlib modules.
+    ///
+    /// 2026-04-27 fix-static-field-access: 没这个 API 之前，VM 启动时只跑
+    /// 主模块的 __static_init__，导入 zpkg（如 z42.math）的常量字段（PI / E /
+    /// Tau）永远不被赋值 → `Math.PI` 返回 null。
+    pub fn declared_namespaces(&self) -> Vec<String> {
+        let mut all: Vec<String> = self.declared_zpkgs.values()
+            .flat_map(|c| c.namespaces.iter().cloned())
+            .collect();
+        all.sort();
+        all.dedup();
+        all
+    }
+
     /// Return zpkg file names from `declared_zpkgs` whose exported namespaces
     /// cover `ns` (exact match or a descendant like `Std.Collections.Generic`
     /// covering a query for `Std.Collections`).
-    fn candidates_for_namespace(&self, ns: &str) -> Vec<String> {
+    pub(crate) fn candidates_for_namespace(&self, ns: &str) -> Vec<String> {
         let ns_dot = format!("{ns}.");
         self.declared_zpkgs
             .iter()
@@ -260,7 +201,7 @@ impl LazyLoader {
             .collect()
     }
 
-    fn remaining_declared(&self) -> Vec<String> {
+    pub(crate) fn remaining_declared(&self) -> Vec<String> {
         self.declared_zpkgs
             .keys()
             .filter(|f| !self.loaded_zpkgs.contains(f.as_str()))
@@ -275,7 +216,7 @@ impl LazyLoader {
     /// Cycle-safe: inserts into `loaded_zpkgs` **before** loading the
     /// artifact, so a re-entrant call (A depends on B, B depends on A)
     /// returns immediately on the second visit.
-    fn load_zpkg_file(&mut self, file_name: &str) -> Result<()> {
+    pub(crate) fn load_zpkg_file(&mut self, file_name: &str) -> Result<()> {
         if self.loaded_zpkgs.contains(file_name) {
             return Ok(());
         }
@@ -357,7 +298,7 @@ fn remap_const_str(fn_: &mut Function, offset: usize) {
 /// E.g. "Std.IO.Console.WriteLine" → Some("Std.IO")
 ///      "Std.Assert.Equal"         → Some("Std")
 ///      "main"                     → None (no namespace)
-fn namespace_prefix(func_name: &str) -> Option<String> {
+pub(crate) fn namespace_prefix(func_name: &str) -> Option<String> {
     // A qualified function name has the form: <ns>.<Class>.<method>
     //                                         or <ns>.<func>
     // Strategy: strip the last two segments (Class.method), keep the rest.
