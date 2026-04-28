@@ -111,7 +111,9 @@
       "Bash(bash --version)",
       "Bash(xargs bash *)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/01_hello/source.z42 --emit ir -o /tmp/01.zasm)",
-      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/01_hello/source.z42 --emit ir -o src/runtime/tests/golden/01_hello/expected.zasm)"
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/01_hello/source.z42 --emit ir -o src/runtime/tests/golden/01_hello/expected.zasm)",
+      "Bash(/Users/d.s.qiu/Documents/codesigner-ui/z42/scripts/test-vm.sh interp *)",
+      "Bash(/Users/d.s.qiu/Documents/codesigner-ui/z42/scripts/test-cross-zpkg.sh)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/z42.core/src",

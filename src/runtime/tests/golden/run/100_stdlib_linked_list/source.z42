@@ -1,0 +1,51 @@
+using Std.IO;
+using Std.Collections;
+
+void Main() {
+    var lst = new LinkedList<int>();
+    Console.WriteLine(lst.Count());      // 0
+    Console.WriteLine(lst.IsEmpty());    // true
+
+    lst.AddLast(1);
+    lst.AddLast(2);
+    lst.AddLast(3);
+    lst.AddFirst(0);
+    Console.WriteLine(lst.Count());      // 4
+    Console.WriteLine(lst.First().Value); // 0
+    Console.WriteLine(lst.Last().Value);  // 3
+
+    int a = lst.RemoveFirst();
+    Console.WriteLine(a);                 // 0
+    int b = lst.RemoveLast();
+    Console.WriteLine(b);                 // 3
+    Console.WriteLine(lst.Count());      // 2
+
+    Console.WriteLine(lst.Contains(1));  // true
+    Console.WriteLine(lst.Contains(9));  // false
+
+    lst.AddLast(4);
+    lst.AddLast(5);
+    Console.WriteLine(lst.Remove(2));    // true (removes middle)
+    Console.WriteLine(lst.Count());      // 3
+    Console.WriteLine(lst.First().Value); // 1
+    Console.WriteLine(lst.Last().Value);  // 5
+    Console.WriteLine(lst.Remove(99));   // false
+
+    var node = lst.Find(4);
+    Console.WriteLine(node.Value);        // 4
+    Console.WriteLine(node.Next().Value); // 5
+    Console.WriteLine(node.Previous().Value); // 1
+
+    lst.Clear();
+    Console.WriteLine(lst.Count());      // 0
+    Console.WriteLine(lst.IsEmpty());    // true
+
+    var ls = new LinkedList<string>();
+    ls.AddLast("a");
+    ls.AddLast("b");
+    ls.AddLast("c");
+    Console.WriteLine(ls.RemoveFirst()); // a
+    Console.WriteLine(ls.RemoveFirst()); // b
+    Console.WriteLine(ls.Count());       // 1
+    Console.WriteLine(ls.First().Value); // c
+}
