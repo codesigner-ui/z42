@@ -92,6 +92,17 @@ src/compiler/z42.Compiler/Codegen/  ← 第 4 层 ✗ 不自动加 README
 | Rust `impl` 块 | 200 行（超出拆分为多个 impl 块或子模块） |
 | C# `class` / `record` | 200 行（超出提取辅助类型） |
 
+> **partial class 累计计入**：C# `partial class` / `partial struct` 的多个分部
+> 文件按"类型整体"判定 200 行硬限——把所有 `partial X` 文件中归属同一类型的
+> 行（除 using / namespace / `partial class X { ... }` 包裹之外的成员体积）
+> 累加。这条规则防止有人把"类型超 200 行"通过拆分散落到多个 partial 来绕过。
+>
+> 计算方式：`grep -c "^[[:space:]]*\(public\|private\|internal\|protected\|static\|sealed\|virtual\)" Type.*.cs` 给个粗略下限；精确计算把所有
+> `Type.*.cs` 的有效行（去掉头部 using/namespace/类壳）相加。
+>
+> 单文件 500 行硬限仍独立适用——partial 拆分主要解决"文件超限"，**不**解决
+> "类型超限"。两条限制分别约束。
+
 ### 执行方式
 
 - Claude 每次新增代码时，**主动检查**所在文件是否超出软限制
