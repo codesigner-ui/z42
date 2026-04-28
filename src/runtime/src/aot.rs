@@ -1,6 +1,21 @@
+//! AOT (ahead-of-time) backend — compiles z42 bytecode to standalone native
+//! binaries.
+//!
+//! **STATUS: STUB** — `run()` returns an error; no compilation logic exists.
+//!
+//! Planned implementation: LLVM via the `inkwell` crate. Tracked as
+//! `docs/roadmap.md` milestone **M9** (L3 phase, 📋 planned).
+//!
+//! Until M9 lands, attempting to execute a function with `ExecMode::Aot`
+//! returns the error below; the user-visible message in `vm.rs::Vm::run`
+//! reproduces the same milestone hint.
+
 use crate::metadata::{Function, Module};
 use anyhow::Result;
 
 pub fn run(_module: &Module, _func: &Function) -> Result<()> {
-    anyhow::bail!("AOT backend not yet implemented")
+    anyhow::bail!(
+        "AOT backend is not implemented yet (planned: roadmap M9 — L3 phase, \
+         LLVM/inkwell). Switch to `--mode interp` or `--mode jit`."
+    )
 }
