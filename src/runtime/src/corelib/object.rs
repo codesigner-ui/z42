@@ -1,4 +1,5 @@
-use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
+use crate::metadata::{NativeData, TypeDesc, Value};
+use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,7 +8,7 @@ use std::sync::Arc;
 
 /// Returns a `Std.Type` object with `__name` and `__fullName` derived from
 /// the runtime class of the argument.
-pub fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
+pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let class_name = match args.first() {
         Some(Value::Object(rc)) => rc.borrow().type_desc.name.clone(),
         Some(Value::Null) => bail!("__obj_get_type: null reference"),
@@ -31,16 +32,16 @@ pub fn builtin_obj_get_type(args: &[Value]) -> Result<Value> {
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
         type_param_constraints: vec![],
     });
-    Ok(Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ScriptObject {
+    Ok(ctx.heap().alloc_object(
         type_desc,
-        slots: vec![Value::Str(simple_name), Value::Str(class_name)],
-        native: NativeData::None,
-    }))))
+        vec![Value::Str(simple_name), Value::Str(class_name)],
+        NativeData::None,
+    ))
 }
 
 /// Reference equality: true iff both arguments point to the same heap allocation,
 /// or both are null.
-pub fn builtin_obj_ref_eq(args: &[Value]) -> Result<Value> {
+pub fn builtin_obj_ref_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let result = match (args.first(), args.get(1)) {
         (Some(Value::Object(a)), Some(Value::Object(b))) => std::rc::Rc::ptr_eq(a, b),
         (Some(Value::Null), Some(Value::Null))           => true,
@@ -51,7 +52,7 @@ pub fn builtin_obj_ref_eq(args: &[Value]) -> Result<Value> {
 }
 
 /// Identity-based hash code derived from the Rc pointer address.
-pub fn builtin_obj_hash_code(args: &[Value]) -> Result<Value> {
+pub fn builtin_obj_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Object(rc)) => {
             let addr = std::rc::Rc::as_ptr(rc) as i64;
@@ -64,7 +65,7 @@ pub fn builtin_obj_hash_code(args: &[Value]) -> Result<Value> {
 
 /// Value equality — defaults to reference equality.
 /// args: [this, other]
-pub fn builtin_obj_equals(args: &[Value]) -> Result<Value> {
+pub fn builtin_obj_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let result = match (args.first(), args.get(1)) {
         (Some(Value::Object(a)), Some(Value::Object(b))) => std::rc::Rc::ptr_eq(a, b),
         (Some(Value::Null), Some(Value::Null))           => true,
@@ -76,7 +77,7 @@ pub fn builtin_obj_equals(args: &[Value]) -> Result<Value> {
 
 /// Human-readable representation — returns the unqualified type name.
 /// args: [this]
-pub fn builtin_obj_to_str(args: &[Value]) -> Result<Value> {
+pub fn builtin_obj_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Object(rc)) => {
             let class_name = rc.borrow().type_desc.name.clone();

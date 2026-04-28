@@ -53,7 +53,7 @@ pub unsafe extern "C" fn jit_builtin(
     let arg_regs  = std::slice::from_raw_parts(args_ptr, argc);
     let args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
 
-    match crate::corelib::exec_builtin(name, &args) {
+    match crate::corelib::exec_builtin(vm_ctx_ref(ctx), name, &args) {
         Ok(v)  => { frame_ref.regs[dst as usize] = v; 0 }
         Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string())); 1 }
     }

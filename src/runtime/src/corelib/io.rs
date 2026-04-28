@@ -1,32 +1,33 @@
 use crate::metadata::Value;
+use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 use super::convert::value_to_str;
 
-pub fn builtin_println(args: &[Value]) -> Result<Value> {
+pub fn builtin_println(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let text = args.first().map(value_to_str).unwrap_or_default();
     println!("{}", text);
     Ok(Value::Null)
 }
 
-pub fn builtin_print(args: &[Value]) -> Result<Value> {
+pub fn builtin_print(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let text = args.first().map(value_to_str).unwrap_or_default();
     print!("{}", text);
     Ok(Value::Null)
 }
 
-pub fn builtin_readline(_args: &[Value]) -> Result<Value> {
+pub fn builtin_readline(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let mut line = String::new();
     std::io::stdin().read_line(&mut line)?;
     Ok(Value::Str(line.trim_end_matches(['\n', '\r']).to_string()))
 }
 
-pub fn builtin_concat(args: &[Value]) -> Result<Value> {
+pub fn builtin_concat(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = args.first().map(value_to_str).unwrap_or_default();
     let b = args.get(1).map(value_to_str).unwrap_or_default();
     Ok(Value::Str(format!("{}{}", a, b)))
 }
 
-pub fn builtin_len(args: &[Value]) -> Result<Value> {
+pub fn builtin_len(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Array(rc)) => Ok(Value::I64(rc.borrow().len() as i64)),
         Some(Value::Str(s))    => Ok(Value::I64(s.len() as i64)),
@@ -35,7 +36,7 @@ pub fn builtin_len(args: &[Value]) -> Result<Value> {
     }
 }
 
-pub fn builtin_contains(args: &[Value]) -> Result<Value> {
+pub fn builtin_contains(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Str(s)) => {
             use super::convert::require_str;

@@ -1,12 +1,18 @@
 use super::*;
-use crate::metadata::{FieldSlot, NativeData, ScriptObject, TypeDesc, Value};
+use crate::metadata::{NativeData, TypeDesc, Value};
+use crate::vm_context::VmContext;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 fn s(v: &str) -> Value { Value::Str(v.into()) }
 fn i(n: i64) -> Value { Value::I64(n) }
 fn i64(n: i64) -> Value { Value::I64(n) }
-fn obj(class_name: &str) -> Value {
+
+/// Build a fresh VmContext for each test (heap is fully isolated, fast to construct).
+fn ctx() -> VmContext { VmContext::new() }
+
+/// Allocate a minimal Object with the given class name through the heap interface.
+fn obj(ctx: &VmContext, class_name: &str) -> Value {
     let type_desc = Arc::new(TypeDesc {
         name: class_name.to_string(),
         base_name: None,
@@ -16,110 +22,118 @@ fn obj(class_name: &str) -> Value {
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
         type_param_constraints: vec![],
     });
-    Value::Object(std::rc::Rc::new(std::cell::RefCell::new(ScriptObject {
-        type_desc,
-        slots: Vec::new(),
-        native: NativeData::None,
-    })))
+    ctx.heap().alloc_object(type_desc, Vec::new(), NativeData::None)
 }
 
 // ── __len ─────────────────────────────────────────────────────────────────────
 
 #[test]
 fn len_of_string_is_utf8_bytes() {
-    assert_eq!(exec_builtin("__len", &[s("hello")]).unwrap(), i64(5));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__len", &[s("hello")]).unwrap(), i64(5));
 }
 
 #[test]
 fn len_of_empty_string() {
-    assert_eq!(exec_builtin("__len", &[s("")]).unwrap(), i64(0));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__len", &[s("")]).unwrap(), i64(0));
 }
 
 #[test]
 fn len_missing_arg_errors() {
-    assert!(exec_builtin("__len", &[]).is_err());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__len", &[]).is_err());
 }
 
 // ── __str_char_at (new in simplify-string-stdlib 2026-04-24) ──────────────────
 
 #[test]
 fn char_at_returns_nth_scalar() {
-    assert_eq!(exec_builtin("__str_char_at", &[s("hello"), i(1)]).unwrap(), Value::Char('e'));
-    assert_eq!(exec_builtin("__str_char_at", &[s("hello"), i(0)]).unwrap(), Value::Char('h'));
-    assert_eq!(exec_builtin("__str_char_at", &[s("hello"), i(4)]).unwrap(), Value::Char('o'));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__str_char_at", &[s("hello"), i(1)]).unwrap(), Value::Char('e'));
+    assert_eq!(exec_builtin(&c, "__str_char_at", &[s("hello"), i(0)]).unwrap(), Value::Char('h'));
+    assert_eq!(exec_builtin(&c, "__str_char_at", &[s("hello"), i(4)]).unwrap(), Value::Char('o'));
 }
 
 #[test]
 fn char_at_out_of_range_errors() {
-    assert!(exec_builtin("__str_char_at", &[s("abc"), i(5)]).is_err());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__str_char_at", &[s("abc"), i(5)]).is_err());
 }
 
 #[test]
 fn char_at_unicode_scalar_index() {
     // "α" is one scalar but 2 UTF-8 bytes; script-level API treats it as one unit.
-    assert_eq!(exec_builtin("__str_char_at", &[s("αβγ"), i(1)]).unwrap(), Value::Char('β'));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__str_char_at", &[s("αβγ"), i(1)]).unwrap(), Value::Char('β'));
 }
 
 // ── __str_from_chars (new in simplify-string-stdlib 2026-04-24) ──────────────
 
 #[test]
 fn from_chars_builds_string() {
-    use std::{cell::RefCell, rc::Rc};
-    let arr = Value::Array(Rc::new(RefCell::new(vec![
+    let c = ctx();
+    let arr = c.heap().alloc_array(vec![
         Value::Char('h'), Value::Char('i'),
-    ])));
-    assert_eq!(exec_builtin("__str_from_chars", &[arr]).unwrap(), s("hi"));
+    ]);
+    assert_eq!(exec_builtin(&c, "__str_from_chars", &[arr]).unwrap(), s("hi"));
 }
 
 #[test]
 fn from_chars_empty_array() {
-    use std::{cell::RefCell, rc::Rc};
-    let arr = Value::Array(Rc::new(RefCell::new(vec![])));
-    assert_eq!(exec_builtin("__str_from_chars", &[arr]).unwrap(), s(""));
+    let c = ctx();
+    let arr = c.heap().alloc_array(vec![]);
+    assert_eq!(exec_builtin(&c, "__str_from_chars", &[arr]).unwrap(), s(""));
 }
 
 // ── __char_is_whitespace / __char_to_lower / __char_to_upper ─────────────────
 
 #[test]
 fn char_is_whitespace_ascii() {
-    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char(' ')]).unwrap(), Value::Bool(true));
-    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char('\t')]).unwrap(), Value::Bool(true));
-    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char('\n')]).unwrap(), Value::Bool(true));
-    assert_eq!(exec_builtin("__char_is_whitespace", &[Value::Char('a')]).unwrap(), Value::Bool(false));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__char_is_whitespace", &[Value::Char(' ')]).unwrap(), Value::Bool(true));
+    assert_eq!(exec_builtin(&c, "__char_is_whitespace", &[Value::Char('\t')]).unwrap(), Value::Bool(true));
+    assert_eq!(exec_builtin(&c, "__char_is_whitespace", &[Value::Char('\n')]).unwrap(), Value::Bool(true));
+    assert_eq!(exec_builtin(&c, "__char_is_whitespace", &[Value::Char('a')]).unwrap(), Value::Bool(false));
 }
 
 #[test]
 fn char_to_lower_ascii_only() {
-    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('A')]).unwrap(), Value::Char('a'));
-    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('Z')]).unwrap(), Value::Char('z'));
-    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('1')]).unwrap(), Value::Char('1'));
-    assert_eq!(exec_builtin("__char_to_lower", &[Value::Char('a')]).unwrap(), Value::Char('a'));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__char_to_lower", &[Value::Char('A')]).unwrap(), Value::Char('a'));
+    assert_eq!(exec_builtin(&c, "__char_to_lower", &[Value::Char('Z')]).unwrap(), Value::Char('z'));
+    assert_eq!(exec_builtin(&c, "__char_to_lower", &[Value::Char('1')]).unwrap(), Value::Char('1'));
+    assert_eq!(exec_builtin(&c, "__char_to_lower", &[Value::Char('a')]).unwrap(), Value::Char('a'));
 }
 
 #[test]
 fn char_to_upper_ascii_only() {
-    assert_eq!(exec_builtin("__char_to_upper", &[Value::Char('a')]).unwrap(), Value::Char('A'));
-    assert_eq!(exec_builtin("__char_to_upper", &[Value::Char('z')]).unwrap(), Value::Char('Z'));
-    assert_eq!(exec_builtin("__char_to_upper", &[Value::Char('!')]).unwrap(), Value::Char('!'));
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__char_to_upper", &[Value::Char('a')]).unwrap(), Value::Char('A'));
+    assert_eq!(exec_builtin(&c, "__char_to_upper", &[Value::Char('z')]).unwrap(), Value::Char('Z'));
+    assert_eq!(exec_builtin(&c, "__char_to_upper", &[Value::Char('!')]).unwrap(), Value::Char('!'));
 }
 
 // ── dispatch table coverage ───────────────────────────────────────────────────
 
 #[test]
 fn unknown_builtin_errors() {
-    assert!(exec_builtin("__nonexistent", &[]).is_err());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__nonexistent", &[]).is_err());
 }
 
 #[test]
 fn println_via_dispatch_table() {
-    assert!(exec_builtin("__println", &[s("test")]).is_ok());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__println", &[s("test")]).is_ok());
 }
 
 // ── __obj_get_type ────────────────────────────────────────────────────────────
 
 #[test]
 fn obj_get_type_returns_type_object() {
-    let result = exec_builtin("__obj_get_type", &[obj("Foo")]).unwrap();
+    let c = ctx();
+    let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "Foo")]).unwrap();
     match result {
         Value::Object(rc) => assert_eq!(rc.borrow().type_desc.name, "Std.Type"),
         other => panic!("expected Object, got {:?}", other),
@@ -128,7 +142,8 @@ fn obj_get_type_returns_type_object() {
 
 #[test]
 fn obj_get_type_simple_name_no_namespace() {
-    let result = exec_builtin("__obj_get_type", &[obj("Foo")]).unwrap();
+    let c = ctx();
+    let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "Foo")]).unwrap();
     let Value::Object(rc) = result else { panic!("expected Object") };
     let borrow = rc.borrow();
     assert_eq!(borrow.slots[0], Value::Str("Foo".into()));
@@ -137,7 +152,8 @@ fn obj_get_type_simple_name_no_namespace() {
 
 #[test]
 fn obj_get_type_namespaced_class_splits_name() {
-    let result = exec_builtin("__obj_get_type", &[obj("geometry.Circle")]).unwrap();
+    let c = ctx();
+    let result = exec_builtin(&c, "__obj_get_type", &[obj(&c, "geometry.Circle")]).unwrap();
     let Value::Object(rc) = result else { panic!("expected Object") };
     let borrow = rc.borrow();
     assert_eq!(borrow.slots[0], Value::Str("Circle".into()));
@@ -146,49 +162,55 @@ fn obj_get_type_namespaced_class_splits_name() {
 
 #[test]
 fn obj_get_type_null_errors() {
-    assert!(exec_builtin("__obj_get_type", &[Value::Null]).is_err());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__obj_get_type", &[Value::Null]).is_err());
 }
 
 #[test]
 fn obj_get_type_non_object_errors() {
-    assert!(exec_builtin("__obj_get_type", &[i(42)]).is_err());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__obj_get_type", &[i(42)]).is_err());
 }
 
 // ── __obj_ref_eq ──────────────────────────────────────────────────────────────
 
 #[test]
 fn obj_ref_eq_same_rc_is_true() {
-    let a = obj("Foo");
+    let c = ctx();
+    let a = obj(&c, "Foo");
     assert_eq!(
-        exec_builtin("__obj_ref_eq", &[a.clone(), a]).unwrap(),
+        exec_builtin(&c, "__obj_ref_eq", &[a.clone(), a]).unwrap(),
         Value::Bool(true)
     );
 }
 
 #[test]
 fn obj_ref_eq_different_allocs_is_false() {
+    let c = ctx();
     assert_eq!(
-        exec_builtin("__obj_ref_eq", &[obj("Foo"), obj("Foo")]).unwrap(),
+        exec_builtin(&c, "__obj_ref_eq", &[obj(&c, "Foo"), obj(&c, "Foo")]).unwrap(),
         Value::Bool(false)
     );
 }
 
 #[test]
 fn obj_ref_eq_both_null_is_true() {
+    let c = ctx();
     assert_eq!(
-        exec_builtin("__obj_ref_eq", &[Value::Null, Value::Null]).unwrap(),
+        exec_builtin(&c, "__obj_ref_eq", &[Value::Null, Value::Null]).unwrap(),
         Value::Bool(true)
     );
 }
 
 #[test]
 fn obj_ref_eq_one_null_is_false() {
+    let c = ctx();
     assert_eq!(
-        exec_builtin("__obj_ref_eq", &[obj("Foo"), Value::Null]).unwrap(),
+        exec_builtin(&c, "__obj_ref_eq", &[obj(&c, "Foo"), Value::Null]).unwrap(),
         Value::Bool(false)
     );
     assert_eq!(
-        exec_builtin("__obj_ref_eq", &[Value::Null, obj("Foo")]).unwrap(),
+        exec_builtin(&c, "__obj_ref_eq", &[Value::Null, obj(&c, "Foo")]).unwrap(),
         Value::Bool(false)
     );
 }
@@ -197,27 +219,31 @@ fn obj_ref_eq_one_null_is_false() {
 
 #[test]
 fn obj_hash_code_returns_i32() {
-    let result = exec_builtin("__obj_hash_code", &[obj("Foo")]).unwrap();
+    let c = ctx();
+    let result = exec_builtin(&c, "__obj_hash_code", &[obj(&c, "Foo")]).unwrap();
     assert!(matches!(result, Value::I64(_)));
 }
 
 #[test]
 fn obj_hash_code_same_object_is_consistent() {
-    let a = obj("Foo");
-    let h1 = exec_builtin("__obj_hash_code", &[a.clone()]).unwrap();
-    let h2 = exec_builtin("__obj_hash_code", &[a]).unwrap();
+    let c = ctx();
+    let a = obj(&c, "Foo");
+    let h1 = exec_builtin(&c, "__obj_hash_code", &[a.clone()]).unwrap();
+    let h2 = exec_builtin(&c, "__obj_hash_code", &[a]).unwrap();
     assert_eq!(h1, h2);
 }
 
 #[test]
 fn obj_hash_code_null_is_zero() {
+    let c = ctx();
     assert_eq!(
-        exec_builtin("__obj_hash_code", &[Value::Null]).unwrap(),
+        exec_builtin(&c, "__obj_hash_code", &[Value::Null]).unwrap(),
         Value::I64(0)
     );
 }
 
 #[test]
 fn obj_hash_code_non_object_errors() {
-    assert!(exec_builtin("__obj_hash_code", &[i(1)]).is_err());
+    let c = ctx();
+    assert!(exec_builtin(&c, "__obj_hash_code", &[i(1)]).is_err());
 }

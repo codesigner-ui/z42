@@ -34,12 +34,19 @@ pub mod object;
 pub mod char;
 
 use crate::metadata::Value;
+use crate::vm_context::VmContext;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
 /// Function pointer type for all native builtins.
-pub type NativeFn = fn(&[Value]) -> Result<Value>;
+///
+/// Carries `&VmContext` so builtins can access the GC heap (e.g. allocate
+/// `Std.Type` objects via `ctx.heap().alloc_object(...)`) and other runtime
+/// state. **2026-04-29 extend-native-fn-signature** added `&VmContext` —
+/// previously `fn(&[Value]) -> Result<Value>`, which forced corelib allocation
+/// callsites to bypass the heap interface.
+pub type NativeFn = fn(&VmContext, &[Value]) -> Result<Value>;
 
 static DISPATCH: OnceLock<HashMap<&'static str, NativeFn>> = OnceLock::new();
 
@@ -146,11 +153,11 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
 }
 
 /// Stable public entry point — called by the interpreter and JIT `jit_builtin`.
-pub fn exec_builtin(name: &str, args: &[Value]) -> Result<Value> {
+pub fn exec_builtin(ctx: &VmContext, name: &str, args: &[Value]) -> Result<Value> {
     dispatch_table()
         .get(name)
         .ok_or_else(|| anyhow::anyhow!("unknown builtin `{name}`"))?
-        (args)
+        (ctx, args)
 }
 
 #[cfg(test)]

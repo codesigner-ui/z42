@@ -130,6 +130,7 @@ pub unsafe extern "C" fn jit_to_str(
             }
         }
         match crate::corelib::exec_builtin(
+                vm_ctx_ref(ctx),
                 crate::metadata::well_known_names::BUILTIN_OBJ_TO_STR,
                 &[val.clone()]) {
             Ok(v) => { (*frame).regs[dst as usize] = Value::Str(match v { Value::Str(s) => s, ref o => value_to_str(o) }); }

@@ -1,4 +1,5 @@
 use crate::metadata::Value;
+use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 
 /// Convert a Value to its string representation.
@@ -49,22 +50,22 @@ pub fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
 
 // ── Parse / convert builtins ─────────────────────────────────────────────────
 
-pub fn builtin_long_parse(args: &[Value]) -> Result<Value> {
+pub fn builtin_long_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = require_str(args, 0, "long.Parse")?;
     s.trim().parse::<i64>().map(Value::I64)
         .map_err(|_| anyhow::anyhow!("long.Parse: could not parse {:?} as long", s))
 }
-pub fn builtin_int_parse(args: &[Value]) -> Result<Value> {
+pub fn builtin_int_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = require_str(args, 0, "int.Parse")?;
     s.trim().parse::<i64>().map(Value::I64)
         .map_err(|_| anyhow::anyhow!("int.Parse: could not parse {:?} as int", s))
 }
-pub fn builtin_double_parse(args: &[Value]) -> Result<Value> {
+pub fn builtin_double_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = require_str(args, 0, "double.Parse")?;
     s.trim().parse::<f64>().map(Value::F64)
         .map_err(|_| anyhow::anyhow!("double.Parse: could not parse {:?} as double", s))
 }
-pub fn builtin_to_str(args: &[Value]) -> Result<Value> {
+pub fn builtin_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Str(args.first().map(value_to_str).unwrap_or_default()))
 }
 
@@ -99,16 +100,16 @@ fn require_char(args: &[Value], idx: usize, ctx: &str) -> Result<char> {
 // 2026-04-27 wave2-compare-to-script: builtin_int_compare_to removed.
 // `Std.int.CompareTo` / `Std.long.CompareTo` 现在是脚本（用 IR `<`/`>`）。
 
-pub fn builtin_int_equals(args: &[Value]) -> Result<Value> {
+pub fn builtin_int_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_i64(args, 0, "int.Equals")?;
     let b = require_i64(args, 1, "int.Equals")?;
     Ok(Value::Bool(a == b))
 }
-pub fn builtin_int_hash_code(args: &[Value]) -> Result<Value> {
+pub fn builtin_int_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_i64(args, 0, "int.GetHashCode")?;
     Ok(Value::I64(a))  // identity hash for integers
 }
-pub fn builtin_int_to_string(args: &[Value]) -> Result<Value> {
+pub fn builtin_int_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_i64(args, 0, "int.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
@@ -116,16 +117,16 @@ pub fn builtin_int_to_string(args: &[Value]) -> Result<Value> {
 // 2026-04-27 wave2-compare-to-script: builtin_double_compare_to removed.
 // `Std.double.CompareTo` / `Std.float.CompareTo` 现在是脚本（NaN → 0 由 `<`/`>` 自然返回 false 实现）。
 
-pub fn builtin_double_equals(args: &[Value]) -> Result<Value> {
+pub fn builtin_double_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_f64(args, 0, "double.Equals")?;
     let b = require_f64(args, 1, "double.Equals")?;
     Ok(Value::Bool(a == b))
 }
-pub fn builtin_double_hash_code(args: &[Value]) -> Result<Value> {
+pub fn builtin_double_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_f64(args, 0, "double.GetHashCode")?;
     Ok(Value::I64(a.to_bits() as i64))
 }
-pub fn builtin_double_to_string(args: &[Value]) -> Result<Value> {
+pub fn builtin_double_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_f64(args, 0, "double.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
@@ -136,21 +137,21 @@ pub fn builtin_double_to_string(args: &[Value]) -> Result<Value> {
 // 2026-04-27 wave2-compare-to-script: builtin_char_compare_to removed.
 // `Std.char.CompareTo` 现在是脚本（codepoint `<`/`>` 比较）。
 
-pub fn builtin_char_equals(args: &[Value]) -> Result<Value> {
+pub fn builtin_char_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_char(args, 0, "char.Equals")?;
     let b = require_char(args, 1, "char.Equals")?;
     Ok(Value::Bool(a == b))
 }
-pub fn builtin_char_hash_code(args: &[Value]) -> Result<Value> {
+pub fn builtin_char_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_char(args, 0, "char.GetHashCode")?;
     Ok(Value::I64(a as i64))
 }
-pub fn builtin_char_to_string(args: &[Value]) -> Result<Value> {
+pub fn builtin_char_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_char(args, 0, "char.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
-pub fn builtin_str_compare_to(args: &[Value]) -> Result<Value> {
+pub fn builtin_str_compare_to(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let a = require_str(args, 0, "string.CompareTo")?;
     let b = require_str(args, 1, "string.CompareTo")?;
     Ok(Value::I64(a.cmp(&b) as i64))

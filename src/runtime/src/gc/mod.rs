@@ -12,7 +12,7 @@
 //! | Phase | 内容 |
 //! |-------|------|
 //! | 1（已落地）| trait + RcMagrGC + 全嵌入接口（host-side） |
-//! | 1.5（计划）| corelib NativeFn 签名扩展 + 剩余 Rc::new 迁移 |
+//! | 1.5（已落地）| corelib NativeFn 签名带 `&VmContext` + 剩余 Rc::new 迁移 |
 //! | 2（计划）| 环检测真实实现（Bacon-Rajan / dumpster 2.0） |
 //! | 3（计划）| Mark-Sweep + RootScope 真实 trace + write_barrier + GcRef<T> |
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |

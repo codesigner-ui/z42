@@ -397,16 +397,19 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 **已知限制（Phase 1 RC 模式）**：
 
 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
-2. **corelib 直构未迁移**：`corelib/object.rs:34`（`__obj_get_type`）、
-   `corelib/fs.rs:51`（`__env_args`）、`corelib/tests.rs` 仍直接 `Rc::new(RefCell::new(...))`
-   → Phase 1.5 配合 NativeFn 签名扩展一并处理
-3. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅累加 `finalizers_pending`
+2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅累加 `finalizers_pending`
    计数 → Phase 3 mark-sweep 调度真实触发
-4. **`take_snapshot` / `iterate_live_objects` 仅覆盖 pinned roots 可达对象**：
+3. **`take_snapshot` / `iterate_live_objects` 仅覆盖 pinned roots 可达对象**：
    RC 无全堆枚举 → snapshot 标记 `coverage = ReachableFromPinnedRoots`，Phase 3
    trace 后自动升级 `Full`
-5. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
-6. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+4. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
+5. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+
+> **2026-04-29 extend-native-fn-signature（Phase 1.5 完成）**：原限制"corelib 直构未迁移"
+> 已解决 —— `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55
+> 个 builtin 走 ctx 传参；`__obj_get_type` / `__env_args` 走 `ctx.heap().alloc_*(...)`。
+> 全代码库无任何 `Rc::new(RefCell::new(...))` 直构，仅 `gc/rc_heap.rs` 内部权威实现保留
+> （即所有分配都通过 GC 接口的唯一物理收口点）。
 
 > **2026-04-29 remove-dead-value-map**：原 Phase 1 限制 #3（`alloc_map()` 占位）
 > 与 `Value::Map` variant 一并删除 —— 自从 2026-04-26 extern-audit-wave0 把
@@ -419,7 +422,7 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 |-------|------|------|
 | **Phase 1** | trait MagrGC 接口 + RcMagrGC 实现 + 6 个脚本驱动 callsite 收口 | ✅ 2026-04-29 add-magrgc-heap-interface |
 | **Phase 1 (扩展)** | trait 全面对齐 MMTk porting contract（10 能力组 ~30 方法）+ host-side 嵌入接口完整实现 | ✅ 2026-04-29 expand-magrgc-mmtk-interface |
-| **Phase 1.5** | corelib `NativeFn` 签名扩展带 `&VmContext` + corelib 内剩余 Rc::new 迁移 | 📋 待立项 |
+| **Phase 1.5** | corelib `NativeFn` 签名扩展带 `&VmContext` + corelib 内剩余 Rc::new 迁移 | ✅ 2026-04-29 extend-native-fn-signature |
 | **Phase 2** | 环检测真实实现（dumpster 2.0 集成 / 自研 Bacon-Rajan 二选一） | 📋 待立项 |
 | **Phase 3** | Mark-Sweep + RootScope 真实 trace + 真实 write_barrier + Cranelift stack maps；`Value::Array/Object` 改用 `GcRef<T>`；finalizer 真实调度；snapshot 升级 Full coverage | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |

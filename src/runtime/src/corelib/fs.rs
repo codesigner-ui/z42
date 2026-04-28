@@ -1,21 +1,22 @@
 use crate::metadata::Value;
+use crate::vm_context::VmContext;
 use anyhow::Result;
 use super::convert::require_str;
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 
-pub fn builtin_file_read_text(args: &[Value]) -> Result<Value> {
+pub fn builtin_file_read_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path = require_str(args, 0, "__file_read_text")?;
     let text = std::fs::read_to_string(path.as_str())?;
     Ok(Value::Str(text))
 }
-pub fn builtin_file_write_text(args: &[Value]) -> Result<Value> {
+pub fn builtin_file_write_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path    = require_str(args, 0, "__file_write_text")?;
     let content = require_str(args, 1, "__file_write_text")?;
     std::fs::write(path.as_str(), content.as_str())?;
     Ok(Value::Null)
 }
-pub fn builtin_file_append_text(args: &[Value]) -> Result<Value> {
+pub fn builtin_file_append_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     use std::io::Write;
     let path    = require_str(args, 0, "__file_append_text")?;
     let content = require_str(args, 1, "__file_append_text")?;
@@ -23,11 +24,11 @@ pub fn builtin_file_append_text(args: &[Value]) -> Result<Value> {
     file.write_all(content.as_bytes())?;
     Ok(Value::Null)
 }
-pub fn builtin_file_exists(args: &[Value]) -> Result<Value> {
+pub fn builtin_file_exists(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path = require_str(args, 0, "__file_exists")?;
     Ok(Value::Bool(std::path::Path::new(path.as_str()).exists()))
 }
-pub fn builtin_file_delete(args: &[Value]) -> Result<Value> {
+pub fn builtin_file_delete(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let path = require_str(args, 0, "__file_delete")?;
     std::fs::remove_file(path.as_str())?;
     Ok(Value::Null)
@@ -39,28 +40,27 @@ pub fn builtin_file_delete(args: &[Value]) -> Result<Value> {
 
 // ── Environment / Process ─────────────────────────────────────────────────────
 
-pub fn builtin_env_get(args: &[Value]) -> Result<Value> {
+pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let key = require_str(args, 0, "__env_get")?;
     Ok(match std::env::var(key.as_str()) {
         Ok(v)  => Value::Str(v),
         Err(_) => Value::Null,
     })
 }
-pub fn builtin_env_args(_args: &[Value]) -> Result<Value> {
+pub fn builtin_env_args(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let list: Vec<Value> = std::env::args().map(Value::Str).collect();
-    Ok(Value::Array(std::rc::Rc::new(std::cell::RefCell::new(list))))
+    Ok(ctx.heap().alloc_array(list))
 }
-pub fn builtin_process_exit(args: &[Value]) -> Result<Value> {
+pub fn builtin_process_exit(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let code = match args.first() {
         Some(Value::I64(n)) => *n as i32,
         _ => 0,
     };
     std::process::exit(code);
 }
-pub fn builtin_time_now_ms(_args: &[Value]) -> Result<Value> {
-    let ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0);
+pub fn builtin_time_now_ms(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ms = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64).unwrap_or(0);
     Ok(Value::I64(ms))
 }

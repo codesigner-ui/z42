@@ -181,7 +181,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
 
         Instruction::Builtin { dst, name, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;
-            let result = crate::corelib::exec_builtin(name, &arg_vals)?;
+            let result = crate::corelib::exec_builtin(ctx, name, &arg_vals)?;
             frame.set(*dst, result);
         }
 

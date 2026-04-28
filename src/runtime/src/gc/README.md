@@ -63,11 +63,15 @@ let snap = ctx.heap().take_snapshot();
 **已知限制（Phase 1 RC 模式）**：
 
 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
-2. **corelib 内 `Rc::new` 直构未迁移**：`corelib/object.rs:34`、`corelib/fs.rs:51`、`corelib/tests.rs` 的 3 处 → Phase 1.5 配合 NativeFn 签名扩展处理
-3. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅记录到 `finalizers_pending` 计数 → Phase 3 mark-sweep 调度真实触发
-4. **`take_snapshot` / `iterate_live_objects` 仅覆盖 reachable from pinned roots**：RC 无全堆枚举能力 → Phase 3 trace 后 `coverage` 自动升级 `Full`
-5. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
-6. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+2. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册仅记录到 `finalizers_pending` 计数 → Phase 3 mark-sweep 调度真实触发
+3. **`take_snapshot` / `iterate_live_objects` 仅覆盖 reachable from pinned roots**：RC 无全堆枚举能力 → Phase 3 trace 后 `coverage` 自动升级 `Full`
+4. **`used_bytes` 单调递增**：RC drop 不可观察 → Phase 3 trace 精确化
+5. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3 可拒绝
+
+> **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
+> `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin
+> 走 ctx 传参；`__obj_get_type` / `__env_args` 走 `ctx.heap().alloc_*(...)`。
+> 全代码库无任何 `Rc::new(RefCell::new(...))` 直构，仅 `gc/rc_heap.rs` 内部权威实现保留。
 
 ## 命名
 
