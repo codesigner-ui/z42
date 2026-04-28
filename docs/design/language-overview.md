@@ -3,6 +3,11 @@
 > 本文档是 **L1（Bootstrap）** 阶段的语法实现参考，面向编译器开发者。
 > 语言设计决策（feature 层面）见 [`docs/features.md`](../features.md)。
 > 演进计划和实现进度见 [`docs/roadmap.md`](../roadmap.md)。
+>
+> **SoT 关系**：本文档是语法的**叙事性说明**（user-facing prose），机器可读
+> 的权威定义在 [`grammar.peg`](grammar.peg)；`Z42.Tests.GrammarSyncTests` 强制
+> 校验两者一致。改动语法时按 `grammar.peg` → 本文档 → 跑 `dotnet test
+> --filter GrammarSync` 的顺序，避免漂移。
 
 ---
 

@@ -1,5 +1,20 @@
 # z42 Phase 1 Grammar (PEG notation)
 #
+# === Source of Truth (SoT) ===
+#
+# This file is the **machine-readable SoT** for z42 syntax. The C# parser
+# (`z42.Syntax.Parser.*`) must accept exactly the language defined here;
+# `Z42.Tests.GrammarSyncTests` enforces parity by cross-checking this file
+# against the parser's keyword/symbol tables.
+#
+# The narrative companion (intended for language users) is
+# `docs/design/language-overview.md`. When syntax changes:
+#   1. Update this file FIRST (the rule is the contract)
+#   2. Then update language-overview.md to keep the prose in sync
+#   3. Run `dotnet test --filter GrammarSync` to catch any drift
+#
+# === PEG Notation ===
+#
 # Conventions:
 #   rule = expr         definition
 #   /                   ordered choice (try left first)
