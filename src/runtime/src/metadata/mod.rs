@@ -9,6 +9,7 @@
 
 pub mod types;
 pub mod bytecode;
+mod bytecode_serde;
 pub mod project;
 pub mod formats;
 pub mod zbc_reader;
