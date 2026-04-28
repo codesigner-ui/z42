@@ -1,0 +1,16 @@
+{
+  "abi_version": 1,
+  "module": "future",
+  "version": "0.2.0",
+  "library_name": "future",
+  "types": [
+    {
+      "name": "Forward",
+      "size": 8,
+      "align": 8,
+      "extra_metadata": "schema-unknown field, must be tolerated for forward compatibility",
+      "future_capabilities": ["streaming", "async-method"]
+    }
+  ],
+  "module_extra": { "tagline": "demo of forward-compatible additionalProperties" }
+}

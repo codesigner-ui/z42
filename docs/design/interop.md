@@ -493,7 +493,7 @@ Backends:
 
 Machine-readable native library metadata, **published alongside the `.so` / `.dylib`** (analogous to Rust `.rmeta` or C# XML doc + metadata).
 
-**Format**: JSON during development, FlatBuffer for production distribution (decision §12).
+**Format**: JSON during development, FlatBuffer for production distribution (decision §12). The canonical v1 schema lives at [`docs/design/manifest-schema.json`](manifest-schema.json) (JSON Schema Draft 2020-12).
 
 ```json
 {
@@ -540,18 +540,19 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 
 ## §10 Roadmap
 
-| Stage | Content | Depends on |
-|---|---|---|
-| **L2.M8** | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp) | New IR opcode `CallNative` |
-| **L2.M9** | Tier 1 PoC: handwritten `numz42-c` demo | M8 |
-| **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | M8 |
-| **L2.M11** | `#[derive(Z42Type)]` + `#[z42::methods]` + `numz42-rs` PoC | M10 |
-| **L2.M12** | `pinned` block syntax + String/Array borrow | type system |
-| **L2.M13** | `.z42abi` manifest format + compiler reader | M11 |
-| **L2.M14** | Source gen: `import` auto-syncs manifest + compile-time validation | M13 |
-| **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |
-| **L3.M16** | JIT/AOT direct vtable call emission (bypass libffi) | JIT backend |
-| **L3.M17** | Cycle collector ↔ native `Z42Traceable` integration | cycle GC |
+| Stage | Content | Depends on | Status |
+|---|---|---|---|
+| **C1** (`design-interop-interfaces`) | All Tier 1/2/3 public surfaces locked: C header + 3 Rust crates + manifest schema + 4 new IR opcodes (declared, trap on execution) + Z0905–Z0910 reserved | — | ✅ 2026-04-29 |
+| **L2.M8** (C2) | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp); fills `CallNative` runtime behaviour | C1 |  |
+| **L2.M9** (C2) | Tier 1 PoC: handwritten `numz42-c` demo | M8 |  |
+| **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | C1 | ✅ scaffold landed in C1 |
+| **L2.M11** (C3 `impl-tier2-rust-macros`) | `#[derive(Z42Type)]` + `#[z42::methods]` + `numz42-rs` PoC fills macro bodies | M10 |  |
+| **L2.M12** (C4 `impl-pinned-block`) | `pinned` block syntax + String/Array borrow; fills `PinPtr`/`UnpinPtr` runtime | type system |  |
+| **L2.M13** (C5 first half) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
+| **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
+| **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |
+| **L3.M16** | JIT/AOT direct vtable call emission (bypass libffi) | JIT backend |  |
+| **L3.M17** | Cycle collector ↔ native `Z42Traceable` integration | cycle GC |  |
 
 ---
 

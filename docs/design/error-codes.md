@@ -60,6 +60,34 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 
 ---
 
+## Z09xx — Native Interop (FFI)
+
+由 spec [`design-interop-interfaces`](../../spec/changes/design-interop-interfaces/) (C1) 占位；具体语义在 C2–C5 spec 中钉死。Z0901–Z0904 用于 L1 `[Native]` dispatch（已启用）；Z0905–Z0910 是 L2+ 三层 ABI 预留段。
+
+### Z0901–Z0904（L1 `[Native]` 已启用）
+
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| Z0901 | UnknownNativeName                | `[Native("__name")]` 中的 `__name` 不在 VM `dispatch_table` 内 |
+| Z0902 | NativeArityMismatch              | `extern` 方法参数数量与 `dispatch_table` 注册项不一致 |
+| Z0903 | ExternMissingNativeAttribute     | `extern` 方法缺少 `[Native]` 标注 |
+| Z0904 | NativeAttributeOnNonExtern       | `[Native]` 标注用在非 `extern` 方法上 |
+
+### Z0905–Z0910（L2+ 预留，C1 占位）
+
+| Code  | Title                            | Reserved for spec | When (planned) |
+|-------|----------------------------------|-------------------|----------------|
+| Z0905 | NativeTypeRegistrationFailure    | C2 (`impl-tier1-c-abi`) | `z42_register_type` 失败：descriptor 无效 / 名字冲突 |
+| Z0906 | AbiVersionMismatch               | C2 (`impl-tier1-c-abi`) | `Z42TypeDescriptor.abi_version` 与 VM 期望版本不一致 |
+| Z0907 | NativeMethodSignatureMismatch    | C3/C5             | manifest 声明的方法签名与用户 `extern class` 声明不一致 |
+| Z0908 | PinnedBlockConstraintViolation   | C4 (`impl-pinned-block`) | `pinned` 块内试图修改 / 重分配被借出的 String/Array |
+| Z0909 | ManifestParseError               | C5 (`impl-source-generator`) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
+| Z0910 | NativeLibraryLoadFailure         | C2/C5             | dlopen / LoadLibrary 失败：库不存在 / 不兼容架构 |
+
+> **占位约定**：本 spec 不实现 Z0905–Z0910 的具体抛出点；C1 验证只确保编号已注册、不与现有 Z0xxx 冲突。
+
+---
+
 ## E06xx — Package / Import Resolution（strict-using-resolution，2026-04-28）
 
 由 TypeChecker 在导入符号过滤后报出（参见 [namespace-using.md](namespace-using.md#strict-using-resolution-2026-04-28)）。

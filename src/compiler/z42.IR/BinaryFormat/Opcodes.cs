@@ -46,9 +46,11 @@ public static class Opcodes
     public const byte Throw  = 0x44;
 
     // ── Calls (0x50–0x5F) ─────────────────────────────────────────────────────
-    public const byte Call    = 0x50;  // static call
-    public const byte Builtin = 0x51;  // built-in function call
-    public const byte VCall   = 0x52;  // virtual dispatch
+    public const byte Call             = 0x50;  // static call
+    public const byte Builtin          = 0x51;  // built-in function call
+    public const byte VCall            = 0x52;  // virtual dispatch
+    public const byte CallNative       = 0x53;  // native interop direct symbol call (C2)
+    public const byte CallNativeVtable = 0x54;  // native type vtable indirect call  (C5)
 
     // ── Fields (0x60–0x6F) ────────────────────────────────────────────────────
     public const byte FieldGet  = 0x60;
@@ -68,6 +70,10 @@ public static class Opcodes
     public const byte ArraySet    = 0x83;
     public const byte ArrayLen    = 0x84;
     public const byte StrConcat   = 0x85;
+
+    // ── Pin / FFI Borrow (0x90–0x9F) ──────────────────────────────────────────
+    public const byte PinPtr   = 0x90;  // pin a String/Array buffer for FFI borrow (C4)
+    public const byte UnpinPtr = 0x91;  // release pinned view (C4)
 }
 
 /// <summary>Type tag byte embedded in each instruction header.</summary>

@@ -387,6 +387,35 @@ pub enum Instruction {
         field: String,
         #[serde(with = "typed_reg_serde")] val: Reg,
     },
+
+    // Native interop (C1 scaffold; semantics by C2/C4/C5)
+    /// Direct native symbol call. Resolved at load time; runtime behaviour
+    /// arrives in spec C2.
+    CallNative {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        module: String,
+        type_name: String,
+        symbol: String,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
+    /// Native-type vtable indirect call. `vtable_slot` is filled by the C5
+    /// source generator at compile time so no name lookup happens at runtime.
+    CallNativeVtable {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] recv: Reg,
+        vtable_slot: u16,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
+    /// Pin a String/Array buffer for FFI borrow. Pinned-view layout and
+    /// lifetime semantics land in spec C4.
+    PinPtr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+    },
+    /// Release a pinned view created by `PinPtr`.
+    UnpinPtr {
+        #[serde(with = "typed_reg_serde")] pinned: Reg,
+    },
 }
 
 /// Block terminator.

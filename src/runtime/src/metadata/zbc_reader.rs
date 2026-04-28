@@ -58,9 +58,11 @@ const OP_RET: u8         = 0x42;
 const OP_RET_VAL: u8     = 0x43;
 const OP_THROW: u8       = 0x44;
 
-const OP_CALL: u8        = 0x50;
-const OP_BUILTIN: u8     = 0x51;
-const OP_VCALL: u8       = 0x52;
+const OP_CALL: u8                = 0x50;
+const OP_BUILTIN: u8             = 0x51;
+const OP_VCALL: u8               = 0x52;
+const OP_CALL_NATIVE: u8         = 0x53;
+const OP_CALL_NATIVE_VTABLE: u8  = 0x54;
 
 const OP_FIELD_GET: u8   = 0x60;
 const OP_FIELD_SET: u8   = 0x61;
@@ -77,6 +79,9 @@ const OP_ARRAY_GET: u8     = 0x82;
 const OP_ARRAY_SET: u8     = 0x83;
 const OP_ARRAY_LEN: u8     = 0x84;
 const OP_STR_CONCAT: u8    = 0x85;
+
+const OP_PIN_PTR: u8       = 0x90;
+const OP_UNPIN_PTR: u8     = 0x91;
 
 // ── Type tag constants ────────────────────────────────────────────────────────
 
@@ -569,6 +574,23 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             let val = c.read_u16()? as u32;
             Instruction::ArraySet { arr, idx, val }
         }
+
+        OP_CALL_NATIVE => {
+            let module    = pool_str_owned(pool, c.read_u32()?)?;
+            let type_name = pool_str_owned(pool, c.read_u32()?)?;
+            let symbol    = pool_str_owned(pool, c.read_u32()?)?;
+            let args      = read_args(c)?;
+            Instruction::CallNative { dst, module, type_name, symbol, args }
+        }
+        OP_CALL_NATIVE_VTABLE => {
+            let recv = c.read_u16()? as u32;
+            let slot = c.read_u16()?;
+            let args = read_args(c)?;
+            Instruction::CallNativeVtable { dst, recv, vtable_slot: slot, args }
+        }
+        OP_PIN_PTR   => Instruction::PinPtr   { dst, src: c.read_u16()? as u32 },
+        OP_UNPIN_PTR => Instruction::UnpinPtr { pinned: c.read_u16()? as u32 },
+
         _ => bail!("unknown opcode 0x{op:02X}"),
     };
     Ok(instr)

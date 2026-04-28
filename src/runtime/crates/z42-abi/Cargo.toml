@@ -1,0 +1,9 @@
+[package]
+name = "z42-abi"
+version = "0.1.0"
+edition = "2021"
+description = "z42 Tier 1 native interop ABI — stable C ABI mirror types"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"

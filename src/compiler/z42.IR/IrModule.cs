@@ -203,6 +203,29 @@ public sealed record StaticGetInstr(TypedReg Dst, string Field) : IrInstr;
 /// Store Val into the module-level static field named Field.
 public sealed record StaticSetInstr(string Field, TypedReg Val) : IrInstr;
 
+// ── Native Interop (C1 scaffold; semantics by C2/C4/C5) ───────────────────
+
+/// Direct native symbol call. `Module`/`TypeName`/`Symbol` identify a
+/// function registered through the Tier 1 ABI; resolved at load time.
+/// `Args` are blittable z42 values per spec C2.
+public sealed record CallNativeInstr(
+    TypedReg Dst, string Module, string TypeName, string Symbol, List<TypedReg> Args
+) : IrInstr;
+
+/// Indirect call through a native type's vtable. `Recv` is a native-type
+/// instance; `VtableSlot` is the method index (filled by C5 source generator
+/// at compile time, so no runtime name lookup is needed).
+public sealed record CallNativeVtableInstr(
+    TypedReg Dst, TypedReg Recv, ushort VtableSlot, List<TypedReg> Args
+) : IrInstr;
+
+/// Pin a `String`/`Array` to borrow its raw buffer for FFI use. `Dst` is an
+/// opaque pinned-view value whose layout / lifetime rules land in C4.
+public sealed record PinPtrInstr(TypedReg Dst, TypedReg Src) : IrInstr;
+
+/// Release a pinned view created by `PinPtr`. No result.
+public sealed record UnpinPtrInstr(TypedReg Pinned) : IrInstr;
+
 // ── Terminators ──────────────────────────────────────────────────────────────
 
 // ── Terminators ──────────────────────────────────────────────────────────

@@ -52,9 +52,21 @@
 | `src/exception/` | 结构化异常，当前通过 `thread_local PENDING_EXCEPTION` 临时处理 |
 | `src/thread/` | 多线程，Phase 1 单线程执行 |
 
+### crates/ — Native interop Rust crates（C1 落地）
+本目录是 z42 native interop 三层 ABI 的 Rust 侧公开接口；详见 [`crates/README.md`](crates/README.md)。
+
+| 子 crate | 职责 | 状态 |
+|---------|------|------|
+| `crates/z42-abi/` | Tier 1 C ABI 的 Rust `#[repr(C)]` 镜像（`no_std`，无依赖） | ✅ C1 接口锁定 |
+| `crates/z42-rs/` | Tier 2 用户面向 trait/type（`Z42Type`、`Z42Traceable`、`Visitor`） | ✅ 骨架 |
+| `crates/z42-macros/` | proc macro 入口（`Z42Type` derive、`methods`/`trait_impl`、`module!`） | 🟡 入口已注册，展开报 `compile_error!` 指向 C3 |
+
+C 头文件位于 [`include/z42_abi.h`](include/z42_abi.h)；`.z42abi` manifest schema 在 [`docs/design/manifest-schema.json`](../../docs/design/manifest-schema.json)。
+
 ## 构建与测试
 
 ```bash
-cargo build --manifest-path src/runtime/Cargo.toml
+cargo build --workspace --manifest-path src/runtime/Cargo.toml
+cargo test  --workspace --manifest-path src/runtime/Cargo.toml
 ./scripts/test-vm.sh
 ```

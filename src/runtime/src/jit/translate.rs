@@ -6,7 +6,7 @@
 /// emitted as inline Cranelift instructions.
 
 use crate::metadata::{Function, Instruction, Terminator};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::Context;
@@ -209,6 +209,14 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::AsCast     { dst, .. } => Some(*dst),
                 Instruction::StaticGet  { dst, .. } => Some(*dst),
                 Instruction::StaticSet  { .. }      => None,
+
+                // C1 native interop scaffold — JIT path lands in L3.M16; for
+                // now compute dst register correctly so reg-allocator stays
+                // sound when these opcodes appear in interp-mode bytecode.
+                Instruction::CallNative       { dst, .. } => Some(*dst),
+                Instruction::CallNativeVtable { dst, .. } => Some(*dst),
+                Instruction::PinPtr           { dst, .. } => Some(*dst),
+                Instruction::UnpinPtr         { .. }      => None,
             };
             if let Some(d) = dst {
                 if d as usize > max { max = d as usize; }
@@ -663,6 +671,26 @@ pub fn translate_function(
                     let (fp, fl) = str_val!(field);
                     let v = ri!(*val);
                     builder.ins().call(hr_static_set, &[frame_val, ctx_val, fp, fl, v]);
+                }
+
+                // C1 native interop scaffold: JIT translation lands in
+                // L3.M16. Refuse to compile a function that contains these
+                // opcodes; caller should keep the function in Interp mode.
+                Instruction::CallNative { module, type_name, symbol, .. } => {
+                    bail!(
+                        "JIT cannot translate CallNative yet (L3.M16): {module}::{type_name}::{symbol}"
+                    );
+                }
+                Instruction::CallNativeVtable { vtable_slot, .. } => {
+                    bail!(
+                        "JIT cannot translate CallNativeVtable yet (L3.M16): slot={vtable_slot}"
+                    );
+                }
+                Instruction::PinPtr { .. } => {
+                    bail!("JIT cannot translate PinPtr yet (L3.M16)");
+                }
+                Instruction::UnpinPtr { .. } => {
+                    bail!("JIT cannot translate UnpinPtr yet (L3.M16)");
                 }
             }
         }

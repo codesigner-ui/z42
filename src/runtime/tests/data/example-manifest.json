@@ -1,0 +1,48 @@
+{
+  "abi_version": 1,
+  "module": "numz42",
+  "version": "0.1.0",
+  "library_name": "numz42",
+  "types": [
+    {
+      "name": "Tensor",
+      "size": 56,
+      "align": 8,
+      "flags": ["sealed"],
+      "fields": [
+        { "name": "rank", "type": "u32", "offset": 0, "readonly": true }
+      ],
+      "methods": [
+        {
+          "name": "new",
+          "kind": "ctor",
+          "symbol": "__shim_Tensor_new",
+          "params": [{ "name": "shape", "type": "&[i64]" }],
+          "ret": "Self"
+        },
+        {
+          "name": "ndim",
+          "kind": "method",
+          "symbol": "__shim_Tensor_ndim",
+          "params": [],
+          "ret": "usize"
+        },
+        {
+          "name": "dot",
+          "kind": "method",
+          "symbol": "__shim_Tensor_dot",
+          "params": [{ "name": "other", "type": "&Self" }],
+          "ret": "Self"
+        }
+      ],
+      "trait_impls": [
+        {
+          "trait": "z42.core::Display",
+          "methods": [
+            { "name": "fmt", "symbol": "__shim_Tensor_fmt" }
+          ]
+        }
+      ]
+    }
+  ]
+}

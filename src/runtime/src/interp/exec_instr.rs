@@ -418,6 +418,29 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             let v = frame.get(*val)?.clone();
             ctx.static_set(field, v);
         }
+
+        // ── Native interop (C1 scaffold) ───────────────────────────────────
+        // The four opcodes below are declared so the binary format is frozen,
+        // but their runtime behaviour ships in later specs. Hitting them at
+        // runtime today means the source program used native interop before
+        // the implementing spec landed — surface it as a clean trap rather
+        // than silently no-op.
+        Instruction::CallNative { module, type_name, symbol, .. } => {
+            bail!(
+                "CallNative not yet implemented (Z0905, see spec C2 / impl-tier1-c-abi): {module}::{type_name}::{symbol}"
+            );
+        }
+        Instruction::CallNativeVtable { vtable_slot, .. } => {
+            bail!(
+                "CallNativeVtable not yet implemented (Z0907, see spec C5 / impl-source-generator): slot={vtable_slot}"
+            );
+        }
+        Instruction::PinPtr { .. } => {
+            bail!("PinPtr not yet implemented (Z0908, see spec C4 / impl-pinned-block)");
+        }
+        Instruction::UnpinPtr { .. } => {
+            bail!("UnpinPtr not yet implemented (Z0908, see spec C4 / impl-pinned-block)");
+        }
     }
     Ok(None)
 }

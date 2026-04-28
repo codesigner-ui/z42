@@ -107,6 +107,18 @@
 - JIT 基础优化：热点函数识别、简单内联、常量折叠
 - **MagrGC 子系统（Phase 1 ✅ 2026-04-29）**：`trait MagrGC` 接口收口（参考 MMTk porting contract）+ `RcMagrGC` 默认后端（行为等价 `Rc<RefCell<...>>`）+ 6 个脚本驱动 callsite 迁移（interp 3 + JIT 3）；环引用泄漏作为已知限制，由 Phase 2 修复。详见 `docs/design/vm-architecture.md` "GC 子系统" 段。
 
+### Native Interop / 三层 ABI
+
+详见 [docs/design/interop.md](design/interop.md)。
+
+| Spec | 内容 | 状态 |
+|------|------|------|
+| **C1**（`design-interop-interfaces` ✅ 2026-04-29）| 接口骨架一次锁定：C 头文件 `include/z42_abi.h` + 3 个 Rust crate（`z42-abi` / `z42-rs` / `z42-macros`）+ JSON Schema 2020-12 manifest + 4 个新 IR opcode（`call.native` / `call.native.vt` / `pin` / `unpin`）+ 错误码 Z0905–Z0910 占位。无运行时行为（VM 遇 trap，macro 报 `compile_error!`）。 | ✅ |
+| **C2**（`impl-tier1-c-abi`）| Tier 1 C ABI 实现：`z42_register_type` 注册表 + libffi 调度（Interp）+ `numz42-c` PoC | 📋 |
+| **C3**（`impl-tier2-rust-macros`）| Tier 2 proc macro 实现：`#[derive(Z42Type)]` / `#[methods]` / `module!` + `numz42-rs` PoC | 📋 |
+| **C4**（`impl-pinned-block`）| `pinned p = X { ... }` 语法 + `PinPtr`/`UnpinPtr` runtime + String/Array 借出 | 📋 |
+| **C5**（`impl-source-generator`）| `.z42abi` manifest reader + `import T from "lib"` 编译期签名校验 + `CallNativeVtable` runtime | 📋 |
+
 ### 标准库（基础）
 - `z42.core`：基础类型协议（ToString、Equals、GetHashCode）
 - `z42.io`：文件读写、标准输入输出

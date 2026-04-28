@@ -1,0 +1,12 @@
+[package]
+name = "z42-rs"
+version = "0.1.0"
+edition = "2021"
+description = "z42 Tier 2 ergonomic Rust API for native interop (skeleton)"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+z42-abi = { path = "../z42-abi" }

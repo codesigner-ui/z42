@@ -140,6 +140,27 @@ public static partial class ZbcWriter
                 WriteReg(w, i.Arr); WriteReg(w, i.Idx); WriteReg(w, i.Val);
                 break;
 
+            case CallNativeInstr i:
+                w.Write(Opcodes.CallNative); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                w.Write((uint)pool.Idx(i.Module));
+                w.Write((uint)pool.Idx(i.TypeName));
+                w.Write((uint)pool.Idx(i.Symbol));
+                WriteArgs(w, i.Args);
+                break;
+            case CallNativeVtableInstr i:
+                w.Write(Opcodes.CallNativeVtable); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Recv); w.Write(i.VtableSlot);
+                WriteArgs(w, i.Args);
+                break;
+            case PinPtrInstr i:
+                w.Write(Opcodes.PinPtr); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Src);
+                break;
+            case UnpinPtrInstr i:
+                w.Write(Opcodes.UnpinPtr); w.Write(TypeTagFromIrType(i.Pinned.Type)); w.Write(NoReg);
+                WriteReg(w, i.Pinned);
+                break;
+
             default:
                 throw new InvalidOperationException($"ZbcWriter: unhandled instruction {instr.GetType().Name}");
         }
@@ -229,6 +250,8 @@ public static partial class ZbcWriter
             case AsCastInstr i:     pool.Intern(i.ClassName); break;
             case StaticGetInstr i:  pool.Intern(i.Field); break;
             case StaticSetInstr i:  pool.Intern(i.Field); break;
+            case CallNativeInstr i:
+                pool.Intern(i.Module); pool.Intern(i.TypeName); pool.Intern(i.Symbol); break;
         }
     }
 
@@ -294,6 +317,11 @@ public static partial class ZbcWriter
             case ArrayGetInstr i:    v(i.Dst); v(i.Arr); v(i.Idx); break;
             case ArraySetInstr i:    v(i.Arr); v(i.Idx); v(i.Val); break;
             case ArrayLenInstr i:    v(i.Dst); v(i.Arr); break;
+
+            case CallNativeInstr i:       v(i.Dst); foreach (var a in i.Args) v(a); break;
+            case CallNativeVtableInstr i: v(i.Dst); v(i.Recv); foreach (var a in i.Args) v(a); break;
+            case PinPtrInstr i:           v(i.Dst); v(i.Src); break;
+            case UnpinPtrInstr i:         v(i.Pinned); break;
         }
     }
 

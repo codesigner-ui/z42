@@ -1,0 +1,15 @@
+[package]
+name = "z42-macros"
+version = "0.1.0"
+edition = "2021"
+description = "z42 proc macros — Z42Type derive, methods attr, module! (skeleton)"
+license = "MIT OR Apache-2.0"
+
+[lib]
+path = "src/lib.rs"
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote       = "1"
+syn         = { version = "2", features = ["full"] }

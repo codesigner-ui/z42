@@ -145,6 +145,26 @@ public static partial class ZbcReader
             case Opcodes.ArrayLen:  return new ArrayLenInstr(d, RU(r.ReadUInt16()));
             case Opcodes.StrConcat: return new StrConcatInstr(d, RU(r.ReadUInt16()), RU(r.ReadUInt16()));
 
+            case Opcodes.CallNative:
+            {
+                var module = P(pool, r.ReadUInt32());
+                var type   = P(pool, r.ReadUInt32());
+                var symbol = P(pool, r.ReadUInt32());
+                var args   = ReadArgs(r);
+                return new CallNativeInstr(d, module, type, symbol, args);
+            }
+            case Opcodes.CallNativeVtable:
+            {
+                var recv = RU(r.ReadUInt16());
+                var slot = r.ReadUInt16();
+                var args = ReadArgs(r);
+                return new CallNativeVtableInstr(d, recv, slot, args);
+            }
+            case Opcodes.PinPtr:
+                return new PinPtrInstr(d, RU(r.ReadUInt16()));
+            case Opcodes.UnpinPtr:
+                return new UnpinPtrInstr(RU(r.ReadUInt16()));
+
             default:
                 throw new InvalidDataException($"ZbcReader: unknown opcode 0x{op:X2}");
         }

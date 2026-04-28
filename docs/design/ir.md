@@ -159,6 +159,52 @@ JSON wire format:
 {"op": "builtin", "dst": 3, "name": "__list_add",               "args": [0, 1]}
 ```
 
+### Native Interop (C1 scaffold)
+
+```
+%r = call.native     "<module>::<type>::<symbol>"(%arg0, ...)
+%r = call.native.vt  %recv.<vtable_slot>(%arg0, ...)
+%p = pin    %src                  # borrow String/Array buffer for FFI
+     unpin  %pinned               # release pin
+```
+
+Four opcodes lock down the binary format for the L2+ three-tier ABI (see
+[interop.md](interop.md)). Each is **declared** in C1 with no runtime
+behaviour; subsequent specs (C2, C4, C5) wire up dispatch.
+
+| Opcode | Byte | Operands | Filled by spec |
+|--------|------|----------|----------------|
+| `call.native` | `0x53` | `dst`, module:str, type:str, symbol:str, args | C2 (`impl-tier1-c-abi`) |
+| `call.native.vt` | `0x54` | `dst`, recv:reg, vtable_slot:u16, args | C5 (`impl-source-generator`) |
+| `pin` | `0x90` | `dst`, src:reg | C4 (`impl-pinned-block`) |
+| `unpin` | `0x91` | pinned:reg (no dst) | C4 |
+
+`call.native` is the direct-symbol path used to call functions registered
+through `z42_register_type` (Tier 1 C ABI). `call.native.vt` is the
+vtable-indexed path: the source generator picks `vtable_slot` at compile
+time so no name lookup happens at runtime, matching C# 11+
+`[LibraryImport]` semantics.
+
+`pin` borrows the raw buffer of a `String` or blittable-element `Array<T>`
+for FFI use; `unpin` returns it to normal use. Pinned regions cannot be
+mutated or relocated until unpinned. The `pinned` block syntax in user
+code lowers to a `pin` … `unpin` pair around the FFI call.
+
+VM behaviour (C1): the interpreter raises a clean error
+("`<opcode>` not yet implemented (Z090x, see spec C2/C4/C5)") if any of
+these opcodes execute; the JIT translator refuses to compile a function
+that contains them. Both behaviours flip to real implementations as the
+respective specs land.
+
+JSON wire format:
+```json
+{"op": "call_native",        "dst": 2, "module": "numz42", "type_name": "Tensor",
+                             "symbol": "__shim_Tensor_dot", "args": [0, 1]}
+{"op": "call_native_vtable", "dst": 3, "recv": 0, "vtable_slot": 7, "args": [1]}
+{"op": "pin_ptr",            "dst": 4, "src": 1}
+{"op": "unpin_ptr",          "pinned": 4}
+```
+
 ### String Operations
 ```
 %r = str.concat %a, %b          # concatenate two strings
