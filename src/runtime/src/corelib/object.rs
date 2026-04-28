@@ -43,7 +43,7 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// or both are null.
 pub fn builtin_obj_ref_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let result = match (args.first(), args.get(1)) {
-        (Some(Value::Object(a)), Some(Value::Object(b))) => std::rc::Rc::ptr_eq(a, b),
+        (Some(Value::Object(a)), Some(Value::Object(b))) => crate::gc::GcRef::ptr_eq(a, b),
         (Some(Value::Null), Some(Value::Null))           => true,
         (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
         _                                                => false,
@@ -54,8 +54,8 @@ pub fn builtin_obj_ref_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// Identity-based hash code derived from the Rc pointer address.
 pub fn builtin_obj_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
-        Some(Value::Object(rc)) => {
-            let addr = std::rc::Rc::as_ptr(rc) as i64;
+        Some(Value::Object(gc)) => {
+            let addr = crate::gc::GcRef::as_ptr(gc) as *const _ as i64;
             Ok(Value::I64((addr & 0x7fff_ffff) as i64))
         }
         Some(Value::Null) => Ok(Value::I64(0)),
@@ -67,7 +67,7 @@ pub fn builtin_obj_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> 
 /// args: [this, other]
 pub fn builtin_obj_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let result = match (args.first(), args.get(1)) {
-        (Some(Value::Object(a)), Some(Value::Object(b))) => std::rc::Rc::ptr_eq(a, b),
+        (Some(Value::Object(a)), Some(Value::Object(b))) => crate::gc::GcRef::ptr_eq(a, b),
         (Some(Value::Null), Some(Value::Null))           => true,
         (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
         _                                                => false,

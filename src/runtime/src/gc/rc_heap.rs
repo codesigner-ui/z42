@@ -1,9 +1,9 @@
 //! `RcMagrGC` —— Phase 1 GC backend with full embedding API surface.
 //!
-//! 行为等价迁移前的直接 `Rc::new(RefCell::new(...))` 构造（保留 `Rc::ptr_eq`
-//! 引用相等 / `Rc::as_ptr` 身份哈希 / `RefCell` 借用检查），同时实现 MMTk
-//! porting contract 形状的全部 host-side 嵌入接口（roots / observers /
-//! profiler / weak refs / finalizers / heap config / ...）。
+//! 通过 [`GcRef<T>`] 句柄抽象走 `Rc<RefCell<T>>` backing（保留引用相等 /
+//! 身份哈希 / 内部可变性语义），同时实现 MMTk porting contract 形状的全部
+//! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
+//! heap config / ...）。
 //!
 //! **Phase 1 已知限制**：
 //! 1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
@@ -16,13 +16,13 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
 
 use super::heap::MagrGC;
+use super::refs::GcRef;
 use super::types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
     GcEvent, GcKind, GcObserver, HeapSnapshot, HeapStats, ObserverId, RootHandle,
@@ -38,7 +38,7 @@ struct RcHeapInner {
     /// 每个 frame 的 pin 列表，用于 leave_frame 时整批 unpin。
     frame_pins:        Vec<Vec<RootHandle>>,
     observers:         Vec<(ObserverId, Arc<dyn GcObserver>)>,
-    /// Finalizers 按 `Rc::as_ptr(rc) as usize` 索引；Phase 1 仅注册不触发。
+    /// Finalizers 按 `GcRef::as_ptr(gc) as usize` 索引；Phase 1 仅注册不触发。
     finalizers:        HashMap<usize, FinalizerFn>,
     alloc_sampler:     Option<AllocSamplerFn>,
     pause_count:       u32,
@@ -87,11 +87,11 @@ impl RcMagrGC {
         EPOCH.get_or_init(Instant::now).elapsed().as_micros() as u64
     }
 
-    /// 提取 heap 引用类型 Value 的 Rc 指针 key（用于去重 / finalizer key）。
+    /// 提取 heap 引用类型 Value 的指针 key（用于去重 / finalizer key）。
     fn rc_ptr_key(value: &Value) -> Option<usize> {
         match value {
-            Value::Object(rc) => Some(Rc::as_ptr(rc) as *const _ as usize),
-            Value::Array(rc)  => Some(Rc::as_ptr(rc) as *const _ as usize),
+            Value::Object(gc) => Some(GcRef::as_ptr(gc) as *const _ as usize),
+            Value::Array(gc)  => Some(GcRef::as_ptr(gc) as *const _ as usize),
             _ => None,
         }
     }
@@ -176,9 +176,9 @@ impl MagrGC for RcMagrGC {
         native: NativeData,
     ) -> Value {
         let class = type_desc.name.clone();
-        let value = Value::Object(Rc::new(RefCell::new(ScriptObject {
+        let value = Value::Object(GcRef::new(ScriptObject {
             type_desc, slots, native,
-        })));
+        }));
         let size = self.object_size_bytes(&value);
         self.record_alloc(AllocKind::Object { class }, size);
         value
@@ -186,7 +186,7 @@ impl MagrGC for RcMagrGC {
 
     fn alloc_array(&self, elems: Vec<Value>) -> Value {
         let elem_count = elems.len();
-        let value      = Value::Array(Rc::new(RefCell::new(elems)));
+        let value      = Value::Array(GcRef::new(elems));
         let size       = self.object_size_bytes(&value);
         self.record_alloc(AllocKind::Array { elem_count }, size);
         value
@@ -346,11 +346,11 @@ impl MagrGC for RcMagrGC {
 
     fn make_weak(&self, value: &Value) -> Option<WeakRef> {
         match value {
-            Value::Object(rc) => Some(WeakRef {
-                inner: WeakRefInner::Object(Rc::downgrade(rc)),
+            Value::Object(gc) => Some(WeakRef {
+                inner: WeakRefInner::Object(GcRef::downgrade(gc)),
             }),
-            Value::Array(rc) => Some(WeakRef {
-                inner: WeakRefInner::Array(Rc::downgrade(rc)),
+            Value::Array(gc) => Some(WeakRef {
+                inner: WeakRefInner::Array(GcRef::downgrade(gc)),
             }),
             _ => None,
         }

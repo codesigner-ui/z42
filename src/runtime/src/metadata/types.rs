@@ -1,7 +1,7 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::sync::Arc;
+
+use crate::gc::GcRef;
 
 // ── TypeDesc — runtime type descriptor ──────────────────────────────────────
 //
@@ -88,10 +88,12 @@ pub struct ScriptObject {
 /// The compiler emits ConstI32/ConstI64 which the VM widens to I64.
 /// Floating-point is unified as F64 (double precision).
 ///
-/// `Array` uses `Rc<RefCell<Vec<Value>>>` for reference semantics with
-/// interior mutability.  `Object` uses `Rc<RefCell<ScriptObject>>` for the
-/// same reason.  `Value::Str` remains a primitive for performance; member
-/// access on strings is handled via virtual field dispatch in the interpreter.
+/// `Array` / `Object` 用 [`GcRef<T>`] 作为不透明堆引用句柄。Phase 3a backing
+/// 是 `Rc<RefCell<T>>`（行为等价历史 `Rc<RefCell<...>>` 直构）；Phase 3b 切到
+/// 自定义堆 + mark-sweep 时，本 enum 与所有 callsite 保持不变。
+///
+/// `Value::Str` remains a primitive for performance; member access on strings
+/// is handled via virtual field dispatch in the interpreter.
 ///
 /// 2026-04-29 remove-dead-value-map: 删除了 `Value::Map` variant —— 自从
 /// 2026-04-26 extern-audit-wave0 把 `Std.Collections.Dictionary` 改为纯 z42
@@ -106,9 +108,9 @@ pub enum Value {
     Str(String),
     Null,
     /// Heap-allocated dynamic array with reference semantics.
-    Array(Rc<RefCell<Vec<Value>>>),
+    Array(GcRef<Vec<Value>>),
     /// Heap-allocated managed class instance with reference semantics.
-    Object(Rc<RefCell<ScriptObject>>),
+    Object(GcRef<ScriptObject>),
 }
 
 impl PartialEq for Value {
@@ -121,8 +123,8 @@ impl PartialEq for Value {
             (Value::Str(a),  Value::Str(b))  => a == b,
             (Value::Null,    Value::Null)    => true,
             // Array/Object equality is reference equality (same as C# reference semantics)
-            (Value::Array(a),  Value::Array(b))  => Rc::ptr_eq(a, b),
-            (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
+            (Value::Array(a),  Value::Array(b))  => GcRef::ptr_eq(a, b),
+            (Value::Object(a), Value::Object(b)) => GcRef::ptr_eq(a, b),
             _ => false,
         }
     }

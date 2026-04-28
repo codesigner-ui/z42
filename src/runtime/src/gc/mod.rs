@@ -3,7 +3,8 @@
 //! # 当前状态（Phase 1，2026-04-29 expand-magrgc-mmtk-interface）
 //!
 //! - [`MagrGC`] —— GC 抽象 trait，对齐 MMTk porting contract（10 个能力组 / ~30 方法）
-//! - [`RcMagrGC`] —— 基于 `Rc<RefCell<...>>` 的 RC 后端 + 完整 host-side 嵌入接口
+//! - [`GcRef<T>`] / [`WeakGcRef<T>`] —— 堆引用不透明句柄（隐藏 backing 实现）
+//! - [`RcMagrGC`] —— Phase 3a 默认后端，`GcRef` 走 `Rc<RefCell<T>>` backing + 完整 host-side 嵌入接口
 //!   - alloc / roots / write barriers / object model / collection control
 //!   - heap config / finalization / weak refs / observers / profiler / stats
 //!
@@ -13,16 +14,22 @@
 //! |-------|------|
 //! | 1（已落地）| trait + RcMagrGC + 全嵌入接口（host-side） |
 //! | 1.5（已落地）| corelib NativeFn 签名带 `&VmContext` + 剩余 Rc::new 迁移 |
-//! | 2（计划）| 环检测真实实现（Bacon-Rajan / dumpster 2.0） |
-//! | 3（计划）| Mark-Sweep + RootScope 真实 trace + write_barrier + GcRef<T> |
+//! | 2（**跳过**）| 环检测中间方案（直奔 Phase 3 mark-sweep） |
+//! | 3a（已落地）| `GcRef<T>` 不透明句柄抽象（backing 仍 Rc<RefCell<T>>，行为零变化） |
+//! | 3b（计划）| 自定义堆 allocator（bump pointer / region + mark bits） |
+//! | 3c（计划）| Mark-Sweep 真实算法（interp root scan）→ 修复环泄漏 |
+//! | 3d（计划）| 嵌入接口升级（snapshot Full / finalizer 真触发 / used_bytes 精确）|
+//! | 3e（计划）| Cranelift stack maps（JIT 路径下 GC 安全）|
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |
 
 pub mod heap;
 pub mod rc_heap;
+pub mod refs;
 pub mod types;
 
 pub use heap::MagrGC;
 pub use rc_heap::RcMagrGC;
+pub use refs::{GcRef, WeakGcRef};
 pub use types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
     GcEvent, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats, ObserverId,

@@ -9,10 +9,10 @@
 //! into multi-threaded telemetry / metrics pipelines, so the bound is required
 //! even though `VmContext` itself is currently single-threaded.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::refs::WeakGcRef;
 use crate::metadata::{ScriptObject, Value};
 
 // ── Handles ──────────────────────────────────────────────────────────────────
@@ -135,8 +135,8 @@ pub struct WeakRef {
 
 #[derive(Debug, Clone)]
 pub(crate) enum WeakRefInner {
-    Object(std::rc::Weak<RefCell<ScriptObject>>),
-    Array (std::rc::Weak<RefCell<Vec<Value>>>),
+    Object(WeakGcRef<ScriptObject>),
+    Array (WeakGcRef<Vec<Value>>),
 }
 
 // ── Stats ────────────────────────────────────────────────────────────────────

@@ -423,8 +423,13 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 | **Phase 1** | trait MagrGC 接口 + RcMagrGC 实现 + 6 个脚本驱动 callsite 收口 | ✅ 2026-04-29 add-magrgc-heap-interface |
 | **Phase 1 (扩展)** | trait 全面对齐 MMTk porting contract（10 能力组 ~30 方法）+ host-side 嵌入接口完整实现 | ✅ 2026-04-29 expand-magrgc-mmtk-interface |
 | **Phase 1.5** | corelib `NativeFn` 签名扩展带 `&VmContext` + corelib 内剩余 Rc::new 迁移 | ✅ 2026-04-29 extend-native-fn-signature |
+| **Phase 2** | （**跳过**）—— 直接进 Phase 3 mark-sweep，避免双重智能指针 churn | ⏭ 跳过 |
+| **Phase 3a** | `GcRef<T>` / `WeakGcRef<T>` 不透明句柄抽象（backing 仍 `Rc<RefCell<T>>`，行为零变化）| ✅ 2026-04-29 introduce-gcref-handle |
 | **Phase 2** | 环检测真实实现（dumpster 2.0 集成 / 自研 Bacon-Rajan 二选一） | 📋 待立项 |
-| **Phase 3** | Mark-Sweep + RootScope 真实 trace + 真实 write_barrier + Cranelift stack maps；`Value::Array/Object` 改用 `GcRef<T>`；finalizer 真实调度；snapshot 升级 Full coverage | 📋 待立项 |
+| **Phase 3b** | 自定义堆 allocator（bump pointer / region + mark bits） | 📋 待立项 |
+| **Phase 3c** | Mark-Sweep 真实算法（interp root scan）→ 修复环泄漏；finalizer 真实调度 | 📋 待立项 |
+| **Phase 3d** | 嵌入接口升级（snapshot Full / iterate_live_objects 全堆 / used_bytes 精确）| 📋 待立项 |
+| **Phase 3e** | Cranelift stack maps（JIT 路径下 GC 安全点） | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |
 
 ### 字符串脚本化的未来动机

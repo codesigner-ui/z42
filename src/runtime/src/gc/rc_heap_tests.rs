@@ -42,7 +42,7 @@ fn two_alloc_object_calls_return_distinct_rcs() {
     let a    = heap.alloc_object(td.clone(), vec![], NativeData::None);
     let b    = heap.alloc_object(td.clone(), vec![], NativeData::None);
     let (Value::Object(ra), Value::Object(rb)) = (a, b) else { panic!() };
-    assert!(!std::rc::Rc::ptr_eq(&ra, &rb));
+    assert!(!crate::gc::GcRef::ptr_eq(&ra, &rb));
 }
 
 #[test]
@@ -316,7 +316,7 @@ fn upgrade_weak_succeeds_while_strong_alive() {
     let w = heap.make_weak(&v).unwrap();
     let upgraded = heap.upgrade_weak(&w).unwrap();
     let (Value::Array(a), Value::Array(b)) = (&v, &upgraded) else { panic!() };
-    assert!(std::rc::Rc::ptr_eq(a, b));
+    assert!(crate::gc::GcRef::ptr_eq(a, b));
 }
 
 #[test]
