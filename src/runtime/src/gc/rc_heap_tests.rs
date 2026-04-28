@@ -65,16 +65,6 @@ fn alloc_array_empty_returns_empty_vec() {
     assert!(rc.borrow().is_empty());
 }
 
-// ── alloc_map ────────────────────────────────────────────────────────────────
-
-#[test]
-fn alloc_map_returns_empty_value_map() {
-    let heap = RcMagrGC::new();
-    let v    = heap.alloc_map();
-    let Value::Map(rc) = v else { panic!("expected Value::Map") };
-    assert!(rc.borrow().is_empty());
-}
-
 // ── stats counters ────────────────────────────────────────────────────────────
 
 #[test]
@@ -84,7 +74,7 @@ fn stats_allocations_monotonically_increases() {
     let _ = heap.alloc_array(vec![]);
     assert_eq!(heap.stats().allocations, 1);
     let _ = heap.alloc_array(vec![Value::I64(1)]);
-    let _ = heap.alloc_map();
+    let _ = heap.alloc_object(dummy_type_desc("Foo"), vec![], NativeData::None);
     assert_eq!(heap.stats().allocations, 3);
 }
 

@@ -22,6 +22,8 @@ use std::sync::Arc;
 
 use crate::metadata::{NativeData, TypeDesc, Value};
 
+
+
 /// 堆统计信息。Phase 1 暴露基础计数；Phase 2+ 扩展存活对象数 / 暂停时长等。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HeapStats {
@@ -48,9 +50,6 @@ pub trait MagrGC: std::fmt::Debug {
 
     /// 分配一个 `Vec<Value>` 数组并以 `Value::Array` 返回。
     fn alloc_array(&self, elems: Vec<Value>) -> Value;
-
-    /// 分配一个空 `HashMap<String, Value>` 并以 `Value::Map` 返回。
-    fn alloc_map(&self) -> Value;
 
     /// 写屏障：当 `owner` 对象的 `slot` 字段被赋为 `new` 时通知 GC。
     ///

@@ -207,13 +207,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     }
                     borrowed[i].clone()
                 }
-                Value::Map(rc) => {
-                    let rc = rc.clone();
-                    let key = value_to_str(frame.get(*idx)?);
-                    let borrowed = rc.borrow();
-                    borrowed.get(&key).cloned().unwrap_or(Value::Null)
-                }
-                other => bail!("ArrayGet: expected array or map, got {:?}", other),
+                other => bail!("ArrayGet: expected array, got {:?}", other),
             };
             frame.set(*dst, result);
         }
@@ -229,12 +223,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     }
                     borrowed[i] = v;
                 }
-                Value::Map(rc) => {
-                    let rc = rc.clone();
-                    let key = value_to_str(frame.get(*idx)?);
-                    rc.borrow_mut().insert(key, v);
-                }
-                other => bail!("ArraySet: expected array or map, got {:?}", other),
+                other => bail!("ArraySet: expected array, got {:?}", other),
             }
         }
         Instruction::ArrayLen { dst, arr } => {
@@ -296,10 +285,6 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                 Value::Array(rc) => match field_name.as_str() {
                     "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
                     other => bail!("array has no field `{}`", other),
-                },
-                Value::Map(rc) => match field_name.as_str() {
-                    "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
-                    other => bail!("map has no field `{}`", other),
                 },
                 other => bail!("FieldGet: not an object or known value type, got {:?}", other),
             };

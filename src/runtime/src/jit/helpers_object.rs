@@ -1,7 +1,6 @@
 #![allow(dangerous_implicit_autorefs)]
 // JIT helpers — function calls, arrays, objects, type checks, static fields.
 
-use crate::corelib::convert::value_to_str;
 use crate::metadata::{NativeData, Value};
 use std::collections::HashMap;
 
@@ -113,12 +112,8 @@ pub unsafe extern "C" fn jit_array_get(
             }
             borrowed[i].clone()
         }
-        Value::Map(rc) => {
-            let key = value_to_str(&idx_val);
-            rc.borrow().get(&key).cloned().unwrap_or(Value::Null)
-        }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: expected array or map, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: expected array, got {:?}", other)));
             return 1;
         }
     };
@@ -151,12 +146,8 @@ pub unsafe extern "C" fn jit_array_set(
             }
             borrowed[i] = v;
         }
-        Value::Map(rc) => {
-            let key = value_to_str(&idx_val);
-            rc.borrow_mut().insert(key, v);
-        }
         other => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: expected array or map, got {:?}", other)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: expected array, got {:?}", other)));
             return 1;
         }
     }
@@ -239,7 +230,6 @@ pub unsafe extern "C" fn jit_field_get(
         }
         Value::Str(s) if field_name == "Length" => Value::I64(s.chars().count() as i64),
         Value::Array(rc) if field_name == "Length" || field_name == "Count" => Value::I64(rc.borrow().len() as i64),
-        Value::Map(rc) if field_name == "Length" || field_name == "Count" => Value::I64(rc.borrow().len() as i64),
         other => {
             set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldGet: expected object, got {:?}", other)));
             return 1;

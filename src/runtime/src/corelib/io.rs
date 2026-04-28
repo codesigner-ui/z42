@@ -30,8 +30,7 @@ pub fn builtin_len(args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Array(rc)) => Ok(Value::I64(rc.borrow().len() as i64)),
         Some(Value::Str(s))    => Ok(Value::I64(s.len() as i64)),
-        Some(Value::Map(rc))   => Ok(Value::I64(rc.borrow().len() as i64)),
-        Some(other)            => bail!("__len: expected array, string, or map, got {:?}", other),
+        Some(other)            => bail!("__len: expected array or string, got {:?}", other),
         None                   => bail!("__len: missing argument"),
     }
 }

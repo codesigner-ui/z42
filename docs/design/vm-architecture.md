@@ -361,7 +361,6 @@ z42 VM 的 GC 抽象由 `crate::gc::MagrGC` trait 定义，参考 [MMTk](https:/
 pub trait MagrGC: std::fmt::Debug {
     fn alloc_object(&self, td: Arc<TypeDesc>, slots: Vec<Value>, native: NativeData) -> Value;
     fn alloc_array(&self, elems: Vec<Value>) -> Value;
-    fn alloc_map(&self) -> Value;
     fn write_barrier(&self, _owner: &Value, _slot: usize, _new: &Value) {}
     fn collect(&self) {}
     fn collect_cycles(&self) {}
@@ -392,7 +391,11 @@ pub trait MagrGC: std::fmt::Debug {
 2. **corelib 直构未迁移**：`corelib/object.rs:34`（`__obj_get_type`）、
    `corelib/fs.rs:51`（`__env_args`）、`corelib/tests.rs` 仍直接 `Rc::new(RefCell::new(...))`
    → Phase 1.5 配合 NativeFn 签名扩展一并处理
-3. **`alloc_map()` 暂无 callsite**：接口已就位但脚本驱动的 Map 分配点尚未出现
+
+> **2026-04-29 remove-dead-value-map**：原 Phase 1 限制 #3（`alloc_map()` 占位）
+> 与 `Value::Map` variant 一并删除 —— 自从 2026-04-26 extern-audit-wave0 把
+> `Std.Collections.Dictionary` 改为纯脚本类后，`Value::Map` 已无创建路径。`value_to_str`
+> 同步改为 exhaustive match，编译期强制覆盖所有 Value variant。
 
 ### Phase 路线（持续迭代）
 

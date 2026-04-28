@@ -92,6 +92,10 @@ pub struct ScriptObject {
 /// interior mutability.  `Object` uses `Rc<RefCell<ScriptObject>>` for the
 /// same reason.  `Value::Str` remains a primitive for performance; member
 /// access on strings is handled via virtual field dispatch in the interpreter.
+///
+/// 2026-04-29 remove-dead-value-map: 删除了 `Value::Map` variant —— 自从
+/// 2026-04-26 extern-audit-wave0 把 `Std.Collections.Dictionary` 改为纯 z42
+/// 脚本类（基于 `T[]`），Map variant 已无创建路径，作为 dead variant 一并清理。
 #[derive(Debug, Clone)]
 pub enum Value {
     I64(i64),
@@ -103,8 +107,6 @@ pub enum Value {
     Null,
     /// Heap-allocated dynamic array with reference semantics.
     Array(Rc<RefCell<Vec<Value>>>),
-    /// Heap-allocated dictionary with reference semantics (keys serialised to String).
-    Map(Rc<RefCell<HashMap<String, Value>>>),
     /// Heap-allocated managed class instance with reference semantics.
     Object(Rc<RefCell<ScriptObject>>),
 }
@@ -118,9 +120,8 @@ impl PartialEq for Value {
             (Value::Char(a), Value::Char(b)) => a == b,
             (Value::Str(a),  Value::Str(b))  => a == b,
             (Value::Null,    Value::Null)    => true,
-            // Array/Map/Object equality is reference equality (same as C# reference semantics)
+            // Array/Object equality is reference equality (same as C# reference semantics)
             (Value::Array(a),  Value::Array(b))  => Rc::ptr_eq(a, b),
-            (Value::Map(a),    Value::Map(b))    => Rc::ptr_eq(a, b),
             (Value::Object(a), Value::Object(b)) => Rc::ptr_eq(a, b),
             _ => false,
         }

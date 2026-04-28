@@ -2,6 +2,9 @@ use crate::metadata::Value;
 use anyhow::{bail, Result};
 
 /// Convert a Value to its string representation.
+///
+/// Exhaustive match: 加新 `Value` variant 时编译期强制覆盖（防止再次出现
+/// 像 `Value::Map` 那样"variant 加进 enum 但消费侧忘记更新"的死代码）。
 pub fn value_to_str(v: &Value) -> String {
     match v {
         Value::I64(n)  => n.to_string(),
@@ -15,7 +18,6 @@ pub fn value_to_str(v: &Value) -> String {
             format!("[{}]", inner.join(", "))
         }
         Value::Object(rc) => format!("{}{{...}}", rc.borrow().type_desc.name),
-        other => format!("{:?}", other),
     }
 }
 

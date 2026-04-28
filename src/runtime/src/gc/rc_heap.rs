@@ -8,7 +8,6 @@
 //! **已知限制**：不解决环引用泄漏。Phase 2 由 `CycleCollectingHeap` 替代时修复。
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -45,11 +44,6 @@ impl MagrGC for RcMagrGC {
     fn alloc_array(&self, elems: Vec<Value>) -> Value {
         self.bump_alloc();
         Value::Array(Rc::new(RefCell::new(elems)))
-    }
-
-    fn alloc_map(&self) -> Value {
-        self.bump_alloc();
-        Value::Map(Rc::new(RefCell::new(HashMap::new())))
     }
 
     fn collect_cycles(&self) {

@@ -41,7 +41,6 @@ let s = ctx.heap().stats();
 
 1. 环引用泄漏：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
 2. corelib 内 `Rc::new` 直构未迁移：`corelib/object.rs:34`、`corelib/fs.rs:51`、`corelib/tests.rs` 的 3 处 → Phase 1.5 配合 NativeFn 签名扩展一并处理
-3. `alloc_map()` 接口已就位但暂无脚本驱动 callsite
 
 ## 命名
 

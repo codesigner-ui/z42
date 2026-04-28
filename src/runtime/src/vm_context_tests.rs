@@ -86,7 +86,7 @@ fn two_contexts_heap_isolated() {
     let ctx1 = VmContext::new();
     let ctx2 = VmContext::new();
     let _ = ctx1.heap().alloc_array(vec![]);
-    let _ = ctx1.heap().alloc_map();
+    let _ = ctx1.heap().alloc_array(vec![Value::I64(1)]);
     assert_eq!(ctx1.heap().stats().allocations, 2);
     assert_eq!(ctx2.heap().stats().allocations, 0);
 }
