@@ -54,6 +54,85 @@ public static class Math {
 - Unregistered name → compile error `Z0901`
 - Parameter count must match `NativeTable` definition; mismatch → `Z0902`
 
+### Native Function Naming Convention
+
+Native function names (the string passed to `[Native("...")]` and used as the
+dispatch key in `corelib/mod.rs::dispatch_table`) follow a fixed format. New
+builtins **must** comply; existing exceptions are legacy and not to be imitated.
+
+#### Format
+
+```
+__<area>_<verb>[_<modifier>]
+```
+
+- **`__` prefix** — marks the symbol as VM-internal dispatch key; reserves the
+  namespace from user-defined code (which never starts identifiers with `__`).
+- **`<area>`** — domain prefix; required. ASCII lowercase, single word.
+  Allowed values:
+
+  | Area | Domain | Examples |
+  |------|--------|----------|
+  | `str` | string operations on `Std.String` | `__str_length`, `__str_char_at`, `__str_from_chars` |
+  | `char` | `Std.char` operations | `__char_to_upper`, `__char_is_whitespace` |
+  | `int` / `long` / `double` | primitive type ops (parse / hash / equals / to_string) | `__int_parse`, `__double_to_string` |
+  | `math` | `Std.Math.Math` static methods | `__math_sqrt`, `__math_atan2` |
+  | `obj` | universal object protocol | `__obj_get_type`, `__obj_ref_eq`, `__obj_hash_code` |
+  | `file` | `Std.IO.File` static methods | `__file_read_text`, `__file_exists` |
+  | `env` | environment / process | `__env_get`, `__env_args` |
+  | `time` | clock / measurement | `__time_now_ms` |
+  | `process` | host process control | `__process_exit` |
+
+  When introducing a builtin in a **new domain**, add the area prefix to this
+  table and pick a short, single-word identifier (no underscores inside the
+  area).
+- **`<verb>`** — snake_case action; required. Multi-word OK
+  (`__str_starts_with`, `__file_read_text`).
+- **`<modifier>`** (optional) — disambiguates overloads or units, e.g.
+  `__time_now_ms` (units), `__math_log10` (variant). Avoid unless necessary.
+
+#### Examples
+
+```rust
+// ✅ Conform — area prefix + verb
+m.insert("__str_length",       string::builtin_length);
+m.insert("__math_sqrt",        math::builtin_sqrt);
+m.insert("__obj_get_type",     object::builtin_get_type);
+m.insert("__file_read_text",   fs::builtin_file_read_text);
+
+// ❌ Legacy bare verb — do NOT add new ones
+m.insert("__println",   io::builtin_println);     // historical (since L1)
+m.insert("__readline",  io::builtin_readline);
+m.insert("__concat",    io::builtin_concat);
+m.insert("__len",       io::builtin_len);
+m.insert("__contains",  io::builtin_contains);
+m.insert("__to_str",    convert::builtin_to_str);
+```
+
+#### Why the convention matters
+
+- **stdlib maintainability** — anyone reading `__str_*` knows it backs string
+  operations; bare `__concat` requires reading the implementation to know which
+  type it operates on.
+- **dispatch table grouping** — `corelib/mod.rs::dispatch_table` registers
+  builtins in area-grouped sections; the naming convention keeps the file
+  visually organized.
+- **collision avoidance** — adding `__hash` would conflict across domains;
+  `__str_hash_code` / `__int_hash_code` / `__char_hash_code` / `__obj_hash_code`
+  coexist trivially.
+
+#### Legacy bare names (do not add)
+
+The following 9 bare-verb names predate the convention and are retained for
+backward compatibility:
+
+`__println`, `__print`, `__readline`, `__concat`, `__contains`, `__len`,
+`__to_str`, `__time_now_ms`, `__process_exit`.
+
+When migrating these is convenient (e.g. their implementing module reorganises),
+prefer renaming to `__io_writeline` / `__io_readline` / `__io_concat` etc.
+Otherwise they may stay as-is —— but **no new bare names**.
+
 ### Calling Convention
 
 When z42 code calls a native function:
