@@ -105,6 +105,7 @@
 - 调试符号：行号映射、局部变量名（支持基础调试体验）
 - Interpreter 基础优化：指令 dispatch 效率、对象分配路径
 - JIT 基础优化：热点函数识别、简单内联、常量折叠
+- **MagrGC 子系统（Phase 1 ✅ 2026-04-29）**：`trait MagrGC` 接口收口（参考 MMTk porting contract）+ `RcMagrGC` 默认后端（行为等价 `Rc<RefCell<...>>`）+ 6 个脚本驱动 callsite 迁移（interp 3 + JIT 3）；环引用泄漏作为已知限制，由 Phase 2 修复。详见 `docs/design/vm-architecture.md` "GC 子系统" 段。
 
 ### 标准库（基础）
 - `z42.core`：基础类型协议（ToString、Equals、GetHashCode）
@@ -121,7 +122,7 @@
 
 | 项目 | 触发条件 | 说明 |
 |------|---------|------|
-| A6: Value `Rc<RefCell>` → `Arc<Mutex>` 或对象池 | L3 async/线程模型设计时 | `Rc` 是 `!Send`，阻塞跨线程传值；需与并发模型一并设计 |
+| A6: Value `Rc<RefCell>` → `Arc<Mutex>` 或对象池 | L3 async/线程模型设计时 | `Rc` 是 `!Send`，阻塞跨线程传值；需与并发模型一并设计。**注**：MagrGC Phase 1 已收口分配接口（2026-04-29），Phase 3 切换到 `GcRef<T>` 时一并解决 Send 问题 |
 | A10: `PackageCompiler` → 可注入 `BuildPipeline` | 需要 mock 文件系统做编译器单元测试时 | 当前 static class 可用，低优先级 |
 | `TypeEnv.BuiltinClasses` 动态注入 | L3 泛型设计启动时 | 当前硬编码集合；与泛型一并设计 |
 | `IsReferenceType` 中 List/Dict 硬编码 | L3 泛型设计启动时 | List/Dict 应为 `Z42ClassType`，需泛型类型表示 |

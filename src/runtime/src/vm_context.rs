@@ -42,18 +42,22 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::gc::{MagrGC, RcMagrGC};
 use crate::metadata::lazy_loader::{LazyLoader, ZpkgCandidate};
 use crate::metadata::{Function, TypeDesc, Value};
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
 ///
-/// All fields are `RefCell` so methods take `&self` (not `&mut self`) — keeps
-/// borrow patterns simple at JIT extern-C call sites where the receiver is
-/// reached through `*mut VmContext` and we can't easily produce `&mut`.
+/// All `RefCell` fields take `&self` so JIT extern-C call sites (which reach
+/// the receiver through `*mut VmContext`) can avoid producing `&mut`. The
+/// `heap` field is `Box<dyn MagrGC>` without `RefCell` because it is set once
+/// in `new()` and never replaced; trait methods take `&self` and the
+/// implementation handles its own interior mutability.
 pub struct VmContext {
     pub(crate) static_fields:     RefCell<HashMap<String, Value>>,
     pub(crate) pending_exception: RefCell<Option<Value>>,
     pub(crate) lazy_loader:       RefCell<Option<LazyLoader>>,
+    pub(crate) heap:              Box<dyn MagrGC>,
 }
 
 impl Default for VmContext {
@@ -66,7 +70,16 @@ impl VmContext {
             static_fields:     RefCell::new(HashMap::new()),
             pending_exception: RefCell::new(None),
             lazy_loader:       RefCell::new(None),
+            heap:              Box::new(RcMagrGC::new()),
         }
+    }
+
+    // ── GC heap ───────────────────────────────────────────────────────────
+
+    /// Borrow the GC heap as a trait object. All script-driven allocations go
+    /// through this entry point; see `docs/design/vm-architecture.md` "GC 子系统".
+    pub fn heap(&self) -> &dyn MagrGC {
+        self.heap.as_ref()
     }
 
     // ── Static fields ─────────────────────────────────────────────────────

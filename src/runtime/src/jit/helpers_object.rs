@@ -2,10 +2,8 @@
 // JIT helpers — function calls, arrays, objects, type checks, static fields.
 
 use crate::corelib::convert::value_to_str;
-use crate::metadata::{NativeData, ScriptObject, Value};
-use std::cell::RefCell;
+use crate::metadata::{NativeData, Value};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use super::frame::{FnEntry, JitFrame, JitModuleCtx};
 use super::helpers::{set_exception, vm_ctx_ref, JitFn};
@@ -77,18 +75,18 @@ pub unsafe extern "C" fn jit_array_new(
             return 1;
         }
     };
-    (*frame).regs[dst as usize] = Value::Array(Rc::new(RefCell::new(vec![Value::Null; n])));
+    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vec![Value::Null; n]);
     0
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_array_new_lit(
-    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, elems_ptr: *const u32, elem_cnt: usize,
 ) {
     let elems = std::slice::from_raw_parts(elems_ptr, elem_cnt);
     let vals: Vec<Value> = elems.iter().map(|&r| (*frame).regs[r as usize].clone()).collect();
-    (*frame).regs[dst as usize] = Value::Array(Rc::new(RefCell::new(vals)));
+    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vals);
 }
 
 #[no_mangle]
@@ -205,8 +203,7 @@ pub unsafe extern "C" fn jit_obj_new(
             type_param_constraints: vec![],
         }));
     let slots = vec![Value::Null; type_desc.fields.len()];
-    let obj_rc  = Rc::new(RefCell::new(ScriptObject { type_desc, slots, native: NativeData::None }));
-    let obj_val = Value::Object(obj_rc);
+    let obj_val = vm_ctx_ref(ctx).heap().alloc_object(type_desc, slots, NativeData::None);
 
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
     let mut ctor_args: Vec<Value> = vec![obj_val.clone()];

@@ -3,11 +3,9 @@
 /// Each match arm corresponds to one IR instruction. Object-related dispatch
 /// helpers live in `dispatch.rs`; register-level numeric helpers in `ops.rs`.
 
-use crate::metadata::{Instruction, Module, NativeData, ScriptObject, Value};
+use crate::metadata::{Instruction, Module, NativeData, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 use super::dispatch::{
     is_subclass_or_eq_td, make_fallback_type_desc, obj_to_string, resolve_virtual, value_to_str,
@@ -190,13 +188,13 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         // ── Arrays ───────────────────────────────────────────────────────────
         Instruction::ArrayNew { dst, size } => {
             let n = to_usize(frame.get(*size)?, "ArrayNew size")?;
-            frame.set(*dst, Value::Array(Rc::new(RefCell::new(vec![Value::Null; n]))));
+            frame.set(*dst, ctx.heap().alloc_array(vec![Value::Null; n]));
         }
         Instruction::ArrayNewLit { dst, elems } => {
             let vals: Vec<Value> = elems.iter()
                 .map(|r| frame.get(*r).map(|v| v.clone()))
                 .collect::<Result<_>>()?;
-            frame.set(*dst, Value::Array(Rc::new(RefCell::new(vals))));
+            frame.set(*dst, ctx.heap().alloc_array(vals));
         }
         Instruction::ArrayGet { dst, arr, idx } => {
             let result = match frame.get(*arr)? {
@@ -261,12 +259,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                 });
 
             let slots = vec![Value::Null; type_desc.fields.len()];
-            let obj_rc = Rc::new(RefCell::new(ScriptObject {
-                type_desc,
-                slots,
-                native: NativeData::None,
-            }));
-            let obj_val = Value::Object(obj_rc);
+            let obj_val = ctx.heap().alloc_object(type_desc, slots, NativeData::None);
 
             // 直查 ctor_name (TypeChecker 已 overload-resolve)；无名字推断。
             // L3-G4d: fall back to lazy loader when the ctor lives in a stdlib zpkg

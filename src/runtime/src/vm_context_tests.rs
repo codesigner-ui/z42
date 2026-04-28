@@ -64,6 +64,33 @@ fn two_contexts_exception_isolated() {
     assert!(matches!(v, Some(Value::Str(ref s)) if s == "ctx1"));
 }
 
+// ── GC heap ───────────────────────────────────────────────────────────────────
+
+#[test]
+fn heap_is_installed_by_default() {
+    let ctx = VmContext::new();
+    // Default Phase 1 backend: RcMagrGC, alloc starts at 0.
+    assert_eq!(ctx.heap().stats().allocations, 0);
+}
+
+#[test]
+fn heap_alloc_array_increments_stats() {
+    let ctx = VmContext::new();
+    let v = ctx.heap().alloc_array(vec![Value::I64(1)]);
+    assert!(matches!(v, Value::Array(_)));
+    assert_eq!(ctx.heap().stats().allocations, 1);
+}
+
+#[test]
+fn two_contexts_heap_isolated() {
+    let ctx1 = VmContext::new();
+    let ctx2 = VmContext::new();
+    let _ = ctx1.heap().alloc_array(vec![]);
+    let _ = ctx1.heap().alloc_map();
+    assert_eq!(ctx1.heap().stats().allocations, 2);
+    assert_eq!(ctx2.heap().stats().allocations, 0);
+}
+
 // ── lazy_loader install / uninstall ───────────────────────────────────────────
 
 #[test]

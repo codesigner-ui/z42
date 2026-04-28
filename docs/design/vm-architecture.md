@@ -349,6 +349,80 @@ ConstStr 索引相对自己 pool。合并时若不重映射，懒加载函数里
 
 ---
 
+## GC 子系统 —— MagrGC（2026-04-29）
+
+### 接口形状
+
+z42 VM 的 GC 抽象由 `crate::gc::MagrGC` trait 定义，参考 [MMTk](https://www.mmtk.io/)
+`VMBinding` porting contract（OpenJDK / V8 / Julia / Ruby / RustPython 的事实
+标准接口形状）：
+
+```rust
+pub trait MagrGC: std::fmt::Debug {
+    fn alloc_object(&self, td: Arc<TypeDesc>, slots: Vec<Value>, native: NativeData) -> Value;
+    fn alloc_array(&self, elems: Vec<Value>) -> Value;
+    fn alloc_map(&self) -> Value;
+    fn write_barrier(&self, _owner: &Value, _slot: usize, _new: &Value) {}
+    fn collect(&self) {}
+    fn collect_cycles(&self) {}
+    fn stats(&self) -> HeapStats;
+}
+```
+
+`VmContext` 持有 `Box<dyn MagrGC>`（与 `static_fields` / `lazy_loader` 同 ownership
+模型）；所有脚本驱动分配走 `ctx.heap().alloc_*(...)`；JIT helper 通过
+`vm_ctx_ref(ctx).heap().alloc_*(...)` 调用同一接口。
+
+命名 **MagrGC** 取自《银河系漫游指南》中的 **Magrathea** —— 那颗专门建造
+定制行星的传奇世界，与"管理对象生命周期"主题契合。
+
+### Phase 1：RcMagrGC（已落地）
+
+`crate::gc::RcMagrGC` 是 Phase 1 默认后端，行为等价迁移前的直接
+`Rc::new(RefCell::new(...))` 构造：
+
+- `Value::Object` / `Value::Array` / `Value::Map` 形状不变
+- `Rc::ptr_eq` 引用相等语义保留
+- `RefCell` 运行时借用检查保留
+- `write_barrier` / `collect` 是 no-op；`collect_cycles` 仅递增 stats counter
+
+**已知限制**：
+
+1. **环引用泄漏**：`a.next = b; b.next = a` 仍泄漏 → Phase 2 修复
+2. **corelib 直构未迁移**：`corelib/object.rs:34`（`__obj_get_type`）、
+   `corelib/fs.rs:51`（`__env_args`）、`corelib/tests.rs` 仍直接 `Rc::new(RefCell::new(...))`
+   → Phase 1.5 配合 NativeFn 签名扩展一并处理
+3. **`alloc_map()` 暂无 callsite**：接口已就位但脚本驱动的 Map 分配点尚未出现
+
+### Phase 路线（持续迭代）
+
+| Phase | 内容 | 状态 |
+|-------|------|------|
+| **Phase 1** | trait MagrGC 接口 + RcMagrGC 实现 + 6 个脚本驱动 callsite 收口 | ✅ 2026-04-29 |
+| **Phase 1.5** | corelib `NativeFn` 签名扩展带 `&VmContext` + corelib 内剩余 Rc::new 迁移 | 📋 待立项 |
+| **Phase 2** | 环检测真实实现（dumpster 2.0 集成 / 自研 Bacon-Rajan 二选一） | 📋 待立项 |
+| **Phase 3** | Mark-Sweep + RootScope + 真实 write_barrier + Cranelift stack maps；`Value::Array/Map/Object` 改用 `GcRef<T>` | 📋 待立项 |
+| **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |
+
+### 字符串脚本化的未来动机
+
+当 Phase 2/3 GC 成熟（环检测 + 追踪），字符串可以从 `Value::Str(String)`
+primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 BCL `String`），
+届时 z42 源码可承担更多 string 方法实现，进一步减少 Rust 端硬编码 builtin。
+这与 2026-04-24 起的 simplify-string-stdlib / wave1-string-script 系列重构方向一致。
+
+### 设计权衡：为什么不一次到位
+
+- **Phase 1 范围严格限定为"接口收口、行为零变化"** —— commit 范围干净（纯重构），
+  失败回滚成本低；环检测算法选型应在专门的 Phase 2 spec 中讨论（dumpster crate 依赖、
+  STW vs 并发等独立决策点）
+- **trait 形状一次设计完，让后续 phase 切换实现无需改 callsite** —— 6 处分配点
+  已统一走 `ctx.heap()`，未来即使从 RcMagrGC 切到 MarkSweepHeap，调用方代码不变
+- **`Value` enum 不动** —— Phase 3 引入 `GcRef<T>` 时再统一修改 PartialEq /
+  JIT helper / 测试构造；Phase 1 不要把这些副带成本算进来
+
+---
+
 ## 延伸阅读
 
 - `docs/design/ir.md` — IR 指令集、zbc 二进制格式
