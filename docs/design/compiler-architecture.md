@@ -563,6 +563,158 @@ intraSymbols = sharedSymbols.ExtractIntraSymbols(firstNs, classNamespaces);
 
 ---
 
+## 错误处理：Diagnostics vs Exceptions
+
+z42 编译器同时使用**诊断收集**（`DiagnosticBag`）与**异常**（`ParseException` /
+`CompilationException`），但二者各司其职 —— 不是冗余设计。新接手者最容易困
+惑的就是"什么时候 `_diags.Error(...)` 后继续、什么时候 `throw`"，本节把
+规则一次说清。
+
+### 三个核心类型
+
+| 类型 | 定义位置 | 作用 |
+|------|---------|------|
+| `DiagnosticBag` | `z42.Core/Diagnostics/DiagnosticBag.cs` | 收集多条诊断（错误 + 警告 + 信息），允许"先报告再继续"模式 |
+| `ParseException` | `z42.Syntax/Parser/Parser.cs` | Parser 在**无法继续解析当前结构**时抛出（panic-mode）；携带 `Span` 与 `code` |
+| `CompilationException` | `z42.Core/Diagnostics/DiagnosticBag.cs` | 由 `DiagnosticBag.ThrowIfErrors()` 抛出；表示"已收集到错误，停止当前 unit" |
+
+### 使用规则
+
+#### ① Parser 用 `ParseException`（强制中断）
+
+**场景**：当 Parser 已经消费了一些 token，但接下来的 token 序列既不满足
+任何已知文法规则、也无法智能猜测意图（例如 `int x = ;` 这种）→ 当前声明
+/ 表达式必须放弃。
+
+```csharp
+// z42.Syntax/Parser/TopLevelParser.Helpers.cs
+private static Token ExpectKind(ref TokenCursor cursor, TokenKind kind)
+{
+    if (cursor.Current.Kind != kind)
+        throw new ParseException(
+            $"expected `{Combinators.KindDisplay(kind)}`, got `{cursor.Current.Text}`",
+            cursor.Current.Span,
+            DiagnosticCodes.ExpectedToken);
+    ...
+}
+```
+
+**为什么不 `_diags.Error()` 后继续**：parser 是有状态的（cursor 位置），
+错误 token 上"装作没事"会让后续解析被错误位置误导，产生雪崩式假错误。
+
+#### ② Parser 顶层用 `catch (ParseException) when (diags != null)`（panic 恢复）
+
+**只在顶层声明边界 catch**：`ParseCompilationUnit` 的 top-item 循环、
+`ParseClassDecl` 的成员循环、`StmtParser` 的语句循环 —— 这些点适合
+"放弃当前声明，跳到下一个边界继续 parse"，能在一次 build 里报告多个语法
+错误。
+
+```csharp
+// z42.Syntax/Parser/TopLevelParser.cs
+while (!cursor.IsEnd)
+{
+    try
+    {
+        // ... parse one top-item ...
+    }
+    catch (ParseException ex) when (diags != null)
+    {
+        diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
+        cursor = SkipToNextDeclaration(cursor);  // panic-mode: 找下一个 `class` / `void` / `using` 等开始 token
+    }
+}
+```
+
+**`when (diags != null)` 的意义**：API 暴露给"只 parse 不报错"的内部用法
+（如表达式 fragment 解析）时，diags 为 null → 异常直接传播，调用方决定
+是否兜底。这是有意的双模式接口。
+
+#### ③ Semantic / Codegen 用 `_diags.Error()`（继续收集）
+
+**场景**：类型检查、Codegen 阶段每个错误都不影响其他独立子树（例如方法 A
+的类型错误不影响方法 B），所以全部走 diag 收集，跑完整个 CU 一次性报告。
+
+```csharp
+// z42.Semantics/TypeCheck/TypeChecker.Generics.cs
+if (bundle.RequiresEnum && !IsEnumArg(typeArg))
+    _diags.Error(DiagnosticCodes.TypeMismatch,
+        $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy constraint `enum` on `{declName}`",
+        callSpan);
+// 注意：不 throw —— 继续检查下一个 type arg
+```
+
+**为什么不 `throw`**：让用户一次拿到所有错误，避免 fix-one-rebuild-find-next 循环。
+
+#### ④ Body 绑定用 `try { ... } catch (CompilationException)`（函数级隔离）
+
+**场景**：当一个函数 body 因深层错误彻底崩溃（不一定是 `CompilationException`，
+也可能是任意 `Exception` 即 ICE），需要保护**其他函数继续被检查**。
+
+```csharp
+// z42.Semantics/TypeCheck/TypeChecker.cs
+private void TryBindClassMethods(ClassDecl cls)
+{
+    try { BindClassMethods(cls); }
+    catch (CompilationException) { /* 诊断已记录，继续下一个类 */ }
+    catch (Exception ex) when (ex is not OutOfMemoryException and not StackOverflowException)
+    {
+        _diags.Error(DiagnosticCodes.InternalCompilerError,
+            $"ICE while checking class `{cls.Name}`: [{ex.GetType().Name}] {ex.Message}", cls.Span);
+    }
+}
+```
+
+**`CompilationException` 不是错误**：它只是一个"我已经把错误塞进 diag 了，
+请把我作为信号回到外层"。catch 时**不再追加诊断**（已经在 diag 里了）。
+
+#### ⑤ Pipeline 用 `diags.HasErrors` 决策（不依赖异常控制流）
+
+**场景**：`PipelineCore.Compile` 在调用 TypeChecker 后，先检查 `diags.HasErrors`
+决定是否进入 IrGen；CompilationException 只是 IrGen 内部 `ThrowIfErrors()`
+的兜底，正常路径都走 `if (diags.HasErrors)`。
+
+```csharp
+// z42.Pipeline/PipelineCore.cs
+var sem = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
+if (diags.HasErrors)
+    return new(null, diags, ...);   // 先看 diag，不进 IrGen
+try
+{
+    var ir = new IrGen(...).Generate(cu);
+    ...
+}
+catch (CompilationException)
+{
+    // 仅当 IrGen 内部 ThrowIfErrors 时触发，diag 已收集
+    return new(null, diags, ...);
+}
+// 其他异常 = ICE，直接传播让 stack trace 暴露
+```
+
+### 决策表（速查）
+
+| 场景 | 用什么 | 例子 |
+|------|--------|------|
+| Parser 期望 token X 但拿到 Y | `throw new ParseException` | `ExpectKind(LParen)` 失败 |
+| Parser 表达式 / 语句中递归失败 | `throw new ParseException` | `Combinators.Unwrap(ref cursor)` |
+| 顶层声明边界 / 成员循环 | `catch (ParseException) when (diags != null)` + 跳过 | `ParseCompilationUnit` top loop |
+| TypeChecker 检测到类型不匹配 | `_diags.Error(...)` 继续 | `RequireAssignable` 失败 |
+| TypeChecker 检测到未定义符号 | `_diags.Error(...)` 继续 | `BindIdent` 找不到 |
+| Codegen 发现 unreachable 状态 | `_diags.Error(...)` 继续（让其他函数继续生成） | `IrGen` 内部检查 |
+| Body 绑定包裹（保护其他函数） | `try / catch (CompilationException) / catch (Exception → ICE)` | `TryBindClassMethods` |
+| Pipeline 阶段切换 | `if (diags.HasErrors) return` | `Compile` TypeChecker → IrGen 间 |
+| 真正的内部 bug（NullRef 等） | **不 catch**，让它传播 | 任何未预期 `Exception` |
+
+### 反模式（违规即修）
+
+- ❌ Parser 内部 `_diags.Error()` 后继续 parsing —— 错误 cursor 位置会污染后续
+- ❌ TypeChecker `throw new SomeException` 中断检查 —— 用户拿不到完整错误列表
+- ❌ Pipeline 用 `try { ... } catch (Exception)` 吞掉 ICE —— 失去 stack trace 调试线索
+- ❌ catch `CompilationException` 后再 `_diags.Error("...")` 加错误 —— 重复报告
+- ❌ `_diags.Error(..., span)` 用了 `Span.Empty` / `(0,0)` —— 用户定位不到位置（`EmitImportDiagnostics` 之类的 cross-file 诊断除外，但应注释说明）
+
+---
+
 ## 关键设计权衡
 
 ### 为什么 AST 节点是 `sealed record`
