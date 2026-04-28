@@ -2,20 +2,20 @@
 //!
 //! **STATUS: STUB** — no public API yet.
 //!
-//! Phase 1 reality (post consolidate-vm-state, 2026-04-28):
+//! Phase 1 reality (post extend-jit-helper-abi, 2026-04-28):
 //! - **interp** propagates exceptions via `ExecOutcome::Thrown(Value)` enum,
-//!   with no thread_local intermediary. The legacy `UserException` sentinel
-//!   + `PENDING_EXCEPTION` thread_local + `user_throw` / `user_exception_take`
-//!   helpers were deleted — review2 §5.5 closed.
-//! - **JIT** stores the in-flight exception in `jit/helpers.rs::PENDING_EXCEPTION`
-//!   thread_local for ABI reasons (extern "C" arith/bool helpers don't carry
-//!   ctx). `JitModule::run` syncs the slot with `VmContext::pending_exception`
-//!   at the entry/exit boundary, so each VmContext sees its own slot across
-//!   serial runs.
+//!   with no thread_local intermediary.
+//! - **JIT** stores the in-flight exception in `VmContext::pending_exception`
+//!   directly. Helper extern "C" functions all carry `*const JitModuleCtx` as
+//!   2nd parameter and reach `VmContext` via `(*jit_ctx).vm_ctx`. No
+//!   thread_local exception state remains.
 //!
-//! **Future work**:
-//! - Extend JIT helper ABI to receive `*const JitModuleCtx` (unblocks deleting
-//!   the last JIT thread_local and brings full multi-VM-per-thread parity);
-//!   tracked as follow-up `extend-jit-helper-abi` spec.
-//! - Once that lands, this module can host the unified exception type
-//!   hierarchy + cross-backend unwinding contract that L2 / L3 needs.
+//! All previously-existing thread_local exception slots
+//! (`interp::PENDING_EXCEPTION`, `jit::helpers::PENDING_EXCEPTION`) and
+//! the `UserException` sentinel + `user_throw` / `user_exception_take` /
+//! `sync_in_from_ctx` / `sync_out_to_ctx` bridges are gone (review2 §5.5
+//! closed; review2 §3 fully tackled).
+//!
+//! **Future work**: this module can host the unified exception type hierarchy
+//! + cross-backend unwinding contract that L2 / L3 needs (Result<T, E>,
+//! cancellation tokens, etc.).

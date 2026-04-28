@@ -323,11 +323,14 @@ builtin 按功能分 submodule：`string.rs` / `io.rs` / `math.rs` / `collection
 | Pending exception (JIT) | `jit/helpers.rs::PENDING_EXCEPTION` thread_local | thread_local 保留（extern "C" ABI）；`JitModule::run` 在边界与 `ctx.pending_exception` sync |
 | 静态字段 (JIT) | `jit/helpers.rs::STATIC_FIELDS` thread_local | thread_local 保留；同样 sync 机制 |
 
-> JIT 端 2 个 thread_local 保留是因为 ~30 个 extern "C" arith/bool helper
-> 签名不带 `JitModuleCtx`，要全部加 ctx 参数需改 ABI + Cranelift 生成端。
-> 那是后续 `extend-jit-helper-abi` spec 的工作。当前 sync 模式在外部
-> 观察上等价（serial 多 ctx 互不污染），代价是同线程并发 JIT 调用未支持
-> （但 `JitModule::run` 是同步的，结构上不可能并发）。
+> 2026-04-28 update（extend-jit-helper-abi）：JIT 端的 2 个 thread_local
+> 已删除。所有 ~37 个 extern "C" helper 签名都加了 `ctx: *const JitModuleCtx`
+> 第 2 参（含 macro 实例化的批量 helper），Cranelift translate.rs 同步在
+> 调用点插入 `ctx_val`。helper 内部通过 `vm_ctx_ref(ctx)` → `(*ctx).vm_ctx`
+> 两层间接拿到 `VmContext`，不再有任何同步桥接代码。
+>
+> Runtime 内仅余 `jit/frame.rs::FRAME_POOL`（pure allocator cache，每线程
+> 独立池子合理）。`VmContext` 是所有 runtime-mutable 状态的唯一规范来源。
 
 ### 为什么不预加载所有 stdlib
 

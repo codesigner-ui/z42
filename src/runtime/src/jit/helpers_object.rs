@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use super::frame::{FnEntry, JitFrame, JitModuleCtx};
-use super::helpers::{set_exception, JitFn};
+use super::helpers::{set_exception, vm_ctx_ref, JitFn};
 
 // ── Calls ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +25,10 @@ pub unsafe extern "C" fn jit_call(
 
     let entry: &FnEntry = match ctx_ref.fn_entries.get(func_name) {
         Some(e) => e,
-        None => { set_exception(Value::Str(format!("undefined function `{}`", func_name))); return 1; }
+        None => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("undefined function `{}`", func_name)));
+            return 1;
+        }
     };
 
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
@@ -42,7 +45,8 @@ pub unsafe extern "C" fn jit_call(
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_builtin(
-    frame: *mut JitFrame, dst: u32,
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32,
     name_ptr: *const u8, name_len: usize,
     args_ptr: *const u32, argc: usize,
 ) -> u8 {
@@ -54,18 +58,24 @@ pub unsafe extern "C" fn jit_builtin(
 
     match crate::corelib::exec_builtin(name, &args) {
         Ok(v)  => { frame_ref.regs[dst as usize] = v; 0 }
-        Err(e) => { set_exception(Value::Str(e.to_string())); 1 }
+        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string())); 1 }
     }
 }
 
 // ── Arrays ───────────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_array_new(frame: *mut JitFrame, dst: u32, size: u32) -> u8 {
+pub unsafe extern "C" fn jit_array_new(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, size: u32,
+) -> u8 {
     let n = match &(*frame).regs[size as usize] {
         Value::I64(n) if *n >= 0 => *n as usize,
         Value::I64(n) if *n >= 0 => *n as usize,
-        other => { set_exception(Value::Str(format!("ArrayNew: expected non-negative int, got {:?}", other))); return 1; }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayNew: expected non-negative int, got {:?}", other)));
+            return 1;
+        }
     };
     (*frame).regs[dst as usize] = Value::Array(Rc::new(RefCell::new(vec![Value::Null; n])));
     0
@@ -73,7 +83,8 @@ pub unsafe extern "C" fn jit_array_new(frame: *mut JitFrame, dst: u32, size: u32
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_array_new_lit(
-    frame: *mut JitFrame, dst: u32, elems_ptr: *const u32, elem_cnt: usize,
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, elems_ptr: *const u32, elem_cnt: usize,
 ) {
     let elems = std::slice::from_raw_parts(elems_ptr, elem_cnt);
     let vals: Vec<Value> = elems.iter().map(|&r| (*frame).regs[r as usize].clone()).collect();
@@ -81,7 +92,10 @@ pub unsafe extern "C" fn jit_array_new_lit(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_array_get(frame: *mut JitFrame, dst: u32, arr: u32, idx: u32) -> u8 {
+pub unsafe extern "C" fn jit_array_get(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, arr: u32, idx: u32,
+) -> u8 {
     let arr_val = (*frame).regs[arr as usize].clone();
     let idx_val = (*frame).regs[idx as usize].clone();
     let result = match &arr_val {
@@ -89,11 +103,14 @@ pub unsafe extern "C" fn jit_array_get(frame: *mut JitFrame, dst: u32, arr: u32,
             let i = match &idx_val {
                 Value::I64(n) if *n >= 0 => *n as usize,
                 Value::I64(n) if *n >= 0 => *n as usize,
-                other => { set_exception(Value::Str(format!("ArrayGet: bad index {:?}", other))); return 1; }
+                other => {
+                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: bad index {:?}", other)));
+                    return 1;
+                }
             };
             let borrowed = rc.borrow();
             if i >= borrowed.len() {
-                set_exception(Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
+                set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
                 return 1;
             }
             borrowed[i].clone()
@@ -102,14 +119,20 @@ pub unsafe extern "C" fn jit_array_get(frame: *mut JitFrame, dst: u32, arr: u32,
             let key = value_to_str(&idx_val);
             rc.borrow().get(&key).cloned().unwrap_or(Value::Null)
         }
-        other => { set_exception(Value::Str(format!("ArrayGet: expected array or map, got {:?}", other))); return 1; }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayGet: expected array or map, got {:?}", other)));
+            return 1;
+        }
     };
     (*frame).regs[dst as usize] = result;
     0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_array_set(frame: *mut JitFrame, arr: u32, idx: u32, val: u32) -> u8 {
+pub unsafe extern "C" fn jit_array_set(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    arr: u32, idx: u32, val: u32,
+) -> u8 {
     let arr_val = (*frame).regs[arr as usize].clone();
     let idx_val = (*frame).regs[idx as usize].clone();
     let v       = (*frame).regs[val as usize].clone();
@@ -118,11 +141,14 @@ pub unsafe extern "C" fn jit_array_set(frame: *mut JitFrame, arr: u32, idx: u32,
             let i = match &idx_val {
                 Value::I64(n) if *n >= 0 => *n as usize,
                 Value::I64(n) if *n >= 0 => *n as usize,
-                other => { set_exception(Value::Str(format!("ArraySet: bad index {:?}", other))); return 1; }
+                other => {
+                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: bad index {:?}", other)));
+                    return 1;
+                }
             };
             let mut borrowed = rc.borrow_mut();
             if i >= borrowed.len() {
-                set_exception(Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
+                set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
                 return 1;
             }
             borrowed[i] = v;
@@ -131,16 +157,25 @@ pub unsafe extern "C" fn jit_array_set(frame: *mut JitFrame, arr: u32, idx: u32,
             let key = value_to_str(&idx_val);
             rc.borrow_mut().insert(key, v);
         }
-        other => { set_exception(Value::Str(format!("ArraySet: expected array or map, got {:?}", other))); return 1; }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: expected array or map, got {:?}", other)));
+            return 1;
+        }
     }
     0
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_array_len(frame: *mut JitFrame, dst: u32, arr: u32) -> u8 {
+pub unsafe extern "C" fn jit_array_len(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, arr: u32,
+) -> u8 {
     match &(*frame).regs[arr as usize] {
         Value::Array(rc) => { (*frame).regs[dst as usize] = Value::I64(rc.borrow().len() as i64); 0 }
-        other => { set_exception(Value::Str(format!("ArrayLen: expected array, got {:?}", other))); 1 }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayLen: expected array, got {:?}", other)));
+            1
+        }
     }
 }
 
@@ -191,7 +226,8 @@ pub unsafe extern "C" fn jit_obj_new(
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_field_get(
-    frame: *mut JitFrame, dst: u32, obj: u32,
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, obj: u32,
     field_name_ptr: *const u8, field_name_len: usize,
 ) -> u8 {
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
@@ -207,7 +243,10 @@ pub unsafe extern "C" fn jit_field_get(
         Value::Str(s) if field_name == "Length" => Value::I64(s.chars().count() as i64),
         Value::Array(rc) if field_name == "Length" || field_name == "Count" => Value::I64(rc.borrow().len() as i64),
         Value::Map(rc) if field_name == "Length" || field_name == "Count" => Value::I64(rc.borrow().len() as i64),
-        other => { set_exception(Value::Str(format!("FieldGet: expected object, got {:?}", other))); return 1; }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldGet: expected object, got {:?}", other)));
+            return 1;
+        }
     };
     (*frame).regs[dst as usize] = val;
     0
@@ -215,7 +254,8 @@ pub unsafe extern "C" fn jit_field_get(
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_field_set(
-    frame: *mut JitFrame, obj: u32,
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    obj: u32,
     field_name_ptr: *const u8, field_name_len: usize, val: u32,
 ) -> u8 {
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
@@ -229,7 +269,10 @@ pub unsafe extern "C" fn jit_field_set(
             }
             0
         }
-        other => { set_exception(Value::Str(format!("FieldSet: expected object, got {:?}", other))); 1 }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("FieldSet: expected object, got {:?}", other)));
+            1
+        }
     }
 }
 
@@ -278,7 +321,7 @@ pub unsafe extern "C" fn jit_vcall(
             // Lazy loader fallback — call via interpreter.
             // Reach VmContext through the JIT module ctx pointer (set by
             // JitModule::run for the duration of this entry call).
-            let vm_ctx = unsafe { &*((*ctx).vm_ctx) };
+            let vm_ctx = vm_ctx_ref(ctx);
             if let Some(lazy_fn) = vm_ctx.try_lookup_function(func_name) {
                 match crate::interp::exec_function(vm_ctx, module, lazy_fn.as_ref(), &call_args) {
                     Ok(outcome) => match outcome {
@@ -287,11 +330,11 @@ pub unsafe extern "C" fn jit_vcall(
                             return 0;
                         }
                         crate::interp::ExecOutcome::Thrown(val) => {
-                            set_exception(val);
+                            set_exception(vm_ctx, val);
                             return 1;
                         }
                     },
-                    Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+                    Err(e) => { set_exception(vm_ctx, Value::Str(e.to_string())); return 1; }
                 }
             }
         }
@@ -301,17 +344,23 @@ pub unsafe extern "C" fn jit_vcall(
 
     let class_name = match &obj_val {
         Value::Object(rc) => rc.borrow().type_desc.name.clone(),
-        other => { set_exception(Value::Str(format!("VCall: expected object, got {:?}", other))); return 1; }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: expected object, got {:?}", other)));
+            return 1;
+        }
     };
 
     let func_name = match resolve_virtual(module, &class_name, method) {
         Ok(n)  => n,
-        Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+        Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string())); return 1; }
     };
 
     let entry = match ctx_ref.fn_entries.get(&func_name) {
         Some(e) => e,
-        None => { set_exception(Value::Str(format!("VCall: compiled entry for `{}` not found", func_name))); return 1; }
+        None => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: compiled entry for `{}` not found", func_name)));
+            return 1;
+        }
     };
 
     let mut call_args: Vec<Value> = vec![obj_val];
@@ -386,19 +435,21 @@ pub unsafe extern "C" fn jit_as_cast(
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_static_get(
-    frame: *mut JitFrame, dst: u32, field_ptr: *const u8, field_len: usize,
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, field_ptr: *const u8, field_len: usize,
 ) {
     let field = std::str::from_utf8(std::slice::from_raw_parts(field_ptr, field_len))
         .unwrap_or("<invalid>");
-    (*frame).regs[dst as usize] = super::helpers::static_get(field);
+    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).static_get(field);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_static_set(
-    frame: *mut JitFrame, field_ptr: *const u8, field_len: usize, val: u32,
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    field_ptr: *const u8, field_len: usize, val: u32,
 ) {
     let field = std::str::from_utf8(std::slice::from_raw_parts(field_ptr, field_len))
         .unwrap_or("<invalid>").to_string();
     let v = (*frame).regs[val as usize].clone();
-    super::helpers::static_set_inner(&field, v);
+    vm_ctx_ref(ctx).static_set(&field, v);
 }

@@ -21,7 +21,7 @@ use cranelift_module::{FuncId, Linkage, Module as CraneliftModule};
 use cranelift_jit::{JITBuilder, JITModule};
 use crate::vm_context::VmContext;
 use frame::{FnEntry, JitFrame, JitModuleCtx};
-use helpers::{take_exception_error, sync_in_from_ctx, sync_out_to_ctx, JitFn};
+use helpers::{take_exception_error, JitFn};
 use std::collections::HashMap;
 
 // ─── Public API ─────────────────────────────────────────────────────────────
@@ -45,16 +45,13 @@ impl JitModule {
     pub fn run_fn(&mut self, ctx: &mut VmContext, entry_name: &str) -> Result<()> {
         let entry = self.ctx.fn_entries.get(entry_name)
             .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?;
-        // Sync ctx → JIT thread_local slots before entry; sync back after.
-        sync_in_from_ctx(ctx);
         self.ctx.vm_ctx = ctx as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
         let r = unsafe { f(&mut frame, &*self.ctx) };
         frame.recycle();
         self.ctx.vm_ctx = std::ptr::null_mut();
-        sync_out_to_ctx(ctx);
-        if r != 0 { return Err(take_exception_error()); }
+        if r != 0 { return Err(take_exception_error(ctx)); }
         Ok(())
     }
 

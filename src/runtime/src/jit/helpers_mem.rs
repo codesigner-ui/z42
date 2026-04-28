@@ -4,37 +4,55 @@
 use crate::corelib::convert::value_to_str;
 use crate::metadata::Value;
 use super::frame::{JitFrame, JitModuleCtx};
-use super::helpers::{set_exception, take_exception, JitFn};
+use super::helpers::{set_exception, take_exception, vm_ctx_ref, JitFn};
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_const_i32(frame: *mut JitFrame, dst: u32, val: i32) {
+pub unsafe extern "C" fn jit_const_i32(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, val: i32,
+) {
     (*frame).regs[dst as usize] = Value::I64(val as i64);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_const_i64(frame: *mut JitFrame, dst: u32, val: i64) {
-    (*frame).regs[dst as usize] = Value::I64(val as i64);
+pub unsafe extern "C" fn jit_const_i64(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, val: i64,
+) {
+    (*frame).regs[dst as usize] = Value::I64(val);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_const_f64(frame: *mut JitFrame, dst: u32, val: f64) {
+pub unsafe extern "C" fn jit_const_f64(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, val: f64,
+) {
     (*frame).regs[dst as usize] = Value::F64(val);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_const_bool(frame: *mut JitFrame, dst: u32, val: u8) {
+pub unsafe extern "C" fn jit_const_bool(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, val: u8,
+) {
     (*frame).regs[dst as usize] = Value::Bool(val != 0);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_const_char(frame: *mut JitFrame, dst: u32, val: i32) {
+pub unsafe extern "C" fn jit_const_char(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, val: i32,
+) {
     (*frame).regs[dst as usize] = Value::Char(char::from_u32(val as u32).unwrap_or('\0'));
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_const_null(frame: *mut JitFrame, dst: u32) {
+pub unsafe extern "C" fn jit_const_null(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32,
+) {
     (*frame).regs[dst as usize] = Value::Null;
 }
 
@@ -48,14 +66,20 @@ pub unsafe extern "C" fn jit_const_str(
     let ctx_ref = &*ctx;
     match ctx_ref.string_pool.get(idx as usize) {
         Some(s) => { (*frame).regs[dst as usize] = Value::Str(s.clone()); 0 }
-        None => { set_exception(Value::Str(format!("string pool index {} out of range", idx))); 1 }
+        None => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("string pool index {} out of range", idx)));
+            1
+        }
     }
 }
 
 // ── Copy ─────────────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_copy(frame: *mut JitFrame, dst: u32, src: u32) {
+pub unsafe extern "C" fn jit_copy(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, src: u32,
+) {
     let v = (*frame).regs[src as usize].clone();
     (*frame).regs[dst as usize] = v;
 }
@@ -63,14 +87,17 @@ pub unsafe extern "C" fn jit_copy(frame: *mut JitFrame, dst: u32, src: u32) {
 // ── String ───────────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_str_concat(frame: *mut JitFrame, dst: u32, a: u32, b: u32) -> u8 {
+pub unsafe extern "C" fn jit_str_concat(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, a: u32, b: u32,
+) -> u8 {
     match (&(*frame).regs[a as usize], &(*frame).regs[b as usize]) {
         (Value::Str(sa), Value::Str(sb)) => {
             (*frame).regs[dst as usize] = Value::Str(format!("{}{}", sa, sb));
             0
         }
         (va, vb) => {
-            set_exception(Value::Str(format!("StrConcat: expected two strings, got {:?} and {:?}", va, vb)));
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("StrConcat: expected two strings, got {:?} and {:?}", va, vb)));
             1
         }
     }
@@ -106,7 +133,10 @@ pub unsafe extern "C" fn jit_to_str(
                 crate::metadata::well_known_names::BUILTIN_OBJ_TO_STR,
                 &[val.clone()]) {
             Ok(v) => { (*frame).regs[dst as usize] = Value::Str(match v { Value::Str(s) => s, ref o => value_to_str(o) }); }
-            Err(e) => { set_exception(Value::Str(e.to_string())); return 1; }
+            Err(e) => {
+                set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string()));
+                return 1;
+            }
         }
     } else {
         (*frame).regs[dst as usize] = Value::Str(value_to_str(val));
@@ -117,27 +147,42 @@ pub unsafe extern "C" fn jit_to_str(
 // ── Control-flow helpers ─────────────────────────────────────────────────────
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_get_bool(frame: *mut JitFrame, reg: u32) -> u8 {
+pub unsafe extern "C" fn jit_get_bool(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    reg: u32,
+) -> u8 {
     match &(*frame).regs[reg as usize] {
         Value::Bool(b) => if *b { 1 } else { 0 },
-        other => { set_exception(Value::Str(format!("BrCond: expected bool, got {:?}", other))); 255 }
+        other => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("BrCond: expected bool, got {:?}", other)));
+            255
+        }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_set_ret(frame: *mut JitFrame, reg: u32) {
+pub unsafe extern "C" fn jit_set_ret(
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    reg: u32,
+) {
     let v = (*frame).regs[reg as usize].clone();
     (*frame).ret = Some(v);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_throw(frame: *mut JitFrame, reg: u32) {
+pub unsafe extern "C" fn jit_throw(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    reg: u32,
+) {
     let v = (*frame).regs[reg as usize].clone();
-    set_exception(v);
+    set_exception(vm_ctx_ref(ctx), v);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn jit_install_catch(frame: *mut JitFrame, catch_reg: u32) {
-    let v = take_exception().unwrap_or(Value::Null);
+pub unsafe extern "C" fn jit_install_catch(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    catch_reg: u32,
+) {
+    let v = take_exception(vm_ctx_ref(ctx)).unwrap_or(Value::Null);
     (*frame).regs[catch_reg as usize] = v;
 }

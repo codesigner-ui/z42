@@ -92,61 +92,65 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         }};
     }
 
+    // extend-jit-helper-abi (2026-04-28): every helper now receives
+    // `ctx: *const JitModuleCtx` as 2nd param (after `frame`). Helper bodies
+    // reach VmContext via `(*ctx).vm_ctx`, replacing the previous
+    // `thread_local!` slots in `helpers.rs`.
     Ok(HelperIds {
-        const_i32:     decl!("jit_const_i32",  [ptr, i32t, i32t],                    []),
-        const_i64:     decl!("jit_const_i64",  [ptr, i32t, i64t],                    []),
-        const_f64:     decl!("jit_const_f64",  [ptr, i32t, f64t],                    []),
-        const_bool:    decl!("jit_const_bool", [ptr, i32t, i8t],                     []),
-        const_char:    decl!("jit_const_char", [ptr, i32t, i32t],                    []),
-        const_null:    decl!("jit_const_null", [ptr, i32t],                           []),
-        const_str:     decl!("jit_const_str",  [ptr, ptr, i32t, i32t],               [i8t]),
-        copy:          decl!("jit_copy",       [ptr, i32t, i32t],                    []),
-        add:           decl!("jit_add",        [ptr, i32t, i32t, i32t],              [i8t]),
-        sub:           decl!("jit_sub",        [ptr, i32t, i32t, i32t],              [i8t]),
-        mul:           decl!("jit_mul",        [ptr, i32t, i32t, i32t],              [i8t]),
-        div:           decl!("jit_div",        [ptr, i32t, i32t, i32t],              [i8t]),
-        rem:           decl!("jit_rem",        [ptr, i32t, i32t, i32t],              [i8t]),
-        eq:            decl!("jit_eq",         [ptr, i32t, i32t, i32t],              []),
-        ne:            decl!("jit_ne",         [ptr, i32t, i32t, i32t],              []),
-        lt:            decl!("jit_lt",         [ptr, i32t, i32t, i32t],              [i8t]),
-        le:            decl!("jit_le",         [ptr, i32t, i32t, i32t],              [i8t]),
-        gt:            decl!("jit_gt",         [ptr, i32t, i32t, i32t],              [i8t]),
-        ge:            decl!("jit_ge",         [ptr, i32t, i32t, i32t],              [i8t]),
-        and:           decl!("jit_and",        [ptr, i32t, i32t, i32t],              [i8t]),
-        or:            decl!("jit_or",         [ptr, i32t, i32t, i32t],              [i8t]),
-        not:           decl!("jit_not",        [ptr, i32t, i32t],                    [i8t]),
-        neg:           decl!("jit_neg",        [ptr, i32t, i32t],                    [i8t]),
-        bit_and:       decl!("jit_bit_and",    [ptr, i32t, i32t, i32t],              [i8t]),
-        bit_or:        decl!("jit_bit_or",     [ptr, i32t, i32t, i32t],              [i8t]),
-        bit_xor:       decl!("jit_bit_xor",    [ptr, i32t, i32t, i32t],              [i8t]),
-        bit_not:       decl!("jit_bit_not",    [ptr, i32t, i32t],                    [i8t]),
-        shl:           decl!("jit_shl",        [ptr, i32t, i32t, i32t],              [i8t]),
-        shr:           decl!("jit_shr",        [ptr, i32t, i32t, i32t],              [i8t]),
-        str_concat:    decl!("jit_str_concat", [ptr, i32t, i32t, i32t],              [i8t]),
-        to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],               [i8t]),
+        const_i32:     decl!("jit_const_i32",  [ptr, ptr, i32t, i32t],                    []),
+        const_i64:     decl!("jit_const_i64",  [ptr, ptr, i32t, i64t],                    []),
+        const_f64:     decl!("jit_const_f64",  [ptr, ptr, i32t, f64t],                    []),
+        const_bool:    decl!("jit_const_bool", [ptr, ptr, i32t, i8t],                     []),
+        const_char:    decl!("jit_const_char", [ptr, ptr, i32t, i32t],                    []),
+        const_null:    decl!("jit_const_null", [ptr, ptr, i32t],                           []),
+        const_str:     decl!("jit_const_str",  [ptr, ptr, i32t, i32t],                    [i8t]),
+        copy:          decl!("jit_copy",       [ptr, ptr, i32t, i32t],                    []),
+        add:           decl!("jit_add",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        sub:           decl!("jit_sub",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        mul:           decl!("jit_mul",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        div:           decl!("jit_div",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        rem:           decl!("jit_rem",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        eq:            decl!("jit_eq",         [ptr, ptr, i32t, i32t, i32t],              []),
+        ne:            decl!("jit_ne",         [ptr, ptr, i32t, i32t, i32t],              []),
+        lt:            decl!("jit_lt",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        le:            decl!("jit_le",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        gt:            decl!("jit_gt",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        ge:            decl!("jit_ge",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        and:           decl!("jit_and",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        or:            decl!("jit_or",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        not:           decl!("jit_not",        [ptr, ptr, i32t, i32t],                    [i8t]),
+        neg:           decl!("jit_neg",        [ptr, ptr, i32t, i32t],                    [i8t]),
+        bit_and:       decl!("jit_bit_and",    [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        bit_or:        decl!("jit_bit_or",     [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        bit_xor:       decl!("jit_bit_xor",    [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        bit_not:       decl!("jit_bit_not",    [ptr, ptr, i32t, i32t],                    [i8t]),
+        shl:           decl!("jit_shl",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        shr:           decl!("jit_shr",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        str_concat:    decl!("jit_str_concat", [ptr, ptr, i32t, i32t, i32t],              [i8t]),
+        to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],                    [i8t]),
         // jit_call(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8
-        call:          decl!("jit_call",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t], [i8t]),
-        // jit_builtin(frame, dst, name_ptr, name_len, args_ptr, argc) -> u8
-        builtin:       decl!("jit_builtin",    [ptr, i32t, ptr, i64t, ptr, i64t],     [i8t]),
-        array_new:     decl!("jit_array_new",     [ptr, i32t, i32t],                 [i8t]),
-        array_new_lit: decl!("jit_array_new_lit", [ptr, i32t, ptr, i64t],            []),
-        array_get:     decl!("jit_array_get",     [ptr, i32t, i32t, i32t],           [i8t]),
-        array_set:     decl!("jit_array_set",     [ptr, i32t, i32t, i32t],           [i8t]),
-        array_len:     decl!("jit_array_len",     [ptr, i32t, i32t],                 [i8t]),
+        call:          decl!("jit_call",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t],    [i8t]),
+        // jit_builtin(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8
+        builtin:       decl!("jit_builtin",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t],    [i8t]),
+        array_new:     decl!("jit_array_new",     [ptr, ptr, i32t, i32t],                 [i8t]),
+        array_new_lit: decl!("jit_array_new_lit", [ptr, ptr, i32t, ptr, i64t],            []),
+        array_get:     decl!("jit_array_get",     [ptr, ptr, i32t, i32t, i32t],           [i8t]),
+        array_set:     decl!("jit_array_set",     [ptr, ptr, i32t, i32t, i32t],           [i8t]),
+        array_len:     decl!("jit_array_len",     [ptr, ptr, i32t, i32t],                 [i8t]),
         // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc) -> u8
         obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
-        field_get:     decl!("jit_field_get",  [ptr, i32t, i32t, ptr, i64t],          [i8t]),
-        field_set:     decl!("jit_field_set",  [ptr, i32t, ptr, i64t, i32t],          [i8t]),
+        field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t],         [i8t]),
+        field_set:     decl!("jit_field_set",  [ptr, ptr, i32t, ptr, i64t, i32t],         [i8t]),
         // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc) -> u8
         vcall:         decl!("jit_vcall",      [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t], [i8t]),
-        is_instance:   decl!("jit_is_instance",[ptr, ptr, i32t, i32t, ptr, i64t],    []),
-        as_cast:       decl!("jit_as_cast",    [ptr, ptr, i32t, i32t, ptr, i64t],    []),
-        static_get:    decl!("jit_static_get", [ptr, i32t, ptr, i64t],               []),
-        static_set:    decl!("jit_static_set", [ptr, ptr, i64t, i32t],               []),
-        get_bool:      decl!("jit_get_bool",      [ptr, i32t],                       [i8t]),
-        set_ret:       decl!("jit_set_ret",       [ptr, i32t],                       []),
-        throw:         decl!("jit_throw",         [ptr, i32t],                       []),
-        install_catch: decl!("jit_install_catch", [ptr, i32t],                       []),
+        is_instance:   decl!("jit_is_instance",[ptr, ptr, i32t, i32t, ptr, i64t],         []),
+        as_cast:       decl!("jit_as_cast",    [ptr, ptr, i32t, i32t, ptr, i64t],         []),
+        static_get:    decl!("jit_static_get", [ptr, ptr, i32t, ptr, i64t],               []),
+        static_set:    decl!("jit_static_set", [ptr, ptr, ptr, i64t, i32t],               []),
+        get_bool:      decl!("jit_get_bool",      [ptr, ptr, i32t],                       [i8t]),
+        set_ret:       decl!("jit_set_ret",       [ptr, ptr, i32t],                       []),
+        throw:         decl!("jit_throw",         [ptr, ptr, i32t],                       []),
+        install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
     })
 }
 
@@ -391,7 +395,7 @@ pub fn translate_function(
                     builder.ins().brif($ret, exc_blk, &[], ok_blk, &[]);
                     builder.switch_to_block(exc_blk);
                     let creg = ri!(catch_reg);
-                    builder.ins().call(hr_install_catch, &[frame_val, creg]);
+                    builder.ins().call(hr_install_catch, &[frame_val, ctx_val, creg]);
                     builder.ins().jump(catch_cl, &[]);
                 } else {
                     let exc_blk = builder.create_block();
@@ -409,27 +413,27 @@ pub fn translate_function(
             match instr {
                 Instruction::ConstI32 { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i64);
-                    builder.ins().call(hr_const_i32, &[frame_val, d, v]);
+                    builder.ins().call(hr_const_i32, &[frame_val, ctx_val, d, v]);
                 }
                 Instruction::ConstI64 { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I64, *val);
-                    builder.ins().call(hr_const_i64, &[frame_val, d, v]);
+                    builder.ins().call(hr_const_i64, &[frame_val, ctx_val, d, v]);
                 }
                 Instruction::ConstF64 { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().f64const(*val);
-                    builder.ins().call(hr_const_f64, &[frame_val, d, v]);
+                    builder.ins().call(hr_const_f64, &[frame_val, ctx_val, d, v]);
                 }
                 Instruction::ConstBool { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I8, if *val { 1 } else { 0 });
-                    builder.ins().call(hr_const_bool, &[frame_val, d, v]);
+                    builder.ins().call(hr_const_bool, &[frame_val, ctx_val, d, v]);
                 }
                 Instruction::ConstChar { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i32 as i64);
-                    builder.ins().call(hr_const_char, &[frame_val, d, v]);
+                    builder.ins().call(hr_const_char, &[frame_val, ctx_val, d, v]);
                 }
                 Instruction::ConstNull { dst } => {
                     let d = ri!(*dst);
-                    builder.ins().call(hr_const_null, &[frame_val, d]);
+                    builder.ins().call(hr_const_null, &[frame_val, ctx_val, d]);
                 }
                 Instruction::ConstStr { dst, idx } => {
                     let d = ri!(*dst); let i = ri!(*idx);
@@ -438,126 +442,126 @@ pub fn translate_function(
                 }
                 Instruction::Copy { dst, src } => {
                     let d = ri!(*dst); let s = ri!(*src);
-                    builder.ins().call(hr_copy, &[frame_val, d, s]);
+                    builder.ins().call(hr_copy, &[frame_val, ctx_val, d, s]);
                 }
 
                 // Arithmetic
                 Instruction::Add { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_add, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_add, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Sub { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_sub, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_sub, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Mul { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_mul, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_mul, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Div { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_div, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_div, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Rem { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_rem, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_rem, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // Comparison
                 Instruction::Eq { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    builder.ins().call(hr_eq, &[frame_val, d, av, bv]);
+                    builder.ins().call(hr_eq, &[frame_val, ctx_val, d, av, bv]);
                 }
                 Instruction::Ne { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    builder.ins().call(hr_ne, &[frame_val, d, av, bv]);
+                    builder.ins().call(hr_ne, &[frame_val, ctx_val, d, av, bv]);
                 }
                 Instruction::Lt { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_lt, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_lt, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Le { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_le, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_le, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Gt { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_gt, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_gt, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Ge { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_ge, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_ge, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // Logical
                 Instruction::And { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_and, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_and, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Or { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_or, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_or, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Not { dst, src } => {
                     let d = ri!(*dst); let s = ri!(*src);
-                    let inst = builder.ins().call(hr_not, &[frame_val, d, s]);
+                    let inst = builder.ins().call(hr_not, &[frame_val, ctx_val, d, s]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // Unary arithmetic
                 Instruction::Neg { dst, src } => {
                     let d = ri!(*dst); let s = ri!(*src);
-                    let inst = builder.ins().call(hr_neg, &[frame_val, d, s]);
+                    let inst = builder.ins().call(hr_neg, &[frame_val, ctx_val, d, s]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // Bitwise
                 Instruction::BitAnd { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_bit_and, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_bit_and, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::BitOr { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_bit_or, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_bit_or, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::BitXor { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_bit_xor, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_bit_xor, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::BitNot { dst, src } => {
                     let d = ri!(*dst); let s = ri!(*src);
-                    let inst = builder.ins().call(hr_bit_not, &[frame_val, d, s]);
+                    let inst = builder.ins().call(hr_bit_not, &[frame_val, ctx_val, d, s]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Shl { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_shl, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_shl, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Shr { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_shr, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_shr, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // String
                 Instruction::StrConcat { dst, a, b } => {
                     let (d, av, bv) = (ri!(*dst), ri!(*a), ri!(*b));
-                    let inst = builder.ins().call(hr_str_concat, &[frame_val, d, av, bv]);
+                    let inst = builder.ins().call(hr_str_concat, &[frame_val, ctx_val, d, av, bv]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::ToStr { dst, src } => {
@@ -578,34 +582,34 @@ pub fn translate_function(
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(name);
                     let (ap, al) = regs_val!(args);
-                    let inst = builder.ins().call(hr_builtin, &[frame_val, d, np, nl, ap, al]);
+                    let inst = builder.ins().call(hr_builtin, &[frame_val, ctx_val, d, np, nl, ap, al]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // Arrays
                 Instruction::ArrayNew { dst, size } => {
                     let d = ri!(*dst); let s = ri!(*size);
-                    let inst = builder.ins().call(hr_array_new, &[frame_val, d, s]);
+                    let inst = builder.ins().call(hr_array_new, &[frame_val, ctx_val, d, s]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::ArrayNewLit { dst, elems } => {
                     let d = ri!(*dst);
                     let (ep, el) = regs_val!(elems);
-                    builder.ins().call(hr_array_new_lit, &[frame_val, d, ep, el]);
+                    builder.ins().call(hr_array_new_lit, &[frame_val, ctx_val, d, ep, el]);
                 }
                 Instruction::ArrayGet { dst, arr, idx } => {
                     let d = ri!(*dst); let a = ri!(*arr); let i = ri!(*idx);
-                    let inst = builder.ins().call(hr_array_get, &[frame_val, d, a, i]);
+                    let inst = builder.ins().call(hr_array_get, &[frame_val, ctx_val, d, a, i]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::ArraySet { arr, idx, val } => {
                     let a = ri!(*arr); let i = ri!(*idx); let v = ri!(*val);
-                    let inst = builder.ins().call(hr_array_set, &[frame_val, a, i, v]);
+                    let inst = builder.ins().call(hr_array_set, &[frame_val, ctx_val, a, i, v]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::ArrayLen { dst, arr } => {
                     let d = ri!(*dst); let a = ri!(*arr);
-                    let inst = builder.ins().call(hr_array_len, &[frame_val, d, a]);
+                    let inst = builder.ins().call(hr_array_len, &[frame_val, ctx_val, d, a]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
@@ -621,14 +625,14 @@ pub fn translate_function(
                 Instruction::FieldGet { dst, obj, field_name } => {
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (fp, fl) = str_val!(field_name);
-                    let inst = builder.ins().call(hr_field_get, &[frame_val, d, o, fp, fl]);
+                    let inst = builder.ins().call(hr_field_get, &[frame_val, ctx_val, d, o, fp, fl]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::FieldSet { obj, field_name, val } => {
                     let o = ri!(*obj);
                     let (fp, fl) = str_val!(field_name);
                     let v = ri!(*val);
-                    let inst = builder.ins().call(hr_field_set, &[frame_val, o, fp, fl, v]);
+                    let inst = builder.ins().call(hr_field_set, &[frame_val, ctx_val, o, fp, fl, v]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::VCall { dst, obj, method, args } => {
@@ -653,12 +657,12 @@ pub fn translate_function(
                 Instruction::StaticGet { dst, field } => {
                     let d = ri!(*dst);
                     let (fp, fl) = str_val!(field);
-                    builder.ins().call(hr_static_get, &[frame_val, d, fp, fl]);
+                    builder.ins().call(hr_static_get, &[frame_val, ctx_val, d, fp, fl]);
                 }
                 Instruction::StaticSet { field, val } => {
                     let (fp, fl) = str_val!(field);
                     let v = ri!(*val);
-                    builder.ins().call(hr_static_set, &[frame_val, fp, fl, v]);
+                    builder.ins().call(hr_static_set, &[frame_val, ctx_val, fp, fl, v]);
                 }
             }
         }
@@ -671,7 +675,7 @@ pub fn translate_function(
             }
             Terminator::Ret { reg: Some(r) } => {
                 let rv   = ri!(*r);
-                builder.ins().call(hr_set_ret, &[frame_val, rv]);
+                builder.ins().call(hr_set_ret, &[frame_val, ctx_val, rv]);
                 let zero = builder.ins().iconst(types::I8, 0);
                 builder.ins().return_(&[zero]);
             }
@@ -682,7 +686,7 @@ pub fn translate_function(
             }
             Terminator::BrCond { cond, true_label, false_label } => {
                 let cv   = ri!(*cond);
-                let inst = builder.ins().call(hr_get_bool, &[frame_val, cv]);
+                let inst = builder.ins().call(hr_get_bool, &[frame_val, ctx_val, cv]);
                 let b    = builder.inst_results(inst)[0];
 
                 let true_idx  = z42_func.blocks.iter().position(|blk| &blk.label == true_label)
@@ -694,11 +698,11 @@ pub fn translate_function(
             }
             Terminator::Throw { reg } => {
                 let rv = ri!(*reg);
-                builder.ins().call(hr_throw, &[frame_val, rv]);
+                builder.ins().call(hr_throw, &[frame_val, ctx_val, rv]);
 
                 if let Some((catch_cl, catch_reg)) = catch_info {
                     let creg = ri!(catch_reg);
-                    builder.ins().call(hr_install_catch, &[frame_val, creg]);
+                    builder.ins().call(hr_install_catch, &[frame_val, ctx_val, creg]);
                     builder.ins().jump(catch_cl, &[]);
                 } else {
                     let one = builder.ins().iconst(types::I8, 1);

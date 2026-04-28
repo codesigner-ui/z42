@@ -4,11 +4,11 @@
 /// code only handles control flow (branches / jumps).
 ///
 /// Convention:
-///   Functions that can fail return u8: 0=success, 1=exception (PENDING_EXCEPTION).
+///   Functions that can fail return u8: 0=success, 1=exception (stored on ctx).
 ///   Functions that cannot fail return ().
 ///
 /// Split into submodules by category:
-///   helpers.rs        — shared state (exceptions, static fields), common helpers
+///   helpers.rs        — shared state access (exceptions, static fields), common helpers
 ///   helpers_arith.rs  — arithmetic, comparison, logical, unary, bitwise
 ///   helpers_mem.rs    — constants, copy, variable slots, string ops, control-flow
 ///   helpers_object.rs — function calls, arrays, objects, type checks, static fields
@@ -16,87 +16,51 @@
 use crate::corelib::convert::value_to_str;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
-use std::cell::RefCell;
-use std::collections::HashMap;
 
 use super::frame::{JitFrame, JitModuleCtx};
 
-// ── JIT-internal exception + static-fields slots ──────────────────────────────
+// ── VmContext access via JitModuleCtx ───────────────────────────────────────
 //
-// These two `thread_local!` slots remain as JIT extern "C" helper backing
-// store; the broader VmContext is the canonical owner (consolidate-vm-state,
-// 2026-04-28 — Decision 5). `JitModule::run` syncs them with `ctx.*` at
-// the run boundary (sync-in before entry, sync-out after return), so:
+// Every JIT helper now receives `*const JitModuleCtx` as its 2nd parameter
+// (after `*mut JitFrame`). The `JitModuleCtx::vm_ctx: *mut VmContext` field
+// (set by `JitModule::run` for the duration of one entry call) is the only
+// runtime-mutable VM state — the previous `PENDING_EXCEPTION` and
+// `STATIC_FIELDS` thread_local slots have been removed.
 //
-// - Each `VmContext` sees its own static-field map and exception slot
-//   across separate `run` calls (no cross-ctx pollution).
-// - Mid-run JIT helpers still operate on thread_local (no ABI change).
-// - Concurrent JIT execution on the same thread for two different ctxes
-//   would corrupt these slots — but `JitModule::run` is synchronous, so
-//   that's structurally impossible without a future async-JIT redesign.
-//
-// Removing these requires extending every helper signature (~30 fns) with
-// `ctx: *const JitModuleCtx` and updating Cranelift call sites. Tracked as
-// follow-up "extend-jit-helper-abi" spec.
+// extend-jit-helper-abi (2026-04-28) — closes the C1 follow-up that left
+// these as `sync_in_from_ctx` / `sync_out_to_ctx` bridges.
 
-thread_local! {
-    static PENDING_EXCEPTION: RefCell<Option<Value>> = const { RefCell::new(None) };
-    static STATIC_FIELDS:     RefCell<HashMap<String, Value>> = RefCell::new(HashMap::new());
+/// Borrow the VmContext from a JitModuleCtx pointer for the duration of the
+/// helper call.
+///
+/// SAFETY: caller must ensure
+///   1. `jit_ctx` is non-null and points to a valid JitModuleCtx
+///   2. `(*jit_ctx).vm_ctx` is non-null (always true while inside
+///      `JitModule::run` / `run_fn`)
+///   3. The returned reference's lifetime does not outlive the helper call
+pub(super) unsafe fn vm_ctx_ref<'a>(jit_ctx: *const JitModuleCtx) -> &'a VmContext {
+    &*((*jit_ctx).vm_ctx)
 }
 
-pub(super) fn set_exception(v: Value) {
-    PENDING_EXCEPTION.with(|p| *p.borrow_mut() = Some(v));
+pub(super) fn set_exception(ctx: &VmContext, v: Value) {
+    ctx.set_exception(v);
 }
 
-pub(super) fn take_exception() -> Option<Value> {
-    PENDING_EXCEPTION.with(|p| p.borrow_mut().take())
+pub(super) fn take_exception(ctx: &VmContext) -> Option<Value> {
+    ctx.take_exception()
 }
 
-pub(super) fn take_exception_error() -> anyhow::Error {
-    let msg = take_exception()
+pub(super) fn take_exception_error(ctx: &VmContext) -> anyhow::Error {
+    let msg = take_exception(ctx)
         .as_ref()
         .map(value_to_str)
         .unwrap_or_else(|| "uncaught exception".to_owned());
     anyhow::anyhow!("{}", msg)
 }
 
-pub(super) fn static_get(field: &str) -> Value {
-    STATIC_FIELDS.with(|sf| sf.borrow().get(field).cloned().unwrap_or(Value::Null))
-}
-
-pub(super) fn static_set_inner(field: &str, val: Value) {
-    STATIC_FIELDS.with(|sf| { sf.borrow_mut().insert(field.to_string(), val); });
-}
-
-#[allow(dead_code)]
-pub(super) fn static_fields_clear() {
-    STATIC_FIELDS.with(|sf| sf.borrow_mut().clear());
-}
-
-// ── VmContext sync helpers (called by JitModule::run) ────────────────────────
-
-/// Snapshot ctx state into the JIT thread_local slots before entering a
-/// JIT-compiled function. Called by `JitModule::run` at the boundary.
-pub(super) fn sync_in_from_ctx(ctx: &VmContext) {
-    STATIC_FIELDS.with(|sf| {
-        let mut sf = sf.borrow_mut();
-        sf.clear();
-        for (k, v) in ctx.static_fields.borrow().iter() {
-            sf.insert(k.clone(), v.clone());
-        }
-    });
-    PENDING_EXCEPTION.with(|p| *p.borrow_mut() = ctx.pending_exception.borrow_mut().take());
-}
-
-/// Write JIT thread_local state back into ctx after a JIT-compiled function
-/// returns. Called by `JitModule::run` at the boundary.
-pub(super) fn sync_out_to_ctx(ctx: &VmContext) {
-    let snapshot: HashMap<String, Value> =
-        STATIC_FIELDS.with(|sf| sf.borrow().clone());
-    *ctx.static_fields.borrow_mut() = snapshot;
-    let pending = PENDING_EXCEPTION.with(|p| p.borrow_mut().take());
-    *ctx.pending_exception.borrow_mut() = pending;
-}
+// `static_get` / `static_set` are accessed directly through `VmContext` methods
+// at the helper call sites (see `helpers_object::jit_static_get/set`); no
+// helper-layer wrapper needed.
 
 // ── JIT function type alias ───────────────────────────────────────────────────
 
