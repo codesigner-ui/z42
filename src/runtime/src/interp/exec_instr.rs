@@ -15,20 +15,6 @@ use super::dispatch::{
 use super::ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
 use super::{ExecOutcome, Frame};
 
-/// Convert PascalCase to snake_case: "StartsWith" → "starts_with"
-fn to_snake_case(s: &str) -> String {
-    let mut result = String::with_capacity(s.len() + 4);
-    for (i, ch) in s.chars().enumerate() {
-        if ch.is_uppercase() {
-            if i > 0 { result.push('_'); }
-            result.push(ch.to_lowercase().next().unwrap());
-        } else {
-            result.push(ch);
-        }
-    }
-    result
-}
-
 /// L3-G4b primitive-as-struct: maps a primitive `Value` variant to its stdlib
 /// struct's qualified class name (e.g. `Value::I64` → `"Std.int"`). The VM
 /// dispatches primitive method calls by constructing `{class}.{method}` and
@@ -378,42 +364,43 @@ pub fn exec_instr(module: &Module, frame: &mut Frame, instr: &Instruction) -> Re
             }
 
             // Primitive string type: dispatch all methods via builtins.
+            //
+            // Hot path note: the seven `__str_*` builtins below are the
+            // EXHAUSTIVE list of native methods on `string` (see
+            // `src/libraries/z42.core/src/String.z42`). Any other method
+            // name is a stdlib script (`Std.String.<Method>`), so we go
+            // directly to the script path — this avoids the per-call
+            // `to_snake_case` + `format!("__str_{snake}")` allocation that
+            // earlier code paid even for known-script methods.
             if let Value::Str(_) = &obj_val {
                 let builtin_name = match method.as_str() {
-                    "ToString"    => "__str_to_string",
-                    "Equals"      => "__str_equals",
-                    "GetHashCode" => "__str_hash_code",
-                    other => {
-                        // Try stdlib string method: StartsWith → __str_starts_with
-                        let snake = to_snake_case(other);
-                        let mut call_args = vec![obj_val];
-                        call_args.append(&mut extra_args);
-                        let name = format!("__str_{snake}");
-                        match crate::corelib::exec_builtin(&name, &call_args) {
-                            Ok(ret) => { frame.set(*dst, ret); return Ok(None); }
-                            Err(_) => {
-                                // Fallback: try stdlib function call
-                                let func_name = format!("Std.String.{other}");
-                                let callee = module.func_index.get(func_name.as_str())
-                                    .and_then(|&idx| module.functions.get(idx));
-                                if let Some(callee) = callee {
-                                    let outcome = super::exec_function(module, callee, &call_args)?;
-                                    match outcome {
-                                        ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                                        ExecOutcome::Thrown(val) => return Ok(Some(val)),
-                                    }
-                                    return Ok(None);
-                                }
-                                bail!("VCall: string method `{other}` not found");
-                            }
-                        }
-                    }
+                    "ToString"    => Some("__str_to_string"),
+                    "Equals"      => Some("__str_equals"),
+                    "GetHashCode" => Some("__str_hash_code"),
+                    "CharAt"      => Some("__str_char_at"),
+                    "CompareTo"   => Some("__str_compare_to"),
+                    _             => None,
                 };
                 let mut call_args = vec![obj_val];
                 call_args.append(&mut extra_args);
-                let ret = crate::corelib::exec_builtin(builtin_name, &call_args)?;
-                frame.set(*dst, ret);
-                return Ok(None);
+                if let Some(name) = builtin_name {
+                    let ret = crate::corelib::exec_builtin(name, &call_args)?;
+                    frame.set(*dst, ret);
+                    return Ok(None);
+                }
+                // Script fallback: Std.String.<Method>
+                let func_name = format!("Std.String.{method}");
+                let callee = module.func_index.get(func_name.as_str())
+                    .and_then(|&idx| module.functions.get(idx));
+                if let Some(callee) = callee {
+                    let outcome = super::exec_function(module, callee, &call_args)?;
+                    match outcome {
+                        ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                        ExecOutcome::Thrown(val) => return Ok(Some(val)),
+                    }
+                    return Ok(None);
+                }
+                bail!("VCall: string method `{method}` not found");
             }
 
             // O(1) vtable dispatch using pre-computed TypeDesc.
