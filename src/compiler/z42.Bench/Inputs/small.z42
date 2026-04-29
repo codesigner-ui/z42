@@ -1,0 +1,62 @@
+// Small benchmark input (~50 lines)
+// No imports — exercises only primitive arithmetic + control flow.
+
+namespace Bench.Small;
+
+int Add(int a, int b) {
+    return a + b;
+}
+
+int Multiply(int a, int b) {
+    return a * b;
+}
+
+int Subtract(int a, int b) {
+    return a - b;
+}
+
+int Power(int base_, int exp) {
+    int result = 1;
+    for (int i = 0; i < exp; i++) {
+        result = result * base_;
+    }
+    return result;
+}
+
+int Factorial(int n) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * Factorial(n - 1);
+}
+
+int Fib(int n) {
+    if (n <= 1) {
+        return n;
+    }
+    return Fib(n - 1) + Fib(n - 2);
+}
+
+int SumTo(int n) {
+    int total = 0;
+    for (int i = 1; i <= n; i++) {
+        total = total + i;
+    }
+    return total;
+}
+
+int Compute(int n) {
+    int x = Add(n, 1);
+    int y = Multiply(x, 2);
+    int z = Subtract(y, 3);
+    return z;
+}
+
+int Main() {
+    int a = Compute(10);
+    int b = Power(2, 8);
+    int c = Factorial(5);
+    int d = Fib(10);
+    int e = SumTo(100);
+    return a + b + c + d + e;
+}

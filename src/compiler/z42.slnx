@@ -7,4 +7,5 @@
   <Project Path="z42.Pipeline/z42.Pipeline.csproj" />
   <Project Path="z42.Driver/z42.Driver.csproj" />
   <Project Path="z42.Tests\z42.Tests.csproj" />
+  <Project Path="z42.Bench/z42.Bench.csproj" />
 </Solution>

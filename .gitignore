@@ -41,3 +41,6 @@ dist/
 
 # Cross-zpkg e2e test build artifacts (per-package libs/ populated by test driver).
 src/runtime/tests/cross-zpkg/*/*/libs/
+
+# BenchmarkDotNet output (auto-created in CWD when running `dotnet run` from any dir)
+BenchmarkDotNet.Artifacts/

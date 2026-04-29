@@ -74,9 +74,23 @@ bench: bench-rust
 bench-rust *args:
     cargo bench --manifest-path src/runtime/Cargo.toml {{args}}
 
-# (P1.B placeholder) Run C# compiler benchmarks (BenchmarkDotNet)
-bench-compiler:
-    @echo "❌ P1.B 待实施：BenchmarkDotNet (src/compiler/z42.Bench/)" && exit 1
+# Run C# compiler benchmarks (BenchmarkDotNet).
+#   just bench-compiler                    # interactive picker
+#   just bench-compiler --list flat        # inspect available
+#   just bench-compiler --filter "*Lex*"   # filter (quote glob to avoid shell expansion)
+#   just bench-compiler --filter "*"       # run all (also: just bench-compiler-all)
+# Recipe runs in shebang shell with globbing disabled (set -f) so {{args}}
+# pass through unmolested even when they contain `*`.
+bench-compiler *args:
+    #!/usr/bin/env bash
+    set -euf -o pipefail
+    dotnet run --project src/compiler/z42.Bench -c Release -- {{args}}
+
+# Convenience: run all C# compiler benchmarks (no interactive prompt; CI-friendly).
+bench-compiler-all:
+    #!/usr/bin/env bash
+    set -euf -o pipefail
+    dotnet run --project src/compiler/z42.Bench -c Release -- --filter '*'
 
 # (P1.C placeholder) Run end-to-end .z42 scenarios (hyperfine)
 bench-e2e:

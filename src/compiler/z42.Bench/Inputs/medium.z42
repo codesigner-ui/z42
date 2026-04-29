@@ -1,0 +1,211 @@
+// Medium benchmark input (~250 lines)
+// No imports — exercises primitives + classes + nested control flow + recursion.
+
+namespace Bench.Medium;
+
+// ─── Pure arithmetic helpers ─────────────────────────────────────────────
+
+int Add(int a, int b) { return a + b; }
+int Sub(int a, int b) { return a - b; }
+int Mul(int a, int b) { return a * b; }
+int Div(int a, int b) { return a / b; }
+int Mod(int a, int b) { return a % b; }
+
+int Min(int a, int b) {
+    if (a < b) { return a; }
+    return b;
+}
+
+int Max(int a, int b) {
+    if (a > b) { return a; }
+    return b;
+}
+
+int Abs(int x) {
+    if (x < 0) { return -x; }
+    return x;
+}
+
+int Sign(int x) {
+    if (x > 0) { return 1; }
+    if (x < 0) { return -1; }
+    return 0;
+}
+
+int Clamp(int x, int lo, int hi) {
+    return Min(Max(x, lo), hi);
+}
+
+// ─── Recursive numerics ───────────────────────────────────────────────────
+
+int Factorial(int n) {
+    if (n <= 1) { return 1; }
+    return n * Factorial(n - 1);
+}
+
+int Fib(int n) {
+    if (n <= 1) { return n; }
+    return Fib(n - 1) + Fib(n - 2);
+}
+
+int Gcd(int a, int b) {
+    if (b == 0) { return a; }
+    return Gcd(b, a % b);
+}
+
+int Lcm(int a, int b) {
+    return a / Gcd(a, b) * b;
+}
+
+int Power(int base_, int exp) {
+    if (exp == 0) { return 1; }
+    if (exp == 1) { return base_; }
+    int half = Power(base_, exp / 2);
+    if (exp % 2 == 0) { return half * half; }
+    return half * half * base_;
+}
+
+// ─── Loop-based numerics ─────────────────────────────────────────────────
+
+int SumTo(int n) {
+    int total = 0;
+    for (int i = 1; i <= n; i++) {
+        total = total + i;
+    }
+    return total;
+}
+
+int ProductTo(int n) {
+    int total = 1;
+    for (int i = 1; i <= n; i++) {
+        total = total * i;
+    }
+    return total;
+}
+
+int CountDivisors(int n) {
+    int count = 0;
+    for (int i = 1; i <= n; i++) {
+        if (n % i == 0) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+int IsPrime(int n) {
+    if (n < 2) { return 0; }
+    if (n == 2) { return 1; }
+    if (n % 2 == 0) { return 0; }
+    for (int i = 3; i * i <= n; i = i + 2) {
+        if (n % i == 0) { return 0; }
+    }
+    return 1;
+}
+
+int CountPrimesUpTo(int limit) {
+    int count = 0;
+    for (int i = 2; i <= limit; i++) {
+        if (IsPrime(i) == 1) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+int DigitSum(int n) {
+    int sum = 0;
+    int x = Abs(n);
+    while (x > 0) {
+        sum = sum + (x % 10);
+        x = x / 10;
+    }
+    return sum;
+}
+
+int Reverse(int n) {
+    int result = 0;
+    int x = Abs(n);
+    while (x > 0) {
+        result = result * 10 + (x % 10);
+        x = x / 10;
+    }
+    if (n < 0) { return -result; }
+    return result;
+}
+
+int IsPalindrome(int n) {
+    if (Reverse(n) == n) { return 1; }
+    return 0;
+}
+
+// ─── Composite operations ────────────────────────────────────────────────
+
+int CollatzLength(int n) {
+    int count = 0;
+    int x = n;
+    while (x != 1) {
+        if (x % 2 == 0) {
+            x = x / 2;
+        } else {
+            x = 3 * x + 1;
+        }
+        count = count + 1;
+        if (count > 1000) { return -1; }
+    }
+    return count;
+}
+
+int LongestCollatz(int limit) {
+    int best_n = 1;
+    int best_len = 0;
+    for (int i = 1; i <= limit; i++) {
+        int len = CollatzLength(i);
+        if (len > best_len) {
+            best_len = len;
+            best_n = i;
+        }
+    }
+    return best_n;
+}
+
+int CountPalindromesUpTo(int limit) {
+    int count = 0;
+    for (int i = 1; i <= limit; i++) {
+        if (IsPalindrome(i) == 1) {
+            count = count + 1;
+        }
+    }
+    return count;
+}
+
+int SumOfPrimesUpTo(int limit) {
+    int total = 0;
+    for (int i = 2; i <= limit; i++) {
+        if (IsPrime(i) == 1) {
+            total = total + i;
+        }
+    }
+    return total;
+}
+
+int Ackermann(int m, int n) {
+    if (m == 0) { return n + 1; }
+    if (n == 0) { return Ackermann(m - 1, 1); }
+    return Ackermann(m - 1, Ackermann(m, n - 1));
+}
+
+// ─── Entry ───────────────────────────────────────────────────────────────
+
+int Main() {
+    int a = Factorial(10);
+    int b = Fib(15);
+    int c = Power(3, 10);
+    int d = SumTo(1000);
+    int e = CountPrimesUpTo(100);
+    int f = LongestCollatz(50);
+    int g = SumOfPrimesUpTo(100);
+    int h = CountPalindromesUpTo(200);
+    int i = Ackermann(2, 3);
+    return a + b + c + d + e + f + g + h + i;
+}
