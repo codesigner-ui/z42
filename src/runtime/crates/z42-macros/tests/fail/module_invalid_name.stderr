@@ -1,0 +1,5 @@
+error: module name "z42.bad-name" contains illegal character '.'; only [A-Za-z0-9_] allowed
+ --> tests/fail/module_invalid_name.rs:6:11
+  |
+6 |     name: "z42.bad-name",
+  |           ^^^^^^^^^^^^^^

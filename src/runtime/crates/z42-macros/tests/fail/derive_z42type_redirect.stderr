@@ -1,0 +1,7 @@
+error: #[derive(Z42Type)] is reserved for spec C5; in C3 use `#[z42::methods(module = "...", name = "...")]` on an `impl` block instead
+ --> tests/fail/derive_z42type_redirect.rs:3:10
+  |
+3 | #[derive(Z42Type)]
+  |          ^^^^^^^
+  |
+  = note: this error originates in the derive macro `Z42Type` (in Nightly builds, run with -Z macro-backtrace for more info)

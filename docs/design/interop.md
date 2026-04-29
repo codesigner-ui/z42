@@ -546,7 +546,7 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M8** (`impl-tier1-c-abi`) | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp); fills `CallNative` runtime behaviour | C1 | ✅ 2026-04-29 |
 | **L2.M9** (`impl-tier1-c-abi`) | Tier 1 PoC: handwritten `numz42-c` demo (Counter type, register + `CallNative` end-to-end) | M8 | ✅ 2026-04-29 (合并入 L2.M8 spec) |
 | **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | C1 | ✅ scaffold landed in C1 |
-| **L2.M11** (C3 `impl-tier2-rust-macros`) | `#[derive(Z42Type)]` + `#[z42::methods]` + `numz42-rs` PoC fills macro bodies | M10 |  |
+| **L2.M11** (`impl-tier2-rust-macros`) | `#[z42::methods]` + `module!` proc macro 实现（C3 主入口）+ `numz42-rs` PoC（Rust 版 Counter 端到端）；`#[derive(Z42Type)]` 与 `#[z42::trait_impl]` 仍 stub，留给 C5 与 source generator 联动设计 | M10 | ✅ 2026-04-29 |
 | **L2.M12** (C4 `impl-pinned-block`) | `pinned` block syntax + String/Array borrow; fills `PinPtr`/`UnpinPtr` runtime | type system |  |
 | **L2.M13** (C5 first half) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |

@@ -177,3 +177,25 @@ pub unsafe extern "C" fn z42_invoke_method(
 pub extern "C" fn z42_last_error() -> Z42Error {
     error::last()
 }
+
+// ── z42_set_panic_message (used by z42-rs shim panic recovery) ──────────
+
+/// Forward a panic message from a Rust `extern "C"` shim into the VM's
+/// thread-local last-error slot. Called from the `catch_unwind` recovery
+/// branch emitted by `#[z42::methods]`.
+///
+/// # Safety
+/// `msg` must be either NULL or a NUL-terminated string valid for the
+/// duration of this call. The function copies the message; the caller
+/// retains ownership of `msg`.
+#[no_mangle]
+pub extern "C" fn z42_set_panic_message(msg: *const c_char) {
+    if msg.is_null() {
+        error::set(Z0905, "native shim panic (no message)");
+        return;
+    }
+    let owned = unsafe { CStr::from_ptr(msg) }
+        .to_string_lossy()
+        .into_owned();
+    error::set(Z0905, format!("native shim panic: {owned}"));
+}

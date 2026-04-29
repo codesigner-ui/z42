@@ -1,45 +1,43 @@
 //! Proc macro entry points for z42 native interop.
 //!
-//! C1 scaffold: macros are registered (so `cargo check` of the crate succeeds
-//! and IDEs see them), but each invocation expands to a `compile_error!`
-//! pointing at the spec that will provide a real implementation.
-//!
-//! Real expansion logic lands in spec C3.
+//! C3 wires up `#[z42::methods]` and `z42::module!` to real expansions;
+//! `#[derive(Z42Type)]` and `#[z42::trait_impl]` remain stubbed and
+//! redirect users to the spec that will land them (C5).
+
+mod methods_attr;
+mod module_macro;
+mod shim;
+mod signature;
+mod util;
 
 use proc_macro::TokenStream;
 use quote::quote;
 
-const C3_DERIVE: &str =
-    "#[derive(Z42Type)] is declared in z42-macros but not yet implemented (spec C3)";
-const C3_METHODS: &str =
-    "#[z42::methods] is declared in z42-macros but not yet implemented (spec C3)";
-const C3_TRAIT_IMPL: &str =
-    "#[z42::trait_impl] is declared in z42-macros but not yet implemented (spec C3)";
-const C3_MODULE: &str =
-    "z42::module! is declared in z42-macros but not yet implemented (spec C3)";
+const C5_DERIVE: &str =
+    "#[derive(Z42Type)] is reserved for spec C5; in C3 use `#[z42::methods(module = \"...\", name = \"...\")]` on an `impl` block instead";
+const C5_TRAIT_IMPL: &str =
+    "#[z42::trait_impl] is reserved for spec C5 (source-generator phase); not available in C3";
 
-/// `#[derive(Z42Type)]` — generates a `Z42Type` impl + static descriptor.
+/// `#[derive(Z42Type)]` — reserved (still stubbed in C3; see message).
 #[proc_macro_derive(Z42Type, attributes(z42))]
 pub fn derive_z42_type(_input: TokenStream) -> TokenStream {
-    quote! { ::core::compile_error!(#C3_DERIVE); }.into()
+    quote! { ::core::compile_error!(#C5_DERIVE); }.into()
 }
 
-/// `#[z42::methods]` — wraps each `impl` method with an `extern "C"` shim.
+/// `#[z42::methods(module = "...", name = "...")]` on `impl T { ... }`.
 #[proc_macro_attribute]
-pub fn methods(_attr: TokenStream, _item: TokenStream) -> TokenStream {
-    quote! { ::core::compile_error!(#C3_METHODS); }.into()
+pub fn methods(attr: TokenStream, item: TokenStream) -> TokenStream {
+    methods_attr::expand(attr, item)
 }
 
-/// `#[z42::trait_impl("trait_name")]` — registers a trait impl into the
-/// descriptor's `trait_impls` table.
+/// `#[z42::trait_impl("trait_name")]` — reserved for C5.
 #[proc_macro_attribute]
 pub fn trait_impl(_attr: TokenStream, _item: TokenStream) -> TokenStream {
-    quote! { ::core::compile_error!(#C3_TRAIT_IMPL); }.into()
+    quote! { ::core::compile_error!(#C5_TRAIT_IMPL); }.into()
 }
 
-/// `z42::module! { name: "...", types: [..] }` — emits `#[ctor]` registration
-/// + writes the `<module>.z42abi` manifest at build time.
+/// `z42::module! { name: "...", types: [T1, T2, ...] }`.
 #[proc_macro]
-pub fn module(_input: TokenStream) -> TokenStream {
-    quote! { ::core::compile_error!(#C3_MODULE); }.into()
+pub fn module(input: TokenStream) -> TokenStream {
+    module_macro::expand(input)
 }

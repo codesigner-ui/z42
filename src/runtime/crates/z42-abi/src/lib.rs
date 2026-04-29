@@ -153,6 +153,27 @@ pub struct Z42TypeDescriptor_v1 {
     pub trait_impls: *const Z42TraitImpl,
 }
 
+// ── Sync promises ─────────────────────────────────────────────────────────
+//
+// These descriptor types contain raw pointers (`*const c_char`,
+// `*const Z42MethodDesc`, etc.) so they're `!Sync` by default. In every
+// supported usage (including the C3 derive-macro expansion) the targets
+// of those pointers live in `'static` storage — string literals,
+// compile-time-built static arrays, `extern "C" fn` items, etc. We
+// therefore promise `Sync` at the crate level so descriptors can be
+// declared `static`.
+//
+// SAFETY: holders of these structs must guarantee every pointer field
+// references `'static` immutable data. Violating this contract will be
+// caught by the registry path (`registry::RegisteredType::from_descriptor`)
+// when CStrings cannot be read or signatures fail to parse.
+
+unsafe impl Sync for Z42TypeDescriptor_v1 {}
+unsafe impl Sync for Z42MethodDesc {}
+unsafe impl Sync for Z42FieldDesc {}
+unsafe impl Sync for Z42MethodImpl {}
+unsafe impl Sync for Z42TraitImpl {}
+
 // ── VM-exposed API (resolved at link time against z42_vm) ───────────────────
 
 extern "C" {

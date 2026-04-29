@@ -25,6 +25,37 @@ extern "C" {
     fn numz42_register_static();
 }
 
+// ── Rust-side PoC (spec C3) ────────────────────────────────────────────────
+//
+// Mirrors `tests/data/numz42-c/numz42.c` but uses the C3 ergonomic macros
+// from `z42-rs` instead of hand-writing a `Z42TypeDescriptor_v1` literal.
+
+mod numz42_rs {
+    use ::z42_rs::prelude::*;
+    use ::z42_rs as z42;
+
+    #[derive(Default)]
+    pub struct Counter {
+        pub value: i64,
+    }
+
+    #[z42::methods(module = "numz42_rs", name = "Counter")]
+    impl Counter {
+        pub fn inc(&mut self) -> i64 { self.value += 1; self.value }
+        pub fn get(&self) -> i64 { self.value }
+    }
+
+    z42::module! {
+        name: "numz42_rs",
+        types: [Counter],
+    }
+}
+
+extern "C" {
+    /// Emitted by the `z42::module!` macro inside `mod numz42_rs`.
+    fn numz42_rs_register();
+}
+
 fn build_function(name: &str, instructions: Vec<Instruction>, terminator: Terminator) -> Function {
     Function {
         name: name.to_string(),
@@ -149,6 +180,118 @@ fn callnative_counter_inc_three_times_then_get_returns_three() {
         result,
         Some(Value::I64(3)),
         "Counter::get should return 3 after 3 incs"
+    );
+}
+
+// ── Rust PoC scenarios (spec C3) ─────────────────────────────────────────
+
+fn vm_with_rust_counter_registered() -> VmContext {
+    let ctx = VmContext::new();
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_rs_register() });
+    ctx
+}
+
+#[test]
+fn rust_counter_register_and_resolve() {
+    let ctx = vm_with_rust_counter_registered();
+    let ty = ctx
+        .resolve_native_type("numz42_rs", "Counter")
+        .expect("Rust Counter resolves after register");
+    assert_eq!(ty.module(), "numz42_rs");
+    assert_eq!(ty.type_name(), "Counter");
+    assert!(ty.method("inc").is_some());
+    assert!(ty.method("get").is_some());
+}
+
+#[test]
+fn rust_counter_callnative_inc_three_times_then_get_returns_three() {
+    let ctx = vm_with_rust_counter_registered();
+
+    // Same IR shape as the C version, but the Rust descriptor doesn't
+    // expose an `__alloc__` static method — instead the macro emits a
+    // VM-internal alloc fn we don't surface as a method. Instead we let
+    // the user-side test call alloc through the descriptor by invoking
+    // the alloc function directly via a synthetic approach:
+    //
+    // Rust PoC strategy: drive the Counter through alloc helper that
+    // we expose as a static method named `alloc` (added in PoC). Since
+    // C3 macro doesn't yet support static methods alongside instance
+    // methods elegantly, we call descriptor.alloc() from Rust here.
+    let ty = ctx.resolve_native_type("numz42_rs", "Counter").unwrap();
+    let alloc_fn = unsafe { (*ty.descriptor_ptr()).alloc.expect("alloc set") };
+    let counter_ptr = unsafe { alloc_fn() };
+    let ctor_fn = unsafe { (*ty.descriptor_ptr()).ctor.expect("ctor set") };
+    unsafe { ctor_fn(counter_ptr, std::ptr::null()) };
+    let counter_as_i64 = counter_ptr as i64;
+
+    let instructions = vec![
+        Instruction::ConstI64 { dst: 0, val: counter_as_i64 },
+        Instruction::CallNative {
+            dst: 2,
+            module: "numz42_rs".into(),
+            type_name: "Counter".into(),
+            symbol: "inc".into(),
+            args: vec![0],
+        },
+        Instruction::CallNative {
+            dst: 2,
+            module: "numz42_rs".into(),
+            type_name: "Counter".into(),
+            symbol: "inc".into(),
+            args: vec![0],
+        },
+        Instruction::CallNative {
+            dst: 2,
+            module: "numz42_rs".into(),
+            type_name: "Counter".into(),
+            symbol: "inc".into(),
+            args: vec![0],
+        },
+        Instruction::CallNative {
+            dst: 1,
+            module: "numz42_rs".into(),
+            type_name: "Counter".into(),
+            symbol: "get".into(),
+            args: vec![0],
+        },
+    ];
+    let m = build_module(
+        "rust_counter_e2e",
+        instructions,
+        Terminator::Ret { reg: Some(1) },
+    );
+    let func = &m.functions[0];
+
+    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+        .expect("rust_counter_e2e returns Ok");
+    assert_eq!(result, Some(Value::I64(3)));
+
+    // Cleanup: dealloc the Counter via the descriptor.
+    let dealloc_fn = unsafe { (*ty.descriptor_ptr()).dealloc.expect("dealloc set") };
+    let dtor_fn = unsafe { (*ty.descriptor_ptr()).dtor.expect("dtor set") };
+    unsafe { dtor_fn(counter_ptr) };
+    unsafe { dealloc_fn(counter_ptr) };
+}
+
+#[test]
+fn c_and_rust_modules_coexist() {
+    let ctx = VmContext::new();
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_rs_register() });
+
+    let c_ty = ctx
+        .resolve_native_type("numz42", "Counter")
+        .expect("C Counter present");
+    let rs_ty = ctx
+        .resolve_native_type("numz42_rs", "Counter")
+        .expect("Rust Counter present");
+
+    // Same simple name `Counter` distinguishes by module — no clash.
+    assert_eq!(c_ty.module(), "numz42");
+    assert_eq!(rs_ty.module(), "numz42_rs");
+    assert_ne!(
+        std::rc::Rc::as_ptr(&c_ty) as *const _,
+        std::rc::Rc::as_ptr(&rs_ty) as *const _
     );
 }
 

@@ -1,0 +1,7 @@
+error: z42::methods: missing `module = "..."` attribute
+ --> tests/fail/methods_missing_module.rs:6:1
+  |
+6 | #[methods(name = "Counter")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `methods` (in Nightly builds, run with -Z macro-backtrace for more info)

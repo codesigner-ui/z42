@@ -9,4 +9,5 @@ license = "MIT OR Apache-2.0"
 path = "src/lib.rs"
 
 [dependencies]
-z42-abi = { path = "../z42-abi" }
+z42-abi    = { path = "../z42-abi" }
+z42-macros = { path = "../z42-macros" }

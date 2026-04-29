@@ -100,6 +100,19 @@ fn abi_version_constant() {
 }
 
 #[test]
+fn descriptor_types_are_sync() {
+    // C3 ergonomic macros emit `static` Z42TypeDescriptor_v1 / *MethodDesc /
+    // *TraitImpl literals. The crate-level `unsafe impl Sync` makes that
+    // work; this test pins the promise.
+    fn assert_sync<T: Sync>() {}
+    assert_sync::<Z42TypeDescriptor_v1>();
+    assert_sync::<Z42MethodDesc>();
+    assert_sync::<Z42FieldDesc>();
+    assert_sync::<Z42MethodImpl>();
+    assert_sync::<Z42TraitImpl>();
+}
+
+#[test]
 fn flag_bits_pinned() {
     // Frozen wire values; do not change without bumping ABI version.
     assert_eq!(Z42_TYPE_FLAG_VALUE_TYPE, 1);

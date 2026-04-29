@@ -1,0 +1,7 @@
+error: z42::methods: missing `name = "..."` attribute
+ --> tests/fail/methods_missing_name.rs:6:1
+  |
+6 | #[methods(module = "demo")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `methods` (in Nightly builds, run with -Z macro-backtrace for more info)

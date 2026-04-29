@@ -3,26 +3,30 @@
 //! Sits on top of [`z42_abi`] and exposes user-friendly types and traits that
 //! Rust crate authors implement to expose native types to z42 user code.
 //!
-//! Status: C1 scaffold. Trait shapes and type aliases are stable enough for
-//! C2..C5 to fill in implementation; no runtime behavior is provided yet.
+//! # Quick start
 //!
 //! ```ignore
 //! use z42_rs::prelude::*;
 //!
-//! struct MyType { /* ... */ }
+//! #[derive(Default)]
+//! pub struct Counter { value: i64 }
 //!
-//! impl Z42Type for MyType {
-//!     const MODULE: &'static str = "demo";
-//!     const NAME:   &'static str = "MyType";
-//!     fn descriptor() -> *const z42_abi::Z42TypeDescriptor_v1 {
-//!         /* C3 derive macro fills this in */
-//!         core::ptr::null()
-//!     }
+//! #[z42::methods(module = "demo", name = "Counter")]
+//! impl Counter {
+//!     pub fn inc(&mut self) -> i64 { self.value += 1; self.value }
+//!     pub fn get(&self) -> i64 { self.value }
 //! }
+//!
+//! z42::module! { name: "demo", types: [Counter] }
 //! ```
+//!
+//! After expansion the module exposes a `demo_register()` symbol the VM
+//! invokes to register `Counter` via Tier 1 `z42_register_type`.
+//!
+//! Note: `z42-rs` requires `std`. The lower-level `z42-abi` mirror crate
+//! stays `no_std` for embedded users.
 
-#![cfg_attr(not(test), no_std)]
-
+pub mod native_helpers;
 pub mod traits;
 pub mod types;
 
@@ -30,6 +34,11 @@ pub mod types;
 pub mod prelude {
     pub use crate::traits::{Visitor, Z42Traceable, Z42Type};
     pub use crate::types::{Descriptor, Z42Args, Z42Error, Z42TypeRef, Z42Value};
+    pub use ::z42_macros::{methods, module, trait_impl, Z42Type as DeriveZ42Type};
 }
+
+// Re-export macros at crate root so users can `#[z42_rs::methods(...)]` /
+// `#[derive(z42_rs::Z42Type)]` without the prelude import.
+pub use ::z42_macros::{methods, module, trait_impl, Z42Type};
 
 pub use z42_abi;

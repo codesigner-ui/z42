@@ -53,6 +53,7 @@ cranelift-native   = "0.115"
 
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }
+z42-rs     = { path = "crates/z42-rs" }
 
 [profile.release]
 opt-level = 3
