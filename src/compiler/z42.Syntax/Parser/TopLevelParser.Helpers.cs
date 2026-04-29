@@ -207,23 +207,114 @@ internal static partial class TopLevelParser
     ///   * `Tier1`      for the new `[Native(lib=, type=, entry=)]` form (Tier 1)
     internal sealed record NativeAttribute(string? Intrinsic, Tier1NativeBinding? Tier1);
 
-    /// Parses an attribute `[...]`.
-    /// Returns a NativeAttribute when the bracketed form is `[Native(...)]`;
-    /// null otherwise (skips balanced brackets in that case).
-    /// Always advances the cursor past the closing `]`.
-    private static NativeAttribute? TryParseNativeAttribute(ref TokenCursor cursor)
+    /// Spec R1 — known `z42.test.*` attribute names. Parser recognises bare
+    /// identifier matches (e.g. `[Test]`); semantic validation lives in R4.
+    private static readonly HashSet<string> TestAttributeNames = new(StringComparer.Ordinal)
+    {
+        "Test", "Benchmark", "Setup", "Teardown", "Ignore", "Skip"
+    };
+
+    /// Parses any bracketed attribute `[...]` and dispatches by name. Returns
+    /// a discriminated result (exactly one of Native / Test populated, or both
+    /// null when the attribute is unrecognised and skipped). Always advances
+    /// the cursor past the closing `]`.
+    internal static (NativeAttribute? Native, TestAttribute? Test) TryParseAttribute(ref TokenCursor cursor)
     {
         ExpectKind(ref cursor, TokenKind.LBracket);
+        var attrSpan = cursor.Current.Span;
 
-        // Detect outer shape: `Native ( ... )]`
-        bool isNative = cursor.Current.Kind == TokenKind.Identifier
-                     && cursor.Current.Text == "Native"
-                     && cursor.Peek(1).Kind == TokenKind.LParen;
-        if (!isNative)
+        // Identifier required as first token after `[`. Otherwise skip.
+        if (cursor.Current.Kind != TokenKind.Identifier)
         {
             SkipBalancedToRBracket(ref cursor);
-            return null;
+            return (null, null);
         }
+
+        string name = cursor.Current.Text;
+
+        // Dispatch: known z42.test attributes vs Native vs unknown.
+        if (TestAttributeNames.Contains(name))
+        {
+            var test = ParseTestAttributeBody(ref cursor, name, attrSpan);
+            return (null, test);
+        }
+        if (name == "Native" && cursor.Peek(1).Kind == TokenKind.LParen)
+        {
+            var native = ParseNativeAttributeBody(ref cursor);
+            return (native, null);
+        }
+
+        // Unknown attribute — skip silently (existing behavior, preserves
+        // forward compatibility with future attributes).
+        SkipBalancedToRBracket(ref cursor);
+        return (null, null);
+    }
+
+    /// Back-compat shim: returns Native part only. Used by call sites that
+    /// pre-date R1; new sites use TryParseAttribute directly.
+    private static NativeAttribute? TryParseNativeAttribute(ref TokenCursor cursor)
+        => TryParseAttribute(ref cursor).Native;
+
+    /// Spec R1 — parses the body of a `[Test]` / `[Benchmark]` / `[Skip(...)]`
+    /// / etc. attribute. Cursor enters at the attribute name identifier;
+    /// exits past the closing `]`. Supports two forms:
+    ///   * No-arg: `[Test]`, `[Benchmark]`, `[Setup]`, `[Teardown]`, `[Ignore]`
+    ///   * Named-args: `[Skip(reason: "...", platform: "...", feature: "...")]`
+    ///
+    /// Named arg values must be string literals. Returns a TestAttribute AST
+    /// node; semantic validation (e.g. requiring [Skip] reason) is in R4.
+    private static TestAttribute ParseTestAttributeBody(
+        ref TokenCursor cursor, string name, Span attrSpan)
+    {
+        cursor = cursor.Advance(); // <name>
+
+        Dictionary<string, string>? namedArgs = null;
+        if (cursor.Current.Kind == TokenKind.LParen)
+        {
+            cursor = cursor.Advance(); // (
+            namedArgs = new Dictionary<string, string>(StringComparer.Ordinal);
+            while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
+            {
+                if (cursor.Current.Kind != TokenKind.Identifier
+                    || cursor.Peek(1).Kind != TokenKind.Colon)
+                {
+                    throw new ParseException(
+                        $"`[{name}(...)]` requires named arguments of the form `key: \"value\"`",
+                        cursor.Current.Span,
+                        DiagnosticCodes.UnexpectedToken);
+                }
+
+                var keyTok = ExpectKind(ref cursor, TokenKind.Identifier);
+                ExpectKind(ref cursor, TokenKind.Colon);
+                if (cursor.Current.Kind != TokenKind.StringLiteral)
+                {
+                    throw new ParseException(
+                        $"`[{name}(...)]`: value for `{keyTok.Text}` must be a string literal",
+                        cursor.Current.Span,
+                        DiagnosticCodes.UnexpectedToken);
+                }
+                var raw = cursor.Current.Text;
+                var val = raw.Length >= 2 ? raw[1..^1] : raw;
+                namedArgs[keyTok.Text] = val;
+                cursor = cursor.Advance(); // string
+
+                if (cursor.Current.Kind == TokenKind.Comma)
+                    cursor = cursor.Advance();
+            }
+            ExpectKind(ref cursor, TokenKind.RParen);
+        }
+        ExpectKind(ref cursor, TokenKind.RBracket);
+
+        return new TestAttribute(
+            Name:      name,
+            NamedArgs: namedArgs,
+            Span:      attrSpan);
+    }
+
+    /// Body of `[Native(...)]`. Caller has already consumed `[` and is
+    /// positioned at the `Native` identifier. Exits past the closing `]`.
+    private static NativeAttribute? ParseNativeAttributeBody(ref TokenCursor cursor)
+    {
 
         // Look at the first token inside the parens to decide form.
         if (cursor.Peek(2).Kind == TokenKind.StringLiteral)

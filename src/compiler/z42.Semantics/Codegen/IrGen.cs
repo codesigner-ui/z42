@@ -157,9 +157,101 @@ public sealed class IrGen : IEmitterContext
                 .Select(m => EmitMethod(implTargetNt.Name, m)));
         }
         functions.AddRange(cu.Functions.Select(EmitFunction));
-        var module = new IrModule(cu.Namespace ?? "main", _strings, classes, functions);
+
+        // R1: collect TestIndex from FunctionDecl.TestAttributes across top-level
+        // and class-method scopes. method_id is the index into `functions` (post-
+        // emit, in declaration order). We look up each test-decorated FunctionDecl
+        // by its qualified IR-side name to find the matching emitted function.
+        var testIndex = BuildTestIndex(cu, functions);
+
+        var module = new IrModule(cu.Namespace ?? "main", _strings, classes, functions,
+            TestIndex: testIndex.Count > 0 ? testIndex : null);
         IrVerifier.VerifyOrThrow(module);
         return module;
+    }
+
+    /// <summary>R1 — walk FunctionDecls (top-level + class methods) and emit one
+    /// <see cref="TestEntry"/> per function decorated with z42.test.* attributes.
+    /// `method_id` is resolved by name lookup into the post-emit functions list.
+    /// </summary>
+    private List<TestEntry> BuildTestIndex(CompilationUnit cu, List<IrFunction> functions)
+    {
+        var entries = new List<TestEntry>();
+
+        // Build name → index lookup once (functions list is finalized at this point).
+        var fnIndexByName = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < functions.Count; i++)
+            fnIndexByName.TryAdd(functions[i].Name, i);
+
+        // Top-level test functions
+        foreach (var fn in cu.Functions)
+        {
+            if (fn.TestAttributes is null || fn.TestAttributes.Count == 0) continue;
+            if (!fnIndexByName.TryGetValue(QualifyName(fn.Name), out var idx)) continue;
+            entries.Add(BuildTestEntry(idx, fn.TestAttributes));
+        }
+
+        // Class methods (prefix with class name, mirror EmitMethod naming)
+        foreach (var cls in cu.Classes)
+            foreach (var m in cls.Methods)
+            {
+                if (m.TestAttributes is null || m.TestAttributes.Count == 0) continue;
+                var qualClass = ((IEmitterContext)this).QualifyClassName(cls.Name);
+                // Try with arity suffix first (overload-aware), fall back to bare name.
+                string arityKey = $"{qualClass}.{m.Name}${m.Params.Count}";
+                string bareKey  = $"{qualClass}.{m.Name}";
+                if (fnIndexByName.TryGetValue(arityKey, out var idx)
+                    || fnIndexByName.TryGetValue(bareKey, out idx))
+                    entries.Add(BuildTestEntry(idx, m.TestAttributes));
+            }
+
+        return entries;
+    }
+
+    /// <summary>Reduce a list of parsed test attributes on one function into a
+    /// single <see cref="TestEntry"/>. Strings (Skip reason/platform/feature)
+    /// are interned into the module's string pool with 1-based indices.</summary>
+    private TestEntry BuildTestEntry(int methodId, List<TestAttribute> attrs)
+    {
+        var kind         = TestEntryKind.Test;          // default if no primary kind seen
+        var flags        = TestFlags.None;
+        int reasonIdx    = 0;
+        int platformIdx  = 0;
+        int featureIdx   = 0;
+
+        foreach (var attr in attrs)
+        {
+            switch (attr.Name)
+            {
+                case "Test":      kind = TestEntryKind.Test;      break;
+                case "Benchmark": kind = TestEntryKind.Benchmark; break;
+                case "Setup":     kind = TestEntryKind.Setup;     break;
+                case "Teardown":  kind = TestEntryKind.Teardown;  break;
+                case "Ignore":    flags |= TestFlags.Ignored;     break;
+                case "Skip":
+                    flags |= TestFlags.Skipped;
+                    if (attr.NamedArgs is not null)
+                    {
+                        if (attr.NamedArgs.TryGetValue("reason", out var reason))
+                            reasonIdx = Intern(reason) + 1;     // 1-based
+                        if (attr.NamedArgs.TryGetValue("platform", out var platform))
+                            platformIdx = Intern(platform) + 1;
+                        if (attr.NamedArgs.TryGetValue("feature", out var feature))
+                            featureIdx = Intern(feature) + 1;
+                    }
+                    break;
+            }
+        }
+
+        return new TestEntry(
+            MethodId:             methodId,
+            Kind:                 kind,
+            Flags:                flags,
+            SkipReasonStrIdx:     reasonIdx,
+            SkipPlatformStrIdx:   platformIdx,
+            SkipFeatureStrIdx:    featureIdx,
+            ExpectedThrowTypeIdx: 0,                            // R4
+            TestCases:            Array.Empty<TestCase>());     // R4 (TestCase parser pending)
     }
 
     // ── Per-function delegation ──────────────────────────────────────────────

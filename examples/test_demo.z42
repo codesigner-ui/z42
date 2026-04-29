@@ -1,0 +1,39 @@
+// Spec R1 (add-test-metadata-section) — compile-time test discovery demo.
+//
+// This file exercises the parser + IR codegen path for z42.test.* attributes.
+// Compiling it produces a .zbc with a TIDX section containing one TestEntry per
+// decorated function below. The runtime side (R3 z42-test-runner) will read
+// these entries to discover and dispatch tests.
+//
+// **Note**: this is a compile-only demo. The functions have empty bodies and
+// cannot be executed via z42vm yet — the actual test runner ships in R3.
+namespace TestDemo;
+
+[Test]
+void test_simple() { }
+
+[Test]
+[Skip(reason: "blocked by issue #123")]
+void test_skipped_unconditional() { }
+
+[Test]
+[Skip(platform: "ios", reason: "JIT not supported on iOS")]
+void test_skipped_on_ios() { }
+
+[Test]
+[Skip(feature: "multithreading", reason: "single-threaded build")]
+void test_skipped_without_feature() { }
+
+[Test]
+[Skip(platform: "wasm", feature: "filesystem", reason: "wasm sandbox has no fs")]
+void test_skipped_combined() { }
+
+[Test]
+[Ignore]
+void test_ignored() { }
+
+[Setup]
+void setup_fixture() { }
+
+[Teardown]
+void teardown_fixture() { }

@@ -177,7 +177,8 @@ public sealed record FunctionDecl(
     List<Expr>? BaseCtorArgs = null,  // non-null only on constructors with `: base(...)`
     List<string>? TypeParams = null,  // generic type parameters: <T>, <K,V>
     WhereClause? Where = null,        // L3-G2 generic constraints
-    Tier1NativeBinding? Tier1Binding = null)  // spec C6 — Tier 1 dispatch binding
+    Tier1NativeBinding? Tier1Binding = null,  // spec C6 — Tier 1 dispatch binding
+    List<TestAttribute>? TestAttributes = null)  // spec R1 — z42.test.* attributes (collected, validated in R4)
 {
     // Convenience accessors — keep read sites concise
     public bool IsStatic   => Modifiers.HasFlag(FunctionModifiers.Static);
@@ -188,6 +189,20 @@ public sealed record FunctionDecl(
 }
 
 public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span);
+
+// ── Test attributes (spec R1) ────────────────────────────────────────────────
+
+/// <summary>One occurrence of a <c>z42.test.*</c> attribute on a function. The
+/// parser collects these as-is; semantic validation (mutual exclusion,
+/// signature checks) is done in R4.</summary>
+public sealed record TestAttribute(
+    /// <summary>Attribute name without brackets: "Test" / "Benchmark" / "Setup" /
+    /// "Teardown" / "Ignore" / "Skip".</summary>
+    string Name,
+    /// <summary>Named arguments (e.g. for [Skip(reason: "x", platform: "ios", feature: "jit")]).
+    /// Null when the attribute has no parens or empty parens.</summary>
+    IReadOnlyDictionary<string, string>? NamedArgs,
+    Span Span);
 
 // ── Type expressions ──────────────────────────────────────────────────────────
 

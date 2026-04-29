@@ -267,17 +267,25 @@ internal static partial class TopLevelParser
         var classWhereClause = ParseWhereClause(ref cursor);
 
         ExpectKind(ref cursor, TokenKind.LBrace);
-        NativeAttribute? pendingNative = null;
+        NativeAttribute?     pendingNative    = null;
+        List<TestAttribute>? pendingTestAttrs = null;  // R1: per-method z42.test.* attrs
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
             try
             {
-                if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
+                if (cursor.Current.Kind == TokenKind.LBracket)
+                {
+                    var (parsedNative, parsedTest) = TryParseAttribute(ref cursor);
+                    if (parsedNative != null) pendingNative = parsedNative;
+                    if (parsedTest   != null) (pendingTestAttrs ??= new()).Add(parsedTest);
+                    continue;
+                }
                 // L3-G4e: indexer `<vis>? <type> this [params] { get {..} set {..} }`
                 // desugars to `get_Item(params) → type` + `set_Item(params, type value) → void`
                 if (IsIndexerDecl(cursor))
                 {
                     pendingNative = null;
+                    pendingTestAttrs = null;
                     foreach (var m in ParseIndexerDecl(ref cursor, feat, diags))
                         methods.Add(m);
                     continue;
@@ -285,6 +293,7 @@ internal static partial class TopLevelParser
                 if (IsFieldDecl(cursor))
                 {
                     pendingNative = null;
+                    pendingTestAttrs = null;
                     var fSpan = cursor.Current.Span;
                     var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
                     var (fStatic, _, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
@@ -310,8 +319,9 @@ internal static partial class TopLevelParser
                 }
                 else
                 {
-                    methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags));
-                    pendingNative = null;
+                    methods.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags, pendingTestAttrs));
+                    pendingNative    = null;
+                    pendingTestAttrs = null;
                 }
             }
             catch (ParseException ex) when (diags != null)

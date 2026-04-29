@@ -65,7 +65,8 @@ internal static partial class TopLevelParser
         var interfaces = new List<InterfaceDecl>();
         var impls      = new List<ImplDecl>();
 
-        NativeAttribute? pendingNative = null;
+        NativeAttribute?      pendingNative    = null;
+        List<TestAttribute>?  pendingTestAttrs = null;  // R1: accumulated z42.test.* attrs
         while (!cursor.IsEnd)
         {
             try
@@ -75,7 +76,13 @@ internal static partial class TopLevelParser
                         $"`{cursor.Current.Text}` is a keyword reserved for Phase 2 and cannot be used yet",
                         cursor.Current.Span,
                         DiagnosticCodes.FeatureDisabled);
-                if (cursor.Current.Kind == TokenKind.LBracket) { pendingNative = TryParseNativeAttribute(ref cursor); continue; }
+                if (cursor.Current.Kind == TokenKind.LBracket)
+                {
+                    var (parsedNative, parsedTest) = TryParseAttribute(ref cursor);
+                    if (parsedNative != null) pendingNative = parsedNative;
+                    if (parsedTest   != null) (pendingTestAttrs ??= new()).Add(parsedTest);
+                    continue;
+                }
                 if (cursor.Current.Kind == TokenKind.Namespace)
                 {
                     cursor = cursor.Advance();
@@ -90,26 +97,29 @@ internal static partial class TopLevelParser
                     if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
                     continue;
                 }
-                if (IsEnumDecl(cursor))          { pendingNative = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
-                if (IsInterfaceDecl(cursor))      { pendingNative = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
+                if (IsEnumDecl(cursor))          { pendingNative = null; pendingTestAttrs = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
+                if (IsInterfaceDecl(cursor))      { pendingNative = null; pendingTestAttrs = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
                 if (IsClassOrStructDecl(cursor))  {
                     // Spec C9: thread the class-level [Native(lib=, type=)]
                     // attribute (if present) into ClassDecl so its methods
                     // can stitch defaults at codegen time.
                     var classNative = pendingNative;
-                    pendingNative = null;
+                    pendingNative    = null;
+                    pendingTestAttrs = null;  // class-level test attrs not supported (R4 will diagnose)
                     classes.Add(ParseClassDecl(ref cursor, feat, diags, classNative));
                     continue;
                 }
                 if (cursor.Current.Kind == TokenKind.Impl)
-                                                  { pendingNative = null; impls.Add(ParseImplDecl(ref cursor, feat, diags)); continue; }
-                functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags));
-                pendingNative = null;
+                                                  { pendingNative = null; pendingTestAttrs = null; impls.Add(ParseImplDecl(ref cursor, feat, diags)); continue; }
+                functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags, pendingTestAttrs));
+                pendingNative    = null;
+                pendingTestAttrs = null;
             }
             catch (ParseException ex) when (diags != null)
             {
                 diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken, ex.Message, ex.Span);
-                pendingNative = null;
+                pendingNative    = null;
+                pendingTestAttrs = null;
                 cursor = SkipToNextDeclaration(cursor);
             }
         }
@@ -145,7 +155,8 @@ internal static partial class TopLevelParser
 
     internal static FunctionDecl ParseFunctionDecl(
         ref TokenCursor cursor, LanguageFeatures feat, Visibility defaultVis,
-        NativeAttribute? nativeAttr = null, DiagnosticBag? diags = null)
+        NativeAttribute? nativeAttr = null, DiagnosticBag? diags = null,
+        List<TestAttribute>? testAttrs = null)
     {
         var nativeIntrinsic = nativeAttr?.Intrinsic;
         var tier1Binding    = nativeAttr?.Tier1;
@@ -251,7 +262,8 @@ internal static partial class TopLevelParser
             BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
             nativeIntrinsic, start,
             BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams, Where: whereClause,
-            Tier1Binding: tier1Binding);
+            Tier1Binding: tier1Binding,
+            TestAttributes: testAttrs);
     }
 
     /// Build FunctionModifiers flags from individual booleans parsed from source.
