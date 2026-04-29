@@ -117,7 +117,11 @@ pub unsafe extern "C" fn jit_to_str(
             if let Some(entry) = ctx_ref.fn_entries.get(&func_name) {
                 let mut callee = JitFrame::new(entry.max_reg, &[val.clone()]);
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+                // Phase 3f-2: GC roots scan
+                let vm_ctx = vm_ctx_ref(ctx);
+                vm_ctx.push_frame_regs(&callee.regs as *const _);
                 let r = jit_fn(&mut callee, ctx);
+                vm_ctx.pop_frame_regs();
                 if r != 0 { callee.recycle(); return 1; }
                 let s = match callee.ret.take() {
                     Some(Value::Str(s)) => s,

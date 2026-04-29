@@ -5,11 +5,9 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 3a/3b/3c/3d/3d.1/3f/3e 后已知限制**：
+//! **Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2 后已知限制**：
 //! 1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
 //!    Result，签名约束。真拒绝需 trait API 升级 + 全 callsite 错误处理路径
-//! 2. **JIT 栈帧 JitFrame.regs 暂未对接为 GC roots**：interp 已通过 exec_stack
-//!    暴露给 scanner（Phase 3f），JIT 端 JitFrame 待对接 → Phase 3f-2（视需要）
 //!
 //! **已解决**：
 //! - Phase 3b（add-heap-registry）：snapshot/iterate Full coverage
@@ -28,6 +26,10 @@
 //!   后 alive_vec drop / 普通 scope 退出）都自动触发已注册 finalizer，
 //!   one-shot via take。`finalizers: HashMap` 字段移除，`stats()` 即时遍历
 //!   registry 重算 finalizers_pending。
+//! - Phase 3f-2（add-jit-stack-scanning）：6 个 JitFrame::new callsite 在
+//!   jit_fn 调用前后 push/pop frame.regs 到 VmContext.exec_stack（与 interp
+//!   共用同一数据结构）。修复 JIT 路径下 transitive 可达对象（如返回值穿过
+//!   函数边界后通过 outer.slot 间接持有）被误清的 bug。
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

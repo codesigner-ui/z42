@@ -33,7 +33,11 @@ pub unsafe extern "C" fn jit_call(
 
     let mut callee_frame = JitFrame::new(entry.max_reg, &args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+    // Phase 3f-2: push callee frame regs to GC roots scan during this jit_fn call.
+    let vm_ctx = vm_ctx_ref(ctx);
+    vm_ctx.push_frame_regs(&callee_frame.regs as *const _);
     let result = jit_fn(&mut callee_frame, ctx);
+    vm_ctx.pop_frame_regs();
     if result != 0 { callee_frame.recycle(); return 1; }
     frame_ref.regs[dst as usize] = callee_frame.ret.take().unwrap_or(Value::Null);
     callee_frame.recycle();
@@ -204,7 +208,11 @@ pub unsafe extern "C" fn jit_obj_new(
     if let Some(entry) = ctx_ref.fn_entries.get(&ctor_name) {
         let mut callee = JitFrame::new(entry.max_reg, &ctor_args);
         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+        // Phase 3f-2: 注册 callee frame regs 给 GC root scanner
+        let vm_ctx = vm_ctx_ref(ctx);
+        vm_ctx.push_frame_regs(&callee.regs as *const _);
         let r = jit_fn(&mut callee, ctx);
+        vm_ctx.pop_frame_regs();
         callee.recycle();
         if r != 0 { return 1; }
     }
@@ -299,7 +307,11 @@ pub unsafe extern "C" fn jit_vcall(
             if let Some(entry) = ctx_ref.fn_entries.get(func_name) {
                 let mut callee = JitFrame::new(entry.max_reg, &call_args);
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+                // Phase 3f-2: GC roots scan
+                let vm_ctx = vm_ctx_ref(ctx);
+                vm_ctx.push_frame_regs(&callee.regs as *const _);
                 let r = jit_fn(&mut callee, ctx);
+                vm_ctx.pop_frame_regs();
                 if r != 0 { callee.recycle(); return 1; }
                 frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
                 callee.recycle();
@@ -354,7 +366,11 @@ pub unsafe extern "C" fn jit_vcall(
     call_args.append(&mut extra_args);
     let mut callee = JitFrame::new(entry.max_reg, &call_args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+    // Phase 3f-2: GC roots scan
+    let vm_ctx = vm_ctx_ref(ctx);
+    vm_ctx.push_frame_regs(&callee.regs as *const _);
     let r = jit_fn(&mut callee, ctx);
+    vm_ctx.pop_frame_regs();
     if r != 0 { callee.recycle(); return 1; }
     frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
     callee.recycle();

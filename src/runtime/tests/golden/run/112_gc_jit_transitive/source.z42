@@ -1,0 +1,29 @@
+namespace Demo;
+using Std.IO;
+using Std;
+
+// Phase 3f-2：JIT 路径下 transitive 可达对象在 collect 时不应被误清。
+// 关键：inner 仅通过 holder.Child 间接可达（MakeHolder 返回后，inner 不在
+// 任何 frame reg 直接持有；只能从 Main 的 holder reg → holder.Child → inner）。
+
+class Inner {
+    int Value;
+}
+
+class Holder {
+    Inner Child;
+}
+
+Holder MakeHolder() {
+    Holder h = new Holder();
+    h.Child = new Inner();
+    h.Child.Value = 42;
+    return h;
+    // MakeHolder 的 frame.regs 退出，inner 与 h 之间链条仅由 h.Child 维持
+}
+
+void Main() {
+    Holder holder = MakeHolder();
+    GC.ForceCollect();  // JIT 模式下若不扫 frame regs，inner 会被误清
+    Console.WriteLine($"value: {holder.Child.Value}");
+}

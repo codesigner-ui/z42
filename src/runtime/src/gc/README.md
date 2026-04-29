@@ -61,12 +61,15 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2 后）**：
 
 1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
    Result，签名约束 → 独立 spec 升级 trait API
-2. **JIT 栈帧 JitFrame.regs 暂未对接**：interp 已对接（Phase 3f），JIT 待
-   Phase 3f-2 视需要处理
+
+> **2026-04-29 add-jit-stack-scanning（Phase 3f-2 完成）**：6 个 JitFrame::new
+> callsite 在 jit_fn 调用前后 push/pop frame.regs 到 VmContext.exec_stack
+> （与 interp 共用同一数据结构）。修复 JIT 路径下 transitive 可达对象
+> （如返回值穿过函数边界后通过 outer.slot 间接持有）被误清的 bug。
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate Full coverage。
 >

@@ -48,7 +48,10 @@ impl JitModule {
         self.ctx.vm_ctx = ctx as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
+        // Phase 3f-2: register top-level entry frame regs for GC root scanning
+        ctx.push_frame_regs(&frame.regs as *const _);
         let r = unsafe { f(&mut frame, &*self.ctx) };
+        ctx.pop_frame_regs();
         frame.recycle();
         self.ctx.vm_ctx = std::ptr::null_mut();
         if r != 0 { return Err(take_exception_error(ctx)); }
