@@ -10,7 +10,9 @@
 | C# 编译器吞吐 | BenchmarkDotNet | `src/compiler/z42.Bench/` | ✅ P1.B |
 | z42 端到端 | hyperfine + 自建 harness | `bench/scenarios/` + `scripts/bench-run.sh` | ✅ P1.C |
 | 基线对比 | `scripts/bench-diff.sh` | `bench/baselines/` | ✅ P1.D.1 |
-| CI bench gate | gh-pages baseline + PR diff | `.github/workflows/` | ⏳ P1.D.2 |
+| CI bench smoke (artifact) | `.github/workflows/ci.yml` (`bench-e2e` job) | — | ✅ P1.D.2 |
+| 主分支 baseline 持久化 | `.github/workflows/bench-update.yml` → `bench-baselines` 分支 | — | ✅ P1.D.3 |
+| PR auto-diff (informational) | ci.yml fetch + bench-diff | — | ⏳ P1.D.4 |
 
 ## 目录结构
 
@@ -47,10 +49,27 @@ PR 到 main 时，`.github/workflows/ci.yml` 的 `bench-e2e` job 自动跑 `just
 - CI runner 噪声大（共享 VM），5% 阈值会大量假阳性
 - 还没有持久化的 main baseline 可对比
 
-P1.D.3 加 gh-pages baseline 持久化 + 自动 diff 时再开启门禁。**当前流程**：
+P1.D.4 加 PR fetch + 自动 diff 后才有自动门禁；当前 PR 流程：
 1. PR 触发 CI → bench-e2e job 跑完 → 在 PR Checks 页面下载 artifact
 2. 本地 `cp downloaded.json bench/baselines/main-darwin-arm64.json`
 3. 本地 `just bench-diff` 手动检查
+
+**主分支 baseline 持久化（P1.D.3 已上线）**：每次 push 到 main 自动跑全量 e2e 并把结果提交到 `bench-baselines` 分支：
+
+```
+bench-baselines/
+├── README.md
+└── baselines/
+    └── e2e-ubuntu-latest.json   # auto-updated by bench-update.yml
+```
+
+手动获取最新 main baseline：
+
+```bash
+git fetch origin bench-baselines:bench-baselines
+git show bench-baselines:baselines/e2e-ubuntu-latest.json > /tmp/main.json
+just bench-diff /tmp/main.json
+```
 
 ## 与 baseline 对比
 

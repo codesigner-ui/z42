@@ -9,7 +9,8 @@
 | 文件 | 触发条件 | 职责 |
 |------|---------|------|
 | `ci.yml` (job: `build-and-test`) | `pull_request` 到 main / `push` 到 main | linux/macos/windows 三平台跑 `just build` + `just test`（Windows 退化为 smoke test） |
-| `ci.yml` (job: `bench-e2e`) | `pull_request` 到 main（仅 ubuntu） | 跑 `just bench-e2e --quick`，上传 `bench/results/e2e.json` 为 artifact 供 PR 作者手动 diff（自动 diff 留 P1.D.3） |
+| `ci.yml` (job: `bench-e2e`) | `pull_request` 到 main（仅 ubuntu） | 跑 `just bench-e2e --quick`，上传 `bench/results/e2e.json` 为 artifact 供 PR 作者手动 diff（自动 diff 留 P1.D.4） |
+| `bench-update.yml` | `push` 到 main（仅 ubuntu） | 跑 `just bench-e2e` 全量 → 把 `bench/results/e2e.json` 提交到 `bench-baselines` 分支的 `baselines/e2e-ubuntu-latest.json`。首次自动 bootstrap 该分支。 |
 
 ## 设计约定
 
@@ -20,9 +21,9 @@
 
 ## 后续 workflows（占位）
 
-- P1: `bench-update.yml` —— push to main 时全量 benchmark + 上传 baseline
-- P4.2: `platform-wasm` job 加入 ci.yml
-- P4.3: `platform-android` job
-- P4.4: `platform-ios` job
+- P1.D.4：ci.yml `bench-e2e` job 加 fetch `bench-baselines` + 信息性 auto-diff
+- P4.2：`platform-wasm` job 加入 ci.yml
+- P4.3：`platform-android` job
+- P4.4：`platform-ios` job
 
 详见 [spec/changes/](../../spec/changes/) 中各 sub-spec 的 CI 接入设计。
