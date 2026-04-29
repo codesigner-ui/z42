@@ -1,0 +1,9 @@
+// E2E benchmark scenario: minimal startup.
+// Workload: just print one line. Measures z42vm + stdlib load + interp init overhead.
+// Expected output: ok
+namespace Bench.Startup;
+using Std.IO;
+
+void Main() {
+    Console.WriteLine("ok");
+}

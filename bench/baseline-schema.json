@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://z42.dev/schemas/bench-baseline-v1.json",
+  "title": "z42 Benchmark Baseline v1",
+  "description": "Schema for z42 benchmark baseline / current-run results. Produced by scripts/bench-run.sh; consumed by scripts/bench-diff.sh (P1.D).",
+  "type": "object",
+  "required": ["schema_version", "commit", "branch", "os", "timestamp", "benchmarks"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "const": 1 },
+    "commit":         { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+    "branch":         { "type": "string", "minLength": 1 },
+    "os":             { "type": "string", "minLength": 1 },
+    "timestamp":      { "type": "string", "format": "date-time" },
+    "rustc_version":  { "type": ["string", "null"] },
+    "dotnet_version": { "type": ["string", "null"] },
+    "benchmarks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "tier", "metric", "value", "unit"],
+        "additionalProperties": false,
+        "properties": {
+          "name":     { "type": "string", "minLength": 1 },
+          "tier":     { "enum": ["rust-micro", "csharp-throughput", "z42-e2e"] },
+          "metric":   { "enum": ["time", "throughput", "memory"] },
+          "value":    { "type": "number" },
+          "unit":     { "enum": ["ns", "us", "ms", "s", "ops/sec", "bytes", "KB", "MB"] },
+          "ci_lower": { "type": ["number", "null"] },
+          "ci_upper": { "type": ["number", "null"] },
+          "samples":  { "type": ["integer", "null"], "minimum": 1 }
+        }
+      }
+    }
+  }
+}

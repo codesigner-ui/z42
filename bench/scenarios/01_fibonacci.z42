@@ -1,0 +1,14 @@
+// E2E benchmark scenario: recursive Fibonacci.
+// Workload: ~2^25 recursive calls, exercises function-call dispatch.
+// Expected output: 75025
+namespace Bench.Fibonacci;
+using Std.IO;
+
+int Fib(int n) {
+    if (n <= 1) { return n; }
+    return Fib(n - 1) + Fib(n - 2);
+}
+
+void Main() {
+    Console.WriteLine(Fib(25));
+}

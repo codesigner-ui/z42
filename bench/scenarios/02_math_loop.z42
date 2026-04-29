@@ -1,0 +1,17 @@
+// E2E benchmark scenario: tight integer arithmetic loop.
+// Workload: 100k iterations of (mul + add). Exercises interp dispatch + i32 ops.
+// Expected output: 333328333350000
+namespace Bench.MathLoop;
+using Std.IO;
+
+int SumSquares(int n) {
+    int total = 0;
+    for (int i = 0; i < n; i++) {
+        total = total + i * i;
+    }
+    return total;
+}
+
+void Main() {
+    Console.WriteLine(SumSquares(100000));
+}

@@ -92,9 +92,12 @@ bench-compiler-all:
     set -euf -o pipefail
     dotnet run --project src/compiler/z42.Bench -c Release -- --filter '*'
 
-# (P1.C placeholder) Run end-to-end .z42 scenarios (hyperfine)
-bench-e2e:
-    @echo "❌ P1.C 待实施：z42 端到端 (bench/scenarios/, hyperfine)" && exit 1
+# Run end-to-end .z42 scenarios with hyperfine.
+#   just bench-e2e          # full: warmup=3, runs=10, all scenarios (~1-2 min)
+#   just bench-e2e --quick  # quick: warmup=1, runs=3, 2 scenarios only (~30s)
+# Output: bench/results/e2e.json (conforms to bench/baseline-schema.json)
+bench-e2e *args:
+    ./scripts/bench-run.sh {{args}}
 
 # (P1.D placeholder) Diff current bench against baseline
 bench-diff baseline="main":

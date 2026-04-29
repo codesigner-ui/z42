@@ -44,3 +44,7 @@ src/runtime/tests/cross-zpkg/*/*/libs/
 
 # BenchmarkDotNet output (auto-created in CWD when running `dotnet run` from any dir)
 BenchmarkDotNet.Artifacts/
+
+# Bench output / baseline files (only .gitkeep tracked; CI publishes real baselines elsewhere)
+bench/results/*.json
+bench/baselines/*.json
