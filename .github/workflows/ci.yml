@@ -31,7 +31,7 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
+          dotnet-version: '10.0.x'
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -70,3 +70,64 @@ jobs:
           dotnet test src/compiler/z42.Tests/z42.Tests.csproj
           cargo test --manifest-path src/runtime/Cargo.toml
         shell: bash
+
+  # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
+  # uploads bench/results/e2e.json as artifact for manual inspection.
+  # No diff/gate yet — that's P1.D.3 (gh-pages baseline + automatic PR diff).
+  # Note: noisy CI runners make 5% gate unreliable; current smoke just verifies
+  # bench infra works in CI. Manual download + bench-diff.sh for now.
+  bench-e2e:
+    name: bench-e2e (smoke, PR only)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+        with:
+          just-version: '1.50.0'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install hyperfine
+        run: |
+          wget -q https://github.com/sharkdp/hyperfine/releases/download/v1.20.0/hyperfine_1.20.0_amd64.deb
+          sudo dpkg -i hyperfine_1.20.0_amd64.deb
+
+      - name: Cache cargo (shared key with build-and-test)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Run e2e bench (quick mode)
+        run: just bench-e2e --quick
+
+      - name: Upload bench results
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-e2e-results-${{ runner.os }}
+          path: bench/results/e2e.json
+          retention-days: 30
+          if-no-files-found: error

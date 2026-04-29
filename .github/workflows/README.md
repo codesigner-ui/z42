@@ -8,7 +8,8 @@
 
 | 文件 | 触发条件 | 职责 |
 |------|---------|------|
-| `ci.yml` | `pull_request` 到 main / `push` 到 main | 在 linux-x64 / macos-aarch64 / windows-x64 三平台跑 `just build` + `just test`（Windows 退化为 smoke test） |
+| `ci.yml` (job: `build-and-test`) | `pull_request` 到 main / `push` 到 main | linux/macos/windows 三平台跑 `just build` + `just test`（Windows 退化为 smoke test） |
+| `ci.yml` (job: `bench-e2e`) | `pull_request` 到 main（仅 ubuntu） | 跑 `just bench-e2e --quick`，上传 `bench/results/e2e.json` 为 artifact 供 PR 作者手动 diff（自动 diff 留 P1.D.3） |
 
 ## 设计约定
 

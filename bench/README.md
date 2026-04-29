@@ -40,6 +40,18 @@ just bench-e2e               # z42 端到端（hyperfine on .zbc）
 just bench-e2e --quick       # 只跑 startup + fibonacci，少 iter
 ```
 
+## CI 集成（PR）
+
+PR 到 main 时，`.github/workflows/ci.yml` 的 `bench-e2e` job 自动跑 `just bench-e2e --quick`（仅 ubuntu），把 `bench/results/e2e.json` 上传为 artifact `bench-e2e-results-Linux`。**当前不做自动 diff/门禁** —— 因为：
+
+- CI runner 噪声大（共享 VM），5% 阈值会大量假阳性
+- 还没有持久化的 main baseline 可对比
+
+P1.D.3 加 gh-pages baseline 持久化 + 自动 diff 时再开启门禁。**当前流程**：
+1. PR 触发 CI → bench-e2e job 跑完 → 在 PR Checks 页面下载 artifact
+2. 本地 `cp downloaded.json bench/baselines/main-darwin-arm64.json`
+3. 本地 `just bench-diff` 手动检查
+
 ## 与 baseline 对比
 
 ```bash
