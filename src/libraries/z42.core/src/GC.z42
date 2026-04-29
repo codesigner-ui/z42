@@ -1,0 +1,33 @@
+namespace Std;
+
+// `Std.GC` —— 让 z42 脚本显式控制 GC（环检测 + 堆使用量查询）。
+//
+// MagrGC Phase 3d.2（expose-gc-to-scripts）暴露给脚本端。底层走 corelib::gc
+// builtins → ctx.heap().collect_cycles() / used_bytes() / force_collect()。
+//
+// 用法：
+//   Std.GC.Collect();             // 触发环检测（建议性，paused 时跳过）
+//   long bytes = Std.GC.UsedBytes(); // 当前堆 used_bytes
+//   long freed = Std.GC.ForceCollect(); // 强制完整 collect，返回释放字节数
+//
+// 注意：collect_cycles 当前只扫 pinned roots + VmContext.static_fields +
+// pending_exception，interp/JIT 栈帧 regs 暂未对接（Phase 3f）。但 Rc strong
+// count 自动包含栈帧引用，所以即使脚本在执行中调用，trial-deletion 算法仍
+// 安全（活的对象 tentative > 0 不会被错误断环）。
+
+public static class GC {
+    /// 触发环检测与回收（基于 Bacon-Rajan trial-deletion）。
+    /// 当 GC 被 pause 时本调用是 no-op。
+    [Native("__gc_collect")]
+    public static extern void Collect();
+
+    /// 当前堆 used_bytes（alloc 累加，collect 减去释放量）。
+    /// RC 模式下普通 Drop 不更新此计数（Phase 3e wrapper backing 后精确）。
+    [Native("__gc_used_bytes")]
+    public static extern long UsedBytes();
+
+    /// 强制完整 collect 并返回估算的 freed_bytes。与 Collect() 不同，
+    /// 不被 pause 跳过（除非 GC 实现明确文档化）。
+    [Native("__gc_force_collect")]
+    public static extern long ForceCollect();
+}

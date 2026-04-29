@@ -1,0 +1,27 @@
+namespace Demo;
+using Std.IO;
+using Std;
+
+class Node {
+    Node Next;
+}
+
+void MakeCycle() {
+    Node a = new Node();
+    Node b = new Node();
+    a.Next = b;
+    b.Next = a;
+    // a, b 出 scope 时 Rc count = 1（仅由对方的 Next 持有）→ 经典环泄漏
+}
+
+void Main() {
+    long before = GC.UsedBytes();
+    MakeCycle();
+    long withCycle = GC.UsedBytes();
+    long freed = GC.ForceCollect();
+    long after = GC.UsedBytes();
+
+    Console.WriteLine($"alloc grew: {withCycle > before}");
+    Console.WriteLine($"freed > 0: {freed > 0}");
+    Console.WriteLine($"used dropped: {after < withCycle}");
+}

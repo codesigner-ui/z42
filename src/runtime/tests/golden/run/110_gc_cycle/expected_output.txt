@@ -1,0 +1,3 @@
+alloc grew: true
+freed > 0: true
+used dropped: true

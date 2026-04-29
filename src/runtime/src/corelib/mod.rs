@@ -32,6 +32,7 @@ pub mod math;
 pub mod fs;
 pub mod object;
 pub mod char;
+pub mod gc;
 
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
@@ -147,6 +148,11 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__obj_hash_code", object::builtin_obj_hash_code);
         m.insert("__obj_equals",    object::builtin_obj_equals);
         m.insert("__obj_to_str",    object::builtin_obj_to_str);
+
+        // ── GC control（Phase 3d.2 expose-gc-to-scripts） ───────────────────
+        m.insert("__gc_collect",       gc::builtin_gc_collect);
+        m.insert("__gc_used_bytes",    gc::builtin_gc_used_bytes);
+        m.insert("__gc_force_collect", gc::builtin_gc_force_collect);
 
         m
     })

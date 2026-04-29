@@ -441,6 +441,7 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 | **Phase 3c** | Trial-deletion 环回收器（保留 RC backing，断环让 Rc 链 Drop） | ✅ 2026-04-29 add-cycle-breaking-collector |
 | **Phase 3d** | Finalizer 真触发（cycle collect 时调度）+ 内存压力自动 collect + near_limit_warned 自动 reset | ✅ 2026-04-29 add-finalizer-and-auto-collect |
 | **Phase 3d.1** | External root scanner（VmContext static_fields / pending_exception 暴露给 cycle collector，修复漏扫 bug）| ✅ 2026-04-29 add-external-root-scanning |
+| **Phase 3d.2** | 暴露 `Std.GC.Collect()` / `UsedBytes()` / `ForceCollect()` 给 z42 脚本 + 端到端 golden test 验证环回收 | ✅ 2026-04-29 expose-gc-to-scripts |
 | **Phase 3e**（可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）| 📋 待立项 |
 | **Phase 3f** | Cranelift stack maps（interp + JIT 路径下 GC 安全点） | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |
