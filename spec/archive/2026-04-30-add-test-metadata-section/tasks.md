@@ -1,18 +1,20 @@
 # Tasks: Add Test Metadata Section
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 P0 (just/CI) + P1 (benchmark) 完成。本文件锁定接口契约。
+> 状态：🟢 已完成 | 创建：2026-04-29 | 完成：2026-04-30
+> 依赖 P0 (just/CI) + P1 (benchmark) 完成。
+>
+> 实施分 4 次提交（R1.A+B / R1.C.1 / R1.C.2-5 / R1.D）。详见底部"实施记录"。
 
 ## 进度概览
 
-- [ ] 阶段 1: C# 端 TestEntry 类型 + IrModule 字段
-- [ ] 阶段 2: zbc 二进制格式（section ID 注册 + Writer + Reader）
-- [ ] 阶段 3: AttributeBinder 集成（识别 8 个 attribute name）
-- [ ] 阶段 4: Rust 端 test_index decoder
-- [ ] 阶段 5: LoadedArtifact 集成
-- [ ] 阶段 6: 跨语言契约测试
-- [ ] 阶段 7: 文档同步
-- [ ] 阶段 8: 验证全绿
+- [x] 阶段 1: C# 端 TestEntry 类型 + IrModule 字段
+- [x] 阶段 2: zbc 二进制格式（section ID 注册 + Writer + Reader）
+- [x] 阶段 3: AttributeBinder 集成（识别 6 个 attribute name；2 个推迟）
+- [x] 阶段 4: Rust 端 test_index decoder
+- [x] 阶段 5: LoadedArtifact 集成
+- [x] 阶段 6: 跨语言契约测试
+- [x] 阶段 7: 文档同步
+- [x] 阶段 8: 验证全绿
 
 ---
 
@@ -120,3 +122,43 @@
 - Rust decoder + LoadedArtifact 集成：0.5 天
 - 跨语言契约测试 + 调试：1 天
 - 文档：0.5 天
+
+---
+
+## 实施记录（2026-04-30）
+
+实际分 4 次提交完成，每次独立可回滚：
+
+| Phase | Commit | 范围 |
+|-------|--------|------|
+| **R1.A+B** | `ea54554` | C# `TestEntry` / `TestEntryKind` / `TestFlags` 类型 + `IrModule.TestIndex` 字段 + `SectionTags.Tidx` + ZbcWriter/Reader v=1 plumbing；Rust 镜像类型 + `read_test_index` decoder + 10 单测 + `LoadedArtifact.test_index` 字段 |
+| **R1.C.1** | `bb2df98` | 用户 feedback：`[Skip]` 不只是字符串，要区分 platform/feature。TIDX v=1 → v=2，TestEntry 加 `skip_platform_str_idx` + `skip_feature_str_idx`；C# + Rust 双端格式同步；Rust 单测扩到 12 个 |
+| **R1.C.2-5** | `5180d21` | parser 重构 `TryParseNativeAttribute` → 公开 `TryParseAttribute` 返回 `(Native, Test)` 二选一；识别 6 个 z42.test attribute (`Test`/`Benchmark`/`Setup`/`Teardown`/`Ignore`/`Skip`)；新 AST 节点 `TestAttribute`；FunctionDecl 加 `TestAttributes` 字段；IrGen 加 `BuildTestIndex` / `BuildTestEntry` 写 IrModule.TestIndex；examples/test_demo.z42 + 跨语言契约测试 `test_demo_tidx_round_trips` |
+| **R1.D** | (本 commit) | docs/design/zbc.md 加 TIDX section 二进制格式；docs/design/error-codes.md 注册 Z0911-Z0915 占位（R4 填实）；docs/design/testing.md 新建（含 Bench vs Test 分离原则）；归档到 spec/archive/2026-04-30-add-test-metadata-section/ |
+
+### 实施过程偏差与决策
+
+1. **TIDX section ID**：原 spec design.md 设计为数字 ID `0x0A`；调研发现 z42 zbc 用 4 字节 ASCII tag（NSPC/STRS/TYPE/...），改为 `TIDX` tag。
+2. **二进制编码**：原 spec 设计为 LEB128 变长；改为固定宽度 LE（u32/u16/u8），与 zbc 其他 sections 一致（DBUG/FUNC 等都是固定宽度）。
+3. **C# 文件位置**：原 spec 设计为 `src/compiler/z42.IR/Metadata/TestEntry.cs`；调研发现 z42.IR 项目目录扁平结构，按现有约定放顶层 `src/compiler/z42.IR/TestEntry.cs`。
+4. **String pool 索引基准**：原 spec design.md 设 1-based（0=none）；调研 StringPool 是 0-based。保留 1-based 语义但显式 +1 偏移（IrGen 内 `Intern(s) + 1`）；reader 端读时按 1-based 解析。
+5. **z42 attribute 系统不通用**：原 spec 假设 8 个 z42.test attribute 像 `[Native]` 一样可被识别；调研发现 z42 仅硬编码 `[Native]`，无通用 attribute 语法。决策：仿 [Native] 模式扩展 parser，识别 6 个简单 attribute（`[Test]`/`[Benchmark]`/`[Setup]`/`[Teardown]`/`[Ignore]`/`[Skip]`）。
+6. **`[ShouldThrow<E>]` 与 `[TestCase(args)]` 推迟**：原 spec 计划 8 个 attribute；这两个需要 generic 语法 / typed args 解析支持。User 决策（决策 1A）：v0.1 仅 6 个简单形式；ShouldThrow / TestCase 留 R4 一并实施。
+7. **TIDX v=1 → v=2**：用户 feedback "skip 不光是字符串"。R1.A+B 刚发的 v=1 在 R1.C.1 立即 bump 到 v=2 加 `skip_platform_str_idx` / `skip_feature_str_idx` 字段。无 v=1 文件曾被实际写入磁盘（parser 支持在 R1.C 才加），decoder 显式拒收 v=1。
+8. **Bench 与 Test 分离原则**：R1.D testing.md 文档化"bench 不放 src/tests/"原则，与 Rust/C++/.NET/Java/Haskell 主流静态语言一致；详见 [docs/design/testing.md](../../docs/design/testing.md) Bench-vs-Test 章节。
+9. **Spec 偏差记录方式**：用户决策（决策 3A）：实施记录在 commit + tasks.md，归档时入正式 spec；不在每次偏差都重新审批 spec。
+
+### 已知缺口（留 backlog）
+
+- **`[ShouldThrow<E>]` / `[TestCase(args)]`** — 需要 generic / typed args attribute 语法，留 R4 一并实施
+- **TestEntry.expected_throw_type_idx 实际填充** — R4 校验 `[ShouldThrow<E>]` 时填实
+- **TestEntry.test_cases 实际填充** — R4 实施 `[TestCase(args)]` 时填实
+- **类外（top-level static）测试函数的 method_id 解析** — 当前已支持；class methods 也支持
+- **zpkg 加载场景 test_index 聚合** — load_zpkg 暂返回空 vec；R3 runner 直接读 .zbc，不依赖 zpkg 路径
+
+### 验证记录
+
+- `cargo test --lib metadata::test_index` — 12/12 ✅
+- `cargo test --test zbc_compat test_demo_tidx_round_trips` — ✅（编译 examples/test_demo.z42 → Rust 读 8 entries 一致）
+- `just test` — 872/872 ✅（767 compiler xUnit + 104 vm golden + 1 cross-zpkg）
+- 二进制 .zbc 含 `TIDX` magic + version=2 + 8 entries（hex dump 验证）

@@ -330,6 +330,44 @@ data:    UTF-8 字节流（紧密排列，无 NUL 分隔）
   指令偏移 → 源文件行列映射表（压缩 delta 编码）
 ```
 
+### TIDX（Test Index，可选；spec R1）
+
+编译时收集的测试元数据。仅当模块含至少一个 `[Test]` / `[Benchmark]` /
+`[Setup]` / `[Teardown]` / `[Ignore]` / `[Skip]` 注解的函数时由
+`ZbcWriter.BuildTidxSection` 写入；缺失等价于"无测试"。`z42-test-runner` (R3)
+读这里发现测试，**不再**扫整个 method table。
+
+字段 little-endian 固定宽度（与其他 sections 一致）。
+
+```
+[4]  magic         "TIDX" (54 49 44 58)
+[1]  version       1=R1.A+B 占位（已废弃，reader 拒收），2=当前
+[4]  entry_count
+
+每条 TestEntry（27 字节 + 4 × test_case_count）:
+  [4]  method_id                   (索引 module.functions[])
+  [1]  kind                        1=Test 2=Benchmark 3=Setup 4=Teardown 5=Doctest(reserved)
+  [2]  flags                       bit0=Skipped bit1=Ignored bit2=ShouldThrow bit3=Doctest
+  [4]  skip_reason_str_idx         (0=无；否则 1-based string pool 索引)
+  [4]  skip_platform_str_idx       (0=无平台过滤；否则 platform 名 1-based idx，如 "ios")
+  [4]  skip_feature_str_idx        (0=无特性过滤；否则 feature 名 1-based idx，如 "jit")
+  [4]  expected_throw_type_idx     (0=无 [ShouldThrow]；R4 填入异常类型 1-based idx)
+  [4]  test_case_count             ([TestCase(args)] 实例数；R4 时填非零)
+
+  test_cases: test_case_count × {
+    [4]  arg_repr_str_idx          (1-based string pool 索引，参数文本表示；R4 升级为 typed)
+  }
+```
+
+**版本演化**：
+
+- v=1（R1.A+B，2026-04-29）：原始格式，仅 `skip_reason_str_idx`
+- v=2（R1.C，2026-04-29）：加 `skip_platform_str_idx` + `skip_feature_str_idx`，
+  支持 `[Skip(platform: "ios", feature: "jit", reason: "...")]` 条件跳过
+
+R1.A+B 的 v=1 在引入 parser 支持前 bump 到 v=2；无任何 v=1 文件曾被实际写
+入磁盘，reader 显式拒收以避免未来歧义（pre-1.0 不留兼容路径）。
+
 ---
 
 ## 解释器执行模型

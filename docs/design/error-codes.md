@@ -105,6 +105,18 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 |-------|----------------------------------|-------------------|----------------|
 | Z0909 | ManifestParseError               | source generator (C7+) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
 
+### Z0911–Z0915（R4 占位，2026-04-30）
+
+由 spec [`compiler-validate-test-attributes`](../../spec/changes/compiler-validate-test-attributes/) (R4) 钉死；R1 / R1.C 已收集 attribute（`[Test]` / `[Benchmark]` / `[Skip]` / 等），但**不**做语义校验。R4 加 `TestAttributeValidator` pass 在 TypeCheck 后跑，触发以下错误码。本期仅占位编号。
+
+| Code  | Title                                 | Planned trigger (R4) |
+|-------|---------------------------------------|----------------------|
+| Z0911 | TestSignatureInvalid                  | `[Test]` 函数签名错误：必须 `fn() -> void`、不能泛型、不能实例方法、`[TestCase]` arg 数量与函数 param 数量不一致、`[Test]` 与 `[Benchmark]` 互斥 |
+| Z0912 | BenchmarkSignatureInvalid             | `[Benchmark]` 函数签名错误：第一个参数必须是 `Bencher`，返回 void |
+| Z0913 | ShouldThrowTypeInvalid                | `[ShouldThrow<E>]` 中 E 不存在 / 不是 `Exception` 子类型 / 缺类型参数 / 未搭配 `[Test]` |
+| Z0914 | SkipReasonMissing                     | `[Skip]` 缺 `reason` 参数（或 reason 为空字符串）；或 `[Skip]` / `[Ignore]` 单独使用（必须搭配 `[Test]` / `[Benchmark]`） |
+| Z0915 | SetupTeardownSignatureInvalid         | `[Setup]` / `[Teardown]` 签名错误（需 `fn() -> void`）；或与 `[Test]` / `[Benchmark]` 同一函数标注（互斥） |
+
 ---
 
 ## E06xx — Package / Import Resolution（strict-using-resolution，2026-04-28）
