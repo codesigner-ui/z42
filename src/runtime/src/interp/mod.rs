@@ -140,8 +140,25 @@ fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, inst
 
 // ── Core execution loop ──────────────────────────────────────────────────────
 
+/// Phase 3f: RAII guard 保证 push_frame_regs / pop_frame_regs 严格配对，
+/// 即使 exec_function 通过 `?` early return 或 panic 展开。Drop 时自动 pop。
+struct FrameGuard<'a> {
+    ctx: &'a VmContext,
+}
+impl Drop for FrameGuard<'_> {
+    fn drop(&mut self) {
+        self.ctx.pop_frame_regs();
+    }
+}
+
 pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
     let mut frame = Frame::new(args, func.max_reg);
+    // Phase 3f: 把当前 frame.regs 指针注册到 exec_stack 让 GC 扫到。
+    // SAFETY: regs Vec 在 frame 内（栈上），地址稳定到本函数返回；
+    // FrameGuard 在 Drop 时 pop（含 ?-propagated error 与 panic）。
+    ctx.push_frame_regs(&frame.regs as *const Vec<Value>);
+    let _frame_guard = FrameGuard { ctx };
+
     let block_map = &func.block_index;
     let mut block_idx = 0usize;
 

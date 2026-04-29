@@ -1,0 +1,27 @@
+namespace Demo;
+using Std.IO;
+using Std;
+
+// Phase 3f：在脚本执行中调 GC.ForceCollect 时，frame.regs 持有的对象 +
+// 通过它们间接可达的对象，都不应被误清。
+
+class Inner {
+    int Value;
+}
+
+class Outer {
+    Inner Child;
+}
+
+void Main() {
+    // outer 在 main frame.regs；child 通过 outer.Child 链可达，自身不在 reg
+    Outer outer = new Outer();
+    outer.Child = new Inner();
+    outer.Child.Value = 42;
+
+    // 脚本执行中触发 GC（interp 栈扫描必须看到 outer）
+    GC.ForceCollect();
+
+    // 验证 child 仍然活着 + 数据 intact
+    Console.WriteLine($"value: {outer.Child.Value}");
+}

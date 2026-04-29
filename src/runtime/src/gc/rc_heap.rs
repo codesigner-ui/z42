@@ -5,13 +5,12 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 3a/3b/3c/3d/3d.1 后已知限制**：
+//! **Phase 3a/3b/3c/3d/3d.1/3f 后已知限制**：
 //! 1. **Finalizer 仅在 collect_cycles 时触发**：纯链式 Drop（无环）情况下不触发
 //!    → Phase 3e 替换 backing 时引入 wrapper 解决
 //! 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
-//! 3. **interp / JIT 栈帧 regs 暂未对接为 GC roots**：collect_cycles 须在
-//!    interp/JIT 顶层调用之间触发（脚本 Rust 局部 Value 不可见） → Phase 3f
-//!    Cranelift stack maps + interp 栈扫描
+//! 3. **JIT 栈帧 regs 暂未对接为 GC roots**：interp 已通过 exec_stack 暴露给
+//!    scanner（Phase 3f），JIT 端 JitFrame 待对接 → Phase 3f-2（视需要）
 //!
 //! **已解决**：
 //! - Phase 3b（add-heap-registry）：snapshot/iterate Full coverage
@@ -20,6 +19,10 @@
 //! - Phase 3d.1（add-external-root-scanning）：**external root scanner 机制 +
 //!   VmContext 的 `static_fields` / `pending_exception` 自动暴露为 GC roots**，
 //!   修复 cycle collector 漏扫导致 static 字段持有的对象被误清的 bug
+//! - Phase 3f（add-interp-stack-scanning）：interp `exec_function` 通过
+//!   `FrameGuard` RAII 把 `frame.regs` Vec 指针注册到 `VmContext.exec_stack`，
+//!   scanner 闭包遍历喂给 mark 阶段。修复脚本执行中调 GC 时
+//!   "outer 在 reg + outer.slot → inner 间接可达 → inner 被误清" 的 bug
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};

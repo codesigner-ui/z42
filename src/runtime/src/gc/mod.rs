@@ -21,8 +21,9 @@
 //! | 3d（已落地）| Finalizer 真触发（collect 时调度）+ 内存压力自动 collect |
 //! | 3d.1（已落地）| External root scanner（VmContext static_fields 自动暴露给 GC，修复漏扫 bug）|
 //! | 3d.2（已落地）| `Std.GC.Collect()` / `UsedBytes()` / `ForceCollect()` 暴露给 z42 脚本 + 端到端 golden test 验证 |
+//! | 3f（已落地）| interp 栈扫描（FrameGuard RAII 把 frame.regs 暴露给 scanner，修复 transitive bug）|
 //! | 3e（计划，可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）|
-//! | 3f（计划）| Cranelift stack maps（GC 安全点）|
+//! | 3f-2（计划，可选）| JIT JitFrame.regs 对接为 GC roots（Cranelift stack maps）|
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |
 
 pub mod heap;

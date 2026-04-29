@@ -555,6 +555,54 @@ fn iterate_live_objects_full_coverage_includes_unpinned() {
     assert_eq!(count, 2);
 }
 
+// ── Interp stack scanning (Phase 3f) ─────────────────────────────────────────
+
+#[test]
+fn frame_held_outer_with_inner_chain_protected_by_stack_scan() {
+    // Phase 3f bug 场景：frame.regs 持 outer，outer 通过 slot 间接持 inner
+    // （inner 没在 reg 里）。如果 scanner 不扫 frame regs，outer 在 unreachable
+    // 集里，inner 通过 outer.slot 引用被算 internal 减除 → tentative=0 → inner
+    // 被错误清空。Phase 3f 把 frame regs 暴露给 scanner 修复此问题。
+    //
+    // 本测试用 set_external_root_scanner 直接模拟：把"frame regs Vec" 通过
+    // Rc<RefCell> 共享给 scanner 闭包（与 vm_context.rs 中实际 raw-ptr 实现等价）。
+    let heap = RcMagrGC::new();
+
+    let inner = heap.alloc_object(dummy_type_desc("Inner"), vec![Value::I64(42)], NativeData::None);
+    let outer = heap.alloc_object(dummy_type_desc("Outer"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &outer else { panic!() };
+        g.borrow_mut().slots[0] = inner.clone();
+    }
+
+    let frame_regs: std::rc::Rc<std::cell::RefCell<Vec<Value>>>
+        = std::rc::Rc::new(std::cell::RefCell::new(vec![outer.clone()]));
+
+    {
+        let fr = frame_regs.clone();
+        heap.set_external_root_scanner(Box::new(move |visit| {
+            for v in fr.borrow().iter() {
+                visit(v);
+            }
+        }));
+    }
+
+    drop(outer);
+    drop(inner);
+
+    heap.collect_cycles();
+
+    // Verify: outer / inner 数据 intact（inner.slots[0] = 42 未被错误清空）
+    let regs = frame_regs.borrow();
+    let Value::Object(outer_gc) = &regs[0] else { panic!() };
+    let inner_val = outer_gc.borrow().slots[0].clone();
+    let Value::Object(inner_gc) = &inner_val else {
+        panic!("inner should still be Object, got {:?}", inner_val);
+    };
+    assert_eq!(inner_gc.borrow().slots[0], Value::I64(42),
+        "Phase 3f: transitively reachable inner survives collect when outer in frame regs");
+}
+
 // ── External root scanner (Phase 3d.1) ───────────────────────────────────────
 
 #[test]

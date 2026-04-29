@@ -64,6 +64,12 @@ pub struct VmContext {
     pub(crate) static_fields:     Rc<RefCell<HashMap<String, Value>>>,
     pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
     pub(crate) lazy_loader:       Rc<RefCell<Option<LazyLoader>>>,
+    /// Phase 3f：interp `exec_function` 入口把当前 frame 的 `regs` Vec 指针推入；
+    /// external root scanner 遍历这些指针把 frame regs 内的 Value 喂给 cycle
+    /// collector mark 阶段。Vec 内的指针是 raw ptr 而非 Rc/Arc —— 因为 frame
+    /// 本身在 Rust 栈，pointer 仅在对应 `exec_function` 调用栈期间有效，由
+    /// `FrameGuard` RAII 保证 push/pop 严格配对。
+    pub(crate) exec_stack:        Rc<RefCell<Vec<*const Vec<Value>>>>,
     pub(crate) heap:              Box<dyn MagrGC>,
 }
 
@@ -76,20 +82,39 @@ impl VmContext {
         let static_fields     = Rc::new(RefCell::new(HashMap::new()));
         let pending_exception = Rc::new(RefCell::new(None));
         let lazy_loader       = Rc::new(RefCell::new(None));
+        let exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>> = Rc::new(RefCell::new(Vec::new()));
 
-        // Phase 3d.1: 注入 external root scanner 闭包，让 cycle collector mark
-        // 阶段把 static_fields + pending_exception 持的 Value 也作为 roots 扫描。
-        // 闭包通过 Rc clone 与 VmContext 字段共享 ownership（无 lifetime 牵扯）。
+        // Phase 3d.1 + 3f: 注入 external root scanner 闭包，让 cycle collector mark
+        // 阶段把 static_fields + pending_exception + interp exec_stack frame regs
+        // 持的 Value 也作为 roots 扫描。闭包通过 Rc clone 与 VmContext 字段共享
+        // ownership（无 lifetime 牵扯）。
         let heap = RcMagrGC::new();
         {
             let sf = static_fields.clone();
             let pe = pending_exception.clone();
+            let es = exec_stack.clone();
             heap.set_external_root_scanner(Box::new(move |visit| {
+                // 1. static_fields
                 for v in sf.borrow().values() {
                     visit(v);
                 }
+                // 2. pending_exception
                 if let Some(v) = pe.borrow().as_ref() {
                     visit(v);
+                }
+                // 3. interp exec_stack frame regs（Phase 3f）
+                //
+                // SAFETY: exec_stack 中每个 raw ptr 都对应一个仍在 Rust 栈
+                // 的 `Frame.regs` Vec。push 在 `interp::exec_function` 入口
+                // 由 `FrameGuard` RAII 保证 pop 在函数返回（含 panic 展开 / `?`
+                // early return）时配对完成。GC 在 z42 脚本调用 collect 时触发，
+                // 必然在某个 exec_function 内（脚本帧仍活），所有 ptr 有效。
+                for &regs_ptr in es.borrow().iter() {
+                    unsafe {
+                        for v in (*regs_ptr).iter() {
+                            visit(v);
+                        }
+                    }
                 }
             }));
         }
@@ -98,8 +123,24 @@ impl VmContext {
             static_fields,
             pending_exception,
             lazy_loader,
+            exec_stack,
             heap: Box::new(heap),
         }
+    }
+
+    // ── Interp exec stack（Phase 3f） ─────────────────────────────────────
+
+    /// Push current frame's regs pointer onto exec_stack, used by GC root
+    /// scanning. Caller must guarantee pointer stays valid until matching
+    /// `pop_frame_regs()` (typically via `FrameGuard` RAII).
+    pub(crate) fn push_frame_regs(&self, regs: *const Vec<Value>) {
+        self.exec_stack.borrow_mut().push(regs);
+    }
+
+    /// Pop the most recently pushed frame regs pointer. No-op if empty
+    /// (defensive; should not happen with correct RAII pairing).
+    pub(crate) fn pop_frame_regs(&self) {
+        self.exec_stack.borrow_mut().pop();
     }
 
     // ── GC heap ───────────────────────────────────────────────────────────

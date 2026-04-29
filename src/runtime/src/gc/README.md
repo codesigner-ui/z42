@@ -61,12 +61,13 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b/3c/3d/3d.1 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1/3f 后）**：
 
 1. **Finalizer 仅在 collect_cycles 时触发**：纯 Rc Drop（无环）路径不触发 →
    Phase 3e 替换 backing 时一并解决
 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
-3. **interp / JIT 栈帧 regs 暂未对接为 GC roots** → Phase 3f Cranelift stack maps
+3. **JIT 栈帧 regs 暂未对接为 GC roots**：interp 已对接（Phase 3f），JIT 端
+   JitFrame 待 Phase 3f-2 视需要处理（Rc strong count 大部分场景已自动覆盖）
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate Full coverage。
 >
@@ -85,6 +86,12 @@ let snap = ctx.heap().take_snapshot();
 > 也喂入 BFS。`VmContext::new` 注册一个扫描自身 `static_fields` /
 > `pending_exception` 的闭包（通过 Rc<RefCell<...>> 共享 ownership）。这样
 > static 字段持有的 cyclic 对象不会被误判为 unreachable + 内部 slots 不会被误清。
+>
+> **2026-04-29 add-interp-stack-scanning（Phase 3f 完成）**：扩展 scanner 到
+> 也扫 interp 栈帧 regs。`VmContext.exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>>`
+> 由 `interp::exec_function` 入口的 `FrameGuard` RAII 推/弹（保证 panic / `?`
+> early return 也配对）。修复"frame 持 outer + outer.slot → inner 间接可达"
+> 时 inner 被误清的 bug。
 
 > **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
 > `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin
