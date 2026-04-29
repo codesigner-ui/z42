@@ -3,26 +3,24 @@
 //! # 设计意图
 //!
 //! `GcRef<T>` 是 `Value::Object` / `Value::Array` 等堆引用类型的**不透明句柄**，
-//! 隐藏内部 backing 实现。Phase 3 mark-sweep 替换 backing 时（`Rc<...>` →
-//! 自定义堆 handle），所有 callsite 走 `GcRef::*` API 不需任何修改。
+//! 隐藏内部 backing 实现。后续 backing 切换（自定义堆 allocator / 真 mark-sweep
+//! / MMTk 集成等，见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md)
+//! "GC 后续迭代规划" 段）所有 callsite 走 `GcRef::*` API 不需任何修改。
 //!
-//! # Phase 路线
+//! # 当前 backing（Phase 3e，2026-04-29）
 //!
-//! | Phase | backing |
-//! |-------|---------|
-//! | 3a | `Rc<RefCell<T>>` —— Rust std 引用计数 + 内部可变性（无 finalizer 钩子）|
-//! | **3e（当前）** | `Rc<GcAllocation<T>>` —— GcAllocation 含 inner RefCell + finalizer Cell + 自定义 Drop。**Drop 时自动触发已注册的 finalizer**（one-shot）|
-//! | 3+e（计划，可选）| 自定义堆 handle（index / pointer + region allocator + mark bits） |
-//! | 4+ | 分代 / 并发 / MMTk 集成 |
+//! `Rc<GcAllocation<T>>` —— `GcAllocation` 含 `inner: RefCell<T>` +
+//! `finalizer: RefCell<Option<FinalizerFn>>` + 自定义 `Drop`。
+//! **Drop 时自动触发已注册的 finalizer**（one-shot via take）。
 //!
 //! # API 契约
 //!
 //! - `clone()` 是 cheap operation（增加内部 refcount，类似 `Rc::clone`）
 //! - `borrow()` / `borrow_mut()` 受 `RefCell` 借用规则约束（运行时 panic）
 //! - `ptr_eq(a, b)` 比较是否指向同一堆分配
-//! - `as_ptr(this)` 返回 GcAllocation 内 inner RefCell 的稳定地址（用作身份哈希）
+//! - `as_ptr(this)` 返回 GcAllocation 内 inner RefCell 的稳定地址（用作身份哈希 / dedup key）
 //! - `downgrade(this)` 创建弱引用
-//! - **Phase 3e**: 当最后一个 GcRef 被 Drop 时，若 finalizer 已注册自动触发
+//! - 当最后一个 GcRef 被 Drop 时，若 finalizer 已注册自动触发
 
 use std::cell::{Ref, RefCell, RefMut};
 use std::rc::{Rc, Weak};

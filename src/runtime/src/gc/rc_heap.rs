@@ -1,9 +1,10 @@
-//! `RcMagrGC` —— Phase 1 GC backend with full embedding API surface.
+//! `RcMagrGC` —— 默认 GC backend（接口完整 + Trial-deletion 环回收器）。
 //!
-//! 通过 [`GcRef<T>`] 句柄抽象走 `Rc<RefCell<T>>` backing（保留引用相等 /
-//! 身份哈希 / 内部可变性语义），同时实现 MMTk porting contract 形状的全部
-//! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
-//! heap config / ...）。
+//! 通过 [`GcRef<T>`] 句柄抽象走 `Rc<GcAllocation<T>>` backing（GcAllocation
+//! 含 `inner: RefCell<T>` + `finalizer: RefCell<Option<FinalizerFn>>` + 自定义
+//! `Drop`，Phase 3e 起 Drop 时自动触发 finalizer），同时实现 MMTk porting
+//! contract 形状的全部 host-side 嵌入接口（roots / observers / profiler /
+//! weak refs / finalizers / heap config / strict OOM / ...）。
 //!
 //! **Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2/3-OOM 后已知限制**：（无）
 //!

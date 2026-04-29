@@ -1,32 +1,34 @@
 //! `VmContext` — runtime-mutable state for one VM instance.
 //!
-//! Consolidates state that previously lived in `thread_local!` slots scattered
-//! across `interp/` and `jit/` modules:
+//! Single canonical owner of all per-VM mutable state. Replaces the historical
+//! `thread_local!` constellation under `interp/` + `jit/` (consolidate-vm-state,
+//! 2026-04-28). Fields:
 //!
-//! - **`static_fields`**: user-class static field storage (was
-//!   `interp/dispatch.rs::STATIC_FIELDS` + `jit/helpers.rs::STATIC_FIELDS`)
-//! - **`pending_exception`**: JIT extern-C exception ABI bridge slot (was
-//!   `jit/helpers.rs::PENDING_EXCEPTION` + the now-deleted
-//!   `interp/mod.rs::PENDING_EXCEPTION` death-row sentinel)
-//! - **`lazy_loader`**: on-demand zpkg loader registry (was
-//!   `metadata/lazy_loader.rs::STATE`)
+//! - **`static_fields`** — user-class static field storage
+//! - **`pending_exception`** — JIT extern-C exception ABI bridge slot
+//! - **`lazy_loader`** — on-demand zpkg loader registry
+//! - **`exec_stack`** — interp/JIT frame.regs raw pointers (Phase 3f / 3f-2 GC roots)
+//! - **`heap`** — `Box<dyn MagrGC>` GC subsystem (default `RcMagrGC`)
+//! - **`native_types`** / **`native_libs`** — Tier 1 native interop registry (spec C2)
+//! - **`pinned_owned_buffers`** — owned byte buffers backing `Value::PinnedView` (spec C4)
 //!
-//! The remaining `thread_local!` in the runtime is `jit/frame.rs::FRAME_POOL`,
-//! a pure allocator cache — not state — and intentionally stays per-thread.
+//! The only remaining `thread_local!` in the runtime is `jit/frame.rs::FRAME_POOL`
+//! (pure allocator cache, not state) and `native/exports.rs::CURRENT_VM` (FFI
+//! callback bridge, scoped via `VmGuard` RAII).
 //!
 //! # Lifecycle
 //!
 //! ```ignore
 //! let mut ctx = VmContext::new();
-//! ctx.install_lazy_loader(libs_dir, main_pool_len);
+//! ctx.install_lazy_loader_with_deps(libs_dir, main_pool_len, declared, loaded);
 //! Vm::new(module, mode).run(&mut ctx, hint)?;
 //! ```
 //!
 //! # Threading
 //!
-//! `VmContext` is **not** `Send` / `Sync` (intentionally — `RefCell` interior).
-//! One ctx serves one OS thread at a time; multi-threaded VM is a follow-up
-//! after JIT ABI restructuring.
+//! `VmContext` is **not** `Send` / `Sync` (intentionally — `Rc<RefCell<...>>`
+//! interiors throughout). One ctx serves one OS thread at a time; multi-threaded
+//! VM is a roadmap follow-up.
 //!
 //! # JIT integration
 //!
@@ -35,7 +37,8 @@
 //! duration of one entry-point invocation and cleared on return. JIT helpers
 //! access fields through `(*jit_ctx).vm_ctx` and call ctx methods.
 //!
-//! See `docs/design/vm-architecture.md` for the full state-collapse rationale.
+//! See `docs/design/vm-architecture.md` "VmContext —— 运行时状态归口" 段 for
+//! the full state-collapse rationale.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
