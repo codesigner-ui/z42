@@ -295,6 +295,68 @@ fn c_and_rust_modules_coexist() {
     );
 }
 
+// ── Spec C7: end-to-end from real z42 source ──────────────────────────────
+
+/// Loads `tests/data/z42_native_e2e/source.zbc` (compiled from a `.z42`
+/// program that uses `[Native(lib=, type=, entry=)]` to call into the
+/// statically-linked `numz42-c` Counter), pre-registers the type, runs
+/// `Main`, and checks the returned value. Closes the C2→C6 loop:
+///
+///   z42 source  →  z42c  →  zbc  →  VM dispatch  →  numz42-c  →  i64
+///
+/// If the .zbc file is regenerated (e.g. compiler IR change), refresh
+/// it via:
+///
+///   dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll \
+///       src/runtime/tests/data/z42_native_e2e/source.z42 --emit zbc \
+///       -o src/runtime/tests/data/z42_native_e2e/source.zbc
+#[test]
+fn z42_source_calls_numz42_via_native_attr() {
+    use std::path::PathBuf;
+
+    let zbc_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/z42_native_e2e/source.zbc");
+    if !zbc_path.is_file() {
+        panic!(
+            "fixture missing: {} — run the regen command in the doctest above",
+            zbc_path.display()
+        );
+    }
+
+    let zbc_str = zbc_path.to_str().expect("zbc path is utf-8");
+    let artifact = z42_vm::metadata::load_artifact(zbc_str)
+        .unwrap_or_else(|e| panic!("load_artifact({zbc_str}) failed: {e}"));
+    let module = artifact.module;
+
+    // Pre-register Counter inside a VmGuard scope so `z42_register_type`
+    // can locate the active VM. The VM owns the type table; the call has
+    // to happen on this thread before we run any IR that references it.
+    let ctx = VmContext::new();
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
+
+    // Find the user `Main` function. Compiler emits it under the namespace
+    // declared in source.z42 (`Demo.Main` here).
+    let main_idx = module
+        .functions
+        .iter()
+        .position(|f| {
+            f.name == "Demo.Main" || f.name.ends_with(".Main") || f.name == "Main"
+        })
+        .unwrap_or_else(|| {
+            let names: Vec<&String> = module.functions.iter().map(|f| &f.name).collect();
+            panic!("no Main fn; functions present: {names:?}")
+        });
+    let main_fn = &module.functions[main_idx];
+
+    let result = z42_vm::interp::run_returning(&ctx, &module, main_fn, &[] as &[Value])
+        .expect("Main runs to completion");
+    assert_eq!(
+        result,
+        Some(Value::I64(3)),
+        "z42 Main should return Counter::get after 3 increments"
+    );
+}
+
 #[test]
 fn callnative_unknown_method_z0905() {
     let ctx = vm_with_counter_registered();
