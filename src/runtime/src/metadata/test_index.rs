@@ -15,22 +15,34 @@
 //!
 //! ```text
 //! u32   magic = 0x58_44_49_54 ("TIDX" on disk: 54 49 44 58)
-//! u8    version = 1
+//! u8    version = 2
 //! u32   entry_count
 //! TestEntry entries[entry_count]
 //!
-//! TestEntry (19 + 4*test_case_count bytes):
-//!   u32   method_id              (index into module.functions[])
-//!   u8    kind                   (TestEntryKind discriminant)
-//!   u16   flags                  (TestFlags bitset)
-//!   u32   skip_reason_str_idx    (0 = none; otherwise 1-based pool idx)
+//! TestEntry (27 + 4*test_case_count bytes):
+//!   u32   method_id               (index into module.functions[])
+//!   u8    kind                    (TestEntryKind discriminant)
+//!   u16   flags                   (TestFlags bitset)
+//!   u32   skip_reason_str_idx     (0 = none; otherwise 1-based pool idx)
+//!   u32   skip_platform_str_idx   (0 = always-skipped; otherwise platform name)
+//!   u32   skip_feature_str_idx    (0 = no feature gate; otherwise feature name)
 //!   u32   expected_throw_type_idx (0 = none; reserved for R4 — currently 0)
 //!   u32   test_case_count
 //!   TestCase test_cases[test_case_count]
 //!
 //! TestCase (4 bytes):
-//!   u32   arg_repr_str_idx       (1-based string pool idx)
+//!   u32   arg_repr_str_idx        (1-based string pool idx)
 //! ```
+//!
+//! ### Version history
+//!
+//! - **v=1** (R1.A+B, 2026-04-29): initial format with `skip_reason_str_idx`
+//!   only. Bumped to v=2 in R1.C before any v=1 file existed in the wild
+//!   (parser support didn't ship with R1.A+B, so no .zbc was ever written
+//!   with TIDX entries; all v=1 .zbc had empty TIDX or no TIDX section).
+//! - **v=2** (R1.C): added `skip_platform_str_idx` + `skip_feature_str_idx`
+//!   for conditional skip ([Skip(platform: "ios", feature: "jit", reason:
+//!   "...")] semantics).
 //!
 //! ### Magic byte order note
 //!
@@ -48,7 +60,7 @@ use bitflags::bitflags;
 pub const TEST_INDEX_MAGIC: u32 = 0x58_44_49_54;
 
 /// Current TIDX section format version. Bumped on incompatible payload changes.
-pub const TEST_INDEX_VERSION: u8 = 1;
+pub const TEST_INDEX_VERSION: u8 = 2;
 
 /// Test-method classification, mirrored from C# `TestEntryKind`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -118,6 +130,14 @@ pub struct TestEntry {
     pub flags: TestFlags,
     /// 0 = no [Skip] reason; otherwise 1-based index into `module.string_pool`.
     pub skip_reason_str_idx: u32,
+    /// 0 = unconditionally skipped (or no [Skip]); otherwise 1-based idx of
+    /// platform name (e.g. "ios", "wasm") — runner only skips when running
+    /// on this platform. Lets you tag tests that don't apply to certain OSes.
+    pub skip_platform_str_idx: u32,
+    /// 0 = no feature gate; otherwise 1-based idx of feature name (e.g.
+    /// "jit", "multithreading") — runner skips when this feature is
+    /// unavailable in the running build configuration.
+    pub skip_feature_str_idx: u32,
     /// 0 = no [ShouldThrow<E>]; otherwise 1-based index (R4 will fill).
     pub expected_throw_type_idx: u32,
     /// Empty when not parameterized; one element per `[TestCase(...)]`.
@@ -159,6 +179,8 @@ pub fn read_test_index(payload: &[u8]) -> Result<Vec<TestEntry>> {
         let flags = TestFlags::from_bits(flags_raw)
             .ok_or_else(|| anyhow!("TIDX entry has reserved flag bits set: 0x{:04x}", flags_raw))?;
         let skip_reason_str_idx    = cursor.read_u32_le()?;
+        let skip_platform_str_idx  = cursor.read_u32_le()?;
+        let skip_feature_str_idx   = cursor.read_u32_le()?;
         let expected_throw_type_idx = cursor.read_u32_le()?;
         let test_case_count        = cursor.read_u32_le()?;
         let mut test_cases = Vec::with_capacity(test_case_count as usize);
@@ -171,6 +193,8 @@ pub fn read_test_index(payload: &[u8]) -> Result<Vec<TestEntry>> {
             kind,
             flags,
             skip_reason_str_idx,
+            skip_platform_str_idx,
+            skip_feature_str_idx,
             expected_throw_type_idx,
             test_cases,
         });

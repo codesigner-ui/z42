@@ -487,9 +487,15 @@ public static partial class ZbcWriter
     //   TestEntry[]:
     //     u32 method_id, u8 kind, u16 flags,
     //     u32 skip_reason_str_idx, u32 expected_throw_type_idx,
+    //     u32 skip_reason_str_idx,
+    //     u32 skip_platform_str_idx,    // R1.C: runner skips on this platform only
+    //     u32 skip_feature_str_idx,     // R1.C: runner skips when feature missing
+    //     u32 expected_throw_type_idx,  // (reserved for R4)
     //     u32 test_case_count,
     //     TestCase[]: u32 arg_repr_str_idx
-    private const byte TidxFormatVersion = 1;
+    //
+    // v=2 (R1.C) bumped from v=1 before any v=1 file existed in the wild.
+    private const byte TidxFormatVersion = 2;
 
     private static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex)
     {
@@ -506,6 +512,8 @@ public static partial class ZbcWriter
             w.Write((byte)entry.Kind);
             w.Write((ushort)entry.Flags);
             w.Write((uint)entry.SkipReasonStrIdx);
+            w.Write((uint)entry.SkipPlatformStrIdx);
+            w.Write((uint)entry.SkipFeatureStrIdx);
             w.Write((uint)entry.ExpectedThrowTypeIdx);
             w.Write((uint)entry.TestCases.Count);
             foreach (var tc in entry.TestCases)

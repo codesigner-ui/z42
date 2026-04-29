@@ -16,8 +16,14 @@ public sealed record TestEntry(
     int                    MethodId,
     TestEntryKind          Kind,
     TestFlags              Flags,
-    /// <summary>0 = none; otherwise 1-based string-pool index for [Skip(reason)].</summary>
+    /// <summary>0 = none; otherwise 1-based string-pool index for [Skip(reason: ...)].</summary>
     int                    SkipReasonStrIdx,
+    /// <summary>0 = always-skipped; otherwise 1-based pool index for [Skip(platform: ...)]:
+    /// runner skips this test only when running on the named platform (e.g. "ios", "wasm").</summary>
+    int                    SkipPlatformStrIdx,
+    /// <summary>0 = no feature gate; otherwise 1-based pool index for [Skip(feature: ...)]:
+    /// runner skips this test when the named feature is unavailable (e.g. "jit", "multithreading").</summary>
+    int                    SkipFeatureStrIdx,
     /// <summary>0 = none; otherwise 1-based pool index for [ShouldThrow&lt;E&gt;] (R4 fills).</summary>
     int                    ExpectedThrowTypeIdx,
     /// <summary>Empty for non-parameterized methods; one entry per [TestCase(...)].</summary>

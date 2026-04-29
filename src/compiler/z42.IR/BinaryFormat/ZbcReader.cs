@@ -417,7 +417,7 @@ public static partial class ZbcReader
     // ── TIDX section (R1: compile-time test metadata) ────────────────────────
     // Reads the section payload written by ZbcWriter.BuildTidxSection.
     // Layout mirror; see ZbcWriter.BuildTidxSection for the byte-level contract.
-    private const byte TidxExpectedVersion = 1;
+    private const byte TidxExpectedVersion = 2;
 
     private static IReadOnlyList<TestEntry> ReadTidxSection(ReadOnlySpan<byte> sec)
     {
@@ -446,6 +446,8 @@ public static partial class ZbcReader
             byte   kindByte           = sec[pos];                                  pos += 1;
             ushort flags              = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
             uint   skipReasonStrIdx   = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+            uint   skipPlatformStrIdx = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+            uint   skipFeatureStrIdx  = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
             uint   expectedThrowIdx   = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
             uint   testCaseCount      = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
 
@@ -461,6 +463,8 @@ public static partial class ZbcReader
                 Kind:                 (TestEntryKind)kindByte,
                 Flags:                (TestFlags)flags,
                 SkipReasonStrIdx:     (int)skipReasonStrIdx,
+                SkipPlatformStrIdx:   (int)skipPlatformStrIdx,
+                SkipFeatureStrIdx:    (int)skipFeatureStrIdx,
                 ExpectedThrowTypeIdx: (int)expectedThrowIdx,
                 TestCases:            testCases));
         }
