@@ -561,7 +561,8 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M13b** (`marshal-str-to-cstr`) | `Value::Str` 直接 marshal 到 `*const c_char`（NUL-terminated）：`marshal::Arena` 承载 CallNative 期间的 `CString` 临时；`(Value::Str, SigType::CStr/Ptr)` 分支构造借出；`CallNative` dispatch 接 arena；interior NUL 报 Z0908(d)。**z42 字符串可直接进 libc 风格 native 函数无需 pinned 块**。 | C6 / C7 | ✅ 2026-04-29 |
 | **L2.M13c** (`class-level-native-shorthand`) | 类级 `[Native(lib=, type=)]` 共享默认：`Tier1NativeBinding` 改 nullable，方法级 partial 形式 + 类级 defaults 拼接出完整 binding；TypeChecker 校验 stitched 完整性；IrGen 用 stitched 结果 emit `CallNativeInstr`。**非平凡 native 库声明不再每方法重复 lib + type**。 | C6 + C8 | ✅ 2026-04-29 |
 | **L2.M13d** (`byte-buffer-pin`) | Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 路径扫元素 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。Z0908(e) 抛出。**z42 二进制数据可直接进 native FFI**。 | C4 | ✅ 2026-04-29 |
-| **L2.M13** (manifest reader) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
+| **L2.M13e** (`manifest-reader-import`, C11a) | Lexer `Import` Phase1 keyword + contextual `from`；`import IDENT from "<lib>";` 顶层语法 → AST `NativeTypeImport` 收集到 `CompilationUnit.NativeImports`；`Z42.Project.NativeManifest.Read` 读取 `.z42abi` JSON（System.Text.Json，`abi_version == 1` + 必需字段轻量校验）；`NativeManifestException` + E0909 启用。**编译器现在能消费 manifest 数据通路；尚未合成 ClassDecl（留给 C11b）**。 | C9 | ✅ 2026-04-30 |
+| **L2.M13** (manifest reader) | `.z42abi` manifest reader (schema already locked in C1) | M11 | ✅ 2026-04-30（合并入 C11a）|
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
 | **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |
 | **L3.M16** | JIT/AOT direct vtable call emission (bypass libffi) | JIT backend |  |

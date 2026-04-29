@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\z42.IR\z42.IR.csproj" />
+    <ProjectReference Include="..\z42.Core\z42.Core.csproj" />
   </ItemGroup>
 </Project>

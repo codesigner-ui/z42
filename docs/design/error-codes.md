@@ -99,11 +99,13 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 |-------|----------------------------------|----------------|
 | E0907 | NativeAttributeMalformed (parser/typecheck, specs C6 + C9) | (a) parser：`[Native(...)]` 含未知键 / 值不是 string literal / 完全无键；(b) typecheck (spec C9)：method-level 与 class-level 拼接后的 Tier1 binding 仍缺 lib/type/entry 任一字段。原"manifest-vs-declaration 签名校验"占位含义由后续 source generator spec 接管，复用编号 |
 
-### Z0909（仍为后续 spec 预留）
+### E0909（C11a 已启用，2026-04-30）
 
-| Code  | Title                            | Reserved for spec | Planned trigger |
-|-------|----------------------------------|-------------------|----------------|
-| Z0909 | ManifestParseError               | source generator (C7+) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
+由 `Z42.Project.NativeManifest.Read` 在加载 `.z42abi` manifest 时抛出 `NativeManifestException`。错误码以 `E` 前缀形式归入编译器/工具链域。
+
+| Code  | Title              | When it occurs |
+|-------|--------------------|----------------|
+| E0909 | ManifestParseError | (a) manifest 文件不存在 / IO 失败；(b) JSON 不合法；(c) `abi_version` 不等于 `NativeManifest.ExpectedAbiVersion`（当前 = 1）；(d) 缺必需字段（`module` / `library_name` / `types`） |
 
 ### Z0911–Z0915（R4 占位，2026-04-30）
 

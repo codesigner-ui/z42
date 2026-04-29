@@ -21,6 +21,7 @@ public enum TokenKind
     Switch, Case, Default,
     Try, Catch, Finally, Throw,
     Pinned,         // `pinned p = s { ... }` — Tier 1 native interop borrow (spec C5)
+    Import,         // `import T from "lib";` — manifest-driven native type import (spec C11a)
     Typeof, Is, As,
     Null,
     Where,          // L3-G2 generic constraints: `where T: I + J`

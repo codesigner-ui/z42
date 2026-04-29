@@ -21,6 +21,14 @@ public sealed record CompilationUnit(
     List<EnumDecl> Enums,
     List<InterfaceDecl> Interfaces,
     List<ImplDecl> Impls,
+    Span Span,
+    List<NativeTypeImport>? NativeImports = null);
+
+/// `import T from "lib";` — top-level native type import (spec C11a).
+/// C11a only records the binding; C11b synthesizes the corresponding ClassDecl.
+public sealed record NativeTypeImport(
+    string Name,
+    string LibName,
     Span Span);
 
 // ── Extern impl block ─────────────────────────────────────────────────────────

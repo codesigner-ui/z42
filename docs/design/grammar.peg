@@ -36,13 +36,18 @@
 # ═══════════════════════════════════════════════════════════════════
 
 compilation_unit
-    = namespace_decl? using_decl* top_decl* EOF
+    = namespace_decl? using_decl* (import_decl / top_decl)* EOF
 
 namespace_decl
     = "namespace" S qualified_name S ";"
 
 using_decl
     = "using" S qualified_name S ";"
+
+# Spec C11a — native type import: `from` is contextual (matched as identifier),
+# not a keyword, to keep user identifier space unrestricted.
+import_decl
+    = "import" S IDENT S "from" S STRING S ";"
 
 qualified_name
     = IDENT ("." IDENT)*

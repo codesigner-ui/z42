@@ -43,6 +43,9 @@ internal static class TokenDefs
         // Native interop (Phase 1 — spec C5 `impl-pinned-syntax`)
         new("pinned",  TokenKind.Pinned,  LanguagePhase.Phase1),
 
+        // Native interop (Phase 1 — spec C11a `manifest-reader-import`)
+        new("import",  TokenKind.Import,  LanguagePhase.Phase1),
+
         // Declarations (Phase 1)
         new("namespace", TokenKind.Namespace, LanguagePhase.Phase1),
         new("using",     TokenKind.Using,     LanguagePhase.Phase1),

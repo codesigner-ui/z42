@@ -93,4 +93,7 @@ public static class DiagnosticCodes
     // Native interop — `pinned` block (spec C5)
     public const string PinnedNotPinnable       = "E0908a"; // source of `pinned` is not a pinnable type (string in C5)
     public const string PinnedControlFlow       = "E0908b"; // return/break/continue/throw inside `pinned` body
+
+    // Native interop — manifest reader (spec C11a)
+    public const string ManifestParseError       = "E0909"; // .z42abi manifest parse / validation failure
 }

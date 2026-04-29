@@ -233,6 +233,13 @@ public static class DiagnosticCatalog
             "Early control flow inside `pinned` body",
             "The body of a `pinned` block must use straight-line control flow so the compiler can pair each `pin` with exactly one `unpin`. `return` / `break` / `continue` / `throw` are forbidden inside the body in spec C5.",
             "pinned p = s { return p.len; }   // not allowed in C5"),
+
+        // ── E0909: Native manifest reader (spec C11a) ────────────────────────
+
+        [DiagnosticCodes.ManifestParseError] = new(
+            "Native manifest parse failure",
+            "A `.z42abi` manifest could not be loaded: the file is missing, the JSON is malformed, the `abi_version` does not match the compiler's expected ABI, or a required field (module / library_name / types) is missing. Re-generate the manifest from the producing native crate, or pin the compiler version that emitted it.",
+            "import Counter from \"numz42\";  // numz42.z42abi missing/broken → E0909"),
     };
 
     // ── Public API ────────────────────────────────────────────────────────────

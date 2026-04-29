@@ -59,11 +59,12 @@ internal static partial class TopLevelParser
             if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
         }
 
-        var classes    = new List<ClassDecl>();
-        var functions  = new List<FunctionDecl>();
-        var enums      = new List<EnumDecl>();
-        var interfaces = new List<InterfaceDecl>();
-        var impls      = new List<ImplDecl>();
+        var classes       = new List<ClassDecl>();
+        var functions     = new List<FunctionDecl>();
+        var enums         = new List<EnumDecl>();
+        var interfaces    = new List<InterfaceDecl>();
+        var impls         = new List<ImplDecl>();
+        var nativeImports = new List<NativeTypeImport>();
 
         NativeAttribute?      pendingNative    = null;
         List<TestAttribute>?  pendingTestAttrs = null;  // R1: accumulated z42.test.* attrs
@@ -97,6 +98,11 @@ internal static partial class TopLevelParser
                     if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
                     continue;
                 }
+                if (cursor.Current.Kind == TokenKind.Import)
+                {
+                    nativeImports.Add(ParseNativeTypeImport(ref cursor));
+                    continue;
+                }
                 if (IsEnumDecl(cursor))          { pendingNative = null; pendingTestAttrs = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
                 if (IsInterfaceDecl(cursor))      { pendingNative = null; pendingTestAttrs = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
                 if (IsClassOrStructDecl(cursor))  {
@@ -124,7 +130,35 @@ internal static partial class TopLevelParser
             }
         }
 
-        return new CompilationUnit(ns, usings, classes, functions, enums, interfaces, impls, start);
+        return new CompilationUnit(
+            ns, usings, classes, functions, enums, interfaces, impls, start,
+            NativeImports: nativeImports.Count == 0 ? null : nativeImports);
+    }
+
+    /// `import IDENT from "<lib>";` — spec C11a manifest-driven native import.
+    /// `from` is contextual (matched as Identifier with text == "from") so it
+    /// does not pollute the keyword namespace.
+    private static NativeTypeImport ParseNativeTypeImport(ref TokenCursor cursor)
+    {
+        var start = cursor.Current.Span;            // `import` token span
+        cursor = cursor.Advance();                  // consume `import`
+
+        var nameTok = ExpectKind(ref cursor, TokenKind.Identifier);
+        var name    = nameTok.Text;
+
+        if (cursor.Current.Kind != TokenKind.Identifier || cursor.Current.Text != "from")
+            throw new ParseException(
+                $"expected `from` after import name, got `{cursor.Current.Text}`",
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
+        cursor = cursor.Advance();                  // consume `from`
+
+        var libTok = ExpectKind(ref cursor, TokenKind.StringLiteral);
+        var libRaw = libTok.Text;
+        var libName = libRaw.Length >= 2 ? libRaw[1..^1] : libRaw;
+
+        ExpectKind(ref cursor, TokenKind.Semicolon);
+        return new NativeTypeImport(name, libName, start);
     }
 
     /// Skip tokens until we reach a plausible start of a new top-level declaration.
@@ -136,6 +170,7 @@ internal static partial class TopLevelParser
             // Stop at tokens that start a new top-level declaration
             if (kind is TokenKind.Class or TokenKind.Struct or TokenKind.Enum
                 or TokenKind.Interface or TokenKind.Impl or TokenKind.Namespace or TokenKind.Using
+                or TokenKind.Import
                 or TokenKind.Public or TokenKind.Private or TokenKind.Internal
                 or TokenKind.Protected or TokenKind.Abstract or TokenKind.Sealed
                 or TokenKind.Static or TokenKind.Virtual or TokenKind.Override
