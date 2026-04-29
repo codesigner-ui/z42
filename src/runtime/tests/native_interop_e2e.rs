@@ -311,14 +311,18 @@ fn c_and_rust_modules_coexist() {
 ///       src/runtime/tests/data/z42_native_e2e/source.z42 --emit zbc \
 ///       -o src/runtime/tests/data/z42_native_e2e/source.zbc
 #[test]
+#[cfg(z42_have_z42c)]
 fn z42_source_calls_numz42_via_native_attr() {
     use std::path::PathBuf;
 
-    let zbc_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/data/z42_native_e2e/source.zbc");
+    // build.rs compiles `tests/data/z42_native_e2e/source.z42` via z42c
+    // when the .NET driver is built and writes the output to OUT_DIR. If
+    // z42c isn't available, the `cfg(z42_have_z42c)` gate keeps this test
+    // out of the run with a build-time `cargo:warning`.
+    let zbc_path = PathBuf::from(env!("OUT_DIR")).join("z42_native_e2e_source.zbc");
     if !zbc_path.is_file() {
         panic!(
-            "fixture missing: {} — run the regen command in the doctest above",
+            "fixture missing in OUT_DIR ({}); rebuild z42c then `cargo test`",
             zbc_path.display()
         );
     }
