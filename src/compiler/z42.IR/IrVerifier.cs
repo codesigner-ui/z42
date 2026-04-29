@@ -180,7 +180,11 @@ public static class IrVerifier
         IsInstanceInstr i => i.Dst,
         AsCastInstr     i => i.Dst,
         StaticGetInstr  i => i.Dst,
-        // No Dst: ArraySetInstr, FieldSetInstr, StaticSetInstr
+        // Native interop (specs C1–C5)
+        CallNativeInstr        i => i.Dst,
+        CallNativeVtableInstr  i => i.Dst,
+        PinPtrInstr            i => i.Dst,
+        // No Dst: ArraySetInstr, FieldSetInstr, StaticSetInstr, UnpinPtrInstr
         _ => null,
     };
 
@@ -224,6 +228,11 @@ public static class IrVerifier
         IsInstanceInstr i => [i.Obj],
         AsCastInstr     i => [i.Obj],
         StaticSetInstr  i => [i.Val],
+        // Native interop (specs C1–C5)
+        CallNativeInstr        i => i.Args,
+        CallNativeVtableInstr  i => [i.Recv, ..i.Args],
+        PinPtrInstr            i => [i.Src],
+        UnpinPtrInstr          i => [i.Pinned],
         // No uses: ConstXxx, StaticGetInstr
         _ => [],
     };

@@ -83,13 +83,15 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | Z0906 | AbiVersionMismatch               | `z42_register_type` 接收的 `Z42TypeDescriptor_v1.abi_version` 与 VM 期望的 `Z42_ABI_VERSION` 不一致 |
 | Z0910 | NativeLibraryLoadFailure         | `VmContext::load_native_library` 中 `libloading::Library::new(path)` 失败（路径不存在 / 架构不匹配 / 权限错误）或目标库缺少 `<basename>_register` 入口符号 |
 
-### Z0908（C4 已启用，2026-04-29）
+### Z0908（C4 runtime + C5 syntax 已启用，2026-04-29）
 
-由 `src/runtime/src/interp/exec_instr.rs` 在 PinPtr / UnpinPtr / FieldGet 三条 PinnedView 相关分支抛出。
+由 VM runtime（`src/runtime/src/interp/exec_instr.rs`）和 TypeChecker（`src/compiler/z42.Semantics/TypeCheck/TypeChecker.Stmts.cs`）联合抛出。
 
-| Code  | Title                            | When it occurs |
-|-------|----------------------------------|----------------|
-| Z0908 | PinnedViewConstraintViolation   | (a) `PinPtr` 收到非 `Value::Str` source（C4 仅支持 `String`，`Array<u8>` 等待后续 spec 引入字节缓冲类型）；(b) `UnpinPtr` 收到非 `Value::PinnedView`（IR 损坏或 compiler emit 不配对）；(c) `FieldGet` on `PinnedView` 访问 `ptr` / `len` 之外的字段名 |
+| Code   | Title                            | When it occurs |
+|--------|----------------------------------|----------------|
+| Z0908  | PinnedViewConstraintViolation (runtime) | (a) `PinPtr` 收到非 `Value::Str` source（C4 仅支持 `String`，`Array<u8>` 等待后续 spec 引入字节缓冲类型）；(b) `UnpinPtr` 收到非 `Value::PinnedView`（IR 损坏或 compiler emit 不配对）；(c) `FieldGet` on `PinnedView` 访问 `ptr` / `len` 之外的字段名 |
+| E0908a | PinnedNotPinnable (TypeCheck, spec C5) | `pinned p = <expr> { ... }` 中 `<expr>` 类型不是 `string` |
+| E0908b | PinnedControlFlow (TypeCheck, spec C5) | `pinned` 块体内含 `return` / `break` / `continue` / `throw` —— C5 范围内严格禁止；放开需要 IR 层 try-finally-like UnpinPtr emission，留给后续 spec |
 
 ### Z0907 / Z0909（仍为 C3/C5 预留）
 

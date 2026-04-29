@@ -26,6 +26,8 @@ public enum LanguageFeature
     UsingStmt,
     Threading,
     Bitwise,
+    /// Spec C5 — `pinned p = s { ... }` block for native interop borrows.
+    NativeInterop,
 }
 
 /// <summary>
@@ -84,6 +86,7 @@ public sealed class LanguageFeatures
             [LanguageFeature.UsingStmt]       = new("using_stmt",       LanguagePhase.Phase1),
             [LanguageFeature.Threading]       = new("threading",        LanguagePhase.Phase1, [LanguageFeature.Async]),
             [LanguageFeature.Bitwise]         = new("bitwise",          LanguagePhase.Phase1),
+            [LanguageFeature.NativeInterop]   = new("native_interop",   LanguagePhase.Phase1),
         };
 
     /// Reverse lookup: snake_case name → enum value.

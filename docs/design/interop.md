@@ -555,7 +555,8 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M9** (`impl-tier1-c-abi`) | Tier 1 PoC: handwritten `numz42-c` demo (Counter type, register + `CallNative` end-to-end) | M8 | ✅ 2026-04-29 (合并入 L2.M8 spec) |
 | **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | C1 | ✅ scaffold landed in C1 |
 | **L2.M11** (`impl-tier2-rust-macros`) | `#[z42::methods]` + `module!` proc macro 实现（C3 主入口）+ `numz42-rs` PoC（Rust 版 Counter 端到端）；`#[derive(Z42Type)]` 与 `#[z42::trait_impl]` 仍 stub，留给 C5 与 source generator 联动设计 | M10 | ✅ 2026-04-29 |
-| **L2.M12** (`impl-pinned-block` runtime) | `Value::PinnedView { ptr, len, kind }` + `PinPtr`/`UnpinPtr` runtime + `FieldGet` on PinnedView (.ptr / .len) + marshal 接 PinnedView。**z42 用户代码 `pinned` 块 syntax** 留给 C5 与其他 user-facing FFI 语法（`[Native]` / `import T from "lib"`）一起落地。Z42_VALUE_TAG_PINNED_VIEW=8。 | type system | ✅ 2026-04-29 (runtime) |
+| **L2.M12** (`impl-pinned-block` runtime) | `Value::PinnedView { ptr, len, kind }` + `PinPtr`/`UnpinPtr` runtime + `FieldGet` on PinnedView (.ptr / .len) + marshal 接 PinnedView | type system | ✅ 2026-04-29 (runtime) |
+| **L2.M12.5** (`impl-pinned-syntax`) | z42 用户代码 `pinned p = s { ... }` syntax：lexer (Pinned keyword) + AST (PinnedStmt) + Parser + TypeChecker (source 类型校验 / 控制流限制 / PinnedView 字段) + IR Codegen (PinPtr/Body/UnpinPtr emit)；E0908a/b TypeCheck 错误码；其他 user-facing FFI syntax (`[Native(lib=,entry=)]` / `extern class T` / `import T from "lib"`) 留给后续 spec。 | C4 runtime | ✅ 2026-04-29 (syntax) |
 | **L2.M13** (C5 first half) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
 | **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |

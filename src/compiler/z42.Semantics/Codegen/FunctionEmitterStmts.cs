@@ -90,7 +90,36 @@ internal sealed partial class FunctionEmitter
             case BoundThrow th:
                 EndBlock(new ThrowTerm(EmitExpr(th.Value)));
                 break;
+
+            case BoundPinned p:
+                EmitBoundPinned(p);
+                break;
         }
+    }
+
+    /// Spec C5 — `pinned p = s { body }`:
+    ///   PinPtr   <view>, <source>
+    ///   <body>
+    ///   UnpinPtr <view>
+    /// `p.ptr` / `p.len` inside the body lower to the standard FieldGet
+    /// IR, dispatched at runtime against `Value::PinnedView` (C4).
+    private void EmitBoundPinned(BoundPinned p)
+    {
+        var srcReg = EmitExpr(p.Source);
+        var viewReg = Alloc(IrType.Ref);
+        Emit(new PinPtrInstr(viewReg, srcReg));
+
+        // Bind the user-visible name (`p`) to the view register so any
+        // `p.ptr` / `p.len` inside the body resolves to FieldGet on it.
+        WriteBackName(p.Name, viewReg);
+
+        EmitBoundBlock(p.Body);
+
+        // The TypeChecker forbids early control flow inside the block, so
+        // every `pin` reaches a single `unpin` at the end of straight-line
+        // emission. (See spec C5 — control-flow restrictions.)
+        if (!_blockEnded)
+            Emit(new UnpinPtrInstr(viewReg));
     }
 
     // ── Control flow ──────────────────────────────────────────────────────────

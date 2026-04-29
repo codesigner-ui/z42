@@ -161,6 +161,7 @@ stmt
     / continue_stmt        (* [feat:control_flow] *)
     / throw_stmt           (* [feat:exceptions] *)
     / try_stmt             (* [feat:exceptions] *)
+    / pinned_stmt          (* [feat:native_interop] — spec C5 *)
     / using_stmt           (* [feat:using_stmt] *)
     / await_stmt           (* [feat:async] *)
     / lock_stmt            (* [feat:threading] *)
@@ -208,6 +209,9 @@ catch_clause
 
 finally_clause
     = "finally" S block
+
+pinned_stmt                                # [feat:native_interop] — spec C5
+    = "pinned" S IDENT S "=" S expr S block
 
 using_stmt                                 # [feat:using_stmt]
     = "using" S ("(" S expr S ")" S stmt / var_decl_stmt)

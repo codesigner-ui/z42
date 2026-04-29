@@ -20,6 +20,7 @@ public enum TokenKind
     Do, Break, Continue,
     Switch, Case, Default,
     Try, Catch, Finally, Throw,
+    Pinned,         // `pinned p = s { ... }` — Tier 1 native interop borrow (spec C5)
     Typeof, Is, As,
     Null,
     Where,          // L3-G2 generic constraints: `where T: I + J`

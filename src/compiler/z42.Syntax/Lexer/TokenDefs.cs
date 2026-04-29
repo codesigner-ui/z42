@@ -40,6 +40,9 @@ internal static class TokenDefs
         new("finally", TokenKind.Finally, LanguagePhase.Phase1),
         new("throw",   TokenKind.Throw,   LanguagePhase.Phase1),
 
+        // Native interop (Phase 1 — spec C5 `impl-pinned-syntax`)
+        new("pinned",  TokenKind.Pinned,  LanguagePhase.Phase1),
+
         // Declarations (Phase 1)
         new("namespace", TokenKind.Namespace, LanguagePhase.Phase1),
         new("using",     TokenKind.Using,     LanguagePhase.Phase1),

@@ -10,6 +10,10 @@ namespace Z42.Semantics.TypeCheck;
 public sealed partial class TypeChecker
 {
     private int _loopDepth = 0;
+    /// Spec C5 — non-zero while inside a `pinned` block. ReturnStmt /
+    /// BreakStmt / ContinueStmt / ThrowStmt error with Z0908 if this is
+    /// > 0 so each `pin` pairs with exactly one `unpin` at codegen time.
+    private int _pinnedDepth = 0;
 
     // ── Block ─────────────────────────────────────────────────────────────────
 
@@ -111,11 +115,19 @@ public sealed partial class TypeChecker
             case BreakStmt bk:
                 if (_loopDepth == 0)
                     _diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", bk.Span);
+                if (_pinnedDepth > 0)
+                    _diags.Error(DiagnosticCodes.PinnedControlFlow,
+                        "Z0908: `break` is not allowed inside a `pinned` block (spec C5 limitation)",
+                        bk.Span);
                 return new BoundBreak(bk.Span);
 
             case ContinueStmt ck:
                 if (_loopDepth == 0)
                     _diags.Error(DiagnosticCodes.InvalidBreakContinue, "`continue` outside of loop", ck.Span);
+                if (_pinnedDepth > 0)
+                    _diags.Error(DiagnosticCodes.PinnedControlFlow,
+                        "Z0908: `continue` is not allowed inside a `pinned` block (spec C5 limitation)",
+                        ck.Span);
                 return new BoundContinue(ck.Span);
 
             case SwitchStmt sw:
@@ -149,7 +161,14 @@ public sealed partial class TypeChecker
             }
 
             case ThrowStmt th:
+                if (_pinnedDepth > 0)
+                    _diags.Error(DiagnosticCodes.PinnedControlFlow,
+                        "Z0908: `throw` is not allowed inside a `pinned` block (spec C5 limitation)",
+                        th.Span);
                 return new BoundThrow(BindExpr(th.Value, env), th.Span);
+
+            case PinnedStmt pin:
+                return BindPinned(pin, env, retType);
 
             default:
                 // Unknown future construct — emit a no-op break
@@ -221,6 +240,10 @@ public sealed partial class TypeChecker
 
     private BoundReturn BindReturn(ReturnStmt r, TypeEnv env, Z42Type expectedRetType)
     {
+        if (_pinnedDepth > 0)
+            _diags.Error(DiagnosticCodes.PinnedControlFlow,
+                "Z0908: `return` is not allowed inside a `pinned` block (spec C5 limitation)",
+                r.Span);
         if (r.Value == null)
         {
             if (expectedRetType is not Z42VoidType and not Z42UnknownType)
@@ -232,5 +255,25 @@ public sealed partial class TypeChecker
         RequireAssignable(expectedRetType, value.Type, r.Value.Span,
             $"return type mismatch: expected `{expectedRetType}`, got `{value.Type}`");
         return new BoundReturn(value, r.Span);
+    }
+
+    // ── Pinned (spec C5) ──────────────────────────────────────────────────────
+
+    private BoundPinned BindPinned(PinnedStmt pin, TypeEnv env, Z42Type retType)
+    {
+        var source = BindExpr(pin.Source, env);
+        if (source.Type != Z42Type.String && source.Type is not Z42ErrorType)
+            _diags.Error(DiagnosticCodes.PinnedNotPinnable,
+                $"Z0908: source of `pinned` must be `string` (current C5 limitation; got `{source.Type}`)",
+                pin.Source.Span);
+
+        var scope = env.PushScope();
+        scope.Define(pin.Name, Z42Type.PinnedView);
+
+        _pinnedDepth++;
+        var body = BindBlock(pin.Body, scope, retType);
+        _pinnedDepth--;
+
+        return new BoundPinned(pin.Name, source, body, pin.Span);
     }
 }

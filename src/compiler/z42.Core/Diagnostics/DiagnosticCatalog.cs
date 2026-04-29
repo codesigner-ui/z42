@@ -216,6 +216,18 @@ public static class DiagnosticCatalog
             "Native attribute on non-extern method",
             "The `[Native]` attribute can only be applied to methods declared with the `extern` keyword.",
             "[Native(\"file_read\")] int ReadByte() { return 0; }  // not extern"),
+
+        // ── E0908: `pinned` block constraints (spec C5) ──────────────────
+
+        [DiagnosticCodes.PinnedNotPinnable] = new(
+            "Pinned source must be pinnable",
+            "The expression on the right-hand side of `pinned <name> = <expr>` must be a `string` (current C5 limitation; `byte[]` arrives in a follow-up spec).",
+            "pinned p = 42 { }   // 42 is int, not pinnable"),
+
+        [DiagnosticCodes.PinnedControlFlow] = new(
+            "Early control flow inside `pinned` body",
+            "The body of a `pinned` block must use straight-line control flow so the compiler can pair each `pin` with exactly one `unpin`. `return` / `break` / `continue` / `throw` are forbidden inside the body in spec C5.",
+            "pinned p = s { return p.len; }   // not allowed in C5"),
     };
 
     // ── Public API ────────────────────────────────────────────────────────────

@@ -242,6 +242,16 @@ public sealed record CatchClause(
 
 public sealed record ThrowStmt(Expr Value, Span Span) : Stmt(Span);
 
+/// `pinned <Name> = <Source> { <Body> }` — borrows a `string` (and, in a
+/// follow-up spec, `byte[]`) buffer for the duration of `Body` so it can
+/// be passed to native code as a raw pointer + length pair. See spec C5
+/// `impl-pinned-syntax` for typing rules and control-flow restrictions.
+public sealed record PinnedStmt(
+    string Name,
+    Expr Source,
+    BlockStmt Body,
+    Span Span) : Stmt(Span);
+
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 public abstract record Expr(Span Span);

@@ -147,6 +147,15 @@ public sealed partial class TypeChecker
             return new BoundMember(target, m.Member, Z42Type.Int, m.Span);
         if (m.Member == "Count")
             return new BoundMember(target, m.Member, Z42Type.Int, m.Span);
+        // Spec C5 — PinnedView exposes only `ptr` and `len`, both `long`.
+        if (target.Type == Z42Type.PinnedView)
+        {
+            if (m.Member is "ptr" or "len")
+                return new BoundMember(target, m.Member, Z42Type.Long, m.Span);
+            _diags.Error(DiagnosticCodes.UndefinedSymbol,
+                $"`PinnedView` has no field `{m.Member}` (only `ptr` / `len`)", m.Span);
+            return new BoundError($"no member `{m.Member}` on PinnedView", Z42Type.Error, m.Span);
+        }
         return new BoundMember(target, m.Member, Z42Type.Unknown, m.Span);
     }
 

@@ -16,6 +16,10 @@ public abstract record Z42Type
     public static readonly Z42PrimType String = new("string");
     public static readonly Z42PrimType Char   = new("char");
     public static readonly Z42PrimType Object = new("object");
+    /// Spec C5 — opaque builtin type for the local introduced by a
+    /// `pinned p = s { ... }` block. Only `.ptr` and `.len` field access
+    /// are valid (both yield `long`); other uses are type errors.
+    public static readonly Z42PrimType PinnedView = new("PinnedView");
 
     // Explicit-size integer singletons
     public static readonly Z42PrimType I8  = new("i8");

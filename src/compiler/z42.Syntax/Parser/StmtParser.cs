@@ -31,6 +31,8 @@ internal static class StmtParser
         [TokenKind.Switch]   = new(ParseSwitch,   LanguageFeature.PatternMatch),
         [TokenKind.Try]      = new(ParseTryCatch, LanguageFeature.Exceptions),
         [TokenKind.Throw]    = new(ParseThrow,    LanguageFeature.Exceptions),
+        // Spec C5 (`impl-pinned-syntax`) — `pinned p = s { ... }` block.
+        [TokenKind.Pinned]   = new(ParsePinned),
     };
 
     // ── Public entry points ───────────────────────────────────────────────────
@@ -102,6 +104,7 @@ internal static class StmtParser
                 or TokenKind.For or TokenKind.Foreach
                 or TokenKind.Break or TokenKind.Continue
                 or TokenKind.Switch or TokenKind.Try or TokenKind.Throw
+                or TokenKind.Pinned
                 or TokenKind.LBrace)
                 break;
             cursor = cursor.Advance();
@@ -379,6 +382,22 @@ internal static class StmtParser
         var val = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.Semicolon);
         return ParseResult<Stmt>.Ok(new ThrowStmt(val, kw.Span), cursor);
+    }
+
+    /// Spec C5 (`impl-pinned-syntax`):
+    ///   pinned <ident> = <expr> { <body> }
+    /// Borrows a `string` for the body's duration so it can be handed to
+    /// native code as `(p.ptr, p.len)`. The body is parsed with the standard
+    /// `ParseBlock`; control-flow restrictions (no `return`/`break`/etc.)
+    /// are enforced at type-check time, not in the parser.
+    private static ParseResult<Stmt> ParsePinned(
+        TokenCursor cursor, Token kw, LanguageFeatures feat)
+    {
+        var name = Expect(ref cursor, TokenKind.Identifier).Text;
+        Expect(ref cursor, TokenKind.Eq);
+        var source = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var body = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        return ParseResult<Stmt>.Ok(new PinnedStmt(name, source, body, kw.Span), cursor);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

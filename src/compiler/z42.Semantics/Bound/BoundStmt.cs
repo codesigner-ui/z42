@@ -90,3 +90,15 @@ public sealed record BoundCatchClause(string? VarName, BoundBlock Body, Span Spa
 // ── Throw ─────────────────────────────────────────────────────────────────────
 
 public sealed record BoundThrow(BoundExpr Value, Span Span) : BoundStmt(Span);
+
+// ── Pinned (spec C5) ────────────────────────────────────────────────────────
+
+/// `pinned <Name> = <Source> { <Body> }` — Tier 1 native-interop borrow.
+/// Codegen emits `PinPtrInstr` before <Body>, the body itself, and a
+/// terminating `UnpinPtrInstr`. The TypeChecker rejects early control
+/// flow inside the body so each pin pairs with exactly one unpin.
+public sealed record BoundPinned(
+    string Name,
+    BoundExpr Source,
+    BoundBlock Body,
+    Span Span) : BoundStmt(Span);
