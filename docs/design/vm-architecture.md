@@ -394,11 +394,11 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 - `alloc_*` 通用通路 `record_alloc`：bump stats → 压力检查 → sampler 触发
 - 事件分发：先 snapshot observer 列表再调用，避免回调重入引发 borrow 冲突
 
-**已知限制（Phase 3a/3b/3c/3d/3d.1/3f 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e 后）**：
 
-1. **Finalizer 仅在 collect_cycles 时触发**：纯 Rc Drop 路径不触发 → Phase 3e
-2. **`OutOfMemory` 仅通知不拒绝** → Phase 3e+
-3. **JIT 栈帧 JitFrame.regs 暂未对接为 GC roots**：interp 已对接（Phase 3f），
+1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
+   Result，签名约束。真拒绝需 trait API 升级 + 全 callsite 错误处理路径
+2. **JIT 栈帧 JitFrame.regs 暂未对接为 GC roots**：interp 已对接（Phase 3f），
    JIT 端待 Phase 3f-2 视需要处理
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate `Full` 覆盖。
@@ -444,6 +444,7 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 | **Phase 3d.1** | External root scanner（VmContext static_fields / pending_exception 暴露给 cycle collector，修复漏扫 bug）| ✅ 2026-04-29 add-external-root-scanning |
 | **Phase 3d.2** | 暴露 `Std.GC.Collect()` / `UsedBytes()` / `ForceCollect()` 给 z42 脚本 + 端到端 golden test 验证环回收 | ✅ 2026-04-29 expose-gc-to-scripts |
 | **Phase 3f** | interp 栈扫描（`exec_function` FrameGuard RAII 把 frame.regs 暴露给 scanner，修复"outer 在 reg + outer.slot → inner" 间接可达对象被误清的 bug） | ✅ 2026-04-29 add-interp-stack-scanning |
+| **Phase 3e** | `GcRef<T>` backing 升级 `Rc<GcAllocation<T>>`，wrapper Drop 自动触发已注册 finalizer（含纯 Rc Drop 路径，不仅限 cycle collect） | ✅ 2026-04-29 add-drop-time-finalizer |
 | **Phase 3e**（可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）| 📋 待立项 |
 | **Phase 3f** | Cranelift stack maps（interp + JIT 路径下 GC 安全点） | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |

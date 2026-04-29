@@ -22,7 +22,7 @@
 //! | 3d.1（已落地）| External root scanner（VmContext static_fields 自动暴露给 GC，修复漏扫 bug）|
 //! | 3d.2（已落地）| `Std.GC.Collect()` / `UsedBytes()` / `ForceCollect()` 暴露给 z42 脚本 + 端到端 golden test 验证 |
 //! | 3f（已落地）| interp 栈扫描（FrameGuard RAII 把 frame.regs 暴露给 scanner，修复 transitive bug）|
-//! | 3e（计划，可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）|
+//! | 3e（已落地）| GcRef backing → `Rc<GcAllocation<T>>` wrapper + Drop 自动触发 finalizer（含纯 Rc Drop 路径）|
 //! | 3f-2（计划，可选）| JIT JitFrame.regs 对接为 GC roots（Cranelift stack maps）|
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |
 

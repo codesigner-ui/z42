@@ -5,12 +5,11 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 3a/3b/3c/3d/3d.1/3f 后已知限制**：
-//! 1. **Finalizer 仅在 collect_cycles 时触发**：纯链式 Drop（无环）情况下不触发
-//!    → Phase 3e 替换 backing 时引入 wrapper 解决
-//! 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
-//! 3. **JIT 栈帧 regs 暂未对接为 GC roots**：interp 已通过 exec_stack 暴露给
-//!    scanner（Phase 3f），JIT 端 JitFrame 待对接 → Phase 3f-2（视需要）
+//! **Phase 3a/3b/3c/3d/3d.1/3f/3e 后已知限制**：
+//! 1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
+//!    Result，签名约束。真拒绝需 trait API 升级 + 全 callsite 错误处理路径
+//! 2. **JIT 栈帧 JitFrame.regs 暂未对接为 GC roots**：interp 已通过 exec_stack
+//!    暴露给 scanner（Phase 3f），JIT 端 JitFrame 待对接 → Phase 3f-2（视需要）
 //!
 //! **已解决**：
 //! - Phase 3b（add-heap-registry）：snapshot/iterate Full coverage
@@ -23,6 +22,12 @@
 //!   `FrameGuard` RAII 把 `frame.regs` Vec 指针注册到 `VmContext.exec_stack`，
 //!   scanner 闭包遍历喂给 mark 阶段。修复脚本执行中调 GC 时
 //!   "outer 在 reg + outer.slot → inner 间接可达 → inner 被误清" 的 bug
+//! - Phase 3e（add-drop-time-finalizer）：`GcRef<T>` backing 升级为
+//!   `Rc<GcAllocation<T>>`，wrapper 含 `finalizer: RefCell<Option<FinalizerFn>>`
+//!   + 自定义 `Drop`。**所有 Rc Drop 路径**（含纯链式 drop / cycle 断环
+//!   后 alive_vec drop / 普通 scope 退出）都自动触发已注册 finalizer，
+//!   one-shot via take。`finalizers: HashMap` 字段移除，`stats()` 即时遍历
+//!   registry 重算 finalizers_pending。
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -48,8 +53,6 @@ struct RcHeapInner {
     /// 每个 frame 的 pin 列表，用于 leave_frame 时整批 unpin。
     frame_pins:        Vec<Vec<RootHandle>>,
     observers:         Vec<(ObserverId, Arc<dyn GcObserver>)>,
-    /// Finalizers 按 `GcRef::as_ptr(gc) as usize` 索引；Phase 1 仅注册不触发。
-    finalizers:        HashMap<usize, FinalizerFn>,
     alloc_sampler:     Option<AllocSamplerFn>,
     pause_count:       u32,
     next_root_id:      u64,
@@ -65,6 +68,10 @@ struct RcHeapInner {
     /// **Phase 3d**: 上次 auto-collect 触发时的 `used_bytes`，用于 throttle
     /// 自动 collect —— 仅当当前 used 距上次增长 >= 10% limit 才再次自动触发。
     last_auto_collect_used: u64,
+    // **Phase 3e**: finalizers 不再集中存 HashMap；改存到每个 GcAllocation 的
+    // finalizer Cell 上。Drop 时自动 take + fire（含 cycle 断环后 alive_vec
+    // drop 链）。register_finalizer / cancel_finalizer 走 GcRef 方法。
+    // finalizers_pending 由 stats() 即时遍历 registry 重算。
 }
 
 impl std::fmt::Debug for RcHeapInner {
@@ -74,7 +81,6 @@ impl std::fmt::Debug for RcHeapInner {
             .field("roots_count",       &self.roots.len())
             .field("frame_count",       &self.frame_pins.len())
             .field("observers_count",   &self.observers.len())
-            .field("finalizers_count",  &self.finalizers.len())
             .field("alloc_sampler",     &self.alloc_sampler.is_some())
             .field("pause_count",       &self.pause_count)
             .field("near_limit_warned", &self.near_limit_warned)
@@ -323,31 +329,17 @@ impl RcMagrGC {
 
         // Break: tentative <= 0 表示无外部引用，安全断环
         let mut freed_bytes: u64 = 0;
-        let mut to_finalize: Vec<FinalizerFn> = Vec::new();
         for v in &unreachable {
             let Some(key) = Self::rc_ptr_key(v) else { continue };
             if tentative.get(&key).copied().unwrap_or(0) <= 0 {
                 freed_bytes = freed_bytes.saturating_add(self.object_size_bytes(v) as u64);
-                // Phase 3d: 提取 finalizer（one-shot 语义）；先收集，break 后统一调用
-                {
-                    let mut i = self.inner.borrow_mut();
-                    if let Some(fin) = i.finalizers.remove(&key) {
-                        to_finalize.push(fin);
-                        i.stats.finalizers_pending = i.finalizers.len() as u64;
-                    }
-                }
                 Self::break_cycle_value(v);
             }
         }
 
-        // Phase 3d: 在 break_cycle 之后、unreachable Vec drop 之前调 finalizer。
-        // 此时对象 slots 已清空（finalizer 见到的是"墓碑"状态），但 Rc 还活着
-        // —— finalizer 不应假设对象内部状态可读。RC drop 链稍后随 alive_vec 释放。
-        for fin in to_finalize {
-            fin();
-        }
-
-        // unreachable Vec drops here → 断环对象的 Rc 强引用计数链式归零 → Drop
+        // **Phase 3e**: 不再显式 dispatch finalizer —— 当 unreachable Vec 在
+        // 函数返回时 drop，断环对象的 Rc 强引用计数链式归零，触发
+        // `GcAllocation::Drop` 自动调用注册的 finalizer（one-shot via take）。
         freed_bytes
     }
 
@@ -618,18 +610,22 @@ impl MagrGC for RcMagrGC {
 
     // ── 7. Finalization ──────────────────────────────────────────────────────
 
+    /// **Phase 3e**: finalizer 直接挂在 GcAllocation wrapper 上，Drop 时自动
+    /// 触发（含 cycle 断环后 alive_vec drop 链 + 普通 Rc Drop）。
     fn register_finalizer(&self, value: &Value, fin: FinalizerFn) {
-        let Some(key) = Self::rc_ptr_key(value) else { return };
-        let mut i = self.inner.borrow_mut();
-        i.finalizers.insert(key, fin);
-        i.stats.finalizers_pending = i.finalizers.len() as u64;
+        match value {
+            Value::Object(gc) => GcRef::set_finalizer(gc, fin),
+            Value::Array(gc)  => GcRef::set_finalizer(gc, fin),
+            _ => {} // 原子值无 finalizer
+        }
     }
 
     fn cancel_finalizer(&self, value: &Value) {
-        let Some(key) = Self::rc_ptr_key(value) else { return };
-        let mut i = self.inner.borrow_mut();
-        i.finalizers.remove(&key);
-        i.stats.finalizers_pending = i.finalizers.len() as u64;
+        match value {
+            Value::Object(gc) => { let _ = GcRef::cancel_finalizer(gc); }
+            Value::Array(gc)  => { let _ = GcRef::cancel_finalizer(gc); }
+            _ => {}
+        }
     }
 
     // ── 8. Weak references ───────────────────────────────────────────────────
@@ -707,7 +703,20 @@ impl MagrGC for RcMagrGC {
     // ── 11. Stats ────────────────────────────────────────────────────────────
 
     fn stats(&self) -> HeapStats {
-        self.inner.borrow().stats
+        // Phase 3e: finalizers_pending 即时遍历 heap_registry 重算 —— 因为
+        // finalizer 现在挂在 GcAllocation 上，Drop 时自动 take，没有集中
+        // 计数器；准确值需扫 registry。snapshot_live_from_registry 顺路 prune
+        // 死引用。
+        let alive = self.snapshot_live_from_registry();
+        let pending = alive.iter().filter(|v| match v {
+            Value::Object(gc) => GcRef::has_finalizer(gc),
+            Value::Array(gc)  => GcRef::has_finalizer(gc),
+            _ => false,
+        }).count() as u64;
+
+        let mut s = self.inner.borrow().stats;
+        s.finalizers_pending = pending;
+        s
     }
 }
 

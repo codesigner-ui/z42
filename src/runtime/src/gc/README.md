@@ -61,13 +61,12 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b/3c/3d/3d.1/3f 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e 后）**：
 
-1. **Finalizer 仅在 collect_cycles 时触发**：纯 Rc Drop（无环）路径不触发 →
-   Phase 3e 替换 backing 时一并解决
-2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
-3. **JIT 栈帧 regs 暂未对接为 GC roots**：interp 已对接（Phase 3f），JIT 端
-   JitFrame 待 Phase 3f-2 视需要处理（Rc strong count 大部分场景已自动覆盖）
+1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
+   Result，签名约束 → 独立 spec 升级 trait API
+2. **JIT 栈帧 JitFrame.regs 暂未对接**：interp 已对接（Phase 3f），JIT 待
+   Phase 3f-2 视需要处理
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate Full coverage。
 >
@@ -92,6 +91,12 @@ let snap = ctx.heap().take_snapshot();
 > 由 `interp::exec_function` 入口的 `FrameGuard` RAII 推/弹（保证 panic / `?`
 > early return 也配对）。修复"frame 持 outer + outer.slot → inner 间接可达"
 > 时 inner 被误清的 bug。
+>
+> **2026-04-29 add-drop-time-finalizer（Phase 3e 完成）**：`GcRef<T>` backing
+> 升级为 `Rc<GcAllocation<T>>`，wrapper 含 finalizer Cell + 自定义 Drop。
+> **所有 Rc Drop 路径**（普通 scope 退出 / cycle 断环 / 显式 drop）都自动触发
+> 已注册 finalizer（one-shot via take）。`finalizers: HashMap` 字段移除，
+> `stats()` 即时遍历 registry 重算 `finalizers_pending`。
 
 > **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
 > `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin
