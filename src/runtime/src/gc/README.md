@@ -61,15 +61,19 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2/3-OOM 后）**：（无）
 
-1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
-   Result，签名约束 → 独立 spec 升级 trait API
+GC 子系统主功能至此完整 —— 所有原始限制已解决，可投产。
 
 > **2026-04-29 add-jit-stack-scanning（Phase 3f-2 完成）**：6 个 JitFrame::new
 > callsite 在 jit_fn 调用前后 push/pop frame.regs 到 VmContext.exec_stack
 > （与 interp 共用同一数据结构）。修复 JIT 路径下 transitive 可达对象
 > （如返回值穿过函数边界后通过 outer.slot 间接持有）被误清的 bug。
+>
+> **2026-04-29 add-strict-oom-rejection（Phase 3-OOM 完成）**：trait 加
+> `set_strict_oom(bool)` 默认 no-op；RcMagrGC 启用 strict 模式后 alloc 越过
+> `max_heap_bytes` 时返回 `Value::Null`、不入 registry、不 bump stats，仍
+> fire `OutOfMemory` 事件让 host observer 感知。默认关闭 → 完全向后兼容。
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate Full coverage。
 >

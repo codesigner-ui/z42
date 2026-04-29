@@ -5,9 +5,17 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2 后已知限制**：
-//! 1. **`OutOfMemory` 仅通知不拒绝**：MagrGC trait `alloc_*` 返回 `Value` 不带
-//!    Result，签名约束。真拒绝需 trait API 升级 + 全 callsite 错误处理路径
+//! **Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2/3-OOM 后已知限制**：（无）
+//!
+//! GC 子系统主功能至此完整。所有原始限制已解决：
+//! - 接口（trait + GcRef + heap registry）✅
+//! - 环回收（trial-deletion）✅
+//! - Finalizer（drop-time + cycle collect 双路径）✅
+//! - 自动 collect（内存压力）✅
+//! - VmContext 级 roots（static_fields + pending_exception）✅
+//! - 栈扫描（interp + JIT 全部 frame.regs）✅
+//! - **OOM 真拒绝（strict 模式可选启用）✅**
+//! - 端到端验证（`Std.GC.*` 暴露 + golden tests）✅
 //!
 //! **已解决**：
 //! - Phase 3b（add-heap-registry）：snapshot/iterate Full coverage
@@ -30,6 +38,10 @@
 //!   jit_fn 调用前后 push/pop frame.regs 到 VmContext.exec_stack（与 interp
 //!   共用同一数据结构）。修复 JIT 路径下 transitive 可达对象（如返回值穿过
 //!   函数边界后通过 outer.slot 间接持有）被误清的 bug。
+//! - Phase 3-OOM（add-strict-oom-rejection）：trait 加 `set_strict_oom(bool)`
+//!   默认 no-op（向后兼容）。RcMagrGC 启用 strict 模式后 alloc 越过
+//!   max_heap_bytes 时返回 `Value::Null` 不入 registry / 不 bump used_bytes
+//!   （撤销分配），同时 fire OutOfMemory 事件。
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -70,6 +82,10 @@ struct RcHeapInner {
     /// **Phase 3d**: 上次 auto-collect 触发时的 `used_bytes`，用于 throttle
     /// 自动 collect —— 仅当当前 used 距上次增长 >= 10% limit 才再次自动触发。
     last_auto_collect_used: u64,
+    /// **Phase 3-OOM**: strict OOM 模式开关。true 时 alloc 越界返回 Value::Null
+    /// 不入 registry / 不 bump used_bytes（撤销分配）；false（默认）兼容历史
+    /// 行为：alloc 仍成功，只 fire 事件。
+    strict_oom: bool,
     // **Phase 3e**: finalizers 不再集中存 HashMap；改存到每个 GcAllocation 的
     // finalizer Cell 上。Drop 时自动 take + fire（含 cycle 断环后 alive_vec
     // drop 链）。register_finalizer / cancel_finalizer 走 GcRef 方法。
@@ -367,6 +383,16 @@ impl RcMagrGC {
         alive
     }
 
+    /// **Phase 3-OOM**: 检查在当前 used_bytes 基础上再分配 `size` 字节是否会
+    /// 越过 max_heap_bytes 上限。仅在 strict_oom 模式下使用。
+    fn would_oom_after_alloc(&self, size: u64) -> (bool, u64) {
+        let i = self.inner.borrow();
+        if !i.strict_oom { return (false, 0); }
+        let Some(limit) = i.stats.max_bytes else { return (false, 0); };
+        let after = i.stats.used_bytes.saturating_add(size);
+        (after > limit, limit)
+    }
+
     /// **Phase 3d**: 内存压力下自动触发 collect_cycles。
     ///
     /// 条件：
@@ -444,6 +470,15 @@ impl MagrGC for RcMagrGC {
             type_desc, slots, native,
         }));
         let size = self.object_size_bytes(&value);
+        // Phase 3-OOM: strict 模式下若 alloc 后会越界，撤销并返 Null
+        let (would_oom, limit) = self.would_oom_after_alloc(size as u64);
+        if would_oom {
+            self.fire_event(GcEvent::OutOfMemory {
+                requested_bytes: size as u64,
+                limit_bytes: limit,
+            });
+            return Value::Null; // value 在此 drop，GcRef Drop → GcAllocation Drop（无 finalizer 注册）
+        }
         self.record_alloc(&value, AllocKind::Object { class }, size);
         // Phase 3d: 内存压力下自动 collect（local `value` 持外部强引用，自身不会被破坏）
         self.maybe_auto_collect();
@@ -454,6 +489,15 @@ impl MagrGC for RcMagrGC {
         let elem_count = elems.len();
         let value      = Value::Array(GcRef::new(elems));
         let size       = self.object_size_bytes(&value);
+        // Phase 3-OOM: strict 模式下若 alloc 后会越界，撤销并返 Null
+        let (would_oom, limit) = self.would_oom_after_alloc(size as u64);
+        if would_oom {
+            self.fire_event(GcEvent::OutOfMemory {
+                requested_bytes: size as u64,
+                limit_bytes: limit,
+            });
+            return Value::Null;
+        }
         self.record_alloc(&value, AllocKind::Array { elem_count }, size);
         self.maybe_auto_collect();
         value
@@ -608,6 +652,10 @@ impl MagrGC for RcMagrGC {
 
     fn used_bytes(&self) -> u64 {
         self.inner.borrow().stats.used_bytes
+    }
+
+    fn set_strict_oom(&self, enabled: bool) {
+        self.inner.borrow_mut().strict_oom = enabled;
     }
 
     // ── 7. Finalization ──────────────────────────────────────────────────────

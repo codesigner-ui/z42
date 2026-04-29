@@ -24,6 +24,7 @@
 //! | 3f（已落地）| interp 栈扫描（FrameGuard RAII 把 frame.regs 暴露给 scanner，修复 transitive bug）|
 //! | 3e（已落地）| GcRef backing → `Rc<GcAllocation<T>>` wrapper + Drop 自动触发 finalizer（含纯 Rc Drop 路径）|
 //! | 3f-2（已落地）| JIT JitFrame.regs 对接（6 callsites push/pop frame.regs 到 exec_stack，修复 transitive bug）|
+//! | 3-OOM（已落地）| strict OOM 模式（trait `set_strict_oom`；启用后 alloc 越限返 Null 不进 registry/stats）|
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |
 
 pub mod heap;

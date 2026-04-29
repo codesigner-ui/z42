@@ -129,12 +129,21 @@ pub trait MagrGC: std::fmt::Debug {
     // ── 6. Heap config ───────────────────────────────────────────────────────
 
     /// 设置堆字节上限（`None` = 不限制）。超过 75% 触发 `AllocationPressure`，
-    /// 超过 90% 触发 `NearHeapLimit`，越界触发 `OutOfMemory`（Phase 1 仍允许
-    /// 分配，仅通知；Phase 3 tracing GC 可拒绝）。
+    /// 超过 90% 触发 `NearHeapLimit`，越界触发 `OutOfMemory`。
+    /// 默认情况下（strict_oom=false）alloc 仍然成功，仅通知；启用
+    /// `set_strict_oom(true)` 后 alloc 越界返回 `Value::Null` 不实际占用 heap。
     fn set_max_heap_bytes(&self, max: Option<u64>);
 
     /// 已用字节数（同 `stats().used_bytes`）。
     fn used_bytes(&self) -> u64;
+
+    /// 启用 / 关闭 **strict OOM 模式**。Phase 3-OOM (2026-04-29)。
+    /// 默认 false（行为兼容历史：alloc 越界仅 fire 事件不拒绝）。
+    /// 启用后：`alloc_*` 越过 `max_heap_bytes` 时返回 `Value::Null`、不入 registry、
+    /// 不 bump used_bytes，仍 fire `OutOfMemory` 事件让 observer 感知。
+    /// 调用方（script）见到 Null 通常会在后续访问产生 NullReferenceException；
+    /// host 可通过 OOM observer 提前感知并主动管理（kill VM / 重置 heap 等）。
+    fn set_strict_oom(&self, _enabled: bool) {}
 
     // ── 7. Finalization ──────────────────────────────────────────────────────
 
