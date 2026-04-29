@@ -286,6 +286,13 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
                     other => bail!("array has no field `{}`", other),
                 },
+                Value::PinnedView { ptr, len, .. } => match field_name.as_str() {
+                    // Spec C4 — only `ptr` / `len` are exposed; element type
+                    // information (kind) stays internal.
+                    "ptr" => Value::I64(*ptr as i64),
+                    "len" => Value::I64(*len as i64),
+                    other => bail!("Z0908: PinnedView has no field `{}` (only `ptr` / `len`)", other),
+                },
                 other => bail!("FieldGet: not an object or known value type, got {:?}", other),
             };
             frame.set(*dst, val);
@@ -475,11 +482,43 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                 "CallNativeVtable not yet implemented (Z0907, see spec C5 / impl-source-generator): slot={vtable_slot}"
             );
         }
-        Instruction::PinPtr { .. } => {
-            bail!("PinPtr not yet implemented (Z0908, see spec C4 / impl-pinned-block)");
+        Instruction::PinPtr { dst, src } => {
+            // C4: borrow a `String` / future `Array<u8>` buffer for FFI.
+            // Caller (currently always test-emitted IR; user-side `pinned`
+            // syntax lands in C5) is responsible for matching `UnpinPtr` on
+            // every exit path. RC backend treats the borrow as zero-cost
+            // (no relocation possible); the pin set will be repopulated
+            // for moving GC backends in a later spec.
+            let view = match frame.get(*src)? {
+                Value::Str(s) => Value::PinnedView {
+                    ptr: s.as_ptr() as u64,
+                    len: s.len() as u64,
+                    kind: crate::metadata::PinSourceKind::Str,
+                },
+                Value::Array(_) => {
+                    bail!(
+                        "Z0908: PinPtr does not support Array yet — `Array<u8>` pinning needs a dedicated byte buffer type and lands in a follow-up spec"
+                    );
+                }
+                other => bail!(
+                    "Z0908: PinPtr source must be String, got {:?}",
+                    other
+                ),
+            };
+            frame.set(*dst, view);
         }
-        Instruction::UnpinPtr { .. } => {
-            bail!("UnpinPtr not yet implemented (Z0908, see spec C4 / impl-pinned-block)");
+        Instruction::UnpinPtr { pinned } => {
+            match frame.get(*pinned)? {
+                Value::PinnedView { .. } => {
+                    // RC backend: nothing to release. A future moving GC
+                    // backend will deregister the entry from its pin set
+                    // here.
+                }
+                other => bail!(
+                    "Z0908: UnpinPtr expects PinnedView (compiler-emitted UnpinPtr should always pair with a prior PinPtr); got {:?}",
+                    other
+                ),
+            }
         }
     }
     Ok(None)

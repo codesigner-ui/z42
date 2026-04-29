@@ -354,6 +354,14 @@ fn process_array(data: Array<u8>) {
 
 **Comparison with C# `fixed`**: same intent. Narrower (z42 only on `String` / `Array`; C# accepts any blittable lvalue). Strictly typed: `p.ptr` is `*const u8` for `String` / `*const T` for `Array<T>`, never an opaque pointer.
 
+**Runtime representation (C4 ✅ 2026-04-29)**: a pinned view is an internal
+`Value::PinnedView { ptr: u64, len: u64, kind: PinSourceKind }` variant. The
+ABI tag `Z42_VALUE_TAG_PINNED_VIEW = 8` is reserved in `z42_abi`. `String`
+sources are supported today; `Array<u8>` pinning waits on a dedicated
+byte-buffer variant in a follow-up spec. `view.ptr` and `view.len` go
+through the standard `FieldGet` IR opcode; out-of-range field names raise
+Z0908.
+
 ### 6.4 Native Types as First-Class
 
 The most important departure from C#. Native libraries register **complete z42 classes** via Tier 1/2:
@@ -547,7 +555,7 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M9** (`impl-tier1-c-abi`) | Tier 1 PoC: handwritten `numz42-c` demo (Counter type, register + `CallNative` end-to-end) | M8 | ✅ 2026-04-29 (合并入 L2.M8 spec) |
 | **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | C1 | ✅ scaffold landed in C1 |
 | **L2.M11** (`impl-tier2-rust-macros`) | `#[z42::methods]` + `module!` proc macro 实现（C3 主入口）+ `numz42-rs` PoC（Rust 版 Counter 端到端）；`#[derive(Z42Type)]` 与 `#[z42::trait_impl]` 仍 stub，留给 C5 与 source generator 联动设计 | M10 | ✅ 2026-04-29 |
-| **L2.M12** (C4 `impl-pinned-block`) | `pinned` block syntax + String/Array borrow; fills `PinPtr`/`UnpinPtr` runtime | type system |  |
+| **L2.M12** (`impl-pinned-block` runtime) | `Value::PinnedView { ptr, len, kind }` + `PinPtr`/`UnpinPtr` runtime + `FieldGet` on PinnedView (.ptr / .len) + marshal 接 PinnedView。**z42 用户代码 `pinned` 块 syntax** 留给 C5 与其他 user-facing FFI 语法（`[Native]` / `import T from "lib"`）一起落地。Z42_VALUE_TAG_PINNED_VIEW=8。 | type system | ✅ 2026-04-29 (runtime) |
 | **L2.M13** (C5 first half) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
 | **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |

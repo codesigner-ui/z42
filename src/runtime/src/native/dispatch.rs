@@ -252,13 +252,14 @@ pub(crate) fn z42_native_ptr(v: *mut c_void) -> Z42Value {
     Z42Value { tag: Z42_VALUE_TAG_NATIVEPTR, reserved: 0, payload: v as usize as u64 }
 }
 
-// ── Frozen Z42Value tag values (ABI v1) ──────────────────────────────────
+// ── Frozen Z42Value tag values ──────────────────────────────────────────
+//
+// Source of truth lives in `z42_abi`; re-exported here for the historical
+// callers in this module. New consumers should import from `z42_abi`
+// directly.
 
-pub const Z42_VALUE_TAG_NULL:      u32 = 0;
-pub const Z42_VALUE_TAG_I64:       u32 = 1;
-pub const Z42_VALUE_TAG_F64:       u32 = 2;
-pub const Z42_VALUE_TAG_BOOL:      u32 = 3;
-pub const Z42_VALUE_TAG_STR:       u32 = 4;
-pub const Z42_VALUE_TAG_OBJECT:    u32 = 5;
-pub const Z42_VALUE_TAG_TYPEREF:   u32 = 6;
-pub const Z42_VALUE_TAG_NATIVEPTR: u32 = 7;
+pub use z42_abi::{
+    Z42_VALUE_TAG_BOOL, Z42_VALUE_TAG_F64, Z42_VALUE_TAG_I64, Z42_VALUE_TAG_NATIVEPTR,
+    Z42_VALUE_TAG_NULL, Z42_VALUE_TAG_OBJECT, Z42_VALUE_TAG_PINNED_VIEW, Z42_VALUE_TAG_STR,
+    Z42_VALUE_TAG_TYPEREF,
+};

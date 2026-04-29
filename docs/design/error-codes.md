@@ -83,12 +83,19 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | Z0906 | AbiVersionMismatch               | `z42_register_type` 接收的 `Z42TypeDescriptor_v1.abi_version` 与 VM 期望的 `Z42_ABI_VERSION` 不一致 |
 | Z0910 | NativeLibraryLoadFailure         | `VmContext::load_native_library` 中 `libloading::Library::new(path)` 失败（路径不存在 / 架构不匹配 / 权限错误）或目标库缺少 `<basename>_register` 入口符号 |
 
-### Z0907–Z0909（仍为 C3/C4/C5 预留）
+### Z0908（C4 已启用，2026-04-29）
+
+由 `src/runtime/src/interp/exec_instr.rs` 在 PinPtr / UnpinPtr / FieldGet 三条 PinnedView 相关分支抛出。
+
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| Z0908 | PinnedViewConstraintViolation   | (a) `PinPtr` 收到非 `Value::Str` source（C4 仅支持 `String`，`Array<u8>` 等待后续 spec 引入字节缓冲类型）；(b) `UnpinPtr` 收到非 `Value::PinnedView`（IR 损坏或 compiler emit 不配对）；(c) `FieldGet` on `PinnedView` 访问 `ptr` / `len` 之外的字段名 |
+
+### Z0907 / Z0909（仍为 C3/C5 预留）
 
 | Code  | Title                            | Reserved for spec | Planned trigger |
 |-------|----------------------------------|-------------------|----------------|
 | Z0907 | NativeMethodSignatureMismatch    | C3/C5             | manifest 声明的方法签名与用户 `extern class` 声明不一致 |
-| Z0908 | PinnedBlockConstraintViolation   | C4 (`impl-pinned-block`) | `pinned` 块内试图修改 / 重分配被借出的 String/Array |
 | Z0909 | ManifestParseError               | C5 (`impl-source-generator`) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
 
 ---

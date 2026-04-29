@@ -176,8 +176,8 @@ behaviour; subsequent specs (C2, C4, C5) wire up dispatch.
 |--------|------|----------|----------------|
 | `call.native` | `0x53` | `dst`, module:str, type:str, symbol:str, args | C2 (`impl-tier1-c-abi`) |
 | `call.native.vt` | `0x54` | `dst`, recv:reg, vtable_slot:u16, args | C5 (`impl-source-generator`) |
-| `pin` | `0x90` | `dst`, src:reg | C4 (`impl-pinned-block`) |
-| `unpin` | `0x91` | pinned:reg (no dst) | C4 |
+| `pin` | `0x90` | `dst`, src:reg | C4 ✅ |
+| `unpin` | `0x91` | pinned:reg (no dst) | C4 ✅ |
 
 `call.native` is the direct-symbol path used to call functions registered
 through `z42_register_type` (Tier 1 C ABI). `call.native.vt` is the
@@ -185,16 +185,27 @@ vtable-indexed path: the source generator picks `vtable_slot` at compile
 time so no name lookup happens at runtime, matching C# 11+
 `[LibraryImport]` semantics.
 
-`pin` borrows the raw buffer of a `String` or blittable-element `Array<T>`
-for FFI use; `unpin` returns it to normal use. Pinned regions cannot be
-mutated or relocated until unpinned. The `pinned` block syntax in user
-code lowers to a `pin` … `unpin` pair around the FFI call.
+`pin` borrows the raw buffer of a `String` (and, in a follow-up spec,
+blittable-element byte arrays) for FFI use; `unpin` returns it to normal
+use. Pinned regions cannot be mutated or relocated until unpinned. The
+`pinned` block syntax in user code (introduced in spec C5) lowers to a
+`pin` … `unpin` pair around the FFI call.
 
-VM behaviour (C1): the interpreter raises a clean error
-("`<opcode>` not yet implemented (Z090x, see spec C2/C4/C5)") if any of
-these opcodes execute; the JIT translator refuses to compile a function
-that contains them. Both behaviours flip to real implementations as the
-respective specs land.
+**Runtime semantics (C4)**: `pin` constructs a `Value::PinnedView { ptr, len, kind }`
+from a `Value::Str` source — `ptr` is the raw `String` buffer address,
+`len` is the byte count, `kind = PinSourceKind::Str`. Field access
+`view.ptr` / `view.len` projects via `FieldGet` to `Value::I64`.
+`unpin` is a no-op on the RC backend (no relocation possible) but
+validates that the operand is a PinnedView (Z0908 otherwise) so a
+moving GC backend can later use the same opcode for pin-set
+deregistration. `Array<u8>` pinning is reserved for a follow-up spec
+that introduces a dedicated byte-buffer Value variant.
+
+VM behaviour for the still-trapping opcodes (`call.native.vt`): the
+interpreter raises a clean error ("`<opcode>` not yet implemented
+(Z090x, see spec C5)") if executed. The JIT translator refuses to
+compile a function that contains any of the four FFI opcodes (lands in
+L3.M16).
 
 JSON wire format:
 ```json

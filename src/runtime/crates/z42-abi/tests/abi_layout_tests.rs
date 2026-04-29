@@ -128,3 +128,17 @@ fn flag_bits_pinned() {
     assert_eq!(Z42_FIELD_FLAG_READONLY, 1);
     assert_eq!(Z42_FIELD_FLAG_INTERNAL, 2);
 }
+
+#[test]
+fn value_tag_constants_pinned() {
+    // Frozen wire values — entries appended only across ABI versions.
+    assert_eq!(Z42_VALUE_TAG_NULL,        0);
+    assert_eq!(Z42_VALUE_TAG_I64,         1);
+    assert_eq!(Z42_VALUE_TAG_F64,         2);
+    assert_eq!(Z42_VALUE_TAG_BOOL,        3);
+    assert_eq!(Z42_VALUE_TAG_STR,         4);
+    assert_eq!(Z42_VALUE_TAG_OBJECT,      5);
+    assert_eq!(Z42_VALUE_TAG_TYPEREF,     6);
+    assert_eq!(Z42_VALUE_TAG_NATIVEPTR,   7);
+    assert_eq!(Z42_VALUE_TAG_PINNED_VIEW, 8);
+}

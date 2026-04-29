@@ -35,8 +35,10 @@ C2 接口 + 单元测试落地。
 - ✅ libffi 调度（`Cif::call<R>` 多返回类型分发）
 - ✅ marshal 双向（i8..i64 / u8..u64 / f32 / f64 / bool / null / pointer）
 - ✅ `CallNative` interp dispatch（取代 C1 trap）
+- ✅ `PinPtr` / `UnpinPtr` interp dispatch + `Value::PinnedView` (spec C4 2026-04-29)
+- ✅ `marshal::value_to_z42` 接 `PinnedView`（投 `*const u8` / `usize`）
 - 🟡 `z42_invoke` / `z42_invoke_method`：spec C5 接入（reverse-call 是 source generator 一起的工作）
-- 🟡 `Z42_VALUE_TAG_STR` / `OBJECT` / `TYPEREF`：tag 已冻结，marshal 路径在 C4/C5 接入
+- 🟡 `Z42_VALUE_TAG_STR` / `OBJECT` / `TYPEREF`：tag 已冻结，marshal 路径在 C5 接入
 
 ## 依赖关系
 

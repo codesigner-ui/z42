@@ -19,6 +19,9 @@ pub fn value_to_str(v: &Value) -> String {
             format!("[{}]", inner.join(", "))
         }
         Value::Object(rc) => format!("{}{{...}}", rc.borrow().type_desc.name),
+        Value::PinnedView { ptr, len, kind } => {
+            format!("PinnedView{{ptr=0x{ptr:x}, len={len}, kind={kind:?}}}")
+        }
     }
 }
 

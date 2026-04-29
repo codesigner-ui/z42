@@ -111,6 +111,20 @@ pub enum Value {
     Array(GcRef<Vec<Value>>),
     /// Heap-allocated managed class instance with reference semantics.
     Object(GcRef<ScriptObject>),
+    /// Spec C4 — borrowed view of a `String` / `Array<u8>` for native FFI.
+    /// Created by `PinPtr`, released by `UnpinPtr`. The `ptr` is an
+    /// untyped raw address — consumers must know the source `kind` to
+    /// interpret it. Field access (`.ptr` / `.len`) goes through the
+    /// regular `FieldGet` instruction.
+    PinnedView { ptr: u64, len: u64, kind: PinSourceKind },
+}
+
+/// Origin of a [`Value::PinnedView`]. Recorded for diagnostics; both kinds
+/// share the same wire form (raw bytes + length).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PinSourceKind {
+    Str,
+    ArrayU8,
 }
 
 impl PartialEq for Value {
@@ -125,6 +139,10 @@ impl PartialEq for Value {
             // Array/Object equality is reference equality (same as C# reference semantics)
             (Value::Array(a),  Value::Array(b))  => GcRef::ptr_eq(a, b),
             (Value::Object(a), Value::Object(b)) => GcRef::ptr_eq(a, b),
+            (
+                Value::PinnedView { ptr: ap, len: al, kind: ak },
+                Value::PinnedView { ptr: bp, len: bl, kind: bk },
+            ) => ap == bp && al == bl && ak == bk,
             _ => false,
         }
     }

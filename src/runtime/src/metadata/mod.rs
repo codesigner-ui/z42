@@ -23,7 +23,7 @@ pub mod well_known_names;
 mod constraint_tests;
 
 // Re-exports: runtime value types
-pub use types::{ExecMode, FieldSlot, NativeData, ScriptObject, TypeDesc, Value};
+pub use types::{ExecMode, FieldSlot, NativeData, PinSourceKind, ScriptObject, TypeDesc, Value};
 #[allow(deprecated)]
 pub use types::ObjectData;
 

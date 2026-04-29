@@ -153,6 +153,22 @@ pub struct Z42TypeDescriptor_v1 {
     pub trait_impls: *const Z42TraitImpl,
 }
 
+// ── Z42Value tag values (frozen) ───────────────────────────────────────────
+//
+// `Z42Value.tag` discriminator. Once shipped these values are part of the
+// stable ABI; new entries append only.
+
+pub const Z42_VALUE_TAG_NULL:        u32 = 0;
+pub const Z42_VALUE_TAG_I64:         u32 = 1;
+pub const Z42_VALUE_TAG_F64:         u32 = 2;
+pub const Z42_VALUE_TAG_BOOL:        u32 = 3;
+pub const Z42_VALUE_TAG_STR:         u32 = 4;
+pub const Z42_VALUE_TAG_OBJECT:      u32 = 5;
+pub const Z42_VALUE_TAG_TYPEREF:     u32 = 6;
+pub const Z42_VALUE_TAG_NATIVEPTR:   u32 = 7;
+/// Spec C4 — `Value::PinnedView` (z42 String/Array borrowed for FFI).
+pub const Z42_VALUE_TAG_PINNED_VIEW: u32 = 8;
+
 // ── Sync promises ─────────────────────────────────────────────────────────
 //
 // These descriptor types contain raw pointers (`*const c_char`,

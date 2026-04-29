@@ -38,6 +38,18 @@ pub fn value_to_z42(v: &Value, target: &SigType) -> Result<Z42Value> {
         (Value::Null, SigType::Ptr | SigType::SelfRef | SigType::CStr) => {
             Ok(dispatch::z42_native_ptr(std::ptr::null_mut()))
         }
+        // Spec C4 — PinnedView projects to either its raw pointer or its
+        // length, depending on the target ABI type. C5's source generator
+        // emits separate `FieldGet view, "ptr"` / `FieldGet view, "len"`
+        // before the call site, but a defensive fall-through here lets a
+        // hand-crafted IR pass the view directly when convenient.
+        (Value::PinnedView { ptr, .. }, SigType::Ptr | SigType::SelfRef | SigType::CStr) => {
+            Ok(dispatch::z42_native_ptr(*ptr as usize as *mut c_void))
+        }
+        (
+            Value::PinnedView { len, .. },
+            SigType::U64 | SigType::I64 | SigType::U32 | SigType::I32,
+        ) => Ok(dispatch::z42_i64(*len as i64)),
         (v, ty) => Err(anyhow!(
             "marshal: cannot pass z42 {v:?} as native arg of type {ty:?} (C2 blittable subset only; pinned/object marshalling lands in C4/C5)"
         )),

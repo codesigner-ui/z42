@@ -571,6 +571,10 @@ impl MagrGC for RcMagrGC {
                 size_of::<Value>() + size_of::<ScriptObject>()
                     + obj.slots.capacity() * size_of::<Value>()
             }
+            // Spec C4: PinnedView holds raw ptr+len; the borrowed buffer
+            // itself is owned by the source `Value::Str` / `Value::Array`,
+            // not by the view. Charge only the discriminant + scalars.
+            Value::PinnedView { .. } => size_of::<Value>(),
         }
     }
 

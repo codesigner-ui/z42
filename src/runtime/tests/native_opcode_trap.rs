@@ -92,21 +92,27 @@ fn call_native_vtable_traps_with_spec_pointer() {
 }
 
 #[test]
-fn pin_ptr_traps_with_spec_pointer() {
+fn pin_ptr_non_str_z0908() {
+    // C4 (`impl-pinned-block`) flipped PinPtr from a blanket trap to real
+    // dispatch on `Value::Str` / `Value::Array`. Other source variants
+    // surface as Z0908 with the source variant in the message.
     let m = module_with_single_instr(
-        "pin_ptr_test",
+        "pin_ptr_non_str",
         Instruction::PinPtr { dst: 0, src: 1 },
     );
-    let err = run(&m).expect_err("PinPtr must trap in C1");
-    assert_trap_with(err, "spec C4");
+    // r1 is uninitialised → defaults to Value::Null in Frame, which falls
+    // into the catch-all bail.
+    let err = run(&m).expect_err("PinPtr Null source must fail");
+    assert_trap_with(err, "Z0908");
 }
 
 #[test]
-fn unpin_ptr_traps_with_spec_pointer() {
+fn unpin_ptr_non_view_z0908() {
+    // C4: UnpinPtr is a hard error when its argument isn't a PinnedView.
     let m = module_with_single_instr(
-        "unpin_ptr_test",
+        "unpin_ptr_non_view",
         Instruction::UnpinPtr { pinned: 1 },
     );
-    let err = run(&m).expect_err("UnpinPtr must trap in C1");
-    assert_trap_with(err, "spec C4");
+    let err = run(&m).expect_err("UnpinPtr non-view must fail");
+    assert_trap_with(err, "Z0908");
 }
