@@ -148,7 +148,7 @@ public sealed class IrGen : IEmitterContext
 
         foreach (var cls in cu.Classes)
             functions.AddRange(cls.Methods.Where(m => !m.IsAbstract)
-                .Select(m => EmitMethod(cls.Name, m)));
+                .Select(m => EmitMethod(cls.Name, m, cls.ClassNativeDefaults)));
         // L3 extern impl (Change 1): emit impl method bodies under the target class.
         foreach (var impl in cu.Impls)
         {
@@ -164,7 +164,8 @@ public sealed class IrGen : IEmitterContext
 
     // ── Per-function delegation ──────────────────────────────────────────────
 
-    private IrFunction EmitMethod(string className, FunctionDecl method)
+    private IrFunction EmitMethod(string className, FunctionDecl method,
+        Tier1NativeBinding? classNativeDefaults = null)
     {
         // L3-Impl2: QualifyClassName routes imported impl targets to source namespace.
         // For local classes (cu.Classes path) this returns the same as QualifyName.
@@ -178,14 +179,19 @@ public sealed class IrGen : IEmitterContext
             ? $"{qualClass}.{arityKey}"
             : $"{qualClass}.{method.Name}";
 
-        if (method.IsExtern && (method.NativeIntrinsic != null || method.Tier1Binding != null))
+        // Spec C9 — stitch method-level Tier1Binding with class-level
+        // defaults so the method can omit lib/type when the class supplies
+        // them. After stitching, IR codegen sees a complete (Lib, Type,
+        // Entry) triple or null (legacy [Native("__name")] path).
+        var stitchedTier1 = StitchTier1(method.Tier1Binding, classNativeDefaults);
+        if (method.IsExtern && (method.NativeIntrinsic != null || stitchedTier1 != null))
         {
             var stub = EmitNativeStub(
                 methodIrName,
                 method.Params.Count + (method.IsStatic ? 0 : 1),
                 method.IsStatic ? 0 : 1,
                 method.NativeIntrinsic,
-                method.Tier1Binding,
+                stitchedTier1,
                 method.ReturnType is VoidType);
             return stub with { IsStatic = method.IsStatic };
         }
@@ -273,6 +279,10 @@ public sealed class IrGen : IEmitterContext
     ///
     /// In both cases the stub function itself has the same shape: arguments
     /// in r0..rN-1, result in rN, single block returning the result.
+    ///
+    /// `tier1` is the *stitched* binding (method + class defaults already
+    /// merged via [`StitchTier1`]). All three fields must be non-null when
+    /// non-null is passed; type-check guarantees this otherwise emits E0907.
     private static IrFunction EmitNativeStub(
         string qualifiedName, int totalParams, int paramOffset,
         string? intrinsicName, Tier1NativeBinding? tier1, bool isVoid)
@@ -281,13 +291,30 @@ public sealed class IrGen : IEmitterContext
             .Select(i => new TypedReg(i, IrType.Unknown)).ToList();
         var dst  = new TypedReg(totalParams, isVoid ? IrType.Void : IrType.Unknown);
         IrInstr call = tier1 is { } t
-            ? new CallNativeInstr(dst, t.Lib, t.TypeName, t.Entry, args)
+            ? new CallNativeInstr(dst, t.Lib!, t.TypeName!, t.Entry!, args)
             : new BuiltinInstr(dst, intrinsicName!, args);
         var instrs = new List<IrInstr> { call };
         var term   = new RetTerm(isVoid ? null : dst);
         var block  = new IrBlock("entry", instrs, term);
         return new IrFunction(qualifiedName, totalParams, isVoid ? "void" : "object",
             "Interp", [block], null, MaxReg: totalParams + 1);
+    }
+
+    /// Spec C9 — combine a method's `[Native(...)]` binding with its enclosing
+    /// class's defaults. Method fields override class fields; missing fields
+    /// from one source are filled by the other. Returns null if neither side
+    /// supplies any Tier1 info (legacy path); returns a binding with possibly
+    /// null fields otherwise — caller must validate completeness via
+    /// type-check (which raises E0907 on null fields).
+    internal static Tier1NativeBinding? StitchTier1(
+        Tier1NativeBinding? methodBinding,
+        Tier1NativeBinding? classDefaults)
+    {
+        if (methodBinding is null && classDefaults is null) return null;
+        return new Tier1NativeBinding(
+            Lib:      methodBinding?.Lib      ?? classDefaults?.Lib,
+            TypeName: methodBinding?.TypeName ?? classDefaults?.TypeName,
+            Entry:    methodBinding?.Entry    ?? classDefaults?.Entry);
     }
 
     // ── Module-level helpers ─────────────────────────────────────────────────

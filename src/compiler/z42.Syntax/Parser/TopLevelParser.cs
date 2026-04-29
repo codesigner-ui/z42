@@ -92,7 +92,15 @@ internal static partial class TopLevelParser
                 }
                 if (IsEnumDecl(cursor))          { pendingNative = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
                 if (IsInterfaceDecl(cursor))      { pendingNative = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
-                if (IsClassOrStructDecl(cursor))  { pendingNative = null; classes.Add(ParseClassDecl(ref cursor, feat, diags)); continue; }
+                if (IsClassOrStructDecl(cursor))  {
+                    // Spec C9: thread the class-level [Native(lib=, type=)]
+                    // attribute (if present) into ClassDecl so its methods
+                    // can stitch defaults at codegen time.
+                    var classNative = pendingNative;
+                    pendingNative = null;
+                    classes.Add(ParseClassDecl(ref cursor, feat, diags, classNative));
+                    continue;
+                }
                 if (cursor.Current.Kind == TokenKind.Impl)
                                                   { pendingNative = null; impls.Add(ParseImplDecl(ref cursor, feat, diags)); continue; }
                 functions.Add(ParseFunctionDecl(ref cursor, feat, Visibility.Internal, pendingNative, diags));

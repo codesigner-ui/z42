@@ -277,9 +277,13 @@ internal static partial class TopLevelParser
             }
             ExpectKind(ref cursor, TokenKind.RParen);
             ExpectKind(ref cursor, TokenKind.RBracket);
-            if (lib is null || typeName is null || entry is null)
+            // Spec C9 — accept any non-empty subset of {lib, type, entry}.
+            // Strict completeness is validated later by TypeChecker after
+            // class-level defaults are stitched in. An attribute that
+            // specifies *no* keys at all is still malformed.
+            if (lib is null && typeName is null && entry is null)
                 throw new ParseException(
-                    "`[Native(lib=, type=, entry=)]` requires all three keys",
+                    "`[Native(...)]` requires at least one of `lib`, `type`, `entry`",
                     attrSpan,
                     DiagnosticCodes.NativeAttributeMalformed);
             return new NativeAttribute(null, new Tier1NativeBinding(lib, typeName, entry));

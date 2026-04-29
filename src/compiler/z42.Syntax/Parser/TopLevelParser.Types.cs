@@ -179,8 +179,12 @@ internal static partial class TopLevelParser
     // ── Class / struct / record ───────────────────────────────────────────────
 
     private static ClassDecl ParseClassDecl(ref TokenCursor cursor, LanguageFeatures feat,
-        DiagnosticBag? diags = null)
+        DiagnosticBag? diags = null, NativeAttribute? classNative = null)
     {
+        // Spec C9 — class-level [Native(lib=, type=)] becomes the per-class
+        // default that methods inside this class can stitch against.
+        Tier1NativeBinding? classDefaults = classNative?.Tier1;
+
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, Visibility.Internal);
         var (_, _, _, isAbstract, isSealed, _) = ParseNonVisibilityModifiers(ref cursor);
@@ -231,7 +235,8 @@ internal static partial class TopLevelParser
             {
                 cursor = cursor.Advance();
                 return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
-                    null, [], fields, methods, start, typeParams, Where: null);
+                    null, [], fields, methods, start, typeParams, Where: null,
+                    ClassNativeDefaults: classDefaults);
             }
         }
 
@@ -322,7 +327,8 @@ internal static partial class TopLevelParser
         }
         ExpectKind(ref cursor, TokenKind.RBrace);
         return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
-            baseClass, ifaces, fields, methods, start, typeParams, classWhereClause);
+            baseClass, ifaces, fields, methods, start, typeParams, classWhereClause,
+            ClassNativeDefaults: classDefaults);
     }
 
     // ── Extern impl block ─────────────────────────────────────────────────────

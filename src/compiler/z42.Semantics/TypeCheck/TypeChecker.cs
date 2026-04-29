@@ -239,7 +239,11 @@ public sealed partial class TypeChecker : ITypeInferrer
         {
         foreach (var method in cls.Methods)
         {
-            if (ValidateNativeMethod(method, isInstance: !method.IsStatic)) continue;
+            // Spec C9 — pass class-level [Native(lib=, type=)] defaults so
+            // the method's possibly-partial Tier1 binding can be validated
+            // against the stitched whole.
+            if (ValidateNativeMethod(method, isInstance: !method.IsStatic,
+                classNativeDefaults: cls.ClassNativeDefaults)) continue;
             var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
             var scope = env.WithClass(cls.Name);
             if (!method.IsStatic)
@@ -321,12 +325,16 @@ public sealed partial class TypeChecker : ITypeInferrer
         }
     }
 
-    private bool ValidateNativeMethod(FunctionDecl fn, bool isInstance = false)
+    private bool ValidateNativeMethod(FunctionDecl fn, bool isInstance = false,
+        Tier1NativeBinding? classNativeDefaults = null)
     {
         // Spec C6 — `[Native]` accepts two mutually-exclusive forms:
         //   • legacy: `[Native("__name")]`         → fn.NativeIntrinsic
         //   • Tier 1: `[Native(lib=, type=, entry=)]` → fn.Tier1Binding
-        bool hasNative = fn.NativeIntrinsic != null || fn.Tier1Binding != null;
+        // Spec C9 — Tier 1 binding may be partial; class-level
+        // `[Native(lib=, type=)]` provides defaults for missing fields.
+        var stitched = StitchTier1(fn.Tier1Binding, classNativeDefaults);
+        bool hasNative = fn.NativeIntrinsic != null || stitched != null;
         bool isExtern  = fn.IsExtern;
         if (isExtern && !hasNative)
         {
@@ -341,7 +349,32 @@ public sealed partial class TypeChecker : ITypeInferrer
                 $"[Native] attribute on '{fn.Name}' requires the extern modifier", fn.Span);
             return false;
         }
+        // Tier 1 stitched binding must be complete.
+        if (stitched is not null
+            && (stitched.Lib is null || stitched.TypeName is null || stitched.Entry is null))
+        {
+            var missing = new List<string>();
+            if (stitched.Lib is null)      missing.Add("lib");
+            if (stitched.TypeName is null) missing.Add("type");
+            if (stitched.Entry is null)    missing.Add("entry");
+            _diags.Error(DiagnosticCodes.NativeAttributeMalformed,
+                $"`[Native]` on extern method `{fn.Name}` is incomplete after stitching with class defaults; missing: {string.Join(", ", missing)}",
+                fn.Span);
+        }
         return isExtern;
+    }
+
+    /// Same logic as `IrGen.StitchTier1` — duplicated to avoid a TypeCheck →
+    /// Codegen dependency. Method fields override class defaults.
+    private static Tier1NativeBinding? StitchTier1(
+        Tier1NativeBinding? methodBinding,
+        Tier1NativeBinding? classDefaults)
+    {
+        if (methodBinding is null && classDefaults is null) return null;
+        return new Tier1NativeBinding(
+            Lib:      methodBinding?.Lib      ?? classDefaults?.Lib,
+            TypeName: methodBinding?.TypeName ?? classDefaults?.TypeName,
+            Entry:    methodBinding?.Entry    ?? classDefaults?.Entry);
     }
 
     private void CheckParamNames(IEnumerable<Param> parms)

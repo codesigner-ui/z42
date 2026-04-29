@@ -125,7 +125,8 @@ public sealed record ClassDecl(
     List<FunctionDecl> Methods,
     Span Span,
     List<string>? TypeParams = null,
-    WhereClause? Where = null);  // L3-G2 generic constraints
+    WhereClause? Where = null,   // L3-G2 generic constraints
+    Tier1NativeBinding? ClassNativeDefaults = null);  // spec C9 — class-level [Native(lib=, type=)] shorthand
 
 /// A field inside a class/struct: `int x;`
 public sealed record FieldDecl(
@@ -154,10 +155,15 @@ public enum FunctionModifiers
 
 // ── Function declaration ──────────────────────────────────────────────────────
 
-/// Spec C6 — descriptor binding emitted by the new `[Native(lib=, type=,
-/// entry=)]` form. When non-null, IR codegen emits `CallNativeInstr` and
-/// `NativeIntrinsic` is null. Mutually exclusive with `NativeIntrinsic`.
-public sealed record Tier1NativeBinding(string Lib, string TypeName, string Entry);
+/// Spec C6 — descriptor binding emitted by the `[Native(lib=, type=,
+/// entry=)]` form. When non-null on a `FunctionDecl`, IR codegen emits
+/// `CallNativeInstr` and `NativeIntrinsic` is null.
+///
+/// Spec C9 — fields are nullable so the parser can carry a *partial*
+/// binding (e.g. only `Entry`) that gets stitched against a class-level
+/// default at codegen time. After stitching the effective binding has
+/// all three fields populated; type-check raises E0907 otherwise.
+public sealed record Tier1NativeBinding(string? Lib, string? TypeName, string? Entry);
 
 public sealed record FunctionDecl(
     string Name,

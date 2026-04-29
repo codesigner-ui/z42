@@ -97,7 +97,7 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 
 | Code  | Title                            | When it occurs |
 |-------|----------------------------------|----------------|
-| E0907 | NativeAttributeMalformed (parser, spec C6) | `[Native(lib=, type=, entry=)]` 缺任一键 / 含未知键 / 值不是 string literal。原 Z0907 "manifest-vs-declaration 签名校验" 占位含义由后续 source generator spec 接管，复用 E0907 编号 |
+| E0907 | NativeAttributeMalformed (parser/typecheck, specs C6 + C9) | (a) parser：`[Native(...)]` 含未知键 / 值不是 string literal / 完全无键；(b) typecheck (spec C9)：method-level 与 class-level 拼接后的 Tier1 binding 仍缺 lib/type/entry 任一字段。原"manifest-vs-declaration 签名校验"占位含义由后续 source generator spec 接管，复用编号 |
 
 ### Z0909（仍为后续 spec 预留）
 

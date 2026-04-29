@@ -559,7 +559,8 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M12.5** (`impl-pinned-syntax`) | z42 用户代码 `pinned p = s { ... }` syntax：lexer (Pinned keyword) + AST (PinnedStmt) + Parser + TypeChecker (source 类型校验 / 控制流限制 / PinnedView 字段) + IR Codegen (PinPtr/Body/UnpinPtr emit)；E0908a/b TypeCheck 错误码；其他 user-facing FFI syntax (`[Native(lib=,entry=)]` / `extern class T` / `import T from "lib"`) 留给后续 spec。 | C4 runtime | ✅ 2026-04-29 (syntax) |
 | **L2.M13a** (`extend-native-attribute`) | 扩展 `[Native]` attribute 接受 `[Native(lib=, type=, entry=)]` Tier 1 形式；解析为 `Tier1NativeBinding`；IR Codegen 在 stub 中 emit `CallNativeInstr` 而非 `BuiltinInstr`。**z42 用户代码现在能直接调用 C2 注册的 native 函数**（test harness 预注册 native lib 留作后续 spec）。E0907 NativeAttributeMalformed。 | C5 syntax | ✅ 2026-04-29 |
 | **L2.M13b** (`marshal-str-to-cstr`) | `Value::Str` 直接 marshal 到 `*const c_char`（NUL-terminated）：`marshal::Arena` 承载 CallNative 期间的 `CString` 临时；`(Value::Str, SigType::CStr/Ptr)` 分支构造借出；`CallNative` dispatch 接 arena；interior NUL 报 Z0908(d)。**z42 字符串可直接进 libc 风格 native 函数无需 pinned 块**。 | C6 / C7 | ✅ 2026-04-29 |
-| **L2.M13** (C5 first half) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
+| **L2.M13c** (`class-level-native-shorthand`) | 类级 `[Native(lib=, type=)]` 共享默认：`Tier1NativeBinding` 改 nullable，方法级 partial 形式 + 类级 defaults 拼接出完整 binding；TypeChecker 校验 stitched 完整性；IrGen 用 stitched 结果 emit `CallNativeInstr`。**非平凡 native 库声明不再每方法重复 lib + type**。 | C6 + C8 | ✅ 2026-04-29 |
+| **L2.M13** (manifest reader) | `.z42abi` manifest reader (schema already locked in C1) | M11 |  |
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
 | **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |
 | **L3.M16** | JIT/AOT direct vtable call emission (bypass libffi) | JIT backend |  |
