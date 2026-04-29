@@ -117,10 +117,12 @@ fn register_counter_then_resolve() {
         .expect("Counter resolves after register");
     assert_eq!(ty.module(), "numz42");
     assert_eq!(ty.type_name(), "Counter");
-    assert_eq!(ty.method_count(), 3);
+    // C8 added `strlen` to the Counter method table (4 methods total).
+    assert_eq!(ty.method_count(), 4);
     assert!(ty.method("inc").is_some());
     assert!(ty.method("get").is_some());
     assert!(ty.method("__alloc__").is_some());
+    assert!(ty.method("strlen").is_some());
 }
 
 #[test]
@@ -359,6 +361,120 @@ fn z42_source_calls_numz42_via_native_attr() {
         Some(Value::I64(3)),
         "z42 Main should return Counter::get after 3 increments"
     );
+}
+
+// ── Spec C8: z42 Str → native *const c_char ───────────────────────────────
+
+/// Helper: tiny module with an arbitrary single-string pool for C8 tests.
+fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminator: Terminator) -> Module {
+    let func = Function {
+        name: format!("{name}.Main"),
+        param_count: 0,
+        ret_type: "i64".into(),
+        exec_mode: ExecMode::Interp,
+        blocks: vec![BasicBlock {
+            label: "entry".into(),
+            instructions,
+            terminator,
+        }],
+        exception_table: vec![],
+        is_static: true,
+        max_reg: 4,
+        line_table: vec![],
+        local_vars: vec![],
+        type_params: vec![],
+        type_param_constraints: vec![],
+        block_index: HashMap::new(),
+    };
+    Module {
+        name: name.to_string(),
+        string_pool: vec![s.to_string()],
+        classes: vec![],
+        functions: vec![func],
+        type_registry: HashMap::new(),
+        func_index: HashMap::new(),
+    }
+}
+
+#[test]
+fn z42_str_marshals_to_cstr_via_strlen() {
+    // Hand-craft IR that loads a string constant and calls
+    // `numz42::Counter::strlen("hello world")`. The marshal layer
+    // (spec C8) builds a NUL-terminated CString in its arena and hands
+    // libffi the raw pointer; native strlen returns 11.
+    let ctx = VmContext::new();
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
+
+    let m = module_with_str(
+        "str_to_cstr_e2e",
+        "hello world",
+        vec![
+            Instruction::ConstStr { dst: 0, idx: 0 },
+            Instruction::CallNative {
+                dst: 1,
+                module: "numz42".into(),
+                type_name: "Counter".into(),
+                symbol: "strlen".into(),
+                args: vec![0],
+            },
+        ],
+        Terminator::Ret { reg: Some(1) },
+    );
+    let func = &m.functions[0];
+    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+        .expect("strlen via Str-marshal succeeds");
+    assert_eq!(result, Some(Value::I64(11)));
+}
+
+#[test]
+fn z42_str_with_interior_nul_traps_z0908() {
+    let ctx = VmContext::new();
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
+
+    // Pool the bad string. We can't reuse build_module's pool directly
+    // (which only stores "hello world"); set up a tiny custom module.
+    let func = Function {
+        name: "interior_nul.Main".into(),
+        param_count: 0,
+        ret_type: "i64".into(),
+        exec_mode: ExecMode::Interp,
+        blocks: vec![BasicBlock {
+            label: "entry".into(),
+            instructions: vec![
+                Instruction::ConstStr { dst: 0, idx: 0 },
+                Instruction::CallNative {
+                    dst: 1,
+                    module: "numz42".into(),
+                    type_name: "Counter".into(),
+                    symbol: "strlen".into(),
+                    args: vec![0],
+                },
+            ],
+            terminator: Terminator::Ret { reg: Some(1) },
+        }],
+        exception_table: vec![],
+        is_static: true,
+        max_reg: 4,
+        line_table: vec![],
+        local_vars: vec![],
+        type_params: vec![],
+        type_param_constraints: vec![],
+        block_index: HashMap::new(),
+    };
+    let m = Module {
+        name: "interior_nul".into(),
+        string_pool: vec!["a\0b".to_string()],
+        classes: vec![],
+        functions: vec![func],
+        type_registry: HashMap::new(),
+        func_index: HashMap::new(),
+    };
+    let func = &m.functions[0];
+    let err = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+        .expect_err("interior NUL must fail at marshal");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("Z0908"), "msg = {msg}");
+    assert!(msg.contains("interior NUL"), "msg = {msg}");
 }
 
 #[test]

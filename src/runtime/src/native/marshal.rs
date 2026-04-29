@@ -4,6 +4,7 @@
 //! via `pinned` blocks lands in C4; managed object handles go through
 //! `Z42_VALUE_TAG_OBJECT` once script-defined classes can cross FFI in C5.
 
+use std::ffi::CString;
 use std::os::raw::c_void;
 
 use anyhow::{anyhow, Result};
@@ -15,9 +16,39 @@ use crate::native::dispatch::{
     Z42_VALUE_TAG_NATIVEPTR, Z42_VALUE_TAG_NULL,
 };
 
+/// Per-call scratch storage owning temporary buffers (currently
+/// NUL-terminated `CString`s) whose raw pointers were handed to a native
+/// function. The arena is created on the stack of one `CallNative`
+/// dispatch and dropped after the call returns; spec C8 added it to make
+/// `(Value::Str, SigType::CStr)` marshal possible without leaking memory
+/// or relying on thread-local storage.
+#[derive(Default)]
+pub struct Arena {
+    cstrings: Vec<CString>,
+}
+
+impl Arena {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Push a CString into the arena and return its raw pointer. The
+    /// pointer remains valid until the arena is dropped.
+    fn alloc_cstring(&mut self, cs: CString) -> *const std::os::raw::c_char {
+        let ptr = cs.as_ptr();
+        self.cstrings.push(cs);
+        ptr
+    }
+
+    /// Total number of stored temporaries — exposed for tests.
+    pub fn temps_len(&self) -> usize { self.cstrings.len() }
+}
+
 /// Convert a z42 [`Value`] into a [`Z42Value`] suitable for passing to a
-/// native method whose argument type is `target`.
-pub fn value_to_z42(v: &Value, target: &SigType) -> Result<Z42Value> {
+/// native method whose argument type is `target`. Temporaries that need
+/// to outlive the conversion (e.g. `CString` backing for `*const c_char`)
+/// are stashed in `arena` and remain alive until the caller drops it.
+pub fn value_to_z42(v: &Value, target: &SigType, arena: &mut Arena) -> Result<Z42Value> {
     match (v, target) {
         // Integer-family targets accept Value::I64 (any narrowing happens
         // at libffi cif level — only the low N bytes are read).
@@ -50,10 +81,26 @@ pub fn value_to_z42(v: &Value, target: &SigType) -> Result<Z42Value> {
             Value::PinnedView { len, .. },
             SigType::U64 | SigType::I64 | SigType::U32 | SigType::I32,
         ) => Ok(dispatch::z42_i64(*len as i64)),
+        // Spec C8 — Value::Str → *const c_char (NUL-terminated). The
+        // arena owns the CString for the call's duration. Interior NULs
+        // surface as Z0908 because the C consumer cannot disambiguate
+        // them from the terminator.
+        (Value::Str(s), SigType::CStr | SigType::Ptr) => {
+            let cs = CString::new(s.as_str()).map_err(|_| anyhow!(
+                "Z0908: cannot pass z42 string {:?} as `*const c_char`: contains interior NUL",
+                truncate_for_msg(s)
+            ))?;
+            let ptr = arena.alloc_cstring(cs);
+            Ok(dispatch::z42_native_ptr(ptr as *mut c_void))
+        }
         (v, ty) => Err(anyhow!(
             "marshal: cannot pass z42 {v:?} as native arg of type {ty:?} (C2 blittable subset only; pinned/object marshalling lands in C4/C5)"
         )),
     }
+}
+
+fn truncate_for_msg(s: &str) -> String {
+    if s.len() <= 32 { s.to_string() } else { format!("{}…", &s[..32]) }
 }
 
 /// Convert the [`Z42Value`] returned from a native method into a z42 [`Value`].

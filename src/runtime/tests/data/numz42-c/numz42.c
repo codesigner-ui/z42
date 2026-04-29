@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* z42_abi.h ships with the runtime. CMake / cc-rs build script adds
  * `src/runtime/include` to the include path. */
@@ -74,6 +75,13 @@ static int64_t counter_get(const Counter* self) {
     return self->value;
 }
 
+/* Spec C8 — exercises Str→CStr marshal via the standard libc strlen.
+ * Lives on Counter (rather than a dedicated type) so the test infra can
+ * keep a single registered type; the Counter receiver itself is unused. */
+static int64_t counter_strlen(const char* s) {
+    return (int64_t)strlen(s);
+}
+
 /* ── Static descriptor ──────────────────────────────────────────────── */
 
 static const Z42MethodDesc COUNTER_METHODS[] = {
@@ -96,6 +104,13 @@ static const Z42MethodDesc COUNTER_METHODS[] = {
         .signature = "(*const Self) -> i64",
         .fn_ptr = (void*)counter_get,
         .flags = Z42_METHOD_FLAG_VIRTUAL,
+        .reserved = 0,
+    },
+    {
+        .name = "strlen",
+        .signature = "(*const u8) -> i64",
+        .fn_ptr = (void*)counter_strlen,
+        .flags = Z42_METHOD_FLAG_STATIC,
         .reserved = 0,
     },
 };

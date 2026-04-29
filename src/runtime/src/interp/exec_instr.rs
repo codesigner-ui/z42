@@ -454,10 +454,14 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     method.params.len()
                 );
             }
+            // Spec C8: marshal arena owns temporaries (e.g. CString backing
+            // for `*const c_char`) for the call's duration; dropped after
+            // dispatch returns.
+            let mut arena = marshal::Arena::new();
             let z_args: Vec<z42_abi::Z42Value> = args
                 .iter()
                 .zip(method.params.iter())
-                .map(|(reg, ty)| marshal::value_to_z42(frame.get(*reg)?, ty))
+                .map(|(reg, ty)| marshal::value_to_z42(frame.get(*reg)?, ty, &mut arena))
                 .collect::<Result<_>>()?;
 
             // SAFETY: cif was built from `params`/`return_type` matching the
@@ -473,6 +477,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     &method.return_type,
                 )
             }?;
+            drop(arena);
 
             let result = marshal::z42_to_value(&z_ret, &method.return_type)?;
             frame.set(*dst, result);
