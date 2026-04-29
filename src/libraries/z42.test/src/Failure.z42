@@ -1,0 +1,66 @@
+namespace Std.Test;
+
+// ── Test framework exception types (spec R2.A) ────────────────────────────
+//
+// These exception types let the R3 z42-test-runner distinguish test outcomes
+// at the catch boundary:
+//
+//   - `TestFailure` thrown by Assert.* (z42.test 增强版；R2.D 接 Std.Assert
+//     的 TestFailure 升级)；runner 标记 `Outcome::Failed`，附 actual/expected
+//     诊断信息
+//   - `SkipSignal` thrown by Assert.skip(reason)（运行时跳过；与 [Skip(...)]
+//     注解的"编译时已知跳过"互补）；runner 标记 `Outcome::Skipped`
+//   - 任意其他 Std.Exception 子类型 → runner 标记 `Outcome::Failed`，提示为
+//     未预期错误
+//
+// 当前状态（R2.A）：仅类型骨架；尚未被任何 Assert 实现使用（R2.D 升级
+// Std.Assert.* 抛 TestFailure 而非裸 Exception）。R3 runner 已在 spec design.md
+// 中按字符串匹配 type name 分类（"z42.test.SkipSignal" / "z42.test.TestFailure"），
+// 与本类的 fully-qualified name 对齐。
+//
+// 选型说明：放在 z42.test 而非 z42.core 是因为 z42.core 是 prelude（隐式
+// 导入到所有模块）；TestFailure / SkipSignal 是测试专属语义，不应进 prelude。
+
+public class TestFailure : Exception {
+    // 失败的实际值（字符串化）。空字符串表示无值（如 Assert.fail("...")）。
+    public string Actual;
+    // 期望的值（字符串化）。空字符串表示纯断言（如 Assert.isTrue 失败）。
+    public string Expected;
+    // 失败位置（file:line），由 Assert 内部填入；R4 校验链路接入后由编译器
+    // 注入。当前留空。
+    public string Location;
+
+    // 简单 ctor：仅 message（适用于 Assert.fail）
+    public TestFailure(string message) : base(message) {
+        this.Actual   = "";
+        this.Expected = "";
+        this.Location = "";
+    }
+
+    // 完整 ctor：带 actual/expected（适用于 Assert.eq 等比较类断言）
+    public TestFailure(string message, string actual, string expected) : base(message) {
+        this.Actual   = actual;
+        this.Expected = expected;
+        this.Location = "";
+    }
+
+    override string ToString() {
+        if (this.Expected != "") {
+            return $"TestFailure: {this.Message} (expected {this.Expected}, actual {this.Actual})";
+        }
+        return $"TestFailure: {this.Message}";
+    }
+}
+
+public class SkipSignal : Exception {
+    // 跳过原因（必须非空字符串）。
+    public string Reason;
+
+    public SkipSignal(string reason) : base(reason) {
+        this.Reason = reason;
+    }
+
+    override string ToString() {
+        return $"SkipSignal: {this.Reason}";
+    }
+}
