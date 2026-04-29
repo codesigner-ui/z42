@@ -35,6 +35,18 @@ A **full-stack systems programming language** designed for productivity and perf
 
 ## Quick Start
 
+Day-to-day build / test / packaging is unified behind [`just`](https://github.com/casey/just):
+
+```bash
+brew install just      # or: cargo install just / sudo apt install just / scoop install just
+
+just                   # list available tasks
+just build             # compiler + runtime
+just test              # all tests
+```
+
+Or call the underlying tools directly:
+
 ```bash
 # Build compiler + runtime
 dotnet build src/compiler/z42.slnx

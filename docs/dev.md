@@ -5,6 +5,37 @@
 
 ---
 
+## Quick Start: just
+
+日常构建 / 测试 / 打包统一入口走 [`just`](https://github.com/casey/just)。
+
+### 安装 just
+
+```bash
+brew install just                       # macOS
+cargo install just                      # 通用（任何已装 cargo 的环境）
+sudo apt install just                   # Ubuntu 22.04+ / Debian
+scoop install just                      # Windows (scoop)
+```
+
+### 常用命令
+
+```bash
+just                # 列出所有 task（= just --list）
+just build          # 编译器 + 运行时
+just test           # 全部测试（compiler + VM + cross-zpkg）
+just test-vm        # 仅 VM golden tests
+just test-vm jit    # 用 JIT 模式
+just clean          # 清空 artifacts/
+just ci             # CI 标准管线（= build + test）
+```
+
+> 占位 task：`just bench` / `just test-changed` / `just test-stdlib` / `just platform <x> <y>` 当前会输出 "Pn 待实施" 并 exit 1，等对应 sub-spec 实施后启用。
+>
+> 现有 `./scripts/*.sh` 仍可独立运行（justfile 内部就是调用它们），向后兼容。
+
+---
+
 ## 构建
 
 ```bash

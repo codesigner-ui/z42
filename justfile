@@ -1,0 +1,110 @@
+# z42 task runner
+# Usage: just <task> [args]
+# Run `just --list` (or just `just`) for all tasks.
+#
+# Top-level tasks:
+#   build       Build compiler + runtime
+#   test        Run all tests
+#   bench       Run benchmarks (P1, not yet implemented)
+#   clean       Remove build artifacts
+#   ci          CI pipeline (= build + test)
+#   platform    Cross-platform tasks (P4, not yet implemented)
+#
+# Conventions:
+#   - Verbs first, kebab-case forbidden in task combos (use space-separated subtargets)
+#   - Wraps existing scripts/*.sh; scripts remain independently callable
+#   - Placeholder tasks for P1/P2/P3/P4 print "待实施" and exit non-zero
+
+# Default: list available tasks
+default:
+    @just --list --unsorted
+
+# ──────────── Build ────────────
+
+# Build everything: runtime + compiler
+build: build-runtime build-compiler
+
+# Build the Rust VM
+build-runtime:
+    cargo build --manifest-path src/runtime/Cargo.toml
+
+# Build the C# compiler
+build-compiler:
+    dotnet build src/compiler/z42.slnx
+
+# Build standard library (zpkg artifacts)
+build-stdlib *args:
+    ./scripts/build-stdlib.sh {{args}}
+
+# ──────────── Test ────────────
+
+# Run all tests: compiler + VM + cross-zpkg
+test: test-compiler test-vm test-cross-zpkg
+
+# Run C# compiler tests (xUnit)
+test-compiler:
+    dotnet test src/compiler/z42.Tests/z42.Tests.csproj
+
+# Run VM golden tests (mode: interp | jit, default interp)
+test-vm mode="interp":
+    ./scripts/test-vm.sh {{mode}}
+
+# Run cross-zpkg integration tests (mode: interp | jit, default interp)
+test-cross-zpkg mode="interp":
+    ./scripts/test-cross-zpkg.sh {{mode}}
+
+# (P2 placeholder) Run only tests affected by recent git changes
+test-changed:
+    @echo "❌ P2 待实施：增量测试 (z42-test-runner + scripts/test-changed.sh)" && exit 1
+
+# (P3 placeholder) Run a specific stdlib library's tests, or all if no arg
+test-stdlib lib="":
+    @echo "❌ P3 待实施：stdlib 本地测试 ({{lib}})" && exit 1
+
+# (P3 placeholder) Run cross-stdlib integration tests
+test-integration:
+    @echo "❌ P3 待实施：integration 测试" && exit 1
+
+# ──────────── Benchmark (P1 placeholder) ────────────
+
+# (P1 placeholder) Run all benchmarks
+bench *args:
+    @echo "❌ P1 待实施：benchmark ({{args}})" && exit 1
+
+# ──────────── Platform (P4 placeholder) ────────────
+
+# (P4 placeholder) Cross-platform tasks: just platform <name> <action>
+#   <name>: wasm | android | ios
+#   <action>: build | test | demo | ...
+platform name action *args:
+    @echo "❌ P4 待实施：platform {{name}} {{action}} {{args}}" && exit 1
+
+# ──────────── Distribution ────────────
+
+# Build distributable package: artifacts/z42/
+package mode="release":
+    ./scripts/package.sh {{mode}}
+
+# End-to-end test of the distribution package (mode: interp | jit, default interp)
+test-dist mode="interp":
+    ./scripts/test-dist.sh {{mode}}
+
+# ──────────── Misc ────────────
+
+# Remove all build artifacts
+clean:
+    cargo clean --manifest-path src/runtime/Cargo.toml
+    dotnet clean src/compiler/z42.slnx
+    rm -rf artifacts/
+
+# Regenerate golden test .zbc files from .z42 sources
+regen-golden:
+    ./scripts/regen-golden-tests.sh
+
+# Audit C# code for missing using directives
+audit-csharp:
+    ./scripts/audit-missing-usings.sh
+
+# CI pipeline: build + test (extended in P1 with bench-quick)
+ci: build test
+    @echo "✅ CI passed"
