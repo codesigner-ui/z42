@@ -202,41 +202,104 @@ internal static partial class TopLevelParser
 
     // ── Attributes ────────────────────────────────────────────────────────────
 
+    /// Spec C6 — parsed `[Native(...)]` attribute. Carries **exactly one** of:
+    ///   * `Intrinsic`  for the legacy `[Native("__name")]` form (L1 stdlib dispatch)
+    ///   * `Tier1`      for the new `[Native(lib=, type=, entry=)]` form (Tier 1)
+    internal sealed record NativeAttribute(string? Intrinsic, Tier1NativeBinding? Tier1);
+
     /// Parses an attribute `[...]`.
-    /// Returns the intrinsic name string if it is `[Native("__name")]`; null otherwise.
+    /// Returns a NativeAttribute when the bracketed form is `[Native(...)]`;
+    /// null otherwise (skips balanced brackets in that case).
     /// Always advances the cursor past the closing `]`.
-    private static string? TryParseNativeAttribute(ref TokenCursor cursor)
+    private static NativeAttribute? TryParseNativeAttribute(ref TokenCursor cursor)
     {
         ExpectKind(ref cursor, TokenKind.LBracket);
 
-        // Try to match: Native ( "<string>" )
-        string? intrinsic = null;
-        if (cursor.Current.Kind == TokenKind.Identifier
-            && cursor.Current.Text == "Native"
-            && cursor.Peek(1).Kind == TokenKind.LParen
-            && cursor.Peek(2).Kind == TokenKind.StringLiteral
-            && cursor.Peek(3).Kind == TokenKind.RParen
-            && cursor.Peek(4).Kind == TokenKind.RBracket)
+        // Detect outer shape: `Native ( ... )]`
+        bool isNative = cursor.Current.Kind == TokenKind.Identifier
+                     && cursor.Current.Text == "Native"
+                     && cursor.Peek(1).Kind == TokenKind.LParen;
+        if (!isNative)
         {
+            SkipBalancedToRBracket(ref cursor);
+            return null;
+        }
+
+        // Look at the first token inside the parens to decide form.
+        if (cursor.Peek(2).Kind == TokenKind.StringLiteral)
+        {
+            // Legacy: `[Native("__name")]`
             cursor    = cursor.Advance(); // Native
             cursor    = cursor.Advance(); // (
             var lit   = cursor.Current.Text;
-            intrinsic = lit.Length >= 2 ? lit[1..^1] : lit; // strip surrounding quotes
+            var intrinsic = lit.Length >= 2 ? lit[1..^1] : lit; // strip "..."
             cursor    = cursor.Advance(); // "<string>"
-            cursor    = cursor.Advance(); // )
-            cursor    = cursor.Advance(); // ]
-            return intrinsic;
+            ExpectKind(ref cursor, TokenKind.RParen);
+            ExpectKind(ref cursor, TokenKind.RBracket);
+            return new NativeAttribute(intrinsic, null);
         }
 
-        // Not a Native attribute — skip balanced brackets.
-        int depth2 = 1;
-        while (!cursor.IsEnd && depth2 > 0)
+        if (cursor.Peek(2).Kind == TokenKind.Identifier
+            && cursor.Peek(3).Kind == TokenKind.Eq)
         {
-            if (cursor.Current.Kind == TokenKind.LBracket) depth2++;
-            if (cursor.Current.Kind == TokenKind.RBracket) depth2--;
+            // New form: `[Native(lib="...", type="...", entry="...")]`
+            cursor = cursor.Advance(); // Native
+            cursor = cursor.Advance(); // (
+            string? lib = null, typeName = null, entry = null;
+            var attrSpan = cursor.Current.Span;
+            while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
+            {
+                var keyTok = ExpectKind(ref cursor, TokenKind.Identifier);
+                ExpectKind(ref cursor, TokenKind.Eq);
+                if (cursor.Current.Kind != TokenKind.StringLiteral)
+                    throw new ParseException(
+                        $"`[Native(...)]`: value for `{keyTok.Text}` must be a string literal",
+                        cursor.Current.Span,
+                        DiagnosticCodes.NativeAttributeMalformed);
+                var raw = cursor.Current.Text;
+                var val = raw.Length >= 2 ? raw[1..^1] : raw;
+                cursor = cursor.Advance(); // string
+
+                switch (keyTok.Text)
+                {
+                    case "lib":   lib = val; break;
+                    case "type":  typeName = val; break;
+                    case "entry": entry = val; break;
+                    default:
+                        throw new ParseException(
+                            $"`[Native(...)]`: unknown key `{keyTok.Text}` (allowed: lib, type, entry)",
+                            keyTok.Span,
+                            DiagnosticCodes.NativeAttributeMalformed);
+                }
+
+                if (cursor.Current.Kind == TokenKind.Comma)
+                    cursor = cursor.Advance();
+            }
+            ExpectKind(ref cursor, TokenKind.RParen);
+            ExpectKind(ref cursor, TokenKind.RBracket);
+            if (lib is null || typeName is null || entry is null)
+                throw new ParseException(
+                    "`[Native(lib=, type=, entry=)]` requires all three keys",
+                    attrSpan,
+                    DiagnosticCodes.NativeAttributeMalformed);
+            return new NativeAttribute(null, new Tier1NativeBinding(lib, typeName, entry));
+        }
+
+        // Recognised `[Native(` but neither shape — skip and report nothing.
+        SkipBalancedToRBracket(ref cursor);
+        return null;
+    }
+
+    private static void SkipBalancedToRBracket(ref TokenCursor cursor)
+    {
+        // Caller has already consumed the opening `[`; bracket depth starts at 1.
+        int depth = 1;
+        while (!cursor.IsEnd && depth > 0)
+        {
+            if (cursor.Current.Kind == TokenKind.LBracket) depth++;
+            if (cursor.Current.Kind == TokenKind.RBracket) depth--;
             cursor = cursor.Advance();
         }
-        return null;
     }
 
     private static void SkipAttribute(ref TokenCursor cursor)

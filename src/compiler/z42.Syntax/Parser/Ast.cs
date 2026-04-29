@@ -154,6 +154,11 @@ public enum FunctionModifiers
 
 // ── Function declaration ──────────────────────────────────────────────────────
 
+/// Spec C6 — descriptor binding emitted by the new `[Native(lib=, type=,
+/// entry=)]` form. When non-null, IR codegen emits `CallNativeInstr` and
+/// `NativeIntrinsic` is null. Mutually exclusive with `NativeIntrinsic`.
+public sealed record Tier1NativeBinding(string Lib, string TypeName, string Entry);
+
 public sealed record FunctionDecl(
     string Name,
     List<Param> Params,
@@ -165,7 +170,8 @@ public sealed record FunctionDecl(
     Span Span,
     List<Expr>? BaseCtorArgs = null,  // non-null only on constructors with `: base(...)`
     List<string>? TypeParams = null,  // generic type parameters: <T>, <K,V>
-    WhereClause? Where = null)        // L3-G2 generic constraints
+    WhereClause? Where = null,        // L3-G2 generic constraints
+    Tier1NativeBinding? Tier1Binding = null)  // spec C6 — Tier 1 dispatch binding
 {
     // Convenience accessors — keep read sites concise
     public bool IsStatic   => Modifiers.HasFlag(FunctionModifiers.Static);

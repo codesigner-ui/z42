@@ -65,7 +65,7 @@ internal static partial class TopLevelParser
         var interfaces = new List<InterfaceDecl>();
         var impls      = new List<ImplDecl>();
 
-        string? pendingNative = null;
+        NativeAttribute? pendingNative = null;
         while (!cursor.IsEnd)
         {
             try
@@ -137,8 +137,10 @@ internal static partial class TopLevelParser
 
     internal static FunctionDecl ParseFunctionDecl(
         ref TokenCursor cursor, LanguageFeatures feat, Visibility defaultVis,
-        string? nativeIntrinsic = null, DiagnosticBag? diags = null)
+        NativeAttribute? nativeAttr = null, DiagnosticBag? diags = null)
     {
+        var nativeIntrinsic = nativeAttr?.Intrinsic;
+        var tier1Binding    = nativeAttr?.Tier1;
         var start = cursor.Current.Span;
         var vis   = ParseVisibility(ref cursor, defaultVis);
         var (isStatic, isVirtual, isOverride, isAbstract, _, isExtern) =
@@ -187,7 +189,8 @@ internal static partial class TopLevelParser
             return new FunctionDecl($"get_{name}", [], returnType,
                 new BlockStmt([], start), vis,
                 BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
-                nativeIntrinsic, start);
+                nativeIntrinsic, start,
+                Tier1Binding: tier1Binding);
         }
 
         var parms = ParseParamList(ref cursor, feat);
@@ -239,7 +242,8 @@ internal static partial class TopLevelParser
         return new FunctionDecl(name, parms, returnType, body, vis,
             BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
             nativeIntrinsic, start,
-            BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams, Where: whereClause);
+            BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams, Where: whereClause,
+            Tier1Binding: tier1Binding);
     }
 
     /// Build FunctionModifiers flags from individual booleans parsed from source.

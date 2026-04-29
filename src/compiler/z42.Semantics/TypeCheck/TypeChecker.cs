@@ -323,12 +323,16 @@ public sealed partial class TypeChecker : ITypeInferrer
 
     private bool ValidateNativeMethod(FunctionDecl fn, bool isInstance = false)
     {
-        bool hasNative = fn.NativeIntrinsic != null;
+        // Spec C6 — `[Native]` accepts two mutually-exclusive forms:
+        //   • legacy: `[Native("__name")]`         → fn.NativeIntrinsic
+        //   • Tier 1: `[Native(lib=, type=, entry=)]` → fn.Tier1Binding
+        bool hasNative = fn.NativeIntrinsic != null || fn.Tier1Binding != null;
         bool isExtern  = fn.IsExtern;
         if (isExtern && !hasNative)
         {
             _diags.Error(DiagnosticCodes.ExternRequiresNative,
-                $"extern method '{fn.Name}' requires a [Native(\"...\")]  attribute", fn.Span);
+                $"extern method '{fn.Name}' requires a [Native(\"...\")] or [Native(lib=, type=, entry=)] attribute",
+                fn.Span);
             return true;
         }
         if (hasNative && !isExtern)

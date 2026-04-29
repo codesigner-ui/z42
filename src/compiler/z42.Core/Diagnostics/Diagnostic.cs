@@ -88,6 +88,7 @@ public static class DiagnosticCodes
     // Native / InternalCall
     public const string ExternRequiresNative     = "E0903"; // extern method missing [Native] attribute
     public const string NativeRequiresExtern     = "E0904"; // [Native] attribute on non-extern method
+    public const string NativeAttributeMalformed = "E0907"; // [Native(...)] argument list malformed (spec C6)
 
     // Native interop — `pinned` block (spec C5)
     public const string PinnedNotPinnable       = "E0908a"; // source of `pinned` is not a pinnable type (string in C5)

@@ -262,7 +262,7 @@ internal static partial class TopLevelParser
         var classWhereClause = ParseWhereClause(ref cursor);
 
         ExpectKind(ref cursor, TokenKind.LBrace);
-        string? pendingNative = null;
+        NativeAttribute? pendingNative = null;
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
             try

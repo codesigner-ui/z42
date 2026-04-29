@@ -178,13 +178,14 @@ public sealed class IrGen : IEmitterContext
             ? $"{qualClass}.{arityKey}"
             : $"{qualClass}.{method.Name}";
 
-        if (method.IsExtern && method.NativeIntrinsic != null)
+        if (method.IsExtern && (method.NativeIntrinsic != null || method.Tier1Binding != null))
         {
             var stub = EmitNativeStub(
                 methodIrName,
                 method.Params.Count + (method.IsStatic ? 0 : 1),
                 method.IsStatic ? 0 : 1,
                 method.NativeIntrinsic,
+                method.Tier1Binding,
                 method.ReturnType is VoidType);
             return stub with { IsStatic = method.IsStatic };
         }
@@ -195,12 +196,13 @@ public sealed class IrGen : IEmitterContext
 
     private IrFunction EmitFunction(FunctionDecl fn)
     {
-        if (fn.IsExtern && fn.NativeIntrinsic != null)
+        if (fn.IsExtern && (fn.NativeIntrinsic != null || fn.Tier1Binding != null))
             return EmitNativeStub(
                 QualifyName(fn.Name),
                 fn.Params.Count,
                 0,
                 fn.NativeIntrinsic,
+                fn.Tier1Binding,
                 fn.ReturnType is VoidType);
 
         var body = GetBoundBody(fn);
@@ -262,15 +264,26 @@ public sealed class IrGen : IEmitterContext
         static IrConstraintBundle EmptyBundle() => new(false, false, null, new List<string>());
     }
 
-    /// Emits a single-block function that forwards all parameters to a VM builtin.
+    /// Emits a single-block stub function that forwards all parameters to a
+    /// VM-side native dispatch. Two forms (mutually exclusive — exactly one
+    /// of `intrinsicName` / `tier1` must be non-null):
+    ///
+    ///   * legacy `[Native("__name")]` (L1 stdlib) → `BuiltinInstr`
+    ///   * spec C6 `[Native(lib=, type=, entry=)]`  → `CallNativeInstr`
+    ///
+    /// In both cases the stub function itself has the same shape: arguments
+    /// in r0..rN-1, result in rN, single block returning the result.
     private static IrFunction EmitNativeStub(
         string qualifiedName, int totalParams, int paramOffset,
-        string intrinsicName, bool isVoid)
+        string? intrinsicName, Tier1NativeBinding? tier1, bool isVoid)
     {
         var args = Enumerable.Range(0, totalParams)
             .Select(i => new TypedReg(i, IrType.Unknown)).ToList();
         var dst  = new TypedReg(totalParams, isVoid ? IrType.Void : IrType.Unknown);
-        var instrs = new List<IrInstr> { new BuiltinInstr(dst, intrinsicName, args) };
+        IrInstr call = tier1 is { } t
+            ? new CallNativeInstr(dst, t.Lib, t.TypeName, t.Entry, args)
+            : new BuiltinInstr(dst, intrinsicName!, args);
+        var instrs = new List<IrInstr> { call };
         var term   = new RetTerm(isVoid ? null : dst);
         var block  = new IrBlock("entry", instrs, term);
         return new IrFunction(qualifiedName, totalParams, isVoid ? "void" : "object",

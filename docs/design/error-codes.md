@@ -93,12 +93,17 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | E0908a | PinnedNotPinnable (TypeCheck, spec C5) | `pinned p = <expr> { ... }` 中 `<expr>` 类型不是 `string` |
 | E0908b | PinnedControlFlow (TypeCheck, spec C5) | `pinned` 块体内含 `return` / `break` / `continue` / `throw` —— C5 范围内严格禁止；放开需要 IR 层 try-finally-like UnpinPtr emission，留给后续 spec |
 
-### Z0907 / Z0909（仍为 C3/C5 预留）
+### E0907（C6 已启用，2026-04-29）
+
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| E0907 | NativeAttributeMalformed (parser, spec C6) | `[Native(lib=, type=, entry=)]` 缺任一键 / 含未知键 / 值不是 string literal。原 Z0907 "manifest-vs-declaration 签名校验" 占位含义由后续 source generator spec 接管，复用 E0907 编号 |
+
+### Z0909（仍为后续 spec 预留）
 
 | Code  | Title                            | Reserved for spec | Planned trigger |
 |-------|----------------------------------|-------------------|----------------|
-| Z0907 | NativeMethodSignatureMismatch    | C3/C5             | manifest 声明的方法签名与用户 `extern class` 声明不一致 |
-| Z0909 | ManifestParseError               | C5 (`impl-source-generator`) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
+| Z0909 | ManifestParseError               | source generator (C7+) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
 
 ---
 

@@ -217,6 +217,11 @@ public static class DiagnosticCatalog
             "The `[Native]` attribute can only be applied to methods declared with the `extern` keyword.",
             "[Native(\"file_read\")] int ReadByte() { return 0; }  // not extern"),
 
+        [DiagnosticCodes.NativeAttributeMalformed] = new(
+            "Malformed [Native] attribute",
+            "The Tier 1 form `[Native(lib=\"...\", type=\"...\", entry=\"...\")]` requires all three string-valued keys (lib, type, entry). The legacy `[Native(\"__name\")]` form takes a single string argument. Mixing the forms or using unknown keys is rejected.",
+            "[Native(lib=\"numz42\", entry=\"inc\")]   // missing `type=`"),
+
         // ── E0908: `pinned` block constraints (spec C5) ──────────────────
 
         [DiagnosticCodes.PinnedNotPinnable] = new(
