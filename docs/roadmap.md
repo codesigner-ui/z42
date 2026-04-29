@@ -105,7 +105,7 @@
 - 调试符号：行号映射、局部变量名（支持基础调试体验）
 - Interpreter 基础优化：指令 dispatch 效率、对象分配路径
 - JIT 基础优化：热点函数识别、简单内联、常量折叠
-- **MagrGC 子系统（Phase 1 / 1.5 / 3a-3f ✅ 2026-04-29 完整）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` / heap registry / Trial-deletion 环回收器（Bacon-Rajan）修复环引用泄漏 + Drop-time finalizer（GcAllocation wrapper）+ 内存压力自动 collect + external root scanner（VmContext static_fields）+ interp/JIT 栈扫描 + strict OOM 真拒绝模式 + `Std.GC.*` 脚本暴露。详见 `docs/design/vm-architecture.md` "GC 子系统" 段。
+- **MagrGC 子系统（Phase 1 / 1.5 / 3a-3f / 3-OOM ✅ 2026-04-29 主功能完整）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` / heap registry / Trial-deletion 环回收器（Bacon-Rajan）修复环引用泄漏 + Drop-time finalizer（GcAllocation wrapper）+ 内存压力自动 collect + external root scanner（VmContext static_fields）+ interp/JIT 栈扫描 + strict OOM 真拒绝模式 + `Std.GC.*` 脚本暴露。后续可选迭代（性能 / 嵌入式工具 / MMTk 集成等）规划见 `docs/design/vm-architecture.md` "GC 后续迭代规划" 段。
 
 ### Native Interop / 三层 ABI
 

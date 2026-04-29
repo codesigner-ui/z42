@@ -444,9 +444,8 @@ GC 子系统主功能至此完整。所有原始限制已解决，可投产。
 | **Phase 3e** | `GcRef<T>` backing 升级 `Rc<GcAllocation<T>>`，wrapper Drop 自动触发已注册 finalizer（含纯 Rc Drop 路径，不仅限 cycle collect） | ✅ 2026-04-29 add-drop-time-finalizer |
 | **Phase 3f-2** | JIT 栈扫描（6 个 JitFrame::new 站点 push/pop frame.regs 到 exec_stack，修复 JIT 路径 transitive bug）| ✅ 2026-04-29 add-jit-stack-scanning |
 | **Phase 3-OOM** | strict OOM 模式（trait `set_strict_oom`；启用后 alloc 越过 `max_heap_bytes` 返回 `Value::Null` 不入 registry / 不 bump stats）| ✅ 2026-04-29 add-strict-oom-rejection |
-| **Phase 3e**（可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）| 📋 待立项 |
-| **Phase 3f** | Cranelift stack maps（interp + JIT 路径下 GC 安全点） | 📋 待立项 |
-| **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |
+
+至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
 ### 字符串脚本化的未来动机
 
@@ -464,6 +463,126 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
   已统一走 `ctx.heap()`，未来即使从 RcMagrGC 切到 MarkSweepHeap，调用方代码不变
 - **`Value` enum 不动** —— Phase 3 引入 `GcRef<T>` 时再统一修改 PartialEq /
   JIT helper / 测试构造；Phase 1 不要把这些副带成本算进来
+
+### GC 后续迭代规划
+
+> 至 Phase 3-OOM 完成（2026-04-29）GC 主功能完整。下表是**可选优化轨道**，
+> 按需启动独立 spec。每条提供 **What / Why / Deps / Size / Risk** 四元组，
+> 让接手者不用读源码就能判断 ROI。
+
+#### A. 性能优化轨道
+
+##### A1. 自定义堆 allocator（移除 std Rc 开销）
+- **What**：替换 `Rc<GcAllocation<T>>` backing 为自定义 region allocator + bump pointer
+- **Why**：std Rc 每次 clone/drop 走原子 refcount op（单线程下 non-atomic 但仍有 cache miss）；自定义 allocator 可批量回收 + 更紧凑的对象布局
+- **Deps**：无（`GcRef<T>` 句柄抽象 Phase 3a 已就位，调用方无需修改）
+- **Size**：500-800 LOC，4-6 天
+- **Risk**：内部 Drop 语义改变（Rc 即时释放 → allocator 批量回收）需要严格测试覆盖
+
+##### A2. 纯 Mark-Sweep（移除 RC，统一 tracing）
+- **What**：从 trial-deletion (RC + 环检测) 升到纯 tracing GC（无 Rc 元数据）
+- **Why**：环检测 RC 混合算法的 trial-deletion 在 cycle 多的 workload 下 O(N²) 计算 tentative；纯 tracing 是 O(reachable)
+- **Deps**：A1（自定义 allocator）+ Trace trait 全 Value variant 实现
+- **Size**：1500+ LOC，10-14 天
+- **Risk**：行为变化（Rc 即时释放消失 → 析构延迟到 collect）；性能 trade-off 取决于 workload，需 benchmark 决策
+
+##### A3. Generational GC（young/old 分代）
+- **What**：young 代频繁回收（短命对象集中）+ old 代低频回收 + write barriers 跟踪跨代引用
+- **Why**：典型程序"分配的对象大多很快死"（generational hypothesis），young-only collect 大幅降低 pause time
+- **Deps**：A1 + A2 + write barriers 真实实现 + IR codegen 在引用赋值处插桩
+- **Size**：2000+ LOC，15-20 天
+- **Risk**：write barrier 在每个引用赋值处插入 → 性能开销需 careful；compiler/codegen 配合工作量大
+
+##### A4. Concurrent / incremental collector
+- **What**：collect 工作分摊到多个 alloc 时间片（incremental）或后台线程（concurrent）
+- **Why**：当前 STW collect 在大堆下停顿明显；分摊后单次 pause 时间有界
+- **Deps**：A2（mark-sweep）+ 多线程模型（roadmap A6 backlog）
+- **Size**：3000+ LOC，20-30 天
+- **Risk**：数据竞争 + write barrier 复杂度高；需要 GC safepoint 协议
+
+#### B. 嵌入式 / 可观察性
+
+##### B1. OOM 异常抛出（替代 strict 模式返 Null）
+- **What**：alloc 失败抛 `Std.OutOfMemoryException`（脚本 `try/catch` 可捕获），替代 strict 模式返 `Value::Null`
+- **Why**：脚本端 OOM 处理更自然；当前返 Null 后续访问产生 NRE，丢失"why null"信息
+- **Deps**：预分配 exception 实例（破启动期 alloc 循环依赖）+ ctx.set_exception 与 alloc callsite 集成
+- **Size**：~150 LOC，1-2 天
+- **Risk**：低；exception 实例的"启动期 alloc"循环依赖是设计点
+
+##### B2. 软引用（SoftGcRef）
+- **What**：内存压力下 GC 可主动回收的引用，介于 strong 与 weak 之间
+- **Why**：缓存场景（"内存够则保留，紧张则丢弃"）现在只能手动 weak + 重建
+- **Deps**：A2 mark phase 决策接口（区分软引用与强引用）
+- **Size**：~200 LOC，2 天
+
+##### B3. Heap snapshot 导出（V8 / Chrome DevTools 格式）
+- **What**：序列化 `HeapSnapshot` 为 `.heapsnapshot` 兼容 Chrome DevTools / [perfetto](https://perfetto.dev/) 等工具
+- **Why**：嵌入用户用熟悉的工具分析堆，无需重写 z42 专用 GUI
+- **Deps**：无（纯序列化层）
+- **Size**：~300 LOC，2-3 天
+
+##### B4. 分配站点追踪（per-callsite alloc count + total bytes）
+- **What**：默认 alloc_sampler 实现按 IR 站点 ID 聚合分配数据
+- **Why**：定位"哪行代码在 hot allocate"，性能调优刚需
+- **Deps**：编译期注入 site ID（IR 加 `alloc_site_id` 字段 + Codegen 配合）
+- **Size**：~400 LOC，3-4 天
+- **Risk**：site ID 在 IR 持久化、跨 zpkg 唯一性
+
+##### B5. GC pause 直方图
+- **What**：内置 metrics 直方图（Prometheus 风格 buckets：< 1ms / 1-10 / 10-100 / ...）
+- **Why**：观察长尾 pause 分布，比单次 pause_us 更有信息量
+- **Deps**：无
+- **Size**：~200 LOC，2 天
+
+#### C. 测试 / 调试质量
+
+##### C1. Debug-only invariant 检查
+- **What**：debug build 下每次 collect 后 assert（无 dangling Rc / registry 一致性 / finalizers_pending == has_finalizer 总数 / 等）
+- **Why**：早暴露内部一致性 bug，防止生产环境疑难杂症
+- **Deps**：无
+- **Size**：~150 LOC，1-2 天
+
+##### C2. Stress test（property-based）
+- **What**：proptest / quickcheck 生成随机 alloc / drop / pin / collect 序列，长跑下 verify 不 crash + 内存不 leak
+- **Why**：手工 unit test 难覆盖 alloc 与 collect 的交错状态空间
+- **Deps**：proptest crate
+- **Size**：~300 LOC，2-3 天
+
+##### C3. Multi-VmContext 隔离压测
+- **What**：多个 VmContext 实例并行运行（线程间隔离），verify GC 状态不互相污染
+- **Why**：嵌入用户可能创建多 VM；验证 Phase 3 多实例隔离设计真的成立
+- **Deps**：无
+- **Size**：~200 LOC，2 天
+
+#### D. 终极方向：MMTk 集成
+
+##### D1. MMTk 后端实现
+- **What**：实现 [MMTk](https://www.mmtk.io/) `VMBinding` trait，把 RcMagrGC 替换为 MMTk-backed GC（多 collector 可选：SemiSpace / GenImmix / MarkSweep / Immix / GenCopy）
+- **Why**：MMTk 是工业级研究项目，被 OpenJDK / V8 / Julia / Ruby / RustPython 采用；享受 ~30 年 GC 算法成果
+- **Deps**：A1 + A2（自定义 allocator + tracing）；trait 形状已对齐 MMTk porting contract
+- **Size**：4-8 周（包括稳定 + benchmark）
+- **Risk**：高 —— 引入大型 crate 依赖；ABI 边界 careful；但 trait 抽象层可以 ABI-shield
+
+#### 优先级建议
+
+如以工程成熟度优先：
+
+1. **C1 + C2 + C3**（debug invariants + stress + multi-VM）—— 巩固现有质量
+2. **B1**（OOM exception）—— 嵌入用户最常请求的 ergonomics
+3. **B5**（pause 直方图）—— 低成本可观察性
+4. **B3**（heap snapshot 导出）—— 让现有工具链可用
+
+如以性能为优先：
+
+1. **A1**（自定义 allocator）—— 单刀直入的常数因子优化
+2. **A2**（mark-sweep）—— 算法路径简化的前提
+3. **B4**（alloc site tracking）—— 找出热点
+4. **A3 / A4**（generational / concurrent）—— 长期投资
+
+如以"赶上工业级"为优先：
+
+直接跳到 **D1**（MMTk 集成），跳过 A1-A4 自研路径。trait 形状已对齐
+MMTk porting contract，集成成本主要在 ABI shim + 调优。
 
 ---
 

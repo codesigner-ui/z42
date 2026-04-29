@@ -61,6 +61,10 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
+**主功能至 Phase 3-OOM 完成（2026-04-29）。** 后续可选迭代规划（性能 / 嵌入式
+工具 / 测试质量 / MMTk 集成）见同文档 ["GC 后续迭代规划"](../../../../docs/design/vm-architecture.md#gc-后续迭代规划) 段，
+每条目带 What / Why / Deps / Size / Risk 四元组，可按优先级独立启动 spec。
+
 **已知限制（Phase 3a/3b/3c/3d/3d.1/3f/3e/3f-2/3-OOM 后）**：（无）
 
 GC 子系统主功能至此完整 —— 所有原始限制已解决，可投产。

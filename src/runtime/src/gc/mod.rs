@@ -25,6 +25,13 @@
 //! | 3e（已落地）| GcRef backing → `Rc<GcAllocation<T>>` wrapper + Drop 自动触发 finalizer（含纯 Rc Drop 路径）|
 //! | 3f-2（已落地）| JIT JitFrame.regs 对接（6 callsites push/pop frame.regs 到 exec_stack，修复 transitive bug）|
 //! | 3-OOM（已落地）| strict OOM 模式（trait `set_strict_oom`；启用后 alloc 越限返 Null 不进 registry/stats）|
+//!
+//! **GC 主功能至此完整**（2026-04-29）。后续可选迭代轨道见
+//! [`docs/design/vm-architecture.md`](../../../docs/design/vm-architecture.md)
+//! "GC 后续迭代规划" 段：A 性能（自定义 allocator / mark-sweep / generational
+//! / concurrent）、B 嵌入式工具（OOM 异常 / 软引用 / heap snapshot 导出 /
+//! alloc 站点追踪 / pause 直方图）、C 测试质量（debug invariants / stress 压测）、
+//! D MMTk 集成（终极方向）。
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |
 
 pub mod heap;
