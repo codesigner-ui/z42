@@ -1,7 +1,9 @@
 # Tasks: Add Benchmark Framework
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 P0 (add-just-and-ci) 完成。本文件锁定接口契约。
+> 状态：🟢 已完成（主体） | 创建：2026-04-29 | 完成：2026-04-29
+> 依赖 P0 (add-just-and-ci) 完成。
+>
+> 实施拆为 6 次提交（P1.A → P1.D.4）。详见底部"实施记录"。
 
 ## 进度概览
 
@@ -91,3 +93,38 @@
 ### 工作量估计
 
 1–2 天（含 schema 设计 + CI 调试）。
+
+---
+
+## 实施记录（2026-04-29）
+
+实施分 6 次提交完成主体，每次独立可回滚：
+
+| Phase | Commit | 范围 |
+|-------|--------|------|
+| **P1.A** | `edade7b` | criterion dev-dep + `src/runtime/benches/smoke_bench.rs`（2 个纯 Rust 基线 bench） + `just bench-rust` |
+| **P1.B** | `16cabef` | `src/compiler/z42.Bench/`（BDN 0.14.0；4 阶段 × 2 输入 = 8 benchmarks）+ `just bench-compiler` + `bench-compiler-all` |
+| **P1.C** | `4e62553` | `bench/scenarios/{01_fibonacci,02_math_loop,03_startup}.z42` + `bench/baseline-schema.json` + `scripts/bench-run.sh` + `scripts/_merge-bench-results.py` + `just bench-e2e` |
+| **P1.D.1** | `c8c3f5e` | `scripts/bench-diff.sh`（jq + awk diff）+ `just bench-diff` |
+| **P1.D.2** | `eb87e9b` | ci.yml `bench-e2e` job（PR 触发，linux）+ artifact upload；顺便修 .NET 9.0.x → 10.0.x |
+| **P1.D.3** | `c82d830` | `.github/workflows/bench-update.yml`：push to main 跑全量 + 提交到独立 `bench-baselines` 分支 |
+| **P1.D.4** | `9755505` | ci.yml `bench-e2e` 加 fetch baseline + informational diff 到 `$GITHUB_STEP_SUMMARY` |
+
+### 实施过程偏差与决策
+
+1. **拆为 6 个 commit 而非 1 个**：原 spec 暗示一次性实施。实际拆为 P1.A → P1.D.4 让每次提交独立可验证；尤其 P1.D 进一步拆 4 个子 phase（local diff → CI smoke → baseline 持久化 → PR diff）让"CI 状态管理"复杂度可控。
+2. **JIT/AOT bench 推迟**：原 spec design.md 提到 `interp_bench.rs` / `gc_bench.rs` / `decoder_bench.rs` 各 3 个真实 benchmark；实际只交付 `smoke_bench.rs`（2 个纯 Rust 基线）。原因：真实 VM bench 需要构造最小 Module / 暴露 Interpreter 公共 API，工作量翻倍且与本期"搭框架"目标偏离。后续可作为独立"bench coverage 扩充"任务。
+3. **BDN large.z42 跳过**：原 spec 三档输入（small / medium / large 5000 行）；实际只交付 small (~50 行) + medium (~250 行)。Large 需要程序生成器，非关键路径。
+4. **CI 阈值放宽**：原 spec 5% 时间退化阻塞；实际改为 15% (time) / 20% (memory) **informational only**（不阻塞）。CI 共享 VM 噪声大，5% 阈值会大量假阳性。等以后引入 dedicated runner 或多次取均值再调严。
+5. **gh-pages → bench-baselines 独立分支**：原 spec 提到"gh-pages 或 release artifacts"；实际选独立分支 `bench-baselines`，避免与未来文档站点冲突且单一职责。
+6. **修了 P0 残留 .NET 版本 bug**：CI 设的 9.0.x 但项目 net10.0；P1.D.2 一并修。
+
+### 已知缺口（留 backlog）
+
+- **真实 VM 内部 micro-bench**（interp/gc/decoder） — 推迟到 R 系列后或独立任务
+- **BDN large.z42 输入** — 需要程序生成器
+- **真正的 PR fail 门禁** — 需要稳定 bench runner 环境
+- **多平台 baseline**（linux + macOS） — 当前仅 linux；macOS runner 噪声更大，价值低
+- **HTML 报告聚合** — criterion 本身有 HTML 但需 publish；BDN markdown 可解析
+
+这些都是覆盖度与稳定性扩展，不影响当前框架可用性。
