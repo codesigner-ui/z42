@@ -65,11 +65,26 @@ test-stdlib lib="":
 test-integration:
     @echo "❌ P3 待实施：integration 测试" && exit 1
 
-# ──────────── Benchmark (P1 placeholder) ────────────
+# ──────────── Benchmark ────────────
 
-# (P1 placeholder) Run all benchmarks
-bench *args:
-    @echo "❌ P1 待实施：benchmark ({{args}})" && exit 1
+# Run all benchmarks (P1.A: Rust criterion only; BDN + e2e in P1.B/C)
+bench: bench-rust
+
+# Run Rust micro-benchmarks (criterion)
+bench-rust *args:
+    cargo bench --manifest-path src/runtime/Cargo.toml {{args}}
+
+# (P1.B placeholder) Run C# compiler benchmarks (BenchmarkDotNet)
+bench-compiler:
+    @echo "❌ P1.B 待实施：BenchmarkDotNet (src/compiler/z42.Bench/)" && exit 1
+
+# (P1.C placeholder) Run end-to-end .z42 scenarios (hyperfine)
+bench-e2e:
+    @echo "❌ P1.C 待实施：z42 端到端 (bench/scenarios/, hyperfine)" && exit 1
+
+# (P1.D placeholder) Diff current bench against baseline
+bench-diff baseline="main":
+    @echo "❌ P1.D 待实施：bench-diff (vs {{baseline}})" && exit 1
 
 # ──────────── Platform (P4 placeholder) ────────────
 
