@@ -9,7 +9,8 @@
 | Rust 微基准 | criterion | `src/runtime/benches/` | ✅ P1.A |
 | C# 编译器吞吐 | BenchmarkDotNet | `src/compiler/z42.Bench/` | ✅ P1.B |
 | z42 端到端 | hyperfine + 自建 harness | `bench/scenarios/` + `scripts/bench-run.sh` | ✅ P1.C |
-| 基线对比与门禁 | `scripts/bench-diff.sh` + CI | `bench/baselines/` | ⏳ P1.D |
+| 基线对比 | `scripts/bench-diff.sh` | `bench/baselines/` | ✅ P1.D.1 |
+| CI bench gate | gh-pages baseline + PR diff | `.github/workflows/` | ⏳ P1.D.2 |
 
 ## 目录结构
 
@@ -37,6 +38,33 @@ just bench-e2e               # z42 端到端（hyperfine on .zbc）
 
 # 快速 sanity（< 60s）
 just bench-e2e --quick       # 只跑 startup + fibonacci，少 iter
+```
+
+## 与 baseline 对比
+
+```bash
+# 1. 把当前结果保存为 baseline（首次或重置）
+cp bench/results/e2e.json bench/baselines/main-darwin-arm64.json
+
+# 2. 后续跑 bench 后对比
+just bench-e2e
+just bench-diff                                # 自动选 main-<os>.json
+just bench-diff bench/baselines/main-x.json    # 显式 baseline
+```
+
+退化判定：
+- 时间退化 > 5%（默认阈值，`--threshold-time` 调整）→ `↑` 标注，exit 1
+- 内存退化 > 10%（默认阈值，`--threshold-memory` 调整）→ `↑` 标注
+- 改进（更快/更小）→ `↓` 标注，但**不**触发失败
+- 浮动 ≤ 阈值 → `≈` 标注
+
+输出示例：
+
+```
+  01_fibonacci [time]      50.000 ms → 81.007 ms  ↑ +62.0%
+  02_math_loop [time]      15.000 ms → 15.128 ms  ≈ +0.9%
+
+❌ 1 regression(s) above threshold (out of 2 benchmarks)
 ```
 
 ## 输出格式

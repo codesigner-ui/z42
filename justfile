@@ -99,9 +99,18 @@ bench-compiler-all:
 bench-e2e *args:
     ./scripts/bench-run.sh {{args}}
 
-# (P1.D placeholder) Diff current bench against baseline
-bench-diff baseline="main":
-    @echo "❌ P1.D 待实施：bench-diff (vs {{baseline}})" && exit 1
+# Diff current bench results against a baseline JSON.
+#   just bench-diff                                 # auto-baseline (bench/baselines/main-<os>.json)
+#   just bench-diff bench/baselines/main-linux.json # explicit baseline path
+# Exit codes: 0 = no regression; 1 = regression > threshold; 2 = error.
+bench-diff baseline="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -z "{{baseline}}" ]]; then
+        ./scripts/bench-diff.sh --current bench/results/e2e.json
+    else
+        ./scripts/bench-diff.sh --current bench/results/e2e.json --baseline {{baseline}}
+    fi
 
 # ──────────── Platform (P4 placeholder) ────────────
 
