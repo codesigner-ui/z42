@@ -18,7 +18,7 @@
 //! | 3a（已落地）| `GcRef<T>` 不透明句柄抽象（backing 仍 Rc<RefCell<T>>，行为零变化） |
 //! | 3b（已落地）| Heap registry + snapshot/iterate Full coverage |
 //! | 3c（已落地）| **Trial-deletion 环回收器** —— `collect_cycles` 真实回收环引用 |
-//! | 3d（计划）| Finalizer 真触发 + OOM 拒绝 |
+//! | 3d（已落地）| Finalizer 真触发（collect 时调度）+ 内存压力自动 collect |
 //! | 3e（计划，可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）|
 //! | 3f（计划）| Cranelift stack maps（GC 安全点）|
 //! | 4+（长期）| 分代 / 并发 / MMTk 集成 |

@@ -258,7 +258,104 @@ fn used_bytes_increases_with_alloc() {
     assert!(heap.used_bytes() > 0);
 }
 
-// ── 7. Finalization ──────────────────────────────────────────────────────────
+// ── 7. Finalization (Phase 3d: real triggering) ──────────────────────────────
+
+#[test]
+fn finalizer_fires_when_object_freed_via_cycle_collect() {
+    let heap = RcMagrGC::new();
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+
+    let a = heap.alloc_object(dummy_type_desc("F"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("G"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &a else { panic!() };
+        g.borrow_mut().slots[0] = b.clone();
+        let Value::Object(g) = &b else { panic!() };
+        g.borrow_mut().slots[0] = a.clone();
+    }
+    heap.register_finalizer(&a, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+    drop(a);
+    drop(b);
+
+    heap.collect_cycles();
+
+    assert_eq!(fired.load(Ordering::SeqCst), 1, "finalizer fires on cycle break");
+    assert_eq!(heap.stats().finalizers_pending, 0, "finalizer removed after fire");
+}
+
+#[test]
+fn finalizer_does_not_fire_when_object_kept_alive() {
+    let heap = RcMagrGC::new();
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+    let _alive = heap.alloc_object(dummy_type_desc("Alive"), vec![], NativeData::None);
+    heap.register_finalizer(&_alive, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    heap.collect_cycles();
+
+    assert_eq!(fired.load(Ordering::SeqCst), 0, "finalizer not fired for live object");
+    assert_eq!(heap.stats().finalizers_pending, 1);
+}
+
+#[test]
+fn finalizer_is_one_shot_after_fire() {
+    let heap = RcMagrGC::new();
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+    let a = heap.alloc_object(dummy_type_desc("F"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &a else { panic!() };
+        g.borrow_mut().slots[0] = a.clone();
+    }
+    heap.register_finalizer(&a, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+    drop(a);
+
+    heap.collect_cycles();
+    heap.collect_cycles();  // second call should not re-fire
+
+    assert_eq!(fired.load(Ordering::SeqCst), 1, "one-shot");
+}
+
+// ── Auto-collect on memory pressure (Phase 3d) ───────────────────────────────
+
+#[test]
+fn auto_collect_triggers_when_over_threshold() {
+    let heap = RcMagrGC::new();
+    heap.set_max_heap_bytes(Some(2_000));  // 阈值 1800 (90%)
+    let gc_before = heap.stats().gc_cycles;
+
+    // 反复 alloc 直到 used 越过 90% 阈值
+    let mut keep_alive: Vec<Value> = Vec::new();
+    for _ in 0..30 {
+        keep_alive.push(heap.alloc_array(vec![Value::I64(0); 8]));
+    }
+    let gc_after = heap.stats().gc_cycles;
+    assert!(gc_after > gc_before, "auto-collect should fire when heap >90% limit");
+}
+
+#[test]
+fn auto_collect_throttled_by_growth_delta() {
+    let heap = RcMagrGC::new();
+    heap.set_max_heap_bytes(Some(10_000));
+
+    // 一次性 alloc 跨 90% 阈值
+    let _big = heap.alloc_array(vec![Value::I64(0); 200]);
+    let gc1 = heap.stats().gc_cycles;
+
+    // 紧跟一个小 alloc：增长 < 10% (1000 bytes) 不应再触发 auto-collect
+    let _small = heap.alloc_array(vec![]);
+    let gc2 = heap.stats().gc_cycles;
+    assert_eq!(gc1, gc2, "small alloc within throttle delta does not retrigger");
+}
+
+// ── 7-existing. Finalization counter tests (Phase 3a baseline) ───────────────
 
 #[test]
 fn register_finalizer_increments_pending_count() {

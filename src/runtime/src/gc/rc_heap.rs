@@ -5,20 +5,21 @@
 //! host-side 嵌入接口（roots / observers / profiler / weak refs / finalizers /
 //! heap config / ...）。
 //!
-//! **Phase 3a/3b/3c 后已知限制**：
-//! 1. **Finalizer 不会被自动触发**：RC 缺 Drop hook，注册被记录但不调用 →
-//!    Phase 3d 调度真实触发（cycle collector sweep 时回调）
-//! 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e 可拒绝
+//! **Phase 3a/3b/3c/3d 后已知限制**：
+//! 1. **Finalizer 仅在 collect_cycles 时触发**：纯链式 Drop（无环）情况下不触发
+//!    → Phase 3e 替换 backing 时引入 wrapper 解决
+//! 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
 //! 3. **`collect_cycles` 必须在 interp/JIT 不在执行中调用**：用户代码中 Rust 局部
-//!    变量持的 Value 不在 GC roots 中，环检测看不到 → 可能误把外部仍持有的对象
-//!    判为可断 → Phase 3f Cranelift stack maps 解决
+//!    变量持的 Value 不在 GC roots 中，环检测看不到 → Phase 3f Cranelift stack maps
 //!
 //! **已解决**：
-//! - Phase 3b（2026-04-29 add-heap-registry）：`take_snapshot` /
-//!   `iterate_live_objects` 升级 Full coverage
+//! - Phase 3b（2026-04-29 add-heap-registry）：snapshot/iterate Full coverage
 //! - Phase 3c（2026-04-29 add-cycle-breaking-collector）：环引用真实回收
-//!   （Bacon-Rajan trial-deletion，断环让 Rc Drop 链式释放）+ `used_bytes`
-//!   在 collect 后准确反映释放量
+//!   （Bacon-Rajan trial-deletion）+ `used_bytes` 准确反映释放量
+//! - Phase 3d（2026-04-29 add-finalizer-and-auto-collect）：
+//!   finalizer 在 cycle collect 时**真实触发**（one-shot）+ 内存压力下 alloc
+//!   后**自动 collect**（90% 阈值 + 10% growth throttle）+ `near_limit_warned`
+//!   collect 后自动 reset
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -50,13 +51,17 @@ struct RcHeapInner {
     pause_count:       u32,
     next_root_id:      u64,
     next_observer_id:  u64,
-    /// 防止 NearHeapLimit 事件刷屏（RC 模式 used_bytes 单调，这个 flag 也单调）。
+    /// 防止 NearHeapLimit 事件刷屏（Phase 3d 后 collect_cycles 完成且使用降到
+    /// 阈值以下时会自动 reset，下次跨阈值能再发事件）。
     near_limit_warned: bool,
     /// **Phase 3b: heap registry** —— 每次 `alloc_*` 推入对应 WeakRef，让 GC
     /// 能枚举所有"曾经分配且当前可能存活"的堆对象。这是 Phase 3c mark-sweep
     /// 的物理前置：mark 阶段需要候选集（roots 之外的所有对象）。
     /// 不阻止对象回收（Weak 不持 strong refcount）。
     heap_registry:     Vec<WeakRef>,
+    /// **Phase 3d**: 上次 auto-collect 触发时的 `used_bytes`，用于 throttle
+    /// 自动 collect —— 仅当当前 used 距上次增长 >= 10% limit 才再次自动触发。
+    last_auto_collect_used: u64,
 }
 
 impl std::fmt::Debug for RcHeapInner {
@@ -71,6 +76,7 @@ impl std::fmt::Debug for RcHeapInner {
             .field("pause_count",       &self.pause_count)
             .field("near_limit_warned", &self.near_limit_warned)
             .field("registry_size",     &self.heap_registry.len())
+            .field("last_auto_collect_used", &self.last_auto_collect_used)
             .finish()
     }
 }
@@ -268,12 +274,28 @@ impl RcMagrGC {
 
         // Break: tentative <= 0 表示无外部引用，安全断环
         let mut freed_bytes: u64 = 0;
+        let mut to_finalize: Vec<FinalizerFn> = Vec::new();
         for v in &unreachable {
             let Some(key) = Self::rc_ptr_key(v) else { continue };
             if tentative.get(&key).copied().unwrap_or(0) <= 0 {
                 freed_bytes = freed_bytes.saturating_add(self.object_size_bytes(v) as u64);
+                // Phase 3d: 提取 finalizer（one-shot 语义）；先收集，break 后统一调用
+                {
+                    let mut i = self.inner.borrow_mut();
+                    if let Some(fin) = i.finalizers.remove(&key) {
+                        to_finalize.push(fin);
+                        i.stats.finalizers_pending = i.finalizers.len() as u64;
+                    }
+                }
                 Self::break_cycle_value(v);
             }
+        }
+
+        // Phase 3d: 在 break_cycle 之后、unreachable Vec drop 之前调 finalizer。
+        // 此时对象 slots 已清空（finalizer 见到的是"墓碑"状态），但 Rc 还活着
+        // —— finalizer 不应假设对象内部状态可读。RC drop 链稍后随 alive_vec 释放。
+        for fin in to_finalize {
+            fin();
         }
 
         // unreachable Vec drops here → 断环对象的 Rc 强引用计数链式归零 → Drop
@@ -300,6 +322,39 @@ impl RcMagrGC {
             }
         });
         alive
+    }
+
+    /// **Phase 3d**: 内存压力下自动触发 collect_cycles。
+    ///
+    /// 条件：
+    /// - max_bytes 已设
+    /// - used >= 90% limit
+    /// - 距上次 auto-collect 增长 >= 10% limit（throttle，避免每次 alloc 都 collect）
+    /// - pause_count == 0
+    fn maybe_auto_collect(&self) {
+        let (used, max_opt, last, paused) = {
+            let i = self.inner.borrow();
+            (i.stats.used_bytes, i.stats.max_bytes, i.last_auto_collect_used, i.pause_count > 0)
+        };
+        if paused { return; }
+        let Some(limit) = max_opt else { return };
+        let near_threshold = (limit as f64 * 0.9) as u64;
+        if used < near_threshold { return; }
+        let throttle_delta = (limit as f64 * 0.1) as u64;
+        if used.saturating_sub(last) < throttle_delta { return; }
+        self.inner.borrow_mut().last_auto_collect_used = used;
+        self.collect_cycles();
+    }
+
+    /// **Phase 3d**: collect 完成后，若 used 已降到 90% 阈值以下，
+    /// reset `near_limit_warned` 让下次跨阈值能再发 NearHeapLimit 事件。
+    fn maybe_reset_near_limit_warned(&self) {
+        let mut i = self.inner.borrow_mut();
+        let Some(limit) = i.stats.max_bytes else { return };
+        let near_threshold = (limit as f64 * 0.9) as u64;
+        if i.stats.used_bytes < near_threshold {
+            i.near_limit_warned = false;
+        }
     }
 
     fn check_pressure(&self, requested: u64) {
@@ -347,6 +402,8 @@ impl MagrGC for RcMagrGC {
         }));
         let size = self.object_size_bytes(&value);
         self.record_alloc(&value, AllocKind::Object { class }, size);
+        // Phase 3d: 内存压力下自动 collect（local `value` 持外部强引用，自身不会被破坏）
+        self.maybe_auto_collect();
         value
     }
 
@@ -355,6 +412,7 @@ impl MagrGC for RcMagrGC {
         let value      = Value::Array(GcRef::new(elems));
         let size       = self.object_size_bytes(&value);
         self.record_alloc(&value, AllocKind::Array { elem_count }, size);
+        self.maybe_auto_collect();
         value
     }
 
@@ -458,6 +516,8 @@ impl MagrGC for RcMagrGC {
             i.stats.gc_cycles += 1;
             i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
         }
+        // Phase 3d: 若 used 已降到 90% 阈值以下，重置 near_limit_warned
+        self.maybe_reset_near_limit_warned();
         let pause_us = Self::now_us().saturating_sub(start);
         self.fire_event(GcEvent::AfterCollect {
             kind: GcKind::CycleCollector, freed_bytes, pause_us,
@@ -479,6 +539,7 @@ impl MagrGC for RcMagrGC {
             i.stats.gc_cycles += 1;
             i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
         }
+        self.maybe_reset_near_limit_warned();
         let pause_us = Self::now_us().saturating_sub(start);
         self.fire_event(GcEvent::AfterCollect {
             kind: GcKind::Full, freed_bytes, pause_us,

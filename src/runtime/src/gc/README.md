@@ -61,22 +61,23 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b/3c 后）**：
+**已知限制（Phase 3a/3b/3c/3d 后）**：
 
-1. **Finalizer 不会被自动触发**：RC 缺 Drop hook → Phase 3d 由 collect 时调度
-2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e 可拒绝
-3. **`collect_cycles` 须在 interp/JIT 不在执行中调用**：用户 Rust 局部变量持的
-   Value 不在 GC roots 中，可能被误判 → Phase 3f Cranelift stack maps 解决
+1. **Finalizer 仅在 collect_cycles 时触发**：纯 Rc Drop（无环）路径不触发 →
+   Phase 3e 替换 backing 时一并解决
+2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
+3. **`collect_cycles` 须在 interp/JIT 不在执行中调用** → Phase 3f Cranelift stack maps
 
-> **2026-04-29 add-heap-registry（Phase 3b 完成）**：`take_snapshot` /
-> `iterate_live_objects` 升级 Full coverage（RcHeapInner heap_registry +
-> 自动 prune）。
+> **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate Full coverage。
 >
-> **2026-04-29 add-cycle-breaking-collector（Phase 3c 完成）**：环引用真实
-> 回收。`collect_cycles` / `force_collect` 实现 Bacon-Rajan 的 trial-deletion
-> 算法 —— mark phase 从 pinned roots 出发，sweep phase 对纯环内对象（外部
-> 引用为 0）调 `break_cycle_value` 清空内部 slots，让 Rc Drop 链自然完成
-> 释放。`used_bytes` 在 collect 后反映准确释放量。
+> **2026-04-29 add-cycle-breaking-collector（Phase 3c 完成）**：环引用真实回收
+> （Bacon-Rajan trial-deletion）+ `used_bytes` 准确反映释放量。
+>
+> **2026-04-29 add-finalizer-and-auto-collect（Phase 3d 完成）**：
+> - **Finalizer 真触发**：`collect_cycles` 断环时调用注册的 finalizer（one-shot）
+> - **内存压力自动 collect**：alloc 后检查 `used >= 90% max_bytes`，throttle by
+>   10% growth → 自动 `collect_cycles`
+> - `near_limit_warned` collect 后自动 reset，让下次跨阈值能再发 `NearHeapLimit`
 
 > **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
 > `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin
