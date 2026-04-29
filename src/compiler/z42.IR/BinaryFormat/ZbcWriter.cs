@@ -81,6 +81,15 @@ public static partial class ZbcWriter
                 flags |= ZbcFlags.HasDebug;
                 sections.Add((SectionTags.Dbug, BuildDbugSection(module.Functions, pool)));
             }
+
+            // TIDX section (R1 add-test-metadata-section): compile-time test
+            // metadata. Emitted only when the module has at least one
+            // [Test]/[Benchmark]/etc.-decorated function; absent section means
+            // "no test entries" to readers.
+            if (module.TestIndex is { Count: > 0 } testIndex)
+            {
+                sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex)));
+            }
         }
 
         return AssembleFile(flags, sections);
@@ -465,6 +474,42 @@ public static partial class ZbcWriter
                 }
 
             w.Write(instrBytes);
+        }
+
+        return ms.ToArray();
+    }
+
+    // ── TIDX section (R1: compile-time test metadata) ────────────────────────
+    // Layout (fixed-width LE, mirrored by Rust src/runtime/src/metadata/test_index.rs):
+    //   u32   magic = "TIDX" (54 49 44 58 on disk)
+    //   u8    version = 1
+    //   u32   entry_count
+    //   TestEntry[]:
+    //     u32 method_id, u8 kind, u16 flags,
+    //     u32 skip_reason_str_idx, u32 expected_throw_type_idx,
+    //     u32 test_case_count,
+    //     TestCase[]: u32 arg_repr_str_idx
+    private const byte TidxFormatVersion = 1;
+
+    private static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write(SectionTags.Tidx);                  // 4 bytes ASCII magic
+        w.Write(TidxFormatVersion);                 // u8 version
+        w.Write((uint)testIndex.Count);
+
+        foreach (var entry in testIndex)
+        {
+            w.Write((uint)entry.MethodId);
+            w.Write((byte)entry.Kind);
+            w.Write((ushort)entry.Flags);
+            w.Write((uint)entry.SkipReasonStrIdx);
+            w.Write((uint)entry.ExpectedThrowTypeIdx);
+            w.Write((uint)entry.TestCases.Count);
+            foreach (var tc in entry.TestCases)
+                w.Write((uint)tc.ArgReprStrIdx);
         }
 
         return ms.ToArray();

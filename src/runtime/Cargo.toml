@@ -29,6 +29,9 @@ bincode = "1"      # compact binary format (.zbc)
 anyhow = "1"
 thiserror = "1"
 
+# Bitflags (used by metadata::test_index for TestFlags; spec R1)
+bitflags = "2"
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 

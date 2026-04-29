@@ -13,8 +13,11 @@ use anyhow::{bail, Context, Result};
 use super::bytecode::Module;
 use super::formats::{ZpkgDep, ZBC_MAGIC, ZPKG_MAGIC};
 use super::merge::merge_modules;
+use super::test_index::TestEntry;
 use super::types::{FieldSlot, TypeDesc};
-use super::zbc_reader::{read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces};
+use super::zbc_reader::{
+    read_test_index_section, read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces,
+};
 
 /// Result of loading a compiler artifact.
 pub struct LoadedArtifact {
@@ -27,6 +30,11 @@ pub struct LoadedArtifact {
     /// Namespace prefixes extracted from the import table (populated by load_zbc).
     /// Used by main.rs to load the corresponding zpkgs.
     pub import_namespaces: Vec<String>,
+    /// Spec R1 (add-test-metadata-section) — compile-time test metadata
+    /// extracted from the zbc TIDX section. Empty when the artifact has no
+    /// `[Test]`/`[Benchmark]`/etc.-decorated functions or the section is absent
+    /// (older artifacts). Consumed by R3 z42-test-runner.
+    pub test_index: Vec<TestEntry>,
 }
 
 /// Load a compiler output artifact from `path`, returning a `LoadedArtifact`.
@@ -67,11 +75,16 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     // (approximation: namespace = first two components of any external call target)
     let import_namespaces = extract_import_namespaces_from_module(&module);
 
+    // R1 — TIDX section (optional; absent for non-test artifacts).
+    let test_index = read_test_index_section(&raw)
+        .with_context(|| format!("cannot read TIDX section in `{path}`"))?;
+
     Ok(LoadedArtifact {
         module,
         entry_hint: None,
         dependencies: vec![],
         import_namespaces,
+        test_index,
     })
 }
 
@@ -103,6 +116,10 @@ fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
         entry_hint: meta.entry,
         dependencies: meta.dependencies,
         import_namespaces: vec![],
+        // R1: zpkg test metadata aggregation deferred. R3 runner reads
+        // individual .zbc files directly via load_artifact, where TIDX
+        // sections are populated. Setting empty here is correct for now.
+        test_index: vec![],
     })
 }
 

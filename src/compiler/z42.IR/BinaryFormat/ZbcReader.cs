@@ -41,6 +41,9 @@ public static partial class ZbcReader
         var dbugVarTables  = ReadSection(data, dir, SectionTags.Dbug,
                                          sec => ReadDbugSection(sec, pool),
                                          new List<List<IrLocalVarEntry>?>());
+        var testIndex      = ReadSection(data, dir, SectionTags.Tidx,
+                                         sec => ReadTidxSection(sec),
+                                         (IReadOnlyList<TestEntry>)Array.Empty<TestEntry>());
 
         // ── Reconstruct functions ─────────────────────────────────────────────
         var functions = new List<IrFunction>(funcBodies.Count);
@@ -64,7 +67,12 @@ public static partial class ZbcReader
         }
 
         string moduleName = nspc.Length > 0 ? nspc : "unknown";
-        return new IrModule(moduleName, BuildStringPool(pool, functions), classes, functions);
+        return new IrModule(
+            moduleName,
+            BuildStringPool(pool, functions),
+            classes,
+            functions,
+            TestIndex: testIndex.Count > 0 ? testIndex : null);
     }
 
     /// <summary>
@@ -404,6 +412,60 @@ public static partial class ZbcReader
                         block.Instructions[i] = new ConstStrInstr(cs.Dst, local);
 
         return result;
+    }
+
+    // ── TIDX section (R1: compile-time test metadata) ────────────────────────
+    // Reads the section payload written by ZbcWriter.BuildTidxSection.
+    // Layout mirror; see ZbcWriter.BuildTidxSection for the byte-level contract.
+    private const byte TidxExpectedVersion = 1;
+
+    private static IReadOnlyList<TestEntry> ReadTidxSection(ReadOnlySpan<byte> sec)
+    {
+        int pos = 0;
+
+        // Magic: bytes "TIDX" (4 bytes ASCII).
+        if (sec.Length < 4 || !SectionTags.Equals(sec.Slice(0, 4), SectionTags.Tidx))
+            throw new InvalidDataException("TIDX section: missing or invalid magic");
+        pos += 4;
+
+        if (sec.Length <= pos)
+            throw new InvalidDataException("TIDX section: truncated (no version byte)");
+        byte version = sec[pos]; pos += 1;
+        if (version != TidxExpectedVersion)
+            throw new InvalidDataException(
+                $"TIDX section: unsupported version {version} (expected {TidxExpectedVersion})");
+
+        if (sec.Length < pos + 4)
+            throw new InvalidDataException("TIDX section: truncated (no entry count)");
+        uint entryCount = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+
+        var entries = new List<TestEntry>((int)entryCount);
+        for (int i = 0; i < entryCount; i++)
+        {
+            uint   methodId           = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+            byte   kindByte           = sec[pos];                                  pos += 1;
+            ushort flags              = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+            uint   skipReasonStrIdx   = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+            uint   expectedThrowIdx   = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+            uint   testCaseCount      = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+
+            var testCases = new List<TestCase>((int)testCaseCount);
+            for (int j = 0; j < testCaseCount; j++)
+            {
+                uint argReprStrIdx = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+                testCases.Add(new TestCase((int)argReprStrIdx));
+            }
+
+            entries.Add(new TestEntry(
+                MethodId:             (int)methodId,
+                Kind:                 (TestEntryKind)kindByte,
+                Flags:                (TestFlags)flags,
+                SkipReasonStrIdx:     (int)skipReasonStrIdx,
+                ExpectedThrowTypeIdx: (int)expectedThrowIdx,
+                TestCases:            testCases));
+        }
+
+        return entries;
     }
 
     // ── DBUG section (local variable names) ──────────────────────────────────

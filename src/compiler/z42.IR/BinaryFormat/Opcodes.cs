@@ -208,6 +208,7 @@ public static class SectionTags
 
     // ── Optional ─────────────────────────────────────────────────────────────
     public static readonly byte[] Dbug = "DBUG"u8.ToArray();  // debug info
+    public static readonly byte[] Tidx = "TIDX"u8.ToArray();  // R1: compile-time test metadata
 
     public static bool Equals(ReadOnlySpan<byte> a, byte[] b) =>
         a.SequenceEqual(b);

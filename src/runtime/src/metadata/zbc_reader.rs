@@ -721,6 +721,24 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     Ok(Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new(), func_index: std::collections::HashMap::new() })
 }
 
+/// Spec R1 — read the optional TIDX section from a zbc file. Returns an empty
+/// vec if the section is absent (older zbc / module without test methods).
+///
+/// Used by `loader.rs` to populate `LoadedArtifact.test_index`. Decoupled from
+/// `read_zbc` because the test metadata is host-tooling data, not VM runtime
+/// data; runner code calls this directly without going through `load_artifact`
+/// when only metadata is needed.
+pub fn read_test_index_section(data: &[u8]) -> Result<Vec<crate::metadata::TestEntry>> {
+    if data.len() < 16 { bail!("zbc file too short") }
+    if &data[0..4] != ZBC_MAGIC { bail!("not a binary zbc (bad magic)") }
+    let sec_count = u16::from_le_bytes([data[10], data[11]]);
+    let dir = read_directory(data, sec_count)?;
+    Ok(get_section(data, &dir, b"TIDX")
+        .map(crate::metadata::test_index::read_test_index)
+        .transpose()?
+        .unwrap_or_default())
+}
+
 // ── zpkg public API ───────────────────────────────────────────────────────────
 
 pub struct ZpkgInfo {

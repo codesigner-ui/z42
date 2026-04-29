@@ -24,7 +24,13 @@ public sealed record IrModule(
     string Name,
     IReadOnlyList<string> StringPool,
     List<IrClassDesc> Classes,
-    List<IrFunction> Functions);
+    List<IrFunction> Functions,
+    /// <summary>R1 (add-test-metadata-section) — entries collected from
+    /// <c>z42.test.*</c> attributes. Persisted to the zbc <c>TIDX</c> section
+    /// only when non-empty (writer skips section when null/empty; reader returns
+    /// empty list when section absent). Default null preserves backward
+    /// compatibility with all existing callers.</summary>
+    IReadOnlyList<TestEntry>? TestIndex = null);
 
 // ── Class descriptor ──────────────────────────────────────────────────────────
 

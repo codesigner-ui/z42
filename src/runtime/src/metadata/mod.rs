@@ -17,6 +17,7 @@ pub mod loader;
 pub mod lazy_loader;
 pub mod merge;
 pub mod well_known_names;
+pub mod test_index;
 
 #[cfg(test)]
 #[path = "constraint_tests.rs"]
@@ -37,3 +38,9 @@ pub use merge::merge_modules;
 
 // Re-exports: lazy loader (state owned by VmContext, see crate::vm_context)
 pub use lazy_loader::{LazyLoader, ZpkgCandidate};
+
+// Re-exports: test metadata (R1 add-test-metadata-section)
+pub use test_index::{
+    read_test_index, TestCase, TestEntry, TestEntryKind, TestFlags,
+    TEST_INDEX_MAGIC, TEST_INDEX_VERSION,
+};
