@@ -61,12 +61,12 @@ let snap = ctx.heap().take_snapshot();
 
 详见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md) "GC 子系统" 段。
 
-**已知限制（Phase 3a/3b/3c/3d 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1 后）**：
 
 1. **Finalizer 仅在 collect_cycles 时触发**：纯 Rc Drop（无环）路径不触发 →
    Phase 3e 替换 backing 时一并解决
 2. **`OutOfMemory` 仅通知不拒绝**：RC 模式 alloc 仍然成功 → Phase 3e+
-3. **`collect_cycles` 须在 interp/JIT 不在执行中调用** → Phase 3f Cranelift stack maps
+3. **interp / JIT 栈帧 regs 暂未对接为 GC roots** → Phase 3f Cranelift stack maps
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate Full coverage。
 >
@@ -78,6 +78,13 @@ let snap = ctx.heap().take_snapshot();
 > - **内存压力自动 collect**：alloc 后检查 `used >= 90% max_bytes`，throttle by
 >   10% growth → 自动 `collect_cycles`
 > - `near_limit_warned` collect 后自动 reset，让下次跨阈值能再发 `NearHeapLimit`
+>
+> **2026-04-29 add-external-root-scanning（Phase 3d.1 完成）**：修复 cycle
+> collector 漏扫 VmContext 级 roots 的 bug —— `RcMagrGC` 加 `external_root_scanner`
+> 字段，`mark_reachable_set` 在扫完 pinned roots 后调用 scanner 把额外 roots
+> 也喂入 BFS。`VmContext::new` 注册一个扫描自身 `static_fields` /
+> `pending_exception` 的闭包（通过 Rc<RefCell<...>> 共享 ownership）。这样
+> static 字段持有的 cyclic 对象不会被误判为 unreachable + 内部 slots 不会被误清。
 
 > **2026-04-29 extend-native-fn-signature**：原限制"corelib 内 Rc::new 直构未迁移"已解决 ——
 > `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55 个 builtin

@@ -40,6 +40,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::gc::{MagrGC, RcMagrGC};
@@ -53,10 +54,16 @@ use crate::metadata::{Function, TypeDesc, Value};
 /// `heap` field is `Box<dyn MagrGC>` without `RefCell` because it is set once
 /// in `new()` and never replaced; trait methods take `&self` and the
 /// implementation handles its own interior mutability.
+///
+/// **Phase 3d.1 (2026-04-29)**: `static_fields` / `pending_exception` /
+/// `lazy_loader` 改用 `Rc<RefCell<...>>` 包装，让 `RcMagrGC` 的 external
+/// root scanner 闭包能 clone Rc 共享访问，从而 mark_reachable_set 把这些
+/// 字段持有的 Value 也纳入 GC roots（修复 cycle collector 漏扫 static_fields
+/// 导致误清的 bug）。
 pub struct VmContext {
-    pub(crate) static_fields:     RefCell<HashMap<String, Value>>,
-    pub(crate) pending_exception: RefCell<Option<Value>>,
-    pub(crate) lazy_loader:       RefCell<Option<LazyLoader>>,
+    pub(crate) static_fields:     Rc<RefCell<HashMap<String, Value>>>,
+    pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
+    pub(crate) lazy_loader:       Rc<RefCell<Option<LazyLoader>>>,
     pub(crate) heap:              Box<dyn MagrGC>,
 }
 
@@ -66,11 +73,32 @@ impl Default for VmContext {
 
 impl VmContext {
     pub fn new() -> Self {
+        let static_fields     = Rc::new(RefCell::new(HashMap::new()));
+        let pending_exception = Rc::new(RefCell::new(None));
+        let lazy_loader       = Rc::new(RefCell::new(None));
+
+        // Phase 3d.1: 注入 external root scanner 闭包，让 cycle collector mark
+        // 阶段把 static_fields + pending_exception 持的 Value 也作为 roots 扫描。
+        // 闭包通过 Rc clone 与 VmContext 字段共享 ownership（无 lifetime 牵扯）。
+        let heap = RcMagrGC::new();
+        {
+            let sf = static_fields.clone();
+            let pe = pending_exception.clone();
+            heap.set_external_root_scanner(Box::new(move |visit| {
+                for v in sf.borrow().values() {
+                    visit(v);
+                }
+                if let Some(v) = pe.borrow().as_ref() {
+                    visit(v);
+                }
+            }));
+        }
+
         Self {
-            static_fields:     RefCell::new(HashMap::new()),
-            pending_exception: RefCell::new(None),
-            lazy_loader:       RefCell::new(None),
-            heap:              Box::new(RcMagrGC::new()),
+            static_fields,
+            pending_exception,
+            lazy_loader,
+            heap: Box::new(heap),
         }
     }
 

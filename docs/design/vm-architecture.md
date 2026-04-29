@@ -394,11 +394,11 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 - `alloc_*` 通用通路 `record_alloc`：bump stats → 压力检查 → sampler 触发
 - 事件分发：先 snapshot observer 列表再调用，避免回调重入引发 borrow 冲突
 
-**已知限制（Phase 3a/3b/3c/3d 后）**：
+**已知限制（Phase 3a/3b/3c/3d/3d.1 后）**：
 
 1. **Finalizer 仅在 collect_cycles 时触发**：纯 Rc Drop 路径不触发 → Phase 3e
 2. **`OutOfMemory` 仅通知不拒绝** → Phase 3e+
-3. **`collect_cycles` 须在 interp/JIT 不在执行中调用** → Phase 3f
+3. **interp / JIT 栈帧 regs 暂未对接为 GC roots** → Phase 3f
 
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate `Full` 覆盖。
 >
@@ -440,6 +440,7 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 | **Phase 3b** | Heap registry（`Vec<WeakRef>` 让 GC 枚举所有存活对象）+ snapshot/iterate Full coverage | ✅ 2026-04-29 add-heap-registry |
 | **Phase 3c** | Trial-deletion 环回收器（保留 RC backing，断环让 Rc 链 Drop） | ✅ 2026-04-29 add-cycle-breaking-collector |
 | **Phase 3d** | Finalizer 真触发（cycle collect 时调度）+ 内存压力自动 collect + near_limit_warned 自动 reset | ✅ 2026-04-29 add-finalizer-and-auto-collect |
+| **Phase 3d.1** | External root scanner（VmContext static_fields / pending_exception 暴露给 cycle collector，修复漏扫 bug）| ✅ 2026-04-29 add-external-root-scanning |
 | **Phase 3e**（可选）| 替换 GcRef backing 为自定义堆 + 真 mark-sweep（性能 / generational 准备）| 📋 待立项 |
 | **Phase 3f** | Cranelift stack maps（interp + JIT 路径下 GC 安全点） | 📋 待立项 |
 | **Phase 4+** | 分代 / 并发 / MMTk 集成 | 长期 |

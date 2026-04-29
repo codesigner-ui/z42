@@ -555,6 +555,105 @@ fn iterate_live_objects_full_coverage_includes_unpinned() {
     assert_eq!(count, 2);
 }
 
+// ── External root scanner (Phase 3d.1) ───────────────────────────────────────
+
+#[test]
+fn external_root_scanner_called_during_collect() {
+    let heap = RcMagrGC::new();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let c = calls.clone();
+    heap.set_external_root_scanner(Box::new(move |_visit| {
+        c.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    heap.collect_cycles();
+    assert!(calls.load(Ordering::SeqCst) >= 1, "scanner invoked during mark phase");
+}
+
+#[test]
+fn cycle_reachable_via_external_scanner_is_preserved() {
+    use std::cell::RefCell as StdRefCell;
+    use std::rc::Rc as StdRc;
+
+    let heap = RcMagrGC::new();
+
+    // 模拟 VmContext.static_fields 风格的外部容器
+    let external: StdRc<StdRefCell<Vec<Value>>> = StdRc::new(StdRefCell::new(Vec::new()));
+
+    // scanner 把 external 中所有 Value 暴露为 roots
+    {
+        let ext = external.clone();
+        heap.set_external_root_scanner(Box::new(move |visit| {
+            for v in ext.borrow().iter() {
+                visit(v);
+            }
+        }));
+    }
+
+    // 构造一个 a-b 环
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &a else { panic!() };
+        g.borrow_mut().slots[0] = b.clone();
+        let Value::Object(g) = &b else { panic!() };
+        g.borrow_mut().slots[0] = a.clone();
+    }
+
+    // 把 a 放到 external（模拟 static_fields 持有），drop 本地强引用
+    external.borrow_mut().push(a.clone());
+    drop(a);
+    drop(b);
+
+    heap.collect_cycles();
+
+    // a 应该仍然存活（external scanner 把它喂进 reachable）
+    // b 也存活（a.slots[0] = b 链可达）
+    let mut count = 0;
+    heap.iterate_live_objects(&mut |_| count += 1);
+    assert_eq!(count, 2, "external-rooted cycle survives collect");
+
+    // 关键：a 的 slots 应该 intact（不被误清）
+    let alive_a = external.borrow()[0].clone();
+    let Value::Object(g) = &alive_a else { panic!() };
+    let slot0 = g.borrow().slots[0].clone();
+    assert!(matches!(slot0, Value::Object(_)),
+        "a.slots[0] still references b (NOT cleared by collector)");
+}
+
+#[test]
+fn cycle_unreachable_from_external_scanner_still_collected() {
+    use std::cell::RefCell as StdRefCell;
+    use std::rc::Rc as StdRc;
+
+    let heap = RcMagrGC::new();
+    let external: StdRc<StdRefCell<Vec<Value>>> = StdRc::new(StdRefCell::new(Vec::new()));
+    {
+        let ext = external.clone();
+        heap.set_external_root_scanner(Box::new(move |visit| {
+            for v in ext.borrow().iter() { visit(v); }
+        }));
+    }
+
+    // 构造 a-b 环但**不**把 a 放进 external
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(g) = &a else { panic!() };
+        g.borrow_mut().slots[0] = b.clone();
+        let Value::Object(g) = &b else { panic!() };
+        g.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a); drop(b);
+
+    heap.collect_cycles();
+
+    // 没在 external 里 → 仍是 unreachable → 被收集
+    let mut count = 0;
+    heap.iterate_live_objects(&mut |_| count += 1);
+    assert_eq!(count, 0, "non-rooted cycle still collected");
+}
+
 // ── Cycle collection (Phase 3c) ──────────────────────────────────────────────
 
 fn alive_count(heap: &RcMagrGC) -> usize {

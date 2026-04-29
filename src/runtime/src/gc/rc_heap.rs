@@ -83,22 +83,51 @@ impl std::fmt::Debug for RcHeapInner {
 
 // ── RcMagrGC ─────────────────────────────────────────────────────────────────
 
+/// External root scanner type. **Phase 3d.1**：宿主（典型情况是 `VmContext`）
+/// 通过 `set_external_root_scanner` 注册的闭包，在 mark 阶段被调用以暴露
+/// 自己持有的 Value（如 static_fields / pending_exception / 未来的 interp
+/// 栈帧 regs），让 cycle collector 不会把这些可达对象误判为 unreachable。
+///
+/// 不要求 Send + Sync —— 闭包通常捕获 `Rc<RefCell<...>>` 共享 VmContext 字段，
+/// 与 RcMagrGC 同处单一线程下使用。
+type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value))>;
+
 #[derive(Default)]
 pub struct RcMagrGC {
     inner: RefCell<RcHeapInner>,
+    external_root_scanner: RefCell<Option<ExternalRootScanner>>,
 }
 
 impl std::fmt::Debug for RcMagrGC {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let scanner_set = self.external_root_scanner.try_borrow()
+            .map(|s| s.is_some())
+            .unwrap_or(false);
+        let mut d = f.debug_struct("RcMagrGC");
         match self.inner.try_borrow() {
-            Ok(i)  => f.debug_struct("RcMagrGC").field("inner", &*i).finish(),
-            Err(_) => f.debug_struct("RcMagrGC").field("inner", &"<borrowed>").finish(),
+            Ok(i)  => { d.field("inner", &*i); }
+            Err(_) => { d.field("inner", &"<borrowed>"); }
         }
+        d.field("external_scanner", &scanner_set).finish()
     }
 }
 
 impl RcMagrGC {
     pub fn new() -> Self { Self::default() }
+
+    /// **Phase 3d.1**: 注册一个 external root scanner 闭包。每次 cycle
+    /// collection mark 阶段在扫完 pinned roots 后会调用此闭包，把闭包 yield
+    /// 出来的 Value 也加入 reachable BFS 队列。
+    ///
+    /// 典型用途：`VmContext::new` 注册一个扫描自己 static_fields /
+    /// pending_exception 的闭包，让那些字段持有的 cyclic 对象在 collect 时
+    /// 不被误判为可断。
+    ///
+    /// 同一 RcMagrGC 上重复调用会**覆盖**之前的 scanner（仅一个 active 闭包）。
+    /// 传 `set_external_root_scanner(Box::new(|_| {}))` 等价于卸载（no-op 闭包）。
+    pub fn set_external_root_scanner(&self, scanner: ExternalRootScanner) {
+        *self.external_root_scanner.borrow_mut() = Some(scanner);
+    }
 
     fn now_us() -> u64 {
         static EPOCH: OnceLock<Instant> = OnceLock::new();
@@ -181,15 +210,32 @@ impl RcMagrGC {
 
     // ── Cycle collection helpers (Phase 3c) ──────────────────────────────────
 
-    /// Mark phase: BFS from pinned roots, return reachable pointer-key set.
+    /// Mark phase: BFS from pinned roots **+ external root scanner**, return
+    /// reachable pointer-key set.
     ///
-    /// **限制**：本 MVP 只扫 pinned roots（host 通过 `pin_root` / `enter_frame`
-    /// 注册的）。VmContext 内的 `static_fields` / `pending_exception` / interp
-    /// 栈帧 regs 暂未对接 → 用户必须保证 `collect_cycles` 在 VM 顶层调用之间
-    /// 触发，或显式 pin 跨调用持有的 Value。Phase 3f Cranelift stack maps 解决。
+    /// **Phase 3d.1**: 现在扫两批 roots：
+    /// 1. RcMagrGC 内部 `pinned_roots`（host 通过 `pin_root` / `enter_frame` 注册）
+    /// 2. `external_root_scanner` 闭包暴露的额外 roots（典型：VmContext
+    ///    的 `static_fields` / `pending_exception` 持有的 Value）
+    ///
+    /// **剩余限制**：interp / JIT 栈帧的 register 暂未对接 → 用户必须保证
+    /// `collect_cycles` 在 VM 顶层调用之间触发，或显式 pin 跨调用持有的
+    /// Value（Phase 3f Cranelift stack maps 解决）。
     fn mark_reachable_set(&self) -> HashSet<usize> {
         let mut reachable: HashSet<usize> = HashSet::new();
         let mut queue: Vec<Value> = self.inner.borrow().roots.values().cloned().collect();
+
+        // Phase 3d.1: 把 external scanner 暴露的额外 roots 也压入 queue
+        // 注：在 borrow scanner 的 scope 内不持有 self.inner 借用，避免 re-entrant 冲突
+        {
+            let scanner_borrow = self.external_root_scanner.borrow();
+            if let Some(scan) = scanner_borrow.as_ref() {
+                scan(&mut |v| {
+                    queue.push(v.clone());
+                });
+            }
+        }
+
         while let Some(v) = queue.pop() {
             let Some(key) = Self::rc_ptr_key(&v) else { continue };
             if !reachable.insert(key) { continue; }
