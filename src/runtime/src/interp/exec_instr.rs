@@ -419,16 +419,56 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             ctx.static_set(field, v);
         }
 
-        // ── Native interop (C1 scaffold) ───────────────────────────────────
-        // The four opcodes below are declared so the binary format is frozen,
-        // but their runtime behaviour ships in later specs. Hitting them at
-        // runtime today means the source program used native interop before
-        // the implementing spec landed — surface it as a clean trap rather
-        // than silently no-op.
-        Instruction::CallNative { module, type_name, symbol, .. } => {
-            bail!(
-                "CallNative not yet implemented (Z0905, see spec C2 / impl-tier1-c-abi): {module}::{type_name}::{symbol}"
-            );
+        // ── Native interop ─────────────────────────────────────────────────
+        //
+        // C2 (`impl-tier1-c-abi`): `CallNative` flows through the registered
+        // `RegisteredType` → libffi cif → marshal/unmarshal pipeline.
+        // C4/C5 will wire the remaining three opcodes.
+        Instruction::CallNative { dst, module, type_name, symbol, args } => {
+            use crate::native::{marshal, dispatch as ndisp};
+
+            let ty = ctx.resolve_native_type(module, type_name).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "CallNative: unknown native type {module}::{type_name} (Z0905)"
+                )
+            })?;
+            let method = ty.method(symbol).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "CallNative: unknown method {module}::{type_name}::{symbol} (Z0905)"
+                )
+            })?;
+
+            // Marshal each register into a Z42Value targeting the corresponding
+            // ABI-side parameter type.
+            if args.len() != method.params.len() {
+                bail!(
+                    "CallNative {module}::{type_name}::{symbol}: arity mismatch (caller passed {}, signature wants {})",
+                    args.len(),
+                    method.params.len()
+                );
+            }
+            let z_args: Vec<z42_abi::Z42Value> = args
+                .iter()
+                .zip(method.params.iter())
+                .map(|(reg, ty)| marshal::value_to_z42(frame.get(*reg)?, ty))
+                .collect::<Result<_>>()?;
+
+            // SAFETY: cif was built from `params`/`return_type` matching the
+            // native function pointer at registration time; native lib keeps
+            // the function alive via `VmContext.native_libs`. CURRENT_VM is
+            // set by VmGuard so a re-entrant z42_* call finds the right ctx.
+            let z_ret = unsafe {
+                ndisp::call(
+                    &method.cif,
+                    method.fn_ptr,
+                    &z_args,
+                    &method.params,
+                    &method.return_type,
+                )
+            }?;
+
+            let result = marshal::z42_to_value(&z_ret, &method.return_type)?;
+            frame.set(*dst, result);
         }
         Instruction::CallNativeVtable { vtable_slot, .. } => {
             bail!(

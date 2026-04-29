@@ -543,8 +543,8 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | Stage | Content | Depends on | Status |
 |---|---|---|---|
 | **C1** (`design-interop-interfaces`) | All Tier 1/2/3 public surfaces locked: C header + 3 Rust crates + manifest schema + 4 new IR opcodes (declared, trap on execution) + Z0905–Z0910 reserved | — | ✅ 2026-04-29 |
-| **L2.M8** (C2) | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp); fills `CallNative` runtime behaviour | C1 |  |
-| **L2.M9** (C2) | Tier 1 PoC: handwritten `numz42-c` demo | M8 |  |
+| **L2.M8** (`impl-tier1-c-abi`) | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp); fills `CallNative` runtime behaviour | C1 | ✅ 2026-04-29 |
+| **L2.M9** (`impl-tier1-c-abi`) | Tier 1 PoC: handwritten `numz42-c` demo (Counter type, register + `CallNative` end-to-end) | M8 | ✅ 2026-04-29 (合并入 L2.M8 spec) |
 | **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | C1 | ✅ scaffold landed in C1 |
 | **L2.M11** (C3 `impl-tier2-rust-macros`) | `#[derive(Z42Type)]` + `#[z42::methods]` + `numz42-rs` PoC fills macro bodies | M10 |  |
 | **L2.M12** (C4 `impl-pinned-block`) | `pinned` block syntax + String/Array borrow; fills `PinPtr`/`UnpinPtr` runtime | type system |  |

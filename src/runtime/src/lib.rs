@@ -6,5 +6,6 @@ pub mod exception;
 pub mod interp;
 pub mod jit;
 pub mod aot;
+pub mod native;
 pub mod vm;
 pub mod vm_context;

@@ -58,7 +58,7 @@ pub struct Z42TypeOpaque {
 /// Tagged value crossing the ABI boundary. Internal layout of `payload` is
 /// stabilised by C2; for C1 it is treated as opaque bits.
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Z42Value {
     pub tag: u32,
     pub reserved: u32,

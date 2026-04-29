@@ -71,6 +71,15 @@ pub struct VmContext {
     /// `FrameGuard` RAII 保证 push/pop 严格配对。
     pub(crate) exec_stack:        Rc<RefCell<Vec<*const Vec<Value>>>>,
     pub(crate) heap:              Box<dyn MagrGC>,
+
+    /// Native interop Tier 1 — registered native types keyed by
+    /// `(module_name, type_name)`. Filled by `z42_register_type`; queried by
+    /// `CallNative` IR dispatch and `z42_resolve_type`. Per-VM isolated so
+    /// multi-VM tests stay independent. See spec C2 (`impl-tier1-c-abi`).
+    pub(crate) native_types:      Rc<RefCell<HashMap<(String, String), Rc<crate::native::RegisteredType>>>>,
+    /// Loaded native libraries kept alive for the VM's lifetime so that
+    /// function pointers stored in `native_types` stay valid until VM drop.
+    pub(crate) native_libs:       Rc<RefCell<Vec<libloading::Library>>>,
 }
 
 impl Default for VmContext {
@@ -125,7 +134,56 @@ impl VmContext {
             lazy_loader,
             exec_stack,
             heap: Box::new(heap),
+            native_types: Rc::new(RefCell::new(HashMap::new())),
+            native_libs:  Rc::new(RefCell::new(Vec::new())),
         }
+    }
+
+    // ── Native interop (Tier 1, spec C2) ──────────────────────────────────
+
+    /// Register a native type with this VM. Returns `false` (with [`crate::native::error::set`]
+    /// already populated) on duplicate `(module, name)`. Internally invoked
+    /// from `z42_register_type`; tests may also call this directly with a
+    /// pre-built [`RegisteredType`].
+    pub fn register_native_type(
+        &self,
+        ty: Rc<crate::native::RegisteredType>,
+    ) -> bool {
+        let key = (ty.module().to_string(), ty.type_name().to_string());
+        let mut map = self.native_types.borrow_mut();
+        if map.contains_key(&key) {
+            return false;
+        }
+        map.insert(key, ty);
+        true
+    }
+
+    /// Look up a previously registered native type. Returns `None` when the
+    /// `(module, name)` pair is unknown.
+    pub fn resolve_native_type(
+        &self,
+        module: &str,
+        name: &str,
+    ) -> Option<Rc<crate::native::RegisteredType>> {
+        let key = (module.to_string(), name.to_string());
+        self.native_types.borrow().get(&key).cloned()
+    }
+
+    /// Total number of registered native types — primarily for tests.
+    pub fn native_type_count(&self) -> usize {
+        self.native_types.borrow().len()
+    }
+
+    /// Load a native library and invoke its `<basename>_register` entry point.
+    /// The library handle is stored on `self` until VM drop. Errors are
+    /// returned as `anyhow::Error` and mirrored into the thread-local
+    /// last-error slot so C callers see the same diagnostic via
+    /// [`z42_last_error`](z42_abi::z42_last_error).
+    pub fn load_native_library(
+        &self,
+        path: impl AsRef<std::path::Path>,
+    ) -> anyhow::Result<()> {
+        crate::native::loader::load_library(self, path.as_ref())
     }
 
     // ── Interp exec stack（Phase 3f） ─────────────────────────────────────

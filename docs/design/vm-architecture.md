@@ -21,13 +21,24 @@ vm.run(&mut ctx, hint)?;
 
 `VmContext` 持有：
 
-- `static_fields: RefCell<HashMap<String, Value>>` — 用户类 static 字段
-- `pending_exception: RefCell<Option<Value>>` — JIT extern "C" 边界异常槽位
-- `lazy_loader: RefCell<Option<LazyLoader>>` — 按需 zpkg 加载器
+- `static_fields: Rc<RefCell<HashMap<String, Value>>>` — 用户类 static 字段
+- `pending_exception: Rc<RefCell<Option<Value>>>` — JIT extern "C" 边界异常槽位
+- `lazy_loader: Rc<RefCell<Option<LazyLoader>>>` — 按需 zpkg 加载器
+- `exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>>` — interp frame.regs 指针栈（GC root scanner 用）
+- `heap: Box<dyn MagrGC>` — GC 子系统接口（默认 RcMagrGC 后端）
+- `native_types: Rc<RefCell<HashMap<(String,String), Rc<RegisteredType>>>>` — Tier 1 native interop 注册表（spec C2，2026-04-29）
+- `native_libs: Rc<RefCell<Vec<libloading::Library>>>` — 已加载的 native 库句柄，保活到 VM drop（spec C2）
 
 API 方法都用 `&self`（内部 RefCell），调用方代码风格基本不变。多 VmContext
 实例完全隔离 —— 这是 review2 §3 的设计目标兑现。详见
-[`object-protocol.md`](object-protocol.md) 与 review2 §3 / §5.5 / §5.2。
+[`object-protocol.md`](object-protocol.md)、[`interop.md`](interop.md) 与 review2 §3 / §5.5 / §5.2。
+
+**Native interop 入口**：`VmContext::register_native_type(Rc<RegisteredType>)` /
+`resolve_native_type(module, name)` / `load_native_library(path)`；后者打开 `.dylib`
+/`.so`/`.dll` 并调用其 `<basename>_register` 入口（约定）让 native 库通过
+`z42_register_type` 把类型推入 `native_types`。Interp 入口设置 thread-local
+`CURRENT_VM` 让 native callback 能找回 VM；详见 `src/runtime/src/native/exports.rs`
+的 `VmGuard` RAII。
 
 ---
 

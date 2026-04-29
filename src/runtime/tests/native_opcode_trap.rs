@@ -58,9 +58,12 @@ fn assert_trap_with(err: anyhow::Error, fragment: &str) {
 }
 
 #[test]
-fn call_native_traps_with_spec_pointer() {
+fn call_native_unknown_type_z0905() {
+    // C2 (`impl-tier1-c-abi`) flipped CallNative from a blanket trap to
+    // real registry+libffi dispatch; the failure mode now is "unknown
+    // native type" because no library has registered numz42::Tensor.
     let m = module_with_single_instr(
-        "call_native_test",
+        "call_native_unknown_type",
         Instruction::CallNative {
             dst: 0,
             module: "numz42".into(),
@@ -69,8 +72,8 @@ fn call_native_traps_with_spec_pointer() {
             args: vec![],
         },
     );
-    let err = run(&m).expect_err("CallNative must trap in C1");
-    assert_trap_with(err, "spec C2");
+    let err = run(&m).expect_err("CallNative must fail when type is unregistered");
+    assert_trap_with(err, "Z0905");
 }
 
 #[test]

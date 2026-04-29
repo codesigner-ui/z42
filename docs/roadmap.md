@@ -114,7 +114,7 @@
 | Spec | 内容 | 状态 |
 |------|------|------|
 | **C1**（`design-interop-interfaces` ✅ 2026-04-29）| 接口骨架一次锁定：C 头文件 `include/z42_abi.h` + 3 个 Rust crate（`z42-abi` / `z42-rs` / `z42-macros`）+ JSON Schema 2020-12 manifest + 4 个新 IR opcode（`call.native` / `call.native.vt` / `pin` / `unpin`）+ 错误码 Z0905–Z0910 占位。无运行时行为（VM 遇 trap，macro 报 `compile_error!`）。 | ✅ |
-| **C2**（`impl-tier1-c-abi`）| Tier 1 C ABI 实现：`z42_register_type` 注册表 + libffi 调度（Interp）+ `numz42-c` PoC | 📋 |
+| **C2**（`impl-tier1-c-abi` ✅ 2026-04-29）| Tier 1 C ABI 运行时：`VmContext.native_types` registry + libffi cif 缓存 + `Z42Value` marshal（blittable 子集）+ `dlopen` loader + thread-local `CURRENT_VM` + `Instruction::CallNative` interp dispatch（取代 C1 trap）+ Z0905/Z0906/Z0910 抛出点 + `numz42-c` PoC（Counter 类型 alloc/inc/get end-to-end）。`z42_invoke` / reverse-call 留给 C5。 | ✅ |
 | **C3**（`impl-tier2-rust-macros`）| Tier 2 proc macro 实现：`#[derive(Z42Type)]` / `#[methods]` / `module!` + `numz42-rs` PoC | 📋 |
 | **C4**（`impl-pinned-block`）| `pinned p = X { ... }` 语法 + `PinPtr`/`UnpinPtr` runtime + String/Array 借出 | 📋 |
 | **C5**（`impl-source-generator`）| `.z42abi` manifest reader + `import T from "lib"` 编译期签名校验 + `CallNativeVtable` runtime | 📋 |

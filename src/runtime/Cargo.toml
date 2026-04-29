@@ -15,6 +15,9 @@ path = "src/main.rs"
 name = "z42_vm"
 path = "src/lib.rs"
 
+[build-dependencies]
+cc = "1"
+
 [dependencies]
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -32,6 +35,14 @@ clap = { version = "4", features = ["derive"] }
 # Logging
 tracing = "0.1"
 tracing-subscriber = "0.3"
+
+# Native interop — Tier 1 ABI runtime (spec C2)
+# Use system libffi (avoids libffi-sys's bundled build that breaks on macOS arm64
+# with newer Xcode toolchain). pkg-config must be able to find libffi (homebrew /
+# apt install libffi-dev / etc). Enable "bundled" feature instead if that fails.
+libffi     = { version = "3.2", features = ["system"] }
+libloading = "0.8"
+z42-abi    = { path = "crates/z42-abi" }
 
 # JIT backend — Cranelift
 cranelift-codegen = { version = "0.115", features = ["unwind"] }

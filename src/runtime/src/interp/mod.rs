@@ -38,6 +38,22 @@ pub fn run(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) ->
     }
 }
 
+/// Variant of [`run`] that returns the function's return value (if any)
+/// instead of discarding it. Used by integration tests and by embedders
+/// that need the result of a script entry point. Mirrors `run` in every
+/// other respect (errors, exception conversion).
+pub fn run_returning(
+    ctx: &VmContext,
+    module: &Module,
+    func: &Function,
+    args: &[Value],
+) -> Result<Option<Value>> {
+    match exec_function(ctx, module, func, args)? {
+        ExecOutcome::Returned(v) => Ok(v),
+        ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
+    }
+}
+
 /// Run with static init: clears static fields, runs ALL `*.__static_init__`
 /// functions (both eager-loaded in `module.functions` and lazy-loadable from
 /// declared zpkgs), then runs `func`.
@@ -158,6 +174,12 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
     // FrameGuard 在 Drop 时 pop（含 ?-propagated error 与 panic）。
     ctx.push_frame_regs(&frame.regs as *const Vec<Value>);
     let _frame_guard = FrameGuard { ctx };
+
+    // Spec C2: scope `CURRENT_VM` to this z42 frame so `z42_*` extern
+    // entry points fired by native callbacks can locate the active VM.
+    // The guard nests safely if a native callback re-enters z42 through
+    // `exec_function`; on exit the previous pointer is restored.
+    let _vm_guard = crate::native::exports::VmGuard::enter(ctx);
 
     let block_map = &func.block_index;
     let mut block_idx = 0usize;

@@ -73,18 +73,23 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 | Z0903 | ExternMissingNativeAttribute     | `extern` 方法缺少 `[Native]` 标注 |
 | Z0904 | NativeAttributeOnNonExtern       | `[Native]` 标注用在非 `extern` 方法上 |
 
-### Z0905–Z0910（L2+ 预留，C1 占位）
+### Z0905 / Z0906 / Z0910（C2 已启用，2026-04-29）
 
-| Code  | Title                            | Reserved for spec | When (planned) |
+由 `src/runtime/src/native/{registry,error,loader,exports}.rs` 在 `z42_register_type` / `z42_resolve_type` / `VmContext::load_native_library` / `Instruction::CallNative` 路径上抛出。错误信息通过 thread-local `LAST_ERROR` 透传给 `z42_last_error()`，同时以 `anyhow::Error` 形式向 z42 解释器返回。
+
+| Code  | Title                            | When it occurs |
+|-------|----------------------------------|----------------|
+| Z0905 | NativeTypeRegistrationFailure    | `z42_register_type` 收到 `null` descriptor / `null` `module_name` 或 `type_name` / `method_count > 0` 但 `methods == NULL` / 方法签名解析失败 / `(module, type)` 在 VM 内已存在；`CallNative` 找不到 `(module, type)` 或 `symbol`；`z42_invoke` / `z42_invoke_method` 在 C2 阶段尚未实现的 reverse-call 路径 |
+| Z0906 | AbiVersionMismatch               | `z42_register_type` 接收的 `Z42TypeDescriptor_v1.abi_version` 与 VM 期望的 `Z42_ABI_VERSION` 不一致 |
+| Z0910 | NativeLibraryLoadFailure         | `VmContext::load_native_library` 中 `libloading::Library::new(path)` 失败（路径不存在 / 架构不匹配 / 权限错误）或目标库缺少 `<basename>_register` 入口符号 |
+
+### Z0907–Z0909（仍为 C3/C4/C5 预留）
+
+| Code  | Title                            | Reserved for spec | Planned trigger |
 |-------|----------------------------------|-------------------|----------------|
-| Z0905 | NativeTypeRegistrationFailure    | C2 (`impl-tier1-c-abi`) | `z42_register_type` 失败：descriptor 无效 / 名字冲突 |
-| Z0906 | AbiVersionMismatch               | C2 (`impl-tier1-c-abi`) | `Z42TypeDescriptor.abi_version` 与 VM 期望版本不一致 |
 | Z0907 | NativeMethodSignatureMismatch    | C3/C5             | manifest 声明的方法签名与用户 `extern class` 声明不一致 |
 | Z0908 | PinnedBlockConstraintViolation   | C4 (`impl-pinned-block`) | `pinned` 块内试图修改 / 重分配被借出的 String/Array |
 | Z0909 | ManifestParseError               | C5 (`impl-source-generator`) | `.z42abi` JSON 解析失败 / Schema 校验不过 |
-| Z0910 | NativeLibraryLoadFailure         | C2/C5             | dlopen / LoadLibrary 失败：库不存在 / 不兼容架构 |
-
-> **占位约定**：本 spec 不实现 Z0905–Z0910 的具体抛出点；C1 验证只确保编号已注册、不与现有 Z0xxx 冲突。
 
 ---
 
