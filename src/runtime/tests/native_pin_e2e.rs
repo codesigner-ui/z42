@@ -101,25 +101,83 @@ fn pin_view_unknown_field_z0908() {
 }
 
 #[test]
-fn pin_array_z0908_pending_buffer_type() {
-    // Array<u8> pinning waits on a dedicated byte-buffer Value variant;
-    // the runtime should reject Array sources today with a clear message
-    // pointing at the follow-up spec.
+fn pin_empty_array_returns_zero_length_view() {
+    // Spec C10 — empty Array<u8> pin now accepted; produces a zero-length
+    // PinnedView (ptr address may be the empty-Box dangling sentinel; len = 0).
     let m = build_module(
-        "pin_array",
+        "pin_empty_array",
         vec![
-            Instruction::ArrayNewLit {
-                dst: 0,
-                elems: vec![],
-            },
+            Instruction::ArrayNewLit { dst: 0, elems: vec![] },
             Instruction::PinPtr { dst: 1, src: 0 },
+            Instruction::FieldGet { dst: 2, obj: 1, field_name: "len".to_string() },
+            Instruction::UnpinPtr { pinned: 1 },
+        ],
+        Terminator::Ret { reg: Some(2) },
+    );
+    let out = run_returning(&m).expect("empty Array<u8> pin ok");
+    assert_eq!(out, Some(Value::I64(0)));
+}
+
+#[test]
+fn pin_array_u8_snapshots_bytes() {
+    // Spec C10 — Array of I64 in 0..=255 pins as a byte buffer.
+    use z42_vm::vm_context::VmContext;
+    let ctx = VmContext::new();
+    let m = build_module(
+        "pin_byte_array",
+        vec![
+            Instruction::ConstI64 { dst: 0, val: 0x68 }, // 'h'
+            Instruction::ConstI64 { dst: 1, val: 0x69 }, // 'i'
+            Instruction::ArrayNewLit { dst: 2, elems: vec![0, 1] },
+            Instruction::PinPtr { dst: 3, src: 2 },
+            Instruction::FieldGet { dst: 4, obj: 3, field_name: "len".to_string() },
+            Instruction::UnpinPtr { pinned: 3 },
+        ],
+        Terminator::Ret { reg: Some(4) },
+    );
+    let func = &m.functions[0];
+    let out = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+        .expect("byte array pin ok");
+    assert_eq!(out, Some(Value::I64(2)));
+    // After UnpinPtr the owned-buffer table should be empty.
+    assert_eq!(
+        ctx.pinned_owned_buffer_count(),
+        0,
+        "UnpinPtr must release the owned Box<[u8]>"
+    );
+}
+
+#[test]
+fn pin_array_with_out_of_range_element_z0908() {
+    let m = build_module(
+        "pin_oor",
+        vec![
+            Instruction::ConstI64 { dst: 0, val: 256 },          // out of u8 range
+            Instruction::ArrayNewLit { dst: 1, elems: vec![0] },
+            Instruction::PinPtr { dst: 2, src: 1 },
         ],
         Terminator::Ret { reg: None },
     );
-    let err = run_returning(&m).expect_err("Array PinPtr must fail in C4");
+    let err = run_returning(&m).expect_err("element 256 must fail");
     let msg = format!("{err:#}");
     assert!(msg.contains("Z0908"), "msg = {msg}");
-    assert!(msg.contains("Array"), "msg = {msg}");
+    assert!(msg.contains("0..=255"), "msg = {msg}");
+}
+
+#[test]
+fn pin_array_with_negative_element_z0908() {
+    let m = build_module(
+        "pin_neg",
+        vec![
+            Instruction::ConstI64 { dst: 0, val: -1 },
+            Instruction::ArrayNewLit { dst: 1, elems: vec![0] },
+            Instruction::PinPtr { dst: 2, src: 1 },
+        ],
+        Terminator::Ret { reg: None },
+    );
+    let err = run_returning(&m).expect_err("element -1 must fail");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("Z0908"), "msg = {msg}");
 }
 
 #[test]

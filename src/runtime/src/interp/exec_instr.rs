@@ -500,13 +500,33 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     len: s.len() as u64,
                     kind: crate::metadata::PinSourceKind::Str,
                 },
-                Value::Array(_) => {
-                    bail!(
-                        "Z0908: PinPtr does not support Array yet — `Array<u8>` pinning needs a dedicated byte buffer type and lands in a follow-up spec"
-                    );
+                Value::Array(arr) => {
+                    // Spec C10 — `Array<u8>` pin: snapshot the bytes into
+                    // a Box<[u8]> owned by the VM for the pin's lifetime.
+                    // Each element must be a `Value::I64` in 0..=255.
+                    let arr_ref = arr.borrow();
+                    let mut bytes = Vec::with_capacity(arr_ref.len());
+                    for (i, v) in arr_ref.iter().enumerate() {
+                        match v {
+                            Value::I64(n) if (0..=255).contains(n) => {
+                                bytes.push(*n as u8);
+                            }
+                            other => bail!(
+                                "Z0908: PinPtr Array element {i} not a u8 in 0..=255: {other:?}"
+                            ),
+                        }
+                    }
+                    let len = bytes.len() as u64;
+                    let buf: Box<[u8]> = bytes.into_boxed_slice();
+                    let ptr = ctx.pin_owned_buffer(buf);
+                    Value::PinnedView {
+                        ptr,
+                        len,
+                        kind: crate::metadata::PinSourceKind::ArrayU8,
+                    }
                 }
                 other => bail!(
-                    "Z0908: PinPtr source must be String, got {:?}",
+                    "Z0908: PinPtr source must be String or Array<u8>, got {:?}",
                     other
                 ),
             };
@@ -514,10 +534,15 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         }
         Instruction::UnpinPtr { pinned } => {
             match frame.get(*pinned)? {
+                Value::PinnedView { ptr, kind: crate::metadata::PinSourceKind::ArrayU8, .. } => {
+                    // Spec C10: drop the snapshot Box<[u8]> we leaked into
+                    // VmContext at PinPtr time.
+                    ctx.release_owned_buffer(*ptr);
+                }
                 Value::PinnedView { .. } => {
-                    // RC backend: nothing to release. A future moving GC
-                    // backend will deregister the entry from its pin set
-                    // here.
+                    // Str pin: borrowed from the source String — no-op.
+                    // Future moving GC will deregister the entry from its
+                    // pin set here.
                 }
                 other => bail!(
                     "Z0908: UnpinPtr expects PinnedView (compiler-emitted UnpinPtr should always pair with a prior PinPtr); got {:?}",

@@ -82,6 +82,18 @@ static int64_t counter_strlen(const char* s) {
     return (int64_t)strlen(s);
 }
 
+/* Spec C10 — verifies Array<u8> pin: caller hands a (ptr, len) pair from
+ * a pinned z42 byte[] and we just echo back the length we observed,
+ * after touching every byte to force a real read. Returning ptr[0] would
+ * also work but len is trivial to assert from the test side. */
+static int64_t counter_buflen(const uint8_t* buf, uint64_t len) {
+    /* Touch the buffer (so optimisers can't elide) — sum mod 256. */
+    volatile uint64_t acc = 0;
+    for (uint64_t i = 0; i < len; ++i) acc += buf[i];
+    (void)acc;
+    return (int64_t)len;
+}
+
 /* ── Static descriptor ──────────────────────────────────────────────── */
 
 static const Z42MethodDesc COUNTER_METHODS[] = {
@@ -110,6 +122,13 @@ static const Z42MethodDesc COUNTER_METHODS[] = {
         .name = "strlen",
         .signature = "(*const u8) -> i64",
         .fn_ptr = (void*)counter_strlen,
+        .flags = Z42_METHOD_FLAG_STATIC,
+        .reserved = 0,
+    },
+    {
+        .name = "buflen",
+        .signature = "(*const u8, u64) -> i64",
+        .fn_ptr = (void*)counter_buflen,
         .flags = Z42_METHOD_FLAG_STATIC,
         .reserved = 0,
     },

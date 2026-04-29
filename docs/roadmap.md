@@ -122,7 +122,8 @@
 | **C7**（e2e harness ✅ 2026-04-29）| Rust 集成测试加载真实 .z42 编译产物 + 预注册 numz42-c + 跑端到端，闭环 C2→C6；build.rs 自动编译 fixture .z42 → OUT_DIR/.zbc | ✅ |
 | **C8**（`marshal-str-to-cstr` ✅ 2026-04-29）| `Value::Str` 直接 marshal 到 `*const c_char`：`marshal::Arena` 承载临时 CString；`(Value::Str, SigType::CStr/Ptr)` 分支构造 NUL-terminated 借出；CallNative dispatch 改造接 arena；interior NUL 报 Z0908；numz42-c 加 strlen + e2e 验证 `strlen("hello world") == 11`。z42 用户代码现在可以直接传 string 到 native 函数无需 pinned 块 | ✅ |
 | **C9**（`class-level-native-shorthand` ✅ 2026-04-29）| 类级 `[Native(lib=, type=)]` 默认值：`Tier1NativeBinding` 字段改 nullable 承载部分信息；`ClassDecl` 加 `ClassNativeDefaults` 字段；parser 接受 partial 形式（lib/type/entry 任意子集）；TypeChecker 把方法级 binding 与类级 defaults 拼接，缺 fields 报 E0907；IrGen `EmitNativeStub` 接 stitched binding emit `CallNativeInstr`。**用户写非平凡 native 库不再需要每个方法重复 lib + type**。E0907 抛出条件扩展。 | ✅ |
-| **C10+**（后续 spec，未排）| extern class T / manifest reader (.z42abi) / source generator import / CallNativeVtable runtime + IR codegen / Object/TypeRef marshal / Array<u8> byte buffer pin / JIT emit native opcodes | 📋 |
+| **C10**（`byte-buffer-pin` ✅ 2026-04-29）| Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 源扫元素验证 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。numz42-c 加 `counter_buflen(*const u8, u64) -> i64`；e2e 测试 z42 byte[] → CallNative buflen → 长度正确。**z42 二进制数据可直接进 native FFI**（文件 IO / 密码学 / 网络协议 unblocked）。Z0908(e) 抛出。 | ✅ |
+| **C11+**（后续 spec，未排）| extern class T / manifest reader (.z42abi) / source generator import / CallNativeVtable runtime + IR codegen / Object/TypeRef marshal / JIT emit native opcodes | 📋 |
 
 ### 标准库（基础）
 - `z42.core`：基础类型协议（ToString、Equals、GetHashCode）

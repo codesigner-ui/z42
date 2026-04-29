@@ -80,6 +80,13 @@ pub struct VmContext {
     /// Loaded native libraries kept alive for the VM's lifetime so that
     /// function pointers stored in `native_types` stay valid until VM drop.
     pub(crate) native_libs:       Rc<RefCell<Vec<libloading::Library>>>,
+
+    /// Spec C10 — owned byte buffers backing `Value::PinnedView` instances
+    /// produced by pinning a `Value::Array<u8>`. Keyed by the buffer's data
+    /// pointer (`Box::as_ptr() as u64`) so `UnpinPtr` can find and drop
+    /// the right entry. Empty for `Str`-source pins (those borrow from the
+    /// source `String` and need no extra storage).
+    pub(crate) pinned_owned_buffers: Rc<RefCell<HashMap<u64, Box<[u8]>>>>,
 }
 
 impl Default for VmContext {
@@ -136,6 +143,7 @@ impl VmContext {
             heap: Box::new(heap),
             native_types: Rc::new(RefCell::new(HashMap::new())),
             native_libs:  Rc::new(RefCell::new(Vec::new())),
+            pinned_owned_buffers: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
@@ -172,6 +180,31 @@ impl VmContext {
     /// Total number of registered native types — primarily for tests.
     pub fn native_type_count(&self) -> usize {
         self.native_types.borrow().len()
+    }
+
+    // ── Pinned owned buffers (spec C10 — Array<u8> pin) ──────────────────
+
+    /// Register an owned byte buffer (the snapshot of an `Array<u8>` taken
+    /// during `PinPtr`). Returns the buffer's data pointer for storage in
+    /// the `Value::PinnedView`. The buffer remains alive until
+    /// [`release_owned_buffer`] is called from a matching `UnpinPtr`.
+    pub fn pin_owned_buffer(&self, buf: Box<[u8]>) -> u64 {
+        let ptr = buf.as_ptr() as u64;
+        self.pinned_owned_buffers.borrow_mut().insert(ptr, buf);
+        ptr
+    }
+
+    /// Drop an owned buffer previously registered via [`pin_owned_buffer`].
+    /// Idempotent: silently no-ops if `ptr` isn't registered (e.g. `Str`
+    /// pins which never enter the table).
+    pub fn release_owned_buffer(&self, ptr: u64) {
+        let _ = self.pinned_owned_buffers.borrow_mut().remove(&ptr);
+    }
+
+    /// Total number of currently-pinned owned buffers — exposed for
+    /// tests asserting that UnpinPtr cleaned up.
+    pub fn pinned_owned_buffer_count(&self) -> usize {
+        self.pinned_owned_buffers.borrow().len()
     }
 
     /// Load a native library and invoke its `<basename>_register` entry point.

@@ -89,7 +89,7 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 
 | Code   | Title                            | When it occurs |
 |--------|----------------------------------|----------------|
-| Z0908  | NativeMarshalConstraintViolation (runtime) | (a) `PinPtr` 收到非 `Value::Str` source（C4 仅支持 `String`，`Array<u8>` 等待后续 spec 引入字节缓冲类型）；(b) `UnpinPtr` 收到非 `Value::PinnedView`（IR 损坏或 compiler emit 不配对）；(c) `FieldGet` on `PinnedView` 访问 `ptr` / `len` 之外的字段名；(d) **(spec C8)** `marshal::value_to_z42` 把含 interior NUL 的 `Value::Str` 投到 `*const c_char` —— 不可能歧义传给 NUL-terminated 消费者 |
+| Z0908  | NativeMarshalConstraintViolation (runtime) | (a) `PinPtr` 收到非 `Value::Str` / `Value::Array` source；(b) `UnpinPtr` 收到非 `Value::PinnedView`（IR 损坏或 compiler emit 不配对）；(c) `FieldGet` on `PinnedView` 访问 `ptr` / `len` 之外的字段名；(d) **(spec C8)** `marshal::value_to_z42` 把含 interior NUL 的 `Value::Str` 投到 `*const c_char`；(e) **(spec C10)** `PinPtr` Array 源含**非 `Value::I64` 元素**或元素**超出 `0..=255`**（仅每元素都是 u8 范围 i64 时可作为字节缓冲 pin） |
 | E0908a | PinnedNotPinnable (TypeCheck, spec C5) | `pinned p = <expr> { ... }` 中 `<expr>` 类型不是 `string` |
 | E0908b | PinnedControlFlow (TypeCheck, spec C5) | `pinned` 块体内含 `return` / `break` / `continue` / `throw` —— C5 范围内严格禁止；放开需要 IR 层 try-finally-like UnpinPtr emission，留给后续 spec |
 

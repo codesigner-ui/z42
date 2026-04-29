@@ -117,12 +117,13 @@ fn register_counter_then_resolve() {
         .expect("Counter resolves after register");
     assert_eq!(ty.module(), "numz42");
     assert_eq!(ty.type_name(), "Counter");
-    // C8 added `strlen` to the Counter method table (4 methods total).
-    assert_eq!(ty.method_count(), 4);
+    // C8 added `strlen`; C10 added `buflen` (5 methods total).
+    assert_eq!(ty.method_count(), 5);
     assert!(ty.method("inc").is_some());
     assert!(ty.method("get").is_some());
     assert!(ty.method("__alloc__").is_some());
     assert!(ty.method("strlen").is_some());
+    assert!(ty.method("buflen").is_some());
 }
 
 #[test]
@@ -424,6 +425,74 @@ fn z42_str_marshals_to_cstr_via_strlen() {
     let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect("strlen via Str-marshal succeeds");
     assert_eq!(result, Some(Value::I64(11)));
+}
+
+#[test]
+fn z42_byte_array_pins_and_calls_native_buflen() {
+    // Spec C10 — z42 byte[] pinned and passed to native:
+    //   r0..r2 = const I64 (bytes)
+    //   r3 = ArrayNewLit [r0, r1, r2]
+    //   r4 = PinPtr r3
+    //   r5 = FieldGet r4 "ptr"
+    //   r6 = FieldGet r4 "len"
+    //   r7 = CallNative numz42::Counter::buflen(r5, r6)
+    //   UnpinPtr r4
+    //   Ret r7
+    let ctx = VmContext::new();
+    invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
+
+    let func = Function {
+        name: "byte_pin_e2e.Main".into(),
+        param_count: 0,
+        ret_type: "i64".into(),
+        exec_mode: ExecMode::Interp,
+        blocks: vec![BasicBlock {
+            label: "entry".into(),
+            instructions: vec![
+                Instruction::ConstI64 { dst: 0, val: 0x68 }, // 'h'
+                Instruction::ConstI64 { dst: 1, val: 0x69 }, // 'i'
+                Instruction::ConstI64 { dst: 2, val: 0x21 }, // '!'
+                Instruction::ArrayNewLit { dst: 3, elems: vec![0, 1, 2] },
+                Instruction::PinPtr { dst: 4, src: 3 },
+                Instruction::FieldGet { dst: 5, obj: 4, field_name: "ptr".into() },
+                Instruction::FieldGet { dst: 6, obj: 4, field_name: "len".into() },
+                Instruction::CallNative {
+                    dst: 7,
+                    module: "numz42".into(),
+                    type_name: "Counter".into(),
+                    symbol: "buflen".into(),
+                    args: vec![5, 6],
+                },
+                Instruction::UnpinPtr { pinned: 4 },
+            ],
+            terminator: Terminator::Ret { reg: Some(7) },
+        }],
+        exception_table: vec![],
+        is_static: true,
+        max_reg: 16,
+        line_table: vec![],
+        local_vars: vec![],
+        type_params: vec![],
+        type_param_constraints: vec![],
+        block_index: HashMap::new(),
+    };
+    let m = Module {
+        name: "byte_pin_e2e".into(),
+        string_pool: vec![],
+        classes: vec![],
+        functions: vec![func],
+        type_registry: HashMap::new(),
+        func_index: HashMap::new(),
+    };
+    let func = &m.functions[0];
+    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+        .expect("byte array pin → native buflen succeeds");
+    assert_eq!(result, Some(Value::I64(3)));
+    assert_eq!(
+        ctx.pinned_owned_buffer_count(),
+        0,
+        "owned buffer must be released by UnpinPtr"
+    );
 }
 
 #[test]
