@@ -240,6 +240,13 @@ public static class DiagnosticCatalog
             "Native manifest parse failure",
             "A `.z42abi` manifest could not be loaded: the file is missing, the JSON is malformed, the `abi_version` does not match the compiler's expected ABI, or a required field (module / library_name / types) is missing. Re-generate the manifest from the producing native crate, or pin the compiler version that emitted it.",
             "import Counter from \"numz42\";  // numz42.z42abi missing/broken → E0909"),
+
+        // ── E0916: Native import synthesis (spec C11b) ───────────────────────
+
+        [DiagnosticCodes.NativeImportSynthesisFailure] = new(
+            "Native import synthesis failure",
+            "An `import T from \"lib\";` statement could not be turned into a script-visible class. Common causes: (a) the type name is not present in the manifest's `types[]` array; (b) a method's `params` / `ret` signature uses a type the C11b synthesizer does not yet support (only primitives, `Self`, and `*mut Self` / `*const Self` are accepted; `*const c_char`, user types, arrays, etc. are not yet handled); (c) two `import` statements name the same type but resolve to different libraries; (d) a `kind=\"method\"` entry's first parameter is not a `Self` pointer.",
+            "import Foo from \"numz42\";  // numz42.z42abi has no `Foo` type → E0916"),
     };
 
     // ── Public API ────────────────────────────────────────────────────────────

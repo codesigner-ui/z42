@@ -562,6 +562,7 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M13c** (`class-level-native-shorthand`) | 类级 `[Native(lib=, type=)]` 共享默认：`Tier1NativeBinding` 改 nullable，方法级 partial 形式 + 类级 defaults 拼接出完整 binding；TypeChecker 校验 stitched 完整性；IrGen 用 stitched 结果 emit `CallNativeInstr`。**非平凡 native 库声明不再每方法重复 lib + type**。 | C6 + C8 | ✅ 2026-04-29 |
 | **L2.M13d** (`byte-buffer-pin`) | Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 路径扫元素 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。Z0908(e) 抛出。**z42 二进制数据可直接进 native FFI**。 | C4 | ✅ 2026-04-29 |
 | **L2.M13e** (`manifest-reader-import`, C11a) | Lexer `Import` Phase1 keyword + contextual `from`；`import IDENT from "<lib>";` 顶层语法 → AST `NativeTypeImport` 收集到 `CompilationUnit.NativeImports`；`Z42.Project.NativeManifest.Read` 读取 `.z42abi` JSON（System.Text.Json，`abi_version == 1` + 必需字段轻量校验）；`NativeManifestException` + E0909 启用。**编译器现在能消费 manifest 数据通路；尚未合成 ClassDecl（留给 C11b）**。 | C9 | ✅ 2026-04-30 |
+| **L2.M13f** (`synthesize-native-class`, C11b — Path B1) | `NativeImportSynthesizer` 编译期 pass（位 Parser 与 TypeChecker 之间）：每个 `import T from "lib";` → 找 manifest → 合成 `ClassDecl`（`IsSealed=true`, `Visibility=Internal`, `Fields=[]`, `ClassNativeDefaults` 复用 C9 stitching）注入 `cu.Classes`；`ManifestSignatureParser` 白名单（primitives + `Self` + `*mut/const Self`）；`INativeManifestLocator` 注入式（默认 `<sourceDir>/<lib>.z42abi` + `Z42_NATIVE_LIBS_PATH`）；E0916 启用。**用户现在写 `import Counter from "numz42";` 即得脚本可见 Counter 类，TypeChecker / IrGen / VM 走 C2–C10 既有路径，零新 ABI**。 | C11a | ✅ 2026-04-30 |
 | **L2.M13** (manifest reader) | `.z42abi` manifest reader (schema already locked in C1) | M11 | ✅ 2026-04-30（合并入 C11a）|
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
 | **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |
@@ -657,6 +658,31 @@ L1 functions and naming conventions remain valid throughout L2.M8–M14. Migrati
 4. **L3.M15+** — legacy `__name` dispatch table removed once all stdlib migrated
 
 During the transition, both styles coexist; the compiler accepts both. No automated migration tool — stdlib reorg is manual, one capability at a time, each as its own `spec/changes/` proposal.
+
+---
+
+## §11.5 Native Class Synthesis: Path B1 / B2 / C (decided 2026-04-30)
+
+When the compiler synthesizes a script-visible `ClassDecl` from an `import T from "lib";` statement (spec C11b+), there are three architectural shapes for **who owns the instance memory layout**:
+
+| Path | Owner | What native side provides | What VM side does |
+|---|---|---|---|
+| **A** — native-owned blittable | Native struct with `#[repr(C)]` | size / align / per-field offsets in manifest; `tp_alloc` / `tp_dealloc` | Treats instance as opaque ptr; `Z42TypeDescriptor_v1` carries layout |
+| **B1** — handle-flavored (✅ C11b) | Native (opaque) | function callbacks only; native ctor returns `*mut Self`; methods take `*mut/const Self` first | VM stores opaque handle (Value-as-IntPtr); no script-visible fields |
+| **B2** — VM-owned fields (⏭️ C11c) | VM | function callbacks; field access via new `z42_obj_get/set_field` ABI | Allocates Value::Object with named fields; native methods see them via callback |
+| **C** — hybrid script-side `[Repr(C)]` (⏭️ C11d) | Script | layout declared by user in z42 `class` with `[Repr(C)]` attribute | Compiler emits matching descriptor; opens A-style perf for user-defined types |
+
+**C11b ships B1 only.** Rationale:
+- 95% of FFI use cases are wrapping opaque-handle libraries (sqlite, curl, openssl, regex_t) — B1 fits naturally
+- B1 reuses C2–C10 ABI unchanged, zero new VM-side surface
+- B2's "fields visible in z42 debugger / reflection" is desirable but not blocking
+- C lets users opt into A-style blittability without polluting the default path
+
+**Out of scope for C11b** (each becomes its own future spec):
+- B2: VM-owned fields requires `z42_obj_get_field(handle, name)` + `z42_obj_set_field(handle, name, value)` exports plus an allocator hook
+- A & C: blittable layout requires the synthesizer to read manifest `size` / `align` / per-field `offset` and emit a `Z42TypeDescriptor_v1` with field metadata, plus codegen must lower direct field access to offset arithmetic
+
+The handle in B1 is **not stored as a script-visible z42 field**. It is the runtime Value of the variable holding the imported instance — i.e. `var c = new Counter()` ⇒ `c` *is* the IntPtr returned by `numz42_Counter_alloc`. Subsequent calls `c.inc()` are dispatched as `CallNativeInstr` with `c` passed as the first libffi argument (the receiver), exactly the pattern C2–C10 already exercise for hand-written `[Native(lib=, type=, entry=)]` declarations.
 
 ---
 

@@ -107,6 +107,14 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 |-------|--------------------|----------------|
 | E0909 | ManifestParseError | (a) manifest 文件不存在 / IO 失败；(b) JSON 不合法；(c) `abi_version` 不等于 `NativeManifest.ExpectedAbiVersion`（当前 = 1）；(d) 缺必需字段（`module` / `library_name` / `types`） |
 
+### E0916（C11b 已启用，2026-04-30）
+
+由 `Z42.Semantics.Synthesis.NativeImportSynthesizer` 在合成 ClassDecl 时抛出 `NativeImportException`，由 `PackageCompiler` 在 source-loop 中捕获并写入诊断输出。
+
+| Code  | Title                          | When it occurs |
+|-------|--------------------------------|----------------|
+| E0916 | NativeImportSynthesisFailure   | (a) `import T from "lib";` 中 `T` 不在 manifest 的 `types[]` 中；(b) manifest 某 method 的 `params` / `ret` 用了 C11b 白名单外的类型（白名单：primitives / `Self` / `*mut/const Self`）；(c) 同名 type 被两条 import 声明但 lib 不同；(d) `kind=="method"` 的 entry 第一参数不是 `*mut/const Self`；(e) `DefaultNativeManifestLocator` 在 `<sourceDir>` 与 `Z42_NATIVE_LIBS_PATH` 中均找不到 `<lib>.z42abi` |
+
 ### Z0911–Z0915（R4 占位，2026-04-30）
 
 由 spec [`compiler-validate-test-attributes`](../../spec/changes/compiler-validate-test-attributes/) (R4) 钉死；R1 / R1.C 已收集 attribute（`[Test]` / `[Benchmark]` / `[Skip]` / 等），但**不**做语义校验。R4 加 `TestAttributeValidator` pass 在 TypeCheck 后跑，触发以下错误码。本期仅占位编号。

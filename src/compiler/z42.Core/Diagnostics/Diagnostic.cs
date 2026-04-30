@@ -96,4 +96,7 @@ public static class DiagnosticCodes
 
     // Native interop — manifest reader (spec C11a)
     public const string ManifestParseError       = "E0909"; // .z42abi manifest parse / validation failure
+
+    // Native interop — class synthesis from manifest (spec C11b)
+    public const string NativeImportSynthesisFailure = "E0916"; // import T from "lib"; synthesizer cannot produce ClassDecl
 }

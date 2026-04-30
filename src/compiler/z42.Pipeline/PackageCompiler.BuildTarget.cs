@@ -301,6 +301,27 @@ public static partial class PackageCompiler
                 parseErrors++;
                 continue;
             }
+            // C11b — synthesize ClassDecls for `import T from "lib";` declarations.
+            try
+            {
+                Z42.Semantics.Synthesis.NativeImportSynthesizer.Run(
+                    cu,
+                    new Z42.Semantics.Synthesis.DefaultNativeManifestLocator(),
+                    sourceDir: Path.GetDirectoryName(sourceFile));
+            }
+            catch (Z42.Semantics.Synthesis.NativeImportException ex)
+            {
+                Console.Error.WriteLine($"error[{ex.Code}]: {ex.Message}");
+                parseErrors++;
+                continue;
+            }
+            catch (Z42.Project.NativeManifestException ex)
+            {
+                Console.Error.WriteLine($"error[{ex.Code}]: {ex.Message}");
+                parseErrors++;
+                continue;
+            }
+
             string ns = cu.Namespace ?? "main";
             parsedCus.Add((sourceFile, source, cu, ns));
         }
