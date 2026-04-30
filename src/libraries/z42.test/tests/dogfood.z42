@@ -1,14 +1,13 @@
-// Spec R5 — z42.test 库本地测试（dogfooding）。
+// Spec R5 + R4.B — z42.test 库本地测试（dogfooding）。
 //
 // 用 Std.Test.Assert 测试 Std.Test.Assert 自身：
 // - 通过路径不抛异常 → Outcome::Passed
-// - Assert.Fail 抛 TestFailure → 这条测试**故意失败**，用于人工验证 runner
-//   能区分 TestFailure；本期用 [Skip] 跳过，留作 R3 完整版加 [ShouldThrow]
-//   时改为 [ShouldThrow<TestFailure>]
-// - Assert.Skip 抛 SkipSignal → 同上，[Skip] 占位
+// - Assert.Fail 抛 TestFailure → 用 [ShouldThrow<TestFailure>] 验证（R4.B + A2）
+// - Assert.Skip 抛 SkipSignal → 用 [ShouldThrow<SkipSignal>] 验证（同）
 namespace Z42TestDogfood;
 
-using Std.Test;
+using Std;       // TestFailure / SkipSignal (in Std namespace)
+using Std.Test;  // Assert API
 
 // ── Pass-path 验证（这些都应该绿）──────────────────────────────────────
 
@@ -44,16 +43,16 @@ void test_assert_contains_pass() {
     Assert.Contains("ell", "hello");
 }
 
-// ── Fail-path 占位（待 R3 完整版 + R4 [ShouldThrow]）────────────────────
+// ── Fail-path 验证（R4.B [ShouldThrow] + A2 runner runtime check）───────
 
 [Test]
-[Skip(reason: "Assert.Fail throws TestFailure — verify via [ShouldThrow<TestFailure>] in R4")]
+[ShouldThrow<TestFailure>]
 void test_assert_fail_throws_testfailure() {
     Assert.Fail("expected to fail");
 }
 
 [Test]
-[Skip(reason: "Assert.Skip throws SkipSignal — verify via [ShouldThrow<SkipSignal>] in R4")]
+[ShouldThrow<SkipSignal>]
 void test_assert_skip_throws_skipsignal() {
     Assert.Skip("expected to skip");
 }

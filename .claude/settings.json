@@ -98,7 +98,8 @@
       "Bash(xxd /tmp/test_demo.zbc)",
       "Bash(git restore *)",
       "Bash(git pull *)",
-      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 mv spec/changes/manifest-reader-import spec/archive/2026-04-30-manifest-reader-import)"
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 mv spec/changes/manifest-reader-import spec/archive/2026-04-30-manifest-reader-import)",
+      "Bash(./scripts/test-stdlib.sh z42.test)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

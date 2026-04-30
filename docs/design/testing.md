@@ -152,9 +152,20 @@ ZbcReader → Rust loader → resolve_test_index_strings
   → TestEntry.expected_throw_type = Some("E")
 ```
 
+### Runtime 比对（A2，2026-04-30）
+
+z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出：
+
+- **未抛**（exit 0）→ Failed `expected to throw <E>, but no exception was thrown`
+- **类型匹配**（FQ 相等 OR 短名相等）→ Passed
+- **类型不匹配** → Failed `expected to throw <E>, got <X>`
+- 不做 inheritance walk（`[ShouldThrow<Exception>]` 不匹配 `Std.TestFailure`，留给后续 spec）
+
+类型提取：从 stderr 的 `Error: uncaught exception: ` 后取 `[A-Za-z0-9_.]+`，覆盖 `<TYPE>: <msg>` 与 `<TYPE>{field=...}` 两种 z42vm 输出格式。
+
 ### 当前不做的
 
-- ⏸️ z42-test-runner 实际比对 thrown vs expected —— 留给 A2 spec
+- ⏸️ inheritance-aware 比对（`[ShouldThrow<Base>]` 匹配 `SubClass`）
 - ⏸️ 多类型参数 `[X<A, B>]` / 嵌套 `[X<List<Y>>]` / dotted name `<Std.E>`
 - ⏸️ TypeArg 升级为 TypeExpr（当前 `string?` 足够）
 - ⏸️ user-defined attributes（z42 当前白名单：z42.test.* + Native 两个 family）

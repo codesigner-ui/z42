@@ -114,6 +114,10 @@ struct DiscoveredTest<'a> {
     method_name: &'a str,
     flags: TestFlags,
     skip_reason: Option<String>,
+    /// Resolved [ShouldThrow<E>] expected exception type name (R4.B / A2).
+    /// Populated only when SHOULD_THROW flag is set and the type was resolved.
+    /// `None` means the test has no ShouldThrow expectation.
+    expected_throw: Option<String>,
 }
 
 struct TestReport<'a> {
@@ -135,11 +139,19 @@ impl<'a> TestReport<'a> {
             } else {
                 None
             };
+            // R4.B / A2 — only populate when SHOULD_THROW is set AND the type
+            // resolved (str_idx == 0 leaves expected_throw_type as None).
+            let expected_throw = if entry.flags.contains(TestFlags::SHOULD_THROW) {
+                entry.expected_throw_type.clone()
+            } else {
+                None
+            };
             tests.push(DiscoveredTest {
                 method_id: entry.method_id,
                 method_name: &method.name,
                 flags: entry.flags,
                 skip_reason,
+                expected_throw,
             });
         }
         Self { tests }
@@ -185,6 +197,37 @@ fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
 
+    // R4.B / A2 — [ShouldThrow<E>] inverts the success/failure semantics:
+    // success means "the expected type was thrown" rather than "no exception".
+    if let Some(expected) = &test.expected_throw {
+        if output.status.success() {
+            return Outcome::Failed {
+                reason: format!(
+                    "expected to throw `{expected}`, but no exception was thrown"
+                ),
+            };
+        }
+        let actual = extract_thrown_type(&stderr);
+        match actual.as_deref() {
+            Some(a) if type_matches(expected, a) => {
+                return Outcome::Passed { duration_ms };
+            }
+            Some(a) => {
+                return Outcome::Failed {
+                    reason: format!("expected to throw `{expected}`, got `{a}`"),
+                };
+            }
+            None => {
+                return Outcome::Failed {
+                    reason: format!(
+                        "expected to throw `{expected}`, got non-exception failure: {}",
+                        stderr.lines().next().unwrap_or("(empty stderr)").trim_end(),
+                    ),
+                };
+            }
+        }
+    }
+
     if output.status.success() {
         return Outcome::Passed { duration_ms };
     }
@@ -212,6 +255,47 @@ fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
         reason = format!("z42vm exited with status {}", output.status);
     }
     Outcome::Failed { reason }
+}
+
+/// Extract the (possibly fully-qualified) thrown type name from z42vm's stderr.
+///
+/// z42vm prints uncaught exceptions in one of two shapes (kept consistent with
+/// `interp::format_uncaught_exception`):
+///   `Error: uncaught exception: <FQ_TYPE>: <msg>`        — string-message form
+///   `Error: uncaught exception: <FQ_TYPE>{field=...}`    — object-dump form
+///
+/// We pull `<FQ_TYPE>` —— the longest prefix of `[A-Za-z0-9_.]` after the
+/// `"Error: uncaught exception: "` literal. Returns `None` when the prefix is
+/// absent (e.g. VM crashed before exception machinery).
+fn extract_thrown_type(stderr: &str) -> Option<String> {
+    const PREFIX: &str = "Error: uncaught exception: ";
+    for line in stderr.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix(PREFIX) {
+            let end = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '.'))
+                .unwrap_or(rest.len());
+            if end == 0 { return None; }
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
+}
+
+/// Whether `expected` (as written in `[ShouldThrow<E>]`) matches the `actual_fq`
+/// fully-qualified type extracted from stderr. Matches when:
+///   - strings are byte-equal (`"Std.TestFailure" == "Std.TestFailure"`)
+///   - `expected` is the trailing dotted segment of `actual_fq`
+///     (`"TestFailure"` matches `"Std.TestFailure"` but not `"MyTestFailure"`)
+///
+/// Does NOT walk inheritance: `[ShouldThrow<Exception>]` does not match
+/// `Std.TestFailure` even though `TestFailure : Exception`. That broader
+/// behaviour is left to a future spec (requires runner-side type hierarchy).
+fn type_matches(expected: &str, actual_fq: &str) -> bool {
+    if expected == actual_fq { return true; }
+    // Trailing-segment match: split on `.`, last piece is the short name.
+    let actual_short = actual_fq.rsplit('.').next().unwrap_or(actual_fq);
+    expected == actual_short
 }
 
 fn extract_exception_msg(stderr: &str) -> String {
@@ -286,4 +370,101 @@ fn print_footer(summary: &RunSummary) {
         summary.skipped,
     );
     println!("{}", line);
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── extract_thrown_type ──────────────────────────────────────────────
+
+    #[test]
+    fn extract_simple_qualified() {
+        let s = "Error: uncaught exception: Std.TestFailure: boom";
+        assert_eq!(extract_thrown_type(s), Some("Std.TestFailure".to_string()));
+    }
+
+    #[test]
+    fn extract_short_name() {
+        let s = "Error: uncaught exception: MyError: something";
+        assert_eq!(extract_thrown_type(s), Some("MyError".to_string()));
+    }
+
+    #[test]
+    fn extract_picks_first_matching_line_in_multiline() {
+        let s = "some preamble\n  Error: uncaught exception: Std.SkipSignal: skipped\nfooter";
+        assert_eq!(extract_thrown_type(s), Some("Std.SkipSignal".to_string()));
+    }
+
+    #[test]
+    fn extract_no_prefix_returns_none() {
+        let s = "panic: VM segfaulted at 0xdeadbeef";
+        assert_eq!(extract_thrown_type(s), None);
+    }
+
+    #[test]
+    fn extract_no_message_separator() {
+        // Trailing-only form: no `:`, no `{` — just the type. Pull the whole
+        // remaining identifier-like prefix.
+        let s = "Error: uncaught exception: Std.TestFailure";
+        assert_eq!(extract_thrown_type(s), Some("Std.TestFailure".to_string()));
+    }
+
+    #[test]
+    fn extract_object_dump_form() {
+        // z42vm's actual format for exception objects without a string message:
+        // type name followed by `{field=value}` — must stop at the `{`.
+        let s = r#"Error: uncaught exception: Std.TestFailure{message="boom"}"#;
+        assert_eq!(extract_thrown_type(s), Some("Std.TestFailure".to_string()));
+    }
+
+    #[test]
+    fn extract_with_indentation() {
+        let s = "       Error: uncaught exception: Std.SkipSignal{}";
+        assert_eq!(extract_thrown_type(s), Some("Std.SkipSignal".to_string()));
+    }
+
+    // ── type_matches ─────────────────────────────────────────────────────
+
+    #[test]
+    fn matches_byte_equal() {
+        assert!(type_matches("Std.TestFailure", "Std.TestFailure"));
+    }
+
+    #[test]
+    fn matches_short_against_qualified() {
+        assert!(type_matches("TestFailure", "Std.TestFailure"));
+        assert!(type_matches("SkipSignal", "Std.SkipSignal"));
+    }
+
+    #[test]
+    fn no_false_positive_on_suffix_collision() {
+        // Crucial: substring containment must NOT trigger a match.
+        assert!(!type_matches("TestFailure", "Std.MyTestFailure"));
+        assert!(!type_matches("Failure", "Std.TestFailure"));
+    }
+
+    #[test]
+    fn no_match_on_different_short_names() {
+        assert!(!type_matches("TestFailure", "Std.SkipSignal"));
+        assert!(!type_matches("Foo", "Bar"));
+    }
+
+    #[test]
+    fn empty_strings_no_match() {
+        // Empty `expected` could falsely match anything via short-name suffix
+        // logic if not guarded — make sure it doesn't. Both sides empty are
+        // technically equal but this case shouldn't arise (validator E0913
+        // prevents bare `[ShouldThrow]` from reaching the runner).
+        assert!(!type_matches("", "Std.TestFailure"));
+        assert!(!type_matches("Foo", ""));
+    }
+
+    #[test]
+    fn matches_short_against_short() {
+        // No namespace on the actual side (rare but possible).
+        assert!(type_matches("TestFailure", "TestFailure"));
+    }
 }

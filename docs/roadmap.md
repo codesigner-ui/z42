@@ -104,11 +104,12 @@
   - **R3 minimal**（`add-z42-test-runner` ✅ 2026-04-30）：z42-test-runner subprocess 模式（fork z42vm with `--entry <name>`，按 stderr 内容分类 Pass/Skip/Fail）
   - **R4.A**（`compiler-validate-test-attributes` ✅ 2026-04-30）：TestAttributeValidator pass + E0911/E0912/E0914/E0915 4 个错误码（[Test]/[Benchmark]/[Setup]/[Teardown] 签名 + 互斥校验；[Skip] 缺 reason 校验）
   - **R4.B**（`add-generic-attribute-syntax` ✅ 2026-04-30）：单类型参数泛型 attribute 语法 `[Name<TypeArg>]`；解锁 `[ShouldThrow<E>]`；E0913 验证（type arg 必填 / 类型存在 / 继承 Exception / 仅 ShouldThrow 接受 type arg）；IrGen 写入 `TestEntry.ExpectedThrowTypeIdx` + `TestFlags.ShouldThrow`
+  - **A2**（`extend-runner-shouldthrow` ✅ 2026-04-30）：z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出（FQ 完整匹配 OR 短名匹配，无 inheritance walk）；dogfood.z42 两个 `[Skip]` 占位替换为 `[ShouldThrow<TestFailure>]` / `[ShouldThrow<SkipSignal>]` —— **z42.test 自检完整闭环**（7 passed / 0 skipped，原 5/2）
   - **R5**（`rewrite-goldens-with-test-mechanism` minimal + ad-hoc 迁移 ✅ 2026-04-30）：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件 + `just test-stdlib` 入口；13 个 stdlib-bound golden 物理迁回所测库目录
 - 📋 **后续完整版**（详见 [spec/changes/](../spec/changes/)）：
   - **R3 完整版**（`rewrite-z42-test-runner-compile-time`）：编译时收集 [Test] 名单；[Setup]/[Teardown] hook 真生效；JSON/JUnit 输出
-  - **R2 完整版**（`extend-z42-test-library`）：`[ShouldThrow<E>]` runtime 比对 + `TestIO.captureStdout` + `Bencher` 完整实现
-  - **A2**（待开 spec）：runner 读 TIDX `expected_throw_type` 比对实际 stderr；dogfood.z42 `[Skip]` 替换为 `[ShouldThrow<E>]`
+  - **R2 完整版**（`extend-z42-test-library`）：`TestIO.captureStdout` + `Bencher` 完整实现
+  - **inheritance-aware ShouldThrow**（待开 spec）：让 `[ShouldThrow<Base>]` 匹配 `SubClass` 抛出（要求 runner 知道完整类型层次）
 - 🚧 增量测试 `scripts/test-changed.sh` —— P2 placeholder（justfile 占位中）
 
 ### VM 质量
