@@ -90,7 +90,7 @@ public static class PipelineCore
         // R4.A — validate z42.test attribute usage (signatures, mutual
         // exclusion, [Skip] reason). Runs after TypeCheck so symbol info is
         // available; before IrGen so codegen never sees malformed test entries.
-        Z42.Semantics.TestAttributeValidator.Validate(cu, diags);
+        Z42.Semantics.TestAttributeValidator.Validate(cu, sem, diags);
         if (diags.HasErrors)
             return new(null, diags, new HashSet<string>(), cu.Namespace, cu.Usings);
         try

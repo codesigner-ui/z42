@@ -1,7 +1,16 @@
 # Tasks: Compiler-Validate Test Attributes
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 R1 + R2 完成。
+> 状态：🟢 已完成（R4.A 阶段） | 创建：2026-04-29 | 归档：2026-04-30
+>
+> **实际交付（与 DRAFT 差异）**：
+> - ✅ TestAttributeValidator pass（在 TypeChecker 与 IrGen 之间）
+> - ✅ E0911 [Test] / [Benchmark] 签名 + 互斥校验
+> - ✅ E0912 [Benchmark] 部分签名校验（partial：return void + no generics；first-param `Bencher` 检查留给 R2.C 闭包依赖）
+> - ✅ E0914 [Skip] 缺 reason / [Skip][Ignore] 缺主标签
+> - ✅ E0915 [Setup]/[Teardown] 签名 + 互斥
+> - ✅ 7 个错误用例覆盖（z42.Tests TestAttributeValidatorTests）
+> - ⏸️ E0913 [ShouldThrow<E>] —— 阻塞于 generic attribute 语法（R4.B）
+> - ⏸️ TestCase 参数校验 —— 留给后续 spec（R5+ data-driven）
 
 ## 进度概览
 

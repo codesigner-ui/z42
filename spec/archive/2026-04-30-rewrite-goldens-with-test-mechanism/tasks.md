@@ -1,7 +1,12 @@
 # Tasks: Rewrite Goldens with Test Mechanism
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 R1 + R2 + R3 + R4 全部完成。
+> 状态：🟢 已完成（minimal 版） | 创建：2026-04-29 | 归档：2026-04-30
+>
+> **实际交付（与 DRAFT 差异）**：
+> - ✅ 阶段 4：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件（z42.math / z42.text / z42.collections / z42.core / z42.io / z42.test 自检）
+> - ✅ 半归属物理迁移（独立 spec ad-hoc 落地 2026-04-30）：13 个 stdlib-bound golden 从 `src/runtime/tests/golden/run/` 迁到 `src/libraries/<lib>/tests/golden/`；VM-only 93 例原地保留
+> - ⏸️ 阶段 1-3：批量 `_rewrite-goldens.py` 半自动重写工具 —— **未实施**。决定保留 stdout-based 比对（迁移而非重写），节省 ~106 个用例的人工 review 成本
+> - ⏸️ 阶段 5：编译器 GoldenTests 引用更新 —— 当前 paths 仍指向原 runtime 目录的 VM-only 部分，不受影响
 
 ## 进度概览
 

@@ -205,8 +205,13 @@ public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span)
 /// signature checks) is done in R4.</summary>
 public sealed record TestAttribute(
     /// <summary>Attribute name without brackets: "Test" / "Benchmark" / "Setup" /
-    /// "Teardown" / "Ignore" / "Skip".</summary>
+    /// "Teardown" / "Ignore" / "Skip" / "ShouldThrow".</summary>
     string Name,
+    /// <summary>Single type argument from `[Name&lt;TypeArg&gt;]` syntax (R4.B).
+    /// Null when the attribute has no `&lt;...&gt;` clause. Currently only
+    /// `[ShouldThrow&lt;E&gt;]` uses this; validator (E0913) gates which
+    /// attribute names accept it.</summary>
+    string? TypeArg,
     /// <summary>Named arguments (e.g. for [Skip(reason: "x", platform: "ios", feature: "jit")]).
     /// Null when the attribute has no parens or empty parens.</summary>
     IReadOnlyDictionary<string, string>? NamedArgs,

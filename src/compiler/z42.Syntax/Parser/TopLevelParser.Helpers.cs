@@ -209,9 +209,10 @@ internal static partial class TopLevelParser
 
     /// Spec R1 — known `z42.test.*` attribute names. Parser recognises bare
     /// identifier matches (e.g. `[Test]`); semantic validation lives in R4.
+    /// `ShouldThrow` added in R4.B (generic attribute syntax `[ShouldThrow&lt;E&gt;]`).
     private static readonly HashSet<string> TestAttributeNames = new(StringComparer.Ordinal)
     {
-        "Test", "Benchmark", "Setup", "Teardown", "Ignore", "Skip"
+        "Test", "Benchmark", "Setup", "Teardown", "Ignore", "Skip", "ShouldThrow"
     };
 
     /// Parses any bracketed attribute `[...]` and dispatches by name. Returns
@@ -268,6 +269,39 @@ internal static partial class TopLevelParser
     {
         cursor = cursor.Advance(); // <name>
 
+        // R4.B — optional `<TypeArg>`. Only single non-nested identifier allowed.
+        // Parser accepts the syntax for any attribute name; validator gates
+        // which names actually permit a type arg.
+        string? typeArg = null;
+        if (cursor.Current.Kind == TokenKind.Lt)
+        {
+            cursor = cursor.Advance(); // <
+            if (cursor.Current.Kind != TokenKind.Identifier)
+            {
+                throw new ParseException(
+                    $"`[{name}<...>]` requires a type identifier",
+                    cursor.Current.Span,
+                    DiagnosticCodes.UnexpectedToken);
+            }
+            typeArg = cursor.Current.Text;
+            cursor = cursor.Advance(); // <Type>
+            if (cursor.Current.Kind == TokenKind.Comma)
+            {
+                throw new ParseException(
+                    $"`[{name}<...>]` accepts a single type parameter; multi-arg generics not supported in attributes",
+                    cursor.Current.Span,
+                    DiagnosticCodes.UnexpectedToken);
+            }
+            if (cursor.Current.Kind == TokenKind.Lt)
+            {
+                throw new ParseException(
+                    $"`[{name}<...>]` does not support nested generic type parameters",
+                    cursor.Current.Span,
+                    DiagnosticCodes.UnexpectedToken);
+            }
+            ExpectKind(ref cursor, TokenKind.Gt);
+        }
+
         Dictionary<string, string>? namedArgs = null;
         if (cursor.Current.Kind == TokenKind.LParen)
         {
@@ -307,6 +341,7 @@ internal static partial class TopLevelParser
 
         return new TestAttribute(
             Name:      name,
+            TypeArg:   typeArg,
             NamedArgs: namedArgs,
             Span:      attrSpan);
     }

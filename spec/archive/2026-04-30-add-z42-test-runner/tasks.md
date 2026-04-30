@@ -1,7 +1,16 @@
 # Tasks: Add z42-test-runner + Test Metadata
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 P0 (add-just-and-ci) 完成。本文件锁定接口契约。
+> 状态：🟢 已完成（minimal 版） | 创建：2026-04-29 | 归档：2026-04-30
+>
+> **实际交付（与 DRAFT 差异）**：
+> - ✅ 阶段 1：z42.test 库 minimal —— TestFailure / SkipSignal / Assert 8 方法（Equal / NotEqual / True / False / Null / NotNull / Contains / Fail / Skip）
+> - ✅ 阶段 2-3：z42-test-runner subprocess 模式（不在 Cargo workspace；fork z42vm with `--entry <name>`，按 stderr 内容分类 Pass/Skip/Fail）—— 编译时收集 [Test] 留给独立 spec [rewrite-z42-test-runner-compile-time](../rewrite-z42-test-runner-compile-time/)
+> - ✅ 阶段 5：`just test-stdlib` 入口（独立 spec [add-just-and-ci 增量]）
+> - ⏸️ 阶段 4：`scripts/test-changed.sh` 增量测试 —— 推迟（P2 placeholder 仍在 justfile）
+> - ⏸️ 阶段 6.5/6：[Test] / [Skip] 等 attribute 编译时校验由 [compiler-validate-test-attributes](../compiler-validate-test-attributes/) 接管 —— R4.A
+> - ⏸️ TestIO / Bencher / [ShouldThrow<E>] —— 留给 [extend-z42-test-library](../extend-z42-test-library/)（R2 完整版）
+
+依赖 P0 (add-just-and-ci) 完成。本文件锁定接口契约。
 
 ## 进度概览
 

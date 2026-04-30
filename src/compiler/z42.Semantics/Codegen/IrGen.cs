@@ -218,6 +218,7 @@ public sealed class IrGen : IEmitterContext
         int reasonIdx    = 0;
         int platformIdx  = 0;
         int featureIdx   = 0;
+        int expectedThrowTypeIdx = 0;
 
         foreach (var attr in attrs)
         {
@@ -240,6 +241,13 @@ public sealed class IrGen : IEmitterContext
                             featureIdx = Intern(feature) + 1;
                     }
                     break;
+                case "ShouldThrow":
+                    flags |= TestFlags.ShouldThrow;
+                    // R4.B — TypeArg null is rejected by TestAttributeValidator
+                    // (E0913); guard here defensively for non-validated paths.
+                    if (attr.TypeArg is not null)
+                        expectedThrowTypeIdx = Intern(attr.TypeArg) + 1;
+                    break;
             }
         }
 
@@ -250,7 +258,7 @@ public sealed class IrGen : IEmitterContext
             SkipReasonStrIdx:     reasonIdx,
             SkipPlatformStrIdx:   platformIdx,
             SkipFeatureStrIdx:    featureIdx,
-            ExpectedThrowTypeIdx: 0,                            // R4
+            ExpectedThrowTypeIdx: expectedThrowTypeIdx,          // R4.B
             TestCases:            Array.Empty<TestCase>());     // R4 (TestCase parser pending)
     }
 
