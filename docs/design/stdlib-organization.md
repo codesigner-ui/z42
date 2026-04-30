@@ -13,7 +13,7 @@
 1. **每个 zpkg 是分发单元，对应 `[project] name = "z42.<domain>"`**；命名空间可跨 zpkg。
 2. **z42.core 是隐式 prelude** — 所有程序自动加载 + 不可声明依赖。
 3. **VM extern 只能在 z42.core**（lock-in 规则，见 `libraries/README.md`）；`z42.io` 是仅有的 host FFI 例外（OS 能力走单独通道）。
-4. **包按层叠层分类**（L0 → L1 → L2 → L3），上层依赖下层，**禁止反向依赖** —— 这是硬约束，决定了哪些接口必须在 core。
+4. **包按层叠层分类**（L0 → L1 → L2 → L3），上层依赖下层，**禁止反向依赖** —— 这是硬约束，决定了哪些接口必须在 core。stdlib 层级是更通用规则"包依赖必须无环"（见 [project.md L5 — 依赖必须无环](project.md#依赖必须无环no-circular-dependencies)）的特化形式：stdlib 不仅要求 DAG，还规定了固定的层级顺序。
 5. **「Extension over Expansion」**：**未来新增**类型方法 / 高层 trait 时，优先用外部包 + `impl Trait for Type` 扩展（L3-Impl2 已支持），而非塞回类型所在包。**已有 core 内容不做回溯迁移**（见规则 #6）。
 6. **不回溯迁移 core 内已有的接口/类型**：core 自身的实现（如 List 的 IEquatable / IComparable 约束、Dictionary 的 IEquatable 约束）以及未来可能添加的策略重载（`Sort(IComparer<T>)` / `Dictionary(IEqualityComparer<K>)`）都需要这些 protocol 在 core scope 内；迁出会让 core → L1 形成反向依赖，违反规则 #4。**这条规则比 #5 优先级高。**
 7. **每个新包必须明确层级 + 依赖闭包 + 是否可纯脚本化**；不满足全部的不开新包，留 backlog。

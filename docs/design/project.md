@@ -380,6 +380,50 @@ optimize = 3
 strip    = true
 ```
 
+### 依赖必须无环（No Circular Dependencies）
+
+**硬规则**：z42 包之间的依赖关系**必须形成有向无环图（DAG）**。任何包不得直接或间接依赖自身。该约束在所有依赖层级一致生效，没有运行时延迟 import 等后门。
+
+**适用范围与强制状态**：
+
+| 层级 | 约束 | 当前强制 |
+|------|------|----------|
+| zpkg `[dependencies]` 之间 | A 依赖 B → B 不得（直接或传递）依赖 A | 🔄 编译期解析时检测（错误码待 RFC，建议 `E0610 CircularPackageDependency`） |
+| Workspace member 之间 | 同上，DFS 三色检测 | ✅ `WS006 CircularDependency`（见 [error-codes.md](error-codes.md)） |
+| Preset `include` 链 | 同上 | ✅ `WS020 CircularInclude` |
+| stdlib 层级 | `L0 ← L1 ← L2 ← L3`，下层不得依赖上层 | ✅ 设计规则（见 [stdlib-organization.md](stdlib-organization.md)） |
+
+**为什么禁止循环依赖**：
+
+1. **构建顺序确定**：DAG 给出唯一拓扑序，编译器、增量构建、链接器能并行/缓存；环会要求"同时编译两个包"或人工切环
+2. **初始化语义清晰**：循环依赖会把"模块初始化顺序"暴露成运行时竞态；DAG 保证下层先初始化
+3. **工具链可推理**：类型解析、增量编译、IDE 跳转、文档生成在 DAG 下都是良定义问题
+4. **大型工程已被验证**：Rust crate、Go module、.NET assembly、Java JPMS module、Swift module 一律强制 DAG —— z42 沿用同一边界
+
+**破环手法（推荐）**：
+
+当两个包"看起来"必须互引时，几乎总能用以下手法之一拆开：
+
+- **下沉公共抽象**：把双方共享的接口/协议下沉到更底层的包，双方都依赖它（典型：`z42.core` 沉淀 `IComparable` / `IEquatable` / `IComparer`，让 `z42.collections` 的 `Sort` 与 `z42.core` 的 `List` 都能用）
+- **接口反转**：抽象在下层定义，实现在上层；下层无需感知具体实现（Rust trait 跨 crate 实现、Go "接口归消费者所有" 都是这个套路）
+- **跨包扩展**（cross-zpkg `impl Trait for Type`，L3-Impl2 已支持）：在外部包给已有类型挂方法，不必把方法塞回类型所在包
+- **再导出（re-export）**：用户使用路径扁平化，但物理依赖图保持 DAG（参考 Rust `pub use`、.NET `[TypeForwardedTo]`）
+- **拆 domain 后合或分**：发现 A、B 互相依赖，往往说明它们是同一概念被错拆（→ 合并），或可以抽出共享部分 C 让 A → C ← B
+
+**禁止手法（反模式）**：
+
+- ❌ 运行时延迟 import / 函数体内 import（Python 风格） —— z42 不提供此后门
+- ❌ "源码引用"打洞（Haskell `{-# SOURCE #-}` 风格） —— z42 不引入此机制
+- ❌ 新旧 zpkg 共存 + 灰度迁移以"绕开"循环 —— pre-1.0 不留兼容（见 [workflow.md](../../.claude/rules/workflow.md) "不为旧版本提供兼容"）
+
+**编译器报错要求**（待实现时遵守）：
+
+- 在依赖闭包解析阶段构建依赖图，发现环立即终止，**不进入 TypeChecker**
+- 错误信息**必须列出完整环路**（如 `A → B → C → A`），并标注每条边来自哪个包的 `[dependencies]` 字段
+- 同一构建中存在多条独立环 → 各报一次，不合并
+
+> **同包内不受此规则约束**：单个 zpkg 内部的文件 / 类型 / 函数互相引用是允许的（同 Rust crate 内 module、Java 同 package、Swift 同 module）。本规则的最小切割单位是 **zpkg（分发单元）**。
+
 ---
 
 ## L6 — 工作区（Workspace）
