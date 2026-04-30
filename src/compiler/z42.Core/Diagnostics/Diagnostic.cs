@@ -99,4 +99,11 @@ public static class DiagnosticCodes
 
     // Native interop — class synthesis from manifest (spec C11b)
     public const string NativeImportSynthesisFailure = "E0916"; // import T from "lib"; synthesizer cannot produce ClassDecl
+
+    // Test framework — attribute validation (spec R4 compiler-validate-test-attributes)
+    public const string TestSignatureInvalid          = "E0911"; // [Test] function signature wrong (must be fn() -> void, no generics)
+    public const string BenchmarkSignatureInvalid     = "E0912"; // [Benchmark] signature wrong (R4.A partial; full Bencher check pending R2.C)
+    public const string ShouldThrowTypeInvalid        = "E0913"; // [ShouldThrow<E>] — reserved (R4.B needs generic attribute syntax)
+    public const string SkipReasonMissing             = "E0914"; // [Skip] missing/empty reason; [Skip]/[Ignore] used standalone
+    public const string SetupTeardownSignatureInvalid = "E0915"; // [Setup]/[Teardown] signature wrong / mutually exclusive with [Test]/[Benchmark]
 }

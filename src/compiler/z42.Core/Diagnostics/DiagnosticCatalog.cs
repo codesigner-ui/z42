@@ -247,6 +247,44 @@ public static class DiagnosticCatalog
             "Native import synthesis failure",
             "An `import T from \"lib\";` statement could not be turned into a script-visible class. Common causes: (a) the type name is not present in the manifest's `types[]` array; (b) a method's `params` / `ret` signature uses a type the C11b synthesizer does not yet support (only primitives, `Self`, and `*mut Self` / `*const Self` are accepted; `*const c_char`, user types, arrays, etc. are not yet handled); (c) two `import` statements name the same type but resolve to different libraries; (d) a `kind=\"method\"` entry's first parameter is not a `Self` pointer.",
             "import Foo from \"numz42\";  // numz42.z42abi has no `Foo` type → E0916"),
+
+        // ── E0911 / E0914 / E0915: Test attribute validation (spec R4.A) ─────
+
+        [DiagnosticCodes.TestSignatureInvalid] = new(
+            "Test attribute signature invalid",
+            "A function decorated with `[Test]` (or `[Benchmark]`) does not satisfy the runner's calling contract. " +
+            "[Test] functions must be `fn() -> void` (no parameters, void return, no generic type parameters). " +
+            "Two attributes that imply incompatible roles cannot coexist on the same function: `[Test]` is mutually exclusive with `[Benchmark]`.",
+            "[Test] void Foo(int x) { }  // [Test] cannot take parameters → E0911"),
+
+        [DiagnosticCodes.BenchmarkSignatureInvalid] = new(
+            "Benchmark attribute signature invalid",
+            "A function decorated with `[Benchmark]` does not satisfy the bench runner's calling contract. " +
+            "Phase R4.A only catches obviously-wrong shapes (non-void return, generic type params); the full " +
+            "first-parameter-is-Bencher check lands when the Bencher type ships in R2.C (closure-dependent). " +
+            "Until then, runtime errors will surface for malformed [Benchmark] bodies.",
+            "[Benchmark] int Bench() { return 0; }  // void return required → E0912"),
+
+        [DiagnosticCodes.ShouldThrowTypeInvalid] = new(
+            "ShouldThrow<E> attribute invalid (placeholder)",
+            "Reserved for spec R4.B once the parser supports generic attribute syntax `[ShouldThrow<E>]`. " +
+            "Will fire when E is undefined, not a subtype of `Std.Exception`, or applied without `[Test]`. " +
+            "Currently the parser does not accept `[ShouldThrow<...>]` so this code is unreachable.",
+            null),
+
+        [DiagnosticCodes.SkipReasonMissing] = new(
+            "Skip attribute missing reason or used standalone",
+            "`[Skip(...)]` requires a non-empty `reason:` named argument explaining why the test is skipped. " +
+            "Additionally, `[Skip]` and `[Ignore]` only make sense on a function that is also `[Test]` or `[Benchmark]` — " +
+            "decorating a regular non-test function with these attributes is treated as a programmer mistake.",
+            "[Skip] void Foo() { }  // missing [Test] + missing reason → E0914"),
+
+        [DiagnosticCodes.SetupTeardownSignatureInvalid] = new(
+            "Setup/Teardown attribute signature invalid",
+            "Functions decorated with `[Setup]` or `[Teardown]` must be `fn() -> void` (no parameters, void return). " +
+            "These attributes are mutually exclusive with `[Test]`, `[Benchmark]`, `[Skip]`, and `[Ignore]` — " +
+            "setup/teardown hooks are infrastructure, not tests themselves.",
+            "[Setup] void Init(int seed) { }  // setup cannot take parameters → E0915"),
     };
 
     // ── Public API ────────────────────────────────────────────────────────────

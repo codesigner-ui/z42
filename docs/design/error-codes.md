@@ -115,17 +115,17 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 |-------|--------------------------------|----------------|
 | E0916 | NativeImportSynthesisFailure   | (a) `import T from "lib";` 中 `T` 不在 manifest 的 `types[]` 中；(b) manifest 某 method 的 `params` / `ret` 用了 C11b 白名单外的类型（白名单：primitives / `Self` / `*mut/const Self`）；(c) 同名 type 被两条 import 声明但 lib 不同；(d) `kind=="method"` 的 entry 第一参数不是 `*mut/const Self`；(e) `DefaultNativeManifestLocator` 在 `<sourceDir>` 与 `Z42_NATIVE_LIBS_PATH` 中均找不到 `<lib>.z42abi` |
 
-### Z0911–Z0915（R4 占位，2026-04-30）
+### E0911 / E0912 / E0914 / E0915（R4.A 已启用，2026-04-30）
 
-由 spec [`compiler-validate-test-attributes`](../../spec/changes/compiler-validate-test-attributes/) (R4) 钉死；R1 / R1.C 已收集 attribute（`[Test]` / `[Benchmark]` / `[Skip]` / 等），但**不**做语义校验。R4 加 `TestAttributeValidator` pass 在 TypeCheck 后跑，触发以下错误码。本期仅占位编号。
+由 spec [`compiler-validate-test-attributes`](../../spec/changes/compiler-validate-test-attributes/) (R4) 钉死；R1.C parser 收集 `[Test]` / `[Benchmark]` / `[Skip]` / `[Setup]` / `[Teardown]` / `[Ignore]` 6 个 attribute 后，本 pass 在 TypeCheck 之后、IrGen 之前校验签名 + 组合合法性。实施位置：[`src/compiler/z42.Semantics/TestAttributeValidator.cs`](../../src/compiler/z42.Semantics/TestAttributeValidator.cs)。
 
-| Code  | Title                                 | Planned trigger (R4) |
-|-------|---------------------------------------|----------------------|
-| Z0911 | TestSignatureInvalid                  | `[Test]` 函数签名错误：必须 `fn() -> void`、不能泛型、不能实例方法、`[TestCase]` arg 数量与函数 param 数量不一致、`[Test]` 与 `[Benchmark]` 互斥 |
-| Z0912 | BenchmarkSignatureInvalid             | `[Benchmark]` 函数签名错误：第一个参数必须是 `Bencher`，返回 void |
-| Z0913 | ShouldThrowTypeInvalid                | `[ShouldThrow<E>]` 中 E 不存在 / 不是 `Exception` 子类型 / 缺类型参数 / 未搭配 `[Test]` |
-| Z0914 | SkipReasonMissing                     | `[Skip]` 缺 `reason` 参数（或 reason 为空字符串）；或 `[Skip]` / `[Ignore]` 单独使用（必须搭配 `[Test]` / `[Benchmark]`） |
-| Z0915 | SetupTeardownSignatureInvalid         | `[Setup]` / `[Teardown]` 签名错误（需 `fn() -> void`）；或与 `[Test]` / `[Benchmark]` 同一函数标注（互斥） |
+| Code   | Title                            | When it occurs |
+|--------|----------------------------------|----------------|
+| E0911  | TestSignatureInvalid             | `[Test]` 函数签名错误：必须 `fn() -> void`、不能泛型；`[Test]` 与 `[Benchmark]` 互斥 |
+| E0912  | BenchmarkSignatureInvalid        | `[Benchmark]` 部分签名校验：返回 void、不能泛型。**完整** "首参为 Bencher" 校验等 R2.C 提供 Bencher 类型后启用 |
+| E0913  | ShouldThrowTypeInvalid           | （**预留**，R4.B）`[ShouldThrow<E>]` 中 E 不存在 / 非 Exception 子类型 / 未搭配 `[Test]`；当前 parser 不支持泛型 attribute 语法，故未被触发 |
+| E0914  | SkipReasonMissing                | `[Skip]` 缺 `reason` 参数（或 reason 为空字符串）；或 `[Skip]` / `[Ignore]` 单独使用（必须搭配 `[Test]` / `[Benchmark]`） |
+| E0915  | SetupTeardownSignatureInvalid    | `[Setup]` / `[Teardown]` 签名错误（需 `fn() -> void`）；或与 `[Test]` / `[Benchmark]` / `[Skip]` / `[Ignore]` 同函数标注（互斥） |
 
 ---
 
