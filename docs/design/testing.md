@@ -99,13 +99,20 @@ cargo run -p gc-stress --release -- --iterations 100
 
 Rust 后端用例的 `Cargo.toml` 加入 `src/runtime/Cargo.toml` 的 `[workspace] members`，与 z42-runtime 共享依赖图。
 
-### 不再做的事（R5 缩范围）
+### Golden 用例归属（2026-04-29 微调）
 
-原 R5 spec 计划把 103 个 golden 按归属拆到 `vm_core/` / `stdlib:<lib>/` / `integration/` 三个 tier。**改为不拆**：
+R5 期间原计划保留所有 golden 在 `src/runtime/tests/golden/run/`，归档时改为**按归属轻度拆分**：
 
-- 现有 `src/runtime/tests/golden/run/<NN>_<name>/` 全部**保留原位**（无论是否 import stdlib）
-- 定位：这些都是 "VM 端到端测试"（验证 VM 执行结果）
-- stdlib 库**新建** tests/ 目录，写**新的**原生 API 测试（`[Test]` + Assert），不做迁移
+- **VM-only**（不依赖 stdlib 的 lexer / parser / typecheck / interp / JIT 用例）：留在 `src/runtime/tests/golden/run/<NN>_<name>/`
+- **Stdlib-bound**（用例的核心是验证某个 stdlib 库的行为）：迁到 `src/libraries/<lib>/tests/golden/<NN>_<name>/`，与该库源码同居
+  - z42.collections — `List<T>` / `Dictionary<K,V>` / `Stack<T>` / `Queue<T>` / `LinkedList<T>` 相关 8 例
+  - z42.math — `Math` / `Random` 相关 3 例
+  - z42.text — `StringBuilder` 1 例
+  - z42.test — runner / assert dogfood 1 例（`18_test_runner`）
+
+`scripts/test-vm.sh` 与 `scripts/regen-golden-tests.sh` 通过 `GOLDEN_GLOBS` 同时扫两个根，**对 CI 不增加配置**，对开发者却让"改某个库时哪些 golden 受影响"变得直接可见。
+
+格式与 stdout-比对的运行机制不变；与 `tests/*.z42`（`[Test]` + Assert 单元测试）共存于同一 `tests/` 目录树。
 
 ---
 

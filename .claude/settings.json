@@ -88,7 +88,17 @@
       "Bash(bash scripts/test-vm.sh)",
       "Bash(git config *)",
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 log --oneline -5)",
-      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 status --short docs/)"
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 status --short docs/)",
+      "Bash(git check-ignore *)",
+      "WebSearch",
+      "Bash(grep -E \"\\\\.csproj|\\\\.cs$\")",
+      "Bash(cc -x c -fsyntax-only /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/include/z42_abi.h)",
+      "Bash(c++ -x c++ -fsyntax-only /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/include/z42_abi.h)",
+      "Bash(awk '{ pass += $4; fail += $6; print } END { print \"TOTAL: \" pass \" passed, \" fail \" failed\" }')",
+      "Bash(xxd /tmp/test_demo.zbc)",
+      "Bash(git restore *)",
+      "Bash(git pull *)",
+      "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 mv spec/changes/manifest-reader-import spec/archive/2026-04-30-manifest-reader-import)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

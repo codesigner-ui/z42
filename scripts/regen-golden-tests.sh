@@ -15,7 +15,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
-GOLDEN_DIR="src/runtime/tests/golden/run"
+GOLDEN_GLOBS=(
+    "src/runtime/tests/golden/run/*/"
+    "src/libraries/"*"/tests/golden/"*"/"
+)
 COMPILER_SLN="src/compiler/z42.slnx"
 
 BUILD_CONFIG="Debug"
@@ -42,7 +45,14 @@ FAIL=0
 SKIP=0
 FAILURES=()
 
-for dir in "$GOLDEN_DIR"/*/; do
+DIRS=()
+for glob in "${GOLDEN_GLOBS[@]}"; do
+    for d in $glob; do
+        [ -d "$d" ] && DIRS+=("$d")
+    done
+done
+
+for dir in "${DIRS[@]}"; do
     name=$(basename "$dir")
     source="$dir/source.z42"
     output="$dir/source.zbc"

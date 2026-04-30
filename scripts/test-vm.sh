@@ -20,7 +20,12 @@ ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
-GOLDEN_DIR="src/runtime/tests/golden/run"
+# Golden roots: VM-only cases live under src/runtime/tests/golden/run; stdlib-
+# specific cases live alongside their library at src/libraries/<lib>/tests/golden.
+GOLDEN_GLOBS=(
+    "src/runtime/tests/golden/run/*/"
+    "src/libraries/"*"/tests/golden/"*"/"
+)
 MODES=("interp" "jit")
 
 if [ $# -ge 1 ]; then
@@ -44,7 +49,15 @@ for MODE in "${MODES[@]}"; do
     FAIL=0
     FAILURES=()
 
-    for dir in "$GOLDEN_DIR"/*/; do
+    # Collect every golden case dir matching any configured glob.
+    DIRS=()
+    for glob in "${GOLDEN_GLOBS[@]}"; do
+        for d in $glob; do
+            [ -d "$d" ] && DIRS+=("$d")
+        done
+    done
+
+    for dir in "${DIRS[@]}"; do
         name=$(basename "$dir")
         artifact="$dir/source.zbc"
         expected="$dir/expected_output.txt"
