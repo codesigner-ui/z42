@@ -57,9 +57,16 @@ test-cross-zpkg mode="interp":
 test-changed:
     @echo "❌ P2 待实施：增量测试 (z42-test-runner + scripts/test-changed.sh)" && exit 1
 
-# (P3 placeholder) Run a specific stdlib library's tests, or all if no arg
+# Run stdlib library [Test] tests via z42-test-runner. (R3 minimal v0.2 + R5)
+#
+#   just test-stdlib                # run every stdlib lib's tests
+#   just test-stdlib z42.math       # run only z42.math's tests
+#
+# Each test file `src/libraries/<lib>/tests/*.z42` is compiled to .zbc then
+# fed to z42-test-runner, which subprocesses to z42vm with --entry per [Test]
+# method. Setup/Teardown not yet supported (R3 full version).
 test-stdlib lib="":
-    @echo "❌ P3 待实施：stdlib 本地测试 ({{lib}})" && exit 1
+    ./scripts/test-stdlib.sh {{lib}}
 
 # (P3 placeholder) Run cross-stdlib integration tests
 test-integration:
