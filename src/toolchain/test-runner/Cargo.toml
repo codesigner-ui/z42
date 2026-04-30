@@ -1,0 +1,23 @@
+[package]
+name = "z42-test-runner"
+version = "0.1.0"
+edition = "2021"
+description = "z42 test runner — discovers [Test] functions via TIDX section and executes them via the embedded Interpreter"
+
+[[bin]]
+name = "z42-test-runner"
+path = "src/main.rs"
+
+[dependencies]
+# Embed the runtime so we can drive the Interpreter in-process. Path-dep so any
+# z42-runtime change rebuilds the runner during workspace builds.
+z42_vm = { path = "../../runtime" }
+
+# Error handling
+anyhow = "1"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Color output (optional — TTY-aware)
+colored = "2"

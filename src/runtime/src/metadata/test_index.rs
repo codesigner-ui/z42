@@ -120,6 +120,17 @@ pub struct TestCase {
 }
 
 /// One row in the TIDX section.
+///
+/// **String resolution lifecycle**: `*_str_idx` fields point into the
+/// **raw STRS pool** (pre-rebuild). The loader (see
+/// [`crate::metadata::loader::load_zbc`]) resolves them to the `*_resolved`
+/// `Option<String>` fields immediately after `read_zbc`, **before** the global
+/// pool gets rebuilt by `rebuild_string_pool` (which only retains strings
+/// referenced by `ConstStr` instructions, dropping TIDX-only strings).
+///
+/// **Runner code should read the resolved strings** (`skip_reason`, etc.) and
+/// ignore the `_str_idx` fields. The indices stay around for round-tripping
+/// against the cross-language contract test.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TestEntry {
     /// Index into `module.functions[]` in the same .zbc.
@@ -128,7 +139,7 @@ pub struct TestEntry {
     pub kind: TestEntryKind,
     /// Bit flags ([Skip] / [Ignore] / [ShouldThrow] / reserved).
     pub flags: TestFlags,
-    /// 0 = no [Skip] reason; otherwise 1-based index into `module.string_pool`.
+    /// 0 = no [Skip] reason; otherwise 1-based index into the **raw** STRS pool.
     pub skip_reason_str_idx: u32,
     /// 0 = unconditionally skipped (or no [Skip]); otherwise 1-based idx of
     /// platform name (e.g. "ios", "wasm") — runner only skips when running
@@ -142,6 +153,37 @@ pub struct TestEntry {
     pub expected_throw_type_idx: u32,
     /// Empty when not parameterized; one element per `[TestCase(...)]`.
     pub test_cases: Vec<TestCase>,
+
+    // ── Resolved strings (populated by loader::resolve_test_index_strings) ──
+    /// Resolved [Skip(reason: ...)] string. None when `skip_reason_str_idx == 0`
+    /// or before resolution.
+    pub skip_reason: Option<String>,
+    /// Resolved [Skip(platform: ...)] string.
+    pub skip_platform: Option<String>,
+    /// Resolved [Skip(feature: ...)] string.
+    pub skip_feature: Option<String>,
+    /// Resolved [ShouldThrow<E>] type name (R4 will populate).
+    pub expected_throw_type: Option<String>,
+}
+
+/// Resolve all `*_str_idx` fields in `entries` against `raw_pool` (the STRS
+/// section as decoded from disk, **before** `rebuild_string_pool` discards
+/// strings only referenced by TIDX). Populates the corresponding `Option<String>`
+/// fields in-place. Indices remain unchanged for round-trip diagnostics.
+///
+/// Called by [`crate::metadata::loader`] after `read_zbc` and before
+/// `rebuild_string_pool` runs (which would lose TIDX-only strings).
+pub fn resolve_test_index_strings(entries: &mut [TestEntry], raw_pool: &[String]) {
+    let lookup = |idx_1based: u32| -> Option<String> {
+        if idx_1based == 0 { return None; }
+        raw_pool.get((idx_1based - 1) as usize).cloned()
+    };
+    for e in entries.iter_mut() {
+        e.skip_reason         = lookup(e.skip_reason_str_idx);
+        e.skip_platform       = lookup(e.skip_platform_str_idx);
+        e.skip_feature        = lookup(e.skip_feature_str_idx);
+        e.expected_throw_type = lookup(e.expected_throw_type_idx);
+    }
 }
 
 // ── Decoder ────────────────────────────────────────────────────────────────
@@ -197,6 +239,11 @@ pub fn read_test_index(payload: &[u8]) -> Result<Vec<TestEntry>> {
             skip_feature_str_idx,
             expected_throw_type_idx,
             test_cases,
+            // Resolved fields populated by loader::resolve_test_index_strings
+            skip_reason: None,
+            skip_platform: None,
+            skip_feature: None,
+            expected_throw_type: None,
         });
     }
 

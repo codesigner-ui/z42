@@ -16,7 +16,7 @@ use super::merge::merge_modules;
 use super::test_index::TestEntry;
 use super::types::{FieldSlot, TypeDesc};
 use super::zbc_reader::{
-    read_test_index_section, read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces,
+    read_test_index_resolved, read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces,
 };
 
 /// Result of loading a compiler artifact.
@@ -76,7 +76,7 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     let import_namespaces = extract_import_namespaces_from_module(&module);
 
     // R1 — TIDX section (optional; absent for non-test artifacts).
-    let test_index = read_test_index_section(&raw)
+    let test_index = read_test_index_resolved(&raw)
         .with_context(|| format!("cannot read TIDX section in `{path}`"))?;
 
     Ok(LoadedArtifact {

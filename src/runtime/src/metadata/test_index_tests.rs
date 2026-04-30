@@ -26,7 +26,8 @@ fn build_payload(entries: &[TestEntry]) -> Vec<u8> {
     out
 }
 
-/// Convenience constructor for tests; defaults all str-idx fields to 0.
+/// Convenience constructor for tests; defaults all str-idx fields to 0 and
+/// resolved string fields to None (not yet resolved by loader).
 fn entry(method_id: u32, kind: TestEntryKind) -> TestEntry {
     TestEntry {
         method_id,
@@ -37,6 +38,10 @@ fn entry(method_id: u32, kind: TestEntryKind) -> TestEntry {
         skip_feature_str_idx: 0,
         expected_throw_type_idx: 0,
         test_cases: vec![],
+        skip_reason: None,
+        skip_platform: None,
+        skip_feature: None,
+        expected_throw_type: None,
     }
 }
 
@@ -81,6 +86,10 @@ fn decodes_flags_and_indices() {
         skip_feature_str_idx: 0,
         expected_throw_type_idx: 22,
         test_cases: vec![],
+        skip_reason: None,
+        skip_platform: None,
+        skip_feature: None,
+        expected_throw_type: None,
     };
     let payload = build_payload(&[e.clone()]);
     let result = read_test_index(&payload).unwrap();
@@ -102,6 +111,10 @@ fn decodes_skip_platform_and_feature() {
         skip_feature_str_idx: 300,   // e.g. pool[300] = "jit"
         expected_throw_type_idx: 0,
         test_cases: vec![],
+        skip_reason: None,
+        skip_platform: None,
+        skip_feature: None,
+        expected_throw_type: None,
     };
     let payload = build_payload(&[e.clone()]);
     let result = read_test_index(&payload).unwrap();
@@ -125,6 +138,10 @@ fn decodes_test_cases() {
             TestCase { arg_repr_str_idx: 101 },
             TestCase { arg_repr_str_idx: 102 },
         ],
+        skip_reason: None,
+        skip_platform: None,
+        skip_feature: None,
+        expected_throw_type: None,
     };
     let payload = build_payload(&[e.clone()]);
     let result = read_test_index(&payload).unwrap();

@@ -88,7 +88,10 @@ public static partial class ZbcWriter
             // "no test entries" to readers.
             if (module.TestIndex is { Count: > 0 } testIndex)
             {
-                sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex)));
+                // Pass strRemap so TestEntry str_idx (1-based, into IrGen's
+                // pool) get remapped to the final STRS layout — same pattern
+                // ConstStr uses.
+                sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex, strRemap)));
             }
         }
 
@@ -497,7 +500,7 @@ public static partial class ZbcWriter
     // v=2 (R1.C) bumped from v=1 before any v=1 file existed in the wild.
     private const byte TidxFormatVersion = 2;
 
-    private static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex)
+    private static byte[] BuildTidxSection(IReadOnlyList<TestEntry> testIndex, int[] strRemap)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -511,16 +514,31 @@ public static partial class ZbcWriter
             w.Write((uint)entry.MethodId);
             w.Write((byte)entry.Kind);
             w.Write((ushort)entry.Flags);
-            w.Write((uint)entry.SkipReasonStrIdx);
-            w.Write((uint)entry.SkipPlatformStrIdx);
-            w.Write((uint)entry.SkipFeatureStrIdx);
-            w.Write((uint)entry.ExpectedThrowTypeIdx);
+            // Remap 1-based IrGen string-pool indices to the final STRS layout,
+            // mirroring how ConstStr.Idx is remapped in BuildFuncSection.
+            // Index 0 (= "no value") stays 0; positive indices remap via
+            // strRemap[idx-1] + 1 (back to 1-based).
+            w.Write(RemapTidxStrIdx(entry.SkipReasonStrIdx,     strRemap));
+            w.Write(RemapTidxStrIdx(entry.SkipPlatformStrIdx,   strRemap));
+            w.Write(RemapTidxStrIdx(entry.SkipFeatureStrIdx,    strRemap));
+            w.Write(RemapTidxStrIdx(entry.ExpectedThrowTypeIdx, strRemap));
             w.Write((uint)entry.TestCases.Count);
             foreach (var tc in entry.TestCases)
-                w.Write((uint)tc.ArgReprStrIdx);
+                w.Write(RemapTidxStrIdx(tc.ArgReprStrIdx, strRemap));
         }
 
         return ms.ToArray();
+    }
+
+    /// Remap a 1-based IrGen string-pool index to the post-remap zbc STRS pool
+    /// layout. Returns 0 (= "no value") unchanged. Out-of-range indices are
+    /// clamped to 0 to prevent reader-side index-out-of-bounds; this also
+    /// catches programmer error during IrGen.
+    private static uint RemapTidxStrIdx(int origIdx1Based, int[] strRemap)
+    {
+        if (origIdx1Based <= 0 || origIdx1Based - 1 >= strRemap.Length)
+            return 0;
+        return (uint)(strRemap[origIdx1Based - 1] + 1);
     }
 
     // ── DBUG section (debug info: local variable names) ──────────────────────

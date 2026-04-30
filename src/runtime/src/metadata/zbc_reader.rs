@@ -724,10 +724,12 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
 /// Spec R1 — read the optional TIDX section from a zbc file. Returns an empty
 /// vec if the section is absent (older zbc / module without test methods).
 ///
-/// Used by `loader.rs` to populate `LoadedArtifact.test_index`. Decoupled from
-/// `read_zbc` because the test metadata is host-tooling data, not VM runtime
-/// data; runner code calls this directly without going through `load_artifact`
-/// when only metadata is needed.
+/// **The returned `TestEntry` rows have only `*_str_idx` populated**;
+/// `*_resolved` `Option<String>` fields are `None`. Use
+/// [`read_test_index_resolved`] for the loader path that wants resolved
+/// strings, or call
+/// [`crate::metadata::test_index::resolve_test_index_strings`] manually with
+/// a raw STRS pool obtained via [`read_raw_string_pool`].
 pub fn read_test_index_section(data: &[u8]) -> Result<Vec<crate::metadata::TestEntry>> {
     if data.len() < 16 { bail!("zbc file too short") }
     if &data[0..4] != ZBC_MAGIC { bail!("not a binary zbc (bad magic)") }
@@ -737,6 +739,34 @@ pub fn read_test_index_section(data: &[u8]) -> Result<Vec<crate::metadata::TestE
         .map(crate::metadata::test_index::read_test_index)
         .transpose()?
         .unwrap_or_default())
+}
+
+/// Read the **raw** STRS string pool (pre-rebuild). The TIDX `*_str_idx` fields
+/// reference indices in this pool; `read_zbc` discards strings only referenced
+/// by TIDX during `rebuild_string_pool`, so loader code must read the raw pool
+/// **before** running through `read_zbc` if it wants to resolve TIDX strings.
+pub fn read_raw_string_pool(data: &[u8]) -> Result<Vec<String>> {
+    if data.len() < 16 { bail!("zbc file too short") }
+    if &data[0..4] != ZBC_MAGIC { bail!("not a binary zbc (bad magic)") }
+    let sec_count = u16::from_le_bytes([data[10], data[11]]);
+    let dir = read_directory(data, sec_count)?;
+    Ok(get_section(data, &dir, b"STRS")
+        .or_else(|| get_section(data, &dir, b"BSTR"))
+        .map(read_strs)
+        .transpose()?
+        .unwrap_or_default())
+}
+
+/// Convenience: read the TIDX section AND resolve all `*_str_idx` fields to
+/// `Option<String>` using the raw STRS pool from the same `data`. This is the
+/// API used by [`loader::load_artifact`].
+pub fn read_test_index_resolved(data: &[u8]) -> Result<Vec<crate::metadata::TestEntry>> {
+    let mut entries = read_test_index_section(data)?;
+    if !entries.is_empty() {
+        let pool = read_raw_string_pool(data)?;
+        crate::metadata::test_index::resolve_test_index_strings(&mut entries, &pool);
+    }
+    Ok(entries)
 }
 
 // ── zpkg public API ───────────────────────────────────────────────────────────
