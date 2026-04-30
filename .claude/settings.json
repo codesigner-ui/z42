@@ -99,7 +99,11 @@
       "Bash(git restore *)",
       "Bash(git pull *)",
       "Bash(git -C /Users/d.s.qiu/Documents/codesigner-ui/z42 mv spec/changes/manifest-reader-import spec/archive/2026-04-30-manifest-reader-import)",
-      "Bash(./scripts/test-stdlib.sh z42.test)"
+      "Bash(./scripts/test-stdlib.sh z42.test)",
+      "Bash(artifacts/rust/debug/z42vm artifacts/libraries/z42.test/dist/z42.test.zpkg --dump-class-info)",
+      "Bash(artifacts/rust/debug/z42vm --help)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/z42-test-runner-work/z42.test_dogfood.zbc)",
+      "Bash(xargs -I{} grep -l -i \"thread\\\\|concur\\\\|async\\\\|goroutine\\\\|fiber\" /Users/d.s.qiu/Documents/codesigner-ui/z42/docs/design/{})"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

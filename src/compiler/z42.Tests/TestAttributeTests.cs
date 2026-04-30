@@ -231,8 +231,61 @@ public sealed class TestAttributeTests
             because: "[ShouldThrow<TestFailure>] should set 1-based string-pool index");
         entry.Flags.HasFlag(TestFlags.ShouldThrow).Should().BeTrue();
 
-        // 1-based idx → 0-based pool slot.
-        module.StringPool[entry.ExpectedThrowTypeIdx - 1].Should().Be("TestFailure");
+        // A3 — IrGen emits the user-written type plus its DESCENDANTS as a
+        // `;`-delimited chain. TestFailure has no subclasses in this CU, so
+        // the chain is just ["TestFailure"].
+        var actual = module.StringPool[entry.ExpectedThrowTypeIdx - 1];
+        actual.Split(';').Should().Equal(new[] { "TestFailure" });
+    }
+
+    [Fact]
+    public void IrGen_ShouldThrow_DescendantsIncluded()
+    {
+        // [ShouldThrow<Exception>] + this CU declares two Exception subclasses
+        // (TestFailure, SkipSignal). Chain must contain Exception + both subs.
+        var src = ExceptionStub + """
+            [Test] [ShouldThrow<Exception>] void f() {}
+            """;
+        var cu = ParseCu(src);
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Check(cu, imported: null);
+        TestAttributeValidator.Validate(cu, model, diags);
+        diags.HasErrors.Should().BeFalse(because: string.Join("\n", diags.All));
+
+        var module = new IrGen(semanticModel: model).Generate(cu);
+        var entry = module.TestIndex!.Single(e => e.Kind == TestEntryKind.Test);
+        var actual = module.StringPool[entry.ExpectedThrowTypeIdx - 1];
+        var entries = actual.Split(';');
+        entries[0].Should().Be("Exception", because: "head is always the user-written type");
+        entries.Should().Contain("TestFailure");
+        entries.Should().Contain("SkipSignal");
+    }
+
+    [Fact]
+    public void IrGen_ShouldThrow_TransitiveDescendantsIncluded()
+    {
+        // GrandChild : Child : TestFailure : Exception.
+        // [ShouldThrow<TestFailure>] should match Child and GrandChild too.
+        var src = ExceptionStub + """
+            class Child : TestFailure {
+                public Child(string m) : base(m) {}
+            }
+            class GrandChild : Child {
+                public GrandChild(string m) : base(m) {}
+            }
+            [Test] [ShouldThrow<TestFailure>] void f() {}
+            """;
+        var cu = ParseCu(src);
+        var diags = new DiagnosticBag();
+        var model = new TypeChecker(diags).Check(cu, imported: null);
+        TestAttributeValidator.Validate(cu, model, diags);
+        diags.HasErrors.Should().BeFalse(because: string.Join("\n", diags.All));
+
+        var module = new IrGen(semanticModel: model).Generate(cu);
+        var entry = module.TestIndex!.Single(e => e.Kind == TestEntryKind.Test);
+        var entries = module.StringPool[entry.ExpectedThrowTypeIdx - 1].Split(';');
+        entries.Should().Contain(new[] { "TestFailure", "Child", "GrandChild" });
+        entries.Should().NotContain("SkipSignal", because: "siblings of TestFailure must not appear");
     }
 
     [Fact]

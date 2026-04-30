@@ -157,15 +157,23 @@ ZbcReader → Rust loader → resolve_test_index_strings
 z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出：
 
 - **未抛**（exit 0）→ Failed `expected to throw <E>, but no exception was thrown`
-- **类型匹配**（FQ 相等 OR 短名相等）→ Passed
+- **类型匹配**（FQ 相等 OR 短名相等，对 chain 中任一 entry 匹配即算）→ Passed
 - **类型不匹配** → Failed `expected to throw <E>, got <X>`
-- 不做 inheritance walk（`[ShouldThrow<Exception>]` 不匹配 `Std.TestFailure`，留给后续 spec）
 
 类型提取：从 stderr 的 `Error: uncaught exception: ` 后取 `[A-Za-z0-9_.]+`，覆盖 `<TYPE>: <msg>` 与 `<TYPE>{field=...}` 两种 z42vm 输出格式。
 
+### Inheritance 比对（A3，2026-04-30）
+
+`[ShouldThrow<Base>]` 也匹配 Base 的子类（编译期展开方案，运行时无需类型反射）：
+
+- **C# IrGen 端**：`BuildShouldThrowChain(typeArg)` 遍历 `SemanticModel.Classes`，把 `typeArg` + 所有从 `typeArg` 派生的类的短名拼成 `;`-delimited 字符串写入 TIDX `expected_throw_type` 槽。例如 `[ShouldThrow<Exception>]` 在 z42.test dogfood 的 CU 里展开为 `"Exception;TestFailure;SkipSignal"`。
+- **Runner 端**：split `expected_throw_type` 后任一 entry 命中即 Pass；同样的 `type_matches`（FQ vs 短名）规则
+- **覆盖范围**：仅当前 CU 的 `SemanticModel.Classes` 可见类（含 `using` 引入的 import）；不在 import 链路上的 zpkg 依赖不会枚举（这些场景下 fallback 到直接匹配）
+- **零格式 bump**：TIDX layout 不变；`expected_throw_type` 字段语义从"单个类型名"扩展为"类型名或 `;`-delimited list"
+
 ### 当前不做的
 
-- ⏸️ inheritance-aware 比对（`[ShouldThrow<Base>]` 匹配 `SubClass`）
+- ⏸️ 跨非 import zpkg 依赖的 inheritance（要求 runner 知道完整类型层次，需做 LazyLoader 集成 → 由 R3 完整版承担）
 - ⏸️ 多类型参数 `[X<A, B>]` / 嵌套 `[X<List<Y>>]` / dotted name `<Std.E>`
 - ⏸️ TypeArg 升级为 TypeExpr（当前 `string?` 足够）
 - ⏸️ user-defined attributes（z42 当前白名单：z42.test.* + Native 两个 family）

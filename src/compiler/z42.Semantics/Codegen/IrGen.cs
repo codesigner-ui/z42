@@ -245,8 +245,14 @@ public sealed class IrGen : IEmitterContext
                     flags |= TestFlags.ShouldThrow;
                     // R4.B — TypeArg null is rejected by TestAttributeValidator
                     // (E0913); guard here defensively for non-validated paths.
+                    //
+                    // A3 — emit the user-written type plus its ancestor short
+                    // names as a `;`-delimited chain ("TestFailure;Exception").
+                    // The runner accepts a match against any entry, giving
+                    // inheritance-aware ShouldThrow without any TIDX layout
+                    // change or cross-module class loading at runtime.
                     if (attr.TypeArg is not null)
-                        expectedThrowTypeIdx = Intern(attr.TypeArg) + 1;
+                        expectedThrowTypeIdx = Intern(BuildShouldThrowChain(attr.TypeArg)) + 1;
                     break;
             }
         }
@@ -260,6 +266,54 @@ public sealed class IrGen : IEmitterContext
             SkipFeatureStrIdx:    featureIdx,
             ExpectedThrowTypeIdx: expectedThrowTypeIdx,          // R4.B
             TestCases:            Array.Empty<TestCase>());     // R4 (TestCase parser pending)
+    }
+
+    /// A3 — Build the `;`-delimited expected-throw chain for `[ShouldThrow<E>]`.
+    ///
+    /// Emits <c>E</c> followed by every visible class whose inheritance chain
+    /// passes through <c>E</c> — i.e. <c>E</c> + its descendants. The runner
+    /// splits on ';' and matches against any entry, so
+    /// <c>[ShouldThrow&lt;Exception&gt;]</c> catching a <c>TestFailure</c> throw
+    /// passes because <c>TestFailure</c> appears in the chain (compile-time
+    /// inclusion list, not runtime walk).
+    ///
+    /// Limited to classes visible in this CU's <see cref="SemanticModel.Classes"/>
+    /// (which includes imports brought in by <c>using</c> directives). Classes
+    /// in non-imported zpkg dependencies are not enumerated; for those the
+    /// runner falls back to direct matching.
+    private string BuildShouldThrowChain(string typeArg)
+    {
+        var chain = new List<string> { typeArg };
+        if (_semanticModel is null) return typeArg;
+
+        foreach (var (name, cls) in _semanticModel.Classes)
+        {
+            if (name == typeArg) continue;
+            if (IsDescendantOf(cls, typeArg)) chain.Add(name);
+        }
+        return string.Join(';', chain);
+    }
+
+    /// Whether <paramref name="cls"/> derives transitively from
+    /// <paramref name="ancestorShortName"/>. Walks <c>BaseClassName</c> chain;
+    /// cycle-guarded.
+    private bool IsDescendantOf(Z42ClassType cls, string ancestorShortName)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var current = cls;
+        while (current is not null && visited.Add(current.Name))
+        {
+            if (current.BaseClassName is null) return false;
+            var baseFq = current.BaseClassName;
+            var baseShort = baseFq.Contains('.')
+                ? baseFq[(baseFq.LastIndexOf('.') + 1)..]
+                : baseFq;
+            if (baseShort == ancestorShortName) return true;
+            if (_semanticModel?.Classes.TryGetValue(baseShort, out var next) != true)
+                return false;
+            current = next;
+        }
+        return false;
     }
 
     // ── Per-function delegation ──────────────────────────────────────────────

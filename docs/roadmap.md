@@ -105,11 +105,12 @@
   - **R4.A**（`compiler-validate-test-attributes` ✅ 2026-04-30）：TestAttributeValidator pass + E0911/E0912/E0914/E0915 4 个错误码（[Test]/[Benchmark]/[Setup]/[Teardown] 签名 + 互斥校验；[Skip] 缺 reason 校验）
   - **R4.B**（`add-generic-attribute-syntax` ✅ 2026-04-30）：单类型参数泛型 attribute 语法 `[Name<TypeArg>]`；解锁 `[ShouldThrow<E>]`；E0913 验证（type arg 必填 / 类型存在 / 继承 Exception / 仅 ShouldThrow 接受 type arg）；IrGen 写入 `TestEntry.ExpectedThrowTypeIdx` + `TestFlags.ShouldThrow`
   - **A2**（`extend-runner-shouldthrow` ✅ 2026-04-30）：z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出（FQ 完整匹配 OR 短名匹配，无 inheritance walk）；dogfood.z42 两个 `[Skip]` 占位替换为 `[ShouldThrow<TestFailure>]` / `[ShouldThrow<SkipSignal>]` —— **z42.test 自检完整闭环**（7 passed / 0 skipped，原 5/2）
+  - **A3**（`extend-runner-shouldthrow-inheritance` ✅ 2026-04-30）：inheritance-aware ShouldThrow 编译期展开方案——C# IrGen 把 `[ShouldThrow<E>]` 的 E + 所有可见派生类短名拼成 `;`-delimited 写入 TIDX；runner split 后任一命中即 Pass。零 TIDX 格式 bump、零运行时类型反射；dogfood 加 `[ShouldThrow<Exception>]` 验证（8/0）
   - **R5**（`rewrite-goldens-with-test-mechanism` minimal + ad-hoc 迁移 ✅ 2026-04-30）：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件 + `just test-stdlib` 入口；13 个 stdlib-bound golden 物理迁回所测库目录
 - 📋 **后续完整版**（详见 [spec/changes/](../spec/changes/)）：
   - **R3 完整版**（`rewrite-z42-test-runner-compile-time`）：编译时收集 [Test] 名单；[Setup]/[Teardown] hook 真生效；JSON/JUnit 输出
   - **R2 完整版**（`extend-z42-test-library`）：`TestIO.captureStdout` + `Bencher` 完整实现
-  - **inheritance-aware ShouldThrow**（待开 spec）：让 `[ShouldThrow<Base>]` 匹配 `SubClass` 抛出（要求 runner 知道完整类型层次）
+  - **跨包 inheritance-aware ShouldThrow**（待开 spec）：让 `[ShouldThrow<Base>]` 匹配跨非 import zpkg 依赖的 SubClass（A3 已覆盖 import 范围内；剩下要求 runner 加 LazyLoader 集成，可与 R3 完整版合并）
 - 🚧 增量测试 `scripts/test-changed.sh` —— P2 placeholder（justfile 占位中）
 
 ### VM 质量

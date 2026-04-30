@@ -199,28 +199,35 @@ fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcome {
 
     // R4.B / A2 — [ShouldThrow<E>] inverts the success/failure semantics:
     // success means "the expected type was thrown" rather than "no exception".
+    //
+    // A3: `expected_throw` may be a `;`-delimited list "Leaf;Mid;Base"
+    // produced by the C# IrGen for inheritance-aware matching (the head is
+    // the user-written type, followed by its ancestor short names). The runner
+    // accepts a match against ANY entry. Single-name (no `;`) preserves A2 behavior.
     if let Some(expected) = &test.expected_throw {
+        let candidates: Vec<&str> = expected.split(';').filter(|s| !s.is_empty()).collect();
+        let display = candidates.first().copied().unwrap_or(expected);
         if output.status.success() {
             return Outcome::Failed {
                 reason: format!(
-                    "expected to throw `{expected}`, but no exception was thrown"
+                    "expected to throw `{display}`, but no exception was thrown"
                 ),
             };
         }
         let actual = extract_thrown_type(&stderr);
         match actual.as_deref() {
-            Some(a) if type_matches(expected, a) => {
+            Some(a) if candidates.iter().any(|c| type_matches(c, a)) => {
                 return Outcome::Passed { duration_ms };
             }
             Some(a) => {
                 return Outcome::Failed {
-                    reason: format!("expected to throw `{expected}`, got `{a}`"),
+                    reason: format!("expected to throw `{display}`, got `{a}`"),
                 };
             }
             None => {
                 return Outcome::Failed {
                     reason: format!(
-                        "expected to throw `{expected}`, got non-exception failure: {}",
+                        "expected to throw `{display}`, got non-exception failure: {}",
                         stderr.lines().next().unwrap_or("(empty stderr)").trim_end(),
                     ),
                 };
@@ -295,7 +302,7 @@ fn type_matches(expected: &str, actual_fq: &str) -> bool {
     if expected == actual_fq { return true; }
     // Trailing-segment match: split on `.`, last piece is the short name.
     let actual_short = actual_fq.rsplit('.').next().unwrap_or(actual_fq);
-    expected == actual_short
+    !expected.is_empty() && expected == actual_short
 }
 
 fn extract_exception_msg(stderr: &str) -> String {
@@ -466,5 +473,44 @@ mod tests {
     fn matches_short_against_short() {
         // No namespace on the actual side (rare but possible).
         assert!(type_matches("TestFailure", "TestFailure"));
+    }
+
+    // ── A3 — semicolon-delimited candidate list parsing ──────────────────
+
+    /// Helper mirroring the run_one branch: split, filter empty, try any-match.
+    fn list_match(expected: &str, actual_fq: &str) -> bool {
+        expected.split(';').filter(|s| !s.is_empty())
+            .any(|c| type_matches(c, actual_fq))
+    }
+
+    #[test]
+    fn list_single_entry_matches_a2_behavior() {
+        // No `;` — falls through to a single-candidate match.
+        assert!(list_match("TestFailure", "Std.TestFailure"));
+        assert!(!list_match("TestFailure", "Std.SkipSignal"));
+    }
+
+    #[test]
+    fn list_inheritance_chain_matches_via_ancestor() {
+        // Compiler emits "TestFailure;Exception" for [ShouldThrow<Exception>]
+        // when actual class is TestFailure (compile-time chain expansion).
+        // But the user-visible expected type is the leaf written in source,
+        // so the chain head is the user type. For [ShouldThrow<Exception>]
+        // catching TestFailure, the chain is "Exception" — and the runner
+        // sees "Exception" alone or any expansion. A successful test below.
+        assert!(list_match("Exception;Object", "Std.Exception"));
+        assert!(list_match("TestFailure;Exception", "Std.Exception"));
+    }
+
+    #[test]
+    fn list_no_candidate_matches() {
+        assert!(!list_match("Foo;Bar;Baz", "Std.TestFailure"));
+    }
+
+    #[test]
+    fn list_skips_empty_segments() {
+        // Defensive: trailing `;` or duplicated `;;` shouldn't false-match.
+        assert!(list_match("Exception;;", "Std.Exception"));
+        assert!(!list_match(";;", "Std.Exception"));
     }
 }

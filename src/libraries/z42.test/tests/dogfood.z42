@@ -56,3 +56,12 @@ void test_assert_fail_throws_testfailure() {
 void test_assert_skip_throws_skipsignal() {
     Assert.Skip("expected to skip");
 }
+
+// A3 — inheritance-aware: TestFailure extends Exception, so [ShouldThrow<Exception>]
+// catches a TestFailure throw via the compile-time-emitted ancestor chain
+// in TIDX (no runner-side class metadata required).
+[Test]
+[ShouldThrow<Exception>]
+void test_assert_fail_caught_via_exception_base() {
+    Assert.Fail("inheritance walk should match Exception");
+}
