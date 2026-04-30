@@ -1,0 +1,46 @@
+// Spec R3 minimal — verify exception classification end-to-end.
+//
+// Each test below covers one Outcome variant the z42-test-runner classifies:
+//   - test_passes              → Outcome::Passed (empty body returns OK)
+//   - test_fails_via_assert    → Outcome::Failed (Assert.Fail throws TestFailure)
+//   - test_fails_via_throw     → Outcome::Failed (raw exception, not TestFailure)
+//   - test_skips_via_assert    → Outcome::Skipped (Assert.Skip throws SkipSignal)
+//
+// Compile with:
+//   dotnet run --project src/compiler/z42.Driver -- \
+//     examples/test_assert_demo.z42 --emit zbc -o /tmp/test_assert_demo.zbc
+//
+// Run with:
+//   cargo run --manifest-path src/toolchain/test-runner/Cargo.toml -- \
+//     /tmp/test_assert_demo.zbc
+//
+// Expected output (1 passed, 2 failed, 1 skipped):
+//   ✓ TestAssertDemo.test_passes  (Nms)
+//   ✗ TestAssertDemo.test_fails_via_assert
+//       TestFailure: intentional failure
+//   ✗ TestAssertDemo.test_fails_via_throw
+//       raw exception
+//   ⊘ TestAssertDemo.test_skips_via_assert  (env not configured)
+namespace TestAssertDemo;
+
+using Std.Test;
+
+[Test]
+void test_passes() {
+    // Empty body — z42-test-runner classifies as Outcome::Passed.
+}
+
+[Test]
+void test_fails_via_assert() {
+    Assert.Fail("intentional failure");
+}
+
+[Test]
+void test_fails_via_throw() {
+    throw "raw exception";
+}
+
+[Test]
+void test_skips_via_assert() {
+    Assert.Skip("env not configured");
+}

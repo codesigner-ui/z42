@@ -1,4 +1,4 @@
-namespace Std.Test;
+namespace Std;
 
 // ── Test framework exception types (spec R2.A) ────────────────────────────
 //

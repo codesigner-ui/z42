@@ -13,6 +13,12 @@ struct Cli {
     #[arg(long, value_enum)]
     mode: Option<ExecMode>,
 
+    /// Override entry point — call this function instead of the default
+    /// (Main / `<namespace>.Main`). Used by z42-test-runner to invoke
+    /// individual `[Test]` methods discovered via the TIDX section.
+    #[arg(long)]
+    entry: Option<String>,
+
     /// Enable verbose tracing
     #[arg(short, long)]
     verbose: bool,
@@ -368,5 +374,7 @@ fn main() -> Result<()> {
     };
 
     let vm = z42_vm::vm::Vm::new(final_module, default_mode);
-    vm.run(&mut ctx, entry_hint.as_deref())
+    // CLI --entry overrides any artifact-supplied entry hint.
+    let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
+    vm.run(&mut ctx, effective_entry)
 }
