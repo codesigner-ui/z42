@@ -22,15 +22,19 @@ scoop install just                      # Windows (scoop)
 
 ```bash
 just                # 列出所有 task（= just --list）
-just build          # 编译器 + 运行时
-just test           # 全部测试（compiler + VM + cross-zpkg）
-just test-vm        # 仅 VM golden tests
-just test-vm jit    # 用 JIT 模式
-just clean          # 清空 artifacts/
-just ci             # CI 标准管线（= build + test）
+just build               # 编译器 + 运行时
+just test                # 全部测试（compiler + VM + cross-zpkg）
+just test-vm             # 仅 VM golden tests
+just test-vm jit         # 用 JIT 模式
+just test-stdlib         # 6 个 stdlib 库的 [Test] 测试（z42-test-runner 调度）
+just test-stdlib z42.math   # 仅某个库
+just test-changed        # 增量：根据 git diff 跑受影响的测试
+just test-changed --dry-run # 仅打印计划
+just clean               # 清空 artifacts/
+just ci                  # CI 标准管线（= build + test）
 ```
 
-> 占位 task：`just bench` / `just test-changed` / `just test-stdlib` / `just platform <x> <y>` 当前会输出 "Pn 待实施" 并 exit 1，等对应 sub-spec 实施后启用。
+> 占位 task：`just bench` / `just platform <x> <y>` 当前会输出 "Pn 待实施" 并 exit 1，等对应 sub-spec 实施后启用。
 >
 > 现有 `./scripts/*.sh` 仍可独立运行（justfile 内部就是调用它们），向后兼容。
 

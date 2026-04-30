@@ -103,7 +103,12 @@
       "Bash(artifacts/rust/debug/z42vm artifacts/libraries/z42.test/dist/z42.test.zpkg --dump-class-info)",
       "Bash(artifacts/rust/debug/z42vm --help)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll disasm /tmp/z42-test-runner-work/z42.test_dogfood.zbc)",
-      "Bash(xargs -I{} grep -l -i \"thread\\\\|concur\\\\|async\\\\|goroutine\\\\|fiber\" /Users/d.s.qiu/Documents/codesigner-ui/z42/docs/design/{})"
+      "Bash(xargs -I{} grep -l -i \"thread\\\\|concur\\\\|async\\\\|goroutine\\\\|fiber\" /Users/d.s.qiu/Documents/codesigner-ui/z42/docs/design/{})",
+      "Bash(chmod +x scripts/test-changed.sh)",
+      "Bash(git fetch *)",
+      "Bash(./scripts/test-changed.sh --dry-run)",
+      "Bash(./scripts/test-changed.sh HEAD~3 --dry-run)",
+      "Bash(bash -n scripts/test-changed.sh)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

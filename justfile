@@ -53,9 +53,14 @@ test-vm mode="interp":
 test-cross-zpkg mode="interp":
     ./scripts/test-cross-zpkg.sh {{mode}}
 
-# (P2 placeholder) Run only tests affected by recent git changes
-test-changed:
-    @echo "❌ P2 待实施：增量测试 (z42-test-runner + scripts/test-changed.sh)" && exit 1
+# Run only tests affected by changes vs a base ref (default: HEAD).
+#   just test-changed                # working tree + staged changes
+#   just test-changed main           # branch delta vs main
+#   just test-changed --dry-run      # print plan, don't execute
+# Maps file paths to coarse-grained test scopes (see docs/design/testing.md
+# "增量测试").
+test-changed *args:
+    ./scripts/test-changed.sh {{args}}
 
 # Run stdlib library [Test] tests via z42-test-runner. (R3 minimal v0.2 + R5)
 #

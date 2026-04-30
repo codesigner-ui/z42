@@ -245,6 +245,63 @@ substring match 而非 regex；不引入 `regex` 依赖。`test.method_name.cont
 - `1` — 任一 failed
 - `2` — runner 内部错误（路径解析、I/O 等）
 - `3` — 0 tests discovered（含被 filter 排空）
+
+---
+
+## 增量测试 `just test-changed`（R3c，2026-04-30）
+
+[scripts/test-changed.sh](../../scripts/test-changed.sh) 把 `git diff` 的变更文件映射到受影响测试集合，跳过无关测试加快本地反馈。
+
+### Base ref 解析
+
+按优先级：
+
+1. 环境变量 `Z42_TEST_CHANGED_BASE`（CI 友好，例如 `origin/main`）
+2. 命令行第一参数（`just test-changed main`）
+3. 默认 `HEAD`（工作区 + staged 修改）
+
+untracked 文件（`git ls-files --others --exclude-standard`）也纳入变更集。
+
+### 文件 → 测试映射
+
+| 变更路径 | 触发命令 |
+|---------|---------|
+| `src/libraries/<lib>/src/**` | `just test-stdlib <lib>` + `just test-vm` |
+| `src/libraries/<lib>/tests/**` | `just test-stdlib <lib>` |
+| `src/libraries/<lib>/<lib>.toml` | `just test-stdlib <lib>` |
+| `src/runtime/src/**`、`src/runtime/Cargo.toml` | `cargo test runtime` + `just test-vm` |
+| `src/runtime/tests/cross-zpkg/**` | `just test-cross-zpkg` |
+| `src/runtime/tests/**`（其他） | `just test-vm` |
+| `src/compiler/**` | `just test-compiler` + `just test-vm` |
+| `src/toolchain/**` | `cargo test test-runner` + `just test-stdlib` |
+| `scripts/test-vm.sh`、`scripts/regen-golden-tests.sh` | `just test-vm` |
+| `scripts/test-stdlib.sh`、`scripts/build-stdlib.sh` | `just test-stdlib` |
+| `scripts/test-cross-zpkg.sh` | `just test-cross-zpkg` |
+| `justfile`、`*.workspace.toml`、`src/runtime/build.rs` | 全套 `just test` |
+| `*.md`、`docs/**`、`spec/**`、`.claude/**`、`README*` | 不触发 |
+| 其他 `src/**` 或未识别的根级文件 | 全套 `just test`（防御性） |
+
+去重后按"先编译后 VM 后 stdlib 后 cross"的隐式顺序串行执行；任一命令失败即停（透传退出码）。
+
+### 限制（R3c 范围）
+
+- 目录级粗粒度映射；不读 IR / 类级反向依赖图（需独立 spec）
+- 不缓存上次结果（每次重新跑选中的命令）
+- 单 base ref；不支持区间或多 ref
+- 不监听文件变更（无 watch 模式）
+
+### 用例
+
+```bash
+# 改了 z42.math 一个文件 → 只跑 z42.math + VM goldens
+just test-changed
+
+# PR 检查：只跑 main 与当前 branch 之间的差异影响范围
+Z42_TEST_CHANGED_BASE=origin/main just test-changed
+
+# 看计划不执行（pre-commit hook 友好）
+just test-changed --dry-run
+```
 - ⏸️ TypeArg 升级为 TypeExpr（当前 `string?` 足够）
 - ⏸️ user-defined attributes（z42 当前白名单：z42.test.* + Native 两个 family）
 
