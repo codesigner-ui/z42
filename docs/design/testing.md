@@ -175,6 +175,76 @@ z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出：
 
 - ⏸️ 跨非 import zpkg 依赖的 inheritance（要求 runner 知道完整类型层次，需做 LazyLoader 集成 → 由 R3 完整版承担）
 - ⏸️ 多类型参数 `[X<A, B>]` / 嵌套 `[X<List<Y>>]` / dotted name `<Std.E>`
+
+---
+
+## Runner 输出格式（R3a，2026-04-30）
+
+`z42-test-runner --format <pretty|tap|json>` 三选一。`--filter <SUBSTR>` 按方法名 substring 筛选；多个 `--format` 等价于最后一个。
+
+### 默认 format 选择
+
+- TTY 上 stdout → `pretty`（人类可读，带颜色）
+- 非 TTY（管道、重定向、CI）→ `tap`（机器消费默认）
+- 显式 `--format X` 强制覆盖
+
+### Pretty
+
+R3a 保留原 R3 minimal 输出语义，仅在收集所有结果之后再渲染。和 A2/A3 阶段视觉等价。
+
+### TAP 13 ([testanything.org](https://testanything.org/tap-version-13-specification.html))
+
+```
+TAP version 13
+1..8
+ok 1 - Z42TestDogfood.test_assert_equal_pass
+ok 2 - Z42TestDogfood.test_skip # SKIP platform=ios
+not ok 3 - Z42TestDogfood.test_fail
+  ---
+  message: 'expected `Foo`, got `Bar`'
+  ...
+```
+
+YAML diagnostic 块仅在 `not ok` 后输出（`ok` 不带 reason）；skip 用 `# SKIP <reason>` 指令。
+
+### JSON
+
+自定义 schema，可扩字段（保持向后兼容）：
+
+```json
+{
+  "tool": "z42-test-runner",
+  "version": "0.1.0",
+  "module": "z42.test_dogfood.zbc",
+  "summary": {
+    "total": 8, "passed": 8, "failed": 0, "skipped": 0,
+    "duration_ms": 48
+  },
+  "tests": [
+    { "name": "Z42TestDogfood.test_assert_equal_pass",
+      "status": "passed", "duration_ms": 6 },
+    { "name": "Z42TestDogfood.test_skip",
+      "status": "skipped", "duration_ms": 0,
+      "reason": "platform=ios" },
+    { "name": "Z42TestDogfood.test_fail",
+      "status": "failed", "duration_ms": 7,
+      "reason": "expected `Foo`, got `Bar`" }
+  ]
+}
+```
+
+`reason` 字段对 `passed` 测试不输出（serde `skip_serializing_if`）。后续 R3b 加 `setup_duration_ms` / `teardown_duration_ms` 时不破坏现有消费者。
+
+### --filter
+
+substring match 而非 regex；不引入 `regex` 依赖。`test.method_name.contains(filter)` 为 true 即保留。如未来需 regex，独立 spec 升级。
+
+### 退出码
+
+- `0` — 全部通过 / 仅 skipped
+- `1` — 任一 failed
+- `2` — runner 内部错误（路径解析、I/O 等）
+- `3` — 0 tests discovered（含被 filter 排空）
 - ⏸️ TypeArg 升级为 TypeExpr（当前 `string?` 足够）
 - ⏸️ user-defined attributes（z42 当前白名单：z42.test.* + Native 两个 family）
 

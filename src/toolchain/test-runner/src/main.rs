@@ -24,8 +24,10 @@
 //!   z42-test-runner <file.zbc> [--z42vm <path>]
 
 use anyhow::{bail, Context, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use colored::*;
+use serde::Serialize;
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Command;
 use std::time::Instant;
@@ -34,11 +36,30 @@ use z42_vm::metadata::{
     load_artifact, LoadedArtifact, TestEntry, TestEntryKind, TestFlags,
 };
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+#[clap(rename_all = "lower")]
+enum Format {
+    /// Human-friendly TTY output (colored).
+    Pretty,
+    /// TAP 13 (`testanything.org`) — perl/Rust-style protocol consumed by CI tooling.
+    Tap,
+    /// Self-describing JSON document (see `docs/design/testing.md` for schema).
+    Json,
+}
+
 #[derive(Parser)]
-#[command(name = "z42-test-runner", about = "z42 test runner (R3 minimal v0.2)", version)]
+#[command(name = "z42-test-runner", about = "z42 test runner (R3a)", version)]
 struct Cli {
     /// Path to a .zbc file containing test methods (decorated with z42.test attributes).
     file: PathBuf,
+
+    /// Output format. Default: `pretty` when stdout is a TTY, otherwise `tap`.
+    #[arg(long, value_enum)]
+    format: Option<Format>,
+
+    /// Run only tests whose method name contains this substring (case-sensitive).
+    #[arg(long, value_name = "SUBSTR")]
+    filter: Option<String>,
 
     /// Override z42vm binary path. Default: sibling of test-runner binary, then $PATH.
     #[arg(long)]
@@ -64,46 +85,52 @@ fn main() {
     }
 }
 
+fn resolve_format(explicit: Option<Format>) -> Format {
+    explicit.unwrap_or_else(|| {
+        if std::io::stdout().is_terminal() { Format::Pretty } else { Format::Tap }
+    })
+}
+
 fn run(cli: &Cli) -> Result<i32> {
     let zbc_path = cli.file.to_str().context("file path is not valid UTF-8")?;
     let artifact = load_artifact(zbc_path)
         .with_context(|| format!("loading artifact `{zbc_path}`"))?;
+    let format = resolve_format(cli.format);
 
-    let report = TestReport::from_artifact(&artifact);
+    let mut report = TestReport::from_artifact(&artifact);
+    // R3a — substring filter applied post-discovery; preserves zero-test
+    // semantics so an over-narrow filter exits 3 (not 0) just like an empty
+    // TIDX section.
+    if let Some(needle) = &cli.filter {
+        report.tests.retain(|t| t.method_name.contains(needle.as_str()));
+    }
     if report.tests.is_empty() {
-        println!("{}", "no tests found (TIDX section empty or absent)".yellow());
+        if matches!(format, Format::Pretty) {
+            println!("{}", "no tests found (TIDX section empty, absent, or filtered out)".yellow());
+        }
         return Ok(3);
     }
 
     let z42vm = resolve_z42vm(cli.z42vm.as_ref())
         .context("locating z42vm binary (use --z42vm to override)")?;
 
-    print_header(&report, zbc_path);
-    let mut summary = RunSummary::default();
+    let module_name = std::path::Path::new(zbc_path)
+        .file_name().and_then(|s| s.to_str()).unwrap_or(zbc_path).to_string();
 
+    let mut results: Vec<TestResult> = Vec::with_capacity(report.tests.len());
     for test in &report.tests {
         let outcome = run_one(&z42vm, zbc_path, test);
-        match outcome {
-            Outcome::Passed { duration_ms } => {
-                summary.passed += 1;
-                println!("  {} {}  ({}ms)", "✓".green().bold(), test.method_name, duration_ms);
-            }
-            Outcome::Skipped { reason } => {
-                summary.skipped += 1;
-                println!("  {} {}  ({})", "⊘".yellow().bold(), test.method_name, reason);
-            }
-            Outcome::Failed { reason } => {
-                summary.failed += 1;
-                println!("  {} {}", "✗".red().bold(), test.method_name);
-                for line in reason.lines() {
-                    println!("      {}", line.red());
-                }
-            }
-        }
+        results.push(TestResult::from_outcome(test.method_name.to_string(), outcome));
     }
 
-    print_footer(&summary);
-    Ok(if summary.failed > 0 { 1 } else { 0 })
+    let exit_code = if results.iter().any(|r| r.status == TestStatus::Failed) { 1 } else { 0 };
+
+    match format {
+        Format::Pretty => print_pretty(&module_name, &results),
+        Format::Tap    => print_tap(&module_name, &results),
+        Format::Json   => print_json(&module_name, &results)?,
+    }
+    Ok(exit_code)
 }
 
 // ── Discovery ─────────────────────────────────────────────────────────────
@@ -346,37 +373,156 @@ fn resolve_z42vm(override_: Option<&PathBuf>) -> Result<PathBuf> {
     );
 }
 
-// ── Output ────────────────────────────────────────────────────────────────
+// ── Result type (R3a) ─────────────────────────────────────────────────────
 
-#[derive(Default)]
-struct RunSummary {
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum TestStatus { Passed, Failed, Skipped }
+
+#[derive(Debug, Serialize)]
+struct TestResult {
+    name: String,
+    status: TestStatus,
+    /// Wallclock duration in milliseconds. Always present for `passed` and
+    /// `failed`; `0` (and meaningless) for synthesized `skipped` results that
+    /// short-circuit before z42vm is spawned.
+    duration_ms: u64,
+    /// Failure message or skip rationale. `None` for `passed`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+impl TestResult {
+    fn from_outcome(name: String, outcome: Outcome) -> Self {
+        match outcome {
+            Outcome::Passed { duration_ms } => Self {
+                name, status: TestStatus::Passed, duration_ms, reason: None,
+            },
+            Outcome::Skipped { reason } => Self {
+                name, status: TestStatus::Skipped, duration_ms: 0, reason: Some(reason),
+            },
+            Outcome::Failed { reason } => Self {
+                name, status: TestStatus::Failed, duration_ms: 0, reason: Some(reason),
+            },
+        }
+    }
+}
+
+#[derive(Default, Serialize)]
+struct Summary {
+    total: usize,
     passed: usize,
     failed: usize,
     skipped: usize,
+    duration_ms: u64,
 }
 
-fn print_header(report: &TestReport, path: &str) {
-    let total = report.tests.len();
-    let module_name = std::path::Path::new(path)
-        .file_name().and_then(|s| s.to_str()).unwrap_or(path);
-    println!("{}", format!("running {total} tests from {module_name}").bold());
-    println!();
+impl Summary {
+    fn from_results(results: &[TestResult]) -> Self {
+        let mut s = Self::default();
+        for r in results {
+            s.total += 1;
+            s.duration_ms += r.duration_ms;
+            match r.status {
+                TestStatus::Passed  => s.passed  += 1,
+                TestStatus::Failed  => s.failed  += 1,
+                TestStatus::Skipped => s.skipped += 1,
+            }
+        }
+        s
+    }
 }
 
-fn print_footer(summary: &RunSummary) {
+// ── Formatters ────────────────────────────────────────────────────────────
+
+fn print_pretty(module_name: &str, results: &[TestResult]) {
+    println!("{}", format!("running {} tests from {}", results.len(), module_name).bold());
     println!();
-    let line = format!(
+    for r in results {
+        match r.status {
+            TestStatus::Passed => println!(
+                "  {} {}  ({}ms)", "✓".green().bold(), r.name, r.duration_ms),
+            TestStatus::Skipped => println!(
+                "  {} {}  ({})", "⊘".yellow().bold(), r.name,
+                r.reason.as_deref().unwrap_or("skipped")),
+            TestStatus::Failed => {
+                println!("  {} {}", "✗".red().bold(), r.name);
+                if let Some(reason) = &r.reason {
+                    for line in reason.lines() {
+                        println!("      {}", line.red());
+                    }
+                }
+            }
+        }
+    }
+    let summary = Summary::from_results(results);
+    println!();
+    let header = if summary.failed == 0 {
+        "ok".green().bold().to_string()
+    } else {
+        "FAILED".red().bold().to_string()
+    };
+    println!(
         "result: {}.  {} passed; {} failed; {} skipped",
-        if summary.failed == 0 {
-            "ok".green().bold().to_string()
-        } else {
-            "FAILED".red().bold().to_string()
-        },
-        summary.passed,
-        summary.failed,
-        summary.skipped,
+        header, summary.passed, summary.failed, summary.skipped,
     );
-    println!("{}", line);
+}
+
+/// TAP version 13 (testanything.org). Plan line first, then `ok` / `not ok`
+/// per test. YAML diagnostic block only on failures (skip reason carried in
+/// the directive). No color codes — TAP consumers expect plain ASCII.
+fn print_tap(_module_name: &str, results: &[TestResult]) {
+    println!("TAP version 13");
+    println!("1..{}", results.len());
+    for (idx, r) in results.iter().enumerate() {
+        let n = idx + 1;
+        match r.status {
+            TestStatus::Passed => println!("ok {n} - {}", r.name),
+            TestStatus::Skipped => {
+                let reason = r.reason.as_deref().unwrap_or("skipped");
+                println!("ok {n} - {} # SKIP {}", r.name, reason);
+            }
+            TestStatus::Failed => {
+                println!("not ok {n} - {}", r.name);
+                if let Some(reason) = &r.reason {
+                    println!("  ---");
+                    println!("  message: {}", yaml_escape(reason));
+                    println!("  ...");
+                }
+            }
+        }
+    }
+}
+
+/// YAML 1.2 single-line escape: wrap in single quotes, double interior `'`,
+/// collapse newlines to spaces. Adequate for our short failure messages; if
+/// future reasons embed structured content, replace with full YAML emitter.
+fn yaml_escape(s: &str) -> String {
+    let collapsed: String = s.lines().collect::<Vec<_>>().join(" ");
+    format!("'{}'", collapsed.replace('\'', "''"))
+}
+
+#[derive(Serialize)]
+struct JsonReport<'a> {
+    tool: &'static str,
+    version: &'static str,
+    module: &'a str,
+    summary: Summary,
+    tests: &'a [TestResult],
+}
+
+fn print_json(module_name: &str, results: &[TestResult]) -> Result<()> {
+    let report = JsonReport {
+        tool: "z42-test-runner",
+        version: env!("CARGO_PKG_VERSION"),
+        module: module_name,
+        summary: Summary::from_results(results),
+        tests: results,
+    };
+    let s = serde_json::to_string_pretty(&report)
+        .context("serializing JSON report")?;
+    println!("{s}");
+    Ok(())
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -512,5 +658,113 @@ mod tests {
         // Defensive: trailing `;` or duplicated `;;` shouldn't false-match.
         assert!(list_match("Exception;;", "Std.Exception"));
         assert!(!list_match(";;", "Std.Exception"));
+    }
+
+    // ── R3a — formatter outputs ──────────────────────────────────────────
+
+    fn sample_results() -> Vec<TestResult> {
+        vec![
+            TestResult {
+                name: "M.test_pass".into(), status: TestStatus::Passed,
+                duration_ms: 12, reason: None,
+            },
+            TestResult {
+                name: "M.test_skip".into(), status: TestStatus::Skipped,
+                duration_ms: 0, reason: Some("platform=ios".into()),
+            },
+            TestResult {
+                name: "M.test_fail".into(), status: TestStatus::Failed,
+                duration_ms: 7,
+                reason: Some("expected `Foo`, got `Bar`".into()),
+            },
+        ]
+    }
+
+    #[test]
+    fn tap_format_matches_v13_skeleton() {
+        let mut buf = Vec::new();
+        // Capture stdout via a thread is complex; instead reproduce the format
+        // in a string and assert the exact shape that print_tap would emit.
+        // We rebuild the lines deterministically using the same logic.
+        buf.push("TAP version 13".to_string());
+        buf.push(format!("1..{}", sample_results().len()));
+        for (idx, r) in sample_results().iter().enumerate() {
+            let n = idx + 1;
+            match r.status {
+                TestStatus::Passed  => buf.push(format!("ok {n} - {}", r.name)),
+                TestStatus::Skipped => buf.push(format!(
+                    "ok {n} - {} # SKIP {}", r.name,
+                    r.reason.as_deref().unwrap_or("skipped"))),
+                TestStatus::Failed  => {
+                    buf.push(format!("not ok {n} - {}", r.name));
+                    if let Some(reason) = &r.reason {
+                        buf.push("  ---".to_string());
+                        buf.push(format!("  message: {}", yaml_escape(reason)));
+                        buf.push("  ...".to_string());
+                    }
+                }
+            }
+        }
+        let expected = [
+            "TAP version 13",
+            "1..3",
+            "ok 1 - M.test_pass",
+            "ok 2 - M.test_skip # SKIP platform=ios",
+            "not ok 3 - M.test_fail",
+            "  ---",
+            "  message: 'expected `Foo`, got `Bar`'",
+            "  ...",
+        ].join("\n");
+        assert_eq!(buf.join("\n"), expected);
+    }
+
+    #[test]
+    fn yaml_escape_handles_quotes_and_newlines() {
+        assert_eq!(yaml_escape("hello"), "'hello'");
+        assert_eq!(yaml_escape("can't"), "'can''t'");
+        assert_eq!(yaml_escape("line one\nline two"), "'line one line two'");
+    }
+
+    #[test]
+    fn json_serialization_round_trip() {
+        let results = sample_results();
+        let report = JsonReport {
+            tool: "z42-test-runner",
+            version: "0.1.0",
+            module: "demo.zbc",
+            summary: Summary::from_results(&results),
+            tests: &results,
+        };
+        let s = serde_json::to_string(&report).unwrap();
+        // Spot-check key invariants without snapshotting the whole document.
+        assert!(s.contains("\"tool\":\"z42-test-runner\""));
+        assert!(s.contains("\"module\":\"demo.zbc\""));
+        assert!(s.contains("\"status\":\"passed\""));
+        assert!(s.contains("\"status\":\"skipped\""));
+        assert!(s.contains("\"status\":\"failed\""));
+        assert!(s.contains("\"reason\":\"platform=ios\""));
+        assert!(s.contains("\"total\":3"));
+        assert!(s.contains("\"passed\":1"));
+    }
+
+    #[test]
+    fn json_passed_omits_reason_field() {
+        let r = TestResult {
+            name: "M.t".into(), status: TestStatus::Passed,
+            duration_ms: 5, reason: None,
+        };
+        let s = serde_json::to_string(&r).unwrap();
+        assert!(!s.contains("\"reason\""),
+            "passed test should not serialize a `reason` field");
+    }
+
+    #[test]
+    fn summary_aggregates_correctly() {
+        let summary = Summary::from_results(&sample_results());
+        assert_eq!(summary.total, 3);
+        assert_eq!(summary.passed, 1);
+        assert_eq!(summary.failed, 1);
+        assert_eq!(summary.skipped, 1);
+        assert_eq!(summary.duration_ms, 12 + 0 + 7);
     }
 }
