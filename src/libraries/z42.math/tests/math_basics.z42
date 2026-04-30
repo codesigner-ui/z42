@@ -1,0 +1,48 @@
+// Spec R5 — z42.math 库本地测试。覆盖 Abs / Max / Min（int + double overload）
+// 与基础数学常量。
+//
+// 编译：
+//   dotnet run --project src/compiler/z42.Driver -- \
+//     src/libraries/z42.math/tests/math_basics.z42 --emit zbc -o /tmp/math.zbc
+// 运行：
+//   cargo run -p z42-test-runner -- /tmp/math.zbc
+namespace Z42MathTests;
+
+using Std.Test;   // Std.Test.Assert (R2.D)
+using Std.Math;   // 被测库
+
+[Test]
+void test_abs_int_positive() {
+    Assert.Equal(5, Math.Abs(5));
+}
+
+[Test]
+void test_abs_int_negative() {
+    Assert.Equal(5, Math.Abs(-5));
+}
+
+[Test]
+void test_abs_int_zero() {
+    Assert.Equal(0, Math.Abs(0));
+}
+
+[Test]
+void test_max_int() {
+    Assert.Equal(10, Math.Max(3, 10));
+    Assert.Equal(10, Math.Max(10, 3));
+    Assert.Equal(7,  Math.Max(7, 7));
+}
+
+[Test]
+void test_min_int() {
+    Assert.Equal(3, Math.Min(3, 10));
+    Assert.Equal(3, Math.Min(10, 3));
+    Assert.Equal(7, Math.Min(7, 7));
+}
+
+[Test]
+void test_constants_pi() {
+    // π 至少应该在 [3.14, 3.15] 之间（保护防止常量被误改）
+    Assert.True(Math.PI > 3.14);
+    Assert.True(Math.PI < 3.15);
+}

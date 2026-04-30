@@ -1,0 +1,56 @@
+// Spec R5 — z42.text 库本地测试。覆盖 StringBuilder 的核心 Append /
+// AppendLine / GetLength / ToString 工作流。
+namespace Z42TextTests;
+
+using Std.Test;
+using Std.Text;
+
+[Test]
+void test_empty_builder() {
+    var sb = new StringBuilder();
+    Assert.Equal(0, sb.GetLength());
+    Assert.Equal("", sb.ToString());
+}
+
+[Test]
+void test_append_single() {
+    var sb = new StringBuilder();
+    sb.Append("hello");
+    Assert.Equal(5, sb.GetLength());
+    Assert.Equal("hello", sb.ToString());
+}
+
+[Test]
+void test_append_multiple() {
+    var sb = new StringBuilder();
+    sb.Append("a");
+    sb.Append("b");
+    sb.Append("c");
+    Assert.Equal("abc", sb.ToString());
+}
+
+[Test]
+void test_append_chain() {
+    var sb = new StringBuilder();
+    sb.Append("x").Append("y").Append("z");
+    Assert.Equal("xyz", sb.ToString());
+}
+
+[Test]
+void test_append_line() {
+    var sb = new StringBuilder();
+    sb.AppendLine("first");
+    sb.AppendLine("second");
+    Assert.Equal("first\nsecond\n", sb.ToString());
+}
+
+[Test]
+void test_grow_beyond_initial_capacity() {
+    // Initial capacity is 4; append 10 items to force at least one grow().
+    var sb = new StringBuilder();
+    for (int i = 0; i < 10; i = i + 1) {
+        sb.Append("a");
+    }
+    Assert.Equal(10, sb.GetLength());
+    Assert.Equal("aaaaaaaaaa", sb.ToString());
+}

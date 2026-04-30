@@ -1,0 +1,59 @@
+// Spec R5 — z42.collections 库本地测试。覆盖 LinkedList<T> 的 Count /
+// IsEmpty / AddFirst / AddLast / First / Last 行为。
+namespace Z42CollectionsTests;
+
+using Std.Test;
+using Std.Collections;
+
+[Test]
+void test_new_list_is_empty() {
+    var list = new LinkedList<int>();
+    Assert.True(list.IsEmpty());
+    Assert.Equal(0, list.Count());
+}
+
+[Test]
+void test_add_last_increases_count() {
+    var list = new LinkedList<int>();
+    list.AddLast(1);
+    list.AddLast(2);
+    list.AddLast(3);
+    Assert.False(list.IsEmpty());
+    Assert.Equal(3, list.Count());
+}
+
+[Test]
+void test_add_first_increases_count() {
+    var list = new LinkedList<int>();
+    list.AddFirst(1);
+    list.AddFirst(2);
+    Assert.Equal(2, list.Count());
+}
+
+[Test]
+void test_first_after_add_last() {
+    var list = new LinkedList<int>();
+    list.AddLast(10);
+    list.AddLast(20);
+    var head = list.First();
+    Assert.Equal(10, head.Value);
+}
+
+[Test]
+void test_last_after_add_last() {
+    var list = new LinkedList<int>();
+    list.AddLast(10);
+    list.AddLast(20);
+    list.AddLast(30);
+    var tail = list.Last();
+    Assert.Equal(30, tail.Value);
+}
+
+[Test]
+void test_first_after_add_first() {
+    var list = new LinkedList<int>();
+    list.AddLast(1);
+    list.AddFirst(0);
+    var head = list.First();
+    Assert.Equal(0, head.Value);
+}

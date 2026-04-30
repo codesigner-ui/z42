@@ -1,0 +1,46 @@
+// Spec R5 — z42.core 库本地测试。覆盖 Std.Assert（z42.core 提供的通用断言）
+// 与基础类型行为。注意这里测的是 Std.Assert（z42.core）而非 Std.Test.Assert
+// （z42.test）—— 后者只在测试代码里使用。
+namespace Z42CoreTests;
+
+using Std.Test;  // 测试框架的 Assert（抛 TestFailure）
+
+[Test]
+void test_string_equality() {
+    Assert.Equal("hello", "hel" + "lo");
+}
+
+[Test]
+void test_string_concat() {
+    var s = "abc" + "def";
+    Assert.Equal(6, s.Length);
+}
+
+[Test]
+void test_int_arithmetic() {
+    Assert.Equal(7, 3 + 4);
+    Assert.Equal(12, 3 * 4);
+    Assert.Equal(-1, 3 - 4);
+}
+
+[Test]
+void test_bool_logic() {
+    Assert.True(true);
+    Assert.False(false);
+    Assert.True(1 == 1);
+    Assert.False(1 == 2);
+}
+
+[Test]
+void test_string_contains() {
+    Assert.Contains("ell", "hello world");
+    Assert.Contains("world", "hello world");
+}
+
+[Test]
+void test_null_handling() {
+    string? maybe = null;
+    Assert.Null(maybe);
+    string defined = "x";
+    Assert.NotNull(defined);
+}

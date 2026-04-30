@@ -1,0 +1,45 @@
+// Spec R5 — z42.io 库本地测试。受 closure 缺失限制，无法捕获 stdout
+// 内容做精确比对（TestIO.captureStdout 待 R2.B 实施）；本期只做 smoke 测试，
+// 验证 IO API 不抛异常 + 数值类 API 返回合理值。
+namespace Z42IoTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_writeline_does_not_throw() {
+    // Smoke: Console.WriteLine 不应抛异常。输出会进入 z42vm 子进程的
+    // stdout（test-runner 当前不捕获，由 R2.B + R3 完整版 升级后捕获 + 默认隐藏）。
+    Console.WriteLine("[smoke] z42.io console test");
+}
+
+[Test]
+void test_writeline_int() {
+    Console.WriteLine(42);
+}
+
+[Test]
+void test_writeline_bool() {
+    Console.WriteLine(true);
+}
+
+[Test]
+void test_current_time_is_positive() {
+    long now = Environment.GetCurrentTimeMs();
+    // Time should be positive (unix epoch ms; we're well past 1970)
+    Assert.True(now > 0);
+}
+
+[Test]
+void test_current_time_is_monotonic() {
+    long t1 = Environment.GetCurrentTimeMs();
+    long t2 = Environment.GetCurrentTimeMs();
+    Assert.True(t2 >= t1);
+}
+
+[Test]
+void test_get_command_line_args_does_not_throw() {
+    // Smoke: should return non-null array, exact contents depend on z42vm CLI.
+    var args = Environment.GetCommandLineArgs();
+    Assert.NotNull(args);
+}
