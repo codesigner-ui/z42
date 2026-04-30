@@ -95,10 +95,20 @@
 - 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
 
 ### 测试体系
-- Golden test 覆盖所有 L1 特性（每特性至少：正常用例、边界用例、错误用例）
-- VM interp + JIT 双模式运行同一测试集，结果一致
-- CI 脚本稳定：`dotnet test` + `./scripts/test-vm.sh` 全绿为唯一合并门禁
-- 自动化测试，减少大模型AI去检索日志，降低token使用
+- ✅ Golden test 覆盖所有 L1 特性（93 例 VM-only + 13 例 stdlib-bound = 106；2026-04-30 按归属分流到 `src/runtime/tests/golden/run/` 与 `src/libraries/<lib>/tests/golden/`）
+- ✅ VM interp + JIT 双模式运行同一测试集，结果一致（104/104 × 2）
+- ✅ CI 脚本稳定：`dotnet test` (799/799) + `./scripts/test-vm.sh` (104/104 × 2) + `./scripts/test-stdlib.sh` (6 lib) + `./scripts/test-cross-zpkg.sh` 全绿为唯一合并门禁
+- ✅ **R 系列测试基础设施（2026-04-29 ~ 04-30）**：
+  - **R1**（`add-test-metadata-section` ✅ 2026-04-30）：zbc TIDX section v=2（TestEntry skip_reason / platform / feature 字段）+ 6 个测试 attribute（[Test] [Benchmark] [Setup] [Teardown] [Skip] [Ignore]）解析与收集
+  - **R2 minimal**（`add-z42-test-runner` ✅ 2026-04-30）：`Std.Test.Assert` 8 方法（Equal / NotEqual / True / False / Null / NotNull / Contains / Fail / Skip）+ `TestFailure` / `SkipSignal` 异常类
+  - **R3 minimal**（`add-z42-test-runner` ✅ 2026-04-30）：z42-test-runner subprocess 模式（fork z42vm with `--entry <name>`，按 stderr 内容分类 Pass/Skip/Fail）
+  - **R4.A**（`compiler-validate-test-attributes` ✅ 2026-04-30）：TestAttributeValidator pass + E0911/E0912/E0914/E0915 4 个错误码（[Test]/[Benchmark]/[Setup]/[Teardown] 签名 + 互斥校验；[Skip] 缺 reason 校验）
+  - **R5**（`rewrite-goldens-with-test-mechanism` minimal + ad-hoc 迁移 ✅ 2026-04-30）：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件 + `just test-stdlib` 入口；13 个 stdlib-bound golden 物理迁回所测库目录
+- 📋 **后续完整版**（详见 [spec/changes/](../spec/changes/)）：
+  - **R3 完整版**（`rewrite-z42-test-runner-compile-time`）：编译时收集 [Test] 名单；[Setup]/[Teardown] hook 真生效；JSON/JUnit 输出
+  - **R2 完整版**（`extend-z42-test-library`）：`[ShouldThrow<E>]` + `TestIO.captureStdout` + `Bencher` 完整实现
+  - **R4.B**（待开 spec）：`[ShouldThrow<E>]` 校验，阻塞于 generic attribute 语法（`[X<T>]`）
+- 🚧 增量测试 `scripts/test-changed.sh` —— P2 placeholder（justfile 占位中）
 
 ### VM 质量
 - 类型元数据：type info、字段布局、方法表（为 L3 泛型/接口分发做准备）
