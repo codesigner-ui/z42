@@ -71,7 +71,13 @@ modifier
 # ═══════════════════════════════════════════════════════════════════
 
 function_decl
-    = type_expr S IDENT S "(" S param_list S ")" S block
+    = type_expr S IDENT S "(" S param_list S ")" S function_body
+
+# Expression-bodied form (C# 7+): `R Name(T x) => expr;`
+# Block form: `R Name(T x) { ... }`
+function_body
+    = block
+    / "=>" S expr S ";"
 
 param_list
     = (param ("," S param)*)?
@@ -142,7 +148,9 @@ nullable_type  = (named_type / generic_type) "?"   # [feat:nullable]
 generic_type   = qualified_name "<" S type_expr ("," S type_expr)* S ">"   # [feat:generics]
 array_type     = type_expr "[" "]"                 # [feat:arrays]
 tuple_type     = "(" S type_expr S IDENT? ("," S type_expr S IDENT?)+ S ")"  # [feat:tuples]
-func_type      = "Func" "<" S type_expr ("," S type_expr)* S ">"  # [feat:delegates]
+# Function type: `(T1, T2) -> R` form (replaces C# Func<T1,T2,R> / Action<T>).
+# See docs/design/closure.md §3.2 for rationale.
+func_type      = "(" S (type_expr ("," S type_expr)*)? S ")" S "->" S type_expr   # [feat:delegates]
 
 # Primitive type aliases
 # int long short byte uint ulong ushort sbyte
@@ -155,6 +163,7 @@ func_type      = "Func" "<" S type_expr ("," S type_expr)* S ">"  # [feat:delega
 
 stmt
     = block
+    / function_decl        (* [feat:lambda] local function (C# 7+ nested decl) *)
     / var_decl_stmt
     / return_stmt
     / if_stmt              (* [feat:control_flow] *)
@@ -310,7 +319,16 @@ object_initializer                         # [feat:oop]
     = "{" S (IDENT S "=" S expr ("," S IDENT S "=" S expr)*)? S "}"
 
 lambda_expr                                # [feat:lambda]
-    = (IDENT / "(" S param_list S ")") S "=>" S (expr / block)
+    = lambda_params S "=>" S (expr / block)
+
+lambda_params                              # [feat:lambda]
+    = IDENT                                                              # x => ...
+    / "(" S ")"                                                          # () => ...
+    / "(" S lambda_param ("," S lambda_param)* S ")"                      # (x, y) / (int x, int y)
+
+lambda_param                               # [feat:lambda]
+    = type_expr S IDENT                                                  # 显式类型
+    / IDENT                                                              # 隐式类型（推断）
 
 switch_expr                                # [feat:pattern_match]
     = primary_expr S "switch" S "{" S switch_arm ("," S switch_arm)* ","? S "}"

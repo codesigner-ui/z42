@@ -350,6 +350,35 @@ exec.mode interp | jit | aot    # module-level directive
 
 ---
 
+### Closures (草案，L3 落地)
+
+闭包 / lambda / 函数引用相关的 IR 指令。完整设计见 [closure.md](closure.md)。
+opcode 编号在 `impl-closure-l3` 变更落地时分配。
+
+```
+# 创建闭包：栈分配（档 A，env 在调用方栈帧）
+%r = mkclos.stack <env_layout>, <fn_ref>
+
+# 创建闭包：堆分配（档 C，env 进 RC/GC 堆，闭包对象是胖指针）
+%r = mkclos.heap <env_layout>, <fn_ref>
+
+# 调用闭包：档 A/B 直接 call；档 C 走 vtable 间接调用
+%r = callclos %closure (%arg1, %arg2, ...) -> <RetType>
+
+# Ref<T> 包装类型（R14：闭包内修改外部值类型的逃生口）
+%r = mkref %value         -> Ref<T>
+%v = loadref %ref         -> T
+       storeref %ref, %value
+```
+
+档 B（单态化）不产生新 IR——闭包字面量在 IR 阶段直接 inline 到泛型函数体内。
+
+无捕获 lambda 在 IR 层降级为 `loadfn <fn_ref>`（与函数引用同源），不产生 closure 对象。
+
+> **待回填**：档 C 闭包 env 在 RC vs GC 内存模型下的具体编码（refcount 字段位置 / 扫描根注册）；弱引用支持 IR 指令——这些依赖 z42 内存模型决议。
+
+---
+
 ## Binary Format
 
 `.zbc` 和 `.zpkg` 二进制格式的完整规范见 [zbc.md](zbc.md)。

@@ -214,6 +214,46 @@ bool TryParse(string s, out int result) {
 
 ```
 
+### 5.1 局部函数（嵌套函数声明，C# 7+）
+
+```z42
+int Outer() {
+    // 局部函数：仅在 Outer 内可见，可直接递归
+    int Helper(int x) => x * 2;
+    int Fact(int n) => n <= 1 ? 1 : n * Fact(n - 1);
+    return Helper(3) + Fact(5);
+}
+```
+
+L2 阶段嵌套函数不允许引用外层 local（捕获是 L3 的闭包特性）；L3 阶段引用外层 local 时升级为闭包，详见 [`closure.md`](closure.md)。
+
+### 5.2 Lambda 与函数类型
+
+z42 提供 C# 风格 lambda 字面量与 **`(T) -> R` 函数类型**（替代 `Func<T,R>` / `Action<T>`）。
+
+```z42
+// Lambda 字面量
+var inc = (int x) => x + 1;                  // 表达式 body
+var step = (int x) => {                      // 语句 body
+    var y = x * 2;
+    return y + 1;
+};
+
+// 函数类型作为参数 / 字段类型
+List<U> Map<T, U>(List<T> self, (T) -> U f) { ... }
+class EventBus {
+    public List<(int) -> void> Handlers = new();
+}
+
+// 高阶 API 用法
+list.Map(x => x * 2);
+list.Filter(x => x > 0);
+```
+
+**捕获语义**（L3 完整闭包阶段）：值类型按快照、引用类型按身份、`spawn` 边界 move + Send。完整规范见 [`closure.md`](closure.md)。
+
+L2 阶段编译器只接受**无捕获 lambda**——回调字面量（如 `x => x.Name`）可用，但引用外层 local 直接编译错误。
+
 ---
 
 ## 6. 类

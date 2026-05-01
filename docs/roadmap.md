@@ -280,12 +280,26 @@ VM 运行时类型系统。多项特性联动，单独做不如合并。
 - L3-G3c 关联类型（R-9 依赖）
 - VM 架构决策：type_args 如何在代码共享前提下运行时可得
 
+### L3-C 闭包（Closures）实现进度
+
+设计已锁定 — 见 [`docs/design/closure.md`](design/closure.md)（2026-05-01 归档变更 `add-closures`）。
+实现拆为两个独立变更，按 L 阶段递进：
+
+| 子阶段 | 内容 | 落地变更 | 状态 |
+|--------|------|---------|:----:|
+| **L3-C0**（设计） | 闭包 spec + IR 草案 + grammar 文法 + 文档同步 | `add-closures` | ✅ 已完成（2026-05-01）|
+| **L2-C1**（无捕获 lambda） | Parser + AST + TypeCheck + Codegen + VM：lambda 字面量、`(T)->R` 函数类型、表达式短写、无捕获 local function | `impl-lambda-l2` | 📋 待开始 |
+| **L3-C2**（完整闭包） | 捕获分析 + 三档实现（栈/单态化/堆擦除）+ Send 派生 + `--warn-closure-alloc` + Ref<T> 共享 | `impl-closure-l3` | 📋 待开始 |
+
+衍生需求（独立 follow-up）：
+- VM 诊断：对象引用链 / captured env dump / allocation site 追踪 — 待 `vm-architecture.md` 立项
+
 ### 高级语法（从 L1 推迟）
 
 | 特性 | 说明 |
 |------|------|
 | 泛型 `<T>` + `where` 约束 | 类型参数、约束推断、代码共享 + 具化（L3-G1 ✅ 基础完成） |
-| Lambda + 闭包 | 捕获变量、`Func<>`/`Action<>` 委托 |
+| Lambda + 闭包 | 设计已锁，分 L2-C1 / L3-C2 两批落地（见上 L3-C 表） |
 | 接口完整实现 | 多接口、虚方法表、接口继承 |
 | 类继承完整实现 | 多态、`override`/`virtual`/`abstract` |
 | `async`/`await` | `Task`/`ValueTask`、结构化并发 |

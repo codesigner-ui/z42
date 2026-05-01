@@ -46,12 +46,12 @@ This makes z42 both a **complete systems programming language** and a **highly c
 | `null_coalesce` | `??` operator |
 | `ternary` | `? :` ternary operator |
 | `cast` | `(Type)expr` explicit cast |
-| `lambda` | Lambda expressions `=>` (L3) |
+| `lambda` | Lambda expressions `=>` (L2: no-capture / L3: full closure — see [`closure.md`](closure.md)) |
 | `async` | `async` / `await` (L3) |
 | `nullable` | `T?` nullable types |
 | `interpolated_str` | `$"..."` string interpolation |
 | `tuples` | Tuple types and literals (L3) |
-| `delegates` | Delegate types (L3) |
+| `delegates` | Function types `(T) -> R` (L2 — see [`closure.md`](closure.md)) |
 | `reflection` | `typeof` / `nameof` |
 | `threading` | `lock` / multi-threading (L3) |
 | `using_stmt` | `using` statement (resource management) |

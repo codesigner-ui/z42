@@ -391,9 +391,12 @@ task scope {
 }
 ```
 
-- 闭包按 move 捕获（与 Rust async 一致）
-- 捕获变量必须 `Send`
-- scope 内对 scope 外变量的引用 → 必须 `Sync` 且生命周期覆盖 scope
+跨 `spawn` / async task 边界的闭包捕获遵循通用闭包规范——详细规则见
+[closure.md §9 并发对接](closure.md) 及其 R8 行为契约。本节只列并发特有的约束：
+
+- **强制 move 捕获**（与 Rust async 一致）：`spawn` 之后外部不得再用被捕获变量
+- **捕获项必须 `Send`**：编译器自动派生闭包 Send 性，违反报 `Z0809`
+- **scope 内对 scope 外变量的引用** → 必须 `Sync` 且生命周期覆盖 scope
 
 ### 6.4 阻塞操作的处理
 
