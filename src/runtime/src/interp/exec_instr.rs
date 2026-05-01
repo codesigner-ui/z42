@@ -191,13 +191,25 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             frame.set(*dst, Value::FuncRef(func.clone()));
         }
 
-        // Indirect call via a `FuncRef`-typed register. See closure.md §6.
+        // Indirect call: dispatch on FuncRef (no-capture) or Closure (capturing).
+        // For Closures, env is prepended to the user args as the lifted body's
+        // implicit first parameter. See closure.md §6.
         Instruction::CallIndirect { dst, callee, args } => {
-            let fname = match frame.get(*callee)? {
-                Value::FuncRef(name) => name.clone(),
-                other => bail!("CallIndirect: expected FuncRef, got {:?}", other),
+            let (fname, env_opt) = match frame.get(*callee)? {
+                Value::FuncRef(name) => (name.clone(), None),
+                Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.clone())),
+                other => bail!("CallIndirect: expected FuncRef or Closure, got {:?}", other),
             };
-            let arg_vals = collect_args(&frame.regs, args)?;
+            let user_vals = collect_args(&frame.regs, args)?;
+            let arg_vals: Vec<Value> = match env_opt {
+                None      => user_vals,
+                Some(env) => {
+                    let mut v = Vec::with_capacity(user_vals.len() + 1);
+                    v.push(Value::Array(env));
+                    v.extend(user_vals);
+                    v
+                }
+            };
             let callee_fn = module.func_index.get(fname.as_str())
                 .and_then(|&idx| module.functions.get(idx));
             let outcome = if let Some(cfn) = callee_fn {
@@ -211,6 +223,21 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                 ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
                 ExecOutcome::Thrown(val)   => return Ok(Some(val)),
             }
+        }
+
+        // L3 closure construction: collect captures into a heap Vec<Value>,
+        // build `Value::Closure { env, fn_name }`. See closure.md §6.
+        Instruction::MkClos { dst, fn_name, captures } => {
+            let mut env_vec: Vec<Value> = Vec::with_capacity(captures.len());
+            for r in captures {
+                env_vec.push(frame.get(*r)?.clone());
+            }
+            let env_val = ctx.heap().alloc_array(env_vec);
+            let env = match env_val {
+                Value::Array(rc) => rc,
+                _ => unreachable!("alloc_array must return Value::Array"),
+            };
+            frame.set(*dst, Value::Closure { env, fn_name: fn_name.clone() });
         }
 
         // ── Arrays ───────────────────────────────────────────────────────────

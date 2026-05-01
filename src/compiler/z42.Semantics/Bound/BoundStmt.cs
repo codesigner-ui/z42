@@ -93,17 +93,18 @@ public sealed record BoundThrow(BoundExpr Value, Span Span) : BoundStmt(Span);
 
 // ── Local function (impl-local-fn-l2) ────────────────────────────────────────
 
-/// L2 nested function declaration (no captures). Lifted to a module-level
-/// function during IrGen with name `<Owner>__<LocalName>`. Local fn bodies
-/// are bound as if they were independent functions; capture of outer-scope
-/// locals is rejected via the L2 capture-boundary check (Z0301).
-/// See docs/design/closure.md §3.4.
+/// Local (nested) function declaration. Lifted to a module-level function during
+/// IrGen with name `<Owner>__<LocalName>`. `Captures` lists outer-scope variables
+/// referenced in the body — empty for the L2 no-capture path (lifts via direct
+/// `Call`); non-empty triggers the L3 `MkClos` heap-erasure path.
+/// See docs/design/closure.md §3.4 + impl-closure-l3-core.
 public sealed record BoundLocalFunction(
     string Name,
     IReadOnlyList<string> ParamNames,
     IReadOnlyList<Z42Type> ParamTypes,
     Z42Type RetType,
     BoundBlock Body,
+    IReadOnlyList<BoundCapture> Captures,
     Span Span) : BoundStmt(Span);
 
 // ── Pinned (spec C5) ────────────────────────────────────────────────────────

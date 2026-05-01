@@ -322,6 +322,14 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] callee: Reg,
         #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
     },
+    /// L3 closure tier-C: allocate a heap env from `captures`, build a
+    /// `Value::Closure { env, fn_name }`, and write it to `dst`. See
+    /// docs/design/closure.md §6.
+    MkClos {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        fn_name: String,
+        #[serde(with = "typed_reg_vec_serde")] captures: Vec<Reg>,
+    },
     // Arrays
     /// Allocate a zero-initialised array of `size` elements.
     ArrayNew {

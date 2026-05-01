@@ -53,6 +53,7 @@ public static class Opcodes
     public const byte CallNativeVtable = 0x54;  // native type vtable indirect call  (C5)
     public const byte LoadFn           = 0x55;  // push a function reference onto the operand stack (L2 no-capture lambda)
     public const byte CallIndirect     = 0x56;  // call via a FuncRef-typed register (L2 no-capture lambda)
+    public const byte MkClos           = 0x57;  // allocate heap env + construct closure (L3 capture path)
 
     // ── Fields (0x60–0x6F) ────────────────────────────────────────────────────
     public const byte FieldGet  = 0x60;

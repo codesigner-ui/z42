@@ -92,24 +92,22 @@ public sealed class LocalFunctionTypeCheckTests
             && d.Message.Contains("Helper"));
     }
 
-    // ── LF-5: no-capture ──────────────────────────────────────────────────────
+    // ── LF-5: capture (impl-closure-l3-core 解锁) ─────────────────────────────
 
     [Fact]
-    public void LocalFn_RejectsCaptureOfOuterLocal()
+    public void LocalFn_CaptureOfOuterLocal_NowAllowed()
     {
+        // L2 阶段曾报 Z0301；L3 (impl-closure-l3-core) 解锁本地函数捕获。
+        // 编译期通过 capture 分析把 k 记录到 BoundLocalFunction.Captures。
         var (_, diags) = Check("""
             int Outer() {
                 var k = 10;
-                int Helper(int x) => x + k;   // captures k
+                int Helper(int x) => x + k;   // captures k (value snapshot)
                 return Helper(3);
             }
             void Main() { var x = Outer(); }
             """);
-        diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d =>
-            d.Code == DiagnosticCodes.FeatureDisabled
-            && d.Message.Contains("capture")
-            && d.Message.Contains("k"));
+        diags.HasErrors.Should().BeFalse();
     }
 
     [Fact]

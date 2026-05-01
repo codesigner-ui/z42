@@ -143,18 +143,23 @@ foreach (var f in fns) Console.WriteLine(f());   // 输出 1, 2, 3（不是 3, 3
 
 C 风格 `for` 同样适用——这是与 C# 5+ 的一处对齐扩展（C# 5 只修了 foreach）。
 
-### 4.4 共享可变值类型用 `Ref<T>` / `Box<T>`
+### 4.4 共享可变状态：用 class（不引入 `Ref<T>` 包装）
 
-由于值类型按快照捕获，需要"在闭包内修改外部值类型"时使用包装类型：
+由于值类型按快照捕获，需要"在闭包内修改外部状态"时——**直接用 class**（引用类型按身份共享规则自然生效）：
 
 ```z42
-var counter = new Ref<int>(0);
-var inc = () => counter.Value = counter.Value + 1;
+class Counter { public int n = 0; }
+
+var c = new Counter();
+var inc = () => c.n = c.n + 1;
 inc(); inc();
-Console.WriteLine(counter.Value);   // 输出 2
+Console.WriteLine(c.n);   // 输出 2
 ```
 
-`Ref<T>` 本身是引用类型，按身份共享规则生效。具体类型设计见独立的 stdlib spec。
+z42 **不引入** Rust 风格的 `Ref<T>` / `Box<T>` 堆包装类——刻意保持简单。
+共享可变状态的唯一推荐路径是 class（引用类型）。
+
+> **C# `ref` 关键字**是函数参数级特性（pass-by-reference 调用），与闭包**不相关**——它不可被 lambda 捕获（生命周期不允许，与 C# 一致）。本规范不规定 `ref`，那是独立 feature 提案 `add-ref-params` 的范畴。
 
 ---
 
@@ -311,7 +316,7 @@ task scope {
 | L 阶段 | 允许的闭包特性 |
 |---|---|
 | **L2** | 无捕获 lambda + `(T) -> R` 函数类型 + 表达式短写 + 无捕获 local function |
-| **L3** | 完整闭包（捕获 / 三档实现 / Send 派生 / `--warn-closure-alloc` 诊断 / `Ref<T>` 共享）|
+| **L3** | 完整闭包（捕获 / 三档实现 / Send 派生 / `--warn-closure-alloc` 诊断）|
 
 L2 阶段提供"语法骨架"，覆盖 90% 的回调字面量（`callback(x => x.Name)` 这类不捕获外部状态的写法）；L3 阶段补齐捕获能力，配合内存模型决议后落地。
 

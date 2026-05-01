@@ -41,6 +41,18 @@ internal sealed partial class FunctionEmitter
     /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design Decision 7.
     private readonly Dictionary<string, string> _localFnLiftedNames = new();
 
+    /// Register holding this function's `env` (Vec<Value>) when emitting a
+    /// capturing lifted body — i.e. the closure's heap-allocated env passed
+    /// as the first implicit parameter. -1 means the current emitter scope is
+    /// not a capturing-lifted body (so `BoundCapturedIdent` is unreachable).
+    /// See docs/design/closure.md §6 + impl-closure-l3-core design Decision 7.
+    private int _envReg = -1;
+
+    /// Maps a capture's source-level name to its slot index in `_envReg`.
+    /// Populated by `EmitLifted*WithEnv` so nested lambdas inside this body
+    /// can resolve their own captures transitively (Decision 6).
+    private readonly Dictionary<string, int> _envCaptureIndex = new();
+
     // ── Debug line tracking ──────────────────────────────────────────────────
     private List<IrLineEntry> _lineTable = new();
     private int _lastLine = -1;

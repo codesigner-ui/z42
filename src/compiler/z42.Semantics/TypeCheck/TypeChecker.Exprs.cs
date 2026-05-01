@@ -256,7 +256,8 @@ public sealed partial class TypeChecker
         foreach (var bp in boundParams)
             lambdaEnv.Define(bp.Name, bp.Type);
 
-        _lambdaOuterStack.Push(env);
+        var frame = new LambdaBindingFrame { OuterEnv = env };
+        _lambdaBindingStack.Push(frame);
         BoundLambdaBody body;
         Z42Type retType;
         try
@@ -285,13 +286,13 @@ public sealed partial class TypeChecker
         }
         finally
         {
-            _lambdaOuterStack.Pop();
+            _lambdaBindingStack.Pop();
         }
 
         // 3. Synthesize the function type.
         var paramTypes = boundParams.Select(p => p.Type).ToList();
         var fnType     = new Z42FuncType(paramTypes, retType);
-        return new BoundLambda(boundParams, body, fnType, lambda.Span);
+        return new BoundLambda(boundParams, body, fnType, frame.Captures, lambda.Span);
     }
 
     // ── Identifier ────────────────────────────────────────────────────────────
@@ -301,21 +302,42 @@ public sealed partial class TypeChecker
         var varType = env.LookupVar(id.Name);
         if (varType != null)
         {
-            // L2 no-capture check: when inside a lambda or local-fn body, a
-            // local var must resolve via this body's own scope chain — *not*
-            // via the boundary (parent) scope. We skip the check when the
-            // name shadows in a nested scope (e.g. a local fn's own param of
-            // the same name as an outer param). See closure.md §10 +
-            // impl-local-fn-l2 design Decision 4.
-            if (_lambdaOuterStack.Count > 0)
+            // L3 capture path (impl-closure-l3-core): when inside one or more
+            // nested lambdas / local-fn bodies, a name that resolves through
+            // any enclosing lambda's outer boundary must be captured by *each*
+            // such enclosing frame so the capture propagates transitively from
+            // the outermost defining scope down to the innermost reference.
+            // See docs/design/closure.md §4 + impl-closure-l3-core Decision 6.
+            if (_lambdaBindingStack.Count > 0)
             {
-                var boundary = _lambdaOuterStack.Peek();
-                if (!env.ResolvesVarBelowBoundary(id.Name, boundary))
+                var topFrame = _lambdaBindingStack.Peek();
+                if (!env.ResolvesVarBelowBoundary(id.Name, topFrame.OuterEnv))
                 {
-                    _diags.Error(DiagnosticCodes.FeatureDisabled,
-                        $"lambda capture of `{id.Name}` is not enabled in L2 — closure captures are an L3 feature (see docs/design/closure.md §10). Pass it as a parameter or use a static / global symbol instead.",
-                        id.Span);
-                    return new BoundError($"capture of `{id.Name}` not allowed in L2", Z42Type.Error, id.Span);
+                    // Walk frames from outermost → innermost so each frame
+                    // whose boundary excludes the variable also captures it.
+                    int innermostIndex = -1;
+                    var kind = Z42Type.IsReferenceType(varType)
+                        ? BoundCaptureKind.ReferenceShare
+                        : BoundCaptureKind.ValueSnapshot;
+                    foreach (var frame in _lambdaBindingStack.Reverse())
+                    {
+                        // The frame must capture iff the name is visible from
+                        // its outer (boundary) env — i.e. lives at or above
+                        // the boundary so the lifted body can't see it directly.
+                        if (frame.OuterEnv.LookupVar(id.Name) != null)
+                        {
+                            if (!frame.NameToIndex.TryGetValue(id.Name, out var idx))
+                            {
+                                idx = frame.Captures.Count;
+                                frame.Captures.Add(new BoundCapture(
+                                    id.Name, varType, kind, id.Span));
+                                frame.NameToIndex[id.Name] = idx;
+                            }
+                            innermostIndex = idx;
+                        }
+                    }
+                    if (innermostIndex >= 0)
+                        return new BoundCapturedIdent(id.Name, varType, innermostIndex, id.Span);
                 }
             }
             return new BoundIdent(id.Name, varType, id.Span);

@@ -121,6 +121,11 @@ pub enum Value {
     /// literals (see docs/design/closure.md §6). Indirect call dispatches
     /// to the named function in the loaded module.
     FuncRef(String),
+    /// L3 capturing closure value: pairs a heap-allocated env (Vec<Value>)
+    /// with the lifted function's qualified name. CallIndirect on a Closure
+    /// passes `env` as the callee's first implicit parameter and copies user
+    /// args after it. See docs/design/closure.md §6 + impl-closure-l3-core.
+    Closure { env: GcRef<Vec<Value>>, fn_name: String },
 }
 
 /// Origin of a [`Value::PinnedView`]. Recorded for diagnostics; both kinds

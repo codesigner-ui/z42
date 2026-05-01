@@ -1,0 +1,1 @@
+closure l3 capture ok

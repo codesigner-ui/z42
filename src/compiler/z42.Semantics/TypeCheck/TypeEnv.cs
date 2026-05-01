@@ -85,6 +85,16 @@ internal sealed class TypeEnv
         return _parent != null && _parent.ResolvesVarBelowBoundary(name, boundary);
     }
 
+    /// L3 transitive capture helper: returns true if `name` is defined in
+    /// `this` scope or any of its ancestors (i.e. visible from `this`).
+    /// Used to walk the lambda binding stack for nested-capture propagation.
+    /// See impl-closure-l3-core design Decision 6.
+    internal bool ResolvesVarBelowBoundaryOrSelf(string name)
+    {
+        if (_vars.ContainsKey(name)) return true;
+        return _parent != null && _parent.ResolvesVarBelowBoundaryOrSelf(name);
+    }
+
     /// Returns true if <paramref name="name"/> refers to a class (local or imported).
     /// Use this to distinguish "undefined variable" from "this is a type reference"
     /// when <see cref="LookupVar"/> returns null.

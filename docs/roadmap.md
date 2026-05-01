@@ -290,7 +290,12 @@ VM 运行时类型系统。多项特性联动，单独做不如合并。
 | **L3-C0**（设计） | 闭包 spec + IR 草案 + grammar 文法 + 文档同步 | `add-closures` | ✅ 已完成（2026-05-01）|
 | **L2-C1**（无捕获 lambda） | Parser + AST + TypeCheck + Codegen + VM：lambda 字面量、`(T)->R` 函数类型、`Func<>`/`Action<>` desugar、`LoadFn` + `CallIndirect` 间接调用 | `impl-lambda-l2` | ✅ 已完成（2026-05-01）|
 | **L2-C1b**（local function） | 嵌套 `Type Name(...)` 函数声明 + 前向引用 + 直接递归 + L2 无捕获检查 + 一层嵌套限制 | `impl-local-fn-l2` | ✅ 已完成（2026-05-01）|
-| **L3-C2**（完整闭包） | 捕获分析 + 三档实现（栈/单态化/堆擦除）+ Send 派生 + `--warn-closure-alloc` + Ref<T> 共享；JIT 路径补全 LoadFn/CallIndirect | `impl-closure-l3` | 📋 待开始 |
+| **L3-C2-core**（核心闭包：捕获 + 档 C） | 捕获分析 + 档 C 堆擦除（MkClos + Value::Closure） | `impl-closure-l3-core` | ✅ 已完成（2026-05-01）|
+| **L3-C2-loops**（循环变量新绑定） | R7 — for/foreach/while 循环变量每迭代 fresh binding | `impl-closure-l3-loops` | 📋 待开始 |
+| **L3-C2-jit**（JIT 路径补全） | LoadFn / CallIndirect / MkClos 在 JIT 后端实现 | `impl-closure-l3-jit-complete` | 📋 待开始 |
+| **L3-C2-mono**（单态化档 B） | 性能优化：泛型 HOF 单态化 + 闭包内联 | `impl-closure-l3-monomorphize` | 📋 待开始 |
+| **L3-C2-stack**（栈分配档 A） | 性能优化：逃逸分析 + 栈上 env | `impl-closure-l3-escape-stack` | 📋 待开始 |
+| **L3-C2-send**（Send 派生 + spawn 检查） | 与 concurrency 实施一起做（暂缓）| `impl-closure-l3-send` | ⏸ 与 concurrency 同期 |
 
 衍生需求（独立 follow-up）：
 - VM 诊断：对象引用链 / captured env dump / allocation site 追踪 — 待 `vm-architecture.md` 立项

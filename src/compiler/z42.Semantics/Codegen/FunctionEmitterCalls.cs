@@ -125,6 +125,20 @@ internal sealed partial class FunctionEmitter
                 }
 
                 string callName;
+                // impl-closure-l3-core: a call to a name defined as a *capturing*
+                // local fn in the current emitter scope is dispatched indirectly
+                // via the closure value stored in `_locals[name]`. Capturing
+                // local fns are removed from `_localFnLiftedNames` (handled at
+                // the declaration site). See impl-closure-l3-core Decision 9.
+                if (call.CalleeName is { } cnCap
+                    && !_localFnLiftedNames.ContainsKey(cnCap)
+                    && _locals.TryGetValue(cnCap, out var closureReg))
+                {
+                    var dstClosure = Alloc(ToIrType(call.Type));
+                    Emit(new CallIndirectInstr(dstClosure, closureReg, argRegs));
+                    return dstClosure;
+                }
+
                 // impl-local-fn-l2: a call to a name defined as a local fn in
                 // the current emitter scope routes to its lifted module-level
                 // name (`<Owner>__<LocalName>`). Local fn shadows top-level.

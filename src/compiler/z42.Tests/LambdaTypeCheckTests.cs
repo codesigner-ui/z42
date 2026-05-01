@@ -60,19 +60,16 @@ public sealed class LambdaTypeCheckTests
         diags.HasErrors.Should().BeTrue();
     }
 
-    // ── IR-L5: L2 no-capture check ────────────────────────────────────────────
+    // ── IR-L5: capture (impl-closure-l3-core 解锁) ────────────────────────────
 
     [Fact]
-    public void Lambda_RejectsCaptureOfOuterLocal()
+    public void Lambda_CaptureOfOuterLocal_NowAllowed()
     {
+        // L2 阶段曾报 Z0301 拒绝；L3 (impl-closure-l3-core) 解锁，捕获分析
+        // 在 BindLambda 内自动记录到 BoundLambda.Captures（值类型走快照）。
         var (_, diags) = Check(
             "void Main() { var k = 10; (int) -> bool f = (int x) => x > k; }");
-        diags.HasErrors.Should().BeTrue();
-        // Error should call out the captured name.
-        diags.All.Should().Contain(d =>
-            d.Code == DiagnosticCodes.FeatureDisabled
-            && d.Message.Contains("capture")
-            && d.Message.Contains("k"));
+        diags.HasErrors.Should().BeFalse();
     }
 
     [Fact]
@@ -84,13 +81,20 @@ public sealed class LambdaTypeCheckTests
     }
 
     [Fact]
-    public void Lambda_NestedLambdaInner_RejectsOuterParamCapture()
+    public void Lambda_NestedLambdaInnerCapturesOuterParam_NowAllowed()
     {
-        // `(int x) => (int y) => x + y` — inner lambda captures outer's `x`.
-        // L2 rejects this; L3 will accept.
-        var (_, diags) = Check(
-            "void Main() { ((int) -> int) f = (int x) => { (int) -> int g = (int y) => x + y; return g(x); }; }");
-        diags.HasErrors.Should().BeTrue();
+        // `(int x) => { var g = (int y) => x + y; ...; }` — inner lambda
+        // captures outer lambda's `x`. L3 accepts and lifts it through the
+        // outer lambda's env (impl-closure-l3-core Decision 6).
+        var (_, diags) = Check("""
+            void Main() {
+                (int) -> int f = (int x) => {
+                    (int) -> int g = (int y) => x + y;
+                    return g(x);
+                };
+            }
+            """);
+        diags.HasErrors.Should().BeFalse();
     }
 
     // ── IR-L4: Func<T,R> / Action<T> equivalence ─────────────────────────────

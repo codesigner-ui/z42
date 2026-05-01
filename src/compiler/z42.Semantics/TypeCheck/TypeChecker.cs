@@ -48,10 +48,18 @@ public sealed partial class TypeChecker : ITypeInferrer
     private readonly Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
         _classConstraints = new();
 
-    /// Stack of `outer-env at lambda boundary` for L2 no-capture detection.
-    /// Pushed when entering a lambda body; popped when leaving. Empty means we're
-    /// not inside a lambda. See docs/design/closure.md §10 + design.md Decision 6.
-    private readonly Stack<TypeEnv> _lambdaOuterStack = new();
+    /// Stack of lambda binding frames. Each frame tracks the outer env (for
+    /// capture-boundary detection) and the captures collected so far for that
+    /// lambda's body. Pushed when entering a lambda or local-fn body; popped
+    /// when leaving; empty means we're at top-level / inside a regular method.
+    /// See docs/design/closure.md §4 + impl-closure-l3-core design Decision 4.
+    private sealed class LambdaBindingFrame
+    {
+        public required TypeEnv OuterEnv { get; init; }
+        public List<BoundCapture> Captures { get; } = new();
+        public Dictionary<string, int> NameToIndex { get; } = new();
+    }
+    private readonly Stack<LambdaBindingFrame> _lambdaBindingStack = new();
 
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
     {

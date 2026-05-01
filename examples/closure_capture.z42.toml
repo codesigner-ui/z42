@@ -1,0 +1,25 @@
+# closure_capture.z42.toml — L3 闭包核心（捕获 + 档 C）示例
+
+[project]
+version     = "0.1.0"
+description = "L3 closure capture + tier-C heap erasure demo"
+
+[sources]
+include = ["closure_capture.z42"]
+
+[[exe]]
+name  = "closure_capture"
+entry = "Demo.ClosureCapture.Main"
+
+[build]
+out_dir = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "interp"   # JIT for MkClos / CallIndirect lands in impl-closure-l3-jit-complete
+optimize = 3
+strip    = true

@@ -149,6 +149,12 @@ public sealed record LoadFnInstr(TypedReg Dst, string Func) : IrInstr;
 /// a local variable holds a lambda or function reference. Args follow the
 /// same convention as `CallInstr`. See docs/design/closure.md §6.
 public sealed record CallIndirectInstr(TypedReg Dst, TypedReg Callee, List<TypedReg> Args) : IrInstr;
+/// L3 closure tier-C: allocate a heap env with the captured values and
+/// construct a closure value `(env, fn_name)` in `Dst`. Each `Captures` reg
+/// supplies one captured value (in capture order, matching the lifted
+/// function's env layout). See docs/design/closure.md §6 +
+/// impl-closure-l3-core design Decision 7.
+public sealed record MkClosInstr(TypedReg Dst, string FuncName, List<TypedReg> Captures) : IrInstr;
 
 // ── Arithmetic ────────────────────────────────────────────────────────────────
 

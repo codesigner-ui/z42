@@ -223,6 +223,7 @@ pub fn max_reg(func: &Function) -> usize {
                 // back to interp mode (see translate.rs match below).
                 Instruction::LoadFn       { dst, .. } => Some(*dst),
                 Instruction::CallIndirect { dst, .. } => Some(*dst),
+                Instruction::MkClos       { dst, .. } => Some(*dst),
             };
             if let Some(d) = dst {
                 if d as usize > max { max = d as usize; }
@@ -707,6 +708,9 @@ pub fn translate_function(
                 }
                 Instruction::CallIndirect { .. } => {
                     bail!("JIT cannot translate CallIndirect yet (L3+ closure work)");
+                }
+                Instruction::MkClos { .. } => {
+                    bail!("JIT cannot translate MkClos yet (impl-closure-l3-jit-complete)");
                 }
             }
         }

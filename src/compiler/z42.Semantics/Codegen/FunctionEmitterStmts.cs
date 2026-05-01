@@ -114,20 +114,44 @@ internal sealed partial class FunctionEmitter
         }
     }
 
-    /// L2 nested function declaration — emit a lifted module-level function
-    /// named `<Owner>__<LocalName>` and remember the mapping so calls within
-    /// the current function emit as direct `Call <lifted>`.
-    /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design.
+    /// Local-function declaration — emit a lifted module-level function named
+    /// `<Owner>__<LocalName>`. Two paths depending on captures:
+    ///   • No captures (L2)  → lift body, leave mapping for direct `Call` at
+    ///     subsequent call sites (handled in `EmitBoundCall.Free`).
+    ///   • Has captures (L3) → lift body with env param; emit a `MkClos` here
+    ///     into a register holding the closure value, and override the
+    ///     mapping in `_localFnLiftedNames` to that register (call sites then
+    ///     emit `CallIndirect`).
+    /// See docs/design/closure.md §3.4 + impl-closure-l3-core Decision 9.
     private void EmitBoundLocalFunction(BoundLocalFunction lfn)
     {
-        // Lifted name was already registered in the sibling pre-pass of
-        // `EmitBoundBlock`; re-fetch it for emission. The sub-emitter
-        // inherits the same lifted-name map so mutual recursion (and direct
-        // recursion) within the lifted body resolves correctly.
         var liftedName = _localFnLiftedNames[lfn.Name];
-        var subEmitter = new FunctionEmitter(_ctx, _localFnLiftedNames);
-        var lifted     = subEmitter.EmitLiftedLocalFunction(liftedName, lfn);
-        _ctx.RegisterLiftedFunction(lifted);
+
+        if (lfn.Captures.Count == 0)
+        {
+            // L2 path: lifted body without env; static call.
+            var subEmitter = new FunctionEmitter(_ctx, _localFnLiftedNames);
+            var lifted     = subEmitter.EmitLiftedLocalFunction(liftedName, lfn);
+            _ctx.RegisterLiftedFunction(lifted);
+            return;
+        }
+
+        // L3 path: lifted body with env at reg 0; create a Closure value at
+        // declaration site and stash it in a register. Call sites that resolve
+        // to this name need to switch to indirect call via the closure reg.
+        var captureRegs = lfn.Captures.Select(c => EmitCaptureExpr(c)).ToList();
+        var subEmitter2 = new FunctionEmitter(_ctx, _localFnLiftedNames);
+        var lifted2     = subEmitter2.EmitLiftedLocalFunctionWithEnv(liftedName, lfn);
+        _ctx.RegisterLiftedFunction(lifted2);
+
+        var closureReg = Alloc(IrType.Ref);
+        Emit(new MkClosInstr(closureReg, liftedName, captureRegs));
+        // Bind the local-fn name to the closure reg so subsequent calls in
+        // this function emit CallIndirect rather than static Call.
+        _locals[lfn.Name] = closureReg;
+        // Remove the L2 lifted-name mapping so EmitBoundCall.Free falls back
+        // to the indirect-call path for this name.
+        _localFnLiftedNames.Remove(lfn.Name);
     }
 
     /// Spec C5 — `pinned p = s { body }`:

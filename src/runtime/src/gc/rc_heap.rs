@@ -579,6 +579,14 @@ impl MagrGC for RcMagrGC {
             // impl-lambda-l2: FuncRef holds the function name; no managed heap
             // allocation beyond the string buffer.
             Value::FuncRef(name) => size_of::<Value>() + name.capacity(),
+            // impl-closure-l3-core: Closure carries a heap-allocated env (Vec<Value>);
+            // its size is the env's storage plus the function-name string.
+            Value::Closure { env, fn_name } => {
+                size_of::<Value>()
+                    + size_of::<Vec<Value>>()
+                    + env.borrow().capacity() * size_of::<Value>()
+                    + fn_name.capacity()
+            }
         }
     }
 
@@ -590,6 +598,13 @@ impl MagrGC for RcMagrGC {
             }
             Value::Array(rc) => {
                 let arr = rc.borrow();
+                for elem in arr.iter() { visitor(elem); }
+            }
+            // impl-closure-l3-core: a closure's env owns Value slots that may
+            // contain Object/Array refs; scan them so reachable closures keep
+            // their captured objects alive.
+            Value::Closure { env, .. } => {
+                let arr = env.borrow();
                 for elem in arr.iter() { visitor(elem); }
             }
             _ => {}

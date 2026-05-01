@@ -1,0 +1,52 @@
+// L3 closure core — capture + tier C heap erasure end-to-end demo.
+// Covers value-snapshot / reference-share / nested capture / local-fn capture.
+namespace Demo;
+using Std.IO;
+
+class Counter {
+    public int n;
+    Counter() { this.n = 0; }
+}
+
+// Higher-order helper to verify Closure dispatch via CallIndirect.
+int Apply((int) -> int f, int x) => f(x);
+
+void Main() {
+    // 1) Value-type capture — snapshot semantics.
+    var k = 10;
+    (int) -> bool pred = (int x) => x > k;
+    Assert.Equal(true,  pred(15));
+    Assert.Equal(false, pred(5));
+    k = 100;                       // 修改外层
+    Assert.Equal(true, pred(15));  // 闭包仍用快照值 10
+
+    // 2) Reference-type capture — identity sharing.
+    var c = new Counter();
+    var inc = () => c.n = c.n + 1;
+    inc(); inc(); inc();
+    Assert.Equal(3, c.n);          // 闭包内 mutation 通过 ref 可见外层
+
+    // 3) Capture passed through a higher-order helper.
+    var bias = 100;
+    Assert.Equal(105, Apply((int x) => x + bias, 5));
+
+    // 4) Nested capture — inner lambda transitively captures outer's `k2`.
+    var k2 = 7;
+    var f = () => {
+        var g = () => k2 * 2;     // g 通过 f 的 env 间接捕获 k2
+        return g();
+    };
+    Assert.Equal(14, f());
+
+    // 5) Local-function capture (impl-local-fn-l2 + impl-closure-l3-core 联合解锁).
+    Assert.Equal(1023, OuterLocal());
+
+    Console.WriteLine("closure l3 capture ok");
+}
+
+// Top-level helper exercising local-fn capture (one-level nesting allowed).
+int OuterLocal() {
+    var prefix = 1000;
+    int Helper(int x) => x + prefix;   // captures `prefix` from enclosing scope
+    return Helper(23);
+}

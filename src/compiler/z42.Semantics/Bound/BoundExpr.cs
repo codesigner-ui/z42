@@ -80,13 +80,37 @@ public abstract record BoundLambdaBody(Span Span);
 public sealed record BoundLambdaExprBody(BoundExpr Expr, Span Span)         : BoundLambdaBody(Span);
 public sealed record BoundLambdaBlockBody(BoundBlock Block, Span Span)      : BoundLambdaBody(Span);
 
-/// L2 lambda literal — captured into a `Z42FuncType`. The body never references
-/// outer-scope locals (capture is rejected at TypeCheck time; see closure.md §10).
-/// Lifted to a module-level function during IrGen (lifted name is assigned by IrGen).
+/// L3 lambda capture kind. See docs/design/closure.md §4 + impl-closure-l3-core.
+/// - `ValueSnapshot` — value type captured by copy at MkClos time; closure body
+///   sees the captured value frozen at creation. Modifying it affects the
+///   closure's env only, never the outer variable.
+/// - `ReferenceShare` — reference type captured by identity; mutations to the
+///   shared object are visible both inside the closure and from the outer scope.
+public enum BoundCaptureKind { ValueSnapshot, ReferenceShare }
+
+/// A single captured variable inside a lambda or local function.
+/// Determined at TypeCheck time; consumed by Codegen to emit `MkClos`.
+public sealed record BoundCapture(string Name, Z42Type Type, BoundCaptureKind Kind, Span Span);
+
+/// Reference to a captured variable inside a lambda / local fn body.
+/// Replaces `BoundIdent` for names that resolve through the lambda's outer
+/// boundary. `CaptureIndex` indexes into the lifted function's `env` array
+/// (env is a `Vec<Value>` in the VM — see closure.md §4 + design.md Decision 1).
+public sealed record BoundCapturedIdent(
+    string Name,
+    Z42Type Type,
+    int CaptureIndex,
+    Span Span) : BoundExpr(Type, Span);
+
+/// Lambda literal — captured into a `Z42FuncType`. `Captures` lists the
+/// outer-scope variables read in the body (in capture order); empty for
+/// the L2 no-capture path (lifts via `LoadFn`). Non-empty triggers L3
+/// `MkClos` lifting with a heap-allocated env. See closure.md §6.
 public sealed record BoundLambda(
     IReadOnlyList<BoundLambdaParam> Params,
     BoundLambdaBody Body,
     Z42FuncType FuncType,
+    IReadOnlyList<BoundCapture> Captures,
     Span Span) : BoundExpr(FuncType, Span);
 
 // ── Calls ─────────────────────────────────────────────────────────────────────

@@ -93,6 +93,12 @@ public static partial class ZbcReader
                 var args   = ReadArgs(r);
                 return new CallIndirectInstr(d, callee, args);
             }
+            case Opcodes.MkClos:
+            {
+                var fn       = P(pool, r.ReadUInt32());
+                var captures = ReadArgs(r);
+                return new MkClosInstr(d, fn, captures);
+            }
             case Opcodes.Builtin:
             {
                 var name = P(pool, r.ReadUInt32());

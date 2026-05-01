@@ -263,18 +263,20 @@ public sealed partial class TypeChecker
 
     // ── Local function (impl-local-fn-l2) ─────────────────────────────────────
 
-    /// L2 nested function declaration. The signature has already been entered
-    /// into `env` during BindBlock pass 1 (forward reference / direct
-    /// recursion). This pass binds the body and rejects captures.
+    /// Local (nested) function declaration. The signature has already been entered
+    /// into `env` during BindBlock pass 1 (forward reference / direct recursion).
+    /// This pass binds the body and collects any captures via the lambda binding
+    /// frame stack (impl-closure-l3-core: captures are now allowed; the L2
+    /// rejection has been promoted to a proper capture path).
     /// See docs/design/closure.md §3.4.
     private BoundStmt BindLocalFunctionStmt(LocalFunctionStmt lf, TypeEnv env)
     {
-        // L2 only allows one level of nesting; any further nesting is a
-        // capture-needing construct that belongs to L3.
-        if (_lambdaOuterStack.Count > 0)
+        // One-level nesting limit retained: a local fn declared inside a
+        // lambda/local-fn body is still rejected (L3-multilevel closure work).
+        if (_lambdaBindingStack.Count > 0)
         {
             _diags.Error(DiagnosticCodes.FeatureDisabled,
-                "nested local function is not allowed in L2 — nesting depth >1 requires L3 closure support; please move to a top-level function or wait for `impl-closure-l3`",
+                "nested local function is not allowed — multi-level lexical nesting requires the upcoming impl-closure-l3-multilevel work; please move to a top-level function for now",
                 lf.Span);
         }
 
@@ -287,8 +289,11 @@ public sealed partial class TypeChecker
         for (int i = 0; i < fnDecl.Params.Count; i++)
             bodyEnv.Define(fnDecl.Params[i].Name, paramTypes[i]);
 
-        // Push capture-boundary so BindIdent rejects refs to outer locals.
-        _lambdaOuterStack.Push(env);
+        // Push a lambda binding frame so BindIdent records captures (or, if
+        // the body never crosses the boundary, the frame's Captures stays
+        // empty and Codegen falls back to the L2 LoadFn / direct Call path).
+        var frame = new LambdaBindingFrame { OuterEnv = env };
+        _lambdaBindingStack.Push(frame);
         BoundBlock body;
         try
         {
@@ -296,11 +301,12 @@ public sealed partial class TypeChecker
         }
         finally
         {
-            _lambdaOuterStack.Pop();
+            _lambdaBindingStack.Pop();
         }
 
         var paramNames = fnDecl.Params.Select(p => p.Name).ToList();
-        return new BoundLocalFunction(fnDecl.Name, paramNames, paramTypes, retType, body, lf.Span);
+        return new BoundLocalFunction(
+            fnDecl.Name, paramNames, paramTypes, retType, body, frame.Captures, lf.Span);
     }
 
     // ── Return ────────────────────────────────────────────────────────────────
