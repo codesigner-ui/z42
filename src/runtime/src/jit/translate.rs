@@ -217,6 +217,12 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::CallNativeVtable { dst, .. } => Some(*dst),
                 Instruction::PinPtr           { dst, .. } => Some(*dst),
                 Instruction::UnpinPtr         { .. }      => None,
+
+                // impl-lambda-l2: JIT path lands in L3+. For now compute dst
+                // correctly so reg-allocation stays sound; translation falls
+                // back to interp mode (see translate.rs match below).
+                Instruction::LoadFn       { dst, .. } => Some(*dst),
+                Instruction::CallIndirect { dst, .. } => Some(*dst),
             };
             if let Some(d) = dst {
                 if d as usize > max { max = d as usize; }
@@ -691,6 +697,16 @@ pub fn translate_function(
                 }
                 Instruction::UnpinPtr { .. } => {
                     bail!("JIT cannot translate UnpinPtr yet (L3.M16)");
+                }
+
+                // impl-lambda-l2: lambdas / function references — JIT support
+                // lands in a later iteration (L3+). Refuse to compile so the
+                // caller keeps the function in Interp mode.
+                Instruction::LoadFn { .. } => {
+                    bail!("JIT cannot translate LoadFn yet (L3+ closure work)");
+                }
+                Instruction::CallIndirect { .. } => {
+                    bail!("JIT cannot translate CallIndirect yet (L3+ closure work)");
                 }
             }
         }

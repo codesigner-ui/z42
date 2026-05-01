@@ -115,6 +115,121 @@ internal static partial class ExprParser
         return Ok(innerR.Value, cursor);
     }
 
+    // ── Lambda parsing ────────────────────────────────────────────────────────
+
+    /// Returns true if the cursor points at the start of a lambda literal:
+    ///   • `IDENT '=>'` — single untyped param
+    ///   • `'(' ... ')' '=>'` — paren-wrapped param list (possibly empty / typed)
+    /// Does not consume tokens.
+    /// See docs/design/closure.md §3.1.
+    internal static bool IsLambdaStart(TokenCursor cursor)
+    {
+        if (cursor.Current.Kind == TokenKind.Identifier
+            && cursor.Peek(1).Kind == TokenKind.FatArrow)
+            return true;
+
+        if (cursor.Current.Kind != TokenKind.LParen) return false;
+
+        // Scan to matching `)` at depth 0, then check for `=>`.
+        // Bounded by IsEnd so we don't loop forever on malformed input.
+        int depth = 1;
+        int i = 1;
+        while (depth > 0)
+        {
+            var tok = cursor.Peek(i);
+            if (tok.Kind == TokenKind.Eof) return false;
+            if (tok.Kind == TokenKind.LParen) depth++;
+            else if (tok.Kind == TokenKind.RParen) depth--;
+            i++;
+        }
+        return cursor.Peek(i).Kind == TokenKind.FatArrow;
+    }
+
+    /// Parse a lambda literal. Caller has confirmed `IsLambdaStart(cursor)`.
+    /// See docs/design/closure.md §3.1.
+    internal static ParseResult<Expr> ParseLambda(TokenCursor cursor, LanguageFeatures feat)
+    {
+        var startSpan = cursor.Current.Span;
+        var paramList = new List<LambdaParam>();
+
+        if (cursor.Current.Kind == TokenKind.Identifier)
+        {
+            // Form 1: `IDENT => body`
+            var name = cursor.Current.Text;
+            var pSpan = cursor.Current.Span;
+            paramList.Add(new LambdaParam(name, null, pSpan));
+            cursor = cursor.Advance(); // consume IDENT
+        }
+        else
+        {
+            // Form 2: `( ... ) => body`
+            cursor = cursor.Advance(); // consume (
+            while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
+            {
+                paramList.Add(ParseLambdaParam(ref cursor));
+                if (cursor.Current.Kind != TokenKind.Comma) break;
+                cursor = cursor.Advance();
+            }
+            Expect(ref cursor, TokenKind.RParen);
+        }
+
+        Expect(ref cursor, TokenKind.FatArrow);
+
+        // Body: block `{ ... }` or expression
+        LambdaBody body;
+        if (cursor.Current.Kind == TokenKind.LBrace)
+        {
+            var blockR = StmtParser.ParseBlock(cursor, feat);
+            if (!blockR.IsOk) return ParseResult<Expr>.Fail(cursor, blockR.Error!);
+            cursor = blockR.Remainder;
+            body = new LambdaBlockBody(blockR.Value, blockR.Value.Span);
+        }
+        else
+        {
+            // Lambda body expression: parse at BpAssign-1 so that comma at
+            // call sites and `,` in arg lists terminate the lambda.
+            var exprR = Parse(cursor, feat, BpAssign - 1);
+            if (!exprR.IsOk) return exprR;
+            cursor = exprR.Remainder;
+            body = new LambdaExprBody(exprR.Value, exprR.Value.Span);
+        }
+
+        return Ok(new LambdaExpr(paramList, body, startSpan), cursor);
+    }
+
+    /// Parse a single lambda parameter inside `(...)`:
+    ///   • `IDENT`               — untyped
+    ///   • `Type IDENT`          — typed (e.g. `int x`)
+    private static LambdaParam ParseLambdaParam(ref TokenCursor cursor)
+    {
+        var span = cursor.Current.Span;
+
+        // If the current token is a type token (or could start a type),
+        // try to parse a type followed by identifier.
+        if (TypeParser.IsTypeToken(cursor.Current.Kind)
+            && cursor.Peek(1).Kind == TokenKind.Identifier)
+        {
+            var tyR = TypeParser.Parse(cursor);
+            if (tyR.IsOk && tyR.Remainder.Current.Kind == TokenKind.Identifier)
+            {
+                cursor = tyR.Remainder;
+                var nameTok = cursor.Current;
+                cursor = cursor.Advance();
+                return new LambdaParam(nameTok.Text, tyR.Value, span);
+            }
+        }
+
+        // Plain identifier — untyped param.
+        if (cursor.Current.Kind != TokenKind.Identifier)
+            throw new ParseException(
+                $"expected lambda parameter name, got `{cursor.Current.Text}`",
+                cursor.Current.Span,
+                DiagnosticCodes.ExpectedToken);
+        var n = cursor.Current.Text;
+        cursor = cursor.Advance();
+        return new LambdaParam(n, null, span);
+    }
+
     // ── Interpolated string ───────────────────────────────────────────────────
 
     internal static InterpolatedStrExpr ParseInterpolatedString(

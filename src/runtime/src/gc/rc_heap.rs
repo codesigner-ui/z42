@@ -576,6 +576,9 @@ impl MagrGC for RcMagrGC {
             // itself is owned by the source `Value::Str` / `Value::Array`,
             // not by the view. Charge only the discriminant + scalars.
             Value::PinnedView { .. } => size_of::<Value>(),
+            // impl-lambda-l2: FuncRef holds the function name; no managed heap
+            // allocation beyond the string buffer.
+            Value::FuncRef(name) => size_of::<Value>() + name.capacity(),
         }
     }
 

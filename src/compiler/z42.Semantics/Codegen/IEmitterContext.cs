@@ -40,4 +40,17 @@ internal interface IEmitterContext
     string QualifyClassName(string className);
     /// Maps imported class short names to their dependency namespaces.
     IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
+
+    // ── Lambda lifting (impl-lambda-l2) ──────────────────────────────────────
+
+    /// Register a lifted function created during expression emission (e.g. an
+    /// L2 no-capture lambda). Lifted functions are appended to the module's
+    /// function list after primary emission completes.
+    /// See docs/design/closure.md §6 + design.md Decision 1.
+    void RegisterLiftedFunction(IrFunction fn);
+
+    /// Allocate a unique index for a lifted lambda within `containerName`. The
+    /// returned index is monotonically increasing per container; the IR emitter
+    /// composes the lifted name as `<containerName>__lambda_<index>`.
+    int NextLambdaIndex(string containerName);
 }

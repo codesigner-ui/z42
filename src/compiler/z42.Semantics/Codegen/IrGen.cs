@@ -37,6 +37,11 @@ public sealed class IrGen : IEmitterContext
     // Param lists still come from AST (needed for FillDefaults BoundExpr lookup).
     private Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
 
+    // Lifted lambda functions accumulated during emission (impl-lambda-l2).
+    // See docs/design/closure.md §6 + design.md Decision 1.
+    private readonly List<IrFunction> _liftedFunctions = new();
+    private readonly Dictionary<string, int> _lambdaCounters = new();
+
     // ── IEmitterContext explicit implementation ──────────────────────────────
     ClassRegistry IEmitterContext.ClassRegistry => _classRegistry;
     SemanticModel IEmitterContext.SemanticModel => _semanticModel!;
@@ -55,6 +60,17 @@ public sealed class IrGen : IEmitterContext
         TryGetStaticFieldKey(className, fieldName);
     IReadOnlyDictionary<string, string> IEmitterContext.ImportedClassNamespaces =>
         _semanticModel?.ImportedClassNamespaces ?? new Dictionary<string, string>();
+    void IEmitterContext.RegisterLiftedFunction(IrFunction fn) => _liftedFunctions.Add(fn);
+    int IEmitterContext.NextLambdaIndex(string containerName)
+    {
+        if (_lambdaCounters.TryGetValue(containerName, out var idx))
+        {
+            _lambdaCounters[containerName] = idx + 1;
+            return idx;
+        }
+        _lambdaCounters[containerName] = 1;
+        return 0;
+    }
     string IEmitterContext.QualifyClassName(string className)
     {
         // L3-G4d: local classes shadow imported ones. If a class exists in the semantic
@@ -157,6 +173,10 @@ public sealed class IrGen : IEmitterContext
                 .Select(m => EmitMethod(implTargetNt.Name, m)));
         }
         functions.AddRange(cu.Functions.Select(EmitFunction));
+
+        // impl-lambda-l2: append all lambda lifted functions registered during emission.
+        // See docs/design/closure.md §6 + design.md Decision 1.
+        functions.AddRange(_liftedFunctions);
 
         // R1: collect TestIndex from FunctionDecl.TestAttributes across top-level
         // and class-method scopes. method_id is the index into `functions` (post-

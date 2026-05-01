@@ -141,6 +141,14 @@ public sealed record ToStrInstr(TypedReg Dst, TypedReg Src)            : IrInstr
 
 public sealed record CallInstr(TypedReg Dst, string Func, List<TypedReg> Args) : IrInstr;
 public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args) : IrInstr;
+/// Push a function reference value onto the operand stack. L2 no-capture lambda
+/// literal lowers to this instruction with `Func` pointing at a lifted function.
+/// See docs/design/closure.md §6 + ir.md.
+public sealed record LoadFnInstr(TypedReg Dst, string Func) : IrInstr;
+/// Indirect call: invoke a function via a `FuncRef`-typed register. Used when
+/// a local variable holds a lambda or function reference. Args follow the
+/// same convention as `CallInstr`. See docs/design/closure.md §6.
+public sealed record CallIndirectInstr(TypedReg Dst, TypedReg Callee, List<TypedReg> Args) : IrInstr;
 
 // ── Arithmetic ────────────────────────────────────────────────────────────────
 

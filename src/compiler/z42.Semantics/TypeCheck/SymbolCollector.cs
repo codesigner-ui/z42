@@ -201,8 +201,14 @@ public sealed partial class SymbolCollector : ISymbolBinder
         VoidType      => Z42Type.Void,
         OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
         ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
+        // Function type `(T1, T2) -> R` — see docs/design/closure.md §3.2
+        FuncType   ft => new Z42FuncType(
+                            ft.ParamTypes.Select(ResolveType).ToList(),
+                            ResolveType(ft.ReturnType)),
         NamedType  nt when _activeTypeParams?.Contains(nt.Name) == true
                       => new Z42GenericParamType(nt.Name),
+        // C# `Action` (no type args) → `() -> void`, equivalent to `() -> void`.
+        NamedType  nt when nt.Name == "Action" => new Z42FuncType([], Z42Type.Void),
         NamedType  nt => nt.Name switch
         {
             "int"    or "i32" => Z42Type.Int,
@@ -236,6 +242,15 @@ public sealed partial class SymbolCollector : ISymbolBinder
         {
             "List"       => new Z42PrimType("List"),
             "Dictionary" => new Z42PrimType("Dictionary"),
+            // C# `Func<T1, ..., Tn, R>` and `Action<T1, ..., Tn>` desugar to
+            // `Z42FuncType` so they're equivalent to the new `(T) -> R` syntax.
+            // See docs/design/closure.md §3.2 and design.md Decision 9.
+            "Func" when gt.TypeArgs.Count >= 1 => new Z42FuncType(
+                gt.TypeArgs.Take(gt.TypeArgs.Count - 1).Select(ResolveType).ToList(),
+                ResolveType(gt.TypeArgs[^1])),
+            "Action"                            => new Z42FuncType(
+                gt.TypeArgs.Select(ResolveType).ToList(),
+                Z42Type.Void),
             // L3-G2.5 chain: generic interface references preserve TypeArgs so
             // downstream arg-aware checks can compare `IEquatable<int>` precisely.
             // L3 static abstract (C# 11): also preserve StaticMembers so generic

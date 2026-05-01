@@ -31,6 +31,9 @@ internal sealed partial class FunctionEmitter
     private List<IrInstr> _curInstrs = new();
     private bool _blockEnded;
     private string? _currentClassName;
+    /// Fully-qualified name of the function currently being emitted. Used by
+    /// `EmitLambdaLiteral` to compose lifted-lambda names. Set at every entry point.
+    private string _currentFnQualName = "";
 
     // ── Debug line tracking ──────────────────────────────────────────────────
     private List<IrLineEntry> _lineTable = new();
@@ -46,6 +49,7 @@ internal sealed partial class FunctionEmitter
     {
         bool isStatic = method.IsStatic;
         _currentClassName = className;
+        _currentFnQualName = methodIrName;
         _sourceFile = method.Span.File;
         int paramOffset = isStatic ? 0 : 1;
         _nextReg = method.Params.Count + paramOffset;
@@ -129,6 +133,7 @@ internal sealed partial class FunctionEmitter
     internal IrFunction EmitFunction(FunctionDecl fn, BoundBlock body)
     {
         _currentClassName = null;
+        _currentFnQualName = _ctx.QualifyName(fn.Name);
         _sourceFile = fn.Span.File;
         _nextReg = fn.Params.Count;
 

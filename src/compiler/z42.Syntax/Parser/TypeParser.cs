@@ -18,6 +18,16 @@ internal static class TypeParser
     internal static ParseResult<TypeExpr> Parse(TokenCursor cursor)
     {
         var span = cursor.Current.Span;
+
+        // Function type: `(T1, T2) -> R` — see docs/design/closure.md §3.2
+        if (cursor.Current.Kind == TokenKind.LParen)
+        {
+            var funcResult = ParseFuncType(cursor);
+            if (funcResult.IsOk) return funcResult;
+            return ParseResult<TypeExpr>.Fail(cursor,
+                $"expected type, got `{cursor.Current.Text}`");
+        }
+
         if (!TokenDefs.TypeKeywords.Contains(cursor.Current.Kind))
             return ParseResult<TypeExpr>.Fail(cursor,
                 $"expected type name, got `{cursor.Current.Text}`");
@@ -68,5 +78,46 @@ internal static class TypeParser
         }
 
         return ParseResult<TypeExpr>.Ok(ty, cursor);
+    }
+
+    /// Parse `(T1, T2) -> R`. Caller has confirmed `LParen` at cursor.
+    /// Returns Fail if tokens after `)` are not `->` — caller handles that.
+    private static ParseResult<TypeExpr> ParseFuncType(TokenCursor cursor)
+    {
+        var span = cursor.Current.Span;
+        cursor = cursor.Advance(); // skip (
+
+        var paramTypes = new List<TypeExpr>();
+        if (cursor.Current.Kind != TokenKind.RParen)
+        {
+            var first = Parse(cursor);
+            if (!first.IsOk) return ParseResult<TypeExpr>.Fail(cursor, first.Error!);
+            paramTypes.Add(first.Value);
+            cursor = first.Remainder;
+            while (cursor.Current.Kind == TokenKind.Comma)
+            {
+                cursor = cursor.Advance();
+                var next = Parse(cursor);
+                if (!next.IsOk) return ParseResult<TypeExpr>.Fail(cursor, next.Error!);
+                paramTypes.Add(next.Value);
+                cursor = next.Remainder;
+            }
+        }
+        if (cursor.Current.Kind != TokenKind.RParen)
+            return ParseResult<TypeExpr>.Fail(cursor,
+                $"expected `)` in function type, got `{cursor.Current.Text}`");
+        cursor = cursor.Advance(); // skip )
+
+        if (cursor.Current.Kind != TokenKind.Arrow)
+            return ParseResult<TypeExpr>.Fail(cursor,
+                $"expected `->` after `(...)` in function type, got `{cursor.Current.Text}`");
+        cursor = cursor.Advance(); // skip ->
+
+        var ret = Parse(cursor);
+        if (!ret.IsOk) return ParseResult<TypeExpr>.Fail(cursor, ret.Error!);
+
+        return ParseResult<TypeExpr>.Ok(
+            new FuncType(paramTypes, ret.Value, span),
+            ret.Remainder);
     }
 }

@@ -1,0 +1,31 @@
+// L2 no-capture lambda + (T)->R function type.
+// See docs/design/closure.md and spec/changes/impl-lambda-l2/.
+// Local function support deferred to impl-local-fn-l2.
+namespace Demo;
+using Std.IO;
+
+// Top-level helper that takes a function value and applies it.
+int Apply((int) -> int f, int x) => f(x);
+
+void Main() {
+    // 1) Lambda literal stored in a local var, then invoked indirectly.
+    (int) -> int sq = (int x) => x * x;
+    Assert.Equal(25, sq(5));
+    Assert.Equal(0,  sq(0));
+
+    // 2) Lambda passed to a higher-order function (Func<T,R> equivalence).
+    Func<int, int> inc = (int x) => x + 1;
+    Assert.Equal(11, Apply(inc, 10));
+
+    // 3) Lambda literal directly at call site.
+    Assert.Equal(20, Apply((int x) => x * 4, 5));
+
+    // 4) Block-body lambda.
+    (int) -> int double_then_inc = (int x) => {
+        var y = x * 2;
+        return y + 1;
+    };
+    Assert.Equal(7, double_then_inc(3));
+
+    Console.WriteLine("lambda l2 basic ok");
+}

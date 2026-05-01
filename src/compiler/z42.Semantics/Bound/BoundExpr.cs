@@ -70,6 +70,25 @@ public sealed record BoundUnary(UnaryOp Op, BoundExpr Operand, Z42Type Type, Spa
 public sealed record BoundPostfix(PostfixOp Op, BoundExpr Operand, Z42Type Type, Span Span)
     : BoundExpr(Type, Span);
 
+// ── Lambda ────────────────────────────────────────────────────────────────────
+
+/// L2 no-capture lambda parameter (typed) — Type is fully resolved.
+public sealed record BoundLambdaParam(string Name, Z42Type Type, Span Span);
+
+/// L2 no-capture lambda body: either a single expression or a block.
+public abstract record BoundLambdaBody(Span Span);
+public sealed record BoundLambdaExprBody(BoundExpr Expr, Span Span)         : BoundLambdaBody(Span);
+public sealed record BoundLambdaBlockBody(BoundBlock Block, Span Span)      : BoundLambdaBody(Span);
+
+/// L2 lambda literal — captured into a `Z42FuncType`. The body never references
+/// outer-scope locals (capture is rejected at TypeCheck time; see closure.md §10).
+/// Lifted to a module-level function during IrGen (lifted name is assigned by IrGen).
+public sealed record BoundLambda(
+    IReadOnlyList<BoundLambdaParam> Params,
+    BoundLambdaBody Body,
+    Z42FuncType FuncType,
+    Span Span) : BoundExpr(FuncType, Span);
+
 // ── Calls ─────────────────────────────────────────────────────────────────────
 
 /// Classifies how a call was resolved by the TypeChecker.

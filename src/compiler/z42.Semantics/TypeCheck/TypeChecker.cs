@@ -48,6 +48,11 @@ public sealed partial class TypeChecker : ITypeInferrer
     private readonly Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>
         _classConstraints = new();
 
+    /// Stack of `outer-env at lambda boundary` for L2 no-capture detection.
+    /// Pushed when entering a lambda body; popped when leaving. Empty means we're
+    /// not inside a lambda. See docs/design/closure.md §10 + design.md Decision 6.
+    private readonly Stack<TypeEnv> _lambdaOuterStack = new();
+
     public TypeChecker(DiagnosticBag diags, LanguageFeatures? features = null, DependencyIndex? depIndex = null)
     {
         _diags    = diags;

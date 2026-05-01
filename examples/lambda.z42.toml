@@ -1,0 +1,25 @@
+# lambda.z42.toml — L2 阶段无捕获 lambda 示例
+
+[project]
+version     = "0.1.0"
+description = "L2 lambda + (T) -> R function type demo"
+
+[sources]
+include = ["lambda.z42"]
+
+[[exe]]
+name  = "lambda"
+entry = "Demo.Lambda.Main"
+
+[build]
+out_dir = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "interp"   # JIT lambda 支持等 L3+
+optimize = 3
+strip    = true

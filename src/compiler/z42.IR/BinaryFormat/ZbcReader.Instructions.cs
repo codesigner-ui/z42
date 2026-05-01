@@ -82,6 +82,17 @@ public static partial class ZbcReader
                 var args = ReadArgs(r);
                 return new CallInstr(d, fn, args);
             }
+            case Opcodes.LoadFn:
+            {
+                var fn = P(pool, r.ReadUInt32());
+                return new LoadFnInstr(d, fn);
+            }
+            case Opcodes.CallIndirect:
+            {
+                var callee = RU(r.ReadUInt16());
+                var args   = ReadArgs(r);
+                return new CallIndirectInstr(d, callee, args);
+            }
             case Opcodes.Builtin:
             {
                 var name = P(pool, r.ReadUInt32());

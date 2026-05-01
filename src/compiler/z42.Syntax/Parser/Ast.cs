@@ -226,6 +226,11 @@ public sealed record VoidType(Span Span)                 : TypeExpr(Span);
 public sealed record ArrayType(TypeExpr Element, Span Span) : TypeExpr(Span);  // T[]
 public sealed record GenericType(string Name, List<TypeExpr> TypeArgs, Span Span) : TypeExpr(Span);  // Box<int>, Dict<K,V>
 
+/// Function type `(T1, T2) -> R`. Equivalent to C# `Func<T1, T2, R>` /
+/// `Action<T1, T2>` (resolved as same `Z42FuncType` in the semantic layer).
+/// See docs/design/closure.md §3.2.
+public sealed record FuncType(List<TypeExpr> ParamTypes, TypeExpr ReturnType, Span Span) : TypeExpr(Span);
+
 // ── Statements ────────────────────────────────────────────────────────────────
 
 public abstract record Stmt(Span Span);
@@ -331,7 +336,17 @@ public sealed record NewExpr(TypeExpr Type, List<Expr> Args, Span Span) : Expr(S
 public sealed record ArrayCreateExpr(TypeExpr ElemType, Expr Size, Span Span)           : Expr(Span);
 /// new T[] { e0, e1, ... }  — array from literal elements
 public sealed record ArrayLitExpr(TypeExpr ElemType, List<Expr> Elements, Span Span)    : Expr(Span);
-public sealed record LambdaExpr(List<string> Params, Expr Body, Span Span) : Expr(Span);
+/// Lambda parameter: `name` (untyped) or `Type name` (typed).
+/// `Type == null` means the type is inferred from context (expected `Z42FuncType`).
+public sealed record LambdaParam(string Name, TypeExpr? Type, Span Span);
+
+/// Lambda body: either an expression (`x => x + 1`) or a block (`x => { return x; }`).
+public abstract record LambdaBody(Span Span);
+public sealed record LambdaExprBody(Expr Expr, Span Span)        : LambdaBody(Span);
+public sealed record LambdaBlockBody(BlockStmt Block, Span Span) : LambdaBody(Span);
+
+/// Lambda literal `params => body`. See docs/design/closure.md §3.1.
+public sealed record LambdaExpr(List<LambdaParam> Params, LambdaBody Body, Span Span) : Expr(Span);
 public sealed record SwitchExpr(Expr Subject, List<SwitchArm> Arms, Span Span) : Expr(Span);
 public sealed record SwitchArm(Expr? Pattern, Expr Body, Span Span);
 

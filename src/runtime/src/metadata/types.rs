@@ -117,6 +117,10 @@ pub enum Value {
     /// interpret it. Field access (`.ptr` / `.len`) goes through the
     /// regular `FieldGet` instruction.
     PinnedView { ptr: u64, len: u64, kind: PinSourceKind },
+    /// Function reference value. Currently used by L2 no-capture lambda
+    /// literals (see docs/design/closure.md §6). Indirect call dispatches
+    /// to the named function in the loaded module.
+    FuncRef(String),
 }
 
 /// Origin of a [`Value::PinnedView`]. Recorded for diagnostics; both kinds

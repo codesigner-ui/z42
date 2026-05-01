@@ -330,6 +330,18 @@ public sealed partial class TypeChecker
                 return new BoundCall(BoundCallKind.Free, null, null, null,
                     funcId.Name, freeArgs, retType, call.Span);
             }
+            // impl-lambda-l2: indirect call via a `Z42FuncType`-typed local variable
+            // (e.g. `var f = x => x + 1; f(5);`). The Receiver field carries the bound
+            // callee so Codegen can emit `CallIndirect`. See closure.md §6.
+            var varType = env.LookupVar(funcId.Name);
+            if (varType is Z42FuncType vft)
+            {
+                CheckArgCount(freeArgs.Count, vft.MinArgCount, vft.Params.Count, call.Span);
+                CheckArgTypes(call.Args, freeArgs, vft.Params);
+                var calleeBound = new BoundIdent(funcId.Name, vft, funcId.Span);
+                return new BoundCall(BoundCallKind.Free, calleeBound, null, null,
+                    null, freeArgs, vft.Ret, call.Span);
+            }
             // Unknown function — report error
             BindIdent(funcId, env);
             _diags.Error(DiagnosticCodes.TypeMismatch,
@@ -338,13 +350,13 @@ public sealed partial class TypeChecker
                 funcId.Name, freeArgs, Z42Type.Error, call.Span);
         }
 
-        // Non-identifier callee (rare)
+        // Non-identifier callee (rare): indirect call via expression — see closure.md §6.
         var calleeExpr = BindExpr(call.Callee, env);
         if (calleeExpr.Type is Z42FuncType ft2)
         {
             CheckArgCount(freeArgs.Count, ft2.MinArgCount, ft2.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, ft2.Params);
-            return new BoundCall(BoundCallKind.Free, null, null, null,
+            return new BoundCall(BoundCallKind.Free, calleeExpr, null, null,
                 null, freeArgs, ft2.Ret, call.Span);
         }
         _diags.Error(DiagnosticCodes.TypeMismatch,

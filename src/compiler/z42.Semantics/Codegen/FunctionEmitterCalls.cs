@@ -113,6 +113,17 @@ internal sealed partial class FunctionEmitter
 
             case BoundCallKind.Free:
             {
+                // impl-lambda-l2: indirect call via FuncRef-typed expression.
+                // BindCall populates `Receiver` (with `CalleeName == null`) when the
+                // callee is a local var or arbitrary expr of `Z42FuncType`.
+                if (call.Receiver is { } indirectCallee)
+                {
+                    var calleeReg = EmitExpr(indirectCallee);
+                    var idst      = Alloc(ToIrType(call.Type));
+                    Emit(new CallIndirectInstr(idst, calleeReg, argRegs));
+                    return idst;
+                }
+
                 string callName;
                 if (_ctx.TopLevelFunctionNames.Contains(call.CalleeName!))
                     callName = _ctx.QualifyName(call.CalleeName!);

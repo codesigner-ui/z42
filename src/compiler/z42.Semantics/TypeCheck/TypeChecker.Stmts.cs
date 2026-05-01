@@ -212,7 +212,9 @@ public sealed partial class TypeChecker
                 }
                 else
                 {
-                    initBound = BindExpr(v.Init, env);
+                    // Pass `varType` as expected so context-driven inference (e.g.
+                    // for lambda literals — see closure.md §4) can flow through.
+                    initBound = BindExpr(v.Init, env, varType);
                     RequireAssignable(varType, initBound.Type, v.Init.Span);
                 }
             }

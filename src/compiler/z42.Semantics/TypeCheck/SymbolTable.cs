@@ -214,10 +214,16 @@ public sealed class SymbolTable
         VoidType      => Z42Type.Void,
         OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
         ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
+        // Function type `(T1, T2) -> R` — see docs/design/closure.md §3.2
+        FuncType   ft => new Z42FuncType(
+                            ft.ParamTypes.Select(ResolveType).ToList(),
+                            ResolveType(ft.ReturnType)),
         GenericType gt => ResolveGenericType(gt),
         NamedType  nt => nt.Name switch
         {
             "var"             => Z42Type.Unknown,
+            // C# `Action` (no type args) → `() -> void` (closure design Decision 9).
+            "Action"          => new Z42FuncType([], Z42Type.Void),
             _ when _activeTypeParams?.Contains(nt.Name) == true
                               => MakeTypeParam(nt.Name),
             _                 => TypeRegistry.GetZ42Type(nt.Name) ??
@@ -272,6 +278,21 @@ public sealed class SymbolTable
     /// 不再由编译器发射。
     private Z42Type ResolveGenericType(GenericType gt)
     {
+        // C# `Func<T1, ..., Tn, R>` / `Action<T1, ..., Tn>` desugar to Z42FuncType,
+        // equivalent to the `(T) -> R` syntax. See docs/design/closure.md §3.2 and
+        // design.md Decision 9.
+        if (gt.Name == "Func" && gt.TypeArgs.Count >= 1)
+        {
+            var paramTypes = gt.TypeArgs.Take(gt.TypeArgs.Count - 1).Select(ResolveType).ToList();
+            var retType    = ResolveType(gt.TypeArgs[^1]);
+            return new Z42FuncType(paramTypes, retType);
+        }
+        if (gt.Name == "Action")
+        {
+            var paramTypes = gt.TypeArgs.Select(ResolveType).ToList();
+            return new Z42FuncType(paramTypes, Z42Type.Void);
+        }
+
         // User-defined generic class: resolve as class type (code sharing — same class, different type_args)
         if (Classes.TryGetValue(gt.Name, out var ct))
         {

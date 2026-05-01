@@ -308,6 +308,20 @@ pub enum Instruction {
         name: String,
         #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
     },
+    /// Push a function-reference value onto a register. The runtime resolves
+    /// `func` at call site (current usage: L2 no-capture lambda lifted as a
+    /// module-level function). See docs/design/closure.md §6.
+    LoadFn {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        func: String,
+    },
+    /// Indirect call via a register holding a `FuncRef` value. See
+    /// docs/design/closure.md §6.
+    CallIndirect {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] callee: Reg,
+        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+    },
     // Arrays
     /// Allocate a zero-initialised array of `size` elements.
     ArrayNew {

@@ -1,0 +1,2 @@
+JIT support for LoadFn / CallIndirect lands in a later iteration.
+See spec/changes/impl-lambda-l2/design.md — Decision 1 + Risk table.

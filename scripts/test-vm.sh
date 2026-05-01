@@ -64,6 +64,12 @@ for MODE in "${MODES[@]}"; do
 
         [ -f "$artifact" ] && [ -f "$expected" ] || continue
 
+        # Skip JIT for tests with `interp_only` marker (e.g. tests using IR
+        # opcodes whose JIT path is not yet implemented — see closure.md §6).
+        if [ "$MODE" = "jit" ] && [ -f "$dir/interp_only" ]; then
+            continue
+        fi
+
         actual=$(cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$artifact" --mode "$MODE" 2>&1) || true
 
         if [ "$actual" = "$(cat "$expected")" ]; then

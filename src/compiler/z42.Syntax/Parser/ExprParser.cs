@@ -55,6 +55,17 @@ internal static partial class ExprParser
     {
         var span = cursor.Current.Span;
 
+        // Lambda detection — `x => ...` or `(...) => ...`. Lambda binds at the
+        // lowest expression level; we preempt before normal Nud dispatch.
+        // See docs/design/closure.md §3.1.
+        if (IsLambdaStart(cursor))
+        {
+            if (!feat.IsEnabled(LanguageFeature.Lambda))
+                throw new ParseException($"feature `lambda` is disabled", span,
+                    DiagnosticCodes.FeatureDisabled);
+            return ParseLambda(cursor, feat);
+        }
+
         if (!s_nudTable.TryGetValue(cursor.Current.Kind, out var nudEntry))
             return ParseResult<Expr>.Fail(cursor,
                 $"unexpected token `{cursor.Current.Text}` in expression");

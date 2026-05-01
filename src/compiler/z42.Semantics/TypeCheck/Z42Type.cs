@@ -60,6 +60,18 @@ public abstract record Z42Type
             // Fall back to element-wise IsAssignableTo for non-generic arrays
             if (IsAssignableTo(tArr.Element, sArr.Element)) return true;
         }
+        // Function types: structural equality on Params + Ret (IReadOnlyList uses
+        // reference equality by default in record `Equals`, so we compare by element).
+        // See docs/design/closure.md §3.2.
+        if (source is Z42FuncType sFn && target is Z42FuncType tFn
+            && sFn.Params.Count == tFn.Params.Count)
+        {
+            if (!IsAssignableTo(tFn.Ret, sFn.Ret)) goto next;
+            for (int i = 0; i < sFn.Params.Count; i++)
+                if (!IsAssignableTo(tFn.Params[i], sFn.Params[i])) goto next;
+            return true;
+            next: ;
+        }
         // null is assignable to any reference type or optional type
         if (source is Z42NullType && (IsReferenceType(target) || target is Z42OptionType)) return true;
         // Same-name class types are compatible (handles two-pass TypeChecker where stubs

@@ -185,6 +185,34 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             frame.set(*dst, result);
         }
 
+        // L2 no-capture lambda lifting: push a function reference value.
+        // See docs/design/closure.md §6 + ir.md.
+        Instruction::LoadFn { dst, func } => {
+            frame.set(*dst, Value::FuncRef(func.clone()));
+        }
+
+        // Indirect call via a `FuncRef`-typed register. See closure.md §6.
+        Instruction::CallIndirect { dst, callee, args } => {
+            let fname = match frame.get(*callee)? {
+                Value::FuncRef(name) => name.clone(),
+                other => bail!("CallIndirect: expected FuncRef, got {:?}", other),
+            };
+            let arg_vals = collect_args(&frame.regs, args)?;
+            let callee_fn = module.func_index.get(fname.as_str())
+                .and_then(|&idx| module.functions.get(idx));
+            let outcome = if let Some(cfn) = callee_fn {
+                super::exec_function(ctx, module, cfn, &arg_vals)?
+            } else if let Some(lazy_fn) = ctx.try_lookup_function(&fname) {
+                super::exec_function(ctx, module, lazy_fn.as_ref(), &arg_vals)?
+            } else {
+                bail!("CallIndirect: undefined function `{fname}`");
+            };
+            match outcome {
+                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
+                ExecOutcome::Thrown(val)   => return Ok(Some(val)),
+            }
+        }
+
         // ── Arrays ───────────────────────────────────────────────────────────
         Instruction::ArrayNew { dst, size } => {
             let n = to_usize(frame.get(*size)?, "ArrayNew size")?;

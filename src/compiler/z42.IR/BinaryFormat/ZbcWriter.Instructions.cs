@@ -80,6 +80,15 @@ public static partial class ZbcWriter
                 w.Write((uint)pool.Idx(i.Func));
                 WriteArgs(w, i.Args);
                 break;
+            case LoadFnInstr i:
+                w.Write(Opcodes.LoadFn); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                w.Write((uint)pool.Idx(i.Func));
+                break;
+            case CallIndirectInstr i:
+                w.Write(Opcodes.CallIndirect); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Callee);
+                WriteArgs(w, i.Args);
+                break;
             case BuiltinInstr i:
                 w.Write(Opcodes.Builtin); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Name));
@@ -241,6 +250,7 @@ public static partial class ZbcWriter
         switch (instr)
         {
             case CallInstr i:       pool.Intern(i.Func); break;
+            case LoadFnInstr i:     pool.Intern(i.Func); break;
             case BuiltinInstr i:    pool.Intern(i.Name); break;
             case VCallInstr i:      pool.Intern(i.Method); break;
             case FieldGetInstr i:   pool.Intern(i.FieldName); break;
@@ -303,6 +313,8 @@ public static partial class ZbcWriter
             case ToStrInstr i:     v(i.Dst); v(i.Src); break;
             case StrConcatInstr i: v(i.Dst); v(i.A); v(i.B); break;
             case CallInstr i:   v(i.Dst); foreach (var a in i.Args) v(a); break;
+            case LoadFnInstr i: v(i.Dst); break;
+            case CallIndirectInstr i: v(i.Dst); v(i.Callee); foreach (var a in i.Args) v(a); break;
             case BuiltinInstr i: v(i.Dst); foreach (var a in i.Args) v(a); break;
             case VCallInstr i:  v(i.Dst); v(i.Obj); foreach (var a in i.Args) v(a); break;
             case FieldGetInstr i:  v(i.Dst); v(i.Obj); break;

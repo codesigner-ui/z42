@@ -63,6 +63,8 @@ const OP_BUILTIN: u8             = 0x51;
 const OP_VCALL: u8               = 0x52;
 const OP_CALL_NATIVE: u8         = 0x53;
 const OP_CALL_NATIVE_VTABLE: u8  = 0x54;
+const OP_LOAD_FN: u8             = 0x55;
+const OP_CALL_INDIRECT: u8       = 0x56;
 
 const OP_FIELD_GET: u8   = 0x60;
 const OP_FIELD_SET: u8   = 0x61;
@@ -516,6 +518,15 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             let func = pool_str_owned(pool, c.read_u32()?)?;
             let args = read_args(c)?;
             Instruction::Call { dst, func, args }
+        }
+        OP_LOAD_FN => {
+            let func = pool_str_owned(pool, c.read_u32()?)?;
+            Instruction::LoadFn { dst, func }
+        }
+        OP_CALL_INDIRECT => {
+            let callee = c.read_u16()? as u32;
+            let args   = read_args(c)?;
+            Instruction::CallIndirect { dst, callee, args }
         }
         OP_BUILTIN => {
             let name = pool_str_owned(pool, c.read_u32()?)?;

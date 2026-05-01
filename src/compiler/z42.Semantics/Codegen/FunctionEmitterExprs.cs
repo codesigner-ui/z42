@@ -69,6 +69,9 @@ internal sealed partial class FunctionEmitter
                 throw new InvalidOperationException($"undefined variable `{id.Name}`");
             }
 
+            case BoundLambda lambda:
+                return EmitLambdaLiteral(lambda);
+
             case BoundAssign assign:
                 return EmitBoundAssign(assign);
 
@@ -153,6 +156,62 @@ internal sealed partial class FunctionEmitter
                 throw new NotSupportedException(
                     $"BoundExpr type {expr.GetType().Name} not yet supported in FunctionEmitter");
         }
+    }
+
+    // ── Lambda literal (impl-lambda-l2) ───────────────────────────────────────
+
+    /// L2 no-capture lambda literal: lift body to a fresh module-level function
+    /// and emit a `LoadFn` to push its reference. See docs/design/closure.md §6
+    /// + design.md Decision 1.
+    private TypedReg EmitLambdaLiteral(BoundLambda lambda)
+    {
+        var index    = _ctx.NextLambdaIndex(_currentFnQualName);
+        var liftedNm = $"{_currentFnQualName}__lambda_{index}";
+        var lifted   = new FunctionEmitter(_ctx).EmitLifted(liftedNm, lambda);
+        _ctx.RegisterLiftedFunction(lifted);
+
+        var dst = Alloc(IrType.Ref);
+        Emit(new LoadFnInstr(dst, liftedNm));
+        return dst;
+    }
+
+    /// Emit a lifted lambda body as a standalone IrFunction. Mirrors the
+    /// shape of `EmitFunction` but takes its params/body from a `BoundLambda`.
+    internal IrFunction EmitLifted(string liftedQualName, BoundLambda lambda)
+    {
+        _currentClassName = null;
+        _currentFnQualName = liftedQualName;
+        _sourceFile = lambda.Span.File;
+        _nextReg = lambda.Params.Count;
+
+        StartBlock("entry");
+        for (int i = 0; i < lambda.Params.Count; i++)
+            _locals[lambda.Params[i].Name] = new TypedReg(i, ToIrType(lambda.Params[i].Type));
+
+        switch (lambda.Body)
+        {
+            case BoundLambdaExprBody eb:
+            {
+                var resultReg = EmitExpr(eb.Expr);
+                if (lambda.FuncType.Ret == Z42Type.Void)
+                    EndBlock(new RetTerm(null));
+                else
+                    EndBlock(new RetTerm(resultReg));
+                break;
+            }
+            case BoundLambdaBlockBody bb:
+            {
+                EmitBoundBlock(bb.Block);
+                if (!_blockEnded) EndBlock(new RetTerm(null));
+                break;
+            }
+        }
+
+        var retName  = lambda.FuncType.Ret == Z42Type.Void ? "void" : lambda.FuncType.Ret.ToString() ?? "object";
+        var lineTbl  = _lineTable.Count > 0 ? _lineTable : null;
+        var localTbl = SnapshotLocalVarTable();
+        return new IrFunction(liftedQualName, lambda.Params.Count, retName,
+            "Interp", _blocks, null, MaxReg: _nextReg, LineTable: lineTbl, LocalVarTable: localTbl);
     }
 
     // ── Member access ─────────────────────────────────────────────────────────

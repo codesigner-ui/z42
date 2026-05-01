@@ -201,6 +201,9 @@ public sealed partial class TypeChecker
                 return new BoundSwitchExpr(subject, arms, resultType, sw.Span);
             }
 
+            case LambdaExpr lambda:
+                return BindLambda(lambda, env, expectedType);
+
             case ErrorExpr e:
                 return new BoundError("error expr", Z42Type.Error, e.Span);
 
@@ -209,12 +212,110 @@ public sealed partial class TypeChecker
         }
     }
 
+    // ── Lambda ────────────────────────────────────────────────────────────────
+
+    /// L2 lambda binding: synthesize a `Z42FuncType`, bind the body, and verify
+    /// no captures (closure captures are L3-only). See docs/design/closure.md.
+    private BoundExpr BindLambda(LambdaExpr lambda, TypeEnv env, Z42Type? expected)
+    {
+        // 1. Determine each param's resolved type.
+        var expectedFn = expected as Z42FuncType;
+        if (expectedFn != null && expectedFn.Params.Count != lambda.Params.Count)
+        {
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"lambda has {lambda.Params.Count} parameters but expected {expectedFn.Params.Count}",
+                lambda.Span);
+            return new BoundError("lambda arity mismatch", Z42Type.Error, lambda.Span);
+        }
+
+        var boundParams = new List<BoundLambdaParam>(lambda.Params.Count);
+        for (int i = 0; i < lambda.Params.Count; i++)
+        {
+            var p = lambda.Params[i];
+            Z42Type ptype;
+            if (p.Type != null)
+            {
+                ptype = ResolveType(p.Type);
+            }
+            else if (expectedFn != null)
+            {
+                ptype = expectedFn.Params[i];
+            }
+            else
+            {
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"cannot infer type for lambda parameter `{p.Name}`; either provide an explicit type (`(int {p.Name}) => ...`) or assign to a variable with a known function type",
+                    p.Span);
+                ptype = Z42Type.Error;
+            }
+            boundParams.Add(new BoundLambdaParam(p.Name, ptype, p.Span));
+        }
+
+        // 2. Push lambda scope: params become locals; outer env is the capture boundary.
+        var lambdaEnv = env.PushScope();
+        foreach (var bp in boundParams)
+            lambdaEnv.Define(bp.Name, bp.Type);
+
+        _lambdaOuterStack.Push(env);
+        BoundLambdaBody body;
+        Z42Type retType;
+        try
+        {
+            switch (lambda.Body)
+            {
+                case LambdaExprBody eb:
+                {
+                    var be = BindExpr(eb.Expr, lambdaEnv, expectedFn?.Ret);
+                    body    = new BoundLambdaExprBody(be, eb.Span);
+                    retType = be.Type;
+                    break;
+                }
+                case LambdaBlockBody bb:
+                {
+                    // Block body: use the expected return type if known, else Unknown.
+                    var ret  = expectedFn?.Ret ?? Z42Type.Unknown;
+                    var blk  = BindBlock(bb.Block, lambdaEnv, ret);
+                    body     = new BoundLambdaBlockBody(blk, bb.Span);
+                    retType  = ret;
+                    break;
+                }
+                default:
+                    return new BoundError("invalid lambda body", Z42Type.Error, lambda.Span);
+            }
+        }
+        finally
+        {
+            _lambdaOuterStack.Pop();
+        }
+
+        // 3. Synthesize the function type.
+        var paramTypes = boundParams.Select(p => p.Type).ToList();
+        var fnType     = new Z42FuncType(paramTypes, retType);
+        return new BoundLambda(boundParams, body, fnType, lambda.Span);
+    }
+
     // ── Identifier ────────────────────────────────────────────────────────────
 
     private BoundExpr BindIdent(IdentExpr id, TypeEnv env)
     {
-        var t = env.LookupVar(id.Name) ?? env.LookupFunc(id.Name);
-        if (t != null) return new BoundIdent(id.Name, t, id.Span);
+        var varType = env.LookupVar(id.Name);
+        if (varType != null)
+        {
+            // L2 no-capture check: when inside a lambda body, a local var that
+            // resolves through the lambda's *outer* env is a capture, which is
+            // an L3 feature. See docs/design/closure.md §10.
+            if (_lambdaOuterStack.Count > 0
+                && _lambdaOuterStack.Peek().LookupVar(id.Name) != null)
+            {
+                _diags.Error(DiagnosticCodes.FeatureDisabled,
+                    $"lambda capture of `{id.Name}` is not enabled in L2 — closure captures are an L3 feature (see docs/design/closure.md §10). Pass it as a parameter or use a static / global symbol instead.",
+                    id.Span);
+                return new BoundError($"capture of `{id.Name}` not allowed in L2", Z42Type.Error, id.Span);
+            }
+            return new BoundIdent(id.Name, varType, id.Span);
+        }
+        var fnType = env.LookupFunc(id.Name);
+        if (fnType != null) return new BoundIdent(id.Name, fnType, id.Span);
         // Type references (class, enum, interface, imported class) are not variables;
         // return BoundIdent with Unknown type so downstream member/call resolution handles them.
         if (_symbols.EnumTypes.Contains(id.Name)

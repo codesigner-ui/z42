@@ -421,6 +421,11 @@ internal static class StmtParser
     /// Lookahead: is `cursor` pointing at a type-annotated variable declaration?
     private static bool IsTypeAnnotatedVarDecl(TokenCursor cursor)
     {
+        // Function type form `(T1, ...) -> R IDENT [= init];` — see closure.md §3.2.
+        if (cursor.Current.Kind == TokenKind.LParen)
+        {
+            return IsFuncTypeVarDecl(cursor);
+        }
         if (!TypeParser.IsTypeToken(cursor.Current.Kind)) return false;
         // 2026-04-27 fix-generic-array-type-parsing：扫过类型表达式（含 `<...>`、
         // `[]`、`?` 任意组合），停在第一个非类型 token；若后接 `Identifier`
@@ -448,6 +453,74 @@ internal static class StmtParser
         // 终态：Identifier + (= | ;)
         return cursor.Peek(i).Kind == TokenKind.Identifier
             && cursor.Peek(i + 1).Kind is TokenKind.Eq or TokenKind.Semicolon;
+    }
+
+    /// Lookahead: is `cursor` (at `(`) pointing at a function-type-annotated
+    /// variable declaration of the form `(T1, ...) -> R IDENT [= init];`?
+    /// Differs from a parenthesised expression because of the `-> Type IDENT`
+    /// continuation.
+    private static bool IsFuncTypeVarDecl(TokenCursor cursor)
+    {
+        if (cursor.Current.Kind != TokenKind.LParen) return false;
+
+        // Walk to matching `)` at depth 0.
+        int depth = 1;
+        int i = 1;
+        while (depth > 0)
+        {
+            var tok = cursor.Peek(i);
+            if (tok.Kind == TokenKind.Eof) return false;
+            if (tok.Kind == TokenKind.LParen) depth++;
+            else if (tok.Kind == TokenKind.RParen) depth--;
+            i++;
+        }
+
+        // After `)`, expect `->` then a type expression then IDENT then `=` or `;`.
+        if (cursor.Peek(i).Kind != TokenKind.Arrow) return false;
+        i++;
+
+        // Skip the return type — accept either a type keyword (possibly followed
+        // by `<...>`, `?`, `[]`) or a nested `(...) -> ...` chain. We only need
+        // to confirm the pattern terminates in `IDENT (= | ;)`, so a simple
+        // bracket-balanced walk that stops on a free-standing IDENT works.
+        // Bound `i` by Eof to avoid infinite loops.
+        int start = i;
+        while (cursor.Peek(i).Kind != TokenKind.Eof)
+        {
+            var k = cursor.Peek(i).Kind;
+            if (k == TokenKind.LParen)
+            {
+                int d = 1; i++;
+                while (d > 0 && cursor.Peek(i).Kind != TokenKind.Eof)
+                {
+                    var ki = cursor.Peek(i).Kind;
+                    if (ki == TokenKind.LParen) d++;
+                    else if (ki == TokenKind.RParen) d--;
+                    i++;
+                }
+                continue;
+            }
+            if (k == TokenKind.Lt)
+            {
+                int d = 1; i++;
+                while (d > 0 && cursor.Peek(i).Kind != TokenKind.Eof)
+                {
+                    var ki = cursor.Peek(i).Kind;
+                    if (ki == TokenKind.Lt) d++;
+                    else if (ki == TokenKind.Gt) d--;
+                    i++;
+                }
+                continue;
+            }
+            // Once we encounter an Identifier with `=` or `;` next, we have
+            // found the variable name.
+            if (k == TokenKind.Identifier
+                && cursor.Peek(i + 1).Kind is TokenKind.Eq or TokenKind.Semicolon)
+                return i > start;
+            // Continue walking through type tokens / `?` / `[]` / `,` / `Arrow`.
+            i++;
+        }
+        return false;
     }
 
     /// Consume an expected token or throw ParseException.
