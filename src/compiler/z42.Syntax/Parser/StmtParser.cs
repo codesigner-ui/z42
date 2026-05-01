@@ -128,6 +128,17 @@ internal static class StmtParser
             return entry.Fn(cursor, kw, feat);
         }
 
+        // 2a. Local function declaration: `Type Name(params) => expr;` or
+        //     `Type Name(params) { body }`. Must be checked BEFORE
+        //     `IsTypeAnnotatedVarDecl` since both start with `Type Identifier`,
+        //     and BEFORE the func-type var-decl path so we don't misinterpret
+        //     a local fn whose return type is `(T) -> R`.
+        //     See docs/design/closure.md §3.4 + impl-local-fn-l2 design.
+        if (IsLocalFunctionDecl(cursor))
+        {
+            return ParseLocalFunctionStmt(ref cursor, feat, span);
+        }
+
         // 2. Type-annotated local: `Type name = expr;` or `Type name;`
         if (IsTypeAnnotatedVarDecl(cursor))
         {
@@ -453,6 +464,88 @@ internal static class StmtParser
         // 终态：Identifier + (= | ;)
         return cursor.Peek(i).Kind == TokenKind.Identifier
             && cursor.Peek(i + 1).Kind is TokenKind.Eq or TokenKind.Semicolon;
+    }
+
+    /// Lookahead: is `cursor` pointing at a local-function declaration of the
+    /// form `Type Name(params) => expr;` or `Type Name(params) { body }`?
+    /// Distinguishes from var-decl (`Type Name = init;`) by the `(` after Name.
+    /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design.
+    private static bool IsLocalFunctionDecl(TokenCursor cursor)
+    {
+        // Skip the return type expression and check whether the next two
+        // tokens form `Identifier '('`. Two starting forms:
+        //   1) Type-keyword (`int`, `string`, generic, array, nullable): walk
+        //      via the same skip logic used by `IsTypeAnnotatedVarDecl`
+        //   2) Function-type return `(T) -> R`: walk to matching `)` then `->` then type
+        if (!TypeParser.IsTypeToken(cursor.Current.Kind)
+            && cursor.Current.Kind != TokenKind.LParen)
+            return false;
+
+        int i = SkipTypeExprForLookahead(cursor, 0);
+        if (i <= 0) return false;
+        return cursor.Peek(i).Kind == TokenKind.Identifier
+            && cursor.Peek(i + 1).Kind == TokenKind.LParen;
+    }
+
+    /// Walk a type expression from `cursor.Peek(start)` and return the index
+    /// just past it. Returns -1 if no valid type expression starts there.
+    /// Handles type-keyword + generics + array + nullable; also `(T) -> R`.
+    /// Bounded by Eof to avoid infinite loops.
+    private static int SkipTypeExprForLookahead(TokenCursor cursor, int start)
+    {
+        int i = start;
+        var first = cursor.Peek(i).Kind;
+
+        // Function type `(T) -> R` (possibly nested return)
+        if (first == TokenKind.LParen)
+        {
+            int depth = 1; i++;
+            while (depth > 0)
+            {
+                var k = cursor.Peek(i).Kind;
+                if (k == TokenKind.Eof) return -1;
+                if (k == TokenKind.LParen) depth++;
+                else if (k == TokenKind.RParen) depth--;
+                i++;
+            }
+            if (cursor.Peek(i).Kind != TokenKind.Arrow) return -1;
+            i++;
+            return SkipTypeExprForLookahead(cursor, i);
+        }
+
+        // Type-keyword (int / string / generic-class / etc.)
+        if (!TypeParser.IsTypeToken(first)) return -1;
+        i++;
+        // Optional `<T1, T2, ...>`
+        if (cursor.Peek(i).Kind == TokenKind.Lt)
+        {
+            int depth = 1; i++;
+            while (depth > 0 && cursor.Peek(i).Kind != TokenKind.Eof)
+            {
+                var k = cursor.Peek(i).Kind;
+                if (k == TokenKind.Lt) depth++;
+                else if (k == TokenKind.Gt) depth--;
+                i++;
+            }
+            if (depth != 0) return -1;
+        }
+        // Optional `?` then optional `[]`
+        if (cursor.Peek(i).Kind == TokenKind.Question) i++;
+        if (cursor.Peek(i).Kind == TokenKind.LBracket
+            && cursor.Peek(i + 1).Kind == TokenKind.RBracket)
+            i += 2;
+        return i;
+    }
+
+    /// Parse a local-function declaration as a statement. Caller must have
+    /// confirmed `IsLocalFunctionDecl(cursor)`.
+    /// Reuses `TopLevelParser.ParseFunctionDecl` so the body grammar (block,
+    /// expression body, etc.) stays consistent with top-level functions.
+    private static ParseResult<Stmt> ParseLocalFunctionStmt(
+        ref TokenCursor cursor, LanguageFeatures feat, Span span)
+    {
+        var decl = TopLevelParser.ParseFunctionDecl(ref cursor, feat, Visibility.Internal);
+        return ParseResult<Stmt>.Ok(new LocalFunctionStmt(decl, span), cursor);
     }
 
     /// Lookahead: is `cursor` (at `(`) pointing at a function-type-annotated

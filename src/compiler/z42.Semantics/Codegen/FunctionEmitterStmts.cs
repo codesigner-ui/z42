@@ -11,6 +11,19 @@ internal sealed partial class FunctionEmitter
 
     private void EmitBoundBlock(BoundBlock block)
     {
+        // Sibling pre-pass: register every BoundLocalFunction's lifted name
+        // BEFORE emitting any stmt so that mutually-referencing siblings and
+        // direct recursion resolve correctly inside lifted bodies.
+        // See impl-local-fn-l2 design Decision 7.
+        foreach (var stmt in block.Stmts)
+        {
+            if (stmt is BoundLocalFunction lfn
+                && !_localFnLiftedNames.ContainsKey(lfn.Name))
+            {
+                _localFnLiftedNames[lfn.Name] = $"{_currentFnQualName}__{lfn.Name}";
+            }
+        }
+
         foreach (var stmt in block.Stmts)
         {
             if (_blockEnded) break;
@@ -94,7 +107,27 @@ internal sealed partial class FunctionEmitter
             case BoundPinned p:
                 EmitBoundPinned(p);
                 break;
+
+            case BoundLocalFunction lfn:
+                EmitBoundLocalFunction(lfn);
+                break;
         }
+    }
+
+    /// L2 nested function declaration — emit a lifted module-level function
+    /// named `<Owner>__<LocalName>` and remember the mapping so calls within
+    /// the current function emit as direct `Call <lifted>`.
+    /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design.
+    private void EmitBoundLocalFunction(BoundLocalFunction lfn)
+    {
+        // Lifted name was already registered in the sibling pre-pass of
+        // `EmitBoundBlock`; re-fetch it for emission. The sub-emitter
+        // inherits the same lifted-name map so mutual recursion (and direct
+        // recursion) within the lifted body resolves correctly.
+        var liftedName = _localFnLiftedNames[lfn.Name];
+        var subEmitter = new FunctionEmitter(_ctx, _localFnLiftedNames);
+        var lifted     = subEmitter.EmitLiftedLocalFunction(liftedName, lfn);
+        _ctx.RegisterLiftedFunction(lifted);
     }
 
     /// Spec C5 — `pinned p = s { body }`:

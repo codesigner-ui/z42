@@ -125,7 +125,13 @@ internal sealed partial class FunctionEmitter
                 }
 
                 string callName;
-                if (_ctx.TopLevelFunctionNames.Contains(call.CalleeName!))
+                // impl-local-fn-l2: a call to a name defined as a local fn in
+                // the current emitter scope routes to its lifted module-level
+                // name (`<Owner>__<LocalName>`). Local fn shadows top-level.
+                if (call.CalleeName is { } cn0
+                    && _localFnLiftedNames.TryGetValue(cn0, out var liftedName))
+                    callName = liftedName;
+                else if (_ctx.TopLevelFunctionNames.Contains(call.CalleeName!))
                     callName = _ctx.QualifyName(call.CalleeName!);
                 else if (_currentClassName is not null
                     && _ctx.ClassRegistry.TryGetStaticMethods(

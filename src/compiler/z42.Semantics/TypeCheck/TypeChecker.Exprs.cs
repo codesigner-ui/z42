@@ -301,16 +301,22 @@ public sealed partial class TypeChecker
         var varType = env.LookupVar(id.Name);
         if (varType != null)
         {
-            // L2 no-capture check: when inside a lambda body, a local var that
-            // resolves through the lambda's *outer* env is a capture, which is
-            // an L3 feature. See docs/design/closure.md §10.
-            if (_lambdaOuterStack.Count > 0
-                && _lambdaOuterStack.Peek().LookupVar(id.Name) != null)
+            // L2 no-capture check: when inside a lambda or local-fn body, a
+            // local var must resolve via this body's own scope chain — *not*
+            // via the boundary (parent) scope. We skip the check when the
+            // name shadows in a nested scope (e.g. a local fn's own param of
+            // the same name as an outer param). See closure.md §10 +
+            // impl-local-fn-l2 design Decision 4.
+            if (_lambdaOuterStack.Count > 0)
             {
-                _diags.Error(DiagnosticCodes.FeatureDisabled,
-                    $"lambda capture of `{id.Name}` is not enabled in L2 — closure captures are an L3 feature (see docs/design/closure.md §10). Pass it as a parameter or use a static / global symbol instead.",
-                    id.Span);
-                return new BoundError($"capture of `{id.Name}` not allowed in L2", Z42Type.Error, id.Span);
+                var boundary = _lambdaOuterStack.Peek();
+                if (!env.ResolvesVarBelowBoundary(id.Name, boundary))
+                {
+                    _diags.Error(DiagnosticCodes.FeatureDisabled,
+                        $"lambda capture of `{id.Name}` is not enabled in L2 — closure captures are an L3 feature (see docs/design/closure.md §10). Pass it as a parameter or use a static / global symbol instead.",
+                        id.Span);
+                    return new BoundError($"capture of `{id.Name}` not allowed in L2", Z42Type.Error, id.Span);
+                }
             }
             return new BoundIdent(id.Name, varType, id.Span);
         }

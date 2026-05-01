@@ -287,6 +287,12 @@ public sealed record CatchClause(
 
 public sealed record ThrowStmt(Expr Value, Span Span) : Stmt(Span);
 
+/// Local (nested) function declaration, e.g.
+/// `int Outer() { int Helper(int x) => x * 2; return Helper(3); }`.
+/// L2 阶段不允许捕获外层 local 变量（捕获是 L3 闭包特性）。
+/// 见 docs/design/closure.md §3.4。
+public sealed record LocalFunctionStmt(FunctionDecl Decl, Span Span) : Stmt(Span);
+
 /// `pinned <Name> = <Source> { <Body> }` — borrows a `string` (and, in a
 /// follow-up spec, `byte[]`) buffer for the duration of `Body` so it can
 /// be passed to native code as a raw pointer + length pair. See spec C5

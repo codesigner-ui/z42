@@ -34,6 +34,12 @@ internal sealed partial class FunctionEmitter
     /// Fully-qualified name of the function currently being emitted. Used by
     /// `EmitLambdaLiteral` to compose lifted-lambda names. Set at every entry point.
     private string _currentFnQualName = "";
+    /// Maps a local-function's source-level name (`Helper`) to its lifted
+    /// module-level name (`Outer__Helper`). Populated by
+    /// `EmitBoundLocalFunction` so call sites within the current function
+    /// resolve directly to a static `Call`.
+    /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design Decision 7.
+    private readonly Dictionary<string, string> _localFnLiftedNames = new();
 
     // ── Debug line tracking ──────────────────────────────────────────────────
     private List<IrLineEntry> _lineTable = new();
@@ -41,6 +47,17 @@ internal sealed partial class FunctionEmitter
     private string? _sourceFile;
 
     internal FunctionEmitter(IEmitterContext ctx) => _ctx = ctx;
+
+    /// Construct a sub-emitter that inherits a parent's local-fn lifting map.
+    /// Used when emitting a lifted local function body so calls to *sibling*
+    /// local fns (incl. self for direct recursion) resolve to their lifted
+    /// names. See impl-local-fn-l2 design Decision 7.
+    internal FunctionEmitter(IEmitterContext ctx, IReadOnlyDictionary<string, string> parentLiftedNames)
+        : this(ctx)
+    {
+        foreach (var (k, v) in parentLiftedNames)
+            _localFnLiftedNames[k] = v;
+    }
 
     // ── Entry points ─────────────────────────────────────────────────────────
 

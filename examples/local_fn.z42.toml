@@ -1,0 +1,25 @@
+# local_fn.z42.toml — L2 local function 示例
+
+[project]
+version     = "0.1.0"
+description = "L2 nested function declaration demo"
+
+[sources]
+include = ["local_fn.z42"]
+
+[[exe]]
+name  = "local_fn"
+entry = "Demo.LocalFn.Main"
+
+[build]
+out_dir = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "interp"   # JIT lifted local fn 等 L3+
+optimize = 3
+strip    = true

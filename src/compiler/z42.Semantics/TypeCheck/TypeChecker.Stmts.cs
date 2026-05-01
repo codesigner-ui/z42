@@ -20,6 +20,26 @@ public sealed partial class TypeChecker
     private BoundBlock BindBlock(BlockStmt block, TypeEnv parent, Z42Type retType)
     {
         var scope = parent.PushScope();
+
+        // Pass 1 — pre-declare local functions so forward references and
+        // direct recursion work. See docs/design/closure.md §3.4 +
+        // impl-local-fn-l2 design Decision 2.
+        foreach (var stmt in block.Stmts)
+        {
+            if (stmt is LocalFunctionStmt lf)
+            {
+                var paramTypes = lf.Decl.Params.Select(p => ResolveType(p.Type)).ToList();
+                var sig        = new Z42FuncType(paramTypes, ResolveType(lf.Decl.ReturnType));
+                if (!scope.DefineLocalFunc(lf.Decl.Name, sig))
+                {
+                    _diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                        $"local function `{lf.Decl.Name}` is already declared in this block",
+                        lf.Span);
+                }
+            }
+        }
+
+        // Pass 2 — bind every statement.
         var stmts = new List<BoundStmt>(block.Stmts.Count);
         foreach (var stmt in block.Stmts)
             stmts.Add(BindStmt(stmt, scope, retType));
@@ -37,6 +57,9 @@ public sealed partial class TypeChecker
 
             case VarDeclStmt v:
                 return BindVarDecl(v, env);
+
+            case LocalFunctionStmt lf:
+                return BindLocalFunctionStmt(lf, env);
 
             case ReturnStmt r:
                 return BindReturn(r, env, retType);
@@ -236,6 +259,48 @@ public sealed partial class TypeChecker
 
         env.Define(v.Name, varType);
         return new BoundVarDecl(v.Name, varType, initBound, v.Span);
+    }
+
+    // ── Local function (impl-local-fn-l2) ─────────────────────────────────────
+
+    /// L2 nested function declaration. The signature has already been entered
+    /// into `env` during BindBlock pass 1 (forward reference / direct
+    /// recursion). This pass binds the body and rejects captures.
+    /// See docs/design/closure.md §3.4.
+    private BoundStmt BindLocalFunctionStmt(LocalFunctionStmt lf, TypeEnv env)
+    {
+        // L2 only allows one level of nesting; any further nesting is a
+        // capture-needing construct that belongs to L3.
+        if (_lambdaOuterStack.Count > 0)
+        {
+            _diags.Error(DiagnosticCodes.FeatureDisabled,
+                "nested local function is not allowed in L2 — nesting depth >1 requires L3 closure support; please move to a top-level function or wait for `impl-closure-l3`",
+                lf.Span);
+        }
+
+        var fnDecl = lf.Decl;
+        var paramTypes = fnDecl.Params.Select(p => ResolveType(p.Type)).ToList();
+        var retType    = ResolveType(fnDecl.ReturnType);
+
+        // Push body scope, bind parameters as locals.
+        var bodyEnv = env.PushScope();
+        for (int i = 0; i < fnDecl.Params.Count; i++)
+            bodyEnv.Define(fnDecl.Params[i].Name, paramTypes[i]);
+
+        // Push capture-boundary so BindIdent rejects refs to outer locals.
+        _lambdaOuterStack.Push(env);
+        BoundBlock body;
+        try
+        {
+            body = BindBlock(fnDecl.Body, bodyEnv, retType);
+        }
+        finally
+        {
+            _lambdaOuterStack.Pop();
+        }
+
+        var paramNames = fnDecl.Params.Select(p => p.Name).ToList();
+        return new BoundLocalFunction(fnDecl.Name, paramNames, paramTypes, retType, body, lf.Span);
     }
 
     // ── Return ────────────────────────────────────────────────────────────────

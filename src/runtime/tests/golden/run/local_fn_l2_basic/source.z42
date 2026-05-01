@@ -1,0 +1,50 @@
+// L2 local function (nested fn declaration) end-to-end demo.
+// See docs/design/closure.md §3.4 + spec/changes/impl-local-fn-l2/.
+//
+// 覆盖：
+//   • 简单 local fn（exp body / block body）
+//   • 直接递归
+//   • 前向引用（body 顶部调用 body 底部声明的 helper）
+//   • 多个 local fn 在同一个父函数内共存
+namespace Demo;
+using Std.IO;
+
+// 直接递归 local fn
+int FactCaller(int n) {
+    int Fact(int n) => n <= 1 ? 1 : n * Fact(n - 1);
+    return Fact(n);
+}
+
+// 前向引用：先声明的 helper 调用后声明的 helper（local fn 间互调）
+// 注意：L2 无捕获，所以 Use 必须通过参数接收外层值，不能直接捕获 x
+int ForwardRef(int x) {
+    int Use(int v) => Helper(v) + 100;
+    int Helper(int a) => a * 2;
+    return Use(x);
+}
+
+// 多 local fn 互调
+int MultiLocal(int x) {
+    int Double(int a) => a * 2;
+    int Triple(int a) => a * 3;
+    int Combine(int a) => Double(a) + Triple(a);   // 5*2 + 5*3 = 25
+    return Combine(x);
+}
+
+// Block-body local fn
+int BlockBody() {
+    int Compute(int x) {
+        var y = x * 2;
+        return y + 1;
+    }
+    return Compute(3);   // 7
+}
+
+void Main() {
+    Assert.Equal(120, FactCaller(5));     // 5! = 120
+    Assert.Equal(110, ForwardRef(5));     // 5*2 + 100 = 110
+    Assert.Equal(25,  MultiLocal(5));
+    Assert.Equal(7,   BlockBody());
+
+    Console.WriteLine("local fn l2 basic ok");
+}

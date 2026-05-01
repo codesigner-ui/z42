@@ -15,6 +15,10 @@ internal sealed class TypeEnv
     private readonly IReadOnlyDictionary<string, Z42ClassType>     _classes;  // global class table
     private readonly IReadOnlySet<string>                           _importedClassNames;
     private readonly Dictionary<string, Z42Type>                    _vars = new();
+    /// Local function signatures defined in this scope. Lexically scoped: a
+    /// `LookupLocalFunc` walks the parent chain. See docs/design/closure.md §3.4
+    /// + impl-local-fn-l2 design Decision 3.
+    private readonly Dictionary<string, Z42FuncType>                _localFuncs = new();
 
     /// The class currently being checked, or null for top-level functions.
     /// Immutable per scope — when entering a class, create a new env via <see cref="WithClass"/>.
@@ -68,6 +72,19 @@ internal sealed class TypeEnv
         return null;
     }
 
+    /// L2 capture detection helper: returns true if `name` resolves to a
+    /// variable in `this` scope or any descendant scope strictly **below**
+    /// (i.e. nearer than) `boundary`. Returns false if walking up reaches
+    /// `boundary` without finding the name (which means the name lives at
+    /// the boundary or above — i.e. it's a capture).
+    /// See docs/design/closure.md §10 + impl-local-fn-l2 design.
+    internal bool ResolvesVarBelowBoundary(string name, TypeEnv boundary)
+    {
+        if (ReferenceEquals(this, boundary)) return false;
+        if (_vars.ContainsKey(name)) return true;
+        return _parent != null && _parent.ResolvesVarBelowBoundary(name, boundary);
+    }
+
     /// Returns true if <paramref name="name"/> refers to a class (local or imported).
     /// Use this to distinguish "undefined variable" from "this is a type reference"
     /// when <see cref="LookupVar"/> returns null.
@@ -76,8 +93,37 @@ internal sealed class TypeEnv
 
     // ── Function operations ───────────────────────────────────────────────────
 
-    internal Z42FuncType? LookupFunc(string name) =>
-        _funcs.TryGetValue(name, out var f) ? f : null;
+    /// Lookup a function: prefer scope-local definitions (lexically nearest)
+    /// before falling back to the module-level global function table.
+    /// Local fn lookup is part of `impl-local-fn-l2` (see closure.md §3.4).
+    internal Z42FuncType? LookupFunc(string name)
+    {
+        if (_localFuncs.TryGetValue(name, out var lf)) return lf;
+        if (_parent != null)
+        {
+            var fromParent = _parent.LookupFunc(name);
+            if (fromParent != null) return fromParent;
+        }
+        return _funcs.TryGetValue(name, out var f) ? f : null;
+    }
+
+    /// Define a local function in this scope. Returns false if the name is
+    /// already defined in this scope (caller should report duplicate-decl).
+    internal bool DefineLocalFunc(string name, Z42FuncType sig)
+    {
+        if (_localFuncs.ContainsKey(name)) return false;
+        _localFuncs[name] = sig;
+        return true;
+    }
+
+    /// Returns true if `name` is a local function defined in *this* scope or any
+    /// ancestor scope (i.e. not the module-level global table). Used by Codegen
+    /// to disambiguate `Call` sites without a separate IEmitterContext API.
+    internal bool IsLocalFunc(string name)
+    {
+        if (_localFuncs.ContainsKey(name)) return true;
+        return _parent != null && _parent.IsLocalFunc(name);
+    }
 
     // ── Class operations ──────────────────────────────────────────────────────
 

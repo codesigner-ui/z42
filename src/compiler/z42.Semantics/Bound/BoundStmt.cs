@@ -91,6 +91,21 @@ public sealed record BoundCatchClause(string? VarName, BoundBlock Body, Span Spa
 
 public sealed record BoundThrow(BoundExpr Value, Span Span) : BoundStmt(Span);
 
+// ── Local function (impl-local-fn-l2) ────────────────────────────────────────
+
+/// L2 nested function declaration (no captures). Lifted to a module-level
+/// function during IrGen with name `<Owner>__<LocalName>`. Local fn bodies
+/// are bound as if they were independent functions; capture of outer-scope
+/// locals is rejected via the L2 capture-boundary check (Z0301).
+/// See docs/design/closure.md §3.4.
+public sealed record BoundLocalFunction(
+    string Name,
+    IReadOnlyList<string> ParamNames,
+    IReadOnlyList<Z42Type> ParamTypes,
+    Z42Type RetType,
+    BoundBlock Body,
+    Span Span) : BoundStmt(Span);
+
 // ── Pinned (spec C5) ────────────────────────────────────────────────────────
 
 /// `pinned <Name> = <Source> { <Body> }` — Tier 1 native-interop borrow.

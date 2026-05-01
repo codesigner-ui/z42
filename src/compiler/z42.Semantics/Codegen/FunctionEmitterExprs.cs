@@ -175,6 +175,31 @@ internal sealed partial class FunctionEmitter
         return dst;
     }
 
+    /// L2 local function lifting (impl-local-fn-l2): emit a `BoundLocalFunction`
+    /// as a standalone module-level IrFunction. Naming and emit pattern mirror
+    /// `EmitLifted` for lambdas; the difference is that local fn callers know
+    /// the lifted name statically and emit `Call` (not `LoadFn`/`CallIndirect`).
+    internal IrFunction EmitLiftedLocalFunction(string liftedQualName, BoundLocalFunction lfn)
+    {
+        _currentClassName = null;
+        _currentFnQualName = liftedQualName;
+        _sourceFile = lfn.Span.File;
+        _nextReg = lfn.ParamNames.Count;
+
+        StartBlock("entry");
+        for (int i = 0; i < lfn.ParamNames.Count; i++)
+            _locals[lfn.ParamNames[i]] = new TypedReg(i, ToIrType(lfn.ParamTypes[i]));
+
+        EmitBoundBlock(lfn.Body);
+        if (!_blockEnded) EndBlock(new RetTerm(null));
+
+        var retName  = lfn.RetType == Z42Type.Void ? "void" : lfn.RetType.ToString() ?? "object";
+        var lineTbl  = _lineTable.Count > 0 ? _lineTable : null;
+        var localTbl = SnapshotLocalVarTable();
+        return new IrFunction(liftedQualName, lfn.ParamNames.Count, retName,
+            "Interp", _blocks, null, MaxReg: _nextReg, LineTable: lineTbl, LocalVarTable: localTbl);
+    }
+
     /// Emit a lifted lambda body as a standalone IrFunction. Mirrors the
     /// shape of `EmitFunction` but takes its params/body from a `BoundLambda`.
     internal IrFunction EmitLifted(string liftedQualName, BoundLambda lambda)
