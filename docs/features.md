@@ -117,6 +117,8 @@ Call-site argument labeling: `Greet(name: "z42", prefix: "Hi")`.
 ### Lambda & Closures (L3)
 Anonymous functions assigned to `Func<>` / `Action<>` delegate types. Closures capture variables from the enclosing scope.
 
+Lambda 是 delegate / event 体系的前置依赖；完整 delegate / 多播 / event / 订阅策略 wrapper 设计见 [docs/design/delegates-events.md](design/delegates-events.md)。
+
 **Phase:** L3
 
 ---
