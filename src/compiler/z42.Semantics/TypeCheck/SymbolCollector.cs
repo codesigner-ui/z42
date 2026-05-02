@@ -289,11 +289,17 @@ public sealed partial class SymbolCollector : ISymbolBinder
             "ushort"          => Z42Type.U16,
             "uint"            => Z42Type.U32,
             "ulong"           => Z42Type.U64,
+            // 2026-05-02 add-delegate-type: 用户声明的非泛型 delegate → Z42FuncType
+            _ when _delegates.TryGetValue(nt.Name, out var di) && di.TypeParams.Count == 0
+                              => di.Signature,
             _                 => _enumTypes.Contains(nt.Name)                 ? new Z42EnumType(nt.Name)
                                : _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
                                : _interfaces.TryGetValue(nt.Name, out var it) ? it
                                : new Z42PrimType(nt.Name),
         },
+        GenericType gt when _delegates.TryGetValue($"{gt.Name}${gt.TypeArgs.Count}", out var dgi)
+                            && dgi.TypeParams.Count == gt.TypeArgs.Count
+                       => InstantiateGenericDelegate(dgi, gt.TypeArgs.Select(ResolveType).ToList()),
         GenericType gt => gt.Name switch
         {
             "List"       => new Z42PrimType("List"),
@@ -334,6 +340,18 @@ public sealed partial class SymbolCollector : ISymbolBinder
     };
 
     // ── Signature building (no default binding) ──────────────────────────────
+
+    /// 2026-05-02 add-delegate-type: generic delegate 实例化。把 DelegateInfo
+    /// 中的 Z42GenericParamType 占位（"T" / "R" 等）按对应类型参数下标替换为
+    /// 具体类型。复用 `TypeChecker.SubstituteTypeParams`（同 generic class / func
+    /// 路径）。
+    private Z42Type InstantiateGenericDelegate(DelegateInfo info, IReadOnlyList<Z42Type> typeArgs)
+    {
+        var subMap = new Dictionary<string, Z42Type>(info.TypeParams.Count);
+        for (int i = 0; i < info.TypeParams.Count; i++)
+            subMap[info.TypeParams[i]] = typeArgs[i];
+        return TypeChecker.SubstituteTypeParams(info.Signature, subMap);
+    }
 
     /// Build a Z42FuncType from parameter types + return type.
     /// Computes RequiredCount from `p.Default != null` — does NOT bind default expressions.

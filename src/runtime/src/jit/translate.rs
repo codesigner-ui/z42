@@ -74,6 +74,8 @@ pub struct HelperIds {
     pub load_fn:        FuncId,
     pub mk_clos:        FuncId,
     pub call_indirect:  FuncId,
+    // D1b add-method-group-conversion: cached method group conversion
+    pub load_fn_cached: FuncId,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -161,6 +163,8 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         mk_clos:        decl!("jit_mk_clos",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t, i8t], [i8t]),
         // jit_call_indirect(frame, ctx, dst, callee, args_ptr, args_len) -> u8
         call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t],            [i8t]),
+        // jit_load_fn_cached(frame, ctx, dst, name_ptr, name_len, slot_id) -> u8
+        load_fn_cached: decl!("jit_load_fn_cached", [ptr, ptr, i32t, ptr, i64t, i32t],           [i8t]),
     })
 }
 
@@ -232,6 +236,7 @@ pub fn max_reg(func: &Function) -> usize {
                 // correctly so reg-allocation stays sound; translation falls
                 // back to interp mode (see translate.rs match below).
                 Instruction::LoadFn       { dst, .. } => Some(*dst),
+                Instruction::LoadFnCached { dst, .. } => Some(*dst),
                 Instruction::CallIndirect { dst, .. } => Some(*dst),
                 Instruction::MkClos       { dst, .. } => Some(*dst),
             };
@@ -354,6 +359,7 @@ pub fn translate_function(
     let hr_load_fn       = imp!(helper_ids.load_fn);
     let hr_mk_clos       = imp!(helper_ids.mk_clos);
     let hr_call_indirect = imp!(helper_ids.call_indirect);
+    let hr_load_fn_cached = imp!(helper_ids.load_fn_cached);
 
     // ── Translate each z42 block ──────────────────────────────────────────────
     for (block_idx, z42_block) in z42_func.blocks.iter().enumerate() {
@@ -722,6 +728,15 @@ pub fn translate_function(
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(func);
                     let inst = builder.ins().call(hr_load_fn, &[frame_val, ctx_val, d, np, nl]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                }
+                // 2026-05-02 D1b: cached method group conversion
+                Instruction::LoadFnCached { dst, func, slot_id } => {
+                    let d = ri!(*dst);
+                    let (np, nl) = str_val!(func);
+                    let sid = builder.ins().iconst(types::I32, *slot_id as i64);
+                    let inst = builder.ins().call(hr_load_fn_cached,
+                        &[frame_val, ctx_val, d, np, nl, sid]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {

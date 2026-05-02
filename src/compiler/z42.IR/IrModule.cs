@@ -30,7 +30,12 @@ public sealed record IrModule(
     /// only when non-empty (writer skips section when null/empty; reader returns
     /// empty list when section absent). Default null preserves backward
     /// compatibility with all existing callers.</summary>
-    IReadOnlyList<TestEntry>? TestIndex = null);
+    IReadOnlyList<TestEntry>? TestIndex = null,
+    /// <summary>D1b (add-method-group-conversion) — number of module-level
+    /// FuncRef cache slots required by <c>LoadFnCached</c> instructions. VM
+    /// pre-allocates a Vec&lt;Value&gt; of this size at module load time.
+    /// Zero / unset for modules without method group conversions.</summary>
+    int FuncRefCacheSlotCount = 0);
 
 // ── Class descriptor ──────────────────────────────────────────────────────────
 
@@ -145,6 +150,12 @@ public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args
 /// literal lowers to this instruction with `Func` pointing at a lifted function.
 /// See docs/design/closure.md §6 + ir.md.
 public sealed record LoadFnInstr(TypedReg Dst, string Func) : IrInstr;
+
+/// 2026-05-02 add-method-group-conversion (D1b — I12 优化)：在 module-level
+/// static slot 缓存 `Value::FuncRef(Func)`。首次执行时构造 + 写入 slot；后续
+/// hit 直接 load。`SlotId` 由 IrGen 全模块去重分配（同 fn name 共享 slot）。
+/// 与 LoadFnInstr 行为等价，只是消除了 String 重新分配开销。
+public sealed record LoadFnCachedInstr(TypedReg Dst, string Func, uint SlotId) : IrInstr;
 /// Indirect call: invoke a function via a `FuncRef`-typed register. Used when
 /// a local variable holds a lambda or function reference. Args follow the
 /// same convention as `CallInstr`. See docs/design/closure.md §6.

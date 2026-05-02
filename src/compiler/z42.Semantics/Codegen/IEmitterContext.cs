@@ -53,4 +53,10 @@ internal interface IEmitterContext
     /// returned index is monotonically increasing per container; the IR emitter
     /// composes the lifted name as `<containerName>__lambda_<index>`.
     int NextLambdaIndex(string containerName);
+
+    /// 2026-05-02 add-method-group-conversion (D1b): allocate a module-level
+    /// FuncRef cache slot for a fully-qualified function / static-method name.
+    /// Shared across all call sites of the same `fqName` (去重 — design.md
+    /// Decision 1). Returned slot id is consumed by `LoadFnCachedInstr`.
+    int GetOrAllocFuncRefSlot(string fqName);
 }

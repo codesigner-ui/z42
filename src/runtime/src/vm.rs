@@ -28,6 +28,11 @@ impl Vm {
     pub fn run(&self, ctx: &mut VmContext, hint: Option<&str>) -> Result<()> {
         let entry_name = self.resolve_entry(hint)?;
 
+        // 2026-05-02 add-method-group-conversion (D1b): pre-allocate the FuncRef
+        // cache slots needed by `LoadFnCached` instructions for this module's
+        // global slot range.
+        ctx.alloc_func_ref_slots(self.module.func_ref_cache_slots);
+
         let entry = self
             .module
             .functions

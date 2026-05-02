@@ -44,6 +44,10 @@ public static partial class ZbcReader
         var testIndex      = ReadSection(data, dir, SectionTags.Tidx,
                                          sec => ReadTidxSection(sec),
                                          (IReadOnlyList<TestEntry>)Array.Empty<TestEntry>());
+        // 2026-05-02 add-method-group-conversion (D1b)
+        int funcRefCacheSlots = ReadSection(data, dir, SectionTags.Frcs,
+                                         sec => (int)BitConverter.ToUInt32(sec, 0),
+                                         0);
 
         // ── Reconstruct functions ─────────────────────────────────────────────
         var functions = new List<IrFunction>(funcBodies.Count);
@@ -72,7 +76,8 @@ public static partial class ZbcReader
             BuildStringPool(pool, functions),
             classes,
             functions,
-            TestIndex: testIndex.Count > 0 ? testIndex : null);
+            TestIndex: testIndex.Count > 0 ? testIndex : null,
+            FuncRefCacheSlotCount: funcRefCacheSlots);
     }
 
     /// <summary>

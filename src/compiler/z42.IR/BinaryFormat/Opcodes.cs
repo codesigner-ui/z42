@@ -54,6 +54,7 @@ public static class Opcodes
     public const byte LoadFn           = 0x55;  // push a function reference onto the operand stack (L2 no-capture lambda)
     public const byte CallIndirect     = 0x56;  // call via a FuncRef-typed register (L2 no-capture lambda)
     public const byte MkClos           = 0x57;  // allocate heap env + construct closure (L3 capture path)
+    public const byte LoadFnCached     = 0x58;  // method group conversion w/ module-level FuncRef cache slot (D1b)
 
     // ── Fields (0x60–0x6F) ────────────────────────────────────────────────────
     public const byte FieldGet  = 0x60;
@@ -212,6 +213,7 @@ public static class SectionTags
     // ── Optional ─────────────────────────────────────────────────────────────
     public static readonly byte[] Dbug = "DBUG"u8.ToArray();  // debug info
     public static readonly byte[] Tidx = "TIDX"u8.ToArray();  // R1: compile-time test metadata
+    public static readonly byte[] Frcs = "FRCS"u8.ToArray();  // D1b: FuncRef cache slot count (single u32)
 
     public static bool Equals(ReadOnlySpan<byte> a, byte[] b) =>
         a.SequenceEqual(b);

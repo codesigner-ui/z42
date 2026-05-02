@@ -75,8 +75,12 @@ internal sealed partial class FunctionEmitter
                 if (id.Type is Z42FuncType
                     && _ctx.TopLevelFunctionNames.Contains(id.Name))
                 {
+                    // 2026-05-02 D1b: 顶层函数方法组转换 → LoadFnCached
+                    //（共享 module-level cache slot；同 fn name 跨多 site 复用）
                     var dst = Alloc(IrType.Ref);
-                    Emit(new LoadFnInstr(dst, _ctx.QualifyName(id.Name)));
+                    var fq  = _ctx.QualifyName(id.Name);
+                    var slot = _ctx.GetOrAllocFuncRefSlot(fq);
+                    Emit(new LoadFnCachedInstr(dst, fq, (uint)slot));
                     return dst;
                 }
                 if (id.Type is Z42FuncType
@@ -85,9 +89,11 @@ internal sealed partial class FunctionEmitter
                         _ctx.QualifyName(_currentClassName), out var staticSet)
                     && staticSet.Contains(id.Name))
                 {
+                    // 2026-05-02 D1b: 静态方法方法组转换 → LoadFnCached
                     var dst = Alloc(IrType.Ref);
-                    Emit(new LoadFnInstr(dst,
-                        $"{_ctx.QualifyName(_currentClassName)}.{id.Name}"));
+                    var fq  = $"{_ctx.QualifyName(_currentClassName)}.{id.Name}";
+                    var slot = _ctx.GetOrAllocFuncRefSlot(fq);
+                    Emit(new LoadFnCachedInstr(dst, fq, (uint)slot));
                     return dst;
                 }
                 throw new InvalidOperationException($"undefined variable `{id.Name}`");

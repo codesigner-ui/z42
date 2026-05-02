@@ -1,0 +1,25 @@
+// 2026-05-02 add-method-group-conversion (D1b) regression golden.
+// 验证：方法组转换的运行时正确性 + 多次调用 + 跨函数调用同 slot 共享
+namespace Demo;
+using Std.IO;
+
+public delegate int IntFn0();
+public delegate int IntFn1(int x);
+
+int Helper() { return 42; }
+int Square(int x) { return x * x; }
+
+void DoCall(IntFn0 f) { Console.WriteLine(f()); }
+
+void Main() {
+    IntFn0 a = Helper;
+    Console.WriteLine(a());        // 42
+    Console.WriteLine(a());        // 42 — slot hit
+
+    IntFn1 sq = Square;
+    Console.WriteLine(sq(5));      // 25
+    Console.WriteLine(sq(6));      // 36
+
+    DoCall(Helper);                // 42
+    DoCall(Helper);                // 42
+}

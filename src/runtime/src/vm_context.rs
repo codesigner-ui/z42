@@ -79,6 +79,11 @@ pub struct VmContext {
     /// regs + env_arena）。SAFETY 与 exec_stack 一致：raw ptr 由 FrameGuard RAII 保证
     /// 在 frame 还活时有效。frame 不持 stack closure 时这里 push null pointer。
     pub(crate) env_arena_stack:   Rc<RefCell<Vec<*const Vec<Vec<Value>>>>>,
+    /// 2026-05-02 add-method-group-conversion (D1b): module-level FuncRef cache
+    /// slots. `LoadFnCached { slot_id }` 首次执行时把 `Value::FuncRef(name)`
+    /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。Slot id 在
+    /// `merge_modules` 阶段已 remap 到全局 index space。
+    pub(crate) func_ref_slots:    Rc<RefCell<Vec<Value>>>,
     pub(crate) heap:              Box<dyn MagrGC>,
 
     /// Native interop Tier 1 — registered native types keyed by
@@ -109,6 +114,7 @@ impl VmContext {
         let lazy_loader       = Rc::new(RefCell::new(None));
         let exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>> = Rc::new(RefCell::new(Vec::new()));
         let env_arena_stack: Rc<RefCell<Vec<*const Vec<Vec<Value>>>>> = Rc::new(RefCell::new(Vec::new()));
+        let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
 
         // Phase 3d.1 + 3f: 注入 external root scanner 闭包，让 cycle collector mark
         // 阶段把 static_fields + pending_exception + interp exec_stack frame regs
@@ -120,6 +126,7 @@ impl VmContext {
             let pe = pending_exception.clone();
             let es = exec_stack.clone();
             let eas = env_arena_stack.clone();
+            let frs = func_ref_slots.clone();
             heap.set_external_root_scanner(Box::new(move |visit| {
                 // 1. static_fields
                 for v in sf.borrow().values() {
@@ -156,6 +163,10 @@ impl VmContext {
                         }
                     }
                 }
+                // 5. method group conversion cache slots（D1b）
+                for v in frs.borrow().iter() {
+                    visit(v);
+                }
             }));
         }
 
@@ -165,6 +176,7 @@ impl VmContext {
             lazy_loader,
             exec_stack,
             env_arena_stack,
+            func_ref_slots,
             heap: Box::new(heap),
             native_types: Rc::new(RefCell::new(HashMap::new())),
             native_libs:  Rc::new(RefCell::new(Vec::new())),
@@ -249,6 +261,34 @@ impl VmContext {
     /// Push current frame's regs pointer onto exec_stack, used by GC root
     /// scanning. Caller must guarantee pointer stays valid until matching
     /// `pop_frame_regs()` (typically via `FrameGuard` RAII).
+    /// 2026-05-02 add-method-group-conversion (D1b): ensure VmContext has at
+    /// least `n` FuncRef cache slots allocated. Idempotent — only grows.
+    pub fn alloc_func_ref_slots(&self, n: u32) {
+        let mut s = self.func_ref_slots.borrow_mut();
+        if s.len() < n as usize {
+            s.resize(n as usize, Value::Null);
+        }
+    }
+
+    /// LoadFnCached read: returns slot value, or `Value::Null` if uninitialised
+    /// (caller's responsibility to fill on first miss). Bounds-checked.
+    pub(crate) fn func_ref_slot(&self, idx: u32) -> Value {
+        self.func_ref_slots
+            .borrow()
+            .get(idx as usize)
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    /// LoadFnCached write: store a `Value::FuncRef` into the slot for future hits.
+    pub(crate) fn set_func_ref_slot(&self, idx: u32, value: Value) {
+        let mut s = self.func_ref_slots.borrow_mut();
+        if (idx as usize) >= s.len() {
+            s.resize((idx as usize) + 1, Value::Null);
+        }
+        s[idx as usize] = value;
+    }
+
     /// 2026-05-02 impl-closure-l3-escape-stack: push frame regs + env_arena
     /// pointers atomically. 调用方需保证 raw ptr 在配对的 pop_frame_regs 之前
     /// 不失效（典型由 `FrameGuard` RAII 保证）。env_arena 可以是 null（frame

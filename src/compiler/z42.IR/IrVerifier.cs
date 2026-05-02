@@ -149,6 +149,7 @@ public static class IrVerifier
         ToStrInstr      i => i.Dst,
         CallInstr       i => i.Dst,
         LoadFnInstr     i => i.Dst,
+        LoadFnCachedInstr i => i.Dst,
         CallIndirectInstr i => i.Dst,
         MkClosInstr     i => i.Dst,
         BuiltinInstr    i => i.Dst,

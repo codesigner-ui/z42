@@ -161,6 +161,7 @@
 | 2026-05-02 | `impl-closure-l3-monomorphize` | 闭包单态化（alias 子集）：`var f = Helper; f();` 由 CallIndirect → 直接 Call；alias 链传播；带捕获 closure / 函数参数保守 fallback CallIndirect。前置补齐：BoundIdent → LoadFn 路径覆盖顶层函数 / 静态方法 ident 解析。详见 closure.md §6.4.1 |
 | 2026-05-02 | `impl-closure-l3-escape-stack` | 闭包 env 栈分配（档 A 子集）：仅作 callee 立即调用的 capturing closure 由 heap MkClos → frame-local arena (`Value::StackClosure`)。新增 zbc MkClos 1-byte stack_alloc flag、`InterpFrame/JitFrame.env_arena`、`VmContext.env_arena_stack` GC root、`ClosureEscapeAnalyzer` Bound pass。保守优先：任何 escape 风险 fallback heap。详见 closure.md §6.0.1 |
 | 2026-05-02 | `add-delegate-type` (D1a) | 引入 `delegate` 关键字：顶层 + 嵌套（class body 内）+ 泛型 `<T,R>` + where 约束。delegate 类型 = `Z42FuncType` 复用，无新 IR / VM 路径。`SymbolTable.Delegates` + `DelegateInfo` 注册表；同名多 arity 用 `Foo$N` key。`delegate*` unmanaged 语法预留报错。详见 delegates-events.md |
+| 2026-05-02 | `add-method-group-conversion` (D1b) | 方法组转换 I12 缓存：`IntFn f = Helper;` 由 `LoadFn`（每次新 `Value::FuncRef`）→ `LoadFnCached`（module-level cache slot）。新增 IR opcode `0x58` + zbc `FRCS` section + `VmContext.func_ref_slots: Vec<Value>` GC root。同 fn name 跨多 site 共享 slot；merge_modules 按 cumulative slot offset 重映射。详见 delegates-events.md D6 / I12 改进项 |
 
 ### 代码质量 Backlog（按触发条件执行）
 

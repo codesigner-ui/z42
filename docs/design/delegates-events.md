@@ -1,6 +1,6 @@
 # z42 Delegates & Events 设计
 
-> **状态**：D1a 已落地（2026-05-02）：`delegate` 关键字 + 顶层 / 嵌套 / 泛型 / where 约束 + 单播 Invoke。D1b/D1c/D2 待实施。
+> **状态**：D1a + D1b 已落地（2026-05-02）：`delegate` 关键字 + 顶层 / 嵌套 / 泛型 / where 约束 + 单播 Invoke + 方法组转换 I12 缓存。D1c/D2 待实施。
 > **历史状态**：L2/L3 前瞻性设计草案（2026-05-01 定稿）
 > **定位**：与 `generics.md` / `concurrency.md` / `static-abstract-interface.md` 同级 — 长期规范，等具体 spec/changes/ 启动时实施
 > **参考**：C# delegate/event（视觉与心智蓝本）+ Rust/Kotlin/Swift（单播/多播分离）+ Rx/Combine `Subject` 体系（订阅策略 wrapper）

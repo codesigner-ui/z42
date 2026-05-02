@@ -42,6 +42,12 @@ public sealed class IrGen : IEmitterContext
     private readonly List<IrFunction> _liftedFunctions = new();
     private readonly Dictionary<string, int> _lambdaCounters = new();
 
+    // 2026-05-02 add-method-group-conversion (D1b): module-level FuncRef
+    // cache slot allocator. Same fully-qualified function name shares one
+    // slot across all call sites (design Decision 1).
+    private readonly Dictionary<string, int> _funcRefSlots = new(StringComparer.Ordinal);
+    private int _nextFuncRefSlotId = 0;
+
     // ── IEmitterContext explicit implementation ──────────────────────────────
     ClassRegistry IEmitterContext.ClassRegistry => _classRegistry;
     SemanticModel IEmitterContext.SemanticModel => _semanticModel!;
@@ -70,6 +76,14 @@ public sealed class IrGen : IEmitterContext
         }
         _lambdaCounters[containerName] = 1;
         return 0;
+    }
+
+    int IEmitterContext.GetOrAllocFuncRefSlot(string fqName)
+    {
+        if (_funcRefSlots.TryGetValue(fqName, out var id)) return id;
+        var allocated = _nextFuncRefSlotId++;
+        _funcRefSlots[fqName] = allocated;
+        return allocated;
     }
     string IEmitterContext.QualifyClassName(string className)
     {
@@ -216,7 +230,8 @@ public sealed class IrGen : IEmitterContext
         var testIndex = BuildTestIndex(cu, functions);
 
         var module = new IrModule(cu.Namespace ?? "main", _strings, classes, functions,
-            TestIndex: testIndex.Count > 0 ? testIndex : null);
+            TestIndex: testIndex.Count > 0 ? testIndex : null,
+            FuncRefCacheSlotCount: _nextFuncRefSlotId);
         IrVerifier.VerifyOrThrow(module);
         return module;
     }

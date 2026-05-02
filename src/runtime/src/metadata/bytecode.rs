@@ -22,6 +22,11 @@ pub struct Module {
     /// Populated by the loader after deserialisation.
     #[serde(skip)]
     pub func_index: HashMap<String, usize>,
+    /// 2026-05-02 add-method-group-conversion (D1b): number of FuncRef cache
+    /// slots required by `LoadFnCached` instructions. VM allocates a parallel
+    /// `Vec<Value>` of this size on `VmContext` at module load.
+    #[serde(default)]
+    pub func_ref_cache_slots: u32,
 }
 
 /// Class descriptor — field layout for object allocation.
@@ -314,6 +319,15 @@ pub enum Instruction {
     LoadFn {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         func: String,
+    },
+    /// 2026-05-02 add-method-group-conversion (D1b): cached method group
+    /// conversion. First execution stores `Value::FuncRef(func)` into VmContext
+    /// `func_ref_slots[slot_id]`; subsequent hits read from slot. Same fully-
+    /// qualified `func` shares a `slot_id` across all call sites in a module.
+    LoadFnCached {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        func: String,
+        slot_id: u32,
     },
     /// Indirect call via a register holding a `FuncRef` value. See
     /// docs/design/closure.md §6.

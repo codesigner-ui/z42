@@ -164,6 +164,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     reg!("jit_static_set",    helpers_object::jit_static_set);
     // helpers_closure: L3 closure construction + indirect dispatch
     reg!("jit_load_fn",       helpers_closure::jit_load_fn);
+    reg!("jit_load_fn_cached", helpers_closure::jit_load_fn_cached);
     reg!("jit_mk_clos",       helpers_closure::jit_mk_clos);
     reg!("jit_call_indirect", helpers_closure::jit_call_indirect);
 

@@ -87,6 +87,12 @@ public static partial class ZbcReader
                 var fn = P(pool, r.ReadUInt32());
                 return new LoadFnInstr(d, fn);
             }
+            case Opcodes.LoadFnCached:
+            {
+                var fn     = P(pool, r.ReadUInt32());
+                var slotId = r.ReadUInt32();
+                return new LoadFnCachedInstr(d, fn, slotId);
+            }
             case Opcodes.CallIndirect:
             {
                 var callee = RU(r.ReadUInt16());

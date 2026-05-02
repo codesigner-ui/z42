@@ -93,6 +93,17 @@ public static partial class ZbcWriter
                 // ConstStr uses.
                 sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex, strRemap)));
             }
+
+            // 2026-05-02 add-method-group-conversion (D1b): FRCS section holds
+            // the FuncRef cache slot count as a single u32. Emitted only when
+            // > 0; absent section means 0 slots required.
+            if (module.FuncRefCacheSlotCount > 0)
+            {
+                using var fms = new MemoryStream();
+                using var fbw = new BinaryWriter(fms);
+                fbw.Write((uint)module.FuncRefCacheSlotCount);
+                sections.Add((SectionTags.Frcs, fms.ToArray()));
+            }
         }
 
         return AssembleFile(flags, sections);

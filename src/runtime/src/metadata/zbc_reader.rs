@@ -66,6 +66,7 @@ const OP_CALL_NATIVE_VTABLE: u8  = 0x54;
 const OP_LOAD_FN: u8             = 0x55;
 const OP_CALL_INDIRECT: u8       = 0x56;
 const OP_MK_CLOS: u8             = 0x57;
+const OP_LOAD_FN_CACHED: u8      = 0x58;  // D1b add-method-group-conversion
 
 const OP_FIELD_GET: u8   = 0x60;
 const OP_FIELD_SET: u8   = 0x61;
@@ -524,6 +525,11 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             let func = pool_str_owned(pool, c.read_u32()?)?;
             Instruction::LoadFn { dst, func }
         }
+        OP_LOAD_FN_CACHED => {
+            let func    = pool_str_owned(pool, c.read_u32()?)?;
+            let slot_id = c.read_u32()?;
+            Instruction::LoadFnCached { dst, func, slot_id }
+        }
         OP_CALL_INDIRECT => {
             let callee = c.read_u16()? as u32;
             let args   = read_args(c)?;
@@ -737,7 +743,18 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
 
     let name = if namespace.is_empty() { "unknown".to_owned() } else { namespace };
     let string_pool = rebuild_string_pool(&pool_raw, &mut functions);
-    Ok(Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new(), func_index: std::collections::HashMap::new() })
+    // 2026-05-02 add-method-group-conversion (D1b): FRCS section holds the
+    // FuncRef cache slot count (u32). Absent / empty → 0.
+    let func_ref_cache_slots = get_section(data, &dir, b"FRCS")
+        .filter(|s| s.len() >= 4)
+        .map(|s| u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
+        .unwrap_or(0);
+    Ok(Module {
+        name, string_pool, classes, functions,
+        type_registry: std::collections::HashMap::new(),
+        func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots,
+    })
 }
 
 /// Spec R1 — read the optional TIDX section from a zbc file. Returns an empty
@@ -964,7 +981,17 @@ fn read_mods_section(
 
         let name = if namespace.is_empty() { "unknown".to_owned() } else { namespace.clone() };
         let string_pool = rebuild_string_pool(pool, &mut functions);
-        result.push((Module { name, string_pool, classes, functions, type_registry: std::collections::HashMap::new(), func_index: std::collections::HashMap::new() }, namespace));
+        // 2026-05-02 D1b: zpkg packed-mode 暂不支持 method group cache slot
+        // metadata（FRCS section 是 module-level；packed zpkg 的多 module 模式
+        // 需要后续扩展 MODS 携带 per-module slot count）。当前 fallback 为 0；
+        // zpkg 内的 LoadFnCached 命中会触发 OOB → bail（运行时报错）。视
+        // packed zpkg 是否实际命中 LoadFnCached 决定 follow-up。
+        result.push((Module {
+            name, string_pool, classes, functions,
+            type_registry: std::collections::HashMap::new(),
+            func_index: std::collections::HashMap::new(),
+            func_ref_cache_slots: 0,
+        }, namespace));
 
         sig_offset += func_count;
         let _ = sig_offset; // used for validation if needed
