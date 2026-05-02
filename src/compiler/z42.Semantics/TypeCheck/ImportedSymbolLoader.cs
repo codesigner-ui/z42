@@ -182,8 +182,46 @@ public static class ImportedSymbolLoader
             }
         }
 
+        // 2026-05-02 add-generic-delegates (D1c): collect imported delegate types.
+        // Single-pass — delegate signatures only reference primitives /
+        // already-resolved imported classes/interfaces / generic params (no
+        // self-reference forward issues). Same key style as
+        // SymbolTable.Delegates: simple key + arity-suffix + qualified for nested.
+        var delegates = new Dictionary<string, DelegateInfo>(StringComparer.Ordinal);
+        foreach (var mod in modules)
+        {
+            if (mod.Delegates is not { } modDelegates) continue;
+            if (!packageOf.TryGetValue(mod, out var pkg)) continue;
+            if (!allowedPkgs.Contains(pkg)) continue;
+            foreach (var d in modDelegates)
+            {
+                var tpSet = d.TypeParams is { Count: > 0 } tps
+                    ? new HashSet<string>(tps) : null;
+                var paramTypes = d.Params.Select(p =>
+                    ResolveTypeName(p.TypeName, tpSet, classes, interfaces)).ToList();
+                var retType = ResolveTypeName(d.ReturnType, tpSet, classes, interfaces);
+                var sig = new Z42FuncType(paramTypes, retType);
+                var info = new DelegateInfo(sig,
+                    (IReadOnlyList<string>)(d.TypeParams ?? new List<string>()),
+                    d.ContainerClass);
+
+                var arity = d.TypeParams?.Count ?? 0;
+                var bareName = d.ContainerClass is null
+                    ? d.Name : $"{d.ContainerClass}.{d.Name}";
+                var key = arity > 0 ? $"{bareName}${arity}" : bareName;
+                delegates.TryAdd(key, info);
+                // 嵌套 delegate 同时注册 simple key 供类内部直接引用
+                if (d.ContainerClass is not null)
+                {
+                    var simpleKey = arity > 0 ? $"{d.Name}${arity}" : d.Name;
+                    delegates.TryAdd(simpleKey, info);
+                }
+            }
+        }
+
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
-            classConstraints, funcConstraints, classInterfaces, classPkg, collisions);
+            classConstraints, funcConstraints, classInterfaces, classPkg, collisions,
+            Delegates: delegates.Count > 0 ? delegates : null);
     }
 
     /// L3-Impl2 Phase 3: merge `impl Trait for Target` declarations into the
@@ -560,8 +598,11 @@ public static class ImportedSymbolLoader
             collisions = merged;
         }
 
+        var delegates = MergeNullable(low.Delegates, high.Delegates);
+
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
-            classConstraints, funcConstraints, classInterfaces, classPackages, collisions);
+            classConstraints, funcConstraints, classInterfaces, classPackages, collisions,
+            Delegates: delegates);
     }
 
     private static Dictionary<string, T>? MergeNullable<T>(
@@ -604,7 +645,11 @@ public sealed record ImportedSymbols(
     /// strict-using-resolution: collision records — same (namespace, class-name)
     /// claimed by 2+ activated packages. TypeChecker emits E0601 from this list.
     /// Each entry: (namespace, className, packageNames[]).
-    IReadOnlyList<NamespaceCollision>?   Collisions      = null);
+    IReadOnlyList<NamespaceCollision>?   Collisions      = null,
+    /// 2026-05-02 add-generic-delegates (D1c): imported delegate type registry
+    /// (key style matches `SymbolTable.Delegates`: `Foo` / `Foo$N` /
+    /// `Class.Foo` / `Class.Foo$N`). Replaces hardcoded `Action`/`Func` desugar.
+    Dictionary<string, DelegateInfo>?    Delegates       = null);
 
 /// strict-using-resolution: 跨包同 (ns, name) 冲突描述。
 public sealed record NamespaceCollision(

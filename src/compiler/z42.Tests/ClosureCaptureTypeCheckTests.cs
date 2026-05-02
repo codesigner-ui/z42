@@ -190,10 +190,12 @@ public sealed class ClosureCaptureTypeCheckTests
         // NB: spawn 关键字在 z42 当前 codebase 仍未实现，所以这条用 lambda
         // 字面量 + Func 派遣模拟"逃逸到外部回调"——只验证 capture 不会产生
         // Send-related 错误。
+        // 2026-05-02 D1c: hardcoded Func desugar removed; declare delegate inline.
         var (_, diags) = Check("""
+            public delegate bool IntPred(int x);
             void Main() {
                 var k = 10;
-                Func<int, bool> f = (int x) => x > k;
+                IntPred f = (int x) => x > k;
             }
             """);
         diags.All.Should().NotContain(d =>

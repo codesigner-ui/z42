@@ -17,7 +17,43 @@ public static class ExportedTypeExtractor
         var enums      = ExtractEnums(sem);
         var functions  = ExtractFunctions(sem);
         var impls      = cu is null ? null : ExtractImpls(sem, cu, ns);
-        return new ExportedModule(ns, classes, interfaces, enums, functions, impls);
+        var delegates  = ExtractDelegates(sem);
+        return new ExportedModule(ns, classes, interfaces, enums, functions, impls, delegates);
+    }
+
+    /// 2026-05-02 add-generic-delegates (D1c): extract delegate types from
+    /// SemanticModel.Delegates so importers can resolve `Action<T>` /
+    /// `Func<T,R>` / `Predicate<T>` etc. from cross-zpkg references.
+    private static List<ExportedDelegateDef>? ExtractDelegates(SemanticModel sem)
+    {
+        if (sem.Delegates.Count == 0) return null;
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var result = new List<ExportedDelegateDef>();
+        foreach (var (key, info) in sem.Delegates)
+        {
+            // SymbolCollector 注册了 simple key + qualified key 两份（嵌套场景）；
+            // Extract 用 Signature reference equality 去重，每个真实 delegate 只
+            // 输出一次。Key 形如 "Foo" / "Foo$2" / "Btn.OnClick" / "Btn.OnClick$2"
+            // — 取 simple/$N 形式（不含 `.`）作为权威条目。
+            if (key.Contains('.')) continue;
+            // 拆 arity 后缀
+            var name = key;
+            var dollar = name.IndexOf('$');
+            if (dollar >= 0) name = name[..dollar];
+            var dedupKey = name + "$" + info.TypeParams.Count;
+            if (!seen.Add(dedupKey)) continue;
+
+            var parms = new List<ExportedParamDef>(info.Signature.Params.Count);
+            for (int i = 0; i < info.Signature.Params.Count; i++)
+                parms.Add(new ExportedParamDef($"arg{i}", info.Signature.Params[i].ToString() ?? "unknown"));
+            result.Add(new ExportedDelegateDef(
+                Name: name,
+                Params: parms,
+                ReturnType: info.Signature.Ret.ToString() ?? "void",
+                TypeParams: info.TypeParams.Count > 0 ? new List<string>(info.TypeParams) : null,
+                ContainerClass: info.ContainerClass));
+        }
+        return result.Count > 0 ? result : null;
     }
 
     /// L3-Impl2: extract `impl Trait for Target { ... }` blocks for cross-zpkg

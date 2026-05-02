@@ -232,10 +232,6 @@ public sealed class SymbolTable
         NamedType  nt => nt.Name switch
         {
             "var"             => Z42Type.Unknown,
-            // C# `Action` (no type args) → `() -> void` (closure design Decision 9).
-            // 2026-05-02 add-delegate-type：仍保留 hardcoded 路径作为兜底（与
-            // 0-arity 用户自定义 `delegate void Foo();` 共存）；D1c 一并清理。
-            "Action"          => new Z42FuncType([], Z42Type.Void),
             _ when _activeTypeParams?.Contains(nt.Name) == true
                               => MakeTypeParam(nt.Name),
             // 2026-05-02 add-delegate-type: 命名 delegate（非泛型）→ Z42FuncType
@@ -306,20 +302,9 @@ public sealed class SymbolTable
             return TypeChecker.SubstituteTypeParams(di.Signature, subMap);
         }
 
-        // C# `Func<T1, ..., Tn, R>` / `Action<T1, ..., Tn>` desugar to Z42FuncType,
-        // equivalent to the `(T) -> R` syntax. See docs/design/closure.md §3.2 and
-        // design.md Decision 9. (D1c 时与 user-defined 路径合并并删除此分支。)
-        if (gt.Name == "Func" && gt.TypeArgs.Count >= 1)
-        {
-            var paramTypes = gt.TypeArgs.Take(gt.TypeArgs.Count - 1).Select(ResolveType).ToList();
-            var retType    = ResolveType(gt.TypeArgs[^1]);
-            return new Z42FuncType(paramTypes, retType);
-        }
-        if (gt.Name == "Action")
-        {
-            var paramTypes = gt.TypeArgs.Select(ResolveType).ToList();
-            return new Z42FuncType(paramTypes, Z42Type.Void);
-        }
+        // 2026-05-02 add-generic-delegates (D1c): hardcoded `Action`/`Func`
+        // desugar removed — replaced by stdlib `Std.Delegates`（z42.core 内
+        // 真实 delegate 声明）+ TSIG export 路径。
 
         // User-defined generic class: resolve as class type (code sharing — same class, different type_args)
         if (Classes.TryGetValue(gt.Name, out var ct))

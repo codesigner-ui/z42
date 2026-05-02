@@ -168,7 +168,8 @@ public sealed partial class TypeChecker : ITypeInferrer
             importedClassNames: _symbols.ImportedClassNames as IReadOnlySet<string>
                                 ?? new HashSet<string>(_symbols.ImportedClassNames),
             classInterfaces: _symbols.ClassInterfaces,
-            stackAllocClosures: stackAllocClosures);
+            stackAllocClosures: stackAllocClosures,
+            delegates: _symbols.Delegates);
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────

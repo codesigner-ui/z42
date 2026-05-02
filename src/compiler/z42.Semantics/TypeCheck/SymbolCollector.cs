@@ -35,6 +35,11 @@ public sealed partial class SymbolCollector : ISymbolBinder
     /// 2026-05-02 add-delegate-type: 用户声明的 delegate 注册表（含顶层 + 嵌套）。
     /// Key = "Foo" / "Foo$N" / "Btn.OnClick" / "Btn.OnClick$N"。
     internal readonly Dictionary<string, DelegateInfo>     _delegates              = new();
+    /// D1c: keys of delegates that came from imported zpkg TSIG. Local
+    /// re-registration with the same key (intra-package self-import or stdlib
+    /// rebuild seeing its own cached TSIG) silently overrides imported entry
+    /// instead of reporting a duplicate-decl error.
+    internal readonly HashSet<string>                      _importedDelegateKeys   = new();
 
     public SymbolCollector(DiagnosticBag diags)
     {
@@ -101,9 +106,17 @@ public sealed partial class SymbolCollector : ISymbolBinder
             // 简单名 key —— 类内部 + 顶层都可直接 `OnClick` 引用。同名全局 delegate
             // / 同名嵌套 delegate 之间冲突属于 v1 限制（和 D1a Open Question 一致）。
             var simpleKey = arity > 0 ? $"{d.Name}${arity}" : d.Name;
+            // D1c: 如果该 key 已存在但来自 imported TSIG（自我导入 / stdlib 重建
+            // 看到自己的 cached TSIG），允许 local declaration 覆盖；不报错。
+            // 来自其他 local delegate 的真正冲突仍然报错。
             if (!_delegates.TryAdd(simpleKey, info))
-                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
-                    $"delegate `{simpleKey}` is already declared", d.Span);
+            {
+                if (_importedDelegateKeys.Remove(simpleKey))
+                    _delegates[simpleKey] = info; // override imported with local
+                else
+                    _diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                        $"delegate `{simpleKey}` is already declared", d.Span);
+            }
 
             // 嵌套 delegate 同时注册 qualified key（"Btn.OnClick" / "Btn.OnClick$N"），
             // 为未来 dotted-path 外部引用预留；当前 ResolveType 仅消费 simpleKey。
@@ -112,7 +125,12 @@ public sealed partial class SymbolCollector : ISymbolBinder
                 var qualifiedKey = arity > 0
                     ? $"{containerClass}.{d.Name}${arity}"
                     : $"{containerClass}.{d.Name}";
-                _delegates.TryAdd(qualifiedKey, info);
+                if (!_delegates.TryAdd(qualifiedKey, info))
+                {
+                    if (_importedDelegateKeys.Remove(qualifiedKey))
+                        _delegates[qualifiedKey] = info;
+                    // 嵌套 qualified 路径不报 duplicate（D1a 已存在 silent 行为）
+                }
             }
         }
         finally { _activeTypeParams = prev; }
@@ -146,6 +164,14 @@ public sealed partial class SymbolCollector : ISymbolBinder
             if (_enumTypes.Add(name))
                 _importedEnumNames.Add(name);
         }
+        // 2026-05-02 add-generic-delegates (D1c): import imported delegate registry
+        if (imported.Delegates is { } importedDelegates)
+            foreach (var (key, info) in importedDelegates)
+            {
+                if (_delegates.TryAdd(key, info))
+                    _importedDelegateKeys.Add(key);
+            }
+
         foreach (var (name, ns) in imported.ClassNamespaces)
             _importedClassNamespaces.TryAdd(name, ns);
         // L3-G4b primitive-as-struct: import stdlib `struct int : IComparable<int>` etc.
@@ -263,8 +289,6 @@ public sealed partial class SymbolCollector : ISymbolBinder
                             ResolveType(ft.ReturnType)),
         NamedType  nt when _activeTypeParams?.Contains(nt.Name) == true
                       => new Z42GenericParamType(nt.Name),
-        // C# `Action` (no type args) → `() -> void`, equivalent to `() -> void`.
-        NamedType  nt when nt.Name == "Action" => new Z42FuncType([], Z42Type.Void),
         NamedType  nt => nt.Name switch
         {
             "int"    or "i32" => Z42Type.Int,
@@ -304,15 +328,6 @@ public sealed partial class SymbolCollector : ISymbolBinder
         {
             "List"       => new Z42PrimType("List"),
             "Dictionary" => new Z42PrimType("Dictionary"),
-            // C# `Func<T1, ..., Tn, R>` and `Action<T1, ..., Tn>` desugar to
-            // `Z42FuncType` so they're equivalent to the new `(T) -> R` syntax.
-            // See docs/design/closure.md §3.2 and design.md Decision 9.
-            "Func" when gt.TypeArgs.Count >= 1 => new Z42FuncType(
-                gt.TypeArgs.Take(gt.TypeArgs.Count - 1).Select(ResolveType).ToList(),
-                ResolveType(gt.TypeArgs[^1])),
-            "Action"                            => new Z42FuncType(
-                gt.TypeArgs.Select(ResolveType).ToList(),
-                Z42Type.Void),
             // L3-G2.5 chain: generic interface references preserve TypeArgs so
             // downstream arg-aware checks can compare `IEquatable<int>` precisely.
             // L3 static abstract (C# 11): also preserve StaticMembers so generic

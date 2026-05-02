@@ -102,13 +102,15 @@ public sealed class LambdaTypeCheckTests
     [Fact]
     public void FuncType_AndArrowType_AreEquivalent()
     {
-        // `Func<int, int>` and `(int) -> int` desugar to the same Z42FuncType,
-        // so cross-assigning between them is allowed (Decision 9).
+        // 2026-05-02 D1c: hardcoded `Func`/`Action` desugar removed; this test
+        // now uses a locally-declared delegate to verify named-delegate ↔
+        // arrow-type structural equivalence (same as before, just w/o stdlib).
         var src = """
+            public delegate int IntFn(int x);
             void Main() {
-                Func<int, int> a = (int x) => x + 1;
-                (int) -> int   b = a;
-                Func<int, int> c = b;
+                IntFn a = (int x) => x + 1;
+                (int) -> int b = a;
+                IntFn c = b;
             }
             """;
         var (_, diags) = Check(src);
@@ -118,10 +120,11 @@ public sealed class LambdaTypeCheckTests
     [Fact]
     public void Action_DesugarsToVoidReturn()
     {
-        // `Action<int>` is `(int) -> void`. Assigning a void-returning block
-        // lambda must be accepted; a value-returning lambda would mismatch.
-        var (_, diags) = Check(
-            "void Main() { Action<int> log = (int x) => { }; }");
+        // 2026-05-02 D1c: 本测试改名后续 follow-up；当前用本地 delegate 验证。
+        var (_, diags) = Check("""
+            public delegate void Log(int x);
+            void Main() { Log log = (int x) => { }; }
+            """);
         diags.HasErrors.Should().BeFalse();
     }
 }

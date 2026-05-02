@@ -15,7 +15,25 @@ public sealed record ExportedModule(
     List<ExportedInterfaceDef> Interfaces,
     List<ExportedEnumDef>      Enums,
     List<ExportedFuncDef>      Functions,
-    List<ExportedImplDef>?     Impls = null);
+    List<ExportedImplDef>?     Impls     = null,
+    /// 2026-05-02 add-generic-delegates (D1c): exported delegate types so
+    /// downstream CUs can resolve `Func<int,int>` / `Predicate<T>` etc.
+    /// Replaces SymbolCollector hardcoded `Action`/`Func` desugar.
+    List<ExportedDelegateDef>? Delegates = null);
+
+/// 2026-05-02 add-generic-delegates: serialized `delegate R Foo<T,R>(T arg)`.
+/// Param + return types stored as IR-level type-name strings (same as
+/// ExportedFuncDef); generic type-params restored on the consumer side as
+/// `Z42GenericParamType` placeholders.
+public sealed record ExportedDelegateDef(
+    string Name,
+    List<ExportedParamDef> Params,
+    string ReturnType,
+    List<string>? TypeParams = null,
+    /// Simple class name when this delegate is nested inside a class
+    /// (`class Btn { delegate void OnClick(...) }` → ContainerClass="Btn").
+    /// Null for top-level delegates.
+    string? ContainerClass = null);
 
 /// L3-Impl2: serialized `impl Trait for Target { ... }` block.
 /// `TargetFqName` and `TraitFqName` are fully-qualified (e.g. `Std.int`,

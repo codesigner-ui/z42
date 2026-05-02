@@ -112,6 +112,32 @@ public static partial class ZpkgWriter
                         w.Write((uint)pool.Idx(tp));
                 WriteTpConstraints(w, fn.TypeParamConstraints, pool);
             }
+
+            // 2026-05-02 add-generic-delegates (D1c): Delegates section.
+            // Reader uses position-guard for forward compat with older zpkgs
+            // that lack this trailer.
+            var delegates = mod.Delegates ?? new List<ExportedDelegateDef>();
+            w.Write((ushort)delegates.Count);
+            foreach (var d in delegates)
+            {
+                w.Write((uint)pool.Idx(d.Name));
+                w.Write((uint)pool.Idx(d.ReturnType));
+                w.Write((byte)d.Params.Count);
+                foreach (var p in d.Params)
+                {
+                    w.Write((uint)pool.Idx(p.Name));
+                    w.Write((uint)pool.Idx(p.TypeName));
+                }
+                byte dTpCount = (byte)(d.TypeParams?.Count ?? 0);
+                w.Write(dTpCount);
+                if (d.TypeParams != null)
+                    foreach (var tp in d.TypeParams)
+                        w.Write((uint)pool.Idx(tp));
+                // ContainerClass: 0xFFFFFFFF sentinel = null
+                w.Write(d.ContainerClass != null
+                    ? (uint)pool.Idx(d.ContainerClass)
+                    : uint.MaxValue);
+            }
         }
 
         return ms.ToArray();

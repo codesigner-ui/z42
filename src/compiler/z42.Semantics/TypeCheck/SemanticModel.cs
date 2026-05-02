@@ -85,6 +85,12 @@ public sealed class SemanticModel
     /// (`Value::StackClosure`)。reference-equality keyed（与 BoundDefaults 同款）。
     public IReadOnlySet<BoundLambda> StackAllocClosures { get; }
 
+    /// 2026-05-02 add-delegate-type / add-generic-delegates: user-declared
+    /// delegate type registry. Same shape as `SymbolTable.Delegates` —
+    /// re-exposed here so `ExportedTypeExtractor` can serialize delegate
+    /// signatures into TSIG.
+    public IReadOnlyDictionary<string, DelegateInfo> Delegates { get; }
+
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,
         IReadOnlyDictionary<string, Z42FuncType>      funcs,
@@ -101,7 +107,8 @@ public sealed class SemanticModel
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null,
         IReadOnlySet<string>? importedClassNames = null,
         IReadOnlyDictionary<string, List<Z42InterfaceType>>? classInterfaces = null,
-        IReadOnlySet<BoundLambda>? stackAllocClosures = null)
+        IReadOnlySet<BoundLambda>? stackAllocClosures = null,
+        IReadOnlyDictionary<string, DelegateInfo>? delegates = null)
     {
         Classes                 = classes;
         Funcs                   = funcs;
@@ -119,5 +126,6 @@ public sealed class SemanticModel
         ImportedClassNames      = importedClassNames ?? new HashSet<string>();
         ClassInterfaces         = classInterfaces ?? new Dictionary<string, List<Z42InterfaceType>>();
         StackAllocClosures      = stackAllocClosures ?? new HashSet<BoundLambda>(ReferenceEqualityComparer.Instance);
+        Delegates               = delegates ?? new Dictionary<string, DelegateInfo>();
     }
 }

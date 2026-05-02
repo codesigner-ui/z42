@@ -161,7 +161,46 @@ public static partial class ZpkgReader
                     fnTypeParams, fnConstraints));
             }
 
-            result.Add(new ExportedModule(ns, classes, interfaces, enums, functions));
+            // 2026-05-02 add-generic-delegates (D1c): Delegates trailer.
+            // Position-guard for forward compat with pre-D1c zpkgs.
+            List<ExportedDelegateDef>? delegates = null;
+            if (ms.Position < ms.Length)
+            {
+                ushort dgCount = r.ReadUInt16();
+                if (dgCount > 0)
+                {
+                    delegates = new List<ExportedDelegateDef>(dgCount);
+                    for (int di = 0; di < dgCount; di++)
+                    {
+                        string dName    = P(pool, r.ReadUInt32());
+                        string dRetType = P(pool, r.ReadUInt32());
+                        byte dParamCnt  = r.ReadByte();
+                        var dParms = new List<ExportedParamDef>(dParamCnt);
+                        for (int pi = 0; pi < dParamCnt; pi++)
+                        {
+                            string pn = P(pool, r.ReadUInt32());
+                            string pt = P(pool, r.ReadUInt32());
+                            dParms.Add(new ExportedParamDef(pn, pt));
+                        }
+                        byte dTpCount = r.ReadByte();
+                        List<string>? dTypeParams = null;
+                        if (dTpCount > 0)
+                        {
+                            dTypeParams = new List<string>(dTpCount);
+                            for (int ti = 0; ti < dTpCount; ti++)
+                                dTypeParams.Add(P(pool, r.ReadUInt32()));
+                        }
+                        uint cclsRaw = r.ReadUInt32();
+                        string? containerClass = cclsRaw == uint.MaxValue ? null : P(pool, cclsRaw);
+                        delegates.Add(new ExportedDelegateDef(
+                            dName, dParms, dRetType, dTypeParams, containerClass));
+                    }
+                }
+            }
+
+            result.Add(new ExportedModule(
+                ns, classes, interfaces, enums, functions,
+                Impls: null, Delegates: delegates));
         }
         return result;
     }

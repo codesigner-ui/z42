@@ -1,0 +1,6 @@
+done
+log: 42
+49
+7
+true
+false

@@ -71,6 +71,17 @@ public static partial class ZpkgWriter
                 foreach (var arg in impl.TraitTypeArgs) pool.Intern(arg);
                 foreach (var m in impl.Methods) InternMethodStrings(pool, m);
             }
+        // 2026-05-02 add-generic-delegates (D1c): intern delegate strings.
+        if (mod.Delegates != null)
+            foreach (var d in mod.Delegates)
+            {
+                pool.Intern(d.Name);
+                pool.Intern(d.ReturnType);
+                foreach (var p in d.Params) { pool.Intern(p.Name); pool.Intern(p.TypeName); }
+                if (d.TypeParams != null)
+                    foreach (var tp in d.TypeParams) pool.Intern(tp);
+                if (d.ContainerClass != null) pool.Intern(d.ContainerClass);
+            }
     }
 
     private static void InternTpConstraints(

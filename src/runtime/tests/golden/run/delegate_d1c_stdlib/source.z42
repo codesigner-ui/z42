@@ -1,0 +1,29 @@
+// 2026-05-02 add-generic-delegates (D1c) regression golden.
+// 验证 stdlib `Action`/`Func`/`Predicate` 真实类型 + 移除 hardcoded desugar
+// 后跨 zpkg 端到端工作。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    // Action 0-arity
+    Action done = () => Console.WriteLine("done");
+    done();
+
+    // Action<T>
+    Action<int> log = (int x) => Console.WriteLine($"log: {x}");
+    log(42);
+
+    // Func<T, R>
+    Func<int, int> sq = (int x) => x * x;
+    Console.WriteLine(sq(7));
+
+    // Func<T1, T2, R>
+    Func<int, int, int> add = (int a, int b) => a + b;
+    Console.WriteLine(add(3, 4));
+
+    // Predicate<T> — D1c 新增
+    Predicate<int> isEven = (int x) => x % 2 == 0;
+    Console.WriteLine(isEven(4));
+    Console.WriteLine(isEven(5));
+}
