@@ -66,6 +66,30 @@ internal sealed partial class FunctionEmitter
                     Emit(new FieldGetInstr(dst, new TypedReg(0, IrType.Ref), id.Name));
                     return dst;
                 }
+                // 2026-05-02 impl-closure-l3-monomorphize prerequisite: ident
+                // 解析为顶层函数 / 静态方法 → emit LoadFn 把 FuncRef 装入寄存器。
+                // 之前这条路径不存在，导致 `var f = Helper;` 在 Codegen 崩溃；
+                // mono spec 的 alias 跟踪让 `f()` 直接走 Call 而不需要 LoadFn，
+                // 但 `var g = f;` / `Apply(Helper, ...)` 等场景仍需要把 ident 装载
+                // 为 FuncRef，因此补齐这条根因路径。
+                if (id.Type is Z42FuncType
+                    && _ctx.TopLevelFunctionNames.Contains(id.Name))
+                {
+                    var dst = Alloc(IrType.Ref);
+                    Emit(new LoadFnInstr(dst, _ctx.QualifyName(id.Name)));
+                    return dst;
+                }
+                if (id.Type is Z42FuncType
+                    && _currentClassName is not null
+                    && _ctx.ClassRegistry.TryGetStaticMethods(
+                        _ctx.QualifyName(_currentClassName), out var staticSet)
+                    && staticSet.Contains(id.Name))
+                {
+                    var dst = Alloc(IrType.Ref);
+                    Emit(new LoadFnInstr(dst,
+                        $"{_ctx.QualifyName(_currentClassName)}.{id.Name}"));
+                    return dst;
+                }
                 throw new InvalidOperationException($"undefined variable `{id.Name}`");
             }
 

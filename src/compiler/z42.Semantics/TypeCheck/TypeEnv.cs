@@ -20,6 +20,13 @@ internal sealed class TypeEnv
     /// + impl-local-fn-l2 design Decision 3.
     private readonly Dictionary<string, Z42FuncType>                _localFuncs = new();
 
+    /// 2026-05-02 impl-closure-l3-monomorphize: per-scope "function alias" 表。
+    /// `var f = Helper;` 在当前 scope 写入 `f → "Demo.Helper"`；调用 `f()` 时
+    /// `LookupAlias` 命中 → BindCall 直接 emit `Call("Demo.Helper", ...)` 而非
+    /// CallIndirect。重赋值（`f = X;`）调 `RemoveAlias` 使保守 fallback 生效。
+    /// 仅做单赋值跟踪，不做完整 SSA / dataflow（参见 design.md Decision 2）。
+    private readonly Dictionary<string, string>                     _funcAliases = new();
+
     /// The class currently being checked, or null for top-level functions.
     /// Immutable per scope — when entering a class, create a new env via <see cref="WithClass"/>.
     internal string? CurrentClass { get; }
@@ -139,4 +146,28 @@ internal sealed class TypeEnv
 
     internal Z42ClassType? LookupClass(string name) =>
         _classes.TryGetValue(name, out var c) ? c : null;
+
+    // ── Function alias operations (closure mono) ─────────────────────────────
+    // 2026-05-02 impl-closure-l3-monomorphize.
+
+    /// Record that `localName` is an alias for `funcFullyQualifiedName`. Called
+    /// at `var f = Helper;` (no captures, ident init). Caller must remove the
+    /// alias on any subsequent assignment to `localName`.
+    internal void BindAlias(string localName, string funcFullyQualifiedName) =>
+        _funcAliases[localName] = funcFullyQualifiedName;
+
+    /// Remove an alias for `localName` from the current scope. Idempotent.
+    /// Called on any assignment / mutation that could change the function the
+    /// var refers to (single-assignment policy).
+    internal void RemoveAlias(string localName) => _funcAliases.Remove(localName);
+
+    /// Look up a function alias for `localName`, walking parent scopes.
+    /// Returns the fully-qualified function name if `localName` resolves to
+    /// a known function (top-level / static method / lifted lambda); null
+    /// otherwise.
+    internal string? LookupAlias(string localName)
+    {
+        if (_funcAliases.TryGetValue(localName, out var fq)) return fq;
+        return _parent?.LookupAlias(localName);
+    }
 }

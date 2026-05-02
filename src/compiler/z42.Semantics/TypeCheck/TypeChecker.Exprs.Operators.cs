@@ -67,6 +67,13 @@ public sealed partial class TypeChecker
         // Narrow from Unknown after first assignment
         if (assign.Target is IdentExpr id && target.Type is Z42UnknownType)
             env.Define(id.Name, value2.Type);
+
+        // 2026-05-02 impl-closure-l3-monomorphize: 任何对 local var 的赋值
+        // 都可能改变 var 指向的函数 → 保守清掉 alias，使后续调用退化到
+        // CallIndirect。仅在可控 init 时（BindVarDecl）重新登记。
+        if (assign.Target is IdentExpr aid)
+            env.RemoveAlias(aid.Name);
+
         return new BoundAssign(target, value2, value2.Type, assign.Span);
     }
 

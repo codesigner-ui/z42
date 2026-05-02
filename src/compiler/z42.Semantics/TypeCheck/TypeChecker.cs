@@ -32,6 +32,10 @@ public sealed partial class TypeChecker : ITypeInferrer
 
     // ── Readonly symbol table (populated by SymbolCollector, consumed here) ───
     private SymbolTable _symbols = null!;
+    /// 2026-05-02 impl-closure-l3-monomorphize: 当前 CU 的命名空间，供
+    /// `ResolveFuncAlias` 把顶层函数 / 静态方法名拼成 fully-qualified。
+    /// IrGen / Codegen 用 `cu.Namespace` 同样规则；保持一致。
+    private string? _currentNamespace;
 
     // ── Binding outputs ──────────────────────────────────────────────────────
     private readonly Dictionary<FunctionDecl, BoundBlock> _boundBodies = new();
@@ -133,6 +137,7 @@ public sealed partial class TypeChecker : ITypeInferrer
     public SemanticModel Infer(CompilationUnit cu, SymbolTable symbols)
     {
         _symbols = symbols;
+        _currentNamespace = cu.Namespace;
 
         // ── Pass 0.5: resolve generic constraints from `where` clauses (L3-G2) ──
         ResolveAllWhereConstraints(cu);

@@ -245,6 +245,30 @@ env 进 RC/GC 堆，闭包对象是胖指针 `(env_ptr, vtable_ptr)`，调用走
 | 跨线程能力 | ❌ | ❌ | ✅（env 在堆 + Send） |
 | 典型用途 | map/filter 链式 | stdlib 极热路径 | 事件 / 异步 / 集合存储 |
 
+### 6.4.1 单态化（已落地：alias 子集，2026-05-02 impl-closure-l3-monomorphize）
+
+档 B 的全套（"泛型形参 + 单态 call site + 内联"）尚未落地，但 z42 已实现一个**子集** —— **alias 单态化**，把"已知 callee 走 CallIndirect"的低效 case 折叠为直接 `Call`：
+
+| 模式 | 改前（一律堆擦除路径）| 改后（alias 单态化）|
+|---|---|---|
+| `Helper();` | `Call("ns.Helper", ...)` | 不变 |
+| `var f = Helper; f();` | `LoadFn` + `CallIndirect` | `Call("ns.Helper", ...)` ✓ |
+| `var f = Helper; var g = f; g();` | `LoadFn` ×2 + `CallIndirect` | `Call("ns.Helper", ...)` ✓（alias 链传播） |
+| `f = OtherFn; f();` | CallIndirect | CallIndirect（赋值后 alias 失效） |
+| `Apply(Square, 7)` 内 `f(x)` | CallIndirect（不变） | CallIndirect（参数 callee 编译期不可知） |
+
+**实现原理**（详见 `spec/archive/2026-05-02-impl-closure-l3-monomorphize/`）：
+
+- TypeChecker 在 `var f = Helper;` 这种"init 是 simple ident 且 ident 解析为已知函数"的情形把 `f` 写入 `TypeEnv._funcAliases[f] = "ns.Helper"`
+- 任何对 `f` 的赋值清掉 alias（保守）
+- 嵌套作用域随 `TypeEnv._parent` 链查 alias —— `var g = f;` 复用 `f` 的 alias
+- BindCall 在"var of FuncType"分支前先查 alias：命中 → emit `BoundCall(Free, null, …, CalleeName=fqName)`，与"直接调用顶层函数"路径同构 → Codegen 直接 `Call`
+- `Apply(Helper, …)` 中 `Helper` 通过 ident 装载为 FuncRef（Codegen 新增 `BoundIdent → LoadFn` 路径，覆盖 ident 解析为顶层函数 / 静态方法的情形），保持值传递语义
+- 仅做单赋值跟踪（design Decision 2）；条件分支 / 字段读取的复杂情形保守 fallback CallIndirect
+- **不影响带捕获的 closure**（`var add = (int x) => x + n;` 仍走 MkClos + CallIndirect，因为单态化丢 env 会破坏语义，design Decision 4）
+
+未来增量：流敏感分析（if/else 二选一）/ 跨 capture 边界 alias 传播 / 与档 B 单态化合并。
+
 ### 6.5 决策算法
 
 ```

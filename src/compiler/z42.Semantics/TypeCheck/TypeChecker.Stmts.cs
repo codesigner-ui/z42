@@ -258,7 +258,45 @@ public sealed partial class TypeChecker
         }
 
         env.Define(v.Name, varType);
+
+        // 2026-05-02 impl-closure-l3-monomorphize: 若 init 是 simple ident 且
+        // 该 ident 解析为已知函数（顶层 func / 静态方法 / 已绑定 alias），把
+        // 当前 var 也记入 alias，调用 `f()` 时直接 emit Call 而非 CallIndirect。
+        // 仅处理"init 是裸 ident"的简单形式；带捕获 lambda / 复杂表达式
+        // 走兜底 CallIndirect 路径。
+        if (varType is Z42FuncType && v.Init is IdentExpr initIdent)
+        {
+            var resolved = ResolveFuncAlias(initIdent.Name, env);
+            if (resolved != null) env.BindAlias(v.Name, resolved);
+        }
+
         return new BoundVarDecl(v.Name, varType, initBound, v.Span);
+    }
+
+    /// 2026-05-02 impl-closure-l3-monomorphize: 解析"该 ident 是否为编译期已知
+    /// 函数引用"。命中：顶层函数（namespace.Name）/ alias 链 / 静态方法（限
+    /// CurrentClass）。Miss → null（退化 CallIndirect）。
+    private string? ResolveFuncAlias(string name, TypeEnv env)
+    {
+        // 1. alias 链已有 → 直接传播
+        var aliased = env.LookupAlias(name);
+        if (aliased != null) return aliased;
+
+        // 2. 顶层函数 → fully-qualified by current namespace
+        if (_symbols.Functions.ContainsKey(name))
+            return _currentNamespace is { } ns ? $"{ns}.{name}" : name;
+
+        // 3. 当前类的静态方法
+        if (env.CurrentClass != null
+            && _symbols.Classes.TryGetValue(env.CurrentClass, out var ct)
+            && ct.StaticMethods.ContainsKey(name))
+        {
+            return _currentNamespace is { } ns
+                ? $"{ns}.{env.CurrentClass}.{name}"
+                : $"{env.CurrentClass}.{name}";
+        }
+
+        return null;
     }
 
     // ── Local function (impl-local-fn-l2) ─────────────────────────────────────

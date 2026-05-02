@@ -338,6 +338,17 @@ public sealed partial class TypeChecker
             {
                 CheckArgCount(freeArgs.Count, vft.MinArgCount, vft.Params.Count, call.Span);
                 CheckArgTypes(call.Args, freeArgs, vft.Params);
+
+                // 2026-05-02 impl-closure-l3-monomorphize: 若该 var 是已知函数的 alias
+                //（`var f = Helper; f();`），直接 emit 静态 Call 而非 CallIndirect。
+                //  与"funcId 直接是顶层函数名"路径走相同 IR shape。
+                var aliasFq = env.LookupAlias(funcId.Name);
+                if (aliasFq != null)
+                {
+                    return new BoundCall(BoundCallKind.Free, null, null, null,
+                        aliasFq, freeArgs, vft.Ret, call.Span);
+                }
+
                 var calleeBound = new BoundIdent(funcId.Name, vft, funcId.Span);
                 return new BoundCall(BoundCallKind.Free, calleeBound, null, null,
                     null, freeArgs, vft.Ret, call.Span);
