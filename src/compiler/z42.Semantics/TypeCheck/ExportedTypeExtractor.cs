@@ -326,7 +326,16 @@ public static class ExportedTypeExtractor
         Z42NullType            => "null",
         Z42ErrorType           => "error",
         Z42UnknownType         => "unknown",
-        Z42FuncType            => "func",
+        // 2026-05-02 D2a: Z42FuncType 序列化为 stdlib delegate 名（Action / Func）
+        // 让 ResolveTypeName 通过 delegate 注册表恢复完整签名。失去 nominal
+        // delegate 名（如自定义 `delegate int Foo(int)`）→ 退化为 Func<int,int>
+        // —— 结构等价无害（D1a Decision 2 命名 delegate 与字面量结构等价）。
+        Z42FuncType ft when ft.Ret is Z42VoidType =>
+            ft.Params.Count == 0
+                ? "Action"
+                : $"Action<{string.Join(", ", ft.Params.Select(TypeToString))}>",
+        Z42FuncType ft =>
+            $"Func<{string.Join(", ", ft.Params.Concat(new[] { ft.Ret }).Select(TypeToString))}>",
         _                      => "unknown",
     };
 

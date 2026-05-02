@@ -1,0 +1,28 @@
+// 2026-05-02 add-multicast-action (D2a) regression golden.
+// 端到端验证多播订阅 / 取消 / IDisposable token / COW snapshot。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    var bus = new MulticastAction<int>();
+    Console.WriteLine(bus.Count());     // 0
+
+    var t1 = bus.Subscribe((int x) => Console.WriteLine($"a:{x}"));
+    var t2 = bus.Subscribe((int x) => Console.WriteLine($"b:{x}"));
+    Console.WriteLine(bus.Count());     // 2
+
+    bus.Invoke(1);                       // a:1 / b:1
+
+    var t3 = bus.Subscribe((int x) => Console.WriteLine($"c:{x}"));
+    bus.Invoke(2);                       // a:2 / b:2 / c:2
+
+    t3.Dispose();
+    bus.Invoke(3);                       // a:3 / b:3
+    Console.WriteLine(bus.Count());     // 2
+
+    t1.Dispose();
+    t2.Dispose();
+    bus.Invoke(4);                       // (nothing)
+    Console.WriteLine(bus.Count());     // 0
+}

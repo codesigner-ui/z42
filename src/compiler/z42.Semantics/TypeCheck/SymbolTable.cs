@@ -152,6 +152,13 @@ public sealed class SymbolTable
             classInterfaces[className] = ifList.Select(i => i.Name).ToList();
         }
 
+        // 2026-05-02 add-multicast-action (D2a): 把本包内 collected delegates
+        // 一并 extract，让 Phase 2 跨 CU 编译能识别 `Action<T>` 等 delegate 名
+        // （Phase 1 SymbolCollector 累积，Phase 2 通过 intraSymbols 看见）。
+        var delegates = new Dictionary<string, DelegateInfo>(StringComparer.Ordinal);
+        foreach (var (key, info) in Delegates)
+            delegates[key] = info;
+
         return new ImportedSymbols(
             Classes:          classes,
             Functions:        funcs,
@@ -161,7 +168,8 @@ public sealed class SymbolTable
             ClassNamespaces:  classNs,
             ClassConstraints: null,    // intra-package 不传约束（local 会重新 collect）
             FuncConstraints:  null,
-            ClassInterfaces:  classInterfaces);
+            ClassInterfaces:  classInterfaces,
+            Delegates:        delegates.Count > 0 ? delegates : null);
     }
 
     /// Build ancestor set for each class by walking the inheritance chain once per class.

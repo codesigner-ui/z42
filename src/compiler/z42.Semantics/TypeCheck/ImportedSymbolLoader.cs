@@ -109,6 +109,41 @@ public static class ImportedSymbolLoader
                 }
         }
 
+        // ── Phase 1.5: 加载 delegates（2026-05-02 D2a/D1c）──
+        // delegate 签名只引用 classes / interfaces 骨架 + 基本元素 + 自身泛型
+        // 占位，Phase 1 已就绪；放在 Phase 2 之前，让 Phase 2 method 类型解析
+        // 也能识别 `Action<T>` 等 delegate 名。
+        var delegates = new Dictionary<string, DelegateInfo>(StringComparer.Ordinal);
+        foreach (var mod in modules)
+        {
+            if (mod.Delegates is not { } modDelegates) continue;
+            if (!packageOf.TryGetValue(mod, out var pkg2)) continue;
+            if (!allowedPkgs.Contains(pkg2)) continue;
+            foreach (var d in modDelegates)
+            {
+                var tpSet = d.TypeParams is { Count: > 0 } tps
+                    ? new HashSet<string>(tps) : null;
+                var paramTypes = d.Params.Select(p =>
+                    ResolveTypeName(p.TypeName, tpSet, classes, interfaces)).ToList();
+                var retType = ResolveTypeName(d.ReturnType, tpSet, classes, interfaces);
+                var sig = new Z42FuncType(paramTypes, retType);
+                var info = new DelegateInfo(sig,
+                    (IReadOnlyList<string>)(d.TypeParams ?? new List<string>()),
+                    d.ContainerClass);
+
+                var arity = d.TypeParams?.Count ?? 0;
+                var bareName = d.ContainerClass is null
+                    ? d.Name : $"{d.ContainerClass}.{d.Name}";
+                var key = arity > 0 ? $"{bareName}${arity}" : bareName;
+                delegates.TryAdd(key, info);
+                if (d.ContainerClass is not null)
+                {
+                    var simpleKey = arity > 0 ? $"{d.Name}${arity}" : d.Name;
+                    delegates.TryAdd(simpleKey, info);
+                }
+            }
+        }
+
         // ── Phase 2: 填充成员 + 其他副产物 dicts ──
         // 关键：Phase 1 骨架内嵌的 Dictionary 是 mutable；Phase 2 直接对同一
         // 字典 Add 字段/方法，**不替换 Z42ClassType record 实例**。这样在 Phase 2
@@ -117,7 +152,7 @@ public static class ImportedSymbolLoader
         // "字段持有空骨架" 问题。
         foreach (var (mod, cls) in selectedClasses)
         {
-            FillClassMembersInPlace(cls, classes[cls.Name], classes, interfaces);
+            FillClassMembersInPlace(cls, classes[cls.Name], classes, interfaces, delegates);
             classNs[cls.Name] = mod.Namespace;
             if (cls.TypeParamConstraints is { Count: > 0 } cc)
                 classConstraints[cls.Name] = cc;
@@ -135,7 +170,7 @@ public static class ImportedSymbolLoader
             // to a populated dict — handled by replacing the record in that
             // edge case (interface methods dict is always pre-allocated).
             interfaces[iface.Name] = FillInterfaceMembersInPlace(
-                iface, interfaces[iface.Name], classes, interfaces);
+                iface, interfaces[iface.Name], classes, interfaces, delegates);
         }
 
         // Enums and free functions don't reference other class/interface types
@@ -158,7 +193,7 @@ public static class ImportedSymbolLoader
                 {
                     funcs[fn.Name] = RebuildFuncType(
                         fn.Params, fn.ReturnType, fn.MinArgCount, null,
-                        classes, interfaces);
+                        classes, interfaces, delegates);
                     if (fn.TypeParamConstraints is { Count: > 0 } fc)
                         funcConstraints[fn.Name] = fc;
                 }
@@ -179,43 +214,6 @@ public static class ImportedSymbolLoader
             {
                 collisions ??= new List<NamespaceCollision>();
                 collisions.Add(new NamespaceCollision(ns, name, pkgs));
-            }
-        }
-
-        // 2026-05-02 add-generic-delegates (D1c): collect imported delegate types.
-        // Single-pass — delegate signatures only reference primitives /
-        // already-resolved imported classes/interfaces / generic params (no
-        // self-reference forward issues). Same key style as
-        // SymbolTable.Delegates: simple key + arity-suffix + qualified for nested.
-        var delegates = new Dictionary<string, DelegateInfo>(StringComparer.Ordinal);
-        foreach (var mod in modules)
-        {
-            if (mod.Delegates is not { } modDelegates) continue;
-            if (!packageOf.TryGetValue(mod, out var pkg)) continue;
-            if (!allowedPkgs.Contains(pkg)) continue;
-            foreach (var d in modDelegates)
-            {
-                var tpSet = d.TypeParams is { Count: > 0 } tps
-                    ? new HashSet<string>(tps) : null;
-                var paramTypes = d.Params.Select(p =>
-                    ResolveTypeName(p.TypeName, tpSet, classes, interfaces)).ToList();
-                var retType = ResolveTypeName(d.ReturnType, tpSet, classes, interfaces);
-                var sig = new Z42FuncType(paramTypes, retType);
-                var info = new DelegateInfo(sig,
-                    (IReadOnlyList<string>)(d.TypeParams ?? new List<string>()),
-                    d.ContainerClass);
-
-                var arity = d.TypeParams?.Count ?? 0;
-                var bareName = d.ContainerClass is null
-                    ? d.Name : $"{d.ContainerClass}.{d.Name}";
-                var key = arity > 0 ? $"{bareName}${arity}" : bareName;
-                delegates.TryAdd(key, info);
-                // 嵌套 delegate 同时注册 simple key 供类内部直接引用
-                if (d.ContainerClass is not null)
-                {
-                    var simpleKey = arity > 0 ? $"{d.Name}${arity}" : d.Name;
-                    delegates.TryAdd(simpleKey, info);
-                }
             }
         }
 
@@ -328,7 +326,8 @@ public static class ImportedSymbolLoader
         ExportedClassDef                              cls,
         Z42ClassType                                  skeleton,
         IReadOnlyDictionary<string, Z42ClassType>     classes,
-        IReadOnlyDictionary<string, Z42InterfaceType> interfaces)
+        IReadOnlyDictionary<string, Z42InterfaceType> interfaces,
+        IReadOnlyDictionary<string, DelegateInfo>?    delegates = null)
     {
         // Cast back to Dictionary<> — BuildClassSkeleton 创建的是 mutable Dictionary.
         var fields        = (Dictionary<string, Z42Type>)skeleton.Fields;
@@ -343,7 +342,7 @@ public static class ImportedSymbolLoader
 
         foreach (var f in cls.Fields)
         {
-            var ft = ResolveTypeName(f.TypeName, tpSet, classes, interfaces);
+            var ft = ResolveTypeName(f.TypeName, tpSet, classes, interfaces, delegates);
             if (f.IsStatic) staticFields[f.Name] = ft;
             else            fields[f.Name]        = ft;
             memberVis[f.Name] = ParseVisibility(f.Visibility);
@@ -352,7 +351,7 @@ public static class ImportedSymbolLoader
         foreach (var m in cls.Methods)
         {
             var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet,
-                classes, interfaces);
+                classes, interfaces, delegates);
             if (m.IsStatic) staticMethods[m.Name] = sig;
             else            methods[m.Name]        = sig;
             string visKey = m.Name.Contains('$') ? m.Name[..m.Name.IndexOf('$')] : m.Name;
@@ -368,7 +367,8 @@ public static class ImportedSymbolLoader
         ExportedInterfaceDef                          iface,
         Z42InterfaceType                              skeleton,
         IReadOnlyDictionary<string, Z42ClassType>     classes,
-        IReadOnlyDictionary<string, Z42InterfaceType> interfaces)
+        IReadOnlyDictionary<string, Z42InterfaceType> interfaces,
+        IReadOnlyDictionary<string, DelegateInfo>?    delegates = null)
     {
         // L3 primitive-as-struct: restore interface's type params so `T` in method
         // signatures (e.g. `T op_Add(T other)` in `INumber<T>`) resolves to
@@ -380,7 +380,7 @@ public static class ImportedSymbolLoader
         foreach (var m in iface.Methods)
         {
             var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet,
-                classes, interfaces);
+                classes, interfaces, delegates);
             if (m.IsStatic)
             {
                 staticMembers ??= new Dictionary<string, Z42StaticMember>();
@@ -411,12 +411,13 @@ public static class ImportedSymbolLoader
         int                                            minArgCount,
         HashSet<string>?                               genericParams = null,
         IReadOnlyDictionary<string, Z42ClassType>?     classes       = null,
-        IReadOnlyDictionary<string, Z42InterfaceType>? interfaces    = null)
+        IReadOnlyDictionary<string, Z42InterfaceType>? interfaces    = null,
+        IReadOnlyDictionary<string, DelegateInfo>?     delegates     = null)
     {
         var paramTypes = parms.Select(p =>
-            ResolveTypeName(p.TypeName, genericParams, classes, interfaces)).ToList();
+            ResolveTypeName(p.TypeName, genericParams, classes, interfaces, delegates)).ToList();
         return new Z42FuncType(paramTypes,
-            ResolveTypeName(retType, genericParams, classes, interfaces),
+            ResolveTypeName(retType, genericParams, classes, interfaces, delegates),
             minArgCount == paramTypes.Count ? -1 : minArgCount);
     }
 
@@ -436,12 +437,13 @@ public static class ImportedSymbolLoader
         string                                         name,
         HashSet<string>?                               genericParams = null,
         IReadOnlyDictionary<string, Z42ClassType>?     classes       = null,
-        IReadOnlyDictionary<string, Z42InterfaceType>? interfaces    = null)
+        IReadOnlyDictionary<string, Z42InterfaceType>? interfaces    = null,
+        IReadOnlyDictionary<string, DelegateInfo>?     delegates     = null)
     {
         if (name.EndsWith("[]"))
-            return new Z42ArrayType(ResolveTypeName(name[..^2], genericParams, classes, interfaces));
+            return new Z42ArrayType(ResolveTypeName(name[..^2], genericParams, classes, interfaces, delegates));
         if (name.EndsWith("?"))
-            return new Z42OptionType(ResolveTypeName(name[..^1], genericParams, classes, interfaces));
+            return new Z42OptionType(ResolveTypeName(name[..^1], genericParams, classes, interfaces, delegates));
         // 2026-04-28 fix-generic-type-roundtrip：识别 `Foo<X, Y, ...>` 字符串，
         // 重建为 `Z42InstantiatedType { Definition = Foo, TypeArgs = [X, Y, ...] }`。
         // 否则 `KeyValuePair<K, V>` 当 unknown class 处理 → 跨 zpkg 后退化为
@@ -453,17 +455,32 @@ public static class ImportedSymbolLoader
             {
                 string baseName = name[..lt];
                 string argsStr  = name[(lt + 1)..^1];
+                var resolvedArgs = SplitGenericArgs(argsStr)
+                    .Select(s => ResolveTypeName(s.Trim(), genericParams, classes, interfaces, delegates))
+                    .ToList();
+                // 2026-05-02 D2a: generic delegate (`Action<T>` / `Func<T,R>`) 实例化
+                if (delegates is not null
+                    && delegates.TryGetValue($"{baseName}${resolvedArgs.Count}", out var di)
+                    && di.TypeParams.Count == resolvedArgs.Count)
+                {
+                    var subMap = new Dictionary<string, Z42Type>(di.TypeParams.Count);
+                    for (int i = 0; i < di.TypeParams.Count; i++)
+                        subMap[di.TypeParams[i]] = resolvedArgs[i];
+                    return TypeChecker.SubstituteTypeParams(di.Signature, subMap);
+                }
                 if (classes is not null && classes.TryGetValue(baseName, out var defCls))
                 {
-                    var args = SplitGenericArgs(argsStr)
-                        .Select(s => ResolveTypeName(s.Trim(), genericParams, classes, interfaces))
-                        .ToList();
-                    return new Z42InstantiatedType(defCls, args);
+                    return new Z42InstantiatedType(defCls, resolvedArgs);
                 }
             }
         }
         if (genericParams != null && genericParams.Contains(name))
             return new Z42GenericParamType(name);
+        // 2026-05-02 D2a: 非泛型 delegate 名（如 `Action`，0-arity）解析为 Z42FuncType
+        if (delegates is not null
+            && delegates.TryGetValue(name, out var di0)
+            && di0.TypeParams.Count == 0)
+            return di0.Signature;
 
         switch (name)
         {

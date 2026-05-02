@@ -64,10 +64,10 @@ public sealed class IncrementalBuildIntegrationTests
         // 第二次：全 cached（34 = z42.core 文件数，含 2026-04-29 expose-gc-to-scripts
         // 新增的 GC.z42；如果新增 / 删除 stdlib 文件需同步更新此处。
         // fix-incremental-cache-invalidation 引入 "preserved existing zpkg" 行，
-        // 但 "cached: 35/35" 仍打印）
+        // 但 "cached: 36/36" 仍打印）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 35/35");
+        err2.Should().Contain("cached: 36/36");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 4/4");
     }
@@ -86,6 +86,6 @@ public sealed class IncrementalBuildIntegrationTests
         // 含 2026-04-29 expose-gc-to-scripts 新增的 GC.z42）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/35");
+        err2.Should().Contain("cached: 0/36");
     }
 }

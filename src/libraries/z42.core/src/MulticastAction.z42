@@ -1,0 +1,111 @@
+namespace Std;
+
+// 2026-05-02 add-multicast-action (D2a): 多播 Action —— 一次注册多个
+// `Action<T>` handler，Invoke 时全部触发。与单播 `Action<T>` 类型分离
+// （delegates-events.md K1）。
+//
+// 内部用 Action<T>[] handlers + bool[] alive 平行数组持订阅；alive[idx]
+// 标记是否活跃。COW snapshot —— Invoke 时拷贝当前数组遍历副本，触发
+// 期间 Subscribe / Dispose 影响下次触发不影响本次。
+//
+// D2a 仅 fail-fast 路径（continueOnException 默认 false；handler 抛异常
+// 直接传播，不包装）。`continueOnException=true` + `MulticastException`
+// 在 D2d 实施。
+//
+// ISubscription wrapper（StrongRef / WeakRef / OnceRef / CompositeRef）+
+// 双 vec 优化 在 D2b 实施。
+
+public sealed class MulticastAction<T> {
+    Action<T>[] handlers;
+    bool[] alive;
+    public int SlotCount;
+    int capacity;
+
+    public MulticastAction() {
+        this.capacity = 4;
+        this.handlers = new Action<T>[4];
+        this.alive = new bool[4];
+        this.SlotCount = 0;
+    }
+
+    public IDisposable Subscribe(Action<T> handler) {
+        if (this.SlotCount == this.capacity) this.Grow();
+        int idx = this.SlotCount;
+        this.handlers[idx] = handler;
+        this.alive[idx] = true;
+        this.SlotCount = this.SlotCount + 1;
+        return new MulticastSubscription<T>(this, idx);
+    }
+
+    public int Count() {
+        int c = 0;
+        int i = 0;
+        while (i < this.SlotCount) {
+            if (this.alive[i]) c = c + 1;
+            i = i + 1;
+        }
+        return c;
+    }
+
+    public void Invoke(T arg, bool continueOnException = false) {
+        // COW snapshot —— 拷贝 handlers + alive 到本地数组后遍历副本。
+        // 触发期间 Subscribe / Dispose 影响下次触发，不影响本次。
+        int n = this.SlotCount;
+        Action<T>[] snapHandlers = new Action<T>[n];
+        bool[] snapAlive = new bool[n];
+        int i = 0;
+        while (i < n) {
+            snapHandlers[i] = this.handlers[i];
+            snapAlive[i] = this.alive[i];
+            i = i + 1;
+        }
+        i = 0;
+        while (i < n) {
+            if (snapAlive[i]) snapHandlers[i](arg);
+            i = i + 1;
+        }
+        // continueOnException 参数当前 D2a 未消费 —— D2d 加聚合异常路径时启用。
+        // v1 用户传 true 行为同 false（fail-fast）。
+    }
+
+    // Internal: dispose token 入口。把 alive[idx] 置 false，invoke 跳过。
+    public void RemoveAt(int idx) {
+        if (idx >= 0 && idx < this.SlotCount) {
+            this.alive[idx] = false;
+        }
+    }
+
+    void Grow() {
+        int newCap = this.capacity * 2;
+        Action<T>[] biggerH = new Action<T>[newCap];
+        bool[] biggerA = new bool[newCap];
+        int i = 0;
+        while (i < this.SlotCount) {
+            biggerH[i] = this.handlers[i];
+            biggerA[i] = this.alive[i];
+            i = i + 1;
+        }
+        this.handlers = biggerH;
+        this.alive = biggerA;
+        this.capacity = newCap;
+    }
+}
+
+// 内部订阅 token —— Subscribe 返回它，Dispose 把 bus.alive[idx] 置 false。
+// 幂等：重复 Dispose 是 no-op（idx 设为 -1 后 RemoveAt 跳过）。
+public sealed class MulticastSubscription<T> : IDisposable {
+    MulticastAction<T> bus;
+    int idx;
+
+    public MulticastSubscription(MulticastAction<T> bus, int idx) {
+        this.bus = bus;
+        this.idx = idx;
+    }
+
+    public void Dispose() {
+        if (this.idx >= 0) {
+            this.bus.RemoveAt(this.idx);
+            this.idx = -1;
+        }
+    }
+}
