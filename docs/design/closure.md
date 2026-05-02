@@ -66,7 +66,15 @@ var f5 = (x: int, y: int) => x + y;      // 显式参数类型
 List<(int) -> bool>                      // 作为泛型实参
 ```
 
-z42 **不**使用 `Func<T,R>` / `Action<T>`——避开 17 重载历史包袱。这是相对 C# 唯一的语法偏离：声明仍是 C# 风（`R Name(T x)`），但**类型位置**改用箭头。这与 TypeScript 的 `function add(a, b): number` 声明 vs `(a, b) => number` 类型同样的不对称，是已知可接受的取舍。
+**类型位置写法对比**（2026-05-02 add-delegate-type 后）：
+
+| 写法 | 用法 | 推荐度 |
+|---|---|---|
+| `(int) -> int` 字面量箭头类型 | 简短匿名场景；签名一目了然 | ⭐⭐⭐ 默认 |
+| 命名 `delegate int IntFn(int x);` | 跨多 site 复用 / 接 C# 心智 / 嵌套类型组织 | ⭐⭐⭐ 推荐 |
+| 泛型 `Func<int, int>` / `Action<int>` / `Predicate<int>` | C# 风格，由 stdlib `Std.Delegates` 提供（D1c） | ⭐⭐ 兼容 |
+
+这三种写法**结构等价**，互转零开销。脚本生成 N arity 类型避开 C# 17 重载维护成本。详见 `delegates-events.md` §3。
 
 ### 3.3 函数表达式短写（C# 7+ expression-bodied）
 

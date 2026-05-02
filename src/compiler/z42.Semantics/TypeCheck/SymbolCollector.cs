@@ -32,6 +32,9 @@ public sealed partial class SymbolCollector : ISymbolBinder
     internal readonly HashSet<string>                      _importedInterfaceNames = new();
     internal readonly HashSet<string>                      _importedFuncNames      = new();
     internal readonly HashSet<string>                      _importedEnumNames      = new();
+    /// 2026-05-02 add-delegate-type: 用户声明的 delegate 注册表（含顶层 + 嵌套）。
+    /// Key = "Foo" / "Foo$N" / "Btn.OnClick" / "Btn.OnClick$N"。
+    internal readonly Dictionary<string, DelegateInfo>     _delegates              = new();
 
     public SymbolCollector(DiagnosticBag diags)
     {
@@ -49,6 +52,7 @@ public sealed partial class SymbolCollector : ISymbolBinder
 
         CollectEnums(cu);
         CollectInterfaces(cu);
+        CollectDelegates(cu);   // 2026-05-02 add-delegate-type — must precede CollectClasses（class 字段类型可能引用 delegate）
         CollectClasses(cu);
         CollectImpls(cu);
         CollectFunctions(cu);
@@ -59,7 +63,59 @@ public sealed partial class SymbolCollector : ISymbolBinder
             _classInterfaces, _abstractMethods,
             _abstractClasses, _sealedClasses, _virtualMethods,
             _importedClassNames, _importedClassNamespaces,
-            _importedInterfaceNames, _importedFuncNames, _importedEnumNames);
+            _importedInterfaceNames, _importedFuncNames, _importedEnumNames,
+            delegates: _delegates);
+    }
+
+    /// 2026-05-02 add-delegate-type: 收集顶层 + 嵌套 delegate。
+    /// 顶层 → "Foo" / "Foo$N"；嵌套 → "Class.Foo" / "Class.Foo$N"。
+    /// 解析签名时若 delegate 含 type-params，激活 _activeTypeParams 让
+    /// ResolveType 把 `T` 解析为 Z42GenericParamType 占位（与 generic class
+    /// / func 同款 pattern）。
+    private void CollectDelegates(CompilationUnit cu)
+    {
+        if (cu.Delegates is { } topLevels)
+            foreach (var d in topLevels)
+                RegisterDelegate(d, containerClass: null);
+
+        foreach (var cls in cu.Classes)
+            if (cls.NestedDelegates is { } nested)
+                foreach (var d in nested)
+                    RegisterDelegate(d, containerClass: cls.Name);
+    }
+
+    private void RegisterDelegate(DelegateDecl d, string? containerClass)
+    {
+        var prev = _activeTypeParams;
+        _activeTypeParams = d.TypeParams != null
+            ? new HashSet<string>(d.TypeParams)
+            : null;
+        try
+        {
+            var paramTypes = d.Params.Select(p => ResolveType(p.Type)).ToList();
+            var retType    = ResolveType(d.ReturnType);
+            var sig        = new Z42FuncType(paramTypes, retType);
+            var info       = new DelegateInfo(sig, d.TypeParams ?? [], containerClass);
+
+            var arity = d.TypeParams?.Count ?? 0;
+            // 简单名 key —— 类内部 + 顶层都可直接 `OnClick` 引用。同名全局 delegate
+            // / 同名嵌套 delegate 之间冲突属于 v1 限制（和 D1a Open Question 一致）。
+            var simpleKey = arity > 0 ? $"{d.Name}${arity}" : d.Name;
+            if (!_delegates.TryAdd(simpleKey, info))
+                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                    $"delegate `{simpleKey}` is already declared", d.Span);
+
+            // 嵌套 delegate 同时注册 qualified key（"Btn.OnClick" / "Btn.OnClick$N"），
+            // 为未来 dotted-path 外部引用预留；当前 ResolveType 仅消费 simpleKey。
+            if (containerClass is not null)
+            {
+                var qualifiedKey = arity > 0
+                    ? $"{containerClass}.{d.Name}${arity}"
+                    : $"{containerClass}.{d.Name}";
+                _delegates.TryAdd(qualifiedKey, info);
+            }
+        }
+        finally { _activeTypeParams = prev; }
     }
 
     /// Merge imported symbols from dependency zpkgs.

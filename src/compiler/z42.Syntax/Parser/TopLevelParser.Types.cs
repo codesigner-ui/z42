@@ -73,6 +73,35 @@ internal static partial class TopLevelParser
         return new EnumDecl(name, vis, members, start);
     }
 
+    // ── Delegate (2026-05-02 add-delegate-type) ──────────────────────────────
+    //
+    // 语法：`[visibility] delegate ReturnType Name<TypeParams>?(Params) where? ;`
+    // 顶层 + 嵌套（class body 内）共用此 parser。
+    private static DelegateDecl ParseDelegateDecl(
+        ref TokenCursor cursor, LanguageFeatures feat,
+        Visibility defaultVis = Visibility.Internal)
+    {
+        var start = cursor.Current.Span;
+        var vis   = ParseVisibility(ref cursor, defaultVis);
+        SkipNonVisibilityModifiers(ref cursor);
+        ExpectKind(ref cursor, TokenKind.Delegate);
+
+        // D1a Decision 8: `delegate*<T,R>` (unmanaged func pointer) 预留
+        if (cursor.Current.Kind == TokenKind.Star)
+            throw new ParseException(
+                "`delegate*` (unmanaged function pointer) is not yet supported",
+                cursor.Current.Span);
+
+        var retType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+        var name    = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+        var typeParams = ParseTypeParams(ref cursor);   // null if no `<...>`
+        var parms      = ParseParamList(ref cursor, feat);
+        var where      = ParseWhereClause(ref cursor);  // null if no `where`
+        ExpectKind(ref cursor, TokenKind.Semicolon);
+        return new DelegateDecl(name, vis, parms, retType,
+            start, typeParams, where);
+    }
+
     // ── Interface ─────────────────────────────────────────────────────────────
 
     private static InterfaceDecl ParseInterfaceDecl(
@@ -269,6 +298,7 @@ internal static partial class TopLevelParser
         ExpectKind(ref cursor, TokenKind.LBrace);
         NativeAttribute?     pendingNative    = null;
         List<TestAttribute>? pendingTestAttrs = null;  // R1: per-method z42.test.* attrs
+        var nestedDelegates = new List<DelegateDecl>(); // 2026-05-02 add-delegate-type
         while (cursor.Current.Kind != TokenKind.RBrace && !cursor.IsEnd)
         {
             try
@@ -278,6 +308,14 @@ internal static partial class TopLevelParser
                     var (parsedNative, parsedTest) = TryParseAttribute(ref cursor);
                     if (parsedNative != null) pendingNative = parsedNative;
                     if (parsedTest   != null) (pendingTestAttrs ??= new()).Add(parsedTest);
+                    continue;
+                }
+                // 2026-05-02 add-delegate-type: 嵌套 delegate (class body 内)
+                if (IsDelegateDecl(cursor))
+                {
+                    pendingNative = null;
+                    pendingTestAttrs = null;
+                    nestedDelegates.Add(ParseDelegateDecl(ref cursor, feat, Visibility.Public));
                     continue;
                 }
                 // L3-G4e: indexer `<vis>? <type> this [params] { get {..} set {..} }`
@@ -338,7 +376,8 @@ internal static partial class TopLevelParser
         ExpectKind(ref cursor, TokenKind.RBrace);
         return new ClassDecl(name, isStruct, isRecord, isAbstract, isSealed, vis,
             baseClass, ifaces, fields, methods, start, typeParams, classWhereClause,
-            ClassNativeDefaults: classDefaults);
+            ClassNativeDefaults: classDefaults,
+            NestedDelegates: nestedDelegates.Count == 0 ? null : nestedDelegates);
     }
 
     // ── Extern impl block ─────────────────────────────────────────────────────

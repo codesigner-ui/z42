@@ -462,6 +462,15 @@ internal static partial class TopLevelParser
         return cursor.Current.Kind == TokenKind.Interface;
     }
 
+    // 2026-05-02 add-delegate-type
+    private static bool IsDelegateDecl(TokenCursor cursor)
+    {
+        cursor = cursor.SkipWhile(t => t.Kind is
+            TokenKind.Public or TokenKind.Private
+            or TokenKind.Protected or TokenKind.Internal);
+        return cursor.Current.Kind == TokenKind.Delegate;
+    }
+
     private static bool IsClassOrStructDecl(TokenCursor cursor)
     {
         cursor = cursor.SkipWhile(t => t.Kind is

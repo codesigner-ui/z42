@@ -1,0 +1,29 @@
+// 2026-05-02 add-delegate-type D1a regression golden.
+// 端到端验证：顶层 / 嵌套 / 泛型 delegate + lambda 赋值 + Invoke 调用
+namespace Demo;
+using Std.IO;
+
+public delegate int Sq(int x);
+public delegate void OnClick(int x, int y);
+
+// 泛型 delegate
+public delegate R Mapper<T, R>(T arg);
+
+void Main() {
+    // 非泛型顶层 delegate
+    Sq sq = (int x) => x * x;
+    Console.WriteLine(sq(5));               // 25
+
+    // capturing closure 通过 delegate 调用
+    int n = 10;
+    Sq add = (int x) => x + n;
+    Console.WriteLine(add(7));              // 17
+
+    // 多参数 delegate
+    OnClick handler = (int x, int y) => Console.WriteLine($"({x},{y})");
+    handler(3, 4);                           // (3,4)
+
+    // 泛型 delegate 实例化
+    Mapper<int, int> doubler = (int v) => v * 2;
+    Console.WriteLine(doubler(21));          // 42
+}

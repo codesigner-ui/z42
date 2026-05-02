@@ -22,7 +22,8 @@ public sealed record CompilationUnit(
     List<InterfaceDecl> Interfaces,
     List<ImplDecl> Impls,
     Span Span,
-    List<NativeTypeImport>? NativeImports = null);
+    List<NativeTypeImport>? NativeImports = null,
+    List<DelegateDecl>? Delegates = null);  // 2026-05-02 add-delegate-type
 
 /// `import T from "lib";` — top-level native type import (spec C11a).
 /// C11a only records the binding; C11b synthesizes the corresponding ClassDecl.
@@ -134,7 +135,24 @@ public sealed record ClassDecl(
     Span Span,
     List<string>? TypeParams = null,
     WhereClause? Where = null,   // L3-G2 generic constraints
-    Tier1NativeBinding? ClassNativeDefaults = null);  // spec C9 — class-level [Native(lib=, type=)] shorthand
+    Tier1NativeBinding? ClassNativeDefaults = null,  // spec C9 — class-level [Native(lib=, type=)] shorthand
+    List<DelegateDecl>? NestedDelegates = null);     // 2026-05-02 add-delegate-type
+
+// ── Delegate declaration (2026-05-02 add-delegate-type) ──────────────────────
+
+/// `delegate R Name<T1, T2>(T1 a, T2 b) where T : IFoo;`
+///
+/// 命名 callable 类型。语义上等价 `(T1, T2) -> R` 字面量类型；编译器把它解析
+/// 为 `Z42FuncType`。支持顶层 + 嵌套（class body 内）+ 泛型 + where 约束。
+/// 详见 `docs/design/delegates-events.md` §3 + spec/archive/.../add-delegate-type.
+public sealed record DelegateDecl(
+    string Name,
+    Visibility Visibility,
+    List<Param> Params,
+    TypeExpr ReturnType,
+    Span Span,
+    List<string>? TypeParams = null,
+    WhereClause? Where = null);
 
 /// A field inside a class/struct: `int x;`
 public sealed record FieldDecl(

@@ -16,6 +16,14 @@ public sealed class SymbolTable
     public IReadOnlyDictionary<string, Z42InterfaceType> Interfaces { get; }
     public IReadOnlyDictionary<string, long> EnumConstants { get; }
     public IReadOnlySet<string> EnumTypes { get; }
+
+    /// 2026-05-02 add-delegate-type: 命名 delegate 注册表。
+    /// Key 形式：
+    ///   非泛型顶层  →  "Foo"
+    ///   泛型顶层    →  "Foo$N"  （N = TypeParams.Count）
+    ///   嵌套        →  "Btn.OnClick"  或  "Btn.OnClick$N"
+    /// Value 携带签名 / 类型参数 / 可选 where 约束元数据。
+    public IReadOnlyDictionary<string, DelegateInfo> Delegates { get; }
     /// L3-G2.5 chain: per-class list of implemented interfaces with TypeArgs preserved.
     /// `class Foo: IEquatable<int>` stores `Z42InterfaceType("IEquatable", ..., [Int])`.
     public IReadOnlyDictionary<string, List<Z42InterfaceType>> ClassInterfaces { get; }
@@ -57,7 +65,8 @@ public sealed class SymbolTable
         Dictionary<string, string>? importedClassNamespaces = null,
         HashSet<string>? importedInterfaceNames = null,
         HashSet<string>? importedFuncNames = null,
-        HashSet<string>? importedEnumNames = null)
+        HashSet<string>? importedEnumNames = null,
+        Dictionary<string, DelegateInfo>? delegates = null)
     {
         Classes = classes;
         Functions = functions;
@@ -74,6 +83,7 @@ public sealed class SymbolTable
         ImportedInterfaceNames  = importedInterfaceNames  ?? new HashSet<string>();
         ImportedFuncNames       = importedFuncNames       ?? new HashSet<string>();
         ImportedEnumNames       = importedEnumNames       ?? new HashSet<string>();
+        Delegates               = delegates ?? new Dictionary<string, DelegateInfo>();
         _ancestors = BuildAncestorSets(classes);
     }
 
@@ -223,9 +233,14 @@ public sealed class SymbolTable
         {
             "var"             => Z42Type.Unknown,
             // C# `Action` (no type args) → `() -> void` (closure design Decision 9).
+            // 2026-05-02 add-delegate-type：仍保留 hardcoded 路径作为兜底（与
+            // 0-arity 用户自定义 `delegate void Foo();` 共存）；D1c 一并清理。
             "Action"          => new Z42FuncType([], Z42Type.Void),
             _ when _activeTypeParams?.Contains(nt.Name) == true
                               => MakeTypeParam(nt.Name),
+            // 2026-05-02 add-delegate-type: 命名 delegate（非泛型）→ Z42FuncType
+            _ when Delegates.TryGetValue(nt.Name, out var di) && di.TypeParams.Count == 0
+                              => di.Signature,
             _                 => TypeRegistry.GetZ42Type(nt.Name) ??
                                (EnumTypes.Contains(nt.Name)                  ? new Z42EnumType(nt.Name)
                                : Classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
@@ -278,9 +293,22 @@ public sealed class SymbolTable
     /// 不再由编译器发射。
     private Z42Type ResolveGenericType(GenericType gt)
     {
+        // 2026-05-02 add-delegate-type: 用户声明的泛型 delegate 优先于 hardcoded
+        // `Func`/`Action` desugar 路径 —— 当用户在 stdlib 或 CU 内定义同名
+        // delegate 时直接走 SymbolTable 路径。Hardcoded 路径在 D1c 移除。
+        var arityKey = $"{gt.Name}${gt.TypeArgs.Count}";
+        if (Delegates.TryGetValue(arityKey, out var di) && di.TypeParams.Count == gt.TypeArgs.Count)
+        {
+            var resolvedArgs = gt.TypeArgs.Select(ResolveType).ToList();
+            var subMap = new Dictionary<string, Z42Type>(di.TypeParams.Count);
+            for (int i = 0; i < di.TypeParams.Count; i++)
+                subMap[di.TypeParams[i]] = resolvedArgs[i];
+            return TypeChecker.SubstituteTypeParams(di.Signature, subMap);
+        }
+
         // C# `Func<T1, ..., Tn, R>` / `Action<T1, ..., Tn>` desugar to Z42FuncType,
         // equivalent to the `(T) -> R` syntax. See docs/design/closure.md §3.2 and
-        // design.md Decision 9.
+        // design.md Decision 9. (D1c 时与 user-defined 路径合并并删除此分支。)
         if (gt.Name == "Func" && gt.TypeArgs.Count >= 1)
         {
             var paramTypes = gt.TypeArgs.Take(gt.TypeArgs.Count - 1).Select(ResolveType).ToList();

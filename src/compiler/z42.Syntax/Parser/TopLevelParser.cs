@@ -65,6 +65,7 @@ internal static partial class TopLevelParser
         var interfaces    = new List<InterfaceDecl>();
         var impls         = new List<ImplDecl>();
         var nativeImports = new List<NativeTypeImport>();
+        var delegates     = new List<DelegateDecl>();   // 2026-05-02 add-delegate-type
 
         NativeAttribute?      pendingNative    = null;
         List<TestAttribute>?  pendingTestAttrs = null;  // R1: accumulated z42.test.* attrs
@@ -105,6 +106,7 @@ internal static partial class TopLevelParser
                 }
                 if (IsEnumDecl(cursor))          { pendingNative = null; pendingTestAttrs = null; enums.Add(ParseEnumDecl(ref cursor, diags)); continue; }
                 if (IsInterfaceDecl(cursor))      { pendingNative = null; pendingTestAttrs = null; interfaces.Add(ParseInterfaceDecl(ref cursor, feat)); continue; }
+                if (IsDelegateDecl(cursor))       { pendingNative = null; pendingTestAttrs = null; delegates.Add(ParseDelegateDecl(ref cursor, feat)); continue; }
                 if (IsClassOrStructDecl(cursor))  {
                     // Spec C9: thread the class-level [Native(lib=, type=)]
                     // attribute (if present) into ClassDecl so its methods
@@ -132,7 +134,8 @@ internal static partial class TopLevelParser
 
         return new CompilationUnit(
             ns, usings, classes, functions, enums, interfaces, impls, start,
-            NativeImports: nativeImports.Count == 0 ? null : nativeImports);
+            NativeImports: nativeImports.Count == 0 ? null : nativeImports,
+            Delegates:     delegates.Count == 0 ? null : delegates);
     }
 
     /// `import IDENT from "<lib>";` — spec C11a manifest-driven native import.
