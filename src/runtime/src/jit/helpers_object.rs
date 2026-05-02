@@ -197,7 +197,11 @@ pub unsafe extern "C" fn jit_obj_new(
             vtable: Vec::new(), vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
             type_param_constraints: vec![],
         }));
-    let slots = vec![Value::Null; type_desc.fields.len()];
+    // 2026-05-02 fix-class-field-default-init: 按字段类型选默认值（与 interp
+    // exec_instr.rs::ObjNew 镜像，共用 metadata::default_value_for）。
+    let slots: Vec<Value> = type_desc.fields.iter()
+        .map(|f| crate::metadata::default_value_for(&f.type_tag))
+        .collect();
     let obj_val = vm_ctx_ref(ctx).heap().alloc_object(type_desc, slots, NativeData::None);
 
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);

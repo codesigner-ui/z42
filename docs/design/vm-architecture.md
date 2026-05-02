@@ -209,7 +209,7 @@ module。`initially_loaded_zpkgs` 含 `"z42.core.zpkg"`，所以 LazyLoader
 ```
 1. type_desc = module.type_registry[class_name] | lazy_loader.try_lookup_type(class_name)
             | make_fallback_type_desc(...)
-2. allocate ScriptObject(type_desc, slots=fields.len() × Null)
+2. allocate ScriptObject(type_desc, slots=fields.iter().map(|f| default_value_for(&f.type_tag)).collect())
 3. ctor_fn = module.func_index[ctor_name] | lazy_loader.try_lookup_function(ctor_name)
 4. if ctor_fn: exec_function(ctor_fn, [obj, ...args])
    else:       skip ctor call（默认无参 ctor 语义；TypeChecker 已确保
@@ -221,6 +221,18 @@ module。`initially_loaded_zpkgs` 含 `"z42.core.zpkg"`，所以 LazyLoader
 不再做 `${class}.${simple}` 名字推断（2026-04-26 add-objnew-ctor-name 重构）。
 `ctor_name` 含 `$N` arity suffix（重载场景）；单 ctor 时无 suffix。
 
+**字段默认值（2026-05-02 fix-class-field-default-init）**：步骤 2 把
+slot 初始化为对应类型的默认值（`int*`/`f64*` → 0、`bool` → false、`char` →
+`'\0'`、`str` / 引用 → null），不再一律 `Null`。具体映射由
+`metadata::default_value_for(type_tag) -> Value` 单一函数提供，interp 与
+JIT (`jit_obj_new`) 共享实现。需要这一步的前提是 `FieldSlot` 携带
+`type_tag: String`（从 zbc `FieldDesc.type_tag` 透传），见下文 TypeDesc 结构。
+
+ctor 入口由编译器侧 IrGen 注入字段 init（base ctor call 之后、用户 body
+之前）；无显式 ctor 但本类或本地祖先链有字段 init 的类，编译器合成无参
+隐式 ctor 内联整条链的 init 表达式。详见
+`docs/design/language-overview.md` §6.3 + `spec/archive/2026-05-02-fix-class-field-default-init/`。
+
 ### TypeDesc 结构
 
 ```rust
@@ -228,6 +240,8 @@ struct TypeDesc {
     name: String,                          // FQ 类名，e.g. "Std.Collections.Stack"
     base_name: Option<String>,             // 父类 FQ 名
     fields: Vec<FieldSlot>,                // 布局顺序，基类字段在前
+    //   FieldSlot { name: String, type_tag: String }
+    //   type_tag 用于 ObjNew 选默认值（fix-class-field-default-init）
     field_index: HashMap<String, usize>,   // O(1) 字段名 → slot
     vtable: Vec<(method_name, func_name)>, // 方法名 → FQ func name
     vtable_index: HashMap<String, usize>,  // O(1) method → vtable slot

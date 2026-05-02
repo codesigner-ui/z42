@@ -715,6 +715,32 @@ catch (CompilationException)
 
 ---
 
+## Class field initializer pipeline（2026-05-02 fix-class-field-default-init）
+
+实例字段 `int n = 5;` / 静态字段 `static int s = 1;` 的 init 表达式
+统一在 TypeChecker 阶段绑定，按字段种类分流到 SemanticModel 的两本字典：
+
+| 字段种类 | SemanticModel 字段 | 消费者（IrGen / FunctionEmitter） |
+|---------|------------------|---------------------------------|
+| `static` field with init | `BoundStaticInits` | `EmitStaticInit` 在 `__static_init__` 函数体中按拓扑序发射 `StaticSet` |
+| 实例 field with init | `BoundInstanceInits` | 每个 ctor 入口（base ctor call 之后、用户 body 之前）按字段声明顺序注入 `FieldSet` |
+
+**关键决策**：
+
+- `TypeChecker.BindFieldInits` 同时绑定两类初始化器，类型检查时把字段类型作为 expected
+  type（驱动数值字面量 / lambda / 重载选择），并在不可赋值时报错。
+- `FunctionEmitter.EmitMethod` 接受 `IReadOnlyList<FieldDecl>? instanceFieldInits` 参数 —
+  IrGen 在调用时仅对 ctor（`!isStatic && method.Name == className`）传入非空列表。
+- 类没有显式 ctor 但本类或任一**本地祖先**有字段 init → IrGen 调
+  `EmitImplicitCtor`，构造一个空 body 的 synth `FunctionDecl(name=cls.Name)`，
+  通过 `CollectChainFieldInits` 沿祖先链 top-down 拼出整条链的 FieldDecl 列表，
+  作为 `instanceFieldInits` 传给 `FunctionEmitter.EmitMethod`。
+- 合成 ctor 不调用 base ctor —— 与 z42 现有"只有 `: base(...)` 才生成 base call"
+  行为一致。跨 zpkg 祖先字段 init 不在合成范围内（FieldDecl AST 不可见），
+  目前是已知限制。
+- 未带显式初始化器的字段由 VM 端 `metadata::default_value_for(type_tag)` 在 `ObjNew`
+  分配时填默认值，详见 `docs/design/vm-architecture.md` §ObjNew dispatch。
+
 ## 关键设计权衡
 
 ### 为什么 AST 节点是 `sealed record`

@@ -46,6 +46,13 @@ public sealed class SemanticModel
     /// Only populated for static fields that have an initializer (FieldDecl.Initializer != null).
     public IReadOnlyDictionary<FieldDecl, BoundExpr> BoundStaticInits { get; }
 
+    /// Bound instance field initializers keyed by FieldDecl (reference equality).
+    /// Only populated for non-static fields that have an initializer.
+    /// Codegen 在每个 ctor body 头部（base ctor call 之后）按字段声明顺序发射
+    /// `this.<field> = <init-expr>`；无显式 ctor 但任一字段有显式 init 时，
+    /// IrGen 合成无参隐式 ctor 跑这些 init。
+    public IReadOnlyDictionary<FieldDecl, BoundExpr> BoundInstanceInits { get; }
+
     /// Bound base-constructor argument lists, keyed by the constructor FunctionDecl.
     /// Only populated for constructors that have a base-ctor call (FunctionDecl.BaseCtorArgs != null).
     public IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> BoundBaseCtorArgs { get; }
@@ -81,6 +88,7 @@ public sealed class SemanticModel
         IReadOnlyDictionary<FunctionDecl, BoundBlock> boundBodies,
         IReadOnlyDictionary<Param,        BoundExpr>  boundDefaults,
         IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundStaticInits,
+        IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundInstanceInits,
         IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs,
         IReadOnlyDictionary<string, string>? importedClassNamespaces = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? funcConstraints = null,
@@ -96,6 +104,7 @@ public sealed class SemanticModel
         BoundBodies             = boundBodies;
         BoundDefaults           = boundDefaults;
         BoundStaticInits        = boundStaticInits;
+        BoundInstanceInits      = boundInstanceInits;
         BoundBaseCtorArgs       = boundBaseCtorArgs;
         ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
         FuncConstraints         = funcConstraints  ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();

@@ -327,6 +327,36 @@ public class Point3D(double X, double Y, double Z) : Point(X, Y) {
 }
 ```
 
+### 6.3 字段默认值与初始化器
+
+实例字段（不是 auto-property）支持声明时附加 `=` 初始化器：
+
+```z42
+class Box {
+    int n = 5;            // 显式 initializer
+    string s = "hello";
+    bool flag;            // 无 initializer → 取类型默认值
+}
+```
+
+规则（参见 `spec/archive/2026-05-02-fix-class-field-default-init/`）：
+
+| 字段写法 | 初始值（无显式 ctor）| 初始值（显式 ctor body 覆写后）|
+|---------|--------------------|-----------------------------|
+| `int n;` | `0` | ctor body 内最后一次赋值 |
+| `int n = 5;` | `5`（合成 ctor 入口注入 init）| `5` → 用户 body 的赋值覆写 |
+| `bool flag;` | `false` | … |
+| `string s;` | `null` | … |
+| `string s = "x";` | `"x"` | … |
+| `Point p;` | `null`（引用类型默认）| … |
+
+**实现细节**：
+
+- 编译器把 instance field initializer 注入到每个显式 ctor 入口（base ctor call 之后、用户 body 之前）。
+- 类没有显式 ctor 但本类或本地祖先链上任一类有字段 init → 编译器合成无参隐式 ctor，按祖先 → 自身顺序内联整条链的 field init 表达式。
+- 字段无 init 时，VM `ObjNew` 按字段声明类型选默认值（`int*`/`f64*` → 0、`bool` → false、`char` → `'\0'`、`str`/引用类型 → null），不再一律 null。
+- z42 当前模型不自动调用 base ctor — 显式 ctor 仍需用户主动写 `: base(...)` 触发父类 ctor side effect；合成 ctor 仅内联本地祖先字段 init，不调用任何 base ctor。
+
 ---
 
 ## 7. 结构体

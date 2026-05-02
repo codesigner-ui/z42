@@ -108,7 +108,18 @@
       "Bash(git fetch *)",
       "Bash(./scripts/test-changed.sh --dry-run)",
       "Bash(./scripts/test-changed.sh HEAD~3 --dry-run)",
-      "Bash(bash -n scripts/test-changed.sh)"
+      "Bash(bash -n scripts/test-changed.sh)",
+      "Bash(bash scripts/regen-golden-tests.sh src/runtime/tests/golden/run/lambda_l2_basic)",
+      "Bash(bash scripts/test-vm.sh jit)",
+      "Bash(bash scripts/regen-golden-tests.sh src/runtime/tests/golden/run/local_fn_l2_basic)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/local_fn_l2_basic/source.z42 --emit zbc -o /tmp/lfn_basic.zbc)",
+      "Bash(bash scripts/regen-golden-tests.sh src/runtime/tests/golden/run/closure_l3_capture)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/closure_l3_capture/source.z42 --emit zbc -o /tmp/cl3.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/closure_l3_capture/source.z42 --emit zbc -o src/runtime/tests/golden/run/closure_l3_capture/source.zbc)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/closure_l3_capture/source.z42 --emit ir)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/__r7probe/source.z42 --emit zbc -o src/runtime/tests/golden/run/__r7probe/source.zbc)",
+      "Bash(bash scripts/regen-golden-tests.sh src/runtime/tests/golden/run/closure_l3_loops)",
+      "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/closure_l3_loops/source.z42 --emit zbc -o src/runtime/tests/golden/run/closure_l3_loops/source.zbc)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

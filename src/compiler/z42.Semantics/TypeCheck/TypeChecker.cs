@@ -39,6 +39,8 @@ public sealed partial class TypeChecker : ITypeInferrer
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FieldDecl, BoundExpr> _boundStaticInits =
         new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<FieldDecl, BoundExpr> _boundInstanceInits =
+        new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
 
     /// Resolved generic constraints keyed by declaration name. (L3-G2, L3-G2.5)
@@ -139,7 +141,7 @@ public sealed partial class TypeChecker : ITypeInferrer
         MergeImportedConstraints();
 
         // ── Pass 1: bind bodies (function-level error isolation) ────────────
-        BindStaticFieldInits(cu);
+        BindFieldInits(cu);
         foreach (var cls  in cu.Classes)   TryBindClassMethods(cls);
         foreach (var impl in cu.Impls)     TryBindImplMethods(impl);
         foreach (var fn   in cu.Functions) TryBindFunction(fn);
@@ -148,7 +150,7 @@ public sealed partial class TypeChecker : ITypeInferrer
         return new SemanticModel(
             _symbols.Classes, _symbols.Functions, _symbols.Interfaces,
             _symbols.EnumConstants, _symbols.EnumTypes,
-            _boundBodies, _boundDefaults, _boundStaticInits, _boundBaseCtorArgs,
+            _boundBodies, _boundDefaults, _boundStaticInits, _boundInstanceInits, _boundBaseCtorArgs,
             _symbols.ImportedClassNamespaces as Dictionary<string, string>
                 ?? new Dictionary<string, string>(_symbols.ImportedClassNamespaces),
             funcConstraints:  _funcConstraints,
@@ -399,18 +401,29 @@ public sealed partial class TypeChecker : ITypeInferrer
                     $"duplicate parameter name `{p.Name}`", p.Span);
     }
 
-    // ── Static field initializer binding ─────────────────────────────────────
-
-    private void BindStaticFieldInits(CompilationUnit cu)
+    // ── Field initializer binding (static + instance) ───────────────────────
+    //
+    // 静态字段 init 写入 _boundStaticInits（由 __static_init__ 跑）；
+    // 实例字段 init 写入 _boundInstanceInits（由每个 ctor 入口注入，参见
+    // fix-class-field-default-init design Decision 2）。
+    // Codegen 通过 SemanticModel 取这两份字典分别处理。
+    private void BindFieldInits(CompilationUnit cu)
     {
         foreach (var cls in cu.Classes)
         {
-            var statics = cls.Fields.Where(f => f.IsStatic && f.Initializer != null).ToList();
-            if (statics.Count == 0) continue;
+            var withInit = cls.Fields.Where(f => f.Initializer != null).ToList();
+            if (withInit.Count == 0) continue;
             var env   = new TypeEnv(_symbols.Functions, _symbols.Classes, _symbols.ImportedClassNames);
             var scope = env.WithClass(cls.Name);
-            foreach (var field in statics)
-                _boundStaticInits[field] = BindExpr(field.Initializer!, scope);
+            foreach (var field in withInit)
+            {
+                var fieldType = ResolveType(field.Type);
+                var bound = BindExpr(field.Initializer!, scope, fieldType);
+                RequireAssignable(fieldType, bound.Type, field.Span,
+                    $"field initializer of `{field.Name}` (expected `{fieldType}`, got `{bound.Type}`)");
+                if (field.IsStatic) _boundStaticInits[field]   = bound;
+                else                _boundInstanceInits[field] = bound;
+            }
         }
     }
 

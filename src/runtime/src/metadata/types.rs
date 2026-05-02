@@ -12,6 +12,29 @@ use crate::gc::GcRef;
 #[derive(Debug, Clone)]
 pub struct FieldSlot {
     pub name: String,
+    /// Type tag from zbc (e.g. `"int"`, `"long"`, `"bool"`, `"f64"`, `"str"`,
+    /// `"Demo.Box"`, …). Used by `ObjNew` to pick a per-type default `Value`
+    /// for fields that have no explicit initializer.
+    /// 2026-05-02 fix-class-field-default-init.
+    pub type_tag: String,
+}
+
+/// Returns the default `Value` for a field whose declared type tag is
+/// `type_tag`. Mirrors the C# `EmitStaticInit` defaults. Used by `ObjNew`
+/// (interp + JIT) to initialise fields without an explicit initializer.
+///
+/// Reference / unknown types fall back to `Null`. `char` follows the existing
+/// "char-as-i64" representation (no separate `Value::Char` variant).
+pub fn default_value_for(type_tag: &str) -> Value {
+    match type_tag {
+        "int" | "long" | "short" | "byte" | "sbyte" | "ushort" | "uint" | "ulong"
+        | "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64"
+        | "isize" | "usize" => Value::I64(0),
+        "double" | "float" | "f32" | "f64" => Value::F64(0.0),
+        "bool" => Value::Bool(false),
+        "char" => Value::Char('\0'),
+        _ => Value::Null,
+    }
 }
 
 /// Pre-computed runtime type descriptor (CoreCLR MethodTable equivalent).

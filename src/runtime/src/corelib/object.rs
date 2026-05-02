@@ -24,8 +24,8 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         name: crate::metadata::well_known_names::STD_TYPE.to_string(),
         base_name: None,
         fields: vec![
-            crate::metadata::FieldSlot { name: "__name".to_string() },
-            crate::metadata::FieldSlot { name: "__fullName".to_string() },
+            crate::metadata::FieldSlot { name: "__name".to_string(), type_tag: "str".to_string() },
+            crate::metadata::FieldSlot { name: "__fullName".to_string(), type_tag: "str".to_string() },
         ],
         field_index,
         vtable: Vec::new(),

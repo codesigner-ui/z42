@@ -162,9 +162,40 @@ public sealed class IrGen : IEmitterContext
         if (cu.Classes.Any(cls => cls.Fields.Any(f => f.IsStatic)))
             functions.Add(new FunctionEmitter(this).EmitStaticInit(cu));
 
+        // 2026-05-02 fix-class-field-default-init: 为每个 class 收集"有显式
+        // initializer 的实例字段"列表，并在该类每个 ctor 上注入 init。无显式
+        // ctor 但任一字段（含本类或本地祖先链中任一节点）有 init →
+        // 合成无参隐式 ctor，按祖先 → 自身顺序内联所有字段 init。参见 design.md
+        // Decision 2/3 + 备注：由于 z42 当前模型不自动调用 base ctor，合成 ctor
+        // 不依赖 base call，而是直接内联本地祖先的 field init 表达式。
+        var localClassByName = cu.Classes.ToDictionary(c => c.Name, c => c);
         foreach (var cls in cu.Classes)
-            functions.AddRange(cls.Methods.Where(m => !m.IsAbstract)
-                .Select(m => EmitMethod(cls.Name, m, cls.ClassNativeDefaults)));
+        {
+            var ownFieldInits = cls.Fields
+                .Where(f => !f.IsStatic && f.Initializer != null)
+                .ToList();
+
+            bool hasExplicitCtor = false;
+            foreach (var m in cls.Methods.Where(m => !m.IsAbstract))
+            {
+                bool isCtor = !m.IsStatic && m.Name == cls.Name;
+                if (isCtor) hasExplicitCtor = true;
+                // 显式 ctor 仅注入"本类自己"的字段 init（保留现有 z42 模型：
+                // 用户显式 ctor 必须自己 `: base(...)` 触发父类 init）。
+                functions.Add(EmitMethod(
+                    cls.Name, m, cls.ClassNativeDefaults,
+                    isCtor ? ownFieldInits : null));
+            }
+
+            if (!hasExplicitCtor)
+            {
+                // 合成 ctor 需要看祖先链：只要本类或任一本地祖先有 field init，
+                // 就需要合成；并且 init 列表覆盖整条链（祖先在前、自身在后）。
+                var chainInits = CollectChainFieldInits(cls, localClassByName);
+                if (chainInits.Count > 0)
+                    functions.Add(EmitImplicitCtor(cls, chainInits));
+            }
+        }
         // L3 extern impl (Change 1): emit impl method bodies under the target class.
         foreach (var impl in cu.Impls)
         {
@@ -339,7 +370,8 @@ public sealed class IrGen : IEmitterContext
     // ── Per-function delegation ──────────────────────────────────────────────
 
     private IrFunction EmitMethod(string className, FunctionDecl method,
-        Tier1NativeBinding? classNativeDefaults = null)
+        Tier1NativeBinding? classNativeDefaults = null,
+        IReadOnlyList<FieldDecl>? instanceFieldInits = null)
     {
         // L3-Impl2: QualifyClassName routes imported impl targets to source namespace.
         // For local classes (cu.Classes path) this returns the same as QualifyName.
@@ -371,7 +403,63 @@ public sealed class IrGen : IEmitterContext
         }
 
         var body = GetBoundBody(method);
-        return new FunctionEmitter(this).EmitMethod(className, method, body, methodIrName);
+        return new FunctionEmitter(this).EmitMethod(
+            className, method, body, methodIrName, instanceFieldInits);
+    }
+
+    /// Walks the local ancestor chain top-down (root → self) and concatenates
+    /// each class's instance field initializers. Used to build the synth ctor's
+    /// field-init injection list when a class declines explicit ctor.
+    ///
+    /// Imported (zpkg) ancestors are skipped — their FieldDecl AST is not
+    /// available in this CU; cross-package field-init inheritance is out of
+    /// scope for this fix and would require either propagating BoundExpr
+    /// through TSIG or moving init evaluation to the importing side. See
+    /// fix-class-field-default-init design notes.
+    private List<FieldDecl> CollectChainFieldInits(
+        ClassDecl cls, IReadOnlyDictionary<string, ClassDecl> localClassByName)
+    {
+        var chain = new List<ClassDecl>();
+        var current = cls;
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (current is not null && visited.Add(current.Name))
+        {
+            chain.Add(current);
+            if (current.BaseClass is null) break;
+            if (!localClassByName.TryGetValue(current.BaseClass, out var parent))
+                break; // imported / unknown — stop walking
+            current = parent;
+        }
+        chain.Reverse(); // root → self
+        var result = new List<FieldDecl>();
+        foreach (var c in chain)
+            result.AddRange(c.Fields.Where(f => !f.IsStatic && f.Initializer != null));
+        return result;
+    }
+
+    /// 2026-05-02 fix-class-field-default-init: 合成无参隐式 ctor。
+    /// 当 class 没有显式 ctor 但本类或任一本地祖先有实例字段 initializer 时调用。
+    /// 合成的 IR 函数名 = `{qualifiedClass}.{cls.Name}`，与 ResolveCtorName
+    /// 在"无显式 ctor"路径返回的 className 拼接后一致；body 仅含字段 init
+    /// （由 EmitMethod 的字段 init 注入逻辑产生），不包含 implicit base call
+    /// （与 z42 现有"只有 `: base(...)` 才生成 base call"行为一致）。
+    private IrFunction EmitImplicitCtor(ClassDecl cls, IReadOnlyList<FieldDecl> instanceFieldInits)
+    {
+        var synthCtor = new FunctionDecl(
+            Name:            cls.Name,
+            Params:          new List<Param>(),
+            ReturnType:      new VoidType(cls.Span),
+            Body:            new BlockStmt(new List<Stmt>(), cls.Span),
+            Visibility:      Visibility.Public,
+            Modifiers:       FunctionModifiers.None,
+            NativeIntrinsic: null,
+            Span:            cls.Span,
+            BaseCtorArgs:    null);
+        var emptyBody = new BoundBlock(Array.Empty<BoundStmt>(), cls.Span);
+        var qualClass = ((IEmitterContext)this).QualifyClassName(cls.Name);
+        var ctorIrName = $"{qualClass}.{cls.Name}";
+        return new FunctionEmitter(this).EmitMethod(
+            cls.Name, synthCtor, emptyBody, ctorIrName, instanceFieldInits);
     }
 
     private IrFunction EmitFunction(FunctionDecl fn)

@@ -153,6 +153,12 @@
 > **后续扩展计划**（time / threading / net / json / crypto 等 P0–P3 分级清单）：
 > 见 [docs/design/stdlib-roadmap.md](design/stdlib-roadmap.md)。
 
+### 已完成的关键 fix（按时间）
+
+| 日期 | 名称 | 影响 |
+|------|------|------|
+| 2026-05-02 | `fix-class-field-default-init` | 实例字段 `int n;` / `int n = 5;` / 继承字段 init 现在按声明类型正确初始化（之前一律 Null）。三层（TypeChecker + Codegen + VM ObjNew）协同；引入 `metadata::default_value_for` + `FieldSlot.type_tag`。详见 archive |
+
 ### 代码质量 Backlog（按触发条件执行）
 
 > 来源：2026-04-14 代码审查。批次 1–4 已完成，以下为剩余低优先级项。

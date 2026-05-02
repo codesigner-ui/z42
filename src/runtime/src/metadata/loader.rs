@@ -319,7 +319,10 @@ pub fn build_type_registry(module: &mut Module) {
 
         for f in &desc.fields {
             if !fields.iter().any(|s| s.name == f.name) {
-                fields.push(FieldSlot { name: f.name.clone() });
+                fields.push(FieldSlot {
+                    name: f.name.clone(),
+                    type_tag: f.type_tag.clone(),
+                });
             }
         }
 

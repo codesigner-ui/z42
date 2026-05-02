@@ -73,8 +73,13 @@ internal sealed partial class FunctionEmitter
 
     // ── Entry points ─────────────────────────────────────────────────────────
 
+    /// Emits IR for a class method. For ctors, `instanceFieldInits` (if non-null)
+    /// provides the list of instance fields whose initializers should be injected
+    /// at ctor entry, after base ctor call but before user body. See
+    /// fix-class-field-default-init design Decision 2.
     internal IrFunction EmitMethod(
-        string className, FunctionDecl method, BoundBlock body, string methodIrName)
+        string className, FunctionDecl method, BoundBlock body, string methodIrName,
+        IReadOnlyList<FieldDecl>? instanceFieldInits = null)
     {
         bool isStatic = method.IsStatic;
         _currentClassName = className;
@@ -110,6 +115,22 @@ internal sealed partial class FunctionEmitter
             argRegs.AddRange(boundBaseArgs.Select(EmitExpr));
             var dst = Alloc(IrType.Ref);
             Emit(new CallInstr(dst, baseCtorIrName, argRegs));
+        }
+
+        // 2026-05-02 fix-class-field-default-init: 在 ctor 入口（base ctor call 之后、
+        // 用户 body 之前）按字段声明顺序注入 `this.<field> = <init-expr>`，仅对
+        // 有显式 Initializer 的字段发射；无 init 的字段由 VM ObjNew 的 type defaults
+        // 兜底（参见 design.md Decision 1/2）。隐式合成 ctor 走相同路径，
+        // body 是空 BoundBlock。
+        if (isCtor && instanceFieldInits is { Count: > 0 })
+        {
+            foreach (var field in instanceFieldInits)
+            {
+                if (!_ctx.SemanticModel.BoundInstanceInits.TryGetValue(field, out var initExpr))
+                    continue;
+                var valReg = EmitExpr(initExpr);
+                Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), field.Name, valReg));
+            }
         }
 
         EmitBoundBlock(body);

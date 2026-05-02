@@ -1,0 +1,46 @@
+// 2026-05-02 fix-class-field-default-init regression golden.
+// 验证四组场景：
+//   A) 全部字段有显式 init  → 隐式 ctor 注入
+//   B) 全部字段无显式 init  → VM ObjNew 类型默认值
+//   C) init + 显式 ctor body 覆写 → ctor 入口 init → 用户 body 覆盖
+//   D) 继承场景 P → Q  → 子类 init 不影响父类 init
+namespace Demo;
+using Std.IO;
+
+class A {
+    int x = 1;
+    string s = "hello";
+    bool b = true;
+}
+
+class B {
+    int n;
+    bool flag;
+}
+
+class C {
+    int n = 5;
+    C(int x) { this.n = x; }
+}
+
+class P {
+    int p = 100;
+}
+
+class Q : P {
+    int q = 200;
+}
+
+void Main() {
+    var a = new A();
+    Console.WriteLine($"A: x={a.x} s={a.s} b={a.b}");
+
+    var b = new B();
+    Console.WriteLine($"B: n={b.n} flag={b.flag}");
+
+    var c = new C(99);
+    Console.WriteLine($"C: n={c.n}");
+
+    var q = new Q();
+    Console.WriteLine($"Q: p={q.p} q={q.q}");
+}

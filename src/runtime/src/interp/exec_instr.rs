@@ -302,7 +302,12 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     std::sync::Arc::new(make_fallback_type_desc(module, class_name))
                 });
 
-            let slots = vec![Value::Null; type_desc.fields.len()];
+            // 2026-05-02 fix-class-field-default-init: 按字段声明类型选默认值
+            // （int → I64(0)、bool → Bool(false)、str/ref → Null …），不再
+            // 一律 Null。有显式 init 的字段在 ctor 入口被 FieldSet 覆写。
+            let slots: Vec<Value> = type_desc.fields.iter()
+                .map(|f| crate::metadata::default_value_for(&f.type_tag))
+                .collect();
             let obj_val = ctx.heap().alloc_object(type_desc, slots, NativeData::None);
 
             // 直查 ctor_name (TypeChecker 已 overload-resolve)；无名字推断。

@@ -104,7 +104,10 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
     for desc in chain.iter().rev() {
         for f in &desc.fields {
             if !fields.iter().any(|s: &FieldSlot| s.name == f.name) {
-                fields.push(FieldSlot { name: f.name.clone() });
+                fields.push(FieldSlot {
+                    name: f.name.clone(),
+                    type_tag: f.type_tag.clone(),
+                });
             }
         }
     }

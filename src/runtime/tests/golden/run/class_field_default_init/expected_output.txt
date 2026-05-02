@@ -1,0 +1,4 @@
+A: x=1 s=hello b=true
+B: n=0 flag=false
+C: n=99
+Q: p=100 q=200

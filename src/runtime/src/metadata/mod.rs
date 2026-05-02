@@ -24,7 +24,7 @@ pub mod test_index;
 mod constraint_tests;
 
 // Re-exports: runtime value types
-pub use types::{ExecMode, FieldSlot, NativeData, PinSourceKind, ScriptObject, TypeDesc, Value};
+pub use types::{default_value_for, ExecMode, FieldSlot, NativeData, PinSourceKind, ScriptObject, TypeDesc, Value};
 #[allow(deprecated)]
 pub use types::ObjectData;
 
