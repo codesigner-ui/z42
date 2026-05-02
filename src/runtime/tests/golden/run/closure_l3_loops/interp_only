@@ -1,0 +1,2 @@
+JIT path for MkClos / CallIndirect lands in impl-closure-l3-jit-complete.
+This golden uses MkClos under the hood for every closure created in the loop body.

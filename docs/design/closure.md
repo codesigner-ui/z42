@@ -143,6 +143,13 @@ foreach (var f in fns) Console.WriteLine(f());   // 输出 1, 2, 3（不是 3, 3
 
 C 风格 `for` 同样适用——这是与 C# 5+ 的一处对齐扩展（C# 5 只修了 foreach）。
 
+> **实现注**：z42 的"每次迭代新绑定"语义由值快照规则（§4.1）**自动满足**——
+> 闭包 env 在 `MkClos` 时拷贝当前迭代的值，而非持有"对循环变量的引用"。
+> 即使 `for` / `foreach` 循环用单一寄存器复用循环变量存储，每次创建的闭包
+> env 仍是独立快照。无需循环 codegen 特殊处理。
+> 见 `golden/run/closure_l3_loops/`（regression 防护）+
+> `spec/archive/2026-05-02-verify-closure-l3-loops/`（验证记录）。
+
 ### 4.4 共享可变状态：用 class（不引入 `Ref<T>` 包装）
 
 由于值类型按快照捕获，需要"在闭包内修改外部状态"时——**直接用 class**（引用类型按身份共享规则自然生效）：

@@ -1,0 +1,84 @@
+// L3 closure — loop-variable fresh-binding regression test (R7).
+//
+// z42 captures value-typed locals by snapshot at MkClos time, so each loop
+// iteration produces a closure whose env carries the current iteration's
+// value. This is *automatically* C# 5+/foreach behavior AND it extends to
+// C-style `for` (which C# 5+ left broken) — see docs/design/closure.md §4.3.
+//
+// This test guards against regression: if the value-snapshot path is ever
+// changed to share a single backing storage across iterations, all closures
+// would collapse to the final iteration value (the classic "晚绑定" bug).
+namespace Demo;
+using Std.IO;
+
+class Bag {
+    public int n;
+    Bag(int n) { this.n = n; }
+}
+
+void Main() {
+    int[] nums = new int[] { 1, 2, 3 };
+
+    // ── 1) foreach with value-type loop variable ────────────────────────────
+    () -> int fe0 = () => 0;
+    () -> int fe1 = () => 0;
+    () -> int fe2 = () => 0;
+    int feIdx = 0;
+    foreach (var i in nums) {
+        if      (feIdx == 0) fe0 = () => i;
+        else if (feIdx == 1) fe1 = () => i;
+        else if (feIdx == 2) fe2 = () => i;
+        feIdx = feIdx + 1;
+    }
+    Assert.Equal(1, fe0());
+    Assert.Equal(2, fe1());
+    Assert.Equal(3, fe2());
+
+    // ── 2) C-style for with mutating loop variable ──────────────────────────
+    () -> int fc0 = () => 0;
+    () -> int fc1 = () => 0;
+    () -> int fc2 = () => 0;
+    for (int j = 0; j < 3; j = j + 1) {
+        if      (j == 0) fc0 = () => j;
+        else if (j == 1) fc1 = () => j;
+        else if (j == 2) fc2 = () => j;
+    }
+    Assert.Equal(0, fc0());
+    Assert.Equal(1, fc1());
+    Assert.Equal(2, fc2());
+
+    // ── 3) while with re-declared loop variable ────────────────────────────
+    () -> int fw0 = () => 0;
+    () -> int fw1 = () => 0;
+    () -> int fw2 = () => 0;
+    int k = 0;
+    while (k < 3) {
+        var snap = k * 10;            // local var per iteration
+        if      (k == 0) fw0 = () => snap;
+        else if (k == 1) fw1 = () => snap;
+        else if (k == 2) fw2 = () => snap;
+        k = k + 1;
+    }
+    Assert.Equal(0,  fw0());
+    Assert.Equal(10, fw1());
+    Assert.Equal(20, fw2());
+
+    // ── 4) Reference-type loop variable: each iteration's ref is captured
+    //         independently (different objects in different closures).
+    Bag[] bags = new Bag[] { new Bag(7), new Bag(8), new Bag(9) };
+    () -> int br0 = () => 0;
+    () -> int br1 = () => 0;
+    () -> int br2 = () => 0;
+    int bi = 0;
+    foreach (var b in bags) {
+        if      (bi == 0) br0 = () => b.n;
+        else if (bi == 1) br1 = () => b.n;
+        else if (bi == 2) br2 = () => b.n;
+        bi = bi + 1;
+    }
+    Assert.Equal(7, br0());
+    Assert.Equal(8, br1());
+    Assert.Equal(9, br2());
+
+    Console.WriteLine("closure l3 loops ok");
+}
