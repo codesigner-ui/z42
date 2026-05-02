@@ -587,6 +587,12 @@ impl MagrGC for RcMagrGC {
                     + env.borrow().capacity() * size_of::<Value>()
                     + fn_name.capacity()
             }
+            // impl-closure-l3-escape-stack: StackClosure 的 env 在创建 frame 的
+            // env_arena 中，由 frame 拥有；本 Value 自身只携带 idx + fn_name。
+            // GC 不为 arena 内存分配 / 释放负责（frame Drop 自动处理）。
+            Value::StackClosure { fn_name, .. } => {
+                size_of::<Value>() + fn_name.capacity()
+            }
         }
     }
 

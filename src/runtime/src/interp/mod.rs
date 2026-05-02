@@ -112,6 +112,10 @@ pub fn run_with_static_init(ctx: &VmContext, module: &Module, func: &Function) -
 
 pub(crate) struct Frame {
     pub regs: Vec<Value>,
+    /// 2026-05-02 impl-closure-l3-escape-stack: frame-local arena 持有不逃逸
+    /// closure 的 env。`Value::StackClosure { env_idx }` 索引这里。frame drop
+    /// 时整个 arena 一并释放（内嵌的 Value 走 normal Drop / GcRef 减引用计数）。
+    pub env_arena: Vec<Vec<Value>>,
 }
 
 impl Frame {
@@ -121,7 +125,7 @@ impl Frame {
         for (i, v) in args.iter().enumerate() {
             regs[i] = v.clone();
         }
-        Frame { regs }
+        Frame { regs, env_arena: Vec::new() }
     }
 
     pub fn set(&mut self, reg: u32, val: Value) {
@@ -169,10 +173,15 @@ impl Drop for FrameGuard<'_> {
 
 pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
     let mut frame = Frame::new(args, func.max_reg);
-    // Phase 3f: 把当前 frame.regs 指针注册到 exec_stack 让 GC 扫到。
-    // SAFETY: regs Vec 在 frame 内（栈上），地址稳定到本函数返回；
+    // Phase 3f + impl-closure-l3-escape-stack: 把当前 frame.regs +
+    // frame.env_arena 指针都注册到 GC root。env_arena 在 stack closure 创建
+    // 路径才会有非空内容，但即便空也要注册以保持 push/pop 严格 1:1。
+    // SAFETY: regs/env_arena Vec 在 frame 内（栈上），地址稳定到本函数返回；
     // FrameGuard 在 Drop 时 pop（含 ?-propagated error 与 panic）。
-    ctx.push_frame_regs(&frame.regs as *const Vec<Value>);
+    ctx.push_frame_state(
+        &frame.regs as *const Vec<Value>,
+        &frame.env_arena as *const Vec<Vec<Value>>,
+    );
     let _frame_guard = FrameGuard { ctx };
 
     // Spec C2: scope `CURRENT_VM` to this z42 frame so `z42_*` extern

@@ -195,17 +195,30 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         // For Closures, env is prepended to the user args as the lifted body's
         // implicit first parameter. See closure.md §6.
         Instruction::CallIndirect { dst, callee, args } => {
-            let (fname, env_opt) = match frame.get(*callee)? {
-                Value::FuncRef(name) => (name.clone(), None),
-                Value::Closure { env, fn_name } => (fn_name.clone(), Some(env.clone())),
-                other => bail!("CallIndirect: expected FuncRef or Closure, got {:?}", other),
+            // env 解码：FuncRef → 无 env；Closure → heap GcRef；StackClosure
+            // → 从当前 frame.env_arena 复制出 Vec（新 GcRef，callee 内 lifetime
+            //   独立于 caller frame，避免 caller 弹出 arena 后 use-after-free）
+            let (fname, env_vec_opt): (String, Option<Vec<Value>>) = match frame.get(*callee)? {
+                Value::FuncRef(name)               => (name.clone(), None),
+                Value::Closure { env, fn_name }    => (fn_name.clone(), Some(env.borrow().clone())),
+                Value::StackClosure { env_idx, fn_name } => {
+                    let idx = *env_idx as usize;
+                    if idx >= frame.env_arena.len() {
+                        bail!("CallIndirect: stack closure env_idx {} out of bounds (arena_len={})",
+                              idx, frame.env_arena.len());
+                    }
+                    (fn_name.clone(), Some(frame.env_arena[idx].clone()))
+                }
+                other => bail!("CallIndirect: expected FuncRef / Closure / StackClosure, got {:?}", other),
             };
             let user_vals = collect_args(&frame.regs, args)?;
-            let arg_vals: Vec<Value> = match env_opt {
-                None      => user_vals,
-                Some(env) => {
+            let arg_vals: Vec<Value> = match env_vec_opt {
+                None          => user_vals,
+                Some(env_vec) => {
+                    // 升格为 heap GcRef 给 callee 用 —— callee 不区分 stack/heap closure。
+                    let env_val = ctx.heap().alloc_array(env_vec);
                     let mut v = Vec::with_capacity(user_vals.len() + 1);
-                    v.push(Value::Array(env));
+                    v.push(env_val);
                     v.extend(user_vals);
                     v
                 }
@@ -225,19 +238,26 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             }
         }
 
-        // L3 closure construction: collect captures into a heap Vec<Value>,
-        // build `Value::Closure { env, fn_name }`. See closure.md §6.
-        Instruction::MkClos { dst, fn_name, captures } => {
+        // L3 closure construction. `stack_alloc=true` 走 frame-local arena
+        //（impl-closure-l3-escape-stack）；否则 heap 路径（原 Tier C）。
+        Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
             let mut env_vec: Vec<Value> = Vec::with_capacity(captures.len());
             for r in captures {
                 env_vec.push(frame.get(*r)?.clone());
             }
-            let env_val = ctx.heap().alloc_array(env_vec);
-            let env = match env_val {
-                Value::Array(rc) => rc,
-                _ => unreachable!("alloc_array must return Value::Array"),
+            let value = if *stack_alloc {
+                let idx = frame.env_arena.len() as u32;
+                frame.env_arena.push(env_vec);
+                Value::StackClosure { env_idx: idx, fn_name: fn_name.clone() }
+            } else {
+                let env_val = ctx.heap().alloc_array(env_vec);
+                let env = match env_val {
+                    Value::Array(rc) => rc,
+                    _ => unreachable!("alloc_array must return Value::Array"),
+                };
+                Value::Closure { env, fn_name: fn_name.clone() }
             };
-            frame.set(*dst, Value::Closure { env, fn_name: fn_name.clone() });
+            frame.set(*dst, value);
         }
 
         // ── Arrays ───────────────────────────────────────────────────────────

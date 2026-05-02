@@ -73,6 +73,12 @@ pub struct VmContext {
     /// 本身在 Rust 栈，pointer 仅在对应 `exec_function` 调用栈期间有效，由
     /// `FrameGuard` RAII 保证 push/pop 严格配对。
     pub(crate) exec_stack:        Rc<RefCell<Vec<*const Vec<Value>>>>,
+    /// 2026-05-02 impl-closure-l3-escape-stack: 与 exec_stack 平行的 stack，
+    /// 持每个活动 frame 的 env_arena pointer，让 GC root scanner 把 stack closure
+    /// env 中的 Value 一并 mark。push/pop 与 exec_stack 严格成对（同一 frame 同时 push
+    /// regs + env_arena）。SAFETY 与 exec_stack 一致：raw ptr 由 FrameGuard RAII 保证
+    /// 在 frame 还活时有效。frame 不持 stack closure 时这里 push null pointer。
+    pub(crate) env_arena_stack:   Rc<RefCell<Vec<*const Vec<Vec<Value>>>>>,
     pub(crate) heap:              Box<dyn MagrGC>,
 
     /// Native interop Tier 1 — registered native types keyed by
@@ -102,6 +108,7 @@ impl VmContext {
         let pending_exception = Rc::new(RefCell::new(None));
         let lazy_loader       = Rc::new(RefCell::new(None));
         let exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>> = Rc::new(RefCell::new(Vec::new()));
+        let env_arena_stack: Rc<RefCell<Vec<*const Vec<Vec<Value>>>>> = Rc::new(RefCell::new(Vec::new()));
 
         // Phase 3d.1 + 3f: 注入 external root scanner 闭包，让 cycle collector mark
         // 阶段把 static_fields + pending_exception + interp exec_stack frame regs
@@ -112,6 +119,7 @@ impl VmContext {
             let sf = static_fields.clone();
             let pe = pending_exception.clone();
             let es = exec_stack.clone();
+            let eas = env_arena_stack.clone();
             heap.set_external_root_scanner(Box::new(move |visit| {
                 // 1. static_fields
                 for v in sf.borrow().values() {
@@ -135,6 +143,19 @@ impl VmContext {
                         }
                     }
                 }
+                // 4. interp/JIT env_arena —— stack closure 的 captured env Value
+                // （impl-closure-l3-escape-stack）。null 指针表示该 frame 没有
+                // 任何 stack closure，跳过。
+                for &arena_ptr in eas.borrow().iter() {
+                    if arena_ptr.is_null() { continue; }
+                    unsafe {
+                        for env in (*arena_ptr).iter() {
+                            for v in env.iter() {
+                                visit(v);
+                            }
+                        }
+                    }
+                }
             }));
         }
 
@@ -143,6 +164,7 @@ impl VmContext {
             pending_exception,
             lazy_loader,
             exec_stack,
+            env_arena_stack,
             heap: Box::new(heap),
             native_types: Rc::new(RefCell::new(HashMap::new())),
             native_libs:  Rc::new(RefCell::new(Vec::new())),
@@ -227,14 +249,26 @@ impl VmContext {
     /// Push current frame's regs pointer onto exec_stack, used by GC root
     /// scanning. Caller must guarantee pointer stays valid until matching
     /// `pop_frame_regs()` (typically via `FrameGuard` RAII).
-    pub(crate) fn push_frame_regs(&self, regs: *const Vec<Value>) {
+    /// 2026-05-02 impl-closure-l3-escape-stack: push frame regs + env_arena
+    /// pointers atomically. 调用方需保证 raw ptr 在配对的 pop_frame_regs 之前
+    /// 不失效（典型由 `FrameGuard` RAII 保证）。env_arena 可以是 null（frame
+    /// 不持 stack closure）或指向 `Vec<Vec<Value>>` 的有效地址。
+    /// 替代了 Phase 3f 的 push_frame_regs（仅 regs，单独存在的 API 已被废弃）。
+    pub(crate) fn push_frame_state(
+        &self,
+        regs: *const Vec<Value>,
+        env_arena: *const Vec<Vec<Value>>,
+    ) {
         self.exec_stack.borrow_mut().push(regs);
+        self.env_arena_stack.borrow_mut().push(env_arena);
     }
 
     /// Pop the most recently pushed frame regs pointer. No-op if empty
-    /// (defensive; should not happen with correct RAII pairing).
+    /// (defensive; should not happen with correct RAII pairing). 同时弹出
+    /// env_arena_stack 顶（与 push 1:1）。
     pub(crate) fn pop_frame_regs(&self) {
         self.exec_stack.borrow_mut().pop();
+        self.env_arena_stack.borrow_mut().pop();
     }
 
     // ── GC heap ───────────────────────────────────────────────────────────

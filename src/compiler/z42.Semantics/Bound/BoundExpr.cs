@@ -105,7 +105,11 @@ public sealed record BoundCapturedIdent(
 /// Lambda literal — captured into a `Z42FuncType`. `Captures` lists the
 /// outer-scope variables read in the body (in capture order); empty for
 /// the L2 no-capture path (lifts via `LoadFn`). Non-empty triggers L3
-/// `MkClos` lifting with a heap-allocated env. See closure.md §6.
+/// `MkClos` lifting with an env. See closure.md §6.
+///
+/// 是否栈分配 env 通过 `SemanticModel.StackAllocClosures` 集合查询
+/// （reference-equality keyed），由 ClosureEscapeAnalyzer 写回。BoundLambda
+/// 本身保持 immutable record。详见 impl-closure-l3-escape-stack。
 public sealed record BoundLambda(
     IReadOnlyList<BoundLambdaParam> Params,
     BoundLambdaBody Body,

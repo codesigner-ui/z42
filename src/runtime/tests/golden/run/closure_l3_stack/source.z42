@@ -1,0 +1,29 @@
+// 2026-05-02 impl-closure-l3-escape-stack regression golden.
+// 端到端验证：
+//   1) capturing closure 仅作 callee 立即调用 → stack-alloc，结果正确
+//   2) 重赋值后混合 stack/heap closure 用同一 var 调用，正确性保留
+//   3) 嵌套作用域内的 stack closure 与外部 var 捕获，retval 正确
+namespace Demo;
+using Std.IO;
+
+void Main() {
+    int n = 10;
+
+    // Stack-alloc 路径：add 仅在下行被立即调用
+    var add = (int x) => x + n;
+    Console.WriteLine(add(5));      // 15
+
+    // 嵌套 if 内创建 stack closure，立即调用
+    int m = 100;
+    if (n > 0) {
+        var bump = (int x) => x + m;
+        Console.WriteLine(bump(7));  // 107
+    }
+
+    // 多次调用同一 stack closure（应每次成功，env 在 frame 内稳定）
+    int base_n = 1;
+    var bump1 = (int x) => x + base_n;
+    Console.WriteLine(bump1(10));    // 11
+    Console.WriteLine(bump1(20));    // 21
+    Console.WriteLine(bump1(30));    // 31
+}

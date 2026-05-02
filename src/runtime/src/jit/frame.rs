@@ -17,6 +17,11 @@ pub struct JitFrame {
     pub regs: Vec<Value>,
     /// Return value written by `jit_set_ret` before the function returns.
     pub ret:  Option<Value>,
+    /// 2026-05-02 impl-closure-l3-escape-stack: frame-local arena for
+    /// non-escaping closure envs. `Value::StackClosure { env_idx }` indexes
+    /// here. Released as part of `JitFrame::recycle` (envs hold normal Drop
+    /// semantics — GcRef contents inside env Vec follow their own RC chains).
+    pub env_arena: Vec<Vec<Value>>,
 }
 
 impl JitFrame {
@@ -30,12 +35,15 @@ impl JitFrame {
                 regs[i] = v.clone();
             }
         }
-        JitFrame { regs, ret: None }
+        JitFrame { regs, ret: None, env_arena: Vec::new() }
     }
 
     /// Return the register Vec to the pool for reuse.
     pub fn recycle(self) {
         return_pooled_regs(self.regs);
+        // env_arena drops naturally with `self`; no explicit recycle (pool
+        // dimension is reg vector only — env arenas are infrequent and
+        // small enough to skip pooling for v1).
     }
 }
 

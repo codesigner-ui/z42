@@ -284,6 +284,25 @@ func_name 是 bare 名 → miss）。`build_type_registry` 从 `Module.classes[]
 
 ---
 
+## 闭包 dispatch（Closure / StackClosure / FuncRef）
+
+`Value` 三种 callable variant 的 CallIndirect 路径：
+
+```
+match callee_value {
+  FuncRef(name)               → 直接 call name；无 env
+  Closure { env, fn_name }    → 把 env (GcRef) 作 implicit first arg → call fn_name
+  StackClosure { env_idx, fn_name } → 从 caller frame.env_arena[env_idx] clone Vec<Value>
+                                       → 升格为临时 GcRef → 作 implicit first arg → call fn_name
+}
+```
+
+**StackClosure**（2026-05-02 impl-closure-l3-escape-stack）：env 在 caller frame 的 `env_arena: Vec<Vec<Value>>` 中，零堆分配。CallIndirect 时复制内容到临时 GcRef，callee 不区分 stack/heap 来源。
+
+**GC root**：`VmContext.env_arena_stack` 与 `exec_stack` 平行注册（`push_frame_state(regs, env_arena)`）。GC scanner 遍历 arena 中每个 Value 做 mark，确保 stack closure env 持有的 Object/Array refs 不被回收。
+
+**lifetime 安全**：StackClosure value 的有效性由分析器（`ClosureEscapeAnalyzer`）在编译期保证 —— closure value 永不离开创建它的 frame；CallIndirect 复制 env 内容也意味着 callee 不会持有指向 caller arena 的悬空指针。
+
 ## interp vs JIT 分发
 
 位置：`src/runtime/src/vm.rs` + `interp/` + `jit/`

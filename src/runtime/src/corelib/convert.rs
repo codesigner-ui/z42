@@ -23,7 +23,8 @@ pub fn value_to_str(v: &Value) -> String {
             format!("PinnedView{{ptr=0x{ptr:x}, len={len}, kind={kind:?}}}")
         }
         Value::FuncRef(name) => format!("<fn {name}>"),
-        Value::Closure { fn_name, .. } => format!("<closure {fn_name}>"),
+        Value::Closure { fn_name, .. }      => format!("<closure {fn_name}>"),
+        Value::StackClosure { fn_name, .. } => format!("<closure {fn_name}>"),
     }
 }
 

@@ -119,7 +119,7 @@ pub unsafe extern "C" fn jit_to_str(
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                 // Phase 3f-2: GC roots scan
                 let vm_ctx = vm_ctx_ref(ctx);
-                vm_ctx.push_frame_regs(&callee.regs as *const _);
+                vm_ctx.push_frame_state(&callee.regs as *const _, &callee.env_arena as *const _);
                 let r = jit_fn(&mut callee, ctx);
                 vm_ctx.pop_frame_regs();
                 if r != 0 { callee.recycle(); return 1; }

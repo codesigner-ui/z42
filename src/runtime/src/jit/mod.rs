@@ -49,8 +49,12 @@ impl JitModule {
         self.ctx.vm_ctx = ctx as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
-        // Phase 3f-2: register top-level entry frame regs for GC root scanning
-        ctx.push_frame_regs(&frame.regs as *const _);
+        // Phase 3f-2 + impl-closure-l3-escape-stack: register both frame.regs
+        // 与 frame.env_arena 让 GC 同时扫到 stack closure env。
+        ctx.push_frame_state(
+            &frame.regs as *const _,
+            &frame.env_arena as *const _,
+        );
         let r = unsafe { f(&mut frame, &*self.ctx) };
         ctx.pop_frame_regs();
         frame.recycle();

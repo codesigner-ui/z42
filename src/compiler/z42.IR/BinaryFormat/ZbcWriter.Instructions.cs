@@ -92,6 +92,8 @@ public static partial class ZbcWriter
             case MkClosInstr i:
                 w.Write(Opcodes.MkClos); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.FuncName));
+                // 2026-05-02 impl-closure-l3-escape-stack: 1 byte stack_alloc flag
+                w.Write((byte)(i.StackAlloc ? 1 : 0));
                 WriteArgs(w, i.Captures);
                 break;
             case BuiltinInstr i:

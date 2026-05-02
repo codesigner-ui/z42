@@ -530,9 +530,11 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             Instruction::CallIndirect { dst, callee, args }
         }
         OP_MK_CLOS => {
-            let fn_name  = pool_str_owned(pool, c.read_u32()?)?;
-            let captures = read_args(c)?;
-            Instruction::MkClos { dst, fn_name, captures }
+            let fn_name     = pool_str_owned(pool, c.read_u32()?)?;
+            // 2026-05-02 impl-closure-l3-escape-stack: 1 byte flag
+            let stack_alloc = c.read_u8()? != 0;
+            let captures    = read_args(c)?;
+            Instruction::MkClos { dst, fn_name, captures, stack_alloc }
         }
         OP_BUILTIN => {
             let name = pool_str_owned(pool, c.read_u32()?)?;

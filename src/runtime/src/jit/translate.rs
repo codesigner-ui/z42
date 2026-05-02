@@ -157,8 +157,8 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
         // jit_load_fn(frame, ctx, dst, name_ptr, name_len) -> u8
         load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
-        // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len) -> u8
-        mk_clos:        decl!("jit_mk_clos",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t],       [i8t]),
+        // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len, stack_alloc:u8) -> u8
+        mk_clos:        decl!("jit_mk_clos",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t, i8t], [i8t]),
         // jit_call_indirect(frame, ctx, dst, callee, args_ptr, args_len) -> u8
         call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t],            [i8t]),
     })
@@ -724,12 +724,13 @@ pub fn translate_function(
                     let inst = builder.ins().call(hr_load_fn, &[frame_val, ctx_val, d, np, nl]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::MkClos { dst, fn_name, captures } => {
+                Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(fn_name);
                     let (cp, cl) = regs_val!(captures);
+                    let sa = builder.ins().iconst(types::I8, if *stack_alloc { 1 } else { 0 });
                     let inst = builder.ins().call(hr_mk_clos,
-                        &[frame_val, ctx_val, d, np, nl, cp, cl]);
+                        &[frame_val, ctx_val, d, np, nl, cp, cl, sa]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::CallIndirect { dst, callee, args } => {

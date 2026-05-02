@@ -200,6 +200,39 @@ sub.Dispose();                                        // 通过 handle 退订，
 
 用户**永远写一种代码**；编译器根据闭包出现的位置自动选三档之一。
 
+### 6.0.1 档 A 子集（已落地：单变量立即调用，2026-05-02 impl-closure-l3-escape-stack）
+
+档 A 完整版（"任何不逃逸的 closure 都栈分配"）尚未落地，但已实现一个**子集** —— **"capturing closure 仅作 callee 立即调用"** 模式：
+
+```z42
+int n = 5;
+var add = (int x) => x + n;       // ← capturing closure
+var r = add(3);                    // ← 仅作 callee 调用，无其它 use
+```
+
+满足条件的 closure：编译器把 `MkClos.StackAlloc=true` → VM 在创建 frame 的 `env_arena: Vec<Vec<Value>>` 中放 env，闭包值是 `Value::StackClosure { env_idx, fn_name }`。**零堆分配 + 零 GC root 占用**。
+
+不满足任一条件即 fallback 堆（`Value::Closure`，原 Tier C 路径），保留正确性：
+
+| 失败模式 | 原因 |
+|---|---|
+| `return closure;` | 跨 frame escape |
+| `field = closure;` / `arr[i] = closure;` | 引用泄露到长寿对象 |
+| `Run(closure)` 传给 callee | 第一版无 `[NoEscape]` 标注，所有 callee 默认逃逸 |
+| `var g = f;` 别名链 | 第一个 var 的"用途"非 callee 位置 |
+| `f = OtherClosure;` 重赋值 | env lifetime 不再单一 |
+| 嵌套 lambda 捕获 closure var | `BoundCapturedIdent` → escape |
+
+**实现概览**（详见 `spec/archive/2026-05-02-impl-closure-l3-escape-stack/`）：
+
+- `Value::StackClosure { env_idx: u32, fn_name: String }` —— 与 `Value::FuncRef` / `Value::Closure` 对称的第三种 callable variant，dispatch 端 match 三个 variant（design Decision 1 选项 A）
+- `InterpFrame.env_arena` / `JitFrame.env_arena` —— per-frame `Vec<Vec<Value>>`，stack closure 创建时 push、CallIndirect 时 clone 内容升格为临时 GcRef 给 callee（callee 不区分 stack/heap closure）
+- `VmContext.env_arena_stack` —— 与 `exec_stack` 平行的 GC root stack，scanner 扫 arena 中的 Value 完成对象图覆盖；`push_frame_state(regs, env_arena)` API 强制 1:1 push
+- `ClosureEscapeAnalyzer` —— TypeChecker 后置 pass：找出 `var x = lambda;` 候选 → 扫函数体确认所有 `BoundIdent(x)` 都在 `BoundCall.Receiver` 位置 → 加入 `SemanticModel.StackAllocClosures` 集合 → Codegen 透传到 `MkClosInstr.StackAlloc`
+- 保守优先：分析器**绝不冒**误判 escape 为 stack 的风险（→ use-after-free），任何不确定即 fallback heap
+
+未来增量：`[NoEscape]` 形参标注 / stdlib 高阶 API 白名单 / 流敏感分析 / 完整档 A（任何"明显不逃逸"的 closure）。
+
 ### 6.1 档 A — 栈分配
 
 **触发**：闭包传给具体 `(T) -> R` 形参，且形参标注 `[no_escape]`（或流分析确认不逃逸）。

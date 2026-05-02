@@ -151,6 +151,11 @@ public sealed partial class TypeChecker : ITypeInferrer
         foreach (var impl in cu.Impls)     TryBindImplMethods(impl);
         foreach (var fn   in cu.Functions) TryBindFunction(fn);
 
+        // ── Pass 1.5: closure escape analysis（impl-closure-l3-escape-stack）
+        // 跑在所有 body 绑定后，找出可栈分配 env 的 capturing closure。结果是
+        // BoundLambda 集合，由 SemanticModel.StackAllocClosures 暴露给 Codegen。
+        var stackAllocClosures = ClosureEscapeAnalyzer.Analyze(_boundBodies);
+
         // ── Assemble SemanticModel from frozen symbols + bound results ──────
         return new SemanticModel(
             _symbols.Classes, _symbols.Functions, _symbols.Interfaces,
@@ -162,7 +167,8 @@ public sealed partial class TypeChecker : ITypeInferrer
             classConstraints: _classConstraints,
             importedClassNames: _symbols.ImportedClassNames as IReadOnlySet<string>
                                 ?? new HashSet<string>(_symbols.ImportedClassNames),
-            classInterfaces: _symbols.ClassInterfaces);
+            classInterfaces: _symbols.ClassInterfaces,
+            stackAllocClosures: stackAllocClosures);
     }
 
     // ── Body binding entry points (error-isolated) ──────────────────────────

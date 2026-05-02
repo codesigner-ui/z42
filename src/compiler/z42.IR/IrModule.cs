@@ -149,12 +149,18 @@ public sealed record LoadFnInstr(TypedReg Dst, string Func) : IrInstr;
 /// a local variable holds a lambda or function reference. Args follow the
 /// same convention as `CallInstr`. See docs/design/closure.md §6.
 public sealed record CallIndirectInstr(TypedReg Dst, TypedReg Callee, List<TypedReg> Args) : IrInstr;
-/// L3 closure tier-C: allocate a heap env with the captured values and
-/// construct a closure value `(env, fn_name)` in `Dst`. Each `Captures` reg
-/// supplies one captured value (in capture order, matching the lifted
-/// function's env layout). See docs/design/closure.md §6 +
-/// impl-closure-l3-core design Decision 7.
-public sealed record MkClosInstr(TypedReg Dst, string FuncName, List<TypedReg> Captures) : IrInstr;
+/// L3 closure tier-C: allocate an env with the captured values and construct
+/// a closure value `(env, fn_name)` in `Dst`. Each `Captures` reg supplies
+/// one captured value (in capture order, matching the lifted function's env
+/// layout). See docs/design/closure.md §6 + impl-closure-l3-core design Decision 7.
+///
+/// `StackAlloc`（2026-05-02 impl-closure-l3-escape-stack）：编译器 escape 分析
+/// 证明 env 不离开当前 frame 时设为 true → VM 走 frame-local arena
+/// （`Value::StackClosure { env_idx, fn_name }`，零堆分配）；否则走堆
+/// （`Value::Closure { env: GcRef, fn_name }`，原 Tier C 路径）。
+public sealed record MkClosInstr(
+    TypedReg Dst, string FuncName, List<TypedReg> Captures,
+    bool StackAlloc = false) : IrInstr;
 
 // ── Arithmetic ────────────────────────────────────────────────────────────────
 

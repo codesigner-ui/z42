@@ -79,6 +79,12 @@ public sealed class SemanticModel
     /// Exposed so ExportedTypeExtractor can write TSIG `ExportedClassDef.Interfaces`.
     public IReadOnlyDictionary<string, List<Z42InterfaceType>> ClassInterfaces { get; }
 
+    /// 2026-05-02 impl-closure-l3-escape-stack: BoundLambda 集合，写入此集合的
+    /// lambda 经 escape 分析证明 env 不离开创建 frame → Codegen 把
+    /// `MkClosInstr.StackAlloc` 设为 true → VM 走 frame-local arena
+    /// (`Value::StackClosure`)。reference-equality keyed（与 BoundDefaults 同款）。
+    public IReadOnlySet<BoundLambda> StackAllocClosures { get; }
+
     internal SemanticModel(
         IReadOnlyDictionary<string, Z42ClassType>     classes,
         IReadOnlyDictionary<string, Z42FuncType>      funcs,
@@ -94,7 +100,8 @@ public sealed class SemanticModel
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? funcConstraints = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null,
         IReadOnlySet<string>? importedClassNames = null,
-        IReadOnlyDictionary<string, List<Z42InterfaceType>>? classInterfaces = null)
+        IReadOnlyDictionary<string, List<Z42InterfaceType>>? classInterfaces = null,
+        IReadOnlySet<BoundLambda>? stackAllocClosures = null)
     {
         Classes                 = classes;
         Funcs                   = funcs;
@@ -111,5 +118,6 @@ public sealed class SemanticModel
         ClassConstraints        = classConstraints ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
         ImportedClassNames      = importedClassNames ?? new HashSet<string>();
         ClassInterfaces         = classInterfaces ?? new Dictionary<string, List<Z42InterfaceType>>();
+        StackAllocClosures      = stackAllocClosures ?? new HashSet<BoundLambda>(ReferenceEqualityComparer.Instance);
     }
 }

@@ -227,7 +227,11 @@ internal sealed partial class FunctionEmitter
         _ctx.RegisterLiftedFunction(liftedCap);
 
         var dst = Alloc(IrType.Ref);
-        Emit(new MkClosInstr(dst, liftedNm, captureRegs));
+        // 2026-05-02 impl-closure-l3-escape-stack: 查 SemanticModel.StackAllocClosures
+        // 决定 MkClosInstr.StackAlloc。escape 分析器在所有 body 绑定后写入该集合
+        //（reference-equality keyed），default false（保守 fallback heap）。
+        bool stackAlloc = _ctx.SemanticModel.StackAllocClosures.Contains(lambda);
+        Emit(new MkClosInstr(dst, liftedNm, captureRegs, stackAlloc));
         return dst;
     }
 

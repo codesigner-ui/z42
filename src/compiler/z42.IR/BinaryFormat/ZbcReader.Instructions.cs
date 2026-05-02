@@ -95,9 +95,11 @@ public static partial class ZbcReader
             }
             case Opcodes.MkClos:
             {
-                var fn       = P(pool, r.ReadUInt32());
-                var captures = ReadArgs(r);
-                return new MkClosInstr(d, fn, captures);
+                var fn         = P(pool, r.ReadUInt32());
+                // 2026-05-02 impl-closure-l3-escape-stack: 1 byte stack_alloc flag
+                var stackAlloc = r.ReadByte() != 0;
+                var captures   = ReadArgs(r);
+                return new MkClosInstr(d, fn, captures, stackAlloc);
             }
             case Opcodes.Builtin:
             {
