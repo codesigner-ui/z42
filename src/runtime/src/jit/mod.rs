@@ -10,6 +10,7 @@
 mod frame;
 pub(crate) mod helpers;
 mod helpers_arith;
+mod helpers_closure;
 mod helpers_mem;
 mod helpers_object;
 mod translate;
@@ -157,6 +158,10 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     reg!("jit_as_cast",       helpers_object::jit_as_cast);
     reg!("jit_static_get",    helpers_object::jit_static_get);
     reg!("jit_static_set",    helpers_object::jit_static_set);
+    // helpers_closure: L3 closure construction + indirect dispatch
+    reg!("jit_load_fn",       helpers_closure::jit_load_fn);
+    reg!("jit_mk_clos",       helpers_closure::jit_mk_clos);
+    reg!("jit_call_indirect", helpers_closure::jit_call_indirect);
 
     let mut jit = JITModule::new(jit_builder);
 

@@ -70,6 +70,10 @@ pub struct HelperIds {
     pub set_ret:        FuncId,
     pub throw:          FuncId,
     pub install_catch:  FuncId,
+    // L3 closure helpers (impl-closure-l3-jit-complete)
+    pub load_fn:        FuncId,
+    pub mk_clos:        FuncId,
+    pub call_indirect:  FuncId,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -151,6 +155,12 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         set_ret:       decl!("jit_set_ret",       [ptr, ptr, i32t],                       []),
         throw:         decl!("jit_throw",         [ptr, ptr, i32t],                       []),
         install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
+        // jit_load_fn(frame, ctx, dst, name_ptr, name_len) -> u8
+        load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
+        // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len) -> u8
+        mk_clos:        decl!("jit_mk_clos",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t],       [i8t]),
+        // jit_call_indirect(frame, ctx, dst, callee, args_ptr, args_len) -> u8
+        call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t],            [i8t]),
     })
 }
 
@@ -341,6 +351,9 @@ pub fn translate_function(
     let hr_set_ret       = imp!(helper_ids.set_ret);
     let hr_throw         = imp!(helper_ids.throw);
     let hr_install_catch = imp!(helper_ids.install_catch);
+    let hr_load_fn       = imp!(helper_ids.load_fn);
+    let hr_mk_clos       = imp!(helper_ids.mk_clos);
+    let hr_call_indirect = imp!(helper_ids.call_indirect);
 
     // ── Translate each z42 block ──────────────────────────────────────────────
     for (block_idx, z42_block) in z42_func.blocks.iter().enumerate() {
@@ -703,14 +716,29 @@ pub fn translate_function(
                 // impl-lambda-l2: lambdas / function references — JIT support
                 // lands in a later iteration (L3+). Refuse to compile so the
                 // caller keeps the function in Interp mode.
-                Instruction::LoadFn { .. } => {
-                    bail!("JIT cannot translate LoadFn yet (L3+ closure work)");
+                // L3 closure helpers (impl-closure-l3-jit-complete).
+                // Behaviour mirrors interp::exec_instr; see closure.md §6.
+                Instruction::LoadFn { dst, func } => {
+                    let d = ri!(*dst);
+                    let (np, nl) = str_val!(func);
+                    let inst = builder.ins().call(hr_load_fn, &[frame_val, ctx_val, d, np, nl]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::CallIndirect { .. } => {
-                    bail!("JIT cannot translate CallIndirect yet (L3+ closure work)");
+                Instruction::MkClos { dst, fn_name, captures } => {
+                    let d = ri!(*dst);
+                    let (np, nl) = str_val!(fn_name);
+                    let (cp, cl) = regs_val!(captures);
+                    let inst = builder.ins().call(hr_mk_clos,
+                        &[frame_val, ctx_val, d, np, nl, cp, cl]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
-                Instruction::MkClos { .. } => {
-                    bail!("JIT cannot translate MkClos yet (impl-closure-l3-jit-complete)");
+                Instruction::CallIndirect { dst, callee, args } => {
+                    let d = ri!(*dst);
+                    let c = ri!(*callee);
+                    let (ap, al) = regs_val!(args);
+                    let inst = builder.ins().call(hr_call_indirect,
+                        &[frame_val, ctx_val, d, c, ap, al]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
             }
         }

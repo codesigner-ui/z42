@@ -1,4 +1,0 @@
-JIT support for lifted local function call sites lands later (impl-closure-l3).
-Lifted IrFunctions are normal Call sites in IR; JIT may compile them but the
-local-fn capture-boundary push/pop pattern is exercised here, so we keep the
-golden interp-only to mirror lambda_l2_basic.

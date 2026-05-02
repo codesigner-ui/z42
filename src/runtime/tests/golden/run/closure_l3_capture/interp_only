@@ -1,3 +1,0 @@
-JIT support for LoadFn / CallIndirect / MkClos lands in impl-closure-l3-jit-complete.
-This golden exercises the same opcodes as lambda_l2_basic plus MkClos, so we keep it
-interp-only in lockstep with the L2 lambda goldens until the JIT story is closed.
