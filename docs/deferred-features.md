@@ -51,18 +51,14 @@
 - **触发条件**：用户需要在外部用 `Btn.OnClick` 而非 `using` 后用 simple `OnClick`。
 - **当前状态**：嵌套 delegate 类内部直接 `OnClick` 引用工作；外部需要先把它声明为顶层。
 
-## D-7：D2c-单播 event + 严格 access control
+## D-7-residual：单播 event 的 IDisposable token + 严格 access control
 
-- **来源**：D2c spec 拆分（多播部分 2026-05-03 落地于 `add-event-keyword-multicast`）
-- **设计文档**：`docs/design/delegates-events.md` §6.2 单播 event 行
-- **状态**：多播部分已落地；单播 event 待独立 spec
-- **依赖**：无（前置 D2a/b/D-5/D2c-多播 已完成）
-- **触发条件**：用户实际需要单播 event（Cocoa-style 回调属性）；或需要严格写访问控制（外部 invoke / 直接 set 报错）
+- **来源**：D-7 单播 event 主体 2026-05-04 已落地（`spec/archive/2026-05-04-add-event-keyword-singlecast/`）；本条留 design line 301-304 的 `IDisposable` 返回 + 闭包 cleanup 部分 + 严格 access control
+- **设计文档**：`docs/design/delegates-events.md` §6.3 + §6.5
 - **缺失实现**：
-  - 单播 event 字段 nullable 类型（`Action<T>?` / `Func<...>?` / `Predicate<T>?`）
-  - 双绑定 throw `InvalidOperationException` 路径
-  - `Std.Disposable.From(Action)` 工厂用于 add_Y 返回的清空 lambda
-  - 严格 access control：外部 `obj.X.Invoke(...)` / `obj.X = ...` 报 E0407
+  - 单播 `add_X` 返回 `IDisposable` 而非 void（设计 line 301）—— 需要 stdlib `Std.Disposable.From(Action)` 工厂或 per-event 私有 token 类
+  - 严格 access control：外部 `obj.X.Invoke(...)` / `obj.X = ...` 报 E0407（多播 + 单播都缺）
+- **触发条件**：用户实际需要 `using (token = btn.OnKey += h)` 风格 + 用户希望强制不让外部直接 invoke event field
 
 ## D-8b：D2d Func/Predicate 异常聚合 + MulticastException<R>
 

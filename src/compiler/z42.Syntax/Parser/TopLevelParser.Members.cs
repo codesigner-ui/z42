@@ -199,6 +199,10 @@ internal static partial class TopLevelParser
     private static readonly HashSet<string> MulticastTypeNames =
         new(StringComparer.Ordinal) { "MulticastAction", "MulticastFunc", "MulticastPredicate" };
 
+    // 2026-05-04 add-event-keyword-singlecast (D-7)：单播 event 类型集合。
+    private static readonly HashSet<string> SinglecastTypeNames =
+        new(StringComparer.Ordinal) { "Action", "Func", "Predicate" };
+
     private static string HandlerTypeName(string multicastTypeName) => multicastTypeName switch
     {
         "MulticastAction"    => "Action",
@@ -214,60 +218,128 @@ internal static partial class TopLevelParser
         var fieldType = evtField.Type;
         var span      = evtField.Span;
 
-        // 验证类型：必须是 GenericType("Multicast{Action|Func|Predicate}", [...])
-        if (fieldType is not GenericType gt
-            || !MulticastTypeNames.Contains(gt.Name)
-            || gt.TypeArgs.Count == 0)
+        // 验证类型：多播 / 单播两类
+        if (fieldType is not GenericType gt || gt.TypeArgs.Count == 0)
         {
             throw new ParseException(
-                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` / `MulticastFunc<T,R>` / `MulticastPredicate<T>` for now",
+                "event field type must be `Action<T>` / `Func<T,R>` / `Predicate<T>` (single-cast) or `MulticastAction<T>` / `MulticastFunc<T,R>` / `MulticastPredicate<T>` (multi-cast)",
+                span, DiagnosticCodes.UnexpectedToken);
+        }
+        bool isMulticast  = MulticastTypeNames.Contains(gt.Name);
+        bool isSinglecast = SinglecastTypeNames.Contains(gt.Name);
+        if (!isMulticast && !isSinglecast)
+        {
+            throw new ParseException(
+                $"event field type `{gt.Name}` not supported; use Action / Func / Predicate (single-cast) or Multicast{{Action|Func|Predicate}} (multi-cast)",
                 span, DiagnosticCodes.UnexpectedToken);
         }
 
-        // Backing field: 同名 + auto-init `new MulticastXxx<...>()`
-        var initExpr = new NewExpr(fieldType, new List<Expr>(), span);
-        var backing  = new FieldDecl(
-            fieldName, fieldType, evtField.Visibility, evtField.IsStatic,
-            initExpr, span, IsEvent: true);
+        if (isMulticast)
+        {
+            // ── 多播路径（D2c-多播 + D2d-1） ────────────────────────────
+            // Backing field: 同名 + auto-init `new MulticastXxx<...>()`
+            var mInitExpr = new NewExpr(fieldType, new List<Expr>(), span);
+            var mBacking  = new FieldDecl(
+                fieldName, fieldType, evtField.Visibility, evtField.IsStatic,
+                mInitExpr, span, IsEvent: true);
 
-        // handler 类型：Action<T> / Func<T,R> / Predicate<T>
-        // type-args 直接复用 multicast 字段的（MulticastFunc<T,R> → Func<T,R> 同 2 个 args）
-        var handlerT = new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span);
-        var idisp    = new NamedType("IDisposable", span);
+            // handler 类型：Action<T> / Func<T,R> / Predicate<T>
+            var mHandlerT = new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span);
+            var mIdisp    = new NamedType("IDisposable", span);
 
-        // add_X body: return this.X.Subscribe(h);
-        var addThis        = new IdentExpr("this", span);
-        var addFieldRead   = new MemberExpr(addThis, fieldName, span);
-        var addSubMember   = new MemberExpr(addFieldRead, "Subscribe", span);
-        var addHRef        = new IdentExpr("h", span);
-        var addSubCall     = new CallExpr(addSubMember, new List<Expr> { addHRef }, span);
-        var addBody        = new BlockStmt(
-            new List<Stmt> { new ReturnStmt(addSubCall, span) }, span);
-        var addFn = new FunctionDecl(
+            // add_X body: return this.X.Subscribe(h);
+            var addThis        = new IdentExpr("this", span);
+            var addFieldRead   = new MemberExpr(addThis, fieldName, span);
+            var addSubMember   = new MemberExpr(addFieldRead, "Subscribe", span);
+            var addHRef        = new IdentExpr("h", span);
+            var addSubCall     = new CallExpr(addSubMember, new List<Expr> { addHRef }, span);
+            var addBody        = new BlockStmt(
+                new List<Stmt> { new ReturnStmt(addSubCall, span) }, span);
+            var addFn = new FunctionDecl(
+                $"add_{fieldName}",
+                new List<Param> { new Param("h", mHandlerT, null, span) },
+                mIdisp, addBody,
+                Visibility.Public,
+                FunctionModifiers.None,
+                null, span);
+
+            // remove_X body: this.X.Unsubscribe(h);
+            var rmThis        = new IdentExpr("this", span);
+            var rmFieldRead   = new MemberExpr(rmThis, fieldName, span);
+            var rmUnsubMember = new MemberExpr(rmFieldRead, "Unsubscribe", span);
+            var rmHRef        = new IdentExpr("h", span);
+            var rmUnsubCall   = new CallExpr(rmUnsubMember, new List<Expr> { rmHRef }, span);
+            var rmBody        = new BlockStmt(
+                new List<Stmt> { new ExprStmt(rmUnsubCall, span) }, span);
+            var rmFn = new FunctionDecl(
+                $"remove_{fieldName}",
+                new List<Param> { new Param("h", mHandlerT, null, span) },
+                new VoidType(span), rmBody,
+                Visibility.Public,
+                FunctionModifiers.None,
+                null, span);
+
+            return (mBacking, new List<FunctionDecl> { addFn, rmFn });
+        }
+
+        // ── 单播路径（D-7 add-event-keyword-singlecast） ────────────────
+        // Backing field: 同名 + OptionType wrap，初值 null（OptionType 默认）
+        var optionType = new OptionType(fieldType, span);
+        var sBacking   = new FieldDecl(
+            fieldName, optionType, evtField.Visibility, evtField.IsStatic,
+            null, span, IsEvent: true);
+
+        // 单播 handler 类型 = 字段裸类型（Action<T> 自身）
+        var sHandlerT = fieldType;
+
+        // add_X body:
+        //   if (this.X != null)
+        //       throw new InvalidOperationException("single-cast event already bound");
+        //   this.X = h;
+        var sAddThis      = new IdentExpr("this", span);
+        var sAddFieldRead = new MemberExpr(sAddThis, fieldName, span);
+        var sAddNullCmp   = new BinaryExpr("!=", sAddFieldRead, new LitNullExpr(span), span);
+        var ioeName       = new NamedType("InvalidOperationException", span);
+        var ioeArg        = new LitStrExpr("single-cast event already bound", span);
+        var ioeNew        = new NewExpr(ioeName, new List<Expr> { ioeArg }, span);
+        var sAddThrow     = new ThrowStmt(ioeNew, span);
+        var sAddIfBlock   = new BlockStmt(new List<Stmt> { sAddThrow }, span);
+        var sAddIf        = new IfStmt(sAddNullCmp, sAddIfBlock, null, span);
+        var sAddFieldRead2 = new MemberExpr(new IdentExpr("this", span), fieldName, span);
+        var sAddAssign    = new AssignExpr(sAddFieldRead2, new IdentExpr("h", span), span);
+        var sAddBody      = new BlockStmt(
+            new List<Stmt> { sAddIf, new ExprStmt(sAddAssign, span) }, span);
+        var sAddFn = new FunctionDecl(
             $"add_{fieldName}",
-            new List<Param> { new Param("h", handlerT, null, span) },
-            idisp, addBody,
+            new List<Param> { new Param("h", sHandlerT, null, span) },
+            new VoidType(span), sAddBody,
             Visibility.Public,
             FunctionModifiers.None,
             null, span);
 
-        // remove_X body: this.X.Unsubscribe(h);
-        var rmThis        = new IdentExpr("this", span);
-        var rmFieldRead   = new MemberExpr(rmThis, fieldName, span);
-        var rmUnsubMember = new MemberExpr(rmFieldRead, "Unsubscribe", span);
-        var rmHRef        = new IdentExpr("h", span);
-        var rmUnsubCall   = new CallExpr(rmUnsubMember, new List<Expr> { rmHRef }, span);
-        var rmBody        = new BlockStmt(
-            new List<Stmt> { new ExprStmt(rmUnsubCall, span) }, span);
-        var rmFn = new FunctionDecl(
+        // remove_X body:
+        //   if (DelegateOps.ReferenceEquals(this.X, h)) this.X = null;
+        var sRmThis        = new IdentExpr("this", span);
+        var sRmFieldRead   = new MemberExpr(sRmThis, fieldName, span);
+        var sRmDelegateOps = new IdentExpr("DelegateOps", span);
+        var sRmRefEqMember = new MemberExpr(sRmDelegateOps, "ReferenceEquals", span);
+        var sRmRefEqCall   = new CallExpr(sRmRefEqMember,
+            new List<Expr> { sRmFieldRead, new IdentExpr("h", span) }, span);
+        var sRmFieldRead2  = new MemberExpr(new IdentExpr("this", span), fieldName, span);
+        var sRmAssignNull  = new AssignExpr(sRmFieldRead2, new LitNullExpr(span), span);
+        var sRmIfBlock     = new BlockStmt(
+            new List<Stmt> { new ExprStmt(sRmAssignNull, span) }, span);
+        var sRmIf          = new IfStmt(sRmRefEqCall, sRmIfBlock, null, span);
+        var sRmBody        = new BlockStmt(new List<Stmt> { sRmIf }, span);
+        var sRmFn = new FunctionDecl(
             $"remove_{fieldName}",
-            new List<Param> { new Param("h", handlerT, null, span) },
-            new VoidType(span), rmBody,
+            new List<Param> { new Param("h", sHandlerT, null, span) },
+            new VoidType(span), sRmBody,
             Visibility.Public,
             FunctionModifiers.None,
             null, span);
 
-        return (backing, new List<FunctionDecl> { addFn, rmFn });
+        return (sBacking, new List<FunctionDecl> { sAddFn, sRmFn });
     }
 
     /// 2026-05-03 add-interface-event-default：interface 端 event 合成。
@@ -278,22 +350,36 @@ internal static partial class TopLevelParser
     internal static List<MethodSignature> SynthesizeInterfaceEvent(
         TypeExpr fieldType, string fieldName, Span span)
     {
-        // 2026-05-03 add-multicast-func-predicate (D2d-1)：放宽接受三种 multicast 类型。
-        if (fieldType is not GenericType gt
-            || !MulticastTypeNames.Contains(gt.Name)
-            || gt.TypeArgs.Count == 0)
+        // 2026-05-03 add-multicast-func-predicate (D2d-1) +
+        // 2026-05-04 add-event-keyword-singlecast (D-7)：接受多播 + 单播两类。
+        if (fieldType is not GenericType gt || gt.TypeArgs.Count == 0)
         {
             throw new ParseException(
-                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` / `MulticastFunc<T,R>` / `MulticastPredicate<T>` for now",
+                "event field type must be `Action<T>` / `Func<T,R>` / `Predicate<T>` (single-cast) or `MulticastAction<T>` / `MulticastFunc<T,R>` / `MulticastPredicate<T>` (multi-cast)",
                 span, DiagnosticCodes.UnexpectedToken);
         }
-        var handlerT = new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span);
-        var idisp    = new NamedType("IDisposable", span);
+        bool isMulticast  = MulticastTypeNames.Contains(gt.Name);
+        bool isSinglecast = SinglecastTypeNames.Contains(gt.Name);
+        if (!isMulticast && !isSinglecast)
+        {
+            throw new ParseException(
+                $"event field type `{gt.Name}` not supported in interface; use Action / Func / Predicate (single-cast) or Multicast{{Action|Func|Predicate}} (multi-cast)",
+                span, DiagnosticCodes.UnexpectedToken);
+        }
+
+        // 多播：handler 类型 = `<HandlerName><...args>`；返回 IDisposable
+        // 单播：handler 类型 = 字段裸类型；add 返回 void（没有 IDisposable token）
+        var handlerT = isMulticast
+            ? new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span)
+            : (TypeExpr)fieldType;
+        var addRet   = isMulticast
+            ? (TypeExpr)new NamedType("IDisposable", span)
+            : (TypeExpr)new VoidType(span);
         var hParam   = new Param("h", handlerT, null, span);
         return new List<MethodSignature>
         {
-            new MethodSignature($"add_{fieldName}",    new List<Param> { hParam }, idisp,                 span, IsStatic: false, IsVirtual: false, Body: null),
-            new MethodSignature($"remove_{fieldName}", new List<Param> { hParam }, new VoidType(span),    span, IsStatic: false, IsVirtual: false, Body: null),
+            new MethodSignature($"add_{fieldName}",    new List<Param> { hParam }, addRet,             span, IsStatic: false, IsVirtual: false, Body: null),
+            new MethodSignature($"remove_{fieldName}", new List<Param> { hParam }, new VoidType(span), span, IsStatic: false, IsVirtual: false, Body: null),
         };
     }
 

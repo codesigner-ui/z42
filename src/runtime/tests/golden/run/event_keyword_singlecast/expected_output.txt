@@ -1,0 +1,5 @@
+first bind ok
+double bind caught
+d bound
+d cleared
+d rebound

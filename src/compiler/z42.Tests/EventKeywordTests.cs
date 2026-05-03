@@ -77,18 +77,71 @@ public sealed class EventKeywordTests
         remove.Visibility.Should().Be(Visibility.Public);
     }
 
+    // ── D-7 单播 event (2026-05-04 add-event-keyword-singlecast) ─────────────
+
     [Fact]
-    public void SingleCast_Event_Reports_Not_Yet_Supported()
+    public void SingleCast_Event_Synthesizes_Add_Remove_Methods()
     {
-        var (_, diags) = Check("""
+        var (cu, _) = Check("""
             namespace Demo;
             using Std;
             public class Bus {
                 public event Action<int> OnKey;
             }
             """);
+        var bus = cu.Classes[0];
+        bus.Methods.Select(m => m.Name).Should().Contain(["add_OnKey", "remove_OnKey"]);
+        var add = bus.Methods.First(m => m.Name == "add_OnKey");
+        // 单播 add 返回 void（多播返回 IDisposable）
+        add.ReturnType.Should().BeOfType<VoidType>();
+        // handler 类型直接是字段裸类型 Action<int>
+        add.Params[0].Type.Should().BeOfType<GenericType>()
+            .Which.Name.Should().Be("Action");
+    }
+
+    [Fact]
+    public void SingleCast_Event_Field_Is_Nullable()
+    {
+        var (cu, _) = Check("""
+            namespace Demo;
+            using Std;
+            public class Bus {
+                public event Action<int> OnKey;
+            }
+            """);
+        var field = cu.Classes[0].Fields[0];
+        field.Type.Should().BeOfType<OptionType>("single-cast event field is nullable");
+        field.Initializer.Should().BeNull("nullable defaults to null");
+    }
+
+    [Fact]
+    public void Interface_SingleCast_Event_Synthesizes_Signatures()
+    {
+        var (cu, _) = Check("""
+            namespace Demo;
+            using Std;
+            public interface IBus {
+                event Action<int> OnKey;
+            }
+            """);
+        var iface = cu.Interfaces[0];
+        iface.Methods.Select(m => m.Name).Should().Contain(["add_OnKey", "remove_OnKey"]);
+        var add = iface.Methods.First(m => m.Name == "add_OnKey");
+        add.ReturnType.Should().BeOfType<VoidType>();
+    }
+
+    [Fact]
+    public void Event_Unknown_Generic_Type_Reports_Error()
+    {
+        var (_, diags) = Check("""
+            namespace Demo;
+            using Std;
+            public class Bus {
+                public event Foo<int> Bar;
+            }
+            """);
         diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Message.Contains("single-cast event not yet supported"));
+        diags.All.Should().Contain(d => d.Message.Contains("not supported"));
     }
 
     [Fact]
@@ -180,17 +233,7 @@ public sealed class EventKeywordTests
         add.Body.Should().BeNull("instance abstract signature");
     }
 
-    [Fact]
-    public void Interface_SingleCast_Event_Reports_Not_Yet_Supported()
-    {
-        var (_, diags) = Check("""
-            namespace Demo;
-            using Std;
-            public interface IBus {
-                event Action<int> OnKey;
-            }
-            """);
-        diags.HasErrors.Should().BeTrue();
-        diags.All.Should().Contain(d => d.Message.Contains("single-cast event not yet supported"));
-    }
+    // Interface_SingleCast_Event_Reports_Not_Yet_Supported removed:
+    // 2026-05-04 D-7 add-event-keyword-singlecast 解锁 interface 单播 event。
+    // 见 Interface_SingleCast_Event_Synthesizes_Signatures 上面正路径覆盖。
 }
