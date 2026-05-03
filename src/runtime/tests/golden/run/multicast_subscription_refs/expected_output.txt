@@ -1,0 +1,10 @@
+3
+strong:1
+once:1
+comp:1
+strong:2
+1
+0
+persist:4
+persist:5
+0

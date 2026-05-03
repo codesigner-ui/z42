@@ -1,110 +1,191 @@
 namespace Std;
 
-// 2026-05-02 add-multicast-action (D2a): 多播 Action —— 一次注册多个
-// `Action<T>` handler，Invoke 时全部触发。与单播 `Action<T>` 类型分离
-// （delegates-events.md K1）。
+// 2026-05-02 add-multicast-action (D2a) + 2026-05-03 add-isubscription-wrapper (D2b):
+// 多播 Action —— 一次注册多个 `Action<T>` handler，Invoke 时全部触发。与
+// 单播 `Action<T>` 类型分离（delegates-events.md K1）。
 //
-// 内部用 Action<T>[] handlers + bool[] alive 平行数组持订阅；alive[idx]
-// 标记是否活跃。COW snapshot —— Invoke 时拷贝当前数组遍历副本，触发
-// 期间 Subscribe / Dispose 影响下次触发不影响本次。
+// 双 vec 通道（D2b 优化 A）：
+//   • strong vec —— 直接持 Action<T>，invoke fast loop 无 wrapper 检查；裸
+//     handler `Subscribe(Action<T>)` 走此路径，零 wrapper 开销。
+//   • advanced vec —— 持 `ISubscription<Action<T>>` 接口（含 OnceRef /
+//     CompositeRef / 用户自定义 wrapper）。invoke slow loop 走 IsAlive +
+//     Get + OnInvoked 路径。
 //
-// D2a 仅 fail-fast 路径（continueOnException 默认 false；handler 抛异常
-// 直接传播，不包装）。`continueOnException=true` + `MulticastException`
-// 在 D2d 实施。
+// COW snapshot —— Invoke 时拷贝当前数组遍历副本，触发期间 Subscribe /
+// Dispose 影响下次触发不影响本次。
+// fail-fast 路径（continueOnException 默认 false；handler 抛异常直接传播）。
 //
-// ISubscription wrapper（StrongRef / WeakRef / OnceRef / CompositeRef）+
-// 双 vec 优化 在 D2b 实施。
+// 解封历史：D2b 阶段 2 实施时发现 z42 generic 类型系统三处缺陷阻塞
+// `ISubscription<Action<T>>[]` 字段表达。前置 spec 已修齐：
+//   • fix-nested-generic-parsing (`>>` token splitting)
+//   • fix-z42type-structural-equality (record IReadOnlyList element-wise)
+//   • fix-generic-member-substitution (INVESTIGATED — Bug 1+3 下游症状)
 
 public sealed class MulticastAction<T> {
-    Action<T>[] handlers;
-    bool[] alive;
-    public int SlotCount;
-    int capacity;
+    // ── strong fast path ──
+    Action<T>[] strong;
+    bool[] strongAlive;
+    int strongCount;
+    int strongCapacity;
+
+    // ── advanced slow path（D2b 阶段 2） ──
+    // 持 ISubscription<Action<T>> 接口数组；用户传入 OnceRef / CompositeRef /
+    // 自定义 wrapper class : ISubscription<Action<T>> 都能 plug in。
+    ISubscription<Action<T>>[] advanced;
+    bool[] advancedAlive;
+    int advancedCount;
+    int advancedCapacity;
 
     public MulticastAction() {
-        this.capacity = 4;
-        this.handlers = new Action<T>[4];
-        this.alive = new bool[4];
-        this.SlotCount = 0;
+        this.strongCapacity = 4;
+        this.strong = new Action<T>[4];
+        this.strongAlive = new bool[4];
+        this.strongCount = 0;
+
+        this.advancedCapacity = 4;
+        this.advanced = new ISubscription<Action<T>>[4];
+        this.advancedAlive = new bool[4];
+        this.advancedCount = 0;
     }
 
+    // 裸 handler 订阅 → strong fast path（零 wrapper 开销）。
     public IDisposable Subscribe(Action<T> handler) {
-        if (this.SlotCount == this.capacity) this.Grow();
-        int idx = this.SlotCount;
-        this.handlers[idx] = handler;
-        this.alive[idx] = true;
-        this.SlotCount = this.SlotCount + 1;
-        return new MulticastSubscription<T>(this, idx);
+        if (this.strongCount == this.strongCapacity) this.GrowStrong();
+        int idx = this.strongCount;
+        this.strong[idx] = handler;
+        this.strongAlive[idx] = true;
+        this.strongCount = this.strongCount + 1;
+        return new MulticastSubscription<T>(this, idx, false);
     }
 
+    // ISubscription wrapper 订阅 → advanced slow path（OnceRef / CompositeRef /
+    // 用户自定义 wrapper）。
+    public IDisposable SubscribeAdvanced(ISubscription<Action<T>> wrapper) {
+        if (this.advancedCount == this.advancedCapacity) this.GrowAdvanced();
+        int idx = this.advancedCount;
+        this.advanced[idx] = wrapper;
+        this.advancedAlive[idx] = true;
+        this.advancedCount = this.advancedCount + 1;
+        return new MulticastSubscription<T>(this, idx, true);
+    }
+
+    // 当前活跃订阅总数（strong + advanced）。
     public int Count() {
         int c = 0;
         int i = 0;
-        while (i < this.SlotCount) {
-            if (this.alive[i]) c = c + 1;
+        while (i < this.strongCount) {
+            if (this.strongAlive[i]) c = c + 1;
+            i = i + 1;
+        }
+        i = 0;
+        while (i < this.advancedCount) {
+            if (this.advancedAlive[i] && this.advanced[i].IsAlive()) c = c + 1;
             i = i + 1;
         }
         return c;
     }
 
     public void Invoke(T arg, bool continueOnException = false) {
-        // COW snapshot —— 拷贝 handlers + alive 到本地数组后遍历副本。
-        // 触发期间 Subscribe / Dispose 影响下次触发，不影响本次。
-        int n = this.SlotCount;
-        Action<T>[] snapHandlers = new Action<T>[n];
-        bool[] snapAlive = new bool[n];
+        // ── strong snapshot + fast loop ──
+        int sn = this.strongCount;
+        Action<T>[] snapStrong = new Action<T>[sn];
+        bool[] snapStrongAlive = new bool[sn];
         int i = 0;
-        while (i < n) {
-            snapHandlers[i] = this.handlers[i];
-            snapAlive[i] = this.alive[i];
+        while (i < sn) {
+            snapStrong[i] = this.strong[i];
+            snapStrongAlive[i] = this.strongAlive[i];
             i = i + 1;
         }
         i = 0;
-        while (i < n) {
-            if (snapAlive[i]) snapHandlers[i](arg);
+        while (i < sn) {
+            if (snapStrongAlive[i]) snapStrong[i](arg);
             i = i + 1;
         }
-        // continueOnException 参数当前 D2a 未消费 —— D2d 加聚合异常路径时启用。
-        // v1 用户传 true 行为同 false（fail-fast）。
+
+        // ── advanced snapshot + slow loop ──
+        int an = this.advancedCount;
+        ISubscription<Action<T>>[] snapAdv = new ISubscription<Action<T>>[an];
+        bool[] snapAdvAlive = new bool[an];
+        i = 0;
+        while (i < an) {
+            snapAdv[i] = this.advanced[i];
+            snapAdvAlive[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i]) {
+                var w = snapAdv[i];
+                if (w.IsAlive()) {
+                    w.Get()(arg);
+                    w.OnInvoked();
+                }
+            }
+            i = i + 1;
+        }
+        // continueOnException 当前未消费 —— D2d 加聚合异常路径时启用。
     }
 
-    // Internal: dispose token 入口。把 alive[idx] 置 false，invoke 跳过。
-    public void RemoveAt(int idx) {
-        if (idx >= 0 && idx < this.SlotCount) {
-            this.alive[idx] = false;
+    // Internal: dispose token 入口。`isAdvanced` 决定 alive 数组归属。
+    public void RemoveAt(int idx, bool isAdvanced) {
+        if (isAdvanced) {
+            if (idx >= 0 && idx < this.advancedCount) {
+                this.advancedAlive[idx] = false;
+            }
+        } else {
+            if (idx >= 0 && idx < this.strongCount) {
+                this.strongAlive[idx] = false;
+            }
         }
     }
 
-    void Grow() {
-        int newCap = this.capacity * 2;
+    void GrowStrong() {
+        int newCap = this.strongCapacity * 2;
         Action<T>[] biggerH = new Action<T>[newCap];
         bool[] biggerA = new bool[newCap];
         int i = 0;
-        while (i < this.SlotCount) {
-            biggerH[i] = this.handlers[i];
-            biggerA[i] = this.alive[i];
+        while (i < this.strongCount) {
+            biggerH[i] = this.strong[i];
+            biggerA[i] = this.strongAlive[i];
             i = i + 1;
         }
-        this.handlers = biggerH;
-        this.alive = biggerA;
-        this.capacity = newCap;
+        this.strong = biggerH;
+        this.strongAlive = biggerA;
+        this.strongCapacity = newCap;
+    }
+
+    void GrowAdvanced() {
+        int newCap = this.advancedCapacity * 2;
+        ISubscription<Action<T>>[] biggerH = new ISubscription<Action<T>>[newCap];
+        bool[] biggerA = new bool[newCap];
+        int i = 0;
+        while (i < this.advancedCount) {
+            biggerH[i] = this.advanced[i];
+            biggerA[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+        this.advanced = biggerH;
+        this.advancedAlive = biggerA;
+        this.advancedCapacity = newCap;
     }
 }
 
-// 内部订阅 token —— Subscribe 返回它，Dispose 把 bus.alive[idx] 置 false。
-// 幂等：重复 Dispose 是 no-op（idx 设为 -1 后 RemoveAt 跳过）。
+// 内部订阅 token —— Subscribe 返回它，Dispose 把对应通道的 alive[idx] 置 false。
+// `isAdvanced` 区分 strong vs advanced 通道。
 public sealed class MulticastSubscription<T> : IDisposable {
     MulticastAction<T> bus;
     int idx;
+    bool isAdvanced;
 
-    public MulticastSubscription(MulticastAction<T> bus, int idx) {
+    public MulticastSubscription(MulticastAction<T> bus, int idx, bool isAdvanced) {
         this.bus = bus;
         this.idx = idx;
+        this.isAdvanced = isAdvanced;
     }
 
     public void Dispose() {
         if (this.idx >= 0) {
-            this.bus.RemoveAt(this.idx);
+            this.bus.RemoveAt(this.idx, this.isAdvanced);
             this.idx = -1;
         }
     }

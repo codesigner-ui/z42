@@ -1,6 +1,6 @@
 # z42 Delegates & Events 设计
 
-> **状态**：D1 + D2a 已落地（2026-05-02）：D1 = `delegate` 关键字 / 单播 / 方法组缓存 / stdlib delegate 类型 / TSIG 跨 zpkg 导出；D2a = `MulticastAction<T>` 基础多播 + COW snapshot + IDisposable token + fail-fast 异常路径。D2b（ISubscription wrapper）/ D2c（event 关键字）/ D2d（MulticastFunc + MulticastException）待实施。
+> **状态**：D1 + D2a + D2b 已落地（最新 2026-05-03）：D1 = `delegate` 关键字 / 单播 / 方法组缓存 / stdlib delegate 类型 / TSIG 跨 zpkg 导出；D2a = `MulticastAction<T>` 基础多播 + COW snapshot + IDisposable token + fail-fast 异常路径；**D2b = `ISubscription<TD>` 接口 + StrongRef / OnceRef / CompositeRef wrapper + ModeFlags 位运算 mode；MulticastAction 双 vec strong / advanced 通道 + SubscribeAdvanced 重载**。WeakRef 延后（前置依赖 corelib weak-ref builtin，见 docs/deferred-features.md D-1）。D2c（event 关键字）/ D2d（MulticastFunc + MulticastException）待实施。
 > **历史状态**：L2/L3 前瞻性设计草案（2026-05-01 定稿）
 > **定位**：与 `generics.md` / `concurrency.md` / `static-abstract-interface.md` 同级 — 长期规范，等具体 spec/changes/ 启动时实施
 > **参考**：C# delegate/event（视觉与心智蓝本）+ Rust/Kotlin/Swift（单播/多播分离）+ Rx/Combine `Subject` 体系（订阅策略 wrapper）

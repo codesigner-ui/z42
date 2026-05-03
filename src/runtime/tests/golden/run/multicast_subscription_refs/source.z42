@@ -1,0 +1,42 @@
+// 2026-05-03 add-isubscription-wrapper (D2b) regression golden.
+// 端到端验证 advanced 通道：OnceRef 一次性订阅、CompositeRef mode flags、
+// 双 vec strong + advanced 共存、Count() 跨通道汇总、Dispose 双通道路由。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    var bus = new MulticastAction<int>();
+
+    // strong fast path —— 裸 handler
+    var s1 = bus.Subscribe((int x) => Console.WriteLine($"strong:{x}"));
+
+    // advanced slow path —— OnceRef（仅触发一次后自动失效）
+    var once = new OnceRef<Action<int>>((int x) => Console.WriteLine($"once:{x}"));
+    var a1 = bus.SubscribeAdvanced(once);
+
+    // advanced slow path —— CompositeRef Once mode（与 OnceRef 等价路径）
+    var comp = new CompositeRef<Action<int>>((int x) => Console.WriteLine($"comp:{x}"), ModeFlags.Once);
+    var a2 = bus.SubscribeAdvanced(comp);
+
+    Console.WriteLine(bus.Count());  // 3 = 1 strong + 2 advanced
+
+    bus.Invoke(1);                    // strong:1 / once:1 / comp:1
+    bus.Invoke(2);                    // strong:2  (once+comp 已 latch)
+
+    Console.WriteLine(bus.Count());  // 1 = 1 strong + 0 advanced (consumed)
+
+    // Dispose strong handler
+    s1.Dispose();
+    bus.Invoke(3);                    // (nothing)
+    Console.WriteLine(bus.Count());  // 0
+
+    // CompositeRef 默认 mode (None) —— 不 latch，每次都 fire
+    var comp2 = new CompositeRef<Action<int>>((int x) => Console.WriteLine($"persist:{x}"), ModeFlags.None);
+    var a3 = bus.SubscribeAdvanced(comp2);
+    bus.Invoke(4);                    // persist:4
+    bus.Invoke(5);                    // persist:5
+    a3.Dispose();
+    bus.Invoke(6);                    // (nothing)
+    Console.WriteLine(bus.Count());  // 0
+}
