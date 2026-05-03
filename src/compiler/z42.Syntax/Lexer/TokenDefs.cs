@@ -61,6 +61,7 @@ internal static class TokenDefs
         new("interface", TokenKind.Interface, LanguagePhase.Phase1),
         new("record",    TokenKind.Record,    LanguagePhase.Phase1),
         new("delegate",  TokenKind.Delegate,  LanguagePhase.Phase1),
+        new("event",     TokenKind.Event,     LanguagePhase.Phase1),
         new("abstract",  TokenKind.Abstract,  LanguagePhase.Phase1),
         new("extern",    TokenKind.Extern,    LanguagePhase.Phase1),
         new("sealed",    TokenKind.Sealed,    LanguagePhase.Phase1),

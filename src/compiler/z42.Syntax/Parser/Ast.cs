@@ -161,7 +161,8 @@ public sealed record FieldDecl(
     Visibility Visibility,
     bool IsStatic,
     Expr? Initializer,
-    Span Span);
+    Span Span,
+    bool IsEvent = false);
 
 // ── Function modifiers ────────────────────────────────────────────────────────
 

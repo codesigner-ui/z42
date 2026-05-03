@@ -354,7 +354,11 @@ public sealed record Z42ClassType(
     IReadOnlyDictionary<string, Visibility>   MemberVisibility,
     string? BaseClassName = null,
     IReadOnlyList<string>? TypeParams = null,
-    bool IsStruct = false) : Z42Type
+    bool IsStruct = false,
+    /// 2026-05-03 add-event-keyword-multicast (D2c-多播)：本类声明的 event field
+    /// 名集合。`obj.X += h` / `obj.X -= h` desugar 到 `obj.add_X(h)` / `obj.remove_X(h)`
+    /// 时用于 detect。null 表示无 event field（默认）。
+    IReadOnlySet<string>? EventFieldNames = null) : Z42Type
 {
     public override string ToString() => Name;
 }

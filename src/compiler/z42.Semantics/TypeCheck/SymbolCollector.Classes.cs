@@ -122,10 +122,22 @@ public sealed partial class SymbolCollector
 
             var effectiveBase2 = cls.BaseClass
                 ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
+            // 2026-05-03 add-event-keyword-multicast (D2c-多播)：收集 event field
+            // 名 → EventFieldNames 集合（用于 BindAssign `+=` / `-=` desugar）。
+            HashSet<string>? eventNames = null;
+            foreach (var f in cls.Fields)
+            {
+                if (f.IsEvent)
+                {
+                    eventNames ??= new HashSet<string>(StringComparer.Ordinal);
+                    eventNames.Add(f.Name);
+                }
+            }
             _classes[cls.Name] = new Z42ClassType(
                 cls.Name, fields, methods, staticFields, staticMethods,
                 memberVis, effectiveBase2, cls.TypeParams?.AsReadOnly(),
-                IsStruct: cls.IsStruct);
+                IsStruct: cls.IsStruct,
+                EventFieldNames: eventNames);
             // L3-G2.5 chain: resolve each interface TypeExpr to a Z42InterfaceType
             // (with TypeArgs for generic interface references). Failures fall back to
             // name-only stubs to avoid cascading diagnostics.

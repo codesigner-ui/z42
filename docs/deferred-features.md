@@ -48,12 +48,18 @@
 - **触发条件**：用户需要在外部用 `Btn.OnClick` 而非 `using` 后用 simple `OnClick`。
 - **当前状态**：嵌套 delegate 类内部直接 `OnClick` 引用工作；外部需要先把它声明为顶层。
 
-## D-7：D2c event 关键字 + `+=` / `-=` desugar
+## D-7：D2c-单播 event + 严格 access control
 
-- **来源**：D2 路线 spec 拆分（D2c 还未启动）
-- **设计文档**：`docs/design/delegates-events.md` §6
-- **状态**：尚未 spec，等 D2b 归档后启动
-- **依赖**：D2b 完成（ISubscription wrapper）
+- **来源**：D2c spec 拆分（多播部分 2026-05-03 落地于 `add-event-keyword-multicast`）
+- **设计文档**：`docs/design/delegates-events.md` §6.2 单播 event 行
+- **状态**：多播部分已落地；单播 event 待独立 spec
+- **依赖**：无（前置 D2a/b/D-5/D2c-多播 已完成）
+- **触发条件**：用户实际需要单播 event（Cocoa-style 回调属性）；或需要严格写访问控制（外部 invoke / 直接 set 报错）
+- **缺失实现**：
+  - 单播 event 字段 nullable 类型（`Action<T>?` / `Func<...>?` / `Predicate<T>?`）
+  - 双绑定 throw `InvalidOperationException` 路径
+  - `Std.Disposable.From(Action)` 工厂用于 add_Y 返回的清空 lambda
+  - 严格 access control：外部 `obj.X.Invoke(...)` / `obj.X = ...` 报 E0407
 
 ## D-8：D2d MulticastFunc / MulticastPredicate + MulticastException 异常聚合
 

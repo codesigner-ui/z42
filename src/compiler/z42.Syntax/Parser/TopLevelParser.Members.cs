@@ -185,6 +185,80 @@ internal static partial class TopLevelParser
         return (backing, accessors);
     }
 
+    /// 2026-05-03 add-event-keyword-multicast (D2c-多播)：合成 event field 的
+    /// auto-init + add_X / remove_X 方法。同 `SynthesizeClassAutoProp` 模式。
+    ///
+    /// 多播 `event MulticastAction<T> X;` →
+    ///   field X: MulticastAction<T> = new MulticastAction<T>();
+    ///   public IDisposable add_X(Action<T> h) { return this.X.Subscribe(h); }
+    ///   public void remove_X(Action<T> h) { this.X.Unsubscribe(h); }
+    ///
+    /// 单播 event（`event Action<T> X;`）暂不支持 —— 报 "not yet supported"。
+    /// Spec 2b `add-event-keyword-singlecast` 落地。
+    internal static (FieldDecl backing, List<FunctionDecl> accessors)
+    SynthesizeClassEvent(FieldDecl evtField)
+    {
+        var fieldName = evtField.Name;
+        var fieldType = evtField.Type;
+        var span      = evtField.Span;
+
+        // 验证类型：必须是 GenericType("MulticastAction", [T])
+        if (fieldType is not GenericType gt
+            || gt.Name != "MulticastAction"
+            || gt.TypeArgs.Count != 1)
+        {
+            throw new ParseException(
+                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` for now",
+                span, DiagnosticCodes.UnexpectedToken);
+        }
+
+        var typeArg = gt.TypeArgs[0];  // T
+
+        // Backing field: 同名 + auto-init `new MulticastAction<T>()`
+        var initExpr = new NewExpr(fieldType, new List<Expr>(), span);
+        var backing  = new FieldDecl(
+            fieldName, fieldType, evtField.Visibility, evtField.IsStatic,
+            initExpr, span, IsEvent: true);
+
+        // Action<T> param type + IDisposable return type
+        var actionT = new GenericType("Action", new List<TypeExpr> { typeArg }, span);
+        var idisp   = new NamedType("IDisposable", span);
+
+        // add_X body: return this.X.Subscribe(h);
+        var addThis        = new IdentExpr("this", span);
+        var addFieldRead   = new MemberExpr(addThis, fieldName, span);
+        var addSubMember   = new MemberExpr(addFieldRead, "Subscribe", span);
+        var addHRef        = new IdentExpr("h", span);
+        var addSubCall     = new CallExpr(addSubMember, new List<Expr> { addHRef }, span);
+        var addBody        = new BlockStmt(
+            new List<Stmt> { new ReturnStmt(addSubCall, span) }, span);
+        var addFn = new FunctionDecl(
+            $"add_{fieldName}",
+            new List<Param> { new Param("h", actionT, null, span) },
+            idisp, addBody,
+            Visibility.Public,
+            FunctionModifiers.None,
+            null, span);
+
+        // remove_X body: this.X.Unsubscribe(h);
+        var rmThis        = new IdentExpr("this", span);
+        var rmFieldRead   = new MemberExpr(rmThis, fieldName, span);
+        var rmUnsubMember = new MemberExpr(rmFieldRead, "Unsubscribe", span);
+        var rmHRef        = new IdentExpr("h", span);
+        var rmUnsubCall   = new CallExpr(rmUnsubMember, new List<Expr> { rmHRef }, span);
+        var rmBody        = new BlockStmt(
+            new List<Stmt> { new ExprStmt(rmUnsubCall, span) }, span);
+        var rmFn = new FunctionDecl(
+            $"remove_{fieldName}",
+            new List<Param> { new Param("h", actionT, null, span) },
+            new VoidType(span), rmBody,
+            Visibility.Public,
+            FunctionModifiers.None,
+            null, span);
+
+        return (backing, new List<FunctionDecl> { addFn, rmFn });
+    }
+
     /// Parse auto-property in an interface body — produces method signatures only
     /// (no backing field, no body).
     /// Returns (getter [+ setter] MethodSignatures).

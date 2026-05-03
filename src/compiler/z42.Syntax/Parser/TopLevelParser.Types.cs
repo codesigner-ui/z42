@@ -335,12 +335,24 @@ internal static partial class TopLevelParser
                     var fSpan = cursor.Current.Span;
                     var fVis  = ParseVisibility(ref cursor, Visibility.Internal);
                     var (fStatic, _, _, _, _, _) = ParseNonVisibilityModifiers(ref cursor);
+                    // 2026-05-03 add-event-keyword (D2c)：`event` modifier 在 vis +
+                    // 非 vis modifiers 之后、type 之前；标识字段为 event field。
+                    bool fIsEvent = false;
+                    if (cursor.Current.Kind == TokenKind.Event)
+                    {
+                        cursor = cursor.Advance();
+                        fIsEvent = true;
+                    }
                     var fType = TypeParser.Parse(cursor).Unwrap(ref cursor);
                     var fName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
                     Expr? fInit = null;
                     if (cursor.Current.Kind == TokenKind.LBrace)
                     {
                         // Auto-property: synthesize backing field + accessors.
+                        if (fIsEvent)
+                            throw new ParseException(
+                                "`event` modifier cannot be combined with auto-property syntax",
+                                fSpan, DiagnosticCodes.InvalidModifier);
                         var (backing, accessors) = SynthesizeClassAutoProp(
                             ref cursor, fVis, fStatic, fType, fName, fSpan);
                         fields.Add(backing);
@@ -353,7 +365,18 @@ internal static partial class TopLevelParser
                         fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1).Unwrap(ref cursor);
                     }
                     ExpectKind(ref cursor, TokenKind.Semicolon);
-                    fields.Add(new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan));
+                    var rawField = new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan, fIsEvent);
+                    if (fIsEvent)
+                    {
+                        // 2026-05-03 D2c-多播：合成 add_X / remove_X 方法 + auto-init
+                        var (backing, accessors) = SynthesizeClassEvent(rawField);
+                        fields.Add(backing);
+                        foreach (var acc in accessors) methods.Add(acc);
+                    }
+                    else
+                    {
+                        fields.Add(rawField);
+                    }
                 }
                 else
                 {

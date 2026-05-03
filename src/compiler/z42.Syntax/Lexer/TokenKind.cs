@@ -13,7 +13,7 @@ public enum TokenKind
     // C# keywords
     Namespace, Using, Var,
     Static, Public, Private, Protected, Internal,
-    Class, Struct, Enum, Interface, Record, Delegate,
+    Class, Struct, Enum, Interface, Record, Delegate, Event,
     Abstract, Sealed, Override, Virtual, New, Extern,
     Async, Await,
     Return, If, Else, While, For, Foreach, In,

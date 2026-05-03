@@ -484,10 +484,11 @@ internal static partial class TopLevelParser
 
     private static bool IsFieldDecl(TokenCursor cursor)
     {
-        // Skip visibility + static/sealed modifiers
+        // Skip visibility + static/sealed modifiers + `event` modifier (D2c)
         cursor = cursor.SkipWhile(t => t.Kind is
             TokenKind.Public    or TokenKind.Private or TokenKind.Protected
-            or TokenKind.Internal or TokenKind.Static or TokenKind.Sealed);
+            or TokenKind.Internal or TokenKind.Static or TokenKind.Sealed
+            or TokenKind.Event);
         // Must start with a type token
         if (!TypeParser.IsTypeToken(cursor.Current.Kind)) return false;
         cursor = cursor.Advance();

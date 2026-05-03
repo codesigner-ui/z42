@@ -16,6 +16,34 @@ public sealed partial class TypeChecker
 
     private BoundExpr BindAssign(AssignExpr assign, TypeEnv env)
     {
+        // 2026-05-03 add-event-keyword-multicast (D2c-多播)：`obj.X += h` / `obj.X -= h`
+        // 当 X 是 event field 时 desugar 到 `obj.add_X(h)` / `obj.remove_X(h)`。
+        // Parser emits `+=` 为 AssignExpr(LHS, BinaryExpr("+", LHS, RHS))，本路径
+        // 在 BindAssign 入口最先 detect 拦截。
+        if (assign.Target is MemberExpr eMem
+            && assign.Value is BinaryExpr eBe
+            && (eBe.Op == "+" || eBe.Op == "-"))
+        {
+            var eRecv = BindExpr(eMem.Target, env);
+            if (eRecv.Type is Z42ClassType eCt
+                && eCt.EventFieldNames?.Contains(eMem.Member) == true)
+            {
+                var accessorName = (eBe.Op == "+") ? $"add_{eMem.Member}" : $"remove_{eMem.Member}";
+                if (!eCt.Methods.TryGetValue(accessorName, out var accSig))
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"event field `{eMem.Member}` synthesized accessor `{accessorName}` not found on `{eCt.Name}`",
+                        assign.Span);
+                    return new BoundError("missing event accessor", Z42Type.Error, assign.Span);
+                }
+                var eRhs = BindExpr(eBe.Right, env);
+                if (accSig.Params.Count > 0)
+                    RequireAssignable(accSig.Params[0], eRhs.Type, eBe.Right.Span);
+                return new BoundCall(BoundCallKind.Virtual, eRecv, eCt.Name, accessorName,
+                    null, new List<BoundExpr> { eRhs }, accSig.Ret, assign.Span);
+            }
+        }
+
         // L3-G4e: `obj[i] = v` on a class receiver with set_Item → dispatch to setter.
         // Detect BEFORE binding target (which would go through get_Item for class receiver).
         if (assign.Target is IndexExpr ixTgt)
