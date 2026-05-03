@@ -259,6 +259,33 @@ internal static partial class TopLevelParser
         return (backing, new List<FunctionDecl> { addFn, rmFn });
     }
 
+    /// 2026-05-03 add-interface-event-default：interface 端 event 合成。
+    /// 与 class 端 `SynthesizeClassEvent` 对偶，但产 `MethodSignature`（无 body）
+    /// 而非 `FunctionDecl`。每个 multicast event 产 add_X / remove_X 两个
+    /// instance abstract signature。
+    /// 单播 event 同样报 "single-cast event not yet supported"。
+    internal static List<MethodSignature> SynthesizeInterfaceEvent(
+        TypeExpr fieldType, string fieldName, Span span)
+    {
+        if (fieldType is not GenericType gt
+            || gt.Name != "MulticastAction"
+            || gt.TypeArgs.Count != 1)
+        {
+            throw new ParseException(
+                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` for now",
+                span, DiagnosticCodes.UnexpectedToken);
+        }
+        var typeArg = gt.TypeArgs[0];
+        var actionT = new GenericType("Action", new List<TypeExpr> { typeArg }, span);
+        var idisp   = new NamedType("IDisposable", span);
+        var hParam  = new Param("h", actionT, null, span);
+        return new List<MethodSignature>
+        {
+            new MethodSignature($"add_{fieldName}",    new List<Param> { hParam }, idisp,                 span, IsStatic: false, IsVirtual: false, Body: null),
+            new MethodSignature($"remove_{fieldName}", new List<Param> { hParam }, new VoidType(span),    span, IsStatic: false, IsVirtual: false, Body: null),
+        };
+    }
+
     /// Parse auto-property in an interface body — produces method signatures only
     /// (no backing field, no body).
     /// Returns (getter [+ setter] MethodSignatures).

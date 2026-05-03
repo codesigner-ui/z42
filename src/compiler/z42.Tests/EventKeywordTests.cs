@@ -108,4 +108,39 @@ public sealed class EventKeywordTests
     // (multicast_event_keyword) 覆盖 —— 单元测试环境无 stdlib，
     // 合成的 add_X body `return this.X.Subscribe(h)` 拿不到 MulticastAction
     // 的 Methods 定义会报 TypeCheck 错。
+
+    // ── interface event default (2026-05-03 add-interface-event-default) ─────
+
+    [Fact]
+    public void Interface_Event_Synthesizes_AddX_RemoveX_MethodSignatures()
+    {
+        var (cu, _) = Check("""
+            namespace Demo;
+            using Std;
+            public interface IBus {
+                event MulticastAction<int> Clicked;
+            }
+            """);
+        var iface = cu.Interfaces.Should().ContainSingle().Subject;
+        iface.Methods.Select(m => m.Name).Should().Contain(["add_Clicked", "remove_Clicked"]);
+        var add = iface.Methods.First(m => m.Name == "add_Clicked");
+        add.Params.Should().ContainSingle();
+        add.IsStatic.Should().BeFalse();
+        add.IsVirtual.Should().BeFalse();
+        add.Body.Should().BeNull("instance abstract signature");
+    }
+
+    [Fact]
+    public void Interface_SingleCast_Event_Reports_Not_Yet_Supported()
+    {
+        var (_, diags) = Check("""
+            namespace Demo;
+            using Std;
+            public interface IBus {
+                event Action<int> OnKey;
+            }
+            """);
+        diags.HasErrors.Should().BeTrue();
+        diags.All.Should().Contain(d => d.Message.Contains("single-cast event not yet supported"));
+    }
 }

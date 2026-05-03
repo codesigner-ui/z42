@@ -149,6 +149,18 @@ internal static partial class TopLevelParser
                 throw new ParseException(
                     "`abstract` and `virtual` cannot be combined", mSpan,
                     DiagnosticCodes.InvalidModifier);
+            // 2026-05-03 add-interface-event-default：interface 内 `event`
+            // 声明合成 add_X / remove_X MethodSignatures（与 class 端
+            // SynthesizeClassEvent 对偶）。
+            if (cursor.Current.Kind == TokenKind.Event)
+            {
+                cursor = cursor.Advance();
+                var evtType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+                var evtName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+                ExpectKind(ref cursor, TokenKind.Semicolon);
+                methods.AddRange(SynthesizeInterfaceEvent(evtType, evtName, mSpan));
+                continue;
+            }
             var mType = TypeParser.Parse(cursor).Unwrap(ref cursor);
             // L3 operator overload in interface: `static abstract T operator +(T, T)`
             string mName;
