@@ -1,0 +1,29 @@
+namespace Std;
+
+// 2026-05-03 add-multicast-exception-aggregate (D2d-2)：
+// MulticastAction.Invoke(continueOnException=true) 时聚合所有 handler
+// 抛出的异常。Failures + FailureIndices 并行数组（避开 Dictionary 依赖）。
+//
+// 索引计数：strong-first / advanced-after 统一 0-based。total = strong
+// 活跃数 + advanced 活跃数。
+public class MulticastException : AggregateException {
+    public Exception[] Failures;
+    public int[] FailureIndices;
+    public int TotalHandlers;
+
+    public MulticastException(Exception[] failures, int[] indices, int totalHandlers)
+        : base("multicast invoke aggregate", failures) {
+        this.Failures = failures;
+        this.FailureIndices = indices;
+        this.TotalHandlers = totalHandlers;
+    }
+
+    public int SuccessCount() {
+        return this.TotalHandlers - this.Failures.Length;
+    }
+
+    override string ToString() {
+        return "MulticastException: " + Convert.ToString(this.Failures.Length)
+             + " of " + Convert.ToString(this.TotalHandlers) + " handlers failed";
+    }
+}

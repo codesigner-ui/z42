@@ -1,0 +1,16 @@
+namespace Std;
+
+// 2026-05-03 add-multicast-exception-aggregate (D2d-2)：
+// 多个异常聚合的基类，C# 风格。携带 InnerExceptions 数组，便于通用 catch
+// 处理批处理失败场景。MulticastException 继承本类。
+public class AggregateException : Exception {
+    public Exception[] InnerExceptions;
+
+    public AggregateException(string message, Exception[] inners) : base(message) {
+        this.InnerExceptions = inners;
+    }
+
+    override string ToString() {
+        return "AggregateException: " + this.Message + " (" + Convert.ToString(this.InnerExceptions.Length) + " inner)";
+    }
+}

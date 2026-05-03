@@ -64,7 +64,13 @@ public sealed class MulticastPredicate<T> {
         return c;
     }
 
-    public bool[] Invoke(T arg, bool continueOnException = false) {
+    // 1-arg overload：默认 fail-fast。z42 default param bool 读取报 Null
+    // bug，分 2 overload 替代 default 参数。
+    public bool[] Invoke(T arg) {
+        return this.Invoke(arg, false);
+    }
+
+    public bool[] Invoke(T arg, bool continueOnException) {
         int sn = this.strongCount;
         Predicate<T>[] snapStrong = new Predicate<T>[sn];
         bool[] snapStrongAlive = new bool[sn];

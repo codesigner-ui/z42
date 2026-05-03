@@ -61,12 +61,26 @@
   - `Std.Disposable.From(Action)` 工厂用于 add_Y 返回的清空 lambda
   - 严格 access control：外部 `obj.X.Invoke(...)` / `obj.X = ...` 报 E0407
 
-## D-8：D2d MulticastFunc / MulticastPredicate + MulticastException 异常聚合
+## D-8b：D2d Func/Predicate 异常聚合 + MulticastException<R>
 
-- **来源**：D2 路线 spec 拆分（D2d 还未启动）
-- **设计文档**：`docs/design/delegates-events.md` §4 + §7
-- **状态**：尚未 spec，等 D2b/c 归档后启动
-- **依赖**：D2b 完成
+- **来源**：D2d 拆分后 D2d-2 仅 Action 路径落地（2026-05-04）；Func/Predicate 留本条
+- **设计文档**：`docs/design/delegates-events.md` §7
+- **触发原因**：`MulticastException<R>` 泛型版本 + Results 数组占位（成功 = 返回值，失败 = default(R)）需要类型系统支持泛型异常类继承 + R 类型的 default value computation。当前 z42 generic + exception 组合未验证。
+- **前置依赖**：z42 generic class 继承非泛型 base class 跨 catch handler 子类型匹配；R 类型 default value 计算（int=0/bool=false/string=null/Class=null）。
+- **触发条件**：用户实际需要 MulticastFunc / MulticastPredicate 全跑完模式（如 plug-in 系统多实现 vote 投票）。
+- **缺失实现**：
+  - stdlib `MulticastException<R>` 泛型继承 MulticastException（含 Results: R[]）
+  - `MulticastFunc.Invoke(continueOnException=true)` 累积 Results + Failures，抛 `MulticastException<R>`
+  - `MulticastPredicate.Invoke(continueOnException=true)` 同款（R=bool）
+
+## D-9：z42 默认参数 bool 读取报 Null bug
+
+- **来源**：2026-05-04 `add-multicast-exception-aggregate` 实施时发现
+- **触发现象**：方法签名 `void Invoke(T arg, bool continueOnException = false)`，调用 `bus.Invoke(arg)` 不传第二个参数。函数体内读 `continueOnException` 时 VM 报 "expected bool in register %2, got Null"。Default 值 `false` 没有被填充。
+- **workaround（已用于 D2d-2）**：分 `Invoke(arg)` + `Invoke(arg, bool)` 两个 overload，1-arg 委托 2-arg。MulticastAction / MulticastFunc / MulticastPredicate 三个类全部应用。
+- **前置依赖**：z42 编译器 / IR codegen / VM 之一 default param 填充逻辑修正（具体哪一层未定位）。
+- **触发条件**：任何方法默认 bool 参数被读取时；不读则不触发。
+- **影响**：所有 stdlib `default-bool-param` API 都得避开此 bug（用 overload 替代）；用户代码同样受影响
 
 ---
 

@@ -85,8 +85,21 @@ public sealed class MulticastAction<T> {
         return c;
     }
 
-    public void Invoke(T arg, bool continueOnException = false) {
-        // ── strong snapshot + fast loop ──
+    // 1-arg overload：默认 fail-fast 路径（D2a 行为；首抛即停，原异常传播）。
+    public void Invoke(T arg) {
+        this.Invoke(arg, false);
+    }
+
+    // 2026-05-03 add-multicast-exception-aggregate (D2d-2)：
+    // continueOnException=true 时所有 handler 均尝试调用，失败者收入
+    // Failures 数组，最终抛 MulticastException 聚合诊断；continueOnException=false
+    // 保持 D2a 的 fail-fast 路径（首抛即停，原异常传播）。
+    //
+    // 注：分 2 个 overload 而非用 default param，因 z42 当前 default
+    // bool 参数读取时报 Null（caller 不填默认未生效；现有 D2a/b/c
+    // golden 用 `bus.Invoke(arg)` 即依赖此 1-arg 路径）。
+    public void Invoke(T arg, bool continueOnException) {
+        // ── strong snapshot ──
         int sn = this.strongCount;
         Action<T>[] snapStrong = new Action<T>[sn];
         bool[] snapStrongAlive = new bool[sn];
@@ -96,13 +109,7 @@ public sealed class MulticastAction<T> {
             snapStrongAlive[i] = this.strongAlive[i];
             i = i + 1;
         }
-        i = 0;
-        while (i < sn) {
-            if (snapStrongAlive[i]) snapStrong[i](arg);
-            i = i + 1;
-        }
-
-        // ── advanced snapshot + slow loop ──
+        // ── advanced snapshot ──
         int an = this.advancedCount;
         ISubscription<Action<T>>[] snapAdv = new ISubscription<Action<T>>[an];
         bool[] snapAdvAlive = new bool[an];
@@ -112,18 +119,107 @@ public sealed class MulticastAction<T> {
             snapAdvAlive[i] = this.advancedAlive[i];
             i = i + 1;
         }
+
+        if (!continueOnException) {
+            // fail-fast 路径（D2a 行为保持）
+            i = 0;
+            while (i < sn) {
+                if (snapStrongAlive[i]) snapStrong[i](arg);
+                i = i + 1;
+            }
+            i = 0;
+            while (i < an) {
+                if (snapAdvAlive[i]) {
+                    var w = snapAdv[i];
+                    if (w.IsAlive()) {
+                        w.Get()(arg);
+                        w.OnInvoked();
+                    }
+                }
+                i = i + 1;
+            }
+            return;
+        }
+
+        // continueOnException=true 路径：累积失败索引 + 异常，全跑完后聚合抛
+        Exception[] failExns = new Exception[8];
+        int[] failIdx = new int[8];
+        int failCap = 8;
+        int failCount = 0;
+        int totalCalled = 0;
+
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) {
+                totalCalled = totalCalled + 1;
+                try {
+                    snapStrong[i](arg);
+                } catch (Exception e) {
+                    if (failCount == failCap) {
+                        int newCap = failCap * 2;
+                        Exception[] biggerE = new Exception[newCap];
+                        int[] biggerI = new int[newCap];
+                        int k = 0;
+                        while (k < failCount) {
+                            biggerE[k] = failExns[k];
+                            biggerI[k] = failIdx[k];
+                            k = k + 1;
+                        }
+                        failExns = biggerE;
+                        failIdx = biggerI;
+                        failCap = newCap;
+                    }
+                    failExns[failCount] = e;
+                    failIdx[failCount] = totalCalled - 1;
+                    failCount = failCount + 1;
+                }
+            }
+            i = i + 1;
+        }
         i = 0;
         while (i < an) {
             if (snapAdvAlive[i]) {
                 var w = snapAdv[i];
                 if (w.IsAlive()) {
-                    w.Get()(arg);
-                    w.OnInvoked();
+                    totalCalled = totalCalled + 1;
+                    try {
+                        w.Get()(arg);
+                        w.OnInvoked();
+                    } catch (Exception e) {
+                        if (failCount == failCap) {
+                            int newCap = failCap * 2;
+                            Exception[] biggerE = new Exception[newCap];
+                            int[] biggerI = new int[newCap];
+                            int k = 0;
+                            while (k < failCount) {
+                                biggerE[k] = failExns[k];
+                                biggerI[k] = failIdx[k];
+                                k = k + 1;
+                            }
+                            failExns = biggerE;
+                            failIdx = biggerI;
+                            failCap = newCap;
+                        }
+                        failExns[failCount] = e;
+                        failIdx[failCount] = totalCalled - 1;
+                        failCount = failCount + 1;
+                    }
                 }
             }
             i = i + 1;
         }
-        // continueOnException 当前未消费 —— D2d 加聚合异常路径时启用。
+
+        if (failCount > 0) {
+            Exception[] trimE = new Exception[failCount];
+            int[] trimI = new int[failCount];
+            int j = 0;
+            while (j < failCount) {
+                trimE[j] = failExns[j];
+                trimI[j] = failIdx[j];
+                j = j + 1;
+            }
+            throw new MulticastException(trimE, trimI, totalCalled);
+        }
     }
 
     // 2026-05-03 fix-delegate-reference-equality (D-5)：by-handler 取消订阅。

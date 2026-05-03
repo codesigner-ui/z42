@@ -1,0 +1,59 @@
+// 2026-05-04 add-multicast-exception-aggregate (D2d-2) regression golden.
+// 端到端验证 MulticastAction.Invoke continueOnException=true 异常聚合：
+// 0 异常不抛 / 单异常聚合 / 多异常聚合 / continueOnException=false 保持
+// fail-fast 行为不变。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    // ── 0 异常 + continueOnException=true：不抛 ──
+    var bus = new MulticastAction<int>();
+    bus.Subscribe((int x) => Console.WriteLine($"a:{x}"));
+    bus.Subscribe((int x) => Console.WriteLine($"b:{x}"));
+    try {
+        bus.Invoke(1, true);                 // a:1 / b:1
+        Console.WriteLine("no exception");
+    } catch (Exception e) {
+        Console.WriteLine("unexpected");
+    }
+
+    // ── 1 异常 + continueOnException=true：聚合，跑完所有 handler ──
+    var bus2 = new MulticastAction<int>();
+    bus2.Subscribe((int x) => Console.WriteLine($"h0:{x}"));
+    bus2.Subscribe((int x) => { throw new Exception("h1 oops"); });
+    bus2.Subscribe((int x) => Console.WriteLine($"h2:{x}"));
+    try {
+        bus2.Invoke(2, true);                // h0:2 / h2:2 都跑完
+        Console.WriteLine("no exception (should not reach)");
+    } catch (MulticastException me) {
+        Console.WriteLine("aggregate caught");
+        Console.WriteLine(me.Failures.Length);    // 1
+        Console.WriteLine(me.FailureIndices[0]);  // 1
+        Console.WriteLine(me.TotalHandlers);      // 3
+        Console.WriteLine(me.SuccessCount());     // 2
+    }
+
+    // ── 多异常聚合 ──
+    var bus3 = new MulticastAction<int>();
+    bus3.Subscribe((int x) => { throw new Exception("h0 fail"); });
+    bus3.Subscribe((int x) => { throw new Exception("h1 fail"); });
+    try {
+        bus3.Invoke(3, true);
+    } catch (MulticastException me) {
+        Console.WriteLine(me.Failures.Length);    // 2
+        Console.WriteLine(me.SuccessCount());     // 0
+    }
+
+    // ── continueOnException=false 保持 fail-fast：第一个异常即停 ──
+    var bus4 = new MulticastAction<int>();
+    bus4.Subscribe((int x) => Console.WriteLine($"f0:{x}"));
+    bus4.Subscribe((int x) => { throw new Exception("f1 fast"); });
+    bus4.Subscribe((int x) => Console.WriteLine($"f2:{x}"));   // 不应被调用
+    try {
+        bus4.Invoke(4);                          // 1-arg overload, fail-fast
+        Console.WriteLine("no exception (should not reach)");
+    } catch (Exception e) {
+        Console.WriteLine($"fast caught: {e.Message}");
+    }
+}
