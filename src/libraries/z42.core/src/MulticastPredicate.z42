@@ -1,0 +1,285 @@
+namespace Std;
+
+// 2026-05-03 add-multicast-func-predicate (D2d-1):
+// 多播 Predicate —— 一次注册多个 `Predicate<T>` handler，Invoke 收集所有
+// 返回值进 `bool[]`。FIFO（注册顺序 = 调用顺序）。`All(T)` / `Any(T)` 短路
+// 求值（K10 LINQ 习惯）。
+//
+// 双 vec 通道（同 MulticastAction / MulticastFunc 模式）。
+// fail-fast 默认；`continueOnException=true` 异常聚合留 D2d-2。
+
+public sealed class MulticastPredicate<T> {
+    Predicate<T>[] strong;
+    bool[] strongAlive;
+    int strongCount;
+    int strongCapacity;
+
+    ISubscription<Predicate<T>>[] advanced;
+    bool[] advancedAlive;
+    int advancedCount;
+    int advancedCapacity;
+
+    public MulticastPredicate() {
+        this.strongCapacity = 4;
+        this.strong = new Predicate<T>[4];
+        this.strongAlive = new bool[4];
+        this.strongCount = 0;
+
+        this.advancedCapacity = 4;
+        this.advanced = new ISubscription<Predicate<T>>[4];
+        this.advancedAlive = new bool[4];
+        this.advancedCount = 0;
+    }
+
+    public IDisposable Subscribe(Predicate<T> handler) {
+        if (this.strongCount == this.strongCapacity) this.GrowStrong();
+        int idx = this.strongCount;
+        this.strong[idx] = handler;
+        this.strongAlive[idx] = true;
+        this.strongCount = this.strongCount + 1;
+        return new MulticastPredicateSubscription<T>(this, idx, false);
+    }
+
+    public IDisposable SubscribeAdvanced(ISubscription<Predicate<T>> wrapper) {
+        if (this.advancedCount == this.advancedCapacity) this.GrowAdvanced();
+        int idx = this.advancedCount;
+        this.advanced[idx] = wrapper;
+        this.advancedAlive[idx] = true;
+        this.advancedCount = this.advancedCount + 1;
+        return new MulticastPredicateSubscription<T>(this, idx, true);
+    }
+
+    public int Count() {
+        int c = 0;
+        int i = 0;
+        while (i < this.strongCount) {
+            if (this.strongAlive[i]) c = c + 1;
+            i = i + 1;
+        }
+        i = 0;
+        while (i < this.advancedCount) {
+            if (this.advancedAlive[i] && this.advanced[i].IsAlive()) c = c + 1;
+            i = i + 1;
+        }
+        return c;
+    }
+
+    public bool[] Invoke(T arg, bool continueOnException = false) {
+        int sn = this.strongCount;
+        Predicate<T>[] snapStrong = new Predicate<T>[sn];
+        bool[] snapStrongAlive = new bool[sn];
+        int i = 0;
+        while (i < sn) {
+            snapStrong[i] = this.strong[i];
+            snapStrongAlive[i] = this.strongAlive[i];
+            i = i + 1;
+        }
+
+        int an = this.advancedCount;
+        ISubscription<Predicate<T>>[] snapAdv = new ISubscription<Predicate<T>>[an];
+        bool[] snapAdvAlive = new bool[an];
+        i = 0;
+        while (i < an) {
+            snapAdv[i] = this.advanced[i];
+            snapAdvAlive[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+
+        int total = 0;
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) total = total + 1;
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i] && snapAdv[i].IsAlive()) total = total + 1;
+            i = i + 1;
+        }
+
+        bool[] result = new bool[total];
+        int outIdx = 0;
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) {
+                result[outIdx] = snapStrong[i](arg);
+                outIdx = outIdx + 1;
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i]) {
+                var w = snapAdv[i];
+                if (w.IsAlive()) {
+                    result[outIdx] = w.Get()(arg);
+                    w.OnInvoked();
+                    outIdx = outIdx + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // `All(arg)` —— 一旦遇 false 立即返回 false（短路），后续 handler 不调用。
+    // 空 bus 返回 true（vacuous truth）。
+    public bool All(T arg) {
+        int sn = this.strongCount;
+        Predicate<T>[] snapStrong = new Predicate<T>[sn];
+        bool[] snapStrongAlive = new bool[sn];
+        int i = 0;
+        while (i < sn) {
+            snapStrong[i] = this.strong[i];
+            snapStrongAlive[i] = this.strongAlive[i];
+            i = i + 1;
+        }
+        int an = this.advancedCount;
+        ISubscription<Predicate<T>>[] snapAdv = new ISubscription<Predicate<T>>[an];
+        bool[] snapAdvAlive = new bool[an];
+        i = 0;
+        while (i < an) {
+            snapAdv[i] = this.advanced[i];
+            snapAdvAlive[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) {
+                if (!snapStrong[i](arg)) return false;
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i]) {
+                var w = snapAdv[i];
+                if (w.IsAlive()) {
+                    bool r = w.Get()(arg);
+                    w.OnInvoked();
+                    if (!r) return false;
+                }
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    // `Any(arg)` —— 一旦遇 true 立即返回 true（短路）。
+    // 空 bus 返回 false（vacuous existential）。
+    public bool Any(T arg) {
+        int sn = this.strongCount;
+        Predicate<T>[] snapStrong = new Predicate<T>[sn];
+        bool[] snapStrongAlive = new bool[sn];
+        int i = 0;
+        while (i < sn) {
+            snapStrong[i] = this.strong[i];
+            snapStrongAlive[i] = this.strongAlive[i];
+            i = i + 1;
+        }
+        int an = this.advancedCount;
+        ISubscription<Predicate<T>>[] snapAdv = new ISubscription<Predicate<T>>[an];
+        bool[] snapAdvAlive = new bool[an];
+        i = 0;
+        while (i < an) {
+            snapAdv[i] = this.advanced[i];
+            snapAdvAlive[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) {
+                if (snapStrong[i](arg)) return true;
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i]) {
+                var w = snapAdv[i];
+                if (w.IsAlive()) {
+                    bool r = w.Get()(arg);
+                    w.OnInvoked();
+                    if (r) return true;
+                }
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    public void Unsubscribe(Predicate<T> handler) {
+        int i = 0;
+        while (i < this.strongCount) {
+            if (this.strongAlive[i]) {
+                if (DelegateOps.ReferenceEquals(this.strong[i], handler)) {
+                    this.strongAlive[i] = false;
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    public void RemoveAt(int idx, bool isAdvanced) {
+        if (isAdvanced) {
+            if (idx >= 0 && idx < this.advancedCount) {
+                this.advancedAlive[idx] = false;
+            }
+        } else {
+            if (idx >= 0 && idx < this.strongCount) {
+                this.strongAlive[idx] = false;
+            }
+        }
+    }
+
+    void GrowStrong() {
+        int newCap = this.strongCapacity * 2;
+        Predicate<T>[] biggerH = new Predicate<T>[newCap];
+        bool[] biggerA = new bool[newCap];
+        int i = 0;
+        while (i < this.strongCount) {
+            biggerH[i] = this.strong[i];
+            biggerA[i] = this.strongAlive[i];
+            i = i + 1;
+        }
+        this.strong = biggerH;
+        this.strongAlive = biggerA;
+        this.strongCapacity = newCap;
+    }
+
+    void GrowAdvanced() {
+        int newCap = this.advancedCapacity * 2;
+        ISubscription<Predicate<T>>[] biggerH = new ISubscription<Predicate<T>>[newCap];
+        bool[] biggerA = new bool[newCap];
+        int i = 0;
+        while (i < this.advancedCount) {
+            biggerH[i] = this.advanced[i];
+            biggerA[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+        this.advanced = biggerH;
+        this.advancedAlive = biggerA;
+        this.advancedCapacity = newCap;
+    }
+}
+
+public sealed class MulticastPredicateSubscription<T> : IDisposable {
+    MulticastPredicate<T> bus;
+    int idx;
+    bool isAdvanced;
+
+    public MulticastPredicateSubscription(MulticastPredicate<T> bus, int idx, bool isAdvanced) {
+        this.bus = bus;
+        this.idx = idx;
+        this.isAdvanced = isAdvanced;
+    }
+
+    public void Dispose() {
+        if (this.idx >= 0) {
+            this.bus.RemoveAt(this.idx, this.isAdvanced);
+            this.idx = -1;
+        }
+    }
+}

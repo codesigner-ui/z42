@@ -109,6 +109,56 @@ public sealed class EventKeywordTests
     // 合成的 add_X body `return this.X.Subscribe(h)` 拿不到 MulticastAction
     // 的 Methods 定义会报 TypeCheck 错。
 
+    // ── D2d-1 多播 Func / Predicate event (2026-05-03 add-multicast-func-predicate) ─
+
+    [Fact]
+    public void MulticastFunc_Event_Synthesizes_Add_With_Func_Handler()
+    {
+        var (cu, _) = Check("""
+            namespace Demo;
+            using Std;
+            public class Bus {
+                public event MulticastFunc<int, bool> Validate;
+            }
+            """);
+        var bus = cu.Classes[0];
+        bus.Methods.Select(m => m.Name).Should().Contain(["add_Validate", "remove_Validate"]);
+        var add = bus.Methods.First(m => m.Name == "add_Validate");
+        var hType = (GenericType)add.Params[0].Type;
+        hType.Name.Should().Be("Func");
+        hType.TypeArgs.Should().HaveCount(2, "Func<int, bool>");
+    }
+
+    [Fact]
+    public void MulticastPredicate_Event_Synthesizes_Add_With_Predicate_Handler()
+    {
+        var (cu, _) = Check("""
+            namespace Demo;
+            using Std;
+            public class Filt {
+                public event MulticastPredicate<int> Filter;
+            }
+            """);
+        var add = cu.Classes[0].Methods.First(m => m.Name == "add_Filter");
+        var hType = (GenericType)add.Params[0].Type;
+        hType.Name.Should().Be("Predicate");
+        hType.TypeArgs.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void Interface_MulticastFunc_Event_Synthesizes_Signatures()
+    {
+        var (cu, _) = Check("""
+            namespace Demo;
+            using Std;
+            public interface IFilt {
+                event MulticastFunc<int, bool> Validate;
+            }
+            """);
+        var iface = cu.Interfaces[0];
+        iface.Methods.Select(m => m.Name).Should().Contain(["add_Validate", "remove_Validate"]);
+    }
+
     // ── interface event default (2026-05-03 add-interface-event-default) ─────
 
     [Fact]

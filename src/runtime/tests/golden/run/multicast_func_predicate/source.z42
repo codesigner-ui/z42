@@ -1,0 +1,70 @@
+// 2026-05-03 add-multicast-func-predicate (D2d-1) regression golden.
+// 端到端验证 MulticastFunc / MulticastPredicate 双 vec 路径 +
+// All / Any 短路 + event keyword 接受三种 multicast 类型。
+namespace Demo;
+using Std;
+using Std.IO;
+
+public class Validators {
+    public event MulticastFunc<int, bool> Validate;
+    public event MulticastPredicate<int> Filter;
+
+    public bool[] runValidate(int x) {
+        return this.Validate.Invoke(x);
+    }
+
+    public bool[] runFilter(int x) {
+        return this.Filter.Invoke(x);
+    }
+
+    public bool allFilter(int x) {
+        return this.Filter.All(x);
+    }
+
+    public bool anyFilter(int x) {
+        return this.Filter.Any(x);
+    }
+}
+
+void Main() {
+    // ── MulticastFunc 直接用法 ──
+    var bus = new MulticastFunc<int, int>();
+    bus.Subscribe((int x) => x + 1);
+    bus.Subscribe((int x) => x * 2);
+    int[] r = bus.Invoke(5);
+    Console.WriteLine(r[0]);          // 6
+    Console.WriteLine(r[1]);          // 10
+    Console.WriteLine(r.Length);      // 2
+
+    // ── MulticastPredicate All / Any 短路 ──
+    var pred = new MulticastPredicate<int>();
+    Console.WriteLine(pred.All(0));   // true (空集 vacuous)
+    Console.WriteLine(pred.Any(0));   // false (空集 vacuous)
+
+    pred.Subscribe((int x) => x > 0);
+    pred.Subscribe((int x) => x < 100);
+    bool[] pr = pred.Invoke(5);
+    Console.WriteLine(pr[0]);          // true
+    Console.WriteLine(pr[1]);          // true
+    Console.WriteLine(pred.All(5));   // true
+    Console.WriteLine(pred.Any(5));   // true
+
+    // 短路 false
+    pred.Subscribe((int x) => x == 99);
+    Console.WriteLine(pred.All(5));   // false (3rd handler false)
+
+    // ── event keyword 多类型 ──
+    var v = new Validators();
+
+    v.Validate += (int x) => x > 0;
+    v.Validate += (int x) => x < 100;
+    bool[] vr = v.runValidate(50);
+    Console.WriteLine(vr[0]);          // true
+    Console.WriteLine(vr[1]);          // true
+
+    v.Filter += (int x) => x > 0;
+    v.Filter += (int x) => x % 2 == 0;
+    Console.WriteLine(v.allFilter(4)); // true
+    Console.WriteLine(v.allFilter(3)); // false (odd)
+    Console.WriteLine(v.anyFilter(3)); // true (positive)
+}

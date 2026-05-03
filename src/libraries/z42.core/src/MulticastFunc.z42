@@ -1,0 +1,213 @@
+namespace Std;
+
+// 2026-05-03 add-multicast-func-predicate (D2d-1):
+// 多播 Func —— 一次注册多个 `Func<T, R>` handler，Invoke 收集所有返回值
+// 入 `R[]`。FIFO（注册顺序 = 调用顺序）。与单播 `Func<T, R>` 类型分离
+// （delegates-events.md K2/K8）。
+//
+// 双 vec 通道（同 MulticastAction 模式）：
+//   • strong vec —— 直接持 Func<T,R>，invoke fast loop 无 wrapper 检查；裸
+//     handler `Subscribe(Func<T,R>)` 走此路径。
+//   • advanced vec —— 持 `ISubscription<Func<T,R>>` wrapper（OnceRef /
+//     CompositeRef / 自定义）。invoke slow loop 走 IsAlive + Get + OnInvoked。
+//
+// COW snapshot —— Invoke 时拷贝当前数组遍历副本。
+// fail-fast 路径（continueOnException 默认 false；handler 抛异常直接传播）。
+// `continueOnException=true` 异常聚合留 D2d-2（`MulticastException<R>`）。
+
+public sealed class MulticastFunc<T, R> {
+    // ── strong fast path ──
+    Func<T, R>[] strong;
+    bool[] strongAlive;
+    int strongCount;
+    int strongCapacity;
+
+    // ── advanced slow path ──
+    ISubscription<Func<T, R>>[] advanced;
+    bool[] advancedAlive;
+    int advancedCount;
+    int advancedCapacity;
+
+    public MulticastFunc() {
+        this.strongCapacity = 4;
+        this.strong = new Func<T, R>[4];
+        this.strongAlive = new bool[4];
+        this.strongCount = 0;
+
+        this.advancedCapacity = 4;
+        this.advanced = new ISubscription<Func<T, R>>[4];
+        this.advancedAlive = new bool[4];
+        this.advancedCount = 0;
+    }
+
+    public IDisposable Subscribe(Func<T, R> handler) {
+        if (this.strongCount == this.strongCapacity) this.GrowStrong();
+        int idx = this.strongCount;
+        this.strong[idx] = handler;
+        this.strongAlive[idx] = true;
+        this.strongCount = this.strongCount + 1;
+        return new MulticastFuncSubscription<T, R>(this, idx, false);
+    }
+
+    public IDisposable SubscribeAdvanced(ISubscription<Func<T, R>> wrapper) {
+        if (this.advancedCount == this.advancedCapacity) this.GrowAdvanced();
+        int idx = this.advancedCount;
+        this.advanced[idx] = wrapper;
+        this.advancedAlive[idx] = true;
+        this.advancedCount = this.advancedCount + 1;
+        return new MulticastFuncSubscription<T, R>(this, idx, true);
+    }
+
+    public int Count() {
+        int c = 0;
+        int i = 0;
+        while (i < this.strongCount) {
+            if (this.strongAlive[i]) c = c + 1;
+            i = i + 1;
+        }
+        i = 0;
+        while (i < this.advancedCount) {
+            if (this.advancedAlive[i] && this.advanced[i].IsAlive()) c = c + 1;
+            i = i + 1;
+        }
+        return c;
+    }
+
+    // Invoke 收集所有活跃 handler 返回值进 R[]，按 strong-first / advanced-after
+    // 顺序累加。失败抛原异常（D2d-2 加聚合）。
+    public R[] Invoke(T arg, bool continueOnException = false) {
+        // ── strong snapshot + fast loop ──
+        int sn = this.strongCount;
+        Func<T, R>[] snapStrong = new Func<T, R>[sn];
+        bool[] snapStrongAlive = new bool[sn];
+        int i = 0;
+        while (i < sn) {
+            snapStrong[i] = this.strong[i];
+            snapStrongAlive[i] = this.strongAlive[i];
+            i = i + 1;
+        }
+
+        // ── advanced snapshot + slow loop ──
+        int an = this.advancedCount;
+        ISubscription<Func<T, R>>[] snapAdv = new ISubscription<Func<T, R>>[an];
+        bool[] snapAdvAlive = new bool[an];
+        i = 0;
+        while (i < an) {
+            snapAdv[i] = this.advanced[i];
+            snapAdvAlive[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+
+        // 先统计活跃 handler 总数确定 result 长度
+        int total = 0;
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) total = total + 1;
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i] && snapAdv[i].IsAlive()) total = total + 1;
+            i = i + 1;
+        }
+
+        R[] result = new R[total];
+        int outIdx = 0;
+        i = 0;
+        while (i < sn) {
+            if (snapStrongAlive[i]) {
+                result[outIdx] = snapStrong[i](arg);
+                outIdx = outIdx + 1;
+            }
+            i = i + 1;
+        }
+        i = 0;
+        while (i < an) {
+            if (snapAdvAlive[i]) {
+                var w = snapAdv[i];
+                if (w.IsAlive()) {
+                    result[outIdx] = w.Get()(arg);
+                    w.OnInvoked();
+                    outIdx = outIdx + 1;
+                }
+            }
+            i = i + 1;
+        }
+        // continueOnException 当前未消费 —— D2d-2 加聚合异常路径时启用。
+        return result;
+    }
+
+    public void Unsubscribe(Func<T, R> handler) {
+        int i = 0;
+        while (i < this.strongCount) {
+            if (this.strongAlive[i]) {
+                if (DelegateOps.ReferenceEquals(this.strong[i], handler)) {
+                    this.strongAlive[i] = false;
+                }
+            }
+            i = i + 1;
+        }
+    }
+
+    public void RemoveAt(int idx, bool isAdvanced) {
+        if (isAdvanced) {
+            if (idx >= 0 && idx < this.advancedCount) {
+                this.advancedAlive[idx] = false;
+            }
+        } else {
+            if (idx >= 0 && idx < this.strongCount) {
+                this.strongAlive[idx] = false;
+            }
+        }
+    }
+
+    void GrowStrong() {
+        int newCap = this.strongCapacity * 2;
+        Func<T, R>[] biggerH = new Func<T, R>[newCap];
+        bool[] biggerA = new bool[newCap];
+        int i = 0;
+        while (i < this.strongCount) {
+            biggerH[i] = this.strong[i];
+            biggerA[i] = this.strongAlive[i];
+            i = i + 1;
+        }
+        this.strong = biggerH;
+        this.strongAlive = biggerA;
+        this.strongCapacity = newCap;
+    }
+
+    void GrowAdvanced() {
+        int newCap = this.advancedCapacity * 2;
+        ISubscription<Func<T, R>>[] biggerH = new ISubscription<Func<T, R>>[newCap];
+        bool[] biggerA = new bool[newCap];
+        int i = 0;
+        while (i < this.advancedCount) {
+            biggerH[i] = this.advanced[i];
+            biggerA[i] = this.advancedAlive[i];
+            i = i + 1;
+        }
+        this.advanced = biggerH;
+        this.advancedAlive = biggerA;
+        this.advancedCapacity = newCap;
+    }
+}
+
+// 内部订阅 token —— SubscribeXxx 返回它，Dispose 把 alive[idx] 置 false。
+public sealed class MulticastFuncSubscription<T, R> : IDisposable {
+    MulticastFunc<T, R> bus;
+    int idx;
+    bool isAdvanced;
+
+    public MulticastFuncSubscription(MulticastFunc<T, R> bus, int idx, bool isAdvanced) {
+        this.bus = bus;
+        this.idx = idx;
+        this.isAdvanced = isAdvanced;
+    }
+
+    public void Dispose() {
+        if (this.idx >= 0) {
+            this.bus.RemoveAt(this.idx, this.isAdvanced);
+            this.idx = -1;
+        }
+    }
+}

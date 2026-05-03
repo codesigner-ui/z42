@@ -185,16 +185,28 @@ internal static partial class TopLevelParser
         return (backing, accessors);
     }
 
-    /// 2026-05-03 add-event-keyword-multicast (D2c-多播)：合成 event field 的
+    /// 2026-05-03 add-event-keyword-multicast (D2c-多播) +
+    /// 2026-05-03 add-multicast-func-predicate (D2d-1)：合成 event field 的
     /// auto-init + add_X / remove_X 方法。同 `SynthesizeClassAutoProp` 模式。
     ///
-    /// 多播 `event MulticastAction<T> X;` →
-    ///   field X: MulticastAction<T> = new MulticastAction<T>();
-    ///   public IDisposable add_X(Action<T> h) { return this.X.Subscribe(h); }
-    ///   public void remove_X(Action<T> h) { this.X.Unsubscribe(h); }
+    /// 接受三种多播类型（D2d-1 放宽）：
+    ///   event MulticastAction<T> X;     handler 类型 Action<T>
+    ///   event MulticastFunc<T,R> X;     handler 类型 Func<T,R>
+    ///   event MulticastPredicate<T> X;  handler 类型 Predicate<T>
     ///
     /// 单播 event（`event Action<T> X;`）暂不支持 —— 报 "not yet supported"。
     /// Spec 2b `add-event-keyword-singlecast` 落地。
+    private static readonly HashSet<string> MulticastTypeNames =
+        new(StringComparer.Ordinal) { "MulticastAction", "MulticastFunc", "MulticastPredicate" };
+
+    private static string HandlerTypeName(string multicastTypeName) => multicastTypeName switch
+    {
+        "MulticastAction"    => "Action",
+        "MulticastFunc"      => "Func",
+        "MulticastPredicate" => "Predicate",
+        _ => throw new InvalidOperationException($"not a multicast type: {multicastTypeName}"),
+    };
+
     internal static (FieldDecl backing, List<FunctionDecl> accessors)
     SynthesizeClassEvent(FieldDecl evtField)
     {
@@ -202,27 +214,26 @@ internal static partial class TopLevelParser
         var fieldType = evtField.Type;
         var span      = evtField.Span;
 
-        // 验证类型：必须是 GenericType("MulticastAction", [T])
+        // 验证类型：必须是 GenericType("Multicast{Action|Func|Predicate}", [...])
         if (fieldType is not GenericType gt
-            || gt.Name != "MulticastAction"
-            || gt.TypeArgs.Count != 1)
+            || !MulticastTypeNames.Contains(gt.Name)
+            || gt.TypeArgs.Count == 0)
         {
             throw new ParseException(
-                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` for now",
+                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` / `MulticastFunc<T,R>` / `MulticastPredicate<T>` for now",
                 span, DiagnosticCodes.UnexpectedToken);
         }
 
-        var typeArg = gt.TypeArgs[0];  // T
-
-        // Backing field: 同名 + auto-init `new MulticastAction<T>()`
+        // Backing field: 同名 + auto-init `new MulticastXxx<...>()`
         var initExpr = new NewExpr(fieldType, new List<Expr>(), span);
         var backing  = new FieldDecl(
             fieldName, fieldType, evtField.Visibility, evtField.IsStatic,
             initExpr, span, IsEvent: true);
 
-        // Action<T> param type + IDisposable return type
-        var actionT = new GenericType("Action", new List<TypeExpr> { typeArg }, span);
-        var idisp   = new NamedType("IDisposable", span);
+        // handler 类型：Action<T> / Func<T,R> / Predicate<T>
+        // type-args 直接复用 multicast 字段的（MulticastFunc<T,R> → Func<T,R> 同 2 个 args）
+        var handlerT = new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span);
+        var idisp    = new NamedType("IDisposable", span);
 
         // add_X body: return this.X.Subscribe(h);
         var addThis        = new IdentExpr("this", span);
@@ -234,7 +245,7 @@ internal static partial class TopLevelParser
             new List<Stmt> { new ReturnStmt(addSubCall, span) }, span);
         var addFn = new FunctionDecl(
             $"add_{fieldName}",
-            new List<Param> { new Param("h", actionT, null, span) },
+            new List<Param> { new Param("h", handlerT, null, span) },
             idisp, addBody,
             Visibility.Public,
             FunctionModifiers.None,
@@ -250,7 +261,7 @@ internal static partial class TopLevelParser
             new List<Stmt> { new ExprStmt(rmUnsubCall, span) }, span);
         var rmFn = new FunctionDecl(
             $"remove_{fieldName}",
-            new List<Param> { new Param("h", actionT, null, span) },
+            new List<Param> { new Param("h", handlerT, null, span) },
             new VoidType(span), rmBody,
             Visibility.Public,
             FunctionModifiers.None,
@@ -267,18 +278,18 @@ internal static partial class TopLevelParser
     internal static List<MethodSignature> SynthesizeInterfaceEvent(
         TypeExpr fieldType, string fieldName, Span span)
     {
+        // 2026-05-03 add-multicast-func-predicate (D2d-1)：放宽接受三种 multicast 类型。
         if (fieldType is not GenericType gt
-            || gt.Name != "MulticastAction"
-            || gt.TypeArgs.Count != 1)
+            || !MulticastTypeNames.Contains(gt.Name)
+            || gt.TypeArgs.Count == 0)
         {
             throw new ParseException(
-                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` for now",
+                "single-cast event not yet supported (D2c-singlecast pending); use `event MulticastAction<T>` / `MulticastFunc<T,R>` / `MulticastPredicate<T>` for now",
                 span, DiagnosticCodes.UnexpectedToken);
         }
-        var typeArg = gt.TypeArgs[0];
-        var actionT = new GenericType("Action", new List<TypeExpr> { typeArg }, span);
-        var idisp   = new NamedType("IDisposable", span);
-        var hParam  = new Param("h", actionT, null, span);
+        var handlerT = new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span);
+        var idisp    = new NamedType("IDisposable", span);
+        var hParam   = new Param("h", handlerT, null, span);
         return new List<MethodSignature>
         {
             new MethodSignature($"add_{fieldName}",    new List<Param> { hParam }, idisp,                 span, IsStatic: false, IsVirtual: false, Body: null),
