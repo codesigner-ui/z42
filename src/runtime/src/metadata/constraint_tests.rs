@@ -14,6 +14,7 @@ fn empty_module(name: &str) -> Module {
         functions: vec![],
         type_registry: std::collections::HashMap::new(),
         func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots: 0,
     }
 }
 

@@ -40,14 +40,6 @@
 - **前置依赖**：L3 后期完整 type-system 规划；与 generics.md / static-abstract-interface.md 协同。
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
 
-## D-5：单播 delegate `Unsubscribe(handler)` reference equality 比较（D2a 延后）
-
-- **来源**：`spec/archive/2026-05-02-add-multicast-action/`
-- **触发原因**：z42 当前类型系统中 `Action<T>` 是 `Z42FuncType` 值（运行时 `Value::FuncRef` / `Value::Closure` / `Value::StackClosure`），无 IEquatable 实现；reference equality 比较需要专门的 delegate identity API。
-- **前置依赖**：在 corelib 加 `__delegate_eq(Value, Value) -> bool` builtin（按 ptr_eq 路径）；或者引入 `Object.ReferenceEquals` 接受 delegate 类型。
-- **触发条件**：用户实际需要 `bus.Unsubscribe(handler)` 而非 token-based dispose。
-- **当前状态**：仅 token-based `Subscribe(...).Dispose()` 支持取消；满足 95% 用例。
-
 ## D-6：嵌套 delegate dotted-path 外部引用（D1a 延后）
 
 - **来源**：`spec/archive/2026-05-02-add-delegate-type/` Open Question 1

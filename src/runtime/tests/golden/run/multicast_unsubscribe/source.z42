@@ -1,0 +1,55 @@
+// 2026-05-03 fix-delegate-reference-equality (D-5) regression golden.
+// 端到端验证 MulticastAction.Unsubscribe 通过 delegate reference equality
+// by-handler 取消订阅；含未订阅 / 重复 / 多 handler 精确移除场景。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    var bus = new MulticastAction<int>();
+
+    // case 1: subscribe → unsubscribe → invoke 不触发
+    Action<int> h = (int x) => Console.WriteLine($"h:{x}");
+    bus.Subscribe(h);
+    bus.Invoke(1);          // h:1
+    bus.Unsubscribe(h);
+    bus.Invoke(2);          // (nothing)
+    Console.WriteLine(bus.Count());  // 0
+
+    // case 2: 未订阅 unsubscribe = no-op
+    Action<int> ghost = (int x) => Console.WriteLine($"ghost:{x}");
+    bus.Unsubscribe(ghost);          // no-op (not subscribed)
+    Console.WriteLine(bus.Count());  // 0
+
+    // case 3: 重复 unsubscribe 幂等
+    bus.Subscribe(h);
+    bus.Unsubscribe(h);
+    bus.Unsubscribe(h);              // idempotent
+    Console.WriteLine(bus.Count());  // 0
+
+    // case 4: 多 handler 中精确移除一个
+    Action<int> a = (int x) => Console.WriteLine($"a:{x}");
+    Action<int> b = (int x) => Console.WriteLine($"b:{x}");
+    Action<int> c = (int x) => Console.WriteLine($"c:{x}");
+    bus.Subscribe(a);
+    bus.Subscribe(b);
+    bus.Subscribe(c);
+    bus.Unsubscribe(b);
+    bus.Invoke(3);          // a:3 / c:3 (no b)
+    Console.WriteLine(bus.Count());  // 2
+
+    // case 5: 同 handler 多次 Subscribe，一次 Unsubscribe 全清
+    var bus2 = new MulticastAction<int>();
+    Action<int> dup = (int x) => Console.WriteLine($"dup:{x}");
+    bus2.Subscribe(dup);
+    bus2.Subscribe(dup);
+    bus2.Subscribe(dup);
+    Console.WriteLine(bus2.Count());  // 3
+    bus2.Unsubscribe(dup);
+    Console.WriteLine(bus2.Count());  // 0
+    bus2.Invoke(4);                    // (nothing)
+
+    // case 6: DelegateOps.ReferenceEquals 直接调用
+    Console.WriteLine(DelegateOps.ReferenceEquals(h, h));     // True (same lambda var)
+    Console.WriteLine(DelegateOps.ReferenceEquals(h, ghost)); // False (different lambdas)
+}

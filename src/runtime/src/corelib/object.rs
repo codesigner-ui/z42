@@ -51,6 +51,32 @@ pub fn builtin_obj_ref_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Bool(result))
 }
 
+/// 2026-05-03 fix-delegate-reference-equality (D-5)：delegate reference
+/// equality —— 三个 `Value` 变体（FuncRef / Closure / StackClosure）按
+/// 各自身份语义比较。跨变体不等，非 delegate 值返回 false 不报错。
+///
+/// 语义参见 `delegates-events.md` 与本 spec design.md：
+/// - `FuncRef(name)` —— fn name 字符串相等
+/// - `Closure { env, fn_name }` —— fn_name 相等且 env GcRef::ptr_eq
+/// - `StackClosure { env_idx, fn_name }` —— fn_name 相等且 env_idx 相等
+pub fn builtin_delegate_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let result = match (args.first(), args.get(1)) {
+        (Some(Value::FuncRef(a)), Some(Value::FuncRef(b))) => a == b,
+        (
+            Some(Value::Closure { env: ea, fn_name: na }),
+            Some(Value::Closure { env: eb, fn_name: nb }),
+        ) => na == nb && crate::gc::GcRef::ptr_eq(ea, eb),
+        (
+            Some(Value::StackClosure { env_idx: ia, fn_name: na }),
+            Some(Value::StackClosure { env_idx: ib, fn_name: nb }),
+        ) => na == nb && ia == ib,
+        (Some(Value::Null), Some(Value::Null))           => true,
+        (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
+        _                                                => false,
+    };
+    Ok(Value::Bool(result))
+}
+
 /// Identity-based hash code derived from the Rc pointer address.
 pub fn builtin_obj_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {

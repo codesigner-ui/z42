@@ -247,3 +247,96 @@ fn obj_hash_code_non_object_errors() {
     let c = ctx();
     assert!(exec_builtin(&c, "__obj_hash_code", &[i(1)]).is_err());
 }
+
+// ── __delegate_eq (2026-05-03 fix-delegate-reference-equality, D-5) ───────────
+
+use crate::gc::GcRef;
+
+fn fn_ref(name: &str) -> Value { Value::FuncRef(name.into()) }
+
+#[test]
+fn delegate_eq_same_funcref_equal() {
+    let c = ctx();
+    let a = fn_ref("Demo.Helper");
+    let b = fn_ref("Demo.Helper");
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn delegate_eq_diff_funcref_not_equal() {
+    let c = ctx();
+    let a = fn_ref("Demo.A");
+    let b = fn_ref("Demo.B");
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn delegate_eq_same_closure_equal_via_ptr_eq() {
+    let c = ctx();
+    let env = GcRef::new(vec![Value::I64(1)]);
+    let a = Value::Closure { env: env.clone(), fn_name: "Demo.Lambda".into() };
+    let b = Value::Closure { env: env.clone(), fn_name: "Demo.Lambda".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn delegate_eq_diff_closure_env_not_equal() {
+    let c = ctx();
+    let a = Value::Closure { env: GcRef::new(vec![Value::I64(1)]), fn_name: "Demo.Lambda".into() };
+    let b = Value::Closure { env: GcRef::new(vec![Value::I64(1)]), fn_name: "Demo.Lambda".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn delegate_eq_same_stackclosure_equal() {
+    let c = ctx();
+    let a = Value::StackClosure { env_idx: 0, fn_name: "Demo.Stack".into() };
+    let b = Value::StackClosure { env_idx: 0, fn_name: "Demo.Stack".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn delegate_eq_diff_stackclosure_idx_not_equal() {
+    let c = ctx();
+    let a = Value::StackClosure { env_idx: 0, fn_name: "Demo.Stack".into() };
+    let b = Value::StackClosure { env_idx: 1, fn_name: "Demo.Stack".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn delegate_eq_funcref_vs_closure_not_equal() {
+    let c = ctx();
+    let a = fn_ref("Demo.F");
+    let b = Value::Closure { env: GcRef::new(vec![]), fn_name: "Demo.F".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn delegate_eq_closure_vs_stackclosure_not_equal() {
+    let c = ctx();
+    let a = Value::Closure { env: GcRef::new(vec![]), fn_name: "Demo.F".into() };
+    let b = Value::StackClosure { env_idx: 0, fn_name: "Demo.F".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[a, b]).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn delegate_eq_both_null_equal() {
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[Value::Null, Value::Null]).unwrap(), Value::Bool(true));
+}
+
+#[test]
+fn delegate_eq_null_vs_funcref_not_equal() {
+    let c = ctx();
+    assert_eq!(
+        exec_builtin(&c, "__delegate_eq", &[Value::Null, fn_ref("Demo.F")]).unwrap(),
+        Value::Bool(false)
+    );
+}
+
+#[test]
+fn delegate_eq_non_delegate_values_returns_false() {
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[i(5), s("foo")]).unwrap(), Value::Bool(false));
+    assert_eq!(exec_builtin(&c, "__delegate_eq", &[obj(&c, "Foo"), i(0)]).unwrap(), Value::Bool(false));
+}

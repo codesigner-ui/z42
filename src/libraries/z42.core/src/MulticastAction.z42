@@ -126,6 +126,26 @@ public sealed class MulticastAction<T> {
         // continueOnException 当前未消费 —— D2d 加聚合异常路径时启用。
     }
 
+    // 2026-05-03 fix-delegate-reference-equality (D-5)：by-handler 取消订阅。
+    // 仅扫 strong 通道；advanced 通道用 token-based dispose（wrapper 持有
+    // 自身引用，by-handler 比较语义不同）。
+    //
+    // 行为：linear scan strong[]，每个 alive 槽用 `Object.DelegateReferenceEquals`
+    // 与 handler 比较，命中置 alive=false。**不 break** —— 同 handler 多次
+    // Subscribe 一次 Unsubscribe 全清（list 语义，与 `obj.X -= h` 用户预期
+    // "h 不再被通知"对齐）。未订阅 handler 是 no-op。
+    public void Unsubscribe(Action<T> handler) {
+        int i = 0;
+        while (i < this.strongCount) {
+            if (this.strongAlive[i]) {
+                if (DelegateOps.ReferenceEquals(this.strong[i], handler)) {
+                    this.strongAlive[i] = false;
+                }
+            }
+            i = i + 1;
+        }
+    }
+
     // Internal: dispose token 入口。`isAdvanced` 决定 alive 数组归属。
     public void RemoveAt(int idx, bool isAdvanced) {
         if (isAdvanced) {
