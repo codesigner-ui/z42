@@ -561,6 +561,25 @@ intraSymbols = sharedSymbols.ExtractIntraSymbols(firstNs, classNamespaces);
 
 **优先级**（binding power）：见 `.claude/rules/compiler-csharp.md` 的 Pratt 表。
 
+### 嵌套 generic `>>` 拆分（2026-05-03 fix-nested-generic-parsing）
+
+Lexer 把 `>>` 词法化为单一 `GtGt` token（shift-right operator）。`TypeParser`
+解析嵌套 generic 如 `Foo<Bar<T>>` 时不能"两次 `Gt` 关闭"，需在 parser 端拆分。
+
+**算法**（[TypeParser.cs](../../src/compiler/z42.Syntax/Parser/TypeParser.cs)）：
+内部 `ParseInternal()` 返回一个 `ExtraClose: bool` flag。当 generic 关闭检查
+遇到 `GtGt` 时 consume 整个 token，置 `ExtraClose=true` 上传；调用方收到则
+视自己的关闭已被吸收（GtGt 用 1 个 `>` 关闭自己 + 1 个 `>` 关闭上层），不再
+推进 cursor 也不处理 `[]` `?` 后缀（它们属于上层）。
+
+**Depth-scan 站点**（5 处 lookahead helper：`SkipGenericParams` / `IsFieldDecl`
+/ `IsLocalFunctionDecl` / 索引器扫描 / 局部变量扫描）用 `case GtGt: depth -= 2;`
+计为两个关闭。
+
+**为什么不在 lexer 拆分**：cursor 是 `readonly struct` + `IReadOnlyList<Token>`
+的 immutable 设计（lookahead/backtracking 依赖此不变性）；由 parser 上下文
+驱动 lexer mode 切换会污染分层。Roslyn 也用 parser-side split。
+
 ---
 
 ## 错误处理：Diagnostics vs Exceptions

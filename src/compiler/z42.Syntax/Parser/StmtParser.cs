@@ -442,7 +442,7 @@ internal static class StmtParser
         // `[]`、`?` 任意组合），停在第一个非类型 token；若后接 `Identifier`
         // + (`=` | `;`) 即为带类型注解的 var decl。
         int i = 1;
-        // 可选 `<T1, T2, ...>` —— 用深度计数支持嵌套泛型
+        // 可选 `<T1, T2, ...>` —— 用深度计数支持嵌套泛型（GtGt 计为 2 个 close）
         if (cursor.Peek(i).Kind == TokenKind.Lt)
         {
             int depth = 1;
@@ -452,6 +452,7 @@ internal static class StmtParser
                 var k = cursor.Peek(i).Kind;
                 if      (k == TokenKind.Lt) depth++;
                 else if (k == TokenKind.Gt) depth--;
+                else if (k == TokenKind.GtGt) depth -= 2;
                 i++;
             }
             if (depth != 0) return false;
@@ -516,7 +517,7 @@ internal static class StmtParser
         // Type-keyword (int / string / generic-class / etc.)
         if (!TypeParser.IsTypeToken(first)) return -1;
         i++;
-        // Optional `<T1, T2, ...>`
+        // Optional `<T1, T2, ...>` — GtGt 计为 2 个 close（嵌套泛型）
         if (cursor.Peek(i).Kind == TokenKind.Lt)
         {
             int depth = 1; i++;
@@ -525,6 +526,7 @@ internal static class StmtParser
                 var k = cursor.Peek(i).Kind;
                 if (k == TokenKind.Lt) depth++;
                 else if (k == TokenKind.Gt) depth--;
+                else if (k == TokenKind.GtGt) depth -= 2;
                 i++;
             }
             if (depth != 0) return -1;
@@ -601,6 +603,7 @@ internal static class StmtParser
                     var ki = cursor.Peek(i).Kind;
                     if (ki == TokenKind.Lt) d++;
                     else if (ki == TokenKind.Gt) d--;
+                    else if (ki == TokenKind.GtGt) d -= 2;
                     i++;
                 }
                 continue;

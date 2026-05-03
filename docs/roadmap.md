@@ -164,6 +164,7 @@
 | 2026-05-02 | `add-method-group-conversion` (D1b) | 方法组转换 I12 缓存：`IntFn f = Helper;` 由 `LoadFn`（每次新 `Value::FuncRef`）→ `LoadFnCached`（module-level cache slot）。新增 IR opcode `0x58` + zbc `FRCS` section + `VmContext.func_ref_slots: Vec<Value>` GC root。同 fn name 跨多 site 共享 slot；merge_modules 按 cumulative slot offset 重映射。详见 delegates-events.md D6 / I12 改进项 |
 | 2026-05-02 | `add-generic-delegates` (D1c) | stdlib `Std.Delegates` 真实类型（0-4 arity Action / Func + Predicate<T>）+ 移除 SymbolCollector 硬编码 desugar。新增 ExportedDelegateDef + TSIG 跨 zpkg 导出 + ImportedSymbols.Delegates + 自我导入 silent override。3 件套统一通过 stdlib + delegate 注册表解析；Predicate 首次可用 |
 | 2026-05-02 | `add-multicast-action` (D2a) | stdlib `Std.MulticastAction<T>` 基础多播：Subscribe / Unsubscribe (token-based) / Invoke / COW snapshot / fail-fast 异常路径 + `IDisposable Disposable` token。零 IR/VM 变更（普通 generic class）。配套：ImportedSymbolLoader Phase 1.5 提前加载 delegates 让 method 类型 resolution 看到 `Action<T>`；ExportedTypeExtractor Z42FuncType 序列化为 `Action<...>`/`Func<...>` 保持跨 zpkg 完整签名；SymbolTable.ExtractIntraSymbols 也 export delegates 跨 CU。D2b/c/d 待实施 |
+| 2026-05-03 | `fix-nested-generic-parsing` | 嵌套 generic 解析（`Foo<Bar<T>>` 等）：TypeParser 内部 `ParseInternal` 加 `ExtraClose` flag 线程穿透处理 `>>` (GtGt) token；5 处 depth-scan lookahead helper（`SkipGenericParams` / `IsFieldDecl` / `IsLocalFunctionDecl` / 索引器扫描 / 局部变量扫描）加 `case GtGt: depth -= 2`。Lexer 不动（保持 immutable cursor 设计）。详见 compiler-architecture.md "Pratt 表达式解析" §嵌套 generic |
 
 ### 代码质量 Backlog（按触发条件执行）
 

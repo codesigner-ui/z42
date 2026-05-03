@@ -26,7 +26,7 @@ internal static partial class TopLevelParser
         if (cursor.Current.Kind == TokenKind.LBracket
             && cursor.Peek(1).Kind == TokenKind.RBracket)
             cursor = cursor.Advance(2);
-        // Optional <TypeArgs> (for generic return type like `T`)
+        // Optional <TypeArgs> (for generic return type like `T`) — GtGt 计为 2 个 close
         if (cursor.Current.Kind == TokenKind.Lt)
         {
             int depth = 1; cursor = cursor.Advance();
@@ -34,6 +34,7 @@ internal static partial class TopLevelParser
             {
                 if (cursor.Current.Kind == TokenKind.Lt) depth++;
                 else if (cursor.Current.Kind == TokenKind.Gt) depth--;
+                else if (cursor.Current.Kind == TokenKind.GtGt) depth -= 2;
                 cursor = cursor.Advance();
             }
         }

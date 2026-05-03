@@ -424,6 +424,97 @@ public sealed class ParserTests
             .Which.Name.Should().Be("_map");
     }
 
+    // ── Nested generic types (fix-nested-generic-parsing, 2026-05-03) ────────
+    // Exercise the GtGt token splitting in TypeParser + 5 depth-scan helpers.
+
+    [Fact]
+    public void FieldDecl_NestedGeneric_TwoLevels()
+    {
+        // `Foo<Bar<int>> f;` — tokens end with `>>` (GtGt). Inner Bar consumes
+        // GtGt, sets ExtraClose=true; outer Foo absorbs without advancing.
+        var cu  = ParseCu("class Box { Foo<Bar<int>> f; }");
+        var cls = cu.Classes.Should().ContainSingle().Subject;
+        cls.Fields.Should().ContainSingle().Which.Name.Should().Be("f");
+        var outer = (GenericType)cls.Fields[0].Type;
+        outer.Name.Should().Be("Foo");
+        outer.TypeArgs.Should().ContainSingle();
+        var inner = (GenericType)outer.TypeArgs[0];
+        inner.Name.Should().Be("Bar");
+        inner.TypeArgs.Should().ContainSingle()
+            .Which.Should().BeOfType<NamedType>().Which.Name.Should().Be("int");
+    }
+
+    [Fact]
+    public void FieldDecl_NestedGeneric_ThreeLevels()
+    {
+        // `Foo<Bar<Baz<int>>> f;` — `>>` `>` sequence. Innermost Baz consumes
+        // GtGt; Bar absorbs; outer Foo sees plain Gt.
+        var cu  = ParseCu("class Box { Foo<Bar<Baz<int>>> f; }");
+        var outer = (GenericType)cu.Classes[0].Fields[0].Type;
+        outer.Name.Should().Be("Foo");
+        var mid = (GenericType)outer.TypeArgs[0];
+        mid.Name.Should().Be("Bar");
+        var inner = (GenericType)mid.TypeArgs[0];
+        inner.Name.Should().Be("Baz");
+        inner.TypeArgs[0].Should().BeOfType<NamedType>()
+            .Which.Name.Should().Be("int");
+    }
+
+    [Fact]
+    public void MethodParam_NestedGeneric()
+    {
+        var cu = ParseCu("class C { void m(Foo<Bar<int>> p) { } }");
+        var fn = cu.Classes[0].Methods.Should().ContainSingle().Subject;
+        fn.Params.Should().ContainSingle();
+        var ty = (GenericType)fn.Params[0].Type;
+        ty.Name.Should().Be("Foo");
+        ((GenericType)ty.TypeArgs[0]).Name.Should().Be("Bar");
+    }
+
+    [Fact]
+    public void MethodReturn_NestedGeneric()
+    {
+        var cu = ParseCu("class C { Foo<Bar<int>> get() { return null; } }");
+        var fn = cu.Classes[0].Methods.Should().ContainSingle().Subject;
+        var ty = (GenericType)fn.ReturnType;
+        ty.Name.Should().Be("Foo");
+        ((GenericType)ty.TypeArgs[0]).Name.Should().Be("Bar");
+    }
+
+    [Fact]
+    public void LocalVar_NestedGeneric()
+    {
+        // Inside a method body, exercising IsLocalDecl + IsLocalFunctionDecl scans.
+        var stmts = ParseStmts("Foo<Bar<int>> v;");
+        var v = (VarDeclStmt)stmts.Should().ContainSingle().Subject;
+        v.Name.Should().Be("v");
+        var ty = (GenericType)v.TypeAnnotation!;
+        ty.Name.Should().Be("Foo");
+        ((GenericType)ty.TypeArgs[0]).Name.Should().Be("Bar");
+    }
+
+    [Fact]
+    public void FieldDecl_NestedGenericArray()
+    {
+        // `Foo<Bar<int>>[] f;` — generic + array suffix combined.
+        var cu = ParseCu("class C { Foo<Bar<int>>[] f; }");
+        var arr = cu.Classes[0].Fields.Should().ContainSingle().Subject.Type;
+        arr.Should().BeOfType<ArrayType>();
+        var elem = (GenericType)((ArrayType)arr).Element;
+        elem.Name.Should().Be("Foo");
+        ((GenericType)elem.TypeArgs[0]).Name.Should().Be("Bar");
+    }
+
+    [Fact]
+    public void FieldDecl_SingleGeneric_Regression()
+    {
+        // Regression: single-level generic still parses correctly.
+        var cu  = ParseCu("class Box { List<int> xs; }");
+        var ty = (GenericType)cu.Classes[0].Fields[0].Type;
+        ty.Name.Should().Be("List");
+        ty.TypeArgs[0].Should().BeOfType<NamedType>().Which.Name.Should().Be("int");
+    }
+
     // ── Error handling ────────────────────────────────────────────────────────
 
     [Fact]

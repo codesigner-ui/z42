@@ -195,7 +195,8 @@ internal static partial class TopLevelParser
         while (!cursor.IsEnd && depth > 0)
         {
             if (cursor.Current.Kind == TokenKind.Lt) depth++;
-            if (cursor.Current.Kind == TokenKind.Gt) depth--;
+            else if (cursor.Current.Kind == TokenKind.Gt) depth--;
+            else if (cursor.Current.Kind == TokenKind.GtGt) depth -= 2;
             cursor = cursor.Advance();
         }
     }
@@ -491,10 +492,8 @@ internal static partial class TopLevelParser
         if (!TypeParser.IsTypeToken(cursor.Current.Kind)) return false;
         cursor = cursor.Advance();
         // Optional generic suffix <...> — depth-counted scan to handle multiple
-        // type args (e.g. `Dictionary<int, string>`). Note: nested generics
-        // `List<List<int>>` are blocked by TypeParser's `>>` (GtGt) handling
-        // (separate bug); IsFieldDecl returns false for that and lets the
-        // parser produce its usual diagnostic.
+        // type args (e.g. `Dictionary<int, string>`). Nested generics like
+        // `List<List<int>>` use `>>` (GtGt) which counts as 2 closes.
         if (cursor.Current.Kind == TokenKind.Lt)
         {
             int depth = 1;
@@ -505,6 +504,7 @@ internal static partial class TopLevelParser
                 {
                     case TokenKind.Lt:    depth++; break;
                     case TokenKind.Gt:    depth--; break;
+                    case TokenKind.GtGt:  depth -= 2; break;
                     // Bail on tokens that can't appear inside a type-arg list —
                     // probably means we mis-identified `<` as generic.
                     case TokenKind.Semicolon:

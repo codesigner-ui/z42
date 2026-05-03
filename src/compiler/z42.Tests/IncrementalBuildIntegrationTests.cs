@@ -61,13 +61,12 @@ public sealed class IncrementalBuildIntegrationTests
         err1.Should().Contain("cached: 0/");
         err1.Should().NotContain("cached: 34/");   // 第一次必然不命中
 
-        // 第二次：全 cached（34 = z42.core 文件数，含 2026-04-29 expose-gc-to-scripts
-        // 新增的 GC.z42；如果新增 / 删除 stdlib 文件需同步更新此处。
-        // fix-incremental-cache-invalidation 引入 "preserved existing zpkg" 行，
-        // 但 "cached: 36/36" 仍打印）
+        // 第二次：全 cached（38 = z42.core 文件数；2026-05-03 add-isubscription-wrapper
+        // D2b 阶段 1 新增 ISubscription.z42 + SubscriptionRefs.z42，36 → 38。
+        // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 36/36");
+        err2.Should().Contain("cached: 38/38");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 4/4");
     }
@@ -82,10 +81,10 @@ public sealed class IncrementalBuildIntegrationTests
         var (code1, _, _) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code1.Should().Be(0);
 
-        // --no-incremental：仍 0/N 即使 cache 存在（34 = z42.core 文件数，
-        // 含 2026-04-29 expose-gc-to-scripts 新增的 GC.z42）
+        // --no-incremental：仍 0/N 即使 cache 存在（38 = z42.core 文件数；
+        // 2026-05-03 add-isubscription-wrapper D2b 阶段 1 新增 2 文件，36 → 38）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/36");
+        err2.Should().Contain("cached: 0/38");
     }
 }
