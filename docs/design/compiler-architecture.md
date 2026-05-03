@@ -561,6 +561,26 @@ intraSymbols = sharedSymbols.ExtractIntraSymbols(firstNs, classNamespaces);
 
 **优先级**（binding power）：见 `.claude/rules/compiler-csharp.md` 的 Pratt 表。
 
+### Z42Type record 结构 equality（2026-05-03 fix-z42type-structural-equality）
+
+C# `record` 默认 `Equals` 对 `IReadOnlyList<T>` 字段做**引用比较**而非元素级。
+对于持 `IReadOnlyList<Z42Type>` 的类型 record 这是 bug —— 同结构两个不同
+list 对象的实例报"不相等"，污染 `==`、HashSet/Dict key、`IsAssignableTo`
+触底比较。
+
+修复：[Z42Type.cs](../../src/compiler/z42.Semantics/TypeCheck/Z42Type.cs)
+三个 record (`Z42InstantiatedType` / `Z42InterfaceType` / `Z42FuncType`)
+override `Equals(SameType?)` + `GetHashCode()`，list 字段元素级递归
+`Z42Type.Equals`。提供 `Z42Type.ListEquals<T>` 静态助手统一逻辑。
+
+`Z42InterfaceType.Methods` / `StaticMembers` 字典字段仍走默认引用比较 ——
+实践中 interface name 唯一确定其方法集，同名两次构造往往共享字典对象。
+未发现 bug 前不引入字典深比成本。
+
+`IsAssignableTo` 中既有的 `Z42FuncType` / `Z42InstantiatedType` element-wise
+workaround 分支（line 63-74 / 82-86）保留作防御性 + 子类型放宽（`IsAssignableTo`
+而非 `Equals` 递归）；删除评估留独立 cleanup spec。
+
 ### 嵌套 generic `>>` 拆分（2026-05-03 fix-nested-generic-parsing）
 
 Lexer 把 `>>` 词法化为单一 `GtGt` token（shift-right operator）。`TypeParser`

@@ -126,6 +126,21 @@ public abstract record Z42Type
         || t is Z42ArrayType or Z42ClassType or Z42InterfaceType or Z42OptionType
            or Z42GenericParamType or Z42InstantiatedType;
 
+    /// 2026-05-03 fix-z42type-structural-equality：C# record 默认 Equals 对
+    /// `IReadOnlyList<T>` 字段是引用比较；该助手 element-wise 走 T.Equals
+    /// 的真实结构比较。null safe（双 null 相等；单 null 不等）。
+    /// 用于 Z42InstantiatedType / Z42InterfaceType / Z42FuncType 的 Equals override。
+    internal static bool ListEquals<T>(IReadOnlyList<T>? a, IReadOnlyList<T>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null) return false;
+        if (a.Count != b.Count) return false;
+        var cmp = EqualityComparer<T>.Default;
+        for (int i = 0; i < a.Count; i++)
+            if (!cmp.Equals(a[i], b[i])) return false;
+        return true;
+    }
+
     /// For a binary arithmetic operation, returns the "wider" of two numeric types.
     public static Z42Type ArithmeticResult(Z42Type l, Z42Type r)
     {
@@ -172,6 +187,26 @@ public sealed record Z42FuncType(
     public int MinArgCount => RequiredCount < 0 ? Params.Count : RequiredCount;
     public override string ToString() =>
         $"({string.Join(", ", Params)}) -> {Ret}";
+
+    // 2026-05-03 fix-z42type-structural-equality：record 默认对 Params
+    // (IReadOnlyList) 走引用比较；这里 element-wise 真比。
+    public bool Equals(Z42FuncType? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        if (RequiredCount != other.RequiredCount) return false;
+        if (!Ret.Equals(other.Ret)) return false;
+        return ListEquals(Params, other.Params);
+    }
+
+    public override int GetHashCode()
+    {
+        var hc = new HashCode();
+        hc.Add(RequiredCount);
+        hc.Add(Ret);
+        foreach (var p in Params) hc.Add(p);
+        return hc.ToHashCode();
+    }
 }
 
 /// `T[]`
@@ -231,6 +266,31 @@ public sealed record Z42InterfaceType(
     public override string ToString() => TypeArgs is { Count: > 0 } args
         ? $"{Name}<{string.Join(", ", args)}>"
         : Name;
+
+    // 2026-05-03 fix-z42type-structural-equality：record 默认对 TypeArgs /
+    // TypeParams (IReadOnlyList) 走引用比较；这里 element-wise 真比。
+    // Methods / StaticMembers 字典走默认引用比较 —— 实践中由 Name 唯一确定，
+    // 同 Name 的两次构造往往共享字典对象（design Decision 3）。
+    public bool Equals(Z42InterfaceType? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        if (Name != other.Name) return false;
+        if (!ListEquals(TypeArgs, other.TypeArgs)) return false;
+        if (!ListEquals(TypeParams, other.TypeParams)) return false;
+        return true;
+    }
+
+    public override int GetHashCode()
+    {
+        var hc = new HashCode();
+        hc.Add(Name);
+        if (TypeArgs is not null)
+            foreach (var t in TypeArgs) hc.Add(t);
+        if (TypeParams is not null)
+            foreach (var p in TypeParams) hc.Add(p);
+        return hc.ToHashCode();
+    }
 }
 
 /// Uninstantiated generic type parameter (e.g., T in Identity<T>).
@@ -314,4 +374,24 @@ public sealed record Z42InstantiatedType(
     public string Name => Definition.Name;
     public override string ToString() =>
         $"{Definition.Name}<{string.Join(", ", TypeArgs)}>";
+
+    // 2026-05-03 fix-z42type-structural-equality：record 默认对 TypeArgs
+    // (IReadOnlyList) 走引用比较；这里 element-wise 真比。Definition 按 Name 比较
+    // —— 与 IsAssignableTo 同名 ClassType 兼容路径（line 79-80）一致，
+    // 避免依赖 ClassType 全局 intern 假设（实际并未 intern）。
+    public bool Equals(Z42InstantiatedType? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        if (Definition.Name != other.Definition.Name) return false;
+        return ListEquals(TypeArgs, other.TypeArgs);
+    }
+
+    public override int GetHashCode()
+    {
+        var hc = new HashCode();
+        hc.Add(Definition.Name);
+        foreach (var t in TypeArgs) hc.Add(t);
+        return hc.ToHashCode();
+    }
 }
