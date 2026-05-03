@@ -79,6 +79,10 @@ pub struct TypeDesc {
 pub enum NativeData {
     /// No native backing — ordinary user-defined class.
     None,
+    /// 2026-05-04 expose-weak-ref-builtin (D-1a)：包装 GC 弱引用句柄。
+    /// 由 `__obj_make_weak` builtin 创建；`__obj_upgrade_weak` 升格回原对象。
+    /// 用户视角是 `Std.WeakHandle` 类（无字段）。
+    WeakRef(crate::gc::WeakRef),
     // 2026-04-26 script-first-stringbuilder: removed `StringBuilder(String)` —
     // `Std.Text.StringBuilder` is now a pure z42 script. Variant slot kept open
     // for future native-backed types (Stream / FileHandle / etc.).

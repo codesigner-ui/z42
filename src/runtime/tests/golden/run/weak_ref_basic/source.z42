@@ -1,0 +1,40 @@
+// 2026-05-04 expose-weak-ref-builtin (D-1a) regression golden.
+// 端到端验证 WeakHandle.MakeWeak / Upgrade：Object 弱化 + 升格回原对象
+// + 原子值不可弱化 + 非 handle 输入容错。
+namespace Demo;
+using Std;
+using Std.IO;
+
+public class Box {
+    public int value;
+    public Box(int v) { this.value = v; }
+}
+
+void Main() {
+    // ── Object 弱化 + Upgrade 拿回原对象 ──
+    var box = new Box(42);
+    var weak = WeakHandle.MakeWeak(box);
+    if (weak != null) {
+        Console.WriteLine("weak created");
+    } else {
+        Console.WriteLine("unexpected null weak");
+    }
+
+    var alive = WeakHandle.Upgrade(weak);
+    if (alive != null) {
+        Console.WriteLine("upgrade ok");
+        // identity 校验由 corelib 单元测试覆盖（Object.X 跨 CU 调用受限制）
+    }
+
+    // ── 原子值不可弱化 ──
+    var noWeak = WeakHandle.MakeWeak(42);    // primitive
+    if (noWeak == null) {
+        Console.WriteLine("primitive unweakable");
+    }
+
+    // ── 非 WeakHandle 输入 Upgrade 返回 null ──
+    var notHandle = WeakHandle.Upgrade(null);
+    if (notHandle == null) {
+        Console.WriteLine("null handle yields null");
+    }
+}

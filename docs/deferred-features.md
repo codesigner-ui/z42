@@ -7,14 +7,17 @@
 
 ---
 
-## D-1：WeakRef 弱引用订阅 wrapper（D2b 延后）
+## D-1b：`Std.WeakRef<TD>` ISubscription wrapper（D-1a 上 follow-up）
 
-- **来源**：`spec/archive/2026-05-03-add-isubscription-wrapper/`（待归档）
+- **来源**：D-1 拆分后 D-1a (`expose-weak-ref-builtin`) 2026-05-04 落地 corelib builtins + `Std.WeakHandle` 不透明类；本条留 ISubscription wrapper
 - **设计文档**：`docs/design/delegates-events.md` §5.2 + §5.3
-- **触发原因**：z42 GC heap trait 已有 `make_weak` / `upgrade_weak` API（`src/runtime/src/gc/heap.rs:164-167`），但 **corelib 未暴露 builtin**（`__obj_make_weak` / `__obj_upgrade_weak` 不存在），所以 stdlib `WeakRef<T>` 无法实现 `TryGet()` 升格。
-- **前置依赖**：独立 spec `expose-weak-ref-builtin` —— 在 corelib 加 2 个 native intrinsic（`__obj_make_weak(Object) -> WeakHandle` / `__obj_upgrade_weak(WeakHandle) -> Object?`）+ stdlib `WeakHandle` opaque 类型。
+- **缺失实现**：
+  - stdlib `Std.WeakRef<TD> : ISubscription<TD>` 类（基于 D-1a 的 WeakHandle）
+  - delegate 内部 .Target 提取（Closure.env 的 weak 持有；FuncRef / StackClosure 退化为 strong，per design line 191）
+  - 接入 D2b CompositeRef.Mode.Weak（当前是 placeholder noop）
+- **前置依赖**：D-1a 已落地（提供 WeakHandle.MakeWeak / Upgrade 原料）；delegate `.Target` 暴露机制（Closure.env 通过新 builtin / 用户暂不可访问）。
 - **触发条件**：用户实际遇到 lapsed-listener 内存泄漏 / GUI 长寿对象持回调场景。
-- **占位**：`CompositeRef.Mode` 已保留 `Weak=2` flag 占位；用户当前传入会 noop（与 Strong 等价），不报错。
+- **占位**：`CompositeRef.Mode.Weak` 保留 flag 占位；用户当前传入会 noop（与 Strong 等价），不报错。
 
 ## D-2：ISubscription chain `.AsOnce()` / `.AsWeak()` 跨 generic interface impl（D2b 延后）
 

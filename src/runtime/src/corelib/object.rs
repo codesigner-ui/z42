@@ -51,6 +51,58 @@ pub fn builtin_obj_ref_eq(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Bool(result))
 }
 
+/// 2026-05-04 expose-weak-ref-builtin (D-1a)：把 GC 的 `make_weak` 暴露给
+/// stdlib。Object/Array 弱化返回 WeakHandle（包装 NativeData::WeakRef 的
+/// ScriptObject）；原子值（I64 / Str / Bool / Char / FuncRef / Closure 等）
+/// 不可弱化，返回 Null。
+pub fn builtin_obj_make_weak(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let target = match args.first() {
+        Some(v) => v,
+        None => return Ok(Value::Null),
+    };
+    let weak = match ctx.heap().make_weak(target) {
+        Some(w) => w,
+        None => return Ok(Value::Null),
+    };
+    let type_desc = weak_handle_type_desc();
+    Ok(ctx.heap().alloc_object(type_desc, Vec::new(), NativeData::WeakRef(weak)))
+}
+
+/// 2026-05-04 expose-weak-ref-builtin (D-1a)：升格 WeakHandle 弱引用。
+/// 目标存活返回原 Object/Array；目标已被回收 / 输入非 WeakHandle / Null →
+/// 返回 Null（lenient 处理，与 `__delegate_eq` 同款）。
+pub fn builtin_obj_upgrade_weak(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let handle = match args.first() {
+        Some(Value::Object(o)) => o,
+        _ => return Ok(Value::Null),
+    };
+    let weak = {
+        let obj = handle.borrow();
+        match &obj.native {
+            NativeData::WeakRef(w) => w.clone(),
+            _ => return Ok(Value::Null),
+        }
+    };
+    Ok(ctx.heap().upgrade_weak(&weak).unwrap_or(Value::Null))
+}
+
+/// WeakHandle 的 TypeDesc 单例（slots 为空；仅 NativeData::WeakRef 携带状态）。
+fn weak_handle_type_desc() -> Arc<TypeDesc> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Arc<TypeDesc>> = OnceLock::new();
+    CACHE.get_or_init(|| Arc::new(TypeDesc {
+        name: "Std.WeakHandle".to_string(),
+        base_name: None,
+        fields: Vec::new(),
+        field_index: HashMap::new(),
+        vtable: Vec::new(),
+        vtable_index: HashMap::new(),
+        type_params: vec![],
+        type_args: vec![],
+        type_param_constraints: vec![],
+    })).clone()
+}
+
 /// 2026-05-03 fix-delegate-reference-equality (D-5)：delegate reference
 /// equality —— 三个 `Value` 变体（FuncRef / Closure / StackClosure）按
 /// 各自身份语义比较。跨变体不等，非 delegate 值返回 false 不报错。

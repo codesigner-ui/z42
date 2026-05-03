@@ -149,6 +149,8 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__obj_equals",    object::builtin_obj_equals);
         m.insert("__obj_to_str",    object::builtin_obj_to_str);
         m.insert("__delegate_eq",   object::builtin_delegate_eq);
+        m.insert("__obj_make_weak", object::builtin_obj_make_weak);
+        m.insert("__obj_upgrade_weak", object::builtin_obj_upgrade_weak);
 
         // ── GC control（Phase 3d.2 expose-gc-to-scripts） ───────────────────
         m.insert("__gc_collect",       gc::builtin_gc_collect);

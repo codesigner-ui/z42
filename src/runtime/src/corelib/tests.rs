@@ -340,3 +340,51 @@ fn delegate_eq_non_delegate_values_returns_false() {
     assert_eq!(exec_builtin(&c, "__delegate_eq", &[i(5), s("foo")]).unwrap(), Value::Bool(false));
     assert_eq!(exec_builtin(&c, "__delegate_eq", &[obj(&c, "Foo"), i(0)]).unwrap(), Value::Bool(false));
 }
+
+// ── __obj_make_weak / __obj_upgrade_weak (2026-05-04 expose-weak-ref-builtin, D-1a) ─
+
+#[test]
+fn make_weak_object_returns_handle_object() {
+    let c = ctx();
+    let target = obj(&c, "Foo");
+    let handle = exec_builtin(&c, "__obj_make_weak", &[target]).unwrap();
+    assert!(matches!(handle, Value::Object(_)));
+}
+
+#[test]
+fn make_weak_primitive_returns_null() {
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__obj_make_weak", &[i(5)]).unwrap(), Value::Null);
+    assert_eq!(exec_builtin(&c, "__obj_make_weak", &[s("foo")]).unwrap(), Value::Null);
+    assert_eq!(exec_builtin(&c, "__obj_make_weak", &[Value::Bool(true)]).unwrap(), Value::Null);
+}
+
+#[test]
+fn upgrade_weak_alive_returns_original() {
+    let c = ctx();
+    let target = obj(&c, "Foo");
+    let handle = exec_builtin(&c, "__obj_make_weak", &[target.clone()]).unwrap();
+    let upgraded = exec_builtin(&c, "__obj_upgrade_weak", &[handle]).unwrap();
+    assert_eq!(
+        exec_builtin(&c, "__obj_ref_eq", &[target, upgraded]).unwrap(),
+        Value::Bool(true)
+    );
+}
+
+#[test]
+fn upgrade_weak_non_handle_returns_null() {
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__obj_upgrade_weak", &[Value::Null]).unwrap(), Value::Null);
+    assert_eq!(exec_builtin(&c, "__obj_upgrade_weak", &[obj(&c, "NotAHandle")]).unwrap(), Value::Null);
+    assert_eq!(exec_builtin(&c, "__obj_upgrade_weak", &[i(5)]).unwrap(), Value::Null);
+}
+
+#[test]
+fn make_weak_then_upgrade_array() {
+    let c = ctx();
+    let arr = Value::Array(crate::gc::GcRef::new(vec![i(1), i(2)]));
+    let handle = exec_builtin(&c, "__obj_make_weak", &[arr.clone()]).unwrap();
+    assert!(matches!(handle, Value::Object(_)));
+    let upgraded = exec_builtin(&c, "__obj_upgrade_weak", &[handle]).unwrap();
+    assert!(matches!(upgraded, Value::Array(_)));
+}
