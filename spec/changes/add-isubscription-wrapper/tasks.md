@@ -1,31 +1,26 @@
 # Tasks: D2b — ISubscription wrapper 体系
 
-> 状态：🛑 阻塞（2026-05-03） | 创建：2026-05-03 | 类型：stdlib（完整流程）
-> **依赖**：D2a 已 GREEN（MulticastAction<T> 基础多播）
->
-> **阻塞原因**：实施阶段 2 时发现 z42 generic 类型系统三处缺陷
-> （嵌套 generic `>>` token 歧义 / 实例化字段访问推断丢失 / 类型 reference equality bug）
-> 阻塞 `MulticastAction.advanced` 通道无法表达。已立前置 spec
-> `fix-generic-type-system`（语言层修复）。GREEN 后 D2b 解封继续阶段 2。
+> 状态：🟡 进行中（2026-05-03 解封） | 创建：2026-05-03 | 类型：stdlib（完整流程）
+> **依赖**：D2a 已 GREEN；前置三 spec 已 GREEN：
+> - `fix-nested-generic-parsing`（commit e8e71cb）
+> - `fix-z42type-structural-equality`（commit cba09aa）
+> - `fix-generic-member-substitution`（INVESTIGATED — 实为 Bug 1+3 症状）
 >
 > **当前已落地（阶段 1 完成，build 绿）**：
 > - `src/libraries/z42.core/src/ISubscription.z42`（接口）
 > - `src/libraries/z42.core/src/SubscriptionRefs.z42`（StrongRef / OnceRef / CompositeRef）
->
-> wrapper 类作为独立 primitive 保留（用户可手工 `new OnceRef(h)` 走 IsAlive/Get/OnInvoked）。
-> 与 MulticastAction 集成等 generic 修复后继续。
 
 ## 进度概览
-- [ ] 阶段 1: stdlib ISubscription / SubscriptionRefs / impl 扩展
-- [ ] 阶段 2: MulticastAction 双 vec 改造
+- [x] 阶段 1: stdlib ISubscription / SubscriptionRefs（已落地，2026-05-03 早 commit 66ca7d4）
+- [ ] 阶段 2: MulticastAction 双 vec 改造（解封继续）
 - [ ] 阶段 3: 测试
 - [ ] 阶段 4: 验证 + 文档同步 + 归档
 
 ## 阶段 1: stdlib wrapper 类
-- [ ] 1.1 NEW `src/libraries/z42.core/src/ISubscription.z42` —— interface 定义
-- [ ] 1.2 NEW `src/libraries/z42.core/src/SubscriptionRefs.z42` —— ModeFlags + StrongRef + OnceRef + CompositeRef
-- [ ] 1.3 NEW（同文件或独立）`Action<T>.AsOnce()` impl 扩展 —— 验证 generic delegate impl 可行；不行则改静态工厂
-- [ ] 1.4 验证 `TD?` 返回类型在 generic interface 中合法 —— 不行则改返回 `TD` + 抛 / use default
+- [x] 1.1 NEW `src/libraries/z42.core/src/ISubscription.z42` —— interface 定义
+- [x] 1.2 NEW `src/libraries/z42.core/src/SubscriptionRefs.z42` —— ModeFlags + StrongRef + OnceRef + CompositeRef
+- [ ] 1.3 ~~`Action<T>.AsOnce()` impl 扩展~~ —— 推迟（D2 路线 D-2 deferred；CompositeRef.WithMode 已可达成"once"）
+- [ ] 1.4 ~~验证 `TD?` 返回类型~~ —— 用 `TD Get()` + 调用方 IsAlive 守卫的方案（已落地）
 
 ## 阶段 2: MulticastAction 双 vec
 - [ ] 2.1 修改 `src/libraries/z42.core/src/MulticastAction.z42`：拆分 handlers/alive 为 strong + advanced 两组数组
