@@ -45,7 +45,19 @@
 - **前置依赖**：L3 后期完整 type-system 规划；与 generics.md / static-abstract-interface.md 协同。
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
 
-## D-8b-1：stdlib `MulticastException<R>` 类（structural foundation）
+## D-8b-0：generic / non-generic class arity overloading（D-8b-1 阻塞前置）
+
+- **来源**：2026-05-04 D-8b-1 实施期间发现的结构性 type-system gap
+- **触发原因**：z42 当前 class registry `_classes` 用裸 simple name（`cls.Name`）作 key，**不按 generic arity 区分**。同名 class 的非泛型 / 泛型版本（`MulticastException` 与 `MulticastException<R>`）冲突，编译期报 E0408 duplicate + E0411 sealed。Delegate 注册早已用 arity-suffixed key（`Action$0` / `Action$1`），class 没跟进。
+- **缺失实现**：
+  - `SymbolCollector.Classes.cs` 类注册改为 arity-aware：`MulticastException` 与 `MulticastException$1` 共存
+  - `ResolveType` / `ResolveGenericType` 路径接受同名不同 arity 路由
+  - `IrGen` / zbc 跨 CU 序列化按 arity-suffixed full name emit + 跨 zpkg 导入对齐
+  - C# 编译器侧 + Rust VM lookup 都需要更新
+- **前置依赖**：z42 现有泛型实例化路径（已支持 generic class），主要是注册 + lookup 一致性
+- **触发条件**：D-8b-1 阻塞解除（同名 generic / non-generic exception 类共存）；或用户在其他场景需要"同名 generic + non-generic"对（如 `Result` / `Result<T>`）
+
+## D-8b-1：stdlib `MulticastException<R>` 类（structural foundation；阻塞 D-8b-0）
 
 - **来源**：D-8b 原条目拆分（2026-05-04 重新评估）；本条仅"加 generic exception 类 + 不依赖类型过滤的最小集成"
 - **设计文档**：`docs/design/delegates-events.md` §7
@@ -53,7 +65,7 @@
   - stdlib `Std.MulticastException<R>` 泛型类，继承 `Std.MulticastException`（非泛型 base 已存在），新增 `Results: R[]` 字段
   - 构造器接受 `failures / failureIndices / totalHandlers / results` 四个数组
 - **不在本条范围**：MulticastFunc / MulticastPredicate 的 `continueOnException=true` 通路 —— 那需要 catch-by-type 真正生效（D-8b-2）才能让用户在 catch handler 里捕获 `MulticastException<int>` 而非 wildcard
-- **触发条件**：D-8b-2 落地后立刻能接入；当前可独立落地作为 type 定义（用户即便不接 invoke 通路也可手动 throw）
+- **2026-05-04 阻塞**：实施期间发现 z42 class registry 不区分 arity，`MulticastException` 与 `MulticastException<R>` 同名冲突；阻塞解除前必须先做 D-8b-0。规避路径（重命名为 `MulticastResultException<R>`）会留命名债 + 偏离设计，已弃
 
 ## D-8b-2：catch-by-generic-type 类型过滤（编译器 + VM）
 
