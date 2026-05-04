@@ -73,15 +73,11 @@ public sealed class MulticastFunc<T, R> {
         return c;
     }
 
-    // 1-arg overload：默认 fail-fast。z42 当前 default param bool 读取报 Null
-    // bug，分 2 overload 替代 default 参数。
-    public R[] Invoke(T arg) {
-        return this.Invoke(arg, false);
-    }
-
+    // 2026-05-04 fix-default-param-cross-cu (D-9) 修复后回归 default param
+    // 单签名形式（先前临时拆 1-arg/2-arg overload 已退回）。
     // Invoke 收集所有活跃 handler 返回值进 R[]，按 strong-first / advanced-after
     // 顺序累加。失败抛原异常（D2d-2 加聚合）。
-    public R[] Invoke(T arg, bool continueOnException) {
+    public R[] Invoke(T arg, bool continueOnException = false) {
         // ── strong snapshot + fast loop ──
         int sn = this.strongCount;
         Func<T, R>[] snapStrong = new Func<T, R>[sn];

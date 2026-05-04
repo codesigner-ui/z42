@@ -85,20 +85,15 @@ public sealed class MulticastAction<T> {
         return c;
     }
 
-    // 1-arg overload：默认 fail-fast 路径（D2a 行为；首抛即停，原异常传播）。
-    public void Invoke(T arg) {
-        this.Invoke(arg, false);
-    }
-
-    // 2026-05-03 add-multicast-exception-aggregate (D2d-2)：
+    // 2026-05-03 add-multicast-exception-aggregate (D2d-2) +
+    // 2026-05-04 fix-default-param-cross-cu (D-9)：
     // continueOnException=true 时所有 handler 均尝试调用，失败者收入
     // Failures 数组，最终抛 MulticastException 聚合诊断；continueOnException=false
     // 保持 D2a 的 fail-fast 路径（首抛即停，原异常传播）。
     //
-    // 注：分 2 个 overload 而非用 default param，因 z42 当前 default
-    // bool 参数读取时报 Null（caller 不填默认未生效；现有 D2a/b/c
-    // golden 用 `bus.Invoke(arg)` 即依赖此 1-arg 路径）。
-    public void Invoke(T arg, bool continueOnException) {
+    // D-9 修复后回归 default param 单签名形式（先前 D-9 workaround 临时拆
+    // 1-arg/2-arg overload 已退回）。
+    public void Invoke(T arg, bool continueOnException = false) {
         // ── strong snapshot ──
         int sn = this.strongCount;
         Action<T>[] snapStrong = new Action<T>[sn];

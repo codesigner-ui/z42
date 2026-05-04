@@ -37,6 +37,12 @@ public sealed class IrGen : IEmitterContext
     // Param lists still come from AST (needed for FillDefaults BoundExpr lookup).
     private Dictionary<string, IReadOnlyList<Param>> _funcParams = new();
 
+    // 2026-05-04 fix-default-param-cross-cu (D-9)：跨 CU 方法签名注册表。
+    // imported 方法没有 AST `Param`（FuncParams 不覆盖），但 `Z42FuncType` 携带
+    // RequiredCount + Params 类型信息够用 type-default fallback。同时注册
+    // local 方法 / 顶层 func，保证 FillDefaults 单一查找路径。
+    private Dictionary<string, Z42FuncType> _funcSignatures = new(StringComparer.Ordinal);
+
     // Lifted lambda functions accumulated during emission (impl-lambda-l2).
     // See docs/design/closure.md §6 + design.md Decision 1.
     private readonly List<IrFunction> _liftedFunctions = new();
@@ -54,6 +60,12 @@ public sealed class IrGen : IEmitterContext
     HashSet<string> IEmitterContext.TopLevelFunctionNames => _topLevelFunctionNames;
     IReadOnlyDictionary<string, long> IEmitterContext.EnumConstants => _enumConstants;
     IReadOnlyDictionary<string, IReadOnlyList<Param>> IEmitterContext.FuncParams => _funcParams;
+    bool IEmitterContext.TryGetMethodSignature(string qualifiedName, out Z42FuncType sig)
+    {
+        if (_funcSignatures.TryGetValue(qualifiedName, out var found)) { sig = found; return true; }
+        sig = null!;
+        return false;
+    }
     DependencyIndex IEmitterContext.DepIndex => _depIndex;
     void IEmitterContext.TrackDepNamespace(string ns) => _usedDepNamespaces.Add(ns);
     string IEmitterContext.QualifyName(string name) => QualifyName(name);
@@ -166,6 +178,35 @@ public sealed class IrGen : IEmitterContext
             var qualName = ((IEmitterContext)this).QualifyClassName(targetNt.Name);
             foreach (var m in impl.Methods)
                 _funcParams[$"{qualName}.{m.Name}"] = m.Params;
+        }
+
+        // 2026-05-04 fix-default-param-cross-cu (D-9)：注册所有方法 / 顶层函数
+        // 的 Z42FuncType 签名（local + imported）。FillDefaults fallback 用此
+        // 表对跨 CU 调用 emit type-default const 填充缺位参数。
+        //
+        // 双 key 注册：本地 QualifyName（与 ClassRegistry / FuncParams 同款键）
+        // + 跨 CU QualifyClassName（与 DepIndex.QualifiedName 同款键）。
+        foreach (var (className, ct) in _semanticModel!.Classes)
+        {
+            var localKey    = QualifyName(className);
+            var importedKey = ((IEmitterContext)this).QualifyClassName(className);
+            foreach (var (methodKey, sig) in ct.Methods)
+            {
+                _funcSignatures[$"{localKey}.{methodKey}"] = sig;
+                if (importedKey != localKey)
+                    _funcSignatures[$"{importedKey}.{methodKey}"] = sig;
+            }
+            foreach (var (methodKey, sig) in ct.StaticMethods)
+            {
+                _funcSignatures[$"{localKey}.{methodKey}"] = sig;
+                if (importedKey != localKey)
+                    _funcSignatures[$"{importedKey}.{methodKey}"] = sig;
+            }
+        }
+        foreach (var (funcName, sig) in _semanticModel.Funcs)
+        {
+            _funcSignatures[funcName] = sig;
+            _funcSignatures[QualifyName(funcName)] = sig;
         }
 
         // ── Emit ──────────────────────────────────────────────────────────────

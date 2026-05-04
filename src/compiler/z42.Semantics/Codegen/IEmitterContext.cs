@@ -32,6 +32,11 @@ internal interface IEmitterContext
     IReadOnlyDictionary<string, long> EnumConstants { get; }
     IReadOnlyDictionary<string, IReadOnlyList<Param>> FuncParams { get; }
 
+    /// 2026-05-04 fix-default-param-cross-cu (D-9)：按 qualifiedName 查方法的
+    /// `Z42FuncType` 签名（local + imported 都覆盖）。FillDefaults 用作 fallback
+    /// 当 FuncParams miss 时（imported 方法无 AST `Param`）。
+    bool TryGetMethodSignature(string qualifiedName, out Z42FuncType sig);
+
     // ── Dependency resolution ────────────────────────────────────────────────
     DependencyIndex DepIndex { get; }
     void TrackDepNamespace(string ns);

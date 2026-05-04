@@ -72,14 +72,15 @@
   - `MulticastFunc.Invoke(continueOnException=true)` 累积 Results + Failures，抛 `MulticastException<R>`
   - `MulticastPredicate.Invoke(continueOnException=true)` 同款（R=bool）
 
-## D-9：z42 默认参数 bool 读取报 Null bug
+## D-10：13_assert golden 中 string.Contains dispatch 误指 LinkedList.Contains
 
-- **来源**：2026-05-04 `add-multicast-exception-aggregate` 实施时发现
-- **触发现象**：方法签名 `void Invoke(T arg, bool continueOnException = false)`，调用 `bus.Invoke(arg)` 不传第二个参数。函数体内读 `continueOnException` 时 VM 报 "expected bool in register %2, got Null"。Default 值 `false` 没有被填充。
-- **workaround（已用于 D2d-2）**：分 `Invoke(arg)` + `Invoke(arg, bool)` 两个 overload，1-arg 委托 2-arg。MulticastAction / MulticastFunc / MulticastPredicate 三个类全部应用。
-- **前置依赖**：z42 编译器 / IR codegen / VM 之一 default param 填充逻辑修正（具体哪一层未定位）。
-- **触发条件**：任何方法默认 bool 参数被读取时；不读则不触发。
-- **影响**：所有 stdlib `default-bool-param` API 都得避开此 bug（用 overload 替代）；用户代码同样受影响
+- **来源**：2026-05-04 `fix-default-param-cross-cu` 实施期间发现（HEAD baseline `de52807` 也 fail，D-9 之前已存在）
+- **触发现象**：`Std.Assert.Contains(actual, expected)` 内部 `actual.Contains(expected)`（actual: string）VM 运行时报 `undefined function Std.Collections.LinkedList.Contains`。stdlib 编译时把 `string.Contains` dispatch 错指到 `LinkedList.Contains`。
+- **可能原因**：DepIndex / IrGen 的 instance method dispatch 在 stdlib 编译期对名字 `Contains` 在多个类（String / LinkedList / Dictionary 等）模糊匹配时选错类
+- **影响**：13_assert × 2 modes 失败；不影响其他 golden 或单元测试
+- **workaround**：暂无 —— 修需要追 IR codegen instance dispatch 类匹配逻辑
+- **前置依赖**：定位 stdlib Assert.z42 编译时的 BindCall / DepIndex / FunctionEmitterCalls 路径
+- **触发条件**：仅 13_assert.z42 命中；其他 stdlib / 用户代码用 `string.Contains` 待用户实测
 
 ---
 
