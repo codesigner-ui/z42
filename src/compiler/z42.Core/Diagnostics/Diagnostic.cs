@@ -73,6 +73,7 @@ public static class DiagnosticCodes
     public const string InvalidInheritance    = "E0411";  // sealed class, struct base, missing abstract impl, override without virtual
     public const string InterfaceMismatch     = "E0412";  // interface method missing or wrong signature
     public const string InvalidImpl           = "E0413";  // extern impl block: bad target/trait, sig mismatch, missing/duplicate method
+    public const string EventFieldExternalAccess = "E0414"; // event field invoked or assigned outside owner class (D-7-residual)
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

@@ -30,6 +30,13 @@ public sealed partial class TypeChecker
                     && fv == Visibility.Private)
                     _diags.Error(DiagnosticCodes.AccessViolation,
                         $"field `{m.Member}` is private to `{def.Name}`", m.Span);
+                // 2026-05-04 D-7-residual：event field 严格 access control。
+                // 外部对 event field 任意 read / write / call 都禁止；只允许 +=/-=
+                // （已在 BindAssign 阶段 desugar 到 add_X / remove_X，不进 BindMemberExpr）。
+                if (!insideClass && def.EventFieldNames?.Contains(m.Member) == true)
+                    _diags.Error(DiagnosticCodes.EventFieldExternalAccess,
+                        $"event field `{m.Member}` cannot be accessed outside `{def.Name}`; use `+=` / `-=` to subscribe / unsubscribe",
+                        m.Span);
                 return new BoundMember(target, m.Member, SubstituteTypeParams(ft, subMap), m.Span);
             }
             // Auto-property getter dispatch on instantiated generic class
@@ -68,6 +75,13 @@ public sealed partial class TypeChecker
                     && fv == Visibility.Private)
                     _diags.Error(DiagnosticCodes.AccessViolation,
                         $"field `{m.Member}` is private to `{ct.Name}`", m.Span);
+                // 2026-05-04 D-7-residual：event field 严格 access control。
+                // 外部对 event field 任意 read / write / call 都禁止；只允许 +=/-=
+                // （已在 BindAssign 阶段 desugar 到 add_X / remove_X，不进 BindMemberExpr）。
+                if (!insideClass && ct.EventFieldNames?.Contains(m.Member) == true)
+                    _diags.Error(DiagnosticCodes.EventFieldExternalAccess,
+                        $"event field `{m.Member}` cannot be accessed outside `{ct.Name}`; use `+=` / `-=` to subscribe / unsubscribe",
+                        m.Span);
                 return new BoundMember(target, m.Member, ft, m.Span);
             }
             // Auto-property getter dispatch: 字段缺失但 method `get_<Member>` 存在

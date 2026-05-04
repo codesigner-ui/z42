@@ -62,11 +62,12 @@ public sealed class IncrementalBuildIntegrationTests
         err1.Should().NotContain("cached: 34/");   // 第一次必然不命中
 
         // 第二次：全 cached（39 = z42.core 文件数；2026-05-03 fix-delegate-reference-equality
-        // 新增 DelegateOps.z42（D-5 落地），43 → 44。
+        // 新增 DelegateOps.z42（D-5 落地），43 → 44；2026-05-04 D-7-residual 新增
+        // Disposable.z42（IDisposable factory），44 → 45。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 44/44");
+        err2.Should().Contain("cached: 45/45");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 4/4");
     }
@@ -82,9 +83,10 @@ public sealed class IncrementalBuildIntegrationTests
         code1.Should().Be(0);
 
         // --no-incremental：仍 0/N 即使 cache 存在（39 = z42.core 文件数；
-        // 2026-05-03 fix-delegate-reference-equality 新增 DelegateOps.z42，43 → 44）
+        // 2026-05-03 fix-delegate-reference-equality 新增 DelegateOps.z42，43 → 44；
+        // 2026-05-04 D-7-residual 新增 Disposable.z42，44 → 45）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/44");
+        err2.Should().Contain("cached: 0/45");
     }
 }

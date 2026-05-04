@@ -45,15 +45,6 @@
 - **前置依赖**：L3 后期完整 type-system 规划；与 generics.md / static-abstract-interface.md 协同。
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
 
-## D-7-residual：单播 event 的 IDisposable token + 严格 access control
-
-- **来源**：D-7 单播 event 主体 2026-05-04 已落地（`spec/archive/2026-05-04-add-event-keyword-singlecast/`）；本条留 design line 301-304 的 `IDisposable` 返回 + 闭包 cleanup 部分 + 严格 access control
-- **设计文档**：`docs/design/delegates-events.md` §6.3 + §6.5
-- **缺失实现**：
-  - 单播 `add_X` 返回 `IDisposable` 而非 void（设计 line 301）—— 需要 stdlib `Std.Disposable.From(Action)` 工厂或 per-event 私有 token 类
-  - 严格 access control：外部 `obj.X.Invoke(...)` / `obj.X = ...` 报 E0407（多播 + 单播都缺）
-- **触发条件**：用户实际需要 `using (token = btn.OnKey += h)` 风格 + 用户希望强制不让外部直接 invoke event field
-
 ## D-8b-1：stdlib `MulticastException<R>` 类（structural foundation）
 
 - **来源**：D-8b 原条目拆分（2026-05-04 重新评估）；本条仅"加 generic exception 类 + 不依赖类型过滤的最小集成"
@@ -106,3 +97,6 @@
 - **D-6**（嵌套 delegate dotted-path 外部引用）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-nested-delegate-dotted-path/` 实施。
   AST 加 `MemberType(Left, Right)` 节点，TypeParser dotted-path lookahead，SymbolTable.ResolveMemberType 拍平为 qualified key 查 Delegates。
   v1 仅支持 1 层嵌套 + 非泛型；深嵌套 / 嵌套泛型 parser 接受但 lookup 给 Unknown，留待后续 spec。
+
+- **D-7-residual**（单播 event IDisposable token + 严格 access control）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-singlecast-event-idisposable-token/` 实施。
+  原 spec Decision 1 选项 B（嵌套 sealed token 类）发现依赖未实现的"嵌套 class"基础设施，切换到选项 A：新增 stdlib `Std.Disposable : IDisposable` + `Disposable.From(Action)` 工厂。单播 `add_X` body 末尾 return `Disposable.From(() => this.remove_X(h))` 通过 lambda 捕获 owner+handler。新 diagnostic 码 E0414 EventFieldExternalAccess（在 BindMemberExpr 单点检查 EventFieldNames + insideClass）；多播单播双路径同样生效。

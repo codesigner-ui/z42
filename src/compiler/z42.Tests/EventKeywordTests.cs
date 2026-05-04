@@ -92,8 +92,9 @@ public sealed class EventKeywordTests
         var bus = cu.Classes[0];
         bus.Methods.Select(m => m.Name).Should().Contain(["add_OnKey", "remove_OnKey"]);
         var add = bus.Methods.First(m => m.Name == "add_OnKey");
-        // 单播 add 返回 void（多播返回 IDisposable）
-        add.ReturnType.Should().BeOfType<VoidType>();
+        // 2026-05-04 D-7-residual：单播 add 返回 IDisposable（与多播对齐）
+        add.ReturnType.Should().BeOfType<NamedType>()
+            .Which.Name.Should().Be("IDisposable");
         // handler 类型直接是字段裸类型 Action<int>
         add.Params[0].Type.Should().BeOfType<GenericType>()
             .Which.Name.Should().Be("Action");
@@ -127,7 +128,9 @@ public sealed class EventKeywordTests
         var iface = cu.Interfaces[0];
         iface.Methods.Select(m => m.Name).Should().Contain(["add_OnKey", "remove_OnKey"]);
         var add = iface.Methods.First(m => m.Name == "add_OnKey");
-        add.ReturnType.Should().BeOfType<VoidType>();
+        // 2026-05-04 D-7-residual：interface 端单播 event add 同样返回 IDisposable
+        add.ReturnType.Should().BeOfType<NamedType>()
+            .Which.Name.Should().Be("IDisposable");
     }
 
     [Fact]

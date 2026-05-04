@@ -162,6 +162,17 @@ public static class DiagnosticCatalog
             "impl IGreet for int { string Hello() { return \"\"; } }  // ok (primitive struct)\n" +
             "impl IGreet for SomeInterface { ... }  // error: target is an interface"),
 
+        [DiagnosticCodes.EventFieldExternalAccess] = new(
+            "Event field accessed outside its declaring class",
+            "Event fields (declared with the `event` keyword) enforce strict access control: " +
+            "external code may only `+=` / `-=` to subscribe / unsubscribe via the synthesized " +
+            "`add_X` / `remove_X` accessors. Direct read, assignment, or invocation from outside " +
+            "the declaring class is rejected so the event source retains exclusive control over " +
+            "raising the event. (D-7-residual, 2026-05-04)",
+            "class Btn { public event Action<int> OnClick; void Raise() { var f = this.OnClick; } }\n" +
+            "void Use(Btn b) { b.OnClick.Invoke(1); }  // E0414: event field cannot be accessed outside `Btn`\n" +
+            "void Sub(Btn b, Action<int> h) { b.OnClick += h; }  // ok (desugars to b.add_OnClick(h))"),
+
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

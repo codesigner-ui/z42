@@ -282,7 +282,7 @@ internal static partial class TopLevelParser
             return (mBacking, new List<FunctionDecl> { addFn, rmFn });
         }
 
-        // ── 单播路径（D-7 add-event-keyword-singlecast） ────────────────
+        // ── 单播路径（D-7 add-event-keyword-singlecast + D-7-residual） ─
         // Backing field: 同名 + OptionType wrap，初值 null（OptionType 默认）
         var optionType = new OptionType(fieldType, span);
         var sBacking   = new FieldDecl(
@@ -291,11 +291,13 @@ internal static partial class TopLevelParser
 
         // 单播 handler 类型 = 字段裸类型（Action<T> 自身）
         var sHandlerT = fieldType;
+        var sIdisp    = new NamedType("IDisposable", span);
 
-        // add_X body:
+        // add_X body (D-7-residual)：
         //   if (this.X != null)
         //       throw new InvalidOperationException("single-cast event already bound");
         //   this.X = h;
+        //   return Disposable.From(() => this.remove_X(h));
         var sAddThis      = new IdentExpr("this", span);
         var sAddFieldRead = new MemberExpr(sAddThis, fieldName, span);
         var sAddNullCmp   = new BinaryExpr("!=", sAddFieldRead, new LitNullExpr(span), span);
@@ -307,12 +309,25 @@ internal static partial class TopLevelParser
         var sAddIf        = new IfStmt(sAddNullCmp, sAddIfBlock, null, span);
         var sAddFieldRead2 = new MemberExpr(new IdentExpr("this", span), fieldName, span);
         var sAddAssign    = new AssignExpr(sAddFieldRead2, new IdentExpr("h", span), span);
+        // Disposable.From(() => this.remove_X(h)) —— 通过 lambda 捕获 this + h。
+        // Lambda 调 remove_X 而非直接 `this.X = null`，复用 D-7 主体 remove_X 中
+        // ref-equality 比较，避免重复实现。
+        var lambdaThis     = new IdentExpr("this", span);
+        var lambdaRmMember = new MemberExpr(lambdaThis, $"remove_{fieldName}", span);
+        var lambdaH        = new IdentExpr("h", span);
+        var lambdaRmCall   = new CallExpr(lambdaRmMember, new List<Expr> { lambdaH }, span);
+        var lambda         = new LambdaExpr(
+            new List<LambdaParam>(), new LambdaExprBody(lambdaRmCall, span), span);
+        var disposableId   = new IdentExpr("Disposable", span);
+        var disposableFrom = new MemberExpr(disposableId, "From", span);
+        var disposableCall = new CallExpr(disposableFrom, new List<Expr> { lambda }, span);
+        var sAddReturn     = new ReturnStmt(disposableCall, span);
         var sAddBody      = new BlockStmt(
-            new List<Stmt> { sAddIf, new ExprStmt(sAddAssign, span) }, span);
+            new List<Stmt> { sAddIf, new ExprStmt(sAddAssign, span), sAddReturn }, span);
         var sAddFn = new FunctionDecl(
             $"add_{fieldName}",
             new List<Param> { new Param("h", sHandlerT, null, span) },
-            new VoidType(span), sAddBody,
+            sIdisp, sAddBody,
             Visibility.Public,
             FunctionModifiers.None,
             null, span);
@@ -368,13 +383,11 @@ internal static partial class TopLevelParser
         }
 
         // 多播：handler 类型 = `<HandlerName><...args>`；返回 IDisposable
-        // 单播：handler 类型 = 字段裸类型；add 返回 void（没有 IDisposable token）
+        // 单播：handler 类型 = 字段裸类型；返回 IDisposable（D-7-residual：单播也对齐）
         var handlerT = isMulticast
             ? new GenericType(HandlerTypeName(gt.Name), gt.TypeArgs, span)
             : (TypeExpr)fieldType;
-        var addRet   = isMulticast
-            ? (TypeExpr)new NamedType("IDisposable", span)
-            : (TypeExpr)new VoidType(span);
+        var addRet   = (TypeExpr)new NamedType("IDisposable", span);
         var hParam   = new Param("h", handlerT, null, span);
         return new List<MethodSignature>
         {

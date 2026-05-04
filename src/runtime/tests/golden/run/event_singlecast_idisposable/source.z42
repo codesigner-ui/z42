@@ -1,0 +1,41 @@
+// 2026-05-04 D-7-residual add-singlecast-event-idisposable-token golden.
+// 端到端验证：单播 event `+=` 返回 IDisposable token，token.Dispose() 触发
+// 合成的 remove_X 清掉 backing field，使再次 += 可以成功（D-7 行为：双绑抛）。
+namespace Demo;
+using Std;
+using Std.IO;
+
+public class Cocoa {
+    public event Action<int> OnKey;
+}
+
+void Main() {
+    var c = new Cocoa();
+
+    // 1) 第一次 += 返回 IDisposable token
+    Action<int> handler = (int x) => Console.WriteLine($"tick: {x}");
+    var t = c.OnKey += handler;
+    Console.WriteLine("first bind ok");
+
+    // 2) 二次 += 抛 InvalidOperationException（D-7 行为不变）
+    try {
+        c.OnKey += (int x) => Console.WriteLine("never");
+        Console.WriteLine("no throw (BUG)");
+    } catch (InvalidOperationException e) {
+        Console.WriteLine("double bind throws");
+    }
+
+    // 3) Dispose 触发 remove_X，清空 backing field
+    t.Dispose();
+    Console.WriteLine("disposed");
+
+    // 4) 清空后可以 re-bind 新 handler（验证 Dispose 真正调用了 remove_X）
+    Action<int> handler2 = (int x) => Console.WriteLine($"second: {x}");
+    var t2 = c.OnKey += handler2;
+    Console.WriteLine("rebind ok");
+
+    // 5) Dispose 是幂等的（多次安全）
+    t.Dispose();
+    t2.Dispose();
+    Console.WriteLine("dispose idempotent");
+}
