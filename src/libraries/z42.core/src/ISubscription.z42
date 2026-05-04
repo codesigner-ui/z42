@@ -8,7 +8,7 @@ namespace Std;
 // v1 无约束；用户错误地 `ISubscription<int>` 在 wrapper 构造期间 fail-fast。
 //
 // `WeakRef<TD>` / `AsWeak()` 在 v1 不实现 —— GC 弱引用 builtin 未暴露 corelib，
-// 详见 docs/deferred-features.md D-1。
+// 详见 docs/deferred.md D-1。
 public interface ISubscription<TD> {
     // 返回 wrapped delegate；仅当 IsAlive()=true 时定义；调用方先检查 IsAlive。
     TD Get();

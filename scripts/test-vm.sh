@@ -6,9 +6,17 @@
 #   expected_output.txt — expected stdout
 #
 # Usage:
-#   ./scripts/test-vm.sh              # run both interp and jit
-#   ./scripts/test-vm.sh interp       # interp only
-#   ./scripts/test-vm.sh jit          # jit only
+#   ./scripts/test-vm.sh                    # rebuild stdlib + golden zbc, then run interp + jit
+#   ./scripts/test-vm.sh interp             # interp only
+#   ./scripts/test-vm.sh jit                # jit only
+#   ./scripts/test-vm.sh --no-rebuild       # skip stdlib + golden rebuild (fast iteration)
+#   ./scripts/test-vm.sh interp --no-rebuild
+#
+# Default behaviour rebuilds stdlib zpkgs (sync to artifacts/z42/libs/) and golden
+# .zbc artifacts before running, eliminating the historical "stale artifact gives
+# false GREEN/RED" failure mode (2026-05-04 fix-test-vm-stale-artifacts; previously
+# multiple archived commits' "全绿" verification was based on out-of-sync libs/
+# zpkg + old golden zbc emitted by an earlier compiler version).
 #
 # Exit code: 0 if all selected tests pass, 1 otherwise.
 
@@ -28,8 +36,27 @@ GOLDEN_GLOBS=(
 )
 MODES=("interp" "jit")
 
-if [ $# -ge 1 ]; then
-    MODES=("$1")
+REBUILD=true
+POSITIONAL=()
+for arg in "$@"; do
+    case "$arg" in
+        --no-rebuild) REBUILD=false ;;
+        *)            POSITIONAL+=("$arg") ;;
+    esac
+done
+
+if [ "${#POSITIONAL[@]}" -ge 1 ]; then
+    MODES=("${POSITIONAL[0]}")
+fi
+
+if [ "$REBUILD" = true ]; then
+    # Order matters: regen-golden-tests.sh internally calls build-stdlib.sh
+    # (transitively rebuilds the C# compiler driver), then recompiles every
+    # golden source.z42 → source.zbc against the freshly-built stdlib zpkgs
+    # synced into artifacts/z42/libs/. Pass through to keep both step's
+    # output streams visible.
+    "$SCRIPT_DIR/regen-golden-tests.sh"
+    echo ""
 fi
 
 # Build once before running tests

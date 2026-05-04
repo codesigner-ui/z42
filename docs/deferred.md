@@ -72,16 +72,6 @@
   - `MulticastFunc.Invoke(continueOnException=true)` 累积 Results + Failures，抛 `MulticastException<R>`
   - `MulticastPredicate.Invoke(continueOnException=true)` 同款（R=bool）
 
-## D-10：13_assert golden 中 string.Contains dispatch 误指 LinkedList.Contains
-
-- **来源**：2026-05-04 `fix-default-param-cross-cu` 实施期间发现（HEAD baseline `de52807` 也 fail，D-9 之前已存在）
-- **触发现象**：`Std.Assert.Contains(actual, expected)` 内部 `actual.Contains(expected)`（actual: string）VM 运行时报 `undefined function Std.Collections.LinkedList.Contains`。stdlib 编译时把 `string.Contains` dispatch 错指到 `LinkedList.Contains`。
-- **可能原因**：DepIndex / IrGen 的 instance method dispatch 在 stdlib 编译期对名字 `Contains` 在多个类（String / LinkedList / Dictionary 等）模糊匹配时选错类
-- **影响**：13_assert × 2 modes 失败；不影响其他 golden 或单元测试
-- **workaround**：暂无 —— 修需要追 IR codegen instance dispatch 类匹配逻辑
-- **前置依赖**：定位 stdlib Assert.z42 编译时的 BindCall / DepIndex / FunctionEmitterCalls 路径
-- **触发条件**：仅 13_assert.z42 命中；其他 stdlib / 用户代码用 `string.Contains` 待用户实测
-
 ---
 
 ## 已自动归档前的"成熟 follow-up"指南
@@ -90,3 +80,11 @@
 1. 把对应条目从本文件移入 archive spec 的"实施备注"
 2. 创建 `expose-XXX-builtin` 类型的独立 spec
 3. 验证 + GREEN 后归档；本文件移除该条目
+
+---
+
+## 已移除条目（保留备注以便溯源）
+
+- **D-10**（13_assert string.Contains 误指 LinkedList.Contains）：2026-05-04 排查发现并不存在真实的 dispatch bug。
+  现象由两层 stale artifact 叠加造成：① D-9 commit (`bddc818 fix-default-param-cross-cu`) 已修复底层默认参数路径，但 `artifacts/z42/libs/z42.core.zpkg` 没同步，VM 仍加载旧 stdlib IR；② 多个 multicast/event golden 的 `source.zbc` 也是旧编译器产出。
+  根因是 `./scripts/test-vm.sh` 入口未强制重建 stdlib + golden，由 `spec/archive/2026-05-04-fix-test-vm-stale-artifacts/` 修复。条目从此移除。

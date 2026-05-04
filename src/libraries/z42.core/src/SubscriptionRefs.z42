@@ -3,7 +3,7 @@ namespace Std;
 // 2026-05-03 add-isubscription-wrapper (D2b): ISubscription wrapper 三件套。
 // StrongRef（pass-through）/ OnceRef（一次性）/ CompositeRef（mode flags）。
 //
-// WeakRef 在 v1 不实现（待 corelib weak-ref builtin），见 docs/deferred-features.md D-1。
+// WeakRef 在 v1 不实现（待 corelib weak-ref builtin），见 docs/deferred.md D-1。
 
 // Mode flags for CompositeRef. v1 仅 Once；Weak 占位（D2b-followup 启用）。
 // 用 int 常量 + 位运算（z42 enum 暂不支持 [Flags] | 操作）；future enum 升级

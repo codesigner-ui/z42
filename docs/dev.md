@@ -100,15 +100,24 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.zbc | file.zpkg> [--mo
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 # VM 测试（interp + jit 双模式）
-./scripts/test-vm.sh
+./scripts/test-vm.sh                      # 默认：自动重建 stdlib + golden zbc 后跑
+./scripts/test-vm.sh interp               # 仅 interp
+./scripts/test-vm.sh --no-rebuild         # 跳过重建（dev 反复跑同一测试时加速）
 
 # 跨 zpkg 端到端测试（target lib + ext lib + main app 三方协作）
 ./scripts/test-cross-zpkg.sh
 ```
 
-> 修改编译器后，先 `--emit zbc` 重新生成 `.zbc`，再跑 `./scripts/test-vm.sh`。
-> `test-cross-zpkg.sh` 用例放在 `src/runtime/tests/cross-zpkg/`，
-> 详见该目录的 README。
+> **测试入口统一用 `test-vm.sh`，不必先手动跑 `build-stdlib.sh` / `regen-golden-tests.sh`。**
+> 默认 `test-vm.sh` 入口会按依赖顺序重建：
+> 1. `build-stdlib.sh`（dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/z42/libs/`）
+> 2. `regen-golden-tests.sh`（用最新 z42c 把所有 golden `source.z42` → `source.zbc`）
+> 3. `cargo build` VM
+> 4. 逐个跑 golden test
+>
+> 这一改动来自 2026-05-04 `fix-test-vm-stale-artifacts`：早期入口不强制刷新依赖产物，多次出现"stdlib zpkg 旧 / golden zbc 旧"导致测试输出对当前代码不真实（假绿/假红）。`--no-rebuild` 仅供你**确认上一次重建是新的**且只在反复迭代单个测试时使用。
+>
+> `test-cross-zpkg.sh` 用例放在 `src/runtime/tests/cross-zpkg/`，详见该目录的 README。
 
 ---
 
@@ -140,16 +149,16 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ```
 
 > `artifacts/z42/` 与 `artifacts/libraries/` 均已在 `.gitignore` 中，不纳入版本控制。
-> 修改标准库源文件后需重新运行 `./scripts/build-stdlib.sh` 更新 zpkg 产物。
+> 修改标准库源文件后跑 `./scripts/test-vm.sh` 会自动 rebuild + sync；只想 rebuild 不跑测试时直接 `./scripts/build-stdlib.sh`。
 
 > **artifacts 目录分工**：
 > - `artifacts/libraries/<lib>/dist/` — workspace 模式 stdlib **构建产物**（每 lib 一个子目录）
 > - `artifacts/libraries/<lib>/cache/` — 中间产物 .zbc（debug/indexed 模式时生成）
-> - `artifacts/z42/libs/` — 分发版 stdlib 扁平布局（package.sh 拷贝目标）
+> - `artifacts/z42/libs/` — VM 加载路径（`build-stdlib.sh` 自动 sync；`package.sh` 也会拷贝）
 > - `artifacts/z42/bin/` — 分发版 z42c / z42vm 单文件 binary
 >
-> `build-stdlib.sh` 仅写 `artifacts/libraries/`；`package.sh` 在打包阶段把
-> `<lib>/dist/<lib>.zpkg` 拷到 `artifacts/z42/libs/<lib>.zpkg`。
+> `build-stdlib.sh` 既写 `artifacts/libraries/<lib>/dist/`，又同步到 `artifacts/z42/libs/`（2026-04-27
+> `wave1-path-script` 之后的行为）；`package.sh` 在分发版打包阶段额外保证一份最终拷贝。
 > 发行包测试全流程：`package.sh` → `build-stdlib.sh --use-dist` → `test-dist.sh`。
 
 ---
