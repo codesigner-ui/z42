@@ -3,9 +3,13 @@ namespace Std;
 // 2026-05-03 add-isubscription-wrapper (D2b): ISubscription wrapper 三件套。
 // StrongRef（pass-through）/ OnceRef（一次性）/ CompositeRef（mode flags）。
 //
-// WeakRef 在 v1 不实现（待 corelib weak-ref builtin），见 docs/deferred.md D-1。
+// 2026-05-04 D-1b: 加 `WeakRef<TD>` + 激活 CompositeRef.Mode.Weak。
+// 关键设计：weak 路径**不**强持原 handler（那会反向锁住 receiver，因为
+// Closure 强持 env=[receiver]），而是拆解为 (WeakHandle to receiver, fnName)，
+// Get 时通过 `DelegateOps.MakeClosure(fnName, [upgradedReceiver])` 重建 Closure。
+// FuncRef / StackClosure / 无捕获 lambda 的 target 是 null → 退化为 strong。
 
-// Mode flags for CompositeRef. v1 仅 Once；Weak 占位（D2b-followup 启用）。
+// Mode flags for CompositeRef. v1 Once；2026-05-04 D-1b 激活 Weak。
 // 用 int 常量 + 位运算（z42 enum 暂不支持 [Flags] | 操作）；future enum 升级
 // 后兼容。
 public class ModeFlags {
@@ -60,30 +64,70 @@ public sealed class OnceRef<TD> : ISubscription<TD> {
 }
 
 // 组合包装 —— mode flags 累加；融合后只分配一个 CompositeRef 实例。
-// v1 支持 Once flag；Weak 占位（D2b-followup）。
+// 2026-05-04 D-1b：Once + Weak 都已激活。
+// **关键设计**：Mode.Weak 时 CompositeRef 不强持 handler（与 WeakRef 同模式），
+// 而是存 (WeakHandle, fnName)，Get 时重建 Closure。否则 weak 失效（参 WeakRef
+// 注释）。strong 路径继续直接持 handler 走 fast path。
 public sealed class CompositeRef<TD> : ISubscription<TD> {
-    TD handler;
+    private TD strongHandler;       // 仅 Mode.Weak 未启用 / weak 退化时有效
     public int Modes;
     bool consumed;
+    private WeakHandle weakHandle;
+    private string fnName;
+    bool weakDegraded;
 
     public CompositeRef(TD h, int modes) {
-        this.handler = h;
         this.Modes = modes;
         this.consumed = false;
+        this.weakDegraded = true;
+        this.weakHandle = null;
+        this.fnName = null;
+        if ((modes & 2) != 0) {
+            // Mode.Weak set：尝试拆解 handler 为 (WeakHandle, fnName)
+            var target = DelegateOps.GetTarget(h);
+            if (target != null) {
+                this.weakHandle = WeakHandle.MakeWeak(target);
+                this.fnName = DelegateOps.GetFnName(h);
+                this.weakDegraded = false;
+                // 故意不存 strongHandler —— 与 WeakRef 同款，避免反向锁住 receiver
+            } else {
+                // 退化 strong：listener 无可弱化目标
+                this.strongHandler = h;
+            }
+        } else {
+            // 无 Weak flag：strong path
+            this.strongHandler = h;
+        }
     }
 
     // 累加 mode flag 复用本实例，链式 .AsOnce().AsWeak() 不重复分配（融合）。
+    // 注意：构造后追加 Weak 不重新拆解 handler（避免反向耦合 ctor 序）；
+    // 推荐在 ctor 直接传完整 mode。
     public CompositeRef<TD> WithMode(int additional) {
         this.Modes = this.Modes | additional;
         return this;
     }
 
     public TD Get() {
-        return this.handler;
+        if ((this.Modes & 2) != 0 && !this.weakDegraded) {
+            // Weak 活跃路径：upgrade target → 重建 Closure
+            var target = WeakHandle.Upgrade(this.weakHandle);
+            if (target == null) return null;
+            var env = new object[1];
+            env[0] = target;
+            return (TD)DelegateOps.MakeClosure(this.fnName, env);
+        }
+        // strong 或 weak 退化：直接返回 strongHandler
+        return this.strongHandler;
     }
 
     public bool IsAlive() {
-        return !this.consumed;
+        if (this.consumed) return false;
+        if ((this.Modes & 2) != 0 && !this.weakDegraded) {
+            var live = WeakHandle.Upgrade(this.weakHandle);
+            return live != null;
+        }
+        return true;
     }
 
     public void OnInvoked() {
@@ -91,6 +135,61 @@ public sealed class CompositeRef<TD> : ISubscription<TD> {
         if ((this.Modes & 1) != 0) {
             this.consumed = true;
         }
-        // Weak / 其他 mode 在 D2b-followup 启用
+    }
+}
+
+// 2026-05-04 D-1b：弱引用包装。
+// **关键设计**：WeakRef **不**强持原 handler（那会反向锁住 receiver，因为
+// Closure 自己强持 env=[receiver]，weak 无效）。相反，构造时拆解 handler 为：
+//   - WeakHandle（target 弱引用）
+//   - fnName（Closure 的 fn_name 字符串，强持，但 string 不锁 receiver）
+//   - degradedHandler（target 不可弱化时退化为 strong handler）
+// Get 时若 target 还活：用 MakeClosure(fnName, [target]) 重建一个新 Closure；
+// 若 target 已死：返回 null，IsAlive=false。
+//
+// 退化策略（per design line 191）：FuncRef / StackClosure / 无捕获 lambda
+// 的 target 是 null → 退化 strong（持 degradedHandler，weak 无效但行为合法）。
+//
+// MulticastAction.Invoke loop 已经 per-iteration 检查 IsSubscriptionAlive，
+// 此 wrapper 自然形成 lapsed listener 短路；无需改 invoke 路径。
+public sealed class WeakRef<TD> : ISubscription<TD> {
+    private TD degradedHandler;  // 仅 isDegraded=true 时有效
+    private WeakHandle weakHandle;
+    private string fnName;
+    bool isDegraded;
+
+    public WeakRef(TD h) {
+        var target = DelegateOps.GetTarget(h);
+        if (target != null) {
+            this.weakHandle = WeakHandle.MakeWeak(target);
+            this.fnName = DelegateOps.GetFnName(h);
+            this.isDegraded = false;
+            // degradedHandler 不存 —— 故意不强持原 handler
+        } else {
+            this.degradedHandler = h;
+            this.weakHandle = null;
+            this.fnName = null;
+            this.isDegraded = true;
+        }
+    }
+
+    public TD Get() {
+        if (this.isDegraded) return this.degradedHandler;
+        var target = WeakHandle.Upgrade(this.weakHandle);
+        if (target == null) return null;
+        // 重建 Closure：env=[target]，fn_name=同原 handler 的 thunk 名
+        var env = new object[1];
+        env[0] = target;
+        return (TD)DelegateOps.MakeClosure(this.fnName, env);
+    }
+
+    public bool IsAlive() {
+        if (this.isDegraded) return true;
+        var live = WeakHandle.Upgrade(this.weakHandle);
+        return live != null;
+    }
+
+    public void OnInvoked() {
+        // noop —— weak 不维护本地状态
     }
 }

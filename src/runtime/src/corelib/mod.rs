@@ -149,6 +149,9 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__obj_equals",    object::builtin_obj_equals);
         m.insert("__obj_to_str",    object::builtin_obj_to_str);
         m.insert("__delegate_eq",   object::builtin_delegate_eq);
+        m.insert("__delegate_target", object::builtin_delegate_target);
+        m.insert("__delegate_fn_name", object::builtin_delegate_fn_name);
+        m.insert("__make_closure", object::builtin_make_closure);
         m.insert("__obj_make_weak", object::builtin_obj_make_weak);
         m.insert("__obj_upgrade_weak", object::builtin_obj_upgrade_weak);
 

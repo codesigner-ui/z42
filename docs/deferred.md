@@ -7,18 +7,6 @@
 
 ---
 
-## D-1b：`Std.WeakRef<TD>` ISubscription wrapper（D-1a 上 follow-up）
-
-- **来源**：D-1 拆分后 D-1a (`expose-weak-ref-builtin`) 2026-05-04 落地 corelib builtins + `Std.WeakHandle` 不透明类；本条留 ISubscription wrapper
-- **设计文档**：`docs/design/delegates-events.md` §5.2 + §5.3
-- **缺失实现**：
-  - stdlib `Std.WeakRef<TD> : ISubscription<TD>` 类（基于 D-1a 的 WeakHandle）
-  - delegate 内部 .Target 提取（Closure.env 的 weak 持有；FuncRef / StackClosure 退化为 strong，per design line 191）
-  - 接入 D2b CompositeRef.Mode.Weak（当前是 placeholder noop）
-- **前置依赖**：D-1a 已落地（提供 WeakHandle.MakeWeak / Upgrade 原料）；delegate `.Target` 暴露机制（Closure.env 通过新 builtin / 用户暂不可访问）。
-- **触发条件**：用户实际遇到 lapsed-listener 内存泄漏 / GUI 长寿对象持回调场景。
-- **占位**：`CompositeRef.Mode.Weak` 保留 flag 占位；用户当前传入会 noop（与 Strong 等价），不报错。
-
 ## D-2：ISubscription chain `.AsOnce()` / `.AsWeak()` 跨 generic interface impl（D2b 延后）
 
 - **来源**：`spec/archive/2026-05-03-add-isubscription-wrapper/` design Decision 3
@@ -112,3 +100,6 @@
 
 - **D-7-residual**（单播 event IDisposable token + 严格 access control）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-singlecast-event-idisposable-token/` 实施。
   原 spec Decision 1 选项 B（嵌套 sealed token 类）发现依赖未实现的"嵌套 class"基础设施，切换到选项 A：新增 stdlib `Std.Disposable : IDisposable` + `Disposable.From(Action)` 工厂。单播 `add_X` body 末尾 return `Disposable.From(() => this.remove_X(h))` 通过 lambda 捕获 owner+handler。新 diagnostic 码 E0414 EventFieldExternalAccess（在 BindMemberExpr 单点检查 EventFieldNames + insideClass）；多播单播双路径同样生效。
+
+- **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
+  实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。

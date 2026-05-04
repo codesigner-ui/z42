@@ -435,11 +435,61 @@ internal sealed partial class FunctionEmitter
             return dst;
         }
 
+        // 2026-05-04 D-1b: instance method group conversion `obj.Method` —
+        // 当 BoundMember.Type 是 Z42FuncType（说明 `MemberName` 是方法而非字段）
+        // 且 receiver 是 class，emit 一个 thunk closure：MkClos(thunk, [recv])。
+        // Thunk 内部 vcall env[0].MethodName(args)；与 lambda 闭包同享 env 协议。
+        // 之前这条路径直接 emit FieldGet → 把方法名当字段读 → 运行时拿到 Null →
+        // CallIndirect 报错（D-1b 实施期间发现的根因）。
+        if (m.Type is Z42FuncType funcTy
+            && IsInstanceMethodOf(m.Target.Type, m.MemberName, funcTy.Params.Count, out var qualClass))
+        {
+            var recvReg   = EmitExpr(m.Target);
+            var thunkName = _ctx.GetOrCreateInstanceMethodThunk(qualClass, m.MemberName, funcTy);
+            var dstClos   = Alloc(IrType.Ref);
+            // stackAlloc=false：closure escape 难以静态证明（用户可能存到字段 /
+            // 传 cross-frame）；保守 heap-alloc。等未来 escape 分析升级再开 stack。
+            Emit(new MkClosInstr(dstClos, thunkName, new List<TypedReg> { recvReg }, false));
+            return dstClos;
+        }
+
         // Instance field access
         var objReg = EmitExpr(m.Target);
         var dst2 = Alloc(ToIrType(m.Type));
         Emit(new FieldGetInstr(dst2, objReg, m.MemberName));
         return dst2;
+    }
+
+    /// 2026-05-04 D-1b: 判定 `MemberName` 是否是 receiver 类型上的实例方法
+    /// （而非字段）。返回 true + 输出 qualifiedClassName 用于 thunk 命名。
+    /// 同名 field + method 优先 field（保持已有行为）；arity 用 Z42FuncType.Params 计数。
+    private bool IsInstanceMethodOf(Z42Type recvType, string name, int arity, out string qualClass)
+    {
+        qualClass = "";
+        switch (recvType)
+        {
+            case Z42ClassType ct:
+                if (ct.Fields.ContainsKey(name)) return false;  // field 优先
+                if (ct.Methods.ContainsKey(name)
+                    || ct.Methods.ContainsKey($"{name}${arity}"))
+                {
+                    qualClass = _ctx.QualifyClassName(ct.Name);
+                    return true;
+                }
+                return false;
+            case Z42InstantiatedType inst:
+                var def = inst.Definition;
+                if (def.Fields.ContainsKey(name)) return false;
+                if (def.Methods.ContainsKey(name)
+                    || def.Methods.ContainsKey($"{name}${arity}"))
+                {
+                    qualClass = _ctx.QualifyClassName(def.Name);
+                    return true;
+                }
+                return false;
+            default:
+                return false;
+        }
     }
 
     // ── Assignment ────────────────────────────────────────────────────────────

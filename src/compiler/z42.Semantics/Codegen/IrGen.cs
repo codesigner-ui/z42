@@ -97,6 +97,81 @@ public sealed class IrGen : IEmitterContext
         _funcRefSlots[fqName] = allocated;
         return allocated;
     }
+
+    // 2026-05-04 D-1b instance method group conversion: thunk cache keyed by
+    // `<qualifiedClassName>.<methodName>$<arity>`，value 是 thunk 的 fully-qualified
+    // name（已注册到 _liftedFunctions）。同一 (class, method, arity) 复用 thunk。
+    private readonly Dictionary<string, string> _instanceMethodThunks = new(StringComparer.Ordinal);
+
+    string IEmitterContext.GetOrCreateInstanceMethodThunk(
+        string qualifiedClassName, string methodName, Z42FuncType signature)
+    {
+        int arity = signature.Params.Count;
+        var cacheKey = $"{qualifiedClassName}.{methodName}${arity}";
+        if (_instanceMethodThunks.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        // Thunk 名形如 `<currentNs>.__mg_thunk_<safeClass>_<method>$<arity>__`
+        // safeClass 把 namespace 点替换为 `_`，避免 lookup 时 namespace 解析二义性。
+        var safeClass = qualifiedClassName.Replace('.', '_');
+        var thunkName = $"{QualifyName($"__mg_thunk_{safeClass}_{methodName}${arity}__")}";
+
+        // 构建 thunk IrFunction：
+        //   reg 0     = env (Vec<Value>) — env[0] is the receiver
+        //   reg 1..N  = user args (matching method's signature minus `this`)
+        //   reg N+1   = idxReg (const i32 = 0)
+        //   reg N+2   = recvReg (env[0])
+        //   reg N+3   = retReg (vcall result)
+        var instrs   = new List<IrInstr>();
+        var idxReg   = new TypedReg(arity + 1, IrType.I32);
+        var recvReg  = new TypedReg(arity + 2, IrType.Ref);
+        instrs.Add(new ConstI32Instr(idxReg, 0));
+        instrs.Add(new ArrayGetInstr(recvReg, new TypedReg(0, IrType.Ref), idxReg));
+
+        var argRegs = new List<TypedReg>();
+        for (int i = 0; i < arity; i++)
+            argRegs.Add(new TypedReg(1 + i, FunctionEmitter.ToIrType(signature.Params[i])));
+
+        IrTerminator term;
+        int maxReg;
+        if (signature.Ret == Z42Type.Void)
+        {
+            // void: emit VCall with dst=Ref placeholder (unused); then return
+            var dummyDst = new TypedReg(arity + 3, IrType.Void);
+            instrs.Add(new VCallInstr(dummyDst, recvReg, methodName, argRegs));
+            term = new RetTerm(null);
+            maxReg = arity + 4;
+        }
+        else
+        {
+            var retIr  = FunctionEmitter.ToIrType(signature.Ret);
+            var retReg = new TypedReg(arity + 3, retIr);
+            instrs.Add(new VCallInstr(retReg, recvReg, methodName, argRegs));
+            term = new RetTerm(retReg);
+            maxReg = arity + 4;
+        }
+
+        var block = new IrBlock("entry", instrs, term);
+        var retName = signature.Ret == Z42Type.Void
+            ? "void"
+            : signature.Ret.ToString() ?? "object";
+
+        var thunk = new IrFunction(
+            Name: thunkName,
+            ParamCount: 1 + arity,        // env + user args
+            RetType: retName,
+            ExecMode: "Interp",
+            Blocks: new List<IrBlock> { block },
+            ExceptionTable: null,
+            IsStatic: true,
+            MaxReg: maxReg,
+            LineTable: null,
+            LocalVarTable: null);
+
+        _liftedFunctions.Add(thunk);
+        _instanceMethodThunks[cacheKey] = thunkName;
+        return thunkName;
+    }
     string IEmitterContext.QualifyClassName(string className)
     {
         // L3-G4d: local classes shadow imported ones. If a class exists in the semantic

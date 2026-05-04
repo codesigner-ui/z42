@@ -388,3 +388,114 @@ fn make_weak_then_upgrade_array() {
     let upgraded = exec_builtin(&c, "__obj_upgrade_weak", &[handle]).unwrap();
     assert!(matches!(upgraded, Value::Array(_)));
 }
+
+// ── __delegate_target / __delegate_fn_name / __make_closure (D-1b, 2026-05-04) ──
+
+fn closure(env: Vec<Value>, fn_name: &str) -> Value {
+    Value::Closure {
+        env: crate::gc::GcRef::new(env),
+        fn_name: fn_name.to_string(),
+    }
+}
+
+#[test]
+fn delegate_target_extracts_object_from_closure_env() {
+    let c = ctx();
+    let receiver = obj(&c, "Listener");
+    let cl = closure(vec![receiver.clone()], "thunk_OnTick");
+    let target = exec_builtin(&c, "__delegate_target", &[cl]).unwrap();
+    // 提取出来的对象与原 receiver 引用相等
+    assert_eq!(
+        exec_builtin(&c, "__obj_ref_eq", &[target, receiver]).unwrap(),
+        Value::Bool(true)
+    );
+}
+
+#[test]
+fn delegate_target_returns_null_for_empty_env() {
+    let c = ctx();
+    let cl = closure(vec![], "lambda_no_capture");
+    assert_eq!(exec_builtin(&c, "__delegate_target", &[cl]).unwrap(), Value::Null);
+}
+
+#[test]
+fn delegate_target_returns_null_for_non_object_env_first() {
+    let c = ctx();
+    let cl = closure(vec![i(42), s("x")], "lambda_int_capture");
+    assert_eq!(exec_builtin(&c, "__delegate_target", &[cl]).unwrap(), Value::Null);
+}
+
+#[test]
+fn delegate_target_returns_null_for_funcref() {
+    let c = ctx();
+    let f = Value::FuncRef("Helper".into());
+    assert_eq!(exec_builtin(&c, "__delegate_target", &[f]).unwrap(), Value::Null);
+}
+
+#[test]
+fn delegate_target_returns_null_for_stack_closure() {
+    let c = ctx();
+    let sc = Value::StackClosure { env_idx: 0, fn_name: "stack_lambda".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_target", &[sc]).unwrap(), Value::Null);
+}
+
+#[test]
+fn delegate_fn_name_returns_string() {
+    let c = ctx();
+    let cl = closure(vec![obj(&c, "Foo")], "thunk_Bar");
+    assert_eq!(exec_builtin(&c, "__delegate_fn_name", &[cl]).unwrap(), s("thunk_Bar"));
+}
+
+#[test]
+fn delegate_fn_name_works_for_funcref_and_stack_closure() {
+    let c = ctx();
+    assert_eq!(
+        exec_builtin(&c, "__delegate_fn_name", &[Value::FuncRef("free_fn".into())]).unwrap(),
+        s("free_fn"));
+    let sc = Value::StackClosure { env_idx: 3, fn_name: "stk".into() };
+    assert_eq!(exec_builtin(&c, "__delegate_fn_name", &[sc]).unwrap(), s("stk"));
+}
+
+#[test]
+fn delegate_fn_name_returns_null_for_non_delegate() {
+    let c = ctx();
+    assert_eq!(exec_builtin(&c, "__delegate_fn_name", &[i(5)]).unwrap(), Value::Null);
+    assert_eq!(exec_builtin(&c, "__delegate_fn_name", &[Value::Null]).unwrap(), Value::Null);
+}
+
+#[test]
+fn make_closure_constructs_value_closure() {
+    let c = ctx();
+    let receiver = obj(&c, "Listener");
+    let env_arr = Value::Array(crate::gc::GcRef::new(vec![receiver.clone()]));
+    let cl = exec_builtin(&c, "__make_closure", &[s("thunk_X"), env_arr]).unwrap();
+    match cl {
+        Value::Closure { env, fn_name } => {
+            assert_eq!(fn_name, "thunk_X");
+            // env[0] 应是同一 receiver
+            let env_ref = env.borrow();
+            assert_eq!(env_ref.len(), 1);
+            match &env_ref[0] {
+                Value::Object(_) => {
+                    let upgraded = env_ref[0].clone();
+                    assert_eq!(
+                        exec_builtin(&c, "__obj_ref_eq", &[upgraded, receiver]).unwrap(),
+                        Value::Bool(true)
+                    );
+                }
+                _ => panic!("env[0] should be Object"),
+            }
+        }
+        _ => panic!("expected Closure, got {:?}", cl),
+    }
+}
+
+#[test]
+fn make_closure_returns_null_for_invalid_args() {
+    let c = ctx();
+    // fn_name 不是 string
+    let env_arr = Value::Array(crate::gc::GcRef::new(vec![]));
+    assert_eq!(exec_builtin(&c, "__make_closure", &[i(5), env_arr.clone()]).unwrap(), Value::Null);
+    // env 不是 array
+    assert_eq!(exec_builtin(&c, "__make_closure", &[s("x"), i(5)]).unwrap(), Value::Null);
+}

@@ -68,6 +68,78 @@ pub fn builtin_obj_make_weak(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(ctx.heap().alloc_object(type_desc, Vec::new(), NativeData::WeakRef(weak)))
 }
 
+/// 2026-05-04 D-1b: 提取 delegate 的 captured target（receiver 对象）。
+/// 用于 `Std.WeakRef<TD>` 在 ctor 时拿到 target 后做 `MakeWeak` —— 让多播
+/// 订阅器只持 listener 的弱引用，避免 lapsed listener 内存泄漏。
+///
+/// 语义（lenient，与 `__obj_make_weak` 同款）：
+/// - `Closure { env: [first, ...] }` 当 `first is Object` → 返回该 Object
+///   （instance method 组转换的 thunk 把 receiver 放在 env[0]，D-1b Phase 1）
+/// - `Closure { env: [] }` / `env[0]` 非 Object（如基础类型 / Null）→ Null
+/// - `StackClosure` → Null（stack 上不能 weak hold；用户场景退化 strong）
+/// - `FuncRef` → Null（free function 无 receiver）
+/// - 非 delegate / Null → Null
+pub fn builtin_delegate_target(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    match args.first() {
+        Some(Value::Closure { env, .. }) => {
+            let env_ref = env.borrow();
+            match env_ref.first() {
+                Some(Value::Object(o)) => Ok(Value::Object(o.clone())),
+                Some(Value::Array(a)) => Ok(Value::Array(a.clone())),
+                _ => Ok(Value::Null),
+            }
+        }
+        _ => Ok(Value::Null),
+    }
+}
+
+/// 2026-05-04 D-1b: 提取 Closure 的 fn_name（thunk 函数全限定名）。
+/// 与 `__delegate_target` 配套使用 —— `Std.WeakRef<TD>` 不强持原 handler
+/// （那会反向锁住 receiver），而是存 `(WeakHandle, fnName)`，Get 时用
+/// `__make_closure(fnName, [upgradedTarget])` 重建一个新 Closure。
+///
+/// 语义：
+/// - `Closure { fn_name }` → 返回 fn_name 字符串
+/// - `StackClosure { fn_name }` → 返回 fn_name 字符串
+/// - `FuncRef(name)` → 返回 name
+/// - 其他 → Null
+pub fn builtin_delegate_fn_name(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    match args.first() {
+        Some(Value::Closure { fn_name, .. }) => Ok(Value::Str(fn_name.clone())),
+        Some(Value::StackClosure { fn_name, .. }) => Ok(Value::Str(fn_name.clone())),
+        Some(Value::FuncRef(name)) => Ok(Value::Str(name.clone())),
+        _ => Ok(Value::Null),
+    }
+}
+
+/// 2026-05-04 D-1b: 用给定 fn_name + env 数组构造 heap-allocated Closure。
+/// 与 `__delegate_target` / `__delegate_fn_name` 配套，让 `Std.WeakRef<TD>.Get()`
+/// 在 receiver 仍存活时重建一个等价于原 handler 的 Closure。
+///
+/// 语义：
+/// - args[0]: Value::Str (fn_name)
+/// - args[1]: Value::Array (env Vec<Value>)
+/// - 非 string / 非 array / Null → Null（lenient）
+pub fn builtin_make_closure(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let fn_name = match args.first() {
+        Some(Value::Str(s)) => s.clone(),
+        _ => return Ok(Value::Null),
+    };
+    let env_arr = match args.get(1) {
+        Some(Value::Array(a)) => a.clone(),
+        _ => return Ok(Value::Null),
+    };
+    // 把 Array 里的元素拷贝到 Vec<Value>，再走 heap.alloc_array 拿到新的 GcRef。
+    // 与 jit_mk_clos 同款路径：env 是 GC 管理的 Array → Closure 持其 GcRef。
+    let env_vec: Vec<Value> = env_arr.borrow().iter().cloned().collect();
+    let env_val = ctx.heap().alloc_array(env_vec);
+    let env = match env_val {
+        Value::Array(rc) => rc,
+        _ => return Ok(Value::Null),  // unreachable but lenient
+    };
+    Ok(Value::Closure { env, fn_name })
+}
+
 /// 2026-05-04 expose-weak-ref-builtin (D-1a)：升格 WeakHandle 弱引用。
 /// 目标存活返回原 Object/Array；目标已被回收 / 输入非 WeakHandle / Null →
 /// 返回 Null（lenient 处理，与 `__delegate_eq` 同款）。

@@ -64,4 +64,16 @@ internal interface IEmitterContext
     /// Shared across all call sites of the same `fqName` (去重 — design.md
     /// Decision 1). Returned slot id is consumed by `LoadFnCachedInstr`.
     int GetOrAllocFuncRefSlot(string fqName);
+
+    /// 2026-05-04 D-1b instance method group conversion: get-or-create a thunk
+    /// IrFunction for `obj.Method` 实例方法组转换。返回 thunk 的 fully-qualified
+    /// name；emitter 在调用站发射 `MkClosInstr(dst, thunkName, [recvReg])` 把
+    /// recv 作为 env[0]，thunk 内部 `vcall env[0].method(args)` 转发。同一
+    /// (qualifiedClass, methodName, arity) 共享同一 thunk（去重）。
+    ///
+    /// 必须暴露 thunk 接口而不是直接走现有 lambda 路径，因为 thunk 没有 BoundLambda
+    /// AST —— 由 codegen 侧手工构造 IrFunction，节省 BoundExpr 层合成 lambda 的
+    /// 复杂度。
+    string GetOrCreateInstanceMethodThunk(
+        string qualifiedClassName, string methodName, Z42FuncType signature);
 }

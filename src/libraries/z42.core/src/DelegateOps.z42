@@ -19,4 +19,25 @@ namespace Std;
 public static class DelegateOps {
     [Native("__delegate_eq")]
     public static extern bool ReferenceEquals(object a, object b);
+
+    // 2026-05-04 D-1b：从 delegate 提取 captured target（receiver 对象）。
+    // 用于 `Std.WeakRef<TD>` 在 ctor 时拿到 target 后做 `WeakHandle.MakeWeak`。
+    //
+    // - Closure with env=[obj, ...] where obj is Object/Array → 返回 obj
+    // - Closure with env=[] / env[0] 非 Object → null
+    // - StackClosure / FuncRef / 非 delegate → null（lenient）
+    [Native("__delegate_target")]
+    public static extern object GetTarget(object delegateValue);
+
+    // 2026-05-04 D-1b：提取 delegate 的 fn_name（thunk 函数全限定名）。
+    // 与 GetTarget + MakeClosure 配套：WeakRef 不强持原 handler（那会反向锁住
+    // receiver，weak 无效），而是存 (WeakHandle, fnName)，Get 时重建 Closure。
+    [Native("__delegate_fn_name")]
+    public static extern string GetFnName(object delegateValue);
+
+    // 2026-05-04 D-1b：用 fn_name + env 数组重建 Closure。
+    // env[0] 通常是 receiver 对象（与 instance method group conversion 的
+    // thunk 协议一致：reg 0 = env，env[0] = receiver）。
+    [Native("__make_closure")]
+    public static extern object MakeClosure(string fnName, object[] env);
 }

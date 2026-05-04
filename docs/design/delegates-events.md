@@ -1,6 +1,6 @@
 # z42 Delegates & Events 设计
 
-> **状态**：D1 + D2a + D2b + D-5 + D2c-多播 + D2c-interface + D2d-1 + D2d-2-Action + D-1a + D-7 单播 event + D-6 嵌套 delegate dotted-path 外部引用 + **D-7-residual 单播 event IDisposable token + 严格 access control（E0414）** 已落地（最新 2026-05-04）；D2d-1 = `Std.MulticastFunc<T,R>` + `Std.MulticastPredicate<T>` 双 vec 多播类（含 Predicate.All / Any 短路）+ event keyword 类型校验放宽接受三种 multicast 类型；**D2d-2-Action = `Std.AggregateException` + `Std.MulticastException` 异常聚合类 + `MulticastAction.Invoke(continueOnException=true)` 全跑完后聚合抛**（Func/Predicate 聚合留 D-8b follow-up）；D1 = `delegate` 关键字 / 单播 / 方法组缓存 / stdlib delegate 类型 / TSIG 跨 zpkg 导出；D2a = `MulticastAction<T>` 基础多播 + COW snapshot + IDisposable token + fail-fast 异常路径；D2b = `ISubscription<TD>` 接口 + StrongRef / OnceRef / CompositeRef wrapper + ModeFlags 位运算 mode；MulticastAction 双 vec strong / advanced 通道 + SubscribeAdvanced 重载；D-5 = `__delegate_eq` builtin + `MulticastAction.Unsubscribe(handler)`；D2c-多播 = `event` 关键字（FieldDecl.IsEvent）+ 多播 event field auto-init `new MulticastAction<T>()` + 合成 `add_X`/`remove_X` + `+=`/`-=` desugar；**D2c-interface (I10) = interface body 接受 `event MulticastAction<T> X;` 声明并合成 instance abstract `add_X`/`remove_X` MethodSignatures；class 实现 interface 同名 event 即满足契约**。WeakRef 延后（前置依赖 corelib weak-ref builtin，见 docs/deferred.md D-1）。D2c-单播（event Action<T> 字段 + throw on double-bind + 严格 access control）/ D2d（MulticastFunc + MulticastException）待实施。
+> **状态**：D1 + D2a + D2b + D-5 + D2c-多播 + D2c-interface + D2d-1 + D2d-2-Action + D-1a + D-7 单播 event + D-6 嵌套 delegate dotted-path 外部引用 + D-7-residual 单播 event IDisposable token + 严格 access control（E0414）+ **instance method group conversion + D-1b WeakRef ISubscription wrapper + CompositeRef.Mode.Weak** 已落地（最新 2026-05-04）；D2d-1 = `Std.MulticastFunc<T,R>` + `Std.MulticastPredicate<T>` 双 vec 多播类（含 Predicate.All / Any 短路）+ event keyword 类型校验放宽接受三种 multicast 类型；**D2d-2-Action = `Std.AggregateException` + `Std.MulticastException` 异常聚合类 + `MulticastAction.Invoke(continueOnException=true)` 全跑完后聚合抛**（Func/Predicate 聚合留 D-8b follow-up）；D1 = `delegate` 关键字 / 单播 / 方法组缓存 / stdlib delegate 类型 / TSIG 跨 zpkg 导出；D2a = `MulticastAction<T>` 基础多播 + COW snapshot + IDisposable token + fail-fast 异常路径；D2b = `ISubscription<TD>` 接口 + StrongRef / OnceRef / CompositeRef wrapper + ModeFlags 位运算 mode；MulticastAction 双 vec strong / advanced 通道 + SubscribeAdvanced 重载；D-5 = `__delegate_eq` builtin + `MulticastAction.Unsubscribe(handler)`；D2c-多播 = `event` 关键字（FieldDecl.IsEvent）+ 多播 event field auto-init `new MulticastAction<T>()` + 合成 `add_X`/`remove_X` + `+=`/`-=` desugar；**D2c-interface (I10) = interface body 接受 `event MulticastAction<T> X;` 声明并合成 instance abstract `add_X`/`remove_X` MethodSignatures；class 实现 interface 同名 event 即满足契约**。WeakRef 延后（前置依赖 corelib weak-ref builtin，见 docs/deferred.md D-1）。D2c-单播（event Action<T> 字段 + throw on double-bind + 严格 access control）/ D2d（MulticastFunc + MulticastException）待实施。
 > **历史状态**：L2/L3 前瞻性设计草案（2026-05-01 定稿）
 > **定位**：与 `generics.md` / `concurrency.md` / `static-abstract-interface.md` 同级 — 长期规范，等具体 spec/changes/ 启动时实施
 > **参考**：C# delegate/event（视觉与心智蓝本）+ Rust/Kotlin/Swift（单播/多播分离）+ Rx/Combine `Subject` 体系（订阅策略 wrapper）
@@ -221,6 +221,24 @@ public sealed class WeakRef<TDelegate> : ISubscription<TDelegate>
     where TDelegate : Delegate {
     public WeakRef(TDelegate handler);
 }
+// 2026-05-04 D-1b 实施：WeakRef **不**强持原 handler（那会反向锁住 receiver
+// 因为 Closure 自己强持 env=[receiver]，weak 失效）。改为构造时拆解为：
+//   - WeakHandle to receiver（弱引用，不锁 GC）
+//   - fnName: string（thunk 函数全限定名）
+// Get 时通过 `DelegateOps.MakeClosure(fnName, [WeakHandle.Upgrade(...)])` 重建
+// 一个新的 Closure。Listener 被 GC 回收后 Upgrade 返回 null，Get 返回 null，
+// IsAlive 返回 false，MulticastAction.Invoke 自然短路。
+//
+// 配套基础（D-1b Phase 1）：instance method group conversion `obj.Method`
+// 编译期合成 thunk function `__mg_thunk_<Class>_<Method>$<arity>__`，emit
+// `MkClos(thunk, [recv])`。Thunk 内部 vcall env[0].method(args)。这套约定
+// 让 receiver 落在 env[0]，配合 `__delegate_target` builtin 提取出来弱化。
+//
+// 配套 corelib builtins（D-1b Phase 2）：
+//   - `__delegate_target(d) -> Object?`：从 Closure 提取 env[0]
+//   - `__delegate_fn_name(d) -> string`：提取 fn_name
+//   - `__make_closure(name, env) -> Closure`：用 (name, env array) 重建 Closure
+// stdlib 端通过 `Std.DelegateOps` 静态类暴露这三个。
 
 // 一次性包装 —— OnInvoked 第一次后 IsAlive = false
 public sealed class OnceRef<TDelegate> : ISubscription<TDelegate>
