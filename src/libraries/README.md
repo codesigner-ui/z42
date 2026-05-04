@@ -8,7 +8,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 
 | 目录 | 包名 | 内容 |
 |------|------|------|
-| `z42.core/` | `z42.core` | 核心类型：`Object`、`String`、`Type`、`Assert`、`Convert`、核心接口；`Collections/` 子目录内含基础泛型集合 `List<T>` / `Dictionary<K,V>` |
+| `z42.core/` | `z42.core` | 核心类型 + 隐式 prelude；按子目录组织：`Primitives/`（6 个 primitive 成员方法）/ `Delegates/`（callable + multicast + 订阅）/ `Protocols/`（核心接口）/ `Exceptions/`（Exception 树）/ `Collections/`（List / Dict / KVP）；根留 Object / Type / String / Convert / Assert / GC / Disposable。详见 [src/README.md](z42.core/src/README.md) |
 | `z42.collections/` | `z42.collections` | 次级集合类型：`Queue`、`Stack`（未来 `LinkedList` / `SortedDictionary` / `PriorityQueue`） |
 | `z42.io/` | `z42.io` | IO 类型：`Console`、`File`、`Path`、`Environment` |
 | `z42.math/` | `z42.math` | 数学函数：`Math` |

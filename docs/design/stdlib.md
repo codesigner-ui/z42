@@ -277,19 +277,29 @@ User `.z42.toml` files must NOT declare it — it is injected automatically.
 
 ```
 src/libraries/z42.core/src/
-├── Object.z42          # ToString, Equals, GetHashCode stubs
-├── String.z42 + primitive structs (Int/Long/Double/Float/Bool/Char)
-├── Type.z42            # runtime type object (typeof result)
-├── Convert.z42         # Convert.ToInt32, Convert.ToDouble, Convert.ToString
-├── Assert.z42          # Assert.Equal, Assert.True, Assert.Null, …
-├── IEquatable.z42      # interface IEquatable<T>
-├── IComparable.z42     # interface IComparable<T>
-├── IDisposable.z42     # interface IDisposable
-├── INumber.z42         # interface INumber<T> (op_Add / op_Subtract / …)
-└── Collections/        # 基础泛型集合三件套（namespace Std.Collections）
-    ├── List.z42        # List<T>       — 纯脚本动态数组
-    ├── Dictionary.z42  # Dictionary<K,V> — 纯脚本开放寻址哈希表
-    └── HashSet.z42     # （未来实现）
+├── README.md             # 子目录职责 + 包内依赖说明
+├── Object.z42            # ToString / Equals / GetHashCode 协议方法
+├── Type.z42              # 运行时类型对象（typeof 结果）
+├── String.z42            # string primitive 成员方法
+├── Primitives/           # 6 个数值/布尔 primitive 成员方法
+│   ├── Bool.z42 / Char.z42 / Int.z42 / Long.z42 / Float.z42 / Double.z42
+├── Delegates/            # callable + multicast + 订阅策略整套（A1 + A4）
+│   ├── Delegates.z42 / DelegateOps.z42
+│   ├── ISubscription.z42 / SubscriptionRefs.z42 / WeakHandle.z42
+│   └── MulticastAction.z42 / MulticastFunc.z42 / MulticastPredicate.z42
+├── Protocols/            # 接口契约集中（A2）
+│   ├── IEquatable.z42 / IComparable.z42 / IDisposable.z42
+│   ├── IFormattable.z42 / INumber.z42
+│   └── IEnumerable.z42 / IEnumerator.z42 / IComparer.z42 / IEqualityComparer.z42
+├── Exceptions/           # Exception 基类 + 11 标准子类（A3）
+│   ├── Exception.z42 / AggregateException.z42 / MulticastException.z42
+│   └── ArgumentException.z42 / NullReferenceException.z42 / ...
+├── Collections/          # 基础泛型集合（A5；namespace Std.Collections）
+│   ├── KeyValuePair.z42 / List.z42 / Dictionary.z42
+├── Convert.z42           # Convert.ToInt32 / ToDouble / ToString
+├── Assert.z42            # Assert.Equal / True / Null / Contains
+├── GC.z42                # Std.GC.Collect / GetMemorySize / SetMode
+└── Disposable.z42        # IDisposable 通用实现 + Disposable.From(Action) 工厂
 ```
 
 **2026-04-25 reorganize-stdlib-packages W1 调整**：
