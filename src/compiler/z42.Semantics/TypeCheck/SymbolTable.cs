@@ -237,6 +237,10 @@ public sealed class SymbolTable
                             ft.ParamTypes.Select(ResolveType).ToList(),
                             ResolveType(ft.ReturnType)),
         GenericType gt => ResolveGenericType(gt),
+        // 2026-05-04 D-6: nested delegate dotted-path 外部引用 (`Outer.Inner` 类型表达式)。
+        // SymbolCollector 已注册 qualified key (`Btn.OnClick`)；这里把 MemberType
+        // 拍平成 qualified key 查 Delegates。当前仅支持 1 层 + 非泛型嵌套 delegate。
+        MemberType mt => ResolveMemberType(mt),
         NamedType  nt => nt.Name switch
         {
             "var"             => Z42Type.Unknown,
@@ -253,6 +257,28 @@ public sealed class SymbolTable
         },
         _ => Z42Type.Unknown
     };
+
+    /// 2026-05-04 D-6: dotted-path nested type lookup.
+    /// 把 MemberType 链拍平成 "Owner.NestedName" qualified key，查 Delegates map。
+    /// 当前仅支持：
+    ///   - Left 是 class（包括嵌套 chain 顶端）
+    ///   - Right 命中 Delegates qualified key（嵌套 delegate；非泛型）
+    /// 不支持的情况给清晰错误，上层 TypeChecker 接到 Z42Type.Unknown 后报 E0401。
+    private Z42Type ResolveMemberType(MemberType mt)
+    {
+        // 提取左侧 class 名称：Left 必须最终 resolve 到一个 class（可链式嵌套）。
+        // 当前嵌套深度仅 1 层（class 内的 delegate），所以 Left 只期望是 NamedType。
+        if (mt.Left is not NamedType leftNt)
+        {
+            // 深嵌套 (e.g. A.B.C) 或非简单类型 — 留给后续 deferred spec。
+            return Z42Type.Unknown;
+        }
+        var qualifiedKey = $"{leftNt.Name}.{mt.Right}";
+        if (Delegates.TryGetValue(qualifiedKey, out var di) && di.TypeParams.Count == 0)
+            return di.Signature;
+        // 泛型 nested delegate 暂不支持，给清晰可识别的 Unknown 让上层报 E0401。
+        return Z42Type.Unknown;
+    }
 
     private Z42GenericParamType MakeTypeParam(string name)
     {

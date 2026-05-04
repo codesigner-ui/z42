@@ -457,6 +457,12 @@ internal static class StmtParser
             }
             if (depth != 0) return false;
         }
+        // 2026-05-04 D-6: 可选 `.Ident.Ident...` dotted-path（嵌套 delegate 外部引用）
+        while (cursor.Peek(i).Kind == TokenKind.Dot
+            && cursor.Peek(i + 1).Kind == TokenKind.Identifier)
+        {
+            i += 2;
+        }
         // 可选 `?` 或 `[]`（顺序：先 `?` 再 `[]`，或仅一种）
         if (cursor.Peek(i).Kind == TokenKind.Question) i++;
         if (cursor.Peek(i).Kind == TokenKind.LBracket
@@ -530,6 +536,12 @@ internal static class StmtParser
                 i++;
             }
             if (depth != 0) return -1;
+        }
+        // 2026-05-04 D-6: Optional dotted-path `.Ident.Ident...`（嵌套 delegate 外部引用）
+        while (cursor.Peek(i).Kind == TokenKind.Dot
+            && cursor.Peek(i + 1).Kind == TokenKind.Identifier)
+        {
+            i += 2;
         }
         // Optional `?` then optional `[]`
         if (cursor.Peek(i).Kind == TokenKind.Question) i++;

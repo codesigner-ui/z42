@@ -519,6 +519,13 @@ internal static partial class TopLevelParser
             }
             if (depth != 0) return false;
         }
+        // 2026-05-04 D-6: optional dotted-path (`Outer.Inner` 嵌套 delegate 类型外部引用)。
+        // 类型可以是 `Btn.OnClick handler;` —— 消费 0+ 次 `.Ident`。
+        while (cursor.Current.Kind == TokenKind.Dot
+            && cursor.Peek(1).Kind == TokenKind.Identifier)
+        {
+            cursor = cursor.Advance(2); // skip . + Ident
+        }
         // Optional array suffix []
         if (cursor.Current.Kind == TokenKind.LBracket
             && cursor.Peek(1).Kind == TokenKind.RBracket)

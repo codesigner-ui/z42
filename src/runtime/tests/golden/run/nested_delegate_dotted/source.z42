@@ -1,0 +1,44 @@
+// 2026-05-04 D-6 add-nested-delegate-dotted-path golden.
+// 端到端验证：嵌套 delegate 在外部以 dotted-path（Owner.Inner）形式被引用为
+// 字段类型 / 参数 / 返回类型，编译 + 运行通过。
+namespace Demo;
+using Std.IO;
+
+public class Btn {
+    public delegate void OnClick(int x);
+    public delegate int Compute(int a, int b);
+}
+
+// 字段类型用 dotted-path
+public class Listener {
+    public Btn.OnClick handler;
+}
+
+// 参数类型 + 返回类型都用 dotted-path
+Btn.OnClick MakePrinter() {
+    return (int x) => Console.WriteLine($"clicked: {x}");
+}
+
+void RunOnce(Btn.OnClick h, int v) {
+    h(v);
+}
+
+int RunCompute(Btn.Compute f, int a, int b) {
+    return f(a, b);
+}
+
+void Main() {
+    // 1) 通过 helper 拿一个 dotted-path delegate 类型的值
+    Btn.OnClick h = MakePrinter();
+    h(10);                              // clicked: 10
+
+    // 2) 字段是 dotted-path delegate，赋值 + 调用（z42 当前要求先把字段提到 local 再 invoke）
+    var li = new Listener();
+    li.handler = (int x) => Console.WriteLine($"li: {x}");
+    Btn.OnClick lh = li.handler;
+    lh(20);                             // li: 20
+
+    // 3) 参数 + 返回值是 dotted-path delegate
+    RunOnce(h, 30);                     // clicked: 30
+    Console.WriteLine(RunCompute((int a, int b) => a + b, 7, 8));  // 15
+}

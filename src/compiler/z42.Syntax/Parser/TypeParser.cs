@@ -106,6 +106,25 @@ internal static class TypeParser
             ty = new GenericType(name, typeArgs, span);
         }
 
+        // T.U.V — dotted-path (D-6: nested delegate external access)。
+        // 左结合：`A.B.C` → MemberType(MemberType(A, B), C)。
+        // extraClose=true 时跳过：`Foo<Bar<int>>.X` 当前不支持，留给后续 spec。
+        // 仅支持 `Right` 是裸 Ident（不支持 `Outer.Inner<T>`，留待 deferred）。
+        if (!extraClose)
+        {
+            while (cursor.Current.Kind == TokenKind.Dot
+                && TokenDefs.TypeKeywords.Contains(cursor.Peek(1).Kind))
+            {
+                cursor = cursor.Advance(); // skip .
+                var rightSpan = cursor.Current.Span;
+                var rightName = cursor.Current.Text;
+                cursor = cursor.Advance(); // consume Ident
+                var combinedSpan = new Span(
+                    span.Start, rightSpan.End, span.Line, span.Column, span.File);
+                ty = new MemberType(ty, rightName, combinedSpan);
+            }
+        }
+
         // T[] — array type（generic 之后也允许，以支持 `T<U,V>[]`）。
         // extraClose=true 时跳过 —— GtGt 已 implicitly 关闭外层 generic，
         // 后续 `[]` `?` 属于外层而非本级（如 `Foo<Bar<int>>[]` 中 `[]` 附 Foo）。

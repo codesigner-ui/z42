@@ -25,6 +25,7 @@
 - **触发原因**：z42 现有 `impl<T> ISubscription<T> { ... }` 跨 generic interface 的扩展方法机制未验证。D2b v1 仅支持 `impl<T> Action<T> { public ... AsOnce() }`（具体 delegate 类型上的扩展），ISubscription 实例的链式 chain 不可用。
 - **前置依赖**：验证 / 修复 z42 generic interface 上的 impl 扩展；或实现 wrapper 类自身的 fluent API（`composite.WithMode(Once)` 已可用，只是不通过 `.AsOnce()` 链式）。
 - **触发条件**：D2b 后用户希望 `someSubscription.AsOnce().AsWeak()` 这样链式融合。当前用 `new CompositeRef<T>(handler, Mode.Once | Mode.Weak)` 直接构造也能达到相同结果。
+- **2026-05-04 重新评估**（探索后实际工作量比原描述高）：`SymbolCollector.Impls.cs:19-23` 的 switch 仅接受 `NamedType`，**不接受** generic 实例化 target（`ISubscription<T>` / `Action<T>` 都不行）。要做需 Parser/AST/SymbolCollector 三层联动，2-4 hr 真实编译器工作。Workaround `new CompositeRef<T>(h, Once|Weak)` + `.WithMode(...)` 在 CompositeRef 实例上链式已覆盖功能需求（仅美感差），**deprioritize**：等真有用户因美感受阻再启动。
 
 ## D-3：N>4 arity Action / Func（D1c 延后）
 
@@ -34,6 +35,7 @@
 - **前置依赖**：z42 自举完成（编译器用 z42 实现），或独立 spec 用 C# 写代码生成。
 - **触发条件**：用户实际需要 5+ arity callable（按 C# 经验罕见，<5% 场景）。
 - **当前状态**：手写 0-4 arity（覆盖 95% 场景）。
+- **2026-05-04 重新评估**：探索 examples/ + tests/ 确认 0 个 5+ arity 真实使用；compiler / runtime 无 per-arity 特殊路径，加 5-16 是纯机械重复。**结论：保持 deferred**。等真有用户场景；自举完成后用 z42 自身写生成器（`tools/gen-delegates.z42`）。当前不做 C# 一次性生成器，避免引入永久的"非 z42 写的 z42 stdlib 源"反向依赖。
 
 ## D-4：协变 / 逆变（`<in T, out R>` 等）（D1 延后）
 
@@ -42,14 +44,6 @@
 - **触发原因**：协变 / 逆变涉及泛型 type-arg 关系约束，z42 当前 generic 系统未做这类规则，加进来牵扯 ImportedSymbols / RebuildFuncType / 子类型规则全链路。
 - **前置依赖**：L3 后期完整 type-system 规划；与 generics.md / static-abstract-interface.md 协同。
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
-
-## D-6：嵌套 delegate dotted-path 外部引用（D1a 延后）
-
-- **来源**：`spec/archive/2026-05-02-add-delegate-type/` Open Question 1
-- **触发原因**：D1a 注册嵌套 delegate 时同时写入 simple key + qualified key (`Btn.OnClick`)，但 ResolveType NamedType 路径仅消费 simple key；外部 `Btn.OnClick` dotted-path 解析需要 MemberType 协议。
-- **前置依赖**：z42 类型系统对 nested-type member access (`Class.NestedType`) 的支持；当前类内引用走 simple name 已足够。
-- **触发条件**：用户需要在外部用 `Btn.OnClick` 而非 `using` 后用 simple `OnClick`。
-- **当前状态**：嵌套 delegate 类内部直接 `OnClick` 引用工作；外部需要先把它声明为顶层。
 
 ## D-7-residual：单播 event 的 IDisposable token + 严格 access control
 
@@ -60,17 +54,37 @@
   - 严格 access control：外部 `obj.X.Invoke(...)` / `obj.X = ...` 报 E0407（多播 + 单播都缺）
 - **触发条件**：用户实际需要 `using (token = btn.OnKey += h)` 风格 + 用户希望强制不让外部直接 invoke event field
 
-## D-8b：D2d Func/Predicate 异常聚合 + MulticastException<R>
+## D-8b-1：stdlib `MulticastException<R>` 类（structural foundation）
 
-- **来源**：D2d 拆分后 D2d-2 仅 Action 路径落地（2026-05-04）；Func/Predicate 留本条
+- **来源**：D-8b 原条目拆分（2026-05-04 重新评估）；本条仅"加 generic exception 类 + 不依赖类型过滤的最小集成"
 - **设计文档**：`docs/design/delegates-events.md` §7
-- **触发原因**：`MulticastException<R>` 泛型版本 + Results 数组占位（成功 = 返回值，失败 = default(R)）需要类型系统支持泛型异常类继承 + R 类型的 default value computation。当前 z42 generic + exception 组合未验证。
-- **前置依赖**：z42 generic class 继承非泛型 base class 跨 catch handler 子类型匹配；R 类型 default value 计算（int=0/bool=false/string=null/Class=null）。
-- **触发条件**：用户实际需要 MulticastFunc / MulticastPredicate 全跑完模式（如 plug-in 系统多实现 vote 投票）。
 - **缺失实现**：
-  - stdlib `MulticastException<R>` 泛型继承 MulticastException（含 Results: R[]）
-  - `MulticastFunc.Invoke(continueOnException=true)` 累积 Results + Failures，抛 `MulticastException<R>`
-  - `MulticastPredicate.Invoke(continueOnException=true)` 同款（R=bool）
+  - stdlib `Std.MulticastException<R>` 泛型类，继承 `Std.MulticastException`（非泛型 base 已存在），新增 `Results: R[]` 字段
+  - 构造器接受 `failures / failureIndices / totalHandlers / results` 四个数组
+- **不在本条范围**：MulticastFunc / MulticastPredicate 的 `continueOnException=true` 通路 —— 那需要 catch-by-type 真正生效（D-8b-2）才能让用户在 catch handler 里捕获 `MulticastException<int>` 而非 wildcard
+- **触发条件**：D-8b-2 落地后立刻能接入；当前可独立落地作为 type 定义（用户即便不接 invoke 通路也可手动 throw）
+
+## D-8b-2：catch-by-generic-type 类型过滤（编译器 + VM）
+
+- **来源**：D-8b 探索 2026-05-04 发现 —— `BoundCatchClause` 不携带异常类型，所有 catch 当 wildcard 处理，**`catch (MulticastException<int> e)` 无法过滤**
+- **触发原因**：在 D-8b-1 落地 `MulticastException<R>` 后，用户写 `try { ... } catch (MulticastException<int> e) { ... }` 不会按类型过滤，e 会捕获所有异常 —— 类型断言假象
+- **前置依赖**：
+  - Parser 保留 catch clause 的 type expression（`catch (T e)` 中的 `T`）
+  - TypeChecker 把类型存入 `BoundCatchClause`
+  - IR `IrExceptionEntry.CatchType` 存全限定名（含 type args 序列化）
+  - VM `exec_throw` / catch 分发期检查 thrown value 是否 instance-of CatchType（包括泛型子类匹配）
+- **触发条件**：D-8b-1 落地后，用户尝试 catch generic exception 子类时；或任意场景需要"按类型过滤异常"
+
+## D-8b-3：`default(R)` 表达式（IR + VM 元素初始化）
+
+- **来源**：D-8b 探索 2026-05-04 发现 —— z42 当前没有 `default(T)` 表达式
+- **触发原因**：`MulticastException<R>.Results[i]` 在某索引失败时需要占位值（int=0 / bool=false / string=null / Class=null）。手动 sentinel 不通用
+- **前置依赖**：
+  - Parser/AST 加 `DefaultExpr(TypeExpr)` 节点
+  - TypeChecker 接受任意类型，得到该类型的 zero-init 值
+  - IR codegen emit `Const0` 系列 / `ConstNull`，或加新 `DefaultOf(typeId)` 指令
+  - 跨 generic param `default(T)` 在 monomorphize 期解析具体类型
+- **触发条件**：D-8b-1 落地后，MulticastFunc 真要走 continueOnException 路径填 Results placeholder 时
 
 ---
 
@@ -88,3 +102,7 @@
 - **D-10**（13_assert string.Contains 误指 LinkedList.Contains）：2026-05-04 排查发现并不存在真实的 dispatch bug。
   现象由两层 stale artifact 叠加造成：① D-9 commit (`bddc818 fix-default-param-cross-cu`) 已修复底层默认参数路径，但 `artifacts/z42/libs/z42.core.zpkg` 没同步，VM 仍加载旧 stdlib IR；② 多个 multicast/event golden 的 `source.zbc` 也是旧编译器产出。
   根因是 `./scripts/test-vm.sh` 入口未强制重建 stdlib + golden，由 `spec/archive/2026-05-04-fix-test-vm-stale-artifacts/` 修复。条目从此移除。
+
+- **D-6**（嵌套 delegate dotted-path 外部引用）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-nested-delegate-dotted-path/` 实施。
+  AST 加 `MemberType(Left, Right)` 节点，TypeParser dotted-path lookahead，SymbolTable.ResolveMemberType 拍平为 qualified key 查 Delegates。
+  v1 仅支持 1 层嵌套 + 非泛型；深嵌套 / 嵌套泛型 parser 接受但 lookup 给 Unknown，留待后续 spec。

@@ -123,7 +123,10 @@
       "Bash(pkill -f \"dotnet test\")",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll build src/runtime/tests/golden/run/delegate_d1b_method_group/source.z42 --emit zbc -o /tmp/d1b.zbc)",
       "Bash(dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll src/runtime/tests/golden/run/delegate_d1b_method_group/source.z42 --emit zbc -o /tmp/d1b.zbc)",
-      "Bash(./artifacts/rust/debug/z42vm /tmp/test_contains/source.zbc)"
+      "Bash(./artifacts/rust/debug/z42vm /tmp/test_contains/source.zbc)",
+      "Bash(xargs -I {} sh -c 'echo \"=== {} ===\" && head -40 {}')",
+      "Bash(dotnet /Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll /Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/run/nested_delegate_dotted/source.z42 --emit zbc -o /tmp/nested_test.zbc)",
+      "Bash(./artifacts/rust/debug/z42vm /tmp/nested_test.zbc)"
     ],
     "additionalDirectories": [
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",

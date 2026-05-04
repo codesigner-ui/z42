@@ -244,6 +244,7 @@ public sealed record OptionType(TypeExpr Inner, Span Span) : TypeExpr(Span);   /
 public sealed record VoidType(Span Span)                 : TypeExpr(Span);
 public sealed record ArrayType(TypeExpr Element, Span Span) : TypeExpr(Span);  // T[]
 public sealed record GenericType(string Name, List<TypeExpr> TypeArgs, Span Span) : TypeExpr(Span);  // Box<int>, Dict<K,V>
+public sealed record MemberType(TypeExpr Left, string Right, Span Span) : TypeExpr(Span);  // Outer.Inner (D-6: nested delegate dotted-path)
 
 /// Function type `(T1, T2) -> R`. Equivalent to C# `Func<T1, T2, R>` /
 /// `Action<T1, T2>` (resolved as same `Z42FuncType` in the semantic layer).
