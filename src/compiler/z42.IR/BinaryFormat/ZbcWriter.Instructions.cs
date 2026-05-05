@@ -80,6 +80,21 @@ public static partial class ZbcWriter
                 w.Write((uint)pool.Idx(i.Func));
                 WriteArgs(w, i.Args);
                 break;
+            // Spec impl-ref-out-in-runtime: address-load opcodes
+            case LoadLocalAddrInstr i:
+                w.Write(Opcodes.LoadLocalAddr); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Slot);
+                break;
+            case LoadElemAddrInstr i:
+                w.Write(Opcodes.LoadElemAddr); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Arr);
+                WriteReg(w, i.Idx);
+                break;
+            case LoadFieldAddrInstr i:
+                w.Write(Opcodes.LoadFieldAddr); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                WriteReg(w, i.Obj);
+                w.Write((uint)pool.Idx(i.FieldName));
+                break;
             case LoadFnInstr i:
                 w.Write(Opcodes.LoadFn); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Func));
@@ -276,6 +291,7 @@ public static partial class ZbcWriter
             case StaticSetInstr i:  pool.Intern(i.Field); break;
             case CallNativeInstr i:
                 pool.Intern(i.Module); pool.Intern(i.TypeName); pool.Intern(i.Symbol); break;
+            case LoadFieldAddrInstr i: pool.Intern(i.FieldName); break;
         }
     }
 
@@ -327,6 +343,9 @@ public static partial class ZbcWriter
             case ToStrInstr i:     v(i.Dst); v(i.Src); break;
             case StrConcatInstr i: v(i.Dst); v(i.A); v(i.B); break;
             case CallInstr i:   v(i.Dst); foreach (var a in i.Args) v(a); break;
+            case LoadLocalAddrInstr i: v(i.Dst); v(i.Slot); break;
+            case LoadElemAddrInstr i:  v(i.Dst); v(i.Arr); v(i.Idx); break;
+            case LoadFieldAddrInstr i: v(i.Dst); v(i.Obj); break;
             case LoadFnInstr i: v(i.Dst); break;
             case LoadFnCachedInstr i: v(i.Dst); break;
             case CallIndirectInstr i: v(i.Dst); v(i.Callee); foreach (var a in i.Args) v(a); break;

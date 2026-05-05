@@ -1,0 +1,12 @@
+// Spec impl-ref-out-in-runtime: 基础 ref 修改 caller local 场景。
+// 期望：c 在 Increment(ref c) 后被修改为 1，print 输出 1。
+
+void Increment(ref int x) {
+    x = x + 1;
+}
+
+void Main() {
+    var c = 0;
+    Increment(ref c);
+    Console.WriteLine(c);
+}

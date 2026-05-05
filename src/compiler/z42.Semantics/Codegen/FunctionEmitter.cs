@@ -144,10 +144,40 @@ internal sealed partial class FunctionEmitter
         // L3-G3a: method constraint lookup uses `{ClassName}.{MethodName}` key
         var constraints = IrGen.BuildConstraintList(
             $"{className}.{method.Name}", method.TypeParams, _ctx.SemanticModel?.FuncConstraints);
+        // Spec impl-ref-out-in-runtime: surface ref/out/in modifiers on
+        // each parameter into IrFunction.ParamModifiers (informational; VM
+        // detects ref args at runtime via Value::Ref tag — this list lets
+        // tooling render source-level shape).
+        var paramMods = BuildParamModifiers(method.Params, paramOffset);
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
             IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: method.TypeParams,
-            TypeParamConstraints: constraints);
+            TypeParamConstraints: constraints,
+            ParamModifiers: paramMods);
+    }
+
+    /// Spec impl-ref-out-in-runtime: convert `Param.Modifier` enum values to
+    /// `byte` codes (0=None, 1=Ref, 2=Out, 3=In). Returns null when no
+    /// param has a non-None modifier (saves a few bytes in zbc and keeps
+    /// existing functions byte-identical).
+    private static List<byte>? BuildParamModifiers(
+        IReadOnlyList<Param> parms, int leadingOffset = 0)
+    {
+        if (parms.All(p => p.Modifier == ParamModifier.None)) return null;
+        var list = new List<byte>(parms.Count + leadingOffset);
+        // Leading offset reserved for `this` (instance methods); always None.
+        for (int i = 0; i < leadingOffset; i++) list.Add(0);
+        foreach (var p in parms)
+        {
+            list.Add(p.Modifier switch
+            {
+                ParamModifier.Ref => 1,
+                ParamModifier.Out => 2,
+                ParamModifier.In  => 3,
+                _ => 0,
+            });
+        }
+        return list;
     }
 
     /// 选择 base ctor 的 method-table key（base class 的 Methods 字典里）。
@@ -200,10 +230,12 @@ internal sealed partial class FunctionEmitter
         var localVars = SnapshotLocalVarTable();
         var constraints = IrGen.BuildConstraintList(
             fn.Name, fn.TypeParams, _ctx.SemanticModel?.FuncConstraints);
+        var paramMods = BuildParamModifiers(fn.Params);
         return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
             "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: fn.TypeParams,
-            TypeParamConstraints: constraints);
+            TypeParamConstraints: constraints,
+            ParamModifiers: paramMods);
     }
 
     internal IrFunction EmitStaticInit(CompilationUnit cu)

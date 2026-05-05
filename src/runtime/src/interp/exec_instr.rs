@@ -161,6 +161,50 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             frame.set(*dst, Value::Str(s));
         }
 
+        // ── Address-load (spec impl-ref-out-in-runtime) ─────────────────────
+        // Produce a Value::Ref pointing at the named location. Callers emit
+        // these for `ref`/`out`/`in` arg expressions before the Call; the
+        // Ref flows through Call.args; callee's Frame::get_deref /
+        // set_thru_ref transparently follow it.
+        Instruction::LoadLocalAddr { dst, slot } => {
+            let depth = ctx.frame_stack_depth();
+            // Current frame is the most recent push (depth - 1).
+            let frame_idx = (depth.saturating_sub(1)) as u32;
+            frame.set(*dst, Value::Ref {
+                kind: crate::metadata::types::RefKind::Stack {
+                    frame_idx, slot: *slot,
+                }
+            });
+        }
+        Instruction::LoadElemAddr { dst, arr, idx } => {
+            let arr_val = frame.get(*arr)?;
+            let idx_val = to_usize(frame.get(*idx)?, "LoadElemAddr index")?;
+            match arr_val {
+                Value::Array(rc) => {
+                    frame.set(*dst, Value::Ref {
+                        kind: crate::metadata::types::RefKind::Array {
+                            gc_ref: rc.clone(), idx: idx_val,
+                        }
+                    });
+                }
+                other => bail!("LoadElemAddr: expected array, got {:?}", other),
+            }
+        }
+        Instruction::LoadFieldAddr { dst, obj, field_name } => {
+            let obj_val = frame.get(*obj)?;
+            match obj_val {
+                Value::Object(rc) => {
+                    frame.set(*dst, Value::Ref {
+                        kind: crate::metadata::types::RefKind::Field {
+                            gc_ref: rc.clone(),
+                            field_name: field_name.clone(),
+                        }
+                    });
+                }
+                other => bail!("LoadFieldAddr: expected object, got {:?}", other),
+            }
+        }
+
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;

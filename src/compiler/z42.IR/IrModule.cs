@@ -95,7 +95,14 @@ public sealed record IrFunction(
     /// Resolved constraints per type parameter (L3-G3a). Aligned by index with
     /// `TypeParams` when both are non-null. Each entry may be "empty" (no flags/base/interfaces)
     /// to signal that the parameter is unconstrained.
-    List<IrConstraintBundle>? TypeParamConstraints = null);
+    List<IrConstraintBundle>? TypeParamConstraints = null,
+    /// Spec impl-ref-out-in-runtime: per-parameter modifier bytes
+    /// (0=None, 1=Ref, 2=Out, 3=In). Aligned by index with the parameter
+    /// list. Null or all-zero = no ref/out/in params (informational only;
+    /// VM does not require this for transparent deref since `Value::Ref`
+    /// in arg positions is detected at function entry — this list lets
+    /// tooling / debugger surface the source-level modifier).
+    List<byte>? ParamModifiers = null);
 
 /// An entry in a function's local variable table: register RegId holds variable Name.
 public sealed record IrLocalVarEntry(string Name, int RegId);
@@ -145,6 +152,21 @@ public sealed record ToStrInstr(TypedReg Dst, TypedReg Src)            : IrInstr
 // ── Calls ─────────────────────────────────────────────────────────────────────
 
 public sealed record CallInstr(TypedReg Dst, string Func, List<TypedReg> Args) : IrInstr;
+
+// ── Address-load (spec impl-ref-out-in-runtime) ──────────────────────────────
+// 由 Codegen 在 ref/out/in callsite 实参展开时 emit；产生 Value::Ref。
+// 所有三个指令的 dst 类型为 IrType.Ref（一种新的"地址值"逻辑类型；
+// 当前 IrType 没有专门 Ref tag，使用 Unknown 即可——VM 不依赖 IR 类型
+// 区分 Ref，仅靠 Value 自身 enum tag）。
+
+/// 产生指向当前 frame 的 reg[Slot] 的 Value::Ref::Stack。
+public sealed record LoadLocalAddrInstr(TypedReg Dst, TypedReg Slot) : IrInstr;
+
+/// 产生指向 Arr[Idx] 的 Value::Ref::Array。
+public sealed record LoadElemAddrInstr(TypedReg Dst, TypedReg Arr, TypedReg Idx) : IrInstr;
+
+/// 产生指向 Obj.FieldName 的 Value::Ref::Field。
+public sealed record LoadFieldAddrInstr(TypedReg Dst, TypedReg Obj, string FieldName) : IrInstr;
 public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args) : IrInstr;
 /// Push a function reference value onto the operand stack. L2 no-capture lambda
 /// literal lowers to this instruction with `Func` pointing at a lifted function.

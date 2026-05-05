@@ -172,6 +172,10 @@ public static class ZasmWriter
             GeInstr i => $"{Reg(i.Dst)} = ge  {Reg(i.A)}, {Reg(i.B)}",
 
             CallInstr    i => $"{Reg(i.Dst)} = call  @{i.Func}{FormatArgList(i.Args)}",
+            // Spec impl-ref-out-in-runtime: address-load text format
+            LoadLocalAddrInstr i => $"{Reg(i.Dst)} = load_local_addr  {Reg(i.Slot)}",
+            LoadElemAddrInstr  i => $"{Reg(i.Dst)} = load_elem_addr   {Reg(i.Arr)}, {Reg(i.Idx)}",
+            LoadFieldAddrInstr i => $"{Reg(i.Dst)} = load_field_addr  {Reg(i.Obj)}.{i.FieldName}",
             BuiltinInstr i => $"{Reg(i.Dst)} = builtin  {i.Name}{FormatArgList(i.Args)}",
             VCallInstr   i => $"{Reg(i.Dst)} = v_call  {Reg(i.Obj)}.{i.Method}{FormatArgList(i.Args)}",
 

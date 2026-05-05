@@ -87,6 +87,11 @@ const OP_STR_CONCAT: u8    = 0x85;
 const OP_PIN_PTR: u8       = 0x90;
 const OP_UNPIN_PTR: u8     = 0x91;
 
+// Spec impl-ref-out-in-runtime: address-load opcodes producing Value::Ref.
+const OP_LOAD_LOCAL_ADDR: u8 = 0xA0;
+const OP_LOAD_ELEM_ADDR:  u8 = 0xA1;
+const OP_LOAD_FIELD_ADDR: u8 = 0xA2;
+
 // ── Type tag constants ────────────────────────────────────────────────────────
 
 const TAG_I64: u8 = 0x05;
@@ -615,6 +620,23 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
         }
         OP_PIN_PTR   => Instruction::PinPtr   { dst, src: c.read_u16()? as u32 },
         OP_UNPIN_PTR => Instruction::UnpinPtr { pinned: c.read_u16()? as u32 },
+
+        // Spec impl-ref-out-in-runtime: address-load decoding (operand layout
+        // mirrors C# `BinaryFormat/ZbcWriter.Instructions.cs`).
+        OP_LOAD_LOCAL_ADDR => {
+            let slot = c.read_u16()? as u32;
+            Instruction::LoadLocalAddr { dst, slot }
+        }
+        OP_LOAD_ELEM_ADDR => {
+            let arr = c.read_u16()? as u32;
+            let idx = c.read_u16()? as u32;
+            Instruction::LoadElemAddr { dst, arr, idx }
+        }
+        OP_LOAD_FIELD_ADDR => {
+            let obj = c.read_u16()? as u32;
+            let field_name = pool_str_owned(pool, c.read_u32()?)?;
+            Instruction::LoadFieldAddr { dst, obj, field_name }
+        }
 
         _ => bail!("unknown opcode 0x{op:02X}"),
     };

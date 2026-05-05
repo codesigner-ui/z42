@@ -593,6 +593,15 @@ impl MagrGC for RcMagrGC {
             Value::StackClosure { fn_name, .. } => {
                 size_of::<Value>() + fn_name.capacity()
             }
+            // Spec impl-ref-out-in-runtime: Ref 仅存索引或 GcRef；底层
+            // Vec/Object 已被本身的 Value::Array / Value::Object 计入，
+            // Ref 只额外计入自己的 enum tag + RefKind 数据。
+            Value::Ref { kind } => match kind {
+                crate::metadata::types::RefKind::Stack { .. } => size_of::<Value>(),
+                crate::metadata::types::RefKind::Array { .. } => size_of::<Value>(),
+                crate::metadata::types::RefKind::Field { field_name, .. } =>
+                    size_of::<Value>() + field_name.capacity(),
+            },
         }
     }
 
@@ -613,6 +622,20 @@ impl MagrGC for RcMagrGC {
                 let arr = env.borrow();
                 for elem in arr.iter() { visitor(elem); }
             }
+            // Spec impl-ref-out-in-runtime: Ref::Array / Ref::Field 持 GcRef，
+            // GC 必须跟随让 caller 数组 / 对象在调用期间不被回收。
+            // Stack kind 不持 GcRef（frame 在调用栈上自然存活）。
+            Value::Ref { kind } => match kind {
+                crate::metadata::types::RefKind::Stack { .. } => {}
+                crate::metadata::types::RefKind::Array { gc_ref, .. } => {
+                    let arr = gc_ref.borrow();
+                    for elem in arr.iter() { visitor(elem); }
+                }
+                crate::metadata::types::RefKind::Field { gc_ref, .. } => {
+                    let obj = gc_ref.borrow();
+                    for slot in &obj.slots { visitor(slot); }
+                }
+            },
             _ => {}
         }
     }

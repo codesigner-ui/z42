@@ -209,6 +209,11 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::StrConcat { dst, .. }  => Some(*dst),
                 Instruction::ToStr     { dst, .. }  => Some(*dst),
                 Instruction::Call      { dst, .. }  => Some(*dst),
+                // Spec impl-ref-out-in-runtime: address-load opcodes (interp
+                // only; JIT body match further down emits unimplemented).
+                Instruction::LoadLocalAddr { dst, .. } => Some(*dst),
+                Instruction::LoadElemAddr  { dst, .. } => Some(*dst),
+                Instruction::LoadFieldAddr { dst, .. } => Some(*dst),
                 Instruction::Builtin   { dst, .. }  => Some(*dst),
                 Instruction::ArrayNew    { dst, .. } => Some(*dst),
                 Instruction::ArrayNewLit { dst, .. } => Some(*dst),
@@ -717,6 +722,20 @@ pub fn translate_function(
                 }
                 Instruction::UnpinPtr { .. } => {
                     bail!("JIT cannot translate UnpinPtr yet (L3.M16)");
+                }
+
+                // Spec impl-ref-out-in-runtime: address-load opcodes are
+                // interp-only; JIT path needs Value::Ref handling + cross-
+                // frame deref support which is not yet implemented (CLAUDE.md
+                // "interp 全绿前不碰 JIT/AOT"). Function falls back to interp.
+                Instruction::LoadLocalAddr { .. } => {
+                    bail!("JIT cannot translate LoadLocalAddr yet (impl-ref-out-in-runtime; interp only)");
+                }
+                Instruction::LoadElemAddr { .. } => {
+                    bail!("JIT cannot translate LoadElemAddr yet (impl-ref-out-in-runtime; interp only)");
+                }
+                Instruction::LoadFieldAddr { .. } => {
+                    bail!("JIT cannot translate LoadFieldAddr yet (impl-ref-out-in-runtime; interp only)");
                 }
 
                 // impl-lambda-l2: lambdas / function references — JIT support

@@ -1,0 +1,17 @@
+// Spec impl-ref-out-in-runtime: 嵌套调用 ref 透传
+// Outer 拿到 caller 的 ref，再把自己的 ref param 作为 ref arg 传给 Inner。
+// Inner 修改最终落到原始 caller 的 c。期望输出 101。
+
+void Inner(ref int x) {
+    x = x + 100;
+}
+
+void Outer(ref int x) {
+    Inner(ref x);
+}
+
+void Main() {
+    var c = 1;
+    Outer(ref c);
+    Console.WriteLine(c);
+}

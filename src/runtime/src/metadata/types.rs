@@ -160,6 +160,23 @@ pub enum Value {
     /// 场景仍走 `Value::Closure`。详见
     /// `spec/archive/2026-05-02-impl-closure-l3-escape-stack/`。
     StackClosure { env_idx: u32, fn_name: String },
+    /// Spec impl-ref-out-in-runtime: `ref` / `out` / `in` 参数运行时表达。
+    /// 持有该 Value 的寄存器在 frame.get/set 时被透明 deref（单点 dispatch，
+    /// 见 `interp/mod.rs::Frame::get`）。引用永远不离开调用栈帧（前置 spec
+    /// design Decision 9 + R1），因此 Stack kind 的 frame_idx 不会 stale。
+    Ref { kind: RefKind },
+}
+
+/// Spec impl-ref-out-in-runtime: 描述 `Value::Ref` 指向的底层位置类型。
+#[derive(Debug, Clone)]
+pub enum RefKind {
+    /// 指向 caller 调用栈第 `frame_idx` 层 frame 的 reg[`slot`]。
+    /// `frame_idx` 是 `VmContext.frame_state_at` 列表索引。
+    Stack { frame_idx: u32, slot: u32 },
+    /// 指向 caller 数组对象的 `idx` 元素。GcRef 持有数组，让 GC 跟随。
+    Array { gc_ref: GcRef<Vec<Value>>, idx: usize },
+    /// 指向 caller 对象的命名字段。
+    Field { gc_ref: GcRef<ScriptObject>, field_name: String },
 }
 
 /// Origin of a [`Value::PinnedView`]. Recorded for diagnostics; both kinds
@@ -186,6 +203,18 @@ impl PartialEq for Value {
                 Value::PinnedView { ptr: ap, len: al, kind: ak },
                 Value::PinnedView { ptr: bp, len: bl, kind: bk },
             ) => ap == bp && al == bl && ak == bk,
+            // Spec impl-ref-out-in-runtime: Ref 比较按 RefKind 字段；
+            // Array/Field kind 用 GcRef::ptr_eq（同 Object/Array 引用语义）；
+            // Stack kind 比 frame_idx + slot（指向同一栈位置）。
+            (Value::Ref { kind: a }, Value::Ref { kind: b }) => match (a, b) {
+                (RefKind::Stack { frame_idx: f1, slot: s1 },
+                 RefKind::Stack { frame_idx: f2, slot: s2 }) => f1 == f2 && s1 == s2,
+                (RefKind::Array { gc_ref: g1, idx: i1 },
+                 RefKind::Array { gc_ref: g2, idx: i2 }) => GcRef::ptr_eq(g1, g2) && i1 == i2,
+                (RefKind::Field { gc_ref: g1, field_name: n1 },
+                 RefKind::Field { gc_ref: g2, field_name: n2 }) => GcRef::ptr_eq(g1, g2) && n1 == n2,
+                _ => false,
+            },
             _ => false,
         }
     }

@@ -302,6 +302,30 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         #[serde(with = "typed_reg_serde")] src: Reg,
     },
+    // Spec impl-ref-out-in-runtime: Address-load instructions producing
+    // Value::Ref values. Caller emits these for `ref`/`out`/`in` arguments
+    // before the Call; the Ref is passed through Call's args; callee's
+    // frame.get/set transparently derefs (single dispatch point).
+    LoadLocalAddr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        /// Slot in the *current* frame to point at. Codegen guarantees this
+        /// is a real local register (not virtual). At runtime produces
+        /// `Value::Ref { kind: RefKind::Stack { frame_idx: depth-1, slot } }`.
+        #[serde(with = "typed_reg_serde")] slot: Reg,
+    },
+    LoadElemAddr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        /// Reg holding the array (must be `Value::Array(GcRef<...>)`).
+        #[serde(with = "typed_reg_serde")] arr: Reg,
+        /// Reg holding the index (must be `Value::I64`).
+        #[serde(with = "typed_reg_serde")] idx: Reg,
+    },
+    LoadFieldAddr {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        /// Reg holding the object (must be `Value::Object(GcRef<...>)`).
+        #[serde(with = "typed_reg_serde")] obj: Reg,
+        field_name: String,
+    },
     // Calls
     Call {
         #[serde(with = "typed_reg_serde")] dst: Reg,

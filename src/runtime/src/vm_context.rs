@@ -311,6 +311,31 @@ impl VmContext {
         self.env_arena_stack.borrow_mut().pop();
     }
 
+    /// Spec impl-ref-out-in-runtime (Decision R1): index into the frame
+    /// state stack and return a raw pointer to that frame's `regs` Vec.
+    /// Used by `Value::Ref { kind: RefKind::Stack { frame_idx, .. } }`
+    /// transparent deref in `Frame::get/set`.
+    ///
+    /// # Safety
+    /// Caller must:
+    ///   1. Use the returned pointer only while the corresponding frame is
+    ///      still alive (guaranteed by spec design Decision 9: refs never
+    ///      escape the call stack — popped frames cannot be referenced).
+    ///   2. Not race with concurrent push/pop on the same VmContext (single
+    ///      RefCell borrow boundary; deref is synchronous within a frame).
+    pub(crate) fn frame_state_at(&self, idx: usize) -> Option<*const Vec<Value>> {
+        let stack = self.exec_stack.borrow();
+        stack.get(idx).copied()
+    }
+
+    /// Current depth of the frame stack. `frame_state_at(depth - 1)` is the
+    /// most recent frame. Used by codegen-generated `LoadLocalAddr` to
+    /// produce a `RefKind::Stack { frame_idx }` referencing the current
+    /// frame at emission time.
+    pub(crate) fn frame_stack_depth(&self) -> usize {
+        self.exec_stack.borrow().len()
+    }
+
     // ── GC heap ───────────────────────────────────────────────────────────
 
     /// Borrow the GC heap as a trait object. All script-driven allocations go

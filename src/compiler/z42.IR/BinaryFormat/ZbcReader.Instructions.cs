@@ -82,6 +82,25 @@ public static partial class ZbcReader
                 var args = ReadArgs(r);
                 return new CallInstr(d, fn, args);
             }
+            // Spec impl-ref-out-in-runtime: address-load decode (operand
+            // layout mirrors `BinaryFormat/ZbcWriter.Instructions.cs`).
+            case Opcodes.LoadLocalAddr:
+            {
+                var slot = RU(r.ReadUInt16());
+                return new LoadLocalAddrInstr(d, slot);
+            }
+            case Opcodes.LoadElemAddr:
+            {
+                var arr = RU(r.ReadUInt16());
+                var idx = RU(r.ReadUInt16());
+                return new LoadElemAddrInstr(d, arr, idx);
+            }
+            case Opcodes.LoadFieldAddr:
+            {
+                var obj = RU(r.ReadUInt16());
+                var fieldName = P(pool, r.ReadUInt32());
+                return new LoadFieldAddrInstr(d, obj, fieldName);
+            }
             case Opcodes.LoadFn:
             {
                 var fn = P(pool, r.ReadUInt32());

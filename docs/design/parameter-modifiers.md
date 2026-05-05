@@ -1,6 +1,6 @@
 # Parameter Modifiers — `ref` / `out` / `in`
 
-> 状态：**编译期验证已落地**（spec/archive/2026-05-05-define-ref-out-in-parameters-typecheck/）；运行时实施待 follow-up spec `impl-ref-out-in-runtime`。
+> 状态：**编译期 + 运行时全部已落地**（spec/archive/2026-05-05-define-ref-out-in-parameters-typecheck/ + spec/archive/2026-05-05-impl-ref-out-in-runtime/）。
 
 z42 提供三个参数修饰符：
 
@@ -169,29 +169,30 @@ void Foo(in int x) {
 
 ---
 
-## Runtime Implementation (Future Spec Reference)
+## Runtime Implementation
 
-**当前状态（2026-05-05）**：编译期验证已落地，但运行时实施延后到独立 spec `impl-ref-out-in-runtime`。
+运行时通过 `Value::Ref` + 入口 copy-in / 出口 copy-out 实现，由 spec [`impl-ref-out-in-runtime`](../../spec/archive/2026-05-05-impl-ref-out-in-runtime/) 落地（2026-05-05）。
 
-**过渡期行为**：用户写 `Increment(ref c)` 编译期通过所有验证（修饰符一致 / lvalue / 严格类型 / DA / 4 交互规则 / overload 选择），但运行时 callee 修改不传回 caller —— codegen 当前走普通 by-value `Call` 指令。这是过渡状态，等运行时 spec 落地后自动修复。
+**关键架构（design Decision R2 sidecar 方案）**：
 
-**临时替代方案**：在过渡期需要"修改调用方变量"语义时，使用 tuple 多返回值（已完整支持）：
-```z42
-// 不要写（运行时不工作）：
-void Increment(ref int x) { x = x + 1; }
-var c = 0; Increment(ref c);    // c 仍然 0
+1. **3 个 IR opcodes** 由 Codegen 在 ref/out/in callsite 实参展开时 emit：
+   - `LoadLocalAddr { dst, slot }` → `Value::Ref::Stack { frame_idx, slot }`
+   - `LoadElemAddr { dst, arr, idx }` → `Value::Ref::Array { gc_ref, idx }`
+   - `LoadFieldAddr { dst, obj, field_name }` → `Value::Ref::Field { gc_ref, field_name }`
 
-// 改用 tuple：
-int Increment(int x) { return x + 1; }
-var c = 0; c = Increment(c);    // c == 1
-```
+2. **入口 copy-in**：`exec_function` 在 callee Frame 创建后，扫描 params；持 `Value::Ref` 的 reg 被 deref'd 替换为底层值，原 `RefKind` 存入 `frame.ref_writebacks` sidecar。callee 体内所有指令读到的都是普通 `Value`，**无需修改 80+ 指令 handler**。
 
-**Follow-up spec 设计基础**（已在拆分前 spec 的 `design.md` 决议）：
-- **Decision 1**：IR 端扩展 `Call` 指令，emit `LoadLocalAddr` / `LoadElemAddr` / `LoadFieldAddr` 产生 `Value::Ref`
-- **Decision 2**：VM 端 `Value::Ref { kind: RefKind { Stack { frame_idx, slot }, Array { gc_ref, idx }, Field { gc_ref, field_offset } } }`
-- **Decision 3**：callee 透明 deref（frame.get/set 检测 Value::Ref 自动跟随，codegen 不需重写）
-- **Decision 8**：引用类型 ref（`ref string s`）复用 Stack RefKind
-- **Decision 9**：GC 标记包含 Value::Ref；Stack frame 自然存活；Array/Field 持 GcRef
+3. **出口 copy-out**：`exec_function` 在每个 return / throw 路径前调用 `run_ref_writebacks`，把 callee 最终 reg 值通过原 `RefKind` 写回 caller 的 lvalue（Stack → caller frame slot；Array → 数组元素；Field → 对象字段）。
+
+4. **嵌套调用透传**：`Outer(ref x) { Inner(ref x) }` 中 Outer 的 x 已被入口 copy-in 解为底层值；Codegen 对 `Inner(ref x)` emit `LoadLocalAddr` 指向 Outer 的 slot；Inner 写入触发 Outer slot 更新；Outer 出口 writeback 把 Outer slot 写回原 caller。两步 indirection 自然形成。
+
+5. **GC 协调**：`Value::Ref::Array` / `Field` 持 `GcRef`，参与 GC mark 让底层数组 / 对象在调用期间存活。Stack ref 不持 GcRef（frame 在调用栈自然存活）。
+
+**Decision R2 选择 sidecar 方案而非"frame.get/set 内部 deref"**的理由：
+- frame.get/set 内部 deref 需要修改 80+ 指令 handler 调用点（每个都要传 ctx）
+- sidecar 仅在 frame 入口/出口工作，所有指令 handler 不变
+- 语义等价：用户无法观察到调用中途状态（与 C# 一致）
+- 性能：仅 1 次 Vec 分配 + n 次 deref/store-through（n = ref params 数量），远小于 80+ handler 改造的运行时开销
 
 ---
 

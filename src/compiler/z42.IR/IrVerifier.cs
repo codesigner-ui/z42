@@ -104,6 +104,14 @@ public static class IrVerifier
 
                 if (GetDst(instr) is { } dst)
                     defined.Add(dst.Id);
+                // Spec impl-ref-out-in-runtime: LoadLocalAddrInstr also
+                // implicitly defines the Slot register — it's the lvalue
+                // the Ref will write through, populated by the callee at
+                // runtime via copy-out. From the verifier's static view,
+                // mark it defined here so subsequent reads of the slot
+                // (e.g. `out var x; print(x)`) verify.
+                if (instr is LoadLocalAddrInstr lla)
+                    defined.Add(lla.Slot.Id);
             }
 
             // Terminator uses
@@ -188,6 +196,10 @@ public static class IrVerifier
         CallNativeInstr        i => i.Dst,
         CallNativeVtableInstr  i => i.Dst,
         PinPtrInstr            i => i.Dst,
+        // Spec impl-ref-out-in-runtime: address-load instructions
+        LoadLocalAddrInstr     i => i.Dst,
+        LoadElemAddrInstr      i => i.Dst,
+        LoadFieldAddrInstr     i => i.Dst,
         // No Dst: ArraySetInstr, FieldSetInstr, StaticSetInstr, UnpinPtrInstr
         _ => null,
     };
@@ -239,6 +251,17 @@ public static class IrVerifier
         CallNativeVtableInstr  i => [i.Recv, ..i.Args],
         PinPtrInstr            i => [i.Src],
         UnpinPtrInstr          i => [i.Pinned],
+        // Spec impl-ref-out-in-runtime: address-load uses.
+        // LoadLocalAddrInstr.Slot is an *index*, not a register read; the
+        // slot's value is not consumed (Ref::Stack records `slot` for later
+        // deref). Treating it as a use would falsely flag `out var x`
+        // inline-declared locals (they've been allocated but never written
+        // before `LoadLocalAddrInstr` runs — the callee writes via the Ref).
+        // Instead treat LoadLocalAddrInstr as additionally *defining* the
+        // slot (see GetDst patch) so `out var x` cleanly works.
+        LoadLocalAddrInstr     => [],
+        LoadElemAddrInstr      i => [i.Arr, i.Idx],
+        LoadFieldAddrInstr     i => [i.Obj],
         // No uses: ConstXxx, StaticGetInstr
         _ => [],
     };

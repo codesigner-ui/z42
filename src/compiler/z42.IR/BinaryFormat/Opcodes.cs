@@ -78,6 +78,11 @@ public static class Opcodes
     // ── Pin / FFI Borrow (0x90–0x9F) ──────────────────────────────────────────
     public const byte PinPtr   = 0x90;  // pin a String/Array buffer for FFI borrow (C4)
     public const byte UnpinPtr = 0x91;  // release pinned view (C4)
+
+    // ── Address-load (0xA0–0xAF) — spec impl-ref-out-in-runtime ──────────────
+    public const byte LoadLocalAddr = 0xA0;  // dst, slot                  → Value::Ref::Stack
+    public const byte LoadElemAddr  = 0xA1;  // dst, arr, idx              → Value::Ref::Array
+    public const byte LoadFieldAddr = 0xA2;  // dst, obj, field_name (str) → Value::Ref::Field
 }
 
 /// <summary>Type tag byte embedded in each instruction header.</summary>

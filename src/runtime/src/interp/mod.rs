@@ -116,6 +116,17 @@ pub(crate) struct Frame {
     /// closure 的 env。`Value::StackClosure { env_idx }` 索引这里。frame drop
     /// 时整个 arena 一并释放（内嵌的 Value 走 normal Drop / GcRef 减引用计数）。
     pub env_arena: Vec<Vec<Value>>,
+    /// Spec impl-ref-out-in-runtime (Decision R2 architecture E):
+    /// `(param_reg, original_ref_kind)` pairs. When the function was called
+    /// with a `ref`/`out`/`in` argument, the entry path deref'd the Ref
+    /// (storing the underlying value into `regs[param_reg]` so all
+    /// instruction handlers see a normal value) and stashed the original
+    /// `RefKind` here. At function exit, every entry's final `regs[param_reg]`
+    /// value is stored back through the corresponding Ref to the caller's
+    /// lvalue. Net semantic: caller sees the post-call value of its
+    /// `ref`/`out` lvalue, identical to true cross-frame refs but without
+    /// requiring 80+ instruction handlers to be deref-aware.
+    pub ref_writebacks: Vec<(u32, crate::metadata::types::RefKind)>,
 }
 
 impl Frame {
@@ -125,9 +136,17 @@ impl Frame {
         for (i, v) in args.iter().enumerate() {
             regs[i] = v.clone();
         }
-        Frame { regs, env_arena: Vec::new() }
+        Frame {
+            regs,
+            env_arena: Vec::new(),
+            ref_writebacks: Vec::new(),
+        }
     }
 
+    /// Set a register's raw value (no deref). For ref-aware store-through
+    /// (transparently writing through `Value::Ref` to the underlying
+    /// caller slot / array elem / object field), use `set_thru_ref`
+    /// (spec impl-ref-out-in-runtime).
     pub fn set(&mut self, reg: u32, val: Value) {
         let idx = reg as usize;
         if idx >= self.regs.len() {
@@ -136,6 +155,9 @@ impl Frame {
         self.regs[idx] = val;
     }
 
+    /// Get a register's raw value (no deref). For ref-aware read-through
+    /// (transparently dereferencing `Value::Ref`), use `get_deref`
+    /// (spec impl-ref-out-in-runtime).
     #[inline(always)]
     pub fn get(&self, reg: u32) -> Result<&Value> {
         let idx = reg as usize;
@@ -143,6 +165,133 @@ impl Frame {
             Ok(&self.regs[idx])
         } else {
             anyhow::bail!("undefined register %{reg}")
+        }
+    }
+
+    /// Spec impl-ref-out-in-runtime (Decision R2): read a register's value
+    /// with transparent deref. If the register holds a `Value::Ref`, the
+    /// underlying value (from caller frame / array elem / object field) is
+    /// returned. Otherwise behaves like `get` but returns owned `Value`.
+    /// Use this in instruction handlers that read user-visible values.
+    #[allow(dead_code)]
+    pub fn get_deref(&self, reg: u32, ctx: &VmContext) -> Result<Value> {
+        match self.get(reg)? {
+            Value::Ref { kind } => deref_ref(kind, ctx),
+            other => Ok(other.clone()),
+        }
+    }
+
+    /// Spec impl-ref-out-in-runtime (Decision R2): write a register with
+    /// transparent store-through. If the register currently holds a
+    /// `Value::Ref`, the write is forwarded to the underlying location and
+    /// the Ref itself is preserved so subsequent reads/writes still
+    /// indirect. Otherwise the register is overwritten.
+    #[allow(dead_code)]
+    pub fn set_thru_ref(&mut self, reg: u32, val: Value, ctx: &VmContext) -> Result<()> {
+        let idx = reg as usize;
+        if idx >= self.regs.len() {
+            self.regs.resize(idx + 1, Value::Null);
+        }
+        let kind_to_store = match &self.regs[idx] {
+            Value::Ref { kind } => Some(kind.clone()),
+            _ => None,
+        };
+        match kind_to_store {
+            Some(kind) => store_thru_ref(&kind, val, ctx),
+            None => { self.regs[idx] = val; Ok(()) }
+        }
+    }
+}
+
+/// Spec impl-ref-out-in-runtime: dereference a `Value::Ref { kind }` into
+/// the underlying value. Stack kind looks up `ctx.frame_state_at(frame_idx)`
+/// (raw pointer, safe under design Decision 9: refs don't escape call
+/// stack). Array/Field kinds borrow the held GcRef and read.
+pub(crate) fn deref_ref(
+    kind: &crate::metadata::types::RefKind, ctx: &VmContext,
+) -> Result<Value> {
+    use crate::metadata::types::RefKind;
+    match kind {
+        RefKind::Stack { frame_idx, slot } => {
+            let regs_ptr = ctx.frame_state_at(*frame_idx as usize)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "ref points to popped frame (frame_idx={frame_idx})"))?;
+            // SAFETY: spec Decision 9 — refs never escape the call stack;
+            // when this deref runs, the target frame is still active.
+            let regs = unsafe { &*regs_ptr };
+            let v = regs.get(*slot as usize)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "ref target slot %{slot} out of frame range"))?;
+            // Sanity guard: ref-to-ref nesting not supported (codegen never
+            // produces it; defend in case of malformed bytecode).
+            if let Value::Ref { .. } = v {
+                anyhow::bail!("ref-to-ref nesting not supported");
+            }
+            Ok(v.clone())
+        }
+        RefKind::Array { gc_ref, idx } => {
+            let arr = gc_ref.borrow();
+            arr.get(*idx)
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!(
+                    "ref array index {idx} out of bounds (len={})", arr.len()))
+        }
+        RefKind::Field { gc_ref, field_name } => {
+            let obj = gc_ref.borrow();
+            let slot = *obj.type_desc.field_index.get(field_name)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "ref field `{field_name}` not found on type `{}`",
+                    obj.type_desc.name))?;
+            Ok(obj.slots.get(slot).cloned().unwrap_or(Value::Null))
+        }
+    }
+}
+
+/// Spec impl-ref-out-in-runtime: store a value through a `Value::Ref` to
+/// the underlying location. Mirror of `deref_ref` for the write path.
+pub(crate) fn store_thru_ref(
+    kind: &crate::metadata::types::RefKind, val: Value, ctx: &VmContext,
+) -> Result<()> {
+    use crate::metadata::types::RefKind;
+    match kind {
+        RefKind::Stack { frame_idx, slot } => {
+            let regs_ptr = ctx.frame_state_at(*frame_idx as usize)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "ref points to popped frame (frame_idx={frame_idx})"))?;
+            // SAFETY: same as deref_ref; the frame is still active.
+            // We need *mut here — cast from *const Vec<Value>. The frame's
+            // regs Vec is borrowed from `Frame` which is `&mut` during exec
+            // of its instructions, so the Vec is uniquely owned by that
+            // frame. Cross-frame mutation requires us to coerce to mut.
+            let regs = unsafe { &mut *(regs_ptr as *mut Vec<Value>) };
+            let slot_idx = *slot as usize;
+            if slot_idx >= regs.len() {
+                regs.resize(slot_idx + 1, Value::Null);
+            }
+            regs[slot_idx] = val;
+            Ok(())
+        }
+        RefKind::Array { gc_ref, idx } => {
+            let mut arr = gc_ref.borrow_mut();
+            if *idx >= arr.len() {
+                anyhow::bail!(
+                    "ref array index {idx} out of bounds (len={})", arr.len());
+            }
+            arr[*idx] = val;
+            Ok(())
+        }
+        RefKind::Field { gc_ref, field_name } => {
+            let mut obj = gc_ref.borrow_mut();
+            let slot_opt = obj.type_desc.field_index.get(field_name).copied();
+            match slot_opt {
+                Some(slot) if slot < obj.slots.len() => {
+                    obj.slots[slot] = val;
+                    Ok(())
+                }
+                _ => anyhow::bail!(
+                    "ref field `{field_name}` not found on type `{}`",
+                    obj.type_desc.name),
+            }
         }
     }
 }
@@ -173,6 +322,26 @@ impl Drop for FrameGuard<'_> {
 
 pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
     let mut frame = Frame::new(args, func.max_reg);
+
+    // Spec impl-ref-out-in-runtime (Decision R2 architecture E):
+    // 入口 copy-in：扫描 params，对每个持 Value::Ref 的 reg：
+    //   1. 通过 RefKind 解引用得到底层值
+    //   2. 将 reg[i] 替换为底层值（callee 体内所有指令读到的是普通 Value）
+    //   3. 把原 RefKind 存入 frame.ref_writebacks，留给出口 copy-out 用
+    // 这样 callee 的 80+ 指令 handler 完全不需要感知 Ref —— 透明性由
+    // 入口/出口完成，仅一次 Vec 分配代价。
+    // 注意：deref 必须在 push_frame_state 之前完成，因为此时 callee 自己的
+    // frame 尚未入栈，Ref::Stack { frame_idx } 指向 caller 的栈位置，
+    // ctx.frame_state_at 能找到正确 regs 指针。
+    for i in 0..(func.param_count as usize).min(frame.regs.len()) {
+        if let Value::Ref { kind } = &frame.regs[i] {
+            let kind_clone = kind.clone();
+            let underlying = deref_ref(&kind_clone, ctx)?;
+            frame.regs[i] = underlying;
+            frame.ref_writebacks.push((i as u32, kind_clone));
+        }
+    }
+
     // Phase 3f + impl-closure-l3-escape-stack: 把当前 frame.regs +
     // frame.env_arena 指针都注册到 GC root。env_arena 在 stack closure 创建
     // 路径才会有非空内容，但即便空也要注册以保持 push/pop 严格 1:1。
@@ -216,6 +385,11 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                         continue 'exec;
                     }
                     // No handler — propagate up as ExecOutcome::Thrown (no anyhow allocation)
+                    // Spec impl-ref-out-in-runtime: writebacks still run on
+                    // throw paths so any modifications callee made to ref/out
+                    // params before the throw are visible to caller (matches
+                    // C# DA model: caller in catch block sees mutations).
+                    run_ref_writebacks(&frame, ctx)?;
                     return Ok(ExecOutcome::Thrown(thrown_val));
                 }
                 Err(e) => {
@@ -231,8 +405,15 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
         }
 
         match &block.terminator {
-            Terminator::Ret { reg: None }      => return Ok(ExecOutcome::Returned(None)),
-            Terminator::Ret { reg: Some(r) }   => return Ok(ExecOutcome::Returned(Some(frame.get(*r)?.clone()))),
+            Terminator::Ret { reg: None }      => {
+                run_ref_writebacks(&frame, ctx)?;
+                return Ok(ExecOutcome::Returned(None));
+            }
+            Terminator::Ret { reg: Some(r) }   => {
+                let ret_val = frame.get(*r)?.clone();
+                run_ref_writebacks(&frame, ctx)?;
+                return Ok(ExecOutcome::Returned(Some(ret_val)));
+            }
             Terminator::Br  { label }          => {
                 block_idx = *block_map.get(label.as_str())
                     .with_context(|| format!("undefined block `{label}`"))?;
@@ -255,11 +436,27 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                         .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
                 } else {
                     // No local handler — propagate via value, not anyhow
+                    run_ref_writebacks(&frame, ctx)?;
                     return Ok(ExecOutcome::Thrown(val));
                 }
             }
         }
     }
+}
+
+/// Spec impl-ref-out-in-runtime: copy-out for `ref`/`out` params. Iterate
+/// `frame.ref_writebacks`; for each `(reg, original_ref_kind)`, take the
+/// callee's final value of that reg and store it through the original Ref
+/// to the caller's lvalue. Runs before every function-exit return path
+/// (normal return + uncaught throw).
+fn run_ref_writebacks(frame: &Frame, ctx: &VmContext) -> Result<()> {
+    for (reg, kind) in &frame.ref_writebacks {
+        let final_val = frame.regs.get(*reg as usize)
+            .cloned()
+            .unwrap_or(Value::Null);
+        store_thru_ref(kind, final_val, ctx)?;
+    }
+    Ok(())
 }
 
 /// Find the index into `func.exception_table` that covers the given block index.
