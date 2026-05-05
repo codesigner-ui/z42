@@ -35,19 +35,36 @@ public static class ManifestSignatureParser
     /// <summary>
     /// Parse a manifest <c>ret</c> string into a z42 <see cref="TypeExpr"/>.
     /// <paramref name="selfTypeName"/> is the enclosing manifest type name —
-    /// used to expand <c>Self</c>.
+    /// used to expand <c>Self</c>. <paramref name="knownNativeTypes"/> is the
+    /// set of native type names imported by the current compilation unit
+    /// (always includes <paramref name="selfTypeName"/>); used by C11e to
+    /// resolve <c>*mut/*const &lt;Other&gt;</c> against in-scope imports.
     /// </summary>
-    public static TypeExpr ParseReturn(string sig, string selfTypeName, Span span)
+    public static TypeExpr ParseReturn(
+        string sig, string selfTypeName,
+        IReadOnlySet<string> knownNativeTypes,
+        Span span)
     {
         var s = sig.Trim();
 
         if (s == "void")    return new VoidType(span);
         if (s == "Self")    return new NamedType(selfTypeName, span);
 
+        if (s == "*const c_char" || s == "*mut c_char")
+            throw new NativeImportException(
+                DiagnosticCodes.NativeImportSynthesisFailure,
+                $"manifest return type `{sig}` (c_char return) requires an " +
+                "ownership protocol (who frees the C string?) and is tracked in " +
+                "C11f; for now use a void return + out-param or wrap in a typed handle",
+                span);
+
+        if (TryParsePointerToOther(s, knownNativeTypes, selfTypeName, span, out var named))
+            return named!;
+
         if (s_primitives.Contains(s))
             return new NamedType(s, span);
 
-        throw Unsupported(sig, span, position: "return");
+        throw Unsupported(sig, span, position: "return", knownNativeTypes);
     }
 
     /// <summary>
@@ -58,12 +75,20 @@ public static class ManifestSignatureParser
     /// Only valid for <paramref name="firstParam"/>=true.
     /// </summary>
     public static (bool IsReceiver, TypeExpr? Type) ParseParam(
-        string sig, string selfTypeName, bool firstParam, Span span)
+        string sig, string selfTypeName,
+        IReadOnlySet<string> knownNativeTypes,
+        bool firstParam, Span span)
     {
         var s = sig.Trim();
 
         if (firstParam && (s == "*mut Self" || s == "*const Self"))
             return (IsReceiver: true, Type: null);
+
+        if (s == "*const c_char" || s == "*mut c_char")
+            return (IsReceiver: false, Type: new NamedType("string", span));
+
+        if (TryParsePointerToOther(s, knownNativeTypes, selfTypeName, span, out var named))
+            return (IsReceiver: false, Type: named!);
 
         if (s == "Self")
             return (IsReceiver: false, Type: new NamedType(selfTypeName, span));
@@ -71,13 +96,48 @@ public static class ManifestSignatureParser
         if (s_primitives.Contains(s))
             return (IsReceiver: false, Type: new NamedType(s, span));
 
-        throw Unsupported(sig, span, position: "parameter");
+        throw Unsupported(sig, span, position: "parameter", knownNativeTypes);
     }
 
-    private static NativeImportException Unsupported(string sig, Span span, string position)
-        => new(
+    /// <summary>
+    /// C11e: recognise <c>*mut &lt;X&gt;</c> / <c>*const &lt;X&gt;</c> where X is
+    /// neither <c>Self</c> nor <c>c_char</c>. X must be in
+    /// <paramref name="known"/> — otherwise raise an unknown-type error.
+    /// Returns false (does not match) when the shape isn't a pointer-to-other.
+    /// </summary>
+    private static bool TryParsePointerToOther(
+        string s, IReadOnlySet<string> known, string selfName,
+        Span span, out NamedType? named)
+    {
+        named = null;
+        string? targetName = null;
+        if (s.StartsWith("*mut "))   targetName = s["*mut ".Length..].Trim();
+        else if (s.StartsWith("*const ")) targetName = s["*const ".Length..].Trim();
+        if (targetName is null) return false;
+        if (targetName == "Self" || targetName == "c_char") return false;
+
+        if (!known.Contains(targetName))
+            throw Unknown(targetName, span);
+
+        named = new NamedType(targetName, span);
+        return true;
+    }
+
+    private static NativeImportException Unknown(string typeName, Span span) => new(
+        DiagnosticCodes.NativeImportSynthesisFailure,
+        $"manifest references native type `{typeName}` but no matching " +
+        $"`import {typeName} from \"...\";` is in scope",
+        span);
+
+    private static NativeImportException Unsupported(
+        string sig, Span span, string position, IReadOnlySet<string> known)
+    {
+        var importedList = known.Count == 0 ? "(none)" : string.Join(", ", known);
+        return new(
             DiagnosticCodes.NativeImportSynthesisFailure,
-            $"manifest {position} type `{sig}` is not supported by C11b synthesizer " +
-            "(whitelist: primitives, `Self`, `*mut/const Self`)",
+            $"manifest {position} type `{sig}` is not supported by C11e synthesizer " +
+            "(whitelist: primitives, `Self`, `*mut/const Self`, `*const c_char` (param-only), " +
+            $"`*mut/const <Imported>`; currently-imported native types: {importedList})",
             span);
+    }
 }

@@ -566,6 +566,7 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M13d** (`byte-buffer-pin`) | Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 路径扫元素 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。Z0908(e) 抛出。**z42 二进制数据可直接进 native FFI**。 | C4 | ✅ 2026-04-29 |
 | **L2.M13e** (`manifest-reader-import`, C11a) | Lexer `Import` Phase1 keyword + contextual `from`；`import IDENT from "<lib>";` 顶层语法 → AST `NativeTypeImport` 收集到 `CompilationUnit.NativeImports`；`Z42.Project.NativeManifest.Read` 读取 `.z42abi` JSON（System.Text.Json，`abi_version == 1` + 必需字段轻量校验）；`NativeManifestException` + E0909 启用。**编译器现在能消费 manifest 数据通路；尚未合成 ClassDecl（留给 C11b）**。 | C9 | ✅ 2026-04-30 |
 | **L2.M13f** (`synthesize-native-class`, C11b — Path B1) | `NativeImportSynthesizer` 编译期 pass（位 Parser 与 TypeChecker 之间）：每个 `import T from "lib";` → 找 manifest → 合成 `ClassDecl`（`IsSealed=true`, `Visibility=Internal`, `Fields=[]`, `ClassNativeDefaults` 复用 C9 stitching）注入 `cu.Classes`；`ManifestSignatureParser` 白名单（primitives + `Self` + `*mut/const Self`）；`INativeManifestLocator` 注入式（默认 `<sourceDir>/<lib>.z42abi` + `Z42_NATIVE_LIBS_PATH`）；E0916 启用。**用户现在写 `import Counter from "numz42";` 即得脚本可见 Counter 类，TypeChecker / IrGen / VM 走 C2–C10 既有路径，零新 ABI**。 | C11a | ✅ 2026-04-30 |
+| **L2.M13g** (`extend-signature-whitelist`, C11e) | `ManifestSignatureParser` 白名单从 demo 级扩到能包真实 opaque-handle C 库：(1) `*const/*mut c_char` 在 param 位置 → `string`（走 C8 已有 arena marshal，零新 IR）；(2) `*const/*mut <Other>` 中 Other 是当前 CompilationUnit 已 import 的 native type 名 → `NamedType("Other")`（让 native 类之间互相引用作为方法签名）。`NativeImportSynthesizer.Run` 收集 `knownNativeTypes`（含所有 import.Name）并下传给 sig parser；E0916 错误信息分两类——**unknown-type**（`*mut Foo` 但 Foo 未 import，附 ``import Foo from "...";`` 提示）/ **unsupported-shape**（`Box<T>` / `[T; N]` 等结构未支持，附当前已 import 的 type 列表）。c_char return 留 C11f（owner ship 协议未定）。**用户现在能 import 真实 C 库（printf/regex_t/sqlite3 等）：c_char param + 跨 native 类指针 unblocked**。 | C11b | ✅ 2026-05-06 |
 | **L2.M13** (manifest reader) | `.z42abi` manifest reader (schema already locked in C1) | M11 | ✅ 2026-04-30（合并入 C11a）|
 | **L2.M14** (C5 second half) | Source gen: `import` auto-syncs manifest + compile-time validation; fills `CallNativeVtable` runtime | M13 |  |
 | **L3.M15** | `z42-std-*` series start (regex / serde wrappers) | M14 |  |
@@ -684,6 +685,21 @@ When the compiler synthesizes a script-visible `ClassDecl` from an `import T fro
 **Out of scope for C11b** (each becomes its own future spec):
 - B2: VM-owned fields requires `z42_obj_get_field(handle, name)` + `z42_obj_set_field(handle, name, value)` exports plus an allocator hook
 - A & C: blittable layout requires the synthesizer to read manifest `size` / `align` / per-field `offset` and emit a `Z42TypeDescriptor_v1` with field metadata, plus codegen must lower direct field access to offset arithmetic
+
+**Signature whitelist (C11e extension, 2026-05-06)** — `ManifestSignatureParser` accepts:
+
+| Shape | z42 mapping | Position | Notes |
+|---|---|---|---|
+| `void` / `i8..i64` / `u8..u64` / `f32` / `f64` / `bool` | `NamedType("<primitive>")` / `VoidType` | param + return | C11b |
+| `Self` | `NamedType(<enclosing>)` | return | C11b |
+| `*mut Self` / `*const Self` | implicit `this` receiver | first param | C11b |
+| `*const c_char` / `*mut c_char` | `NamedType("string")` | **param only** | C11e — return 位置 C11f 未定 owner ship 协议；marshal 走 C8 既有 `(Value::Str, SigType::CStr)` arena 路径 |
+| `*const <Other>` / `*mut <Other>` | `NamedType("Other")` | param + return | C11e — Other 必须是当前 CompilationUnit 已 `import` 的 native type 名（含 `selfTypeName`）；未 import 报 unknown-type E0916 |
+
+**Out of scope for C11e** (each留给 C11f / C11g):
+- `c_char` 返回值（who frees the C string? — owner ship 协议未定）
+- `Array<T>` / `&[T]` / `[T; N]` 数组形态（数组语义 + 长度对协议待定）
+- `Option<T>` / nullable 指针
 
 The handle in B1 is **not stored as a script-visible z42 field**. It is the runtime Value of the variable holding the imported instance — i.e. `var c = new Counter()` ⇒ `c` *is* the IntPtr returned by `numz42_Counter_alloc`. Subsequent calls `c.inc()` are dispatched as `CallNativeInstr` with `c` passed as the first libffi argument (the receiver), exactly the pattern C2–C10 already exercise for hand-written `[Native(lib=, type=, entry=)]` declarations.
 

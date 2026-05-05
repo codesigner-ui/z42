@@ -107,13 +107,13 @@ The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.C
 |-------|--------------------|----------------|
 | E0909 | ManifestParseError | (a) manifest 文件不存在 / IO 失败；(b) JSON 不合法；(c) `abi_version` 不等于 `NativeManifest.ExpectedAbiVersion`（当前 = 1）；(d) 缺必需字段（`module` / `library_name` / `types`） |
 
-### E0916（C11b 已启用，2026-04-30）
+### E0916（C11b 已启用，2026-04-30；C11e 扩展，2026-05-06）
 
 由 `Z42.Semantics.Synthesis.NativeImportSynthesizer` 在合成 ClassDecl 时抛出 `NativeImportException`，由 `PackageCompiler` 在 source-loop 中捕获并写入诊断输出。
 
 | Code  | Title                          | When it occurs |
 |-------|--------------------------------|----------------|
-| E0916 | NativeImportSynthesisFailure   | (a) `import T from "lib";` 中 `T` 不在 manifest 的 `types[]` 中；(b) manifest 某 method 的 `params` / `ret` 用了 C11b 白名单外的类型（白名单：primitives / `Self` / `*mut/const Self`）；(c) 同名 type 被两条 import 声明但 lib 不同；(d) `kind=="method"` 的 entry 第一参数不是 `*mut/const Self`；(e) `DefaultNativeManifestLocator` 在 `<sourceDir>` 与 `Z42_NATIVE_LIBS_PATH` 中均找不到 `<lib>.z42abi` |
+| E0916 | NativeImportSynthesisFailure   | (a) `import T from "lib";` 中 `T` 不在 manifest 的 `types[]` 中；(b1, **unsupported-shape**) manifest 某 method 的 `params` / `ret` 用了 C11e 白名单外的类型形态（白名单：primitives / `Self` / `*mut/const Self` / `*const c_char` (param-only) / `*mut/const <Imported>`）——错误信息包含当前已 import 的 native type 列表；(b2, **unknown-type**) `*mut/const <X>` 中 X 不是 `c_char` / `Self`，且未在当前 CompilationUnit 中 `import`——错误信息含 ``import X from "...";`` 提示；(b3) `*const c_char` / `*mut c_char` 出现在 ret 位置——错误信息含 "c_char return"、"C11f"（ownership 协议未定，留 C11f）；(c) 同名 type 被两条 import 声明但 lib 不同；(d) `kind=="method"` 的 entry 第一参数不是 `*mut/const Self`；(e) `DefaultNativeManifestLocator` 在 `<sourceDir>` 与 `Z42_NATIVE_LIBS_PATH` 中均找不到 `<lib>.z42abi` |
 
 ### E0911 / E0912 / E0914 / E0915（R4.A 已启用，2026-04-30）
 

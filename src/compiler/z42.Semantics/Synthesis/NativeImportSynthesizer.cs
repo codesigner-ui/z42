@@ -59,6 +59,13 @@ public static class NativeImportSynthesizer
             }
         }
 
+        // C11e: collect the set of native type names imported by this CU.
+        // ManifestSignatureParser uses this set to resolve `*mut/*const <Other>`
+        // against in-scope imports. We also seed selfTypeName at synthesis time
+        // (see SynthesizeClass) so `Self` paths remain unaffected.
+        var knownTypes = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var imp in imports) knownTypes.Add(imp.Name);
+
         // Cache manifest reads so multiple imports of the same lib hit disk once.
         var manifestCache = new Dictionary<string, ManifestData>(StringComparer.Ordinal);
         var alreadySynthesized = new HashSet<string>(StringComparer.Ordinal);
@@ -83,15 +90,17 @@ public static class NativeImportSynthesizer
                     $"manifest for `{imp.LibName}` does not declare type `{imp.Name}`",
                     imp.Span);
 
-            cu.Classes.Add(SynthesizeClass(typeEntry, manifest, imp.Span));
+            cu.Classes.Add(SynthesizeClass(typeEntry, manifest, imp.Span, knownTypes));
         }
     }
 
-    private static ClassDecl SynthesizeClass(TypeEntry type, ManifestData manifest, Span span)
+    private static ClassDecl SynthesizeClass(
+        TypeEntry type, ManifestData manifest, Span span,
+        IReadOnlySet<string> knownTypes)
     {
         var methods = new List<FunctionDecl>(type.Methods.Count);
         foreach (var m in type.Methods)
-            methods.Add(SynthesizeMethod(m, type.Name, span));
+            methods.Add(SynthesizeMethod(m, type.Name, span, knownTypes));
 
         var classDefaults = new Tier1NativeBinding(
             Lib:      manifest.LibraryName,
@@ -115,9 +124,11 @@ public static class NativeImportSynthesizer
             ClassNativeDefaults: classDefaults);
     }
 
-    private static FunctionDecl SynthesizeMethod(MethodEntry m, string selfTypeName, Span span)
+    private static FunctionDecl SynthesizeMethod(
+        MethodEntry m, string selfTypeName, Span span,
+        IReadOnlySet<string> knownTypes)
     {
-        var (parms, returnType) = TranslateSignature(m, selfTypeName, span);
+        var (parms, returnType) = TranslateSignature(m, selfTypeName, span, knownTypes);
 
         var modifiers = FunctionModifiers.Extern;
         if (m.Kind == "static")
@@ -150,16 +161,17 @@ public static class NativeImportSynthesizer
     }
 
     private static (List<Param> Params, TypeExpr ReturnType) TranslateSignature(
-        MethodEntry m, string selfTypeName, Span span)
+        MethodEntry m, string selfTypeName, Span span,
+        IReadOnlySet<string> knownTypes)
     {
-        var ret  = ManifestSignatureParser.ParseReturn(m.Ret, selfTypeName, span);
+        var ret  = ManifestSignatureParser.ParseReturn(m.Ret, selfTypeName, knownTypes, span);
         var outs = new List<Param>(m.Params.Count);
 
         for (int i = 0; i < m.Params.Count; i++)
         {
             var p = m.Params[i];
             var (isReceiver, type) = ManifestSignatureParser.ParseParam(
-                p.Type, selfTypeName, firstParam: i == 0, span);
+                p.Type, selfTypeName, knownTypes, firstParam: i == 0, span);
             if (isReceiver)
                 continue;
             outs.Add(new Param(p.Name, type!, Default: null, Span: span));

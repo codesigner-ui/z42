@@ -252,4 +252,130 @@ public sealed class NativeImportSynthesizerTests
         act.Should().Throw<NativeImportException>()
            .Which.Code.Should().Be(DiagnosticCodes.NativeImportSynthesisFailure);
     }
+
+    // ── C11e: c_char param + cross-import type refs ───────────────────────────
+
+    [Fact]
+    public void Synth_Method_With_CCharParam_BecomesString()
+    {
+        var manifest = """
+            {
+              "abi_version": 1,
+              "module": "lib",
+              "version": "0.1.0",
+              "library_name": "lib",
+              "types": [
+                {
+                  "name": "Greeter",
+                  "size": 8,
+                  "align": 8,
+                  "flags": [],
+                  "fields": [],
+                  "methods": [
+                    {
+                      "name": "set_name",
+                      "kind": "method",
+                      "symbol": "lib_Greeter_set_name",
+                      "params": [
+                        { "name": "self", "type": "*mut Self" },
+                        { "name": "name", "type": "*const c_char" }
+                      ],
+                      "ret": "void"
+                    }
+                  ],
+                  "trait_impls": []
+                }
+              ]
+            }
+            """;
+        var cu      = ParseOnly("import Greeter from \"lib\";");
+        var locator = new InMemoryManifestLocator(new() { ["lib"] = manifest });
+        NativeImportSynthesizer.Run(cu, locator, sourceDir: null);
+
+        var setName = cu.Classes[0].Methods.Single(m => m.Name == "set_name");
+        setName.Params.Should().ContainSingle();
+        var p = setName.Params[0];
+        p.Name.Should().Be("name");
+        p.Type.Should().BeOfType<NamedType>().Which.Name.Should().Be("string");
+    }
+
+    [Fact]
+    public void Synth_Method_Returning_OtherImportedType()
+    {
+        var manifest = """
+            {
+              "abi_version": 1,
+              "module": "rx",
+              "version": "0.1.0",
+              "library_name": "rx",
+              "types": [
+                {
+                  "name": "Regex",
+                  "size": 8, "align": 8, "flags": [], "fields": [],
+                  "methods": [], "trait_impls": []
+                },
+                {
+                  "name": "Match",
+                  "size": 8, "align": 8, "flags": [], "fields": [],
+                  "methods": [
+                    {
+                      "name": "pattern",
+                      "kind": "method",
+                      "symbol": "rx_Match_pattern",
+                      "params": [{ "name": "self", "type": "*const Self" }],
+                      "ret": "*mut Regex"
+                    }
+                  ],
+                  "trait_impls": []
+                }
+              ]
+            }
+            """;
+        var cu = ParseOnly("""
+            import Regex from "rx";
+            import Match from "rx";
+            """);
+        var locator = new InMemoryManifestLocator(new() { ["rx"] = manifest });
+        NativeImportSynthesizer.Run(cu, locator, sourceDir: null);
+
+        var matchClass = cu.Classes.Single(c => c.Name == "Match");
+        var pattern    = matchClass.Methods.Single(m => m.Name == "pattern");
+        pattern.ReturnType.Should().BeOfType<NamedType>().Which.Name.Should().Be("Regex");
+    }
+
+    [Fact]
+    public void Synth_Method_Param_OtherType_NotImported_E0916()
+    {
+        var manifest = """
+            {
+              "abi_version": 1,
+              "module": "rx",
+              "version": "0.1.0",
+              "library_name": "rx",
+              "types": [
+                {
+                  "name": "Match",
+                  "size": 8, "align": 8, "flags": [], "fields": [],
+                  "methods": [
+                    {
+                      "name": "from_regex",
+                      "kind": "static",
+                      "symbol": "rx_Match_from_regex",
+                      "params": [{ "name": "r", "type": "*mut Regex" }],
+                      "ret": "Self"
+                    }
+                  ],
+                  "trait_impls": []
+                }
+              ]
+            }
+            """;
+        var cu      = ParseOnly("import Match from \"rx\";");  // user forgot to import Regex
+        var locator = new InMemoryManifestLocator(new() { ["rx"] = manifest });
+        var act     = () => NativeImportSynthesizer.Run(cu, locator, sourceDir: null);
+        var ex      = act.Should().Throw<NativeImportException>().Which;
+        ex.Code.Should().Be(DiagnosticCodes.NativeImportSynthesisFailure);
+        ex.Message.Should().Contain("`Regex`");
+        ex.Message.Should().Contain("import Regex from");
+    }
 }
