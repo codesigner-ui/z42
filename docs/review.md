@@ -306,41 +306,210 @@ Clang 用 action-based parsing（Parser 边解析边调用 Sema callback）。z4
 
 ---
 
+## Part 4 — VM 架构对标 (vs dotnet/runtime CoreCLR)
+
+> **参考代码**: dotnet/runtime 在本机 `/Users/d.s.qiu/Documents/codesigner-ui/runtime/`（主要看 `src/coreclr/vm/`、`src/coreclr/gc/`、`src/coreclr/inc/corjit.h`）
+>
+> z42 VM 当前规模 ~17.5K LOC（4 个 crate），分相: `metadata` / `corelib` / `gc` / `interp` / `jit` / `native`。本部分按"对未来扩展的阻碍程度"排序。
+
+### 概览
+
+z42 VM **整体设计已具备小型 VM 的基本骨架**，并且有两个相对 CoreCLR 早期阶段就做对了的好选择:
+
+- **[VmContext](../src/runtime/src/vm_context.rs) 集中化运行时状态**（445 LOC）— 替代 `thread_local!` 全局，让"多 VM 实例同进程共存"天然可行（embedding 友好）
+- **`MagrGC` trait 已预留**（[gc/heap.rs](../src/runtime/src/gc/heap.rs)，10 capability groups，~30 method）— 比 CoreCLR `IGCHeap` 接口在 v1 时期还早形式化 GC 边界
+
+但相对 CoreCLR 的成熟形态，有几条**会随 M7+ 与 L3 扩展线性放大成本**的设计裂缝。
+
+### P0 — 影响 M7+ 与 L3 扩展性
+
+#### 4.1 跨函数 / 跨类型引用用字符串名
+
+[exec_instr.rs](../src/runtime/src/interp/exec_instr.rs) 中 `Call` / `CallVirtual` / `Builtin` 全部按 `qualified_fn_name: String` 在 HashMap 里查。
+
+| 维度 | z42 | CoreCLR |
+|---|---|---|
+| 函数引用 | `String` + HashMap | metadata token → `MethodDesc*` 指针 |
+| 类型引用 | `String` + HashMap | metadata token → `MethodTable*` 指针 |
+| Builtin 分发 | `exec_builtin(name: &str, …)` | FCall MethodDesc，缓存原生指针 |
+
+**实际成本**:
+- 每次虚调用一次字符串哈希
+- IR 体积膨胀（u32 vs 长字符串）
+- `func_ref_cache_slots`（D1b 引入）已经在补救字符串查找的开销，是症状层修复
+
+**建议**: 立 spec `introduce-method-token`——在加载期把所有跨引用解析成 `MethodId(u32)` / `TypeId(u32)`，IR 字段从 String 改 u32。**这个改造应当在 M7 启动前完成**，否则反射 R-series 落地后回头改的代价翻倍（reflection API 必须建立在稳定 token 系统上）。
+
+#### 4.2 JIT/Interp 边界未形式化
+
+CoreCLR 用 `ICorJitCompiler` + `ICorJitInfo`（~100 callback）严格隔离 JIT 与 EE。z42 当前:
+
+- [jit/translate.rs](../src/runtime/src/jit/translate.rs)（833 LOC）里直接 `extern "C"` 声明了 **65 个 helper**
+- 每加一个 IR opcode → 可能加一个 helper；helper 签名手写、无版本号
+- `JitModuleCtx` 直接持 `*mut VmContext` 裸指针穿透所有抽象
+
+**问题**: 当 M4 解释器全绿、真正实施 JIT 时，会面临"helper 集合稳定性"的痛点——helper 改签名就要联动改所有 codegen 与 Cranelift 注册。
+
+**建议**: 在 M4 全绿之前（即 JIT 真正展开实施之前），立 spec `formalize-jit-vm-interface`，把当前 65 个 helper 收成一个 trait（或 `#[repr(C)]` vtable），定一个版本号字段。即使现在只有一个实现，**这条边界一旦形式化，后续 tier-up / ICorJitInfo 风格演进都顺**。
+
+#### 4.3 元数据 eager full-load
+
+[loader.rs](../src/runtime/src/metadata/loader.rs) 加载 .zbc 时一次性完整反序列化所有类型/函数。CoreCLR 用 RID maps 做**懒加载**——`MethodDesc` 在 chunk 内首次访问才物化。
+
+**当前 OK**: z42 stdlib 还小。
+**何时痛**: stdlib + 用户库共 50+ zpkg 时，VM 启动 = 全量解码所有 bincode。已有 [LazyLoader](../src/runtime/src/metadata/lazy_loader.rs) 但只对**模块整体**懒加载，模块内的 type/function 仍然是 eager。
+
+**建议**: 不急于现在改，但在 [vm-architecture.md](design/vm-architecture.md) 显式记一笔"未来引入 RID-map 风格的 per-type 懒加载"，避免反射 R-series 设计时假设元数据全量在内存。
+
+### P1 — 会随特性长大的问题
+
+#### 4.4 异常模型与 JIT 集成脆弱
+
+- 解释器：`ExecOutcome::Thrown(Value)` 通过返回值层层传上栈
+- JIT：`pending_exception: Option<Value>` 在 VmContext，**每个 helper 调用后都要轮询**
+- 异常表（`ExceptionEntry`）在每个函数本地，throw 时**线性扫描** try 区间
+
+vs CoreCLR 两阶段 EH + funclet + RVA 索引的 EH clause table。
+
+**问题**: JIT 侧"每次 call 后 polling pending_exception"在热路径上。当 try/catch 嵌套加深、性能基准跑起来，这条会出现在 profile 顶部。
+
+**建议**: 落地 spec `eh-protocol-v2` —— 至少把异常表从线性扫描升级为按 try_start 排序 + 二分查找；JIT 侧引入"helper 直接 trap / unwind"机制（Cranelift 已支持 traps）。M7 期间规划。
+
+#### 4.5 无统一 frame chain
+
+z42 当前有**三种"frame"概念**:
+
+| 来源 | 用途 |
+|---|---|
+| `interp::Frame` | 解释器活动记录（regs + env_arena） |
+| `jit::JitFrame` | JIT 寄存器文件 + FRAME_POOL 缓存 |
+| `VmContext::exec_stack` | GC 栈扫描用（`FrameGuard` RAII 推入） |
+
+CoreCLR 用单一 `Thread::m_pFrame` 链表，EH / GC / profiler / debugger **共享**这一链。z42 的三套并存导致: stack trace 不可能（要做必须三处协调）；async/fiber 引入时三处都要同步改。
+
+**建议**: 立 spec `unify-frame-chain`，引入轻量 `VmFrame { kind: Interp | Jit | Native, regs_ptr, prev: Option<NonNull<VmFrame>> }` 单链表，三套各持自己的扩展数据但共享 chain 节点。**Stack trace、profiler、debugger 都从这条链派生**。M7 内规划。
+
+#### 4.6 无方法分类 / stub 机制
+
+CoreCLR `MethodDesc` 有 `mcIL` / `mcFCall` / `mcPInvoke` / `mcArray` / `mcInstantiated` 分类，特殊方法直接挂原生 stub，**不走 IR 层**。
+
+z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特殊 Codegen"实现。Workable，但:
+- Builtin 走 `Builtin` 指令 + `exec_builtin(name, …)` 字符串查找（每次调用一次哈希）
+- Tier1 native 走 `CallNative` + libffi cif 重建
+
+**建议**: 配合 §4.1 的 token 化，给 corelib builtin 在 load 时分配 `BuiltinId(u32)` 直接缓存函数指针，IR 改用 id。Tier1 native 同理缓存 cif。这是**无设计风险的纯优化**，可在 `introduce-method-token` 同 spec 内一并做。
+
+### P2 — 长期 / 工具链
+
+#### 4.7 无 tier-up 基础设施
+
+`exec_mode` 是 IR 编译期注解（每个函数一个），不是**运行时 tier-up**。CoreCLR Tier 0 (interp) → Tier 1 (JIT) 由调用计数触发。
+
+**何时该做**: M4 解释器 + JIT 都全绿稳定后，是自然的演进方向。需要的基础设施: 调用计数（每函数一个 `AtomicU32`）、热阈值、函数指针替换。**前置依赖 §4.1 token 化**——没有稳定 MethodId，无法做 tier-up 替换。
+
+#### 4.8 无 ETW/EventPipe 风格诊断
+
+`tracing` crate 仅做 VM 内部 log，没有用户可订阅的事件流（GC tick、JIT compiled、exception thrown）。Embedding 场景（z42 作为脚本宿主）会希望有这个。
+
+**建议**: M7 之后立 spec `eventpipe-lite` —— 复用 `tracing::span` + `tracing::event`，定义一组稳定 event name + schema。低成本预留。
+
+#### 4.9 单线程
+
+已知限制。GC、VmContext、async/await 全部受此约束。L3 之前不动。多线程引入时需要的核心设计: GC suspension 协议、cooperative mode、线程本地 frame chain。
+
+### CoreCLR 对照下值得点名的 z42 正面设计
+
+写进 [vm-architecture.md](design/vm-architecture.md) 作为不变量，避免后续退化:
+
+1. **`VmContext` 集中状态、零 thread_local 业务态**（除 JIT `FRAME_POOL` 分配缓存）— embedding / 多 VM 共存的基础
+2. **Register VM**（vs CoreCLR stack VM 解释）— 一般性能更好
+3. **`MagrGC` trait 已就位**（10 capability groups）— 比 CoreCLR 在 v1 时期还早形式化 GC 边界
+4. **`PinView` 作为一等 `Value` 变体** — FFI 零拷贝模型干净，比 CoreCLR pinning + GCHandle 简洁
+5. **静态字段在 `VmContext::static_fields`，不挂在 TypeDesc 上** — 多 VM 隔离天然成立
+6. **GC stack scanning 用 `FrameGuard` RAII** — 比 CoreCLR 的 cooperative + Frame chain 更 Rust-ic，less ceremony
+
+### CoreCLR vs z42 设计取舍补充表
+
+| 维度 | z42 | CoreCLR | 评价 |
+|---|---|---|---|
+| 跨引用模型 | 字符串 + HashMap | metadata token → 指针 | ❌ **该改**（§4.1） |
+| JIT/EE 边界 | 65 个 extern helper 直裸 | `ICorJitCompiler` + `ICorJitInfo` | ❌ **该形式化**（§4.2） |
+| 元数据加载 | eager full-load | RID-map 懒加载 | ⚠️ M7 后规划（§4.3） |
+| 异常分发 | 线性扫表 + value 传播 | 两阶段 EH + funclet + RVA 索引 | ⚠️ M7 期间规划（§4.4） |
+| 栈遍历 | 三套 frame 概念并存 | 单一 `Thread::m_pFrame` 链 | ⚠️ **该统一**（§4.5） |
+| 方法分类 | 全部走 IR | mcIL / mcFCall / mcPInvoke 分类 stub | ⚠️ 与 §4.1 同 spec（§4.6） |
+| 运行时状态归属 | `VmContext` 集中 | `Thread` TLS + AppDomain | ✅ z42 更优 |
+| GC 接口 | `MagrGC` trait 已就位 | `IGCHeap` 接口 | ✅ 一致，方向对 |
+| FFI 模型 | `PinView` first-class Value | GCHandle + pinning | ✅ z42 更简洁 |
+| 静态字段 | 在 VmContext | 在 MethodTable | ✅ z42 更优（多 VM 隔离） |
+| Tier-up | 无（编译期 exec_mode） | Tier 0 → Tier 1 调用计数 | ⚠️ L3 准备（§4.7） |
+| 诊断 | tracing 内部 log | ETW + Profiler API | ⚠️ M7 后规划（§4.8） |
+| 多线程 | 单线程 | 多线程 + 协作式 GC | ⚠️ L3 准备（§4.9） |
+
+---
+
 ## 推进路线图
 
 按"对未来工作的阻塞程度"排序。每项标注变更类型（`refactor` / `lang` / `docs`）便于 spec 立项。
+
+**编译器**（Compiler）和 **VM**（Runtime）两条线分开排序，可并行推进:
+
+#### 编译器线
 
 | 时机 | 工作 | 类型 | 影响 | 状态 |
 |---|---|---|---|---|
 | **现在**（M6 收尾） | 完成 `extend-signature-whitelist` | 进行中 | 当前 spec | 🟡 |
 | **本迭代结束前** | `spec/changes/` 两个目录纳入 git | (随提交) | 防止脱管 | 📋 |
 | **M6 → M7 之间** | `introduce-bound-visitor` — 引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>`，迁 `FunctionEmitter*` 与 `TypeChecker.Exprs` | refactor | Part 1 §1.1、§1.3 + Part 2 §2.1；为 §3.2 dump-ast 提供基础 | 📋 |
-| **M6 → M7 之间** | `parser-error-recovery` — 启用现有 ErrorStmt/ErrorExpr 节点，多错聚合（**design 中点名"基础已有，仅需启用"**） | refactor | Part 2 §2.2 + Part 3 §3.7，LSP 前置 | 📋 |
+| **M6 → M7 之间** | `parser-error-recovery` — 启用现有 ErrorStmt/ErrorExpr 节点，多错聚合 | refactor | Part 2 §2.2 + Part 3 §3.7，LSP 前置 | 📋 |
 | **M6 → M7 之间** | `split-large-codegen-files` — IrGen、ImportedSymbolLoader、TypeChecker.Calls | refactor | Part 1 §1.1 残留 | 📋 |
 | **M6 → M7 之间** | `split-large-test-files` — TypeCheckerTests / rc_heap_tests | refactor | Part 1 §1.4 | 📋 |
-| **M6 → M7 之间** | `impl-dump-ast` — 实现 `--dump-ast` handler（依赖 `introduce-bound-visitor`） | refactor | Part 3 §3.2，开发期高频价值 | 📋 |
+| **M6 → M7 之间** | `impl-dump-ast` — 实现 `--dump-ast` handler（依赖 `introduce-bound-visitor`） | refactor | Part 3 §3.2 | 📋 |
 | **M7 启动前**（**关键前置**） | `split-symbol-from-type` — 抽 `ISymbol` 层；**Symbol 持有 `DeclSpan`，根除 §3.1 Decl 身份丢失** | lang | Part 2 §2.3 + Part 3 §3.1，R-series 反射前置 | 📋 |
 | **M7 期间** | `lexer-trivia-preserve` — lexer 加 trivia 字段（可空） | refactor | Part 2 §2.5，formatter 前置 | 📋 |
-| **M7 期间** | `split-exec-instr` — Rust VM 解释器分发拆分 | refactor | Part 1 §1.2 | 📋 |
-| **M7 期间** | `diag-engine-v2` — warning groups + severity 重映射（pragma 抑制留待 trivia 后） | lang | Part 3 §3.3 | 📋 |
+| **M7 期间** | `diag-engine-v2` — warning groups + severity 重映射 | lang | Part 3 §3.3 | 📋 |
 | **M7 之后** | 公共 API 边界声明（仅文档 + 命名空间约定） | docs | Part 2 §2.4 + Part 3 §3.5 | 📋 |
-| **M7 之后** | 在 [compiler-architecture.md](design/compiler-architecture.md) 显式记录"AST 不可变 / 三段分相"作为不变量 | docs | Part 3 §3.8、§3.9 防退化 | 📋 |
-| **L3 之后** | 评估 native 签名解析统一；评估引入 CFG（如 nullability/escape 分析需要） | 待评估 | Part 2 §2.6 + Part 3 §3.4 | 📋 |
+| **M7 之后** | 在 [compiler-architecture.md](design/compiler-architecture.md) 记录"AST 不可变 / 三段分相"作为不变量 | docs | Part 3 §3.8、§3.9 防退化 | 📋 |
+| **L3 之后** | 评估 native 签名解析统一；评估引入 CFG | 待评估 | Part 2 §2.6 + Part 3 §3.4 | 📋 |
+
+#### VM 线（Rust runtime）
+
+| 时机 | 工作 | 类型 | 影响 | 状态 |
+|---|---|---|---|---|
+| **M4 全绿前** | `formalize-jit-vm-interface` — 把 65 个 extern helper 收成 trait/vtable，定版本号 | refactor | Part 4 §4.2，JIT 真正展开前必须 | 📋 |
+| **M6 → M7 之间** | `split-exec-instr` — `exec_instr.rs` (756 LOC) 按 op 类别拆分 | refactor | Part 1 §1.2 | 📋 |
+| **M7 启动前**（**关键前置**） | `introduce-method-token` — String → `MethodId` / `TypeId` / `BuiltinId`，IR 字段 u32 化（含 §4.6 builtin/native 缓存） | lang+vm | Part 4 §4.1 + §4.6，反射 R-series 前置 | 📋 |
+| **M7 期间** | `unify-frame-chain` — 单一 `VmFrame` 链表，统一 interp / jit / GC scan | refactor | Part 4 §4.5，stack trace / debugger 前置 | 📋 |
+| **M7 期间** | `eh-protocol-v2` — 异常表二分查找 + JIT trap 集成 | vm | Part 4 §4.4，依赖 `unify-frame-chain` | 📋 |
+| **M7 之后** | 在 [vm-architecture.md](design/vm-architecture.md) 记录"VmContext 集中 / Register VM / PinView first-class / static-in-context"作为不变量 | docs | Part 4 §4.正面设计 防退化 | 📋 |
+| **M7 之后** | `lazy-metadata-loading` — RID-map 风格 per-type 懒加载 | vm | Part 4 §4.3，依赖 `introduce-method-token` | 📋 |
+| **M7 之后** | `eventpipe-lite` — tracing-based 用户可订阅事件流 | vm | Part 4 §4.8，embedding 友好 | 📋 |
+| **L3 准备** | tier-up 基础设施 | vm | Part 4 §4.7，依赖 `introduce-method-token` + `formalize-jit-vm-interface` | 📋 |
+| **L3 准备** | 多线程 GC suspension 协议（大件） | vm | Part 4 §4.9 | 📋 |
 
 ### 关键依赖关系
 
 ```
 extend-signature-whitelist (进行中)
     ↓
-introduce-bound-visitor ───┐
-parser-error-recovery   ───┤  (并行可)
-split-large-codegen-files ─┘
-    ↓
-split-symbol-from-type  ← M7 启动前必须完成
-    ↓
-M7 (VM metadata + reflection R-series)
-    ↓
-lexer-trivia-preserve / 公共 API 边界
+┌─ 编译器线 ─────────────────┐  ┌─ VM 线 ────────────────────┐
+│                            │  │                            │
+│ introduce-bound-visitor ──┐│  │ formalize-jit-vm-interface │
+│ parser-error-recovery   ──┤│  │ split-exec-instr           │
+│ split-large-codegen-files─┤│  │                            │
+│ split-large-test-files  ──┤│  │           ↓                │
+│           ↓                │  │ introduce-method-token  ←───┼─── M7 启动前必须
+│ impl-dump-ast              │  │           ↓                │     （含 builtin/native 缓存）
+│           ↓                │  │ unify-frame-chain          │
+│ split-symbol-from-type ←───┼──┤           ↓                │
+│   (含 Decl 身份保留)       │  │ eh-protocol-v2             │
+└─────────────┬──────────────┘  └─────────────┬──────────────┘
+              ↓                                ↓
+           M7 (VM metadata + reflection R-series + tier-up 准备)
+              ↓
+       lexer-trivia / diag-engine-v2 / lazy-metadata / eventpipe-lite
+              ↓
+         L3 (tier-up / 多线程 / 公共 API)
 ```
 
 ### 立项建议优先级
@@ -348,26 +517,32 @@ lexer-trivia-preserve / 公共 API 边界
 **最高优先**（M7 启动前必须）:
 
 1. `split-symbol-from-type` — 反射系列的设计前置；同步根除 Decl 身份丢失（§3.1）
-2. `introduce-bound-visitor` — 阻止 `FunctionEmitter*` 继续膨胀；为 dump-ast 提供基础
-3. `parser-error-recovery` — IDE/LSP 前置；现有 ErrorStmt/ErrorExpr 基础已有，仅需启用
+2. `introduce-method-token` — VM 反射 R-series 前置；同步处理 builtin / native 缓存（§4.1+§4.6）
+3. `introduce-bound-visitor` — 阻止 `FunctionEmitter*` 继续膨胀；为 dump-ast 提供基础
+4. `parser-error-recovery` — IDE/LSP 前置；现有 ErrorStmt/ErrorExpr 基础已有，仅需启用
+5. `formalize-jit-vm-interface` — JIT 真正展开前必须形式化（§4.2）
 
 **高优先**（M7 启动前应完成）:
 
-4. `split-large-codegen-files` + `split-large-test-files` — 直接消除当前 [code-organization.md](../.claude/rules/code-organization.md) 违规
-5. `split-exec-instr` — Rust 端同款问题
-6. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费
+6. `split-large-codegen-files` + `split-large-test-files` — 直接消除当前 [code-organization.md](../.claude/rules/code-organization.md) 违规
+7. `split-exec-instr` — Rust 端同款问题
+8. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费
 
 **中优先**（M7 内或之后）:
 
-7. `lexer-trivia-preserve` — 单向门，越晚改成本越高
-8. `diag-engine-v2` — warning groups + severity 重映射
-9. 公共 API 边界声明 — 仅文档工作
-10. 在 [compiler-architecture.md](design/compiler-architecture.md) 记录 "AST 不可变 / 三段分相" 不变量
+9. `unify-frame-chain` — stack trace / debugger 前置（§4.5）
+10. `eh-protocol-v2` — 异常分发性能 + JIT 集成（§4.4）
+11. `lexer-trivia-preserve` — 单向门，越晚改成本越高
+12. `diag-engine-v2` — warning groups + severity 重映射
+13. 在 [compiler-architecture.md](design/compiler-architecture.md) / [vm-architecture.md](design/vm-architecture.md) 记录正面设计作为不变量
+14. 公共 API 边界声明 — 仅文档工作
 
 **低优先**（观察）:
 
-11. native 签名解析统一 — 等 M7 反射落地后再评估
-12. 引入显式 CFG — 当 nullability/escape/liveness 分析需要时
+15. `lazy-metadata-loading` / `eventpipe-lite` — M7 之后再评估
+16. native 签名解析统一 — 等 M7 反射落地后再评估
+17. 引入显式 CFG — 当 nullability/escape/liveness 分析需要时
+18. tier-up + 多线程 — L3 准备阶段大件
 
 ---
 
@@ -388,3 +563,9 @@ lexer-trivia-preserve / 公共 API 边界
 - **依赖审计**: NuGet / Cargo 第三方依赖的版本与许可证（CI 工作）
 - **跨平台**: Windows / Linux 适配（CLAUDE.md 当前 darwin only）
 - **stdlib 内容覆盖度**: 标准库 API 完整度（M7 范围）
+
+## 修订记录
+
+- **2026-05-05 初版**: Part 1（工程组织）+ Part 2（Roslyn 视角）
+- **2026-05-05 增补 Part 3**: Clang 视角对标
+- **2026-05-05 增补 Part 4**: VM 架构对标 (vs dotnet/runtime CoreCLR)；路线图拆为编译器线 + VM 线两轨
