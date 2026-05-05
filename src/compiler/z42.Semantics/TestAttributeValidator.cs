@@ -154,7 +154,7 @@ public static class TestAttributeValidator
         // ── E0912 [Benchmark] signature (partial; full check needs Bencher type — R2.C) ──
         if (hasBenchmark && !hasTest)
         {
-            ValidateBenchmarkPartialSignature(fn, diags);
+            ValidateBenchmarkFullSignature(fn, diags);
         }
 
         // ── E0915 [Setup]/[Teardown] signature ────────────────────────────
@@ -251,11 +251,14 @@ public static class TestAttributeValidator
         return false;
     }
 
-    /// [Benchmark] partial signature check (R4.A scope). The full "first param
-    /// must be Bencher" check requires the Bencher type from z42.test, which
-    /// is closure-dependent and lands in R2.C. For now we only check the
-    /// always-applicable rules: void return + no generics.
-    private static void ValidateBenchmarkPartialSignature(FunctionDecl fn, DiagnosticBag diags)
+    /// R2 完整版 — full [Benchmark] signature check.
+    ///
+    /// Rules:
+    ///   1. return type is void
+    ///   2. not generic
+    ///   3. exactly one parameter, of type `Bencher` (short name match;
+    ///      Bencher class lives in `Std.Test`)
+    private static void ValidateBenchmarkFullSignature(FunctionDecl fn, DiagnosticBag diags)
     {
         if (fn.ReturnType is not VoidType)
         {
@@ -270,6 +273,38 @@ public static class TestAttributeValidator
                 $"function `{fn.Name}` decorated with `[Benchmark]` must not be generic",
                 fn.Span);
         }
-        // First-parameter-is-Bencher check pending R2.C.
+
+        if (fn.Params.Count == 0)
+        {
+            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
+                $"function `{fn.Name}` decorated with `[Benchmark]` must have first parameter of type `Bencher`",
+                fn.Span);
+            return;
+        }
+
+        if (fn.Params.Count > 1)
+        {
+            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
+                $"function `{fn.Name}` decorated with `[Benchmark]` must take exactly one parameter (the Bencher); got {fn.Params.Count}",
+                fn.Span);
+            // Don't return — still validate the first param's type below.
+        }
+
+        var firstParamTypeName = ExtractTypeName(fn.Params[0].Type);
+        if (firstParamTypeName != "Bencher")
+        {
+            diags.Error(DiagnosticCodes.BenchmarkSignatureInvalid,
+                $"function `{fn.Name}` decorated with `[Benchmark]` first parameter must be `Bencher`, got `{firstParamTypeName}`",
+                fn.Params[0].Span);
+        }
     }
+
+    /// Extract the short name from a TypeExpr — `NamedType.Name` or
+    /// `GenericType.Name` (no parameter brackets). Used for shape-only checks.
+    private static string ExtractTypeName(TypeExpr t) => t switch
+    {
+        NamedType nt   => nt.Name,
+        GenericType gt => gt.Name,
+        _              => "<unknown>",
+    };
 }

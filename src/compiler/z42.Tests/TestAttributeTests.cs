@@ -66,6 +66,17 @@ public sealed class TestAttributeTests
         }
         """;
 
+    // R2 完整版: validate-time stub for `Bencher` (real definition in z42.test).
+    // Validator only checks the parameter type's short name, so an empty class
+    // is enough to satisfy E0912 lookups. Combined with ExceptionStub, this
+    // gives a self-contained CU sans imports.
+    private const string BencherStub = """
+        namespace Std.Test;
+        class Bencher {
+            public Bencher() {}
+        }
+        """;
+
     // ── Parser: basic accept ───────────────────────────────────────────────────
 
     [Fact]
@@ -299,5 +310,49 @@ public sealed class TestAttributeTests
         var entry = module.TestIndex!.Single();
         entry.ExpectedThrowTypeIdx.Should().Be(0);
         entry.Flags.HasFlag(TestFlags.ShouldThrow).Should().BeFalse();
+    }
+
+    // ── R2 完整版 — E0912 [Benchmark] full signature ──────────────────────────
+
+    [Fact]
+    public void Validate_BenchmarkWithBencherParam_PassesValidation()
+    {
+        var (diags, _) = Validate(BencherStub + """
+            [Benchmark] void f(Bencher b) {}
+            """);
+        diags.HasErrors.Should().BeFalse(because: string.Join("\n", diags.All));
+    }
+
+    [Fact]
+    public void Validate_BenchmarkNoParams_ReportsE0912()
+    {
+        var (diags, _) = Validate(BencherStub + """
+            [Benchmark] void f() {}
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
+            d.Message.Contains("first parameter of type"));
+    }
+
+    [Fact]
+    public void Validate_BenchmarkWrongParamType_ReportsE0912()
+    {
+        var (diags, _) = Validate(BencherStub + """
+            [Benchmark] void f(int x) {}
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
+            d.Message.Contains("must be `Bencher`"));
+    }
+
+    [Fact]
+    public void Validate_BenchmarkExtraParams_ReportsE0912()
+    {
+        var (diags, _) = Validate(BencherStub + """
+            [Benchmark] void f(Bencher b, int extra) {}
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.BenchmarkSignatureInvalid &&
+            d.Message.Contains("exactly one parameter"));
     }
 }

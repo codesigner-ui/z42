@@ -13,3 +13,17 @@ public static class Console {
     [Native("__readline")]
     public static extern string ReadLine();
 }
+
+// `ConsoleError` mirrors C#'s `Console.Error` (sibling class because z42 has
+// no nested static classes; semantics identical).
+//
+// 2026-05-05 R2 完整版：runner-side TestIO sink dispatch routes stderr to
+// its own capture buffer, distinct from stdout. Until now z42 had no
+// user-facing way to write to stderr; tests can use this directly.
+public static class ConsoleError {
+    [Native("__eprintln")]
+    public static extern void WriteLine(object value);
+
+    [Native("__eprint")]
+    public static extern void Write(object value);
+}

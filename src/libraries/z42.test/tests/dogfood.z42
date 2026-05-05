@@ -7,7 +7,8 @@
 namespace Z42TestDogfood;
 
 using Std;       // TestFailure / SkipSignal (in Std namespace)
-using Std.Test;  // Assert API
+using Std.Test;  // Assert API + TestIO + Bencher (R2 完整版)
+using Std.IO;    // Console.WriteLine / Error.WriteLine (TestIO capture targets)
 
 // ── Pass-path 验证（这些都应该绿）──────────────────────────────────────
 
@@ -64,4 +65,191 @@ void test_assert_skip_throws_skipsignal() {
 [ShouldThrow<Exception>]
 void test_assert_fail_caught_via_exception_base() {
     Assert.Fail("inheritance walk should match Exception");
+}
+
+// z42 lambda 对**值类型**采用快照捕获语义（详见
+// examples/closure_capture.z42），整数、字符串等的"在 lambda 里改 + 外部读"
+// 模式不工作；要传递可变状态必须用引用类型容器。下面 IntCell / StrCell 即此。
+class IntCell {
+    public int v;
+    public IntCell() { this.v = 0; }
+}
+
+class StrCell {
+    public string v;
+    public StrCell() { this.v = ""; }
+}
+
+// ── R2 完整版：TestIO ────────────────────────────────────────────────────
+
+[Test]
+void test_testio_capture_stdout() {
+    var s = TestIO.captureStdout(() => {
+        Console.WriteLine("hello");
+        Console.WriteLine("world");
+    });
+    Assert.Equal("hello\nworld\n", s);
+}
+
+[Test]
+void test_testio_capture_stderr() {
+    var s = TestIO.captureStderr(() => {
+        ConsoleError.WriteLine("on stderr");
+    });
+    Assert.Equal("on stderr\n", s);
+}
+
+[Test]
+void test_testio_capture_both() {
+    var r = TestIO.captureBoth(() => {
+        Console.WriteLine("a");
+        ConsoleError.WriteLine("b");
+    });
+    Assert.Equal("a\n", r.Stdout);
+    Assert.Equal("b\n", r.Stderr);
+}
+
+[Test]
+void test_testio_capture_nested_stdout() {
+    // 用 StrCell 因为 string 是值类型快照（lambda 写不回外部变量）。
+    var holder = new StrCell();
+    var outer = TestIO.captureStdout(() => {
+        Console.WriteLine("outer-pre");
+        holder.v = TestIO.captureStdout(() => {
+            Console.WriteLine("inner");
+        });
+        Console.WriteLine("outer-post");
+    });
+    Assert.Equal("inner\n", holder.v);
+    Assert.Equal("outer-pre\nouter-post\n", outer);
+}
+
+[Test]
+void test_testio_capture_rethrows_body_exception() {
+    // body 抛出时 sink 应被卸载，异常透传。
+    var caught = false;
+    try {
+        TestIO.captureStdout(() => {
+            Console.WriteLine("before throw");
+            throw new Exception("boom");
+        });
+    } catch (Exception e) {
+        caught = true;       // catch 块在 lambda 外，不受快照影响
+    }
+    Assert.True(caught);
+    // 后续 capture 应该看到自己的输出，不被上次未卸载 sink 污染。
+    var s = TestIO.captureStdout(() => {
+        Console.WriteLine("clean");
+    });
+    Assert.Equal("clean\n", s);
+}
+
+// ── R2 完整版：Assert 扩展 ──────────────────────────────────────────────
+
+[Test]
+void test_assert_throws_any_exception() {
+    Assert.Throws(() => Assert.Fail("inner boom"));
+}
+
+[Test]
+void test_assert_throws_skip_also_counts() {
+    // 任意 throw 都算命中（包括 SkipSignal / 普通 Exception）。
+    Assert.Throws(() => Assert.Skip("any throw counts"));
+    Assert.Throws(() => { throw new Exception("plain"); });
+}
+
+[Test]
+[ShouldThrow<TestFailure>]
+void test_assert_throws_no_throw_fails() {
+    // body 不抛 → Throws 自身抛 TestFailure（被外层 [ShouldThrow] 捕获）
+    Assert.Throws(() => { });
+}
+
+[Test]
+void test_assert_does_not_throw_pass() {
+    Assert.DoesNotThrow(() => {
+        var x = 1 + 1;
+    });
+}
+
+[Test]
+[ShouldThrow<TestFailure>]
+void test_assert_does_not_throw_actually_throws_fails() {
+    // body 抛 TestFailure → DoesNotThrow 抛 TestFailure（外层 [ShouldThrow] 捕获）
+    Assert.DoesNotThrow(() => Assert.Fail("oops"));
+}
+
+[Test]
+void test_assert_equal_approx_within_eps() {
+    Assert.EqualApprox(1.0001, 1.0, 0.001);
+    Assert.EqualApprox(-2.5, -2.4995, 0.001);
+}
+
+[Test]
+[ShouldThrow<TestFailure>]
+void test_assert_equal_approx_beyond_eps_fails() {
+    Assert.EqualApprox(1.5, 1.0, 0.1);
+}
+
+// ── R2 完整版：Bencher ──────────────────────────────────────────────────
+
+[Test]
+void test_bencher_default_runs_warmup_plus_samples() {
+    var b = new Bencher();
+    var c = new IntCell();
+    b.iter(() => { c.v = c.v + 1; });
+    // 默认 warmup=10, samples=100 → body 调用 110 次
+    Assert.Equal(110, c.v);
+    Assert.Equal(100, b.Samples);
+}
+
+[Test]
+void test_bencher_custom_iter_counts() {
+    var b = new Bencher(2, 5);
+    var c = new IntCell();
+    b.iter(() => { c.v = c.v + 1; });
+    Assert.Equal(7, c.v);
+    Assert.Equal(5, b.Samples);
+}
+
+[Test]
+void test_bencher_stat_invariants() {
+    var b = new Bencher(2, 5);
+    // body 做点活：不需要捕获结果，只需要让样本耗时非零。
+    b.iter(() => {
+        var i = 0;
+        var sum = 0.0;
+        while (i < 100) {
+            sum = sum + Math.Sqrt(i + 1.0);
+            i = i + 1;
+        }
+        // sum 在 lambda 内自洽，不需要外传。
+    });
+    Assert.True(b.MinNs >= 0);
+    Assert.True(b.MaxNs >= b.MinNs);
+    Assert.True(b.MedianNs >= b.MinNs);
+    Assert.True(b.MedianNs <= b.MaxNs);
+    Assert.True(b.TotalNs >= b.MinNs * 5);
+}
+
+[Test]
+void test_bencher_print_summary_format() {
+    var b = new Bencher(1, 3);
+    b.iter(() => { });
+    var s = TestIO.captureStdout(() => {
+        b.printSummary("foo");
+    });
+    Assert.Contains("foo", s);
+    Assert.Contains("min", s);
+    Assert.Contains("median", s);
+    Assert.Contains("max", s);
+}
+
+[Test]
+void test_bench_helpers_black_box_passthrough() {
+    // 本期 blackBox 用 object 形态（generic extern 在 z42 当前限制下不可用）。
+    var x = BenchHelpers.blackBox(42);
+    Assert.Equal(42, x);
+    var y = BenchHelpers.blackBox("xyz");
+    Assert.Equal("xyz", y);
 }

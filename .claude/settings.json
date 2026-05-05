@@ -49,7 +49,9 @@
       "Bash(rm -rf src/libraries/*/dist)",
       "Bash(Z42_INCR_DEBUG=1 *)",
       "Bash(TRYBUILD=overwrite *)",
-      "Bash(/tmp/classify.sh)"
+      "Bash(/tmp/classify.sh)",
+      "Bash(./artifacts/runtime/debug/z42_vm src/libraries/z42.math/tests/golden/15_math/source.zbc)",
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/**)"
     ],
     "additionalDirectories": [
       "/tmp",

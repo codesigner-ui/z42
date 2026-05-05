@@ -33,6 +33,7 @@ pub mod fs;
 pub mod object;
 pub mod char;
 pub mod gc;
+pub mod bench;
 
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
@@ -58,10 +59,22 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         // ── I/O ───────────────────────────────────────────────────────────────
         m.insert("__println",  io::builtin_println);
         m.insert("__print",    io::builtin_print);
+        m.insert("__eprintln", io::builtin_eprintln);
+        m.insert("__eprint",   io::builtin_eprint);
         m.insert("__readline", io::builtin_readline);
         m.insert("__concat",   io::builtin_concat);
         m.insert("__len",      io::builtin_len);
         m.insert("__contains", io::builtin_contains);
+
+        // ── TestIO sinks (R2 完整版) ─────────────────────────────────────────
+        m.insert("__test_io_install_stdout_sink", io::builtin_test_io_install_stdout_sink);
+        m.insert("__test_io_take_stdout_buffer",  io::builtin_test_io_take_stdout_buffer);
+        m.insert("__test_io_install_stderr_sink", io::builtin_test_io_install_stderr_sink);
+        m.insert("__test_io_take_stderr_buffer",  io::builtin_test_io_take_stderr_buffer);
+
+        // ── Bencher helpers (R2 完整版) ──────────────────────────────────────
+        m.insert("__bench_now_ns",     bench::builtin_bench_now_ns);
+        m.insert("__bench_black_box",  bench::builtin_bench_black_box);
 
         // ── String (minimal intrinsic core; most methods are script-side now) ─
         // 2026-04-24 simplify-string-stdlib: removed 11 str builtins (contains /

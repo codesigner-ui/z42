@@ -1,0 +1,129 @@
+namespace Std.Test;
+
+using Std;
+using Std.IO;
+
+// `Std.Test.Bencher` — measure elapsed nanoseconds of a code segment (R2 完整版).
+//
+// Usage:
+//
+//   var b = new Bencher();              // warmup=10, samples=100
+//   b.iter(() => doWork());
+//   b.printSummary("doWork");           // bench[doWork] min=... median=... max=...
+//
+// API surface stable; `[Benchmark]` test runner mode (auto-discover and run
+// Bencher-typed methods) is a future spec — for now use Bencher inside a
+// regular `[Test]`.
+//
+// blackBox: identity wrapper to opt out of dead-code elimination. Interp
+// path is no-op today; JIT path will hook here once cranelift learns to
+// elide pure expressions. Safe to use unconditionally.
+
+public class Bencher {
+    public int WarmupIters { get; private set; }
+    public int Samples { get; private set; }
+    public long MinNs { get; private set; }
+    public long MaxNs { get; private set; }
+    public long MedianNs { get; private set; }
+    public long TotalNs { get; private set; }
+
+    public Bencher() {
+        // z42 当前不支持 `: this(...)` ctor delegation；展开默认值。
+        this.WarmupIters = 10;
+        this.Samples = 100;
+        this.MinNs = 0;
+        this.MaxNs = 0;
+        this.MedianNs = 0;
+        this.TotalNs = 0;
+    }
+
+    public Bencher(int warmupIters, int sampleIters) {
+        this.WarmupIters = warmupIters;
+        this.Samples = sampleIters;
+        this.MinNs = 0;
+        this.MaxNs = 0;
+        this.MedianNs = 0;
+        this.TotalNs = 0;
+    }
+
+    // Run `body` `WarmupIters` times un-timed, then `Samples` times timed.
+    // After return, MinNs / MedianNs / MaxNs / TotalNs reflect the sample run.
+    public void iter(Action body) {
+        // ── warmup ───────────────────────────────────────────────────────
+        int w = 0;
+        while (w < this.WarmupIters) {
+            body();
+            w = w + 1;
+        }
+
+        // ── timed samples ────────────────────────────────────────────────
+        long[] times = new long[this.Samples];
+        int i = 0;
+        while (i < this.Samples) {
+            long t0 = __bench_now_ns();
+            body();
+            long t1 = __bench_now_ns();
+            times[i] = t1 - t0;
+            i = i + 1;
+        }
+
+        // ── stats: insertion sort + min/median/max/total ─────────────────
+        sortInPlace(times);
+
+        if (this.Samples > 0) {
+            this.MinNs    = times[0];
+            this.MaxNs    = times[this.Samples - 1];
+            this.MedianNs = times[this.Samples / 2];
+        }
+        long total = 0;
+        int j = 0;
+        while (j < this.Samples) {
+            total = total + times[j];
+            j = j + 1;
+        }
+        this.TotalNs = total;
+    }
+
+    // Human-readable single-line summary. Intentionally compact —
+    // machine-consumable JSON is a future spec (would also serialise the
+    // raw samples array).
+    public void printSummary(string label) {
+        Console.WriteLine($"bench[{label}] min={this.MinNs}ns median={this.MedianNs}ns max={this.MaxNs}ns samples={this.Samples}");
+    }
+
+    // Insertion sort — Samples is small (default 100), no heap pressure.
+    // Stable, in-place, no-allocation.
+    private static void sortInPlace(long[] xs) {
+        int n = xs.Length;
+        int i = 1;
+        while (i < n) {
+            long key = xs[i];
+            int j = i - 1;
+            while (j >= 0 && xs[j] > key) {
+                xs[j + 1] = xs[j];
+                j = j - 1;
+            }
+            xs[j + 1] = key;
+            i = i + 1;
+        }
+    }
+
+    // ── Native bindings ───────────────────────────────────────────────────
+
+    [Native("__bench_now_ns")]
+    private static extern long __bench_now_ns();
+}
+
+public static class BenchHelpers {
+    // Identity wrapper marking "do not optimise this away" — cf. criterion
+    // black_box / std::hint::black_box. Currently a no-op (interp does not
+    // eliminate dead code); shape preserved so user code stays portable to
+    // future JIT optimisations.
+    //
+    // **Type**：本期 API 用 `object` 而非 `<T>`。z42 parser 在表达式上下文
+    // 不识别方法级显式 generic call `Foo.bar<int>(42)`（与 `<` 比较冲突），
+    // 而 generic extern 又不能从参数推断 T；用 object 是当前唯一可用形态。
+    // 等显式 generic call site 语法或更深的 inference 落地时升级回 `<T>(T)`。
+    [Native("__bench_black_box")]
+    public static extern object blackBox(object value);
+}

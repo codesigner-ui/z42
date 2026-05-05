@@ -312,6 +312,86 @@ just test-changed --dry-run
 
 ---
 
+## TestIO（R2 完整版，2026-05-05）
+
+`Std.Test.TestIO` 三个静态方法，让测试代码捕获被测代码的 console 输出。lambda + delegate 已落地后兑现。
+
+```z42
+public static class TestIO {
+    public static string captureStdout(Action body);
+    public static string captureStderr(Action body);
+    public static CaptureResult captureBoth(Action body);
+}
+
+public class CaptureResult {
+    public string Stdout { get; }
+    public string Stderr { get; }
+}
+```
+
+### 实现要点
+
+- **Stack 语义**：`__test_io_install_*_sink` push 一个 `Vec<u8>`，`__test_io_take_*_buffer` pop。嵌套合法（内层 push/pop 不影响外层 buffer）。
+- **异常透传**：捕获过程中 body 抛 → take_buffer 在 catch 块里调一次确保 sink pop，再 `throw e;` 重抛。每个 `captureStdout` 调用前后 sink stack 深度守恒。
+- **stderr 先决条件**：z42.io 加 `Std.IO.ConsoleError` 类（`WriteLine` / `Write`，binding `__eprintln` / `__eprint`），让 z42 用户首次能写 stderr。`captureBoth` 同时 install 两个 sink；channel 之间不混合。
+
+### 错误模式
+
+> 写测试时记得：z42 lambda **快照捕获值类型**（[examples/closure_capture.z42](../../examples/closure_capture.z42)）。要把 capture 结果传出 lambda body 必须用引用类型（class/array），不能直接对外部 int / string 局部变量赋值。dogfood 用 `IntCell` / `StrCell` 等 wrapper class 演示这个模式。
+
+---
+
+## Bencher（R2 完整版，2026-05-05）
+
+`Std.Test.Bencher` 给代码段做 wall-clock 测量。当前 runner 不调度 [Benchmark] 方法（独立 spec），用户在 [Test] 里手动 `var b = new Bencher(); b.iter(() => ...);` 即可。
+
+```z42
+public class Bencher {
+    public Bencher();                              // warmup=10 / samples=100
+    public Bencher(int warmupIters, int sampleIters);
+    public void iter(Action body);
+    public long MinNs { get; }
+    public long MaxNs { get; }
+    public long MedianNs { get; }
+    public long TotalNs { get; }
+    public int  Samples { get; }
+    public void printSummary(string label);
+}
+
+public static class BenchHelpers {
+    public static object blackBox(object value);   // identity；JIT 端预留 hook
+}
+```
+
+### Native helpers
+
+- `__bench_now_ns` — `OnceLock<Instant>` epoch + `Instant::now().elapsed().as_nanos()`，单调性由 `std::time::Instant` 保证
+- `__bench_black_box` — interp 端 `args[0].clone()`；future JIT 端可挂钩防止 dead-code elimination
+
+### TestAttributeValidator E0912 完整化（R2 完整版）
+
+R4.A 留的"first-parameter-is-Bencher"检查现在补齐：`[Benchmark]` 方法必须 `void f(Bencher b)`（exactly 1 个参数；类型短名 `Bencher`）。0 / 多余参数 / 错类型都报 E0912。
+
+### Runner [Benchmark] 调度（未做）
+
+当前 runner `entry.kind != TestEntryKind::Test { continue; }`：[Benchmark] 函数被 discovery 过滤掉。运行 / JSON 输出 / criterion-style baseline diff 留给独立 spec。
+
+---
+
+## 实施期间发现的 z42 反射限制（2026-05-05）
+
+R2 完整版实施时碰到 z42 当前的三个 runtime-type 识别 bug，记录于此供未来 compiler-fix spec 清算：
+
+| 路径 | 现象 | 实测 |
+|---|---|---|
+| `e is X` cross-module（X 是导入类的短名）| 当 `e` 静态类型 = Exception、运行时 = Std.TestFailure → IsInstance 返回 false | dogfood debug 多次复现 |
+| generic-E `is`（`is E` where E is type-param）| IR 端 IsInstance 接受编译期固定 class_name | spec 明文不支持 |
+| `Object.GetType()` on Exception 子类 | VCall 找不到方法（vtable 跨多层继承时 Object 方法未传递）| `unknown method GetType` 报错 |
+
+这些限制让 `Assert.Throws<E>(Action)` / `Assert.Throws(string typeName, Action)` 都不可用；本期最终 API 是 untyped 的 `Assert.Throws(Action)` —— "应抛特定类型"用 `[ShouldThrow<E>]` 测试级注解（编译期写 chain → runner 字符串匹配，绕开 reflection）。
+
+---
+
 ## Benchmark 与 Test 分离原则
 
 z42 **不**把 benchmark 放到 `src/tests/` 下，而是分离两个不同的目录树。这与 Rust / C++ / .NET / Java / Haskell 等主流静态语言一致。

@@ -1,18 +1,67 @@
 # z42.test
 
-z42 标准测试运行时（v0）—— 极简 imperative TestRunner，支撑 stdlib 自身和用户脚本的单元测试。
+z42 标准测试库 —— 给 stdlib 自身和用户脚本提供 attribute 注解（[Test] / [Skip] / [ShouldThrow<E>] 等）+ Assert + TestIO + Bencher，配合 [z42-test-runner](../../toolchain/test-runner/) 运行。
 
-## 现状（v0, 2026-04-27）
+## 现状（v0.5, 2026-05-05）
 
-z42 当前缺失三件支撑高级测试 API 的语言能力：
+R 系列基础设施已落（R1 / R2 minimal / R2 完整版 / R3 minimal+R3a+R3c / R4.A+R4.B / R5）。当前能力：
 
-| 能力 | 状态 | 影响 v1+ API |
+| 能力 | 状态 | API |
 |---|---|---|
-| Lambda / 函数引用 | L3 | `runner.Run("name", () => ...)` 等闭包式 API |
-| 通用 Attribute（不只 [Native]）| L3+ | `[Test]` 注解 |
-| Reflection / 类型枚举 | L3-R | 自动发现 `[Test]` 方法 |
+| Attribute 注解 | ✅ R1.C / R4.A / R4.B | `[Test]` / `[Skip(reason:)]` / `[Ignore]` / `[Setup]` / `[Teardown]` / `[Benchmark]` / `[ShouldThrow<E>]` |
+| Assert 基础（9 方法） | ✅ R2 minimal | Equal / NotEqual / True / False / Null / NotNull / Contains / Fail / Skip |
+| Assert 扩展（lambda） | ✅ R2 完整版 | Throws / DoesNotThrow / EqualApprox |
+| TestIO（捕获 console） | ✅ R2 完整版 | captureStdout / captureStderr / captureBoth |
+| Bencher（基准测量） | ✅ R2 完整版 | Bencher.iter(Action) / printSummary / Min·Max·Median·Total·Samples + BenchHelpers.blackBox |
+| Imperative TestRunner（旧） | ✅ v0 保留 | Begin / Fail / Summary（lambda 前的兼容路径）|
+| Runner [Benchmark] 调度 | 📋 待开 spec | runner 当前 skip [Benchmark]；用户在 [Test] 内手动构造 Bencher |
 
-所以 v0 用最朴素的 `Begin / try-catch-Fail / Summary` 模式。
+## 推荐用法（lambda 时代）
+
+```z42
+namespace MyTests;
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_addition() {
+    Assert.Equal(4, 2 + 2);
+}
+
+[Test]
+[ShouldThrow<TestFailure>]
+void test_fail_path() {
+    Assert.Fail("expected to fail");
+}
+
+[Test]
+void test_with_capture() {
+    var s = TestIO.captureStdout(() => Console.WriteLine("hello"));
+    Assert.Equal("hello\n", s);
+}
+
+[Test]
+void test_with_bench() {
+    var b = new Bencher();
+    var c = new Counter();
+    b.iter(() => { c.n = c.n + 1; });
+    Assert.Equal(110, c.n);     // 默认 warmup=10 + samples=100
+    b.printSummary("counter");
+}
+
+class Counter { public int n; public Counter() { this.n = 0; } }
+```
+
+跑测试：`just test-stdlib mylib`（每个 [Test] 由 [z42-test-runner](../../toolchain/test-runner/) fork z42vm 子进程独立执行）。
+
+## 已知限制（待 z42 反射能力增强）
+
+- `Assert.Throws(Action)` 不带类型断言（任意 throw 都算命中）；类型敏感的"应抛特定类型"用 `[ShouldThrow<E>]` 测试级注解
+- z42 lambda 对值类型采用快照捕获语义，要把 capture 结果传出 lambda body 必须用引用类型（class wrapper / array），不能直接对外部 int / string 局部变量赋值
+- BenchHelpers.blackBox 接 `object` 而非 generic `<T>`（z42 parser 在表达式上下文不识别方法级显式 generic call）
+
+## 旧 v0 imperative TestRunner（保留）
 
 ## 使用
 
@@ -56,30 +105,23 @@ void Main() {
 
 ## 路线图
 
-### v1 — Lambda 就绪后
+### 已交付（2026-04-29 ~ 2026-05-05）
 
-```z42
-runner.Run("Addition", () => Assert.Equal(4, 2 + 2));
-runner.Run("Concat",   () => Assert.Equal("ab", "a" + "b"));
-return runner.Summary();
-```
-
-`Run` 自动 try/catch，省掉用户写 try/catch 的样板。Begin/Fail 仍保留作为底层 API。
-
-### v2 — Attribute + Reflection 就绪后
+[Test] attribute 注解发现 + z42-test-runner subprocess 调度（R3 minimal）→ 与 v2 路线图对齐：
 
 ```z42
 public class MyTests {
     [Test] public void Addition() { Assert.Equal(4, 2 + 2); }
     [Test] public void Concat()   { Assert.Equal("ab", "a" + "b"); }
 }
-
-void Main() {
-    return new TestRunner("MyTests").RunAll<MyTests>();
-}
 ```
 
-自动发现 `[Test]` 注解的方法 + 实例化 + 调用。与 xUnit / NUnit 风格对齐。
+由 `just test-stdlib` 自动发现 + 调度。imperative TestRunner v0 仍可用（向后兼容）。
+
+### 后续
+
+- Runner [Benchmark] 调度 + criterion-style baseline diff（独立 spec）
+- 类型敏感的 `Assert.Throws<E>(Action)` —— 等 z42 反射能力增强（is X cross-module / generic-E IsInstance / Object.GetType() vtable inheritance 任一修好）
 
 ## 设计选择
 

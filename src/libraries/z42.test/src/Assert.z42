@@ -18,14 +18,15 @@ namespace Std.Test;
 // （TestFailure 在 z42.test），破坏 prelude 包不依赖任何包的约定。所以新增
 // 平行 API 而非升级。
 //
-// 当前不包含的方法（受 closure 缺失限制；R2.B/C 时补）：
-// - `Throws<E>(action)` — 需要 fn() -> void 闭包参数
-// - `DoesNotThrow(action)` — 同
-// - `Near(actual, expected, eps)` — 不需要闭包，可加；本期先不加
+// R2 完整版（2026-05-05）：补齐 lambda 依赖的方法：
+// - `Throws(typeName, action)`：z42 generic-E 反射受限，API 用 string 比对类型名
+// - `DoesNotThrow(action)`：lambda 直接接 Action
+// - `EqualApprox(actual, expected, eps)`：浮点容差（不依赖 closure，本期顺带加）
 //
-// 当前不包含的方法（受 generics 限制；L3 后补）：
-// - `Throws<E>` — 泛型类型参数
-// - `Equal<T: Equatable>` — 泛型约束（已有 object 重载够用）
+// 仍未支持（需要更深的反射 / 泛型约束）：
+// - `Throws<E>` 真正泛型版本（typeof(E) 在 generic body 内当前是 parse-time
+//   string desugar，返回字面 "E"；`is E` 同样在 IR 层固定为编译期类名）
+// - `Equal<T: Equatable>` 泛型约束（object 重载够用）
 
 public static class Assert {
     // ── 相等性 ────────────────────────────────────────────────────────────
@@ -93,5 +94,54 @@ public static class Assert {
     // 跳过条件，例如"环境变量缺失"、"硬件不支持"等）。
     public static void Skip(string reason) {
         throw new SkipSignal(reason);
+    }
+
+    // ── 异常断言 (R2 完整版) ──────────────────────────────────────────────
+    //
+    // **API 形态**：`Throws` / `DoesNotThrow` 仅检查"是否抛出"，不检查具体类型。
+    //
+    // 选 untyped 形态是因为 z42 当前以下三个机制都无法可靠地识别 catch 进来的
+    // Exception 子类型，类型敏感版会假阳性：
+    //   1. generic <E>：IR 层 IsInstance 接受**编译期固定的**类名，generic 参数
+    //      不参与 type substitution
+    //   2. `e is X`：当 `e` 静态类型是 `Exception`、运行时类型是 `Std.TestFailure`
+    //      （子类）时，is-check 返回 false（很可能是 namespace-qualified 名字
+    //      在编译器与 vtable 之间不一致；待独立 compiler-fix spec）
+    //   3. `e.GetType().__name`：`Object.GetType()` 在 Exception 子类的 vtable
+    //      上 VCall 找不到（Object 方法跨 Exception → 子类的继承链未完整传递）
+    //
+    // 测试中要"断言整个 [Test] 抛出某具体类型"用 `[ShouldThrow<E>]` 即可
+    // （编译期 chain 写入 TIDX，runner 端字符串匹配；不依赖上面三个机制）。
+    // 要"断言代码段抛出"则用本节方法。两者覆盖典型场景。
+
+    public static void Throws(Action body) {
+        try {
+            body();
+        } catch (Exception e) {
+            return;   // 任意异常都算命中
+        }
+        throw new TestFailure("expected to throw but no exception was thrown");
+    }
+
+    public static void DoesNotThrow(Action body) {
+        try {
+            body();
+        } catch (Exception e) {
+            throw new TestFailure($"expected no exception but got: {e.Message}");
+        }
+    }
+
+    // ── 浮点容差 ──────────────────────────────────────────────────────────
+    //
+    // 绝对容差比较；NaN 永不命中（NaN != NaN by definition）。
+    public static void EqualApprox(double actual, double expected, double eps) {
+        var diff = actual - expected;
+        if (diff < 0.0) { diff = -diff; }
+        if (diff > eps) {
+            throw new TestFailure(
+                $"values differ beyond eps: |{actual} - {expected}| = {diff} > {eps}",
+                actual.ToString(),
+                expected.ToString());
+        }
     }
 }
