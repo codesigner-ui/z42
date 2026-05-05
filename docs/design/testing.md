@@ -378,17 +378,21 @@ R4.A 留的"first-parameter-is-Bencher"检查现在补齐：`[Benchmark]` 方法
 
 ---
 
-## 实施期间发现的 z42 反射限制（2026-05-05）
+## R2 实施期间发现的 z42 限制（2026-05-05，及后续修复）
 
-R2 完整版实施时碰到 z42 当前的三个 runtime-type 识别 bug，记录于此供未来 compiler-fix spec 清算：
+R2 完整版实施时碰到的语言/反射 bug，多数同会话内已修复：
 
-| 路径 | 现象 | 实测 |
+| 路径 | 现象 | 状态 |
 |---|---|---|
-| `e is X` cross-module（X 是导入类的短名）| 当 `e` 静态类型 = Exception、运行时 = Std.TestFailure → IsInstance 返回 false | dogfood debug 多次复现 |
-| generic-E `is`（`is E` where E is type-param）| IR 端 IsInstance 接受编译期固定 class_name | spec 明文不支持 |
-| `Object.GetType()` on Exception 子类 | VCall 找不到方法（vtable 跨多层继承时 Object 方法未传递）| `unknown method GetType` 报错 |
+| `e is X` cross-module（X 是导入类的短名）| 当 `e` 静态类型 = Exception、运行时 = Std.TestFailure → IsInstance 返回 false | ✅ 修：FunctionEmitterExprs `BoundIsPattern` 与 `BinaryOp.Is/As` 改用 `QualifyClassName`（commit 7858f30）|
+| `Object.GetType()` on Exception 子类 | VCall 找不到方法（vtable 跨多层继承时未传递）| ✅ 修：exec_instr.rs VCall 加 lazy hierarchy walk fallback（同上 commit）|
+| `throw;` bare rethrow | parser 无此语法 | ✅ 修：StmtParser 接受 `throw;`，TypeChecker 维护 catch-var 栈，desugar 到 `throw <currentCatchVar>;`（本批次）|
+| `: this(args)` ctor delegation | parser 无此语法 | ✅ 修：TopLevelParser 接受 `:this(...)`，AST `FunctionDecl.ThisCtorArgs`，FunctionEmitter 委托时 emit 链接 ctor call + skip base + skip field-init（本批次）|
+| Lambda 值类型快照捕获 | 设计选择，非 bug | 📋 保留：详见 [closure_capture.z42](../../examples/closure_capture.z42)。需要 mutable 状态用 wrapper class |
+| Generic-E `is` (`is E` where E is type-param) | IR-side IsInstance 接受编译期硬编码 class_name | ⏸️ 未修：等需求驱动 |
+| Generic-extern T inference | extern 函数无法从参数推断 T；call-site `.<T>(...)` 与 `<` 比较冲突 | ⏸️ 未修：BenchHelpers.blackBox(object) 临时形态 |
 
-这些限制让 `Assert.Throws<E>(Action)` / `Assert.Throws(string typeName, Action)` 都不可用；本期最终 API 是 untyped 的 `Assert.Throws(Action)` —— "应抛特定类型"用 `[ShouldThrow<E>]` 测试级注解（编译期写 chain → runner 字符串匹配，绕开 reflection）。
+`Assert.Throws(string typeName, Action)` 已恢复（依赖 IsInstance + GetType 修复），同时保留 `Assert.ThrowsAny(Action)` 处理"不在乎具体类型"场景。
 
 ---
 

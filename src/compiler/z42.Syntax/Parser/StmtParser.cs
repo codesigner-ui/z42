@@ -390,6 +390,14 @@ internal static class StmtParser
     private static ParseResult<Stmt> ParseThrow(
         TokenCursor cursor, Token kw, LanguageFeatures feat)
     {
+        // `throw;` — bare rethrow inside a catch clause. Defer "are we in a
+        // catch?" check to the TypeChecker, which has the enclosing-clause
+        // context (we're a parser, no scope info here).
+        if (cursor.Current.Kind == TokenKind.Semicolon)
+        {
+            cursor = cursor.Advance(); // ;
+            return ParseResult<Stmt>.Ok(new ThrowStmt(null, kw.Span), cursor);
+        }
         var val = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.Semicolon);
         return ParseResult<Stmt>.Ok(new ThrowStmt(val, kw.Span), cursor);

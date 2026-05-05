@@ -27,15 +27,7 @@ public class Bencher {
     public long MedianNs { get; private set; }
     public long TotalNs { get; private set; }
 
-    public Bencher() {
-        // z42 当前不支持 `: this(...)` ctor delegation；展开默认值。
-        this.WarmupIters = 10;
-        this.Samples = 100;
-        this.MinNs = 0;
-        this.MaxNs = 0;
-        this.MedianNs = 0;
-        this.TotalNs = 0;
-    }
+    public Bencher() : this(10, 100) {}
 
     public Bencher(int warmupIters, int sampleIters) {
         this.WarmupIters = warmupIters;

@@ -202,6 +202,7 @@ public sealed record FunctionDecl(
     string? NativeIntrinsic,
     Span Span,
     List<Expr>? BaseCtorArgs = null,  // non-null only on constructors with `: base(...)`
+    List<Expr>? ThisCtorArgs = null,  // 2026-05-05 ctor delegation `: this(args)`; mutually exclusive with BaseCtorArgs
     List<string>? TypeParams = null,  // generic type parameters: <T>, <K,V>
     WhereClause? Where = null,        // L3-G2 generic constraints
     Tier1NativeBinding? Tier1Binding = null,  // spec C6 — Tier 1 dispatch binding
@@ -314,7 +315,10 @@ public sealed record CatchClause(
     BlockStmt Body,
     Span Span);
 
-public sealed record ThrowStmt(Expr Value, Span Span) : Stmt(Span);
+/// `throw <expr>;` 抛指定异常；`throw;` 在 catch 块内重抛当前异常（rethrow）。
+/// `Value == null` 表示 bare rethrow；TypeChecker 在 binding 阶段解析为
+/// 当前 catch 子句的异常变量。
+public sealed record ThrowStmt(Expr? Value, Span Span) : Stmt(Span);
 
 /// Local (nested) function declaration, e.g.
 /// `int Outer() { int Helper(int x) => x * 2; return Helper(3); }`.

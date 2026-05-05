@@ -252,22 +252,29 @@ internal static partial class TopLevelParser
 
         var parms = ParseParamList(ref cursor, feat);
 
-        // Constructor initializer: ClassName(...) : base(args)
+        // Constructor initializer: `ClassName(...) : base(args)` — chain to
+        // base-class ctor; or `ClassName(...) : this(args)` (2026-05-05) —
+        // delegate to another overload of the same class. Mutually exclusive.
         List<Expr>? baseCtorArgs = null;
+        List<Expr>? thisCtorArgs = null;
         bool isCtor = returnType is VoidType && cursor.Current.Kind == TokenKind.Colon;
-        if (isCtor && cursor.Peek(1) is { Kind: TokenKind.Identifier, Text: "base" })
+        if (isCtor && cursor.Peek(1).Kind == TokenKind.Identifier
+            && (cursor.Peek(1).Text == "base" || cursor.Peek(1).Text == "this"))
         {
+            var keyword = cursor.Peek(1).Text;
             cursor = cursor.Advance(); // skip ':'
-            cursor = cursor.Advance(); // skip 'base'
+            cursor = cursor.Advance(); // skip 'base' / 'this'
             ExpectKind(ref cursor, TokenKind.LParen);
-            baseCtorArgs = [];
+            var args = new List<Expr>();
             while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
             {
-                baseCtorArgs.Add(ExprParser.Parse(cursor, feat).Unwrap(ref cursor));
+                args.Add(ExprParser.Parse(cursor, feat).Unwrap(ref cursor));
                 if (cursor.Current.Kind != TokenKind.Comma) break;
                 cursor = cursor.Advance();
             }
             ExpectKind(ref cursor, TokenKind.RParen);
+            if (keyword == "base") baseCtorArgs = args;
+            else                   thisCtorArgs = args;
         }
 
         // Where clause: T Max<T>(...) where T: I + J { ... }
@@ -299,7 +306,8 @@ internal static partial class TopLevelParser
         return new FunctionDecl(name, parms, returnType, body, vis,
             BuildModifiers(isStatic, isVirtual, isOverride, isAbstract, isExtern),
             nativeIntrinsic, start,
-            BaseCtorArgs: baseCtorArgs, TypeParams: funcTypeParams, Where: whereClause,
+            BaseCtorArgs: baseCtorArgs, ThisCtorArgs: thisCtorArgs,
+            TypeParams: funcTypeParams, Where: whereClause,
             Tier1Binding: tier1Binding,
             TestAttributes: testAttrs);
     }

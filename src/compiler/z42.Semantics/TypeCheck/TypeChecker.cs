@@ -46,6 +46,7 @@ public sealed partial class TypeChecker : ITypeInferrer
     private readonly Dictionary<FieldDecl, BoundExpr> _boundInstanceInits =
         new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundBaseCtorArgs = new();
+    private readonly Dictionary<FunctionDecl, IReadOnlyList<BoundExpr>> _boundThisCtorArgs = new();
 
     /// Resolved generic constraints keyed by declaration name. (L3-G2, L3-G2.5)
     /// Populated in Pass 0.5 after SymbolCollector; consumed at body binding and call sites.
@@ -160,7 +161,7 @@ public sealed partial class TypeChecker : ITypeInferrer
         return new SemanticModel(
             _symbols.Classes, _symbols.Functions, _symbols.Interfaces,
             _symbols.EnumConstants, _symbols.EnumTypes,
-            _boundBodies, _boundDefaults, _boundStaticInits, _boundInstanceInits, _boundBaseCtorArgs,
+            _boundBodies, _boundDefaults, _boundStaticInits, _boundInstanceInits, _boundBaseCtorArgs, _boundThisCtorArgs,
             _symbols.ImportedClassNamespaces as Dictionary<string, string>
                 ?? new Dictionary<string, string>(_symbols.ImportedClassNamespaces),
             funcConstraints:  _funcConstraints,
@@ -302,6 +303,8 @@ public sealed partial class TypeChecker : ITypeInferrer
             bool isCtor = method.Name == cls.Name;
             if (isCtor && method.BaseCtorArgs is { } baseCtorArgs)
                 _boundBaseCtorArgs[method] = baseCtorArgs.Select(a => BindExpr(a, scope)).ToList();
+            if (isCtor && method.ThisCtorArgs is { } thisCtorArgs)
+                _boundThisCtorArgs[method] = thisCtorArgs.Select(a => BindExpr(a, scope)).ToList();
             _boundBodies[method] = BindBlock(method.Body, scope,
                 isCtor ? Z42Type.Void : _symbols.ResolveType(method.ReturnType));
             if (!method.IsAbstract)

@@ -96,9 +96,29 @@ internal sealed partial class FunctionEmitter
         for (int i = 0; i < method.Params.Count; i++)
             _locals[method.Params[i].Name] = new TypedReg(i + paramOffset, ToIrType(method.Params[i].Type));
 
-        // Emit base constructor call at the start of derived constructors
+        // 2026-05-05 ctor delegation `: this(...)`: when present, the chained
+        // ctor performs base-ctor + field-init for us. We emit ONLY the
+        // chained-ctor call here; skip both base and field-init.
         bool isCtor = !isStatic && method.Name == className;
-        if (isCtor && method.BaseCtorArgs is { }
+        bool emittedThisChain = false;
+        if (isCtor && method.ThisCtorArgs is { }
+            && _ctx.SemanticModel.BoundThisCtorArgs.TryGetValue(method, out var boundThisArgs))
+        {
+            var classQual = _ctx.QualifyName(className);
+            // Overload-resolve by arity within the same class.
+            var thisCtorKey = ResolveBaseCtorKey(className, boundThisArgs.Count, classQual);
+            var thisCtorIrName = $"{classQual}.{thisCtorKey}";
+            var argRegs = new List<TypedReg> { new(0, IrType.Ref) };
+            argRegs.AddRange(boundThisArgs.Select(EmitExpr));
+            var dst = Alloc(IrType.Ref);
+            Emit(new CallInstr(dst, thisCtorIrName, argRegs));
+            emittedThisChain = true;
+        }
+
+        // Emit base constructor call at the start of derived constructors
+        // (skipped when delegating via `: this(...)` — the chained ctor handles it).
+        if (!emittedThisChain
+            && isCtor && method.BaseCtorArgs is { }
             && _ctx.ClassRegistry.TryGetBaseClassName(_ctx.QualifyName(className), out var baseQual)
             && baseQual is not null
             && _ctx.SemanticModel.BoundBaseCtorArgs.TryGetValue(method, out var boundBaseArgs))
@@ -121,8 +141,9 @@ internal sealed partial class FunctionEmitter
         // 用户 body 之前）按字段声明顺序注入 `this.<field> = <init-expr>`，仅对
         // 有显式 Initializer 的字段发射；无 init 的字段由 VM ObjNew 的 type defaults
         // 兜底（参见 design.md Decision 1/2）。隐式合成 ctor 走相同路径，
-        // body 是空 BoundBlock。
-        if (isCtor && instanceFieldInits is { Count: > 0 })
+        // body 是空 BoundBlock。Skipped when `: this(...)` chains — chained
+        // ctor will run the field inits.
+        if (!emittedThisChain && isCtor && instanceFieldInits is { Count: > 0 })
         {
             foreach (var field in instanceFieldInits)
             {

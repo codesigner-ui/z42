@@ -15,6 +15,11 @@ public sealed partial class TypeChecker
     /// > 0 so each `pin` pairs with exactly one `unpin` at codegen time.
     private int _pinnedDepth = 0;
 
+    // 2026-05-05 fix-bare-rethrow: stack of catch-variable names enclosing the
+    // currently-being-bound statement. Push when entering CatchClause, pop on
+    // exit. `throw;` at the top of an empty stack is an error.
+    private readonly Stack<string> _catchVarStack = new();
+
     // ── Block ─────────────────────────────────────────────────────────────────
 
     private BoundBlock BindBlock(BlockStmt block, TypeEnv parent, Z42Type retType)
@@ -176,8 +181,23 @@ public sealed partial class TypeChecker
                     var catchScope = env.PushScope();
                     if (clause.VarName != null)
                         catchScope.Define(clause.VarName, Z42Type.Unknown);
-                    catches.Add(new BoundCatchClause(clause.VarName,
-                        BindBlock(clause.Body, catchScope, retType), clause.Span));
+                    // Track catch-variable for bare rethrow (`throw;`). Use
+                    // a synthesised placeholder when the user wrote
+                    // `catch { ... }` without binding — bare rethrow there
+                    // still semantically means "rethrow current exception"
+                    // but we need a name to bind to. The IR side handles the
+                    // null var case via __caught — see below.
+                    var catchVar = clause.VarName ?? "__bare_catch__";
+                    _catchVarStack.Push(catchVar);
+                    try
+                    {
+                        catches.Add(new BoundCatchClause(clause.VarName,
+                            BindBlock(clause.Body, catchScope, retType), clause.Span));
+                    }
+                    finally
+                    {
+                        _catchVarStack.Pop();
+                    }
                 }
                 var fin = tc.Finally != null ? BindBlock(tc.Finally, env, retType) : null;
                 return new BoundTryCatch(tryBody, catches, fin, tc.Span);
@@ -188,6 +208,24 @@ public sealed partial class TypeChecker
                     _diags.Error(DiagnosticCodes.PinnedControlFlow,
                         "Z0908: `throw` is not allowed inside a `pinned` block (spec C5 limitation)",
                         th.Span);
+                if (th.Value is null)
+                {
+                    // 2026-05-05 fix-bare-rethrow: `throw;` desugars to
+                    // `throw <currentCatchVar>;`. Errors out when used
+                    // outside a catch clause.
+                    if (_catchVarStack.Count == 0 || _catchVarStack.Peek() == "__bare_catch__")
+                    {
+                        _diags.Error(DiagnosticCodes.UnexpectedToken,
+                            "`throw;` (bare rethrow) is only valid inside a `catch (Exception <var>)` clause that binds the exception",
+                            th.Span);
+                        // Return a stub to keep binding flowing; this branch
+                        // shouldn't reach codegen because diags.HasErrors
+                        // gates the pipeline.
+                        return new BoundExprStmt(new BoundLitInt(0L, Z42Type.Int, th.Span), th.Span);
+                    }
+                    var rethrowExpr = BindExpr(new IdentExpr(_catchVarStack.Peek(), th.Span), env);
+                    return new BoundThrow(rethrowExpr, th.Span);
+                }
                 return new BoundThrow(BindExpr(th.Value, env), th.Span);
 
             case PinnedStmt pin:

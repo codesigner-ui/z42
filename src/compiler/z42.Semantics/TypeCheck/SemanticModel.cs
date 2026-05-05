@@ -57,6 +57,11 @@ public sealed class SemanticModel
     /// Only populated for constructors that have a base-ctor call (FunctionDecl.BaseCtorArgs != null).
     public IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> BoundBaseCtorArgs { get; }
 
+    /// 2026-05-05 fix-ctor-delegation: bound `: this(args)` argument lists,
+    /// keyed by the delegating ctor's FunctionDecl. Mutually exclusive with
+    /// `BoundBaseCtorArgs` for the same key.
+    public IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> BoundThisCtorArgs { get; }
+
     /// Maps imported class short name → dependency namespace (e.g. "Console" → "Std.IO").
     /// Used by IrGen to qualify imported class calls with the correct namespace.
     public IReadOnlyDictionary<string, string> ImportedClassNamespaces { get; }
@@ -102,6 +107,7 @@ public sealed class SemanticModel
         IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundStaticInits,
         IReadOnlyDictionary<FieldDecl,    BoundExpr>  boundInstanceInits,
         IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundBaseCtorArgs,
+        IReadOnlyDictionary<FunctionDecl, IReadOnlyList<BoundExpr>> boundThisCtorArgs,
         IReadOnlyDictionary<string, string>? importedClassNamespaces = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? funcConstraints = null,
         IReadOnlyDictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>? classConstraints = null,
@@ -120,6 +126,7 @@ public sealed class SemanticModel
         BoundStaticInits        = boundStaticInits;
         BoundInstanceInits      = boundInstanceInits;
         BoundBaseCtorArgs       = boundBaseCtorArgs;
+        BoundThisCtorArgs       = boundThisCtorArgs;
         ImportedClassNamespaces = importedClassNamespaces ?? new Dictionary<string, string>();
         FuncConstraints         = funcConstraints  ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
         ClassConstraints        = classConstraints ?? new Dictionary<string, IReadOnlyDictionary<string, GenericConstraintBundle>>();
