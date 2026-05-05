@@ -113,8 +113,27 @@ public sealed partial class SymbolCollector
                 .ToDictionary(g => g.Key, g => g.Count());
             foreach (var m in cls.Methods)
             {
+                // 2026-05-05 fix-method-typeparams: method-level generic params
+                // (e.g. `T Foo<T>(T x)` inside a non-generic class) must be
+                // activated while resolving this method's signature so `T`
+                // becomes Z42GenericParamType rather than the Z42PrimType("T")
+                // fallback. Class-level params (line 91) cover generic classes;
+                // this branch handles **method-level** params for static and
+                // instance methods inside any class (generic or not).
+                HashSet<string>? methodTypeParamSnapshot = null;
+                if (m.TypeParams is { Count: > 0 } mtp)
+                {
+                    methodTypeParamSnapshot = _activeTypeParams;
+                    _activeTypeParams = methodTypeParamSnapshot is null
+                        ? new HashSet<string>(mtp)
+                        : new HashSet<string>(methodTypeParamSnapshot.Concat(mtp));
+                }
+
                 var retType = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
                 var sig     = BuildFuncSignature(m.Params, retType);
+
+                if (m.TypeParams is { Count: > 0 })
+                    _activeTypeParams = methodTypeParamSnapshot;
                 bool isOverloaded     = methodNameCount[(m.Name, m.IsStatic)] > 1;
                 bool sameArityCollide = arityGroupCount[(m.Name, m.IsStatic, m.Params.Count)] > 1;
                 string regName;

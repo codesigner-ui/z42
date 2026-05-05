@@ -390,7 +390,9 @@ R2 完整版实施时碰到的语言/反射 bug，多数同会话内已修复：
 | `: this(args)` ctor delegation | parser 无此语法 | ✅ 修：TopLevelParser 接受 `:this(...)`，AST `FunctionDecl.ThisCtorArgs`，FunctionEmitter 委托时 emit 链接 ctor call + skip base + skip field-init（本批次）|
 | Lambda 值类型快照捕获 | 设计选择，非 bug | 📋 保留：详见 [closure_capture.z42](../../examples/closure_capture.z42)。需要 mutable 状态用 wrapper class |
 | Generic-E `is` (`is E` where E is type-param) | IR-side IsInstance 接受编译期硬编码 class_name | ⏸️ 未修：等需求驱动 |
-| Generic-extern T inference | extern 函数无法从参数推断 T；call-site `.<T>(...)` 与 `<` 比较冲突 | ⏸️ 未修：BenchHelpers.blackBox(object) 临时形态 |
+| Generic-extern T inference (in-CU) | extern 函数 `T f<T>(T x)` 在同 CU 内调用 `f(42)` 无法推断 T | ✅ 修：SymbolCollector.Classes 在收 method 签名时激活 method.TypeParams（本批次）；TypeChecker.Calls 静态方法路径加 SubstituteGenericParams + SubstituteGenericReturn |
+| Generic-extern T inference (cross-zpkg) | 跨 zpkg 调用还差 TSIG `ExportedMethodDef` 加 method-level TypeParams 字段 | ⏸️ 未修：BenchHelpers.blackBox(object) 临时形态；独立 spec 处理 TSIG bump |
+| Method-level explicit generic call `Foo.bar<int>(42)` | parser 与 `<` 比较运算符冲突 | ⏸️ 未修：依赖参数推断（in-CU 已可用） |
 
 `Assert.Throws(string typeName, Action)` 已恢复（依赖 IsInstance + GetType 修复），同时保留 `Assert.ThrowsAny(Action)` 处理"不在乎具体类型"场景。
 

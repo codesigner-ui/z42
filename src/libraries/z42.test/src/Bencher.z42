@@ -112,10 +112,13 @@ public static class BenchHelpers {
     // eliminate dead code); shape preserved so user code stays portable to
     // future JIT optimisations.
     //
-    // **Type**：本期 API 用 `object` 而非 `<T>`。z42 parser 在表达式上下文
-    // 不识别方法级显式 generic call `Foo.bar<int>(42)`（与 `<` 比较冲突），
-    // 而 generic extern 又不能从参数推断 T；用 object 是当前唯一可用形态。
-    // 等显式 generic call site 语法或更深的 inference 落地时升级回 `<T>(T)`。
+    // **Type 仍是 object 而非 generic <T>**：
+    // - 2026-05-05 fix-method-typeparams 修好了 **in-CU** method-level generic
+    //   参数推断（`SymbolCollector.Classes` 把 method.TypeParams 加进
+    //   `_activeTypeParams` 池）
+    // - 但**跨 zpkg** 还需要 TSIG 二进制格式 bump（`ExportedMethodDef` 加
+    //   method-level TypeParams 字段，writer + reader 同步），独立 spec 处理
+    // - 在那之前，本 API 用 object 形态保证从 dogfood 等下游 CU 调用可用
     [Native("__bench_black_box")]
     public static extern object blackBox(object value);
 }

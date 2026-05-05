@@ -23,13 +23,18 @@ public sealed partial class TypeChecker
             {
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
                 CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
-                CheckArgTypes(call.Args, args, staticSig.Params);
+                // 2026-05-05 fix-generic-extern-infer: substitute T → concrete
+                // before arg-type validation so `BlackBox<T>(int)` etc. accept
+                // int args. Same path also handles non-extern generic statics.
+                var checkedParams = SubstituteGenericParams(staticSig, args);
+                CheckArgTypes(call.Args, args, checkedParams);
                 CheckArgModifiers(call.Args, args, staticSig, env, call.Span);
+                var inferredRet = SubstituteGenericReturn(staticSig, args);
                 // Use resolved key when overload (modifier-tagged or arity-tagged) so
                 // IR Codegen / VM dispatch resolves to the correct variant.
                 string resolvedStatic = staticKey != staticMember ? staticKey! : staticMember;
                 return new BoundCall(BoundCallKind.Static, null, clsName, resolvedStatic,
-                    null, args, staticSig.Ret, call.Span);
+                    null, args, inferredRet, call.Span);
             }
             // Imported class: method not found → try DepIndex, or defer to IrGen
             if (isImported)
@@ -662,5 +667,20 @@ public sealed partial class TypeChecker
         if (ft.Ret is not Z42GenericParamType retGp) return ft.Ret;
         var inferred = InferFuncTypeArgs(ft, boundArgs);
         return inferred.TryGetValue(retGp.Name, out var concrete) ? concrete : ft.Ret;
+    }
+
+    /// 2026-05-05 fix-generic-extern-infer: substitute every `Z42GenericParamType`
+    /// occurrence in the parameter list using inference from boundArgs. Returns
+    /// the original list unchanged when nothing is inferred. Used to make
+    /// CheckArgTypes accept `BlackBox<T>(int)` etc. as `int` matching `T`'s
+    /// inferred slot rather than the literal type-param.
+    private static IReadOnlyList<Z42Type> SubstituteGenericParams(
+        Z42FuncType ft, IReadOnlyList<BoundExpr> boundArgs)
+    {
+        var inferred = InferFuncTypeArgs(ft, boundArgs);
+        if (inferred.Count == 0) return ft.Params;
+        return ft.Params.Select(p =>
+            p is Z42GenericParamType gp && inferred.TryGetValue(gp.Name, out var concrete)
+                ? concrete : p).ToList();
     }
 }
