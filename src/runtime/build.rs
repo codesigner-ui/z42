@@ -54,7 +54,7 @@ fn main() {
         println!("cargo:rerun-if-changed={}", z42_src.display());
         let project_root = manifest_dir.parent().and_then(Path::parent);
         if let Some(root) = project_root {
-            let driver = root.join("artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll");
+            let driver = root.join("artifacts/compiler/z42.Driver/bin/z42c.dll");
             println!("cargo:rerun-if-changed={}", driver.display());
             if driver.is_file() {
                 // Emit into OUT_DIR (under target/), not the source tree —

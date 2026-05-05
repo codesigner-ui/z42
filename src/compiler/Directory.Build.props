@@ -2,5 +2,10 @@
   <PropertyGroup>
     <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\compiler\$(MSBuildProjectName)\bin\</BaseOutputPath>
     <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\compiler\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+    <OutputPath>$(BaseOutputPath)</OutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)</IntermediateOutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 </Project>

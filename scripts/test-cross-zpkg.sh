@@ -25,7 +25,7 @@ cd "$ROOT"
 
 MODE="${1:-interp}"
 TESTS_DIR="src/runtime/tests/cross-zpkg"
-DRIVER_DLL="artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll"
+DRIVER_DLL="artifacts/compiler/z42.Driver/bin/z42c.dll"
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
 
 # Ensure compiler + VM are built. Run noisily on first failure but suppress

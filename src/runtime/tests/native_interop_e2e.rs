@@ -310,7 +310,7 @@ fn c_and_rust_modules_coexist() {
 /// If the .zbc file is regenerated (e.g. compiler IR change), refresh
 /// it via:
 ///
-///   dotnet artifacts/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll \
+///   dotnet artifacts/compiler/z42.Driver/bin/z42c.dll \
 ///       src/runtime/tests/data/z42_native_e2e/source.z42 --emit zbc \
 ///       -o src/runtime/tests/data/z42_native_e2e/source.zbc
 #[test]

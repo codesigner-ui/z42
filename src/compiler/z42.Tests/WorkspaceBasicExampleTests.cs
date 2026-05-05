@@ -12,7 +12,7 @@ public sealed class WorkspaceBasicExampleTests
     {
         get
         {
-            // tests 二进制运行在 artifacts/compiler/z42.Tests/bin/Debug/net10.0/
+            // tests 二进制运行在 artifacts/compiler/z42.Tests/bin/
             // 向上找到 repo root，再拼 examples/workspace-basic
             var dir = new DirectoryInfo(AppContext.BaseDirectory);
             while (dir is not null)

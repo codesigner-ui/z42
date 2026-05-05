@@ -22,7 +22,7 @@ public sealed class IncrementalBuildIntegrationTests
         }
     }
 
-    static string Z42cDll => Path.Combine(RepoRoot, "artifacts", "compiler", "z42.Driver", "bin", "Debug", "net10.0", "z42c.dll");
+    static string Z42cDll => Path.Combine(RepoRoot, "artifacts", "compiler", "z42.Driver", "bin", "z42c.dll");
 
     static (int code, string stdout, string stderr) RunZ42c(string workDir, params string[] args)
     {
