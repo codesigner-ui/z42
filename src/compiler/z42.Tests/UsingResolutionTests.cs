@@ -132,6 +132,57 @@ public sealed class UsingResolutionTests
     }
 
     [Fact]
+    public void TypeChecker_NoError_When_UsedNamespaceHasOnlyImpls()
+    {
+        // Regression: fix-cross-zpkg-using-resolution (2026-05-06).
+        // 一个 activated package 只贡献 `impl Trait for Type` 块、没有 class /
+        // interface / enum / function 时，`using <ns>;` 也必须能解析（不报 E0602）。
+        // Cross-zpkg L3-Impl2 的真实使用场景。
+        var src = @"
+            namespace App;
+            using Demo.Greeter;
+            void Main() {}
+        ";
+        var (cu, diags) = Parse(src);
+
+        // demo.target 提供 Robot 类（Demo.Target 命名空间）
+        var targetMod = new ExportedModule(
+            "Demo.Target",
+            new List<ExportedClassDef> { Class("Robot") },
+            new List<ExportedInterfaceDef>(),
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>());
+        // demo.greeter 只有 impl 块，无 class — Demo.Greeter 不出现在 ClassNamespaces
+        var greeterMod = new ExportedModule(
+            "Demo.Greeter",
+            new List<ExportedClassDef>(),
+            new List<ExportedInterfaceDef>(),
+            new List<ExportedEnumDef>(),
+            new List<ExportedFuncDef>(),
+            Impls: new List<ExportedImplDef>());
+
+        var packageOf = new Dictionary<ExportedModule, string>
+        {
+            [targetMod]  = "demo.target",
+            [greeterMod] = "demo.greeter",
+        };
+        var imported = ImportedSymbolLoader.Load(
+            new[] { targetMod, greeterMod }, packageOf,
+            activatedPackages: new HashSet<string> { "demo.target", "demo.greeter" },
+            preludePackages:   new HashSet<string>());
+
+        imported.ResolvedNamespaces.Should().NotBeNull();
+        imported.ResolvedNamespaces!.Should().Contain("Demo.Greeter",
+            because: "impl-only 包的 namespace 必须进入 ResolvedNamespaces");
+
+        var tc = new TypeChecker(diags, LanguageFeatures.Phase1);
+        tc.Check(cu, imported);
+
+        diags.All.Where(d => d.Code == DiagnosticCodes.UnresolvedUsing).Should().BeEmpty(
+            because: "Demo.Greeter 由 demo.greeter 包提供（虽只有 impl），E0602 不应触发");
+    }
+
+    [Fact]
     public void PreludePackages_HasZ42Core()
     {
         PreludePackages.Names.Should().Contain("z42.core");

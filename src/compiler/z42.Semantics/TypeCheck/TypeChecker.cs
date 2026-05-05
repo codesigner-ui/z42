@@ -116,11 +116,20 @@ public sealed partial class TypeChecker : ITypeInferrer
         }
 
         // E0602 — using points to no loaded namespace.
-        // Resolved namespaces = ImportedSymbols.ClassNamespaces values + intra-package own namespace.
+        //
+        // Resolved namespaces are the union of:
+        //   1. ImportedSymbols.ResolvedNamespaces — every namespace declared by an
+        //      activated module (including impl-only packages with no classes;
+        //      fix-cross-zpkg-using-resolution 2026-05-06).
+        //   2. ImportedSymbols.ClassNamespaces.Values — kept for backward compat
+        //      with paths that don't populate ResolvedNamespaces yet (e.g. older
+        //      tests using the legacy two-arg `Load(modules, usings)` factory).
+        //   3. The compilation unit's own namespace — same-package files seeing
+        //      each other via intraSymbols.
         if (cu.Usings.Count == 0) return;
         var resolvedNs = new HashSet<string>(StringComparer.Ordinal);
+        if (imported.ResolvedNamespaces is { } rns) resolvedNs.UnionWith(rns);
         foreach (var v in imported.ClassNamespaces.Values) resolvedNs.Add(v);
-        // 同包文件相互 using 也应该被认为已解析（intraSymbols 通过 ClassNamespaces 注入）
         if (cu.Namespace is { } ownNs) resolvedNs.Add(ownNs);
         var unresolvedSpan = new Z42.Core.Text.Span(0, 0, 0, 0, "");
         foreach (var u in cu.Usings)

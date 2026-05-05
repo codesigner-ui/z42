@@ -75,6 +75,11 @@ public static class ImportedSymbolLoader
         var selectedClasses    = new List<(ExportedModule mod, ExportedClassDef     cls)>();
         var selectedInterfaces = new List<(ExportedModule mod, ExportedInterfaceDef iface)>();
 
+        // 2026-05-06: collect every namespace declared by an activated module — used
+        // for E0602 `using <ns>;` resolution. Includes namespaces from impl-only
+        // packages (e.g. cross-zpkg `impl Trait for Type` modules).
+        var resolvedNs = new HashSet<string>(StringComparer.Ordinal);
+
         // ── Phase 1: 骨架登记 ──
         // 遍历 modules，对每个新名字创建空成员的骨架；first-wins on duplicates.
         // 同时记录每个 (ns, class-name) 被哪些 package 贡献，用于冲突检测。
@@ -82,6 +87,10 @@ public static class ImportedSymbolLoader
         {
             var pkg = packageOf.TryGetValue(mod, out var p) ? p : "";
             if (!allowedPkgs.Contains(pkg)) continue;
+
+            // Every activated module's namespace is reachable via `using`, regardless
+            // of whether it contributes types in this loader pass (impl blocks count).
+            if (!string.IsNullOrEmpty(mod.Namespace)) resolvedNs.Add(mod.Namespace);
 
             foreach (var cls in mod.Classes)
             {
@@ -219,7 +228,8 @@ public static class ImportedSymbolLoader
 
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
             classConstraints, funcConstraints, classInterfaces, classPkg, collisions,
-            Delegates: delegates.Count > 0 ? delegates : null);
+            Delegates: delegates.Count > 0 ? delegates : null,
+            ResolvedNamespaces: resolvedNs.Count > 0 ? resolvedNs : null);
     }
 
     /// L3-Impl2 Phase 3: merge `impl Trait for Target` declarations into the
@@ -617,9 +627,18 @@ public static class ImportedSymbolLoader
 
         var delegates = MergeNullable(low.Delegates, high.Delegates);
 
+        HashSet<string>? resolvedNs = null;
+        if (low.ResolvedNamespaces is not null || high.ResolvedNamespaces is not null)
+        {
+            resolvedNs = new HashSet<string>(StringComparer.Ordinal);
+            if (low.ResolvedNamespaces  is not null) resolvedNs.UnionWith(low.ResolvedNamespaces);
+            if (high.ResolvedNamespaces is not null) resolvedNs.UnionWith(high.ResolvedNamespaces);
+        }
+
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
             classConstraints, funcConstraints, classInterfaces, classPackages, collisions,
-            Delegates: delegates);
+            Delegates: delegates,
+            ResolvedNamespaces: resolvedNs);
     }
 
     private static Dictionary<string, T>? MergeNullable<T>(
@@ -666,7 +685,14 @@ public sealed record ImportedSymbols(
     /// 2026-05-02 add-generic-delegates (D1c): imported delegate type registry
     /// (key style matches `SymbolTable.Delegates`: `Foo` / `Foo$N` /
     /// `Class.Foo` / `Class.Foo$N`). Replaces hardcoded `Action`/`Func` desugar.
-    Dictionary<string, DelegateInfo>?    Delegates       = null);
+    Dictionary<string, DelegateInfo>?    Delegates       = null,
+    /// 2026-05-06 fix-cross-zpkg-using-resolution: namespaces declared by any
+    /// activated module (via `mod.Namespace`), regardless of whether the module
+    /// contributes classes / interfaces / enums. Required for E0602 to recognize
+    /// `using <ns>;` on packages that contribute only impl blocks (no classes),
+    /// e.g. cross-zpkg `impl Trait for Type` where the impl-providing zpkg has
+    /// its own namespace but no class declarations.
+    HashSet<string>?                     ResolvedNamespaces = null);
 
 /// strict-using-resolution: 跨包同 (ns, name) 冲突描述。
 public sealed record NamespaceCollision(
