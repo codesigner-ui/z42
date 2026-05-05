@@ -112,8 +112,7 @@
   - **R5**（`rewrite-goldens-with-test-mechanism` minimal + ad-hoc 迁移 ✅ 2026-04-30）：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件 + `just test-stdlib` 入口；13 个 stdlib-bound golden 物理迁回所测库目录
   - **R2 完整版**（`extend-z42-test-library` ✅ 2026-05-05）：lambda 落地后兑现 z42.test 库三处 TODO —— `Std.Test.TestIO` (captureStdout/Stderr/Both + nested + 异常透传) / `Std.Test.Bencher` (default+custom ctor / iter / Min·Max·Median·Total·Samples / printSummary) / `Std.Test.BenchHelpers.blackBox(object)` / `Assert.Throws(Action)` + `DoesNotThrow` + `EqualApprox`；E0912 完整化（[Benchmark] first-param-is-Bencher）；`Std.IO.ConsoleError`（首次 stderr 写出 API）；6 个新 native（4 testio + 2 bench）；dogfood 25/25
 - 📋 **后续完整版**（详见 [spec/changes/](../spec/changes/)）：
-  - **R3b** （待开 spec）：in-process 执行 + [Setup]/[Teardown] hook 真生效 + Runner [Benchmark] 调度模式（R2 完整版交付 Bencher 类，但 runner 不调度它；属于此 spec 范围）
-  - **跨包 inheritance-aware ShouldThrow**（待开 spec）：让 `[ShouldThrow<Base>]` 匹配跨非 import zpkg 依赖的 SubClass（A3 已覆盖 import 范围内；剩下要求 runner 加 LazyLoader 集成，可与 R3 完整版合并）
+  - **R3b** （待开 spec）：in-process 执行 + [Setup]/[Teardown] hook 真生效 + Runner [Benchmark] 调度模式（R2 完整版交付 Bencher 类，但 runner 不调度它）+ zpkg-as-input（顺带覆盖跨非 import 包 inheritance 的边角情形 —— A3 编译期 chain 已经覆盖 import 范围；R3b 用 LazyLoader 时自然吸收）
   - **类型敏感 `Throws<E>`**（待开 spec）：依赖 z42 三个反射限制（`is X` cross-module / generic-E IsInstance / Object.GetType() 跨 Exception 子类）任一修好；R2 完整版以 untyped `Throws(Action)` + `[ShouldThrow<E>]` 测试级注解作为过渡
 
 ### VM 质量
