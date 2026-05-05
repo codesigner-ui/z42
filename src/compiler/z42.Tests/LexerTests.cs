@@ -68,6 +68,20 @@ public sealed class LexerTests
         Lex(text)[0].Kind.Should().Be(expected);
     }
 
+    // ── Parameter modifiers (spec: define-ref-out-in-parameters) ──────────────
+
+    [Theory]
+    [InlineData("ref", TokenKind.Ref)]
+    [InlineData("out", TokenKind.Out)]
+    [InlineData("in",  TokenKind.In)]   // reuses foreach...in token
+    public void ParameterModifier_IsRecognised(string text, TokenKind expected)
+    {
+        var tokens = Lex(text);
+        tokens.Should().HaveCount(2);    // modifier + EOF
+        tokens[0].Kind.Should().Be(expected);
+        tokens[0].Text.Should().Be(text);
+    }
+
     // ── Integer literal ───────────────────────────────────────────────────────
 
     [Theory]

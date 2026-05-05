@@ -115,7 +115,8 @@ internal static partial class ExprParser
 
     private static readonly LedFn CallLed = (cursor, left, tok, feat) =>
     {
-        var args = ParseArgList(ref cursor, TokenKind.RParen, feat);
+        // allowModifiers: spec define-ref-out-in-parameters — `f(ref x)` etc.
+        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true);
         Expect(ref cursor, TokenKind.RParen);
         return Ok(new CallExpr(left, args, left.Span), cursor);
     };

@@ -65,6 +65,23 @@ internal sealed class TypeEnv
     /// Define a variable in this scope.
     internal void Define(string name, Z42Type type) => _vars[name] = type;
 
+    /// Spec define-ref-out-in-parameters: parameter modifier tracking. Set
+    /// per function/method entry so `BindAssign` can refuse writes to `in`
+    /// params and the closure analyzer can refuse capture of ref/out/in
+    /// params. Walks parent chain to find the enclosing function's record.
+    private readonly Dictionary<string, Z42.Syntax.Parser.ParamModifier> _paramMods = new();
+
+    internal void DefineParamModifier(
+        string name, Z42.Syntax.Parser.ParamModifier modifier) =>
+        _paramMods[name] = modifier;
+
+    internal Z42.Syntax.Parser.ParamModifier LookupParamModifier(string name)
+    {
+        if (_paramMods.TryGetValue(name, out var m)) return m;
+        if (_parent != null) return _parent.LookupParamModifier(name);
+        return Z42.Syntax.Parser.ParamModifier.None;
+    }
+
     /// Returns true if <paramref name="name"/> is defined in THIS scope only (not parent scopes).
     internal bool DefinedInCurrentScope(string name) => _vars.ContainsKey(name);
 

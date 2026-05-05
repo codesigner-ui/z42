@@ -13,6 +13,7 @@ public enum TokenKind
     // C# keywords
     Namespace, Using, Var,
     Static, Public, Private, Protected, Internal,
+    Ref, Out,        // parameter modifiers (spec: define-ref-out-in-parameters); In reuses foreach...in token below
     Class, Struct, Enum, Interface, Record, Delegate, Event,
     Abstract, Sealed, Override, Virtual, New, Extern,
     Async, Await,

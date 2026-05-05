@@ -250,25 +250,69 @@ public sealed partial class SymbolCollector : ISymbolBinder
 
     private void CollectFunctions(CompilationUnit cu)
     {
+        // Spec define-ref-out-in-parameters (Decision 7): detect modifier-overload
+        // groups before registration so we can split them into modifier-tagged keys.
+        var localGroups = cu.Functions
+            .GroupBy(fn => (fn.Name, Arity: fn.Params.Count))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         foreach (var fn in cu.Functions)
         {
             // L3-Impl2 / cross-CU Phase 1: a local function name may already be in
             // `_funcs` because it was injected via `MergeImported` from intraSymbols
             // (same package's pre-collected declarations). In that case, the local
             // declaration shadows the import — drop the imported entry silently and
-            // fall through to the normal registration. Only error on **local-local**
-            // collisions (same name declared twice within the local source).
-            if (_funcs.ContainsKey(fn.Name))
-            {
-                if (_importedFuncNames.Remove(fn.Name))
-                    _funcs.Remove(fn.Name); // shed the import; about to re-add as local
-                else
-                    _diags.Error(DiagnosticCodes.DuplicateDeclaration,
-                        $"duplicate function declaration `{fn.Name}`", fn.Span);
-            }
+            // fall through to the normal registration.
+            if (_funcs.ContainsKey(fn.Name) && _importedFuncNames.Remove(fn.Name))
+                _funcs.Remove(fn.Name);
+
             if (fn.TypeParams != null) _activeTypeParams = new HashSet<string>(fn.TypeParams);
-            _funcs[fn.Name] = BuildFuncSignature(fn.Params, ResolveType(fn.ReturnType));
+            var sig = BuildFuncSignature(fn.Params, ResolveType(fn.ReturnType));
             _activeTypeParams = null;
+
+            // Determine registration key. Spec define-ref-out-in-parameters
+            // Decision 7: when (Name, Arity) collides AND at least one variant
+            // has a modifier, use modifier-tagged key `Name$Arity$<modSig>`.
+            // Pure same-arity collision (both all-None) keeps the legacy
+            // single-key behavior (errors as duplicate, matching pre-spec).
+            var groupKey = (fn.Name, Arity: fn.Params.Count);
+            bool sameArityCollide = localGroups[groupKey].Count > 1;
+            bool anyHasModifier = sameArityCollide && localGroups[groupKey].Any(x =>
+                x.Params.Any(p => p.Modifier != ParamModifier.None));
+            string regName;
+            if (sameArityCollide && anyHasModifier)
+            {
+                var modSig = ModifierMangling.PatternFromParams(fn.Params);
+                regName = $"{fn.Name}${fn.Params.Count}${modSig}";
+
+                // If a previous iteration registered the same fn under bare name
+                // (because it was the first declaration encountered), migrate it now.
+                if (_funcs.TryGetValue(fn.Name, out var prev))
+                {
+                    var prevModSig = ModifierMangling.PatternFromModifiers(
+                        prev.ParamModifiers, prev.Params.Count);
+                    var prevModKey = $"{fn.Name}${prev.Params.Count}${prevModSig}";
+                    if (prevModKey != regName)
+                    {
+                        _funcs.Remove(fn.Name);
+                        _funcs[prevModKey] = prev;
+                    }
+                }
+            }
+            else
+            {
+                regName = fn.Name;
+            }
+
+            if (_funcs.ContainsKey(regName))
+            {
+                _diags.Error(DiagnosticCodes.DuplicateDeclaration,
+                    $"duplicate function declaration `{fn.Name}`" +
+                    (sameArityCollide ? " (same arity + same modifier sequence; modifier-based overload requires distinct modifier signatures)" : ""),
+                    fn.Span);
+                continue;
+            }
+            _funcs[regName] = sig;
         }
     }
 
@@ -370,6 +414,8 @@ public sealed partial class SymbolCollector : ISymbolBinder
 
     /// Build a Z42FuncType from parameter types + return type.
     /// Computes RequiredCount from `p.Default != null` — does NOT bind default expressions.
+    /// Carries `Param.Modifier` through to the resulting Z42FuncType so call-site
+    /// modifier consistency can be checked later (spec: define-ref-out-in-parameters).
     internal Z42FuncType BuildFuncSignature(IReadOnlyList<Param> parms, Z42Type retType)
     {
         var paramTypes    = parms.Select(p => ResolveType(p.Type)).ToList();
@@ -387,6 +433,15 @@ public sealed partial class SymbolCollector : ISymbolBinder
                     parms[i].Span);
             }
         }
-        return new Z42FuncType(paramTypes, retType, requiredCount == parms.Count ? -1 : requiredCount);
+        // Spec define-ref-out-in-parameters: only attach modifier list when at
+        // least one parameter actually carries a modifier (avoid unnecessary
+        // allocation for the common all-None case; equality treats null and
+        // all-None as equivalent).
+        IReadOnlyList<ParamModifier>? modifiers = ModifierMangling.HasAnyModifier(parms)
+            ? parms.Select(p => p.Modifier).ToList()
+            : null;
+        return new Z42FuncType(paramTypes, retType,
+            requiredCount == parms.Count ? -1 : requiredCount,
+            modifiers);
     }
 }

@@ -140,6 +140,30 @@ public sealed record BoundCall(
     Z42Type RetType,
     Span Span) : BoundExpr(RetType, Span);
 
+// ── Parameter modifier wrapper (spec: define-ref-out-in-parameters) ──────────
+
+/// Inline `out var x` declaration carried by a BoundModifiedArg. The local
+/// `Name` is registered in the caller's TypeEnv at bind time (with placeholder
+/// `Z42Type.Unknown` if signature not yet resolved); CheckArgTypes patches the
+/// type from the matched parameter. `Type` is the resolved local type after
+/// signature matching.
+public sealed record BoundOutVarDecl(string Name, Z42Type Type, Span Span);
+
+/// Bound form of `Syntax.Parser.ModifiedArg` — a callsite argument that the
+/// user wrote with `ref` / `out` / `in` prefix. `Inner` is the bound inner
+/// expression (typically a `BoundIdent` for ref/in, the just-declared local
+/// `BoundIdent` for `out var x`, or any lvalue expression like
+/// `BoundIndex` / `BoundMember` for `ref a[i]` / `ref obj.f`). `Type` mirrors
+/// `Inner.Type` so existing code paths that read `BoundExpr.Type` keep working.
+/// IR codegen unwraps to emit address-load + ref-mask bit for the matching
+/// argument slot (see design.md Decision 1).
+public sealed record BoundModifiedArg(
+    BoundExpr Inner,
+    Z42.Syntax.Parser.ArgModifier Modifier,
+    BoundOutVarDecl? OutDecl,
+    Z42Type Type,
+    Span Span) : BoundExpr(Type, Span);
+
 // ── Member and index access ───────────────────────────────────────────────────
 
 public sealed record BoundMember(BoundExpr Target, string MemberName, Z42Type Type, Span Span)

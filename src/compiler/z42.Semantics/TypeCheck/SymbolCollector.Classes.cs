@@ -104,12 +104,51 @@ public sealed partial class SymbolCollector
             var methodNameCount = cls.Methods
                 .GroupBy(m => (m.Name, m.IsStatic))
                 .ToDictionary(g => g.Key, g => g.Count());
+            // Spec define-ref-out-in-parameters (Decision 7): same-arity overload
+            // by modifier requires a 3rd-axis grouping. When two methods share
+            // (Name, IsStatic, Arity) but differ in modifier sequence, fall back
+            // to a modifier-tagged key `Name$Arity$<modSig>`.
+            var arityGroupCount = cls.Methods
+                .GroupBy(m => (m.Name, m.IsStatic, Arity: m.Params.Count))
+                .ToDictionary(g => g.Key, g => g.Count());
             foreach (var m in cls.Methods)
             {
                 var retType = m.Name == cls.Name ? (Z42Type)Z42Type.Void : ResolveType(m.ReturnType);
                 var sig     = BuildFuncSignature(m.Params, retType);
-                bool isOverloaded = methodNameCount[(m.Name, m.IsStatic)] > 1;
-                string regName = isOverloaded ? $"{m.Name}${m.Params.Count}" : m.Name;
+                bool isOverloaded     = methodNameCount[(m.Name, m.IsStatic)] > 1;
+                bool sameArityCollide = arityGroupCount[(m.Name, m.IsStatic, m.Params.Count)] > 1;
+                string regName;
+                if (!isOverloaded)
+                {
+                    regName = m.Name;
+                }
+                else if (sameArityCollide)
+                {
+                    // Spec define-ref-out-in-parameters Decision 7: only switch
+                    // to modifier-tagged keys when at least one method in the
+                    // (Name, IsStatic, Arity) group has a non-None modifier.
+                    // Pure same-arity collision (both all-None) keeps legacy
+                    // arity-only key so existing same-arity overloads (like
+                    // stdlib `Math.Abs(int)` / `Math.Abs(double)`) keep working.
+                    bool anyHasModifier = cls.Methods.Any(x =>
+                        x.Name == m.Name
+                        && x.IsStatic == m.IsStatic
+                        && x.Params.Count == m.Params.Count
+                        && x.Params.Any(p => p.Modifier != ParamModifier.None));
+                    if (anyHasModifier)
+                    {
+                        var modSig = ModifierMangling.PatternFromParams(m.Params);
+                        regName = $"{m.Name}${m.Params.Count}${modSig}";
+                    }
+                    else
+                    {
+                        regName = $"{m.Name}${m.Params.Count}";
+                    }
+                }
+                else
+                {
+                    regName = $"{m.Name}${m.Params.Count}";
+                }
                 if (m.IsStatic) staticMethods[regName] = sig;
                 else            methods[regName]        = sig;
             }

@@ -1,9 +1,13 @@
 # 已显式延后的功能
 
-> 跟踪 spec 实施过程中被识别为"v1 不实现，等前置/未来再做"的功能。
+> **本文档仅记录"实施期延后"**：spec 实施 / fix / refactor 过程中发现 Scope 外问题、经 User 裁决"v1 不实现、等前置/未来再做"的功能。
 > 每条标注：来源 spec / 触发原因 / 前置依赖 / 触发条件（什么时候应该回来做）。
 >
-> 不在此列表的"未做"功能可以视为没明确决策，需要新建 spec 讨论。
+> **设计期延后**（spec proposal/design 起草期就主动决定不做的子特性）应记录在对应
+> `docs/design/<feature>.md` 的 "Deferred / Future Work" 段，**不**进本文档。两类延后的判断标准与
+> 记录位置见 [`.claude/rules/workflow.md`](../.claude/rules/workflow.md) "延后特性管理"。
+>
+> 不在此列表也不在任何 design doc 的"未做"功能可以视为没明确决策，需要新建 spec 讨论。
 
 ---
 

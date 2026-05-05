@@ -69,7 +69,7 @@ internal static partial class ExprParser
 
         // new T(args)
         Expect(ref cursor, TokenKind.LParen);
-        var args = ParseArgList(ref cursor, TokenKind.RParen, feat);
+        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true);
         Expect(ref cursor, TokenKind.RParen);
         return Ok(new NewExpr(ty, args, tok.Span), cursor);
     }
@@ -277,17 +277,70 @@ internal static partial class ExprParser
         ParseResult<Expr>.Ok(e, cursor);
 
     /// Parse a comma-separated argument list, stopping at `stop` token.
+    /// `allowModifiers=true` accepts `ref`/`out`/`in` prefix on each argument
+    /// (spec: define-ref-out-in-parameters). Used for call expressions and
+    /// constructor invocation; **not** for array / collection literal element
+    /// lists (modifiers do not apply there).
     private static List<Expr> ParseArgList(
-        ref TokenCursor cursor, TokenKind stop, LanguageFeatures feat)
+        ref TokenCursor cursor, TokenKind stop, LanguageFeatures feat,
+        bool allowModifiers = false)
     {
         var args = new List<Expr>();
         while (cursor.Current.Kind != stop && !cursor.IsEnd)
         {
-            args.Add(Parse(cursor, feat).Unwrap(ref cursor));
+            Expr arg = allowModifiers
+                ? ParseCallArgWithOptionalModifier(ref cursor, feat)
+                : Parse(cursor, feat).Unwrap(ref cursor);
+            args.Add(arg);
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
         }
         return args;
+    }
+
+    /// Parse a single call-site argument that may be prefixed with `ref` /
+    /// `out` / `in` (spec: define-ref-out-in-parameters). When the prefix is
+    /// `out` and the next tokens are `var <ident>`, an inline OutVarDecl is
+    /// constructed (Q4: scope extends to the enclosing statement, handled by
+    /// TypeChecker).
+    private static Expr ParseCallArgWithOptionalModifier(
+        ref TokenCursor cursor, LanguageFeatures feat)
+    {
+        var startSpan = cursor.Current.Span;
+        var modifier = cursor.Current.Kind switch
+        {
+            TokenKind.Ref => ArgModifier.Ref,
+            TokenKind.Out => ArgModifier.Out,
+            TokenKind.In  => ArgModifier.In,
+            _             => ArgModifier.None,
+        };
+        if (modifier == ArgModifier.None)
+            return Parse(cursor, feat).Unwrap(ref cursor);
+
+        cursor = cursor.Advance(); // consume ref/out/in
+
+        OutVarDecl? outDecl = null;
+        Expr inner;
+        if (modifier == ArgModifier.Out && cursor.Current.Kind == TokenKind.Var)
+        {
+            // `out var x` — inline declaration
+            cursor = cursor.Advance(); // consume `var`
+            if (cursor.Current.Kind != TokenKind.Identifier)
+                throw new ParseException(
+                    $"expected identifier after `out var`, got `{cursor.Current.Text}`",
+                    cursor.Current.Span,
+                    DiagnosticCodes.ExpectedToken);
+            var nameTok = cursor.Current;
+            cursor = cursor.Advance();
+            outDecl = new OutVarDecl(nameTok.Text, AnnotatedType: null, nameTok.Span);
+            inner = new IdentExpr(nameTok.Text, nameTok.Span);
+        }
+        else
+        {
+            inner = Parse(cursor, feat).Unwrap(ref cursor);
+        }
+
+        return new ModifiedArg(inner, modifier, outDecl, startSpan);
     }
 
     /// Consume an expected token or throw ParseException.

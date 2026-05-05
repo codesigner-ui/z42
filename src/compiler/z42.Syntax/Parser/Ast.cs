@@ -215,7 +215,16 @@ public sealed record FunctionDecl(
     public bool IsExtern   => Modifiers.HasFlag(FunctionModifiers.Extern);
 }
 
-public sealed record Param(string Name, TypeExpr Type, Expr? Default, Span Span);
+/// Parameter passing mode (spec: define-ref-out-in-parameters).
+/// - None: pass by value (or by-reference for reference types — z42 default)
+/// - Ref:  bidirectional reference; caller must initialize, both sides may read/write
+/// - Out:  output-only; callee must assign in all normal-return paths (DA enforced)
+/// - In:   read-only reference; callee may not write (zero-copy contract)
+public enum ParamModifier { None, Ref, Out, In }
+
+public sealed record Param(
+    string Name, TypeExpr Type, Expr? Default, Span Span,
+    ParamModifier Modifier = ParamModifier.None);
 
 // ── Test attributes (spec R1) ────────────────────────────────────────────────
 
@@ -351,6 +360,27 @@ public sealed record UnaryExpr(string Op, Expr Operand, Span Span) : Expr(Span);
 public sealed record PostfixExpr(string Op, Expr Operand, Span Span) : Expr(Span);
 public sealed record AssignExpr(Expr Target, Expr Value, Span Span) : Expr(Span);
 public sealed record CallExpr(Expr Callee, List<Expr> Args, Span Span) : Expr(Span);
+
+/// Argument modifier at callsite (spec: define-ref-out-in-parameters).
+/// Mirrors ParamModifier; must match the callee parameter's modifier exactly
+/// (TypeChecker enforces).
+public enum ArgModifier { None, Ref, Out, In }
+
+/// Callsite argument with explicit modifier: `f(ref x)` / `f(out var n)` /
+/// `f(in y)`. `OutDecl` is non-null only when the user wrote `out var x`
+/// (inline declaration); in that case `Inner` is the IdentExpr referring to
+/// the just-declared name. Modifier=None is reserved for normal value args
+/// (callsites typically use the bare Expr; ModifiedArg is only constructed
+/// when a modifier prefix was lexed).
+public sealed record ModifiedArg(
+    Expr Inner, ArgModifier Modifier, OutVarDecl? OutDecl, Span Span)
+    : Expr(Span);
+
+/// Inline `out var x` declaration at callsite (spec Q4: scope extends to
+/// the enclosing statement, e.g. `if (TryParse(s, out var v)) print(v)`).
+/// `AnnotatedType` is non-null only when the user wrote an explicit type
+/// (e.g. `out int x`) instead of `var`.
+public sealed record OutVarDecl(string Name, TypeExpr? AnnotatedType, Span Span);
 public sealed record MemberExpr(Expr Target, string Member, Span Span) : Expr(Span);
 public sealed record IndexExpr(Expr Target, Expr Index, Span Span) : Expr(Span);
 public sealed record ConditionalExpr(Expr Cond, Expr Then, Expr Else, Span Span) : Expr(Span);

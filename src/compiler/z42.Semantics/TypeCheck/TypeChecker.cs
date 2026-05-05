@@ -237,7 +237,11 @@ public sealed partial class TypeChecker : ITypeInferrer
                 }
                 CheckParamNames(method.Params);
                 foreach (var p in method.Params)
+                {
                     scope.Define(p.Name, _symbols.ResolveType(p.Type));
+                    if (p.Modifier != ParamModifier.None)
+                        scope.DefineParamModifier(p.Name, p.Modifier);
+                }
                 BindParamDefaults(method.Params, scope);
                 var retType = _symbols.ResolveType(method.ReturnType);
                 _boundBodies[method] = BindBlock(method.Body, scope, retType);
@@ -247,7 +251,7 @@ public sealed partial class TypeChecker : ITypeInferrer
                         && !FlowAnalyzer.AlwaysReturns(_boundBodies[method]))
                         _diags.Error(DiagnosticCodes.MissingReturn,
                             $"not all code paths return a value in `{method.Name}`", method.Span);
-                    FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags);
+                    FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags, method.Params);
                 }
             }
         }
@@ -289,7 +293,11 @@ public sealed partial class TypeChecker : ITypeInferrer
             }
             CheckParamNames(method.Params);
             foreach (var p in method.Params)
+            {
                 scope.Define(p.Name, _symbols.ResolveType(p.Type));
+                if (p.Modifier != ParamModifier.None)
+                    scope.DefineParamModifier(p.Name, p.Modifier);
+            }
             BindParamDefaults(method.Params, scope);
             bool isCtor = method.Name == cls.Name;
             if (isCtor && method.BaseCtorArgs is { } baseCtorArgs)
@@ -303,7 +311,7 @@ public sealed partial class TypeChecker : ITypeInferrer
                     && !FlowAnalyzer.AlwaysReturns(_boundBodies[method]))
                     _diags.Error(DiagnosticCodes.MissingReturn,
                         $"not all code paths return a value in `{method.Name}`", method.Span);
-                FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags);
+                FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[method], _diags, method.Params);
             }
         }
         }
@@ -321,7 +329,13 @@ public sealed partial class TypeChecker : ITypeInferrer
             var scope = env.PushScope();
             CheckParamNames(fn.Params);
             foreach (var p in fn.Params)
+            {
                 scope.Define(p.Name, _symbols.ResolveType(p.Type));
+                // Spec define-ref-out-in-parameters: track modifier for write
+                // protection (`in` no-write) and lambda-capture restriction.
+                if (p.Modifier != ParamModifier.None)
+                    scope.DefineParamModifier(p.Name, p.Modifier);
+            }
             BindParamDefaults(fn.Params, scope);
             _boundBodies[fn] = BindBlock(fn.Body, scope, _symbols.ResolveType(fn.ReturnType));
             var fnRetType = _symbols.ResolveType(fn.ReturnType);
@@ -330,7 +344,7 @@ public sealed partial class TypeChecker : ITypeInferrer
                 && !FlowAnalyzer.AlwaysReturns(_boundBodies[fn]))
                 _diags.Error(DiagnosticCodes.MissingReturn,
                     $"not all code paths return a value in `{fn.Name}`", fn.Span);
-            FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags);
+            FlowAnalyzer.CheckDefiniteAssignment(_boundBodies[fn], _diags, fn.Params);
         }
         finally { if (fn.TypeParams != null) _symbols.PopTypeParams(); }
     }

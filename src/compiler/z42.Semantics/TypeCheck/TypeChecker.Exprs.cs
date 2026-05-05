@@ -65,6 +65,15 @@ public sealed partial class TypeChecker
             }
 
             case CallExpr call:     return BindCall(call, env);
+
+            // ModifiedArg (spec: define-ref-out-in-parameters) — only valid
+            // as an argument to a CallExpr / NewExpr; appearing anywhere else
+            // is a parser-side mistake (parser ensures this). Inner is bound
+            // here; modifier validation against the callee's signature happens
+            // in CheckArgTypes (TypeChecker.Calls.cs). For `out var x`, the
+            // local is declared with placeholder Unknown type; CheckArgTypes
+            // patches the type once the matching parameter is resolved.
+            case ModifiedArg ma:    return BindModifiedArg(ma, env);
             case MemberExpr m:      return BindMemberExpr(m, env);
 
             case IndexExpr ix:
@@ -316,6 +325,20 @@ public sealed partial class TypeChecker
                     // Walk frames from outermost → innermost so each frame
                     // whose boundary excludes the variable also captures it.
                     int innermostIndex = -1;
+                    // Spec define-ref-out-in-parameters: lambda may not capture
+                    // ref/out/in parameters (Decision 4 / spec scenario "lambda
+                    // 不能捕获 ref/out/in 参数"). The captured slot is a frame
+                    // address living only for the call stack; closing over it
+                    // would let the address escape the call frame.
+                    var capturedMod = env.LookupParamModifier(id.Name);
+                    if (capturedMod != ParamModifier.None)
+                    {
+                        _diags.Error(DiagnosticCodes.TypeMismatch,
+                            $"lambda cannot capture `{ModifierKeyword(capturedMod)}` parameter `{id.Name}`",
+                            id.Span);
+                        // Continue building bound tree as if not captured —
+                        // downstream traversal stays sane.
+                    }
                     var kind = Z42Type.IsReferenceType(varType)
                         ? BoundCaptureKind.ReferenceShare
                         : BoundCaptureKind.ValueSnapshot;

@@ -68,6 +68,7 @@
 | `struct` / `record` | ✅ | ✅ | ✅ | ✅ | struct 复用 class 路径；record 自动合成ctor |
 | 接口 `interface` | ✅ | ✅ | ✅ | ✅ | 通过 VCallInstr 实现运行时分发 |
 | 继承 | ✅ | ✅ | ✅ | ✅ | base(...) 构造器链支持 |
+| `ref` / `out` / `in` 参数修饰符 | ✅ | ✅ | ⏸ | ⏸ | 编译期已落地（spec 2026-05-05-define-ref-out-in-parameters-typecheck）；运行时实施在 follow-up `impl-ref-out-in-runtime`，过渡期 callee 修改不传回 caller |
 
 ---
 

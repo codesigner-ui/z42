@@ -17,15 +17,18 @@ public sealed partial class TypeChecker
             && _symbols.Classes.TryGetValue(clsName, out var staticCt))
         {
             bool isImported = _symbols.ImportedClassNames.Contains(clsName);
-            var arityKey  = $"{staticMember}${call.Args.Count}";
-            var staticSig = staticCt.StaticMethods.TryGetValue(staticMember, out var s1) ? s1
-                          : staticCt.StaticMethods.TryGetValue(arityKey,     out var s2) ? s2 : null;
+            // Spec define-ref-out-in-parameters (Decision 7): modifier-aware overload.
+            var (staticSig, staticKey) = LookupMethodOverload(staticCt.StaticMethods, staticMember, call.Args);
             if (staticSig is not null)
             {
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
                 CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
                 CheckArgTypes(call.Args, args, staticSig.Params);
-                return new BoundCall(BoundCallKind.Static, null, clsName, staticMember,
+                CheckArgModifiers(call.Args, args, staticSig, env, call.Span);
+                // Use resolved key when overload (modifier-tagged or arity-tagged) so
+                // IR Codegen / VM dispatch resolves to the correct variant.
+                string resolvedStatic = staticKey != staticMember ? staticKey! : staticMember;
+                return new BoundCall(BoundCallKind.Static, null, clsName, resolvedStatic,
                     null, args, staticSig.Ret, call.Span);
             }
             // Imported class: method not found → try DepIndex, or defer to IrGen
@@ -117,6 +120,7 @@ public sealed partial class TypeChecker
                     var mtSub = (Z42FuncType)SubstituteTypeParams(mtRaw, subMap);
                     CheckArgCount(argBound.Count, mtSub.MinArgCount, mtSub.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, mtSub.Params);
+                    CheckArgModifiers(call.Args, argBound, mtSub, env, call.Span);
                     bool isVirtual = _symbols.VirtualMethods.TryGetValue(def.Name, out var vmSet)
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
@@ -132,12 +136,10 @@ public sealed partial class TypeChecker
             if (recvExpr.Type is Z42ClassType ct)
             {
                 var instArityKey = $"{mCallee.Member}${argBound.Count}";
-                bool byBare  = ct.Methods.TryGetValue(mCallee.Member, out var mt1);
-                Z42FuncType? mt2 = null;
-                bool byArity = !byBare && ct.Methods.TryGetValue(instArityKey, out mt2);
-                var mt = byBare ? mt1 : byArity ? mt2 : null;
-                // Use arity-suffixed name when the method was resolved via arity key
-                string resolvedMethodName = byArity ? instArityKey : mCallee.Member;
+                // Spec define-ref-out-in-parameters (Decision 7): modifier-aware overload.
+                var (mt, instKey) = LookupMethodOverload(ct.Methods, mCallee.Member, call.Args);
+                // Resolved method name for IR codegen — use the actual key found.
+                string resolvedMethodName = instKey ?? mCallee.Member;
                 bool isImportedCls = _symbols.ImportedClassNames.Contains(ct.Name);
                 if (mt is not null)
                 {
@@ -151,6 +153,7 @@ public sealed partial class TypeChecker
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
                     CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, mt.Params);
+                    CheckArgModifiers(call.Args, argBound, mt, env, call.Span);
                     // Imported classes always use Instance method calls (no virtual dispatch in stdlib).
                     // User-defined classes may use Virtual dispatch.
                     bool isVirtual = !isImportedCls
@@ -191,6 +194,7 @@ public sealed partial class TypeChecker
                                                 : (Z42FuncType)SubstituteTypeParams(imt, subMap);
                     CheckArgCount(argBound.Count, imtSub.MinArgCount, imtSub.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, imtSub.Params);
+                    CheckArgModifiers(call.Args, argBound, imtSub, env, call.Span);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, ifaceType.Name,
                         mCallee.Member, null, argBound, imtSub.Ret, call.Span);
                 }
@@ -218,6 +222,7 @@ public sealed partial class TypeChecker
                 {
                     CheckArgCount(argBound.Count, bcMt.MinArgCount, bcMt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, bcMt.Params);
+                    CheckArgModifiers(call.Args, argBound, bcMt, env, call.Span);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, bc.Name,
                         mCallee.Member, null, argBound, bcMt.Ret, call.Span);
                 }
@@ -227,6 +232,7 @@ public sealed partial class TypeChecker
                     {
                         CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
                         CheckArgTypes(call.Args, argBound, gmt.Params);
+                        CheckArgModifiers(call.Args, argBound, gmt, env, call.Span);
                         return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
                             mCallee.Member, null, argBound, gmt.Ret, call.Span);
                     }
@@ -276,6 +282,7 @@ public sealed partial class TypeChecker
                     string resolved = primArity ? primArityKey : mCallee.Member;
                     CheckArgCount(argBound.Count, pmt.MinArgCount, pmt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, pmt.Params);
+                    CheckArgModifiers(call.Args, argBound, pmt, env, call.Span);
                     return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName,
                         resolved, null, argBound, pmt.Ret, call.Span);
                 }
@@ -311,24 +318,37 @@ public sealed partial class TypeChecker
         {
             CheckArgCount(freeArgs.Count, bareSig.MinArgCount, bareSig.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, bareSig.Params);
+            CheckArgModifiers(call.Args, freeArgs, bareSig, env, call.Span);
             return new BoundCall(BoundCallKind.Static, null, env.CurrentClass, bareCallName,
                 null, freeArgs, bareSig.Ret, call.Span);
         }
 
         if (call.Callee is IdentExpr funcId)
         {
-            var funcType = env.LookupFunc(funcId.Name);
+            // Spec define-ref-out-in-parameters (Decision 7): try modifier-tagged
+            // overload key first when callsite has any modifier; fall back to bare.
+            Z42FuncType? funcType = null;
+            string resolvedFuncName = funcId.Name;
+            var argModSig = ModifierMangling.PatternFromArgs(call.Args);
+            if (!string.IsNullOrEmpty(argModSig))
+            {
+                var modKey = $"{funcId.Name}${call.Args.Count}${argModSig}";
+                funcType = env.LookupFunc(modKey);
+                if (funcType is not null) resolvedFuncName = modKey;
+            }
+            funcType ??= env.LookupFunc(funcId.Name);
             if (funcType is Z42FuncType ft)
             {
                 CheckArgCount(freeArgs.Count, ft.MinArgCount, ft.Params.Count, call.Span);
                 CheckArgTypes(call.Args, freeArgs, ft.Params);
+                CheckArgModifiers(call.Args, freeArgs, ft, env, call.Span);
                 // L3-G2: if the function has a constraint map, infer type args from params and validate.
                 if (_funcConstraints.ContainsKey(funcId.Name))
                     InferAndValidateFuncConstraints(funcId.Name, ft, freeArgs, call.Span);
                 // Infer type args from params for return type substitution (T → concrete).
                 var retType = SubstituteGenericReturn(ft, freeArgs);
                 return new BoundCall(BoundCallKind.Free, null, null, null,
-                    funcId.Name, freeArgs, retType, call.Span);
+                    resolvedFuncName, freeArgs, retType, call.Span);
             }
             // impl-lambda-l2: indirect call via a `Z42FuncType`-typed local variable
             // (e.g. `var f = x => x + 1; f(5);`). The Receiver field carries the bound
@@ -338,6 +358,7 @@ public sealed partial class TypeChecker
             {
                 CheckArgCount(freeArgs.Count, vft.MinArgCount, vft.Params.Count, call.Span);
                 CheckArgTypes(call.Args, freeArgs, vft.Params);
+                CheckArgModifiers(call.Args, freeArgs, vft, env, call.Span);
 
                 // 2026-05-02 impl-closure-l3-monomorphize: 若该 var 是已知函数的 alias
                 //（`var f = Helper; f();`），直接 emit 静态 Call 而非 CallIndirect。
@@ -367,6 +388,7 @@ public sealed partial class TypeChecker
         {
             CheckArgCount(freeArgs.Count, ft2.MinArgCount, ft2.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, ft2.Params);
+            CheckArgModifiers(call.Args, freeArgs, ft2, env, call.Span);
             return new BoundCall(BoundCallKind.Free, calleeExpr, null, null,
                 null, freeArgs, ft2.Ret, call.Span);
         }
@@ -403,6 +425,170 @@ public sealed partial class TypeChecker
                 $"expected {min}–{max} argument(s), got {actual}", span);
     }
 
+    // ── Parameter modifiers (spec: define-ref-out-in-parameters) ──────────────
+
+    /// Bind a callsite `ref` / `out` / `in` argument. For `out var x`, declare
+    /// the local in the caller's scope with placeholder `Unknown` type; the
+    /// matched parameter's type patches it in `CheckArgTypes`.
+    private BoundExpr BindModifiedArg(ModifiedArg ma, TypeEnv env)
+    {
+        BoundOutVarDecl? boundDecl = null;
+        if (ma.Modifier == ArgModifier.Out && ma.OutDecl is { } decl)
+        {
+            // Placeholder Unknown — patched once signature is known.
+            env.Define(decl.Name, Z42Type.Unknown);
+            boundDecl = new BoundOutVarDecl(decl.Name, Z42Type.Unknown, decl.Span);
+        }
+
+        var inner = BindExpr(ma.Inner, env);
+        return new BoundModifiedArg(inner, ma.Modifier, boundDecl, inner.Type, ma.Span);
+    }
+
+    /// Validate that `ref` / `out` / `in` callsite usage matches the callee's
+    /// parameter modifiers, that argument positions tagged as ref/out/in carry
+    /// lvalue inner expressions, and that types match exactly across the
+    /// modifier boundary (no implicit conversion). Patches `out var x` local
+    /// types from matching parameter types.
+    private void CheckArgModifiers(
+        IReadOnlyList<Expr>      origArgs,
+        IReadOnlyList<BoundExpr> boundArgs,
+        Z42FuncType?             funcType,
+        TypeEnv                  env,
+        Span                     callSpan)
+    {
+        int n = boundArgs.Count;
+        for (int i = 0; i < n; i++)
+        {
+            var origIsModified = origArgs[i] is ModifiedArg;
+            var boundIsModified = boundArgs[i] is BoundModifiedArg;
+            var paramMod = funcType?.ModifierAt(i) ?? ParamModifier.None;
+
+            // Sanity: bound and orig should agree on modifier presence.
+            // (Defensive — should never desync given BindModifiedArg path.)
+            if (origIsModified != boundIsModified) continue;
+
+            // Case 1: signature has modifier, callsite missing — error.
+            if (paramMod != ParamModifier.None && !origIsModified)
+            {
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"argument {i + 1}: parameter has `{ModifierKeyword(paramMod)}` modifier; " +
+                    $"call site must use `{ModifierKeyword(paramMod)}`",
+                    origArgs[i].Span);
+                continue;
+            }
+
+            // Case 2: callsite has modifier, signature missing — error.
+            if (paramMod == ParamModifier.None && origIsModified)
+            {
+                var ma = (ModifiedArg)origArgs[i];
+                _diags.Error(DiagnosticCodes.TypeMismatch,
+                    $"argument {i + 1}: parameter has no modifier; remove `{ArgModifierKeyword(ma.Modifier)}`",
+                    ma.Span);
+                continue;
+            }
+
+            // Case 3: both have modifiers — must match exactly.
+            if (origIsModified)
+            {
+                var ma = (ModifiedArg)origArgs[i];
+                var bma = (BoundModifiedArg)boundArgs[i];
+                if (!ModifiersMatch(ma.Modifier, paramMod))
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"argument {i + 1}: expected `{ModifierKeyword(paramMod)}`, got `{ArgModifierKeyword(ma.Modifier)}`",
+                        ma.Span);
+                    continue;
+                }
+
+                // Lvalue requirement: ref / out / in inner must be a writable
+                // location reference (variable, array element, or object field).
+                // For `out var x`, the inline declaration is by definition lvalue.
+                if (ma.OutDecl is null && !IsLvalueForRef(bma.Inner))
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"argument {i + 1}: `{ArgModifierKeyword(ma.Modifier)}` requires an lvalue (variable, field, or array element)",
+                        ma.Span);
+                    continue;
+                }
+
+                // Patch `out var x` local type from the matched parameter type.
+                if (ma.OutDecl is { } d && i < (funcType?.Params.Count ?? 0))
+                {
+                    var pType = funcType!.Params[i];
+                    env.Define(d.Name, pType);
+                }
+            }
+        }
+    }
+
+    private static bool ModifiersMatch(ArgModifier arg, ParamModifier param)
+    {
+        return (arg, param) switch
+        {
+            (ArgModifier.Ref, ParamModifier.Ref) => true,
+            (ArgModifier.Out, ParamModifier.Out) => true,
+            (ArgModifier.In,  ParamModifier.In)  => true,
+            (ArgModifier.None, ParamModifier.None) => true,
+            _ => false,
+        };
+    }
+
+    private static string ModifierKeyword(ParamModifier m) => m switch
+    {
+        ParamModifier.Ref => "ref",
+        ParamModifier.Out => "out",
+        ParamModifier.In  => "in",
+        _ => "<none>",
+    };
+
+    private static string ArgModifierKeyword(ArgModifier m) => m switch
+    {
+        ArgModifier.Ref => "ref",
+        ArgModifier.Out => "out",
+        ArgModifier.In  => "in",
+        _ => "<none>",
+    };
+
+    /// Test whether a bound expression is a writable location reference for
+    /// the purposes of `ref` / `out` / `in` arguments. Allowed:
+    ///   - `BoundIdent` resolving to a local variable (or `out var x` decl)
+    ///   - `BoundIndex` (`a[i]` — array / list element)
+    ///   - `BoundMember` (`obj.field` — object field; not a method/property)
+    ///
+    /// Disallowed: literals, function calls, arithmetic, casts, `this`-only
+    /// receivers without member access.
+    internal static bool IsLvalueForRef(BoundExpr expr) => expr switch
+    {
+        BoundIdent       => true,
+        BoundIndex       => true,
+        BoundMember      => true,
+        _                => false,
+    };
+
+    /// Modifier-aware overload lookup (spec: define-ref-out-in-parameters,
+    /// Decision 7). Tries keys in order:
+    ///   1. `Name$Arity$<argModSig>` — modifier-tagged key (same-arity overload)
+    ///   2. `Name`                    — bare (single method, no overload)
+    ///   3. `Name$Arity`              — legacy arity-only key (no modifier collision)
+    /// Returns matching sig + the resolved key for IR codegen, or (null, null).
+    internal static (Z42FuncType? Sig, string? Key) LookupMethodOverload(
+        IReadOnlyDictionary<string, Z42FuncType> table,
+        string memberName,
+        IReadOnlyList<Expr> args)
+    {
+        var argModSig = ModifierMangling.PatternFromArgs(args);
+        if (!string.IsNullOrEmpty(argModSig))
+        {
+            var modKey = $"{memberName}${args.Count}${argModSig}";
+            if (table.TryGetValue(modKey, out var modSigVal))
+                return (modSigVal, modKey);
+        }
+        if (table.TryGetValue(memberName, out var bare)) return (bare, memberName);
+        var arityKey = $"{memberName}${args.Count}";
+        if (table.TryGetValue(arityKey, out var ar)) return (ar, arityKey);
+        return (null, null);
+    }
+
     private void CheckArgTypes(
         IReadOnlyList<Expr>      origArgs,
         IReadOnlyList<BoundExpr> boundArgs,
@@ -410,8 +596,28 @@ public sealed partial class TypeChecker
     {
         int n = Math.Min(boundArgs.Count, paramTypes.Count);
         for (int i = 0; i < n; i++)
+        {
+            // For modifier-bearing arguments (ref/out/in), require exact type
+            // match (no implicit conversion across the reference boundary).
+            // For `out var x`, the local was declared as Unknown and CheckArgModifiers
+            // patches it from paramType — skip strict check here.
+            if (boundArgs[i] is BoundModifiedArg bma)
+            {
+                if (bma.OutDecl is not null) continue;
+                if (!paramTypes[i].Equals(bma.Inner.Type)
+                    && bma.Inner.Type is not Z42ErrorType
+                    && bma.Inner.Type is not Z42UnknownType
+                    && paramTypes[i] is not Z42UnknownType)
+                {
+                    _diags.Error(DiagnosticCodes.TypeMismatch,
+                        $"argument {i + 1}: `{ArgModifierKeyword(bma.Modifier)}` requires exact type match — expected `{paramTypes[i]}`, got `{bma.Inner.Type}`",
+                        origArgs[i].Span);
+                }
+                continue;
+            }
             RequireAssignable(paramTypes[i], boundArgs[i].Type, origArgs[i].Span,
                 $"argument {i + 1}: expected `{paramTypes[i]}`, got `{boundArgs[i].Type}`");
+        }
     }
 
     /// Uppercase first character ("string" → "String") for mapping a primitive

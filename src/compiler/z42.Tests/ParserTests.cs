@@ -676,4 +676,91 @@ void Main() { }");
         impl.Methods.Should().HaveCount(2);
         impl.Methods.Select(m => m.Name).Should().Equal("First", "Second");
     }
+
+    // ── Parameter modifiers (spec: define-ref-out-in-parameters) ──────────────
+
+    [Fact]
+    public void ParamModifier_Ref_OnSignature()
+    {
+        var cu = ParseCu("void Inc(ref int x) { } void Main() { }");
+        var fn = cu.Functions.Should().Contain(f => f.Name == "Inc").Subject;
+        fn.Params.Should().HaveCount(1);
+        fn.Params[0].Modifier.Should().Be(ParamModifier.Ref);
+        fn.Params[0].Name.Should().Be("x");
+    }
+
+    [Fact]
+    public void ParamModifier_Out_OnSignature()
+    {
+        var cu = ParseCu("bool TryParse(string s, out int v) { v = 0; return true; } void Main() { }");
+        var fn = cu.Functions.Should().Contain(f => f.Name == "TryParse").Subject;
+        fn.Params.Should().HaveCount(2);
+        fn.Params[0].Modifier.Should().Be(ParamModifier.None);
+        fn.Params[1].Modifier.Should().Be(ParamModifier.Out);
+    }
+
+    [Fact]
+    public void ParamModifier_In_OnSignature()
+    {
+        var cu = ParseCu("double Norm(in double x) { return x; } void Main() { }");
+        var fn = cu.Functions.Should().Contain(f => f.Name == "Norm").Subject;
+        fn.Params.Should().HaveCount(1);
+        fn.Params[0].Modifier.Should().Be(ParamModifier.In);
+    }
+
+    [Fact]
+    public void ArgModifier_Ref_AtCallsite()
+    {
+        var stmt = (ExprStmt)ParseStmt("Inc(ref c);");
+        var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
+        call.Args.Should().HaveCount(1);
+        var arg = call.Args[0].Should().BeOfType<ModifiedArg>().Subject;
+        arg.Modifier.Should().Be(ArgModifier.Ref);
+        arg.OutDecl.Should().BeNull();
+        arg.Inner.Should().BeOfType<IdentExpr>().Which.Name.Should().Be("c");
+    }
+
+    [Fact]
+    public void ArgModifier_Out_VarDecl_AtCallsite()
+    {
+        var stmt = (ExprStmt)ParseStmt("TryParse(\"x\", out var n);");
+        var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
+        call.Args.Should().HaveCount(2);
+        var arg = call.Args[1].Should().BeOfType<ModifiedArg>().Subject;
+        arg.Modifier.Should().Be(ArgModifier.Out);
+        arg.OutDecl.Should().NotBeNull();
+        arg.OutDecl!.Name.Should().Be("n");
+        arg.OutDecl.AnnotatedType.Should().BeNull();
+        arg.Inner.Should().BeOfType<IdentExpr>().Which.Name.Should().Be("n");
+    }
+
+    [Fact]
+    public void ArgModifier_In_AtCallsite()
+    {
+        var stmt = (ExprStmt)ParseStmt("Norm(in v);");
+        var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
+        var arg = call.Args[0].Should().BeOfType<ModifiedArg>().Subject;
+        arg.Modifier.Should().Be(ArgModifier.In);
+    }
+
+    [Fact]
+    public void ArgModifier_MultipleRefArgs()
+    {
+        var stmt = (ExprStmt)ParseStmt("Swap(ref a, ref b);");
+        var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
+        call.Args.Should().HaveCount(2);
+        call.Args[0].Should().BeOfType<ModifiedArg>().Which.Modifier.Should().Be(ArgModifier.Ref);
+        call.Args[1].Should().BeOfType<ModifiedArg>().Which.Modifier.Should().Be(ArgModifier.Ref);
+    }
+
+    [Fact]
+    public void ArgModifier_None_PlainCall_StillWorksWithoutWrapping()
+    {
+        // Baseline regression: a call with no modifier prefix should NOT wrap
+        // its args in ModifiedArg. ModifiedArg only appears for ref/out/in.
+        var stmt = (ExprStmt)ParseStmt("Print(42);");
+        var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
+        call.Args.Should().HaveCount(1);
+        call.Args[0].Should().BeOfType<LitIntExpr>();
+    }
 }

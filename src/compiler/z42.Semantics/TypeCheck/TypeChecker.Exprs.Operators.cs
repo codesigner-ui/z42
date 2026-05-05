@@ -113,6 +113,19 @@ public sealed partial class TypeChecker
         if (assign.Target is IdentExpr aid)
             env.RemoveAlias(aid.Name);
 
+        // Spec define-ref-out-in-parameters: `in` parameter is read-only.
+        // Direct assignment `x = ...` where `x` is an `in` param → error.
+        // Note: assigning *through* `in T` (e.g. modifying mutable state of a
+        // class instance referenced by `in obj`) is allowed — the contract is
+        // "callee may not reseat the slot", not "the referent is immutable".
+        if (assign.Target is IdentExpr inId
+            && env.LookupParamModifier(inId.Name) == ParamModifier.In)
+        {
+            _diags.Error(DiagnosticCodes.TypeMismatch,
+                $"cannot assign to `in` parameter `{inId.Name}` (read-only contract)",
+                assign.Target.Span);
+        }
+
         return new BoundAssign(target, value2, value2.Type, assign.Span);
     }
 

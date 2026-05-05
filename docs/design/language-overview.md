@@ -205,14 +205,29 @@ int Sum(params int[] values) {
     return total;
 }
 
-// out / ref 参数
-bool TryParse(string s, out int result) {
-    // ...
-    result = 0;
-    return false;
+// 多返回值：tuple（推荐）
+(bool ok, int v) TryParse(string s) {
+    return (true, 42);
 }
+var (ok, v) = TryParse("42");
+
+// 参数修饰符：ref / out / in（编译期已落地，运行时实施在 follow-up spec
+// `impl-ref-out-in-runtime`；详见 docs/design/parameter-modifiers.md）
+void Increment(ref int x) { x = x + 1; }    // 双向引用
+bool TryParseOut(string s, out int v) {     // 单向输出 + DefiniteAssignment
+    v = 0; return false;
+}
+double Norm(in BigVec v) { ... }            // 只读引用，零拷贝
+
+// callsite 三者均强制写修饰符（修正 C# `in` 可省的不一致）：
+var c = 0;
+Increment(ref c);
+TryParseOut("x", out var n);                // out var 内联声明
+var d = Norm(in someVec);
 
 ```
+
+> **过渡期注意**：编译期对 `ref` / `out` / `in` 的所有验证已生效（修饰符一致 / lvalue / DA / 4 交互规则 / overload）。运行时 callee 修改尚未传回 caller —— 见 `parameter-modifiers.md` "Runtime Implementation"。需要"修改调用方变量"语义时优先用 tuple 多返回值。
 
 ### 5.1 局部函数（嵌套函数声明，C# 7+）
 

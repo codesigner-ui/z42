@@ -20,16 +20,28 @@ internal static partial class TopLevelParser
         var parms = new List<Param>();
         while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
         {
-            var pSpan    = cursor.Current.Span;
-            var pType    = TypeParser.Parse(cursor).Unwrap(ref cursor);
-            var pName    = ExpectKind(ref cursor, TokenKind.Identifier).Text;
+            var pSpan = cursor.Current.Span;
+            // Optional parameter modifier (spec: define-ref-out-in-parameters).
+            // `In` token is reused from `foreach...in`; in parameter list position
+            // it is unambiguously the `in` modifier.
+            var pModifier = cursor.Current.Kind switch
+            {
+                TokenKind.Ref => ParamModifier.Ref,
+                TokenKind.Out => ParamModifier.Out,
+                TokenKind.In  => ParamModifier.In,
+                _             => ParamModifier.None,
+            };
+            if (pModifier != ParamModifier.None) cursor = cursor.Advance();
+
+            var pType = TypeParser.Parse(cursor).Unwrap(ref cursor);
+            var pName = ExpectKind(ref cursor, TokenKind.Identifier).Text;
             Expr? pDefault = null;
             if (cursor.Current.Kind == TokenKind.Eq)
             {
                 cursor   = cursor.Advance();
                 pDefault = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
             }
-            parms.Add(new Param(pName, pType, pDefault, pSpan));
+            parms.Add(new Param(pName, pType, pDefault, pSpan, pModifier));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
         }

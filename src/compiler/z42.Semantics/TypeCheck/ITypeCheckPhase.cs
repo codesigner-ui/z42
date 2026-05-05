@@ -28,5 +28,7 @@ public interface ITypeInferrer
 public interface IFlowAnalyzer
 {
     bool AlwaysReturns(BoundBlock block);
-    void CheckDefiniteAssignment(BoundBlock block, DiagnosticBag diags);
+    void CheckDefiniteAssignment(
+        BoundBlock block, DiagnosticBag diags,
+        IReadOnlyList<Param>? functionParams = null);
 }

@@ -303,6 +303,9 @@ Allowed at `[Extern]` and native-method signatures:
 | struct `[Layout(C)]` (all blittable fields) | C struct | |
 | static fn pointer | fn pointer | |
 | Native-class ref (`*Self`) | `*mut T` | reference to native type instance |
+| `ref T` 参数 | `*mut T` | 双向引用（spec `impl-ref-out-in-runtime` 落地后启用 zero-copy 路径；编译期签名验证已生效）|
+| `out T` 参数 | `*mut T` | 单向输出（同上 + DefiniteAssignment）|
+| `in T` 参数 | `*const T` | 只读引用，零拷贝（同上）|
 
 **Disallowed**: `String`, `Array<T>` (use `pinned`), `Tuple`, closures, plain z42 class. Compiler enforces at signature check.
 

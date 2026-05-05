@@ -55,6 +55,12 @@ internal static class TokenDefs
         new("private",   TokenKind.Private,   LanguagePhase.Phase1),
         new("protected", TokenKind.Protected, LanguagePhase.Phase1),
         new("internal",  TokenKind.Internal,  LanguagePhase.Phase1),
+
+        // Parameter modifiers (Phase 1 — spec define-ref-out-in-parameters)
+        // `in` is already registered above (Foreach `in`), reused as parameter modifier
+        new("ref",       TokenKind.Ref,       LanguagePhase.Phase1),
+        new("out",       TokenKind.Out,       LanguagePhase.Phase1),
+
         new("class",     TokenKind.Class,     LanguagePhase.Phase1),
         new("struct",    TokenKind.Struct,    LanguagePhase.Phase1),
         new("enum",      TokenKind.Enum,      LanguagePhase.Phase1),

@@ -1,5 +1,6 @@
 using Z42.Core.Diagnostics;
 using Z42.Semantics.Bound;
+using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
 
@@ -16,8 +17,10 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
     // ── IFlowAnalyzer implementation ─────────────────────────────────────────
 
     bool IFlowAnalyzer.AlwaysReturns(BoundBlock block) => AlwaysReturns(block);
-    void IFlowAnalyzer.CheckDefiniteAssignment(BoundBlock block, DiagnosticBag diags) =>
-        CheckDefiniteAssignment(block, diags);
+    void IFlowAnalyzer.CheckDefiniteAssignment(
+        BoundBlock block, DiagnosticBag diags,
+        IReadOnlyList<Param>? functionParams) =>
+        CheckDefiniteAssignment(block, diags, functionParams);
 
     // ── Reachability analysis ────────────────────────────────────────────────
 
@@ -47,11 +50,50 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
 
     /// Checks that all local variables declared without initializer are assigned
     /// before being read. Reports E0407 for violations.
-    internal static void CheckDefiniteAssignment(BoundBlock block, DiagnosticBag diags)
+    ///
+    /// `outParams` (spec: define-ref-out-in-parameters, Decisions 5/6): list of
+    /// parameter names that must be definitely assigned on every normal-return
+    /// path. Non-out params are pre-marked as assigned (caller provides their
+    /// value); `out` params start uninitialized and must be assigned by
+    /// fall-through end-of-body if it is reachable.
+    internal static void CheckDefiniteAssignment(
+        BoundBlock block, DiagnosticBag diags,
+        IReadOnlyList<Param>? functionParams = null)
     {
         var uninitLocals = new HashSet<string>();
         var assigned = new HashSet<string>();
+        if (functionParams is not null)
+        {
+            foreach (var p in functionParams)
+            {
+                if (p.Modifier == ParamModifier.Out)
+                    uninitLocals.Add(p.Name);
+                else
+                    assigned.Add(p.Name);
+            }
+        }
         AnalyzeBlock(block, uninitLocals, assigned, diags);
+
+        // Callee-side DA for `out` (spec Decision 6): every `out` param must be
+        // in the merged `assigned` set after block analysis. AnalyzeIf /
+        // AnalyzeSwitch correctly union assignments from non-terminating
+        // branches (throw / return paths skip the intersection requirement),
+        // so `assigned` here represents "definitely assigned along every
+        // normal-completing path through the body".
+        if (functionParams is not null)
+        {
+            foreach (var p in functionParams)
+            {
+                if (p.Modifier == ParamModifier.Out
+                    && uninitLocals.Contains(p.Name)
+                    && !assigned.Contains(p.Name))
+                {
+                    diags.Error(DiagnosticCodes.UninitializedVariable,
+                        $"`out` parameter `{p.Name}` must be assigned before normal return",
+                        p.Span);
+                }
+            }
+        }
     }
 
     private static void AnalyzeBlock(
@@ -141,8 +183,26 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
         {
             var elseAssigned = new HashSet<string>(assigned);
             AnalyzeStmt(i.Else, uninitLocals, elseAssigned, diags);
-            foreach (var name in thenAssigned)
-                if (elseAssigned.Contains(name)) assigned.Add(name);
+
+            // Spec define-ref-out-in-parameters Decision 6 / scenario "throw
+            // 路径不算赋值"：if a branch always exits via return/throw, only
+            // the other branch's assignments propagate. Otherwise intersect
+            // (must be assigned on both paths).
+            bool thenTerminates = AlwaysReturns(i.Then);
+            bool elseTerminates = StmtAlwaysReturns(i.Else);
+            if (thenTerminates && !elseTerminates)
+                assigned.UnionWith(elseAssigned);
+            else if (!thenTerminates && elseTerminates)
+                assigned.UnionWith(thenAssigned);
+            else if (!thenTerminates && !elseTerminates)
+                foreach (var name in thenAssigned)
+                    if (elseAssigned.Contains(name)) assigned.Add(name);
+            // both terminate → control never falls through; leave `assigned` alone
+        }
+        else
+        {
+            // No else branch: control may fall through if condition is false,
+            // so assignments inside `then` aren't guaranteed. Don't propagate.
         }
     }
 
@@ -215,7 +275,34 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
                 break;
             case BoundCall c:
                 if (c.Receiver != null) CheckReads(c.Receiver, uninitLocals, assigned, diags);
-                foreach (var a in c.Args) CheckReads(a, uninitLocals, assigned, diags);
+                foreach (var a in c.Args)
+                {
+                    // Spec define-ref-out-in-parameters Decision 5: caller-side
+                    // DA for `out` arguments. The target lvalue (or `out var x`
+                    // freshly declared local) is initialized by the call's
+                    // post-condition, not by being read. Skip CheckReads on it
+                    // and mark it assigned.
+                    if (a is BoundModifiedArg
+                        { Modifier: Z42.Syntax.Parser.ArgModifier.Out } bma)
+                    {
+                        if (bma.Inner is BoundIdent outId)
+                        {
+                            if (uninitLocals.Contains(outId.Name))
+                                assigned.Add(outId.Name);
+                        }
+                        else
+                        {
+                            // For `ref obj.f` / `ref a[i]`, recurse so the target
+                            // expression itself (obj / a) is checked but the
+                            // location's prior content is not required.
+                            CheckReadsForRefTarget(bma.Inner, uninitLocals, assigned, diags);
+                        }
+                        continue;
+                    }
+                    // For ref / in: target must be already initialized to be passed.
+                    // Standard CheckReads already handles this via BoundIdent rule.
+                    CheckReads(a, uninitLocals, assigned, diags);
+                }
                 break;
             case BoundAssign a:
                 CheckReads(a.Value, uninitLocals, assigned, diags);
@@ -278,5 +365,29 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
         if (expr is BoundAssign { Target: BoundIdent id }
             && uninitLocals.Contains(id.Name))
             assigned.Add(id.Name);
+    }
+
+    /// For `ref obj.f` / `ref a[i]` style `out` args: still need the *container*
+    /// (obj / a) to be initialized to compute the address; the field/element
+    /// itself doesn't need a prior value.
+    private static void CheckReadsForRefTarget(
+        BoundExpr expr, HashSet<string> uninitLocals, HashSet<string> assigned,
+        DiagnosticBag diags)
+    {
+        switch (expr)
+        {
+            case BoundIndex ix:
+                CheckReads(ix.Target, uninitLocals, assigned, diags);
+                CheckReads(ix.Index, uninitLocals, assigned, diags);
+                break;
+            case BoundMember m:
+                CheckReads(m.Target, uninitLocals, assigned, diags);
+                break;
+            // BoundIdent already short-circuited in caller for `out var x` case;
+            // any other shape isn't a valid ref target (TypeChecker rejects).
+            default:
+                CheckReads(expr, uninitLocals, assigned, diags);
+                break;
+        }
     }
 }

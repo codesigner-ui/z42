@@ -176,15 +176,105 @@ public sealed record Z42UnknownType : Z42Type
     public override string ToString() => "<unknown>";
 }
 
+/// Modifier mangling helpers (spec: define-ref-out-in-parameters, Decision 7).
+/// Used by SymbolCollector / TypeChecker to disambiguate same-arity methods
+/// with different parameter modifier sequences (e.g. `Foo(int)` vs `Foo(ref int)`).
+///
+/// Convention:
+///   - `Pattern*` returns a **fixed-length per-position string** (one char per
+///     param: `_` = None, `r` = Ref, `o` = Out, `i` = In). Used for
+///     **modifier-overload key** `Name$Arity$<Pattern>` when same-arity
+///     collision is detected.
+///   - `HasAny*` returns whether any modifier is non-None. Used as a gating
+///     check (avoid mangling when not needed).
+public static class ModifierMangling
+{
+    public static string PatternFromParams(
+        IReadOnlyList<Z42.Syntax.Parser.Param> parms)
+    {
+        if (parms.Count == 0) return "";
+        var chars = new char[parms.Count];
+        for (int i = 0; i < parms.Count; i++) chars[i] = ToChar(parms[i].Modifier);
+        return new string(chars);
+    }
+
+    public static string PatternFromModifiers(
+        IReadOnlyList<Z42.Syntax.Parser.ParamModifier>? mods, int arity)
+    {
+        if (arity == 0) return "";
+        var chars = new char[arity];
+        for (int i = 0; i < arity; i++)
+        {
+            var m = mods != null && i < mods.Count
+                ? mods[i]
+                : Z42.Syntax.Parser.ParamModifier.None;
+            chars[i] = ToChar(m);
+        }
+        return new string(chars);
+    }
+
+    public static string PatternFromArgs(IReadOnlyList<Z42.Syntax.Parser.Expr> args)
+    {
+        if (args.Count == 0) return "";
+        var chars = new char[args.Count];
+        for (int i = 0; i < args.Count; i++)
+            chars[i] = args[i] is Z42.Syntax.Parser.ModifiedArg ma
+                ? ToChar(ma.Modifier)
+                : '_';
+        return new string(chars);
+    }
+
+    public static bool HasAnyModifier(IReadOnlyList<Z42.Syntax.Parser.Param> parms)
+        => parms.Any(p => p.Modifier != Z42.Syntax.Parser.ParamModifier.None);
+
+    public static bool HasAnyModifier(IReadOnlyList<Z42.Syntax.Parser.Expr> args)
+        => args.Any(a => a is Z42.Syntax.Parser.ModifiedArg);
+
+    private static char ToChar(Z42.Syntax.Parser.ParamModifier m) => m switch
+    {
+        Z42.Syntax.Parser.ParamModifier.Ref => 'r',
+        Z42.Syntax.Parser.ParamModifier.Out => 'o',
+        Z42.Syntax.Parser.ParamModifier.In  => 'i',
+        _                                   => '_',
+    };
+
+    private static char ToChar(Z42.Syntax.Parser.ArgModifier m) => m switch
+    {
+        Z42.Syntax.Parser.ArgModifier.Ref => 'r',
+        Z42.Syntax.Parser.ArgModifier.Out => 'o',
+        Z42.Syntax.Parser.ArgModifier.In  => 'i',
+        _                                 => '_',
+    };
+}
+
 /// Function / method type.
+///
+/// `ParamModifiers` (spec: define-ref-out-in-parameters) is a parallel list to
+/// `Params` indicating each parameter's passing mode (None / Ref / Out / In).
+/// When null or shorter than `Params`, missing entries default to `None` —
+/// keeps the 23 historical construction sites (stdlib, primitive ops,
+/// synthesized sigs) backward-compatible without source-level changes.
 public sealed record Z42FuncType(
     IReadOnlyList<Z42Type> Params,
     Z42Type Ret,
-    int RequiredCount = -1          // -1 means all params required (no defaults)
+    int RequiredCount = -1,         // -1 means all params required (no defaults)
+    IReadOnlyList<Z42.Syntax.Parser.ParamModifier>? ParamModifiers = null
 ) : Z42Type
 {
     /// Number of parameters that must be supplied at every call site.
     public int MinArgCount => RequiredCount < 0 ? Params.Count : RequiredCount;
+
+    /// Modifier of parameter `idx`, defaulting to `None` when not recorded.
+    public Z42.Syntax.Parser.ParamModifier ModifierAt(int idx) =>
+        ParamModifiers is { } mods && idx < mods.Count
+            ? mods[idx]
+            : Z42.Syntax.Parser.ParamModifier.None;
+
+    /// Whether this function has any parameter with a non-None modifier.
+    public bool HasAnyModifier =>
+        ParamModifiers is { } mods
+        && mods.Any(m => m != Z42.Syntax.Parser.ParamModifier.None);
+
     public override string ToString() =>
         $"({string.Join(", ", Params)}) -> {Ret}";
 
@@ -196,7 +286,23 @@ public sealed record Z42FuncType(
         if (ReferenceEquals(this, other)) return true;
         if (RequiredCount != other.RequiredCount) return false;
         if (!Ret.Equals(other.Ret)) return false;
-        return ListEquals(Params, other.Params);
+        if (!ListEquals(Params, other.Params)) return false;
+        // Modifier-aware equality (spec define-ref-out-in-parameters):
+        // null and all-None lists are equivalent; element-wise compare otherwise.
+        return ModifiersEquivalent(ParamModifiers, other.ParamModifiers);
+    }
+
+    private static bool ModifiersEquivalent(
+        IReadOnlyList<Z42.Syntax.Parser.ParamModifier>? a,
+        IReadOnlyList<Z42.Syntax.Parser.ParamModifier>? b)
+    {
+        bool aAllNone = a is null || a.All(m => m == Z42.Syntax.Parser.ParamModifier.None);
+        bool bAllNone = b is null || b.All(m => m == Z42.Syntax.Parser.ParamModifier.None);
+        if (aAllNone && bAllNone) return true;
+        if (aAllNone != bAllNone) return false;
+        if (a!.Count != b!.Count) return false;
+        for (int i = 0; i < a.Count; i++) if (a[i] != b[i]) return false;
+        return true;
     }
 
     public override int GetHashCode()
@@ -205,6 +311,7 @@ public sealed record Z42FuncType(
         hc.Add(RequiredCount);
         hc.Add(Ret);
         foreach (var p in Params) hc.Add(p);
+        // Note: ParamModifiers intentionally not in hash (default-None equivalence)
         return hc.ToHashCode();
     }
 }
