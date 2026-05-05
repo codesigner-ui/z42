@@ -6,6 +6,7 @@
 use crate::metadata::{Instruction, Module, NativeData, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
+use std::sync::Arc;
 
 use super::dispatch::{
     is_subclass_or_eq_td, make_fallback_type_desc, obj_to_string, resolve_virtual, value_to_str,
@@ -505,23 +506,84 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                 Value::Object(rc) => rc.borrow().type_desc.clone(),
                 other => bail!("VCall: expected object, got {:?}", other),
             };
-            // Compute qualified name: try vtable first; fall back to
-            // `${class}.${method}` direct composition (lazy-loaded deps may
-            // lack a populated vtable in their TypeDesc stub).
-            let func_name = if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
-                type_desc.vtable[slot].1.clone()
-            } else if let Ok(f) = resolve_virtual(module, &type_desc.name, method) {
-                f.name.clone()
-            } else {
-                format!("{}.{}", type_desc.name, method)
-            };
+            // Try paths in order:
+            //   1. vtable_index hit (fastest path; pre-built type descriptor)
+            //   2. resolve_virtual: walk module.classes hierarchy looking up
+            //      `<class>.<method>` in module.func_index at each level
+            //   3. (NEW 2026-05-05) lazy hierarchy walk: same hierarchy traversal
+            //      but using ctx.try_lookup_function — covers methods inherited
+            //      from cross-zpkg base classes (e.g. `e.GetType()` when
+            //      `e: Std.TestFailure` and `GetType` is on Std.Object in z42.core)
+            //   4. fallback: `<most-derived>.<method>` (likely fails downstream)
             let mut call_args = vec![obj_val];
             call_args.append(&mut extra_args);
-            let callee_fn = module.func_index.get(func_name.as_str())
-                .and_then(|&idx| module.functions.get(idx));
-            let outcome = if let Some(callee) = callee_fn {
+
+            let mut callee_module_idx: Option<usize> = None;
+            let mut callee_lazy: Option<Arc<crate::metadata::Function>> = None;
+            let mut chosen_name: Option<String> = None;
+
+            if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
+                let n = type_desc.vtable[slot].1.clone();
+                if let Some(&idx) = module.func_index.get(n.as_str()) {
+                    callee_module_idx = Some(idx);
+                } else if let Some(fn_) = ctx.try_lookup_function(&n) {
+                    callee_lazy = Some(fn_);
+                }
+                chosen_name = Some(n);
+            }
+            if callee_module_idx.is_none() && callee_lazy.is_none() {
+                if let Ok(f) = resolve_virtual(module, &type_desc.name, method) {
+                    let n = f.name.clone();
+                    if let Some(&idx) = module.func_index.get(n.as_str()) {
+                        callee_module_idx = Some(idx);
+                    } else if let Some(fn_) = ctx.try_lookup_function(&n) {
+                        callee_lazy = Some(fn_);
+                    }
+                    chosen_name = Some(n);
+                }
+            }
+            // Lazy hierarchy walk: walk type_desc's base chain via
+            // module.classes, trying ctx.try_lookup_function at each level.
+            // Critical for cross-zpkg inherited methods (Std.Object.GetType
+            // accessed via Std.TestFailure receiver).
+            if callee_module_idx.is_none() && callee_lazy.is_none() {
+                let mut cur = type_desc.name.clone();
+                loop {
+                    let candidate = format!("{}.{}", cur, method);
+                    if let Some(&idx) = module.func_index.get(candidate.as_str()) {
+                        callee_module_idx = Some(idx);
+                        chosen_name = Some(candidate);
+                        break;
+                    }
+                    if let Some(fn_) = ctx.try_lookup_function(&candidate) {
+                        callee_lazy = Some(fn_);
+                        chosen_name = Some(candidate);
+                        break;
+                    }
+                    // Walk base via either module.classes or the type_desc
+                    // we already loaded (may be in registry but missing from
+                    // module.classes when imported lazily).
+                    let next = module.classes.iter()
+                        .find(|c| c.name == cur)
+                        .and_then(|c| c.base_class.clone())
+                        .or_else(|| {
+                            // type_desc only has immediate base; but if cur is
+                            // its own name we know its base. For deeper levels
+                            // we rely on module.classes being populated.
+                            if cur == type_desc.name { type_desc.base_name.clone() } else { None }
+                        });
+                    match next {
+                        Some(b) => cur = b,
+                        None => break,
+                    }
+                }
+            }
+
+            let func_name = chosen_name.unwrap_or_else(|| format!("{}.{}", type_desc.name, method));
+            let outcome = if let Some(idx) = callee_module_idx {
+                let callee = &module.functions[idx];
                 super::exec_function(ctx, module, callee, &call_args)?
-            } else if let Some(lazy_fn) = ctx.try_lookup_function(&func_name) {
+            } else if let Some(lazy_fn) = callee_lazy {
                 super::exec_function(ctx, module, lazy_fn.as_ref(), &call_args)?
             } else {
                 bail!("VCall: function `{}` not found", func_name);

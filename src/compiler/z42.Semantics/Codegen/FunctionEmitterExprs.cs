@@ -144,7 +144,13 @@ internal sealed partial class FunctionEmitter
             {
                 var objReg  = EmitExpr(ipe.Target);
                 var boolReg = Alloc(IrType.Bool);
-                var qualName = _ctx.QualifyName(ipe.TypeName);
+                // 2026-05-05: must use QualifyClassName (resolves imports)
+                // rather than QualifyName (always prepends current CU's
+                // namespace). Without this, `e is TestFailure` from a CU
+                // whose namespace is `Z42TestDogfood` emits class_name =
+                // "Z42TestDogfood.TestFailure" while the runtime class is
+                // "Std.TestFailure" → IsInstance returns false.
+                var qualName = _ctx.QualifyClassName(ipe.TypeName);
                 Emit(new IsInstanceInstr(boolReg, objReg, qualName));
                 var castReg = Alloc(IrType.Ref);
                 Emit(new AsCastInstr(castReg, objReg, qualName));
@@ -721,7 +727,9 @@ internal sealed partial class FunctionEmitter
         if (bin.Op is BinaryOp.Is or BinaryOp.As)
         {
             var objReg   = EmitExpr(bin.Left);
-            var qualName = bin.Right is BoundIdent ti ? _ctx.QualifyName(ti.Name) : "__unknown";
+            // QualifyClassName: resolves imported class to its source namespace
+            // (e.g. TestFailure → Std.TestFailure when the test CU imports it).
+            var qualName = bin.Right is BoundIdent ti ? _ctx.QualifyClassName(ti.Name) : "__unknown";
             var dst      = Alloc(bin.Op == BinaryOp.Is ? IrType.Bool : IrType.Ref);
             Emit(bin.Op == BinaryOp.Is
                 ? new IsInstanceInstr(dst, objReg, qualName)

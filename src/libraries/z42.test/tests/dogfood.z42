@@ -147,22 +147,29 @@ void test_testio_capture_rethrows_body_exception() {
 // ── R2 完整版：Assert 扩展 ──────────────────────────────────────────────
 
 [Test]
-void test_assert_throws_any_exception() {
-    Assert.Throws(() => Assert.Fail("inner boom"));
+void test_assert_throws_match() {
+    Assert.Throws("TestFailure", () => Assert.Fail("inner boom"));
 }
 
 [Test]
-void test_assert_throws_skip_also_counts() {
-    // 任意 throw 都算命中（包括 SkipSignal / 普通 Exception）。
-    Assert.Throws(() => Assert.Skip("any throw counts"));
-    Assert.Throws(() => { throw new Exception("plain"); });
+void test_assert_throws_any_exception() {
+    // ThrowsAny 不限类型；Skip / 普通 Exception 都算命中
+    Assert.ThrowsAny(() => Assert.Skip("any throw counts"));
+    Assert.ThrowsAny(() => { throw new Exception("plain"); });
 }
 
 [Test]
 [ShouldThrow<TestFailure>]
 void test_assert_throws_no_throw_fails() {
     // body 不抛 → Throws 自身抛 TestFailure（被外层 [ShouldThrow] 捕获）
-    Assert.Throws(() => { });
+    Assert.Throws("TestFailure", () => { });
+}
+
+[Test]
+[ShouldThrow<TestFailure>]
+void test_assert_throws_wrong_type_fails() {
+    // body 抛 SkipSignal 但期望 TestFailure → Throws 抛 TestFailure
+    Assert.Throws("TestFailure", () => Assert.Skip("not a TestFailure"));
 }
 
 [Test]

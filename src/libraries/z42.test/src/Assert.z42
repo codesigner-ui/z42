@@ -98,27 +98,41 @@ public static class Assert {
 
     // ── 异常断言 (R2 完整版) ──────────────────────────────────────────────
     //
-    // **API 形态**：`Throws` / `DoesNotThrow` 仅检查"是否抛出"，不检查具体类型。
-    //
-    // 选 untyped 形态是因为 z42 当前以下三个机制都无法可靠地识别 catch 进来的
-    // Exception 子类型，类型敏感版会假阳性：
-    //   1. generic <E>：IR 层 IsInstance 接受**编译期固定的**类名，generic 参数
-    //      不参与 type substitution
-    //   2. `e is X`：当 `e` 静态类型是 `Exception`、运行时类型是 `Std.TestFailure`
-    //      （子类）时，is-check 返回 false（很可能是 namespace-qualified 名字
-    //      在编译器与 vtable 之间不一致；待独立 compiler-fix spec）
-    //   3. `e.GetType().__name`：`Object.GetType()` 在 Exception 子类的 vtable
-    //      上 VCall 找不到（Object 方法跨 Exception → 子类的继承链未完整传递）
-    //
-    // 测试中要"断言整个 [Test] 抛出某具体类型"用 `[ShouldThrow<E>]` 即可
-    // （编译期 chain 写入 TIDX，runner 端字符串匹配；不依赖上面三个机制）。
-    // 要"断言代码段抛出"则用本节方法。两者覆盖典型场景。
+    // 2026-05-05 update：早期 R2 完整版因 z42 三个反射限制（is-cross-module /
+    // GetType vtable / generic-extern infer）改为 untyped Throws；同会话后续
+    // fix-is-cross-module + fix-vcall-cross-zpkg 修好前两条，于是补回类型敏感
+    // 版本。`Throws(string typeName, Action)` 通过 `e.GetType().__name` 精确
+    // 比对，避免依赖未修好的 generic-E IsInstance。
 
-    public static void Throws(Action body) {
+    /// Assert that `body` throws an exception whose runtime type's short name
+    /// equals `expectedTypeName`. Use `[ShouldThrow<E>]` for whole-test-level
+    /// throw assertions where the type is statically known at attribute time.
+    public static void Throws(string expectedTypeName, Action body) {
         try {
             body();
         } catch (Exception e) {
-            return;   // 任意异常都算命中
+            var actual = e.GetType().__name;
+            if (actual == expectedTypeName) {
+                return;
+            }
+            throw new TestFailure(
+                $"expected to throw {expectedTypeName} but got {actual}: {e.Message}",
+                actual,
+                expectedTypeName);
+        }
+        throw new TestFailure(
+            $"expected to throw {expectedTypeName} but no exception was thrown",
+            "<no throw>",
+            expectedTypeName);
+    }
+
+    /// Assert any exception is thrown. Less type-safe than the typed overload;
+    /// use when the test only cares "did this throw at all".
+    public static void ThrowsAny(Action body) {
+        try {
+            body();
+        } catch (Exception e) {
+            return;
         }
         throw new TestFailure("expected to throw but no exception was thrown");
     }
@@ -127,7 +141,11 @@ public static class Assert {
         try {
             body();
         } catch (Exception e) {
-            throw new TestFailure($"expected no exception but got: {e.Message}");
+            var actual = e.GetType().__name;
+            throw new TestFailure(
+                $"expected no exception but got {actual}: {e.Message}",
+                actual,
+                "<no throw>");
         }
     }
 
