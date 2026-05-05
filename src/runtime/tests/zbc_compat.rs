@@ -17,30 +17,56 @@ use std::path::PathBuf;
 
 use z42_vm::metadata::{load_artifact, zbc_reader::read_zbc};
 
-/// Resolve the project-root path to a golden test directory.
-fn golden_dir(name: &str) -> PathBuf {
+/// Project root resolved from `CARGO_MANIFEST_DIR` (= src/runtime).
+fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("golden")
-        .join("run")
-        .join(name)
+        .parent().unwrap()        // src/
+        .parent().unwrap()        // <root>/
+        .to_path_buf()
 }
 
-/// Iterate every golden test directory that ships with a `source.zbc`.
+/// Resolve a project-root-relative path to a test case directory.
+/// Format: `"<category>/<name>"` (e.g. `"basic/01_hello"`).
+fn golden_dir(rel: &str) -> PathBuf {
+    project_root().join("src/tests").join(rel)
+}
+
+/// Iterate every test directory that ships with a `source.zbc` under
+/// `src/tests/` (excluding errors/parse/cross-zpkg) and `src/libraries/<lib>/tests/`.
 fn each_golden_zbc() -> Vec<(String, PathBuf)> {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("golden")
-        .join("run");
+    let root = project_root();
     let mut out = Vec::new();
-    let entries = fs::read_dir(&root).expect("golden/run exists");
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() { continue; }
-        let zbc = path.join("source.zbc");
-        if zbc.is_file() {
-            let name = path.file_name().unwrap().to_string_lossy().into_owned();
-            out.push((name, zbc));
+    let mut roots: Vec<PathBuf> = Vec::new();
+
+    // src/tests/<category>/<name>/  (skip errors/parse/cross-zpkg)
+    let tests_root = root.join("src/tests");
+    if let Ok(entries) = fs::read_dir(&tests_root) {
+        for cat in entries.flatten() {
+            if !cat.path().is_dir() { continue; }
+            let cat_name = cat.file_name().to_string_lossy().into_owned();
+            if matches!(cat_name.as_str(), "errors" | "parse" | "cross-zpkg") { continue; }
+            roots.push(cat.path());
+        }
+    }
+    // src/libraries/<lib>/tests/<name>/
+    if let Ok(libs) = fs::read_dir(root.join("src/libraries")) {
+        for lib in libs.flatten() {
+            let p = lib.path().join("tests");
+            if p.is_dir() { roots.push(p); }
+        }
+    }
+
+    for r in roots {
+        if let Ok(entries) = fs::read_dir(&r) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() { continue; }
+                let zbc = path.join("source.zbc");
+                if zbc.is_file() {
+                    let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                    out.push((name, zbc));
+                }
+            }
         }
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
@@ -128,7 +154,7 @@ fn check_instr_pool_refs(
 
 #[test]
 fn hello_zbc_structure() {
-    let bytes = fs::read(golden_dir("01_hello").join("source.zbc"))
+    let bytes = fs::read(golden_dir("basic/01_hello").join("source.zbc"))
         .expect("01_hello/source.zbc");
     let module = read_zbc(&bytes).expect("01_hello decodes");
 
@@ -159,7 +185,7 @@ fn hello_zbc_structure() {
 
 #[test]
 fn class_basic_zbc_has_classes() {
-    let zbc = golden_dir("07_class_basic").join("source.zbc");
+    let zbc = golden_dir("classes/07_class_basic").join("source.zbc");
     if !zbc.is_file() {
         // Ride-along: this assertion is opportunistic. If the test is renamed
         // / restructured upstream, fall through silently rather than fail
@@ -187,7 +213,7 @@ fn class_basic_zbc_has_classes() {
 
 #[test]
 fn hello_load_artifact_full_path() {
-    let zbc = golden_dir("01_hello").join("source.zbc");
+    let zbc = golden_dir("basic/01_hello").join("source.zbc");
     let path = zbc.to_string_lossy();
     let loaded = load_artifact(&path).expect("01_hello loads via load_artifact");
 

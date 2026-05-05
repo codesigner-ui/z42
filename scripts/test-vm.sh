@@ -28,11 +28,12 @@ ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
-# Golden roots: VM-only cases live under src/runtime/tests/golden/run; stdlib-
-# specific cases live alongside their library at src/libraries/<lib>/tests/golden.
+# Test roots (dotnet/runtime-style):
+#   src/tests/<category>/<name>/         — VM e2e by feature category
+#   src/libraries/<lib>/tests/<name>/    — stdlib-specific cases (no golden/ middle)
 GOLDEN_GLOBS=(
-    "src/runtime/tests/golden/run/*/"
-    "src/libraries/"*"/tests/golden/"*"/"
+    "src/tests/"*"/"*"/"
+    "src/libraries/"*"/tests/"*"/"
 )
 MODES=("interp" "jit")
 
@@ -89,7 +90,12 @@ for MODE in "${MODES[@]}"; do
         artifact="$dir/source.zbc"
         expected="$dir/expected_output.txt"
 
-        [ -f "$artifact" ] && [ -f "$expected" ] || continue
+        # Exclude categories that aren't run-tests:
+        case "$dir" in
+            src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
+        esac
+
+        [ -f "$artifact" ] || continue
 
         # Skip JIT for tests with `interp_only` marker (e.g. tests using IR
         # opcodes whose JIT path is not yet implemented — see closure.md §6).
@@ -99,13 +105,22 @@ for MODE in "${MODES[@]}"; do
 
         actual=$(cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$artifact" --mode "$MODE" 2>&1) || true
 
-        if [ "$actual" = "$(cat "$expected")" ]; then
+        # If no expected_output.txt: assertion-based test (Assert.Equal etc.) —
+        # success means the VM ran to completion with empty stdout.
+        expected_str=""
+        [ -f "$expected" ] && expected_str=$(cat "$expected")
+
+        if [ "$actual" = "$expected_str" ]; then
             PASS=$((PASS + 1))
         else
             FAIL=$((FAIL + 1))
             FAILURES+=("$name")
             echo "  FAIL: $name"
-            echo "    expected: $(head -1 "$expected")"
+            if [ -f "$expected" ]; then
+                echo "    expected: $(head -1 "$expected")"
+            else
+                echo "    expected: <empty>"
+            fi
             echo "    actual:   $(echo "$actual" | head -1)"
         fi
     done

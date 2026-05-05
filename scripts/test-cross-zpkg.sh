@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/test-cross-zpkg.sh — Run multi-zpkg end-to-end tests.
 #
-# Each test directory is `src/runtime/tests/cross-zpkg/<name>/` containing:
+# Each test directory is `src/tests/cross-zpkg/<name>/` containing:
 #   target/    — z42.toml + src/*.z42 (lib, no deps)
 #   ext/       — z42.toml + src/*.z42 (lib, depends on target — and other deps)
 #   main/      — z42.toml + src/Main.z42 (exe, depends on target + ext)
@@ -24,7 +24,7 @@ ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
 MODE="${1:-interp}"
-TESTS_DIR="src/runtime/tests/cross-zpkg"
+TESTS_DIR="src/tests/cross-zpkg"
 DRIVER_DLL="artifacts/compiler/z42.Driver/bin/z42c.dll"
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
 

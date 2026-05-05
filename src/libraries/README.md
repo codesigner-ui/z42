@@ -200,7 +200,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | Builtin | 状态 | 备注 |
 |---|---|---|
 | `__file_read_text` / `__file_write_text` / `__file_append_text` / `__file_exists` / `__file_delete` (5) | 🟢 | syscall，BCL/Rust 同级 |
-| ~~`__path_join` / `__path_get_extension` / `__path_get_filename` / `__path_get_directory` / `__path_get_filename_without_ext` (5)~~ | ✅ 已删 | 2026-04-27 wave1-path-script — Unix `/` 语义脚本，见 [z42.io/src/Path.z42](z42.io/src/Path.z42) + golden test [16_path](../runtime/tests/golden/run/16_path/)。`Path.Separator` 常量待静态字段访问支持（L3+）|
+| ~~`__path_join` / `__path_get_extension` / `__path_get_filename` / `__path_get_directory` / `__path_get_filename_without_ext` (5)~~ | ✅ 已删 | 2026-04-27 wave1-path-script — Unix `/` 语义脚本，见 [z42.io/src/Path.z42](z42.io/src/Path.z42) + golden test [16_path](z42.io/tests/16_path/)。`Path.Separator` 常量待静态字段访问支持（L3+）|
 | `__env_get` / `__env_args` / `__process_exit` / `__time_now_ms` (4) | 🟢 | syscall / process state |
 
 ### Object 协议 — 5 项

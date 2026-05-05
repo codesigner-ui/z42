@@ -27,7 +27,7 @@ cd "$ROOT"
 if [ $# -ge 1 ]; then
     FILES="$@"
 else
-    FILES=$(find src/runtime/tests/golden/run -name 'source.z42' | sort)
+    FILES=$(find src/tests src/libraries/*/tests -name 'source.z42' 2>/dev/null | sort)
 fi
 
 PATCHED=0

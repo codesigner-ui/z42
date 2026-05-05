@@ -1014,7 +1014,7 @@ var local = new Stack();    // → local 版本，stdlib 不生效
 
 验证纯 z42 源码能完整实现泛型容器，无需编译器特判。
 
-`src/runtime/tests/golden/run/76_generic_list/` 展示用户编写的 `class MyList<T>`：
+`src/libraries/z42.collections/tests/76_generic_list/` 展示用户编写的 `class MyList<T>`：
 - `T[]` 动态数组字段 + 扩容（`Grow`）
 - `Add` / `Get` / `Set` / `RemoveAt` / `Count`
 - 同时支持 `MyList<int>` 和 `MyList<string>`（primitive T 由 L3-G4a/G4b 打通）

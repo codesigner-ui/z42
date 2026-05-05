@@ -12,7 +12,7 @@
 |------|---------|---------|---------|
 | `build-stdlib.sh` | 改了 stdlib `.z42` 源 | `dotnet`（或 `--use-dist` 用打包过的 z42c） | `artifacts/libraries/<lib>/dist/<lib>.zpkg` + `cache/<file>.zbc` |
 | `package.sh` | 准备发行 / 测发行包 | `dotnet publish` + `cargo build` | `artifacts/z42/bin/{z42c,z42vm}` + `artifacts/z42/libs/*.zpkg` |
-| `regen-golden-tests.sh` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | 更新 `src/runtime/tests/golden/run/*/source.zbc` |
+| `regen-golden-tests.sh` | 编译器变更使 `.zbc` 基线漂移 | `dotnet` + `z42.Driver` | 更新 `src/tests/<cat>/<name>/source.zbc` + `src/libraries/<lib>/tests/<name>/source.zbc` |
 | `test-vm.sh` | 跑 VM 端到端 golden test（最常用） | `cargo build` + `regen-golden-tests.sh` 的产物 | 终端报告 interp / jit 通过率 |
 | `test-cross-zpkg.sh` | 跨包路径 / 元数据相关变更 | `dotnet` + `cargo build` | 终端报告 target/ext/main 三方协作通过率 |
 | `test-dist.sh` | 验证打包后的发行版能独立工作 | `package.sh` + `build-stdlib.sh` 的产物 | 终端报告 packaged z42c+z42vm 跑 golden 通过率 |

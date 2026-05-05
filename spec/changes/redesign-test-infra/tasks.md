@@ -95,6 +95,8 @@
 ## 阶段 E: Phase 3 — 用例迁移（独立 spec）
 
 > 依赖 P2 完成。拟立 spec 名：`migrate-tests-by-ownership`
+>
+> **2026-05-05 状态更新**：由 [`spec/changes/migrate-runtime-tests-by-ownership/`](../migrate-runtime-tests-by-ownership/) 落地（按 dotnet/runtime 风格分类，非原计划"VM-only 留 runtime/tests/golden/run/"模式）。变化见该 spec 的 tasks.md。
 
 ### 范围
 - 给现有 [src/runtime/tests/golden/run/](src/runtime/tests/golden/run/) 103 个用例每个加 `@test-tier:` 注释

@@ -51,7 +51,9 @@
       "Bash(TRYBUILD=overwrite *)",
       "Bash(/tmp/classify.sh)",
       "Bash(./artifacts/runtime/debug/z42_vm src/libraries/z42.math/tests/golden/15_math/source.zbc)",
-      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/**)"
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/**)",
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/runtime/**)",
+      "Bash(bash /tmp/z42_categorize.sh)"
     ],
     "additionalDirectories": [
       "/tmp",
@@ -59,8 +61,8 @@
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/libraries/*",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/z42/libs",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/libraries/*",
-      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/golden/01_hello",
-      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/runtime/tests/cross-zpkg/01_impl_propagation/*",
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/tests/parse/01_hello",
+      "/Users/d.s.qiu/Documents/codesigner-ui/z42/src/tests/cross-zpkg/01_impl_propagation/*",
       "/Users/d.s.qiu/Documents/codesigner-ui/z42/.claude"
     ]
   }

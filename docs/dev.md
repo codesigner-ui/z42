@@ -117,7 +117,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 >
 > 这一改动来自 2026-05-04 `fix-test-vm-stale-artifacts`：早期入口不强制刷新依赖产物，多次出现"stdlib zpkg 旧 / golden zbc 旧"导致测试输出对当前代码不真实（假绿/假红）。`--no-rebuild` 仅供你**确认上一次重建是新的**且只在反复迭代单个测试时使用。
 >
-> `test-cross-zpkg.sh` 用例放在 `src/runtime/tests/cross-zpkg/`，详见该目录的 README。
+> `test-cross-zpkg.sh` 用例放在 `src/tests/cross-zpkg/`，详见该目录的 README。
 
 ---
 

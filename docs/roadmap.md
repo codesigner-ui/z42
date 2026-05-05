@@ -96,7 +96,7 @@
 - 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
 
 ### 测试体系
-- ✅ Golden test 覆盖所有 L1 特性（93 例 VM-only + 13 例 stdlib-bound = 106；2026-04-30 按归属分流到 `src/runtime/tests/golden/run/` 与 `src/libraries/<lib>/tests/golden/`）
+- ✅ Golden test 覆盖所有 L1 特性（114 例 vm_core 按 dotnet/runtime 风格分类 + 20 例 stdlib-bound = 134；2026-05-05 由 `migrate-runtime-tests-by-ownership` 重组到 `src/tests/<category>/` 与 `src/libraries/<lib>/tests/`）
 - ✅ VM interp + JIT 双模式运行同一测试集，结果一致（104/104 × 2）
 - ✅ CI 脚本稳定：`dotnet test` (799/799) + `./scripts/test-vm.sh` (104/104 × 2) + `./scripts/test-stdlib.sh` (6 lib) + `./scripts/test-cross-zpkg.sh` 全绿为唯一合并门禁
 - ✅ **R 系列测试基础设施（2026-04-29 ~ 04-30）**：

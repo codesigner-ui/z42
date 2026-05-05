@@ -24,7 +24,10 @@ DIST_DIR="$ROOT/artifacts/z42"
 Z42C="$DIST_DIR/bin/z42c"
 Z42VM="$DIST_DIR/bin/z42vm"
 LIBS_DIR="$DIST_DIR/libs"
-GOLDEN_DIR="$ROOT/src/runtime/tests/golden/run"
+GOLDEN_GLOBS=(
+    "$ROOT/src/tests/"*"/"*"/"
+    "$ROOT/src/libraries/"*"/tests/"*"/"
+)
 MODES=("interp" "jit")
 
 if [ $# -ge 1 ]; then
@@ -76,13 +79,23 @@ for MODE in "${MODES[@]}"; do
     COMPILE_FAIL=0
     FAILURES=()
 
-    for dir in "$GOLDEN_DIR"/*/; do
+    DIRS=()
+    for glob in "${GOLDEN_GLOBS[@]}"; do
+        for d in $glob; do
+            [ -d "$d" ] && DIRS+=("$d")
+        done
+    done
+
+    for dir in "${DIRS[@]}"; do
         name=$(basename "$dir")
         source="$dir/source.z42"
         expected="$dir/expected_output.txt"
 
-        # Skip directories without source.z42 or expected_output.txt
-        [ -f "$source" ] && [ -f "$expected" ] || continue
+        # Skip non-run categories.
+        case "$dir" in
+            */src/tests/errors/*|*/src/tests/parse/*|*/src/tests/cross-zpkg/*) continue ;;
+        esac
+        [ -f "$source" ] || continue
 
         # Compile: source.z42 → temp.zbc using packaged z42c
         tmpout="$TMPDIR_BASE/${name}.zbc"
@@ -93,16 +106,22 @@ for MODE in "${MODES[@]}"; do
             continue
         fi
 
-        # Run: temp.zbc → z42vm
+        # Run: temp.zbc → z42vm. Empty expected_output.txt OK (Assert-based test).
         actual=$(Z42_LIBS="$LIBS_DIR" "$Z42VM" "$tmpout" --mode "$MODE" 2>&1) || true
+        expected_str=""
+        [ -f "$expected" ] && expected_str=$(cat "$expected")
 
-        if [ "$actual" = "$(cat "$expected")" ]; then
+        if [ "$actual" = "$expected_str" ]; then
             PASS=$((PASS + 1))
         else
             FAIL=$((FAIL + 1))
             FAILURES+=("$name")
             echo "  FAIL: $name"
-            echo "    expected: $(head -1 "$expected")"
+            if [ -f "$expected" ]; then
+                echo "    expected: $(head -1 "$expected")"
+            else
+                echo "    expected: <empty>"
+            fi
             echo "    actual:   $(echo "$actual" | head -1)"
         fi
     done

@@ -102,10 +102,13 @@ while IFS= read -r f; do
             add_plan "cargo test --manifest-path src/runtime/Cargo.toml"
             add_plan "just test-vm"
             TOUCHED_ANY=1 ;;
-        src/runtime/tests/cross-zpkg/*)
+        src/runtime/tests/*)
+            add_plan "cargo test --manifest-path src/runtime/Cargo.toml"
+            TOUCHED_ANY=1 ;;
+        src/tests/cross-zpkg/*)
             add_plan "just test-cross-zpkg"
             TOUCHED_ANY=1 ;;
-        src/runtime/tests/*)
+        src/tests/*)
             add_plan "just test-vm"
             TOUCHED_ANY=1 ;;
 

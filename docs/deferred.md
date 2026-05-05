@@ -107,3 +107,18 @@
 
 - **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
   实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。
+
+---
+
+## fix-cross-zpkg-using-resolution（pre-existing 回归）
+
+- **来源**：`spec/changes/migrate-runtime-tests-by-ownership/`（实施期发现，2026-05-05）
+- **触发原因**：[scripts/test-cross-zpkg.sh](../scripts/test-cross-zpkg.sh) 失败 — main 编译时报 `E0602 using \`Demo.Greeter\`: no loaded package provides this namespace`，即使 `main/libs/demo.greeter.zpkg` 已存在且 zpkg 内 NSPC section 正确声明了 `Demo.Greeter` 命名空间（`strings demo.greeter.zpkg` 可见）。
+- **范围**：与 test 重组迁移**无关**，纯 pre-existing 编译器/PackageCompiler 回归。验证方法：`git checkout ea03570`（cross-zpkg 引入提交）→ 测试 PASS；`git checkout main` → 测试 FAIL。回归在 `ea03570 → 7858f30` 之间引入，跨：
+  - `0339db7` ref/out/in typecheck
+  - `cb61cc0` ref/out/in runtime
+  - `efad8b6` artifacts 输出布局扁平化（最可疑：可能改了 PackageCompiler 的 libs 查找路径）
+  - `5374007` R2 完整版（TestIO + Bencher + Assert ext）
+  - `7858f30` is-pattern cross-module + cross-zpkg vcall inheritance
+- **前置依赖**：无（独立 fix）
+- **触发条件**：`./scripts/test-cross-zpkg.sh` 失败时优先排查 `efad8b6` 的 artifacts 布局变化是否破坏 PackageCompiler 的 `libs/` 解析逻辑。建议起 spec/changes/fix-cross-zpkg-using-resolution/。

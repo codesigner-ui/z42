@@ -24,8 +24,8 @@ ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
 GOLDEN_GLOBS=(
-    "src/runtime/tests/golden/run/*/"
-    "src/libraries/"*"/tests/golden/"*"/"
+    "src/tests/"*"/"*"/"
+    "src/libraries/"*"/tests/"*"/"
 )
 COMPILER_SLN="src/compiler/z42.slnx"
 
@@ -78,6 +78,14 @@ for dir in "${DIRS[@]}"; do
     name=$(basename "$dir")
     source="$dir/source.z42"
     output="$dir/source.zbc"
+
+    # Exclude test categories that don't need .zbc:
+    #   errors/    — compile-failure tests (no run)
+    #   parse/     — IR/ZASM-match tests (no run)
+    #   cross-zpkg/ — multi-zpkg builds with their own driver (test-cross-zpkg.sh)
+    case "$dir" in
+        src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
+    esac
 
     if [ ! -f "$source" ]; then
         echo "  SKIP: $name (no source.z42)"

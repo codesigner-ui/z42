@@ -21,31 +21,43 @@ namespace Z42.Tests;
 /// <summary>
 /// Golden test runner.
 ///
-/// Layout under src/runtime/tests/golden/:
-///   &lt;category&gt;/&lt;name&gt;/
+/// Layout (dotnet/runtime-style, after migrate-runtime-tests-by-ownership):
+///   src/tests/&lt;category&gt;/&lt;name&gt;/
+///   src/libraries/&lt;lib&gt;/tests/&lt;name&gt;/
 ///     source.z42          — z42 source input
-///     expected.zasm       — expected ZASM output (for codegen tests)
-///     expected_output.txt — expected stdout (for run tests)
-///     expected_error.txt  — expected diagnostic output (for error tests)
+///     expected.zasm       — expected ZASM output (for parse tests; under parse/)
+///     expected_output.txt — expected stdout (run tests; absent = empty stdout OK)
+///     expected_error.txt  — expected diagnostic output (error tests; under errors/)
 ///     features.toml       — optional LanguageFeatures overrides
 ///
-/// Test discovery: every subdirectory that contains source.z42 is a test case.
+/// Test discovery walks both src/tests/ and src/libraries/&lt;lib&gt;/tests/. Case
+/// kind is determined by file presence:
+///   expected_error.txt → error case (under src/tests/errors/)
+///   expected.zasm      → parse case (typically under src/tests/parse/)
+///   source.z42 + (source under non-error dir) → run case
 /// </summary>
 public sealed class GoldenTests
 {
-    private static readonly string GoldenRoot = FindGoldenRoot();
+    private static readonly string ProjectRoot = FindProjectRoot();
+    private static readonly string TestsRoot     = Path.Combine(ProjectRoot, "src", "tests");
+    private static readonly string LibrariesRoot = Path.Combine(ProjectRoot, "src", "libraries");
 
-    private static string FindGoldenRoot()
+    private static string FindProjectRoot()
     {
-        var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir != null)
+        // Try AppContext.BaseDirectory first, then current working dir.
+        foreach (var start in new[] { AppContext.BaseDirectory, Environment.CurrentDirectory })
         {
-            string candidate = Path.Combine(dir.FullName, "src", "runtime", "tests", "golden");
-            if (Directory.Exists(candidate)) return candidate;
-            dir = dir.Parent;
+            var dir = new DirectoryInfo(start);
+            while (dir != null)
+            {
+                if (Directory.Exists(Path.Combine(dir.FullName, "src", "tests"))
+                 && Directory.Exists(Path.Combine(dir.FullName, "src", "libraries"))) return dir.FullName;
+                dir = dir.Parent;
+            }
         }
+        // Fallback: AppContext.BaseDirectory under artifacts/compiler/z42.Tests/bin/<cfg>/<tfm>
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..", "runtime", "tests", "golden"));
+            "..", "..", "..", "..", "..", ".."));
     }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -118,23 +130,44 @@ public sealed class GoldenTests
     private static IEnumerable<object[]> DiscoverCases(
         bool hasExpectedZasm = false, bool errorCategory = false, bool runCategory = false)
     {
-        if (!Directory.Exists(GoldenRoot)) yield break;
+        if (!Directory.Exists(TestsRoot)) yield break;
 
-        foreach (var dir in Directory.EnumerateDirectories(GoldenRoot, "*", SearchOption.AllDirectories))
+        // Walk roots:
+        //   src/tests/<cat>/<name>/
+        //   src/libraries/<lib>/tests/<name>/
+        var roots = new List<string> { TestsRoot };
+        if (Directory.Exists(LibrariesRoot))
         {
-            string sourceFile = Path.Combine(dir, "source.z42");
-            if (!File.Exists(sourceFile)) continue;
+            foreach (var lib in Directory.EnumerateDirectories(LibrariesRoot))
+            {
+                string libTests = Path.Combine(lib, "tests");
+                if (Directory.Exists(libTests)) roots.Add(libTests);
+            }
+        }
 
-            bool isErrorCase = dir.Contains(Path.DirectorySeparatorChar + "errors" + Path.DirectorySeparatorChar)
-                            || Path.GetFileName(dir).StartsWith("error_");
-            bool isRunCase   = dir.Contains(Path.DirectorySeparatorChar + "run" + Path.DirectorySeparatorChar);
+        foreach (var root in roots)
+        {
+            foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
+            {
+                string sourceFile = Path.Combine(dir, "source.z42");
+                if (!File.Exists(sourceFile)) continue;
 
-            if (errorCategory != isErrorCase) continue;
-            if (runCategory   != isRunCase)   continue;
-            if (hasExpectedZasm && !File.Exists(Path.Combine(dir, "expected.zasm"))) continue;
+                // Classify by file presence + dir lineage. Errors live under src/tests/errors/.
+                bool isErrorCase = dir.Contains(Path.DirectorySeparatorChar + "errors" + Path.DirectorySeparatorChar)
+                                && File.Exists(Path.Combine(dir, "expected_error.txt"));
+                bool isParseCase = dir.Contains(Path.DirectorySeparatorChar + "parse"  + Path.DirectorySeparatorChar);
+                bool isCrossZpkg = dir.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar);
 
-            string name = Path.GetRelativePath(GoldenRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
-            yield return [name, dir];
+                // Run case: anything that's not error/parse/cross-zpkg-internal and has source.z42.
+                bool isRunCase = !isErrorCase && !isParseCase && !isCrossZpkg;
+
+                if (errorCategory != isErrorCase) continue;
+                if (runCategory   != isRunCase)   continue;
+                if (hasExpectedZasm && !File.Exists(Path.Combine(dir, "expected.zasm"))) continue;
+
+                string name = Path.GetRelativePath(ProjectRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
+                yield return [name, dir];
+            }
         }
     }
 
@@ -334,13 +367,13 @@ public sealed class GoldenTests
             proc.ExitCode.Should().Be(0,
                 because: $"test '{name}' VM should exit cleanly (stderr: {proc.StandardError.ReadToEnd()})");
 
+            // Assertion-based tests (no expected_output.txt) → expect empty stdout.
             string expectedFile = Path.Combine(dir, "expected_output.txt");
-            if (File.Exists(expectedFile))
-            {
-                string expected = File.ReadAllText(expectedFile).ReplaceLineEndings("\n").Trim();
-                string actual   = stdout.ReplaceLineEndings("\n").Trim();
-                Assert.Equal(expected, actual);
-            }
+            string expected = File.Exists(expectedFile)
+                ? File.ReadAllText(expectedFile).ReplaceLineEndings("\n").Trim()
+                : "";
+            string actual = stdout.ReplaceLineEndings("\n").Trim();
+            Assert.Equal(expected, actual);
         }
         finally
         {
