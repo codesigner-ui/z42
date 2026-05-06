@@ -37,17 +37,6 @@
 - **前置依赖**：L3 后期完整 type-system 规划；与 generics.md / static-abstract-interface.md 协同。
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
 
-## D-8b-0：generic / non-generic class arity overloading（D-8b-1 阻塞前置）
-
-- **来源**：2026-05-04 D-8b-1 实施期间发现的结构性 type-system gap
-- **触发原因**：z42 当前 class registry `_classes` 用裸 simple name（`cls.Name`）作 key，**不按 generic arity 区分**。同名 class 的非泛型 / 泛型版本（`MulticastException` 与 `MulticastException<R>`）冲突，编译期报 E0408 duplicate + E0411 sealed。Delegate 注册早已用 arity-suffixed key（`Action$0` / `Action$1`），class 没跟进。
-- **缺失实现**：
-  - `SymbolCollector.Classes.cs` 类注册改为 arity-aware：`MulticastException` 与 `MulticastException$1` 共存
-  - `ResolveType` / `ResolveGenericType` 路径接受同名不同 arity 路由
-  - `IrGen` / zbc 跨 CU 序列化按 arity-suffixed full name emit + 跨 zpkg 导入对齐
-  - C# 编译器侧 + Rust VM lookup 都需要更新
-- **前置依赖**：z42 现有泛型实例化路径（已支持 generic class），主要是注册 + lookup 一致性
-- **触发条件**：D-8b-1 阻塞解除（同名 generic / non-generic exception 类共存）；或用户在其他场景需要"同名 generic + non-generic"对（如 `Result` / `Result<T>`）
 
 ## D-8b-1：stdlib `MulticastException<R>` 类（structural foundation；阻塞 D-8b-0）
 
@@ -97,6 +86,9 @@
 
 - **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
   实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。
+
+- **D-8b-0**（class arity overloading via shadow registry）：2026-05-07 落地，由 `spec/archive/2026-05-07-add-class-arity-overloading/` 实施。
+  Shadow-only mangling — `Z42ClassType` 增 `IrName` + `HasArityMangle` 派生 / 字段。SymbolCollector pre-pass 2-阶段：先扫 cu.Classes 检测 same-name 不同 arity 冲突，仅冲突情况下把 generic 一方注册到 `Name$N` 槽位（HasArityMangle=true）；非冲突 generic 类（List<T> / Dictionary<K,V> 等 stdlib 泛型）保持 bare key 不变 — **零 stdlib zpkg 影响 / 零 VM 改动**。ResolveType GenericType 路径增 `Name$N` shadow lookup（fallback bare）。BindClassMethods / BindNew / ResolveCtorName / IrGen `EmitClassDesc` / `EmitMethod` / `_funcParams` registration 等关键消费点改用 IrName 派生（HasArityMangle=true 时为 `Name$N`），non-collision case 路径上不变。新 8 个 C# 单测覆盖 IrName 派生 / 注册路由 / 同 arity duplicate detection；2 个新 golden 覆盖 coexistence + method dispatch。解锁 D-8b-1 (`MulticastException<R>` stdlib) + D-8b-3 Phase 2 (generic-T `default(T)`) 的真泛型解析。
 
 - **D-8b-3 Phase 1**（`default(T)` zero-value 表达式 — fully-resolved T）：2026-05-06 落地，由 `spec/archive/2026-05-06-add-default-expression/` 实施。
   AST `DefaultExpr(TypeExpr)` + BoundDefault；TypeChecker 解析 T + IsResolvedDefaultTarget 校验（已知 prim / class / interface / array / option / enum / func / instantiated-generic 之一），其它路径报 E0421 InvalidDefaultType。IrGen 不引入新 IR 指令，按 T 直接 emit ConstI64(0) / ConstF64(0.0) / ConstBool(false) / ConstChar('\0') / ConstNull，与 VM `default_value_for(type_tag)` 表对齐；VM 0 改动。Phase 2（generic type-param `default(R)`）独立 spec `add-default-generic-typeparam` 处理，受 IR DefaultOf opcode + 运行时 type_args 查询阻塞。

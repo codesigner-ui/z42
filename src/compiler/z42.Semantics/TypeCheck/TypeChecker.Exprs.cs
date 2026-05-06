@@ -178,18 +178,30 @@ public sealed partial class TypeChecker
             {
                 var args    = newExpr.Args.Select(a => BindExpr(a, env)).ToList();
                 var newType = ResolveType(newExpr.Type);
-                var qualName = newExpr.Type switch
+                // 2026-05-07 add-class-arity-overloading: qualName must reflect
+                // the actual class IrName (mangled `Foo$N` when collision exists),
+                // so downstream ctor lookup / IR emit see the right class.
+                // For non-collision classes IrName == Name → no behavior change.
+                var resolvedClass = newType switch
                 {
-                    NamedType nt   => nt.Name,
-                    GenericType gt => gt.Name,
-                    _              => newType.ToString()!,
+                    Z42InstantiatedType inst => inst.Definition,
+                    Z42ClassType ct          => ct,
+                    _                        => null,
                 };
+                var qualName = resolvedClass?.IrName
+                              ?? newExpr.Type switch
+                              {
+                                  NamedType nt   => nt.Name,
+                                  GenericType gt => gt.Name,
+                                  _              => newType.ToString()!,
+                              };
                 if (_symbols.AbstractClasses.Contains(qualName))
                     _diags.Error(DiagnosticCodes.TypeMismatch,
                         $"cannot instantiate abstract class `{qualName}`", newExpr.Span);
                 // Validate explicit type argument count matches class type parameter count
                 if (newExpr.Type is GenericType gt2
-                    && _symbols.Classes.TryGetValue(gt2.Name, out var clsType)
+                    && (_symbols.Classes.TryGetValue($"{gt2.Name}${gt2.TypeArgs.Count}", out var clsType)
+                        || _symbols.Classes.TryGetValue(gt2.Name, out clsType))
                     && clsType.TypeParams != null)
                 {
                     if (gt2.TypeArgs.Count != clsType.TypeParams.Count)
@@ -201,7 +213,7 @@ public sealed partial class TypeChecker
                         // L3-G2: validate each explicit type arg satisfies the class's where constraints.
                         // L3-G3d: _classConstraints also covers imported classes via TSIG.
                         var resolved = gt2.TypeArgs.Select(ResolveType).ToList();
-                        ValidateGenericConstraints(gt2.Name, clsType.TypeParams, resolved,
+                        ValidateGenericConstraints(clsType.IrName, clsType.TypeParams, resolved,
                             _classConstraints, newExpr.Span);
                     }
                 }

@@ -381,7 +381,12 @@ public sealed partial class SymbolCollector : ISymbolBinder
             // TypeArgs，构造 Z42InstantiatedType。否则 `KeyValuePair<K, V>` 在
             // SymbolCollector 阶段被退化为 bare Z42ClassType，TSIG 序列化丢失
             // type-args，消费端 `dict.Entries()[m].Value` 拿到 generic param V。
-            _            => _classes.TryGetValue(gt.Name, out var ct)
+            // 2026-05-07 add-class-arity-overloading: try arity-suffixed key
+            // first (`Foo$N` — used when same-name non-generic sibling claims
+            // bare slot). Fall through to bare `Name` for the common case where
+            // the generic class has no collision and lives at the bare key.
+            _            => (_classes.TryGetValue($"{gt.Name}${gt.TypeArgs.Count}", out var ct)
+                              || _classes.TryGetValue(gt.Name, out ct))
                               ? (gt.TypeArgs.Count > 0 && ct.TypeParams is { Count: > 0 } tps
                                   && gt.TypeArgs.Count == tps.Count
                                     ? (Z42Type)new Z42InstantiatedType(ct,

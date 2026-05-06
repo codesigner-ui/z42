@@ -273,9 +273,24 @@ public sealed partial class TypeChecker : ITypeInferrer
 
     private void BindClassMethods(ClassDecl cls)
     {
-        if (!_symbols.Classes.TryGetValue(cls.Name, out var classType)) return;
+        // 2026-05-07 add-class-arity-overloading: registry may key the generic
+        // version at `Name$N` when there's a same-name non-generic sibling.
+        // Try arity-suffixed key first, fall back to bare.
+        int arity = cls.TypeParams?.Count ?? 0;
+        Z42ClassType? classType = null;
+        string classKey = cls.Name;
+        if (arity > 0 && _symbols.Classes.TryGetValue($"{cls.Name}${arity}", out var manglee))
+        {
+            classType = manglee;
+            classKey  = $"{cls.Name}${arity}";
+        }
+        else if (_symbols.Classes.TryGetValue(cls.Name, out var bare))
+        {
+            classType = bare;
+        }
+        if (classType is null) return;
         if (cls.TypeParams != null)
-            _symbols.PushTypeParams(cls.TypeParams, _classConstraints.GetValueOrDefault(cls.Name));
+            _symbols.PushTypeParams(cls.TypeParams, _classConstraints.GetValueOrDefault(classKey));
         try
         {
         foreach (var method in cls.Methods)

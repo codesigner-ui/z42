@@ -1,0 +1,34 @@
+namespace Demo;
+using Std.IO;
+
+// add-class-arity-overloading: method dispatch on coexisting same-name
+// arity-disjoint classes routes correctly via IR-mangled names.
+
+class Pair {
+    public string Tag;
+    public Pair(string t) { this.Tag = t; }
+    public string Describe() {
+        return "non-generic Pair: " + this.Tag;
+    }
+}
+
+class Pair<A, B> {
+    public A First;
+    public B Second;
+    public Pair(A a, B b) {
+        this.First = a;
+        this.Second = b;
+    }
+    public string Describe() {
+        return "generic Pair<A,B>";
+    }
+}
+
+void Main() {
+    var p0 = new Pair("untyped");
+    Console.WriteLine(p0.Describe());
+
+    var p2 = new Pair<int, string>(7, "hello");
+    Console.WriteLine(p2.Describe());
+    Console.WriteLine($"first={p2.First} second={p2.Second}");
+}

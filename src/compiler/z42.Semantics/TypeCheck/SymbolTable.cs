@@ -341,7 +341,10 @@ public sealed class SymbolTable
         // 真实 delegate 声明）+ TSIG export 路径。
 
         // User-defined generic class: resolve as class type (code sharing — same class, different type_args)
-        if (Classes.TryGetValue(gt.Name, out var ct))
+        // 2026-05-07 add-class-arity-overloading: try arity-suffixed key first
+        // (collision case), fall back to bare for the common no-collision case.
+        if (Classes.TryGetValue($"{gt.Name}${gt.TypeArgs.Count}", out var ct)
+            || Classes.TryGetValue(gt.Name, out ct))
         {
             if (ct.TypeParams is { Count: > 0 } tps && gt.TypeArgs.Count == tps.Count)
             {

@@ -226,10 +226,19 @@ public sealed class IrGen : IEmitterContext
             _funcParams[QualifyName(fn.Name)] = fn.Params;
         foreach (var cls in cu.Classes)
         {
-            var qualName = QualifyName(cls.Name);
-            if (!_semanticModel.Classes.TryGetValue(cls.Name, out var ct))
+            // 2026-05-07 add-class-arity-overloading: use IR short name (mangled
+            // when collision) for the qualified key so coexisting same-source-
+            // name classes (`Foo` + `Foo<R>`) don't collide in `_funcParams`.
+            int clsArity = cls.TypeParams?.Count ?? 0;
+            string clsLookupKey = clsArity > 0
+                && _semanticModel.Classes.TryGetValue($"{cls.Name}${clsArity}", out var manglee)
+                && manglee.HasArityMangle
+                    ? $"{cls.Name}${clsArity}"
+                    : cls.Name;
+            if (!_semanticModel.Classes.TryGetValue(clsLookupKey, out var ct))
                 throw new InvalidOperationException(
                     $"IrGen: class `{cls.Name}` not found in SemanticModel (TypeChecker bug)");
+            var qualName = QualifyName(ct.IrName);
             foreach (var m in cls.Methods)
             {
                 string arityKey = $"{m.Name}${m.Params.Count}";
@@ -298,13 +307,31 @@ public sealed class IrGen : IEmitterContext
         // 合成无参隐式 ctor，按祖先 → 自身顺序内联所有字段 init。参见 design.md
         // Decision 2/3 + 备注：由于 z42 当前模型不自动调用 base ctor，合成 ctor
         // 不依赖 base call，而是直接内联本地祖先的 field init 表达式。
-        var localClassByName = cu.Classes.ToDictionary(c => c.Name, c => c);
+        // 2026-05-07 add-class-arity-overloading: when same source name has
+        // arity-disjoint siblings (e.g. `class Foo` + `class Foo<R>`), keying
+        // by bare name collides. Use the IrName route via SemanticModel to
+        // produce stable arity-aware keys for the lookup table.
+        string IrKeyOf(ClassDecl c)
+        {
+            int arity = c.TypeParams?.Count ?? 0;
+            if (arity > 0
+                && _semanticModel!.Classes.TryGetValue($"{c.Name}${arity}", out var manglee)
+                && manglee.HasArityMangle)
+                return manglee.IrName;
+            return c.Name;
+        }
+        var localClassByName = cu.Classes.ToDictionary(IrKeyOf, c => c);
         foreach (var cls in cu.Classes)
         {
             var ownFieldInits = cls.Fields
                 .Where(f => !f.IsStatic && f.Initializer != null)
                 .ToList();
 
+            // 2026-05-07 add-class-arity-overloading: pass the IR-side short name
+            // (mangled `Foo$N` for collision case, bare `Name` otherwise) so the
+            // method's qualified IR name keys remain unique when two same-source-
+            // name classes coexist.
+            var clsShortIr = ClassIrShortName(cls);
             bool hasExplicitCtor = false;
             foreach (var m in cls.Methods.Where(m => !m.IsAbstract))
             {
@@ -313,7 +340,7 @@ public sealed class IrGen : IEmitterContext
                 // 显式 ctor 仅注入"本类自己"的字段 init（保留现有 z42 模型：
                 // 用户显式 ctor 必须自己 `: base(...)` 触发父类 init）。
                 functions.Add(EmitMethod(
-                    cls.Name, m, cls.ClassNativeDefaults,
+                    clsShortIr, m, cls.ClassNativeDefaults,
                     isCtor ? ownFieldInits : null));
             }
 
@@ -587,10 +614,14 @@ public sealed class IrGen : IEmitterContext
             Span:            cls.Span,
             BaseCtorArgs:    null);
         var emptyBody = new BoundBlock(Array.Empty<BoundStmt>(), cls.Span);
-        var qualClass = ((IEmitterContext)this).QualifyClassName(cls.Name);
+        // 2026-05-07 add-class-arity-overloading: use IR short name (mangled
+        // when collision) so synthesized ctor IR name doesn't collide with the
+        // non-generic same-source-name sibling.
+        var clsShortIr = ClassIrShortName(cls);
+        var qualClass  = ((IEmitterContext)this).QualifyClassName(clsShortIr);
         var ctorIrName = $"{qualClass}.{cls.Name}";
         return new FunctionEmitter(this).EmitMethod(
-            cls.Name, synthCtor, emptyBody, ctorIrName, instanceFieldInits);
+            clsShortIr, synthCtor, emptyBody, ctorIrName, instanceFieldInits);
     }
 
     private IrFunction EmitFunction(FunctionDecl fn)
@@ -618,17 +649,33 @@ public sealed class IrGen : IEmitterContext
 
     // ── Class descriptors ────────────────────────────────────────────────────
 
+    /// 2026-05-07 add-class-arity-overloading: returns the IR-side class name —
+    /// arity-suffixed (`Foo$N`) when this class has a same-name non-generic
+    /// sibling (HasArityMangle=true); bare `cls.Name` otherwise. Used for IR
+    /// class declaration / FQ name emission so collision pairs survive into
+    /// distinct VM type_registry entries.
+    private string ClassIrShortName(ClassDecl cls)
+    {
+        int arity = cls.TypeParams?.Count ?? 0;
+        if (arity > 0
+            && _semanticModel!.Classes.TryGetValue($"{cls.Name}${arity}", out var manglee)
+            && manglee.HasArityMangle)
+            return manglee.IrName;
+        return cls.Name;
+    }
+
     private IrClassDesc EmitClassDesc(ClassDecl cls)
     {
+        var shortName = ClassIrShortName(cls);
         var baseClass = cls.BaseClass is not null
             ? QualifyName(cls.BaseClass)
             : (cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name))
                 ? null : "Std.Object";
-        return new(QualifyName(cls.Name), baseClass,
+        return new(QualifyName(shortName), baseClass,
             cls.Fields.Where(f => !f.IsStatic)
                 .Select(f => new IrFieldDesc(f.Name, TypeName(f.Type))).ToList(),
             cls.TypeParams?.ToList(),
-            BuildConstraintList(cls.Name, cls.TypeParams, _semanticModel?.ClassConstraints));
+            BuildConstraintList(shortName, cls.TypeParams, _semanticModel?.ClassConstraints));
     }
 
     /// (L3-G3a) Build a parallel list of IrConstraintBundle aligned with `typeParams`.

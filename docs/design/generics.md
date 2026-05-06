@@ -1178,3 +1178,59 @@ void Print<T>(T item) where T: Display {
 | L3-G4 | `Dictionary<K,V>` → 真正的泛型类 |
 | L3-G4 | Queue/Stack/HashSet → 新增泛型集合 |
 | L3-G4 | 标准库接口类改成泛型的(IComparable, IEquatable等) |
+
+---
+
+## Class arity overloading（2026-05-07）
+
+由 [`spec/archive/2026-05-07-add-class-arity-overloading/`](../../spec/archive/2026-05-07-add-class-arity-overloading/) 落地（D-8b-0）。修复 `class Foo` + `class Foo<R>` 同源名冲突的结构性 type-system gap，与 delegate 的 `Action$N` 命名约定对齐。
+
+### 设计：shadow-only mangling
+
+[`Z42ClassType`](../../src/compiler/z42.Semantics/TypeCheck/Z42Type.cs) 增 `IrName` 派生属性 + `HasArityMangle` 标志：
+
+| 场景 | Registry key | `IrName` | `HasArityMangle` |
+|------|-------------|---------|-----------------|
+| 单独非泛型 `class Foo` | `Foo` | `Foo` | false |
+| 单独泛型 `class List<T>` | `List` | `List` | false |
+| 共存 `class Foo` | `Foo` | `Foo` | false |
+| 共存 `class Foo<R>` | `Foo$1` | `Foo$1` | **true** |
+| 共存 `class Pair<A, B>` | `Pair$2` | `Pair$2` | **true** |
+
+**关键性质**：仅冲突时才走 mangling 路径。stdlib 现有泛型类（List<T> / Dictionary<K,V> / MulticastAction<T> ...）无非泛型同名兄弟 → 全部保持 bare key → **零 zpkg 改动**、零 VM 改动。
+
+### Pre-pass 检测
+
+`SymbolCollector.Classes.cs::CollectClasses` 先 group `cu.Classes` by source name；同源名两个以上时，仅 generic 兄弟（arity > 0）需要 mangling。非泛型永远占 bare 槽位。同 arity 重复仍走 E0408 duplicate path。
+
+### 类型解析路由
+
+```
+NamedType("Foo")            → _classes["Foo"]   (always bare)
+GenericType("Foo", [T..])   → _classes["Foo$N"] first, fallback _classes["Foo"]
+```
+
+非冲突情况下 generic 类住在 bare key，fallback 命中；冲突情况下 mangled 槽位先命中。
+
+### 用户面不变
+
+- `Z42ClassType.Name` user-facing 永远 bare（诊断 / 错误 / `typeof` 不泄漏 `$N`）
+- IR / VM type_registry 自动跟随 IrName（mangled 仅在冲突时存在）
+- `IrName == Name` 当 HasArityMangle=false → 兼容所有既有 IR 消费路径
+
+### 实施触点（C# 编译器侧）
+
+- [`SymbolCollector.Classes.cs`](../../src/compiler/z42.Semantics/TypeCheck/SymbolCollector.Classes.cs) `K(cls)` / `KeyFor(cls)` helpers + 2-pass pre-pass + 5 个 pass 用 KeyFor
+- [`SymbolCollector.cs`](../../src/compiler/z42.Semantics/TypeCheck/SymbolCollector.cs) `ResolveType` GenericType — `Name$N` shadow lookup
+- [`SymbolTable.cs`](../../src/compiler/z42.Semantics/TypeCheck/SymbolTable.cs) 镜像 ResolveType
+- [`TypeChecker.cs::BindClassMethods`](../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.cs) IrName-aware classKey
+- [`TypeChecker.Exprs.cs::case NewExpr`](../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.cs) qualName 用 resolved class IrName
+- [`TypeChecker.Exprs.Members.cs::ResolveCtorName`](../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.Members.cs) ctor 名查找用 cls.Name (bare) 而非 className (可能 mangled)
+- [`IrGen.cs`](../../src/compiler/z42.Semantics/Codegen/IrGen.cs) `ClassIrShortName` helper + EmitClassDesc / EmitMethod / EmitImplicitCtor / `_funcParams` 注册全用 IrName
+
+### 限制 / 后续
+
+- **跨 zpkg generic base class**：`class Foo<R> : Bar<int>` 当前不支持（z42 BaseClass 只接 NamedType 字符串），与本变更正交
+- **方法层 generic-vs-non-generic 同名**：`class Foo { void m(); void m<T>(); }` 由 method arity overload 已支持，本变更不动
+- **D-8b-1 解锁**：stdlib `MulticastException<R>` 现可与现有 `MulticastException` 共存
+- **D-8b-3 Phase 2 解锁**：generic type-param `default(R)` 解析现可走 `Z42InstantiatedType.Definition.IrName` 路径

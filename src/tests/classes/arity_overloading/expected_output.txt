@@ -1,0 +1,3 @@
+non-generic.Value=42
+generic-int.Item=7
+generic-string.Item=hello

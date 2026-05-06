@@ -465,8 +465,24 @@ public sealed record Z42ClassType(
     /// 2026-05-03 add-event-keyword-multicast (D2c-多播)：本类声明的 event field
     /// 名集合。`obj.X += h` / `obj.X -= h` desugar 到 `obj.add_X(h)` / `obj.remove_X(h)`
     /// 时用于 detect。null 表示无 event field（默认）。
-    IReadOnlySet<string>? EventFieldNames = null) : Z42Type
+    IReadOnlySet<string>? EventFieldNames = null,
+    /// 2026-05-07 add-class-arity-overloading: shadow-only mangling flag.
+    /// True only when this class is a generic version of a name that ALSO has a
+    /// non-generic same-name sibling in the registry (e.g. `class Foo` +
+    /// `class Foo<R>` coexist; the generic is marked HasArityMangle=true).
+    /// When true, `IrName` returns `Name${TypeParams.Count}` for IR / VM /
+    /// zpkg identity. False (default) keeps backward-compatible bare-name
+    /// behavior, so existing generic stdlib classes (List<T>, Dictionary<K,V>,
+    /// MulticastAction<T>, ...) without same-name conflicts retain their
+    /// historical IR names — no zpkg regen needed.
+    bool HasArityMangle = false) : Z42Type
 {
+    /// IR / VM / zpkg-side identifier. Mangled (`Name$N`) only when this class
+    /// shares its source name with a sibling of different arity; otherwise bare.
+    public string IrName => HasArityMangle && TypeParams is { Count: > 0 } tp
+        ? $"{Name}${tp.Count}"
+        : Name;
+
     public override string ToString() => Name;
 }
 

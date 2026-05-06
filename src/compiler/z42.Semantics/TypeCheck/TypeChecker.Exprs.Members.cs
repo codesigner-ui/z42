@@ -197,14 +197,18 @@ public sealed partial class TypeChecker
 
         if (cls is null) return className; // 类未找到（下游报错）
 
-        bool hasSingle      = cls.Methods.ContainsKey(className);
+        // 2026-05-07 add-class-arity-overloading: ctor methods are registered by
+        // the class's source `Name` (not its mangled IrName). When `className`
+        // is mangled (e.g. "Foo$1"), look up methods by bare `cls.Name` ("Foo").
+        var ctorBaseName    = cls.Name;
+        bool hasSingle      = cls.Methods.ContainsKey(ctorBaseName);
         var  overloadKeys   = cls.Methods.Keys
-            .Where(k => k.StartsWith(className + "$"))
+            .Where(k => k.StartsWith(ctorBaseName + "$"))
             .ToList();
         bool hasExplicitCtor = hasSingle || overloadKeys.Count > 0;
 
         // 无显式 ctor → 默认无参 ctor 语义；VM 跳过 ctor 调用。
-        if (!hasExplicitCtor) return className;
+        if (!hasExplicitCtor) return ctorBaseName;
 
         // arity 匹配判定（含 default params）：argCount 在 [MinArgCount, Params.Count] 闭区间。
         bool ArityMatches(Z42FuncType sig) =>
@@ -213,9 +217,9 @@ public sealed partial class TypeChecker
         // 单 ctor: arity 检查（Z42FuncType.Params 不含 this）
         if (hasSingle && overloadKeys.Count == 0)
         {
-            var sig = cls.Methods[className];
+            var sig = cls.Methods[ctorBaseName];
             if (ArityMatches(sig))
-                return className;
+                return ctorBaseName;
             _diags.Error(DiagnosticCodes.TypeMismatch,
                 $"constructor of `{className}` expects {sig.MinArgCount}..{sig.Params.Count} argument(s), got {argCount}", span);
             return className;
@@ -228,8 +232,8 @@ public sealed partial class TypeChecker
                 return key;
         }
         // 单 ctor 与重载并存的情况（罕见）：单 ctor 也比一下
-        if (hasSingle && ArityMatches(cls.Methods[className]))
-            return className;
+        if (hasSingle && ArityMatches(cls.Methods[ctorBaseName]))
+            return ctorBaseName;
 
         _diags.Error(DiagnosticCodes.TypeMismatch,
             $"no constructor of `{className}` matches {argCount} argument(s)", span);
