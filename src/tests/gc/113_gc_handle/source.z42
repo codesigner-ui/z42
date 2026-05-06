@@ -1,0 +1,42 @@
+namespace Demo;
+using Std.IO;
+using Std;
+
+class Item {
+    int X;
+}
+
+void Main() {
+    // ── 1. AllocStrong anchors target across drop ──────────────────────────
+    GCHandle h = AllocStrongAndDrop();
+    Console.WriteLine(h.Target != null);   // true: still alive via strong slot
+
+    // ── 2. AllocWeak does not anchor (target collected after drop) ─────────
+    GCHandle w = AllocWeakAndDrop();
+    GC.ForceCollect();                      // RC drops the unreferenced target
+    Console.WriteLine(w.Target == null);   // true: target collected
+    Console.WriteLine(w.IsAllocated);      // true: slot still owned by handle
+    Console.WriteLine(w.Kind == GCHandleType.Weak);  // true
+
+    // ── 3. struct copy semantics: Free affects all aliases ─────────────────
+    Item live = new Item();
+    GCHandle h1 = GCHandle.AllocStrong(live);
+    GCHandle h2 = h1;                       // value copy: shared _slot
+    h1.Free();
+    Console.WriteLine(h2.IsAllocated);     // false: slot released for both
+    Console.WriteLine(h2.Target == null);  // true
+
+    h.Free();   // cleanup
+}
+
+GCHandle AllocStrongAndDrop() {
+    Item local = new Item();
+    GCHandle h = GCHandle.AllocStrong(local);
+    return h;   // local goes out of scope; only the strong slot keeps it alive
+}
+
+GCHandle AllocWeakAndDrop() {
+    Item local = new Item();
+    GCHandle h = GCHandle.AllocWeak(local);
+    return h;   // local drops; weak slot does NOT anchor
+}

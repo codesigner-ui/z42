@@ -52,12 +52,91 @@ use std::time::Instant;
 use crate::metadata::{NativeData, ScriptObject, TypeDesc, Value};
 
 use super::heap::MagrGC;
-use super::refs::GcRef;
+use super::refs::{GcRef, WeakGcRef};
 use super::types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
-    GcEvent, GcKind, GcObserver, HeapSnapshot, HeapStats, ObserverId, RootHandle,
-    SnapshotCoverage, WeakRef, WeakRefInner,
+    GcEvent, GcHandleKind, GcKind, GcObserver, HeapSnapshot, HeapStats, ObserverId,
+    RootHandle, SnapshotCoverage, WeakRef, WeakRefInner,
 };
+
+// ── Handle table（reorganize-gc-stdlib，2026-05-07）─────────────────────────
+
+/// One slot in [`HandleSlab`]. Strong slots store cloneable references that
+/// anchor their target across collection; weak slots store a `Weak<...>` that
+/// silently nulls out when the target drops elsewhere.
+///
+/// `Strong(Atomic)` covers `AllocStrong` for atomic values (`I64` / `Str` / ...)
+/// — not Rc-backed, so we just hold the cloned `Value`. `AllocWeak` rejects
+/// atomic values at the `handle_alloc` layer (returns slot 0).
+enum HandleEntry {
+    StrongObject(GcRef<ScriptObject>),
+    StrongArray(GcRef<Vec<Value>>),
+    /// Atomic Value clone (I64 / F64 / Str / Bool / Char / FuncRef / ...).
+    /// Strong-only — AllocWeak on atomics rejects at the alloc layer.
+    StrongAtomic(Value),
+    WeakObject(WeakGcRef<ScriptObject>),
+    WeakArray(WeakGcRef<Vec<Value>>),
+}
+
+impl HandleEntry {
+    fn kind(&self) -> GcHandleKind {
+        match self {
+            HandleEntry::StrongObject(_)
+            | HandleEntry::StrongArray(_)
+            | HandleEntry::StrongAtomic(_) => GcHandleKind::Strong,
+            HandleEntry::WeakObject(_) | HandleEntry::WeakArray(_) => GcHandleKind::Weak,
+        }
+    }
+
+    /// Read the slot's current target; weak slots return None once collected.
+    fn target(&self) -> Option<Value> {
+        match self {
+            HandleEntry::StrongObject(g) => Some(Value::Object(g.clone())),
+            HandleEntry::StrongArray(g)  => Some(Value::Array(g.clone())),
+            HandleEntry::StrongAtomic(v) => Some(v.clone()),
+            HandleEntry::WeakObject(w)   => w.upgrade().map(Value::Object),
+            HandleEntry::WeakArray(w)    => w.upgrade().map(Value::Array),
+        }
+    }
+}
+
+/// `Vec<Option<HandleEntry>>` slab + `Vec<u64>` free list. Slot id 0 is reserved
+/// as the "unallocated" sentinel — `entries[0]` is never read or written.
+#[derive(Default)]
+struct HandleSlab {
+    entries:   Vec<Option<HandleEntry>>,
+    free_list: Vec<u64>,
+}
+
+impl HandleSlab {
+    fn alloc(&mut self, entry: HandleEntry) -> u64 {
+        // Lazy-init: reserve index 0 as the unallocated sentinel on first use.
+        if self.entries.is_empty() {
+            self.entries.push(None);
+        }
+        if let Some(slot) = self.free_list.pop() {
+            self.entries[slot as usize] = Some(entry);
+            slot
+        } else {
+            let slot = self.entries.len() as u64;
+            self.entries.push(Some(entry));
+            slot
+        }
+    }
+
+    fn get(&self, slot: u64) -> Option<&HandleEntry> {
+        self.entries.get(slot as usize).and_then(|e| e.as_ref())
+    }
+
+    fn free(&mut self, slot: u64) {
+        if slot == 0 { return; }
+        let idx = slot as usize;
+        if idx >= self.entries.len() { return; }
+        if self.entries[idx].take().is_some() {
+            self.free_list.push(slot);
+        }
+    }
+}
 
 // ── Internal state ───────────────────────────────────────────────────────────
 
@@ -87,6 +166,9 @@ struct RcHeapInner {
     /// 不入 registry / 不 bump used_bytes（撤销分配）；false（默认）兼容历史
     /// 行为：alloc 仍成功，只 fire 事件。
     strict_oom: bool,
+    /// **reorganize-gc-stdlib（2026-05-07）**: GCHandle slab。Slot 0 reserved
+    /// 作"未分配" sentinel；其他 slot 由 `Std.GCHandle._slot: long` 引用。
+    handle_slab: HandleSlab,
     // **Phase 3e**: finalizers 不再集中存 HashMap；改存到每个 GcAllocation 的
     // finalizer Cell 上。Drop 时自动 take + fire（含 cycle 断环后 alive_vec
     // drop 链）。register_finalizer / cancel_finalizer 走 GcRef 方法。
@@ -749,6 +831,39 @@ impl MagrGC for RcMagrGC {
             WeakRefInner::Object(w) => w.upgrade().map(Value::Object),
             WeakRefInner::Array (w) => w.upgrade().map(Value::Array),
         }
+    }
+
+    // ── 8.5 Handle table ────────────────────────────────────────────────────
+
+    fn handle_alloc(&self, target: &Value, kind: GcHandleKind) -> u64 {
+        let entry = match (target, kind) {
+            (Value::Null, _) => return 0,
+            (Value::Object(g), GcHandleKind::Strong) => HandleEntry::StrongObject(g.clone()),
+            (Value::Array (g), GcHandleKind::Strong) => HandleEntry::StrongArray (g.clone()),
+            (Value::Object(g), GcHandleKind::Weak)   => HandleEntry::WeakObject(GcRef::downgrade(g)),
+            (Value::Array (g), GcHandleKind::Weak)   => HandleEntry::WeakArray (GcRef::downgrade(g)),
+            // Atomic Strong: just clone the Value into the slot.
+            (v, GcHandleKind::Strong) => HandleEntry::StrongAtomic(v.clone()),
+            // Atomic Weak: rejected — atomics aren't Rc-backed, can't weak-ref.
+            (_, GcHandleKind::Weak) => return 0,
+        };
+        self.inner.borrow_mut().handle_slab.alloc(entry)
+    }
+
+    fn handle_target(&self, slot: u64) -> Option<Value> {
+        self.inner.borrow().handle_slab.get(slot).and_then(|e| e.target())
+    }
+
+    fn handle_is_alloc(&self, slot: u64) -> bool {
+        self.inner.borrow().handle_slab.get(slot).is_some()
+    }
+
+    fn handle_kind(&self, slot: u64) -> Option<GcHandleKind> {
+        self.inner.borrow().handle_slab.get(slot).map(|e| e.kind())
+    }
+
+    fn handle_free(&self, slot: u64) {
+        self.inner.borrow_mut().handle_slab.free(slot);
     }
 
     // ── 9. Event observers ───────────────────────────────────────────────────

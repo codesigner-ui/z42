@@ -139,6 +139,26 @@ pub(crate) enum WeakRefInner {
     Array (WeakGcRef<Vec<Value>>),
 }
 
+// ── GC handle table ──────────────────────────────────────────────────────────
+
+/// Discriminator on slots in [`MagrGC::handle_alloc`](super::heap::MagrGC::handle_alloc).
+///
+/// - **`Strong`**: slot stores a reference that anchors the target across GC
+///   collection — equivalent to C# `GCHandleType.Normal`. In Phase 1 RC mode
+///   this is a `Rc::clone` of the wrapped value (atomic values are stored by
+///   value clone). The slot keeps the target alive until the slot is freed.
+/// - **`Weak`**: slot stores a non-anchoring reference; if all strong refs to
+///   the target drop, [`MagrGC::handle_target`](super::heap::MagrGC::handle_target)
+///   on the slot returns `None`. Equivalent to C# `GCHandleType.Weak`.
+///
+/// Phase 3 tracing GC will add `Pinned` (anchor + forbid relocation) and
+/// `WeakTrackResurrection` (weak + finalizer-aware) variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GcHandleKind {
+    Weak,
+    Strong,
+}
+
 // ── Stats ────────────────────────────────────────────────────────────────────
 
 /// Heap-wide statistics snapshot returned by

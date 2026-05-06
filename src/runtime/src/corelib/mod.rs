@@ -173,6 +173,14 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__gc_used_bytes",    gc::builtin_gc_used_bytes);
         m.insert("__gc_force_collect", gc::builtin_gc_force_collect);
 
+        // ── GCHandle struct + HeapStats（reorganize-gc-stdlib，2026-05-07）──
+        m.insert("__gc_handle_alloc",    gc::builtin_gc_handle_alloc);
+        m.insert("__gc_handle_target",   gc::builtin_gc_handle_target);
+        m.insert("__gc_handle_is_alloc", gc::builtin_gc_handle_is_alloc);
+        m.insert("__gc_handle_kind",     gc::builtin_gc_handle_kind);
+        m.insert("__gc_handle_free",     gc::builtin_gc_handle_free);
+        m.insert("__gc_stats",           gc::builtin_gc_stats);
+
         m
     })
 }

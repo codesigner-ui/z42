@@ -285,7 +285,7 @@ src/libraries/z42.core/src/
 │   ├── Bool.z42 / Char.z42 / Int.z42 / Long.z42 / Float.z42 / Double.z42
 ├── Delegates/            # callable + multicast + 订阅策略整套（A1 + A4）
 │   ├── Delegates.z42 / DelegateOps.z42
-│   ├── ISubscription.z42 / SubscriptionRefs.z42 / WeakHandle.z42
+│   ├── ISubscription.z42 / SubscriptionRefs.z42
 │   └── MulticastAction.z42 / MulticastFunc.z42 / MulticastPredicate.z42
 ├── Protocols/            # 接口契约集中（A2）
 │   ├── IEquatable.z42 / IComparable.z42 / IDisposable.z42
@@ -296,9 +296,13 @@ src/libraries/z42.core/src/
 │   └── ArgumentException.z42 / NullReferenceException.z42 / ...
 ├── Collections/          # 基础泛型集合（A5；namespace Std.Collections）
 │   ├── KeyValuePair.z42 / List.z42 / Dictionary.z42
+├── GC/                   # GC 控制 + 句柄（reorganize-gc-stdlib，2026-05-07）
+│   ├── GC.z42            # Std.GC.Collect / UsedBytes / ForceCollect / GetStats
+│   ├── GCHandle.z42      # Std.GCHandle struct + GCHandleType enum (Weak / Strong)
+│   ├── HeapStats.z42     # Std.GC.GetStats() 返回类型（7 long 字段）
+│   └── WeakHandle.z42    # 轻量 weak ref primitive（内部 Delegates/SubscriptionRefs.z42 用）
 ├── Convert.z42           # Convert.ToInt32 / ToDouble / ToString
 ├── Assert.z42            # Assert.Equal / True / Null / Contains
-├── GC.z42                # Std.GC.Collect / GetMemorySize / SetMode
 └── Disposable.z42        # IDisposable 通用实现 + Disposable.From(Action) 工厂
 ```
 

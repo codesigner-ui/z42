@@ -37,8 +37,8 @@ use crate::metadata::{NativeData, TypeDesc, Value};
 
 pub use super::types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
-    GcEvent, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats, ObserverId,
-    RootHandle, SnapshotCoverage, WeakRef,
+    GcEvent, GcHandleKind, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats,
+    ObserverId, RootHandle, SnapshotCoverage, WeakRef,
 };
 
 /// MagrGC —— z42 VM 的 GC 抽象接口（host-friendly）。
@@ -165,6 +165,43 @@ pub trait MagrGC: std::fmt::Debug {
 
     /// 尝试从弱引用恢复强引用。若目标已被回收（无强引用持有）返回 `None`。
     fn upgrade_weak(&self, weak: &WeakRef) -> Option<Value>;
+
+    // ── 8.5 Handle table（reorganize-gc-stdlib，2026-05-07）─────────────────
+    //
+    // Slab + free-list backed handle table that powers `Std.GCHandle` (struct,
+    // single `_slot: long`). Slot 0 is reserved as the "unallocated" sentinel —
+    // any caller seeing `_slot == 0` knows the handle was never bound to a real
+    // entry (e.g. `AllocWeak` on an atomic value).
+    //
+    // Strong slots `Rc::clone` the underlying ScriptObject / Vec<Value>, which
+    // anchors the target across GC collection. Weak slots store a `Weak<...>`
+    // and return `None` from `handle_target` once the target has been dropped.
+    // Both kinds require explicit `handle_free` to release the slot — copying a
+    // GCHandle struct duplicates the slot ID, so freeing one alias frees the
+    // backing for all aliases (matches C# `GCHandle` struct semantics).
+
+    /// Allocate a handle table slot for `target` with the given `kind`.
+    /// Returns the slot id (always `>= 1` on success, `0` for "could not
+    /// allocate"). The current rejection conditions:
+    /// - `kind == Weak` and `target` is an atomic value (no Rc backing) → 0
+    /// - `target == Value::Null` → 0
+    fn handle_alloc(&self, target: &Value, kind: GcHandleKind) -> u64;
+
+    /// Read the current target of `slot`. Returns `None` when the slot has been
+    /// freed, or — for Weak slots — when the target has been collected.
+    fn handle_target(&self, slot: u64) -> Option<Value>;
+
+    /// `true` until `handle_free(slot)` is called. **Note**: for Weak slots
+    /// `is_alloc` stays `true` even after the target is collected (slot is
+    /// still owned by its handle). Use `handle_target` to detect collection.
+    fn handle_is_alloc(&self, slot: u64) -> bool;
+
+    /// `Some(kind)` while the slot is allocated; `None` after `handle_free`.
+    fn handle_kind(&self, slot: u64) -> Option<GcHandleKind>;
+
+    /// Release `slot`. Idempotent: freeing a slot that has already been freed
+    /// (or never allocated, e.g. slot 0) is a no-op.
+    fn handle_free(&self, slot: u64);
 
     // ── 9. Event observers ───────────────────────────────────────────────────
 

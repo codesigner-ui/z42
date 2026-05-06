@@ -121,6 +121,7 @@
 - Interpreter 基础优化：指令 dispatch 效率、对象分配路径
 - JIT 基础优化：热点函数识别、简单内联、常量折叠
 - **MagrGC 子系统（Phase 1 / 1.5 / 3a-3f / 3-OOM ✅ 2026-04-29 主功能完整）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` / heap registry / Trial-deletion 环回收器（Bacon-Rajan）修复环引用泄漏 + Drop-time finalizer（GcAllocation wrapper）+ 内存压力自动 collect + external root scanner（VmContext static_fields）+ interp/JIT 栈扫描 + strict OOM 真拒绝模式 + `Std.GC.*` 脚本暴露。后续可选迭代（性能 / 嵌入式工具 / MMTk 集成等）规划见 `docs/design/vm-architecture.md` "GC 后续迭代规划" 段。
+- **GC stdlib 重组（`reorganize-gc-stdlib` ✅ 2026-05-07）**：`z42.core/src/GC/` 子目录上线（`GC.z42` + `WeakHandle.z42` 搬入 + 新增 `GCHandle.z42` / `HeapStats.z42`）。`Std.GCHandle` 是 1 字段 struct（`_slot: long`）+ corelib `HandleTable` slab + free list backing，对齐 C# `System.Runtime.InteropServices.GCHandle`：拷贝句柄共享同一 slot、Free 后所有 alias 同步失效；支持 `Weak` / `Strong` 双模 + 显式 `Free()`，`Strong = Rc::clone anchor`、`Weak = Rc::downgrade`、atomic 值 Strong 直接 clone Value、atomic 值 Weak 返回 `slot=0`。`Std.HeapStats` 7 long 字段全暴露 Rust `HeapStats`（`MaxBytes = -1` sentinel 表示 unlimited）+ `GC.GetStats()` 静态方法。Phase 3 后增补 `Pinned` / `WeakTrackResurrection`。详见 `docs/design/gc-handle.md`。
 
 ### Native Interop / 三层 ABI
 

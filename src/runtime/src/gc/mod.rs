@@ -45,6 +45,6 @@ pub use rc_heap::RcMagrGC;
 pub use refs::{GcRef, WeakGcRef};
 pub use types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
-    GcEvent, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats, ObserverId,
-    RootHandle, SnapshotCoverage, WeakRef,
+    GcEvent, GcHandleKind, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats,
+    ObserverId, RootHandle, SnapshotCoverage, WeakRef,
 };

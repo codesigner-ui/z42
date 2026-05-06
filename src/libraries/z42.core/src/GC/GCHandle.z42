@@ -1,0 +1,56 @@
+namespace Std;
+
+// reorganize-gc-stdlib (2026-05-07)：z42 端的统一 GC 句柄，对齐 C#
+// `System.Runtime.InteropServices.GCHandle`（IntPtr → CLR handle table）。
+//
+// `GCHandle` 是 struct，单字段 `_slot: long` —— corelib `HandleTable` 中的
+// slot id（0 = 未分配 sentinel）。拷贝 GCHandle 共享同一 slot：
+//
+//     var h1 = GCHandle.AllocStrong(target);
+//     var h2 = h1;          // 值拷贝；_slot 相同 → 共享 corelib slot
+//     h1.Free();            // h2.IsAllocated 也变 false（同一 slot 已释放）
+//
+// 与 `Std.WeakHandle`（轻量、自动回收、无 Free）的区别：GCHandle 双模
+// （Strong / Weak）+ 显式 Free，适合需要"anchor 目标到指定 scope 后再
+// 释放"或"切换 strong/weak"的场景；只想要简单弱引用用 WeakHandle。
+//
+// 原子值（int / string / bool / FuncRef / Closure / Null 等）：
+// - AllocStrong：slot 持 value clone（仍可 anchor）
+// - AllocWeak：返回 _slot=0 的 handle（IsAllocated=false；原子值不可弱化）
+
+public enum GCHandleType {
+    Weak,    // = 0：弱引用，目标可被回收，Target 返回 null
+    Strong,  // = 1：强引用，anchor 目标直到 Free()
+}
+
+public struct GCHandle {
+    private long _slot;
+
+    [Native("__gc_handle_alloc")]
+    public static extern GCHandle Alloc(object target, GCHandleType type);
+
+    public static GCHandle AllocWeak(object target) {
+        return GCHandle.Alloc(target, GCHandleType.Weak);
+    }
+
+    public static GCHandle AllocStrong(object target) {
+        return GCHandle.Alloc(target, GCHandleType.Strong);
+    }
+
+    /// 当前 slot 持有的 target；Free 后 / Weak 模式目标已回收 → `null`。
+    [Native("__gc_handle_target")]
+    public extern object Target { get; }
+
+    /// slot 是否仍占用。Weak 模式即使 target 已回收，IsAllocated 仍为 true
+    /// （slot 由本 handle 拥有）；调 Free 后才变 false。
+    [Native("__gc_handle_is_alloc")]
+    public extern bool IsAllocated { get; }
+
+    /// 分配时的模式（Weak / Strong）。Free 后值未定义——先查 IsAllocated。
+    [Native("__gc_handle_kind")]
+    public extern GCHandleType Kind { get; }
+
+    /// 释放 slot；之后所有共享 _slot 的 handle alias 同步失效。idempotent。
+    [Native("__gc_handle_free")]
+    public extern void Free();
+}

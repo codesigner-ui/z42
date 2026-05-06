@@ -30,4 +30,10 @@ public static class GC {
     /// 不被 pause 跳过（除非 GC 实现明确文档化）。
     [Native("__gc_force_collect")]
     public static extern long ForceCollect();
+
+    /// 当前 heap 全字段 stats 快照。返回 `Std.HeapStats` 实例。
+    /// `MaxBytes` 用 `-1` 表示 unlimited（z42 当前无 `Optional<T>`）。
+    /// 详见 `docs/design/gc-handle.md`。
+    [Native("__gc_stats")]
+    public static extern HeapStats GetStats();
 }
