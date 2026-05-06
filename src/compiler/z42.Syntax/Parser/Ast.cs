@@ -350,6 +350,12 @@ public sealed record LitBoolExpr(bool Value, Span Span)        : Expr(Span);
 public sealed record LitNullExpr(Span Span)                    : Expr(Span);
 public sealed record LitCharExpr(char Value, Span Span)        : Expr(Span);
 
+/// `default(T)` zero-value expression. T is preserved as a TypeExpr so
+/// TypeChecker can resolve it through the standard type-resolution path
+/// (and reject generic type-parameters with E0421 — Phase 2 deferred).
+/// (add-default-expression, 2026-05-06)
+public sealed record DefaultExpr(TypeExpr Target, Span Span)   : Expr(Span);
+
 /// $"text {expr} text"
 public sealed record InterpolatedStrExpr(
     List<InterpolationPart> Parts, Span Span) : Expr(Span);

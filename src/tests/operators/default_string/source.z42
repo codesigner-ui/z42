@@ -1,0 +1,20 @@
+using Std.IO;
+
+// add-default-expression: `default(string)` is null (reference-type semantics,
+// matching C# / `default_value_for("string") = Value::Null`). User can choose
+// empty-string semantics with `?? ""`.
+
+void Main() {
+    var s = default(string);
+    Console.WriteLine($"is-null={s == null}");
+
+    // Null-coalesce to empty string for display.
+    var pretty = default(string) ?? "<null>";
+    Console.WriteLine($"pretty={pretty}");
+
+    // Direct concat with non-null string when user provides default.
+    var prefix = default(string) ?? "";
+    Console.WriteLine($"len={prefix.Length}");
+
+    Console.WriteLine("done");
+}

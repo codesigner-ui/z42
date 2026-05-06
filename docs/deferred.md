@@ -60,16 +60,16 @@
 - **2026-05-04 阻塞**：实施期间发现 z42 class registry 不区分 arity，`MulticastException` 与 `MulticastException<R>` 同名冲突；阻塞解除前必须先做 D-8b-0。规避路径（重命名为 `MulticastResultException<R>`）会留命名债 + 偏离设计，已弃
 
 
-## D-8b-3：`default(R)` 表达式（IR + VM 元素初始化）
+## D-8b-3-Phase2 / add-default-generic-typeparam：泛型 type-param `default(T)`
 
-- **来源**：D-8b 探索 2026-05-04 发现 —— z42 当前没有 `default(T)` 表达式
-- **触发原因**：`MulticastException<R>.Results[i]` 在某索引失败时需要占位值（int=0 / bool=false / string=null / Class=null）。手动 sentinel 不通用
-- **前置依赖**：
-  - Parser/AST 加 `DefaultExpr(TypeExpr)` 节点
-  - TypeChecker 接受任意类型，得到该类型的 zero-init 值
-  - IR codegen emit `Const0` 系列 / `ConstNull`，或加新 `DefaultOf(typeId)` 指令
-  - 跨 generic param `default(T)` 在 monomorphize 期解析具体类型
-- **触发条件**：D-8b-1 落地后，MulticastFunc 真要走 continueOnException 路径填 Results placeholder 时
+- **来源**：D-8b-3 拆分（2026-05-06 落地 Phase 1 时显式分离）
+- **触发原因**：当 T 是 generic class / function 的 type-parameter（如 `class Foo<T> { T x = default(T); }`）时，IR 层无 T 的具体类型；Phase 1 报 E0421 阻断
+- **缺失实现**：
+  - 新 IR 指令 `DefaultOf(dst, type_tag_str)` —— `type_tag_str` 可能是 generic-param 名（"T"/"R"）也可能是 mangled 类型
+  - VM 端按当前实例的 `type_desc.type_args` 查表（method 走 `this.type_desc.type_args[idx]`；free 函数需要 caller 传 type_args，需要新 calling convention）
+  - TypeChecker 在 generic 上下文允许 `default(T)`，emit DefaultOf；JIT helper 镜像
+- **前置依赖**：D-8b-3 Phase 1 已落地（`spec/archive/2026-05-06-add-default-expression/`）；现有 generic class instantiation type_args 路径已就绪
+- **触发条件**：D-8b-1 `MulticastException<R>.Results[i] = default(R)` 实施时；或任意泛型容器 / framework 代码需要"任意 T 的零值"时
 
 ---
 
@@ -97,6 +97,9 @@
 
 - **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
   实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。
+
+- **D-8b-3 Phase 1**（`default(T)` zero-value 表达式 — fully-resolved T）：2026-05-06 落地，由 `spec/archive/2026-05-06-add-default-expression/` 实施。
+  AST `DefaultExpr(TypeExpr)` + BoundDefault；TypeChecker 解析 T + IsResolvedDefaultTarget 校验（已知 prim / class / interface / array / option / enum / func / instantiated-generic 之一），其它路径报 E0421 InvalidDefaultType。IrGen 不引入新 IR 指令，按 T 直接 emit ConstI64(0) / ConstF64(0.0) / ConstBool(false) / ConstChar('\0') / ConstNull，与 VM `default_value_for(type_tag)` 表对齐；VM 0 改动。Phase 2（generic type-param `default(R)`）独立 spec `add-default-generic-typeparam` 处理，受 IR DefaultOf opcode + 运行时 type_args 查询阻塞。
 
 - **D-8b-2**（catch-by-generic-type 类型过滤）：2026-05-06 落地，由 `spec/archive/2026-05-06-catch-by-generic-type/` 实施。
   AST `CatchClause.ExceptionType` 早已捕获，但 BoundCatchClause 一直丢弃；FunctionEmitterStmts 写 null 退化为 wildcard，导致所有 typed `catch (T e)` 失效。修法：BoundCatchClause 增 `ExceptionTypeName: string?`，TypeChecker `TryResolveCatchType` 解析 short → FQ + 校验 Exception 派生（E0420 InvalidCatchType），IrGen 直传 IrExceptionEntry.CatchType（IR / zbc 格式无 bump）。VM 侧：interp `find_handler` 升级签名接 `type_registry` + `&Value` 三分支判定（None / `"*"` / typed via `is_subclass_or_eq_td`）；JIT 新 helper `jit_match_catch_type` + Throw 终结子生成 `catch_chain` 链式 probe，wildcard 单 entry 保留 fast-path。泛型 catch 透明 piggyback（不依赖 D-8b-0）。4 个原 `throw "string"` legacy goldens 升级为 `throw new Exception(...)` 与新 typed-catch 语义对齐。

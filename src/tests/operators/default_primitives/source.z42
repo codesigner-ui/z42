@@ -1,0 +1,33 @@
+using Std.IO;
+
+// add-default-expression: primitive `default(T)` returns the type's zero value.
+//   int / long / byte / etc. → 0
+//   double / float           → 0.0
+//   bool                     → false
+//   char                     → '\0' (null char)
+
+void Main() {
+    // Numeric defaults participate in arithmetic.
+    var i = default(int);
+    var l = default(long);
+    var b = default(byte);
+    Console.WriteLine($"int={i} long={l} byte={b}");
+
+    // Default in expression position.
+    Console.WriteLine($"int+1={default(int) + 1}");
+    Console.WriteLine($"long*2={default(long) * 2}");
+
+    // Floating-point.
+    var d = default(double);
+    Console.WriteLine($"double={d} double+0.5={d + 0.5}");
+
+    // Bool default is false.
+    var fb = default(bool);
+    Console.WriteLine($"bool={fb} not-bool={!fb}");
+
+    // Char default is null character.
+    var c = default(char);
+    Console.WriteLine($"char-is-null={c == '\0'}");
+
+    Console.WriteLine("done");
+}

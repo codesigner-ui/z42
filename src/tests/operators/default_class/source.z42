@@ -1,0 +1,34 @@
+using Std.IO;
+
+// add-default-expression: `default(MyClass)` is null for any class (and
+// any interface / array / nullable). User can null-check before use.
+
+class Point {
+    public int X;
+    public int Y;
+    public Point(int x, int y) {
+        this.X = x;
+        this.Y = y;
+    }
+    public string Describe() {
+        return $"({this.X},{this.Y})";
+    }
+}
+
+void Main() {
+    var p = default(Point);
+    Console.WriteLine($"is-null={p == null}");
+
+    // Null check before invoking gives a clean default-pattern.
+    if (p == null) {
+        Console.WriteLine("null-branch");
+    } else {
+        Console.WriteLine("non-null-branch (UNREACHABLE)");
+    }
+
+    // After explicit assignment the variable is no longer null.
+    p = new Point(3, 4);
+    Console.WriteLine($"after-set={p.Describe()}");
+
+    Console.WriteLine("done");
+}

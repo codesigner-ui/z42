@@ -53,6 +53,59 @@ internal sealed partial class FunctionEmitter
                 Emit(new ConstCharInstr(dst, c.Value));
                 return dst;
             }
+            case BoundDefault def:
+            {
+                // add-default-expression (2026-05-06): zero-value emit by type tag.
+                // No new IR opcode — every default(T) is one of the existing 6
+                // Const* instructions. Mirrors the VM's `default_value_for(type_tag)`
+                // table in src/runtime/src/metadata/types.rs.
+                if (def.Target is Z42PrimType pt)
+                {
+                    switch (pt.Name)
+                    {
+                        case "double" or "float" or "f32" or "f64":
+                        {
+                            var dstF = Alloc(IrType.F64);
+                            Emit(new ConstF64Instr(dstF, 0.0));
+                            return dstF;
+                        }
+                        case "bool":
+                        {
+                            var dstB = Alloc(IrType.Bool);
+                            Emit(new ConstBoolInstr(dstB, false));
+                            return dstB;
+                        }
+                        case "char":
+                        {
+                            var dstC = Alloc(IrType.Char);
+                            Emit(new ConstCharInstr(dstC, '\0'));
+                            return dstC;
+                        }
+                        case "string":
+                        {
+                            var dstS = Alloc(IrType.Ref);
+                            Emit(new ConstNullInstr(dstS));
+                            return dstS;
+                        }
+                        default:
+                            // numeric primitives (int / long / short / byte and i8..u64 aliases)
+                            if (Z42Type.IsNumeric(pt))
+                            {
+                                var dstN = Alloc(ToIrType(pt));
+                                Emit(new ConstI64Instr(dstN, 0));
+                                return dstN;
+                            }
+                            break;
+                    }
+                }
+                // class / interface / array / nullable / struct (unsupported types
+                // were already converted to Z42Type.Error in TypeChecker — they still
+                // hit this branch and emit a harmless null so codegen doesn't crash
+                // on the same input that produced E0421).
+                var dstRef = Alloc(IrType.Ref);
+                Emit(new ConstNullInstr(dstRef));
+                return dstRef;
+            }
             case BoundInterpolatedStr interp:
                 return EmitInterpolation(interp);
 

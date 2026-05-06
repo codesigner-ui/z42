@@ -123,6 +123,33 @@ if (a && b || c) { ... }                 // 等价 ((a && b) || c)
 
 实现注：IR 层将 `&&` / `||` desugar 为 `BrCond` 控制流；保留 `AndInstr` / `OrInstr` 仅用于位运算。
 
+### `default(T)` zero-value 表达式
+
+`default(T)` 求值为类型 T 的零值，与 C# 语义一致；常用于 reset 字段、初始化容器槽位、以及"无意见的占位值"。
+
+```z42
+var i  = default(int);       // 0
+var d  = default(double);    // 0.0
+var b  = default(bool);      // false
+var c  = default(char);      // '\0'
+var s  = default(string);    // null（reference type 默认；用 `?? ""` 选 empty 语义）
+var p  = default(Point);     // null（任意 class / interface / array / nullable）
+var a  = default(int[]);     // null（与 `new int[N]` 区分；后者分配 N 个零）
+```
+
+| T | `default(T)` |
+|---|------|
+| `int` / `long` / `byte` / `short` 等所有整型别名 | `0`（VM `Value::I64(0)`）|
+| `double` / `float` / `f32` / `f64` | `0.0` |
+| `bool` | `false` |
+| `char` | `'\0'`（NUL 字符）|
+| `string` | `null` |
+| 任意 class / interface / array / `T?` / 自定义 struct | `null` |
+
+实现注：IR 层 `default(T)` 不引入新指令；编译器按 T 直接 emit `ConstI64` / `ConstF64` / `ConstBool` / `ConstChar` / `ConstNull`，与 VM `default_value_for(type_tag)` 表对齐。
+
+**Phase 1 限制**：T 必须是编译期可解析的具体类型。在 generic class / function 上下文写 `default(T)`（T 是 type-parameter）报 **E0421 InvalidDefaultType**，留待独立 spec `add-default-generic-typeparam` 解锁（Phase 2，依赖运行时 type_args 查询）。
+
 ---
 
 ## 4. 控制流

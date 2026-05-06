@@ -90,6 +90,19 @@ internal static partial class ExprParser
         return Ok(new LitStrExpr(typeName, tok.Span), cursor);
     }
 
+    /// `default(T)` — preserve T as a TypeExpr so TypeChecker can resolve and
+    /// validate it (rejecting generic type-parameters with E0421). IrGen later
+    /// dispatches on the resolved Z42Type to emit the right `Const*` opcode.
+    /// (add-default-expression, 2026-05-06)
+    private static ParseResult<Expr> ParseDefault(
+        TokenCursor cursor, Token tok, LanguageFeatures _)
+    {
+        Expect(ref cursor, TokenKind.LParen);
+        var ty = TypeParser.Parse(cursor).Unwrap(ref cursor);
+        Expect(ref cursor, TokenKind.RParen);
+        return Ok(new DefaultExpr(ty, tok.Span), cursor);
+    }
+
     private static ParseResult<Expr> ParseLParen(
         TokenCursor cursor, Token tok, LanguageFeatures feat)
     {

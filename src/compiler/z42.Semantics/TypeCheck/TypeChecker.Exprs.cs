@@ -139,6 +139,41 @@ public sealed partial class TypeChecker
                 return new BoundCast(operand, castType, cast.Span);
             }
 
+            case DefaultExpr de:
+            {
+                // add-default-expression (2026-05-06): resolve T through the
+                // standard ResolveType path then validate it.
+                //
+                // - Generic type-parameter (Z42GenericParamType) → E0421 Phase 2 deferred
+                // - ResolveType fall-through emits Z42PrimType("<unknown>") for any
+                //   unknown NamedType (catch-all branch in SymbolCollector); we
+                //   detect that by cross-checking against the TypeRegistry of known
+                //   primitives + class / interface / enum / delegate maps. If none
+                //   match, the type isn't real → E0421 type-not-found.
+                var t = ResolveType(de.Target);
+                if (t is Z42GenericParamType gp)
+                {
+                    _diags.Error(DiagnosticCodes.InvalidDefaultType,
+                        $"default(<{gp.Name}>) on generic type parameter is not yet supported " +
+                        "(deferred to spec add-default-generic-typeparam — see docs/deferred.md D-8b-3 Phase 2)",
+                        de.Span);
+                    return new BoundDefault(Z42Type.Error, de.Span);
+                }
+                if (!IsResolvedDefaultTarget(t))
+                {
+                    var targetName = de.Target switch
+                    {
+                        NamedType nt   => nt.Name,
+                        GenericType gt => gt.Name,
+                        _              => t.ToString() ?? "<unknown>",
+                    };
+                    _diags.Error(DiagnosticCodes.InvalidDefaultType,
+                        $"default(<{targetName}>): type not found", de.Span);
+                    return new BoundDefault(Z42Type.Error, de.Span);
+                }
+                return new BoundDefault(t, de.Span);
+            }
+
             case NewExpr newExpr:
             {
                 var args    = newExpr.Args.Select(a => BindExpr(a, env)).ToList();
@@ -434,4 +469,30 @@ public sealed partial class TypeChecker
         "--" => PostfixOp.Dec,
         _ => throw new InvalidOperationException($"unknown postfix op `{op}`")
     };
+
+    /// add-default-expression (2026-05-06): is `t` a valid `default(T)` target?
+    ///
+    /// Only types we can produce a zero-value for at codegen time qualify.
+    /// `Z42PrimType` of an *unknown* name (the SymbolCollector ResolveType
+    /// catch-all) is **not** valid — that's the type-not-found path the caller
+    /// turns into E0421. Reject Void / Error / Null / Unknown explicitly so
+    /// the user gets a clear error rather than silent ConstNull emission.
+    private bool IsResolvedDefaultTarget(Z42Type t)
+    {
+        switch (t)
+        {
+            case Z42PrimType pt:
+                return TypeRegistry.IsPrimitiveType(pt.Name);
+            case Z42ClassType:
+            case Z42InterfaceType:
+            case Z42ArrayType:
+            case Z42OptionType:
+            case Z42EnumType:
+            case Z42FuncType:
+            case Z42InstantiatedType:
+                return true;
+            default:
+                return false;  // Z42VoidType / Z42ErrorType / Z42NullType / Z42UnknownType
+        }
+    }
 }

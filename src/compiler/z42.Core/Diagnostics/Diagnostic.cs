@@ -75,6 +75,7 @@ public static class DiagnosticCodes
     public const string InvalidImpl           = "E0413";  // extern impl block: bad target/trait, sig mismatch, missing/duplicate method
     public const string EventFieldExternalAccess = "E0414"; // event field invoked or assigned outside owner class (D-7-residual)
     public const string InvalidCatchType         = "E0420"; // catch (T e) where T is unknown or not derived from Exception (catch-by-generic-type)
+    public const string InvalidDefaultType       = "E0421"; // default(T) where T is unknown / generic type-param (add-default-expression Phase 1)
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

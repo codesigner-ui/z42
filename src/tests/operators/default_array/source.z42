@@ -1,0 +1,19 @@
+using Std.IO;
+
+// add-default-expression: `default(T[])` is null (the array reference is null,
+// distinct from `new int[N]` which produces an allocated length-N array).
+
+void Main() {
+    var arr = default(int[]);
+    Console.WriteLine($"default-is-null={arr == null}");
+
+    // `new int[N]` is non-null and has the requested length.
+    var allocated = new int[3];
+    Console.WriteLine($"new[3]-is-null={allocated == null} length={allocated.Length}");
+
+    // String-array default is also null.
+    var sarr = default(string[]);
+    Console.WriteLine($"strarr-is-null={sarr == null}");
+
+    Console.WriteLine("done");
+}

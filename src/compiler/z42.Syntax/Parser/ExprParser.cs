@@ -252,9 +252,10 @@ internal static partial class ExprParser
         [TokenKind.MinusMinus] = new(PrefixUnary("--",     BpUnary)),
 
         // Complex atoms
-        [TokenKind.New]    = new(ParseNew),
-        [TokenKind.Typeof] = new(ParseTypeof),
-        [TokenKind.LParen] = new(ParseLParen),
+        [TokenKind.New]     = new(ParseNew),
+        [TokenKind.Typeof]  = new(ParseTypeof),
+        [TokenKind.Default] = new(ParseDefault),
+        [TokenKind.LParen]  = new(ParseLParen),
     };
 
     // ── Led table ─────────────────────────────────────────────────────────────

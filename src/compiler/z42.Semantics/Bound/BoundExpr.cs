@@ -29,6 +29,13 @@ public sealed record BoundLitNull(Span Span)
 public sealed record BoundLitChar(char Value, Span Span)
     : BoundExpr(Z42Type.Char, Span);
 
+/// `default(T)` after binding — Type is the resolved Z42Type of T (any
+/// fully-resolved primitive / class / interface / array / nullable). IrGen
+/// dispatches on Type to emit the appropriate `Const*` instruction without
+/// any new IR opcode. (add-default-expression, 2026-05-06)
+public sealed record BoundDefault(Z42Type Target, Span Span)
+    : BoundExpr(Target, Span);
+
 // ── Interpolated string ───────────────────────────────────────────────────────
 
 public sealed record BoundInterpolatedStr(

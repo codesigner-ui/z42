@@ -184,6 +184,20 @@ public static class DiagnosticCatalog
             "class Foo {} catch (Foo e) {} // E0420: catch type 'Foo' must derive from Exception\n" +
             "catch (IOException e) { }    // ok"),
 
+        [DiagnosticCodes.InvalidDefaultType] = new(
+            "Invalid type in `default(T)` expression",
+            "The type argument to `default(T)` must be a fully-resolved type known at " +
+            "compile time. Unknown type names trigger E0421 in addition to the normal " +
+            "type-not-found diagnostic. Generic type-parameters (e.g. `default(R)` inside " +
+            "a `class Foo<R>`) are deferred to Phase 2 (`add-default-generic-typeparam`); " +
+            "see `docs/deferred.md` D-8b-3. Result for primitives is the type's zero value " +
+            "(0 / 0.0 / false / '\\0'); for reference types (string / class / interface / " +
+            "array / nullable) it is `null`. (add-default-expression, 2026-05-06)",
+            "default(NoSuchType)                  // E0421: type 'NoSuchType' not found\n" +
+            "class Foo<R> { R make() { return default(R); } }  // E0421: generic type-param deferred\n" +
+            "default(int)                         // ok, 0\n" +
+            "default(string)                      // ok, null"),
+
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

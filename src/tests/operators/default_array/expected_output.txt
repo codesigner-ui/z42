@@ -1,0 +1,4 @@
+default-is-null=true
+new[3]-is-null=false length=3
+strarr-is-null=true
+done
