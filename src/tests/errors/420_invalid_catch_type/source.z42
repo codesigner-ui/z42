@@ -1,0 +1,24 @@
+using Std.IO;
+
+// E0420 InvalidCatchType — catch type unknown / not Exception-derived.
+
+class NotAnException {
+    public int Value;
+    public NotAnException(int v) {
+        this.Value = v;
+    }
+}
+
+void Main() {
+    try {
+        Console.WriteLine("ok");
+    } catch (NoSuchType e) {           // E0420: catch type 'NoSuchType' not found
+        Console.WriteLine("never");
+    }
+
+    try {
+        Console.WriteLine("ok");
+    } catch (NotAnException e) {       // E0420: catch type 'NotAnException' must derive from Exception
+        Console.WriteLine("never");
+    }
+}

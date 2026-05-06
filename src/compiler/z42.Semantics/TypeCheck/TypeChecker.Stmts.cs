@@ -191,7 +191,19 @@ public sealed partial class TypeChecker
                     _catchVarStack.Push(catchVar);
                     try
                     {
-                        catches.Add(new BoundCatchClause(clause.VarName,
+                        // catch-by-generic-type (2026-05-06): resolve declared
+                        // catch type, validate Exception derivation, store FQ
+                        // name. Untyped catches keep `null` for VM wildcard.
+                        string? exTypeFq = null;
+                        if (clause.ExceptionType is { } exTypeName)
+                        {
+                            if (TryResolveCatchType(exTypeName, out var resolvedFq, out var error))
+                                exTypeFq = resolvedFq;
+                            else
+                                _diags.Error(DiagnosticCodes.InvalidCatchType, error, clause.Span);
+                        }
+
+                        catches.Add(new BoundCatchClause(clause.VarName, exTypeFq,
                             BindBlock(clause.Body, catchScope, retType), clause.Span));
                     }
                     finally
@@ -404,6 +416,74 @@ public sealed partial class TypeChecker
         RequireAssignable(expectedRetType, value.Type, r.Value.Span,
             $"return type mismatch: expected `{expectedRetType}`, got `{value.Type}`");
         return new BoundReturn(value, r.Span);
+    }
+
+    // ── Catch type resolution (catch-by-generic-type, 2026-05-06) ─────────────
+
+    /// Resolve a `catch (T e)` declared type to a fully-qualified class name and
+    /// validate that it derives from `Std.Exception`.
+    ///
+    /// Returns true with `fqName` set on success; false with `error` filled when
+    /// the type is unknown or not Exception-derived. Caller emits E0420 on failure
+    /// and leaves `BoundCatchClause.ExceptionTypeName` as null (which falls back
+    /// to wildcard catch — slightly permissive but keeps the rest of compilation
+    /// green so the user sees other diagnostics in the same pass).
+    private bool TryResolveCatchType(string typeName, out string fqName, out string error)
+    {
+        // Step 1 — find the class definition. SymbolCollector merges imported
+        // classes into `_symbols.Classes` keyed by short name, so a single
+        // lookup covers both local and imported cases. Distinguish them via
+        // `_symbols.ImportedClassNamespaces` to pick the right FQ namespace
+        // (imported class → its declared namespace; local class → current CU namespace).
+        Z42ClassType? classDef = null;
+        string? declaredNs = null;
+        if (_symbols.Classes.TryGetValue(typeName, out var found))
+        {
+            classDef   = found;
+            declaredNs = _symbols.ImportedClassNamespaces.TryGetValue(typeName, out var importedNs)
+                ? importedNs
+                : _currentNamespace;
+        }
+
+        if (classDef is null)
+        {
+            error  = $"catch type '{typeName}' not found";
+            fqName = "";
+            return false;
+        }
+
+        // Step 2 — walk base chain. `Exception` is the canonical short name
+        // (declared in Std.Exception); we accept either short or FQ "Std.Exception".
+        // Depth bound 32 prevents pathological cycles (compiler bugs).
+        var current = classDef;
+        for (int depth = 0; depth < 32; depth++)
+        {
+            if (current.Name == "Exception")
+            {
+                fqName = string.IsNullOrEmpty(declaredNs) ? typeName : $"{declaredNs}.{typeName}";
+                error  = "";
+                return true;
+            }
+            if (current.BaseClassName is null) break;
+
+            // Walk to base. BaseClassName is short; look up local then imported.
+            if (_symbols.Classes.TryGetValue(current.BaseClassName, out var nextLocal))
+            {
+                current = nextLocal;
+            }
+            else if (_imported?.Classes.TryGetValue(current.BaseClassName, out var nextImp) == true)
+            {
+                current = nextImp;
+            }
+            else
+            {
+                break; // base name unresolvable — treat as not derived
+            }
+        }
+
+        error  = $"catch type '{typeName}' must derive from Exception";
+        fqName = "";
+        return false;
     }
 
     // ── Pinned (spec C5) ──────────────────────────────────────────────────────

@@ -380,6 +380,15 @@ impl VmContext {
         self.pending_exception.borrow_mut().take()
     }
 
+    /// Peek at the pending exception without removing it. Used by JIT catch-type
+    /// dispatch (catch-by-generic-type, 2026-05-06): the throw helper has set the
+    /// exception, the dispatch helper inspects its class to decide which catch
+    /// handler to jump to, and a later `take_exception` (via `jit_install_catch`)
+    /// hands the value to the chosen catch register.
+    pub fn peek_exception(&self) -> Option<Value> {
+        self.pending_exception.borrow().clone()
+    }
+
     // ── Lazy loader (delegates to LazyLoader struct) ─────────────────────
 
     /// Install with no declared dependencies — for tests / single-file

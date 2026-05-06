@@ -68,15 +68,57 @@ public class Exception {
 
 - 仍支持 `throw "string"` / `throw 42` 等任意值抛出（保持 L1 行为）
 - stdlib 自身 / 新代码**推荐**用 `throw new <ExceptionType>(...)`
-- catch 子句无视类型过滤，`catch (Exception e)` 捕获一切（pre-Wave 2 行为）
+- 非 Object 抛出（string / int 等）只能被 **bare `catch { }`** 接住；不再被 typed `catch (Exception e)` 捕获（catch-by-generic-type，2026-05-06）
+
+## catch 按类型过滤（2026-05-06）
+
+由 [`spec/archive/2026-05-06-catch-by-generic-type/`](../../spec/archive/2026-05-06-catch-by-generic-type/) 落地。修复"所有 catch 子句一律 wildcard"的 Phase 1 语义 bug — 之前 `catch (NullReferenceException e)` 也会捕获 IOException，类型断言形同虚设。
+
+### 语义
+
+| 形式 | catch_type IR 字段 | 匹配规则 |
+|------|-------------------|---------|
+| `catch (T e)` / `catch (T)` | `Some("FQ.T")` | thrown.class instance-of T（沿 BaseClassName 链上溯）|
+| `catch { }` | `None` | 任意 thrown — 包含非 Object 的 Phase 1 legacy 抛出 |
+| 编译器合成的 finally fallthrough | `Some("*")` | 任意 thrown（synthetic catchall）|
+
+多个 catch 子句按**源码顺序**第一个匹配者胜（C# / Java / Python 标准）。VM 端 `find_handler` 沿源序扫 exception_table，每条按上表 None / `"*"` / typed 三分支判定，首个匹配即返回。
+
+### 编译期校验（E0420 InvalidCatchType）
+
+`catch (T e)` 在 TypeChecker 阶段必须满足：
+1. `T` 是已加载（本 CU 或 imported）的 class 名
+2. 沿 `BaseClassName` 链可上溯到 `Std.Exception`（`Exception` 自身亦视为合法）
+
+否则报 `E0420 InvalidCatchType`：
+
+```z42
+catch (NoSuchType e) { }     // E0420: catch type 'NoSuchType' not found
+class Foo { } catch (Foo e)  // E0420: catch type 'Foo' must derive from Exception
+```
+
+E0420 不阻塞编译（compiler emit `null` catch_type → 退化为 wildcard），让用户在同一编译批次看到所有诊断。
+
+### 实现路径
+
+- **AST**：`CatchClause.ExceptionType: string?` 早已捕获用户写的类型名（pre-existing）
+- **TypeChecker**：[`TypeChecker.Stmts.cs::TryResolveCatchType`](../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Stmts.cs) 解析 short → FQ + 校验 Exception 派生，写入 `BoundCatchClause.ExceptionTypeName`
+- **IrGen**：[`FunctionEmitterStmts.cs`](../../src/compiler/z42.Semantics/Codegen/FunctionEmitterStmts.cs) 直接把 BoundCatchClause.ExceptionTypeName 给 `IrExceptionEntry.CatchType`（IR / zbc 字段早已存在，无格式 bump）
+- **VM interp**：[`interp/mod.rs::find_handler`](../../src/runtime/src/interp/mod.rs) 接 `&Module.type_registry` + `&Value`；每个 entry 的 catch_type 走 None / `"*"` / typed-via-`is_subclass_or_eq_td` 三分支
+- **VM JIT**：新 helper `jit_match_catch_type(target_ptr, len) -> i8` 在 ctx.exception 上 peek + 类型链匹配；JIT throw 终结子按 catch_chain 顺序生成 `match_catch_type → brif → install_catch + jump` 链；wildcard 单 entry 走 fast-path
+
+### 泛型 catch（透明 piggyback）
+
+`catch (MulticastException<int> e)` 也透明工作：编译器把 type-args 编入 mangled FQ 名（z42 generic instantiation 早已使用），VM 端字符串比较 + 链式上溯即足够，无需类型反射或 monomorphize 期改动。但 D-8b-0（class registry arity-aware）落地前，同名 generic / non-generic 共存仍被早期阶段挡住。
 
 ## 未来计划（按需推进）
 
 | 项 | 说明 |
 |---|----|
 | StackTrace 自动填充 | 需 VM 在 throw 时收集帧链；零 source 改动可上线 |
-| catch 按类型过滤 | `catch (T e)` 仅匹配 T 子类；需要 TypeChecker + IR 配合 |
 | Exception ctor 重载 | 等 VM ObjNew 支持 arity suffix 查找后补 `Exception(msg, inner)` |
 | 字段 `?` 可空标注 | 等 Parser / TypeChecker 扩展字段 nullable |
 | 同类型字段 self-assign | E0402 修复；解锁用户代码 InnerException 链使用 |
 | 派生子类扩展 | `OverflowException` / `DivideByZeroException` / `IOException` 按需加 |
+| `catch (e)` 无类型 + var 语法 | 当前 parser 把单 ident 当 type；要新语法（如 `catch (var e)`）才能"untyped with var"|
+| Exception filter `catch (T e) when (cond)` | 待评估（C# 风格条件 catch；与 D-8b-2 不冲突）|

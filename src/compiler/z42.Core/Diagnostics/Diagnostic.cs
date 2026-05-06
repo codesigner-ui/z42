@@ -74,6 +74,7 @@ public static class DiagnosticCodes
     public const string InterfaceMismatch     = "E0412";  // interface method missing or wrong signature
     public const string InvalidImpl           = "E0413";  // extern impl block: bad target/trait, sig mismatch, missing/duplicate method
     public const string EventFieldExternalAccess = "E0414"; // event field invoked or assigned outside owner class (D-7-residual)
+    public const string InvalidCatchType         = "E0420"; // catch (T e) where T is unknown or not derived from Exception (catch-by-generic-type)
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

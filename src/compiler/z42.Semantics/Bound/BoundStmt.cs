@@ -85,7 +85,19 @@ public sealed record BoundTryCatch(
     BoundBlock? Finally,
     Span Span) : BoundStmt(Span);
 
-public sealed record BoundCatchClause(string? VarName, BoundBlock Body, Span Span);
+/// `catch (T e) { ... }` after binding.
+///
+/// `ExceptionTypeName` carries the resolved fully-qualified type name (e.g.
+/// `Std.IOException`) when the user declared a typed catch. `null` means an
+/// untyped `catch { }` / `catch (e)` — VM treats it as a wildcard.
+/// TypeChecker validates that the named type is a known class deriving from
+/// `Std.Exception`; failures emit E0420 and leave `ExceptionTypeName` as null.
+/// (catch-by-generic-type, 2026-05-06)
+public sealed record BoundCatchClause(
+    string? VarName,
+    string? ExceptionTypeName,
+    BoundBlock Body,
+    Span Span);
 
 // ── Throw ─────────────────────────────────────────────────────────────────────
 

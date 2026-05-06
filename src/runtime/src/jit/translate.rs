@@ -70,6 +70,9 @@ pub struct HelperIds {
     pub set_ret:        FuncId,
     pub throw:          FuncId,
     pub install_catch:  FuncId,
+    /// catch-by-generic-type (2026-05-06): peek at pending exception's class +
+    /// subclass walk vs `target` string. Returns 1 on match, 0 otherwise.
+    pub match_catch_type: FuncId,
     // L3 closure helpers (impl-closure-l3-jit-complete)
     pub load_fn:        FuncId,
     pub mk_clos:        FuncId,
@@ -157,6 +160,8 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         set_ret:       decl!("jit_set_ret",       [ptr, ptr, i32t],                       []),
         throw:         decl!("jit_throw",         [ptr, ptr, i32t],                       []),
         install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
+        // jit_match_catch_type(frame, ctx, target_ptr, target_len) -> i8
+        match_catch_type: decl!("jit_match_catch_type", [ptr, ptr, ptr, i64t],            [i8t]),
         // jit_load_fn(frame, ctx, dst, name_ptr, name_len) -> u8
         load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
         // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len, stack_alloc:u8) -> u8
@@ -257,15 +262,21 @@ pub fn max_reg(func: &Function) -> usize {
 // Exception table helper
 // ═════════════════════════════════════════════════════════════════════════════
 
-fn find_handler_entry(func: &Function, block_idx: usize) -> Option<usize> {
+/// Find every exception_table entry whose try region covers `block_idx`,
+/// in source order. catch-by-generic-type (2026-05-06) requires the JIT to
+/// see all covering entries (not just the first) so it can emit a typed-catch
+/// chain that probes each candidate's `catch_type` against the thrown value's
+/// class and jumps to the first matching handler.
+fn find_handler_entries(func: &Function, block_idx: usize) -> Vec<usize> {
+    let mut out = Vec::new();
     for (i, entry) in func.exception_table.iter().enumerate() {
-        let start = func.blocks.iter().position(|b| b.label == entry.try_start)?;
-        let end   = func.blocks.iter().position(|b| b.label == entry.try_end)?;
+        let Some(start) = func.blocks.iter().position(|b| b.label == entry.try_start) else { continue };
+        let Some(end)   = func.blocks.iter().position(|b| b.label == entry.try_end)   else { continue };
         if block_idx >= start && block_idx < end {
-            return Some(i);
+            out.push(i);
         }
     }
-    None
+    out
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -359,8 +370,9 @@ pub fn translate_function(
     let hr_static_set    = imp!(helper_ids.static_set);
     let hr_get_bool      = imp!(helper_ids.get_bool);
     let hr_set_ret       = imp!(helper_ids.set_ret);
-    let hr_throw         = imp!(helper_ids.throw);
-    let hr_install_catch = imp!(helper_ids.install_catch);
+    let hr_throw            = imp!(helper_ids.throw);
+    let hr_install_catch    = imp!(helper_ids.install_catch);
+    let hr_match_catch_type = imp!(helper_ids.match_catch_type);
     let hr_load_fn       = imp!(helper_ids.load_fn);
     let hr_mk_clos       = imp!(helper_ids.mk_clos);
     let hr_call_indirect = imp!(helper_ids.call_indirect);
@@ -372,14 +384,36 @@ pub fn translate_function(
             builder.switch_to_block(cl_blocks[block_idx]);
         }
 
-        // Find enclosing exception-handler entry for this block (if any).
-        let catch_info: Option<(cranelift_codegen::ir::Block, u32)> =
-            find_handler_entry(z42_func, block_idx).map(|ei| {
+        // catch-by-generic-type (2026-05-06): collect every enclosing exception-
+        // handler entry, in source order. Each tuple is
+        //   (catch_cl, catch_reg, catch_type)
+        // where `catch_type` is None for wildcard / synthetic-finally fallthrough
+        // (matches any thrown value) and Some(t) for a typed catch (only matches
+        // when the thrown value's class is `t` or a subclass).
+        //
+        // The legacy single-entry shortcut is preserved as `catch_info` for the
+        // wildcard-only case so the unconditional jump path stays identical to
+        // pre-fix behaviour. Typed / multi-catch goes through `catch_chain`.
+        let catch_chain: Vec<(cranelift_codegen::ir::Block, u32, Option<&str>)> =
+            find_handler_entries(z42_func, block_idx).into_iter().map(|ei| {
                 let entry      = &z42_func.exception_table[ei];
                 let catch_idx  = z42_func.blocks.iter().position(|b| b.label == entry.catch_label)
                     .expect("catch_label block must exist");
-                (cl_blocks[catch_idx], entry.catch_reg)
-            });
+                let ty: Option<&str> = match entry.catch_type.as_deref() {
+                    None | Some("*") => None,
+                    Some(t)          => Some(t),
+                };
+                (cl_blocks[catch_idx], entry.catch_reg, ty)
+            }).collect();
+        // Wildcard shortcut: if there is exactly one covering entry and it is
+        // untyped, the JIT can skip the type-probe chain entirely (cheap path
+        // for the existing 7 untyped-catch goldens).
+        let catch_info: Option<(cranelift_codegen::ir::Block, u32)> =
+            if catch_chain.len() == 1 && catch_chain[0].2.is_none() {
+                Some((catch_chain[0].0, catch_chain[0].1))
+            } else {
+                None
+            };
 
         // ── Inline helpers used in match arms ────────────────────────────────
 
@@ -423,26 +457,74 @@ pub fn translate_function(
             }};
         }
 
-        // After a helper call that returns u8: branch to catch or return 1 on error.
-        // Blocks are NOT sealed here; seal_all_blocks() is called once after all
-        // control-flow edges are established (handles back-edges in loops correctly).
-        macro_rules! check {
-            ($ret:expr) => {{
-                let ok_blk  = builder.create_block();
+        // After a helper call that returns u8: branch to catch dispatch or
+        // return 1 on error. Blocks are NOT sealed here; seal_all_blocks() is
+        // called once after all control-flow edges are established (handles
+        // back-edges in loops correctly).
+        //
+        // catch-by-generic-type (2026-05-06): when the enclosing scope has any
+        // typed catches (or multiple covering entries), the exception path
+        // probes each entry's catch_type via `jit_match_catch_type` and jumps
+        // to the first match; falls through to return-1 if none match. The
+        // wildcard fast-path (single covering untyped entry → unconditional
+        // jump) is preserved via the `catch_info` shortcut on the cold side.
+        macro_rules! emit_dispatch_to_catch_or_return {
+            () => {{
                 if let Some((catch_cl, catch_reg)) = catch_info {
-                    let exc_blk = builder.create_block();
-                    builder.ins().brif($ret, exc_blk, &[], ok_blk, &[]);
-                    builder.switch_to_block(exc_blk);
                     let creg = ri!(catch_reg);
                     builder.ins().call(hr_install_catch, &[frame_val, ctx_val, creg]);
                     builder.ins().jump(catch_cl, &[]);
+                } else if !catch_chain.is_empty() {
+                    // Typed / multi-catch chain: probe each entry's catch_type;
+                    // first instance-of match wins. The `closed_by_wildcard`
+                    // flag tracks whether a wildcard entry already terminated
+                    // the current Cranelift block via `jump` — once that happens
+                    // the block is "filled" and the trailing return-1 fallthrough
+                    // would be illegal (panic in Cranelift's frontend).
+                    let mut closed_by_wildcard = false;
+                    for (catch_cl, catch_reg, ty) in catch_chain.iter() {
+                        match ty {
+                            None => {
+                                // Wildcard / synthetic-finally fallthrough — always match.
+                                let creg = ri!(*catch_reg);
+                                builder.ins().call(hr_install_catch, &[frame_val, ctx_val, creg]);
+                                builder.ins().jump(*catch_cl, &[]);
+                                closed_by_wildcard = true;
+                                break;
+                            }
+                            Some(t) => {
+                                let (tptr, tlen) = str_val!(t);
+                                let inst = builder.ins().call(hr_match_catch_type, &[frame_val, ctx_val, tptr, tlen]);
+                                let m = builder.inst_results(inst)[0];
+                                let take_blk = builder.create_block();
+                                let next_blk = builder.create_block();
+                                builder.ins().brif(m, take_blk, &[], next_blk, &[]);
+                                builder.switch_to_block(take_blk);
+                                let creg = ri!(*catch_reg);
+                                builder.ins().call(hr_install_catch, &[frame_val, ctx_val, creg]);
+                                builder.ins().jump(*catch_cl, &[]);
+                                builder.switch_to_block(next_blk);
+                            }
+                        }
+                    }
+                    if !closed_by_wildcard {
+                        // All entries were typed and none matched — propagate.
+                        let one = builder.ins().iconst(types::I8, 1);
+                        builder.ins().return_(&[one]);
+                    }
                 } else {
-                    let exc_blk = builder.create_block();
-                    builder.ins().brif($ret, exc_blk, &[], ok_blk, &[]);
-                    builder.switch_to_block(exc_blk);
                     let one = builder.ins().iconst(types::I8, 1);
                     builder.ins().return_(&[one]);
                 }
+            }};
+        }
+        macro_rules! check {
+            ($ret:expr) => {{
+                let ok_blk  = builder.create_block();
+                let exc_blk = builder.create_block();
+                builder.ins().brif($ret, exc_blk, &[], ok_blk, &[]);
+                builder.switch_to_block(exc_blk);
+                emit_dispatch_to_catch_or_return!();
                 builder.switch_to_block(ok_blk);
             }};
         }
@@ -810,15 +892,7 @@ pub fn translate_function(
             Terminator::Throw { reg } => {
                 let rv = ri!(*reg);
                 builder.ins().call(hr_throw, &[frame_val, ctx_val, rv]);
-
-                if let Some((catch_cl, catch_reg)) = catch_info {
-                    let creg = ri!(catch_reg);
-                    builder.ins().call(hr_install_catch, &[frame_val, ctx_val, creg]);
-                    builder.ins().jump(catch_cl, &[]);
-                } else {
-                    let one = builder.ins().iconst(types::I8, 1);
-                    builder.ins().return_(&[one]);
-                }
+                emit_dispatch_to_catch_or_return!();
             }
         }
 

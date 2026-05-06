@@ -124,6 +124,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     reg!("jit_set_ret",       helpers_mem::jit_set_ret);
     reg!("jit_throw",         helpers_mem::jit_throw);
     reg!("jit_install_catch", helpers_mem::jit_install_catch);
+    reg!("jit_match_catch_type", helpers_mem::jit_match_catch_type);
     // helpers_arith: arithmetic, comparison, logical, unary, bitwise
     reg!("jit_add",           helpers_arith::jit_add);
     reg!("jit_sub",           helpers_arith::jit_sub);

@@ -9,9 +9,9 @@ void Main() {
 
     // finally runs after catch
     try {
-        throw "err";
+        throw new Exception("err");
     } catch (Exception e) {
-        Console.WriteLine($"caught: {e}");
+        Console.WriteLine($"caught: {e.Message}");
     } finally {
         Console.WriteLine("finally2");
     }

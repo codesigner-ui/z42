@@ -1,0 +1,34 @@
+using Std.IO;
+
+// catch-by-generic-type subclass match:
+//   ArgumentNullException : ArgumentException : Exception
+// Throwing the deepest derived class matches every level above it.
+
+void Main() {
+    // Catch by direct base.
+    try {
+        throw new ArgumentNullException("name");
+    } catch (ArgumentException e) {
+        Console.WriteLine($"caught as ArgumentException: {e.Message}");
+    }
+
+    // Catch by Exception (top of chain).
+    try {
+        throw new ArgumentNullException("path");
+    } catch (Exception e) {
+        Console.WriteLine($"caught as Exception: {e.Message}");
+    }
+
+    // Sibling lineage does NOT match.
+    try {
+        try {
+            throw new ArgumentNullException("x");
+        } catch (KeyNotFoundException e) {
+            Console.WriteLine("WRONG: sibling lineage should not match");
+        }
+    } catch (Exception e) {
+        Console.WriteLine($"sibling-skip caught by Exception: {e.Message}");
+    }
+
+    Console.WriteLine("done");
+}

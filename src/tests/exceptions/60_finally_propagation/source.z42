@@ -4,7 +4,7 @@ using Std.IO;
 void ThrowInTry() {
     try {
         Console.WriteLine("throwing");
-        throw "from try";
+        throw new Exception("from try");
     } finally {
         Console.WriteLine("finally ran");
     }
@@ -21,12 +21,12 @@ void NoThrow() {
 void NestedFinally() {
     try {
         try {
-            throw "deep";
+            throw new Exception("deep");
         } finally {
             Console.WriteLine("inner finally");
         }
     } catch (Exception e) {
-        Console.WriteLine($"outer caught: {e}");
+        Console.WriteLine($"outer caught: {e.Message}");
     }
 }
 
@@ -38,7 +38,7 @@ void Main() {
     try {
         ThrowInTry();
     } catch (Exception e) {
-        Console.WriteLine($"caught: {e}");
+        Console.WriteLine($"caught: {e.Message}");
     }
 
     // nested: inner finally runs before outer catch

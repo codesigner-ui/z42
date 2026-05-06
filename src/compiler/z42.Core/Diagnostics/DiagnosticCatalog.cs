@@ -173,6 +173,17 @@ public static class DiagnosticCatalog
             "void Use(Btn b) { b.OnClick.Invoke(1); }  // E0414: event field cannot be accessed outside `Btn`\n" +
             "void Sub(Btn b, Action<int> h) { b.OnClick += h; }  // ok (desugars to b.add_OnClick(h))"),
 
+        [DiagnosticCodes.InvalidCatchType] = new(
+            "Catch type must be a known Exception-derived class",
+            "A `catch (T e)` clause requires `T` to be either a known class deriving from " +
+            "`Std.Exception` or `Exception` itself. Untyped `catch { }` and `catch (e)` " +
+            "remain wildcard catches that match any exception. Catch types are filtered at " +
+            "runtime by walking the thrown value's class chain, so `catch (Base e)` matches " +
+            "any subclass instance. (catch-by-generic-type, 2026-05-06)",
+            "catch (NoSuchType e) { }     // E0420: catch type 'NoSuchType' not found\n" +
+            "class Foo {} catch (Foo e) {} // E0420: catch type 'Foo' must derive from Exception\n" +
+            "catch (IOException e) { }    // ok"),
+
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

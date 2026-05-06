@@ -59,16 +59,6 @@
 - **不在本条范围**：MulticastFunc / MulticastPredicate 的 `continueOnException=true` 通路 —— 那需要 catch-by-type 真正生效（D-8b-2）才能让用户在 catch handler 里捕获 `MulticastException<int>` 而非 wildcard
 - **2026-05-04 阻塞**：实施期间发现 z42 class registry 不区分 arity，`MulticastException` 与 `MulticastException<R>` 同名冲突；阻塞解除前必须先做 D-8b-0。规避路径（重命名为 `MulticastResultException<R>`）会留命名债 + 偏离设计，已弃
 
-## D-8b-2：catch-by-generic-type 类型过滤（编译器 + VM）
-
-- **来源**：D-8b 探索 2026-05-04 发现 —— `BoundCatchClause` 不携带异常类型，所有 catch 当 wildcard 处理，**`catch (MulticastException<int> e)` 无法过滤**
-- **触发原因**：在 D-8b-1 落地 `MulticastException<R>` 后，用户写 `try { ... } catch (MulticastException<int> e) { ... }` 不会按类型过滤，e 会捕获所有异常 —— 类型断言假象
-- **前置依赖**：
-  - Parser 保留 catch clause 的 type expression（`catch (T e)` 中的 `T`）
-  - TypeChecker 把类型存入 `BoundCatchClause`
-  - IR `IrExceptionEntry.CatchType` 存全限定名（含 type args 序列化）
-  - VM `exec_throw` / catch 分发期检查 thrown value 是否 instance-of CatchType（包括泛型子类匹配）
-- **触发条件**：D-8b-1 落地后，用户尝试 catch generic exception 子类时；或任意场景需要"按类型过滤异常"
 
 ## D-8b-3：`default(R)` 表达式（IR + VM 元素初始化）
 
@@ -107,6 +97,9 @@
 
 - **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
   实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。
+
+- **D-8b-2**（catch-by-generic-type 类型过滤）：2026-05-06 落地，由 `spec/archive/2026-05-06-catch-by-generic-type/` 实施。
+  AST `CatchClause.ExceptionType` 早已捕获，但 BoundCatchClause 一直丢弃；FunctionEmitterStmts 写 null 退化为 wildcard，导致所有 typed `catch (T e)` 失效。修法：BoundCatchClause 增 `ExceptionTypeName: string?`，TypeChecker `TryResolveCatchType` 解析 short → FQ + 校验 Exception 派生（E0420 InvalidCatchType），IrGen 直传 IrExceptionEntry.CatchType（IR / zbc 格式无 bump）。VM 侧：interp `find_handler` 升级签名接 `type_registry` + `&Value` 三分支判定（None / `"*"` / typed via `is_subclass_or_eq_td`）；JIT 新 helper `jit_match_catch_type` + Throw 终结子生成 `catch_chain` 链式 probe，wildcard 单 entry 保留 fast-path。泛型 catch 透明 piggyback（不依赖 D-8b-0）。4 个原 `throw "string"` legacy goldens 升级为 `throw new Exception(...)` 与新 typed-catch 语义对齐。
 
 - **fix-cross-zpkg-using-resolution**：2026-05-06 落地，由 `spec/archive/2026-05-06-fix-cross-zpkg-using-resolution/` 实施。
   根因：`25a8505 strict-using-resolution` 的 E0602 检查用 `imported.ClassNamespaces.Values` 作为 resolved namespaces 真相源，但该字段只记录"有 class 的命名空间"——L3-Impl2 的 cross-zpkg impl-only 包（`demo.greeter` 只有 `impl IGreet for Robot` 块、无 class）的命名空间被漏掉，导致 `using Demo.Greeter;` 报 E0602。修法：`ImportedSymbols` 增 `ResolvedNamespaces` 字段，从 `Load()` 中所有 activated module 的 `mod.Namespace` 收集；`TypeChecker.EmitImportDiagnostics` 改用三源 union（`ResolvedNamespaces ∪ ClassNamespaces.Values ∪ {ownNs}`）。回归测试 `UsingResolutionTests.TypeChecker_NoError_When_UsedNamespaceHasOnlyImpls` 锁定该路径。

@@ -1,0 +1,28 @@
+using Std.IO;
+
+// catch-by-generic-type ordering:
+//   Multiple catches, first source-order match wins (matches C# / Java).
+//   With ArgumentException first then Exception, the more-specific entry
+//   takes the dispatch even though Exception would also match.
+
+void Main() {
+    // ArgumentException catches its own; Exception fallback never runs.
+    try {
+        throw new ArgumentException("one");
+    } catch (ArgumentException e) {
+        Console.WriteLine($"specific: {e.Message}");
+    } catch (Exception e) {
+        Console.WriteLine("WRONG: catch ordering broken");
+    }
+
+    // Different exception flows to Exception fallback (specific doesn't match).
+    try {
+        throw new InvalidOperationException("two");
+    } catch (ArgumentException e) {
+        Console.WriteLine("WRONG: ArgumentException catch hit");
+    } catch (Exception e) {
+        Console.WriteLine($"fallback: {e.Message}");
+    }
+
+    Console.WriteLine("done");
+}

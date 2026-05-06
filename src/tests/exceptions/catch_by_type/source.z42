@@ -1,0 +1,27 @@
+using Std.IO;
+
+// catch-by-generic-type: typed catch only matches its declared type.
+// (1) ArgumentException matches ArgumentException catch.
+// (2) Mismatched typed catch is skipped; outer catch matches via Exception base.
+
+void Main() {
+    // Match: thrown == declared.
+    try {
+        throw new ArgumentException("bad arg");
+    } catch (ArgumentException e) {
+        Console.WriteLine($"argument: {e.Message}");
+    }
+
+    // Mismatch on inner typed catch: KeyNotFound caught only by outer Exception.
+    try {
+        try {
+            throw new KeyNotFoundException("missing");
+        } catch (ArgumentException e) {
+            Console.WriteLine("WRONG: typed mismatch should not match");
+        }
+    } catch (Exception e) {
+        Console.WriteLine($"outer: {e.Message}");
+    }
+
+    Console.WriteLine("done");
+}

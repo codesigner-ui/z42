@@ -6,7 +6,7 @@
 /// • dispatch.rs — object dispatch helpers (vtable, ToString, static fields)
 /// • ops.rs      — register-level helpers (int_binop, numeric_lt, collect_args, …)
 
-mod dispatch;
+pub(crate) mod dispatch;
 pub(crate) mod exec_instr;
 mod ops;
 
@@ -377,7 +377,9 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 Ok(None) => {}
                 Ok(Some(thrown_val)) => {
                     // User exception from a callee — try to find a local handler
-                    if let Some(entry_idx) = find_handler(func, block_idx, block_map) {
+                    if let Some(entry_idx) = find_handler(
+                        func, block_idx, block_map, &module.type_registry, &thrown_val,
+                    ) {
                         let entry = &func.exception_table[entry_idx];
                         frame.set(entry.catch_reg, thrown_val);
                         block_idx = *block_map.get(entry.catch_label.as_str())
@@ -429,7 +431,9 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
             }
             Terminator::Throw { reg } => {
                 let val = frame.get(*reg)?.clone();
-                if let Some(entry_idx) = find_handler(func, block_idx, block_map) {
+                if let Some(entry_idx) = find_handler(
+                    func, block_idx, block_map, &module.type_registry, &val,
+                ) {
                     let entry = &func.exception_table[entry_idx];
                     frame.set(entry.catch_reg, val);
                     block_idx = *block_map.get(entry.catch_label.as_str())
@@ -459,13 +463,52 @@ fn run_ref_writebacks(frame: &Frame, ctx: &VmContext) -> Result<()> {
     Ok(())
 }
 
-/// Find the index into `func.exception_table` that covers the given block index.
-fn find_handler(func: &Function, block_idx: usize, block_map: &HashMap<String, usize>) -> Option<usize> {
+/// Find the index into `func.exception_table` of the first handler whose try
+/// region covers `block_idx` AND whose declared `catch_type` matches the thrown
+/// value's class (with subclass walk via the type registry).
+///
+/// catch-by-generic-type (2026-05-06): catch_type semantics —
+///   None       — wildcard (user wrote `catch { }` / `catch (e)`); always matches.
+///   Some("*")  — synthetic finally fallthrough catchall (compiler-generated
+///                when there is no user catch but a finally block exists).
+///   Some(t)    — typed catch; matches when the thrown value is an instance of
+///                class `t` or any of its subclasses (sibling lineages skipped).
+///
+/// Source-order is preserved: exception_table entries are written in catch-clause
+/// order by FunctionEmitterStmts; this loop scans them in that order and returns
+/// the first match — matching C# / Java first-source-match-wins semantics.
+///
+/// `thrown` is expected to be a `Value::Object` (z42 throw is restricted to
+/// Exception-derived class instances); non-object throws fall through to the
+/// untyped catches via the wildcard branches above.
+fn find_handler(
+    func: &Function,
+    block_idx: usize,
+    block_map: &HashMap<String, usize>,
+    type_registry: &HashMap<String, std::sync::Arc<crate::metadata::TypeDesc>>,
+    thrown: &Value,
+) -> Option<usize> {
+    let thrown_class: Option<String> = match thrown {
+        Value::Object(rc) => Some(rc.borrow().type_desc.name.clone()),
+        _                 => None,
+    };
+
     for (i, entry) in func.exception_table.iter().enumerate() {
         let start_idx = *block_map.get(&entry.try_start)?;
         let end_idx   = *block_map.get(&entry.try_end)?;
-        if block_idx >= start_idx && block_idx < end_idx {
-            return Some(i);
+        if !(block_idx >= start_idx && block_idx < end_idx) { continue; }
+
+        match entry.catch_type.as_deref() {
+            None      => return Some(i),                   // user untyped catch
+            Some("*") => return Some(i),                   // synthetic finally fallthrough
+            Some(target) => {
+                if let Some(ref derived) = thrown_class {
+                    if dispatch::is_subclass_or_eq_td(type_registry, derived, target) {
+                        return Some(i);
+                    }
+                }
+                // type mismatch — try next entry
+            }
         }
     }
     None

@@ -436,9 +436,12 @@ internal sealed partial class FunctionEmitter
             var catchReg         = Alloc(IrType.Ref);
             string catchStartLbl = FreshLabel("catch_start");
 
-            // ExceptionType is not stored in BoundCatchClause — use wildcard catch
+            // catch-by-generic-type (2026-05-06): emit BoundCatchClause's resolved
+            // exception type FQ name so VM `find_handler` can filter by class.
+            // null = untyped catch (`catch { }` / `catch (e)`) → wildcard;
+            // non-null = typed catch — VM matches via instance-of with subclass walk.
             _exceptionTable.Add(new IrExceptionEntry(
-                tryStartLbl, tryEndLbl, catchStartLbl, null, catchReg));
+                tryStartLbl, tryEndLbl, catchStartLbl, clause.ExceptionTypeName, catchReg));
 
             StartBlock(catchStartLbl);
             if (clause.VarName != null)

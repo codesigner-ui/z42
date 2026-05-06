@@ -1,0 +1,4 @@
+caught as ArgumentException: name
+caught as Exception: path
+sibling-skip caught by Exception: x
+done

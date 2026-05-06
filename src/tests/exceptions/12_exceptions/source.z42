@@ -3,7 +3,7 @@ void Main() {
     // Basic try/catch
     try {
         Console.WriteLine("before throw");
-        throw "oops";
+        throw new Exception("oops");
         Console.WriteLine("never reached");
     } catch (Exception e) {
         Console.WriteLine("caught");
@@ -11,9 +11,9 @@ void Main() {
 
     // Catch gets the thrown value
     try {
-        throw "hello from catch";
+        throw new Exception("hello from catch");
     } catch (Exception msg) {
-        Console.WriteLine(msg);
+        Console.WriteLine(msg.Message);
     }
 
     Console.WriteLine("done");

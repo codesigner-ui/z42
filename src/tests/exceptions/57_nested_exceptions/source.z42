@@ -7,33 +7,33 @@ void Main() {
         Console.WriteLine("outer try");
         try {
             Console.WriteLine("inner try");
-            throw "inner error";
+            throw new Exception("inner error");
         } catch (Exception e) {
-            Console.WriteLine($"inner caught: {e}");
+            Console.WriteLine($"inner caught: {e.Message}");
         }
         Console.WriteLine("outer continues");
     } catch (Exception e) {
         Console.WriteLine("outer caught (should not reach)");
     }
 
-    // Nested: inner does NOT catch, outer catches
+    // Nested: inner does NOT catch (rethrows), outer catches
     try {
         try {
-            throw "bubble up";
+            throw new Exception("bubble up");
         } catch (Exception e) {
-            Console.WriteLine($"inner: {e}");
-            throw "rethrown";
+            Console.WriteLine($"inner: {e.Message}");
+            throw new Exception("rethrown");
         }
     } catch (Exception e) {
-        Console.WriteLine($"outer: {e}");
+        Console.WriteLine($"outer: {e.Message}");
     }
 
     // try/catch/finally combined: finally runs with catch present
     try {
         try {
-            throw "deep";
+            throw new Exception("deep");
         } catch (Exception e) {
-            Console.WriteLine($"inner caught: {e}");
+            Console.WriteLine($"inner caught: {e.Message}");
         } finally {
             Console.WriteLine("inner finally");
         }
@@ -45,12 +45,12 @@ void Main() {
     try {
         ThrowHelper();
     } catch (Exception e) {
-        Console.WriteLine($"from helper: {e}");
+        Console.WriteLine($"from helper: {e.Message}");
     }
 
     Console.WriteLine("all done");
 }
 
 void ThrowHelper() {
-    throw "helper error";
+    throw new Exception("helper error");
 }
