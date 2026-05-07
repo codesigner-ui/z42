@@ -79,6 +79,8 @@ pub struct HelperIds {
     pub call_indirect:  FuncId,
     // D1b add-method-group-conversion: cached method group conversion
     pub load_fn_cached: FuncId,
+    // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
+    pub default_of:     FuncId,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -170,6 +172,8 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t],            [i8t]),
         // jit_load_fn_cached(frame, ctx, dst, name_ptr, name_len, slot_id) -> u8
         load_fn_cached: decl!("jit_load_fn_cached", [ptr, ptr, i32t, ptr, i64t, i32t],           [i8t]),
+        // jit_default_of(frame, ctx, dst, param_index) -> u8
+        default_of:     decl!("jit_default_of",     [ptr, ptr, i32t, i32t],                      [i8t]),
     })
 }
 
@@ -378,6 +382,7 @@ pub fn translate_function(
     let hr_mk_clos       = imp!(helper_ids.mk_clos);
     let hr_call_indirect = imp!(helper_ids.call_indirect);
     let hr_load_fn_cached = imp!(helper_ids.load_fn_cached);
+    let hr_default_of     = imp!(helper_ids.default_of);
 
     // ── Translate each z42 block ──────────────────────────────────────────────
     for (block_idx, z42_block) in z42_func.blocks.iter().enumerate() {
@@ -827,13 +832,17 @@ pub fn translate_function(
                 Instruction::LoadFieldAddr { .. } => {
                     bail!("JIT cannot translate LoadFieldAddr yet (impl-ref-out-in-runtime; interp only)");
                 }
-                // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): JIT
-                // bail mirrors LoadFieldAddr — function falls back to Interp mode.
-                // JIT helper for runtime type_args lookup is a follow-up; the
-                // interp path covers all current use cases (`MulticastException<R>`
-                // ctor / methods do not run in JIT in stdlib usage today).
-                Instruction::DefaultOf { .. } => {
-                    bail!("JIT cannot translate DefaultOf yet (D-8b-3 Phase 2; interp only)");
+                // 2026-05-07 D-8b-3 Phase 2 + switch-multicast-funcpredicate-to-generic-exception:
+                // emit `jit_default_of(frame, ctx, dst, param_index)` helper call.
+                // JIT-allocated instances still have empty type_args (jit_obj_new
+                // doesn't propagate them yet), so the helper falls through to Null
+                // when called on a JIT-allocated generic instance — same path as
+                // method-level / free generic graceful-degradation.
+                Instruction::DefaultOf { dst, param_index } => {
+                    let d  = ri!(*dst);
+                    let pi = builder.ins().iconst(types::I32, *param_index as i64);
+                    let inst = builder.ins().call(hr_default_of, &[frame_val, ctx_val, d, pi]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 
                 // impl-lambda-l2: lambdas / function references — JIT support

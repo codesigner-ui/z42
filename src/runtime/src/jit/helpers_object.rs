@@ -224,6 +224,33 @@ pub unsafe extern "C" fn jit_obj_new(
     0
 }
 
+// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): JIT helper for
+// `default(T)` runtime resolution. Mirrors interp `Instruction::DefaultOf`
+// dispatch in src/interp/exec_instr.rs — reads `frame.regs[0]` (this) →
+// `ScriptObject.type_args[param_index]` → `default_value_for(tag)`. Non-Object
+// reg 0 / OOB index / empty type_args → graceful Null. Note: JIT-allocated
+// objects currently have empty type_args (jit_obj_new doesn't propagate them
+// from the IR ObjNew yet), so this returns Null in JIT-only data-flow; interp
+// path is the source of truth for full generic-T zero-value resolution.
+#[no_mangle]
+pub unsafe extern "C" fn jit_default_of(
+    _frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, param_index: u32,
+) -> u8 {
+    let frame_ref = &mut *_frame;
+    let val = match frame_ref.regs.first() {
+        Some(Value::Object(rc)) => {
+            let b = rc.borrow();
+            b.type_args.get(param_index as usize)
+                .map(|tag| crate::metadata::types::default_value_for(tag))
+                .unwrap_or(Value::Null)
+        }
+        _ => Value::Null,
+    };
+    frame_ref.regs[dst as usize] = val;
+    0
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn jit_field_get(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,

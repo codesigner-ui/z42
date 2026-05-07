@@ -431,8 +431,14 @@ public class MulticastException<R> : MulticastException {
 - 泛型类型 `MulticastException<R>` 已 land 进 `src/libraries/z42.core/src/Exceptions/MulticastException.z42`，与已有非泛型 `MulticastException` 共存通过 add-class-arity-overloading（D-8b-0）的 shadow-only mangling：IR-side `MulticastException$1`，源码 `MulticastException`
 - 构造器使用 ctor delegation `: base(failures, indices, totalHandlers)`（D-1a 落地的 `: base(...)` 链式 ctor），由父类负责设置 `Failures` / `FailureIndices` / `TotalHandlers`，子类构造体只设置 `Results`
 - 对外字段为 plain field（非属性），与现有 stdlib 风格一致；`SuccessCount()` 走 method 而非 property（z42 暂无 property setter / getter 语法）
-- **未做**：`MulticastFunc<T,R>` / `MulticastPredicate<T>` 仍抛非泛型 `MulticastException`，切换到泛型版本依赖 D-8b-3 Phase 2 的 generic-T `default(R)` 支持，留作独立 follow-up
 - 平行数组 `Failures: Exception[]` + `FailureIndices: int[]` 而非 `Dictionary<int, Exception>` —— 写规范时还有 Dictionary 形态的 K8 提案，实际实施 D2d-2-Action 时为避开 Dictionary 依赖改为平行数组，本节同步规范现状
+
+**K8 完整语义实施记录（switch-multicast-funcpredicate-to-generic-exception，2026-05-07）**：
+
+- `MulticastFunc<T,R>.Invoke(continueOnException=true)` 与 `MulticastPredicate<T>.Invoke(continueOnException=true)` 切换到完整聚合路径：失败位置 `result[i] = default(R)` / `default(bool)`（依赖 D-8b-3 Phase 2 的运行时 type_args 解析），失败收尾抛 `MulticastException<R>` / `MulticastException<bool>`，携带 `Results: R[]` 与平行 `Failures` / `FailureIndices`
+- Scope 扩展：本 spec 同时扩 catch 子句 parser 接受泛型类型（`catch (MulticastException<int> e)`），mangle 到 `Name$N` 与 D-8b-0 类注册键对齐；TypeChecker 路径已就绪
+- JIT 跨步：新增 `jit_default_of` helper 镜像 interp，让 stdlib 的 `default(R)` 在 JIT 模式下也被 emit；但 `jit_obj_new` 仍未 propagate type_args，故 JIT-allocated 实例的 `default(T)` 仍走 graceful Null。新 2 个 golden（`multicast_func_aggregate` / `multicast_predicate_aggregate`）带 `interp_only` 标记
+- 用户能写：`try { ... } catch (MulticastException<int> e) { e.Results[i] /* 失败位 = default(R) */ }`
 
 ### 7.2 行为矩阵
 

@@ -13,7 +13,9 @@ namespace Std;
 //
 // COW snapshot —— Invoke 时拷贝当前数组遍历副本。
 // fail-fast 路径（continueOnException 默认 false；handler 抛异常直接传播）。
-// `continueOnException=true` 异常聚合留 D2d-2（`MulticastException<R>`）。
+// `continueOnException=true`（2026-05-07 switch-multicast-funcpredicate-to-generic-exception
+// 落地）：全跑完后失败位置占 `default(R)`，多失败聚合抛 `MulticastException<R>`，
+// 携带 Results: R[] 与失败索引 / 异常并行数组。
 
 public sealed class MulticastFunc<T, R> {
     // ── strong fast path ──
@@ -115,10 +117,63 @@ public sealed class MulticastFunc<T, R> {
 
         R[] result = new R[total];
         int outIdx = 0;
+
+        // ── fail-fast 路径（continueOnException=false）──
+        if (!continueOnException) {
+            i = 0;
+            while (i < sn) {
+                if (snapStrongAlive[i]) {
+                    result[outIdx] = snapStrong[i](arg);
+                    outIdx = outIdx + 1;
+                }
+                i = i + 1;
+            }
+            i = 0;
+            while (i < an) {
+                if (snapAdvAlive[i]) {
+                    var w = snapAdv[i];
+                    if (w.IsAlive()) {
+                        result[outIdx] = w.Get()(arg);
+                        w.OnInvoked();
+                        outIdx = outIdx + 1;
+                    }
+                }
+                i = i + 1;
+            }
+            return result;
+        }
+
+        // ── continueOnException=true 路径：累积失败 + 占位 default(R) ──
+        Exception[] failExns = new Exception[8];
+        int[] failIdx = new int[8];
+        int failCap = 8;
+        int failCount = 0;
+
         i = 0;
         while (i < sn) {
             if (snapStrongAlive[i]) {
-                result[outIdx] = snapStrong[i](arg);
+                try {
+                    result[outIdx] = snapStrong[i](arg);
+                } catch (Exception e) {
+                    result[outIdx] = default(R);
+                    if (failCount == failCap) {
+                        int newCap = failCap * 2;
+                        Exception[] biggerE = new Exception[newCap];
+                        int[] biggerI = new int[newCap];
+                        int k = 0;
+                        while (k < failCount) {
+                            biggerE[k] = failExns[k];
+                            biggerI[k] = failIdx[k];
+                            k = k + 1;
+                        }
+                        failExns = biggerE;
+                        failIdx = biggerI;
+                        failCap = newCap;
+                    }
+                    failExns[failCount] = e;
+                    failIdx[failCount] = outIdx;
+                    failCount = failCount + 1;
+                }
                 outIdx = outIdx + 1;
             }
             i = i + 1;
@@ -128,14 +183,46 @@ public sealed class MulticastFunc<T, R> {
             if (snapAdvAlive[i]) {
                 var w = snapAdv[i];
                 if (w.IsAlive()) {
-                    result[outIdx] = w.Get()(arg);
-                    w.OnInvoked();
+                    try {
+                        result[outIdx] = w.Get()(arg);
+                        w.OnInvoked();
+                    } catch (Exception e) {
+                        result[outIdx] = default(R);
+                        if (failCount == failCap) {
+                            int newCap = failCap * 2;
+                            Exception[] biggerE = new Exception[newCap];
+                            int[] biggerI = new int[newCap];
+                            int k = 0;
+                            while (k < failCount) {
+                                biggerE[k] = failExns[k];
+                                biggerI[k] = failIdx[k];
+                                k = k + 1;
+                            }
+                            failExns = biggerE;
+                            failIdx = biggerI;
+                            failCap = newCap;
+                        }
+                        failExns[failCount] = e;
+                        failIdx[failCount] = outIdx;
+                        failCount = failCount + 1;
+                    }
                     outIdx = outIdx + 1;
                 }
             }
             i = i + 1;
         }
-        // continueOnException 当前未消费 —— D2d-2 加聚合异常路径时启用。
+
+        if (failCount > 0) {
+            Exception[] trimE = new Exception[failCount];
+            int[] trimI = new int[failCount];
+            int j = 0;
+            while (j < failCount) {
+                trimE[j] = failExns[j];
+                trimI[j] = failIdx[j];
+                j = j + 1;
+            }
+            throw new MulticastException<R>(trimE, trimI, total, result);
+        }
         return result;
     }
 

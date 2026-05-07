@@ -156,6 +156,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     reg!("jit_array_set",     helpers_object::jit_array_set);
     reg!("jit_array_len",     helpers_object::jit_array_len);
     reg!("jit_obj_new",       helpers_object::jit_obj_new);
+    reg!("jit_default_of",    helpers_object::jit_default_of);
     reg!("jit_field_get",     helpers_object::jit_field_get);
     reg!("jit_field_set",     helpers_object::jit_field_set);
     reg!("jit_vcall",         helpers_object::jit_vcall);

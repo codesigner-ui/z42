@@ -1,0 +1,38 @@
+// 2026-05-07 switch-multicast-funcpredicate-to-generic-exception:
+// MulticastPredicate<T>.Invoke(continueOnException=true) 失败聚合 + 占位 default(bool)=false。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    // ── 1 异常：聚合，失败位置 = default(bool) = false ──
+    var bus = new MulticastPredicate<int>();
+    bus.Subscribe((int x) => x > 0);                              // index 0 → true
+    bus.Subscribe((int x) => { throw new Exception("p1 oops"); }); // index 1 → fail
+    bus.Subscribe((int x) => x < 100);                            // index 2 → true
+    try {
+        bool[] r = bus.Invoke(7, true);
+        Console.WriteLine("no exception (should not reach)");
+    } catch (MulticastException<bool> me) {
+        Console.WriteLine("aggregate caught");
+        Console.WriteLine(me.Failures.Length);                    // 1
+        Console.WriteLine(me.FailureIndices[0]);                  // 1
+        Console.WriteLine(me.TotalHandlers);                      // 3
+        Console.WriteLine(me.Results.Length);                     // 3
+        Console.WriteLine(me.Results[0]);                         // True
+        Console.WriteLine(me.Results[1]);                         // False  (default(bool))
+        Console.WriteLine(me.Results[2]);                         // True
+    }
+
+    // ── continueOnException=false 保持 fail-fast ──
+    var bus2 = new MulticastPredicate<int>();
+    bus2.Subscribe((int x) => true);
+    bus2.Subscribe((int x) => { throw new Exception("fast"); });
+    bus2.Subscribe((int x) => true);
+    try {
+        bool[] r = bus2.Invoke(9);
+        Console.WriteLine("no exception (should not reach)");
+    } catch (Exception e) {
+        Console.WriteLine($"fast caught: {e.Message}");
+    }
+}

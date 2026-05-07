@@ -364,6 +364,27 @@ internal static class StmtParser
                 {
                     exType = cursor.Current.Text;
                     cursor = cursor.Advance();
+                    // 2026-05-07 switch-multicast-funcpredicate-to-generic-exception:
+                    // accept generic type-args in catch clause and mangle to `Name$N`,
+                    // matching D-8b-0 class arity overloading registry key. Depth-tracked
+                    // counting handles nested generics like `Foo<Bar<int>>` ⇒ `Foo$1`.
+                    if (cursor.Current.Kind == TokenKind.Lt)
+                    {
+                        cursor = cursor.Advance();
+                        int depth = 1;
+                        int argCount = 1;
+                        while (depth > 0 && cursor.Current.Kind != TokenKind.Eof)
+                        {
+                            switch (cursor.Current.Kind)
+                            {
+                                case TokenKind.Lt: depth++; break;
+                                case TokenKind.Gt: depth--; break;
+                                case TokenKind.Comma when depth == 1: argCount++; break;
+                            }
+                            cursor = cursor.Advance();
+                        }
+                        exType = $"{exType}${argCount}";
+                    }
                     if (cursor.Current.Kind == TokenKind.Identifier)
                     {
                         varName = cursor.Current.Text;

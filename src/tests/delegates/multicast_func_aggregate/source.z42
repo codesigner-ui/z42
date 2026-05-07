@@ -1,0 +1,51 @@
+// 2026-05-07 switch-multicast-funcpredicate-to-generic-exception:
+// MulticastFunc<T, R>.Invoke(continueOnException=true) 失败聚合 + 占位 default(R)。
+namespace Demo;
+using Std;
+using Std.IO;
+
+void Main() {
+    // ── 0 异常 + continueOnException=true：不抛，返回完整结果数组 ──
+    var bus = new MulticastFunc<int, int>();
+    bus.Subscribe((int x) => x * 2);
+    bus.Subscribe((int x) => x + 100);
+    try {
+        int[] r0 = bus.Invoke(5, true);          // [10, 105]
+        Console.WriteLine(r0.Length);            // 2
+        Console.WriteLine(r0[0]);                // 10
+        Console.WriteLine(r0[1]);                // 105
+    } catch (Exception e) {
+        Console.WriteLine("unexpected");
+    }
+
+    // ── 1 异常 + continueOnException=true：聚合，失败位置 = default(R) = 0 ──
+    var bus2 = new MulticastFunc<int, int>();
+    bus2.Subscribe((int x) => x);                          // index 0 → 7
+    bus2.Subscribe((int x) => { throw new Exception("h1 oops"); });  // index 1 → fail
+    bus2.Subscribe((int x) => x * x);                      // index 2 → 49
+    try {
+        int[] r1 = bus2.Invoke(7, true);
+        Console.WriteLine("no exception (should not reach)");
+    } catch (MulticastException<int> me) {
+        Console.WriteLine("aggregate caught");
+        Console.WriteLine(me.Failures.Length);             // 1
+        Console.WriteLine(me.FailureIndices[0]);           // 1
+        Console.WriteLine(me.TotalHandlers);               // 3
+        Console.WriteLine(me.Results.Length);              // 3
+        Console.WriteLine(me.Results[0]);                  // 7
+        Console.WriteLine(me.Results[1]);                  // 0  (default(int))
+        Console.WriteLine(me.Results[2]);                  // 49
+    }
+
+    // ── continueOnException=false 保持 fail-fast：第一个异常立即抛 ──
+    var bus3 = new MulticastFunc<int, int>();
+    bus3.Subscribe((int x) => x);
+    bus3.Subscribe((int x) => { throw new Exception("fast"); });
+    bus3.Subscribe((int x) => x + 1);              // 不应被调用
+    try {
+        int[] r2 = bus3.Invoke(9);                 // default false → fail-fast
+        Console.WriteLine("no exception (should not reach)");
+    } catch (Exception e) {
+        Console.WriteLine($"fast caught: {e.Message}");
+    }
+}
