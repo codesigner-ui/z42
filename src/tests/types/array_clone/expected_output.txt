@@ -1,3 +1,4 @@
-clone ok
-distinct ref
-empty ok
+1
+99
+999
+0

@@ -106,9 +106,18 @@ internal static partial class ExprParser
     private static ParseResult<Expr> ParseLParen(
         TokenCursor cursor, Token tok, LanguageFeatures feat)
     {
-        // Try cast: `(TypeName)expr` — type token followed immediately by `)`
-        if (TypeParser.IsTypeToken(cursor.Current.Kind)
-            && cursor.Peek(1).Kind == TokenKind.RParen)
+        // Try cast: `(TypeName)expr` (single ident) — fast-path lookahead.
+        // 2026-05-07 add-as-cast-on-arrays: also recognise `(TypeName[])expr` so
+        // `(int[])arr.Clone()` parses as a cast. Higher-order forms (jagged
+        // `T[][]`, generic-with-array `Foo<T>[]`) remain out-of-scope and use
+        // explicit type-binding workarounds.
+        bool simpleCast = TypeParser.IsTypeToken(cursor.Current.Kind)
+            && cursor.Peek(1).Kind == TokenKind.RParen;
+        bool arrayCast  = TypeParser.IsTypeToken(cursor.Current.Kind)
+            && cursor.Peek(1).Kind == TokenKind.LBracket
+            && cursor.Peek(2).Kind == TokenKind.RBracket
+            && cursor.Peek(3).Kind == TokenKind.RParen;
+        if (simpleCast || arrayCast)
         {
             var tyR = TypeParser.Parse(cursor);
             if (tyR.IsOk && tyR.Remainder.Current.Kind == TokenKind.RParen)
