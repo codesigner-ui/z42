@@ -1,16 +1,29 @@
 # Tasks: Redesign Test Infrastructure
 
-> 状态：🟡 进行中（仅规划阶段） | 创建：2026-04-29
+> 状态：🟢 已完成（规划阶段；子 spec 状态见下表） | 创建：2026-04-29 | 完成：2026-05-07
 > 本变更只交付 4 份规范文档；实际实施由 5 个独立 Phase 子 spec 执行。
 
 ## 进度概览
 
-- [ ] 阶段 A: 本变更规范文档
-- [ ] 阶段 B: P0 子 spec（基础设施）—— 后续独立立项
-- [ ] 阶段 C: P1 子 spec（benchmark）—— 后续独立立项
-- [ ] 阶段 D: P2 子 spec（z42-test-runner）—— 后续独立立项
-- [ ] 阶段 E: P3 子 spec（用例迁移）—— 后续独立立项
-- [ ] 阶段 F: P4 子 spec（跨平台）—— 后续独立立项
+- [x] 阶段 A: 本变更规范文档（proposal / design / spec / tasks 已写齐）
+- [ ] 阶段 B: P0 子 spec（基础设施）—— 待立项
+- [ ] 阶段 C: P1 子 spec（benchmark）—— 待立项
+- [ ] 阶段 D: P2 子 spec（z42-test-runner）—— `rewrite-z42-test-runner-compile-time` 已立项 + design.md 就绪，待实施
+- [x] 阶段 E: P3 子 spec（用例迁移）—— `spec/archive/2026-05-05-migrate-runtime-tests-by-ownership/` 已落地（按 dotnet/runtime 风格分类）
+- [部分] 阶段 F: P4 子 spec（跨平台）—— **F.1 已落地** `spec/archive/2026-05-07-add-runtime-feature-flags/` (commit 215f289)；F.2/F.3/F.4 已写完 proposal + design + tasks，待实施
+
+## 子 spec 状态快照（2026-05-07）
+
+| 子项 | 状态 | spec 路径 |
+|------|------|---------|
+| P0 add-just-and-ci | DRAFT（未立项） | — |
+| P1 add-benchmark-framework | DRAFT（未立项） | — |
+| P2 add-z42-test-runner | DRAFT 已写 | `spec/changes/rewrite-z42-test-runner-compile-time/` |
+| P3 migrate-tests-by-ownership | ✅ 已归档 | `spec/archive/2026-05-05-migrate-runtime-tests-by-ownership/` |
+| F.1 add-runtime-feature-flags | ✅ 已归档 | `spec/archive/2026-05-07-add-runtime-feature-flags/` |
+| F.2 add-platform-wasm | DRAFT 已写 | `spec/changes/add-platform-wasm/` |
+| F.3 add-platform-android | DRAFT 已写 | `spec/changes/add-platform-android/` |
+| F.4 add-platform-ios | DRAFT 已写 | `spec/changes/add-platform-ios/` |
 
 ---
 
@@ -21,7 +34,7 @@
 - [x] A.3 写 [design.md](spec/changes/redesign-test-infra/design.md)
 - [x] A.4 写 [specs/test-infrastructure/spec.md](spec/changes/redesign-test-infra/specs/test-infrastructure/spec.md)
 - [x] A.5 写本 tasks.md
-- [ ] A.6 commit + push（含 `.claude/`、`spec/`）
+- [x] A.6 commit + push（含 `.claude/`、`spec/`）—— 与本 spec 收尾归档同时完成
 
 ---
 
