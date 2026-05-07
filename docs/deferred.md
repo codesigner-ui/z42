@@ -29,6 +29,21 @@
 - **当前状态**：手写 0-4 arity（覆盖 95% 场景）。
 - **2026-05-04 重新评估**：探索 examples/ + tests/ 确认 0 个 5+ arity 真实使用；compiler / runtime 无 per-arity 特殊路径，加 5-16 是纯机械重复。**结论：保持 deferred**。等真有用户场景；自举完成后用 z42 自身写生成器（`tools/gen-delegates.z42`）。当前不做 C# 一次性生成器，避免引入永久的"非 z42 写的 z42 stdlib 源"反向依赖。
 
+## D-11：introduce-bound-visitor（review.md §2.1 visitor 抽象基类）
+
+- **来源**：[docs/review.md](review.md) Part 2 §2.1（推荐引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>` 抽象基类）；2026-05-07 探索后暂缓
+- **触发原因（探索结论）**：
+  1. 当前 `EmitExpr` / `EmitBoundStmt` switch 已经**部分 visitor 化**——FunctionEmitterStmts.cs 16 个 case 几乎全是单行 helper 调用；FunctionEmitterExprs.cs 28 个 case 中约 16 个已委托给 `EmitBoundXxx` helper。"巨型 switch" 实际负担没有 review.md 初判那么重
+  2. **本 spec 单独做收益小**：抽象基类的"加新节点编译期穷尽性保证"价值需多消费者才显现。当前有 6 处 `case Bound` 站点（4 在 Codegen + FlowAnalyzer + ClosureEscapeAnalyzer），如果只迁 FunctionEmitter 一个，单消费者用 visitor 框架是过度设计
+  3. **不解决 P0 LOC 问题**：visitor base class 只迁移 switch 体到 override 方法。FunctionEmitterExprs.cs 878 LOC 仍 ~880（每个 case 体仍要写）。review.md §1.1 P0 硬限违规需 `split-large-codegen-files` 解决
+  4. **C# 多继承摩擦**：FunctionEmitter (sealed partial) 只能继承一个 base class，Exprs / Stmts 两套 visitor 不能直接同时继承——需 nested visitor 或继承一个+方法表 mix
+- **前置依赖**：第二个 BoundExpr 消费者出现（dump-ast / lint / 第二个 emitter），让 visitor 抽象基类有真实使用者；或与 `split-symbol-from-type`（review.md §2.3 + §3.1）合并做（Symbol/Decl 分离时连带重审 visitor）
+- **触发条件**：
+  - dump-ast / 某个新分析器需要遍历 BoundExpr，引入即第二个真实消费者
+  - 或者新增 BoundXxx 节点导致多处 switch 漏改的事故出现 ≥ 1 次
+  - 或者 `split-symbol-from-type` spec 启动时一并设计
+- **当前状态**：保持 FunctionEmitterExprs / Stmts 现有方法表风格不变；EmitExpr 主 switch 紧凑度可接受。后续 `split-large-codegen-files` 处理 FunctionEmitterExprs.cs 878 LOC 超限（按表达式类别拆 partial 文件）
+
 ## D-4：协变 / 逆变（`<in T, out R>` 等）（D1 延后）
 
 - **来源**：`spec/archive/2026-05-02-add-delegate-type/`
