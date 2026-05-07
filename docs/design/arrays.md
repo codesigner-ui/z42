@@ -105,6 +105,16 @@ Array(Rc<RefCell<Vec<Value>>>)
 
 ---
 
+## 运行时基类 `Std.Array`（add-array-base-class，2026-05-07）
+
+所有 `T[]` 在运行时是 `Std.Array : Object` 的实例。stdlib `src/libraries/z42.core/src/Array.z42` 定义 sealed class，绑定 `Length` 字段（IR `array_len` 快路径）+ `Clone()` / `GetType()` / `Equals()` / `GetHashCode()` / `ToString()`（全 Native 绑定到现有 `__obj_*` / `__array_clone` builtin）。
+
+类型系统：`T[]` is-a `Std.Array` is-a `Std.Object` —— 真子类型链（`Z42Type.IsAssignableTo` 显式分支，不再依赖 `target == Object` catch-all 对数组的兜底）。
+
+VM dispatch：`Value::Array` 不携带 TypeDesc 引用，VCall 通过 `primitive_class_name` 路由到 `Std.Array.<method>` 直查 func_index（与 `Std.int` / `Std.String` 同款）；`is_instance` / `as_cast` 硬编码识别 `Array` / `Object` / `Std.Array` / `Std.Object` 子类型。
+
+后续 follow-up：静态算法（Sort/IndexOf/...）、IEnumerable 接入、协变（`Dog[]` → `Animal[]`）、元素类型反射元数据（`arr.GetType().__name == "int[]"`）—— 各自独立 spec。
+
 ## 不在此规范范围内
 
 - 多维数组 `T[,]` / jagged `T[][]`（Phase 2）

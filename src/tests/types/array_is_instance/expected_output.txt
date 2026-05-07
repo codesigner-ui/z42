@@ -1,0 +1,3 @@
+xs is Array
+xs is Object
+3

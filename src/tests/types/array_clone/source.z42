@@ -1,0 +1,22 @@
+using Std.IO;
+
+// 2026-05-07 add-array-base-class: arr.Clone() 浅拷贝。v1 验证：
+//   1. Clone 不抛异常，返回非 null
+//   2. 原数组与 Clone 结果引用不同（== 在 Object 级别 = reference equality）
+// Cast Clone 结果回 int[] 与 GetType()-on-Object 等需后续 spec。
+
+void Main() {
+    int[] xs = new int[3];
+    xs[0] = 1; xs[1] = 2; xs[2] = 3;
+
+    Object copy = xs.Clone();
+    if (copy == null) Console.WriteLine("clone null"); else Console.WriteLine("clone ok");
+
+    Object orig = xs;
+    if (orig == copy) Console.WriteLine("same ref"); else Console.WriteLine("distinct ref");
+
+    // 空数组也能 Clone
+    int[] empty = new int[0];
+    Object emptyCopy = empty.Clone();
+    if (emptyCopy == null) Console.WriteLine("empty null"); else Console.WriteLine("empty ok");
+}

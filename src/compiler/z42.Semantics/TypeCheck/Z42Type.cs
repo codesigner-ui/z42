@@ -91,6 +91,12 @@ public abstract record Z42Type
             return true;
         // T is assignable to T? (implicit wrap)
         if (target is Z42OptionType opt && IsAssignableTo(opt.Inner, source)) return true;
+        // 2026-05-07 add-array-base-class: `T[]` is-a `Std.Array` 真子类型；
+        // `Std.Array` is-a `Std.Object` 通过继承链。这两条由本规则显式表达，
+        // 不再依赖下方的 `target == Object` catch-all 对数组的兜底。
+        if (source is Z42ArrayType
+            && target is Z42ClassType { Name: "Array" or "Object" })
+            return true;
         // Everything is assignable to `object` (universal base type — primitives auto-box at runtime).
         // VM Value enum carries the original type through; no compiler-side boxing needed.
         if (target == Object && source is not Z42VoidType) return true;

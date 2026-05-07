@@ -31,6 +31,7 @@ pub mod string;
 pub mod math;
 pub mod fs;
 pub mod object;
+pub mod array;
 pub mod char;
 pub mod gc;
 pub mod bench;
@@ -167,6 +168,9 @@ fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
         m.insert("__make_closure", object::builtin_make_closure);
         m.insert("__obj_make_weak", object::builtin_obj_make_weak);
         m.insert("__obj_upgrade_weak", object::builtin_obj_upgrade_weak);
+
+        // ── Array protocol（add-array-base-class，2026-05-07）────────────────
+        m.insert("__array_clone", array::builtin_array_clone);
 
         // ── GC control（Phase 3d.2 expose-gc-to-scripts） ───────────────────
         m.insert("__gc_collect",       gc::builtin_gc_collect);

@@ -448,6 +448,12 @@ fn is_subclass_or_eq(module: &crate::metadata::Module, derived: &str, target: &s
     }
 }
 
+// 2026-05-07 add-array-base-class: T[] is-a Std.Array is-a Std.Object.
+// Mirror the interp `is_array_isa` hardcoded chain.
+fn is_array_isa(class_name: &str) -> bool {
+    matches!(class_name, "Array" | "Object" | "Std.Array" | "Std.Object")
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn jit_is_instance(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
@@ -458,6 +464,7 @@ pub unsafe extern "C" fn jit_is_instance(
     let module = &*(*ctx).module;
     let result = match &(*frame).regs[obj as usize] {
         Value::Object(rc) => is_subclass_or_eq(module, &rc.borrow().type_desc.name, class_name),
+        Value::Array(_)   => is_array_isa(class_name),
         _ => false,
     };
     (*frame).regs[dst as usize] = Value::Bool(result);
@@ -474,6 +481,7 @@ pub unsafe extern "C" fn jit_as_cast(
     let val    = (*frame).regs[obj as usize].clone();
     let is_match = match &val {
         Value::Object(rc) => is_subclass_or_eq(module, &rc.borrow().type_desc.name, class_name),
+        Value::Array(_)   => is_array_isa(class_name),
         Value::Null => true,
         _           => false,
     };

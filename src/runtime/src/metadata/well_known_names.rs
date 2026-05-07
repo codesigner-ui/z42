@@ -41,6 +41,11 @@ pub const STD_OBJECT: &str = "Std.Object";
 /// Stdlib's reified-type class returned by `__obj_get_type`.
 pub const STD_TYPE: &str = "Std.Type";
 
+/// 2026-05-07 add-array-base-class: runtime base of all `T[]`. `Value::Array`
+/// 不携带 TypeDesc 引用，VM 端 `is_instance` / `as_cast` 硬编码识别 `STD_ARRAY`
+/// / `STD_OBJECT` 子类型。
+pub const STD_ARRAY: &str = "Std.Array";
+
 // ── Well-known builtin names (used outside corelib::dispatch_table) ──────
 
 /// Builtin invoked as the fallback in `dispatch.rs::obj_to_string` when an

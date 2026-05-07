@@ -29,6 +29,11 @@ pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
         Value::Bool(_) => Some(STD_BOOL),
         Value::Char(_) => Some(STD_CHAR),
         Value::Str(_)  => Some(STD_STRING),  // capitalised — stdlib retains `class String`
+        // 2026-05-07 add-array-base-class: T[] dispatches to Std.Array methods
+        // (Clone / GetType / ToString / Equals / GetHashCode). The lookup path
+        // below tries `Std.Array.<method>` first, then falls through to base
+        // `Std.Object.<method>` via the existing primitive overload retry logic.
+        Value::Array(_) => Some(STD_ARRAY),
         _ => None,
     }
 }
@@ -629,6 +634,9 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     let runtime_class = rc.borrow().type_desc.name.clone();
                     is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
                 }
+                // 2026-05-07 add-array-base-class: T[] is-a Std.Array is-a Std.Object.
+                // VM hardcodes the chain since Value::Array doesn't carry a TypeDesc.
+                Value::Array(_) => is_array_isa(class_name),
                 Value::Null => false,
                 _ => false,
             };
@@ -642,6 +650,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                     let runtime_class = rc.borrow().type_desc.name.clone();
                     is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
                 }
+                Value::Array(_) => is_array_isa(class_name),
                 Value::Null => true,
                 _ => false,
             };
@@ -782,4 +791,12 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         }
     }
     Ok(None)
+}
+
+// 2026-05-07 add-array-base-class: hardcoded is-a check for `Value::Array`.
+// Class name comparison accepts both unqualified and `Std.`-qualified forms
+// because IR-emitted class names depend on TypeChecker's qualification path
+// (imported classes use FQ; bare references unqualified).
+fn is_array_isa(class_name: &str) -> bool {
+    matches!(class_name, "Array" | "Object" | "Std.Array" | "Std.Object")
 }

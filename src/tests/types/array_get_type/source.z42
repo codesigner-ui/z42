@@ -1,0 +1,19 @@
+using Std.IO;
+
+// 2026-05-07 add-array-base-class: T[] 接入 Std.Array → Std.Object 链路。
+// arr.GetType() 返回 Std.Type 实例，__name="Array"，__fullName="Std.Array"。
+
+void Main() {
+    int[] xs = new int[3];
+    var t = xs.GetType();
+    Console.WriteLine(t.__name);
+    Console.WriteLine(t.__fullName);
+
+    // 不同元素类型也走相同路径（v1 不区分元素类型）
+    string[] ys = new string[2];
+    Console.WriteLine(ys.GetType().__name);
+
+    // 空数组也有 Type
+    int[] empty = new int[0];
+    Console.WriteLine(empty.GetType().__fullName);
+}

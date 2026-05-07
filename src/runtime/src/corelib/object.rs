@@ -11,6 +11,11 @@ use std::sync::Arc;
 pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let class_name = match args.first() {
         Some(Value::Object(rc)) => rc.borrow().type_desc.name.clone(),
+        // 2026-05-07 add-array-base-class: T[] 的 `GetType()` 返回 Std.Array
+        // Type 对象。v1 不带元素类型（简单 `__name == "Array"`）；元素类型
+        // 元数据留给 expand-type-metadata 后续 spec。
+        Some(Value::Array(_)) => crate::metadata::well_known_names::STD_ARRAY.to_string(),
+        Some(Value::Str(_))   => "Std.String".to_string(),
         Some(Value::Null) => bail!("__obj_get_type: null reference"),
         _ => bail!("__obj_get_type: expected an object"),
     };
@@ -208,6 +213,11 @@ pub fn builtin_obj_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> 
             let addr = crate::gc::GcRef::as_ptr(gc) as *const _ as i64;
             Ok(Value::I64((addr & 0x7fff_ffff) as i64))
         }
+        // 2026-05-07 add-array-base-class: identity hash for Value::Array
+        Some(Value::Array(gc)) => {
+            let addr = crate::gc::GcRef::as_ptr(gc) as *const _ as i64;
+            Ok(Value::I64((addr & 0x7fff_ffff) as i64))
+        }
         Some(Value::Null) => Ok(Value::I64(0)),
         _ => bail!("__obj_hash_code: expected an object"),
     }
@@ -218,6 +228,8 @@ pub fn builtin_obj_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> 
 pub fn builtin_obj_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let result = match (args.first(), args.get(1)) {
         (Some(Value::Object(a)), Some(Value::Object(b))) => crate::gc::GcRef::ptr_eq(a, b),
+        // 2026-05-07 add-array-base-class: reference-equality for arrays (mirror Object)
+        (Some(Value::Array(a)),  Some(Value::Array(b)))  => crate::gc::GcRef::ptr_eq(a, b),
         (Some(Value::Null), Some(Value::Null))           => true,
         (Some(Value::Null), _) | (_, Some(Value::Null)) => false,
         _                                                => false,
@@ -234,6 +246,10 @@ pub fn builtin_obj_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
             let simple = class_name.split('.').next_back().unwrap_or(&class_name).to_string();
             Ok(Value::Str(simple))
         }
+        // 2026-05-07 add-array-base-class: arrays ToString returns simple class name
+        // ("Array"), matching Object protocol default. Element-typed ToString
+        // (`int[]` etc.) is deferred to expand-type-metadata.
+        Some(Value::Array(_)) => Ok(Value::Str("Array".into())),
         Some(Value::Null) => Ok(Value::Str("null".into())),
         _ => bail!("__obj_to_str: expected an object"),
     }
