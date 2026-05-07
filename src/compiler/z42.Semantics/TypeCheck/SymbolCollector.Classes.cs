@@ -54,11 +54,21 @@ public sealed partial class SymbolCollector
         _virtualMethods["Object"] = ["ToString", "Equals", "GetHashCode"];
         if (!cuDefinesObject)
         {
+            // 2026-05-07 fix-gettype-on-object-typed-receiver: include `GetType()`
+            // in the stub so `Object o = ...; o.GetType()` resolves. The real
+            // `Std.Object` (loaded later via MergeImported) declares GetType too;
+            // before this fix `MergeImported` used TryAdd which left this stub
+            // shadowing the real class, so any GetType call on an Object-typed
+            // receiver hit E0402 "type Object has no method GetType".
+            // Type return type uses `Z42Type.Unknown` because the real `Std.Type`
+            // class isn't loaded yet during this pre-registration; downstream
+            // typechecker treats Unknown as compatible (avoids cascading errors).
             var objectMethods = new Dictionary<string, Z42FuncType>
             {
                 ["ToString"]    = new([], Z42Type.String),
                 ["Equals"]      = new([Z42Type.Object], Z42Type.Bool),
                 ["GetHashCode"] = new([], Z42Type.Int),
+                ["GetType"]     = new([], Z42Type.Unknown),
             };
             _classes["Object"] = new Z42ClassType(
                 "Object",
