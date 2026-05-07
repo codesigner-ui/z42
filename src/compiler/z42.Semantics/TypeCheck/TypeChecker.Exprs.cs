@@ -141,23 +141,16 @@ public sealed partial class TypeChecker
 
             case DefaultExpr de:
             {
-                // add-default-expression (2026-05-06): resolve T through the
-                // standard ResolveType path then validate it.
-                //
-                // - Generic type-parameter (Z42GenericParamType) → E0421 Phase 2 deferred
-                // - ResolveType fall-through emits Z42PrimType("<unknown>") for any
-                //   unknown NamedType (catch-all branch in SymbolCollector); we
-                //   detect that by cross-checking against the TypeRegistry of known
-                //   primitives + class / interface / enum / delegate maps. If none
-                //   match, the type isn't real → E0421 type-not-found.
+                // add-default-expression (2026-05-06) Phase 1: fully-resolved T → emit Const*.
+                // add-default-generic-typeparam (2026-05-07, D-8b-3 Phase 2): generic
+                // type-param T → emit DefaultOfInstr(idx); runtime resolves
+                // `this.type_desc.type_args[idx]`. Method-level / free / static path
+                // gracefully degrades (idx=0; runtime returns Null when this is non-object).
                 var t = ResolveType(de.Target);
                 if (t is Z42GenericParamType gp)
                 {
-                    _diags.Error(DiagnosticCodes.InvalidDefaultType,
-                        $"default(<{gp.Name}>) on generic type parameter is not yet supported " +
-                        "(deferred to spec add-default-generic-typeparam — see docs/deferred.md D-8b-3 Phase 2)",
-                        de.Span);
-                    return new BoundDefault(Z42Type.Error, de.Span);
+                    int paramIdx = ResolveGenericParamIndex(gp.Name, env);
+                    return new BoundDefault(t, de.Span, GenericParamIndex: paramIdx);
                 }
                 if (!IsResolvedDefaultTarget(t))
                 {
@@ -506,5 +499,26 @@ public sealed partial class TypeChecker
             default:
                 return false;  // Z42VoidType / Z42ErrorType / Z42NullType / Z42UnknownType
         }
+    }
+
+    /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): map a
+    /// generic type-parameter name (e.g. "R") to its 0-based index in the
+    /// enclosing class's TypeParams. Used by `default(R)` codegen so the new
+    /// `DefaultOfInstr` carries the index that the VM will use to read
+    /// `this.type_desc.type_args[idx]`.
+    ///
+    /// Class-level type-param → exact index. Method-level / free generic /
+    /// static method on generic class → returns 0 (graceful-degradation: the
+    /// runtime detects non-Object reg 0 / OOB index and falls through to Null).
+    private int ResolveGenericParamIndex(string paramName, TypeEnv env)
+    {
+        if (env.CurrentClass is { } className
+            && _symbols.Classes.TryGetValue(className, out var ct)
+            && ct.TypeParams is { } tps)
+        {
+            for (int i = 0; i < tps.Count; i++)
+                if (tps[i] == paramName) return i;
+        }
+        return 0;
     }
 }

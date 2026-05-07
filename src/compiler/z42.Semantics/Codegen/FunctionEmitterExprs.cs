@@ -55,6 +55,17 @@ internal sealed partial class FunctionEmitter
             }
             case BoundDefault def:
             {
+                // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2):
+                // generic type-parameter T → emit `DefaultOfInstr(idx)`. Runtime
+                // resolves `this.type_desc.type_args[idx]` and looks up the zero
+                // value via `default_value_for(tag)`. Method-level / free generic
+                // path carries idx=0 and gracefully returns Null at runtime.
+                if (def.GenericParamIndex is int paramIdx)
+                {
+                    var dstG = Alloc(IrType.Ref);
+                    Emit(new DefaultOfInstr(dstG, (byte)paramIdx));
+                    return dstG;
+                }
                 // add-default-expression (2026-05-06): zero-value emit by type tag.
                 // No new IR opcode — every default(T) is one of the existing 6
                 // Const* instructions. Mirrors the VM's `default_value_for(type_tag)`
@@ -853,7 +864,15 @@ internal sealed partial class FunctionEmitter
         string fqCtor = $"{qualCls}.{n.CtorName}";
         argRegs = FillDefaults(fqCtor, argRegs);
         var dst = Alloc(IrType.Ref);
-        Emit(new ObjNewInstr(dst, qualCls, fqCtor, argRegs));
+        // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): when this
+        // is `new Foo<T1, T2>()`, the bound result type is Z42InstantiatedType
+        // carrying TypeArgs. Forward each to the IR as a runtime type-tag string
+        // so VM populates the new instance's type_args; this is the source of
+        // truth for `DefaultOf` and any future runtime type-args queries.
+        IReadOnlyList<string>? typeArgs = n.Type is Z42InstantiatedType inst
+            ? inst.TypeArgs.Select(ExportedTypeExtractor.TypeToString).ToList()
+            : null;
+        Emit(new ObjNewInstr(dst, qualCls, fqCtor, argRegs, typeArgs));
         return dst;
     }
 }

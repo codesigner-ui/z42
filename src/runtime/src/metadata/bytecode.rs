@@ -326,6 +326,15 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] obj: Reg,
         field_name: String,
     },
+    /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): runtime
+    /// resolution of `default(T)` where T is a generic type-parameter of the
+    /// receiver class. Reads `frame.regs[0]` (this) → `Object → type_desc.type_args[param_index]`,
+    /// looks up the resolved type via `default_value_for(tag)`, writes Value to dst.
+    /// Non-Object reg 0 / OOB index → graceful-degrade to `Value::Null`.
+    DefaultOf {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        param_index: u8,
+    },
     // Calls
     Call {
         #[serde(with = "typed_reg_serde")] dst: Reg,
@@ -407,6 +416,12 @@ pub enum Instruction {
         class_name: String,
         ctor_name: String,
         #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): resolved
+        /// generic type-arguments for this allocation, e.g. `["int"]` for
+        /// `new Foo<int>()`. VM populates the new instance's
+        /// `ScriptObject.type_args` from this list. Empty for non-generic.
+        #[serde(default)]
+        type_args: Vec<String>,
     },
     /// Load field `field_name` of object `obj` into `dst`.
     FieldGet {

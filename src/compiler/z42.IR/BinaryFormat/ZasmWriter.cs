@@ -176,6 +176,8 @@ public static class ZasmWriter
             LoadLocalAddrInstr i => $"{Reg(i.Dst)} = load_local_addr  {Reg(i.Slot)}",
             LoadElemAddrInstr  i => $"{Reg(i.Dst)} = load_elem_addr   {Reg(i.Arr)}, {Reg(i.Idx)}",
             LoadFieldAddrInstr i => $"{Reg(i.Dst)} = load_field_addr  {Reg(i.Obj)}.{i.FieldName}",
+            // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
+            DefaultOfInstr i => $"{Reg(i.Dst)} = default.of  ${i.ParamIndex}",
             BuiltinInstr i => $"{Reg(i.Dst)} = builtin  {i.Name}{FormatArgList(i.Args)}",
             VCallInstr   i => $"{Reg(i.Dst)} = v_call  {Reg(i.Obj)}.{i.Method}{FormatArgList(i.Args)}",
 

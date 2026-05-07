@@ -200,6 +200,8 @@ public static class IrVerifier
         LoadLocalAddrInstr     i => i.Dst,
         LoadElemAddrInstr      i => i.Dst,
         LoadFieldAddrInstr     i => i.Dst,
+        // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
+        DefaultOfInstr         i => i.Dst,
         // No Dst: ArraySetInstr, FieldSetInstr, StaticSetInstr, UnpinPtrInstr
         _ => null,
     };

@@ -219,6 +219,7 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::LoadLocalAddr { dst, .. } => Some(*dst),
                 Instruction::LoadElemAddr  { dst, .. } => Some(*dst),
                 Instruction::LoadFieldAddr { dst, .. } => Some(*dst),
+                Instruction::DefaultOf     { dst, .. } => Some(*dst),
                 Instruction::Builtin   { dst, .. }  => Some(*dst),
                 Instruction::ArrayNew    { dst, .. } => Some(*dst),
                 Instruction::ArrayNewLit { dst, .. } => Some(*dst),
@@ -735,7 +736,14 @@ pub fn translate_function(
                 }
 
                 // Objects
-                Instruction::ObjNew { dst, class_name, ctor_name, args } => {
+                Instruction::ObjNew { dst, class_name, ctor_name, args, type_args: _ } => {
+                    // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2):
+                    // JIT path drops type_args (helper signature unchanged). The
+                    // resulting instance carries empty `type_args`, so `default(T)`
+                    // inside JIT-compiled methods on generic classes degrades to
+                    // Value::Null (interp path is the source of truth for full
+                    // generic-T zero-value resolution). Same trade-off as
+                    // LoadFieldAddr — JIT keeps simple, interp covers correctness.
                     let d = ri!(*dst);
                     let (cp, cl) = str_val!(class_name);
                     let (kp, kl) = str_val!(ctor_name);
@@ -818,6 +826,14 @@ pub fn translate_function(
                 }
                 Instruction::LoadFieldAddr { .. } => {
                     bail!("JIT cannot translate LoadFieldAddr yet (impl-ref-out-in-runtime; interp only)");
+                }
+                // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): JIT
+                // bail mirrors LoadFieldAddr — function falls back to Interp mode.
+                // JIT helper for runtime type_args lookup is a follow-up; the
+                // interp path covers all current use cases (`MulticastException<R>`
+                // ctor / methods do not run in JIT in stdlib usage today).
+                Instruction::DefaultOf { .. } => {
+                    bail!("JIT cannot translate DefaultOf yet (D-8b-3 Phase 2; interp only)");
                 }
 
                 // impl-lambda-l2: lambdas / function references — JIT support

@@ -1,0 +1,22 @@
+using Std.IO;
+
+// Generic-T field initialized in ctor body via default(T).
+// new Box<int>() → x=0; new Box<string>() → x=null.
+
+class Box<T> {
+    public T x;
+    public Box() {
+        this.x = default(T);
+    }
+    public bool IsXZero(int probe) {
+        return this.x == probe;
+    }
+}
+
+void Main() {
+    var bi = new Box<int>();
+    if (bi.IsXZero(0)) Console.WriteLine("int-0");
+    else               Console.WriteLine("int-NOT-0");
+    var bs = new Box<string>();
+    if (bs.x == null) Console.WriteLine("string-null"); else Console.WriteLine("string-not-null");
+}

@@ -1,0 +1,27 @@
+using Std.IO;
+
+// add-default-generic-typeparam (D-8b-3 Phase 2): default(T) where T is a
+// generic class type-parameter resolves at runtime via the instance's
+// per-instance `type_args`. Foo<int>.GetDefault() returns 0;
+// Foo<string>.GetDefault() returns null.
+
+class Foo<R> {
+    public R GetDefault() {
+        return default(R);
+    }
+    public bool IsDefaultZero(int probe) {
+        // Compare R's default to the int probe (works only when R==int);
+        // For non-int R the boxed default is null and != probe.
+        return default(R) == probe;
+    }
+}
+
+void Main() {
+    var fi = new Foo<int>();
+    if (fi.IsDefaultZero(0)) Console.WriteLine("int-default-is-0");
+    else                     Console.WriteLine("int-default-NOT-0");
+
+    var fs = new Foo<string>();
+    var ds = fs.GetDefault();
+    if (ds == null) Console.WriteLine("string-null"); else Console.WriteLine("string-not-null");
+}

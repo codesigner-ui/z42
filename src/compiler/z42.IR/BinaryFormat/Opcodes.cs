@@ -83,6 +83,9 @@ public static class Opcodes
     public const byte LoadLocalAddr = 0xA0;  // dst, slot                  → Value::Ref::Stack
     public const byte LoadElemAddr  = 0xA1;  // dst, arr, idx              → Value::Ref::Array
     public const byte LoadFieldAddr = 0xA2;  // dst, obj, field_name (str) → Value::Ref::Field
+
+    // ── Generic runtime (0xB0–0xBF) — D-8b-3 Phase 2 ──────────────────────────
+    public const byte DefaultOf     = 0xB0;  // dst, param_index (u8) → default value of this.type_desc.type_args[idx]
 }
 
 /// <summary>Type tag byte embedded in each instruction header.</summary>

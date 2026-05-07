@@ -125,16 +125,35 @@ public sealed class DefaultExpressionTests
     }
 
     [Fact]
-    public void TypeChecker_Default_GenericTypeParam_RaisesE0421()
+    public void TypeChecker_Default_ClassLevelGenericParam_NoE0421AndCarriesIndex()
     {
+        // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): the gate
+        // that rejected generic-T `default(T)` with E0421 was lifted; binding
+        // now produces a `BoundDefault` with `GenericParamIndex` set.
         var src = @"
             class Box<T> { public T Make() { return default(T); } }
             void Main() { var b = new Box<int>(); }
         ";
-        var (_, diags) = Bind(src);
-        diags.All.Should().Contain(d =>
-            d.Code == DiagnosticCodes.InvalidDefaultType
-            && d.Message.Contains("generic type parameter"));
+        var (sem, diags) = Bind(src);
+        diags.All.Where(d => d.IsError).Should().BeEmpty();
+        var bd = ExtractFirstBoundDefault(sem);
+        bd.Should().NotBeNull();
+        bd!.GenericParamIndex.Should().Be(0,
+            because: "T is the 0-th type-param of class Box<T>");
+    }
+
+    [Fact]
+    public void TypeChecker_Default_SecondPositionGenericParam_IndexIs1()
+    {
+        var src = @"
+            class Pair<K, V> { public V Make() { return default(V); } }
+            void Main() { var p = new Pair<int, string>(); }
+        ";
+        var (sem, diags) = Bind(src);
+        diags.All.Where(d => d.IsError).Should().BeEmpty();
+        var bd = ExtractFirstBoundDefault(sem);
+        bd!.GenericParamIndex.Should().Be(1,
+            because: "V is the 1-st type-param of class Pair<K, V>");
     }
 
     // ── BoundDefault carries the resolved Type ───────────────────────────────

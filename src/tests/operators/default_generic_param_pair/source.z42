@@ -1,0 +1,21 @@
+using Std.IO;
+
+// Multi type-param: default(K) resolves via type_args[0], default(V) via type_args[1].
+// Pair<int, string> → K=int → 0, V=string → null.
+
+class Pair<K, V> {
+    public bool IsKDefaultZero(int probe) {
+        return default(K) == probe;
+    }
+    public V GetDefV() {
+        return default(V);
+    }
+}
+
+void Main() {
+    var p = new Pair<int, string>();
+    if (p.IsKDefaultZero(0)) Console.WriteLine("K-int-0");
+    else                     Console.WriteLine("K-int-NOT-0");
+    var v = p.GetDefV();
+    if (v == null) Console.WriteLine("V-null"); else Console.WriteLine("V-not-null");
+}

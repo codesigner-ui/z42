@@ -167,6 +167,16 @@ public sealed record LoadElemAddrInstr(TypedReg Dst, TypedReg Arr, TypedReg Idx)
 
 /// 产生指向 Obj.FieldName 的 Value::Ref::Field。
 public sealed record LoadFieldAddrInstr(TypedReg Dst, TypedReg Obj, string FieldName) : IrInstr;
+
+// ── Generic runtime (D-8b-3 Phase 2) ─────────────────────────────────────────
+// 当 `default(T)` 中 T 是泛型 type-parameter 时由 IrGen emit。运行时从
+// `frame.regs[0]`（this）取 `type_desc.type_args[ParamIndex]` 解析为
+// 具体 type tag，再调 `default_value_for(tag)` 拿 zero-value 写入 Dst。
+// 非 Object reg 0 / OOB index 走 graceful-degradation = Value::Null。
+
+/// 解析当前 receiver class 第 ParamIndex（0-based）个 type-arg 的 zero value。
+public sealed record DefaultOfInstr(TypedReg Dst, byte ParamIndex) : IrInstr;
+
 public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args) : IrInstr;
 /// Push a function reference value onto the operand stack. L2 no-capture lambda
 /// literal lowers to this instruction with `Func` pointing at a lifted function.
@@ -246,7 +256,14 @@ public sealed record ArrayLenInstr(TypedReg Dst, TypedReg Arr)               : I
 /// Allocate a new object of ClassName, calling specific overload-resolved
 /// constructor `CtorName` (含 `$N` arity suffix 如有，对齐 Call 指令的
 /// FQ 函数名约定）with Args. VM 不再做名字推断，直查 ctor_name。
-public sealed record ObjNewInstr(TypedReg Dst, string ClassName, string CtorName, List<TypedReg> Args) : IrInstr;
+///
+/// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): `TypeArgs` 携带
+/// 该 allocation 的 resolved 泛型类型参数（`new Foo<int>()` → `["int"]`）。
+/// VM 在 `ScriptObject.type_args` 上 populate，供 `DefaultOf` 等运行时类型
+/// 查询使用。非泛型类传 `[]`。
+public sealed record ObjNewInstr(
+    TypedReg Dst, string ClassName, string CtorName, List<TypedReg> Args,
+    IReadOnlyList<string>? TypeArgs = null) : IrInstr;
 /// Load field FieldName from object in register Obj into Dst.
 public sealed record FieldGetInstr(TypedReg Dst, TypedReg Obj, string FieldName)      : IrInstr;
 /// Store Val into field FieldName of object in register Obj.

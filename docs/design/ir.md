@@ -273,6 +273,26 @@ JSON wire format (tag = `"op"`):
 调用。0.7 起 `ctor_name` 字段必备，0.6 及更早 zbc 不再被支持
 （按 `.claude/rules/workflow.md "不为旧版本提供兼容"`）。
 
+0.9（2026-05-07，add-default-generic-typeparam）起，`obj_new` 携带 **resolved
+type-args 列表**（如 `new Foo<int>()` → `["int"]`），VM 在分配实例后写入
+`ScriptObject.type_args` 字段，供后续 `default_of` 等运行时类型查询使用。
+非泛型类传空列表，零开销。
+
+#### `default_of` (D-8b-3 Phase 2)
+
+```
+%r = default_of $<param_index>      # default value of this.type_args[idx]
+```
+
+JSON: `{"op": "default_of", "dst": 5, "param_index": 0}`
+
+仅在 generic class 的 instance method / ctor body 内由 IrGen 为
+`default(T)` 表达式 emit。运行时读 `frame.regs[0]` (this) →
+`ScriptObject.type_args[param_index]` → `default_value_for(tag)` 写 dst。
+非 Object reg 0 / OOB index / 空 type_args → graceful 退化为
+`Value::Null`（method-level type-param / free generic / static method on
+generic class 的当前路径都走该退化）。
+
 `field_get` / `field_set` use pre-computed slot indices from the `TypeDesc` registry (O(1) per
 access). Virtual fields are also dispatched by `field_get` for built-in primitive types:
 - `Value::Str` — `"Length"` returns `I64` (Unicode scalar count, not byte length)

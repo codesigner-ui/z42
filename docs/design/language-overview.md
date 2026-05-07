@@ -146,9 +146,12 @@ var a  = default(int[]);     // null（与 `new int[N]` 区分；后者分配 N 
 | `string` | `null` |
 | 任意 class / interface / array / `T?` / 自定义 struct | `null` |
 
-实现注：IR 层 `default(T)` 不引入新指令；编译器按 T 直接 emit `ConstI64` / `ConstF64` / `ConstBool` / `ConstChar` / `ConstNull`，与 VM `default_value_for(type_tag)` 表对齐。
+实现注：fully-resolved T → IR 层不引入新指令；编译器按 T 直接 emit `ConstI64` / `ConstF64` / `ConstBool` / `ConstChar` / `ConstNull`，与 VM `default_value_for(type_tag)` 表对齐。
 
-**Phase 1 限制**：T 必须是编译期可解析的具体类型。在 generic class / function 上下文写 `default(T)`（T 是 type-parameter）报 **E0421 InvalidDefaultType**，留待独立 spec `add-default-generic-typeparam` 解锁（Phase 2，依赖运行时 type_args 查询）。
+**泛型 type-parameter 支持**（Phase 2，2026-05-07 add-default-generic-typeparam）：在 generic class `Foo<T>` 的 instance method / ctor body 内 `default(T)` 走运行时解析路径 —— IR emit 新指令 `DefaultOf(dst, param_index)`（`param_index` 是 T 在类 type_params 中的 0-based 位置），VM 读 `frame.regs[0]`（this）的 `ScriptObject.type_args[idx]` → 走 `default_value_for(tag)`。
+`new Foo<int>()` 的实例 type_args = `["int"]`；`Foo<int>::Make()` 内 `default(T)` 真返 `0`，`Foo<string>` 实例返 `null`。
+
+边界：method-level type-param `m<U>()`、free generic function `f<T>()`、static method on generic class — 这些路径无 `this`，编译期通过但运行时退化为 `Value::Null`（graceful-degradation）。后续 spec 拓展 calling convention 让方法级 / free 也能传 type_args。
 
 ---
 

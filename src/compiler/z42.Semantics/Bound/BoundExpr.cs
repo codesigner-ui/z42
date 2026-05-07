@@ -33,7 +33,14 @@ public sealed record BoundLitChar(char Value, Span Span)
 /// fully-resolved primitive / class / interface / array / nullable). IrGen
 /// dispatches on Type to emit the appropriate `Const*` instruction without
 /// any new IR opcode. (add-default-expression, 2026-05-06)
-public sealed record BoundDefault(Z42Type Target, Span Span)
+///
+/// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): when T is a
+/// generic type-parameter, `GenericParamIndex` is set to its 0-based position
+/// in the enclosing class's TypeParams list (or 0 for graceful-degradation
+/// path: method-level type-param / free generic / unresolvable scope). IrGen
+/// emits `DefaultOfInstr` instead of Phase 1 Const*; runtime resolves
+/// `this.type_desc.type_args[GenericParamIndex]`.
+public sealed record BoundDefault(Z42Type Target, Span Span, int? GenericParamIndex = null)
     : BoundExpr(Target, Span);
 
 // ── Interpolated string ───────────────────────────────────────────────────────

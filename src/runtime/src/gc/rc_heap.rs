@@ -551,6 +551,9 @@ impl MagrGC for RcMagrGC {
         let class = type_desc.name.clone();
         let value = Value::Object(GcRef::new(ScriptObject {
             type_desc, slots, native,
+            // D-8b-3 Phase 2: type_args 默认为空；ObjNew 路径在 alloc 后通过
+            // GcRef 的 borrow_mut() 设置具体值。
+            type_args: Vec::new(),
         }));
         let size = self.object_size_bytes(&value);
         // Phase 3-OOM: strict 模式下若 alloc 后会越界，撤销并返 Null

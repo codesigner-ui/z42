@@ -1,15 +1,6 @@
-// E0421 InvalidDefaultType — default(T) on unknown / generic type-parameter.
-
-class Box<T> {
-    public T Value;
-    public Box(T v) {
-        this.Value = v;
-    }
-
-    public T MakeDefault() {
-        return default(T);              // E0421: generic type-param deferred
-    }
-}
+// E0421 InvalidDefaultType — default(T) on unknown type only.
+// Phase 2 (add-default-generic-typeparam) lifted the generic type-param
+// gate; that case is now valid and emits DefaultOfInstr.
 
 void Main() {
     var x = default(NoSuchType);        // E0421: type 'NoSuchType' not found

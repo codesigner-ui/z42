@@ -1,2 +1,1 @@
-*source.z42*: error E0421: *default(<T>) on generic type parameter is not yet supported*
 *source.z42*: error E0421: *default(<NoSuchType>): type not found*

@@ -105,6 +105,12 @@ pub struct ScriptObject {
     pub slots: Vec<Value>,
     /// Native backing for built-in types (e.g. StringBuilder buffer).
     pub native: NativeData,
+    /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): per-instance
+    /// generic type-arguments. For `new Foo<int, string>()` this is
+    /// `["int", "string"]`. Empty for non-generic classes and uninstantiated
+    /// generic definitions. Index aligns with `type_desc.type_params`.
+    /// Read by `DefaultOf` opcode and any future runtime type-args queries.
+    pub type_args: Vec<String>,
 }
 
 // ── Value ────────────────────────────────────────────────────────────────────

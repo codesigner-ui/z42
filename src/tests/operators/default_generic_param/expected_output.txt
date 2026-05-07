@@ -1,0 +1,2 @@
+int-default-is-0
+string-null

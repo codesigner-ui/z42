@@ -56,6 +56,8 @@ pub trait MagrGC: std::fmt::Debug {
     // ── 1. Allocation ────────────────────────────────────────────────────────
 
     /// 分配一个 `ScriptObject` 并以 `Value::Object` 返回。
+    /// 调用方负责通过 `type_args` 字段（默认 `vec![]`）后续 set 运行时泛型类型
+    /// 参数（D-8b-3 Phase 2）；本接口保持向后兼容，不强制每个调用点都传 type_args。
     fn alloc_object(
         &self,
         type_desc: Arc<TypeDesc>,

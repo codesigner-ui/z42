@@ -95,6 +95,11 @@ public static partial class ZbcWriter
                 WriteReg(w, i.Obj);
                 w.Write((uint)pool.Idx(i.FieldName));
                 break;
+            // D-8b-3 Phase 2: generic type-param `default(T)` runtime resolution
+            case DefaultOfInstr i:
+                w.Write(Opcodes.DefaultOf); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
+                w.Write(i.ParamIndex);
+                break;
             case LoadFnInstr i:
                 w.Write(Opcodes.LoadFn); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write((uint)pool.Idx(i.Func));
@@ -149,6 +154,12 @@ public static partial class ZbcWriter
                 w.Write((uint)pool.Idx(i.ClassName));
                 w.Write((uint)pool.Idx(i.CtorName));
                 WriteArgs(w, i.Args);
+                // D-8b-3 Phase 2: type_args 列表（resolved 泛型类型参数）
+                {
+                    var tArgs = i.TypeArgs ?? (IReadOnlyList<string>)Array.Empty<string>();
+                    w.Write((byte)tArgs.Count);
+                    foreach (var ta in tArgs) w.Write((uint)pool.Idx(ta));
+                }
                 break;
             case IsInstanceInstr i:
                 w.Write(Opcodes.IsInstance); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
@@ -284,7 +295,10 @@ public static partial class ZbcWriter
             case VCallInstr i:      pool.Intern(i.Method); break;
             case FieldGetInstr i:   pool.Intern(i.FieldName); break;
             case FieldSetInstr i:   pool.Intern(i.FieldName); break;
-            case ObjNewInstr i:     pool.Intern(i.ClassName); pool.Intern(i.CtorName); break;
+            case ObjNewInstr i:
+                pool.Intern(i.ClassName); pool.Intern(i.CtorName);
+                if (i.TypeArgs is { } tas) foreach (var ta in tas) pool.Intern(ta);
+                break;
             case IsInstanceInstr i: pool.Intern(i.ClassName); break;
             case AsCastInstr i:     pool.Intern(i.ClassName); break;
             case StaticGetInstr i:  pool.Intern(i.Field); break;
@@ -346,6 +360,7 @@ public static partial class ZbcWriter
             case LoadLocalAddrInstr i: v(i.Dst); v(i.Slot); break;
             case LoadElemAddrInstr i:  v(i.Dst); v(i.Arr); v(i.Idx); break;
             case LoadFieldAddrInstr i: v(i.Dst); v(i.Obj); break;
+            case DefaultOfInstr i: v(i.Dst); break;
             case LoadFnInstr i: v(i.Dst); break;
             case LoadFnCachedInstr i: v(i.Dst); break;
             case CallIndirectInstr i: v(i.Dst); v(i.Callee); foreach (var a in i.Args) v(a); break;

@@ -92,6 +92,10 @@ const OP_LOAD_LOCAL_ADDR: u8 = 0xA0;
 const OP_LOAD_ELEM_ADDR:  u8 = 0xA1;
 const OP_LOAD_FIELD_ADDR: u8 = 0xA2;
 
+// add-default-generic-typeparam (D-8b-3 Phase 2): runtime resolution of
+// `default(T)` where T is a generic type-parameter on the receiver class.
+const OP_DEFAULT_OF: u8 = 0xB0;
+
 // ── Type tag constants ────────────────────────────────────────────────────────
 
 const TAG_I64: u8 = 0x05;
@@ -579,7 +583,13 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             let class_name = pool_str_owned(pool, c.read_u32()?)?;
             let ctor_name  = pool_str_owned(pool, c.read_u32()?)?;
             let args       = read_args(c)?;
-            Instruction::ObjNew { dst, class_name, ctor_name, args }
+            // D-8b-3 Phase 2: type_args list (resolved generic type-arguments)
+            let t_count = c.read_u8()? as usize;
+            let mut type_args = Vec::with_capacity(t_count);
+            for _ in 0..t_count {
+                type_args.push(pool_str_owned(pool, c.read_u32()?)?);
+            }
+            Instruction::ObjNew { dst, class_name, ctor_name, args, type_args }
         }
         OP_IS_INSTANCE => {
             let obj        = c.read_u16()? as u32;
@@ -636,6 +646,12 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             let obj = c.read_u16()? as u32;
             let field_name = pool_str_owned(pool, c.read_u32()?)?;
             Instruction::LoadFieldAddr { dst, obj, field_name }
+        }
+
+        // add-default-generic-typeparam (D-8b-3 Phase 2)
+        OP_DEFAULT_OF => {
+            let param_index = c.read_u8()?;
+            Instruction::DefaultOf { dst, param_index }
         }
 
         _ => bail!("unknown opcode 0x{op:02X}"),

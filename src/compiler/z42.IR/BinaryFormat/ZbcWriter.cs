@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 8;   // 2026-04-26 cross-zpkg-impl-propagation: zpkg IMPL section carries cross-zpkg `impl Trait for Type` declarations
+    public const ushort VersionMinor = 9;   // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): new opcode `DefaultOf` (0xB0); old VMs cannot decode
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

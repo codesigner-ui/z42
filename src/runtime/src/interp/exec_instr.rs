@@ -206,6 +206,27 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
             }
         }
 
+        // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): runtime
+        // resolution of `default(T)` where T is a generic type-parameter of the
+        // receiver class. Reads `frame.regs[0]` (this) → `Object → instance.type_args[idx]`,
+        // looks up the resolved tag via `default_value_for(tag)`, writes result to dst.
+        // Non-Object reg 0 / OOB index / empty type_args → graceful Null.
+        // type_args is per-instance (populated by `obj.new`), not per-TypeDesc, so
+        // `Foo<int>` and `Foo<string>` instances differ at runtime despite sharing
+        // the same TypeDesc Arc (z42 erasure with per-instance type-arg view).
+        Instruction::DefaultOf { dst, param_index } => {
+            let val = match frame.get(0) {
+                Ok(Value::Object(rc)) => {
+                    let borrowed = rc.borrow();
+                    borrowed.type_args.get(*param_index as usize)
+                        .map(|tag| crate::metadata::types::default_value_for(tag))
+                        .unwrap_or(Value::Null)
+                }
+                _ => Value::Null,
+            };
+            frame.set(*dst, val);
+        }
+
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
             let arg_vals = collect_args(&frame.regs, args)?;
@@ -370,7 +391,7 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         }
 
         // ── Objects ──────────────────────────────────────────────────────────
-        Instruction::ObjNew { dst, class_name, ctor_name, args } => {
+        Instruction::ObjNew { dst, class_name, ctor_name, args, type_args } => {
             // L3-G4d: for imported classes (e.g. Std.Collections.Stack) the TypeDesc
             // may only exist in the lazy loader until first use; probe it before
             // falling back to a blank synthetic descriptor.
@@ -389,6 +410,14 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
                 .map(|f| crate::metadata::default_value_for(&f.type_tag))
                 .collect();
             let obj_val = ctx.heap().alloc_object(type_desc, slots, NativeData::None);
+
+            // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): populate
+            // per-instance type_args from the IR instruction. Read by `DefaultOf`.
+            if !type_args.is_empty() {
+                if let Value::Object(ref rc) = obj_val {
+                    rc.borrow_mut().type_args = type_args.clone();
+                }
+            }
 
             // 直查 ctor_name (TypeChecker 已 overload-resolve)；无名字推断。
             // L3-G4d: fall back to lazy loader when the ctor lives in a stdlib zpkg

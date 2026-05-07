@@ -101,6 +101,12 @@ public static partial class ZbcReader
                 var fieldName = P(pool, r.ReadUInt32());
                 return new LoadFieldAddrInstr(d, obj, fieldName);
             }
+            // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
+            case Opcodes.DefaultOf:
+            {
+                var paramIndex = r.ReadByte();
+                return new DefaultOfInstr(d, paramIndex);
+            }
             case Opcodes.LoadFn:
             {
                 var fn = P(pool, r.ReadUInt32());
@@ -164,7 +170,15 @@ public static partial class ZbcReader
                 var cls  = P(pool, r.ReadUInt32());
                 var ctor = P(pool, r.ReadUInt32());
                 var args = ReadArgs(r);
-                return new ObjNewInstr(d, cls, ctor, args);
+                // D-8b-3 Phase 2: type_args 列表
+                int tCount = r.ReadByte();
+                List<string>? typeArgs = null;
+                if (tCount > 0)
+                {
+                    typeArgs = new List<string>(tCount);
+                    for (int k = 0; k < tCount; k++) typeArgs.Add(P(pool, r.ReadUInt32()));
+                }
+                return new ObjNewInstr(d, cls, ctor, args, typeArgs);
             }
             case Opcodes.IsInstance:
             {

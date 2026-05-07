@@ -38,17 +38,6 @@
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
 
 
-## D-8b-3-Phase2 / add-default-generic-typeparam：泛型 type-param `default(T)`
-
-- **来源**：D-8b-3 拆分（2026-05-06 落地 Phase 1 时显式分离）
-- **触发原因**：当 T 是 generic class / function 的 type-parameter（如 `class Foo<T> { T x = default(T); }`）时，IR 层无 T 的具体类型；Phase 1 报 E0421 阻断
-- **缺失实现**：
-  - 新 IR 指令 `DefaultOf(dst, type_tag_str)` —— `type_tag_str` 可能是 generic-param 名（"T"/"R"）也可能是 mangled 类型
-  - VM 端按当前实例的 `type_desc.type_args` 查表（method 走 `this.type_desc.type_args[idx]`；free 函数需要 caller 传 type_args，需要新 calling convention）
-  - TypeChecker 在 generic 上下文允许 `default(T)`，emit DefaultOf；JIT helper 镜像
-- **前置依赖**：D-8b-3 Phase 1 已落地（`spec/archive/2026-05-06-add-default-expression/`）；现有 generic class instantiation type_args 路径已就绪
-- **触发条件**：D-8b-1 `MulticastException<R>.Results[i] = default(R)` 实施时；或任意泛型容器 / framework 代码需要"任意 T 的零值"时
-
 ---
 
 ## 已自动归档前的"成熟 follow-up"指南
@@ -75,6 +64,10 @@
 
 - **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
   实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。
+
+- **D-8b-3 Phase 2 / add-default-generic-typeparam**（泛型 type-param `default(T)` 运行时解析）：2026-05-07 落地，由 `spec/archive/2026-05-07-add-default-generic-typeparam/` 实施。
+  新 IR 指令 `DefaultOf(dst, param_index)`（opcode 0xB0），运行时读 `frame.regs[0]`（this）的 `ScriptObject.type_args[param_index]` → `default_value_for(tag)`。
+  实施期阶段 7 发现重大前置缺口 → User 裁决 A：本 spec 同时落地 type_args propagation 基础设施。改造点：① `ObjNewInstr` 增 `TypeArgs` 字段，C# IrGen 在 `EmitBoundNew` 把 `Z42InstantiatedType.TypeArgs` 序列化为 type-tag 字符串列表传给 IR；② zbc/zpkg writer + reader 双端编/解码 type_args；③ Rust `ScriptObject` struct 增 `type_args: Vec<String>` 字段，interp ObjNew handler 在 alloc 后 `borrow_mut` populate；④ JIT 路径 type_args 不传（保持 `jit_obj_new` 签名不变），JIT 实例 type_args 为空 → JIT 编译的 generic-class 方法内 `default(T)` 退化为 Null（与 LoadFieldAddr 同 trade-off：interp 是真值源，JIT 简单实现）。zbc 0.8 → 0.9。E0421 gate 改为只对 unknown type 触发；generic-T 走 `DefaultOf` 路径。method-level type-param / free generic / static method on generic class 当前不支持（无 `this` 路径），运行时 graceful 退化为 Null —— 留待后续 spec 拓展 calling convention 携带 type_args。新 3 个 golden（`default_generic_param/`, `default_generic_param_pair/`, `default_generic_param_field_init/`，均带 `interp_only` 标记）+ 2 个 xUnit case 验证。
 
 - **D-8b-1**（stdlib `MulticastException<R>` 泛型类）：2026-05-07 落地，由 `spec/archive/2026-05-07-add-multicast-exception-generic/` 实施。
   新增 `Std.MulticastException<R> : MulticastException`，字段 `Results: R[]`；构造器走 ctor delegation `: base(failures, indices, totalHandlers)` 把父类字段初始化交给 base ctor。利用 D-8b-0 shadow-only mangling 与已存在的非泛型同名 base 共存（IR-side `MulticastException$1`，源码 `MulticastException`）。实施过程中发现两处依赖修复：①`ExportedTypeExtractor` 把 `sem.Classes` 的注册键（mangled `Foo$N`）当 `ExportedClassDef.Name` emit，导致消费者 `Z42ClassType.Name` 与自身 ctor 方法键（源码裸名）不一致 → 改 emit `ct.Name`（源码裸名），消费者 `ImportedSymbolLoader` 在 `byName` 分组检测同名 + 不同 arity 时 re-apply mangle 进 importKey；② `FunctionEmitter` 的 `isCtor = method.Name == className` 在 IR 端 className mangled 时漏判（base ctor / field-init 全跳过）→ 加 `sourceClassName` 去除 `$N` 后缀再比对。MulticastFunc / MulticastPredicate 切换到泛型 `MulticastException<R>` 仍依赖 D-8b-3 Phase 2，留作独立 follow-up。
