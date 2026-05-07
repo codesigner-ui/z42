@@ -463,7 +463,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **M6 → M7 之间** | `introduce-bound-visitor` — 引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>`，迁 `FunctionEmitter*` 与 `TypeChecker.Exprs` | refactor | Part 1 §1.1、§1.3 + Part 2 §2.1；为 §3.2 dump-ast 提供基础 | 📋 |
 | **M6 → M7 之间** | `parser-error-recovery` — 启用现有 ErrorStmt/ErrorExpr 节点，多错聚合 | refactor | Part 2 §2.2 + Part 3 §3.7，LSP 前置 | 📋 |
 | **部分完成** | `split-function-emitter-exprs` — FunctionEmitterExprs.cs (878→274 主) + 5 partial | refactor | Part 1 §1.1 (1/4 P0 文件) | 🟢 2026-05-07 |
-| **M6 → M7 之间** | `split-irgen` — IrGen.cs (806 LOC) | refactor | Part 1 §1.1 (2/4) | 📋 |
+| **已落地** | `split-irgen` — IrGen.cs (806→198 主) + 5 partial | refactor | Part 1 §1.1 (2/4) | 🟢 2026-05-07 |
 | **M6 → M7 之间** | `split-imported-symbol-loader` — ImportedSymbolLoader.cs (730 LOC，按 Phase 拆) | refactor | Part 1 §1.1 (3/4) | 📋 |
 | **M6 → M7 之间** | `split-typechecker-calls` — TypeChecker.Calls.cs (686 LOC) | refactor | Part 1 §1.1 (4/4) | 📋 |
 | **部分完成** | `split-typechecker-tests` — TypeCheckerTests.cs (1730→177 主) + 6 partial 文件（每 ≤ 483 LOC）；rc_heap_tests 留独立 spec | refactor | Part 1 §1.4 (C#) | 🟢 2026-05-07 |
