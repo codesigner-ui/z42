@@ -941,5 +941,5 @@ impl MagrGC for RcMagrGC {
 }
 
 #[cfg(test)]
-#[path = "rc_heap_tests.rs"]
+#[path = "rc_heap_tests/mod.rs"]
 mod rc_heap_tests;

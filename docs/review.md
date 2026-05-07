@@ -464,7 +464,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **M6 → M7 之间** | `parser-error-recovery` — 启用现有 ErrorStmt/ErrorExpr 节点，多错聚合 | refactor | Part 2 §2.2 + Part 3 §3.7，LSP 前置 | 📋 |
 | **M6 → M7 之间** | `split-large-codegen-files` — IrGen、ImportedSymbolLoader、TypeChecker.Calls | refactor | Part 1 §1.1 残留 | 📋 |
 | **部分完成** | `split-typechecker-tests` — TypeCheckerTests.cs (1730→177 主) + 6 partial 文件（每 ≤ 483 LOC）；rc_heap_tests 留独立 spec | refactor | Part 1 §1.4 (C#) | 🟢 2026-05-07 |
-| **M6 → M7 之间** | `split-rc-heap-tests` — rc_heap_tests.rs (1229 LOC) → 子目录按 GC 主题拆分 | refactor | Part 1 §1.4 (Rust) | 📋 |
+| **已落地** | `split-rc-heap-tests` — rc_heap_tests.rs (1229 LOC) → `rc_heap_tests/` 子目录 10 个 topic 文件（最大 228 LOC） | refactor | Part 1 §1.4 (Rust) — **§1.4 整体收口** | 🟢 2026-05-07 |
 | **M6 → M7 之间** | `impl-dump-ast` — 实现 `--dump-ast` handler（依赖 `introduce-bound-visitor`） | refactor | Part 3 §3.2 | 📋 |
 | **M7 启动前**（**关键前置**） | `split-symbol-from-type` — 抽 `ISymbol` 层；**Symbol 持有 `DeclSpan`，根除 §3.1 Decl 身份丢失** | lang | Part 2 §2.3 + Part 3 §3.1，R-series 反射前置 | 📋 |
 | **M7 期间** | `lexer-trivia-preserve` — lexer 加 trivia 字段（可空） | refactor | Part 2 §2.5，formatter 前置 | 📋 |
