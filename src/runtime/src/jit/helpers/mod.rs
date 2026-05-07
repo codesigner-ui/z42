@@ -1,17 +1,37 @@
-/// `extern "C"` helper functions called by JIT-compiled code.
+/// `extern "C"` helper functions called by JIT-compiled code, plus the
+/// shared utilities and helper-table registry.
 ///
-/// All Value operations are implemented here; the Cranelift-generated native
-/// code only handles control flow (branches / jumps).
+/// Architecture
+/// ------------
+/// * Each `Instruction` category lives in its own submodule, mirroring
+///   the interpreter's `interp/exec_*.rs` split (see `docs/design/vm-architecture.md`
+///   §"JIT/EE helper 边界")
+/// * `registry.rs` is the single source of truth for the helper set:
+///   it owns `HelperIds` (one `FuncId` per helper) and the two registration
+///   functions consumed by `jit/mod.rs` and `jit/translate.rs`
+/// * `mod.rs` (this file) keeps the small set of cross-cutting utilities
+///   that every helper needs (`vm_ctx_ref`, `set_exception`, ...) so
+///   submodules can `use super::*;`
 ///
-/// Convention:
-///   Functions that can fail return u8: 0=success, 1=exception (stored on ctx).
-///   Functions that cannot fail return ().
-///
-/// Split into submodules by category:
-///   helpers.rs        — shared state access (exceptions, static fields), common helpers
-///   helpers_arith.rs  — arithmetic, comparison, logical, unary, bitwise
-///   helpers_mem.rs    — constants, copy, variable slots, string ops, control-flow
-///   helpers_object.rs — function calls, arrays, objects, type checks, static fields
+/// Convention
+/// ----------
+///   * Functions that can fail return `u8`: 0 = success, 1 = exception
+///     (stored on `VmContext` via `set_exception`)
+///   * Functions that cannot fail return `()`
+///   * Every helper takes `frame: *mut JitFrame, ctx: *const JitModuleCtx`
+///     as the first two parameters
+
+pub mod arith;
+pub mod array;
+pub mod call;
+pub mod closure;
+pub mod control;
+pub mod object;
+pub mod registry;
+pub mod value;
+pub mod vcall;
+
+pub use registry::{declare_imports, register_symbols, HelperIds};
 
 use crate::corelib::convert::value_to_str;
 use crate::metadata::Value;
@@ -19,16 +39,24 @@ use crate::vm_context::VmContext;
 
 use super::frame::{JitFrame, JitModuleCtx};
 
-// ── VmContext access via JitModuleCtx ───────────────────────────────────────
+// ─── ABI version ────────────────────────────────────────────────────────────
 //
-// Every JIT helper now receives `*const JitModuleCtx` as its 2nd parameter
+// Bumped whenever the helper set or any helper signature changes. There is
+// no runtime version check in the current single-JIT-implementation regime —
+// this constant exists as a hook for future tier-up / multiple JIT backend
+// scenarios (review.md Part 4 §4.2). When that arrives, the consumer will
+// fail the JIT init if its compiled-against version doesn't match.
+
+#[allow(dead_code)] // hook for future tier-up / multiple JIT backend version-mismatch detection
+pub const VM_JIT_INTERFACE_VERSION: u32 = 1;
+
+// ─── VmContext access via JitModuleCtx ──────────────────────────────────────
+//
+// Every JIT helper receives `*const JitModuleCtx` as its 2nd parameter
 // (after `*mut JitFrame`). The `JitModuleCtx::vm_ctx: *mut VmContext` field
 // (set by `JitModule::run` for the duration of one entry call) is the only
 // runtime-mutable VM state — the previous `PENDING_EXCEPTION` and
 // `STATIC_FIELDS` thread_local slots have been removed.
-//
-// extend-jit-helper-abi (2026-04-28) — closes the C1 follow-up that left
-// these as `sync_in_from_ctx` / `sync_out_to_ctx` bridges.
 
 /// Borrow the VmContext from a JitModuleCtx pointer for the duration of the
 /// helper call.
@@ -50,7 +78,7 @@ pub(super) fn take_exception(ctx: &VmContext) -> Option<Value> {
     ctx.take_exception()
 }
 
-pub(super) fn take_exception_error(ctx: &VmContext) -> anyhow::Error {
+pub fn take_exception_error(ctx: &VmContext) -> anyhow::Error {
     let msg = take_exception(ctx)
         .as_ref()
         .map(value_to_str)
@@ -58,15 +86,11 @@ pub(super) fn take_exception_error(ctx: &VmContext) -> anyhow::Error {
     anyhow::anyhow!("{}", msg)
 }
 
-// `static_get` / `static_set` are accessed directly through `VmContext` methods
-// at the helper call sites (see `helpers_object::jit_static_get/set`); no
-// helper-layer wrapper needed.
-
-// ── JIT function type alias ───────────────────────────────────────────────────
+// ─── JIT function type alias ────────────────────────────────────────────────
 
 pub type JitFn = unsafe extern "C" fn(frame: *mut JitFrame, ctx: *const JitModuleCtx) -> u8;
 
-// ── Shared numeric helpers ────────────────────────────────────────────────────
+// ─── Shared numeric helpers ─────────────────────────────────────────────────
 
 pub(super) fn int_binop_helper(
     va: &Value, vb: &Value,

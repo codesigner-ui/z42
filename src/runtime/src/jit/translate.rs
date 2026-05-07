@@ -2,7 +2,7 @@
 ///
 /// One z42 basic block maps to one Cranelift block.
 /// All value-level operations are dispatched to `extern "C"` helper functions
-/// (see `helpers.rs`).  Only branches, jumps, and function entry/exit are
+/// (see `helpers/`). Only branches, jumps, and function entry/exit are
 /// emitted as inline Cranelift instructions.
 
 use crate::metadata::{Function, Instruction, Terminator};
@@ -11,174 +11,11 @@ use cranelift_codegen::ir::{AbiParam, InstBuilder};
 use cranelift_codegen::ir::types;
 use cranelift_codegen::Context;
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
-use cranelift_module::{FuncId, Linkage, Module as CraneliftModule};
+use cranelift_module::{FuncId, Module as CraneliftModule};
 use cranelift_jit::JITModule;
 use std::collections::HashMap;
 
-// ═════════════════════════════════════════════════════════════════════════════
-// HelperIds — module-level FuncId for each helper (not per-function)
-// ═════════════════════════════════════════════════════════════════════════════
-
-pub struct HelperIds {
-    pub const_i32:      FuncId,
-    pub const_i64:      FuncId,
-    pub const_f64:      FuncId,
-    pub const_bool:     FuncId,
-    pub const_char:     FuncId,
-    pub const_null:     FuncId,
-    pub const_str:      FuncId,
-    pub copy:           FuncId,
-    pub add:            FuncId,
-    pub sub:            FuncId,
-    pub mul:            FuncId,
-    pub div:            FuncId,
-    pub rem:            FuncId,
-    pub eq:             FuncId,
-    pub ne:             FuncId,
-    pub lt:             FuncId,
-    pub le:             FuncId,
-    pub gt:             FuncId,
-    pub ge:             FuncId,
-    pub and:            FuncId,
-    pub or:             FuncId,
-    pub not:            FuncId,
-    pub neg:            FuncId,
-    pub bit_and:        FuncId,
-    pub bit_or:         FuncId,
-    pub bit_xor:        FuncId,
-    pub bit_not:        FuncId,
-    pub shl:            FuncId,
-    pub shr:            FuncId,
-    pub str_concat:     FuncId,
-    pub to_str:         FuncId,
-    pub call:           FuncId,
-    pub builtin:        FuncId,
-    pub array_new:      FuncId,
-    pub array_new_lit:  FuncId,
-    pub array_get:      FuncId,
-    pub array_set:      FuncId,
-    pub array_len:      FuncId,
-    pub obj_new:        FuncId,
-    pub field_get:      FuncId,
-    pub field_set:      FuncId,
-    pub vcall:          FuncId,
-    pub is_instance:    FuncId,
-    pub as_cast:        FuncId,
-    pub static_get:     FuncId,
-    pub static_set:     FuncId,
-    pub get_bool:       FuncId,
-    pub set_ret:        FuncId,
-    pub throw:          FuncId,
-    pub install_catch:  FuncId,
-    /// catch-by-generic-type (2026-05-06): peek at pending exception's class +
-    /// subclass walk vs `target` string. Returns 1 on match, 0 otherwise.
-    pub match_catch_type: FuncId,
-    // L3 closure helpers (impl-closure-l3-jit-complete)
-    pub load_fn:        FuncId,
-    pub mk_clos:        FuncId,
-    pub call_indirect:  FuncId,
-    // D1b add-method-group-conversion: cached method group conversion
-    pub load_fn_cached: FuncId,
-    // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
-    pub default_of:     FuncId,
-}
-
-// ═════════════════════════════════════════════════════════════════════════════
-// declare_helpers — register all helpers in the JITModule
-// ═════════════════════════════════════════════════════════════════════════════
-
-pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
-    let ptr  = jit.target_config().pointer_type();
-    let i8t  = types::I8;
-    let i32t = types::I32;
-    let i64t = types::I64;
-    let f64t = types::F64;
-
-    macro_rules! decl {
-        ($name:expr, [$($p:expr),*], [$($r:expr),*]) => {{
-            let mut sig = jit.make_signature();
-            $(sig.params.push(AbiParam::new($p));)*
-            $(sig.returns.push(AbiParam::new($r));)*
-            jit.declare_function($name, Linkage::Import, &sig)?
-        }};
-    }
-
-    // extend-jit-helper-abi (2026-04-28): every helper now receives
-    // `ctx: *const JitModuleCtx` as 2nd param (after `frame`). Helper bodies
-    // reach VmContext via `(*ctx).vm_ctx`, replacing the previous
-    // `thread_local!` slots in `helpers.rs`.
-    Ok(HelperIds {
-        const_i32:     decl!("jit_const_i32",  [ptr, ptr, i32t, i32t],                    []),
-        const_i64:     decl!("jit_const_i64",  [ptr, ptr, i32t, i64t],                    []),
-        const_f64:     decl!("jit_const_f64",  [ptr, ptr, i32t, f64t],                    []),
-        const_bool:    decl!("jit_const_bool", [ptr, ptr, i32t, i8t],                     []),
-        const_char:    decl!("jit_const_char", [ptr, ptr, i32t, i32t],                    []),
-        const_null:    decl!("jit_const_null", [ptr, ptr, i32t],                           []),
-        const_str:     decl!("jit_const_str",  [ptr, ptr, i32t, i32t],                    [i8t]),
-        copy:          decl!("jit_copy",       [ptr, ptr, i32t, i32t],                    []),
-        add:           decl!("jit_add",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        sub:           decl!("jit_sub",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        mul:           decl!("jit_mul",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        div:           decl!("jit_div",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        rem:           decl!("jit_rem",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        eq:            decl!("jit_eq",         [ptr, ptr, i32t, i32t, i32t],              []),
-        ne:            decl!("jit_ne",         [ptr, ptr, i32t, i32t, i32t],              []),
-        lt:            decl!("jit_lt",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        le:            decl!("jit_le",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        gt:            decl!("jit_gt",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        ge:            decl!("jit_ge",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        and:           decl!("jit_and",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        or:            decl!("jit_or",         [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        not:           decl!("jit_not",        [ptr, ptr, i32t, i32t],                    [i8t]),
-        neg:           decl!("jit_neg",        [ptr, ptr, i32t, i32t],                    [i8t]),
-        bit_and:       decl!("jit_bit_and",    [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        bit_or:        decl!("jit_bit_or",     [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        bit_xor:       decl!("jit_bit_xor",    [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        bit_not:       decl!("jit_bit_not",    [ptr, ptr, i32t, i32t],                    [i8t]),
-        shl:           decl!("jit_shl",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        shr:           decl!("jit_shr",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        str_concat:    decl!("jit_str_concat", [ptr, ptr, i32t, i32t, i32t],              [i8t]),
-        to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],                    [i8t]),
-        // jit_call(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8
-        call:          decl!("jit_call",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t],    [i8t]),
-        // jit_builtin(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8
-        builtin:       decl!("jit_builtin",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t],    [i8t]),
-        array_new:     decl!("jit_array_new",     [ptr, ptr, i32t, i32t],                 [i8t]),
-        array_new_lit: decl!("jit_array_new_lit", [ptr, ptr, i32t, ptr, i64t],            []),
-        array_get:     decl!("jit_array_get",     [ptr, ptr, i32t, i32t, i32t],           [i8t]),
-        array_set:     decl!("jit_array_set",     [ptr, ptr, i32t, i32t, i32t],           [i8t]),
-        array_len:     decl!("jit_array_len",     [ptr, ptr, i32t, i32t],                 [i8t]),
-        // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc,
-        //             type_args_ptr, type_args_count) -> u8
-        // 2026-05-07 expand-jit-type-args: last 2 params carry per-instance generic
-        // type-args (D-8b-3 Phase 2 JIT path completion).
-        obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
-        field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t],         [i8t]),
-        field_set:     decl!("jit_field_set",  [ptr, ptr, i32t, ptr, i64t, i32t],         [i8t]),
-        // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc) -> u8
-        vcall:         decl!("jit_vcall",      [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t], [i8t]),
-        is_instance:   decl!("jit_is_instance",[ptr, ptr, i32t, i32t, ptr, i64t],         []),
-        as_cast:       decl!("jit_as_cast",    [ptr, ptr, i32t, i32t, ptr, i64t],         []),
-        static_get:    decl!("jit_static_get", [ptr, ptr, i32t, ptr, i64t],               []),
-        static_set:    decl!("jit_static_set", [ptr, ptr, ptr, i64t, i32t],               []),
-        get_bool:      decl!("jit_get_bool",      [ptr, ptr, i32t],                       [i8t]),
-        set_ret:       decl!("jit_set_ret",       [ptr, ptr, i32t],                       []),
-        throw:         decl!("jit_throw",         [ptr, ptr, i32t],                       []),
-        install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
-        // jit_match_catch_type(frame, ctx, target_ptr, target_len) -> i8
-        match_catch_type: decl!("jit_match_catch_type", [ptr, ptr, ptr, i64t],            [i8t]),
-        // jit_load_fn(frame, ctx, dst, name_ptr, name_len) -> u8
-        load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
-        // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len, stack_alloc:u8) -> u8
-        mk_clos:        decl!("jit_mk_clos",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t, i8t], [i8t]),
-        // jit_call_indirect(frame, ctx, dst, callee, args_ptr, args_len) -> u8
-        call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t],            [i8t]),
-        // jit_load_fn_cached(frame, ctx, dst, name_ptr, name_len, slot_id) -> u8
-        load_fn_cached: decl!("jit_load_fn_cached", [ptr, ptr, i32t, ptr, i64t, i32t],           [i8t]),
-        // jit_default_of(frame, ctx, dst, param_index) -> u8
-        default_of:     decl!("jit_default_of",     [ptr, ptr, i32t, i32t],                      [i8t]),
-    })
-}
+pub use super::helpers::HelperIds;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // max_reg — largest register index used in a function

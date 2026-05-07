@@ -1,10 +1,10 @@
 #![allow(dangerous_implicit_autorefs)]
-// JIT helpers — arithmetic, comparison, logical, unary, bitwise operations.
+//! Arithmetic, comparison, logical, unary, and bitwise helpers.
 
-use crate::metadata::Value;
-use super::frame::{JitFrame, JitModuleCtx};
-use super::helpers::{set_exception, vm_ctx_ref, int_binop_helper, int_bitop_helper, numeric_lt_helper};
 use crate::corelib::convert::value_to_str;
+use crate::metadata::Value;
+use super::super::frame::{JitFrame, JitModuleCtx};
+use super::{set_exception, vm_ctx_ref, int_binop_helper, int_bitop_helper, numeric_lt_helper};
 
 // ── Arithmetic ───────────────────────────────────────────────────────────────
 

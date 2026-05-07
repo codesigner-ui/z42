@@ -321,6 +321,58 @@ match callee_value {
 
 ---
 
+## JIT/EE helper 边界（2026-05-07 formalize-jit-vm-interface）
+
+位置：`src/runtime/src/jit/helpers/`
+
+**问题**: JIT-compiled native code 需要回调 VM 完成所有非纯算术操作（构造对象、字符串、调度虚方法、读静态字段、抛/捕异常等）。这些回调被称为 "helper"，每个是一个 `#[no_mangle] pub unsafe extern "C" fn jit_xxx(...)`。Cranelift 通过 symbol-by-name 解析（`JITBuilder::symbol(name, ptr)`）让生成的 native code 调到 helper。
+
+**要求**: 单一改动点。加新 helper 不能让人在 3 个文件里同步签名（容易漂移）。
+
+**结构**: 三个职责文件 + 按 `Instruction` 类别拆的 helper 子文件:
+
+```
+jit/helpers/
+├── mod.rs        — 共享工具（vm_ctx_ref / set_exception / 数值 helper）+
+│                   VM_JIT_INTERFACE_VERSION
+├── registry.rs   — 中央注册表（单一真相源）
+│                   ├── HelperIds {fields...}     ← 一字段一 FuncId
+│                   ├── register_symbols(builder) ← 给 JITBuilder 绑名→指针
+│                   └── declare_imports(jit) -> HelperIds
+│                                                 ← 给 JITModule 声明签名
+├── value.rs      — Const* / Copy / 字符串 / get_bool / set_ret
+├── arith.rs      — 算术 / 比较 / 逻辑 / 一元 / 位运算
+├── control.rs    — throw / install_catch / match_catch_type
+├── call.rs       — jit_call / jit_builtin
+├── array.rs      — Array*
+├── object.rs     — ObjNew / Field* / IsInstance / AsCast / Static* / default_of
+├── vcall.rs      — 虚调用（独立文件，含 primitive-as-struct + 懒加载 fallback）
+└── closure.rs    — load_fn / load_fn_cached / mk_clos / call_indirect
+```
+
+**与 `interp/exec_*.rs` 命名对称**: 加新 IR 指令时，interp 与 JIT 改的文件名一一对应（`exec_value.rs` ↔ `helpers/value.rs`），认知负担最小。
+
+**消费者**: 
+- `jit/mod.rs::compile_module` 调 `helpers::register_symbols(&mut builder)` 一次
+- `jit/translate.rs` 通过 `pub use super::helpers::HelperIds;` 重导，并消费 `helpers::declare_imports(&mut jit)` 拿 `HelperIds`
+
+**新增 helper 改 2 处**（不再是 3 处）:
+1. `helpers/<category>.rs` 添加 `pub unsafe extern "C" fn jit_xxx(...)` 函数体
+2. `helpers/registry.rs` 添加:
+   - `HelperIds.xxx: FuncId` 字段
+   - `register_symbols` 中 `reg!("jit_xxx", category::jit_xxx);` 行
+   - `declare_imports` 返回的 `HelperIds {...}` 中 `xxx: decl!("jit_xxx", [params...], [returns...]);` 行
+
+`mod.rs` 与 `translate.rs` 都不再需要知道 helper 列表。
+
+**`VM_JIT_INTERFACE_VERSION: u32 = 1` 作为 hook**: 当前没有运行时校验消费者——单一 JITModule 实现，bump 这个常量当 helper 集合或签名变化时即可。未来若引入第二个 JIT 后端（LLVM / wasm）或多版本 tier-up，启动时校验该值与编译期版本是否兼容，避免 cross-version helper 错配。属于 review.md Part 4 §4.2 提出的"边界形式化"目标，**不引入校验代码避免过度设计**，留 hook 即可。
+
+**为什么不引入 trait**: trait object dispatch 会带来间接调用开销，违背 zero-cost helper 设计；且 helper 已经走 cranelift symbol 解析机制（按名解析），用 trait 反而绕路。保留 `extern "C"` 直调零开销，仅在边界**形态**上做形式化（HelperIds + registry），不动**调用机制**。
+
+**与 CoreCLR `ICorJitInfo` 对照**: CoreCLR 的 JIT/EE 边界是 callback-based vtable（`ICorJitInfo` 含 ~100 callback），versioned via GUID。z42 当前 ~50 helper、单实现、symbol-by-name 解析——比 ICorJitInfo 简洁但同方向（"单一边界 + 版本号"）。等需要支持多 JIT 后端时再考虑升级到 vtable 形态。
+
+---
+
 ## corelib builtin dispatch
 
 位置：`src/runtime/src/corelib/`

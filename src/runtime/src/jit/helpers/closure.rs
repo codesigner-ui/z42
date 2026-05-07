@@ -1,10 +1,10 @@
 #![allow(dangerous_implicit_autorefs)]
-//! L3 closure JIT helpers — `LoadFn` / `MkClos` / `CallIndirect`.
+//! L3 closure JIT helpers — `LoadFn` / `LoadFnCached` / `MkClos` / `CallIndirect`.
 //!
-//! Behaviour mirrors `interp::exec_instr` (impl-closure-l3-core); see
-//! `docs/design/closure.md` §6 + `spec/archive/2026-05-02-impl-closure-l3-jit-complete/`.
+//! Behaviour mirrors `interp::exec_call` / `exec_instr` (impl-closure-l3-core);
+//! see `docs/design/closure.md` §6 + `spec/archive/2026-05-02-impl-closure-l3-jit-complete/`.
 //!
-//! Convention follows the rest of `jit/helpers_*`:
+//! Convention follows the rest of `jit/helpers/`:
 //!   • Every helper takes `frame: *mut JitFrame, ctx: *const JitModuleCtx` first.
 //!   • Returns `u8`: 0 on success, 1 on exception (set via `set_exception`).
 //!   • Strings / register-index slices are passed as `(ptr, len)` pairs whose
@@ -12,8 +12,8 @@
 
 use crate::metadata::Value;
 
-use super::frame::{FnEntry, JitFrame, JitModuleCtx};
-use super::helpers::{set_exception, vm_ctx_ref, JitFn};
+use super::super::frame::{FnEntry, JitFrame, JitModuleCtx};
+use super::{set_exception, vm_ctx_ref, JitFn};
 
 // ── LoadFn ────────────────────────────────────────────────────────────────────
 
