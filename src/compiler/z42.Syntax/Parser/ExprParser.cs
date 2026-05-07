@@ -37,12 +37,14 @@ internal static partial class ExprParser
     // ── Delegate types ────────────────────────────────────────────────────────
 
     /// Prefix / atom handler: triggering token already consumed; `cursor` is after it.
+    /// `diags` flows through recursive Parse calls so per-arg / per-subexpr recovery
+    /// can localize errors (spec enhance-expr-recovery, 2026-05-08).
     private delegate ParseResult<Expr> NudFn(
-        TokenCursor cursor, Token tok, LanguageFeatures feat);
+        TokenCursor cursor, Token tok, LanguageFeatures feat, DiagnosticBag? diags);
 
     /// Infix / postfix handler: operator token already consumed; `cursor` is after it.
     private delegate ParseResult<Expr> LedFn(
-        TokenCursor cursor, Expr left, Token tok, LanguageFeatures feat);
+        TokenCursor cursor, Expr left, Token tok, LanguageFeatures feat, DiagnosticBag? diags);
 
     private sealed record NudEntry(NudFn Fn, LanguageFeature? Feature = null);
     private sealed record LedEntry(int Bp, LedFn Fn, LanguageFeature? Feature = null);
@@ -50,8 +52,36 @@ internal static partial class ExprParser
     // ── Entry point ───────────────────────────────────────────────────────────
 
     /// Parse an expression with the given minimum binding power (0 = full expression).
+    ///
+    /// 错误恢复（spec enhance-expr-recovery, 2026-05-08）：当 caller 传入
+    /// `DiagnosticBag` 时，遇到 ParseException 不再冒泡——改为把错误写进
+    /// `diags` 并返回 `ParseResult.Ok(ErrorExpr, cursor_at_sync_point)`。
+    /// caller 可以继续解析剩余 input。`diags == null` 时保持原 throw 行为
+    /// （test 路径 fail-fast）。
     internal static ParseResult<Expr> Parse(
-        TokenCursor cursor, LanguageFeatures feat, int minBp = 0)
+        TokenCursor cursor, LanguageFeatures feat, int minBp = 0,
+        DiagnosticBag? diags = null)
+    {
+        if (diags == null)
+            return ParseInternal(cursor, feat, minBp, diags: null);
+
+        try
+        {
+            return ParseInternal(cursor, feat, minBp, diags);
+        }
+        catch (ParseException ex)
+        {
+            diags.Error(ex.Code ?? DiagnosticCodes.UnexpectedToken,
+                        ex.Message, ex.Span);
+            var skipped = SkipToExprBoundary(cursor);
+            return ParseResult<Expr>.Ok(new ErrorExpr(ex.Message, ex.Span), skipped);
+        }
+    }
+
+    /// Pratt 主体（行为不变；提取自原 Parse 以便上层 try/catch 包裹）。
+    /// `diags` 透传给 Nud/Led 以支持子表达式独立恢复；`null` 时维持 throw 语义。
+    private static ParseResult<Expr> ParseInternal(
+        TokenCursor cursor, LanguageFeatures feat, int minBp, DiagnosticBag? diags)
     {
         var span = cursor.Current.Span;
 
@@ -76,7 +106,7 @@ internal static partial class ExprParser
 
         var nudTok = cursor.Current;
         cursor = cursor.Advance();
-        var r = nudEntry.Fn(cursor, nudTok, feat);
+        var r = nudEntry.Fn(cursor, nudTok, feat, diags);
         if (!r.IsOk) return r;
         cursor = r.Remainder;
         var left = r.Value;
@@ -89,7 +119,7 @@ internal static partial class ExprParser
 
             var ledTok = cursor.Current;
             cursor = cursor.Advance();
-            var lr = ledEntry.Fn(cursor, left, ledTok, feat);
+            var lr = ledEntry.Fn(cursor, left, ledTok, feat, diags);
             if (!lr.IsOk) return lr;
             cursor = lr.Remainder;
             left   = lr.Value;
@@ -98,30 +128,51 @@ internal static partial class ExprParser
         return ParseResult<Expr>.Ok(left, cursor);
     }
 
+    /// Skip tokens to the next expression sync point (`,` `)` `]` `;` `}` or EOF).
+    /// 平面 skip：不跟踪嵌套深度（嵌套由外层 ArgList / block 循环条件管控）。
+    /// spec enhance-expr-recovery design Decision 3.
+    private static TokenCursor SkipToExprBoundary(TokenCursor cursor)
+    {
+        while (!cursor.IsEnd)
+        {
+            var k = cursor.Current.Kind;
+            if (k is TokenKind.Comma
+                  or TokenKind.RParen
+                  or TokenKind.RBracket
+                  or TokenKind.RBrace
+                  or TokenKind.Semicolon)
+                break;
+            cursor = cursor.Advance();
+        }
+        return cursor;
+    }
+
     // ── Led implementations (must be declared before s_ledTable) ─────────────
 
-    private static LedFn BinaryLeft(string op, int bp) => (cursor, left, tok, feat) =>
-        Parse(cursor, feat, bp).Map(right => (Expr)new BinaryExpr(op, left, right, left.Span));
+    private static LedFn BinaryLeft(string op, int bp) => (cursor, left, tok, feat, diags) =>
+        Parse(cursor, feat, bp, diags).Map(right => (Expr)new BinaryExpr(op, left, right, left.Span));
 
-    private static readonly LedFn Assign = (cursor, left, tok, feat) =>
-        Parse(cursor, feat, BpAssign - 1).Map(right => (Expr)new AssignExpr(left, right, left.Span));
+    private static readonly LedFn Assign = (cursor, left, tok, feat, diags) =>
+        Parse(cursor, feat, BpAssign - 1, diags).Map(right => (Expr)new AssignExpr(left, right, left.Span));
 
-    private static LedFn CompoundAssign(string binOp) => (cursor, left, tok, feat) =>
-        Parse(cursor, feat, BpAssign - 1).Map(right =>
+    private static LedFn CompoundAssign(string binOp) => (cursor, left, tok, feat, diags) =>
+        Parse(cursor, feat, BpAssign - 1, diags).Map(right =>
             (Expr)new AssignExpr(left, new BinaryExpr(binOp, left, right, left.Span), left.Span));
 
-    private static LedFn Postfix(string op) => (cursor, left, tok, feat) =>
+    private static LedFn Postfix(string op) => (cursor, left, tok, feat, diags) =>
         Ok(new PostfixExpr(op, left, left.Span), cursor);
 
-    private static readonly LedFn CallLed = (cursor, left, tok, feat) =>
+    private static readonly LedFn CallLed = (cursor, left, tok, feat, diags) =>
     {
         // allowModifiers: spec define-ref-out-in-parameters — `f(ref x)` etc.
-        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true);
+        // diags: spec enhance-expr-recovery — single bad arg becomes ErrorExpr
+        // and parsing of subsequent args continues.
+        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true, diags: diags);
         Expect(ref cursor, TokenKind.RParen);
         return Ok(new CallExpr(left, args, left.Span), cursor);
     };
 
-    private static readonly LedFn MemberAccessLed = (cursor, left, tok, feat) =>
+    private static readonly LedFn MemberAccessLed = (cursor, left, tok, feat, diags) =>
     {
         if (cursor.Current.Kind != TokenKind.Identifier)
             throw new ParseException(
@@ -133,16 +184,16 @@ internal static partial class ExprParser
         return Ok(new MemberExpr(left, member, left.Span), cursor);
     };
 
-    private static readonly LedFn IndexAccessLed = (cursor, left, tok, feat) =>
+    private static readonly LedFn IndexAccessLed = (cursor, left, tok, feat, diags) =>
     {
-        var idxR = Parse(cursor, feat);
+        var idxR = Parse(cursor, feat, diags: diags);
         if (!idxR.IsOk) return idxR;
         cursor = idxR.Remainder;
         Expect(ref cursor, TokenKind.RBracket);
         return Ok(new IndexExpr(left, idxR.Value, left.Span), cursor);
     };
 
-    private static readonly LedFn QuestionLed = (cursor, left, tok, feat) =>
+    private static readonly LedFn QuestionLed = (cursor, left, tok, feat, diags) =>
     {
         // null-conditional: obj?.member
         if (cursor.Current.Kind == TokenKind.Dot)
@@ -159,18 +210,18 @@ internal static partial class ExprParser
         if (!feat.IsEnabled(LanguageFeature.Ternary))
             throw new ParseException($"feature `{LanguageFeatures.Metadata[LanguageFeature.Ternary].Name}` is disabled", tok.Span,
                 DiagnosticCodes.FeatureDisabled);
-        var thenR = Parse(cursor, feat);
+        var thenR = Parse(cursor, feat, diags: diags);
         if (!thenR.IsOk) return thenR;
         cursor = thenR.Remainder;
         Expect(ref cursor, TokenKind.Colon);
-        var elseR = Parse(cursor, feat);
+        var elseR = Parse(cursor, feat, diags: diags);
         return elseR.Map(e => (Expr)new ConditionalExpr(left, thenR.Value, e, left.Span));
     };
 
-    private static readonly LedFn NullCoalesce = (cursor, left, tok, feat) =>
-        Parse(cursor, feat, BpTernary - 1).Map(right => (Expr)new NullCoalesceExpr(left, right, tok.Span));
+    private static readonly LedFn NullCoalesce = (cursor, left, tok, feat, diags) =>
+        Parse(cursor, feat, BpTernary - 1, diags).Map(right => (Expr)new NullCoalesceExpr(left, right, tok.Span));
 
-    private static readonly LedFn IsLed = (cursor, left, tok, feat) =>
+    private static readonly LedFn IsLed = (cursor, left, tok, feat, diags) =>
     {
         if (cursor.Current.Kind != TokenKind.Identifier)
             throw new ParseException(
@@ -191,7 +242,7 @@ internal static partial class ExprParser
             cursor);
     };
 
-    private static readonly LedFn SwitchExprLed = (cursor, left, tok, feat) =>
+    private static readonly LedFn SwitchExprLed = (cursor, left, tok, feat, diags) =>
     {
         Expect(ref cursor, TokenKind.LBrace);
         var arms = new List<SwitchArm>();
@@ -206,10 +257,10 @@ internal static partial class ExprParser
             }
             else
             {
-                pattern = Parse(cursor, feat, BpAssign + 1).Unwrap(ref cursor);
+                pattern = Parse(cursor, feat, BpAssign + 1, diags).Unwrap(ref cursor);
             }
             Expect(ref cursor, TokenKind.FatArrow);
-            var body = Parse(cursor, feat, BpAssign + 1).Unwrap(ref cursor);
+            var body = Parse(cursor, feat, BpAssign + 1, diags).Unwrap(ref cursor);
             arms.Add(new SwitchArm(pattern, body, aSpan));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
@@ -225,22 +276,22 @@ internal static partial class ExprParser
         // Literals
         [TokenKind.IntLiteral]                = new(ParseIntLit),
         [TokenKind.FloatLiteral]              = new(ParseFloatLit),
-        [TokenKind.StringLiteral]             = new((c, t, _) => Ok(new LitStrExpr(UnescapeString(t.Text[1..^1]), t.Span), c)),
-        [TokenKind.CharLiteral]               = new((c, t, _) => Ok(new LitCharExpr(UnescapeChar(t.Text), t.Span), c)),
+        [TokenKind.StringLiteral]             = new((c, t, _, _) => Ok(new LitStrExpr(UnescapeString(t.Text[1..^1]), t.Span), c)),
+        [TokenKind.CharLiteral]               = new((c, t, _, _) => Ok(new LitCharExpr(UnescapeChar(t.Text), t.Span), c)),
         [TokenKind.InterpolatedStringLiteral] = new(ParseInterpolatedNud),
-        [TokenKind.True]                      = new((c, t, _) => Ok(new LitBoolExpr(true,  t.Span), c)),
-        [TokenKind.False]                     = new((c, t, _) => Ok(new LitBoolExpr(false, t.Span), c)),
-        [TokenKind.Null]                      = new((c, t, _) => Ok(new LitNullExpr(t.Span), c)),
+        [TokenKind.True]                      = new((c, t, _, _) => Ok(new LitBoolExpr(true,  t.Span), c)),
+        [TokenKind.False]                     = new((c, t, _, _) => Ok(new LitBoolExpr(false, t.Span), c)),
+        [TokenKind.Null]                      = new((c, t, _, _) => Ok(new LitNullExpr(t.Span), c)),
 
         // Identifier and type-keywords as static-call targets (string.Join, int.Parse, …)
-        [TokenKind.Identifier] = new((c, t, _) => Ok(new IdentExpr(t.Text,     t.Span), c)),
-        [TokenKind.String]     = new((c, t, _) => Ok(new IdentExpr("string",   t.Span), c)),
-        [TokenKind.Int]        = new((c, t, _) => Ok(new IdentExpr("int",      t.Span), c)),
-        [TokenKind.Long]       = new((c, t, _) => Ok(new IdentExpr("long",     t.Span), c)),
-        [TokenKind.Double]     = new((c, t, _) => Ok(new IdentExpr("double",   t.Span), c)),
-        [TokenKind.Float]      = new((c, t, _) => Ok(new IdentExpr("float",    t.Span), c)),
-        [TokenKind.Bool]       = new((c, t, _) => Ok(new IdentExpr("bool",     t.Span), c)),
-        [TokenKind.Char]       = new((c, t, _) => Ok(new IdentExpr("char",     t.Span), c)),
+        [TokenKind.Identifier] = new((c, t, _, _) => Ok(new IdentExpr(t.Text,     t.Span), c)),
+        [TokenKind.String]     = new((c, t, _, _) => Ok(new IdentExpr("string",   t.Span), c)),
+        [TokenKind.Int]        = new((c, t, _, _) => Ok(new IdentExpr("int",      t.Span), c)),
+        [TokenKind.Long]       = new((c, t, _, _) => Ok(new IdentExpr("long",     t.Span), c)),
+        [TokenKind.Double]     = new((c, t, _, _) => Ok(new IdentExpr("double",   t.Span), c)),
+        [TokenKind.Float]      = new((c, t, _, _) => Ok(new IdentExpr("float",    t.Span), c)),
+        [TokenKind.Bool]       = new((c, t, _, _) => Ok(new IdentExpr("bool",     t.Span), c)),
+        [TokenKind.Char]       = new((c, t, _, _) => Ok(new IdentExpr("char",     t.Span), c)),
 
         // Prefix unary (BpUnary so postfix at BpPostfix binds tighter)
         [TokenKind.Plus]       = new(PrefixUnary("+",      BpUnary)),

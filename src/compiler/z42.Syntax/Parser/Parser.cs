@@ -21,9 +21,16 @@ namespace Z42.Syntax.Parser;
 ///   TopLevelParser   — compilation unit, class, function, enum, interface
 ///
 /// Error recovery: the parser accumulates syntax errors into a DiagnosticBag
-/// and continues parsing. Statement and top-level declaration boundaries serve
-/// as recovery points. ErrorExpr/ErrorStmt placeholder nodes are inserted where
-/// parsing failed. Callers should check Diagnostics.HasErrors after parsing.
+/// and continues parsing. Three sync levels:
+///   • Top-level declaration boundary — TopLevelParser.ParseCompilationUnit
+///   • Statement boundary             — StmtParser.ParseBlock
+///   • Expression boundary            — ExprParser.Parse(diags) sync points
+///                                      `,` `)` `]` `;` `}` (spec
+///                                      enhance-expr-recovery, 2026-05-08)
+/// `ErrorExpr` / `ErrorStmt` placeholder nodes are inserted where parsing
+/// failed. Callers should check `Diagnostics.HasErrors` after parsing.
+/// `Parser.ParseExpr()` keeps the legacy throw behavior for fail-fast tests;
+/// the new behavior is opted into via DiagnosticBag threading from callers.
 public sealed class Parser
 {
     private readonly List<Token>      _tokens;

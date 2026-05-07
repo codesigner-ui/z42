@@ -13,11 +13,11 @@ internal static partial class ExprParser
 {
     // ── Nud implementations ───────────────────────────────────────────────────
 
-    private static NudFn PrefixUnary(string op, int bp) => (cursor, tok, feat) =>
-        Parse(cursor, feat, bp).Map(operand => (Expr)new UnaryExpr(op, operand, tok.Span));
+    private static NudFn PrefixUnary(string op, int bp) => (cursor, tok, feat, diags) =>
+        Parse(cursor, feat, bp, diags).Map(operand => (Expr)new UnaryExpr(op, operand, tok.Span));
 
     private static ParseResult<Expr> ParseIntLit(
-        TokenCursor cursor, Token tok, LanguageFeatures _)
+        TokenCursor cursor, Token tok, LanguageFeatures _, DiagnosticBag? __)
     {
         var text = tok.Text.Replace("_", "").TrimEnd('L', 'l', 'u', 'U');
         long value;
@@ -31,7 +31,7 @@ internal static partial class ExprParser
     }
 
     private static ParseResult<Expr> ParseFloatLit(
-        TokenCursor cursor, Token tok, LanguageFeatures _)
+        TokenCursor cursor, Token tok, LanguageFeatures _, DiagnosticBag? __)
     {
         var raw     = tok.Text.Replace("_", "");
         bool isFloat = raw.EndsWith('f') || raw.EndsWith('F');
@@ -41,11 +41,11 @@ internal static partial class ExprParser
     }
 
     private static ParseResult<Expr> ParseInterpolatedNud(
-        TokenCursor cursor, Token tok, LanguageFeatures feat) =>
+        TokenCursor cursor, Token tok, LanguageFeatures feat, DiagnosticBag? _) =>
         Ok(ParseInterpolatedString(tok, feat), cursor);
 
     private static ParseResult<Expr> ParseNew(
-        TokenCursor cursor, Token tok, LanguageFeatures feat)
+        TokenCursor cursor, Token tok, LanguageFeatures feat, DiagnosticBag? diags)
     {
         var ty = TypeParser.Parse(cursor).Unwrap(ref cursor);
 
@@ -53,7 +53,7 @@ internal static partial class ExprParser
         if (ty is ArrayType arrTy && cursor.Current.Kind == TokenKind.LBrace)
         {
             cursor = cursor.Advance();
-            var elems = ParseArgList(ref cursor, TokenKind.RBrace, feat);
+            var elems = ParseArgList(ref cursor, TokenKind.RBrace, feat, diags: diags);
             Expect(ref cursor, TokenKind.RBrace);
             return Ok(new ArrayLitExpr(arrTy.Element, elems, tok.Span), cursor);
         }
@@ -62,20 +62,20 @@ internal static partial class ExprParser
         if (cursor.Current.Kind == TokenKind.LBracket)
         {
             cursor = cursor.Advance();
-            var size = Parse(cursor, feat).Unwrap(ref cursor);
+            var size = Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
             Expect(ref cursor, TokenKind.RBracket);
             return Ok(new ArrayCreateExpr(ty, size, tok.Span), cursor);
         }
 
         // new T(args)
         Expect(ref cursor, TokenKind.LParen);
-        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true);
+        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true, diags: diags);
         Expect(ref cursor, TokenKind.RParen);
         return Ok(new NewExpr(ty, args, tok.Span), cursor);
     }
 
     private static ParseResult<Expr> ParseTypeof(
-        TokenCursor cursor, Token tok, LanguageFeatures _)
+        TokenCursor cursor, Token tok, LanguageFeatures _, DiagnosticBag? __)
     {
         Expect(ref cursor, TokenKind.LParen);
         var ty = TypeParser.Parse(cursor).Unwrap(ref cursor);
@@ -95,7 +95,7 @@ internal static partial class ExprParser
     /// dispatches on the resolved Z42Type to emit the right `Const*` opcode.
     /// (add-default-expression, 2026-05-06)
     private static ParseResult<Expr> ParseDefault(
-        TokenCursor cursor, Token tok, LanguageFeatures _)
+        TokenCursor cursor, Token tok, LanguageFeatures _, DiagnosticBag? __)
     {
         Expect(ref cursor, TokenKind.LParen);
         var ty = TypeParser.Parse(cursor).Unwrap(ref cursor);
@@ -104,7 +104,7 @@ internal static partial class ExprParser
     }
 
     private static ParseResult<Expr> ParseLParen(
-        TokenCursor cursor, Token tok, LanguageFeatures feat)
+        TokenCursor cursor, Token tok, LanguageFeatures feat, DiagnosticBag? diags)
     {
         // Try cast: `(TypeName)expr` (single ident) — fast-path lookahead.
         // 2026-05-07 add-as-cast-on-arrays: also recognise `(TypeName[])expr` so
@@ -123,14 +123,14 @@ internal static partial class ExprParser
             if (tyR.IsOk && tyR.Remainder.Current.Kind == TokenKind.RParen)
             {
                 var afterClose = tyR.Remainder.Advance();
-                var operandR   = Parse(afterClose, feat, BpUnary);
+                var operandR   = Parse(afterClose, feat, BpUnary, diags);
                 if (operandR.IsOk)
                     return Ok(new CastExpr(tyR.Value, operandR.Value, tok.Span),
                               operandR.Remainder);
             }
         }
         // Grouping: `(expr)`
-        var innerR = Parse(cursor, feat);
+        var innerR = Parse(cursor, feat, diags: diags);
         if (!innerR.IsOk) return innerR;
         cursor = innerR.Remainder;
         Expect(ref cursor, TokenKind.RParen);
@@ -303,16 +303,19 @@ internal static partial class ExprParser
     /// (spec: define-ref-out-in-parameters). Used for call expressions and
     /// constructor invocation; **not** for array / collection literal element
     /// lists (modifiers do not apply there).
+    ///
+    /// `diags` 透传给子 `Parse()` 调用：传入时单个 arg 失败转 ErrorExpr，
+    /// 后续 arg 继续解析（spec enhance-expr-recovery）。
     private static List<Expr> ParseArgList(
         ref TokenCursor cursor, TokenKind stop, LanguageFeatures feat,
-        bool allowModifiers = false)
+        bool allowModifiers = false, DiagnosticBag? diags = null)
     {
         var args = new List<Expr>();
         while (cursor.Current.Kind != stop && !cursor.IsEnd)
         {
             Expr arg = allowModifiers
-                ? ParseCallArgWithOptionalModifier(ref cursor, feat)
-                : Parse(cursor, feat).Unwrap(ref cursor);
+                ? ParseCallArgWithOptionalModifier(ref cursor, feat, diags)
+                : Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
             args.Add(arg);
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
@@ -326,7 +329,8 @@ internal static partial class ExprParser
     /// constructed (Q4: scope extends to the enclosing statement, handled by
     /// TypeChecker).
     private static Expr ParseCallArgWithOptionalModifier(
-        ref TokenCursor cursor, LanguageFeatures feat)
+        ref TokenCursor cursor, LanguageFeatures feat,
+        DiagnosticBag? diags = null)
     {
         var startSpan = cursor.Current.Span;
         var modifier = cursor.Current.Kind switch
@@ -337,7 +341,7 @@ internal static partial class ExprParser
             _             => ArgModifier.None,
         };
         if (modifier == ArgModifier.None)
-            return Parse(cursor, feat).Unwrap(ref cursor);
+            return Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
 
         cursor = cursor.Advance(); // consume ref/out/in
 
@@ -345,7 +349,8 @@ internal static partial class ExprParser
         Expr inner;
         if (modifier == ArgModifier.Out && cursor.Current.Kind == TokenKind.Var)
         {
-            // `out var x` — inline declaration
+            // `out var x` — inline declaration. expected-identifier 路径**保留 throw**
+            // （非 expression token sync，转 ErrorExpr 收益小；按 design Decision 备注）
             cursor = cursor.Advance(); // consume `var`
             if (cursor.Current.Kind != TokenKind.Identifier)
                 throw new ParseException(
@@ -359,7 +364,7 @@ internal static partial class ExprParser
         }
         else
         {
-            inner = Parse(cursor, feat).Unwrap(ref cursor);
+            inner = Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         }
 
         return new ModifiedArg(inner, modifier, outDecl, startSpan);

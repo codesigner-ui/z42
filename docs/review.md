@@ -461,7 +461,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **现在**（M6 收尾） | 完成 `extend-signature-whitelist` | 进行中 | 当前 spec | 🟡 |
 | **本迭代结束前** | `spec/changes/` 两个目录纳入 git | (随提交) | 防止脱管 | 📋 |
 | **M6 → M7 之间** | `introduce-bound-visitor` — 引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>`，迁 `FunctionEmitter*` 与 `TypeChecker.Exprs` | refactor | Part 1 §1.1、§1.3 + Part 2 §2.1；为 §3.2 dump-ast 提供基础 | 📋 |
-| **M6 → M7 之间** | `parser-error-recovery` — 启用现有 ErrorStmt/ErrorExpr 节点，多错聚合 | refactor | Part 2 §2.2 + Part 3 §3.7，LSP 前置 | 📋 |
+| **已落地** | `enhance-expr-recovery` — ExprParser 接 DiagnosticBag overload + ErrorExpr 激活 + 全链路 thread bag（NudFn/LedFn 签名 + StmtParser/TopLevelParser callers）；arg-level recovery 真生效（`f(1, *, 3)` 形态） | lang | Part 2 §2.2 + Part 3 §3.7 整体收口 | 🟢 2026-05-08 |
 | **部分完成** | `split-function-emitter-exprs` — FunctionEmitterExprs.cs (878→274 主) + 5 partial | refactor | Part 1 §1.1 (1/4 P0 文件) | 🟢 2026-05-07 |
 | **已落地** | `split-irgen` — IrGen.cs (806→198 主) + 5 partial | refactor | Part 1 §1.1 (2/4) | 🟢 2026-05-07 |
 | **已落地** | `split-imported-symbol-loader` — ImportedSymbolLoader.cs (730→167 主) + 5 partial（按 Phase 分组） | refactor | Part 1 §1.1 (3/4) | 🟢 2026-05-08 |

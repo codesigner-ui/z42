@@ -374,7 +374,7 @@ internal static partial class TopLevelParser
                     if (cursor.Current.Kind == TokenKind.Eq)
                     {
                         cursor = cursor.Advance();
-                        fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1).Unwrap(ref cursor);
+                        fInit = ExprParser.Parse(cursor, LanguageFeatures.Phase1, diags: diags).Unwrap(ref cursor);
                     }
                     ExpectKind(ref cursor, TokenKind.Semicolon);
                     var rawField = new FieldDecl(fName, fType, fVis, fStatic, fInit, fSpan, fIsEvent);

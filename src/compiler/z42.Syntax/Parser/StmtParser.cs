@@ -12,8 +12,11 @@ internal static class StmtParser
 {
     // ── Delegate / table ──────────────────────────────────────────────────────
 
+    /// `diags` 透传给内部 `ExprParser.Parse(...)` 调用以激活 expr 级 recovery
+    /// （spec enhance-expr-recovery, 2026-05-08）。stmt-level catch 在
+    /// `ParseBlock` 兜底，所以不传也安全。
     private delegate ParseResult<Stmt> StmtFn(
-        TokenCursor cursor, Token kw, LanguageFeatures feat);
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags);
 
     private sealed record StmtEntry(StmtFn Fn, LanguageFeature? Feature = null);
 
@@ -49,7 +52,7 @@ internal static class StmtParser
         {
             try
             {
-                var r = ParseStmt(cursor, feat);
+                var r = ParseStmt(cursor, feat, diags);
                 if (!r.IsOk)
                 {
                     if (diags != null)
@@ -113,7 +116,7 @@ internal static class StmtParser
     }
 
     internal static ParseResult<Stmt> ParseStmt(
-        TokenCursor cursor, LanguageFeatures feat)
+        TokenCursor cursor, LanguageFeatures feat, DiagnosticBag? diags = null)
     {
         var span = cursor.Current.Span;
 
@@ -125,7 +128,7 @@ internal static class StmtParser
                     DiagnosticCodes.FeatureDisabled);
             var kw = cursor.Current;
             cursor = cursor.Advance();
-            return entry.Fn(cursor, kw, feat);
+            return entry.Fn(cursor, kw, feat, diags);
         }
 
         // 2a. Local function declaration: `Type Name(params) => expr;` or
@@ -148,7 +151,7 @@ internal static class StmtParser
             if (cursor.Current.Kind == TokenKind.Eq)
             {
                 cursor = cursor.Advance();
-                init = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+                init = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
             }
             Expect(ref cursor, TokenKind.Semicolon);
             return ParseResult<Stmt>.Ok(new VarDeclStmt(vname, ty, init, span), cursor);
@@ -156,11 +159,11 @@ internal static class StmtParser
 
         // 3. Nested block
         if (cursor.Current.Kind == TokenKind.LBrace)
-            return ParseBlock(cursor, feat).Map(b => (Stmt)b);
+            return ParseBlock(cursor, feat, diags).Map(b => (Stmt)b);
 
         // 4. Expression statement
         {
-            var exprR = ExprParser.Parse(cursor, feat);
+            var exprR = ExprParser.Parse(cursor, feat, diags: diags);
             if (!exprR.IsOk)
                 throw new ParseException(exprR.Error!, exprR.ErrorSpan);
             cursor = exprR.Remainder;
@@ -173,36 +176,36 @@ internal static class StmtParser
     // ── Statement handlers ────────────────────────────────────────────────────
 
     private static ParseResult<Stmt> ParseVarDecl(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         var name  = Expect(ref cursor, TokenKind.Identifier).Text;
         Expr? init = null;
         if (cursor.Current.Kind == TokenKind.Eq)
         {
             cursor = cursor.Advance();
-            init = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            init = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         }
         Expect(ref cursor, TokenKind.Semicolon);
         return ParseResult<Stmt>.Ok(new VarDeclStmt(name, null, init, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseReturn(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         Expr? val = cursor.Current.Kind == TokenKind.Semicolon
             ? null
-            : ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            : ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.Semicolon);
         return ParseResult<Stmt>.Ok(new ReturnStmt(val, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseIf(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         Expect(ref cursor, TokenKind.LParen);
-        var cond = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var cond = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
-        var then = BlockOrSingle(cursor, feat, out cursor);
+        var then = BlockOrSingle(cursor, feat, out cursor, diags);
 
         Stmt? else_ = null;
         if (cursor.Current.Kind == TokenKind.Else)
@@ -212,40 +215,40 @@ internal static class StmtParser
             {
                 var ifKw = cursor.Current;
                 cursor = cursor.Advance();
-                else_ = ParseIf(cursor, ifKw, feat).Unwrap(ref cursor);
+                else_ = ParseIf(cursor, ifKw, feat, diags).Unwrap(ref cursor);
             }
             else
             {
-                else_ = BlockOrSingle(cursor, feat, out cursor);
+                else_ = BlockOrSingle(cursor, feat, out cursor, diags);
             }
         }
         return ParseResult<Stmt>.Ok(new IfStmt(cond, then, else_, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseWhile(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         Expect(ref cursor, TokenKind.LParen);
-        var cond = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var cond = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
-        var body = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        var body = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         return ParseResult<Stmt>.Ok(new WhileStmt(cond, body, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseDoWhile(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
-        var body = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        var body = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.While);
         Expect(ref cursor, TokenKind.LParen);
-        var cond = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var cond = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
         if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
         return ParseResult<Stmt>.Ok(new DoWhileStmt(body, cond, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseFor(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         Expect(ref cursor, TokenKind.LParen);
 
@@ -253,7 +256,7 @@ internal static class StmtParser
         Stmt? init = null;
         if (cursor.Current.Kind != TokenKind.Semicolon)
         {
-            var r = ParseStmt(cursor, feat);
+            var r = ParseStmt(cursor, feat, diags);
             if (!r.IsOk) return r;
             init   = r.Value;
             cursor = r.Remainder;
@@ -263,51 +266,51 @@ internal static class StmtParser
         // condition
         Expr? cond = null;
         if (cursor.Current.Kind != TokenKind.Semicolon)
-            cond = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            cond = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.Semicolon);
 
         // increment
         Expr? incr = null;
         if (cursor.Current.Kind != TokenKind.RParen)
-            incr = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            incr = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
 
-        var body = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        var body = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         return ParseResult<Stmt>.Ok(new ForStmt(init, cond, incr, body, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseForeach(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         Expect(ref cursor, TokenKind.LParen);
         if (cursor.Current.Kind == TokenKind.Var) cursor = cursor.Advance(); // optional var
         var vname      = Expect(ref cursor, TokenKind.Identifier).Text;
         Expect(ref cursor, TokenKind.In);
-        var collection = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var collection = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
-        var body = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        var body = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         return ParseResult<Stmt>.Ok(new ForeachStmt(vname, collection, body, kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseBreak(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
         return ParseResult<Stmt>.Ok(new BreakStmt(kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseContinue(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         if (cursor.Current.Kind == TokenKind.Semicolon) cursor = cursor.Advance();
         return ParseResult<Stmt>.Ok(new ContinueStmt(kw.Span), cursor);
     }
 
     private static ParseResult<Stmt> ParseSwitch(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         Expect(ref cursor, TokenKind.LParen);
-        var subject = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var subject = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.RParen);
         Expect(ref cursor, TokenKind.LBrace);
 
@@ -325,7 +328,7 @@ internal static class StmtParser
             else
             {
                 Expect(ref cursor, TokenKind.Case);
-                pattern = ExprParser.Parse(cursor, feat, 11).Unwrap(ref cursor);
+                pattern = ExprParser.Parse(cursor, feat, 11, diags).Unwrap(ref cursor);
                 Expect(ref cursor, TokenKind.Colon);
             }
 
@@ -333,7 +336,7 @@ internal static class StmtParser
             while (cursor.Current.Kind is not (TokenKind.Case or TokenKind.Default
                                                or TokenKind.RBrace or TokenKind.Eof))
             {
-                var r = ParseStmt(cursor, feat);
+                var r = ParseStmt(cursor, feat, diags);
                 if (!r.IsOk) return r.AsFailure<Stmt>();
                 body.Add(r.Value);
                 cursor = r.Remainder;
@@ -346,9 +349,9 @@ internal static class StmtParser
     }
 
     private static ParseResult<Stmt> ParseTryCatch(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
-        var tryBody = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        var tryBody = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
 
         var catches = new List<CatchClause>();
         while (cursor.Current.Kind == TokenKind.Catch)
@@ -393,7 +396,7 @@ internal static class StmtParser
                 }
                 Expect(ref cursor, TokenKind.RParen);
             }
-            var catchBody = ParseBlock(cursor, feat).Unwrap(ref cursor);
+            var catchBody = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
             catches.Add(new CatchClause(exType, varName, catchBody, cSpan));
         }
 
@@ -401,7 +404,7 @@ internal static class StmtParser
         if (cursor.Current.Kind == TokenKind.Finally)
         {
             cursor   = cursor.Advance();
-            finally_ = ParseBlock(cursor, feat).Unwrap(ref cursor);
+            finally_ = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         }
 
         return ParseResult<Stmt>.Ok(
@@ -409,7 +412,7 @@ internal static class StmtParser
     }
 
     private static ParseResult<Stmt> ParseThrow(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         // `throw;` — bare rethrow inside a catch clause. Defer "are we in a
         // catch?" check to the TypeChecker, which has the enclosing-clause
@@ -419,7 +422,7 @@ internal static class StmtParser
             cursor = cursor.Advance(); // ;
             return ParseResult<Stmt>.Ok(new ThrowStmt(null, kw.Span), cursor);
         }
-        var val = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+        var val = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         Expect(ref cursor, TokenKind.Semicolon);
         return ParseResult<Stmt>.Ok(new ThrowStmt(val, kw.Span), cursor);
     }
@@ -431,12 +434,12 @@ internal static class StmtParser
     /// `ParseBlock`; control-flow restrictions (no `return`/`break`/etc.)
     /// are enforced at type-check time, not in the parser.
     private static ParseResult<Stmt> ParsePinned(
-        TokenCursor cursor, Token kw, LanguageFeatures feat)
+        TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags)
     {
         var name = Expect(ref cursor, TokenKind.Identifier).Text;
         Expect(ref cursor, TokenKind.Eq);
-        var source = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
-        var body = ParseBlock(cursor, feat).Unwrap(ref cursor);
+        var source = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
+        var body = ParseBlock(cursor, feat, diags).Unwrap(ref cursor);
         return ParseResult<Stmt>.Ok(new PinnedStmt(name, source, body, kw.Span), cursor);
     }
 
@@ -444,16 +447,17 @@ internal static class StmtParser
 
     /// Parse `{ block }` or a single statement, returning a BlockStmt either way.
     private static BlockStmt BlockOrSingle(
-        TokenCursor cursor, LanguageFeatures feat, out TokenCursor rest)
+        TokenCursor cursor, LanguageFeatures feat, out TokenCursor rest,
+        DiagnosticBag? diags = null)
     {
         if (cursor.Current.Kind == TokenKind.LBrace)
         {
-            var r = ParseBlock(cursor, feat);
+            var r = ParseBlock(cursor, feat, diags);
             rest = r.Remainder;
             return r.OrThrow();
         }
         var span  = cursor.Current.Span;
-        var stmtR = ParseStmt(cursor, feat);
+        var stmtR = ParseStmt(cursor, feat, diags);
         rest = stmtR.Remainder;
         return new BlockStmt([stmtR.OrThrow()], span);
     }

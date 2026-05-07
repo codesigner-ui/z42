@@ -14,7 +14,7 @@ internal static partial class TopLevelParser
 {
     // ── Shared helpers ────────────────────────────────────────────────────────
 
-    private static List<Param> ParseParamList(ref TokenCursor cursor, LanguageFeatures feat)
+    private static List<Param> ParseParamList(ref TokenCursor cursor, LanguageFeatures feat, DiagnosticBag? diags = null)
     {
         ExpectKind(ref cursor, TokenKind.LParen);
         var parms = new List<Param>();
@@ -39,7 +39,7 @@ internal static partial class TopLevelParser
             if (cursor.Current.Kind == TokenKind.Eq)
             {
                 cursor   = cursor.Advance();
-                pDefault = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+                pDefault = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
             }
             parms.Add(new Param(pName, pType, pDefault, pSpan, pModifier));
             if (cursor.Current.Kind != TokenKind.Comma) break;

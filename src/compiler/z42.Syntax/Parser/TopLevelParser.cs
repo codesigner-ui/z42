@@ -268,7 +268,7 @@ internal static partial class TopLevelParser
             var args = new List<Expr>();
             while (cursor.Current.Kind != TokenKind.RParen && !cursor.IsEnd)
             {
-                args.Add(ExprParser.Parse(cursor, feat).Unwrap(ref cursor));
+                args.Add(ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor));
                 if (cursor.Current.Kind != TokenKind.Comma) break;
                 cursor = cursor.Advance();
             }
@@ -291,7 +291,7 @@ internal static partial class TopLevelParser
         {
             // Expression body: `=> expr;`
             cursor = cursor.Advance();  // skip =>
-            var expr = ExprParser.Parse(cursor, feat).Unwrap(ref cursor);
+            var expr = ExprParser.Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
             ExpectKind(ref cursor, TokenKind.Semicolon);
             Stmt stmt = returnType is VoidType
                 ? new ExprStmt(expr, expr.Span)
