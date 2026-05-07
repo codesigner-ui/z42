@@ -412,18 +412,27 @@ namespace Std;
 
 // 无值版本 — MulticastAction 抛
 public class MulticastException : AggregateException {
-    public IReadOnlyDictionary<int, Exception> Failures { get; }   // handler 索引 → 异常
-    public int TotalHandlers { get; }
-    public int SuccessCount => TotalHandlers - Failures.Count;
+    public Exception[] Failures;          // 与 FailureIndices 平行：第 i 个失败异常
+    public int[]       FailureIndices;    // 与 Failures 平行：失败 handler 在 strong/advanced 序列中的 0-based 索引
+    public int         TotalHandlers;     // strong + advanced 活跃订阅总数
+    public int SuccessCount() => TotalHandlers - Failures.Length;
 }
 
-// 带值版本 — MulticastFunc / MulticastPredicate 抛
+// 带值版本 — MulticastFunc / MulticastPredicate 抛（D-8b-1, 2026-05-07 落地）
 public class MulticastException<R> : MulticastException {
-    public R[] Results { get; }   // 成功位置 = handler 返回值；失败位置 = default(R)
+    public R[] Results;   // 与 Invoke 返回的 R[] 等长；失败位置 = default(R)（待 D-8b-3 Phase 2 generic-T `default(R)`）
 }
 ```
 
-继承 `AggregateException`（z42.core Wave 2 已规划）。
+继承 `AggregateException`（z42.core 已规划）。
+
+**实施记录（D-8b-1，2026-05-07）**：
+
+- 泛型类型 `MulticastException<R>` 已 land 进 `src/libraries/z42.core/src/Exceptions/MulticastException.z42`，与已有非泛型 `MulticastException` 共存通过 add-class-arity-overloading（D-8b-0）的 shadow-only mangling：IR-side `MulticastException$1`，源码 `MulticastException`
+- 构造器使用 ctor delegation `: base(failures, indices, totalHandlers)`（D-1a 落地的 `: base(...)` 链式 ctor），由父类负责设置 `Failures` / `FailureIndices` / `TotalHandlers`，子类构造体只设置 `Results`
+- 对外字段为 plain field（非属性），与现有 stdlib 风格一致；`SuccessCount()` 走 method 而非 property（z42 暂无 property setter / getter 语法）
+- **未做**：`MulticastFunc<T,R>` / `MulticastPredicate<T>` 仍抛非泛型 `MulticastException`，切换到泛型版本依赖 D-8b-3 Phase 2 的 generic-T `default(R)` 支持，留作独立 follow-up
+- 平行数组 `Failures: Exception[]` + `FailureIndices: int[]` 而非 `Dictionary<int, Exception>` —— 写规范时还有 Dictionary 形态的 K8 提案，实际实施 D2d-2-Action 时为避开 Dictionary 依赖改为平行数组，本节同步规范现状
 
 ### 7.2 行为矩阵
 

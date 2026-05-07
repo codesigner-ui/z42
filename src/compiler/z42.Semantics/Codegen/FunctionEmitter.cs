@@ -99,7 +99,16 @@ internal sealed partial class FunctionEmitter
         // 2026-05-05 ctor delegation `: this(...)`: when present, the chained
         // ctor performs base-ctor + field-init for us. We emit ONLY the
         // chained-ctor call here; skip both base and field-init.
-        bool isCtor = !isStatic && method.Name == className;
+        //
+        // 2026-05-07 add-class-arity-overloading: when the IR-side class name
+        // is mangled (`Foo$N`), strip the suffix to recover the bare source
+        // name used for ctor identity (`method.Name == sourceClassName`).
+        // Class names never contain `$` in source; the suffix is purely an
+        // arity disambiguator added by the registry.
+        var sourceClassName = className.Contains('$')
+            ? className[..className.IndexOf('$')]
+            : className;
+        bool isCtor = !isStatic && method.Name == sourceClassName;
         bool emittedThisChain = false;
         if (isCtor && method.ThisCtorArgs is { }
             && _ctx.SemanticModel.BoundThisCtorArgs.TryGetValue(method, out var boundThisArgs))

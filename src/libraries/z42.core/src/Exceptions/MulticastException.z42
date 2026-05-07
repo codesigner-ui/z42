@@ -27,3 +27,29 @@ public class MulticastException : AggregateException {
              + " of " + Convert.ToString(this.TotalHandlers) + " handlers failed";
     }
 }
+
+// 2026-05-07 add-multicast-exception-generic (D-8b-1)：
+// 泛型版本，携带 Results: R[]。与非泛型 MulticastException 共存通过
+// add-class-arity-overloading 的 shadow-only mangling 路径（IrName=
+// "MulticastException$1"）。
+//
+// design.md K8：MulticastFunc<T,R>.Invoke(continueOnException=true) 全跑完后
+// 返回 R[]（失败位置占位 default(R)）；多失败聚合抛 `MulticastException<R>`，
+// Results 字段 = 与 R[] 等长（成功 = 真值，失败 = default(R)）。
+//
+// 当前 MulticastFunc/Predicate 仍抛非泛型 base 版本；切换到本类需
+// D-8b-3 Phase 2 generic-T `default(R)` 支持，留作独立 follow-up。
+public class MulticastException<R> : MulticastException {
+    public R[] Results;
+
+    public MulticastException(Exception[] failures, int[] indices, int totalHandlers, R[] results)
+        : base(failures, indices, totalHandlers) {
+        this.Results = results;
+    }
+
+    override string ToString() {
+        return "MulticastException<R>: " + Convert.ToString(this.Failures.Length)
+             + " of " + Convert.ToString(this.TotalHandlers) + " handlers failed; "
+             + Convert.ToString(this.Results.Length) + " results";
+    }
+}

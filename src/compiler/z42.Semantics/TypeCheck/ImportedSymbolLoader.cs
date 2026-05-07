@@ -83,6 +83,28 @@ public static class ImportedSymbolLoader
         // ── Phase 1: 骨架登记 ──
         // 遍历 modules，对每个新名字创建空成员的骨架；first-wins on duplicates.
         // 同时记录每个 (ns, class-name) 被哪些 package 贡献，用于冲突检测。
+        //
+        // 2026-05-07 add-class-arity-overloading: shadow-only mangling for
+        // imported classes. First scan for same-name + arity-disjoint sets per
+        // module so that, when an imported package declares e.g. both
+        // `MulticastException` and `MulticastException<R>`, the generic version
+        // is registered under `Name$N` rather than colliding on the bare name.
+        var importMangleNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var mod in modules)
+        {
+            if (!packageOf.TryGetValue(mod, out var modPkg)) continue;
+            if (!allowedPkgs.Contains(modPkg)) continue;
+            var byName = mod.Classes
+                .GroupBy(c => c.Name)
+                .Where(g => g.Count() >= 2 && g.Select(c => c.TypeParams?.Count ?? 0).Distinct().Count() >= 2)
+                .Select(g => g.Key);
+            foreach (var n in byName) importMangleNames.Add(n);
+        }
+        string ImportKey(ExportedClassDef cls) =>
+            cls.TypeParams is { Count: > 0 } tps && importMangleNames.Contains(cls.Name)
+                ? $"{cls.Name}${tps.Count}"
+                : cls.Name;
+
         foreach (var mod in modules)
         {
             var pkg = packageOf.TryGetValue(mod, out var p) ? p : "";
@@ -94,7 +116,8 @@ public static class ImportedSymbolLoader
 
             foreach (var cls in mod.Classes)
             {
-                var key = (mod.Namespace, cls.Name);
+                var importKey = ImportKey(cls);
+                var key       = (mod.Namespace, importKey);
                 if (!contributors.TryGetValue(key, out var list))
                 {
                     list = new List<string>();
@@ -102,10 +125,10 @@ public static class ImportedSymbolLoader
                 }
                 if (!list.Contains(pkg)) list.Add(pkg);
 
-                if (!classes.ContainsKey(cls.Name))
+                if (!classes.ContainsKey(importKey))
                 {
-                    classes[cls.Name] = BuildClassSkeleton(cls);
-                    classPkg[cls.Name] = pkg;
+                    classes[importKey] = BuildClassSkeleton(cls, importKey);
+                    classPkg[importKey] = pkg;
                     selectedClasses.Add((mod, cls));
                 }
             }
@@ -161,15 +184,16 @@ public static class ImportedSymbolLoader
         // "字段持有空骨架" 问题。
         foreach (var (mod, cls) in selectedClasses)
         {
-            FillClassMembersInPlace(cls, classes[cls.Name], classes, interfaces, delegates);
-            classNs[cls.Name] = mod.Namespace;
+            var importKey = ImportKey(cls);
+            FillClassMembersInPlace(cls, classes[importKey], classes, interfaces, delegates);
+            classNs[importKey] = mod.Namespace;
             if (cls.TypeParamConstraints is { Count: > 0 } cc)
-                classConstraints[cls.Name] = cc;
+                classConstraints[importKey] = cc;
             // L3-G4b primitive-as-struct: preserve declared interface list so
             // the TypeChecker can answer "does stdlib struct int implement
             // IComparable?" via data-driven lookup.
             if (cls.Interfaces.Count > 0)
-                classInterfaces[cls.Name] = new List<string>(cls.Interfaces);
+                classInterfaces[importKey] = new List<string>(cls.Interfaces);
         }
 
         foreach (var (_, iface) in selectedInterfaces)
@@ -302,10 +326,14 @@ public static class ImportedSymbolLoader
 
     // ── Phase 1 helpers: 骨架构造 ──────────────────────────────────────────────
 
-    private static Z42ClassType BuildClassSkeleton(ExportedClassDef cls)
+    private static Z42ClassType BuildClassSkeleton(ExportedClassDef cls, string importKey)
     {
         IReadOnlyList<string>? typeParams = cls.TypeParams is { Count: > 0 }
             ? cls.TypeParams.AsReadOnly() : null;
+        // 2026-05-07 add-class-arity-overloading: when the import key is
+        // the mangled `Name$N` form, mark the class so its IrName matches
+        // (consumer codegen / IR encoding picks up the mangled identity).
+        bool hasArityMangle = importKey != cls.Name;
         return new Z42ClassType(
             cls.Name,
             Fields:           new Dictionary<string, Z42Type>(),
@@ -315,7 +343,8 @@ public static class ImportedSymbolLoader
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName:    cls.BaseClass,
             TypeParams:       typeParams,
-            IsStruct:         false);
+            IsStruct:         false,
+            HasArityMangle:   hasArityMangle);
     }
 
     private static Z42InterfaceType BuildInterfaceSkeleton(ExportedInterfaceDef iface)

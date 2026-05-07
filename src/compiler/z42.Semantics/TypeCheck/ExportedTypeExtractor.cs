@@ -171,8 +171,16 @@ public static class ExportedTypeExtractor
             var ifaceNames = sem.ClassInterfaces.TryGetValue(name, out var ifaceList)
                 ? ifaceList.Select(i => i.Name).ToList()
                 : new List<string>();
+            // 2026-05-07 add-class-arity-overloading: emit the SOURCE bare name
+            // (`ct.Name`), not the registry key `name` which may be arity-mangled
+            // (e.g. `Foo$1`). Method keys in `ct.Methods` (including ctor) are
+            // keyed by source bare name; the consumer's ImportedSymbolLoader
+            // re-applies the mangle on import (via ImportKey()) to keep two
+            // same-name arity-disjoint classes registered separately. Emitting
+            // the registry key here would desync `Z42ClassType.Name` from its
+            // own ctor method key on the consumer side.
             result.Add(new ExportedClassDef(
-                name, ct.BaseClassName,
+                ct.Name, ct.BaseClassName,
                 false, false, false,
                 fields, methods, ifaceNames, typeParams, constraints));
         }

@@ -38,17 +38,6 @@
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
 
 
-## D-8b-1：stdlib `MulticastException<R>` 类（structural foundation；阻塞 D-8b-0）
-
-- **来源**：D-8b 原条目拆分（2026-05-04 重新评估）；本条仅"加 generic exception 类 + 不依赖类型过滤的最小集成"
-- **设计文档**：`docs/design/delegates-events.md` §7
-- **缺失实现**：
-  - stdlib `Std.MulticastException<R>` 泛型类，继承 `Std.MulticastException`（非泛型 base 已存在），新增 `Results: R[]` 字段
-  - 构造器接受 `failures / failureIndices / totalHandlers / results` 四个数组
-- **不在本条范围**：MulticastFunc / MulticastPredicate 的 `continueOnException=true` 通路 —— 那需要 catch-by-type 真正生效（D-8b-2）才能让用户在 catch handler 里捕获 `MulticastException<int>` 而非 wildcard
-- **2026-05-04 阻塞**：实施期间发现 z42 class registry 不区分 arity，`MulticastException` 与 `MulticastException<R>` 同名冲突；阻塞解除前必须先做 D-8b-0。规避路径（重命名为 `MulticastResultException<R>`）会留命名债 + 偏离设计，已弃
-
-
 ## D-8b-3-Phase2 / add-default-generic-typeparam：泛型 type-param `default(T)`
 
 - **来源**：D-8b-3 拆分（2026-05-06 落地 Phase 1 时显式分离）
@@ -86,6 +75,9 @@
 
 - **D-1b**（WeakRef ISubscription wrapper）：2026-05-04 落地，由 `spec/archive/2026-05-04-add-weak-ref-subscription-wrapper/` 实施。
   实施期间发现两个 stop-and-ask 信号：① z42 instance method group conversion `obj.Method` 完全未实现（只有 free function path），需要 Phase 1 修复（compiler 在 `EmitBoundMember` emit thunk + `MkClos([recv])`）；② WeakRef 不能强持原 handler（会反向锁住 receiver），需要 Phase 2 加 2 个新 builtin (`__delegate_fn_name` / `__make_closure`) + Phase 3 重写 WeakRef 为 (WeakHandle, fnName) 模式 + Get 时重建 Closure。CompositeRef.Mode.Weak 同款激活。验证：lapsed listener 在 `GC.ForceCollect()` 后真正失效。
+
+- **D-8b-1**（stdlib `MulticastException<R>` 泛型类）：2026-05-07 落地，由 `spec/archive/2026-05-07-add-multicast-exception-generic/` 实施。
+  新增 `Std.MulticastException<R> : MulticastException`，字段 `Results: R[]`；构造器走 ctor delegation `: base(failures, indices, totalHandlers)` 把父类字段初始化交给 base ctor。利用 D-8b-0 shadow-only mangling 与已存在的非泛型同名 base 共存（IR-side `MulticastException$1`，源码 `MulticastException`）。实施过程中发现两处依赖修复：①`ExportedTypeExtractor` 把 `sem.Classes` 的注册键（mangled `Foo$N`）当 `ExportedClassDef.Name` emit，导致消费者 `Z42ClassType.Name` 与自身 ctor 方法键（源码裸名）不一致 → 改 emit `ct.Name`（源码裸名），消费者 `ImportedSymbolLoader` 在 `byName` 分组检测同名 + 不同 arity 时 re-apply mangle 进 importKey；② `FunctionEmitter` 的 `isCtor = method.Name == className` 在 IR 端 className mangled 时漏判（base ctor / field-init 全跳过）→ 加 `sourceClassName` 去除 `$N` 后缀再比对。MulticastFunc / MulticastPredicate 切换到泛型 `MulticastException<R>` 仍依赖 D-8b-3 Phase 2，留作独立 follow-up。
 
 - **D-8b-0**（class arity overloading via shadow registry）：2026-05-07 落地，由 `spec/archive/2026-05-07-add-class-arity-overloading/` 实施。
   Shadow-only mangling — `Z42ClassType` 增 `IrName` + `HasArityMangle` 派生 / 字段。SymbolCollector pre-pass 2-阶段：先扫 cu.Classes 检测 same-name 不同 arity 冲突，仅冲突情况下把 generic 一方注册到 `Name$N` 槽位（HasArityMangle=true）；非冲突 generic 类（List<T> / Dictionary<K,V> 等 stdlib 泛型）保持 bare key 不变 — **零 stdlib zpkg 影响 / 零 VM 改动**。ResolveType GenericType 路径增 `Name$N` shadow lookup（fallback bare）。BindClassMethods / BindNew / ResolveCtorName / IrGen `EmitClassDesc` / `EmitMethod` / `_funcParams` registration 等关键消费点改用 IrName 派生（HasArityMangle=true 时为 `Name$N`），non-collision case 路径上不变。新 8 个 C# 单测覆盖 IrName 派生 / 注册路由 / 同 arity duplicate detection；2 个新 golden 覆盖 coexistence + method dispatch。解锁 D-8b-1 (`MulticastException<R>` stdlib) + D-8b-3 Phase 2 (generic-T `default(T)`) 的真泛型解析。

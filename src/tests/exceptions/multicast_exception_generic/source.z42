@@ -1,0 +1,27 @@
+using Std.IO;
+
+void Main() {
+    var failures = new Exception[1];
+    failures[0] = new Exception("h0 fail");
+    var indices = new int[1];
+    indices[0] = 0;
+    var results = new int[3];
+    results[0] = 99;
+
+    var ex = new MulticastException<int>(failures, indices, 3, results);
+
+    // Inherited Failures field — set by base ctor.
+    var f = ex.Failures;
+    if (f == null) Console.WriteLine("Failures null"); else Console.WriteLine("Failures not null");
+
+    // Local Results field — set by self ctor body.
+    var r = ex.Results;
+    if (r == null) Console.WriteLine("Results null"); else Console.WriteLine("Results not null");
+
+    // Inherited TotalHandlers field + SuccessCount() method via base.
+    Console.WriteLine(Convert.ToString(ex.TotalHandlers));
+    Console.WriteLine(Convert.ToString(ex.SuccessCount()));
+
+    // Override ToString picks the generic class's overload (1 of 3 + 3 results).
+    Console.WriteLine(ex.ToString());
+}

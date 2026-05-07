@@ -53,7 +53,8 @@
       "Bash(./artifacts/runtime/debug/z42_vm src/libraries/z42.math/tests/golden/15_math/source.zbc)",
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/**)",
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/runtime/**)",
-      "Bash(bash /tmp/z42_categorize.sh)"
+      "Bash(bash /tmp/z42_categorize.sh)",
+      "Bash(Z42_LIBS=artifacts/z42/libs cargo run -q --manifest-path src/runtime/Cargo.toml -- /tmp/sm.zbc)"
     ],
     "additionalDirectories": [
       "/tmp",
