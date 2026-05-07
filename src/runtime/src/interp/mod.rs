@@ -1,14 +1,31 @@
 /// Interpreter backend — tree-walking bytecode execution.
 ///
 /// Implementation is split across submodules:
-/// • mod.rs      — public API, Frame, core execution loop
-/// • exec_instr.rs — instruction dispatch (one big match)
-/// • dispatch.rs — object dispatch helpers (vtable, ToString, static fields)
-/// • ops.rs      — register-level helpers (int_binop, numeric_lt, collect_args, …)
+/// • mod.rs        — public API, Frame, core execution loop
+/// • exec_instr.rs — thin per-Instruction dispatcher (exhaustive match → helpers)
+/// • exec_value.rs — constants / copy / arith / cmp / logical / unary / bitwise / string
+/// • exec_address.rs — LoadLocalAddr / LoadElemAddr / LoadFieldAddr / DefaultOf
+/// • exec_call.rs    — Call / Builtin / LoadFn / LoadFnCached / CallIndirect / MkClos
+/// • exec_array.rs   — ArrayNew / ArrayNewLit / ArrayGet / ArraySet / ArrayLen
+/// • exec_object.rs  — ObjNew / FieldGet / FieldSet / IsInstance / AsCast / Static*
+/// • exec_vcall.rs   — VCall + primitive_class_name + is_array_isa (single-op file)
+/// • exec_native.rs  — CallNative / CallNativeVtable / PinPtr / UnpinPtr
+/// • dispatch.rs   — object dispatch helpers (vtable, ToString, static fields)
+/// • ops.rs        — register-level helpers (int_binop, numeric_lt, collect_args, …)
 
 pub(crate) mod dispatch;
 pub(crate) mod exec_instr;
+mod exec_address;
+mod exec_array;
+mod exec_call;
+mod exec_native;
+mod exec_object;
+mod exec_value;
+mod exec_vcall;
 mod ops;
+
+// Re-export for cross-module callers (notably jit/helpers_object.rs).
+pub(crate) use exec_vcall::primitive_class_name;
 
 pub use crate::corelib::convert::value_to_str;
 use crate::metadata::{Function, Module, Terminator, Value};

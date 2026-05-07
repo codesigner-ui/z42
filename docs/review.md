@@ -477,7 +477,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | 时机 | 工作 | 类型 | 影响 | 状态 |
 |---|---|---|---|---|
 | **M4 全绿前** | `formalize-jit-vm-interface` — 把 65 个 extern helper 收成 trait/vtable，定版本号 | refactor | Part 4 §4.2，JIT 真正展开前必须 | 📋 |
-| **M6 → M7 之间** | `split-exec-instr` — `exec_instr.rs` (756 LOC) 按 op 类别拆分 | refactor | Part 1 §1.2 | 📋 |
+| **M6 → M7 之间** | `split-exec-instr` — `exec_instr.rs` (802→131 LOC) 按 op 类别拆为 7 个子模块 | refactor | Part 1 §1.2 | 🟢 2026-05-07 |
 | **M7 启动前**（**关键前置**） | `introduce-method-token` — String → `MethodId` / `TypeId` / `BuiltinId`，IR 字段 u32 化（含 §4.6 builtin/native 缓存） | lang+vm | Part 4 §4.1 + §4.6，反射 R-series 前置 | 📋 |
 | **M7 期间** | `unify-frame-chain` — 单一 `VmFrame` 链表，统一 interp / jit / GC scan | refactor | Part 4 §4.5，stack trace / debugger 前置 | 📋 |
 | **M7 期间** | `eh-protocol-v2` — 异常表二分查找 + JIT trap 集成 | vm | Part 4 §4.4，依赖 `unify-frame-chain` | 📋 |

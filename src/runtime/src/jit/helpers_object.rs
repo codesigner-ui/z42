@@ -341,9 +341,9 @@ pub unsafe extern "C" fn jit_vcall(
     // carries the unmangled method name (e.g. `Equals`), but IrGen emits overloaded
     // methods with a `$<arity>` suffix (e.g. `Std.String.Equals$1`). When the
     // unmangled lookup misses we retry with the arity-suffixed name. Mirrors
-    // `interp/exec_instr.rs::Instruction::VCall`. Subsumes the legacy `Value::Str`
+    // `interp/exec_vcall.rs::vcall`. Subsumes the legacy `Value::Str`
     // hardcoded `__str_*` fallback (review2 §2.2).
-    if let Some(class_name) = crate::interp::exec_instr::primitive_class_name(&obj_val) {
+    if let Some(class_name) = crate::interp::primitive_class_name(&obj_val) {
         let mut call_args = vec![obj_val.clone()];
         call_args.append(&mut extra_args);
         let arity = call_args.len() - 1; // exclude `this`

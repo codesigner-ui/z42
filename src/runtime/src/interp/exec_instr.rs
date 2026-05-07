@@ -1,42 +1,20 @@
 /// Single-instruction dispatch for the interpreter.
 ///
-/// Each match arm corresponds to one IR instruction. Object-related dispatch
-/// helpers live in `dispatch.rs`; register-level numeric helpers in `ops.rs`.
-
-use crate::metadata::{Instruction, Module, NativeData, Value};
-use crate::vm_context::VmContext;
-use anyhow::{bail, Result};
-use std::sync::Arc;
-
-use super::dispatch::{
-    is_subclass_or_eq_td, make_fallback_type_desc, obj_to_string, resolve_virtual, value_to_str,
-};
-use super::ops::{bool_val, collect_args, int_binop, int_bitop, numeric_lt, str_val, to_usize};
-use super::{ExecOutcome, Frame};
-
-/// L3-G4b primitive-as-struct: maps a primitive `Value` variant to its stdlib
-/// struct's qualified class name (e.g. `Value::I64` → `"Std.int"`). The VM
-/// dispatches primitive method calls by constructing `{class}.{method}` and
-/// looking up the function in `module.func_index` — replacing the old
-/// hardcoded `(Value, method)` → builtin-name switch.
+/// This file is a thin dispatcher: each `Instruction` variant matches one arm
+/// that delegates to a per-category helper (see sibling `exec_*.rs` modules).
+/// The match is **exhaustive** ([runtime-rust.md](../../../../.claude/rules/runtime-rust.md)
+/// "不允许有 `_` 通配兜底"); adding a new `Instruction` variant produces a
+/// compile error here, forcing the matching helper / category decision.
 ///
-/// Returns None for non-primitive values (objects, arrays, null, etc.).
-pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
-    use crate::metadata::well_known_names::*;
-    match obj {
-        Value::I64(_)  => Some(STD_INT),
-        Value::F64(_)  => Some(STD_DOUBLE),
-        Value::Bool(_) => Some(STD_BOOL),
-        Value::Char(_) => Some(STD_CHAR),
-        Value::Str(_)  => Some(STD_STRING),  // capitalised — stdlib retains `class String`
-        // 2026-05-07 add-array-base-class: T[] dispatches to Std.Array methods
-        // (Clone / GetType / ToString / Equals / GetHashCode). The lookup path
-        // below tries `Std.Array.<method>` first, then falls through to base
-        // `Std.Object.<method>` via the existing primitive overload retry logic.
-        Value::Array(_) => Some(STD_ARRAY),
-        _ => None,
-    }
-}
+/// Helpers that may propagate a callee user exception return
+/// `Result<Option<Value>>` and the dispatcher checks `is_some()` to forward
+/// the throw upstack. All other helpers return `Result<()>`.
+
+use crate::metadata::{Instruction, Module, Value};
+use crate::vm_context::VmContext;
+use anyhow::Result;
+
+use super::Frame;
 
 /// Execute a single instruction.
 /// Returns:
@@ -44,759 +22,110 @@ pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
 ///   Ok(Some(val))  — a callee threw a user exception (value-based propagation)
 ///   Err(e)         — internal VM error
 pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<Option<Value>> {
+    use super::{exec_address, exec_array, exec_call, exec_native, exec_object, exec_value, exec_vcall};
+
     match instr {
         // ── Constants ────────────────────────────────────────────────────────
-        Instruction::ConstStr { dst, idx } => {
-            let i = *idx as usize;
-            let s = if let Some(s) = module.string_pool.get(i) {
-                s.clone()
-            } else if let Some(s) = ctx.try_lookup_string(i) {
-                // ConstStr from a lazily-loaded function — idx is offset past main pool.
-                s
-            } else {
-                bail!("string pool index {idx} out of range");
-            };
-            frame.set(*dst, Value::Str(s));
-        }
-        Instruction::ConstI32  { dst, val } => frame.set(*dst, Value::I64(*val as i64)),
-        Instruction::ConstI64  { dst, val } => frame.set(*dst, Value::I64(*val)),
-        Instruction::ConstF64  { dst, val } => frame.set(*dst, Value::F64(*val)),
-        Instruction::ConstBool { dst, val } => frame.set(*dst, Value::Bool(*val)),
-        Instruction::ConstChar { dst, val } => frame.set(*dst, Value::Char(*val)),
-        Instruction::ConstNull { dst }      => frame.set(*dst, Value::Null),
-        Instruction::Copy      { dst, src } => frame.set(*dst, frame.get(*src)?.clone()),
+        Instruction::ConstStr  { dst, idx } => exec_value::const_str(ctx, module, frame, *dst, *idx)?,
+        Instruction::ConstI32  { dst, val } => exec_value::const_i32(frame, *dst, *val),
+        Instruction::ConstI64  { dst, val } => exec_value::const_i64(frame, *dst, *val),
+        Instruction::ConstF64  { dst, val } => exec_value::const_f64(frame, *dst, *val),
+        Instruction::ConstBool { dst, val } => exec_value::const_bool(frame, *dst, *val),
+        Instruction::ConstChar { dst, val } => exec_value::const_char(frame, *dst, *val),
+        Instruction::ConstNull { dst }      => exec_value::const_null(frame, *dst),
+        Instruction::Copy      { dst, src } => exec_value::copy(frame, *dst, *src)?,
 
         // ── Arithmetic ───────────────────────────────────────────────────────
-        Instruction::Add { dst, a, b } => {
-            let result = match (frame.get(*a)?, frame.get(*b)?) {
-                (Value::Str(sa), Value::Str(sb)) => Value::Str(format!("{}{}", sa, sb)),
-                (Value::Str(sa), vb)             => Value::Str(format!("{}{}", sa, value_to_str(vb))),
-                (va, Value::Str(sb))             => Value::Str(format!("{}{}", value_to_str(va), sb)),
-                // 2026-04-28 vm-wrapping-int-arith: wrapping_add（与 Rust release build /
-                // C# unchecked int / Java int 一致），解锁 hash / PRNG / 校验和算法
-                _ => int_binop(&frame.regs, *a, *b, i64::wrapping_add, |x, y| x + y)?,
-            };
-            frame.set(*dst, result);
-        }
-        Instruction::Sub { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, i64::wrapping_sub, |x, y| x - y)?);
-        }
-        Instruction::Mul { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, i64::wrapping_mul, |x, y| x * y)?);
-        }
-        Instruction::Div { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x / y, |x, y| x / y)?);
-        }
-        Instruction::Rem { dst, a, b } => {
-            frame.set(*dst, int_binop(&frame.regs, *a, *b, |x, y| x % y, |x, y| x % y)?);
-        }
+        Instruction::Add { dst, a, b } => exec_value::add(frame, *dst, *a, *b)?,
+        Instruction::Sub { dst, a, b } => exec_value::sub(frame, *dst, *a, *b)?,
+        Instruction::Mul { dst, a, b } => exec_value::mul(frame, *dst, *a, *b)?,
+        Instruction::Div { dst, a, b } => exec_value::div(frame, *dst, *a, *b)?,
+        Instruction::Rem { dst, a, b } => exec_value::rem(frame, *dst, *a, *b)?,
 
         // ── Comparison ───────────────────────────────────────────────────────
-        Instruction::Eq { dst, a, b } => {
-            frame.set(*dst, Value::Bool(frame.get(*a)? == frame.get(*b)?));
-        }
-        Instruction::Ne { dst, a, b } => {
-            frame.set(*dst, Value::Bool(frame.get(*a)? != frame.get(*b)?));
-        }
-        Instruction::Lt { dst, a, b } => {
-            frame.set(*dst, Value::Bool(numeric_lt(&frame.regs, *a, *b)?));
-        }
-        Instruction::Le { dst, a, b } => {
-            frame.set(*dst, Value::Bool(!numeric_lt(&frame.regs, *b, *a)?));
-        }
-        Instruction::Gt { dst, a, b } => {
-            frame.set(*dst, Value::Bool(numeric_lt(&frame.regs, *b, *a)?));
-        }
-        Instruction::Ge { dst, a, b } => {
-            frame.set(*dst, Value::Bool(!numeric_lt(&frame.regs, *a, *b)?));
-        }
+        Instruction::Eq { dst, a, b } => exec_value::eq(frame, *dst, *a, *b)?,
+        Instruction::Ne { dst, a, b } => exec_value::ne(frame, *dst, *a, *b)?,
+        Instruction::Lt { dst, a, b } => exec_value::lt(frame, *dst, *a, *b)?,
+        Instruction::Le { dst, a, b } => exec_value::le(frame, *dst, *a, *b)?,
+        Instruction::Gt { dst, a, b } => exec_value::gt(frame, *dst, *a, *b)?,
+        Instruction::Ge { dst, a, b } => exec_value::ge(frame, *dst, *a, *b)?,
 
         // ── Logical ──────────────────────────────────────────────────────────
-        Instruction::And { dst, a, b } => {
-            frame.set(*dst, Value::Bool(bool_val(&frame.regs, *a)? && bool_val(&frame.regs, *b)?));
-        }
-        Instruction::Or { dst, a, b } => {
-            frame.set(*dst, Value::Bool(bool_val(&frame.regs, *a)? || bool_val(&frame.regs, *b)?));
-        }
-        Instruction::Not { dst, src } => {
-            frame.set(*dst, Value::Bool(!bool_val(&frame.regs, *src)?));
-        }
+        Instruction::And { dst, a, b } => exec_value::and(frame, *dst, *a, *b)?,
+        Instruction::Or  { dst, a, b } => exec_value::or(frame, *dst, *a, *b)?,
+        Instruction::Not { dst, src }  => exec_value::not(frame, *dst, *src)?,
 
-        // ── Unary arithmetic ─────────────────────────────────────────────────
-        Instruction::Neg { dst, src } => {
-            let res = match frame.get(*src)? {
-                Value::I64(n) => Value::I64(-n),
-                Value::F64(f) => Value::F64(-f),
-                other => bail!("Neg: expected numeric, got {:?}", other),
-            };
-            frame.set(*dst, res);
-        }
+        // ── Unary ────────────────────────────────────────────────────────────
+        Instruction::Neg { dst, src } => exec_value::neg(frame, *dst, *src)?,
 
         // ── Bitwise ──────────────────────────────────────────────────────────
-        Instruction::BitAnd { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x & y)?);
-        }
-        Instruction::BitOr { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x | y)?);
-        }
-        Instruction::BitXor { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x ^ y)?);
-        }
-        Instruction::BitNot { dst, src } => {
-            let res = match frame.get(*src)? {
-                Value::I64(n) => Value::I64(!n),
-                other => bail!("BitNot: expected integral, got {:?}", other),
-            };
-            frame.set(*dst, res);
-        }
-        Instruction::Shl { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x << (y & 63))?);
-        }
-        Instruction::Shr { dst, a, b } => {
-            frame.set(*dst, int_bitop(&frame.regs, *a, *b, |x, y| x >> (y & 63))?);
-        }
+        Instruction::BitAnd { dst, a, b } => exec_value::bit_and(frame, *dst, *a, *b)?,
+        Instruction::BitOr  { dst, a, b } => exec_value::bit_or(frame, *dst, *a, *b)?,
+        Instruction::BitXor { dst, a, b } => exec_value::bit_xor(frame, *dst, *a, *b)?,
+        Instruction::BitNot { dst, src }  => exec_value::bit_not(frame, *dst, *src)?,
+        Instruction::Shl    { dst, a, b } => exec_value::shl(frame, *dst, *a, *b)?,
+        Instruction::Shr    { dst, a, b } => exec_value::shr(frame, *dst, *a, *b)?,
 
-        // ── String ───────────────────────────────────────────────────────────
-        Instruction::StrConcat { dst, a, b } => {
-            let sa = str_val(&frame.regs, *a)?;
-            let sb = str_val(&frame.regs, *b)?;
-            frame.set(*dst, Value::Str(format!("{}{}", sa, sb)));
-        }
-        Instruction::ToStr { dst, src } => {
-            let s = obj_to_string(ctx, module, frame.get(*src)?)?;
-            frame.set(*dst, Value::Str(s));
-        }
+        // ── String formation ─────────────────────────────────────────────────
+        Instruction::StrConcat { dst, a, b } => exec_value::str_concat(frame, *dst, *a, *b)?,
+        Instruction::ToStr     { dst, src }  => exec_value::to_str(ctx, module, frame, *dst, *src)?,
 
         // ── Address-load (spec impl-ref-out-in-runtime) ─────────────────────
-        // Produce a Value::Ref pointing at the named location. Callers emit
-        // these for `ref`/`out`/`in` arg expressions before the Call; the
-        // Ref flows through Call.args; callee's Frame::get_deref /
-        // set_thru_ref transparently follow it.
-        Instruction::LoadLocalAddr { dst, slot } => {
-            let depth = ctx.frame_stack_depth();
-            // Current frame is the most recent push (depth - 1).
-            let frame_idx = (depth.saturating_sub(1)) as u32;
-            frame.set(*dst, Value::Ref {
-                kind: crate::metadata::types::RefKind::Stack {
-                    frame_idx, slot: *slot,
-                }
-            });
-        }
-        Instruction::LoadElemAddr { dst, arr, idx } => {
-            let arr_val = frame.get(*arr)?;
-            let idx_val = to_usize(frame.get(*idx)?, "LoadElemAddr index")?;
-            match arr_val {
-                Value::Array(rc) => {
-                    frame.set(*dst, Value::Ref {
-                        kind: crate::metadata::types::RefKind::Array {
-                            gc_ref: rc.clone(), idx: idx_val,
-                        }
-                    });
-                }
-                other => bail!("LoadElemAddr: expected array, got {:?}", other),
-            }
-        }
-        Instruction::LoadFieldAddr { dst, obj, field_name } => {
-            let obj_val = frame.get(*obj)?;
-            match obj_val {
-                Value::Object(rc) => {
-                    frame.set(*dst, Value::Ref {
-                        kind: crate::metadata::types::RefKind::Field {
-                            gc_ref: rc.clone(),
-                            field_name: field_name.clone(),
-                        }
-                    });
-                }
-                other => bail!("LoadFieldAddr: expected object, got {:?}", other),
-            }
-        }
+        Instruction::LoadLocalAddr { dst, slot } => exec_address::load_local_addr(ctx, frame, *dst, *slot),
+        Instruction::LoadElemAddr  { dst, arr, idx } => exec_address::load_elem_addr(frame, *dst, *arr, *idx)?,
+        Instruction::LoadFieldAddr { dst, obj, field_name } => exec_address::load_field_addr(frame, *dst, *obj, field_name)?,
 
-        // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): runtime
-        // resolution of `default(T)` where T is a generic type-parameter of the
-        // receiver class. Reads `frame.regs[0]` (this) → `Object → instance.type_args[idx]`,
-        // looks up the resolved tag via `default_value_for(tag)`, writes result to dst.
-        // Non-Object reg 0 / OOB index / empty type_args → graceful Null.
-        // type_args is per-instance (populated by `obj.new`), not per-TypeDesc, so
-        // `Foo<int>` and `Foo<string>` instances differ at runtime despite sharing
-        // the same TypeDesc Arc (z42 erasure with per-instance type-arg view).
-        Instruction::DefaultOf { dst, param_index } => {
-            let val = match frame.get(0) {
-                Ok(Value::Object(rc)) => {
-                    let borrowed = rc.borrow();
-                    borrowed.type_args.get(*param_index as usize)
-                        .map(|tag| crate::metadata::types::default_value_for(tag))
-                        .unwrap_or(Value::Null)
-                }
-                _ => Value::Null,
-            };
-            frame.set(*dst, val);
-        }
+        // ── Generic default(T) at runtime (D-8b-3 Phase 2) ──────────────────
+        Instruction::DefaultOf { dst, param_index } => exec_address::default_of(frame, *dst, *param_index),
 
         // ── Calls ────────────────────────────────────────────────────────────
-        Instruction::Call { dst, func: fname, args } => {
-            let arg_vals = collect_args(&frame.regs, args)?;
-            let callee_fn = module.func_index.get(fname.as_str())
-                .and_then(|&idx| module.functions.get(idx));
-            let outcome = if let Some(callee) = callee_fn {
-                super::exec_function(ctx, module, callee, &arg_vals)?
-            } else if let Some(lazy_fn) = ctx.try_lookup_function(fname) {
-                super::exec_function(ctx, module, lazy_fn.as_ref(), &arg_vals)?
-            } else {
-                bail!("undefined function `{fname}`");
-            };
-            match outcome {
-                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                ExecOutcome::Thrown(val) => return Ok(Some(val)),
+        Instruction::Call { dst, func, args } => {
+            if let Some(thrown) = exec_call::call(ctx, module, frame, *dst, func, args)? {
+                return Ok(Some(thrown));
             }
         }
-
-        Instruction::Builtin { dst, name, args } => {
-            let arg_vals = collect_args(&frame.regs, args)?;
-            let result = crate::corelib::exec_builtin(ctx, name, &arg_vals)?;
-            frame.set(*dst, result);
-        }
-
-        // L2 no-capture lambda lifting: push a function reference value.
-        // See docs/design/closure.md §6 + ir.md.
-        Instruction::LoadFn { dst, func } => {
-            frame.set(*dst, Value::FuncRef(func.clone()));
-        }
-
-        // 2026-05-02 add-method-group-conversion (D1b): cached method group
-        // conversion. First execution constructs `Value::FuncRef(func)` and
-        // stores it into the module-level slot; subsequent hits read the slot.
-        Instruction::LoadFnCached { dst, func, slot_id } => {
-            let cached = ctx.func_ref_slot(*slot_id);
-            let value = if matches!(cached, Value::Null) {
-                let v = Value::FuncRef(func.clone());
-                ctx.set_func_ref_slot(*slot_id, v.clone());
-                v
-            } else {
-                cached
-            };
-            frame.set(*dst, value);
-        }
-
-        // Indirect call: dispatch on FuncRef (no-capture) or Closure (capturing).
-        // For Closures, env is prepended to the user args as the lifted body's
-        // implicit first parameter. See closure.md §6.
+        Instruction::Builtin { dst, name, args } => exec_call::builtin(ctx, frame, *dst, name, args)?,
+        Instruction::LoadFn { dst, func } => exec_call::load_fn(frame, *dst, func),
+        Instruction::LoadFnCached { dst, func, slot_id } => exec_call::load_fn_cached(ctx, frame, *dst, func, *slot_id),
         Instruction::CallIndirect { dst, callee, args } => {
-            // env 解码：FuncRef → 无 env；Closure → heap GcRef；StackClosure
-            // → 从当前 frame.env_arena 复制出 Vec（新 GcRef，callee 内 lifetime
-            //   独立于 caller frame，避免 caller 弹出 arena 后 use-after-free）
-            let (fname, env_vec_opt): (String, Option<Vec<Value>>) = match frame.get(*callee)? {
-                Value::FuncRef(name)               => (name.clone(), None),
-                Value::Closure { env, fn_name }    => (fn_name.clone(), Some(env.borrow().clone())),
-                Value::StackClosure { env_idx, fn_name } => {
-                    let idx = *env_idx as usize;
-                    if idx >= frame.env_arena.len() {
-                        bail!("CallIndirect: stack closure env_idx {} out of bounds (arena_len={})",
-                              idx, frame.env_arena.len());
-                    }
-                    (fn_name.clone(), Some(frame.env_arena[idx].clone()))
-                }
-                other => bail!("CallIndirect: expected FuncRef / Closure / StackClosure, got {:?}", other),
-            };
-            let user_vals = collect_args(&frame.regs, args)?;
-            let arg_vals: Vec<Value> = match env_vec_opt {
-                None          => user_vals,
-                Some(env_vec) => {
-                    // 升格为 heap GcRef 给 callee 用 —— callee 不区分 stack/heap closure。
-                    let env_val = ctx.heap().alloc_array(env_vec);
-                    let mut v = Vec::with_capacity(user_vals.len() + 1);
-                    v.push(env_val);
-                    v.extend(user_vals);
-                    v
-                }
-            };
-            let callee_fn = module.func_index.get(fname.as_str())
-                .and_then(|&idx| module.functions.get(idx));
-            let outcome = if let Some(cfn) = callee_fn {
-                super::exec_function(ctx, module, cfn, &arg_vals)?
-            } else if let Some(lazy_fn) = ctx.try_lookup_function(&fname) {
-                super::exec_function(ctx, module, lazy_fn.as_ref(), &arg_vals)?
-            } else {
-                bail!("CallIndirect: undefined function `{fname}`");
-            };
-            match outcome {
-                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                ExecOutcome::Thrown(val)   => return Ok(Some(val)),
+            if let Some(thrown) = exec_call::call_indirect(ctx, module, frame, *dst, *callee, args)? {
+                return Ok(Some(thrown));
             }
         }
-
-        // L3 closure construction. `stack_alloc=true` 走 frame-local arena
-        //（impl-closure-l3-escape-stack）；否则 heap 路径（原 Tier C）。
         Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
-            let mut env_vec: Vec<Value> = Vec::with_capacity(captures.len());
-            for r in captures {
-                env_vec.push(frame.get(*r)?.clone());
-            }
-            let value = if *stack_alloc {
-                let idx = frame.env_arena.len() as u32;
-                frame.env_arena.push(env_vec);
-                Value::StackClosure { env_idx: idx, fn_name: fn_name.clone() }
-            } else {
-                let env_val = ctx.heap().alloc_array(env_vec);
-                let env = match env_val {
-                    Value::Array(rc) => rc,
-                    _ => unreachable!("alloc_array must return Value::Array"),
-                };
-                Value::Closure { env, fn_name: fn_name.clone() }
-            };
-            frame.set(*dst, value);
+            exec_call::mk_clos(ctx, frame, *dst, fn_name, captures, *stack_alloc)?
         }
 
         // ── Arrays ───────────────────────────────────────────────────────────
-        Instruction::ArrayNew { dst, size } => {
-            let n = to_usize(frame.get(*size)?, "ArrayNew size")?;
-            frame.set(*dst, ctx.heap().alloc_array(vec![Value::Null; n]));
-        }
-        Instruction::ArrayNewLit { dst, elems } => {
-            let vals: Vec<Value> = elems.iter()
-                .map(|r| frame.get(*r).map(|v| v.clone()))
-                .collect::<Result<_>>()?;
-            frame.set(*dst, ctx.heap().alloc_array(vals));
-        }
-        Instruction::ArrayGet { dst, arr, idx } => {
-            let result = match frame.get(*arr)? {
-                Value::Array(rc) => {
-                    let rc = rc.clone();
-                    let i = to_usize(frame.get(*idx)?, "ArrayGet index")?;
-                    let borrowed = rc.borrow();
-                    if i >= borrowed.len() {
-                        bail!("array index {} out of bounds (len={})", i, borrowed.len());
-                    }
-                    borrowed[i].clone()
-                }
-                other => bail!("ArrayGet: expected array, got {:?}", other),
-            };
-            frame.set(*dst, result);
-        }
-        Instruction::ArraySet { arr, idx, val } => {
-            let v = frame.get(*val)?.clone();
-            match frame.get(*arr)? {
-                Value::Array(rc) => {
-                    let rc = rc.clone();
-                    let i = to_usize(frame.get(*idx)?, "ArraySet index")?;
-                    let mut borrowed = rc.borrow_mut();
-                    if i >= borrowed.len() {
-                        bail!("array index {} out of bounds (len={})", i, borrowed.len());
-                    }
-                    borrowed[i] = v;
-                }
-                other => bail!("ArraySet: expected array, got {:?}", other),
-            }
-        }
-        Instruction::ArrayLen { dst, arr } => {
-            let len = match frame.get(*arr)? {
-                Value::Array(rc) => rc.borrow().len() as i32,
-                other => bail!("ArrayLen: expected array, got {:?}", other),
-            };
-            frame.set(*dst, Value::I64(len as i64));
-        }
+        Instruction::ArrayNew    { dst, size }      => exec_array::array_new(ctx, frame, *dst, *size)?,
+        Instruction::ArrayNewLit { dst, elems }     => exec_array::array_new_lit(ctx, frame, *dst, elems)?,
+        Instruction::ArrayGet    { dst, arr, idx }  => exec_array::array_get(frame, *dst, *arr, *idx)?,
+        Instruction::ArraySet    { arr, idx, val }  => exec_array::array_set(frame, *arr, *idx, *val)?,
+        Instruction::ArrayLen    { dst, arr }       => exec_array::array_len(frame, *dst, *arr)?,
 
         // ── Objects ──────────────────────────────────────────────────────────
         Instruction::ObjNew { dst, class_name, ctor_name, args, type_args } => {
-            // L3-G4d: for imported classes (e.g. Std.Collections.Stack) the TypeDesc
-            // may only exist in the lazy loader until first use; probe it before
-            // falling back to a blank synthetic descriptor.
-            let type_desc = module.type_registry
-                .get(class_name)
-                .cloned()
-                .or_else(|| ctx.try_lookup_type(class_name))
-                .unwrap_or_else(|| {
-                    std::sync::Arc::new(make_fallback_type_desc(module, class_name))
-                });
-
-            // 2026-05-02 fix-class-field-default-init: 按字段声明类型选默认值
-            // （int → I64(0)、bool → Bool(false)、str/ref → Null …），不再
-            // 一律 Null。有显式 init 的字段在 ctor 入口被 FieldSet 覆写。
-            let slots: Vec<Value> = type_desc.fields.iter()
-                .map(|f| crate::metadata::default_value_for(&f.type_tag))
-                .collect();
-            let obj_val = ctx.heap().alloc_object(type_desc, slots, NativeData::None);
-
-            // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): populate
-            // per-instance type_args from the IR instruction. Read by `DefaultOf`.
-            if !type_args.is_empty() {
-                if let Value::Object(ref rc) = obj_val {
-                    rc.borrow_mut().type_args = type_args.clone();
-                }
-            }
-
-            // 直查 ctor_name (TypeChecker 已 overload-resolve)；无名字推断。
-            // L3-G4d: fall back to lazy loader when the ctor lives in a stdlib zpkg
-            // (imported generic class ctor isn't in the main module's function table).
-            let ctor_fn = module.func_index.get(ctor_name.as_str())
-                .and_then(|&i| module.functions.get(i));
-            if let Some(ctor) = ctor_fn {
-                let mut ctor_args = vec![obj_val.clone()];
-                ctor_args.extend(collect_args(&frame.regs, args)?);
-                super::exec_function(ctx, module, ctor, &ctor_args)?;
-            } else if let Some(lazy_ctor) = ctx.try_lookup_function(ctor_name) {
-                let mut ctor_args = vec![obj_val.clone()];
-                ctor_args.extend(collect_args(&frame.regs, args)?);
-                super::exec_function(ctx, module, lazy_ctor.as_ref(), &ctor_args)?;
-            }
-
-            frame.set(*dst, obj_val);
+            exec_object::obj_new(ctx, module, frame, *dst, class_name, ctor_name, args, type_args)?
         }
-
-        Instruction::FieldGet { dst, obj, field_name } => {
-            let val = match frame.get(*obj)? {
-                Value::Object(rc) => {
-                    let borrowed = rc.borrow();
-                    if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
-                        borrowed.slots.get(slot).cloned().unwrap_or(Value::Null)
-                    } else {
-                        Value::Null
-                    }
-                }
-                Value::Str(s) => match field_name.as_str() {
-                    "Length" => Value::I64(s.chars().count() as i64),
-                    other    => bail!("string has no field `{}`", other),
-                },
-                Value::Array(rc) => match field_name.as_str() {
-                    "Length" | "Count" => Value::I64(rc.borrow().len() as i64),
-                    other => bail!("array has no field `{}`", other),
-                },
-                Value::PinnedView { ptr, len, .. } => match field_name.as_str() {
-                    // Spec C4 — only `ptr` / `len` are exposed; element type
-                    // information (kind) stays internal.
-                    "ptr" => Value::I64(*ptr as i64),
-                    "len" => Value::I64(*len as i64),
-                    other => bail!("Z0908: PinnedView has no field `{}` (only `ptr` / `len`)", other),
-                },
-                other => bail!("FieldGet: not an object or known value type, got {:?}", other),
-            };
-            frame.set(*dst, val);
-        }
-
-        Instruction::FieldSet { obj, field_name, val } => {
-            let v = frame.get(*val)?.clone();
-            match frame.get(*obj)? {
-                Value::Object(rc) => {
-                    let mut borrowed = rc.borrow_mut();
-                    if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
-                        if slot < borrowed.slots.len() {
-                            borrowed.slots[slot] = v;
-                        }
-                    }
-                }
-                other => bail!("FieldSet: expected object, got {:?}", other),
-            }
-        }
-
+        Instruction::FieldGet { dst, obj, field_name } => exec_object::field_get(frame, *dst, *obj, field_name)?,
+        Instruction::FieldSet { obj, field_name, val } => exec_object::field_set(frame, *obj, field_name, *val)?,
         Instruction::VCall { dst, obj, method, args } => {
-            let obj_val = frame.get(*obj)?.clone();
-            let mut extra_args = collect_args(&frame.regs, args)?;
-
-            // L3-G4b primitive-as-struct: primitives dispatch through their stdlib
-            // struct's method (e.g. `Value::I64.CompareTo` → call `Std.int.CompareTo`
-            // IR function, which contains a BuiltinInstr for `__int_compare_to`).
-            // This replaces the old hardcoded `(Value, method) → builtin` table —
-            // method-to-native binding is now entirely data-driven via stdlib source.
-            //
-            // Overload resolution: when the receiver type is statically `object`
-            // (e.g. `Std.Assert.Equal(object, object)` calling `expected.Equals(actual)`),
-            // the C# emit can't pick an overload at compile time; the IR carries the
-            // unmangled method name `Equals`. But IrGen emits overloaded methods with
-            // a `$N` arity suffix (e.g. `Std.String.Equals$1`). We retry with `$<arity>`
-            // when the unmangled lookup misses — covers `Equals` (arity 1) and any
-            // other overloaded primitive method without per-Value-type special cases.
-            // This subsumes the legacy `Value::Str` hardcoded block (review2 §2.2).
-            if let Some(class_name) = primitive_class_name(&obj_val) {
-                let mut call_args = vec![obj_val.clone()];
-                call_args.append(&mut extra_args);
-                let arity = call_args.len() - 1; // exclude `this`
-                let primary = format!("{}.{}", class_name, method);
-                let overload = format!("{}.{}${}", class_name, method, arity);
-                for func_name in [primary.as_str(), overload.as_str()] {
-                    if let Some(&idx) = module.func_index.get(func_name) {
-                        if let Some(callee) = module.functions.get(idx) {
-                            let outcome = super::exec_function(ctx, module, callee, &call_args)?;
-                            match outcome {
-                                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                                ExecOutcome::Thrown(val) => return Ok(Some(val)),
-                            }
-                            return Ok(None);
-                        }
-                    }
-                    if let Some(lazy_fn) = ctx.try_lookup_function(func_name) {
-                        let outcome = super::exec_function(ctx, module, lazy_fn.as_ref(), &call_args)?;
-                        match outcome {
-                            ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                            ExecOutcome::Thrown(val) => return Ok(Some(val)),
-                        }
-                        return Ok(None);
-                    }
-                }
-                // Restore args for fallback paths below (call_args consumed obj_val).
-                extra_args = call_args.into_iter().skip(1).collect();
-            }
-
-            // O(1) vtable dispatch using pre-computed TypeDesc.
-            let type_desc = match &obj_val {
-                Value::Object(rc) => rc.borrow().type_desc.clone(),
-                other => bail!("VCall: expected object, got {:?}", other),
-            };
-            // Try paths in order:
-            //   1. vtable_index hit (fastest path; pre-built type descriptor)
-            //   2. resolve_virtual: walk module.classes hierarchy looking up
-            //      `<class>.<method>` in module.func_index at each level
-            //   3. (NEW 2026-05-05) lazy hierarchy walk: same hierarchy traversal
-            //      but using ctx.try_lookup_function — covers methods inherited
-            //      from cross-zpkg base classes (e.g. `e.GetType()` when
-            //      `e: Std.TestFailure` and `GetType` is on Std.Object in z42.core)
-            //   4. fallback: `<most-derived>.<method>` (likely fails downstream)
-            let mut call_args = vec![obj_val];
-            call_args.append(&mut extra_args);
-
-            let mut callee_module_idx: Option<usize> = None;
-            let mut callee_lazy: Option<Arc<crate::metadata::Function>> = None;
-            let mut chosen_name: Option<String> = None;
-
-            if let Some(&slot) = type_desc.vtable_index.get(method.as_str()) {
-                let n = type_desc.vtable[slot].1.clone();
-                if let Some(&idx) = module.func_index.get(n.as_str()) {
-                    callee_module_idx = Some(idx);
-                } else if let Some(fn_) = ctx.try_lookup_function(&n) {
-                    callee_lazy = Some(fn_);
-                }
-                chosen_name = Some(n);
-            }
-            if callee_module_idx.is_none() && callee_lazy.is_none() {
-                if let Ok(f) = resolve_virtual(module, &type_desc.name, method) {
-                    let n = f.name.clone();
-                    if let Some(&idx) = module.func_index.get(n.as_str()) {
-                        callee_module_idx = Some(idx);
-                    } else if let Some(fn_) = ctx.try_lookup_function(&n) {
-                        callee_lazy = Some(fn_);
-                    }
-                    chosen_name = Some(n);
-                }
-            }
-            // Lazy hierarchy walk: walk type_desc's base chain via
-            // module.classes, trying ctx.try_lookup_function at each level.
-            // Critical for cross-zpkg inherited methods (Std.Object.GetType
-            // accessed via Std.TestFailure receiver).
-            if callee_module_idx.is_none() && callee_lazy.is_none() {
-                let mut cur = type_desc.name.clone();
-                loop {
-                    let candidate = format!("{}.{}", cur, method);
-                    if let Some(&idx) = module.func_index.get(candidate.as_str()) {
-                        callee_module_idx = Some(idx);
-                        chosen_name = Some(candidate);
-                        break;
-                    }
-                    if let Some(fn_) = ctx.try_lookup_function(&candidate) {
-                        callee_lazy = Some(fn_);
-                        chosen_name = Some(candidate);
-                        break;
-                    }
-                    // Walk base via either module.classes or the type_desc
-                    // we already loaded (may be in registry but missing from
-                    // module.classes when imported lazily).
-                    let next = module.classes.iter()
-                        .find(|c| c.name == cur)
-                        .and_then(|c| c.base_class.clone())
-                        .or_else(|| {
-                            // type_desc only has immediate base; but if cur is
-                            // its own name we know its base. For deeper levels
-                            // we rely on module.classes being populated.
-                            if cur == type_desc.name { type_desc.base_name.clone() } else { None }
-                        });
-                    match next {
-                        Some(b) => cur = b,
-                        None => break,
-                    }
-                }
-            }
-
-            let func_name = chosen_name.unwrap_or_else(|| format!("{}.{}", type_desc.name, method));
-            let outcome = if let Some(idx) = callee_module_idx {
-                let callee = &module.functions[idx];
-                super::exec_function(ctx, module, callee, &call_args)?
-            } else if let Some(lazy_fn) = callee_lazy {
-                super::exec_function(ctx, module, lazy_fn.as_ref(), &call_args)?
-            } else {
-                bail!("VCall: function `{}` not found", func_name);
-            };
-            match outcome {
-                ExecOutcome::Returned(ret) => frame.set(*dst, ret.unwrap_or(Value::Null)),
-                ExecOutcome::Thrown(val) => return Ok(Some(val)),
+            if let Some(thrown) = exec_vcall::vcall(ctx, module, frame, *dst, *obj, method, args)? {
+                return Ok(Some(thrown));
             }
         }
+        Instruction::IsInstance { dst, obj, class_name } => exec_object::is_instance(module, frame, *dst, *obj, class_name)?,
+        Instruction::AsCast     { dst, obj, class_name } => exec_object::as_cast(module, frame, *dst, *obj, class_name)?,
+        Instruction::StaticGet  { dst, field } => exec_object::static_get(ctx, frame, *dst, field),
+        Instruction::StaticSet  { field, val } => exec_object::static_set(ctx, frame, field, *val)?,
 
-        Instruction::IsInstance { dst, obj, class_name } => {
-            let result = match frame.get(*obj)? {
-                Value::Object(rc) => {
-                    let runtime_class = rc.borrow().type_desc.name.clone();
-                    is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
-                }
-                // 2026-05-07 add-array-base-class: T[] is-a Std.Array is-a Std.Object.
-                // VM hardcodes the chain since Value::Array doesn't carry a TypeDesc.
-                Value::Array(_) => is_array_isa(class_name),
-                Value::Null => false,
-                _ => false,
-            };
-            frame.set(*dst, Value::Bool(result));
+        // ── Native interop ───────────────────────────────────────────────────
+        Instruction::CallNative { dst, module: m, type_name, symbol, args } => {
+            exec_native::call_native(ctx, module, frame, *dst, m, type_name, symbol, args)?
         }
-
-        Instruction::AsCast { dst, obj, class_name } => {
-            let val = frame.get(*obj)?.clone();
-            let is_match = match &val {
-                Value::Object(rc) => {
-                    let runtime_class = rc.borrow().type_desc.name.clone();
-                    is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
-                }
-                Value::Array(_) => is_array_isa(class_name),
-                Value::Null => true,
-                _ => false,
-            };
-            frame.set(*dst, if is_match { val } else { Value::Null });
-        }
-
-        Instruction::StaticGet { dst, field } => {
-            frame.set(*dst, ctx.static_get(field));
-        }
-        Instruction::StaticSet { field, val } => {
-            let v = frame.get(*val)?.clone();
-            ctx.static_set(field, v);
-        }
-
-        // ── Native interop ─────────────────────────────────────────────────
-        //
-        // C2 (`impl-tier1-c-abi`): `CallNative` flows through the registered
-        // `RegisteredType` → libffi cif → marshal/unmarshal pipeline.
-        // C4/C5 will wire the remaining three opcodes.
-        Instruction::CallNative { dst, module, type_name, symbol, args } => {
-            use crate::native::{marshal, dispatch as ndisp};
-
-            let ty = ctx.resolve_native_type(module, type_name).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "CallNative: unknown native type {module}::{type_name} (Z0905)"
-                )
-            })?;
-            let method = ty.method(symbol).ok_or_else(|| {
-                anyhow::anyhow!(
-                    "CallNative: unknown method {module}::{type_name}::{symbol} (Z0905)"
-                )
-            })?;
-
-            // Marshal each register into a Z42Value targeting the corresponding
-            // ABI-side parameter type.
-            if args.len() != method.params.len() {
-                bail!(
-                    "CallNative {module}::{type_name}::{symbol}: arity mismatch (caller passed {}, signature wants {})",
-                    args.len(),
-                    method.params.len()
-                );
-            }
-            // Spec C8: marshal arena owns temporaries (e.g. CString backing
-            // for `*const c_char`) for the call's duration; dropped after
-            // dispatch returns.
-            let mut arena = marshal::Arena::new();
-            let z_args: Vec<z42_abi::Z42Value> = args
-                .iter()
-                .zip(method.params.iter())
-                .map(|(reg, ty)| marshal::value_to_z42(frame.get(*reg)?, ty, &mut arena))
-                .collect::<Result<_>>()?;
-
-            // SAFETY: cif was built from `params`/`return_type` matching the
-            // native function pointer at registration time; native lib keeps
-            // the function alive via `VmContext.native_libs`. CURRENT_VM is
-            // set by VmGuard so a re-entrant z42_* call finds the right ctx.
-            let z_ret = unsafe {
-                ndisp::call(
-                    &method.cif,
-                    method.fn_ptr,
-                    &z_args,
-                    &method.params,
-                    &method.return_type,
-                )
-            }?;
-            drop(arena);
-
-            let result = marshal::z42_to_value(&z_ret, &method.return_type)?;
-            frame.set(*dst, result);
-        }
-        Instruction::CallNativeVtable { vtable_slot, .. } => {
-            bail!(
-                "CallNativeVtable not yet implemented (Z0907, see spec C5 / impl-source-generator): slot={vtable_slot}"
-            );
-        }
-        Instruction::PinPtr { dst, src } => {
-            // C4: borrow a `String` / future `Array<u8>` buffer for FFI.
-            // Caller (currently always test-emitted IR; user-side `pinned`
-            // syntax lands in C5) is responsible for matching `UnpinPtr` on
-            // every exit path. RC backend treats the borrow as zero-cost
-            // (no relocation possible); the pin set will be repopulated
-            // for moving GC backends in a later spec.
-            let view = match frame.get(*src)? {
-                Value::Str(s) => Value::PinnedView {
-                    ptr: s.as_ptr() as u64,
-                    len: s.len() as u64,
-                    kind: crate::metadata::PinSourceKind::Str,
-                },
-                Value::Array(arr) => {
-                    // Spec C10 — `Array<u8>` pin: snapshot the bytes into
-                    // a Box<[u8]> owned by the VM for the pin's lifetime.
-                    // Each element must be a `Value::I64` in 0..=255.
-                    let arr_ref = arr.borrow();
-                    let mut bytes = Vec::with_capacity(arr_ref.len());
-                    for (i, v) in arr_ref.iter().enumerate() {
-                        match v {
-                            Value::I64(n) if (0..=255).contains(n) => {
-                                bytes.push(*n as u8);
-                            }
-                            other => bail!(
-                                "Z0908: PinPtr Array element {i} not a u8 in 0..=255: {other:?}"
-                            ),
-                        }
-                    }
-                    let len = bytes.len() as u64;
-                    let buf: Box<[u8]> = bytes.into_boxed_slice();
-                    let ptr = ctx.pin_owned_buffer(buf);
-                    Value::PinnedView {
-                        ptr,
-                        len,
-                        kind: crate::metadata::PinSourceKind::ArrayU8,
-                    }
-                }
-                other => bail!(
-                    "Z0908: PinPtr source must be String or Array<u8>, got {:?}",
-                    other
-                ),
-            };
-            frame.set(*dst, view);
-        }
-        Instruction::UnpinPtr { pinned } => {
-            match frame.get(*pinned)? {
-                Value::PinnedView { ptr, kind: crate::metadata::PinSourceKind::ArrayU8, .. } => {
-                    // Spec C10: drop the snapshot Box<[u8]> we leaked into
-                    // VmContext at PinPtr time.
-                    ctx.release_owned_buffer(*ptr);
-                }
-                Value::PinnedView { .. } => {
-                    // Str pin: borrowed from the source String — no-op.
-                    // Future moving GC will deregister the entry from its
-                    // pin set here.
-                }
-                other => bail!(
-                    "Z0908: UnpinPtr expects PinnedView (compiler-emitted UnpinPtr should always pair with a prior PinPtr); got {:?}",
-                    other
-                ),
-            }
-        }
+        Instruction::CallNativeVtable { vtable_slot, .. } => exec_native::call_native_vtable(*vtable_slot)?,
+        Instruction::PinPtr   { dst, src }   => exec_native::pin_ptr(ctx, frame, *dst, *src)?,
+        Instruction::UnpinPtr { pinned }     => exec_native::unpin_ptr(ctx, frame, *pinned)?,
     }
     Ok(None)
-}
-
-// 2026-05-07 add-array-base-class: hardcoded is-a check for `Value::Array`.
-// Class name comparison accepts both unqualified and `Std.`-qualified forms
-// because IR-emitted class names depend on TypeChecker's qualification path
-// (imported classes use FQ; bare references unqualified).
-fn is_array_isa(class_name: &str) -> bool {
-    matches!(class_name, "Array" | "Object" | "Std.Array" | "Std.Object")
 }

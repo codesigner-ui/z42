@@ -7,7 +7,14 @@
 | 文件 | 职责 |
 |------|------|
 | `mod.rs` | 公开 API（`run`/`run_with_static_init`）、`Frame`、执行循环、异常表查找 |
-| `exec_instr.rs` | 单指令 dispatch（一个大 match）：常量、算术、比较、逻辑、数组、对象、调用 |
+| `exec_instr.rs` | 薄分发器：穷尽 match 把 `Instruction` 分派到下面 7 个 `exec_<category>.rs` |
+| `exec_value.rs` | 常量 / Copy / 算术 / 比较 / 逻辑 / 一元 / 位运算 / 字符串构造 |
+| `exec_address.rs` | `LoadLocalAddr` / `LoadElemAddr` / `LoadFieldAddr` / `DefaultOf` |
+| `exec_call.rs` | `Call` / `Builtin` / `LoadFn` / `LoadFnCached` / `CallIndirect` / `MkClos` |
+| `exec_array.rs` | `ArrayNew` / `ArrayNewLit` / `ArrayGet` / `ArraySet` / `ArrayLen` |
+| `exec_object.rs` | `ObjNew` / `FieldGet` / `FieldSet` / `IsInstance` / `AsCast` / `Static*` |
+| `exec_vcall.rs` | `VCall` + `primitive_class_name` + `is_array_isa`（独占文件因体积较大） |
+| `exec_native.rs` | `CallNative` / `CallNativeVtable` / `PinPtr` / `UnpinPtr` |
 | `dispatch.rs` | 对象分发辅助：vtable 解析、ToString 协议、子类检查、静态字段、fallback TypeDesc |
 | `ops.rs` | 寄存器级辅助：`int_binop`、`numeric_lt`、`collect_args`、`bool_val`、`str_val` |
 

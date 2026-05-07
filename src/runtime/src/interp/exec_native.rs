@@ -1,0 +1,143 @@
+/// Native interop instructions:
+///   • CallNative — Spec C2 `impl-tier1-c-abi`: libffi-driven C ABI dispatch
+///   • CallNativeVtable — Spec C5 placeholder (Z0907)
+///   • PinPtr / UnpinPtr — Spec C4/C10: zero-copy / borrowed buffer FFI
+
+use crate::metadata::{Module, Value};
+use crate::vm_context::VmContext;
+use anyhow::{bail, Result};
+
+use super::Frame;
+
+/// C2 (`impl-tier1-c-abi`): `CallNative` flows through the registered
+/// `RegisteredType` → libffi cif → marshal/unmarshal pipeline.
+/// C4/C5 will wire the remaining three opcodes.
+pub(super) fn call_native(
+    ctx: &VmContext, _module: &Module, frame: &mut Frame,
+    dst: u32, module_name: &str, type_name: &str, symbol: &str, args: &[u32],
+) -> Result<()> {
+    use crate::native::{marshal, dispatch as ndisp};
+
+    let ty = ctx.resolve_native_type(module_name, type_name).ok_or_else(|| {
+        anyhow::anyhow!(
+            "CallNative: unknown native type {module_name}::{type_name} (Z0905)"
+        )
+    })?;
+    let method = ty.method(symbol).ok_or_else(|| {
+        anyhow::anyhow!(
+            "CallNative: unknown method {module_name}::{type_name}::{symbol} (Z0905)"
+        )
+    })?;
+
+    // Marshal each register into a Z42Value targeting the corresponding
+    // ABI-side parameter type.
+    if args.len() != method.params.len() {
+        bail!(
+            "CallNative {module_name}::{type_name}::{symbol}: arity mismatch (caller passed {}, signature wants {})",
+            args.len(),
+            method.params.len()
+        );
+    }
+    // Spec C8: marshal arena owns temporaries (e.g. CString backing
+    // for `*const c_char`) for the call's duration; dropped after
+    // dispatch returns.
+    let mut arena = marshal::Arena::new();
+    let z_args: Vec<z42_abi::Z42Value> = args
+        .iter()
+        .zip(method.params.iter())
+        .map(|(reg, ty)| marshal::value_to_z42(frame.get(*reg)?, ty, &mut arena))
+        .collect::<Result<_>>()?;
+
+    // SAFETY: cif was built from `params`/`return_type` matching the
+    // native function pointer at registration time; native lib keeps
+    // the function alive via `VmContext.native_libs`. CURRENT_VM is
+    // set by VmGuard so a re-entrant z42_* call finds the right ctx.
+    let z_ret = unsafe {
+        ndisp::call(
+            &method.cif,
+            method.fn_ptr,
+            &z_args,
+            &method.params,
+            &method.return_type,
+        )
+    }?;
+    drop(arena);
+
+    let result = marshal::z42_to_value(&z_ret, &method.return_type)?;
+    frame.set(dst, result);
+    Ok(())
+}
+
+pub(super) fn call_native_vtable(vtable_slot: u16) -> Result<()> {
+    bail!(
+        "CallNativeVtable not yet implemented (Z0907, see spec C5 / impl-source-generator): slot={vtable_slot}"
+    );
+}
+
+/// C4: borrow a `String` / future `Array<u8>` buffer for FFI.
+/// Caller (currently always test-emitted IR; user-side `pinned`
+/// syntax lands in C5) is responsible for matching `UnpinPtr` on
+/// every exit path. RC backend treats the borrow as zero-cost
+/// (no relocation possible); the pin set will be repopulated
+/// for moving GC backends in a later spec.
+pub(super) fn pin_ptr(ctx: &VmContext, frame: &mut Frame, dst: u32, src: u32) -> Result<()> {
+    let view = match frame.get(src)? {
+        Value::Str(s) => Value::PinnedView {
+            ptr: s.as_ptr() as u64,
+            len: s.len() as u64,
+            kind: crate::metadata::PinSourceKind::Str,
+        },
+        Value::Array(arr) => {
+            // Spec C10 — `Array<u8>` pin: snapshot the bytes into
+            // a Box<[u8]> owned by the VM for the pin's lifetime.
+            // Each element must be a `Value::I64` in 0..=255.
+            let arr_ref = arr.borrow();
+            let mut bytes = Vec::with_capacity(arr_ref.len());
+            for (i, v) in arr_ref.iter().enumerate() {
+                match v {
+                    Value::I64(n) if (0..=255).contains(n) => {
+                        bytes.push(*n as u8);
+                    }
+                    other => bail!(
+                        "Z0908: PinPtr Array element {i} not a u8 in 0..=255: {other:?}"
+                    ),
+                }
+            }
+            let len = bytes.len() as u64;
+            let buf: Box<[u8]> = bytes.into_boxed_slice();
+            let ptr = ctx.pin_owned_buffer(buf);
+            Value::PinnedView {
+                ptr,
+                len,
+                kind: crate::metadata::PinSourceKind::ArrayU8,
+            }
+        }
+        other => bail!(
+            "Z0908: PinPtr source must be String or Array<u8>, got {:?}",
+            other
+        ),
+    };
+    frame.set(dst, view);
+    Ok(())
+}
+
+pub(super) fn unpin_ptr(ctx: &VmContext, frame: &Frame, pinned: u32) -> Result<()> {
+    match frame.get(pinned)? {
+        Value::PinnedView { ptr, kind: crate::metadata::PinSourceKind::ArrayU8, .. } => {
+            // Spec C10: drop the snapshot Box<[u8]> we leaked into
+            // VmContext at PinPtr time.
+            ctx.release_owned_buffer(*ptr);
+            Ok(())
+        }
+        Value::PinnedView { .. } => {
+            // Str pin: borrowed from the source String — no-op.
+            // Future moving GC will deregister the entry from its
+            // pin set here.
+            Ok(())
+        }
+        other => bail!(
+            "Z0908: UnpinPtr expects PinnedView (compiler-emitted UnpinPtr should always pair with a prior PinPtr); got {:?}",
+            other
+        ),
+    }
+}
