@@ -24,10 +24,15 @@ struct Cli {
     verbose: bool,
 }
 
+// 2026-05-07 add-runtime-feature-flags (P4.1): variants are feature-gated so
+// `--help` only advertises modes the binary can actually run, and clap rejects
+// unsupported `--mode jit` requests with a friendly enum-list error.
 #[derive(Clone, ValueEnum)]
 enum ExecMode {
     Interp,
+    #[cfg(feature = "jit")]
     Jit,
+    #[cfg(feature = "aot")]
     Aot,
 }
 
@@ -284,7 +289,15 @@ fn main() -> Result<()> {
     //     (see interp/exec_instr.rs + metadata/lazy_loader.rs).
     //   JIT/AOT mode → eager. JIT requires all callee functions to be
     //     pre-compiled, so we pre-load all declared deps at startup.
-    let is_eager = matches!(cli.mode, Some(ExecMode::Jit) | Some(ExecMode::Aot));
+    // P4.1: branches involving feature-gated variants must also be gated, otherwise
+    // the match arm references a non-existent enum constructor when the feature is off.
+    let is_eager = match cli.mode {
+        #[cfg(feature = "jit")]
+        Some(ExecMode::Jit) => true,
+        #[cfg(feature = "aot")]
+        Some(ExecMode::Aot) => true,
+        _ => false,
+    };
     if is_eager {
         // Eager: load all declared dependencies (DEPS) and import namespaces.
         for dep in &user_artifact.dependencies {
@@ -368,7 +381,9 @@ fn main() -> Result<()> {
     );
 
     let default_mode = match cli.mode {
+        #[cfg(feature = "jit")]
         Some(ExecMode::Jit) => z42_vm::metadata::ExecMode::Jit,
+        #[cfg(feature = "aot")]
         Some(ExecMode::Aot) => z42_vm::metadata::ExecMode::Aot,
         _                   => z42_vm::metadata::ExecMode::Interp,
     };

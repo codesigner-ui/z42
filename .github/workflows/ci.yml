@@ -184,3 +184,40 @@ jobs:
             echo "First push to main triggers \`.github/workflows/bench-update.yml\`,"
             echo "which seeds the baseline. Subsequent PRs will see auto-diff here."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # 2026-05-07 add-runtime-feature-flags (P4.1): verify all 4 feature presets
+  # compile on host target. P4.2/P4.3/P4.4 will add real cross-compile jobs
+  # (wasm32-unknown-unknown / aarch64-apple-ios / aarch64-linux-android).
+  feature-matrix:
+    name: feature-matrix (P4.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+        with:
+          just-version: '1.50.0'
+
+      - name: Build interp-only (no cranelift)
+        run: just build-interp-only
+
+      - name: Build wasm preset (host target)
+        run: just build-wasm-feature
+
+      - name: Build ios preset (host target)
+        run: just build-ios-feature
+
+      - name: Build android preset (host target)
+        run: just build-android-feature
+
+      - name: Verify cranelift excluded under interp-only
+        run: |
+          if cargo tree --manifest-path src/runtime/Cargo.toml \
+             --no-default-features --features interp-only 2>&1 | grep -q "cranelift"; then
+            echo "ERROR: cranelift still present in interp-only build" >&2
+            exit 1
+          fi

@@ -36,6 +36,34 @@ build-compiler:
 build-stdlib *args:
     ./scripts/build-stdlib.sh {{args}}
 
+# ──────────── Feature-flag builds (P4.1) ────────────
+# Verify each feature combo from `src/runtime/Cargo.toml` compiles. Host target
+# only — actual cross-compile to wasm32 / aarch64-apple-ios etc. lands in
+# P4.2/P4.3/P4.4.
+
+# Build runtime with no-default-features + interp-only (no JIT, no cranelift)
+build-interp-only:
+    cargo build --release --manifest-path src/runtime/Cargo.toml \
+        --no-default-features --features interp-only
+
+# Verify wasm feature compiles (host target)
+build-wasm-feature:
+    cargo build --release --manifest-path src/runtime/Cargo.toml \
+        --no-default-features --features wasm
+
+# Verify ios feature compiles (host target)
+build-ios-feature:
+    cargo build --release --manifest-path src/runtime/Cargo.toml \
+        --no-default-features --features ios
+
+# Verify android feature compiles (host target)
+build-android-feature:
+    cargo build --release --manifest-path src/runtime/Cargo.toml \
+        --no-default-features --features android
+
+# Run all feature-matrix builds (CI: feature-matrix job)
+build-feature-matrix: build-interp-only build-wasm-feature build-ios-feature build-android-feature
+
 # ──────────── Test ────────────
 
 # Run all tests: compiler + VM + cross-zpkg

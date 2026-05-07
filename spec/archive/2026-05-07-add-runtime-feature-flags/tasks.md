@@ -1,16 +1,25 @@
 # Tasks: Add Runtime Feature Flags
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 P0 / P3 完成。本文件锁定接口契约。
+> 状态：🟢 已完成 | 创建：2026-04-29 | 完成：2026-05-07
+> 通过 batch authorization 与 expand-jit-type-args / add-array-base-class 串行实施。
 
 ## 进度概览
 
-- [ ] 阶段 1: Cargo.toml 改造
-- [ ] 阶段 2: 源码 cfg gate
-- [ ] 阶段 3: z42vm CLI cfg
-- [ ] 阶段 4: just / CI 接入
-- [ ] 阶段 5: 文档同步
-- [ ] 阶段 6: 验证
+- [x] 阶段 1: Cargo.toml 改造
+- [x] 阶段 2: 源码 cfg gate
+- [x] 阶段 3: z42vm CLI cfg
+- [x] 阶段 4: just / CI 接入
+- [x] 阶段 5: 文档同步
+- [x] 阶段 6: 验证
+
+实际改动比 tasks 草稿轻量：现有代码库只有 1 处跨模块引用（`vm.rs:45`）+ 1 处 lib.rs `pub mod` 声明 + main.rs 的 1 个 CLI enum + 2 处 main.rs ExecMode pattern matching；其它 cargo build / test 路径都已经天然 feature-clean。
+
+落地结果：
+- `cargo build` 默认行为不变（含 JIT），test-vm 300/300（interp 152 + jit 148）全绿
+- `cargo build --no-default-features --features interp-only` 编译通过 + cargo test 全绿；产物 `--help` 仅显示 `--mode <interp>`；cranelift 完全从依赖树排除（`cargo tree | grep cranelift` 为空）
+- `wasm` / `ios` / `android` 三个 preset 均编译通过（host target）
+- justfile 加 `build-{interp-only, wasm-feature, ios-feature, android-feature, feature-matrix}` 5 个 task
+- CI 加 `feature-matrix` job，含 cranelift exclusion 验证
 
 ---
 

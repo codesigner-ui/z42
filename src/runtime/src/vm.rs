@@ -42,7 +42,17 @@ impl Vm {
 
         match self.default_mode {
             ExecMode::Interp => crate::interp::run_with_static_init(ctx, &self.module, entry),
+            // 2026-05-07 add-runtime-feature-flags (P4.1): JIT path is feature-gated.
+            // When `jit` feature is off, fall through to a friendly bail so old zbc
+            // files with `exec_mode = Jit` produce a clear "recompile with --features jit"
+            // message instead of an opaque link error.
+            #[cfg(feature = "jit")]
             ExecMode::Jit    => crate::jit::run(ctx, &self.module, &entry_name),
+            #[cfg(not(feature = "jit"))]
+            ExecMode::Jit    => bail!(
+                "JIT mode requested but the runtime was built without the `jit` feature. \
+                 Recompile with `--features jit` (default), or run the bytecode in `--mode interp`."
+            ),
             ExecMode::Aot    => bail!(
                 "AOT mode is not implemented yet (planned: roadmap M9 — L3 \
                  phase, LLVM/inkwell). Switch to `--mode interp` or \

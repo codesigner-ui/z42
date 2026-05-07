@@ -47,12 +47,27 @@ libffi     = { version = "3.2", features = ["system"] }
 libloading = "0.8"
 z42-abi    = { path = "crates/z42-abi" }
 
-# JIT backend — Cranelift
-cranelift-codegen = { version = "0.115", features = ["unwind"] }
-cranelift-frontend = "0.115"
-cranelift-jit      = "0.115"
-cranelift-module   = "0.115"
-cranelift-native   = "0.115"
+# JIT backend — Cranelift (optional; enabled via `jit` feature)
+cranelift-codegen = { version = "0.115", features = ["unwind"], optional = true }
+cranelift-frontend = { version = "0.115", optional = true }
+cranelift-jit      = { version = "0.115", optional = true }
+cranelift-module   = { version = "0.115", optional = true }
+cranelift-native   = { version = "0.115", optional = true }
+
+[features]
+# 2026-05-07 add-runtime-feature-flags (P4.1):
+# - default = ["jit"] keeps `cargo build` behavior unchanged (backward compat)
+# - `jit` enables the Cranelift JIT backend (desktop x64/aarch64 only)
+# - `aot` is a placeholder for future AOT compilation (M9; no impl yet)
+# - `interp-only` is intent-only (no extra deps); used by platform presets
+# - platform presets are convenience combos for `--no-default-features --features <preset>`
+default     = ["jit"]
+jit         = ["dep:cranelift-codegen", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native"]
+aot         = []
+interp-only = []
+wasm        = ["interp-only"]
+ios         = ["interp-only", "aot"]
+android     = ["interp-only", "aot"]
 
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }
