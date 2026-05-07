@@ -29,6 +29,17 @@
 - **当前状态**：手写 0-4 arity（覆盖 95% 场景）。
 - **2026-05-04 重新评估**：探索 examples/ + tests/ 确认 0 个 5+ arity 真实使用；compiler / runtime 无 per-arity 特殊路径，加 5-16 是纯机械重复。**结论：保持 deferred**。等真有用户场景；自举完成后用 z42 自身写生成器（`tools/gen-delegates.z42`）。当前不做 C# 一次性生成器，避免引入永久的"非 z42 写的 z42 stdlib 源"反向依赖。
 
+## D-12：BindCall 函数级拆分（split-typechecker-calls 残留）
+
+- **来源**：`spec/archive/2026-05-08-split-typechecker-calls/`
+- **触发原因**：split-typechecker-calls 把 TypeChecker.Calls.cs 686 → 405 LOC 主文件，但 `BindCall` 单方法 ~395 行（远超 60 行函数硬限）。三大分支（Static class method / Member call / Free function call）的内联 dispatch 拆为独立 helper 方法属于函数级 refactor，行为级风险高于纯文件拆分
+- **前置依赖**：与 D-11 (`introduce-bound-visitor`) 同性质——可在引入 visitor 框架时一并解决，或独立 spec 抽 3 个 helper 方法（`BindStaticCall` / `BindMemberCall` / `BindFreeCall`）
+- **触发条件**：
+  - D-11 触发条件成熟时同 spec 处理
+  - 或者 BindCall 内部需要新增分支（call kind）导致方法继续膨胀
+  - 或者编译器 LSP / IDE 集成场景需要更细粒度的 call binding 钩子
+- **当前状态**：405 LOC 主文件 < 500 硬限，软限超出但工程上可接受。test 覆盖完整（1104/1104），不影响功能演进
+
 ## D-11：introduce-bound-visitor（review.md §2.1 visitor 抽象基类）
 
 - **来源**：[docs/review.md](review.md) Part 2 §2.1（推荐引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>` 抽象基类）；2026-05-07 探索后暂缓
