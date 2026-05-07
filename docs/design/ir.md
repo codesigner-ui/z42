@@ -276,7 +276,8 @@ JSON wire format (tag = `"op"`):
 0.9（2026-05-07，add-default-generic-typeparam）起，`obj_new` 携带 **resolved
 type-args 列表**（如 `new Foo<int>()` → `["int"]`），VM 在分配实例后写入
 `ScriptObject.type_args` 字段，供后续 `default_of` 等运行时类型查询使用。
-非泛型类传空列表，零开销。
+非泛型类传空列表，零开销。interp 与 JIT 路径都 propagate（JIT 路径 by
+`expand-jit-type-args` 2026-05-07 同日补齐）。
 
 #### `default_of` (D-8b-3 Phase 2)
 

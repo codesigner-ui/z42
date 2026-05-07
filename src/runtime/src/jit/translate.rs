@@ -148,8 +148,11 @@ pub fn declare_helpers(jit: &mut JITModule) -> Result<HelperIds> {
         array_get:     decl!("jit_array_get",     [ptr, ptr, i32t, i32t, i32t],           [i8t]),
         array_set:     decl!("jit_array_set",     [ptr, ptr, i32t, i32t, i32t],           [i8t]),
         array_len:     decl!("jit_array_len",     [ptr, ptr, i32t, i32t],                 [i8t]),
-        // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc) -> u8
-        obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
+        // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc,
+        //             type_args_ptr, type_args_count) -> u8
+        // 2026-05-07 expand-jit-type-args: last 2 params carry per-instance generic
+        // type-args (D-8b-3 Phase 2 JIT path completion).
+        obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
         field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t],         [i8t]),
         field_set:     decl!("jit_field_set",  [ptr, ptr, i32t, ptr, i64t, i32t],         [i8t]),
         // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc) -> u8
@@ -741,19 +744,19 @@ pub fn translate_function(
                 }
 
                 // Objects
-                Instruction::ObjNew { dst, class_name, ctor_name, args, type_args: _ } => {
-                    // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2):
-                    // JIT path drops type_args (helper signature unchanged). The
-                    // resulting instance carries empty `type_args`, so `default(T)`
-                    // inside JIT-compiled methods on generic classes degrades to
-                    // Value::Null (interp path is the source of truth for full
-                    // generic-T zero-value resolution). Same trade-off as
-                    // LoadFieldAddr — JIT keeps simple, interp covers correctness.
+                Instruction::ObjNew { dst, class_name, ctor_name, args, type_args } => {
+                    // 2026-05-07 expand-jit-type-args: marshal `Vec<String>` as a
+                    // `*const String` + count to `jit_obj_new`. The IR storage
+                    // lives for the module lifetime, so the raw pointer is valid
+                    // for the duration of all JIT-compiled calls.
                     let d = ri!(*dst);
                     let (cp, cl) = str_val!(class_name);
                     let (kp, kl) = str_val!(ctor_name);
                     let (ap, al) = regs_val!(args);
-                    let inst = builder.ins().call(hr_obj_new, &[frame_val, ctx_val, d, cp, cl, kp, kl, ap, al]);
+                    let tap = builder.ins().iconst(ptr, type_args.as_ptr() as i64);
+                    let tac = builder.ins().iconst(types::I64, type_args.len() as i64);
+                    let inst = builder.ins().call(hr_obj_new,
+                        &[frame_val, ctx_val, d, cp, cl, kp, kl, ap, al, tap, tac]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::FieldGet { dst, obj, field_name } => {

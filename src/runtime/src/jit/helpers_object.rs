@@ -181,6 +181,11 @@ pub unsafe extern "C" fn jit_obj_new(
     cls_name_ptr: *const u8, cls_name_len: usize,
     ctor_name_ptr: *const u8, ctor_name_len: usize,
     args_ptr: *const u32, argc: usize,
+    // 2026-05-07 expand-jit-type-args: per-instance generic type-args (D-8b-3
+    // Phase 2 JIT path). `type_args_ptr` is a `*const String` directly into the
+    // IR `Instruction::ObjNew { type_args: Vec<String> }` storage, valid for
+    // module lifetime. Non-generic ObjNew passes count = 0.
+    type_args_ptr: *const String, type_args_count: usize,
 ) -> u8 {
     let class_name = std::str::from_utf8(std::slice::from_raw_parts(cls_name_ptr, cls_name_len))
         .unwrap_or("<invalid>").to_string();
@@ -203,6 +208,16 @@ pub unsafe extern "C" fn jit_obj_new(
         .map(|f| crate::metadata::default_value_for(&f.type_tag))
         .collect();
     let obj_val = vm_ctx_ref(ctx).heap().alloc_object(type_desc, slots, NativeData::None);
+
+    // 2026-05-07 expand-jit-type-args: populate per-instance type_args BEFORE
+    // ctor call so the ctor body's `default(T)` resolves correctly (mirrors
+    // interp ObjNew handler order).
+    if type_args_count > 0 {
+        if let Value::Object(ref rc) = obj_val {
+            let slice = std::slice::from_raw_parts(type_args_ptr, type_args_count);
+            rc.borrow_mut().type_args = slice.iter().cloned().collect();
+        }
+    }
 
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
     let mut ctor_args: Vec<Value> = vec![obj_val.clone()];
