@@ -1,4 +1,3 @@
-using Std.IO;
 void main() {
     // Basic put/get via indexing
     var scores = new Dictionary<string, int>();
@@ -34,6 +33,4 @@ void main() {
     Assert.Equal("two", table[2]);
     Assert.True(table.ContainsKey(1));
     Assert.False(table.ContainsKey(3));
-
-    Console.WriteLine("dict ok");
 }

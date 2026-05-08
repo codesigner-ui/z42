@@ -1,4 +1,3 @@
-using Std.IO;
 void Main() {
     var list = new List<int>();
     list.Add(1);
@@ -40,6 +39,4 @@ void Main() {
         sum += n;
     }
     Assert.Equal(3, sum); // 1 + 2 = 3 (stops before 4)
-
-    Console.WriteLine("All passed");
 }
