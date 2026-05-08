@@ -144,9 +144,61 @@ if ic.cached_type.get() == recv_type_id.0 {
 
 ### Decision 6: Field/Static 字段访问要不要也 token 化？
 
-**问题**: `FieldGet { field_name: String }` 等同样 string-based。
+**问题**: `FieldGet { field_name: String }` / `StaticGet { field: String }` 等同样 string-based。
 
-**决定**: **本 spec 不动 Field/Static**。Field 解析依赖 receiver type（同 VCall 的复杂度）；Phase 1 优先函数 dispatch（影响最大）。Field 留 `introduce-field-token` follow-up spec。
+**初版决定（已翻转）**: 不动 Field/Static，留 follow-up spec。
+
+**修订决定（user 2026-05-08 裁决）**: **本 spec 纳入 Field + Static**。
+
+**原因（user 视角）**:
+1. **对称性**：method dispatch token 化、field access 不 token 化 = 设计裂缝
+2. **反射 R-series**：field 元数据与 method 元数据需要同步 token 化才能一并设计
+3. **静态字段成本极低**：`HashMap<String, Value>` → `Vec<Value>` 是 30 行改动
+4. **实例字段与 VCall 同款 IC pattern**：复用 VCallIC 镜像 FieldIC，~80 行
+5. **总成本可控**：scope +25%，覆盖度 +50%
+
+**实施细节**:
+- **Static fields**: resolver 扫所有 StaticGet/Set instruction，按 unique `field: String` 分配全局 `StaticFieldId`；`VmContext.static_fields: HashMap<String, Value>` → `Vec<Value>`；保留 `static_field_index: HashMap<String, u32>` 给 lazy load fallback
+- **Instance fields**: 与 VCall 镜像 — `FieldIC { cached_type_id: AtomicU32, cached_slot: AtomicU32 }`，receiver type 命中即用，miss 走 `obj.type_desc.field_index` 查 + 填 IC
+
+`FieldId(u32)`: per-type，索引 `TypeDesc.fields: Vec<FieldSlot>`（其实就是 field_index value，重命名为 typed wrapper）
+
+`StaticFieldId(u32)`: 全局，索引 `VmContext.static_fields: Vec<Value>`
+
+### Decision 8: Static field 跨 zpkg 协调（NEW，因 Decision 6 翻转新增）
+
+**问题**: 当 zpkg A 的 `__static_init__` 在 zpkg B 之前加载，B 中 StaticGet 引用 A 的字段如何分配 ID？
+
+**选项**:
+- **A. ID 一次性分配**：所有 zpkg eager-load 后，扫整个 link 后 module 的 StaticGet/Set，统一编号
+- **B. ID 增量分配**：每 zpkg 加载时新增 StaticFieldId，已加载 zpkg 引用回填 cache
+- **C. ID 在首次 use 分配**：lazy `static_field_index.entry(name).or_insert_with(|| next_id())`
+
+**决定**: 选 **C (lazy 增量)**。原因：
+1. 跨 zpkg lazy load 路径已经存在，cache 回填模式已成熟（Decision 3）
+2. 选 A 需要"link 阶段"协调，与现有 lazy 机制冲突
+3. 选 B 需要每次 zpkg 加载触发 cache 失效，复杂
+4. C 与 Decision 1 (Eager intra-module + lazy cross-module) 一致
+
+具体实现:
+```rust
+// VmContext
+pub static_fields: RefCell<Vec<Value>>,
+pub static_field_index: RefCell<HashMap<String, u32>>,
+pub next_static_field_id: Cell<u32>,
+
+pub fn resolve_static_field_id(&self, name: &str) -> StaticFieldId {
+    let mut idx = self.static_field_index.borrow_mut();
+    if let Some(&id) = idx.get(name) { return StaticFieldId(id); }
+    let id = self.next_static_field_id.get();
+    self.next_static_field_id.set(id + 1);
+    idx.insert(name.to_string(), id);
+    self.static_fields.borrow_mut().resize_with((id + 1) as usize, || Value::Null);
+    StaticFieldId(id)
+}
+```
+
+resolver 在 module load 时调 `resolve_static_field_id` 注册 intra-module 的 StaticGet/Set，cross-module 的留 UNRESOLVED；首次执行时 lazy 调用同 API 分配 + 回填 cache。
 
 ### Decision 7: TypeDesc 加 `id: TypeId` 字段
 
@@ -262,13 +314,28 @@ pub(super) fn call(
 最终方案: ResolvedTokens 内每个 token 表 + 一个并行 `Vec<u32>` 给定每条指令的 site index：
 ```rust
 pub struct ResolvedTokens {
-    pub method_tokens: Vec<Cell<u32>>,  // 长度 = Call site 总数
-    pub builtin_tokens: Vec<u32>,       // 长度 = Builtin site 总数
-    pub type_tokens: Vec<Cell<u32>>,    // 长度 = ObjNew site 总数
-    pub vcall_ic: Vec<VCallIC>,         // 长度 = VCall site 总数
+    // 函数 dispatch
+    pub method_tokens:        Vec<AtomicU32>,  // 长度 = Call site 总数
+    pub builtin_tokens:       Vec<u32>,        // 长度 = Builtin site 总数（immut，load 时 panic if miss）
+    pub type_tokens:          Vec<AtomicU32>,  // 长度 = ObjNew site 总数
+    pub vcall_ic:             Vec<VCallIC>,    // 长度 = VCall site 总数
+    // 字段访问（Decision 6 翻转加入）
+    pub field_ic:             Vec<FieldIC>,    // 长度 = FieldGet + FieldSet site 总数
+    pub static_field_tokens:  Vec<AtomicU32>,  // 长度 = StaticGet + StaticSet site 总数
     // 每条指令对应的 site index（按指令类型）：
     // (block_idx, instr_idx) → site_idx；只为 token-bearing instructions 填值。
-    pub site_index: Vec<Vec<u32>>,
+    pub site_index:           Vec<Vec<u32>>,
+}
+
+pub struct VCallIC {
+    pub cached_type_id:  AtomicU32,  // TypeId.0; UNRESOLVED = 未命中过
+    pub cached_slot:     AtomicU32,  // VTableSlot.0
+    pub cached_fn_idx:   AtomicU32,  // MethodId.0 of resolved target
+}
+
+pub struct FieldIC {
+    pub cached_type_id:  AtomicU32,  // TypeId.0; UNRESOLVED = 未命中过
+    pub cached_slot:     AtomicU32,  // FieldId.0 — 实际就是 TypeDesc.fields 的索引
 }
 ```
 

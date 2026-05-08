@@ -4,7 +4,7 @@
 
 ### Requirement: Token newtypes 提供类型安全标识
 
-新增 `MethodId(u32)` / `TypeId(u32)` / `BuiltinId(u32)` / `FieldId(u32)` / `VTableSlot(u32)` newtype 包装。Sentinel `UNRESOLVED: u32 = u32::MAX` 表示"尚未解析"。
+新增 `MethodId(u32)` / `TypeId(u32)` / `BuiltinId(u32)` / `FieldId(u32)` / `StaticFieldId(u32)` / `VTableSlot(u32)` newtype 包装。Sentinel `UNRESOLVED: u32 = u32::MAX` 表示"尚未解析"。
 
 #### Scenario: 不同 token 类型不可混用
 
@@ -76,11 +76,11 @@
 - **WHEN** 同进程内创建多个 `VmContext` 实例
 - **THEN** 各 VmContext 使用同一个静态 `BUILTINS` 表（builtin 是无状态分发，全局共享 OK；与 memory feedback "VmContext 多实例隔离" 不矛盾——builtin 是函数指针，没有 per-VM 状态）
 
-### Requirement: VCall / Field hot-path slot cache
+### Requirement: VCall / FieldGet / FieldSet hot-path inline cache
 
 VCall / FieldGet / FieldSet 的 receiver type 运行时才知道，**per-instruction-position cache** 不够；需要 **per-(instruction-position, receiver-type) cache**。
 
-简化方案：单个 slot 缓存最近一次的 (TypeId, slot) pair，receiver type 命中即用，未命中走原 hierarchy walk + 更新 slot。**这是 inline cache 模式**。
+简化方案：每 site 一个 slot 缓存最近一次的 `(TypeId, slot/FieldId)` pair，receiver type 命中即用，未命中走原 hierarchy walk / field_index 查 + 更新 slot。**这是 inline cache 模式（mono IC）**。
 
 #### Scenario: 单态 VCall 命中 inline cache
 
@@ -91,6 +91,37 @@ VCall / FieldGet / FieldSet 的 receiver type 运行时才知道，**per-instruc
 
 - **WHEN** VCall site 被不同 receiver type 交替调用（megamorphic）
 - **THEN** 退化为每次都 walk —— 性能不优于现状，但不更差（Phase 1 接受；Phase X 可加 polymorphic IC）
+
+#### Scenario: 单态 FieldGet 命中 inline cache
+
+- **WHEN** 同一 FieldGet site `obj.X` 被一种 receiver type（如 `Std.Point`）反复访问
+- **THEN** 第一次执行 `obj.type_desc.field_index["X"]` → slot；后续执行直接 IC 命中，零 hash
+
+#### Scenario: FieldSet 同模式
+
+- **WHEN** 同一 FieldSet site `obj.Y = v` 单态使用
+- **THEN** 与 FieldGet 同款 IC，命中后直接 `obj.slots[cached_slot] = v`
+
+### Requirement: Static fields 全局编号 + Vec 索引
+
+`StaticGet` / `StaticSet` 的 `field: String` 是全局唯一名（编译器已保证 qualified 形式）。加载期 `resolver` 扫所有 StaticGet/Set instruction，对每个 unique `field` 分配 `StaticFieldId(u32)`。
+
+`VmContext.static_fields` 由 `HashMap<String, Value>` 改为 `Vec<Value>`（按 id 索引），同时保留 `static_field_index: HashMap<String, u32>` 给 lazy load fallback（cross-zpkg 静态字段在主 module 加载时未知）。
+
+#### Scenario: 同模块 StaticGet 命中直接索引
+
+- **WHEN** 加载完成后 `Function.resolved.static_field_tokens[<site_idx>]` = `StaticFieldId(7)`
+- **THEN** 执行时直接 `ctx.static_fields[7]` 读取，零 hash
+
+#### Scenario: 跨 zpkg StaticGet lazy 解析回填
+
+- **WHEN** 主 module 引用 `Std.Math.PI`，`Std.Math` zpkg 加载前；resolver 留 `static_field_tokens[<site>]` = `UNRESOLVED`
+- **THEN** 首次 dispatch 触发 `Std.Math` lazy load + `__static_init__` 执行；执行完成后 `static_field_index["Std.Math.PI"]` 已分配 ID；StaticGet 路径回填 cache，后续命中直接 Vec 索引
+
+#### Scenario: StaticSet 同款
+
+- **WHEN** `Std.Counter.Count = 0` 在 `__static_init__` 中执行
+- **THEN** 走同款 token cache 写入路径（首次执行触发分配 + 回填，subsequent 直接索引）
 
 ## Pipeline Steps
 
