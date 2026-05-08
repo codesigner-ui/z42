@@ -51,9 +51,43 @@ pub(super) fn is_array_isa(class_name: &str) -> bool {
 pub(super) fn vcall(
     ctx: &VmContext, module: &Module, frame: &mut Frame,
     dst: u32, obj: u32, method: &str, args: &[u32],
+    // vcall_ic: monomorphic inline cache (TypeId, vtable slot, MethodId)
+    // populated on first dispatch with this receiver type at this site.
+    // Subsequent hits with the same receiver type take the fast path
+    // (single u32 compare + direct module.functions index).
+    vcall_ic: Option<&crate::metadata::resolver::VCallIC>,
 ) -> Result<Option<Value>> {
+    use std::sync::atomic::Ordering;
     let obj_val = frame.get(obj)?.clone();
     let mut extra_args = collect_args(&frame.regs, args)?;
+
+    // ── Fast path: IC hit on user-class receiver ─────────────────────────
+    // Only applies when (1) caller passed an IC, (2) receiver is Value::Object
+    // (primitives go through the dedicated primitive_class_name path below),
+    // (3) receiver's TypeId matches cache, (4) cached MethodId resolves to a
+    // module function. Anything else falls through to the slow path which
+    // also updates the IC.
+    if let (Some(ic), Value::Object(ref rc)) = (vcall_ic, &obj_val) {
+        let recv_type = rc.borrow().type_desc.id.0;
+        let cached_type = ic.cached_type_id.load(Ordering::Relaxed);
+        if recv_type != crate::metadata::tokens::UNRESOLVED && recv_type == cached_type {
+            let fn_idx = ic.cached_fn_idx.load(Ordering::Relaxed);
+            if fn_idx != crate::metadata::tokens::UNRESOLVED {
+                if let Some(callee) = module.functions.get(fn_idx as usize) {
+                    let mut call_args = vec![obj_val.clone()];
+                    call_args.append(&mut extra_args);
+                    let outcome = super::exec_function(ctx, module, callee, &call_args)?;
+                    return match outcome {
+                        ExecOutcome::Returned(ret) => {
+                            frame.set(dst, ret.unwrap_or(Value::Null));
+                            Ok(None)
+                        }
+                        ExecOutcome::Thrown(val) => Ok(Some(val)),
+                    };
+                }
+            }
+        }
+    }
 
     // L3-G4b primitive-as-struct: primitives dispatch through their stdlib
     // struct's method (e.g. `Value::I64.CompareTo` → call `Std.int.CompareTo`
@@ -128,6 +162,17 @@ pub(super) fn vcall(
         let n = type_desc.vtable[slot].1.clone();
         if let Some(&idx) = module.func_index.get(n.as_str()) {
             callee_module_idx = Some(idx);
+            // Populate IC for next time this site sees the same receiver type.
+            // Only cache when receiver's TypeId is resolved (not for fallback
+            // synthetic descriptors where id == UNRESOLVED).
+            if let Some(ic) = vcall_ic {
+                let recv_type = type_desc.id.0;
+                if recv_type != crate::metadata::tokens::UNRESOLVED {
+                    ic.cached_type_id.store(recv_type, Ordering::Relaxed);
+                    ic.cached_slot.store(slot as u32, Ordering::Relaxed);
+                    ic.cached_fn_idx.store(idx as u32, Ordering::Relaxed);
+                }
+            }
         } else if let Some(fn_) = ctx.try_lookup_function(&n) {
             callee_lazy = Some(fn_);
         }

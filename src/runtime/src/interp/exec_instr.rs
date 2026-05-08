@@ -149,10 +149,26 @@ pub fn exec_instr(
                 .and_then(|r| r.type_tokens.get(_site_idx as usize));
             exec_object::obj_new(ctx, module, frame, *dst, class_name, ctor_name, args, type_args, type_token)?
         }
-        Instruction::FieldGet { dst, obj, field_name } => exec_object::field_get(frame, *dst, *obj, field_name)?,
-        Instruction::FieldSet { obj, field_name, val } => exec_object::field_set(frame, *obj, field_name, *val)?,
+        Instruction::FieldGet { dst, obj, field_name } => {
+            let field_ic = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.field_ic.get(_site_idx as usize));
+            exec_object::field_get(frame, *dst, *obj, field_name, field_ic)?;
+        }
+        Instruction::FieldSet { obj, field_name, val } => {
+            let field_ic = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.field_ic.get(_site_idx as usize));
+            exec_object::field_set(frame, *obj, field_name, *val, field_ic)?;
+        }
         Instruction::VCall { dst, obj, method, args } => {
-            if let Some(thrown) = exec_vcall::vcall(ctx, module, frame, *dst, *obj, method, args)? {
+            // Hot path: monomorphic inline cache fires when receiver TypeId
+            // matches the cached one at this site (same site + same recv type).
+            // Polymorphic sites overwrite the slot each time (Phase 1 mono IC).
+            let vcall_ic = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.vcall_ic.get(_site_idx as usize));
+            if let Some(thrown) = exec_vcall::vcall(ctx, module, frame, *dst, *obj, method, args, vcall_ic)? {
                 return Ok(Some(thrown));
             }
         }
