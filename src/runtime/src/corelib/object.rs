@@ -36,6 +36,7 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         vtable: Vec::new(),
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
         type_param_constraints: vec![],
+        id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });
     Ok(ctx.heap().alloc_object(
         type_desc,
@@ -177,6 +178,7 @@ fn weak_handle_type_desc() -> Arc<TypeDesc> {
         type_params: vec![],
         type_args: vec![],
         type_param_constraints: vec![],
+        id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })).clone()
 }
 

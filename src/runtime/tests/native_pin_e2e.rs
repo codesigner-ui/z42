@@ -30,6 +30,7 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
         type_params: vec![],
         type_param_constraints: vec![],
         block_index: HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     };
     Module {
         name: name.to_string(),

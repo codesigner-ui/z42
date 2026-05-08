@@ -43,6 +43,7 @@ fn generic_fn(name: &str, tp: &str, bundle: ConstraintBundle) -> Function {
         type_params: vec![tp.into()],
         type_param_constraints: vec![bundle],
         block_index: std::collections::HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     }
 }
 

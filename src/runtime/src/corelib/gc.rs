@@ -80,6 +80,7 @@ fn gc_handle_type_desc() -> Arc<TypeDesc> {
             type_params: vec![],
             type_args: vec![],
             type_param_constraints: vec![],
+            id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()
 }
@@ -112,6 +113,7 @@ fn heap_stats_type_desc() -> Arc<TypeDesc> {
             type_params: vec![],
             type_args: vec![],
             type_param_constraints: vec![],
+            id: crate::metadata::tokens::TypeId::UNRESOLVED,
         })
     }).clone()
 }

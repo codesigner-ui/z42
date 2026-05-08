@@ -45,6 +45,11 @@ pub fn default_value_for(type_tag: &str) -> Value {
 pub struct TypeDesc {
     /// Fully-qualified class name (e.g. `"Demo.Point"`).
     pub name: String,
+    /// Runtime token assigned by `metadata::resolver::resolve_module` (introduce-method-token,
+    /// 2026-05-08). Stable for the lifetime of the loaded module; used by VCallIC / FieldIC
+    /// for receiver-type comparison without name hash. Default `TypeId::UNRESOLVED` until
+    /// resolver runs (back-compat — pre-resolver code doesn't depend on this).
+    pub id: super::tokens::TypeId,
     /// Fully-qualified base class name, if any.
     pub base_name: Option<String>,
     /// Field slots in order (base fields first, then derived).

@@ -17,6 +17,7 @@ pub mod zbc_reader;
 pub mod loader;
 pub mod lazy_loader;
 pub mod merge;
+pub mod resolver;
 pub mod well_known_names;
 pub mod test_index;
 

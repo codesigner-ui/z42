@@ -75,6 +75,7 @@ fn build_function(name: &str, instructions: Vec<Instruction>, terminator: Termin
         type_params: vec![],
         type_param_constraints: vec![],
         block_index: HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     }
 }
 
@@ -387,6 +388,7 @@ fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminat
         type_params: vec![],
         type_param_constraints: vec![],
         block_index: HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     };
     Module {
         name: name.to_string(),
@@ -477,6 +479,7 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
         type_params: vec![],
         type_param_constraints: vec![],
         block_index: HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     };
     let m = Module {
         name: "byte_pin_e2e".into(),
@@ -532,6 +535,7 @@ fn z42_str_with_interior_nul_traps_z0908() {
         type_params: vec![],
         type_param_constraints: vec![],
         block_index: HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     };
     let m = Module {
         name: "interior_nul".into(),

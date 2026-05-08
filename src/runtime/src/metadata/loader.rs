@@ -367,6 +367,7 @@ pub fn build_type_registry(module: &mut Module) {
             type_params: desc.type_params.clone(),
             type_args: vec![],
             type_param_constraints: desc.type_param_constraints.clone(),
+            id: crate::metadata::tokens::TypeId::UNRESOLVED,
         }));
     }
 

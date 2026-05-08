@@ -776,6 +776,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
             type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default(),
             block_index:     std::collections::HashMap::new(),
+            resolved:        std::sync::OnceLock::new(),
         }
     }).collect();
 
@@ -1014,6 +1015,7 @@ fn read_mods_section(
                 type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
                 type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default(),
                 block_index:     std::collections::HashMap::new(),
+            resolved:        std::sync::OnceLock::new(),
             }
         }).collect();
 

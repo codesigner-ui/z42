@@ -18,6 +18,7 @@ pub(super) fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         type_params: vec![],
         type_args: vec![],
         type_param_constraints: vec![],
+        id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })
 }
 

@@ -37,6 +37,7 @@ pub unsafe extern "C" fn jit_obj_new(
             fields: Vec::new(), field_index: HashMap::new(),
             vtable: Vec::new(), vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
             type_param_constraints: vec![],
+            id: crate::metadata::tokens::TypeId::UNRESOLVED,
         }));
     // 2026-05-02 fix-class-field-default-init: 按字段类型选默认值（与 interp
     // exec_object.rs::obj_new 镜像，共用 metadata::default_value_for）。

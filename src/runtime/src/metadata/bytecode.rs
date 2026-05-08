@@ -123,6 +123,12 @@ pub struct Function {
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,
+    /// Per-function token cache (introduce-method-token, 2026-05-08).
+    /// Lazy-init by `metadata::resolver::resolve_module` after module load.
+    /// `OnceLock` so `Function: Sync` is preserved (single-thread today,
+    /// future multi-thread ready). Not serialized — purely runtime metadata.
+    #[serde(skip)]
+    pub resolved: std::sync::OnceLock<super::resolver::ResolvedTokens>,
 }
 
 /// An entry in a function's local variable table: register `reg` holds variable `name`.

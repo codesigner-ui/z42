@@ -120,5 +120,6 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
         vtable: Vec::new(),
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
         type_param_constraints: vec![],
+        id: crate::metadata::tokens::TypeId::UNRESOLVED,
     }
 }

@@ -31,6 +31,7 @@ fn module_with_single_instr(name: &str, instr: Instruction) -> Module {
         type_params: vec![],
         type_param_constraints: vec![],
         block_index: HashMap::new(),
+        resolved: std::sync::OnceLock::new(),
     };
 
     Module {

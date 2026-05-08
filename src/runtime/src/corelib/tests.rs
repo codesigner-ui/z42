@@ -21,6 +21,7 @@ fn obj(ctx: &VmContext, class_name: &str) -> Value {
         vtable: Vec::new(),
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
         type_param_constraints: vec![],
+        id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });
     ctx.heap().alloc_object(type_desc, Vec::new(), NativeData::None)
 }
