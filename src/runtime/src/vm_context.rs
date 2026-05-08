@@ -64,7 +64,19 @@ use crate::metadata::{Function, TypeDesc, Value};
 /// 字段持有的 Value 也纳入 GC roots（修复 cycle collector 漏扫 static_fields
 /// 导致误清的 bug）。
 pub struct VmContext {
-    pub(crate) static_fields:     Rc<RefCell<HashMap<String, Value>>>,
+    /// Static field storage indexed by `StaticFieldId.0` (introduce-method-token,
+    /// 2026-05-08). Replaces the prior `HashMap<String, Value>` to enable
+    /// O(1) Vec-indexed access from the dispatch hot path. Names are
+    /// remapped to integer IDs via `static_field_index` (lazy allocation
+    /// on first access — safe across cross-zpkg lazy load order).
+    pub(crate) static_fields:     Rc<RefCell<Vec<Value>>>,
+    /// Maps full-qualified static-field name to its `StaticFieldId.0`
+    /// (slot index in `static_fields`). Lazy-built on first access via
+    /// `resolve_static_field_id` so cross-zpkg static fields can be
+    /// encountered in any order. Read by:
+    ///  - `static_get(name)` / `static_set(name)` legacy by-name API
+    ///  - `metadata::resolver` to populate `ResolvedTokens.static_field_tokens`
+    pub(crate) static_field_index: Rc<RefCell<HashMap<String, u32>>>,
     pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
     pub(crate) lazy_loader:       Rc<RefCell<Option<LazyLoader>>>,
     /// Phase 3f：interp `exec_function` 入口把当前 frame 的 `regs` Vec 指针推入；
@@ -109,7 +121,8 @@ impl Default for VmContext {
 
 impl VmContext {
     pub fn new() -> Self {
-        let static_fields     = Rc::new(RefCell::new(HashMap::new()));
+        let static_fields:     Rc<RefCell<Vec<Value>>>            = Rc::new(RefCell::new(Vec::new()));
+        let static_field_index: Rc<RefCell<HashMap<String, u32>>> = Rc::new(RefCell::new(HashMap::new()));
         let pending_exception = Rc::new(RefCell::new(None));
         let lazy_loader       = Rc::new(RefCell::new(None));
         let exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>> = Rc::new(RefCell::new(Vec::new()));
@@ -129,7 +142,7 @@ impl VmContext {
             let frs = func_ref_slots.clone();
             heap.set_external_root_scanner(Box::new(move |visit| {
                 // 1. static_fields
-                for v in sf.borrow().values() {
+                for v in sf.borrow().iter() {
                     visit(v);
                 }
                 // 2. pending_exception
@@ -172,6 +185,7 @@ impl VmContext {
 
         Self {
             static_fields,
+            static_field_index,
             pending_exception,
             lazy_loader,
             exec_stack,
@@ -345,25 +359,90 @@ impl VmContext {
     }
 
     // ── Static fields ─────────────────────────────────────────────────────
+    //
+    // Layout (introduce-method-token, 2026-05-08):
+    //   `static_fields: Vec<Value>`           — slot storage by StaticFieldId.0
+    //   `static_field_index: HashMap<&str, u32>` — name → id (lazy-allocated)
+    //
+    // The legacy by-name `static_get` / `static_set` API lazy-allocates an
+    // ID on first write and looks up by name on read (returning Null if no
+    // ID is yet allocated). The dispatch hot path uses `static_get_by_id`
+    // / `static_set_by_id` after `metadata::resolver` has populated
+    // per-instruction `StaticFieldId` cache slots.
 
-    /// Read a user-class static field. Unset fields read as `Value::Null`.
+    /// Resolve (or lazy-allocate) a `StaticFieldId` for the given full-qualified
+    /// static-field name. Idempotent. Called by `metadata::resolver` at module
+    /// load and by hot paths on cache miss (cross-zpkg lazy fields).
+    pub fn resolve_static_field_id(&self, name: &str) -> crate::metadata::tokens::StaticFieldId {
+        let mut idx = self.static_field_index.borrow_mut();
+        if let Some(&id) = idx.get(name) {
+            return crate::metadata::tokens::StaticFieldId(id);
+        }
+        let id = idx.len() as u32;
+        idx.insert(name.to_string(), id);
+        // Extend backing Vec to match index.
+        let mut sf = self.static_fields.borrow_mut();
+        if (id as usize) >= sf.len() {
+            sf.resize_with((id + 1) as usize, || Value::Null);
+        }
+        crate::metadata::tokens::StaticFieldId(id)
+    }
+
+    /// Read a user-class static field by name. Unset fields read as
+    /// `Value::Null`. Lazy fallback for cross-zpkg paths and JIT helpers
+    /// not yet threading `StaticFieldId`.
     pub fn static_get(&self, field: &str) -> Value {
+        let idx = self.static_field_index.borrow();
+        match idx.get(field) {
+            Some(&id) => self
+                .static_fields
+                .borrow()
+                .get(id as usize)
+                .cloned()
+                .unwrap_or(Value::Null),
+            None => Value::Null,
+        }
+    }
+
+    /// Write a user-class static field by name. Lazy-allocates the id on
+    /// first write.
+    pub fn static_set(&self, field: &str, val: Value) {
+        let id = self.resolve_static_field_id(field);
+        self.static_set_by_id(id, val);
+    }
+
+    /// Hot-path read by id (no hash). Caller must have a resolved id.
+    /// Returns `Value::Null` if id ≥ Vec length (unallocated slot).
+    #[inline]
+    pub fn static_get_by_id(&self, id: crate::metadata::tokens::StaticFieldId) -> Value {
         self.static_fields
             .borrow()
-            .get(field)
+            .get(id.0 as usize)
             .cloned()
             .unwrap_or(Value::Null)
     }
 
-    /// Write a user-class static field.
-    pub fn static_set(&self, field: &str, val: Value) {
-        self.static_fields.borrow_mut().insert(field.to_string(), val);
+    /// Hot-path write by id. Caller must have a resolved id; the slot
+    /// is auto-extended if id ≥ current Vec length.
+    #[inline]
+    pub fn static_set_by_id(&self, id: crate::metadata::tokens::StaticFieldId, val: Value) {
+        let mut sf = self.static_fields.borrow_mut();
+        if (id.0 as usize) >= sf.len() {
+            sf.resize_with((id.0 + 1) as usize, || Value::Null);
+        }
+        sf[id.0 as usize] = val;
     }
 
     /// Drop all static fields (used by `run_with_static_init` to ensure a
-    /// clean slate before each entry-point run).
+    /// clean slate before each entry-point run). Resets values to Null but
+    /// **keeps the index** so previously-allocated `StaticFieldId`s stay
+    /// stable across runs (resolver-populated IDs in `Function.resolved`
+    /// remain valid after re-init).
     pub fn static_fields_clear(&self) {
-        self.static_fields.borrow_mut().clear();
+        let mut sf = self.static_fields.borrow_mut();
+        for slot in sf.iter_mut() {
+            *slot = Value::Null;
+        }
     }
 
     // ── JIT exception bridge ──────────────────────────────────────────────
