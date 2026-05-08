@@ -1,4 +1,3 @@
-using Std.IO;
 // Test: generic class — code sharing, type param in fields and methods
 
 class Box<T> {
@@ -42,6 +41,4 @@ void Main() {
     var p2 = new Pair<int, string>(2, "two");
     Assert.Equal(2, p2.first);
     Assert.Equal("two", p2.second);
-
-    Console.WriteLine("generic class ok");
 }

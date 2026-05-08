@@ -1,7 +1,6 @@
 // L3 closure core — capture + tier C heap erasure end-to-end demo.
 // Covers value-snapshot / reference-share / nested capture / local-fn capture.
 namespace Demo;
-using Std.IO;
 
 class Counter {
     public int n;
@@ -40,8 +39,6 @@ void Main() {
 
     // 5) Local-function capture (impl-local-fn-l2 + impl-closure-l3-core 联合解锁).
     Assert.Equal(1023, OuterLocal());
-
-    Console.WriteLine("closure l3 capture ok");
 }
 
 // Top-level helper exercising local-fn capture (one-level nesting allowed).

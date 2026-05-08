@@ -7,7 +7,6 @@
 //   • 前向引用（body 顶部调用 body 底部声明的 helper）
 //   • 多个 local fn 在同一个父函数内共存
 namespace Demo;
-using Std.IO;
 
 // 直接递归 local fn
 int FactCaller(int n) {
@@ -45,6 +44,4 @@ void Main() {
     Assert.Equal(110, ForwardRef(5));     // 5*2 + 100 = 110
     Assert.Equal(25,  MultiLocal(5));
     Assert.Equal(7,   BlockBody());
-
-    Console.WriteLine("local fn l2 basic ok");
 }

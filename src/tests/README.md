@@ -39,7 +39,7 @@
 | `source.z42` | 必须 | z42 源码 |
 | `source.zbc` | run / parse | 由 `regen-golden-tests.sh` 生成；checked-in |
 | `source.zasm` | 可选 | ZASM 调试文本 |
-| `expected_output.txt` | run | stdout 期望（**空 = 删除**；缺失视为期望空 stdout）|
+| `expected_output.txt` | run | stdout 期望（**空 = 删除**；缺失 = assert-only 模式：用例靠 `Std.Assert` 抛异常表达失败，期望空 stdout）|
 | `expected_error.txt` | error | 编译诊断期望 |
 | `expected.zasm` | parse | IR ZASM 期望 |
 | `features.toml` | 可选 | LanguageFeatures override |

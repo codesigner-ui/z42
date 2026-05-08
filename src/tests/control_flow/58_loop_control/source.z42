@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 void Main() {
     // for with break
@@ -49,6 +48,4 @@ void Main() {
         }
     }
     Assert.Equal(6, total);    // 3 outer × 2 inner
-
-    Console.WriteLine("loop control ok");
 }

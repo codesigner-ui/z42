@@ -1,4 +1,3 @@
-using Std.IO;
 // Test: logical operators (&&, ||, !) and short-circuit evaluation
 
 void Main() {
@@ -39,6 +38,4 @@ void Main() {
     Assert.Equal(true, (a || b) && c);
     Assert.Equal(false, a && b && c);
     Assert.Equal(true, a || b || c);
-
-    Console.WriteLine("All logical operator tests passed");
 }

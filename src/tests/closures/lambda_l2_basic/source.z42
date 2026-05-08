@@ -2,7 +2,6 @@
 // See docs/design/closure.md and spec/changes/impl-lambda-l2/.
 // Local function support deferred to impl-local-fn-l2.
 namespace Demo;
-using Std.IO;
 
 // Top-level helper that takes a function value and applies it.
 int Apply((int) -> int f, int x) => f(x);
@@ -26,6 +25,4 @@ void Main() {
         return y + 1;
     };
     Assert.Equal(7, double_then_inc(3));
-
-    Console.WriteLine("lambda l2 basic ok");
 }

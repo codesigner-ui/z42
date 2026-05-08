@@ -1,4 +1,3 @@
-using Std.IO;
 // Test: nullable value types (int?, double?, bool?)
 
 void Main() {
@@ -38,6 +37,4 @@ void Main() {
     Assert.Equal(100, x ?? 0);
     x = null;
     Assert.Equal(0, x ?? 0);
-
-    Console.WriteLine("nullable value types ok");
 }

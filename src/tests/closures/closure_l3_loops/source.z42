@@ -9,7 +9,6 @@
 // changed to share a single backing storage across iterations, all closures
 // would collapse to the final iteration value (the classic "晚绑定" bug).
 namespace Demo;
-using Std.IO;
 
 class Bag {
     public int n;
@@ -79,6 +78,4 @@ void Main() {
     Assert.Equal(7, br0());
     Assert.Equal(8, br1());
     Assert.Equal(9, br2());
-
-    Console.WriteLine("closure l3 loops ok");
 }

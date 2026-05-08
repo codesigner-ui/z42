@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 void Main() {
     // C# numeric type aliases — all map to i32/i64 in the VM.
@@ -20,6 +19,4 @@ void Main() {
     // double
     double d = 2.718;
     Assert.True(d > 2.7);
-
-    Console.WriteLine("numeric aliases ok");
 }

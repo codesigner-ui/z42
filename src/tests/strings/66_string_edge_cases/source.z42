@@ -1,4 +1,3 @@
-using Std.IO;
 // Test: string edge cases
 
 void Main() {
@@ -46,6 +45,4 @@ void Main() {
     // Multi-line string content via interpolation
     var line = $"Line 1 and Line 2";
     Assert.Equal("Line 1 and Line 2", line);
-
-    Console.WriteLine("string edge cases ok");
 }
