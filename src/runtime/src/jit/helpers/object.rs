@@ -105,19 +105,45 @@ pub unsafe extern "C" fn jit_default_of(
 
 // ── Field access ─────────────────────────────────────────────────────────────
 
+/// `jit_field_get` after formalize-jit-method-token Phase 2.E (2026-05-08):
+/// per-site `FieldIC` is threaded in (stable raw pointer baked at codegen).
+/// Mirrors interp `field_get` — IC hit fetches `slots[cached_slot]` directly;
+/// miss walks `field_index` and writes (TypeId, slot) to IC. Non-Object
+/// receivers (Str / Array) bypass the IC since their field set is hardcoded.
 #[no_mangle]
 pub unsafe extern "C" fn jit_field_get(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, obj: u32,
     field_name_ptr: *const u8, field_name_len: usize,
+    ic_ptr: *const crate::metadata::resolver::FieldIC,
 ) -> u8 {
+    use std::sync::atomic::Ordering;
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
         .unwrap_or("<invalid>");
     let obj_val = &(*frame).regs[obj as usize];
     let val = match obj_val {
         Value::Object(rc) => {
             let b = rc.borrow();
-            if let Some(&slot) = b.type_desc.field_index.get(field_name) {
+            // IC fast path
+            if !ic_ptr.is_null() {
+                let recv_type = b.type_desc.id.0;
+                if recv_type != crate::metadata::tokens::UNRESOLVED
+                    && (*ic_ptr).cached_type_id.load(Ordering::Relaxed) == recv_type
+                {
+                    let slot = (*ic_ptr).cached_slot.load(Ordering::Relaxed) as usize;
+                    let v = b.slots.get(slot).cloned().unwrap_or(Value::Null);
+                    (*frame).regs[dst as usize] = v;
+                    return 0;
+                }
+                // Miss: walk + update IC.
+                if let Some(&slot) = b.type_desc.field_index.get(field_name) {
+                    if recv_type != crate::metadata::tokens::UNRESOLVED {
+                        (*ic_ptr).cached_type_id.store(recv_type, Ordering::Relaxed);
+                        (*ic_ptr).cached_slot.store(slot as u32, Ordering::Relaxed);
+                    }
+                    b.slots.get(slot).cloned().unwrap_or(Value::Null)
+                } else { Value::Null }
+            } else if let Some(&slot) = b.type_desc.field_index.get(field_name) {
                 b.slots.get(slot).cloned().unwrap_or(Value::Null)
             } else { Value::Null }
         }
@@ -137,14 +163,35 @@ pub unsafe extern "C" fn jit_field_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     obj: u32,
     field_name_ptr: *const u8, field_name_len: usize, val: u32,
+    ic_ptr: *const crate::metadata::resolver::FieldIC,
 ) -> u8 {
+    use std::sync::atomic::Ordering;
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
-        .unwrap_or("<invalid>").to_string();
+        .unwrap_or("<invalid>");
     let v = (*frame).regs[val as usize].clone();
     match &(*frame).regs[obj as usize] {
         Value::Object(rc) => {
             let mut b = rc.borrow_mut();
-            if let Some(&slot) = b.type_desc.field_index.get(&field_name) {
+            // IC fast path
+            if !ic_ptr.is_null() {
+                let recv_type = b.type_desc.id.0;
+                if recv_type != crate::metadata::tokens::UNRESOLVED
+                    && (*ic_ptr).cached_type_id.load(Ordering::Relaxed) == recv_type
+                {
+                    let slot = (*ic_ptr).cached_slot.load(Ordering::Relaxed) as usize;
+                    if slot < b.slots.len() { b.slots[slot] = v; }
+                    return 0;
+                }
+                // Miss: walk + update IC.
+                let slot_opt = b.type_desc.field_index.get(field_name).copied();
+                if let Some(slot) = slot_opt {
+                    if recv_type != crate::metadata::tokens::UNRESOLVED {
+                        (*ic_ptr).cached_type_id.store(recv_type, Ordering::Relaxed);
+                        (*ic_ptr).cached_slot.store(slot as u32, Ordering::Relaxed);
+                    }
+                    if slot < b.slots.len() { b.slots[slot] = v; }
+                }
+            } else if let Some(&slot) = b.type_desc.field_index.get(field_name) {
                 if slot < b.slots.len() { b.slots[slot] = v; }
             }
             0

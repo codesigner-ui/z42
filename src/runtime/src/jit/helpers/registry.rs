@@ -250,10 +250,13 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         // jit_obj_new(frame, ctx, dst, cls_ptr, cls_len, ctor_ptr, ctor_len, args_ptr, argc,
         //             type_args_ptr, type_args_count) -> u8
         obj_new:       decl!("jit_obj_new",    [ptr, ptr, i32t, ptr, i64t, ptr, i64t, ptr, i64t, ptr, i64t], [i8t]),
-        field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t],         [i8t]),
-        field_set:     decl!("jit_field_set",  [ptr, ptr, i32t, ptr, i64t, i32t],         [i8t]),
-        // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc) -> u8
-        vcall:         decl!("jit_vcall",      [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t], [i8t]),
+        // formalize-jit-method-token Phase 2.E (2026-05-08): trailing `ptr`
+        // arg = `*const FieldIC` (stable into Function.resolved.field_ic).
+        field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t, ptr],    [i8t]),
+        field_set:     decl!("jit_field_set",  [ptr, ptr, i32t, ptr, i64t, i32t, ptr],    [i8t]),
+        // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc, ic_ptr) -> u8
+        // Phase 2.E: trailing `ptr` arg = `*const VCallIC`.
+        vcall:         decl!("jit_vcall",      [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t, ptr], [i8t]),
         is_instance:   decl!("jit_is_instance",[ptr, ptr, i32t, i32t, ptr, i64t],         []),
         as_cast:       decl!("jit_as_cast",    [ptr, ptr, i32t, i32t, ptr, i64t],         []),
         // formalize-jit-method-token Phase 2 (2026-05-08): id-based

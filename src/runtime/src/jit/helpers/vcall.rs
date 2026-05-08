@@ -4,16 +4,29 @@
 //! Mirrors `interp/exec_vcall.rs`.
 
 use crate::metadata::Value;
+use crate::metadata::resolver::VCallIC;
 
 use super::super::frame::{JitFrame, JitModuleCtx};
 use super::{set_exception, vm_ctx_ref, JitFn};
 
+/// `jit_vcall` after formalize-jit-method-token Phase 2.E (2026-05-08):
+/// the per-site `VCallIC` is threaded in (stable raw pointer baked into
+/// machine code by codegen). Mirrors interp `vcall` — IC hit goes
+/// straight to `fn_entries_by_id[cached_fn_idx]`; miss falls through
+/// the existing primitive / vtable / lazy-loader paths and writes the
+/// resolved (TypeId, vtable slot, MethodId) triple back to IC.
+///
+/// `ic_ptr` may be null when the resolver hasn't run (only happens in
+/// tests bypassing `Vm::run`); helper degrades gracefully to slow path.
 #[no_mangle]
 pub unsafe extern "C" fn jit_vcall(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, obj: u32, method_ptr: *const u8, method_len: usize,
     args_ptr: *const u32, argc: usize,
+    ic_ptr: *const VCallIC,
 ) -> u8 {
+    use std::sync::atomic::Ordering;
+
     let method    = std::str::from_utf8(std::slice::from_raw_parts(method_ptr, method_len))
         .unwrap_or("<invalid>");
     let ctx_ref   = &*ctx;
@@ -23,6 +36,37 @@ pub unsafe extern "C" fn jit_vcall(
     let obj_val = frame_ref.regs[obj as usize].clone();
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);
     let mut extra_args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
+
+    // ── IC fast path ────────────────────────────────────────────────────
+    // Only applies when (1) IC pointer non-null, (2) receiver is an object
+    // (primitives go through the dedicated primitive_class_name path
+    // below), (3) receiver TypeId matches cache, (4) cached_fn_idx
+    // resolves to an entry in `fn_entries_by_id`.
+    if !ic_ptr.is_null() {
+        if let Value::Object(ref rc) = obj_val {
+            let recv_type = rc.borrow().type_desc.id.0;
+            let cached_type = (*ic_ptr).cached_type_id.load(Ordering::Relaxed);
+            if recv_type != crate::metadata::tokens::UNRESOLVED && recv_type == cached_type {
+                let fn_idx = (*ic_ptr).cached_fn_idx.load(Ordering::Relaxed);
+                if fn_idx != crate::metadata::tokens::UNRESOLVED {
+                    if let Some(entry) = ctx_ref.fn_entries_by_id.get(fn_idx as usize).copied().flatten() {
+                        let mut call_args: Vec<Value> = vec![obj_val.clone()];
+                        call_args.append(&mut extra_args);
+                        let mut callee = JitFrame::new(entry.max_reg, &call_args);
+                        let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+                        let vm_ctx = vm_ctx_ref(ctx);
+                        vm_ctx.push_frame_state(&callee.regs as *const _, &callee.env_arena as *const _);
+                        let r = jit_fn(&mut callee, ctx);
+                        vm_ctx.pop_frame_regs();
+                        if r != 0 { callee.recycle(); return 1; }
+                        frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
+                        callee.recycle();
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
 
     // L3-G4b primitive-as-struct: primitives dispatch through their stdlib struct's
     // method — construct `{Std.int | Std.double | ...}.{method}` and invoke via the
@@ -78,8 +122,11 @@ pub unsafe extern "C" fn jit_vcall(
         extra_args = call_args.into_iter().skip(1).collect();
     }
 
-    let class_name = match &obj_val {
-        Value::Object(rc) => rc.borrow().type_desc.name.clone(),
+    let (class_name, recv_type_id) = match &obj_val {
+        Value::Object(rc) => {
+            let b = rc.borrow();
+            (b.type_desc.name.clone(), b.type_desc.id.0)
+        }
         other => {
             set_exception(vm_ctx_ref(ctx), Value::Str(format!("VCall: expected object, got {:?}", other)));
             return 1;
@@ -90,6 +137,17 @@ pub unsafe extern "C" fn jit_vcall(
         Ok(n)  => n,
         Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string())); return 1; }
     };
+
+    // IC update: cache (recv_type_id, fn_idx) for next time this site sees
+    // the same receiver type. Slot index isn't tracked here (resolve_virtual
+    // walks by name, not vtable index) — store UNRESOLVED so the slot is
+    // visible-but-unused; the IC fast path only consults `cached_fn_idx`.
+    if !ic_ptr.is_null() && recv_type_id != crate::metadata::tokens::UNRESOLVED {
+        if let Some(&fn_idx) = module.func_index.get(&func_name) {
+            (*ic_ptr).cached_type_id.store(recv_type_id, Ordering::Relaxed);
+            (*ic_ptr).cached_fn_idx.store(fn_idx as u32, Ordering::Relaxed);
+        }
+    }
 
     let entry = match ctx_ref.fn_entries.get(&func_name) {
         Some(e) => e,

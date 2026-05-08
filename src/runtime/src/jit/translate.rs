@@ -141,6 +141,35 @@ fn method_id_at(func: &Function, block_idx: usize, instr_idx: usize) -> u32 {
         .unwrap_or(crate::metadata::tokens::UNRESOLVED)
 }
 
+/// formalize-jit-method-token Phase 2.E helper: stable raw pointer to
+/// the `VCallIC` slot for the VCall site at `(block_idx, instr_idx)`.
+/// Returns null when `Function.resolved` is unset (helper degrades to
+/// non-IC slow path). The IC lives inside `Function.resolved.vcall_ic`
+/// (which lives inside Module), so the pointer is valid for the entire
+/// JitModule lifetime.
+fn vcall_ic_ptr_at(func: &Function, block_idx: usize, instr_idx: usize) -> *const crate::metadata::resolver::VCallIC {
+    func.resolved.get()
+        .and_then(|r| {
+            let site = *r.site_index.get(block_idx)?.get(instr_idx)?;
+            r.vcall_ic.get(site as usize)
+        })
+        .map(|ic| ic as *const _)
+        .unwrap_or(std::ptr::null())
+}
+
+/// formalize-jit-method-token Phase 2.E helper: stable raw pointer to
+/// the `FieldIC` slot for a FieldGet/FieldSet site. Same lifetime
+/// guarantees as `vcall_ic_ptr_at`.
+fn field_ic_ptr_at(func: &Function, block_idx: usize, instr_idx: usize) -> *const crate::metadata::resolver::FieldIC {
+    func.resolved.get()
+        .and_then(|r| {
+            let site = *r.site_index.get(block_idx)?.get(instr_idx)?;
+            r.field_ic.get(site as usize)
+        })
+        .map(|ic| ic as *const _)
+        .unwrap_or(std::ptr::null())
+}
+
 /// formalize-jit-method-token Phase 2 helper: look up the resolved
 /// `StaticFieldId.0` for a `StaticGet` / `StaticSet` site at
 /// `(block_idx, instr_idx)`. Falls back to a direct lookup for tests
@@ -660,24 +689,35 @@ pub fn translate_function(
                         &[frame_val, ctx_val, d, cp, cl, kp, kl, ap, al, tap, tac]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
+                // formalize-jit-method-token Phase 2.E (2026-05-08): emit
+                // FieldIC pointer as i64 const so helper can take IC fast
+                // path on monomorphic sites. Pointer is stable through
+                // Function.resolved (OnceLock-set, never overwritten).
                 Instruction::FieldGet { dst, obj, field_name } => {
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (fp, fl) = str_val!(field_name);
-                    let inst = builder.ins().call(hr_field_get, &[frame_val, ctx_val, d, o, fp, fl]);
+                    let ic_ptr = field_ic_ptr_at(z42_func, block_idx, instr_idx);
+                    let ic_val = builder.ins().iconst(ptr, ic_ptr as i64);
+                    let inst = builder.ins().call(hr_field_get, &[frame_val, ctx_val, d, o, fp, fl, ic_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::FieldSet { obj, field_name, val } => {
                     let o = ri!(*obj);
                     let (fp, fl) = str_val!(field_name);
                     let v = ri!(*val);
-                    let inst = builder.ins().call(hr_field_set, &[frame_val, ctx_val, o, fp, fl, v]);
+                    let ic_ptr = field_ic_ptr_at(z42_func, block_idx, instr_idx);
+                    let ic_val = builder.ins().iconst(ptr, ic_ptr as i64);
+                    let inst = builder.ins().call(hr_field_set, &[frame_val, ctx_val, o, fp, fl, v, ic_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
+                // Phase 2.E: emit VCallIC pointer as trailing helper arg.
                 Instruction::VCall { dst, obj, method, args } => {
                     let d = ri!(*dst); let o = ri!(*obj);
                     let (mp, ml) = str_val!(method);
                     let (ap, al) = regs_val!(args);
-                    let inst = builder.ins().call(hr_vcall, &[frame_val, ctx_val, d, o, mp, ml, ap, al]);
+                    let ic_ptr = vcall_ic_ptr_at(z42_func, block_idx, instr_idx);
+                    let ic_val = builder.ins().iconst(ptr, ic_ptr as i64);
+                    let inst = builder.ins().call(hr_vcall, &[frame_val, ctx_val, d, o, mp, ml, ap, al, ic_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::IsInstance { dst, obj, class_name } => {

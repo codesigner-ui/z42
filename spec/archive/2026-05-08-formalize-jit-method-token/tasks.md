@@ -1,6 +1,6 @@
 # Tasks: formalize-jit-method-token
 
-> 状态：🟡 进行中（Phase 2.A + 2.B + 2.C 已落地）| 创建：2026-05-08
+> 状态：🟢 已完成（Phase 2 全部落地，Phase 2.D 推迟到 Phase 3）| 创建：2026-05-08 | 完成：2026-05-08
 > 类型：vm（runtime JIT helper 接口契约扩展，refactor 性质）
 > 来源：Sibling spec to `2026-05-08-introduce-method-token` Phase 2 follow-up
 
@@ -39,18 +39,18 @@ ResolvedTokens 并 emit `iconst.i32 <id>` 作 helper 实参。
 - registry.rs Cranelift 签名: `[ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t]`
 - 验证: cargo test + VM golden 310/310 全绿
 
-🟡 **Phase 2.D — JIT ObjNew** (待启动):
-- TypeId 主要 observability 用途（type_registry 仍 HashMap）；可推迟到 Phase 3 zbc 格式 bump 时一起做
-- 工作量: ~30min
+⏸️ **Phase 2.D — JIT ObjNew** (推迟到 Phase 3):
+- 决策：当前 type_registry 仍是 HashMap-by-name；JIT ObjNew 的 TypeId 化在 Phase 2 阶段**纯属 observability**（写回 cross-zpkg 解析后的 id），dispatch 路径不变。
+- Phase 3 zbc 格式 bump + type_registry 改 Vec-by-TypeId 时，TypeId 才能成为真正的热路径键。届时 ObjNew helper 自然要切到 id-based 查找，本步骤会随 Phase 3 一并落地。
+- 不在 Phase 2 范围内单独做，以避免一次性写两遍 helper 签名变更。
 
-🟡 **Phase 2.E — JIT VCall + Field IC** (待启动，最复杂):
-- IC 集成：JIT 机器码需要 inline 检查 `cached_type_id == receiver.type_desc.id` 后直接 `module.functions[cached_fn_idx]`
-- 三选一:
-  - A. 助手承担 IC（helper 接 IC 指针，dispatch 仍 helper-call 一次）—— 简单但失去内联收益
-  - B. JIT 在机器码 emit IC check + branch + slow-path call —— 收益最大但复杂
-  - C. 不做 IC（跟现状一样字符串路径）—— 放弃热路径优化
-- 推荐 A（与 interp 行为对齐 + 助手已实现 IC 逻辑）
-- 工作量: ~2h
+✅ **Phase 2.E — JIT VCall + Field IC** (本次, Option A 落地):
+- 决策：助手承担 IC（IC 指针作为 helper 末参数，dispatch 仍 helper-call 一次）。理由见 design.md：与 interp 行为对齐，且 IC 逻辑已在 resolver 实现，复用零成本。Option B（机器码 emit IC check）留给 Phase 3+ 的 perf 工作。
+- `jit_vcall` 加 `ic_ptr: *const VCallIC` 末参数；hit → 直接 `fn_entries_by_id[cached_fn_idx]`，miss → resolve_virtual + 回写 IC。
+- `jit_field_get` / `jit_field_set` 加 `ic_ptr: *const FieldIC` 末参数；mirror interp `field_get/set` 的 IC fast/slow 路径。
+- translate.rs 新增 `vcall_ic_ptr_at` / `field_ic_ptr_at` 辅助；codegen emit IC slot 的 stable raw pointer 作 i64 const。
+- registry.rs Cranelift 签名末尾加 `ptr` 槽位。
+- 验证: cargo + dotnet 1109/1109 + VM golden 310/310 全绿
 
 ---
 

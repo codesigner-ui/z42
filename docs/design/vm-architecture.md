@@ -441,9 +441,20 @@ pub struct ResolvedTokens {
 | Phase | 内容 | 状态 |
 |---|---|---|
 | 1 | Token newtypes + 加载期 resolver + interp 8 热路径 + StaticField 全局编号 + Field/VCall 单态 IC | 🟢 2026-05-08 |
-| 2 (sibling) | JIT helpers 接 MethodId/BuiltinId/etc | 📋 待启动 |
-| 3 (future) | zbc 格式 bump，IR struct 字段从 String 改 u32 | 📋 待启动 |
-| 4 (future) | Compiler 端 token-aware emit | 📋 待启动 |
+| 2 (sibling) | JIT helpers 接 MethodId/BuiltinId/StaticFieldId + VCall/Field IC（Option A — helper carries IC） | 🟢 2026-05-08 |
+| 3 (future) | zbc 格式 bump，IR struct 字段从 String 改 u32；type_registry 改 Vec-by-TypeId（同时落地 ObjNew TypeId 热路径） | 📋 待启动 |
+| 4 (future) | Compiler 端 token-aware emit；Phase 2.E Option B（JIT 机器码 inline IC check）作 perf 工作 | 📋 待启动 |
+
+> **Phase 2 边界**: Phase 2 已把 JIT helper 切到 token / IC 形态，但 dispatch
+> 仍走 helper-call 一次（Option A）。机器码 inline IC check（Option B，跳过
+> helper 调用本身）需要 cranelift 端的复杂 control-flow，留给 Phase 4 perf
+> 阶段。Option A 已让 JIT 的 hot path 与 interp 行为完全对齐：IC hit 时直接
+> 通过 `JitModuleCtx.fn_entries_by_id[cached_fn_idx]` 跳到目标 native 代码，
+> 无 HashMap 哈希、无 vtable 解析。
+>
+> **Phase 2.D 推迟**: ObjNew TypeId 在 Phase 2 阶段是纯 observability（type_registry
+> 仍是 HashMap-by-name，dispatch 路径没有热路径键可换）；与其单独写一遍 helper
+> 签名变更，不如等 Phase 3 把 type_registry 改 Vec-by-TypeId 时一起切。
 
 ### 与 D-1b `func_ref_cache_slots` 的关系
 
