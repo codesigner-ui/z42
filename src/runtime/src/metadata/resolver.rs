@@ -1,5 +1,5 @@
 //! Load-time token resolution for the introduce-method-token spec
-//! (Phase 1, 2026-05-08). Walks every IR instruction in a freshly merged
+//! (Phase 1, 2026-05-08). Walks every IR instruction in a freshly built
 //! `Module` and pre-fills per-function `ResolvedTokens` so the dispatch
 //! hot path can index `Vec<Function>` / `Vec<Value>` directly without
 //! per-call hashing.
@@ -17,13 +17,12 @@
 //! .field_name`) are *not* resolved here. They use per-site monomorphic
 //! inline caches (`VCallIC` / `FieldIC`) populated on first dispatch.
 //!
-//! Population timing: called from `metadata::loader::merge_modules` after
-//! the `func_index` / `type_registry` are built, so all intra-module
-//! lookups succeed.
+//! Population timing: called from `Vm::run` after `merge_modules` /
+//! `build_type_registry` are done (so all intra-module lookups succeed)
+//! and before any dispatch happens (so hot paths see fully-populated
+//! `ResolvedTokens`).
 
-use crate::metadata::tokens::{
-    BuiltinId, FieldId, MethodId, StaticFieldId, TypeId, VTableSlot, UNRESOLVED,
-};
+use crate::metadata::tokens::UNRESOLVED;
 use std::sync::atomic::AtomicU32;
 
 /// Per-function lazy-init cache populated by `resolve_module`. Stored on
@@ -47,9 +46,7 @@ pub struct ResolvedTokens {
     pub vcall_ic: Vec<VCallIC>,
     /// `FieldGet` / `FieldSet` sites: monomorphic inline cache (TypeId, field slot).
     pub field_ic: Vec<FieldIC>,
-    /// `StaticGet` / `StaticSet` sites: cached `StaticFieldId` (lazy resolve
-    /// via `VmContext::resolve_static_field_id` on first dispatch; cross-zpkg
-    /// safe).
+    /// `StaticGet` / `StaticSet` sites: cached `StaticFieldId`.
     pub static_field_tokens: Vec<AtomicU32>,
     /// `(block_idx, instr_idx) → site_idx` mapping. Outer Vec indexed by
     /// `block_idx`, inner Vec by `instr_idx`. Stores the appropriate
@@ -98,55 +95,126 @@ impl Default for FieldIC {
     }
 }
 
-// ─── Token-bearing instruction kinds ──────────────────────────────────────────
-//
-// Used by `resolve_module` to enumerate sites. One enum value per kind so
-// the per-kind site_idx stays distinct (Call site #2 is unrelated to
-// Builtin site #2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // populated at Phase 3 implementation
-enum SiteKind {
-    Method,
-    Builtin,
-    Type,
-    VCall,
-    Field,
-    StaticField,
-}
-
-#[allow(dead_code)] // re-exported for Phase 3 hookup
-pub(crate) use private_resolver::resolve_module;
-
-mod private_resolver {
-    use super::*;
-    use crate::metadata::Module;
-
-    /// Walk every Function in `module` and populate its `resolved`
-    /// `OnceLock<ResolvedTokens>`. Idempotent: once `OnceLock` is
-    /// initialised on a function, subsequent calls are no-ops.
-    ///
-    /// Phase 3 of the spec — currently a stub that initialises empty
-    /// `ResolvedTokens` for every function so consumers can rely on
-    /// `function.resolved.get().is_some()` after this returns. Real
-    /// resolution logic (Call → MethodId, etc.) lands in the next commit.
-    #[allow(dead_code, unused_variables)]
-    pub(crate) fn resolve_module(module: &mut Module) {
-        // 1. Assign TypeId to each TypeDesc in the registry.
-        //    The registry HashMap is keyed by class name; iterate
-        //    `module.classes` for stable ordering (id matches definition order).
-        let registry = std::sync::Arc::clone(&std::sync::Arc::new(module.type_registry.clone()));
-        // (We can't mutate Arc<TypeDesc> through the registry once shared,
-        //  so this block is a placeholder — Phase 3 will redesign TypeId
-        //  assignment to happen during type_registry construction in
-        //  loader.rs, before any Arc shares are taken.)
-        let _ = registry;
-
-        // 2. Walk every function and populate ResolvedTokens (Phase 3).
-        //    Stub: leave functions' `resolved` un-initialised. Hot paths
-        //    will fall back to string lookup until Phase 3 lands.
-        for _func in &module.functions {
-            // function.resolved.set(ResolvedTokens { ... }).ok();
+/// Walk every Function in `module` and populate its `resolved`
+/// `OnceLock<ResolvedTokens>`. Idempotent: once `OnceLock` is
+/// initialised on a function, subsequent calls are no-ops (the
+/// `let _ = ...` ignores the duplicate-set error).
+///
+/// `ctx` is needed for `StaticGet/Set` resolution: static field IDs are
+/// allocated lazily through `VmContext::resolve_static_field_id` so
+/// cross-zpkg static fields can be encountered in any load order.
+pub fn resolve_module(module: &crate::metadata::Module, ctx: &crate::vm_context::VmContext) {
+    for func in &module.functions {
+        // Skip if already populated (idempotent).
+        if func.resolved.get().is_some() {
+            continue;
         }
+
+        // ─── Pass 1: enumerate token-bearing sites ────────────────────────
+        // Per-kind site lists. Each entry: the source-string at that site,
+        // captured for pass-2 resolution. site_index[block][instr] = the
+        // appropriate per-kind site_idx (or UNRESOLVED for non-token instructions).
+        let mut method_site_names:   Vec<String> = Vec::new();
+        let mut builtin_site_names:  Vec<String> = Vec::new();
+        let mut type_site_names:     Vec<String> = Vec::new();
+        let mut static_site_names:   Vec<String> = Vec::new();
+        let mut vcall_site_count:    u32 = 0;
+        let mut field_site_count:    u32 = 0;
+
+        let mut site_index: Vec<Vec<u32>> = Vec::with_capacity(func.blocks.len());
+
+        for block in &func.blocks {
+            let mut block_sites = vec![UNRESOLVED; block.instructions.len()];
+            for (instr_idx, instr) in block.instructions.iter().enumerate() {
+                use crate::metadata::Instruction;
+                let site_idx = match instr {
+                    Instruction::Call { func: name, .. } => {
+                        let s = method_site_names.len() as u32;
+                        method_site_names.push(name.clone());
+                        s
+                    }
+                    Instruction::Builtin { name, .. } => {
+                        let s = builtin_site_names.len() as u32;
+                        builtin_site_names.push(name.clone());
+                        s
+                    }
+                    Instruction::ObjNew { class_name, .. } => {
+                        let s = type_site_names.len() as u32;
+                        type_site_names.push(class_name.clone());
+                        s
+                    }
+                    Instruction::VCall { .. } => {
+                        let s = vcall_site_count;
+                        vcall_site_count += 1;
+                        s
+                    }
+                    Instruction::FieldGet { .. } | Instruction::FieldSet { .. } => {
+                        let s = field_site_count;
+                        field_site_count += 1;
+                        s
+                    }
+                    Instruction::StaticGet { field, .. } | Instruction::StaticSet { field, .. } => {
+                        let s = static_site_names.len() as u32;
+                        static_site_names.push(field.clone());
+                        s
+                    }
+                    _ => UNRESOLVED, // non-token-bearing instruction
+                };
+                block_sites[instr_idx] = site_idx;
+            }
+            site_index.push(block_sites);
+        }
+
+        // ─── Pass 2: resolve names → tokens ───────────────────────────────
+        let method_tokens: Vec<AtomicU32> = method_site_names.iter()
+            .map(|name| AtomicU32::new(
+                module.func_index.get(name).copied()
+                    .map(|idx| idx as u32)
+                    .unwrap_or(UNRESOLVED)
+            ))
+            .collect();
+
+        let builtin_tokens: Vec<u32> = builtin_site_names.iter()
+            .map(|name| {
+                crate::corelib::builtin_id_of(name)
+                    .unwrap_or_else(|| panic!(
+                        "unknown builtin `{}` (typo? not registered in BUILTINS table?)",
+                        name
+                    ))
+                    .0
+            })
+            .collect();
+
+        let type_tokens: Vec<AtomicU32> = type_site_names.iter()
+            .map(|name| AtomicU32::new(
+                module.type_registry.get(name)
+                    .map(|td| td.id.0)
+                    .unwrap_or(UNRESOLVED)
+            ))
+            .collect();
+
+        let vcall_ic: Vec<VCallIC> = (0..vcall_site_count).map(|_| VCallIC::default()).collect();
+        let field_ic: Vec<FieldIC> = (0..field_site_count).map(|_| FieldIC::default()).collect();
+
+        // Static fields: lazy allocate through the VmContext so cross-zpkg
+        // ordering doesn't matter. Resolution is "always succeed" — if the
+        // name was first seen in this module, this is the allocation site.
+        let static_field_tokens: Vec<AtomicU32> = static_site_names.iter()
+            .map(|name| AtomicU32::new(ctx.resolve_static_field_id(name).0))
+            .collect();
+
+        let resolved = ResolvedTokens {
+            method_tokens,
+            builtin_tokens,
+            type_tokens,
+            vcall_ic,
+            field_ic,
+            static_field_tokens,
+            site_index,
+        };
+
+        // OnceLock idempotent set — Err means already set (race or repeat call).
+        let _ = func.resolved.set(resolved);
     }
 }
 
@@ -183,16 +251,4 @@ mod resolver_tests {
         assert_eq!(ic.cached_slot.load(Ordering::Relaxed), UNRESOLVED);
     }
 
-    // Compile-time use of imports to silence unused_imports warnings on the
-    // tokens module (BuiltinId / FieldId / MethodId / StaticFieldId / TypeId /
-    // VTableSlot will be used by Phase 3 implementation).
-    #[allow(dead_code)]
-    fn _suppress_unused_imports_check() {
-        let _: BuiltinId = BuiltinId::UNRESOLVED;
-        let _: FieldId = FieldId::UNRESOLVED;
-        let _: MethodId = MethodId::UNRESOLVED;
-        let _: StaticFieldId = StaticFieldId::UNRESOLVED;
-        let _: TypeId = TypeId::UNRESOLVED;
-        let _: VTableSlot = VTableSlot::UNRESOLVED;
-    }
 }

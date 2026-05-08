@@ -33,6 +33,12 @@ impl Vm {
         // global slot range.
         ctx.alloc_func_ref_slots(self.module.func_ref_cache_slots);
 
+        // introduce-method-token Phase 3 (2026-05-08): pre-resolve dispatch
+        // tokens for every Function. Idempotent — safe if hot paths run
+        // before Phase 4 hookups consume the cache (they fall back to
+        // string lookup until Phase 4 lands).
+        crate::metadata::resolver::resolve_module(&self.module, ctx);
+
         let entry = self
             .module
             .functions
