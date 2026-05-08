@@ -54,7 +54,12 @@
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/**)",
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/runtime/**)",
       "Bash(bash /tmp/z42_categorize.sh)",
-      "Bash(Z42_LIBS=artifacts/z42/libs cargo run -q --manifest-path src/runtime/Cargo.toml -- /tmp/sm.zbc)"
+      "Bash(Z42_LIBS=artifacts/z42/libs cargo run -q --manifest-path src/runtime/Cargo.toml -- /tmp/sm.zbc)",
+      "Bash(sed -i.bak 's/TokenCursor cursor, Token kw, LanguageFeatures feat\\)/TokenCursor cursor, Token kw, LanguageFeatures feat, DiagnosticBag? diags\\)/g' StmtParser.cs)",
+      "Bash(sed -i.bak 's/ExprParser\\\\.Parse\\(cursor, feat\\)/ExprParser.Parse\\(cursor, feat, diags: diags\\)/g' StmtParser.cs)",
+      "Bash(sed -i.bak 's/ExprParser\\\\.Parse\\(cursor, feat, 11\\)/ExprParser.Parse\\(cursor, feat, 11, diags\\)/g' StmtParser.cs)",
+      "Bash(sed -i.bak 's/entry\\\\.Fn\\(cursor, kw, feat\\)/entry.Fn\\(cursor, kw, feat, diags\\)/g' StmtParser.cs)",
+      "Bash(sed -i.bak 's/ParseBlock\\(cursor, feat\\)\\\\./ParseBlock\\(cursor, feat, diags\\)./g' StmtParser.cs)"
     ],
     "additionalDirectories": [
       "/tmp",
