@@ -1,6 +1,6 @@
 # Tasks: formalize-jit-method-token
 
-> 状态：🟡 进行中（Phase 2.A + 2.B 已落地）| 创建：2026-05-08
+> 状态：🟡 进行中（Phase 2.A + 2.B + 2.C 已落地）| 创建：2026-05-08
 > 类型：vm（runtime JIT helper 接口契约扩展，refactor 性质）
 > 来源：Sibling spec to `2026-05-08-introduce-method-token` Phase 2 follow-up
 
@@ -30,11 +30,14 @@ ResolvedTokens 并 emit `iconst.i32 <id>` 作 helper 实参。
 - translate.rs 新增 `static_field_id_at(func, block, instr, _field)` 辅助；StaticGet/StaticSet codegen emit iconst.i32 of id
 - 验证: cargo test + VM golden 310/310 全绿
 
-🟡 **Phase 2.C — JIT Call** (待启动):
-- 需要 JitModuleCtx 加 `fn_entries_by_id: Vec<FnEntry>`（与 fn_entries HashMap 并存，索引 = MethodId.0）
-- helper 签名: `(frame, ctx, dst, method_id, name_ptr, name_len, args_ptr, argc) -> u8` —— UNRESOLVED 时走 name fallback（cross-zpkg）
-- translate.rs Call codegen emit method_id + name 双参数
-- 工作量: ~1h
+✅ **Phase 2.C — JIT Call** (本次):
+- `FnEntry` 加 `#[derive(Copy, Clone)]`（允许 HashMap + Vec 双驻留）
+- `JitModuleCtx` 加 `fn_entries_by_id: Vec<Option<FnEntry>>`（索引 = MethodId.0；`None` slot 留给未来 abstract / extern stub）
+- `compile_module` 同时 push 两个表（HashMap 按 name 索引，Vec 按 module.functions 顺序）
+- `jit_call` 签名: `(frame, ctx, dst, method_id, fn_name_ptr, fn_name_len, args_ptr, argc) -> u8` —— hot path 直接 Vec[id]，UNRESOLVED 时走 name fallback（cross-zpkg）
+- translate.rs `method_id_at(func, block, instr) -> u32` helper；Call codegen emit `iconst.i32 <method_id>` 作 helper 第 4 参数（在 dst 之后、name 之前）
+- registry.rs Cranelift 签名: `[ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t]`
+- 验证: cargo test + VM golden 310/310 全绿
 
 🟡 **Phase 2.D — JIT ObjNew** (待启动):
 - TypeId 主要 observability 用途（type_registry 仍 HashMap）；可推迟到 Phase 3 zbc 格式 bump 时一起做

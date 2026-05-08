@@ -128,6 +128,19 @@ fn find_handler_entries(func: &Function, block_idx: usize) -> Vec<usize> {
 // translate_function
 // ═════════════════════════════════════════════════════════════════════════════
 
+/// formalize-jit-method-token Phase 2.C helper: look up the resolved
+/// `MethodId.0` for a `Call` site. Returns `UNRESOLVED` (= u32::MAX)
+/// for cross-zpkg lazy targets — `jit_call` falls back to name lookup.
+fn method_id_at(func: &Function, block_idx: usize, instr_idx: usize) -> u32 {
+    func.resolved.get()
+        .and_then(|r| {
+            let site = *r.site_index.get(block_idx)?.get(instr_idx)?;
+            r.method_tokens.get(site as usize)
+        })
+        .map(|atom| atom.load(std::sync::atomic::Ordering::Relaxed))
+        .unwrap_or(crate::metadata::tokens::UNRESOLVED)
+}
+
 /// formalize-jit-method-token Phase 2 helper: look up the resolved
 /// `StaticFieldId.0` for a `StaticGet` / `StaticSet` site at
 /// `(block_idx, instr_idx)`. Falls back to a direct lookup for tests
@@ -567,11 +580,16 @@ pub fn translate_function(
                 }
 
                 // Calls
+                // formalize-jit-method-token Phase 2.C (2026-05-08): emit
+                // pre-resolved MethodId + name (fallback for cross-zpkg).
+                // Helper checks id first; UNRESOLVED → uses name HashMap.
                 Instruction::Call { dst, func: fname, args } => {
                     let d = ri!(*dst);
                     let (np, nl) = str_val!(fname);
                     let (ap, al) = regs_val!(args);
-                    let inst = builder.ins().call(hr_call, &[frame_val, ctx_val, d, np, nl, ap, al]);
+                    let mid = method_id_at(z42_func, block_idx, instr_idx);
+                    let mid_val = builder.ins().iconst(types::I32, mid as i64);
+                    let inst = builder.ins().call(hr_call, &[frame_val, ctx_val, d, mid_val, np, nl, ap, al]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Builtin { dst, name, args } => {

@@ -6,22 +6,42 @@ use crate::metadata::Value;
 use super::super::frame::{FnEntry, JitFrame, JitModuleCtx};
 use super::{set_exception, vm_ctx_ref, JitFn};
 
+/// `jit_call` after formalize-jit-method-token Phase 2.C (2026-05-08):
+/// hot path takes pre-resolved `MethodId` and indexes `fn_entries_by_id`
+/// directly. On `UNRESOLVED` (cross-zpkg), falls back to name-based
+/// HashMap lookup. Name pointer kept for diagnostics + fallback.
 #[no_mangle]
 pub unsafe extern "C" fn jit_call(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
-    dst: u32, fn_name_ptr: *const u8, fn_name_len: usize,
+    dst: u32,
+    method_id: u32,
+    fn_name_ptr: *const u8, fn_name_len: usize,
     args_ptr: *const u32, argc: usize,
 ) -> u8 {
-    let func_name = std::str::from_utf8(std::slice::from_raw_parts(fn_name_ptr, fn_name_len))
-        .unwrap_or("<invalid>");
     let ctx_ref   = &*ctx;
     let frame_ref = &mut *frame;
 
-    let entry: &FnEntry = match ctx_ref.fn_entries.get(func_name) {
+    // Hot path: direct Vec[id] index when token resolved.
+    let entry_opt: Option<FnEntry> =
+        if method_id != crate::metadata::tokens::UNRESOLVED {
+            ctx_ref.fn_entries_by_id.get(method_id as usize).copied().flatten()
+        } else {
+            None
+        };
+
+    let entry: FnEntry = match entry_opt {
         Some(e) => e,
         None => {
-            set_exception(vm_ctx_ref(ctx), Value::Str(format!("undefined function `{}`", func_name)));
-            return 1;
+            // Cross-zpkg / fallback: by-name HashMap lookup.
+            let func_name = std::str::from_utf8(std::slice::from_raw_parts(fn_name_ptr, fn_name_len))
+                .unwrap_or("<invalid>");
+            match ctx_ref.fn_entries.get(func_name) {
+                Some(&e) => e,
+                None => {
+                    set_exception(vm_ctx_ref(ctx), Value::Str(format!("undefined function `{}`", func_name)));
+                    return 1;
+                }
+            }
         }
     };
 

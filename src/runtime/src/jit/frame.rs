@@ -86,6 +86,12 @@ fn return_pooled_regs(mut regs: Vec<Value>) {
 // ── FnEntry ──────────────────────────────────────────────────────────────────
 
 /// A compiled native function entry inside the JIT module.
+///
+/// `Copy + Clone` so it can live in both the by-name `HashMap` (cross-zpkg
+/// lazy fallback) and the by-id `Vec` (introduce-method-token Phase 2.C
+/// fast path) without ownership headaches. Each FnEntry is two machine
+/// words (ptr + usize), zero-cost to copy.
+#[derive(Copy, Clone)]
 pub struct FnEntry {
     /// Pointer to the native machine code of the function.
     pub ptr:     *const u8,
@@ -105,6 +111,14 @@ pub struct JitModuleCtx {
     pub string_pool: Vec<String>,
     /// Compiled function table — name → native code entry.
     pub fn_entries:  HashMap<String, FnEntry>,
+    /// Compiled function table — `MethodId.0` → native code entry
+    /// (introduce-method-token Phase 2.C, 2026-05-08). Indexed in
+    /// `module.functions` order so MethodId matches.
+    /// `None` slot = function couldn't be JIT-compiled (e.g. abstract,
+    /// extern stub) — caller must handle by falling back to the by-name
+    /// HashMap or returning an error. In current builds every function
+    /// in `module.functions` gets a JIT entry, so all slots are `Some`.
+    pub fn_entries_by_id: Vec<Option<FnEntry>>,
     /// Back-pointer to the bytecode module for class descriptors, etc.
     /// SAFETY: the Module must outlive this ctx.
     pub module:      *const crate::metadata::Module,

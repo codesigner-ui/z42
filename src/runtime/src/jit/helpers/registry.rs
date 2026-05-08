@@ -235,8 +235,10 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         shr:           decl!("jit_shr",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
         str_concat:    decl!("jit_str_concat", [ptr, ptr, i32t, i32t, i32t],              [i8t]),
         to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],                    [i8t]),
-        // jit_call(frame, ctx, dst, name_ptr, name_len, args_ptr, argc) -> u8
-        call:          decl!("jit_call",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t],    [i8t]),
+        // jit_call(frame, ctx, dst, method_id, name_ptr, name_len, args_ptr, argc) -> u8
+        // formalize-jit-method-token Phase 2.C (2026-05-08): id-first dispatch
+        // with name fallback for cross-zpkg UNRESOLVED targets.
+        call:          decl!("jit_call",       [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t], [i8t]),
         // jit_builtin(frame, ctx, dst, builtin_id, args_ptr, argc) -> u8
         // formalize-jit-method-token (2026-05-08): id-based dispatch (no hash).
         builtin:       decl!("jit_builtin",    [ptr, ptr, i32t, i32t, ptr, i64t],         [i8t]),

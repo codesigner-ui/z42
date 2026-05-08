@@ -137,20 +137,31 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     // ── 6. Finalise ──────────────────────────────────────────────────────────
     jit.finalize_definitions()?;
 
-    // ── 7. Build fn_entries ───────────────────────────────────────────────────
+    // ── 7. Build fn_entries (by-name) + fn_entries_by_id (by MethodId) ───────
+    // The by-id Vec is indexed in `module.functions` order so `MethodId.0`
+    // matches the slot index. The HashMap stays as cross-zpkg lazy fallback.
     let mut fn_entries: HashMap<String, FnEntry> = HashMap::new();
-    for (name, id) in &func_ids {
-        let ptr_raw = jit.get_finalized_function(*id);
-        fn_entries.insert(name.clone(), FnEntry {
-            ptr:     ptr_raw as *const u8,
-            max_reg: max_regs[name],
-        });
+    let mut fn_entries_by_id: Vec<Option<FnEntry>> = Vec::with_capacity(module.functions.len());
+    for func in &module.functions {
+        let entry = if let Some(&id) = func_ids.get(&func.name) {
+            let ptr_raw = jit.get_finalized_function(id);
+            let e = FnEntry {
+                ptr:     ptr_raw as *const u8,
+                max_reg: max_regs[&func.name],
+            };
+            fn_entries.insert(func.name.clone(), e);
+            Some(e)
+        } else {
+            None
+        };
+        fn_entries_by_id.push(entry);
     }
 
     // ── 8. Build JitModuleCtx ─────────────────────────────────────────────────
     let ctx = Box::new(JitModuleCtx {
         string_pool: module.string_pool.clone(),
         fn_entries,
+        fn_entries_by_id,
         module: module as *const Module,
         // Set by JitModule::run for the duration of an entry call; null
         // outside that window.
