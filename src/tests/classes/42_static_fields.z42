@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 class Counter {
     static int count = 0;
@@ -27,5 +26,4 @@ void Main() {
     Assert.Equal(1, a.GetId());
     Assert.Equal(2, b.GetId());
     Assert.Equal(3, c.GetId());
-    Console.WriteLine("Static fields work!");
 }

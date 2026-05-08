@@ -7,7 +7,6 @@ bool TryParse(string s, out int v) {
 }
 
 void Main() {
-    if (TryParse("x", out var n)) {
-        Console.WriteLine(n);
-    }
+    Assert.True(TryParse("x", out var n));
+    Assert.Equal(42, n);
 }

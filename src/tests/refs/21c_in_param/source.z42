@@ -7,5 +7,5 @@ int DoubleIt(in int x) {
 
 void Main() {
     var v = 21;
-    Console.WriteLine(DoubleIt(in v));
+    Assert.Equal(42, DoubleIt(in v));
 }

@@ -1,0 +1,11 @@
+namespace Demo;
+
+class MathHelper {
+    static int Square(int x) { return x * x; }
+    static int SumOfSquares(int a, int b) { return Square(a) + Square(b); }
+}
+
+void Main() {
+    Assert.Equal(25, MathHelper.Square(5));
+    Assert.Equal(25, MathHelper.SumOfSquares(3, 4));
+}

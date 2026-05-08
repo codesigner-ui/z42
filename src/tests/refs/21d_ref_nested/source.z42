@@ -13,5 +13,5 @@ void Outer(ref int x) {
 void Main() {
     var c = 1;
     Outer(ref c);
-    Console.WriteLine(c);
+    Assert.Equal(101, c);
 }

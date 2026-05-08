@@ -1,0 +1,10 @@
+namespace Demo;
+
+void Main() {
+    var t1 = typeof(int);
+    var t2 = typeof(string);
+    var t3 = typeof(bool);
+    Assert.Equal("int", t1);
+    Assert.Equal("string", t2);
+    Assert.Equal("bool", t3);
+}

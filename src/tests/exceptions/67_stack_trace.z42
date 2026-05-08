@@ -1,0 +1,20 @@
+// Test: multi-level function calls — verify exception propagation through call stack.
+
+string Inner() {
+    throw "inner error";
+    return "unreachable";
+}
+
+string Middle() {
+    return Inner();
+}
+
+void Main() {
+    bool caught = false;
+    try {
+        var result = Middle();
+    } catch {
+        caught = true;
+    }
+    Assert.True(caught);
+}

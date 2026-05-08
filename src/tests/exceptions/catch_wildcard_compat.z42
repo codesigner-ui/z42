@@ -1,0 +1,27 @@
+// catch-by-generic-type backward compat:
+//   The bare `catch { ... }` form (no parens, no var) remains a wildcard —
+//   it matches any thrown value, including Phase 1 non-Object throws like
+//   `throw "string"`. This is what the existing 7 legacy exception goldens
+//   relied on through `catch (Exception e)` before strict typing landed;
+//   bare `catch` keeps that escape hatch for code that needs to handle
+//   arbitrary throw values without committing to an Exception type.
+
+void Main() {
+    // Wildcard catches a typed throw (no filtering).
+    bool caught_typed = false;
+    try {
+        throw new ArgumentException("typed");
+    } catch {
+        caught_typed = true;
+    }
+    Assert.True(caught_typed);
+
+    // Wildcard catches Phase 1 string throw (legacy).
+    bool caught_string = false;
+    try {
+        throw "raw string";
+    } catch {
+        caught_string = true;
+    }
+    Assert.True(caught_string);
+}

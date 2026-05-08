@@ -8,5 +8,5 @@ void Increment(ref int x) {
 void Main() {
     var c = 0;
     Increment(ref c);
-    Console.WriteLine(c);
+    Assert.Equal(1, c);
 }

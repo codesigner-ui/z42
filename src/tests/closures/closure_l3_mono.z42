@@ -1,0 +1,20 @@
+// 2026-05-02 impl-closure-l3-monomorphize regression golden.
+// 端到端验证：alias 单态化路径 + 直接 Call 路径 + indirect fallback 路径。
+namespace Demo;
+
+int Helper() { return 42; }
+int Square(int n) { return n * n; }
+
+int Apply((int) -> int f, int x) {
+    return f(x);
+}
+
+void Main() {
+    var f = Helper;
+    Assert.Equal(42, f());          // alias direct call
+
+    var g = f;
+    Assert.Equal(42, g());          // alias chain
+
+    Assert.Equal(49, Apply(Square, 7)); // function param fallback CallIndirect
+}

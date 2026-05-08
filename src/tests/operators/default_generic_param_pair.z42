@@ -1,0 +1,18 @@
+// Multi type-param: default(K) resolves via type_args[0], default(V) via type_args[1].
+// Pair<int, string> → K=int → 0, V=string → null.
+
+class Pair<K, V> {
+    public bool IsKDefaultZero(int probe) {
+        return default(K) == probe;
+    }
+    public V GetDefV() {
+        return default(V);
+    }
+}
+
+void Main() {
+    var p = new Pair<int, string>();
+    Assert.True(p.IsKDefaultZero(0));
+    var v = p.GetDefV();
+    Assert.Null(v);
+}

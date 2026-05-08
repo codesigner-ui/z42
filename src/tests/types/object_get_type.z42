@@ -1,0 +1,25 @@
+// 2026-05-07 fix-gettype-on-object-typed-receiver:
+// 上行到 Object 的引用上调用 GetType()，编译期不再报 E0402。
+// (问题根因：SymbolCollector 预注册的 Object stub 缺 GetType 方法签名，
+// MergeImported 用 TryAdd 不会覆盖；本 fix 把 GetType 加到 stub 里。)
+
+class Foo {
+    public int x;
+    public Foo() { this.x = 42; }
+}
+
+void Main() {
+    Foo f = new Foo();
+
+    // 直接 receiver
+    Assert.Equal("Foo", f.GetType().__fullName);
+
+    // 上行到 Object 后再 GetType —— 这是修复路径
+    Object o = f;
+    Assert.Equal("Foo", o.GetType().__fullName);
+
+    // 数组上行后也能拿 Type（add-array-base-class 已铺路）
+    int[] arr = new int[3];
+    Object oa = arr;
+    Assert.Equal("Std.Array", oa.GetType().__fullName);
+}
