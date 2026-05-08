@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 class Point {
     int X;
@@ -17,7 +16,9 @@ class Point {
 
 void Main() {
     var p = new Point(3, 4);
-    Console.WriteLine(p.ToString());
+    Assert.Equal("(3, 4)", p.ToString());
+
     p.X = 10;
-    Console.WriteLine($"X={p.X} Y={p.Y}");
+    Assert.Equal(10, p.X);
+    Assert.Equal(4,  p.Y);
 }

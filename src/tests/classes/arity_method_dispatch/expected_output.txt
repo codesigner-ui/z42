@@ -1,3 +1,0 @@
-non-generic Pair: untyped
-generic Pair<A,B>
-first=7 second=hello

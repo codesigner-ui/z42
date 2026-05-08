@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 // add-class-arity-overloading: same source name `Foo` for non-generic
 // (arity 0) and generic `Foo<R>` (arity 1) coexist via shadow registry
@@ -17,11 +16,11 @@ class Foo<R> {
 
 void Main() {
     var a = new Foo(42);
-    Console.WriteLine($"non-generic.Value={a.Value}");
+    Assert.Equal(42, a.Value);
 
     var b = new Foo<int>(7);
-    Console.WriteLine($"generic-int.Item={b.Item}");
+    Assert.Equal(7, b.Item);
 
     var c = new Foo<string>("hello");
-    Console.WriteLine($"generic-string.Item={c.Item}");
+    Assert.Equal("hello", c.Item);
 }

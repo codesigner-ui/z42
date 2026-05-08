@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 class Person {
     public string Name { get; set; }
@@ -17,8 +16,13 @@ class Person {
 
 void Main() {
     var p = new Person("Alice", 30);
-    Console.WriteLine(p.Greet());
+    Assert.Equal("Hi, I'm Alice, age 30", p.Greet());
+
     p.Name = "Bob";
     p.Age = 25;
-    Console.WriteLine(p.Greet());
+    Assert.Equal("Hi, I'm Bob, age 25", p.Greet());
+
+    // Verify setter actually wrote backing fields
+    Assert.Equal("Bob", p.Name);
+    Assert.Equal(25,    p.Age);
 }

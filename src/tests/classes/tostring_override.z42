@@ -1,5 +1,4 @@
 namespace Demo;
-using Std.IO;
 
 class Point {
     int X;
@@ -19,16 +18,16 @@ void Main() {
     var p = new Point(3, 4);
 
     // ToString() override via vtable dispatch
-    Console.WriteLine(p.ToString());
+    Assert.Equal("(3, 4)", p.ToString());
 
     // String interpolation calls ToStr instruction → vtable dispatch
-    Console.WriteLine($"Point is {p}");
+    Assert.Equal("Point is (3, 4)", $"Point is {p}");
 
     // String.ToString() returns self
     string s = "hello";
-    Console.WriteLine(s.ToString());
+    Assert.Equal("hello", s.ToString());
 
     // String.Equals() value comparison
-    Console.WriteLine(s.Equals("hello"));
-    Console.WriteLine(s.Equals("world"));
+    Assert.True(s.Equals("hello"));
+    Assert.False(s.Equals("world"));
 }

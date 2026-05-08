@@ -1,4 +1,3 @@
-using Std.IO;
 // Auto-property: get-set + readonly forms.
 
 class Box {
@@ -16,14 +15,14 @@ class Box {
 
 void Main() {
     var b = new Box(3, 4, "first");
-    Console.WriteLine(b.Width);   // 3
-    Console.WriteLine(b.Height);  // 4
-    Console.WriteLine(b.Label);   // first
+    Assert.Equal(3, b.Width);
+    Assert.Equal(4, b.Height);
+    Assert.Equal("first", b.Label);
 
     // Setter dispatch
     b.Width = 10;
-    Console.WriteLine(b.Width);   // 10
+    Assert.Equal(10, b.Width);
 
     // Property in expression
-    Console.WriteLine(b.Width + b.Height);  // 14
+    Assert.Equal(14, b.Width + b.Height);
 }

@@ -5,7 +5,6 @@
 //   C) init + 显式 ctor body 覆写 → ctor 入口 init → 用户 body 覆盖
 //   D) 继承场景 P → Q  → 子类 init 不影响父类 init
 namespace Demo;
-using Std.IO;
 
 class A {
     int x = 1;
@@ -32,15 +31,23 @@ class Q : P {
 }
 
 void Main() {
+    // A: 显式 init 注入
     var a = new A();
-    Console.WriteLine($"A: x={a.x} s={a.s} b={a.b}");
+    Assert.Equal(1, a.x);
+    Assert.Equal("hello", a.s);
+    Assert.True(a.b);
 
+    // B: 无 init → VM 类型默认值
     var b = new B();
-    Console.WriteLine($"B: n={b.n} flag={b.flag}");
+    Assert.Equal(0, b.n);
+    Assert.False(b.flag);
 
+    // C: ctor body 覆盖 init
     var c = new C(99);
-    Console.WriteLine($"C: n={c.n}");
+    Assert.Equal(99, c.n);
 
+    // D: 继承场景，父子各自 init
     var q = new Q();
-    Console.WriteLine($"Q: p={q.p} q={q.q}");
+    Assert.Equal(100, q.p);
+    Assert.Equal(200, q.q);
 }

@@ -1,4 +1,3 @@
-using Std.IO;
 // Verify two-phase ImportedSymbolLoader: user code can assign same-typed
 // instance to a class's self-reference field (was E0402 before fix).
 
@@ -9,13 +8,13 @@ void Main() {
     // Same-class self-reference field assignment (the regression target).
     outer.InnerException = inner;
 
-    Console.WriteLine(outer.Message);                  // wrapped
-    Console.WriteLine(outer.InnerException.Message);   // root cause
+    Assert.Equal("wrapped",    outer.Message);
+    Assert.Equal("root cause", outer.InnerException.Message);
 
     // Chain length 2
     var middle = new Exception("middle");
     middle.InnerException = inner;
     outer.InnerException = middle;
-    Console.WriteLine(outer.InnerException.Message);                  // middle
-    Console.WriteLine(outer.InnerException.InnerException.Message);   // root cause
+    Assert.Equal("middle",     outer.InnerException.Message);
+    Assert.Equal("root cause", outer.InnerException.InnerException.Message);
 }
