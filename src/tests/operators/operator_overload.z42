@@ -1,0 +1,35 @@
+// Test: L3 operator overload (C# style `operator` keyword).
+// User struct Vec2 declares static operator + / - / * (with heterogeneous `Vec2 * int`).
+// Compiler desugars `a + b` / `v * 10` to Vec2.op_Add(a,b) / Vec2.op_Multiply(v, 10) static calls.
+
+public struct Vec2 {
+    int x;
+    int y;
+    Vec2(int a, int b) { this.x = a; this.y = b; }
+
+    public static Vec2 operator +(Vec2 a, Vec2 b) {
+        return new Vec2(a.x + b.x, a.y + b.y);
+    }
+    public static Vec2 operator -(Vec2 a, Vec2 b) {
+        return new Vec2(a.x - b.x, a.y - b.y);
+    }
+    public static Vec2 operator *(Vec2 v, int s) {
+        return new Vec2(v.x * s, v.y * s);
+    }
+}
+
+void Main() {
+    var a = new Vec2(1, 2);
+    var b = new Vec2(10, 20);
+
+    var sum    = a + b;           // Vec2.op_Add(a, b)
+    var diff   = b - a;           // Vec2.op_Subtract(b, a)
+    var scaled = a * 100;         // Vec2.op_Multiply(a, 100) — heterogeneous
+
+    Assert.Equal(11, sum.x);
+    Assert.Equal(22, sum.y);
+    Assert.Equal(9,  diff.x);
+    Assert.Equal(18, diff.y);
+    Assert.Equal(100, scaled.x);
+    Assert.Equal(200, scaled.y);
+}

@@ -1,0 +1,25 @@
+namespace Demo;
+
+class MathHelper {
+    static int Square(int n) {
+        return n * n;
+    }
+
+    static int Add(int a, int b) {
+        return a + b;
+    }
+
+    static string Describe(int n) {
+        if (n > 0) return "positive";
+        if (n < 0) return "negative";
+        return "zero";
+    }
+}
+
+void Main() {
+    Assert.Equal(25, MathHelper.Square(5));
+    Assert.Equal(10, MathHelper.Add(3, 7));
+    Assert.Equal("negative", MathHelper.Describe(-4));
+    Assert.Equal("zero",     MathHelper.Describe(0));
+    Assert.Equal("positive", MathHelper.Describe(9));
+}

@@ -1,0 +1,42 @@
+// Verify ObjNew dispatches to overload-resolved ctor (Class.Class$N).
+
+class Box {
+    public int Width;
+    public int Height;
+    public string Label;
+
+    Box(int size) {
+        this.Width  = size;
+        this.Height = size;
+        this.Label  = "square";
+    }
+
+    Box(int w, int h) {
+        this.Width  = w;
+        this.Height = h;
+        this.Label  = "rect";
+    }
+
+    Box(int w, int h, string label) {
+        this.Width  = w;
+        this.Height = h;
+        this.Label  = label;
+    }
+}
+
+void Main() {
+    var a = new Box(7);
+    Assert.Equal(7, a.Width);
+    Assert.Equal(7, a.Height);
+    Assert.Equal("square", a.Label);
+
+    var b = new Box(3, 4);
+    Assert.Equal(3, b.Width);
+    Assert.Equal(4, b.Height);
+    Assert.Equal("rect", b.Label);
+
+    var c = new Box(5, 6, "named");
+    Assert.Equal(5, c.Width);
+    Assert.Equal(6, c.Height);
+    Assert.Equal("named", c.Label);
+}

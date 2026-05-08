@@ -1,0 +1,35 @@
+// Interface property + class implementation.
+
+interface IShape {
+    int Area { get; }
+    string Name { get; }
+}
+
+class Square : IShape {
+    int side;
+
+    Square(int s) {
+        this.side = s;
+    }
+
+    int get_Area() {
+        return this.side * this.side;
+    }
+
+    string get_Name() {
+        return "Square";
+    }
+}
+
+void AssertShape(IShape s, string name, int area) {
+    Assert.Equal(name, s.Name);
+    Assert.Equal(area, s.Area);
+}
+
+void Main() {
+    var sq = new Square(5);
+    Assert.Equal(25, sq.Area);
+    Assert.Equal("Square", sq.Name);
+
+    AssertShape(sq, "Square", 25);
+}

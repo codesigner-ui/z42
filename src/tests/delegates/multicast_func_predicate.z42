@@ -1,0 +1,70 @@
+// 2026-05-03 add-multicast-func-predicate (D2d-1) regression golden.
+// 端到端验证 MulticastFunc / MulticastPredicate 双 vec 路径 +
+// All / Any 短路 + event keyword 接受三种 multicast 类型。
+namespace Demo;
+
+using Std;
+
+public class Validators {
+    public event MulticastFunc<int, bool> Validate;
+    public event MulticastPredicate<int> Filter;
+
+    public bool[] runValidate(int x) {
+        return this.Validate.Invoke(x);
+    }
+
+    public bool[] runFilter(int x) {
+        return this.Filter.Invoke(x);
+    }
+
+    public bool allFilter(int x) {
+        return this.Filter.All(x);
+    }
+
+    public bool anyFilter(int x) {
+        return this.Filter.Any(x);
+    }
+}
+
+void Main() {
+    // ── MulticastFunc 直接用法 ──
+    var bus = new MulticastFunc<int, int>();
+    bus.Subscribe((int x) => x + 1);
+    bus.Subscribe((int x) => x * 2);
+    int[] r = bus.Invoke(5);
+    Assert.Equal(6,  r[0]);
+    Assert.Equal(10, r[1]);
+    Assert.Equal(2,  r.Length);
+
+    // ── MulticastPredicate All / Any 短路 ──
+    var pred = new MulticastPredicate<int>();
+    Assert.True(pred.All(0));    // 空集 vacuous
+    Assert.False(pred.Any(0));   // 空集 vacuous
+
+    pred.Subscribe((int x) => x > 0);
+    pred.Subscribe((int x) => x < 100);
+    bool[] pr = pred.Invoke(5);
+    Assert.True(pr[0]);
+    Assert.True(pr[1]);
+    Assert.True(pred.All(5));
+    Assert.True(pred.Any(5));
+
+    // 短路 false
+    pred.Subscribe((int x) => x == 99);
+    Assert.False(pred.All(5));   // 3rd handler false
+
+    // ── event keyword 多类型 ──
+    var v = new Validators();
+
+    v.Validate += (int x) => x > 0;
+    v.Validate += (int x) => x < 100;
+    bool[] vr = v.runValidate(50);
+    Assert.True(vr[0]);
+    Assert.True(vr[1]);
+
+    v.Filter += (int x) => x > 0;
+    v.Filter += (int x) => x % 2 == 0;
+    Assert.True(v.allFilter(4));
+    Assert.False(v.allFilter(3)); // odd
+    Assert.True(v.anyFilter(3));  // positive
+}

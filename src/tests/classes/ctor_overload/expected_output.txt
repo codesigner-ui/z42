@@ -1,9 +1,0 @@
-7
-7
-square
-3
-4
-rect
-5
-6
-named

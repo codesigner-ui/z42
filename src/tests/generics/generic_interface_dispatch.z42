@@ -1,0 +1,32 @@
+// Generic interface dispatch — TypeArgs substitute on method args + return.
+// Validates: IEquatable<int> + IComparer<int> 经接口变量调用工作.
+
+class MyInt : IEquatable<int> {
+    public int V;
+    MyInt(int v) { this.V = v; }
+    bool Equals(int other) { return this.V == other; }
+    int GetHashCode() { return this.V; }
+}
+
+class IntDescComparer : IComparer<int> {
+    int Compare(int x, int y) { return y - x; }
+}
+
+bool CheckEq(IEquatable<int> e, int v) {
+    return e.Equals(v);
+}
+
+int CallCmp(IComparer<int> c, int a, int b) {
+    return c.Compare(a, b);
+}
+
+void Main() {
+    var m = new MyInt(42);
+    Assert.True(CheckEq(m, 42));
+    Assert.False(CheckEq(m, 99));
+
+    var c = new IntDescComparer();
+    Assert.Equal(2,  CallCmp(c, 3, 5));   // 5-3 desc
+    Assert.Equal(-2, CallCmp(c, 5, 3));
+    Assert.Equal(0,  CallCmp(c, 4, 4));
+}

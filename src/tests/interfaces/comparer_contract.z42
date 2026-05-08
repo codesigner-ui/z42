@@ -1,0 +1,31 @@
+// Wave 3: IComparer<T> contract — user class can implement; verifies stdlib
+// IComparer interface is loadable + implement-able.
+//
+// Note: 经接口变量 `IComparer<int> c` 调用受现有 generic interface dispatch
+// bug 阻塞（TypeChecker 在 method args 上不 substitute T → int），属本 wave
+// scope 外的独立缺陷；测试用直接具体类调用验证契约。
+
+class DescIntComparer : IComparer<int> {
+    int Compare(int x, int y) {
+        return y - x;
+    }
+}
+
+class AscIntComparer : IComparer<int> {
+    int Compare(int x, int y) {
+        return x - y;
+    }
+}
+
+void Main() {
+    var desc = new DescIntComparer();
+    var asc  = new AscIntComparer();
+
+    Assert.Equal(2,  desc.Compare(3, 5));   // 5-3 descending
+    Assert.Equal(-2, desc.Compare(5, 3));
+    Assert.Equal(0,  desc.Compare(4, 4));
+
+    Assert.Equal(-2, asc.Compare(3, 5));    // 3-5 ascending
+    Assert.Equal(2,  asc.Compare(5, 3));
+    Assert.Equal(0,  asc.Compare(4, 4));
+}
