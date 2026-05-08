@@ -26,7 +26,7 @@ fn project_root() -> PathBuf {
 }
 
 /// Resolve a project-root-relative path to a test case directory.
-/// Format: `"<category>/<name>"` (e.g. `"basic/01_hello"`).
+/// Format: `"<category>/<name>"` (e.g. `"basic/hello"`).
 fn golden_dir(rel: &str) -> PathBuf {
     project_root().join("src/tests").join(rel)
 }
@@ -154,9 +154,9 @@ fn check_instr_pool_refs(
 
 #[test]
 fn hello_zbc_structure() {
-    let bytes = fs::read(golden_dir("basic/01_hello").join("source.zbc"))
-        .expect("01_hello/source.zbc");
-    let module = read_zbc(&bytes).expect("01_hello decodes");
+    let bytes = fs::read(golden_dir("basic/hello").join("source.zbc"))
+        .expect("hello/source.zbc");
+    let module = read_zbc(&bytes).expect("hello decodes");
 
     // Source uses `namespace Demo;` so functions are emitted as `Demo.Greet`,
     // `Demo.Main`. The module name itself comes from the NSPC section.
@@ -185,19 +185,19 @@ fn hello_zbc_structure() {
 
 #[test]
 fn class_basic_zbc_has_classes() {
-    let zbc = golden_dir("classes/07_class_basic").join("source.zbc");
+    let zbc = golden_dir("classes/class_basic").join("source.zbc");
     if !zbc.is_file() {
         // Ride-along: this assertion is opportunistic. If the test is renamed
         // / restructured upstream, fall through silently rather than fail
         // (the broad `all_golden_zbc_decode` test still exercises everything).
         return;
     }
-    let bytes = fs::read(&zbc).expect("07_class_basic/source.zbc");
-    let module = read_zbc(&bytes).expect("07_class_basic decodes");
+    let bytes = fs::read(&zbc).expect("class_basic/source.zbc");
+    let module = read_zbc(&bytes).expect("class_basic decodes");
 
     assert!(
         !module.classes.is_empty(),
-        "07_class_basic must declare at least one class via TYPE section"
+        "class_basic must declare at least one class via TYPE section"
     );
     // Every class has a non-empty simple name.
     for cls in &module.classes {
@@ -213,9 +213,9 @@ fn class_basic_zbc_has_classes() {
 
 #[test]
 fn hello_load_artifact_full_path() {
-    let zbc = golden_dir("basic/01_hello").join("source.zbc");
+    let zbc = golden_dir("basic/hello").join("source.zbc");
     let path = zbc.to_string_lossy();
-    let loaded = load_artifact(&path).expect("01_hello loads via load_artifact");
+    let loaded = load_artifact(&path).expect("hello loads via load_artifact");
 
     // func_index built by post-decode pass.
     assert!(

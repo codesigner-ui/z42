@@ -509,8 +509,8 @@ public struct int : ..., INumber<int> {
 
 ### 7.3 golden test 影响
 
-- `87_generic_inumber`：依赖原 INumber 实例方法，需改写或标记废弃
-- `88_operator_overload`：静态 operator，**不受影响**
+- `generic_inumber`：依赖原 INumber 实例方法，需改写或标记废弃
+- `operator_overload`：静态 operator，**不受影响**
 
 ---
 

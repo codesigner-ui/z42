@@ -157,5 +157,5 @@ Phase 3 引入 `Optional<long>` 后再迁移到 nullable 形态。
 | GC types | `src/runtime/src/gc/types.rs` | `GcHandleKind` enum |
 | Dispatch | `src/runtime/src/corelib/mod.rs` | 6 个 builtin 注册 |
 | Tests | `src/runtime/src/gc/rc_heap_tests.rs` | 10 个 HandleTable 单测 |
-| Tests | `src/tests/gc/113_gc_handle/` | strong / weak / Free / struct copy e2e |
-| Tests | `src/tests/gc/114_gc_stats/` | GetStats 字段一致性 e2e |
+| Tests | `src/tests/gc/gc_handle/` | strong / weak / Free / struct copy e2e |
+| Tests | `src/tests/gc/gc_stats/` | GetStats 字段一致性 e2e |
