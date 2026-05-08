@@ -376,7 +376,7 @@ pub fn translate_function(
         }
 
         // ── Instruction translation ───────────────────────────────────────────
-        for instr in &z42_block.instructions {
+        for (instr_idx, instr) in z42_block.instructions.iter().enumerate() {
             match instr {
                 Instruction::ConstI32 { dst, val } => {
                     let d = ri!(*dst); let v = builder.ins().iconst(types::I32, *val as i64);
@@ -546,10 +546,27 @@ pub fn translate_function(
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Builtin { dst, name, args } => {
+                    // formalize-jit-method-token Phase 2 (2026-05-08): emit
+                    // pre-resolved BuiltinId as i32 const, drop name pointers.
+                    // Resolver populates Function.resolved.builtin_tokens at
+                    // load (closed set, never UNRESOLVED at this point).
                     let d = ri!(*dst);
-                    let (np, nl) = str_val!(name);
                     let (ap, al) = regs_val!(args);
-                    let inst = builder.ins().call(hr_builtin, &[frame_val, ctx_val, d, np, nl, ap, al]);
+                    let builtin_id = z42_func.resolved.get()
+                        .and_then(|r| {
+                            let site = *r.site_index.get(block_idx)?.get(instr_idx)?;
+                            r.builtin_tokens.get(site as usize).copied()
+                        })
+                        .unwrap_or_else(|| {
+                            // Fallback: resolver hadn't run (shouldn't happen
+                            // in production via Vm::run, but guards against
+                            // direct compile_module callers in tests).
+                            crate::corelib::builtin_id_of(name)
+                                .unwrap_or_else(|| panic!("unknown builtin `{}`", name))
+                                .0
+                        });
+                    let bid = builder.ins().iconst(types::I32, builtin_id as i64);
+                    let inst = builder.ins().call(hr_builtin, &[frame_val, ctx_val, d, bid, ap, al]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 

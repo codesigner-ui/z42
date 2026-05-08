@@ -41,20 +41,25 @@ pub unsafe extern "C" fn jit_call(
     0
 }
 
+/// `jit_builtin` after `formalize-jit-method-token` (2026-05-08): receives
+/// pre-resolved `BuiltinId` directly (not name pointers). Resolver
+/// guarantees every `Instruction::Builtin.name` resolves at module load
+/// (closed set; panic on miss), so JIT codegen embeds the id as an i32
+/// constant in the generated machine code. Helper indexes
+/// `BUILTINS[id]` directly — zero hash on every call.
 #[no_mangle]
 pub unsafe extern "C" fn jit_builtin(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32,
-    name_ptr: *const u8, name_len: usize,
+    builtin_id: u32,
     args_ptr: *const u32, argc: usize,
 ) -> u8 {
-    let name = std::str::from_utf8(std::slice::from_raw_parts(name_ptr, name_len))
-        .unwrap_or("<invalid>");
     let frame_ref = &mut *frame;
     let arg_regs  = std::slice::from_raw_parts(args_ptr, argc);
     let args: Vec<Value> = arg_regs.iter().map(|&r| frame_ref.regs[r as usize].clone()).collect();
 
-    match crate::corelib::exec_builtin(vm_ctx_ref(ctx), name, &args) {
+    let id = crate::metadata::tokens::BuiltinId(builtin_id);
+    match crate::corelib::exec_builtin_by_id(vm_ctx_ref(ctx), id, &args) {
         Ok(v)  => { frame_ref.regs[dst as usize] = v; 0 }
         Err(e) => { set_exception(vm_ctx_ref(ctx), Value::Str(e.to_string())); 1 }
     }
