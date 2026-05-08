@@ -36,6 +36,7 @@ pub mod char;
 pub mod gc;
 pub mod bench;
 
+use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::Result;
@@ -51,150 +52,163 @@ use std::sync::OnceLock;
 /// callsites to bypass the heap interface.
 pub type NativeFn = fn(&VmContext, &[Value]) -> Result<Value>;
 
-static DISPATCH: OnceLock<HashMap<&'static str, NativeFn>> = OnceLock::new();
+/// Single source of truth for all corelib builtins. Each entry's index
+/// (position in this slice) is its **stable `BuiltinId`** for the lifetime
+/// of the process — the resolver assigns IDs by walking this slice.
+///
+/// `introduce-method-token` (2026-05-08): replaces ad-hoc `HashMap` with an
+/// indexed array so dispatch hot path can `BUILTINS[id.0 as usize].1(ctx, args)`
+/// without hashing. The HashMap-based `exec_builtin(name, args)` entry point
+/// remains as fallback for paths that haven't threaded `BuiltinId` yet (e.g.
+/// JIT helpers Phase 1).
+const BUILTINS: &[(&str, NativeFn)] = &[
+    // ── I/O ────────────────────────────────────────────────────────────────────
+    ("__println",  io::builtin_println),
+    ("__print",    io::builtin_print),
+    ("__eprintln", io::builtin_eprintln),
+    ("__eprint",   io::builtin_eprint),
+    ("__readline", io::builtin_readline),
+    ("__concat",   io::builtin_concat),
+    ("__len",      io::builtin_len),
+    ("__contains", io::builtin_contains),
 
-fn dispatch_table() -> &'static HashMap<&'static str, NativeFn> {
-    DISPATCH.get_or_init(|| {
-        let mut m: HashMap<&'static str, NativeFn> = HashMap::new();
+    // ── TestIO sinks (R2 完整版) ──────────────────────────────────────────────
+    ("__test_io_install_stdout_sink", io::builtin_test_io_install_stdout_sink),
+    ("__test_io_take_stdout_buffer",  io::builtin_test_io_take_stdout_buffer),
+    ("__test_io_install_stderr_sink", io::builtin_test_io_install_stderr_sink),
+    ("__test_io_take_stderr_buffer",  io::builtin_test_io_take_stderr_buffer),
 
-        // ── I/O ───────────────────────────────────────────────────────────────
-        m.insert("__println",  io::builtin_println);
-        m.insert("__print",    io::builtin_print);
-        m.insert("__eprintln", io::builtin_eprintln);
-        m.insert("__eprint",   io::builtin_eprint);
-        m.insert("__readline", io::builtin_readline);
-        m.insert("__concat",   io::builtin_concat);
-        m.insert("__len",      io::builtin_len);
-        m.insert("__contains", io::builtin_contains);
+    // ── Bencher helpers (R2 完整版) ───────────────────────────────────────────
+    ("__bench_now_ns",     bench::builtin_bench_now_ns),
+    ("__bench_black_box",  bench::builtin_bench_black_box),
 
-        // ── TestIO sinks (R2 完整版) ─────────────────────────────────────────
-        m.insert("__test_io_install_stdout_sink", io::builtin_test_io_install_stdout_sink);
-        m.insert("__test_io_take_stdout_buffer",  io::builtin_test_io_take_stdout_buffer);
-        m.insert("__test_io_install_stderr_sink", io::builtin_test_io_install_stderr_sink);
-        m.insert("__test_io_take_stderr_buffer",  io::builtin_test_io_take_stderr_buffer);
+    // ── String (minimal intrinsic core; most methods are script-side now) ────
+    ("__str_length",     string::builtin_str_length),
+    ("__str_char_at",    string::builtin_str_char_at),
+    ("__str_from_chars", string::builtin_str_from_chars),
+    ("__str_to_string",  string::builtin_str_to_string),
+    ("__str_equals",     string::builtin_str_equals),
+    ("__str_hash_code",  string::builtin_str_hash_code),
 
-        // ── Bencher helpers (R2 完整版) ──────────────────────────────────────
-        m.insert("__bench_now_ns",     bench::builtin_bench_now_ns);
-        m.insert("__bench_black_box",  bench::builtin_bench_black_box);
+    // ── Char ──────────────────────────────────────────────────────────────────
+    ("__char_is_whitespace", char::builtin_char_is_whitespace),
+    ("__char_to_lower",      char::builtin_char_to_lower),
+    ("__char_to_upper",      char::builtin_char_to_upper),
 
-        // ── String (minimal intrinsic core; most methods are script-side now) ─
-        // 2026-04-24 simplify-string-stdlib: removed 11 str builtins (contains /
-        // starts_with / ends_with / index_of / replace / to_lower / to_upper /
-        // trim / trim_start / trim_end / is_null_or_empty / is_null_or_whitespace /
-        // substring). Script methods in Std.String.z42 now use char_at + from_chars.
-        m.insert("__str_length",     string::builtin_str_length);
-        m.insert("__str_char_at",    string::builtin_str_char_at);
-        m.insert("__str_from_chars", string::builtin_str_from_chars);
-        // 2026-04-27 wave1-string-script: removed __str_split / __str_join —
-        // `Std.String.Split` / `Join` 现在是脚本（基于 CharAt + Substring）。
-        // 2026-04-27 wave3a-str-concat-script: removed __str_concat —
-        // `Std.String.Concat` 现在是脚本（用 `+` IR StrConcatInstr）。
-        // 2026-04-27 wave3b-str-format-script: removed __str_format —
-        // `Std.String.Format` 现在是脚本（链式 Replace + Convert.ToString）。
-        m.insert("__str_to_string",  string::builtin_str_to_string);
-        m.insert("__str_equals",     string::builtin_str_equals);
-        m.insert("__str_hash_code",  string::builtin_str_hash_code);
+    // ── Parse / convert ───────────────────────────────────────────────────────
+    ("__long_parse",   convert::builtin_long_parse),
+    ("__int_parse",    convert::builtin_int_parse),
+    ("__double_parse", convert::builtin_double_parse),
+    ("__to_str",       convert::builtin_to_str),
 
-        // ── Char (L3 char primitive helpers for script-side string ops) ──────
-        m.insert("__char_is_whitespace", char::builtin_char_is_whitespace);
-        m.insert("__char_to_lower",      char::builtin_char_to_lower);
-        m.insert("__char_to_upper",      char::builtin_char_to_upper);
+    // ── Primitive IComparable / IEquatable (L3-G4b) ───────────────────────────
+    ("__int_equals",        convert::builtin_int_equals),
+    ("__int_hash_code",     convert::builtin_int_hash_code),
+    ("__int_to_string",     convert::builtin_int_to_string),
+    ("__double_equals",     convert::builtin_double_equals),
+    ("__double_hash_code",  convert::builtin_double_hash_code),
+    ("__double_to_string",  convert::builtin_double_to_string),
+    ("__char_equals",       convert::builtin_char_equals),
+    ("__char_hash_code",    convert::builtin_char_hash_code),
+    ("__char_to_string",    convert::builtin_char_to_string),
+    ("__str_compare_to",    convert::builtin_str_compare_to),
 
-        // ── Parse / convert ───────────────────────────────────────────────────
-        m.insert("__long_parse",   convert::builtin_long_parse);
-        m.insert("__int_parse",    convert::builtin_int_parse);
-        m.insert("__double_parse", convert::builtin_double_parse);
-        m.insert("__to_str",       convert::builtin_to_str);
+    // ── Math ──────────────────────────────────────────────────────────────────
+    ("__math_pow",     math::builtin_math_pow),
+    ("__math_sqrt",    math::builtin_math_sqrt),
+    ("__math_floor",   math::builtin_math_floor),
+    ("__math_ceiling", math::builtin_math_ceiling),
+    ("__math_round",   math::builtin_math_round),
+    ("__math_log",     math::builtin_math_log),
+    ("__math_log10",   math::builtin_math_log10),
+    ("__math_sin",     math::builtin_math_sin),
+    ("__math_cos",     math::builtin_math_cos),
+    ("__math_tan",     math::builtin_math_tan),
+    ("__math_atan2",   math::builtin_math_atan2),
+    ("__math_exp",     math::builtin_math_exp),
 
-        // ── Primitive IComparable / IEquatable (L3-G4b) ───────────────────────
-        // 2026-04-27 wave2-compare-to-script: removed __int_compare_to /
-        // __double_compare_to / __char_compare_to — primitive `CompareTo`
-        // 现在是脚本（用 IR `<` / `>`，与 Rust `partial_cmp.unwrap_or(0)` 等价）。
-        m.insert("__int_equals",        convert::builtin_int_equals);
-        m.insert("__int_hash_code",     convert::builtin_int_hash_code);
-        m.insert("__int_to_string",     convert::builtin_int_to_string);
-        m.insert("__double_equals",     convert::builtin_double_equals);
-        m.insert("__double_hash_code",  convert::builtin_double_hash_code);
-        m.insert("__double_to_string",  convert::builtin_double_to_string);
-        // 2026-04-27 wave1-bool-script: removed __bool_equals / _hash_code /
-        // _to_string — `Std.bool` methods are now pure z42 script.
-        m.insert("__char_equals",       convert::builtin_char_equals);
-        m.insert("__char_hash_code",    convert::builtin_char_hash_code);
-        m.insert("__char_to_string",    convert::builtin_char_to_string);
-        m.insert("__str_compare_to",    convert::builtin_str_compare_to);
+    // ── File I/O ──────────────────────────────────────────────────────────────
+    ("__file_read_text",   fs::builtin_file_read_text),
+    ("__file_write_text",  fs::builtin_file_write_text),
+    ("__file_append_text", fs::builtin_file_append_text),
+    ("__file_exists",      fs::builtin_file_exists),
+    ("__file_delete",      fs::builtin_file_delete),
 
-        // ── Math ──────────────────────────────────────────────────────────────
-        // 2026-04-27 wave1-math-script: removed __math_abs / _max / _min —
-        // `Std.Math.Math.Abs/Max/Min` 现在是脚本（int + double overload）。
-        m.insert("__math_pow",     math::builtin_math_pow);
-        m.insert("__math_sqrt",    math::builtin_math_sqrt);
-        m.insert("__math_floor",   math::builtin_math_floor);
-        m.insert("__math_ceiling", math::builtin_math_ceiling);
-        m.insert("__math_round",   math::builtin_math_round);
-        m.insert("__math_log",     math::builtin_math_log);
-        m.insert("__math_log10",   math::builtin_math_log10);
-        m.insert("__math_sin",     math::builtin_math_sin);
-        m.insert("__math_cos",     math::builtin_math_cos);
-        m.insert("__math_tan",     math::builtin_math_tan);
-        m.insert("__math_atan2",   math::builtin_math_atan2);
-        m.insert("__math_exp",     math::builtin_math_exp);
+    // ── Environment / Process ─────────────────────────────────────────────────
+    ("__env_get",      fs::builtin_env_get),
+    ("__env_args",     fs::builtin_env_args),
+    ("__process_exit", fs::builtin_process_exit),
+    ("__time_now_ms",  fs::builtin_time_now_ms),
 
-        // ── File I/O ──────────────────────────────────────────────────────────
-        m.insert("__file_read_text",   fs::builtin_file_read_text);
-        m.insert("__file_write_text",  fs::builtin_file_write_text);
-        m.insert("__file_append_text", fs::builtin_file_append_text);
-        m.insert("__file_exists",      fs::builtin_file_exists);
-        m.insert("__file_delete",      fs::builtin_file_delete);
+    // ── Object protocol ───────────────────────────────────────────────────────
+    ("__obj_get_type",  object::builtin_obj_get_type),
+    ("__obj_ref_eq",    object::builtin_obj_ref_eq),
+    ("__obj_hash_code", object::builtin_obj_hash_code),
+    ("__obj_equals",    object::builtin_obj_equals),
+    ("__obj_to_str",    object::builtin_obj_to_str),
+    ("__delegate_eq",   object::builtin_delegate_eq),
+    ("__delegate_target", object::builtin_delegate_target),
+    ("__delegate_fn_name", object::builtin_delegate_fn_name),
+    ("__make_closure", object::builtin_make_closure),
+    ("__obj_make_weak", object::builtin_obj_make_weak),
+    ("__obj_upgrade_weak", object::builtin_obj_upgrade_weak),
 
-        // ── Path ──────────────────────────────────────────────────────────────
-        // 2026-04-27 wave1-path-script: removed 5 __path_* — `Std.IO.Path`
-        // 现在是脚本实现（Unix `/` 语义；详见 src/libraries/z42.io/src/Path.z42）。
+    // ── Array protocol（add-array-base-class，2026-05-07）─────────────────────
+    ("__array_clone", array::builtin_array_clone),
 
-        // ── Environment / Process ─────────────────────────────────────────────
-        m.insert("__env_get",      fs::builtin_env_get);
-        m.insert("__env_args",     fs::builtin_env_args);
-        m.insert("__process_exit", fs::builtin_process_exit);
-        m.insert("__time_now_ms",  fs::builtin_time_now_ms);
+    // ── GC control（Phase 3d.2 expose-gc-to-scripts） ────────────────────────
+    ("__gc_collect",       gc::builtin_gc_collect),
+    ("__gc_used_bytes",    gc::builtin_gc_used_bytes),
+    ("__gc_force_collect", gc::builtin_gc_force_collect),
 
-        // ── Object protocol ───────────────────────────────────────────────────
-        m.insert("__obj_get_type",  object::builtin_obj_get_type);
-        m.insert("__obj_ref_eq",    object::builtin_obj_ref_eq);
-        m.insert("__obj_hash_code", object::builtin_obj_hash_code);
-        m.insert("__obj_equals",    object::builtin_obj_equals);
-        m.insert("__obj_to_str",    object::builtin_obj_to_str);
-        m.insert("__delegate_eq",   object::builtin_delegate_eq);
-        m.insert("__delegate_target", object::builtin_delegate_target);
-        m.insert("__delegate_fn_name", object::builtin_delegate_fn_name);
-        m.insert("__make_closure", object::builtin_make_closure);
-        m.insert("__obj_make_weak", object::builtin_obj_make_weak);
-        m.insert("__obj_upgrade_weak", object::builtin_obj_upgrade_weak);
+    // ── GCHandle struct + HeapStats（reorganize-gc-stdlib，2026-05-07）───────
+    ("__gc_handle_alloc",    gc::builtin_gc_handle_alloc),
+    ("__gc_handle_target",   gc::builtin_gc_handle_target),
+    ("__gc_handle_is_alloc", gc::builtin_gc_handle_is_alloc),
+    ("__gc_handle_kind",     gc::builtin_gc_handle_kind),
+    ("__gc_handle_free",     gc::builtin_gc_handle_free),
+    ("__gc_stats",           gc::builtin_gc_stats),
+];
 
-        // ── Array protocol（add-array-base-class，2026-05-07）────────────────
-        m.insert("__array_clone", array::builtin_array_clone);
+/// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
+/// resolver's `builtin_id_of` lookup. Built once on first access from
+/// `BUILTINS` (single source of truth).
+static BUILTIN_INDEX: OnceLock<HashMap<&'static str, u32>> = OnceLock::new();
 
-        // ── GC control（Phase 3d.2 expose-gc-to-scripts） ───────────────────
-        m.insert("__gc_collect",       gc::builtin_gc_collect);
-        m.insert("__gc_used_bytes",    gc::builtin_gc_used_bytes);
-        m.insert("__gc_force_collect", gc::builtin_gc_force_collect);
-
-        // ── GCHandle struct + HeapStats（reorganize-gc-stdlib，2026-05-07）──
-        m.insert("__gc_handle_alloc",    gc::builtin_gc_handle_alloc);
-        m.insert("__gc_handle_target",   gc::builtin_gc_handle_target);
-        m.insert("__gc_handle_is_alloc", gc::builtin_gc_handle_is_alloc);
-        m.insert("__gc_handle_kind",     gc::builtin_gc_handle_kind);
-        m.insert("__gc_handle_free",     gc::builtin_gc_handle_free);
-        m.insert("__gc_stats",           gc::builtin_gc_stats);
-
-        m
+fn builtin_index() -> &'static HashMap<&'static str, u32> {
+    BUILTIN_INDEX.get_or_init(|| {
+        BUILTINS.iter().enumerate()
+            .map(|(i, (name, _))| (*name, i as u32))
+            .collect()
     })
 }
 
+/// Resolve a builtin name to its `BuiltinId`. Returns `None` if no builtin
+/// with that name is registered. Called by `metadata::resolver` at module
+/// load to populate `ResolvedTokens.builtin_tokens`.
+pub fn builtin_id_of(name: &str) -> Option<BuiltinId> {
+    builtin_index().get(name).copied().map(BuiltinId)
+}
+
+/// Fast-path dispatch by id (no hash, just `BUILTINS[id.0 as usize]`).
+/// Caller must have validated the id (e.g. resolver assigned it).
+#[inline]
+pub fn exec_builtin_by_id(ctx: &VmContext, id: BuiltinId, args: &[Value]) -> Result<Value> {
+    let idx = id.0 as usize;
+    debug_assert!(idx < BUILTINS.len(), "BuiltinId {} out of range", id.0);
+    BUILTINS[idx].1(ctx, args)
+}
+
 /// Stable public entry point — called by the interpreter and JIT `jit_builtin`.
+/// Falls back to `HashMap<&'static str, _>` lookup when caller has only a name
+/// (e.g. JIT helpers in Phase 1; cross-zpkg lazy paths). Hot interp path
+/// after `introduce-method-token` Phase 1 prefers `exec_builtin_by_id`.
 pub fn exec_builtin(ctx: &VmContext, name: &str, args: &[Value]) -> Result<Value> {
-    dispatch_table()
+    let id = builtin_index()
         .get(name)
-        .ok_or_else(|| anyhow::anyhow!("unknown builtin `{name}`"))?
-        (ctx, args)
+        .copied()
+        .ok_or_else(|| anyhow::anyhow!("unknown builtin `{name}`"))?;
+    BUILTINS[id as usize].1(ctx, args)
 }
 
 #[cfg(test)]

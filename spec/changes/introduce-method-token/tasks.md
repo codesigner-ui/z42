@@ -1,8 +1,18 @@
 # Tasks: introduce-method-token (Phase 1)
 
-> 状态：📋 设计就绪，待实施 | 创建：2026-05-08（2026-05-08 Decision 6 翻转扩展到 Field/Static）
+> 状态：🟡 进行中（Phase 1.1 + 1.3 已落地，infrastructure 就位但尚未消费）| 创建：2026-05-08
 > 类型：vm（runtime dispatch 契约扩展，走完整流程）
 > 来源：[review.md](../../../docs/review.md) Part 4 §4.1 + §4.6 + §4.7（tier-up 前置）
+
+## 已完成进度（2026-05-08）
+
+✅ **Phase 1.1**: `metadata/tokens.rs` — 6 个 newtype（MethodId / TypeId / BuiltinId / FieldId / StaticFieldId / VTableSlot）+ UNRESOLVED sentinel + tokens_tests
+✅ **Phase 1.3**: `corelib/mod.rs::BUILTINS` 静态数组（single source of truth）+ `builtin_id_of(name)` API + `exec_builtin_by_id(ctx, id, args)` 快路径（保留 HashMap-based `exec_builtin(name)` 作 fallback）
+✅ baseline 全绿: cargo test (所有 suite) + VM golden 310/310
+
+🟡 **Pending**: Phase 1.2/2/3/4/5/6/7（VmContext 重构 / Function.resolved / resolver / 11 hot path 改造 / 集成测试 / 文档同步 / 归档）
+
+下次会话从 [tasks.md 阶段 1.4 起步](#)（TypeDesc.id 字段 + Function.resolved + ResolvedTokens 结构）。当前 infrastructure 是**纯 additive**（任何 caller 仍走原 HashMap 路径），可安全暂存。
 
 **Scope 摘要**: 完整 token 化所有 dispatch 站点 — Call/CallIndirect/VCall/Builtin/ObjNew + FieldGet/FieldSet/StaticGet/StaticSet。涵盖 §4.1（cross 引用）、§4.6（builtin/native 缓存）、§4.7（tier-up 前置）+ field access 对称（user 2026-05-08 裁决纳入）。
 

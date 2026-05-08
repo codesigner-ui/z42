@@ -8,6 +8,7 @@
 ///   `loader`   — format-dispatch entry point: `load_artifact(path)`
 
 pub mod types;
+pub mod tokens;
 pub mod bytecode;
 mod bytecode_serde;
 pub mod project;
