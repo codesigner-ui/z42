@@ -1,4 +1,0 @@
-3
-4
-Hi, I'm Alice, age 30
-Hi, I'm Bob, age 30

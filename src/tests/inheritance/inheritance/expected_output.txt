@@ -1,3 +1,0 @@
-Animal: Cat
-Dog: Rex (Husky)
-Rex

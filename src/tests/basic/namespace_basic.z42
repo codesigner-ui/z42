@@ -1,0 +1,23 @@
+namespace Demo;
+
+class Greeter {
+    string name;
+
+    Greeter(string n) {
+        this.name = n;
+    }
+
+    string Greet() {
+        return $"Hello, {this.name}!";
+    }
+}
+
+string FormatCount(int n) {
+    return $"count={n}";
+}
+
+void Main() {
+    var g = new Greeter("world");
+    Assert.Equal("Hello, world!", g.Greet());
+    Assert.Equal("count=42", FormatCount(42));
+}

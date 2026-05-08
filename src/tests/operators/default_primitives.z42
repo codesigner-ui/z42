@@ -1,0 +1,27 @@
+// add-default-expression: primitive `default(T)` returns the type's zero value.
+//   int / long / byte / etc. → 0
+//   double / float           → 0.0
+//   bool                     → false
+//   char                     → '\0' (null char)
+
+void Main() {
+    // Numeric defaults.
+    Assert.Equal(0, default(int));
+    Assert.Equal(0L, default(long));
+    Assert.Equal(0, default(byte));
+
+    // Default in expression position.
+    Assert.Equal(1,  default(int)  + 1);
+    Assert.Equal(0L, default(long) * 2);
+
+    // Floating-point.
+    Assert.Equal(0.0, default(double));
+    Assert.Equal(0.5, default(double) + 0.5);
+
+    // Bool default is false.
+    Assert.False(default(bool));
+    Assert.True(!default(bool));
+
+    // Char default is null character.
+    Assert.True(default(char) == '\0');
+}

@@ -1,0 +1,55 @@
+namespace Demo;
+
+string DayName(int day) {
+    switch (day) {
+        case 1:
+            return "Monday";
+        case 2:
+            return "Tuesday";
+        case 3:
+            return "Wednesday";
+        default:
+            return "Other";
+    }
+}
+
+string Grade(int score) {
+    switch (score) {
+        case 5:
+            return "A";
+        case 4:
+            return "B";
+        case 3:
+            return "C";
+        default:
+            return "F";
+    }
+}
+
+string CategorizeLang(string lang) {
+    switch (lang) {
+        case "rust":
+            return "systems";
+        case "z42":
+            return "hybrid";
+        default:
+            return "unknown";
+    }
+}
+
+void Main() {
+    // Basic switch statement
+    Assert.Equal("Monday",    DayName(1));
+    Assert.Equal("Wednesday", DayName(3));
+    Assert.Equal("Other",     DayName(99));
+
+    // Switch with expressions in case
+    Assert.Equal("A", Grade(5));
+    Assert.Equal("C", Grade(3));
+    Assert.Equal("F", Grade(0));
+
+    // Switch on string
+    Assert.Equal("hybrid",  CategorizeLang("z42"));
+    Assert.Equal("systems", CategorizeLang("rust"));
+    Assert.Equal("unknown", CategorizeLang("?"));
+}

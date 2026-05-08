@@ -1,4 +1,0 @@
-weak created
-upgrade ok
-primitive unweakable
-null handle yields null

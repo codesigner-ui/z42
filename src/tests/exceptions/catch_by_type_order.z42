@@ -1,0 +1,32 @@
+// catch-by-generic-type ordering:
+//   Multiple catches, first source-order match wins (matches C# / Java).
+//   With ArgumentException first then Exception, the more-specific entry
+//   takes the dispatch even though Exception would also match.
+
+void Main() {
+    // ArgumentException catches its own; Exception fallback never runs.
+    string specific = "";
+    bool fallback_one = false;
+    try {
+        throw new ArgumentException("one");
+    } catch (ArgumentException e) {
+        specific = e.Message;
+    } catch (Exception e) {
+        fallback_one = true; // should NOT happen
+    }
+    Assert.Equal("one", specific);
+    Assert.False(fallback_one);
+
+    // Different exception flows to Exception fallback (specific doesn't match).
+    bool specific_two = false;
+    string fallbackMsg = "";
+    try {
+        throw new InvalidOperationException("two");
+    } catch (ArgumentException e) {
+        specific_two = true; // should NOT happen
+    } catch (Exception e) {
+        fallbackMsg = e.Message;
+    }
+    Assert.False(specific_two);
+    Assert.Equal("two", fallbackMsg);
+}

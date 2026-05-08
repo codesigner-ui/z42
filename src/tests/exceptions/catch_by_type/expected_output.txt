@@ -1,3 +1,0 @@
-argument: bad arg
-outer: missing
-done

@@ -1,0 +1,31 @@
+namespace Demo;
+
+using Std;
+
+class Box {
+    int Value;
+}
+
+void Main() {
+    HeapStats before = GC.GetStats();
+
+    // Allocate some objects to bump UsedBytes / Allocations
+    Box[] items = new Box[5];
+    for (int i = 0; i < 5; i = i + 1) {
+        items[i] = new Box();
+    }
+
+    HeapStats after = GC.GetStats();
+
+    // ── HeapStats fields are non-negative ───────────────────────────────────
+    Assert.True(after.Allocations >= 0);
+    Assert.True(after.GcCycles >= 0);
+    Assert.True(after.UsedBytes >= 0);
+
+    // ── MaxBytes uses -1 as the unlimited sentinel (default is unlimited) ──
+    Assert.Equal(-1, after.MaxBytes);
+
+    // ── Allocations and UsedBytes monotonically increase after alloc ────────
+    Assert.True(after.Allocations > before.Allocations);
+    Assert.True(after.UsedBytes > before.UsedBytes);
+}

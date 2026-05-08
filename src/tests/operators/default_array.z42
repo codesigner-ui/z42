@@ -1,0 +1,16 @@
+// add-default-expression: `default(T[])` is null (the array reference is null,
+// distinct from `new int[N]` which produces an allocated length-N array).
+
+void Main() {
+    var arr = default(int[]);
+    Assert.Null(arr);
+
+    // `new int[N]` is non-null and has the requested length.
+    var allocated = new int[3];
+    Assert.NotNull(allocated);
+    Assert.Equal(3, allocated.Length);
+
+    // String-array default is also null.
+    var sarr = default(string[]);
+    Assert.Null(sarr);
+}

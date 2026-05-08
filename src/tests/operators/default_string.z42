@@ -1,0 +1,16 @@
+// add-default-expression: `default(string)` is null (reference-type semantics,
+// matching C# / `default_value_for("string") = Value::Null`). User can choose
+// empty-string semantics with `?? ""`.
+
+void Main() {
+    var s = default(string);
+    Assert.Null(s);
+
+    // Null-coalesce to empty string for display.
+    var pretty = default(string) ?? "<null>";
+    Assert.Equal("<null>", pretty);
+
+    // Direct concat with non-null string when user provides default.
+    var prefix = default(string) ?? "";
+    Assert.Equal(0, prefix.Length);
+}

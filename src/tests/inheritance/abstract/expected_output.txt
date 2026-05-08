@@ -1,2 +1,0 @@
-Shape: circle(r=5)
-Shape: rect(3x4)

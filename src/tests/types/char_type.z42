@@ -1,0 +1,18 @@
+namespace Demo;
+
+void Main() {
+    char c = 'A';
+    char d = 'z';
+
+    // char to string via interpolation
+    Assert.Equal("char: A", $"char: {c}");
+    Assert.Equal("char: z", $"char: {d}");
+
+    // char comparison
+    Assert.True(c == 'A');
+    Assert.True(c != 'B');
+
+    // Escape sequences
+    Assert.Equal('\n', '\n');
+    Assert.Equal('\t', '\t');
+}

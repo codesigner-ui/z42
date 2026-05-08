@@ -1,2 +1,0 @@
-circle r=5
-square s=3

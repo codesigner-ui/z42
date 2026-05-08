@@ -1,4 +1,0 @@
-is-null=true
-null-branch
-after-set=(3,4)
-done

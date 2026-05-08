@@ -1,0 +1,10 @@
+namespace Demo;
+
+string Greet(string name) {
+    return $"Hello, {name}!";
+}
+
+void Main() {
+    Assert.Equal("Hello, world!", Greet("world"));
+    Assert.Equal("z42 version 0.1, the answer is 42", $"z42 version 0.1, the answer is {42}");
+}

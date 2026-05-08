@@ -1,0 +1,38 @@
+// catch-by-generic-type subclass match:
+//   ArgumentNullException : ArgumentException : Exception
+// Throwing the deepest derived class matches every level above it.
+
+void Main() {
+    // Catch by direct base.
+    string asArg = "";
+    try {
+        throw new ArgumentNullException("name");
+    } catch (ArgumentException e) {
+        asArg = e.Message;
+    }
+    Assert.Equal("name", asArg);
+
+    // Catch by Exception (top of chain).
+    string asException = "";
+    try {
+        throw new ArgumentNullException("path");
+    } catch (Exception e) {
+        asException = e.Message;
+    }
+    Assert.Equal("path", asException);
+
+    // Sibling lineage does NOT match.
+    bool sibling_matched = false;
+    string outerMsg = "";
+    try {
+        try {
+            throw new ArgumentNullException("x");
+        } catch (KeyNotFoundException e) {
+            sibling_matched = true; // should NOT happen
+        }
+    } catch (Exception e) {
+        outerMsg = e.Message;
+    }
+    Assert.False(sibling_matched);
+    Assert.Equal("x", outerMsg);
+}
