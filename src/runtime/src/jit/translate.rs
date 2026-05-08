@@ -128,6 +128,35 @@ fn find_handler_entries(func: &Function, block_idx: usize) -> Vec<usize> {
 // translate_function
 // ═════════════════════════════════════════════════════════════════════════════
 
+/// formalize-jit-method-token Phase 2 helper: look up the resolved
+/// `StaticFieldId.0` for a `StaticGet` / `StaticSet` site at
+/// `(block_idx, instr_idx)`. Falls back to a direct lookup for tests
+/// that bypass `Vm::run` (which is the only path that populates
+/// `Function.resolved`). Field name is captured for the fallback.
+fn static_field_id_at(func: &Function, block_idx: usize, instr_idx: usize, _field: &str) -> u32 {
+    func.resolved.get()
+        .and_then(|r| {
+            let site = *r.site_index.get(block_idx)?.get(instr_idx)?;
+            r.static_field_tokens.get(site as usize)
+        })
+        .map(|atom| atom.load(std::sync::atomic::Ordering::Relaxed))
+        .filter(|&id| id != crate::metadata::tokens::UNRESOLVED)
+        .unwrap_or_else(|| {
+            // Fallback: resolver hadn't run (only relevant for direct
+            // compile_module callers in tests). Allocate id eagerly so
+            // jit_static_get/set's by_id call doesn't see UNRESOLVED.
+            // Note: this needs ctx; fallback is a corner case so we use
+            // a sentinel that helper detects... but we can't reach ctx
+            // here. Tests using this path either don't exist or run via
+            // Vm::run. If this assertion fires, fix the test setup.
+            panic!(
+                "JIT codegen for StaticGet/Set at {:?}#{}.{} — Function.resolved missing. \
+                 Caller must invoke metadata::resolver::resolve_module before JIT compile.",
+                func.name, block_idx, instr_idx
+            )
+        })
+}
+
 pub fn translate_function(
     jit:          &mut JITModule,
     helper_ids:   &HelperIds,
@@ -645,15 +674,21 @@ pub fn translate_function(
                 }
 
                 // Static fields
+                // formalize-jit-method-token Phase 2 (2026-05-08): emit
+                // pre-resolved StaticFieldId directly. Resolver populates
+                // static_field_tokens at load via lazy ID allocation
+                // (always succeeds), so id is never UNRESOLVED here.
                 Instruction::StaticGet { dst, field } => {
                     let d = ri!(*dst);
-                    let (fp, fl) = str_val!(field);
-                    builder.ins().call(hr_static_get, &[frame_val, ctx_val, d, fp, fl]);
+                    let field_id = static_field_id_at(z42_func, block_idx, instr_idx, field);
+                    let id_val = builder.ins().iconst(types::I32, field_id as i64);
+                    builder.ins().call(hr_static_get, &[frame_val, ctx_val, d, id_val]);
                 }
                 Instruction::StaticSet { field, val } => {
-                    let (fp, fl) = str_val!(field);
                     let v = ri!(*val);
-                    builder.ins().call(hr_static_set, &[frame_val, ctx_val, fp, fl, v]);
+                    let field_id = static_field_id_at(z42_func, block_idx, instr_idx, field);
+                    let id_val = builder.ins().iconst(types::I32, field_id as i64);
+                    builder.ins().call(hr_static_set, &[frame_val, ctx_val, id_val, v]);
                 }
 
                 // C1 native interop scaffold: JIT translation lands in

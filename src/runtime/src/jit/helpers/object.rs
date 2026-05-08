@@ -214,23 +214,25 @@ pub unsafe extern "C" fn jit_as_cast(
 
 // ── Static fields ────────────────────────────────────────────────────────────
 
+/// `jit_static_get` after formalize-jit-method-token Phase 2 (2026-05-08):
+/// receives pre-resolved `StaticFieldId` directly. Resolver populates
+/// `Function.resolved.static_field_tokens` at load via lazy ID allocation
+/// (always succeeds), so JIT codegen embeds the id as i32 const.
 #[no_mangle]
 pub unsafe extern "C" fn jit_static_get(
-    frame: *mut JitFrame, ctx: *const JitModuleCtx,
-    dst: u32, field_ptr: *const u8, field_len: usize,
+    frame: *mut JitFrame, _ctx: *const JitModuleCtx,
+    dst: u32, field_id: u32,
 ) {
-    let field = std::str::from_utf8(std::slice::from_raw_parts(field_ptr, field_len))
-        .unwrap_or("<invalid>");
-    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).static_get(field);
+    let id = crate::metadata::tokens::StaticFieldId(field_id);
+    (*frame).regs[dst as usize] = vm_ctx_ref(_ctx).static_get_by_id(id);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn jit_static_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
-    field_ptr: *const u8, field_len: usize, val: u32,
+    field_id: u32, val: u32,
 ) {
-    let field = std::str::from_utf8(std::slice::from_raw_parts(field_ptr, field_len))
-        .unwrap_or("<invalid>").to_string();
+    let id = crate::metadata::tokens::StaticFieldId(field_id);
     let v = (*frame).regs[val as usize].clone();
-    vm_ctx_ref(ctx).static_set(&field, v);
+    vm_ctx_ref(ctx).static_set_by_id(id, v);
 }
