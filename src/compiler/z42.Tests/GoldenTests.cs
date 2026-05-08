@@ -21,20 +21,27 @@ namespace Z42.Tests;
 /// <summary>
 /// Golden test runner.
 ///
-/// Layout (dotnet/runtime-style, after migrate-runtime-tests-by-ownership):
-///   src/tests/&lt;category&gt;/&lt;name&gt;/
-///   src/libraries/&lt;lib&gt;/tests/&lt;name&gt;/
-///     source.z42          — z42 source input
-///     expected.zasm       — expected ZASM output (for parse tests; under parse/)
-///     expected_output.txt — expected stdout (run tests; absent = empty stdout OK)
-///     expected_error.txt  — expected diagnostic output (error tests; under errors/)
-///     features.toml       — optional LanguageFeatures overrides
+/// Two layouts coexist (dual-mode discovery, 2026-05-08 flatten-assert-only-tests):
 ///
-/// Test discovery walks both src/tests/ and src/libraries/&lt;lib&gt;/tests/. Case
-/// kind is determined by file presence:
+///   Dir mode  — case dir holds source + sidecars:
+///     src/tests/&lt;category&gt;/&lt;name&gt;/
+///     src/libraries/&lt;lib&gt;/tests/&lt;name&gt;/
+///       source.z42          — z42 source input
+///       expected.zasm       — expected ZASM output (parse tests)
+///       expected_output.txt — expected stdout (run tests; absent = empty stdout OK)
+///       expected_error.txt  — expected diagnostic output (error tests)
+///       features.toml       — optional LanguageFeatures overrides
+///       emit_format.txt     — optional emit format override (zbc/zpkg)
+///
+///   Flat mode — single file, no sidecars (assert-only run cases only):
+///     src/tests/&lt;category&gt;/&lt;name&gt;.z42
+///     src/libraries/&lt;lib&gt;/tests/&lt;name&gt;.z42
+///   Sidecars all default (LanguageFeatures.Phase1, emit zbc, expected stdout = "").
+///
+/// Test discovery walks both layouts. Case kind by file presence:
 ///   expected_error.txt → error case (under src/tests/errors/)
 ///   expected.zasm      → parse case (typically under src/tests/parse/)
-///   source.z42 + (source under non-error dir) → run case
+///   anything else with source.z42 (or flat .z42) under non-error/parse/cross-zpkg → run case
 /// </summary>
 public sealed class GoldenTests
 {
@@ -133,8 +140,10 @@ public sealed class GoldenTests
         if (!Directory.Exists(TestsRoot)) yield break;
 
         // Walk roots:
-        //   src/tests/<cat>/<name>/
-        //   src/libraries/<lib>/tests/<name>/
+        //   src/tests/<cat>/<name>[/source.z42]      (dir mode)
+        //   src/tests/<cat>/<name>.z42               (flat mode)
+        //   src/libraries/<lib>/tests/<name>[/source.z42]  (dir mode)
+        //   src/libraries/<lib>/tests/<name>.z42     (flat mode)
         var roots = new List<string> { TestsRoot };
         if (Directory.Exists(LibrariesRoot))
         {
@@ -145,36 +154,62 @@ public sealed class GoldenTests
             }
         }
 
+        static bool IsExcludedPath(string p) =>
+               p.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar);
+
         foreach (var root in roots)
         {
+            // ── Dir mode: any directory containing source.z42 ──
             foreach (var dir in Directory.EnumerateDirectories(root, "*", SearchOption.AllDirectories))
             {
                 string sourceFile = Path.Combine(dir, "source.z42");
                 if (!File.Exists(sourceFile)) continue;
 
-                // Classify by file presence + dir lineage. Errors live under src/tests/errors/.
                 bool isErrorCase = dir.Contains(Path.DirectorySeparatorChar + "errors" + Path.DirectorySeparatorChar)
                                 && File.Exists(Path.Combine(dir, "expected_error.txt"));
                 bool isParseCase = dir.Contains(Path.DirectorySeparatorChar + "parse"  + Path.DirectorySeparatorChar);
-                bool isCrossZpkg = dir.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar);
-
-                // Run case: anything that's not error/parse/cross-zpkg-internal and has source.z42.
-                bool isRunCase = !isErrorCase && !isParseCase && !isCrossZpkg;
+                if (IsExcludedPath(dir)) continue;
+                bool isRunCase = !isErrorCase && !isParseCase;
 
                 if (errorCategory != isErrorCase) continue;
                 if (runCategory   != isRunCase)   continue;
                 if (hasExpectedZasm && !File.Exists(Path.Combine(dir, "expected.zasm"))) continue;
 
                 string name = Path.GetRelativePath(ProjectRoot, dir).Replace(Path.DirectorySeparatorChar, '/');
-                yield return [name, dir];
+                yield return [name, sourceFile, dir];
+            }
+
+            // ── Flat mode: any *.z42 file (excluding source.z42 which is dir mode) ──
+            // Flat cases are always assert-only run tests: no sidecars, expected stdout empty.
+            // Error / parse cases must use dir mode (they require sidecar files).
+            //
+            // Flat scan only applies to src/tests/. Files under src/libraries/<lib>/tests/<name>.z42
+            // are owned by the z42-test-runner ([Test]-attributed; dispatched via scripts/test-stdlib.sh)
+            // and would lack a Main entry point — not golden runnable.
+            if (root != TestsRoot) continue;
+
+            foreach (var file in Directory.EnumerateFiles(root, "*.z42", SearchOption.AllDirectories))
+            {
+                if (Path.GetFileName(file) == "source.z42") continue;
+                if (IsExcludedPath(file)) continue;
+                // Flat files are always run cases — skip when caller wants other kinds.
+                if (errorCategory)   continue;
+                if (hasExpectedZasm) continue;
+                if (!runCategory)    continue;
+
+                string name = Path.GetRelativePath(ProjectRoot, file).Replace(Path.DirectorySeparatorChar, '/');
+                yield return [name, file, /* dir (no sidecars) */ null!];
             }
         }
     }
 
     // ── Features loader ────────────────────────────────────────────────────
+    //
+    // dir == null (flat mode) ⇒ no sidecars ⇒ defaults.
 
-    private static LanguageFeatures LoadFeatures(string dir)
+    private static LanguageFeatures LoadFeatures(string? dir)
     {
+        if (dir == null) return LanguageFeatures.Phase1;
         string tomlPath = Path.Combine(dir, "features.toml");
         if (!File.Exists(tomlPath)) return LanguageFeatures.Phase1;
 
@@ -194,9 +229,8 @@ public sealed class GoldenTests
 
     // ── Compile helper ─────────────────────────────────────────────────────
 
-    private static (IrModule? ir, DiagnosticBag diags, IReadOnlySet<string> usedDepNs) Compile(string dir)
+    private static (IrModule? ir, DiagnosticBag diags, IReadOnlySet<string> usedDepNs) Compile(string sourceFile, string? dir)
     {
-        string sourceFile = Path.Combine(dir, "source.z42");
         string source     = File.ReadAllText(sourceFile);
         var features      = LoadFeatures(dir);
         var diags         = new DiagnosticBag();
@@ -255,9 +289,10 @@ public sealed class GoldenTests
 
     [Theory]
     [MemberData(nameof(ParseTestCases))]
-    public void IrMatchesExpected(string name, string dir)
+    public void IrMatchesExpected(string name, string sourceFile, string dir)
     {
-        var (ir, diags, _) = Compile(dir);
+        // Parse cases always have a dir (expected.zasm sidecar required).
+        var (ir, diags, _) = Compile(sourceFile, dir);
 
         diags.PrintAll();
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors");
@@ -273,9 +308,10 @@ public sealed class GoldenTests
 
     [Theory]
     [MemberData(nameof(ErrorTestCases))]
-    public void DiagnosticsMatchExpected(string name, string dir)
+    public void DiagnosticsMatchExpected(string name, string sourceFile, string dir)
     {
-        var (_, diags, _) = Compile(dir);
+        // Error cases always have a dir (expected_error.txt sidecar required).
+        var (_, diags, _) = Compile(sourceFile, dir);
 
         string expectedFile = Path.Combine(dir, "expected_error.txt");
         string expected     = File.ReadAllText(expectedFile).Trim();
@@ -291,22 +327,27 @@ public sealed class GoldenTests
 
     [Theory]
     [MemberData(nameof(RunTestCases))]
-    public void RunMatchesExpected(string name, string dir)
+    public void RunMatchesExpected(string name, string sourceFile, string? dir)
     {
-        var (ir, diags, usedDepNs) = Compile(dir);
+        // Run cases come in dir mode (with sidecars) or flat mode (dir == null,
+        // assert-only; all sidecars default).
+        var (ir, diags, usedDepNs) = Compile(sourceFile, dir);
         var diagStr = string.Join("\n", diags.All.Select(d => d.ToString()));
         diags.HasErrors.Should().BeFalse(because: $"test '{name}' should compile without errors.\nDiagnostics:\n{diagStr}");
         ir.Should().NotBeNull();
 
         // Determine emit format
         string emitFmt = "zbc";
-        string fmtFile = Path.Combine(dir, "emit_format.txt");
-        if (File.Exists(fmtFile))
-            emitFmt = File.ReadAllText(fmtFile).Trim().ToLowerInvariant();
+        if (dir != null)
+        {
+            string fmtFile = Path.Combine(dir, "emit_format.txt");
+            if (File.Exists(fmtFile))
+                emitFmt = File.ReadAllText(fmtFile).Trim().ToLowerInvariant();
+        }
 
         var zbc = new ZbcFile(
             ZbcVersion : ZbcFile.CurrentVersion,
-            SourceFile : Path.Combine(dir, "source.z42"),
+            SourceFile : sourceFile,
             SourceHash : "sha256:test",
             Namespace  : ir!.Name,
             Exports    : ir.Functions.Select(f => f.Name).ToList(),
@@ -367,11 +408,15 @@ public sealed class GoldenTests
             proc.ExitCode.Should().Be(0,
                 because: $"test '{name}' VM should exit cleanly (stderr: {proc.StandardError.ReadToEnd()})");
 
-            // Assertion-based tests (no expected_output.txt) → expect empty stdout.
-            string expectedFile = Path.Combine(dir, "expected_output.txt");
-            string expected = File.Exists(expectedFile)
-                ? File.ReadAllText(expectedFile).ReplaceLineEndings("\n").Trim()
-                : "";
+            // Assertion-based tests (no expected_output.txt sidecar, or flat
+            // mode with no dir at all) → expect empty stdout.
+            string expected = "";
+            if (dir != null)
+            {
+                string expectedFile = Path.Combine(dir, "expected_output.txt");
+                if (File.Exists(expectedFile))
+                    expected = File.ReadAllText(expectedFile).ReplaceLineEndings("\n").Trim();
+            }
             string actual = stdout.ReplaceLineEndings("\n").Trim();
             Assert.Equal(expected, actual);
         }

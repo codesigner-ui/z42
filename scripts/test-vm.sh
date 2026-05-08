@@ -77,29 +77,40 @@ for MODE in "${MODES[@]}"; do
     FAIL=0
     FAILURES=()
 
-    # Collect every golden case dir matching any configured glob.
-    DIRS=()
+    # Enumerate cases in two layouts:
+    #   Dir mode:  <root>/<name>/source.zbc + <root>/<name>/expected_output.txt
+    #   Flat mode: <root>/<name>.zbc        + <root>/<name>.expected_output.txt (rare; usually absent = assert-only)
+    # CASES tuples: "name|artifact|expected|interp_only_marker"
+    CASES=()
     for glob in "${GOLDEN_GLOBS[@]}"; do
         for d in $glob; do
-            [ -d "$d" ] && DIRS+=("$d")
+            [ -d "$d" ] || continue
+            case "$d" in
+                src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
+            esac
+            [ -f "$d/source.zbc" ] || continue
+            name=$(basename "$d")
+            CASES+=("$name|$d/source.zbc|$d/expected_output.txt|$d/interp_only")
         done
     done
-
-    for dir in "${DIRS[@]}"; do
-        name=$(basename "$dir")
-        artifact="$dir/source.zbc"
-        expected="$dir/expected_output.txt"
-
-        # Exclude categories that aren't run-tests:
-        case "$dir" in
+    # Flat mode: only src/tests/ — src/libraries/<lib>/tests/*.zbc belongs to
+    # the z42-test-runner (test-stdlib.sh), not the golden runner.
+    for f in "src/tests/"*"/"*".zbc"; do
+        [ -f "$f" ] || continue
+        case "$f" in
             src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
         esac
+        name=$(basename "$f" .zbc)
+        dir=$(dirname "$f")
+        CASES+=("$name|$f|$dir/$name.expected_output.txt|$dir/$name.interp_only")
+    done
 
-        [ -f "$artifact" ] || continue
+    for entry in "${CASES[@]}"; do
+        IFS='|' read -r name artifact expected interp_marker <<< "$entry"
 
         # Skip JIT for tests with `interp_only` marker (e.g. tests using IR
         # opcodes whose JIT path is not yet implemented — see closure.md §6).
-        if [ "$MODE" = "jit" ] && [ -f "$dir/interp_only" ]; then
+        if [ "$MODE" = "jit" ] && [ -f "$interp_marker" ]; then
             continue
         fi
 

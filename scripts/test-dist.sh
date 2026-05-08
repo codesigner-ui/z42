@@ -79,23 +79,32 @@ for MODE in "${MODES[@]}"; do
     COMPILE_FAIL=0
     FAILURES=()
 
-    DIRS=()
+    # Enumerate cases in dual layout (dir + flat). Tuples: "name|source|expected".
+    CASES=()
     for glob in "${GOLDEN_GLOBS[@]}"; do
         for d in $glob; do
-            [ -d "$d" ] && DIRS+=("$d")
+            [ -d "$d" ] || continue
+            case "$d" in
+                */src/tests/errors/*|*/src/tests/parse/*|*/src/tests/cross-zpkg/*) continue ;;
+            esac
+            [ -f "$d/source.z42" ] || continue
+            name=$(basename "$d")
+            CASES+=("$name|$d/source.z42|$d/expected_output.txt")
         done
     done
-
-    for dir in "${DIRS[@]}"; do
-        name=$(basename "$dir")
-        source="$dir/source.z42"
-        expected="$dir/expected_output.txt"
-
-        # Skip non-run categories.
-        case "$dir" in
+    # Flat mode: only src/tests/ (libraries flat .z42 are test-runner cases).
+    for f in "$ROOT/src/tests/"*"/"*".z42"; do
+        [ -f "$f" ] || continue
+        case "$f" in
             */src/tests/errors/*|*/src/tests/parse/*|*/src/tests/cross-zpkg/*) continue ;;
         esac
-        [ -f "$source" ] || continue
+        name=$(basename "$f" .z42)
+        dir=$(dirname "$f")
+        CASES+=("$name|$f|$dir/$name.expected_output.txt")
+    done
+
+    for entry in "${CASES[@]}"; do
+        IFS='|' read -r name source expected <<< "$entry"
 
         # Compile: source.z42 → temp.zbc using packaged z42c
         tmpout="$TMPDIR_BASE/${name}.zbc"

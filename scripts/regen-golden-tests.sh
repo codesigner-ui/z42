@@ -67,31 +67,40 @@ FAIL=0
 SKIP=0
 FAILURES=()
 
-DIRS=()
+# Enumerate cases in two layouts:
+#   Dir mode:  <root>/<name>/source.z42   → <root>/<name>/source.zbc
+#   Flat mode: <root>/<name>.z42          → <root>/<name>.zbc
+# CASES holds "name|source|output" tuples (| as separator since paths have no |).
+CASES=()
+# Dir mode
 for glob in "${GOLDEN_GLOBS[@]}"; do
     for d in $glob; do
-        [ -d "$d" ] && DIRS+=("$d")
+        [ -d "$d" ] || continue
+        case "$d" in
+            src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
+        esac
+        [ -f "$d/source.z42" ] || continue
+        name=$(basename "$d")
+        CASES+=("$name|$d/source.z42|$d/source.zbc")
     done
 done
-
-for dir in "${DIRS[@]}"; do
-    name=$(basename "$dir")
-    source="$dir/source.z42"
-    output="$dir/source.zbc"
-
-    # Exclude test categories that don't need .zbc:
-    #   errors/    — compile-failure tests (no run)
-    #   parse/     — IR/ZASM-match tests (no run)
-    #   cross-zpkg/ — multi-zpkg builds with their own driver (test-cross-zpkg.sh)
-    case "$dir" in
+# Flat mode (only under src/tests/; src/libraries/<lib>/tests/*.z42 belongs
+# to the z42-test-runner via scripts/test-stdlib.sh, not the golden runner).
+for f in "src/tests/"*"/"*".z42"; do
+    [ -f "$f" ] || continue
+    case "$f" in
         src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
     esac
+    name=$(basename "$f" .z42)
+    dir=$(dirname "$f")
+    CASES+=("$name|$f|$dir/$name.zbc")
+done
 
-    if [ ! -f "$source" ]; then
-        echo "  SKIP: $name (no source.z42)"
-        SKIP=$((SKIP + 1))
-        continue
-    fi
+for entry in "${CASES[@]}"; do
+    name="${entry%%|*}"
+    rest="${entry#*|}"
+    source="${rest%%|*}"
+    output="${rest##*|}"
 
     if dotnet "$DRIVER_DLL" "$source" --emit zbc -o "$output" 2>/dev/null; then
         echo "  OK:   $name"
