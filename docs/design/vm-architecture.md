@@ -373,6 +373,84 @@ jit/helpers/
 
 ---
 
+## Method token system（2026-05-08 introduce-method-token Phase 1）
+
+位置：`src/runtime/src/metadata/tokens.rs` + `metadata/resolver.rs` + `vm_context.rs::resolve_static_field_id` + 各 `interp/exec_*.rs` 热路径
+
+**问题**: review.md Part 4 §4.1 痛点 — z42 IR 所有跨引用 dispatch 用 `String` + `HashMap.get()` 做身份。每次虚调用一次 hash + 字符串等价比较；IR 内存表示膨胀；反射 R-series 设计无 token 锚点。
+
+**设计**: 加载期解析所有可解析的 string 引用为 newtype token (`MethodId(u32)` / `TypeId(u32)` / `BuiltinId(u32)` / `FieldId(u32)` / `StaticFieldId(u32)` / `VTableSlot(u32)`)，存到外置 `Function.resolved: OnceLock<ResolvedTokens>`，热路径直接 Vec/Array 索引。无需改 IR `Instruction` struct 字段类型（zbc 格式不动；compiler 端不变）。
+
+### 数据结构
+
+```rust
+// metadata/tokens.rs — 6 个 newtype + UNRESOLVED sentinel
+pub const UNRESOLVED: u32 = u32::MAX;
+pub struct MethodId(pub u32);     // → Module.functions[id]
+pub struct TypeId(pub u32);       // → Module.classes order
+pub struct BuiltinId(pub u32);    // → BUILTINS[id] 全局静态表
+pub struct FieldId(pub u32);      // → TypeDesc.fields[id]
+pub struct StaticFieldId(pub u32);// → VmContext.static_fields[id]
+pub struct VTableSlot(pub u32);   // → TypeDesc.vtable[id]
+
+// metadata/resolver.rs — Function.resolved 内容
+pub struct ResolvedTokens {
+    pub method_tokens:        Vec<AtomicU32>,   // Call 站点（cross-zpkg 留 UNRESOLVED）
+    pub builtin_tokens:       Vec<u32>,         // Builtin 站点（100% 命中）
+    pub type_tokens:          Vec<AtomicU32>,   // ObjNew 站点
+    pub vcall_ic:             Vec<VCallIC>,     // VCall 单态 IC
+    pub field_ic:             Vec<FieldIC>,     // FieldGet/Set 单态 IC
+    pub static_field_tokens:  Vec<AtomicU32>,   // StaticGet/Set 站点
+    pub site_index:           Vec<Vec<u32>>,    // (block, instr) → per-kind site_idx
+}
+```
+
+### 解析时序
+
+1. **`metadata::loader::build_type_registry`**: 在 topo order 中给每个 `TypeDesc.id` 分配（0..N）
+2. **`vm.rs::Vm::run`**: 调 `resolver::resolve_module(&module, ctx)`：
+   - 走每个 Function 的每个 (block, instr) 元组
+   - 对每个 token-bearing instruction 分配 per-kind site_idx
+   - 解析能解析的 token：
+     - `Call.func` → `module.func_index` 命中 → `MethodId`，否则 `UNRESOLVED`
+     - `Builtin.name` → `corelib::builtin_id_of` 命中 → `BuiltinId`（必须，否则 panic）
+     - `ObjNew.class_name` → `module.type_registry` → `TypeId`
+     - `StaticGet/Set.field` → `ctx.resolve_static_field_id(name)` 懒分配
+     - `VCall` / `FieldGet/Set` → 留 IC UNRESOLVED（receiver-type-dependent）
+   - `function.resolved.set(...)` (OnceLock idempotent)
+
+### 热路径行为
+
+每条 token-bearing 指令在 `interp::exec_instr` 入口查 `resolved.site_index[block_idx][instr_idx] → site_idx`，传给对应 helper：
+
+- **Call**: 命中 → `module.functions[cached]`；UNRESOLVED → `func_index` 查找 + 写回 cache（cross-zpkg 单点回填）
+- **Builtin**: 直接 `BUILTINS[id]`（无 fallback；100% 命中）
+- **ObjNew**: 仍走 `type_registry`（HashMap by name）；TypeId cache 用作 cross-zpkg observability
+- **StaticGet/Set**: 命中 → `static_fields[id]`；UNRESOLVED → name lookup + 回填
+- **VCall**: 单态 IC 命中（`recv.type_desc.id == cached_type_id`）→ 直调 `module.functions[cached_fn_idx]`；miss → 走原 4 段 dispatch + 在 vtable_index hit 时填 IC
+- **FieldGet/Set**: 单态 IC 命中 → 直读/写 `obj.slots[cached_slot]`；miss → `field_index` 查 + 填 IC
+
+### 跨 zpkg 时序
+
+- **Intra-module**：`build_type_registry` + `resolve_module` 都在同一 module 加载完成后跑，所有 intra-module ID 立即可用。
+- **Cross-zpkg lazy load**：lazy_loader 触发的 zpkg 加载后，对方模块的 `func_index` / `type_registry` 才填充。caller 模块的 `Function.resolved` 中的 cross-zpkg 引用初始为 `UNRESOLVED`；首次 dispatch 通过 string lookup 命中后**写回 cache**，单点回填。
+- **StaticFieldId 全局 lazy 增量**：`VmContext::resolve_static_field_id(name)` idempotent — 任何模块在加载期或 dispatch 期遇到新的 static field name，立即分配新 id 并 resize Vec。已分配的 id 不变（resolver-populated cache 跨 module reload 仍有效）。
+
+### Phase 化路线
+
+| Phase | 内容 | 状态 |
+|---|---|---|
+| 1 | Token newtypes + 加载期 resolver + interp 8 热路径 + StaticField 全局编号 + Field/VCall 单态 IC | 🟢 2026-05-08 |
+| 2 (sibling) | JIT helpers 接 MethodId/BuiltinId/etc | 📋 待启动 |
+| 3 (future) | zbc 格式 bump，IR struct 字段从 String 改 u32 | 📋 待启动 |
+| 4 (future) | Compiler 端 token-aware emit | 📋 待启动 |
+
+### 与 D-1b `func_ref_cache_slots` 的关系
+
+`func_ref_cache_slots`（D-1b add-method-group-conversion）是 method group 转换的 module-level 缓存，与本 spec 的 `method_tokens` 是两套独立的运行时 cache。Phase 2（JIT 端）若做 method-token 整合时，可考虑统一到一套 token 系统。
+
+---
+
 ## corelib builtin dispatch
 
 位置：`src/runtime/src/corelib/`

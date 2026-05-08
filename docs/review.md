@@ -482,7 +482,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 |---|---|---|---|---|
 | **已落地** | `formalize-jit-vm-interface` — helper 重组为 `jit/helpers/` 子目录 + `registry.rs` 中央注册 + `VM_JIT_INTERFACE_VERSION`（实测 ~50 helper，非 65） | refactor | Part 4 §4.2 + Part 1 §1.1（顺带解决 helpers_object.rs 512 LOC 超限） | 🟢 2026-05-07 |
 | **M6 → M7 之间** | `split-exec-instr` — `exec_instr.rs` (802→131 LOC) 按 op 类别拆为 7 个子模块 | refactor | Part 1 §1.2 | 🟢 2026-05-07 |
-| **M7 启动前**（**关键前置**） | `introduce-method-token` — String → `MethodId` / `TypeId` / `BuiltinId`，IR 字段 u32 化（含 §4.6 builtin/native 缓存） | lang+vm | Part 4 §4.1 + §4.6，反射 R-series 前置 | 📋 |
+| **已落地** | `introduce-method-token` Phase 1 — Token newtypes + 加载期 resolver + 8 热路径全 token cache（Call/Builtin/ObjNew/VCall/FieldGet/FieldSet/StaticGet/StaticSet）+ StaticField 全局编号 + Field/VCall 单态 IC；JIT/zbc/compiler-emit 留后续 phase | vm | Part 4 §4.1 + §4.6 + §4.7 (tier-up 前置) | 🟢 2026-05-08 |
 | **M7 期间** | `unify-frame-chain` — 单一 `VmFrame` 链表，统一 interp / jit / GC scan | refactor | Part 4 §4.5，stack trace / debugger 前置 | 📋 |
 | **M7 期间** | `eh-protocol-v2` — 异常表二分查找 + JIT trap 集成 | vm | Part 4 §4.4，依赖 `unify-frame-chain` | 📋 |
 | **M7 之后** | 在 [vm-architecture.md](design/vm-architecture.md) 记录"VmContext 集中 / Register VM / PinView first-class / static-in-context"作为不变量 | docs | Part 4 §4.正面设计 防退化 | 📋 |

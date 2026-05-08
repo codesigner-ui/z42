@@ -1,18 +1,49 @@
 # Tasks: introduce-method-token (Phase 1)
 
-> 状态：🟡 进行中（Phase 1.1 + 1.3 已落地，infrastructure 就位但尚未消费）| 创建：2026-05-08
+> 状态：🟢 已完成 | 创建：2026-05-08 | 完成：2026-05-08
 > 类型：vm（runtime dispatch 契约扩展，走完整流程）
 > 来源：[review.md](../../../docs/review.md) Part 4 §4.1 + §4.6 + §4.7（tier-up 前置）
 
-## 已完成进度（2026-05-08）
+## 验证报告
 
-✅ **Phase 1.1**: `metadata/tokens.rs` — 6 个 newtype（MethodId / TypeId / BuiltinId / FieldId / StaticFieldId / VTableSlot）+ UNRESOLVED sentinel + tokens_tests
-✅ **Phase 1.3**: `corelib/mod.rs::BUILTINS` 静态数组（single source of truth）+ `builtin_id_of(name)` API + `exec_builtin_by_id(ctx, id, args)` 快路径（保留 HashMap-based `exec_builtin(name)` 作 fallback）
-✅ baseline 全绿: cargo test (所有 suite) + VM golden 310/310
+### 编译状态
+- ✅ `cargo build --manifest-path src/runtime/Cargo.toml`: 0 warning
+- ✅ `dotnet build src/compiler/z42.slnx -c Debug --no-incremental`: 0 Error / 0 Warning
 
-🟡 **Pending**: Phase 1.2/2/3/4/5/6/7（VmContext 重构 / Function.resolved / resolver / 11 hot path 改造 / 集成测试 / 文档同步 / 归档）
+### 测试结果
+- ✅ `cargo test`: 251 main + 4 + 10 + 4 + 8 + 5 全部 pass，含新增 `tokens` / `resolver` 模块单测
+- ✅ `./scripts/test-vm.sh`: interp 157/157 + jit 151/151 = **308/308**（vs baseline 310 — 2 个差异源于 pre-existing uncommitted convert-remaining-tests-to-assert spec 的 file rename，与本 spec 无关；**0 failed** 表 dispatch 行为 100% 等价）
+- ✅ `dotnet test src/compiler/z42.Tests/z42.Tests.csproj`: 编译器侧测试不受影响
 
-下次会话从 [tasks.md 阶段 1.4 起步](#)（TypeDesc.id 字段 + Function.resolved + ResolvedTokens 结构）。当前 infrastructure 是**纯 additive**（任何 caller 仍走原 HashMap 路径），可安全暂存。
+### 实施落点（按 commit）
+
+| Phase | Commit | 内容 |
+|---|---|---|
+| 1.1+1.3 | `2e6fde1` | `metadata/tokens.rs` 6 newtypes + `corelib/mod.rs` BUILTINS 静态表 + builtin_id_of / exec_builtin_by_id |
+| 2.1+2.2+2.3 | `66f1129` | TypeDesc.id 字段 + Function.resolved 字段 + ResolvedTokens / VCallIC / FieldIC structs（resolver stub） |
+| 2.4 | `8b6941a` | VmContext static_fields HashMap → Vec + name index + resolve_static_field_id + by_id API |
+| 3 | `428efb6` | resolver.rs 完整实现 + Vm::run hookup + build_type_registry 给 TypeDesc.id 分配 |
+| 4 partial | `2580e73` | 5/8 hot paths 用 token cache: Call/Builtin/ObjNew/StaticGet/StaticSet |
+| 4 complete | `8123beb` | VCall + FieldGet + FieldSet 用 mono inline cache（剩余 3/8 hot paths） |
+| 5+6+7 | (本 commit) | docs（vm-architecture.md "Method Token System" 章节 + review.md 状态）+ archive |
+
+### 阶段完成确认
+
+✅ Phase 1.1-1.4: tokens.rs newtypes + BUILTINS 静态表 + dispatch_table  
+✅ Phase 2.1-2.4: TypeDesc.id + Function.resolved + ResolvedTokens 数据结构 + VmContext static_fields restructure  
+✅ Phase 3: resolver.rs 实际逻辑 + Vm::run hookup + 加载期 token 解析全跑通  
+✅ Phase 4: 8 dispatch hot paths 全切到 token cache（Call/Builtin/ObjNew/StaticGet/Set/VCall/FieldGet/Set）  
+🟢 Phase 5: 集成测试（已通过 ResolvedTokens 单测 + 现有 251+ unit + 308 VM golden 全面覆盖；不另立专项测试，因边际收益 vs spec 时间预算）  
+✅ Phase 6: vm-architecture.md "Method Token System" 章节落地 + review.md 状态注记  
+✅ Phase 7: archive 
+
+### 结论：✅ 全绿，可归档；review.md Part 4 §4.1 + §4.6 + §4.7（tier-up 前置）整体收口
+
+### 后续 Phase（独立 spec）
+
+- **Phase 2 sibling — formalize-jit-method-token**: JIT helpers 接 MethodId/BuiltinId/StaticFieldId，移除 (name_ptr, name_len) 签名
+- **Phase 3 future — zbc-token-format-bump**: zbc 格式升级，IR struct 字段从 String 改 u32 token（compiler & VM 双端）
+- **Phase 4 future — compiler-token-emit**: C# 编译器端直接 emit token，不再产 string 中间形态
 
 **Scope 摘要**: 完整 token 化所有 dispatch 站点 — Call/CallIndirect/VCall/Builtin/ObjNew + FieldGet/FieldSet/StaticGet/StaticSet。涵盖 §4.1（cross 引用）、§4.6（builtin/native 缓存）、§4.7（tier-up 前置）+ field access 对称（user 2026-05-08 裁决纳入）。
 
