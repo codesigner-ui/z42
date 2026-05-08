@@ -14,10 +14,35 @@ use super::{ExecOutcome, Frame};
 pub(super) fn call(
     ctx: &VmContext, module: &Module, frame: &mut Frame,
     dst: u32, fname: &str, args: &[u32],
+    // method_token: Pre-resolved cache from Function.resolved.method_tokens[site_idx].
+    // Some(slot): hot path checks slot for resolved MethodId; on UNRESOLVED (cross-zpkg),
+    // falls back to string lookup + lazy loader, then writes the resolved id back into
+    // the slot. None: pure string lookup (back-compat).
+    method_token: Option<&std::sync::atomic::AtomicU32>,
 ) -> Result<Option<Value>> {
+    use std::sync::atomic::Ordering;
     let arg_vals = collect_args(&frame.regs, args)?;
-    let callee_fn = module.func_index.get(fname)
-        .and_then(|&idx| module.functions.get(idx));
+
+    // Hot path: direct index into module.functions if cache hit.
+    let callee_fn = if let Some(slot) = method_token {
+        let cached = slot.load(Ordering::Relaxed);
+        if cached != crate::metadata::tokens::UNRESOLVED {
+            module.functions.get(cached as usize)
+        } else {
+            // Miss: resolve via func_index + write back.
+            match module.func_index.get(fname).copied() {
+                Some(idx) => {
+                    slot.store(idx as u32, Ordering::Relaxed);
+                    module.functions.get(idx)
+                }
+                None => None,
+            }
+        }
+    } else {
+        // No token (back-compat): old path.
+        module.func_index.get(fname).and_then(|&idx| module.functions.get(idx))
+    };
+
     let outcome = if let Some(callee) = callee_fn {
         super::exec_function(ctx, module, callee, &arg_vals)?
     } else if let Some(lazy_fn) = ctx.try_lookup_function(fname) {
@@ -34,11 +59,27 @@ pub(super) fn call(
     }
 }
 
+/// `Builtin` dispatch. Hot path uses pre-resolved `BuiltinId` to index
+/// `BUILTINS[id]` directly (no hash). Falls back to name-based lookup
+/// when the resolver hasn't populated a token (e.g. unit tests bypassing
+/// `Vm::run`).
+///
+/// `builtin_id` is the resolved `BuiltinId.0` from
+/// `Function.resolved.builtin_tokens[site_idx]`, or `None` when the
+/// caller has no resolved token to pass (back-compat path).
 pub(super) fn builtin(
     ctx: &VmContext, frame: &mut Frame, dst: u32, name: &str, args: &[u32],
+    builtin_id: Option<u32>,
 ) -> Result<()> {
     let arg_vals = collect_args(&frame.regs, args)?;
-    let result = crate::corelib::exec_builtin(ctx, name, &arg_vals)?;
+    let result = match builtin_id {
+        Some(id) => crate::corelib::exec_builtin_by_id(
+            ctx,
+            crate::metadata::tokens::BuiltinId(id),
+            &arg_vals,
+        )?,
+        None => crate::corelib::exec_builtin(ctx, name, &arg_vals)?,
+    };
     frame.set(dst, result);
     Ok(())
 }

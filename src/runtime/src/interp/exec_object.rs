@@ -11,10 +11,18 @@ use super::exec_vcall::is_array_isa;
 use super::ops::collect_args;
 use super::Frame;
 
+/// `ObjNew` dispatch. Currently still goes through `module.type_registry`
+/// (HashMap by name) since registry isn't a Vec-by-TypeId — the cache
+/// `type_token` enables future fast-path + cross-zpkg observability:
+/// when the slot starts as UNRESOLVED and the lazy loader resolves the
+/// class, we write the resolved id back so subsequent diagnostics /
+/// reflection see it.
 pub(super) fn obj_new(
     ctx: &VmContext, module: &Module, frame: &mut Frame,
     dst: u32, class_name: &str, ctor_name: &str, args: &[u32], type_args: &[String],
+    type_token: Option<&std::sync::atomic::AtomicU32>,
 ) -> Result<()> {
+    use std::sync::atomic::Ordering;
     // L3-G4d: for imported classes (e.g. Std.Collections.Stack) the TypeDesc
     // may only exist in the lazy loader until first use; probe it before
     // falling back to a blank synthetic descriptor.
@@ -25,6 +33,19 @@ pub(super) fn obj_new(
         .unwrap_or_else(|| {
             std::sync::Arc::new(make_fallback_type_desc(module, class_name))
         });
+
+    // Refresh the type_token cache if it was UNRESOLVED at load (cross-zpkg
+    // lazy class). Not strictly needed for current dispatch (we still go
+    // through type_registry lookup above) but gives forward observability
+    // and prepares the slot for Phase X where ObjNew may use TypeId-keyed
+    // caches.
+    if let Some(slot) = type_token {
+        if slot.load(Ordering::Relaxed) == crate::metadata::tokens::UNRESOLVED
+            && type_desc.id.is_resolved()
+        {
+            slot.store(type_desc.id.0, Ordering::Relaxed);
+        }
+    }
 
     // 2026-05-02 fix-class-field-default-init: 按字段声明类型选默认值
     // （int → I64(0)、bool → Bool(false)、str/ref → Null …），不再
@@ -147,12 +168,28 @@ pub(super) fn as_cast(
     Ok(())
 }
 
-pub(super) fn static_get(ctx: &VmContext, frame: &mut Frame, dst: u32, field: &str) {
-    frame.set(dst, ctx.static_get(field));
+/// `StaticGet` hot path. Resolver populates `static_field_tokens[site_idx]`
+/// with the lazy-allocated `StaticFieldId` at module load (always succeeds).
+/// `field_id` Some → direct Vec index (no hash); None → name fallback.
+pub(super) fn static_get(
+    ctx: &VmContext, frame: &mut Frame, dst: u32, field: &str,
+    field_id: Option<u32>,
+) {
+    let v = match field_id {
+        Some(id) => ctx.static_get_by_id(crate::metadata::tokens::StaticFieldId(id)),
+        None     => ctx.static_get(field),
+    };
+    frame.set(dst, v);
 }
 
-pub(super) fn static_set(ctx: &VmContext, frame: &Frame, field: &str, val: u32) -> Result<()> {
+pub(super) fn static_set(
+    ctx: &VmContext, frame: &Frame, field: &str, val: u32,
+    field_id: Option<u32>,
+) -> Result<()> {
     let v = frame.get(val)?.clone();
-    ctx.static_set(field, v);
+    match field_id {
+        Some(id) => ctx.static_set_by_id(crate::metadata::tokens::StaticFieldId(id), v),
+        None     => ctx.static_set(field, v),
+    }
     Ok(())
 }

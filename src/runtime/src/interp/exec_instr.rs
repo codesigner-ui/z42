@@ -10,7 +10,8 @@
 /// `Result<Option<Value>>` and the dispatcher checks `is_some()` to forward
 /// the throw upstack. All other helpers return `Result<()>`.
 
-use crate::metadata::{Instruction, Module, Value};
+use crate::metadata::{Function, Instruction, Module, Value};
+use crate::metadata::tokens::UNRESOLVED;
 use crate::vm_context::VmContext;
 use anyhow::Result;
 
@@ -21,8 +22,31 @@ use super::Frame;
 ///   Ok(None)       — normal completion
 ///   Ok(Some(val))  — a callee threw a user exception (value-based propagation)
 ///   Err(e)         — internal VM error
-pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &Instruction) -> Result<Option<Value>> {
+///
+/// `func` / `block_idx` / `instr_idx` are passed through for the
+/// introduce-method-token Phase 4 dispatch fast path. Token-bearing
+/// helpers (Call / Builtin / ObjNew / VCall / FieldGet / FieldSet /
+/// StaticGet / StaticSet) read `func.resolved.site_index[block_idx]
+/// [instr_idx]` to find their per-kind cache slot. Non-token-bearing
+/// instructions ignore these parameters.
+pub fn exec_instr(
+    ctx: &VmContext, module: &Module, frame: &mut Frame,
+    func: &Function, block_idx: usize, instr_idx: usize,
+    instr: &Instruction,
+) -> Result<Option<Value>> {
     use super::{exec_address, exec_array, exec_call, exec_native, exec_object, exec_value, exec_vcall};
+
+    // Look up per-instruction site_idx (UNRESOLVED if non-token-bearing or
+    // resolver hasn't run). `resolved` is None only if Vm::run hasn't been
+    // called yet (e.g. unit tests calling exec_function directly without
+    // resolver hookup) — helpers fall back to string lookup in that case.
+    let resolved = func.resolved.get();
+    let _site_idx = resolved
+        .and_then(|r| r.site_index.get(block_idx))
+        .and_then(|b| b.get(instr_idx).copied())
+        .unwrap_or(UNRESOLVED);
+    // ↑ `_site_idx` is read by token-bearing arms below; hidden behind `_`
+    //   prefix so the variable isn't a warning when no consumer is enabled.
 
     match instr {
         // ── Constants ────────────────────────────────────────────────────────
@@ -79,12 +103,25 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         Instruction::DefaultOf { dst, param_index } => exec_address::default_of(frame, *dst, *param_index),
 
         // ── Calls ────────────────────────────────────────────────────────────
-        Instruction::Call { dst, func, args } => {
-            if let Some(thrown) = exec_call::call(ctx, module, frame, *dst, func, args)? {
+        Instruction::Call { dst, func: fname, args } => {
+            // Hot path: pre-resolved MethodId direct-indexes module.functions.
+            // Cross-zpkg cache (UNRESOLVED at load) backfills on first hit.
+            let method_token = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.method_tokens.get(_site_idx as usize));
+            if let Some(thrown) = exec_call::call(ctx, module, frame, *dst, fname, args, method_token)? {
                 return Ok(Some(thrown));
             }
         }
-        Instruction::Builtin { dst, name, args } => exec_call::builtin(ctx, frame, *dst, name, args)?,
+        Instruction::Builtin { dst, name, args } => {
+            // Hot path: resolver populates Function.resolved.builtin_tokens
+            // with BuiltinId per site at load time (closed set, all hits).
+            // Fallback to name lookup when resolver hasn't run.
+            let builtin_id = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.builtin_tokens.get(_site_idx as usize).copied());
+            exec_call::builtin(ctx, frame, *dst, name, args, builtin_id)?;
+        }
         Instruction::LoadFn { dst, func } => exec_call::load_fn(frame, *dst, func),
         Instruction::LoadFnCached { dst, func, slot_id } => exec_call::load_fn_cached(ctx, frame, *dst, func, *slot_id),
         Instruction::CallIndirect { dst, callee, args } => {
@@ -105,7 +142,12 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
 
         // ── Objects ──────────────────────────────────────────────────────────
         Instruction::ObjNew { dst, class_name, ctor_name, args, type_args } => {
-            exec_object::obj_new(ctx, module, frame, *dst, class_name, ctor_name, args, type_args)?
+            // Hot path: pass type_token cache for repopulation. Dispatch via
+            // type_registry / lazy_loader unchanged.
+            let type_token = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.type_tokens.get(_site_idx as usize));
+            exec_object::obj_new(ctx, module, frame, *dst, class_name, ctor_name, args, type_args, type_token)?
         }
         Instruction::FieldGet { dst, obj, field_name } => exec_object::field_get(frame, *dst, *obj, field_name)?,
         Instruction::FieldSet { obj, field_name, val } => exec_object::field_set(frame, *obj, field_name, *val)?,
@@ -116,8 +158,25 @@ pub fn exec_instr(ctx: &VmContext, module: &Module, frame: &mut Frame, instr: &I
         }
         Instruction::IsInstance { dst, obj, class_name } => exec_object::is_instance(module, frame, *dst, *obj, class_name)?,
         Instruction::AsCast     { dst, obj, class_name } => exec_object::as_cast(module, frame, *dst, *obj, class_name)?,
-        Instruction::StaticGet  { dst, field } => exec_object::static_get(ctx, frame, *dst, field),
-        Instruction::StaticSet  { field, val } => exec_object::static_set(ctx, frame, field, *val)?,
+        Instruction::StaticGet  { dst, field } => {
+            // Hot path: pre-resolved StaticFieldId → direct Vec index.
+            use std::sync::atomic::Ordering;
+            let field_id = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.static_field_tokens.get(_site_idx as usize))
+                .map(|atom| atom.load(Ordering::Relaxed))
+                .filter(|&id| id != UNRESOLVED);
+            exec_object::static_get(ctx, frame, *dst, field, field_id);
+        }
+        Instruction::StaticSet  { field, val } => {
+            use std::sync::atomic::Ordering;
+            let field_id = resolved
+                .filter(|_| _site_idx != UNRESOLVED)
+                .and_then(|r| r.static_field_tokens.get(_site_idx as usize))
+                .map(|atom| atom.load(Ordering::Relaxed))
+                .filter(|&id| id != UNRESOLVED);
+            exec_object::static_set(ctx, frame, field, *val, field_id)?;
+        }
 
         // ── Native interop ───────────────────────────────────────────────────
         Instruction::CallNative { dst, module: m, type_name, symbol, args } => {

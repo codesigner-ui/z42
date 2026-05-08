@@ -390,7 +390,12 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
             //   Ok(None)       — normal instruction completion
             //   Ok(Some(val))  — a callee threw an exception (value-based propagation)
             //   Err(e)         — internal VM error
-            match exec_instr::exec_instr(ctx, module, &mut frame, instr) {
+            //
+            // (block_idx, instr_idx, func) are passed through for the
+            // introduce-method-token Phase 4 dispatch fast path: helpers
+            // that need cache lookup index `func.resolved.site_index[block_idx]
+            // [instr_idx]` to find their per-kind cache slot.
+            match exec_instr::exec_instr(ctx, module, &mut frame, func, block_idx, instr_idx, instr) {
                 Ok(None) => {}
                 Ok(Some(thrown_val)) => {
                     // User exception from a callee — try to find a local handler
