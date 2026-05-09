@@ -6,22 +6,27 @@
 
 ## ADDED Requirements
 
-### Requirement: Token32 统一编码
+### Requirement: Token32 统一编码（**2026-05-09 S3 redesign**）
 
-#### Scenario: 同一 IR 引用站点写入 / 读取后值守恒
+#### Scenario: 本地 token = module 内部位置
 
-- **WHEN** 编译器为某 `Call.Func` 引用分配 `MethodId(42)`，写入 zbc
-- **THEN** VM 加载该 zbc 后，`Module.functions[42].name` 与编译期该 Call 站点指向的函数名完全一致
+- **WHEN** 编译器为某 `Call.Func` 解析到本地函数（在 `module.Functions` 第 42 位）
+- **THEN** 写入 zbc 的 token 值为 `42`（`< IMPORT_BASE`），VM 加载后 decode 时 `funcNames[42]` 与原函数名一致
 
-#### Scenario: 高字节预留 0
+#### Scenario: 跨包 token = STRS 池索引 + IMPORT_BASE
 
-- **WHEN** 当前版本编译器分配任何 token
-- **THEN** 该 `u32` 的高 8 位（`token >> 24`）始终为 0；运行期写出诊断时若发现高字节非 0，应判定为 corrupted zbc
+- **WHEN** 编译器为某 `Call.Func` 解析到非本地（cross-zpkg）函数 `Std.IO.Print`
+- **THEN** 该名字 intern 到 STRS 池（设其 idx = `n`），token 写入 `IMPORT_BASE + n` (`= 0x8000_0000 + n`)；VM decode 时识别 `token >= IMPORT_BASE`，取 `pool[token - IMPORT_BASE]` = `"Std.IO.Print"` 作为 IR 字段值
+
+#### Scenario: 高字节预留 0（仅本地区段）
+
+- **WHEN** 本地 token（`< IMPORT_BASE`）
+- **THEN** 该 `u32` 的高 8 位（`token >> 24`）始终为 0；这一约束只对 intra-module 部分有效，cross-zpkg 的 token 高位是 IMPORT_BASE 标志位
 
 #### Scenario: UNRESOLVED 哨兵
 
-- **WHEN** 某站点目标在编译期不可解析（cross-zpkg）
-- **THEN** 该字段写入 `0xFFFF_FFFF`（`UNRESOLVED`），同时把目标名加入 import_table；VM 加载时识别哨兵即跳到 import_table 路径
+- **WHEN** 某站点目标在编译期不可解析（错误条件 / 占位）
+- **THEN** 该字段写入 `0xFFFF_FFFF`（`UNRESOLVED`）；VM 加载时识别哨兵即报错或回退（与 IMPORT_BASE 区段不重叠）
 
 ### Requirement: 确定性 Token 分配
 
@@ -30,25 +35,21 @@
 - **WHEN** 用同一 `z42c` 版本编译同一份 `.z42` 源代码两次（`out1.zbc`、`out2.zbc`）
 - **THEN** `sha256(out1) == sha256(out2)`，且 byte-level diff 为空
 
-#### Scenario: MethodId 分配序
+#### Scenario: MethodId 分配序（源序）
 
-- **WHEN** 模块声明 `Foo.bar(int)`、`Foo.baz()`、`Aaa.zzz()` 三个方法
-- **THEN** TokenAllocator 分配序为 `Aaa.zzz → Foo.bar → Foo.baz`（按 (FQ class, method, arity, params) 字典序）；`MethodId.0` 依次为 0/1/2
+- **WHEN** 模块按源码顺序声明 `Foo.bar`、`Foo.baz`、`Aaa.zzz` 三个方法（IrGen 收集到 `module.Functions` 即此序）
+- **THEN** TokenAllocator 分配 `Foo.bar → 0`、`Foo.baz → 1`、`Aaa.zzz → 2`（直接用 `module.Functions` 的索引）
 
-#### Scenario: TypeId 分配序
+#### Scenario: TypeId 分配序（源序）
 
-- **WHEN** 模块声明 `class Bar`、`class Aaa`、`class Foo`
-- **THEN** TokenAllocator 分配 `Aaa→0, Bar→1, Foo→2`（按 FQ class name 字典序）
+- **WHEN** 模块按源码顺序声明 `class Bar`、`class Aaa`、`class Foo`（`module.Classes` 即此序）
+- **THEN** TokenAllocator 分配 `Bar→0, Aaa→1, Foo→2`（直接用 `module.Classes` 的索引）
 
-#### Scenario: StaticFieldId 分配序
+#### Scenario: 改源即换 token（接受的取舍）
 
-- **WHEN** 多个 class 声明静态字段：`Foo.x`、`Aaa.y`、`Foo.a`
-- **THEN** 分配序按 (declaring class FQ name, field name) 字典序：`Aaa.y → Foo.a → Foo.x`
-
-#### Scenario: import_table 排序
-
-- **WHEN** 当前模块使用 `Std.IO.Print`、`Std.Math.Abs`、`Std.IO.ReadLine` 三个 cross-zpkg 引用
-- **THEN** import_table 内顺序为 `Std.IO.Print → Std.IO.ReadLine → Std.Math.Abs`（按 (kind tag, name) 字典序）
+- **WHEN** 用户调换源码中两个函数的声明顺序
+- **THEN** 这两个函数的 MethodId 互换；其他函数不受影响。Reproducible build 要求 = 同源同构产，源改即变属正常行为
+- **WHY**：取消 Ordinal 排序换来 ZbcWriter / TIDX / SIGS-FUNC 全链不需要 sort 协调；deterministic 仍由 IrGen 的源码遍历保证
 
 #### Scenario: 模块发现顺序无关
 
@@ -62,10 +63,10 @@
 - **WHEN** 编译器写出新版 zbc
 - **THEN** 头部 `zbc_version` 字段为 `[1, 0]`；旧版 0.9 zbc 加载触发明确错误（"zbc 1.0 required, got 0.9"），不尝试 fallback
 
-#### Scenario: IMPT 区段扩展
+#### Scenario: IMPT 区段沿用旧语义（不扩展）
 
-- **WHEN** 模块至少有 1 个 cross-zpkg 引用
-- **THEN** zbc 含 IMPT 区段，每条 entry 为 `(kind: u8, name_str_idx: u32)`，按字典序排列；intra-module 引用不进入 IMPT
+- **WHEN** 模块需要列举 cross-zpkg 函数 import 名字
+- **THEN** IMPT 区段保持 v0.9 形态（仅 `[(name_str_idx)*]` 列表，无 kind tag），用于 namespace 提取等诊断 / 元数据用途；**IR 字段中的 cross-zpkg 引用直接以 `IMPORT_BASE + str_idx` 编码进 token，不依赖 IMPT 区段**
 
 #### Scenario: 老 zbc 不兼容
 
@@ -127,32 +128,25 @@
 
 ## MODIFIED Requirements
 
-### Requirement: IR Instruction 字段类型（**Rust 端**）
+### Requirement: IR Instruction 字段类型（**2026-05-09 S3 redesign**）
 
-**Before** (Phase 1+2):
+**Before** (Phase 1+2)：所有 string-bearing 字段为 `String`（运行期通过 ResolvedTokens cache 加速）
+
+**After** (Phase 3 redesigned)：**字段类型不变**——C# / Rust 双端 IR records 均保留 `String` 字段。Tokenization 仅在 wire format 边界发生（ZbcWriter encode + ZbcReader decode），不级联到 IR struct / instruction enum。
+
+```csharp
+// C# 不变
+public sealed record CallInstr(TypedReg Dst, string Func, List<TypedReg> Args) : IrInstr;
+```
+
 ```rust
+// Rust 不变
 Call { dst: Reg, func: String, args: Vec<Reg> }
-ObjNew { dst: Reg, class_name: String, ctor_name: String, args: Vec<Reg>, type_args: Vec<String> }
-VCall { dst: Reg, obj: Reg, method: String, args: Vec<Reg> }
-FieldGet { dst: Reg, obj: Reg, field_name: String }
-StaticGet { dst: Reg, field: String }
-LoadFn { dst: Reg, func: String }
-... (其他 string-bearing 字段同理)
 ```
 
-**After** (Phase 3):
-```rust
-Call { dst: Reg, func: MethodId, args: Vec<Reg> }
-ObjNew { dst: Reg, class_id: TypeId, ctor_id: MethodId, args: Vec<Reg>, type_args: Vec<TypeId> }
-VCall { dst: Reg, obj: Reg, method: String, args: Vec<Reg> }   // method 不动 — receiver-type-dependent，IC 路径
-FieldGet { dst: Reg, obj: Reg, field_name: String }            // field_name 不动 — 同理
-StaticGet { dst: Reg, field: StaticFieldId }
-LoadFn { dst: Reg, func: MethodId }
-```
+> **设计取舍**（2026-05-09）：原 design 要求 IR 字段改 `MethodId` / `TypeId` / `StaticFieldId` 强类型 newtype。实施期发现：(1) C# IR records 是编译期中间表示，不持久化；(2) Rust 运行期 hot path 是 ResolvedTokens cache（Phase 1+2 已优化）— IR 字段类型对热路径无影响；(3) 跨字段类型改造级联面巨大（~15 文件）。**简化方案**：tokenization 严格在 zbc encode / decode 阶段做；IR 字段保持 String 在两端一致，运行期 dispatch 行为零变化。
 
-> 注：`VCall.method` 和 `Field*.field_name` 因为 receiver-type-dependent，无法编译期 token 化（与 receiver 实际类型一一对应）；继续保持 String，运行期通过 VCallIC / FieldIC 单态缓存。这是 Phase 1+2 既有设计，本次不动。
-
-> **C# IR records 字段类型（2026-05-09 实施期裁决）**：原 design 要求 C# `IrModule.cs` 中 `CallInstr` / `ObjNewInstr` 等 record 字段类型也跟随 Rust 改为 `MethodId` / `TypeId` / `StaticFieldId`。实施期裁决保留 C# IR records 为 `string` 类型，理由：(1) C# IR records 是编译期中间表示，不持久化；持久化产物（zbc）由 ZbcWriter 决定，已能独立 tokenize；(2) 运行期 hot path 是 Rust 端，与 C# IR record 字段类型无关；(3) tokenization 仅在 wire format 边界（ZbcWriter 输出 / ZbcReader 输入 / Rust Instruction enum）落地即可，无需级联到 C# 编译器内部。`TokenAllocator` 作为 IrGen 的 sibling output，与 IR module 一起产出，由 ZbcWriter 消费生成 v1.0 wire format。
+> 注：`VCall.method` / `Field*.field_name` / `Builtin.name` / native interop 字段在 wire format 也**不 tokenize**（Builtin 是 closed set，receiver-type-dependent 字段不能编译期解析；这些字段的 wire 编码继续是 STRS 池索引，不走 IMPORT_BASE 编码路径）。
 
 ### Requirement: type_registry 接口
 
@@ -194,12 +188,15 @@ pub struct ResolvedTokens {
 }
 ```
 
-## IR Mapping
+## IR Mapping（**2026-05-09 S3 redesign**）
 
-- **新 IR 字段**：`MethodId`、`TypeId`、`StaticFieldId` (newtype on `u32`，高字节预留 0)
-- **新 IMPT 区段**条目格式（per entry）：`(kind: u8, name_str_idx: u32)`
-- **import kind 标签**（C# `ImportKind` enum / Rust `ImportKind` enum；语义"哪个 token 空间被导入"）：`0x01 = Method`, `0x02 = Type`, `0x03 = StaticField`, `0x04 = Builtin (closed set, never imported but tag for completeness)`
-- **UNRESOLVED 哨兵**：`0xFFFF_FFFF`，与 import_table 配合
+- **Token 编码（u32，wire format only）**：
+  - `[0, 0x7FFF_FFFE]` → 本地 module 内位置（intra-module index into Functions / Classes / etc.）
+  - `[0x8000_0000, 0xFFFF_FFFE]` → 跨包字符串名（`token - IMPORT_BASE` = STRS 池索引）
+  - `0xFFFF_FFFF` → UNRESOLVED 哨兵（错误状态）
+- **不引入新 IMPT entry 格式**；IMPT 区段保持 v0.9 语义（namespace 提取用），不参与 IR 字段 token 解码
+- **C# 端 `MethodId` / `TypeId` / `StaticFieldId` newtype**：保留作 IR 内部辅助类型 + 测试断言；**不进 C# IR records 字段**（C# IR records 字段类型保持 `string`，详见 design.md）
+- **Rust 端 `Instruction` enum 字段类型**：仍为 `String`（与 C# 对齐）；token 仅在 zbc decode 时映射回 String 后注入
 
 ## Pipeline Steps
 

@@ -68,49 +68,55 @@ IrModule (字段已是 Token32)                     ←── MODIFIED: string f
 - 高字节预留 0 → 未来需要 B2（CLR-style 统一 token）时只需启用高字节，IR 字段类型无须改
 - 验证简单：`assert!(token >> 24 == 0)`
 
-### Decision 2: IMPT 区段编码
+### Decision 2: cross-zpkg ref 编码（**2026-05-09 S3 redesign**）
 
-**问题**：cross-zpkg refs 怎么编码进 IMPT？
+**问题**：cross-zpkg refs 在 wire format 里怎么表示？
 
-**选项**：
-- A. 单一 entry 列表 `[(kind: u8, name_str_idx: u32), ...]`，按字典序排
-- B. 按 kind 拆 4 个子表（method_imports / type_imports / static_field_imports / builtin_imports），每个表内字典序
-- C. 不要 IMPT，cross-zpkg 直接在 IR 字段里写完整字符串（pool idx）
+**旧选项**（已废弃）：
+- A. 新增 IMPT entry 格式 `[(kind, name_str_idx)*]`，IR token = `IMPORT_BASE + import_table_idx`，packed zpkg 还需 per-module IMPT
+- B. 按 kind 拆 4 个子表 + per-module IMPT
+- C. 不动，全部走 STRS 池
 
-**决定**：**选 A**。
-- 简洁：单一表 + kind tag，不需 4 个子表 header
-- B 的 separation 在 reader 端意义不大（仍要按 kind dispatch）
-- C 退化到 0.9 状态，违背 Phase 3 目标
+**实施尝试**（2026-05-09 旧 S3，commits 在 `wip/phase3-s3-broken`）：选 A。失败原因：per-module IMPT 在 packed zpkg + sort coordination + cross-module token resolution 三件事的复杂度叠加在一起，stdlib 加载链路在 lazy load 时 token → name 失败。
 
-import_table[idx] 与 IR 字段中 token 的关系：用 **magic threshold** 而非 high-bit：
+**新决定**（2026-05-09 redesign）：**复用 STRS 池，token 用 IMPORT_BASE 标志位区分**。
+
+Token 编码语义（u32）：
 
 ```
-intra-module:    [0,             0x7FFF_FFFE]   (~2.1B 容量，远超需求)
+intra-module:    [0,             0x7FFF_FFFE]   token = local index in module.Functions / module.Classes
 IMPORT_BASE:     0x8000_0000
-import indices:  [0x8000_0000,   0xFFFF_FFFE]
+cross-zpkg:      [0x8000_0000,   0xFFFF_FFFE]   token - IMPORT_BASE = STRS pool index of FQ name
 UNRESOLVED:      0xFFFF_FFFF
 ```
 
-简单且与 UNRESOLVED 共存。
+**关键简化**：
+- ❌ 不引入新 IMPT entry 格式
+- ❌ 不需要 packed zpkg per-module IMPT
+- ❌ 不需要 sort coordination（TIDX remap / sorted SIGS-FUNC）
+- ❌ 不需要 cross-module token resolution 专用逻辑
+- ✅ Decoder 简单：`token < IMPORT_BASE ? local_table[token] : pool[token - IMPORT_BASE]`
+- ✅ Encoder 简单：`if name in local: write index; else write IMPORT_BASE + pool.Idx(name)`
 
-### Decision 3: TokenAllocator 算法
+### Decision 3: TokenAllocator 算法（**2026-05-09 S3 redesign**）
 
-**问题**：怎么按确定性序分配 token？
+**问题**：怎么生成 deterministic token？
 
-**算法**：
-1. 收集所有 declarations 进 list（by walking IR module structure）
-2. 对每个 kind 用 `OrderBy(...)` 排序：
-   - MethodId: `(declaring_class_fq, method_name, arity, param_type_repr)`
-   - TypeId: `(class_fq)`
-   - StaticFieldId: `(declaring_class_fq, field_name)`
-3. 按排序后顺序分配 `0, 1, 2, ...`
-4. cross-zpkg refs 收集进 import_table（去重 + 排序），分配 `IMPORT_BASE + import_idx`
-5. emit 时把每个引用站点的 string name 替换为 lookup 出来的 token
+**新算法**（替代旧 Ordinal 排序方案）：
+1. TokenAllocator 直接用 `module.Functions` / `module.Classes` 的 List 索引作 token id
+2. Resolve 时：
+   - `name` 命中本地表 → 返回该索引（< IMPORT_BASE）
+   - 否则 → 通过 StringPool intern 该 name，返回 `IMPORT_BASE + pool.Idx(name)`
+3. emit 时把每个引用站点的 string name 替换为 lookup 出来的 token
 
-边界 case：
-- 函数重载：`Foo.bar(int) vs Foo.bar(str)` → param_type_repr 区分
-- 泛型 instantiation：本次只处理 Phase 1+2 既有的类级 type_args（已存在），方法级泛型 instantiation 不在 scope（继续走 String）
-- 同名 nested class：FQ 名包含 outer
+无需"DiscoverImport pre-pass"——cross-zpkg 引用在 emit 期就地写 STRS 池。
+
+**Determinism 保证**：
+- IrGen 的 IR module 收集是源序遍历 → `module.Functions` / `module.Classes` 是源序确定的
+- StringPool intern 顺序由 IrGen visit 顺序决定 → 同源同输入 → 同 pool layout
+- 故同源同 toolchain → 同 zbc 字节级输出（reproducible build 满足）
+
+**取舍**：用户改源即换 token（spec.md "改源即换 token" scenario 接受这个行为）。换得无 sort 协调 / 无 TIDX remap / 无 sorted SIGS。
 
 ### Decision 4: type_registry 重构策略
 
@@ -135,30 +141,30 @@ UNRESOLVED:      0xFFFF_FFFF
 
 **决定**：**选 A**。pre-1.0 不留兼容路径；删除更清爽。Resolver 简化为只 init IC。
 
-### Decision 6: 实施分阶段（关键决策）
+### Decision 6: 实施分阶段（**2026-05-09 S3 redesign**）
 
-**问题**：60+ 文件大手术不能一次提交。怎么拆？
+**问题**：旧分阶段尝试（S3.A-D + S4 + S5）3 件事叠加复杂度过高，重设计后可以更细更安全。
 
-**决定**：分 5 个内部阶段（每个独立 commit，最终 1 个归档）。回退点设在 Stage 1 完成后。
+| Stage | 内容 | 状态 |
+|---|---|---|
+| **S0** | Token32 wrapper + 类型骨架（C#+Rust） | 🟢 commit `626beb8` |
+| **S1** | type_registry Vec restructure（VM 内部，吸收 Phase 2.D） | 🟢 commit `58f17b0`（**回退点**） |
+| **S2 step 1** | TokenAllocator standalone | 🟢 commit `3306659` |
+| **S2 step 2** | IrGen sibling output | 🟢 commit `dca32ee` |
+| **S3 (旧)** | v1.0 wire format + IMPT 扩展 + per-module IMPT + sort 协调 | ❌ broken @ `833193a` (wip/phase3-s3-broken) |
+| **S3a (新)** | Rust ZbcReader 接受 v1.0 + v0.9（双版本读，主写仍 v0.9） | 🟡 待实施 |
+| **S3b (新)** | C# ZbcWriter / ZbcReader 默认改 v1.0；stdlib + golden regen；测试全绿 | 🟡 待实施 |
+| **S3c (新)** | 清理 v0.9 fallback；Rust 拒绝 v0.9 zbc | 🟡 待实施 |
+| **S4 (旧)** | Rust Instruction enum 字段 String → newtype | ❌ 移入 Out of Scope（IR 字段保持 String） |
+| **S5** | Reproducibility tests + 文档同步 + 归档 | 🟡 待实施 |
 
-| Stage | 内容 | 可独立测试 | 回退安全 |
-|---|---|---|---|
-| **S0** | Token32 wrapper + 类型骨架（C#+Rust） | ✅ | ✅ |
-| **S1** | type_registry Vec restructure（仅 VM 内部，不动 zbc 格式） | ✅ cargo + VM golden | ✅（**回退点**） |
-| **S2** | TokenAllocator + IR records 类型迁移（C# 端） | ✅ dotnet test | ✅ |
-| **S3** | zbc 1.0 格式 bump：ZbcWriter / ZbcReader / Rust zbc_reader 同步 | ✅ round-trip | ⚠️（影响 stdlib） |
-| **S4** | VM 加载路径切换：loader / merge / lazy_loader / resolver / interp / jit | ✅ regen stdlib + 全测试 | ⚠️ |
-| **S5** | Reproducibility tests + CI gate + docs sync | ✅ | ✅ |
+**S3 三步骤 redesign 的关键**：
+- 每步独立 GREEN（main 不破）
+- S3a：runtime 兼容两版本 → 不破现有 v0.9 stdlib / golden
+- S3b：编译器切 v1.0 + regen 全部 artifacts → runtime 已能读，所以一次 commit 通过
+- S3c：清理（runtime 收紧到只读 v1.0）
 
-**回退条件触发**（Stage 3-4 中）：
-- 任一 Stage 工作量超出估算 1.5x → 停下评估
-- 某个核心架构决策需要重新讨论 → 停下评估
-- pre-existing 测试出现非平凡回归 → 停下修复
-
-**回退动作**：
-- 把 Stage 0/1 的 type_registry Vec restructure 单独归档为独立 spec（`restructure-type-registry-by-typeid`）
-- Stage 2-5 的成果回滚或保留为 WIP 分支
-- 重新规划余下工作
+**S3 + S4 + S5 的 BUILTIN/native 字段不变**：spec.md 已明确 BUILTIN.name / VCall.method / Field*.field_name / CallNative* 不 tokenize。
 
 ### Decision 7: 老 zbc 不留 fallback
 

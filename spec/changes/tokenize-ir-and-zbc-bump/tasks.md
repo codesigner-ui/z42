@@ -7,11 +7,18 @@
 ## 进度概览
 
 - [x] **S0**：审计 + Token32 骨架（commit `626beb8`）
-- [x] **S1**：type_registry Vec restructure（**回退点已建立**）
-- [ ] **S2**：TokenAllocator + IR records 迁移（C# 端，~2 天）
-- [ ] **S3**：zbc 1.0 格式 bump（C# + Rust 同步，~2 天）
-- [ ] **S4**：VM 加载路径切换 + stdlib regen（~3 天）
-- [ ] **S5**：Reproducibility tests + 文档同步 + 归档（~半天）
+- [x] **S1**：type_registry Vec restructure（commit `58f17b0`，**回退点**）
+- [x] **S2 step 1**：TokenAllocator standalone（commit `3306659`）
+- [x] **S2 step 2**：IrGen sibling output（commit `dca32ee`）
+- [ ] **S3a**：Rust ZbcReader 双版本支持（v0.9 + v1.0）
+- [ ] **S3b**：C# ZbcWriter/Reader 切 v1.0 + stdlib + golden regen
+- [ ] **S3c**：清理 v0.9 fallback
+- [ ] **S5**：Reproducibility tests + 文档同步 + 归档
+
+> **2026-05-09 redesign**：原 S3 (per-module IMPT + sort 协调) 失败 → WIP `wip/phase3-s3-broken` (commit `833193a`)。
+> 重设计后取消 IMPT 改造和 sort 协调，cross-zpkg 引用直接复用 STRS 池
+> (`IMPORT_BASE + str_idx`)。原 S4 (Rust IR enum 字段改 token) 移入 Out of Scope。
+> 新 S3a/b/c 三步替代旧 S3+S4，每步独立 GREEN。
 
 ---
 
@@ -108,74 +115,59 @@
 
 ---
 
-## S3 — zbc 1.0 格式 bump（C# + Rust 同步）
+## S3 — zbc 1.0 wire format（**2026-05-09 redesign**）
 
-### 3.1 C# 端 ZbcWriter
-- [ ] 3.1.1 `Opcodes.cs`：版本常量 1.0；IMPT 区段语义注释更新
-- [ ] 3.1.2 `ZbcWriter.cs`：写头部版本 1.0；IMPT 扩展为 `[(kind: u8, name_str_idx: u32)...]`，按字典序排
-- [ ] 3.1.3 `ZbcWriter.Instructions.cs`：所有 `pool.Idx(name)` 改 `token.Value`
-- [ ] 3.1.4 `StringPool.cs`：emit-time 排序检查（按 intern 顺序，不动）
+> 旧 S3 (per-module IMPT + sort 协调 + cross-module token 解析) 在
+> `wip/phase3-s3-broken` (commit `833193a`) 失败。重设计后取消 IMPT 扩展 +
+> 取消 sort 协调；cross-zpkg ref 直接复用 STRS 池 (`IMPORT_BASE + str_idx`)。
+> S4 / S5 (Rust IR enum 字段改 token / VM 加载路径切换) 统统**移入 Out of Scope**——
+> Rust 端 IR 字段保持 String，token 仅在 wire 边界进行编解码。
 
-### 3.2 C# 端 ZbcReader
-- [ ] 3.2.1 `ZbcReader.cs`：读 IMPT 扩展区段；version mismatch 报错
-- [ ] 3.2.2 `ZbcReader.Instructions.cs`：解码 token (u32)
+### S3a — Rust ZbcReader 双版本支持（unchanged main）
 
-### 3.3 Rust 端 zbc_reader
-- [ ] 3.3.1 `metadata/formats.rs`：`ZBC_VERSION = [1, 0]`；老版加载报错信息更新
-- [ ] 3.3.2 `metadata/bytecode.rs`：`Instruction` enum 字段类型 String → newtype（与 C# 端对称）
-- [ ] 3.3.3 `metadata/bytecode_serde.rs`：字段 serde 同步
-- [ ] 3.3.4 `metadata/bytecode.rs`：加 `ImportTable` / `ImportEntry` / `TokenKind` 类型
-- [ ] 3.3.5 `metadata/zbc_reader.rs`：1.0 解码 + IMPT 扩展
+> **目标**：runtime 兼容 v0.9 + v1.0 同时；C# 端不变；现有 stdlib (v0.9) 继续工作。
 
-### 3.4 round-trip 测试
-- [ ] 3.4.1 C# `ZbcRoundTripTests` 跑通（如已存在），否则补单元测试
-- [ ] 3.4.2 Rust `tests/zbc_compat.rs`：1.0 round-trip
+- [ ] 3a.1 `metadata/formats.rs`：保留 `ZBC_VERSION = [0, 9]` 不动（writer 仍是 0.9 来源）；新增常量 `ZBC_MAX_SUPPORTED = [1, 0]` 注释 reader 接受范围
+- [ ] 3a.2 `metadata/zbc_reader.rs::read_zbc`：读 major.minor 后判断分支；major == 0 → 走旧路径；major == 1 → 走新路径（token decoder）
+- [ ] 3a.3 `metadata/zbc_reader.rs`：实现 `decode_token_to_name(token, pool, local_funcs_or_classes) -> String`：
+  - `token < IMPORT_BASE` → 取 `local_table[token]`
+  - `token >= IMPORT_BASE` → 取 `pool[token - IMPORT_BASE]`
+  - `token == UNRESOLVED` → "<unresolved>"
+- [ ] 3a.4 `decode_instr` v1.0 分支：tokenizable opcodes (`Call/LoadFn/LoadFnCached/MkClos/ObjNew/IsInstance/AsCast`) 用新 decoder；其他不变
+- [ ] 3a.5 `read_func` 接受 `local_funcs: &[String]` + `local_classes: &[String]` 参数，从 sigs / classes 提供
+- [ ] 3a.6 packed-zpkg path 同步：`read_mods_section` 给 `read_func` 传 per-module local_funcs / local_classes（per-module 是 sigs slice + classes vec）
+- [ ] 3a.7 `tests/zbc_compat.rs` 加 v1.0 round-trip 测试（用 v1.0 hand-crafted bytes）
+- [ ] 3a.8 验证：现有 cargo test (260+) + VM golden (310/310) 全绿（reader 改动对 v0.9 输入零行为变化）
+- [ ] 3a.9 commit: `feat(vm): tokenize-ir-and-zbc-bump S3a — Rust ZbcReader supports both v0.9 and v1.0 (forward compat for compiler switch)`
 
-### 3.5 验证 + commit
-- [ ] 3.5.1 `dotnet build` + `cargo build` 全绿
-- [ ] 3.5.2 `dotnet test` + `cargo test`（VM golden 暂未跑因为 stdlib 还是 0.9） 全绿
-- [ ] 3.5.3 commit: `feat(zbc): S3 — zbc 1.0 format bump + IMPT extension (Phase 3)`
+### S3b — C# ZbcWriter / ZbcReader 切换 v1.0 + 全 regen
 
----
+> **目标**：编译器默认产 v1.0；stdlib + golden 全部 regen；测试全绿。Rust 已能读 v1.0 (S3a)。
 
-## S4 — VM 加载路径切换 + stdlib regen
+- [ ] 3b.1 `Tokens.cs`：保留 newtype 但简化（去掉 ImportTable / DiscoverImport / 排序）
+- [ ] 3b.2 `TokenAllocator.cs`：rewrite — 收 `module.Functions` / `module.Classes` 索引为 token；Resolve 时本地 → 索引，否则 → `IMPORT_BASE + pool.Idx(name)`
+- [ ] 3b.3 `TokenAllocatorTests.cs`：rewrite 反映新语义（源序、IMPORT_BASE 编码 cross-zpkg）
+- [ ] 3b.4 `ZbcWriter.cs`：版本常量 → `[1, 0]`；不动 IMPT 区段格式
+- [ ] 3b.5 `ZbcWriter.Instructions.cs`：tokenizable 字段 emit u32（`allocator.ResolveX(name).Value`），其他保持 `pool.Idx(...)`
+- [ ] 3b.6 `ZbcReader.cs` + `ZbcReader.Instructions.cs`：增加 v1.0 分支 + token decoder（与 Rust 对称）；同时仍能读 v0.9 直至 S3c 清理
+- [ ] 3b.7 `ZpkgWriter.Sections.cs::BuildModsSection`：每个内嵌 module 用同一 TokenAllocator 模式编 token；不需要 per-module IMPT 改造
+- [ ] 3b.8 `ZpkgReader.Sections.cs`：packed module decode 给 token decoder 提供 local_funcs (sigs slice) + local_classes (typeData decoded)
+- [ ] 3b.9 `IrGen.Generate.cs`：`_allocator = TokenAllocator.FromModule(module)` 已存在；不动逻辑
+- [ ] 3b.10 dotnet build 全绿
+- [ ] 3b.11 `./scripts/build-stdlib.sh` 重编 6 个 stdlib zpkg → v1.0
+- [ ] 3b.12 `./scripts/regen-golden-tests.sh` 重编 140 golden zbc → v1.0
+- [ ] 3b.13 dotnet test 全绿（含 round-trip）
+- [ ] 3b.14 cargo test 全绿
+- [ ] 3b.15 `./scripts/test-vm.sh` 全绿
+- [ ] 3b.16 commit: `feat(zbc): tokenize-ir-and-zbc-bump S3b — switch to zbc 1.0 wire format + stdlib + golden regen`
 
-### 4.1 加载路径
-- [ ] 4.1.1 `metadata/loader.rs`：移除 String→u32 解析（IR 已是 token）
-- [ ] 4.1.2 `metadata/merge.rs`：合并 import_tables + token remap
-- [ ] 4.1.3 `metadata/lazy_loader.rs`：走 import_table → 名字 → 解析 → 回写 IR 字段 token
-- [ ] 4.1.4 `metadata/resolver.rs`：删除 method_tokens / builtin_tokens / type_tokens / static_field_tokens / site_index；只保留 vcall_ic / field_ic 初始化
+### S3c — 清理 v0.9 fallback（pre-1.0 不留兼容）
 
-### 4.2 Interp 简化
-- [ ] 4.2.1 `interp/exec_instr.rs`：移除 `_site_idx` 参数；直接读 IR 字段 token
-- [ ] 4.2.2 `interp/exec_call.rs::call`：token 直查 module.functions，import token 走 import_table
-- [ ] 4.2.3 `interp/exec_call.rs::builtin`：BuiltinId 直查 BUILTINS
-- [ ] 4.2.4 `interp/exec_object.rs::obj_new`：TypeId 直查 type_registry_vec；ctor MethodId 同理
-- [ ] 4.2.5 `interp/exec_object.rs::is_instance / as_cast`：TypeId 直接走
-- [ ] 4.2.6 `interp/exec_object.rs::static_get / static_set`：StaticFieldId 直查
-- [ ] 4.2.7 `interp/exec_vcall.rs`：IC 输入参数变化（method 仍 string）
-
-### 4.3 JIT 简化
-- [ ] 4.3.1 `jit/translate.rs`：移除 method_id_at / static_field_id_at / vcall_ic_ptr_at / field_ic_ptr_at 的 site_index 中介；直接从 IR 字段读 token；emit `iconst.i32 <token.0>`
-- [ ] 4.3.2 `jit/helpers/call.rs::jit_call`：删除 name fallback 入参（intra 直接 token，import 走 import_table 由 helper 处理）
-- [ ] 4.3.3 `jit/helpers/object.rs::jit_obj_new`：TypeId / MethodId 直接入参
-- [ ] 4.3.4 `jit/helpers/object.rs::jit_static_get/set`：（已 token 化，跟随接口微调）
-- [ ] 4.3.5 `jit/helpers/vcall.rs`：method 仍 string，IC 输入跟随
-- [ ] 4.3.6 `jit/helpers/closure.rs::jit_load_fn / jit_mk_clos`：MethodId 入参
-- [ ] 4.3.7 `jit/helpers/registry.rs`：所有签名同步
-- [ ] 4.3.8 `jit/frame.rs / jit/mod.rs`：fn_entries_by_id 适配（入参可能从 i32 改 token）
-- [ ] 4.3.9 `corelib/mod.rs`：`builtin_id_of` 退化或保留作 import_table 名→id 反查
-
-### 4.4 stdlib regen
-- [ ] 4.4.1 `dotnet build src/compiler/z42.slnx -c Debug --no-incremental`
-- [ ] 4.4.2 重编 6 个 stdlib zpkg：`./scripts/build-stdlib.sh`（或对应脚本）
-- [ ] 4.4.3 重编 140 个 golden zbc：`./scripts/regen-golden-tests.sh`
-
-### 4.5 验证 + commit
-- [ ] 4.5.1 `cargo test` 全绿
-- [ ] 4.5.2 `dotnet test` 全绿
-- [ ] 4.5.3 `./scripts/test-vm.sh` 310/310 全绿
-- [ ] 4.5.4 commit: `feat(vm+jit): S4 — token-based dispatch + stdlib 1.0 regen (Phase 3)`
+- [ ] 3c.1 Rust `metadata/zbc_reader.rs::read_zbc`：major == 0 时直接 `bail!("zbc 1.0+ required, got 0.{minor}")`；删除 v0.9 instr decoder 分支（如有）
+- [ ] 3c.2 Rust `metadata/formats.rs`：`ZBC_VERSION = [1, 0]`（writer 不存在但常量更新作 reader 期望）
+- [ ] 3c.3 C# `ZbcReader.cs`：major == 0 时抛 `InvalidDataException("zbc 1.0+ required")`
+- [ ] 3c.4 dotnet test + cargo test + VM golden 全绿
+- [ ] 3c.5 commit: `chore(zbc): tokenize-ir-and-zbc-bump S3c — drop v0.x fallback (CLAUDE.md 不为旧版本提供兼容)`
 
 ---
 
