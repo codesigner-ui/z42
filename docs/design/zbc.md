@@ -453,4 +453,34 @@ z42c --assemble foo.zasm -o foo.zbc
 
 - `version_major` 变化 → 破坏性变更，VM 必须拒绝加载
 - `version_minor` 变化 → 新增操作码，旧 VM 遇到未知 opcode 报 `UnsupportedOpcode` 错误
-- 当前版本：`major=0, minor=1`
+- **当前版本**：`major=1, minor=0`（Phase 3 `tokenize-ir-and-zbc-bump`，2026-05-09）
+- pre-1.0 (0.x) 不支持，VM 加载时 bail。Phase 1+2 历史版本 0.1–0.9 已废弃；
+  artifacts 用 `scripts/build-stdlib.sh + scripts/regen-golden-tests.sh` 重生
+
+### Token 编码（v1.0+）
+
+Tokenizable IR 字段（`Call.func` / `LoadFn.func` / `LoadFnCached.func` /
+`MkClos.fn_name` / `ObjNew.{class_name, ctor_name}` / `IsInstance.class_name` /
+`AsCast.class_name`）以 u32 token 写入，编码语义：
+
+```
+intra-module:    [0,             0x7FFF_FFFE]   token = local index
+                                                  (Functions / Classes 索引)
+IMPORT_BASE:     0x8000_0000
+cross-zpkg:      [0x8000_0000,   0xFFFF_FFFE]   token - IMPORT_BASE = STRS idx
+UNRESOLVED:      0xFFFF_FFFF                    占位 / 错误状态
+```
+
+Decoder（C# `ZbcReader.IdMap` / Rust `metadata::zbc_reader::IdMap`）按 token
+范围分发：本地 token → `local_funcs[token]` 或 `local_classes[token]`；
+import token → `pool[token - IMPORT_BASE]`；UNRESOLVED → `<unresolved>` 诊断。
+
+Cross-zpkg 引用直接复用 STRS 池，**不引入新 IMPT entry 格式**；IMPT 区段保持
+v0.x 的 namespace 提取语义（用于 lazy zpkg 路由）。
+
+**不 tokenize** 的字段：`BuiltinInstr.Name`（closed set runtime 解析）、
+`VCallInstr.Method`（receiver-type-dependent，IC 路径）、
+`FieldGet/Set.FieldName` / `LoadFieldAddr.FieldName`（同上）、
+`StaticGet/Set.Field`（runtime lazy 全局编号）、
+`CallNative*.{Module,TypeName,Symbol}`（native interop separate concern）。
+这些字段继续以 STRS 池 idx 编码。

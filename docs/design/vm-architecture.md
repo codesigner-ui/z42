@@ -442,8 +442,8 @@ pub struct ResolvedTokens {
 |---|---|---|
 | 1 | Token newtypes + 加载期 resolver + interp 8 热路径 + StaticField 全局编号 + Field/VCall 单态 IC | 🟢 2026-05-08 |
 | 2 (sibling) | JIT helpers 接 MethodId/BuiltinId/StaticFieldId + VCall/Field IC（Option A — helper carries IC） | 🟢 2026-05-08 |
-| 3 (future) | zbc 格式 bump，IR struct 字段从 String 改 u32；type_registry 改 Vec-by-TypeId（同时落地 ObjNew TypeId 热路径） | 📋 待启动 |
-| 4 (future) | Compiler 端 token-aware emit；Phase 2.E Option B（JIT 机器码 inline IC check）作 perf 工作 | 📋 待启动 |
+| 3 | zbc 1.0 wire format（IR 字段 token 化：本地 = `module.Functions/Classes` 索引；cross-zpkg = `IMPORT_BASE + STRS idx`）+ type_registry Vec-by-TypeId（吸收 Phase 2.D） | 🟢 2026-05-09 |
+| 4 (future) | Compiler 端 token-aware emit perf；Phase 2.E Option B（JIT 机器码 inline IC check）作 perf 工作 | 📋 待启动 |
 
 > **Phase 2 边界**: Phase 2 已把 JIT helper 切到 token / IC 形态，但 dispatch
 > 仍走 helper-call 一次（Option A）。机器码 inline IC check（Option B，跳过
@@ -455,6 +455,15 @@ pub struct ResolvedTokens {
 > **Phase 2.D 推迟**: ObjNew TypeId 在 Phase 2 阶段是纯 observability（type_registry
 > 仍是 HashMap-by-name，dispatch 路径没有热路径键可换）；与其单独写一遍 helper
 > 签名变更，不如等 Phase 3 把 type_registry 改 Vec-by-TypeId 时一起切。
+>
+> **Phase 3 实施期决策（2026-05-09 redesign）**：原 Phase 3 设计要求 IMPT 区段
+> 扩展 + sort coordination + Rust Instruction enum 字段改 newtype。实施期发现
+> 三件复杂度叠加导致无法 GREEN（commit `833193a` 在 `wip/phase3-s3-broken` 分支
+> 保留作为反例）。重设计取消上述三项，改用：(1) STRS 池复用 + IMPORT_BASE bit
+> 编码 cross-zpkg 引用（不需新 IMPT 格式）；(2) 源序分配 token id（不需 sort
+> coordination）；(3) IR enum 字段保持 `String`，token 化只在 wire 边界发生。
+> 三步骤 (S3a/b/c) 每步独立 GREEN：S3a 让 Rust reader 双版本支持，S3b 切换
+> 编译器 + stdlib regen，S3c 清理 v0.x fallback。
 
 ### 与 D-1b `func_ref_cache_slots` 的关系
 
