@@ -21,15 +21,15 @@ public static partial class ZbcReader
         ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
 
-        // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): support both
-        // v0.9 and v1.0+. Token encoding differs (IMPORT_BASE bit on STRS
-        // pool); decoder dispatches via IdMap.
-        bool isV1 = major switch
-        {
-            0 => false,
-            1 => true,
-            _ => throw new InvalidDataException($"zbc major version {major} not supported (expected 0.x or 1.x)"),
-        };
+        // Phase 3 S3c (tokenize-ir-and-zbc-bump, 2026-05-09): require zbc 1.0+.
+        // Pre-1.0 not supported per CLAUDE.md "不为旧版本提供兼容".
+        if (major == 0)
+            throw new InvalidDataException(
+                $"zbc {major}.{minor} not supported; requires 1.0+. " +
+                "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
+        if (major > 1)
+            throw new InvalidDataException(
+                $"zbc major version {major} not supported (expected 1.x)");
 
         var dir = ReadDirectory(data, minor, secCount);
 
@@ -46,9 +46,8 @@ public static partial class ZbcReader
                                          sec => ReadSigsSection(sec, pool),
                                          new List<SigEntry>());
 
-        var idMap = isV1
-            ? IdMap.ForV1(pool, sigs.Select(s => s.Name).ToList(), classes.Select(c => c.Name).ToList())
-            : IdMap.ForV0(pool);
+        // Phase 3 S3c: v1.0+ exclusive — IdMap always v1.0 form.
+        var idMap = IdMap.ForV1(pool, sigs.Select(s => s.Name).ToList(), classes.Select(c => c.Name).ToList());
 
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
                                          sec => ReadFuncSection(sec, pool, idMap),
@@ -125,25 +124,19 @@ public static partial class ZbcReader
         public string[] Pool { get; }
         public IReadOnlyList<string> LocalFuncs { get; }
         public IReadOnlyList<string> LocalClasses { get; }
-        public bool IsV1 { get; }
 
-        private IdMap(string[] pool, IReadOnlyList<string> funcs, IReadOnlyList<string> classes, bool isV1)
+        private IdMap(string[] pool, IReadOnlyList<string> funcs, IReadOnlyList<string> classes)
         {
             Pool = pool;
             LocalFuncs = funcs;
             LocalClasses = classes;
-            IsV1 = isV1;
         }
 
-        public static IdMap ForV0(string[] pool) =>
-            new(pool, Array.Empty<string>(), Array.Empty<string>(), isV1: false);
-
         public static IdMap ForV1(string[] pool, IReadOnlyList<string> funcs, IReadOnlyList<string> classes) =>
-            new(pool, funcs, classes, isV1: true);
+            new(pool, funcs, classes);
 
         public string ResolveMethod(uint token)
         {
-            if (!IsV1) return token < Pool.Length ? Pool[token] : $"<str#{token}>";
             if (token == TokenConsts.Unresolved) return "<unresolved>";
             if (token >= TokenConsts.ImportBase)
             {
@@ -155,7 +148,6 @@ public static partial class ZbcReader
 
         public string ResolveType(uint token)
         {
-            if (!IsV1) return token < Pool.Length ? Pool[token] : $"<str#{token}>";
             if (token == TokenConsts.Unresolved) return "<unresolved>";
             if (token >= TokenConsts.ImportBase)
             {
@@ -449,12 +441,13 @@ public static partial class ZbcReader
 
     /// Exposes FUNC section decoding for ZpkgReader (packed mode module bodies).
     public static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> DecodeFuncSectionPublic(
-        byte[] data, string[] pool, IReadOnlyList<string>? localFuncs = null,
-        IReadOnlyList<string>? localClasses = null, bool isV1 = false)
+        byte[] data, string[] pool,
+        IReadOnlyList<string>? localFuncs = null,
+        IReadOnlyList<string>? localClasses = null)
     {
-        var idMap = isV1
-            ? IdMap.ForV1(pool, localFuncs ?? Array.Empty<string>(), localClasses ?? Array.Empty<string>())
-            : IdMap.ForV0(pool);
+        var idMap = IdMap.ForV1(pool,
+            localFuncs ?? Array.Empty<string>(),
+            localClasses ?? Array.Empty<string>());
         return ReadFuncSection(data, pool, idMap);
     }
 

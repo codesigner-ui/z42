@@ -354,19 +354,16 @@ struct FuncBody {
     line_table: Vec<crate::metadata::bytecode::LineEntry>,
 }
 
-// ── Phase 3 S3a (tokenize-ir-and-zbc-bump, 2026-05-09) ────────────────────────
+// ── Phase 3 S3c (tokenize-ir-and-zbc-bump, 2026-05-09) ────────────────────────
 //
-// IdMap: maps a u32 IR-field token to its FQ name string. Behaves differently
-// based on zbc version:
+// IdMap: maps a v1.0 zbc IR-field token to its FQ name string.
 //
-//   v0.9 (`is_v1 == false`): every token is a STRS pool index. Local tables
-//       ignored.
+//   • token < IMPORT_BASE   → `local_funcs[token]` or `local_classes[token]`
+//   • token >= IMPORT_BASE  → `pool[token - IMPORT_BASE]` (cross-zpkg STRS idx)
+//   • token == UNRESOLVED   → "<unresolved>" diagnostic placeholder
 //
-//   v1.0 (`is_v1 == true`):
-//       • token < IMPORT_BASE → `local_funcs[token]` or `local_classes[token]`
-//                                (depending on resolve flavour)
-//       • token >= IMPORT_BASE → `pool[token - IMPORT_BASE]` (cross-zpkg STRS idx)
-//       • token == UNRESOLVED → "<unresolved>" diagnostic placeholder
+// Pre-1.0 reading was supported in S3a/b transitionally, removed in S3c per
+// CLAUDE.md "不为旧版本提供兼容".
 
 const IMPORT_BASE_TOKEN: u32 = 0x8000_0000;
 const UNRESOLVED_TOKEN:  u32 = 0xFFFF_FFFF;
@@ -375,22 +372,14 @@ struct IdMap<'a> {
     pool: &'a [String],
     local_funcs:   Vec<String>,
     local_classes: Vec<String>,
-    is_v1: bool,
 }
 
 impl<'a> IdMap<'a> {
-    fn for_v0(pool: &'a [String]) -> Self {
-        Self { pool, local_funcs: vec![], local_classes: vec![], is_v1: false }
-    }
-
     fn for_v1(pool: &'a [String], local_funcs: Vec<String>, local_classes: Vec<String>) -> Self {
-        Self { pool, local_funcs, local_classes, is_v1: true }
+        Self { pool, local_funcs, local_classes }
     }
 
     fn resolve_method(&self, token: u32) -> Result<String> {
-        if !self.is_v1 {
-            return pool_str_owned(self.pool, token);
-        }
         if token == UNRESOLVED_TOKEN {
             return Ok("<unresolved>".to_owned());
         }
@@ -405,9 +394,6 @@ impl<'a> IdMap<'a> {
     }
 
     fn resolve_type(&self, token: u32) -> Result<String> {
-        if !self.is_v1 {
-            return pool_str_owned(self.pool, token);
-        }
         if token == UNRESOLVED_TOKEN {
             return Ok("<unresolved>".to_owned());
         }
@@ -797,13 +783,22 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
     // Phase 3 S3a (tokenize-ir-and-zbc-bump, 2026-05-09): support both v0.9
     // (legacy: IR refs are STRS pool indices) and v1.0 (token-encoded IR refs
-    // with IMPORT_BASE bit). Reject anything else.
-    let is_v1 = match major {
-        0 => false,
-        1 => true,
-        _ => bail!("zbc major version {major} not supported (expected 0.x or 1.x)"),
-    };
-    let has_is_static = is_v1 || minor >= 4;
+    // with IMPORT_BASE bit).
+    //
+    // Phase 3 S3c (2026-05-09): require zbc 1.0+. Pre-1.0 not supported per
+    // CLAUDE.md "不为旧版本提供兼容" — old artifacts must be regenerated via
+    // `scripts/build-stdlib.sh + scripts/regen-golden-tests.sh`.
+    if major == 0 {
+        bail!(
+            "zbc {major}.{minor} not supported; requires 1.0+. \
+             Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
+        );
+    }
+    if major > 1 {
+        bail!("zbc major version {major} not supported (expected 1.x)");
+    }
+    let _ = minor; // currently unused for v1.x dispatch
+    let has_is_static = true;  // v1.0+ always has is_static in SIGS
     let dir = read_directory(data, sec_count)?;
 
     let namespace = get_section(data, &dir, b"NSPC")
@@ -827,16 +822,12 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
         .transpose()?
         .unwrap_or_default();
 
-    // Phase 3 S3a: build IdMap based on detected version.
-    let id_map = if is_v1 {
-        IdMap::for_v1(
-            &pool_raw,
-            sigs.iter().map(|s| s.name.clone()).collect(),
-            classes.iter().map(|c| c.name.clone()).collect(),
-        )
-    } else {
-        IdMap::for_v0(&pool_raw)
-    };
+    // Phase 3 S3c: zbc 1.0+ exclusive — IdMap always v1.0.
+    let id_map = IdMap::for_v1(
+        &pool_raw,
+        sigs.iter().map(|s| s.name.clone()).collect(),
+        classes.iter().map(|c| c.name.clone()).collect(),
+    );
 
     let func_bodies = get_section(data, &dir, b"FUNC")
         .map(|s| read_func(s, &pool_raw, &id_map))
@@ -995,8 +986,16 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
     let flags     = u16::from_le_bytes([data[8], data[9]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
     let is_packed = flags & 0x01 != 0;
-    // zpkg v0.1+ always includes is_static in SIGS (no legacy format exists)
-    let has_is_static = minor >= 1;
+    // Phase 3 S3c (2026-05-09): zpkg minor must be 0.2+ (= v1.0 inner modules).
+    // Earlier zpkg minor 0.1 carried v0.9 zbc inner modules — no longer
+    // supported per CLAUDE.md "不为旧版本提供兼容".
+    if minor < 2 {
+        bail!(
+            "zpkg minor 0.{minor} not supported; requires 0.2+ (with v1.0 inner zbc). \
+             Run scripts/build-stdlib.sh to rebuild."
+        );
+    }
+    let has_is_static = true; // zpkg 0.2+ always has is_static in SIGS
 
     let dir = read_directory(data, sec_count)?;
 
@@ -1015,11 +1014,8 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
         // MODS: per-module FUNC+TYPE bodies
         let mods_sec = get_section(data, &dir, b"MODS")
             .ok_or_else(|| anyhow::anyhow!("packed zpkg missing MODS section"))?;
-        // Phase 3 S3a: zpkg minor 0.x → inner modules are v0.9 zbc (legacy
-        // pool-idx encoding); 0.2+ → v1.0 zbc with token-encoded IR refs.
-        // Today's writer emits 0.1; v1.0-bearing zpkg comes in S3b.
-        let inner_is_v1 = minor >= 2;
-        read_mods_section(mods_sec, &pool, &sigs, inner_is_v1)
+        // Phase 3 S3c: zpkg 0.2+ exclusive → inner modules always v1.0.
+        read_mods_section(mods_sec, &pool, &sigs)
     } else {
         // Indexed mode: FILE section lists .zbc paths, not loadable directly
         bail!("indexed zpkg cannot be loaded directly by the VM; use packed mode")
@@ -1071,7 +1067,6 @@ fn read_mods_section(
     sec: &[u8],
     pool: &[String],
     global_sigs: &[FuncSig],
-    inner_is_v1: bool,
 ) -> Result<Vec<(Module, String)>> {
     let mut c = Cursor::new(sec);
     let mod_count = c.read_u32()? as usize;
@@ -1093,17 +1088,12 @@ fn read_mods_section(
         let sigs_slice = &global_sigs[first_sig..first_sig + func_count.min(global_sigs.len() - first_sig.min(global_sigs.len()))];
 
         let classes = if type_len > 0 { read_type(type_data, pool)? } else { vec![] };
-        // Phase 3 S3a: build per-module IdMap. v0.9 ignores local tables;
-        // v1.0 uses local funcs (sigs slice) + local classes.
-        let id_map = if inner_is_v1 {
-            IdMap::for_v1(
-                pool,
-                sigs_slice.iter().map(|s| s.name.clone()).collect(),
-                classes.iter().map(|c| c.name.clone()).collect(),
-            )
-        } else {
-            IdMap::for_v0(pool)
-        };
+        // Phase 3 S3c: zpkg 0.2+ inner modules are v1.0; IdMap always v1.0.
+        let id_map = IdMap::for_v1(
+            pool,
+            sigs_slice.iter().map(|s| s.name.clone()).collect(),
+            classes.iter().map(|c| c.name.clone()).collect(),
+        );
         let func_bodies = read_func(func_data, pool, &id_map)?;
 
         let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {

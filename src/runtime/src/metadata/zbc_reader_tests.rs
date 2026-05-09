@@ -1,7 +1,7 @@
-//! Phase 3 S3a (tokenize-ir-and-zbc-bump, 2026-05-09) unit tests for IdMap.
+//! Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09) IdMap unit tests.
 //!
-//! IdMap is the v0.9-vs-v1.0 wire-format compat layer — verifies the
-//! decode logic in isolation before the C# writer flips to v1.0 emit (S3b).
+//! IdMap is the v1.0 wire-format token decoder. Pre-1.0 support was dropped
+//! in S3c per CLAUDE.md "不为旧版本提供兼容".
 
 use super::*;
 
@@ -14,33 +14,7 @@ fn pool_for_test() -> Vec<String> {
 }
 
 #[test]
-fn v0_resolve_method_treats_token_as_pool_idx() {
-    let pool = pool_for_test();
-    let id_map = IdMap::for_v0(&pool);
-
-    // v0.9 semantics: token == pool index, ignoring local tables.
-    assert_eq!(id_map.resolve_method(0).unwrap(), "Demo.Aaa");
-    assert_eq!(id_map.resolve_method(1).unwrap(), "Std.IO.Print");
-    assert_eq!(id_map.resolve_method(2).unwrap(), "Std.Math.Abs");
-}
-
-#[test]
-fn v0_resolve_type_treats_token_as_pool_idx() {
-    let pool = pool_for_test();
-    let id_map = IdMap::for_v0(&pool);
-    assert_eq!(id_map.resolve_type(0).unwrap(), "Demo.Aaa");
-    assert_eq!(id_map.resolve_type(2).unwrap(), "Std.Math.Abs");
-}
-
-#[test]
-fn v0_oob_pool_idx_errors() {
-    let pool = pool_for_test();
-    let id_map = IdMap::for_v0(&pool);
-    assert!(id_map.resolve_method(99).is_err());
-}
-
-#[test]
-fn v1_local_token_uses_local_funcs_table() {
+fn local_token_uses_local_funcs_table() {
     let pool = pool_for_test();
     let id_map = IdMap::for_v1(
         &pool,
@@ -54,7 +28,7 @@ fn v1_local_token_uses_local_funcs_table() {
 }
 
 #[test]
-fn v1_import_token_uses_pool() {
+fn import_token_uses_pool() {
     let pool = pool_for_test();
     let id_map = IdMap::for_v1(
         &pool,
@@ -68,7 +42,7 @@ fn v1_import_token_uses_pool() {
 }
 
 #[test]
-fn v1_local_class_token_uses_local_classes_table() {
+fn local_class_token_uses_local_classes_table() {
     let pool = pool_for_test();
     let id_map = IdMap::for_v1(
         &pool,
@@ -81,7 +55,7 @@ fn v1_local_class_token_uses_local_classes_table() {
 }
 
 #[test]
-fn v1_unresolved_token_returns_diagnostic_placeholder() {
+fn unresolved_token_returns_diagnostic_placeholder() {
     let pool = pool_for_test();
     let id_map = IdMap::for_v1(&pool, vec![], vec![]);
 
@@ -91,7 +65,7 @@ fn v1_unresolved_token_returns_diagnostic_placeholder() {
 }
 
 #[test]
-fn v1_local_token_oob_errors() {
+fn local_token_oob_errors() {
     let pool = pool_for_test();
     let id_map = IdMap::for_v1(
         &pool,
@@ -102,7 +76,7 @@ fn v1_local_token_oob_errors() {
 }
 
 #[test]
-fn v1_import_token_to_oob_pool_errors() {
+fn import_token_to_oob_pool_errors() {
     let pool = pool_for_test();
     let id_map = IdMap::for_v1(&pool, vec![], vec![]);
 
