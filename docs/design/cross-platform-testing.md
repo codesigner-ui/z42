@@ -89,10 +89,33 @@ pub struct RunOptions {
 }
 
 pub struct PlatformInfo {
-    pub name:    &'static str,       // "host" / "wasm" / "android" / "ios"
-    pub mode:    ExecMode,           // Interp / Jit / Aot
-    pub features: &'static [&'static str], // 已编译的 cargo features
+    pub name:         &'static str,       // "host" / "wasm" / "android" / "ios"
+    pub mode:         ExecMode,           // Interp / Jit / Aot
+    pub capabilities: CapabilitySet,      // bitset of supported capabilities
 }
+
+/// Closed enum — adding a new capability requires updating both the enum
+/// and the C# AttributeBinder's whitelist (E0917 unknown-capability check).
+bitflags! {
+    pub struct CapabilitySet: u16 {
+        const JIT        = 0b0000_0001;
+        const AOT        = 0b0000_0010;
+        const THREADING  = 0b0000_0100;
+        const FILESYSTEM = 0b0000_1000;
+        const NETWORK    = 0b0001_0000;
+        const DLOPEN     = 0b0010_0000;
+        const SUBPROCESS = 0b0100_0000;
+    }
+}
+
+// 各平台编译期常量
+pub const HOST_CAPS:    CapabilitySet = CapabilitySet::all();
+pub const WASM_CAPS:    CapabilitySet = CapabilitySet::empty();   // 暂全无；Worker+SAB 落地后开 THREADING
+pub const ANDROID_CAPS: CapabilitySet = CapabilitySet::THREADING.union(CapabilitySet::FILESYSTEM)
+                                                                  .union(CapabilitySet::NETWORK);
+pub const IOS_CAPS:     CapabilitySet = CapabilitySet::THREADING.union(CapabilitySet::FILESYSTEM)
+                                                                  .union(CapabilitySet::NETWORK);
+// JIT / AOT / DLOPEN / SUBPROCESS 在 mobile / wasm 全 false（policy / sandbox）
 
 pub enum TestResult {
     Pass    { name: String, duration_ns: u64 },
@@ -183,49 +206,98 @@ class Z42TestRunnerTests: XCTestCase {
 
 ## 测试选择性（skip 机制）
 
+两层机制，先 capability 后 platform：
+
+| 层级 | Attribute | 用途 |
+|---|---|---|
+| **能力门控**（首选） | `[Feature("threading")]` | 测试需要某项**能力**才能运行；任何不具备该能力的平台自动 skip |
+| **平台 escape hatch** | `[SkipPlatform("ios")]` | 测试因平台特定 bug / 限制需跳过，**与能力无关** |
+
 ### 既有：`[Skip]` attribute
 
 `testing.md` R1 已支持 `[Skip(reason: ...)]`（无条件）+ TIDX `skip_reason` 字段。
 
-### 新增：`[SkipPlatform]`
+### 能力注册表（Capability Registry）
+
+平台能力是**封闭枚举**，避免拼写错误 / 漂移。当前定义：
+
+| Capability | 含义 | host | wasm | android | ios |
+|---|---|:---:|:---:|:---:|:---:|
+| `jit` | Cranelift JIT codegen | ✅ | ❌ 沙箱禁动态 codegen | ✅ M9+ | ❌ App Store policy |
+| `aot` | AOT 编译产物（M9+） | ⚠️ 占位 | ❌ | ⚠️ 占位 | ⚠️ 占位 |
+| `threading` | 多线程执行（pthread / Worker / GCD） | ✅ | ⚠️ 仅 Worker+SAB | ✅ | ✅ |
+| `filesystem` | 完整 POSIX 文件 I/O | ✅ | ❌ 默认无 | ⚠️ scoped storage | ⚠️ sandbox |
+| `network` | TCP socket / HTTP client | ✅ | ⚠️ fetch / WebSocket | ✅ | ✅ |
+| `dlopen` | 动态加载 native library（FFI） | ✅ | ❌ | ⚠️ NDK only | ❌ App Store |
+| `subprocess` | spawn 子进程 | ✅ | ❌ | ❌ | ❌ App Store |
+
+平台能力集在编译期由 cargo features 决定，运行时通过 `PlatformInfo.capabilities` 暴露给 runner。
+
+> **多线程具体语义**：z42 的并发模型属 L3 范围（参 [features.md](features.md)），尚未落地。`threading` capability 现在主要给 stdlib `Std.Threading` 类（占位）+ 未来 `async`/`Task` 测试预留接口。落地之前所有用例不带 `[Feature("threading")]`，capability 默认对所有平台 false。
+
+### 既有：`[Feature]` attribute（扩用法）
 
 ```z42
 [Test]
-[SkipPlatform("wasm", reason: "no filesystem")]
-void test_file_io() { ... }
+[Feature("jit")]
+void test_jit_inlining() { ... }       // 仅 host 跑（其他平台 capabilities 不含 jit）
 
 [Test]
-[SkipPlatform("ios", reason: "no JIT, test verifies JIT-specific behavior")]
-[Feature("jit")]
-void test_jit_inlining() { ... }
+[Feature("threading")]                  // 未来 L3 落地后启用
+void test_parallel_map() { ... }
+
+[Test]
+[Feature("filesystem")]
+void test_read_file() { ... }            // host + 带 filesystem 的移动平台 sandbox 路径
+
+[Test]
+[Feature("threading", "filesystem")]    // AND 语义：两项都需要
+void test_concurrent_log_write() { ... }
 ```
 
-编译器在 TIDX 写 `skip_platforms: List<String>`（已有 `platform: String` 字段，扩为列表）。runner 在 `RunOptions.platform.name` 与该列表匹配时 → status=Skip。
+runner 检查：`RunOptions.platform.capabilities.is_superset_of(test.required_features)` 不满足 → status=Skip。
 
-**默认行为**：所有 `src/tests/` + `src/libraries/<lib>/tests/` 的用例在每个平台都跑。`[SkipPlatform]` 是显式 opt-out。
+### `[SkipPlatform]` —— 平台特定 escape hatch
 
-### Feature gate 联动
+仅当**问题与能力无关**（例如 wasm runtime 某版本 bug、特定平台数值精度差异）时使用：
 
-`[Feature("jit")]` 已存在 → runner 在 `RunOptions.platform.features` 不含 `"jit"` 时 skip。复用现有路径。
+```z42
+[Test]
+[SkipPlatform("wasm", reason: "wasm-bindgen 0.2.x bug #1234")]
+void test_some_specific_case() { ... }
+```
+
+编译器在 TIDX 写 `skip_platforms: List<String>`（R1 已有 `platform: String` 字段，扩为列表）。
+
+**优先级原则**：能用 `[Feature]` 表达就**不要**用 `[SkipPlatform]`。`[Feature]` 是声明式（"此测试需要 X 能力"），`[SkipPlatform]` 是命令式（"在 Y 平台跳过"）—— 前者会随平台能力升级自动启用，后者需手动维护。
+
+### 默认行为
+
+所有 `src/tests/` + `src/libraries/<lib>/tests/` 的用例在每个平台都跑（除 `[Feature]` / `[SkipPlatform]` / `[Skip]` 显式 opt-out 外）。
 
 ---
 
 ## 跨平台 parity 期望
 
-| 测试类别 | host | wasm | android | ios |
-|---|:---:|:---:|:---:|:---:|
-| 基础语法 / 类型 / 控制流 | ✅ | ✅ | ✅ | ✅ |
-| 类 / 接口 / 继承 / 泛型 | ✅ | ✅ | ✅ | ✅ |
-| 异常 / try-catch | ✅ | ✅ | ✅ | ✅ |
-| GC / 弱引用 | ✅ | ⚠️ 可能时序差异 | ✅ | ✅ |
-| Closure / Lambda | ✅ | ✅ | ✅ | ✅ |
-| ref/out/in（dir-mode 含 interp_only marker） | ✅ interp | ✅ interp | ✅ interp | ✅ interp |
-| Native FFI（dlopen 路径） | ✅ | ❌ skip | ⚠️ 受限 | ❌ skip |
-| Filesystem stdlib | ✅ | ❌ skip | ⚠️ scoped | ⚠️ scoped |
-| Cross-zpkg 多包 | ✅ | 暂不跑 | 暂不跑 | 暂不跑 |
-| JIT 专项（如 jit_transitive） | ✅ jit | ❌ skip | ❌ skip | ❌ skip |
+| 测试类别 | 用到的 capability | host | wasm | android | ios |
+|---|---|:---:|:---:|:---:|:---:|
+| 基础语法 / 类型 / 控制流 | — | ✅ | ✅ | ✅ | ✅ |
+| 类 / 接口 / 继承 / 泛型 | — | ✅ | ✅ | ✅ | ✅ |
+| 异常 / try-catch | — | ✅ | ✅ | ✅ | ✅ |
+| Closure / Lambda | — | ✅ | ✅ | ✅ | ✅ |
+| GC / 弱引用 | — | ✅ | ⚠️ 时序差异 | ✅ | ✅ |
+| ref/out/in（dir-mode + interp_only） | — | ✅ interp | ✅ interp | ✅ interp | ✅ interp |
+| JIT 专项（如 jit_transitive） | `jit` | ✅ | skip | ✅ M9+ | skip |
+| Multithreading（L3+） | `threading` | ✅ | ⚠️ Worker+SAB | ✅ | ✅ |
+| Filesystem stdlib | `filesystem` | ✅ | skip | ✅ scoped | ✅ sandbox |
+| Network stdlib | `network` | ✅ | ⚠️ fetch only | ✅ | ✅ |
+| Native FFI（dlopen 路径） | `dlopen` | ✅ | skip | ⚠️ NDK | skip |
+| Subprocess spawn | `subprocess` | ✅ | skip | skip | skip |
+| Cross-zpkg 多包 | — | ✅ | 暂不跑 | 暂不跑 | 暂不跑 |
 
-> 比例预估：当前 157 case → 各平台预计跑 ~140 个（gc-cycle / weak / jit / native FFI / filesystem 大概 15-17 个用 `[SkipPlatform]`）。
+`skip` = 测试自动跳过（缺所需 capability）；`⚠️` = 子集可跑或语义略有差异。
+
+> 比例预估：当前 157 case → 各平台预计跑 ~140 个（jit / native FFI / filesystem 共 ~15-17 个 capability-gated；threading 类 L3 起逐步增加）。
 
 ---
 
@@ -311,6 +383,26 @@ jobs:
 - 单一真相来源；CI runner 不需维护额外清单
 - 代价：需要给 [SkipPlatform] 加 attribute validator（E0916+ 错误码）—— 现有 R4.A 框架可扩
 
+### Decision 4: Capability 表示 —— 字符串 vs 封闭枚举
+
+**问题：** `[Feature("jit")]` 的参数是任意字符串还是封闭枚举？
+
+**选项：**
+- **A：开放字符串** —— 任何字符串都接受；runner 与 PlatformInfo.capabilities 做字符串集合比较
+- **B：封闭枚举（采纳）** —— 编译期把 `"jit"` / `"threading"` 等映射到 `CapabilitySet` 位；attribute validator 拒绝未注册名称（E0917 unknown-capability）
+
+**采纳 B**：
+- 拼写错误（`[Feature("threadnig")]`）会变"永远 skip"的隐形 bug；封闭枚举编译期拒绝
+- Runtime 用 bitset 比对比字符串 set 快（runner 启动 O(1)）
+- 强制开发者通过 PR 把新 capability 加进表 → 触发讨论"这能力意味着什么、各平台是否提供"
+- 代价：每加新 capability 改 enum 定义 + C# 端 whitelist + 各平台常量；接受这个 friction，因为 capability 数量本就少（10 内）
+
+**新 capability 的添加流程：**
+1. `src/runtime/src/test_runner/capabilities.rs` 加 enum variant
+2. 各 `<PLATFORM>_CAPS` 常量决定该平台是否提供
+3. C# 端 `CapabilityRegistry.cs` whitelist 加入名称（attribute validator 用）
+4. `cross-platform-testing.md` capability 矩阵表加一行
+
 ---
 
 ## 实施分期建议
@@ -321,8 +413,12 @@ jobs:
    spec：[rewrite-z42-test-runner-compile-time](../../spec/changes/rewrite-z42-test-runner-compile-time/) （已 DRAFT）
    交付：`pub fn run_zbc(...)`，CLI 改成调用库；host 现有 `./scripts/test-stdlib.sh` 不变
 
-2. **Phase 2 — `[SkipPlatform]` attribute**（轻量）
-   新 spec（小）：扩 TIDX `skip_platforms`、加 attribute validator、runner 读 RunOptions.platform.name 匹配
+2. **Phase 2 — Capability 注册表 + `[SkipPlatform]` attribute**（轻量）
+   新 spec（小）：
+   - `CapabilitySet` enum 在 Rust + C# 端各定义一份（七项初始 capability：jit / aot / threading / filesystem / network / dlopen / subprocess）
+   - `[Feature(name)]` validator：name 必须在白名单（E0917 unknown-capability）
+   - `[SkipPlatform(name, reason)]` validator：name ∈ {"host", "wasm", "android", "ios"}（E0918）
+   - runner `RunOptions.platform.capabilities` 与 `test.required_caps` 做 superset 比对
 
 3. **Phase 3 — host CI 产 zbc artifact bundle**（轻量）
    新 spec（小）：`./scripts/build-test-zbcs.sh` 把所有 `src/tests/**/*.z42` + `src/libraries/<lib>/tests/*.z42` 编译到 `artifacts/test-zbcs/`，CI upload
@@ -339,6 +435,8 @@ jobs:
 
 ## Deferred / Open Questions
 
+- **Threading 语义**：`threading` capability 已声明，但 z42 并发模型（`async` / `Task<T>` / `lock` 等）属 L3 范围、尚未有规范。**Phase 1-5 内不会有任何 `[Feature("threading")]` 测试**。capability 注册先就位，等 L3 并发设计落地（独立 spec）后第一批 threading 测试同时进
+- **wasm threading 路径**：浏览器 multi-threading 依赖 SharedArrayBuffer + `COOP/COEP` HTTP headers，不是 wasm-bindgen 默认。等 L3 并发落地时单独评估是否 wasm 跑（可能默认 `WASM_CAPS` 不含 THREADING，仅在 `+sab` build target 上开启）
 - **Bencher 跨平台**：`Std.Test.Bencher` 用 `__bench_now_ns` builtin。wasm 需用 `performance.now()` 桥；移动平台用 `clock_gettime`。每平台需要一个 native shim。Phase 4/5 内解决。
 - **真机 CI**：iOS / Android 真机租用（BrowserStack / Firebase Test Lab）成本与稳定性 trade-off，v0.1 simulator/emulator 即可，真机走 manual smoke
 - **stdout 字符编码**：移动平台 NSString / Java String 都是 UTF-16，golden 比对前要 normalize 到 UTF-8 + LF。`Std.Test.TestIO.captureStdout` 已是 UTF-8 string，platform binding 转字符串时遵循
