@@ -2,6 +2,7 @@ using FluentAssertions;
 using Z42.Core.Diagnostics;
 using Z42.Core.Features;
 using Z42.IR;
+using Z42.IR.BinaryFormat;
 using Z42.Semantics.Codegen;
 using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Lexer;
@@ -10,8 +11,8 @@ using Z42.Syntax.Parser;
 namespace Z42.Tests;
 
 /// <summary>
-/// Phase 3 S2 step 2 (<c>tokenize-ir-and-zbc-bump</c>, 2026-05-09): verifies
-/// IrGen produces a populated <see cref="TokenAllocator"/> sibling output.
+/// Phase 3 S3b (<c>tokenize-ir-and-zbc-bump</c>, 2026-05-09 redesigned):
+/// verifies IrGen produces a populated <see cref="TokenAllocator"/> sibling output.
 /// </summary>
 public class IrGenTokenAllocatorTests
 {
@@ -39,13 +40,11 @@ public class IrGenTokenAllocatorTests
             """;
 
         var (_, allocator) = Compile(src);
-
         allocator.Should().NotBeNull(because: "IrGen.Allocator should be set after Generate()");
-        allocator!.ImportTable.Should().NotBeNull();
     }
 
     [Fact]
-    public void LocalClass_Is_Registered_As_Intra_Module()
+    public void LocalClass_ResolvesToInsertionIndex()
     {
         const string src = """
             namespace Demo;
@@ -53,17 +52,18 @@ public class IrGenTokenAllocatorTests
             class Bar { public Bar() {} }
             """;
 
-        var (_, allocator) = Compile(src);
+        var (module, allocator) = Compile(src);
         allocator.Should().NotBeNull();
+        var pool = new StringPool();
 
-        var fooId = allocator!.ResolveType("Demo.Foo");
-        var barId = allocator.ResolveType("Demo.Bar");
+        // module.Classes is in source order: Foo, Bar
+        var fooToken = allocator!.ResolveType("Demo.Foo", pool);
+        var barToken = allocator.ResolveType("Demo.Bar", pool);
 
-        fooId.IsImport.Should().BeFalse();
-        barId.IsImport.Should().BeFalse();
-        // Determinism: TypeIds assigned in Ordinal order — "Demo.Bar" < "Demo.Foo"
-        barId.Value.Should().Be(0u);
-        fooId.Value.Should().Be(1u);
+        fooToken.Should().BeLessThan(TokenConsts.ImportBase, "local class");
+        barToken.Should().BeLessThan(TokenConsts.ImportBase, "local class");
+        fooToken.Should().Be((uint)module.Classes.FindIndex(c => c.Name == "Demo.Foo"));
+        barToken.Should().Be((uint)module.Classes.FindIndex(c => c.Name == "Demo.Bar"));
     }
 
     [Fact]
@@ -74,11 +74,13 @@ public class IrGenTokenAllocatorTests
             int main() { return 0; }
             """;
 
-        var (_, allocator) = Compile(src);
+        var (module, allocator) = Compile(src);
         allocator.Should().NotBeNull();
+        var pool = new StringPool();
 
-        var mainId = allocator!.ResolveMethod("Demo.main");
-        mainId.IsImport.Should().BeFalse();
+        var mainToken = allocator!.ResolveMethod("Demo.main", pool);
+        mainToken.Should().BeLessThan(TokenConsts.ImportBase, "local fn");
+        mainToken.Should().Be((uint)module.Functions.FindIndex(f => f.Name == "Demo.main"));
     }
 
     [Fact]
@@ -96,9 +98,11 @@ public class IrGenTokenAllocatorTests
 
         a.Should().NotBeNull();
         b.Should().NotBeNull();
+        var pool1 = new StringPool();
+        var pool2 = new StringPool();
 
-        a!.ResolveType("Demo.Foo").Should().Be(b!.ResolveType("Demo.Foo"));
-        a.ResolveType("Demo.Bar").Should().Be(b.ResolveType("Demo.Bar"));
-        a.ResolveMethod("Demo.main").Should().Be(b.ResolveMethod("Demo.main"));
+        a!.ResolveType("Demo.Foo",  pool1).Should().Be(b!.ResolveType("Demo.Foo",  pool2));
+        a.ResolveType("Demo.Bar",   pool1).Should().Be(b.ResolveType("Demo.Bar",   pool2));
+        a.ResolveMethod("Demo.main",pool1).Should().Be(b.ResolveMethod("Demo.main",pool2));
     }
 }

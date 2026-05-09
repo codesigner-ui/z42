@@ -12,8 +12,15 @@ public static partial class ZbcWriter
     private static void WriteInstr(
         BinaryWriter w, IrInstr instr,
         StringPool pool, int[] strRemap,
-        Dictionary<string, ushort> blockIdx)
+        Dictionary<string, ushort> blockIdx,
+        TokenAllocator allocator)
     {
+        // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): tokenizable IR
+        // fields (Call.Func, LoadFn.Func, ObjNew.Class/Ctor, IsInstance.Class,
+        // AsCast.Class, etc.) emit u32 token via allocator. Local refs become
+        // their `module.Functions` / `module.Classes` index; cross-zpkg refs
+        // become `IMPORT_BASE + STRS pool idx`. Other (Builtin / VCall /
+        // FieldGet/Set / StaticGet/Set / native) keep `pool.Idx(name)` u32.
         switch (instr)
         {
             case ConstStrInstr i:
@@ -77,7 +84,7 @@ public static partial class ZbcWriter
 
             case CallInstr i:
                 w.Write(Opcodes.Call); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                w.Write((uint)pool.Idx(i.Func));
+                w.Write(allocator.ResolveMethod(i.Func, pool));
                 WriteArgs(w, i.Args);
                 break;
             // Spec impl-ref-out-in-runtime: address-load opcodes
@@ -102,11 +109,11 @@ public static partial class ZbcWriter
                 break;
             case LoadFnInstr i:
                 w.Write(Opcodes.LoadFn); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                w.Write((uint)pool.Idx(i.Func));
+                w.Write(allocator.ResolveMethod(i.Func, pool));
                 break;
             case LoadFnCachedInstr i:
                 w.Write(Opcodes.LoadFnCached); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                w.Write((uint)pool.Idx(i.Func));
+                w.Write(allocator.ResolveMethod(i.Func, pool));
                 w.Write(i.SlotId);
                 break;
             case CallIndirectInstr i:
@@ -116,7 +123,7 @@ public static partial class ZbcWriter
                 break;
             case MkClosInstr i:
                 w.Write(Opcodes.MkClos); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                w.Write((uint)pool.Idx(i.FuncName));
+                w.Write(allocator.ResolveMethod(i.FuncName, pool));
                 // 2026-05-02 impl-closure-l3-escape-stack: 1 byte stack_alloc flag
                 w.Write((byte)(i.StackAlloc ? 1 : 0));
                 WriteArgs(w, i.Captures);
@@ -151,8 +158,8 @@ public static partial class ZbcWriter
 
             case ObjNewInstr i:
                 w.Write(Opcodes.ObjNew); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                w.Write((uint)pool.Idx(i.ClassName));
-                w.Write((uint)pool.Idx(i.CtorName));
+                w.Write(allocator.ResolveType(i.ClassName, pool));
+                w.Write(allocator.ResolveMethod(i.CtorName, pool));
                 WriteArgs(w, i.Args);
                 // D-8b-3 Phase 2: type_args 列表（resolved 泛型类型参数）
                 {
@@ -163,11 +170,11 @@ public static partial class ZbcWriter
                 break;
             case IsInstanceInstr i:
                 w.Write(Opcodes.IsInstance); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                WriteReg(w, i.Obj); w.Write((uint)pool.Idx(i.ClassName));
+                WriteReg(w, i.Obj); w.Write(allocator.ResolveType(i.ClassName, pool));
                 break;
             case AsCastInstr i:
                 w.Write(Opcodes.AsCast); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
-                WriteReg(w, i.Obj); w.Write((uint)pool.Idx(i.ClassName));
+                WriteReg(w, i.Obj); w.Write(allocator.ResolveType(i.ClassName, pool));
                 break;
 
             case ArrayNewInstr i:

@@ -28,8 +28,8 @@ namespace Z42.IR.BinaryFormat;
 /// </summary>
 public static partial class ZbcWriter
 {
-    public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 9;   // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): new opcode `DefaultOf` (0xB0); old VMs cannot decode
+    public const ushort VersionMajor = 1;
+    public const ushort VersionMinor = 0;   // 2026-05-09 tokenize-ir-and-zbc-bump (Phase 3 S3b): IR fields tokenized via TokenAllocator (local index OR IMPORT_BASE + STRS idx for cross-zpkg). Pre-1.0 not readable by current runtime.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -40,10 +40,17 @@ public static partial class ZbcWriter
     /// </summary>
     public static byte[] Write(
         IrModule             module,
-        ZbcFlags             flags   = ZbcFlags.None,
-        IEnumerable<string>? exports = null)
+        ZbcFlags             flags     = ZbcFlags.None,
+        IEnumerable<string>? exports   = null,
+        TokenAllocator?      allocator = null)
     {
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
+
+        // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): drive IR-field
+        // token encoding via TokenAllocator. Caller may thread one through
+        // (e.g. `IrGen.Allocator`); else build fresh from module — the
+        // factory uses the same algorithm so determinism holds either way.
+        allocator ??= TokenAllocator.FromModule(module);
 
         var exportSet = exports is null
             ? module.Functions.Select(f => f.Name).ToHashSet()
@@ -62,7 +69,7 @@ public static partial class ZbcWriter
         if (stripped)
         {
             sections.Add((SectionTags.Bstr, BuildStrpSection(pool)));
-            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
+            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap, allocator)));
         }
         else
         {
@@ -71,7 +78,7 @@ public static partial class ZbcWriter
             sections.Add((SectionTags.Sigs, BuildSigsSection(module.Functions, pool)));
             sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
             sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
-            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
+            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap, allocator)));
 
             // DBUG section: line table + local variable names
             bool hasDebug = module.Functions.Any(f =>
@@ -400,8 +407,14 @@ public static partial class ZbcWriter
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
-        w.Write((uint)imports.Count);
-        foreach (var imp in imports) w.Write((uint)pool.Idx(imp));
+        // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): sort imports
+        // for deterministic output (HashSet iteration is hash-ordered, not
+        // reproducible across runs). Imports are diagnostic / namespace-scan
+        // metadata only — IR fields encode cross-zpkg refs via IMPORT_BASE +
+        // STRS idx, so this section's role is reduced.
+        var sortedImports = imports.OrderBy(x => x, StringComparer.Ordinal).ToList();
+        w.Write((uint)sortedImports.Count);
+        foreach (var imp in sortedImports) w.Write((uint)pool.Idx(imp));
 
         return ms.ToArray();
     }
@@ -428,7 +441,7 @@ public static partial class ZbcWriter
     // ── FUNC section (function bodies, both modes) ────────────────────────────
 
     public static byte[] BuildFuncSection(
-        List<IrFunction> functions, StringPool pool, int[] strRemap)
+        List<IrFunction> functions, StringPool pool, int[] strRemap, TokenAllocator allocator)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -450,7 +463,7 @@ public static partial class ZbcWriter
                 blockOffsets[bi] = (uint)instrMs.Position;
                 var block = fn.Blocks[bi];
                 foreach (var instr in block.Instructions)
-                    WriteInstr(iw, instr, pool, strRemap, blockIdx);
+                    WriteInstr(iw, instr, pool, strRemap, blockIdx, allocator);
                 WriteTerminator(iw, block.Terminator, blockIdx);
             }
             iw.Flush();

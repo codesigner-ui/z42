@@ -1,213 +1,133 @@
 using FluentAssertions;
 using Z42.IR;
+using Z42.IR.BinaryFormat;
 
 namespace Z42.Tests;
 
 /// <summary>
-/// Phase 3 (<c>tokenize-ir-and-zbc-bump</c>, 2026-05-09): verifies determinism
-/// and import_table ordering invariants of <see cref="TokenAllocator"/>.
+/// Phase 3 (<c>tokenize-ir-and-zbc-bump</c>, 2026-05-09 redesigned): verifies
+/// <see cref="TokenAllocator"/> returns local indices for intra-module
+/// references and <c>IMPORT_BASE + STRS idx</c> for cross-zpkg references.
 /// </summary>
 public class TokenAllocatorTests
 {
-    // ── Determinism: same registration set → same IDs regardless of order ──
-
-    [Fact]
-    public void TypeId_AssignedInOrdinalOrder()
+    private static IrModule BuildModule(string[] funcNames, string[] classNames)
     {
-        var a = new TokenAllocator();
-        a.RegisterClass("Demo.Bbb");
-        a.RegisterClass("Demo.Aaa");
-        a.RegisterClass("Demo.Ccc");
-        a.Build();
-
-        a.ResolveType("Demo.Aaa").Value.Should().Be(0u);
-        a.ResolveType("Demo.Bbb").Value.Should().Be(1u);
-        a.ResolveType("Demo.Ccc").Value.Should().Be(2u);
+        var fns = funcNames
+            .Select(n => new IrFunction(n, 0, "void", "Interp",
+                Blocks: new List<IrBlock> { new("entry", new List<IrInstr>(), new RetTerm(null)) }))
+            .ToList();
+        var classes = classNames
+            .Select(n => new IrClassDesc(n, BaseClass: null, Fields: new List<IrFieldDesc>()))
+            .ToList();
+        return new IrModule("Test", new List<string>(), classes, fns);
     }
 
     [Fact]
-    public void MethodId_AssignedInOrdinalOrder()
+    public void LocalFunction_ResolvesToInsertionIndex()
     {
-        var a = new TokenAllocator();
-        // Simulate IrGen registering in arbitrary visit order.
-        a.RegisterMethod("Foo.zzz");
-        a.RegisterMethod("Aaa.bar");
-        a.RegisterMethod("Foo.bar$2");
-        a.RegisterMethod("Foo.bar");
-        a.Build();
+        var m = BuildModule(new[] { "Demo.First", "Demo.Second", "Demo.Third" }, Array.Empty<string>());
+        var a = TokenAllocator.FromModule(m);
+        var pool = new StringPool();
 
-        // String.CompareOrdinal: '$' (0x24) < 'a' (0x61). Hence "Foo.bar$2" < "Foo.bar".
-        // Wait — actually "Foo.bar" < "Foo.bar$2" because the shorter is prefix.
-        // CompareOrdinal: shorter prefix sorts first.
-        a.ResolveMethod("Aaa.bar").Value.Should().Be(0u);
-        a.ResolveMethod("Foo.bar").Value.Should().Be(1u);
-        a.ResolveMethod("Foo.bar$2").Value.Should().Be(2u);
-        a.ResolveMethod("Foo.zzz").Value.Should().Be(3u);
+        a.ResolveMethod("Demo.First",  pool).Should().Be(0u);
+        a.ResolveMethod("Demo.Second", pool).Should().Be(1u);
+        a.ResolveMethod("Demo.Third",  pool).Should().Be(2u);
     }
 
     [Fact]
-    public void StaticFieldId_AssignedInOrdinalOrder()
+    public void LocalClass_ResolvesToInsertionIndex()
     {
-        var a = new TokenAllocator();
-        a.RegisterStaticField("Foo.x");
-        a.RegisterStaticField("Aaa.y");
-        a.RegisterStaticField("Foo.a");
-        a.Build();
+        var m = BuildModule(Array.Empty<string>(), new[] { "Demo.Foo", "Demo.Bar" });
+        var a = TokenAllocator.FromModule(m);
+        var pool = new StringPool();
 
-        a.ResolveStaticField("Aaa.y").Value.Should().Be(0u);
-        a.ResolveStaticField("Foo.a").Value.Should().Be(1u);
-        a.ResolveStaticField("Foo.x").Value.Should().Be(2u);
+        a.ResolveType("Demo.Foo", pool).Should().Be(0u);
+        a.ResolveType("Demo.Bar", pool).Should().Be(1u);
     }
 
     [Fact]
-    public void TwoAllocators_SameInputs_ProduceSameTokens()
+    public void NonLocalMethod_ResolvesToImportBasePlusPoolIdx()
     {
-        var inputs = new[] { "Demo.Foo", "Demo.Bar", "Demo.Aaa" };
+        var m = BuildModule(new[] { "Demo.Local" }, Array.Empty<string>());
+        var a = TokenAllocator.FromModule(m);
+        var pool = new StringPool();
 
-        var a = new TokenAllocator();
-        foreach (var n in inputs) a.RegisterClass(n);
-        a.Build();
-
-        var b = new TokenAllocator();
-        // Different insertion order should not affect output.
-        foreach (var n in inputs.Reverse()) b.RegisterClass(n);
-        b.Build();
-
-        foreach (var n in inputs)
-            a.ResolveType(n).Should().Be(b.ResolveType(n));
-    }
-
-    // ── Idempotency ────────────────────────────────────────────────────────
-
-    [Fact]
-    public void Register_Idempotent()
-    {
-        var a = new TokenAllocator();
-        a.RegisterClass("Demo.X");
-        a.RegisterClass("Demo.X");  // duplicate
-        a.RegisterClass("Demo.X");  // duplicate
-        a.Build();
-
-        a.ResolveType("Demo.X").Value.Should().Be(0u);
-        a.ImportTable.Count.Should().Be(0);
+        var token = a.ResolveMethod("Std.IO.Print", pool);
+        token.Should().BeGreaterThanOrEqualTo(TokenConsts.ImportBase);
+        token.Should().NotBe(TokenConsts.Unresolved);
+        var poolIdx = (int)(token - TokenConsts.ImportBase);
+        pool.Idx("Std.IO.Print").Should().Be(poolIdx, "import idx == STRS pool position");
     }
 
     [Fact]
-    public void DiscoverImport_Idempotent()
+    public void NonLocalClass_ResolvesToImportBasePlusPoolIdx()
     {
-        var a = new TokenAllocator();
-        a.DiscoverImport(ImportKind.Method, "Std.IO.Print");
-        a.DiscoverImport(ImportKind.Method, "Std.IO.Print");  // duplicate
-        a.DiscoverImport(ImportKind.Method, "Std.IO.Print");  // duplicate
-        a.Build();
+        var m = BuildModule(Array.Empty<string>(), new[] { "Demo.Local" });
+        var a = TokenAllocator.FromModule(m);
+        var pool = new StringPool();
 
-        a.ImportTable.Count.Should().Be(1);
-    }
-
-    // ── Import table ordering ──────────────────────────────────────────────
-
-    [Fact]
-    public void ImportTable_SortedByKindThenName()
-    {
-        var a = new TokenAllocator();
-        a.DiscoverImport(ImportKind.Type,        "Std.Object");
-        a.DiscoverImport(ImportKind.Method,      "Std.IO.Print");
-        a.DiscoverImport(ImportKind.StaticField, "Std.Math.PI");
-        a.DiscoverImport(ImportKind.Method,      "Std.IO.ReadLine");
-        a.DiscoverImport(ImportKind.Type,        "Std.Array");
-        a.Build();
-
-        var t = a.ImportTable;
-        t.Count.Should().Be(5);
-        // Method (0x01) entries first, sorted by name
-        t[0].Should().Be(new ImportEntry(ImportKind.Method, "Std.IO.Print"));
-        t[1].Should().Be(new ImportEntry(ImportKind.Method, "Std.IO.ReadLine"));
-        // Type (0x02) entries next
-        t[2].Should().Be(new ImportEntry(ImportKind.Type, "Std.Array"));
-        t[3].Should().Be(new ImportEntry(ImportKind.Type, "Std.Object"));
-        // StaticField (0x03) entries last
-        t[4].Should().Be(new ImportEntry(ImportKind.StaticField, "Std.Math.PI"));
+        var token = a.ResolveType("Std.Object", pool);
+        token.Should().BeGreaterThanOrEqualTo(TokenConsts.ImportBase);
     }
 
     [Fact]
-    public void ImportToken_IsImportBasePlusIdx()
+    public void LocalAndImport_DistinctSpaces()
     {
-        var a = new TokenAllocator();
-        a.DiscoverImport(ImportKind.Method, "Std.IO.Print");
-        a.DiscoverImport(ImportKind.Method, "Std.IO.ReadLine");
-        a.Build();
+        var m = BuildModule(new[] { "Demo.X" }, Array.Empty<string>());
+        var a = TokenAllocator.FromModule(m);
+        var pool = new StringPool();
 
-        var p = a.ResolveMethod("Std.IO.Print");
-        p.Value.Should().Be(TokenConsts.ImportBase + 0u);
-        p.IsImport.Should().BeTrue();
-        p.ImportIdx.Should().Be(0u);
+        var local  = a.ResolveMethod("Demo.X",        pool);
+        var import = a.ResolveMethod("Std.Foreign", pool);
 
-        var r = a.ResolveMethod("Std.IO.ReadLine");
-        r.Value.Should().Be(TokenConsts.ImportBase + 1u);
-        r.ImportIdx.Should().Be(1u);
+        local.Should().BeLessThan(TokenConsts.ImportBase, "local index in low range");
+        import.Should().BeGreaterThanOrEqualTo(TokenConsts.ImportBase, "import token has IMPORT_BASE bit");
     }
 
     [Fact]
-    public void IntraModule_AndImport_DistinctSpaces()
+    public void DuplicateNonLocalNameInternsOnceInPool()
     {
-        var a = new TokenAllocator();
-        a.RegisterMethod("Demo.Local");
-        a.DiscoverImport(ImportKind.Method, "Std.Foreign");
-        a.Build();
+        var m = BuildModule(new[] { "Demo.Local" }, Array.Empty<string>());
+        var a = TokenAllocator.FromModule(m);
+        var pool = new StringPool();
 
-        var local = a.ResolveMethod("Demo.Local");
-        local.IsImport.Should().BeFalse();
-        local.Value.Should().BeLessThan(TokenConsts.ImportBase);
+        var t1 = a.ResolveMethod("Std.IO.Print", pool);
+        var t2 = a.ResolveMethod("Std.IO.Print", pool);
 
-        var foreign = a.ResolveMethod("Std.Foreign");
-        foreign.IsImport.Should().BeTrue();
-    }
-
-    // ── Lifecycle errors ───────────────────────────────────────────────────
-
-    [Fact]
-    public void Resolve_BeforeBuild_Throws()
-    {
-        var a = new TokenAllocator();
-        a.RegisterClass("X");
-
-        var act = () => a.ResolveType("X");
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*must call Build()*");
+        t1.Should().Be(t2, "same name → same token via pool intern dedup");
     }
 
     [Fact]
-    public void Register_AfterBuild_Throws()
+    public void TwoBuilds_SameSource_ProduceSameTokens()
     {
-        var a = new TokenAllocator();
-        a.Build();
+        // Determinism: same module → same allocator output.
+        var m1 = BuildModule(new[] { "Foo", "Bar", "Baz" }, new[] { "C1", "C2" });
+        var m2 = BuildModule(new[] { "Foo", "Bar", "Baz" }, new[] { "C1", "C2" });
+        var a = TokenAllocator.FromModule(m1);
+        var b = TokenAllocator.FromModule(m2);
+        var pool1 = new StringPool();
+        var pool2 = new StringPool();
 
-        var act = () => a.RegisterClass("X");
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*cannot register after Build()*");
+        a.ResolveMethod("Foo", pool1).Should().Be(b.ResolveMethod("Foo", pool2));
+        a.ResolveMethod("Bar", pool1).Should().Be(b.ResolveMethod("Bar", pool2));
+        a.ResolveType("C1",   pool1).Should().Be(b.ResolveType("C1",   pool2));
     }
 
     [Fact]
-    public void Resolve_UnknownName_Throws()
+    public void SourceOrderMatters_ChangingSourceChangesTokens()
     {
-        var a = new TokenAllocator();
-        a.Build();
+        // Documented tradeoff: re-arranging source declarations changes tokens.
+        // This is acceptable per spec (reproducible build = same source → same output).
+        var m1 = BuildModule(new[] { "A", "B" }, Array.Empty<string>());
+        var m2 = BuildModule(new[] { "B", "A" }, Array.Empty<string>());
+        var a = TokenAllocator.FromModule(m1);
+        var b = TokenAllocator.FromModule(m2);
+        var pool = new StringPool();
 
-        var act = () => a.ResolveMethod("Demo.Nonexistent");
-        act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*not registered*");
-    }
-
-    // ── Build is idempotent ────────────────────────────────────────────────
-
-    [Fact]
-    public void Build_Idempotent()
-    {
-        var a = new TokenAllocator();
-        a.RegisterClass("X");
-        a.Build();
-        a.Build();  // second call is a no-op
-
-        a.ResolveType("X").Value.Should().Be(0u);
+        a.ResolveMethod("A", pool).Should().Be(0u);
+        a.ResolveMethod("B", pool).Should().Be(1u);
+        b.ResolveMethod("A", pool).Should().Be(1u, "swapped insertion order swaps tokens");
+        b.ResolveMethod("B", pool).Should().Be(0u);
     }
 }

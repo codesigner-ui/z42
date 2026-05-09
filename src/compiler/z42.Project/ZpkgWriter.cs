@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 1;
+    public const ushort VersionMinor = 2;   // 2026-05-09 tokenize-ir-and-zbc-bump (Phase 3 S3b): inner modules emit zbc 1.0 IR fields (token-encoded). Reader uses minor >= 2 to switch to v1.0 IdMap decode.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

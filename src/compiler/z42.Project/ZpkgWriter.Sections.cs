@@ -220,8 +220,14 @@ public static partial class ZpkgWriter
             var zbc  = modules[mi];
             var mod  = zbc.Module;
 
-            // FUNC section bytes using global pool indices
-            byte[] funcData = ZbcWriter.BuildFuncSection(mod.Functions, pool, remaps[mi]);
+            // FUNC section bytes using global pool indices.
+            // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): per-module
+            // TokenAllocator drives IR-field token encoding. Cross-zpkg refs
+            // (e.g. one stdlib module calling another) get encoded as
+            // IMPORT_BASE + global pool idx — STRS already shared at zpkg
+            // level so cross-module refs round-trip naturally.
+            var modAllocator = TokenAllocator.FromModule(mod);
+            byte[] funcData = ZbcWriter.BuildFuncSection(mod.Functions, pool, remaps[mi], modAllocator);
             // TYPE section bytes (0 bytes if no classes)
             byte[] typeData = mod.Classes.Count > 0
                 ? ZbcWriter.BuildTypeSection(mod.Classes, pool)

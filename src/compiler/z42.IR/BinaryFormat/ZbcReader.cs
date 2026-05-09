@@ -18,8 +18,18 @@ public static partial class ZbcReader
     /// </summary>
     public static IrModule Read(byte[] data)
     {
-        ParseHeader(data, out _, out ushort minor, out var flags, out ushort secCount);
+        ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
+
+        // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): support both
+        // v0.9 and v1.0+. Token encoding differs (IMPORT_BASE bit on STRS
+        // pool); decoder dispatches via IdMap.
+        bool isV1 = major switch
+        {
+            0 => false,
+            1 => true,
+            _ => throw new InvalidDataException($"zbc major version {major} not supported (expected 0.x or 1.x)"),
+        };
 
         var dir = ReadDirectory(data, minor, secCount);
 
@@ -35,8 +45,13 @@ public static partial class ZbcReader
         var sigs           = ReadSection(data, dir, SectionTags.Sigs,
                                          sec => ReadSigsSection(sec, pool),
                                          new List<SigEntry>());
+
+        var idMap = isV1
+            ? IdMap.ForV1(pool, sigs.Select(s => s.Name).ToList(), classes.Select(c => c.Name).ToList())
+            : IdMap.ForV0(pool);
+
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
-                                         sec => ReadFuncSection(sec, pool),
+                                         sec => ReadFuncSection(sec, pool, idMap),
                                          new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>());
         var dbugVarTables  = ReadSection(data, dir, SectionTags.Dbug,
                                          sec => ReadDbugSection(sec, pool),
@@ -96,6 +111,59 @@ public static partial class ZbcReader
     {
         if (data.Length < 10) return ZbcFlags.None;
         return (ZbcFlags)BitConverter.ToUInt16(data, 8);
+    }
+
+    // ── Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09) ─────────────────────
+    //
+    // IdMap: maps IR-field tokens back to FQ name strings during decode.
+    // v0.9: token == STRS pool idx (legacy); v1.0+: IMPORT_BASE bit on token
+    // distinguishes intra-module index from cross-zpkg pool idx. Mirrors
+    // Rust `runtime/metadata/zbc_reader.rs::IdMap`.
+
+    internal sealed class IdMap
+    {
+        public string[] Pool { get; }
+        public IReadOnlyList<string> LocalFuncs { get; }
+        public IReadOnlyList<string> LocalClasses { get; }
+        public bool IsV1 { get; }
+
+        private IdMap(string[] pool, IReadOnlyList<string> funcs, IReadOnlyList<string> classes, bool isV1)
+        {
+            Pool = pool;
+            LocalFuncs = funcs;
+            LocalClasses = classes;
+            IsV1 = isV1;
+        }
+
+        public static IdMap ForV0(string[] pool) =>
+            new(pool, Array.Empty<string>(), Array.Empty<string>(), isV1: false);
+
+        public static IdMap ForV1(string[] pool, IReadOnlyList<string> funcs, IReadOnlyList<string> classes) =>
+            new(pool, funcs, classes, isV1: true);
+
+        public string ResolveMethod(uint token)
+        {
+            if (!IsV1) return token < Pool.Length ? Pool[token] : $"<str#{token}>";
+            if (token == TokenConsts.Unresolved) return "<unresolved>";
+            if (token >= TokenConsts.ImportBase)
+            {
+                uint poolIdx = token - TokenConsts.ImportBase;
+                return poolIdx < Pool.Length ? Pool[poolIdx] : $"<bad import {poolIdx}>";
+            }
+            return token < LocalFuncs.Count ? LocalFuncs[(int)token] : $"<bad fn {token}>";
+        }
+
+        public string ResolveType(uint token)
+        {
+            if (!IsV1) return token < Pool.Length ? Pool[token] : $"<str#{token}>";
+            if (token == TokenConsts.Unresolved) return "<unresolved>";
+            if (token >= TokenConsts.ImportBase)
+            {
+                uint poolIdx = token - TokenConsts.ImportBase;
+                return poolIdx < Pool.Length ? Pool[poolIdx] : $"<bad import {poolIdx}>";
+            }
+            return token < LocalClasses.Count ? LocalClasses[(int)token] : $"<bad cls {token}>";
+        }
     }
 
     // ── Header + Directory ────────────────────────────────────────────────────
@@ -296,7 +364,7 @@ public static partial class ZbcReader
     // ── FUNC section ─────────────────────────────────────────────────────────
 
     private static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> ReadFuncSection(
-        byte[] data, string[] pool)
+        byte[] data, string[] pool, IdMap idMap)
     {
         using var ms   = new MemoryStream(data, writable: false);
         using var r    = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
@@ -351,7 +419,7 @@ public static partial class ZbcReader
             {
                 int start = (int)blockOffsets[bi];
                 int end   = bi + 1 < blockCount ? (int)blockOffsets[bi + 1] : (int)instrLen;
-                var (instrs, term) = DecodeBlock(instrBytes, start, end, pool);
+                var (instrs, term) = DecodeBlock(instrBytes, start, end, pool, idMap);
                 blocks.Add(new IrBlock(bi == 0 ? "entry" : $"block_{bi}", instrs, term));
             }
 
@@ -381,7 +449,14 @@ public static partial class ZbcReader
 
     /// Exposes FUNC section decoding for ZpkgReader (packed mode module bodies).
     public static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> DecodeFuncSectionPublic(
-        byte[] data, string[] pool) => ReadFuncSection(data, pool);
+        byte[] data, string[] pool, IReadOnlyList<string>? localFuncs = null,
+        IReadOnlyList<string>? localClasses = null, bool isV1 = false)
+    {
+        var idMap = isV1
+            ? IdMap.ForV1(pool, localFuncs ?? Array.Empty<string>(), localClasses ?? Array.Empty<string>())
+            : IdMap.ForV0(pool);
+        return ReadFuncSection(data, pool, idMap);
+    }
 
     /// Exposes TYPE section decoding for ZpkgReader.
     public static List<IrClassDesc> DecodeTypeSectionPublic(
