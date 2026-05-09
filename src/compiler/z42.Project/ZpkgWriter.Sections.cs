@@ -183,8 +183,11 @@ public static partial class ZpkgWriter
         uint total = (uint)modules.Sum(m => m.Module.Functions.Count);
         w.Write(total);
 
+        // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): sort each module's
+        // Functions by Ordinal name so per-module local positions in the global
+        // SIGS slice align with TokenAllocator's MethodId ordering.
         foreach (var zbc in modules)
-            foreach (var fn in zbc.Module.Functions)
+            foreach (var fn in zbc.Module.Functions.OrderBy(f => f.Name, StringComparer.Ordinal))
             {
                 w.Write((uint)pool.Idx(fn.Name));
                 w.Write((ushort)fn.ParamCount);
@@ -220,27 +223,52 @@ public static partial class ZpkgWriter
             var zbc  = modules[mi];
             var mod  = zbc.Module;
 
-            // FUNC section bytes using global pool indices
-            byte[] funcData = ZbcWriter.BuildFuncSection(mod.Functions, pool, remaps[mi]);
-            // TYPE section bytes (0 bytes if no classes)
-            byte[] typeData = mod.Classes.Count > 0
-                ? ZbcWriter.BuildTypeSection(mod.Classes, pool)
+            // FUNC section bytes using global pool indices.
+            // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): allocator is
+            // built per-module; mod.Functions / mod.Classes are sorted by
+            // Ordinal name to match allocator's MethodId / TypeId ordering.
+            // Per-module IMPT is written so cross-module refs round-trip.
+            var sortedFunctions = mod.Functions.OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+            var sortedClasses   = mod.Classes.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
+            var allocator = TokenAllocator.FromModule(mod);
+            byte[] funcData = ZbcWriter.BuildFuncSection(sortedFunctions, pool, remaps[mi], allocator);
+            byte[] typeData = sortedClasses.Count > 0
+                ? ZbcWriter.BuildTypeSection(sortedClasses, pool)
                 : [];
+            byte[] imptData = BuildPackedImptSection(allocator, pool);
 
             w.Write((uint)pool.Idx(zbc.Namespace));
             w.Write((uint)pool.Idx(zbc.SourceFile));
             w.Write((uint)pool.Idx(zbc.SourceHash));
-            w.Write((ushort)mod.Functions.Count);
+            w.Write((ushort)sortedFunctions.Count);
             w.Write(firstSigIdx);
             w.Write((uint)funcData.Length);
             w.Write(funcData);
             w.Write((uint)typeData.Length);
             if (typeData.Length > 0) w.Write(typeData);
+            w.Write((uint)imptData.Length);
+            if (imptData.Length > 0) w.Write(imptData);
 
-            firstSigIdx += (uint)mod.Functions.Count;
+            firstSigIdx += (uint)sortedFunctions.Count;
         }
 
         return ms.ToArray();
+    }
+
+    /// Phase 3 S3: per-module IMPT for packed zpkg — same wire format as
+    /// `ZbcWriter.BuildImptSection` (u32 count + (u8 kind, u32 name_str_idx)*).
+    private static byte[] BuildPackedImptSection(TokenAllocator allocator, StringPool pool)
+    {
+        using var ims = new MemoryStream();
+        using var iw  = new BinaryWriter(ims, Encoding.UTF8, leaveOpen: true);
+        var imports = allocator.ImportTable;
+        iw.Write((uint)imports.Count);
+        foreach (var entry in imports)
+        {
+            iw.Write((byte)entry.Kind);
+            iw.Write((uint)pool.Idx(entry.Name));
+        }
+        return ims.ToArray();
     }
 
     // ── FILE section (indexed: per-file path references) ──────────────────────

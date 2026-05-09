@@ -97,11 +97,23 @@ public static partial class ZpkgReader
             uint typeBodySize  = r.ReadUInt32();
             byte[] typeData    = typeBodySize > 0 ? r.ReadBytes((int)typeBodySize) : [];
 
-            // Decode function bodies using global pool
-            var funcBodies = ZbcReader.DecodeFuncSectionPublic(funcData, pool);
+            // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): per-module
+            // IMPT for v1.0 token resolution. (kind: u8, name_str_idx: u32)*.
+            uint imptSize     = r.ReadUInt32();
+            byte[] imptData   = imptSize > 0 ? r.ReadBytes((int)imptSize) : [];
+            var imports       = imptSize > 0
+                ? DecodePackedImpt(imptData, pool)
+                : new List<ImportEntry>();
+
             var classes    = typeData.Length > 0
                 ? ZbcReader.DecodeTypeSectionPublic(typeData, pool)
                 : new List<IrClassDesc>();
+            var classNames = classes.Select(c => c.Name).ToList();
+            var funcNames  = sigs
+                .Skip((int)firstSigIdx).Take(funcCount)
+                .Select(s => s.Name).ToList();
+            var funcBodies = ZbcReader.DecodeFuncSectionPublic(
+                funcData, pool, classNames, funcNames, imports);
 
             // Reconstruct functions
             var functions = new List<IrFunction>(funcCount);
@@ -152,6 +164,24 @@ public static partial class ZpkgReader
                 for (int k = 0; k < ifaceCount; k++) r.ReadUInt32();
             }
             result.Add((name, paramCount, retType, execMode, isStatic));
+        }
+        return result;
+    }
+
+    // ── Phase 3 S3: per-module IMPT decoder (mirror of ZbcReader.ReadImptSection) ──
+
+    private static List<ImportEntry> DecodePackedImpt(byte[] data, string[] pool)
+    {
+        using var ms = new MemoryStream(data, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+        uint count   = r.ReadUInt32();
+        var result   = new List<ImportEntry>((int)count);
+        for (int i = 0; i < count; i++)
+        {
+            byte kind = r.ReadByte();
+            uint nameI = r.ReadUInt32();
+            string name = nameI < pool.Length ? pool[nameI] : $"<str#{nameI}>";
+            result.Add(new ImportEntry((ImportKind)kind, name));
         }
         return result;
     }

@@ -28,8 +28,8 @@ namespace Z42.IR.BinaryFormat;
 /// </summary>
 public static partial class ZbcWriter
 {
-    public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 9;   // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): new opcode `DefaultOf` (0xB0); old VMs cannot decode
+    public const ushort VersionMajor = 1;
+    public const ushort VersionMinor = 0;   // 2026-05-09 tokenize-ir-and-zbc-bump (Phase 3 S3): IR fields tokenized (Method/Type), IMPT extended with (kind, name_str_idx) entries. Pre-1.0 zbc not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -41,15 +41,34 @@ public static partial class ZbcWriter
     public static byte[] Write(
         IrModule             module,
         ZbcFlags             flags   = ZbcFlags.None,
-        IEnumerable<string>? exports = null)
+        IEnumerable<string>? exports = null,
+        TokenAllocator?      allocator = null)
     {
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
 
+        // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): allocator drives
+        // IR-field token encoding + IMPT entries. If caller didn't thread an
+        // allocator, build one fresh from the module — TokenAllocator.FromModule
+        // is the single source of truth for the algorithm so determinism is
+        // preserved across both code paths.
+        allocator ??= TokenAllocator.FromModule(module);
+
+        // Phase 3 S3: serialize TYPE / SIGS / FUNC / EXPT / TIDX in the same
+        // Ordinal order TokenAllocator uses for TypeId / MethodId. This way
+        // a reader can recover names from tokens by indexing into the section
+        // (token == section position). Module.Classes / Module.Functions stay
+        // in source order in-memory; the sorted views are wire-format-only.
+        var sortedClasses   = module.Classes.OrderBy(c => c.Name, StringComparer.Ordinal).ToList();
+        var sortedFunctions = module.Functions.OrderBy(f => f.Name, StringComparer.Ordinal).ToList();
+
         var exportSet = exports is null
-            ? module.Functions.Select(f => f.Name).ToHashSet()
+            ? sortedFunctions.Select(f => f.Name).ToHashSet()
             : exports.ToHashSet();
 
         // ── Build string pool ─────────────────────────────────────────────────
+        // Imports must also be interned for IMPT name_str_idx; covered by
+        // InternInstrStrings (full mode) since every cross-zpkg ref appears
+        // in some Call/ObjNew/etc instruction. Stripped mode also covers them.
         var pool     = new StringPool();
         var strRemap = new int[module.StringPool.Count];
         InternPoolStrings(pool, module, strRemap, fullMode: !stripped);
@@ -62,36 +81,50 @@ public static partial class ZbcWriter
         if (stripped)
         {
             sections.Add((SectionTags.Bstr, BuildStrpSection(pool)));
-            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
+            sections.Add((SectionTags.Impt, BuildImptSection(allocator, pool)));
+            sections.Add((SectionTags.Func, BuildFuncSection(sortedFunctions, pool, strRemap, allocator)));
         }
         else
         {
             sections.Add((SectionTags.Strs, BuildStrpSection(pool)));
-            sections.Add((SectionTags.Type, BuildTypeSection(module.Classes, pool)));
-            sections.Add((SectionTags.Sigs, BuildSigsSection(module.Functions, pool)));
-            sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
-            sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
-            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap)));
+            sections.Add((SectionTags.Type, BuildTypeSection(sortedClasses, pool)));
+            sections.Add((SectionTags.Sigs, BuildSigsSection(sortedFunctions, pool)));
+            sections.Add((SectionTags.Impt, BuildImptSection(allocator, pool)));
+            sections.Add((SectionTags.Expt, BuildExptSection(sortedFunctions, pool, exportSet)));
+            sections.Add((SectionTags.Func, BuildFuncSection(sortedFunctions, pool, strRemap, allocator)));
 
-            // DBUG section: line table + local variable names
-            bool hasDebug = module.Functions.Any(f =>
+            // DBUG section: line table + local variable names. Use sorted
+            // functions so per-fn debug info indexes align with FUNC/SIGS.
+            bool hasDebug = sortedFunctions.Any(f =>
                 f.LineTable is { Count: > 0 } || f.LocalVarTable is { Count: > 0 });
             if (hasDebug)
             {
                 flags |= ZbcFlags.HasDebug;
-                sections.Add((SectionTags.Dbug, BuildDbugSection(module.Functions, pool)));
+                sections.Add((SectionTags.Dbug, BuildDbugSection(sortedFunctions, pool)));
             }
 
             // TIDX section (R1 add-test-metadata-section): compile-time test
             // metadata. Emitted only when the module has at least one
             // [Test]/[Benchmark]/etc.-decorated function; absent section means
             // "no test entries" to readers.
+            //
+            // Phase 3 S3: TestEntry.MethodId is built from module.Functions
+            // positions (source order); remap to sorted positions before
+            // writing so MethodIds at decode time correctly index the SIGS
+            // section.
             if (module.TestIndex is { Count: > 0 } testIndex)
             {
-                // Pass strRemap so TestEntry str_idx (1-based, into IrGen's
-                // pool) get remapped to the final STRS layout — same pattern
-                // ConstStr uses.
-                sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex, strRemap)));
+                var sortedMethodIdMap = new Dictionary<int, uint>(sortedFunctions.Count);
+                for (int sortedI = 0; sortedI < sortedFunctions.Count; sortedI++)
+                {
+                    var fn = sortedFunctions[sortedI];
+                    int origI = module.Functions.IndexOf(fn);
+                    if (origI >= 0) sortedMethodIdMap[origI] = (uint)sortedI;
+                }
+                var remappedTestIndex = testIndex
+                    .Select(e => e with { MethodId = (int)sortedMethodIdMap[e.MethodId] })
+                    .ToList();
+                sections.Add((SectionTags.Tidx, BuildTidxSection(remappedTestIndex, strRemap)));
             }
 
             // 2026-05-02 add-method-group-conversion (D1b): FRCS section holds
@@ -379,29 +412,31 @@ public static partial class ZbcWriter
                 w.Write((uint)pool.Idx(iface));
     }
 
-    // ── IMPT section (full mode: import table) ────────────────────────────────
+    // ── IMPT section (v1.0: kind-tagged imports + builtin names) ──────────────
+    //
+    // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09):
+    //   v0.x format: u32 count + str_idx[count] (function-only imports)
+    //   v1.0 format: u32 count + (u8 kind, u32 name_str_idx)[count]
+    //                followed by u32 builtin_count + str_idx[builtin_count]
+    //
+    // The cross-zpkg imports come from the TokenAllocator (sorted by (kind, name)
+    // for reproducibility). Builtin names continue to flow as a separate
+    // legacy block — `BuiltinInstr.Name` is not allocator-managed (closed set
+    // resolved by runtime BUILTINS table at load).
 
-    private static byte[] BuildImptSection(IrModule module, StringPool pool)
+    private static byte[] BuildImptSection(TokenAllocator allocator, StringPool pool)
     {
-        var definedNames = module.Functions.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
-        var imports      = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var fn in module.Functions)
-            foreach (var block in fn.Blocks)
-                foreach (var instr in block.Instructions)
-                    switch (instr)
-                    {
-                        case CallInstr i when !definedNames.Contains(i.Func):
-                            imports.Add(i.Func); break;
-                        case BuiltinInstr i:
-                            imports.Add(i.Name); break;
-                    }
-
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
 
+        // v1.0 import entries: (kind, name_str_idx), already sorted by allocator.
+        var imports = allocator.ImportTable;
         w.Write((uint)imports.Count);
-        foreach (var imp in imports) w.Write((uint)pool.Idx(imp));
+        foreach (var entry in imports)
+        {
+            w.Write((byte)entry.Kind);
+            w.Write((uint)pool.Idx(entry.Name));
+        }
 
         return ms.ToArray();
     }
@@ -428,7 +463,7 @@ public static partial class ZbcWriter
     // ── FUNC section (function bodies, both modes) ────────────────────────────
 
     public static byte[] BuildFuncSection(
-        List<IrFunction> functions, StringPool pool, int[] strRemap)
+        List<IrFunction> functions, StringPool pool, int[] strRemap, TokenAllocator allocator)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -450,7 +485,7 @@ public static partial class ZbcWriter
                 blockOffsets[bi] = (uint)instrMs.Position;
                 var block = fn.Blocks[bi];
                 foreach (var instr in block.Instructions)
-                    WriteInstr(iw, instr, pool, strRemap, blockIdx);
+                    WriteInstr(iw, instr, pool, strRemap, blockIdx, allocator);
                 WriteTerminator(iw, block.Terminator, blockIdx);
             }
             iw.Flush();

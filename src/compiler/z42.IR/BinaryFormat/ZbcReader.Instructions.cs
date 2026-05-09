@@ -8,7 +8,7 @@ public static partial class ZbcReader
     // ── Block decoding ────────────────────────────────────────────────────────
 
     private static (List<IrInstr>, IrTerminator) DecodeBlock(
-        byte[] data, int start, int end, string[] pool)
+        byte[] data, int start, int end, string[] pool, IdMap idMap)
     {
         var instrs = new List<IrInstr>();
         using var ms = new MemoryStream(data, start, end - start, writable: false);
@@ -23,7 +23,7 @@ public static partial class ZbcReader
             if (op is Opcodes.Ret or Opcodes.RetVal or Opcodes.Br or Opcodes.BrCond or Opcodes.Throw)
                 return (instrs, DecodeTerm(op, typ, dst, r));
 
-            instrs.Add(DecodeInstr(op, typ, dst, r, pool));
+            instrs.Add(DecodeInstr(op, typ, dst, r, pool, idMap));
         }
         return (instrs, new RetTerm(null));
     }
@@ -38,7 +38,7 @@ public static partial class ZbcReader
         _              => throw new InvalidDataException($"Not a terminator: 0x{op:X2}"),
     };
 
-    private static IrInstr DecodeInstr(byte op, byte typ, int dst, BinaryReader r, string[] pool)
+    private static IrInstr DecodeInstr(byte op, byte typ, int dst, BinaryReader r, string[] pool, IdMap idMap)
     {
         var d = R(dst, typ);   // typed destination register
 
@@ -78,7 +78,8 @@ public static partial class ZbcReader
             case Opcodes.Ge:     return new GeInstr(d, RU(r.ReadUInt16()), RU(r.ReadUInt16()));
             case Opcodes.Call:
             {
-                var fn   = P(pool, r.ReadUInt32());
+                // Phase 3 S3 v1.0: u32 MethodId token → name via idMap.
+                var fn   = idMap.ResolveMethod(r.ReadUInt32());
                 var args = ReadArgs(r);
                 return new CallInstr(d, fn, args);
             }
@@ -109,12 +110,12 @@ public static partial class ZbcReader
             }
             case Opcodes.LoadFn:
             {
-                var fn = P(pool, r.ReadUInt32());
+                var fn = idMap.ResolveMethod(r.ReadUInt32());
                 return new LoadFnInstr(d, fn);
             }
             case Opcodes.LoadFnCached:
             {
-                var fn     = P(pool, r.ReadUInt32());
+                var fn     = idMap.ResolveMethod(r.ReadUInt32());
                 var slotId = r.ReadUInt32();
                 return new LoadFnCachedInstr(d, fn, slotId);
             }
@@ -126,7 +127,7 @@ public static partial class ZbcReader
             }
             case Opcodes.MkClos:
             {
-                var fn         = P(pool, r.ReadUInt32());
+                var fn         = idMap.ResolveMethod(r.ReadUInt32());
                 // 2026-05-02 impl-closure-l3-escape-stack: 1 byte stack_alloc flag
                 var stackAlloc = r.ReadByte() != 0;
                 var captures   = ReadArgs(r);
@@ -167,8 +168,8 @@ public static partial class ZbcReader
             }
             case Opcodes.ObjNew:
             {
-                var cls  = P(pool, r.ReadUInt32());
-                var ctor = P(pool, r.ReadUInt32());
+                var cls  = idMap.ResolveType(r.ReadUInt32());
+                var ctor = idMap.ResolveMethod(r.ReadUInt32());
                 var args = ReadArgs(r);
                 // D-8b-3 Phase 2: type_args 列表
                 int tCount = r.ReadByte();
@@ -183,13 +184,13 @@ public static partial class ZbcReader
             case Opcodes.IsInstance:
             {
                 var obj = RU(r.ReadUInt16());
-                var cls = P(pool, r.ReadUInt32());
+                var cls = idMap.ResolveType(r.ReadUInt32());
                 return new IsInstanceInstr(d, obj, cls);
             }
             case Opcodes.AsCast:
             {
                 var obj = RU(r.ReadUInt16());
-                var cls = P(pool, r.ReadUInt32());
+                var cls = idMap.ResolveType(r.ReadUInt32());
                 return new AsCastInstr(d, obj, cls);
             }
             case Opcodes.ArrayNew:    return new ArrayNewInstr(d, RU(r.ReadUInt16()));

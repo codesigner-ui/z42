@@ -48,6 +48,123 @@ public sealed class TokenAllocator
 
     private bool _built;
 
+    /// <summary>Build a finalized <see cref="TokenAllocator"/> from a complete
+    /// <see cref="IrModule"/>. Walks the module's declarations + every
+    /// instruction's string refs to register intra-module IDs and discover
+    /// cross-zpkg imports, then calls <see cref="Build"/>.
+    ///
+    /// <para>This is the single source of truth for the allocator-building
+    /// algorithm — both <c>IrGen</c> (compile-time, sibling output) and
+    /// <c>ZbcWriter</c> (encode-time, when caller didn't thread allocator)
+    /// invoke this so determinism is preserved across all entry points.</para>
+    /// </summary>
+    public static TokenAllocator FromModule(IrModule module)
+    {
+        var allocator = new TokenAllocator();
+
+        // ── Pass 1: register intra-module decls ───────────────────────────
+        var localClassNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var cls in module.Classes)
+        {
+            allocator.RegisterClass(cls.Name);
+            localClassNames.Add(cls.Name);
+        }
+        var localFuncNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fn in module.Functions)
+        {
+            allocator.RegisterMethod(fn.Name);
+            localFuncNames.Add(fn.Name);
+        }
+
+        // ── Pass 2: scan instructions for refs ────────────────────────────
+        foreach (var fn in module.Functions)
+        foreach (var block in fn.Blocks)
+        foreach (var instr in block.Instructions)
+        {
+            switch (instr)
+            {
+                case CallInstr c:
+                    if (!localFuncNames.Contains(c.Func))
+                        allocator.DiscoverImport(ImportKind.Method, c.Func);
+                    break;
+                case LoadFnInstr lf:
+                    if (!localFuncNames.Contains(lf.Func))
+                        allocator.DiscoverImport(ImportKind.Method, lf.Func);
+                    break;
+                case LoadFnCachedInstr lfc:
+                    if (!localFuncNames.Contains(lfc.Func))
+                        allocator.DiscoverImport(ImportKind.Method, lfc.Func);
+                    break;
+                case MkClosInstr mk:
+                    if (!localFuncNames.Contains(mk.FuncName))
+                        allocator.DiscoverImport(ImportKind.Method, mk.FuncName);
+                    break;
+                case ObjNewInstr on:
+                    if (!localClassNames.Contains(on.ClassName))
+                        allocator.DiscoverImport(ImportKind.Type, on.ClassName);
+                    if (!localFuncNames.Contains(on.CtorName))
+                        allocator.DiscoverImport(ImportKind.Method, on.CtorName);
+                    if (on.TypeArgs is not null)
+                        foreach (var ta in on.TypeArgs)
+                            if (LooksLikeTypeName(ta) && !localClassNames.Contains(ta))
+                                allocator.DiscoverImport(ImportKind.Type, ta);
+                    break;
+                case IsInstanceInstr ii:
+                    if (!localClassNames.Contains(ii.ClassName))
+                        allocator.DiscoverImport(ImportKind.Type, ii.ClassName);
+                    break;
+                case AsCastInstr ac:
+                    if (!localClassNames.Contains(ac.ClassName))
+                        allocator.DiscoverImport(ImportKind.Type, ac.ClassName);
+                    break;
+                case StaticGetInstr sg:
+                    RegisterStaticFieldRef(allocator, localClassNames, sg.Field);
+                    break;
+                case StaticSetInstr ss:
+                    RegisterStaticFieldRef(allocator, localClassNames, ss.Field);
+                    break;
+                // BuiltinInstr.Name / VCallInstr.Method / Field*.FieldName /
+                // CallNative*  → not in allocator (closed set / receiver-type-
+                // dependent / native interop).
+            }
+        }
+
+        allocator.Build();
+        return allocator;
+    }
+
+    private static bool LooksLikeTypeName(string typeArg) =>
+        typeArg.Contains('.') && !IsPrimitiveTag(typeArg);
+
+    private static bool IsPrimitiveTag(string s) => s switch
+    {
+        "int" or "long" or "short" or "byte" or "sbyte"
+        or "ushort" or "uint" or "ulong"
+        or "i8" or "i16" or "i32" or "i64"
+        or "u8" or "u16" or "u32" or "u64"
+        or "isize" or "usize"
+        or "double" or "float" or "f32" or "f64"
+        or "bool" or "char" or "str" or "string"
+        or "void" or "object" => true,
+        _ => false,
+    };
+
+    private static void RegisterStaticFieldRef(
+        TokenAllocator allocator, HashSet<string> localClassNames, string fieldFqName)
+    {
+        var dot = fieldFqName.LastIndexOf('.');
+        if (dot < 0)
+        {
+            allocator.RegisterStaticField(fieldFqName);
+            return;
+        }
+        var ownerClass = fieldFqName[..dot];
+        if (localClassNames.Contains(ownerClass))
+            allocator.RegisterStaticField(fieldFqName);
+        else
+            allocator.DiscoverImport(ImportKind.StaticField, fieldFqName);
+    }
+
     /// <summary>Register an intra-module class declaration. Idempotent — duplicate
     /// registrations are silently ignored.</summary>
     public void RegisterClass(string fqName)

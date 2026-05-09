@@ -18,8 +18,15 @@ public static partial class ZbcReader
     /// </summary>
     public static IrModule Read(byte[] data)
     {
-        ParseHeader(data, out _, out ushort minor, out var flags, out ushort secCount);
+        ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
+
+        // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): require zbc 1.0+.
+        // Pre-1.0 (0.x) zbc carries no IMPT-extension and uses str_idx for IR
+        // refs; not supported by this reader. Run regen-golden-tests.sh.
+        if (major == 0)
+            throw new InvalidDataException(
+                $"zbc 1.0+ required, got {major}.{minor}. Run regen-golden-tests.sh or rebuild your sources.");
 
         var dir = ReadDirectory(data, minor, secCount);
 
@@ -35,8 +42,21 @@ public static partial class ZbcReader
         var sigs           = ReadSection(data, dir, SectionTags.Sigs,
                                          sec => ReadSigsSection(sec, pool),
                                          new List<SigEntry>());
+        // Phase 3 S3: IMPT extended format — (kind: u8, name_str_idx: u32)*.
+        var imports        = ReadSection(data, dir, SectionTags.Impt,
+                                         sec => ReadImptSection(sec, pool),
+                                         new List<ImportEntry>());
+
+        // Build the IdMap that lets DecodeInstr convert tokens back to names.
+        // Class / function names are positional in TYPE / SIGS sections;
+        // imports are indexed by (token - ImportBase).
+        var idMap = new IdMap(
+            classes.Select(c => c.Name).ToList(),
+            sigs.Select(s => s.Name).ToList(),
+            imports);
+
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
-                                         sec => ReadFuncSection(sec, pool),
+                                         sec => ReadFuncSection(sec, pool, idMap),
                                          new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>());
         var dbugVarTables  = ReadSection(data, dir, SectionTags.Dbug,
                                          sec => ReadDbugSection(sec, pool),
@@ -293,10 +313,71 @@ public static partial class ZbcReader
         return result;
     }
 
+    // ── IMPT section (Phase 3 S3 v1.0 extended format) ───────────────────────
+
+    private static List<ImportEntry> ReadImptSection(byte[] data, string[] pool)
+    {
+        using var ms = new MemoryStream(data, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+        uint count   = r.ReadUInt32();
+        var result   = new List<ImportEntry>((int)count);
+        for (int i = 0; i < count; i++)
+        {
+            byte kind  = r.ReadByte();
+            uint nameI = r.ReadUInt32();
+            result.Add(new ImportEntry((ImportKind)kind, P(pool, nameI)));
+        }
+        return result;
+    }
+
+    /// <summary>Phase 3 S3 reader-side IdMap: maps tokens back to names so the
+    /// decoded <see cref="IrInstr"/> records (still <c>String</c>-typed) can
+    /// be reconstructed from v1.0 zbc that emits u32 tokens.</summary>
+    internal sealed class IdMap
+    {
+        public IReadOnlyList<string> ClassNames { get; }
+        public IReadOnlyList<string> FuncNames  { get; }
+        public IReadOnlyList<ImportEntry> Imports { get; }
+
+        public IdMap(IReadOnlyList<string> classNames, IReadOnlyList<string> funcNames,
+            IReadOnlyList<ImportEntry> imports)
+        {
+            ClassNames = classNames;
+            FuncNames  = funcNames;
+            Imports    = imports;
+        }
+
+        public string ResolveMethod(uint token)
+        {
+            if (token == TokenConsts.Unresolved)
+                return "<unresolved>";
+            if (token >= TokenConsts.ImportBase)
+            {
+                uint idx = token - TokenConsts.ImportBase;
+                if (idx >= Imports.Count) return $"<bad import {idx}>";
+                return Imports[(int)idx].Name;
+            }
+            return token < FuncNames.Count ? FuncNames[(int)token] : $"<bad fn {token}>";
+        }
+
+        public string ResolveType(uint token)
+        {
+            if (token == TokenConsts.Unresolved)
+                return "<unresolved>";
+            if (token >= TokenConsts.ImportBase)
+            {
+                uint idx = token - TokenConsts.ImportBase;
+                if (idx >= Imports.Count) return $"<bad import {idx}>";
+                return Imports[(int)idx].Name;
+            }
+            return token < ClassNames.Count ? ClassNames[(int)token] : $"<bad cls {token}>";
+        }
+    }
+
     // ── FUNC section ─────────────────────────────────────────────────────────
 
     private static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> ReadFuncSection(
-        byte[] data, string[] pool)
+        byte[] data, string[] pool, IdMap idMap)
     {
         using var ms   = new MemoryStream(data, writable: false);
         using var r    = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
@@ -351,7 +432,7 @@ public static partial class ZbcReader
             {
                 int start = (int)blockOffsets[bi];
                 int end   = bi + 1 < blockCount ? (int)blockOffsets[bi + 1] : (int)instrLen;
-                var (instrs, term) = DecodeBlock(instrBytes, start, end, pool);
+                var (instrs, term) = DecodeBlock(instrBytes, start, end, pool, idMap);
                 blocks.Add(new IrBlock(bi == 0 ? "entry" : $"block_{bi}", instrs, term));
             }
 
@@ -380,8 +461,11 @@ public static partial class ZbcReader
     // ── Internal helpers for ZpkgReader ──────────────────────────────────────
 
     /// Exposes FUNC section decoding for ZpkgReader (packed mode module bodies).
+    /// Phase 3 S3: takes <see cref="IdMap"/> for v1.0 token → name resolution.
     public static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> DecodeFuncSectionPublic(
-        byte[] data, string[] pool) => ReadFuncSection(data, pool);
+        byte[] data, string[] pool, IReadOnlyList<string> classNames,
+        IReadOnlyList<string> funcNames, IReadOnlyList<ImportEntry> imports)
+        => ReadFuncSection(data, pool, new IdMap(classNames, funcNames, imports));
 
     /// Exposes TYPE section decoding for ZpkgReader.
     public static List<IrClassDesc> DecodeTypeSectionPublic(

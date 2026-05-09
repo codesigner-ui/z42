@@ -192,151 +192,19 @@ public sealed partial class IrGen
         IrVerifier.VerifyOrThrow(module);
 
         // Phase 3 S2 step 2 (tokenize-ir-and-zbc-bump, 2026-05-09): build
-        // TokenAllocator as a sibling output. Walks the just-emitted IrModule:
-        // intra-module classes / functions / static fields → registered;
-        // cross-zpkg refs encountered in instructions → DiscoverImport.
-        // After Build(), the allocator is ready for ZbcWriter v1.0 to consume
-        // (S3). C# IR record fields stay String (option β decision).
-        _allocator = BuildTokenAllocator(module);
+        // TokenAllocator as a sibling output. Logic lives in
+        // TokenAllocator.FromModule (single source of truth — also used by
+        // ZbcWriter when caller didn't thread allocator through).
+        _allocator = TokenAllocator.FromModule(module);
 
         return module;
     }
 
-    // ── TokenAllocator construction (Phase 3 S2 step 2) ──────────────────
-
-    /// <summary>Phase 3 sibling output: walks the emitted IrModule and builds a
-    /// finalized <see cref="TokenAllocator"/>. Available via <see cref="Allocator"/>
-    /// after <see cref="Generate"/> returns. Null before Generate runs.</summary>
-    private TokenAllocator? _allocator;
-
-    /// <summary>Phase 3 (tokenize-ir-and-zbc-bump): finalized TokenAllocator
+    /// <summary>Phase 3 sibling output: finalized <see cref="TokenAllocator"/>
     /// for this module. Populated by <see cref="Generate"/>; null until then.
     /// ZbcWriter (S3) reads this to emit v1.0 tokens + IMPT section.</summary>
+    private TokenAllocator? _allocator;
     public TokenAllocator? Allocator => _allocator;
-
-    private static TokenAllocator BuildTokenAllocator(IrModule module)
-    {
-        var allocator = new TokenAllocator();
-
-        // ── Pass 1: register intra-module decls ───────────────────────────
-        var localClassNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var cls in module.Classes)
-        {
-            allocator.RegisterClass(cls.Name);
-            localClassNames.Add(cls.Name);
-        }
-        var localFuncNames = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var fn in module.Functions)
-        {
-            allocator.RegisterMethod(fn.Name);
-            localFuncNames.Add(fn.Name);
-        }
-
-        // Static fields aren't a top-level decl list; infer from StaticGet/Set
-        // sites whose owning class FQ is local. Collect cross-zpkg static
-        // fields as imports.
-        // (Same loop also collects cross-zpkg method/type imports.)
-
-        // ── Pass 2: scan instructions for refs (local registrations of
-        //           static fields + cross-zpkg DiscoverImport for everything) ─
-        foreach (var fn in module.Functions)
-        foreach (var block in fn.Blocks)
-        foreach (var instr in block.Instructions)
-        {
-            switch (instr)
-            {
-                case CallInstr c:
-                    if (!localFuncNames.Contains(c.Func))
-                        allocator.DiscoverImport(ImportKind.Method, c.Func);
-                    break;
-                case LoadFnInstr lf:
-                    if (!localFuncNames.Contains(lf.Func))
-                        allocator.DiscoverImport(ImportKind.Method, lf.Func);
-                    break;
-                case LoadFnCachedInstr lfc:
-                    if (!localFuncNames.Contains(lfc.Func))
-                        allocator.DiscoverImport(ImportKind.Method, lfc.Func);
-                    break;
-                case MkClosInstr mk:
-                    if (!localFuncNames.Contains(mk.FuncName))
-                        allocator.DiscoverImport(ImportKind.Method, mk.FuncName);
-                    break;
-                case ObjNewInstr on:
-                    if (!localClassNames.Contains(on.ClassName))
-                        allocator.DiscoverImport(ImportKind.Type, on.ClassName);
-                    if (!localFuncNames.Contains(on.CtorName))
-                        allocator.DiscoverImport(ImportKind.Method, on.CtorName);
-                    if (on.TypeArgs is not null)
-                        foreach (var ta in on.TypeArgs)
-                            if (LooksLikeTypeName(ta) && !localClassNames.Contains(ta))
-                                allocator.DiscoverImport(ImportKind.Type, ta);
-                    break;
-                case IsInstanceInstr ii:
-                    if (!localClassNames.Contains(ii.ClassName))
-                        allocator.DiscoverImport(ImportKind.Type, ii.ClassName);
-                    break;
-                case AsCastInstr ac:
-                    if (!localClassNames.Contains(ac.ClassName))
-                        allocator.DiscoverImport(ImportKind.Type, ac.ClassName);
-                    break;
-                case StaticGetInstr sg:
-                    RegisterStaticFieldRef(allocator, localClassNames, sg.Field);
-                    break;
-                case StaticSetInstr ss:
-                    RegisterStaticFieldRef(allocator, localClassNames, ss.Field);
-                    break;
-                // BuiltinInstr.Name → not tokenized via allocator (closed set
-                //   resolved by runtime BUILTINS table).
-                // VCallInstr / FieldGet/Set / LoadFieldAddr → receiver-type-
-                //   dependent String, IC-cached at runtime; not in allocator.
-                // CallNativeInstr / CallNativeVtableInstr → native interop,
-                //   separate concern; not in allocator.
-            }
-        }
-
-        allocator.Build();
-        return allocator;
-    }
-
-    /// <summary>Heuristic: TypeArgs entries that "look like" a type name
-    /// (contain '.' indicating FQ class) are candidates for import discovery;
-    /// primitive type tags (e.g. "int", "f64") and unresolved type-param
-    /// names (e.g. "T") are not registered as types.</summary>
-    private static bool LooksLikeTypeName(string typeArg) =>
-        typeArg.Contains('.') && !IsPrimitiveTag(typeArg);
-
-    private static bool IsPrimitiveTag(string s) => s switch
-    {
-        "int" or "long" or "short" or "byte" or "sbyte"
-        or "ushort" or "uint" or "ulong"
-        or "i8" or "i16" or "i32" or "i64"
-        or "u8" or "u16" or "u32" or "u64"
-        or "isize" or "usize"
-        or "double" or "float" or "f32" or "f64"
-        or "bool" or "char" or "str" or "string"
-        or "void" or "object" => true,
-        _ => false,
-    };
-
-    /// <summary>Register a static field reference. Local if owning class is
-    /// in <paramref name="localClassNames"/>; otherwise discovered as import.</summary>
-    private static void RegisterStaticFieldRef(
-        TokenAllocator allocator, HashSet<string> localClassNames, string fieldFqName)
-    {
-        // fieldFqName format: "Owner.Class.fieldName" — strip last segment.
-        var dot = fieldFqName.LastIndexOf('.');
-        if (dot < 0)
-        {
-            // No owner class; treat as local (rare, defensively register local).
-            allocator.RegisterStaticField(fieldFqName);
-            return;
-        }
-        var ownerClass = fieldFqName[..dot];
-        if (localClassNames.Contains(ownerClass))
-            allocator.RegisterStaticField(fieldFqName);
-        else
-            allocator.DiscoverImport(ImportKind.StaticField, fieldFqName);
-    }
 
     /// <summary>R1 — walk FunctionDecls (top-level + class methods) and emit one
     /// <see cref="TestEntry"/> per function decorated with z42.test.* attributes.

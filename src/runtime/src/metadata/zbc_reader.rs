@@ -354,7 +354,7 @@ struct FuncBody {
     line_table: Vec<crate::metadata::bytecode::LineEntry>,
 }
 
-fn read_func(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
+fn read_func(sec: &[u8], pool: &[String], id_map: &IdMap) -> Result<Vec<FuncBody>> {
     let mut c = Cursor::new(sec);
     let func_count = c.read_u32()? as usize;
     let mut bodies = Vec::with_capacity(func_count);
@@ -401,7 +401,7 @@ fn read_func(sec: &[u8], pool: &[String]) -> Result<Vec<FuncBody>> {
             let start = block_offsets[bi];
             let end   = if bi + 1 < block_count { block_offsets[bi + 1] } else { instr_len };
             let label = if bi == 0 { "entry".to_owned() } else { format!("block_{bi}") };
-            let (instrs, term) = decode_block(&instr_bytes[start..end], pool)?;
+            let (instrs, term) = decode_block(&instr_bytes[start..end], pool, id_map)?;
             blocks.push(BasicBlock { label, instructions: instrs, terminator: term });
         }
 
@@ -452,7 +452,7 @@ fn read_dbug(sec: &[u8], pool: &[String]) -> Result<Vec<Vec<crate::metadata::byt
 
 // ── Block decoding ────────────────────────────────────────────────────────────
 
-fn decode_block(data: &[u8], pool: &[String]) -> Result<(Vec<Instruction>, Terminator)> {
+fn decode_block(data: &[u8], pool: &[String], id_map: &IdMap) -> Result<(Vec<Instruction>, Terminator)> {
     let mut c = Cursor::new(data);
     let mut instrs = Vec::new();
 
@@ -478,13 +478,82 @@ fn decode_block(data: &[u8], pool: &[String]) -> Result<(Vec<Instruction>, Termi
                 }));
             }
             OP_THROW => return Ok((instrs, Terminator::Throw { reg: dst })),
-            _ => instrs.push(decode_instr(op, typ, dst, &mut c, pool)?),
+            _ => instrs.push(decode_instr(op, typ, dst, &mut c, pool, id_map)?),
         }
     }
     Ok((instrs, Terminator::Ret { reg: None }))
 }
 
-fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> Result<Instruction> {
+// ── Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09) ────────────────────────
+//
+// IdMap mirrors the C# `ZbcReader.IdMap`: maps v1.0 zbc tokens (u32 in IR
+// fields) back to FQ name strings so the existing `Instruction` enum (still
+// String-based at this stage) can be reconstructed.
+//
+//   token < ImportBase:  intra-module index into ClassNames / FuncNames
+//   token >= ImportBase: import_table[token - ImportBase].name
+
+const IMPORT_BASE_LOCAL: u32 = 0x8000_0000;
+const UNRESOLVED_LOCAL:  u32 = 0xFFFF_FFFF;
+
+#[derive(Debug, Default)]
+struct IdMap {
+    class_names: Vec<String>,
+    func_names:  Vec<String>,
+    imports:     Vec<ImportEntryRaw>,
+}
+
+#[derive(Debug, Clone)]
+struct ImportEntryRaw {
+    #[allow(dead_code)] // kind is informational; resolution is by token range
+    kind: u8,
+    name: String,
+}
+
+impl IdMap {
+    fn resolve_method(&self, token: u32) -> String {
+        if token == UNRESOLVED_LOCAL { return "<unresolved>".to_owned(); }
+        if token >= IMPORT_BASE_LOCAL {
+            let idx = (token - IMPORT_BASE_LOCAL) as usize;
+            return self.imports.get(idx)
+                .map(|e| e.name.clone())
+                .unwrap_or_else(|| format!("<bad import {idx}>"));
+        }
+        self.func_names.get(token as usize)
+            .cloned()
+            .unwrap_or_else(|| format!("<bad fn {token}>"))
+    }
+
+    fn resolve_type(&self, token: u32) -> String {
+        if token == UNRESOLVED_LOCAL { return "<unresolved>".to_owned(); }
+        if token >= IMPORT_BASE_LOCAL {
+            let idx = (token - IMPORT_BASE_LOCAL) as usize;
+            return self.imports.get(idx)
+                .map(|e| e.name.clone())
+                .unwrap_or_else(|| format!("<bad import {idx}>"));
+        }
+        self.class_names.get(token as usize)
+            .cloned()
+            .unwrap_or_else(|| format!("<bad cls {token}>"))
+    }
+}
+
+/// Decode the IMPT section (Phase 3 S3 v1.0 extended format).
+/// Layout: `u32 count + (u8 kind, u32 name_str_idx)*`.
+fn read_impt(sec: &[u8], pool: &[String]) -> Result<Vec<ImportEntryRaw>> {
+    let mut c = Cursor::new(sec);
+    let count = c.read_u32()? as usize;
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let kind = c.read_u8()?;
+        let name_idx = c.read_u32()?;
+        let name = pool_str_owned(pool, name_idx)?;
+        out.push(ImportEntryRaw { kind, name });
+    }
+    Ok(out)
+}
+
+fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_map: &IdMap) -> Result<Instruction> {
     let instr = match op {
         OP_CONST_STR  => Instruction::ConstStr { dst, idx: c.read_u32()? },
         OP_CONST_I if typ == TAG_I64
@@ -526,16 +595,17 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
         OP_ARRAY_LEN => Instruction::ArrayLen { dst, arr: c.read_u16()? as u32 },
 
         OP_CALL => {
-            let func = pool_str_owned(pool, c.read_u32()?)?;
+            // Phase 3 S3 v1.0: u32 MethodId token → name via id_map.
+            let func = id_map.resolve_method(c.read_u32()?);
             let args = read_args(c)?;
             Instruction::Call { dst, func, args }
         }
         OP_LOAD_FN => {
-            let func = pool_str_owned(pool, c.read_u32()?)?;
+            let func = id_map.resolve_method(c.read_u32()?);
             Instruction::LoadFn { dst, func }
         }
         OP_LOAD_FN_CACHED => {
-            let func    = pool_str_owned(pool, c.read_u32()?)?;
+            let func    = id_map.resolve_method(c.read_u32()?);
             let slot_id = c.read_u32()?;
             Instruction::LoadFnCached { dst, func, slot_id }
         }
@@ -545,7 +615,7 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             Instruction::CallIndirect { dst, callee, args }
         }
         OP_MK_CLOS => {
-            let fn_name     = pool_str_owned(pool, c.read_u32()?)?;
+            let fn_name     = id_map.resolve_method(c.read_u32()?);
             // 2026-05-02 impl-closure-l3-escape-stack: 1 byte flag
             let stack_alloc = c.read_u8()? != 0;
             let captures    = read_args(c)?;
@@ -580,8 +650,8 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
             Instruction::StaticSet { field, val }
         }
         OP_OBJ_NEW => {
-            let class_name = pool_str_owned(pool, c.read_u32()?)?;
-            let ctor_name  = pool_str_owned(pool, c.read_u32()?)?;
+            let class_name = id_map.resolve_type(c.read_u32()?);
+            let ctor_name  = id_map.resolve_method(c.read_u32()?);
             let args       = read_args(c)?;
             // D-8b-3 Phase 2: type_args list (resolved generic type-arguments)
             let t_count = c.read_u8()? as usize;
@@ -593,12 +663,12 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String]) -> R
         }
         OP_IS_INSTANCE => {
             let obj        = c.read_u16()? as u32;
-            let class_name = pool_str_owned(pool, c.read_u32()?)?;
+            let class_name = id_map.resolve_type(c.read_u32()?);
             Instruction::IsInstance { dst, obj, class_name }
         }
         OP_AS_CAST => {
             let obj        = c.read_u16()? as u32;
-            let class_name = pool_str_owned(pool, c.read_u32()?)?;
+            let class_name = id_map.resolve_type(c.read_u32()?);
             Instruction::AsCast { dst, obj, class_name }
         }
         OP_ARRAY_NEW     => Instruction::ArrayNew { dst, size: c.read_u16()? as u32 },
@@ -722,9 +792,17 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     if data.len() < 16 { bail!("zbc file too short") }
     if &data[0..4] != ZBC_MAGIC { bail!("not a binary zbc (bad magic)") }
 
+    let major     = u16::from_le_bytes([data[4], data[5]]);
     let minor     = u16::from_le_bytes([data[6], data[7]]);
+    // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): require zbc 1.0+.
+    // Pre-1.0 carries no IMPT-extension and uses str_idx for IR refs;
+    // not supported. Run regen-golden-tests.sh to upgrade artifacts.
+    if major == 0 {
+        bail!("zbc 1.0+ required, got {major}.{minor}. Run regen-golden-tests.sh or rebuild your sources.");
+    }
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
-    let has_is_static = minor >= 4;
+    let has_is_static = true;  // v1.0+ always has is_static field in SIGS
+    let _ = minor; // currently unused for v1.x dispatch
     let dir = read_directory(data, sec_count)?;
 
     let namespace = get_section(data, &dir, b"NSPC")
@@ -748,8 +826,20 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
         .transpose()?
         .unwrap_or_default();
 
+    // Phase 3 S3: IMPT extended (kind, name_str_idx) entries.
+    let imports = get_section(data, &dir, b"IMPT")
+        .map(|s| read_impt(s, &pool_raw))
+        .transpose()?
+        .unwrap_or_default();
+
+    let id_map = IdMap {
+        class_names: classes.iter().map(|c| c.name.clone()).collect(),
+        func_names:  sigs.iter().map(|s| s.name.clone()).collect(),
+        imports,
+    };
+
     let func_bodies = get_section(data, &dir, b"FUNC")
-        .map(|s| read_func(s, &pool_raw))
+        .map(|s| read_func(s, &pool_raw, &id_map))
         .transpose()?
         .unwrap_or_default();
 
@@ -993,12 +1083,23 @@ fn read_mods_section(
         let func_data   = c.read_bytes(func_len)?;
         let type_len    = c.read_u32()? as usize;
         let type_data   = c.read_bytes(type_len)?;
+        // Phase 3 S3 (tokenize-ir-and-zbc-bump, 2026-05-09): per-module IMPT
+        // (kind, name_str_idx)*. Required for cross-module token resolution
+        // inside packed zpkg modules.
+        let impt_len    = c.read_u32()? as usize;
+        let impt_data   = c.read_bytes(impt_len)?;
 
         let namespace = pool_str_owned(pool, ns_idx)?;
         let sigs_slice = &global_sigs[first_sig..first_sig + func_count.min(global_sigs.len() - first_sig.min(global_sigs.len()))];
 
-        let func_bodies = read_func(func_data, pool)?;
         let classes = if type_len > 0 { read_type(type_data, pool)? } else { vec![] };
+        let imports = if impt_len > 0 { read_impt(impt_data, pool)? } else { vec![] };
+        let id_map = IdMap {
+            class_names: classes.iter().map(|c| c.name.clone()).collect(),
+            func_names:  sigs_slice.iter().map(|s| s.name.clone()).collect(),
+            imports,
+        };
+        let func_bodies = read_func(func_data, pool, &id_map)?;
 
         let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {
             let sig = sigs_slice.get(i);
