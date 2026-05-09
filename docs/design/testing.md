@@ -8,7 +8,7 @@
 2. **结构化 assertion**：`Assert.eq` / `Assert.throws<E>` / `Assert.near` 等替代 stdout 字面量比对
 3. **条件跳过**：`[Skip(platform: "ios", feature: "jit", ...)]` 按平台 / 特性自动决定是否运行
 4. **多层组织**：单元 / stdlib API / VM × 脚本工程级集成 各自归位
-5. **跨平台一致**：同一份 `.zbc` 在 desktop / wasm / iOS / Android 跑相同结果（P4 范围）
+5. **跨平台一致**：同一份 `.zbc` 在 desktop / wasm / iOS / Android 跑相同结果（详见 [cross-platform-testing.md](cross-platform-testing.md)）
 
 ## 架构总览（R 系列）
 
