@@ -127,10 +127,10 @@
 
 ## MODIFIED Requirements
 
-### Requirement: IR Instruction 字段类型
+### Requirement: IR Instruction 字段类型（**Rust 端**）
 
 **Before** (Phase 1+2):
-```
+```rust
 Call { dst: Reg, func: String, args: Vec<Reg> }
 ObjNew { dst: Reg, class_name: String, ctor_name: String, args: Vec<Reg>, type_args: Vec<String> }
 VCall { dst: Reg, obj: Reg, method: String, args: Vec<Reg> }
@@ -141,7 +141,7 @@ LoadFn { dst: Reg, func: String }
 ```
 
 **After** (Phase 3):
-```
+```rust
 Call { dst: Reg, func: MethodId, args: Vec<Reg> }
 ObjNew { dst: Reg, class_id: TypeId, ctor_id: MethodId, args: Vec<Reg>, type_args: Vec<TypeId> }
 VCall { dst: Reg, obj: Reg, method: String, args: Vec<Reg> }   // method 不动 — receiver-type-dependent，IC 路径
@@ -151,6 +151,8 @@ LoadFn { dst: Reg, func: MethodId }
 ```
 
 > 注：`VCall.method` 和 `Field*.field_name` 因为 receiver-type-dependent，无法编译期 token 化（与 receiver 实际类型一一对应）；继续保持 String，运行期通过 VCallIC / FieldIC 单态缓存。这是 Phase 1+2 既有设计，本次不动。
+
+> **C# IR records 字段类型（2026-05-09 实施期裁决）**：原 design 要求 C# `IrModule.cs` 中 `CallInstr` / `ObjNewInstr` 等 record 字段类型也跟随 Rust 改为 `MethodId` / `TypeId` / `StaticFieldId`。实施期裁决保留 C# IR records 为 `string` 类型，理由：(1) C# IR records 是编译期中间表示，不持久化；持久化产物（zbc）由 ZbcWriter 决定，已能独立 tokenize；(2) 运行期 hot path 是 Rust 端，与 C# IR record 字段类型无关；(3) tokenization 仅在 wire format 边界（ZbcWriter 输出 / ZbcReader 输入 / Rust Instruction enum）落地即可，无需级联到 C# 编译器内部。`TokenAllocator` 作为 IrGen 的 sibling output，与 IR module 一起产出，由 ZbcWriter 消费生成 v1.0 wire format。
 
 ### Requirement: type_registry 接口
 

@@ -69,45 +69,42 @@
 
 ---
 
-## S2 — TokenAllocator + IR records 迁移（C# 端）
+## S2 — TokenAllocator standalone + IrGen sibling output（C# 端）
 
-### 2.1 IR records 字段类型迁移
-- [ ] 2.1.1 `IrModule.cs::CallInstr`：`string Func` → `MethodId Func`
-- [ ] 2.1.2 `IrModule.cs::BuiltinInstr`：`string Name` → `BuiltinId Name`
-- [ ] 2.1.3 `IrModule.cs::ObjNewInstr`：`ClassName/CtorName` → `TypeId ClassId / MethodId CtorId`；`TypeArgs` 元素 → `TypeId`
-- [ ] 2.1.4 `IrModule.cs::IsInstanceInstr / AsCastInstr`：`ClassName` → `TypeId ClassId`
-- [ ] 2.1.5 `IrModule.cs::StaticGetInstr / StaticSetInstr`：`Field` → `StaticFieldId Field`
-- [ ] 2.1.6 `IrModule.cs::LoadFnInstr / LoadFnCachedInstr / MkClosInstr`：`Func / FuncName` → `MethodId`
-- [ ] 2.1.7 `IrModule.cs::FieldGetInstr / FieldSetInstr / LoadFieldAddrInstr`：`FieldName` 保持 `string`（receiver-type-dependent）
-- [ ] 2.1.8 `IrModule.cs::VCallInstr`：`Method` 保持 `string`（同上）
-- [ ] 2.1.9 `ExportedTypes.cs / DependencyIndex.cs`：跟随接口
+> **2026-05-09 实施期裁决（option β）**：原计划 IR records 字段类型 `string → token`
+> 移入 Out of Scope。改为 TokenAllocator 作为 IrGen 的 sibling output 接到 ZbcWriter
+> 消费侧。详见 spec.md / design.md / proposal.md 的对应说明。
+> S2 拆成 step 1 / step 2 两个独立 commit。
 
-### 2.2 TokenAllocator 实现
-- [ ] 2.2.1 新建 `src/compiler/z42.IR/TokenAllocator.cs`：按 (FQ class, method, arity, params) 分配 MethodId；按 FQ class 分配 TypeId；按 (class, field) 分配 StaticFieldId
-- [ ] 2.2.2 收集 cross-zpkg refs 进 import_table；`IMPORT_BASE + idx` 分配
-- [ ] 2.2.3 提供 `Resolve(string fqName, TokenKind kind) -> uint` API 给 IrGen 用
+### 2.0 step 1 — TokenAllocator standalone（已完成 commit `3306659`）
+- [x] 2.0.1 `TokenAllocator.cs` (NEW)：register / DiscoverImport / Build / Resolve* + ImportTable 排序
+- [x] 2.0.2 `ImportEntry` record (NEW)：(kind, name) 二元组
+- [x] 2.0.3 `TokenAllocatorTests.cs` (NEW)：13 个单测覆盖 determinism / 排序 / lifecycle / import 空间
 
-### 2.3 IrGen 接入
-- [ ] 2.3.1 `IrPassManager.cs`：在 IrGen 之前跑 TokenAllocator pass
-- [ ] 2.3.2 `IrGen.cs / IrGen.Helpers.cs / IrGen.Functions.cs / IrGen.Classes.cs / IrGen.Generate.cs / IrGen.Tests.cs`：emit 时调 `allocator.Resolve(name)` 拿 token，写入 IR 字段
-- [ ] 2.3.3 `FunctionEmitterExprs.cs / .Members.cs`：调用站点换 token
+### 2.1 step 2 — IrGen sibling output
+- [ ] 2.1.1 `IrGen.Generate.cs` / `IrGen.cs`：完成 IR module emit 后跑 TokenAllocator
+  - Pass 1：注册 intra-module classes (`IrModule.Classes`) + methods (`IrModule.Functions.Name`) + 静态字段（扫描 IR 中所有 `StaticGetInstr.Field` / `StaticSetInstr.Field` 收集）
+  - Pass 2：扫描 IR 中所有 cross-zpkg refs（`CallInstr.Func` 不属于本模块的；`ObjNewInstr.ClassName` / `IsInstanceInstr` / `AsCastInstr` 不属于本模块的；等）→ DiscoverImport
+  - Build()
+- [ ] 2.1.2 改 `IrGen` 公开返回类型：`(IrModule, TokenAllocator)` 或新 wrapper class，让下游消费者拿到 allocator
+- [ ] 2.1.3 IrModule 不动；C# IR records 字段类型不动（裁决保持 String）
 
-### 2.4 IrVerifier + ZasmWriter
-- [ ] 2.4.1 `IrVerifier.cs`：验证 token bounds（intra-module < `IMPORT_BASE` ∪ `[IMPORT_BASE, UNRESOLVED)`）
-- [ ] 2.4.2 `ZasmWriter.cs`：文本输出 `<token>:<resolved-name>` 形式（解引用 import_table / functions / classes）
+### 2.2 IrVerifier 增强（可选 / 推迟）
+- [ ] 2.2.1 `IrVerifier.cs`：暂不改；token bounds 验证留到 S3（ZbcWriter 验证更直接）
 
-### 2.5 emit 期 sorted iteration（reproducibility）
-- [ ] 2.5.1 根据 0.1.1 审计结果，把 IrGen 内所有 Dictionary 迭代改 `OrderBy`
-- [ ] 2.5.2 StringPool 的 emit 路径检查无 nondeterministic 排序
+### 2.3 测试
+- [ ] 2.3.1 新增 `IrGenTokenAllocatorIntegrationTests.cs`（或挂在 `IrGenTests.cs`）：IrGen 输出的 allocator 含完整 decls + import_table
 
-### 2.6 测试
-- [ ] 2.6.1 新建 `TokenAllocatorTests.cs`：deterministic 分配 fixed-sample 验证
-- [ ] 2.6.2 `IrGenTests.cs / IrVerifierTests.cs / IncrementalBuildTests.cs / CrossZpkgImplTests.cs`：跟随接口
-- [ ] 2.6.3 `GoldenTests.cs`：暂时 skip（zbc 1.0 在 S3）
+### 2.4 验证 + commit
+- [ ] 2.4.1 `dotnet build` + `dotnet test` 全绿
+- [ ] 2.4.2 commit: `feat(compiler): S2 step 2 — IrGen produces TokenAllocator alongside IrModule`
 
-### 2.7 验证 + commit
-- [ ] 2.7.1 `dotnet build` + `dotnet test`（除 zbc round-trip 类）全绿
-- [ ] 2.7.2 commit: `feat(compiler): S2 — TokenAllocator + IR records token migration (Phase 3)`
+### 推迟到 S3 的项（原 S2 内容）
+- ZbcWriter wire format 改 v1.0 + IMPT 区段 → S3
+- ZbcReader 解码 v1.0 → S3
+- `Opcodes.cs` 版本常量 → S3
+- emit 期 sorted iteration（IMPT HashSet 修复）→ S3
+- `ZasmWriter.cs` token 输出 → S3
 
 ---
 

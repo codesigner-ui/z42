@@ -203,15 +203,20 @@ impl MethodId {
 // 同理 TypeId / StaticFieldId / BuiltinId
 ```
 
-### IrModule 字段迁移示例（C#）
+### IrModule 字段（C#）保持 String — 实施期裁决（2026-05-09）
+
+C# IR records 不动；TokenAllocator 作为 IrGen 的 sibling output 与 IR module
+一起产出。tokenization 只在 wire format 边界（ZbcWriter v1.0 输出 / ZbcReader
+v1.0 输入 / Rust Instruction enum）落地。
 
 ```csharp
-// Before
+// 维持现状（不变）
 public sealed record CallInstr(TypedReg Dst, string Func, List<TypedReg> Args) : IrInstr;
-
-// After
-public sealed record CallInstr(TypedReg Dst, MethodId Func, List<TypedReg> Args) : IrInstr;
 ```
+
+理由：C# IR records 不持久化；改字段类型不影响 zbc 二进制 + Rust runtime
+hot path，但会级联到 ~15 个 C# 文件 + IrVerifier 诊断 / ZasmWriter 文本输出
+等需要从 token 反查名字。投入不成正比。
 
 ### Rust Instruction enum 字段迁移示例
 
