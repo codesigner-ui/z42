@@ -24,6 +24,24 @@ use serde::{Deserialize, Serialize};
 /// practice); a sentinel cannot collide with a real id without overflowing.
 pub const UNRESOLVED: u32 = u32::MAX;
 
+/// Phase 3 (`tokenize-ir-and-zbc-bump`, 2026-05-09): bit threshold splitting
+/// the `u32` token space into intra-module IDs and import-table indices.
+///
+/// ```text
+/// intra-module:    [0,             0x7FFF_FFFE]   (~2.1B capacity)
+/// IMPORT_BASE:     0x8000_0000
+/// import indices:  [0x8000_0000,   0xFFFF_FFFE]   (idx = token - IMPORT_BASE)
+/// UNRESOLVED:      0xFFFF_FFFF
+/// ```
+///
+/// Applies to `MethodId` / `TypeId` / `StaticFieldId` / `BuiltinId` —
+/// kinds that can be cross-zpkg-imported. `FieldId` / `VTableSlot` are
+/// always intra-type slot indices and never carry import semantics
+/// (the methods on those types still compile but always return false /
+/// trip on `import_idx`; the constraint is upheld by the caller, not
+/// the type).
+pub const IMPORT_BASE: u32 = 0x8000_0000;
+
 macro_rules! define_token {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
@@ -37,6 +55,22 @@ macro_rules! define_token {
             #[inline]
             pub fn is_resolved(self) -> bool {
                 self.0 != UNRESOLVED
+            }
+
+            /// True iff `self` points into the per-module import_table
+            /// (cross-zpkg lazy reference). False for both intra-module
+            /// IDs and the UNRESOLVED sentinel.
+            #[inline]
+            pub fn is_import(self) -> bool {
+                self.0 >= IMPORT_BASE && self.0 != UNRESOLVED
+            }
+
+            /// Index into the import_table. Caller must check `is_import()`
+            /// first. Panics if called on a non-import token (debug build).
+            #[inline]
+            pub fn import_idx(self) -> u32 {
+                debug_assert!(self.is_import(), "import_idx() on non-import token");
+                self.0 - IMPORT_BASE
             }
         }
     };
@@ -84,32 +118,5 @@ define_token!(
 );
 
 #[cfg(test)]
-mod tokens_tests {
-    use super::*;
-
-    #[test]
-    fn unresolved_sentinel_is_u32_max() {
-        assert_eq!(UNRESOLVED, u32::MAX);
-        assert!(!MethodId::UNRESOLVED.is_resolved());
-        assert!(!TypeId::UNRESOLVED.is_resolved());
-        assert!(!BuiltinId::UNRESOLVED.is_resolved());
-        assert!(!FieldId::UNRESOLVED.is_resolved());
-        assert!(!StaticFieldId::UNRESOLVED.is_resolved());
-        assert!(!VTableSlot::UNRESOLVED.is_resolved());
-    }
-
-    #[test]
-    fn resolved_token_reports_resolved() {
-        assert!(MethodId(0).is_resolved());
-        assert!(MethodId(42).is_resolved());
-        assert!(BuiltinId(7).is_resolved());
-    }
-
-    #[test]
-    fn token_types_are_distinct() {
-        // Compile-time check — these would fail to compile if MethodId == TypeId.
-        let _m: MethodId = MethodId(1);
-        let _t: TypeId = TypeId(1);
-        // Cannot mix: `let _: MethodId = TypeId(1);` would not compile.
-    }
-}
+#[path = "tokens_tests.rs"]
+mod tests;

@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use z42_vm::metadata::{load_artifact, zbc_reader::read_zbc};
+use z42_vm::metadata::zbc_reader::read_zbc;
 
 /// Project root resolved from `CARGO_MANIFEST_DIR` (= src/runtime).
 fn project_root() -> PathBuf {
@@ -150,38 +150,12 @@ fn check_instr_pool_refs(
 // Specific structural assertions: pin a few high-traffic golden tests so
 // silent regressions in opcode layout get a precise diagnostic, not just a
 // generic "decode failed".
+//
+// Note (2026-05-09 cleanup): the `hello_*` structural tests previously pinned
+// against `basic/hello/source.zbc` were removed in commit `6fc6ccb`-era test
+// refactor (`basic/hello/` → single-file `basic/hello.z42`); the
+// `all_golden_zbc_decode` test below remains the comprehensive backstop.
 // ────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn hello_zbc_structure() {
-    let bytes = fs::read(golden_dir("basic/hello").join("source.zbc"))
-        .expect("hello/source.zbc");
-    let module = read_zbc(&bytes).expect("hello decodes");
-
-    // Source uses `namespace Demo;` so functions are emitted as `Demo.Greet`,
-    // `Demo.Main`. The module name itself comes from the NSPC section.
-    assert_eq!(module.name, "Demo", "namespace from NSPC");
-
-    let names: Vec<&str> = module.functions.iter().map(|f| f.name.as_str()).collect();
-    assert!(
-        names.iter().any(|n| *n == "Demo.Greet"),
-        "Demo.Greet must be present, got: {names:?}"
-    );
-    assert!(
-        names.iter().any(|n| *n == "Demo.Main"),
-        "Demo.Main must be present, got: {names:?}"
-    );
-
-    // String pool must include the source literals used in interpolation /
-    // direct args. C# emits these via the unified strings section.
-    let pool = &module.string_pool;
-    for needed in &["Hello, ", "!", "world", "z42 version 0.1, the answer is "] {
-        assert!(
-            pool.iter().any(|s| s == needed),
-            "string pool missing literal {needed:?}; pool = {pool:?}"
-        );
-    }
-}
 
 #[test]
 fn class_basic_zbc_has_classes() {
@@ -203,29 +177,6 @@ fn class_basic_zbc_has_classes() {
     for cls in &module.classes {
         assert!(!cls.name.is_empty(), "class name empty");
     }
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// load_artifact full-path test: includes build_type_registry +
-// verify_constraints + build_block_indices + build_func_index.
-// Ensures the post-decode passes also stay green against C# output.
-// ────────────────────────────────────────────────────────────────────────────
-
-#[test]
-fn hello_load_artifact_full_path() {
-    let zbc = golden_dir("basic/hello").join("source.zbc");
-    let path = zbc.to_string_lossy();
-    let loaded = load_artifact(&path).expect("hello loads via load_artifact");
-
-    // func_index built by post-decode pass.
-    assert!(
-        loaded.module.func_index.contains_key("Demo.Main"),
-        "func_index missing Demo.Main"
-    );
-    assert!(
-        loaded.module.func_index.contains_key("Demo.Greet"),
-        "func_index missing Demo.Greet"
-    );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
