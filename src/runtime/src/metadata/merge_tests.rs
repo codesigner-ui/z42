@@ -41,6 +41,7 @@ fn make_module_with(
         classes,
         functions,
         type_registry: std::collections::HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: std::collections::HashMap::new(),
         func_ref_cache_slots: 0,
     }

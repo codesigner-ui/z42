@@ -86,6 +86,7 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
         classes: vec![],
         functions: vec![build_function(&format!("{name}.Main"), instructions, terminator)],
         type_registry: HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: 0,
     }
@@ -396,6 +397,7 @@ fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminat
         classes: vec![],
         functions: vec![func],
         type_registry: HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: 0,
     }
@@ -487,6 +489,7 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
         classes: vec![],
         functions: vec![func],
         type_registry: HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: 0,
     };
@@ -543,6 +546,7 @@ fn z42_str_with_interior_nul_traps_z0908() {
         classes: vec![],
         functions: vec![func],
         type_registry: HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: 0,
     };

@@ -38,6 +38,7 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
         classes: vec![],
         functions: vec![func],
         type_registry: HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: 0,
     }

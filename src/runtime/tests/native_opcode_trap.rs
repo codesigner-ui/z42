@@ -40,6 +40,7 @@ fn module_with_single_instr(name: &str, instr: Instruction) -> Module {
         classes: vec![],
         functions: vec![func],
         type_registry: HashMap::new(),
+        type_registry_vec: Vec::new(),
         func_index: HashMap::new(),
         func_ref_cache_slots: 0,
     }

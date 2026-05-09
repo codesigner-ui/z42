@@ -293,19 +293,23 @@ fn infer_namespace(name: &str) -> &str {
 // ── TypeDesc registry ─────────────────────────────────────────────────────────
 
 /// Pre-build a `TypeDesc` for every class in `module.classes` and store the
-/// results in `module.type_registry`.
+/// results in `module.type_registry` (by-name HashMap) **and**
+/// `module.type_registry_vec` (by-`TypeId` Vec, Phase 3 S1, 2026-05-09).
 ///
 /// Algorithm (CoreCLR-inspired):
 ///   1. Topological sort: each class is processed after its base class.
 ///   2. Field slots: base fields first (already in base TypeDesc), then derived.
 ///   3. vtable: start with base vtable, override entries where derived defines
 ///      the same method name, append new methods at the end.
+///   4. Both views populated: by-name HashMap and by-TypeId Vec[id] = Arc.
 pub fn build_type_registry(module: &mut Module) {
     let order = topo_sort_classes(module);
     let mut registry: HashMap<String, Arc<TypeDesc>> = HashMap::new();
+    let mut registry_vec: Vec<Arc<TypeDesc>> = Vec::with_capacity(order.len());
     // introduce-method-token 2026-05-08: assign TypeId in topo order so that
     // each TypeDesc has a stable per-module id. VCallIC / FieldIC compare
     // receiver TypeId via single u32 equality (no name hash).
+    // Phase 3 S1: TypeId.0 is also the index in `registry_vec` (invariant).
     let mut next_type_id: u32 = 0;
 
     for class_name in &order {
@@ -363,7 +367,7 @@ pub fn build_type_registry(module: &mut Module) {
 
         let type_id = crate::metadata::tokens::TypeId(next_type_id);
         next_type_id += 1;
-        registry.insert(class_name.clone(), Arc::new(TypeDesc {
+        let arc = Arc::new(TypeDesc {
             name: class_name.clone(),
             base_name: desc.base_class.clone(),
             fields,
@@ -374,10 +378,17 @@ pub fn build_type_registry(module: &mut Module) {
             type_args: vec![],
             type_param_constraints: desc.type_param_constraints.clone(),
             id: type_id,
-        }));
+        });
+        debug_assert_eq!(
+            registry_vec.len() as u32, type_id.0,
+            "type_registry_vec invariant: index == TypeId.0"
+        );
+        registry_vec.push(arc.clone());
+        registry.insert(class_name.clone(), arc);
     }
 
     module.type_registry = registry;
+    module.type_registry_vec = registry_vec;
 }
 
 // ── L3-G3a: constraint verification pass ───────────────────────────────────

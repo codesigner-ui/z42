@@ -6,8 +6,8 @@
 
 ## 进度概览
 
-- [ ] **S0**：审计 + Token32 骨架（~半天）
-- [ ] **S1**：type_registry Vec restructure（~半天，回退点）
+- [x] **S0**：审计 + Token32 骨架（commit `626beb8`）
+- [x] **S1**：type_registry Vec restructure（**回退点已建立**）
 - [ ] **S2**：TokenAllocator + IR records 迁移（C# 端，~2 天）
 - [ ] **S3**：zbc 1.0 格式 bump（C# + Rust 同步，~2 天）
 - [ ] **S4**：VM 加载路径切换 + stdlib regen（~3 天）

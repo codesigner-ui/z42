@@ -1,3 +1,4 @@
+use super::tokens::TypeId;
 use super::types::{ExecMode, TypeDesc};
 use super::bytecode_serde::{typed_reg_serde, typed_reg_vec_serde, typed_reg_opt_serde};
 use serde::{Deserialize, Serialize};
@@ -18,6 +19,17 @@ pub struct Module {
     /// to the corresponding `TypeDesc` (field layout + vtable).
     #[serde(skip)]
     pub type_registry: HashMap<String, Arc<TypeDesc>>,
+    /// Phase 3 S1 (`tokenize-ir-and-zbc-bump`, 2026-05-09): parallel
+    /// by-`TypeId` view of the type registry. Index `i` holds the `Arc<TypeDesc>`
+    /// whose `id == TypeId(i as u32)`. Built alongside `type_registry` by
+    /// `build_type_registry` (intra-module classes) and extended by
+    /// `register_lazy_type` (cross-zpkg lazy load).
+    ///
+    /// In S1 this is observability infrastructure — consumers still go
+    /// through `type_registry` (HashMap by-name). S4 will switch hot paths
+    /// to `type_by_id()` once IR fields are tokenised.
+    #[serde(skip)]
+    pub type_registry_vec: Vec<Arc<TypeDesc>>,
     /// Pre-built function name → index mapping for O(1) call dispatch.
     /// Populated by the loader after deserialisation.
     #[serde(skip)]
@@ -27,6 +39,51 @@ pub struct Module {
     /// `Vec<Value>` of this size on `VmContext` at module load.
     #[serde(default)]
     pub func_ref_cache_slots: u32,
+}
+
+impl Module {
+    /// Phase 3 S1 (`tokenize-ir-and-zbc-bump`, 2026-05-09): O(1) by-`TypeId`
+    /// type lookup. Invariant: `type_registry_vec[id.0] == registry[name]`
+    /// where `name` is the FQ class name of that TypeDesc, maintained by
+    /// `loader::build_type_registry` and `Module::register_lazy_type`.
+    #[inline]
+    pub fn type_by_id(&self, id: TypeId) -> Option<&Arc<TypeDesc>> {
+        if !id.is_resolved() { return None; }
+        self.type_registry_vec.get(id.0 as usize)
+    }
+
+    /// Append a lazily-loaded TypeDesc to both views (Vec and HashMap),
+    /// assigning the next available `TypeId.0`. Returns the assigned id.
+    /// Used by `lazy_loader` for cross-zpkg type resolution.
+    ///
+    /// Caller responsibility: the input `Arc<TypeDesc>` may carry its own
+    /// `id` (from another module's build_type_registry); this method
+    /// **rebuilds** the Arc with the freshly-allocated module-local id so
+    /// downstream `td.id` checks remain consistent. If the type is already
+    /// present (by-name match), returns the existing id without modification.
+    pub fn register_lazy_type(&mut self, td: Arc<TypeDesc>) -> TypeId {
+        if let Some(existing) = self.type_registry.get(&td.name) {
+            return existing.id;
+        }
+        let new_id = TypeId(self.type_registry_vec.len() as u32);
+        // Rebuild with the new module-local id (TypeDesc.id is a single u32 —
+        // cheap to clone the rest by Arc-internals walking).
+        let rebuilt = Arc::new(TypeDesc {
+            name: td.name.clone(),
+            id: new_id,
+            base_name: td.base_name.clone(),
+            fields: td.fields.clone(),
+            field_index: td.field_index.clone(),
+            vtable: td.vtable.clone(),
+            vtable_index: td.vtable_index.clone(),
+            type_params: td.type_params.clone(),
+            type_args: td.type_args.clone(),
+            type_param_constraints: td.type_param_constraints.clone(),
+        });
+        self.type_registry.insert(rebuilt.name.clone(), rebuilt.clone());
+        self.type_registry_vec.push(rebuilt);
+        new_id
+    }
 }
 
 /// Class descriptor — field layout for object allocation.

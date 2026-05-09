@@ -212,6 +212,135 @@ fn test_resolve_namespace_cross_tier_override() {
     assert_eq!(path.extension().and_then(|e| e.to_str()), Some("zbc"));
 }
 
+// ── Phase 3 S1: type_registry_vec + Module API ───────────────────────────────
+
+/// Build a minimal Module with two classes and verify build_type_registry
+/// populates both `type_registry` (HashMap by name) and `type_registry_vec`
+/// (Vec by TypeId), and that the Vec[id] index agrees with the HashMap.
+#[test]
+fn type_registry_vec_invariant_after_build() {
+    use crate::metadata::bytecode::{ClassDesc, Module};
+
+    let mut module = Module {
+        name: "Demo".to_owned(),
+        string_pool: vec![],
+        classes: vec![
+            ClassDesc {
+                name: "Demo.Aaa".to_owned(),
+                base_class: None,
+                fields: vec![],
+                type_params: vec![],
+                type_param_constraints: vec![],
+            },
+            ClassDesc {
+                name: "Demo.Bbb".to_owned(),
+                base_class: Some("Demo.Aaa".to_owned()),
+                fields: vec![],
+                type_params: vec![],
+                type_param_constraints: vec![],
+            },
+        ],
+        functions: vec![],
+        type_registry: std::collections::HashMap::new(),
+        type_registry_vec: Vec::new(),
+        func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots: 0,
+    };
+
+    crate::metadata::loader::build_type_registry(&mut module);
+
+    // Both views populated and consistent.
+    assert_eq!(module.type_registry.len(), 2, "by-name HashMap has 2 types");
+    assert_eq!(module.type_registry_vec.len(), 2, "by-id Vec has 2 types");
+
+    // Topo order: Aaa (no base) → Bbb (extends Aaa). TypeId.0 == Vec index.
+    let aaa = module.type_registry.get("Demo.Aaa").expect("Aaa registered");
+    let bbb = module.type_registry.get("Demo.Bbb").expect("Bbb registered");
+    assert_eq!(aaa.id.0, 0, "Aaa got TypeId 0 (topo first)");
+    assert_eq!(bbb.id.0, 1, "Bbb got TypeId 1 (topo second)");
+
+    // Vec[id.0] yields the same Arc as the HashMap entry.
+    assert!(std::sync::Arc::ptr_eq(&module.type_registry_vec[0], aaa));
+    assert!(std::sync::Arc::ptr_eq(&module.type_registry_vec[1], bbb));
+
+    // Module::type_by_id lookup returns the same Arc.
+    assert!(std::sync::Arc::ptr_eq(
+        module.type_by_id(crate::metadata::tokens::TypeId(0)).unwrap(),
+        aaa
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        module.type_by_id(crate::metadata::tokens::TypeId(1)).unwrap(),
+        bbb
+    ));
+}
+
+#[test]
+fn type_by_id_unresolved_returns_none() {
+    let module = crate::metadata::bytecode::Module {
+        name: String::new(),
+        string_pool: vec![],
+        classes: vec![],
+        functions: vec![],
+        type_registry: std::collections::HashMap::new(),
+        type_registry_vec: Vec::new(),
+        func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots: 0,
+    };
+
+    assert!(module.type_by_id(crate::metadata::tokens::TypeId::UNRESOLVED).is_none());
+    assert!(module.type_by_id(crate::metadata::tokens::TypeId(99)).is_none());
+}
+
+#[test]
+fn register_lazy_type_appends_with_next_id() {
+    use crate::metadata::types::TypeDesc;
+    let mut module = crate::metadata::bytecode::Module {
+        name: "Demo".to_owned(),
+        string_pool: vec![],
+        classes: vec![],
+        functions: vec![],
+        type_registry: std::collections::HashMap::new(),
+        type_registry_vec: Vec::new(),
+        func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots: 0,
+    };
+
+    // Lazy type carrying a foreign id (simulating cross-zpkg arrival).
+    let foreign = std::sync::Arc::new(TypeDesc {
+        name: "Lazy.Foreign".to_owned(),
+        id: crate::metadata::tokens::TypeId(42),
+        base_name: None,
+        fields: vec![],
+        field_index: std::collections::HashMap::new(),
+        vtable: vec![],
+        vtable_index: std::collections::HashMap::new(),
+        type_params: vec![],
+        type_args: vec![],
+        type_param_constraints: vec![],
+    });
+
+    let assigned = module.register_lazy_type(foreign);
+
+    // Module-local id is the next available slot (= 0 for first registration),
+    // not the foreign incoming id of 42.
+    assert_eq!(assigned.0, 0, "first lazy gets id 0");
+    assert_eq!(module.type_registry_vec.len(), 1);
+    assert_eq!(module.type_registry_vec[0].id, assigned, "stored TypeDesc rebuilt with module-local id");
+    assert!(module.type_registry.contains_key("Lazy.Foreign"));
+
+    // Re-registering the same name returns the existing id (idempotent).
+    let dup = std::sync::Arc::new(TypeDesc {
+        name: "Lazy.Foreign".to_owned(),
+        id: crate::metadata::tokens::TypeId(99),
+        base_name: None, fields: vec![], field_index: std::collections::HashMap::new(),
+        vtable: vec![], vtable_index: std::collections::HashMap::new(),
+        type_params: vec![], type_args: vec![], type_param_constraints: vec![],
+    });
+    let dup_id = module.register_lazy_type(dup);
+    assert_eq!(dup_id, assigned, "re-register returns existing id");
+    assert_eq!(module.type_registry_vec.len(), 1, "no duplicate Vec slot");
+}
+
 /// resolve_dependency locates a zpkg by file name in the libs_paths.
 #[test]
 fn test_resolve_dependency_by_file_name() {
