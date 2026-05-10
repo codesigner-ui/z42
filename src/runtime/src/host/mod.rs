@@ -532,10 +532,17 @@ fn classify_config_error(e: config::ConfigError) -> Z42HostStatus {
 
 /// Map an interpreter / runtime error message to a `Z42HostStatus`.
 /// Heuristic: the interpreter surfaces uncaught z42 exceptions via
-/// `format_uncaught` (always contains "Unhandled exception"). Everything
-/// else (verification, type registry, etc.) is bucketed as INTERNAL.
+/// `exception::format_uncaught`, which prefixes the message with
+/// "uncaught exception:". Anything else — verification failure, type
+/// registry crash, etc. — buckets as `Internal`.
+///
+/// `ArgMismatch` is classified before this function is called (in
+/// `ops::invoke_impl`) because it has a structural cause rather than a
+/// runtime error string.
 fn classify_invoke_error(msg: &str) -> Z42HostStatus {
-    if msg.contains("Unhandled exception") {
+    if msg.contains("arg-count-mismatch:") {
+        Z42HostStatus::ArgMismatch
+    } else if msg.contains("uncaught exception") {
         Z42HostStatus::VmException
     } else {
         Z42HostStatus::Internal

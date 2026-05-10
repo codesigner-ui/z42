@@ -424,6 +424,206 @@ fn load_invoke_hello_world() {
     );
 }
 
+// ── H3 error-path coverage ──────────────────────────────────────────────
+
+/// Helper: run a host session against the embedding_hello fixture and
+/// hand the closure a fully-initialised `(Host*, Module*)` tuple. The
+/// session is shut down on the way out regardless of test outcome.
+#[cfg(z42_have_embedding_hello)]
+fn with_hello_session<R>(
+    capture: &Mutex<Vec<u8>>,
+    body: impl FnOnce(*mut Z42Host, *mut Z42Module) -> R,
+) -> R {
+    let user_data = capture as *const Mutex<Vec<u8>> as *mut c_void;
+    let libs_path = libs_dir_cstring();
+    let search_paths: [*const c_char; 2] = [libs_path.as_ptr(), ptr::null()];
+    let cfg = Z42HostConfig {
+        abi_version: Z42_HOST_ABI_VERSION,
+        reserved: 0,
+        exec_mode: config::Z42ExecMode::Interp as i32,
+        heap_initial_bytes: 0,
+        heap_max_bytes: 0,
+        stdout_sink: Some(host_simple_capture_sink),
+        stderr_sink: None,
+        sink_user_data: user_data,
+        search_paths: search_paths.as_ptr(),
+    };
+    let mut host: *mut Z42Host = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_initialize(&cfg, &mut host) },
+        Z42HostStatus::Ok
+    );
+    let zbc_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/embedding_hello.zbc"));
+    let mut module: *mut Z42Module = ptr::null_mut();
+    let load_status = unsafe {
+        z42_host_load_zbc(host, zbc_bytes.as_ptr(), zbc_bytes.len(), &mut module)
+    };
+    assert_eq!(load_status, Z42HostStatus::Ok);
+    let result = body(host, module);
+    assert_eq!(unsafe { z42_host_shutdown(host) }, Z42HostStatus::Ok);
+    result
+}
+
+/// Capture-only sink used by H3 tests that don't care about extra
+/// formatting — the StdoutCapture in `load_invoke_hello_world` adds an
+/// `[host]` prefix; here we keep raw bytes for ordering assertions.
+unsafe extern "C" fn host_simple_capture_sink(
+    bytes: *const c_char,
+    length: usize,
+    user_data: *mut c_void,
+) {
+    if user_data.is_null() {
+        return;
+    }
+    let mu = unsafe { &*(user_data as *const Mutex<Vec<u8>>) };
+    let slice = if bytes.is_null() || length == 0 {
+        &[][..]
+    } else {
+        unsafe { std::slice::from_raw_parts(bytes as *const u8, length) }
+    };
+    if let Ok(mut g) = mu.lock() {
+        g.extend_from_slice(slice);
+    }
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn resolve_entry_unknown_fqn_returns_entry_not_found() {
+    let _g = test_lock();
+    reset_host();
+    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+        eprintln!("skipping: corelib zpkg not available");
+        return;
+    }
+
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    with_hello_session(&capture, |host, module| {
+        let fqn = CString::new("Embedding.Hello.NoSuchMethod").unwrap();
+        let mut entry: *mut Z42Entry = ptr::null_mut();
+        let status =
+            unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) };
+        assert_eq!(status, Z42HostStatus::EntryNotFound);
+        assert!(entry.is_null());
+        let err = unsafe { z42_host_last_error(ptr::null_mut()) };
+        let msg = unsafe { CStr::from_ptr(err.message) }.to_string_lossy();
+        assert!(
+            msg.contains("NoSuchMethod"),
+            "expected message to mention the missing FQN, got {msg}"
+        );
+    });
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn invoke_arg_count_mismatch_returns_arg_mismatch() {
+    let _g = test_lock();
+    reset_host();
+    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+        eprintln!("skipping: corelib zpkg not available");
+        return;
+    }
+
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    with_hello_session(&capture, |host, module| {
+        let fqn = CString::new("Embedding.Hello.Main").unwrap();
+        let mut entry: *mut Z42Entry = ptr::null_mut();
+        assert_eq!(
+            unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+            Z42HostStatus::Ok
+        );
+
+        // Main() takes zero args; passing one i64 must fail with ArgMismatch.
+        let bogus_args = [z42_abi::Z42Value {
+            tag: z42_abi::Z42_VALUE_TAG_I64,
+            reserved: 0,
+            payload: 42,
+        }];
+        let mut result = z42_abi::Z42Value {
+            tag: u32::MAX,
+            reserved: 0,
+            payload: 0,
+        };
+        let status = unsafe {
+            z42_host_invoke(entry, bogus_args.as_ptr(), bogus_args.len(), &mut result)
+        };
+        assert_eq!(status, Z42HostStatus::ArgMismatch);
+        let err = unsafe { z42_host_last_error(ptr::null_mut()) };
+        let msg = unsafe { CStr::from_ptr(err.message) }.to_string_lossy();
+        assert!(msg.contains("expects 0"), "expected expects-0 detail, got {msg}");
+        assert!(msg.contains("got 1"), "expected got-1 detail, got {msg}");
+    });
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn z42_throw_escapes_as_vm_exception_with_message() {
+    let _g = test_lock();
+    reset_host();
+    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+        eprintln!("skipping: corelib zpkg not available");
+        return;
+    }
+
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    with_hello_session(&capture, |host, module| {
+        let fqn = CString::new("Embedding.Hello.Boom").unwrap();
+        let mut entry: *mut Z42Entry = ptr::null_mut();
+        assert_eq!(
+            unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+            Z42HostStatus::Ok
+        );
+
+        let mut result = z42_abi::Z42Value {
+            tag: u32::MAX,
+            reserved: 0,
+            payload: 0,
+        };
+        let status = unsafe { z42_host_invoke(entry, ptr::null(), 0, &mut result) };
+        assert_eq!(
+            status,
+            Z42HostStatus::VmException,
+            "z42 throw must surface as VmException"
+        );
+        let err = unsafe { z42_host_last_error(ptr::null_mut()) };
+        let msg = unsafe { CStr::from_ptr(err.message) }.to_string_lossy();
+        assert!(
+            msg.contains("intentional embedding-test failure"),
+            "expected exception message to be propagated, got {msg}"
+        );
+    });
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn sink_called_in_correct_order_for_multiple_lines() {
+    let _g = test_lock();
+    reset_host();
+    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+        eprintln!("skipping: corelib zpkg not available");
+        return;
+    }
+
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    with_hello_session(&capture, |host, module| {
+        let fqn = CString::new("Embedding.Hello.MultiLine").unwrap();
+        let mut entry: *mut Z42Entry = ptr::null_mut();
+        assert_eq!(
+            unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+            Z42HostStatus::Ok
+        );
+        assert_eq!(
+            unsafe { z42_host_invoke(entry, ptr::null(), 0, ptr::null_mut()) },
+            Z42HostStatus::Ok
+        );
+    });
+
+    let captured = String::from_utf8_lossy(&capture.lock().unwrap()).into_owned();
+    assert_eq!(
+        captured, "first\nsecond\nthird\n",
+        "host stdout sink must receive lines in invocation order"
+    );
+}
+
 #[test]
 fn load_zbc_with_garbage_bytes_returns_bad_zbc() {
     let _g = test_lock();

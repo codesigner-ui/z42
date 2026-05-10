@@ -204,6 +204,12 @@ impl Drop for HostSinkGuard {
 /// Invoke an entry point. Marshals args + return value through the
 /// `Z42Value` ABI; activates host stdout / stderr dispatch for the
 /// duration of the call.
+///
+/// Errors are returned as `anyhow::Error` so the `extern "C"` boundary
+/// can classify them. The caller maps the special prefix
+/// `"arg-count-mismatch:"` to `Z42_HOST_ERR_ARG_MISMATCH`; any z42
+/// throw escaping the entry surfaces as `Z42_HOST_ERR_VM_EXCEPTION`
+/// via `classify_invoke_error`.
 pub(crate) fn invoke_impl(
     host_module: &HostModule,
     entry: &HostEntry,
@@ -214,6 +220,15 @@ pub(crate) fn invoke_impl(
         .functions
         .get(entry.fn_idx)
         .ok_or_else(|| anyhow!("z42_host_invoke: entry function index out of bounds"))?;
+
+    if args_bytes.len() != func.param_count {
+        bail!(
+            "arg-count-mismatch: function `{}` expects {} arg(s), got {}",
+            func.name,
+            func.param_count,
+            args_bytes.len()
+        );
+    }
 
     let _sink_guard = HostSinkGuard::enter();
     interp::run_returning(&host_module.ctx, &host_module.module, func, args_bytes)

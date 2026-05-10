@@ -21,10 +21,10 @@
 ## 阶段进度
 
 - ✅ **H0** 设计文档 + spec/changes 四件套（`spec/changes/add-embedding-api/`）
-- ✅ **H1** Tier 1 C ABI scaffold —— 单实例 lifecycle，13 个 unit test
+- ✅ **H1** Tier 1 C ABI scaffold —— 单实例 lifecycle，12 个 unit test
 - ✅ **H2-core** `load_zbc` / `resolve_entry` / `invoke` 全链路 + stdout sink 接 VM + 集成测试 hello-world
 - ✅ **H2b** Tier 2 `z42-host` crate + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码
-- 📋 **H3** 错误路径全覆盖 + VM exception 翻译
+- ✅ **H3** 错误路径全覆盖（17 个 host:: 测试 / 5 类错误：BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）
 - 📋 **H4** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` spec；包含桌面 staticlib build）
 - 📋 **H5** test-runner library 重构到 `z42-host` 之上（归 runner spec）
 

@@ -1,6 +1,6 @@
 # Tasks: Add Embedding / Hosting API
 
-> 状态：🟢 H0 + H1 + H2 完成 / H3 待启动 | 创建：2026-05-10
+> 状态：🟢 H0 + H1 + H2 + H3 完成 | 创建：2026-05-10 | spec 范围全部落地
 >
 > 本 spec 范围 = H0–H3（design + ABI scaffold + hello-world + 错误路径）。
 > H4（移动平台接入） / H5（runner 重构）由各自 spec 主导。
@@ -11,7 +11,7 @@
 - [x] **H1** C ABI scaffold + Rust 单实例 state + 链接通
 - [x] **H2-core** load_zbc / resolve_entry / invoke 全链路 + stdout sink 接 VM + Rust 集成测试 hello-world
 - [x] **H2b** Tier 2 Rust crate `z42-host` + `examples/hello_rust` 端到端 + `examples/hello_c` 参考源码
-- [ ] **H3** 错误路径全覆盖 + VM exception 翻译
+- [x] **H3** 错误路径全覆盖（5 类错误：BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）+ classify 机制对齐 `format_uncaught`
 
 ---
 
@@ -125,12 +125,15 @@
 
 ## H3: 错误路径全覆盖
 
-- [ ] 3.1 `host_tests::load_zbc_bad_magic_returns_bad_zbc`
-- [ ] 3.2 `host_tests::resolve_entry_unknown_returns_not_found`
-- [ ] 3.3 `host_tests::invoke_arg_count_mismatch_returns_arg_mismatch`
-- [ ] 3.4 `host_tests::z42_throw_returns_vm_exception_with_message`
-- [ ] 3.5 `host_tests::sink_called_in_correct_order`
-- [ ] 3.6 文档同步：[docs/design/embedding.md](../../../docs/design/embedding.md) §10 错误处理段补充实施细节
+- [x] 3.1 `host_tests::load_zbc_with_garbage_bytes_returns_bad_zbc`（H2 已就位，H3 复用）
+- [x] 3.2 `host_tests::resolve_entry_unknown_fqn_returns_entry_not_found`
+- [x] 3.3 `host_tests::invoke_arg_count_mismatch_returns_arg_mismatch`（fixture `Main()` 0 参 vs 传 1 个 I64）
+- [x] 3.4 `host_tests::z42_throw_escapes_as_vm_exception_with_message`（fixture `Boom()` `throw new Exception(...)`）
+- [x] 3.5 `host_tests::sink_called_in_correct_order_for_multiple_lines`（fixture `MultiLine()` 3 行）
+- [x] 3.6 [docs/design/embedding.md](../../../docs/design/embedding.md) §10 状态码 → 触发条件表 + 错误消息分类机制段
+- [x] 3.7 [src/runtime/src/host/ops.rs](../../../src/runtime/src/host/ops.rs) `invoke_impl` 加 `args.len() != func.param_count` 检查；前缀 `arg-count-mismatch:` 用于 `classify_invoke_error` 分流
+- [x] 3.8 [src/runtime/src/host/mod.rs](../../../src/runtime/src/host/mod.rs) `classify_invoke_error` 修复（`"Unhandled exception"` → `"uncaught exception"` 与 `format_uncaught` 对齐）
+- [x] 3.9 [spec/changes/add-embedding-api/specs/embedding-host-api/spec.md](specs/embedding-host-api/spec.md) 加 Requirement"Hello-World 端到端" + Requirement"错误路径分类（H3）"
 
 ---
 

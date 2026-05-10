@@ -132,19 +132,60 @@
 
 ---
 
-### Requirement: H1 占位行为
+### Requirement: Hello-World 端到端
 
-> H1 阶段未实现的功能必须返回 `ERR_INTERNAL`，message 含 "H2 not yet implemented"，
-> 而非 panic 或 segfault。这是为 H2 留接口的契约。
+#### Scenario: Main 函数加载并通过宿主 stdout sink 输出
 
-#### Scenario: H1 阶段 load_zbc 返回 INTERNAL
+- **GIVEN** `search_paths` 包含 `z42.core.zpkg` 与对应的 `z42.io.zpkg`
+- **WHEN** 调用 `z42_host_initialize` → `z42_host_load_zbc(hello.zbc)` → `z42_host_resolve_entry("Embedding.Hello.Main")` → `z42_host_invoke(entry, NULL, 0, &result)`
+- **THEN** 全部返回 `Z42_HOST_OK`
+- **AND** `result.tag == Z42_VALUE_TAG_NULL`（void 返回）
+- **AND** 宿主 stdout sink 收到字节序列 `"Hello, World!\n"`
 
-- **GIVEN** H1 完成、H2 未启动
-- **WHEN** 调用 `z42_host_load_zbc` 传入合法字节流
-- **THEN** 返回 `Z42_HOST_ERR_INTERNAL`
-- **AND** `last_error.message` 含 "H2"
+#### Scenario: 多行输出按顺序到达 sink
 
-> 注：H2 完成后本 Scenario 删除，替换为 [Hello World 端到端] Requirement。
+- **GIVEN** 同上，但 invoke `Embedding.Hello.MultiLine`（3 行）
+- **WHEN** invoke 返回
+- **THEN** 宿主 stdout sink 收到字节序列 `"first\nsecond\nthird\n"`，顺序与 `Console.WriteLine` 调用顺序一致
+
+---
+
+### Requirement: 错误路径分类（H3）
+
+#### Scenario: load_zbc 收到非 zbc 字节返回 BAD_ZBC
+
+- **WHEN** 调用 `z42_host_load_zbc` 传入空字节或 magic 不匹配的字节
+- **THEN** 返回 `Z42_HOST_ERR_BAD_ZBC`
+- **AND** `out_module` 被赋值为 NULL
+- **AND** `last_error.message` 含 "magic" 或 "zbc"
+
+#### Scenario: resolve_entry 未知 FQN 返回 ENTRY_NOT_FOUND
+
+- **GIVEN** module 已加载
+- **WHEN** 调用 `z42_host_resolve_entry` 传入不存在的 FQN（如 `Embedding.Hello.NoSuchMethod`）
+- **THEN** 返回 `Z42_HOST_ERR_ENTRY_NOT_FOUND`
+- **AND** `out_entry` 被赋值为 NULL
+- **AND** `last_error.message` 含传入的 FQN
+
+#### Scenario: invoke 参数数量不符返回 ARG_MISMATCH
+
+- **GIVEN** `Main()` 已 resolve（0 参数）
+- **WHEN** 调用 `z42_host_invoke(entry, args, 1, &result)` 传入 1 个 i64 参数
+- **THEN** 返回 `Z42_HOST_ERR_ARG_MISMATCH`
+- **AND** `last_error.message` 含 "expects 0" 与 "got 1"
+
+#### Scenario: z42 抛出异常跨出 invoke 顶层返回 VM_EXCEPTION
+
+- **GIVEN** `Embedding.Hello.Boom`（含 `throw new Exception("intentional embedding-test failure")`）已 resolve
+- **WHEN** 调用 `z42_host_invoke(entry, NULL, 0, &result)`
+- **THEN** 返回 `Z42_HOST_ERR_VM_EXCEPTION`
+- **AND** `last_error.message` 含异常 message 字面量
+
+#### Scenario: 错误消息分类机制
+
+- **WHEN** 阅读 [src/runtime/src/host/mod.rs](../../../../src/runtime/src/host/mod.rs) `classify_invoke_error`
+- **THEN** 按 marker 前缀分流：`"arg-count-mismatch:"` → `ArgMismatch`；`"uncaught exception"` → `VmException`；其余 → `Internal`
+- **AND** `arg-count-mismatch:` marker 由 [src/runtime/src/host/ops.rs](../../../../src/runtime/src/host/ops.rs) `invoke_impl` 在调用 `interp::run_returning` 前抛出
 
 ---
 

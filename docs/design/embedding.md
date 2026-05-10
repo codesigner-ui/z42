@@ -318,10 +318,49 @@ fn main() -> anyhow::Result<()> {
 
 ## §10 错误处理
 
+### 设计原则
+
 - 所有 API 返回 `Z42HostStatus`；详细信息走 `z42_host_last_error`（线程局部）
-- z42 端 `throw` 跨出顶层 → `ERR_VM_EXCEPTION`，错误信息含异常类型 FQN + message
+- 成功路径必须 clear last_error；失败路径必须 set
+- z42 端 `throw` 跨出顶层 → `ERR_VM_EXCEPTION`，错误信息含异常类型 + message
 - Rust panic（不应该发生，但兜底）→ `ERR_INTERNAL`
 - ABI 不暴露异常对象本身（v0.1）；后续 catch-from-host 进 Deferred
+
+### 状态码 → 触发条件（H1–H3 实测）
+
+| 状态码 | 触发条件 | 测试 |
+|--------|---------|------|
+| `OK` (0) | 任何 API 成功；副作用：`last_error.code = 0` | 所有 happy-path 测试 |
+| `ERR_ALREADY_INIT` (1) | `initialize` 在已初始化状态再次调用 | `initialize_twice_returns_already_init` |
+| `ERR_NOT_INIT` (2) | 任何 API 在未初始化状态调用（含 stale handle） | `shutdown_when_not_initialized_returns_not_init` / `load_zbc_before_init_returns_not_init` |
+| `ERR_BAD_CONFIG` (3) | `cfg == NULL` / `abi_version` 不匹配 / 未知 `exec_mode` / `search_path` 含 NUL | `null_config_returns_bad_config` / `bad_abi_version_returns_bad_config` / `unknown_exec_mode_returns_bad_config` |
+| `ERR_FEATURE_OFF` (4) | 请求 JIT/AOT 但对应 feature 编译时关闭（[cross-platform.md](cross-platform.md)） | `jit_mode_when_feature_off_returns_feature_off` |
+| `ERR_BAD_ZBC` (10) | bytes 长度 < 4 / magic 不匹配 / `read_zbc` 解析失败 | `load_zbc_with_garbage_bytes_returns_bad_zbc` |
+| `ERR_VERIFICATION` (11) | IR 校验失败（暂未独立测试覆盖；通过 `verify_constraints` 抛出） | — |
+| `ERR_ENTRY_NOT_FOUND` (20) | FQN 不在 `module.func_index` / module handle 是 NULL | `resolve_entry_unknown_fqn_returns_entry_not_found` |
+| `ERR_ARG_MISMATCH` (21) | `args.len() != func.param_count`（v0.1 仅检查数量，类型在 H4+ 引入完整 marshal 后扩展） | `invoke_arg_count_mismatch_returns_arg_mismatch` |
+| `ERR_VM_EXCEPTION` (30) | z42 `throw` 跨出 invoke 顶层（错误消息以 `"uncaught exception:"` 开头，由 `exception::format_uncaught` 生成） | `z42_throw_escapes_as_vm_exception_with_message` |
+| `ERR_INTERNAL` (99) | Rust panic 经 `catch_unwind` / 锁中毒 / 其他未分类错误 | （兜底，无单独测试用例） |
+
+### 错误消息分类机制（实施细节）
+
+`host::ops::invoke_impl` 把"参数数量不符"先于其他错误检查，并以前缀 `arg-count-mismatch:` 抛出 `anyhow::Error`。`host::mod::classify_invoke_error` 按字符串前缀分流：
+
+```rust
+fn classify_invoke_error(msg: &str) -> Z42HostStatus {
+    if msg.contains("arg-count-mismatch:")     { Z42HostStatus::ArgMismatch }
+    else if msg.contains("uncaught exception") { Z42HostStatus::VmException }
+    else                                       { Z42HostStatus::Internal }
+}
+```
+
+为何用字符串前缀而不是结构化 enum：interp 路径已是 `anyhow::Error`-only；为单个分类增加领域错误类型成本远大于一个稳定 marker。`uncaught exception:` marker 由 `exception::format_uncaught` 钉住（参见 `src/runtime/src/exception/mod.rs`），是 z42 异常输出的稳定契约。
+
+### Sink 顺序保证
+
+`route_stdout` / `route_stderr` 在 `HOST_SINK_ACTIVE` 设为 `true` 的线程上**同步**派发；
+多次 `Console.WriteLine` 严格按调用顺序触发 sink，sink 收到的字节顺序与 z42 程序的写出顺序一致。
+`sink_called_in_correct_order_for_multiple_lines` 用 3 行输出验证该保证。
 
 ---
 

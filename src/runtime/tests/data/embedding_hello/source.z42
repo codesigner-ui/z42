@@ -1,12 +1,17 @@
 // Embedding API hello-world fixture.
 //
-// Spec: spec/changes/add-embedding-api/ (H2)
-//       docs/design/embedding.md §9.1
+// Spec: spec/changes/add-embedding-api/ (H2 / H3)
+//       docs/design/embedding.md §9.1, §10
 //
-// Loaded by `host::host_tests::load_invoke_hello_world` and the future
-// external `examples/hello_c` / `examples/hello_rust`. Output goes
-// through Console.WriteLine, which routes through corelib io and lands
-// in the host's stdout sink (verified by the cargo test).
+// Loaded by `host::host_tests::*` and the external `examples/hello_*`.
+// Each entry exercises a distinct host-API path:
+//
+//   Main       — H2 happy path (single line, void return)
+//   MultiLine  — H3 sink ordering (3 lines must arrive in order)
+//   Boom       — H3 VmException (z42 throw escapes the entry)
+//
+// Output goes through Console.WriteLine, which routes through corelib
+// io and lands in the host's stdout sink.
 
 namespace Embedding.Hello;
 
@@ -14,4 +19,14 @@ using Std.IO;
 
 void Main() {
     Console.WriteLine("Hello, World!");
+}
+
+void MultiLine() {
+    Console.WriteLine("first");
+    Console.WriteLine("second");
+    Console.WriteLine("third");
+}
+
+void Boom() {
+    throw new Exception("intentional embedding-test failure");
 }
