@@ -458,8 +458,8 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 
 | 时机 | 工作 | 类型 | 影响 | 状态 |
 |---|---|---|---|---|
-| **现在**（M6 收尾） | 完成 `extend-signature-whitelist` | 进行中 | 当前 spec | 🟡 |
-| **本迭代结束前** | `spec/changes/` 两个目录纳入 git | (随提交) | 防止脱管 | 📋 |
+| **已落地** | 完成 `extend-signature-whitelist` (C11e) | (并入 C11e 系列) | 当前 spec | 🟢 2026-05-06 |
+| **已落地** | `spec/changes/` 两个目录纳入 git（add-array-base-class / extend-signature-whitelist 已归档至 archive/） | (随后续提交) | 防止脱管 | 🟢 2026-05-07 |
 | **M6 → M7 之间** | `introduce-bound-visitor` — 引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>`，迁 `FunctionEmitter*` 与 `TypeChecker.Exprs` | refactor | Part 1 §1.1、§1.3 + Part 2 §2.1；为 §3.2 dump-ast 提供基础 | 📋 |
 | **已落地** | `enhance-expr-recovery` — ExprParser 接 DiagnosticBag overload + ErrorExpr 激活 + 全链路 thread bag（NudFn/LedFn 签名 + StmtParser/TopLevelParser callers）；arg-level recovery 真生效（`f(1, *, 3)` 形态） | lang | Part 2 §2.2 + Part 3 §3.7 整体收口 | 🟢 2026-05-08 |
 | **部分完成** | `split-function-emitter-exprs` — FunctionEmitterExprs.cs (878→274 主) + 5 partial | refactor | Part 1 §1.1 (1/4 P0 文件) | 🟢 2026-05-07 |
@@ -483,6 +483,8 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **已落地** | `formalize-jit-vm-interface` — helper 重组为 `jit/helpers/` 子目录 + `registry.rs` 中央注册 + `VM_JIT_INTERFACE_VERSION`（实测 ~50 helper，非 65） | refactor | Part 4 §4.2 + Part 1 §1.1（顺带解决 helpers_object.rs 512 LOC 超限） | 🟢 2026-05-07 |
 | **M6 → M7 之间** | `split-exec-instr` — `exec_instr.rs` (802→131 LOC) 按 op 类别拆为 7 个子模块 | refactor | Part 1 §1.2 | 🟢 2026-05-07 |
 | **已落地** | `introduce-method-token` Phase 1 — Token newtypes + 加载期 resolver + 8 热路径全 token cache（Call/Builtin/ObjNew/VCall/FieldGet/FieldSet/StaticGet/StaticSet）+ StaticField 全局编号 + Field/VCall 单态 IC；JIT/zbc/compiler-emit 留后续 phase | vm | Part 4 §4.1 + §4.6 + §4.7 (tier-up 前置) | 🟢 2026-05-08 |
+| **已落地** | `formalize-jit-method-token` Phase 2 — JIT helpers 切换为 token 直传（CallByToken / BuiltinByToken / ObjNewByToken / VCall / Field*ByToken / Static*ByToken）；JIT 不再走字符串路径 | vm | Part 4 §4.1 收口 (interp + JIT 双路径全 token) | 🟢 2026-05-08 |
+| **已落地** | `tokenize-ir-and-zbc-bump` Phase 3 — zbc v1.0 wire 格式：跨模块引用用 `IMPORT_BASE \| STRS pool idx` 编码，模块内引用用 source-order local index；C# `TokenAllocator` + Rust `IdMap` 双侧解码；reproducibility tests | ir | Part 4 §4.1 wire-format 收口；M7 反射 token 系统稳定 | 🟢 2026-05-09 |
 | **M7 期间** | `unify-frame-chain` — 单一 `VmFrame` 链表，统一 interp / jit / GC scan | refactor | Part 4 §4.5，stack trace / debugger 前置 | 📋 |
 | **M7 期间** | `eh-protocol-v2` — 异常表二分查找 + JIT trap 集成 | vm | Part 4 §4.4，依赖 `unify-frame-chain` | 📋 |
 | **M7 之后** | 在 [vm-architecture.md](design/vm-architecture.md) 记录"VmContext 集中 / Register VM / PinView first-class / static-in-context"作为不变量 | docs | Part 4 §4.正面设计 防退化 | 📋 |
@@ -518,19 +520,16 @@ extend-signature-whitelist (进行中)
 
 ### 立项建议优先级
 
-**最高优先**（M7 启动前必须）:
+**最高优先**（M7 启动前必须，仍未完成）:
 
 1. `split-symbol-from-type` — 反射系列的设计前置；同步根除 Decl 身份丢失（§3.1）
-2. `introduce-method-token` — VM 反射 R-series 前置；同步处理 builtin / native 缓存（§4.1+§4.6）
-3. `introduce-bound-visitor` — 阻止 `FunctionEmitter*` 继续膨胀；为 dump-ast 提供基础
-4. `parser-error-recovery` — IDE/LSP 前置；现有 ErrorStmt/ErrorExpr 基础已有，仅需启用
-5. `formalize-jit-vm-interface` — JIT 真正展开前必须形式化（§4.2）
+2. `introduce-bound-visitor` — 阻止 `FunctionEmitter*` 继续膨胀；为 dump-ast 提供基础
 
 **高优先**（M7 启动前应完成）:
 
-6. `split-large-codegen-files` + `split-large-test-files` — 直接消除当前 [code-organization.md](../.claude/rules/code-organization.md) 违规
-7. `split-exec-instr` — Rust 端同款问题
-8. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费
+3. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费
+
+> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`
 
 **中优先**（M7 内或之后）:
 
@@ -573,3 +572,4 @@ extend-signature-whitelist (进行中)
 - **2026-05-05 初版**: Part 1（工程组织）+ Part 2（Roslyn 视角）
 - **2026-05-05 增补 Part 3**: Clang 视角对标
 - **2026-05-05 增补 Part 4**: VM 架构对标 (vs dotnet/runtime CoreCLR)；路线图拆为编译器线 + VM 线两轨
+- **2026-05-09 状态同步**: method-token 三 Phase 全部落地（Phase 1 / formalize-jit / tokenize-ir-zbc）；§4.1 Part 4 痛点关闭；优先级清单收缩到 3 项 (split-symbol-from-type / introduce-bound-visitor / impl-dump-ast)
