@@ -458,6 +458,17 @@ public sealed record Z42EnumType(string Name) : Z42Type
 }
 
 /// User-defined class or struct type.
+///
+/// split-symbol-from-type (2026-05-10) Phase 1: kept as `sealed record`. Manual
+/// `Equals`/`GetHashCode` override compares only `(Name, IsStruct)` — Methods /
+/// Fields / StaticMethods / StaticFields / MemberVisibility dicts are NOT in
+/// equality. This is safe because:
+/// - All current call sites compare via `ct.Name == otherCt.Name` directly
+/// - Phase 2 will switch dict value types to `IMethodSymbol` / `IFieldSymbol`,
+///   which hold a back-pointer to Z42ClassType. If Z42ClassType.Equals included
+///   the Methods dict, MethodSymbol.Equals → Z42ClassType.Equals → dict iteration
+///   → MethodSymbol.Equals would loop forever. Excluding member dicts from
+///   ClassType equality breaks the cycle.
 public sealed record Z42ClassType(
     string Name,
     IReadOnlyDictionary<string, Z42Type>      Fields,
@@ -490,6 +501,34 @@ public sealed record Z42ClassType(
         : Name;
 
     public override string ToString() => Name;
+
+    /// Equality based on `(Name, IsStruct)` only — see class XML doc for why
+    /// member dicts are excluded.
+    public bool Equals(Z42ClassType? other) =>
+        other is not null && (ReferenceEquals(this, other)
+            || (Name == other.Name && IsStruct == other.IsStruct));
+
+    public override int GetHashCode() => HashCode.Combine(Name, IsStruct);
+
+    /// Helper for member-merge call sites that previously used
+    /// `with { Methods = ..., Fields = ... }`. Since `with` still works on
+    /// positional record properties, this is convenience only — kept for
+    /// readability and to centralize Phase 2 migration when dict value types
+    /// switch to IMethodSymbol / IFieldSymbol.
+    public Z42ClassType Rebuild(
+        IReadOnlyDictionary<string, Z42Type>?     fields        = null,
+        IReadOnlyDictionary<string, Z42FuncType>? methods       = null,
+        IReadOnlyDictionary<string, Z42Type>?     staticFields  = null,
+        IReadOnlyDictionary<string, Z42FuncType>? staticMethods = null,
+        IReadOnlyDictionary<string, Visibility>?  memberVisibility = null)
+        => this with
+        {
+            Fields           = fields           ?? Fields,
+            Methods          = methods          ?? Methods,
+            StaticFields     = staticFields     ?? StaticFields,
+            StaticMethods    = staticMethods    ?? StaticMethods,
+            MemberVisibility = memberVisibility ?? MemberVisibility,
+        };
 }
 
 /// Instantiated generic class type. (L3-G4a)
