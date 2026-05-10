@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 1;   // 2026-05-10 span-column-propagate: line table entries carry u32 Column in addition to Line. Pre-1.1 not readable.
+    public const ushort VersionMinor = 2;   // 2026-05-10 split-debug-symbols: ZbcFlags.SymOnly + BLID section (16-byte BLAKE3-128 build_id, always last). Pre-1.2 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -43,13 +43,35 @@ public static partial class ZbcWriter
         ZbcFlags             flags     = ZbcFlags.None,
         IEnumerable<string>? exports   = null,
         TokenAllocator?      allocator = null)
+        => WriteWithSidecar(module, stripSymbols: false, flags, exports, allocator).Main;
+
+    /// <summary>
+    /// Serializes <paramref name="module"/> into binary zbc format with optional
+    /// debug-symbol stripping (1.2 split-debug-symbols).
+    ///
+    /// When <paramref name="stripSymbols"/> is <c>true</c>, the DBUG section
+    /// is moved out of the main file into a separate sidecar byte array, and
+    /// a 16-byte BLID section is appended to the main file (always last) +
+    /// duplicated into the sidecar. The two are paired via a BLAKE3-128 hash
+    /// of the main bytes (with BLID payload zeroed during hashing).
+    ///
+    /// When <paramref name="stripSymbols"/> is <c>false</c>, the second tuple
+    /// element is <c>null</c> and the main file embeds DBUG inline (matching
+    /// pre-1.2 behavior at the byte level for non-debug content).
+    /// </summary>
+    public static (byte[] Main, byte[]? Sidecar) WriteWithSidecar(
+        IrModule             module,
+        bool                 stripSymbols,
+        ZbcFlags             flags     = ZbcFlags.None,
+        IEnumerable<string>? exports   = null,
+        TokenAllocator?      allocator = null)
     {
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
 
-        // Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09): drive IR-field
-        // token encoding via TokenAllocator. Caller may thread one through
-        // (e.g. `IrGen.Allocator`); else build fresh from module — the
-        // factory uses the same algorithm so determinism holds either way.
+        if (stripped && stripSymbols)
+            throw new InvalidOperationException(
+                "ZbcFlags.Stripped (cache-only mode) cannot be combined with stripSymbols (sidecar mode).");
+
         allocator ??= TokenAllocator.FromModule(module);
 
         var exportSet = exports is null
@@ -63,57 +85,95 @@ public static partial class ZbcWriter
 
         // ── Build sections ────────────────────────────────────────────────────
         var sections = new List<(byte[] Tag, byte[] Data)>();
-
         sections.Add((SectionTags.Nspc, BuildNspcSection(module.Name)));
+
+        // 1.2 split-debug-symbols: DBUG is the single container for debug info
+        // (LineTable + LocalVarTable). Routes inline OR to sidecar based on
+        // stripSymbols flag.
+        bool hasDebug = module.Functions.Any(f =>
+            f.LineTable is { Count: > 0 } || f.LocalVarTable is { Count: > 0 });
 
         if (stripped)
         {
             sections.Add((SectionTags.Bstr, BuildStrpSection(pool)));
             sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap, allocator)));
-        }
-        else
-        {
-            sections.Add((SectionTags.Strs, BuildStrpSection(pool)));
-            sections.Add((SectionTags.Type, BuildTypeSection(module.Classes, pool)));
-            sections.Add((SectionTags.Sigs, BuildSigsSection(module.Functions, pool)));
-            sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
-            sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
-            sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap, allocator)));
-
-            // DBUG section: line table + local variable names
-            bool hasDebug = module.Functions.Any(f =>
-                f.LineTable is { Count: > 0 } || f.LocalVarTable is { Count: > 0 });
+            // .cache/*.zbc keeps DBUG inline so dev workflow trace shows file:line:col
             if (hasDebug)
             {
                 flags |= ZbcFlags.HasDebug;
                 sections.Add((SectionTags.Dbug, BuildDbugSection(module.Functions, pool)));
             }
-
-            // TIDX section (R1 add-test-metadata-section): compile-time test
-            // metadata. Emitted only when the module has at least one
-            // [Test]/[Benchmark]/etc.-decorated function; absent section means
-            // "no test entries" to readers.
-            if (module.TestIndex is { Count: > 0 } testIndex)
-            {
-                // Pass strRemap so TestEntry str_idx (1-based, into IrGen's
-                // pool) get remapped to the final STRS layout — same pattern
-                // ConstStr uses.
-                sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex, strRemap)));
-            }
-
-            // 2026-05-02 add-method-group-conversion (D1b): FRCS section holds
-            // the FuncRef cache slot count as a single u32. Emitted only when
-            // > 0; absent section means 0 slots required.
-            if (module.FuncRefCacheSlotCount > 0)
-            {
-                using var fms = new MemoryStream();
-                using var fbw = new BinaryWriter(fms);
-                fbw.Write((uint)module.FuncRefCacheSlotCount);
-                sections.Add((SectionTags.Frcs, fms.ToArray()));
-            }
+            return (AssembleFile(flags, sections), null);
         }
 
-        return AssembleFile(flags, sections);
+        sections.Add((SectionTags.Strs, BuildStrpSection(pool)));
+        sections.Add((SectionTags.Type, BuildTypeSection(module.Classes, pool)));
+        sections.Add((SectionTags.Sigs, BuildSigsSection(module.Functions, pool)));
+        sections.Add((SectionTags.Impt, BuildImptSection(module, pool)));
+        sections.Add((SectionTags.Expt, BuildExptSection(module.Functions, pool, exportSet)));
+        sections.Add((SectionTags.Func, BuildFuncSection(module.Functions, pool, strRemap, allocator)));
+
+        if (hasDebug && !stripSymbols)
+        {
+            flags |= ZbcFlags.HasDebug;
+            sections.Add((SectionTags.Dbug, BuildDbugSection(module.Functions, pool)));
+        }
+
+        // TIDX section (R1 add-test-metadata-section)
+        if (module.TestIndex is { Count: > 0 } testIndex)
+            sections.Add((SectionTags.Tidx, BuildTidxSection(testIndex, strRemap)));
+
+        // FRCS section (D1b add-method-group-conversion)
+        if (module.FuncRefCacheSlotCount > 0)
+        {
+            using var fms = new MemoryStream();
+            using var fbw = new BinaryWriter(fms);
+            fbw.Write((uint)module.FuncRefCacheSlotCount);
+            sections.Add((SectionTags.Frcs, fms.ToArray()));
+        }
+
+        if (!stripSymbols)
+            return (AssembleFile(flags, sections), null);
+
+        // ── Strip mode: append BLID placeholder, assemble, compute hash, patch ──
+        sections.Add((SectionTags.Blid, new byte[BuildId.Size]));
+        byte[] mainBytes = AssembleFile(flags, sections);
+        byte[] buildId   = BuildId.Compute(mainBytes);
+        Array.Copy(buildId, 0, mainBytes, mainBytes.Length - BuildId.Size, BuildId.Size);
+
+        // ── Build sidecar: NSPC + STRS (debug-string subset) + DBUG + BLID ────
+        // Sidecar carries its own minimal STRS so it can be decoded standalone
+        // (z42c symbolicate consumer expects to read sidecar without main).
+        var symPool = new StringPool();
+        InternDebugStrings(symPool, module);
+        byte[] symDbug = BuildDbugSection(module.Functions, symPool);
+
+        var sidecarSections = new List<(byte[] Tag, byte[] Data)>
+        {
+            (SectionTags.Nspc, BuildNspcSection(module.Name)),
+            (SectionTags.Strs, BuildStrpSection(symPool)),
+            (SectionTags.Dbug, symDbug),
+            (SectionTags.Blid, buildId),
+        };
+        byte[] sidecarBytes = AssembleFile(ZbcFlags.SymOnly, sidecarSections);
+        return (mainBytes, sidecarBytes);
+    }
+
+    /// <summary>
+    /// Interns only strings referenced by DBUG content (file paths + local var
+    /// names) into a fresh pool. Used for sidecar STRS subset.
+    /// </summary>
+    private static void InternDebugStrings(StringPool pool, IrModule module)
+    {
+        foreach (var fn in module.Functions)
+        {
+            if (fn.LineTable != null)
+                foreach (var le in fn.LineTable)
+                    if (le.File != null) pool.Intern(le.File);
+            if (fn.LocalVarTable != null)
+                foreach (var lv in fn.LocalVarTable)
+                    pool.Intern(lv.Name);
+        }
     }
 
     // ── File assembly (header + directory + sections) ─────────────────────────
@@ -240,6 +300,11 @@ public static partial class ZbcWriter
                 if (fn.LineTable != null)
                     foreach (var le in fn.LineTable)
                         if (le.File != null) pool.Intern(le.File);
+                // 1.2 split-debug-symbols: stripped mode 也写 DBUG（dev workflow
+                // 异常 trace 显示 file:line:col），LocalVarEntry.Name 必须 intern。
+                if (fn.LocalVarTable != null)
+                    foreach (var lv in fn.LocalVarTable)
+                        pool.Intern(lv.Name);
             }
         }
     }
@@ -470,14 +535,14 @@ public static partial class ZbcWriter
             var instrBytes = instrMs.ToArray();
 
             int excCount  = fn.ExceptionTable?.Count ?? 0;
-            int lineCount = fn.LineTable?.Count ?? 0;
             int regCount  = ComputeRegCount(fn);
 
+            // 1.2 split-debug-symbols: LineTable moved out of FUNC body into
+            // DBUG section. FUNC now carries only execution data.
             w.Write((ushort)regCount);
             w.Write((ushort)fn.Blocks.Count);
             w.Write((uint)instrBytes.Length);
             w.Write((ushort)excCount);
-            w.Write((ushort)lineCount);
 
             foreach (var off in blockOffsets) w.Write(off);
 
@@ -489,18 +554,6 @@ public static partial class ZbcWriter
                     w.Write(blockIdx.TryGetValue(exc.CatchLabel, out var cl) ? cl : (ushort)0);
                     w.Write(exc.CatchType != null ? (uint)pool.Idx(exc.CatchType) : uint.MaxValue);
                     w.Write((ushort)exc.CatchReg.Id);
-                }
-
-            if (fn.LineTable != null)
-                foreach (var le in fn.LineTable)
-                {
-                    w.Write((ushort)le.BlockIdx);
-                    w.Write((ushort)le.InstrIdx);
-                    w.Write((uint)le.Line);
-                    w.Write(le.File != null ? (uint)pool.Idx(le.File) : uint.MaxValue);
-                    // 2026-05-10 span-column-propagate (zbc 1.1): u32 Column.
-                    // Column 0 means unknown.
-                    w.Write((uint)le.Column);
                 }
 
             w.Write(instrBytes);
@@ -568,9 +621,16 @@ public static partial class ZbcWriter
         return (uint)(strRemap[origIdx1Based - 1] + 1);
     }
 
-    // ── DBUG section (debug info: local variable names) ──────────────────────
-
-    private static byte[] BuildDbugSection(List<IrFunction> functions, StringPool pool)
+    // ── DBUG section (debug info: line table + local variable names) ──────────
+    //
+    // 1.2 split-debug-symbols: DBUG is now the single container for debug info
+    // (LineTable previously inline in FUNC body, LocalVarTable already here).
+    // Per-function layout:
+    //   u16 lineCount
+    //   LineEntry[lineCount]: u16 block_idx, u16 instr_idx, u32 line, u32 file_str_idx, u32 column
+    //   u16 varCount
+    //   VarEntry[varCount]:   u32 name_str_idx, u16 reg_id
+    public static byte[] BuildDbugSection(List<IrFunction> functions, StringPool pool)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -579,6 +639,19 @@ public static partial class ZbcWriter
 
         foreach (var fn in functions)
         {
+            int lineCount = fn.LineTable?.Count ?? 0;
+            w.Write((ushort)lineCount);
+            if (fn.LineTable != null)
+                foreach (var le in fn.LineTable)
+                {
+                    w.Write((ushort)le.BlockIdx);
+                    w.Write((ushort)le.InstrIdx);
+                    w.Write((uint)le.Line);
+                    w.Write(le.File != null ? (uint)pool.Idx(le.File) : uint.MaxValue);
+                    // zbc 1.1+ Column (Column 0 means unknown)
+                    w.Write((uint)le.Column);
+                }
+
             int varCount = fn.LocalVarTable?.Count ?? 0;
             w.Write((ushort)varCount);
             if (fn.LocalVarTable != null)

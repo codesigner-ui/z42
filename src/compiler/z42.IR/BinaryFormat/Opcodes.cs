@@ -179,6 +179,7 @@ public static class ExecModes
 /// Flags stored in the zbc file header at bytes[8..9].
 /// bit 0 STRIPPED: metadata (SIGS/EXPT/IMPT) moved to zpkg; file requires zpkg index.
 /// bit 1 HAS_DEBUG: file contains a DBUG section with source-map information.
+/// bit 2 SYM_ONLY: file is a debug-symbol sidecar (.zsym) — only DBUG + BLID, not loadable as main module.
 /// </summary>
 [Flags]
 public enum ZbcFlags : ushort
@@ -186,6 +187,7 @@ public enum ZbcFlags : ushort
     None     = 0x00,
     Stripped = 0x01,
     HasDebug = 0x02,
+    SymOnly  = 0x04,
 }
 
 /// <summary>
@@ -201,6 +203,7 @@ public enum ZbcFlags : ushort
 ///   FUNC  — function bodies, indexed by position (both modes)
 ///   BSTR  — body-only string heap (stripped mode only, replaces STRS)
 ///   DBUG  — debug info / source maps (optional, flags.HAS_DEBUG=1)
+///   BLID  — 16-byte BLAKE3-128 build_id (split-debug-symbols, 1.2+); always last when present.
 /// </summary>
 public static class SectionTags
 {
@@ -222,6 +225,7 @@ public static class SectionTags
     public static readonly byte[] Dbug = "DBUG"u8.ToArray();  // debug info
     public static readonly byte[] Tidx = "TIDX"u8.ToArray();  // R1: compile-time test metadata
     public static readonly byte[] Frcs = "FRCS"u8.ToArray();  // D1b: FuncRef cache slot count (single u32)
+    public static readonly byte[] Blid = "BLID"u8.ToArray();  // split-debug-symbols: 16-byte BLAKE3-128 build_id (always last)
 
     public static bool Equals(ReadOnlySpan<byte> a, byte[] b) =>
         a.SequenceEqual(b);

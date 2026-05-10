@@ -22,14 +22,20 @@ public static partial class ZbcReader
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
 
         // Phase 3 S3c (tokenize-ir-and-zbc-bump, 2026-05-09): require zbc 1.0+.
-        // Pre-1.0 not supported per CLAUDE.md "不为旧版本提供兼容".
+        // 2026-05-10 split-debug-symbols: bumped to 1.2 (LineTable moved from
+        // FUNC body into DBUG section + new BLID section). Pre-1.2 not
+        // supported per CLAUDE.md "不为旧版本提供兼容".
         if (major == 0)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.0+. " +
+                $"zbc {major}.{minor} not supported; requires 1.2+. " +
                 "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
         if (major > 1)
             throw new InvalidDataException(
                 $"zbc major version {major} not supported (expected 1.x)");
+        if (major == 1 && minor < 2)
+            throw new InvalidDataException(
+                $"zbc {major}.{minor} not supported; requires 1.2+. " +
+                "Run scripts/regen-golden-tests.sh to upgrade golden artifacts.");
 
         var dir = ReadDirectory(data, minor, secCount);
 
@@ -51,10 +57,11 @@ public static partial class ZbcReader
 
         var funcBodies     = ReadSection(data, dir, SectionTags.Func,
                                          sec => ReadFuncSection(sec, pool, idMap),
-                                         new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>());
-        var dbugVarTables  = ReadSection(data, dir, SectionTags.Dbug,
+                                         new List<(int, List<IrBlock>, List<IrExceptionEntry>?)>());
+        // 1.2 split-debug-symbols: DBUG = LineTable + LocalVarTable per func.
+        var dbugTables     = ReadSection(data, dir, SectionTags.Dbug,
                                          sec => ReadDbugSection(sec, pool),
-                                         new List<List<IrLocalVarEntry>?>());
+                                         new List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)>());
         var testIndex      = ReadSection(data, dir, SectionTags.Tidx,
                                          sec => ReadTidxSection(sec),
                                          (IReadOnlyList<TestEntry>)Array.Empty<TestEntry>());
@@ -63,11 +70,23 @@ public static partial class ZbcReader
                                          sec => (int)BitConverter.ToUInt32(sec, 0),
                                          0);
 
+        // 1.2 split-debug-symbols: BLID section (always last when present).
+        byte[]? buildId    = ReadSection(data, dir, SectionTags.Blid,
+                                         sec => sec.Length >= BuildId.Size ? sec[..BuildId.Size].ToArray() : null,
+                                         (byte[]?)null);
+
+        // SymOnly files cannot be loaded as a main module — they only carry
+        // debug info paired with a separate main file by build_id.
+        if (flags.HasFlag(ZbcFlags.SymOnly))
+            throw new InvalidDataException(
+                "zbc file has SymOnly flag set: it is a debug-symbol sidecar (.zsym), " +
+                "not a loadable module. Use ReadSidecar() / ApplyDebugInfo() instead.");
+
         // ── Reconstruct functions ─────────────────────────────────────────────
         var functions = new List<IrFunction>(funcBodies.Count);
         for (int i = 0; i < funcBodies.Count; i++)
         {
-            var (regCount, blocks, excTable, lineTable) = funcBodies[i];
+            var (regCount, blocks, excTable) = funcBodies[i];
             var sig = i < sigs.Count ? sigs[i] : null;
             string name     = sig?.Name     ?? $"func#{i}";
             ushort paramCount = sig?.ParamCount ?? 0;
@@ -77,7 +96,7 @@ public static partial class ZbcReader
             var typeParams  = sig?.TypeParams;
             var typeParamConstraints = sig?.TypeParamConstraints;
 
-            var localVars = i < dbugVarTables.Count ? dbugVarTables[i] : null;
+            var (lineTable, localVars) = i < dbugTables.Count ? dbugTables[i] : (null, null);
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                 excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
                 LineTable: lineTable, LocalVarTable: localVars,
@@ -91,7 +110,8 @@ public static partial class ZbcReader
             classes,
             functions,
             TestIndex: testIndex.Count > 0 ? testIndex : null,
-            FuncRefCacheSlotCount: funcRefCacheSlots);
+            FuncRefCacheSlotCount: funcRefCacheSlots,
+            BuildId: buildId);
     }
 
     /// <summary>
@@ -110,6 +130,92 @@ public static partial class ZbcReader
     {
         if (data.Length < 10) return ZbcFlags.None;
         return (ZbcFlags)BitConverter.ToUInt16(data, 8);
+    }
+
+    // ── Sidecar API (1.2 split-debug-symbols) ────────────────────────────────
+
+    /// <summary>
+    /// Decoded contents of a debug-symbol sidecar (.zsym).
+    /// Holds the build_id (used to pair with a main zbc) and per-function
+    /// debug info parsed from the sidecar's DBUG section.
+    /// </summary>
+    public sealed record SidecarData(
+        byte[]                                                          BuildId,
+        IReadOnlyList<(List<IrLineEntry>? Lines, List<IrLocalVarEntry>? Vars)> Functions);
+
+    /// <summary>Reads only the BLID section (16-byte build_id) from any zbc file.
+    /// Returns null when the file has no BLID section.</summary>
+    public static byte[]? ReadBuildId(byte[] data)
+    {
+        ParseHeader(data, out _, out ushort minor, out _, out ushort secCount);
+        var dir = ReadDirectory(data, minor, secCount);
+        return ReadSection(data, dir, SectionTags.Blid,
+            sec => sec.Length >= BuildId.Size ? sec[..BuildId.Size].ToArray() : null,
+            (byte[]?)null);
+    }
+
+    /// <summary>
+    /// Parses a SymOnly sidecar file (.zsym): NSPC + STRS + DBUG + BLID.
+    /// Throws when the file lacks the SymOnly flag, has no BLID, or the
+    /// content is malformed.
+    /// </summary>
+    public static SidecarData ReadSidecar(byte[] data)
+    {
+        ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
+
+        if (major != 1 || minor < 2)
+            throw new InvalidDataException(
+                $"sidecar zbc {major}.{minor} not supported; requires 1.2+. " +
+                "Run scripts/regen-golden-tests.sh to upgrade.");
+        if (!flags.HasFlag(ZbcFlags.SymOnly))
+            throw new InvalidDataException(
+                "expected SymOnly flag set; this is not a debug-symbol sidecar.");
+
+        var dir = ReadDirectory(data, minor, secCount);
+
+        byte[]? buildId = ReadSection(data, dir, SectionTags.Blid,
+            sec => sec.Length >= BuildId.Size ? sec[..BuildId.Size].ToArray() : null,
+            (byte[]?)null);
+        if (buildId is null)
+            throw new InvalidDataException("sidecar is missing BLID section.");
+
+        string[] pool = ReadSection(data, dir, SectionTags.Strs, ReadStrsSection, []);
+        var dbug      = ReadSection(data, dir, SectionTags.Dbug,
+                                    sec => ReadDbugSection(sec, pool),
+                                    new List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)>());
+
+        return new SidecarData(buildId, dbug);
+    }
+
+    /// <summary>
+    /// Merges sidecar debug info into a main module after verifying that the
+    /// build_id matches. Returns a new IrModule with each function's
+    /// LineTable / LocalVarTable populated from the sidecar.
+    /// Throws when build_id mismatches or function count differs.
+    /// </summary>
+    public static IrModule ApplyDebugInfo(IrModule mainModule, SidecarData sidecar)
+    {
+        if (mainModule.BuildId is null)
+            throw new InvalidOperationException(
+                "main module has no BuildId; cannot pair with sidecar.");
+        if (!mainModule.BuildId.AsSpan().SequenceEqual(sidecar.BuildId))
+            throw new InvalidOperationException(
+                $"build_id mismatch: main = {BuildId.ShortHex(mainModule.BuildId)}…, " +
+                $"sidecar = {BuildId.ShortHex(sidecar.BuildId)}…");
+        if (mainModule.Functions.Count != sidecar.Functions.Count)
+            throw new InvalidOperationException(
+                $"function count mismatch: main has {mainModule.Functions.Count}, " +
+                $"sidecar has {sidecar.Functions.Count}");
+
+        var newFns = new List<IrFunction>(mainModule.Functions.Count);
+        for (int i = 0; i < mainModule.Functions.Count; i++)
+        {
+            var fn = mainModule.Functions[i];
+            var (lines, vars) = sidecar.Functions[i];
+            newFns.Add(fn with { LineTable = lines, LocalVarTable = vars });
+        }
+
+        return mainModule with { Functions = newFns };
     }
 
     // ── Phase 3 S3b (tokenize-ir-and-zbc-bump, 2026-05-09) ─────────────────────
@@ -355,16 +461,15 @@ public static partial class ZbcReader
 
     // ── FUNC section ─────────────────────────────────────────────────────────
 
-    private static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> ReadFuncSection(
+    // 1.2 split-debug-symbols: FUNC body no longer contains LineTable.
+    // LineTable now lives in DBUG section (alongside LocalVarTable).
+    private static List<(int, List<IrBlock>, List<IrExceptionEntry>?)> ReadFuncSection(
         byte[] data, string[] pool, IdMap idMap)
     {
         using var ms   = new MemoryStream(data, writable: false);
         using var r    = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
         uint funcCount = r.ReadUInt32();
-        var result     = new List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)>((int)funcCount);
-
-        // Peek flag: detect old format (no line_count field) vs new.
-        // For forward compat, we only read line_count when enough bytes remain.
+        var result     = new List<(int, List<IrBlock>, List<IrExceptionEntry>?)>((int)funcCount);
 
         for (int fi = 0; fi < funcCount; fi++)
         {
@@ -372,7 +477,6 @@ public static partial class ZbcReader
             ushort blockCount = r.ReadUInt16();
             uint   instrLen   = r.ReadUInt32();
             ushort excCount   = r.ReadUInt16();
-            ushort lineCount  = r.ReadUInt16();
 
             var blockOffsets = new uint[blockCount];
             for (int i = 0; i < blockCount; i++) blockOffsets[i] = r.ReadUInt32();
@@ -391,19 +495,6 @@ public static partial class ZbcReader
                     BL(catchB),
                     catchT == uint.MaxValue ? null : P(pool, catchT),
                     RU(catchR)));
-            }
-
-            var lineTable = lineCount > 0 ? new List<IrLineEntry>(lineCount) : null;
-            for (int i = 0; i < lineCount; i++)
-            {
-                ushort blk  = r.ReadUInt16();
-                ushort ins  = r.ReadUInt16();
-                uint lineNo = r.ReadUInt32();
-                uint fileId = r.ReadUInt32();
-                // 2026-05-10 span-column-propagate (zbc 1.1+): u32 Column.
-                uint col    = r.ReadUInt32();
-                string? file = fileId == uint.MaxValue ? null : P(pool, fileId);
-                lineTable!.Add(new IrLineEntry(blk, ins, (int)lineNo, file, (int)col));
             }
 
             byte[] instrBytes = r.ReadBytes((int)instrLen);
@@ -427,7 +518,7 @@ public static partial class ZbcReader
                     .ToList();
             }
 
-            result.Add((regCount, blocks, resolvedExc, lineTable));
+            result.Add((regCount, blocks, resolvedExc));
         }
         return result;
     }
@@ -442,7 +533,7 @@ public static partial class ZbcReader
     // ── Internal helpers for ZpkgReader ──────────────────────────────────────
 
     /// Exposes FUNC section decoding for ZpkgReader (packed mode module bodies).
-    public static List<(int, List<IrBlock>, List<IrExceptionEntry>?, List<IrLineEntry>?)> DecodeFuncSectionPublic(
+    public static List<(int, List<IrBlock>, List<IrExceptionEntry>?)> DecodeFuncSectionPublic(
         byte[] data, string[] pool,
         IReadOnlyList<string>? localFuncs = null,
         IReadOnlyList<string>? localClasses = null)
@@ -452,6 +543,10 @@ public static partial class ZbcReader
             localClasses ?? Array.Empty<string>());
         return ReadFuncSection(data, pool, idMap);
     }
+
+    /// Exposes DBUG section decoding for ZpkgReader (packed mode debug bodies).
+    public static List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)> DecodeDbugSectionPublic(
+        byte[] data, string[] pool) => ReadDbugSection(data, pool);
 
     /// Exposes TYPE section decoding for ZpkgReader.
     public static List<IrClassDesc> DecodeTypeSectionPublic(
@@ -547,29 +642,56 @@ public static partial class ZbcReader
         return entries;
     }
 
-    // ── DBUG section (local variable names) ──────────────────────────────────
-
-    private static List<List<IrLocalVarEntry>?> ReadDbugSection(
+    // ── DBUG section (line table + local variable names) ─────────────────────
+    //
+    // 1.2 split-debug-symbols: DBUG is the single container for debug info.
+    // Per-function layout:
+    //   u16 lineCount + LineEntry[lineCount]: u16 block_idx, u16 instr_idx,
+    //                                         u32 line, u32 file_str_idx, u32 column
+    //   u16 varCount  + VarEntry[varCount]:   u32 name_str_idx, u16 reg_id
+    private static List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)> ReadDbugSection(
         ReadOnlySpan<byte> sec, string[] pool)
     {
         int pos = 0;
         uint funcCount = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
 
-        var result = new List<List<IrLocalVarEntry>?>((int)funcCount);
+        var result = new List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)>((int)funcCount);
         for (int f = 0; f < (int)funcCount; f++)
         {
-            ushort varCount = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
-            if (varCount == 0) { result.Add(null); continue; }
-
-            var vars = new List<IrLocalVarEntry>(varCount);
-            for (int v = 0; v < varCount; v++)
+            // ── Line table ────────────────────────────────────────────────
+            ushort lineCount = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+            List<IrLineEntry>? lines = null;
+            if (lineCount > 0)
             {
-                uint nameIdx = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
-                ushort regId = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
-                string name  = nameIdx < pool.Length ? pool[nameIdx] : $"?{nameIdx}";
-                vars.Add(new IrLocalVarEntry(name, regId));
+                lines = new List<IrLineEntry>(lineCount);
+                for (int i = 0; i < lineCount; i++)
+                {
+                    ushort blk = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+                    ushort ins = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+                    uint lineNo = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+                    uint fileId = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+                    uint col    = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+                    string? file = fileId == uint.MaxValue ? null : (fileId < pool.Length ? pool[fileId] : null);
+                    lines.Add(new IrLineEntry(blk, ins, (int)lineNo, file, (int)col));
+                }
             }
-            result.Add(vars);
+
+            // ── Local var table ───────────────────────────────────────────
+            ushort varCount = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+            List<IrLocalVarEntry>? vars = null;
+            if (varCount > 0)
+            {
+                vars = new List<IrLocalVarEntry>(varCount);
+                for (int v = 0; v < varCount; v++)
+                {
+                    uint nameIdx = BitConverter.ToUInt32(sec.Slice(pos, 4)); pos += 4;
+                    ushort regId = BitConverter.ToUInt16(sec.Slice(pos, 2)); pos += 2;
+                    string name  = nameIdx < pool.Length ? pool[nameIdx] : $"?{nameIdx}";
+                    vars.Add(new IrLocalVarEntry(name, regId));
+                }
+            }
+
+            result.Add((lines, vars));
         }
         return result;
     }

@@ -97,11 +97,18 @@ public static partial class ZpkgReader
             uint typeBodySize  = r.ReadUInt32();
             byte[] typeData    = typeBodySize > 0 ? r.ReadBytes((int)typeBodySize) : [];
 
+            // 1.2 split-debug-symbols: DBUG body per member (mirrors writer).
+            uint dbugBodySize  = r.ReadUInt32();
+            byte[] dbugData    = dbugBodySize > 0 ? r.ReadBytes((int)dbugBodySize) : [];
+
             // Decode function bodies using global pool
             var funcBodies = ZbcReader.DecodeFuncSectionPublic(funcData, pool);
             var classes    = typeData.Length > 0
                 ? ZbcReader.DecodeTypeSectionPublic(typeData, pool)
                 : new List<IrClassDesc>();
+            var dbugTables = dbugData.Length > 0
+                ? ZbcReader.DecodeDbugSectionPublic(dbugData, pool)
+                : new List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)>();
 
             // Reconstruct functions
             var functions = new List<IrFunction>(funcCount);
@@ -112,10 +119,11 @@ public static partial class ZpkgReader
                     ? sigs[sigIdx]
                     : ($"func#{fi}", (ushort)0, "void", "Interp", false);
 
-                var (regCount, blocks, excTable, lineTable) = funcBodies[fi];
+                var (regCount, blocks, excTable) = funcBodies[fi];
+                var (lineTable, localVars) = fi < dbugTables.Count ? dbugTables[fi] : (null, null);
                 functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                     excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
-                    LineTable: lineTable));
+                    LineTable: lineTable, LocalVarTable: localVars));
             }
 
             var strPool = ZbcReader.RebuildStringPoolPublic(pool, functions);

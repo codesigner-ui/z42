@@ -12,6 +12,7 @@
 | 源码生成辅助 | `Roslyn`（只读引用）| 参考 C# AST 结构 |
 | 二进制序列化 | `MessagePack-CSharp` | `.zbc` 读写 |
 | 日志 | `Microsoft.Extensions.Logging` | 统一日志接口 |
+| BLAKE3 哈希 | `Blake3`（xoofx）| zbc build_id（split-debug-symbols） |
 
 ## VM（Rust）
 

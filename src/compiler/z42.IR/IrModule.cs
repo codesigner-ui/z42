@@ -35,7 +35,11 @@ public sealed record IrModule(
     /// FuncRef cache slots required by <c>LoadFnCached</c> instructions. VM
     /// pre-allocates a Vec&lt;Value&gt; of this size at module load time.
     /// Zero / unset for modules without method group conversions.</summary>
-    int FuncRefCacheSlotCount = 0);
+    int FuncRefCacheSlotCount = 0,
+    /// <summary>1.2 split-debug-symbols — 16-byte BLAKE3-128 build_id from
+    /// the BLID section, or null when the file has no BLID (e.g. zpkg-embedded
+    /// modules or test fixtures). Used to pair main zbc with its `.zsym` sidecar.</summary>
+    byte[]? BuildId = null);
 
 // ── Class descriptor ──────────────────────────────────────────────────────────
 

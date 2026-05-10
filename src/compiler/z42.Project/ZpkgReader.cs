@@ -77,6 +77,9 @@ public static partial class ZpkgReader
                 r.BaseStream.Seek(funcBodySize, SeekOrigin.Current);
                 uint typeBodySize  = r.ReadUInt32();
                 r.BaseStream.Seek(typeBodySize, SeekOrigin.Current);
+                // 1.2 split-debug-symbols: per-member DBUG body trailing typeData.
+                uint dbugBodySize  = r.ReadUInt32();
+                r.BaseStream.Seek(dbugBodySize, SeekOrigin.Current);
                 result.Add((sourceFile, sourceHash, ns));
             }
             return result;

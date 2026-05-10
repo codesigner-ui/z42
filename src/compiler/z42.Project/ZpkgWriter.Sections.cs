@@ -233,6 +233,16 @@ public static partial class ZpkgWriter
                 ? ZbcWriter.BuildTypeSection(mod.Classes, pool)
                 : [];
 
+            // 1.2 split-debug-symbols: DBUG body per member (LineTable +
+            // LocalVarTable). 0 bytes when no debug info. Maintains feature
+            // parity with indexed `.cache/*.zbc` after LineTable was moved
+            // out of FUNC body into DBUG.
+            bool hasDebug = mod.Functions.Any(f =>
+                f.LineTable is { Count: > 0 } || f.LocalVarTable is { Count: > 0 });
+            byte[] dbugData = hasDebug
+                ? ZbcWriter.BuildDbugSection(mod.Functions, pool)
+                : [];
+
             w.Write((uint)pool.Idx(zbc.Namespace));
             w.Write((uint)pool.Idx(zbc.SourceFile));
             w.Write((uint)pool.Idx(zbc.SourceHash));
@@ -242,6 +252,8 @@ public static partial class ZpkgWriter
             w.Write(funcData);
             w.Write((uint)typeData.Length);
             if (typeData.Length > 0) w.Write(typeData);
+            w.Write((uint)dbugData.Length);
+            if (dbugData.Length > 0) w.Write(dbugData);
 
             firstSigIdx += (uint)mod.Functions.Count;
         }

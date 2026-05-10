@@ -351,7 +351,9 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
 struct FuncBody {
     blocks: Vec<BasicBlock>,
     exception_table: Vec<ExceptionEntry>,
-    line_table: Vec<crate::metadata::bytecode::LineEntry>,
+    // 1.2 split-debug-symbols: LineTable moved out of FuncBody (FUNC section)
+    // into DBUG section. The merged Function.line_table is populated at
+    // assembly time from the (optional) DBUG content.
 }
 
 // ── Phase 3 S3c (tokenize-ir-and-zbc-bump, 2026-05-09) ────────────────────────
@@ -418,7 +420,7 @@ fn read_func(sec: &[u8], pool: &[String], id_map: &IdMap) -> Result<Vec<FuncBody
         let block_count = c.read_u16()? as usize;
         let instr_len   = c.read_u32()? as usize;
         let exc_count   = c.read_u16()? as usize;
-        let line_count  = c.read_u16()? as usize;
+        // 1.2 split-debug-symbols: line_count + line_table no longer in FUNC.
 
         let mut block_offsets = Vec::with_capacity(block_count);
         for _ in 0..block_count {
@@ -433,22 +435,6 @@ fn read_func(sec: &[u8], pool: &[String], id_map: &IdMap) -> Result<Vec<FuncBody
             let catch_type = c.read_u32()?;
             let catch_reg  = c.read_u16()?;
             raw_exc.push((try_start, try_end, catch_blk, catch_type, catch_reg));
-        }
-
-        let mut line_table = Vec::with_capacity(line_count);
-        for _ in 0..line_count {
-            let blk  = c.read_u16()? as u32;
-            let ins  = c.read_u16()? as u32;
-            let line = c.read_u32()?;
-            let file_id = c.read_u32()?;
-            // 2026-05-10 span-column-propagate (zbc 1.1+): u32 column.
-            let column = c.read_u32()?;
-            let file = if file_id == u32::MAX { None } else {
-                pool.get(file_id as usize).cloned()
-            };
-            line_table.push(crate::metadata::bytecode::LineEntry {
-                block: blk, instr: ins, line, file, column,
-            });
         }
 
         let instr_bytes = c.read_bytes(instr_len)?;
@@ -478,7 +464,7 @@ fn read_func(sec: &[u8], pool: &[String], id_map: &IdMap) -> Result<Vec<FuncBody
             ExceptionEntry { try_start, try_end, catch_label, catch_type, catch_reg: cr as u32 }
         }).collect();
 
-        bodies.push(FuncBody { blocks, exception_table, line_table });
+        bodies.push(FuncBody { blocks, exception_table });
     }
     Ok(bodies)
 }
@@ -487,23 +473,48 @@ fn block_label(idx: usize) -> String {
     if idx == 0 { "entry".to_owned() } else { format!("block_{idx}") }
 }
 
-// ── DBUG section (local variable names) ──────────────────────────────────────
+// ── DBUG section (line table + local variable names; 1.2+) ──────────────────
 
-fn read_dbug(sec: &[u8], pool: &[String]) -> Result<Vec<Vec<crate::metadata::bytecode::LocalVar>>> {
+#[derive(Default)]
+struct DbugFuncEntry {
+    line_table: Vec<crate::metadata::bytecode::LineEntry>,
+    local_vars: Vec<crate::metadata::bytecode::LocalVar>,
+}
+
+fn read_dbug(sec: &[u8], pool: &[String]) -> Result<Vec<DbugFuncEntry>> {
     let mut c = Cursor::new(sec);
     let func_count = c.read_u32()? as usize;
     let mut result = Vec::with_capacity(func_count);
 
     for _ in 0..func_count {
+        // ── Line table ───────────────────────────────────────────────────
+        let line_count = c.read_u16()? as usize;
+        let mut line_table = Vec::with_capacity(line_count);
+        for _ in 0..line_count {
+            let blk     = c.read_u16()? as u32;
+            let ins     = c.read_u16()? as u32;
+            let line    = c.read_u32()?;
+            let file_id = c.read_u32()?;
+            let column  = c.read_u32()?;
+            let file = if file_id == u32::MAX { None } else {
+                pool.get(file_id as usize).cloned()
+            };
+            line_table.push(crate::metadata::bytecode::LineEntry {
+                block: blk, instr: ins, line, file, column,
+            });
+        }
+
+        // ── Local var table ──────────────────────────────────────────────
         let var_count = c.read_u16()? as usize;
-        let mut vars = Vec::with_capacity(var_count);
+        let mut local_vars = Vec::with_capacity(var_count);
         for _ in 0..var_count {
             let name_idx = c.read_u32()? as usize;
             let reg = c.read_u16()?;
             let name = pool.get(name_idx).cloned().unwrap_or_else(|| format!("?{name_idx}"));
-            vars.push(crate::metadata::bytecode::LocalVar { name, reg });
+            local_vars.push(crate::metadata::bytecode::LocalVar { name, reg });
         }
-        result.push(vars);
+
+        result.push(DbugFuncEntry { line_table, local_vars });
     }
     Ok(result)
 }
@@ -785,24 +796,24 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     let major     = u16::from_le_bytes([data[4], data[5]]);
     let minor     = u16::from_le_bytes([data[6], data[7]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
-    // Phase 3 S3a (tokenize-ir-and-zbc-bump, 2026-05-09): support both v0.9
-    // (legacy: IR refs are STRS pool indices) and v1.0 (token-encoded IR refs
-    // with IMPORT_BASE bit).
-    //
-    // Phase 3 S3c (2026-05-09): require zbc 1.0+. Pre-1.0 not supported per
-    // CLAUDE.md "不为旧版本提供兼容" — old artifacts must be regenerated via
-    // `scripts/build-stdlib.sh + scripts/regen-golden-tests.sh`.
-    // 2026-05-10 span-column-propagate: bump to 1.1 — line table entries gained
-    // a `u32 column` field. Per CLAUDE.md "不为旧版本提供兼容", pre-1.1 artifacts
-    // must be regenerated; reader does not preserve a backwards-compat path.
-    if major == 0 || (major == 1 && minor < 1) {
+    // 2026-05-10 split-debug-symbols: bump to 1.2 — LineTable moved from FUNC
+    // body into DBUG section, new BLID section + ZbcFlags.SymOnly. Per CLAUDE.md
+    // "不为旧版本提供兼容", pre-1.2 artifacts must be regenerated.
+    if major == 0 || (major == 1 && minor < 2) {
         bail!(
-            "zbc {major}.{minor} not supported; requires 1.1+. \
+            "zbc {major}.{minor} not supported; requires 1.2+. \
              Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
         );
     }
     if major > 1 {
         bail!("zbc major version {major} not supported (expected 1.x)");
+    }
+    let flags = u16::from_le_bytes([data[8], data[9]]);
+    if (flags & 0x04) != 0 {
+        bail!(
+            "zbc file has SymOnly flag set: it is a debug-symbol sidecar (.zsym), \
+             not a loadable module"
+        );
     }
     let has_is_static = true;  // v1.0+ always has is_static in SIGS
     let dir = read_directory(data, sec_count)?;
@@ -840,7 +851,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
         .transpose()?
         .unwrap_or_default();
 
-    let dbug_vars = get_section(data, &dir, b"DBUG")
+    let mut dbug_entries = get_section(data, &dir, b"DBUG")
         .map(|s| read_dbug(s, &pool_raw))
         .transpose()?
         .unwrap_or_default();
@@ -848,7 +859,11 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     // Assemble functions from SIGS + FUNC + DBUG
     let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {
         let sig = sigs.get(i);
-        let local_vars = dbug_vars.get(i).cloned().unwrap_or_default();
+        let dbug = if i < dbug_entries.len() {
+            std::mem::take(&mut dbug_entries[i])
+        } else {
+            DbugFuncEntry::default()
+        };
         Function {
             name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
             param_count:     sig.map(|s| s.param_count).unwrap_or(0),
@@ -858,8 +873,8 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             exception_table: body.exception_table,
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
-            line_table:      body.line_table,
-            local_vars,
+            line_table:      dbug.line_table,
+            local_vars:      dbug.local_vars,
             type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
             type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default(),
             block_index:     std::collections::HashMap::new(),
@@ -1089,6 +1104,9 @@ fn read_mods_section(
         let func_data   = c.read_bytes(func_len)?;
         let type_len    = c.read_u32()? as usize;
         let type_data   = c.read_bytes(type_len)?;
+        // 1.2 split-debug-symbols: per-member DBUG body. 0 bytes = no debug.
+        let dbug_len    = c.read_u32()? as usize;
+        let dbug_data   = c.read_bytes(dbug_len)?;
 
         let namespace = pool_str_owned(pool, ns_idx)?;
         let sigs_slice = &global_sigs[first_sig..first_sig + func_count.min(global_sigs.len() - first_sig.min(global_sigs.len()))];
@@ -1101,9 +1119,19 @@ fn read_mods_section(
             classes.iter().map(|c| c.name.clone()).collect(),
         );
         let func_bodies = read_func(func_data, pool, &id_map)?;
+        let mut dbug_entries = if dbug_len > 0 {
+            read_dbug(dbug_data, pool)?
+        } else {
+            Vec::new()
+        };
 
         let mut functions: Vec<Function> = func_bodies.into_iter().enumerate().map(|(i, body)| {
             let sig = sigs_slice.get(i);
+            let dbug = if i < dbug_entries.len() {
+                std::mem::take(&mut dbug_entries[i])
+            } else {
+                DbugFuncEntry::default()
+            };
             Function {
                 name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
                 param_count:     sig.map(|s| s.param_count).unwrap_or(0),
@@ -1113,8 +1141,8 @@ fn read_mods_section(
                 exception_table: body.exception_table,
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
-                line_table:      body.line_table,
-                local_vars:      vec![],
+                line_table:      dbug.line_table,
+                local_vars:      dbug.local_vars,
                 type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default(),
                 type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default(),
                 block_index:     std::collections::HashMap::new(),

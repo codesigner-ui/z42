@@ -6,5 +6,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Blake3" Version="2.2.1" />
+  </ItemGroup>
 
 </Project>
