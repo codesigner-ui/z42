@@ -123,6 +123,37 @@ public static class ZpkgBuilder
         return zpkgPath;
     }
 
+    /// <summary>
+    /// 1.5b split-debug-symbols: Serialise <paramref name="zpkg"/> with optional
+    /// debug-symbol stripping. When <paramref name="stripSymbols"/> is true and
+    /// the zpkg is in packed mode, the main `.zpkg` drops all DBUG bodies and a
+    /// matching `<name>.zsym` sidecar is written alongside, paired by BLAKE3-128
+    /// build_id. Returns (zpkgPath, sidecarPath?). Indexed mode is unaffected
+    /// (DBUG already lives in `.cache/*.zbc`); sidecar emission is a no-op.
+    /// </summary>
+    public static (string ZpkgPath, string? SidecarPath) WriteZpkgWithSidecar(
+        ZpkgFile zpkg, string name, string outDir, bool stripSymbols)
+    {
+        Directory.CreateDirectory(outDir);
+        string zpkgPath = Path.Combine(outDir, name + ".zpkg");
+
+        if (zpkg.Mode != ZpkgMode.Packed || !stripSymbols)
+        {
+            File.WriteAllBytes(zpkgPath, ZpkgWriter.Write(zpkg));
+            return (zpkgPath, null);
+        }
+
+        var (mainBytes, sidecarBytes) = ZpkgWriter.WritePackedWithSidecar(zpkg, stripSymbols: true);
+        File.WriteAllBytes(zpkgPath, mainBytes);
+        string? sidecarPath = null;
+        if (sidecarBytes is not null)
+        {
+            sidecarPath = Path.Combine(outDir, name + ".zsym");
+            File.WriteAllBytes(sidecarPath, sidecarBytes);
+        }
+        return (zpkgPath, sidecarPath);
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /// Build the flat ZpkgExport list from all ZbcFile exports, qualifying each

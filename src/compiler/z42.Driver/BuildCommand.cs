@@ -21,6 +21,9 @@ static class BuildCommand
         var excludeOpt  = new Option<string[]>("--exclude", "Exclude the named workspace member(s)") { AllowMultipleArgumentsPerToken = true };
         var noWorkspaceOpt = new Option<bool>("--no-workspace", "Force standalone mode, ignoring workspace");
         var noIncrOpt      = new Option<bool>("--no-incremental", "Disable incremental cache (full rebuild)");
+        // 1.5b split-debug-symbols: CLI override for [profile.*].strip toml field.
+        // Bool? semantics: not specified → null → use toml default; --strip-symbols → true; --strip-symbols=false → false.
+        var stripOpt       = new Option<bool?>("--strip-symbols", "Strip debug symbols to a sidecar `<name>.zsym` (overrides [profile.*].strip)") { Arity = ArgumentArity.ZeroOrOne };
 
         cmd.AddArgument(manifestArg);
         cmd.AddOption(releaseOpt);
@@ -30,6 +33,7 @@ static class BuildCommand
         cmd.AddOption(excludeOpt);
         cmd.AddOption(noWorkspaceOpt);
         cmd.AddOption(noIncrOpt);
+        cmd.AddOption(stripOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
@@ -41,10 +45,11 @@ static class BuildCommand
             var exclude  = ctx.ParseResult.GetValueForOption(excludeOpt) ?? [];
             var noWs     = ctx.ParseResult.GetValueForOption(noWorkspaceOpt);
             var noIncr   = ctx.ParseResult.GetValueForOption(noIncrOpt);
+            var stripCli = ctx.ParseResult.GetValueForOption(stripOpt);
 
             // Workspace 模式判断（C4a）：显式 path / --no-workspace → 走单工程
-            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false, incremental: !noIncr)
-                            ?? PackageCompiler.Run(manifest, release, bin, useIncremental: !noIncr);
+            ctx.ExitCode = TryRunWorkspace(release, packages, workspace, exclude, noWs, manifest, checkOnly: false, incremental: !noIncr, stripCli: stripCli)
+                            ?? PackageCompiler.Run(manifest, release, bin, useIncremental: !noIncr, cliStripOverride: stripCli);
         });
 
         return cmd;
@@ -353,7 +358,8 @@ static class BuildCommand
         bool noWorkspace,
         string? explicitManifest,
         bool checkOnly,
-        bool incremental = true)
+        bool incremental = true,
+        bool? stripCli = null)
     {
         if (noWorkspace) return null;
         if (explicitManifest is not null) return null;       // 显式 path → 单工程
@@ -382,6 +388,12 @@ static class BuildCommand
                     packages = [memberInCwd.MemberName];
             }
 
+            // 1.5b: workspace effective strip = CLI override ?? built-in default (release=true / debug=false).
+            // [profile.*].strip from individual member toml not honored at workspace level — workspace
+            // members forbid [profile.*] sections (WS003). Workspace-root profile would need a separate
+            // resolution path (deferred).
+            bool effectiveStrip = stripCli ?? release;
+
             var orchestrator = new WorkspaceBuildOrchestrator();
             var opts = new WorkspaceBuildOrchestrator.BuildOptions(
                 Selected:     packages,
@@ -389,7 +401,8 @@ static class BuildCommand
                 AllWorkspace: allWorkspace,
                 CheckOnly:    checkOnly,
                 Release:      release,
-                Incremental:  incremental);
+                Incremental:  incremental,
+                StripSymbols: effectiveStrip);
 
             var report = orchestrator.Build(result, ws.Manifest.DefaultMembers, opts);
 

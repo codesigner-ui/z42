@@ -19,7 +19,8 @@ public sealed class WorkspaceBuildOrchestrator
         bool                  AllWorkspace,    // --workspace
         bool                  CheckOnly,       // --check-only / 'check' 命令
         bool                  Release,
-        bool                  Incremental = true);   // --no-incremental → false
+        bool                  Incremental = true,    // --no-incremental → false
+        bool                  StripSymbols = false); // 1.5b: workspace-wide effective strip
 
     public sealed record BuildReport(
         IReadOnlyList<string> Succeeded,
@@ -148,7 +149,7 @@ public sealed class WorkspaceBuildOrchestrator
 
     static int DefaultCompile(ResolvedManifest member, BuildOptions opts)
     {
-        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental);
+        return PackageCompiler.RunResolved(member, opts.Release, opts.CheckOnly, opts.Incremental, opts.StripSymbols);
     }
 
     static string RelativePath(WorkspaceLoadResult workspace, ResolvedManifest m)

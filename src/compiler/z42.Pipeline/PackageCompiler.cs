@@ -23,7 +23,8 @@ public static partial class PackageCompiler
         string?               explicitToml,
         bool                  useRelease,
         string?               binFilter,
-        bool                  useIncremental = true)
+        bool                  useIncremental = true,
+        bool?                 cliStripOverride = null)
     {
         if (!TryLoadManifest(explicitToml, out var tomlPath, out var manifest)) return 1;
 
@@ -31,8 +32,14 @@ public static partial class PackageCompiler
         string projectDir   = Path.GetDirectoryName(Path.GetFullPath(tomlPath))!;
         string outDir       = Path.GetFullPath(Path.Combine(projectDir, manifest.Build.OutDir));
 
+        // 1.5b split-debug-symbols: effective `strip` resolution priority:
+        //   1) CLI `--strip-symbols=...` override
+        //   2) toml `[profile.*].strip`
+        //   3) Built-in default (debug=false / release=true) — already in ProfileSection.DefaultDebug/Release
+        bool stripSymbols = cliStripOverride ?? manifest.SelectProfile(useRelease).Strip;
+
         if (manifest.Project.Kind == ProjectKind.Multi)
-            return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, binFilter);
+            return BuildMultiExe(manifest, projectDir, outDir, useRelease, profileLabel, binFilter, stripSymbols);
 
         if (binFilter is not null)
         {
@@ -56,7 +63,8 @@ public static partial class PackageCompiler
             projectDir,
             outDir,
             manifest.Dependencies,
-            useIncremental: useIncremental);
+            useIncremental: useIncremental,
+            stripSymbols:   stripSymbols);
     }
 
     // ── Workspace mode entry (C4a) ────────────────────────────────────────────
@@ -65,7 +73,8 @@ public static partial class PackageCompiler
     /// 编译一个 workspace member。基于 ResolvedManifest（已应用 workspace 共享 + include +
     /// policy + 集中产物布局）。供 WorkspaceBuildOrchestrator 调用。
     /// </summary>
-    public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly, bool useIncremental = true)
+    public static int RunResolved(ResolvedManifest member, bool useRelease, bool checkOnly,
+        bool useIncremental = true, bool stripSymbols = false)
     {
         string profileLabel = useRelease ? "release" : "debug";
         string memberDir    = Path.GetDirectoryName(Path.GetFullPath(member.ManifestPath))!;
@@ -115,7 +124,8 @@ public static partial class PackageCompiler
             outDir,
             declaredDeps,
             explicitCacheDir: cacheDir,
-            useIncremental: useIncremental);
+            useIncremental: useIncremental,
+            stripSymbols:   stripSymbols);
     }
 
     static IReadOnlyList<string> ResolveSourceFilesFromResolved(ResolvedManifest member, string memberDir)
@@ -194,7 +204,8 @@ public static partial class PackageCompiler
         string                outDir,
         bool                  useRelease,
         string                profileLabel,
-        string?               binFilter)
+        string?               binFilter,
+        bool                  stripSymbols = false)
     {
         var targets = manifest.ExeTargets;
         if (binFilter is not null)
@@ -217,7 +228,7 @@ public static partial class PackageCompiler
             bool pack = manifest.ResolvePack(useRelease, target.Pack);
             if (BuildTarget(target.Name, manifest.Project.Version, ZpkgKind.Exe,
                     target.Entry, sourceFiles, pack, projectDir, outDir,
-                    manifest.Dependencies) != 0)
+                    manifest.Dependencies, stripSymbols: stripSymbols) != 0)
                 errors++;
         }
 

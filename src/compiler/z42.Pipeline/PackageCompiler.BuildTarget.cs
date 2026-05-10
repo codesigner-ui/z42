@@ -27,7 +27,8 @@ public static partial class PackageCompiler
         string                outDir,
         DependencySection?    declaredDeps = null,
         string?               explicitCacheDir = null,
-        bool                  useIncremental = true)
+        bool                  useIncremental = true,
+        bool                  stripSymbols = false)
     {
         // L3-G4g: libsDirs includes projectDir/libs, projectDir/artifacts/z42/libs,
         // plus a walk-up search for the repo-level `artifacts/z42/libs` so stdlib
@@ -124,8 +125,10 @@ public static partial class PackageCompiler
             zpkg = indexedZpkg;
         }
 
-        string zpkgPath = ZpkgBuilder.WriteZpkg(zpkg, name, outDir);
+        var (zpkgPath, sidecarPath) = ZpkgBuilder.WriteZpkgWithSidecar(zpkg, name, outDir, stripSymbols);
         Console.Error.WriteLine($"wrote → {zpkgPath}");
+        if (sidecarPath is not null)
+            Console.Error.WriteLine($"wrote → {sidecarPath}");
         Console.Error.WriteLine($"    Finished → {outDir}");
         return 0;
     }

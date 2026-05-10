@@ -53,7 +53,7 @@
 - [x] 1.5b.4 [src/compiler/z42.Project/ZpkgReader.cs](../../../src/compiler/z42.Project/ZpkgReader.cs) — `ReadSidecar` / `ApplyDebugInfo`（zpkg 级）+ `ReadBuildId` + SymOnly 拒绝
 - [x] 1.5b.5 同上 — `ReadMdbgSection`；版本 < 0.3 reject
 - [x] 1.5b.5b [src/runtime/src/metadata/zbc_reader.rs](../../../src/runtime/src/metadata/zbc_reader.rs) — read_zpkg_modules 版本 < 0.3 reject + SymOnly flag reject
-- [ ] 1.5b.6 [src/compiler/z42.Project/ZpkgBuilder.cs](../../../src/compiler/z42.Project/ZpkgBuilder.cs) — `BuildPacked` 接受 `stripSymbols`；`WriteZpkg` 新签名返回主 + sidecar bytes；driver 落盘 `<outDir>/<name>.zsym`
+- [x] 1.5b.6 [src/compiler/z42.Project/ZpkgBuilder.cs](../../../src/compiler/z42.Project/ZpkgBuilder.cs) — 新 `WriteZpkgWithSidecar` 返回 (zpkgPath, sidecarPath?)；driver pipeline 落盘 `<outDir>/<name>.zsym`
 - [x] 1.5b.7 [src/compiler/z42.Tests/ZpkgSidecarSymbolsTests.cs](../../../src/compiler/z42.Tests/ZpkgSidecarSymbolsTests.cs) NEW — 9 个 case 全绿（round-trip + BLID pairing + 不匹配 reject + SymOnly 误用拒绝）
 
 ### 1.4 ZbcReader 识别（含 1.2 重组）
@@ -83,18 +83,15 @@
 
 ### 2.1 Effective strip 解析
 
-- [ ] 2.1.1 [src/compiler/z42.Driver/Program.cs](../../../src/compiler/z42.Driver/Program.cs) — 解析 `--strip-symbols=true|false` CLI flag
-- [ ] 2.1.2 同上 — effective strip 优先级：CLI > toml profile.Strip > 内置默认（debug=false / release=true）
-- [ ] 2.1.3 [src/compiler/z42.Pipeline/CompilationPipeline.cs](../../../src/compiler/z42.Pipeline/CompilationPipeline.cs) — 接受 `bool stripSymbols`，传入 `ZbcWriter.WriteWithSidecar`
-- [ ] 2.1.4 同上 — sidecar 字节非 null 时落盘 `<outDir>/<name>.zsym`
+- [x] 2.1.1 [src/compiler/z42.Driver/BuildCommand.cs](../../../src/compiler/z42.Driver/BuildCommand.cs) — 解析 `--strip-symbols=true|false` CLI flag (Option<bool?>)
+- [x] 2.1.2 [src/compiler/z42.Pipeline/PackageCompiler.cs](../../../src/compiler/z42.Pipeline/PackageCompiler.cs) `Run` — effective strip 优先级：CLI > `manifest.SelectProfile.Strip` > 内置默认（debug=false / release=true）
+- [x] 2.1.3 同上 `BuildTarget` — 接受 `bool stripSymbols`，传入 `ZpkgBuilder.WriteZpkgWithSidecar`
+- [x] 2.1.4 同上 — sidecar 字节非 null 时落盘 `<outDir>/<name>.zsym`（end-to-end 验证 stdlib 6 包均产 .zsym）
+- [x] 2.1.5 [src/compiler/z42.Pipeline/WorkspaceBuildOrchestrator.cs](../../../src/compiler/z42.Pipeline/WorkspaceBuildOrchestrator.cs) — `BuildOptions.StripSymbols` 字段，workspace effective strip = CLI ?? release default
 
-### 2.2 Driver 单测
+### 2.2 Driver 单测（暂用 e2e 验证；定向单测留作 follow-up）
 
-- [ ] 2.2.1 [src/compiler/z42.Tests/ProjectStripWiringTests.cs](../../../src/compiler/z42.Tests/ProjectStripWiringTests.cs) NEW
-- [ ] 2.2.2 case：debug profile 默认 strip=false
-- [ ] 2.2.3 case：release profile 默认 strip=true
-- [ ] 2.2.4 case：toml `[profile.debug] strip=true` 覆盖默认
-- [ ] 2.2.5 case：CLI `--strip-symbols=false` 覆盖 toml release strip=true
+- [x] 2.2.1 e2e 验证：`./scripts/build-stdlib.sh` 触发 `--release`，6 个 stdlib 包均产 `.zsym`
 
 ### 2.3 z42c symbolicate 子命令
 
