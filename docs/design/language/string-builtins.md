@@ -1,5 +1,7 @@
 # z42 字符串内置方法规范
 
+> **Status**: L1 ✅ ｜ 6 个内置方法（Length/Substring/Contains/StartsWith/EndsWith）；后续按需扩展
+
 ## 设计参考
 
 | 来源 | 借鉴点 |

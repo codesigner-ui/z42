@@ -1,5 +1,7 @@
 # z42 Language Overview
 
+> **Status**: 参考手册 / Reference Manual ｜ 主题章节链接到具体 design doc；最新覆盖 L1 + lambda（L2-C1）+ delegate（L3-D）
+
 > 本文档是 **L1（Bootstrap）** 阶段的语法实现参考，面向编译器开发者。
 > 语言设计决策（feature 层面）见 [`docs/features.md`](../features.md)。
 > 演进计划和实现进度见 [`docs/roadmap.md`](../roadmap.md)。

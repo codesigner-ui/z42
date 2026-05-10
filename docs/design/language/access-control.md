@@ -1,5 +1,7 @@
 # 访问权限控制规范
 
+> **Status**: L1 ✅ (private / 枚举成员) ｜ `protected` / `internal` 检查待 Phase 2
+
 ## 设计原则
 
 **一条统一规则：默认可见性 = 最小封闭作用域。**

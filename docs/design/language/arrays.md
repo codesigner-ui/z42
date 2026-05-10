@@ -1,5 +1,7 @@
 # z42 Arrays（数组）规范
 
+> **Status**: L1 ✅ ｜ 一维数组 + Std.Array 基类（spec/archive/2026-05-07-add-array-base-class）
+
 ## 设计参考
 
 | 来源 | 借鉴点 |

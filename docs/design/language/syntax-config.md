@@ -1,5 +1,7 @@
 # z42 语法配置规范
 
+> **Status**: L1-L2 🚧 ｜ 三层语法配置机制；Phase 2+ 用户定义 operator/keyword
+
 ## 设计目标
 
 z42 的解析器已采用 Pratt 表驱动（`ParseTable.cs`），运算符优先级和语句规则以数据形式存储。

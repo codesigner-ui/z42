@@ -1,5 +1,7 @@
 # Object Protocol — VM Implementation
 
+> **Status**: L1 ✅ ｜ ToString / Equals / GetHashCode / GetType 三路派发（Object vtable / String hardcoded / primitive value_to_str）
+
 This document describes how the VM implements the universal "object" protocol
 methods (`ToString`, `Equals`, `GetHashCode`, `GetType`) — the methods every
 type implicitly inherits from `Std.Object`.

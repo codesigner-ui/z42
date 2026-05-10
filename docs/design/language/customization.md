@@ -1,5 +1,7 @@
 # Language Customization Framework
 
+> **Status**: L1-L2 🚧 ｜ LanguageFeatures + ParseTable 机制；Layer 3 用户定义 operator/keyword 见 Deferred
+
 > This document describes z42's customization architecture: how the compiler can be configured to support different language dialects, enable/disable features, and adapt to different execution environments (embedded, restricted, educational, etc.).
 
 ---

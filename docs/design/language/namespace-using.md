@@ -1,5 +1,7 @@
 # Namespace 与 Using — Phase 1 规范
 
+> **Status**: L1 ✅ ｜ namespace + using 导入 + strict-using-resolution（spec/archive/2026-04-28-strict-using-resolution）
+
 ## 概述
 
 Phase 1 完全对齐 C# 9–12 的 file-scoped namespace 语法，目标是：

@@ -1,5 +1,7 @@
 # z42 闭包设计
 
+> **Status**: L3-C2 ✅ core+loops+jit ｜ lambda 字面量 + 捕获 + 档 C 堆擦除 + JIT；档 A/B 完整版 + Send 派生见 Deferred
+
 > 本文档是 z42 闭包 / lambda / 函数类型的**权威设计规范**。
 > 上游：[`philosophy.md`](../philosophy.md)（设计原则）/ [`language-overview.md`](language-overview.md)（用户视角语法）
 > 下游：[`grammar.peg`](grammar.peg)（机器可读文法）/ [`ir.md`](../runtime/ir.md)（IR 指令）/ [`concurrency.md`](../runtime/concurrency.md)（spawn 捕获规则）

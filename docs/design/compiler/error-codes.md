@@ -1,5 +1,7 @@
 # z42 Diagnostic Codes
 
+> **Status**: L1-L2 🚧 ｜ 4 套错误码空间（E/W/WS/Z）catalog + 加入流程；`z42c explain <CODE>` 命令实施进行中
+
 All error, warning, and info codes emitted by the z42 compiler.
 
 Use `z42c --explain <code>` to view the full description and an example in the terminal.

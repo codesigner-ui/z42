@@ -1,5 +1,7 @@
 # z42 foreach 规范
 
+> **Status**: L1 ✅ ｜ 数组迭代脱糖；`IEnumerable` / 自定义 iterator 见 [`iteration.md`](iteration.md)
+
 > **本文档边界**：foreach 语法 + 语义 + Phase 1 数组迭代脱糖。**广义迭代机制**（索引鸭子协议 vs IEnumerable 接口契约 / 设计权衡 / Wave 2 路径）见 [`iteration.md`](iteration.md)。
 
 ## 设计参考
