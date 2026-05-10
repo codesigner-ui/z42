@@ -33,85 +33,90 @@ internal sealed partial class FunctionEmitter
 
     // ── Statements ────────────────────────────────────────────────────────────
 
+    /// Lazy-instantiated stmt visitor (nested class below). Per-emitter
+    /// instance so it can hold a reference to `this` for outer access.
+    private IrEmitStmtVisitor? _stmtVisitor;
+
     private void EmitBoundStmt(BoundStmt stmt)
     {
         TrackLine(stmt.Span);
-        switch (stmt)
+        (_stmtVisitor ??= new IrEmitStmtVisitor(this)).Visit(stmt);
+    }
+
+    /// introduce-bound-visitor S6 — replaces the legacy switch in
+    /// `EmitBoundStmt`. Nested private class so it accesses FunctionEmitter's
+    /// private state through `_e` without leaking visibility. Behavior
+    /// identical: each Visit method either calls a partial helper
+    /// (Emit{Bound,If,While,...}) or emits inline.
+    private sealed class IrEmitStmtVisitor : BoundStmtVisitor<Unit>
+    {
+        private readonly FunctionEmitter _e;
+        public IrEmitStmtVisitor(FunctionEmitter e) { _e = e; }
+
+        protected override Unit VisitVarDecl(BoundVarDecl v)
         {
-            case BoundVarDecl v:
-                if (v.Init != null)
-                {
-                    var reg = EmitExpr(v.Init);
-                    // WriteBackName will allocate a register for this variable on first assignment
-                    WriteBackName(v.Name, reg);
-                }
-                // If no initializer, variable will get a register on first assignment
-                break;
-
-            case BoundReturn r:
-                EndBlock(r.Value != null
-                    ? new RetTerm(EmitExpr(r.Value))
-                    : new RetTerm(null));
-                break;
-
-            case BoundExprStmt e:
-                EmitExpr(e.Expr);
-                break;
-
-            case BoundBlockStmt b:
-                EmitBoundBlock(b.Block);
-                break;
-
-            case BoundIf ifStmt:
-                EmitBoundIf(ifStmt);
-                break;
-
-            case BoundWhile ws:
-                EmitBoundWhile(ws);
-                break;
-
-            case BoundDoWhile dw:
-                EmitBoundDoWhile(dw);
-                break;
-
-            case BoundFor fs:
-                EmitBoundFor(fs);
-                break;
-
-            case BoundForeach fe:
-                EmitBoundForeach(fe);
-                break;
-
-            case BoundBreak:
-                if (_loopStack.Count > 0)
-                    EndBlock(new BrTerm(_loopStack.Peek().Break));
-                break;
-
-            case BoundContinue:
-                if (_loopStack.Count > 0)
-                    EndBlock(new BrTerm(_loopStack.Peek().Continue));
-                break;
-
-            case BoundSwitch sw:
-                EmitBoundSwitchStmt(sw);
-                break;
-
-            case BoundTryCatch tc:
-                EmitBoundTryCatch(tc);
-                break;
-
-            case BoundThrow th:
-                EndBlock(new ThrowTerm(EmitExpr(th.Value)));
-                break;
-
-            case BoundPinned p:
-                EmitBoundPinned(p);
-                break;
-
-            case BoundLocalFunction lfn:
-                EmitBoundLocalFunction(lfn);
-                break;
+            if (v.Init != null)
+            {
+                var reg = _e.EmitExpr(v.Init);
+                // WriteBackName will allocate a register for this variable on
+                // first assignment.
+                _e.WriteBackName(v.Name, reg);
+            }
+            // If no initializer, variable will get a register on first assignment.
+            return default;
         }
+
+        protected override Unit VisitReturn(BoundReturn r)
+        {
+            _e.EndBlock(r.Value != null
+                ? new RetTerm(_e.EmitExpr(r.Value))
+                : new RetTerm(null));
+            return default;
+        }
+
+        protected override Unit VisitExprStmt(BoundExprStmt e)
+        {
+            _e.EmitExpr(e.Expr);
+            return default;
+        }
+
+        protected override Unit VisitBlockStmt(BoundBlockStmt b)
+        {
+            _e.EmitBoundBlock(b.Block);
+            return default;
+        }
+
+        protected override Unit VisitIf(BoundIf i)            { _e.EmitBoundIf(i); return default; }
+        protected override Unit VisitWhile(BoundWhile w)      { _e.EmitBoundWhile(w); return default; }
+        protected override Unit VisitDoWhile(BoundDoWhile dw) { _e.EmitBoundDoWhile(dw); return default; }
+        protected override Unit VisitFor(BoundFor f)          { _e.EmitBoundFor(f); return default; }
+        protected override Unit VisitForeach(BoundForeach fe) { _e.EmitBoundForeach(fe); return default; }
+
+        protected override Unit VisitBreak(BoundBreak br)
+        {
+            if (_e._loopStack.Count > 0)
+                _e.EndBlock(new BrTerm(_e._loopStack.Peek().Break));
+            return default;
+        }
+
+        protected override Unit VisitContinue(BoundContinue co)
+        {
+            if (_e._loopStack.Count > 0)
+                _e.EndBlock(new BrTerm(_e._loopStack.Peek().Continue));
+            return default;
+        }
+
+        protected override Unit VisitSwitch(BoundSwitch sw)         { _e.EmitBoundSwitchStmt(sw); return default; }
+        protected override Unit VisitTryCatch(BoundTryCatch tc)     { _e.EmitBoundTryCatch(tc); return default; }
+
+        protected override Unit VisitThrow(BoundThrow th)
+        {
+            _e.EndBlock(new ThrowTerm(_e.EmitExpr(th.Value)));
+            return default;
+        }
+
+        protected override Unit VisitPinned(BoundPinned p)                     { _e.EmitBoundPinned(p); return default; }
+        protected override Unit VisitLocalFunction(BoundLocalFunction lfn)     { _e.EmitBoundLocalFunction(lfn); return default; }
     }
 
     /// Local-function declaration — emit a lifted module-level function named
