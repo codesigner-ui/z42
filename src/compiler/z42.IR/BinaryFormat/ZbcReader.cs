@@ -27,14 +27,14 @@ public static partial class ZbcReader
         // supported per CLAUDE.md "不为旧版本提供兼容".
         if (major == 0)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.2+. " +
+                $"zbc {major}.{minor} not supported; requires 1.3+. " +
                 "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
         if (major > 1)
             throw new InvalidDataException(
                 $"zbc major version {major} not supported (expected 1.x)");
-        if (major == 1 && minor < 2)
+        if (major == 1 && minor < 3)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.2+. " +
+                $"zbc {major}.{minor} not supported; requires 1.3+. " +
                 "Run scripts/regen-golden-tests.sh to upgrade golden artifacts.");
 
         var dir = ReadDirectory(data, minor, secCount);
@@ -99,6 +99,7 @@ public static partial class ZbcReader
             var (lineTable, localVars) = i < dbugTables.Count ? dbugTables[i] : (null, null);
             functions.Add(new IrFunction(name, paramCount, retType, execMode, blocks,
                 excTable?.Count > 0 ? excTable : null, IsStatic: isStatic,
+                ParamTypes: sig?.ParamTypes,
                 LineTable: lineTable, LocalVarTable: localVars,
                 TypeParams: typeParams, TypeParamConstraints: typeParamConstraints));
         }
@@ -163,9 +164,9 @@ public static partial class ZbcReader
     {
         ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
 
-        if (major != 1 || minor < 2)
+        if (major != 1 || minor < 3)
             throw new InvalidDataException(
-                $"sidecar zbc {major}.{minor} not supported; requires 1.2+. " +
+                $"sidecar zbc {major}.{minor} not supported; requires 1.3+. " +
                 "Run scripts/regen-golden-tests.sh to upgrade.");
         if (!flags.HasFlag(ZbcFlags.SymOnly))
             throw new InvalidDataException(
@@ -422,6 +423,7 @@ public static partial class ZbcReader
 
     private record SigEntry(
         string Name, ushort ParamCount, string RetType, string ExecMode, bool IsStatic,
+        List<string>? ParamTypes,
         List<string>? TypeParams, List<IrConstraintBundle>? TypeParamConstraints);
 
     private static List<SigEntry> ReadSigsSection(byte[] data, string[] pool)
@@ -439,6 +441,16 @@ public static partial class ZbcReader
             string retType    = TypeTags.ToIrString(r.ReadByte());
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
+
+            // 1.3 split-debug-symbols: per-param type names (u32 strIdx × paramCount).
+            List<string>? paramTypes = null;
+            if (paramCount > 0)
+            {
+                paramTypes = new List<string>(paramCount);
+                for (int p = 0; p < paramCount; p++)
+                    paramTypes.Add(P(pool, r.ReadUInt32()));
+            }
+
             // Generic type parameters (v0.3+) + per-tp constraints (v0.5+)
             byte tpCount = (ms.Position < ms.Length) ? r.ReadByte() : (byte)0;
             List<string>? typeParams = null;
@@ -454,6 +466,7 @@ public static partial class ZbcReader
                 }
             }
             result.Add(new SigEntry(name, paramCount, retType, execMode, isStatic,
+                paramTypes,
                 typeParams, typeParamConstraints));
         }
         return result;

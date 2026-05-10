@@ -85,6 +85,11 @@ public sealed record IrFunction(
     List<IrBlock> Blocks,
     List<IrExceptionEntry>? ExceptionTable = null,
     bool IsStatic = false,
+    /// 1.3 split-debug-symbols: per-parameter type names for stack-trace
+    /// signature decoration. Aligned by index with the parameter list (when
+    /// non-null, length must equal ParamCount). Null = unknown — wire writer
+    /// pads with "?" placeholders.
+    List<string>? ParamTypes = null,
     /// Total number of registers used by this function (size for Vec pre-allocation in the VM).
     /// 0 means unknown (VM falls back to dynamic resizing).
     int MaxReg = 0,
@@ -185,7 +190,7 @@ public sealed record DefaultOfInstr(TypedReg Dst, byte ParamIndex) : IrInstr;
 public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args) : IrInstr;
 /// Push a function reference value onto the operand stack. L2 no-capture lambda
 /// literal lowers to this instruction with `Func` pointing at a lifted function.
-/// See docs/design/closure.md §6 + ir.md.
+/// See docs/design/language/closure.md §6 + ir.md.
 public sealed record LoadFnInstr(TypedReg Dst, string Func) : IrInstr;
 
 /// 2026-05-02 add-method-group-conversion (D1b — I12 优化)：在 module-level
@@ -195,12 +200,12 @@ public sealed record LoadFnInstr(TypedReg Dst, string Func) : IrInstr;
 public sealed record LoadFnCachedInstr(TypedReg Dst, string Func, uint SlotId) : IrInstr;
 /// Indirect call: invoke a function via a `FuncRef`-typed register. Used when
 /// a local variable holds a lambda or function reference. Args follow the
-/// same convention as `CallInstr`. See docs/design/closure.md §6.
+/// same convention as `CallInstr`. See docs/design/language/closure.md §6.
 public sealed record CallIndirectInstr(TypedReg Dst, TypedReg Callee, List<TypedReg> Args) : IrInstr;
 /// L3 closure tier-C: allocate an env with the captured values and construct
 /// a closure value `(env, fn_name)` in `Dst`. Each `Captures` reg supplies
 /// one captured value (in capture order, matching the lifted function's env
-/// layout). See docs/design/closure.md §6 + impl-closure-l3-core design Decision 7.
+/// layout). See docs/design/language/closure.md §6 + impl-closure-l3-core design Decision 7.
 ///
 /// `StackAlloc`（2026-05-02 impl-closure-l3-escape-stack）：编译器 escape 分析
 /// 证明 env 不离开当前 frame 时设为 true → VM 走 frame-local arena

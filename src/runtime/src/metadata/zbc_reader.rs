@@ -310,6 +310,10 @@ struct FuncSig {
     ret_type: String,
     exec_mode: ExecMode,
     is_static: bool,
+    /// 1.3 split-debug-symbols: per-parameter type names for trace signature
+    /// decoration. Length always equals `param_count` (writer pads unknowns
+    /// with "?"). Empty Vec when param_count == 0.
+    param_types: Vec<String>,
     type_params: Vec<String>,
     type_param_constraints: Vec<ConstraintBundle>,
 }
@@ -324,6 +328,14 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
         let ret_tag     = c.read_u8()?;
         let mode_byte   = c.read_u8()?;
         let is_static   = if has_is_static { c.read_u8()? != 0 } else { false };
+
+        // 1.3 split-debug-symbols: per-param type names (u32 strIdx × param_count).
+        let mut param_types = Vec::with_capacity(param_count);
+        for _ in 0..param_count {
+            let pt_idx = c.read_u32()?;
+            param_types.push(c.pool_str(pool, pt_idx)?.to_owned());
+        }
+
         // Generic type params (added after is_static) + per-tp constraints (L3-G3a)
         let tp_count    = if has_is_static { c.read_u8()? as usize } else { 0 };
         let mut type_params = Vec::with_capacity(tp_count);
@@ -339,6 +351,7 @@ fn read_sigs(sec: &[u8], pool: &[String], has_is_static: bool) -> Result<Vec<Fun
             ret_type: type_tag_to_str(ret_tag).to_owned(),
             exec_mode: exec_mode_from_byte(mode_byte),
             is_static,
+            param_types,
             type_params,
             type_param_constraints,
         });
@@ -560,8 +573,8 @@ pub fn parse_zbc_sidecar(data: &[u8]) -> Result<ZbcSidecarData> {
     }
     let major = u16::from_le_bytes([data[4], data[5]]);
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if major != 1 || minor < 2 {
-        bail!("zbc sidecar {major}.{minor} not supported; requires 1.2+");
+    if major != 1 || minor < 3 {
+        bail!("zbc sidecar {major}.{minor} not supported; requires 1.3+");
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -597,8 +610,8 @@ pub fn parse_zpkg_sidecar(data: &[u8]) -> Result<ZpkgSidecarData> {
         bail!("not a zpkg sidecar (bad magic)");
     }
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if minor < 3 {
-        bail!("zpkg sidecar minor 0.{minor} not supported; requires 0.3+");
+    if minor < 4 {
+        bail!("zpkg sidecar minor 0.{minor} not supported; requires 0.4+");
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -919,12 +932,13 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     let major     = u16::from_le_bytes([data[4], data[5]]);
     let minor     = u16::from_le_bytes([data[6], data[7]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
-    // 2026-05-10 split-debug-symbols: bump to 1.2 — LineTable moved from FUNC
-    // body into DBUG section, new BLID section + ZbcFlags.SymOnly. Per CLAUDE.md
-    // "不为旧版本提供兼容", pre-1.2 artifacts must be regenerated.
-    if major == 0 || (major == 1 && minor < 2) {
+    // 2026-05-10 split-debug-symbols Phase 4: bumped to 1.3 — SIGS gains
+    // per-parameter type names (u32 strIdx × paramCount) for stack-trace
+    // signature decoration. Per CLAUDE.md "不为旧版本提供兼容", pre-1.3
+    // artifacts must be regenerated.
+    if major == 0 || (major == 1 && minor < 3) {
         bail!(
-            "zbc {major}.{minor} not supported; requires 1.2+. \
+            "zbc {major}.{minor} not supported; requires 1.3+. \
              Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
         );
     }
@@ -991,6 +1005,7 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
             name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
             param_count:     sig.map(|s| s.param_count).unwrap_or(0),
             ret_type:        sig.map(|s| s.ret_type.clone()).unwrap_or_else(|| "void".to_owned()),
+            param_types:     sig.map(|s| s.param_types.clone()).unwrap_or_default(),
             exec_mode:       sig.map(|s| s.exec_mode).unwrap_or(ExecMode::Interp),
             blocks:          body.blocks,
             exception_table: body.exception_table,
@@ -1133,9 +1148,9 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
     // 2026-05-10 split-debug-symbols: bumped to zpkg 0.3 — inner zbc 1.2
     // (LineTable in DBUG) + per-member DBUG body in MODS + sidecar form
     // (FlagSymOnly + MDBG + BLID).
-    if minor < 3 {
+    if minor < 4 {
         bail!(
-            "zpkg minor 0.{minor} not supported; requires 0.3+ (with zbc 1.2 inner modules). \
+            "zpkg minor 0.{minor} not supported; requires 0.4+ (with zbc 1.3 inner modules). \
              Run scripts/build-stdlib.sh to rebuild."
         );
     }
@@ -1265,6 +1280,7 @@ fn read_mods_section(
                 name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
                 param_count:     sig.map(|s| s.param_count).unwrap_or(0),
                 ret_type:        sig.map(|s| s.ret_type.clone()).unwrap_or_else(|| "void".to_owned()),
+                param_types:     sig.map(|s| s.param_types.clone()).unwrap_or_default(),
                 exec_mode:       sig.map(|s| s.exec_mode).unwrap_or(ExecMode::Interp),
                 blocks:          body.blocks,
                 exception_table: body.exception_table,

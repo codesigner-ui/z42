@@ -143,6 +143,21 @@
 
 ## 阶段 4: Rust trace 退化 + 函数签名
 
+### 4.0 Wire format Phase 4：SIGS 携带 per-param 类型名（zbc 1.2 → 1.3, zpkg 0.3 → 0.4）
+
+- [x] 4.0.1 [src/compiler/z42.IR/IrModule.cs](../../../../src/compiler/z42.IR/IrModule.cs) — `IrFunction.ParamTypes: List<string>?` 字段
+- [x] 4.0.2 [src/compiler/z42.IR/BinaryFormat/ZbcWriter.cs](../../../../src/compiler/z42.IR/BinaryFormat/ZbcWriter.cs) `BuildSigsSection` — 写 u32 strIdx × paramCount；intern "?" 占位
+- [x] 4.0.3 同上 — bump version 1.2 → 1.3；`WriteConstraintBundle` 改 public（zpkg 共享）
+- [x] 4.0.4 [src/compiler/z42.IR/BinaryFormat/ZbcReader.cs](../../../../src/compiler/z42.IR/BinaryFormat/ZbcReader.cs) `ReadSigsSection` + 主入口 — 读 ParamTypes 并注入 IrFunction
+- [x] 4.0.5 同上 — version < 1.3 reject
+- [x] 4.0.6 [src/compiler/z42.Project/ZpkgWriter.Sections.cs](../../../../src/compiler/z42.Project/ZpkgWriter.Sections.cs) — zpkg `BuildSigsSection` 同步写 ParamTypes + **修复 pre-existing bug**（写 constraint bundle 与 reader 对齐）
+- [x] 4.0.7 [src/compiler/z42.Project/ZpkgReader.Sections.cs](../../../../src/compiler/z42.Project/ZpkgReader.Sections.cs) — zpkg-internal SIGS reader 跳过 ParamTypes 字段
+- [x] 4.0.8 [src/compiler/z42.Project/ZpkgWriter.cs](../../../../src/compiler/z42.Project/ZpkgWriter.cs) — bump zpkg 0.3 → 0.4
+- [x] 4.0.9 [src/compiler/z42.Project/ZpkgReader.cs](../../../../src/compiler/z42.Project/ZpkgReader.cs) — version < 0.4 reject
+- [x] 4.0.10 [src/runtime/src/metadata/zbc_reader.rs](../../../../src/runtime/src/metadata/zbc_reader.rs) `read_sigs` — 读 ParamTypes 进 FuncSig；版本 1.2 → 1.3、zpkg 0.3 → 0.4 reject + sidecar 同步
+- [x] 4.0.11 [src/runtime/src/metadata/bytecode.rs](../../../../src/runtime/src/metadata/bytecode.rs) — `Function.param_types: Vec<String>` 字段
+- [x] 4.0.12 [src/compiler/z42.Semantics/Codegen/FunctionEmitter.cs](../../../../src/compiler/z42.Semantics/Codegen/FunctionEmitter.cs) `EmitMethod` / `EmitFunction` — 填充 ParamTypes（含 `this` 类名前缀）
+
 ### 4.1 Frame.func_name 携带签名
 
 - [ ] 4.1.1 在 metadata 层提供 `signature_string(func_idx) -> String`（合成 `(t1,t2,...)`）

@@ -148,6 +148,10 @@ public static partial class ZpkgReader
             string retType    = TypeTags.ToIrString(r.ReadByte());
             string execMode   = ExecModes.ToIrString(r.ReadByte());
             bool   isStatic   = r.ReadByte() != 0;
+            // 1.3 split-debug-symbols Phase 4: skip per-param type names
+            // (u32 strIdx × paramCount) — matches ZpkgWriter.BuildSigsSection
+            // and ZbcReader.ReadSigsSection layout.
+            for (int p = 0; p < paramCount; p++) r.ReadUInt32();
             // Skip generic type parameters + per-tp constraints (L3-G1 + L3-G3a + L3-G2.5 bare-tp)
             byte tpCount = r.ReadByte();
             for (int t = 0; t < tpCount; t++)

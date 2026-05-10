@@ -34,6 +34,7 @@ fn generic_fn(name: &str, tp: &str, bundle: ConstraintBundle) -> Function {
         name: name.to_owned(),
         param_count: 0,
         ret_type: "void".into(),
+        param_types: vec![],
         exec_mode: ExecMode::Interp,
         blocks: vec![],
         exception_table: vec![],

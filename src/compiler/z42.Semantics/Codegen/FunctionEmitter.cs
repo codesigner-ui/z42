@@ -38,14 +38,14 @@ internal sealed partial class FunctionEmitter
     /// module-level name (`Outer__Helper`). Populated by
     /// `EmitBoundLocalFunction` so call sites within the current function
     /// resolve directly to a static `Call`.
-    /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design Decision 7.
+    /// See docs/design/language/closure.md §3.4 + impl-local-fn-l2 design Decision 7.
     private readonly Dictionary<string, string> _localFnLiftedNames = new();
 
     /// Register holding this function's `env` (Vec<Value>) when emitting a
     /// capturing lifted body — i.e. the closure's heap-allocated env passed
     /// as the first implicit parameter. -1 means the current emitter scope is
     /// not a capturing-lifted body (so `BoundCapturedIdent` is unreachable).
-    /// See docs/design/closure.md §6 + impl-closure-l3-core design Decision 7.
+    /// See docs/design/language/closure.md §6 + impl-closure-l3-core design Decision 7.
     private int _envReg = -1;
 
     /// Maps a capture's source-level name to its slot index in `_envReg`.
@@ -179,8 +179,15 @@ internal sealed partial class FunctionEmitter
         // detects ref args at runtime via Value::Ref tag — this list lets
         // tooling render source-level shape).
         var paramMods = BuildParamModifiers(method.Params, paramOffset);
+        // 1.3 split-debug-symbols Phase 4: per-parameter type names for
+        // stack-trace signature decoration. Includes implicit `this` (= the
+        // receiver class) at index 0 for instance methods.
+        var paramTypes = new List<string>(paramCount);
+        for (int i = 0; i < paramOffset; i++) paramTypes.Add(className);
+        foreach (var p in method.Params) paramTypes.Add(TypeName(p.Type));
         return new IrFunction(methodIrName, paramCount, retType, "Interp", _blocks, excTable,
-            IsStatic: isStatic, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
+            IsStatic: isStatic, ParamTypes: paramTypes,
+            MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: method.TypeParams,
             TypeParamConstraints: constraints,
             ParamModifiers: paramMods);
@@ -261,8 +268,10 @@ internal sealed partial class FunctionEmitter
         var constraints = IrGen.BuildConstraintList(
             fn.Name, fn.TypeParams, _ctx.SemanticModel?.FuncConstraints);
         var paramMods = BuildParamModifiers(fn.Params);
+        var paramTypes = fn.Params.Select(p => TypeName(p.Type)).ToList();
         return new IrFunction(_ctx.QualifyName(fn.Name), fn.Params.Count, retType,
-            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
+            "Interp", _blocks, excTable, ParamTypes: paramTypes,
+            MaxReg: _nextReg, LineTable: lineTable, LocalVarTable: localVars,
             TypeParams: fn.TypeParams,
             TypeParamConstraints: constraints,
             ParamModifiers: paramMods);

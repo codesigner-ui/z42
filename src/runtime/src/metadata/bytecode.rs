@@ -144,6 +144,31 @@ pub struct FieldDesc {
     pub type_tag: String,
 }
 
+/// Format a function's stack-trace display name with parameter signature.
+/// Returns `<name>(<t1>,<t2>,...)` (e.g. `Demo.Greeter.greet(str)`).
+/// Empty signature is `<name>()`. Used by VM frame push sites so traces
+/// disambiguate overloads (1.3 split-debug-symbols Phase 4).
+pub fn format_frame_name(func: &Function) -> String {
+    let mut out = String::with_capacity(func.name.len() + 2 + func.param_count * 4);
+    out.push_str(&func.name);
+    out.push('(');
+    for (i, t) in func.param_types.iter().enumerate() {
+        if i > 0 { out.push(','); }
+        out.push_str(t);
+    }
+    // When SIGS lacks per-param types (older artifacts or null source), fall
+    // back to "?" placeholders matching `param_count` so the shape is
+    // recognizable.
+    if func.param_types.is_empty() && func.param_count > 0 {
+        for i in 0..func.param_count {
+            if i > 0 { out.push(','); }
+            out.push('?');
+        }
+    }
+    out.push(')');
+    out
+}
+
 /// A single function.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Function {
@@ -152,6 +177,11 @@ pub struct Function {
     pub param_count: usize,
     /// Return type tag: "void", "str", "i32", "i64", "f64", "bool".
     pub ret_type: String,
+    /// 1.3 split-debug-symbols: per-parameter type names for stack-trace
+    /// signature decoration. Length always equals `param_count` (zbc writer
+    /// pads unknowns with "?"). Empty when param_count == 0.
+    #[serde(default)]
+    pub param_types: Vec<String>,
     pub exec_mode: ExecMode,
     pub blocks: Vec<BasicBlock>,
     #[serde(default)]
@@ -417,7 +447,7 @@ pub enum Instruction {
     },
     /// Push a function-reference value onto a register. The runtime resolves
     /// `func` at call site (current usage: L2 no-capture lambda lifted as a
-    /// module-level function). See docs/design/closure.md §6.
+    /// module-level function). See docs/design/language/closure.md §6.
     LoadFn {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         func: String,
@@ -432,14 +462,14 @@ pub enum Instruction {
         slot_id: u32,
     },
     /// Indirect call via a register holding a `FuncRef` value. See
-    /// docs/design/closure.md §6.
+    /// docs/design/language/closure.md §6.
     CallIndirect {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         #[serde(with = "typed_reg_serde")] callee: Reg,
         #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
     },
     /// L3 closure tier-C: allocate an env from `captures`, build a closure
-    /// value and write it to `dst`. See docs/design/closure.md §6.
+    /// value and write it to `dst`. See docs/design/language/closure.md §6.
     /// `stack_alloc=true` (impl-closure-l3-escape-stack): VM 走 frame-local
     /// arena → `Value::StackClosure`；否则 heap → `Value::Closure`。
     MkClos {

@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 2;   // 2026-05-10 split-debug-symbols: ZbcFlags.SymOnly + BLID section (16-byte BLAKE3-128 build_id, always last). Pre-1.2 not readable.
+    public const ushort VersionMinor = 3;   // 2026-05-10 split-debug-symbols Phase 4: SIGS gains per-parameter type names (u32 strIdx × ParamCount) for stack-trace signature decoration. Pre-1.3 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -250,10 +250,15 @@ public static partial class ZbcWriter
                         InternConstraintBundle(pool, b);
             }
 
+            // 1.3 split-debug-symbols: SIGS pads with "?" for unknown param types.
+            pool.Intern("?");
             foreach (var fn in module.Functions)
             {
                 pool.Intern(fn.Name);
                 pool.Intern(fn.RetType);
+                if (fn.ParamTypes != null)
+                    foreach (var pt in fn.ParamTypes)
+                        pool.Intern(pt);
                 foreach (var block in fn.Blocks)
                 {
                     pool.Intern(block.Label);
@@ -392,6 +397,18 @@ public static partial class ZbcWriter
             w.Write(TypeTags.FromString(fn.RetType));
             w.Write(ExecModes.FromString(fn.ExecMode));
             w.Write((byte)(fn.IsStatic ? 1 : 0));  // is_static flag
+
+            // 1.3 split-debug-symbols: per-parameter type names (u32 strIdx × ParamCount).
+            // When fn.ParamTypes is null or shorter than ParamCount, pad with "?"
+            // placeholders so the wire layout is always paramCount entries.
+            for (int i = 0; i < fn.ParamCount; i++)
+            {
+                string ptype = (fn.ParamTypes != null && i < fn.ParamTypes.Count)
+                    ? fn.ParamTypes[i]
+                    : "?";
+                w.Write((uint)pool.Idx(ptype));
+            }
+
             // Generic type parameters (L3-G1) + per-tp constraints (L3-G3a)
             byte tpCount = (byte)(fn.TypeParams?.Count ?? 0);
             w.Write(tpCount);
@@ -427,7 +444,7 @@ public static partial class ZbcWriter
     ///                bit5 RequiresEnum),
     ///                [if bit2] base_class u32, [if bit3] type_param_constraint u32,
     ///                interface_count u8, interface_name_idx[] u32.
-    internal static void WriteConstraintBundle(BinaryWriter w, StringPool pool, IrConstraintBundle? b)
+    public static void WriteConstraintBundle(BinaryWriter w, StringPool pool, IrConstraintBundle? b)
     {
         byte flags = 0;
         if (b is not null)

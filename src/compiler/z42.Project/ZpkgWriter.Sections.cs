@@ -191,12 +191,33 @@ public static partial class ZpkgWriter
                 w.Write(TypeTags.FromString(fn.RetType));
                 w.Write(ExecModes.FromString(fn.ExecMode));
                 w.Write((byte)(fn.IsStatic ? 1 : 0));
-                // Generic type parameters
+
+                // 1.3 split-debug-symbols Phase 4: per-param type names (u32 strIdx × ParamCount).
+                // Mirrors ZbcWriter.BuildSigsSection — writers must stay in lock-step.
+                for (int i = 0; i < fn.ParamCount; i++)
+                {
+                    string ptype = (fn.ParamTypes != null && i < fn.ParamTypes.Count)
+                        ? fn.ParamTypes[i]
+                        : "?";
+                    w.Write((uint)pool.Idx(ptype));
+                }
+
+                // Generic type parameters + per-tp constraint bundles (L3-G3a).
+                // Pre-1.3 ZpkgWriter omitted the constraint bundle here, but
+                // both ZpkgReader.ReadSigsSection (skip) and Rust read_sigs
+                // (decode) expect it — the writer was the odd-one-out, and the
+                // mismatch only surfaces when paired with Phase 4 param_types.
+                // Mirror ZbcWriter.BuildSigsSection layout exactly.
                 byte tpCount = (byte)(fn.TypeParams?.Count ?? 0);
                 w.Write(tpCount);
                 if (fn.TypeParams != null)
-                    foreach (var tp in fn.TypeParams)
-                        w.Write((uint)pool.Idx(tp));
+                    for (int i = 0; i < fn.TypeParams.Count; i++)
+                    {
+                        w.Write((uint)pool.Idx(fn.TypeParams[i]));
+                        var b = fn.TypeParamConstraints != null && i < fn.TypeParamConstraints.Count
+                            ? fn.TypeParamConstraints[i] : null;
+                        ZbcWriter.WriteConstraintBundle(w, pool, b);
+                    }
             }
 
         return ms.ToArray();

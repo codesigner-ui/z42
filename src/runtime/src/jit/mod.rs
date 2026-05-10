@@ -162,10 +162,15 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
                 .and_then(|e| e.file.as_deref())
                 .unwrap_or("")
                 .into();
+            // 1.3 split-debug-symbols Phase 4: precompute signature-decorated
+            // frame name (e.g. `Demo.greet(str)`) so JIT push sites get
+            // overload-disambiguated traces matching interp behaviour.
+            let frame_name: std::sync::Arc<str> =
+                std::sync::Arc::from(crate::metadata::bytecode::format_frame_name(func).as_str());
             let e = FnEntry {
                 ptr:     ptr_raw as *const u8,
                 max_reg: max_regs[&func.name],
-                name:    std::sync::Arc::from(func.name.as_str()),
+                name:    frame_name,
                 file:    file_str,
             };
             fn_entries.insert(func.name.clone(), e.clone());

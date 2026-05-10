@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 3;   // 2026-05-10 split-debug-symbols: inner zbc 1.2 (LineTable in DBUG) + per-member DBUG body; FlagSymOnly + MDBG + BLID for sidecar form. Pre-0.3 not readable.
+    public const ushort VersionMinor = 4;   // 2026-05-10 split-debug-symbols Phase 4: inner zbc 1.3 (SIGS gains per-param type names). Pre-0.4 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

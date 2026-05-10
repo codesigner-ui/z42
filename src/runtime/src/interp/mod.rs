@@ -411,7 +411,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
         .and_then(|e| e.file.clone())
         .unwrap_or_default();
     ctx.push_frame(crate::exception::VmFrame::new(
-        func.name.clone(),
+        crate::metadata::bytecode::format_frame_name(func),
         file,
         &frame.regs as *const Vec<Value>,
         &frame.env_arena as *const Vec<Vec<Value>>,

@@ -19,15 +19,16 @@ public sealed class GrammarSyncTests
 
     private static string FindGrammarPath()
     {
+        // 2026-05-10 docs reorganization: docs/design/grammar.peg → docs/design/language/grammar.peg
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "docs", "design", "grammar.peg");
+            string candidate = Path.Combine(dir.FullName, "docs", "design", "language", "grammar.peg");
             if (File.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }
         return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,
-            "..", "..", "..", "..", "..", "..", "docs", "design", "grammar.peg"));
+            "..", "..", "..", "..", "..", "..", "docs", "design", "language", "grammar.peg"));
     }
 
     [Fact]

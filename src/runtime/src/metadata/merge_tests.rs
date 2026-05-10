@@ -21,7 +21,7 @@ fn make_module_with(
     let mut functions = vec![Function {
         name: format!("{}.Main", name),
         param_count: 0,
-        ret_type: "void".to_string(),
+        ret_type: "void".to_string(), param_types: vec![],
         exec_mode: ExecMode::Interp,
         blocks: vec![block],
         exception_table: vec![],
@@ -138,7 +138,7 @@ fn merge_deduplicates_functions_by_name() {
     let dup_func = Function {
         name: "A.Main".to_string(),
         param_count: 0,
-        ret_type: "i32".to_string(), // different ret_type to distinguish
+        ret_type: "i32".to_string(), param_types: vec![], // different ret_type to distinguish
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
             label: "entry".to_string(),
