@@ -404,7 +404,16 @@ public static class BoundDumper
                 BoundCallKind.Virtual  => $"{c.ReceiverClass}.{c.MethodName} (virtual)",
                 _ => "?",
             };
-            _w.Line($"BoundCall {c.Kind} {meta} : {FmtType(c.Type)} {FmtSpan(c.Span)}");
+            // split-symbol-from-type Phase 4: dump Symbol back-pointer
+            // (decl=file:line for local methods, decl=imported for imported,
+            // decl=null for unresolved/error fallback).
+            var declStr = c.Symbol switch
+            {
+                null                                       => " decl=null",
+                { Decl: null }                              => " decl=imported",
+                { Decl: { Span: var s } }                   => $" decl={s.Line}:{s.Column}",
+            };
+            _w.Line($"BoundCall {c.Kind} {meta} : {FmtType(c.Type)}{declStr} {FmtSpan(c.Span)}");
             _w.Indented(() =>
             {
                 if (c.Receiver != null) { _w.Line("Receiver:"); _w.Indented(() => Visit(c.Receiver)); }
@@ -412,6 +421,22 @@ public static class BoundDumper
                 {
                     _w.Line($"Args [{c.Args.Count} items]:");
                     _w.Indented(() => { foreach (var a in c.Args) Visit(a); });
+                }
+            });
+            return default;
+        }
+
+        protected override Unit VisitIndirectCall(BoundIndirectCall ic)
+        {
+            _w.Line($"BoundIndirectCall : {FmtType(ic.Type)} {FmtSpan(ic.Span)}");
+            _w.Indented(() =>
+            {
+                _w.Line("Callee:");
+                _w.Indented(() => Visit(ic.Callee));
+                if (ic.Args.Count > 0)
+                {
+                    _w.Line($"Args [{ic.Args.Count} items]:");
+                    _w.Indented(() => { foreach (var a in ic.Args) Visit(a); });
                 }
             });
             return default;

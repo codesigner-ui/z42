@@ -11,7 +11,7 @@ public sealed partial class TypeChecker
 {
     // ── Call ──────────────────────────────────────────────────────────────────
 
-    private BoundCall BindCall(CallExpr call, TypeEnv env)
+    private BoundExpr BindCall(CallExpr call, TypeEnv env)
     {
         // ── Static class method: ClassName.Method(args) ──────────────────────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
@@ -36,7 +36,7 @@ public sealed partial class TypeChecker
                 // IR Codegen / VM dispatch resolves to the correct variant.
                 string resolvedStatic = staticKey != staticMember ? staticKey! : staticMember;
                 return new BoundCall(BoundCallKind.Static, null, clsName, resolvedStatic,
-                    null, args, inferredRet, call.Span);
+                    null, args, inferredRet, call.Span, Symbol: staticSym);
             }
             // Imported class: method not found → try DepIndex, or defer to IrGen
             if (isImported)
@@ -132,7 +132,8 @@ public sealed partial class TypeChecker
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
                         isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,
-                        recvExpr, def.Name, resolvedMethodName, null, argBound, mtSub.Ret, call.Span);
+                        recvExpr, def.Name, resolvedMethodName, null, argBound, mtSub.Ret, call.Span,
+                        Symbol: mtRaw);
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type `{inst}` has no method `{mCallee.Member}`", call.Span);
@@ -169,7 +170,8 @@ public sealed partial class TypeChecker
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
                         isVirtual ? BoundCallKind.Virtual : BoundCallKind.Instance,
-                        recvExpr, ct.Name, resolvedMethodName, null, argBound, mt.Ret, call.Span);
+                        recvExpr, ct.Name, resolvedMethodName, null, argBound, mt.Ret, call.Span,
+                        Symbol: mtSym);
                 }
                 // Imported class: method not found → try DepIndex, or defer to IrGen
                 if (isImportedCls)
@@ -205,7 +207,8 @@ public sealed partial class TypeChecker
                     CheckArgTypes(call.Args, argBound, imtSub.Params);
                     CheckArgModifiers(call.Args, argBound, imtSub, env, call.Span);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, ifaceType.Name,
-                        mCallee.Member, null, argBound, imtSub.Ret, call.Span);
+                        mCallee.Member, null, argBound, imtSub.Ret, call.Span,
+                        Symbol: imSym);
                 }
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"interface `{ifaceType.Name}` has no method `{mCallee.Member}`", call.Span);
@@ -234,7 +237,8 @@ public sealed partial class TypeChecker
                     CheckArgTypes(call.Args, argBound, bcMt.Params);
                     CheckArgModifiers(call.Args, argBound, bcMt, env, call.Span);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, bc.Name,
-                        mCallee.Member, null, argBound, bcMt.Ret, call.Span);
+                        mCallee.Member, null, argBound, bcMt.Ret, call.Span,
+                        Symbol: bcMtSym);
                 }
                 foreach (var iface in bundle.Interfaces)
                 {
@@ -245,7 +249,8 @@ public sealed partial class TypeChecker
                         CheckArgTypes(call.Args, argBound, gmt.Params);
                         CheckArgModifiers(call.Args, argBound, gmt, env, call.Span);
                         return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
-                            mCallee.Member, null, argBound, gmt.Ret, call.Span);
+                            mCallee.Member, null, argBound, gmt.Ret, call.Span,
+                            Symbol: gmtSym);
                     }
                     // L3 static abstract interface members: `x.op_Add(y)` on generic T
                     // whose constraint declares `static abstract T op_Add(T a, T b)`.
@@ -296,7 +301,8 @@ public sealed partial class TypeChecker
                     CheckArgTypes(call.Args, argBound, pmt.Params);
                     CheckArgModifiers(call.Args, argBound, pmt, env, call.Span);
                     return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName,
-                        resolved, null, argBound, pmt.Ret, call.Span);
+                        resolved, null, argBound, pmt.Ret, call.Span,
+                        Symbol: pmtSym);
                 }
             }
 
@@ -333,7 +339,8 @@ public sealed partial class TypeChecker
             CheckArgTypes(call.Args, freeArgs, bareSig.Params);
             CheckArgModifiers(call.Args, freeArgs, bareSig, env, call.Span);
             return new BoundCall(BoundCallKind.Static, null, env.CurrentClass, bareCallName,
-                null, freeArgs, bareSig.Ret, call.Span);
+                null, freeArgs, bareSig.Ret, call.Span,
+                Symbol: bareSym);
         }
 
         if (call.Callee is IdentExpr funcId)
@@ -383,9 +390,10 @@ public sealed partial class TypeChecker
                         aliasFq, freeArgs, vft.Ret, call.Span);
                 }
 
+                // split-symbol-from-type Phase 4: function-value variable call →
+                // BoundIndirectCall (not BoundCall — there's no method symbol).
                 var calleeBound = new BoundIdent(funcId.Name, vft, funcId.Span);
-                return new BoundCall(BoundCallKind.Free, calleeBound, null, null,
-                    null, freeArgs, vft.Ret, call.Span);
+                return new BoundIndirectCall(calleeBound, freeArgs, vft.Ret, call.Span);
             }
             // Unknown function — report error
             BindIdent(funcId, env);
@@ -402,8 +410,9 @@ public sealed partial class TypeChecker
             CheckArgCount(freeArgs.Count, ft2.MinArgCount, ft2.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, ft2.Params);
             CheckArgModifiers(call.Args, freeArgs, ft2, env, call.Span);
-            return new BoundCall(BoundCallKind.Free, calleeExpr, null, null,
-                null, freeArgs, ft2.Ret, call.Span);
+            // split-symbol-from-type Phase 4: arbitrary expression call →
+            // BoundIndirectCall.
+            return new BoundIndirectCall(calleeExpr, freeArgs, ft2.Ret, call.Span);
         }
         _diags.Error(DiagnosticCodes.TypeMismatch,
             $"cannot call non-function type `{calleeExpr.Type}`", call.Callee.Span);

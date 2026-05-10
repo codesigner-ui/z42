@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Semantics.Symbols;
 using Z42.Semantics.TypeCheck;
 
 namespace Z42.Semantics.Bound;
@@ -137,19 +138,42 @@ public sealed record BoundLambda(
 /// All calls are fully resolved at TypeCheck time (stdlib methods resolved via DepIndex).
 public enum BoundCallKind { Free, Static, Instance, Virtual }
 
-/// A fully-bound call expression.
+/// A fully-bound DIRECT method-dispatch call expression.
 ///
 /// Field usage by kind:
 ///   Free       — CalleeName = func name, Receiver = null
 ///   Static     — ReceiverClass = class, MethodName = method, Receiver = null
 ///   Instance   — Receiver = bound receiver, ReceiverClass = class, MethodName = method
 ///   Virtual    — Receiver = bound receiver, ReceiverClass = class, MethodName = method
+///
+/// split-symbol-from-type Phase 4 (2026-05-10): for **indirect** calls (lambda
+/// invocation / function-value variable / closure / method-group conversion
+/// then call), see <see cref="BoundIndirectCall"/>. The two are distinct node
+/// kinds — callers no longer overload BoundCall for both purposes.
+///
+/// `Symbol` is non-null on the happy path (resolved direct dispatch). It MAY
+/// be null on error fallback paths where method resolution failed
+/// (`RetType == Z42Type.Error`); PipelineCore aborts at `diags.HasErrors`
+/// before codegen reaches such nodes.
 public sealed record BoundCall(
     BoundCallKind Kind,
     BoundExpr? Receiver,
     string? ReceiverClass,
     string? MethodName,
     string? CalleeName,
+    IReadOnlyList<BoundExpr> Args,
+    Z42Type RetType,
+    Span Span,
+    IMethodSymbol? Symbol = null) : BoundExpr(RetType, Span);
+
+/// Indirect call via a function-value expression — lambda, delegate, function
+/// variable, closure, or method-group conversion. Distinct from BoundCall
+/// (direct method dispatch) because there is no method symbol to resolve at
+/// compile time; the callee is just a value of `Z42FuncType`.
+///
+/// split-symbol-from-type Phase 4 (2026-05-10).
+public sealed record BoundIndirectCall(
+    BoundExpr Callee,
     IReadOnlyList<BoundExpr> Args,
     Z42Type RetType,
     Span Span) : BoundExpr(RetType, Span);

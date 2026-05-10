@@ -206,6 +206,7 @@ public sealed class BoundVisitorTests
         protected override Unit VisitPostfix(BoundPostfix p)            => Mark(p);
         protected override Unit VisitLambda(BoundLambda l)              => Mark(l);
         protected override Unit VisitCall(BoundCall c)                  => Mark(c);
+        protected override Unit VisitIndirectCall(BoundIndirectCall ic) => Mark(ic);
         protected override Unit VisitModifiedArg(BoundModifiedArg m)    => Mark(m);
         protected override Unit VisitMember(BoundMember m)              => Mark(m);
         protected override Unit VisitIndex(BoundIndex i)                => Mark(i);
@@ -266,6 +267,7 @@ public sealed class BoundVisitorTests
         protected override Unit VisitPostfix(BoundPostfix p)          { Count++; return base.VisitPostfix(p); }
         protected override Unit VisitLambda(BoundLambda l)            { Count++; return base.VisitLambda(l); }
         protected override Unit VisitCall(BoundCall c)                { Count++; return base.VisitCall(c); }
+        protected override Unit VisitIndirectCall(BoundIndirectCall ic) { Count++; return base.VisitIndirectCall(ic); }
         protected override Unit VisitModifiedArg(BoundModifiedArg m)  { Count++; return base.VisitModifiedArg(m); }
         protected override Unit VisitMember(BoundMember m)            { Count++; return base.VisitMember(m); }
         protected override Unit VisitIndex(BoundIndex i)              { Count++; return base.VisitIndex(i); }

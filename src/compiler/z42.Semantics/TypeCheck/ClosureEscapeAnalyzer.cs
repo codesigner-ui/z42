@@ -308,6 +308,18 @@ internal static class ClosureEscapeAnalyzer
             return default;
         }
 
+        protected override Unit VisitIndirectCall(BoundIndirectCall ic)
+        {
+            // Indirect call: callee is a function VALUE expression, not a method
+            // reference. Therefore it counts as **callee position** for the
+            // escape analysis — the candidate is being invoked, not stored or
+            // passed elsewhere. This preserves the previous behavior where
+            // `var f = () => x; f();` did not mark `f` as escaped.
+            Scan(ic.Callee, calleePosition: true);
+            foreach (var a in ic.Args) Scan(a, calleePosition: false);
+            return default;
+        }
+
         protected override Unit VisitAssign(BoundAssign asn)
         {
             // 赋值 target / value 都不是 callee 位置

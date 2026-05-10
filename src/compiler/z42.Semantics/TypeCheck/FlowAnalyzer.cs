@@ -493,6 +493,14 @@ internal sealed class FlowAnalyzer : IFlowAnalyzer
         protected override Unit VisitCapturedIdent(BoundCapturedIdent ci) => default;
         protected override Unit VisitLambda(BoundLambda l)              => default;
         protected override Unit VisitModifiedArg(BoundModifiedArg m)    => default;  // handled inside VisitCall
+
+        protected override Unit VisitIndirectCall(BoundIndirectCall ic)
+        {
+            // Both the callee (function value) and args are read positions.
+            Visit(ic.Callee);
+            foreach (var a in ic.Args) Visit(a);
+            return default;
+        }
         protected override Unit VisitError(BoundError err)              => default;
 
         /// For `ref obj.f` / `ref a[i]` style `out` args: still need the *container*

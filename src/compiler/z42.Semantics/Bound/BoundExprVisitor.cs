@@ -35,6 +35,7 @@ public abstract class BoundExprVisitor<TResult>
         BoundPostfix p          => VisitPostfix(p),
         BoundLambda l           => VisitLambda(l),
         BoundCall c             => VisitCall(c),
+        BoundIndirectCall ic    => VisitIndirectCall(ic),
         BoundModifiedArg m      => VisitModifiedArg(m),
         BoundMember m           => VisitMember(m),
         BoundIndex i            => VisitIndex(i),
@@ -68,6 +69,7 @@ public abstract class BoundExprVisitor<TResult>
     protected abstract TResult VisitPostfix(BoundPostfix p);
     protected abstract TResult VisitLambda(BoundLambda l);
     protected abstract TResult VisitCall(BoundCall c);
+    protected abstract TResult VisitIndirectCall(BoundIndirectCall ic);
     protected abstract TResult VisitModifiedArg(BoundModifiedArg m);
     protected abstract TResult VisitMember(BoundMember m);
     protected abstract TResult VisitIndex(BoundIndex i);
@@ -147,6 +149,13 @@ public abstract class BoundExprWalker : BoundExprVisitor<Unit>
     {
         if (c.Receiver != null) Visit(c.Receiver);
         foreach (var a in c.Args) Visit(a);
+        return default;
+    }
+
+    protected override Unit VisitIndirectCall(BoundIndirectCall ic)
+    {
+        Visit(ic.Callee);
+        foreach (var a in ic.Args) Visit(a);
         return default;
     }
 

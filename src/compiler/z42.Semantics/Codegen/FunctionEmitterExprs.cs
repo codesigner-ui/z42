@@ -210,6 +210,7 @@ internal sealed partial class FunctionEmitter
 
         protected override TypedReg VisitAssign(BoundAssign a)             => _e.EmitBoundAssign(a);
         protected override TypedReg VisitCall(BoundCall c)                 => _e.EmitBoundCall(c);
+        protected override TypedReg VisitIndirectCall(BoundIndirectCall ic) => _e.EmitBoundIndirectCall(ic);
         protected override TypedReg VisitBinary(BoundBinary b)             => _e.EmitBoundBinary(b);
         protected override TypedReg VisitUnary(BoundUnary u)               => _e.EmitBoundUnary(u);
         protected override TypedReg VisitPostfix(BoundPostfix p)           => _e.EmitBoundPostfix(p);

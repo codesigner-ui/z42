@@ -536,6 +536,7 @@ internal sealed partial class FunctionEmitter
         protected override Unit VisitAssign(BoundAssign a)             => default;
         protected override Unit VisitPostfix(BoundPostfix p)           => default;
         protected override Unit VisitLambda(BoundLambda l)             => default;
+        protected override Unit VisitIndirectCall(BoundIndirectCall ic) => default;
         protected override Unit VisitModifiedArg(BoundModifiedArg m)   => default;
         protected override Unit VisitIndex(BoundIndex i)               => default;
         protected override Unit VisitNew(BoundNew n)                   => default;

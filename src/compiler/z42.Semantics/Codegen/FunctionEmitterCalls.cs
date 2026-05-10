@@ -8,6 +8,21 @@ namespace Z42.Semantics.Codegen;
 /// Call, string interpolation, and switch expression emission — part of FunctionEmitter.
 internal sealed partial class FunctionEmitter
 {
+    // ── Indirect call (lambda / delegate / function-value) ────────────────────
+
+    /// split-symbol-from-type Phase 4: emits IR for `BoundIndirectCall` —
+    /// the callee is a `Z42FuncType`-typed expression (lambda literal, function
+    /// variable, closure, or method-group conversion). Always emits
+    /// `CallIndirectInstr` (no static dispatch path).
+    private TypedReg EmitBoundIndirectCall(BoundIndirectCall ic)
+    {
+        var calleeReg = EmitExpr(ic.Callee);
+        var argRegs   = ic.Args.Select(EmitExpr).ToList();
+        var dst       = Alloc(ToIrType(ic.Type));
+        Emit(new CallIndirectInstr(dst, calleeReg, argRegs));
+        return dst;
+    }
+
     // ── Bound call dispatcher ─────────────────────────────────────────────────
 
     private TypedReg EmitBoundCall(BoundCall call)
