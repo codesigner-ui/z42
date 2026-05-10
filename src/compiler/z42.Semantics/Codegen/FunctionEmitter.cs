@@ -489,41 +489,59 @@ internal sealed partial class FunctionEmitter
         return sorted.Count == classesWithStatic.Count ? sorted : classesWithStatic;
     }
 
-    /// Recursively scan a BoundExpr for references to other classes' static members.
+    /// Recursively scan a BoundExpr for references to other classes' static
+    /// members. Used to build the static-init dependency graph for topological
+    /// sort. introduce-bound-visitor (2026-05-10): migrated from manual switch
+    /// to a `ClassRefScanner` walker subclass — preserves the original (partial)
+    /// node coverage exactly so the dep graph is byte-identical.
     private static void CollectClassRefs(
         BoundExpr expr, HashSet<string> classNames, string self, HashSet<string> refs)
     {
-        switch (expr)
+        new ClassRefScanner(classNames, self, refs).Visit(expr);
+    }
+
+    /// Walker that records other-class static refs encountered through
+    /// `BoundMember(BoundIdent)`. Coverage matches the legacy switch: only
+    /// Member / Call / Binary / Unary / Conditional / Cast / InterpolatedStr
+    /// recurse into children; other interior nodes (Lambda / New / ArrayCreate /
+    /// ArrayLit / Index / Assign / etc.) intentionally do not, mirroring the
+    /// pre-refactor behavior.
+    private sealed class ClassRefScanner : BoundExprWalker
+    {
+        private readonly HashSet<string> _classNames;
+        private readonly string _self;
+        private readonly HashSet<string> _refs;
+
+        public ClassRefScanner(HashSet<string> classNames, string self, HashSet<string> refs)
         {
-            case BoundMember m:
-                // member access: if target resolves to a class with static fields, record dep
-                if (m.Target is BoundIdent id && classNames.Contains(id.Name) && id.Name != self)
-                    refs.Add(id.Name);
-                CollectClassRefs(m.Target, classNames, self, refs);
-                break;
-            case BoundCall c:
-                if (c.Receiver != null) CollectClassRefs(c.Receiver, classNames, self, refs);
-                foreach (var a in c.Args) CollectClassRefs(a, classNames, self, refs);
-                break;
-            case BoundBinary b:
-                CollectClassRefs(b.Left, classNames, self, refs);
-                CollectClassRefs(b.Right, classNames, self, refs);
-                break;
-            case BoundUnary u:
-                CollectClassRefs(u.Operand, classNames, self, refs);
-                break;
-            case BoundConditional cond:
-                CollectClassRefs(cond.Cond, classNames, self, refs);
-                CollectClassRefs(cond.Then, classNames, self, refs);
-                CollectClassRefs(cond.Else, classNames, self, refs);
-                break;
-            case BoundCast cast:
-                CollectClassRefs(cast.Operand, classNames, self, refs);
-                break;
-            case BoundInterpolatedStr interp:
-                foreach (var part in interp.Parts)
-                    if (part is BoundExprPart ep) CollectClassRefs(ep.Inner, classNames, self, refs);
-                break;
+            _classNames = classNames;
+            _self = self;
+            _refs = refs;
         }
+
+        // ── Recurse cases (mirror legacy switch) ──────────────────────────────
+        protected override Unit VisitMember(BoundMember m)
+        {
+            if (m.Target is BoundIdent id && _classNames.Contains(id.Name) && id.Name != _self)
+                _refs.Add(id.Name);
+            return base.VisitMember(m);
+        }
+
+        // VisitCall, VisitBinary, VisitUnary, VisitConditional, VisitCast,
+        // VisitInterpolatedStr inherit Walker's default (recurse into children).
+
+        // ── Block cases (legacy switch ignored these — preserve exactly) ──────
+        protected override Unit VisitAssign(BoundAssign a)             => default;
+        protected override Unit VisitPostfix(BoundPostfix p)           => default;
+        protected override Unit VisitLambda(BoundLambda l)             => default;
+        protected override Unit VisitModifiedArg(BoundModifiedArg m)   => default;
+        protected override Unit VisitIndex(BoundIndex i)               => default;
+        protected override Unit VisitNew(BoundNew n)                   => default;
+        protected override Unit VisitArrayCreate(BoundArrayCreate ac)  => default;
+        protected override Unit VisitArrayLit(BoundArrayLit al)        => default;
+        protected override Unit VisitNullCoalesce(BoundNullCoalesce nc)         => default;
+        protected override Unit VisitNullConditional(BoundNullConditional nc)   => default;
+        protected override Unit VisitIsPattern(BoundIsPattern ip)      => default;
+        protected override Unit VisitSwitchExpr(BoundSwitchExpr s)     => default;
     }
 }
