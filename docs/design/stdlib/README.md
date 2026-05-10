@@ -18,9 +18,14 @@ z42 标准库三层架构、包划分规则、缺失包排期。
 
 > **注**：`organization.md` 与 `roadmap.md` 是**过程文档**，不构成硬约束，方案设计期可灵活引用调整（参见 memory `feedback_stdlib_docs_not_final`）。
 
-## 层级命名（统一）
+## 层级命名（避免混淆）
 
-`L0 / L1 / L2 / L3` 在所有 stdlib 文档中保持同义；不再混用 "Layer 1/2/3"。
+stdlib 同时使用两套层级，**它们不是同义词**：
+
+- **Tier 1 / 2 / 3**（实现层级，见 [`overview.md`](overview.md)）：VM Intrinsic / Platform HAL / Script BCL —— 描述 stdlib 的物理实现位置
+- **L0 / L1 / L2 / L3**（包依赖层级，见 [`organization.md`](organization.md)）：z42.core / z42.collections.text.math / z42.io.threading / z42.net.linq.json —— 描述包之间的依赖方向（上层依赖下层，禁止反向）
+
+两套独立。一个 z42.core 类型可以是 Tier 1 (VM intrinsic) 实现 + L0 (依赖底)；一个 z42.linq 包是 Tier 3 (Script BCL) 实现 + L3 (依赖最上)。
 
 ## 入口点
 

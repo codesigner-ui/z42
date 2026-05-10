@@ -370,68 +370,11 @@ R1.A+B 的 v=1 在引入 parser 支持前 bump 到 v=2；无任何 v=1 文件曾
 
 ---
 
-## 解释器执行模型
+## 执行模型
 
-```
-struct Frame {
-    func:    &FuncBody,
-    pc:      usize,          // 字节偏移在 instr_stream 中
-    block:   u16,
-    regs:    Vec<Value>,     // 大小 = reg_count
-}
-```
+zbc 的解释器循环、JIT 翻译模型、AOT 编译策略统一记录在 [`execution-model.md`](execution-model.md)（Interpreter / JIT / AOT 三模式以及 mixed-mode 切换）。
 
-**Fetch-Decode-Dispatch 循环**：
-
-```
-loop {
-    let opcode = stream[pc];   pc += 1
-    let type   = stream[pc];   pc += 1
-    let dst    = u16(stream[pc..]);  pc += 2
-    match opcode {
-        ADD  => regs[dst] = typed_add(type, regs[a], regs[b]),
-        BR   => { copy block_params; block = target; pc = block_table[target] },
-        CALL => push_frame(...),
-        ...
-    }
-}
-```
-
-- **Block 参数传递**：`br target(args...)` 时，将 args 写入 `regs[target_block_params[i]]`，再跳转
-- **异常处理**：`throw` 时线性搜索 exc_table（小函数中通常 0–3 项，可接受）
-
----
-
-## JIT 翻译模型（Cranelift）
-
-zbc → Cranelift CLIF 的映射直接、无歧义：
-
-| zbc 概念 | Cranelift 映射 |
-|-----------|---------------|
-| 函数 | `FunctionBuilder` |
-| Block（带参数）| `Block` + `append_block_param` |
-| 寄存器（SSA）| `Value`（CLIF SSA Value）|
-| TypeTag | `types::I32 / I64 / F64 / ...` |
-| `br block(args)` | `ins().jump(block, args)` |
-| `br.cond` | `ins().brif(cond, t_block, t_args, f_block, f_args)` |
-| `call fn_idx` | `ins().call(func_ref, args)` |
-| `call.virt` | 生成 vtable 查找 + 间接调用 |
-
-**翻译流程**（无需预分析 pass）：
-
-```
-for each block in func.block_table:
-    builder.switch_to_block(clif_block[block_idx])
-    for each instr in block:
-        let type = clif_type(instr.type)
-        match instr.opcode:
-            ADD  => builder.ins().iadd(lhs, rhs)
-            BR   => builder.ins().jump(target, args)
-            CALL => builder.ins().call(fn_ref, args)
-            ...
-```
-
-因为每条指令已携带类型标签，JIT 翻译器无需任何类型推导，**完全单遍（single-pass）**。
+本文聚焦 **wire format**——指令在二进制流中如何编码、section layout、版本号；不重复执行端的 fetch-decode-dispatch 细节。
 
 ---
 

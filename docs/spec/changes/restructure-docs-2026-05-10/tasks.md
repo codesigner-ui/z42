@@ -20,7 +20,7 @@
 - [x] Phase 1.5: 把 `spec/` 整体挪到 `docs/spec/`（保留子结构）+ 全仓批量更新引用
 - [x] Phase 2: design/ 子目录重构（5 个子目录 + READMEs + 39 文件搬运）
 - [x] Phase 3: deferred.md 分散 + 删除
-- [ ] Phase 4: 冗余清理（按表格 9 项）
+- [x] Phase 4: 冗余清理（9 项审查后实际处理 7 项 + 跳过 2 项无重复）
 - [ ] Phase 5: roadmap + version 重写
 - [ ] Phase 6: 风格模板统一 + 跨引用批量更新
 

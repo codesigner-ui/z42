@@ -2,9 +2,14 @@
 
 > **Status:** Design (L2 implementation target — M7)
 >
-> This document defines the three-layer standard library architecture: VM intrinsics,
+> This document defines the three-tier standard library implementation architecture: VM intrinsics,
 > platform abstraction, and script-level BCL. It is the authoritative contract for
 > M7 implementation work.
+>
+> **Tier vs L#**: This file uses `Tier 1/2/3` for **implementation tiers** (where the code
+> physically lives). Package **dependency layering** (`L0/L1/L2/L3` — which package depends
+> on which) is a separate concern documented in [`organization.md`](organization.md). One
+> z42 package can be Tier 3 (script BCL) implementation + L3 (depends on L2 services).
 
 ---
 
@@ -14,13 +19,13 @@ The z42 standard library is organized into three layers:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Layer 3 — Script BCL  (src/libraries/*.z42)            │
+│  Tier 3 — Script BCL  (src/libraries/*.z42)            │
 │  z42 source code; user-facing APIs; overloads/docs      │
 ├─────────────────────────────────────────────────────────┤
-│  Layer 2 — Platform HAL  (src/runtime/src/platform.rs)  │
+│  Tier 2 — Platform HAL  (src/runtime/src/platform.rs)  │
 │  Rust trait; abstracts OS/WASM/embedded differences     │
 ├─────────────────────────────────────────────────────────┤
-│  Layer 1 — VM Intrinsics  (src/runtime/src/interp/)     │
+│  Tier 1 — VM Intrinsics  (src/runtime/src/interp/)     │
 │  Rust functions; exposed to z42 via `Builtin` IR instr  │
 └─────────────────────────────────────────────────────────┘
 ```
@@ -45,8 +50,8 @@ The z42 standard library takes the best from three reference languages:
 
 新增一个 stdlib 方法时按此顺序决定落点：
 
-1. **Layer 3（z42 源码）先写** — 除非以下条件之一成立
-2. **Layer 1（VM builtin）只有在**：
+1. **Tier 3（z42 源码）先写** — 除非以下条件之一成立
+2. **Tier 1（VM builtin）只有在**：
    - 必须访问 OS / platform / native 资源（文件 / 时间 / 内存）；或
    - 有测量依据的性能热点，且**没有对应的 IR 指令**可以 codegen 特化
 3. **Codegen 特化（L3-G4b 模式）**：如果 primitive 调用能直接映射到 IR 指令
@@ -60,7 +65,7 @@ The z42 standard library takes the best from three reference languages:
 | `x.op_Add(y)` on int/long/double | Codegen 特化 → `AddInstr` | IR 已有，对 primitive 零开销 |
 | `x.CompareTo(y)` on int | VM builtin `__int_compare_to` | 无对应 IR 指令；相对少见，builtin OK |
 | `"abc".Substring(1, 2)` | VM builtin `__str_substring` | 字符串操作需要 Rust UTF-8 处理 |
-| `new List<T>().Add(x)` | Layer 3（z42 ArrayList 源码）| 能用脚本实现；无特殊性能需求 |
+| `new List<T>().Add(x)` | Tier 3（z42 ArrayList 源码）| 能用脚本实现；无特殊性能需求 |
 | `Math.Sqrt(x)` | VM builtin `__math_sqrt` | 需要 libm 的 native 精度 |
 | `File.ReadAllText(path)` | VM builtin → Platform HAL | 必须走 OS API |
 
@@ -96,7 +101,7 @@ The z42 standard library takes the best from three reference languages:
 
 **当前违规：** 无（2026-04-26 起；`StringBuilder` 已纯脚本化、`__list_*` / `__dict_*` 已删除）。
 
-### Layer 3 Package Allowed-Extern Summary
+### Tier 3 Package Allowed-Extern Summary
 
 ```
 z42.core         ✅ extern 允许（语言基石）
@@ -109,7 +114,7 @@ z42.numerics     ✅ 未来必须纯脚本（无 native 依赖）
 
 ---
 
-## Layer 1 — VM Intrinsics
+## Tier 1 — VM Intrinsics
 
 Functions that cannot be implemented in z42 because they require direct Rust/OS access.
 Exposed to script code via the `Builtin` IR instruction (`__name` convention).
@@ -140,7 +145,7 @@ src/runtime/src/corelib/
 
 ---
 
-## Layer 2 — Platform HAL
+## Tier 2 — Platform HAL
 
 A Rust trait that abstracts platform-specific operations. The VM holds a `Box<dyn Platform>`
 at startup, allowing the same bytecode to run on different hosts.
@@ -187,7 +192,7 @@ that call `vm.platform.<method>()` rather than using `std::` directly.
 
 ---
 
-## Layer 3 — Script BCL
+## Tier 3 — Script BCL
 
 z42 source files in `src/libraries/`. Each module:
 - Is a standalone z42 project with its own `.z42.toml`

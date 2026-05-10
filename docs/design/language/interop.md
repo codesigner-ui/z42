@@ -652,16 +652,9 @@ pub static NATIVE_TABLE: &[(&str, usize, NativeFn)] = &[
 | value struct | `<struct>` by value | C-compatible layout |
 | class instance | `GcHandle<Class>` | GC ref |
 
-### 11.5 Migration Path L1 → L2+
+### 11.5 Migration Path
 
-L1 functions and naming conventions remain valid throughout L2.M8–M14. Migration plan:
-
-1. **L2.M8–M10** — Tier 1 C ABI lands alongside L1; new functionality may use either path
-2. **L2.M11–M13** — stdlib-backing builtins gradually re-implemented as Tier 2 native types (`Std.String`, `Std.IO.File`, etc. become native-defined classes)
-3. **L2.M14** — source generator subsumes both `[Native]` and `[Extern]` declarations
-4. **L3.M15+** — legacy `__name` dispatch table removed once all stdlib migrated
-
-During the transition, both styles coexist; the compiler accepts both. No automated migration tool — stdlib reorg is manual, one capability at a time, each as its own `docs/spec/changes/` proposal.
+The full L1 → L2+ migration plan (M8–M14 phasing, deprecation timeline) is tracked in [`docs/roadmap.md`](../../roadmap.md) under the L2 interop section. Both L1 `[Native("__name")]` and L2+ `[Native(lib=,type=,entry=)]` styles coexist during the transition; the compiler accepts both.
 
 ---
 

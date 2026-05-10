@@ -100,6 +100,8 @@ bool starts = a.StartsWith("he");
 string[] parts = a.Split(',');
 ```
 
+> 完整内置方法清单与 phase 限制见 [`string-builtins.md`](string-builtins.md)。
+
 ---
 
 ## 3.5 运算符语义
@@ -564,6 +566,8 @@ public class Z42RuntimeException(string message, int errorCode)
     public int ErrorCode { get; } = errorCode;
 }
 ```
+
+> 完整异常类层次、catch 类型过滤、Phase 1 限制（StackTrace / 构造器重载等）见 [`exceptions.md`](exceptions.md)。
 
 ---
 

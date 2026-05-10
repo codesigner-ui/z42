@@ -2,6 +2,8 @@
 
 本文档定义编译输出粒度、文件格式、zbc 生成策略（Strategy D）和工具命令。
 
+> **本文档的边界**：描述编译产物（`.zbc` / `.zmod` / `.zpkg` / `.zbin`）的形态、生成策略与 VM 加载语义。**不描述** 用户 manifest 字段（归 [`project.md`](project.md)）、`.zbc` 内部 wire format（归 [`../runtime/zbc.md`](../runtime/zbc.md)）、IR 指令集（归 [`../runtime/ir.md`](../runtime/ir.md)）。
+
 ---
 
 ## 总体设计

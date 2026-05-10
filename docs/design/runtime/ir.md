@@ -1,5 +1,7 @@
 # z42 Intermediate Representation (IR)
 
+> **本文档边界**：IR 指令集（**权威**：opcode / 操作数语义 / 类型映射 / 异常表）。**Wire format**（二进制 section / 文件头 / 编码细节）见 [`zbc.md`](zbc.md)；**执行模式切换**（Interp / JIT / AOT 调度）见 [`execution-model.md`](execution-model.md)。
+
 ## Design Goals
 
 - Typed SSA form — every value has an explicit type

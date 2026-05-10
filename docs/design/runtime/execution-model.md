@@ -32,59 +32,16 @@ Source Code
 
 ## Bytecode Format (.zbc)
 
-### File Structure
+This document focuses on **execution mode dispatch**. For canonical references see:
 
-```
-┌─────────────────────┐
-│ Magic ("Z42\0")     │  4 bytes
-│ Version             │  2 bytes
-│ Flags               │  2 bytes (encoding, stripped, etc.)
-├─────────────────────┤
-│ Module Name         │  null-terminated string
-│ Namespace List      │  comma-separated namespaces
-├─────────────────────┤
-│ String Pool         │  all string literals
-│ Type Table          │  type descriptors
-│ Function Metadata   │  signatures, line numbers, names
-├─────────────────────┤
-│ Bytecode (Sections) │
-│  - Functions        │
-│  - Constants        │
-│  - Exception table  │
-├─────────────────────┤
-│ (Stripped zbc)      │  if STRIPPED=1 flag:
-│  No SIGS/EXPT/IMPT  │  metadata for linking only
-│  Cached in .zpkg/.cache/
-└─────────────────────┘
-```
+- **Instruction set** (opcodes / type tags / semantics): [`ir.md`](ir.md)
+- **Wire format** (file header / section layout / encoding details): [`zbc.md`](zbc.md)
 
-### Instruction Format
-
-Each instruction is:
-
-```
-┌─────┬─────┬───────────────────────┐
-│ Op  │ Reg │ Operands              │
-│ (1) │ (1) │ (variable, typically 2)
-└─────┴─────┴───────────────────────┘
-```
-
-**Example instructions:**
-
-```
-LoadConst   r0, 42          # r0 = 42
-Add         r0, r1, r2      # r0 = r1 + r2
-Call        r0, method_id, [r1, r2]   # r0 = call(method_id, r1, r2)
-JumpIfTrue  r0, target      # if r0, goto target
-Return      r0              # ret r0
-```
-
-**Design principles:**
+Three design principles relevant to mode dispatch:
 
 - **Register-based** (not stack-based) — easier for both interpreter dispatch and JIT compilation
-- **Linear bytecode stream** — no jumps to the middle of instructions; all jumps land on opcode boundaries
-- **High-level semantics** — one bytecode instruction can represent a complex operation (method call, array access, etc.)
-- **Interpreter-friendly** — instructions map directly to Rust functions; no complex decoding
+- **Linear bytecode stream with block-level jumps** — all jumps land on opcode boundaries; CFG made explicit by block parameters
+- **Each instruction carries a type tag** — interpreter and JIT can dispatch without type inference
 
 ---
 
