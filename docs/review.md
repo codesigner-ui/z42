@@ -460,7 +460,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 |---|---|---|---|---|
 | **已落地** | 完成 `extend-signature-whitelist` (C11e) | (并入 C11e 系列) | 当前 spec | 🟢 2026-05-06 |
 | **已落地** | `spec/changes/` 两个目录纳入 git（add-array-base-class / extend-signature-whitelist 已归档至 archive/） | (随后续提交) | 防止脱管 | 🟢 2026-05-07 |
-| **M6 → M7 之间** | `introduce-bound-visitor` — 引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>`，迁 `FunctionEmitter*` 与 `TypeChecker.Exprs` | refactor | Part 1 §1.1、§1.3 + Part 2 §2.1；为 §3.2 dump-ast 提供基础 | 📋 |
+| **已落地** | `introduce-bound-visitor` — 引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>` + Walker 默认实现；迁移 10 处手写 switch（FunctionEmitter Emit{Expr,Stmt} + CollectClassRefs / FlowAnalyzer×3 / ClosureEscapeAnalyzer×3）。AST→Bound visitor 留独立 spec | refactor | Part 1 §1.3 + Part 2 §2.1 收口；为 §3.2 dump-ast 提供基础 | 🟢 2026-05-10 |
 | **已落地** | `enhance-expr-recovery` — ExprParser 接 DiagnosticBag overload + ErrorExpr 激活 + 全链路 thread bag（NudFn/LedFn 签名 + StmtParser/TopLevelParser callers）；arg-level recovery 真生效（`f(1, *, 3)` 形态） | lang | Part 2 §2.2 + Part 3 §3.7 整体收口 | 🟢 2026-05-08 |
 | **部分完成** | `split-function-emitter-exprs` — FunctionEmitterExprs.cs (878→274 主) + 5 partial | refactor | Part 1 §1.1 (1/4 P0 文件) | 🟢 2026-05-07 |
 | **已落地** | `split-irgen` — IrGen.cs (806→198 主) + 5 partial | refactor | Part 1 §1.1 (2/4) | 🟢 2026-05-07 |
@@ -523,13 +523,12 @@ extend-signature-whitelist (进行中)
 **最高优先**（M7 启动前必须，仍未完成）:
 
 1. `split-symbol-from-type` — 反射系列的设计前置；同步根除 Decl 身份丢失（§3.1）
-2. `introduce-bound-visitor` — 阻止 `FunctionEmitter*` 继续膨胀；为 dump-ast 提供基础
 
 **高优先**（M7 启动前应完成）:
 
-3. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费
+2. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费（visitor 已就绪）
 
-> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`
+> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`、`introduce-bound-visitor`
 
 **中优先**（M7 内或之后）:
 
@@ -573,3 +572,4 @@ extend-signature-whitelist (进行中)
 - **2026-05-05 增补 Part 3**: Clang 视角对标
 - **2026-05-05 增补 Part 4**: VM 架构对标 (vs dotnet/runtime CoreCLR)；路线图拆为编译器线 + VM 线两轨
 - **2026-05-09 状态同步**: method-token 三 Phase 全部落地（Phase 1 / formalize-jit / tokenize-ir-zbc）；§4.1 Part 4 痛点关闭；优先级清单收缩到 3 项 (split-symbol-from-type / introduce-bound-visitor / impl-dump-ast)
+- **2026-05-10 状态同步**: introduce-bound-visitor 落地（10 处手写 switch 全部迁移到 BoundExprVisitor / BoundStmtVisitor）；Part 2 §2.1 + Part 1 §1.3 收口；优先级清单只剩 split-symbol-from-type + impl-dump-ast 两项

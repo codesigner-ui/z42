@@ -856,6 +856,85 @@ bootstrap 阶段不做 —— 复杂度远超收益。
 
 ---
 
+## Bound 树遍历统一框架（2026-05-10 introduce-bound-visitor）
+
+### 背景
+
+z42 的语义中间表示是 **Bound 树**（`Bound/BoundExpr.cs` + `Bound/BoundStmt.cs`），由 TypeChecker 产出、Codegen 消费。Bound 树的所有遍历都需要按节点种类分派——历史上每个 pass 各自手写 `switch (expr) { case BoundXxx: ... }`，导致：
+
+- 加一个 `BoundXxx` 节点要同步改 5–15 个文件的 switch
+- 漏改一处 → 编译器在该路径上静默退化（默认 fall-through）
+- 同一巨型 switch 模式复制 5+ 处（`FunctionEmitter*` / `FlowAnalyzer` / `ClosureEscapeAnalyzer`）
+
+### 解决方案：`BoundExprVisitor<T>` / `BoundStmtVisitor<T>`
+
+`Bound/BoundExprVisitor.cs` 定义双层基类：
+
+```csharp
+public abstract class BoundExprVisitor<TResult>
+{
+    public TResult Visit(BoundExpr e) => e switch
+    {
+        BoundLitInt n   => VisitLitInt(n),
+        BoundLitFloat f => VisitLitFloat(f),
+        // ... 29 个 BoundExpr 子类对应 29 个 case
+        _ => throw new InvalidOperationException("ICE — add a case to the base switch")
+    };
+
+    protected abstract TResult VisitLitInt(BoundLitInt n);
+    // ... 29 个 abstract Visit 方法
+}
+
+public abstract class BoundExprWalker : BoundExprVisitor<Unit>
+{
+    // 默认实现：leaves 为 no-op，interior 节点递归子节点
+    // 子类只 override 关心的节点
+}
+```
+
+`Unit` 是 `record struct` 占位（C# 不允许 `void` 作为泛型实参）。`BoundStmtVisitor<T>` / `BoundStmtWalker` 同模式，覆盖 16 个 `BoundStmt` 子类。
+
+### 为什么这是正面设计
+
+**新增 BoundXxx 节点的工作流（5 步，编译器强制）**：
+
+1. 在 `BoundExpr.cs` 加 `sealed record BoundFoo(...)`
+2. 在 `BoundExprVisitor.Visit` switch 加一行 `BoundFoo x => VisitFoo(x)`
+3. 加 `protected abstract TResult VisitFoo(BoundFoo x)`
+4. `dotnet build` → 所有 visitor 子类编译期失败（必须 implement `VisitFoo`）
+5. 在每个子类（含 Walker 默认）实现新方法
+
+**第 4 步是核心保险**：基类 `abstract` 强制全员关注；不可能再发生"加节点漏改 dispatch"的静默退化。
+
+### 当前消费者
+
+| Pass | Visitor 子类 | TResult |
+|------|------------|---------|
+| `FunctionEmitter.EmitExpr` | `IrEmitExprVisitor` (nested) | `TypedReg` |
+| `FunctionEmitter.EmitBoundStmt` | `IrEmitStmtVisitor` (nested) | `Unit` |
+| `FunctionEmitter.CollectClassRefs` | `ClassRefScanner : BoundExprWalker` | `Unit` |
+| `FlowAnalyzer.AlwaysReturns` | `AlwaysReturnsVisitor` (singleton) | `bool` |
+| `FlowAnalyzer.AnalyzeStmt` | `DefiniteAssignmentVisitor` | `Unit` |
+| `FlowAnalyzer.CheckReads` | `ReadsVisitor` | `Unit` |
+| `ClosureEscapeAnalyzer` Pass 1/2 | `CandidateCollector` / `EscapeStmtScanner` / `EscapeExprScanner` | `Unit` |
+
+### 实现要点
+
+- **私有状态访问**：Codegen visitor 是 `FunctionEmitter` 的 `private nested sealed class`，通过 `_e: FunctionEmitter` 字段访问外层 `_locals` / `_ctx` / `Emit` / `Alloc` 等私有成员，保持封装零破坏
+- **行为等价**：legacy switch 的"未覆盖节点 default fall-through" 必须显式 override 为 no-op，避免 Walker 默认递归引入新行为
+- **状态化 Walker**：分支 isolation（如 `BoundIf` 的 then/else 各自 `HashSet<string>` 副本）通过 visitor 实例字段 push/pop 模拟
+- **多次 Visit 复用**：emitter 持有 lazy-initialized `_stmtVisitor` / `_exprVisitor` 实例字段，避免每个 stmt/expr 重新构造
+
+### 不变量（不得破坏）
+
+- `BoundExpr` / `BoundStmt` 的子类层级保持**扁平**（不引入中间抽象类），否则 visitor 接口爆炸
+- 新增 BoundXxx 节点 → 必须先改 `BoundExprVisitor` 基类（abstract + switch），不允许只在某个 pass 里临时 fall-through
+- Visitor 子类不得绕过 abstract 用 `default → throw`（exhaustive 是设计核心，绕过等于丢掉编译期保险）
+
+详见：[spec/archive/2026-05-10-introduce-bound-visitor/](../../spec/archive/2026-05-10-introduce-bound-visitor/) 的 design.md。
+
+---
+
 ## 延伸阅读
 
 - `docs/design/compilation.md` — 构建流程（manifest → zpkg 的用户视角）
