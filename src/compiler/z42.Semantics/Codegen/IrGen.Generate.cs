@@ -209,6 +209,14 @@ public sealed partial class IrGen
     /// <summary>R1 — walk FunctionDecls (top-level + class methods) and emit one
     /// <see cref="TestEntry"/> per function decorated with z42.test.* attributes.
     /// `method_id` is resolved by name lookup into the post-emit functions list.
+    ///
+    /// split-symbol-from-type Phase 5 (2026-05-10): for class methods, read
+    /// TestAttributes via <see cref="Symbols.IMethodSymbol.TestAttributes"/>
+    /// (single source of truth at the Symbol layer) rather than re-walking
+    /// `cu.Classes[i].Methods[j].TestAttributes` AST. cu.Classes iteration is
+    /// kept for source-order stability and local-class scoping (imported test
+    /// methods are out of scope). Top-level functions still walk cu.Functions
+    /// because top-level fns aren't yet wrapped in IMethodSymbol (out of spec).
     /// </summary>
     private List<TestEntry> BuildTestIndex(CompilationUnit cu, List<IrFunction> functions)
     {
@@ -219,7 +227,7 @@ public sealed partial class IrGen
         for (int i = 0; i < functions.Count; i++)
             fnIndexByName.TryAdd(functions[i].Name, i);
 
-        // Top-level test functions
+        // Top-level test functions (AST path — no symbol layer for top-level fns).
         foreach (var fn in cu.Functions)
         {
             if (fn.TestAttributes is null || fn.TestAttributes.Count == 0) continue;
@@ -227,19 +235,31 @@ public sealed partial class IrGen
             entries.Add(BuildTestEntry(idx, fn.TestAttributes));
         }
 
-        // Class methods (prefix with class name, mirror EmitMethod naming)
+        // Class methods — read TestAttributes from IMethodSymbol (Symbol layer).
         foreach (var cls in cu.Classes)
+        {
+            if (!_semanticModel!.Classes.TryGetValue(cls.Name, out var ct)) continue;
             foreach (var m in cls.Methods)
             {
-                if (m.TestAttributes is null || m.TestAttributes.Count == 0) continue;
+                // Symbol-table key: arity-mangled when overloaded, bare otherwise.
+                // Mirror SymbolCollector.Classes.cs:200-256 regName logic by trying
+                // both. SymbolCollector stores instance methods in ct.Methods and
+                // statics in ct.StaticMethods; check both buckets.
+                var arityKey = $"{m.Name}${m.Params.Count}";
+                var msym = ct.Methods.GetValueOrDefault(arityKey)
+                        ?? ct.Methods.GetValueOrDefault(m.Name)
+                        ?? ct.StaticMethods.GetValueOrDefault(arityKey)
+                        ?? ct.StaticMethods.GetValueOrDefault(m.Name);
+                if (msym?.TestAttributes is not { Count: > 0 } attrs) continue;
+
                 var qualClass = ((IEmitterContext)this).QualifyClassName(cls.Name);
-                // Try with arity suffix first (overload-aware), fall back to bare name.
-                string arityKey = $"{qualClass}.{m.Name}${m.Params.Count}";
-                string bareKey  = $"{qualClass}.{m.Name}";
-                if (fnIndexByName.TryGetValue(arityKey, out var idx)
-                    || fnIndexByName.TryGetValue(bareKey, out idx))
-                    entries.Add(BuildTestEntry(idx, m.TestAttributes));
+                string fullArityKey = $"{qualClass}.{m.Name}${m.Params.Count}";
+                string fullBareKey  = $"{qualClass}.{m.Name}";
+                if (fnIndexByName.TryGetValue(fullArityKey, out var idx)
+                    || fnIndexByName.TryGetValue(fullBareKey, out idx))
+                    entries.Add(BuildTestEntry(idx, attrs));
             }
+        }
 
         return entries;
     }

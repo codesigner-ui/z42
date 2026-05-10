@@ -10,7 +10,7 @@ namespace Z42.Semantics.Codegen;
 public sealed partial class IrGen
 {
 
-    private TestEntry BuildTestEntry(int methodId, List<TestAttribute> attrs)
+    private TestEntry BuildTestEntry(int methodId, IReadOnlyList<TestAttribute> attrs)
     {
         var kind         = TestEntryKind.Test;          // default if no primary kind seen
         var flags        = TestFlags.None;

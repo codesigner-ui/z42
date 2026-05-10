@@ -34,6 +34,15 @@ public static class TestAttributeValidator
     /// Validate test attributes across an entire compilation unit. Reports any
     /// violations into <paramref name="diags"/>; returns silently. Caller checks
     /// <see cref="DiagnosticBag.HasErrors"/> after.
+    ///
+    /// split-symbol-from-type Phase 5 (2026-05-10): for class methods,
+    /// `IMethodSymbol.TestAttributes` is the canonical source of attribute
+    /// information. The cu.Classes walk is kept for source-order iteration +
+    /// FunctionDecl access (ValidateFunction needs the AST node for span /
+    /// signature checks); but the `TestAttributes` list returned by both
+    /// `m.TestAttributes` and `symbol.TestAttributes` is the SAME list reference
+    /// (populated by SymbolCollector at construction). The walk just confirms:
+    /// no AST methods exist that bypass Symbol-layer attribute exposure.
     /// </summary>
     public static void Validate(CompilationUnit cu, SemanticModel sem, DiagnosticBag diags)
     {
