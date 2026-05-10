@@ -1,44 +1,52 @@
 # Tasks: Rewrite z42-test-runner with Compile-Time Discovery
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 R1 + R2 完成。
+> 状态：🟡 实施中 | 创建：2026-04-29 | 启动：2026-05-10
+> 依赖 R1 + R2 + R4 + A2/A3 + R3a/c — 全部 ✅ 已落地
 
 ## 进度概览
 
-- [ ] 阶段 1: crate 骨架
-- [ ] 阶段 2: discover.rs + result.rs
-- [ ] 阶段 3: runner.rs (执行 + sink + Setup/Teardown)
-- [ ] 阶段 4: bencher.rs (warmup + 统计)
-- [ ] 阶段 5: format/{tap,json,pretty}
-- [ ] 阶段 6: scripts/test-changed.sh
-- [ ] 阶段 7: justfile 接入
+- [ ] 阶段 0: PoC — 验证 in-process Setup→Test→Teardown 三调用 +  Bencher closure stash/take 接口
+- [ ] 阶段 1: 拆 main.rs → 模块（discover/runner/result/format/）
+- [ ] 阶段 2: discover in-process + zpkg 输入支持
+- [ ] 阶段 3: runner Setup/Teardown 调度生效
+- [ ] 阶段 4: bencher.rs (warmup + 统计 + closure 协议)
+- [ ] 阶段 5: format module 化（保留现有 TAP/JSON/pretty 三种）
+- [ ] 阶段 6-7: scripts + justfile（R3c 已落地，仅检查/小修）
 - [ ] 阶段 8: 文档
 - [ ] 阶段 9: 验证
 
 ---
 
-## 阶段 1: Crate 骨架
+## 阶段 0: PoC（先验证关键不确定性）
 
-- [ ] 1.1 [src/runtime/Cargo.toml](src/runtime/Cargo.toml) workspace.members 加 `../toolchain/test-runner`
-- [ ] 1.2 [src/toolchain/test-runner/Cargo.toml](src/toolchain/test-runner/Cargo.toml) 依赖 z42-runtime + clap + serde + serde_json + anyhow + regex + colored
-- [ ] 1.3 [src/toolchain/test-runner/src/main.rs](src/toolchain/test-runner/src/main.rs) clap 入口
-- [ ] 1.4 [src/toolchain/test-runner/README.md](src/toolchain/test-runner/README.md)
-- [ ] 1.5 [src/toolchain/README.md](src/toolchain/README.md) 列入 test-runner
+> 目的：在大改 main.rs 之前确认两个核心机制能跑通，避免实施期 redesign。
 
-## 阶段 2: discover + result
+- [ ] 0.1 验证 in-process API：手写小 PoC，从 host 调 `interp::run(ctx, module, fn_name1, &[])` 然后 `interp::run(ctx, module, fn_name2, &[])`，两个 fn 共享 VmContext 的 static_fields 与 sink state。证明 Setup → Test → Teardown 三调用流程可行
+- [ ] 0.2 验证 Bencher closure stash/take：复用 R2 的 Bencher 类，让 z42 [Benchmark] fn 调 `bencher.Iter(closure)`；runner 通过 thread-local 把闭包提取出来反向多次调用并测时。证明 R2 Bencher native impl 支持这个反向 dispatch（必要时小改 R2 native）
+- [ ] 0.3 PoC 结果记录到本 tasks.md 备注区；如发现接口不足，停下评估是否需要先扩 R2 / runtime API
 
-- [ ] 2.1 [src/toolchain/test-runner/src/result.rs](src/toolchain/test-runner/src/result.rs) TestStatus / TestResult / TestSuiteResult
-- [ ] 2.2 [src/toolchain/test-runner/src/discover.rs](src/toolchain/test-runner/src/discover.rs) discover() 函数（按 design.md Decision 2）
-- [ ] 2.3 collect_zbc_files：递归扫描目录
-- [ ] 2.4 应用 --filter regex / --tag 过滤
+## 阶段 1: 拆 main.rs → 模块
 
-## 阶段 3: Runner
+- [ ] 1.1 `src/toolchain/test-runner/Cargo.toml`：加 `regex` 依赖（spec 要求 regex filter，现 substring）
+- [ ] 1.2 `src/toolchain/test-runner/src/result.rs` (NEW)：从 main.rs 提取 `TestStatus` / `TestResult` / `TestSuiteResult`
+- [ ] 1.3 `src/toolchain/test-runner/src/discover.rs` (NEW)：提取 `TestReport::from_artifact` + `DiscoveredTest`
+- [ ] 1.4 `src/toolchain/test-runner/src/format/{mod,tap,json,pretty}.rs` (NEW)：拆 main.rs 现有三个 emit 函数到 trait + 实现
+- [ ] 1.5 `src/toolchain/test-runner/src/main.rs` (MODIFY)：缩到 ~80 行 CLI 入口 + 调度；旧 monolithic 内容已搬到模块
+- [ ] 1.6 `cargo build -p z42-test-runner` + 现有测试 pass — 重构无行为变化
 
-- [ ] 3.1 [src/toolchain/test-runner/src/runner.rs](src/toolchain/test-runner/src/runner.rs) run_one() 函数
-- [ ] 3.2 sink 安装 + 取出（调用 R2 的 native）
-- [ ] 3.3 Setup → 主体 → Teardown 顺序调度
-- [ ] 3.4 异常分类（TestFailure / SkipSignal / 其他 / ShouldThrow 期望）
-- [ ] 3.5 TestCase 参数化展开
+## 阶段 2: discover 扩展
+
+- [ ] 2.1 `discover.rs::collect_artifacts` (NEW)：支持目录递归扫描 + zpkg 输入（packed mode）
+- [ ] 2.2 `--filter` 改为 regex（依赖 R2 加的 regex crate）
+- [ ] 2.3 收集 Setup / Teardown method_ids 进 `DiscoveredTest`（同 module 内）
+
+## 阶段 3: Runner — in-process + Setup/Teardown
+
+- [ ] 3.1 `runner.rs::run_one(test, artifact, sink_buf)` (NEW)：单 [Test] 执行（替代 subprocess fork）
+- [ ] 3.2 sink 安装 + 取出（调 R2 的 `__test_io_install_stdout_sink` / `__test_io_take_stdout_buffer` builtin）
+- [ ] 3.3 Setup → 主体 → Teardown 顺序调度（共享 VmContext）；任一抛出按异常类型分类
+- [ ] 3.4 异常分类（TestFailure / SkipSignal / 其他 / ShouldThrow 期望，与 A2/A3 chain 兼容）
+- [ ] 3.5 TestCase 参数化展开（如 R1 TIDX 含 TestCases；当前不必，留 follow-up）
 
 ## 阶段 4: Bencher
 
@@ -55,17 +63,10 @@
 - [ ] 5.4 [src/toolchain/test-runner/src/format/pretty.rs](src/toolchain/test-runner/src/format/pretty.rs) TTY 友好（colored）
 - [ ] 5.5 默认 format：TTY 自动 pretty，否则 tap
 
-## 阶段 6: scripts/test-changed.sh
+## 阶段 6-7: scripts + justfile（R3c 已落地，仅检查）
 
-- [ ] 6.1 [scripts/test-changed.sh](scripts/test-changed.sh) 按原 P2 spec design.md Decision 8
-- [ ] 6.2 反向依赖关系硬编码（6 个 stdlib 库）
-- [ ] 6.3 用 jq 输出 JSON
-
-## 阶段 7: justfile
-
-- [ ] 7.1 [justfile](justfile) `test-changed` 替换为完整实现
-- [ ] 7.2 `test-stdlib` 替换为完整实现（含 lib 参数）
-- [ ] 7.3 `test-integration` 替换为完整实现
+- [ ] 6.1 检查 `scripts/test-changed.sh` 已存在 + 行为符合预期
+- [ ] 7.1 检查 `justfile` 的 `test-changed` / `test-stdlib` / `test-integration` 不再是占位（如仍是占位则替换）
 
 ## 阶段 8: 文档
 
@@ -94,12 +95,12 @@
 - R2 (z42.test library) 必须先落地（runner 调用 R2 的 native）
 - 与 R4 / R5 无依赖
 
-### 风险
+### 风险（2026-05-10 update）
 
-- **风险 1**：Interpreter 公开 API 不足以从 host 调任意函数 + 注入参数 → 实施前调研 src/runtime/src/interp/，可能需要先 R3.0 (extend-interpreter-host-api)
-- **风险 2**：Closure value 提取 + 调用协议未定 → 阶段 4 实施时确定
-- **风险 3**：异常类型识别用字符串 contains —— 不可靠；R4 加 type_idx 后改 typed
-- **风险 4**：CI 上 runner 跑慢（每个 [Test] 一个独立 Interpreter） → 串行 v0.1 接受；v0.2 加并行
+- ~~**风险 1**：Interpreter 公开 API 不足~~ → ✅ **已解**：`interp::run(ctx, module, fn, args)` + `interp::run_returning` 已是公开 API
+- **风险 2**：Closure value 提取 + 调用协议未定 → 阶段 0 PoC 验证（先行确认）
+- ~~**风险 3**：异常类型识别用字符串 contains~~ → ✅ **A3 chain 已解**：编译期把 [ShouldThrow<E>] 的 E + 派生类短名写入 TIDX；runner split 后任一命中即 Pass，无需 type 反射
+- **风险 4**：CI 上 runner 跑慢 → 串行 v0.1 接受；v0.2 加并行
 
 ### 工作量估计
 

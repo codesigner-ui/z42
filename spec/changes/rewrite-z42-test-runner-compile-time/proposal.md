@@ -1,14 +1,22 @@
 # Proposal: z42-test-runner with Compile-Time Discovery
 
+> 状态：🟡 已确认实施（2026-05-10 阶段 6.5 gate 通过）| 创建：2026-04-29 | 启动：2026-05-10
+> 类型：refactor + extend（重构现有 test-runner，非 from-scratch）
+
 ## Why
 
-[add-z42-test-runner](../add-z42-test-runner/) (P2) 的原方案在 runner 启动时扫整个 zbc method table 找带 attribute 的函数。R1 已把这一步前移到编译期：编译器写 `TestIndex` section，runner 直接读。
+[`add-z42-test-runner`](../../archive/2026-04-30-add-z42-test-runner/) (P2，已归档 ✅ 2026-04-30) 是 R3 minimal 版：subprocess fork z42vm，每个 [Test] 一个独立进程。当前 `src/toolchain/test-runner/src/main.rs` 是 770 行单文件实现。
 
-R3 实现新版 runner，**消费**：
-- R1 的 `LoadedArtifact.test_index: Vec<TestEntry>`（编译时元数据）
-- R2 的 z42.test 库（assertion / IO sink / Bencher）
+R3 完整版要解决：
+- **subprocess 启动开销** → in-process 执行（`interp::run` 已暴露公开 API）
+- **[Setup] / [Teardown] hook 真生效** → R1 已把 Kind 写入 TIDX section；当前 runner 仅处理 [Test]
+- **Bencher 调度模式** → R2 ✅ 2026-05-05 已交付 `Std.Test.Bencher` 类（custom ctor / iter / Min/Max/Median 等）；runner 缺 `--bench` 模式调度
+- **zpkg-as-input** → 现 runner 仅吃 `.zbc`；zpkg 输入顺带覆盖跨非 import 包 inheritance（A3 chain 的边角）
 
-不再扫 method table，runner 启动 O(1)。
+R3 完整版**消费**：
+- R1 的 `LoadedArtifact.test_index: Vec<TestEntry>`（编译时元数据，含 method_id / kind / flags / skip_reason / expected_throw_type）
+- R2 的 z42.test 库（Assert / TestIO sink / Bencher）
+- R4 (✅ 2026-04-30) attribute 校验 + A2/A3 (✅ 2026-04-30) [ShouldThrow<E>] inheritance chain（编译期 expand 进 TIDX，runner 仅 string 比对）
 
 ## What Changes
 
@@ -41,23 +49,29 @@ R3 实现新版 runner，**消费**：
 
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `src/toolchain/test-runner/Cargo.toml` | NEW | crate manifest |
-| `src/toolchain/test-runner/src/main.rs` | NEW | CLI 入口（clap） |
-| `src/toolchain/test-runner/src/discover.rs` | NEW | 从 `LoadedArtifact.test_index` 收集 + 过滤 TestCase |
-| `src/toolchain/test-runner/src/runner.rs` | NEW | 单 test 执行：sink 安装 / Setup / 主体 / Teardown / 捕获异常 / 时间 |
-| `src/toolchain/test-runner/src/bencher.rs` | NEW | bench 模式：warmup + iter + 统计 + criterion-style 报告 |
-| `src/toolchain/test-runner/src/result.rs` | NEW | TestStatus / TestResult / TestSuiteResult |
+> **Scope 表已根据 2026-05-10 实施期状态修正**：原表把所有文件标 NEW（spec 起草于 2026-04-29，时存只占位）。当前 `test-runner` crate 已存在（770-line `main.rs` + `Cargo.toml` + `README.md`）。
+
+| 文件路径 | 变更类型 | 说明 |
+|---------|---------|------|
+| `src/toolchain/test-runner/Cargo.toml` | MODIFY | 已存在；按需加 `regex` 依赖（filter 当前是 substring，spec 要 regex） |
+| `src/toolchain/test-runner/src/main.rs` | MODIFY | 770 行 → 拆 ~80 行 CLI 入口 + 调度；其余迁移到模块 |
+| `src/toolchain/test-runner/src/discover.rs` | NEW | 从 `main.rs::TestReport` 提取；按 design Decision 2 重写为支持 zpkg + 多 paths |
+| `src/toolchain/test-runner/src/runner.rs` | NEW | in-process Setup → 主体 → Teardown 调度；替换原 `RunOutcome` subprocess fork |
+| `src/toolchain/test-runner/src/bencher.rs` | NEW | `--bench` 模式 + closure stash/take 协议（Q4 决议） |
+| `src/toolchain/test-runner/src/result.rs` | NEW | 从 `main.rs::TestResult/TestStatus` 提取 |
 | `src/toolchain/test-runner/src/format/mod.rs` | NEW | Formatter trait |
-| `src/toolchain/test-runner/src/format/tap.rs` | NEW | TAP 13 输出 |
-| `src/toolchain/test-runner/src/format/json.rs` | NEW | JSON 输出 |
-| `src/toolchain/test-runner/src/format/pretty.rs` | NEW | TTY 友好输出（colored） |
-| `src/toolchain/test-runner/tests/integration_test.rs` | NEW | runner 自身集成测试 |
-| `src/toolchain/test-runner/README.md` | NEW | 工具文档 |
-| `src/toolchain/README.md` | MODIFY | 列入 test-runner |
-| `src/runtime/Cargo.toml` | MODIFY | workspace members 加 `../toolchain/test-runner` |
-| `scripts/test-changed.sh` | NEW | git diff → 受影响测试集（设计同原 P2） |
-| `justfile` | MODIFY | `test-changed` / `test-stdlib` / `test-integration` 替换占位 |
-| `docs/design/test-runner.md` | NEW | runner 设计文档（架构 + 调度流程） |
+| `src/toolchain/test-runner/src/format/tap.rs` | NEW | 从 `main.rs` 现有 TAP emitter 提取 |
+| `src/toolchain/test-runner/src/format/json.rs` | NEW | 从 `main.rs` 现有 JSON emitter 提取 |
+| `src/toolchain/test-runner/src/format/pretty.rs` | NEW | 从 `main.rs` 现有 pretty emitter 提取 |
+| `src/toolchain/test-runner/tests/integration_test.rs` | NEW | runner 自身集成测试（端到端：编译一个 demo zbc → in-process 跑 → 断输出） |
+| `src/toolchain/test-runner/README.md` | MODIFY | 已存在；更新 R3b 完整版能力描述 |
+| `src/toolchain/README.md` | MODIFY | 列入 test-runner（如未列） |
+| `src/runtime/Cargo.toml` | （免改动） | workspace members 已含 `../toolchain/test-runner` |
+| `scripts/test-changed.sh` | （免改动） | R3c ✅ 2026-04-30 已落地 |
+| `justfile` | （视情况）MODIFY | 若已替换占位则不动；按 R3 原 spec 检查 |
+| `docs/design/test-runner.md` | NEW | runner 设计文档（in-process 架构 + Setup/Teardown 调度 + Bencher closure 协议） |
+| `docs/design/testing.md` | MODIFY | 新增 R3b in-process 段说明 |
+| `docs/dev.md` | MODIFY | 加 "z42-test-runner" 段 |
 
 **只读引用**：
 - [add-test-metadata-section/](../add-test-metadata-section/) (R1) — `LoadedArtifact.test_index` 字段契约
@@ -76,15 +90,10 @@ R3 实现新版 runner，**消费**：
 - **attribute 签名校验** → R4
 - **golden 用例迁移** → R5
 
-## Open Questions
+## Open Questions（2026-05-10 阶段 6.5 已拍板）
 
-- [ ] **Q1**：每个 [Test] 一个独立 Interpreter 还是共享 + reset？
-  - 倾向：独立 Interpreter（隔离强；性能损失 ~ms 级，可接受）
-- [ ] **Q2**：Setup/Teardown 在 runner 侧调度还是包成 wrapper 函数？
-  - 倾向：runner 侧调度（直观；无需修改用户代码）
-- [ ] **Q3**：超时实现？(`--timeout` / `[Timeout]`)
-  - 倾向：每个 Interpreter 跑独立 thread + signal/abort；v0.1 用 thread::join + try_join_timeout
-- [ ] **Q4**：Bencher 收集闭包的协议？
-  - 倾向：runner 注入特殊 marker；Bencher.iter 检测到 marker → 把 closure 引用通过 thread-local 传递回宿主
-- [ ] **Q5**：CI 上 runner 路径？通过 `cargo run -p z42-test-runner` 还是预编译 binary？
-  - 倾向：`cargo run` for dev；`cargo build --release -p z42-test-runner` 后用 binary（避免重复编译）
+- [x] **Q1**：每个 [Test] 一个独立 Interpreter 还是共享 + reset？ → **独立 VmContext per [Test]**（`static_fields_clear` 已有；隔离强；性能损失 ~ms 级，可接受）
+- [x] **Q2**：Setup/Teardown 在 runner 侧调度还是包成 wrapper 函数？ → **runner 侧调度**（zero compiler change；同 VmContext 三调用 Setup → 主体 → Teardown 可共享 static state）
+- [x] **Q3**：超时实现？ → **v0.1 不做**（推迟独立 spec；现有 runner 也无 `--timeout`）
+- [x] **Q4**：Bencher 收集闭包的协议？ → **thread-local stash + take**：runner 在调用前 stash benchmark fn；R2 Bencher.Iter native 用 thread-local closure 反向调用宿主测时
+- [x] **Q5**：CI 上 runner 路径？ → **dev 用 `cargo run`；CI 用 `cargo build --release -p z42-test-runner` 后跑 binary**（避免重复编译）
