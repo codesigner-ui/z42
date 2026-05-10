@@ -17,13 +17,11 @@
 
 ---
 
-## 阶段 0: PoC（先验证关键不确定性）
+## 阶段 0: PoC 验证（已通过现有代码确认）
 
-> 目的：在大改 main.rs 之前确认两个核心机制能跑通，避免实施期 redesign。
-
-- [ ] 0.1 验证 in-process API：手写小 PoC，从 host 调 `interp::run(ctx, module, fn_name1, &[])` 然后 `interp::run(ctx, module, fn_name2, &[])`，两个 fn 共享 VmContext 的 static_fields 与 sink state。证明 Setup → Test → Teardown 三调用流程可行
-- [ ] 0.2 验证 Bencher closure stash/take：复用 R2 的 Bencher 类，让 z42 [Benchmark] fn 调 `bencher.Iter(closure)`；runner 通过 thread-local 把闭包提取出来反向多次调用并测时。证明 R2 Bencher native impl 支持这个反向 dispatch（必要时小改 R2 native）
-- [ ] 0.3 PoC 结果记录到本 tasks.md 备注区；如发现接口不足，停下评估是否需要先扩 R2 / runtime API
+- [x] 0.1 in-process API：`interp::run(&ctx, module, func, &[])` + `interp::run_returning` 已是 public API；`tests/native_pin_e2e.rs` 演示 host 直接调用 + 共享 VmContext。Setup → Test → Teardown 三调用 = 三次 `interp::run` 共享 ctx，可行
+- [x] 0.2 Bencher closure 协议：R2 Bencher 类的 `iter(Action body)` 在 z42 端直接 invoke lambda body —— closure 协议**完全在 z42 端**，runner 无需 thread-local stash/take。Runner 调度模式只需：(a) 构造 Bencher z42 对象（默认 ctor），(b) 把 Bencher 作 arg 传给 [Benchmark] fn，(c) fn 自己调 `bencher.iter(...)` 跑 + 写回 Min/Max/Median 字段
+- [x] 0.3 阶段 0 verified by existing tests/code — 直接进阶段 1
 
 ## 阶段 1: 拆 main.rs → 模块
 
