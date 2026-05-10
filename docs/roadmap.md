@@ -1,5 +1,8 @@
 # z42 Roadmap
 
+> 本文按 **phase（L1/L2/L3）** 组织实现进度，回答"现在做到哪一步"；版本发布节奏按 **SemVer** 见 [version.md](version.md)。
+> 已完成 spec 的实施细节存于 [docs/spec/archive/](spec/archive/)；按主题查规范见 [docs/design/](design/)。
+
 ## 固定决策
 
 - **GC**：z42 始终带 GC，不引入所有权/借用（降低上手成本）
@@ -13,364 +16,191 @@
 
 | 阶段 | 目标 | 状态 |
 |------|------|------|
-| **L1** | C# 基础子集，跑通完整 pipeline（源码 → IR → VM 执行） | ✅ 已完成 |
+| **L1** | C# 基础子集，跑通完整 pipeline（源码 → IR → VM 执行） | ✅ 已完成（详见下） |
 | **L2** | 基础设施完善（编译、工程、测试、VM 质量、标准库） | 🚧 进行中 |
-| **L3** | 高级语法扩展（泛型、Lambda、异步 + z42 特有特性） | 📋 待开始 |
+| **L3** | 高级语法扩展（泛型、Lambda、异步 + z42 特有特性） | 🟡 部分（泛型 + lambda + delegates 已落地，async / ADT / Result 待开始） |
 
-> 阶段严格串行：L1 pipeline 全通 → 启动 L2；L2 全完成 → 启动 L3。
+> 阶段严格串行：L1 pipeline 全通 → 启动 L2；L2 全完成 → 启动 L3。当前 L1 全绿、L2 多项进行中、L3 部分提前落地。
 
----
-
-## L1 — Bootstrap（C# 基础子集）
-
-**目标**：以最小特性集跑通完整 pipeline：词法 → 语法 → 类型检查 → IR Codegen → VM 执行。
-
-### 语言特性范围
-
-| 类别 | 特性 |
-|------|------|
-| 基本类型 | `int`/`long`/`double`/`float`/`bool`/`char`/`string`/`void` + C# 数值别名（sbyte/ushort/uint…） |
-| 运算符 | 算术、比较、逻辑、位运算、复合赋值、三目 `?:`、空合并 `??` |
-| 控制流 | `if`/`else`、`while`、`do-while`、`for`、`foreach`、`switch` 表达式/语句、`break`/`continue`/`return` |
-| 函数 | 顶层函数、方法、表达式体（`=>`）、默认参数值 |
-| 类型定义 | `class`（字段、构造器、方法、属性、`static` 成员）、`struct`、`record`、`enum` |
-| 可空类型 | `T?`、`?.` 空条件访问、`??` 空合并 |
-| 集合 | `T[]` 数组、`List<T>`、`Dictionary<K,V>`（pseudo-class 策略） |
-| 字符串 | 插值 `$"..."`、常用方法（Length/Split/Contains/ToUpper 等） |
-| 异常 | `try`/`catch`/`finally`/`throw`、自定义异常类 |
-| 内置 | `Console`、`Math`、`Assert`（pseudo-class） |
-| z42 扩展 | `[ExecMode]` 执行模式注解、`[HotReload]` 热更新注解（命名空间级） |
-
-### Pipeline 实现进度
-
-| 特性 | Parser | TypeCheck | IrGen | VM | 备注 |
-|------|:------:|:---------:|:-----:|:--:|------|
-| 基本类型、运算符 | ✅ | ✅ | ✅ | ✅ | |
-| `if` / `while` / `for` / `foreach` | ✅ | ✅ | ✅ | ✅ | |
-| `do-while` | ✅ | ✅ | ✅ | ✅ | |
-| `switch` 表达式 / 语句 | ✅ | ✅ | ✅ | ✅ | |
-| 三目 `?:` / `??` / `?.` | ✅ | ✅ | ✅ | ✅ | |
-| 字符串插值 `$"..."` | ✅ | ✅ | ✅ | ✅ | |
-| 数组 `T[]` | ✅ | ✅ | ✅ | ✅ | |
-| `List<T>` | ✅ | ✅ | ✅ | ✅ | pseudo-class |
-| `Dictionary<K,V>` | ✅ | ✅ | ✅ | ✅ | pseudo-class，key→string |
-| 可空类型 `T?`（隐式包装） | ✅ | ✅ | ✅ | ✅ | |
-| 枚举 `enum` | ✅ | ✅ | ✅ | ✅ | 成员值映射为 i64 |
-| 类（字段、构造器、方法） | ✅ | ✅ | ✅ | ✅ | ctor 重载（ObjNew 携带 ctor 名）|
-| auto-property（class / interface / extern） | ✅ | ✅ | ✅ | ✅ | desugar 到 backing field + getter/setter |
-| 异常 `try`/`catch`/`throw` | ✅ | ✅ | ✅ | ✅ | |
-| 默认参数值 | ✅ | ✅ | ✅ | ✅ | call site 展开 |
-| C# 数值类型别名 | ✅ | ✅ | ✅ | ✅ | |
-| Math / Assert / Console | — | ✅ | ✅ | ✅ | pseudo-class |
-| `extern` + `[Native]` InternalCall | ✅ | ✅ | ✅ | ✅ | stdlib interop |
-| stdlib linking (StdlibCallIndex) | — | — | ✅ | ✅ | user code → CallInstr → stdlib stub → builtin |
-| 表达式体方法 `=> expr;` | ✅ | ✅ | ✅ | ✅ | TopLevelParser |
-| `struct` / `record` | ✅ | ✅ | ✅ | ✅ | struct 复用 class 路径；record 自动合成ctor |
-| 接口 `interface` | ✅ | ✅ | ✅ | ✅ | 通过 VCallInstr 实现运行时分发 |
-| 继承 | ✅ | ✅ | ✅ | ✅ | base(...) 构造器链支持 |
-| `ref` / `out` / `in` 参数修饰符 | ✅ | ✅ | ✅ | ✅ | 完整落地：spec 2026-05-05-define-ref-out-in-parameters-typecheck（编译期）+ 2026-05-05-impl-ref-out-in-runtime（VM `Value::Ref` + sidecar copy-in/out）|
+**当前焦点**：M6（工程支持 + 测试体系 + 错误码体系）→ M7（VM 元数据 + 标准库）。下一阶段对应 SemVer 版本：[0.2.x（工程化 & 包系统）](version.md#02x--工程化--包系统--perf-ci-立项) → [0.3.x（测试体系 & VM 质量）](version.md#03x--测试体系--vm-质量--gc-v1)。
 
 ---
 
-## L2 — Foundation（基础设施）
+## L1 — Bootstrap（C# 基础子集）✅
+
+**目标已达成**：以最小特性集跑通完整 pipeline（词法 → 语法 → 类型检查 → IR Codegen → VM 执行）。
+
+**特性范围**：基本类型 + 数值别名 / 全部运算符 / 控制流（if/while/do-while/for/foreach/switch）/ 三目 + null-coalesce + null-conditional / 字符串插值 / 数组 + List + Dictionary（pseudo-class）/ 可空类型 / 枚举 / 类（字段/构造器/方法/auto-property/static）/ struct / record / 接口 / 继承 / 异常 / 默认参数 / `ref/out/in` 参数修饰符 / `[ExecMode]` + `[HotReload]` 注解。详见 [language-overview.md](design/language/language-overview.md) 与各专题 [design/language/](design/language/)。
+
+实施明细按 spec 归档于 [docs/spec/archive/2026-04-04-* 至 2026-05-05-*](spec/archive/)。
+
+---
+
+## L2 — Foundation（基础设施）🚧
 
 **目标**：在 L1 pipeline 基础上，补全编译器覆盖、稳定工程体系、建立测试基线、提升 VM 质量，落地基础标准库。
 
 ### 编译器完善
-- TypeChecker 完整覆盖 L1 所有特性（struct、record、interface、inheritance）
-- IR Codegen 完整覆盖 L1 所有特性
-- 错误体系完善：统一错误码（`E####`）、友好错误消息、`explain <CODE>` 命令
-- `.zbc` 二进制格式稳定（magic、版本号、section layout 固定）
-- `disasm` 反汇编输出可读性
 
-### 工程支持
-- `z42.toml` 项目清单：多 binary target、lib target、依赖声明
-- **Workspace 模型（C1 ✅ 2026-04-26）**：`z42.workspace.toml` virtual manifest、glob members、`[workspace.project]` 共享元数据、`xxx.workspace = true` 引用语法、4 个内置路径模板变量。
-- **Workspace include 机制（C2 ✅ 2026-04-26）**：`include` 字段 + preset 合并语义（标量覆盖 / 表合并 / 数组整体覆盖）、循环检测、嵌套深度上限 8、菱形去重。
-- **Workspace policy + 集中产物（C3 ✅ 2026-04-26）**：`[policy]` 字段路径锁定（默认锁定 `build.out_dir` / `build.cache_dir`）、`[workspace.build]` 集中产物（`dist/<member>.zpkg` + cache 按 member 分目录）、`${profile}` 派生路径。
-- **z42c workspace 编译运行时（C4a ✅ 2026-04-26）**：CWD 无关 workspace 发现、`-p` / `--workspace` / `--exclude` / `--no-workspace` flags、跨 member 依赖图（DFS 三色环检测）、拓扑串行编译、上游失败 → 下游 blocked、WS001/002/006 错误码。
-- **z42c workspace 查询命令（C4b ✅ 2026-04-26）**：`info` / `info --resolved -p` / `info --include-graph -p` / `metadata --format json`（schema_version=1）/ `tree` / `lint-manifest`；CliOutputFormatter 带 ANSI 颜色的友好错误输出（自动 NO_COLOR 检测）。
-- **z42c workspace 脚手架 + 清理（C4c ✅ 2026-04-26）**：`new --workspace` 生成完整 monorepo 骨架（z42.workspace.toml + presets/ + libs/ + apps/ + .gitignore）；`new -p <name> --kind lib|exe` 在 workspace 内新增 member；`init` 升级单 manifest 为 workspace；`fmt` 格式化所有 manifest（Tomlyn round-trip）；`clean` workspace 模式集中清理 + `-p` per-member。WS004 已彻底移除（归并入 WS010）。
-- **source_hash 增量编译（C5 ✅ 2026-04-27）**：`IncrementalBuild.Probe` 比对 SHA-256 与上次 zpkg 记录、cache zbc 存在性、ExportedModule 可用性，命中则跳过 parse + typecheck + irgen；cached CU 通过 `externalImported` 注入 sharedCollector，让 fresh CU 引用 cached CU 类型。BuildPacked 写 fullMode cache zbc 让单文件自含；UsedDepNamespaces 从上次 zpkg.Dependencies 回填保证 cross-zpkg 引用正确。`--no-incremental` 强制全量。预期：stdlib 第二次 build 命中率 100%。
-- `build`/`check`/`run`/`clean` 子命令完整 ✅
-- 包格式 `.zpkg` 稳定（indexed/packed 模式、版本信息）
+- **TypeChecker / IrGen**：✅ L1 全特性覆盖
+- **错误体系**：✅ E####（C# 编译期）+ Z####（Rust runtime）catalog 已就位；🚧 友好错误消息 + `z42c explain <CODE>` 命令进行中
+- **`.zbc` 二进制格式**：✅ v1.x 稳定（magic / version / section layout 锁定）；🟡 split-debug-symbols Phase 4 进行中（per-param 类型名带入 SIGS）
+- **`disasm` 反汇编**：✅ 基础可读
 
-### 测试体系
-- ✅ Golden test 覆盖所有 L1 特性（114 例 vm_core 按 dotnet/runtime 风格分类 + 20 例 stdlib-bound = 134；2026-05-05 由 `migrate-runtime-tests-by-ownership` 重组到 `src/tests/<category>/` 与 `src/libraries/<lib>/tests/`）
-- ✅ VM interp + JIT 双模式运行同一测试集，结果一致（104/104 × 2）
-- ✅ CI 脚本稳定：`dotnet test` (799/799) + `./scripts/test-vm.sh` (104/104 × 2) + `./scripts/test-stdlib.sh` (6 lib) + `./scripts/test-cross-zpkg.sh` 全绿为唯一合并门禁
-- ✅ **R 系列测试基础设施（2026-04-29 ~ 04-30）**：
-  - **R1**（`add-test-metadata-section` ✅ 2026-04-30）：zbc TIDX section v=2（TestEntry skip_reason / platform / feature 字段）+ 6 个测试 attribute（[Test] [Benchmark] [Setup] [Teardown] [Skip] [Ignore]）解析与收集
-  - **R2 minimal**（`add-z42-test-runner` ✅ 2026-04-30）：`Std.Test.Assert` 8 方法（Equal / NotEqual / True / False / Null / NotNull / Contains / Fail / Skip）+ `TestFailure` / `SkipSignal` 异常类
-  - **R3 minimal**（`add-z42-test-runner` ✅ 2026-04-30）：z42-test-runner subprocess 模式（fork z42vm with `--entry <name>`，按 stderr 内容分类 Pass/Skip/Fail）
-  - **R4.A**（`compiler-validate-test-attributes` ✅ 2026-04-30）：TestAttributeValidator pass + E0911/E0912/E0914/E0915 4 个错误码（[Test]/[Benchmark]/[Setup]/[Teardown] 签名 + 互斥校验；[Skip] 缺 reason 校验）
-  - **R4.B**（`add-generic-attribute-syntax` ✅ 2026-04-30）：单类型参数泛型 attribute 语法 `[Name<TypeArg>]`；解锁 `[ShouldThrow<E>]`；E0913 验证（type arg 必填 / 类型存在 / 继承 Exception / 仅 ShouldThrow 接受 type arg）；IrGen 写入 `TestEntry.ExpectedThrowTypeIdx` + `TestFlags.ShouldThrow`
-  - **A2**（`extend-runner-shouldthrow` ✅ 2026-04-30）：z42-test-runner 读 TIDX `expected_throw_type` 比对实际抛出（FQ 完整匹配 OR 短名匹配，无 inheritance walk）；dogfood.z42 两个 `[Skip]` 占位替换为 `[ShouldThrow<TestFailure>]` / `[ShouldThrow<SkipSignal>]` —— **z42.test 自检完整闭环**（7 passed / 0 skipped，原 5/2）
-  - **A3**（`extend-runner-shouldthrow-inheritance` ✅ 2026-04-30）：inheritance-aware ShouldThrow 编译期展开方案——C# IrGen 把 `[ShouldThrow<E>]` 的 E + 所有可见派生类短名拼成 `;`-delimited 写入 TIDX；runner split 后任一命中即 Pass。零 TIDX 格式 bump、零运行时类型反射；dogfood 加 `[ShouldThrow<Exception>]` 验证（8/0）
-  - **R3a**（`runner-formats-and-filter` ✅ 2026-04-30）：runner `--format <pretty|tap|json>` + `--filter <SUBSTR>`；默认按 TTY 自动选 pretty/tap；JSON 自定义 schema（可扩字段）；TAP 13；substring 过滤不引 regex 依赖。CI 集成 unblock
-  - **R3c**（`runner-test-changed` ✅ 2026-04-30）：`scripts/test-changed.sh` + `just test-changed` —— git diff 文件 → 目录级映射 → 受影响测试命令集合；支持 `--dry-run` 与 `Z42_TEST_CHANGED_BASE` 环境变量；替换 P2 占位符
-  - **R5**（`rewrite-goldens-with-test-mechanism` minimal + ad-hoc 迁移 ✅ 2026-04-30）：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件 + `just test-stdlib` 入口；13 个 stdlib-bound golden 物理迁回所测库目录
-  - **R2 完整版**（`extend-z42-test-library` ✅ 2026-05-05）：lambda 落地后兑现 z42.test 库三处 TODO —— `Std.Test.TestIO` (captureStdout/Stderr/Both + nested + 异常透传) / `Std.Test.Bencher` (default+custom ctor / iter / Min·Max·Median·Total·Samples / printSummary) / `Std.Test.BenchHelpers.blackBox(object)` / `Assert.Throws(Action)` + `DoesNotThrow` + `EqualApprox`；E0912 完整化（[Benchmark] first-param-is-Bencher）；`Std.IO.ConsoleError`（首次 stderr 写出 API）；6 个新 native（4 testio + 2 bench）；dogfood 25/25
-- 📋 **后续完整版**（详见 [docs/spec/changes/](../spec/changes/)）：
-  - **R3b** （待开 spec）：in-process 执行 + [Setup]/[Teardown] hook 真生效 + Runner [Benchmark] 调度模式（R2 完整版交付 Bencher 类，但 runner 不调度它）+ zpkg-as-input（顺带覆盖跨非 import 包 inheritance 的边角情形 —— A3 编译期 chain 已经覆盖 import 范围；R3b 用 LazyLoader 时自然吸收）
-  - **类型敏感 `Throws<E>`**（待开 spec）：依赖 z42 三个反射限制（`is X` cross-module / generic-E IsInstance / Object.GetType() 跨 Exception 子类）任一修好；R2 完整版以 untyped `Throws(Action)` + `[ShouldThrow<E>]` 测试级注解作为过渡
+### 工程支持 ✅
+
+- `z42.toml` 单包 manifest + workspace（virtual + member + include + policy + 集中产物）
+- `z42c new/init/build/check/run/clean/fmt/disasm/explain/info/metadata/tree/lint-manifest`
+- source_hash 增量编译（命中跳过 parse + typecheck + irgen）
+- 详见 [`compiler/project.md`](design/compiler/project.md) + [`compiler/compilation.md`](design/compiler/compilation.md)
+
+### 测试体系 ✅（部分）
+
+- ✅ Golden test 全 L1 覆盖（114 vm_core + 20 stdlib-bound = 134；按 dotnet/runtime-style 重组）
+- ✅ Interp + JIT 双模式跑同一测试集结果一致
+- ✅ CI 门禁：`dotnet test` + `test-vm.sh` + `test-stdlib.sh` + `test-cross-zpkg.sh` 全绿
+- ✅ R 系列基础（R1 TIDX section / R2 z42.test 库 + Bencher / R3 z42-test-runner subprocess + format/filter / R3c test-changed / R4 attribute 校验 + 泛型 attribute / R5 stdlib 各库本地测试）
+- 📋 R3b：in-process runner + Setup/Teardown hook 真生效 + Bench 调度模式 + zpkg-as-input
+
+详见 [`testing/testing.md`](design/testing/testing.md)。
 
 ### VM 质量
-- 类型元数据：type info、字段布局、方法表（为 L3 泛型/接口分发做准备）
-- 调试符号：行号映射、局部变量名（支持基础调试体验）
-- Interpreter 基础优化：指令 dispatch 效率、对象分配路径
-- JIT 基础优化：热点函数识别、简单内联、常量折叠
-- **MagrGC 子系统（Phase 1 / 1.5 / 3a-3f / 3-OOM ✅ 2026-04-29 主功能完整）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` / heap registry / Trial-deletion 环回收器（Bacon-Rajan）修复环引用泄漏 + Drop-time finalizer（GcAllocation wrapper）+ 内存压力自动 collect + external root scanner（VmContext static_fields）+ interp/JIT 栈扫描 + strict OOM 真拒绝模式 + `Std.GC.*` 脚本暴露。后续可选迭代（性能 / 嵌入式工具 / MMTk 集成等）规划见 `docs/design/runtime/vm-architecture.md` "GC 后续迭代规划" 段。
-- **GC stdlib 重组（`reorganize-gc-stdlib` ✅ 2026-05-07）**：`z42.core/src/GC/` 子目录上线（`GC.z42` + `WeakHandle.z42` 搬入 + 新增 `GCHandle.z42` / `HeapStats.z42`）。`Std.GCHandle` 是 1 字段 struct（`_slot: long`）+ corelib `HandleTable` slab + free list backing，对齐 C# `System.Runtime.InteropServices.GCHandle`：拷贝句柄共享同一 slot、Free 后所有 alias 同步失效；支持 `Weak` / `Strong` 双模 + 显式 `Free()`，`Strong = Rc::clone anchor`、`Weak = Rc::downgrade`、atomic 值 Strong 直接 clone Value、atomic 值 Weak 返回 `slot=0`。`Std.HeapStats` 7 long 字段全暴露 Rust `HeapStats`（`MaxBytes = -1` sentinel 表示 unlimited）+ `GC.GetStats()` 静态方法。Phase 3 后增补 `Pinned` / `WeakTrackResurrection`。详见 `docs/design/runtime/gc-handle.md`。
 
-### Native Interop / 三层 ABI
+- ✅ Type metadata（type info / 字段布局 / 方法表）
+- 📋 调试符号：行号映射、局部变量名（split-debug-symbols 系列进行中）
+- 🚧 Interpreter 优化（指令 dispatch / 对象分配路径）
+- 🚧 JIT 优化（热点函数识别 / 简单内联 / 常量折叠）
+- ✅ MagrGC 子系统（trait + Bacon-Rajan 环回收 + Drop-time finalizer + external root scanner + interp/JIT 栈扫描 + strict OOM）
+- ✅ GC stdlib 重组（`Std.GC` / `WeakHandle` / `GCHandle` / `HeapStats` 暴露脚本端）
 
-详见 [docs/design/language/interop.md](design/language/interop.md)。
+详见 [`runtime/vm-architecture.md`](design/runtime/vm-architecture.md) + [`runtime/gc-handle.md`](design/runtime/gc-handle.md)。
+
+### Native Interop / 三层 ABI ✅
+
+C1 接口骨架 → C2 Tier 1 C ABI runtime → C3 Tier 2 ergonomic Rust API → C4-C8 pinned/byte-buffer/CStr marshal → C9 类级 native shorthand → C10 Array<u8> pin → C11a-e import-from 语法 + manifest reader + opaque-handle whitelist。
+
+后续未排：C11c (Path B2 脚本字段 + VM `z42_obj_*` ABI) / C11d (Path C `[Repr(C)]`) / C11f (c_char return ownership / Array/Option / 定长数组) / `extern class T` / `CallNativeVtable` runtime + IR codegen / JIT emit native opcodes。
+
+详见 [`language/interop.md`](design/language/interop.md)。
+
+### Embedding / Hosting API ✅（H0-H3）
+
+H0 设计 → H1 C ABI scaffold（initialize/shutdown/last_error）→ H2 hello-world 全链路（load_zbc + resolve_entry + invoke + corelib + import_namespaces + stdout sink + Tier 2 `z42-host` crate + `examples/hello_rust`）→ H3 错误路径覆盖。
 
 | Spec | 内容 | 状态 |
 |------|------|------|
-| **C1**（`design-interop-interfaces` ✅ 2026-04-29）| 接口骨架一次锁定：C 头文件 `include/z42_abi.h` + 3 个 Rust crate（`z42-abi` / `z42-rs` / `z42-macros`）+ JSON Schema 2020-12 manifest + 4 个新 IR opcode（`call.native` / `call.native.vt` / `pin` / `unpin`）+ 错误码 Z0905–Z0910 占位。无运行时行为（VM 遇 trap，macro 报 `compile_error!`）。 | ✅ |
-| **C2**（`impl-tier1-c-abi` ✅ 2026-04-29）| Tier 1 C ABI 运行时：`VmContext.native_types` registry + libffi cif 缓存 + `Z42Value` marshal（blittable 子集）+ `dlopen` loader + thread-local `CURRENT_VM` + `Instruction::CallNative` interp dispatch（取代 C1 trap）+ Z0905/Z0906/Z0910 抛出点 + `numz42-c` PoC（Counter 类型 alloc/inc/get end-to-end）。`z42_invoke` / reverse-call 留给 C5。 | ✅ |
-| **C3**（`impl-tier2-rust-macros` ✅ 2026-04-29）| Tier 2 ergonomic Rust API：`#[z42::methods(module=, name=)]` proc macro 一次 emit descriptor + 方法表 + 所有 extern "C" shim + Z42Type impl；`module!` 生成 `<module>_register()` 入口；signature 解析 + libffi cif 自动构造（复用 C2 路径）+ panic catch_unwind 兜底（`z42_set_panic_message` Z0905 桥）；trybuild 4 个诊断测试。`numz42-rs` 内联 PoC 与 `numz42-c` 端到端等价（alloc → inc×3 → get → 3）。`#[derive(Z42Type)]` / `#[z42::trait_impl]` 仍 stub，与 source generator (C5) 一并设计 | ✅ |
-| **C4**（`impl-pinned-block` runtime ✅ 2026-04-29）| Pin/Unpin VM runtime：`Value::PinnedView { ptr, len, kind }` + `PinSourceKind`；`PinPtr` 从 `Value::Str` 抽 ptr+len 构造 view（`Array<u8>` 等字节缓冲类型留给后续 spec）；`UnpinPtr` RC 后端 no-op；`FieldGet` 加 PinnedView.ptr/.len 投影；marshal::value_to_z42 接 PinnedView 投 *const u8 / usize；Z42_VALUE_TAG_PINNED_VIEW=8 钉死。**用户代码 `pinned` 关键字 / 语法** 留给 C5 与 `[Native]` / `import T from "lib"` 一并落地（避免 C# 编译器 churn 两次）。Z0908 已启用 3 条抛出条件。 | ✅ |
-| **C5**（`impl-pinned-syntax` ✅ 2026-04-29）| z42 用户代码 `pinned p = s { ... }` syntax：lexer (Pinned keyword) + AST (PinnedStmt) + Parser + TypeChecker（source 类型 / 控制流 / PinnedView 字段）+ IR Codegen（PinPtr/Body/UnpinPtr）+ IrVerifier 接 4 个 native opcode + E0908a/b 错误码。其他 user-facing FFI 语法（`[Native(lib=,entry=)]` extended attribute / `extern class T { ... }` / `import T from "lib"` / `.z42abi` manifest reader / `CallNativeVtable` runtime）**全部留给后续独立 spec**，避免一次改动横跨 C# 编译器太多模块。 | ✅ |
-| **C6**（`extend-native-attribute` ✅ 2026-04-29）| 扩展 `[Native]` attribute 接受新形式 `[Native(lib=, type=, entry=)]`；解析为 `Tier1NativeBinding`；TypeChecker 接受新形式（互斥于 legacy `[Native("__name")]`）；IR Codegen 在 stub 中 emit `CallNativeInstr` 而非 `BuiltinInstr`。**z42 用户代码现在能直接调用 C2 注册的 native 函数**——只缺 test harness 在 zbc 启动前预注册 numz42-c（独立 spec）即可端到端运行。E0907 NativeAttributeMalformed 已启用。 | ✅ |
-| **C7**（e2e harness ✅ 2026-04-29）| Rust 集成测试加载真实 .z42 编译产物 + 预注册 numz42-c + 跑端到端，闭环 C2→C6；build.rs 自动编译 fixture .z42 → OUT_DIR/.zbc | ✅ |
-| **C8**（`marshal-str-to-cstr` ✅ 2026-04-29）| `Value::Str` 直接 marshal 到 `*const c_char`：`marshal::Arena` 承载临时 CString；`(Value::Str, SigType::CStr/Ptr)` 分支构造 NUL-terminated 借出；CallNative dispatch 改造接 arena；interior NUL 报 Z0908；numz42-c 加 strlen + e2e 验证 `strlen("hello world") == 11`。z42 用户代码现在可以直接传 string 到 native 函数无需 pinned 块 | ✅ |
-| **C9**（`class-level-native-shorthand` ✅ 2026-04-29）| 类级 `[Native(lib=, type=)]` 默认值：`Tier1NativeBinding` 字段改 nullable 承载部分信息；`ClassDecl` 加 `ClassNativeDefaults` 字段；parser 接受 partial 形式（lib/type/entry 任意子集）；TypeChecker 把方法级 binding 与类级 defaults 拼接，缺 fields 报 E0907；IrGen `EmitNativeStub` 接 stitched binding emit `CallNativeInstr`。**用户写非平凡 native 库不再需要每个方法重复 lib + type**。E0907 抛出条件扩展。 | ✅ |
-| **C10**（`byte-buffer-pin` ✅ 2026-04-29）| Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 源扫元素验证 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。numz42-c 加 `counter_buflen(*const u8, u64) -> i64`；e2e 测试 z42 byte[] → CallNative buflen → 长度正确。**z42 二进制数据可直接进 native FFI**（文件 IO / 密码学 / 网络协议 unblocked）。Z0908(e) 抛出。 | ✅ |
-| **C11a**（`manifest-reader-import` ✅ 2026-04-30）| Phase1 关键字 `import`（`from` contextual） + `import IDENT from "<lib>";` 顶层语法 → AST `NativeTypeImport` 收集到 `CompilationUnit.NativeImports`；`Z42.Project.NativeManifest.Read` 读取 `.z42abi` JSON（System.Text.Json，`abi_version == 1` + 必需字段轻量校验），失败抛 `NativeManifestException`；E0909 ManifestParseError 启用。**编译器消费 manifest 数据通路就位；尚未合成 ClassDecl（留给 C11b）**。 | ✅ |
-| **C11b**（`synthesize-native-class` ✅ 2026-04-30，Path B1）| `NativeImportSynthesizer` 编译期 pass：`import T from "lib";` → 找 manifest → 合成 `ClassDecl`（`IsSealed=true`, `Visibility=Internal`, `Fields=[]`, `ClassNativeDefaults` 复用 C9 stitching）注入 `cu.Classes`；`ManifestSignatureParser` 白名单（primitives + `Self` + `*mut/const Self`）；`INativeManifestLocator` 注入式（默认 `<sourceDir>/<lib>.z42abi` + `Z42_NATIVE_LIBS_PATH`）；E0916 启用。**用户 `import T from "lib";` 即得脚本可见类，TypeChecker / IrGen / VM 走既有路径，零新 ABI**。Path B2 (VM-owned 字段)、C (`[Repr(C)]` 脚本端布局) 留 C11c/C11d。 | ✅ |
-| **C11e**（`extend-signature-whitelist` ✅ 2026-05-06）| 把 `ManifestSignatureParser` 白名单从 demo 级扩到能包真实 opaque-handle C 库：(a) `*const/*mut c_char` 在 param 位置 → `string`（走 C8 既有 arena marshal，零新 IR）；(b) `*const/*mut <Other>` 中 Other 是当前 CU 已 import 的 native type 名 → `NamedType("Other")`（native 类间互相引用方法签名）。`NativeImportSynthesizer.Run` 收集 `knownNativeTypes` 下传 sig parser；E0916 分两类（**unknown-type** 含 ``import Foo from "...";`` 提示 / **unsupported-shape** 列已 import types）；c_char return 留 C11f。**`printf` / `regex_t` / `sqlite3` 等 opaque-handle 库现在能 import**。 | ✅ |
-| **C11+**（后续 spec，未排）| C11c (Path B2: 脚本字段 + VM `z42_obj_*` ABI) / C11d (Path C: 脚本 `[Repr(C)]` 映射) / C11f (c_char return ownership 协议 + Array/Option/定长数组) / extern class T / CallNativeVtable runtime + IR codegen / JIT emit native opcodes | 📋 |
+| **H0**（add-embedding-api design ✅ 2026-05-10）| docs/spec/changes 四件套；三层 ABI；多实例 / hot-reload / GC handle / async / Tier 3 facade 进 Deferred | ✅ |
+| **H1-H3** | Tier 1 / Tier 2 + 错误路径全覆盖 | ✅ |
+| **H4** | iOS Swift facade / Android JNI bridge | 📋 |
+| **H5** | `z42-test-runner` 重构基于 `z42-host` | 📋 |
 
-### Embedding / Hosting API（宿主嵌入）
-
-详见 [docs/design/runtime/embedding.md](design/runtime/embedding.md)。本节解决"宿主 app → 启动 VM → 加载 .zbc → 调用入口 → 关闭"，与 interop（native 注册类型）互补。
-
-| Spec / 阶段 | 内容 | 状态 |
-|------------|------|------|
-| **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/runtime/embedding.md](design/runtime/embedding.md) + docs/spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
-| **H1**（`add-embedding-api` C ABI scaffold ✅ 2026-05-10）| `src/runtime/include/z42_host.h` + `src/runtime/src/host/` 单实例 state（initialize / shutdown / last_error）+ build matrix（default / interp-only / ios / android）全绿 + 12 个 unit test | ✅ |
-| **H2**（`add-embedding-api` hello-world ✅ 2026-05-10）| `load_zbc` / `resolve_entry` / `invoke` 全链路（marshal: null + i64/f64/bool）+ corelib + 用户 `import_namespaces` 自动 eager merge + stdout sink 接 corelib io（thread-local active flag + RwLock host sink）+ Tier 2 Rust crate `z42-host` + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码（desktop staticlib build 留 H4） | ✅ |
-| **H3**（`add-embedding-api` 错误路径 ✅ 2026-05-10）| 5 类错误路径测试覆盖（BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）+ `classify_invoke_error` 对齐 `format_uncaught` 的 `"uncaught exception"` marker + `invoke_impl` 加 `args.len() != param_count` 校验。string `Z42Value` marshal 推迟（H4+ 与移动平台 string 协议一并落地） | ✅ |
-| **H4**（归 P4.3 / P4.4） | iOS Swift facade / Android JNI bridge 直连 `z42_host.h`，跑 hello-world | 📋 |
-| **H5**（归 runner spec） | `z42-test-runner` library 内部基于 `z42-host` crate 重构，统一启动路径 | 📋 |
+详见 [`runtime/embedding.md`](design/runtime/embedding.md)。
 
 ### 标准库（基础）
-- `z42.core`：基础类型协议（ToString、Equals、GetHashCode）
-- `z42.io`：文件读写、标准输入输出
-- `z42.core/Collections/`：`List<T>`、`Dictionary<K,V>` 纯脚本实现（L3-G4h step3 ✅ 完成；2026-04-25 W1 从 `z42.collections` 上提到 `z42.core` 包子目录，对齐 C# BCL）
-- `z42.collections`：次级集合 `Queue<T>` / `Stack<T>` / `LinkedList<T>`（未来 `SortedDictionary` / `PriorityQueue`）
-- `z42.core` Wave 2（2026-04-25）：`Exception` 基类 + 9 个标准子类（`ArgumentException` 等）+ `IDisposable` / `IEnumerable<T>` / `IEnumerator<T>` 接口契约；详见 `docs/design/language/exceptions.md`、`docs/design/language/iteration.md`
-- `z42.core` Wave 3（2026-04-26）：`IComparer<T>` / `IEqualityComparer<T>` / `IFormattable` 接口契约（Script-First 纯定义，无 implementer）
-- `z42.string`：字符串操作完整实现
 
-> **后续扩展计划**（time / threading / net / json / crypto 等 P0–P3 分级清单）：
-> 见 [docs/design/stdlib/roadmap.md](design/stdlib/roadmap.md)。
+- ✅ `z42.core`：Object / 基本类型 / Type / Convert / Assert / Exception 树（9 标准子类）/ `IDisposable` / `IEnumerable<T>` / `IEnumerator<T>` / `IComparable<T>` / `IEquatable<T>` / `IComparer<T>` / `IEqualityComparer<T>` / `IFormattable` / `INumber<T>`（Wave 1-3）
+- ✅ `z42.core/Collections/`：`List<T>` / `Dictionary<K,V>` 纯脚本（pseudo-class 已替换）
+- ✅ `z42.core/Delegates/`：Action / Func / Predicate（0-4 arity，详见 [delegates-events.md](design/language/delegates-events.md)）
+- ✅ `z42.core/GC/`：GC / WeakHandle / GCHandle / HeapStats
+- ✅ `z42.collections`：Stack / Queue / LinkedList
+- ✅ `z42.io`：Console / File / Path / Environment（host FFI L2 例外）
+- ✅ `z42.math`：libm 绑定 + 常量
+- ✅ `z42.text`：StringBuilder（纯脚本）
+- ✅ `z42.test`：z42 测试框架（Assert / TestIO / Bencher / TestFailure / SkipSignal）
 
-### 已完成的关键 fix（按时间）
-
-| 日期 | 名称 | 影响 |
-|------|------|------|
-| 2026-05-02 | `fix-class-field-default-init` | 实例字段 `int n;` / `int n = 5;` / 继承字段 init 现在按声明类型正确初始化（之前一律 Null）。三层（TypeChecker + Codegen + VM ObjNew）协同；引入 `metadata::default_value_for` + `FieldSlot.type_tag`。详见 archive |
-| 2026-05-02 | `impl-closure-l3-monomorphize` | 闭包单态化（alias 子集）：`var f = Helper; f();` 由 CallIndirect → 直接 Call；alias 链传播；带捕获 closure / 函数参数保守 fallback CallIndirect。前置补齐：BoundIdent → LoadFn 路径覆盖顶层函数 / 静态方法 ident 解析。详见 closure.md §6.4.1 |
-| 2026-05-02 | `impl-closure-l3-escape-stack` | 闭包 env 栈分配（档 A 子集）：仅作 callee 立即调用的 capturing closure 由 heap MkClos → frame-local arena (`Value::StackClosure`)。新增 zbc MkClos 1-byte stack_alloc flag、`InterpFrame/JitFrame.env_arena`、`VmContext.env_arena_stack` GC root、`ClosureEscapeAnalyzer` Bound pass。保守优先：任何 escape 风险 fallback heap。详见 closure.md §6.0.1 |
-| 2026-05-02 | `add-delegate-type` (D1a) | 引入 `delegate` 关键字：顶层 + 嵌套（class body 内）+ 泛型 `<T,R>` + where 约束。delegate 类型 = `Z42FuncType` 复用，无新 IR / VM 路径。`SymbolTable.Delegates` + `DelegateInfo` 注册表；同名多 arity 用 `Foo$N` key。`delegate*` unmanaged 语法预留报错。详见 delegates-events.md |
-| 2026-05-02 | `add-method-group-conversion` (D1b) | 方法组转换 I12 缓存：`IntFn f = Helper;` 由 `LoadFn`（每次新 `Value::FuncRef`）→ `LoadFnCached`（module-level cache slot）。新增 IR opcode `0x58` + zbc `FRCS` section + `VmContext.func_ref_slots: Vec<Value>` GC root。同 fn name 跨多 site 共享 slot；merge_modules 按 cumulative slot offset 重映射。详见 delegates-events.md D6 / I12 改进项 |
-| 2026-05-02 | `add-generic-delegates` (D1c) | stdlib `Std.Delegates` 真实类型（0-4 arity Action / Func + Predicate<T>）+ 移除 SymbolCollector 硬编码 desugar。新增 ExportedDelegateDef + TSIG 跨 zpkg 导出 + ImportedSymbols.Delegates + 自我导入 silent override。3 件套统一通过 stdlib + delegate 注册表解析；Predicate 首次可用 |
-| 2026-05-02 | `add-multicast-action` (D2a) | stdlib `Std.MulticastAction<T>` 基础多播：Subscribe / Unsubscribe (token-based) / Invoke / COW snapshot / fail-fast 异常路径 + `IDisposable Disposable` token。零 IR/VM 变更（普通 generic class）。配套：ImportedSymbolLoader Phase 1.5 提前加载 delegates 让 method 类型 resolution 看到 `Action<T>`；ExportedTypeExtractor Z42FuncType 序列化为 `Action<...>`/`Func<...>` 保持跨 zpkg 完整签名；SymbolTable.ExtractIntraSymbols 也 export delegates 跨 CU。D2b/c/d 待实施 |
-| 2026-05-03 | `fix-nested-generic-parsing` | 嵌套 generic 解析（`Foo<Bar<T>>` 等）：TypeParser 内部 `ParseInternal` 加 `ExtraClose` flag 线程穿透处理 `>>` (GtGt) token；5 处 depth-scan lookahead helper（`SkipGenericParams` / `IsFieldDecl` / `IsLocalFunctionDecl` / 索引器扫描 / 局部变量扫描）加 `case GtGt: depth -= 2`。Lexer 不动（保持 immutable cursor 设计）。详见 compiler-architecture.md "Pratt 表达式解析" §嵌套 generic |
-| 2026-05-03 | `fix-z42type-structural-equality` | Z42Type record 结构 equality：`Z42InstantiatedType` / `Z42InterfaceType` / `Z42FuncType` 三个 record 加 `Equals` + `GetHashCode` override，列表字段元素级递归。`Z42Type.ListEquals<T>` 静态助手统一逻辑。修复 D2b "cannot assign ISubscription<(T)->void> to ISubscription<(T)->void>" 等 interface type 赋值误判；==/HashSet 现在按结构相等。`IsAssignableTo` workaround 分支保留作防御 |
-| 2026-05-03 | `fix-generic-member-substitution` | INVESTIGATED — 探索发现原假定 substitution propagation bug 实为 Bug 1 (parse) + Bug 3 (equality) 的下游症状。Spec 1+2 落地后 7 个覆盖测试（含 D2b 原报错精确模式 `Slot<Action<T>>[].sub.IsAlive()`）全通过。无 production 改动；保留 `GenericMemberAccessTests.cs` 作为回归防御。三个原假定 bug 实为两个 |
-| 2026-05-03 | `add-isubscription-wrapper` (D2b) | stdlib `Std.ISubscription<TD>` 接口 + `ModeFlags` / `StrongRef` / `OnceRef` / `CompositeRef` wrapper（CompositeRef 带 mode flags 位运算 once / weak-占位；融合后只分配一个实例）。`MulticastAction<T>` 升级双 vec：strong fast path（裸 `Action<T>` 零 wrapper 开销）+ advanced slow path（`ISubscription<Action<T>>[]` 接口数组持有 wrapper，IsAlive/Get/OnInvoked dispatch）。`SubscribeAdvanced` 重载 + dispose token `MulticastSubscription<T>` 双通道路由。前置 spec 三件套（`fix-nested-generic-parsing` / `fix-z42type-structural-equality` / `fix-generic-member-substitution` INVESTIGATED）解锁。WeakRef + `event` keyword（D2c）+ MulticastFunc / MulticastException（D2d）独立批次 |
-| 2026-05-03 | `fix-delegate-reference-equality` (D-5) | corelib `__delegate_eq(a, b) -> bool` builtin（mirror `__obj_ref_eq`）：三个 Value 变体身份语义比较 —— FuncRef 名相等 / Closure 名 + env GcRef::ptr_eq / StackClosure 名 + env_idx 相等；跨变体不等，非 delegate 值返回 false 不报错。stdlib 新增静态类 `Std.DelegateOps.ReferenceEquals(a, b)` 暴露 API（不放 Object —— SymbolTable.cs:111 跳过 Object 跨 CU 导出）。`MulticastAction<T>.Unsubscribe(Action<T> h)` linear scan strong[] 用 ReferenceEquals 比较，**不 break** —— 同 handler 多次 Subscribe 一次 Unsubscribe 全清。Rust 单元 +11 / golden multicast_unsubscribe +1×2 modes。**解锁 D2c `-=` desugar** |
-| 2026-05-03 | `add-event-keyword-multicast` (D2c-多播) | `event` 关键字（lexer + TokenKind + Keywords + AST FieldDecl.IsEvent）+ parser 合成 add_X / remove_X 同 `SynthesizeClassAutoProp` 模式（`MulticastAction<T>` 字段 auto-init `new MulticastAction<T>()`，加 `add_X(Action<T>): IDisposable` / `remove_X(Action<T>)` 调 Subscribe / Unsubscribe）；`Z42ClassType.EventFieldNames` 集合元数据；`TypeChecker.BindAssign` 入口检测 LHS event field 时把 `+=`/`-=` desugar 到 `add_X`/`remove_X` 调用。单播 event 报"not yet supported"（Spec 2b），严格 access control 留 2b。`EventKeywordTests` 5 个 + `event_keyword_multicast` golden +1×2 modes |
-| 2026-05-03 | `add-interface-event-default` (D2c interface I10) | interface body 接受 `event MulticastAction<T> X;` 声明，parser 合成 2 个 instance abstract `MethodSignature`（add_X(Action<T>): IDisposable + remove_X(Action<T>): void）—— 与 class 端 SynthesizeClassEvent 对偶。class 实现 interface 同名 event 即合成匹配方法体满足契约。`TypeChecker.BindAssign` desugar 扩展 `Z42InterfaceType` receiver path（用 add_X 方法存在判断 event 声明）。`EventKeywordTests` +2 + `interface_event` golden +1×2 modes |
-| 2026-05-03 | `add-multicast-func-predicate` (D2d-1) | NEW stdlib `Std.MulticastFunc<T,R>` + `Std.MulticastPredicate<T>` 双 vec strong/advanced 路径（与 MulticastAction 对称，191/265 行 z42）。MulticastFunc.Invoke 返回 `R[]`；MulticastPredicate.Invoke 返回 `bool[]`，加 `All` / `Any` 短路求值（K10 LINQ 习惯）。Parser `SynthesizeClassEvent` / `SynthesizeInterfaceEvent` 类型校验放宽接受三种 multicast 类型 + 按 multicast 类名映射 handler 类型（Action/Func/Predicate）—— `MulticastTypeNames` HashSet + `HandlerTypeName` switch。EventKeywordTests +3 + `multicast_func_predicate` golden +1×2 modes。IncrementalBuildIntegrationTests 39 → 41。`continueOnException=true` 异常聚合留 D2d-2 |
-| 2026-05-04 | `fix-default-param-cross-cu` (D-9) | 跨 CU 方法调用默认参数自动填充修复。`IEmitterContext.TryGetMethodSignature` + IrGen `_funcSignatures` 注册（覆盖 SemanticModel.Classes 含 imported + Funcs，双 key local + imported namespace）；`FunctionEmitterCalls.FillDefaults` 双层 fallback：FuncParams（local CU bound default）→ funcSignatures（imported type-default const，bool=false / int=0 / ref=null 等）；DepIndex instance path 增加 FillDefaults 调用；vcall path 当 ReceiverClass 已知时直接查 funcSignatures 而非全 _entries 遍历（避歧义）。`MulticastAction/Func/Predicate.Invoke` 还原为 default param 单签名（D-9 临时拆 overload workaround 退回）。完整用户 default value 跨 CU 退化为 type-default —— TSIG 当前不导出 default value 表达式，留 follow-up |
-| 2026-05-04 | `add-event-keyword-singlecast` (D-7) | 单播 event 关键字解锁 —— `event Action<T>` / `event Func<T,R>` / `event Predicate<T>` 字段类型支持。Parser `SynthesizeClassEvent` 加单播路径分支：字段 `OptionType wrap`（nullable）+ init null + `add_<X>(handler): void` 抛 `InvalidOperationException("single-cast event already bound")` 当字段非 null + `remove_<X>(handler)` 用 `DelegateOps.ReferenceEquals` ref-eq 清空。`SynthesizeInterfaceEvent` 同款放宽（add 单播返回 void、多播返回 IDisposable）。`SinglecastTypeNames` HashSet 双 path 分支（`Action`/`Func`/`Predicate` vs `Multicast{Action|Func|Predicate}`）。EventKeywordTests +4 + `event_keyword_singlecast` golden +1×2 modes。`add_<X>` IDisposable 返回值 + 严格 access control 留独立 follow-up |
-| 2026-05-04 | `expose-weak-ref-builtin` (D-1a) | corelib `__obj_make_weak(target)` + `__obj_upgrade_weak(handle)` 暴露 GC weak ref API（mirror `__obj_ref_eq` lenient null 处理）。`NativeData::WeakRef(WeakRef)` 新 variant 在 ScriptObject 内携带 GC 弱引用句柄。stdlib NEW `Std.WeakHandle` class（无字段，仅 native data；2 个 static extern 工厂方法）。Object/Array 弱化生效，原子值（int/str/FuncRef/Closure 等）返回 null。`MulticastException<R>` 风格 `Std.WeakRef<TD>` ISubscription wrapper 留 D-1b follow-up。Rust 单元 +5 / golden weak_ref_basic +1×2 modes。IncrementalBuildIntegrationTests 43 → 44 |
-| 2026-05-04 | `add-multicast-exception-aggregate` (D2d-2-Action) | NEW stdlib `Std.AggregateException` 基类（继承 Exception，加 InnerExceptions 数组）+ `Std.MulticastException`（继承 AggregateException，加 Failures + FailureIndices 并行数组 + TotalHandlers + SuccessCount()）。`MulticastAction.Invoke` 拆 1-arg/2-arg overload（**z42 default param bool 读取报 Null bug 的 workaround** —— 同时给 MulticastFunc/Predicate.Invoke 同款拆分维持 method dispatch 一致）；2-arg `continueOnException=true` 路径 try/catch 每 handler 累积 (idx, exception) 对，最终抛 MulticastException。`multicast_exception_aggregate` golden +1×2 modes。IncrementalBuildIntegrationTests 41 → 43。Func/Predicate 聚合 + MulticastException<R> 留 D-8b follow-up |
-| 2026-05-04 | `fix-test-vm-stale-artifacts` | 测试入口流程修复：`./scripts/test-vm.sh` 默认自动调用 `regen-golden-tests.sh`（间接 `build-stdlib.sh`）确保 stdlib zpkg 同步到 `artifacts/z42/libs/` + 所有 golden `.zbc` 是最新编译器输出，杜绝 stale artifact 导致的"假绿/假红"。`--no-rebuild` flag 给反复迭代场景跳过；`regen-golden-tests.sh` 也支持 `--no-stdlib`。`docs/deferred-features.md` → `docs/deferred.md` 重命名 + D-10 条目移除（实际由 D-9 + 本 fix 联合修复）|
-| 2026-05-04 | `add-nested-delegate-dotted-path` (D-6) | 嵌套 delegate 外部 dotted-path 引用解锁（class 内 `delegate void OnClick(...)` 可在外部以 `Btn.OnClick` 类型表达式引用）。NEW AST `MemberType(Left, Right)` + TypeParser 在 NamedType / GenericType 后 lookahead `.Ident` 链；`SkipTypeExprForLookahead` / `IsTypeAnnotatedVarDecl` / `IsFieldDecl` 三处 lookahead 加 dotted-path 跳过；`SymbolTable.ResolveMemberType` 把 `Outer.Inner` 拍平为 qualified key 查 Delegates（D1a 早已注册，仅 lookup 缺路径）。`NestedDelegateAccessTests` +5 + `nested_delegate_dotted` golden +1×2 modes。v1 仅 1 层嵌套 + 非泛型；深嵌套 / 嵌套泛型 parser 接受但 lookup Unknown 报错 |
-| 2026-05-04 | `add-singlecast-event-idisposable-token` (D-7-residual) | 单播 event 完结：`add_X` 由 void 升级为 `IDisposable`（与多播对称）+ 新 diagnostic E0414 严格 access control（外部对 event field 任意 read / invoke / 直接 assign 都禁止，仅 `+=`/`-=` 走 desugar）。NEW stdlib `Std.Disposable : IDisposable` + `Disposable.From(Action)` 工厂（实施期间发现原 Decision 1 选项 B 嵌套 token 类依赖 z42 未实现的嵌套 class 基础设施，切到选项 A）。单播 `add_X` body 末尾 `return Disposable.From(() => this.remove_X(h))` 通过 lambda 捕获 this+h。BindMemberExpr 在 Z42ClassType / Z42InstantiatedType 字段路径加 `!insideClass && EventFieldNames.Contains(...)` 检查。`EventAccessControlTests` +7 + `event_singlecast_idisposable` golden +1×2 modes。stdlib 文件数 44→45 |
-| 2026-05-04 | `add-weak-ref-subscription-wrapper` (D-1b) | 弱引用订阅完结。实施期间含两层 stop-and-ask：**Phase 1** 发现 z42 instance method group conversion `obj.Method` 完全未实现（D1b method group 只覆盖 free fn）—— 需新 compiler 路径：`EmitBoundMember` 检测 BoundMember.Type 为 Z42FuncType 且 receiver 是 class 时 emit thunk function `__mg_thunk_<Class>_<Method>$<arity>__`（per-class+method 缓存）+ `MkClos([recv])`，thunk 内部 vcall env[0].method(args)。**Phase 2** 发现 WeakRef 不能强持原 handler（Closure 反向强持 env=[recv] → receiver 永远可达）—— 需新增 corelib builtins `__delegate_target` / `__delegate_fn_name` / `__make_closure`，把 handler 拆解为 (WeakHandle, fnName)，Get 时通过 `MakeClosure(fnName, [Upgrade(weakHandle)])` 重建 Closure。**Phase 3** stdlib NEW `Std.WeakRef<TD>` + 重写 CompositeRef 使 Mode.Weak 走同模式（之前 placeholder noop）。Std.DelegateOps 加 GetTarget / GetFnName / MakeClosure 暴露三个 builtin。10 个 Rust builtin 单元测试 + 3 个 golden（`weak_subscription_lapsed` / `weak_subscription_alive` / `composite_ref_weak_mode`）+1×2 modes。256 / 988 GREEN |
-| 2026-05-09 | `tokenize-ir-and-zbc-bump` (Phase 3 of method-token series) | zbc 1.0 wire format + IR 字段 token 化 + type_registry Vec-by-TypeId（吸收原 Phase 2.D）。Token 编码：本地 ref = `module.Functions/Classes` 索引；cross-zpkg ref = `IMPORT_BASE (0x8000_0000) + STRS pool idx`；UNRESOLVED = `0xFFFF_FFFF`。**实施期 redesign**：原方案 (per-module IMPT + sort 协调 + Rust IR enum 改 newtype) 在 packed zpkg 跨模块 token 解析时失败（保留为 `wip/phase3-s3-broken` commit `833193a`）。重设计简化：cross-zpkg 复用 STRS 池避免 IMPT 改造，源序分配 token id 避免 sort 协调，Rust IR enum 字段保持 String 仅在 wire 边界做 token 化。三步骤独立 GREEN（S3a Rust 双版本读 → S3b C# 切 v1.0 + stdlib regen → S3c 清理 v0.x）。stdlib zpkg minor bump 0.1→0.2 信号 v1.0 inner zbc。Reproducibility tests: 双编译同源 → byte-identical zbc 单测 3 case 入库。BUILTINS / VCall / Field*.field_name / native interop 字段不 tokenize（非 IR-field-tokenizable，沿用 STRS 池 idx）|
+📋 缺失包（按 P0–P3 排期）：见 [`stdlib/roadmap.md`](design/stdlib/roadmap.md)。
 
 ### 代码质量 Backlog（按触发条件执行）
 
-> 来源：2026-04-14 代码审查。批次 1–4 已完成，以下为剩余低优先级项。
+> 已完成批次 1–4 见 spec/archive/；以下为低优先级未完成项。
 
 | 项目 | 触发条件 | 说明 |
 |------|---------|------|
-| A6: Value `Rc<RefCell>` → `Arc<Mutex>` 或对象池 | L3 async/线程模型设计时 | `Rc` 是 `!Send`，阻塞跨线程传值；需与并发模型一并设计。**注**：MagrGC Phase 1 已收口分配接口（2026-04-29），Phase 3 切换到 `GcRef<T>` 时一并解决 Send 问题 |
-| A10: `PackageCompiler` → 可注入 `BuildPipeline` | 需要 mock 文件系统做编译器单元测试时 | 当前 static class 可用，低优先级 |
-| `TypeEnv.BuiltinClasses` 动态注入 | L3 泛型设计启动时 | 当前硬编码集合；与泛型一并设计 |
-| `IsReferenceType` 中 List/Dict 硬编码 | L3 泛型设计启动时 | List/Dict 应为 `Z42ClassType`，需泛型类型表示 |
-| switch 穷举检查（exhaustiveness） | enum switch 场景增多时 | switch on enum 不检查是否覆盖所有成员 |
-| 死代码警告 | IDE 集成或用户反馈时 | return 后语句静默丢弃，应发 warning |
-| 隐式窄化转换拒绝 | 数值精度 bug 出现时 | `int x = someLong` 应报错要求显式 cast |
-| `IrInstr` JsonDerivedType 自动注册 | 指令数超过 60 个时 | 当前 54 个注解，可考虑 Source Generator 方案 |
-| `exec_instr.rs` 按类别拆分辅助函数 | 文件超过 450 行时 | 当前 362 行，保持单 match 结构但提取 arm 实现 |
-| Golden Test 改用 `test.toml` 声明类别 | 测试目录结构变复杂时 | 当前路径约定 (`/errors/`, `/run/`) 工作正常 |
+| A6: Value `Rc<RefCell>` → `Arc<Mutex>` 或对象池 | L3 async/线程模型设计时 | `Rc` 是 `!Send`；MagrGC Phase 3 切换 `GcRef<T>` 时一并解决 |
+| A10: `PackageCompiler` → 可注入 `BuildPipeline` | mock 文件系统单元测试时 | 当前 static class 可用，低优先级 |
+| `TypeEnv.BuiltinClasses` 动态注入 | 泛型类型表示扩展时 | 当前硬编码集合 |
+| `IsReferenceType` 中 List/Dict 硬编码 | 同上 | List/Dict 应为 `Z42ClassType` |
+| switch 穷举检查（exhaustiveness） | enum switch 场景增多时 | switch on enum 不检查覆盖 |
+| 死代码警告 | IDE 集成或用户反馈时 | return 后语句静默丢弃 |
+| 隐式窄化转换拒绝 | 数值精度 bug 出现时 | `int x = someLong` 应显式 cast |
+| `IrInstr` JsonDerivedType 自动注册 | 指令数超过 60 个时 | 当前 54 个注解 |
+| `exec_instr.rs` 按类别拆分辅助函数 | 文件超过 450 行时 | 当前 362 行 |
+| Golden Test 改用 `test.toml` 声明类别 | 测试目录结构变复杂时 | 当前路径约定（`/errors/`, `/run/`）够用 |
 
 ---
 
-## L3 — Advanced（高级特性）
+## L3 — Advanced（高级特性）🟡
 
-**目标**：引入 L1 推迟的高级语法，以及 z42 特有的类型系统扩展。L2 全完成后启动。
+**目标**：引入 L1 推迟的高级语法 + z42 特有类型系统扩展。L2 全完成后启动；部分子项已提前落地（泛型 / lambda / delegate）。
 
-### L3-G 泛型实现进度
+### L3-G 泛型 ✅（核心已完成）
 
-| 子阶段 | 内容 | Parser | TypeCheck | IrGen | VM | 状态 |
-|--------|------|:------:|:---------:|:-----:|:--:|:----:|
-| **L3-G1** | 泛型函数 + 泛型类（无约束） | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **L3-G2** | 接口约束（`where T: I + J`） | ✅ | ✅ | — | — | ✅ |
-| **L3-G2.5** | 约束范式补充：基类 ✅ / ctor ✅ / class ✅ / struct ✅ / enum ✅ / notnull 等 | ✅ | 🟡 | ✅ | ✅ | 🟡 |
-| **L3-G3a** | zbc 约束元数据 + VM loader + 加载时校验 | — | — | ✅ | ✅ | ✅ |
-| **L3-G3c** | 关联类型（`type Output; Output=T`）— **决策：跳过，等真正用例驱动**（迭代器 trait / async Future 等）。当前 `where T: I<T>` 自引用约束已覆盖 90% 数值场景；C# 不带关联类型也很成功 | — | — | — | — | ⏸ 延后 |
-| **L3-G3d** | 跨 zpkg TypeChecker 消费约束（TSIG 扩展） | — | ✅ | ✅ | — | ✅ |
-| **L3-G4a** | 泛型类实例化类型替换（call-site T → 具体类型） | — | ✅ | — | — | ✅ |
-| **L3-G4b** | Primitive-as-struct: stdlib `struct int : IComparable<int>` 驱动；删除 `PrimitiveImplementsInterface` / `primitive_method_builtin` 硬编码 | ✅ | ✅ | — | ✅ | ✅ |
-| **L3-Impl1** | extern impl Change 1：`impl Trait for Type { ... }` 块（body 方法；同 CU 合并）| ✅ | ✅ | ✅ | ✅ | ✅ |
-| **L3-Impl2** | 跨 zpkg impl 传播：zpkg IMPL section + ImportedSymbolLoader Phase 3 合并（仅脚本 body；impl 块永久禁止 extern，见 generics.md）| — | ✅ | ✅ | ✅ | ✅ |
-| **L3-G4c** | User-level 泛型容器源码实现（MyList<T> 端到端 demo） | — | ✅ | — | ✅ | ✅ |
-| **L3-G4d** | stdlib 导出泛型类（Std.Collections.Stack / Queue 启用 + 名称冲突裁决 + 懒加载 ctor） | — | ✅ | ✅ | ✅ | ✅ |
-| **L3-G4e** | 索引器语法 `T this[int] { get; set; }` — desugar 到 get_Item/set_Item | ✅ | ✅ | — | — | ✅ |
-| **L3-G4f** | 源码级 ArrayList<T> ✅；HashMap 放到 G4g | — | 🟡 | — | — | 🟡 |
-| **L3-G4g** | 跨命名空间约束解析 ✅ + ArrayList.Contains/IndexOf ✅ + HashMap<K,V> ✅ + TSIG 不重导入 ✅ | — | ✅ | — | — | ✅ |
-| **L3-G4h** | step1 `&&`/`||` 短路求值 ✅；step2 foreach 鸭子协议 ✅；step3 pseudo-class List/Dict → 源码 ✅ | — | ✅ | ✅ | ✅ | ✅ |
-| **L3-G4** | 泛型标准库（已细拆为 G4a/G4b/G4c/G4d，保留总指标） | — | 🟡 | — | 🟡 | 🟡 |
-| **L3-R** | 反射与运行时类型信息 — 见下独立小节（统一批次，延后） | — | — | — | — | 📋 |
+| 子阶段 | 内容 | 状态 |
+|--------|------|:----:|
+| **L3-G1** | 泛型函数 + 泛型类（无约束） | ✅ |
+| **L3-G2** | 接口约束 `where T: I + J` | ✅ |
+| **L3-G2.5** | 约束范式（基类 / ctor / class / struct / enum / 接口继承 / 裸 type-param 链 / 数值 / operator / static abstract iter 1）| ✅ |
+| **L3-G2.5 残余** | `notnull` / `unmanaged` / `reified` / `Func` 约束 / 关联类型链 / `<in/out>` 变型 / 默认 type-param | 📋 大部分进 Deferred |
+| **L3-G3a** | zbc 约束元数据 + VM loader 加载时校验 | ✅ |
+| **L3-G3c** | 关联类型 | ⏸ Deferred（见 [generics.md](design/language/generics.md)）|
+| **L3-G3d** | 跨 zpkg TSIG 约束传播 | ✅ |
+| **L3-G4a-h** | 泛型容器 + 索引器 + ArrayList/HashMap + foreach 鸭子协议 + pseudo-class 替换 | ✅ |
+| **L3-Impl1/2** | extern impl + 跨 zpkg 传播 | ✅ |
+| **L3-R** | 反射 + 运行时类型信息 | 📋 统一批次延后（见 §L3-R 下节）|
 
-> L3-G1 已实现：泛型函数/类定义、显式/推断类型参数、IR 代码共享、SIGS/TYPE section 携带 `type_params`。
-> L3-G2 已实现：`where T: I + J` / `where K: I, V: J` 语法、约束方法查找、调用点校验、返回类型按推断替换；启用 `IComparable<T>` / `IEquatable<T>` stdlib 接口。
-> L3-G3a 已实现：zbc 版本 0.4 → 0.5，SIGS/TYPE per-tp 约束元数据；Rust VM loader 读取到 `TypeDesc.type_param_constraints` / `Function.type_param_constraints`；加载时 `verify_constraints` pass 校验约束引用的 class/interface 存在（`Std.*` 前缀放行给 lazy loader）。**不**做运行时 Call/ObjNew 校验（留给 L3-G3b 配合反射）。
+详见 [`generics.md`](design/language/generics.md) + [`static-abstract-interface.md`](design/language/static-abstract-interface.md)。
 
-### L3-G2.5：约束范式扩展（计划）
+### L3-C 闭包 / Lambda ✅（核心 + JIT 完成）
 
-L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立规格。
-**设计决策**：约束合取使用 `+`（Rust 风格）而非 C# `,`；**不支持** OR 约束 `T: A | B`
-（主流语言都无；见 `docs/design/language/generics.md` 设计决策小节）。
+| 子阶段 | 内容 | 状态 |
+|--------|------|:----:|
+| **L2-C1** lambda 字面量 / `(T)->R` 函数类型 / `Func<>`/`Action<>` desugar | ✅ |
+| **L2-C1b** local function | ✅ |
+| **L3-C2-core** 捕获 + 档 C 堆擦除 | ✅ |
+| **L3-C2-loops** 循环变量新绑定（值快照自动满足）| ✅ |
+| **L3-C2-jit** JIT 路径补全 | ✅ |
+| **L3-C2-mono** 档 B 完整版（单态化）| 📋 当前仅 alias 子集 |
+| **L3-C2-stack** 档 A 完整版（栈上 env）| 📋 当前仅 callee 立即调用子集 |
+| **L3-C2-send** Send 派生 + spawn 检查 | ⏸ 与 concurrency 同期 |
 
-#### 已完成 / 已规划
+详见 [`closure.md`](design/language/closure.md)。
 
-| 约束 | 语法 | 语义 | 优先级 / 状态 |
-|------|------|------|:------:|
-| **基类约束** | `where T: BaseClass` | T 必须继承自指定类；可访问基类字段/方法 | ✅ 已完成（2026-04-22） |
-| **构造器约束** | `where T: new()` | T 必须有无参构造器（`new T()` body 实例化待 L3-R） | ✅ 校验已完成（2026-04-23） |
-| **引用类型约束** | `where T: class` | T 为引用类型（排除 struct/primitive） | ✅ 已完成（2026-04-22） |
-| **值类型约束** | `where T: struct` | T 为值类型 | ✅ 已完成（2026-04-22） |
-| **接口继承约束** | `where T: I<U>, U: J` | 跨参数约束链（带 TypeArgs 替换校验） | ✅ 已完成（2026-04-23） |
-| **裸类型参数约束** | `where U: T` | U 必须是 T 的子类型（T 为同 decl 其他 type param） | ✅ 已完成（2026-04-22） |
-| **枚举约束** | `where T: enum` | T 必须是 enum 类型（校验层完整；反射操作待 L3-R） | ✅ 已完成（2026-04-23） |
+### L3-D Delegates / Events ✅
 
-#### 后续迭代
+D1（delegate 关键字 + 单播 + 方法组缓存）+ D2a/b/c/d-1/d-2-Action（多播 + ISubscription wrapper + event 关键字 + 异常聚合）+ D-1a/b（WeakHandle / WeakRef wrapper）+ D-5（ReferenceEquals）+ D-6（嵌套 dotted-path）+ D-7（单播 IDisposable token + 严格 access control）。
 
-| 约束 | 语法 | 语义 | 优先级 | 难度 |
-|------|------|------|:-----:|:----:|
-| **数值约束** | `where T: INumber<T>` | stdlib 声明 + primitive struct 纯脚本 body 实现；Script-First | ✅ 已完成（2026-04-23） |
-| **Operator 重载（C# 风）** | `public static T operator +(T, T)` | desugar 到 `op_Add` 静态调用；支持异构算子；5 个二元算术 | ✅ 已完成（2026-04-24） |
-| **静态抽象接口成员（C# 11 对齐）** | `interface INumber<T> where T: INumber<T> { static abstract T op_Add(T, T); ... }` | 三档 `static abstract / virtual / concrete`；实现者 `static override`；泛型 `a + b` on `T: INumber<T>` 通过 VCall 值驱动派发（复用既有 IR，无新指令）。stdlib INumber + int/long/float/double 全迁移 | ✅ 已完成（2026-04-24，iter 1；`T.Zero` 类型级访问延至 iter 2） |
-| **非空约束** | `where T: notnull` | T 非空（排除 `T?`） | 🟡 中 | 低（待可空性方案收敛） |
-| **无托管约束** | `where T: unmanaged` | T 是无托管引用的值类型（FFI / SIMD / buffer 池） | 🟡 中 | 中（需区分 struct 含 ref 字段） |
-| **具象化约束** | `reified T` | body 内可用 `T::class` / `is T`（Kotlin 风格） | 🟡 中 | 高（**依赖 L3-R** runtime type_args） |
-| **委托/函数约束** | `where T: Func<...>` | 可调用约束（`Fn/FnMut/FnOnce` 等价） | 🟠 低 | 高（**依赖 lambda**） |
-| **关联类型链** | `where T: Iter, T::Item: Clone` | 深度泛型（Rust 迭代器链） | 🟠 低 | 很高（**依赖 L3-G3c**） |
-| **变型标注** | `interface IFoo<in T>` / `<out T>` | 协变/逆变 | 延后 L3 后期 | 中 |
-| **默认类型参数** | `class Box<T = int>` | 省略时默认值 | 延后 L3 后期 | 低 |
+📋 D2d-2 Func/Predicate 异常聚合（Action 路径已完成）；D-2 ISubscription chain；D-3 N>4 arity（Deferred 见 [delegates-events.md](design/language/delegates-events.md)）。
 
-#### 明确不做（与 z42 模型不契合）
+### L3-R 反射与运行时类型信息（统一批次，延后）
 
-| 约束 | 理由 |
-|------|------|
-| **`T: Copy`** | z42 是 GC 语言；class = ref、struct = value 已自动区分，无须显式 Copy trait |
-| **`T: ?Sized`** | z42 所有对象定长（GC 托管）；DST / slice / trait object 概念不适用 |
-| **OR 约束 `T: A \| B`** | 主流语言都无；body 只能用 A ∩ B 交集方法，实用性差。替代方案（共同基接口 / 重载 / ADT）更清晰 |
+合并 L3-G3b、运行时约束校验、`new T()` / `Activator.CreateInstance<T>` 等需求，一次性规划 VM 类型系统。R-5 `type_args` 运行时传递机制是核心架构决策。
 
-**实现策略**：
-- 基类 + 构造器约束复用现有 interface 约束框架（`Z42GenericParamType` 的 Constraints
-  扩展为 union: Interface / BaseClass / ConstructorReq / ValueKind）
-- `class` / `struct` / `notnull` / `unmanaged` / `enum` / `new()` 作为 flag 附加在
-  GenericParam 上，共享 zbc flags 字节（现有已用 bits 0x01–0x10，留 0x20–0x80 给后续）
-- `reified` / `T::Output` 类关联功能和 L3-R / L3-G3c 合批
-- 每个范式独立 spec change，共享 L3-G3a 的约束元数据 zbc 扩展
+**先决条件**：✅ L3-G3a 元数据；📋 L3-G3c 关联类型；📋 VM 架构决策。
 
-### L3-R：反射与运行时类型信息（统一批次，延后）
+详见 [generics.md](design/language/generics.md) §L3-R。
 
-把原 L3-G3b（反射接口 + 运行时约束校验）与其他反射需求合并成独立轨道，一次性规划
-VM 运行时类型系统。多项特性联动，单独做不如合并。
-
-| 子项 | 内容 | 依赖 |
-|------|------|------|
-| **R-1 核心 Type API** | `typeof(T)` / `t.GetType()` / `Type.Name` / `Type.TypeParams` / `Type.TypeArgs` | L3-G3a（元数据已就绪） |
-| **R-2 约束反射** | `Type.Constraints` / `Type.BaseClass` / `Type.Interfaces` | R-1 |
-| **R-3 is/as 运行时判断** | `t is IComparable<T>` / `t as SomeBase` 基于 TypeDesc.vtable + constraints | R-1 + R-2 |
-| **R-4 运行时 Call/ObjNew 约束校验** | 泛型函数 Call / `new T(...)` 时校验 type_args 满足约束（untrusted zbc 兜底） | R-1 + type_args 传递机制 |
-| **R-5 运行时 type_args 传递** | 泛型实例化信息通过隐式参数 / thread-local / TypeDesc 引用传到 callee | 需 VM 架构决策 |
-| **R-6 `new T()` 支持** | 依赖 R-5 拿到 T 的 TypeDesc，ObjNew 时用实际类名 | R-5 |
-| **R-7 `Activator.CreateInstance<T>(args)`** | 反射式泛型实例化 | R-5 + R-6 |
-| **R-8 Module / Assembly 反射** | `Module.GetTypes()` / `Type.GetMethods()` | R-1 |
-| **R-9 关联类型反射** | `Type.AssocTypes["Output"]` | L3-G3c |
-| **R-10 IDE / 工具 元数据** | 供外部工具（LSP / REPL）读取 TypeDesc 完整结构 | R-1 |
-
-**设计挑战（为什么合并）**：
-- R-5 运行时 type_args 传递是最核心的架构决策 — 决定 R-4/R-6/R-7 能否实现
-- 单独做 R-1/R-2 意义有限（应用场景少，ROI 低）；和 R-4/R-5 一起才产生价值
-- zbc 格式扩展若需要为 R-2/R-9 补字段，与 L3-G3a 的约束字段可一次设计完
-
-**先决条件**：
-- L3-G3a 已完成（元数据管道打通）✅
-- L3-G3c 关联类型（R-9 依赖）
-- VM 架构决策：type_args 如何在代码共享前提下运行时可得
-
-### L3-C 闭包（Closures）实现进度
-
-设计已锁定 — 见 [`docs/design/language/closure.md`](design/language/closure.md)（2026-05-01 归档变更 `add-closures`）。
-实现拆为两个独立变更，按 L 阶段递进：
-
-| 子阶段 | 内容 | 落地变更 | 状态 |
-|--------|------|---------|:----:|
-| **L3-C0**（设计） | 闭包 spec + IR 草案 + grammar 文法 + 文档同步 | `add-closures` | ✅ 已完成（2026-05-01）|
-| **L2-C1**（无捕获 lambda） | Parser + AST + TypeCheck + Codegen + VM：lambda 字面量、`(T)->R` 函数类型、`Func<>`/`Action<>` desugar、`LoadFn` + `CallIndirect` 间接调用 | `impl-lambda-l2` | ✅ 已完成（2026-05-01）|
-| **L2-C1b**（local function） | 嵌套 `Type Name(...)` 函数声明 + 前向引用 + 直接递归 + L2 无捕获检查 + 一层嵌套限制 | `impl-local-fn-l2` | ✅ 已完成（2026-05-01）|
-| **L3-C2-core**（核心闭包：捕获 + 档 C） | 捕获分析 + 档 C 堆擦除（MkClos + Value::Closure） | `impl-closure-l3-core` | ✅ 已完成（2026-05-01）|
-| **L3-C2-loops**（循环变量新绑定） | R7 — 由值快照语义**自动满足**；本变更仅添加回归 golden + TypeCheck unit | `verify-closure-l3-loops` | ✅ 已完成（2026-05-02）|
-| **L3-C2-jit**（JIT 路径补全） | LoadFn / CallIndirect / MkClos 在 Cranelift 后端实现；4 个 closure golden 在 JIT 模式全绿 | `impl-closure-l3-jit-complete` | ✅ 已完成（2026-05-02）|
-| **L3-C2-mono**（单态化档 B） | 性能优化：泛型 HOF 单态化 + 闭包内联 | `impl-closure-l3-monomorphize` | 📋 待开始 |
-| **L3-C2-stack**（栈分配档 A） | 性能优化：逃逸分析 + 栈上 env | `impl-closure-l3-escape-stack` | 📋 待开始 |
-| **L3-C2-send**（Send 派生 + spawn 检查） | 与 concurrency 实施一起做（暂缓）| `impl-closure-l3-send` | ⏸ 与 concurrency 同期 |
-
-衍生需求（独立 follow-up）：
-- VM 诊断：对象引用链 / captured env dump / allocation site 追踪 — 待 `vm-architecture.md` 立项
-
-### 高级语法（从 L1 推迟）
+### 高级语法（待开始）
 
 | 特性 | 说明 |
 |------|------|
-| 泛型 `<T>` + `where` 约束 | 类型参数、约束推断、代码共享 + 具化（L3-G1 ✅ 基础完成） |
-| Lambda + 闭包 | 设计已锁，分 L2-C1 / L3-C2 两批落地（见上 L3-C 表） |
-| 接口完整实现 | 多接口、虚方法表、接口继承 |
-| 类继承完整实现 | 多态、`override`/`virtual`/`abstract` |
-| `async`/`await` | `Task`/`ValueTask`、结构化并发 |
-| LINQ 风格 | `Where`/`Select`/`OrderBy`/`ToList` 等 |
-| 命名参数 | call site 指定参数名（`Greet(name: "z42")`） |
-| 模式匹配扩展 | 属性模式、位置模式、`is` 类型测试 |
+| `async` / `await` | 染色 async；`Task` / `ValueTask`；结构化并发；与 GC v3 + concurrency 同期 |
+| LINQ 风格 | `Where` / `Select` / `OrderBy` 等（依赖 lambda + IEnumerable）|
+| 命名参数 | call-site `Greet(name: "z42")` |
+| 模式匹配扩展 | 属性模式 / 位置模式 / `is` 类型测试 |
 
-### z42 特有扩展
+### z42 特有扩展（待开始）
 
 | 特性 | 说明 |
 |------|------|
-| `Result<T, E>` + `?` 运算符 | 函数式错误处理，`try`/`catch` 的高效替代 |
-| `Option<T>` | 替代 `T?`，编译期穷尽检查，消除 null |
-| Trait | 接口静态分发（零开销抽象），替代虚方法表 |
-| ADT（代数数据类型） | 原生 sum type，替代 `abstract record` 模拟 |
-| `match` 穷尽检查 | 强制覆盖所有分支，替代 `switch` |
-| 默认不可变变量 | `let` 不可变，`var`/`mut` 显式可变 |
-| 单文件脚本模式 | 无需 `z42.toml`，直接执行 `.z42` 文件 |
-| 内联 eval | `z42vm -c "..."` 字符串直接执行；嵌入 API（host 传入 source/bytecode） |
-| REPL | 交互式求值环境 |
+| `Result<T, E>` + `?` | 函数式错误处理（与 try/catch 共存）|
+| `Option<T>` | 替代 `T?`（编译期穷尽检查）|
+| Trait 静态分发 | 替代 vtable 接口分发 |
+| ADT（代数数据类型） | 原生 sum type（替代 abstract record 模拟）|
+| `match` 穷尽检查 | 替代 `switch` |
+| 默认不可变变量 | `let` 不可变 / `var` `mut` 显式可变 |
+| 单文件脚本模式 | 无 `z42.toml` 直接 `.z42` 执行 |
+| 内联 eval | `z42vm -c "..."` + 嵌入 API source 输入 |
+| REPL | 交互式求值 |
 
 ---
 
@@ -383,13 +213,11 @@ VM 运行时类型系统。多项特性联动，单独做不如合并。
 | M3 | IR Codegen → `.zbc`（L1 特性全覆盖） | L1 → L2 | ✅ |
 | M4 | VM Interpreter（L1 特性全覆盖） | L1 | ✅ |
 | M5 | VM JIT（Cranelift，L1 特性） | L1 → L2 | ✅ |
-| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | 📋 |
+| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | 🚧 |
 | M7 | VM 元数据 + 标准库基础（core/io/collections） | L2 | 🚧 |
-| M8 | TypeChecker + Codegen 扩展（L3 特性） | L3 | 📋 |
+| M8 | TypeChecker + Codegen 扩展（L3 特性） | L3 | 🟡 部分（泛型 / lambda / delegate）|
 | M9 | VM AOT（LLVM/inkwell） | L3 | 📋 |
 | M10 | 自举（Self-hosting） | L3+ | 📋 |
-
-**当前焦点：M6（工程支持 + 测试体系 + 错误码体系）→ M7（VM 元数据 + 标准库）**
 
 ---
 
@@ -431,7 +259,7 @@ VM 运行时类型系统。多项特性联动，单独做不如合并。
 | **D-11** | introduce-bound-visitor（review.md §2.1 visitor 抽象基类）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-11-introduce-bound-visitorreviewmd-21-visitor-抽象基类) |
 | **D-12** | BindCall 函数级拆分（split-typechecker-calls 残留）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-12-bindcall-函数级拆分split-typechecker-calls-残留) |
 
-### 已归档前的"成熟 follow-up"指南
+### Backlog 项实施流程
 
 每条 deferred 项被实施时：
 1. 把对应条目从 design doc Deferred 段移入实施 spec 的"实施备注"

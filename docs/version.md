@@ -21,6 +21,28 @@
 
 ---
 
+## Feature → Version 映射
+
+> 横向索引：[features.md](features.md) 各设计决策落地到哪个 minor 版本。具体子版本（patch）由后续实施 spec 按工作量切分。
+
+| features.md 章节 | 所属 minor | 状态 |
+|------|:------:|:----:|
+| §1 Type System / §2 Null Safety / §3 Memory Management / §4 Error Handling (exceptions) / §5 Type Definitions (class/struct/record) / §6 Functions / §7 Control Flow | 0.1.x | ✅ L1 |
+| §8 Strings / §9 Collections (List/Dict pseudo-class) / §10 Imports / §11 Numeric Aliases | 0.1.x | ✅ L1 |
+| §12 Hot Reload | 0.3.2 | 🟡 设计有；GC v1 后真热更新落地 |
+| §13 Execution Mode Annotations | 0.1.x（注解）→ 0.3.x（运行时切换）| 🟡 注解 ✅；切换运行时待 |
+| §14 Generics + Trait | 0.5.x | ✅ G1-G4 + L3-Impl（提前落地）|
+| §15 Reflection | 0.5.1–0.5.3 | 📋 L3-R 统一批次 |
+| §16 Lambda + Closure | 0.6.0 | ✅ L2-C1 + L3-C2 核心（提前落地）|
+| §17 Result + ADT + match | 0.7.x | 📋 |
+| §18 可裁剪 / Tree-shaking / 200KB 子集 | 0.9.x（嵌入 / 裁剪）+ 1.0-rc（AOT 静态链接）| 📋 |
+| §19 NativeAOT | 1.0.x | 📋 |
+| §20 Interop 三层 ABI | 0.5.5（Rust embedding 2a）+ 0.9.x（manifest reader 2b）+ 1.0.x（Interop 3）| ✅ Tier 1 + Tier 2 + manifest（提前落地）|
+
+> "提前落地" = 当前 phase（L2 进行中）已实施部分 L3 特性，未对应到 0.x.0 minor 但代码已在 main 分支。
+
+---
+
 ## 总览
 
 | 版本 | 主题 | Phase | 子版本数 | 预计工作量 |
