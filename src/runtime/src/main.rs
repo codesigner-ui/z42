@@ -5,9 +5,10 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "z42vm", about = "z42 Virtual Machine", version)]
 struct Cli {
-    /// Bytecode file to execute.
+    /// Bytecode file to execute. Required unless --explain or --list-errors is used.
     /// Accepted formats: .zbc (single-file), .zpkg (project package)
-    file: String,
+    #[arg(required_unless_present_any = ["explain", "list_errors"])]
+    file: Option<String>,
 
     /// Execution mode override (default: use annotation in bytecode)
     #[arg(long, value_enum)]
@@ -22,6 +23,15 @@ struct Cli {
     /// Enable verbose tracing
     #[arg(short, long)]
     verbose: bool,
+
+    /// Print the catalog entry for a Z#### runtime diagnostic code, then exit.
+    /// Sourced from docs/error-codes/Z.json (shared with `z42c explain`).
+    #[arg(long, value_name = "CODE")]
+    explain: Option<String>,
+
+    /// List every Z#### runtime diagnostic code, then exit.
+    #[arg(long)]
+    list_errors: bool,
 }
 
 // 2026-05-07 add-runtime-feature-flags (P4.1): variants are feature-gated so
@@ -232,6 +242,26 @@ fn build_declared_candidates(
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // ── Diagnostic catalog short-circuits ────────────────────────────────
+    if cli.list_errors {
+        println!("{}", z42_vm::diagnostics::format_list_all());
+        return Ok(());
+    }
+    if let Some(code) = &cli.explain {
+        let upper = code.to_ascii_uppercase();
+        match z42_vm::diagnostics::explain(&upper) {
+            Some(entry) => println!("{}", z42_vm::diagnostics::format(entry)),
+            None => {
+                eprintln!(
+                    "No documentation found for runtime error code {}.\nRun `z42vm --list-errors` for the full catalog.",
+                    upper
+                );
+                std::process::exit(1);
+            }
+        }
+        return Ok(());
+    }
+
     if cli.verbose {
         tracing_subscriber::fmt::init();
     }
@@ -242,7 +272,8 @@ fn main() -> Result<()> {
         log_module_paths(&module_paths);
     }
 
-    tracing::debug!("z42vm loading {}", cli.file);
+    let file = cli.file.as_deref().expect("file required (clap enforces)");
+    tracing::debug!("z42vm loading {}", file);
 
     // Locate stdlib libs directory.
     let libs_dir = resolve_libs_dir();
@@ -281,7 +312,7 @@ fn main() -> Result<()> {
     }
 
     // 5.1c — load the user artifact.
-    let user_artifact = z42_vm::metadata::load_artifact(&cli.file)?;
+    let user_artifact = z42_vm::metadata::load_artifact(file)?;
 
     // 5.1d — dependency loading strategy:
     //   Interp mode → pure lazy. Zpkgs are loaded on demand when the
@@ -353,11 +384,11 @@ fn main() -> Result<()> {
         modules.into_iter().next().unwrap()
     } else {
         let mut m = z42_vm::metadata::merge_modules(modules)
-            .with_context(|| format!("merging modules for `{}`", cli.file))?;
+            .with_context(|| format!("merging modules for `{}`", file))?;
         m.name = user_module_name;
         z42_vm::metadata::loader::build_type_registry(&mut m);
         z42_vm::metadata::loader::verify_constraints(&m)
-            .with_context(|| format!("constraint verification failed for `{}`", cli.file))?;
+            .with_context(|| format!("constraint verification failed for `{}`", file))?;
         z42_vm::metadata::loader::build_block_indices(&mut m);
         z42_vm::metadata::loader::build_func_index(&mut m);
         m

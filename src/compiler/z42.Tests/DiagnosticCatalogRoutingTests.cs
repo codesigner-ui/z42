@@ -35,29 +35,31 @@ public sealed class DiagnosticCatalogRoutingTests
     }
 
     [Fact]
-    public void Explain_unknown_Z_code_includes_runtime_hint()
+    public void Explain_Z0905_uses_rust_catalog()
     {
-        var text = DiagnosticCatalog.Explain("Z9999");
-        text.Should().Contain("No documentation found");
-        text.Should().Contain("VM runtime errors");
+        var text = DiagnosticCatalog.Explain("Z0905");
+        text.Should().Contain("error[Z0905]");
+        text.Should().Contain("Native type registration failure");
     }
 
     [Fact]
-    public void Explain_unknown_E_code_no_runtime_hint()
+    public void Explain_unknown_code_returns_friendly_message()
     {
-        var text = DiagnosticCatalog.Explain("E9999");
+        var text = DiagnosticCatalog.Explain("X9999");
         text.Should().Contain("No documentation found");
-        text.Should().NotContain("VM runtime errors");
+        text.Should().Contain("z42c errors");
     }
 
     [Fact]
-    public void ListAll_includes_E_and_W_groups()
+    public void ListAll_includes_all_groups()
     {
         var text = DiagnosticCatalog.ListAll();
         text.Should().Contain("Compiler diagnostics (E####)");
         text.Should().Contain("Workspace / manifest diagnostics (WS###)");
+        text.Should().Contain("VM runtime diagnostics (Z####)");
         text.Should().Contain("E0402");
         text.Should().Contain("WS003");
+        text.Should().Contain("Z0905");
     }
 
     [Fact]

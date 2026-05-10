@@ -1,0 +1,35 @@
+{
+  "comment": "Single source of truth for Z#### VM runtime diagnostic codes. Both the Rust runtime (src/runtime/src/diagnostics/) and the C# compiler driver (src/compiler/z42.Core/Diagnostics/RustErrorCatalog.cs) consume this file. To add a new Z code: 1) add an entry below; 2) emit it via anyhow!(\"Zxxxx: ...\") in Rust; 3) the drift-guard test in src/runtime/src/diagnostics/registry_audit_tests.rs ensures every Zxxxx string in code has a catalog entry.",
+  "entries": [
+    {
+      "code": "Z0905",
+      "title": "Native type registration failure",
+      "description": "A C-ABI call to z42_register_type failed validation. Common causes: (a) descriptor pointer is null; (b) descriptor.module_name / descriptor.type_name / method.name / method.signature is null or not valid UTF-8; (c) method_count > 0 but the methods array is null; (d) duplicate method names within a single descriptor; (e) a method.fn_ptr is null. Fix the native side's registration call to satisfy the descriptor contract.",
+      "example": "// In native Rust: forgot to set type_name before calling z42_register_type\nlet desc = Z42TypeDescriptor { type_name: std::ptr::null(), ... };\nz42_register_type(ctx, &desc);  // → Z0905"
+    },
+    {
+      "code": "Z0906",
+      "title": "ABI version mismatch",
+      "description": "A native module reported a Z42_ABI_VERSION different from the runtime's expected version. The native side must be rebuilt against the matching z42-abi crate version. The descriptor field carries the version the native module was compiled against; the runtime rejects any mismatch to avoid undefined behavior on layout differences.",
+      "example": "// numz42-c built against z42-abi 1, runtime expects 2 → Z0906\n// Fix: update native crate's Cargo.toml to depend on the matching z42-abi version\n// and rebuild."
+    },
+    {
+      "code": "Z0907",
+      "title": "CallNativeVtable not yet implemented",
+      "description": "The IR emitted a CallNativeVtable instruction (vtable-style native dispatch) but the runtime executor does not yet implement that path. CallNativeVtable is a Spec C5 / impl-source-generator placeholder; it currently surfaces as a runtime trap pointing at the responsible vtable slot.",
+      "example": "// User code dispatched through a native vtable slot before C5 ships → Z0907"
+    },
+    {
+      "code": "Z0908",
+      "title": "Pin / marshal contract violation",
+      "description": "A pinned-block or native-marshal operation rejected a value that does not satisfy the C-ABI contract. Causes include: (a) z42 string contains an interior NUL when marshalling to *const c_char; (b) PinnedView field accessed beyond {ptr, len}; (c) unsupported source type for `pinned p = expr { ... }` (currently only string / Array<u8>). Restructure the value or use a different marshalling path.",
+      "example": "// z42 string \"foo\\0bar\" marshalled to *const c_char → Z0908\n// (interior NUL would be silently truncated by C consumers)"
+    },
+    {
+      "code": "Z0910",
+      "title": "Native library load failure",
+      "description": "dlopen-style loading of a native library failed, or the runtime could not resolve the per-library register entry symbol. The register entry is derived from the library file name (e.g. `libnumz42.so` → `numz42_register`). Causes: (a) file not found / not loadable; (b) file name does not end in a recognizable `<libname>.<ext>` pattern; (c) the expected `<libname>_register` exported symbol is missing from the library.",
+      "example": "// libfoo.so exports `register` instead of `foo_register` → Z0910\n// Fix: rename the export or the file to match."
+    }
+  ]
+}

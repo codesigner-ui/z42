@@ -356,12 +356,8 @@ public static class DiagnosticCatalog
         var entry = TryGet(code);
         if (entry is null)
         {
-            // Friendlier hint when prefix is recognized but code isn't.
-            string hint = code.StartsWith("Z", StringComparison.OrdinalIgnoreCase)
-                ? "\n  (VM runtime errors — central catalog pending; see src/runtime/src/native/error.rs)"
-                : "";
             return $"No documentation found for error code {code}.\n" +
-                   $"Run `z42c errors` to see all known codes.{hint}";
+                   $"Run `z42c errors` to see all known codes.";
         }
 
         var sb = new StringBuilder();

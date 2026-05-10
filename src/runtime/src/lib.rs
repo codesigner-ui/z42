@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod metadata;
 pub mod corelib;
 pub mod gc;
