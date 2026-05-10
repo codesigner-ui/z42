@@ -144,6 +144,19 @@
 | **C11e**（`extend-signature-whitelist` ✅ 2026-05-06）| 把 `ManifestSignatureParser` 白名单从 demo 级扩到能包真实 opaque-handle C 库：(a) `*const/*mut c_char` 在 param 位置 → `string`（走 C8 既有 arena marshal，零新 IR）；(b) `*const/*mut <Other>` 中 Other 是当前 CU 已 import 的 native type 名 → `NamedType("Other")`（native 类间互相引用方法签名）。`NativeImportSynthesizer.Run` 收集 `knownNativeTypes` 下传 sig parser；E0916 分两类（**unknown-type** 含 ``import Foo from "...";`` 提示 / **unsupported-shape** 列已 import types）；c_char return 留 C11f。**`printf` / `regex_t` / `sqlite3` 等 opaque-handle 库现在能 import**。 | ✅ |
 | **C11+**（后续 spec，未排）| C11c (Path B2: 脚本字段 + VM `z42_obj_*` ABI) / C11d (Path C: 脚本 `[Repr(C)]` 映射) / C11f (c_char return ownership 协议 + Array/Option/定长数组) / extern class T / CallNativeVtable runtime + IR codegen / JIT emit native opcodes | 📋 |
 
+### Embedding / Hosting API（宿主嵌入）
+
+详见 [docs/design/embedding.md](design/embedding.md)。本节解决"宿主 app → 启动 VM → 加载 .zbc → 调用入口 → 关闭"，与 interop（native 注册类型）互补。
+
+| Spec / 阶段 | 内容 | 状态 |
+|------------|------|------|
+| **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/embedding.md](design/embedding.md) + spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
+| **H1**（`add-embedding-api` C ABI scaffold） | `src/runtime/include/z42_host.h` + `src/runtime/src/host/` 单实例 state（initialize / shutdown / last_error）+ build matrix（default / interp-only / ios / android）全绿 + 8 个 unit test | 📋 |
+| **H2**（`add-embedding-api` hello-world） | `load_zbc` / `resolve_entry` / `invoke` 全链路 + stdout sink 接 VM + Tier 2 Rust crate `z42-host` + C / Rust example 跑通 hello.zbc | 📋 |
+| **H3**（`add-embedding-api` 错误路径） | 全部 `Z42HostStatus` 路径有测试覆盖；VM exception → `ERR_VM_EXCEPTION`；error message 翻译 | 📋 |
+| **H4**（归 P4.3 / P4.4） | iOS Swift facade / Android JNI bridge 直连 `z42_host.h`，跑 hello-world | 📋 |
+| **H5**（归 runner spec） | `z42-test-runner` library 内部基于 `z42-host` crate 重构，统一启动路径 | 📋 |
+
 ### 标准库（基础）
 - `z42.core`：基础类型协议（ToString、Equals、GetHashCode）
 - `z42.io`：文件读写、标准输入输出
