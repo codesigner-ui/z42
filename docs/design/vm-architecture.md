@@ -72,6 +72,52 @@ z42vm <file>
 
 ---
 
+## Embedding Entry（2026-05-10 add-embedding-api H1）
+
+`src/runtime/src/host/` 是 z42 VM 的**宿主嵌入入口**：与上方 `z42vm` CLI 启动流程并列，存在于另一条进入 VM 的路径。
+
+```
+host application (iOS / Android / IDE 插件 / 其他 native)
+   │
+   │ z42_host_initialize(&cfg, &handle)
+   ▼
+host::state::HOST  (RwLock<Option<HostState>>，进程单实例)
+   │
+   │ z42_host_load_zbc(handle, bytes, len, &mod)        [H2 待实施]
+   │ z42_host_resolve_entry(handle, mod, fqn, &entry)   [H2 待实施]
+   │ z42_host_invoke(entry, args, n, &result)           [H2 待实施]
+   ▼
+（H2）interp::run_method / jit::run（与 CLI 启动流程汇合到同一执行路径）
+```
+
+### 模块边界与 VM 全局状态
+
+| 关系 | H1 状态 | H2 计划 |
+|------|---------|---------|
+| host 模块 ↔ `VmContext` | host 模块**未触及**任何 VM 全局状态；只在 `host::state::HOST` 持有 `ResolvedConfig` | `load_zbc` 接 `metadata::ZbcReader` + `merge_modules`；`invoke` 走 `interp::run_method` |
+| stdout / stderr | `Z42WriteSink` 函数指针存在 `HostState`，未注入 VM stdout writer | sink 包装为 `impl Write`，在 `invoke` 启动前 swap VM stdout writer，结束 / shutdown 时复原 |
+| panic 隔离 | 每个 `extern "C"` 入口经 `host::guard()` `catch_unwind` 兜底，panic → `Z42_HOST_ERR_INTERNAL` | 不变 |
+| 错误诊断 | TLS `LAST_ERROR` 由 `host::error::set_error / clear_error` 管理；与 `native::error::LAST_ERROR` 独立（两条 ABI 各自维护） | 不变 |
+
+### 与 `crate::native` 的边界
+
+| 方向 | 模块 | 解决问题 |
+|------|------|---------|
+| native 代码 → 注册类型/方法 | `crate::native` (`z42_register_type` 等) | 扩展语言（CPython C 扩展类比） |
+| 宿主 app → 启动 VM | `crate::host` (`z42_host_initialize` 等) | 嵌入运行时（CoreCLR `coreclrhost.h` 类比） |
+
+两者复用 `z42_abi::Z42Value` / `Z42Args` / `Z42Error` 类型，互不调用对方。
+
+### 单实例 vs 多实例
+
+v0.1 单实例：`HOST: RwLock<Option<HostState>>`。`Z42HostRef` 是一个 sentinel pointer（`0x1`），所有 host API 调用读 `HOST` 验证活跃。
+
+多实例 / ALC-like 上下文进 [embedding.md §12 Deferred](embedding.md)。届时 `RwLock<Option<...>>` 升级为 `Slab<HostState>`，`Z42HostRef` 编码 `(idx, gen)`，VM 全局状态（GC heap、JIT cache、type registry）必须 per-handle 化。
+
+详见 [docs/design/embedding.md](embedding.md) 与 [spec/changes/add-embedding-api/design.md](../../spec/changes/add-embedding-api/design.md) D1/D5。
+
+---
+
 ## LazyLoader：zpkg-based 依赖懒加载（2026-04-25 重构）
 
 ### 为什么改成 zpkg-based

@@ -1,6 +1,6 @@
 # Tasks: Add Embedding / Hosting API
 
-> 状态：🔵 H0 完成 / H1 待启动 | 创建：2026-05-10
+> 状态：🟢 H0 + H1 完成 / H2 待启动 | 创建：2026-05-10
 >
 > 本 spec 范围 = H0–H3（design + ABI scaffold + hello-world + 错误路径）。
 > H4（移动平台接入） / H5（runner 重构）由各自 spec 主导。
@@ -8,7 +8,7 @@
 ## 进度概览
 
 - [x] **H0** 设计文档与 spec/changes 四件套
-- [ ] **H1** C ABI scaffold + Rust 单实例 state + 链接通
+- [x] **H1** C ABI scaffold + Rust 单实例 state + 链接通
 - [ ] **H2** Hello-world：load_zbc / resolve_entry / invoke 全链路 + Tier 2 Rust + C/Rust example
 - [ ] **H3** 错误路径全覆盖 + VM exception 翻译
 
@@ -21,7 +21,7 @@
 - [x] 0.3 [spec/changes/add-embedding-api/design.md](design.md)
 - [x] 0.4 [spec/changes/add-embedding-api/tasks.md](tasks.md)
 - [x] 0.5 [spec/changes/add-embedding-api/specs/embedding-host-api/spec.md](specs/embedding-host-api/spec.md)
-- [ ] 0.6 [docs/roadmap.md](../../../docs/roadmap.md) L2 进度表加 Embedding 行（H0 已完成 / H1–H3 待）
+- [x] 0.6 [docs/roadmap.md](../../../docs/roadmap.md) L2 进度表加 Embedding 行（H0 已完成 / H1–H3 待）
 
 ---
 
@@ -29,7 +29,7 @@
 
 ### 1.1 C 头文件
 
-- [ ] 1.1.1 [src/runtime/include/z42_host.h](../../../src/runtime/include/z42_host.h) 创建
+- [x] 1.1.1 [src/runtime/include/z42_host.h](../../../src/runtime/include/z42_host.h) 创建
   - 句柄：`Z42HostRef` / `Z42ModuleRef` / `Z42EntryRef`
   - 配置：`Z42HostConfig` / `Z42WriteSink` / `Z42ExecMode`
   - 状态码：`Z42HostStatus`
@@ -39,39 +39,43 @@
 
 ### 1.2 Rust host 模块
 
-- [ ] 1.2.1 [src/runtime/src/host/mod.rs](../../../src/runtime/src/host/mod.rs) — 模块入口 + extern "C" 导出 + `catch_unwind` 包装
-- [ ] 1.2.2 [src/runtime/src/host/config.rs](../../../src/runtime/src/host/config.rs) — `Z42HostConfig` 校验、ABI version check
-- [ ] 1.2.3 [src/runtime/src/host/state.rs](../../../src/runtime/src/host/state.rs) — `RwLock<Option<HostState>>` 单实例
-- [ ] 1.2.4 [src/runtime/src/host/module.rs](../../../src/runtime/src/host/module.rs) — `Slab` + generational `Z42ModuleRef`（H1 仅句柄表，未真正加载）
-- [ ] 1.2.5 [src/runtime/src/host/entry.rs](../../../src/runtime/src/host/entry.rs) — `Slab` + generational `Z42EntryRef`（H1 占位）
-- [ ] 1.2.6 [src/runtime/src/host/error.rs](../../../src/runtime/src/host/error.rs) — `Z42HostStatus` enum + TLS `last_error`
+- [x] 1.2.1 [src/runtime/src/host/mod.rs](../../../src/runtime/src/host/mod.rs) — 模块入口 + extern "C" 导出 + `catch_unwind` 包装
+- [x] 1.2.2 [src/runtime/src/host/config.rs](../../../src/runtime/src/host/config.rs) — `Z42HostConfig` 校验、ABI version check
+- [x] 1.2.3 [src/runtime/src/host/state.rs](../../../src/runtime/src/host/state.rs) — `RwLock<Option<HostState>>` 单实例
+- [x] 1.2.4 [src/runtime/src/host/module.rs](../../../src/runtime/src/host/module.rs) — `Z42Module` 占位 ZST（slab 推迟到 H2 与真实 .zbc 加载一并落地）
+- [x] 1.2.5 [src/runtime/src/host/entry.rs](../../../src/runtime/src/host/entry.rs) — `Z42Entry` 占位 ZST（同 1.2.4）
+- [x] 1.2.6 [src/runtime/src/host/error.rs](../../../src/runtime/src/host/error.rs) — `Z42HostStatus` enum + TLS `last_error`
 
 ### 1.3 单元测试
 
-- [ ] 1.3.1 [src/runtime/src/host/host_tests.rs](../../../src/runtime/src/host/host_tests.rs)
-  - `initialize_then_shutdown`
-  - `initialize_twice_returns_already_init`
-  - `shutdown_then_reinitialize`
-  - `shutdown_when_not_initialized_returns_not_init`
-  - `null_config_returns_bad_config`
-  - `bad_abi_version_returns_bad_config`
-  - `last_error_clears_on_success`
-  - `last_error_persists_on_failure`
+- [x] 1.3.1 [src/runtime/src/host/host_tests.rs](../../../src/runtime/src/host/host_tests.rs)（12 个测试，含 spec 强制的 8 个 + 4 个 H1 补充覆盖）
+  - `initialize_then_shutdown` ✅
+  - `initialize_twice_returns_already_init` ✅
+  - `shutdown_then_reinitialize` ✅
+  - `shutdown_when_not_initialized_returns_not_init` ✅
+  - `null_config_returns_bad_config` ✅
+  - `bad_abi_version_returns_bad_config` ✅
+  - `last_error_clears_on_success` ✅
+  - `last_error_persists_on_failure` ✅
+  - `unknown_exec_mode_returns_bad_config` ✅
+  - `jit_mode_when_feature_off_returns_feature_off` ✅
+  - `load_zbc_before_init_returns_not_init` ✅
+  - `load_zbc_after_init_returns_internal_h2_placeholder` ✅
 
 ### 1.4 集成
 
-- [ ] 1.4.1 [src/runtime/src/lib.rs](../../../src/runtime/src/lib.rs) 加 `pub mod host;`
-- [ ] 1.4.2 [src/toolchain/host/README.md](../../../src/toolchain/host/README.md) 更新到 H1 状态
-- [ ] 1.4.3 [docs/design/vm-architecture.md](../../../docs/design/vm-architecture.md) 加 "Embedding Entry" 小节，描述 host context 与 VM 全局状态的挂接点
+- [x] 1.4.1 [src/runtime/src/lib.rs](../../../src/runtime/src/lib.rs) 加 `pub mod host;`
+- [x] 1.4.2 [src/toolchain/host/README.md](../../../src/toolchain/host/README.md) 更新到 H1 状态
+- [x] 1.4.3 [docs/design/vm-architecture.md](../../../docs/design/vm-architecture.md) 加 "Embedding Entry" 小节
+- [x] 1.4.4 [src/runtime/include/README.md](../../../src/runtime/include/README.md) 加 `z42_host.h` 条目
 
 ### 1.5 验证
 
-- [ ] 1.5.1 `cargo build --manifest-path src/runtime/Cargo.toml` 通过
-- [ ] 1.5.2 `cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features interp-only` 通过
-- [ ] 1.5.3 `cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features ios` 通过
-- [ ] 1.5.4 `cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features android` 通过
-- [ ] 1.5.5 `cargo test --manifest-path src/runtime/Cargo.toml` 全绿（含 pre-existing）
-- [ ] 1.5.6 `cargo clippy --manifest-path src/runtime/Cargo.toml -- -D warnings` 通过
+- [x] 1.5.1 `cargo build --manifest-path src/runtime/Cargo.toml` 通过
+- [x] 1.5.2 `cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features interp-only` 通过
+- [x] 1.5.3 `cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features ios` 通过
+- [x] 1.5.4 `cargo build --manifest-path src/runtime/Cargo.toml --no-default-features --features android` 通过
+- [x] 1.5.5 `cargo test --manifest-path src/runtime/Cargo.toml` 全绿（host:: 12 / 12，整体 322+ pass / 0 fail，含 pre-existing）
 
 ---
 

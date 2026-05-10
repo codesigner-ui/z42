@@ -13,5 +13,8 @@ pub mod jit;
 #[cfg(feature = "aot")]
 pub mod aot;
 pub mod native;
+// Embedding API (Tier 1 C ABI for host applications). Spec:
+// docs/design/embedding.md, spec/changes/add-embedding-api/.
+pub mod host;
 pub mod vm;
 pub mod vm_context;
