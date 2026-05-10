@@ -45,12 +45,48 @@ public sealed class DiagnosticBag
 
     // ── Output ────────────────────────────────────────────────────────────
 
+    /// Output format. Defaults to <see cref="DiagnosticOutputFormat.Plain"/>
+    /// (legacy MSBuild style) for golden-test stability; CLI driver flips to
+    /// <see cref="DiagnosticOutputFormat.Pretty"/> when stderr is a TTY.
+    public static DiagnosticOutputFormat DefaultFormat { get; set; } = DiagnosticOutputFormat.Plain;
+
+    /// Whether to emit ANSI color codes in Pretty mode. Set by the CLI driver
+    /// based on TTY detection / NO_COLOR env / explicit user opt-out.
+    public static bool DefaultUseColor { get; set; } = false;
+
     /// Print all diagnostics to stderr (sorted by file then line).
+    /// Pretty mode reads each unique source file once and renders with caret
+    /// + context; Plain mode keeps the legacy single-line format.
     public void PrintAll(TextWriter? writer = null)
+        => PrintAll(writer, DefaultFormat, DefaultUseColor);
+
+    public void PrintAll(TextWriter? writer, DiagnosticOutputFormat format, bool useColor)
     {
         writer ??= Console.Error;
+
+        // Cache file → source text so repeated diagnostics in the same file
+        // pay one I/O hit. Null entry caches "tried and failed".
+        var fileCache = new Dictionary<string, string?>(StringComparer.Ordinal);
+
         foreach (var d in _items.OrderBy(d => d.Span.File).ThenBy(d => d.Span.Line))
-            writer.WriteLine(d);
+        {
+            string? sourceText = null;
+            if (format == DiagnosticOutputFormat.Pretty && !string.IsNullOrEmpty(d.Span.File))
+            {
+                if (!fileCache.TryGetValue(d.Span.File, out sourceText))
+                {
+                    sourceText = TryReadSource(d.Span.File);
+                    fileCache[d.Span.File] = sourceText;
+                }
+            }
+            writer.WriteLine(DiagnosticRenderer.Render(d, sourceText, format, useColor));
+        }
+    }
+
+    private static string? TryReadSource(string path)
+    {
+        try { return File.Exists(path) ? File.ReadAllText(path) : null; }
+        catch { return null; }
     }
 
     /// Throw a <see cref="CompilationException"/> if there are any errors.

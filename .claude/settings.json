@@ -61,7 +61,9 @@
       "Bash(sed -i.bak 's/entry\\\\.Fn\\(cursor, kw, feat\\)/entry.Fn\\(cursor, kw, feat, diags\\)/g' StmtParser.cs)",
       "Bash(sed -i.bak 's/ParseBlock\\(cursor, feat\\)\\\\./ParseBlock\\(cursor, feat, diags\\)./g' StmtParser.cs)",
       "Bash(artifacts/rust/release/z42-test-runner src/libraries/z42.test/tests/dogfood.zbc)",
-      "Bash(artifacts/rust/release/z42-test-runner --legacy-subprocess src/libraries/z42.test/tests/dogfood.zbc)"
+      "Bash(artifacts/rust/release/z42-test-runner --legacy-subprocess src/libraries/z42.test/tests/dogfood.zbc)",
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== DiagnosticCodes.cs /**)",
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== 错误消息渲染：是否有 source 上下文 /**)"
     ],
     "additionalDirectories": [
       "/tmp",

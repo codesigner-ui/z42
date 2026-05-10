@@ -325,54 +325,105 @@ public static class DiagnosticCatalog
 
     // ── Public API ────────────────────────────────────────────────────────────
 
+    /// External catalogs (e.g. <c>WorkspaceCatalog</c>) register here so the
+    /// explain / list commands can route across code-spaces (E### / W### / Z###).
+    /// Z42.Project bootstraps its registration in a module initializer.
+    private static readonly List<Func<string, DiagnosticEntry?>> _externalLookups = new();
+    private static readonly List<Func<IEnumerable<KeyValuePair<string, DiagnosticEntry>>>> _externalEnumerators = new();
+
+    public static void RegisterExternal(
+        Func<string, DiagnosticEntry?> lookup,
+        Func<IEnumerable<KeyValuePair<string, DiagnosticEntry>>> enumerator)
+    {
+        _externalLookups.Add(lookup);
+        _externalEnumerators.Add(enumerator);
+    }
+
     /// Returns the catalog entry for <paramref name="code"/>, or null if not registered.
-    public static DiagnosticEntry? TryGet(string code) =>
-        All.TryGetValue(code, out var e) ? e : null;
+    /// Searches the built-in E### / W#### / Z### catalogs and any externally-registered.
+    public static DiagnosticEntry? TryGet(string code)
+    {
+        if (All.TryGetValue(code, out var e)) return e;
+        foreach (var lookup in _externalLookups)
+            if (lookup(code) is { } external) return external;
+        return null;
+    }
 
     /// Formats a detailed human-readable explanation of <paramref name="code"/>.
     /// Suitable for printing to a terminal (mirrors `rustc --explain`).
     public static string Explain(string code)
     {
-        if (!All.TryGetValue(code, out var e))
+        var entry = TryGet(code);
+        if (entry is null)
+        {
+            // Friendlier hint when prefix is recognized but code isn't.
+            string hint = code.StartsWith("Z", StringComparison.OrdinalIgnoreCase)
+                ? "\n  (VM runtime errors — central catalog pending; see src/runtime/src/native/error.rs)"
+                : "";
             return $"No documentation found for error code {code}.\n" +
-                   $"Run `z42c --list-errors` to see all known codes.";
+                   $"Run `z42c errors` to see all known codes.{hint}";
+        }
 
         var sb = new StringBuilder();
-        sb.AppendLine($"error[{code}]: {e.Title}");
+        sb.AppendLine($"error[{code}]: {entry.Title}");
         sb.AppendLine(new string('─', 60));
         sb.AppendLine();
-        sb.AppendLine(e.Description);
-        if (e.Example != null)
+        sb.AppendLine(entry.Description);
+        if (entry.Example != null)
         {
             sb.AppendLine();
             sb.AppendLine("Example:");
-            foreach (var line in e.Example.Split('\n'))
+            foreach (var line in entry.Example.Split('\n'))
                 sb.AppendLine($"  {line}");
         }
         return sb.ToString().TrimEnd();
     }
 
-    /// Prints a compact table of all known codes (for `--list-errors`).
+    /// Prints a compact table of all known codes (for `--list-errors`),
+    /// across the built-in E### catalog and all externally-registered ones.
     public static string ListAll()
     {
         var sb = new StringBuilder();
         sb.AppendLine("z42 diagnostic codes:");
         sb.AppendLine();
 
-        string? currentPrefix = null;
-        foreach (var (code, entry) in All.OrderBy(kv => kv.Key))
+        var combined = new List<KeyValuePair<string, DiagnosticEntry>>(All);
+        foreach (var enumerator in _externalEnumerators)
+            combined.AddRange(enumerator());
+
+        string? currentGroup = null;
+        foreach (var (code, entry) in combined.OrderBy(kv => kv.Key))
         {
-            string prefix = code[..4]; // "E010", "E020", ...
-            if (prefix != currentPrefix)
+            string group = GroupKey(code);
+            if (group != currentGroup)
             {
-                if (currentPrefix != null) sb.AppendLine();
-                currentPrefix = prefix;
+                if (currentGroup != null) sb.AppendLine();
+                sb.AppendLine($"# {GroupLabel(group)}");
+                currentGroup = group;
             }
             sb.AppendLine($"  {code}  {entry.Title}");
         }
 
         sb.AppendLine();
-        sb.AppendLine("Use `z42c --explain <code>` for full details.");
+        sb.AppendLine("Use `z42c explain <code>` for full details.");
         return sb.ToString().TrimEnd();
     }
+
+    /// Map a code prefix to its group bucket. "WS" must precede "W" so
+    /// workspace codes (WS###) don't collapse into the compiler-warning
+    /// bucket (W#### within the E-catalog, e.g. W0603 reserved namespace).
+    private static string GroupKey(string code)
+    {
+        if (code.StartsWith("WS", StringComparison.Ordinal)) return "WS";
+        return code[..1];
+    }
+
+    private static string GroupLabel(string group) => group switch
+    {
+        "E"  => "Compiler diagnostics (E####)",
+        "W"  => "Compiler warnings (W####)",
+        "WS" => "Workspace / manifest diagnostics (WS###)",
+        "Z"  => "VM runtime diagnostics (Z####)",
+        _    => $"{group}#### diagnostics",
+    };
 }

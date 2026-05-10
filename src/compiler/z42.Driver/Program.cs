@@ -6,6 +6,33 @@ using Z42.IR.BinaryFormat;
 using Z42.Pipeline;
 using Z42.Project;
 
+// ── Diagnostic output format ──────────────────────────────────────────────────
+// Pretty mode (rust/clang-style with source context + caret) when stderr is a
+// TTY; Plain mode (legacy MSBuild single-line) when piped to a file or another
+// process — keeps IDE / golden-test parsing stable.
+//
+// Overrides:
+//   Z42_DIAG_FORMAT=pretty|plain   force one mode regardless of TTY
+//   NO_COLOR=<anything>            disable ANSI color in Pretty mode
+{
+    var fmtEnv = Environment.GetEnvironmentVariable("Z42_DIAG_FORMAT")?.Trim().ToLowerInvariant();
+    bool isTty = !Console.IsErrorRedirected;
+    DiagnosticBag.DefaultFormat = fmtEnv switch
+    {
+        "pretty" => DiagnosticOutputFormat.Pretty,
+        "plain"  => DiagnosticOutputFormat.Plain,
+        _        => isTty ? DiagnosticOutputFormat.Pretty : DiagnosticOutputFormat.Plain,
+    };
+    bool noColor = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("NO_COLOR"));
+    DiagnosticBag.DefaultUseColor =
+        DiagnosticBag.DefaultFormat == DiagnosticOutputFormat.Pretty && isTty && !noColor;
+
+    // Force Z42.Project's module initializer (which registers WorkspaceCatalog
+    // with the central DiagnosticCatalog) — `explain` / `errors` may run before
+    // any other Z42.Project type is touched.
+    WorkspaceCatalog.Register();
+}
+
 // ── Root command ──────────────────────────────────────────────────────────────
 
 var rootCmd = new RootCommand("z42c — the z42 compiler");
