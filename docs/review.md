@@ -470,7 +470,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **已落地** | `split-rc-heap-tests` — rc_heap_tests.rs (1229 LOC) → `rc_heap_tests/` 子目录 10 个 topic 文件（最大 228 LOC） | refactor | Part 1 §1.4 (Rust) — **§1.4 整体收口** | 🟢 2026-05-07 |
 | **已落地** | `impl-dump-ast` — 实现 `--dump-ast` handler（手写 AST 树打印）+ 新增 `--dump-bound`（基于 `BoundExprVisitor<Unit>` / `BoundStmtVisitor<Unit>` 几乎免费）；输出缩进树 + 类型注解 + Span | refactor | Part 3 §3.2 | 🟢 2026-05-10 |
 | **已落地** | `split-symbol-from-type` — 抽 `IMemberSymbol` / `IMethodSymbol` / `IFieldSymbol` 层；Symbol 持有 `Decl` 反指针 + `Span` + `Modifiers` + `TestAttributes`；Z42ClassType.Methods/Fields 字典值类型切换；BoundCall.Symbol + 新 BoundIndirectCall 节点；TestAttributeValidator + IrGen TestIndex 走 IMethodSymbol.TestAttributes | lang | Part 2 §2.3 + Part 3 §3.1 收口；R-series 反射基础设施就位 | 🟢 2026-05-10 |
-| **M7 期间** | `lexer-trivia-preserve` — lexer 加 trivia 字段（可空） | refactor | Part 2 §2.5，formatter 前置 | 📋 |
+| **已落地** | `lexer-trivia-preserve` — `Token.LeadingTrivia: string` 字段，Lexer 用 `CaptureLeadingTrivia` 替代 `SkipWhitespaceAndComments`；leading-only model（trailing trivia = 下一 token 的 leading；source-end 走 EOF token），round-trip property 验证（10 单测）；Pipelines 暂时忽略字段，formatter / IDE 工作的扩展点已就位 | refactor | Part 2 §2.5 收口；formatter 单向门关闭 | 🟢 2026-05-10 |
 | **M7 期间** | `diag-engine-v2` — warning groups + severity 重映射 | lang | Part 3 §3.3 | 📋 |
 | **M7 之后** | 公共 API 边界声明（仅文档 + 命名空间约定） | docs | Part 2 §2.4 + Part 3 §3.5 | 📋 |
 | **M7 之后** | 在 [compiler-architecture.md](design/compiler-architecture.md) 记录"AST 不可变 / 三段分相"作为不变量 | docs | Part 3 §3.8、§3.9 防退化 | 📋 |
@@ -485,8 +485,9 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **已落地** | `introduce-method-token` Phase 1 — Token newtypes + 加载期 resolver + 8 热路径全 token cache（Call/Builtin/ObjNew/VCall/FieldGet/FieldSet/StaticGet/StaticSet）+ StaticField 全局编号 + Field/VCall 单态 IC；JIT/zbc/compiler-emit 留后续 phase | vm | Part 4 §4.1 + §4.6 + §4.7 (tier-up 前置) | 🟢 2026-05-08 |
 | **已落地** | `formalize-jit-method-token` Phase 2 — JIT helpers 切换为 token 直传（CallByToken / BuiltinByToken / ObjNewByToken / VCall / Field*ByToken / Static*ByToken）；JIT 不再走字符串路径 | vm | Part 4 §4.1 收口 (interp + JIT 双路径全 token) | 🟢 2026-05-08 |
 | **已落地** | `tokenize-ir-and-zbc-bump` Phase 3 — zbc v1.0 wire 格式：跨模块引用用 `IMPORT_BASE \| STRS pool idx` 编码，模块内引用用 source-order local index；C# `TokenAllocator` + Rust `IdMap` 双侧解码；reproducibility tests | ir | Part 4 §4.1 wire-format 收口；M7 反射 token 系统稳定 | 🟢 2026-05-09 |
-| **M7 期间** | `unify-frame-chain` — 单一 `VmFrame` 链表，统一 interp / jit / GC scan | refactor | Part 4 §4.5，stack trace / debugger 前置 | 📋 |
-| **M7 期间** | `eh-protocol-v2` — 异常表二分查找 + JIT trap 集成 | vm | Part 4 §4.4，依赖 `unify-frame-chain` | 📋 |
+| **已落地** | `unify-frame-chain` — 单一 `VmFrame` 链表，统一 interp / jit / GC scan | refactor | Part 4 §4.5 收口；stack trace / debugger 解锁 | 🟢 2026-05-09 |
+| **已落地** | exception-stack-trace + jit-stack-trace-parity — `Std.Exception.StackTrace` 填充 + JIT 与 interp 一致 | vm | stack trace 用户可见（依赖 unify-frame-chain） | 🟢 2026-05-09 |
+| **M7 期间** | `eh-protocol-v2` — 异常表二分查找 + JIT trap 集成 | vm | Part 4 §4.4，依赖 `unify-frame-chain`（已就绪） | 📋 |
 | **M7 之后** | 在 [vm-architecture.md](design/vm-architecture.md) 记录"VmContext 集中 / Register VM / PinView first-class / static-in-context"作为不变量 | docs | Part 4 §4.正面设计 防退化 | 📋 |
 | **M7 之后** | `lazy-metadata-loading` — RID-map 风格 per-type 懒加载 | vm | Part 4 §4.3，依赖 `introduce-method-token` | 📋 |
 | **M7 之后** | `eventpipe-lite` — tracing-based 用户可订阅事件流 | vm | Part 4 §4.8，embedding 友好 | 📋 |
@@ -569,3 +570,5 @@ extend-signature-whitelist (进行中)
 - **2026-05-10 状态同步**: introduce-bound-visitor 落地（10 处手写 switch 全部迁移到 BoundExprVisitor / BoundStmtVisitor）；Part 2 §2.1 + Part 1 §1.3 收口；优先级清单只剩 split-symbol-from-type + impl-dump-ast 两项
 - **2026-05-10 状态同步**: impl-dump-ast 落地（`--dump-ast` AST 缩进树 + `--dump-bound` 类型注解 Bound 树，BoundDumper 直接复用 visitor 框架）；Part 3 §3.2 收口；优先级清单只剩 split-symbol-from-type 一项
 - **2026-05-10 状态同步**: split-symbol-from-type 6-phase 全部落地（Symbol 接口 + Z42ClassType 字典值切换 + 63 调用点机械迁移 + BoundCall.Symbol + BoundIndirectCall + TestAttributeValidator/TestIndex Symbol 化）；Part 2 §2.3 + Part 3 §3.1 收口；**M7 启动前最高优先级清单清空**，R-series 反射基础设施全部就位
+- **2026-05-10 状态补录**: VM 线 `unify-frame-chain` (fd5deb2) + `exception-stack-trace` (3d4c790) + `jit-stack-trace-parity` (820e583) 全部已落地；Part 4 §4.5 收口。`eh-protocol-v2` 依赖（unify-frame-chain）已就绪可启动。其他在飞 specs（Span.Column propagation / Z catalog cross-lang / H0+H1 embedding API）非 review.md 原列项，落地无需 backfill
+- **2026-05-10 状态同步**: `lexer-trivia-preserve` 落地（`Token.LeadingTrivia` 字段 + Lexer 捕获 + 10 单测含 round-trip property）；Part 2 §2.5 单向门关闭，formatter / IDE 扩展点就位

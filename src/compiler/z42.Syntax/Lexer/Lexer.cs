@@ -21,9 +21,17 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         var tokens = new List<Token>();
         while (_pos < source.Length)
         {
-            SkipWhitespaceAndComments();
-            if (_pos >= source.Length) break;
-            tokens.Add(NextToken());
+            // lexer-trivia-preserve (2026-05-10): capture all skipped whitespace
+            // + comments preceding this token; attach as Token.LeadingTrivia for
+            // future formatter / IDE round-trip use. Pipelines currently ignore
+            // it — change is purely additive.
+            string trivia = CaptureLeadingTrivia();
+            if (_pos >= source.Length)
+            {
+                tokens.Add(Token.Eof(_pos, fileName, trivia));
+                return tokens;
+            }
+            tokens.Add(NextToken(trivia));
         }
         tokens.Add(Token.Eof(_pos, fileName));
         return tokens;
@@ -31,40 +39,45 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
 
     // ── Token dispatch ───────────────────────────────────────────────────────
 
-    private Token NextToken()
+    private Token NextToken(string leadingTrivia)
     {
         int startPos = _pos, startLine = _line, startCol = _col;
         char c = source[_pos];
 
         // 1. String / char literals — matched by prefix (longest first)
         if (TryMatchStringRule(out var strRule))
-            return LexStringBody(strRule!, startPos, startLine, startCol);
+            return LexStringBody(strRule!, startPos, startLine, startCol, leadingTrivia);
 
         // 2. Numeric literals — first digit triggers rule table
         if (char.IsDigit(c))
-            return LexNumber(startPos, startLine, startCol);
+            return LexNumber(startPos, startLine, startCol, leadingTrivia);
 
         // 3. Identifier / keyword
         if (char.IsLetter(c) || c == '_')
-            return LexIdentOrKeyword(startPos, startLine, startCol);
+            return LexIdentOrKeyword(startPos, startLine, startCol, leadingTrivia);
 
         // 4. Symbols — longest-match from SymbolRules
         if (TryMatchSymbol(out var symRule))
         {
             for (int i = 0; i < symRule!.Text.Length; i++) Advance();
-            return new Token(symRule.Kind, symRule.Text, MakeSpan(startPos, startLine, startCol));
+            return new Token(symRule.Kind, symRule.Text, MakeSpan(startPos, startLine, startCol), leadingTrivia);
         }
 
         // Unknown character
         Advance();
         return new Token(TokenKind.Error_Unknown, source[startPos.._pos],
-            MakeSpan(startPos, startLine, startCol));
+            MakeSpan(startPos, startLine, startCol), leadingTrivia);
     }
 
-    // ── Whitespace & comments ────────────────────────────────────────────────
+    // ── Whitespace & comments → trivia capture ───────────────────────────────
 
-    private void SkipWhitespaceAndComments()
+    /// lexer-trivia-preserve (2026-05-10): capture and return all whitespace +
+    /// comment text immediately preceding the next token. Returns "" when no
+    /// trivia precedes (e.g. start-of-source already at a token char).
+    /// Replaces the legacy SkipWhitespaceAndComments which discarded the text.
+    private string CaptureLeadingTrivia()
     {
+        int triviaStart = _pos;
         while (_pos < source.Length)
         {
             // Line comment
@@ -86,6 +99,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
             if (source[_pos] is ' ' or '\t' or '\r' or '\n') { Advance(); continue; }
             break;
         }
+        return _pos > triviaStart ? source[triviaStart.._pos] : "";
     }
 
     // ── String / char lexer ──────────────────────────────────────────────────
@@ -103,7 +117,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
     }
 
     private Token LexStringBody(
-        LexRules.StringRule rule, int startPos, int startLine, int startCol)
+        LexRules.StringRule rule, int startPos, int startLine, int startCol, string leadingTrivia)
     {
         // Advance past the prefix ("\"", "$\"", or "'")
         for (int i = 0; i < rule.Prefix.Length; i++) Advance();
@@ -141,12 +155,12 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         }
 
         return new Token(rule.Kind, source[startPos.._pos],
-            MakeSpan(startPos, startLine, startCol));
+            MakeSpan(startPos, startLine, startCol), leadingTrivia);
     }
 
     // ── Numeric lexer ────────────────────────────────────────────────────────
 
-    private Token LexNumber(int startPos, int startLine, int startCol)
+    private Token LexNumber(int startPos, int startLine, int startCol, string leadingTrivia)
     {
         foreach (var rule in LexRules.NumericRules)
         {
@@ -157,7 +171,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
             while (_pos < end.Value) Advance();
             SkipNumericSuffixes();
             return new Token(rule.Kind, source[startPos.._pos],
-                MakeSpan(startPos, startLine, startCol));
+                MakeSpan(startPos, startLine, startCol), leadingTrivia);
         }
         // Should never reach here — s_decDigits always matches at least one digit
         throw new InvalidOperationException("LexNumber: no rule matched");
@@ -171,7 +185,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
 
     // ── Identifier / keyword lexer ───────────────────────────────────────────
 
-    private Token LexIdentOrKeyword(int startPos, int startLine, int startCol)
+    private Token LexIdentOrKeyword(int startPos, int startLine, int startCol, string leadingTrivia)
     {
         while (_pos < source.Length && (char.IsLetterOrDigit(source[_pos]) || source[_pos] == '_'))
             Advance();
@@ -179,7 +193,7 @@ public sealed class Lexer(string source, string fileName = "<unknown>")
         var kind = TokenDefs.Keywords.TryGetValue(text, out var kw) ? kw : TokenKind.Identifier;
         // _ is a special discard pattern
         if (text == "_") kind = TokenKind.Underscore;
-        return new Token(kind, text, MakeSpan(startPos, startLine, startCol));
+        return new Token(kind, text, MakeSpan(startPos, startLine, startCol), leadingTrivia);
     }
 
     // ── Symbol lexer (longest-match) ─────────────────────────────────────────
