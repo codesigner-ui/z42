@@ -1,206 +1,224 @@
 # z42 Roadmap
 
-> 本文按 **phase（L1/L2/L3）** 组织实现进度，回答"现在做到哪一步"；版本发布节奏按 **SemVer** 见 [version.md](version.md)。
-> 已完成 spec 的实施细节存于 [docs/spec/archive/](spec/archive/)；按主题查规范见 [docs/design/](design/)。
+> **本文档 = z42 唯一的迭代计划**：当前焦点、下一阶段、长期 SemVer 路线、未完成项索引。
+>
+> **已完成**：每个落地的功能对应一个 `docs/spec/archive/YYYY-MM-DD-<name>/` 归档目录（带完整 proposal / design / tasks / 实施备注）；本文不复述。需要查"X 何时落地、为什么这样设计"按主题或日期检索 [`docs/spec/archive/`](spec/archive/) 即可。
+>
+> **设计决策**：见 [`docs/features.md`](features.md)（决策 + 理由 + phase 归属）+ [`docs/design/philosophy.md`](design/philosophy.md)（顶层哲学）。
+>
+> **实施细节**：见 [`docs/design/`](design/) 5 个主题子目录。
+
+---
+
+## 设计目标
+
+z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，无需切换语言。融合 C# 语法 + Rust 纪律 + Python 易用性。
+
+| 维度 | 设计 |
+|------|------|
+| 语法 | C#（命名 / 声明 / OOP 结构）|
+| 内存 | 始终 GC（无所有权 / 借用 / 生命周期）|
+| 错误处理 | L1 异常 / L3 引入 `Result<T, E>` + `?`（共存）|
+| 类型系统 | 静态类型 + 局部推断 + 泛型 + 接口；L3 引入 Trait 静态分发 |
+| 执行模型 | Bytecode-native：Interp / JIT / AOT 三模式，命名空间级 `[ExecMode]` 注解切换 |
+| 嵌入 | VM 设计为可嵌入到外部 app（C ABI），目标 ~200KB 子集 |
+| 互操作 | 三层 ABI（C / Rust ergonomic / 平台 facade），native 类型可注册进 z42 |
+
+性能基线（philosophy §9）：interp ≤ Python 1.5×；JIT ≥ V8 70%；AOT ≥ Go 80%；GC pause < 5ms p99；嵌入子集 < 200KB。
+
+---
 
 ## 固定决策
 
-- **GC**：z42 始终带 GC，不引入所有权/借用（降低上手成本）
+- **GC**：z42 始终带 GC，永不引入所有权 / 借用（降低上手成本）
 - **IR**：寄存器 SSA 形式
 - **执行模式注解**：作用于命名空间级
 - **`.zbc` magic**：`ZBC\0`
+- **pre-1.0 不承诺向后兼容**（与 [`workflow.md` "不为旧版本提供兼容"](../.claude/rules/workflow.md) 对齐）
+- **1.0+ 启用 SemVer + deprecation 周期**
 
 ---
 
 ## 阶段总览
 
 | 阶段 | 目标 | 状态 |
-|------|------|------|
-| **L1** | C# 基础子集，跑通完整 pipeline（源码 → IR → VM 执行） | ✅ 已完成（详见下） |
-| **L2** | 基础设施完善（编译、工程、测试、VM 质量、标准库） | 🚧 进行中 |
-| **L3** | 高级语法扩展（泛型、Lambda、异步 + z42 特有特性） | 🟡 部分（泛型 + lambda + delegates 已落地，async / ADT / Result 待开始） |
+|------|------|:----:|
+| **L1** | C# 基础子集，跑通完整 pipeline（源码 → IR → VM 执行） | ✅ 已完成 |
+| **L2** | 基础设施（编译、工程、测试、VM 质量、标准库） | 🚧 进行中 |
+| **L3** | 高级语法（泛型 / Lambda / async + z42 特有特性） | 🟡 部分（泛型 + lambda + delegates 提前落地）|
 
-> 阶段严格串行：L1 pipeline 全通 → 启动 L2；L2 全完成 → 启动 L3。当前 L1 全绿、L2 多项进行中、L3 部分提前落地。
-
-**当前焦点**：M6（工程支持 + 测试体系 + 错误码体系）→ M7（VM 元数据 + 标准库）。下一阶段对应 SemVer 版本：[0.2.x（工程化 & 包系统）](version.md#02x--工程化--包系统--perf-ci-立项) → [0.3.x（测试体系 & VM 质量）](version.md#03x--测试体系--vm-质量--gc-v1)。
+阶段串行：L1 全通 → L2；L2 全完成 → L3。当前 L1 全绿、L2 多项进行中、L3 部分提前落地。
 
 ---
 
-## L1 — Bootstrap（C# 基础子集）✅
+## 当前焦点（next 4–6 周）
 
-**目标已达成**：以最小特性集跑通完整 pipeline（词法 → 语法 → 类型检查 → IR Codegen → VM 执行）。
+**M6 工程支持 + 测试体系 + 错误码体系** + **M7 VM 元数据 + 标准库基础**，对应 SemVer **0.2.x → 0.3.x → 0.4.x**。
 
-**特性范围**：基本类型 + 数值别名 / 全部运算符 / 控制流（if/while/do-while/for/foreach/switch）/ 三目 + null-coalesce + null-conditional / 字符串插值 / 数组 + List + Dictionary（pseudo-class）/ 可空类型 / 枚举 / 类（字段/构造器/方法/auto-property/static）/ struct / record / 接口 / 继承 / 异常 / 默认参数 / `ref/out/in` 参数修饰符 / `[ExecMode]` + `[HotReload]` 注解。详见 [language-overview.md](design/language/language-overview.md) 与各专题 [design/language/](design/language/)。
+### 0.2.x — 工程化 & 包系统 + perf CI 立项
 
-实施明细按 spec 归档于 [docs/spec/archive/2026-04-04-* 至 2026-05-05-*](spec/archive/)。
+退出标准：`.zbc` v1.x / `.zpkg` 格式冻结；perf CI 上线；多平台 CI matrix 全绿；release 自动化产出跨平台 binary。
 
----
+| 子版本 | 内容 | 估时 |
+|------|------|:----:|
+| 0.2.0 | `.zbc` v1.x 格式冻结（magic + section layout 锁定）| 1 周 |
+| 0.2.1 | `.zpkg` indexed/packed 格式冻结 + `z42c disasm` 完整 | 1 周 |
+| 0.2.2 | Benchmark 套件骨架（`cargo bench` + BenchmarkDotNet）+ 初始基线 | 1.5 周 |
+| 0.2.3 | Perf CI + 性能预算（≥10% 退化阻塞 commit）| 1 周 |
+| 0.2.4 | `z42c new/init/fmt/clean` 收尾 + `z42-fmt` 独立 binary + `lint-manifest` | 1 周 |
+| 0.2.5 | 多平台 CI matrix（5 平台 build/test 全绿）+ CI 模板 | 1.5 周 |
+| 0.2.6 | Release 自动化：git tag → 跨平台 z42c/z42vm 二进制 + zpkg 自动产出 | 1 周 |
 
-## L2 — Foundation（基础设施）🚧
+### 0.3.x — 测试体系 & VM 质量 + GC v1
 
-**目标**：在 L1 pipeline 基础上，补全编译器覆盖、稳定工程体系、建立测试基线、提升 VM 质量，落地基础标准库。
+| 子版本 | 内容 | 估时 |
+|------|------|:----:|
+| 0.3.0 | Golden 全 L1 覆盖 + interp/JIT 一致性 CI | 2 周 |
+| 0.3.1 | 调试符号：行号映射稳定 + 局部变量名 + 栈回溯优化 | 2 周 |
+| 0.3.2 | 热重载 VM 端完整实现（interp 模式）| 2 周 |
+| 0.3.3 | **GC v1**：抽象 GC 接口 + mark-and-sweep（替换 `Rc<RefCell>`）| 2–3 周 |
+| 0.3.4 | Profiler hooks：函数 entry/exit + allocation + GC 事件 | 1 周 |
 
-### 编译器完善
+### 0.4.x — 标准库 v1 + test/bench/docgen 工具链
 
-- **TypeChecker / IrGen**：✅ L1 全特性覆盖
-- **错误体系**：✅ E####（C# 编译期）+ Z####（Rust runtime）catalog 已就位；🚧 友好错误消息 + `z42c explain <CODE>` 命令进行中
-- **`.zbc` 二进制格式**：✅ v1.x 稳定（magic / version / section layout 锁定）；🟡 split-debug-symbols Phase 4 进行中（per-param 类型名带入 SIGS）
-- **`disasm` 反汇编**：✅ 基础可读
-
-### 工程支持 ✅
-
-- `z42.toml` 单包 manifest + workspace（virtual + member + include + policy + 集中产物）
-- `z42c new/init/build/check/run/clean/fmt/disasm/explain/info/metadata/tree/lint-manifest`
-- source_hash 增量编译（命中跳过 parse + typecheck + irgen）
-- 详见 [`compiler/project.md`](design/compiler/project.md) + [`compiler/compilation.md`](design/compiler/compilation.md)
-
-### 测试体系 ✅（部分）
-
-- ✅ Golden test 全 L1 覆盖（114 vm_core + 20 stdlib-bound = 134；按 dotnet/runtime-style 重组）
-- ✅ Interp + JIT 双模式跑同一测试集结果一致
-- ✅ CI 门禁：`dotnet test` + `test-vm.sh` + `test-stdlib.sh` + `test-cross-zpkg.sh` 全绿
-- ✅ R 系列基础（R1 TIDX section / R2 z42.test 库 + Bencher / R3 z42-test-runner subprocess + format/filter / R3c test-changed / R4 attribute 校验 + 泛型 attribute / R5 stdlib 各库本地测试）
-- 📋 R3b：in-process runner + Setup/Teardown hook 真生效 + Bench 调度模式 + zpkg-as-input
-
-详见 [`testing/testing.md`](design/testing/testing.md)。
-
-### VM 质量
-
-- ✅ Type metadata（type info / 字段布局 / 方法表）
-- 📋 调试符号：行号映射、局部变量名（split-debug-symbols 系列进行中）
-- 🚧 Interpreter 优化（指令 dispatch / 对象分配路径）
-- 🚧 JIT 优化（热点函数识别 / 简单内联 / 常量折叠）
-- ✅ MagrGC 子系统（trait + Bacon-Rajan 环回收 + Drop-time finalizer + external root scanner + interp/JIT 栈扫描 + strict OOM）
-- ✅ GC stdlib 重组（`Std.GC` / `WeakHandle` / `GCHandle` / `HeapStats` 暴露脚本端）
-
-详见 [`runtime/vm-architecture.md`](design/runtime/vm-architecture.md) + [`runtime/gc-handle.md`](design/runtime/gc-handle.md)。
-
-### Native Interop / 三层 ABI ✅
-
-C1 接口骨架 → C2 Tier 1 C ABI runtime → C3 Tier 2 ergonomic Rust API → C4-C8 pinned/byte-buffer/CStr marshal → C9 类级 native shorthand → C10 Array<u8> pin → C11a-e import-from 语法 + manifest reader + opaque-handle whitelist。
-
-后续未排：C11c (Path B2 脚本字段 + VM `z42_obj_*` ABI) / C11d (Path C `[Repr(C)]`) / C11f (c_char return ownership / Array/Option / 定长数组) / `extern class T` / `CallNativeVtable` runtime + IR codegen / JIT emit native opcodes。
-
-详见 [`language/interop.md`](design/language/interop.md)。
-
-### Embedding / Hosting API ✅（H0-H3）
-
-H0 设计 → H1 C ABI scaffold（initialize/shutdown/last_error）→ H2 hello-world 全链路（load_zbc + resolve_entry + invoke + corelib + import_namespaces + stdout sink + Tier 2 `z42-host` crate + `examples/hello_rust`）→ H3 错误路径覆盖。
-
-| Spec | 内容 | 状态 |
-|------|------|------|
-| **H0**（add-embedding-api design ✅ 2026-05-10）| docs/spec/changes 四件套；三层 ABI；多实例 / hot-reload / GC handle / async / Tier 3 facade 进 Deferred | ✅ |
-| **H1-H3** | Tier 1 / Tier 2 + 错误路径全覆盖 | ✅ |
-| **H4** | iOS Swift facade / Android JNI bridge | 📋 |
-| **H5** | `z42-test-runner` 重构基于 `z42-host` | 📋 |
-
-详见 [`runtime/embedding.md`](design/runtime/embedding.md)。
-
-### 标准库（基础）
-
-- ✅ `z42.core`：Object / 基本类型 / Type / Convert / Assert / Exception 树（9 标准子类）/ `IDisposable` / `IEnumerable<T>` / `IEnumerator<T>` / `IComparable<T>` / `IEquatable<T>` / `IComparer<T>` / `IEqualityComparer<T>` / `IFormattable` / `INumber<T>`（Wave 1-3）
-- ✅ `z42.core/Collections/`：`List<T>` / `Dictionary<K,V>` 纯脚本（pseudo-class 已替换）
-- ✅ `z42.core/Delegates/`：Action / Func / Predicate（0-4 arity，详见 [delegates-events.md](design/language/delegates-events.md)）
-- ✅ `z42.core/GC/`：GC / WeakHandle / GCHandle / HeapStats
-- ✅ `z42.collections`：Stack / Queue / LinkedList
-- ✅ `z42.io`：Console / File / Path / Environment（host FFI L2 例外）
-- ✅ `z42.math`：libm 绑定 + 常量
-- ✅ `z42.text`：StringBuilder（纯脚本）
-- ✅ `z42.test`：z42 测试框架（Assert / TestIO / Bencher / TestFailure / SkipSignal）
-
-📋 缺失包（按 P0–P3 排期）：见 [`stdlib/roadmap.md`](design/stdlib/roadmap.md)。
-
-### 代码质量 Backlog（按触发条件执行）
-
-> 已完成批次 1–4 见 spec/archive/；以下为低优先级未完成项。
-
-| 项目 | 触发条件 | 说明 |
-|------|---------|------|
-| A6: Value `Rc<RefCell>` → `Arc<Mutex>` 或对象池 | L3 async/线程模型设计时 | `Rc` 是 `!Send`；MagrGC Phase 3 切换 `GcRef<T>` 时一并解决 |
-| A10: `PackageCompiler` → 可注入 `BuildPipeline` | mock 文件系统单元测试时 | 当前 static class 可用，低优先级 |
-| `TypeEnv.BuiltinClasses` 动态注入 | 泛型类型表示扩展时 | 当前硬编码集合 |
-| `IsReferenceType` 中 List/Dict 硬编码 | 同上 | List/Dict 应为 `Z42ClassType` |
-| switch 穷举检查（exhaustiveness） | enum switch 场景增多时 | switch on enum 不检查覆盖 |
-| 死代码警告 | IDE 集成或用户反馈时 | return 后语句静默丢弃 |
-| 隐式窄化转换拒绝 | 数值精度 bug 出现时 | `int x = someLong` 应显式 cast |
-| `IrInstr` JsonDerivedType 自动注册 | 指令数超过 60 个时 | 当前 54 个注解 |
-| `exec_instr.rs` 按类别拆分辅助函数 | 文件超过 450 行时 | 当前 362 行 |
-| Golden Test 改用 `test.toml` 声明类别 | 测试目录结构变复杂时 | 当前路径约定（`/errors/`, `/run/`）够用 |
+| 子版本 | 内容 | 估时 |
+|------|------|:----:|
+| 0.4.0 | `z42.core` 完整：Object / Convert / Assert / IEquatable / IComparable / IDisposable | 1.5 周 |
+| 0.4.1 | Exception 体系完整 + 9 标准子类 + IEnumerable<T> 完整 | 1 周 |
+| 0.4.2 | `z42.io`：文件读写 + stdin/stdout + Path 操作 | 1.5 周 |
+| 0.4.3 | `z42.math`：libm 绑定 + 常量 | 1 周 |
+| 0.4.4 | `z42.collections`：List/Dict 纯脚本替换 pseudo-class + Queue/Stack | 2 周 |
+| 0.4.5 | `z42.text`：字符串操作 + StringBuilder | 1 周 |
+| 0.4.6 | **`z42.test` v1 + `z42c test`**：注解发现 + Assert 扩展 + golden 集成 | 2 周 |
+| 0.4.7 | **`z42.bench` v1 + `z42c bench`**：warmup + 多次迭代 + JSON + baseline diff | 2 周 |
+| 0.4.8 | **`z42-doc` 文档生成器**：doc comment → HTML / markdown + stdlib 自动发布 | 1.5 周 |
 
 ---
 
-## L3 — Advanced（高级特性）🟡
+## 长期 SemVer 路线（0.5 → 1.0）
 
-**目标**：引入 L1 推迟的高级语法 + z42 特有类型系统扩展。L2 全完成后启动；部分子项已提前落地（泛型 / lambda / delegate）。
+> 高层 charter；每个 minor 启动时再开 spec 排具体子版本。设计原则：每个 minor 是独立可发布单位（用户可感知能力跃迁）；每个 patch 是独立 spec。
 
-### L3-G 泛型 ✅（核心已完成）
+| 版本 | 主题 | Phase | 估时 |
+|------|------|:----:|:----:|
+| **0.5.x** | 泛型完整 + Trait 静态分发 + 反射 + LSP v1 + Interop 2a（Rust embedding 稳定）| L3 | 10–14 周 |
+| **0.6.x** | 函数式（Lambda / 命名参数 / 模式匹配 / `let` 不可变 / LINQ）+ unmanaged + GC v2 + linter | L3 | 9–11 周 |
+| **0.7.x** | `Result<T,E>` + `?` + ADT + `match` 穷尽检查 | L3 | 6–8 周 |
+| **0.8.x** | async / await + 多线程 + GC v3（generational + concurrent）+ DAP debugger | L3 | 12–16 周 |
+| **0.9.x** | 单文件脚本 + 嵌入 API GA + 可裁剪 + WASM target + Interop 2b（manifest reader / source generator）| L3 | 10–14 周 |
+| **0.10.x** | 性能强化（philosophy §9 五指标全部达标）| L3 | 8–12 周 |
+| **1.0.x** | 自举（z42 编译 z42 编译 z42 byte-identical）+ 跨架构 NativeAOT + Interop 3 + `z42up` 工具链 GA + SemVer / deprecation 启用 | L3+ | 14–18 周 |
 
-| 子阶段 | 内容 | 状态 |
-|--------|------|:----:|
-| **L3-G1** | 泛型函数 + 泛型类（无约束） | ✅ |
-| **L3-G2** | 接口约束 `where T: I + J` | ✅ |
-| **L3-G2.5** | 约束范式（基类 / ctor / class / struct / enum / 接口继承 / 裸 type-param 链 / 数值 / operator / static abstract iter 1）| ✅ |
-| **L3-G2.5 残余** | `notnull` / `unmanaged` / `reified` / `Func` 约束 / 关联类型链 / `<in/out>` 变型 / 默认 type-param | 📋 大部分进 Deferred |
-| **L3-G3a** | zbc 约束元数据 + VM loader 加载时校验 | ✅ |
-| **L3-G3c** | 关联类型 | ⏸ Deferred（见 [generics.md](design/language/generics.md)）|
-| **L3-G3d** | 跨 zpkg TSIG 约束传播 | ✅ |
-| **L3-G4a-h** | 泛型容器 + 索引器 + ArrayList/HashMap + foreach 鸭子协议 + pseudo-class 替换 | ✅ |
-| **L3-Impl1/2** | extern impl + 跨 zpkg 传播 | ✅ |
-| **L3-R** | 反射 + 运行时类型信息 | 📋 统一批次延后（见 §L3-R 下节）|
+**累计估算**：~16–20 个月（按全职 1 人节奏）。
 
-详见 [`generics.md`](design/language/generics.md) + [`static-abstract-interface.md`](design/language/static-abstract-interface.md)。
+### 跨版本关键依赖
 
-### L3-C 闭包 / Lambda ✅（核心 + JIT 完成）
+```
+0.1 ─► 0.2 ─► 0.3 ──┬──► 0.4 ──► 0.5 ──► 0.6 ──► 0.7 ──► 0.8 ──► 0.9 ──► 0.10 ──► 1.0
+       │       │   │           │                                            │
+       │       │   │           └─── reflection ───► 0.5.6 (test 增强)        │
+       │       │   │                                                        │
+       │       │   └─── GC v1 ─────► GC v2 (0.6) ─► GC v3 (0.8) ───────────► │
+       │       │                                                            │
+       │       └─── benchmark 套件 ─► perf CI (0.2.3) ──持续生效──────────► │
+       │                                                                    │
+       └─── .zbc/.zpkg 格式冻结 ─────► 1.0 SemVer 启用 ────────────────────► │
+```
 
-| 子阶段 | 内容 | 状态 |
-|--------|------|:----:|
-| **L2-C1** lambda 字面量 / `(T)->R` 函数类型 / `Func<>`/`Action<>` desugar | ✅ |
-| **L2-C1b** local function | ✅ |
-| **L3-C2-core** 捕获 + 档 C 堆擦除 | ✅ |
-| **L3-C2-loops** 循环变量新绑定（值快照自动满足）| ✅ |
-| **L3-C2-jit** JIT 路径补全 | ✅ |
-| **L3-C2-mono** 档 B 完整版（单态化）| 📋 当前仅 alias 子集 |
-| **L3-C2-stack** 档 A 完整版（栈上 env）| 📋 当前仅 callee 立即调用子集 |
-| **L3-C2-send** Send 派生 + spawn 检查 | ⏸ 与 concurrency 同期 |
+强依赖链：
+- 0.5 反射 ◄── 0.10 性能数据自查（type metadata access）
+- 0.6 unmanaged ◄── 0.9.6 C ABI 头文件
+- 0.7 Result ◄── 0.8 async（async fn 通常返回 `Task<Result<T,E>>`）
+- 0.8 GC v3 ◄── 0.9.5 VM 组件化
+- 0.10 性能基线 ◄── 1.0 稳定承诺
+- 1.0 自举 ◄── 0.5+ 全部 L3 特性（编译器自身需 lambda / generic / async）
 
-详见 [`closure.md`](design/language/closure.md)。
+---
 
-### L3-D Delegates / Events ✅
+## Feature → Version 映射
 
-D1（delegate 关键字 + 单播 + 方法组缓存）+ D2a/b/c/d-1/d-2-Action（多播 + ISubscription wrapper + event 关键字 + 异常聚合）+ D-1a/b（WeakHandle / WeakRef wrapper）+ D-5（ReferenceEquals）+ D-6（嵌套 dotted-path）+ D-7（单播 IDisposable token + 严格 access control）。
+每个 features.md 章节落地到哪个 minor。
 
-📋 D2d-2 Func/Predicate 异常聚合（Action 路径已完成）；D-2 ISubscription chain；D-3 N>4 arity（Deferred 见 [delegates-events.md](design/language/delegates-events.md)）。
+| features.md 章节 | 所属 minor | 当前状态 |
+|------|:------:|:----:|
+| §1 Type System / §2 Null Safety / §3 Memory Management / §4 Error Handling (exceptions) / §5 Type Definitions (class/struct/record) / §6 Functions / §7 Control Flow / §8 Strings / §9 Collections / §10 Imports / §11 Numeric Aliases | 0.1.x | ✅ L1 |
+| §12 Hot Reload | 0.3.2 | 🟡 设计有；GC v1 后真热更新落地 |
+| §13 Execution Mode Annotations | 0.1.x（注解）→ 0.3.x（运行时切换）| 🟡 注解 ✅；运行时切换待 |
+| §14 Generics + Trait | 0.5.x | ✅ G1-G4 + L3-Impl 提前落地 |
+| §15 Reflection | 0.5.1–0.5.3 | 📋 L3-R 统一批次 |
+| §16 Lambda + Closure | 0.6.0 | ✅ L2-C1 + L3-C2 核心提前落地 |
+| §17 Result + ADT + match | 0.7.x | 📋 |
+| §18 可裁剪 / Tree-shaking / 200KB 子集 | 0.9.x（嵌入 / 裁剪）+ 1.0-rc（AOT 静态链接）| 📋 |
+| §19 NativeAOT | 1.0.x | 📋 |
+| §20 Interop 三层 ABI | 0.5.5 / 0.9.x / 1.0.x | ✅ Tier 1 + Tier 2 + manifest 提前落地 |
 
-### L3-R 反射与运行时类型信息（统一批次，延后）
+> "提前落地" = L2 阶段已实施部分 L3 特性，未对应到 0.x.0 minor 但代码已在 main。
 
-合并 L3-G3b、运行时约束校验、`new T()` / `Activator.CreateInstance<T>` 等需求，一次性规划 VM 类型系统。R-5 `type_args` 运行时传递机制是核心架构决策。
+---
 
-**先决条件**：✅ L3-G3a 元数据；📋 L3-G3c 关联类型；📋 VM 架构决策。
+## 横向工作流（贯穿所有版本）
 
-详见 [generics.md](design/language/generics.md) §L3-R。
+| 工作流 | 启用版本 | 内容 |
+|------|:------:|------|
+| Benchmark 套件 | 0.2.2 | `cargo bench` + BenchmarkDotNet 骨架 |
+| Perf CI | 0.2.3 | 关键 benchmark > 10% 退化阻塞 commit |
+| 多平台 CI matrix | 0.2.5 | macOS / Linux / Windows × x86_64/arm64 全绿 |
+| 项目级 CI 模板 | 0.2.5 | `z42c new` 自带 GitHub Actions / GitLab CI 模板 |
+| Release 自动化 | 0.2.6 | git tag → 跨平台 binary + zpkg 自动产出 |
+| 跨 mode 一致性 CI | 0.3.0 | interp / JIT 同测试集结果一致 |
+| `z42c test` GREEN 门禁 | 0.4.6 | stdlib + 用户代码 z42 测试纳入 GREEN |
+| `z42c bench --diff` | 0.4.7 | z42 代码 bench 进 perf CI |
+| `z42-doc` 自动发布 | 0.4.8 | 标准库 doc comment → 静态站点 |
+| LSP 集成测试 | 0.5.7 | LSP server 协议级 conformance test |
+| DAP debugger conformance | 0.8.7 | VS Code / JetBrains 调试 |
+| WASM target CI | 0.9.7 | VM 编译为 WASM + headless 浏览器跑 |
+| 跨 mode bench 对比 | 0.10.x | interp / JIT / AOT 三模 bench 报告 |
+| 跨架构 perf 矩阵 | 1.0-rc1 | x86_64 / arm64 / wasm32 perf 进 release notes |
 
-### 高级语法（待开始）
+### 多平台支持矩阵
 
-| 特性 | 说明 |
-|------|------|
-| `async` / `await` | 染色 async；`Task` / `ValueTask`；结构化并发；与 GC v3 + concurrency 同期 |
-| LINQ 风格 | `Where` / `Select` / `OrderBy` 等（依赖 lambda + IEnumerable）|
-| 命名参数 | call-site `Greet(name: "z42")` |
-| 模式匹配扩展 | 属性模式 / 位置模式 / `is` 类型测试 |
+| 平台 | 编译器 | VM | NativeAOT | 起始版本 |
+|------|:---:|:---:|:---:|:----:|
+| macOS x86_64 / arm64 | ✅ | ✅ | ✅ | 0.2.5 |
+| Linux x86_64 / arm64 | ✅ | ✅ | ✅ | 0.2.5 |
+| Windows x86_64 | ✅ | ✅ | ✅ | 0.2.5 |
+| Windows arm64 | ✅ | ✅ | ⚠️ rc | 1.0-rc2 |
+| WASM (wasm32-wasi) | — | ✅ VM only | — | 0.9.7 |
+| iOS / Android | — | 🔬 实验 | 🔬 实验 | 1.x+ |
+| 嵌入式（no_std）| — | 🔬 实验 | — | 1.x+ |
 
-### z42 特有扩展（待开始）
+### Toolchain 矩阵
 
-| 特性 | 说明 |
-|------|------|
-| `Result<T, E>` + `?` | 函数式错误处理（与 try/catch 共存）|
-| `Option<T>` | 替代 `T?`（编译期穷尽检查）|
-| Trait 静态分发 | 替代 vtable 接口分发 |
-| ADT（代数数据类型） | 原生 sum type（替代 abstract record 模拟）|
-| `match` 穷尽检查 | 替代 `switch` |
-| 默认不可变变量 | `let` 不可变 / `var` `mut` 显式可变 |
-| 单文件脚本模式 | 无 `z42.toml` 直接 `.z42` 执行 |
-| 内联 eval | `z42vm -c "..."` + 嵌入 API source 输入 |
-| REPL | 交互式求值 |
+| 工具 | 用途 | 起始版本 | GA 版本 |
+|------|----|:----:|:----:|
+| `z42c` | 编译器驱动（build/check/run/test/bench/fmt/clean/disasm/explain/new/init/doc）| 当前 | 0.4.x |
+| `z42vm` | VM 运行时 | 当前 | 0.9.x |
+| `z42-fmt` | 代码格式化 | 当前 | 0.2.4 |
+| `z42-doc` | API 文档生成 | 0.4.8 | 0.4.8 |
+| `z42-lsp` | Language Server Protocol | 0.5.7 | 0.6.7 |
+| `z42-lint` | 静态检查 | 0.6.7 | 0.7.x |
+| `z42-dap` | Debug Adapter Protocol | 0.8.7 | 0.9.x |
+| `z42up` | 版本管理工具 | 1.0-rc6 | 1.0 |
+| `z42-pkg` | 包注册表客户端 | 1.x+ | 1.x+ |
+
+### GREEN 标准演进（任一时点 = 该时点之前所有项的累积）
+
+| 起始版本 | 新增 GREEN 项 |
+|:------:|------|
+| 当前 | `dotnet build` + `cargo build` + `dotnet test` + `./scripts/test-vm.sh` 全绿 |
+| 0.2.3 | Perf CI |
+| 0.2.5 | 多平台 CI matrix |
+| 0.4.6 | `z42c test` 100% 通过 |
+| 0.4.7 | `z42c bench --diff` 通过 |
+| 0.4.8 | `z42-doc` 无错 |
+| 0.5.0 | 跨 zpkg 反射元数据一致性 |
+| 0.5.7 | LSP conformance |
+| 0.6.7 | `z42-lint` 零警告 |
+| 0.8.6 | 多线程压力测试（race detector）|
+| 0.8.7 | DAP conformance |
+| 0.9.7 | WASM target build & test |
+| 0.10.0 | philosophy §9 五指标自动化基线 |
+| 1.0.0 | 自举 byte-identical + 跨架构 perf 数字 |
 
 ---
 
@@ -209,15 +227,42 @@ D1（delegate 关键字 + 单播 + 方法组缓存）+ D2a/b/c/d-1/d-2-Action（
 | 里程碑 | 内容 | 所属阶段 | 状态 |
 |--------|------|:-------:|:----:|
 | M1 | Lexer + Parser | L1 | ✅ |
-| M2 | TypeChecker（L1 特性全覆盖） | L1 → L2 | ✅ |
-| M3 | IR Codegen → `.zbc`（L1 特性全覆盖） | L1 → L2 | ✅ |
-| M4 | VM Interpreter（L1 特性全覆盖） | L1 | ✅ |
-| M5 | VM JIT（Cranelift，L1 特性） | L1 → L2 | ✅ |
-| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | 🚧 |
-| M7 | VM 元数据 + 标准库基础（core/io/collections） | L2 | 🚧 |
-| M8 | TypeChecker + Codegen 扩展（L3 特性） | L3 | 🟡 部分（泛型 / lambda / delegate）|
-| M9 | VM AOT（LLVM/inkwell） | L3 | 📋 |
-| M10 | 自举（Self-hosting） | L3+ | 📋 |
+| M2 | TypeChecker（L1 特性全覆盖）| L1 → L2 | ✅ |
+| M3 | IR Codegen → `.zbc`（L1 特性全覆盖）| L1 → L2 | ✅ |
+| M4 | VM Interpreter（L1 特性全覆盖）| L1 | ✅ |
+| M5 | VM JIT（Cranelift，L1 特性）| L1 → L2 | ✅ |
+| M6 | 工程支持 + 测试体系 + `.zbc` 格式稳定 | L2 | 🚧 当前焦点 |
+| M7 | VM 元数据 + 标准库基础（core/io/collections）| L2 | 🚧 当前焦点 |
+| M8 | TypeChecker + Codegen 扩展（L3 特性）| L3 | 🟡 部分（泛型 / lambda / delegate 提前）|
+| M9 | VM AOT（LLVM/inkwell）| L3 | 📋 |
+| M10 | 自举（Self-hosting）| L3+ | 📋 |
+
+---
+
+## 待裁决问题（Q1–Q18）
+
+> 以下问题在对应版本启动 spec 时由 User 裁决；提前列出避免实施时阻塞。
+
+| # | 版本 | 问题 |
+|:--:|:----:|-----|
+| Q1 | 0.3.3 | GC v1 放 0.3 还是延后到 0.8 与多线程一起？（暂定方案：0.3）|
+| Q2 | 0.4.6 | `z42.test` 注解风格：`[Test]`（C#）vs `test "name" {}`（Zig）？（推荐 C# 风）|
+| Q3 | 0.5.4 | Trait 与 interface 是否完全等价？同一类型可同时实现两者？|
+| Q4 | 0.6.0 | 闭包变量捕获：值捕获 vs 引用捕获 vs 显式标注？|
+| Q5 | 0.6.3 | 引入 `let` 后是否提供 `var → let` codemod？|
+| Q6 | 0.7.1 | `Option<T>` 与 `T?` 是否可隐式互转？编译器层视为同一类型？|
+| Q7 | 0.8.5 | 数据竞争预防：Send/Sync trait 还是注解 + 编译器分析？|
+| Q8 | 0.9.5 | VM 组件化粒度：cargo feature 还是构建时 build profile？|
+| Q9 | 0.10.x | 性能强化 9 个 patch 独立发布还是合并 0.10.0 单次？|
+| Q10 | 1.0 | AOT 是否必须卡 1.0？（备选：1.0 = 自举 + 稳定，1.1 = AOT）|
+| Q11 | 0.2.5 | 多平台 CI 选 GitHub Actions matrix 还是自托管 runner？arm64 主机如何获取？|
+| Q12 | 0.2.5 | Release artifact 命名（`z42-{version}-{os}-{arch}.tar.gz`？包含哪些 binary？）|
+| Q13 | 0.5.7 | LSP server 用 .NET（复用编译器）还是 Rust（复用 VM）？|
+| Q14 | 0.8.7 | DAP debugger 多线程暂停语义：单 thread 还是全部？JIT/AOT 如何 step？|
+| Q15 | 0.9.7 | WASM 下 GC：等 wasm-gc proposal 还是自实现 wasm-internal GC？|
+| Q16 | 0.9.8 | 嵌入式 ~200KB 平台基准（cortex-M4 / esp32 / RISC-V？）|
+| Q17 | 1.0-rc6 | `z42up` 用 Rust 还是等自举后用 z42 自身实现？|
+| Q18 | 1.x+ | 包注册表中心化（crates.io 模式）还是去中心化（go modules / git URL）？|
 
 ---
 
@@ -225,17 +270,15 @@ D1（delegate 关键字 + 单播 + 方法组缓存）+ D2a/b/c/d-1/d-2-Action（
 
 > 所有显式延后特性的横向索引；条目正文存于对应 design doc 的 "Deferred / Future Work" 段。新增延后项时：① 在对应 design doc 加条目 ② 在本表加索引行。规则见 [`.claude/rules/workflow.md`](../.claude/rules/workflow.md) "延后特性管理"。
 
-### 设计期延后（feature 设计图景内的"暂不引入"）
-
-各 design doc 的 "Deferred / Future Work" 段直接维护，本表选择性索引最有价值的项。
+### 设计期延后
 
 | 特性 | 描述 | 在哪里 |
 |------|------|------|
 | L3-G3a 关联类型 | `where T: IAdd<Output=T>` + zbc 扩展 + 运行时校验 | [language/generics.md](design/language/generics.md) |
-| 闭包档 A 完整版 | 任何不逃逸 closure 栈分配（当前仅单变量子集） | [language/closure.md](design/language/closure.md) |
-| 闭包档 B 完整版 | 单态化 + 泛型形参标注（当前仅 alias 子集） | [language/closure.md](design/language/closure.md) |
+| 闭包档 A 完整版 | 任何不逃逸 closure 栈分配（当前仅单变量子集）| [language/closure.md](design/language/closure.md) |
+| 闭包档 B 完整版 | 单态化 + 泛型形参标注（当前仅 alias 子集）| [language/closure.md](design/language/closure.md) |
 | 闭包档 C send 派生 | 与 concurrency 实施一起做 | [language/closure.md](design/language/closure.md) |
-| Static abstract iter 2+ | 类型级访问（`T.Zero` / `T.Parse(s)`） | [language/static-abstract-interface.md](design/language/static-abstract-interface.md) |
+| Static abstract iter 2+ | 类型级访问（`T.Zero` / `T.Parse(s)`）| [language/static-abstract-interface.md](design/language/static-abstract-interface.md) |
 | MulticastFunc/Predicate 异常聚合 | D2d-2 Func/Predicate 路径（D2d-2-Action 已落地）| [language/delegates-events.md](design/language/delegates-events.md) |
 | ref local / return / field / struct | parameter-modifiers D1-D4 | [language/parameter-modifiers.md](design/language/parameter-modifiers.md) |
 | StackTrace / 构造器重载 / 字段 ? 标注 / self-assign | exceptions Phase 1 限制 | [language/exceptions.md](design/language/exceptions.md) |
@@ -265,3 +308,21 @@ D1（delegate 关键字 + 单播 + 方法组缓存）+ D2a/b/c/d-1/d-2-Action（
 1. 把对应条目从 design doc Deferred 段移入实施 spec 的"实施备注"
 2. 创建 `<spec-name>` 类型的独立 spec
 3. 验证 + GREEN 后归档；design doc Deferred 段移除该条目，本表索引行同步删除
+
+---
+
+## 已完成的实施
+
+> 不在本文复述。每个落地特性都在 [`docs/spec/archive/YYYY-MM-DD-<spec-name>/`](spec/archive/) 下保留完整 proposal / design / specs / tasks / 实施备注。按主题或日期检索即可：
+>
+> - **L1 全特性**：`2026-04-04-*` 至 `2026-05-05-*`（pipeline / 工程文件 / 异常 / interface / inheritance / 参数修饰符）
+> - **L2 工程支持**：`2026-04-26-*` workspace 系列、`2026-04-27-incremental-build-cache`
+> - **L2 测试体系（R 系列）**：`2026-04-29-redesign-test-infra` / `2026-04-30-add-z42-test-runner` / `2026-05-05-extend-z42-test-library`
+> - **L2 GC（MagrGC）**：`2026-04-29-add-magrgc-*` 系列（heap-interface / cycle-breaking-collector / drop-time-finalizer / strict-oom-rejection / external-root-scanning）
+> - **L2 Interop**：`2026-04-29-impl-tier1-c-abi` / `2026-04-29-impl-tier2-rust-macros` / `2026-04-29-impl-pinned-syntax` / `2026-04-30-manifest-reader-import` / `2026-04-30-synthesize-native-class`
+> - **L2 Embedding**：`2026-05-10-add-embedding-api`（H0-H3）
+> - **L3 泛型 G1-G4**：`2026-04-22-add-generics-*` / `2026-04-23-add-generics-*` / `2026-04-24-add-static-abstract-interface`
+> - **L3 闭包 / Lambda**：`2026-05-01-impl-lambda-l2` / `2026-05-01-impl-closure-l3-core` / `2026-05-02-impl-closure-l3-jit-complete`
+> - **L3 Delegate / Event**：`2026-05-02-add-delegate-type` / `2026-05-02-add-multicast-action` / `2026-05-03-add-event-keyword-multicast` / `2026-05-04-add-event-keyword-singlecast` / `2026-05-04-add-multicast-exception-aggregate`
+>
+> 跨主题概览见 [`docs/design/`](design/) 各子目录的 `README.md` —— 每个 README 列出当前 phase 状态 + 已落地 spec 引用。

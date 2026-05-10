@@ -7,8 +7,7 @@ z42 项目文档总入口。文件分两类：**对外阅读**（语言用户、
 | 文件 / 目录 | 受众 | 内容 |
 |------------|------|------|
 | [`features.md`](features.md) | 对外 | 语言特性 catalog（决策、当前 phase 归属） |
-| [`roadmap.md`](roadmap.md) | 对外 | 阶段总览（L1/L2/L3）+ pipeline 实现里程碑 + Deferred Backlog Index |
-| [`version.md`](version.md) | 对外 | SemVer 版本路线（0.1.0 → 1.0.0 草案）+ Feature ↔ Version 映射 |
+| [`roadmap.md`](roadmap.md) | 对外 | 唯一迭代计划：当前焦点 + 下一阶段 + SemVer 路线 + Feature→Version 映射 + Deferred Backlog |
 | [`dev.md`](dev.md) | 内部 | 本地开发命令（build / test / package） |
 | [`design/`](design/) | 混合 | 设计文档（按主题分 5 子目录）|
 | [`spec/`](spec/) | 内部 | OpenSpec 风变更工作目录（`changes/` 进行中 + `archive/` 已归档）|
