@@ -390,3 +390,50 @@ VM 运行时类型系统。多项特性联动，单独做不如合并。
 | M10 | 自举（Self-hosting） | L3+ | 📋 |
 
 **当前焦点：M6（工程支持 + 测试体系 + 错误码体系）→ M7（VM 元数据 + 标准库）**
+
+---
+
+## Deferred Backlog Index
+
+> 所有显式延后特性的横向索引；条目正文存于对应 design doc 的 "Deferred / Future Work" 段。新增延后项时：① 在对应 design doc 加条目 ② 在本表加索引行。规则见 [`.claude/rules/workflow.md`](../.claude/rules/workflow.md) "延后特性管理"。
+
+### 设计期延后（feature 设计图景内的"暂不引入"）
+
+各 design doc 的 "Deferred / Future Work" 段直接维护，本表选择性索引最有价值的项。
+
+| 特性 | 描述 | 在哪里 |
+|------|------|------|
+| L3-G3a 关联类型 | `where T: IAdd<Output=T>` + zbc 扩展 + 运行时校验 | [language/generics.md](design/language/generics.md) |
+| 闭包档 A 完整版 | 任何不逃逸 closure 栈分配（当前仅单变量子集） | [language/closure.md](design/language/closure.md) |
+| 闭包档 B 完整版 | 单态化 + 泛型形参标注（当前仅 alias 子集） | [language/closure.md](design/language/closure.md) |
+| 闭包档 C send 派生 | 与 concurrency 实施一起做 | [language/closure.md](design/language/closure.md) |
+| Static abstract iter 2+ | 类型级访问（`T.Zero` / `T.Parse(s)`） | [language/static-abstract-interface.md](design/language/static-abstract-interface.md) |
+| MulticastFunc/Predicate 异常聚合 | D2d-2 Func/Predicate 路径（D2d-2-Action 已落地）| [language/delegates-events.md](design/language/delegates-events.md) |
+| ref local / return / field / struct | parameter-modifiers D1-D4 | [language/parameter-modifiers.md](design/language/parameter-modifiers.md) |
+| StackTrace / 构造器重载 / 字段 ? 标注 / self-assign | exceptions Phase 1 限制 | [language/exceptions.md](design/language/exceptions.md) |
+| Layer 3 用户定义 operator/keyword | customization 第三层 | [language/customization.md](design/language/customization.md) |
+| foreach IEnumerator 路径 | 升级为接口 dispatch（当前仅鸭子协议）| [language/iteration.md](design/language/iteration.md) |
+| 自定义 body / init-only / expression-bodied property | properties 未支持子集 | [language/properties.md](design/language/properties.md) |
+| Tier 2/3 完整 interop | manifest reader / 源生成 / symbol resolution | [language/interop.md](design/language/interop.md) |
+| 整体 L3 concurrency | async/await / Future / Send-Sync / 调度器 | [runtime/concurrency.md](design/runtime/concurrency.md) |
+| hot-reload 签名变更 + 跨模块 | 签名变更检测 / 跨模块 reload 故事 | [runtime/hot-reload.md](design/runtime/hot-reload.md) |
+| 完整 JIT 指令映射 + 性能基准 | jit.md 待补 | [runtime/jit.md](design/runtime/jit.md) |
+| GC handle Phase 3+ | Pinned / WeakTrackResurrection / 多线程 barrier | [runtime/gc-handle.md](design/runtime/gc-handle.md) |
+| stdlib P0–P3 缺失包 | time / fs / threading / encoding / net | [stdlib/roadmap.md](design/stdlib/roadmap.md) |
+
+### 实施期延后（D-* 系列）
+
+| ID | 标题 | Design doc 条目 |
+|------|------|------|
+| **D-2** | ISubscription chain `.AsOnce()` / `.AsWeak()` 跨 generic interface impl | [language/delegates-events.md](design/language/delegates-events.md#d-2-isubscription-chain-asonce--asweak-跨-generic-interface-impl) |
+| **D-3** | N>4 arity Action / Func（自举后用 z42 写生成器）| [language/delegates-events.md](design/language/delegates-events.md#d-3-n4-arity-action--func) |
+| **D-4** | 协变 / 逆变（`<in T, out R>` 等）| [language/generics.md](design/language/generics.md#d-4-协变--逆变in-t-out-r-等) |
+| **D-11** | introduce-bound-visitor（review.md §2.1 visitor 抽象基类）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-11-introduce-bound-visitorreviewmd-21-visitor-抽象基类) |
+| **D-12** | BindCall 函数级拆分（split-typechecker-calls 残留）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-12-bindcall-函数级拆分split-typechecker-calls-残留) |
+
+### 已归档前的"成熟 follow-up"指南
+
+每条 deferred 项被实施时：
+1. 把对应条目从 design doc Deferred 段移入实施 spec 的"实施备注"
+2. 创建 `<spec-name>` 类型的独立 spec
+3. 验证 + GREEN 后归档；design doc Deferred 段移除该条目，本表索引行同步删除

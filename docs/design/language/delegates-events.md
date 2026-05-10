@@ -1,6 +1,6 @@
 # z42 Delegates & Events 设计
 
-> **状态**：D1 + D2a + D2b + D-5 + D2c-多播 + D2c-interface + D2d-1 + D2d-2-Action + D-1a + D-7 单播 event + D-6 嵌套 delegate dotted-path 外部引用 + D-7-residual 单播 event IDisposable token + 严格 access control（E0414）+ **instance method group conversion + D-1b WeakRef ISubscription wrapper + CompositeRef.Mode.Weak** 已落地（最新 2026-05-04）；D2d-1 = `Std.MulticastFunc<T,R>` + `Std.MulticastPredicate<T>` 双 vec 多播类（含 Predicate.All / Any 短路）+ event keyword 类型校验放宽接受三种 multicast 类型；**D2d-2-Action = `Std.AggregateException` + `Std.MulticastException` 异常聚合类 + `MulticastAction.Invoke(continueOnException=true)` 全跑完后聚合抛**（Func/Predicate 聚合留 D-8b follow-up）；D1 = `delegate` 关键字 / 单播 / 方法组缓存 / stdlib delegate 类型 / TSIG 跨 zpkg 导出；D2a = `MulticastAction<T>` 基础多播 + COW snapshot + IDisposable token + fail-fast 异常路径；D2b = `ISubscription<TD>` 接口 + StrongRef / OnceRef / CompositeRef wrapper + ModeFlags 位运算 mode；MulticastAction 双 vec strong / advanced 通道 + SubscribeAdvanced 重载；D-5 = `__delegate_eq` builtin + `MulticastAction.Unsubscribe(handler)`；D2c-多播 = `event` 关键字（FieldDecl.IsEvent）+ 多播 event field auto-init `new MulticastAction<T>()` + 合成 `add_X`/`remove_X` + `+=`/`-=` desugar；**D2c-interface (I10) = interface body 接受 `event MulticastAction<T> X;` 声明并合成 instance abstract `add_X`/`remove_X` MethodSignatures；class 实现 interface 同名 event 即满足契约**。WeakRef 延后（前置依赖 corelib weak-ref builtin，见 docs/deferred.md D-1）。D2c-单播（event Action<T> 字段 + throw on double-bind + 严格 access control）/ D2d（MulticastFunc + MulticastException）待实施。
+> **状态**：D1 + D2a + D2b + D-5 + D2c-多播 + D2c-interface + D2d-1 + D2d-2-Action + D-1a + D-7 单播 event + D-6 嵌套 delegate dotted-path 外部引用 + D-7-residual 单播 event IDisposable token + 严格 access control（E0414）+ **instance method group conversion + D-1b WeakRef ISubscription wrapper + CompositeRef.Mode.Weak** 已落地（最新 2026-05-04）；D2d-1 = `Std.MulticastFunc<T,R>` + `Std.MulticastPredicate<T>` 双 vec 多播类（含 Predicate.All / Any 短路）+ event keyword 类型校验放宽接受三种 multicast 类型；**D2d-2-Action = `Std.AggregateException` + `Std.MulticastException` 异常聚合类 + `MulticastAction.Invoke(continueOnException=true)` 全跑完后聚合抛**（Func/Predicate 聚合留 D-8b follow-up）；D1 = `delegate` 关键字 / 单播 / 方法组缓存 / stdlib delegate 类型 / TSIG 跨 zpkg 导出；D2a = `MulticastAction<T>` 基础多播 + COW snapshot + IDisposable token + fail-fast 异常路径；D2b = `ISubscription<TD>` 接口 + StrongRef / OnceRef / CompositeRef wrapper + ModeFlags 位运算 mode；MulticastAction 双 vec strong / advanced 通道 + SubscribeAdvanced 重载；D-5 = `__delegate_eq` builtin + `MulticastAction.Unsubscribe(handler)`；D2c-多播 = `event` 关键字（FieldDecl.IsEvent）+ 多播 event field auto-init `new MulticastAction<T>()` + 合成 `add_X`/`remove_X` + `+=`/`-=` desugar；**D2c-interface (I10) = interface body 接受 `event MulticastAction<T> X;` 声明并合成 instance abstract `add_X`/`remove_X` MethodSignatures；class 实现 interface 同名 event 即满足契约**。WeakRef 已由 D-1a / D-1b 实施（2026-05-04）。D2c-单播（event Action<T> 字段 + throw on double-bind + 严格 access control）/ D2d（MulticastFunc + MulticastException）待实施。
 > **历史状态**：L2/L3 前瞻性设计草案（2026-05-01 定稿）
 > **定位**：与 `generics.md` / `concurrency.md` / `static-abstract-interface.md` 同级 — 长期规范，等具体 docs/spec/changes/ 启动时实施
 > **参考**：C# delegate/event（视觉与心智蓝本）+ Rust/Kotlin/Swift（单播/多播分离）+ Rx/Combine `Subject` 体系（订阅策略 wrapper）
@@ -715,3 +715,28 @@ try { ... } catch (MulticastException e) {
 **迁移成本评估**：C# 项目搬到 z42，delegate / event 相关代码改动率预计 < 10%：
 - 主要改动：`event Action<T>` → `event MulticastAction<T>`（语义诚实代价）
 - 主要受益：`SubscribeWeak` 模式取代手动 `WeakReference + WeakEventManager`；`continueOnException` 取代手动 `GetInvocationList` 循环
+
+---
+
+## Deferred / Future Work
+
+> 索引也存于 [docs/roadmap.md](../../roadmap.md) "Deferred Backlog Index"。
+
+### D-2: ISubscription chain `.AsOnce()` / `.AsWeak()` 跨 generic interface impl
+
+- **来源**：[docs/spec/archive/2026-05-03-add-isubscription-wrapper/](../../spec/archive/2026-05-03-add-isubscription-wrapper/) design Decision 3
+- **触发原因**：z42 现有 `impl<T> ISubscription<T> { ... }` 跨 generic interface 的扩展方法机制未验证。D2b v1 仅支持 `impl<T> Action<T> { public ... AsOnce() }`（具体 delegate 类型上的扩展），ISubscription 实例的链式 chain 不可用。
+- **前置依赖**：验证 / 修复 z42 generic interface 上的 impl 扩展；或实现 wrapper 类自身的 fluent API（`composite.WithMode(Once)` 已可用，只是不通过 `.AsOnce()` 链式）。
+- **触发条件**：D2b 后用户希望 `someSubscription.AsOnce().AsWeak()` 这样链式融合。当前用 `new CompositeRef<T>(handler, Mode.Once | Mode.Weak)` 直接构造也能达到相同结果。
+- **当前 workaround**：`new CompositeRef<T>(h, Once|Weak)` + `.WithMode(...)` 在 CompositeRef 实例上链式已覆盖功能需求（仅美感差）
+- **2026-05-04 重新评估**：[`SymbolCollector.Impls.cs:19-23`](../../../src/compiler/z42.Semantics/TypeCheck/SymbolCollector.Impls.cs#L19-L23) 的 switch 仅接受 `NamedType`，**不接受** generic 实例化 target（`ISubscription<T>` / `Action<T>` 都不行）。要做需 Parser/AST/SymbolCollector 三层联动，2-4 hr 真实编译器工作。**Deprioritize**：等真有用户因美感受阻再启动。
+
+### D-3: N>4 arity Action / Func
+
+- **来源**：[docs/spec/archive/2026-05-02-add-generic-delegates/](../../spec/archive/2026-05-02-add-generic-delegates/)
+- **设计文档**：本文件 §3.4
+- **触发原因**：design 推荐 `tools/gen-delegates.z42` 脚本自动生成 Action/Func 0-16 arity，但 z42 未自举（编译器是 C#），跑 z42 脚本生成 z42 源码是循环依赖。
+- **前置依赖**：z42 自举完成（编译器用 z42 实现），或独立 spec 用 C# 写代码生成。
+- **触发条件**：用户实际需要 5+ arity callable（按 C# 经验罕见，<5% 场景）。
+- **当前 workaround**：手写 0-4 arity（覆盖 95% 场景）。
+- **2026-05-04 重新评估**：探索 examples/ + tests/ 确认 0 个 5+ arity 真实使用；compiler / runtime 无 per-arity 特殊路径，加 5-16 是纯机械重复。**结论：保持 deferred**。等真有用户场景；自举完成后用 z42 自身写生成器（`tools/gen-delegates.z42`）。当前不做 C# 一次性生成器，避免引入永久的"非 z42 写的 z42 stdlib 源"反向依赖。

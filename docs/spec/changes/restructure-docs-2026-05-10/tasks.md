@@ -18,8 +18,8 @@
 
 - [x] Phase 1: 归档 review.md + 外部依赖更新（workflow.md / memory）
 - [x] Phase 1.5: 把 `spec/` 整体挪到 `docs/spec/`（保留子结构）+ 全仓批量更新引用
-- [ ] Phase 2: design/ 子目录重构（5 个子目录 + READMEs + 39 文件搬运）
-- [ ] Phase 3: deferred.md 分散 + 删除
+- [x] Phase 2: design/ 子目录重构（5 个子目录 + READMEs + 39 文件搬运）
+- [x] Phase 3: deferred.md 分散 + 删除
 - [ ] Phase 4: 冗余清理（按表格 9 项）
 - [ ] Phase 5: roadmap + version 重写
 - [ ] Phase 6: 风格模板统一 + 跨引用批量更新
@@ -93,13 +93,14 @@ docs/design/
 
 ## Phase 3: deferred.md 分散
 
-- [ ] 3.1 D-2 ISubscription chain → `language/delegates-events.md` Deferred 段
-- [ ] 3.2 D-3 N>4 arity Action/Func → `language/delegates-events.md` Deferred 段
-- [ ] 3.3 D-4 协变/逆变 → `language/generics.md` Deferred 段
-- [ ] 3.4 D-11 introduce-bound-visitor → `compiler/compiler-architecture.md` Deferred 段
-- [ ] 3.5 D-12 BindCall 函数级拆分 → `compiler/compiler-architecture.md` Deferred 段
-- [ ] 3.6 删除 `docs/deferred.md`
-- [ ] 3.7 commit + push
+- [x] 3.1 D-2 ISubscription chain → `language/delegates-events.md` Deferred 段
+- [x] 3.2 D-3 N>4 arity Action/Func → `language/delegates-events.md` Deferred 段
+- [x] 3.3 D-4 协变/逆变 → `language/generics.md` Deferred 段
+- [x] 3.4 D-11 introduce-bound-visitor → `compiler/compiler-architecture.md` Deferred 段
+- [x] 3.5 D-12 BindCall 函数级拆分 → `compiler/compiler-architecture.md` Deferred 段
+- [x] 3.6 删除 `docs/deferred.md`，roadmap.md 加 "Deferred Backlog Index" 段（设计期延后 + 实施期延后两表）
+- [x] 3.7 修补残留 `deferred.md` 引用（embedding.md / delegates-events.md 状态行）
+- [ ] 3.8 commit + push
 
 ## Phase 4: 冗余清理
 

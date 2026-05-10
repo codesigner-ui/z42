@@ -1056,3 +1056,35 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
 - `docs/design/runtime/zbc.md` — `.zbc` 二进制格式
 - `docs/design/language/namespace-using.md` — namespace / using 的语言规则
 - `.claude/rules/compiler-csharp.md` — C# 编译器开发规范（代码风格 + AST / Parser / Lexer 约定）
+
+---
+
+## Deferred / Future Work
+
+> 索引也存于 [docs/roadmap.md](../../roadmap.md) "Deferred Backlog Index"。
+
+### D-11: introduce-bound-visitor（review.md §2.1 visitor 抽象基类）
+
+- **来源**：[docs/spec/archive/2026-05-10-docs-review/review.md](../../spec/archive/2026-05-10-docs-review/review.md) Part 2 §2.1（推荐引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>` 抽象基类）；2026-05-07 探索后暂缓
+- **触发原因（探索结论）**：
+  1. 当前 `EmitExpr` / `EmitBoundStmt` switch 已经**部分 visitor 化**——FunctionEmitterStmts.cs 16 个 case 几乎全是单行 helper 调用；FunctionEmitterExprs.cs 28 个 case 中约 16 个已委托给 `EmitBoundXxx` helper。"巨型 switch" 实际负担没有 review.md 初判那么重
+  2. **本 spec 单独做收益小**：抽象基类的"加新节点编译期穷尽性保证"价值需多消费者才显现。当前有 6 处 `case Bound` 站点（4 在 Codegen + FlowAnalyzer + ClosureEscapeAnalyzer），如果只迁 FunctionEmitter 一个，单消费者用 visitor 框架是过度设计
+  3. **不解决 P0 LOC 问题**：visitor base class 只迁移 switch 体到 override 方法。FunctionEmitterExprs.cs 878 LOC 仍 ~880（每个 case 体仍要写）。review.md §1.1 P0 硬限违规需 `split-large-codegen-files` 解决
+  4. **C# 多继承摩擦**：FunctionEmitter (sealed partial) 只能继承一个 base class，Exprs / Stmts 两套 visitor 不能直接同时继承——需 nested visitor 或继承一个+方法表 mix
+- **前置依赖**：第二个 BoundExpr 消费者出现（dump-ast / lint / 第二个 emitter），让 visitor 抽象基类有真实使用者；或与 `split-symbol-from-type`（review.md §2.3 + §3.1）合并做（Symbol/Decl 分离时连带重审 visitor）
+- **触发条件**：
+  - dump-ast / 某个新分析器需要遍历 BoundExpr，引入即第二个真实消费者
+  - 或者新增 BoundXxx 节点导致多处 switch 漏改的事故出现 ≥ 1 次
+  - 或者 `split-symbol-from-type` spec 启动时一并设计
+- **当前 workaround**：保持 FunctionEmitterExprs / Stmts 现有方法表风格不变；EmitExpr 主 switch 紧凑度可接受。后续 `split-large-codegen-files` 处理 FunctionEmitterExprs.cs 878 LOC 超限（按表达式类别拆 partial 文件）
+
+### D-12: BindCall 函数级拆分（split-typechecker-calls 残留）
+
+- **来源**：[docs/spec/archive/2026-05-08-split-typechecker-calls/](../../spec/archive/2026-05-08-split-typechecker-calls/)
+- **触发原因**：split-typechecker-calls 把 TypeChecker.Calls.cs 686 → 405 LOC 主文件，但 `BindCall` 单方法 ~395 行（远超 60 行函数硬限）。三大分支（Static class method / Member call / Free function call）的内联 dispatch 拆为独立 helper 方法属于函数级 refactor，行为级风险高于纯文件拆分
+- **前置依赖**：与 D-11 (`introduce-bound-visitor`) 同性质——可在引入 visitor 框架时一并解决，或独立 spec 抽 3 个 helper 方法（`BindStaticCall` / `BindMemberCall` / `BindFreeCall`）
+- **触发条件**：
+  - D-11 触发条件成熟时同 spec 处理
+  - 或者 BindCall 内部需要新增分支（call kind）导致方法继续膨胀
+  - 或者编译器 LSP / IDE 集成场景需要更细粒度的 call binding 钩子
+- **当前 workaround**：405 LOC 主文件 < 500 硬限，软限超出但工程上可接受。test 覆盖完整（1104/1104），不影响功能演进

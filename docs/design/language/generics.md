@@ -1234,3 +1234,17 @@ GenericType("Foo", [T..])   → _classes["Foo$N"] first, fallback _classes["Foo"
 - **方法层 generic-vs-non-generic 同名**：`class Foo { void m(); void m<T>(); }` 由 method arity overload 已支持，本变更不动
 - **D-8b-1 解锁**：stdlib `MulticastException<R>` 现可与现有 `MulticastException` 共存
 - **D-8b-3 Phase 2 解锁**：generic type-param `default(R)` 解析现可走 `Z42InstantiatedType.Definition.IrName` 路径
+---
+
+## Deferred / Future Work
+
+> 索引也存于 [docs/roadmap.md](../../roadmap.md) "Deferred Backlog Index"。
+
+### D-4: 协变 / 逆变（`<in T, out R>` 等）
+
+- **来源**：[docs/spec/archive/2026-05-02-add-delegate-type/](../../spec/archive/2026-05-02-add-delegate-type/)
+- **关联设计文档**：[`delegates-events.md`](delegates-events.md) §12 明确"推迟到 L3 后期"
+- **触发原因**：协变 / 逆变涉及泛型 type-arg 关系约束，z42 当前 generic 系统未做这类规则，加进来牵扯 ImportedSymbols / RebuildFuncType / 子类型规则全链路。
+- **前置依赖**：L3 后期完整 type-system 规划；与 `generics.md` / `static-abstract-interface.md` 协同。
+- **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。
+- **当前 workaround**：依赖具体类型，或手动 wrapper 转换。
