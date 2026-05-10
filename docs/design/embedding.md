@@ -368,7 +368,7 @@ fn classify_invoke_error(msg: &str) -> Z42HostStatus {
 
 | Milestone | 内容 | 依赖 |
 |-----------|------|------|
-| **H0 spec** | 本文档 + spec/archive/2026-05-10-add-embedding-api/ DRAFT | — |
+| **H0 spec** | 本文档 + docs/spec/archive/2026-05-10-add-embedding-api/ DRAFT | — |
 | **H1 C ABI scaffold** | `z42_host.h` + Rust `extern "C"` 空实现 + 链接通 | H0 |
 | **H2 hello-world (interp)** | initialize / load_zbc / resolve / invoke / shutdown 跑通 hello-world；sink 工作；C + Rust 两个 example | H1，interp 已就绪（M4 已完成）|
 | **H3 错误路径** | 所有 `Z42HostStatus` 路径有测试覆盖；VM 异常 → `ERR_VM_EXCEPTION` | H2 |

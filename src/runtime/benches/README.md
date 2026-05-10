@@ -43,4 +43,4 @@ P1.D 引入：
 - `scripts/bench-diff.sh` 与 baseline diff
 - CI PR 阶段 quick 子集 + diff 性能门禁
 
-详见 [spec/changes/add-benchmark-framework/](../../../spec/changes/add-benchmark-framework/)。
+详见 [docs/spec/changes/add-benchmark-framework/](../../../spec/changes/add-benchmark-framework/)。

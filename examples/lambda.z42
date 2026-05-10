@@ -1,5 +1,5 @@
 // L2 阶段无捕获 lambda + (T) -> R 函数类型示范。
-// 设计见 docs/design/closure.md，实现见 spec/archive/2026-05-01-impl-lambda-l2/。
+// 设计见 docs/design/closure.md，实现见 docs/spec/archive/2026-05-01-impl-lambda-l2/。
 //
 // 本示例覆盖：
 //   • Lambda 字面量（带 / 不带类型注解）

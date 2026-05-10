@@ -1,6 +1,6 @@
 // L3 完整闭包（核心子集）示例 — 捕获 + 档 C 堆擦除。
 // 设计见 docs/design/closure.md，实施见
-// spec/archive/2026-05-01-impl-closure-l3-core/。
+// docs/spec/archive/2026-05-01-impl-closure-l3-core/。
 //
 // 覆盖：
 //   • 值类型捕获 — 快照语义（外层修改不影响闭包）

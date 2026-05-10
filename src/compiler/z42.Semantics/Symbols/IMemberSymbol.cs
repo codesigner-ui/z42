@@ -14,7 +14,7 @@ namespace Z42.Semantics.Symbols;
 /// BaseClassName); IMemberSymbol carries the per-declaration information
 /// (Span, Visibility, optional back-pointer to the source FunctionDecl/FieldDecl).
 ///
-/// 设计规则（不变量，参见 spec/archive/.../split-symbol-from-type/design.md）：
+/// 设计规则（不变量，参见 docs/spec/archive/.../split-symbol-from-type/design.md）：
 /// 1. Symbol 持有 ContainingType 反向引用（class / interface / null=top-level）
 /// 2. Z42ClassType.Methods/Fields 字典值是 IMethodSymbol/IFieldSymbol（不是 Z42FuncType/Z42Type 直接签名）
 /// 3. 本地路径 Decl 非空；imported 路径 Decl 为 null

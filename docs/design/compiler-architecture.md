@@ -185,7 +185,7 @@ C4 的 `z42c info --resolved` 直接消费此字段输出"字段 + 来源 + 🔒
 
 ### 设计决策
 
-详见 `spec/archive/2026-04-26-extend-workspace-manifest/design.md`：
+详见 `docs/spec/archive/2026-04-26-extend-workspace-manifest/design.md`：
 
 - **D1**：workspace 根文件名固定 `z42.workspace.toml`
 - **D2**：virtual manifest 强制（root 不可兼任 member）
@@ -931,7 +931,7 @@ public abstract class BoundExprWalker : BoundExprVisitor<Unit>
 - 新增 BoundXxx 节点 → 必须先改 `BoundExprVisitor` 基类（abstract + switch），不允许只在某个 pass 里临时 fall-through
 - Visitor 子类不得绕过 abstract 用 `default → throw`（exhaustive 是设计核心，绕过等于丢掉编译期保险）
 
-详见：[spec/archive/2026-05-10-introduce-bound-visitor/](../../spec/archive/2026-05-10-introduce-bound-visitor/) 的 design.md。
+详见：[docs/spec/archive/2026-05-10-introduce-bound-visitor/](../../spec/archive/2026-05-10-introduce-bound-visitor/) 的 design.md。
 
 ---
 
@@ -1046,7 +1046,7 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
   留 follow-up `extend-symbol-layer`
 - **R-series 反射 API surface** — 本 spec 准备基础设施；具体 reflection API 留各 phase spec
 
-详见：[spec/archive/2026-05-10-split-symbol-from-type/](../../spec/archive/2026-05-10-split-symbol-from-type/) 的 design.md。
+详见：[docs/spec/archive/2026-05-10-split-symbol-from-type/](../../spec/archive/2026-05-10-split-symbol-from-type/) 的 design.md。
 
 ---
 

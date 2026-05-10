@@ -8,7 +8,7 @@ using Z42.Semantics.TypeCheck;
 namespace Z42.Tests;
 
 /// Spec define-ref-out-in-parameters — TypeChecker scenario coverage.
-/// Each test maps to one Scenario in spec/changes/define-ref-out-in-parameters/
+/// Each test maps to one Scenario in docs/spec/changes/define-ref-out-in-parameters/
 /// specs/parameter-modifiers/spec.md.
 public sealed class ParameterModifierTypeCheckTests
 {

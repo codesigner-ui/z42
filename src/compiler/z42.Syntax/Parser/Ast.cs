@@ -144,7 +144,7 @@ public sealed record ClassDecl(
 ///
 /// 命名 callable 类型。语义上等价 `(T1, T2) -> R` 字面量类型；编译器把它解析
 /// 为 `Z42FuncType`。支持顶层 + 嵌套（class body 内）+ 泛型 + where 约束。
-/// 详见 `docs/design/delegates-events.md` §3 + spec/archive/.../add-delegate-type.
+/// 详见 `docs/design/delegates-events.md` §3 + docs/spec/archive/.../add-delegate-type.
 public sealed record DelegateDecl(
     string Name,
     Visibility Visibility,

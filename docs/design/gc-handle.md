@@ -1,6 +1,6 @@
 # GC Handle (Std.GCHandle) — Implementation Principles
 
-> Spec: `spec/archive/2026-05-07-reorganize-gc-stdlib/`. 本文记录设计原理（数据
+> Spec: `docs/spec/archive/2026-05-07-reorganize-gc-stdlib/`. 本文记录设计原理（数据
 > 结构、anchor 语义、与 C# `System.Runtime.InteropServices.GCHandle` 的对应、
 > Phase 3 扩展点），让接手者不必读源码就能理解"为什么这样设计"。
 

@@ -72,7 +72,7 @@ public class Exception {
 
 ## catch 按类型过滤（2026-05-06）
 
-由 [`spec/archive/2026-05-06-catch-by-generic-type/`](../../spec/archive/2026-05-06-catch-by-generic-type/) 落地。修复"所有 catch 子句一律 wildcard"的 Phase 1 语义 bug — 之前 `catch (NullReferenceException e)` 也会捕获 IOException，类型断言形同虚设。
+由 [`docs/spec/archive/2026-05-06-catch-by-generic-type/`](../../spec/archive/2026-05-06-catch-by-generic-type/) 落地。修复"所有 catch 子句一律 wildcard"的 Phase 1 语义 bug — 之前 `catch (NullReferenceException e)` 也会捕获 IOException，类型断言形同虚设。
 
 ### 语义
 

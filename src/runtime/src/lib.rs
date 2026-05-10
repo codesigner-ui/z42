@@ -14,7 +14,7 @@ pub mod jit;
 pub mod aot;
 pub mod native;
 // Embedding API (Tier 1 C ABI for host applications). Spec:
-// docs/design/embedding.md, spec/archive/2026-05-10-add-embedding-api/.
+// docs/design/embedding.md, docs/spec/archive/2026-05-10-add-embedding-api/.
 pub mod host;
 pub mod vm;
 pub mod vm_context;

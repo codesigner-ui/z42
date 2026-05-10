@@ -2,7 +2,7 @@
 
 > **状态**：L3 前瞻性设计草案（2026-04-30），实现尚未开始
 > **定位**：与 `generics.md` / `static-abstract-interface.md` 同级 — 长期规范，等
-> 到 L3 阶段才进入 `spec/changes/` 实施流程
+> 到 L3 阶段才进入 `docs/spec/changes/` 实施流程
 > **参考**：C# / .NET TPL（主蓝本）+ Rust（Send/Sync）+ Kotlin / Swift（结构化并发）
 > **核心选型**：染色（async/await 显式）+ 全 async-only 标准库 + 结构化并发强制 +
 > `Send`/`Sync` 类型层安全 + 单一 runtime

@@ -13,7 +13,7 @@
 //!      indexes a flat `Vec<Function>` / `Vec<Value>` / etc directly,
 //!      replacing per-call `HashMap<&str, _>::get()`.
 //!
-//! See `spec/changes/introduce-method-token/` (or its archived form) for the
+//! See `docs/spec/changes/introduce-method-token/` (or its archived form) for the
 //! full design rationale, including the Decision 6 flip that brought
 //! Field/Static into Phase 1 alongside method dispatch.
 

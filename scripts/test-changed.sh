@@ -76,7 +76,7 @@ while IFS= read -r f; do
     [[ -z "$f" ]] && continue
     case "$f" in
         # Documentation / spec / claude state — never trigger tests
-        *.md|docs/*|spec/*|.claude/*|.gitignore|.gitattributes|LICENSE*|README*)
+        *.md|docs/*|.claude/*|.gitignore|.gitattributes|LICENSE*|README*)
             ;;
 
         # Stdlib library: source vs tests vs manifest

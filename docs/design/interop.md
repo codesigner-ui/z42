@@ -661,7 +661,7 @@ L1 functions and naming conventions remain valid throughout L2.M8–M14. Migrati
 3. **L2.M14** — source generator subsumes both `[Native]` and `[Extern]` declarations
 4. **L3.M15+** — legacy `__name` dispatch table removed once all stdlib migrated
 
-During the transition, both styles coexist; the compiler accepts both. No automated migration tool — stdlib reorg is manual, one capability at a time, each as its own `spec/changes/` proposal.
+During the transition, both styles coexist; the compiler accepts both. No automated migration tool — stdlib reorg is manual, one capability at a time, each as its own `docs/spec/changes/` proposal.
 
 ---
 

@@ -384,7 +384,7 @@ class Box {
 }
 ```
 
-规则（参见 `spec/archive/2026-05-02-fix-class-field-default-init/`）：
+规则（参见 `docs/spec/archive/2026-05-02-fix-class-field-default-init/`）：
 
 | 字段写法 | 初始值（无显式 ctor）| 初始值（显式 ctor body 覆写后）|
 |---------|--------------------|-----------------------------|

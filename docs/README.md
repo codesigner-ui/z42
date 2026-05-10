@@ -13,7 +13,7 @@ z42 项目文档总入口。本目录文件分两类：**对外阅读**（语言
 | [`dev.md`](dev.md) | 内部 | 本地开发命令（build / test / package） |
 | [`design/`](design/) | 混合 | 语言规范 + 实现原理（详见目录内各文件标题） |
 
-> `review1.md` / `review2.md` 是一次性 code & docs review 报告，落实改进项后将归档到 `spec/archive/`。
+> `review1.md` / `review2.md` 是一次性 code & docs review 报告，落实改进项后将归档到 `docs/spec/archive/`。
 
 ## 文档语种策略
 

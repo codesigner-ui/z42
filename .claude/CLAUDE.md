@@ -35,7 +35,7 @@ examples/       # .z42 示例源文件
 - **轻量变更**（fix / refactor / test）：直接 IMPL → GREEN → COMMIT
 - **全绿（GREEN）标准**：定义见 [workflow.md 阶段 8](rules/workflow.md)；任何测试失败（含 pre-existing）都不得 commit / push
 - **提交格式**：`type(scope): 描述`，每个逻辑单元单独提交
-- **自动提交**：每次迭代完成后 Claude 自动 commit + push，`.claude/` 和 `spec/` 必须纳入，无需 User 二次确认
+- **自动提交**：每次迭代完成后 Claude 自动 commit + push，`.claude/` 和 `docs/spec/` 必须纳入，无需 User 二次确认
 
 ## 文档同步（必须遵守）
 

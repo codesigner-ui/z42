@@ -5,7 +5,7 @@ namespace Z42.Core;
 ///
 /// 当前仅 z42.core；扩展任何包都需走 spec proposal（trust model 决策点）。
 ///
-/// 设计参见 spec/archive/2026-04-28-strict-using-resolution/。
+/// 设计参见 docs/spec/archive/2026-04-28-strict-using-resolution/。
 /// </summary>
 public static class PreludePackages
 {

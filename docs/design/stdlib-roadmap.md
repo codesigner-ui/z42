@@ -138,5 +138,5 @@
 以下不属于"包级扩展"，不在本路线图：
 
 - VM 内部 intrinsic 调整（属 stdlib.md L1 层）
-- 现有包的 bug fix / 小特性补丁（直接走 spec/changes/）
+- 现有包的 bug fix / 小特性补丁（直接走 docs/spec/changes/）
 - 语言特性扩展（lambda / async / 反射）— 见 [language-overview.md](language-overview.md) + roadmap L3 段

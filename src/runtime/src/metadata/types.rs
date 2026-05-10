@@ -169,7 +169,7 @@ pub enum Value {
     /// CallIndirect 时由 dispatch 端通过当前帧的 arena 解 env。compiler 经
     /// escape 分析证明 closure 不离开创建 frame 时才发射该 variant；逃逸
     /// 场景仍走 `Value::Closure`。详见
-    /// `spec/archive/2026-05-02-impl-closure-l3-escape-stack/`。
+    /// `docs/spec/archive/2026-05-02-impl-closure-l3-escape-stack/`。
     StackClosure { env_idx: u32, fn_name: String },
     /// Spec impl-ref-out-in-runtime: `ref` / `out` / `in` 参数运行时表达。
     /// 持有该 Value 的寄存器在 frame.get/set 时被透明 deref（单点 dispatch，

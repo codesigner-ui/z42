@@ -111,7 +111,7 @@
   - **R3c**（`runner-test-changed` ✅ 2026-04-30）：`scripts/test-changed.sh` + `just test-changed` —— git diff 文件 → 目录级映射 → 受影响测试命令集合；支持 `--dry-run` 与 `Z42_TEST_CHANGED_BASE` 环境变量；替换 P2 占位符
   - **R5**（`rewrite-goldens-with-test-mechanism` minimal + ad-hoc 迁移 ✅ 2026-04-30）：6 个 stdlib 库各 1 个原生 `[Test]` 测试文件 + `just test-stdlib` 入口；13 个 stdlib-bound golden 物理迁回所测库目录
   - **R2 完整版**（`extend-z42-test-library` ✅ 2026-05-05）：lambda 落地后兑现 z42.test 库三处 TODO —— `Std.Test.TestIO` (captureStdout/Stderr/Both + nested + 异常透传) / `Std.Test.Bencher` (default+custom ctor / iter / Min·Max·Median·Total·Samples / printSummary) / `Std.Test.BenchHelpers.blackBox(object)` / `Assert.Throws(Action)` + `DoesNotThrow` + `EqualApprox`；E0912 完整化（[Benchmark] first-param-is-Bencher）；`Std.IO.ConsoleError`（首次 stderr 写出 API）；6 个新 native（4 testio + 2 bench）；dogfood 25/25
-- 📋 **后续完整版**（详见 [spec/changes/](../spec/changes/)）：
+- 📋 **后续完整版**（详见 [docs/spec/changes/](../spec/changes/)）：
   - **R3b** （待开 spec）：in-process 执行 + [Setup]/[Teardown] hook 真生效 + Runner [Benchmark] 调度模式（R2 完整版交付 Bencher 类，但 runner 不调度它）+ zpkg-as-input（顺带覆盖跨非 import 包 inheritance 的边角情形 —— A3 编译期 chain 已经覆盖 import 范围；R3b 用 LazyLoader 时自然吸收）
   - **类型敏感 `Throws<E>`**（待开 spec）：依赖 z42 三个反射限制（`is X` cross-module / generic-E IsInstance / Object.GetType() 跨 Exception 子类）任一修好；R2 完整版以 untyped `Throws(Action)` + `[ShouldThrow<E>]` 测试级注解作为过渡
 
@@ -150,7 +150,7 @@
 
 | Spec / 阶段 | 内容 | 状态 |
 |------------|------|------|
-| **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/embedding.md](design/embedding.md) + spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
+| **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/embedding.md](design/embedding.md) + docs/spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
 | **H1**（`add-embedding-api` C ABI scaffold ✅ 2026-05-10）| `src/runtime/include/z42_host.h` + `src/runtime/src/host/` 单实例 state（initialize / shutdown / last_error）+ build matrix（default / interp-only / ios / android）全绿 + 12 个 unit test | ✅ |
 | **H2**（`add-embedding-api` hello-world ✅ 2026-05-10）| `load_zbc` / `resolve_entry` / `invoke` 全链路（marshal: null + i64/f64/bool）+ corelib + 用户 `import_namespaces` 自动 eager merge + stdout sink 接 corelib io（thread-local active flag + RwLock host sink）+ Tier 2 Rust crate `z42-host` + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码（desktop staticlib build 留 H4） | ✅ |
 | **H3**（`add-embedding-api` 错误路径 ✅ 2026-05-10）| 5 类错误路径测试覆盖（BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）+ `classify_invoke_error` 对齐 `format_uncaught` 的 `"uncaught exception"` marker + `invoke_impl` 加 `args.len() != param_count` 校验。string `Z42Value` marshal 推迟（H4+ 与移动平台 string 协议一并落地） | ✅ |

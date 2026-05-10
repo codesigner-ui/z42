@@ -14,7 +14,7 @@
 ## 设计原则
 
 1. **每个 minor 是独立可发布单位** —— 升级到 `0.X.0` 应该有用户可感知的能力跃迁
-2. **每个 patch 是独立 spec** —— `0.X.Y` 对应一个 `spec/changes/` 变更单元，单独实施 + 验证 + 归档 + commit + push
+2. **每个 patch 是独立 spec** —— `0.X.Y` 对应一个 `docs/spec/changes/` 变更单元，单独实施 + 验证 + 归档 + commit + push
 3. **横向工作流贯穿所有版本** —— benchmark、perf CI、GREEN 标准随版本演进，与功能特性独立
 4. **1.0.0 之前不承诺向后兼容** —— 与 [workflow.md "不为旧版本提供兼容"](../.claude/rules/workflow.md) 对齐
 5. **1.0.0 启用 SemVer + deprecation 周期** —— 必须先通过自举 + AOT + perf 三道关
@@ -504,7 +504,7 @@
 
 - **本文档每次有版本完成时同步更新**：将完成的子版本表行标 ✅，并把日期填入"实际完成"列（待加）
 - **子版本顺序可调整，但 minor 边界不轻易移动**：minor 是发布单位，跨 minor 移动特性需要明确理由
-- **新增子版本通过 spec/changes/ 走标准流程**：本文档反映已完成的规划，不替代 spec 流程
+- **新增子版本通过 docs/spec/changes/ 走标准流程**：本文档反映已完成的规划，不替代 spec 流程
 - **与 [features.md](features.md) / [roadmap.md](roadmap.md) 三向对齐**：任何 phase 归属或语言设计的变更必须三处同步
 
 ---

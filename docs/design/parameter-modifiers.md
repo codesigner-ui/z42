@@ -1,6 +1,6 @@
 # Parameter Modifiers — `ref` / `out` / `in`
 
-> 状态：**编译期 + 运行时全部已落地**（spec/archive/2026-05-05-define-ref-out-in-parameters-typecheck/ + spec/archive/2026-05-05-impl-ref-out-in-runtime/）。
+> 状态：**编译期 + 运行时全部已落地**（docs/spec/archive/2026-05-05-define-ref-out-in-parameters-typecheck/ + docs/spec/archive/2026-05-05-impl-ref-out-in-runtime/）。
 
 z42 提供三个参数修饰符：
 
