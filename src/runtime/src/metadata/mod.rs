@@ -20,10 +20,15 @@ pub mod merge;
 pub mod resolver;
 pub mod well_known_names;
 pub mod test_index;
+pub mod build_id;
 
 #[cfg(test)]
 #[path = "constraint_tests.rs"]
 mod constraint_tests;
+
+#[cfg(test)]
+#[path = "sidecar_tests.rs"]
+mod sidecar_tests;
 
 // Re-exports: runtime value types
 pub use types::{default_value_for, ExecMode, FieldSlot, NativeData, PinSourceKind, ScriptObject, TypeDesc, Value};

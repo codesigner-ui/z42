@@ -16,7 +16,8 @@ use super::merge::merge_modules;
 use super::test_index::TestEntry;
 use super::types::{FieldSlot, TypeDesc};
 use super::zbc_reader::{
-    read_test_index_resolved, read_zbc, read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces,
+    parse_zbc_sidecar, parse_zpkg_sidecar, read_build_id, read_test_index_resolved, read_zbc,
+    read_zpkg_meta, read_zpkg_modules, read_zpkg_namespaces,
 };
 
 /// Result of loading a compiler artifact.
@@ -62,7 +63,7 @@ pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
 /// the same registry / verification / index passes run.
 ///
 /// Spec: docs/design/embedding.md §4.4 (z42_host_load_zbc),
-///       spec/archive/2026-05-10-add-embedding-api/.
+///       docs/spec/archive/2026-05-10-add-embedding-api/.
 pub fn load_artifact_from_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
     if raw.len() < 4 {
         bail!("artifact byte buffer is too short ({} bytes); expected at least 4 magic bytes", raw.len());
@@ -86,7 +87,67 @@ pub fn load_artifact_from_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
 
 fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     let raw = std::fs::read(path).with_context(|| format!("cannot read `{path}`"))?;
-    load_zbc_bytes(&raw).with_context(|| format!("cannot parse binary zbc `{path}`"))
+    let mut artifact = load_zbc_bytes(&raw).with_context(|| format!("cannot parse binary zbc `{path}`"))?;
+
+    // 1.2 split-debug-symbols: probe `<basename>.zsym` adjacent to the main file
+    // and merge debug info when build_id matches.
+    let sidecar_path = Path::new(path).with_extension("zsym");
+    if let Ok(sym_raw) = std::fs::read(&sidecar_path) {
+        apply_zbc_sidecar(&mut artifact.module, &raw, &sym_raw, &sidecar_path);
+    }
+
+    Ok(artifact)
+}
+
+fn apply_zbc_sidecar(
+    module: &mut Module,
+    main: &[u8],
+    sym: &[u8],
+    sym_path: &Path,
+) {
+    let main_blid = match read_build_id(main) {
+        Some(b) => b,
+        None => {
+            tracing::warn!(
+                "found {} but main zbc has no BLID section; ignoring sidecar",
+                sym_path.display()
+            );
+            return;
+        }
+    };
+    let sidecar = match parse_zbc_sidecar(sym) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("ignoring corrupt zbc sidecar {}: {e}", sym_path.display());
+            return;
+        }
+    };
+    if sidecar.build_id != main_blid {
+        tracing::warn!(
+            "{} build_id mismatch: main={} sidecar={}; ignored",
+            sym_path.display(),
+            super::build_id::short_hex(&main_blid),
+            super::build_id::short_hex(&sidecar.build_id),
+        );
+        return;
+    }
+    if sidecar.functions.len() != module.functions.len() {
+        tracing::warn!(
+            "{} function count mismatch: main has {} sidecar has {}; ignored",
+            sym_path.display(),
+            module.functions.len(),
+            sidecar.functions.len(),
+        );
+        return;
+    }
+    for (i, fb) in sidecar.functions.into_iter().enumerate() {
+        if !fb.line_table.is_empty() {
+            module.functions[i].line_table = fb.line_table;
+        }
+        if !fb.local_vars.is_empty() {
+            module.functions[i].local_vars = fb.local_vars;
+        }
+    }
 }
 
 fn load_zbc_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
@@ -118,7 +179,113 @@ fn load_zbc_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
 
 fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
     let raw = std::fs::read(path).with_context(|| format!("cannot read `{path}`"))?;
-    load_zpkg_bytes(&raw).with_context(|| format!("cannot parse zpkg `{path}`"))
+
+    // 1.5b split-debug-symbols: probe `<basename>.zsym` adjacent to the main
+    // .zpkg and merge per-module debug info into the loaded modules when
+    // build_id matches. We do this before merge_modules so that line tables
+    // land in the right place (before namespace flattening).
+    let sidecar_path = Path::new(path).with_extension("zsym");
+    let sidecar_raw = std::fs::read(&sidecar_path).ok();
+
+    load_zpkg_bytes_with_sidecar(&raw, sidecar_raw.as_deref(), Some(&sidecar_path))
+        .with_context(|| format!("cannot parse zpkg `{path}`"))
+}
+
+fn load_zpkg_bytes_with_sidecar(
+    raw: &[u8],
+    sym_raw: Option<&[u8]>,
+    sym_path: Option<&Path>,
+) -> Result<LoadedArtifact> {
+    if raw.len() < 4 || &raw[0..4] != ZPKG_MAGIC {
+        bail!("not a binary zpkg payload: expected ZPKG magic bytes");
+    }
+
+    let meta = read_zpkg_meta(raw).context("cannot read zpkg metadata")?;
+    let mut module_pairs = read_zpkg_modules(raw).context("cannot load modules from zpkg")?;
+
+    // Apply sidecar (if present + valid + build_id matches) to per-module
+    // function debug fields before flattening.
+    if let Some(sym) = sym_raw {
+        apply_zpkg_sidecar(&mut module_pairs, raw, sym, sym_path);
+    }
+
+    let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
+    let mut module = merge_modules(modules).context("merging zpkg modules")?;
+
+    build_type_registry(&mut module);
+    verify_constraints(&module)
+        .with_context(|| format!("constraint verification failed for module `{}`", module.name))?;
+    build_block_indices(&mut module);
+    build_func_index(&mut module);
+
+    Ok(LoadedArtifact {
+        module,
+        entry_hint: meta.entry,
+        dependencies: meta.dependencies,
+        import_namespaces: vec![],
+        test_index: vec![],
+    })
+}
+
+fn apply_zpkg_sidecar(
+    module_pairs: &mut Vec<(Module, String)>,
+    main: &[u8],
+    sym: &[u8],
+    sym_path: Option<&Path>,
+) {
+    let display_path = sym_path.map(|p| p.display().to_string()).unwrap_or_else(|| "<sidecar>".to_owned());
+    let main_blid = match read_build_id(main) {
+        Some(b) => b,
+        None => {
+            tracing::warn!(
+                "found {display_path} but main zpkg has no BLID section; ignoring sidecar"
+            );
+            return;
+        }
+    };
+    let sidecar = match parse_zpkg_sidecar(sym) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("ignoring corrupt zpkg sidecar {display_path}: {e}");
+            return;
+        }
+    };
+    if sidecar.build_id != main_blid {
+        tracing::warn!(
+            "{display_path} build_id mismatch: main={} sidecar={}; ignored",
+            super::build_id::short_hex(&main_blid),
+            super::build_id::short_hex(&sidecar.build_id),
+        );
+        return;
+    }
+
+    // Match by namespace: sidecar order matches main MODS order, but we
+    // double-check ns equality to be defensive against future MDBG layout
+    // changes.
+    for ((module, ns), (sym_ns, fns)) in module_pairs.iter_mut().zip(sidecar.modules.into_iter()) {
+        if ns != &sym_ns {
+            tracing::warn!(
+                "{display_path}: sidecar module ns mismatch (main={ns}, sidecar={sym_ns}); skipped this module"
+            );
+            continue;
+        }
+        if fns.len() != module.functions.len() {
+            tracing::warn!(
+                "{display_path}: function count mismatch in module '{ns}' (main={}, sidecar={}); skipped",
+                module.functions.len(),
+                fns.len(),
+            );
+            continue;
+        }
+        for (i, fb) in fns.into_iter().enumerate() {
+            if !fb.line_table.is_empty() {
+                module.functions[i].line_table = fb.line_table;
+            }
+            if !fb.local_vars.is_empty() {
+                module.functions[i].local_vars = fb.local_vars;
+            }
+        }
+    }
 }
 
 fn load_zpkg_bytes(raw: &[u8]) -> Result<LoadedArtifact> {

@@ -32,6 +32,9 @@ thiserror = "1"
 # Bitflags (used by metadata::test_index for TestFlags; spec R1)
 bitflags = "2"
 
+# BLAKE3 hash for zbc/zpkg build_id (split-debug-symbols, 1.2/0.3+)
+blake3 = "1"
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 
