@@ -123,15 +123,17 @@ var sourceArg  = new Argument<FileInfo?>("source", () => null, "Source .z42 file
 sourceArg.Arity = ArgumentArity.ZeroOrOne;
 var emitOpt    = new Option<string>("--emit", () => "ir", "Output format: ir (ZASM text) | zbc (binary)");
 var outOpt     = new Option<FileInfo?>(["-o", "--output"], "Output file path");
-var dumpTokOpt = new Option<bool>("--dump-tokens", "Print token stream and exit");
-var dumpAstOpt = new Option<bool>("--dump-ast",    "Print AST and exit");
-var dumpIrOpt  = new Option<bool>("--dump-ir",     "Print IR (ZASM) to stdout alongside emit");
+var dumpTokOpt   = new Option<bool>("--dump-tokens", "Print token stream and exit");
+var dumpAstOpt   = new Option<bool>("--dump-ast",    "Print AST (after parse) and exit");
+var dumpBoundOpt = new Option<bool>("--dump-bound",  "Print Bound tree (after typecheck) and exit");
+var dumpIrOpt    = new Option<bool>("--dump-ir",     "Print IR (ZASM) to stdout alongside emit");
 
 rootCmd.AddArgument(sourceArg);
 rootCmd.AddOption(emitOpt);
 rootCmd.AddOption(outOpt);
 rootCmd.AddOption(dumpTokOpt);
 rootCmd.AddOption(dumpAstOpt);
+rootCmd.AddOption(dumpBoundOpt);
 rootCmd.AddOption(dumpIrOpt);
 
 rootCmd.SetHandler((InvocationContext ctx) =>
@@ -151,10 +153,11 @@ rootCmd.SetHandler((InvocationContext ctx) =>
     }
     var emit    = ctx.ParseResult.GetValueForOption(emitOpt)!;
     var outFile = ctx.ParseResult.GetValueForOption(outOpt);
-    var dumpTok = ctx.ParseResult.GetValueForOption(dumpTokOpt);
-    var dumpAst = ctx.ParseResult.GetValueForOption(dumpAstOpt);
-    var dumpIr  = ctx.ParseResult.GetValueForOption(dumpIrOpt);
-    ctx.ExitCode = SingleFileCompiler.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr);
+    var dumpTok   = ctx.ParseResult.GetValueForOption(dumpTokOpt);
+    var dumpAst   = ctx.ParseResult.GetValueForOption(dumpAstOpt);
+    var dumpBound = ctx.ParseResult.GetValueForOption(dumpBoundOpt);
+    var dumpIr    = ctx.ParseResult.GetValueForOption(dumpIrOpt);
+    ctx.ExitCode = SingleFileCompiler.Run(source, emit, outFile?.FullName, dumpTok, dumpAst, dumpIr, dumpBound);
 });
 
 return await rootCmd.InvokeAsync(args);

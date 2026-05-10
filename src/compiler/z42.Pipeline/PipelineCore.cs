@@ -27,11 +27,14 @@ public sealed record SourceCompileResult(
 /// <summary>
 /// Pure compilation core — no file I/O, no console output.
 ///
-/// Two entry points:
+/// Three entry points:
 /// • <see cref="Compile"/>         — full pipeline from source text (used by PackageCompiler).
 /// • <see cref="CheckAndGenerate"/>— TypeCheck + IrGen from an already-parsed CompilationUnit
 ///                                   (used by SingleFileCompiler, which manages lex/parse itself
 ///                                   to support --dump-tokens / --dump-ast early exits).
+/// • <see cref="CheckOnly"/>       — TypeCheck only, returning the SemanticModel
+///                                   (used by --dump-bound to dump the post-typecheck Bound tree
+///                                   without paying for codegen).
 ///
 /// Callers are responsible for reading source files and printing diagnostics.
 /// This class is fully unit-testable without any file-system mocking.
@@ -73,6 +76,26 @@ public static class PipelineCore
         ImportedSymbols?  imported = null)
         => CheckAndGenerate(cu, fileName, depIndex,
                             features ?? LanguageFeatures.Phase1, new DiagnosticBag(), imported);
+
+    /// <summary>
+    /// TypeCheck only — returns the resolved <see cref="SemanticModel"/> alongside
+    /// diagnostics. Skips IrGen entirely; useful for `--dump-bound` and other
+    /// inspection paths that don't need IR.
+    /// </summary>
+    public static (SemanticModel? Model, DiagnosticBag Diags) CheckOnly(
+        CompilationUnit   cu,
+        DependencyIndex   depIndex,
+        LanguageFeatures? features = null,
+        ImportedSymbols?  imported = null)
+    {
+        var feats = features ?? LanguageFeatures.Phase1;
+        var diags = new DiagnosticBag();
+        var sem   = new TypeChecker(diags, feats, depIndex).Check(cu, imported);
+        if (diags.HasErrors) return (null, diags);
+        Z42.Semantics.TestAttributeValidator.Validate(cu, sem, diags);
+        if (diags.HasErrors) return (null, diags);
+        return (sem, diags);
+    }
 
     // ── Shared implementation ─────────────────────────────────────────────────
 

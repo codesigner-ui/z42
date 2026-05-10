@@ -468,7 +468,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **已落地** | `split-typechecker-calls` — TypeChecker.Calls.cs (686→405 主) + 3 partial；BindCall 单方法 395 行残留（D-12 已记） | refactor | Part 1 §1.1 (4/4) — **§1.1 整体收口** | 🟢 2026-05-08 |
 | **部分完成** | `split-typechecker-tests` — TypeCheckerTests.cs (1730→177 主) + 6 partial 文件（每 ≤ 483 LOC）；rc_heap_tests 留独立 spec | refactor | Part 1 §1.4 (C#) | 🟢 2026-05-07 |
 | **已落地** | `split-rc-heap-tests` — rc_heap_tests.rs (1229 LOC) → `rc_heap_tests/` 子目录 10 个 topic 文件（最大 228 LOC） | refactor | Part 1 §1.4 (Rust) — **§1.4 整体收口** | 🟢 2026-05-07 |
-| **M6 → M7 之间** | `impl-dump-ast` — 实现 `--dump-ast` handler（依赖 `introduce-bound-visitor`） | refactor | Part 3 §3.2 | 📋 |
+| **已落地** | `impl-dump-ast` — 实现 `--dump-ast` handler（手写 AST 树打印）+ 新增 `--dump-bound`（基于 `BoundExprVisitor<Unit>` / `BoundStmtVisitor<Unit>` 几乎免费）；输出缩进树 + 类型注解 + Span | refactor | Part 3 §3.2 | 🟢 2026-05-10 |
 | **M7 启动前**（**关键前置**） | `split-symbol-from-type` — 抽 `ISymbol` 层；**Symbol 持有 `DeclSpan`，根除 §3.1 Decl 身份丢失** | lang | Part 2 §2.3 + Part 3 §3.1，R-series 反射前置 | 📋 |
 | **M7 期间** | `lexer-trivia-preserve` — lexer 加 trivia 字段（可空） | refactor | Part 2 §2.5，formatter 前置 | 📋 |
 | **M7 期间** | `diag-engine-v2` — warning groups + severity 重映射 | lang | Part 3 §3.3 | 📋 |
@@ -524,11 +524,7 @@ extend-signature-whitelist (进行中)
 
 1. `split-symbol-from-type` — 反射系列的设计前置；同步根除 Decl 身份丢失（§3.1）
 
-**高优先**（M7 启动前应完成）:
-
-2. `impl-dump-ast` — 开发期高频价值，依赖 visitor 框架后近乎免费（visitor 已就绪）
-
-> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`、`introduce-bound-visitor`
+> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`、`introduce-bound-visitor`、`impl-dump-ast`
 
 **中优先**（M7 内或之后）:
 
@@ -573,3 +569,4 @@ extend-signature-whitelist (进行中)
 - **2026-05-05 增补 Part 4**: VM 架构对标 (vs dotnet/runtime CoreCLR)；路线图拆为编译器线 + VM 线两轨
 - **2026-05-09 状态同步**: method-token 三 Phase 全部落地（Phase 1 / formalize-jit / tokenize-ir-zbc）；§4.1 Part 4 痛点关闭；优先级清单收缩到 3 项 (split-symbol-from-type / introduce-bound-visitor / impl-dump-ast)
 - **2026-05-10 状态同步**: introduce-bound-visitor 落地（10 处手写 switch 全部迁移到 BoundExprVisitor / BoundStmtVisitor）；Part 2 §2.1 + Part 1 §1.3 收口；优先级清单只剩 split-symbol-from-type + impl-dump-ast 两项
+- **2026-05-10 状态同步**: impl-dump-ast 落地（`--dump-ast` AST 缩进树 + `--dump-bound` 类型注解 Bound 树，BoundDumper 直接复用 visitor 框架）；Part 3 §3.2 收口；优先级清单只剩 split-symbol-from-type 一项

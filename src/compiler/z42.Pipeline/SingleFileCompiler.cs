@@ -19,7 +19,8 @@ public static class SingleFileCompiler
         string?  outPath,
         bool     dumpTokens,
         bool     dumpAst,
-        bool     dumpIr)
+        bool     dumpIr,
+        bool     dumpBound = false)
     {
         string sourceText;
         try   { sourceText = File.ReadAllText(source.FullName); }
@@ -40,7 +41,7 @@ public static class SingleFileCompiler
             return 1;
         }
 
-        if (dumpAst) { Console.WriteLine(cu); return 0; }
+        if (dumpAst) { Console.Write(AstDumper.Dump(cu)); return 0; }
 
         // Load dependencies: scan up from the source file's directory to find artifacts/z42/libs/
         var depIndex = LocateDepIndex(source.FullName);
@@ -50,6 +51,15 @@ public static class SingleFileCompiler
         // Types from non-activated packages are not visible — TypeChecker reports
         // E0401 (UnknownIdentifier) when used.
         var imported = LocateImportedSymbols(source.FullName, cu.Usings);
+
+        if (dumpBound)
+        {
+            var (model, diags) = PipelineCore.CheckOnly(cu, depIndex, imported: imported);
+            diags.PrintAll();
+            if (model is null) return 1;
+            Console.Write(BoundDumper.Dump(model));
+            return 0;
+        }
 
         var result = PipelineCore.CheckAndGenerate(cu, source.FullName, depIndex, imported: imported);
         result.Diags.PrintAll();
