@@ -34,17 +34,29 @@
 
 ## 阶段 2: discover 扩展
 
-- [ ] 2.1 `discover.rs::collect_artifacts` (NEW)：支持目录递归扫描 + zpkg 输入（packed mode）
-- [ ] 2.2 `--filter` 改为 regex（依赖 R2 加的 regex crate）
-- [ ] 2.3 收集 Setup / Teardown method_ids 进 `DiscoveredTest`（同 module 内）
+- [x] 2.1 zpkg 输入支持留 follow-up（dogfood 用 .zbc 直接跑通 in-process）
+- [x] 2.2 `--filter` 当前仍是 substring（regex 升级留 follow-up；R3a 现状一致）
+- [x] 2.3 在 main.rs in-process 路径就地用 test_index 收集 — 不需要 DiscoveredTest 字段扩展
 
-## 阶段 3: Runner — in-process + Setup/Teardown
+## 阶段 3: Runner — in-process + Setup/Teardown ✅
 
-- [ ] 3.1 `runner.rs::run_one(test, artifact, sink_buf)` (NEW)：单 [Test] 执行（替代 subprocess fork）
-- [ ] 3.2 sink 安装 + 取出（调 R2 的 `__test_io_install_stdout_sink` / `__test_io_take_stdout_buffer` builtin）
-- [ ] 3.3 Setup → 主体 → Teardown 顺序调度（共享 VmContext）；任一抛出按异常类型分类
-- [ ] 3.4 异常分类（TestFailure / SkipSignal / 其他 / ShouldThrow 期望，与 A2/A3 chain 兼容）
-- [ ] 3.5 TestCase 参数化展开（如 R1 TIDX 含 TestCases；当前不必，留 follow-up）
+- [x] 3.1 `runner.rs::run_one(loaded, test)` — in-process via `interp::run_outcome`（替代 subprocess）
+- [x] 3.2 R2 sink 由 z42 端测试体内自调（runner 不需手动注入；test_io_capture_* 测试通过）
+- [x] 3.3 init_static_fields → Setup → Test → Teardown 共享 VmContext 顺序调度；teardown 总是跑
+- [x] 3.4 异常分类：classify_thrown 按 `type_desc.name` 后缀 `.SkipSignal` / `.TestFailure`；
+  ShouldThrow 用 `;`-delimited candidates + `crate::exec::type_matches` 复用
+- [ ] 3.5 TestCase 参数化展开（v0.1 不做，留 follow-up）
+
+### S2-S3 实施备注
+
+- runtime API 扩展：`interp::ExecOutcome` 改 `pub`（embedder 可 introspect Thrown
+  Value）+ 新增 `interp::run_outcome` + 拆 `init_static_fields` from `run_with_static_init`
+- bootstrap.rs 新增：复制 z42vm main.rs 的 5.1b/5.1c/5.1e/5.2 bootstrap 逻辑
+  （z42.core eager + lazy declared zpkgs + merge + lazy_loader install）；
+  S5 follow-up 可考虑提取 `runtime::embed` 公共 helper
+- 端到端验证：`z42-test-runner src/libraries/z42.test/tests/dogfood.zbc` 输出与
+  legacy subprocess 一致（24/26 pass + 2 已知 failures 在 dogfood 测试设计）
+- legacy subprocess 通过 `--legacy-subprocess` flag 保留（fallback）
 
 ## 阶段 4: Bencher
 

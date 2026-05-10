@@ -37,8 +37,13 @@ use std::collections::HashMap;
 
 /// Outcome of executing a function.
 /// User exceptions are value-based (no heap allocation), not anyhow errors.
+///
+/// Public so embedders (test-runner, REPL) can introspect thrown exception
+/// values — necessary for [ShouldThrow<E>] type matching and TestFailure /
+/// SkipSignal classification (rewrite-z42-test-runner-compile-time S3,
+/// 2026-05-10).
 #[derive(Debug)]
-pub(crate) enum ExecOutcome {
+pub enum ExecOutcome {
     /// Normal return (with optional return value).
     Returned(Option<Value>),
     /// User exception thrown and not caught within this function.
@@ -71,9 +76,27 @@ pub fn run_returning(
     }
 }
 
-/// Run with static init: clears static fields, runs ALL `*.__static_init__`
-/// functions (both eager-loaded in `module.functions` and lazy-loadable from
-/// declared zpkgs), then runs `func`.
+/// Public-API variant of [`run`] that surfaces both the typed thrown
+/// exception value (for type introspection / [ShouldThrow<E>] matching)
+/// and the optional return value, instead of collapsing thrown into an
+/// anyhow string. For embedders that need exception-aware control flow
+/// (rewrite-z42-test-runner-compile-time S3, 2026-05-10).
+pub fn run_outcome(
+    ctx: &VmContext,
+    module: &Module,
+    func: &Function,
+    args: &[Value],
+) -> Result<ExecOutcome> {
+    exec_function(ctx, module, func, args)
+}
+
+/// Initialise static state: clears static fields then runs ALL
+/// `*.__static_init__` functions (both eager-loaded in `module.functions`
+/// and lazy-loadable from declared zpkgs).
+///
+/// Extracted from [`run_with_static_init`] (2026-05-10 R3b) so embedders
+/// (test-runner, REPL) can do init once + run multiple functions in
+/// sequence (Setup → Test → Teardown) without re-initialising between.
 ///
 /// 2026-04-27 fix-static-field-access: 修前只跑 `{module.name}.__static_init__`
 /// (主模块)，导入的 zpkg（如 z42.math 的 `Std.Math.__static_init__`）虽然 link 进
@@ -87,8 +110,7 @@ pub fn run_returning(
 ///   3. 合并 + 按 FQN 字母序去重 + 逐一调用
 ///
 /// 副作用：所有声明的 stdlib zpkg 都会被 eagerly 加载（不再纯 lazy）。
-/// 在当前 stdlib 规模（~50KB / 5 包）下成本可忽略，换取静态常量可用。
-pub fn run_with_static_init(ctx: &VmContext, module: &Module, func: &Function) -> Result<()> {
+pub fn init_static_fields(ctx: &VmContext, module: &Module) -> Result<()> {
     ctx.static_fields_clear();
 
     // 1. Eager-loaded init functions (in main + z42.core).
@@ -118,7 +140,13 @@ pub fn run_with_static_init(ctx: &VmContext, module: &Module, func: &Function) -
                 bail!("uncaught exception in static init `{}`: {}", init_name, value_to_str(&val)),
         }
     }
+    Ok(())
+}
 
+/// Run with static init: convenience wrapper — calls
+/// [`init_static_fields`] then runs `func`. Used by `Vm::run`.
+pub fn run_with_static_init(ctx: &VmContext, module: &Module, func: &Function) -> Result<()> {
+    init_static_fields(ctx, module)?;
     match exec_function(ctx, module, func, &[])? {
         ExecOutcome::Returned(_) => Ok(()),
         ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
