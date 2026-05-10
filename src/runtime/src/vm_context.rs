@@ -347,12 +347,16 @@ impl VmContext {
         self.call_stack.borrow_mut().pop();
     }
 
-    /// Update the *top* (currently executing) frame's source line.
+    /// Update the *top* (currently executing) frame's source position.
     /// Called by callers right before they invoke a callee, so the snapshot
     /// at a downstream `throw` shows the call site, not 0.
-    pub(crate) fn update_top_frame_line(&self, line: u32) {
+    ///
+    /// `column = 0` means unknown — the snapshot formats as `(file:line)`
+    /// rather than `(file:line:col)`.
+    pub(crate) fn update_top_frame_pos(&self, line: u32, column: u32) {
         if let Some(top) = self.call_stack.borrow().last() {
             top.line.set(line);
+            top.column.set(column);
         }
     }
 

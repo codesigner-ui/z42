@@ -441,10 +441,14 @@ fn read_func(sec: &[u8], pool: &[String], id_map: &IdMap) -> Result<Vec<FuncBody
             let ins  = c.read_u16()? as u32;
             let line = c.read_u32()?;
             let file_id = c.read_u32()?;
+            // 2026-05-10 span-column-propagate (zbc 1.1+): u32 column.
+            let column = c.read_u32()?;
             let file = if file_id == u32::MAX { None } else {
                 pool.get(file_id as usize).cloned()
             };
-            line_table.push(crate::metadata::bytecode::LineEntry { block: blk, instr: ins, line, file });
+            line_table.push(crate::metadata::bytecode::LineEntry {
+                block: blk, instr: ins, line, file, column,
+            });
         }
 
         let instr_bytes = c.read_bytes(instr_len)?;
@@ -788,16 +792,18 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     // Phase 3 S3c (2026-05-09): require zbc 1.0+. Pre-1.0 not supported per
     // CLAUDE.md "不为旧版本提供兼容" — old artifacts must be regenerated via
     // `scripts/build-stdlib.sh + scripts/regen-golden-tests.sh`.
-    if major == 0 {
+    // 2026-05-10 span-column-propagate: bump to 1.1 — line table entries gained
+    // a `u32 column` field. Per CLAUDE.md "不为旧版本提供兼容", pre-1.1 artifacts
+    // must be regenerated; reader does not preserve a backwards-compat path.
+    if major == 0 || (major == 1 && minor < 1) {
         bail!(
-            "zbc {major}.{minor} not supported; requires 1.0+. \
+            "zbc {major}.{minor} not supported; requires 1.1+. \
              Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
         );
     }
     if major > 1 {
         bail!("zbc major version {major} not supported (expected 1.x)");
     }
-    let _ = minor; // currently unused for v1.x dispatch
     let has_is_static = true;  // v1.0+ always has is_static in SIGS
     let dir = read_directory(data, sec_count)?;
 

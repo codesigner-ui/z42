@@ -343,13 +343,20 @@ pub(crate) fn store_thru_ref(
 
 // ── Debug: source line resolution ─────────────────────────────────────────────
 
-pub(crate) fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, instr: u32) -> u32 {
+/// Resolve `(line, column)` covering a given (block, instr) site by walking
+/// the function's line table forward to the latest entry that doesn't
+/// overshoot. Column is 0 when the source position predates zbc 1.1 or the
+/// emitter didn't capture it (gracefully degraded by `format_stack_trace`
+/// — `(file:line)` instead of `(file:line:col)`).
+pub(crate) fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, instr: u32) -> (u32, u32) {
     let mut line = 0u32;
+    let mut column = 0u32;
     for entry in table {
         if entry.block > block || (entry.block == block && entry.instr > instr) { break; }
         line = entry.line;
+        column = entry.column;
     }
-    line
+    (line, column)
 }
 
 // ── Core execution loop ──────────────────────────────────────────────────────
@@ -469,8 +476,9 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                     // UserException sentinel branch — JIT helpers now report
                     // exceptions via `ctx.set_exception` + extern-C return code,
                     // not via `anyhow::Error` wrapping.)
-                    let loc = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
-                    return Err(e.context(format!("  at {} (line {})", func.name, loc)));
+                    let (line, col) = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
+                    let loc_str = if col > 0 { format!("line {line}, col {col}") } else { format!("line {line}") };
+                    return Err(e.context(format!("  at {} ({})", func.name, loc_str)));
                 }
             }
         }
@@ -505,12 +513,12 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 // the throw site (not whatever the previous Call left).
                 // Throw is a block terminator; instr_idx isn't a meaningful
                 // intra-block offset, so use end-of-block (block.instructions.len()).
-                let throw_line = resolve_line(
+                let (throw_line, throw_col) = resolve_line(
                     &func.line_table,
                     block_idx as u32,
                     block.instructions.len() as u32,
                 );
-                ctx.update_top_frame_line(throw_line);
+                ctx.update_top_frame_pos(throw_line, throw_col);
                 crate::exception::populate_stack_trace(&val, ctx, module);
 
                 if let Some(entry_idx) = find_handler(

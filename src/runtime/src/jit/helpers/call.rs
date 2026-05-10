@@ -11,10 +11,12 @@ use super::{set_exception, vm_ctx_ref, JitFn};
 /// directly. On `UNRESOLVED` (cross-zpkg), falls back to name-based
 /// HashMap lookup. Name pointer kept for diagnostics + fallback.
 ///
-/// `caller_line` (jit-stack-trace, 2026-05-10) is the source line of this
-/// call site — codegen passes it as a constant. Stamped onto the caller's
-/// FrameInfo before descending so a downstream throw's snapshot shows
-/// the call site (not 0).
+/// `caller_line` / `caller_col` (jit-stack-trace + span-column-propagate,
+/// 2026-05-10) are the source position of this call site — codegen passes
+/// both as constants. Stamped onto the caller's FrameInfo before descending
+/// so a downstream throw's snapshot shows the precise call site.
+/// `caller_col == 0` means unknown (zbc < 1.1) — formatter degrades to
+/// `(file:line)`.
 #[no_mangle]
 pub unsafe extern "C" fn jit_call(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
@@ -23,6 +25,7 @@ pub unsafe extern "C" fn jit_call(
     fn_name_ptr: *const u8, fn_name_len: usize,
     args_ptr: *const u32, argc: usize,
     caller_line: u32,
+    caller_col:  u32,
 ) -> u8 {
     let ctx_ref   = &*ctx;
     let frame_ref = &mut *frame;
@@ -58,8 +61,8 @@ pub unsafe extern "C" fn jit_call(
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
     let vm_ctx = vm_ctx_ref(ctx);
 
-    // jit-stack-trace: stamp caller's call-site line + push callee frame.
-    vm_ctx.update_top_frame_line(caller_line);
+    // jit-stack-trace + span-column-propagate: stamp caller's site pos.
+    vm_ctx.update_top_frame_pos(caller_line, caller_col);
     vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
         entry.name.to_string(),
         entry.file.to_string(),

@@ -196,13 +196,19 @@ pub struct LocalVar {
 }
 
 /// An entry in a function's source-line mapping table.
+///
+/// 2026-05-10 span-column-propagate (zbc 1.1): `column` carries 1-based
+/// source column from `Span.Column`. Value `0` means unknown (legacy
+/// hand-rolled IR or pre-1.1 zbc never reach here — reader rejects).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LineEntry {
-    pub block: u32,
-    pub instr: u32,
-    pub line:  u32,
+    pub block:  u32,
+    pub instr:  u32,
+    pub line:   u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file:  Option<String>,
+    pub file:   Option<String>,
+    #[serde(default)]
+    pub column: u32,
 }
 
 /// One row in a function's exception table.

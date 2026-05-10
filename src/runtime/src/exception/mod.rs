@@ -35,27 +35,33 @@ use crate::vm_context::VmContext;
 
 /// Per-frame metadata recorded for stack-trace formatting.
 ///
-/// `line` is mutable via [`Cell`] so a caller can record the source line
-/// of its call site just before it invokes a callee, without re-borrowing
-/// the surrounding `RefCell<Vec<FrameInfo>>`.
+/// `line` / `column` are mutable via [`Cell`] so a caller can record the
+/// source position of its call site just before it invokes a callee,
+/// without re-borrowing the surrounding `RefCell<Vec<FrameInfo>>`.
+///
+/// `column` (2026-05-10 span-column-propagate, zbc 1.1) is 1-based;
+/// value 0 means unknown — `format_stack_trace` then degrades to
+/// `(file:line)` instead of `(file:line:col)`.
 #[derive(Debug)]
 pub struct FrameInfo {
     pub func_name: String,
     pub file:      String,
     pub line:      Cell<u32>,
+    pub column:    Cell<u32>,
 }
 
 impl FrameInfo {
     pub fn new(func_name: String, file: String) -> Self {
-        Self { func_name, file, line: Cell::new(0) }
+        Self { func_name, file, line: Cell::new(0), column: Cell::new(0) }
     }
 
-    /// Snapshot used at throw time (no Cell — value is frozen).
+    /// Snapshot used at throw time (no Cell — values are frozen).
     pub fn snapshot(&self) -> FrameSnapshot {
         FrameSnapshot {
             func_name: self.func_name.clone(),
             file:      self.file.clone(),
             line:      self.line.get(),
+            column:    self.column.get(),
         }
     }
 }
@@ -67,13 +73,18 @@ pub struct FrameSnapshot {
     pub func_name: String,
     pub file:      String,
     pub line:      u32,
+    pub column:    u32,
 }
 
 /// Format a captured trace as a multi-line string.
 ///
 /// Frames are presented in caller-to-throw order — the throwing function
 /// is **last**, matching .NET / Java convention (most-recent at the bottom).
-/// Each line: `  at <func> (<file>:<line>)`.
+/// Each line: `  at <func> (<file>:<line>[:<col>])`.
+///
+/// `column` (zbc 1.1+) appears only when > 0; legacy frames without column
+/// gracefully degrade to `(file:line)`. When both file and column are
+/// missing the trailing `(...)` is omitted entirely.
 pub fn format_stack_trace(frames: &[FrameSnapshot]) -> String {
     let mut out = String::new();
     for f in frames.iter().rev() {
@@ -85,11 +96,19 @@ pub fn format_stack_trace(frames: &[FrameSnapshot]) -> String {
             if f.line > 0 {
                 out.push(':');
                 out.push_str(&f.line.to_string());
+                if f.column > 0 {
+                    out.push(':');
+                    out.push_str(&f.column.to_string());
+                }
             }
             out.push(')');
         } else if f.line > 0 {
             out.push_str(" (line ");
             out.push_str(&f.line.to_string());
+            if f.column > 0 {
+                out.push_str(", col ");
+                out.push_str(&f.column.to_string());
+            }
             out.push(')');
         }
         out.push('\n');

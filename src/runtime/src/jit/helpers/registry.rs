@@ -235,10 +235,11 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         shr:           decl!("jit_shr",        [ptr, ptr, i32t, i32t, i32t],              [i8t]),
         str_concat:    decl!("jit_str_concat", [ptr, ptr, i32t, i32t, i32t],              [i8t]),
         to_str:        decl!("jit_to_str",     [ptr, ptr, i32t, i32t],                    [i8t]),
-        // jit_call(frame, ctx, dst, method_id, name_ptr, name_len, args_ptr, argc, caller_line) -> u8
+        // jit_call(frame, ctx, dst, method_id, name_ptr, name_len, args_ptr, argc, caller_line, caller_col) -> u8
         // formalize-jit-method-token Phase 2.C (2026-05-08): id-first dispatch
         // with name fallback for cross-zpkg UNRESOLVED targets.
-        call:          decl!("jit_call",       [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t, i32t], [i8t]),
+        // span-column-propagate (2026-05-10): trailing `i32t` adds caller column.
+        call:          decl!("jit_call",       [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t, i32t, i32t], [i8t]),
         // jit_builtin(frame, ctx, dst, builtin_id, args_ptr, argc) -> u8
         // formalize-jit-method-token (2026-05-08): id-based dispatch (no hash).
         builtin:       decl!("jit_builtin",    [ptr, ptr, i32t, i32t, ptr, i64t],         [i8t]),
@@ -254,10 +255,10 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         // arg = `*const FieldIC` (stable into Function.resolved.field_ic).
         field_get:     decl!("jit_field_get",  [ptr, ptr, i32t, i32t, ptr, i64t, ptr],    [i8t]),
         field_set:     decl!("jit_field_set",  [ptr, ptr, i32t, ptr, i64t, i32t, ptr],    [i8t]),
-        // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc, ic_ptr, caller_line) -> u8
+        // jit_vcall(frame, ctx, dst, obj, method_ptr, method_len, args_ptr, argc, ic_ptr, caller_line, caller_col) -> u8
         // Phase 2.E: trailing `ptr` arg = `*const VCallIC`.
-        // jit-stack-trace (2026-05-10): trailing `i32t` = caller source line.
-        vcall:         decl!("jit_vcall",      [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t, ptr, i32t], [i8t]),
+        // jit-stack-trace (2026-05-10): trailing two `i32t` = caller (line, col).
+        vcall:         decl!("jit_vcall",      [ptr, ptr, i32t, i32t, ptr, i64t, ptr, i64t, ptr, i32t, i32t], [i8t]),
         is_instance:   decl!("jit_is_instance",[ptr, ptr, i32t, i32t, ptr, i64t],         []),
         as_cast:       decl!("jit_as_cast",    [ptr, ptr, i32t, i32t, ptr, i64t],         []),
         // formalize-jit-method-token Phase 2 (2026-05-08): id-based
@@ -266,8 +267,8 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         static_set:    decl!("jit_static_set", [ptr, ptr, i32t, i32t],                    []),
         get_bool:      decl!("jit_get_bool",      [ptr, ptr, i32t],                       [i8t]),
         set_ret:       decl!("jit_set_ret",       [ptr, ptr, i32t],                       []),
-        // jit_throw(frame, ctx, reg, throw_line) — jit-stack-trace 2026-05-10
-        throw:         decl!("jit_throw",         [ptr, ptr, i32t, i32t],                 []),
+        // jit_throw(frame, ctx, reg, throw_line, throw_col) — jit-stack-trace + span-column-propagate
+        throw:         decl!("jit_throw",         [ptr, ptr, i32t, i32t, i32t],           []),
         install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
         // jit_match_catch_type(frame, ctx, target_ptr, target_len) -> i8
         match_catch_type: decl!("jit_match_catch_type", [ptr, ptr, ptr, i64t],            [i8t]),
@@ -275,8 +276,8 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
         // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len, stack_alloc:u8) -> u8
         mk_clos:        decl!("jit_mk_clos",       [ptr, ptr, i32t, ptr, i64t, ptr, i64t, i8t], [i8t]),
-        // jit_call_indirect(frame, ctx, dst, callee, args_ptr, args_len, caller_line) -> u8
-        call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t, i32t],      [i8t]),
+        // jit_call_indirect(frame, ctx, dst, callee, args_ptr, args_len, caller_line, caller_col) -> u8
+        call_indirect:  decl!("jit_call_indirect", [ptr, ptr, i32t, i32t, ptr, i64t, i32t, i32t], [i8t]),
         // jit_load_fn_cached(frame, ctx, dst, name_ptr, name_len, slot_id) -> u8
         load_fn_cached: decl!("jit_load_fn_cached", [ptr, ptr, i32t, ptr, i64t, i32t],           [i8t]),
         // jit_default_of(frame, ctx, dst, param_index) -> u8

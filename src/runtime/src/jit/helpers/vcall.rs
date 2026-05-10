@@ -25,6 +25,7 @@ pub unsafe extern "C" fn jit_vcall(
     args_ptr: *const u32, argc: usize,
     ic_ptr: *const VCallIC,
     caller_line: u32,   // 2026-05-10 jit-stack-trace
+    caller_col:  u32,   // 2026-05-10 span-column-propagate
 ) -> u8 {
     use std::sync::atomic::Ordering;
 
@@ -36,7 +37,7 @@ pub unsafe extern "C" fn jit_vcall(
 
     // jit-stack-trace: stamp caller's call-site line once at entry; each
     // invoke path below pushes the callee frame info before running.
-    vm_ctx_ref(ctx).update_top_frame_line(caller_line);
+    vm_ctx_ref(ctx).update_top_frame_pos(caller_line, caller_col);
 
     let obj_val = frame_ref.regs[obj as usize].clone();
     let arg_regs = std::slice::from_raw_parts(args_ptr, argc);

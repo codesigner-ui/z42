@@ -618,12 +618,13 @@ pub fn translate_function(
                     let (ap, al) = regs_val!(args);
                     let mid = method_id_at(z42_func, block_idx, instr_idx);
                     let mid_val = builder.ins().iconst(types::I32, mid as i64);
-                    // 2026-05-10 jit-stack-trace: pass current source line
-                    // so jit_call can stamp the caller's frame info before
-                    // descending into the callee.
-                    let line = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
+                    // 2026-05-10 jit-stack-trace + span-column-propagate: pass
+                    // current source (line, col) so jit_call can stamp the
+                    // caller's frame info before descending into the callee.
+                    let (line, col) = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
                     let line_val = builder.ins().iconst(types::I32, line as i64);
-                    let inst = builder.ins().call(hr_call, &[frame_val, ctx_val, d, mid_val, np, nl, ap, al, line_val]);
+                    let col_val  = builder.ins().iconst(types::I32, col as i64);
+                    let inst = builder.ins().call(hr_call, &[frame_val, ctx_val, d, mid_val, np, nl, ap, al, line_val, col_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::Builtin { dst, name, args } => {
@@ -722,10 +723,11 @@ pub fn translate_function(
                     let (ap, al) = regs_val!(args);
                     let ic_ptr = vcall_ic_ptr_at(z42_func, block_idx, instr_idx);
                     let ic_val = builder.ins().iconst(ptr, ic_ptr as i64);
-                    // 2026-05-10 jit-stack-trace: caller line for stack trace.
-                    let line = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
+                    // 2026-05-10 jit-stack-trace + span-column-propagate.
+                    let (line, col) = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
                     let line_val = builder.ins().iconst(types::I32, line as i64);
-                    let inst = builder.ins().call(hr_vcall, &[frame_val, ctx_val, d, o, mp, ml, ap, al, ic_val, line_val]);
+                    let col_val  = builder.ins().iconst(types::I32, col as i64);
+                    let inst = builder.ins().call(hr_vcall, &[frame_val, ctx_val, d, o, mp, ml, ap, al, ic_val, line_val, col_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::IsInstance { dst, obj, class_name } => {
@@ -836,11 +838,12 @@ pub fn translate_function(
                     let d = ri!(*dst);
                     let c = ri!(*callee);
                     let (ap, al) = regs_val!(args);
-                    // 2026-05-10 jit-stack-trace: caller line for stack trace.
-                    let line = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
+                    // 2026-05-10 jit-stack-trace + span-column-propagate.
+                    let (line, col) = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
                     let line_val = builder.ins().iconst(types::I32, line as i64);
+                    let col_val  = builder.ins().iconst(types::I32, col as i64);
                     let inst = builder.ins().call(hr_call_indirect,
-                        &[frame_val, ctx_val, d, c, ap, al, line_val]);
+                        &[frame_val, ctx_val, d, c, ap, al, line_val, col_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
             }
@@ -877,18 +880,20 @@ pub fn translate_function(
             }
             Terminator::Throw { reg } => {
                 let rv = ri!(*reg);
-                // 2026-05-10 jit-stack-trace: pass the throw site's line so
-                // jit_throw can stamp the throwing frame's FrameInfo before
-                // populating Std.Exception.StackTrace. Throw is a block
-                // terminator; mirror interp's "instr_idx = block.len()" so
-                // the line resolves to the *last* LineEntry covering the block.
-                let line = crate::interp::resolve_line(
+                // 2026-05-10 jit-stack-trace + span-column-propagate: pass
+                // the throw site's (line, col) so jit_throw can stamp the
+                // throwing frame's FrameInfo before populating
+                // Std.Exception.StackTrace. Throw is a block terminator;
+                // mirror interp's "instr_idx = block.len()" so the position
+                // resolves to the *last* LineEntry covering the block.
+                let (line, col) = crate::interp::resolve_line(
                     &z42_func.line_table,
                     block_idx as u32,
                     z42_block.instructions.len() as u32,
                 );
                 let line_val = builder.ins().iconst(types::I32, line as i64);
-                builder.ins().call(hr_throw, &[frame_val, ctx_val, rv, line_val]);
+                let col_val  = builder.ins().iconst(types::I32, col as i64);
+                builder.ins().call(hr_throw, &[frame_val, ctx_val, rv, line_val, col_val]);
                 emit_dispatch_to_catch_or_return!();
             }
         }

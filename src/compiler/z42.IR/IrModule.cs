@@ -108,8 +108,9 @@ public sealed record IrFunction(
 public sealed record IrLocalVarEntry(string Name, int RegId);
 
 /// An entry in a function's line number table.
-/// "From (BlockIdx, InstrIdx) onward, the source line is Line in File."
-public sealed record IrLineEntry(int BlockIdx, int InstrIdx, int Line, string? File = null);
+/// "From (BlockIdx, InstrIdx) onward, the source position is Line:Column in File."
+/// Column = 0 means the column is unknown (legacy entries / hand-rolled IR).
+public sealed record IrLineEntry(int BlockIdx, int InstrIdx, int Line, string? File = null, int Column = 0);
 
 /// One entry in a function's exception table: covers blocks [TryStart, TryEnd)
 /// and redirects unhandled throws to CatchLabel, storing the exception in CatchReg.

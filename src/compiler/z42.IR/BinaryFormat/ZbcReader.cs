@@ -400,8 +400,10 @@ public static partial class ZbcReader
                 ushort ins  = r.ReadUInt16();
                 uint lineNo = r.ReadUInt32();
                 uint fileId = r.ReadUInt32();
+                // 2026-05-10 span-column-propagate (zbc 1.1+): u32 Column.
+                uint col    = r.ReadUInt32();
                 string? file = fileId == uint.MaxValue ? null : P(pool, fileId);
-                lineTable!.Add(new IrLineEntry(blk, ins, (int)lineNo, file));
+                lineTable!.Add(new IrLineEntry(blk, ins, (int)lineNo, file, (int)col));
             }
 
             byte[] instrBytes = r.ReadBytes((int)instrLen);

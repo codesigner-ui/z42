@@ -112,6 +112,7 @@ pub unsafe extern "C" fn jit_call_indirect(
     dst: u32, callee: u32,
     args_ptr: *const u32, args_len: usize,
     caller_line: u32,   // 2026-05-10 jit-stack-trace
+    caller_col:  u32,   // 2026-05-10 span-column-propagate
 ) -> u8 {
     let frame_ref = &mut *frame;
     let ctx_ref   = &*ctx;
@@ -167,7 +168,7 @@ pub unsafe extern "C" fn jit_call_indirect(
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
 
     // jit-stack-trace: stamp caller's call-site line + push callee call_frame.
-    vm_ctx.update_top_frame_line(caller_line);
+    vm_ctx.update_top_frame_pos(caller_line, caller_col);
     vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
         entry.name.to_string(),
         entry.file.to_string(),

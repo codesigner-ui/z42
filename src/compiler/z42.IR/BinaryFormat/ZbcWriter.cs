@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 0;   // 2026-05-09 tokenize-ir-and-zbc-bump (Phase 3 S3b): IR fields tokenized via TokenAllocator (local index OR IMPORT_BASE + STRS idx for cross-zpkg). Pre-1.0 not readable by current runtime.
+    public const ushort VersionMinor = 1;   // 2026-05-10 span-column-propagate: line table entries carry u32 Column in addition to Line. Pre-1.1 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -498,6 +498,9 @@ public static partial class ZbcWriter
                     w.Write((ushort)le.InstrIdx);
                     w.Write((uint)le.Line);
                     w.Write(le.File != null ? (uint)pool.Idx(le.File) : uint.MaxValue);
+                    // 2026-05-10 span-column-propagate (zbc 1.1): u32 Column.
+                    // Column 0 means unknown.
+                    w.Write((uint)le.Column);
                 }
 
             w.Write(instrBytes);

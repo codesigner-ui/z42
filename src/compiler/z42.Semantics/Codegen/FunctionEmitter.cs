@@ -348,6 +348,8 @@ internal sealed partial class FunctionEmitter
 
     /// Record a source location before emitting instructions for a node.
     /// Only emits a line table entry when the line number changes (RLE compression).
+    /// 2026-05-10 span-column-propagate: also carries Span.Column so runtime
+    /// stack traces can show `(file:line:col)` instead of `(file:line)`.
     private void TrackLine(Core.Text.Span span)
     {
         if (span.Line <= 0 || span.Line == _lastLine) return;
@@ -355,7 +357,7 @@ internal sealed partial class FunctionEmitter
         int blockIdx = _blocks.Count; // current block = next to be sealed
         int instrIdx = _curInstrs.Count;
         string? file = span.File != _sourceFile ? span.File : null;
-        _lineTable.Add(new IrLineEntry(blockIdx, instrIdx, span.Line, file));
+        _lineTable.Add(new IrLineEntry(blockIdx, instrIdx, span.Line, file, span.Column));
     }
 
     private TypedReg Alloc(IrType type = IrType.Unknown) => new(_nextReg++, type);
