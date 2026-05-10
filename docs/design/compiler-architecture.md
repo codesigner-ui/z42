@@ -935,6 +935,121 @@ public abstract class BoundExprWalker : BoundExprVisitor<Unit>
 
 ---
 
+## Symbol 层（2026-05-10 split-symbol-from-type）
+
+### 背景
+
+`Z42ClassType` 历史上把**类型身份**（Name / TypeParams / BaseClassName）和
+**声明身份**（Fields / Methods / StaticFields / StaticMethods 字典，值类型 `Z42FuncType` / `Z42Type`）
+混在一个 record 里。带来两个互相纠缠的问题：
+
+1. **Decl 身份在 pipeline 中丢失**：AST `FunctionDecl` / `FieldDecl` 在 SymbolCollector
+   之后被折叠进 `Z42ClassType.Methods` 字典（值是签名），原始 Decl 节点不再可达。
+   BoundCall 只有字符串名 `MethodName` + `ReceiverClass`，零 back-pointer 到源 decl。
+   Codegen 想知道方法的 [Test] 属性必须重新走 `cu.Classes` AST。
+2. **缺 Symbol 层**：没有 `IMethodSymbol` / `IFieldSymbol` 等 Roslyn 风格 first-class
+   符号对象。所有成员查询都通过 `cls.Methods["foo"]` 字典 lookup，63 个调用点散落。
+
+### 解决方案：`Z42.Semantics.Symbols` 命名空间
+
+引入三层接口 + 两个实现 record/class：
+
+```
+IMemberSymbol               base 接口
+   Name, Span, Visibility, ContainingType: Z42Type?
+
+IMethodSymbol : IMemberSymbol     方法接口
+   Signature: Z42FuncType
+   Modifiers: FunctionModifiers   ← single source of truth
+   Decl: FunctionDecl?            ← 本地非空 / imported 为 null
+   TestAttributes: IReadOnlyList<TestAttribute>?
+   IsStatic / IsVirtual / ... 默认接口属性派生自 Modifiers
+
+IFieldSymbol : IMemberSymbol      字段接口
+   Type: Z42Type
+   IsStatic, IsEvent
+   Decl: FieldDecl?
+
+实现：MethodSymbol / FieldSymbol（sealed class，不是 record，避免循环 Equals）
+   手写 Equals/GetHashCode based on (ContainingType.Name 短名, Name, Signature/Type)
+   Decl 是 back-pointer 不参与相等性
+   ContainingType 是 internal 可设值（two-phase 构造解决 Z42ClassType.Methods
+   持有 IMethodSymbol，IMethodSymbol.ContainingType 持有 Z42ClassType 的循环依赖）
+```
+
+### Z42ClassType 字典值类型切换
+
+```
+Z42ClassType.Fields         : IReadOnlyDictionary<string, IFieldSymbol>
+Z42ClassType.Methods        : IReadOnlyDictionary<string, IMethodSymbol>
+Z42ClassType.StaticFields   : IReadOnlyDictionary<string, IFieldSymbol>
+Z42ClassType.StaticMethods  : IReadOnlyDictionary<string, IMethodSymbol>
+Z42InterfaceType.Methods    : IReadOnlyDictionary<string, IMethodSymbol>
+```
+
+`Z42ClassType.Equals` override 仅按 `(Name, IsStruct)` 比对，避免循环递归
+（如果 record 默认 Equals 包含 Methods 字典，MethodSymbol.Equals → Z42ClassType.Equals
+→ 字典遍历 → MethodSymbol.Equals 死循环）。
+
+### BoundCall vs BoundIndirectCall（Roslyn 风格分离）
+
+历史上 `BoundCall` 同时承载：
+- 直接方法分派（Static / Instance / Virtual / Free）
+- lambda / 函数变量 / 闭包间接调用
+
+split-symbol-from-type Phase 4 拆开两个节点：
+
+```
+BoundCall: 直接方法分派
+   Kind: Free | Static | Instance | Virtual
+   Symbol: IMethodSymbol?    ← 非空 on happy path（resolved 直接分派），
+                              null only on error fallback
+   Receiver, ReceiverClass, MethodName, CalleeName, Args, RetType
+
+BoundIndirectCall: 间接调用（函数值）
+   Callee: BoundExpr         ← lambda / ident-of-FuncType / member-of-FuncType
+   Args, RetType
+   （无 Symbol — 函数值不是方法引用）
+```
+
+BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译期失败 →
+强制全员 override（complete coverage 由 visitor 框架保证）。
+
+### 不变量
+
+1. **Symbol 是 sealed class（不是 record）** — 避免循环引用通过默认 record Equals 死递归
+2. **Decl 是 back-pointer，不参与相等性** — 本地非空、imported / interface-abstract 为 null
+3. **Modifiers / Span / TestAttributes 在 Symbol 字段** — single source of truth；本地构造
+   时从 `decl.X` 拷贝；imported 直接传入（AST 不可变 + 构造时拷贝 → 永不漂移）
+4. **ContainingType: Z42Type?** — class 成员是 Z42ClassType，interface 成员是 Z42InterfaceType，
+   顶层自由函数为 null
+5. **Z42ClassType.Equals 仅按 (Name, IsStruct)** — 不可恢复 default record equality
+6. **BoundCall.Symbol 非空 on happy path** — error fallback 路径允许 null（PipelineCore 在
+   diags.HasErrors 时 abort 不到达 codegen）
+7. **BoundIndirectCall 永不携带 method symbol** — 间接调用语义上不是方法引用
+
+### 当前消费者
+
+| Pass | 通过 Symbol 的访问 |
+|------|---------------------|
+| TypeChecker (49 sites) | cls.Methods[name].Signature.{Params,Ret,...} |
+| Codegen IrGen (TestIndex) | msym.TestAttributes（不再 walk AST） |
+| TestAttributeValidator | msym.TestAttributes（数据等价 m.TestAttributes） |
+| Codegen FunctionEmitter | cls.Methods[name].Signature for ctor 重载查找 |
+| ExportedTypeExtractor | msym.Signature / fsym.Type 写 TSIG |
+
+### 不解决的问题（follow-up spec）
+
+- **顶层函数 wrapper** — 顶层自由函数仍存为 SymbolTable.Functions: Dictionary<string, Z42FuncType>，
+  不是 IMethodSymbol。原因：scope 控制；spec extension 留 follow-up
+- **IPropertySymbol / IParameterSymbol / INamespaceSymbol / IEventSymbol** — full Roslyn shape
+  留 follow-up `extend-symbol-layer`
+- **R-series 反射 API surface** — 本 spec 准备基础设施；具体 reflection API 留各 phase spec
+
+详见：[spec/archive/2026-05-10-split-symbol-from-type/](../../spec/archive/2026-05-10-split-symbol-from-type/) 的 design.md。
+
+---
+
 ## 延伸阅读
 
 - `docs/design/compilation.md` — 构建流程（manifest → zpkg 的用户视角）

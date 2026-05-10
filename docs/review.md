@@ -469,7 +469,7 @@ z42 当前所有方法都是 IR；native import 通过"合成空 ClassDecl + 特
 | **部分完成** | `split-typechecker-tests` — TypeCheckerTests.cs (1730→177 主) + 6 partial 文件（每 ≤ 483 LOC）；rc_heap_tests 留独立 spec | refactor | Part 1 §1.4 (C#) | 🟢 2026-05-07 |
 | **已落地** | `split-rc-heap-tests` — rc_heap_tests.rs (1229 LOC) → `rc_heap_tests/` 子目录 10 个 topic 文件（最大 228 LOC） | refactor | Part 1 §1.4 (Rust) — **§1.4 整体收口** | 🟢 2026-05-07 |
 | **已落地** | `impl-dump-ast` — 实现 `--dump-ast` handler（手写 AST 树打印）+ 新增 `--dump-bound`（基于 `BoundExprVisitor<Unit>` / `BoundStmtVisitor<Unit>` 几乎免费）；输出缩进树 + 类型注解 + Span | refactor | Part 3 §3.2 | 🟢 2026-05-10 |
-| **M7 启动前**（**关键前置**） | `split-symbol-from-type` — 抽 `ISymbol` 层；**Symbol 持有 `DeclSpan`，根除 §3.1 Decl 身份丢失** | lang | Part 2 §2.3 + Part 3 §3.1，R-series 反射前置 | 📋 |
+| **已落地** | `split-symbol-from-type` — 抽 `IMemberSymbol` / `IMethodSymbol` / `IFieldSymbol` 层；Symbol 持有 `Decl` 反指针 + `Span` + `Modifiers` + `TestAttributes`；Z42ClassType.Methods/Fields 字典值类型切换；BoundCall.Symbol + 新 BoundIndirectCall 节点；TestAttributeValidator + IrGen TestIndex 走 IMethodSymbol.TestAttributes | lang | Part 2 §2.3 + Part 3 §3.1 收口；R-series 反射基础设施就位 | 🟢 2026-05-10 |
 | **M7 期间** | `lexer-trivia-preserve` — lexer 加 trivia 字段（可空） | refactor | Part 2 §2.5，formatter 前置 | 📋 |
 | **M7 期间** | `diag-engine-v2` — warning groups + severity 重映射 | lang | Part 3 §3.3 | 📋 |
 | **M7 之后** | 公共 API 边界声明（仅文档 + 命名空间约定） | docs | Part 2 §2.4 + Part 3 §3.5 | 📋 |
@@ -520,11 +520,9 @@ extend-signature-whitelist (进行中)
 
 ### 立项建议优先级
 
-**最高优先**（M7 启动前必须，仍未完成）:
+**最高优先**（M7 启动前必须）：**全部完成** ✅
 
-1. `split-symbol-from-type` — 反射系列的设计前置；同步根除 Decl 身份丢失（§3.1）
-
-> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`、`introduce-bound-visitor`、`impl-dump-ast`
+> 已完成（不再列入待办）：`introduce-method-token` Phase 1–3、`formalize-jit-method-token`、`tokenize-ir-and-zbc-bump`、`formalize-jit-vm-interface`、`enhance-expr-recovery`、所有 split-large-files / split-large-test-files、`split-exec-instr`、`introduce-bound-visitor`、`impl-dump-ast`、`split-symbol-from-type`
 
 **中优先**（M7 内或之后）:
 
@@ -570,3 +568,4 @@ extend-signature-whitelist (进行中)
 - **2026-05-09 状态同步**: method-token 三 Phase 全部落地（Phase 1 / formalize-jit / tokenize-ir-zbc）；§4.1 Part 4 痛点关闭；优先级清单收缩到 3 项 (split-symbol-from-type / introduce-bound-visitor / impl-dump-ast)
 - **2026-05-10 状态同步**: introduce-bound-visitor 落地（10 处手写 switch 全部迁移到 BoundExprVisitor / BoundStmtVisitor）；Part 2 §2.1 + Part 1 §1.3 收口；优先级清单只剩 split-symbol-from-type + impl-dump-ast 两项
 - **2026-05-10 状态同步**: impl-dump-ast 落地（`--dump-ast` AST 缩进树 + `--dump-bound` 类型注解 Bound 树，BoundDumper 直接复用 visitor 框架）；Part 3 §3.2 收口；优先级清单只剩 split-symbol-from-type 一项
+- **2026-05-10 状态同步**: split-symbol-from-type 6-phase 全部落地（Symbol 接口 + Z42ClassType 字典值切换 + 63 调用点机械迁移 + BoundCall.Symbol + BoundIndirectCall + TestAttributeValidator/TestIndex Symbol 化）；Part 2 §2.3 + Part 3 §3.1 收口；**M7 启动前最高优先级清单清空**，R-series 反射基础设施全部就位

@@ -16,10 +16,13 @@
 | `TypeCheck/Z42Type.cs` | 语义类型层次（`Z42IntType`、`Z42ClassType` 等）|
 | `TypeCheck/TypeEnv.cs` | 词法作用域符号表 |
 | `TypeCheck/BinaryTypeTable.cs` | 二元运算符类型规则表 |
-| `Bound/BoundExpr.cs` | 携带类型的表达式绑定节点（29 种 sealed record，含 BoundCallKind 枚举）|
+| `Bound/BoundExpr.cs` | 携带类型的表达式绑定节点（30 种 sealed record，含 BoundCall + BoundIndirectCall 分离）|
 | `Bound/BoundStmt.cs` | 绑定语句节点（16 种 BoundStmt + BoundBlock）|
 | `Bound/BoundExprVisitor.cs` | `BoundExprVisitor<TResult>` + `BoundExprWalker`（默认递归）— Bound 树遍历统一框架；新增 BoundXxx 节点必须在基类 switch + abstract 加一行，所有子类编译期失败强制 override |
 | `Bound/BoundStmtVisitor.cs` | `BoundStmtVisitor<TResult>` + `BoundStmtWalker` 同上 |
+| `Symbols/IMemberSymbol.cs` | 成员符号基接口 — `Name` / `Span` / `Visibility` / `ContainingType: Z42Type?` |
+| `Symbols/IMethodSymbol.cs` | 方法符号接口 + `MethodSymbol` sealed class；`Signature` / `Modifiers` / `Decl?: FunctionDecl` / `TestAttributes?` |
+| `Symbols/IFieldSymbol.cs` | 字段符号接口 + `FieldSymbol` sealed class；`Type` / `IsStatic` / `IsEvent` / `Decl?: FieldDecl` |
 | `Codegen/IrGen.cs` | 代码生成器：模块级状态、公开 API、函数分派 |
 | `Codegen/FunctionEmitter.cs` | 函数级 IR 生成器：块管理、入口点、辅助方法 |
 | `Codegen/FunctionEmitterStmts.cs` | 语句 + 控制流 IR 生成（分部类，消费 BoundStmt）|
