@@ -43,7 +43,8 @@ impl JitModule {
     /// (which receive `*const JitModuleCtx`) can reach VmContext through it.
     pub fn run_fn(&mut self, ctx: &mut VmContext, entry_name: &str) -> Result<()> {
         let entry = self.ctx.fn_entries.get(entry_name)
-            .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?;
+            .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?
+            .clone();
         self.ctx.vm_ctx = ctx as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
@@ -53,8 +54,16 @@ impl JitModule {
             &frame.regs as *const _,
             &frame.env_arena as *const _,
         );
+        // 2026-05-10 jit-stack-trace: push the entry's FrameInfo so a throw
+        // anywhere inside this JIT chain can format a complete trace. Inner
+        // JIT calls are wrapped by jit_call / jit_vcall / jit_call_indirect.
+        ctx.push_call_frame(crate::exception::FrameInfo::new(
+            entry.name.to_string(),
+            entry.file.to_string(),
+        ));
         let r = unsafe { f(&mut frame, &*self.ctx) };
         ctx.pop_frame_regs();
+        ctx.pop_call_frame();
         frame.recycle();
         self.ctx.vm_ctx = std::ptr::null_mut();
         if r != 0 {
@@ -150,11 +159,19 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
     for func in &module.functions {
         let entry = if let Some(&id) = func_ids.get(&func.name) {
             let ptr_raw = jit.get_finalized_function(id);
+            // 2026-05-10 jit-stack-trace: precompute name + file Arcs so
+            // jit_call / jit_vcall can push FrameInfo without reverse lookup.
+            let file_str: std::sync::Arc<str> = func.line_table.first()
+                .and_then(|e| e.file.as_deref())
+                .unwrap_or("")
+                .into();
             let e = FnEntry {
                 ptr:     ptr_raw as *const u8,
                 max_reg: max_regs[&func.name],
+                name:    std::sync::Arc::from(func.name.as_str()),
+                file:    file_str,
             };
-            fn_entries.insert(func.name.clone(), e);
+            fn_entries.insert(func.name.clone(), e.clone());
             Some(e)
         } else {
             None

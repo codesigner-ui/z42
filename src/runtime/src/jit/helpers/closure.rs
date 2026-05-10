@@ -111,6 +111,7 @@ pub unsafe extern "C" fn jit_call_indirect(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     dst: u32, callee: u32,
     args_ptr: *const u32, args_len: usize,
+    caller_line: u32,   // 2026-05-10 jit-stack-trace
 ) -> u8 {
     let frame_ref = &mut *frame;
     let ctx_ref   = &*ctx;
@@ -164,12 +165,21 @@ pub unsafe extern "C" fn jit_call_indirect(
     // 4) Build callee frame, register for GC root scanning, invoke, unregister.
     let mut callee_frame = JitFrame::new(entry.max_reg, &args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
+
+    // jit-stack-trace: stamp caller's call-site line + push callee call_frame.
+    vm_ctx.update_top_frame_line(caller_line);
+    vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
+        entry.name.to_string(),
+        entry.file.to_string(),
+    ));
+
     vm_ctx.push_frame_state(
         &callee_frame.regs as *const _,
         &callee_frame.env_arena as *const _,
     );
     let result = jit_fn(&mut callee_frame, ctx);
     vm_ctx.pop_frame_regs();
+    vm_ctx.pop_call_frame();
     if result != 0 {
         callee_frame.recycle();
         return 1;

@@ -87,16 +87,26 @@ fn return_pooled_regs(mut regs: Vec<Value>) {
 
 /// A compiled native function entry inside the JIT module.
 ///
-/// `Copy + Clone` so it can live in both the by-name `HashMap` (cross-zpkg
-/// lazy fallback) and the by-id `Vec` (introduce-method-token Phase 2.C
-/// fast path) without ownership headaches. Each FnEntry is two machine
-/// words (ptr + usize), zero-cost to copy.
-#[derive(Copy, Clone)]
+/// `Clone` (no longer `Copy`) since we now carry `Arc<str>` for name + file
+/// to give `jit_call` / `jit_vcall` cheap access to the callee's stack-trace
+/// metadata without reverse lookup into `module.functions`. Clone cost is
+/// two `Arc::clone` (refcount bump) — negligible vs. the JIT call itself.
+///
+/// (2026-05-10 jit-stack-trace; was `Copy` since introduce-method-token
+/// Phase 2.C / 2026-05-08.)
+#[derive(Clone)]
 pub struct FnEntry {
     /// Pointer to the native machine code of the function.
     pub ptr:     *const u8,
     /// Size of the register file needed by this function (`max_reg`).
     pub max_reg: usize,
+    /// Fully-qualified function name (e.g. `"Demo.Inner"`), shared via Arc
+    /// across all FnEntry copies. Used to push a `FrameInfo` onto
+    /// `VmContext.call_stack` when the JIT invokes this function.
+    pub name:    std::sync::Arc<str>,
+    /// Source file path (from the function's first `LineEntry`). Empty
+    /// `Arc<str>` if the line table omits file references.
+    pub file:    std::sync::Arc<str>,
 }
 
 // Raw pointer — the JITModule that owns the code lives alongside this entry.

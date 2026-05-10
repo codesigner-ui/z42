@@ -10,6 +10,11 @@ use super::{set_exception, vm_ctx_ref, JitFn};
 /// hot path takes pre-resolved `MethodId` and indexes `fn_entries_by_id`
 /// directly. On `UNRESOLVED` (cross-zpkg), falls back to name-based
 /// HashMap lookup. Name pointer kept for diagnostics + fallback.
+///
+/// `caller_line` (jit-stack-trace, 2026-05-10) is the source line of this
+/// call site — codegen passes it as a constant. Stamped onto the caller's
+/// FrameInfo before descending so a downstream throw's snapshot shows
+/// the call site (not 0).
 #[no_mangle]
 pub unsafe extern "C" fn jit_call(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
@@ -17,6 +22,7 @@ pub unsafe extern "C" fn jit_call(
     method_id: u32,
     fn_name_ptr: *const u8, fn_name_len: usize,
     args_ptr: *const u32, argc: usize,
+    caller_line: u32,
 ) -> u8 {
     let ctx_ref   = &*ctx;
     let frame_ref = &mut *frame;
@@ -24,7 +30,7 @@ pub unsafe extern "C" fn jit_call(
     // Hot path: direct Vec[id] index when token resolved.
     let entry_opt: Option<FnEntry> =
         if method_id != crate::metadata::tokens::UNRESOLVED {
-            ctx_ref.fn_entries_by_id.get(method_id as usize).copied().flatten()
+            ctx_ref.fn_entries_by_id.get(method_id as usize).cloned().flatten()
         } else {
             None
         };
@@ -36,7 +42,7 @@ pub unsafe extern "C" fn jit_call(
             let func_name = std::str::from_utf8(std::slice::from_raw_parts(fn_name_ptr, fn_name_len))
                 .unwrap_or("<invalid>");
             match ctx_ref.fn_entries.get(func_name) {
-                Some(&e) => e,
+                Some(e) => e.clone(),
                 None => {
                     set_exception(vm_ctx_ref(ctx), Value::Str(format!("undefined function `{}`", func_name)));
                     return 1;
@@ -50,11 +56,20 @@ pub unsafe extern "C" fn jit_call(
 
     let mut callee_frame = JitFrame::new(entry.max_reg, &args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
-    // Phase 3f-2: push callee frame regs to GC roots scan during this jit_fn call.
     let vm_ctx = vm_ctx_ref(ctx);
+
+    // jit-stack-trace: stamp caller's call-site line + push callee frame.
+    vm_ctx.update_top_frame_line(caller_line);
+    vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
+        entry.name.to_string(),
+        entry.file.to_string(),
+    ));
+
+    // Phase 3f-2: push callee frame regs to GC roots scan during this jit_fn call.
     vm_ctx.push_frame_state(&callee_frame.regs as *const _, &callee_frame.env_arena as *const _);
     let result = jit_fn(&mut callee_frame, ctx);
     vm_ctx.pop_frame_regs();
+    vm_ctx.pop_call_frame();
     if result != 0 { callee_frame.recycle(); return 1; }
     frame_ref.regs[dst as usize] = callee_frame.ret.take().unwrap_or(Value::Null);
     callee_frame.recycle();

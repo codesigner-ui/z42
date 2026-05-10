@@ -6,13 +6,21 @@ use crate::metadata::Value;
 use super::super::frame::{JitFrame, JitModuleCtx};
 use super::{set_exception, take_exception, vm_ctx_ref};
 
+/// `jit_throw` after jit-stack-trace (2026-05-10): receives the source
+/// line of the `throw` site so it can stamp the throwing frame's
+/// FrameInfo before snapshotting the stack into `Std.Exception.StackTrace`.
 #[no_mangle]
 pub unsafe extern "C" fn jit_throw(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
     reg: u32,
+    throw_line: u32,
 ) {
     let v = (*frame).regs[reg as usize].clone();
-    set_exception(vm_ctx_ref(ctx), v);
+    let vm_ctx = vm_ctx_ref(ctx);
+    let module = &*(*ctx).module;
+    vm_ctx.update_top_frame_line(throw_line);
+    crate::exception::populate_stack_trace(&v, vm_ctx, module);
+    set_exception(vm_ctx, v);
 }
 
 #[no_mangle]

@@ -343,7 +343,7 @@ pub(crate) fn store_thru_ref(
 
 // ── Debug: source line resolution ─────────────────────────────────────────────
 
-fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, instr: u32) -> u32 {
+pub(crate) fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, instr: u32) -> u32 {
     let mut line = 0u32;
     for entry in table {
         if entry.block > block || (entry.block == block && entry.instr > instr) { break; }
