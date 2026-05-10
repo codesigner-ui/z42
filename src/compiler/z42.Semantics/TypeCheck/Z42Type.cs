@@ -1,4 +1,5 @@
 using Z42.Core.Text;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -354,7 +355,7 @@ public sealed record Z42StaticMember(
 /// where args are not yet resolved (legacy path).
 public sealed record Z42InterfaceType(
     string Name,
-    IReadOnlyDictionary<string, Z42FuncType> Methods,
+    IReadOnlyDictionary<string, IMethodSymbol> Methods,
     IReadOnlyList<Z42Type>? TypeArgs = null,
     /// L3 static abstract interface members (C# 11 alignment): static methods /
     /// operators declared in the interface that implementers must provide or
@@ -471,11 +472,11 @@ public sealed record Z42EnumType(string Name) : Z42Type
 ///   ClassType equality breaks the cycle.
 public sealed record Z42ClassType(
     string Name,
-    IReadOnlyDictionary<string, Z42Type>      Fields,
-    IReadOnlyDictionary<string, Z42FuncType>  Methods,
-    IReadOnlyDictionary<string, Z42Type>      StaticFields,
-    IReadOnlyDictionary<string, Z42FuncType>  StaticMethods,
-    IReadOnlyDictionary<string, Visibility>   MemberVisibility,
+    IReadOnlyDictionary<string, IFieldSymbol>  Fields,
+    IReadOnlyDictionary<string, IMethodSymbol> Methods,
+    IReadOnlyDictionary<string, IFieldSymbol>  StaticFields,
+    IReadOnlyDictionary<string, IMethodSymbol> StaticMethods,
+    IReadOnlyDictionary<string, Visibility>    MemberVisibility,
     string? BaseClassName = null,
     IReadOnlyList<string>? TypeParams = null,
     bool IsStruct = false,
@@ -516,11 +517,11 @@ public sealed record Z42ClassType(
     /// readability and to centralize Phase 2 migration when dict value types
     /// switch to IMethodSymbol / IFieldSymbol.
     public Z42ClassType Rebuild(
-        IReadOnlyDictionary<string, Z42Type>?     fields        = null,
-        IReadOnlyDictionary<string, Z42FuncType>? methods       = null,
-        IReadOnlyDictionary<string, Z42Type>?     staticFields  = null,
-        IReadOnlyDictionary<string, Z42FuncType>? staticMethods = null,
-        IReadOnlyDictionary<string, Visibility>?  memberVisibility = null)
+        IReadOnlyDictionary<string, IFieldSymbol>?  fields           = null,
+        IReadOnlyDictionary<string, IMethodSymbol>? methods          = null,
+        IReadOnlyDictionary<string, IFieldSymbol>?  staticFields     = null,
+        IReadOnlyDictionary<string, IMethodSymbol>? staticMethods    = null,
+        IReadOnlyDictionary<string, Visibility>?    memberVisibility = null)
         => this with
         {
             Fields           = fields           ?? Fields,

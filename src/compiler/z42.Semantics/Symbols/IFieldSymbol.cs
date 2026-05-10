@@ -25,7 +25,8 @@ public sealed class FieldSymbol : IFieldSymbol
     public string Name { get; }
     public Span Span { get; }
     public Visibility Visibility { get; }
-    public Z42Type? ContainingType { get; }
+    /// Internally settable for two-phase construction (see MethodSymbol).
+    public Z42Type? ContainingType { get; internal set; }
     public Z42Type Type { get; }
     public bool IsStatic { get; }
     public bool IsEvent { get; }

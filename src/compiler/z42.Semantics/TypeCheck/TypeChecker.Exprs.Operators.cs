@@ -31,17 +31,17 @@ public sealed partial class TypeChecker
 
             if (eRecv.Type is Z42ClassType eCt
                 && eCt.EventFieldNames?.Contains(eMem.Member) == true
-                && eCt.Methods.TryGetValue(accessorName, out var classAccSig))
+                && eCt.Methods.TryGetValue(accessorName, out var classAccSym))
             {
-                accSig       = classAccSig;
+                accSig       = classAccSym.Signature;
                 accClassName = eCt.Name;
             }
             else if (eRecv.Type is Z42InterfaceType eIface
                 && eIface.Methods.TryGetValue($"add_{eMem.Member}", out _)
-                && eIface.Methods.TryGetValue(accessorName, out var ifaceAccSig))
+                && eIface.Methods.TryGetValue(accessorName, out var ifaceAccSym))
             {
                 // interface event：add_X 存在 → 视为 event 声明
-                accSig       = ifaceAccSig;
+                accSig       = ifaceAccSym.Signature;
                 accClassName = eIface.Name;
             }
 
@@ -170,20 +170,20 @@ public sealed partial class TypeChecker
         switch (recvType)
         {
             case Z42ClassType ct
-                when ct.Methods.TryGetValue(setterName, out var mt)
-                  && mt.Params.Count == 1:
-                setter = mt; className = ct.Name; return true;
+                when ct.Methods.TryGetValue(setterName, out var mtSym)
+                  && mtSym.Signature.Params.Count == 1:
+                setter = mtSym.Signature; className = ct.Name; return true;
             case Z42InstantiatedType it
-                when it.Definition.Methods.TryGetValue(setterName, out var mt)
-                  && mt.Params.Count == 1:
+                when it.Definition.Methods.TryGetValue(setterName, out var mtSym)
+                  && mtSym.Signature.Params.Count == 1:
                 var subMap = BuildSubstitutionMap(it);
-                setter = (Z42FuncType)SubstituteTypeParams(mt, subMap);
+                setter = (Z42FuncType)SubstituteTypeParams(mtSym.Signature, subMap);
                 className = it.Definition.Name;
                 return true;
             case Z42InterfaceType ifa
-                when ifa.Methods.TryGetValue(setterName, out var mt)
-                  && mt.Params.Count == 1:
-                setter = mt; className = ifa.Name; return true;
+                when ifa.Methods.TryGetValue(setterName, out var mtSym)
+                  && mtSym.Signature.Params.Count == 1:
+                setter = mtSym.Signature; className = ifa.Name; return true;
         }
         setter = null; className = null; return false;
     }
@@ -201,8 +201,8 @@ public sealed partial class TypeChecker
             case Z42InstantiatedType it: def = it.Definition; subMap = BuildSubstitutionMap(it); break;
         }
         if (def is null) return false;
-        if (!def.Methods.TryGetValue(name, out var mt)) return false;
-        method = mt;
+        if (!def.Methods.TryGetValue(name, out var mtSym)) return false;
+        method = mtSym.Signature;
         className = def.Name;
         return true;
     }
@@ -296,7 +296,8 @@ public sealed partial class TypeChecker
         };
         if (className is null) return null;
         if (!_symbols.Classes.TryGetValue(className, out var classType)) return null;
-        if (!classType.StaticMethods.TryGetValue(methodName, out var sig)) return null;
+        if (!classType.StaticMethods.TryGetValue(methodName, out var sigSym)) return null;
+        var sig = sigSym.Signature;
         if (sig.Params.Count != 2) return null;
         // Signature match: both arguments must be assignable to the declared params.
         if (!Z42Type.IsAssignableTo(sig.Params[0], leftArg)) return null;
@@ -317,18 +318,18 @@ public sealed partial class TypeChecker
         // Concrete class / struct — instance method takes 1 param (other).
         if (t is Z42ClassType ct
             && _symbols.Classes.TryGetValue(ct.Name, out var classType)
-            && classType.Methods.TryGetValue(methodName, out var mt)
-            && mt.Params.Count == 1
-            && Z42Type.IsAssignableTo(mt.Params[0], rightArg))
-            return (ct.Name, ResolveStubType(mt.Ret));
+            && classType.Methods.TryGetValue(methodName, out var mtSym)
+            && mtSym.Signature.Params.Count == 1
+            && Z42Type.IsAssignableTo(mtSym.Signature.Params[0], rightArg))
+            return (ct.Name, ResolveStubType(mtSym.Signature.Ret));
         if (t is Z42InstantiatedType inst
-            && inst.Definition.Methods.TryGetValue(methodName, out var instMt)
-            && instMt.Params.Count == 1)
+            && inst.Definition.Methods.TryGetValue(methodName, out var instMtSym)
+            && instMtSym.Signature.Params.Count == 1)
         {
             var subMap = BuildSubstitutionMap(inst);
-            var substParam = SubstituteTypeParams(instMt.Params[0], subMap);
+            var substParam = SubstituteTypeParams(instMtSym.Signature.Params[0], subMap);
             if (!Z42Type.IsAssignableTo(substParam, rightArg)) return null;
-            return (inst.Definition.Name, SubstituteTypeParams(instMt.Ret, subMap));
+            return (inst.Definition.Name, SubstituteTypeParams(instMtSym.Signature.Ret, subMap));
         }
         // Generic parameter — look through interface constraints (INumber<T> etc.)
         // for a `static abstract T op_Add(T a, T b)` declaration. IR-level

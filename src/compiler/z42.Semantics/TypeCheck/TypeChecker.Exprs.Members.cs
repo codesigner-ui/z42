@@ -23,8 +23,9 @@ public sealed partial class TypeChecker
             var subMap = BuildSubstitutionMap(inst);
             var def    = inst.Definition;
             bool insideClass = env.CurrentClass == def.Name;
-            if (def.Fields.TryGetValue(m.Member, out var ft))
+            if (def.Fields.TryGetValue(m.Member, out var fSym))
             {
+                var ft = fSym.Type;
                 if (!insideClass
                     && def.MemberVisibility.TryGetValue(m.Member, out var fv)
                     && fv == Visibility.Private)
@@ -40,26 +41,26 @@ public sealed partial class TypeChecker
                 return new BoundMember(target, m.Member, SubstituteTypeParams(ft, subMap), m.Span);
             }
             // Auto-property getter dispatch on instantiated generic class
-            if (def.Methods.TryGetValue($"get_{m.Member}", out var instGetter)
-                && instGetter.Params.Count == 0)
+            if (def.Methods.TryGetValue($"get_{m.Member}", out var instGetterSym)
+                && instGetterSym.Signature.Params.Count == 0)
             {
                 if (!insideClass
                     && def.MemberVisibility.TryGetValue($"get_{m.Member}", out var pv)
                     && pv == Visibility.Private)
                     _diags.Error(DiagnosticCodes.AccessViolation,
                         $"property `{m.Member}` getter is private to `{def.Name}`", m.Span);
-                var subRet = SubstituteTypeParams(instGetter.Ret, subMap);
+                var subRet = SubstituteTypeParams(instGetterSym.Signature.Ret, subMap);
                 return new BoundCall(BoundCallKind.Virtual, target, def.Name,
                     $"get_{m.Member}", null, new List<BoundExpr>(), subRet, m.Span);
             }
-            if (def.Methods.TryGetValue(m.Member, out var mt))
+            if (def.Methods.TryGetValue(m.Member, out var mtSym))
             {
                 if (!insideClass
                     && def.MemberVisibility.TryGetValue(m.Member, out var mv)
                     && mv == Visibility.Private)
                     _diags.Error(DiagnosticCodes.AccessViolation,
                         $"method `{m.Member}` is private to `{def.Name}`", m.Span);
-                return new BoundMember(target, m.Member, (Z42FuncType)SubstituteTypeParams(mt, subMap), m.Span);
+                return new BoundMember(target, m.Member, (Z42FuncType)SubstituteTypeParams(mtSym.Signature, subMap), m.Span);
             }
             _diags.Error(DiagnosticCodes.TypeMismatch,
                 $"type `{inst}` has no member `{m.Member}`", m.Span);
@@ -68,7 +69,7 @@ public sealed partial class TypeChecker
         if (target.Type is Z42ClassType ct)
         {
             bool insideClass = env.CurrentClass == ct.Name;
-            if (ct.Fields.TryGetValue(m.Member, out var ft))
+            if (ct.Fields.TryGetValue(m.Member, out var fSym))
             {
                 if (!insideClass
                     && ct.MemberVisibility.TryGetValue(m.Member, out var fv)
@@ -82,12 +83,12 @@ public sealed partial class TypeChecker
                     _diags.Error(DiagnosticCodes.EventFieldExternalAccess,
                         $"event field `{m.Member}` cannot be accessed outside `{ct.Name}`; use `+=` / `-=` to subscribe / unsubscribe",
                         m.Span);
-                return new BoundMember(target, m.Member, ft, m.Span);
+                return new BoundMember(target, m.Member, fSym.Type, m.Span);
             }
             // Auto-property getter dispatch: 字段缺失但 method `get_<Member>` 存在
             // → 转 BoundCall(Virtual, target, get_<Member>, []) 调用 getter。
-            if (ct.Methods.TryGetValue($"get_{m.Member}", out var getter)
-                && getter.Params.Count == 0)
+            if (ct.Methods.TryGetValue($"get_{m.Member}", out var getterSym)
+                && getterSym.Signature.Params.Count == 0)
             {
                 if (!insideClass
                     && ct.MemberVisibility.TryGetValue($"get_{m.Member}", out var pv)
@@ -95,16 +96,16 @@ public sealed partial class TypeChecker
                     _diags.Error(DiagnosticCodes.AccessViolation,
                         $"property `{m.Member}` getter is private to `{ct.Name}`", m.Span);
                 return new BoundCall(BoundCallKind.Virtual, target, ct.Name,
-                    $"get_{m.Member}", null, new List<BoundExpr>(), getter.Ret, m.Span);
+                    $"get_{m.Member}", null, new List<BoundExpr>(), getterSym.Signature.Ret, m.Span);
             }
-            if (ct.Methods.TryGetValue(m.Member, out var mt))
+            if (ct.Methods.TryGetValue(m.Member, out var mtSym))
             {
                 if (!insideClass
                     && ct.MemberVisibility.TryGetValue(m.Member, out var mv)
                     && mv == Visibility.Private)
                     _diags.Error(DiagnosticCodes.AccessViolation,
                         $"method `{m.Member}` is private to `{ct.Name}`", m.Span);
-                return new BoundMember(target, m.Member, mt, m.Span);
+                return new BoundMember(target, m.Member, mtSym.Signature, m.Span);
             }
             _diags.Error(DiagnosticCodes.TypeMismatch,
                 $"type `{ct.Name}` has no member `{m.Member}`", m.Span);
@@ -114,17 +115,17 @@ public sealed partial class TypeChecker
         {
             // Auto-property getter dispatch on interface receiver — substitute
             // generic param return type per ifaceType TypeArgs (e.g. IEnumerator<int>.Current → int).
-            if (ifaceType.Methods.TryGetValue($"get_{m.Member}", out var ifaceGetter)
-                && ifaceGetter.Params.Count == 0)
+            if (ifaceType.Methods.TryGetValue($"get_{m.Member}", out var ifaceGetterSym)
+                && ifaceGetterSym.Signature.Params.Count == 0)
             {
                 var subMap = BuildInterfaceSubstitutionMap(ifaceType);
-                var subRet = subMap is null ? ifaceGetter.Ret
-                                            : SubstituteTypeParams(ifaceGetter.Ret, subMap);
+                var subRet = subMap is null ? ifaceGetterSym.Signature.Ret
+                                            : SubstituteTypeParams(ifaceGetterSym.Signature.Ret, subMap);
                 return new BoundCall(BoundCallKind.Virtual, target, ifaceType.Name,
                     $"get_{m.Member}", null, new List<BoundExpr>(), subRet, m.Span);
             }
-            if (ifaceType.Methods.TryGetValue(m.Member, out var ifmt))
-                return new BoundMember(target, m.Member, ifmt, m.Span);
+            if (ifaceType.Methods.TryGetValue(m.Member, out var ifmtSym))
+                return new BoundMember(target, m.Member, ifmtSym.Signature, m.Span);
         }
         // L3-G2 / G2.5: type parameter member access — resolve via base class first, then constraint interfaces.
         if (target.Type is Z42GenericParamType gp)
@@ -141,14 +142,14 @@ public sealed partial class TypeChecker
             };
             if (bundle.BaseClass is { } bc)
             {
-                if (bc.Fields.TryGetValue(m.Member, out var ft))
-                    return new BoundMember(target, m.Member, ft, m.Span);
-                if (bc.Methods.TryGetValue(m.Member, out var mt))
-                    return new BoundMember(target, m.Member, mt, m.Span);
+                if (bc.Fields.TryGetValue(m.Member, out var fSym))
+                    return new BoundMember(target, m.Member, fSym.Type, m.Span);
+                if (bc.Methods.TryGetValue(m.Member, out var mtSym))
+                    return new BoundMember(target, m.Member, mtSym.Signature, m.Span);
             }
             foreach (var iface in bundle.Interfaces)
-                if (iface.Methods.TryGetValue(m.Member, out var cfmt))
-                    return new BoundMember(target, m.Member, cfmt, m.Span);
+                if (iface.Methods.TryGetValue(m.Member, out var cfmSym))
+                    return new BoundMember(target, m.Member, cfmSym.Signature, m.Span);
 
             _diags.Error(DiagnosticCodes.TypeMismatch,
                 bundle.IsEmpty
@@ -217,7 +218,7 @@ public sealed partial class TypeChecker
         // 单 ctor: arity 检查（Z42FuncType.Params 不含 this）
         if (hasSingle && overloadKeys.Count == 0)
         {
-            var sig = cls.Methods[ctorBaseName];
+            var sig = cls.Methods[ctorBaseName].Signature;
             if (ArityMatches(sig))
                 return ctorBaseName;
             _diags.Error(DiagnosticCodes.TypeMismatch,
@@ -228,11 +229,11 @@ public sealed partial class TypeChecker
         // 重载: 按 arity 选
         foreach (var key in overloadKeys)
         {
-            if (ArityMatches(cls.Methods[key]))
+            if (ArityMatches(cls.Methods[key].Signature))
                 return key;
         }
         // 单 ctor 与重载并存的情况（罕见）：单 ctor 也比一下
-        if (hasSingle && ArityMatches(cls.Methods[ctorBaseName]))
+        if (hasSingle && ArityMatches(cls.Methods[ctorBaseName].Signature))
             return ctorBaseName;
 
         _diags.Error(DiagnosticCodes.TypeMismatch,

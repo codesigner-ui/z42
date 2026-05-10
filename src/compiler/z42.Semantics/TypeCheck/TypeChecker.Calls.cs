@@ -1,6 +1,7 @@
 using Z42.Core.Text;
 using Z42.Core.Diagnostics;
 using Z42.Semantics.Bound;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -18,9 +19,10 @@ public sealed partial class TypeChecker
         {
             bool isImported = _symbols.ImportedClassNames.Contains(clsName);
             // Spec define-ref-out-in-parameters (Decision 7): modifier-aware overload.
-            var (staticSig, staticKey) = LookupMethodOverload(staticCt.StaticMethods, staticMember, call.Args);
-            if (staticSig is not null)
+            var (staticSym, staticKey) = LookupMethodOverload(staticCt.StaticMethods, staticMember, call.Args);
+            if (staticSym is not null)
             {
+                var staticSig = staticSym.Signature;
                 var args = call.Args.Select(a => BindExpr(a, env)).ToList();
                 CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
                 // 2026-05-05 fix-generic-extern-infer: substitute T → concrete
@@ -108,7 +110,7 @@ public sealed partial class TypeChecker
                 var def    = inst.Definition;
                 var instArityKey = $"{mCallee.Member}${argBound.Count}";
                 bool byBare  = def.Methods.TryGetValue(mCallee.Member, out var mt1);
-                Z42FuncType? mt2 = null;
+                IMethodSymbol? mt2 = null;
                 bool byArity = !byBare && def.Methods.TryGetValue(instArityKey, out mt2);
                 var mtRaw = byBare ? mt1 : byArity ? mt2 : null;
                 string resolvedMethodName = byArity ? instArityKey : mCallee.Member;
@@ -122,7 +124,7 @@ public sealed partial class TypeChecker
                         && mv == Visibility.Private)
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{def.Name}`", call.Span);
-                    var mtSub = (Z42FuncType)SubstituteTypeParams(mtRaw, subMap);
+                    var mtSub = (Z42FuncType)SubstituteTypeParams(mtRaw.Signature, subMap);
                     CheckArgCount(argBound.Count, mtSub.MinArgCount, mtSub.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, mtSub.Params);
                     CheckArgModifiers(call.Args, argBound, mtSub, env, call.Span);
@@ -142,12 +144,13 @@ public sealed partial class TypeChecker
             {
                 var instArityKey = $"{mCallee.Member}${argBound.Count}";
                 // Spec define-ref-out-in-parameters (Decision 7): modifier-aware overload.
-                var (mt, instKey) = LookupMethodOverload(ct.Methods, mCallee.Member, call.Args);
+                var (mtSym, instKey) = LookupMethodOverload(ct.Methods, mCallee.Member, call.Args);
                 // Resolved method name for IR codegen — use the actual key found.
                 string resolvedMethodName = instKey ?? mCallee.Member;
                 bool isImportedCls = _symbols.ImportedClassNames.Contains(ct.Name);
-                if (mt is not null)
+                if (mtSym is not null)
                 {
+                    var mt = mtSym.Signature;
                     bool insideClass = env.CurrentClass == ct.Name;
                     var visKey = ct.MemberVisibility.ContainsKey(mCallee.Member)
                         ? mCallee.Member : instArityKey;
@@ -190,8 +193,9 @@ public sealed partial class TypeChecker
 
             if (recvExpr.Type is Z42InterfaceType ifaceType)
             {
-                if (ifaceType.Methods.TryGetValue(mCallee.Member, out var imt))
+                if (ifaceType.Methods.TryGetValue(mCallee.Member, out var imSym))
                 {
+                    var imt = imSym.Signature;
                     // Substitute generic interface T → concrete TypeArgs for method
                     // dispatch. `IEquatable<int>.Equals(T)` → `Equals(int)` etc.
                     var subMap = BuildInterfaceSubstitutionMap(ifaceType);
@@ -223,8 +227,9 @@ public sealed partial class TypeChecker
                                           gp.InterfaceConstraints ?? []),
                 };
                 if (bundle.BaseClass is { } bc
-                    && bc.Methods.TryGetValue(mCallee.Member, out var bcMt))
+                    && bc.Methods.TryGetValue(mCallee.Member, out var bcMtSym))
                 {
+                    var bcMt = bcMtSym.Signature;
                     CheckArgCount(argBound.Count, bcMt.MinArgCount, bcMt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, bcMt.Params);
                     CheckArgModifiers(call.Args, argBound, bcMt, env, call.Span);
@@ -233,8 +238,9 @@ public sealed partial class TypeChecker
                 }
                 foreach (var iface in bundle.Interfaces)
                 {
-                    if (iface.Methods.TryGetValue(mCallee.Member, out var gmt))
+                    if (iface.Methods.TryGetValue(mCallee.Member, out var gmtSym))
                     {
+                        var gmt = gmtSym.Signature;
                         CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
                         CheckArgTypes(call.Args, argBound, gmt.Params);
                         CheckArgModifiers(call.Args, argBound, gmt, env, call.Span);
@@ -279,11 +285,12 @@ public sealed partial class TypeChecker
             {
                 var primArityKey = $"{mCallee.Member}${argBound.Count}";
                 bool primBare  = primClsType.Methods.TryGetValue(mCallee.Member, out var pmt1);
-                Z42FuncType? pmt2 = null;
+                IMethodSymbol? pmt2 = null;
                 bool primArity = !primBare && primClsType.Methods.TryGetValue(primArityKey, out pmt2);
-                var pmt = primBare ? pmt1 : primArity ? pmt2 : null;
-                if (pmt is not null)
+                var pmtSym = primBare ? pmt1 : primArity ? pmt2 : null;
+                if (pmtSym is not null)
                 {
+                    var pmt = pmtSym.Signature;
                     string resolved = primArity ? primArityKey : mCallee.Member;
                     CheckArgCount(argBound.Count, pmt.MinArgCount, pmt.Params.Count, call.Span);
                     CheckArgTypes(call.Args, argBound, pmt.Params);
@@ -319,8 +326,9 @@ public sealed partial class TypeChecker
         if (call.Callee is IdentExpr { Name: var bareCallName }
             && env.CurrentClass != null
             && _symbols.Classes.TryGetValue(env.CurrentClass, out var curCt)
-            && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSig))
+            && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSym))
         {
+            var bareSig = bareSym.Signature;
             CheckArgCount(freeArgs.Count, bareSig.MinArgCount, bareSig.Params.Count, call.Span);
             CheckArgTypes(call.Args, freeArgs, bareSig.Params);
             CheckArgModifiers(call.Args, freeArgs, bareSig, env, call.Span);

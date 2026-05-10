@@ -1,5 +1,6 @@
 using Z42.Core.Diagnostics;
 using Z42.IR;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -63,21 +64,40 @@ public sealed partial class SymbolCollector
             // Type return type uses `Z42Type.Unknown` because the real `Std.Type`
             // class isn't loaded yet during this pre-registration; downstream
             // typechecker treats Unknown as compatible (avoids cascading errors).
-            var objectMethods = new Dictionary<string, Z42FuncType>
-            {
-                ["ToString"]    = new([], Z42Type.String),
-                ["Equals"]      = new([Z42Type.Object], Z42Type.Bool),
-                ["GetHashCode"] = new([], Z42Type.Int),
-                ["GetType"]     = new([], Z42Type.Unknown),
-            };
-            _classes["Object"] = new Z42ClassType(
+            // split-symbol-from-type: Object's built-in methods are constructed as
+            // MethodSymbol-wrapped IMethodSymbol entries (decl=null, ContainingType
+            // assigned post-construction below).
+            var objectClassSkeleton = new Z42ClassType(
                 "Object",
-                new Dictionary<string, Z42Type>(),
-                objectMethods,
-                new Dictionary<string, Z42Type>(),
-                new Dictionary<string, Z42FuncType>(),
+                new Dictionary<string, IFieldSymbol>(),
+                new Dictionary<string, IMethodSymbol>(),
+                new Dictionary<string, IFieldSymbol>(),
+                new Dictionary<string, IMethodSymbol>(),
                 new Dictionary<string, Visibility>(),
                 null);
+            var objectMethods = new Dictionary<string, IMethodSymbol>
+            {
+                ["ToString"]    = new MethodSymbol("ToString", objectClassSkeleton,
+                                                   new Z42FuncType([], Z42Type.String),
+                                                   FunctionModifiers.Virtual, default,
+                                                   Visibility.Public, decl: null, testAttributes: null),
+                ["Equals"]      = new MethodSymbol("Equals", objectClassSkeleton,
+                                                   new Z42FuncType([Z42Type.Object], Z42Type.Bool),
+                                                   FunctionModifiers.Virtual, default,
+                                                   Visibility.Public, decl: null, testAttributes: null),
+                ["GetHashCode"] = new MethodSymbol("GetHashCode", objectClassSkeleton,
+                                                   new Z42FuncType([], Z42Type.Int),
+                                                   FunctionModifiers.Virtual, default,
+                                                   Visibility.Public, decl: null, testAttributes: null),
+                ["GetType"]     = new MethodSymbol("GetType", objectClassSkeleton,
+                                                   new Z42FuncType([], Z42Type.Unknown),
+                                                   FunctionModifiers.None, default,
+                                                   Visibility.Public, decl: null, testAttributes: null),
+            };
+            // Rebuild Object with populated methods dict; ContainingType already
+            // refers to skeleton (same Name → Equals returns true; consumers that
+            // re-query Methods get the populated set via _classes lookup).
+            _classes["Object"] = objectClassSkeleton with { Methods = objectMethods };
         }
 
         // 2026-05-07 add-class-arity-overloading: scan for same-name arity collision.
@@ -118,10 +138,10 @@ public sealed partial class SymbolCollector
                 {
                     _importedClassNamespaces.Remove(key);
                     _classes[key] = new Z42ClassType(
-                        cls.Name, new Dictionary<string, Z42Type>(),
-                        new Dictionary<string, Z42FuncType>(),
-                        new Dictionary<string, Z42Type>(),
-                        new Dictionary<string, Z42FuncType>(),
+                        cls.Name, new Dictionary<string, IFieldSymbol>(),
+                        new Dictionary<string, IMethodSymbol>(),
+                        new Dictionary<string, IFieldSymbol>(),
+                        new Dictionary<string, IMethodSymbol>(),
                         new Dictionary<string, Visibility>(),
                         effectiveBase,
                         TypeParams: cls.TypeParams,
@@ -133,10 +153,10 @@ public sealed partial class SymbolCollector
             }
             else
                 _classes[key] = new Z42ClassType(
-                    cls.Name, new Dictionary<string, Z42Type>(),
-                    new Dictionary<string, Z42FuncType>(),
-                    new Dictionary<string, Z42Type>(),
-                    new Dictionary<string, Z42FuncType>(),
+                    cls.Name, new Dictionary<string, IFieldSymbol>(),
+                    new Dictionary<string, IMethodSymbol>(),
+                    new Dictionary<string, IFieldSymbol>(),
+                    new Dictionary<string, IMethodSymbol>(),
                     new Dictionary<string, Visibility>(),
                     effectiveBase,
                     TypeParams: cls.TypeParams,
@@ -156,16 +176,24 @@ public sealed partial class SymbolCollector
             // Activate generic type params so T resolves to Z42GenericParamType in fields/methods
             if (cls.TypeParams != null) _activeTypeParams = new HashSet<string>(cls.TypeParams);
 
-            var fields        = new Dictionary<string, Z42Type>();
-            var staticFields  = new Dictionary<string, Z42Type>();
-            var methods       = new Dictionary<string, Z42FuncType>();
-            var staticMethods = new Dictionary<string, Z42FuncType>();
+            var fields        = new Dictionary<string, IFieldSymbol>();
+            var staticFields  = new Dictionary<string, IFieldSymbol>();
+            var methods       = new Dictionary<string, IMethodSymbol>();
+            var staticMethods = new Dictionary<string, IMethodSymbol>();
+            // Track FieldSymbol/MethodSymbol instances so we can fix-up ContainingType
+            // after Z42ClassType is constructed (resolves the chicken-and-egg between
+            // Z42ClassType.Methods holding IMethodSymbol and IMethodSymbol.ContainingType
+            // holding Z42ClassType).
+            var symbolsForFixup = new List<IMemberSymbol>();
 
             foreach (var f in cls.Fields)
             {
                 var ft = ResolveType(f.Type);
-                if (f.IsStatic) staticFields[f.Name] = ft;
-                else            fields[f.Name]        = ft;
+                var sym = new FieldSymbol(f.Name, containingType: null, ft, f.IsStatic,
+                                           f.Span, f.Visibility, isEvent: f.IsEvent, decl: f);
+                symbolsForFixup.Add(sym);
+                if (f.IsStatic) staticFields[f.Name] = sym;
+                else            fields[f.Name]      = sym;
             }
             var methodNameCount = cls.Methods
                 .GroupBy(m => (m.Name, m.IsStatic))
@@ -234,8 +262,12 @@ public sealed partial class SymbolCollector
                 {
                     regName = $"{m.Name}${m.Params.Count}";
                 }
-                if (m.IsStatic) staticMethods[regName] = sig;
-                else            methods[regName]        = sig;
+                var methodSym = new MethodSymbol(regName, containingType: null, sig,
+                                                  m.Modifiers, m.Span, m.Visibility,
+                                                  decl: m, testAttributes: m.TestAttributes);
+                symbolsForFixup.Add(methodSym);
+                if (m.IsStatic) staticMethods[regName] = methodSym;
+                else            methods[regName]      = methodSym;
             }
 
             _activeTypeParams = null;
@@ -263,12 +295,17 @@ public sealed partial class SymbolCollector
             var clsKey = KeyFor(cls);
             // Preserve HasArityMangle across the `with`-style replacement.
             bool wasMangled = _classes.TryGetValue(clsKey, out var existing) && existing.HasArityMangle;
-            _classes[clsKey] = new Z42ClassType(
+            var classType = new Z42ClassType(
                 cls.Name, fields, methods, staticFields, staticMethods,
                 memberVis, effectiveBase2, cls.TypeParams?.AsReadOnly(),
                 IsStruct: cls.IsStruct,
                 EventFieldNames: eventNames,
                 HasArityMangle: wasMangled);
+            // Two-phase construction fix-up: assign ContainingType to every
+            // FieldSymbol/MethodSymbol now that classType exists. Resolves the
+            // chicken-and-egg between Z42ClassType.Methods and IMemberSymbol.ContainingType.
+            FixupContainingType(symbolsForFixup, classType);
+            _classes[clsKey] = classType;
             // L3-G2.5 chain: resolve each interface TypeExpr to a Z42InterfaceType
             // (with TypeArgs for generic interface references). Failures fall back to
             // name-only stubs to avoid cascading diagnostics.
@@ -282,7 +319,7 @@ public sealed partial class SymbolCollector
                 else
                     resolvedIfaces.Add(new Z42InterfaceType(
                         IfaceNameFromTypeExpr(ifaceTy),
-                        new Dictionary<string, Z42FuncType>()));
+                        new Dictionary<string, IMethodSymbol>()));
             }
             _activeTypeParams = null;
             _classInterfaces[clsKey] = resolvedIfaces;
@@ -334,8 +371,8 @@ public sealed partial class SymbolCollector
 
             if (!_classes.TryGetValue(effectiveBase3, out var baseType)) continue;
             var derived = _classes[clsKey];
-            var mergedFields  = new Dictionary<string, Z42Type>(baseType.Fields);
-            var mergedMethods = new Dictionary<string, Z42FuncType>(baseType.Methods);
+            var mergedFields  = new Dictionary<string, IFieldSymbol>(baseType.Fields);
+            var mergedMethods = new Dictionary<string, IMethodSymbol>(baseType.Methods);
             foreach (var kv in derived.Fields)  mergedFields[kv.Key]  = kv.Value;
             foreach (var kv in derived.Methods) mergedMethods[kv.Key] = kv.Value;
             _classes[clsKey] = derived with { Fields = mergedFields, Methods = mergedMethods };
@@ -369,20 +406,20 @@ public sealed partial class SymbolCollector
             {
                 var ifaceName = ifaceTy.Name;
                 if (!_interfaces.TryGetValue(ifaceName, out var iface)) continue;
-                foreach (var (methodName, ifaceSig) in iface.Methods)
+                foreach (var (methodName, ifaceSym) in iface.Methods)
                 {
-                    if (!classType.Methods.TryGetValue(methodName, out var implSig))
+                    if (!classType.Methods.TryGetValue(methodName, out var implSym))
                         _diags.Error(DiagnosticCodes.InterfaceMismatch,
                             $"class `{cls.Name}` does not implement interface method `{ifaceName}.{methodName}`",
                             cls.Span);
-                    else if (implSig.Params.Count != ifaceSig.Params.Count)
+                    else if (implSym.Signature.Params.Count != ifaceSym.Signature.Params.Count)
                         _diags.Error(DiagnosticCodes.InterfaceMismatch,
                             $"class `{cls.Name}` method `{methodName}` has wrong parameter count for interface `{ifaceName}` " +
-                            $"(expected {ifaceSig.Params.Count}, got {implSig.Params.Count})",
+                            $"(expected {ifaceSym.Signature.Params.Count}, got {implSym.Signature.Params.Count})",
                             cls.Span);
-                    else if (!Z42Type.IsAssignableTo(ifaceSig.Ret, implSig.Ret))
+                    else if (!Z42Type.IsAssignableTo(ifaceSym.Signature.Ret, implSym.Signature.Ret))
                         _diags.Error(DiagnosticCodes.InterfaceMismatch,
-                            $"class `{cls.Name}` method `{methodName}` return type `{implSig.Ret}` does not match interface `{ifaceName}` return type `{ifaceSig.Ret}`",
+                            $"class `{cls.Name}` method `{methodName}` return type `{implSym.Signature.Ret}` does not match interface `{ifaceName}` return type `{ifaceSym.Signature.Ret}`",
                             cls.Span);
                 }
             }
@@ -496,10 +533,25 @@ public sealed partial class SymbolCollector
         if (ct.BaseClassName is not { } baseName) return;
         FinalizeInheritanceOne(baseName, done);
         if (!_classes.TryGetValue(baseName, out var baseType)) return;
-        var mergedFields  = new Dictionary<string, Z42Type>(baseType.Fields);
-        var mergedMethods = new Dictionary<string, Z42FuncType>(baseType.Methods);
+        var mergedFields  = new Dictionary<string, IFieldSymbol>(baseType.Fields);
+        var mergedMethods = new Dictionary<string, IMethodSymbol>(baseType.Methods);
         foreach (var kv in ct.Fields)  mergedFields[kv.Key]  = kv.Value;
         foreach (var kv in ct.Methods) mergedMethods[kv.Key] = kv.Value;
         _classes[name] = ct with { Fields = mergedFields, Methods = mergedMethods };
+    }
+
+    /// Two-phase construction fix-up: after Z42ClassType is built with Symbol-typed
+    /// dicts, assign ContainingType on each Symbol so consumers (Phase 4 BoundCall.Symbol
+    /// readers, Phase 5 TestAttributeValidator etc.) can navigate symbol → containing type.
+    private static void FixupContainingType(IReadOnlyList<IMemberSymbol> symbols, Z42ClassType containingClass)
+    {
+        foreach (var sym in symbols)
+        {
+            switch (sym)
+            {
+                case MethodSymbol ms: ms.ContainingType = containingClass; break;
+                case FieldSymbol  fs: fs.ContainingType = containingClass; break;
+            }
+        }
     }
 }

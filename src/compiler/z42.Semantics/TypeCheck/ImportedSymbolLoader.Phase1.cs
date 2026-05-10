@@ -1,5 +1,6 @@
 using Z42.Core;
 using Z42.IR;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -19,10 +20,10 @@ public static partial class ImportedSymbolLoader
         bool hasArityMangle = importKey != cls.Name;
         return new Z42ClassType(
             cls.Name,
-            Fields:           new Dictionary<string, Z42Type>(),
-            Methods:          new Dictionary<string, Z42FuncType>(),
-            StaticFields:     new Dictionary<string, Z42Type>(),
-            StaticMethods:    new Dictionary<string, Z42FuncType>(),
+            Fields:           new Dictionary<string, IFieldSymbol>(),
+            Methods:          new Dictionary<string, IMethodSymbol>(),
+            StaticFields:     new Dictionary<string, IFieldSymbol>(),
+            StaticMethods:    new Dictionary<string, IMethodSymbol>(),
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName:    cls.BaseClass,
             TypeParams:       typeParams,
@@ -36,7 +37,7 @@ public static partial class ImportedSymbolLoader
             ? tps.AsReadOnly() : null;
         return new Z42InterfaceType(
             iface.Name,
-            Methods:       new Dictionary<string, Z42FuncType>(),
+            Methods:       new Dictionary<string, IMethodSymbol>(),
             TypeArgs:      null,
             StaticMembers: null,
             TypeParams:    typeParams);

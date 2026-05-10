@@ -44,7 +44,12 @@ public sealed class MethodSymbol : IMethodSymbol
     public string Name { get; }
     public Span Span { get; }
     public Visibility Visibility { get; }
-    public Z42Type? ContainingType { get; }
+    /// Internally settable to support two-phase construction:
+    /// SymbolCollector builds the symbol with containingType=null, then constructs
+    /// Z42ClassType with these symbols, then fixes-up ContainingType post-construction.
+    /// Resolves the chicken-and-egg between Z42ClassType.Methods (holds IMethodSymbol)
+    /// and IMethodSymbol.ContainingType (holds Z42ClassType).
+    public Z42Type? ContainingType { get; internal set; }
     public Z42FuncType Signature { get; }
     public FunctionModifiers Modifiers { get; }
     public FunctionDecl? Decl { get; }

@@ -1,6 +1,7 @@
 using Z42.Core.Text;
 using Z42.Core.Diagnostics;
 using Z42.Semantics.Bound;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -13,9 +14,11 @@ public sealed partial class TypeChecker
     ///   1. `Name$Arity$<argModSig>` — modifier-tagged key (same-arity overload)
     ///   2. `Name`                    — bare (single method, no overload)
     ///   3. `Name$Arity`              — legacy arity-only key (no modifier collision)
-    /// Returns matching sig + the resolved key for IR codegen, or (null, null).
-    internal static (Z42FuncType? Sig, string? Key) LookupMethodOverload(
-        IReadOnlyDictionary<string, Z42FuncType> table,
+    /// Returns matching method symbol + the resolved key for IR codegen, or (null, null).
+    /// (split-symbol-from-type Phase 2: dict value type changed from Z42FuncType to
+    /// IMethodSymbol; callers access `.Signature` on the returned symbol.)
+    internal static (IMethodSymbol? Sym, string? Key) LookupMethodOverload(
+        IReadOnlyDictionary<string, IMethodSymbol> table,
         string memberName,
         IReadOnlyList<Expr> args)
     {
@@ -23,8 +26,8 @@ public sealed partial class TypeChecker
         if (!string.IsNullOrEmpty(argModSig))
         {
             var modKey = $"{memberName}${args.Count}${argModSig}";
-            if (table.TryGetValue(modKey, out var modSigVal))
-                return (modSigVal, modKey);
+            if (table.TryGetValue(modKey, out var modSym))
+                return (modSym, modKey);
         }
         if (table.TryGetValue(memberName, out var bare)) return (bare, memberName);
         var arityKey = $"{memberName}${args.Count}";

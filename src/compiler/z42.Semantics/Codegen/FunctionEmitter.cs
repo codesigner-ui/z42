@@ -226,13 +226,13 @@ internal sealed partial class FunctionEmitter
             argCount >= sig.MinArgCount && argCount <= sig.Params.Count;
 
         // 单 ctor
-        if (cls.Methods.TryGetValue(baseSimpleName, out var single) && ArityMatches(single))
+        if (cls.Methods.TryGetValue(baseSimpleName, out var singleSym) && ArityMatches(singleSym.Signature))
             return baseSimpleName;
 
         // 重载
-        foreach (var (key, sig) in cls.Methods)
+        foreach (var (key, msym) in cls.Methods)
         {
-            if (key.StartsWith(baseSimpleName + "$") && ArityMatches(sig))
+            if (key.StartsWith(baseSimpleName + "$") && ArityMatches(msym.Signature))
                 return key;
         }
 

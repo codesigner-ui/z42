@@ -122,7 +122,7 @@ public sealed partial class TypeChecker
         if (!_symbols.Classes.TryGetValue(className, out var ct)) return false;
         // Z42 stores constructors as methods keyed by class name; overloads get $arity suffix.
         // A no-arg ctor appears as either bare name (single ctor) or `Name$0` (overloaded).
-        if (ct.Methods.TryGetValue(className, out var bare) && bare.Params.Count == 0) return true;
+        if (ct.Methods.TryGetValue(className, out var bareSym) && bareSym.Signature.Params.Count == 0) return true;
         if (ct.Methods.TryGetValue($"{className}$0", out _)) return true;
         // Imported classes may not have constructor in Methods map — look for any method whose
         // name starts with the class name followed by empty params (TSIG stores ctors this way).
@@ -426,8 +426,8 @@ public sealed partial class TypeChecker
     private static Z42Type? FindIndexerRet(Z42ClassType ct,
                                            IReadOnlyDictionary<string, Z42Type>? sub)
     {
-        if (!ct.Methods.TryGetValue("get_Item", out var mt)) return null;
-        return SubstituteTypeParams(mt.Ret, sub);
+        if (!ct.Methods.TryGetValue("get_Item", out var mtSym)) return null;
+        return SubstituteTypeParams(mtSym.Signature.Ret, sub);
     }
 
     private static IReadOnlyDictionary<string, Z42Type> BuildSubMap(Z42InstantiatedType inst)

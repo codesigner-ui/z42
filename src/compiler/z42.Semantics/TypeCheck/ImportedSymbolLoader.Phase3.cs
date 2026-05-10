@@ -1,5 +1,6 @@
 using Z42.Core;
 using Z42.IR;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -40,19 +41,24 @@ public static partial class ImportedSymbolLoader
                 if (!interfaces.ContainsKey(traitShort)) continue;
 
                 // First-wins method merge into target.Methods.
-                var methodsDict = (Dictionary<string, Z42FuncType>)targetClass.Methods;
+                var methodsDict = (Dictionary<string, IMethodSymbol>)targetClass.Methods;
                 foreach (var m in impl.Methods)
                 {
                     var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount,
                         genericParams: null, classes, interfaces);
+                    var mods = ImportedModifiers(m);
+                    var sym = new MethodSymbol(m.Name, targetClass, sig, mods,
+                                                default(Z42.Core.Text.Span),
+                                                ParseVisibility(m.Visibility),
+                                                decl: null, testAttributes: null);
                     if (m.IsStatic)
                     {
-                        var staticDict = (Dictionary<string, Z42FuncType>)targetClass.StaticMethods;
-                        staticDict.TryAdd(m.Name, sig);
+                        var staticDict = (Dictionary<string, IMethodSymbol>)targetClass.StaticMethods;
+                        staticDict.TryAdd(m.Name, sym);
                     }
                     else
                     {
-                        methodsDict.TryAdd(m.Name, sig);
+                        methodsDict.TryAdd(m.Name, sym);
                     }
                 }
 

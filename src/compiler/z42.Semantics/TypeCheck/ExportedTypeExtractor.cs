@@ -139,24 +139,24 @@ public static class ExportedTypeExtractor
             if (sem.ImportedClassNames.Contains(name)) continue;
 
             var fields = new List<ExportedFieldDef>();
-            foreach (var (fn, ft) in ct.Fields)
+            foreach (var (fn, fsym) in ct.Fields)
             {
                 var vis = ct.MemberVisibility.TryGetValue(fn, out var v)
                     ? VisToString(v) : "public";
-                fields.Add(new ExportedFieldDef(fn, TypeToString(ft), vis, false));
+                fields.Add(new ExportedFieldDef(fn, TypeToString(fsym.Type), vis, false));
             }
-            foreach (var (fn, ft) in ct.StaticFields)
+            foreach (var (fn, fsym) in ct.StaticFields)
             {
                 var vis = ct.MemberVisibility.TryGetValue(fn, out var v)
                     ? VisToString(v) : "public";
-                fields.Add(new ExportedFieldDef(fn, TypeToString(ft), vis, true));
+                fields.Add(new ExportedFieldDef(fn, TypeToString(fsym.Type), vis, true));
             }
 
             var methods = new List<ExportedMethodDef>();
-            foreach (var (mn, mt) in ct.Methods)
-                methods.Add(FuncToMethod(mn, mt, false, ct.MemberVisibility));
-            foreach (var (mn, mt) in ct.StaticMethods)
-                methods.Add(FuncToMethod(mn, mt, true, ct.MemberVisibility));
+            foreach (var (mn, msym) in ct.Methods)
+                methods.Add(FuncToMethod(mn, msym.Signature, false, ct.MemberVisibility));
+            foreach (var (mn, msym) in ct.StaticMethods)
+                methods.Add(FuncToMethod(mn, msym.Signature, true, ct.MemberVisibility));
 
             // L3-G4d: propagate generic type parameters so consumers can
             // instantiate imported generic classes with type arguments.
@@ -193,13 +193,14 @@ public static class ExportedTypeExtractor
         foreach (var (name, it) in sem.Interfaces)
         {
             var methods = new List<ExportedMethodDef>();
-            foreach (var (mn, mt) in it.Methods)
+            foreach (var (mn, msym) in it.Methods)
             {
-                var parms = mt.Params.Select((p, i) =>
+                var sig = msym.Signature;
+                var parms = sig.Params.Select((p, i) =>
                     new ExportedParamDef($"p{i}", TypeToString(p))).ToList();
                 methods.Add(new ExportedMethodDef(
-                    mn, parms, TypeToString(mt.Ret),
-                    "public", false, true, true, mt.MinArgCount));
+                    mn, parms, TypeToString(sig.Ret),
+                    "public", false, true, true, sig.MinArgCount));
             }
             // L3 static abstract interface members (C# 11 alignment): export
             // three-tier static members so the consumer can answer

@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Z42.Semantics.Symbols;
 using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Parser;
 
@@ -12,10 +13,10 @@ public sealed class Z42TypeEqualityTests
     private static Z42ClassType MakeClass(string name, params string[] typeParams) =>
         new(
             Name: name,
-            Fields: new Dictionary<string, Z42Type>(),
-            Methods: new Dictionary<string, Z42FuncType>(),
-            StaticFields: new Dictionary<string, Z42Type>(),
-            StaticMethods: new Dictionary<string, Z42FuncType>(),
+            Fields: new Dictionary<string, IFieldSymbol>(),
+            Methods: new Dictionary<string, IMethodSymbol>(),
+            StaticFields: new Dictionary<string, IFieldSymbol>(),
+            StaticMethods: new Dictionary<string, IMethodSymbol>(),
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName: null,
             TypeParams: typeParams.Length == 0 ? null : new List<string>(typeParams));
@@ -23,7 +24,7 @@ public sealed class Z42TypeEqualityTests
     private static Z42InterfaceType MakeInterface(string name, IReadOnlyList<Z42Type>? typeArgs = null,
         IReadOnlyList<string>? typeParams = null)
     {
-        var methods = new Dictionary<string, Z42FuncType>();
+        var methods = new Dictionary<string, IMethodSymbol>();
         return new Z42InterfaceType(name, methods, typeArgs, null, typeParams);
     }
 

@@ -1,4 +1,5 @@
 using Z42.Core.Diagnostics;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -56,7 +57,7 @@ public sealed partial class SymbolCollector
             // Build signatures for impl methods. If target is generic, flow its type params.
             if (targetClass.TypeParams is { Count: > 0 } tps)
                 _activeTypeParams = new HashSet<string>(tps);
-            var implMethodSigs = new Dictionary<string, Z42FuncType>();
+            var implMethodSigs = new Dictionary<string, Z42FuncType>();  // raw signatures, wrapped to MethodSymbol on merge
             foreach (var m in impl.Methods)
             {
                 if (implMethodSigs.ContainsKey(m.Name))
@@ -72,7 +73,7 @@ public sealed partial class SymbolCollector
             _activeTypeParams = null;
 
             // Signature alignment: interface methods must all be provided; arity must match.
-            foreach (var (mName, ifaceSig) in ifaceShape.Methods)
+            foreach (var (mName, ifaceSym) in ifaceShape.Methods)
             {
                 if (!implMethodSigs.TryGetValue(mName, out var implSig))
                 {
@@ -81,10 +82,10 @@ public sealed partial class SymbolCollector
                         impl.Span);
                     continue;
                 }
-                if (implSig.Params.Count != ifaceSig.Params.Count)
+                if (implSig.Params.Count != ifaceSym.Signature.Params.Count)
                     _diags.Error(DiagnosticCodes.InvalidImpl,
                         $"extern impl method `{mName}` on `{targetName}` has {implSig.Params.Count} params, " +
-                        $"interface `{ifaceShape.Name}` expects {ifaceSig.Params.Count}",
+                        $"interface `{ifaceShape.Name}` expects {ifaceSym.Signature.Params.Count}",
                         impl.Span);
             }
 
@@ -93,7 +94,9 @@ public sealed partial class SymbolCollector
             // not inherited-via-base methods already present in the merged Methods map.
             var ownDeclared = cu.Classes.FirstOrDefault(c => c.Name == targetName)?.Methods
                                 .Select(m => m.Name).ToHashSet() ?? [];
-            var mergedMethods = new Dictionary<string, Z42FuncType>(targetClass.Methods);
+            var mergedMethods = new Dictionary<string, IMethodSymbol>(targetClass.Methods);
+            // Find each impl method's source FunctionDecl for Decl back-pointer.
+            var implMethodDecls = impl.Methods.ToDictionary(m => m.Name);
             foreach (var (mName, sig) in implMethodSigs)
             {
                 if (ownDeclared.Contains(mName))
@@ -101,7 +104,14 @@ public sealed partial class SymbolCollector
                         $"extern impl method `{mName}` on `{targetName}` conflicts with an existing class method",
                         impl.Span);
                 else
-                    mergedMethods[mName] = sig;
+                {
+                    var implDecl = implMethodDecls[mName];
+                    var sym = new MethodSymbol(mName, targetClass, sig,
+                                                implDecl.Modifiers, implDecl.Span,
+                                                implDecl.Visibility,
+                                                decl: implDecl, testAttributes: implDecl.TestAttributes);
+                    mergedMethods[mName] = sym;
+                }
             }
             _classes[targetName] = targetClass with { Methods = mergedMethods };
 

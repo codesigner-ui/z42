@@ -242,8 +242,8 @@ public sealed partial class TypeChecker : ITypeInferrer
                                 ?? TypeRegistry.GetZ42Type(targetNt.Name.ToLowerInvariant())
                                 ?? (Z42Type)targetClass;
                     scope.Define("this", thisType);
-                    foreach (var (fname, ftype) in targetClass.Fields)
-                        scope.Define(fname, ftype);
+                    foreach (var (fname, fsym) in targetClass.Fields)
+                        scope.Define(fname, fsym.Type);
                 }
                 CheckParamNames(method.Params);
                 foreach (var p in method.Params)
@@ -313,8 +313,8 @@ public sealed partial class TypeChecker : ITypeInferrer
                             ?? TypeRegistry.GetZ42Type(cls.Name.ToLowerInvariant())
                             ?? (Z42Type)classType;
                 scope.Define("this", thisType);
-                foreach (var (fname, ftype) in classType.Fields)
-                    scope.Define(fname, ftype);
+                foreach (var (fname, fsym) in classType.Fields)
+                    scope.Define(fname, fsym.Type);
             }
             CheckParamNames(method.Params);
             foreach (var p in method.Params)

@@ -88,17 +88,17 @@ public sealed partial class IrGen
         {
             var localKey    = QualifyName(className);
             var importedKey = ((IEmitterContext)this).QualifyClassName(className);
-            foreach (var (methodKey, sig) in ct.Methods)
+            foreach (var (methodKey, msym) in ct.Methods)
             {
-                _funcSignatures[$"{localKey}.{methodKey}"] = sig;
+                _funcSignatures[$"{localKey}.{methodKey}"] = msym.Signature;
                 if (importedKey != localKey)
-                    _funcSignatures[$"{importedKey}.{methodKey}"] = sig;
+                    _funcSignatures[$"{importedKey}.{methodKey}"] = msym.Signature;
             }
-            foreach (var (methodKey, sig) in ct.StaticMethods)
+            foreach (var (methodKey, msym) in ct.StaticMethods)
             {
-                _funcSignatures[$"{localKey}.{methodKey}"] = sig;
+                _funcSignatures[$"{localKey}.{methodKey}"] = msym.Signature;
                 if (importedKey != localKey)
-                    _funcSignatures[$"{importedKey}.{methodKey}"] = sig;
+                    _funcSignatures[$"{importedKey}.{methodKey}"] = msym.Signature;
             }
         }
         foreach (var (funcName, sig) in _semanticModel.Funcs)

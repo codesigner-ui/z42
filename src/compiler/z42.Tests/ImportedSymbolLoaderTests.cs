@@ -69,7 +69,7 @@ public sealed class ImportedSymbolLoaderTests
         loaded.Classes.Should().ContainKey("Exception");
         var exType = loaded.Classes["Exception"];
         exType.Fields.Should().ContainKey("InnerException");
-        exType.Fields["InnerException"].Should().BeOfType<Z42ClassType>(
+        exType.Fields["InnerException"].Type.Should().BeOfType<Z42ClassType>(
             because: "self-reference 字段必须升级为 Z42ClassType，不得降级为 PrimType")
             .Which.Name.Should().Be("Exception");
     }
@@ -86,7 +86,7 @@ public sealed class ImportedSymbolLoaderTests
 
         loaded.Classes.Should().ContainKey("A");
         var aType = loaded.Classes["A"];
-        aType.Fields["b"].Should().BeOfType<Z42ClassType>(
+        aType.Fields["b"].Type.Should().BeOfType<Z42ClassType>(
             because: "forward-reference 字段（A→B）应正确升级为 Z42ClassType")
             .Which.Name.Should().Be("B");
     }
@@ -101,7 +101,7 @@ public sealed class ImportedSymbolLoaderTests
         var loaded = ImportedSymbolLoader.Load(new[] { mod }, new[] { "Std" });
 
         var aType = loaded.Classes["A"];
-        aType.Fields["field"].Should().BeOfType<Z42PrimType>(
+        aType.Fields["field"].Type.Should().BeOfType<Z42PrimType>(
             because: "真正未知的类型名仍降级为 Z42PrimType；TypeChecker 后续报错")
             .Which.Name.Should().Be("NoSuchType");
     }
@@ -122,7 +122,7 @@ public sealed class ImportedSymbolLoaderTests
         loaded.Interfaces.Should().ContainKey("IEnumerable");
         var ie = loaded.Interfaces["IEnumerable"];
         ie.Methods.Should().ContainKey("GetEnumerator");
-        ie.Methods["GetEnumerator"].Ret.Should().BeOfType<Z42InterfaceType>(
+        ie.Methods["GetEnumerator"].Signature.Ret.Should().BeOfType<Z42InterfaceType>(
             because: "接口间 forward-reference 必须解析为 Z42InterfaceType")
             .Which.Name.Should().Be("IEnumerator");
     }
@@ -141,7 +141,7 @@ public sealed class ImportedSymbolLoaderTests
 
         loaded.Classes.Should().ContainKey("A");
         var aType = loaded.Classes["A"];
-        aType.Fields["value"].Should().BeOfType<Z42GenericParamType>(
+        aType.Fields["value"].Type.Should().BeOfType<Z42GenericParamType>(
             because: "在 generic class 内部，同名 T 应作为 generic param，不被 class T 覆盖")
             .Which.Name.Should().Be("T");
     }
@@ -234,7 +234,7 @@ public sealed class ImportedSymbolLoaderTests
 
         var loaded = ImportedSymbolLoader.Load(new[] { coreMod, greetMod }, new[] { "Core", "Greet" });
 
-        loaded.Classes["Robot"].Methods["Hello"].Ret.Should().Be(Z42Type.String,
+        loaded.Classes["Robot"].Methods["Hello"].Signature.Ret.Should().Be(Z42Type.String,
             because: "Robot 已声明 Hello —— impl 的同名方法被 first-wins 跳过");
     }
 

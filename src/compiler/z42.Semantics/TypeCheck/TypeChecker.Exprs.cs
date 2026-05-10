@@ -106,8 +106,8 @@ public sealed partial class TypeChecker
                 Z42Type memberType = nc.Member is "Length" or "Count" ? Z42Type.Int : Z42Type.Unknown;
                 if (target.Type is Z42ClassType nct)
                 {
-                    if (nct.Fields.TryGetValue(nc.Member, out var ft))        memberType = ft;
-                    else if (nct.Methods.TryGetValue(nc.Member, out var mt2)) memberType = mt2.Ret;
+                    if (nct.Fields.TryGetValue(nc.Member, out var fSym))        memberType = fSym.Type;
+                    else if (nct.Methods.TryGetValue(nc.Member, out var mtSym)) memberType = mtSym.Signature.Ret;
                 }
                 return new BoundNullConditional(target, nc.Member, memberType, nc.Span);
             }

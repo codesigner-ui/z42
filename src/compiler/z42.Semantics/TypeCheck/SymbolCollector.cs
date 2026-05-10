@@ -187,7 +187,7 @@ public sealed partial class SymbolCollector : ISymbolBinder
                         list.Add(it);
                     else
                         list.Add(new Z42InterfaceType(ifaceName,
-                            new Dictionary<string, Z42FuncType>()));
+                            new Dictionary<string, Symbols.IMethodSymbol>()));
                 _classInterfaces[name] = list;
             }
     }
@@ -214,8 +214,10 @@ public sealed partial class SymbolCollector : ISymbolBinder
             // resolves to Z42GenericParamType instead of falling back to Z42PrimType("T").
             if (iface.TypeParams is { Count: > 0 } tps)
                 _activeTypeParams = new HashSet<string>(tps);
-            var methods       = new Dictionary<string, Z42FuncType>();
+            var methods       = new Dictionary<string, Symbols.IMethodSymbol>();
             var staticMembers = new Dictionary<string, Z42StaticMember>();
+            // Track method symbols for ContainingType fix-up after Z42InterfaceType is built.
+            var ifaceMethodSyms = new List<Symbols.MethodSymbol>();
             foreach (var m in iface.Methods)
             {
                 var sig = BuildFuncSignature(m.Params, ResolveType(m.ReturnType));
@@ -233,13 +235,27 @@ public sealed partial class SymbolCollector : ISymbolBinder
                 }
                 else
                 {
-                    methods[m.Name] = sig;
+                    // Interface instance methods become MethodSymbol with Decl=null
+                    // (interface MethodSignature is not a FunctionDecl); IsAbstract flag
+                    // derived from m.Body == null.
+                    var mods = m.IsVirtual ? FunctionModifiers.Virtual
+                             : m.Body is null ? FunctionModifiers.Abstract
+                             : FunctionModifiers.None;
+                    var sym = new Symbols.MethodSymbol(m.Name, containingType: null, sig,
+                                                        mods, m.Span,
+                                                        Visibility.Public,
+                                                        decl: null, testAttributes: null);
+                    methods[m.Name] = sym;
+                    ifaceMethodSyms.Add(sym);
                 }
             }
             var ifaceTpList = iface.TypeParams is { Count: > 0 } iTps ? iTps.AsReadOnly() : null;
-            _interfaces[iface.Name] = new Z42InterfaceType(iface.Name, methods,
+            var ifaceType = new Z42InterfaceType(iface.Name, methods,
                 StaticMembers: staticMembers.Count > 0 ? staticMembers : null,
                 TypeParams:    ifaceTpList);
+            // Two-phase fix-up: assign ContainingType to each interface method symbol.
+            foreach (var ms in ifaceMethodSyms) ms.ContainingType = ifaceType;
+            _interfaces[iface.Name] = ifaceType;
             _activeTypeParams = null;
         }
     }

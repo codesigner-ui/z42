@@ -1,5 +1,6 @@
 using Z42.Core;
 using Z42.IR;
+using Z42.Semantics.Symbols;
 using Z42.Syntax.Parser;
 
 namespace Z42.Semantics.TypeCheck;
@@ -17,10 +18,10 @@ public static partial class ImportedSymbolLoader
         IReadOnlyDictionary<string, DelegateInfo>?    delegates = null)
     {
         // Cast back to Dictionary<> — BuildClassSkeleton 创建的是 mutable Dictionary.
-        var fields        = (Dictionary<string, Z42Type>)skeleton.Fields;
-        var staticFields  = (Dictionary<string, Z42Type>)skeleton.StaticFields;
-        var methods       = (Dictionary<string, Z42FuncType>)skeleton.Methods;
-        var staticMethods = (Dictionary<string, Z42FuncType>)skeleton.StaticMethods;
+        var fields        = (Dictionary<string, IFieldSymbol>)skeleton.Fields;
+        var staticFields  = (Dictionary<string, IFieldSymbol>)skeleton.StaticFields;
+        var methods       = (Dictionary<string, IMethodSymbol>)skeleton.Methods;
+        var staticMethods = (Dictionary<string, IMethodSymbol>)skeleton.StaticMethods;
         var memberVis     = (Dictionary<string, Visibility>)skeleton.MemberVisibility;
         // L3 generic: propagate class's TypeParams so field/method signatures
         // containing `T` restore as Z42GenericParamType (not Z42PrimType("T")).
@@ -30,20 +31,38 @@ public static partial class ImportedSymbolLoader
         foreach (var f in cls.Fields)
         {
             var ft = ResolveTypeName(f.TypeName, tpSet, classes, interfaces, delegates);
-            if (f.IsStatic) staticFields[f.Name] = ft;
-            else            fields[f.Name]        = ft;
-            memberVis[f.Name] = ParseVisibility(f.Visibility);
+            var vis = ParseVisibility(f.Visibility);
+            var sym = new FieldSymbol(f.Name, skeleton, ft, f.IsStatic,
+                                       default(Z42.Core.Text.Span), vis,
+                                       isEvent: false, decl: null);
+            if (f.IsStatic) staticFields[f.Name] = sym;
+            else            fields[f.Name]       = sym;
+            memberVis[f.Name] = vis;
         }
 
         foreach (var m in cls.Methods)
         {
             var sig = RebuildFuncType(m.Params, m.ReturnType, m.MinArgCount, tpSet,
                 classes, interfaces, delegates);
-            if (m.IsStatic) staticMethods[m.Name] = sig;
-            else            methods[m.Name]        = sig;
+            var vis = ParseVisibility(m.Visibility);
+            var mods = ImportedModifiers(m);
+            var sym = new MethodSymbol(m.Name, skeleton, sig, mods,
+                                        default(Z42.Core.Text.Span), vis,
+                                        decl: null, testAttributes: null);
+            if (m.IsStatic) staticMethods[m.Name] = sym;
+            else            methods[m.Name]       = sym;
             string visKey = m.Name.Contains('$') ? m.Name[..m.Name.IndexOf('$')] : m.Name;
-            memberVis.TryAdd(visKey, ParseVisibility(m.Visibility));
+            memberVis.TryAdd(visKey, vis);
         }
+    }
+
+    private static FunctionModifiers ImportedModifiers(ExportedMethodDef m)
+    {
+        var mods = FunctionModifiers.None;
+        if (m.IsStatic)   mods |= FunctionModifiers.Static;
+        if (m.IsVirtual)  mods |= FunctionModifiers.Virtual;
+        if (m.IsAbstract) mods |= FunctionModifiers.Abstract;
+        return mods;
     }
 
     /// 接口的 StaticMembers 字段在 Z42InterfaceType 中是 nullable，骨架时为 null。
@@ -62,7 +81,7 @@ public static partial class ImportedSymbolLoader
         // Z42GenericParamType on the consumer side rather than `Z42PrimType("T")`.
         var tpSet = iface.TypeParams is { Count: > 0 } tps
             ? new HashSet<string>(tps) : null;
-        var methods       = (Dictionary<string, Z42FuncType>)skeleton.Methods;
+        var methods       = (Dictionary<string, IMethodSymbol>)skeleton.Methods;
         Dictionary<string, Z42StaticMember>? staticMembers = null;
         foreach (var m in iface.Methods)
         {
@@ -80,7 +99,12 @@ public static partial class ImportedSymbolLoader
             }
             else
             {
-                methods[m.Name] = sig;
+                var sym = new MethodSymbol(m.Name, skeleton, sig,
+                                            ImportedModifiers(m),
+                                            default(Z42.Core.Text.Span),
+                                            Visibility.Public,
+                                            decl: null, testAttributes: null);
+                methods[m.Name] = sym;
             }
         }
         // 如果没 static members，骨架本身已被填充，直接返回；否则替换实例（带 StaticMembers）。

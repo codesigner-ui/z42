@@ -3,6 +3,7 @@ using Xunit;
 using Z42.Core.Diagnostics;
 using Z42.IR;
 using Z42.Project;
+using Z42.Semantics.Symbols;
 using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
@@ -65,15 +66,18 @@ public sealed class TsigConstraintsTests
     {
         // Build synthetic imported symbols: `Box<T> where T: IEquatable`.
         var ieq = new Z42InterfaceType("IEquatable",
-            new Dictionary<string, Z42FuncType> {
-                ["Equals"] = new Z42FuncType([], Z42Type.Bool)
+            new Dictionary<string, IMethodSymbol> {
+                ["Equals"] = new MethodSymbol("Equals", null,
+                    new Z42FuncType([], Z42Type.Bool),
+                    FunctionModifiers.None, default, Visibility.Public,
+                    decl: null, testAttributes: null)
             });
         var box = new Z42ClassType(
             Name: "Box",
-            Fields: new Dictionary<string, Z42Type>(),
-            Methods: new Dictionary<string, Z42FuncType>(),
-            StaticFields: new Dictionary<string, Z42Type>(),
-            StaticMethods: new Dictionary<string, Z42FuncType>(),
+            Fields: new Dictionary<string, IFieldSymbol>(),
+            Methods: new Dictionary<string, IMethodSymbol>(),
+            StaticFields: new Dictionary<string, IFieldSymbol>(),
+            StaticMethods: new Dictionary<string, IMethodSymbol>(),
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName: null,
             TypeParams: new List<string> { "T" });
@@ -121,15 +125,18 @@ void Main() {
     public void ImportedConstraint_AcceptsConformingTypeArg()
     {
         var ieq = new Z42InterfaceType("IEquatable",
-            new Dictionary<string, Z42FuncType> {
-                ["Equals"] = new Z42FuncType([], Z42Type.Bool)
+            new Dictionary<string, IMethodSymbol> {
+                ["Equals"] = new MethodSymbol("Equals", null,
+                    new Z42FuncType([], Z42Type.Bool),
+                    FunctionModifiers.None, default, Visibility.Public,
+                    decl: null, testAttributes: null)
             });
         var box = new Z42ClassType(
             Name: "Box",
-            Fields: new Dictionary<string, Z42Type>(),
-            Methods: new Dictionary<string, Z42FuncType>(),
-            StaticFields: new Dictionary<string, Z42Type>(),
-            StaticMethods: new Dictionary<string, Z42FuncType>(),
+            Fields: new Dictionary<string, IFieldSymbol>(),
+            Methods: new Dictionary<string, IMethodSymbol>(),
+            StaticFields: new Dictionary<string, IFieldSymbol>(),
+            StaticMethods: new Dictionary<string, IMethodSymbol>(),
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName: null,
             TypeParams: new List<string> { "T" });
@@ -138,10 +145,10 @@ void Main() {
         // `PrimitiveImplementsInterface` accepts `int` as conforming.
         var intStruct = new Z42ClassType(
             Name: "int",
-            Fields: new Dictionary<string, Z42Type>(),
-            Methods: new Dictionary<string, Z42FuncType>(),
-            StaticFields: new Dictionary<string, Z42Type>(),
-            StaticMethods: new Dictionary<string, Z42FuncType>(),
+            Fields: new Dictionary<string, IFieldSymbol>(),
+            Methods: new Dictionary<string, IMethodSymbol>(),
+            StaticFields: new Dictionary<string, IFieldSymbol>(),
+            StaticMethods: new Dictionary<string, IMethodSymbol>(),
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName: null,
             IsStruct: true);
