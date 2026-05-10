@@ -291,6 +291,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 完整 JIT 指令映射 + 性能基准 | jit.md 待补 | [runtime/jit.md](design/runtime/jit.md) |
 | GC handle Phase 3+ | Pinned / WeakTrackResurrection / 多线程 barrier | [runtime/gc-handle.md](design/runtime/gc-handle.md) |
 | stdlib P0–P3 缺失包 | time / fs / threading / encoding / net | [stdlib/roadmap.md](design/stdlib/roadmap.md) |
+| split-debug-symbols 退化 trace ip+build_id | line==0 时帧追加 `+0x<ip> [build:<8hex>]`；需 VmFrame 追踪 PC | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
+| `z42c symbolicate` 离线工具 | 把 `.zsym` 应用到 crash trace 还原 file:line:col | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
+| sidecar lazy / mmap 加载 | 启动延迟敏感场景的优化路径 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
+| sidecar 跨目录搜索 | debuginfod 风格 + 环境变量配置 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
+| `Std.Reflection.Symbolicate` 公开 API | 程序内触发符号化 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 
 ### 实施期延后（D-* 系列）
 

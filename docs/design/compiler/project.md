@@ -177,10 +177,12 @@ out_dir     = "dist"   # 产物目录，默认 "dist/"
 incremental = true     # 启用增量编译，默认 true
 
 [profile.debug]
-pack = false           # debug build → indexed zpkg（.cache/*.zbc + dist/<name>.zpkg）
+pack  = false          # debug build → indexed zpkg（.cache/*.zbc + dist/<name>.zpkg）
+strip = false          # 默认保留 DBUG 内嵌主 zpkg / cache zbc
 
 [profile.release]
-pack = true            # release build → packed zpkg（单文件，dist/<name>.zpkg）
+pack  = true           # release build → packed zpkg（单文件，dist/<name>.zpkg）
+strip = true           # 默认剥离 DBUG → 配套 <name>.zsym sidecar
 ```
 
 **`[build]` 字段说明：**
@@ -200,12 +202,23 @@ pack = true            # release build → packed zpkg（单文件，dist/<name>
 
 **内置默认值（未显式配置时）：** `debug` → `false`（indexed），`release` → `true`（packed）
 
+**`strip` 字段说明（2026-05-10 split-debug-symbols）：**
+
+控制 DBUG section 的产出位置。strip=true 时主 `<name>.zpkg` 不含 DBUG body，配套产出 `<name>.zsym` sidecar（zpkg 0.4 `SymOnly` flag，含 MDBG + BLID）。runtime 加载主 zpkg 后自动探测同目录 sidecar 并按 build_id 配对合并，缺失或不匹配时静默退化（trace 维持函数名 + 签名）。
+
+| 层次 | 位置 | 说明 |
+|------|------|------|
+| 最高 | `--strip-symbols=true\|false` | CLI override |
+| 中 | `[profile.debug/release].strip` | toml profile 覆盖 |
+| 最低 | 内置默认 | `debug` → `false`，`release` → `true` |
+
 **产物输出：**
 
-| pack 值 | 产物 | 说明 |
-|---------|------|------|
-| `false` | `dist/<name>.zpkg` (`mode=indexed`) + `.cache/*.zbc` | 开发态，支持增量更新 |
-| `true`  | `dist/<name>.zpkg` (`mode=packed`) | 发布态，单文件自包含 |
+| pack 值 | strip 值 | 产物 | 说明 |
+|---------|---------|------|------|
+| `false` | `false` | `dist/<name>.zpkg` (indexed) + `.cache/*.zbc` | 开发态，DBUG 内嵌 |
+| `true`  | `false` | `dist/<name>.zpkg` (packed)                  | 发布态，DBUG 内嵌（便于现场 debug）|
+| `true`  | `true`  | `dist/<name>.zpkg` + `dist/<name>.zsym`      | 发布态，最小体积，离线可符号化 |
 
 **增量编译工作方式（C5 落地，2026-04-27）：**
 

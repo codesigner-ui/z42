@@ -56,6 +56,8 @@ z42vm <file>
   │
   ├── 5.1c 加载 user artifact (.zbc / .zpkg)
   │      → user_artifact.module + dependencies + import_namespaces
+  │      → probe `<basename>.zsym` 同目录；存在且 build_id 匹配 →
+  │        合并 sidecar DBUG 到 per-module funcs（详见下方 sidecar 章节）
   │
   ├── 5.1d 依赖加载策略
   │      interp: 纯懒加载（build_declared_candidates 填充 LazyLoader）
@@ -71,6 +73,58 @@ z42vm <file>
 ```
 
 ---
+
+## Sidecar 调试符号加载（2026-05-10 split-debug-symbols）
+
+### 加载策略：eager + 同步
+
+`loader::load_zbc` / `load_zpkg` 加载主 artifact 完成后**立即**探测同目录 `<basename>.zsym` 并按 BLID 校验合并。设计选择：
+
+| 选项 | 选择 | 理由 |
+|------|------|------|
+| eager vs lazy | **eager** | 异常路径（trace 构造）必须零 IO；startup 开销可控（典型 sidecar < 100KB） |
+| sidecar 路径 | `<basename>.zsym` 同目录 | 不需要 search path 概念；CI/CD 部署单一目录即可 |
+| BLID 算法 | BLAKE3-128 截 16B + payload 零填 hash | Rust/C# 生态成熟；payload 零填使 sidecar 与 main 字节同步 |
+| BLID 不匹配 | warn + ignore，加载继续 | 调试符号缺失不应让程序无法启动 |
+
+### 合并机制：直接在已加载的 `Module` 上 mutate
+
+主 zpkg/zbc 解析返回 `Vec<(Module, namespace)>` 后立刻 mutate per-module Function：
+
+```rust
+for ((module, ns), (sym_ns, fns)) in module_pairs.iter_mut().zip(sidecar.modules) {
+    for (i, fb) in fns.into_iter().enumerate() {
+        if !fb.line_table.is_empty() { module.functions[i].line_table = fb.line_table; }
+        if !fb.local_vars.is_empty() { module.functions[i].local_vars = fb.local_vars; }
+    }
+}
+```
+
+不用 `RefCell` / `OnceCell` 包装 `line_table` — sidecar merge 发生在 `merge_modules` 之前的可变所有权窗口内。这避免引入运行期 borrow check 开销。
+
+### 与 `merge_modules` 的顺序
+
+`load_zpkg_bytes_with_sidecar` 调用顺序：
+
+1. `read_zpkg_modules(raw)` → `Vec<(Module, ns)>` 拥有可变 Module
+2. `apply_zpkg_sidecar(&mut module_pairs, raw, sym, sym_path)` — 把 sidecar DBUG 合入 per-module funcs
+3. `merge_modules(modules)` — 命名空间扁平化 + 函数表合并
+4. `build_type_registry` / `verify_constraints` / `build_func_index`
+
+为什么 sidecar 在 merge 之前：sidecar 的 MDBG section 按 module namespace 索引，merge 后 namespace 信息丢失到扁平化 IR；提前 merge 会让 sidecar 的"按 ns 配对"丢失对应关系。
+
+### 容错路径
+
+| 情况 | 行为 |
+|------|------|
+| sidecar 文件不存在 | 静默继续；trace 退化为 `at <FQN>(<sig>)` |
+| sidecar 文件 magic 错 / 缺 BLID | `tracing::warn` + 忽略，加载继续 |
+| BLID 不匹配 | `tracing::warn` 显示 `main=<8hex>` / `sidecar=<8hex>` + 忽略 |
+| sidecar module 数 ≠ main module 数 | warn + 忽略 |
+| 单个 module 内 function 数不一致 | warn + 跳过该 module，其他 module 仍合并 |
+| Module 加载主 zbc / zpkg 被发现 `SymOnly` flag | `bail!` —— sidecar 不可作为主模块加载 |
+
+> **实现位置**：[src/runtime/src/metadata/loader.rs](../../../src/runtime/src/metadata/loader.rs) `apply_zbc_sidecar` / `apply_zpkg_sidecar`；解析在 [zbc_reader.rs](../../../src/runtime/src/metadata/zbc_reader.rs) `parse_zbc_sidecar` / `parse_zpkg_sidecar`。
 
 ## Embedding Entry（2026-05-10 add-embedding-api H1）
 

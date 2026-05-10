@@ -247,20 +247,25 @@ Byte 4+:  ...    — 按操作码定义的额外操作数字（u8 / u16 / u32 / 
 
 ```
 [4]  magic:         0x5A 0x42 0x43 0x00   ("ZBC\0")
-[1]  version_major
-[1]  version_minor
-[2]  flags          bit0=exported_entry, bit1=has_debug
-[4]  section_count
+[2]  version_major  当前 1
+[2]  version_minor  当前 3 (2026-05-10 split-debug-symbols Phase 4: SIGS 携带 per-param 类型名)
+[2]  flags          bit0=Stripped, bit1=HasDebug, bit2=SymOnly
+[2]  section_count
 [4]  reserved
 ```
 
-### Section 目录（每项 16 字节）
+**Flags 语义**：
+- `Stripped (0x01)` — `.cache/*.zbc` 模式，缺 STRS/TYPE/SIGS/EXPT/IMPT，仅供增量编译与 zpkg 索引使用
+- `HasDebug (0x02)` — 文件含 DBUG section（line table + 局部变量名）
+- `SymOnly (0x04)` — debug-symbol sidecar（`.zsym`），不可作为主模块加载，需与 build_id 匹配的主 zbc 配对
+
+### Section 目录（每项 12 字节）
 
 ```
-[4]  tag            STRP / TYPE / FUNC / EXPO / IMPO / EXCT / META
+[4]  tag            NSPC / STRS / BSTR / TYPE / SIGS / IMPT / EXPT
+                  / FUNC / DBUG / TIDX / FRCS / BLID
 [4]  offset         从文件头起的字节偏移
 [4]  size           section 字节长度
-[4]  flags
 ```
 
 ### STRP（String Pool）
@@ -321,14 +326,40 @@ data:    UTF-8 字节流（紧密排列，无 NUL 分隔）
 每项: { [4] module_str_idx, [4] name_str_idx, [1] kind }
 ```
 
-### META（调试信息，可选）
+### DBUG（调试信息；可选 ；1.2 重组、1.3 不变）
+
+2026-05-10 split-debug-symbols 把 LineTable 从 FUNC body 抽出并入 DBUG，使 DBUG 成为 z42 调试信息的唯一容器：
 
 ```
-[4]  source_file_str_idx
-[32] source_sha256
-每个函数可附加:
-  指令偏移 → 源文件行列映射表（压缩 delta 编码）
+[4]  func_count                    // 必须等于 FUNC.func_count（一对一对齐）
+每个函数:
+  [2]  line_count
+  line_table: line_count × {
+    [2] block_idx
+    [2] instr_idx
+    [4] line
+    [4] file_str_idx               // 0xFFFFFFFF = 无（line 但跨文件不可定位）
+    [4] column                     // 1-based；0 表示未知（trace 退化为 file:line）
+  }
+  [2]  var_count                   // 局部变量名表（debug 模式）
+  var_table:  var_count × { [4] name_str_idx, [2] reg_id }
 ```
+
+**触发条件**：模块任何函数 LineTable 或 LocalVarTable 非空即写。Stripped 模式（`.cache/*.zbc`）也写 DBUG，保证 dev workflow 异常 trace 显示 file:line:col。Strip 模式（release）剥离 DBUG → 移迁到 sidecar zsym。
+
+### BLID（Build ID；1.2 split-debug-symbols；可选；总是最后一个 section）
+
+```
+[16] BLAKE3-128(zbc with BLID payload zeroed)
+```
+
+写入时机：strip 模式产 zbc 时追加 BLID section 为最后一个，初始 16 字节占位 0，AssembleFile 完成后回填 BLAKE3-128。sidecar 共享相同字节，runtime 据此配对。
+
+### sidecar zbc（`.zsym`）
+
+`ZbcFlags.SymOnly = 0x04` 标识。仅含 NSPC + STRS（debug 字符串子集）+ DBUG + BLID。不可作为主模块加载（reader 立即 bail）。runtime 加载主 zbc/zpkg 后探测同目录 `<name>.zsym`，build_id 匹配则把 DBUG 合入 FuncBody。
+
+> **历史注**：早期文档将 META section 描述为"调试信息"，与代码不符（META 实际存模块名/版本/entry）。2026-05-10 split-debug-symbols 统一为 DBUG 单一调试容器，文档同步至此。
 
 ### TIDX（Test Index，可选；spec R1）
 

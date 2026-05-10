@@ -19,9 +19,10 @@
 ### BinaryFormat/
 | 文件 | 职责 |
 |------|------|
-| `Opcodes.cs` | 字节码指令集定义（`0x00`–`0x8F`，约 40 条） |
-| `ZbcWriter.cs` | `IrModule` → `.zbc` 二进制序列化 |
-| `ZbcReader.cs` | `.zbc` → `IrModule` 反序列化 |
+| `Opcodes.cs` | 字节码指令集定义（`0x00`–`0x8F`，约 40 条）+ `ZbcFlags` (Stripped/HasDebug/SymOnly) + `SectionTags` (含 1.2 BLID / 1.3 DBUG 重组后形态) |
+| `ZbcWriter.cs` | `IrModule` → `.zbc` 二进制序列化；`WriteWithSidecar(stripSymbols)` 拆分主 zbc + sidecar |
+| `ZbcReader.cs` | `.zbc` → `IrModule` 反序列化；`ReadSidecar` / `ApplyDebugInfo` / `ReadBuildId` 用于 sidecar 加载 |
+| `BuildId.cs` | BLAKE3-128 build_id (1.2 split-debug-symbols) — main zbc 与 `.zsym` sidecar 通过 BLID 字节配对 |
 | `ZasmWriter.cs` | `IrModule` → `.zasm` 文本汇编（调试用） |
 
 ## 入口点
