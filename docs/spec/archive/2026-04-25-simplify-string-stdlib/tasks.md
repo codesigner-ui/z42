@@ -46,7 +46,7 @@
 - [x] 4.1 更新 `src/libraries/z42.core/README.md`：反映 String.z42 extern 缩减 + 新增 Char 方法
 - [x] 4.2 更新 `docs/roadmap.md`：如有 "extern 预算削减" 进度项或 Script-First 推进追踪
 - [x] 4.3 更新 `docs/features.md`（若有关于 "stdlib extern 预算" 设计决策需记录）
-- [x] 4.4 若 Substring / IndexOf 语义统一到 char 需要明文记录，更新 `docs/design/language-overview.md` 或新建 `docs/design/stdlib-string.md`
+- [x] 4.4 若 Substring / IndexOf 语义统一到 char 需要明文记录，更新 `docs/design/language/language-overview.md` 或新建 `docs/design/stdlib-string.md`
 - [x] 4.5 归档：`docs/spec/changes/simplify-string-stdlib/` → `docs/spec/archive/2026-04-23-simplify-string-stdlib/`
 - [x] 4.6 自动提交：`git add src/ docs/ .claude/ spec/ *.md && git commit && git push`
 

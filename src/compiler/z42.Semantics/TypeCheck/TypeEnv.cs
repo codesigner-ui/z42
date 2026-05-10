@@ -16,7 +16,7 @@ internal sealed class TypeEnv
     private readonly IReadOnlySet<string>                           _importedClassNames;
     private readonly Dictionary<string, Z42Type>                    _vars = new();
     /// Local function signatures defined in this scope. Lexically scoped: a
-    /// `LookupLocalFunc` walks the parent chain. See docs/design/closure.md §3.4
+    /// `LookupLocalFunc` walks the parent chain. See docs/design/language/closure.md §3.4
     /// + impl-local-fn-l2 design Decision 3.
     private readonly Dictionary<string, Z42FuncType>                _localFuncs = new();
 
@@ -101,7 +101,7 @@ internal sealed class TypeEnv
     /// (i.e. nearer than) `boundary`. Returns false if walking up reaches
     /// `boundary` without finding the name (which means the name lives at
     /// the boundary or above — i.e. it's a capture).
-    /// See docs/design/closure.md §10 + impl-local-fn-l2 design.
+    /// See docs/design/language/closure.md §10 + impl-local-fn-l2 design.
     internal bool ResolvesVarBelowBoundary(string name, TypeEnv boundary)
     {
         if (ReferenceEquals(this, boundary)) return false;

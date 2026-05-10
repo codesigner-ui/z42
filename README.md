@@ -69,12 +69,12 @@ Start here based on what you want to know:
 | I want to... | Read this |
 |--------------|-----------|
 | **Understand z42's design** | [`docs/design/philosophy.md`](docs/design/philosophy.md) |
-| **See language syntax** | [`docs/design/language-overview.md`](docs/design/language-overview.md) |
+| **See language syntax** | [`docs/design/language/language-overview.md`](docs/design/language/language-overview.md) |
 | **Learn feature specs** | [`docs/features.md`](docs/features.md) |
-| **Understand bytecode/IR** | [`docs/design/ir.md`](docs/design/ir.md) |
-| **Understand execution modes** | [`docs/design/execution-model.md`](docs/design/execution-model.md) |
-| **Learn native interop** | [`docs/design/interop.md`](docs/design/interop.md) |
-| **Understand hot reload** | [`docs/design/hot-reload.md`](docs/design/hot-reload.md) |
+| **Understand bytecode/IR** | [`docs/design/runtime/ir.md`](docs/design/runtime/ir.md) |
+| **Understand execution modes** | [`docs/design/runtime/execution-model.md`](docs/design/runtime/execution-model.md) |
+| **Learn native interop** | [`docs/design/language/interop.md`](docs/design/language/interop.md) |
+| **Understand hot reload** | [`docs/design/runtime/hot-reload.md`](docs/design/runtime/hot-reload.md) |
 | **See implementation progress** | [`docs/roadmap.md`](docs/roadmap.md) |
 
 ---

@@ -10,7 +10,7 @@
 - `golden/` 子目录是历史命名，无功能含义，徒增路径深度
 - dotnet/runtime 模式（src/tests/{Exceptions,JIT,GC,Loader,...}）已被工业级项目验证
 
-**文档影响**：[docs/design/testing.md](docs/design/testing.md) 测试目录章节重写
+**文档影响**：[docs/design/testing/testing.md](docs/design/testing/testing.md) 测试目录章节重写
 
 ---
 
@@ -112,7 +112,7 @@ stdlib-bound (移到 libraries):
 
 ## 阶段 4: 文档同步
 
-- [x] 4.1 重写 [docs/design/testing.md](docs/design/testing.md) 测试目录章节（dotnet/runtime 风格）
+- [x] 4.1 重写 [docs/design/testing/testing.md](docs/design/testing/testing.md) 测试目录章节（dotnet/runtime 风格）
 - [x] 4.2 更新 [.claude/rules/code-organization.md](.claude/rules/code-organization.md) 测试目录约定
 - [x] 4.3 更新 [src/runtime/tests/](src/runtime/tests/) 之外的所有 README 引用（cross-zpkg/README.md 已就地搬）
 

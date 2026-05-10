@@ -44,7 +44,7 @@
 
 ### 阶段 6: 文档同步 ✅
 - [x] `gc/README.md` —— 已知限制段移除 corelib 直构条目，加 2026-04-29 完成注释
-- [x] `docs/design/vm-architecture.md` —— "GC 子系统" 段同步移除 + Phase 路线表 Phase 1.5 状态改 ✅
+- [x] `docs/design/runtime/vm-architecture.md` —— "GC 子系统" 段同步移除 + Phase 路线表 Phase 1.5 状态改 ✅
 - [x] `gc/mod.rs` —— Phase 路线表 Phase 1.5 状态改"已落地"
 
 ### 阶段 7: 验证 ✅

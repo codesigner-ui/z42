@@ -27,4 +27,4 @@
 - [x] 4.2 dotnet build && cargo build 成功
 - [x] 4.3 dotnet test: 386 passed
 - [x] 4.4 ./scripts/test-vm.sh: 96 passed（interp 48 + jit 48）
-- [x] 4.5 docs/design/language-overview.md 更新（隐式 Object 继承机制描述）
+- [x] 4.5 docs/design/language/language-overview.md 更新（隐式 Object 继承机制描述）

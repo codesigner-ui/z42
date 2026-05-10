@@ -242,7 +242,7 @@ feature-matrix:
 
 ### Cargo features 文档
 
-[docs/design/cross-platform.md](docs/design/cross-platform.md) 主要内容：
+[docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) 主要内容：
 
 - 平台-feature 矩阵（同父 spec design.md Decision 8）
 - features 完整列表与含义

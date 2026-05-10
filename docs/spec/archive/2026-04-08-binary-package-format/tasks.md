@@ -4,7 +4,7 @@
 
 **变更说明：** zbc 升级到 v0.4（Section Directory + is_static in SIGS），zpkg 新建 v0.1 binary format（ZPK_MAGIC + unified STRS + 跨模块字符串复用）。Runtime 只读 binary，JSON 仅用于 disasm 调试输出。
 
-**文档影响：** docs/design/ir.md（已更新）
+**文档影响：** docs/design/runtime/ir.md（已更新）
 
 ## 进度概览
 - [x] 阶段 1: C# 编译器端
@@ -40,4 +40,4 @@
 - [x] 4.2 dotnet test — 381 passed
 - [x] 4.3 build-stdlib.sh — 5 succeeded
 - [x] 4.4 test-vm.sh interp — 43 passed, 0 failed
-- [x] 4.5 docs/design/ir.md — zbc v0.4 + SIGS is_static + zpkg v0.1 sections 全部更新
+- [x] 4.5 docs/design/runtime/ir.md — zbc v0.4 + SIGS is_static + zpkg v0.1 sections 全部更新

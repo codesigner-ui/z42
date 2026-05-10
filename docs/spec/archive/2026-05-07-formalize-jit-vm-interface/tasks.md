@@ -46,7 +46,7 @@
 **文档影响**:
 - `docs/review.md` — 路线图 §VM 线 `formalize-jit-vm-interface` 状态 📋 → 🟢；同时 §1.1 提及 `helpers_object.rs` 超限的描述应该补一笔（审查时漏了）
 - `src/runtime/src/jit/README.md` — 同步核心文件表与依赖关系
-- `docs/design/vm-architecture.md` — **加一段**记录 "JIT/EE helper 边界" 设计（registry + version 模式），按 [CLAUDE.md](../../../.claude/CLAUDE.md) "实现原理文档规则" 必须落地
+- `docs/design/runtime/vm-architecture.md` — **加一段**记录 "JIT/EE helper 边界" 设计（registry + version 模式），按 [CLAUDE.md](../../../.claude/CLAUDE.md) "实现原理文档规则" 必须落地
 
 ---
 
@@ -75,7 +75,7 @@
 | `src/runtime/src/jit/translate.rs` | `declare_helpers` 改为委托 `helpers::registry::declare_imports(jit)`，保留对外签名 |
 | `src/runtime/src/jit/helpers.rs` | 保留 `JitFn` / `take_exception_error` / `set_exception` 等非 helper 工具（仅 ~100 LOC，不动） |
 | `src/runtime/src/jit/README.md` | 更新核心文件表（同步规则） |
-| `docs/design/vm-architecture.md` | 增加"JIT/EE helper 边界"章节（registry + version 模式） |
+| `docs/design/runtime/vm-architecture.md` | 增加"JIT/EE helper 边界"章节（registry + version 模式） |
 | `docs/review.md` | 路线图状态 + §1.1 补 helpers_object 注记 |
 
 ### DELETE
@@ -190,7 +190,7 @@ trait object dispatch 会带来间接调用开销，且 helper 已经走 craneli
 
 ### 阶段 6: 文档同步
 - [ ] 6.1 `src/runtime/src/jit/README.md` 更新核心文件表（helpers/ 子目录 + registry）
-- [ ] 6.2 `docs/design/vm-architecture.md` 新增 "JIT/EE helper 边界" 段（registry + version 模式 + 与 CoreCLR ICorJitInfo 对照）
+- [ ] 6.2 `docs/design/runtime/vm-architecture.md` 新增 "JIT/EE helper 边界" 段（registry + version 模式 + 与 CoreCLR ICorJitInfo 对照）
 - [ ] 6.3 `docs/review.md` 路线图状态 📋 → 🟢；§1.1 补 helpers_object 注记（顺带修正初版漏点）
 
 ### 阶段 7: 归档 + 提交

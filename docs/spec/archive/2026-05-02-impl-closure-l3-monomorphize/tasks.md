@@ -44,8 +44,8 @@
 - [x] 4.4 `./scripts/test-vm.sh` 全绿（基线 +1×2 modes）
 - [x] 4.5 spec scenarios 逐条对应实现位置确认
 - [x] 4.6 文档同步：
-    - `docs/design/closure.md` 新增 §"单态化（impl-closure-l3-monomorphize）"
-    - `docs/design/compiler-architecture.md` 在"BoundExpr 设计权衡"里加一句 ResolvedFuncName 来源
+    - `docs/design/language/closure.md` 新增 §"单态化（impl-closure-l3-monomorphize）"
+    - `docs/design/compiler/compiler-architecture.md` 在"BoundExpr 设计权衡"里加一句 ResolvedFuncName 来源
     - `docs/roadmap.md` L3-C2 进度表更新（mono ✅）
 - [x] 4.7 移动 `docs/spec/changes/impl-closure-l3-monomorphize/` → `docs/spec/archive/2026-05-02-impl-closure-l3-monomorphize/`
 - [x] 4.8 commit + push（自动）

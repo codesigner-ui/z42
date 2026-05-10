@@ -109,7 +109,7 @@ public sealed record BoundThrow(BoundExpr Value, Span Span) : BoundStmt(Span);
 /// IrGen with name `<Owner>__<LocalName>`. `Captures` lists outer-scope variables
 /// referenced in the body — empty for the L2 no-capture path (lifts via direct
 /// `Call`); non-empty triggers the L3 `MkClos` heap-erasure path.
-/// See docs/design/closure.md §3.4 + impl-closure-l3-core.
+/// See docs/design/language/closure.md §3.4 + impl-closure-l3-core.
 public sealed record BoundLocalFunction(
     string Name,
     IReadOnlyList<string> ParamNames,

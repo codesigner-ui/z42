@@ -58,8 +58,8 @@
 - [ ] 4.2 [src/tests/types/array_get_type/](../../src/tests/types/array_get_type/) NEW golden — `int[] xs = ...; xs.GetType().__fullName` == "Std.Array"
 - [ ] 4.3 [src/tests/types/array_clone/](../../src/tests/types/array_clone/) NEW golden — 浅拷贝原数组改一个不影响另一个；元素引用共享
 - [ ] 4.4 [src/tests/types/array_is_instance/](../../src/tests/types/array_is_instance/) NEW golden — `xs is Array` / `xs is Object`
-- [ ] 4.5 [docs/design/arrays.md](../../docs/design/arrays.md) 加"运行时基类 Std.Array"段
-- [ ] 4.6 [docs/design/object-protocol.md](../../docs/design/object-protocol.md) GetType() for T[] 语义说明
+- [ ] 4.5 [docs/design/language/arrays.md](../../docs/design/language/arrays.md) 加"运行时基类 Std.Array"段
+- [ ] 4.6 [docs/design/language/object-protocol.md](../../docs/design/language/object-protocol.md) GetType() for T[] 语义说明
 - [ ] 4.7 现有数组测试（24_arrays 等）不破
 
 ## 阶段 5: 验证 + 归档

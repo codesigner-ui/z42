@@ -10,7 +10,7 @@
 - D-8b-1：`Std.MulticastException<R> : MulticastException` 已 land 于 `MulticastException.z42`（2026-05-07）
 - D-8b-3 Phase 2：`default(T)` 运行时 type_args 查表已 land（2026-05-07）
 
-**文档影响**：[docs/design/delegates-events.md](../../docs/design/delegates-events.md) §7 实施记录段 + Out-of-Scope 段同步。
+**文档影响**：[docs/design/language/delegates-events.md](../../docs/design/language/delegates-events.md) §7 实施记录段 + Out-of-Scope 段同步。
 
 **模板参考**：[src/libraries/z42.core/src/Delegates/MulticastAction.z42](../../src/libraries/z42.core/src/Delegates/MulticastAction.z42) `Invoke(continueOnException=true)` 路径（line 130-217）已实现完整聚合 + 抛 `MulticastException`；本 spec 把同样的 try/catch 累积/扩容/聚合/抛 模式复制到 Func/Predicate，加 `result[i] = default(R)` 占位 + `Results` 字段携带的差异。
 
@@ -24,7 +24,7 @@
 - [x] 1.4 新 golden multicast_predicate_aggregate（同模式，bool[]）
 - [x] 1.5 现有 multicast_func_predicate / multicast_action_basic / multicast_exception_aggregate 等 golden 不破（regression 152 ok 0 fail）
 - [x] 1.6 build-stdlib + regen-golden 重建
-- [x] 1.7 docs/design/delegates-events.md §7 K8 完整语义实施记录段更新
+- [x] 1.7 docs/design/language/delegates-events.md §7 K8 完整语义实施记录段更新
 - [x] 1.8 全套验证：dotnet test 1099/1099、test-vm 295/295（interp 152 + jit 143；2 个新 golden 带 interp_only）、cargo test 全绿
 - [x] 1.9 commit + push + 归档
 

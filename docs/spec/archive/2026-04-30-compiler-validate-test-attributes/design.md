@@ -165,7 +165,7 @@ public static SourceCompileResult Compile(...)
 
 ### Decision 8: 错误信息风格
 
-参 z42 现有错误码风格（[docs/design/error-codes.md](docs/design/error-codes.md)）。每条错误：
+参 z42 现有错误码风格（[docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md)）。每条错误：
 - 错误码：Z091X
 - 短描述：1 行
 - 函数 + Span 引用源码位置
@@ -225,4 +225,4 @@ R1 的 TestEntry 保留了 expected_throw_type_idx 占位为 0；R4 在校验通
 
 ### 文档校验
 
-[docs/design/error-codes.md](docs/design/error-codes.md) 含每条 Z091X 完整描述（替换 R1 占位）。
+[docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md) 含每条 Z091X 完整描述（替换 R1 占位）。

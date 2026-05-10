@@ -18,7 +18,7 @@ z42-test-runner 加 `--format <pretty|tap|json>` 输出与 `--filter <substring>
 
 ## 文档影响
 
-- `docs/design/testing.md` 加 "Runner 输出格式" 段（pretty / TAP / JSON 三种 + JSON schema）
+- `docs/design/testing/testing.md` 加 "Runner 输出格式" 段（pretty / TAP / JSON 三种 + JSON schema）
 - `docs/roadmap.md` M6 R3a 标记完成；R3b/R3c 仍 backlog
 - `src/toolchain/test-runner/README.md` 用法示例补 `--format` `--filter`
 
@@ -117,7 +117,7 @@ struct TestResult {
 - [x] 4.3 `./scripts/test-stdlib.sh` 8/0 dogfood 不回归（默认 format 仍为 pretty TTY）
 - [x] 4.4 `./scripts/test-cross-zpkg.sh` 1/1 不回归
 - [x] 4.5 手动验证：`z42-test-runner <zbc> --format json` / `--format tap` / `--filter equal` 输出符合 schema
-- [x] 5.1 docs/design/testing.md 加输出格式段 + JSON schema
+- [x] 5.1 docs/design/testing/testing.md 加输出格式段 + JSON schema
 - [x] 5.2 src/toolchain/test-runner/README.md 加 `--format` `--filter` 用法
 - [x] 5.3 docs/roadmap.md R3a 完成
 - [x] 6.1 commit + push + 归档

@@ -22,7 +22,7 @@
 ## D-3：N>4 arity Action / Func（D1c 延后）
 
 - **来源**：`docs/spec/archive/2026-05-02-add-generic-delegates/`
-- **设计文档**：`docs/design/delegates-events.md` §3.4
+- **设计文档**：`docs/design/language/delegates-events.md` §3.4
 - **触发原因**：design 推荐 `tools/gen-delegates.z42` 脚本自动生成 Action/Func 0-16 arity，但 z42 未自举（编译器是 C#），跑 z42 脚本生成 z42 源码是循环依赖。
 - **前置依赖**：z42 自举完成（编译器用 z42 实现），或独立 spec 用 C# 写代码生成。
 - **触发条件**：用户实际需要 5+ arity callable（按 C# 经验罕见，<5% 场景）。
@@ -58,7 +58,7 @@
 ## D-4：协变 / 逆变（`<in T, out R>` 等）（D1 延后）
 
 - **来源**：`docs/spec/archive/2026-05-02-add-delegate-type/`
-- **设计文档**：`docs/design/delegates-events.md` §12 明确"推迟到 L3 后期"
+- **设计文档**：`docs/design/language/delegates-events.md` §12 明确"推迟到 L3 后期"
 - **触发原因**：协变 / 逆变涉及泛型 type-arg 关系约束，z42 当前 generic 系统未做这类规则，加进来牵扯 ImportedSymbols / RebuildFuncType / 子类型规则全链路。
 - **前置依赖**：L3 后期完整 type-system 规划；与 generics.md / static-abstract-interface.md 协同。
 - **触发条件**：用户大量遇到 `Func<Animal>` ↔ `Func<Dog>` 子类型替换问题。

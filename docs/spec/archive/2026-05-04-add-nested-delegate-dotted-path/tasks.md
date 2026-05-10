@@ -21,8 +21,8 @@
 ## 阶段 3: 测试 + 文档
 - [ ] 3.1 NEW `src/compiler/z42.Tests/Semantics/NestedDelegateAccessTests.cs`：外部字段 ✅、参数 ✅、返回类型 ✅、不存在 nested 名 ❌ E0401、左非 class ❌、`Outer.Inner<T>` 报清晰错误（暂不支持）
 - [ ] 3.2 NEW `src/runtime/tests/golden/run/nested_delegate_dotted/source.z42` + `expected_output.txt`：定义 nested delegate + 外部 dotted 引用 + 调用一次输出
-- [ ] 3.3 `docs/design/delegates-events.md` 嵌套 delegate 章节加 dotted-path 落地说明（Open Question 1 已答）
-- [ ] 3.4 `docs/design/language-overview.md` 类型表达式语法段加 MemberType 说明
+- [ ] 3.3 `docs/design/language/delegates-events.md` 嵌套 delegate 章节加 dotted-path 落地说明（Open Question 1 已答）
+- [ ] 3.4 `docs/design/language/language-overview.md` 类型表达式语法段加 MemberType 说明
 - [ ] 3.5 `docs/deferred.md` 移除 D-6 条目
 
 ## 阶段 4: 验证
@@ -30,7 +30,7 @@
 - [ ] 4.2 `dotnet test src/compiler/z42.Tests/z42.Tests.csproj` —— 全绿（含 NestedDelegateAccessTests + TypeParserTests 增量）
 - [ ] 4.3 `./scripts/test-vm.sh` —— 全绿（含新 golden）
 - [ ] 4.4 spec scenarios 5 个场景逐条对应 ✅
-- [ ] 4.5 文档同步：`docs/design/delegates-events.md`、`docs/design/language-overview.md`、`docs/deferred.md`
+- [ ] 4.5 文档同步：`docs/design/language/delegates-events.md`、`docs/design/language/language-overview.md`、`docs/deferred.md`
 
 ## 备注
 - MemberType 是新 AST 节点，不复用 NamedType（Decision 1）

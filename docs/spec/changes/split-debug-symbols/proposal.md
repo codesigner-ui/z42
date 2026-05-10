@@ -6,7 +6,7 @@
 
 借鉴 .NET PDB / dSYM / split-debug 的 sidecar 模式：release 构建剥离 DBUG，配套产 `<name>.zsym`；runtime 自动探测加载，离线时也可用 `z42c symbolicate` 补全 trace。
 
-**附带修复**：[docs/design/zbc.md L260](../../../docs/design/zbc.md#L260) 把 META 描述为"调试信息"，但代码实际把 META 用于模块名/版本/entry，DBUG 才是调试信息。规范文档与代码漂移，借本变更归位。
+**附带修复**：[docs/design/runtime/zbc.md L260](../../../docs/design/runtime/zbc.md#L260) 把 META 描述为"调试信息"，但代码实际把 META 用于模块名/版本/entry，DBUG 才是调试信息。规范文档与代码漂移，借本变更归位。
 
 ## What Changes
 
@@ -30,7 +30,7 @@
 
 ### 修复（顺手做，避免规范漂移）
 
-- `docs/design/zbc.md` L260 section 列表与 META section 描述：META 实际承载 module name/version/entry，DBUG 才是调试信息。文档与代码统一
+- `docs/design/runtime/zbc.md` L260 section 列表与 META section 描述：META 实际承载 module name/version/entry，DBUG 才是调试信息。文档与代码统一
 
 ### 不修改
 
@@ -67,9 +67,9 @@
 | `src/compiler/z42.Tests/ProjectStripWiringTests.cs` | NEW | toml strip → effective writer flag |
 | `src/runtime/src/metadata/sidecar_tests.rs` | NEW | runtime 加载 + 合并单测 |
 | `src/tests/exception/sidecar_symbols/` | NEW | golden test：剥离 + 加载 + trace 一致 |
-| `docs/design/zbc.md` | MODIFY | 修正 META/DBUG；增 SymOnly + BLID 章节；版本 1.2 |
-| `docs/design/exceptions.md` | MODIFY | 新增 sidecar 符号化 + 退化 trace 格式章节 |
-| `docs/design/project.md` | MODIFY | `[profile.*].strip` 字段语义 + `<name>.zsym` 产物说明 |
+| `docs/design/runtime/zbc.md` | MODIFY | 修正 META/DBUG；增 SymOnly + BLID 章节；版本 1.2 |
+| `docs/design/language/exceptions.md` | MODIFY | 新增 sidecar 符号化 + 退化 trace 格式章节 |
+| `docs/design/compiler/project.md` | MODIFY | `[profile.*].strip` 字段语义 + `<name>.zsym` 产物说明 |
 | `src/compiler/z42.IR/BinaryFormat/README.md` | MODIFY | 增 sidecar 描述 |
 | `src/runtime/src/metadata/README.md` | MODIFY | sidecar 加载流程 |
 

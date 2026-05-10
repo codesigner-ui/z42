@@ -104,9 +104,9 @@
   thread_local；exception 状态在 VmContext.pending_exception；标记
   "Phase 2 模块仍 stub，待 Result<T, E> 等高级语法落地" 之类）
 - [x] 5.4 `thread/mod.rs`：删去"3 处 thread_local"列表，反映现状
-- [x] 5.5 `docs/design/vm-architecture.md`：增 "VmContext: 状态收口"段
+- [x] 5.5 `docs/design/runtime/vm-architecture.md`：增 "VmContext: 状态收口"段
   描述 VmContext 字段、生命周期、JIT 嵌入方式
-- [x] 5.6 `docs/design/object-protocol.md`：异常传播说明微调（删
+- [x] 5.6 `docs/design/language/object-protocol.md`：异常传播说明微调（删
   UserException sentinel 历史段）
 
 ## 阶段 6：验证与归档

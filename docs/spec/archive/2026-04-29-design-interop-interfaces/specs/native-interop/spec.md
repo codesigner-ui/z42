@@ -12,7 +12,7 @@
 
 #### Scenario: 关键类型可访问
 - **WHEN** 用户 C 代码 `#include "z42_abi.h"` 后引用 `Z42TypeDescriptor_v1`、`Z42MethodDesc`、`Z42FieldDesc`、`Z42TraitImpl`、`z42_register_type`、`z42_invoke`、`z42_resolve_type`、`z42_last_error`
-- **THEN** 全部可见，签名与 `docs/design/interop.md` §3 一致
+- **THEN** 全部可见，签名与 `docs/design/language/interop.md` §3 一致
 
 #### Scenario: ABI 版本字段位于首位
 - **WHEN** 检查 `Z42TypeDescriptor_v1` 内存布局
@@ -38,7 +38,7 @@
 
 #### Scenario: 用户面向 trait 可导入
 - **WHEN** 用户 crate 写 `use z42_rs::{Z42Type, Z42Traceable, Z42Args, Z42Value, Z42TypeRef, Z42Error};`
-- **THEN** 编译通过；trait/type 名字与 `docs/design/interop.md` 命名一致
+- **THEN** 编译通过；trait/type 名字与 `docs/design/language/interop.md` 命名一致
 
 ---
 
@@ -84,14 +84,14 @@ C# IR 端和 Rust VM 端各加 4 个新 opcode：`CallNative`、`CallNativeVtabl
 
 ### Requirement: Manifest JSON Schema v1
 
-`docs/design/manifest-schema.json` 是 `.z42abi` v1 的权威 JSON Schema，可用任何 JSON Schema validator 校验。
+`docs/design/compiler/manifest-schema.json` 是 `.z42abi` v1 的权威 JSON Schema，可用任何 JSON Schema validator 校验。
 
 #### Scenario: schema 自身合法
 - **WHEN** 用 JSON Schema meta-schema (Draft 2020-12) 校验 `manifest-schema.json`
 - **THEN** 校验通过
 
 #### Scenario: 合法 manifest 通过校验
-- **WHEN** `tests/data/example-manifest.json` （仿照 `docs/design/interop.md` §9 例子）按 schema 校验
+- **WHEN** `tests/data/example-manifest.json` （仿照 `docs/design/language/interop.md` §9 例子）按 schema 校验
 - **THEN** 校验通过
 
 #### Scenario: 关键字段缺失被拒
@@ -106,7 +106,7 @@ C# IR 端和 Rust VM 端各加 4 个新 opcode：`CallNative`、`CallNativeVtabl
 
 ### Requirement: Error Code Registration
 
-错误码 Z0905–Z0910 在 `docs/design/error-codes.md` 注册占位条目。
+错误码 Z0905–Z0910 在 `docs/design/compiler/error-codes.md` 注册占位条目。
 
 #### Scenario: 6 个错误码全部入册
 - **WHEN** 检查 `error-codes.md`
@@ -123,11 +123,11 @@ C# IR 端和 Rust VM 端各加 4 个新 opcode：`CallNative`、`CallNativeVtabl
 接口骨架落地后，相关文档同步更新。
 
 #### Scenario: interop.md Roadmap 更新
-- **WHEN** 检查 `docs/design/interop.md` §10 Roadmap
+- **WHEN** 检查 `docs/design/language/interop.md` §10 Roadmap
 - **THEN** 表中含 C1 行（"L2.M8 prep: Tier 1/2/3 接口骨架"）；§9 引用 `manifest-schema.json` 链接
 
 #### Scenario: ir.md 包含 4 新 opcode 描述
-- **WHEN** 检查 `docs/design/ir.md`
+- **WHEN** 检查 `docs/design/runtime/ir.md`
 - **THEN** 含 `CallNative` / `CallNativeVtable` / `PinPtr` / `UnpinPtr` 4 个 opcode 段落（描述操作数 + 语义占位）
 
 #### Scenario: README 链

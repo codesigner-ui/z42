@@ -76,6 +76,6 @@
 
 ## Documentation Sync
 
-- `docs/design/error-codes.md` E0907 加 "stitched binding incomplete" 抛出条件
-- `docs/design/interop.md` §10 加 C9 行 ✅
+- `docs/design/compiler/error-codes.md` E0907 加 "stitched binding incomplete" 抛出条件
+- `docs/design/language/interop.md` §10 加 C9 行 ✅
 - `docs/roadmap.md` C9 → ✅

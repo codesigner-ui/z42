@@ -4,7 +4,7 @@
 //! Tier 2 trades a bit of overhead for `Result`-based error handling,
 //! `Drop`-based cleanup, and `Box<dyn Fn(...)>` sink callbacks.
 //!
-//! Spec: docs/design/embedding.md (§5 Tier 2 Rust API).
+//! Spec: docs/design/runtime/embedding.md (§5 Tier 2 Rust API).
 //!
 //! ```no_run
 //! use z42_host::{Host, HostConfig, ExecMode};
@@ -51,7 +51,7 @@ use z42_vm::host::{
 /// Execution backend. `Default` lets the runtime / `.zbc` metadata
 /// decide; explicit modes fail with `HostError::FeatureOff` if the
 /// runtime was built without that feature (see
-/// `docs/design/cross-platform.md`).
+/// `docs/design/runtime/cross-platform.md`).
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum ExecMode {
     #[default]

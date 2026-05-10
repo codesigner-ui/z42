@@ -92,7 +92,7 @@
 
 ## 阶段 8: 文档同步 + 归档
 
-- [x] 8.1 MODIFY [docs/design/compiler-architecture.md](../../../docs/design/compiler-architecture.md):
+- [x] 8.1 MODIFY [docs/design/compiler/compiler-architecture.md](../../../docs/design/compiler/compiler-architecture.md):
   - 增段 "Bound tree visitor pattern" — 列为正面设计
   - 说明：基类 switch + abstract Visit；新增 BoundExpr 节点的 5 步流程（节点 record → 加 abstract → 编译期失败提示所有 visitor 子类 override）
 - [x] 8.2 MODIFY [src/compiler/z42.Semantics/README.md](../../../src/compiler/z42.Semantics/README.md):

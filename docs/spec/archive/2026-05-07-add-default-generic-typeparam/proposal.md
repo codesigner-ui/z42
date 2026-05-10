@@ -42,7 +42,7 @@ Phase 2 解锁泛型 type-param `default(T)`，落地后立即触发：
 | `src/tests/errors/421_invalid_default_type/` | MODIFY | 把 generic-T case 从 E0421 改成"Phase 2 已解锁"的对照案例（保留 unknown-type 的 E0421）|
 | `docs/design/default-expression.md` 或 `language-overview.md` | MODIFY | 同步 generic-T 支持 |
 | `docs/deferred.md` | MODIFY | 把 D-8b-3 Phase 2 移到"已落地" |
-| `docs/design/delegates-events.md` | MODIFY | §7 把 `default(R)` 的"待 Phase 2"备注改为"Phase 2 已解锁"|
+| `docs/design/language/delegates-events.md` | MODIFY | §7 把 `default(R)` 的"待 Phase 2"备注改为"Phase 2 已解锁"|
 
 **只读引用**（理解上下文必需，不修改）：
 
@@ -57,7 +57,7 @@ Phase 2 解锁泛型 type-param `default(T)`，落地后立即触发：
 - **方法级 type-param `class Foo { void m<U>() { U x = default(U); } }`**：与 free function 同理，需要 method-level type_args 计参；同 graceful-degradation
 - **Static method on generic class `class Foo<T> { static T defaultT() { return default(T); } }`**：static method 无 `this`，同上
 - **新 IR `DefaultOf` 之外的 generic 运行时反射 API**（`typeof(T)` / `T.GetType()`）：纯然 out of scope
-- **Monomorphization**：z42 走 erasure model（`docs/design/generics.md`），本变更不引入 mono；runtime type_args 查表是 erasure 模型下的标准做法
+- **Monomorphization**：z42 走 erasure model（`docs/design/language/generics.md`），本变更不引入 mono；runtime type_args 查表是 erasure 模型下的标准做法
 
 ## Open Questions
 

@@ -63,9 +63,9 @@
 
 ## 阶段 6: 文档同步 + 归档
 
-- [x] 6.1 `docs/design/stdlib.md` Module Auto-load Policy 更新（随 W1 同步）
-- [x] 6.2 **新增** `docs/design/vm-architecture.md` — LazyLoader / VCall / TypeDesc / ConstStr 重映射
-- [x] 6.3 **新增** `docs/design/compiler-architecture.md` — TsigCache / ImportedSymbolLoader / QualifyClassName
+- [x] 6.1 `docs/design/stdlib/overview.md` Module Auto-load Policy 更新（随 W1 同步）
+- [x] 6.2 **新增** `docs/design/runtime/vm-architecture.md` — LazyLoader / VCall / TypeDesc / ConstStr 重映射
+- [x] 6.3 **新增** `docs/design/compiler/compiler-architecture.md` — TsigCache / ImportedSymbolLoader / QualifyClassName
 - [x] 6.4 `.claude/CLAUDE.md` 文档同步规则追加"编译器 / VM 实现原理"行（User 要求）
 - [x] 6.5 `docs/roadmap.md` — 见 W1 同步
 - [x] 6.6 tasks.md 状态 → `🟢 已完成`

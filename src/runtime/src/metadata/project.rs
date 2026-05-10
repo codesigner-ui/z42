@@ -5,7 +5,7 @@
 /// (they may coexist when a workspace root is also a project).
 ///
 /// File name constant: [`FILE_NAME`].
-/// See docs/design/project.md for the full design.
+/// See docs/design/compiler/project.md for the full design.
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

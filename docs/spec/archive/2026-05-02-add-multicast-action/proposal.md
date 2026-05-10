@@ -1,6 +1,6 @@
 # Proposal: D2a — `MulticastAction<T>` 多播基础类型
 
-> 这是 `docs/design/delegates-events.md` D2 阶段第 1/4 切片。
+> 这是 `docs/design/language/delegates-events.md` D2 阶段第 1/4 切片。
 > 配套：D2b ISubscription wrapper / D2c event 关键字 / D2d MulticastFunc + 异常聚合。
 
 ## Why
@@ -37,13 +37,13 @@ D2a 落地多播路径的最小切片 —— `MulticastAction<T>` 单类型 + Su
 | `src/runtime/tests/golden/run/multicast_action_basic/expected_output.txt` | NEW | golden 期望输出 |
 | `src/runtime/tests/golden/run/multicast_action_basic/source.zbc` | NEW | regen 产物 |
 | `examples/multicast_basic.z42` | NEW | 演示 |
-| `docs/design/delegates-events.md` | MODIFY | D2a 完成标记 |
+| `docs/design/language/delegates-events.md` | MODIFY | D2a 完成标记 |
 | `docs/roadmap.md` | MODIFY | 加一行 |
 
 **只读引用**：
 
-- `docs/design/delegates-events.md` §4.1 (`MulticastAction<T>` 类型定义) + §4.2 (调用语义) + §4.3 (COW)
-- `docs/design/delegates-events.md` §9.1 (优化 A — 双 vec) — D2b 实施
+- `docs/design/language/delegates-events.md` §4.1 (`MulticastAction<T>` 类型定义) + §4.2 (调用语义) + §4.3 (COW)
+- `docs/design/language/delegates-events.md` §9.1 (优化 A — 双 vec) — D2b 实施
 - `src/libraries/z42.collections/src/LinkedList.z42` —— stdlib 类风格参考
 - D1c archive — Action/Func/Predicate 注册路径
 

@@ -2,7 +2,7 @@
 
 **变更说明：** 实施架构审查报告中的中期三项改进
 **原因：** Parser 多错误报告（A5）、消除语义层分裂（A1）、静态类型调用解析（A7）
-**文档影响：** docs/design/language-overview.md（错误恢复行为）
+**文档影响：** docs/design/language/language-overview.md（错误恢复行为）
 
 > 状态：🟢 已完成（A5） | 创建：2026-04-15 | 完成：2026-04-15
 

@@ -59,7 +59,7 @@ public sealed partial class TypeChecker : ITypeInferrer
     /// capture-boundary detection) and the captures collected so far for that
     /// lambda's body. Pushed when entering a lambda or local-fn body; popped
     /// when leaving; empty means we're at top-level / inside a regular method.
-    /// See docs/design/closure.md §4 + impl-closure-l3-core design Decision 4.
+    /// See docs/design/language/closure.md §4 + impl-closure-l3-core design Decision 4.
     private sealed class LambdaBindingFrame
     {
         public required TypeEnv OuterEnv { get; init; }

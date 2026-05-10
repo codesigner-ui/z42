@@ -1,6 +1,6 @@
 # Proposal: D1a — `delegate` 关键字 + 命名 delegate 类型（含泛型）+ 单播 Invoke
 
-> 这是 `docs/design/delegates-events.md` D1 阶段的语言层切片（D1a）。
+> 这是 `docs/design/language/delegates-events.md` D1 阶段的语言层切片（D1a）。
 > 配套子 spec：D1b 方法组转换 + 缓存；D1c stdlib 真实类型 + 移除 hardcoded desugar。
 >
 > **2026-05-02 scope 调整（user 裁决）**：
@@ -10,7 +10,7 @@
 
 ## Why
 
-`docs/design/delegates-events.md` §3 规定单播 callable 类型为 `delegate` 关键字声明，但 z42 当前：
+`docs/design/language/delegates-events.md` §3 规定单播 callable 类型为 `delegate` 关键字声明，但 z42 当前：
 
 - **无 `delegate` 关键字**（TokenKind / TokenDefs 都没有；当前用关键字声明 callable 不可能）
 - **无 `DelegateDecl` AST 节点**（`CompilationUnit` 只有 Classes/Functions/Enums/Interfaces）
@@ -67,15 +67,15 @@
 | `src/runtime/tests/golden/run/delegate_d1a/source.z42` | NEW | 端到端 golden |
 | `src/runtime/tests/golden/run/delegate_d1a/expected_output.txt` | NEW | golden 期望输出 |
 | `src/runtime/tests/golden/run/delegate_d1a/source.zbc` | NEW | regen 产物 |
-| `docs/design/closure.md` | MODIFY | §3.2 修正：从 "**不**使用 Func/Action" 改为 "delegate 关键字+ named delegate 类型，详见 delegates-events.md" |
-| `docs/design/delegates-events.md` | MODIFY | 顶部状态从 "前瞻性设计草案" 改为 "D1a 已落地（2026-05-02）"；§11.2 D1 行加完成标记 |
+| `docs/design/language/closure.md` | MODIFY | §3.2 修正：从 "**不**使用 Func/Action" 改为 "delegate 关键字+ named delegate 类型，详见 delegates-events.md" |
+| `docs/design/language/delegates-events.md` | MODIFY | 顶部状态从 "前瞻性设计草案" 改为 "D1a 已落地（2026-05-02）"；§11.2 D1 行加完成标记 |
 | `docs/roadmap.md` | MODIFY | 已完成关键 fix 表新增一行 |
 
 **只读引用**：
 
 - `src/compiler/z42.Syntax/Parser/TopLevelParser.Types.cs::ParseEnumDecl` —— 头部签名 + 单次定义参考
 - `src/compiler/z42.Semantics/TypeCheck/SymbolCollector.cs:248-253` —— 现有 `Action`/`Func` desugar 路径（D1c 移除）
-- `docs/design/delegates-events.md` §3 —— 单播 delegate 设计
+- `docs/design/language/delegates-events.md` §3 —— 单播 delegate 设计
 
 ## Out of Scope
 

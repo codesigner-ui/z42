@@ -32,7 +32,7 @@ design 承诺（K8 完整语义、Phase 2 Scenario "Foo<int> instance returns 0 
 | `src/tests/operators/default_generic_param_field_init/interp_only` | DELETE | 同上 |
 | `src/tests/delegates/multicast_func_aggregate/interp_only` | DELETE | 同上 |
 | `src/tests/delegates/multicast_predicate_aggregate/interp_only` | DELETE | 同上 |
-| `docs/design/ir.md` | MODIFY | `obj_new` 0.9 版描述同步：JIT 路径现也 propagate type_args |
+| `docs/design/runtime/ir.md` | MODIFY | `obj_new` 0.9 版描述同步：JIT 路径现也 propagate type_args |
 | `docs/deferred.md` | MODIFY | D-8b-3 Phase 2 备注："JIT 路径限制" 段更新为已解决 |
 
 **只读引用**：

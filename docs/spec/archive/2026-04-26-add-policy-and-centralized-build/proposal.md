@@ -54,9 +54,9 @@ C3 把 C1 占位的两块语法落地为**实际行为**：
 | `src/compiler/z42.Project/WorkspaceManifest.cs` | `[policy]` 段从占位变为实际数据模型（字段路径 → 锁定值字典） |
 | `src/compiler/z42.Compiler/PackageCompiler.cs` | 产物输出路径从 member-local 改为 `ResolvedManifest.EffectiveOutDir`；cache 路径同理 |
 | `src/compiler/z42.Compiler/IncrementalCompiler.cs`（如存在） | cache 路径走 CentralizedBuildLayout |
-| `docs/design/project.md` | L6.6 章节"policy 与集中产物"；修订 L3 段说明 workspace 模式下 [build] 行为差异 |
-| `docs/design/compiler-architecture.md` | PolicyEnforcer / CentralizedBuildLayout 的设计原理 |
-| `docs/design/error-codes.md` | 追加 WS010 / WS011；更新 WS004 描述 |
+| `docs/design/compiler/project.md` | L6.6 章节"policy 与集中产物"；修订 L3 段说明 workspace 模式下 [build] 行为差异 |
+| `docs/design/compiler/compiler-architecture.md` | PolicyEnforcer / CentralizedBuildLayout 的设计原理 |
+| `docs/design/compiler/error-codes.md` | 追加 WS010 / WS011；更新 WS004 描述 |
 
 ### 删除（DELETE）
 

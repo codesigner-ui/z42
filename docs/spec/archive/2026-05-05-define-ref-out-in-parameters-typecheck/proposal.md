@@ -16,7 +16,7 @@ z42 主语言体目前只有"按值传"和"引用类型自动按引用传"两种
 - **限制** `in` 参数写保护：函数体内 `x = ...` 报错（callee 端只读契约）
 - **更新** `language-overview.md` §5 旧 `out int result` 例子，改写为完整三修饰符小节 + tuple 多返回示例对照
 - **更新** `interop.md` ABI 表新增 `ref T ↔ *mut T` / `out T ↔ *mut T` / `in T ↔ *const T` 映射
-- **新建** `docs/design/parameter-modifiers.md`：完整规范 + "Deferred / Future Work" 段（D1-D6 + 运行时实施引用）
+- **新建** `docs/design/language/parameter-modifiers.md`：完整规范 + "Deferred / Future Work" 段（D1-D6 + 运行时实施引用）
 - **设计期延后** 6 项相关特性，写入 `parameter-modifiers.md` 的 "Deferred / Future Work" 段：D1 ref local / D2 ref return / D3 ref field / D4 ref struct / D5 scoped / D6 ref readonly
 - **不引入** D1-D6 任何位置形态；维持 `mut` / `unsafe` 已有立场（feedback_no_mut_modifier / feedback_no_unsafe_keyword）
 
@@ -39,15 +39,15 @@ z42 主语言体目前只有"按值传"和"引用类型自动按引用传"两种
 | `src/compiler/z42.Tests/LexerTests.cs` | MODIFY | +3 token 测试 |
 | `src/compiler/z42.Tests/ParserTests.cs` | MODIFY | +8 解析测试 |
 | `src/compiler/z42.Tests/ParameterModifierTypeCheckTests.cs` | NEW | 20 个语义测试覆盖所有 scenarios |
-| `docs/design/language-overview.md` | MODIFY | §5 重写函数小节 |
-| `docs/design/parameter-modifiers.md` | NEW | 完整规范 + Deferred / Future Work 段（D1-D6 + 运行时引用）|
-| `docs/design/interop.md` | MODIFY | ABI 表更新 |
-| `docs/design/compiler-architecture.md` | MODIFY | modifier 流转原理 |
+| `docs/design/language/language-overview.md` | MODIFY | §5 重写函数小节 |
+| `docs/design/language/parameter-modifiers.md` | NEW | 完整规范 + Deferred / Future Work 段（D1-D6 + 运行时引用）|
+| `docs/design/language/interop.md` | MODIFY | ABI 表更新 |
+| `docs/design/compiler/compiler-architecture.md` | MODIFY | modifier 流转原理 |
 | `docs/roadmap.md` | MODIFY | Pipeline 进度表更新（仅编译期阶段）|
 
 **只读引用**（理解上下文必读，不修改；不计入并行冲突）：
-- `docs/design/closure.md` — lambda 捕获规则现状
-- `docs/design/exceptions.md` — throw 路径对 DA 影响的先例
+- `docs/design/language/closure.md` — lambda 捕获规则现状
+- `docs/design/language/exceptions.md` — throw 路径对 DA 影响的先例
 - `docs/spec/archive/2026-04-29-impl-pinned-syntax/` — IR/VM 协调实施模式参考
 - `src/compiler/z42.IR/IrModule.cs` — IR 数据模型
 - `src/compiler/z42.Semantics/Codegen/*` — 当前 codegen 不在本 spec 改动范围
@@ -57,7 +57,7 @@ z42 主语言体目前只有"按值传"和"引用类型自动按引用传"两种
 - **运行时实施**（IR Codegen ref-aware Call / VM `Value::Ref` + RefKind / 跨 frame 索引 / 透明 deref / `ref a[i]` / `ref obj.f` / 7 个 golden tests）—— 拆分到独立 spec `impl-ref-out-in-runtime`，与本 spec 的 design.md Decision 1/2/8/9 保持一致
   - 用户写 `Increment(ref c)` 在本 spec 阶段：编译期通过所有验证，运行时 codegen 走普通 by-value Call（callee 修改自己 param 不影响 caller）
   - 后续 spec 启动时无需再做编译期工作，只补 Codegen + VM
-- **6 项设计期延后子特性**（在 `docs/design/parameter-modifiers.md` 的 "Deferred / Future Work" 段记录形态 + 延后理由 + 重启评估触发条件，本 spec 不实施）：
+- **6 项设计期延后子特性**（在 `docs/design/language/parameter-modifiers.md` 的 "Deferred / Future Work" 段记录形态 + 延后理由 + 重启评估触发条件，本 spec 不实施）：
   - **D1**：`ref` 局部变量 `ref int x = ref expr`
   - **D2**：`ref` 返回类型 `ref T M()`
   - **D3**：`ref` 字段（绑定 `ref struct`，与 D4 同进退）

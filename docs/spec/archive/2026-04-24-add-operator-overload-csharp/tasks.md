@@ -46,7 +46,7 @@
 - [x] 5.2 Golden test `88_operator_overload` 端到端（interp + jit 双绿）
 
 ### 阶段 6：文档 + 归档 ✅
-- [x] 6.1 `docs/design/generics.md` 新增 "Operator 重载" 小节
+- [x] 6.1 `docs/design/language/generics.md` 新增 "Operator 重载" 小节
       （语法 / 运算符映射 / desugar 优先级 / 后续迭代）
 - [x] 6.2 `docs/roadmap.md` L3-G2.5 新增 Operator 重载 ✅ 行
 - [x] 6.3 GREEN：566 编译器 + 168 VM (interp+jit) 全绿

@@ -2,7 +2,7 @@
 
 ## Why
 
-[delegates-events.md §6.5 I10](docs/design/delegates-events.md#65-改进项)：interface 中声明的 `event` 应自动合成 add/remove signature 要求，implementer 在 class body 写 `event ...` 即满足契约 —— 用户无需手写 add_X / remove_X。
+[delegates-events.md §6.5 I10](docs/design/language/delegates-events.md#65-改进项)：interface 中声明的 `event` 应自动合成 add/remove signature 要求，implementer 在 class body 写 `event ...` 即满足契约 —— 用户无需手写 add_X / remove_X。
 
 D2c-多播（Spec 2）已实现 class 端合成 add_X / remove_X 方法体；本 spec 加 interface 端的"声明侧"对偶。
 

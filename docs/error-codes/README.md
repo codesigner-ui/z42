@@ -53,7 +53,7 @@ Both binaries render the same data because they read from the same `Z.json`.
   (and vice versa) to access the catalog.
 - **Hand-editable.** No code-gen step to debug.
 - **Cross-platform proof.** When future bindings (wasm / iOS / Android, see
-  [docs/design/cross-platform-testing.md](../design/cross-platform-testing.md))
+  [docs/design/testing/cross-platform-testing.md](../design/testing/cross-platform-testing.md))
   need to surface VM errors, they read the same JSON via whatever loader makes
   sense for that platform.
 

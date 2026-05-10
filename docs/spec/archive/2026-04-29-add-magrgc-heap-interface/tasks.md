@@ -34,7 +34,7 @@
 - [x] 4.7 清理无用 imports：`Rc` / `RefCell` / `ScriptObject`（interp + jit）
 
 ## 阶段 5: 文档同步
-- [x] 5.1 `docs/design/vm-architecture.md` —— 新增 "GC 子系统 —— MagrGC" 段：trait 形状、Phase 1 RcMagrGC、Phase 路线表、字符串脚本化未来动机、设计权衡
+- [x] 5.1 `docs/design/runtime/vm-architecture.md` —— 新增 "GC 子系统 —— MagrGC" 段：trait 形状、Phase 1 RcMagrGC、Phase 路线表、字符串脚本化未来动机、设计权衡
 - [x] 5.2 `docs/roadmap.md` —— L2 VM 质量段新增 MagrGC Phase 1 完成条目；A6 backlog 注释 Phase 1 已收口
 - [x] 5.3 `gc/README.md` —— 终稿（含核心文件表、入口点、Phase 路线、命名出处）
 

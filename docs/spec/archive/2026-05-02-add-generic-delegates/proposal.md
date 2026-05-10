@@ -1,6 +1,6 @@
 # Proposal: D1c — stdlib `Action` / `Func` / `Predicate` 真实类型 + 移除 hardcoded desugar
 
-> 这是 `docs/design/delegates-events.md` D1 阶段第三切片，在 D1a/D1b 落地后实施。
+> 这是 `docs/design/language/delegates-events.md` D1 阶段第三切片，在 D1a/D1b 落地后实施。
 > D2（多播 / event / 异常）独立批次。
 >
 > **2026-05-02 scope 调整**：泛型 delegate + where 约束已移到 D1a 一并实施（user 裁决）。
@@ -33,8 +33,8 @@ D1a 之后 z42 在编译器层支持 `delegate R Func<T,R>(T arg);` 解析与实
 | `src/compiler/z42.Tests/PredicateTests.cs` | NEW | Predicate 端到端 |
 | `src/runtime/tests/golden/run/delegate_d1c_stdlib/` | NEW | 端到端 golden |
 | `examples/delegate_stdlib.z42` | NEW | 演示 |
-| `docs/design/delegates-events.md` | MODIFY | D1c 完成标记；§3.4 "脚本生成"改为"0-4 已手写，>4 follow-up" |
-| `docs/design/closure.md` §3.2 | MODIFY | 确认与 stdlib 真实 delegate 一致（D1a 已改） |
+| `docs/design/language/delegates-events.md` | MODIFY | D1c 完成标记；§3.4 "脚本生成"改为"0-4 已手写，>4 follow-up" |
+| `docs/design/language/closure.md` §3.2 | MODIFY | 确认与 stdlib 真实 delegate 一致（D1a 已改） |
 | `docs/roadmap.md` | MODIFY | 已完成关键 fix 表加一行 |
 
 **只读引用**：

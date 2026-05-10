@@ -89,8 +89,8 @@ IMPL section 只承载"声明追加"。
 | `src/runtime/src/metadata/binary.rs` | edit | 解码 IMPL section（VM 侧暂不消费，但格式要兼容） |
 | `src/runtime/tests/golden/run/102_cross_zpkg_impl/` | add | golden test：临时多 zpkg 场景 |
 | `src/compiler/z42.Tests/...` | add | 单元测试：IMPL section roundtrip + ImportedSymbolLoader merge |
-| `docs/design/generics.md` | edit | extern impl 章节加 L3-Impl2 落地小节 |
-| `docs/design/compiler-architecture.md` | edit | TSIG 章节加 IMPL section 描述 |
+| `docs/design/language/generics.md` | edit | extern impl 章节加 L3-Impl2 落地小节 |
+| `docs/design/compiler/compiler-architecture.md` | edit | TSIG 章节加 IMPL section 描述 |
 | `docs/roadmap.md` | edit | L3-Impl2 状态 ✅ |
 
 ## Out of Scope

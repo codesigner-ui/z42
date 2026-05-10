@@ -78,7 +78,7 @@ L3 完整闭包（捕获 + 三档实现 + Send + 诊断）拆到独立的后续 
 | `docs/spec/changes/impl-lambda-l2/tasks.md` | NEW | 任务清单 |
 
 **只读引用**（理解上下文用）：
-- `docs/design/closure.md` — 行为契约
+- `docs/design/language/closure.md` — 行为契约
 - `docs/spec/archive/2026-05-01-add-closures/specs/closure/spec.md` — Requirement R1-R14 原文
 - `src/compiler/z42.Syntax/Parser/Combinators.cs` — Parser 组合子风格参考
 - `src/compiler/z42.Semantics/TypeCheck/TypeChecker.Calls.cs` — 类型推断风格参考

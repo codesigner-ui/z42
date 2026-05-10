@@ -19,7 +19,7 @@ R3c 给开发者一个**精确范围工具**：改 `z42.math/src/*` 只触发 `z
 ## 文档影响
 
 - `docs/dev.md` 加 `just test-changed` 用法
-- `docs/design/testing.md` "增量测试" 段（替换当前 placeholder 说明）
+- `docs/design/testing/testing.md` "增量测试" 段（替换当前 placeholder 说明）
 - `justfile` 注释更新
 
 ## 设计
@@ -97,7 +97,7 @@ $ just test-changed
     - 多目录混改 → 命令去重 + 顺序执行
     - `--dry-run` 不实际执行
 - [x] 3.1 [docs/dev.md](docs/dev.md) 添加 `just test-changed` 示例
-- [x] 3.2 [docs/design/testing.md](docs/design/testing.md) 增量测试段：列出映射规则 + 限制
+- [x] 3.2 [docs/design/testing/testing.md](docs/design/testing/testing.md) 增量测试段：列出映射规则 + 限制
 - [x] 3.3 [docs/roadmap.md](docs/roadmap.md) M6 R3c 完成；增量测试占位符移除
 - [x] 4.1 commit + push + 归档
 

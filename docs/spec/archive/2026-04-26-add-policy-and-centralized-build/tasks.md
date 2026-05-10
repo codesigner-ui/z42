@@ -80,12 +80,12 @@
 
 ## 阶段 7: 文档同步
 
-- [ ] 7.1 修改 `docs/design/project.md`：
+- [ ] 7.1 修改 `docs/design/compiler/project.md`：
   - L3 段补充 workspace 模式下 `[build]` 行为差异
   - 新增 L6.6 章节"policy 与集中产物布局"
   - 字段速查区补 `[policy]` 段语法
-- [ ] 7.2 修改 `docs/design/compiler-architecture.md`：PolicyEnforcer / CentralizedBuildLayout 设计原理
-- [ ] 7.3 修改 `docs/design/error-codes.md`：追加 WS010 / WS011；删除 WS004 旧定义
+- [ ] 7.2 修改 `docs/design/compiler/compiler-architecture.md`：PolicyEnforcer / CentralizedBuildLayout 设计原理
+- [ ] 7.3 修改 `docs/design/compiler/error-codes.md`：追加 WS010 / WS011；删除 WS004 旧定义
 - [ ] 7.4 spec scenarios 逐条覆盖确认
 
 ---

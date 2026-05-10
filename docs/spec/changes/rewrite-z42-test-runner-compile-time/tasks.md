@@ -81,7 +81,7 @@
 ## 阶段 8: 文档
 
 - [ ] 8.1 [docs/design/test-runner.md](docs/design/test-runner.md) 完整设计
-- [ ] 8.2 [docs/design/testing.md](docs/design/testing.md) 加 R3 段（runner 在大图中位置）
+- [ ] 8.2 [docs/design/testing/testing.md](docs/design/testing/testing.md) 加 R3 段（runner 在大图中位置）
 - [ ] 8.3 [src/toolchain/test-runner/README.md](src/toolchain/test-runner/README.md) 用法 + 示例
 - [ ] 8.4 [docs/dev.md](docs/dev.md) 加 "z42-test-runner" 段
 

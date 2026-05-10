@@ -63,10 +63,10 @@
 - [x] 6.3 `./scripts/test-vm.sh` 全绿（基线 +1×2 modes）
 - [x] 6.4 spec scenarios 逐条对应实现位置
 - [x] 6.5 文档同步：
-    - `docs/design/closure.md` §6.4.1 mono 末尾加 "+ D1b 把 LoadFn 升级为 LoadFnCached（I12）"
-    - `docs/design/delegates-events.md` D1b 完成标记
-    - `docs/design/ir.md` —— 新增 `LoadFnCached` opcode 描述
-    - `docs/design/vm-architecture.md` —— `VmContext.func_ref_slots` 简介
+    - `docs/design/language/closure.md` §6.4.1 mono 末尾加 "+ D1b 把 LoadFn 升级为 LoadFnCached（I12）"
+    - `docs/design/language/delegates-events.md` D1b 完成标记
+    - `docs/design/runtime/ir.md` —— 新增 `LoadFnCached` opcode 描述
+    - `docs/design/runtime/vm-architecture.md` —— `VmContext.func_ref_slots` 简介
     - `docs/roadmap.md` —— 加一行
 - [x] 6.6 移动 `docs/spec/changes/add-method-group-conversion/` → `docs/spec/archive/2026-05-02-add-method-group-conversion/`
 - [x] 6.7 commit + push

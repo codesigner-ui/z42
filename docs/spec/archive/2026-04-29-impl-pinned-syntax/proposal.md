@@ -55,11 +55,11 @@ fn read_length(s: string) : long {
 | `tests/golden/run/pinned_basic/source.z42` | NEW | 端到端示例：`pinned p = s { return p.len; }` |
 | `tests/golden/run/pinned_basic/expected.txt` | NEW | 期望输出 (`5`) |
 | `examples/pinned_basic.z42` | NEW | 用户示例 |
-| `docs/design/grammar.peg` | MODIFY | 加 pinned-stmt 产生式 |
-| `docs/design/language-overview.md` | MODIFY | 加 pinned 语法描述 |
-| `docs/design/interop.md` | MODIFY | §6.3 / §10 C5 → ✅ |
+| `docs/design/language/grammar.peg` | MODIFY | 加 pinned-stmt 产生式 |
+| `docs/design/language/language-overview.md` | MODIFY | 加 pinned 语法描述 |
+| `docs/design/language/interop.md` | MODIFY | §6.3 / §10 C5 → ✅ |
 | `docs/roadmap.md` | MODIFY | C5 → ✅ |
-| `docs/design/error-codes.md` | MODIFY | Z0908 抛出条件加 TypeChecker 三项 |
+| `docs/design/compiler/error-codes.md` | MODIFY | Z0908 抛出条件加 TypeChecker 三项 |
 
 **只读引用**：
 - `src/compiler/z42.IR/IrModule.cs` — `PinPtrInstr` / `UnpinPtrInstr` IR record（C1 已声明）

@@ -53,7 +53,7 @@
 
 ## 阶段 5: 文档 + GREEN ✅
 
-- [x] 5.1 `docs/design/generics.md`：L3-G4f 小节
+- [x] 5.1 `docs/design/language/generics.md`：L3-G4f 小节
 - [x] 5.2 `docs/roadmap.md`：L3-G4f ✅（ArrayList 部分）；新增 L3-G4g（HashMap + 跨命名空间约束）/ L3-G4h（foreach iterator）占位
 - [x] 5.3 `dotnet build` + `dotnet test` 524/524 ✅; `test-vm.sh` 154/154 ✅（77 interp + 77 jit）
 

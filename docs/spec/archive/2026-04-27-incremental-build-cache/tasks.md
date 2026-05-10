@@ -72,8 +72,8 @@
 
 ## 阶段 5: 文档同步
 
-- [ ] 5.1 修改 `docs/design/compiler-architecture.md`：ManifestLoader 模块表追加 IncrementalBuild；说明文件级粒度 + 失效条件
-- [ ] 5.2 修改 `docs/design/project.md`：在 L6 末尾或独立章节说明增量构建机制 + `--no-incremental` flag
+- [ ] 5.1 修改 `docs/design/compiler/compiler-architecture.md`：ManifestLoader 模块表追加 IncrementalBuild；说明文件级粒度 + 失效条件
+- [ ] 5.2 修改 `docs/design/compiler/project.md`：在 L6 末尾或独立章节说明增量构建机制 + `--no-incremental` flag
 - [ ] 5.3 修改 `docs/dev.md`：示例命令补 `--no-incremental`
 - [ ] 5.4 修改 `docs/roadmap.md`：标记增量编译落地
 

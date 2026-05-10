@@ -55,8 +55,8 @@
 ## 阶段 6: 文档 + 验证
 
 - [x] 6.1 [src/libraries/z42.core/src/Exceptions/Exception.z42](../../src/libraries/z42.core/src/Exceptions/Exception.z42) 注释更新："Phase 1 恒为 null" → "interp throws populate at throw site"
-- [x] 6.2 [docs/design/exceptions.md](../../docs/design/exceptions.md) 加 stack-trace 段（如已存在该文档）
-- [x] 6.3 [docs/design/vm-architecture.md](../../docs/design/vm-architecture.md) 简短记录 call_stack 维护策略
+- [x] 6.2 [docs/design/language/exceptions.md](../../docs/design/language/exceptions.md) 加 stack-trace 段（如已存在该文档）
+- [x] 6.3 [docs/design/runtime/vm-architecture.md](../../docs/design/runtime/vm-architecture.md) 简短记录 call_stack 维护策略
 - [x] 6.4 dotnet test + cargo test --lib + test-vm.sh 全绿
 
 ## Scope
@@ -71,8 +71,8 @@
 | `src/runtime/src/exception_tests.rs` | MODIFY 或 NEW | 单测 |
 | `src/libraries/z42.core/src/Exceptions/Exception.z42` | MODIFY | 注释更新 |
 | `src/tests/exceptions/stack_trace_basic.z42` | NEW | golden + assert |
-| `docs/design/vm-architecture.md` | MODIFY | call_stack 段 |
-| `docs/design/exceptions.md` | MODIFY (if exists) | trace 段 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | call_stack 段 |
+| `docs/design/language/exceptions.md` | MODIFY (if exists) | trace 段 |
 
 **只读引用：**
 - `func.line_table` / `resolve_line` — 已存在，无需改

@@ -71,7 +71,7 @@
 
 ## 阶段 8: 文档同步
 
-- [ ] 8.1 [docs/design/cross-platform.md](docs/design/cross-platform.md) 加 "Android" 章节
+- [ ] 8.1 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) 加 "Android" 章节
 - [ ] 8.2 [platform/android/README.md](platform/android/README.md) 完整文档（工具、build、AAR 集成示例）
 - [ ] 8.3 [docs/dev.md](docs/dev.md) 加 "Platform: Android" 段
 - [ ] 8.4 [docs/roadmap.md](docs/roadmap.md) 进度表加 P4.3 完成

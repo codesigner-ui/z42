@@ -264,7 +264,7 @@ public sealed partial class TypeChecker
     // ── Lambda ────────────────────────────────────────────────────────────────
 
     /// L2 lambda binding: synthesize a `Z42FuncType`, bind the body, and verify
-    /// no captures (closure captures are L3-only). See docs/design/closure.md.
+    /// no captures (closure captures are L3-only). See docs/design/language/closure.md.
     private BoundExpr BindLambda(LambdaExpr lambda, TypeEnv env, Z42Type? expected)
     {
         // 1. Determine each param's resolved type.
@@ -356,7 +356,7 @@ public sealed partial class TypeChecker
             // any enclosing lambda's outer boundary must be captured by *each*
             // such enclosing frame so the capture propagates transitively from
             // the outermost defining scope down to the innermost reference.
-            // See docs/design/closure.md §4 + impl-closure-l3-core Decision 6.
+            // See docs/design/language/closure.md §4 + impl-closure-l3-core Decision 6.
             if (_lambdaBindingStack.Count > 0)
             {
                 var topFrame = _lambdaBindingStack.Peek();

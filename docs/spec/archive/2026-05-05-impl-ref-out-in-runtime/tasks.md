@@ -53,9 +53,9 @@
 - [ ] 6.3 Rust GC 单元测试 — Value::Ref::Array / Field 持有的对象在 GC 周期间存活
 
 ## 阶段 7: 文档同步
-- [ ] 7.1 `docs/design/parameter-modifiers.md` "Runtime Implementation" 段从 future → current；移除过渡期警告
-- [ ] 7.2 `docs/design/ir.md` 加 3 新 opcode + Value::Ref 表达说明
-- [ ] 7.3 `docs/design/vm-architecture.md` 加 Ref 数据结构 + frame stack indexed lookup + GC 协调段
+- [ ] 7.1 `docs/design/language/parameter-modifiers.md` "Runtime Implementation" 段从 future → current；移除过渡期警告
+- [ ] 7.2 `docs/design/runtime/ir.md` 加 3 新 opcode + Value::Ref 表达说明
+- [ ] 7.3 `docs/design/runtime/vm-architecture.md` 加 Ref 数据结构 + frame stack indexed lookup + GC 协调段
 - [ ] 7.4 `docs/roadmap.md` ref/out/in 行 IrGen ⏸ → ✅，VM ⏸ → ✅
 
 ## 阶段 8: 验证 + 归档

@@ -79,11 +79,11 @@
 
 ## 阶段 6: 文档同步
 
-- [ ] 6.1 [docs/design/testing.md](docs/design/testing.md) 元数据 + front-matter + 归属规则 + TAP/JSON 格式
+- [ ] 6.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) 元数据 + front-matter + 归属规则 + TAP/JSON 格式
 - [ ] 6.2 [docs/design/test-runner.md](docs/design/test-runner.md) 实现原理（架构图、模块职责、调用流程）
 - [ ] 6.3 [docs/dev.md](docs/dev.md) 加 "z42-test-runner" 段
 - [ ] 6.4 [docs/roadmap.md](docs/roadmap.md) Pipeline 进度表加 P2 完成
-- [ ] 6.5 [docs/design/vm-architecture.md](docs/design/vm-architecture.md) 在 toolchain 章节加 test-runner 简介
+- [ ] 6.5 [docs/design/runtime/vm-architecture.md](docs/design/runtime/vm-architecture.md) 在 toolchain 章节加 test-runner 简介
 
 ## 阶段 7: 验证
 

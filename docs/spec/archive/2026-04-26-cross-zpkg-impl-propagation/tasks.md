@@ -54,8 +54,8 @@
 
 ## 阶段 7: 文档 + 归档
 
-- [x] 7.1 `docs/design/compiler-architecture.md` 加 "跨 zpkg impl 块传播" 小节
-- [x] 7.2 `docs/design/generics.md` extern impl 章节加 L3-Impl2 落地小节
+- [x] 7.1 `docs/design/compiler/compiler-architecture.md` 加 "跨 zpkg impl 块传播" 小节
+- [x] 7.2 `docs/design/language/generics.md` extern impl 章节加 L3-Impl2 落地小节
 - [x] 7.3 `docs/roadmap.md` L3-Impl2 状态 ✅
 - [x] 7.4 tasks.md 状态 → `🟢 已完成`
 - [x] 7.5 归档 + commit + push（scope `feat(ir+typecheck)`）

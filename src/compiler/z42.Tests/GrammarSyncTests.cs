@@ -5,7 +5,7 @@ using Z42.Core.Features;
 namespace Z42.Tests;
 
 /// <summary>
-/// Validates that every <c>[feat:NAME]</c> tag in <c>docs/design/grammar.peg</c> is
+/// Validates that every <c>[feat:NAME]</c> tag in <c>docs/design/language/grammar.peg</c> is
 /// recognised by <see cref="LanguageFeatures"/>. If a tag is a typo or a new
 /// feature is added to the grammar but not to <c>LanguageFeatures.GetByName</c>,
 /// this test will fail with the list of unrecognised names.

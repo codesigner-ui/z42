@@ -88,7 +88,7 @@ C# `Predicate<T>` 也只有 1 arity。多 arity predicate 用户用 `Func<T1, T2
 
 ### Decision 6: 不实现 N arity 自动生成脚本
 
-`docs/design/delegates-events.md` §3.4 提到 `tools/gen-delegates.z42` 自动生成 16 arity。**v1 不实施**。
+`docs/design/language/delegates-events.md` §3.4 提到 `tools/gen-delegates.z42` 自动生成 16 arity。**v1 不实施**。
 
 理由：
 - z42 当前未自举（编译器是 C#），跑 z42 脚本生成 z42 源码是循环依赖

@@ -2,7 +2,7 @@
 
 ## Why
 
-`docs/design/interop.md` 定义的三层 ABI 横跨 7 个实施 milestone（L2.M8–M14）。如果 7 个 spec 各自独立设计接口，**形状会在实施过程中漂移** —— 后一个 spec 实现时常发现前一个 spec 锁死的 trait 签名不够用，被迫返工或加兼容层。
+`docs/design/language/interop.md` 定义的三层 ABI 横跨 7 个实施 milestone（L2.M8–M14）。如果 7 个 spec 各自独立设计接口，**形状会在实施过程中漂移** —— 后一个 spec 实现时常发现前一个 spec 锁死的 trait 签名不够用，被迫返工或加兼容层。
 
 按"接口先行"原则，本变更**一次性把所有公开接口（C ABI 头文件、Rust crate trait/类型签名、manifest JSON Schema、IR opcode 声明、错误码）钉死**，只交付编译通过的桩（`unimplemented!()`/`Trap`）。后续 C2–C5 spec 在稳定接口下填实现。
 
@@ -15,11 +15,11 @@
 - **Crate `z42-abi`**：Tier 1 类型的 Rust 镜像（`#[repr(C)]`，`no_std`-friendly）
 - **Crate `z42-rs`**：用户面向类型 / trait 骨架（`Z42Type`、`Z42Traceable`、`Z42Args`、`Z42Value`、`Z42TypeRef`、`Z42Error`）
 - **Crate `z42-macros`**：proc macro 入口签名（`Z42Type` derive、`methods` attr、`module!` macro），实现体 `unimplemented!()`
-- **Manifest JSON Schema**：`docs/design/manifest-schema.json`（Draft 2020-12）描述 `.z42abi` 格式 v1
+- **Manifest JSON Schema**：`docs/design/compiler/manifest-schema.json`（Draft 2020-12）描述 `.z42abi` 格式 v1
 - **IR opcode 声明**（C# + Rust）：`CallNative`、`CallNativeVtable`、`PinPtr`、`UnpinPtr` 四个新指令；只新增枚举值，dispatch 走 `Trap`
-- **错误码**：`Z0905`–`Z0910` 注册到 `docs/design/error-codes.md`（具体语义留给 C2–C5）
+- **错误码**：`Z0905`–`Z0910` 注册到 `docs/design/compiler/error-codes.md`（具体语义留给 C2–C5）
 - **测试**：crate 编译 + JSON Schema 自校验 + IR opcode 序列化往返
-- **文档同步**：`docs/design/interop.md` §10 路线图加 C1 条目；新建/更新 README.md
+- **文档同步**：`docs/design/language/interop.md` §10 路线图加 C1 条目；新建/更新 README.md
 
 ## Scope
 
@@ -49,10 +49,10 @@
 | `src/compiler/z42.IR/BinaryFormat/Opcodes.cs` | MODIFY | 加 4 个新 opcode 常量 |
 | `src/compiler/z42.IR/BinaryFormat/ZbcReader.Instructions.cs` | MODIFY | 4 个新 opcode 读取分支（暂返回桩 IR 节点） |
 | `src/compiler/z42.IR/BinaryFormat/ZbcWriter.Instructions.cs` | MODIFY | 4 个新 opcode 写入分支 |
-| `docs/design/manifest-schema.json` | NEW | `.z42abi` v1 JSON Schema |
-| `docs/design/error-codes.md` | MODIFY | 注册 Z0905–Z0910（语义占位） |
-| `docs/design/interop.md` | MODIFY | §10 Roadmap 加 C1 行；§9 反向引用 manifest-schema.json |
-| `docs/design/ir.md` | MODIFY | 加 4 个新 opcode 描述 |
+| `docs/design/compiler/manifest-schema.json` | NEW | `.z42abi` v1 JSON Schema |
+| `docs/design/compiler/error-codes.md` | MODIFY | 注册 Z0905–Z0910（语义占位） |
+| `docs/design/language/interop.md` | MODIFY | §10 Roadmap 加 C1 行；§9 反向引用 manifest-schema.json |
+| `docs/design/runtime/ir.md` | MODIFY | 加 4 个新 opcode 描述 |
 | `docs/roadmap.md` | MODIFY | Pipeline 进度表更新 |
 | `src/runtime/crates/z42-abi/tests/abi_layout_tests.rs` | NEW | 验证 `#[repr(C)]` 字段 offset / size |
 | `src/runtime/crates/z42-rs/tests/skeleton_tests.rs` | NEW | 验证 trait/type 编译通过 |
@@ -61,10 +61,10 @@
 
 **只读引用**（理解上下文，不修改；不计入并行冲突）：
 
-- `docs/design/interop.md` §1–§9（已存在的设计文档作为接口规范来源）
+- `docs/design/language/interop.md` §1–§9（已存在的设计文档作为接口规范来源）
 - `src/runtime/src/metadata/bytecode.rs` 现有 `Instruction` 变体（理解 enum 风格）
 - `src/compiler/z42.IR/BinaryFormat/Opcodes.cs` 现有 opcode 常量（避免冲突）
-- `docs/design/error-codes.md` 现有编号（避免冲突）
+- `docs/design/compiler/error-codes.md` 现有编号（避免冲突）
 
 ## Out of Scope
 

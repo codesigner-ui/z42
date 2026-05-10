@@ -4,11 +4,11 @@
 
 ### Requirement: 设计文档
 
-#### Scenario: docs/design/embedding.md 存在并覆盖核心章节
+#### Scenario: docs/design/runtime/embedding.md 存在并覆盖核心章节
 
-- **WHEN** 阅读 [docs/design/embedding.md](../../../../docs/design/embedding.md)
+- **WHEN** 阅读 [docs/design/runtime/embedding.md](../../../../docs/design/runtime/embedding.md)
 - **THEN** 含 §1 设计目标、§2 设计原则、§3 架构、§4 Tier 1 C ABI、§7 生命周期、§9 Hello World、§12 Deferred 章节
-- **AND** §1 明确指出与 [interop.md](../../../../docs/design/interop.md) 的边界：interop = native 注册类型；embedding = 宿主启动 VM
+- **AND** §1 明确指出与 [interop.md](../../../../docs/design/language/interop.md) 的边界：interop = native 注册类型；embedding = 宿主启动 VM
 
 ---
 
@@ -245,7 +245,7 @@
 
 #### Scenario: vm-architecture.md 含 Embedding 入口小节
 
-- **WHEN** 阅读 [docs/design/vm-architecture.md](../../../../docs/design/vm-architecture.md)
+- **WHEN** 阅读 [docs/design/runtime/vm-architecture.md](../../../../docs/design/runtime/vm-architecture.md)
 - **THEN** 含 "Embedding Entry" 章节
 - **AND** 描述 `host` 模块如何挂接到 VM 全局状态（stdout sink、shutdown 时机）
 

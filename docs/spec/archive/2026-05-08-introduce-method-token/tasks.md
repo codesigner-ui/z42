@@ -136,7 +136,7 @@
 
 ## 阶段 6: 文档同步
 
-- [ ] 6.1 `docs/design/vm-architecture.md` 新增 "Method Token System" 章节：MethodId/TypeId/BuiltinId 定义 + ResolvedTokens 结构 + 解析时序 + 与 D1b func_ref_slots 关系
+- [ ] 6.1 `docs/design/runtime/vm-architecture.md` 新增 "Method Token System" 章节：MethodId/TypeId/BuiltinId 定义 + ResolvedTokens 结构 + 解析时序 + 与 D1b func_ref_slots 关系
 - [ ] 6.2 `src/runtime/src/metadata/README.md` (如存在) 同步核心文件表加 tokens.rs / resolver.rs
 - [ ] 6.3 `docs/review.md` Part 4 §4.1 + §4.6 状态注记 → 🟢
 - [ ] 6.4 `docs/deferred.md` 加 D-XX 条记录 Phase 2 (formalize-jit-method-token) / Phase 3 (zbc-token-format-bump) / Phase 4 (compiler-token-emit) 后续 spec 待启动

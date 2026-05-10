@@ -159,7 +159,7 @@ pub fn derive_z42_type(input: TokenStream) -> TokenStream {
 
 ### Decision 7: Manifest Schema 版本与可演进性
 
-**Schema 文件**：`docs/design/manifest-schema.json`（JSON Schema Draft 2020-12）。
+**Schema 文件**：`docs/design/compiler/manifest-schema.json`（JSON Schema Draft 2020-12）。
 
 **根字段**：
 - `$schema`、`$id`、`title`、`description`

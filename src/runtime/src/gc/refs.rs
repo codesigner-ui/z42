@@ -4,7 +4,7 @@
 //!
 //! `GcRef<T>` 是 `Value::Object` / `Value::Array` 等堆引用类型的**不透明句柄**，
 //! 隐藏内部 backing 实现。后续 backing 切换（自定义堆 allocator / 真 mark-sweep
-//! / MMTk 集成等，见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md)
+//! / MMTk 集成等，见 [`docs/design/runtime/vm-architecture.md`](../../../../docs/design/runtime/vm-architecture.md)
 //! "GC 后续迭代规划" 段）所有 callsite 走 `GcRef::*` API 不需任何修改。
 //!
 //! # 当前 backing（Phase 3e，2026-04-29）

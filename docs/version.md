@@ -135,7 +135,7 @@
 - 所有 L1 特性 golden test 全绿
 - 错误码 `E####` 体系雏形可用，所有 lexer/parser/typecheck 错误经过统一编码
 - `examples/` 至少覆盖每个 L1 特性 1 个示例
-- `docs/design/language-overview.md` 与代码行为完全一致
+- `docs/design/language/language-overview.md` 与代码行为完全一致
 
 | 版本 | 内容 | 工作量 |
 |------|------|:----:|
@@ -514,5 +514,5 @@
 - [features.md](features.md) —— 语言特性的设计决策与 phase 归属
 - [roadmap.md](roadmap.md) —— Phase（L1/L2/L3）实现进度
 - [design/philosophy.md](design/philosophy.md) —— 设计原则与目标受众
-- [design/stdlib-organization.md](design/stdlib-organization.md) —— 标准库组织
+- [design/stdlib/organization.md](design/stdlib/organization.md) —— 标准库组织
 - [.claude/rules/workflow.md](../.claude/rules/workflow.md) —— 工作流与 GREEN 标准

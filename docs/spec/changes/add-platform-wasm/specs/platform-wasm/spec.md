@@ -155,7 +155,7 @@
 
 #### Scenario: cross-platform.md 含 wasm 章节
 
-- **WHEN** 阅读 [docs/design/cross-platform.md](docs/design/cross-platform.md)
+- **WHEN** 阅读 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md)
 - **THEN** 含 "WebAssembly" 章节，包括架构、JS API、限制（无 JIT / 无 IO）、构建步骤
 
 #### Scenario: platform/wasm/README.md 完整

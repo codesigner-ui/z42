@@ -66,9 +66,9 @@
 ## 阶段 6: 示例与文档同步
 
 - [ ] 6.1 新增 `examples/workspace-with-presets/` 完整样例（见 proposal Scope 表 13 个文件）
-- [ ] 6.2 修改 `docs/design/project.md`：在 L6 后新增"L6.5 include 机制"章节，含合并语义、路径规则、preset 段限制、嵌套与循环、与 workspace 共享的优先级关系
-- [ ] 6.3 修改 `docs/design/compiler-architecture.md`：ManifestLoader 流程图增加 include 解析阶段，并说明 IncludeResolver / ManifestMerger 的数据结构与算法
-- [ ] 6.4 修改 `docs/design/error-codes.md`：追加 WS020-024
+- [ ] 6.2 修改 `docs/design/compiler/project.md`：在 L6 后新增"L6.5 include 机制"章节，含合并语义、路径规则、preset 段限制、嵌套与循环、与 workspace 共享的优先级关系
+- [ ] 6.3 修改 `docs/design/compiler/compiler-architecture.md`：ManifestLoader 流程图增加 include 解析阶段，并说明 IncludeResolver / ManifestMerger 的数据结构与算法
+- [ ] 6.4 修改 `docs/design/compiler/error-codes.md`：追加 WS020-024
 - [ ] 6.5 spec scenarios 逐条覆盖确认
 
 ---

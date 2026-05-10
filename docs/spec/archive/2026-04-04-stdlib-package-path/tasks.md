@@ -20,7 +20,7 @@
 
 ## 阶段 3: 文档同步
 
-- [ ] 3.1 更新 `docs/design/stdlib.md` 中 "stdlib Search Path" 一节（路径名 + 环境变量名）
+- [ ] 3.1 更新 `docs/design/stdlib/overview.md` 中 "stdlib Search Path" 一节（路径名 + 环境变量名）
 - [ ] 3.2 更新 `.claude/CLAUDE.md` 构建与测试部分，新增 `package.sh` 说明
 
 ## 阶段 4: 验证

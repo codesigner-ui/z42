@@ -24,7 +24,7 @@
 
 ## 阶段 3: 文档同步
 - [x] 3.1 `gc/README.md` —— 更新 Phase 1 known limits（删除 alloc_map 占位说明）
-- [x] 3.2 `docs/design/vm-architecture.md` —— "GC 子系统" 段：trait 形状代码块移除 alloc_map 行；已知限制段加 2026-04-29 重构注释
+- [x] 3.2 `docs/design/runtime/vm-architecture.md` —— "GC 子系统" 段：trait 形状代码块移除 alloc_map 行；已知限制段加 2026-04-29 重构注释
 
 ## 阶段 4: 验证
 

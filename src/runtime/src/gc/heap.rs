@@ -28,7 +28,7 @@
 //!
 //! # Phase 路线
 //!
-//! 见 [`docs/design/vm-architecture.md`](../../../../docs/design/vm-architecture.md)
+//! 见 [`docs/design/runtime/vm-architecture.md`](../../../../docs/design/runtime/vm-architecture.md)
 //! "GC 子系统" 段。
 
 use std::sync::Arc;

@@ -43,7 +43,7 @@
 - [x] 5.4 `./scripts/build-stdlib.sh` 6/6 ✅
 - [x] 5.5 spec scenarios 逐条核对
 - [x] 5.6 文档同步：
-  - `docs/design/delegates-events.md` 顶部状态加 D-5 + D2c-多播
+  - `docs/design/language/delegates-events.md` 顶部状态加 D-5 + D2c-多播
   - `docs/roadmap.md` 历史表加一行
   - `docs/deferred-features.md` D-7 改写：多播已落地，单播留 2b
 - [x] 5.7 移动 `docs/spec/changes/add-event-keyword-multicast/` → `docs/spec/archive/2026-05-03-add-event-keyword-multicast/`

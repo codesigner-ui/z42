@@ -22,7 +22,7 @@
 >   - `src/compiler/z42.Semantics/Codegen/FunctionEmitterCalls.cs` 移除
 >     `IsBuiltinCollectionType` 的 SB 分支 + ResolveBuiltinMethod 的 SB 方法映射
 >   - `src/compiler/z42.Semantics/TypeCheck/TypeChecker.Calls.cs` 同步移除
->   - `docs/design/compiler-architecture.md` "pseudo-class 策略与迁移" 小节同步
+>   - `docs/design/compiler/compiler-architecture.md` "pseudo-class 策略与迁移" 小节同步
 
 - [x] 1.1 重写 `StringBuilder.z42` — 基于 string[] + Convert.ToString + String.FromChars
 - [x] 1.2 移除 IrGen `EmitBoundNew` 中 `case "StringBuilder"` 特例

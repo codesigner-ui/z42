@@ -74,8 +74,8 @@ per tp:
 | `src/runtime/src/metadata/loader.rs` | TypeDesc 新增字段 + build_type_registry 拷贝 + 加载时 verify pass |
 | `src/runtime/src/metadata/merge_tests.rs` | fixture 更新 |
 | `src/runtime/tests/metadata/constraint_tests.rs` | 新增：loader 读取 + verify pass 覆盖 |
-| `docs/design/ir.md` | zbc 格式小节补充约束字段布局 |
-| `docs/design/generics.md` | L3-G3a 状态更新 |
+| `docs/design/runtime/ir.md` | zbc 格式小节补充约束字段布局 |
+| `docs/design/language/generics.md` | L3-G3a 状态更新 |
 | `docs/roadmap.md` | L3-G 进度表 G3a → ✅ |
 
 ## Out of Scope

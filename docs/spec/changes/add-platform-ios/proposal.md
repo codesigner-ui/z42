@@ -23,7 +23,7 @@ P4.4 是 P4 跨平台**最后一块**：
 - **构建脚本** `platform/ios/build.sh`：用 `cargo` 多 target 构建 .a，然后用 `xcodebuild -create-xcframework` 打 xcframework
 - **just 接入**：`just platform ios build` / `just platform ios test`
 - **CI 接入**：macOS runner 上加 platform-ios job（要求 macOS 14+ 自带 Xcode）
-- **文档**：[platform/ios/README.md](platform/ios/README.md) + [docs/design/cross-platform.md](docs/design/cross-platform.md) iOS 段
+- **文档**：[platform/ios/README.md](platform/ios/README.md) + [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) iOS 段
 
 ## Scope
 
@@ -49,7 +49,7 @@ P4.4 是 P4 跨平台**最后一块**：
 | `platform/ios/README.md` | NEW | 工程文档 |
 | `justfile` | MODIFY | 加 `platform-ios-*` 子任务（替换 P4.3 留下的 ios 占位） |
 | `.github/workflows/ci.yml` | MODIFY | 加 platform-ios job（macOS runner） |
-| `docs/design/cross-platform.md` | MODIFY | iOS 段（架构 / Swift API / JIT 禁令） |
+| `docs/design/runtime/cross-platform.md` | MODIFY | iOS 段（架构 / Swift API / JIT 禁令） |
 | `docs/dev.md` | MODIFY | 加 "Platform: iOS" 段 |
 | `src/runtime/Cargo.toml` | MODIFY | `[workspace] members` 加 `../platform/ios/rust` |
 
@@ -57,7 +57,7 @@ P4.4 是 P4 跨平台**最后一块**：
 - [platform/wasm/](platform/wasm/) — 借鉴 JS API 设计风格
 - [platform/android/](platform/android/) — 借鉴 facade + native bridge 切分
 - [src/runtime/](src/runtime/) — 理解 Interpreter API
-- [docs/design/cross-platform.md](docs/design/cross-platform.md) — P4.1 / P4.2 / P4.3 已建好
+- [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) — P4.1 / P4.2 / P4.3 已建好
 
 ## Out of Scope
 

@@ -29,7 +29,7 @@
 ## 阶段 4: 测试 + 文档
 - [ ] 4.1 NEW `src/compiler/z42.Tests/Diagnostics/EventAccessControlTests.cs`：单播外部 invoke ❌、单播外部 assign ❌、多播外部 invoke ❌、多播外部 assign ❌、单播内部 invoke ✅、外部 += / -= ✅
 - [ ] 4.2 NEW `src/runtime/tests/golden/run/event_singlecast_idisposable/source.z42` + `expected_output.txt`：var t = ev.Sub += h; ev.Fire(); t.Dispose(); ev.Fire(); 应只 fire 一次
-- [ ] 4.3 `docs/design/delegates-events.md` §6.3 / §6.5 IDisposable + access control 标记落地，status 行追加 D-7-residual
+- [ ] 4.3 `docs/design/language/delegates-events.md` §6.3 / §6.5 IDisposable + access control 标记落地，status 行追加 D-7-residual
 - [ ] 4.4 `docs/deferred.md` 移除 D-7-residual 条目
 - [ ] 4.5 `docs/roadmap.md` event 行进度表更新
 
@@ -38,7 +38,7 @@
 - [ ] 5.2 `dotnet test src/compiler/z42.Tests/z42.Tests.csproj` —— 全绿（包括新加的 EventAccessControlTests）
 - [ ] 5.3 `./scripts/test-vm.sh` —— 全绿（包括新 golden + 现有 event/multicast 全过）
 - [ ] 5.4 spec scenarios 5 个场景逐条对应 ✅
-- [ ] 5.5 文档同步：`docs/design/delegates-events.md`、`docs/deferred.md`、`docs/roadmap.md`
+- [ ] 5.5 文档同步：`docs/design/language/delegates-events.md`、`docs/deferred.md`、`docs/roadmap.md`
 
 ## 备注
 - E0414 占用 type-checker 段下一个空闲号

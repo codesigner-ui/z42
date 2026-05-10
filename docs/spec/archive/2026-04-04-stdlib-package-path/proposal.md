@@ -19,7 +19,7 @@ stdlib 源文件已在 `src/libraries/` 下存在，但 VM 启动时完全不知
 |-----------|---------|------|
 | `src/runtime/src/main.rs` | modify | 添加 libs 搜索路径探测 + log |
 | `scripts/package.sh` | new | build + 打包到 artifacts/z42/ |
-| `docs/design/stdlib.md` | modify | 更新搜索路径规范（stdlib/ → libs/） |
+| `docs/design/stdlib/overview.md` | modify | 更新搜索路径规范（stdlib/ → libs/） |
 | `.claude/CLAUDE.md` | modify | 新增 package.sh 构建说明 |
 
 ## Out of Scope

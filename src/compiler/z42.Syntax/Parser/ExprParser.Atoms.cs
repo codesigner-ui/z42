@@ -143,7 +143,7 @@ internal static partial class ExprParser
     ///   • `IDENT '=>'` — single untyped param
     ///   • `'(' ... ')' '=>'` — paren-wrapped param list (possibly empty / typed)
     /// Does not consume tokens.
-    /// See docs/design/closure.md §3.1.
+    /// See docs/design/language/closure.md §3.1.
     internal static bool IsLambdaStart(TokenCursor cursor)
     {
         if (cursor.Current.Kind == TokenKind.Identifier
@@ -168,7 +168,7 @@ internal static partial class ExprParser
     }
 
     /// Parse a lambda literal. Caller has confirmed `IsLambdaStart(cursor)`.
-    /// See docs/design/closure.md §3.1.
+    /// See docs/design/language/closure.md §3.1.
     internal static ParseResult<Expr> ParseLambda(TokenCursor cursor, LanguageFeatures feat)
     {
         var startSpan = cursor.Current.Span;

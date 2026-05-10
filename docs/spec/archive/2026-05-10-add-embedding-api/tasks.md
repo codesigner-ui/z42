@@ -17,7 +17,7 @@
 
 ## H0: 设计文档与 spec/changes
 
-- [x] 0.1 [docs/design/embedding.md](../../../docs/design/embedding.md) DRAFT
+- [x] 0.1 [docs/design/runtime/embedding.md](../../../docs/design/runtime/embedding.md) DRAFT
 - [x] 0.2 [docs/spec/changes/add-embedding-api/proposal.md](proposal.md)
 - [x] 0.3 [docs/spec/changes/add-embedding-api/design.md](design.md)
 - [x] 0.4 [docs/spec/changes/add-embedding-api/tasks.md](tasks.md)
@@ -67,7 +67,7 @@
 
 - [x] 1.4.1 [src/runtime/src/lib.rs](../../../src/runtime/src/lib.rs) 加 `pub mod host;`
 - [x] 1.4.2 [src/toolchain/host/README.md](../../../src/toolchain/host/README.md) 更新到 H1 状态
-- [x] 1.4.3 [docs/design/vm-architecture.md](../../../docs/design/vm-architecture.md) 加 "Embedding Entry" 小节
+- [x] 1.4.3 [docs/design/runtime/vm-architecture.md](../../../docs/design/runtime/vm-architecture.md) 加 "Embedding Entry" 小节
 - [x] 1.4.4 [src/runtime/include/README.md](../../../src/runtime/include/README.md) 加 `z42_host.h` 条目
 
 ### 1.5 验证
@@ -130,7 +130,7 @@
 - [x] 3.3 `host_tests::invoke_arg_count_mismatch_returns_arg_mismatch`（fixture `Main()` 0 参 vs 传 1 个 I64）
 - [x] 3.4 `host_tests::z42_throw_escapes_as_vm_exception_with_message`（fixture `Boom()` `throw new Exception(...)`）
 - [x] 3.5 `host_tests::sink_called_in_correct_order_for_multiple_lines`（fixture `MultiLine()` 3 行）
-- [x] 3.6 [docs/design/embedding.md](../../../docs/design/embedding.md) §10 状态码 → 触发条件表 + 错误消息分类机制段
+- [x] 3.6 [docs/design/runtime/embedding.md](../../../docs/design/runtime/embedding.md) §10 状态码 → 触发条件表 + 错误消息分类机制段
 - [x] 3.7 [src/runtime/src/host/ops.rs](../../../src/runtime/src/host/ops.rs) `invoke_impl` 加 `args.len() != func.param_count` 检查；前缀 `arg-count-mismatch:` 用于 `classify_invoke_error` 分流
 - [x] 3.8 [src/runtime/src/host/mod.rs](../../../src/runtime/src/host/mod.rs) `classify_invoke_error` 修复（`"Unhandled exception"` → `"uncaught exception"` 与 `format_uncaught` 对齐）
 - [x] 3.9 [docs/spec/changes/add-embedding-api/specs/embedding-host-api/spec.md](specs/embedding-host-api/spec.md) 加 Requirement"Hello-World 端到端" + Requirement"错误路径分类（H3）"

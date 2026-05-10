@@ -37,7 +37,7 @@
 - [x] 3.5 `./scripts/build-stdlib.sh` 6/6 ✅
 - [x] 3.6 spec scenarios 逐条核对：8 scenario 全部由测试覆盖
 - [x] 3.7 文档同步：
-  - `docs/design/compiler-architecture.md` "Pratt 表达式解析" 后加 §嵌套 generic `>>` 拆分（算法 + Decision 来源）
+  - `docs/design/compiler/compiler-architecture.md` "Pratt 表达式解析" 后加 §嵌套 generic `>>` 拆分（算法 + Decision 来源）
   - `docs/roadmap.md` 历史表加 2026-05-03 fix-nested-generic-parsing 行
 - [x] 3.8 移动 `docs/spec/changes/fix-nested-generic-parsing/` → `docs/spec/archive/2026-05-03-fix-nested-generic-parsing/`
 - [x] 3.9 commit + push

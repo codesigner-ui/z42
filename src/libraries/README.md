@@ -34,7 +34,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 > Runtime 提供 **primitive**（JIT 无法消除的硬能力：syscall / libm / GC barrier /
 > 类型元数据 / UTF-8 codepoint 访问 / 数值字面量 parse），**feature**（集合 / 算法 /
 > 格式化 / Assert / Path 字符串操作 / 算术辅助）一律脚本实现。
-> 详见 [docs/design/stdlib-organization.md "Primitive vs Feature (BCL/Rust 对标)"](../../docs/design/stdlib-organization.md)。
+> 详见 [docs/design/stdlib/organization.md "Primitive vs Feature (BCL/Rust 对标)"](../../docs/design/stdlib/organization.md)。
 
 ### 2. VM 接口集中在 z42.core
 

@@ -61,7 +61,7 @@
 
 - [ ] 5.1 `formats.rs ZBC_VERSION` 从 `[0, 4]` → `[0, 5]`
 - [ ] 5.2 `ZbcFile.cs` 中 `CurrentVersion` 同步（看 C# 侧版本常量位置）
-- [ ] 5.3 `docs/design/ir.md` 记录 0.5 changelog（OP_OBJ_NEW 加 ctor_name）
+- [ ] 5.3 `docs/design/runtime/ir.md` 记录 0.5 changelog（OP_OBJ_NEW 加 ctor_name）
 
 ## 阶段 6: 测试 + 回归
 
@@ -74,8 +74,8 @@
 
 ## 阶段 7: 文档同步 + 归档
 
-- [ ] 7.1 `docs/design/ir.md`：ObjNewInstr 新签名；zbc 版本 0.5 changelog
-- [ ] 7.2 `docs/design/vm-architecture.md`：ObjNew dispatch 章节更新
+- [ ] 7.1 `docs/design/runtime/ir.md`：ObjNewInstr 新签名；zbc 版本 0.5 changelog
+- [ ] 7.2 `docs/design/runtime/vm-architecture.md`：ObjNew dispatch 章节更新
   （与 VCall 对齐 — 编译期 resolve，VM 直查）
 - [ ] 7.3 tasks.md 状态 → `🟢 已完成`
 - [ ] 7.4 归档 + commit + push（scope `feat(ir+vm+typecheck)`）

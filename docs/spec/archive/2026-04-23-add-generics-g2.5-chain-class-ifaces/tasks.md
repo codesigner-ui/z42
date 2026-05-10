@@ -7,7 +7,7 @@
 `<int>` 在整个 pipeline 保留；`where T: IEquatable<int>` 校验会对比实际 args 是否对齐。
 **原因：** L3-G2.5 chain 的 class-侧收尾 —— 之前只做了 primitive + generic param
 的 TypeArg 校验，class 仍按名字匹配（documented gap）。
-**文档影响**：`docs/design/generics.md`（补充说明）、`docs/roadmap.md`（已在 chain 下记录）。
+**文档影响**：`docs/design/language/generics.md`（补充说明）、`docs/roadmap.md`（已在 chain 下记录）。
 
 ## 任务
 

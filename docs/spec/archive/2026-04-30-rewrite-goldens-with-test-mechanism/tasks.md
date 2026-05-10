@@ -62,7 +62,7 @@
 
 ## 阶段 6: 文档
 
-- [ ] 6.1 [docs/design/testing.md](docs/design/testing.md) 标 R5 完成；加迁移后目录树图
+- [ ] 6.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) 标 R5 完成；加迁移后目录树图
 - [ ] 6.2 [tests/README.md](tests/README.md) 顶层目录说明
 - [ ] 6.3 [src/runtime/tests/README.md](src/runtime/tests/README.md) 更新 vm_core 子目录说明
 - [ ] 6.4 各 stdlib 库 README.md 加 tests/ 说明

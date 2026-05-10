@@ -130,17 +130,17 @@
 
 #### Scenario: ir.md 含 TestIndex 二进制格式
 
-- **WHEN** 阅读 [docs/design/ir.md](docs/design/ir.md)
+- **WHEN** 阅读 [docs/design/runtime/ir.md](docs/design/runtime/ir.md)
 - **THEN** 含 "TestIndex Section" 章节，描述 section ID、magic、version、entry layout
 
 #### Scenario: testing.md 含架构图
 
-- **WHEN** 阅读 [docs/design/testing.md](docs/design/testing.md)
+- **WHEN** 阅读 [docs/design/testing/testing.md](docs/design/testing/testing.md)
 - **THEN** 含 R1-R4 全图（编译器收集 → zbc 元数据 → Rust reader → R3 runner 消费 → R2 z42.test 库 assertion）
 
 #### Scenario: 错误码占位注册
 
-- **WHEN** 阅读 [docs/design/error-codes.md](docs/design/error-codes.md)
+- **WHEN** 阅读 [docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md)
 - **THEN** Z0911-Z0915 占位条目存在，标注"R4 落地"
 
 ---

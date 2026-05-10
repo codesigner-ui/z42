@@ -17,8 +17,8 @@
 - **新增** C# `IrFunction.ParamModifiers: List<byte>?` 字段
 - **新增** C# `FunctionEmitterCalls.EmitBoundCall`：检测 `BoundModifiedArg` → 根据 `Inner` 形态 emit `LoadXxxAddr` 产生 Ref 寄存器作为 callee arg
 - **新增** 7 个 golden tests `tests/golden/run/21_ref_out_in/{a..g}/`
-- **更新** `docs/design/parameter-modifiers.md` "Runtime Implementation" 段从 future → current
-- **更新** `docs/design/ir.md` + `vm-architecture.md` + `roadmap.md`
+- **更新** `docs/design/language/parameter-modifiers.md` "Runtime Implementation" 段从 future → current
+- **更新** `docs/design/runtime/ir.md` + `vm-architecture.md` + `roadmap.md`
 
 ## Scope
 
@@ -41,9 +41,9 @@
 | `src/compiler/z42.Semantics/Codegen/FunctionEmitterCalls.cs` | MODIFY | 检测 BoundModifiedArg → emit LoadXxxAddr |
 | `src/compiler/z42.Semantics/Codegen/IrGen.cs` | MODIFY | fn.Params modifier 写入 IrFunction.ParamModifiers |
 | `src/runtime/tests/golden/run/21_ref_out_in/{a..g}/` | NEW | 7 端到端 golden |
-| `docs/design/parameter-modifiers.md` | MODIFY | Runtime Implementation 段从 future → current |
-| `docs/design/ir.md` | MODIFY | 3 新 opcode + Value::Ref 表达 |
-| `docs/design/vm-architecture.md` | MODIFY | Ref 数据结构 + frame stack lookup + GC 协调 |
+| `docs/design/language/parameter-modifiers.md` | MODIFY | Runtime Implementation 段从 future → current |
+| `docs/design/runtime/ir.md` | MODIFY | 3 新 opcode + Value::Ref 表达 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | Ref 数据结构 + frame stack lookup + GC 协调 |
 | `docs/roadmap.md` | MODIFY | ref/out/in 行 IrGen/VM ⏸ → ✅ |
 
 **只读引用**：

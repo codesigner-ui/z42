@@ -16,7 +16,7 @@ P4.3 在 P4.2 (wasm) 验证 interp 路径平台无关性后启动；与 wasm 不
 - **构建脚本** `platform/android/build.sh`：用 `cargo-ndk` 构建 4 个 ABI 的 .so，然后 Gradle 打 AAR
 - **just 接入**：`just platform android build` / `just platform android test`
 - **CI 接入**：linux runner 上加 platform-android job（用 macOS 也可，因 macOS runner 提供 Android emulator x86_64 加速）
-- **文档**：[platform/android/README.md](platform/android/README.md) + [docs/design/cross-platform.md](docs/design/cross-platform.md) Android 段
+- **文档**：[platform/android/README.md](platform/android/README.md) + [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) Android 段
 
 ## Scope
 
@@ -45,14 +45,14 @@ P4.3 在 P4.2 (wasm) 验证 interp 路径平台无关性后启动；与 wasm 不
 | `platform/android/build.sh` | NEW | cargo-ndk + gradle assembleRelease |
 | `justfile` | MODIFY | 加 `platform-android-*` 子任务（替换 P4.2 留下的 android 占位） |
 | `.github/workflows/ci.yml` | MODIFY | 加 platform-android job（macOS runner 用 emulator） |
-| `docs/design/cross-platform.md` | MODIFY | Android 段（架构 / API / 限制） |
+| `docs/design/runtime/cross-platform.md` | MODIFY | Android 段（架构 / API / 限制） |
 | `docs/dev.md` | MODIFY | 加 "Platform: Android" 段 |
 | `src/runtime/Cargo.toml` | MODIFY | `[workspace] members` 加 `../platform/android/z42-runtime/src/main/rust` |
 
 **只读引用**：
 - [platform/wasm/](platform/wasm/) — 借鉴 P4.2 的 JS API 设计风格
 - [src/runtime/](src/runtime/) — 理解 Interpreter API
-- [docs/design/cross-platform.md](docs/design/cross-platform.md) — P4.1 / P4.2 已建好
+- [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) — P4.1 / P4.2 已建好
 
 ## Out of Scope
 

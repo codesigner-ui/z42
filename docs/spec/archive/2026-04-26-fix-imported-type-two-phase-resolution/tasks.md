@@ -74,7 +74,7 @@
 
 ## 阶段 6: 文档同步 + 归档
 
-- [ ] 6.1 `docs/design/compiler-architecture.md` "TSIG 与跨包符号导入" 章节
+- [ ] 6.1 `docs/design/compiler/compiler-architecture.md` "TSIG 与跨包符号导入" 章节
   补"两阶段加载"小节，描述设计与决策
 - [ ] 6.2 tasks.md 状态 → `🟢 已完成`
 - [ ] 6.3 `docs/spec/changes/fix-imported-type-two-phase-resolution/` →

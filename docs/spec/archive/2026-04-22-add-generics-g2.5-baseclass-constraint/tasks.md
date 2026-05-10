@@ -40,7 +40,7 @@
 
 ## 阶段 4: 文档 + 验证 ✅
 
-- [x] 4.1 `docs/design/generics.md`: L3-G2.5 基类约束小节
+- [x] 4.1 `docs/design/language/generics.md`: L3-G2.5 基类约束小节
 - [x] 4.2 `docs/roadmap.md`: L3-G 进度表 G2.5 → 🟡（基类 ✅ / 其他范式 📋）
 - [x] 4.3 `dotnet build` + `cargo build` 全绿
 - [x] 4.4 `dotnet test` 487/487 ✅

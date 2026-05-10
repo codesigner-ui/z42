@@ -99,7 +99,7 @@ T Sum<T>(T[] xs) where T : INumber<T> {
 - [x] 8.2 Golden test `89_static_abstract_operator`（interp + jit；
       涵盖 Add/Sub/Mul + chain `a + b + c`）
 - [x] 8.3 golden test `87_generic_inumber` 注释更新为 static abstract 语义
-- [ ] 8.4 `docs/design/generics.md` 新增 "静态抽象接口成员" 章节 — **本次提交完成**
+- [ ] 8.4 `docs/design/language/generics.md` 新增 "静态抽象接口成员" 章节 — **本次提交完成**
 - [ ] 8.5 `docs/roadmap.md` 标记 ✅ — **本次提交完成**
 - [ ] 8.6 归档
 

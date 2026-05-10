@@ -40,7 +40,7 @@ RAII 保证 push/pop 严格配对（含 panic / `?` early return）。
 ### 阶段 5: 文档同步 ✅
 - [x] `gc/rc_heap.rs` 模块文档：限制 #3 缩到 JIT 栈帧 regs（interp 已对接）
 - [x] `gc/README.md` 同步 + 加 Phase 3f 完成说明
-- [x] `docs/design/vm-architecture.md` 同步 + Phase 路线表加 3f
+- [x] `docs/design/runtime/vm-architecture.md` 同步 + Phase 路线表加 3f
 - [x] `gc/mod.rs` 加 3f 已落地 + 3f-2 计划
 
 ### 阶段 6: 验证 ✅

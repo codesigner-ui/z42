@@ -153,7 +153,7 @@
 
 #### Scenario: testing.md 标注迁移完成
 
-- **WHEN** 阅读 [docs/design/testing.md](docs/design/testing.md)
+- **WHEN** 阅读 [docs/design/testing/testing.md](docs/design/testing/testing.md)
 - **THEN** 含"测试目录树"图与各 tier 用例分布示意
 
 #### Scenario: 各 stdlib 库 README 列 tests/ 内容

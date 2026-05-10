@@ -166,6 +166,6 @@
 
 ## MODIFIED Requirements
 
-### Requirement: zbc 文件格式（docs/design/zbc.md）
+### Requirement: zbc 文件格式（docs/design/runtime/zbc.md）
 **Before:** META section 描述为"调试信息（可选）"含 source_file_str_idx + sha256 + ip→line/column 表；实际代码 LineTable 内联在 FUNC body、DBUG 仅含局部变量名，文档与代码漂移。
 **After:** META section 仅承载模块名/版本/entry（与代码一致）；DBUG section 重组为 z42 调试信息的唯一容器（**LineTable + LocalVarTable** 两表合一），FUNC body 移除 LineTable 字段；sidecar 形态由新增 BLID section + `ZbcFlags.SymOnly` 标识。文档与代码对齐到 1.2。

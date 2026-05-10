@@ -32,7 +32,7 @@
 
 - [x] 4.1 既有 stack_trace_field 测试不需改（断言用 `.Contains("Demo.Inner")` 不依赖具体格式）
 - [x] 4.2 加 1 个 unit 测试 `format_stack_trace` 支持 column 显示
-- [x] 4.3 [docs/design/vm-architecture.md](../../docs/design/vm-architecture.md) 简短记录 column 字段
+- [x] 4.3 [docs/design/runtime/vm-architecture.md](../../docs/design/runtime/vm-architecture.md) 简短记录 column 字段
 - [x] 4.4 regen-golden + build-stdlib 全量重生
 
 ## 阶段 5: 验证
@@ -57,7 +57,7 @@
 | `src/runtime/src/exception/mod.rs` | MODIFY | FrameInfo.column + format_stack_trace |
 | `src/runtime/src/jit/helpers/{call,vcall,closure,control,registry}.rs` | MODIFY | 4 helper 签名 + caller_col |
 | `src/runtime/src/jit/translate.rs` | MODIFY | emit column const |
-| `docs/design/vm-architecture.md` | MODIFY | 文档同步 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | 文档同步 |
 
 ## 备注
 

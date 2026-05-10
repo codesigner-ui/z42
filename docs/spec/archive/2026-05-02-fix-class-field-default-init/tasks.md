@@ -53,8 +53,8 @@
 - [x] 5.5 spec scenarios 逐条对应实现位置确认（见验证报告）
 - [x] 5.6 文档同步：
     - `docs/design/class.md`（NEW 或 MODIFY）—— 字段默认值规则 + Decision 2/3/4 的 z42 语义偏离声明
-    - `docs/design/language-overview.md` —— 在 class 章节加一句"实例字段支持 `=` 初始化器"
-    - `docs/design/vm-architecture.md` 或 `runtime` README —— `FieldSlot.type_tag` + `default_value_for` 的实现原理
+    - `docs/design/language/language-overview.md` —— 在 class 章节加一句"实例字段支持 `=` 初始化器"
+    - `docs/design/runtime/vm-architecture.md` 或 `runtime` README —— `FieldSlot.type_tag` + `default_value_for` 的实现原理
     - `docs/roadmap.md` —— 在合适分类记录 fix 完成
 - [x] 5.7 移动 `docs/spec/changes/fix-class-field-default-init/` → `docs/spec/archive/2026-05-02-fix-class-field-default-init/`
 - [x] 5.8 commit + push（自动）—— 包含 `.claude/`、`spec/`、`src/`、`docs/`

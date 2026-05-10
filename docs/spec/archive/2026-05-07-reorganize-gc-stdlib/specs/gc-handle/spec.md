@@ -113,7 +113,7 @@ attribute 走 `BuiltinInstr` dispatch（与 `__gc_collect` / `__obj_make_weak`
 
 ## Documentation
 
-- `docs/design/stdlib.md` — z42.core 目录树更新；加 GCHandle 章节简介
-- `docs/design/gc-handle.md` — **NEW** 实现原理文档（HandleTable 数据结构、
+- `docs/design/stdlib/overview.md` — z42.core 目录树更新；加 GCHandle 章节简介
+- `docs/design/runtime/gc-handle.md` — **NEW** 实现原理文档（HandleTable 数据结构、
   Strong/Weak slot 语义、struct 共享 backing 模式、Phase 3 Pinned 扩展规划）
 - `docs/roadmap.md` — 加本变更条目

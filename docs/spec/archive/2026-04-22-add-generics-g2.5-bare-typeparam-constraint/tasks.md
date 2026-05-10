@@ -58,7 +58,7 @@
 
 ## 阶段 6: 文档 + 验证 ✅
 
-- [x] 6.1 `docs/design/generics.md`: 裸类型参数约束小节
+- [x] 6.1 `docs/design/language/generics.md`: 裸类型参数约束小节
 - [x] 6.2 `docs/roadmap.md`: 范式表裸参数 → ✅
 
 ## 备注

@@ -10,7 +10,7 @@ T Max<T>(T a, T b) where T: IComparable<T> {
 }
 ```
 
-选定 Rust 风格 `+` 多约束（见 `docs/design/generics.md` 及用户记忆），Parser/TypeCheck 同时落地。
+选定 Rust 风格 `+` 多约束（见 `docs/design/language/generics.md` 及用户记忆），Parser/TypeCheck 同时落地。
 
 ## What Changes
 
@@ -38,7 +38,7 @@ T Max<T>(T a, T b) where T: IComparable<T> {
 | `src/libraries/z42.core/src/IEquatable.z42` | 修改 | 取消注释（若已注释）或确认启用 |
 | `src/compiler/z42.Tests/TypeCheckerTests.cs` | 新增 | 5+ 个用例：单/多约束、调用点校验、未实现错误、约束方法调用 |
 | `src/runtime/tests/golden/run/70_generic_constraints/` | 新增 | Golden test：用户类实现 IComparable + 泛型 Max |
-| `docs/design/generics.md` | 修改 | L3-G2 状态更新；语法细节完善 |
+| `docs/design/language/generics.md` | 修改 | L3-G2 状态更新；语法细节完善 |
 | `docs/roadmap.md` | 修改 | L3-G 进度表 G2 → ✅ |
 
 ## Out of Scope（本次不做，但已列入后续阶段）

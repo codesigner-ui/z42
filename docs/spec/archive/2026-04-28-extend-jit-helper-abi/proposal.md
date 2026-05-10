@@ -55,7 +55,7 @@
 | `src/runtime/src/jit/mod.rs` | MODIFY | 删 sync 调用 |
 | `src/runtime/src/exception/mod.rs` | MODIFY | 文档更新：runtime 已无 thread_local 异常状态 |
 | `src/runtime/src/thread/mod.rs` | MODIFY | 同上 |
-| `docs/design/vm-architecture.md` | MODIFY | 文档：JIT helper ABI 已扩展，sync 段落删除 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | 文档：JIT helper ABI 已扩展，sync 段落删除 |
 | `docs/spec/archive/2026-04-28-consolidate-vm-state/design.md` | 只读 | 历史 Decision 5 仍存档，不动 |
 
 ## Out of Scope

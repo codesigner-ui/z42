@@ -235,7 +235,7 @@ foreach (var fn in module.Functions)
 
 ### Decision 6: 错误码占位
 
-[docs/design/error-codes.md](docs/design/error-codes.md) 注册（语义留 R4 填）：
+[docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md) 注册（语义留 R4 填）：
 
 | 码 | 含义（R4 时定义） |
 |----|----|

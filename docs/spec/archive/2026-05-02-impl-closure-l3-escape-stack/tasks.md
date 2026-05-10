@@ -79,9 +79,9 @@
 - [x] 7.4 `./scripts/test-vm.sh` 全绿（基线 +1×2 modes）
 - [x] 7.5 spec scenarios 逐条对应实现位置确认
 - [x] 7.6 文档同步：
-    - `docs/design/closure.md` 新增 §"escape 分析与栈分配"章节
-    - `docs/design/vm-architecture.md` MkClos 路径说明 stack vs heap
-    - `docs/design/ir.md` 注明 MkClos 增加 StackAlloc flag
+    - `docs/design/language/closure.md` 新增 §"escape 分析与栈分配"章节
+    - `docs/design/runtime/vm-architecture.md` MkClos 路径说明 stack vs heap
+    - `docs/design/runtime/ir.md` 注明 MkClos 增加 StackAlloc flag
     - `docs/roadmap.md` L3-C2 进度表更新（stack ✅）
 - [x] 7.7 移动 `docs/spec/changes/impl-closure-l3-escape-stack/` → `docs/spec/archive/2026-05-02-impl-closure-l3-escape-stack/`
 - [x] 7.8 commit + push（自动）

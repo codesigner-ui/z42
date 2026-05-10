@@ -143,7 +143,7 @@
 
 #### Scenario: 文档明确 JIT 禁令
 
-- **WHEN** 阅读 [docs/design/cross-platform.md](docs/design/cross-platform.md) iOS 章节
+- **WHEN** 阅读 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) iOS 章节
 - **THEN** 明确说明 "iOS App Store 政策禁止 JIT；本平台仅 interp + AOT"
 - **AND** 引用 Apple 官方政策文档链接
 
@@ -158,7 +158,7 @@
 
 #### Scenario: cross-platform.md 含 iOS 章节
 
-- **WHEN** 阅读 [docs/design/cross-platform.md](docs/design/cross-platform.md)
+- **WHEN** 阅读 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md)
 - **THEN** 含 "iOS" 章节：架构图、Swift API、xcframework 集成、JIT 禁令
 
 #### Scenario: platform/ios/README.md 完整

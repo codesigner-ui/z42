@@ -54,8 +54,8 @@
 - [x] 4.3 `./scripts/test-vm.sh` 全绿（基线 +1×2 modes）
 - [x] 4.4 spec scenarios 逐条核对
 - [x] 4.5 文档同步：
-    - `docs/design/delegates-events.md` —— D1c 完成；§3.4 "脚本生成"改为"0-4 已手写，>4 follow-up"
-    - `docs/design/language-overview.md` —— delegate 章节加 stdlib 用法示例
+    - `docs/design/language/delegates-events.md` —— D1c 完成；§3.4 "脚本生成"改为"0-4 已手写，>4 follow-up"
+    - `docs/design/language/language-overview.md` —— delegate 章节加 stdlib 用法示例
     - `docs/roadmap.md` —— 加一行
 - [x] 4.6 移动 `docs/spec/changes/add-generic-delegates/` → `docs/spec/archive/2026-05-02-add-generic-delegates/`
 - [x] 4.7 commit + push

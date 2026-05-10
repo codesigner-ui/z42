@@ -70,7 +70,7 @@ R3 完整版**消费**：
 | `scripts/test-changed.sh` | （免改动） | R3c ✅ 2026-04-30 已落地 |
 | `justfile` | （视情况）MODIFY | 若已替换占位则不动；按 R3 原 spec 检查 |
 | `docs/design/test-runner.md` | NEW | runner 设计文档（in-process 架构 + Setup/Teardown 调度 + Bencher closure 协议） |
-| `docs/design/testing.md` | MODIFY | 新增 R3b in-process 段说明 |
+| `docs/design/testing/testing.md` | MODIFY | 新增 R3b in-process 段说明 |
 | `docs/dev.md` | MODIFY | 加 "z42-test-runner" 段 |
 
 **只读引用**：

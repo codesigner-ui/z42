@@ -177,7 +177,7 @@ public sealed partial class IrGen
         functions.AddRange(cu.Functions.Select(EmitFunction));
 
         // impl-lambda-l2: append all lambda lifted functions registered during emission.
-        // See docs/design/closure.md §6 + design.md Decision 1.
+        // See docs/design/language/closure.md §6 + design.md Decision 1.
         functions.AddRange(_liftedFunctions);
 
         // R1: collect TestIndex from FunctionDecl.TestAttributes across top-level

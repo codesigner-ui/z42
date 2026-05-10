@@ -38,7 +38,7 @@
 
 - [x] 1.5.1 `git mv spec docs/spec`（一次性整目录迁移）
 - [x] 1.5.2 全仓 perl -pi 更新引用：`spec/changes/` → `docs/spec/changes/`、`spec/archive/` → `docs/spec/archive/`（带 negative lookbehind 防双前缀）；148 文件批量更新
-- [x] 1.5.3 残留裸 `spec/` 引用人工修补：`workflow.md` 目录结构图 + 提交规则、`CLAUDE.md` 自动提交段、`docs/design/testing.md` 增量测试 glob 表、`docs/roadmap.md` H0 描述、`scripts/test-changed.sh` glob、`src/toolchain/host/README.md`
+- [x] 1.5.3 残留裸 `spec/` 引用人工修补：`workflow.md` 目录结构图 + 提交规则、`CLAUDE.md` 自动提交段、`docs/design/testing/testing.md` 增量测试 glob 表、`docs/roadmap.md` H0 描述、`scripts/test-changed.sh` glob、`src/toolchain/host/README.md`
 - [x] 1.5.4 验证：grep 全仓不再出现裸 `spec/changes` / `spec/archive` 路径；剩余 `spec/` 引用为 OpenSpec 偏离对比表（workflow.md）+ "spec/code drift" 概念性表述（GrammarSyncTests.cs），合理保留
 - [ ] 1.5.5 commit + push
 

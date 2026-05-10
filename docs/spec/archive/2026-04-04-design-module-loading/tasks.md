@@ -69,8 +69,8 @@
 
 ## 阶段 5: 文档更新
 
-- [x] 5.1 `docs/design/project.md` L5 — 重写 `[dependencies]` 为包名+扫描设计；更新完整字段速查表
-- [x] 5.2 `docs/design/ir.md` — 重写 Binary Format 章节：zbc full/stripped 双模式 + zpkg indexed/packed 格式
+- [x] 5.1 `docs/design/compiler/project.md` L5 — 重写 `[dependencies]` 为包名+扫描设计；更新完整字段速查表
+- [x] 5.2 `docs/design/runtime/ir.md` — 重写 Binary Format 章节：zbc full/stripped 双模式 + zpkg indexed/packed 格式
 - [x] 5.3 `docs/features.md` Section 17 — 补充双路径机制（Z42_PATH + Z42_LIBS）及 zbc/zpkg 职责说明
 - [x] 5.4 `scripts/package.sh` — 移除 `.zbc` 占位文件生成，只保留 `.zpkg` 占位
 

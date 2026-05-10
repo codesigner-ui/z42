@@ -41,7 +41,7 @@ fn test_something() { ... }
 每次新增 `Instruction` variant，必须同时更新：
 1. `bytecode.rs` — 枚举定义
 2. `interp.rs` — `exec_instr` match 分支（不允许有 `_` 通配兜底）
-3. `docs/design/ir.md` — 指令文档
+3. `docs/design/runtime/ir.md` — 指令文档
 
 ## Value 类型
 

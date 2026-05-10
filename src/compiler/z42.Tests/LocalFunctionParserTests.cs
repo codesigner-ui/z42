@@ -7,7 +7,7 @@ namespace Z42.Tests;
 
 /// Parser unit tests for L2 local function declarations.
 /// Pairs with archived `add-closures` Requirement R4 and impl spec
-/// `LF-1`, `LF-2`. See docs/design/closure.md §3.4.
+/// `LF-1`, `LF-2`. See docs/design/language/closure.md §3.4.
 public sealed class LocalFunctionParserTests
 {
     private static CompilationUnit ParseCu(string src)

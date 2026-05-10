@@ -30,7 +30,7 @@
       完成段
 - [x] `gc/heap.rs` `set_strict_oom` 文档化
 - [x] `gc/README.md` 同步 + 加 Phase 3-OOM 完成说明
-- [x] `docs/design/vm-architecture.md` Phase 路线表 3-OOM ✅；限制清单清空
+- [x] `docs/design/runtime/vm-architecture.md` Phase 路线表 3-OOM ✅；限制清单清空
 - [x] `gc/mod.rs` Phase 路线表
 - [x] `docs/roadmap.md` MagrGC 子系统行更新（覆盖全部 Phase）
 

@@ -2,7 +2,7 @@
 
 ## Why
 
-[delegates-events.md §7](docs/design/delegates-events.md#7-异常处理multicastexception) 设计的异常聚合模式：当 `continueOnException=true` 时，多播 Invoke 跑完所有 handler，把异常聚合后一次性抛 `MulticastException`，不让单个 handler 异常打断剩余订阅链。
+[delegates-events.md §7](docs/design/language/delegates-events.md#7-异常处理multicastexception) 设计的异常聚合模式：当 `continueOnException=true` 时，多播 Invoke 跑完所有 handler，把异常聚合后一次性抛 `MulticastException`，不让单个 handler 异常打断剩余订阅链。
 
 D2a/D2d-1 三个 multicast 类的 `continueOnException` 参数当前未消费（fail-fast）。本 spec 落地 Action 路径的聚合行为；Func/Predicate 路径延后。
 

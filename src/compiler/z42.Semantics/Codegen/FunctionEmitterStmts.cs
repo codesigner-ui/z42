@@ -127,7 +127,7 @@ internal sealed partial class FunctionEmitter
     ///     into a register holding the closure value, and override the
     ///     mapping in `_localFnLiftedNames` to that register (call sites then
     ///     emit `CallIndirect`).
-    /// See docs/design/closure.md §3.4 + impl-closure-l3-core Decision 9.
+    /// See docs/design/language/closure.md §3.4 + impl-closure-l3-core Decision 9.
     private void EmitBoundLocalFunction(BoundLocalFunction lfn)
     {
         var liftedName = _localFnLiftedNames[lfn.Name];

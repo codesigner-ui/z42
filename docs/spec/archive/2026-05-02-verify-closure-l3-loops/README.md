@@ -32,7 +32,7 @@ No code paths needed change. This change adds:
   variable capture.
 - `src/compiler/z42.Tests/ClosureCaptureTypeCheckTests.cs` — two
   TypeCheck unit tests confirming compile-time analysis works.
-- `docs/design/closure.md` §4.3 — implementation note explaining the
+- `docs/design/language/closure.md` §4.3 — implementation note explaining the
   auto-satisfaction.
 - `docs/roadmap.md` — L3-C2-loops marked ✅.
 

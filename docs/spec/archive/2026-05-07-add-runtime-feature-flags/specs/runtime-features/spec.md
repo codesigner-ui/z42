@@ -143,7 +143,7 @@
 
 #### Scenario: cross-platform.md 完整描述 features
 
-- **WHEN** 阅读 [docs/design/cross-platform.md](docs/design/cross-platform.md)
+- **WHEN** 阅读 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md)
 - **THEN** 含章节：feature 列表 / 平台 preset 矩阵 / cfg 编写规范 / 添加新 feature 指南
 
 #### Scenario: README 含 features 说明

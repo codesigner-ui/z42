@@ -4,7 +4,7 @@ Demonstrates the Tier 2 [`z42-host`](../../embed/) crate by loading a
 hello-world `.zbc` and routing its `Console.WriteLine` output through a
 host-supplied stdout sink.
 
-Spec: [`docs/design/embedding.md §9.3`](../../../../../docs/design/embedding.md).
+Spec: [`docs/design/runtime/embedding.md §9.3`](../../../../../docs/design/runtime/embedding.md).
 
 ## 一次性准备
 

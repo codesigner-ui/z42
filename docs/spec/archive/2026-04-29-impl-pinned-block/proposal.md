@@ -32,11 +32,11 @@ C4 把 pin 协议在 VM runtime 完整接通：
   - `tests/native_pin_e2e.rs` NEW：手工 IR 构造 `PinPtr s -> view`，调用 `field_get view.ptr`、`view.len`，断言值
   - 现有 `dispatch::call` + marshal 路径下游验证 PinnedView ptr 能作为 native ptr 参数（带最简 C 函数 `c_strlen` 入 numz42-c）
 - **文档同步**：
-  - `docs/design/error-codes.md` Z0908 从占位 → 已启用
-  - `docs/design/interop.md` §6.3 描述 PinnedView Value 形状 + Z42_VALUE_TAG_PINNED_VIEW = 8
-  - `docs/design/ir.md` PinPtr/UnpinPtr 段补 runtime 语义
+  - `docs/design/compiler/error-codes.md` Z0908 从占位 → 已启用
+  - `docs/design/language/interop.md` §6.3 描述 PinnedView Value 形状 + Z42_VALUE_TAG_PINNED_VIEW = 8
+  - `docs/design/runtime/ir.md` PinPtr/UnpinPtr 段补 runtime 语义
   - `docs/roadmap.md` C4 → ✅
-  - `docs/design/vm-architecture.md` Value 变体表补一行
+  - `docs/design/runtime/vm-architecture.md` Value 变体表补一行
 
 ## Scope
 
@@ -55,10 +55,10 @@ C4 把 pin 协议在 VM runtime 完整接通：
 | `src/runtime/tests/native_pin_e2e.rs` | NEW | 端到端：手工 IR 构造 pin → field access → unpin |
 | `src/runtime/tests/data/numz42-c/numz42.c` | MODIFY | 加一个 `c_strlen(*const u8, usize) -> u64` 函数验证 pinned ptr 能进 native |
 | `src/runtime/tests/data/numz42-c/numz42.c` 注册 | 包含在上一行 | strlen 加进 method 表 |
-| `docs/design/interop.md` | MODIFY | §6.3 补 PinnedView 字段 + tag |
-| `docs/design/error-codes.md` | MODIFY | Z0908 从占位 → 已启用 |
-| `docs/design/ir.md` | MODIFY | PinPtr/UnpinPtr 段更新运行时语义 |
-| `docs/design/vm-architecture.md` | MODIFY | Value 变体表加一行 |
+| `docs/design/language/interop.md` | MODIFY | §6.3 补 PinnedView 字段 + tag |
+| `docs/design/compiler/error-codes.md` | MODIFY | Z0908 从占位 → 已启用 |
+| `docs/design/runtime/ir.md` | MODIFY | PinPtr/UnpinPtr 段更新运行时语义 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | Value 变体表加一行 |
 | `docs/roadmap.md` | MODIFY | C4 → ✅ |
 
 **只读引用**：

@@ -186,7 +186,7 @@
 
 ### Requirement: 工作区根 manifest 文件名
 
-**Before**：[docs/design/project.md](../../../docs/design/project.md) L370 称"monorepo 根目录的 z42.toml"，L429 示例又用 `z42.workspace.toml`，无唯一约定。
+**Before**：[docs/design/compiler/project.md](../../../docs/design/compiler/project.md) L370 称"monorepo 根目录的 z42.toml"，L429 示例又用 `z42.workspace.toml`，无唯一约定。
 
 **After**：固定为 `z42.workspace.toml`。Member 仍用 `<name>.z42.toml`。
 
@@ -248,4 +248,4 @@
 | WS038 | 路径模板语法非法（嵌套 / 未闭合 / 空名） | error |
 | WS039 | 模板变量出现在不允许的字段（如 `version` / `members`） | error |
 
-> 错误码序列与 C2/C3/C4 各自占用独立段（WS020+ / WS010+ / WS001+），互不冲突。完整索引在 C4 归档时整理到 [docs/design/error-codes.md](../../../docs/design/error-codes.md)。
+> 错误码序列与 C2/C3/C4 各自占用独立段（WS020+ / WS010+ / WS001+），互不冲突。完整索引在 C4 归档时整理到 [docs/design/compiler/error-codes.md](../../../docs/design/compiler/error-codes.md)。

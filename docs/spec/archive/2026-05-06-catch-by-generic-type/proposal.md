@@ -48,12 +48,12 @@ catch (Exception e) {                 // ← 永远到不了
 | `src/tests/exceptions/catch_wildcard_compat/` | NEW | 无类型 `catch { }` 仍 wildcard golden |
 | `src/tests/errors/420_invalid_catch_type/` | NEW | E0420 错误用例 |
 | [src/compiler/z42.Tests/CatchByTypeTests.cs](src/compiler/z42.Tests/CatchByTypeTests.cs) | NEW | C# 单元测试覆盖 BoundCatchClause / IrExceptionEntry emission |
-| [docs/design/exceptions.md](docs/design/exceptions.md) | MODIFY | 加"catch 类型过滤"章节 |
+| [docs/design/language/exceptions.md](docs/design/language/exceptions.md) | MODIFY | 加"catch 类型过滤"章节 |
 | [docs/deferred.md](docs/deferred.md) | MODIFY | 移除 D-8b-2 active 条目，登记到"已落地" |
 
 **只读引用**：
 
-- [docs/design/exceptions.md](docs/design/exceptions.md) — Exception 类层次现状
+- [docs/design/language/exceptions.md](docs/design/language/exceptions.md) — Exception 类层次现状
 - [src/runtime/src/interp/exec_instr.rs](src/runtime/src/interp/exec_instr.rs) — `is_subclass_or_eq_td` 复用
 - [src/compiler/z42.IR/IrModule.cs](src/compiler/z42.IR/IrModule.cs) — `IrExceptionEntry.CatchType` 已有字段（不需要改 IR 元数据格式）
 - [src/runtime/src/metadata/bytecode.rs](src/runtime/src/metadata/bytecode.rs) — `ExceptionEntry.catch_type: Option<String>` 已有

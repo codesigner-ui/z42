@@ -60,8 +60,8 @@
 
 ## 阶段 6: 文档同步
 
-- [ ] 6.1 [docs/design/testing.md](docs/design/testing.md) 加"测试目录树"图与归属示例
-- [ ] 6.2 [docs/design/testing.md](docs/design/testing.md) 标注 P3 完成
+- [ ] 6.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) 加"测试目录树"图与归属示例
+- [ ] 6.2 [docs/design/testing/testing.md](docs/design/testing/testing.md) 标注 P3 完成
 - [ ] 6.3 [docs/dev.md](docs/dev.md) 测试段更新（按归属命令）
 - [ ] 6.4 [docs/roadmap.md](docs/roadmap.md) 进度表加 P3 完成
 - [ ] 6.5 [.claude/rules/code-organization.md](.claude/rules/code-organization.md) 加测试目录约定

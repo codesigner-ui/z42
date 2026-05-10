@@ -65,7 +65,7 @@
 
 ## 阶段 8: 文档 + 验证
 
-- [x] 8.1 `docs/design/generics.md`: L3-G4d 小节
+- [x] 8.1 `docs/design/language/generics.md`: L3-G4d 小节
 - [x] 8.2 `docs/roadmap.md`: L3-G4d → ✅
 - [x] 8.3 Spec 场景全覆盖校验
 

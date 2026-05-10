@@ -6,7 +6,7 @@
  * Sibling to z42_abi.h, which covers "native code registers types into z42".
  * This header covers the opposite direction: "host app drives the VM".
  *
- * Spec: docs/design/embedding.md (Tier 1 C ABI §4)
+ * Spec: docs/design/runtime/embedding.md (Tier 1 C ABI §4)
  *       docs/spec/archive/2026-05-10-add-embedding-api/
  *
  * Status: H1 scaffold — declarations + single-instance lifecycle.
@@ -23,7 +23,7 @@
  *   z42_host_initialize() succeeds at most once at a time;
  *   shutdown returns the process to "uninitialized" so initialize may be
  *   called again. Multi-instance / ALC-like contexts are tracked in
- *   docs/design/embedding.md §12 Deferred.
+ *   docs/design/runtime/embedding.md §12 Deferred.
  */
 
 #ifndef Z42_HOST_H

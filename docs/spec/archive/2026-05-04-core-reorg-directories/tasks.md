@@ -3,8 +3,8 @@
 > 状态：🟢 已完成 | 创建：2026-05-04 | 完成：2026-05-04
 > 类型：refactor (minimal mode)
 > **变更说明**：把 z42.core/src/ 根目录散落的 ~30 个 .z42 文件按概念分组到子目录（Primitives / Delegates / Protocols），并把 Exception 基类移入既有 Exceptions/ 子目录。
-> **原因**：`docs/design/delegates-events.md` 定稿后 z42.core 增量到 A0–A8；继续平铺会让目录扫读困难。
-> **文档影响**：`src/libraries/README.md` + `docs/design/stdlib.md` Module Catalog；新增 `src/libraries/z42.core/src/README.md`。
+> **原因**：`docs/design/language/delegates-events.md` 定稿后 z42.core 增量到 A0–A8；继续平铺会让目录扫读困难。
+> **文档影响**：`src/libraries/README.md` + `docs/design/stdlib/overview.md` Module Catalog；新增 `src/libraries/z42.core/src/README.md`。
 
 ## 进度概览
 - [ ] 阶段 1: 创建子目录
@@ -39,7 +39,7 @@
 
 ## 阶段 6: 同步文档
 - [x] 6.1 src/libraries/README.md 更新 z42.core 文件清单
-- [x] 6.2 docs/design/stdlib.md "Module Catalog" 段更新 z42.core 目录树
+- [x] 6.2 docs/design/stdlib/overview.md "Module Catalog" 段更新 z42.core 目录树
 - [x] 6.3 新增 src/libraries/z42.core/src/README.md 描述 5 个子目录的职责
 
 ## 阶段 7: 构建 + 测试验证

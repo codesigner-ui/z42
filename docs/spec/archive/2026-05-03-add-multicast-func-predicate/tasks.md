@@ -33,7 +33,7 @@
 - [x] 4.5 IncrementalBuildIntegrationTests 39 → 41
 - [x] 4.6 spec scenarios 逐条核对
 - [x] 4.7 文档同步：
-  - `docs/design/delegates-events.md` 顶部状态加 D2d-1
+  - `docs/design/language/delegates-events.md` 顶部状态加 D2d-1
   - `docs/roadmap.md` 加 2026-05-03 行
 - [x] 4.8 移动 `docs/spec/changes/add-multicast-func-predicate/` → `docs/spec/archive/2026-05-03-add-multicast-func-predicate/`
 - [x] 4.9 commit + push

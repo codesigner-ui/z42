@@ -20,10 +20,10 @@ z42 项目文档总入口。本目录文件分两类：**对外阅读**（语言
 z42 仓库文档采用**双语策略**，按受众分流：
 
 - **对外文档**（面向语言用户 / 潜在贡献者 / 公开发布）：**英文**
-  - 例：[`features.md`](features.md), [`design/philosophy.md`](design/philosophy.md), [`design/language-overview.md`](design/language-overview.md), [`design/interop.md`](design/interop.md), [`design/hot-reload.md`](design/hot-reload.md), [`design/execution-model.md`](design/execution-model.md), [`design/object-protocol.md`](design/object-protocol.md), [`README.md`](../README.md)（仓库根）
+  - 例：[`features.md`](features.md), [`design/philosophy.md`](design/philosophy.md), [`design/language/language-overview.md`](design/language/language-overview.md), [`design/language/interop.md`](design/language/interop.md), [`design/runtime/hot-reload.md`](design/runtime/hot-reload.md), [`design/runtime/execution-model.md`](design/runtime/execution-model.md), [`design/language/object-protocol.md`](design/language/object-protocol.md), [`README.md`](../README.md)（仓库根）
 
 - **内部文档**（面向 z42 开发者 / 协作工作流 / 实现细节）：**中文**
-  - 例：[`dev.md`](dev.md), [`roadmap.md`](roadmap.md), [`design/compiler-architecture.md`](design/compiler-architecture.md), [`design/vm-architecture.md`](design/vm-architecture.md), [`design/zbc.md`](design/zbc.md), [`.claude/CLAUDE.md`](../.claude/CLAUDE.md), [`.claude/rules/*.md`](../.claude/rules/)
+  - 例：[`dev.md`](dev.md), [`roadmap.md`](roadmap.md), [`design/compiler/compiler-architecture.md`](design/compiler/compiler-architecture.md), [`design/runtime/vm-architecture.md`](design/runtime/vm-architecture.md), [`design/runtime/zbc.md`](design/runtime/zbc.md), [`.claude/CLAUDE.md`](../.claude/CLAUDE.md), [`.claude/rules/*.md`](../.claude/rules/)
 
 写新文档时按此分流；混用注释（中文文件里的英文 code comment、英文文件里
 对中文术语的注音等）允许，但**主体语言**应一致。当一份对外英文文档需要

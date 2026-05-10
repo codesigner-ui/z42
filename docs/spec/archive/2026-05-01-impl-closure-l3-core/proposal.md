@@ -54,7 +54,7 @@ void Main() {
 
 ### Closure 设计文档调整（在本变更内修订）
 
-- `docs/design/closure.md` §4.4「共享可变值类型用 `Ref<T>` / `Box<T>`」**整章删除**，改写为说明"如需共享可变状态，使用 class（引用类型按身份共享）；C# `ref` 关键字是参数级特性，不可跨闭包"
+- `docs/design/language/closure.md` §4.4「共享可变值类型用 `Ref<T>` / `Box<T>`」**整章删除**，改写为说明"如需共享可变状态，使用 class（引用类型按身份共享）；C# `ref` 关键字是参数级特性，不可跨闭包"
 - 决议表"共享可变值类型用 `Ref<T>` / `Box<T>`"对应行**删除**
 
 ### Pipeline 改动
@@ -93,7 +93,7 @@ void Main() {
 
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `docs/design/closure.md` | MODIFY | 删 §4.4 / 决议 #10；重写为 class 共享 + C# ref 独立 |
+| `docs/design/language/closure.md` | MODIFY | 删 §4.4 / 决议 #10；重写为 class 共享 + C# ref 独立 |
 | `docs/roadmap.md` | MODIFY | L3-C 表 L2-C2 标 ✅（核心交付） |
 | `src/compiler/z42.Semantics/Bound/BoundExpr.cs` | MODIFY | 加 `BoundCapture` / `BoundCaptureKind` / `BoundCapturedIdent`；改 `BoundLambda` |
 | `src/compiler/z42.Semantics/TypeCheck/TypeChecker.cs` | MODIFY | `_lambdaOuterStack` 重构为 `_lambdaBindingStack` |

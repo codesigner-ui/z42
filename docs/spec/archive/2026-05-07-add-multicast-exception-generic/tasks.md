@@ -10,7 +10,7 @@
 - D-8b-0：class arity overloading shadow-only mangling ✅ 2026-05-07 落地
 - D-8b-2：catch-by-generic-type 类型过滤 ✅ 2026-05-06 落地
 
-**文档影响**：[docs/design/delegates-events.md](../../docs/design/delegates-events.md) §7 + [docs/deferred.md](../../docs/deferred.md)
+**文档影响**：[docs/design/language/delegates-events.md](../../docs/design/language/delegates-events.md) §7 + [docs/deferred.md](../../docs/deferred.md)
 
 ---
 
@@ -20,7 +20,7 @@
       字段 `Results: R[]`；构造器接受 `Exception[] failures, int[] indices, int totalHandlers, R[] results` 四参 + `: base(failures, indices, totalHandlers)` ctor delegation；override `ToString()` 在父类前缀基础上加 results 长度
 - [x] 1.2 [src/tests/exceptions/multicast_exception_generic/](../../src/tests/exceptions/multicast_exception_generic/) golden — 构造 `MulticastException<int>` + 访问 Results / Failures / TotalHandlers + `SuccessCount()` 走父类 method + ToString 走子类 override
 - [x] 1.3 验证：`./scripts/build-stdlib.sh` 重新编译 z42.core.zpkg；现有 multicast_exception_aggregate golden 不破
-- [x] 1.4 [docs/design/delegates-events.md](../../docs/design/delegates-events.md) §7 加 `MulticastException<R>` 类型签名 + 实施记录
+- [x] 1.4 [docs/design/language/delegates-events.md](../../docs/design/language/delegates-events.md) §7 加 `MulticastException<R>` 类型签名 + 实施记录
 - [x] 1.5 [docs/deferred.md](../../docs/deferred.md) D-8b-1 移到"已落地"
 - [x] 1.6 全套验证（dotnet test 1093/1093 ✅ + test-vm interp 147/147 + jit 143/143 ✅ + cargo test ✅）
 - [ ] 1.7 commit + push + 归档 spec → `docs/spec/archive/2026-05-07-add-multicast-exception-generic/`

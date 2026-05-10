@@ -38,8 +38,8 @@
 
 ## 阶段 6: 文档 + GREEN + 归档
 
-- [x] 6.1 `docs/design/interop.md` §6 marshal 表加 (Str, CStr) 行；§6.x 描述 Arena 协议
-- [x] 6.2 `docs/design/error-codes.md` Z0908 加 "interior NUL in marshal" 条目
+- [x] 6.1 `docs/design/language/interop.md` §6 marshal 表加 (Str, CStr) 行；§6.x 描述 Arena 协议
+- [x] 6.2 `docs/design/compiler/error-codes.md` Z0908 加 "interior NUL in marshal" 条目
 - [x] 6.3 `docs/roadmap.md` 加 C8 行 ✅
 - [x] 6.4 全绿验证（cargo workspace + dotnet test + test-vm.sh）
 - [x] 6.5 归档 + commit + push

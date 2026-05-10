@@ -45,7 +45,7 @@
 - [x] 5.4 `scripts/test-dist.sh` 端到端（packaged binaries）162 全绿
 
 ### 阶段 6：文档 + 归档 ✅
-- [x] 6.1 `docs/design/generics.md` 新增 "primitive-as-struct" 小节（动机 / stdlib 示例 / 三层改动对比表 / 类型身份保守 / 未来新接口路径）
+- [x] 6.1 `docs/design/language/generics.md` 新增 "primitive-as-struct" 小节（动机 / stdlib 示例 / 三层改动对比表 / 类型身份保守 / 未来新接口路径）
 - [x] 6.2 `docs/roadmap.md` L3-G4b 描述更新为"数据驱动、stdlib struct 驱动"
 - [x] 6.3 `src/libraries/z42.core/README.md` 列出新 struct 文件 + 设计小节
 - [x] 6.4 归档本 openspec change

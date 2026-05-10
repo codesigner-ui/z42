@@ -79,7 +79,7 @@
 
 ## 阶段 6: Manifest JSON Schema
 
-- [x] 6.1 创建 `docs/design/manifest-schema.json`（Draft 2020-12）：
+- [x] 6.1 创建 `docs/design/compiler/manifest-schema.json`（Draft 2020-12）：
   - `$schema`、`$id`（`https://z42-lang.org/schemas/manifest-v1.json` 占位）
   - 根 object：`abi_version` (const 1)、`module`、`version` (semver 正则)、`library_name`、`types[]`
   - `types[]` items：`name`、`size`、`align`、`flags[]`、`fields[]`、`methods[]`、`trait_impls[]`
@@ -104,7 +104,7 @@
 
 ## 阶段 8: 错误码注册
 
-- [x] 8.1 修改 `docs/design/error-codes.md`：注册 Z0905–Z0910，统一占位描述"Reserved by spec design-interop-interfaces; semantics defined by C2–C5"
+- [x] 8.1 修改 `docs/design/compiler/error-codes.md`：注册 Z0905–Z0910，统一占位描述"Reserved by spec design-interop-interfaces; semantics defined by C2–C5"
 - [x] 8.2 验证编号无冲突（grep `Z0905|Z0906|Z0907|Z0908|Z0909|Z0910` 全仓）
 
 ## 阶段 9: 测试
@@ -118,9 +118,9 @@
 
 ## 阶段 10: 文档同步
 
-- [x] 10.1 修改 `docs/design/interop.md` §10：Roadmap 表加 "C1: 接口骨架" 行（标注完成日期 = 归档日期）
-- [x] 10.2 修改 `docs/design/interop.md` §9：在 manifest 段添加链接到 `manifest-schema.json`
-- [x] 10.3 修改 `docs/design/ir.md`：加 4 个新 opcode 描述（操作数 + 语义占位 + 字节值）
+- [x] 10.1 修改 `docs/design/language/interop.md` §10：Roadmap 表加 "C1: 接口骨架" 行（标注完成日期 = 归档日期）
+- [x] 10.2 修改 `docs/design/language/interop.md` §9：在 manifest 段添加链接到 `manifest-schema.json`
+- [x] 10.3 修改 `docs/design/runtime/ir.md`：加 4 个新 opcode 描述（操作数 + 语义占位 + 字节值）
 - [x] 10.4 创建 `src/runtime/crates/README.md`：第 3 层目录 README，列出 3 个子 crate 职责
 - [x] 10.5 修改 `src/runtime/README.md`：顶层 README 增加 `crates/` 子目录说明
 - [x] 10.6 修改 `docs/roadmap.md`：Pipeline 实现进度表标注 C1 完成

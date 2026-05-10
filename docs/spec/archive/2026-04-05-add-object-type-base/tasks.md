@@ -26,7 +26,7 @@
 - [x] 4.2 cargo build —— 无编译错误
 - [x] 4.3 dotnet test —— 全绿
 - [x] 4.4 ./scripts/test-vm.sh —— 全绿
-- [x] 4.5 docs/design/language-overview.md 更新：Object 协议、Type 类
+- [x] 4.5 docs/design/language/language-overview.md 更新：Object 协议、Type 类
 - [x] 4.6 docs/roadmap.md 更新：Object/Type 特性进度
 
 ## 备注

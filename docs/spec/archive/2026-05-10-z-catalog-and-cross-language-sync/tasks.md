@@ -42,7 +42,7 @@
 ## 阶段 6: 文档 + 验证
 
 - [x] 6.1 [docs/error-codes/README.md](../../docs/error-codes/README.md) NEW — 解释 Z.json 是 SoT，C# / Rust 各自怎么消费，新增码流程
-- [x] 6.2 [docs/design/cross-platform-testing.md](../../docs/design/cross-platform-testing.md) 或 testing.md 不需要更新（不影响测试架构）
+- [x] 6.2 [docs/design/testing/cross-platform-testing.md](../../docs/design/testing/cross-platform-testing.md) 或 testing.md 不需要更新（不影响测试架构）
 - [x] 6.3 dotnet test 全绿
 - [x] 6.4 cargo test 全绿
 - [x] 6.5 test-vm.sh 全绿

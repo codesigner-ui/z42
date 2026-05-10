@@ -45,7 +45,7 @@ pinned roots）。
 ### 阶段 6: 文档同步 ✅
 - [x] `gc/rc_heap.rs` 模块文档 —— 限制清单 #3 移除（Phase 3b 已解决段补充）
 - [x] `gc/README.md` —— 限制清单 #3 移除 + 加 Phase 3b 完成注释
-- [x] `docs/design/vm-architecture.md` —— Phase 路线表 Phase 3b ✅；已知限制 #3 移除并加完成注释
+- [x] `docs/design/runtime/vm-architecture.md` —— Phase 路线表 Phase 3b ✅；已知限制 #3 移除并加完成注释
 - [x] `gc/mod.rs` —— Phase 路线表 3b 改"已落地"
 
 ### 阶段 7: 验证 ✅

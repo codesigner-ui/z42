@@ -46,7 +46,7 @@
 
 - [x] 5.1 `Diagnostic.cs`：加 `public const string NativeAttributeMalformed = "E0907";`
 - [x] 5.2 `DiagnosticCatalog.cs`：加 E0907 catalog 条目（title / explanation / example）
-- [x] 5.3 `docs/design/error-codes.md`：Z0907 → 已启用 + 抛出条件描述
+- [x] 5.3 `docs/design/compiler/error-codes.md`：Z0907 → 已启用 + 抛出条件描述
 
 ## 阶段 6: 单元测试
 
@@ -54,7 +54,7 @@
 
 ## 阶段 7: 文档同步
 
-- [x] 7.1 `docs/design/interop.md` §10 加 C6 行 ✅
+- [x] 7.1 `docs/design/language/interop.md` §10 加 C6 行 ✅
 - [x] 7.2 `docs/roadmap.md` Native Interop 表 加 C6 → ✅
 
 ## 阶段 8: GREEN + 归档

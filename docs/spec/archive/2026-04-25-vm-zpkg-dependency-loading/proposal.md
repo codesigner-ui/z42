@@ -51,8 +51,8 @@ z42 的 zpkg 元数据已经支持这种模型：
 | `src/runtime/src/main.rs` | edit | interp 路径初始化 lazy_loader 时传入 main module 的 dependencies |
 | `src/runtime/src/metadata/loader.rs` | edit | `resolve_namespace` 不再 bail on ambiguous（或废弃）；新增 `resolve_dependency(zpkg_name)` |
 | `src/compiler/z42.Pipeline/PackageCompiler.cs` | edit | **Scope 扩展（2026-04-25）**：编译期 `TsigCache._nsToPath` 从 `Dictionary<string, string>` → `Dictionary<string, List<string>>`，`LoadForUsings` / `LoadAll` 聚合所有路径。见下文 "Scope 扩展说明"。|
-| `docs/design/ir.md` | edit | 若 zbc/zpkg 格式有变化（本变更预计无格式变更，仅加载语义变更） |
-| `docs/design/stdlib.md` | edit | Module Auto-load Policy 章节同步"namespace 可跨 zpkg" |
+| `docs/design/runtime/ir.md` | edit | 若 zbc/zpkg 格式有变化（本变更预计无格式变更，仅加载语义变更） |
+| `docs/design/stdlib/overview.md` | edit | Module Auto-load Policy 章节同步"namespace 可跨 zpkg" |
 | `docs/roadmap.md` | edit | L2 "VM 质量" 条目记录加载器架构升级 |
 
 ### Scope 扩展说明（2026-04-25 实施阶段追加）

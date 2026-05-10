@@ -58,6 +58,6 @@ dotnet run --project ../../src/compiler/z42.Driver -- build --workspace
 
 ## 关联文档
 
-- 语言整体语法：[../docs/design/language-overview.md](../docs/design/language-overview.md)
-- 工程文件 / 项目格式：[../docs/design/project.md](../docs/design/project.md)
+- 语言整体语法：[../docs/design/language/language-overview.md](../docs/design/language/language-overview.md)
+- 工程文件 / 项目格式：[../docs/design/compiler/project.md](../docs/design/compiler/project.md)
 - Phase / 里程碑路线：[../docs/roadmap.md](../docs/roadmap.md)

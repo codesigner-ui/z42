@@ -9,6 +9,6 @@
 - [x] 1.3 删除 5 处 `interp_only` 标记
 - [x] 1.4 dotnet build + cargo build 全绿
 - [x] 1.5 test-vm.sh 300/300 全绿（interp 152 + jit 148；之前 jit 143，新增 5 个）
-- [x] 1.6 docs/design/ir.md obj_new 段同步
+- [x] 1.6 docs/design/runtime/ir.md obj_new 段同步
 - [x] 1.7 docs/deferred.md 更新备注
 - [x] 1.8 commit + push + 归档

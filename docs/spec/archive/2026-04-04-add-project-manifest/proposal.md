@@ -80,7 +80,7 @@ z42c <file.z42> --out <path>        # 指定输出路径
 
 | 文件 / 模块 | 变更类型 | 说明 |
 |------------|---------|------|
-| `docs/design/project.md` | 更新 | 补充 CLI 设计，更新文件名为 `<name>.z42.toml` |
+| `docs/design/compiler/project.md` | 更新 | 补充 CLI 设计，更新文件名为 `<name>.z42.toml` |
 | `src/compiler/z42.Driver/Program.cs` | 修改 | 新增 `build` 子命令入口，更新 help 文本 |
 | `src/compiler/z42.Driver/ProjectManifest.cs` | 新增 | `<name>.z42.toml` 读取与反序列化 |
 | `src/compiler/z42.Driver/BuildCommand.cs` | 新增 | `build` 子命令实现（多文件编译、profile 选择）|

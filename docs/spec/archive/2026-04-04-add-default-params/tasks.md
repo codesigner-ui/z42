@@ -26,7 +26,7 @@
 ## 阶段 4: 验证
 - [x] 4.1 `dotnet build && dotnet test` — 360/360 ✅
 - [x] 4.2 `./scripts/test-vm.sh` — 84/84 ✅
-- [x] 4.3 `docs/design/language-overview.md` 补充默认参数语法
+- [x] 4.3 `docs/design/language/language-overview.md` 补充默认参数语法
 
 ## 备注
 - 默认值在 call site 展开，IR 函数签名不变

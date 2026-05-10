@@ -46,9 +46,9 @@ C1+C2+C3 完成后，workspace manifest schema / include / policy / 集中产物
 | `src/compiler/z42.Driver/Program.cs` | 在 path 解析前接 workspace 发现；workspace 模式分派给 BuildCommand 路由 |
 | `src/compiler/z42.Pipeline/PackageCompiler.cs` | 新增 `CompileFromResolved(ResolvedManifest, ...)` 入口供 orchestrator 调用 |
 | `src/compiler/z42.Project/ManifestErrors.cs` | 追加 WS001 / WS002 / WS006 工厂方法 |
-| `docs/design/project.md` | L7 "z42c 工作目录无关性 + 命令矩阵（基础）" 章节 |
-| `docs/design/compiler-architecture.md` | WorkspaceBuildOrchestrator + MemberDependencyGraph 设计 |
-| `docs/design/error-codes.md` | WS001 / WS002 / WS006 |
+| `docs/design/compiler/project.md` | L7 "z42c 工作目录无关性 + 命令矩阵（基础）" 章节 |
+| `docs/design/compiler/compiler-architecture.md` | WorkspaceBuildOrchestrator + MemberDependencyGraph 设计 |
+| `docs/design/compiler/error-codes.md` | WS001 / WS002 / WS006 |
 | `docs/dev.md` | 简短 workspace 命令示例 |
 
 ### 只读引用

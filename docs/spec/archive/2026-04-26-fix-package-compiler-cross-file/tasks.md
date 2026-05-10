@@ -67,7 +67,7 @@
 
 ## 阶段 6: 文档同步 + 归档
 
-- [x] 6.1 `docs/design/compiler-architecture.md` 新增"多 CU 包内 symbol 共享" 小节
+- [x] 6.1 `docs/design/compiler/compiler-architecture.md` 新增"多 CU 包内 symbol 共享" 小节
   （两阶段编译 + FinalizeInheritance + ExtractIntraSymbols + 兼容性）
 - [x] 6.2 tasks.md 状态 → `🟢 已完成`
 - [x] 6.3 归档 + commit + push（scope `fix(compiler)`）

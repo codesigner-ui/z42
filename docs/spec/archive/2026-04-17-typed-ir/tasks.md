@@ -50,7 +50,7 @@ VM。运行时可跳过动态类型 dispatch。
 - [x] 6.2 `dotnet build && cargo build` —— 无编译错误
 - [x] 6.3 `dotnet test` —— 全绿（396/396）
 - [x] 6.4 `./scripts/test-vm.sh` —— 全绿（114/114）
-- [ ] 6.5 `docs/design/ir.md` 文档同步（已有 TypedReg 描述，无需更新）
+- [ ] 6.5 `docs/design/runtime/ir.md` 文档同步（已有 TypedReg 描述，无需更新）
 
 ## 文档影响
-- `docs/design/ir.md`：指令格式描述更新（TypedReg）
+- `docs/design/runtime/ir.md`：指令格式描述更新（TypedReg）

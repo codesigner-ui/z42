@@ -13,7 +13,7 @@
 
 - [x] Golden `run/76_generic_list`：MyList<T> 完整实现 + int/string 实例化
 - [x] stdlib `Stack.z42` / `Queue.z42` 保留参考实现为注释（待 L3-G4d 启用导出）
-- [x] docs/design/generics.md：L3-G4c 小节
+- [x] docs/design/language/generics.md：L3-G4c 小节
 - [x] docs/roadmap.md：L3-G4c ✅；新增 L3-G4d（stdlib 导出）占位
 - [x] dotnet test 520/520 ✅; test-vm.sh 146/146 ✅（73 interp + 73 jit）
 

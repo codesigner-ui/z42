@@ -197,8 +197,8 @@ interp::run → assert returned value == I64(3)
 
 ## Documentation Sync (mandatory before archive)
 
-- `docs/design/interop.md` §10 Roadmap：C2 行 → ✅ + 完成日期
-- `docs/design/error-codes.md`：Z0905 / Z0906 / Z0910 从"占位"改为"已启用"+ 抛出条件
-- `docs/design/vm-architecture.md`：VM 状态段补 `native_types` + `native_libs`
+- `docs/design/language/interop.md` §10 Roadmap：C2 行 → ✅ + 完成日期
+- `docs/design/compiler/error-codes.md`：Z0905 / Z0906 / Z0910 从"占位"改为"已启用"+ 抛出条件
+- `docs/design/runtime/vm-architecture.md`：VM 状态段补 `native_types` + `native_libs`
 - `docs/roadmap.md` Native Interop 表 C2 → ✅
 - `src/runtime/src/native/README.md` NEW

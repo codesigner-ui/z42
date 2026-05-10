@@ -84,7 +84,7 @@ R5 的核心。详见 design.md。简言之：
 | `scripts/test-cross-zpkg.sh` | 改为驱动 tests/integration/ |
 | `src/runtime/tests/golden/run/` | **删除整个目录** |
 | 各 stdlib 库 README.md | 加 tests/ 说明 |
-| `docs/design/testing.md` | 标 R5 完成；更新目录树 |
+| `docs/design/testing/testing.md` | 标 R5 完成；更新目录树 |
 | `docs/roadmap.md` | 进度表 |
 
 **只读引用**：

@@ -1,6 +1,6 @@
 //! Native interop runtime — Tier 1 C ABI implementation.
 //!
-//! See `docs/design/interop.md` and spec C2 (`impl-tier1-c-abi`). This
+//! See `docs/design/language/interop.md` and spec C2 (`impl-tier1-c-abi`). This
 //! module wires together:
 //!
 //! - [`registry`] — `RegisteredType` + per-VM type table

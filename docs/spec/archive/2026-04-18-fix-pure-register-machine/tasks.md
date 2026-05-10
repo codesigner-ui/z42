@@ -6,7 +6,7 @@
 
 **原因：** 字符串 key 的 HashMap 查找比整数索引慢一个数量级；纯寄存器机是 JIT 实现的前置条件。
 
-**文档影响：** `docs/design/ir.md` 已更新。
+**文档影响：** `docs/design/runtime/ir.md` 已更新。
 
 ---
 

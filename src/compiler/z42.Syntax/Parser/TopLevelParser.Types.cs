@@ -423,7 +423,7 @@ internal static partial class TopLevelParser
     /// belongs at the type-definition site (e.g. `Int.z42`'s struct body), not
     /// in cross-cutting impl extensions. `impl` exists for organizational
     /// separation + cross-package extension via script body that wraps existing
-    /// type APIs. (Decision 2026-04-26 — see docs/design/generics.md.)
+    /// type APIs. (Decision 2026-04-26 — see docs/design/language/generics.md.)
     private static ImplDecl ParseImplDecl(ref TokenCursor cursor, LanguageFeatures feat,
         DiagnosticBag? diags = null)
     {

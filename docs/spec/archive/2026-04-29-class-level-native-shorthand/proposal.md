@@ -53,8 +53,8 @@ public static class NumZ42 {
 | `src/compiler/z42.Semantics/TypeCheck/TypeChecker.cs` | MODIFY | stitched binding 校验（lib/type/entry 全部非 null） |
 | `src/compiler/z42.Semantics/Codegen/IrGen.cs` | MODIFY | `EmitNativeStub` 接 ClassDefaults；方法 Tier1Binding 与 class defaults 拼接 |
 | `src/compiler/z42.Tests/NativeAttributeTier1Tests.cs` | MODIFY | 加 4 个 case：class+method partial 拼接 / class 缺 lib 报错 / method full 仍工作 / class defaults 不写时旧 C6 路径继续工作 |
-| `docs/design/error-codes.md` | MODIFY | E0907 抛出条件加"stitched binding incomplete" |
-| `docs/design/interop.md` | MODIFY | §10 加 C9 行 ✅ |
+| `docs/design/compiler/error-codes.md` | MODIFY | E0907 抛出条件加"stitched binding incomplete" |
+| `docs/design/language/interop.md` | MODIFY | §10 加 C9 行 ✅ |
 | `docs/roadmap.md` | MODIFY | C9 → ✅ |
 
 ## Out of Scope

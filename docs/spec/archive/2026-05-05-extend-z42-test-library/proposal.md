@@ -131,7 +131,7 @@ R4.A 留下：
 | `src/libraries/z42.test/tests/dogfood.z42` | MODIFY | 加 ~7 个新 [Test] |
 | `src/compiler/z42.Semantics/TestAttributeValidator.cs` | MODIFY | E0912 完整化（first-param-is-Bencher） |
 | `src/compiler/z42.Tests/TestAttributeTests.cs` | MODIFY | 加 1-2 个 E0912 case |
-| `docs/design/testing.md` | MODIFY | "TestIO" + "Bencher" 章节 |
+| `docs/design/testing/testing.md` | MODIFY | "TestIO" + "Bencher" 章节 |
 | `docs/roadmap.md` | MODIFY | M6 R2 完整版完成条目 |
 
 **只读引用**：

@@ -54,7 +54,7 @@ C# 支持此语法（`where U: T`），Rust 无（Rust 无继承子类型），S
 | `src/runtime/src/metadata/constraint_tests.rs` | 1 新 loader 测试 |
 | `src/runtime/tests/golden/run/72_generic_bare_typeparam/` | Golden：Container<T, U> 实例化 |
 | `src/runtime/tests/golden/errors/33_bare_typeparam_not_subtype/` | Error：typeArg[U] 不是 typeArg[T] 子类型 |
-| `docs/design/generics.md` | L3-G2.5 裸参数约束小节 |
+| `docs/design/language/generics.md` | L3-G2.5 裸参数约束小节 |
 | `docs/roadmap.md` | 范式表裸参数 → ✅ |
 
 ## Out of Scope

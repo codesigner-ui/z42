@@ -162,7 +162,7 @@
 
 #### Scenario: cross-platform.md 含 Android 章节
 
-- **WHEN** 阅读 [docs/design/cross-platform.md](docs/design/cross-platform.md)
+- **WHEN** 阅读 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md)
 - **THEN** 含 "Android" 章节：架构图、Kotlin API、JNI bridge、AAR 集成、限制（默认 interp-only）
 
 #### Scenario: platform/android/README.md 完整

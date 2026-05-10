@@ -55,8 +55,8 @@ void Main() {
 | `src/compiler/z42.Semantics/Codegen/IrGen.cs` | MODIFY | `EmitNativeStub` 接受可选 `Tier1NativeBinding`；优先 emit `CallNativeInstr` |
 | `src/compiler/z42.Tests/NativeAttributeTier1Tests.cs` | NEW | 5–6 unit tests 覆盖 parser / typecheck / codegen 路径 |
 | `src/compiler/z42.Core/Diagnostics/Diagnostic.cs` + `DiagnosticCatalog.cs` | MODIFY | E0907 NativeAttributeMalformed 注册 |
-| `docs/design/error-codes.md` | MODIFY | Z0907 从占位 → 已启用（C6） |
-| `docs/design/interop.md` | MODIFY | §10 加 C6 行 ✅ |
+| `docs/design/compiler/error-codes.md` | MODIFY | Z0907 从占位 → 已启用（C6） |
+| `docs/design/language/interop.md` | MODIFY | §10 加 C6 行 ✅ |
 | `docs/roadmap.md` | MODIFY | C6 → ✅ |
 
 **只读引用**：

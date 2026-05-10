@@ -1,6 +1,6 @@
 # Design: Embedding / Hosting API
 
-> 详细设计见 [docs/design/embedding.md](../../../docs/design/embedding.md)。本文聚焦**实施级**决策（代码组织、并发、错误转换、与 native 模块的边界），不重复 user-facing API。
+> 详细设计见 [docs/design/runtime/embedding.md](../../../docs/design/runtime/embedding.md)。本文聚焦**实施级**决策（代码组织、并发、错误转换、与 native 模块的边界），不重复 user-facing API。
 
 ## 实施架构
 

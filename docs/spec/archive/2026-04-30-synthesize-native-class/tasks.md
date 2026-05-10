@@ -58,8 +58,8 @@
   - error: TypeNotInManifest / ConflictingDifferentLib / UnsupportedSignature / ManifestNotFound
 
 ## 阶段 7: 文档同步
-- [x] 7.1 `docs/design/error-codes.md` +E0916（与 E0909 并列）
-- [x] 7.2 `docs/design/interop.md` §10 Roadmap +L2.M13f；新增 §11.5 "Native Class Synthesis: Path B1 / B2 / C"
+- [x] 7.1 `docs/design/compiler/error-codes.md` +E0916（与 E0909 并列）
+- [x] 7.2 `docs/design/language/interop.md` §10 Roadmap +L2.M13f；新增 §11.5 "Native Class Synthesis: Path B1 / B2 / C"
 - [x] 7.3 `docs/roadmap.md` Native interop 表 +C11b 行；C11+ 行内列出 C11c/C11d/C11e 后续
 
 ## 阶段 8: 验证 + 归档 + commit

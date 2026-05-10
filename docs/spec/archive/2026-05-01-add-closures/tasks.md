@@ -3,14 +3,14 @@
 > 状态：🟢 已完成 | 创建：2026-05-01 | 归档：2026-05-01 | 类型：lang（design-only）
 
 ## 进度概览
-- [x] 阶段 1: 核心规范文档（docs/design/closure.md）
+- [x] 阶段 1: 核心规范文档（docs/design/language/closure.md）
 - [x] 阶段 2: 现有文档同步（5 个文件 + customization.md 关键字表）
 - [x] 阶段 3: 一致性验证 + 归档准备
 - [x] 计划外修订：5 份文档 Rust 风语法 → C# 风（实施中发现冲突，user 选 Plan A）
 
 ## 阶段 1: 核心规范文档
 
-- [x] 1.1 创建 `docs/design/closure.md`，包含：
+- [x] 1.1 创建 `docs/design/language/closure.md`，包含：
   - § 概述："C# delegate 减去 MulticastDelegate"，单一统一类型
   - § 设计哲学：易用优先 + 去 C# 陷阱 + 性能可达 Rust
   - § 语法：lambda / `(T)->R` / 表达式短写 / 嵌套 `fn`
@@ -24,34 +24,34 @@
   - § 并发对接：spawn / async move + Send（引用 concurrency.md §6.3）
   - § 待回填：内存模型决议后补充档 C 编码、弱引用支持
 
-- [x] 1.2 在 `docs/design/closure.md` 中加入跨文档链接：
+- [x] 1.2 在 `docs/design/language/closure.md` 中加入跨文档链接：
   - 上游：`philosophy.md` / `language-overview.md`
   - 下游：`ir.md` / `grammar.peg` / `concurrency.md`
   - 相关：`iteration.md`（高阶 API 用例）/ `customization.md`（L3 占位）
 
 ## 阶段 2: 现有文档同步
 
-- [x] 2.1 `docs/design/language-overview.md`：
+- [x] 2.1 `docs/design/language/language-overview.md`：
   - 关键字表 `lambda` (L3) → `lambda` (L2 无捕获 / L3 完整)
   - 新增"闭包"小节，挂载语法概览
   - 函数类型 `(T) -> R` 加入类型系统章节
   - 表达式短写 `R Name(T x) => expr;`（C# 7+ expression-bodied）加入函数声明章节
   - Local function 加入函数声明章节
 
-- [x] 2.2 `docs/design/grammar.peg`：
+- [x] 2.2 `docs/design/language/grammar.peg`：
   - 新增 `LambdaExpr` 文法
   - 新增 `FnTypeExpr` 文法
   - 修改 `FnDecl` 文法，body 支持 `=> expr ;` 形式
   - 修改 `Block` 文法，允许 `FnDecl` 在 statement 位置
   - 验证 `=>` 双重含义无歧义
 
-- [x] 2.3 `docs/design/ir.md`：
+- [x] 2.3 `docs/design/runtime/ir.md`：
   - 新增"闭包指令"章节
   - 列出 `mkclos`（栈 / 堆变体）/ `callclos` 骨架
   - 列出 `mkref` / `loadref` / `storeref` 骨架
   - 标注：opcode 编号在 L3 实现时分配
 
-- [x] 2.4 `docs/design/concurrency.md` §6.3：
+- [x] 2.4 `docs/design/runtime/concurrency.md` §6.3：
   - 改为引用 closure.md R8
   - 保留 spawn / SpawnBlocking 自身调度语义
   - 检查 §6.4 / §6.5 等节对"闭包"的引用，统一指向 closure.md

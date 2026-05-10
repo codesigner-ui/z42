@@ -55,11 +55,11 @@
 
 ## 阶段 5: 文档同步
 
-- [ ] 5.1 [docs/design/cross-platform.md](docs/design/cross-platform.md) 新建（完整内容见 design.md Implementation Notes）
+- [ ] 5.1 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) 新建（完整内容见 design.md Implementation Notes）
 - [ ] 5.2 [src/runtime/README.md](src/runtime/README.md) 加 "Features" 段
 - [ ] 5.3 [docs/dev.md](docs/dev.md) 加 "Feature Flags" 段
 - [ ] 5.4 [docs/roadmap.md](docs/roadmap.md) 进度表加 P4.1 完成
-- [ ] 5.5 [docs/design/vm-architecture.md](docs/design/vm-architecture.md) "构建 / feature flag" 章节同步
+- [ ] 5.5 [docs/design/runtime/vm-architecture.md](docs/design/runtime/vm-architecture.md) "构建 / feature flag" 章节同步
 
 ## 阶段 6: 验证
 

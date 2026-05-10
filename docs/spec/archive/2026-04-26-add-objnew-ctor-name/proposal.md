@@ -82,8 +82,8 @@ lazy_loader；删除 `${class}.${simple}` 推断 fallback。
 | `src/runtime/src/interp/exec_instr.rs` | edit | ObjNew 用 ctor_name 直查；删 simple 推断 |
 | `src/runtime/src/jit/translate.rs` 等 | edit (若涉及) | JIT 路径同步用 ctor_name |
 | `src/runtime/tests/golden/run/` | regenerate + add | 重生成所有 source.zbc；新增 ctor 重载 golden |
-| `docs/design/ir.md` | edit | 文档 ObjNewInstr 新签名；zbc 版本 bump 记录 |
-| `docs/design/vm-architecture.md` | edit | 在 VCall 分发章节附近加 ObjNew dispatch 说明 |
+| `docs/design/runtime/ir.md` | edit | 文档 ObjNewInstr 新签名；zbc 版本 bump 记录 |
+| `docs/design/runtime/vm-architecture.md` | edit | 在 VCall 分发章节附近加 ObjNew dispatch 说明 |
 
 ## Out of Scope
 

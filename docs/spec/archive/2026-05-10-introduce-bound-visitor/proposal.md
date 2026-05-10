@@ -22,7 +22,7 @@
   - `ClosureEscapeAnalyzer.AnalyzeStmt` + 2 expr 辅助
   - `FunctionEmitter.EmitExpr` (BoundExpr→IR, biggest)
   - `FunctionEmitter.EmitBoundStmt` (BoundStmt→IR)
-- `docs/design/compiler-architecture.md` 增段落把 visitor 模式记为**正面设计**
+- `docs/design/compiler/compiler-architecture.md` 增段落把 visitor 模式记为**正面设计**
 
 **不做**：
 - AST 树（`Syntax.Parser.Expr/Stmt`）的 visitor —— TypeChecker.Exprs/Stmts 的 AST→Bound 转换是另一棵树，留给独立 spec
@@ -41,7 +41,7 @@
 | `src/compiler/z42.Semantics/TypeCheck/FlowAnalyzer.cs` | MODIFY | 3 处 switch 改 visitor |
 | `src/compiler/z42.Semantics/TypeCheck/ClosureEscapeAnalyzer.cs` | MODIFY | 3 处 switch 改 visitor |
 | `src/compiler/z42.Tests/BoundVisitorTests.cs` | NEW | 单元测试：每个 BoundXxx 都被 dispatch；遗漏节点编译期失败 |
-| `docs/design/compiler-architecture.md` | MODIFY | 增段："Bound tree visitor pattern"（正面设计） |
+| `docs/design/compiler/compiler-architecture.md` | MODIFY | 增段："Bound tree visitor pattern"（正面设计） |
 | `src/compiler/z42.Semantics/README.md` | MODIFY | 增 visitor 入口指引 |
 
 **只读引用**：

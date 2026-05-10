@@ -192,7 +192,7 @@ internal sealed partial class FunctionEmitter
         protected override TypedReg VisitCapturedIdent(BoundCapturedIdent ci)
         {
             // Captured ident lowering: env[CaptureIndex] read.
-            // See docs/design/closure.md §6 + impl-closure-l3-core Decision 7.
+            // See docs/design/language/closure.md §6 + impl-closure-l3-core Decision 7.
             if (_e._envReg < 0)
                 throw new InvalidOperationException(
                     $"BoundCapturedIdent `{ci.Name}` reached emitter without an active env register (ICE)");

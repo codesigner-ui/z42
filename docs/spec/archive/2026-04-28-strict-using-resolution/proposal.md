@@ -41,9 +41,9 @@
 | `src/compiler/z42.Tests/ImportedSymbolLoaderTests.cs` | MODIFY | 加冲突 + prelude + unresolved 用例 |
 | `src/compiler/z42.Tests/UsingResolutionTests.cs` | NEW | 端到端 using 解析行为 |
 | `src/runtime/tests/golden/run/*` | MODIFY | 给所有用到 Std.IO / Std.Math / Std.Text / Std.Collections 次级集合的 test 补 using |
-| `docs/design/namespace-using.md` | MODIFY | 重写"多文件编译"章节为生效语义 |
-| `docs/design/stdlib.md` | MODIFY | "Module Auto-load Policy" 表格说明 prelude 白名单机制 |
-| `docs/design/error-codes.md` | MODIFY | 加 E0210 / E0211 / W0212 |
+| `docs/design/language/namespace-using.md` | MODIFY | 重写"多文件编译"章节为生效语义 |
+| `docs/design/stdlib/overview.md` | MODIFY | "Module Auto-load Policy" 表格说明 prelude 白名单机制 |
+| `docs/design/compiler/error-codes.md` | MODIFY | 加 E0210 / E0211 / W0212 |
 
 **只读引用：**
 - `docs/design/philosophy.md` — 确认 "implicit prelude" 表述

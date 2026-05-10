@@ -16,7 +16,7 @@ pub enum Format {
     Pretty,
     /// TAP 13 (`testanything.org`) — perl/Rust-style protocol consumed by CI tooling.
     Tap,
-    /// Self-describing JSON document (see `docs/design/testing.md` for schema).
+    /// Self-describing JSON document (see `docs/design/testing/testing.md` for schema).
     Json,
 }
 

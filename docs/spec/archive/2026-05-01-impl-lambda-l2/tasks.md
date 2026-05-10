@@ -109,7 +109,7 @@
 - [x] 6.1 新增 `examples/lambda.z42` —— 演示 lambda + 函数类型 + 短写 + local function
 - [x] 6.2 `examples/lambda.z42.toml` —— 配套清单
 - [x] 6.3 `docs/roadmap.md`：标记 L2-C1 ✅ 已完成（在 L3-C 表内）
-- [x] 6.4 检查 `docs/design/closure.md` 是否有需要更新的 L2 实施细节（如 `__lambda_<N>` 命名）
+- [x] 6.4 检查 `docs/design/language/closure.md` 是否有需要更新的 L2 实施细节（如 `__lambda_<N>` 命名）
 
 ## 阶段 7: 验证全绿（GREEN）
 

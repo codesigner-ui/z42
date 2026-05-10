@@ -120,12 +120,12 @@
 - 调试符号：行号映射、局部变量名（支持基础调试体验）
 - Interpreter 基础优化：指令 dispatch 效率、对象分配路径
 - JIT 基础优化：热点函数识别、简单内联、常量折叠
-- **MagrGC 子系统（Phase 1 / 1.5 / 3a-3f / 3-OOM ✅ 2026-04-29 主功能完整）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` / heap registry / Trial-deletion 环回收器（Bacon-Rajan）修复环引用泄漏 + Drop-time finalizer（GcAllocation wrapper）+ 内存压力自动 collect + external root scanner（VmContext static_fields）+ interp/JIT 栈扫描 + strict OOM 真拒绝模式 + `Std.GC.*` 脚本暴露。后续可选迭代（性能 / 嵌入式工具 / MMTk 集成等）规划见 `docs/design/vm-architecture.md` "GC 后续迭代规划" 段。
-- **GC stdlib 重组（`reorganize-gc-stdlib` ✅ 2026-05-07）**：`z42.core/src/GC/` 子目录上线（`GC.z42` + `WeakHandle.z42` 搬入 + 新增 `GCHandle.z42` / `HeapStats.z42`）。`Std.GCHandle` 是 1 字段 struct（`_slot: long`）+ corelib `HandleTable` slab + free list backing，对齐 C# `System.Runtime.InteropServices.GCHandle`：拷贝句柄共享同一 slot、Free 后所有 alias 同步失效；支持 `Weak` / `Strong` 双模 + 显式 `Free()`，`Strong = Rc::clone anchor`、`Weak = Rc::downgrade`、atomic 值 Strong 直接 clone Value、atomic 值 Weak 返回 `slot=0`。`Std.HeapStats` 7 long 字段全暴露 Rust `HeapStats`（`MaxBytes = -1` sentinel 表示 unlimited）+ `GC.GetStats()` 静态方法。Phase 3 后增补 `Pinned` / `WeakTrackResurrection`。详见 `docs/design/gc-handle.md`。
+- **MagrGC 子系统（Phase 1 / 1.5 / 3a-3f / 3-OOM ✅ 2026-04-29 主功能完整）**：`trait MagrGC` 接口（MMTk porting contract，10 能力组 ~30 方法）+ `RcMagrGC` 完整 host-side 实现 + `GcRef<T>` / heap registry / Trial-deletion 环回收器（Bacon-Rajan）修复环引用泄漏 + Drop-time finalizer（GcAllocation wrapper）+ 内存压力自动 collect + external root scanner（VmContext static_fields）+ interp/JIT 栈扫描 + strict OOM 真拒绝模式 + `Std.GC.*` 脚本暴露。后续可选迭代（性能 / 嵌入式工具 / MMTk 集成等）规划见 `docs/design/runtime/vm-architecture.md` "GC 后续迭代规划" 段。
+- **GC stdlib 重组（`reorganize-gc-stdlib` ✅ 2026-05-07）**：`z42.core/src/GC/` 子目录上线（`GC.z42` + `WeakHandle.z42` 搬入 + 新增 `GCHandle.z42` / `HeapStats.z42`）。`Std.GCHandle` 是 1 字段 struct（`_slot: long`）+ corelib `HandleTable` slab + free list backing，对齐 C# `System.Runtime.InteropServices.GCHandle`：拷贝句柄共享同一 slot、Free 后所有 alias 同步失效；支持 `Weak` / `Strong` 双模 + 显式 `Free()`，`Strong = Rc::clone anchor`、`Weak = Rc::downgrade`、atomic 值 Strong 直接 clone Value、atomic 值 Weak 返回 `slot=0`。`Std.HeapStats` 7 long 字段全暴露 Rust `HeapStats`（`MaxBytes = -1` sentinel 表示 unlimited）+ `GC.GetStats()` 静态方法。Phase 3 后增补 `Pinned` / `WeakTrackResurrection`。详见 `docs/design/runtime/gc-handle.md`。
 
 ### Native Interop / 三层 ABI
 
-详见 [docs/design/interop.md](design/interop.md)。
+详见 [docs/design/language/interop.md](design/language/interop.md)。
 
 | Spec | 内容 | 状态 |
 |------|------|------|
@@ -146,11 +146,11 @@
 
 ### Embedding / Hosting API（宿主嵌入）
 
-详见 [docs/design/embedding.md](design/embedding.md)。本节解决"宿主 app → 启动 VM → 加载 .zbc → 调用入口 → 关闭"，与 interop（native 注册类型）互补。
+详见 [docs/design/runtime/embedding.md](design/runtime/embedding.md)。本节解决"宿主 app → 启动 VM → 加载 .zbc → 调用入口 → 关闭"，与 interop（native 注册类型）互补。
 
 | Spec / 阶段 | 内容 | 状态 |
 |------------|------|------|
-| **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/embedding.md](design/embedding.md) + docs/spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
+| **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/runtime/embedding.md](design/runtime/embedding.md) + docs/spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
 | **H1**（`add-embedding-api` C ABI scaffold ✅ 2026-05-10）| `src/runtime/include/z42_host.h` + `src/runtime/src/host/` 单实例 state（initialize / shutdown / last_error）+ build matrix（default / interp-only / ios / android）全绿 + 12 个 unit test | ✅ |
 | **H2**（`add-embedding-api` hello-world ✅ 2026-05-10）| `load_zbc` / `resolve_entry` / `invoke` 全链路（marshal: null + i64/f64/bool）+ corelib + 用户 `import_namespaces` 自动 eager merge + stdout sink 接 corelib io（thread-local active flag + RwLock host sink）+ Tier 2 Rust crate `z42-host` + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码（desktop staticlib build 留 H4） | ✅ |
 | **H3**（`add-embedding-api` 错误路径 ✅ 2026-05-10）| 5 类错误路径测试覆盖（BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）+ `classify_invoke_error` 对齐 `format_uncaught` 的 `"uncaught exception"` marker + `invoke_impl` 加 `args.len() != param_count` 校验。string `Z42Value` marshal 推迟（H4+ 与移动平台 string 协议一并落地） | ✅ |
@@ -162,12 +162,12 @@
 - `z42.io`：文件读写、标准输入输出
 - `z42.core/Collections/`：`List<T>`、`Dictionary<K,V>` 纯脚本实现（L3-G4h step3 ✅ 完成；2026-04-25 W1 从 `z42.collections` 上提到 `z42.core` 包子目录，对齐 C# BCL）
 - `z42.collections`：次级集合 `Queue<T>` / `Stack<T>` / `LinkedList<T>`（未来 `SortedDictionary` / `PriorityQueue`）
-- `z42.core` Wave 2（2026-04-25）：`Exception` 基类 + 9 个标准子类（`ArgumentException` 等）+ `IDisposable` / `IEnumerable<T>` / `IEnumerator<T>` 接口契约；详见 `docs/design/exceptions.md`、`docs/design/iteration.md`
+- `z42.core` Wave 2（2026-04-25）：`Exception` 基类 + 9 个标准子类（`ArgumentException` 等）+ `IDisposable` / `IEnumerable<T>` / `IEnumerator<T>` 接口契约；详见 `docs/design/language/exceptions.md`、`docs/design/language/iteration.md`
 - `z42.core` Wave 3（2026-04-26）：`IComparer<T>` / `IEqualityComparer<T>` / `IFormattable` 接口契约（Script-First 纯定义，无 implementer）
 - `z42.string`：字符串操作完整实现
 
 > **后续扩展计划**（time / threading / net / json / crypto 等 P0–P3 分级清单）：
-> 见 [docs/design/stdlib-roadmap.md](design/stdlib-roadmap.md)。
+> 见 [docs/design/stdlib/roadmap.md](design/stdlib/roadmap.md)。
 
 ### 已完成的关键 fix（按时间）
 
@@ -252,7 +252,7 @@
 
 L3-G2 仅实现 interface 约束。以下范式按优先级排期，每项独立规格。
 **设计决策**：约束合取使用 `+`（Rust 风格）而非 C# `,`；**不支持** OR 约束 `T: A | B`
-（主流语言都无；见 `docs/design/generics.md` 设计决策小节）。
+（主流语言都无；见 `docs/design/language/generics.md` 设计决策小节）。
 
 #### 已完成 / 已规划
 
@@ -327,7 +327,7 @@ VM 运行时类型系统。多项特性联动，单独做不如合并。
 
 ### L3-C 闭包（Closures）实现进度
 
-设计已锁定 — 见 [`docs/design/closure.md`](design/closure.md)（2026-05-01 归档变更 `add-closures`）。
+设计已锁定 — 见 [`docs/design/language/closure.md`](design/language/closure.md)（2026-05-01 归档变更 `add-closures`）。
 实现拆为两个独立变更，按 L 阶段递进：
 
 | 子阶段 | 内容 | 落地变更 | 状态 |

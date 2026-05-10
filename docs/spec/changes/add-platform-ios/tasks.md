@@ -70,7 +70,7 @@
 
 ## 阶段 9: 文档同步
 
-- [ ] 9.1 [docs/design/cross-platform.md](docs/design/cross-platform.md) 加 "iOS" 章节（含 JIT 禁令声明）
+- [ ] 9.1 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) 加 "iOS" 章节（含 JIT 禁令声明）
 - [ ] 9.2 [platform/ios/README.md](platform/ios/README.md) 完整文档（Xcode 安装、build、SwiftPM 集成）
 - [ ] 9.3 [docs/dev.md](docs/dev.md) 加 "Platform: iOS" 段
 - [ ] 9.4 [docs/roadmap.md](docs/roadmap.md) 进度表加 P4.4 完成（P4 全部完成）

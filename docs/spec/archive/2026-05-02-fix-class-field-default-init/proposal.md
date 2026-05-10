@@ -39,7 +39,7 @@
 | `src/runtime/tests/golden/run/class_field_default_init/expected_output.txt` | NEW | golden 期望输出 |
 | `src/runtime/tests/golden/run/class_field_default_init/source.zbc` | NEW | regen 产物 |
 | `src/compiler/z42.Tests/ClassFieldInitTypeCheckTests.cs` | NEW | TypeCheck 单元测试（instance init 类型检查 / 类型不匹配报错） |
-| `docs/design/class.md` 或 `docs/design/language-overview.md` | MODIFY | 同步字段默认值规则（条件性，见 design.md） |
+| `docs/design/class.md` 或 `docs/design/language/language-overview.md` | MODIFY | 同步字段默认值规则（条件性，见 design.md） |
 | `docs/roadmap.md` | MODIFY | 标注 fix 完成 |
 
 **只读引用**：

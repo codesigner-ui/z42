@@ -23,8 +23,8 @@ C10 让 PinPtr 支持 `Value::Array` 中元素全为 `Value::I64` (0..=255) 的�
 | `src/runtime/tests/native_pin_e2e.rs` | 加 Array pin 单元测试 |
 | `src/runtime/tests/native_interop_e2e.rs` | 加 e2e：z42 byte[] → CallNative 测长度 |
 | `src/runtime/tests/data/numz42-c/numz42.c` | 加 `counter_buflen(*const u8, u64) -> u64`（接显式 len） |
-| `docs/design/error-codes.md` | Z0908 抛出条件加 "Array element out of range" |
-| `docs/design/interop.md` / `docs/roadmap.md` | C10 → ✅ |
+| `docs/design/compiler/error-codes.md` | Z0908 抛出条件加 "Array element out of range" |
+| `docs/design/language/interop.md` / `docs/roadmap.md` | C10 → ✅ |
 
 ## Out of Scope
 

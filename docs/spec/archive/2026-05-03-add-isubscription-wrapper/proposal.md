@@ -1,6 +1,6 @@
 # Proposal: D2b — ISubscription wrapper 体系（StrongRef / OnceRef / CompositeRef + 双 vec 优化）
 
-> 这是 `docs/design/delegates-events.md` D2 阶段第 2/4 切片，紧跟 D2a。
+> 这是 `docs/design/language/delegates-events.md` D2 阶段第 2/4 切片，紧跟 D2a。
 > 配套：D2c event 关键字 / D2d MulticastFunc + 异常聚合。
 
 ## Why
@@ -37,7 +37,7 @@ D2a 落地了 `MulticastAction<T>` 基础多播 —— 用户可 `Subscribe(hand
 | `src/compiler/z42.Tests/SubscriptionRefsTests.cs` | NEW | TypeCheck + 行为单元测试 |
 | `src/runtime/tests/golden/run/multicast_subscription_refs/` | NEW | 端到端 golden（OnceRef / Composite / fast/slow 通道）|
 | `examples/multicast_subscription.z42` | NEW | 演示 |
-| `docs/design/delegates-events.md` | MODIFY | D2b 完成标记；§5 调整说明 WeakRef 延后 |
+| `docs/design/language/delegates-events.md` | MODIFY | D2b 完成标记；§5 调整说明 WeakRef 延后 |
 | `docs/roadmap.md` | MODIFY | 加一行 |
 
 **只读引用**：

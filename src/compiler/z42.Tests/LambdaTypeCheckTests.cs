@@ -10,7 +10,7 @@ namespace Z42.Tests;
 
 /// TypeChecker unit tests for L2 lambda binding + L2 no-capture detection.
 /// Pairs with archived `add-closures` Requirements R1, R2, R14 and impl spec
-/// `IR-L4`, `IR-L5`. See docs/design/closure.md §4 + §10.
+/// `IR-L4`, `IR-L5`. See docs/design/language/closure.md §4 + §10.
 public sealed class LambdaTypeCheckTests
 {
     private static (SemanticModel model, DiagnosticBag diags) Check(string src)

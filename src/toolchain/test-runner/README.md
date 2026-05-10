@@ -65,10 +65,10 @@ result: ok.  1 passed; 0 failed; 5 skipped
 
 ## 设计与契约
 
-- 输入契约：[`docs/design/zbc.md` 的 TIDX section](../../../docs/design/zbc.md#tidx-test-index可选spec-r1)
+- 输入契约：[`docs/design/runtime/zbc.md` 的 TIDX section](../../../docs/design/runtime/zbc.md#tidx-test-index可选spec-r1)
 - 异常类型：[`Std.Test.TestFailure` / `Std.Test.SkipSignal`](../../libraries/z42.test/src/Failure.z42)
 - Assert API：[`Std.Test.Assert`](../../libraries/z42.test/src/Assert.z42)
-- 测试框架总览：[`docs/design/testing.md`](../../../docs/design/testing.md)
+- 测试框架总览：[`docs/design/testing/testing.md`](../../../docs/design/testing/testing.md)
 
 ## 实施记录
 

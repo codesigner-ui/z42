@@ -88,7 +88,7 @@ if (target is Z42InterfaceType targetIface && source is Z42ClassType sourceImplC
 | `src/compiler/z42.Semantics/TypeCheck/TypeChecker.Calls.cs` | edit | Z42InterfaceType 分支加 substitution |
 | `src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.cs` | edit | BindMemberExpr Z42InterfaceType 分支同步 substitute |
 | `src/runtime/tests/golden/run/101_generic_interface_dispatch/` | add | 用户类实现 `IEquatable<int>` / `IComparer<int>`，经接口变量调用 |
-| `docs/design/compiler-architecture.md` | edit | TypeChecker 章节补"Z42InterfaceType TypeParams"说明 |
+| `docs/design/compiler/compiler-architecture.md` | edit | TypeChecker 章节补"Z42InterfaceType TypeParams"说明 |
 
 ## Out of Scope
 

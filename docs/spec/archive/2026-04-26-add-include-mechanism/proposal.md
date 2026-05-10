@@ -53,9 +53,9 @@ C# Directory.Build.props 用"递归向上发现"解决，但与 z42 显式哲学
 | `src/compiler/z42.Project/ManifestErrors.cs` | 追加 WS020-024 错误码 |
 | `src/compiler/z42.Project/MemberManifest.cs` | 增加 `Include` 字段 |
 | `src/compiler/z42.Project/WorkspaceManifest.cs` | 不变（workspace 根不允许 include —— 简化语义；future 可放开） |
-| `docs/design/project.md` | 新增 include 机制章节；配置生效顺序图 |
-| `docs/design/compiler-architecture.md` | ManifestLoader 流程图增加 include 解析阶段 |
-| `docs/design/error-codes.md` | 追加 WS020-024 |
+| `docs/design/compiler/project.md` | 新增 include 机制章节；配置生效顺序图 |
+| `docs/design/compiler/compiler-architecture.md` | ManifestLoader 流程图增加 include 解析阶段 |
+| `docs/design/compiler/error-codes.md` | 追加 WS020-024 |
 
 ### 删除（DELETE）
 

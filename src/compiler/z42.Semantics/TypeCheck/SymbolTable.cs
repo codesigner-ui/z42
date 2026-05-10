@@ -232,7 +232,7 @@ public sealed class SymbolTable
         VoidType      => Z42Type.Void,
         OptionType ot => new Z42OptionType(ResolveType(ot.Inner)),
         ArrayType  at => new Z42ArrayType(ResolveType(at.Element)),
-        // Function type `(T1, T2) -> R` — see docs/design/closure.md §3.2
+        // Function type `(T1, T2) -> R` — see docs/design/language/closure.md §3.2
         FuncType   ft => new Z42FuncType(
                             ft.ParamTypes.Select(ResolveType).ToList(),
                             ResolveType(ft.ReturnType)),

@@ -41,7 +41,7 @@ L3 闭包 env 当前一律走 `heap().alloc_array()` —— 即使 closure **不
 | `src/runtime/src/jit/frame.rs` | **可能 MODIFY** | 同上（JitFrame） |
 | `src/runtime/src/interp/exec_instr.rs` | MODIFY | MkClos 分支按 stack_alloc 选 path |
 | `src/runtime/src/jit/helpers_closure.rs` | MODIFY | jit_mk_clos 镜像 |
-| `docs/design/closure.md` | MODIFY | 新增 §"escape 分析与栈分配"章节 |
+| `docs/design/language/closure.md` | MODIFY | 新增 §"escape 分析与栈分配"章节 |
 | `src/runtime/tests/golden/run/closure_l3_stack/source.z42` | NEW | 验证非逃逸场景 stack alloc 命中 + 逃逸场景 fallback heap |
 | `src/runtime/tests/golden/run/closure_l3_stack/expected_output.txt` | NEW | golden 期望输出 |
 | `src/compiler/z42.Tests/ClosureEscapeAnalyzerTests.cs` | NEW | 单元测试：标准模式（map / filter / event handler）的 stack vs heap 决策 |
@@ -50,7 +50,7 @@ L3 闭包 env 当前一律走 `heap().alloc_array()` —— 即使 closure **不
 
 - `src/runtime/src/gc/` — 理解 GcRef 持有 env 的现状，决定 stack alloc 后 GC root 注册策略
 - `docs/spec/archive/2026-05-02-impl-closure-l3-core/design.md` — Tier C 当时为什么选堆
-- `docs/design/closure.md` §6 — 当前 env 路径
+- `docs/design/language/closure.md` §6 — 当前 env 路径
 
 ## Out of Scope
 

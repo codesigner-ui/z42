@@ -59,7 +59,7 @@
 - [x] 5.4 TypeCheckerTests: 4 个用例（推断/显式/数量错误/泛型函数）
 - [x] 5.5 `dotnet test`: 466/466 ✅（含 2 个新 round-trip + 4 个新 typechecker）
 - [x] 5.6 `./scripts/test-vm.sh`: 132/132 ✅（interp + jit 各 66 个）
-- [x] 5.7 docs/design/generics.md + docs/roadmap.md 更新（L3-G1 进度表）
+- [x] 5.7 docs/design/language/generics.md + docs/roadmap.md 更新（L3-G1 进度表）
 - [x] 5.8 `scripts/regen-golden-tests.sh` 修正 driver DLL 路径（z42.Driver.dll → z42c.dll）
 
 ## 备注

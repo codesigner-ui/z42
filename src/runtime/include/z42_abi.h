@@ -3,7 +3,7 @@
  * Stable C ABI for native libraries to register types and methods with
  * the z42 VM, and for the VM to invoke z42 code from native callers.
  *
- * Spec: docs/design/interop.md §3 (Tier 1 C ABI)
+ * Spec: docs/design/language/interop.md §3 (Tier 1 C ABI)
  * Status: C1 scaffold — declarations only; runtime implementation lands in C2.
  *
  * ABI evolution rules:

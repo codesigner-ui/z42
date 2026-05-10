@@ -16,7 +16,7 @@ A2 限制：`[ShouldThrow<Base>]` 必须**完全**匹配抛出类型；不会捕
 
 ## 文档影响
 
-- `docs/design/testing.md` R4.B "当前不做的"删 inheritance walk 一行；Runtime 比对子段加 inheritance 描述
+- `docs/design/testing/testing.md` R4.B "当前不做的"删 inheritance walk 一行；Runtime 比对子段加 inheritance 描述
 - `docs/roadmap.md` M6 把"inheritance-aware spec 待开"标记为完成
 
 ## 实际交付（与原计划差异）
@@ -42,7 +42,7 @@ A2 限制：`[ShouldThrow<Base>]` 必须**完全**匹配抛出类型；不会捕
 - [x] 5.3 `./scripts/test-vm.sh` 208/208 ✅
 - [x] 5.4 `./scripts/test-stdlib.sh` 6/6 lib（dogfood 8/0）✅
 - [x] 5.5 `./scripts/test-cross-zpkg.sh` 1/1 ✅
-- [x] 6.1 docs/design/testing.md "Inheritance 比对（A3）" 段
+- [x] 6.1 docs/design/testing/testing.md "Inheritance 比对（A3）" 段
 - [x] 6.2 docs/roadmap.md A3 标记完成
 
 ## 备注

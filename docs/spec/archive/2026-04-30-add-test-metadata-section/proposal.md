@@ -35,8 +35,8 @@ R1 引入 zbc 文件中的 `TestIndex` 二进制 section + 编译器侧的 attri
   - Rust 侧：`test_index_tests.rs` 测 decoder
   - 跨语言：手写 .z42 文件含全部 8 个 attribute → 编译为 .zbc → Rust decoder 读出 entries 与 C# 写入一致
 - **文档**：
-  - [docs/design/ir.md](docs/design/ir.md) 加 `TestIndex` section 二进制格式
-  - [docs/design/testing.md](docs/design/testing.md)（新建）总览测试框架架构（含 R1-R4 全图）
+  - [docs/design/runtime/ir.md](docs/design/runtime/ir.md) 加 `TestIndex` section 二进制格式
+  - [docs/design/testing/testing.md](docs/design/testing/testing.md)（新建）总览测试框架架构（含 R1-R4 全图）
   - 错误码注册占位：Z0911–Z0915 留给 R4
 
 ## Scope
@@ -58,15 +58,15 @@ R1 引入 zbc 文件中的 `TestIndex` 二进制 section + 编译器侧的 attri
 | `src/runtime/src/metadata/mod.rs` | MODIFY | re-export test_index |
 | `src/runtime/src/metadata/loader.rs` | MODIFY | `LoadedArtifact` 加 `test_index: Vec<TestEntry>` 字段；从 zbc 读出 |
 | `src/runtime/tests/zbc_compat.rs` | MODIFY | 加跨语言契约测试：C# 写 TestIndex → Rust 读，比对一致 |
-| `docs/design/ir.md` | MODIFY | 加 `TestIndex` section 二进制格式描述 |
-| `docs/design/testing.md` | NEW | 测试框架总览（含 R1-R4 架构图与本 spec 在其中位置） |
-| `docs/design/error-codes.md` | MODIFY | 注册 Z0911–Z0915 占位（语义留 R4 填） |
+| `docs/design/runtime/ir.md` | MODIFY | 加 `TestIndex` section 二进制格式描述 |
+| `docs/design/testing/testing.md` | NEW | 测试框架总览（含 R1-R4 架构图与本 spec 在其中位置） |
+| `docs/design/compiler/error-codes.md` | MODIFY | 注册 Z0911–Z0915 占位（语义留 R4 填） |
 | `examples/test_demo.z42` | NEW | 含 8 种 attribute 的最小示例（编译演示，不能执行） |
 
 **只读引用**：
 - [src/compiler/z42.IR/BinaryFormat/](src/compiler/z42.IR/BinaryFormat/) 现有 section 列表（避免 ID 冲突）
 - [src/runtime/src/metadata/formats.rs](src/runtime/src/metadata/formats.rs) — Rust 端 zbc 格式镜像类型
-- [docs/design/ir.md](docs/design/ir.md) 现有 section 描述
+- [docs/design/runtime/ir.md](docs/design/runtime/ir.md) 现有 section 描述
 - [src/runtime/src/lib.rs](src/runtime/src/lib.rs) — 理解 metadata 模块导出
 
 ## Out of Scope

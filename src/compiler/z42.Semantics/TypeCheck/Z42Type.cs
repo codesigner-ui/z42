@@ -63,7 +63,7 @@ public abstract record Z42Type
         }
         // Function types: structural equality on Params + Ret (IReadOnlyList uses
         // reference equality by default in record `Equals`, so we compare by element).
-        // See docs/design/closure.md §3.2.
+        // See docs/design/language/closure.md §3.2.
         if (source is Z42FuncType sFn && target is Z42FuncType tFn
             && sFn.Params.Count == tFn.Params.Count)
         {

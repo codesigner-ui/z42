@@ -34,8 +34,8 @@ type: project
 | `src/runtime/src/formats.rs` | modify | ZpkgFile 新增 namespaces；ZpkgDep 改为解析结果格式 |
 | `src/compiler/z42.Driver/BuildCommand.cs` | modify | 命名空间解析 + 依赖记录写入输出 zpkg |
 | `src/compiler/z42.IR/Formats/ZbcFormat.cs` | modify | zbc 新增 namespace header section |
-| `docs/design/project.md` | modify | L5 改为自动发现设计，移除声明式 `[dependencies]` |
-| `docs/design/ir.md` | modify | 补充 zbc namespace header 格式 |
+| `docs/design/compiler/project.md` | modify | L5 改为自动发现设计，移除声明式 `[dependencies]` |
+| `docs/design/runtime/ir.md` | modify | 补充 zbc namespace header 格式 |
 | `docs/features.md` | modify | Section 17 补充双路径机制说明 |
 
 ## Out of Scope

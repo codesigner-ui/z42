@@ -60,10 +60,10 @@
 
 ## 阶段 6: 文档同步
 
-- [ ] 6.1 重写 `docs/design/project.md` L6 段：固定文件名、新字段、新依赖语法、virtual manifest 说明、路径模板变量章节
-- [ ] 6.2 在 [docs/design/project.md](../../../docs/design/project.md) 末尾"完整字段速查"区追加 `[workspace.project]` 字段表、`xxx.workspace = true` 引用语法、`${var}` 模板变量与允许字段白名单
-- [ ] 6.3 同步 [docs/design/compiler-architecture.md](../../../docs/design/compiler-architecture.md)：新增 ManifestLoader 模块说明（依据 CLAUDE.md "实现原理文档规则"）
-- [ ] 6.4 错误码索引追加到 [docs/design/error-codes.md](../../../docs/design/error-codes.md)（如尚不存在则新建占位段）
+- [ ] 6.1 重写 `docs/design/compiler/project.md` L6 段：固定文件名、新字段、新依赖语法、virtual manifest 说明、路径模板变量章节
+- [ ] 6.2 在 [docs/design/compiler/project.md](../../../docs/design/compiler/project.md) 末尾"完整字段速查"区追加 `[workspace.project]` 字段表、`xxx.workspace = true` 引用语法、`${var}` 模板变量与允许字段白名单
+- [ ] 6.3 同步 [docs/design/compiler/compiler-architecture.md](../../../docs/design/compiler/compiler-architecture.md)：新增 ManifestLoader 模块说明（依据 CLAUDE.md "实现原理文档规则"）
+- [ ] 6.4 错误码索引追加到 [docs/design/compiler/error-codes.md](../../../docs/design/compiler/error-codes.md)（如尚不存在则新建占位段）
 - [ ] 6.5 spec scenarios 逐条覆盖确认（与 `specs/workspace/spec.md` 对照）
 - [ ] 6.6 [docs/roadmap.md](../../../docs/roadmap.md) 更新（如本变更触及 pipeline 进度则同步；C1 不触及 pipeline，可只补一行"工程文件 schema 演进"）
 

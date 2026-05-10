@@ -33,7 +33,7 @@ L3 闭包当前一律走 `CallIndirect` 间接调度（Tier C 堆擦除路径）
 | `src/compiler/z42.Semantics/TypeCheck/TypeEnv.cs` | MODIFY | 新增 `_localFuncAliases: Dictionary<string, string>` per scope，跟踪 `let f = SomeFunc;` 的别名链 |
 | `src/compiler/z42.Semantics/Codegen/FunctionEmitterCalls.cs` | MODIFY | `EmitBoundCall.Free` 优先用 ResolvedFuncName → 发 `Call`；fallback 现有 `CallIndirect` |
 | `src/compiler/z42.Semantics/Codegen/FunctionEmitterExprs.cs` | MODIFY | `EmitLambdaLiteral` 调用场景：被立即调用的 lambda 直接 `Call(<lifted>)` |
-| `docs/design/closure.md` | MODIFY | 新增 §"单态化"章节描述启发式 + 兜底语义 |
+| `docs/design/language/closure.md` | MODIFY | 新增 §"单态化"章节描述启发式 + 兜底语义 |
 | `src/runtime/tests/golden/run/closure_l3_mono/source.z42` | NEW | 端到端验证（dump IR 检查 `Call` vs `CallIndirect`）|
 | `src/runtime/tests/golden/run/closure_l3_mono/expected_output.txt` | NEW | golden 期望输出 |
 | `src/runtime/tests/golden/run/closure_l3_mono/source.zbc` | NEW | regen 产物 |

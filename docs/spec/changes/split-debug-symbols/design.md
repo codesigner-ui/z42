@@ -319,7 +319,7 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 ## Deferred / Future Work
 
-记入 `docs/design/exceptions.md` 的 Deferred 段（设计期延后）：
+记入 `docs/design/language/exceptions.md` 的 Deferred 段（设计期延后）：
 
 - **Lazy / mmap 加载** — 启动延迟敏感场景的优化路径
 - **跨目录 sidecar 搜索** — debuginfod 风格、环境变量配置

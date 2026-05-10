@@ -110,8 +110,8 @@ desugar 为方法调用（Codegen 走 VCall 路径，已支持）。
 | `src/compiler/z42.Tests/PropertyTests.cs` | edit (existing file) | 加入 auto-property 端到端测试 |
 | `src/runtime/tests/golden/run/` | add | 至少 2 个 golden（class auto-property + interface property + readonly） |
 | `src/libraries/z42.core/src/IEnumerator.z42` | edit | 升级 `T Current()` 回 property 形式 `T Current { get; }` |
-| `docs/design/properties.md` | add | 使用者视角 property 语法 + desugar 规则 + backing field 命名约定 |
-| `docs/design/language-overview.md` | edit | 新增 property 章节链接 |
+| `docs/design/language/properties.md` | add | 使用者视角 property 语法 + desugar 规则 + backing field 命名约定 |
+| `docs/design/language/language-overview.md` | edit | 新增 property 章节链接 |
 
 ## Out of Scope
 

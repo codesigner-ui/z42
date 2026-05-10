@@ -7,7 +7,7 @@ namespace Z42.Tests;
 
 /// Parser unit tests for L2 lambda literals + `(T) -> R` function types.
 /// Pairs with archived `add-closures` Requirements R1, R2 and impl spec
-/// `IR-L1`, `IR-L2`, `IR-L3`. See docs/design/closure.md §3.
+/// `IR-L1`, `IR-L2`, `IR-L3`. See docs/design/language/closure.md §3.
 public sealed class LambdaParserTests
 {
     private static CompilationUnit ParseCu(string src)

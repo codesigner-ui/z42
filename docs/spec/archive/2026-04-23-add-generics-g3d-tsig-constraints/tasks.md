@@ -6,8 +6,8 @@
 在 `new ImportedGeneric<T>()` / 泛型函数调用点做约束校验，不再依赖 VM loader 运行时兜底。
 **原因：** G4g 后 stdlib List/Dictionary 带 `where T: IEquatable<T> + IComparable<T>`，
 消费方看不到约束，错误 type arg 只在加载时（或更差：运行时失败时）才暴露。
-**文档影响：** `docs/design/generics.md`（G3d 记录）、`docs/roadmap.md`（G3d ✅）、
-`docs/design/ir.md`（如有 zbc 版本号变化 —— 本次只改 TSIG，zbc 不变）。
+**文档影响：** `docs/design/language/generics.md`（G3d 记录）、`docs/roadmap.md`（G3d ✅）、
+`docs/design/runtime/ir.md`（如有 zbc 版本号变化 —— 本次只改 TSIG，zbc 不变）。
 
 ## 任务
 

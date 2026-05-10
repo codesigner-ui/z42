@@ -65,15 +65,15 @@ void Main() {
 | `src/compiler/z42.Core/Diagnostics/DiagnosticCatalog.cs` | MODIFY +E0916 entry |
 | `src/compiler/z42.Tests/ManifestSignatureParserTests.cs` | NEW 签名解析单测 |
 | `src/compiler/z42.Tests/NativeImportSynthesizerTests.cs` | NEW 端到端合成 + 错误路径 |
-| `docs/design/error-codes.md` | MODIFY +E0916 |
-| `docs/design/interop.md` | MODIFY +C11b roadmap 行 + B1/B2/C 路径表 |
+| `docs/design/compiler/error-codes.md` | MODIFY +E0916 |
+| `docs/design/language/interop.md` | MODIFY +C11b roadmap 行 + B1/B2/C 路径表 |
 | `docs/roadmap.md` | MODIFY +C11b 行 |
 
 **只读引用**：
 - `src/compiler/z42.Project/NativeManifest.cs` — 调用 `Read`
 - `src/compiler/z42.Syntax/Parser/Ast.cs` — 构造 ClassDecl/FunctionDecl/Tier1NativeBinding
 - `src/compiler/z42.Pipeline/PackageCompiler.Helpers.cs` — 理解既有 pipeline 顺序
-- `docs/design/manifest-schema.json` — 字段语义参考
+- `docs/design/compiler/manifest-schema.json` — 字段语义参考
 - `docs/spec/archive/2026-04-30-manifest-reader-import/` — C11a 完整背景
 
 ## Out of Scope（明确推后）

@@ -2,7 +2,7 @@
 
 ## Why
 
-D-1a（`expose-weak-ref-builtin`，2026-05-04）落地了 corelib `Std.WeakHandle` + `__obj_make_weak` / `__obj_upgrade_weak` 两个 builtin，给"运行时弱引用"开了底层口子。但 D-1（`docs/design/delegates-events.md` §5.2 + §5.3）真正想解决的"长寿事件源持回调导致 listener 永不 GC（lapsed listener leak）"问题需要 **stdlib `Std.WeakRef<TD> : ISubscription<TD>` wrapper 类**包住 `WeakHandle` 接入 `MulticastAction.SubscribeAdvanced`。
+D-1a（`expose-weak-ref-builtin`，2026-05-04）落地了 corelib `Std.WeakHandle` + `__obj_make_weak` / `__obj_upgrade_weak` 两个 builtin，给"运行时弱引用"开了底层口子。但 D-1（`docs/design/language/delegates-events.md` §5.2 + §5.3）真正想解决的"长寿事件源持回调导致 listener 永不 GC（lapsed listener leak）"问题需要 **stdlib `Std.WeakRef<TD> : ISubscription<TD>` wrapper 类**包住 `WeakHandle` 接入 `MulticastAction.SubscribeAdvanced`。
 
 不做的现实痛点：
 - GUI / 长寿对象持回调场景：listener 对象本可被 GC，但因被 multicast event 强引用 → 永远活着 → 等价内存泄漏
@@ -30,8 +30,8 @@ D-1a（`expose-weak-ref-builtin`，2026-05-04）落地了 corelib `Std.WeakHandl
 | `src/libraries/z42.core/tests/golden/weak_subscription_lapsed/expected_output.txt` | NEW | golden 期望输出 |
 | `src/libraries/z42.core/tests/golden/composite_ref_weak_mode/source.z42` | NEW | golden：CompositeRef(handler, Once \| Weak) 行为符合两 flag 叠加 |
 | `src/libraries/z42.core/tests/golden/composite_ref_weak_mode/expected_output.txt` | NEW | golden 期望输出 |
-| `docs/design/delegates-events.md` | MODIFY | §5.2 / §5.3 / status 行更新 D-1b 落地；line 191 weak target 退化策略落地说明 |
-| `docs/design/vm-architecture.md`（或 builtin 文档） | MODIFY | `__delegate_target` builtin 加入清单 + 语义说明（含退化规则） |
+| `docs/design/language/delegates-events.md` | MODIFY | §5.2 / §5.3 / status 行更新 D-1b 落地；line 191 weak target 退化策略落地说明 |
+| `docs/design/runtime/vm-architecture.md`（或 builtin 文档） | MODIFY | `__delegate_target` builtin 加入清单 + 语义说明（含退化规则） |
 | `docs/deferred.md` | MODIFY | 移除 D-1b 条目 |
 
 **只读引用**：

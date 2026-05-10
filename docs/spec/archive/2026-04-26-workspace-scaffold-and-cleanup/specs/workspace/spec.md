@@ -95,11 +95,11 @@
 
 ### Requirement: WS004 完全移除
 
-**Before**：C3 阶段 `WS004` 在 ManifestErrors.cs 中标 `[Obsolete]`，相关引用归并入 WS010；docs/design/error-codes.md 中作为占位提及。
+**Before**：C3 阶段 `WS004` 在 ManifestErrors.cs 中标 `[Obsolete]`，相关引用归并入 WS010；docs/design/compiler/error-codes.md 中作为占位提及。
 
 **After**：C4c 阶段：
 - ManifestErrors.cs 中删除 `WS004` 常量声明
-- docs/design/error-codes.md 删除 WS004 占位条目
+- docs/design/compiler/error-codes.md 删除 WS004 占位条目
 - `grep -r "WS004"` 在 src/ docs/ 无残留（除 spec/archive 历史档外）
 
 ### Requirement: z42c subcommand 路由

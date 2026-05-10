@@ -8,7 +8,7 @@
 
 **Scope**：纯 C# TypeChecker。无 IR / VM / zbc 格式改动。
 
-**文档影响**：`docs/design/generics.md` 更新；`docs/roadmap.md` 新增 L3-G4a 状态。
+**文档影响**：`docs/design/language/generics.md` 更新；`docs/roadmap.md` 新增 L3-G4a 状态。
 
 ## 阶段 1: Z42InstantiatedType + 解析
 
@@ -35,7 +35,7 @@
 
 ## 阶段 4: 文档 + 验证
 
-- [x] 4.1 `docs/design/generics.md`: L3-G4a 落地细节
+- [x] 4.1 `docs/design/language/generics.md`: L3-G4a 落地细节
 - [x] 4.2 `docs/roadmap.md`: L3-G4a 独立子项 + ✅
 - [x] 4.3 全绿验证
 

@@ -100,8 +100,8 @@
 
 ## Documentation Sync
 
-- `docs/design/error-codes.md` Z0908 从占位 → 已启用（3 个抛出条件）
-- `docs/design/interop.md` §6.3 / §10 更新
-- `docs/design/ir.md` PinPtr/UnpinPtr 段补 runtime 语义
-- `docs/design/vm-architecture.md` Value 变体表加 PinnedView
+- `docs/design/compiler/error-codes.md` Z0908 从占位 → 已启用（3 个抛出条件）
+- `docs/design/language/interop.md` §6.3 / §10 更新
+- `docs/design/runtime/ir.md` PinPtr/UnpinPtr 段补 runtime 语义
+- `docs/design/runtime/vm-architecture.md` Value 变体表加 PinnedView
 - `docs/roadmap.md` C4 → ✅

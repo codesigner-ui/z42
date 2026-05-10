@@ -52,7 +52,7 @@
 
 ## 阶段 5: 文档 + 验证 ✅
 
-- [x] 5.1 `docs/design/generics.md`: L3-G3a 落地细节 + L3-G3 剩余子阶段
+- [x] 5.1 `docs/design/language/generics.md`: L3-G3a 落地细节 + L3-G3 剩余子阶段
 - [x] 5.2 `docs/roadmap.md`: L3-G3a → ✅；L3-G3b 范围更新（含运行时校验）
 - [x] 5.3 全绿验证：dotnet build + cargo build + dotnet test + cargo test + test-vm.sh
 

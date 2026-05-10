@@ -200,7 +200,7 @@
 
 #### Scenario: testing.md 元数据规范
 
-- **WHEN** 阅读 [docs/design/testing.md](docs/design/testing.md)
+- **WHEN** 阅读 [docs/design/testing/testing.md](docs/design/testing/testing.md)
 - **THEN** 含章节：归属规则 / front-matter 规范 / `[Test]` attribute / 测试发现 / TAP 输出 / JSON 输出 / 增量测试规则
 
 #### Scenario: test-runner.md 实现原理

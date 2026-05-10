@@ -7,7 +7,7 @@
 `int` 是否满足 `IEquatable<string>`（不满足 → 编译期报错）。
 **原因：** G3d 完成后 TSIG 能传约束，但接口约束 args 仍被忽略；跨参数链接的错误只在
 运行时 VCall 或完全不报。补齐到编译期。
-**文档影响：** `docs/design/generics.md`（G2.5 chain 记录）、`docs/roadmap.md`。
+**文档影响：** `docs/design/language/generics.md`（G2.5 chain 记录）、`docs/roadmap.md`。
 
 ## 任务
 

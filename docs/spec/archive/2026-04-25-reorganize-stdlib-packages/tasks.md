@@ -18,10 +18,10 @@
 - `src/libraries/z42.core/README.md`：新增 "Collections" 章节，列出 List / Dictionary / HashSet
 - `src/libraries/z42.collections/README.md`：从表中移除 List / Dictionary / HashSet，保留 Queue / Stack，并说明"最基础三件套已上提到 z42.core"
 - `src/libraries/README.md`：更新库列表表格的 `z42.core` 和 `z42.collections` 内容列
-- `docs/design/stdlib.md`：更新 "Module Catalog" 的 `z42.core` 和 `z42.collections` 文件清单；更新 "Module Auto-load Policy" 表格（`Std.Collections` 的含义范围缩小为 Queue/Stack）
+- `docs/design/stdlib/overview.md`：更新 "Module Catalog" 的 `z42.core` 和 `z42.collections` 文件清单；更新 "Module Auto-load Policy" 表格（`Std.Collections` 的含义范围缩小为 Queue/Stack）
 - `docs/roadmap.md`：L2 "标准库（基础）" 条目更新（`z42.core` / `z42.collections` 内容描述）
-- **不涉及** `docs/design/language-overview.md`（语言语法无变化）
-- **不涉及** `docs/design/ir.md`（IR / VM 不变）
+- **不涉及** `docs/design/language/language-overview.md`（语言语法无变化）
+- **不涉及** `docs/design/runtime/ir.md`（IR / VM 不变）
 
 ---
 
@@ -31,7 +31,7 @@
 - 文件系统移动：`src/libraries/z42.collections/src/{List,Dictionary,HashSet}.z42` → `src/libraries/z42.core/src/*.z42`
 - 两个包 `z42.*.z42.toml` 不变（`z42.collections` 仍声明依赖 `z42.core`）
 - `Std.Collections` namespace 保留不变（文件移到 `z42.core/src/` 下，但 `namespace Std.Collections;` 头部保留）
-- 包 README / libraries README / docs/design/stdlib.md / docs/roadmap.md 同步更新
+- 包 README / libraries README / docs/design/stdlib/overview.md / docs/roadmap.md 同步更新
 - 构建 stdlib zpkg + 跑全套测试验证
 
 **本波 OUT of scope（不动）：**
@@ -90,7 +90,7 @@
 - [x] 3.1 `src/libraries/z42.core/README.md` 加 `src/Collections/` 小节 + 设计决策（D1/D4）
 - [x] 3.2 `src/libraries/z42.collections/README.md` 核心文件表瘦身到 Queue / Stack；顶部说明"基础三件套已上提到 z42.core/src/Collections/"
 - [x] 3.3 `src/libraries/README.md` 库列表表格同步
-- [x] 3.4 `docs/design/stdlib.md` Module Catalog（`z42.core` 加子目录树 + `z42.collections` 瘦身）+ Auto-load Policy 表格行备注
+- [x] 3.4 `docs/design/stdlib/overview.md` Module Catalog（`z42.core` 加子目录树 + `z42.collections` 瘦身）+ Auto-load Policy 表格行备注
 - [x] 3.5 `docs/roadmap.md` L2 "标准库（基础）" 条目拆为 core/Collections + collections 两行
 
 ## 阶段 4：构建 + 测试验证

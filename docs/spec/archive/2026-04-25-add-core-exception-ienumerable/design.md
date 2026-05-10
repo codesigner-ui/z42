@@ -111,7 +111,7 @@ public interface IEnumerable<T> {
 ```
 
 **理由**：
-- z42 整体对齐 C# BCL 命名（见 `docs/design/stdlib.md` Design Philosophy）
+- z42 整体对齐 C# BCL 命名（见 `docs/design/stdlib/overview.md` Design Philosophy）
 - `Option<T>` 尚未引入（L3 ADT），Rust 风需等 ADT 可用
 - `MoveNext() → Current` 两阶段访问更适合手写 iterator（避免 Option wrap/unwrap 热路径）
 

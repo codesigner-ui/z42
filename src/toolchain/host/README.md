@@ -8,7 +8,7 @@
 
 ## 模块状态
 
-详细规范见 [docs/design/embedding.md](../../../docs/design/embedding.md)。
+详细规范见 [docs/design/runtime/embedding.md](../../../docs/design/runtime/embedding.md)。
 
 | 模块 | 职责 | 状态 |
 |------|------|------|
@@ -56,7 +56,7 @@ cargo run --manifest-path src/toolchain/host/examples/hello_rust/Cargo.toml -- \
 
 | 方向 | 解决问题 | 文档 |
 |------|---------|------|
-| **interop** | native 代码 → 注册类型/方法进 z42（CPython C 扩展类比）| [docs/design/interop.md](../../../docs/design/interop.md) |
-| **host (本模块)** | 宿主 app → 启动 VM → 加载 .zbc → 调用入口 → 关闭（CoreCLR `coreclrhost.h` 类比）| [docs/design/embedding.md](../../../docs/design/embedding.md) |
+| **interop** | native 代码 → 注册类型/方法进 z42（CPython C 扩展类比）| [docs/design/language/interop.md](../../../docs/design/language/interop.md) |
+| **host (本模块)** | 宿主 app → 启动 VM → 加载 .zbc → 调用入口 → 关闭（CoreCLR `coreclrhost.h` 类比）| [docs/design/runtime/embedding.md](../../../docs/design/runtime/embedding.md) |
 
 两者复用同一份 `Z42Value` / `Z42Args` / `Z42Error` 类型定义（在 `z42_abi.h`），互不重叠。

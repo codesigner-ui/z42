@@ -9,7 +9,7 @@
 - [x] 阶段 3-4: TypeChecker BindMemberExpr 识别 getter（class/instantiated/interface 三处）+ BindAssign 加 property 路径 + TryFindPropertySetter helper
 - [x] 阶段 5-6: golden tests 97_auto_property_class + 99_interface_property
 - [x] 阶段 7: stdlib IEnumerator.Current 升级回 `T Current { get; }` 形式
-- [x] 阶段 8: docs/design/properties.md + iteration.md 同步
+- [x] 阶段 8: docs/design/language/properties.md + iteration.md 同步
 
 ---
 
@@ -101,13 +101,13 @@
 
 ## 阶段 8: 文档同步 + 归档
 
-- [ ] 8.1 新增 `docs/design/properties.md`：
+- [ ] 8.1 新增 `docs/design/language/properties.md`：
   - 使用者视角语法：class auto-property / readonly / interface / extern
   - desugar 规则（backing field + getter/setter）
   - `__prop_<Name>` 命名约定
-- [ ] 8.2 `docs/design/language-overview.md` 加 property 章节链接
-- [ ] 8.3 `docs/design/iteration.md` 更新：IEnumerator.Current 已恢复 property 形式
-- [ ] 8.4 `docs/design/compiler-architecture.md` 在 Pratt / Parser 章节附近
+- [ ] 8.2 `docs/design/language/language-overview.md` 加 property 章节链接
+- [ ] 8.3 `docs/design/language/iteration.md` 更新：IEnumerator.Current 已恢复 property 形式
+- [ ] 8.4 `docs/design/compiler/compiler-architecture.md` 在 Pratt / Parser 章节附近
   附 auto-property desugar 短小说明
 - [ ] 8.5 GREEN 验证：dotnet test / test-vm.sh / cargo test 全绿
 - [ ] 8.6 tasks.md 状态 → `🟢 已完成`

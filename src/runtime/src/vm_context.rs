@@ -37,7 +37,7 @@
 //! duration of one entry-point invocation and cleared on return. JIT helpers
 //! access fields through `(*jit_ctx).vm_ctx` and call ctx methods.
 //!
-//! See `docs/design/vm-architecture.md` "VmContext —— 运行时状态归口" 段 for
+//! See `docs/design/runtime/vm-architecture.md` "VmContext —— 运行时状态归口" 段 for
 //! the full state-collapse rationale.
 
 use std::cell::RefCell;
@@ -371,7 +371,7 @@ impl VmContext {
     // ── GC heap ───────────────────────────────────────────────────────────
 
     /// Borrow the GC heap as a trait object. All script-driven allocations go
-    /// through this entry point; see `docs/design/vm-architecture.md` "GC 子系统".
+    /// through this entry point; see `docs/design/runtime/vm-architecture.md` "GC 子系统".
     pub fn heap(&self) -> &dyn MagrGC {
         self.heap.as_ref()
     }

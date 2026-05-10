@@ -55,8 +55,8 @@
 - [x] 6.3 `dotnet test` 全套 1012/1012 绿
 
 ## 阶段 7: 文档同步
-- [x] 7.1 `docs/design/error-codes.md` E0916 行更新（C11b → C11b+C11e；加 unknown-type / unsupported-shape 子分类；c_char return 占位 C11f）
-- [x] 7.2 `docs/design/interop.md` Roadmap 表 +L2.M13g 行（C11e）；§11.5 加 "Signature whitelist (C11e extension)" 子节 + Out-of-scope C11f 列表
+- [x] 7.1 `docs/design/compiler/error-codes.md` E0916 行更新（C11b → C11b+C11e；加 unknown-type / unsupported-shape 子分类；c_char return 占位 C11f）
+- [x] 7.2 `docs/design/language/interop.md` Roadmap 表 +L2.M13g 行（C11e）；§11.5 加 "Signature whitelist (C11e extension)" 子节 + Out-of-scope C11f 列表
 - [x] 7.3 `docs/roadmap.md` Native interop 表 +C11e 行；C11+ 剩余清单更新（C11e 移出，C11f 增补 ownership 协议 + Array/Option/定长数组）
 
 ## 阶段 8: GREEN + 归档 + commit

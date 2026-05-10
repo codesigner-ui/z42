@@ -130,8 +130,8 @@ C5 不新增 IR opcode；复用 C1 已声明、C4 已实现 runtime 的：
 
 ## Documentation Sync
 
-- `docs/design/grammar.peg` 加 pinned-stmt 产生式
-- `docs/design/language-overview.md` 加 pinned 块语法描述
-- `docs/design/interop.md` §10 C5 → ✅
+- `docs/design/language/grammar.peg` 加 pinned-stmt 产生式
+- `docs/design/language/language-overview.md` 加 pinned 块语法描述
+- `docs/design/language/interop.md` §10 C5 → ✅
 - `docs/roadmap.md` C5 → ✅
-- `docs/design/error-codes.md` Z0908 加 TypeChecker 三项抛出条件
+- `docs/design/compiler/error-codes.md` Z0908 加 TypeChecker 三项抛出条件

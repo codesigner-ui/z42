@@ -10,8 +10,8 @@ desugar 为普通方法 `get_Item(params) → T` 和 `set_Item(params, T value) 
 `list[i]` 也不能用 `list[i] = v`。Stdlib 若要真替换 pseudo-class List/Dict，
 索引器是必需语言特性。
 
-**文档影响**：`docs/design/generics.md` + `docs/design/language-overview.md` +
-`docs/roadmap.md` + 可能 `docs/design/ir.md`（若新增 IR 指令 — 本次不新增）。
+**文档影响**：`docs/design/language/generics.md` + `docs/design/language/language-overview.md` +
+`docs/roadmap.md` + 可能 `docs/design/runtime/ir.md`（若新增 IR 指令 — 本次不新增）。
 
 ## 进度概览
 - [x] 阶段 1: Parser — 识别 `T this[params] { get/set }` 并 desugar 为方法
@@ -57,8 +57,8 @@ desugar 为普通方法 `get_Item(params) → T` 和 `set_Item(params, T value) 
 
 ## 阶段 5: 文档 + 验证
 
-- [x] 5.1 `docs/design/language-overview.md`：新增索引器语法介绍
-- [x] 5.2 `docs/design/generics.md`：L3-G4e 小节
+- [x] 5.1 `docs/design/language/language-overview.md`：新增索引器语法介绍
+- [x] 5.2 `docs/design/language/generics.md`：L3-G4e 小节
 - [x] 5.3 `docs/roadmap.md`：L3-G4e → ✅
 - [x] 5.4 全绿验证
 

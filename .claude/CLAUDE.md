@@ -43,7 +43,7 @@ examples/       # .z42 示例源文件
 
 具体的"改动类型 → 需更新文档"映射表见 [workflow.md 阶段 9](rules/workflow.md)。
 
-> **实现原理文档规则（2026-04-25）**：涉及编译器或 VM 的**内部机制 / 架构策略**的变更（不只是对外行为），必须把"实现原理"（数据结构、算法、加载策略、决策权衡）同步到 `docs/design/compiler-architecture.md` 或 `docs/design/vm-architecture.md`，使新接手者不必阅读大量源码即可理解"为什么这样设计"。
+> **实现原理文档规则（2026-04-25）**：涉及编译器或 VM 的**内部机制 / 架构策略**的变更（不只是对外行为），必须把"实现原理"（数据结构、算法、加载策略、决策权衡）同步到 `docs/design/compiler/compiler-architecture.md` 或 `docs/design/runtime/vm-architecture.md`，使新接手者不必阅读大量源码即可理解"为什么这样设计"。
 
 ## 代码风格
 
@@ -72,5 +72,5 @@ examples/       # .z42 示例源文件
 - M4（解释器）全绿前，不填充 JIT/AOT 实现
 - L2/L3 特性（Result、Trait、ADT、泛型、Lambda、async 等）不在 L1 阶段引入到规范或代码中
 
-@docs/design/language-overview.md
-@docs/design/ir.md
+@docs/design/language/language-overview.md
+@docs/design/runtime/ir.md

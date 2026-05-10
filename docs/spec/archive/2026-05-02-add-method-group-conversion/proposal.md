@@ -1,6 +1,6 @@
 # Proposal: D1b — 方法组转换 + 调用站点 FuncRef 缓存（I12）
 
-> 这是 `docs/design/delegates-events.md` D1 阶段第二切片，在 D1a 落地后实施。
+> 这是 `docs/design/language/delegates-events.md` D1 阶段第二切片，在 D1a 落地后实施。
 > 配套子 spec：D1a 关键字 + 命名 delegate；D1c 泛型 delegate + N arity 脚本。
 
 ## Why

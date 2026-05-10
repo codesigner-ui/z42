@@ -14,7 +14,7 @@ internal sealed partial class FunctionEmitter
     ///   • No captures (L2)  → lift body, emit `LoadFn`. Result is `FuncRef`.
     ///   • Has captures (L3) → lift body with env param, emit `MkClos` with
     ///     capture regs collected from the current scope. Result is `Closure`.
-    /// See docs/design/closure.md §6 + impl-closure-l3-core design Decision 7/8.
+    /// See docs/design/language/closure.md §6 + impl-closure-l3-core design Decision 7/8.
     private TypedReg EmitLambdaLiteral(BoundLambda lambda)
     {
         var index    = _ctx.NextLambdaIndex(_currentFnQualName);

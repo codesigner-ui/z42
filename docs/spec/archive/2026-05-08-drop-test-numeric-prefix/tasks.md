@@ -11,9 +11,9 @@
 
 **Scope 警告（2026-05-08）：** 初始估计 "2 active doc refs"。重新搜索后实际：
 - `src/runtime/tests/zbc_compat.rs` — ~6 处代码 fixture path
-- `docs/design/generics.md` — ~8 处特性记号引用
-- `docs/design/gc-handle.md` — 2 处全路径
-- `docs/design/static-abstract-interface.md` — 2 处特性记号
+- `docs/design/language/generics.md` — ~8 处特性记号引用
+- `docs/design/runtime/gc-handle.md` — 2 处全路径
+- `docs/design/language/static-abstract-interface.md` — 2 处特性记号
 - `.claude/settings.json` — 2-3 处权限白名单全路径
 
 User 确认扩展 Scope 继续。
@@ -38,9 +38,9 @@ User 确认扩展 Scope 继续。
 ## 阶段 3: 引用更新
 
 - [x] 3.1 [src/runtime/tests/zbc_compat.rs](../../src/runtime/tests/zbc_compat.rs)：`basic/01_hello` → `basic/hello`、`classes/07_class_basic` → `classes/class_basic`，及 doc comment 中相关引用
-- [x] 3.2 [docs/design/generics.md](../../docs/design/generics.md)：`82_short_circuit` / `89_static_abstract_operator` / `80_stdlib_arraylist` / `81_stdlib_hashmap` / `83_foreach_user_class` / `18_list` / `20_dict` / `40_list_operations` / `76_generic_list` → 去 NN_
-- [x] 3.3 [docs/design/gc-handle.md](../../docs/design/gc-handle.md)：`src/tests/gc/113_gc_handle/` / `114_gc_stats/` → 去 NN_
-- [x] 3.4 [docs/design/static-abstract-interface.md](../../docs/design/static-abstract-interface.md)：`87_generic_inumber` / `88_operator_overload` → 去 NN_
+- [x] 3.2 [docs/design/language/generics.md](../../docs/design/language/generics.md)：`82_short_circuit` / `89_static_abstract_operator` / `80_stdlib_arraylist` / `81_stdlib_hashmap` / `83_foreach_user_class` / `18_list` / `20_dict` / `40_list_operations` / `76_generic_list` → 去 NN_
+- [x] 3.3 [docs/design/runtime/gc-handle.md](../../docs/design/runtime/gc-handle.md)：`src/tests/gc/113_gc_handle/` / `114_gc_stats/` → 去 NN_
+- [x] 3.4 [docs/design/language/static-abstract-interface.md](../../docs/design/language/static-abstract-interface.md)：`87_generic_inumber` / `88_operator_overload` → 去 NN_
 - [x] 3.5 [.claude/settings.json](../../.claude/settings.json)：`src/tests/parse/01_hello` / `src/tests/cross-zpkg/01_impl_propagation/*` / `src/libraries/z42.math/tests/golden/15_math/source.zbc`（后者含 stale `/golden/` 中间目录，一并修正） → 去 NN_
 
 ## 阶段 4: 验证
@@ -58,9 +58,9 @@ User 确认扩展 Scope 继续。
 | 95 个 src/tests/`<cat>`/NN_*/ | RENAME | dir |
 | 20 个 src/libraries/`<lib>`/tests/NN_*/ | RENAME | lib dir |
 | `src/runtime/tests/zbc_compat.rs` | MODIFY | path strings |
-| `docs/design/generics.md` | MODIFY | 8 处特性引用 |
-| `docs/design/gc-handle.md` | MODIFY | 2 处全路径 |
-| `docs/design/static-abstract-interface.md` | MODIFY | 2 处特性引用 |
+| `docs/design/language/generics.md` | MODIFY | 8 处特性引用 |
+| `docs/design/runtime/gc-handle.md` | MODIFY | 2 处全路径 |
+| `docs/design/language/static-abstract-interface.md` | MODIFY | 2 处特性引用 |
 | `.claude/settings.json` | MODIFY | 3 处权限白名单 |
 
 ## 备注

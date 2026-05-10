@@ -75,6 +75,6 @@
 
 ## Documentation Sync
 
-- `docs/design/error-codes.md` Z0907 从占位 → 已启用
-- `docs/design/interop.md` §10 加 C6 行 ✅
+- `docs/design/compiler/error-codes.md` Z0907 从占位 → 已启用
+- `docs/design/language/interop.md` §10 加 C6 行 ✅
 - `docs/roadmap.md` C6 → ✅

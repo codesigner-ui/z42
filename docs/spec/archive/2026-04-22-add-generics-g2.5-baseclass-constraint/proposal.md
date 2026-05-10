@@ -37,7 +37,7 @@ void Attach<T>(T component) where T: Component {
 | `src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.cs` | 修改 | 同上 for BindMemberExpr（字段访问） |
 | `src/compiler/z42.Tests/TypeCheckerTests.cs` | 新增 | 4-5 用例（字段访问、方法调用、子类调用点、非子类错误、基类 + interface 组合） |
 | `src/runtime/tests/golden/run/71_generic_baseclass/` | 新增 | Golden：`Animal` 基类 + `Dog` 子类 + `void Describe<T>(T x) where T: Animal` |
-| `docs/design/generics.md` | 修改 | L3-G2.5 小节 |
+| `docs/design/language/generics.md` | 修改 | L3-G2.5 小节 |
 | `docs/roadmap.md` | 修改 | L3-G2.5 状态表（baseclass 子项） |
 
 ## Out of Scope（本次不做）

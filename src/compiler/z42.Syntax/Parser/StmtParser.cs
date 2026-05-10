@@ -136,7 +136,7 @@ internal static class StmtParser
         //     `IsTypeAnnotatedVarDecl` since both start with `Type Identifier`,
         //     and BEFORE the func-type var-decl path so we don't misinterpret
         //     a local fn whose return type is `(T) -> R`.
-        //     See docs/design/closure.md §3.4 + impl-local-fn-l2 design.
+        //     See docs/design/language/closure.md §3.4 + impl-local-fn-l2 design.
         if (IsLocalFunctionDecl(cursor))
         {
             return ParseLocalFunctionStmt(ref cursor, feat, span);
@@ -509,7 +509,7 @@ internal static class StmtParser
     /// Lookahead: is `cursor` pointing at a local-function declaration of the
     /// form `Type Name(params) => expr;` or `Type Name(params) { body }`?
     /// Distinguishes from var-decl (`Type Name = init;`) by the `(` after Name.
-    /// See docs/design/closure.md §3.4 + impl-local-fn-l2 design.
+    /// See docs/design/language/closure.md §3.4 + impl-local-fn-l2 design.
     private static bool IsLocalFunctionDecl(TokenCursor cursor)
     {
         // Skip the return type expression and check whether the next two

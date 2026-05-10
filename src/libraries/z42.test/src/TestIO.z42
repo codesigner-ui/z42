@@ -6,7 +6,7 @@ namespace Std.Test;
 // buffer is popped and returned as a string. Nested calls compose via the
 // stack (inner sees inner output only; outer sees only what executed at
 // the outer level outside of inner's capture window). See
-// docs/design/testing.md "TestIO".
+// docs/design/testing/testing.md "TestIO".
 //
 // 异常路径：被测代码抛出时，sink 也必须卸载。所有方法都先 install，try
 // body()；catch 路径里 take 一次（discard buffer），再 throw 透传异常。

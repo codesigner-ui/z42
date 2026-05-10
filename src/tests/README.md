@@ -71,7 +71,7 @@
    - 仅用 `Assert.*` 测计算 / 控制流，无 sidecar → `src/tests/<category>/<name>.z42`（flat 模式）
    - 不确定类别归 `basic/`
 
-完整规则见 [docs/design/testing.md](../../docs/design/testing.md)。
+完整规则见 [docs/design/testing/testing.md](../../docs/design/testing/testing.md)。
 
 ## 运行
 

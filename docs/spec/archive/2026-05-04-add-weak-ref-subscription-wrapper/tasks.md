@@ -43,8 +43,8 @@
 ## 阶段 6: 测试 + 文档
 - [ ] 6.1 NEW golden `src/libraries/z42.core/tests/golden/weak_subscription_lapsed/source.z42` + expected
 - [ ] 6.2 NEW golden `src/libraries/z42.core/tests/golden/composite_ref_weak_mode/source.z42` + expected
-- [ ] 6.3 `docs/design/delegates-events.md` §5.2 / §5.3 / status 行更新 D-1b 落地；line 191 退化策略说明
-- [ ] 6.4 `docs/design/vm-architecture.md` `__delegate_target` builtin 加入清单
+- [ ] 6.3 `docs/design/language/delegates-events.md` §5.2 / §5.3 / status 行更新 D-1b 落地；line 191 退化策略说明
+- [ ] 6.4 `docs/design/runtime/vm-architecture.md` `__delegate_target` builtin 加入清单
 - [ ] 6.5 `docs/deferred.md` 移除 D-1b 条目
 
 ## 阶段 7: 验证
@@ -52,7 +52,7 @@
 - [ ] 7.2 `dotnet test src/compiler/z42.Tests/z42.Tests.csproj` —— 全绿
 - [ ] 7.3 `./scripts/test-vm.sh` —— 全绿（含两个新 golden + 现有 weak_ref_basic 不回归）
 - [ ] 7.4 spec scenarios 6 个场景逐条对应 ✅
-- [ ] 7.5 文档同步：`docs/design/delegates-events.md`、`docs/design/vm-architecture.md`、`docs/deferred.md`
+- [ ] 7.5 文档同步：`docs/design/language/delegates-events.md`、`docs/design/runtime/vm-architecture.md`、`docs/deferred.md`
 
 ## 备注
 - 阶段 1 是 gating check，发现 method group 形态不对必须停下来报告

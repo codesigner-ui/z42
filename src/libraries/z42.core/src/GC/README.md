@@ -28,7 +28,7 @@
 | 在 Strong / Weak 模式间切换 | `GCHandle` |
 | 跨 native 边界 anchor 对象 | `GCHandle` (Strong) |
 
-详见 `docs/design/gc-handle.md`（HandleTable 数据结构、Strong RC anchor
+详见 `docs/design/runtime/gc-handle.md`（HandleTable 数据结构、Strong RC anchor
 语义、struct 共享 backing 模式、Phase 3 Pinned 扩展规划）。
 
 ## 依赖

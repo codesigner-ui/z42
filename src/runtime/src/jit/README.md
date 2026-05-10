@@ -35,7 +35,7 @@
 1. 对应 `helpers/<category>.rs` 添加函数定义
 2. `helpers/registry.rs` 添加 `register_symbols` 中的 `reg!()` 行 + `HelperIds` 字段 + `declare_imports` 中的 `decl!()` 行
 
-详见 [docs/design/vm-architecture.md](../../../../docs/design/vm-architecture.md) "JIT/EE helper 边界"。
+详见 [docs/design/runtime/vm-architecture.md](../../../../docs/design/runtime/vm-architecture.md) "JIT/EE helper 边界"。
 
 ## 依赖关系
 - 依赖 `corelib` 的 `exec_builtin` 和 `value_to_str`

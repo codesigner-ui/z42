@@ -502,10 +502,10 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
    | 变更类型 | 必须更新的文档 |
    |---------|--------------|
-   | 新语法 / 语句 | `docs/design/language-overview.md` + `docs/design/<feature>.md` |
-   | 新 IR 指令 | `docs/design/ir.md` |
+   | 新语法 / 语句 | `docs/design/language/language-overview.md` + `docs/design/<feature>.md` |
+   | 新 IR 指令 | `docs/design/runtime/ir.md` |
    | 新 zbc / VM 行为 | `docs/design/<feature>.md` |
-   | 新构建步骤 / CLI 参数 / 工程文件规则 | `docs/design/project.md` 或 `CLAUDE.md` |
+   | 新构建步骤 / CLI 参数 / 工程文件规则 | `docs/design/compiler/project.md` 或 `CLAUDE.md` |
    | 任意特性完成某个 pipeline 阶段（Parser / TypeCheck / IrGen / VM） | `docs/roadmap.md` Pipeline 实现进度表 |
    | fix / refactor（若涉及行为或机制变更） | 对应 `docs/design/` 文档必须更新 |
    | 新协作规则 / 工作流规则 | `.claude/rules/workflow.md` |

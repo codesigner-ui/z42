@@ -41,8 +41,8 @@ C11e 把白名单从 demo 级扩到能包真实 opaque-handle 库（`sqlite3` / 
 | `src/compiler/z42.Semantics/Synthesis/NativeImportSynthesizer.cs` | MODIFY 收 knownNativeTypes 并下传 |
 | `src/compiler/z42.Tests/ManifestSignatureParserTests.cs` | MODIFY +c_char + 用户类型用例 |
 | `src/compiler/z42.Tests/NativeImportSynthesizerTests.cs` | MODIFY +e2e c_char 方法 + native 类引用其他 native 类 |
-| `docs/design/error-codes.md` | MODIFY E0916 触发清单更新（区分 unknown-type vs unsupported-shape） |
-| `docs/design/interop.md` | MODIFY §11.5 / Roadmap 加 C11e 行 |
+| `docs/design/compiler/error-codes.md` | MODIFY E0916 触发清单更新（区分 unknown-type vs unsupported-shape） |
+| `docs/design/language/interop.md` | MODIFY §11.5 / Roadmap 加 C11e 行 |
 | `docs/roadmap.md` | MODIFY +C11e 行 |
 
 **只读引用**：

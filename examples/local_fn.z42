@@ -1,5 +1,5 @@
 // L2 阶段 local function（嵌套函数声明，C# 7+ 风格）示范。
-// 设计见 docs/design/closure.md §3.4，实现见
+// 设计见 docs/design/language/closure.md §3.4，实现见
 // docs/spec/archive/2026-05-01-impl-local-fn-l2/。
 //
 // 本示例覆盖：

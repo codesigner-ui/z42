@@ -29,7 +29,7 @@
 - [x] `dotnet test` 519/519 ✅; `test-vm.sh` 144/144 ✅ (interp 72 + jit 72)
 
 ### 文档
-- [x] `docs/design/generics.md`: L3-G4b 小节
+- [x] `docs/design/language/generics.md`: L3-G4b 小节
 - [x] `docs/roadmap.md`: L3-G4b ✅；L3-G4c（List/Dict 源码化）保留 📋
 
 ## 备注

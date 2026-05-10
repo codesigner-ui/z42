@@ -89,7 +89,7 @@
 ### 范围
 - 新建 `src/toolchain/test-runner/`（占位目录已存在）
   - 实现：测试发现（`[Test]` attribute）+ 加载 .zbc + 调用 z42.test assertion + TAP/JSON 输出
-- 元数据标签规范：[docs/design/testing.md](docs/design/testing.md)（新文档）
+- 元数据标签规范：[docs/design/testing/testing.md](docs/design/testing/testing.md)（新文档）
   - `// @test-tier: vm_core | stdlib:<lib> | integration` front-matter 约定
 - 新增 [scripts/test-changed.sh](scripts/test-changed.sh) + 接入 `just test changed`
 - z42.test 库可能需要补 assertion API（`assertEq`, `assertThrows`, `assertNear` 等）
@@ -182,9 +182,9 @@
 |-------|---------|
 | P0 | [docs/dev.md](docs/dev.md)（just 入口）+ [.claude/CLAUDE.md](.claude/CLAUDE.md)（构建段） |
 | P1 | [docs/design/benchmark.md](docs/design/benchmark.md)（新建） |
-| P2 | [docs/design/testing.md](docs/design/testing.md)（新建） |
-| P3 | [docs/design/testing.md](docs/design/testing.md)（迁移规则）+ [.claude/rules/code-organization.md](.claude/rules/code-organization.md)（测试目录约定） |
-| P4 | [docs/design/cross-platform.md](docs/design/cross-platform.md)（新建）+ [docs/dev.md](docs/dev.md)（平台命令） |
+| P2 | [docs/design/testing/testing.md](docs/design/testing/testing.md)（新建） |
+| P3 | [docs/design/testing/testing.md](docs/design/testing/testing.md)（迁移规则）+ [.claude/rules/code-organization.md](.claude/rules/code-organization.md)（测试目录约定） |
+| P4 | [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md)（新建）+ [docs/dev.md](docs/dev.md)（平台命令） |
 
 ### 工作量估计
 

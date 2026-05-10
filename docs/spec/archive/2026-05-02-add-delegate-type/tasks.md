@@ -55,10 +55,10 @@
 - [x] 5.4 `./scripts/test-vm.sh` 全绿（基线 +1×2 modes）
 - [x] 5.5 spec scenarios 逐条对应实现位置确认
 - [x] 5.6 文档同步：
-    - `docs/design/closure.md` §3.2 —— 修正"不使用 Func/Action"为"接受 delegate 关键字 + Func/Action 命名 delegate"
-    - `docs/design/delegates-events.md` —— 顶部状态从"前瞻性"改为"D1a 已落地"；§11.2 D1 行加 ✅ 子项
+    - `docs/design/language/closure.md` §3.2 —— 修正"不使用 Func/Action"为"接受 delegate 关键字 + Func/Action 命名 delegate"
+    - `docs/design/language/delegates-events.md` —— 顶部状态从"前瞻性"改为"D1a 已落地"；§11.2 D1 行加 ✅ 子项
     - `docs/roadmap.md` —— 已完成关键 fix 表加一行
-    - `docs/design/language-overview.md` —— §6 类一节后或独立 §6.5 加 delegate 简介
+    - `docs/design/language/language-overview.md` —— §6 类一节后或独立 §6.5 加 delegate 简介
 - [x] 5.7 移动 `docs/spec/changes/add-delegate-type/` → `docs/spec/archive/2026-05-02-add-delegate-type/`
 - [x] 5.8 commit + push（自动）
 

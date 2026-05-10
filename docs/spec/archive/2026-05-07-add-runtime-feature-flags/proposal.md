@@ -23,7 +23,7 @@ P4.1 是**纯前置工作**，不交付任何平台脚手架，只把 [src/runti
 - **z42vm 二进制 cfg**：CLI `--mode jit` 在 `interp-only` 配置下编译时移除该选项；运行时若用户传 `jit` 报错 `"jit feature not compiled"`
 - **just 接入**：新增 `just build interp-only` / `just build wasm` 等子命令（实际平台构建在 P4.2-P4.4 完成）
 - **CI 验证**：CI 加一个 job 跑 `cargo build --no-default-features --features interp-only`，确保拆分不漏 cfg
-- **文档**：新建 [docs/design/cross-platform.md](docs/design/cross-platform.md)
+- **文档**：新建 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md)
 
 ## Scope
 
@@ -39,7 +39,7 @@ P4.1 是**纯前置工作**，不交付任何平台脚手架，只把 [src/runti
 | `src/runtime/Cargo.lock` | MODIFY | 自动重生 |
 | `justfile` | MODIFY | 加 `build-interp-only` 等 task |
 | `.github/workflows/ci.yml` | MODIFY | 加 interp-only 编译验证 job |
-| `docs/design/cross-platform.md` | NEW | 平台-feature 矩阵 + cfg 规范 |
+| `docs/design/runtime/cross-platform.md` | NEW | 平台-feature 矩阵 + cfg 规范 |
 | `docs/dev.md` | MODIFY | 加 "Feature flags" 段 |
 | `src/runtime/README.md` | MODIFY | 加 features 段说明 |
 

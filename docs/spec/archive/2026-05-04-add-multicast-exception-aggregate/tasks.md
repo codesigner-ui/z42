@@ -32,7 +32,7 @@
 - [x] 4.5 IncrementalBuildIntegrationTests 41 → 43
 - [x] 4.6 spec scenarios 逐条核对
 - [x] 4.7 文档同步：
-  - `docs/design/delegates-events.md` 顶部状态加 D2d-2-Action
+  - `docs/design/language/delegates-events.md` 顶部状态加 D2d-2-Action
   - `docs/roadmap.md` 加 2026-05-04 行
   - `docs/deferred-features.md` D-8 → D-8b（仅 Func/Predicate 留 follow-up）+ NEW D-9（z42 默认参数 bug 跟踪）
 - [x] 4.8 移动 `docs/spec/changes/add-multicast-exception-aggregate/` → `docs/spec/archive/2026-05-04-add-multicast-exception-aggregate/`

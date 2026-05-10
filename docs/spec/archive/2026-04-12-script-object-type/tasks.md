@@ -65,7 +65,7 @@
 - [x] 7.4 `cargo build --manifest-path src/runtime/Cargo.toml` — 无编译错误
 - [x] 7.5 `dotnet test src/compiler/z42.Tests/z42.Tests.csproj` — 全绿（384/384）
 - [x] 7.6 `./scripts/test-vm.sh` — 全绿（92/92，interp+jit）
-- [x] 7.7 更新 `docs/design/ir.md`（ScriptObject/TypeDesc 说明）
+- [x] 7.7 更新 `docs/design/runtime/ir.md`（ScriptObject/TypeDesc 说明）
 - [x] 7.8 更新 `src/runtime/README.md`（types.rs/loader.rs 变更）
 
 ## 备注

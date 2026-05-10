@@ -83,7 +83,7 @@
 
 - [x] 7.1 `exception/mod.rs` 顶部注释更新（runtime 已无 thread_local 异常状态）
 - [x] 7.2 `thread/mod.rs` 顶部注释更新（仅 FRAME_POOL 保留）
-- [x] 7.3 `docs/design/vm-architecture.md` 删 sync 桥接段；说明 helper ABI
+- [x] 7.3 `docs/design/runtime/vm-architecture.md` 删 sync 桥接段；说明 helper ABI
       已扩展
 
 ## 阶段 8：验证

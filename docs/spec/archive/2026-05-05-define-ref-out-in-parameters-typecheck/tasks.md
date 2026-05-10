@@ -43,7 +43,7 @@
 
 ## 阶段 4: 文档同步
 - [x] 4.1 `language-overview.md` §5 重写函数小节（移除旧 `out int` 示例 + 完整三修饰符 + tuple 多返回对照 + 注明"运行时实施在 follow-up spec"）
-- [x] 4.2 创建 `docs/design/parameter-modifiers.md` —— 完整编译期规范 + Deferred / Future Work（D1-D6）+ Runtime Implementation 段
+- [x] 4.2 创建 `docs/design/language/parameter-modifiers.md` —— 完整编译期规范 + Deferred / Future Work（D1-D6）+ Runtime Implementation 段
 - [x] 4.3 `interop.md` ABI 表新增 `ref T ↔ *mut T` / `out T ↔ *mut T` / `in T ↔ *const T` 映射
 - [x] 4.4 `compiler-architecture.md` 加 "Parameter Modifiers" 段（数据流图 + 关键文件 + 用户视角规范引用）
 - [x] 4.5 `roadmap.md` Pipeline 进度表加 ref/out/in 行（Parser/TypeCheck ✅，IrGen/VM ⏸）
@@ -66,4 +66,4 @@
 - **设计期延后特性**：D1 ref local / D2 ref return / D3 ref field / D4 ref struct / D5 scoped / D6 ref readonly —— 写入 `parameter-modifiers.md` 的 "Deferred / Future Work" 段，**不**进 `docs/deferred.md`（设计期延后规则）
 - **pre-existing 规范不一致**（error-codes.md 段头 Z 前缀 vs 实际代码 E 前缀）—— 不在本 spec scope，待独立 fix spec 处理
 - **JIT / AOT** 当前 L2 焦点是 interp，本 spec 不涉及 JIT/AOT 后端
-- **运行时不一致警告**：用户在本 spec 落地后写 `Increment(ref c)` 编译期通过、运行时 callee 修改不传回 caller。`docs/design/parameter-modifiers.md` 的 "Runtime Implementation" 段需明确说明此过渡状态，并指引使用 tuple 多返回作为临时替代。
+- **运行时不一致警告**：用户在本 spec 落地后写 `Increment(ref c)` 编译期通过、运行时 callee 修改不传回 caller。`docs/design/language/parameter-modifiers.md` 的 "Runtime Implementation" 段需明确说明此过渡状态，并指引使用 tuple 多返回作为临时替代。

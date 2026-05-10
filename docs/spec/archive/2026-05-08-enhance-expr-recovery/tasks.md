@@ -98,7 +98,7 @@
 ## 阶段 6: 文档同步
 - [ ] 6.1 `Parser.cs` doc 更新：补"expression 级别 recovery 已激活"说明
 - [ ] 6.2 `docs/review.md` Part 2 §2.2 / Part 3 §3.7 状态注记 → 🟢
-- [ ] 6.3 `docs/design/compiler-architecture.md`（按 [CLAUDE.md](../../../.claude/CLAUDE.md) "实现原理文档规则"）补"parser 三级错误恢复（声明/语句/表达式）"段
+- [ ] 6.3 `docs/design/compiler/compiler-architecture.md`（按 [CLAUDE.md](../../../.claude/CLAUDE.md) "实现原理文档规则"）补"parser 三级错误恢复（声明/语句/表达式）"段
 - [ ] 6.4 `docs/features.md`（如有 parser 错误处理章节）同步
 
 ## 阶段 7: 归档 + 提交

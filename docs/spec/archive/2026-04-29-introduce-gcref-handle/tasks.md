@@ -44,7 +44,7 @@
 - [x] `gc/mod.rs` re-export `GcRef` / `WeakGcRef`
 - [x] `gc/mod.rs` 模块文档更新（提到 GcRef + Phase 3a/b/c/d/e 拆分路线）
 - [x] `gc/README.md` 入口点段加 `GcRef<T>` / `WeakGcRef<T>`
-- [x] `docs/design/vm-architecture.md` Phase 路线表加 Phase 2 跳过说明 + Phase 3a 已落地 + Phase 3b/c/d/e 拆分
+- [x] `docs/design/runtime/vm-architecture.md` Phase 路线表加 Phase 2 跳过说明 + Phase 3a 已落地 + Phase 3b/c/d/e 拆分
 
 ### 阶段 7: 验证 ✅
 

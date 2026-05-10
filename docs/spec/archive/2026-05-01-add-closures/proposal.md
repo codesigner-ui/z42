@@ -32,21 +32,21 @@ z42 当前只有顶层 `fn` 函数声明，无 lambda / closure。但：
 15. L2 = 无捕获 lambda + 短写 + local function；L3 = 完整闭包
 
 文档落地：
-- 新增 `docs/design/closure.md` 作为闭包专题
+- 新增 `docs/design/language/closure.md` 作为闭包专题
 - 更新 `language-overview.md` / `grammar.peg` / `ir.md` / `concurrency.md` / `roadmap.md`
 
 衍生 follow-up（不在本变更内）：
-- VM 诊断需求（对象引用链 / captured env dump / allocation site 追踪）→ 记到 `docs/design/vm-architecture.md` 未来工作
+- VM 诊断需求（对象引用链 / captured env dump / allocation site 追踪）→ 记到 `docs/design/runtime/vm-architecture.md` 未来工作
 
 ## Scope（允许改动的文件）
 
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `docs/design/closure.md` | NEW | 闭包专题设计（核心规范）|
-| `docs/design/language-overview.md` | MODIFY | 增加闭包章节 + 函数类型语法 + L 阶段定位 |
-| `docs/design/grammar.peg` | MODIFY | 增加 lambda / 函数类型 / 表达式短写 / 嵌套函数文法 |
-| `docs/design/ir.md` | MODIFY | 闭包相关 IR 指令草案（mkclos / callclos / vtable_call）|
-| `docs/design/concurrency.md` | MODIFY | §6.3 改为引用 closure.md 的捕获规则 |
+| `docs/design/language/closure.md` | NEW | 闭包专题设计（核心规范）|
+| `docs/design/language/language-overview.md` | MODIFY | 增加闭包章节 + 函数类型语法 + L 阶段定位 |
+| `docs/design/language/grammar.peg` | MODIFY | 增加 lambda / 函数类型 / 表达式短写 / 嵌套函数文法 |
+| `docs/design/runtime/ir.md` | MODIFY | 闭包相关 IR 指令草案（mkclos / callclos / vtable_call）|
+| `docs/design/runtime/concurrency.md` | MODIFY | §6.3 改为引用 closure.md 的捕获规则 |
 | `docs/roadmap.md` | MODIFY | 闭包设计 milestone 标记完成 |
 | `docs/spec/changes/add-closures/proposal.md` | NEW | 本提案 |
 | `docs/spec/changes/add-closures/specs/closure/spec.md` | NEW | 行为规范 |
@@ -54,8 +54,8 @@ z42 当前只有顶层 `fn` 函数声明，无 lambda / closure。但：
 | `docs/spec/changes/add-closures/tasks.md` | NEW | 任务清单 |
 
 **只读引用**：
-- `docs/design/iteration.md` — 确认与迭代器场景契合
-- `docs/design/customization.md` — 确认 L3 lambda 特性占位
+- `docs/design/language/iteration.md` — 确认与迭代器场景契合
+- `docs/design/language/customization.md` — 确认 L3 lambda 特性占位
 - `docs/design/philosophy.md` — 设计哲学对齐
 - `.claude/projects/-Users-d-s-qiu-Documents-codesigner-ui-z42/memory/feedback_*.md` — 已存原则
 

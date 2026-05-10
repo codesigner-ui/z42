@@ -46,7 +46,7 @@
 
 ## 阶段 4: 文档 + 验证 ✅
 
-- [x] 4.1 `docs/design/generics.md`: L3-G2.5 引用/值约束小节
+- [x] 4.1 `docs/design/language/generics.md`: L3-G2.5 引用/值约束小节
 - [x] 4.2 `docs/roadmap.md`: class ✅ / struct ✅
 - [x] 4.3 全绿验证：dotnet build + cargo build + dotnet test + test-vm.sh
 

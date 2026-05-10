@@ -60,7 +60,7 @@
 - [x] 4.2 `./scripts/test-vm.sh` 全绿（基线 +1×2 modes）
 - [x] 4.3 spec scenarios 逐条核对
 - [x] 4.4 文档同步：
-    - `docs/design/delegates-events.md` 顶部状态加 D2a；§4.1 / §4.2 / §4.3 加"已落地"标记
+    - `docs/design/language/delegates-events.md` 顶部状态加 D2a；§4.1 / §4.2 / §4.3 加"已落地"标记
     - `docs/roadmap.md` 加一行
 - [x] 4.5 移动 `docs/spec/changes/add-multicast-action/` → `docs/spec/archive/2026-05-02-add-multicast-action/`
 - [x] 4.6 commit + push

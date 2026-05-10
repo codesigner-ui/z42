@@ -42,7 +42,7 @@
 - [x] 4.5 IncrementalBuildIntegrationTests 文件计数 36 → 38（已在 fix-nested-generic-parsing 修过）
 - [x] 4.6 spec scenarios 逐条核对
 - [x] 4.7 文档同步：
-    - `docs/design/delegates-events.md` 顶部状态 D2b 落地 + WeakRef 延后说明
+    - `docs/design/language/delegates-events.md` 顶部状态 D2b 落地 + WeakRef 延后说明
     - `docs/roadmap.md` 加 2026-05-03 add-isubscription-wrapper 行
 - [x] 4.8 移动 `docs/spec/changes/add-isubscription-wrapper/` → `docs/spec/archive/2026-05-03-add-isubscription-wrapper/`
 - [x] 4.9 commit + push

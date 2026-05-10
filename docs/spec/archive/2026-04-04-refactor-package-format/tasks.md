@@ -4,7 +4,7 @@
 
 **变更说明：** 将 `.zlib` 重命名为 `.zbin`（统一 exe/lib 打包格式）；在 compilation.md 中明确 Strategy D（zbc 生成粒度）架构。
 **原因：** `.zlib` 语义只暗示库，但打包格式同时用于 exe 和 lib；metadata 中的 `kind` 字段已足以区分，后缀应中性化。
-**文档影响：** `docs/design/compilation.md`、`docs/design/project.md`
+**文档影响：** `docs/design/compiler/compilation.md`、`docs/design/compiler/project.md`
 
 ---
 
@@ -26,8 +26,8 @@
 
 ## 文档
 
-- [x] 3.1 `docs/design/compilation.md` — 全文替换 `.zlib` → `.zbin`；新增 Strategy D（zbc 粒度）章节
-- [x] 3.2 `docs/design/project.md` — emit 格式表更新
+- [x] 3.1 `docs/design/compiler/compilation.md` — 全文替换 `.zlib` → `.zbin`；新增 Strategy D（zbc 粒度）章节
+- [x] 3.2 `docs/design/compiler/project.md` — emit 格式表更新
 
 ## 验证
 

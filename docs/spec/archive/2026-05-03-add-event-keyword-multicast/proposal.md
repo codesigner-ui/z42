@@ -2,7 +2,7 @@
 
 ## Why
 
-[delegates-events.md §6](docs/design/delegates-events.md#6) 设计的 `event` 关键字消灭外部 `event?.Invoke(...)` 模板代码：多播 event 字段 default-init 为空 MulticastAction（invoke on empty = no-op），外部 `+=` / `-=` 仅限调用合成的 `add_X` / `remove_X`。
+[delegates-events.md §6](docs/design/language/delegates-events.md#6) 设计的 `event` 关键字消灭外部 `event?.Invoke(...)` 模板代码：多播 event 字段 default-init 为空 MulticastAction（invoke on empty = no-op），外部 `+=` / `-=` 仅限调用合成的 `add_X` / `remove_X`。
 
 D2a (MulticastAction) + D2b (ISubscription wrapper) + D-5 (delegate equality + Unsubscribe) 已 GREEN，本 spec 不再有前置阻塞。
 

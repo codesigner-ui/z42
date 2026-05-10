@@ -36,7 +36,7 @@
 
 ## 阶段 1: closure.md 设计文档调整
 
-- [x] 1.1 `docs/design/closure.md` §4.4「共享可变值类型」整章重写
+- [x] 1.1 `docs/design/language/closure.md` §4.4「共享可变值类型」整章重写
   - 删 `Ref<T>` / `Box<T>` 用法
   - 改为说明 "用 class 共享可变状态（引用类型按身份）；C# `ref` 是参数级独立特性"
 - [x] 1.2 决议表第 10 条删除（"共享可变值类型用 Ref<T>/Box<T>"）

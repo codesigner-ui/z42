@@ -51,12 +51,12 @@
 
 ## 阶段 5: 文档同步
 
-- [x] 5.1 [docs/design/testing.md](docs/design/testing.md) 加 "R4.B Generic Attribute Syntax" 小节：
+- [x] 5.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) 加 "R4.B Generic Attribute Syntax" 小节：
     - 语法 `[Name<TypeArg>]` 形态
     - 当前唯一用例 `[ShouldThrow<E>]`
     - 编译期写入 `TIDX.ExpectedThrowTypeIdx` 流程
     - runtime 比对延后到 A2 spec
-- [x] 5.2 [docs/design/language-overview.md](docs/design/language-overview.md) 检查 attribute 语法段是否需更新（如有"attribute 不支持泛型"的过时陈述则修正）
+- [x] 5.2 [docs/design/language/language-overview.md](docs/design/language/language-overview.md) 检查 attribute 语法段是否需更新（如有"attribute 不支持泛型"的过时陈述则修正）
 - [x] 5.3 [docs/roadmap.md](docs/roadmap.md) M6 测试体系段：把 R4.B 从"未做"改为"已做（编译期）"，A2 / R3 完整版仍在 backlog
 
 ## 阶段 6: 验证

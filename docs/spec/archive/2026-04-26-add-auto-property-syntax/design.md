@@ -286,7 +286,7 @@ public interface IEnumerator<T> : IDisposable {
 }
 ```
 
-`docs/design/iteration.md` 同步说明：parser 完整支持后 IEnumerator.Current
+`docs/design/language/iteration.md` 同步说明：parser 完整支持后 IEnumerator.Current
 形式恢复 C# 标准。
 
 ## Testing Strategy

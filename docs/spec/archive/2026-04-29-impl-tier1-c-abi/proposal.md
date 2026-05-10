@@ -21,7 +21,7 @@ C3/C4/C5 都建立在 C2 之上。**用户面向的 syntax 仍未引入**（[Nat
 - **依赖**：`libffi = "3.2"`、`libloading = "0.8"` 进 z42_vm 运行时依赖
 - **PoC**：`tests/data/numz42-c/numz42.c` + build script，Counter 类型 + 3 方法，注册函数 `numz42_register(VmCtx*)` 由测试代码手动调
 - **集成测试**：`tests/native_interop_e2e.rs` 手工构造 `CallNative` 字节码 → VM 执行 → 验证 Counter inc/get 行为
-- **文档同步**：`docs/design/interop.md` §10 标 C2 ✅；`docs/design/error-codes.md` 把 Z0905/Z0906/Z0910 从"占位"改为"已启用"+ 抛出条件
+- **文档同步**：`docs/design/language/interop.md` §10 标 C2 ✅；`docs/design/compiler/error-codes.md` 把 Z0905/Z0906/Z0910 从"占位"改为"已启用"+ 抛出条件
 - **新单元测试**：registry / marshal 各自的 `*_tests.rs`
 
 ## Scope
@@ -48,15 +48,15 @@ C3/C4/C5 都建立在 C2 之上。**用户面向的 syntax 仍未引入**（[Nat
 | `src/runtime/tests/data/numz42-c/build.sh` | NEW | 编译脚本（cc + dylib），由 build.rs 调用 |
 | `src/runtime/build.rs` | NEW | 测试期编译 numz42-c → `target/debug/libnumz42_c.{dylib,so}` |
 | `src/runtime/tests/native_interop_e2e.rs` | NEW | 端到端：dlopen → register → CallNative → assert |
-| `docs/design/interop.md` | MODIFY | §10 Roadmap C2 → ✅；§3.3 ABI 演进描述补"实现已锁定" |
-| `docs/design/error-codes.md` | MODIFY | Z0905 / Z0906 / Z0910 从"占位"改为"已启用"+ 详细抛出条件 |
+| `docs/design/language/interop.md` | MODIFY | §10 Roadmap C2 → ✅；§3.3 ABI 演进描述补"实现已锁定" |
+| `docs/design/compiler/error-codes.md` | MODIFY | Z0905 / Z0906 / Z0910 从"占位"改为"已启用"+ 详细抛出条件 |
 | `docs/roadmap.md` | MODIFY | Native Interop 表 C2 行 → ✅ + 日期 |
-| `docs/design/vm-architecture.md` | MODIFY | "VM 状态" 段补 `native_types` 说明 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | "VM 状态" 段补 `native_types` 说明 |
 
 **只读引用**（理解上下文，不修改）：
 - `src/runtime/include/z42_abi.h` — Tier 1 ABI 头文件契约
 - `src/runtime/crates/z42-abi/src/lib.rs` — Rust 侧镜像类型
-- `docs/design/interop.md` §3 — C2 必须实现的 ABI 描述
+- `docs/design/language/interop.md` §3 — C2 必须实现的 ABI 描述
 - `src/runtime/src/vm_context.rs` 现有字段布局 — 学习 `Rc<RefCell>` 模式
 
 ## Out of Scope

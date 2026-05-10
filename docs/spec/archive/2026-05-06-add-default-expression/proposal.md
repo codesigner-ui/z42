@@ -53,7 +53,7 @@ z42 已有的 zero-init 机制（VM `default_value_for(type_tag)` + class 字段
 | `src/tests/operators/default_array/` | NEW | golden：default(int[]) == null + new int[N] 等价 |
 | `src/tests/errors/421_invalid_default_type/` | NEW | E0421 错误用例（generic type-param + 未知类型） |
 | [src/compiler/z42.Tests/DefaultExpressionTests.cs](src/compiler/z42.Tests/DefaultExpressionTests.cs) | NEW | 单测：parser / typechecker / emitter 三层契约 |
-| [docs/design/language-overview.md](docs/design/language-overview.md) | MODIFY | 加 default(T) expression 段 |
+| [docs/design/language/language-overview.md](docs/design/language/language-overview.md) | MODIFY | 加 default(T) expression 段 |
 | [docs/deferred.md](docs/deferred.md) | MODIFY | D-8b-3 移到"已落地"，新增 add-default-generic-typeparam Phase 2 deferred 占位 |
 
 **只读引用**：

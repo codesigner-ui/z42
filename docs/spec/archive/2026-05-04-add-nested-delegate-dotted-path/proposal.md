@@ -31,8 +31,8 @@ scope 小但价值高：qualified key 已在符号表，缺的只是 type 表达
 | `src/compiler/z42.Tests/Semantics/NestedDelegateAccessTests.cs` | NEW | TypeChecker 单测：① 外部用 `Btn.OnClick` 作为字段类型 ② 作为参数 ③ 作为返回类型 ④ 不存在的 nested name 报 E0401 |
 | `src/runtime/tests/golden/run/nested_delegate_dotted/source.z42` | NEW | golden：跨类引用 nested delegate 编译 + 运行 |
 | `src/runtime/tests/golden/run/nested_delegate_dotted/expected_output.txt` | NEW | golden 期望输出 |
-| `docs/design/delegates-events.md` | MODIFY | 嵌套 delegate 章节加 dotted-path 落地说明（Open Question 1 标已答） |
-| `docs/design/language-overview.md` | MODIFY | 类型表达式语法段加 MemberType（Outer.Inner）说明 |
+| `docs/design/language/delegates-events.md` | MODIFY | 嵌套 delegate 章节加 dotted-path 落地说明（Open Question 1 标已答） |
+| `docs/design/language/language-overview.md` | MODIFY | 类型表达式语法段加 MemberType（Outer.Inner）说明 |
 | `docs/deferred.md` | MODIFY | 移除 D-6 条目 |
 
 **只读引用**：

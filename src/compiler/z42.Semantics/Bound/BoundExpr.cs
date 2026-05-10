@@ -95,7 +95,7 @@ public abstract record BoundLambdaBody(Span Span);
 public sealed record BoundLambdaExprBody(BoundExpr Expr, Span Span)         : BoundLambdaBody(Span);
 public sealed record BoundLambdaBlockBody(BoundBlock Block, Span Span)      : BoundLambdaBody(Span);
 
-/// L3 lambda capture kind. See docs/design/closure.md §4 + impl-closure-l3-core.
+/// L3 lambda capture kind. See docs/design/language/closure.md §4 + impl-closure-l3-core.
 /// - `ValueSnapshot` — value type captured by copy at MkClos time; closure body
 ///   sees the captured value frozen at creation. Modifying it affects the
 ///   closure's env only, never the outer variable.

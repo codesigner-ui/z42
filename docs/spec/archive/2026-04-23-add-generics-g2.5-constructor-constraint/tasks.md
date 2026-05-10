@@ -7,7 +7,7 @@
 是 L3-G2.5 约束范式补全的高优先级项。
 **Scope 限制**：本次仅实现**约束校验**（编译期拒绝无 no-arg ctor 的实参）；
 泛型 body 内 `new T()` 实例化**依赖 L3-R 运行时 type_args 传递**，单独迭代。
-**文档影响**：`docs/design/generics.md`（约束语法决策、new() 约束语义）、
+**文档影响**：`docs/design/language/generics.md`（约束语法决策、new() 约束语义）、
 `docs/roadmap.md`（G2.5 状态）、ir.md（zbc 约束 flags 位）。
 
 ## 任务

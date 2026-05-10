@@ -13,8 +13,8 @@ agent: Plan
 
 先读取以下文件了解现状：
 - [CLAUDE.md](.claude/CLAUDE.md) — 阶段表格
-- [docs/design/language-overview.md](docs/design/language-overview.md)
-- [docs/design/ir.md](docs/design/ir.md)
+- [docs/design/language/language-overview.md](docs/design/language/language-overview.md)
+- [docs/design/runtime/ir.md](docs/design/runtime/ir.md)
 
 然后扫描代码库，识别哪些内容标注了 `// TODO` 或 `// TODO:`：
 
@@ -33,7 +33,7 @@ grep -rn "TODO" src/
 
 2. **IR Codegen**（`Z42.Compiler/Codegen/`）
    - AST → SSA IR
-   - 发射 `.zbc` 二进制文件（使用 `docs/design/zbc.md` 中的格式）
+   - 发射 `.zbc` 二进制文件（使用 `docs/design/runtime/zbc.md` 中的格式）
 
 3. **解释器完整实现**（`src/runtime/src/interp.rs`）
    - 完整指令集覆盖

@@ -51,7 +51,7 @@ internal interface IEmitterContext
     /// Register a lifted function created during expression emission (e.g. an
     /// L2 no-capture lambda). Lifted functions are appended to the module's
     /// function list after primary emission completes.
-    /// See docs/design/closure.md §6 + design.md Decision 1.
+    /// See docs/design/language/closure.md §6 + design.md Decision 1.
     void RegisterLiftedFunction(IrFunction fn);
 
     /// Allocate a unique index for a lifted lambda within `containerName`. The

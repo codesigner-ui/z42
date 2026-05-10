@@ -134,7 +134,7 @@
 - [x] 3.3.3 同上 — `apply_zbc_sidecar` / `apply_zpkg_sidecar`：BLID 匹配则合并 line_table / local_vars
 - [x] 3.3.4 同上 — 不匹配 / 损坏 / SymOnly flag 错 → `tracing::warn!` + 忽略，加载流程不失败
 - [x] 3.3.5 `Module` 直接 mutate（不需 RefCell）— sidecar merge 在 read_zbc / read_mods_section 返回的可变 Module 上发生
-- [ ] 3.3.6 [docs/design/vm-architecture.md] — 记录"sidecar 加载策略"决策原理（阶段 6 文档同步时落地）
+- [ ] 3.3.6 [docs/design/runtime/vm-architecture.md] — 记录"sidecar 加载策略"决策原理（阶段 6 文档同步时落地）
 
 ### 3.4 Rust 加载单测
 
@@ -178,13 +178,13 @@
 
 ### 6.1 设计文档
 
-- [ ] 6.1.1 [docs/design/zbc.md](../../../docs/design/zbc.md) — 修正 META section 描述（仅模块名/版本/entry，移除"调试信息"误述）
+- [ ] 6.1.1 [docs/design/runtime/zbc.md](../../../docs/design/runtime/zbc.md) — 修正 META section 描述（仅模块名/版本/entry，移除"调试信息"误述）
 - [ ] 6.1.2 同上 — 增 DBUG section 完整描述（line table + local var names）
 - [ ] 6.1.3 同上 — 增 BLID section + ZbcFlags.SymOnly + sidecar 形态章节
 - [ ] 6.1.4 同上 — 版本历史段标记 1.1 → 1.2，列变更（BLID + SymOnly + DBUG 可外迁）
-- [ ] 6.1.5 [docs/design/exceptions.md](../../../docs/design/exceptions.md) — 新增"Sidecar 符号化"章节（产物形态 + 加载流程 + 退化格式）
+- [ ] 6.1.5 [docs/design/language/exceptions.md](../../../docs/design/language/exceptions.md) — 新增"Sidecar 符号化"章节（产物形态 + 加载流程 + 退化格式）
 - [ ] 6.1.6 同上 — 增 Deferred 段：lazy/mmap、跨目录搜索、packer 集成、stdlib API、bundle、压缩 wire format
-- [ ] 6.1.7 [docs/design/project.md](../../../docs/design/project.md) — `[profile.*].strip` 字段语义（之前仅占位、本期生效）
+- [ ] 6.1.7 [docs/design/compiler/project.md](../../../docs/design/compiler/project.md) — `[profile.*].strip` 字段语义（之前仅占位、本期生效）
 - [ ] 6.1.8 同上 — release pipeline 产物表加 `<name>.zsym`
 
 ### 6.2 README 同步

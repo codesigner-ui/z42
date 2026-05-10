@@ -96,8 +96,8 @@
 
 ## 阶段 H: 文档同步
 
-- [x] H.1 [docs/design/testing.md](docs/design/testing.md) 加 "TestIO" 段（API + 嵌套语义 + sink stack 实现要点）
-- [x] H.2 [docs/design/testing.md](docs/design/testing.md) 加 "Bencher" 段（API + 当前 runner 不调度的限制 + future runner mode 链接）
+- [x] H.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) 加 "TestIO" 段（API + 嵌套语义 + sink stack 实现要点）
+- [x] H.2 [docs/design/testing/testing.md](docs/design/testing/testing.md) 加 "Bencher" 段（API + 当前 runner 不调度的限制 + future runner mode 链接）
 - [x] H.3 [docs/roadmap.md](docs/roadmap.md) M6 R2 完整版完成条目；列出新 builtin / 新类型；保留 "[Benchmark] runner 调度" 作为 backlog
 - [x] H.4 [src/libraries/z42.test/README.md](src/libraries/z42.test/README.md) 更新能力清单
 - [x] H.5 [src/libraries/z42.test/src/Assert.z42](src/libraries/z42.test/src/Assert.z42) 顶部注释更新（删 closure-pending 段）

@@ -10,7 +10,7 @@ namespace Z42.Tests;
 
 /// TypeChecker unit tests for L3 closure capture analysis.
 /// Pairs with archived `add-closures` Requirements R5 / R6 and
-/// impl spec `L3-C-1` ~ `L3-C-11`. See docs/design/closure.md §4.
+/// impl spec `L3-C-1` ~ `L3-C-11`. See docs/design/language/closure.md §4.
 public sealed class ClosureCaptureTypeCheckTests
 {
     private static (SemanticModel model, DiagnosticBag diags) Check(string src)
@@ -147,7 +147,7 @@ public sealed class ClosureCaptureTypeCheckTests
         // 一个闭包在 foreach body 内创建并捕获 `i`：每次迭代是独立 BoundLambda
         // 节点（独立 Captures 列表）。值快照语义保证 runtime 的每个 closure
         // 持有自己迭代时的值。这里仅验证编译期 capture 分析正确产出。
-        // 见 docs/design/closure.md §4.3 + impl-closure-l3-core.
+        // 见 docs/design/language/closure.md §4.3 + impl-closure-l3-core.
         var (model, diags) = Check("""
             void Main() {
                 int[] nums = new int[] { 1, 2, 3 };

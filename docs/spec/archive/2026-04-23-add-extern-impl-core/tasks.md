@@ -49,7 +49,7 @@
 - [x] 5.3 Golden test `86_extern_impl_user_class`（interp + jit 双绿）
 
 ### 阶段 6：文档 + 归档 ✅
-- [x] 6.1 `docs/design/generics.md` 新增 "extern impl" 小节
+- [x] 6.1 `docs/design/language/generics.md` 新增 "extern impl" 小节
 - [x] 6.2 `docs/roadmap.md` L3-Impl1 ✅ + L3-Impl2 规划
 - [x] 6.3 `Diagnostic.cs` / `DiagnosticCatalog.cs` 新增 E0413
 - [x] 6.4 GREEN 全绿：561 编译器 + 164 VM (interp+jit)

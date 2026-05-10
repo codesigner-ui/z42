@@ -66,8 +66,8 @@
 - [x] 4.4 上述 3 个 golden 加 `interp_only` 标记（JIT 路径 type_args 不传，default(T) 退化为 Null —— interp 是真值源）
 - [x] 4.5 DefaultExpressionTests.cs：移除原 `TypeChecker_Default_GenericTypeParam_RaisesE0421`；新增 2 个 case 验证 GenericParamIndex 正确解析（class-level 0/1 位置）
 - [x] 4.6 src/tests/errors/421_invalid_default_type/ 移除 generic-T case；保留 unknown type 单 case + 更新 expected_error.txt
-- [x] 4.7 docs/design/language-overview.md §3 default(T) 段同步 Phase 2 支持 + graceful-degradation 边界
-- [x] 4.8 docs/design/ir.md 加 `default_of` 指令文档 + obj_new 0.9 起 carry type_args 说明
+- [x] 4.7 docs/design/language/language-overview.md §3 default(T) 段同步 Phase 2 支持 + graceful-degradation 边界
+- [x] 4.8 docs/design/runtime/ir.md 加 `default_of` 指令文档 + obj_new 0.9 起 carry type_args 说明
 - [x] 4.9 docs/deferred.md 把 D-8b-3 Phase 2 从 active 移到"已落地"段
 - [x] 4.10 dotnet test 1097/1097 全绿
 - [x] 4.11 cargo test 全绿（240 + 多个独立 testbinaries）
@@ -86,7 +86,7 @@
 
 ### graceful-degradation 边界
 
-method-level type-param `m<U>()`、free generic function `f<T>()`、static method on generic class —— 这三种场景目前**编译通过、运行返 Null**。原因是 calling convention 不携带 type_args，callee 拿不到。后续 spec 处理（candidate name: `add-method-level-type-args`）。本 spec 把它们记入 docs/design/language-overview.md "graceful-degradation 边界"段。
+method-level type-param `m<U>()`、free generic function `f<T>()`、static method on generic class —— 这三种场景目前**编译通过、运行返 Null**。原因是 calling convention 不携带 type_args，callee 拿不到。后续 spec 处理（candidate name: `add-method-level-type-args`）。本 spec 把它们记入 docs/design/language/language-overview.md "graceful-degradation 边界"段。
 
 ### JIT 路径限制
 

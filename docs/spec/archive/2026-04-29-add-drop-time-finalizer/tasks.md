@@ -36,7 +36,7 @@
 - [x] `gc/refs.rs` 模块文档 + GcAllocation 说明 + Phase 3e drop 钩子
 - [x] `gc/rc_heap.rs` 模块文档：限制清单从 3 项 → 2 项（finalizer 限制移除）
 - [x] `gc/README.md` 同步
-- [x] `docs/design/vm-architecture.md` 同步 Phase 3e ✅
+- [x] `docs/design/runtime/vm-architecture.md` 同步 Phase 3e ✅
 - [x] `gc/mod.rs` Phase 路线表 3e ✅
 
 ### 阶段 5: 验证 ✅

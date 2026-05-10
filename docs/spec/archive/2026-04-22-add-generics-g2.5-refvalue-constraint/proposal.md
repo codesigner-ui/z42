@@ -39,7 +39,7 @@ void LogValue<T>(T v) where T: struct { Console.WriteLine(v); }
 | `z42.Tests/TypeCheckerTests.cs` | 6 新用例 |
 | `src/runtime/tests/golden/errors/30_generic_class_violation/` | `F<int>` 违反 `where T: class` |
 | `src/runtime/tests/golden/errors/31_generic_struct_violation/` | `F<MyClass>` 违反 `where T: struct` |
-| `docs/design/generics.md` | L3-G2.5 补充 |
+| `docs/design/language/generics.md` | L3-G2.5 补充 |
 | `docs/roadmap.md` | 表格状态更新 |
 
 ## Out of Scope

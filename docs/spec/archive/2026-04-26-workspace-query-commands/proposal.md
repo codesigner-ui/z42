@@ -46,8 +46,8 @@ C4b 把这些能力作为查询命令落地：`info` / `metadata` / `tree` / `li
 |---------|------|
 | `src/compiler/z42.Driver/Program.cs` | subcommand 路由表新增 info / metadata / tree / lint-manifest |
 | `src/compiler/z42.Driver/Commands/BuildCommand.cs` | 错误输出走 CliOutputFormatter |
-| `docs/design/project.md` | L7 章节扩展为完整命令矩阵（含查询命令） |
-| `docs/design/compiler-architecture.md` | InfoCommand / MetadataCommand 输出 schema |
+| `docs/design/compiler/project.md` | L7 章节扩展为完整命令矩阵（含查询命令） |
+| `docs/design/compiler/compiler-architecture.md` | InfoCommand / MetadataCommand 输出 schema |
 | `docs/dev.md` | 查询命令使用示例 |
 
 ### 只读引用

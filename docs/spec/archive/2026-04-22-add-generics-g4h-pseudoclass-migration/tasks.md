@@ -7,7 +7,7 @@
 `Std.Collections.Dictionary<K,V>`（前身 HashMap）。
 **原因：** 完成 L3-G4h "完整实现 List/Dictionary" 目标 —— 用户可继承、增强、泛化
 stdlib 容器，不再受编译器硬编码限制。
-**文档影响：** `docs/design/generics.md`（step 3 记录）、`docs/roadmap.md`（G4h 标记 ✅）。
+**文档影响：** `docs/design/language/generics.md`（step 3 记录）、`docs/roadmap.md`（G4h 标记 ✅）。
 
 ## 任务
 

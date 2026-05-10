@@ -74,9 +74,9 @@
 
 ## 阶段 7: 文档同步
 
-- [ ] 7.1 [docs/design/ir.md](docs/design/ir.md) 加 "TestIndex Section" 章节
-- [ ] 7.2 [docs/design/testing.md](docs/design/testing.md) 新建：测试框架总览（R1-R4 架构图 + 各 spec 范围）
-- [ ] 7.3 [docs/design/error-codes.md](docs/design/error-codes.md) 加 Z0911-Z0915 占位
+- [ ] 7.1 [docs/design/runtime/ir.md](docs/design/runtime/ir.md) 加 "TestIndex Section" 章节
+- [ ] 7.2 [docs/design/testing/testing.md](docs/design/testing/testing.md) 新建：测试框架总览（R1-R4 架构图 + 各 spec 范围）
+- [ ] 7.3 [docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md) 加 Z0911-Z0915 占位
 - [ ] 7.4 [docs/roadmap.md](docs/roadmap.md) Pipeline 进度表更新
 
 ## 阶段 8: 验证
@@ -134,7 +134,7 @@
 | **R1.A+B** | `ea54554` | C# `TestEntry` / `TestEntryKind` / `TestFlags` 类型 + `IrModule.TestIndex` 字段 + `SectionTags.Tidx` + ZbcWriter/Reader v=1 plumbing；Rust 镜像类型 + `read_test_index` decoder + 10 单测 + `LoadedArtifact.test_index` 字段 |
 | **R1.C.1** | `bb2df98` | 用户 feedback：`[Skip]` 不只是字符串，要区分 platform/feature。TIDX v=1 → v=2，TestEntry 加 `skip_platform_str_idx` + `skip_feature_str_idx`；C# + Rust 双端格式同步；Rust 单测扩到 12 个 |
 | **R1.C.2-5** | `5180d21` | parser 重构 `TryParseNativeAttribute` → 公开 `TryParseAttribute` 返回 `(Native, Test)` 二选一；识别 6 个 z42.test attribute (`Test`/`Benchmark`/`Setup`/`Teardown`/`Ignore`/`Skip`)；新 AST 节点 `TestAttribute`；FunctionDecl 加 `TestAttributes` 字段；IrGen 加 `BuildTestIndex` / `BuildTestEntry` 写 IrModule.TestIndex；examples/test_demo.z42 + 跨语言契约测试 `test_demo_tidx_round_trips` |
-| **R1.D** | (本 commit) | docs/design/zbc.md 加 TIDX section 二进制格式；docs/design/error-codes.md 注册 Z0911-Z0915 占位（R4 填实）；docs/design/testing.md 新建（含 Bench vs Test 分离原则）；归档到 docs/spec/archive/2026-04-30-add-test-metadata-section/ |
+| **R1.D** | (本 commit) | docs/design/runtime/zbc.md 加 TIDX section 二进制格式；docs/design/compiler/error-codes.md 注册 Z0911-Z0915 占位（R4 填实）；docs/design/testing/testing.md 新建（含 Bench vs Test 分离原则）；归档到 docs/spec/archive/2026-04-30-add-test-metadata-section/ |
 
 ### 实施过程偏差与决策
 
@@ -145,7 +145,7 @@
 5. **z42 attribute 系统不通用**：原 spec 假设 8 个 z42.test attribute 像 `[Native]` 一样可被识别；调研发现 z42 仅硬编码 `[Native]`，无通用 attribute 语法。决策：仿 [Native] 模式扩展 parser，识别 6 个简单 attribute（`[Test]`/`[Benchmark]`/`[Setup]`/`[Teardown]`/`[Ignore]`/`[Skip]`）。
 6. **`[ShouldThrow<E>]` 与 `[TestCase(args)]` 推迟**：原 spec 计划 8 个 attribute；这两个需要 generic 语法 / typed args 解析支持。User 决策（决策 1A）：v0.1 仅 6 个简单形式；ShouldThrow / TestCase 留 R4 一并实施。
 7. **TIDX v=1 → v=2**：用户 feedback "skip 不光是字符串"。R1.A+B 刚发的 v=1 在 R1.C.1 立即 bump 到 v=2 加 `skip_platform_str_idx` / `skip_feature_str_idx` 字段。无 v=1 文件曾被实际写入磁盘（parser 支持在 R1.C 才加），decoder 显式拒收 v=1。
-8. **Bench 与 Test 分离原则**：R1.D testing.md 文档化"bench 不放 src/tests/"原则，与 Rust/C++/.NET/Java/Haskell 主流静态语言一致；详见 [docs/design/testing.md](../../docs/design/testing.md) Bench-vs-Test 章节。
+8. **Bench 与 Test 分离原则**：R1.D testing.md 文档化"bench 不放 src/tests/"原则，与 Rust/C++/.NET/Java/Haskell 主流静态语言一致；详见 [docs/design/testing/testing.md](../../docs/design/testing/testing.md) Bench-vs-Test 章节。
 9. **Spec 偏差记录方式**：用户决策（决策 3A）：实施记录在 commit + tasks.md，归档时入正式 spec；不在每次偏差都重新审批 spec。
 
 ### 已知缺口（留 backlog）

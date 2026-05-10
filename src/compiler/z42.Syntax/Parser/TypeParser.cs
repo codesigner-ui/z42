@@ -36,7 +36,7 @@ internal static class TypeParser
     {
         var span = cursor.Current.Span;
 
-        // Function type: `(T1, T2) -> R` — see docs/design/closure.md §3.2
+        // Function type: `(T1, T2) -> R` — see docs/design/language/closure.md §3.2
         if (cursor.Current.Kind == TokenKind.LParen)
         {
             var funcResult = ParseFuncType(cursor);

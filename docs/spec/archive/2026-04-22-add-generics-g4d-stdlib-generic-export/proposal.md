@@ -82,7 +82,7 @@ ZpkgWriter / ZpkgReader 同步。zpkg 版本 **不 bump**（version 已在 L3-G3
 | `src/compiler/z42.Tests/ZbcRoundTripTests.cs` | TSIG TypeParams round-trip |
 | `src/runtime/tests/golden/run/77_stdlib_stack_queue/` | 新 golden |
 | `src/runtime/tests/golden/run/78_stdlib_generic_shadow/` | 新 golden |
-| `docs/design/generics.md` | L3-G4d 小节 |
+| `docs/design/language/generics.md` | L3-G4d 小节 |
 | `docs/roadmap.md` | L3-G4d → ✅ |
 
 ## Out of Scope

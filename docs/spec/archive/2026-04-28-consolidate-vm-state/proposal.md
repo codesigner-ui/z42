@@ -77,8 +77,8 @@
 | `src/runtime/src/metadata/loader.rs` | MODIFY | 调用 lazy_loader 处加 ctx 参数 |
 | `src/runtime/src/exception/mod.rs` | MODIFY | 文档更新：STATUS 从 STUB 改为"已迁到 VmContext" |
 | `src/runtime/src/thread/mod.rs` | MODIFY | 文档更新：删去"3 处 thread_local"列表，反映现状 |
-| `docs/design/vm-architecture.md` | MODIFY | 增"VmContext" 段，描述状态收口设计 |
-| `docs/design/object-protocol.md` | MODIFY | 异常传播说明微调（删 UserException sentinel 历史段）|
+| `docs/design/runtime/vm-architecture.md` | MODIFY | 增"VmContext" 段，描述状态收口设计 |
+| `docs/design/language/object-protocol.md` | MODIFY | 异常传播说明微调（删 UserException sentinel 历史段）|
 
 **只读引用**（用于理解上下文）：
 

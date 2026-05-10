@@ -60,7 +60,7 @@
 ## 阶段 6: 错误码注册
 
 - [ ] 6.1 [src/compiler/z42.Core/Diagnostics/ErrorCodes.cs](src/compiler/z42.Core/Diagnostics/ErrorCodes.cs) 注册 Z0911-Z0915 message 模板
-- [ ] 6.2 [docs/design/error-codes.md](docs/design/error-codes.md) 替换 R1 占位为完整描述（触发条件 + 修复建议 + 示例）
+- [ ] 6.2 [docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md) 替换 R1 占位为完整描述（触发条件 + 修复建议 + 示例）
 
 ## 阶段 7: 单元测试
 
@@ -71,7 +71,7 @@
 
 ## 阶段 8: 文档同步
 
-- [ ] 8.1 [docs/design/testing.md](docs/design/testing.md) 加 R4 段（attribute 校验规则）
+- [ ] 8.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) 加 R4 段（attribute 校验规则）
 - [ ] 8.2 [docs/roadmap.md](docs/roadmap.md) 更新
 
 ## 阶段 9: 验证

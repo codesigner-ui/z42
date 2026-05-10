@@ -31,7 +31,7 @@
 - [x] 4.2 `dotnet test` — 全绿（382/382）
 - [x] 4.3 `./scripts/build-stdlib.sh` — stdlib 仍能编译
 - [x] 4.4 `./scripts/test-vm.sh` — 全绿（86/86，interp + jit）
-- [x] 4.5 文档同步：`docs/design/ir.md`（builtin 指令 + stdlib 调用链说明）；`docs/roadmap.md`
+- [x] 4.5 文档同步：`docs/design/runtime/ir.md`（builtin 指令 + stdlib 调用链说明）；`docs/roadmap.md`
 - [x] 4.6 归档
 
 ## 备注

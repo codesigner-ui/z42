@@ -35,7 +35,7 @@
 ### 阶段 5: 文档同步 ✅
 - [x] `gc/rc_heap.rs` 模块文档：限制清单从 3 项调整（finalizer 部分解决）
 - [x] `gc/README.md` 同步
-- [x] `docs/design/vm-architecture.md` 同步 Phase 路线 3d ✅
+- [x] `docs/design/runtime/vm-architecture.md` 同步 Phase 路线 3d ✅
 - [x] `gc/mod.rs` 同步
 - [x] `docs/roadmap.md` 同步
 

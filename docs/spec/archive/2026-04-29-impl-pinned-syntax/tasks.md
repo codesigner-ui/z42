@@ -80,10 +80,10 @@
 
 ## 阶段 8: 文档同步
 
-- [x] 8.1 `docs/design/grammar.peg`：加 pinned-stmt = "pinned" Identifier "=" Expr Block
-- [x] 8.2 `docs/design/language-overview.md`：加 pinned 语法描述 + 限制说明
-- [x] 8.3 `docs/design/interop.md` §10：C5 行 → ✅
-- [x] 8.4 `docs/design/error-codes.md`：Z0908 抛出条件加 TypeChecker 三项
+- [x] 8.1 `docs/design/language/grammar.peg`：加 pinned-stmt = "pinned" Identifier "=" Expr Block
+- [x] 8.2 `docs/design/language/language-overview.md`：加 pinned 语法描述 + 限制说明
+- [x] 8.3 `docs/design/language/interop.md` §10：C5 行 → ✅
+- [x] 8.4 `docs/design/compiler/error-codes.md`：Z0908 抛出条件加 TypeChecker 三项
 - [x] 8.5 `docs/roadmap.md` Native Interop 表 C5 → ✅
 
 ## 阶段 9: 全绿 + 归档

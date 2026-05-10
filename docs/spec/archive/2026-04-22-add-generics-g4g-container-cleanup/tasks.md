@@ -26,7 +26,7 @@
 
 ### 其他
 - [x] 删除 `docs/review.md`（评审已落地）
-- [x] `docs/design/generics.md` / `docs/roadmap.md` 同步
+- [x] `docs/design/language/generics.md` / `docs/roadmap.md` 同步
 
 ## Scope 外发现（记录给 L3-G4h）
 

@@ -173,8 +173,8 @@
 - **THEN** 错误信息含 file:line:col + Span underline
 - **AND** 含错误码 Z091X
 
-#### Scenario: docs/design/error-codes.md 完整
+#### Scenario: docs/design/compiler/error-codes.md 完整
 
-- **WHEN** 阅读 [docs/design/error-codes.md](docs/design/error-codes.md)
+- **WHEN** 阅读 [docs/design/compiler/error-codes.md](docs/design/compiler/error-codes.md)
 - **THEN** Z0911-Z0915 每条含：触发条件 / 修复建议 / 示例
 - **AND** 替换 R1 期占位描述

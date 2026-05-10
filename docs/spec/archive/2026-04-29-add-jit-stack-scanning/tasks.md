@@ -36,7 +36,7 @@ vm_ctx.pop_frame_regs();
 ### 阶段 4: 文档同步 ✅
 - [x] `gc/rc_heap.rs` 模块文档：限制清单 2 项 → 1 项（JIT 已对接）+ 加 Phase 3f-2 完成段
 - [x] `gc/README.md` 同步
-- [x] `docs/design/vm-architecture.md` Phase 路线表 3f-2 ✅
+- [x] `docs/design/runtime/vm-architecture.md` Phase 路线表 3f-2 ✅
 - [x] `gc/mod.rs` Phase 路线表 3f-2 ✅
 
 ### 阶段 5: 验证 ✅

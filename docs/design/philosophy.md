@@ -389,10 +389,10 @@ z42 evolves in **three anchored phases** (L1 → L2 → L3), each with a clear c
 
 ## Related Documents
 
-- [language-overview.md](language-overview.md) — Syntax examples and user guide
+- [language-overview.md](../language/language-overview.md) — Syntax examples and user guide
 - [features.md](../features.md) — Feature definitions and phase assignments
-- [ir.md](ir.md) — IR instruction set and bytecode format
-- [interop.md](interop.md) — Native interoperability in detail
-- [execution-model.md](execution-model.md) — Interpreter, JIT, AOT execution modes
-- [hot-reload.md](hot-reload.md) — Hot update mechanism and constraints
-- [customization.md](customization.md) — Language customization framework
+- [ir.md](../runtime/ir.md) — IR instruction set and bytecode format
+- [interop.md](../language/interop.md) — Native interoperability in detail
+- [execution-model.md](../runtime/execution-model.md) — Interpreter, JIT, AOT execution modes
+- [hot-reload.md](../runtime/hot-reload.md) — Hot update mechanism and constraints
+- [customization.md](../language/customization.md) — Language customization framework

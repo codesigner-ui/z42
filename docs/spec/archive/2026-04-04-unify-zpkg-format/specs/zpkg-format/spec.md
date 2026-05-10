@@ -77,7 +77,7 @@
 - **THEN** 编译器正确解析 `name`、`version`、`kind`、`entry`、`pack` 字段
 
 #### Scenario: 文档与代码一致
-- **WHEN** 查看 `docs/design/project.md`
+- **WHEN** 查看 `docs/design/compiler/project.md`
 - **THEN** 所有示例 TOML 使用 `[project]`（不再出现 `[package]`）
 
 ---

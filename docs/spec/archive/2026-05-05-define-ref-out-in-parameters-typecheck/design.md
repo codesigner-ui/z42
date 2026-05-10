@@ -119,7 +119,7 @@ enum RefKind {
 
 ### Decision 10: 错误码分配
 **问题：** 15 个 scenarios 的错误码怎么定？
-**决定：实施期按 z42 现有惯例分配，documented in `docs/design/error-codes.md` as part of Phase 6 文档同步**。理由：
+**决定：实施期按 z42 现有惯例分配，documented in `docs/design/compiler/error-codes.md` as part of Phase 6 文档同步**。理由：
 - 现有 z42 惯例（E0907 / E0908a / E0911-E0916 等）是按特性 landing 时增量分配，而非提前预留段位
 - 实施期才能确认每个 diagnostic 的精确语义边界
 - 参考段位：E04xx (TypeCheck) 段为修饰符一致性 / lvalue / DA / 4 限制 / overload 错误；E02xx (Parser) 段为 callsite 缺修饰符 / 语法不合法

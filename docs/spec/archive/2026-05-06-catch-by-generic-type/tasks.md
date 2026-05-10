@@ -63,7 +63,7 @@
 
 ## 阶段 7: 文档同步 + 验证 + 归档
 
-- [x] 7.1 [docs/design/exceptions.md](docs/design/exceptions.md) 加"catch 类型过滤"章节（语义 + 子类匹配 + E0420）
+- [x] 7.1 [docs/design/language/exceptions.md](docs/design/language/exceptions.md) 加"catch 类型过滤"章节（语义 + 子类匹配 + E0420）
 - [x] 7.2 [docs/deferred.md](docs/deferred.md) 移除 D-8b-2 active 条目，登记到"已落地"
 - [x] 7.3 验证全套：
   - `dotnet build src/compiler/z42.slnx` 无错

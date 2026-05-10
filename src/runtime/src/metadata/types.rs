@@ -156,13 +156,13 @@ pub enum Value {
     /// regular `FieldGet` instruction.
     PinnedView { ptr: u64, len: u64, kind: PinSourceKind },
     /// Function reference value. Currently used by L2 no-capture lambda
-    /// literals (see docs/design/closure.md §6). Indirect call dispatches
+    /// literals (see docs/design/language/closure.md §6). Indirect call dispatches
     /// to the named function in the loaded module.
     FuncRef(String),
     /// L3 capturing closure value: pairs a heap-allocated env (Vec<Value>)
     /// with the lifted function's qualified name. CallIndirect on a Closure
     /// passes `env` as the callee's first implicit parameter and copies user
-    /// args after it. See docs/design/closure.md §6 + impl-closure-l3-core.
+    /// args after it. See docs/design/language/closure.md §6 + impl-closure-l3-core.
     Closure { env: GcRef<Vec<Value>>, fn_name: String },
     /// 2026-05-02 impl-closure-l3-escape-stack: 栈分配的 capturing closure 值。
     /// `env_idx` 索引创建该 closure 的 frame 的 `env_arena: Vec<Vec<Value>>`；

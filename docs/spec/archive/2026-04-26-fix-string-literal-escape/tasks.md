@@ -18,7 +18,7 @@
 > **文档影响**：
 >   - `src/compiler/z42.Syntax/Parser/ExprParser.cs:215-216` 加 unescape helper
 >   - `src/compiler/z42.Tests/LexerTests.cs` / `ParserTests.cs` 加转义测试
->   - `docs/design/language-overview.md`（如果有 string literal 章节）确认/同步
+>   - `docs/design/language/language-overview.md`（如果有 string literal 章节）确认/同步
 
 - [x] 1.1 在 ExprParser 加 `UnescapeString(string raw)` helper
 - [x] 1.2 StringLiteral nud 调用 unescape

@@ -67,7 +67,7 @@ R4.B 让 `[ShouldThrow<TestFailure>]` 语法可用，编译期记录 expected th
 | `src/compiler/z42.Tests/Parser/TestAttributeParserTests.cs` | NEW | parser 单元测试 |
 | `src/compiler/z42.Tests/Semantics/TestAttributeValidatorTests.cs` | MODIFY | 加 E0913 三种用例 |
 | `src/compiler/z42.Tests/IR/TidxRoundtripTests.cs` | NEW or MODIFY existing | IrGen → ZbcWriter → ZbcReader 验证 ExpectedThrowTypeIdx 路径；不依赖 disasm |
-| `docs/design/testing.md` | MODIFY | 增补 R4.B 段：generic attribute 语法 + ExpectedThrowType 流程 |
+| `docs/design/testing/testing.md` | MODIFY | 增补 R4.B 段：generic attribute 语法 + ExpectedThrowType 流程 |
 
 **只读引用**：
 

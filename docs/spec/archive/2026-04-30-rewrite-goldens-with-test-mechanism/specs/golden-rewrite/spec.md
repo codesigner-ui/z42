@@ -182,7 +182,7 @@
 
 #### Scenario: testing.md 标记 R5 完成
 
-- **WHEN** 阅读 [docs/design/testing.md](docs/design/testing.md)
+- **WHEN** 阅读 [docs/design/testing/testing.md](docs/design/testing/testing.md)
 - **THEN** R5 段标"已完成"
 - **AND** 含 R5 实施后目录树图
 

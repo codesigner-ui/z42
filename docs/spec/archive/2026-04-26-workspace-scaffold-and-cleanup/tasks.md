@@ -50,7 +50,7 @@ C4c 完成后 docs/spec/changes/ 目录清空，workspace 演进规划（C1+C2+C
 ## 阶段 4: WS004 移除
 
 - [ ] 4.1 删除 `src/compiler/z42.Project/ManifestErrors.cs` 中 WS004 常量
-- [ ] 4.2 删除 `docs/design/error-codes.md` 中 WS004 占位
+- [ ] 4.2 删除 `docs/design/compiler/error-codes.md` 中 WS004 占位
 - [ ] 4.3 `grep -r "WS004"` 在 src/ 与 docs/ 中检查残留（仅 spec/archive 保留历史）
 - [ ] 4.4 `dotnet build` 验证无引用残留
 
@@ -64,9 +64,9 @@ C4c 完成后 docs/spec/changes/ 目录清空，workspace 演进规划（C1+C2+C
 
 - [ ] 6.1 验证 dotnet test 全绿
 - [ ] 6.2 验证 cargo build / VM 全绿
-- [ ] 6.3 修改 `docs/design/project.md`：L7 章节追加脚手架 / clean / fmt 子节
-- [ ] 6.4 修改 `docs/design/compiler-architecture.md`：标注 C4 系列完成
-- [ ] 6.5 修改 `docs/design/error-codes.md`：删除 WS004
+- [ ] 6.3 修改 `docs/design/compiler/project.md`：L7 章节追加脚手架 / clean / fmt 子节
+- [ ] 6.4 修改 `docs/design/compiler/compiler-architecture.md`：标注 C4 系列完成
+- [ ] 6.5 修改 `docs/design/compiler/error-codes.md`：删除 WS004
 - [ ] 6.6 修改 `docs/dev.md`：脚手架 + clean 使用示例
 - [ ] 6.7 修改 `docs/roadmap.md`：C4c 完成 + workspace 工具链全 ✅
 

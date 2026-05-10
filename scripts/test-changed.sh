@@ -4,7 +4,7 @@
 #
 # Maps each changed file to a coarse-grained test command, deduplicates the
 # resulting set, and executes the union in a fixed order. See
-# docs/design/testing.md "增量测试" for the full mapping table.
+# docs/design/testing/testing.md "增量测试" for the full mapping table.
 #
 # Usage:
 #   ./scripts/test-changed.sh                 # base = HEAD (unstaged + staged)

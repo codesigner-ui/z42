@@ -119,4 +119,4 @@
 
 ## 运行时不一致警告（过渡状态）
 
-本 spec 落地后到 `impl-ref-out-in-runtime` 落地之前的过渡期：用户写 `Increment(ref c)` 编译期通过所有验证（修饰符一致 + lvalue + DA 等），运行时 callee 修改不传回 caller（codegen 走普通 by-value Call）。`docs/design/parameter-modifiers.md` 的 "Runtime Implementation" 段会明确说明此过渡状态，并指引使用 tuple 多返回（已支持）作为临时替代。
+本 spec 落地后到 `impl-ref-out-in-runtime` 落地之前的过渡期：用户写 `Increment(ref c)` 编译期通过所有验证（修饰符一致 + lvalue + DA 等），运行时 callee 修改不传回 caller（codegen 走普通 by-value Call）。`docs/design/language/parameter-modifiers.md` 的 "Runtime Implementation" 段会明确说明此过渡状态，并指引使用 tuple 多返回（已支持）作为临时替代。

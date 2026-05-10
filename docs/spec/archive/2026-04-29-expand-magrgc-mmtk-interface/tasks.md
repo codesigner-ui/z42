@@ -50,7 +50,7 @@
 - [x] 5.2 `gc/README.md` 更新：核心文件 4→5、入口点扩到全部嵌入类型、能力组表、典型使用代码、Phase 1 RC 已知限制 6 项
 
 ## 阶段 6: 文档同步
-- [x] 6.1 `docs/design/vm-architecture.md` "GC 子系统" 段：trait 形状代码块替换为能力组表、Phase 1 RcMagrGC 描述细化、已知限制扩到 6 项、Phase 路线表新增 "Phase 1 (扩展)" 行
+- [x] 6.1 `docs/design/runtime/vm-architecture.md` "GC 子系统" 段：trait 形状代码块替换为能力组表、Phase 1 RcMagrGC 描述细化、已知限制扩到 6 项、Phase 路线表新增 "Phase 1 (扩展)" 行
 
 ## 阶段 7: 验证
 

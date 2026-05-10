@@ -1,6 +1,6 @@
 //! Hello-world demo for the Tier 2 `z42-host` API.
 //!
-//! Spec: docs/design/embedding.md §9.3.
+//! Spec: docs/design/runtime/embedding.md §9.3.
 //!
 //! Usage (from repo root):
 //!

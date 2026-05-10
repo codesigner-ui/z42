@@ -30,7 +30,7 @@
 - [x] 3.2 interp + jit 双绿（164 → 166 VM 测试）
 
 ### 阶段 4：文档 + 归档 ✅
-- [x] 4.1 `docs/design/generics.md` 新增 INumber 小节
+- [x] 4.1 `docs/design/language/generics.md` 新增 INumber 小节
 - [x] 4.2 `docs/roadmap.md` L3-G2.5 数值约束标 ✅
 - [x] 4.3 `z42.core/README.md` 列出新 struct + INumber 文件
 - [x] 4.4 GREEN：561 编译器 + 166 VM (interp+jit) 全绿

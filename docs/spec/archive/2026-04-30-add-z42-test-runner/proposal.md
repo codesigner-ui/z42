@@ -28,7 +28,7 @@ P2 **只交付工具与规范**，不迁移任何现有 golden（迁移留给 P3
   - 新增 `Test` attribute 类型（IR 元数据）
   - 新增 assertion API：`assertEq`、`assertNotEq`、`assertTrue`、`assertFalse`、`assertThrows<E>`、`assertNear`、`fail`
   - 新增 `Skip` / `Ignore` attribute
-- **元数据规范** [docs/design/testing.md](docs/design/testing.md)：
+- **元数据规范** [docs/design/testing/testing.md](docs/design/testing/testing.md)：
   - `// @test-tier: vm_core | stdlib:<lib> | integration` front-matter
   - `[Test]` / `[Skip]` / `[Ignore]` attribute 语义
   - 测试发现规则
@@ -61,7 +61,7 @@ P2 **只交付工具与规范**，不迁移任何现有 golden（迁移留给 P3
 | `src/libraries/z42.test/tests/` | NEW（dir） | z42.test 自测目录占位 |
 | `scripts/test-changed.sh` | NEW | git diff → 受影响测试集 |
 | `justfile` | MODIFY | 替换 `test-changed` 占位为完整实现 |
-| `docs/design/testing.md` | NEW | 元数据规范 + 测试发现 + 输出格式 |
+| `docs/design/testing/testing.md` | NEW | 元数据规范 + 测试发现 + 输出格式 |
 | `docs/design/test-runner.md` | NEW | runner 实现原理 |
 | `docs/dev.md` | MODIFY | 加 "z42-test-runner" 段 |
 | `src/compiler/z42.IR/Metadata/AttributeKind.cs` | MODIFY（若需） | 注册 `z42.test.Test` 等 attribute kind |

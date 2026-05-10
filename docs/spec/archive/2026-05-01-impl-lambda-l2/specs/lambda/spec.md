@@ -1,7 +1,7 @@
 # Spec: L2 无捕获 Lambda 实现
 
 > 本 spec 定义 `impl-lambda-l2` 的**实现层面**可验证行为。
-> 用户视角语义契约由 [closure.md](../../../../docs/design/closure.md) +
+> 用户视角语义契约由 [closure.md](../../../../docs/design/language/closure.md) +
 > archived [add-closures spec](../../../archive/2026-05-01-add-closures/specs/closure/spec.md) R1–R4 + R9 + R14 锁定。
 
 ## ADDED Requirements
@@ -135,7 +135,7 @@
 User 在阶段 7 实施前裁决：**Scope 收紧，IR-L6 全部 Scenario 推迟到 follow-up
 变更 `impl-local-fn-l2`**。本变更不再实现 / 测试 local function。
 
-> 设计文档（`docs/design/closure.md` §3.4 + `docs/roadmap.md` L3-C 表）保留 local
+> 设计文档（`docs/design/language/closure.md` §3.4 + `docs/roadmap.md` L3-C 表）保留 local
 > function 章节作为长期规范；只是把实施时间线挪后。
 
 ---

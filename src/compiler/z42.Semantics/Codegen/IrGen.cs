@@ -44,7 +44,7 @@ public sealed partial class IrGen : IEmitterContext
     private Dictionary<string, Z42FuncType> _funcSignatures = new(StringComparer.Ordinal);
 
     // Lifted lambda functions accumulated during emission (impl-lambda-l2).
-    // See docs/design/closure.md §6 + design.md Decision 1.
+    // See docs/design/language/closure.md §6 + design.md Decision 1.
     private readonly List<IrFunction> _liftedFunctions = new();
     private readonly Dictionary<string, int> _lambdaCounters = new();
 

@@ -4,7 +4,7 @@
 
 **变更说明：** 补全 L1 特性中零覆盖或严重不足的 golden test；修复发现的 bug
 **原因：** 审计发现 5 个高影响缺口
-**文档影响：** docs/design/ir.md（ConstChar 指令）
+**文档影响：** docs/design/runtime/ir.md（ConstChar 指令）
 
 - [x] 1.1 golden test 52_numeric_aliases — C# 数值别名（byte/sbyte/short/ushort/uint/ulong/double）
 - [x] 1.2 golden test 53_expression_body — 顶层 + class 实例 + static 表达式体方法

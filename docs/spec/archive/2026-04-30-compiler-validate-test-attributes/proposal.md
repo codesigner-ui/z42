@@ -16,7 +16,7 @@ fn bad_throw() { ... }
 fn skipped() { ... }
 ```
 
-这些都能编译通过，错误延迟到 runner 启动甚至运行期才暴露。R4 在 `AttributeBinder` 之后加**校验 pass**，把上述错误前移到编译期，对应错误码 Z0911-Z0915（R1 已在 docs/design/error-codes.md 占位）。
+这些都能编译通过，错误延迟到 runner 启动甚至运行期才暴露。R4 在 `AttributeBinder` 之后加**校验 pass**，把上述错误前移到编译期，对应错误码 Z0911-Z0915（R1 已在 docs/design/compiler/error-codes.md 占位）。
 
 ## What Changes
 
@@ -63,7 +63,7 @@ error Z0911: [Test] function 'bad_test' has invalid signature
 | `src/compiler/z42.Pipeline/PipelineCore.cs` | MODIFY | TypeCheck 后插入 TestAttributeValidator pass |
 | `src/compiler/z42.Core/Diagnostics/ErrorCodes.cs`（按现有命名）| MODIFY | 注册 Z0911-Z0915 message |
 | `src/compiler/z42.Tests/TestAttributeValidatorTests.cs` | NEW | 每个错误码至少 1 个 positive + 1 个 negative test |
-| `docs/design/error-codes.md` | MODIFY | Z0911-Z0915 填入完整诊断信息（替换 R1 占位） |
+| `docs/design/compiler/error-codes.md` | MODIFY | Z0911-Z0915 填入完整诊断信息（替换 R1 占位） |
 
 **只读引用**：
 - [add-test-metadata-section/](../add-test-metadata-section/) (R1) — TestEntry / TestAttributeNames

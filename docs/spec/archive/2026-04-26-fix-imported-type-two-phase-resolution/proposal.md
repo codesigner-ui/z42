@@ -99,7 +99,7 @@ Phase 2 调用时传入完整 classes / interfaces；`Z42PrimType` 仅作 Phase 
 | `src/compiler/z42.Semantics/TypeCheck/ImportedSymbolLoader.cs` | refactor | 核心：拆分 Phase 1 / Phase 2；`ResolveTypeName` 加 classes/interfaces 参数 |
 | `src/compiler/z42.Tests/TypeCheckerTests.cs` 或新建 | add | 单元测试：self-reference / forward-reference 类型解析 |
 | `src/runtime/tests/golden/run/` | add | golden test：用户代码同类型字段 self-assign 编译 + 运行 |
-| `docs/design/compiler-architecture.md` | edit | 在 "TSIG 与跨包符号导入" 章节补"两阶段加载"小节 |
+| `docs/design/compiler/compiler-architecture.md` | edit | 在 "TSIG 与跨包符号导入" 章节补"两阶段加载"小节 |
 
 ## Out of Scope
 

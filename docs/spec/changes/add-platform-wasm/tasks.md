@@ -65,7 +65,7 @@
 
 ## 阶段 8: 文档同步
 
-- [ ] 8.1 [docs/design/cross-platform.md](docs/design/cross-platform.md) 加 "WebAssembly" 章节
+- [ ] 8.1 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) 加 "WebAssembly" 章节
 - [ ] 8.2 [platform/wasm/README.md](platform/wasm/README.md) 完整工程文档
 - [ ] 8.3 [docs/dev.md](docs/dev.md) 加 "Platform: WebAssembly" 段
 - [ ] 8.4 [docs/roadmap.md](docs/roadmap.md) 进度表加 P4.2 完成

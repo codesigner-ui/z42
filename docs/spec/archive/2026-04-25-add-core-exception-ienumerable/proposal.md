@@ -54,8 +54,8 @@ Wave 2（stdlib 重组 roadmap）补齐这两个抽象。参照 C# BCL 设计，
 | `src/libraries/z42.core/src/IEnumerable.z42` | add | 接口 |
 | `src/libraries/z42.core/src/IEnumerator.z42` | add | 接口 |
 | `src/libraries/z42.core/README.md` | edit | 追加 Exceptions + Iteration 章节 |
-| `docs/design/exceptions.md` | add | 异常层次 + throw 语义 + stack trace 规划（使用者视角）|
-| `docs/design/iteration.md` | add | IEnumerable + 鸭子协议并存 + 升级路线（使用者视角）|
+| `docs/design/language/exceptions.md` | add | 异常层次 + throw 语义 + stack trace 规划（使用者视角）|
+| `docs/design/language/iteration.md` | add | IEnumerable + 鸭子协议并存 + 升级路线（使用者视角）|
 | `docs/roadmap.md` | edit | L2 stdlib 条目更新 |
 | `src/compiler/z42.Tests/**/run/*` | add | 每个新类型至少 1 个 golden test |
 

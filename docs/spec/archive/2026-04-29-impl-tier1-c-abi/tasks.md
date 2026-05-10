@@ -126,14 +126,14 @@
 
 ## 阶段 12: 错误码语义落地
 
-- [x] 12.1 修改 `docs/design/error-codes.md`：把 Z0905 / Z0906 / Z0910 从"Reserved"改为详细抛出条件（参见 design §Decision 6）
+- [x] 12.1 修改 `docs/design/compiler/error-codes.md`：把 Z0905 / Z0906 / Z0910 从"Reserved"改为详细抛出条件（参见 design §Decision 6）
 - [x] 12.2 verify Z0907/Z0908/Z0909 仍标"Reserved"留给后续 spec
 - [x] 12.3 grep 确认 Z0905/Z0906/Z0910 在源码至少有一个抛出点（不再仅文档）
 
 ## 阶段 13: 文档同步
 
-- [x] 13.1 修改 `docs/design/interop.md` §10 Roadmap C2 行 → ✅ + 完成日期
-- [x] 13.2 修改 `docs/design/vm-architecture.md`：VM 状态段补 `native_types` + `native_libs` 字段说明
+- [x] 13.1 修改 `docs/design/language/interop.md` §10 Roadmap C2 行 → ✅ + 完成日期
+- [x] 13.2 修改 `docs/design/runtime/vm-architecture.md`：VM 状态段补 `native_types` + `native_libs` 字段说明
 - [x] 13.3 修改 `docs/roadmap.md` Native Interop 表 C2 行 → ✅
 - [x] 13.4 创建 `src/runtime/src/native/README.md`（第 3 层 README）
 

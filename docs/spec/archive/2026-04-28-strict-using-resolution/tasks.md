@@ -32,9 +32,9 @@
 - [x] 4.1 `dotnet build src/compiler/z42.slnx` 无错
 - [x] 4.2 `dotnet test` 734/734 全绿
 - [x] 4.3 `bash scripts/test-vm.sh` interp 100/100 + jit 100/100 全绿
-- [x] 4.4 `docs/design/namespace-using.md` 重写多文件章节为生效语义 + 加 strict-using-resolution 节
-- [x] 4.5 `docs/design/stdlib.md` Module Auto-load Policy 表格说明 prelude 白名单
-- [x] 4.6 `docs/design/error-codes.md` 加 E06xx 章节
+- [x] 4.4 `docs/design/language/namespace-using.md` 重写多文件章节为生效语义 + 加 strict-using-resolution 节
+- [x] 4.5 `docs/design/stdlib/overview.md` Module Auto-load Policy 表格说明 prelude 白名单
+- [x] 4.6 `docs/design/compiler/error-codes.md` 加 E06xx 章节
 - [x] 4.7 commit + push + 移动到 docs/spec/archive/2026-04-28-strict-using-resolution/
 
 ## 备注

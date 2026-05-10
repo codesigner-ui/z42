@@ -44,10 +44,10 @@
 - 备注：未引入 Fixtures/json 文件 — 测试用 `Path.GetTempPath()` + `Guid.N` 生成隔离临时文件，更hermetic。
 
 ## 阶段 7: 文档同步
-- [x] 7.1 `docs/design/error-codes.md` E0909 状态从 reserved → enabled（含 a/b/c/d 触发清单）
-- [x] 7.2 `docs/design/interop.md` §10 Roadmap 加 L2.M13e（C11a） 行
+- [x] 7.1 `docs/design/compiler/error-codes.md` E0909 状态从 reserved → enabled（含 a/b/c/d 触发清单）
+- [x] 7.2 `docs/design/language/interop.md` §10 Roadmap 加 L2.M13e（C11a） 行
 - [x] 7.3 `docs/roadmap.md` Native interop 表加 C11a 行
-- [x] 7.4 `docs/design/grammar.peg` `compilation_unit` 接 `import_decl`，新增 `import_decl` 产生式
+- [x] 7.4 `docs/design/language/grammar.peg` `compilation_unit` 接 `import_decl`，新增 `import_decl` 产生式
 
 ## 阶段 8: 验证 + 归档 + commit
 - [x] 8.1 `dotnet build src/compiler/z42.slnx` — 0 warning / 0 error

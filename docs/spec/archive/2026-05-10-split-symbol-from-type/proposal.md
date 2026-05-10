@@ -73,7 +73,7 @@
 | `src/compiler/z42.Semantics/README.md` | MODIFY | 更新核心文件表（含 Symbols/ 目录） |
 | `src/compiler/z42.Tests/SymbolLayerTests.cs` | NEW | Symbol 构造 / Decl 反指针 / Imported 区分单测 |
 | `src/compiler/z42.Tests/SymbolDeclSpanTests.cs` | NEW | 验证 IMethodSymbol/IFieldSymbol 持有正确的 DeclSpan / FunctionDecl 反指针 |
-| `docs/design/compiler-architecture.md` | MODIFY | 增 "Symbol 层" 段落作为正面设计；记录 IMethodSymbol/IFieldSymbol 不变量 |
+| `docs/design/compiler/compiler-architecture.md` | MODIFY | 增 "Symbol 层" 段落作为正面设计；记录 IMethodSymbol/IFieldSymbol 不变量 |
 
 **只读引用**（理解必须读，不修改；不计入并行冲突）：
 

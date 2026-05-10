@@ -27,7 +27,7 @@ public sealed partial class TypeChecker
         var scope = parent.PushScope();
 
         // Pass 1 — pre-declare local functions so forward references and
-        // direct recursion work. See docs/design/closure.md §3.4 +
+        // direct recursion work. See docs/design/language/closure.md §3.4 +
         // impl-local-fn-l2 design Decision 2.
         foreach (var stmt in block.Stmts)
         {
@@ -356,7 +356,7 @@ public sealed partial class TypeChecker
     /// This pass binds the body and collects any captures via the lambda binding
     /// frame stack (impl-closure-l3-core: captures are now allowed; the L2
     /// rejection has been promoted to a proper capture path).
-    /// See docs/design/closure.md §3.4.
+    /// See docs/design/language/closure.md §3.4.
     private BoundStmt BindLocalFunctionStmt(LocalFunctionStmt lf, TypeEnv env)
     {
         // One-level nesting limit retained: a local fn declared inside a

@@ -36,7 +36,7 @@
 - [ ] 3.3 `dotnet test` —— 全绿
 - [ ] 3.4 手动验证：`cd examples && z42c build` 能正确输出产物到 `dist/`
 - [ ] 3.5 手动验证：`z42c hello.z42` 单文件模式不受影响
-- [ ] 3.6 更新 `docs/design/project.md`：文件名改为 `<name>.z42.toml`，补充 CLI 分工说明
+- [ ] 3.6 更新 `docs/design/compiler/project.md`：文件名改为 `<name>.z42.toml`，补充 CLI 分工说明
 - [ ] 3.7 `./scripts/test-vm.sh` —— 全绿
 
 ## 备注

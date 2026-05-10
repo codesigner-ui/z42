@@ -116,8 +116,8 @@ copy 保留字段。设计可按原计划推进。
 - [ ] 7.1 MODIFY `src/libraries/z42.core/src/README.md`：
       目录表加 `GC/` 行（覆盖 GC / GCHandle / HeapStats / WeakHandle）；
       Delegates/ 行去掉 WeakHandle；跨目录依赖表更新
-- [ ] 7.2 MODIFY `docs/design/stdlib.md`：z42.core 目录树更新
-- [ ] 7.3 NEW `docs/design/gc-handle.md`：实现原理文档
+- [ ] 7.2 MODIFY `docs/design/stdlib/overview.md`：z42.core 目录树更新
+- [ ] 7.3 NEW `docs/design/runtime/gc-handle.md`：实现原理文档
       （HandleTable slab + free list / Strong slot Rc::clone anchor 语义 /
       Weak slot Rc::downgrade / struct 共享 backing / Phase 3 Pinned 扩展规划）
 - [ ] 7.4 MODIFY `docs/roadmap.md` 加本变更条目

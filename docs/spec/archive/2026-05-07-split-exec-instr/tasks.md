@@ -32,7 +32,7 @@
 **文档影响**:
 - `docs/review.md` — 路线图 §VM 线 `split-exec-instr` 状态 `📋` → `🟢`
 - `src/runtime/src/interp/README.md` — 如存在则同步核心文件表（[code-organization.md](../../../.claude/rules/code-organization.md) 同步规则）
-- `docs/design/vm-architecture.md` — **不动**（这是结构 refactor，不改外部行为/机制）
+- `docs/design/runtime/vm-architecture.md` — **不动**（这是结构 refactor，不改外部行为/机制）
 
 ---
 
@@ -122,7 +122,7 @@ pub(super) fn exec_<op>(
 ### 阶段 5: 文档同步
 - [ ] 5.1 检查 `src/runtime/src/interp/README.md` 是否存在；存在则同步核心文件表
 - [ ] 5.2 `docs/review.md` 路线图 §VM 线 `split-exec-instr` 状态从 📋 改为 🟢
-- [ ] 5.3 检查 `docs/design/vm-architecture.md` 是否提及 `exec_instr.rs`；如有指针更新
+- [ ] 5.3 检查 `docs/design/runtime/vm-architecture.md` 是否提及 `exec_instr.rs`；如有指针更新
 
 ### 阶段 6: 归档 + 提交
 - [ ] 6.1 tasks.md 状态 🟡 → 🟢，更新日期

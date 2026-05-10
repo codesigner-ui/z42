@@ -143,7 +143,7 @@ C3 范围内这两个 macro 入口签名仍登记，展开报清晰 `compile_err
 
 ## Documentation Sync
 
-- `docs/design/interop.md` §10 Roadmap C3 行 → ✅ + 完成日期
+- `docs/design/language/interop.md` §10 Roadmap C3 行 → ✅ + 完成日期
 - `docs/roadmap.md` Native Interop 表 C3 → ✅
 - `crates/z42-macros/README.md` 状态从"C1 接口骨架"→"C3 实现完成"
 - `crates/z42-rs/README.md` 增加 `prelude` 用法示例

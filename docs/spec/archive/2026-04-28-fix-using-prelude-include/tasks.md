@@ -8,7 +8,7 @@
 
 **复现：** [20_dict_iter spec 备注](src/runtime/tests/golden/run/20_dict_iter/source.z42) 提到的现象。当时用 workaround：不写 `using Std.Collections;`，靠 GoldenTests 的 fallback "load all namespaces"。
 
-**修复：** `Std` 是隐式 prelude（[philosophy.md](docs/design/philosophy.md) §1 / [stdlib.md "z42.core auto-load"](docs/design/stdlib.md)），无论用户写什么 using，都应可见。在 `Load` 内部把 `Std` 强制加入 `allowedNs`。
+**修复：** `Std` 是隐式 prelude（[philosophy.md](docs/design/philosophy.md) §1 / [stdlib.md "z42.core auto-load"](docs/design/stdlib/overview.md)），无论用户写什么 using，都应可见。在 `Load` 内部把 `Std` 强制加入 `allowedNs`。
 
 ## Tasks
 
@@ -21,4 +21,4 @@
 
 - 不影响只用单包内类型的代码（多加 Std 命名空间不会破坏什么）
 - 不影响 PackageCompiler，它本来就 load all namespaces
-- 与 docs/design/stdlib.md "z42.core 是隐式 prelude" 描述对齐
+- 与 docs/design/stdlib/overview.md "z42.core 是隐式 prelude" 描述对齐

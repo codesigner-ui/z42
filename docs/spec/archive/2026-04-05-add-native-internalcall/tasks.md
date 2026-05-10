@@ -87,7 +87,7 @@
 
 ## 阶段 8: 文档同步
 
-- [x] 8.1 `docs/design/language-overview.md` — §15 extern + [Native] + 表达式体
+- [x] 8.1 `docs/design/language/language-overview.md` — §15 extern + [Native] + 表达式体
 - [x] 8.2 `CLAUDE.md` — build-stdlib.sh 命令
 - [x] 8.3 `docs/roadmap.md` — extern/InternalCall + 表达式体进度表；M7 → 🚧
 

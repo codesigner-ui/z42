@@ -69,9 +69,9 @@ IZ42Command 接口推迟到 C4b 引入新命令时再评估。
 
 ## 阶段 7: 文档同步
 
-- [ ] 7.1 修改 `docs/design/project.md`：新增 L7 章节 "z42c CLI 命令矩阵（基础）" 含 build/check + workspace 发现
-- [ ] 7.2 修改 `docs/design/compiler-architecture.md`：WorkspaceBuildOrchestrator + MemberDependencyGraph 设计原理
-- [ ] 7.3 修改 `docs/design/error-codes.md`：WS001/WS002/WS006 启用
+- [ ] 7.1 修改 `docs/design/compiler/project.md`：新增 L7 章节 "z42c CLI 命令矩阵（基础）" 含 build/check + workspace 发现
+- [ ] 7.2 修改 `docs/design/compiler/compiler-architecture.md`：WorkspaceBuildOrchestrator + MemberDependencyGraph 设计原理
+- [ ] 7.3 修改 `docs/design/compiler/error-codes.md`：WS001/WS002/WS006 启用
 - [ ] 7.4 修改 `docs/dev.md`：workspace 模式构建命令示例
 - [ ] 7.5 修改 `docs/roadmap.md`：C4a 进度
 

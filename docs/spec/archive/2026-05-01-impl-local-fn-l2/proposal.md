@@ -80,7 +80,7 @@ C# 风格 local function 允许在 body 顶部调用 body 底部声明的 local 
 | `docs/spec/changes/impl-local-fn-l2/tasks.md` | NEW | 任务清单 |
 
 **只读引用**：
-- `docs/design/closure.md` §3.4 — 行为契约
+- `docs/design/language/closure.md` §3.4 — 行为契约
 - `docs/spec/archive/2026-05-01-impl-lambda-l2/` — lambda 实施参考
 - `src/compiler/z42.Syntax/Parser/TopLevelParser.cs` — 顶层 fn 解析风格参考
 

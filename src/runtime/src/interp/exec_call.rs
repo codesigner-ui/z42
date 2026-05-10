@@ -85,7 +85,7 @@ pub(super) fn builtin(
 }
 
 /// L2 no-capture lambda lifting: push a function reference value.
-/// See docs/design/closure.md §6 + ir.md.
+/// See docs/design/language/closure.md §6 + ir.md.
 pub(super) fn load_fn(frame: &mut Frame, dst: u32, func: &str) {
     frame.set(dst, Value::FuncRef(func.to_string()));
 }

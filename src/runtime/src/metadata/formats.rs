@@ -1,7 +1,7 @@
 /// Data structures for z42 compiler output formats (Phase 1: JSON).
 ///
 /// Mirrors the C# types in `z42.IR/PackageTypes.cs` exactly.
-/// See `docs/design/compilation.md` for the full spec.
+/// See `docs/design/compiler/compilation.md` for the full spec.
 use serde::{Deserialize, Serialize};
 
 use super::bytecode::Module;

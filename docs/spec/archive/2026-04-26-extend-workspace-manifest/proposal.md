@@ -2,7 +2,7 @@
 
 ## Why
 
-[docs/design/project.md](../../../docs/design/project.md) 的 L6 段当前 workspace 模型有以下问题：
+[docs/design/compiler/project.md](../../../docs/design/compiler/project.md) 的 L6 段当前 workspace 模型有以下问题：
 
 1. **工作区根文件名不一致**：第 370 行说"monorepo 根目录的 z42.toml"，第 429 行示例又写 `z42.workspace.toml`，无唯一约定，编译器无法据此识别根。
 2. **`members` 仅支持显式数组**，新增 member 必须修改根 manifest，与 Cargo 等成熟工具差距大。
@@ -24,7 +24,7 @@
 | **依赖语法对齐 Cargo 风格** | `[dependencies]` 中 `dep.workspace = true` 替代旧的 `version = "workspace"` |
 | **明确 virtual manifest 概念** | workspace 根可不含 `[project]` 段，纯做协调 |
 | **路径字段支持模板变量** | `${workspace_dir}` / `${member_dir}` / `${member_name}` / `${profile}` 四个内置只读变量；仅在白名单路径字段（`include`、`out_dir`、`cache_dir`、`dependencies.path`、`sources.include/exclude`）允许；不允许用户自定义；语法 `${name}`，字面量用 `$$` |
-| **现行 L6 文档全面重写** | [docs/design/project.md](../../../docs/design/project.md) L6 段同步修订 |
+| **现行 L6 文档全面重写** | [docs/design/compiler/project.md](../../../docs/design/compiler/project.md) L6 段同步修订 |
 
 ## Scope（允许改动的文件）
 
@@ -59,9 +59,9 @@
 
 | 文件路径 | 说明 |
 |---------|------|
-| `docs/design/project.md` | L6 段全面重写 + 末尾"完整字段速查"区追加新字段 + 路径模板章节 |
-| `docs/design/compiler-architecture.md` | 新增 ManifestLoader 模块说明（CLAUDE.md "实现原理文档规则"） |
-| `docs/design/error-codes.md` | 追加 WS003/005/007/030-039 索引（如不存在则同步创建） |
+| `docs/design/compiler/project.md` | L6 段全面重写 + 末尾"完整字段速查"区追加新字段 + 路径模板章节 |
+| `docs/design/compiler/compiler-architecture.md` | 新增 ManifestLoader 模块说明（CLAUDE.md "实现原理文档规则"） |
+| `docs/design/compiler/error-codes.md` | 追加 WS003/005/007/030-039 索引（如不存在则同步创建） |
 | `docs/roadmap.md` | 添加一行"工程文件 schema 演进 — workspace L6 增强（C1）" |
 | `src/compiler/z42.Project/z42.Project.csproj` | 若有依赖项变化（如新加 `Microsoft.Extensions.FileSystemGlobbing`）则修改；如不需要可不动 |
 

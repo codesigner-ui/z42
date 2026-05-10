@@ -46,8 +46,8 @@ z42 stdlib 当前 GC 相关接口"散在 Delegates/"且功能单薄：
 | `src/runtime/tests/golden/run/111_gc_handle/` | NEW golden test（strong + weak 端到端）|
 | `src/runtime/tests/golden/run/112_gc_stats/` | NEW golden test（HeapStats 字段一致性）|
 | `src/compiler/z42.Tests/IncrementalBuildIntegrationTests.cs` | MODIFY z42.core 文件数（+2 .z42 文件）|
-| `docs/design/stdlib.md` | MODIFY z42.core 目录树 + 加 GCHandle 章节 |
-| `docs/design/gc-handle.md` | NEW 实现原理文档（HandleTable 数据结构、Strong/Weak 语义、Phase 3 扩展规划）|
+| `docs/design/stdlib/overview.md` | MODIFY z42.core 目录树 + 加 GCHandle 章节 |
+| `docs/design/runtime/gc-handle.md` | NEW 实现原理文档（HandleTable 数据结构、Strong/Weak 语义、Phase 3 扩展规划）|
 | `docs/roadmap.md` | MODIFY 加本变更条目 |
 
 **只读引用**：

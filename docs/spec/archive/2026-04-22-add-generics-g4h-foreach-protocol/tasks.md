@@ -6,8 +6,8 @@
 `int Count()` + `T get_Item(int)` 即可被 foreach 迭代，lower 为索引驱动 for 循环。
 **原因：** 为 step 3 移除 pseudo-class List/Dictionary 做准备；user-source ArrayList /
 HashMap / 自定义容器也能直接用 foreach，无需 VM 特殊分发或 IEnumerable 接口协议。
-**文档影响：** `docs/design/language-overview.md`（foreach 鸭子类型语义）、
-`docs/design/generics.md`（G4h step2 记录）、`docs/roadmap.md`。
+**文档影响：** `docs/design/language/language-overview.md`（foreach 鸭子类型语义）、
+`docs/design/language/generics.md`（G4h step2 记录）、`docs/roadmap.md`。
 
 ## 任务
 

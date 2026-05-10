@@ -14,7 +14,7 @@ A1 编译期把 `[ShouldThrow<E>]` 信息写入 zbc 但 runner 不消费——do
 
 ## 文档影响
 
-- `docs/design/testing.md` R4.B 段："runtime 比对延后到 A2 spec" 删掉，改写为"已实现"
+- `docs/design/testing/testing.md` R4.B 段："runtime 比对延后到 A2 spec" 删掉，改写为"已实现"
 - `docs/roadmap.md` M6 段：A2 标记完成
 
 ## 实现思路
@@ -69,7 +69,7 @@ stderr 形如 `Error: uncaught exception: Std.TestFailure: <msg>`。
 - [x] 3.4 `./scripts/test-vm.sh` 104/104 × 2 不回归
 - [x] 3.5 `./scripts/test-stdlib.sh` —— **预期变化**：dogfood 现在 7 passed / 0 skipped（而非之前 5/2）
 - [x] 3.6 `./scripts/test-cross-zpkg.sh` 1/1 不回归
-- [x] 4.1 [docs/design/testing.md](docs/design/testing.md) R4.B 段"当前不做的"删掉 runtime 比对一行
+- [x] 4.1 [docs/design/testing/testing.md](docs/design/testing/testing.md) R4.B 段"当前不做的"删掉 runtime 比对一行
 - [x] 4.2 [docs/roadmap.md](docs/roadmap.md) M6 A2 标记完成
 - [x] 5.1 commit + push + 归档本 spec 到 archive
 

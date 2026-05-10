@@ -106,7 +106,7 @@
 
 ## 阶段 12: 文档同步
 
-- [x] 12.1 修改 `docs/design/interop.md` §10 Roadmap C3 行 → ✅ + 日期
+- [x] 12.1 修改 `docs/design/language/interop.md` §10 Roadmap C3 行 → ✅ + 日期
 - [x] 12.2 修改 `docs/roadmap.md` Native Interop 表 C3 → ✅
 - [x] 12.3 重写 `crates/z42-macros/README.md`：状态 + 用法示例 + 子模块说明
 - [x] 12.4 更新 `crates/z42-rs/README.md`：prelude 用法示例

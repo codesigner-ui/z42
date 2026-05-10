@@ -1,6 +1,6 @@
 # Spec: L2 Local Function 实现
 
-> 用户视角行为契约由 `docs/design/closure.md` §3.4 + archived
+> 用户视角行为契约由 `docs/design/language/closure.md` §3.4 + archived
 > [add-closures spec](../../../archive/2026-05-01-add-closures/specs/closure/spec.md) R4 锁定。
 > 本 spec 定义 `impl-local-fn-l2` 的实现层面可验证行为。
 

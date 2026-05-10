@@ -41,8 +41,8 @@
 | `src/runtime/src/metadata/formats.rs` | Modify | 新增 `ZpkgFile` / `ZpkgMode`；删除 `ZbinFile` / `ZmodManifest` |
 | `src/runtime/src/metadata/loader.rs` | Modify | 合并 `load_zmod` / `load_zbin` → `load_zpkg` |
 | `src/runtime/src/metadata/mod.rs` | Modify | 更新 re-export |
-| `docs/design/compilation.md` | Modify | 更新格式表、VM 加载表 |
-| `docs/design/project.md` | Modify | `[package]` → `[project]`；新增 `pack` 字段说明；更新 emit 格式表 |
+| `docs/design/compiler/compilation.md` | Modify | 更新格式表、VM 加载表 |
+| `docs/design/compiler/project.md` | Modify | `[package]` → `[project]`；新增 `pack` 字段说明；更新 emit 格式表 |
 
 ## Out of Scope
 

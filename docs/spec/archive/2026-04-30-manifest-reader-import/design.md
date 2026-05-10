@@ -126,7 +126,7 @@ C11a 只做最小校验：
 
 ### Test fixture manifest
 
-测试期间需要一份固定 manifest 文件。最简单：在 `src/compiler/z42.Tests/Fixtures/numz42-manifest.json` 放一份固定 JSON（与 docs/design/manifest-schema.json 例子对齐）。每个 reader 测试用 absolute path 访问。
+测试期间需要一份固定 manifest 文件。最简单：在 `src/compiler/z42.Tests/Fixtures/numz42-manifest.json` 放一份固定 JSON（与 docs/design/compiler/manifest-schema.json 例子对齐）。每个 reader 测试用 absolute path 访问。
 
 ### Empty NativeImports 默认
 

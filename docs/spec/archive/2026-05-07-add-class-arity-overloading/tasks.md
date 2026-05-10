@@ -62,7 +62,7 @@
 
 ## 阶段 7: 文档同步 + 归档
 
-- [x] 7.1 [docs/design/generics.md](docs/design/generics.md) 加 "class arity overloading + IrName" 段
+- [x] 7.1 [docs/design/language/generics.md](docs/design/language/generics.md) 加 "class arity overloading + IrName" 段
 - [x] 7.2 [docs/deferred.md](docs/deferred.md) D-8b-0 移到"已落地"；D-8b-1 / D-8b-3 Phase 2 标记前置已解除（仍未做，但不再受 D-8b-0 阻塞）
 - [x] 7.3 commit + push（`feat(lang+ir): class arity overloading via IrName`）
 - [x] 7.4 归档 spec → `docs/spec/archive/2026-05-07-add-class-arity-overloading/`

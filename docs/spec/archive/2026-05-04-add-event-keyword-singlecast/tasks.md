@@ -25,7 +25,7 @@
 - [x] 3.4 `./scripts/build-stdlib.sh` 6/6 绿
 - [x] 3.5 spec scenarios 逐条核对
 - [x] 3.6 文档同步：
-  - `docs/design/delegates-events.md` 顶部状态加 D-7
+  - `docs/design/language/delegates-events.md` 顶部状态加 D-7
   - `docs/roadmap.md` 加一行
   - `docs/deferred-features.md` D-7 → D-7-residual（IDisposable token + 严格 access control 留 follow-up）
 - [x] 3.7 移动 `docs/spec/changes/add-event-keyword-singlecast/` → `docs/spec/archive/2026-05-04-add-event-keyword-singlecast/`

@@ -42,7 +42,7 @@
 
 ## 阶段 4: 文档 + 验证 ✅
 
-- [x] 4.1 `docs/design/generics.md`: L3-G2 落地细节小节（语法、语义、限制、L3-G3 必做项）
+- [x] 4.1 `docs/design/language/generics.md`: L3-G2 落地细节小节（语法、语义、限制、L3-G3 必做项）
 - [x] 4.2 `docs/roadmap.md`: L3-G 进度表 G2 → ✅
 - [x] 4.3 `dotnet build src/compiler/z42.slnx` 无错误
 - [x] 4.4 `cargo build --manifest-path src/runtime/Cargo.toml` 无错误

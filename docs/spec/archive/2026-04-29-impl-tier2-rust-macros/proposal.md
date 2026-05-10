@@ -16,7 +16,7 @@ C3 把 Tier 2 这一层接通：让 Rust 用户不必手写 `Z42TypeDescriptor_v
 - **`numz42-rs` PoC**：在 z42_vm 测试目录新增 Rust 版 Counter（与 C 版同形状），通过宏注册，端到端跑通 alloc → inc×3 → get → I64(3)
 - **`tests/native_interop_e2e.rs` 扩展**：加 `rust_counter_register_and_invoke` 等场景，验证宏生成的 descriptor 与手写 C descriptor 行为一致
 - **错误码 Z0907 不在本 spec 启用**（仍属 C5）；本 spec 不引入新错误码
-- **文档同步**：`docs/design/interop.md` §10 C3 行 → ✅；`crates/z42-macros/README.md` 更新；`crates/z42-rs/README.md` 加 prelude 说明
+- **文档同步**：`docs/design/language/interop.md` §10 C3 行 → ✅；`crates/z42-macros/README.md` 更新；`crates/z42-rs/README.md` 加 prelude 说明
 - **兼容性**：C 写的 `numz42-c` PoC 保留，与 Rust 版并存验证 ABI 中立
 
 ## Scope
@@ -38,13 +38,13 @@ C3 把 Tier 2 这一层接通：让 Rust 用户不必手写 `Z42TypeDescriptor_v
 | `src/runtime/tests/native_interop_e2e.rs` | MODIFY | 增加 `rust_counter_*` 场景；用辅助函数共享 IR 构造 |
 | `src/runtime/crates/z42-macros/README.md` | MODIFY | 状态从"C1 接口骨架"改为"C3 实现完成 + 用法示例"|
 | `src/runtime/crates/z42-rs/README.md` | MODIFY | prelude 增加 macro 说明 |
-| `docs/design/interop.md` | MODIFY | §10 Roadmap C3 行 → ✅ + 完成日期 |
+| `docs/design/language/interop.md` | MODIFY | §10 Roadmap C3 行 → ✅ + 完成日期 |
 | `docs/roadmap.md` | MODIFY | Native Interop 表 C3 → ✅ |
 
 **只读引用**：
 - `src/runtime/crates/z42-abi/src/lib.rs` — 镜像类型 + 常量
 - `src/runtime/include/z42_abi.h` — C 头规范
-- `docs/design/interop.md` §4（Tier 2 设计）
+- `docs/design/language/interop.md` §4（Tier 2 设计）
 - `src/runtime/tests/data/numz42-c/numz42.c` — C PoC 作为对照
 - `src/runtime/src/native/registry.rs` — descriptor 字段消费方
 

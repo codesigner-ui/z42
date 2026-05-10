@@ -60,9 +60,9 @@ VM 加载入口
 
 ### Decision 3: `[package]` → `[project]` section 名对齐
 
-**问题：** `docs/design/project.md` 用 `[package]`，但 `ProjectTypes.cs` 中 `Z42Proj.Project` 对应 TOML `[project]`。
+**问题：** `docs/design/compiler/project.md` 用 `[package]`，但 `ProjectTypes.cs` 中 `Z42Proj.Project` 对应 TOML `[project]`。
 
-**决定：** 统一用 `[project]`（与代码一致），同步更新 `docs/design/project.md`。
+**决定：** 统一用 `[project]`（与代码一致），同步更新 `docs/design/compiler/project.md`。
 
 ### Decision 4: `BuildConfig` 移除 `Emit` 字段
 

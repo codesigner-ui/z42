@@ -98,10 +98,10 @@
 
 ## 阶段 10: 文档同步
 
-- [x] 10.1 修改 `docs/design/error-codes.md` Z0908 → 已启用 + 3 个抛出条件
-- [x] 10.2 修改 `docs/design/interop.md` §6.3 描述 PinnedView Value + Z42_VALUE_TAG_PINNED_VIEW = 8
-- [x] 10.3 修改 `docs/design/ir.md` PinPtr/UnpinPtr 段：runtime 语义、PinnedView 形状
-- [x] 10.4 修改 `docs/design/vm-architecture.md` Value 变体段加 PinnedView 行
+- [x] 10.1 修改 `docs/design/compiler/error-codes.md` Z0908 → 已启用 + 3 个抛出条件
+- [x] 10.2 修改 `docs/design/language/interop.md` §6.3 描述 PinnedView Value + Z42_VALUE_TAG_PINNED_VIEW = 8
+- [x] 10.3 修改 `docs/design/runtime/ir.md` PinPtr/UnpinPtr 段：runtime 语义、PinnedView 形状
+- [x] 10.4 修改 `docs/design/runtime/vm-architecture.md` Value 变体段加 PinnedView 行
 - [x] 10.5 修改 `docs/roadmap.md` Native Interop 表 C4 → ✅
 - [x] 10.6 修改 `src/runtime/src/native/README.md` 状态部分加 C4 进展
 

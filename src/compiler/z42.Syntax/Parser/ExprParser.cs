@@ -87,7 +87,7 @@ internal static partial class ExprParser
 
         // Lambda detection — `x => ...` or `(...) => ...`. Lambda binds at the
         // lowest expression level; we preempt before normal Nud dispatch.
-        // See docs/design/closure.md §3.1.
+        // See docs/design/language/closure.md §3.1.
         if (IsLambdaStart(cursor))
         {
             if (!feat.IsEnabled(LanguageFeature.Lambda))

@@ -4,7 +4,7 @@
 
 **变更说明：** 合并 `.zmod` / `.zbin` → `.zpkg`（`mode: indexed|packed`）；添加 `pack` 三层优先级配置；`[package]` → `[project]` 文档对齐；移除 `BuildConfig.Emit`。
 **原因：** `.zmod` 和 `.zbin` 是同一工程包的两种形态，统一为 `.zpkg` 简化工具链和 VM 加载器。
-**文档影响：** `docs/design/compilation.md`、`docs/design/project.md`
+**文档影响：** `docs/design/compiler/compilation.md`、`docs/design/compiler/project.md`
 
 ---
 
@@ -103,12 +103,12 @@
 
 ## 阶段 5: 文档同步
 
-- [ ] 5.1 `docs/design/compilation.md`
+- [ ] 5.1 `docs/design/compiler/compilation.md`
   - 更新"文件扩展名总览"表：删除 `.zmod` / `.zbin` 行，新增 `.zpkg` 行
   - 更新"VM 加载语义"表
   - 更新"输出路径约定"表
 
-- [ ] 5.2 `docs/design/project.md`
+- [ ] 5.2 `docs/design/compiler/project.md`
   - 全文 `[package]` → `[project]`
   - emit 格式表更新（移除 `zmod` / `zbin`，说明 pack 字段）
   - 新增 `pack` 字段说明（L3 或 L4 层次）

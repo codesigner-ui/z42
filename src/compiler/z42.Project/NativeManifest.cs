@@ -5,7 +5,7 @@ using Z42.Core.Diagnostics;
 namespace Z42.Project;
 
 // Spec C11a — manifest reader for `.z42abi` JSON.
-// Schema source-of-truth: docs/design/manifest-schema.json (Draft 2020-12).
+// Schema source-of-truth: docs/design/compiler/manifest-schema.json (Draft 2020-12).
 //
 // C11a only does light validation:
 //   • file exists / readable

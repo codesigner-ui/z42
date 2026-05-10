@@ -144,7 +144,7 @@ public sealed record ClassDecl(
 ///
 /// 命名 callable 类型。语义上等价 `(T1, T2) -> R` 字面量类型；编译器把它解析
 /// 为 `Z42FuncType`。支持顶层 + 嵌套（class body 内）+ 泛型 + where 约束。
-/// 详见 `docs/design/delegates-events.md` §3 + docs/spec/archive/.../add-delegate-type.
+/// 详见 `docs/design/language/delegates-events.md` §3 + docs/spec/archive/.../add-delegate-type.
 public sealed record DelegateDecl(
     string Name,
     Visibility Visibility,
@@ -258,7 +258,7 @@ public sealed record MemberType(TypeExpr Left, string Right, Span Span) : TypeEx
 
 /// Function type `(T1, T2) -> R`. Equivalent to C# `Func<T1, T2, R>` /
 /// `Action<T1, T2>` (resolved as same `Z42FuncType` in the semantic layer).
-/// See docs/design/closure.md §3.2.
+/// See docs/design/language/closure.md §3.2.
 public sealed record FuncType(List<TypeExpr> ParamTypes, TypeExpr ReturnType, Span Span) : TypeExpr(Span);
 
 // ── Statements ────────────────────────────────────────────────────────────────
@@ -323,7 +323,7 @@ public sealed record ThrowStmt(Expr? Value, Span Span) : Stmt(Span);
 /// Local (nested) function declaration, e.g.
 /// `int Outer() { int Helper(int x) => x * 2; return Helper(3); }`.
 /// L2 阶段不允许捕获外层 local 变量（捕获是 L3 闭包特性）。
-/// 见 docs/design/closure.md §3.4。
+/// 见 docs/design/language/closure.md §3.4。
 public sealed record LocalFunctionStmt(FunctionDecl Decl, Span Span) : Stmt(Span);
 
 /// `pinned <Name> = <Source> { <Body> }` — borrows a `string` (and, in a
@@ -411,7 +411,7 @@ public abstract record LambdaBody(Span Span);
 public sealed record LambdaExprBody(Expr Expr, Span Span)        : LambdaBody(Span);
 public sealed record LambdaBlockBody(BlockStmt Block, Span Span) : LambdaBody(Span);
 
-/// Lambda literal `params => body`. See docs/design/closure.md §3.1.
+/// Lambda literal `params => body`. See docs/design/language/closure.md §3.1.
 public sealed record LambdaExpr(List<LambdaParam> Params, LambdaBody Body, Span Span) : Expr(Span);
 public sealed record SwitchExpr(Expr Subject, List<SwitchArm> Arms, Span Span) : Expr(Span);
 public sealed record SwitchArm(Expr? Pattern, Expr Body, Span Span);

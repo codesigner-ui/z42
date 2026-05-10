@@ -8,7 +8,7 @@
   是 L3-G2.5 约束范式补全的高优先级项。
 **Scope 限制**：本次只做约束校验层。body 内 `T.Values` / `T.Parse` 等反射式
   enum 操作依赖 L3-R 运行时 type_args，不在本迭代。
-**文档影响**：`docs/design/generics.md`（enum 约束语义）、`docs/roadmap.md`（G2.5 状态）。
+**文档影响**：`docs/design/language/generics.md`（enum 约束语义）、`docs/roadmap.md`（G2.5 状态）。
 
 ## 任务
 
@@ -39,7 +39,7 @@
 - [x] 4.3 无新错误码（复用 TypeMismatch）
 
 ### 阶段 5：文档 + 归档
-- [x] 5.1 `docs/design/generics.md` 增补 enum 约束小节 + 约束表更新
+- [x] 5.1 `docs/design/language/generics.md` 增补 enum 约束小节 + 约束表更新
 - [x] 5.2 `docs/roadmap.md` L3-G2.5 表格 + 已完成/后续迭代列表更新
 - [x] 5.3 GREEN 全绿：547 编译器 + 162 VM (interp+jit)
 

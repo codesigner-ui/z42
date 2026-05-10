@@ -181,9 +181,9 @@
 - [ ] 5.2.1 检查项目是否有 CI 配置（`.github/workflows/` 或类似）；若有，加 reproducibility job；若无，记录到 deferred backlog
 
 ### 5.3 文档同步
-- [ ] 5.3.1 `docs/design/ir.md`：IR 1.0 字段类型 + Token32 设计 + token kind 表
-- [ ] 5.3.2 `docs/design/compilation.md`：zbc 1.0 格式 + IMPT 语义 + magic threshold 编码
-- [ ] 5.3.3 `docs/design/vm-architecture.md`：Phase 化路线表 → Phase 3 🟢；Phase 2.D 吸收说明
+- [ ] 5.3.1 `docs/design/runtime/ir.md`：IR 1.0 字段类型 + Token32 设计 + token kind 表
+- [ ] 5.3.2 `docs/design/compiler/compilation.md`：zbc 1.0 格式 + IMPT 语义 + magic threshold 编码
+- [ ] 5.3.3 `docs/design/runtime/vm-architecture.md`：Phase 化路线表 → Phase 3 🟢；Phase 2.D 吸收说明
 - [ ] 5.3.4 `docs/roadmap.md`：进度更新
 - [ ] 5.3.5 `.claude/rules/code-organization.md`：新增 "Reproducible build 规则"段落
 

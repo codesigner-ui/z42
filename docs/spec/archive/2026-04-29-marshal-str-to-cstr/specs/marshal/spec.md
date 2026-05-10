@@ -64,6 +64,6 @@
 
 ## Documentation Sync
 
-- `docs/design/interop.md` §6 marshal 表加 (Str, CStr) 行
-- `docs/design/error-codes.md` Z0908 加 "interior NUL in marshal" 抛出条件
+- `docs/design/language/interop.md` §6 marshal 表加 (Str, CStr) 行
+- `docs/design/compiler/error-codes.md` Z0908 加 "interior NUL in marshal" 抛出条件
 - `docs/roadmap.md` C8 → ✅

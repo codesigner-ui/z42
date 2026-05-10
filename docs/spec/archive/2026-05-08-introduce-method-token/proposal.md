@@ -91,7 +91,7 @@ z42 VM 当前**所有跨引用 dispatch 都用 String** 作为身份（review.md
 | `src/runtime/src/interp/exec_vcall.rs` | `vcall` 走 VCallIC（mono inline cache） |
 | `src/runtime/src/corelib/mod.rs` | `exec_builtin(BuiltinId, args)` 重载（接受 id），string 版本保留作 lazy resolve fallback |
 | `docs/review.md` | 路线图 §VM 线 `introduce-method-token` 状态注记 |
-| `docs/design/vm-architecture.md` | 加 "Method token system" 章节（按 [CLAUDE.md](../../../.claude/CLAUDE.md) 实现原理文档规则） |
+| `docs/design/runtime/vm-architecture.md` | 加 "Method token system" 章节（按 [CLAUDE.md](../../../.claude/CLAUDE.md) 实现原理文档规则） |
 
 ### 不动（明确）
 

@@ -63,8 +63,8 @@ z42.Tests 项目新增 ProjectReference 到 z42.Driver（用于测 CliOutputForm
 ## 阶段 7: 测试 + 文档
 
 - [ ] 7.1 验证 dotnet test / cargo / VM 全绿
-- [ ] 7.2 修改 `docs/design/project.md`：L7 章节扩展为完整命令矩阵
-- [ ] 7.3 修改 `docs/design/compiler-architecture.md`：MetadataDto schema 说明
+- [ ] 7.2 修改 `docs/design/compiler/project.md`：L7 章节扩展为完整命令矩阵
+- [ ] 7.3 修改 `docs/design/compiler/compiler-architecture.md`：MetadataDto schema 说明
 - [ ] 7.4 修改 `docs/dev.md`：查询命令使用示例
 - [ ] 7.5 修改 `docs/roadmap.md`：C4b 进度
 

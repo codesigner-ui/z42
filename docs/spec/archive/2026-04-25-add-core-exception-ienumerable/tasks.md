@@ -58,12 +58,12 @@
 
 ## 阶段 4: 文档 + README 同步
 
-- [ ] 4.1 新增 `docs/design/exceptions.md` — 使用者视角：
+- [ ] 4.1 新增 `docs/design/language/exceptions.md` — 使用者视角：
   - Exception 层次图（9 个子类）
   - throw 语义（Phase 1 任意值；推荐 Exception 子类）
   - StackTrace 字段说明（当前为 null，未来填充计划）
   - InnerException 使用模式（wrap/unwrap）
-- [ ] 4.2 新增 `docs/design/iteration.md` — 使用者视角：
+- [ ] 4.2 新增 `docs/design/language/iteration.md` — 使用者视角：
   - IEnumerable / IEnumerator 契约
   - 与现有 foreach 鸭子协议（Count + get_Item）并存说明
   - 未来 foreach codegen 升级路线（识别 IEnumerator 路径）

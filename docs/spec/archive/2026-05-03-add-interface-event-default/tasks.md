@@ -26,7 +26,7 @@
 - [x] 3.4 `./scripts/build-stdlib.sh` 6/6 ✅
 - [x] 3.5 spec scenarios 逐条核对
 - [x] 3.6 文档同步：
-  - `docs/design/delegates-events.md` 顶部状态加 D2c-interface 已落地
+  - `docs/design/language/delegates-events.md` 顶部状态加 D2c-interface 已落地
   - `docs/roadmap.md` 加一行
 - [x] 3.7 移动 `docs/spec/changes/add-interface-event-default/` → `docs/spec/archive/2026-05-03-add-interface-event-default/`
 - [x] 3.8 commit + push

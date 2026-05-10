@@ -43,7 +43,7 @@ builtin 一并删除（见 [`corelib/mod.rs:20-22`](../../../src/runtime/src/cor
 | `src/runtime/src/jit/helpers_object.rs` | MODIFY | 移除 `jit_array_get` / `jit_array_set` / `jit_field_get` 的 Value::Map 分支 |
 | `src/runtime/src/corelib/io.rs` | MODIFY | 移除 `__len` 的 Value::Map 分支 |
 | `src/runtime/src/corelib/convert.rs` | MODIFY | `value_to_str` 改为 exhaustive match，移除 `other =>` 兜底 |
-| `docs/design/vm-architecture.md` | MODIFY | "GC 子系统" 段：删除 alloc_map 已知限制条 |
+| `docs/design/runtime/vm-architecture.md` | MODIFY | "GC 子系统" 段：删除 alloc_map 已知限制条 |
 
 **只读引用**：
 

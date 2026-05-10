@@ -56,7 +56,7 @@
 
 ## 阶段 6: 文档同步 + 验证 + 归档
 
-- [x] 6.1 [docs/design/language-overview.md](docs/design/language-overview.md) 加 `default(T)` expression 段（语义表 + 几个示例）
+- [x] 6.1 [docs/design/language/language-overview.md](docs/design/language/language-overview.md) 加 `default(T)` expression 段（语义表 + 几个示例）
 - [x] 6.2 [docs/deferred.md](docs/deferred.md) D-8b-3 移到"已落地"，写明 Phase 1 范围 + Phase 2 generic-T 留作独立 spec `add-default-generic-typeparam`
 - [x] 6.3 验证全套：
   - `dotnet build src/compiler/z42.slnx` 无错

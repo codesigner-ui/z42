@@ -2,7 +2,7 @@
 
 ## Why
 
-[delegates-events.md §4.1](docs/design/delegates-events.md#41-类型定义) 设计的 `Std.MulticastFunc<T,R>` / `Std.MulticastPredicate<T>` 是与 `MulticastAction<T>` 严格对称的多播体系（K2）：
+[delegates-events.md §4.1](docs/design/language/delegates-events.md#41-类型定义) 设计的 `Std.MulticastFunc<T,R>` / `Std.MulticastPredicate<T>` 是与 `MulticastAction<T>` 严格对称的多播体系（K2）：
 
 - `MulticastFunc<T, R>` —— 多播 `Func<T, R>` handler，Invoke 返回 `R[]`
 - `MulticastPredicate<T>` —— 多播 `Predicate<T>` handler，Invoke 返回 `bool[]`，加 `All` / `Any` 短路求值

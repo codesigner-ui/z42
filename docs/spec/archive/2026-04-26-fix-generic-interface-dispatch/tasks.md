@@ -49,7 +49,7 @@
 
 ## 阶段 5: 文档同步 + 归档
 
-- [x] 5.1 `docs/design/compiler-architecture.md` 新增"泛型接口 dispatch — Z42InterfaceType.TypeParams"小节
+- [x] 5.1 `docs/design/compiler/compiler-architecture.md` 新增"泛型接口 dispatch — Z42InterfaceType.TypeParams"小节
 - [x] 5.2 tasks.md 状态 → `🟢 已完成`
 - [x] 5.3 归档 + commit + push（scope `fix(typecheck)`）
 

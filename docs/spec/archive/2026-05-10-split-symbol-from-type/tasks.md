@@ -203,7 +203,7 @@
 
 ## 阶段 6: 文档同步 + 归档
 
-- [x] 6.1 MODIFY [docs/design/compiler-architecture.md](../../../docs/design/compiler-architecture.md):
+- [x] 6.1 MODIFY [docs/design/compiler/compiler-architecture.md](../../../docs/design/compiler/compiler-architecture.md):
   - 增"Symbol 层"段落作为正面设计
   - 记录不变量：(1) Z42ClassType 不再持有签名；(2) Symbols 持有 Decl back-pointer；(3) 构造两阶段 + frozen
   - 列举消费者（TypeChecker / Codegen / TestAttributeValidator / BoundDumper）
