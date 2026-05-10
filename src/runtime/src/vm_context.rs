@@ -91,6 +91,13 @@ pub struct VmContext {
     /// regs + env_arena）。SAFETY 与 exec_stack 一致：raw ptr 由 FrameGuard RAII 保证
     /// 在 frame 还活时有效。frame 不持 stack closure 时这里 push null pointer。
     pub(crate) env_arena_stack:   Rc<RefCell<Vec<*const Vec<Vec<Value>>>>>,
+    /// 2026-05-10 exception-stack-trace: parallel to `exec_stack`, holds
+    /// `(func_name, file, current_line)` per active script frame so a
+    /// `throw` can snapshot the full call chain. Pushed in
+    /// `interp::exec_function` and popped via the existing `FrameGuard`,
+    /// so depth stays in 1:1 sync with `exec_stack` even on `?`-early-return
+    /// or panic unwind. Holds no `Value`s — not a GC root.
+    pub(crate) call_stack:        Rc<RefCell<Vec<crate::exception::FrameInfo>>>,
     /// 2026-05-02 add-method-group-conversion (D1b): module-level FuncRef cache
     /// slots. `LoadFnCached { slot_id }` 首次执行时把 `Value::FuncRef(name)`
     /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。Slot id 在
@@ -128,6 +135,7 @@ impl VmContext {
         let exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>> = Rc::new(RefCell::new(Vec::new()));
         let env_arena_stack: Rc<RefCell<Vec<*const Vec<Vec<Value>>>>> = Rc::new(RefCell::new(Vec::new()));
         let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
+        let call_stack: Rc<RefCell<Vec<crate::exception::FrameInfo>>> = Rc::new(RefCell::new(Vec::new()));
 
         // Phase 3d.1 + 3f: 注入 external root scanner 闭包，让 cycle collector mark
         // 阶段把 static_fields + pending_exception + interp exec_stack frame regs
@@ -190,6 +198,7 @@ impl VmContext {
             lazy_loader,
             exec_stack,
             env_arena_stack,
+            call_stack,
             func_ref_slots,
             heap: Box::new(heap),
             native_types: Rc::new(RefCell::new(HashMap::new())),
@@ -323,6 +332,41 @@ impl VmContext {
     pub(crate) fn pop_frame_regs(&self) {
         self.exec_stack.borrow_mut().pop();
         self.env_arena_stack.borrow_mut().pop();
+    }
+
+    // ── Call-stack tracking (2026-05-10 exception-stack-trace) ────────────
+
+    /// Push a [`FrameInfo`] for the script frame just entered. Pop is the
+    /// caller's responsibility (typically via `FrameGuard` RAII pairing
+    /// with `pop_frame_regs`).
+    pub(crate) fn push_call_frame(&self, info: crate::exception::FrameInfo) {
+        self.call_stack.borrow_mut().push(info);
+    }
+
+    pub(crate) fn pop_call_frame(&self) {
+        self.call_stack.borrow_mut().pop();
+    }
+
+    /// Update the *top* (currently executing) frame's source line.
+    /// Called by callers right before they invoke a callee, so the snapshot
+    /// at a downstream `throw` shows the call site, not 0.
+    pub(crate) fn update_top_frame_line(&self, line: u32) {
+        if let Some(top) = self.call_stack.borrow().last() {
+            top.line.set(line);
+        }
+    }
+
+    /// Snapshot the entire call stack for stack-trace formatting at a
+    /// `throw` site. Cheap clone (small-string + u32 per frame); only
+    /// invoked on the throw path so per-instruction overhead is zero.
+    pub(crate) fn snapshot_call_stack(&self) -> Vec<crate::exception::FrameSnapshot> {
+        self.call_stack.borrow().iter().map(|f| f.snapshot()).collect()
+    }
+
+    /// Current depth of the call stack — debugging / tests.
+    #[cfg(test)]
+    pub(crate) fn call_stack_depth(&self) -> usize {
+        self.call_stack.borrow().len()
     }
 
     /// Spec impl-ref-out-in-runtime (Decision R1): index into the frame

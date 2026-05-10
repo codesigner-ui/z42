@@ -104,6 +104,11 @@ pub fn exec_instr(
 
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
+            // 2026-05-10 exception-stack-trace: stamp current site's source
+            // line on this frame's FrameInfo before descending into the
+            // callee, so a downstream `throw` snapshot shows our call site.
+            update_caller_line(ctx, func, block_idx, instr_idx);
+
             // Hot path: pre-resolved MethodId direct-indexes module.functions.
             // Cross-zpkg cache (UNRESOLVED at load) backfills on first hit.
             let method_token = resolved
@@ -125,6 +130,7 @@ pub fn exec_instr(
         Instruction::LoadFn { dst, func } => exec_call::load_fn(frame, *dst, func),
         Instruction::LoadFnCached { dst, func, slot_id } => exec_call::load_fn_cached(ctx, frame, *dst, func, *slot_id),
         Instruction::CallIndirect { dst, callee, args } => {
+            update_caller_line(ctx, func, block_idx, instr_idx);
             if let Some(thrown) = exec_call::call_indirect(ctx, module, frame, *dst, *callee, args)? {
                 return Ok(Some(thrown));
             }
@@ -162,6 +168,7 @@ pub fn exec_instr(
             exec_object::field_set(frame, *obj, field_name, *val, field_ic)?;
         }
         Instruction::VCall { dst, obj, method, args } => {
+            update_caller_line(ctx, func, block_idx, instr_idx);
             // Hot path: monomorphic inline cache fires when receiver TypeId
             // matches the cached one at this site (same site + same recv type).
             // Polymorphic sites overwrite the slot each time (Phase 1 mono IC).
@@ -203,4 +210,14 @@ pub fn exec_instr(
         Instruction::UnpinPtr { pinned }     => exec_native::unpin_ptr(ctx, frame, *pinned)?,
     }
     Ok(None)
+}
+
+/// 2026-05-10 exception-stack-trace: stamp the current source line of a
+/// call-class instruction onto the executing frame's `FrameInfo` so a
+/// downstream `throw` can format the call site (not 0). Cheap — one line
+/// table linear scan + Cell::set.
+#[inline]
+fn update_caller_line(ctx: &VmContext, func: &Function, block_idx: usize, instr_idx: usize) {
+    let line = super::resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
+    ctx.update_top_frame_line(line);
 }

@@ -57,7 +57,12 @@ impl JitModule {
         ctx.pop_frame_regs();
         frame.recycle();
         self.ctx.vm_ctx = std::ptr::null_mut();
-        if r != 0 { return Err(take_exception_error(ctx)); }
+        if r != 0 {
+            // SAFETY: ctx.module set in compile_module from a &Module that
+            // outlives the JitModule (caller-owned). Deref is safe here.
+            let module = unsafe { &*self.ctx.module };
+            return Err(take_exception_error(ctx, module));
+        }
         Ok(())
     }
 

@@ -8,8 +8,14 @@ namespace Std;
 //
 // 字段：
 //   Message         异常消息（必填）
-//   StackTrace      调用栈快照（Phase 1 恒为 null，留字段给未来填充）
+//   StackTrace      调用栈快照（interp 模式下由 throw 自动填充；JIT 留 follow-up）
 //   InnerException  原始异常（wrapping pattern；无则 null）
+//
+// 2026-05-10 exception-stack-trace：interp 在执行 `throw <exception>` 时若
+// thrown 值是 Exception 子类且 `StackTrace` 仍为 null，runtime 自动填入
+// 形如 `  at Demo.Inner (line 17)\n  at Demo.Outer (line 16)\n  at Demo.Main (line 6)`
+// 的多行字符串。重抛同一对象不会重写已填的 trace。JIT 模式下抛出走
+// `set_exception` 不经 `Terminator::Throw`，目前不填 trace（独立 spec）。
 public class Exception {
     public string Message;
     public string StackTrace;      // reference type defaults to null (Phase 1)

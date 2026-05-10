@@ -1,0 +1,54 @@
+// 2026-05-10 exception-stack-trace: thrown Std.Exception subclasses get
+// their `StackTrace` field auto-populated with the active call chain.
+// Verifies: (a) throw populates the field; (b) re-throw keeps the original
+// trace; (c) trace contains both the throwing function and its callers.
+namespace Demo;
+
+void Main() {
+    string captured = "";
+    try {
+        Outer();
+    } catch (Exception e) {
+        captured = e.StackTrace;
+    }
+
+    // Trace was populated (was null before this batch).
+    Assert.NotNull(captured);
+
+    // Trace mentions every function on the chain (Inner is the throwing
+    // frame, Outer is its caller, Main is the top-level catcher).
+    Assert.True(captured.Contains("Demo.Inner"));
+    Assert.True(captured.Contains("Demo.Outer"));
+    Assert.True(captured.Contains("Demo.Main"));
+
+    // Re-throw retains the original trace (populate is idempotent on
+    // already-populated values via the null-check).
+    string second = "";
+    try {
+        Rethrow();
+    } catch (Exception e) {
+        second = e.StackTrace;
+    }
+    Assert.NotNull(second);
+    // The rethrown exception's trace still mentions the original Inner /
+    // Outer site, not the Rethrow function (which only re-tossed).
+    Assert.True(second.Contains("Demo.Inner"));
+}
+
+void Outer() {
+    Inner();
+}
+
+void Inner() {
+    throw new Exception("kaboom");
+}
+
+void Rethrow() {
+    Exception keep = null;
+    try {
+        Inner();
+    } catch (Exception e) {
+        keep = e;
+    }
+    throw keep;
+}

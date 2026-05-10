@@ -56,7 +56,7 @@ pub enum ExecOutcome {
 pub fn run(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<()> {
     match exec_function(ctx, module, func, args)? {
         ExecOutcome::Returned(_) => Ok(()),
-        ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
+        ExecOutcome::Thrown(val) => bail!("{}", crate::exception::format_uncaught(&val, module)),
     }
 }
 
@@ -72,7 +72,7 @@ pub fn run_returning(
 ) -> Result<Option<Value>> {
     match exec_function(ctx, module, func, args)? {
         ExecOutcome::Returned(v) => Ok(v),
-        ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
+        ExecOutcome::Thrown(val) => bail!("{}", crate::exception::format_uncaught(&val, module)),
     }
 }
 
@@ -149,7 +149,7 @@ pub fn run_with_static_init(ctx: &VmContext, module: &Module, func: &Function) -
     init_static_fields(ctx, module)?;
     match exec_function(ctx, module, func, &[])? {
         ExecOutcome::Returned(_) => Ok(()),
-        ExecOutcome::Thrown(val) => bail!("uncaught exception: {}", value_to_str(&val)),
+        ExecOutcome::Thrown(val) => bail!("{}", crate::exception::format_uncaught(&val, module)),
     }
 }
 
@@ -356,12 +356,16 @@ fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block: u32, inst
 
 /// Phase 3f: RAII guard 保证 push_frame_regs / pop_frame_regs 严格配对，
 /// 即使 exec_function 通过 `?` early return 或 panic 展开。Drop 时自动 pop。
+///
+/// 2026-05-10 exception-stack-trace: 同时 pop call_stack 中的 FrameInfo，
+/// 保持与 frame_states 的 1:1 配对（push 在 exec_function 入口）。
 struct FrameGuard<'a> {
     ctx: &'a VmContext,
 }
 impl Drop for FrameGuard<'_> {
     fn drop(&mut self) {
         self.ctx.pop_frame_regs();
+        self.ctx.pop_call_frame();
     }
 }
 
@@ -396,6 +400,15 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
         &frame.regs as *const Vec<Value>,
         &frame.env_arena as *const Vec<Vec<Value>>,
     );
+    // 2026-05-10 exception-stack-trace: parallel push of (func_name, file)
+    // for stack-trace formatting. file taken from the line_table's first
+    // entry — every function from the C# emitter ships at least one
+    // LineEntry (function-entry line). Empty fallback keeps the runtime
+    // robust to hand-rolled fixtures or stripped artifacts.
+    let file = func.line_table.first()
+        .and_then(|e| e.file.clone())
+        .unwrap_or_default();
+    ctx.push_call_frame(crate::exception::FrameInfo::new(func.name.clone(), file));
     let _frame_guard = FrameGuard { ctx };
 
     // Spec C2: scope `CURRENT_VM` to this z42 frame so `z42_*` extern
@@ -426,6 +439,12 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
             match exec_instr::exec_instr(ctx, module, &mut frame, func, block_idx, instr_idx, instr) {
                 Ok(None) => {}
                 Ok(Some(thrown_val)) => {
+                    // 2026-05-10 exception-stack-trace: callees may throw
+                    // via JIT's set_exception path which doesn't run
+                    // Terminator::Throw — populate here too. Idempotent
+                    // (null-check skips already-populated objects).
+                    crate::exception::populate_stack_trace(&thrown_val, ctx, module);
+
                     // User exception from a callee — try to find a local handler
                     if let Some(entry_idx) = find_handler(
                         func, block_idx, block_map, &module.type_registry, &thrown_val,
@@ -481,6 +500,19 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
             }
             Terminator::Throw { reg } => {
                 let val = frame.get(*reg)?.clone();
+                // 2026-05-10 exception-stack-trace: stamp the throwing
+                // frame's current line so the snapshot's top entry shows
+                // the throw site (not whatever the previous Call left).
+                // Throw is a block terminator; instr_idx isn't a meaningful
+                // intra-block offset, so use end-of-block (block.instructions.len()).
+                let throw_line = resolve_line(
+                    &func.line_table,
+                    block_idx as u32,
+                    block.instructions.len() as u32,
+                );
+                ctx.update_top_frame_line(throw_line);
+                crate::exception::populate_stack_trace(&val, ctx, module);
+
                 if let Some(entry_idx) = find_handler(
                     func, block_idx, block_map, &module.type_registry, &val,
                 ) {

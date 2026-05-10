@@ -33,7 +33,6 @@ pub mod vcall;
 
 pub use registry::{declare_imports, register_symbols, HelperIds};
 
-use crate::corelib::convert::value_to_str;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 
@@ -78,10 +77,10 @@ pub(super) fn take_exception(ctx: &VmContext) -> Option<Value> {
     ctx.take_exception()
 }
 
-pub fn take_exception_error(ctx: &VmContext) -> anyhow::Error {
+pub fn take_exception_error(ctx: &VmContext, module: &crate::metadata::Module) -> anyhow::Error {
     let msg = take_exception(ctx)
         .as_ref()
-        .map(value_to_str)
+        .map(|v| crate::exception::format_uncaught(v, module))
         .unwrap_or_else(|| "uncaught exception".to_owned());
     anyhow::anyhow!("{}", msg)
 }
