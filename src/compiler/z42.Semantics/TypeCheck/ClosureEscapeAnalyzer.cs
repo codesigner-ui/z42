@@ -17,6 +17,12 @@ namespace Z42.Semantics.TypeCheck;
 /// - 仅做"局部 var → 立即调用"模式；流敏感 / 跨函数 / 复杂别名链全部退化 heap。
 /// - 不修改 BoundBlock；产物是 IReadOnlySet&lt;BoundLambda&gt;，由
 ///   <see cref="SemanticModel.StackAllocClosures"/> 暴露给 Codegen。
+///
+/// introduce-bound-visitor (2026-05-10): 三处手写 switch（CollectCandidatesStmt
+/// / ScanStmt / ScanExpr）迁移到 BoundStmtVisitor / BoundExprVisitor 子类。
+/// 行为完全保留 —— legacy fall-through case 显式 override 为 default no-op；
+/// `calleePosition` 状态由 EscapeExprScanner 实例字段持有，VisitCall.Receiver
+/// 期间临时翻转。
 /// </summary>
 internal static class ClosureEscapeAnalyzer
 {
@@ -34,14 +40,16 @@ internal static class ClosureEscapeAnalyzer
         // Pass 1: 找出 candidate (var_name → BoundLambda)。仅在 BoundVarDecl
         // 顶层 init 位置接受 lambda；嵌套表达式里冒出的 lambda 不当 candidate。
         var candidates = new Dictionary<string, BoundLambda>();
-        CollectCandidates(body, candidates);
+        var collector = new CandidateCollector(candidates);
+        collector.WalkBlock(body);
         if (candidates.Count == 0) return;
 
         // Pass 2: 扫所有 BoundExpr / BoundStmt，找 BoundIdent 引用 candidate 名字
         // 且**不在 BoundCall.Receiver 位置**的 use。任何这种 use → 该 var 逃逸，
         // 移出 candidates。结束时还在 candidates 的 lambda 全部加入 stackable。
         var escaped = new HashSet<string>();
-        ScanForEscape(body, candidates, escaped, calleePosition: false);
+        var scanner = new EscapeStmtScanner(candidates, escaped);
+        scanner.WalkBlock(body);
 
         foreach (var (name, lambda) in candidates)
         {
@@ -55,241 +63,388 @@ internal static class ClosureEscapeAnalyzer
 
     // ── Pass 1: candidate 收集 ───────────────────────────────────────────────
 
-    private static void CollectCandidates(BoundBlock block, Dictionary<string, BoundLambda> map)
+    private sealed class CandidateCollector : BoundStmtVisitor<Unit>
     {
-        foreach (var stmt in block.Stmts)
-            CollectCandidatesStmt(stmt, map);
-    }
+        private readonly Dictionary<string, BoundLambda> _map;
+        public CandidateCollector(Dictionary<string, BoundLambda> map) { _map = map; }
 
-    private static void CollectCandidatesStmt(BoundStmt stmt, Dictionary<string, BoundLambda> map)
-    {
-        switch (stmt)
+        public void WalkBlock(BoundBlock block)
         {
-            case BoundVarDecl vd when vd.Init is BoundLambda lam:
-                // 同名变量重声明：保守抛弃（不该发生，TypeChecker 已禁止 duplicate）
-                map[vd.Name] = lam;
-                break;
-            case BoundBlockStmt bs:
-                CollectCandidates(bs.Block, map);
-                break;
-            case BoundIf ifs:
-                CollectCandidates(ifs.Then, map);
-                if (ifs.Else is BoundBlockStmt elseBlock) CollectCandidates(elseBlock.Block, map);
-                else if (ifs.Else is BoundIf nestedIf)    CollectCandidatesStmt(nestedIf, map);
-                break;
-            case BoundWhile w:
-                CollectCandidates(w.Body, map);
-                break;
-            case BoundDoWhile dw:
-                CollectCandidates(dw.Body, map);
-                break;
-            case BoundFor f:
-                CollectCandidates(f.Body, map);
-                break;
-            case BoundForeach fe:
-                CollectCandidates(fe.Body, map);
-                break;
-            case BoundTryCatch tc:
-                CollectCandidates(tc.TryBody, map);
-                foreach (var c in tc.Catches) CollectCandidates(c.Body, map);
-                if (tc.Finally is { } fin) CollectCandidates(fin, map);
-                break;
-            case BoundSwitch sw:
-                foreach (var cse in sw.Cases)
-                    foreach (var bs2 in cse.Body)
-                        CollectCandidatesStmt(bs2, map);
-                break;
-            case BoundLocalFunction lf:
-                CollectCandidates(lf.Body, map);
-                break;
-            case BoundPinned pn:
-                CollectCandidates(pn.Body, map);
-                break;
+            foreach (var s in block.Stmts) Visit(s);
         }
+
+        protected override Unit VisitVarDecl(BoundVarDecl vd)
+        {
+            // 同名变量重声明：保守抛弃（不该发生，TypeChecker 已禁止 duplicate）
+            if (vd.Init is BoundLambda lam) _map[vd.Name] = lam;
+            return default;
+        }
+
+        protected override Unit VisitBlockStmt(BoundBlockStmt bs)
+        {
+            WalkBlock(bs.Block);
+            return default;
+        }
+
+        protected override Unit VisitIf(BoundIf ifs)
+        {
+            WalkBlock(ifs.Then);
+            if (ifs.Else is BoundBlockStmt elseBlock) WalkBlock(elseBlock.Block);
+            else if (ifs.Else is BoundIf nestedIf)    Visit(nestedIf);
+            return default;
+        }
+
+        protected override Unit VisitWhile(BoundWhile w)         { WalkBlock(w.Body); return default; }
+        protected override Unit VisitDoWhile(BoundDoWhile dw)    { WalkBlock(dw.Body); return default; }
+        protected override Unit VisitFor(BoundFor f)             { WalkBlock(f.Body); return default; }
+        protected override Unit VisitForeach(BoundForeach fe)    { WalkBlock(fe.Body); return default; }
+
+        protected override Unit VisitTryCatch(BoundTryCatch tc)
+        {
+            WalkBlock(tc.TryBody);
+            foreach (var c in tc.Catches) WalkBlock(c.Body);
+            if (tc.Finally is { } fin) WalkBlock(fin);
+            return default;
+        }
+
+        protected override Unit VisitSwitch(BoundSwitch sw)
+        {
+            foreach (var cse in sw.Cases)
+                foreach (var bs2 in cse.Body)
+                    Visit(bs2);
+            return default;
+        }
+
+        protected override Unit VisitLocalFunction(BoundLocalFunction lf)
+        {
+            WalkBlock(lf.Body);
+            return default;
+        }
+
+        protected override Unit VisitPinned(BoundPinned pn)
+        {
+            WalkBlock(pn.Body);
+            return default;
+        }
+
+        // ── Stmts the legacy switch ignored ───────────────────────────────────
+        protected override Unit VisitExprStmt(BoundExprStmt e)   => default;
+        protected override Unit VisitReturn(BoundReturn r)       => default;
+        protected override Unit VisitThrow(BoundThrow th)        => default;
+        protected override Unit VisitBreak(BoundBreak br)        => default;
+        protected override Unit VisitContinue(BoundContinue co)  => default;
     }
 
     // ── Pass 2: 逃逸扫描 ─────────────────────────────────────────────────────
 
-    private static void ScanForEscape(
-        BoundBlock block, Dictionary<string, BoundLambda> candidates,
-        HashSet<string> escaped, bool calleePosition)
+    private sealed class EscapeStmtScanner : BoundStmtVisitor<Unit>
     {
-        foreach (var stmt in block.Stmts)
-            ScanStmt(stmt, candidates, escaped);
-    }
+        private readonly Dictionary<string, BoundLambda> _candidates;
+        private readonly HashSet<string> _escaped;
+        private readonly EscapeExprScanner _expr;
 
-    private static void ScanStmt(BoundStmt stmt, Dictionary<string, BoundLambda> candidates, HashSet<string> escaped)
-    {
-        switch (stmt)
+        public EscapeStmtScanner(Dictionary<string, BoundLambda> candidates, HashSet<string> escaped)
         {
-            case BoundVarDecl vd:
-                // VarDecl 自己 init 的 lambda 不算 use；其他子表达式扫描
-                if (vd.Init is { } init && !(init is BoundLambda))
-                    ScanExpr(init, candidates, escaped, calleePosition: false);
-                break;
-            case BoundExprStmt es:
-                ScanExpr(es.Expr, candidates, escaped, calleePosition: false);
-                break;
-            case BoundReturn r:
-                if (r.Value is { } rv) ScanExpr(rv, candidates, escaped, calleePosition: false);
-                break;
-            case BoundIf ifs:
-                ScanExpr(ifs.Cond, candidates, escaped, calleePosition: false);
-                ScanForEscape(ifs.Then, candidates, escaped, calleePosition: false);
-                if (ifs.Else is BoundBlockStmt elseBlock)
-                    ScanForEscape(elseBlock.Block, candidates, escaped, calleePosition: false);
-                else if (ifs.Else is BoundIf elseIf)
-                    ScanStmt(elseIf, candidates, escaped);
-                break;
-            case BoundWhile w:
-                ScanExpr(w.Cond, candidates, escaped, calleePosition: false);
-                ScanForEscape(w.Body, candidates, escaped, calleePosition: false);
-                break;
-            case BoundDoWhile dw:
-                ScanForEscape(dw.Body, candidates, escaped, calleePosition: false);
-                ScanExpr(dw.Cond, candidates, escaped, calleePosition: false);
-                break;
-            case BoundFor f:
-                if (f.Init is { } fi) ScanStmt(fi, candidates, escaped);
-                if (f.Cond is { } fc) ScanExpr(fc, candidates, escaped, calleePosition: false);
-                if (f.Increment is { } fs) ScanExpr(fs, candidates, escaped, calleePosition: false);
-                ScanForEscape(f.Body, candidates, escaped, calleePosition: false);
-                break;
-            case BoundForeach fe:
-                ScanExpr(fe.Collection, candidates, escaped, calleePosition: false);
-                ScanForEscape(fe.Body, candidates, escaped, calleePosition: false);
-                break;
-            case BoundBlockStmt bs:
-                ScanForEscape(bs.Block, candidates, escaped, calleePosition: false);
-                break;
-            case BoundThrow t:
-                ScanExpr(t.Value, candidates, escaped, calleePosition: false);
-                break;
-            case BoundTryCatch tc:
-                ScanForEscape(tc.TryBody, candidates, escaped, calleePosition: false);
-                foreach (var c in tc.Catches)
-                    ScanForEscape(c.Body, candidates, escaped, calleePosition: false);
-                if (tc.Finally is { } fin)
-                    ScanForEscape(fin, candidates, escaped, calleePosition: false);
-                break;
-            case BoundSwitch sw:
-                ScanExpr(sw.Subject, candidates, escaped, calleePosition: false);
-                foreach (var cse in sw.Cases)
-                {
-                    if (cse.Pattern is { } pat)
-                        ScanExpr(pat, candidates, escaped, calleePosition: false);
-                    foreach (var bs2 in cse.Body) ScanStmt(bs2, candidates, escaped);
-                }
-                break;
-            case BoundLocalFunction lf:
-                // Local function body 内引用 candidate 走 BoundCapturedIdent → escape
-                ScanForEscape(lf.Body, candidates, escaped, calleePosition: false);
-                break;
-            case BoundPinned pn:
-                ScanExpr(pn.Source, candidates, escaped, calleePosition: false);
-                ScanForEscape(pn.Body, candidates, escaped, calleePosition: false);
-                break;
-            // BoundBreak / BoundContinue 无表达式
+            _candidates = candidates;
+            _escaped = escaped;
+            _expr = new EscapeExprScanner(candidates, escaped);
         }
-    }
 
-    private static void ScanExpr(
-        BoundExpr expr, Dictionary<string, BoundLambda> candidates,
-        HashSet<string> escaped, bool calleePosition)
-    {
-        switch (expr)
+        public void WalkBlock(BoundBlock block)
         {
-            case BoundIdent id:
-                // 只有当 id.Name 是 candidate 且**非 callee 位置**才标 escape
-                if (candidates.ContainsKey(id.Name) && !calleePosition)
-                    escaped.Add(id.Name);
-                break;
-            case BoundCapturedIdent ci:
-                // 被嵌套 lambda 捕获 → 一律 escape（env 跨边界外溢）
-                if (candidates.ContainsKey(ci.Name)) escaped.Add(ci.Name);
-                break;
-            case BoundCall call:
-                // Receiver 是唯一 callee 位置：用 BoundIdent 时 calleePosition=true
-                if (call.Receiver is { } recv)
-                    ScanExpr(recv, candidates, escaped, calleePosition: true);
-                foreach (var a in call.Args)
-                    ScanExpr(a, candidates, escaped, calleePosition: false);
-                break;
-            case BoundAssign asn:
-                // 赋值 target / value 都不是 callee 位置
-                ScanExpr(asn.Target, candidates, escaped, calleePosition: false);
-                ScanExpr(asn.Value,  candidates, escaped, calleePosition: false);
-                // target 是 BoundIdent 且名字是 candidate → 重赋值，escape
-                if (asn.Target is BoundIdent tid && candidates.ContainsKey(tid.Name))
-                    escaped.Add(tid.Name);
-                break;
-            case BoundBinary bin:
-                ScanExpr(bin.Left,  candidates, escaped, calleePosition: false);
-                ScanExpr(bin.Right, candidates, escaped, calleePosition: false);
-                break;
-            case BoundUnary u:    ScanExpr(u.Operand, candidates, escaped, calleePosition: false); break;
-            case BoundPostfix p:  ScanExpr(p.Operand, candidates, escaped, calleePosition: false); break;
-            case BoundConditional cd:
-                ScanExpr(cd.Cond, candidates, escaped, calleePosition: false);
-                ScanExpr(cd.Then, candidates, escaped, calleePosition: false);
-                ScanExpr(cd.Else, candidates, escaped, calleePosition: false);
-                break;
-            case BoundNullCoalesce nc:
-                ScanExpr(nc.Left,  candidates, escaped, calleePosition: false);
-                ScanExpr(nc.Right, candidates, escaped, calleePosition: false);
-                break;
-            case BoundNullConditional ncd:
-                ScanExpr(ncd.Target, candidates, escaped, calleePosition: false); break;
-            case BoundIsPattern ip:
-                ScanExpr(ip.Target, candidates, escaped, calleePosition: false); break;
-            case BoundCast cs:
-                ScanExpr(cs.Operand, candidates, escaped, calleePosition: false); break;
-            case BoundMember mb:
-                ScanExpr(mb.Target, candidates, escaped, calleePosition: false); break;
-            case BoundIndex ix:
-                ScanExpr(ix.Target, candidates, escaped, calleePosition: false);
-                ScanExpr(ix.Index,  candidates, escaped, calleePosition: false);
-                break;
-            case BoundNew nw:
-                foreach (var a in nw.Args)
-                    ScanExpr(a, candidates, escaped, calleePosition: false);
-                break;
-            case BoundArrayCreate ac:
-                ScanExpr(ac.Size, candidates, escaped, calleePosition: false); break;
-            case BoundArrayLit al:
-                foreach (var e in al.Elements)
-                    ScanExpr(e, candidates, escaped, calleePosition: false);
-                break;
-            case BoundInterpolatedStr istr:
-                foreach (var part in istr.Parts)
-                    if (part is BoundExprPart ep)
-                        ScanExpr(ep.Inner, candidates, escaped, calleePosition: false);
-                break;
-            case BoundLambda inner:
-                // 嵌套 lambda 内部的 capture 列表里出现 candidate 就视为 escape；
-                // BindIdent 已把 outer 引用转成 BoundCapturedIdent，所以 inner.Body
-                // 走 ScanForEscape* 会通过 BoundCapturedIdent case 处理。
-                // 这里也扫 inner body 以防有非 capture 的子表达式包含 candidate。
-                ScanLambdaBody(inner.Body, candidates, escaped);
-                break;
-            default:
-                // BoundLitInt / BoundLitStr / ... / BoundError / BoundFuncRef 等
-                // 不影响 candidate
-                break;
+            foreach (var s in block.Stmts) Visit(s);
         }
+
+        protected override Unit VisitVarDecl(BoundVarDecl vd)
+        {
+            // VarDecl 自己 init 的 lambda 不算 use；其他子表达式扫描
+            if (vd.Init is { } init && !(init is BoundLambda))
+                _expr.Scan(init, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitExprStmt(BoundExprStmt es)
+        {
+            _expr.Scan(es.Expr, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitReturn(BoundReturn r)
+        {
+            if (r.Value is { } rv) _expr.Scan(rv, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitIf(BoundIf ifs)
+        {
+            _expr.Scan(ifs.Cond, calleePosition: false);
+            WalkBlock(ifs.Then);
+            if (ifs.Else is BoundBlockStmt elseBlock) WalkBlock(elseBlock.Block);
+            else if (ifs.Else is BoundIf elseIf) Visit(elseIf);
+            return default;
+        }
+
+        protected override Unit VisitWhile(BoundWhile w)
+        {
+            _expr.Scan(w.Cond, calleePosition: false);
+            WalkBlock(w.Body);
+            return default;
+        }
+
+        protected override Unit VisitDoWhile(BoundDoWhile dw)
+        {
+            WalkBlock(dw.Body);
+            _expr.Scan(dw.Cond, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitFor(BoundFor f)
+        {
+            if (f.Init is { } fi) Visit(fi);
+            if (f.Cond is { } fc) _expr.Scan(fc, calleePosition: false);
+            if (f.Increment is { } fs) _expr.Scan(fs, calleePosition: false);
+            WalkBlock(f.Body);
+            return default;
+        }
+
+        protected override Unit VisitForeach(BoundForeach fe)
+        {
+            _expr.Scan(fe.Collection, calleePosition: false);
+            WalkBlock(fe.Body);
+            return default;
+        }
+
+        protected override Unit VisitBlockStmt(BoundBlockStmt bs)
+        {
+            WalkBlock(bs.Block);
+            return default;
+        }
+
+        protected override Unit VisitThrow(BoundThrow t)
+        {
+            _expr.Scan(t.Value, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitTryCatch(BoundTryCatch tc)
+        {
+            WalkBlock(tc.TryBody);
+            foreach (var c in tc.Catches) WalkBlock(c.Body);
+            if (tc.Finally is { } fin) WalkBlock(fin);
+            return default;
+        }
+
+        protected override Unit VisitSwitch(BoundSwitch sw)
+        {
+            _expr.Scan(sw.Subject, calleePosition: false);
+            foreach (var cse in sw.Cases)
+            {
+                if (cse.Pattern is { } pat) _expr.Scan(pat, calleePosition: false);
+                foreach (var bs2 in cse.Body) Visit(bs2);
+            }
+            return default;
+        }
+
+        protected override Unit VisitLocalFunction(BoundLocalFunction lf)
+        {
+            // Local function body 内引用 candidate 走 BoundCapturedIdent → escape
+            WalkBlock(lf.Body);
+            return default;
+        }
+
+        protected override Unit VisitPinned(BoundPinned pn)
+        {
+            _expr.Scan(pn.Source, calleePosition: false);
+            WalkBlock(pn.Body);
+            return default;
+        }
+
+        // ── Stmts with no expression (legacy switch ignored) ──────────────────
+        protected override Unit VisitBreak(BoundBreak br)        => default;
+        protected override Unit VisitContinue(BoundContinue co)  => default;
     }
 
-    private static void ScanLambdaBody(
-        BoundLambdaBody body, Dictionary<string, BoundLambda> candidates, HashSet<string> escaped)
+    private sealed class EscapeExprScanner : BoundExprVisitor<Unit>
     {
-        switch (body)
+        private readonly Dictionary<string, BoundLambda> _candidates;
+        private readonly HashSet<string> _escaped;
+        private bool _calleePosition;
+
+        public EscapeExprScanner(Dictionary<string, BoundLambda> candidates, HashSet<string> escaped)
         {
-            case BoundLambdaExprBody eb:
-                ScanExpr(eb.Expr, candidates, escaped, calleePosition: false);
-                break;
-            case BoundLambdaBlockBody bb:
-                ScanForEscape(bb.Block, candidates, escaped, calleePosition: false);
-                break;
+            _candidates = candidates;
+            _escaped = escaped;
+        }
+
+        /// Public entry that sets the callee-position state for a scan root.
+        public void Scan(BoundExpr e, bool calleePosition)
+        {
+            var prev = _calleePosition;
+            _calleePosition = calleePosition;
+            Visit(e);
+            _calleePosition = prev;
+        }
+
+        protected override Unit VisitIdent(BoundIdent id)
+        {
+            // 只有当 id.Name 是 candidate 且**非 callee 位置**才标 escape
+            if (_candidates.ContainsKey(id.Name) && !_calleePosition)
+                _escaped.Add(id.Name);
+            return default;
+        }
+
+        protected override Unit VisitCapturedIdent(BoundCapturedIdent ci)
+        {
+            // 被嵌套 lambda 捕获 → 一律 escape（env 跨边界外溢）
+            if (_candidates.ContainsKey(ci.Name)) _escaped.Add(ci.Name);
+            return default;
+        }
+
+        protected override Unit VisitCall(BoundCall call)
+        {
+            // Receiver 是唯一 callee 位置：用 BoundIdent 时 calleePosition=true
+            if (call.Receiver is { } recv) Scan(recv, calleePosition: true);
+            foreach (var a in call.Args) Scan(a, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitAssign(BoundAssign asn)
+        {
+            // 赋值 target / value 都不是 callee 位置
+            Scan(asn.Target, calleePosition: false);
+            Scan(asn.Value,  calleePosition: false);
+            // target 是 BoundIdent 且名字是 candidate → 重赋值，escape
+            if (asn.Target is BoundIdent tid && _candidates.ContainsKey(tid.Name))
+                _escaped.Add(tid.Name);
+            return default;
+        }
+
+        protected override Unit VisitBinary(BoundBinary bin)
+        {
+            Scan(bin.Left,  calleePosition: false);
+            Scan(bin.Right, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitUnary(BoundUnary u)
+        {
+            Scan(u.Operand, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitPostfix(BoundPostfix p)
+        {
+            Scan(p.Operand, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitConditional(BoundConditional cd)
+        {
+            Scan(cd.Cond, calleePosition: false);
+            Scan(cd.Then, calleePosition: false);
+            Scan(cd.Else, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitNullCoalesce(BoundNullCoalesce nc)
+        {
+            Scan(nc.Left,  calleePosition: false);
+            Scan(nc.Right, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitNullConditional(BoundNullConditional ncd)
+        {
+            Scan(ncd.Target, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitIsPattern(BoundIsPattern ip)
+        {
+            Scan(ip.Target, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitCast(BoundCast cs)
+        {
+            Scan(cs.Operand, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitMember(BoundMember mb)
+        {
+            Scan(mb.Target, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitIndex(BoundIndex ix)
+        {
+            Scan(ix.Target, calleePosition: false);
+            Scan(ix.Index,  calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitNew(BoundNew nw)
+        {
+            foreach (var a in nw.Args) Scan(a, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitArrayCreate(BoundArrayCreate ac)
+        {
+            Scan(ac.Size, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitArrayLit(BoundArrayLit al)
+        {
+            foreach (var e in al.Elements) Scan(e, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitInterpolatedStr(BoundInterpolatedStr istr)
+        {
+            foreach (var part in istr.Parts)
+                if (part is BoundExprPart ep) Scan(ep.Inner, calleePosition: false);
+            return default;
+        }
+
+        protected override Unit VisitLambda(BoundLambda inner)
+        {
+            // 嵌套 lambda 内部的 capture 列表里出现 candidate 就视为 escape；
+            // BindIdent 已把 outer 引用转成 BoundCapturedIdent，所以 inner.Body
+            // 走 ScanForEscape* 会通过 BoundCapturedIdent case 处理。
+            // 这里也扫 inner body 以防有非 capture 的子表达式包含 candidate。
+            ScanLambdaBody(inner.Body);
+            return default;
+        }
+
+        // ── Legacy switch's default fall-through (no candidate effect) ────────
+        protected override Unit VisitLitInt(BoundLitInt n)              => default;
+        protected override Unit VisitLitFloat(BoundLitFloat f)          => default;
+        protected override Unit VisitLitStr(BoundLitStr s)              => default;
+        protected override Unit VisitLitBool(BoundLitBool b)            => default;
+        protected override Unit VisitLitNull(BoundLitNull n)            => default;
+        protected override Unit VisitLitChar(BoundLitChar c)            => default;
+        protected override Unit VisitDefault(BoundDefault d)            => default;
+        protected override Unit VisitModifiedArg(BoundModifiedArg m)    => default;
+        protected override Unit VisitSwitchExpr(BoundSwitchExpr s)      => default;
+        protected override Unit VisitError(BoundError err)              => default;
+
+        private void ScanLambdaBody(BoundLambdaBody body)
+        {
+            switch (body)
+            {
+                case BoundLambdaExprBody eb:
+                    Scan(eb.Expr, calleePosition: false);
+                    break;
+                case BoundLambdaBlockBody bb:
+                    // Reuse the outer Pass 2 stmt scanner shape — both share
+                    // the same _candidates / _escaped state. A fresh instance
+                    // is fine because Scan always saves/restores _calleePosition.
+                    new EscapeStmtScanner(_candidates, _escaped).WalkBlock(bb.Block);
+                    break;
+            }
         }
     }
 }
