@@ -64,11 +64,12 @@ pub unsafe extern "C" fn jit_obj_new(
     if let Some(entry) = ctx_ref.fn_entries.get(&ctor_name) {
         let mut callee = JitFrame::new(entry.max_reg, &ctor_args);
         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
-        // Phase 3f-2: 注册 callee frame regs 给 GC root scanner
         let vm_ctx = vm_ctx_ref(ctx);
-        vm_ctx.push_frame_state(&callee.regs as *const _, &callee.env_arena as *const _);
+        vm_ctx.push_frame(crate::exception::VmFrame::new(
+            entry.name.to_string(), entry.file.to_string(),
+            &callee.regs as *const _, &callee.env_arena as *const _));
         let r = jit_fn(&mut callee, ctx);
-        vm_ctx.pop_frame_regs();
+        vm_ctx.pop_frame();
         callee.recycle();
         if r != 0 { return 1; }
     }

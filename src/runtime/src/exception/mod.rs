@@ -33,29 +33,59 @@ use crate::metadata::types::TypeDesc;
 use crate::metadata::{Module, Value};
 use crate::vm_context::VmContext;
 
-/// Per-frame metadata recorded for stack-trace formatting.
+/// One unified per-frame entry — single source of truth for
+/// (a) GC root scanning, (b) stack-trace formatting, and (c) interp
+/// `RefKind::Stack` cross-frame deref.
 ///
-/// `line` / `column` are mutable via [`Cell`] so a caller can record the
-/// source position of its call site just before it invokes a callee,
-/// without re-borrowing the surrounding `RefCell<Vec<FrameInfo>>`.
+/// 2026-05-10 unify-frame-chain replaces three previously-parallel
+/// vectors (`exec_stack`, `env_arena_stack`, `call_stack`) with a single
+/// `Vec<VmFrame>`. Push and pop happen in lockstep — no caller can
+/// "forget half" and leak a partial frame.
 ///
-/// `column` (2026-05-10 span-column-propagate, zbc 1.1) is 1-based;
-/// value 0 means unknown — `format_stack_trace` then degrades to
-/// `(file:line)` instead of `(file:line:col)`.
+/// # Safety / lifetime
+///
+/// `regs` / `env_arena` are raw pointers into a `JitFrame` or interp
+/// `Frame` that lives on the Rust call stack. They are valid for the
+/// duration of the corresponding `exec_function` / `JitModule::run_fn`
+/// activation — RAII (`FrameGuard` for interp, explicit pair in JIT
+/// helpers) guarantees the pop runs before the owning frame's stack slot
+/// goes away. GC scans the call_stack only while a z42 frame is live
+/// (collect is invoked from inside script code), so all pointers it
+/// sees are still in-bounds.
+///
+/// `line` / `column` are mutable via [`Cell`] so callers can stamp the
+/// current call-site position just before invoking a callee, without
+/// re-borrowing the surrounding `RefCell<Vec<VmFrame>>`. `column`
+/// (zbc 1.1+) is 1-based; value 0 means unknown — `format_stack_trace`
+/// then degrades to `(file:line)`.
 #[derive(Debug)]
-pub struct FrameInfo {
+pub struct VmFrame {
     pub func_name: String,
     pub file:      String,
     pub line:      Cell<u32>,
     pub column:    Cell<u32>,
+    /// Pointer to the frame's register file. The Vec content is the
+    /// canonical place where this frame's z42 values live.
+    pub regs:      *const Vec<Value>,
+    /// Pointer to the frame's stack-closure env arena (or null when the
+    /// frame does not host any stack closures).
+    pub env_arena: *const Vec<Vec<Value>>,
 }
 
-impl FrameInfo {
-    pub fn new(func_name: String, file: String) -> Self {
-        Self { func_name, file, line: Cell::new(0), column: Cell::new(0) }
+impl VmFrame {
+    pub fn new(
+        func_name: String, file: String,
+        regs: *const Vec<Value>, env_arena: *const Vec<Vec<Value>>,
+    ) -> Self {
+        Self {
+            func_name, file,
+            line: Cell::new(0), column: Cell::new(0),
+            regs, env_arena,
+        }
     }
 
-    /// Snapshot used at throw time (no Cell — values are frozen).
+    /// Snapshot used at throw time (no Cell — values are frozen). Strips
+    /// the raw pointers — snapshots are not GC-root-scanner targets.
     pub fn snapshot(&self) -> FrameSnapshot {
         FrameSnapshot {
             func_name: self.func_name.clone(),
@@ -65,6 +95,11 @@ impl FrameInfo {
         }
     }
 }
+
+/// Backward-compatibility alias. Phase 1 exception-stack-trace introduced
+/// `FrameInfo`; unify-frame-chain renamed to `VmFrame` to reflect its
+/// broader role (GC roots + closure envs + trace metadata in one row).
+pub type FrameInfo = VmFrame;
 
 /// Frozen view of a [`FrameInfo`] suitable for formatting / passing across
 /// borrow scopes.

@@ -48,22 +48,19 @@ impl JitModule {
         self.ctx.vm_ctx = ctx as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
-        // Phase 3f-2 + impl-closure-l3-escape-stack: register both frame.regs
-        // 与 frame.env_arena 让 GC 同时扫到 stack closure env。
-        ctx.push_frame_state(
-            &frame.regs as *const _,
-            &frame.env_arena as *const _,
-        );
-        // 2026-05-10 jit-stack-trace: push the entry's FrameInfo so a throw
-        // anywhere inside this JIT chain can format a complete trace. Inner
-        // JIT calls are wrapped by jit_call / jit_vcall / jit_call_indirect.
-        ctx.push_call_frame(crate::exception::FrameInfo::new(
+        // 2026-05-10 unify-frame-chain: single push enrolling this entry
+        // frame's regs / env_arena (GC roots) + name / file (trace) in
+        // one VmFrame. Inner JIT calls are wrapped by jit_call / jit_vcall
+        // / jit_call_indirect / jit_obj_new / jit_to_str on the same
+        // unified API.
+        ctx.push_frame(crate::exception::VmFrame::new(
             entry.name.to_string(),
             entry.file.to_string(),
+            &frame.regs as *const _,
+            &frame.env_arena as *const _,
         ));
         let r = unsafe { f(&mut frame, &*self.ctx) };
-        ctx.pop_frame_regs();
-        ctx.pop_call_frame();
+        ctx.pop_frame();
         frame.recycle();
         self.ctx.vm_ctx = std::ptr::null_mut();
         if r != 0 {

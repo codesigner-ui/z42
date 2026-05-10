@@ -79,25 +79,20 @@ pub struct VmContext {
     pub(crate) static_field_index: Rc<RefCell<HashMap<String, u32>>>,
     pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
     pub(crate) lazy_loader:       Rc<RefCell<Option<LazyLoader>>>,
-    /// Phase 3f：interp `exec_function` 入口把当前 frame 的 `regs` Vec 指针推入；
-    /// external root scanner 遍历这些指针把 frame regs 内的 Value 喂给 cycle
-    /// collector mark 阶段。Vec 内的指针是 raw ptr 而非 Rc/Arc —— 因为 frame
-    /// 本身在 Rust 栈，pointer 仅在对应 `exec_function` 调用栈期间有效，由
-    /// `FrameGuard` RAII 保证 push/pop 严格配对。
-    pub(crate) exec_stack:        Rc<RefCell<Vec<*const Vec<Value>>>>,
-    /// 2026-05-02 impl-closure-l3-escape-stack: 与 exec_stack 平行的 stack，
-    /// 持每个活动 frame 的 env_arena pointer，让 GC root scanner 把 stack closure
-    /// env 中的 Value 一并 mark。push/pop 与 exec_stack 严格成对（同一 frame 同时 push
-    /// regs + env_arena）。SAFETY 与 exec_stack 一致：raw ptr 由 FrameGuard RAII 保证
-    /// 在 frame 还活时有效。frame 不持 stack closure 时这里 push null pointer。
-    pub(crate) env_arena_stack:   Rc<RefCell<Vec<*const Vec<Vec<Value>>>>>,
-    /// 2026-05-10 exception-stack-trace: parallel to `exec_stack`, holds
-    /// `(func_name, file, current_line)` per active script frame so a
-    /// `throw` can snapshot the full call chain. Pushed in
-    /// `interp::exec_function` and popped via the existing `FrameGuard`,
-    /// so depth stays in 1:1 sync with `exec_stack` even on `?`-early-return
-    /// or panic unwind. Holds no `Value`s — not a GC root.
-    pub(crate) call_stack:        Rc<RefCell<Vec<crate::exception::FrameInfo>>>,
+    /// 2026-05-10 unify-frame-chain: single source of truth for active
+    /// script frames. Each [`crate::exception::VmFrame`] carries the
+    /// `(name, file, line, column)` trace metadata **and** raw pointers
+    /// to `regs` / `env_arena` for GC root scanning, eliminating the
+    /// risk of partial frames (only one of the previously-parallel
+    /// `exec_stack` / `env_arena_stack` / `call_stack` getting pushed).
+    ///
+    /// Raw ptrs valid only while the owning Rust frame
+    /// (`interp::Frame` / `JitFrame`) is alive — `FrameGuard` RAII for
+    /// interp + paired `push_frame` / `pop_frame` in JIT helpers ensure
+    /// the pop runs before the owner returns. GC collect is only invoked
+    /// from inside script code, so any walk of this Vec sees pointers
+    /// that are still in-bounds.
+    pub(crate) call_stack:        Rc<RefCell<Vec<crate::exception::VmFrame>>>,
     /// 2026-05-02 add-method-group-conversion (D1b): module-level FuncRef cache
     /// slots. `LoadFnCached { slot_id }` 首次执行时把 `Value::FuncRef(name)`
     /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。Slot id 在
@@ -132,21 +127,20 @@ impl VmContext {
         let static_field_index: Rc<RefCell<HashMap<String, u32>>> = Rc::new(RefCell::new(HashMap::new()));
         let pending_exception = Rc::new(RefCell::new(None));
         let lazy_loader       = Rc::new(RefCell::new(None));
-        let exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>> = Rc::new(RefCell::new(Vec::new()));
-        let env_arena_stack: Rc<RefCell<Vec<*const Vec<Vec<Value>>>>> = Rc::new(RefCell::new(Vec::new()));
         let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
-        let call_stack: Rc<RefCell<Vec<crate::exception::FrameInfo>>> = Rc::new(RefCell::new(Vec::new()));
+        // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
+        // previous trio (exec_stack / env_arena_stack / call_stack).
+        let call_stack: Rc<RefCell<Vec<crate::exception::VmFrame>>> = Rc::new(RefCell::new(Vec::new()));
 
-        // Phase 3d.1 + 3f: 注入 external root scanner 闭包，让 cycle collector mark
-        // 阶段把 static_fields + pending_exception + interp exec_stack frame regs
-        // 持的 Value 也作为 roots 扫描。闭包通过 Rc clone 与 VmContext 字段共享
-        // ownership（无 lifetime 牵扯）。
+        // External GC root scanner — invoked by the cycle collector during
+        // mark phase. Walks all out-of-heap Value sources so cycles whose
+        // only roots are static fields / pending exception / live frame
+        // regs / stack closure envs / func-ref slots stay alive.
         let heap = RcMagrGC::new();
         {
-            let sf = static_fields.clone();
-            let pe = pending_exception.clone();
-            let es = exec_stack.clone();
-            let eas = env_arena_stack.clone();
+            let sf  = static_fields.clone();
+            let pe  = pending_exception.clone();
+            let cs  = call_stack.clone();
             let frs = func_ref_slots.clone();
             heap.set_external_root_scanner(Box::new(move |visit| {
                 // 1. static_fields
@@ -157,34 +151,28 @@ impl VmContext {
                 if let Some(v) = pe.borrow().as_ref() {
                     visit(v);
                 }
-                // 3. interp exec_stack frame regs（Phase 3f）
+                // 3. live z42 frame state — unified per VmFrame entry.
                 //
-                // SAFETY: exec_stack 中每个 raw ptr 都对应一个仍在 Rust 栈
-                // 的 `Frame.regs` Vec。push 在 `interp::exec_function` 入口
-                // 由 `FrameGuard` RAII 保证 pop 在函数返回（含 panic 展开 / `?`
-                // early return）时配对完成。GC 在 z42 脚本调用 collect 时触发，
-                // 必然在某个 exec_function 内（脚本帧仍活），所有 ptr 有效。
-                for &regs_ptr in es.borrow().iter() {
+                // SAFETY: `regs` / `env_arena` raw ptrs are valid for the
+                // lifetime of the owning interp `Frame` / `JitFrame`,
+                // popped by RAII / paired helper exits before the owner
+                // returns. GC collect is invoked from inside script code,
+                // so every walk sees pointers still in-bounds.
+                for frame in cs.borrow().iter() {
                     unsafe {
-                        for v in (*regs_ptr).iter() {
+                        for v in (*frame.regs).iter() {
                             visit(v);
                         }
-                    }
-                }
-                // 4. interp/JIT env_arena —— stack closure 的 captured env Value
-                // （impl-closure-l3-escape-stack）。null 指针表示该 frame 没有
-                // 任何 stack closure，跳过。
-                for &arena_ptr in eas.borrow().iter() {
-                    if arena_ptr.is_null() { continue; }
-                    unsafe {
-                        for env in (*arena_ptr).iter() {
-                            for v in env.iter() {
-                                visit(v);
+                        if !frame.env_arena.is_null() {
+                            for env in (*frame.env_arena).iter() {
+                                for v in env.iter() {
+                                    visit(v);
+                                }
                             }
                         }
                     }
                 }
-                // 5. method group conversion cache slots（D1b）
+                // 4. method group conversion cache slots (D1b).
                 for v in frs.borrow().iter() {
                     visit(v);
                 }
@@ -196,8 +184,6 @@ impl VmContext {
             static_field_index,
             pending_exception,
             lazy_loader,
-            exec_stack,
-            env_arena_stack,
             call_stack,
             func_ref_slots,
             heap: Box::new(heap),
@@ -312,38 +298,22 @@ impl VmContext {
         s[idx as usize] = value;
     }
 
-    /// 2026-05-02 impl-closure-l3-escape-stack: push frame regs + env_arena
-    /// pointers atomically. 调用方需保证 raw ptr 在配对的 pop_frame_regs 之前
-    /// 不失效（典型由 `FrameGuard` RAII 保证）。env_arena 可以是 null（frame
-    /// 不持 stack closure）或指向 `Vec<Vec<Value>>` 的有效地址。
-    /// 替代了 Phase 3f 的 push_frame_regs（仅 regs，单独存在的 API 已被废弃）。
-    pub(crate) fn push_frame_state(
-        &self,
-        regs: *const Vec<Value>,
-        env_arena: *const Vec<Vec<Value>>,
-    ) {
-        self.exec_stack.borrow_mut().push(regs);
-        self.env_arena_stack.borrow_mut().push(env_arena);
+    // ── Frame chain (2026-05-10 unify-frame-chain) ────────────────────────
+    //
+    // Single push_frame / pop_frame replaces the previously-separate
+    // (push_frame_state / pop_frame_regs) + (push_call_frame / pop_call_frame)
+    // pairs. Atomic push of one VmFrame holds GC roots + trace metadata
+    // together — caller cannot "forget half".
+
+    /// Push one [`crate::exception::VmFrame`] onto the active script frame
+    /// chain. Pop is the caller's responsibility (typically via the
+    /// interp `FrameGuard` RAII or the explicit pair in JIT helpers).
+    pub(crate) fn push_frame(&self, frame: crate::exception::VmFrame) {
+        self.call_stack.borrow_mut().push(frame);
     }
 
-    /// Pop the most recently pushed frame regs pointer. No-op if empty
-    /// (defensive; should not happen with correct RAII pairing). 同时弹出
-    /// env_arena_stack 顶（与 push 1:1）。
-    pub(crate) fn pop_frame_regs(&self) {
-        self.exec_stack.borrow_mut().pop();
-        self.env_arena_stack.borrow_mut().pop();
-    }
-
-    // ── Call-stack tracking (2026-05-10 exception-stack-trace) ────────────
-
-    /// Push a [`FrameInfo`] for the script frame just entered. Pop is the
-    /// caller's responsibility (typically via `FrameGuard` RAII pairing
-    /// with `pop_frame_regs`).
-    pub(crate) fn push_call_frame(&self, info: crate::exception::FrameInfo) {
-        self.call_stack.borrow_mut().push(info);
-    }
-
-    pub(crate) fn pop_call_frame(&self) {
+    /// Pop the most recently pushed frame. No-op when empty (defensive).
+    pub(crate) fn pop_frame(&self) {
         self.call_stack.borrow_mut().pop();
     }
 
@@ -374,7 +344,7 @@ impl VmContext {
     }
 
     /// Spec impl-ref-out-in-runtime (Decision R1): index into the frame
-    /// state stack and return a raw pointer to that frame's `regs` Vec.
+    /// chain and return a raw pointer to that frame's `regs` Vec.
     /// Used by `Value::Ref { kind: RefKind::Stack { frame_idx, .. } }`
     /// transparent deref in `Frame::get/set`.
     ///
@@ -386,16 +356,16 @@ impl VmContext {
     ///   2. Not race with concurrent push/pop on the same VmContext (single
     ///      RefCell borrow boundary; deref is synchronous within a frame).
     pub(crate) fn frame_state_at(&self, idx: usize) -> Option<*const Vec<Value>> {
-        let stack = self.exec_stack.borrow();
-        stack.get(idx).copied()
+        let stack = self.call_stack.borrow();
+        stack.get(idx).map(|f| f.regs)
     }
 
-    /// Current depth of the frame stack. `frame_state_at(depth - 1)` is the
-    /// most recent frame. Used by codegen-generated `LoadLocalAddr` to
-    /// produce a `RefKind::Stack { frame_idx }` referencing the current
-    /// frame at emission time.
+    /// Current depth of the frame chain. `frame_state_at(depth - 1)` is
+    /// the most recent frame. Used by codegen-generated `LoadLocalAddr`
+    /// to produce a `RefKind::Stack { frame_idx }` referencing the
+    /// current frame at emission time.
     pub(crate) fn frame_stack_depth(&self) -> usize {
-        self.exec_stack.borrow().len()
+        self.call_stack.borrow().len()
     }
 
     // ── GC heap ───────────────────────────────────────────────────────────

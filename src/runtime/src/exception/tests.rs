@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn snapshot_freezes_line_and_column() {
-    let f = FrameInfo::new("Foo".into(), "f.z42".into());
+    let f = FrameInfo::new("Foo".into(), "f.z42".into(), std::ptr::null(), std::ptr::null());
     f.line.set(7);
     f.column.set(13);
     let snap = f.snapshot();

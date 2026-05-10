@@ -361,18 +361,18 @@ pub(crate) fn resolve_line(table: &[crate::metadata::bytecode::LineEntry], block
 
 // ── Core execution loop ──────────────────────────────────────────────────────
 
-/// Phase 3f: RAII guard 保证 push_frame_regs / pop_frame_regs 严格配对，
-/// 即使 exec_function 通过 `?` early return 或 panic 展开。Drop 时自动 pop。
+/// RAII guard ensuring push_frame / pop_frame stay strictly paired even
+/// across `?` early-return or panic unwind from `exec_function`.
 ///
-/// 2026-05-10 exception-stack-trace: 同时 pop call_stack 中的 FrameInfo，
-/// 保持与 frame_states 的 1:1 配对（push 在 exec_function 入口）。
+/// 2026-05-10 unify-frame-chain collapsed the previous trio of pops
+/// (regs / env_arena / call_frame) into a single `pop_frame()` matching
+/// the new single-row VmFrame model.
 struct FrameGuard<'a> {
     ctx: &'a VmContext,
 }
 impl Drop for FrameGuard<'_> {
     fn drop(&mut self) {
-        self.ctx.pop_frame_regs();
-        self.ctx.pop_call_frame();
+        self.ctx.pop_frame();
     }
 }
 
@@ -398,24 +398,24 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
         }
     }
 
-    // Phase 3f + impl-closure-l3-escape-stack: 把当前 frame.regs +
-    // frame.env_arena 指针都注册到 GC root。env_arena 在 stack closure 创建
-    // 路径才会有非空内容，但即便空也要注册以保持 push/pop 严格 1:1。
-    // SAFETY: regs/env_arena Vec 在 frame 内（栈上），地址稳定到本函数返回；
-    // FrameGuard 在 Drop 时 pop（含 ?-propagated error 与 panic）。
-    ctx.push_frame_state(
-        &frame.regs as *const Vec<Value>,
-        &frame.env_arena as *const Vec<Vec<Value>>,
-    );
-    // 2026-05-10 exception-stack-trace: parallel push of (func_name, file)
-    // for stack-trace formatting. file taken from the line_table's first
-    // entry — every function from the C# emitter ships at least one
-    // LineEntry (function-entry line). Empty fallback keeps the runtime
-    // robust to hand-rolled fixtures or stripped artifacts.
+    // 2026-05-10 unify-frame-chain: single push enrolling this frame as
+    // GC root + stack-trace metadata in one VmFrame entry. file taken
+    // from the line_table's first entry; falls back to empty when the
+    // emitter omits redundant file references.
+    //
+    // SAFETY: regs / env_arena Vec live inside `frame` on the Rust call
+    // stack; raw pointers stay valid until this function returns.
+    // FrameGuard's Drop pops on every exit path (`?` propagation, panic
+    // unwind, normal return).
     let file = func.line_table.first()
         .and_then(|e| e.file.clone())
         .unwrap_or_default();
-    ctx.push_call_frame(crate::exception::FrameInfo::new(func.name.clone(), file));
+    ctx.push_frame(crate::exception::VmFrame::new(
+        func.name.clone(),
+        file,
+        &frame.regs as *const Vec<Value>,
+        &frame.env_arena as *const Vec<Vec<Value>>,
+    ));
     let _frame_guard = FrameGuard { ctx };
 
     // Spec C2: scope `CURRENT_VM` to this z42 frame so `z42_*` extern

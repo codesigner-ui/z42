@@ -61,12 +61,11 @@ pub unsafe extern "C" fn jit_vcall(
                         let mut callee = JitFrame::new(entry.max_reg, &call_args);
                         let jit_fn: JitFn = std::mem::transmute(entry.ptr);
                         let vm_ctx = vm_ctx_ref(ctx);
-                        vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
-                            entry.name.to_string(), entry.file.to_string()));
-                        vm_ctx.push_frame_state(&callee.regs as *const _, &callee.env_arena as *const _);
+                        vm_ctx.push_frame(crate::exception::VmFrame::new(
+                            entry.name.to_string(), entry.file.to_string(),
+                            &callee.regs as *const _, &callee.env_arena as *const _));
                         let r = jit_fn(&mut callee, ctx);
-                        vm_ctx.pop_frame_regs();
-                        vm_ctx.pop_call_frame();
+                        vm_ctx.pop_frame();
                         if r != 0 { callee.recycle(); return 1; }
                         frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
                         callee.recycle();
@@ -98,14 +97,12 @@ pub unsafe extern "C" fn jit_vcall(
                 let entry = entry.clone();
                 let mut callee = JitFrame::new(entry.max_reg, &call_args);
                 let jit_fn: JitFn = std::mem::transmute(entry.ptr);
-                // Phase 3f-2: GC roots scan + jit-stack-trace call_frame push.
                 let vm_ctx = vm_ctx_ref(ctx);
-                vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
-                    entry.name.to_string(), entry.file.to_string()));
-                vm_ctx.push_frame_state(&callee.regs as *const _, &callee.env_arena as *const _);
+                vm_ctx.push_frame(crate::exception::VmFrame::new(
+                    entry.name.to_string(), entry.file.to_string(),
+                    &callee.regs as *const _, &callee.env_arena as *const _));
                 let r = jit_fn(&mut callee, ctx);
-                vm_ctx.pop_frame_regs();
-                vm_ctx.pop_call_frame();
+                vm_ctx.pop_frame();
                 if r != 0 { callee.recycle(); return 1; }
                 frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
                 callee.recycle();
@@ -174,14 +171,12 @@ pub unsafe extern "C" fn jit_vcall(
     call_args.append(&mut extra_args);
     let mut callee = JitFrame::new(entry.max_reg, &call_args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
-    // Phase 3f-2: GC roots scan + jit-stack-trace call_frame push.
     let vm_ctx = vm_ctx_ref(ctx);
-    vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
-        entry.name.to_string(), entry.file.to_string()));
-    vm_ctx.push_frame_state(&callee.regs as *const _, &callee.env_arena as *const _);
+    vm_ctx.push_frame(crate::exception::VmFrame::new(
+        entry.name.to_string(), entry.file.to_string(),
+        &callee.regs as *const _, &callee.env_arena as *const _));
     let r = jit_fn(&mut callee, ctx);
-    vm_ctx.pop_frame_regs();
-    vm_ctx.pop_call_frame();
+    vm_ctx.pop_frame();
     if r != 0 { callee.recycle(); return 1; }
     frame_ref.regs[dst as usize] = callee.ret.take().unwrap_or(Value::Null);
     callee.recycle();

@@ -63,7 +63,10 @@
       "Bash(artifacts/rust/release/z42-test-runner src/libraries/z42.test/tests/dogfood.zbc)",
       "Bash(artifacts/rust/release/z42-test-runner --legacy-subprocess src/libraries/z42.test/tests/dogfood.zbc)",
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== DiagnosticCodes.cs /**)",
-      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== 错误消息渲染：是否有 source 上下文 /**)"
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== 错误消息渲染：是否有 source 上下文 /**)",
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== Frame 结构 /**)",
+      "Bash(Z42_LIBS=artifacts/z42/libs ./artifacts/rust/debug/z42vm src/tests/exceptions/stack_trace_field.zbc --mode interp)",
+      "Bash(Z42_LIBS=artifacts/z42/libs ./artifacts/rust/debug/z42vm src/tests/exceptions/stack_trace_field.zbc --mode jit)"
     ],
     "additionalDirectories": [
       "/tmp",

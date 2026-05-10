@@ -167,20 +167,15 @@ pub unsafe extern "C" fn jit_call_indirect(
     let mut callee_frame = JitFrame::new(entry.max_reg, &args);
     let jit_fn: JitFn = std::mem::transmute(entry.ptr);
 
-    // jit-stack-trace: stamp caller's call-site line + push callee call_frame.
     vm_ctx.update_top_frame_pos(caller_line, caller_col);
-    vm_ctx.push_call_frame(crate::exception::FrameInfo::new(
+    vm_ctx.push_frame(crate::exception::VmFrame::new(
         entry.name.to_string(),
         entry.file.to_string(),
-    ));
-
-    vm_ctx.push_frame_state(
         &callee_frame.regs as *const _,
         &callee_frame.env_arena as *const _,
-    );
+    ));
     let result = jit_fn(&mut callee_frame, ctx);
-    vm_ctx.pop_frame_regs();
-    vm_ctx.pop_call_frame();
+    vm_ctx.pop_frame();
     if result != 0 {
         callee_frame.recycle();
         return 1;

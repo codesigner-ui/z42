@@ -24,7 +24,7 @@ vm.run(&mut ctx, hint)?;
 - `static_fields: Rc<RefCell<HashMap<String, Value>>>` — 用户类 static 字段
 - `pending_exception: Rc<RefCell<Option<Value>>>` — JIT extern "C" 边界异常槽位
 - `lazy_loader: Rc<RefCell<Option<LazyLoader>>>` — 按需 zpkg 加载器
-- `exec_stack: Rc<RefCell<Vec<*const Vec<Value>>>>` — interp frame.regs 指针栈（GC root scanner 用）
+- `call_stack: Rc<RefCell<Vec<VmFrame>>>` — 单一统一帧栈（unify-frame-chain，2026-05-10）。每个 `VmFrame` 同时承载 `(regs ptr, env_arena ptr, func_name, file, line, column)`：GC root scanner 扫 regs+env_arena，stack-trace 读 name/file/line/col，interp `RefKind::Stack` 跨帧 deref 通过 `frame.regs`。push/pop 单点操作，物理上消除"GC 看得见但 trace 看不到"的部分帧 bug
 - `heap: Box<dyn MagrGC>` — GC 子系统接口（默认 RcMagrGC 后端）
 - `native_types: Rc<RefCell<HashMap<(String,String), Rc<RegisteredType>>>>` — Tier 1 native interop 注册表（spec C2，2026-04-29）
 - `native_libs: Rc<RefCell<Vec<libloading::Library>>>` — 已加载的 native 库句柄，保活到 VM drop（spec C2）
@@ -299,7 +299,7 @@ match callee_value {
 
 **StackClosure**（2026-05-02 impl-closure-l3-escape-stack）：env 在 caller frame 的 `env_arena: Vec<Vec<Value>>` 中，零堆分配。CallIndirect 时复制内容到临时 GcRef，callee 不区分 stack/heap 来源。
 
-**GC root**：`VmContext.env_arena_stack` 与 `exec_stack` 平行注册（`push_frame_state(regs, env_arena)`）。GC scanner 遍历 arena 中每个 Value 做 mark，确保 stack closure env 持有的 Object/Array refs 不被回收。
+**GC root**：每个 `VmFrame` 内嵌 `regs` + `env_arena` 指针（unify-frame-chain），GC scanner 单循环遍历 `call_stack` 即可同时 mark frame regs 和 stack closure env 中的 Object/Array refs，确保不被回收。
 
 **lifetime 安全**：StackClosure value 的有效性由分析器（`ClosureEscapeAnalyzer`）在编译期保证 —— closure value 永不离开创建它的 frame；CallIndirect 复制 env 内容也意味着 callee 不会持有指向 caller arena 的悬空指针。
 
@@ -637,6 +637,7 @@ GC 子系统主功能至此完整。所有原始限制已解决，可投产。
 | **Phase 3f** | interp 栈扫描（`exec_function` FrameGuard RAII 把 frame.regs 暴露给 scanner，修复"outer 在 reg + outer.slot → inner" 间接可达对象被误清的 bug） | ✅ 2026-04-29 add-interp-stack-scanning |
 | **Phase 3e** | `GcRef<T>` backing 升级 `Rc<GcAllocation<T>>`，wrapper Drop 自动触发已注册 finalizer（含纯 Rc Drop 路径，不仅限 cycle collect） | ✅ 2026-04-29 add-drop-time-finalizer |
 | **Phase 3f-2** | JIT 栈扫描（6 个 JitFrame::new 站点 push/pop frame.regs 到 exec_stack，修复 JIT 路径 transitive bug）| ✅ 2026-04-29 add-jit-stack-scanning |
+| **unify-frame-chain** | `exec_stack` / `env_arena_stack` / `call_stack` 三栈合并为单一 `Vec<VmFrame>`；任一 invoke 站点 push 全套 (regs/env_arena/name/file)，GC scanner 改单循环；附带修复 `jit_obj_new` ctor + `jit_to_str` ToString 缺 call_frame push 的 stack-trace 漏帧 bug | ✅ 2026-05-10 unify-frame-chain |
 | **Phase 3-OOM** | strict OOM 模式（trait `set_strict_oom`；启用后 alloc 越过 `max_heap_bytes` 返回 `Value::Null` 不入 registry / 不 bump stats）| ✅ 2026-04-29 add-strict-oom-rejection |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
