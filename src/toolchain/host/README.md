@@ -20,7 +20,7 @@
 
 ## 阶段进度
 
-- ✅ **H0** 设计文档 + spec/changes 四件套（`spec/changes/add-embedding-api/`）
+- ✅ **H0** 设计文档 + spec/changes 四件套（`spec/archive/2026-05-10-add-embedding-api/`）
 - ✅ **H1** Tier 1 C ABI scaffold —— 单实例 lifecycle，12 个 unit test
 - ✅ **H2-core** `load_zbc` / `resolve_entry` / `invoke` 全链路 + stdout sink 接 VM + 集成测试 hello-world
 - ✅ **H2b** Tier 2 `z42-host` crate + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码

@@ -1,6 +1,6 @@
 //! Resolved entry handle (function / static method). H1 placeholder.
 //!
-//! Spec: spec/changes/add-embedding-api/design.md D2 (generational slab).
+//! Spec: spec/archive/2026-05-10-add-embedding-api/design.md D2 (generational slab).
 
 /// Opaque pointee for `Z42EntryRef`. Real backing in H2.
 #[repr(C)]

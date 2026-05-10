@@ -1,6 +1,6 @@
 //! Unit + integration tests for the embedding API.
 //!
-//! Spec: spec/changes/add-embedding-api/specs/embedding-host-api/spec.md
+//! Spec: spec/archive/2026-05-10-add-embedding-api/specs/embedding-host-api/spec.md
 //!       (Requirement: 测试覆盖)
 //!
 //! All tests serialize on `HOST_TEST_LOCK` because the embedded VM is a

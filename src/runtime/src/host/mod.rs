@@ -1,7 +1,7 @@
 //! Embedding / Hosting API — Tier 1 C ABI implementation.
 //!
 //! Spec: docs/design/embedding.md
-//!       spec/changes/add-embedding-api/
+//!       spec/archive/2026-05-10-add-embedding-api/
 //!
 //! H1 scope: lifecycle (initialize / shutdown / sinks / last_error).
 //! H2 scope: load_zbc / resolve_entry / invoke + stdout sink VM wiring.

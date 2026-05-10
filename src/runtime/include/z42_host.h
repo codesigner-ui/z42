@@ -7,7 +7,7 @@
  * This header covers the opposite direction: "host app drives the VM".
  *
  * Spec: docs/design/embedding.md (Tier 1 C ABI §4)
- *       spec/changes/add-embedding-api/
+ *       spec/archive/2026-05-10-add-embedding-api/
  *
  * Status: H1 scaffold — declarations + single-instance lifecycle.
  *         load_zbc / resolve_entry / invoke return ERR_INTERNAL
