@@ -35,15 +35,18 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 2;   // 2026-05-09 tokenize-ir-and-zbc-bump (Phase 3 S3b): inner modules emit zbc 1.0 IR fields (token-encoded). Reader uses minor >= 2 to switch to v1.0 IdMap decode.
+    public const ushort VersionMinor = 3;   // 2026-05-10 split-debug-symbols: inner zbc 1.2 (LineTable in DBUG) + per-member DBUG body; FlagSymOnly + MDBG + BLID for sidecar form. Pre-0.3 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];
 
     // ── Flags ─────────────────────────────────────────────────────────────────
 
-    private const ushort FlagPacked = 0x01;
-    private const ushort FlagExe    = 0x02;
+    private const ushort FlagPacked  = 0x01;
+    private const ushort FlagExe     = 0x02;
+    /// 1.5b split-debug-symbols: zpkg sidecar (.zsym) form — MDBG + BLID only,
+    /// not loadable as a project package. Paired with a main zpkg by build_id.
+    private const ushort FlagSymOnly = 0x04;
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -53,13 +56,32 @@ public static partial class ZpkgWriter
     public static byte[] Write(ZpkgFile zpkg, IReadOnlyList<ZbcFile>? zbcFiles = null)
     {
         return zpkg.Mode == ZpkgMode.Packed
-            ? WritePacked(zpkg)
+            ? WritePacked(zpkg, stripSymbols: false).Main
             : WriteIndexed(zpkg, zbcFiles ?? []);
+    }
+
+    /// <summary>
+    /// 1.5b split-debug-symbols: serializes a packed <see cref="ZpkgFile"/> with
+    /// optional sidecar emission. When <paramref name="stripSymbols"/> is true,
+    /// the main <c>.zpkg</c> drops all DBUG bodies (MODS bodies write
+    /// <c>dbug_len=0</c>) and a separate sidecar zpkg byte array is returned
+    /// containing META + STRS + MDBG + BLID. The two are paired via
+    /// BLAKE3-128 hash of the main bytes (BLID payload zeroed during hashing).
+    ///
+    /// When <paramref name="stripSymbols"/> is false, the sidecar tuple element
+    /// is null and behaviour matches <see cref="Write"/>.
+    /// </summary>
+    public static (byte[] Main, byte[]? Sidecar) WritePackedWithSidecar(
+        ZpkgFile zpkg, bool stripSymbols)
+    {
+        if (zpkg.Mode != ZpkgMode.Packed)
+            throw new InvalidOperationException("WritePackedWithSidecar requires Packed mode.");
+        return WritePacked(zpkg, stripSymbols);
     }
 
     // ── Packed mode ───────────────────────────────────────────────────────────
 
-    private static byte[] WritePacked(ZpkgFile zpkg)
+    private static (byte[] Main, byte[]? Sidecar) WritePacked(ZpkgFile zpkg, bool stripSymbols)
     {
         // ── Build unified string pool from all modules ─────────────────────────
         var pool = new StringPool();
@@ -90,7 +112,7 @@ public static partial class ZpkgWriter
             (ZpkgTags.Expt, BuildExptSection(zpkg.Exports, pool)),
             (ZpkgTags.Deps, BuildDepsSection(zpkg.Dependencies, pool)),
             (ZpkgTags.Sigs, BuildSigsSection(zpkg.Modules, pool)),
-            (ZpkgTags.Mods, BuildModsSection(zpkg.Modules, pool, remaps)),
+            (ZpkgTags.Mods, BuildModsSection(zpkg.Modules, pool, remaps, stripSymbols)),
         };
 
         if (zpkg.ExportedModules is { Count: > 0 })
@@ -104,7 +126,52 @@ public static partial class ZpkgWriter
 
         ushort flags = FlagPacked;
         if (zpkg.Kind == ZpkgKind.Exe) flags |= FlagExe;
-        return AssembleFile(flags, sections);
+
+        if (!stripSymbols)
+            return (AssembleFile(flags, sections), null);
+
+        // ── Strip mode: append BLID placeholder, assemble, hash, patch ────────
+        sections.Add((ZpkgTags.Blid, new byte[Z42.IR.BinaryFormat.BuildId.Size]));
+        byte[] mainBytes = AssembleFile(flags, sections);
+        byte[] buildId   = Z42.IR.BinaryFormat.BuildId.Compute(mainBytes);
+        Array.Copy(buildId, 0, mainBytes, mainBytes.Length - Z42.IR.BinaryFormat.BuildId.Size,
+                   Z42.IR.BinaryFormat.BuildId.Size);
+
+        // ── Build sidecar zpkg ────────────────────────────────────────────────
+        // Sidecar STRS holds: namespace strings + debug strings (file paths +
+        // var names referenced by DBUG). Per-module DBUG bytes use sidecar STRS.
+        var symPool = new StringPool();
+        foreach (var zbc in zpkg.Modules) symPool.Intern(zbc.Namespace);
+        foreach (var zbc in zpkg.Modules)
+        {
+            foreach (var fn in zbc.Module.Functions)
+            {
+                if (fn.LineTable != null)
+                    foreach (var le in fn.LineTable)
+                        if (le.File != null) symPool.Intern(le.File);
+                if (fn.LocalVarTable != null)
+                    foreach (var lv in fn.LocalVarTable)
+                        symPool.Intern(lv.Name);
+            }
+        }
+        // Always emit per-module DBUG bytes (even when all-empty) for artifact
+        // consistency: sidecar shape stays uniform regardless of debug content.
+        // BuildDbugSection writes func_count + per-func zero counts when nothing
+        // to record — small fixed overhead per module.
+        var perModDbug = new byte[zpkg.Modules.Count][];
+        for (int mi = 0; mi < zpkg.Modules.Count; mi++)
+            perModDbug[mi] = ZbcWriter.BuildDbugSection(zpkg.Modules[mi].Module.Functions, symPool);
+
+        var sidecarSections = new List<(byte[] Tag, byte[] Data)>
+        {
+            (ZpkgTags.Meta, BuildMetaSection(zpkg)),
+            (ZpkgTags.Strs, ZbcWriter.BuildStrpSection(symPool)),
+            (ZpkgTags.Mdbg, BuildMdbgSection(zpkg.Modules, symPool, perModDbug)),
+            (ZpkgTags.Blid, buildId),
+        };
+        ushort sidecarFlags = (ushort)(FlagSymOnly | FlagPacked);
+        byte[] sidecarBytes = AssembleFile(sidecarFlags, sidecarSections);
+        return (mainBytes, sidecarBytes);
     }
 
     // ── Indexed mode ──────────────────────────────────────────────────────────
@@ -188,4 +255,7 @@ internal static class ZpkgTags
     public static readonly byte[] File = "FILE"u8.ToArray();
     public static readonly byte[] Tsig = "TSIG"u8.ToArray();
     public static readonly byte[] Impl = "IMPL"u8.ToArray();
+    // 1.5b split-debug-symbols (zpkg 0.3+): sidecar-only sections.
+    public static readonly byte[] Mdbg = "MDBG"u8.ToArray();  // per-module DBUG bodies
+    public static readonly byte[] Blid = "BLID"u8.ToArray();  // 16-byte BLAKE3-128 build_id (always last)
 }

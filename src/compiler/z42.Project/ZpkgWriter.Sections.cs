@@ -207,7 +207,8 @@ public static partial class ZpkgWriter
     private static byte[] BuildModsSection(
         IReadOnlyList<ZbcFile> modules,
         StringPool pool,
-        int[][] remaps)
+        int[][] remaps,
+        bool stripSymbols = false)
     {
         using var ms = new MemoryStream();
         using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
@@ -234,12 +235,11 @@ public static partial class ZpkgWriter
                 : [];
 
             // 1.2 split-debug-symbols: DBUG body per member (LineTable +
-            // LocalVarTable). 0 bytes when no debug info. Maintains feature
-            // parity with indexed `.cache/*.zbc` after LineTable was moved
-            // out of FUNC body into DBUG.
+            // LocalVarTable). 0 bytes when no debug info, or when stripSymbols
+            // routes the DBUG to the sidecar zpkg's MDBG section.
             bool hasDebug = mod.Functions.Any(f =>
                 f.LineTable is { Count: > 0 } || f.LocalVarTable is { Count: > 0 });
-            byte[] dbugData = hasDebug
+            byte[] dbugData = (hasDebug && !stripSymbols)
                 ? ZbcWriter.BuildDbugSection(mod.Functions, pool)
                 : [];
 
@@ -275,6 +275,34 @@ public static partial class ZpkgWriter
             w.Write((uint)pool.Idx(f.SourceHash));
             w.Write((ushort)f.Exports.Count);
             foreach (var e in f.Exports) w.Write((uint)pool.Idx(e));
+        }
+        return ms.ToArray();
+    }
+
+    // ── MDBG section (sidecar: per-module DBUG bodies, zpkg 0.3+) ─────────────
+    //
+    // Layout:
+    //   u32 module_count
+    //   for each module (in same order as main zpkg's MODS):
+    //     u32 namespace_str_idx     — into sidecar's STRS pool (debug-string subset)
+    //     u32 dbug_len              — bytes following
+    //     u8[dbug_len] dbug_bytes   — DBUG section content built against sidecar STRS
+    //
+    // Loaded by `ZpkgReader.ReadSidecar`; pairs with main packed zpkg via BLID.
+    private static byte[] BuildMdbgSection(
+        IReadOnlyList<ZbcFile> modules,
+        StringPool symPool,
+        byte[][] perModuleDbug)
+    {
+        using var ms = new MemoryStream();
+        using var w  = new BinaryWriter(ms, Encoding.UTF8, leaveOpen: true);
+
+        w.Write((uint)modules.Count);
+        for (int mi = 0; mi < modules.Count; mi++)
+        {
+            w.Write((uint)symPool.Idx(modules[mi].Namespace));
+            w.Write((uint)perModuleDbug[mi].Length);
+            if (perModuleDbug[mi].Length > 0) w.Write(perModuleDbug[mi]);
         }
         return ms.ToArray();
     }

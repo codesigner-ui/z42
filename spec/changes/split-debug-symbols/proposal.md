@@ -50,8 +50,12 @@
 | `src/compiler/z42.Driver/Program.cs` | MODIFY | 读 effective `strip`；`--strip-symbols=true|false` CLI override |
 | `src/compiler/z42.Driver/SymbolicateCommand.cs` | NEW | `z42c symbolicate` 子命令 |
 | `src/compiler/z42.Pipeline/CompilationPipeline.cs` | MODIFY | 把 effective `strip` 传给 ZbcWriter |
-| `src/compiler/z42.Project/ZpkgWriter.Sections.cs` | MODIFY | packed zpkg 每 member 增 DBUG body 字段（feature parity） |
-| `src/compiler/z42.Project/ZpkgReader.Sections.cs` | MODIFY | 读 DBUG body 并应用到 functions |
+| `src/compiler/z42.Project/ZpkgWriter.Sections.cs` | MODIFY | packed zpkg 每 member 增 DBUG body；新增 BuildMdbgSection（sidecar 用） |
+| `src/compiler/z42.Project/ZpkgReader.Sections.cs` | MODIFY | 读 DBUG body 并应用到 functions；读 MDBG section |
+| `src/compiler/z42.Project/ZpkgWriter.cs` | MODIFY | bump zpkg 0.2 → 0.3；`FlagSymOnly`；`WritePackedWithSidecar` |
+| `src/compiler/z42.Project/ZpkgReader.cs` | MODIFY | `ReadSidecar` / `ApplyDebugInfo`（zpkg 级）；版本检查 |
+| `src/compiler/z42.Project/ZpkgBuilder.cs` | MODIFY | 接受 `stripSymbols`；落盘 `<name>.zsym` |
+| `src/compiler/z42.Tests/ZpkgSidecarSymbolsTests.cs` | NEW | zpkg 级 round-trip + build_id pairing |
 | `src/runtime/src/metadata/zbc_reader.rs` | MODIFY | 解析 SymOnly + BLID |
 | `src/runtime/src/metadata/loader.rs` | MODIFY | sidecar 探测（同步） + build_id 校验 + 合并 line_table |
 | `src/runtime/src/metadata/build_id.rs` | NEW | BLAKE3-128 计算（整流置零） |
@@ -75,18 +79,20 @@
 - `spec/archive/2026-05-10-unify-frame-chain/` — 已归档，VmFrame 单一栈布局已就绪
 - `docs/roadmap.md` — 阶段归属
 
-**估计**：17 MODIFY + 7 NEW = 24 文件。
+**估计**：20 MODIFY + 8 NEW = 28 文件。
 
 ## Out of Scope
 
 - 函数名剥离（User 决策：保留）
-- stripped 模式 `.cache/*.zbc` 改造
-- multi-module / multi-zsym bundle（User 决策：1 zpkg : 1 zsym）
+- stripped 模式 `.cache/*.zbc` 改造（dev-workflow cache 与 release strip 正交）
+- multi-module / multi-zsym bundle（User 决策：1 zpkg : 1 zsym 单文件）
 - JIT-emitted machine code 的 debug map（与 IR ip 无关）
 - runtime sidecar 跨目录搜索 / 环境变量配置（本期只探测同目录）
 - DBUG wire format 重新设计 / 紧凑化
 - 把符号化能力暴露为公开 stdlib API（独立 spec）
 - BLAKE3 之外的哈希算法对比（已选定）
+
+> **Scope 扩张（实施期决定，2026-05-10）**：原 Out of Scope 的"packer 集成"已并入本期。User 决策：sidecar 命名 `<name>.zsym`，与 packed `<name>.zpkg` 平级。zpkg 容器扩展 SymOnly flag + MDBG section + BLID section（zpkg 0.2 → 0.3）；indexed 模式同样用 `<name>.zsym` 收集所有 `.cache/*.zbc` 的 DBUG。
 
 ## Open Questions
 

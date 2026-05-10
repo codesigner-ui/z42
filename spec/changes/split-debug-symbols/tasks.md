@@ -45,6 +45,17 @@
 - [x] 1.3.zpkg.2 [src/compiler/z42.Project/ZpkgReader.Sections.cs](../../../src/compiler/z42.Project/ZpkgReader.Sections.cs) — 读 DBUG body 并应用到 functions（mirror writer）
 - [x] 1.3.zpkg.3 [src/compiler/z42.Project/ZpkgReader.cs](../../../src/compiler/z42.Project/ZpkgReader.cs) `ReadSourceHashes` — skip 新增的 DBUG body（增量编译命中需要）
 
+## 阶段 1.5b: zpkg-level sidecar wire format（packer 集成；2026-05-10 scope 扩张）
+
+- [x] 1.5b.1 [src/compiler/z42.Project/ZpkgWriter.cs](../../../src/compiler/z42.Project/ZpkgWriter.cs) — bump zpkg 0.2 → 0.3；新增 `FlagSymOnly = 0x04`、`ZpkgTags.Mdbg`、`ZpkgTags.Blid`
+- [x] 1.5b.2 同上 — 新 API `WritePackedWithSidecar(zpkg, stripSymbols) → (main, sidecar?)`
+- [x] 1.5b.3 [src/compiler/z42.Project/ZpkgWriter.Sections.cs](../../../src/compiler/z42.Project/ZpkgWriter.Sections.cs) — `BuildMdbgSection`；`BuildModsSection` 接受 `bool stripSymbols`
+- [x] 1.5b.4 [src/compiler/z42.Project/ZpkgReader.cs](../../../src/compiler/z42.Project/ZpkgReader.cs) — `ReadSidecar` / `ApplyDebugInfo`（zpkg 级）+ `ReadBuildId` + SymOnly 拒绝
+- [x] 1.5b.5 同上 — `ReadMdbgSection`；版本 < 0.3 reject
+- [x] 1.5b.5b [src/runtime/src/metadata/zbc_reader.rs](../../../src/runtime/src/metadata/zbc_reader.rs) — read_zpkg_modules 版本 < 0.3 reject + SymOnly flag reject
+- [ ] 1.5b.6 [src/compiler/z42.Project/ZpkgBuilder.cs](../../../src/compiler/z42.Project/ZpkgBuilder.cs) — `BuildPacked` 接受 `stripSymbols`；`WriteZpkg` 新签名返回主 + sidecar bytes；driver 落盘 `<outDir>/<name>.zsym`
+- [x] 1.5b.7 [src/compiler/z42.Tests/ZpkgSidecarSymbolsTests.cs](../../../src/compiler/z42.Tests/ZpkgSidecarSymbolsTests.cs) NEW — 9 个 case 全绿（round-trip + BLID pairing + 不匹配 reject + SymOnly 误用拒绝）
+
 ### 1.4 ZbcReader 识别（含 1.2 重组）
 
 - [x] 1.4.0 [src/compiler/z42.IR/BinaryFormat/ZbcReader.cs](../../../src/compiler/z42.IR/BinaryFormat/ZbcReader.cs) `ReadFuncSection` — 移除 LineTable 读取
@@ -56,15 +67,17 @@
 
 ### 1.5 z42.IR 单测
 
-- [ ] 1.5.1 [src/compiler/z42.Tests/SidecarSymbolsTests.cs](../../../src/compiler/z42.Tests/SidecarSymbolsTests.cs) NEW
-- [ ] 1.5.2 case：`WriteWithSidecar(strip=true)` LineTable 非空 → main 不含 DBUG / sidecar 仅 DBUG+BLID
-- [ ] 1.5.3 case：`WriteWithSidecar(strip=true)` 全部 LineTable 空 → 仍产 sidecar（DBUG count=0），BLID 一致
-- [ ] 1.5.4 case：`WriteWithSidecar(strip=false)` → DBUG 内嵌、no BLID、sidecar=null
-- [ ] 1.5.5 case：BLID 稳定性 — 同输入两次哈希相同
-- [ ] 1.5.6 case：BLID 敏感性 — 改一字节哈希变
-- [ ] 1.5.7 case：BLID 整流置零 — 手算 BLAKE3-128 验证
-- [ ] 1.5.8 case：`ReadSidecar` + `ApplyDebugInfo` 匹配 BLID 后 LineTable 注入到 module
-- [ ] 1.5.9 case：`ApplyDebugInfo` BLID 不匹配 → 抛 `InvalidOperationException`
+- [x] 1.5.1 [src/compiler/z42.Tests/SidecarSymbolsTests.cs](../../../src/compiler/z42.Tests/SidecarSymbolsTests.cs) NEW（10 个 case 全绿）
+- [x] 1.5.2 case：`WriteWithSidecar(strip=true)` LineTable 非空 → main 不含 DBUG / sidecar 仅 DBUG+BLID
+- [x] 1.5.3 case：`WriteWithSidecar(strip=true)` 全部 LineTable 空 → 仍产 sidecar，BLID 一致
+- [x] 1.5.4 case：`WriteWithSidecar(strip=false)` → DBUG 内嵌、no BLID、sidecar=null
+- [x] 1.5.5 case：BLID 稳定性 — 同输入两次哈希相同
+- [x] 1.5.6 case：BLID 敏感性 — 改一字节哈希变
+- [x] 1.5.7 case：`ApplyDebugInfo` 匹配 BLID 后 LineTable 注入到 module
+- [x] 1.5.8 case：`ApplyDebugInfo` BLID 不匹配 → 抛 `InvalidOperationException`
+- [x] 1.5.9 case：把 sidecar 当主模块 read → 拒绝
+- [x] 1.5.10 case：`ReadSidecar` 拒绝普通 zbc
+- [x] 1.5.11 case：`BuildId.ShortHex` 格式正确
 
 ## 阶段 2: Driver 接线 + symbolicate
 

@@ -29,6 +29,10 @@ public static partial class ZpkgReader
     public static IReadOnlyList<(IrModule Module, string Namespace)> ReadModules(byte[] data)
     {
         var (flags, dir) = ParseHeaderAndDirectory(data);
+        if ((flags & 0x04) != 0)
+            throw new InvalidDataException(
+                "zpkg has SymOnly flag set: it is a debug-symbol sidecar (.zsym), " +
+                "not a loadable package. Use ReadSidecar() / ApplyDebugInfo() instead.");
         bool packed = (flags & 0x01) != 0;
 
         string[] pool = ReadStrs(data, dir);
@@ -36,6 +40,123 @@ public static partial class ZpkgReader
         return packed
             ? ReadPackedModules(data, dir, pool)
             : ReadIndexedModules(data, dir, pool);
+    }
+
+    // ── Sidecar API (1.5b split-debug-symbols, zpkg 0.3+) ─────────────────────
+
+    /// <summary>
+    /// Per-module debug info parsed from a zpkg sidecar (.zsym): namespace +
+    /// LineTable + LocalVarTable. Order matches the main zpkg's MODS section.
+    /// </summary>
+    public sealed record ZpkgModuleDebug(
+        string Namespace,
+        IReadOnlyList<(List<IrLineEntry>? Lines, List<IrLocalVarEntry>? Vars)> Functions);
+
+    /// <summary>Decoded contents of a zpkg sidecar.</summary>
+    public sealed record ZpkgSidecarData(
+        byte[] BuildId,
+        IReadOnlyList<ZpkgModuleDebug> Modules);
+
+    /// <summary>Reads only the BLID section (16-byte build_id) from any zpkg.</summary>
+    public static byte[]? ReadBuildId(byte[] data)
+    {
+        var (_, dir) = ParseHeaderAndDirectory(data);
+        if (!dir.TryGetValue("BLID", out var e)) return null;
+        if (e.Size < BuildId.Size) return null;
+        return data.AsSpan(e.Offset, BuildId.Size).ToArray();
+    }
+
+    /// <summary>
+    /// Parses a SymOnly zpkg sidecar (.zsym): META + STRS + MDBG + BLID.
+    /// Throws when the file lacks the SymOnly flag, has no BLID, or content
+    /// is malformed.
+    /// </summary>
+    public static ZpkgSidecarData ReadSidecar(byte[] data)
+    {
+        var (flags, dir) = ParseHeaderAndDirectory(data);
+        if ((flags & 0x04) == 0)
+            throw new InvalidDataException(
+                "expected SymOnly flag set; this is not a debug-symbol sidecar.");
+
+        if (!dir.TryGetValue("BLID", out var bldEntry) || bldEntry.Size < BuildId.Size)
+            throw new InvalidDataException("sidecar is missing BLID section.");
+        byte[] buildId = data.AsSpan(bldEntry.Offset, BuildId.Size).ToArray();
+
+        string[] pool = ReadStrs(data, dir);
+
+        if (!dir.TryGetValue("MDBG", out var mdbgEntry))
+            throw new InvalidDataException("sidecar is missing MDBG section.");
+        var mdbg = ReadMdbgSection(data, mdbgEntry.Offset, mdbgEntry.Size, pool);
+        return new ZpkgSidecarData(buildId, mdbg);
+    }
+
+    /// <summary>
+    /// Merges sidecar debug info into a list of (module, ns) pairs after
+    /// verifying that the build_id matches the main zpkg. Returns a new list
+    /// with each module's functions enriched with LineTable / LocalVarTable.
+    /// Throws on build_id mismatch or module count mismatch.
+    /// </summary>
+    public static IReadOnlyList<(IrModule Module, string Namespace)> ApplyDebugInfo(
+        IReadOnlyList<(IrModule Module, string Namespace)> mainModules,
+        byte[] mainZpkgBytes,
+        ZpkgSidecarData sidecar)
+    {
+        byte[]? mainBlid = ReadBuildId(mainZpkgBytes);
+        if (mainBlid is null)
+            throw new InvalidOperationException(
+                "main zpkg has no BLID; cannot pair with sidecar (was it built with stripSymbols=true?).");
+        if (!mainBlid.AsSpan().SequenceEqual(sidecar.BuildId))
+            throw new InvalidOperationException(
+                $"build_id mismatch: main = {BuildId.ShortHex(mainBlid)}…, " +
+                $"sidecar = {BuildId.ShortHex(sidecar.BuildId)}…");
+        if (mainModules.Count != sidecar.Modules.Count)
+            throw new InvalidOperationException(
+                $"module count mismatch: main has {mainModules.Count}, " +
+                $"sidecar has {sidecar.Modules.Count}");
+
+        var result = new List<(IrModule, string)>(mainModules.Count);
+        for (int mi = 0; mi < mainModules.Count; mi++)
+        {
+            var (mainMod, ns) = mainModules[mi];
+            var symMod = sidecar.Modules[mi];
+            if (mainMod.Functions.Count != symMod.Functions.Count)
+                throw new InvalidOperationException(
+                    $"function count mismatch in module '{ns}': main has " +
+                    $"{mainMod.Functions.Count}, sidecar has {symMod.Functions.Count}");
+            var newFns = new List<IrFunction>(mainMod.Functions.Count);
+            for (int fi = 0; fi < mainMod.Functions.Count; fi++)
+            {
+                var (lines, vars) = symMod.Functions[fi];
+                newFns.Add(mainMod.Functions[fi] with
+                {
+                    LineTable     = lines,
+                    LocalVarTable = vars,
+                });
+            }
+            result.Add((mainMod with { Functions = newFns }, ns));
+        }
+        return result;
+    }
+
+    private static IReadOnlyList<ZpkgModuleDebug> ReadMdbgSection(
+        byte[] data, int offset, int size, string[] pool)
+    {
+        using var ms = new MemoryStream(data, offset, size, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+
+        uint modCount = r.ReadUInt32();
+        var result    = new List<ZpkgModuleDebug>((int)modCount);
+        for (int mi = 0; mi < modCount; mi++)
+        {
+            string ns      = P(pool, r.ReadUInt32());
+            uint dbugLen   = r.ReadUInt32();
+            byte[] dbugRaw = dbugLen > 0 ? r.ReadBytes((int)dbugLen) : [];
+            var fns = dbugRaw.Length > 0
+                ? ZbcReader.DecodeDbugSectionPublic(dbugRaw, pool)
+                : new List<(List<IrLineEntry>?, List<IrLocalVarEntry>?)>();
+            result.Add(new ZpkgModuleDebug(ns, fns));
+        }
+        return result;
     }
 
     /// <summary>Returns the namespace list from the NSPC section (fast path, no body decode).</summary>
@@ -147,8 +268,18 @@ public static partial class ZpkgReader
         if (!data.AsSpan(0, 4).SequenceEqual(ZpkgMagic))
             throw new InvalidDataException("Not a binary zpkg (bad magic)");
 
+        ushort major    = BitConverter.ToUInt16(data, 4);
+        ushort minor    = BitConverter.ToUInt16(data, 6);
         ushort flags    = BitConverter.ToUInt16(data, 8);
         ushort secCount = BitConverter.ToUInt16(data, 10);
+
+        // 1.5b split-debug-symbols: bumped to 0.3 (inner zbc 1.2 + per-member
+        // DBUG body + sidecar form). Pre-0.3 zpkg not supported per CLAUDE.md
+        // "不为旧版本提供兼容".
+        if (major == 0 && minor < 3)
+            throw new InvalidDataException(
+                $"zpkg {major}.{minor} not supported; requires 0.3+. " +
+                "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
 
         var dir = new Dictionary<string, (int Offset, int Size)>(StringComparer.Ordinal);
         int pos = 16;

@@ -1007,13 +1007,19 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
     let flags     = u16::from_le_bytes([data[8], data[9]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
     let is_packed = flags & 0x01 != 0;
-    // Phase 3 S3c (2026-05-09): zpkg minor must be 0.2+ (= v1.0 inner modules).
-    // Earlier zpkg minor 0.1 carried v0.9 zbc inner modules — no longer
-    // supported per CLAUDE.md "不为旧版本提供兼容".
-    if minor < 2 {
+    // 2026-05-10 split-debug-symbols: bumped to zpkg 0.3 — inner zbc 1.2
+    // (LineTable in DBUG) + per-member DBUG body in MODS + sidecar form
+    // (FlagSymOnly + MDBG + BLID).
+    if minor < 3 {
         bail!(
-            "zpkg minor 0.{minor} not supported; requires 0.2+ (with v1.0 inner zbc). \
+            "zpkg minor 0.{minor} not supported; requires 0.3+ (with zbc 1.2 inner modules). \
              Run scripts/build-stdlib.sh to rebuild."
+        );
+    }
+    if (flags & 0x04) != 0 {
+        bail!(
+            "zpkg has SymOnly flag set: it is a debug-symbol sidecar (.zsym), \
+             not a loadable package"
         );
     }
     let has_is_static = true; // zpkg 0.2+ always has is_static in SIGS
