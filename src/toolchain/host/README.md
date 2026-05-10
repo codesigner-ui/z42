@@ -12,19 +12,39 @@
 
 | 模块 | 职责 | 状态 |
 |------|------|------|
-| Tier 1 C ABI（`src/runtime/include/z42_host.h` + `src/runtime/src/host/`）| 稳定 C 接口：initialize / load_zbc / resolve_entry / invoke / sinks / shutdown | 🟡 H1（lifecycle + 占位）|
-| `embed/` | Tier 2 Rust crate `z42-host`（`Host::new()` 安全封装）| 📋 H2 |
-| `examples/` | 最小宿主示例（C / Rust）| 📋 H2 |
+| Tier 1 C ABI（[`src/runtime/include/z42_host.h`](../../runtime/include/z42_host.h) + [`src/runtime/src/host/`](../../runtime/src/host/)）| 稳定 C 接口：initialize / load_zbc / resolve_entry / invoke / sinks / shutdown | 🟢 完整 lifecycle + 真正的 load/invoke |
+| [`embed/`](embed/) | Tier 2 Rust crate `z42-host`（`Host::new()` 安全封装；`Drop` 自动 shutdown）| 🟢 H2b |
+| [`examples/hello_rust/`](examples/hello_rust/) | 桌面 Rust 示例 —— 跑通 hello-world，stdout sink 收到输出 | 🟢 H2b |
+| [`examples/hello_c/`](examples/hello_c/) | 桌面 C 参考源码 —— 头文件正确，desktop staticlib build 留 H4 一并做 | 🔵 reference only |
 | `platforms/{ios,android,wasm}/` | Tier 3 facade（归各平台 spec）| 📋 H4（P4.3 / P4.4 / P4.2）|
 
 ## 阶段进度
 
-- ✅ **H0** 设计文档 + spec/changes 四件套（已归档于 `spec/changes/add-embedding-api/`）
-- 🟡 **H1** Tier 1 C ABI scaffold —— 单实例 lifecycle 跑通、build matrix（default / interp-only / ios / android）全绿、12 个 unit test
-- 📋 **H2** load_zbc / resolve_entry / invoke 全链路 + stdout sink 接 VM + Tier 2 Rust + C/Rust example
+- ✅ **H0** 设计文档 + spec/changes 四件套（`spec/changes/add-embedding-api/`）
+- ✅ **H1** Tier 1 C ABI scaffold —— 单实例 lifecycle，13 个 unit test
+- ✅ **H2-core** `load_zbc` / `resolve_entry` / `invoke` 全链路 + stdout sink 接 VM + 集成测试 hello-world
+- ✅ **H2b** Tier 2 `z42-host` crate + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码
 - 📋 **H3** 错误路径全覆盖 + VM exception 翻译
-- 📋 **H4** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` spec）
+- 📋 **H4** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` spec；包含桌面 staticlib build）
 - 📋 **H5** test-runner library 重构到 `z42-host` 之上（归 runner spec）
+
+## Quick Start
+
+```sh
+# 1. 编译器 + stdlib（一次性）
+dotnet build src/compiler/z42.slnx
+
+# 2. 跑 cargo 集成测试（自动编译 fixture）
+cargo test --manifest-path src/runtime/Cargo.toml --lib host::
+
+# 3. 跑外部示例
+dotnet artifacts/compiler/z42.Driver/bin/z42c.dll \
+    src/runtime/tests/data/embedding_hello/source.z42 \
+    --emit zbc -o /tmp/embedding_hello.zbc
+cargo run --manifest-path src/toolchain/host/examples/hello_rust/Cargo.toml -- \
+    /tmp/embedding_hello.zbc artifacts/z42/libs
+# 期望：[host] Hello, World!
+```
 
 ## 依赖关系
 

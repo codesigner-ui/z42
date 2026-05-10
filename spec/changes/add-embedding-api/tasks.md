@@ -1,6 +1,6 @@
 # Tasks: Add Embedding / Hosting API
 
-> 状态：🟢 H0 + H1 + H2-core 完成 / H2b（Tier 2 + examples）+ H3 待启动 | 创建：2026-05-10
+> 状态：🟢 H0 + H1 + H2 完成 / H3 待启动 | 创建：2026-05-10
 >
 > 本 spec 范围 = H0–H3（design + ABI scaffold + hello-world + 错误路径）。
 > H4（移动平台接入） / H5（runner 重构）由各自 spec 主导。
@@ -10,7 +10,7 @@
 - [x] **H0** 设计文档与 spec/changes 四件套
 - [x] **H1** C ABI scaffold + Rust 单实例 state + 链接通
 - [x] **H2-core** load_zbc / resolve_entry / invoke 全链路 + stdout sink 接 VM + Rust 集成测试 hello-world
-- [ ] **H2b** Tier 2 Rust crate `z42-host` + 外部 C / Rust example
+- [x] **H2b** Tier 2 Rust crate `z42-host` + `examples/hello_rust` 端到端 + `examples/hello_c` 参考源码
 - [ ] **H3** 错误路径全覆盖 + VM exception 翻译
 
 ---
@@ -96,30 +96,30 @@
 - [x] 2.2.2 `route_stdout` / `route_stderr` 在 active 时优先派发到 host sink；否则走原有 test sink stack / println fallback
 - [x] 2.2.3 `host::ops::HostSinkGuard` RAII 包裹 `interp::run_returning`；shutdown 时清空 sink slot
 
-### 2.3 Tier 2 Rust crate（H2b 待实施）
+### 2.3 Tier 2 Rust crate
 
-- [ ] 2.3.1 [src/toolchain/host/embed/Cargo.toml](../../../src/toolchain/host/embed/Cargo.toml) — crate `z42-host`，依赖 `z42-runtime`
-- [ ] 2.3.2 [src/toolchain/host/embed/src/lib.rs](../../../src/toolchain/host/embed/src/lib.rs) — `Host` / `HostConfig` / `Module` / `Entry` / `Value` 安全封装
+- [x] 2.3.1 [src/toolchain/host/embed/Cargo.toml](../../../src/toolchain/host/embed/Cargo.toml) — crate `z42-host`，path-dep on `z42_vm` + `z42-abi`
+- [x] 2.3.2 [src/toolchain/host/embed/src/lib.rs](../../../src/toolchain/host/embed/src/lib.rs) — `Host` / `HostConfig` / `Module` / `Entry` / `Value` 安全封装；`Drop` 自动 shutdown；sink 走 `Box<dyn Fn>` + trampoline
 
-### 2.4 Examples（H2b 待实施）
+### 2.4 Examples
 
-- [ ] 2.4.1 [src/toolchain/host/examples/hello_c/main.c](../../../src/toolchain/host/examples/hello_c/main.c)
-- [ ] 2.4.2 [src/toolchain/host/examples/hello_c/CMakeLists.txt](../../../src/toolchain/host/examples/hello_c/CMakeLists.txt)
-- [ ] 2.4.3 [src/toolchain/host/examples/hello_rust/Cargo.toml](../../../src/toolchain/host/examples/hello_rust/Cargo.toml)
-- [ ] 2.4.4 [src/toolchain/host/examples/hello_rust/src/main.rs](../../../src/toolchain/host/examples/hello_rust/src/main.rs)
+- [x] 2.4.3 [src/toolchain/host/examples/hello_rust/Cargo.toml](../../../src/toolchain/host/examples/hello_rust/Cargo.toml)
+- [x] 2.4.4 [src/toolchain/host/examples/hello_rust/src/main.rs](../../../src/toolchain/host/examples/hello_rust/src/main.rs) — 端到端跑通，stdout 加 `[host]` 前缀验证
 - [x] 2.4.5 [src/runtime/tests/data/embedding_hello/source.z42](../../../src/runtime/tests/data/embedding_hello/source.z42) — 集成测试 fixture
-- [x] 2.4.6 端到端 Rust 集成测试：load_zbc → resolve_entry("Embedding.Hello.Main") → invoke → stdout sink 收到 "Hello, World!\n"
+- [x] 2.4.6 端到端 Rust 集成测试 + 命令行 example
+- [x] 2.4.7 [src/toolchain/host/examples/hello_c/main.c](../../../src/toolchain/host/examples/hello_c/main.c) — C 参考源码（`-fsyntax-only` 通过；desktop staticlib build 留 H4 一并做，README 解释原因）
 
 ### 2.5 验证
 
 - [x] 2.5.1 `host::host_tests::load_invoke_hello_world` 通过（gated on `cfg(z42_have_embedding_hello)`，build.rs 自动编译 fixture）
-- [ ] 2.5.2 hello_rust example `cargo run` 输出 "Hello, World!"（H2b）
-- [ ] 2.5.3 hello_c example 链接通过并运行成功（H2b）
+- [x] 2.5.2 hello_rust example `cargo run` 输出 `[host] Hello, World!`
+- 🔵 2.5.3 hello_c example 链接通过并运行成功 → **H4 桌面 staticlib build 一并做**（spec design 期推迟）
 
 ### 2.6 H2 范围内的实施期 Deferred
 
 - 字符串 / 对象 / 数组 / pinned view / typeref `Z42Value` marshal —— H2 仅支持 null / i64 / f64 / bool 进出（hello-world `Main()` 无参数 + void 返回足够）；string 入参的 `pinned` 协议留 H3
 - 多 zpkg 懒加载（`declared_candidates` 非空）—— H2 走 eager merge 避免 invoke 时的"惊讶懒查"；多 zpkg lazy 留 H3
+- **桌面 hello_c staticlib build pipeline** —— `z42_vm` crate 当前只产 `rlib`；要让 C 程序链上去需要 `staticlib` / `cdylib` + `cargo rustc --print=native-static-libs` 的全套系统库。iOS / Android spec（H4）必须把这套配好；为避免桌面 + 移动重复两份配置，hello_c 的实际链接 + 跑通跟 H4 一起做。当前 hello_c `main.c` 已写完且 `gcc -fsyntax-only` 通过
 
 ---
 

@@ -1,0 +1,13 @@
+[package]
+name = "z42-host-hello-rust"
+version = "0.1.0"
+edition = "2021"
+description = "Hello-world demo for the z42-host Tier 2 Rust embedding API."
+publish = false
+
+[[bin]]
+name = "hello_rust"
+path = "src/main.rs"
+
+[dependencies]
+z42-host = { path = "../../embed" }

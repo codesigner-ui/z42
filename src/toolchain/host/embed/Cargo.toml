@@ -1,0 +1,18 @@
+[package]
+name = "z42-host"
+version = "0.1.0"
+edition = "2021"
+description = "Tier 2 ergonomic Rust wrapper around z42's Tier 1 embedding C ABI (z42_host_*)."
+
+[lib]
+name = "z42_host"
+path = "src/lib.rs"
+
+[dependencies]
+# Path-dep on the runtime crate gives access to the extern "C" Rust
+# entry points without round-tripping through a dynamic library.
+z42_vm = { path = "../../../runtime" }
+
+# Reuse the Z42Value / Z42Args / Z42Error types from the shared abi crate
+# so callers don't pull in the full runtime tree just to construct args.
+z42-abi = { path = "../../../runtime/crates/z42-abi" }

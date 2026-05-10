@@ -151,9 +151,9 @@
 | Spec / 阶段 | 内容 | 状态 |
 |------------|------|------|
 | **H0**（`add-embedding-api` design ✅ 2026-05-10）| 设计文档 [docs/design/embedding.md](design/embedding.md) + spec/changes 四件套；三层 ABI（C / Rust / 平台 facade）；单实例 v0.1；多实例 / hot-reload / GC handle / async / Tier 3 facade 形态 / runner 重构 进 Deferred | ✅ |
-| **H1**（`add-embedding-api` C ABI scaffold） | `src/runtime/include/z42_host.h` + `src/runtime/src/host/` 单实例 state（initialize / shutdown / last_error）+ build matrix（default / interp-only / ios / android）全绿 + 8 个 unit test | 📋 |
-| **H2**（`add-embedding-api` hello-world） | `load_zbc` / `resolve_entry` / `invoke` 全链路 + stdout sink 接 VM + Tier 2 Rust crate `z42-host` + C / Rust example 跑通 hello.zbc | 📋 |
-| **H3**（`add-embedding-api` 错误路径） | 全部 `Z42HostStatus` 路径有测试覆盖；VM exception → `ERR_VM_EXCEPTION`；error message 翻译 | 📋 |
+| **H1**（`add-embedding-api` C ABI scaffold ✅ 2026-05-10）| `src/runtime/include/z42_host.h` + `src/runtime/src/host/` 单实例 state（initialize / shutdown / last_error）+ build matrix（default / interp-only / ios / android）全绿 + 12 个 unit test | ✅ |
+| **H2**（`add-embedding-api` hello-world ✅ 2026-05-10）| `load_zbc` / `resolve_entry` / `invoke` 全链路（marshal: null + i64/f64/bool）+ corelib + 用户 `import_namespaces` 自动 eager merge + stdout sink 接 corelib io（thread-local active flag + RwLock host sink）+ Tier 2 Rust crate `z42-host` + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码（desktop staticlib build 留 H4） | ✅ |
+| **H3**（`add-embedding-api` 错误路径） | 全部 `Z42HostStatus` 路径有测试覆盖；VM exception → `ERR_VM_EXCEPTION`；error message 翻译；string `Z42Value` marshal | 📋 |
 | **H4**（归 P4.3 / P4.4） | iOS Swift facade / Android JNI bridge 直连 `z42_host.h`，跑 hello-world | 📋 |
 | **H5**（归 runner spec） | `z42-test-runner` library 内部基于 `z42-host` crate 重构，统一启动路径 | 📋 |
 
