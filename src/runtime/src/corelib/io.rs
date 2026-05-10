@@ -1,7 +1,9 @@
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::os::raw::{c_char, c_void};
+use std::sync::RwLock;
 use super::convert::value_to_str;
 
 // ── R2 完整版 — TestIO sink dispatch ───────────────────────────────────────
@@ -18,9 +20,107 @@ use super::convert::value_to_str;
 thread_local! {
     static STDOUT_SINKS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
     static STDERR_SINKS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
+
+    // Embedding-API hookup (add-embedding-api H2 / 2026-05-10):
+    // when a host application wraps an `interp::run_*` call inside its
+    // `z42_host_invoke` entry, it sets this flag for the duration of the
+    // call. While set, `route_stdout` / `route_stderr` consult the
+    // process-global host sinks (`HOST_STDOUT_SINK` / `HOST_STDERR_SINK`)
+    // first; they fall back to the test-IO stack otherwise. This keeps
+    // host-driven invocation isolated from concurrent test-IO captures
+    // running on other threads.
+    static HOST_SINK_ACTIVE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Process-global stdout / stderr sink installed by the embedding API.
+/// `None` → no host sink configured (the default).
+///
+/// Spec: docs/design/embedding.md §8 (stdout / stderr 重定向).
+pub struct HostSink {
+    pub callback: unsafe extern "C" fn(bytes: *const c_char, length: usize, user_data: *mut c_void),
+    pub user_data: *mut c_void,
+}
+
+// `user_data` is opaque to the runtime; the host alone owns its lifetime.
+// The runtime never dereferences it beyond passing it to the callback.
+unsafe impl Send for HostSink {}
+unsafe impl Sync for HostSink {}
+
+static HOST_STDOUT_SINK: RwLock<Option<HostSink>> = RwLock::new(None);
+static HOST_STDERR_SINK: RwLock<Option<HostSink>> = RwLock::new(None);
+
+/// Install the process-global stdout sink. Returns the previous sink (if
+/// any) so callers can restore it on shutdown.
+pub fn install_host_stdout_sink(sink: Option<HostSink>) -> Option<HostSink> {
+    let mut guard = match HOST_STDOUT_SINK.write() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    std::mem::replace(&mut *guard, sink)
+}
+
+/// Install the process-global stderr sink. Returns the previous sink.
+pub fn install_host_stderr_sink(sink: Option<HostSink>) -> Option<HostSink> {
+    let mut guard = match HOST_STDERR_SINK.write() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    std::mem::replace(&mut *guard, sink)
+}
+
+/// Activate host-sink dispatch on the current thread. Returns the prior
+/// flag value so callers can restore it (paired enter / leave in
+/// `z42_host_invoke`).
+pub fn host_sink_set_active(on: bool) -> bool {
+    HOST_SINK_ACTIVE.with(|c| {
+        let prev = c.get();
+        c.set(on);
+        prev
+    })
+}
+
+fn dispatch_host_sink(
+    text: &str,
+    append_newline: bool,
+    slot: &RwLock<Option<HostSink>>,
+) -> bool {
+    let guard = match slot.read() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    let host = match guard.as_ref() {
+        Some(h) => h,
+        None => return false,
+    };
+    if append_newline {
+        let mut combined = String::with_capacity(text.len() + 1);
+        combined.push_str(text);
+        combined.push('\n');
+        unsafe {
+            (host.callback)(
+                combined.as_ptr() as *const c_char,
+                combined.len(),
+                host.user_data,
+            );
+        }
+    } else {
+        unsafe {
+            (host.callback)(
+                text.as_ptr() as *const c_char,
+                text.len(),
+                host.user_data,
+            );
+        }
+    }
+    true
 }
 
 fn route_stdout(text: &str, append_newline: bool) {
+    if HOST_SINK_ACTIVE.with(|c| c.get())
+        && dispatch_host_sink(text, append_newline, &HOST_STDOUT_SINK)
+    {
+        return;
+    }
     STDOUT_SINKS.with(|sinks| {
         let mut s = sinks.borrow_mut();
         if let Some(top) = s.last_mut() {
@@ -35,6 +135,11 @@ fn route_stdout(text: &str, append_newline: bool) {
 }
 
 fn route_stderr(text: &str, append_newline: bool) {
+    if HOST_SINK_ACTIVE.with(|c| c.get())
+        && dispatch_host_sink(text, append_newline, &HOST_STDERR_SINK)
+    {
+        return;
+    }
     STDERR_SINKS.with(|sinks| {
         let mut s = sinks.borrow_mut();
         if let Some(top) = s.last_mut() {

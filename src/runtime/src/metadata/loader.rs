@@ -53,17 +53,48 @@ pub fn load_artifact(path: &str) -> Result<LoadedArtifact> {
     }
 }
 
+/// Load a compiler output artifact from in-memory bytes, returning a
+/// `LoadedArtifact`. Format is detected by magic bytes.
+///
+/// Used by the embedding API (`z42_host_load_zbc`) where the host hands
+/// the runtime raw bytes rather than a filesystem path. Behaviour
+/// mirrors [`load_artifact`] modulo the source of the byte stream;
+/// the same registry / verification / index passes run.
+///
+/// Spec: docs/design/embedding.md §4.4 (z42_host_load_zbc),
+///       spec/changes/add-embedding-api/.
+pub fn load_artifact_from_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
+    if raw.len() < 4 {
+        bail!("artifact byte buffer is too short ({} bytes); expected at least 4 magic bytes", raw.len());
+    }
+    let magic = &raw[0..4];
+    if magic == ZBC_MAGIC {
+        load_zbc_bytes(raw)
+    } else if magic == ZPKG_MAGIC {
+        load_zpkg_bytes(raw)
+    } else {
+        bail!(
+            "unrecognised artifact magic {:02x?}; expected ZBC ({:02x?}) or ZPKG ({:02x?})",
+            magic,
+            ZBC_MAGIC,
+            ZPKG_MAGIC
+        );
+    }
+}
+
 // ── Format-specific loaders ───────────────────────────────────────────────────
 
 fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     let raw = std::fs::read(path).with_context(|| format!("cannot read `{path}`"))?;
+    load_zbc_bytes(&raw).with_context(|| format!("cannot parse binary zbc `{path}`"))
+}
 
+fn load_zbc_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
     if raw.len() < 4 || &raw[0..4] != ZBC_MAGIC {
-        bail!("not a binary zbc file: `{path}`; expected ZBC magic bytes");
+        bail!("not a binary zbc payload: expected ZBC magic bytes");
     }
 
-    let mut module = read_zbc(&raw)
-        .with_context(|| format!("cannot parse binary zbc `{path}`"))?;
+    let mut module = read_zbc(raw).context("cannot parse binary zbc")?;
 
     build_type_registry(&mut module);
     verify_constraints(&module)
@@ -71,13 +102,10 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
     build_block_indices(&mut module);
     build_func_index(&mut module);
 
-    // Extract import namespaces from the module's ConstStr / Call instructions
-    // (approximation: namespace = first two components of any external call target)
     let import_namespaces = extract_import_namespaces_from_module(&module);
 
-    // R1 — TIDX section (optional; absent for non-test artifacts).
-    let test_index = read_test_index_resolved(&raw)
-        .with_context(|| format!("cannot read TIDX section in `{path}`"))?;
+    let test_index =
+        read_test_index_resolved(raw).context("cannot read TIDX section")?;
 
     Ok(LoadedArtifact {
         module,
@@ -90,20 +118,19 @@ fn load_zbc(path: &str) -> Result<LoadedArtifact> {
 
 fn load_zpkg(path: &str) -> Result<LoadedArtifact> {
     let raw = std::fs::read(path).with_context(|| format!("cannot read `{path}`"))?;
+    load_zpkg_bytes(&raw).with_context(|| format!("cannot parse zpkg `{path}`"))
+}
 
+fn load_zpkg_bytes(raw: &[u8]) -> Result<LoadedArtifact> {
     if raw.len() < 4 || &raw[0..4] != ZPKG_MAGIC {
-        bail!("not a binary zpkg file: `{path}`; expected ZPK magic bytes");
+        bail!("not a binary zpkg payload: expected ZPKG magic bytes");
     }
 
-    let meta = read_zpkg_meta(&raw)
-        .with_context(|| format!("cannot read zpkg metadata from `{path}`"))?;
-
-    let module_pairs = read_zpkg_modules(&raw)
-        .with_context(|| format!("cannot load modules from `{path}`"))?;
+    let meta = read_zpkg_meta(raw).context("cannot read zpkg metadata")?;
+    let module_pairs = read_zpkg_modules(raw).context("cannot load modules from zpkg")?;
 
     let modules: Vec<Module> = module_pairs.into_iter().map(|(m, _)| m).collect();
-    let mut module = merge_modules(modules)
-        .with_context(|| format!("merging modules from `{path}`"))?;
+    let mut module = merge_modules(modules).context("merging zpkg modules")?;
 
     build_type_registry(&mut module);
     verify_constraints(&module)

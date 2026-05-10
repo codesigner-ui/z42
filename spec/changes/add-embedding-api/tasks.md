@@ -1,6 +1,6 @@
 # Tasks: Add Embedding / Hosting API
 
-> 状态：🟢 H0 + H1 完成 / H2 待启动 | 创建：2026-05-10
+> 状态：🟢 H0 + H1 + H2-core 完成 / H2b（Tier 2 + examples）+ H3 待启动 | 创建：2026-05-10
 >
 > 本 spec 范围 = H0–H3（design + ABI scaffold + hello-world + 错误路径）。
 > H4（移动平台接入） / H5（runner 重构）由各自 spec 主导。
@@ -9,7 +9,8 @@
 
 - [x] **H0** 设计文档与 spec/changes 四件套
 - [x] **H1** C ABI scaffold + Rust 单实例 state + 链接通
-- [ ] **H2** Hello-world：load_zbc / resolve_entry / invoke 全链路 + Tier 2 Rust + C/Rust example
+- [x] **H2-core** load_zbc / resolve_entry / invoke 全链路 + stdout sink 接 VM + Rust 集成测试 hello-world
+- [ ] **H2b** Tier 2 Rust crate `z42-host` + 外部 C / Rust example
 - [ ] **H3** 错误路径全覆盖 + VM exception 翻译
 
 ---
@@ -83,35 +84,42 @@
 
 ### 2.1 .zbc 加载与入口解析
 
-- [ ] 2.1.1 `load_zbc`：调 `metadata::ZbcReader` 解析字节，登记到 `HostState::modules`
-- [ ] 2.1.2 `resolve_entry`：解析 FQN（"namespace.Type::method"），匹配 module 元数据，登记到 `HostState::entries`
-- [ ] 2.1.3 `invoke`：构造 frame、推参、调 `interp::run_method`、收返回值
+- [x] 2.1.1 `load_zbc`：调 `metadata::load_artifact_from_bytes` 解析字节；按 main.rs 的 eager 模式合并 corelib + 用户 import_namespaces 命中的所有 zpkg；登记 `HostState::modules`
+- [x] 2.1.2 `resolve_entry`：FQN 通过 `module.func_index` 查找；接受 `namespace.Type.method` 与 `namespace.Type::method` 两种形式；登记 `HostState::entries`
+- [x] 2.1.3 `invoke`：marshal `Z42Value` args → `Value`；调 `interp::run_returning`；marshal 返回值
 
 ### 2.2 stdout sink 接入 VM
 
-- [ ] 2.2.1 包装 sink 回调成 `impl Write`
-- [ ] 2.2.2 在 `interp::run_method` 启动前 swap stdout writer
-- [ ] 2.2.3 调用结束 / shutdown 时复原
+> 实施期机制调整（spec design.md D4）：原计划"包装为 `impl Write` 在 `interp::run_method` 启动前 swap stdout writer"。**实际实现**：在 `corelib/io.rs` 加 `RwLock<Option<HostSink>>` 进程级 sink + `thread_local Cell<bool>` per-thread "active" flag；`route_stdout` / `route_stderr` 命中 active 线程时优先派发到 host sink。RAII `HostSinkGuard` 在 `invoke` 入口设置 active=true，离开时恢复，panic / throw 一并安全清理。C ABI 形态不变；调整为内部机制更贴合 z42 stdout 现状（thread-local stack of `Vec<u8>`）。
 
-### 2.3 Tier 2 Rust crate
+- [x] 2.2.1 `corelib/io.rs` 新增 `HostSink` + `HOST_STDOUT_SINK` / `HOST_STDERR_SINK` (`RwLock<Option<HostSink>>`) + `HOST_SINK_ACTIVE` thread-local flag
+- [x] 2.2.2 `route_stdout` / `route_stderr` 在 active 时优先派发到 host sink；否则走原有 test sink stack / println fallback
+- [x] 2.2.3 `host::ops::HostSinkGuard` RAII 包裹 `interp::run_returning`；shutdown 时清空 sink slot
+
+### 2.3 Tier 2 Rust crate（H2b 待实施）
 
 - [ ] 2.3.1 [src/toolchain/host/embed/Cargo.toml](../../../src/toolchain/host/embed/Cargo.toml) — crate `z42-host`，依赖 `z42-runtime`
 - [ ] 2.3.2 [src/toolchain/host/embed/src/lib.rs](../../../src/toolchain/host/embed/src/lib.rs) — `Host` / `HostConfig` / `Module` / `Entry` / `Value` 安全封装
 
-### 2.4 Examples
+### 2.4 Examples（H2b 待实施）
 
 - [ ] 2.4.1 [src/toolchain/host/examples/hello_c/main.c](../../../src/toolchain/host/examples/hello_c/main.c)
 - [ ] 2.4.2 [src/toolchain/host/examples/hello_c/CMakeLists.txt](../../../src/toolchain/host/examples/hello_c/CMakeLists.txt)
 - [ ] 2.4.3 [src/toolchain/host/examples/hello_rust/Cargo.toml](../../../src/toolchain/host/examples/hello_rust/Cargo.toml)
 - [ ] 2.4.4 [src/toolchain/host/examples/hello_rust/src/main.rs](../../../src/toolchain/host/examples/hello_rust/src/main.rs)
-- [ ] 2.4.5 [examples/hello.z42](../../../examples/hello.z42) — 若已存在则验证签名兼容
-- [ ] 2.4.6 端到端：编译 hello.z42 → hello.zbc → C / Rust 宿主跑通 → stdout 收到 "Hello, World!"
+- [x] 2.4.5 [src/runtime/tests/data/embedding_hello/source.z42](../../../src/runtime/tests/data/embedding_hello/source.z42) — 集成测试 fixture
+- [x] 2.4.6 端到端 Rust 集成测试：load_zbc → resolve_entry("Embedding.Hello.Main") → invoke → stdout sink 收到 "Hello, World!\n"
 
 ### 2.5 验证
 
-- [ ] 2.5.1 `host_tests::load_invoke_hello_world` 通过（Rust）
-- [ ] 2.5.2 hello_rust example `cargo run` 输出 "Hello, World!"
-- [ ] 2.5.3 hello_c example 链接通过并运行成功
+- [x] 2.5.1 `host::host_tests::load_invoke_hello_world` 通过（gated on `cfg(z42_have_embedding_hello)`，build.rs 自动编译 fixture）
+- [ ] 2.5.2 hello_rust example `cargo run` 输出 "Hello, World!"（H2b）
+- [ ] 2.5.3 hello_c example 链接通过并运行成功（H2b）
+
+### 2.6 H2 范围内的实施期 Deferred
+
+- 字符串 / 对象 / 数组 / pinned view / typeref `Z42Value` marshal —— H2 仅支持 null / i64 / f64 / bool 进出（hello-world `Main()` 无参数 + void 返回足够）；string 入参的 `pinned` 协议留 H3
+- 多 zpkg 懒加载（`declared_candidates` 非空）—— H2 走 eager merge 避免 invoke 时的"惊讶懒查"；多 zpkg lazy 留 H3
 
 ---
 

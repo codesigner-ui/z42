@@ -78,12 +78,20 @@ pub(crate) fn clear_error() { ... }
 
 ### D4. stdout / stderr sink 注入
 
-VM 端现状：`src/runtime/src/native/io.rs`（待确认实际位置）持有 `Box<dyn Write>` 形式 stdout writer。
+VM 端实际形态（实施期勘探）：`src/runtime/src/corelib/io.rs` 不持有 `Box<dyn Write>`，而是 **thread-local stack of `Vec<u8>`**（`STDOUT_SINKS` / `STDERR_SINKS`）+ `route_stdout` / `route_stderr` dispatcher。原计划"包装为 `impl Write` 后 swap"在这种结构下不自然。
 
-接入方式：
-1. host 注册 sink 时，包装成实现 `Write` 的 adapter（每次 `write` → 调 C 回调）
-2. 把 adapter 写入 VM 全局 `stdout` 句柄
-3. shutdown 时复原（v0.1 不需要复原 —— 进程重启即可，但 H3 会加测试覆盖此场景）
+最终接入方式（H2 落地）：
+
+1. `corelib/io.rs` 加进程级 `RwLock<Option<HostSink>>`（`HOST_STDOUT_SINK` / `HOST_STDERR_SINK`），存 `(callback, user_data)`
+2. 加 thread-local `Cell<bool> HOST_SINK_ACTIVE`，标记当前线程是否在 host invoke 范围内
+3. `route_stdout` / `route_stderr` 命中 `HOST_SINK_ACTIVE` 时优先派发到 host sink；否则保持现有 test stack / `println!` 行为不变
+4. `host::ops::HostSinkGuard` RAII：进入 `z42_host_invoke` 时设 active=true，离开（含 panic / throw）时复原
+5. shutdown 时把 `HOST_*_SINK` 设回 `None`
+
+为何这样设计：
+- 不引入新 IO 抽象层，复用现有 dispatch 机制（路径最短）
+- thread-local active flag 隔离 host 与并发的 test-IO 测试（互不串扰）
+- v0.1 单实例进程级 sink slot 足够；多实例时把 sink 移到 per-handle state 即可
 
 **注意**：sink 回调可能从不同线程触发（如果 z42 起子线程）。v0.1 文档约定 sink 必须线程安全；不强制 `Send + Sync` 在 ABI 上（C 没有这个概念），文档说明即可。
 

@@ -1,0 +1,17 @@
+// Embedding API hello-world fixture.
+//
+// Spec: spec/changes/add-embedding-api/ (H2)
+//       docs/design/embedding.md §9.1
+//
+// Loaded by `host::host_tests::load_invoke_hello_world` and the future
+// external `examples/hello_c` / `examples/hello_rust`. Output goes
+// through Console.WriteLine, which routes through corelib io and lands
+// in the host's stdout sink (verified by the cargo test).
+
+namespace Embedding.Hello;
+
+using Std.IO;
+
+void Main() {
+    Console.WriteLine("Hello, World!");
+}
