@@ -47,7 +47,7 @@ fn parse_zbc_sidecar_rejects_non_zbc_magic() {
 fn parse_zbc_sidecar_rejects_old_minor() {
     let bytes = make_zbc_header(1, 2, 0x04, 0);
     let err = parse_zbc_sidecar(&bytes).unwrap_err();
-    assert!(err.to_string().contains("requires 1.3+"), "{err}");
+    assert!(err.to_string().contains("requires 1.4+"), "{err}");
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn parse_zpkg_sidecar_rejects_non_zpkg_magic() {
 fn parse_zpkg_sidecar_rejects_old_minor() {
     let bytes = make_zpkg_header(0, 3, 0x04, 0);
     let err = parse_zpkg_sidecar(&bytes).unwrap_err();
-    assert!(err.to_string().contains("requires 0.4+"), "{err}");
+    assert!(err.to_string().contains("requires 0.5+"), "{err}");
 }
 
 #[test]

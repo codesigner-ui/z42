@@ -276,9 +276,9 @@ public static partial class ZpkgReader
         // 1.5b split-debug-symbols: bumped to 0.3 (inner zbc 1.2 + per-member
         // DBUG body + sidecar form). Pre-0.3 zpkg not supported per CLAUDE.md
         // "不为旧版本提供兼容".
-        if (major == 0 && minor < 4)
+        if (major == 0 && minor < 5)
             throw new InvalidDataException(
-                $"zpkg {major}.{minor} not supported; requires 0.4+. " +
+                $"zpkg {major}.{minor} not supported; requires 0.5+. " +
                 "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
 
         var dir = new Dictionary<string, (int Offset, int Size)>(StringComparer.Ordinal);

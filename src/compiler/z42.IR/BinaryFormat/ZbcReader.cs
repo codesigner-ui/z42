@@ -27,14 +27,14 @@ public static partial class ZbcReader
         // supported per CLAUDE.md "不为旧版本提供兼容".
         if (major == 0)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.3+. " +
+                $"zbc {major}.{minor} not supported; requires 1.4+." +
                 "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
         if (major > 1)
             throw new InvalidDataException(
                 $"zbc major version {major} not supported (expected 1.x)");
-        if (major == 1 && minor < 3)
+        if (major == 1 && minor < 4)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.3+. " +
+                $"zbc {major}.{minor} not supported; requires 1.4+." +
                 "Run scripts/regen-golden-tests.sh to upgrade golden artifacts.");
 
         var dir = ReadDirectory(data, minor, secCount);
@@ -164,9 +164,9 @@ public static partial class ZbcReader
     {
         ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
 
-        if (major != 1 || minor < 3)
+        if (major != 1 || minor < 4)
             throw new InvalidDataException(
-                $"sidecar zbc {major}.{minor} not supported; requires 1.3+. " +
+                $"sidecar zbc {major}.{minor} not supported; requires 1.4+." +
                 "Run scripts/regen-golden-tests.sh to upgrade.");
         if (!flags.HasFlag(ZbcFlags.SymOnly))
             throw new InvalidDataException(
@@ -410,13 +410,24 @@ public static partial class ZbcReader
         bool hasTypeParam = (flags & 0x08) != 0;
         bool reqCtor      = (flags & 0x10) != 0;  // L3-G2.5 ctor
         bool reqEnum      = (flags & 0x20) != 0;  // L3-G2.5 enum
+        bool hasFuncSig   = (flags & 0x40) != 0;  // add-generic-func-constraint (1.4+)
         string? baseClass = hasBase ? P(pool, r.ReadUInt32()) : null;
         string? typeParamConstraint = hasTypeParam ? P(pool, r.ReadUInt32()) : null;
         byte ifaceCount = r.ReadByte();
         var ifaces = new List<string>(ifaceCount);
         for (int i = 0; i < ifaceCount; i++)
             ifaces.Add(P(pool, r.ReadUInt32()));
-        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces, typeParamConstraint, reqCtor, reqEnum);
+        IrFuncSig? funcSig = null;
+        if (hasFuncSig)
+        {
+            byte paramCount = r.ReadByte();
+            var ps = new List<string>(paramCount);
+            for (int i = 0; i < paramCount; i++)
+                ps.Add(P(pool, r.ReadUInt32()));
+            string ret = P(pool, r.ReadUInt32());
+            funcSig = new IrFuncSig(ps, ret);
+        }
+        return new IrConstraintBundle(reqClass, reqStruct, baseClass, ifaces, typeParamConstraint, reqCtor, reqEnum, funcSig);
     }
 
     // ── SIGS section ──────────────────────────────────────────────────────────

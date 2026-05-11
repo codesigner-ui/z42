@@ -198,6 +198,31 @@ public static class DiagnosticCatalog
             "default(int)                         // ok, 0\n" +
             "default(string)                      // ok, null"),
 
+        [DiagnosticCodes.GenericFuncConstraintViolation] = new(
+            "Type argument does not satisfy function-type constraint",
+            "A generic parameter has a function/delegate constraint " +
+            "(`where T: Func<int, R>` / `where T: Action<...>` / `where T: (int) -> R`) " +
+            "and the supplied type argument is not assignable to the constraint signature. " +
+            "Assignability follows the usual variance rules: parameter types are " +
+            "contravariant (the argument's params can be supertypes), the return type is " +
+            "covariant (the argument's return can be a subtype). " +
+            "(add-generic-func-constraint, 2026-05-11)",
+            "R Apply<T, R>(T fn, int x) where T: Func<int, R> { return fn(x); }\n" +
+            "Apply<Func<string,int>, int>(s => int.Parse(s), 5)  // E0422: param 'string' is not contravariantly compatible with 'int'\n" +
+            "Apply<Func<int,int>, int>(n => n * 2, 5)            // ok"),
+
+        [DiagnosticCodes.InvalidFuncConstraint] = new(
+            "Function-type constraint cannot combine with other constraints (v1)",
+            "In the first release of function-type constraints, only standalone forms are " +
+            "permitted. Mixing a function constraint with class / interface / `new()` / " +
+            "`class` / `struct` / `enum` constraints on the same type parameter is not " +
+            "supported. Likewise, only one function constraint per type parameter. " +
+            "Combinations such as `where T: Func<int,int> + IFormattable` may be relaxed in " +
+            "a future release. (add-generic-func-constraint, 2026-05-11)",
+            "void X<T>() where T: Func<int,int>             // ok\n" +
+            "void X<T>() where T: Func<int,int> + ICloneable // E0423: cannot combine\n" +
+            "void X<T>() where T: Func<int,int>, T: Action  // E0423: multiple func constraints"),
+
         // ── Z05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

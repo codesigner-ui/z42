@@ -76,6 +76,8 @@ public static class DiagnosticCodes
     public const string EventFieldExternalAccess = "E0414"; // event field invoked or assigned outside owner class (D-7-residual)
     public const string InvalidCatchType         = "E0420"; // catch (T e) where T is unknown or not derived from Exception (catch-by-generic-type)
     public const string InvalidDefaultType       = "E0421"; // default(T) where T is unknown / generic type-param (add-default-expression Phase 1)
+    public const string GenericFuncConstraintViolation = "E0422"; // where T: Func<...> / (T)->R 不满足 (add-generic-func-constraint)
+    public const string InvalidFuncConstraint    = "E0423"; // func 约束与其他约束并置 / 多个 func 约束 (add-generic-func-constraint v1)
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

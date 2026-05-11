@@ -1,0 +1,25 @@
+// Test: add-generic-func-constraint — literal `(T) -> R` syntax equivalent to Func/Action.
+
+int Twice<T>(T f, int x) where T: (int) -> int {
+    return f(x);
+}
+
+void RunVoid<T>(T h) where T: () -> void {
+    h();
+}
+
+class Counter {
+    public int n = 0;
+}
+
+void Main() {
+    Func<int, int> addOne = n => n + 1;
+    int r = Twice(addOne, 5);
+    Assert.Equal(6, r);
+
+    var c = new Counter();
+    Action add10 = () => { c.n = c.n + 10; };
+    RunVoid(add10);
+    RunVoid(add10);
+    Assert.Equal(20, c.n);
+}

@@ -73,6 +73,39 @@ public sealed partial class TypeChecker
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"type argument `{typeArg}` for `{typeParams[i]}` is not a subtype of `{otherArg}` (required by `{typeParams[i]}: {otherTp}` on `{declName}`)",
                     callSpan);
+            // add-generic-func-constraint (2026-05-11): `where T: Func<...> / (T)->R`
+            // — typeArg must be assignable to FuncSignature (params contravariant, return covariant
+            // via Z42FuncType.AssignableTo).
+            if (bundle.FuncSignature is { } expectedSig
+                && !TypeSatisfiesFuncConstraint(typeArg, expectedSig))
+                _diags.Error(DiagnosticCodes.GenericFuncConstraintViolation,
+                    $"type argument `{typeArg}` for `{typeParams[i]}` does not satisfy function-type constraint `{expectedSig}` on `{declName}`",
+                    callSpan);
+        }
+    }
+
+    /// add-generic-func-constraint (2026-05-11): does `typeArg` satisfy `where T: <expectedSig>`?
+    ///
+    /// Accepts:
+    /// - `Z42FuncType` whose signature is assignable to `expectedSig` (variance: params contravariant,
+    ///   return covariant — reuses Z42FuncType.AssignableTo).
+    /// - `Z42ErrorType` / `Z42UnknownType` — don't cascade.
+    /// - `Z42GenericParamType` — propagate when T itself has a compatible FuncSignature constraint.
+    /// Rejects: classes (even if they have an Invoke method), interfaces, primitives, arrays.
+    private bool TypeSatisfiesFuncConstraint(Z42Type typeArg, Z42FuncType expectedSig)
+    {
+        switch (typeArg)
+        {
+            case Z42ErrorType:
+            case Z42UnknownType:
+                return true; // don't cascade
+            case Z42FuncType actual:
+                return Z42Type.IsAssignableTo(expectedSig, actual);
+            case Z42GenericParamType gp:
+                var inner = _symbols.LookupEffectiveConstraints(gp.Name).FuncSignature;
+                return inner is not null && Z42Type.IsAssignableTo(expectedSig, inner);
+            default:
+                return false;
         }
     }
 

@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 3;   // 2026-05-10 split-debug-symbols Phase 4: SIGS gains per-parameter type names (u32 strIdx × ParamCount) for stack-trace signature decoration. Pre-1.3 not readable.
+    public const ushort VersionMinor = 4;   // 2026-05-11 add-generic-func-constraint: constraint bundle flag 0x40 + per-param/return type-name strings (Z42FuncType signature). Pre-1.4 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -455,6 +455,7 @@ public static partial class ZbcWriter
             if (b.TypeParamConstraint is not null) flags |= 0x08;
             if (b.RequiresConstructor)             flags |= 0x10;
             if (b.RequiresEnum)                    flags |= 0x20;
+            if (b.FuncSignature is not null)       flags |= 0x40; // add-generic-func-constraint
         }
         w.Write(flags);
         if (b is not null && b.BaseClass is not null)
@@ -466,6 +467,13 @@ public static partial class ZbcWriter
         if (b is not null)
             foreach (var iface in b.Interfaces)
                 w.Write((uint)pool.Idx(iface));
+        if (b?.FuncSignature is { } sig)
+        {
+            w.Write((byte)sig.Params.Count);
+            foreach (var p in sig.Params)
+                w.Write((uint)pool.Idx(p));
+            w.Write((uint)pool.Idx(sig.Ret));
+        }
     }
 
     // ── IMPT section (full mode: import table) ────────────────────────────────

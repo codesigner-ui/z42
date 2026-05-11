@@ -1,0 +1,17 @@
+// Test: add-generic-func-constraint — Action<T> constraint with void return.
+
+class Counter {
+    public int n = 0;
+}
+
+void Run<T>(T handler, int x) where T: Action<int> {
+    handler(x);
+}
+
+void Main() {
+    var c = new Counter();
+    Action<int> inc = v => { c.n = c.n + v; };
+    Run(inc, 7);
+    Run(inc, 3);
+    Assert.Equal(10, c.n);
+}

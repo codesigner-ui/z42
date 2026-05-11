@@ -429,6 +429,9 @@ public sealed record Z42GenericParamType(
 /// type parameter in the same decl that this one must be a subtype of.
 /// `RequiresConstructor` (L3-G2.5 ctor) demands a no-arg constructor.
 /// `RequiresEnum` (L3-G2.5 enum) demands the type argument be an enum.
+/// `FuncSignature` (add-generic-func-constraint, 2026-05-11) demands the type
+/// argument be a function/delegate type matching the given signature; variance
+/// follows Z42FuncType.AssignableTo (params contravariant, return covariant).
 public sealed record GenericConstraintBundle(
     Z42ClassType? BaseClass,
     IReadOnlyList<Z42InterfaceType> Interfaces,
@@ -436,14 +439,16 @@ public sealed record GenericConstraintBundle(
     bool RequiresStruct = false,
     string? TypeParamConstraint = null,
     bool RequiresConstructor = false,
-    bool RequiresEnum = false)
+    bool RequiresEnum = false,
+    Z42FuncType? FuncSignature = null)
 {
     public static readonly GenericConstraintBundle Empty = new(null, []);
     public bool IsEmpty => BaseClass is null && Interfaces.Count == 0
                            && !RequiresClass && !RequiresStruct
                            && TypeParamConstraint is null
                            && !RequiresConstructor
-                           && !RequiresEnum;
+                           && !RequiresEnum
+                           && FuncSignature is null;
 }
 
 /// User-defined enum type (e.g., `enum Color { Red, Green, Blue }`).

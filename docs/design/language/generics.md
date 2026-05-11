@@ -140,6 +140,47 @@ T Sum<T>(List<T> items) where T: IAdd<T, Output=T> {
 }
 ```
 
+### 委托/函数约束（add-generic-func-constraint, 2026-05-11）
+
+`where T: <function-type>` 允许把"T 是可调用的"作为约束传给 body —— body 内可直接 `t(args)` 调用，dispatch 走既有 CallIndirect（与闭包同一 IR 路径，**零新指令**）。
+
+**两种等价语法形态：**
+
+```z42
+// 命名形式（沿用 stdlib delegate 名）
+R Apply<T, R>(T f, int x) where T: Func<int, R> { return f(x); }
+void Run<T>(T h, int x)  where T: Action<int>   { h(x); }
+bool Test<T>(T p, int x) where T: Predicate<int> { return p(x); }
+
+// 字面量形式（结构性、不依赖 stdlib）
+R Apply<T, R>(T f, int x) where T: (int) -> R   { return f(x); }
+void RunVoid<T>(T h)      where T: () -> void   { h(); }
+```
+
+两种形态在 TypeChecker 内都解析为 `Z42FuncType`，存入 `GenericConstraintBundle.FuncSignature` 字段。
+
+**匹配语义 —— 结构性 + variance**（复用 `Z42FuncType.AssignableTo`）：
+
+- 参数**逆变**：约束 `Func<Cat, int>` 接受 `Func<Animal, int>`（更宽参数 OK）
+- 返回**协变**：约束 `Func<int, Animal>` 接受 `Func<int, Cat>`（更窄返回 OK）
+
+**v1 限制（E0423 InvalidFuncConstraint）：**
+
+- func 约束不能与其他约束（class / interface / `new()` / `struct` / `enum` 等）组合
+- 同一 type 参数不能有多个 func 约束
+- 反例：`where T: Func<int,int> + IDisposable` → E0423
+
+**调用站点约束检查（E0422 GenericFuncConstraintViolation）：**
+
+```z42
+Apply<Func<string,int>, int>(s => int.Parse(s), 5)  // E0422: param 'string' 不能逆变匹配 'int'
+Apply<Func<int,int>, int>(n => n * 2, 5)            // ok
+```
+
+**zbc 编码**：constraint bundle flag bit `0x40` + `param_count:u8 + per-param strIdx + return strIdx`（zbc 1.4+）。VM `verify_constraints` 校验签名内引用的 class/interface 类型存在（type-params + Std.* + primitives 放行）。
+
+**实施记录**：`docs/spec/archive/2026-05-11-add-generic-func-constraint/`。
+
 ### 约束检查时机
 
 | 阶段 | 职责 |
@@ -1114,6 +1155,10 @@ var x = new Container<Animal, Vehicle>(...);      // ❌ E0402
 
 - `new()` — 依赖 VM 运行时类型参数（L3-R 批次）
 - `notnull` — 后续小迭代（与 z42 可空性语义协同设计）
+
+### L3-G2.5 委托/函数约束（add-generic-func-constraint，2026-05-11）
+
+✅ 已完成。详见上方 §约束体系 "委托/函数约束" 段。语法 `where T: Func<int, R>` 或 `where T: (int) -> R`；body 内 `t(args)` 走 CallIndirect；零新 IR / VM 指令。zbc bump 1.3 → 1.4，zpkg 0.4 → 0.5。错误码 E0422 / E0423。
 
 ### L3-G3a 已完成（2026-04-22）
 

@@ -1,0 +1,20 @@
+// Test: add-generic-func-constraint — Predicate<T> constraint (bool return).
+
+bool All<T, U>(T pred, U[] items) where T: Predicate<U> {
+    foreach (var x in items) {
+        if (!pred(x)) return false;
+    }
+    return true;
+}
+
+void Main() {
+    Predicate<int> isEven = n => n % 2 == 0;
+
+    int[] xs = new int[] { 2, 4, 6, 8 };
+    bool allEven = All(isEven, xs);
+    Assert.True(allEven);
+
+    int[] ys = new int[] { 2, 3, 6 };
+    bool allEven2 = All(isEven, ys);
+    Assert.False(allEven2);
+}

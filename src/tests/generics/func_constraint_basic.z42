@@ -1,0 +1,16 @@
+// Test: add-generic-func-constraint (2026-05-11) — basic Func<int,R> constraint.
+// `where T: Func<int, R>` lets body call `t(args)` (CallIndirect dispatch).
+
+R Apply<T, R>(T f, int x) where T: Func<int, R> {
+    return f(x);
+}
+
+void Main() {
+    Func<int, int> doubler = n => n * 2;
+    int twice = Apply(doubler, 5);
+    Assert.Equal(10, twice);
+
+    Func<int, string> wrap = n => "[" + n + "]";
+    string fmt = Apply(wrap, 42);
+    Assert.Equal("[42]", fmt);
+}

@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 4;   // 2026-05-10 split-debug-symbols Phase 4: inner zbc 1.3 (SIGS gains per-param type names). Pre-0.4 not readable.
+    public const ushort VersionMinor = 5;   // 2026-05-11 add-generic-func-constraint: inner zbc 1.4 (constraint bundle flag 0x40 + func signature). Pre-0.5 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

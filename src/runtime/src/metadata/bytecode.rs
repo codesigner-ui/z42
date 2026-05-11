@@ -124,6 +124,20 @@ pub struct ConstraintBundle {
     /// L3-G2.5 enum: `where T: enum` — type arg must be an enum type.
     #[serde(default)]
     pub requires_enum: bool,
+    /// add-generic-func-constraint (2026-05-11): function-type signature.
+    /// `params` are IR type-name strings (e.g. "int", "string", "Cat"); `ret` is
+    /// likewise a type name ("void" / "int" / etc.). None when no func constraint.
+    #[serde(default)]
+    pub func_signature: Option<FuncSigDescriptor>,
+}
+
+/// add-generic-func-constraint (2026-05-11): per-tp function signature spelled
+/// as type-name strings (so zbc serialization is uniform with other constraint
+/// fields that hold class/interface names).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct FuncSigDescriptor {
+    pub params: Vec<String>,
+    pub ret: String,
 }
 
 impl ConstraintBundle {
@@ -133,6 +147,7 @@ impl ConstraintBundle {
             && self.type_param_constraint.is_none()
             && !self.requires_constructor
             && !self.requires_enum
+            && self.func_signature.is_none()
     }
 }
 

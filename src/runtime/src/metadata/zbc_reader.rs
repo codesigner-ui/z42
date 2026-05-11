@@ -282,6 +282,7 @@ fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintB
     let has_type_param       = (flags & 0x08) != 0;
     let requires_constructor = (flags & 0x10) != 0;
     let requires_enum        = (flags & 0x20) != 0;
+    let has_func_sig         = (flags & 0x40) != 0; // add-generic-func-constraint (zbc 1.4+)
     let base_class = if has_base {
         let idx = c.read_u32()?;
         Some(c.pool_str(pool, idx)?.to_owned())
@@ -296,9 +297,21 @@ fn read_constraint_bundle(c: &mut Cursor, pool: &[String]) -> Result<ConstraintB
         let idx = c.read_u32()?;
         interfaces.push(c.pool_str(pool, idx)?.to_owned());
     }
+    let func_signature = if has_func_sig {
+        let param_count = c.read_u8()? as usize;
+        let mut params = Vec::with_capacity(param_count);
+        for _ in 0..param_count {
+            let idx = c.read_u32()?;
+            params.push(c.pool_str(pool, idx)?.to_owned());
+        }
+        let ret_idx = c.read_u32()?;
+        let ret = c.pool_str(pool, ret_idx)?.to_owned();
+        Some(crate::metadata::bytecode::FuncSigDescriptor { params, ret })
+    } else { None };
     Ok(ConstraintBundle {
         requires_class, requires_struct, base_class, interfaces, type_param_constraint,
         requires_constructor, requires_enum,
+        func_signature,
     })
 }
 
@@ -573,8 +586,8 @@ pub fn parse_zbc_sidecar(data: &[u8]) -> Result<ZbcSidecarData> {
     }
     let major = u16::from_le_bytes([data[4], data[5]]);
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if major != 1 || minor < 3 {
-        bail!("zbc sidecar {major}.{minor} not supported; requires 1.3+");
+    if major != 1 || minor < 4 {
+        bail!("zbc sidecar {major}.{minor} not supported; requires 1.4+");
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -610,8 +623,8 @@ pub fn parse_zpkg_sidecar(data: &[u8]) -> Result<ZpkgSidecarData> {
         bail!("not a zpkg sidecar (bad magic)");
     }
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if minor < 4 {
-        bail!("zpkg sidecar minor 0.{minor} not supported; requires 0.4+");
+    if minor < 5 {
+        bail!("zpkg sidecar minor 0.{minor} not supported; requires 0.5+");
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -936,9 +949,9 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     // per-parameter type names (u32 strIdx × paramCount) for stack-trace
     // signature decoration. Per CLAUDE.md "不为旧版本提供兼容", pre-1.3
     // artifacts must be regenerated.
-    if major == 0 || (major == 1 && minor < 3) {
+    if major == 0 || (major == 1 && minor < 4) {
         bail!(
-            "zbc {major}.{minor} not supported; requires 1.3+. \
+            "zbc {major}.{minor} not supported; requires 1.4+. \
              Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
         );
     }
@@ -1148,9 +1161,9 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
     // 2026-05-10 split-debug-symbols: bumped to zpkg 0.3 — inner zbc 1.2
     // (LineTable in DBUG) + per-member DBUG body in MODS + sidecar form
     // (FlagSymOnly + MDBG + BLID).
-    if minor < 4 {
+    if minor < 5 {
         bail!(
-            "zpkg minor 0.{minor} not supported; requires 0.4+ (with zbc 1.3 inner modules). \
+            "zpkg minor 0.{minor} not supported; requires 0.5+ (with zbc 1.4 inner modules). \
              Run scripts/build-stdlib.sh to rebuild."
         );
     }

@@ -100,6 +100,7 @@ public sealed partial class TypeChecker
                 Z42ClassType? baseClass = null;
                 var ifaces = new List<Z42InterfaceType>();
                 string? typeParamConstraint = null;
+                Z42FuncType? funcSignature = null;
                 foreach (var tx in entry.Constraints)
                 {
                     // L3-G2.5 bare-typeparam: NamedType matching another active type param
@@ -136,9 +137,20 @@ public sealed partial class TypeChecker
                         case Z42InterfaceType iface:
                             ifaces.Add(iface);
                             break;
+                        // add-generic-func-constraint (2026-05-11): function/delegate constraint
+                        // `where T: Func<int,R>` / `where T: (int) -> R` — Z42FuncType is the
+                        // resolved type for both named delegate references and `(T) -> R` literal.
+                        case Z42FuncType ft when funcSignature != null:
+                            _diags.Error(DiagnosticCodes.InvalidFuncConstraint,
+                                $"generic parameter `{entry.TypeParam}` cannot have multiple function-type constraints",
+                                tx.Span);
+                            break;
+                        case Z42FuncType ft:
+                            funcSignature = ft;
+                            break;
                         default:
                             _diags.Error(DiagnosticCodes.TypeMismatch,
-                                $"constraint on `{entry.TypeParam}` must be a class or interface, got `{resolved}`",
+                                $"constraint on `{entry.TypeParam}` must be a class, interface, or function type, got `{resolved}`",
                                 tx.Span);
                             break;
                     }
@@ -164,10 +176,22 @@ public sealed partial class TypeChecker
                         entry.Span);
                     reqEnum = reqClass = false;
                 }
+                // v1 rule: function-type constraint cannot combine with other constraints
+                // (E0409 InvalidFuncConstraint). Future versions may relax this.
+                if (funcSignature != null
+                    && (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct
+                        || typeParamConstraint != null || reqCtor || reqEnum))
+                {
+                    _diags.Error(DiagnosticCodes.InvalidFuncConstraint,
+                        $"generic parameter `{entry.TypeParam}` function-type constraint cannot be combined with other constraints (v1 limitation)",
+                        entry.Span);
+                    // drop function signature to surface other constraints' violations cleanly
+                    funcSignature = null;
+                }
                 if (baseClass != null || ifaces.Count > 0 || reqClass || reqStruct
-                    || typeParamConstraint != null || reqCtor || reqEnum)
+                    || typeParamConstraint != null || reqCtor || reqEnum || funcSignature != null)
                     result[entry.TypeParam] = new GenericConstraintBundle(
-                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint, reqCtor, reqEnum);
+                        baseClass, ifaces, reqClass, reqStruct, typeParamConstraint, reqCtor, reqEnum, funcSignature);
             }
             return result.Count > 0 ? result : null;
         }

@@ -66,14 +66,24 @@ public sealed record IrConstraintBundle(
     /// L3-G2.5 ctor: `where T: new()` — T must have a no-arg constructor.
     bool RequiresConstructor = false,
     /// L3-G2.5 enum: `where T: enum` — T must be an enum type.
-    bool RequiresEnum = false)
+    bool RequiresEnum = false,
+    /// add-generic-func-constraint (2026-05-11): function-type signature constraint
+    /// (`where T: Func<int, R>` / `where T: (int) -> R`). Null when no func constraint.
+    /// Encoded in zbc as type-name strings (each entry parses to a TypeTag at load time);
+    /// `Ret` is "void" for Action-style returns.
+    IrFuncSig? FuncSignature = null)
 {
     public bool IsEmpty => !RequiresClass && !RequiresStruct
                            && BaseClass is null && Interfaces.Count == 0
                            && TypeParamConstraint is null
                            && !RequiresConstructor
-                           && !RequiresEnum;
+                           && !RequiresEnum
+                           && FuncSignature is null;
 }
+
+/// add-generic-func-constraint (2026-05-11): function-type signature for `where T: (...) -> R`.
+/// Both `Params` and `Ret` use IR type-name strings (e.g., "int", "string", "Std.Foo", "Action<int>").
+public sealed record IrFuncSig(List<string> Params, string Ret);
 
 // ── Function ──────────────────────────────────────────────────────────────────
 

@@ -64,7 +64,11 @@ public sealed partial class IrGen
                     b.BaseClass?.Name, b.Interfaces.Select(i => i.Name).ToList(),
                     b.TypeParamConstraint,
                     b.RequiresConstructor,
-                    b.RequiresEnum));
+                    b.RequiresEnum,
+                    // add-generic-func-constraint (2026-05-11)
+                    b.FuncSignature is { } sig
+                        ? new IrFuncSig(sig.Params.Select(p => p.ToString()!).ToList(), sig.Ret.ToString()!)
+                        : null));
             else
                 result.Add(EmptyBundle());
         }

@@ -395,6 +395,19 @@ public sealed partial class TypeChecker
                 var calleeBound = new BoundIdent(funcId.Name, vft, funcId.Span);
                 return new BoundIndirectCall(calleeBound, freeArgs, vft.Ret, call.Span);
             }
+            // add-generic-func-constraint (2026-05-11): variable of generic-param type T
+            // whose effective constraints include FuncSignature is callable. Treat as
+            // Z42FuncType with the constraint signature; emit BoundIndirectCall (same path
+            // as lambda values).
+            if (varType is Z42GenericParamType gpVar
+                && _symbols.LookupActiveTypeParamConstraints(gpVar.Name).FuncSignature is { } gpSig)
+            {
+                CheckArgCount(freeArgs.Count, gpSig.MinArgCount, gpSig.Params.Count, call.Span);
+                CheckArgTypes(call.Args, freeArgs, gpSig.Params);
+                CheckArgModifiers(call.Args, freeArgs, gpSig, env, call.Span);
+                var calleeBound = new BoundIdent(funcId.Name, gpSig, funcId.Span);
+                return new BoundIndirectCall(calleeBound, freeArgs, gpSig.Ret, call.Span);
+            }
             // Unknown function — report error
             BindIdent(funcId, env);
             _diags.Error(DiagnosticCodes.TypeMismatch,
