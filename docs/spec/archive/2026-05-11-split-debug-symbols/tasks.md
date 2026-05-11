@@ -1,17 +1,28 @@
 # Tasks: Split Debug Symbols to Sidecar (.zsym)
 
-> 状态：🟡 进行中 | 创建：2026-05-10
+> 状态：🟢 已完成 | 创建：2026-05-10 | 归档：2026-05-11
 > 类型：vm + ir（完整流程）
 > 前置：✅ unify-frame-chain (`fd5deb2`) 已归档，VmFrame 单一栈已就绪
+>
+> **归档摘要**：用户的 release 体积优化诉求（"不带行号 + 离线可符号化"）已落地。
+> 主交付：zbc 1.2/1.3 + zpkg 0.3/0.4 wire format 重组、BLID 配对机制、
+> `<name>.zsym` sidecar 自动加载、SIGS 携带参数签名、`[profile.*].strip` 接线、
+> stdlib 6 zpkg+zsym 完整流水。所有 1207 C# + 309 Rust + 312 VM 测试全绿。
+>
+> **延后到 follow-up spec**：`z42c symbolicate` 离线 CLI 工具 + 退化 trace
+> `+0x<ip> [build:<8hex>]` 格式。已记入 [language/exceptions.md](../../../design/language/exceptions.md)
+> Deferred 段 + roadmap.md Deferred Backlog Index。
 
 ## 进度概览
 
-- [ ] 阶段 1: zbc 二进制层（C# 写/读 + BLID）
-- [ ] 阶段 2: Driver 接线 + symbolicate 子命令
-- [ ] 阶段 3: Rust runtime 加载 + 合并
-- [ ] 阶段 4: Rust trace 退化 + 函数签名
-- [ ] 阶段 5: Golden test 端到端
-- [ ] 阶段 6: 文档同步 + 全绿验证
+- [x] 阶段 1: zbc 二进制层（C# 写/读 + BLID + 1.2 DBUG 重组）
+- [x] 阶段 1.5b: zpkg-level sidecar wire format（packer 集成；scope 扩张）
+- [x] 阶段 2.1 / 2.2: Driver toml strip 接线 + e2e 验证
+- [ ] 阶段 2.3 / 2.4: `z42c symbolicate` CLI ⟶ **deferred follow-up**
+- [x] 阶段 3: Rust runtime 加载 + 合并 + sidecar tests
+- [x] 阶段 4: 函数签名 trace（SIGS 1.3 + format_frame_name）
+- [x] 阶段 5: Golden test 端到端（stdlib pairing gate）
+- [x] 阶段 6: 文档同步（zbc.md / exceptions.md / project.md / vm-architecture.md / roadmap.md）+ 全绿验证
 
 ## 阶段 1: zbc 二进制层（C#）
 
