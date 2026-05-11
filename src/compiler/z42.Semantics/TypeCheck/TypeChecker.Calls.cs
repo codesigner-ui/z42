@@ -397,9 +397,20 @@ public sealed partial class TypeChecker
             funcType ??= env.LookupFunc(funcId.Name);
             if (funcType is Z42FuncType ft)
             {
+                // spec add-named-arguments Part 2: re-bind with reorder when any
+                // named arg. Decl pulled from SymbolTable.FuncDecls (populated
+                // for locally collected top-level funcs). Local nested funcs
+                // and imported funcs have no entry → Z1002 fallback inside helper.
+                List<Argument> ftOrigArgs = call.Args.ToList();
+                if (call.Args.Any(a => a.Name is not null))
+                {
+                    _symbols.FuncDecls.TryGetValue(resolvedFuncName, out var fnDecl);
+                    (ftOrigArgs, freeArgs) = BindArgsReordered(
+                        call.Args, fnDecl?.Params, env, call.Span);
+                }
                 CheckArgCount(freeArgs.Count, ft.MinArgCount, ft.Params.Count, call.Span);
-                CheckArgTypes(call.Args, freeArgs, ft.Params);
-                CheckArgModifiers(call.Args, freeArgs, ft, env, call.Span);
+                CheckArgTypes(ftOrigArgs, freeArgs, ft.Params);
+                CheckArgModifiers(ftOrigArgs, freeArgs, ft, env, call.Span);
                 // L3-G2: if the function has a constraint map, infer type args from params and validate.
                 if (_funcConstraints.ContainsKey(funcId.Name))
                     InferAndValidateFuncConstraints(funcId.Name, ft, freeArgs, call.Span);

@@ -15,6 +15,11 @@ public sealed partial class SymbolCollector : ISymbolBinder
 
     // Mutable state populated during collection, frozen into SymbolTable at the end.
     internal readonly Dictionary<string, Z42FuncType>      _funcs      = new();
+    /// spec add-named-arguments: maps free-function registration key →
+    /// originating FunctionDecl. Populated only for locally collected funcs;
+    /// imported (cross-CU) funcs have no decl entry here — named-arg call
+    /// sites against such funcs fall back to Z1002.
+    internal readonly Dictionary<string, FunctionDecl>     _funcDecls  = new();
     internal readonly Dictionary<string, Z42ClassType>     _classes    = new();
     internal readonly Dictionary<string, Z42InterfaceType> _interfaces = new();
     internal readonly Dictionary<string, long>             _globalEnumConstants = new();
@@ -69,7 +74,8 @@ public sealed partial class SymbolCollector : ISymbolBinder
             _abstractClasses, _sealedClasses, _virtualMethods,
             _importedClassNames, _importedClassNamespaces,
             _importedInterfaceNames, _importedFuncNames, _importedEnumNames,
-            delegates: _delegates);
+            delegates: _delegates,
+            funcDecls: _funcDecls);
     }
 
     /// 2026-05-02 add-delegate-type: 收集顶层 + 嵌套 delegate。
@@ -329,6 +335,7 @@ public sealed partial class SymbolCollector : ISymbolBinder
                 continue;
             }
             _funcs[regName] = sig;
+            _funcDecls[regName] = fn;
         }
     }
 

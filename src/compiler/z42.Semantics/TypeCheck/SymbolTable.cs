@@ -24,6 +24,12 @@ public sealed class SymbolTable
     ///   嵌套        →  "Btn.OnClick"  或  "Btn.OnClick$N"
     /// Value 携带签名 / 类型参数 / 可选 where 约束元数据。
     public IReadOnlyDictionary<string, DelegateInfo> Delegates { get; }
+
+    /// spec add-named-arguments: per-registration-key originating FunctionDecl
+    /// for locally collected top-level free functions. Used at call sites to
+    /// access `Param.Name` for named-arg reorder. Empty for imported funcs
+    /// (named args against imported funcs → Z1002 fallback).
+    public IReadOnlyDictionary<string, FunctionDecl> FuncDecls { get; }
     /// L3-G2.5 chain: per-class list of implemented interfaces with TypeArgs preserved.
     /// `class Foo: IEquatable<int>` stores `Z42InterfaceType("IEquatable", ..., [Int])`.
     public IReadOnlyDictionary<string, List<Z42InterfaceType>> ClassInterfaces { get; }
@@ -66,7 +72,8 @@ public sealed class SymbolTable
         HashSet<string>? importedInterfaceNames = null,
         HashSet<string>? importedFuncNames = null,
         HashSet<string>? importedEnumNames = null,
-        Dictionary<string, DelegateInfo>? delegates = null)
+        Dictionary<string, DelegateInfo>? delegates = null,
+        Dictionary<string, FunctionDecl>? funcDecls = null)
     {
         Classes = classes;
         Functions = functions;
@@ -84,6 +91,7 @@ public sealed class SymbolTable
         ImportedFuncNames       = importedFuncNames       ?? new HashSet<string>();
         ImportedEnumNames       = importedEnumNames       ?? new HashSet<string>();
         Delegates               = delegates ?? new Dictionary<string, DelegateInfo>();
+        FuncDecls               = funcDecls ?? new Dictionary<string, FunctionDecl>();
         _ancestors = BuildAncestorSets(classes);
     }
 

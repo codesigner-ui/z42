@@ -232,6 +232,17 @@ void Greet(string name, string prefix = "Hello") {
     Console.WriteLine($"{prefix}, {name}!");
 }
 
+// 具名实参（C# 风格）：按参数名传递，可乱序；位置实参必须在具名实参之前
+// 跳过中间默认参数也使用具名形式
+void Draw(string color, int width = 1, bool filled = false) { }
+Draw(color: "red", filled: true);          // width 走默认；filled 跳过 width 用具名
+Draw("blue", filled: true);                // 混合：color 位置 + filled 具名
+// Draw(color: "red", 2);                  // 错误 Z1001：位置实参不能跟在具名实参后
+// Draw(badName: "red");                   // 错误 Z1002：参数名不存在
+// Draw(color: "red", color: "blue");      // 错误 Z1003：具名实参重复
+// Draw("red", color: "blue");             // 错误 Z1004：第 1 个参数被位置+具名重复指定
+// Draw(width: 2);                         // 错误 Z1005：required 参数 color 未提供
+
 // 可变参数
 int Sum(params int[] values) {
     int total = 0;

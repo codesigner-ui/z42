@@ -226,4 +226,37 @@ public sealed class NamedArgumentsTests
         diags.All.Should().Contain(d =>
             d.Code == DiagnosticCodes.UnknownArgumentName);
     }
+
+    // ── Top-level free function (env.LookupFunc path via SymbolTable.FuncDecls) ──
+
+    [Fact]
+    public void TypeCheck_FreeFunctionOutOfOrderNamed_BindsClean()
+    {
+        var (_, diags) = Compile("""
+            void Greet(string name, int times) { }
+            void Main() { Greet(times: 3, name: "Alice"); }
+            """);
+        diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TypeCheck_FreeFunctionUnknownName_EmitsZ1002()
+    {
+        var (_, diags) = Compile("""
+            void Greet(string name) { }
+            void Main() { Greet(badName: "Alice"); }
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.UnknownArgumentName);
+    }
+
+    [Fact]
+    public void TypeCheck_FreeFunctionSkipMiddleDefault_BindsClean()
+    {
+        var (_, diags) = Compile("""
+            int Add(int a, int b = 10, int c = 20) { return a + b + c; }
+            void Main() { var r = Add(1, c: 30); }
+            """);
+        diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
 }
