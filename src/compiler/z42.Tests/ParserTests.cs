@@ -714,7 +714,8 @@ void Main() { }");
         var stmt = (ExprStmt)ParseStmt("Inc(ref c);");
         var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
         call.Args.Should().HaveCount(1);
-        var arg = call.Args[0].Should().BeOfType<ModifiedArg>().Subject;
+        call.Args[0].Name.Should().BeNull();
+        var arg = call.Args[0].Value.Should().BeOfType<ModifiedArg>().Subject;
         arg.Modifier.Should().Be(ArgModifier.Ref);
         arg.OutDecl.Should().BeNull();
         arg.Inner.Should().BeOfType<IdentExpr>().Which.Name.Should().Be("c");
@@ -726,7 +727,7 @@ void Main() { }");
         var stmt = (ExprStmt)ParseStmt("TryParse(\"x\", out var n);");
         var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
         call.Args.Should().HaveCount(2);
-        var arg = call.Args[1].Should().BeOfType<ModifiedArg>().Subject;
+        var arg = call.Args[1].Value.Should().BeOfType<ModifiedArg>().Subject;
         arg.Modifier.Should().Be(ArgModifier.Out);
         arg.OutDecl.Should().NotBeNull();
         arg.OutDecl!.Name.Should().Be("n");
@@ -739,7 +740,7 @@ void Main() { }");
     {
         var stmt = (ExprStmt)ParseStmt("Norm(in v);");
         var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
-        var arg = call.Args[0].Should().BeOfType<ModifiedArg>().Subject;
+        var arg = call.Args[0].Value.Should().BeOfType<ModifiedArg>().Subject;
         arg.Modifier.Should().Be(ArgModifier.In);
     }
 
@@ -749,8 +750,8 @@ void Main() { }");
         var stmt = (ExprStmt)ParseStmt("Swap(ref a, ref b);");
         var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
         call.Args.Should().HaveCount(2);
-        call.Args[0].Should().BeOfType<ModifiedArg>().Which.Modifier.Should().Be(ArgModifier.Ref);
-        call.Args[1].Should().BeOfType<ModifiedArg>().Which.Modifier.Should().Be(ArgModifier.Ref);
+        call.Args[0].Value.Should().BeOfType<ModifiedArg>().Which.Modifier.Should().Be(ArgModifier.Ref);
+        call.Args[1].Value.Should().BeOfType<ModifiedArg>().Which.Modifier.Should().Be(ArgModifier.Ref);
     }
 
     [Fact]
@@ -761,6 +762,7 @@ void Main() { }");
         var stmt = (ExprStmt)ParseStmt("Print(42);");
         var call = stmt.Expr.Should().BeOfType<CallExpr>().Subject;
         call.Args.Should().HaveCount(1);
-        call.Args[0].Should().BeOfType<LitIntExpr>();
+        call.Args[0].Name.Should().BeNull();
+        call.Args[0].Value.Should().BeOfType<LitIntExpr>();
     }
 }

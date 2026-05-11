@@ -164,10 +164,12 @@ internal static partial class ExprParser
 
     private static readonly LedFn CallLed = (cursor, left, tok, feat, diags) =>
     {
-        // allowModifiers: spec define-ref-out-in-parameters — `f(ref x)` etc.
+        // ParseCallArgumentList: spec define-ref-out-in-parameters + add-named-arguments
+        //   — `f(ref x)` / `f(name: 1)` / `f(out var y)` all unified through
+        //   `Argument(Name?, Value, Span)` shape.
         // diags: spec enhance-expr-recovery — single bad arg becomes ErrorExpr
         // and parsing of subsequent args continues.
-        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true, diags: diags);
+        var args = ParseCallArgumentList(ref cursor, TokenKind.RParen, feat, diags: diags);
         Expect(ref cursor, TokenKind.RParen);
         return Ok(new CallExpr(left, args, left.Span), cursor);
     };

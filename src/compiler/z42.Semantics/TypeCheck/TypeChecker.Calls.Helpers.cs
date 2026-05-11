@@ -11,10 +11,10 @@ public sealed partial class TypeChecker
     // ── Call helpers ──────────────────────────────────────────────────────────
 
     private List<BoundExpr> BindAndCheckArgs(
-        IReadOnlyList<Expr> args, TypeEnv env,
+        IReadOnlyList<Argument> args, TypeEnv env,
         IReadOnlyList<Z42Type> paramTypes, int minArgCount, Span callSpan)
     {
-        var bound = args.Select(a => BindExpr(a, env)).ToList();
+        var bound = args.Select(a => BindArgValue(a, env)).ToList();
         CheckArgCount(bound.Count, minArgCount, paramTypes.Count, callSpan);
         CheckArgTypes(args, bound, paramTypes);
         return bound;

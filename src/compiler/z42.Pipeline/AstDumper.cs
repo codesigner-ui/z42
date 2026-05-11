@@ -77,6 +77,13 @@ public static class AstDumper
         });
     }
 
+    private static void VisitArgument(Argument a, Writer w)
+    {
+        var nameSuffix = a.Name is null ? "" : $" name={a.Name}";
+        w.Line($"Argument{nameSuffix} {FmtSpan(a.Span)}");
+        w.Indented(() => VisitExpr(a.Value, w));
+    }
+
     private static void VisitMethodSig(MethodSignature m, Writer w)
     {
         var mods = (m.IsStatic ? "static " : "") + (m.IsVirtual ? "virtual " : "");
@@ -513,7 +520,7 @@ public static class AstDumper
                 w.Indented(() =>
                 {
                     w.Line("Callee:"); w.Indented(() => VisitExpr(c.Callee, w));
-                    VisitNodeList("Args", c.Args, VisitExpr, w);
+                    VisitNodeList("Args", c.Args, VisitArgument, w);
                 });
                 break;
             case ModifiedArg m:
@@ -573,7 +580,7 @@ public static class AstDumper
                 w.Indented(() =>
                 {
                     w.Line("Type:"); w.Indented(() => VisitTypeExpr(nw.Type, w));
-                    VisitNodeList("Args", nw.Args, VisitExpr, w);
+                    VisitNodeList("Args", nw.Args, VisitArgument, w);
                 });
                 break;
             case ArrayCreateExpr ac:

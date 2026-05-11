@@ -369,7 +369,23 @@ public sealed record BinaryExpr(string Op, Expr Left, Expr Right, Span Span) : E
 public sealed record UnaryExpr(string Op, Expr Operand, Span Span) : Expr(Span);
 public sealed record PostfixExpr(string Op, Expr Operand, Span Span) : Expr(Span);
 public sealed record AssignExpr(Expr Target, Expr Value, Span Span) : Expr(Span);
-public sealed record CallExpr(Expr Callee, List<Expr> Args, Span Span) : Expr(Span);
+public sealed record CallExpr(Expr Callee, List<Argument> Args, Span Span) : Expr(Span);
+
+/// Callsite argument with optional name (spec: add-named-arguments, 2026-05-11).
+///
+/// `Name == null` → positional argument; `Name != null` → named (`foo: expr`).
+/// `Value` may itself be a `ModifiedArg` when the user wrote `ref`/`out`/`in`
+/// (modifier wrapping is orthogonal to naming). Positional-before-named order
+/// is parser-accepted; TypeChecker enforces the rule (Z0501).
+///
+/// `NameSpan` is the span of the identifier token (used for precise diagnostic
+/// anchoring on duplicate / unknown names); `Span` covers the whole `name:
+/// value` form.
+public sealed record Argument(
+    string? Name,
+    Expr    Value,
+    Span    Span,
+    Span?   NameSpan = null);
 
 /// Argument modifier at callsite (spec: define-ref-out-in-parameters).
 /// Mirrors ParamModifier; must match the callee parameter's modifier exactly
@@ -397,7 +413,7 @@ public sealed record ConditionalExpr(Expr Cond, Expr Then, Expr Else, Span Span)
 /// `left ?? right` — returns left if non-null, otherwise right
 public sealed record NullCoalesceExpr(Expr Left, Expr Right, Span Span) : Expr(Span);
 public sealed record CastExpr(TypeExpr TargetType, Expr Operand, Span Span) : Expr(Span);
-public sealed record NewExpr(TypeExpr Type, List<Expr> Args, Span Span) : Expr(Span);
+public sealed record NewExpr(TypeExpr Type, List<Argument> Args, Span Span) : Expr(Span);
 /// new T[n]  — zero-initialized array of size n
 public sealed record ArrayCreateExpr(TypeExpr ElemType, Expr Size, Span Span)           : Expr(Span);
 /// new T[] { e0, e1, ... }  — array from literal elements

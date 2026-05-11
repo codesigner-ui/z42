@@ -220,12 +220,12 @@ public static class ModifierMangling
         return new string(chars);
     }
 
-    public static string PatternFromArgs(IReadOnlyList<Z42.Syntax.Parser.Expr> args)
+    public static string PatternFromArgs(IReadOnlyList<Z42.Syntax.Parser.Argument> args)
     {
         if (args.Count == 0) return "";
         var chars = new char[args.Count];
         for (int i = 0; i < args.Count; i++)
-            chars[i] = args[i] is Z42.Syntax.Parser.ModifiedArg ma
+            chars[i] = args[i].Value is Z42.Syntax.Parser.ModifiedArg ma
                 ? ToChar(ma.Modifier)
                 : '_';
         return new string(chars);
@@ -234,8 +234,8 @@ public static class ModifierMangling
     public static bool HasAnyModifier(IReadOnlyList<Z42.Syntax.Parser.Param> parms)
         => parms.Any(p => p.Modifier != Z42.Syntax.Parser.ParamModifier.None);
 
-    public static bool HasAnyModifier(IReadOnlyList<Z42.Syntax.Parser.Expr> args)
-        => args.Any(a => a is Z42.Syntax.Parser.ModifiedArg);
+    public static bool HasAnyModifier(IReadOnlyList<Z42.Syntax.Parser.Argument> args)
+        => args.Any(a => a.Value is Z42.Syntax.Parser.ModifiedArg);
 
     private static char ToChar(Z42.Syntax.Parser.ParamModifier m) => m switch
     {

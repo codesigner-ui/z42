@@ -20,7 +20,7 @@ public sealed partial class TypeChecker
     internal static (IMethodSymbol? Sym, string? Key) LookupMethodOverload(
         IReadOnlyDictionary<string, IMethodSymbol> table,
         string memberName,
-        IReadOnlyList<Expr> args)
+        IReadOnlyList<Argument> args)
     {
         var argModSig = ModifierMangling.PatternFromArgs(args);
         if (!string.IsNullOrEmpty(argModSig))
@@ -36,7 +36,7 @@ public sealed partial class TypeChecker
     }
 
     private void CheckArgTypes(
-        IReadOnlyList<Expr>      origArgs,
+        IReadOnlyList<Argument>  origArgs,
         IReadOnlyList<BoundExpr> boundArgs,
         IReadOnlyList<Z42Type>   paramTypes)
     {

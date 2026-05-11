@@ -111,4 +111,11 @@ public static class DiagnosticCodes
     public const string ShouldThrowTypeInvalid        = "E0913"; // [ShouldThrow<E>] — reserved (R4.B needs generic attribute syntax)
     public const string SkipReasonMissing             = "E0914"; // [Skip] missing/empty reason; [Skip]/[Ignore] used standalone
     public const string SetupTeardownSignatureInvalid = "E0915"; // [Setup]/[Teardown] signature wrong / mutually exclusive with [Test]/[Benchmark]
+
+    // ── E10xx: Call-site argument binding (spec add-named-arguments) ──────────
+    public const string PositionalAfterNamed     = "E1001"; // positional arg appears after a named arg in same call
+    public const string UnknownArgumentName      = "E1002"; // named arg `name:` does not match any parameter
+    public const string DuplicateArgumentName    = "E1003"; // same parameter name supplied twice as named arg
+    public const string ParameterDoublySpecified = "E1004"; // parameter set by both positional and named arg
+    public const string MissingRequiredArgument  = "E1005"; // required parameter has no value after binding
 }

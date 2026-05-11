@@ -238,7 +238,7 @@ internal static partial class TopLevelParser
         {
             // ── 多播路径（D2c-多播 + D2d-1） ────────────────────────────
             // Backing field: 同名 + auto-init `new MulticastXxx<...>()`
-            var mInitExpr = new NewExpr(fieldType, new List<Expr>(), span);
+            var mInitExpr = new NewExpr(fieldType, new List<Argument>(), span);
             var mBacking  = new FieldDecl(
                 fieldName, fieldType, evtField.Visibility, evtField.IsStatic,
                 mInitExpr, span, IsEvent: true);
@@ -252,7 +252,7 @@ internal static partial class TopLevelParser
             var addFieldRead   = new MemberExpr(addThis, fieldName, span);
             var addSubMember   = new MemberExpr(addFieldRead, "Subscribe", span);
             var addHRef        = new IdentExpr("h", span);
-            var addSubCall     = new CallExpr(addSubMember, new List<Expr> { addHRef }, span);
+            var addSubCall     = new CallExpr(addSubMember, new List<Argument> { new Argument(null, addHRef, span) }, span);
             var addBody        = new BlockStmt(
                 new List<Stmt> { new ReturnStmt(addSubCall, span) }, span);
             var addFn = new FunctionDecl(
@@ -268,7 +268,7 @@ internal static partial class TopLevelParser
             var rmFieldRead   = new MemberExpr(rmThis, fieldName, span);
             var rmUnsubMember = new MemberExpr(rmFieldRead, "Unsubscribe", span);
             var rmHRef        = new IdentExpr("h", span);
-            var rmUnsubCall   = new CallExpr(rmUnsubMember, new List<Expr> { rmHRef }, span);
+            var rmUnsubCall   = new CallExpr(rmUnsubMember, new List<Argument> { new Argument(null, rmHRef, span) }, span);
             var rmBody        = new BlockStmt(
                 new List<Stmt> { new ExprStmt(rmUnsubCall, span) }, span);
             var rmFn = new FunctionDecl(
@@ -303,7 +303,7 @@ internal static partial class TopLevelParser
         var sAddNullCmp   = new BinaryExpr("!=", sAddFieldRead, new LitNullExpr(span), span);
         var ioeName       = new NamedType("InvalidOperationException", span);
         var ioeArg        = new LitStrExpr("single-cast event already bound", span);
-        var ioeNew        = new NewExpr(ioeName, new List<Expr> { ioeArg }, span);
+        var ioeNew        = new NewExpr(ioeName, new List<Argument> { new Argument(null, ioeArg, span) }, span);
         var sAddThrow     = new ThrowStmt(ioeNew, span);
         var sAddIfBlock   = new BlockStmt(new List<Stmt> { sAddThrow }, span);
         var sAddIf        = new IfStmt(sAddNullCmp, sAddIfBlock, null, span);
@@ -315,12 +315,12 @@ internal static partial class TopLevelParser
         var lambdaThis     = new IdentExpr("this", span);
         var lambdaRmMember = new MemberExpr(lambdaThis, $"remove_{fieldName}", span);
         var lambdaH        = new IdentExpr("h", span);
-        var lambdaRmCall   = new CallExpr(lambdaRmMember, new List<Expr> { lambdaH }, span);
+        var lambdaRmCall   = new CallExpr(lambdaRmMember, new List<Argument> { new Argument(null, lambdaH, span) }, span);
         var lambda         = new LambdaExpr(
             new List<LambdaParam>(), new LambdaExprBody(lambdaRmCall, span), span);
         var disposableId   = new IdentExpr("Disposable", span);
         var disposableFrom = new MemberExpr(disposableId, "From", span);
-        var disposableCall = new CallExpr(disposableFrom, new List<Expr> { lambda }, span);
+        var disposableCall = new CallExpr(disposableFrom, new List<Argument> { new Argument(null, lambda, span) }, span);
         var sAddReturn     = new ReturnStmt(disposableCall, span);
         var sAddBody      = new BlockStmt(
             new List<Stmt> { sAddIf, new ExprStmt(sAddAssign, span), sAddReturn }, span);
@@ -339,7 +339,11 @@ internal static partial class TopLevelParser
         var sRmDelegateOps = new IdentExpr("DelegateOps", span);
         var sRmRefEqMember = new MemberExpr(sRmDelegateOps, "ReferenceEquals", span);
         var sRmRefEqCall   = new CallExpr(sRmRefEqMember,
-            new List<Expr> { sRmFieldRead, new IdentExpr("h", span) }, span);
+            new List<Argument>
+            {
+                new Argument(null, sRmFieldRead, span),
+                new Argument(null, new IdentExpr("h", span), span)
+            }, span);
         var sRmFieldRead2  = new MemberExpr(new IdentExpr("this", span), fieldName, span);
         var sRmAssignNull  = new AssignExpr(sRmFieldRead2, new LitNullExpr(span), span);
         var sRmIfBlock     = new BlockStmt(

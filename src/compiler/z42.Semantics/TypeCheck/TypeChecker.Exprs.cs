@@ -169,7 +169,8 @@ public sealed partial class TypeChecker
 
             case NewExpr newExpr:
             {
-                var args    = newExpr.Args.Select(a => BindExpr(a, env)).ToList();
+                CheckPositionalBeforeNamed(newExpr.Args);
+                var args    = newExpr.Args.Select(a => BindArgValue(a, env)).ToList();
                 var newType = ResolveType(newExpr.Type);
                 // 2026-05-07 add-class-arity-overloading: qualName must reflect
                 // the actual class IrName (mangled `Foo$N` when collision exists),

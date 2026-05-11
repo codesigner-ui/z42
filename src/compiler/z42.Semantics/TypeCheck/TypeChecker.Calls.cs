@@ -13,6 +13,12 @@ public sealed partial class TypeChecker
 
     private BoundExpr BindCall(CallExpr call, TypeEnv env)
     {
+        // spec add-named-arguments: validate positional-before-named once for
+        // the whole call site (Z1001). Name → param-position reorder is wired
+        // per branch via ResolveArgPositions / ReorderToPositional below; the
+        // common "no named args" call path takes a fast no-op.
+        CheckPositionalBeforeNamed(call.Args);
+
         // ── Static class method: ClassName.Method(args) ──────────────────────
         if (call.Callee is MemberExpr { Target: IdentExpr { Name: var clsName }, Member: var staticMember }
             && _symbols.Classes.TryGetValue(clsName, out var staticCt))
@@ -23,7 +29,7 @@ public sealed partial class TypeChecker
             if (staticSym is not null)
             {
                 var staticSig = staticSym.Signature;
-                var args = call.Args.Select(a => BindExpr(a, env)).ToList();
+                var args = call.Args.Select(a => BindArgValue(a, env)).ToList();
                 CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
                 // 2026-05-05 fix-generic-extern-infer: substitute T → concrete
                 // before arg-type validation so `BlackBox<T>(int)` etc. accept
@@ -41,7 +47,7 @@ public sealed partial class TypeChecker
             // Imported class: method not found → try DepIndex, or defer to IrGen
             if (isImported)
             {
-                var args = call.Args.Select(a => BindExpr(a, env)).ToList();
+                var args = call.Args.Select(a => BindArgValue(a, env)).ToList();
                 if (_depIndex?.TryGetStatic(clsName, staticMember, out var depStaticEntry) == true)
                 {
                     var retType = IrTypeToZ42Type(depStaticEntry.RetType);
@@ -71,7 +77,7 @@ public sealed partial class TypeChecker
                         && !_symbols.EnumTypes.Contains(tgtName)
                         && env.LookupVar(tgtName) == null && env.LookupFunc(tgtName) == null)))
             {
-                var args = call.Args.Select(a => BindExpr(a, env)).ToList();
+                var args = call.Args.Select(a => BindArgValue(a, env)).ToList();
 
                 // Map built-in type names to stdlib class names.
                 // L3-G4b primitive-as-struct: int / double now live as `struct int` / `struct double`
@@ -101,7 +107,7 @@ public sealed partial class TypeChecker
             }
 
             var recvExpr = BindExpr(mCallee.Target, env);
-            var argBound = call.Args.Select(a => BindExpr(a, env)).ToList();
+            var argBound = call.Args.Select(a => BindArgValue(a, env)).ToList();
 
             // L3-G4a: method call on instantiated generic class — substitute type params in sig.
             if (recvExpr.Type is Z42InstantiatedType inst)
@@ -326,7 +332,7 @@ public sealed partial class TypeChecker
         }
 
         // ── Free function call ────────────────────────────────────────────────
-        var freeArgs = call.Args.Select(a => BindExpr(a, env)).ToList();
+        var freeArgs = call.Args.Select(a => BindArgValue(a, env)).ToList();
 
         // Bare name inside current class's static methods
         if (call.Callee is IdentExpr { Name: var bareCallName }

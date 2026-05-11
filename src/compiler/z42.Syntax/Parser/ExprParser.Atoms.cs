@@ -1,4 +1,5 @@
 using Z42.Core.Diagnostics;
+using Z42.Core.Text;
 using System.Globalization;
 using System.Text;
 using Z42.Core.Features;
@@ -69,7 +70,7 @@ internal static partial class ExprParser
 
         // new T(args)
         Expect(ref cursor, TokenKind.LParen);
-        var args = ParseArgList(ref cursor, TokenKind.RParen, feat, allowModifiers: true, diags: diags);
+        var args = ParseCallArgumentList(ref cursor, TokenKind.RParen, feat, diags: diags);
         Expect(ref cursor, TokenKind.RParen);
         return Ok(new NewExpr(ty, args, tok.Span), cursor);
     }
@@ -298,41 +299,73 @@ internal static partial class ExprParser
     private static ParseResult<Expr> Ok(Expr e, TokenCursor cursor) =>
         ParseResult<Expr>.Ok(e, cursor);
 
-    /// Parse a comma-separated argument list, stopping at `stop` token.
-    /// `allowModifiers=true` accepts `ref`/`out`/`in` prefix on each argument
-    /// (spec: define-ref-out-in-parameters). Used for call expressions and
-    /// constructor invocation; **not** for array / collection literal element
-    /// lists (modifiers do not apply there).
+    /// Parse a comma-separated expression list (no modifiers, no names),
+    /// stopping at `stop` token. Used for array / collection literal element
+    /// lists where neither ref/out/in nor `name:` form applies.
     ///
     /// `diags` 透传给子 `Parse()` 调用：传入时单个 arg 失败转 ErrorExpr，
     /// 后续 arg 继续解析（spec enhance-expr-recovery）。
     private static List<Expr> ParseArgList(
         ref TokenCursor cursor, TokenKind stop, LanguageFeatures feat,
-        bool allowModifiers = false, DiagnosticBag? diags = null)
+        DiagnosticBag? diags = null)
     {
         var args = new List<Expr>();
         while (cursor.Current.Kind != stop && !cursor.IsEnd)
         {
-            Expr arg = allowModifiers
-                ? ParseCallArgWithOptionalModifier(ref cursor, feat, diags)
-                : Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
-            args.Add(arg);
+            args.Add(Parse(cursor, feat, diags: diags).Unwrap(ref cursor));
             if (cursor.Current.Kind != TokenKind.Comma) break;
             cursor = cursor.Advance();
         }
         return args;
     }
 
-    /// Parse a single call-site argument that may be prefixed with `ref` /
-    /// `out` / `in` (spec: define-ref-out-in-parameters). When the prefix is
-    /// `out` and the next tokens are `var <ident>`, an inline OutVarDecl is
-    /// constructed (Q4: scope extends to the enclosing statement, handled by
-    /// TypeChecker).
-    private static Expr ParseCallArgWithOptionalModifier(
+    /// Parse a comma-separated **call-site** argument list, returning
+    /// `List<Argument>` with optional `Name` per argument (spec
+    /// add-named-arguments). Each argument may also carry a `ref`/`out`/`in`
+    /// modifier (wrapped as `ModifiedArg` inside Argument.Value). Used by
+    /// CallExpr and NewExpr (`new T(args)`); not for array element lists.
+    private static List<Argument> ParseCallArgumentList(
+        ref TokenCursor cursor, TokenKind stop, LanguageFeatures feat,
+        DiagnosticBag? diags = null)
+    {
+        var args = new List<Argument>();
+        while (cursor.Current.Kind != stop && !cursor.IsEnd)
+        {
+            args.Add(ParseCallArgumentWithOptionalNameAndModifier(ref cursor, feat, diags));
+            if (cursor.Current.Kind != TokenKind.Comma) break;
+            cursor = cursor.Advance();
+        }
+        return args;
+    }
+
+    /// Parse a single call-site argument that may be prefixed with `<ident> :`
+    /// (named argument; spec add-named-arguments) and/or `ref` / `out` / `in`
+    /// (spec define-ref-out-in-parameters). When the modifier is `out` and the
+    /// next tokens are `var <ident>`, an inline `OutVarDecl` is constructed.
+    ///
+    /// Named-arg lookahead: `IDENT :` at argument start triggers the named
+    /// form. The ternary `a ? b : c` is *not* misread because `?` is required
+    /// before `:` in that production, and an arg-start `IDENT` followed
+    /// directly by `:` does not appear in any non-named expression form.
+    private static Argument ParseCallArgumentWithOptionalNameAndModifier(
         ref TokenCursor cursor, LanguageFeatures feat,
         DiagnosticBag? diags = null)
     {
         var startSpan = cursor.Current.Span;
+
+        // Named-arg lookahead: IDENT followed by `:` at argument start.
+        string? name = null;
+        Span?   nameSpan = null;
+        if (cursor.Current.Kind == TokenKind.Identifier
+            && cursor.Advance().Current.Kind == TokenKind.Colon)
+        {
+            var nameTok = cursor.Current;
+            name = nameTok.Text;
+            nameSpan = nameTok.Span;
+            cursor = cursor.Advance(); // consume identifier
+            cursor = cursor.Advance(); // consume `:`
+        }
+
         var modifier = cursor.Current.Kind switch
         {
             TokenKind.Ref => ArgModifier.Ref,
@@ -341,7 +374,10 @@ internal static partial class ExprParser
             _             => ArgModifier.None,
         };
         if (modifier == ArgModifier.None)
-            return Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
+        {
+            var bare = Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
+            return new Argument(name, bare, startSpan, nameSpan);
+        }
 
         cursor = cursor.Advance(); // consume ref/out/in
 
@@ -349,8 +385,7 @@ internal static partial class ExprParser
         Expr inner;
         if (modifier == ArgModifier.Out && cursor.Current.Kind == TokenKind.Var)
         {
-            // `out var x` — inline declaration. expected-identifier 路径**保留 throw**
-            // （非 expression token sync，转 ErrorExpr 收益小；按 design Decision 备注）
+            // `out var x` — inline declaration.
             cursor = cursor.Advance(); // consume `var`
             if (cursor.Current.Kind != TokenKind.Identifier)
                 throw new ParseException(
@@ -367,7 +402,8 @@ internal static partial class ExprParser
             inner = Parse(cursor, feat, diags: diags).Unwrap(ref cursor);
         }
 
-        return new ModifiedArg(inner, modifier, outDecl, startSpan);
+        var modified = new ModifiedArg(inner, modifier, outDecl, startSpan);
+        return new Argument(name, modified, startSpan, nameSpan);
     }
 
     /// Consume an expected token or throw ParseException.

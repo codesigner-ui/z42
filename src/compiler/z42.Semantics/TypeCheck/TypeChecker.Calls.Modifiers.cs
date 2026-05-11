@@ -8,7 +8,115 @@ namespace Z42.Semantics.TypeCheck;
 public sealed partial class TypeChecker
 {
 
-    // ── Parameter modifiers (spec: define-ref-out-in-parameters) ──────────────
+    // ── Argument binding (spec: add-named-arguments + define-ref-out-in-parameters) ──
+
+    /// Bind a single callsite argument. Drops the name (TypeCheck reorder layer
+    /// uses .Name separately); routes the inner value through `BindModifiedArg`
+    /// when a modifier is present, otherwise plain `BindExpr`.
+    private BoundExpr BindArgValue(Argument a, TypeEnv env)
+    {
+        return a.Value is ModifiedArg ma
+            ? BindModifiedArg(ma, env)
+            : BindExpr(a.Value, env);
+    }
+
+    /// spec add-named-arguments: validate positional-before-named ordering at
+    /// the call site. Reports `Z1001` on each offending positional arg that
+    /// follows a named one. Does not throw; caller continues binding.
+    private void CheckPositionalBeforeNamed(IReadOnlyList<Argument> args)
+    {
+        bool sawNamed = false;
+        foreach (var a in args)
+        {
+            if (a.Name is not null) { sawNamed = true; continue; }
+            if (sawNamed)
+                _diags.Error(DiagnosticCodes.PositionalAfterNamed,
+                    "positional argument cannot follow a named argument",
+                    a.Span);
+        }
+    }
+
+    /// spec add-named-arguments: reorder named args to their parameter
+    /// positions. Returns a list (length = `args.Count`) where each entry's
+    /// `.Position` is the resolved 0-based param index. Out-of-order named
+    /// args are reordered; positional args keep their index. Reports
+    /// Z1002 / Z1003 / Z1004 for binding errors. The returned tuples are in
+    /// **call-site order** (not reordered) — caller projects into positional
+    /// shape via `ReorderToPositional`.
+    ///
+    /// `paramByName` is the callee's `paramName → index` lookup table. Null
+    /// means callee unknown (imported / DepIndex fallback) — in that case
+    /// named args fall through with `Position = -1`.
+    private List<(Argument Arg, int Position)> ResolveArgPositions(
+        IReadOnlyList<Argument> args,
+        IReadOnlyDictionary<string, int>? paramByName)
+    {
+        var result = new List<(Argument, int)>(args.Count);
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        int positional = 0;
+        foreach (var a in args)
+        {
+            if (a.Name is null)
+            {
+                result.Add((a, positional++));
+                continue;
+            }
+            if (!seenNames.Add(a.Name))
+            {
+                _diags.Error(DiagnosticCodes.DuplicateArgumentName,
+                    $"argument `{a.Name}` already specified",
+                    a.NameSpan ?? a.Span);
+                result.Add((a, -1));
+                continue;
+            }
+            int pos = -1;
+            if (paramByName is not null && !paramByName.TryGetValue(a.Name, out pos))
+            {
+                _diags.Error(DiagnosticCodes.UnknownArgumentName,
+                    $"no parameter named `{a.Name}` on this callee",
+                    a.NameSpan ?? a.Span);
+                pos = -1;
+            }
+            else if (paramByName is null)
+            {
+                // Unknown callee shape — pass-through; downstream may degrade.
+                pos = -1;
+            }
+            result.Add((a, pos));
+        }
+        return result;
+    }
+
+    /// spec add-named-arguments: produce a positional list of length
+    /// `paramCount` from resolved (Arg, Position) pairs. Slots with no
+    /// supplied arg are left `null` (caller fills from defaults). Reports
+    /// `Z1004` when a position is set both positionally and by name.
+    private (List<Argument?> Positional, List<BoundExpr?> Bound) ReorderToPositional(
+        IReadOnlyList<(Argument Arg, int Position)> resolved,
+        int paramCount,
+        TypeEnv env)
+    {
+        var pos = new List<Argument?>(paramCount);
+        var bnd = new List<BoundExpr?>(paramCount);
+        for (int i = 0; i < paramCount; i++) { pos.Add(null); bnd.Add(null); }
+
+        foreach (var (a, p) in resolved)
+        {
+            if (p < 0 || p >= paramCount) continue;   // already-diagnosed (Z1002/Z1003) or overflow
+            if (pos[p] is not null)
+            {
+                _diags.Error(DiagnosticCodes.ParameterDoublySpecified,
+                    a.Name is null
+                        ? $"parameter {p + 1} specified by both positional and named argument"
+                        : $"parameter `{a.Name}` specified by both positional and named argument",
+                    a.Span);
+                continue;
+            }
+            pos[p] = a;
+            bnd[p] = BindArgValue(a, env);
+        }
+        return (pos, bnd);
+    }
 
     /// Bind a callsite `ref` / `out` / `in` argument. For `out var x`, declare
     /// the local in the caller's scope with placeholder `Unknown` type; the
@@ -33,7 +141,7 @@ public sealed partial class TypeChecker
     /// modifier boundary (no implicit conversion). Patches `out var x` local
     /// types from matching parameter types.
     private void CheckArgModifiers(
-        IReadOnlyList<Expr>      origArgs,
+        IReadOnlyList<Argument>  origArgs,
         IReadOnlyList<BoundExpr> boundArgs,
         Z42FuncType?             funcType,
         TypeEnv                  env,
@@ -42,7 +150,7 @@ public sealed partial class TypeChecker
         int n = boundArgs.Count;
         for (int i = 0; i < n; i++)
         {
-            var origIsModified = origArgs[i] is ModifiedArg;
+            var origIsModified = origArgs[i].Value is ModifiedArg;
             var boundIsModified = boundArgs[i] is BoundModifiedArg;
             var paramMod = funcType?.ModifierAt(i) ?? ParamModifier.None;
 
@@ -63,7 +171,7 @@ public sealed partial class TypeChecker
             // Case 2: callsite has modifier, signature missing — error.
             if (paramMod == ParamModifier.None && origIsModified)
             {
-                var ma = (ModifiedArg)origArgs[i];
+                var ma = (ModifiedArg)origArgs[i].Value;
                 _diags.Error(DiagnosticCodes.TypeMismatch,
                     $"argument {i + 1}: parameter has no modifier; remove `{ArgModifierKeyword(ma.Modifier)}`",
                     ma.Span);
@@ -73,7 +181,7 @@ public sealed partial class TypeChecker
             // Case 3: both have modifiers — must match exactly.
             if (origIsModified)
             {
-                var ma = (ModifiedArg)origArgs[i];
+                var ma = (ModifiedArg)origArgs[i].Value;
                 var bma = (BoundModifiedArg)boundArgs[i];
                 if (!ModifiersMatch(ma.Modifier, paramMod))
                 {

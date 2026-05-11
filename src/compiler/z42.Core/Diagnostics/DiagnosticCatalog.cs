@@ -340,6 +340,34 @@ public static class DiagnosticCatalog
             "decorating a regular non-test function with these attributes is treated as a programmer mistake.",
             "[Skip] void Foo() { }  // missing [Test] + missing reason → E0914"),
 
+        // ── E10xx: Call-site argument binding (spec add-named-arguments) ─────
+
+        [DiagnosticCodes.PositionalAfterNamed] = new(
+            "Positional argument after named argument",
+            "Once a named argument (`name: value`) is supplied at a call site, all subsequent arguments must also be named. " +
+            "Reorder so positional arguments come first, or convert the offending argument to a named one.",
+            "Draw(color: \"red\", 2);  // positional `2` after `color:` is invalid"),
+
+        [DiagnosticCodes.UnknownArgumentName] = new(
+            "Unknown argument name",
+            "The name in a `name: value` argument does not match any parameter of the callee (or of any compatible overload).",
+            "void Draw(string color) { }\nDraw(colour: \"red\");  // typo — should be `color`"),
+
+        [DiagnosticCodes.DuplicateArgumentName] = new(
+            "Duplicate named argument",
+            "The same parameter name is supplied twice in a single call. Each parameter can be set at most once via a named argument.",
+            "Draw(color: \"red\", color: \"blue\");  // `color` provided twice"),
+
+        [DiagnosticCodes.ParameterDoublySpecified] = new(
+            "Parameter specified by both positional and named argument",
+            "A parameter received a value both from a positional argument and from a later named argument. Use one form or the other.",
+            "void Draw(string color, int width = 1) { }\nDraw(\"red\", color: \"blue\");  // `color` set positionally and named"),
+
+        [DiagnosticCodes.MissingRequiredArgument] = new(
+            "Missing required argument",
+            "After binding all positional and named arguments, a required parameter (one without a default value) is still unset.",
+            "void Draw(string color, int width) { }\nDraw(width: 2);  // `color` not supplied"),
+
         [DiagnosticCodes.SetupTeardownSignatureInvalid] = new(
             "Setup/Teardown attribute signature invalid",
             "Functions decorated with `[Setup]` or `[Teardown]` must be `fn() -> void` (no parameters, void return). " +
