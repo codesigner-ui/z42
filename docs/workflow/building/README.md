@@ -9,7 +9,7 @@
 | [`stdlib.md`](stdlib.md) | 6 个 stdlib 包 workspace |
 | [`cross-platform.md`](cross-platform.md) | 桌面跨平台 build matrix（placeholder 0.2.5）|
 | [`wasm.md`](wasm.md) | 🟢 WASM facade（`@z42/wasm` npm 包）|
-| [`ios.md`](ios.md) | 📋 iOS facade（`Z42VM.xcframework`）|
+| [`ios.md`](ios.md) | 🟢 iOS facade（`Z42VM.xcframework` SwiftPM 包）|
 | [`android.md`](android.md) | 📋 Android facade（`z42vm.aar`）|
 
 桌面日常用 [`just`](../../../justfile)：`just build` / `just clean` / `just test`。`just` 安装：`brew install just` / `cargo install just` / `sudo apt install just`。

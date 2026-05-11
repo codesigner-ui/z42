@@ -12,12 +12,13 @@ path = "src/lib.rs"
 # Path-dep on the runtime crate gives access to the extern "C" Rust
 # entry points without round-tripping through a dynamic library.
 #
-# 2026-05-12 add-platform-wasm Stage 0: don't pull z42_vm default features.
+# 2026-05-12 add-platform-wasm Stage 0: don't pull z42 default features.
 # Each consumer (desktop example, mobile platform crate, wasm crate) opts in
 # to exactly the runtime features it needs. Defaulting to nothing means a
 # wasm consumer doesn't accidentally drag in `libffi` / `jit` via the dep
 # graph union.
-z42_vm = { path = "../../../runtime", default-features = false }
+# 2026-05-12 runtime crate renamed `z42_vm` → `z42`.
+z42 = { path = "../../../runtime", default-features = false }
 
 # Reuse the Z42Value / Z42Args / Z42Error types from the shared abi crate
 # so callers don't pull in the full runtime tree just to construct args.

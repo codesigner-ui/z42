@@ -27,7 +27,8 @@
 - ✅ **H3** 错误路径全覆盖（17 个 host:: 测试 / 5 类错误：BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）
 - ✅ **H4-prereq** [`add-zpkg-resolver-hook`](../../../docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/) — `Z42ZpkgResolverFn` C ABI + `ZpkgResolver` Rust trait + `MapResolver` / `SearchPathsResolver`（22 个 host:: 测试）
 - 🟢 **H4 (wasm)** [`add-platform-wasm`](../../../docs/spec/archive/2026-05-12-add-platform-wasm/) ✅ —— `@z42/wasm` npm 包；`Z42VM` JS class；wasm-pack web + nodejs 双 target；node demo 跑通；**附带** runtime `native-interop` feature 拆分（让 wasm 能跳过 libffi/libloading）
-- 📋 **H4 (ios / android)** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` spec）
+- 🟢 **H4 (ios)** [`add-platform-ios`](../../../docs/spec/archive/2026-05-12-add-platform-ios/) ✅ —— `Z42VM.xcframework` SwiftPM 包；3 个 iOS rust target 跨编 + `xcodebuild create-xcframework`；`BundleZpkgResolver` 默认实现
+- 📋 **H4 (android)** 移动平台 facade 接入（归 `add-platform-android` spec）
 - 📋 **H5** test-runner library 重构到 `z42-host` 之上（归 runner spec）
 
 ## Quick Start

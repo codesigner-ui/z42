@@ -1,6 +1,6 @@
 # iOS facade — build & run
 
-> 📋 设计期 · facade [`platforms/ios/`](../../../src/toolchain/host/platforms/ios/) · spec [`add-platform-ios/`](../../spec/changes/add-platform-ios/)
+> 🟢 已落地 · facade [`platforms/ios/`](../../../src/toolchain/host/platforms/ios/) · spec [`2026-05-12-add-platform-ios/`](../../spec/archive/2026-05-12-add-platform-ios/)
 
 把 z42 VM 编进 `Z42VM.xcframework`，让 Swift / SwiftUI app `import Z42VM` 跑 `.zbc`。iOS app 只能在 **macOS 主机**上编。**从零开始按下面 4 步走**。
 

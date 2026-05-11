@@ -325,7 +325,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 > - **L2 测试体系（R 系列）**：`2026-04-29-redesign-test-infra` / `2026-04-30-add-z42-test-runner` / `2026-05-05-extend-z42-test-library`
 > - **L2 GC（MagrGC）**：`2026-04-29-add-magrgc-*` 系列（heap-interface / cycle-breaking-collector / drop-time-finalizer / strict-oom-rejection / external-root-scanning）
 > - **L2 Interop**：`2026-04-29-impl-tier1-c-abi` / `2026-04-29-impl-tier2-rust-macros` / `2026-04-29-impl-pinned-syntax` / `2026-04-30-manifest-reader-import` / `2026-04-30-synthesize-native-class`
-> - **L2 Embedding**：`2026-05-10-add-embedding-api`（H0-H3） / `2026-05-12-add-zpkg-resolver-hook`（H4 前置；platform facade 注入 zpkg 字节的 hook） / `2026-05-12-add-platform-wasm`（H4 WASM facade —— `@z42/wasm` npm 包 + 运行时 `native-interop` feature 拆分）
+> - **L2 Embedding**：`2026-05-10-add-embedding-api`（H0-H3） / `2026-05-12-add-zpkg-resolver-hook`（H4 前置；platform facade 注入 zpkg 字节的 hook） / `2026-05-12-add-platform-wasm`（H4 WASM facade）/ `2026-05-12-add-platform-ios`（H4 iOS facade —— `Z42VM.xcframework` SwiftPM 包）
 > - **L3 泛型 G1-G4**：`2026-04-22-add-generics-*` / `2026-04-23-add-generics-*` / `2026-04-24-add-static-abstract-interface`
 > - **L3 闭包 / Lambda**：`2026-05-01-impl-lambda-l2` / `2026-05-01-impl-closure-l3-core` / `2026-05-02-impl-closure-l3-jit-complete`
 > - **L3 Delegate / Event**：`2026-05-02-add-delegate-type` / `2026-05-02-add-multicast-action` / `2026-05-03-add-event-keyword-multicast` / `2026-05-04-add-event-keyword-singlecast` / `2026-05-04-add-multicast-exception-aggregate`
