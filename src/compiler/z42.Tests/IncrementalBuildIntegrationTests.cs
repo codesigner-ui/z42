@@ -65,11 +65,12 @@ public sealed class IncrementalBuildIntegrationTests
         // 新增 DelegateOps.z42（D-5 落地），43 → 44；2026-05-04 D-7-residual 新增
         // Disposable.z42（IDisposable factory），44 → 45；2026-05-07
         // reorganize-gc-stdlib 新增 GCHandle.z42 + HeapStats.z42，45 → 47；
-        // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48。
+        // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
+        // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 48/48");
+        err2.Should().Contain("cached: 49/49");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 4/4");
     }
@@ -88,9 +89,10 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-03 fix-delegate-reference-equality 新增 DelegateOps.z42，43 → 44；
         // 2026-05-04 D-7-residual 新增 Disposable.z42，44 → 45；2026-05-07
         // reorganize-gc-stdlib 新增 GCHandle.z42 + HeapStats.z42，45 → 47；
-        // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48）
+        // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
+        // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/48");
+        err2.Should().Contain("cached: 0/49");
     }
 }
