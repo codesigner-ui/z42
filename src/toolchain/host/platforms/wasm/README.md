@@ -29,10 +29,17 @@ cd src/toolchain/host/platforms/wasm
 # build.sh 一站式：编 fixture .zbc + 拷 stdlib + wasm-pack web/node 两 target
 ./build.sh
 
-# 跑 Node demo（需要 Node ≥ 18）
+# 跑浏览器 demo（无需 Node；任选一个静态服务器）：
+miniserve --index demo/web/index.html .        # 然后开 http://127.0.0.1:8080/
+# 或：dotnet serve -p 8000                      # 开 http://127.0.0.1:8000/demo/web/index.html
+# 或：python3 -m http.server 8000               # 同上 URL
+
+# 或跑 Node demo（需要 Node ≥ 18）
 node demo/node/run.js
-# 期望输出：[host] Hello, World!
+# 期望输出（两种都是）：[host] Hello, World!
 ```
+
+> 详细 step-by-step 跑通流程见 [`docs/workflow/building/wasm.md`](../../../../docs/workflow/building/wasm.md)。
 
 `[host]` 前缀来自 demo 注册的 stdout handler，证明输出**经过宿主回调**而不是 wasm 内部 println。
 
@@ -92,7 +99,10 @@ wasm/
 │   └── pkg-nodejs/          ← wasm-pack --target nodejs 产物
 ├── demo/
 │   ├── fixtures/hello.z42   demo 源代码（build.sh 编 → hello.zbc）
-│   └── node/run.js          Node hello-world demo
+│   ├── node/run.js          Node hello-world demo
+│   └── web/                 浏览器版 hello-world demo（无 Node，配静态服务器）
+│       ├── index.html
+│       └── run.js
 └── build.sh                 一站式构建脚本
 ```
 

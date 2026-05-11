@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>z42 WASM — hello demo</title>
+<style>
+  body   { font: 14px/1.4 system-ui, sans-serif; max-width: 720px; margin: 2em auto; padding: 0 1em; }
+  h1     { font-size: 1.2em; }
+  #status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-weight: bold; }
+  .ok    { background: #d4edda; color: #155724; }
+  .err   { background: #f8d7da; color: #721c24; }
+  pre    { background: #f4f4f4; padding: 1em; border-radius: 4px; white-space: pre-wrap; min-height: 3em; }
+  code   { background: #f4f4f4; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+  <h1>z42 WASM — hello demo · <span id="status">running…</span></h1>
+  <p>Mirrors <code>demo/node/run.js</code> in the browser. Loads <code>hello.zbc</code> +
+  stdlib zpkgs via <code>fetch()</code>, invokes <code>Wasm.Hello.Main</code>,
+  expects <code>Hello, World!</code>.</p>
+  <pre id="log"></pre>
+  <script type="module" src="./run.js"></script>
+</body>
+</html>
