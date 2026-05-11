@@ -52,14 +52,14 @@ fn parse_zbc_sidecar_rejects_old_minor() {
 
 #[test]
 fn parse_zbc_sidecar_rejects_when_symonly_flag_unset() {
-    let bytes = make_zbc_header(1, 3, 0x00, 0);
+    let bytes = make_zbc_header(1, 4, 0x00, 0);
     let err = parse_zbc_sidecar(&bytes).unwrap_err();
     assert!(err.to_string().contains("SymOnly"), "{err}");
 }
 
 #[test]
 fn parse_zbc_sidecar_rejects_missing_blid() {
-    let bytes = make_zbc_header(1, 3, 0x04, 0);
+    let bytes = make_zbc_header(1, 4, 0x04, 0);
     let err = parse_zbc_sidecar(&bytes).unwrap_err();
     assert!(err.to_string().contains("BLID"), "{err}");
 }
@@ -81,7 +81,7 @@ fn parse_zpkg_sidecar_rejects_old_minor() {
 
 #[test]
 fn parse_zpkg_sidecar_rejects_when_symonly_flag_unset() {
-    let bytes = make_zpkg_header(0, 4, 0x00, 0);
+    let bytes = make_zpkg_header(0, 5, 0x00, 0);
     let err = parse_zpkg_sidecar(&bytes).unwrap_err();
     assert!(err.to_string().contains("SymOnly"), "{err}");
 }
