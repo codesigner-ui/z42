@@ -1,5 +1,234 @@
 # Design: WebAssembly Platform Scaffold
 
+---
+
+## 🔄 REVISION 2026-05-11
+
+> 本 spec 原稿（2026-04-29）写于 [embedding API](../../archive/2026-05-10-add-embedding-api/) 之前，
+> 自定义 `Z42Vm` JS 类直接 wrap `z42_runtime::interp::Interpreter`。embedding API 落地后，
+> WASM facade 改为**统一架在 Tier 2 `z42-host` crate 之上**。本节是新架构的**权威定义**；
+> 原稿后续小节中**与本节冲突的部分以本节为准**。
+>
+> 跨平台共同契约：[`src/toolchain/host/platforms/README.md`](../../../../src/toolchain/host/platforms/README.md)
+> 前置 ABI：[`add-zpkg-resolver-hook`](../add-zpkg-resolver-hook/) 必须先落地
+
+### 修订后的架构
+
+```
+┌────────────────────────────────────────────────────────────┐
+│         Browser / Node.js / wasm runtime                   │
+│                                                            │
+│  import init, { Z42VM } from '@z42/wasm';                  │
+│  await init();                                             │
+│  const corelibBytes = await fetch('stdlib/z42.core.zpkg')  │
+│                          .then(r => r.arrayBuffer());      │
+│  const vm = new Z42VM({                                    │
+│    zpkgResolver: new MapZpkgResolver({                     │
+│      'z42.core': new Uint8Array(corelibBytes),             │
+│      'Std.IO':   new Uint8Array(await ioBytes),            │
+│    }),                                                     │
+│    stdoutHandler: (bytes) =>                               │
+│      console.log(new TextDecoder().decode(bytes)),         │
+│  });                                                       │
+│  const m = vm.loadZbc(userBytes);                          │
+│  const e = vm.resolveEntry(m, 'App.Main');                 │
+│  vm.invoke(e);                                             │
+│  vm.dispose();                                             │
+└─────────────────────────┬──────────────────────────────────┘
+                          │ wasm-bindgen JS ↔ Rust
+                          ▼
+┌────────────────────────────────────────────────────────────┐
+│  platforms/wasm/  (cdylib, target wasm32-unknown-unknown)  │
+│                                                            │
+│  src/lib.rs    — #[wasm_bindgen] pub struct Z42VM          │
+│                  → 内部 host: z42_host::Host               │
+│  src/resolver.rs JS callback ↔ Rust ZpkgResolver bridge    │
+│  js/           — npm package（@z42/wasm）                  │
+│                  index.d.ts / index.js / stdlib/*.zpkg     │
+└─────────────────────────┬──────────────────────────────────┘
+                          │
+                          ▼
+┌────────────────────────────────────────────────────────────┐
+│  src/toolchain/host/embed/  (Tier 2 z42-host crate)        │
+└─────────────────────────┬──────────────────────────────────┘
+                          ▼
+┌────────────────────────────────────────────────────────────┐
+│  src/runtime/  (interp-only feature; jit/aot 关闭)         │
+└────────────────────────────────────────────────────────────┘
+```
+
+**目录归属变更**：`platform/wasm/` → **`src/toolchain/host/platforms/wasm/`**。原稿 §Scope 表中所有 `platform/wasm/` 路径替换为 `src/toolchain/host/platforms/wasm/`。
+
+### 修订后的 TypeScript Facade API（权威）
+
+```typescript
+// platforms/wasm/js/index.d.ts
+export default function init(input?: BufferSource | URL): Promise<void>;
+
+export class Z42VM {
+    constructor(options?: Z42VMOptions);
+
+    stdoutHandler: ((bytes: Uint8Array) => void) | null;
+    stderrHandler: ((bytes: Uint8Array) => void) | null;
+
+    loadZbc(bytes: Uint8Array): Z42VMModule;
+    resolveEntry(module: Z42VMModule, fqn: string): Z42VMEntry;
+    invoke(entry: Z42VMEntry, args?: Z42VMValue[]): Z42VMValue;
+
+    dispose(): void;   // → z42_host_shutdown
+}
+
+export interface Z42VMOptions {
+    zpkgResolver?: ZpkgResolver;
+    stdoutHandler?: (bytes: Uint8Array) => void;
+    stderrHandler?: (bytes: Uint8Array) => void;
+}
+
+export class Z42VMModule { /* opaque */ }
+export class Z42VMEntry  { /* opaque */ }
+
+export type Z42VMValue =
+    | { tag: 'null' }
+    | { tag: 'i64',  v: bigint }
+    | { tag: 'f64',  v: number }
+    | { tag: 'bool', v: boolean };
+
+export class Z42VMError extends Error {
+    readonly status: number;   // 1..99 from Z42HostStatus
+    readonly name:   string;   // "AlreadyInit" / "BadZbc" / ...
+}
+
+// ZpkgResolver = 同步函数 OR 实现接口的对象
+export type ZpkgResolver =
+    | ((namespace: string) => Uint8Array | null)
+    | { resolve(namespace: string): Uint8Array | null };
+
+export class MapZpkgResolver implements ZpkgResolver {
+    constructor(initial?: Record<string, Uint8Array>);
+    set(namespace: string, bytes: Uint8Array): void;
+    resolve(namespace: string): Uint8Array | null;
+}
+```
+
+### Rust 端（`src/lib.rs`）
+
+```rust
+use wasm_bindgen::prelude::*;
+use z42_host::{Host, HostConfig, ZpkgResolver};
+
+#[wasm_bindgen]
+pub struct Z42VM {
+    inner: Host,
+}
+
+#[wasm_bindgen]
+impl Z42VM {
+    #[wasm_bindgen(constructor)]
+    pub fn new(options: JsValue) -> Result<Z42VM, JsValue> {
+        let opts = parse_options(&options)?;
+        let cfg = HostConfig {
+            exec_mode: ExecMode::Interp,
+            stdout: opts.stdout_sink_box(),
+            stderr: opts.stderr_sink_box(),
+            zpkg_resolver: Some(opts.into_zpkg_resolver()),
+            search_paths: vec![],   // wasm 无 fs
+            ..Default::default()
+        };
+        let host = Host::new(cfg).map_err(to_js_error)?;
+        Ok(Z42VM { inner: host })
+    }
+
+    #[wasm_bindgen(js_name = loadZbc)]
+    pub fn load_zbc(&self, bytes: &[u8]) -> Result<Z42VMModule, JsValue> { ... }
+
+    #[wasm_bindgen(js_name = resolveEntry)]
+    pub fn resolve_entry(&self, m: &Z42VMModule, fqn: &str) -> Result<Z42VMEntry, JsValue> { ... }
+
+    pub fn invoke(&self, e: &Z42VMEntry, args: JsValue) -> Result<JsValue, JsValue> { ... }
+
+    pub fn dispose(self) { /* Drop → z42_host_shutdown */ }
+}
+```
+
+### JS hook → Rust ZpkgResolver bridge
+
+```rust
+// src/resolver.rs
+struct JsCallbackResolver {
+    callback: js_sys::Function,
+}
+
+unsafe impl Send for JsCallbackResolver {}
+unsafe impl Sync for JsCallbackResolver {}
+
+impl ZpkgResolver for JsCallbackResolver {
+    fn resolve(&self, namespace: &str) -> Option<Vec<u8>> {
+        let arg = JsValue::from_str(namespace);
+        let result = self.callback.call1(&JsValue::NULL, &arg).ok()?;
+        if result.is_null() || result.is_undefined() { return None; }
+        // Uint8Array → Vec<u8>
+        let arr = js_sys::Uint8Array::from(result);
+        Some(arr.to_vec())
+    }
+}
+```
+
+WASM 是单线程（main thread / worker），`Send + Sync` 的 unsafe impl 在单线程环境下安全。如果将来支持 web worker pool，再细化。
+
+### 修订后的 Rust crate
+
+```toml
+# platforms/wasm/Cargo.toml
+[package]
+name = "z42-platform-wasm"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+z42_vm     = { path = "../../../runtime", default-features = false, features = ["wasm"] }
+z42-host   = { path = "../embed" }
+wasm-bindgen = "0.2"
+js-sys       = "0.3"
+
+[features]
+default = []
+```
+
+`features = ["wasm"]` 等价于 `["interp-only"]`（[cross-platform.md](../../../design/runtime/cross-platform.md) §Features）—— JIT 自动禁用，AOT 也禁。
+
+### 修订后的 stdlib bundle
+
+`js/stdlib/*.zpkg` 由 build.sh 从 `artifacts/z42/libs/` 复制；npm tarball 包含这些文件。浏览器端 `fetch('@z42/wasm/stdlib/z42.core.zpkg')`，Node 端 `fs.readFileSync(require.resolve('@z42/wasm/stdlib/z42.core.zpkg'))`。
+
+JS 端 `init()` 不再自动加载 stdlib —— 调用方显式 fetch 后传 `MapZpkgResolver` 是 v0.1 模式（同步 resolver 假设字节已在内存）。**异步 / 懒 fetch 留 0.8.x async/await spec**。
+
+### 原稿中**仍然有效**的决策（未被本节 supersede）
+
+- Decision 1（wasm-pack 工具链）✅
+- Decision 4（Cargo.toml 配置思路）—— deps 列表替换为 z42-host
+- Decision 6（build.sh 接口 / 多 target）—— 步骤不变
+- Decision 7（浏览器 demo）—— `Z42Vm` → `Z42VM`，加载 stdlib bytes 后传 resolver
+- Decision 8（Node demo）—— 同上
+- Decision 10（justfile 接入）—— 命令不变
+- Decision 11（CI）—— playwright 测试不在本次范围
+
+### 原稿中**被 supersede 的决策**
+
+- Decision 2 整段 JS API（`loadZpkg` / `loadZbc` 直接喂、`run(entryPoint, args)` 同步） → 改为 `loadZbc / resolveEntry / invoke` 三步 + ZpkgResolver
+- Decision 3 Rust wasm-bindgen 入口（wrap `z42_runtime::interp::Interpreter`）→ wrap `z42_host::Host`
+- Decision 5（stdout/stderr 桥接通过 wasm-bindgen 闭包 + thread_local）→ 改走 `z42-host` 的 sink + active flag 机制（不再 wasm-specific）
+
+### Open Questions（修订）
+
+- [ ] **R1**：`Z42VMValue` 在 TS 端用 discriminated union（如本文）vs `bigint` 直传？倾向 union，对 null/bool 友好
+- [ ] **R2**：JS `BigInt` 处理 i64 跨平台是否引入 ergonomics 损失？倾向**接受**，i32 用 Number 已可（但 ABI 走 i64）
+- [ ] **R3**：`dispose()` 后再调任何方法 → throw `Z42VMError` 而非静默？倾向**throw**，开发期更早发现 leak
+- [ ] **R4**：是否同步暴露 `MapZpkgResolver` 还是只暴露 ZpkgResolver type alias？倾向**导出 class**，开发者更直观
+
+---
+
 ## Architecture
 
 ```

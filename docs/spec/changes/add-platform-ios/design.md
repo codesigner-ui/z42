@@ -1,5 +1,145 @@
 # Design: iOS Platform Scaffold
 
+---
+
+## 🔄 REVISION 2026-05-11
+
+> 本 spec 原稿（2026-04-29）写于 [embedding API](../../archive/2026-05-10-add-embedding-api/) 之前，
+> 直接包 `z42_runtime::interp::Interpreter`。embedding API 落地后，三平台 facade 改为**统一架在
+> Tier 2 `z42-host` crate 之上**。本节是新架构的**权威定义**；原稿后续小节中**与本节冲突的部分以本节为准**。
+>
+> 跨平台共同契约：[`src/toolchain/host/platforms/README.md`](../../../../src/toolchain/host/platforms/README.md)
+> 前置 ABI：[`add-zpkg-resolver-hook`](../add-zpkg-resolver-hook/) 必须先落地
+
+### 修订后的架构
+
+```
+┌────────────────────────────────────────────────────────────┐
+│           iOS App (Swift / SwiftUI)                        │
+│                                                            │
+│   import Z42VM                                             │
+│   let vm = try Z42VM()              // 默认 BundleResolver │
+│   vm.stdoutHandler = { textArea.append($0) }               │
+│   let m = try vm.loadZbc(data)                             │
+│   let e = try vm.resolveEntry(m, fqn: "App.Main")          │
+│   _ = try vm.invoke(e)                                     │
+└─────────────────────────┬──────────────────────────────────┘
+                          │ Swift module Z42VM
+                          ▼
+┌────────────────────────────────────────────────────────────┐
+│  platforms/ios/                                            │
+│                                                            │
+│  Sources/Z42VM/      — Swift facade（Z42VM 类、协议）       │
+│  Sources/Z42VMC/     — C bridge：#include "z42_host.h"     │
+│  rust/               — cdylib + staticlib，path-dep z42-host│
+│  Resources/stdlib/   — z42.core.zpkg / z42.io.zpkg / ...   │
+└─────────────────────────┬──────────────────────────────────┘
+                          │ extern "C" → z42_host_*
+                          ▼
+┌────────────────────────────────────────────────────────────┐
+│  src/toolchain/host/embed/  (Tier 2 z42-host crate)        │
+└─────────────────────────┬──────────────────────────────────┘
+                          ▼
+┌────────────────────────────────────────────────────────────┐
+│  src/runtime/  (interp-only feature)                       │
+└────────────────────────────────────────────────────────────┘
+```
+
+**目录归属变更**：`platform/ios/` → **`src/toolchain/host/platforms/ios/`**。原稿 §Scope 表中所有 `platform/ios/` 路径替换为 `src/toolchain/host/platforms/ios/`。
+
+### 修订后的 Swift Facade API（权威）
+
+```swift
+// Sources/Z42VM/Z42VM.swift
+public final class Z42VM {
+    public init(zpkgResolver: ZpkgResolver = BundleZpkgResolver()) throws
+
+    public var stdoutHandler: ((Data) -> Void)?
+    public var stderrHandler: ((Data) -> Void)?
+
+    public func loadZbc(_ bytes: Data) throws -> Z42VMModule
+    public func resolveEntry(_ module: Z42VMModule, fqn: String) throws -> Z42VMEntry
+    public func invoke(_ entry: Z42VMEntry, args: [Z42VMValue] = []) throws -> Z42VMValue
+
+    // deinit 自动调 z42_host_shutdown
+}
+
+public final class Z42VMModule  { /* opaque handle */ }
+public final class Z42VMEntry   { /* opaque handle */ }
+
+public enum Z42VMValue {
+    case null
+    case i64(Int64)
+    case f64(Double)
+    case bool(Bool)
+    // string / object 推迟到 H4 后续 spec
+}
+
+public enum Z42VMError: Error {
+    case alreadyInit(String), notInit(String), badConfig(String), featureOff(String)
+    case badZbc(String), verification(String)
+    case entryNotFound(String), argMismatch(String)
+    case vmException(String), internalError(String)
+}
+
+public protocol ZpkgResolver {
+    func resolve(namespace: String) -> Data?
+}
+
+public struct BundleZpkgResolver: ZpkgResolver {
+    public init(bundle: Bundle = .main, subdirectory: String? = "stdlib")
+    public func resolve(namespace: String) -> Data? { ... }
+}
+```
+
+### 修订后的 Rust binding crate
+
+```toml
+# platforms/ios/rust/Cargo.toml
+[package]
+name = "z42-platform-ios"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+z42_vm   = { path = "../../../../runtime", default-features = false, features = ["interp-only"] }
+z42-host = { path = "../../embed" }
+```
+
+`rust/src/lib.rs` 几乎为空：仅 re-export `pub use z42_vm::host::*` 让 Swift module 看见符号。**不再手写自己的 8 个 `z42_*` C 函数**（原稿 §Decision 3 superseded）。Swift facade 直接 import `Z42VMC` module，调 `z42_host.h` 暴露的函数。
+
+### 修订后的 stdlib bundle
+
+`Resources/stdlib/*.zpkg` 在 Xcode "Copy Bundle Resources" phase 复制；`BundleZpkgResolver` 在 `Bundle.main.url(forResource: "<ns>", withExtension: "zpkg", subdirectory: "stdlib")` 找。
+
+build.sh 必须先编译 stdlib（`dotnet build src/compiler/z42.slnx` + 收集 `artifacts/z42/libs/*.zpkg`）再启动 xcframework 构建。
+
+### 原稿中**仍然有效**的决策（未被本节 supersede）
+
+- Decision 1（SwiftPM 工具链）✅
+- Decision 5（多 target 构建 + xcframework）—— 命名 `Z42VM.xcframework` 替换 `Z42Runtime.xcframework`
+- Decision 6（build.sh 接口）—— 步骤不变，产物路径调整
+- Decision 7（iOSDemo Xcode 工程）—— 类名 `Z42Vm` 改 `Z42VM`
+- Decision 8（XCTest）—— 资源路径调整
+- Decision 9–11（just / CI / 文档同步）—— 内容不变，路径 / 命名替换
+
+### 原稿中**被 supersede 的决策**
+
+- 原 Decision 2（JS API 设计）— Swift API 形态以本节为准
+- 原 Decision 3（Rust ios crate）— 直接 wrap `z42_runtime::interp::Interpreter` → 改为 re-export `z42_host`
+- 原 Decision 4（C bridge module）— 头文件 `z42_ios.h` 改为 thin forwarder `#include "z42_host.h"`
+- 任何"自定义 `Z42Vm` / `setStdoutHandler` 直接传字符串"的接口 — 改为 `Z42VM` + `Data`-based sink + 走 `z42-host`
+
+### Open Questions（修订）
+
+- [ ] **R1**：Swift `Data` 作为字节缓冲（vs `[UInt8]`）— 倾向 `Data`，与 Foundation 习惯对齐，零拷贝走 `withUnsafeBytes`
+- [ ] **R2**：iOS app 异步触发 invoke 是否 facade 内置一个 `invokeOnBackground` 便利方法？v0.1 不做；宿主用 GCD `DispatchQueue.global().async { try vm.invoke(...) }`
+- [ ] **R3**：是否在 `Z42VMError` 中携带 `Z42HostStatus` 数值码（除 String message 外）？倾向**是**，便于程序化分支
+
+---
+
 ## Architecture
 
 ```

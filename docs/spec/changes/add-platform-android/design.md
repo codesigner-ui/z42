@@ -1,5 +1,187 @@
 # Design: Android Platform Scaffold
 
+---
+
+## 🔄 REVISION 2026-05-11
+
+> 本 spec 原稿（2026-04-29）写于 [embedding API](../../archive/2026-05-10-add-embedding-api/) 之前，
+> JNI 桥接直连 z42 runtime 内部。embedding API 落地后，Android facade 改为**统一架在 Tier 2
+> `z42-host` crate 之上**。本节是新架构的**权威定义**；原稿后续小节中**与本节冲突的部分以本节为准**。
+>
+> 跨平台共同契约：[`src/toolchain/host/platforms/README.md`](../../../../src/toolchain/host/platforms/README.md)
+> 前置 ABI：[`add-zpkg-resolver-hook`](../add-zpkg-resolver-hook/) 必须先落地
+
+### 修订后的架构
+
+```
+┌────────────────────────────────────────────────────────────┐
+│         Android App (Kotlin / Compose)                     │
+│                                                            │
+│   import io.z42.vm.Z42VM                                   │
+│   val vm = Z42VM(zpkgResolver = AssetZpkgResolver(assets)) │
+│   vm.stdoutHandler = { textView.append(String(it)) }       │
+│   val m = vm.loadZbc(assets.open("hello.zbc").readBytes()) │
+│   val e = vm.resolveEntry(m, "App.Main")                   │
+│   vm.invoke(e)                                             │
+│   vm.close()                                               │
+└──────────────────┬─────────────────────────────────────────┘
+                   │ JNI (Java_io_z42_vm_Z42VM_native*)
+                   ▼
+┌────────────────────────────────────────────────────────────┐
+│  platforms/android/z42vm/                                  │
+│                                                            │
+│  src/main/java/io/z42/vm/   — Kotlin facade（Z42VM 类）    │
+│  src/main/cpp/z42vm_jni.c   — JNI bridge → z42_host.h      │
+│  src/main/jniLibs/<abi>/    — Rust cdylib（4 个 ABI）      │
+│  src/main/assets/stdlib/    — stdlib zpkg bundle           │
+└──────────────────┬─────────────────────────────────────────┘
+                   │ libz42_platform_android.so → z42_host_*
+                   ▼
+┌────────────────────────────────────────────────────────────┐
+│  src/toolchain/host/embed/  (Tier 2 z42-host crate)        │
+└──────────────────┬─────────────────────────────────────────┘
+                   ▼
+┌────────────────────────────────────────────────────────────┐
+│  src/runtime/  (interp-only feature)                       │
+└────────────────────────────────────────────────────────────┘
+```
+
+**目录归属变更**：`platform/android/` → **`src/toolchain/host/platforms/android/`**。原稿 §Scope 表中所有 `platform/android/` 路径替换为 `src/toolchain/host/platforms/android/`。
+
+### 修订后的 Kotlin Facade API（权威）
+
+```kotlin
+// src/main/java/io/z42/vm/Z42VM.kt
+package io.z42.vm
+
+class Z42VM(
+    zpkgResolver: ZpkgResolver
+) : AutoCloseable {
+    var stdoutHandler: ((ByteArray) -> Unit)? = null
+    var stderrHandler: ((ByteArray) -> Unit)? = null
+
+    fun loadZbc(bytes: ByteArray): Z42VMModule
+    fun resolveEntry(module: Z42VMModule, fqn: String): Z42VMEntry
+    fun invoke(entry: Z42VMEntry, vararg args: Z42VMValue): Z42VMValue
+
+    override fun close()   // → z42_host_shutdown
+
+    companion object {
+        init { System.loadLibrary("z42_platform_android") }
+    }
+}
+
+class Z42VMModule internal constructor(internal val handle: Long)
+class Z42VMEntry  internal constructor(internal val handle: Long)
+
+sealed class Z42VMValue {
+    object Null : Z42VMValue()
+    data class I64(val v: Long)    : Z42VMValue()
+    data class F64(val v: Double)  : Z42VMValue()
+    data class Bool(val v: Boolean): Z42VMValue()
+    // String / object 推迟到 H4 后续 spec
+}
+
+class Z42VMException(val status: Int, message: String) : RuntimeException(message)
+
+interface ZpkgResolver {
+    fun resolve(namespace: String): ByteArray?
+}
+
+class AssetZpkgResolver(
+    private val assets: AssetManager,
+    private val subdir: String = "stdlib"
+) : ZpkgResolver {
+    override fun resolve(namespace: String): ByteArray? = try {
+        assets.open("$subdir/$namespace.zpkg").use { it.readBytes() }
+    } catch (_: IOException) { null }
+}
+```
+
+### 修订后的 JNI bridge
+
+`src/main/cpp/z42vm_jni.c`（C 文件，不写 Rust JNI）：
+
+```c
+#include <jni.h>
+#include "z42_host.h"
+
+JNIEXPORT jlong JNICALL
+Java_io_z42_vm_Z42VM_nativeInitialize(JNIEnv* env, jobject self,
+                                       jobject resolver_kotlin) {
+    Z42HostConfig cfg = {0};
+    cfg.abi_version = Z42_HOST_ABI_VERSION;
+    cfg.exec_mode = Z42_EXEC_MODE_INTERP;
+    cfg.zpkg_resolver = jni_zpkg_resolver_trampoline;     /* 回调 Kotlin */
+    cfg.zpkg_resolver_user_data = jni_pack_resolver_ud(env, resolver_kotlin);
+    cfg.stdout_sink = jni_stdout_trampoline;
+    /* ... */
+
+    Z42HostRef host = NULL;
+    if (z42_host_initialize(&cfg, &host) != Z42_HOST_OK) {
+        throw_z42vm_exception(env);
+        return 0;
+    }
+    return (jlong)host;
+}
+
+/* nativeLoadZbc / nativeResolveEntry / nativeInvoke / nativeShutdown 同形 */
+```
+
+**关键决策**：JNI bridge 用 **C**（不是 Rust）。理由：
+- JNI 信号 / 异常处理在 C 比 Rust 直接（避免 `extern "system"` + panic 包装）
+- 胶水 ≤ 200 行 C，不值得引入 Rust JNI crate
+- 链接简单：`target_link_libraries(z42vm_jni z42_platform_android)` 走 CMake
+
+### 修订后的 Rust cdylib
+
+```toml
+# platforms/android/rust/Cargo.toml
+[package]
+name = "z42-platform-android"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+z42_vm   = { path = "../../../../runtime", default-features = false, features = ["interp-only"] }
+z42-host = { path = "../../embed" }
+```
+
+`rust/src/lib.rs` 仅 re-export `pub use z42_vm::host::*`，确保 `z42_host_*` 符号导出到 `libz42_platform_android.so`。C JNI bridge 链接这个 so。
+
+build.sh 用 cargo-ndk 跨编 4 个 ABI（arm64-v8a / armeabi-v7a / x86_64 / x86），输出到 `z42vm/src/main/jniLibs/<abi>/libz42_platform_android.so`。
+
+### 修订后的 stdlib bundle
+
+`z42vm/src/main/assets/stdlib/*.zpkg` 由 build.sh 从 `artifacts/z42/libs/` 复制。Kotlin 端 `AssetZpkgResolver` 读 `context.assets.open("stdlib/$ns.zpkg")` —— Android assets 是 mmap-backed，bundle 内 IO 零开销。
+
+### 原稿中**仍然有效**的决策（未被本节 supersede）
+
+- Gradle 配置（minSdk 23 / targetSdk 34 / Kotlin 1.9 系列）
+- 4 个 ABI 跨编（cargo-ndk）
+- Demo app 工程结构（Compose）
+- 不入 git 的产物清单
+- CI 节点（ubuntu-latest + Android SDK）
+- 文档同步清单
+
+### 原稿中**被 supersede 的决策**
+
+- 任何 `Z42Vm` 类名 → `Z42VM`
+- `setStdoutHandler(line: String)` → `stdoutHandler: ((ByteArray) -> Unit)?`
+- JNI 直连 `z42_runtime::interp::*` → 改走 `z42_host_*`
+- `external fun nativeNew(): Long` 自定义 native API → 以 `z42_host.h` 为准
+- 任何"在 Kotlin / JNI 层处理 zpkg 文件系统路径"的描述 → `ZpkgResolver` 接口
+
+### Open Questions（修订）
+
+- [ ] **R1**：JNI 局部引用是否主动 `DeleteLocalRef`？倾向用 `PushLocalFrame` 包整段 invoke
+- [ ] **R2**：`stdoutHandler` 触发线程 = invoke 调用线程；UI 切换由宿主 `Handler.post { ... }`
+- [ ] **R3**：`Z42VMException.status` 类型 — `Int` + 伴生常量 vs `enum class`？倾向 `Int`（跨进程稳定）
+
+---
+
 ## Architecture
 
 ```
