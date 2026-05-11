@@ -2,6 +2,9 @@
 # target redirect — its own target/ here).
 rust/target/
 
+# build.sh intermediate (lipo'd simulator universal .a before xcframework).
+build/
+
 # SwiftPM build outputs.
 .build/
 .swiftpm/
