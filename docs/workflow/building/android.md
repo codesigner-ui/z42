@@ -1,6 +1,6 @@
 # Android facade — build & run
 
-> 📋 设计期 · facade [`platforms/android/`](../../../src/toolchain/host/platforms/android/) · spec [`add-platform-android/`](../../spec/changes/add-platform-android/)
+> 🟢 已落地 · facade [`platforms/android/`](../../../src/toolchain/host/platforms/android/) · spec [`2026-05-12-add-platform-android/`](../../spec/archive/2026-05-12-add-platform-android/)
 
 把 z42 VM 编进 `z42vm.aar`，让 Kotlin / Compose app 引入后 `import io.z42.vm.Z42VM` 跑 `.zbc`。**从零开始按下面 4 步走**。
 
@@ -37,7 +37,7 @@ cargo install cargo-ndk
 dotnet build src/compiler/z42.slnx
 ```
 
-✅ 产出 `artifacts/compiler/z42.Driver/bin/z42c.dll` + `artifacts/z42/libs/*.zpkg`。
+✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll` + `artifacts/build/libs/release/*.zpkg`。
 
 ❗ `dotnet: command not found` → 装 .NET 8+：https://dotnet.microsoft.com/download
 

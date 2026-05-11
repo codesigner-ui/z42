@@ -1,0 +1,26 @@
+[package]
+name = "z42-platform-android"
+version = "0.1.0"
+edition = "2021"
+description = "Tier 3 Android facade for the z42 embedding API — cdylib re-exporting z42_host_* into Kotlin via a JNI bridge (cpp/z42vm_jni.c)."
+publish = false
+
+[lib]
+name = "z42_platform_android"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Android feature preset = ["interp-only", "aot"]. Sibling iOS spec
+# verified that libffi-sys can't be bundled cleanly on iOS arm64;
+# Android likely hits the same path (system libffi not exposed by
+# the NDK). v0.1 ships without `native-interop`; future spec adds
+# a vendored libffi.
+z42      = { path = "../../../../../runtime", default-features = false, features = ["android"] }
+z42-host = { path = "../../../embed" }
+
+[profile.release]
+opt-level = "z"
+lto       = true
+codegen-units = 1
+strip     = true
