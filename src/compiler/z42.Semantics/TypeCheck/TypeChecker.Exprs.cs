@@ -170,6 +170,9 @@ public sealed partial class TypeChecker
             case NewExpr newExpr:
             {
                 CheckPositionalBeforeNamed(newExpr.Args);
+                // spec add-named-arguments: bind initially as positional so we can
+                // resolve the ctor (whose arity disambiguates overloads); then if
+                // named args are present, re-bind with reorder against ctor's AST.
                 var args    = newExpr.Args.Select(a => BindArgValue(a, env)).ToList();
                 var newType = ResolveType(newExpr.Type);
                 // 2026-05-07 add-class-arity-overloading: qualName must reflect
@@ -212,6 +215,25 @@ public sealed partial class TypeChecker
                     }
                 }
                 var ctorName = ResolveCtorName(qualName, args.Count, newExpr.Span);
+
+                // spec add-named-arguments Part 2: if any named arg, re-bind via
+                // BindArgsReordered using the resolved ctor's AST params.
+                bool hasNamed = false;
+                for (int i = 0; i < newExpr.Args.Count; i++)
+                    if (newExpr.Args[i].Name is not null) { hasNamed = true; break; }
+                if (hasNamed)
+                {
+                    Z42ClassType? cls = null;
+                    if (_symbols.Classes.TryGetValue(qualName, out var local)) cls = local;
+                    else if (_imported?.Classes.TryGetValue(qualName, out var imp) == true) cls = imp;
+                    var ctorDecl = cls?.Methods.TryGetValue(ctorName, out var ctorSym) == true
+                        ? ctorSym.Decl
+                        : null;
+                    var (_, reorderedArgs) = BindArgsReordered(
+                        newExpr.Args, ctorDecl?.Params, env, newExpr.Span);
+                    args = reorderedArgs;
+                }
+
                 return new BoundNew(qualName, ctorName, args, newType, newExpr.Span);
             }
 

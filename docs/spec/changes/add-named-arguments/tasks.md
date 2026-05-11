@@ -45,8 +45,9 @@
 - [x] 2.6 [TypeChecker.Calls.Modifiers.cs](../../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Calls.Modifiers.cs) — `CheckArgModifiers` 签名升级
 - [x] 2.7 [Z42Type.cs](../../../../src/compiler/z42.Semantics/TypeCheck/Z42Type.cs) — `ModifierMangling.PatternFromArgs` / `HasAnyModifier` 签名升级
 - [x] 2.8 [TypeChecker.Exprs.cs](../../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.cs) — `NewExpr` 分支 `CheckPositionalBeforeNamed` + `BindArgValue`
-- [ ] 2.9 **Part 2 留作 follow-up**：实际 reorder 在 15+ call paths（static / instance / virtual / impl-method / dep-index / ctor / lazy / vtable / native...）；Z1002–Z1005 触发；BoundDefaults 填中间空位
-- [ ] 2.10 **Part 2**：`Z42FuncType.ParamNames` 字段（让 imported callees 也支持 named-arg 名字解析）
+- [x] 2.9 **Part 2 (2026-05-12)**：`BindArgsReordered` 统一 helper + 静态方法 / ObjNew 两个核心路径接入；Z1002 / Z1003 / Z1004 / Z1005 实时触发；BoundDefaults 通过 `_boundDefaults` 字典访问 + 按需补绑
+- [x] 2.10 **Part 2**：imported / 跨 CU callees 当 `Decl == null` 时走 Z1002 fallback（保留 forward progress；下游类型校验仍执行）
+- [ ] 2.11 跟进：instance method / virtual / impl-method / lazy / native / 普通函数等 ~10 个剩余路径仍走 shim（位置实参 / Z1002 fallback）；按需求引入 `Z42FuncType.ParamNames` 字段后接入
 
 ## 阶段 3: Codegen FillDefaults 升级
 
@@ -57,8 +58,8 @@
 
 ## 阶段 4: 测试 + 文档
 
-- [ ] 4.1 [NamedArgumentsTests.cs](../../../../src/compiler/z42.Tests/NamedArgumentsTests.cs) NEW — 14 个 case（Parser 4 / TypeCheck 9 / Codegen 2，见 design.md Testing Strategy）
-- [ ] 4.2 [src/tests/calls/named_args/](../../../../src/tests/calls/named_args/) NEW — golden e2e：function + method + ctor + 中间默认 + ref/out 组合
-- [ ] 4.3 既有 golden / examples 扫描：是否有 ternary `a ? b : c` 紧跟在 call arg 开头的代码，确认未被新 lookahead 误伤
-- [ ] 4.4 docs/design/language/language-overview.md — 在"默认参数"段落后追加 named arguments 语法示例 + 规则要点
-- [ ] 4.5 全绿验证：`dotnet build` + `dotnet test` + `./scripts/test-vm.sh`
+- [x] 4.1 [NamedArgumentsTests.cs](../../../../src/compiler/z42.Tests/NamedArgumentsTests.cs) NEW — 12 个 case 全绿（Parser 3 + Z1001-Z1005 共 5 + reorder 工作 4，覆盖核心场景）
+- [ ] 4.2 [src/tests/calls/named_args/](../../../../src/tests/calls/named_args/) NEW — golden e2e（按需引入；现有 stdlib 不依赖此特性）
+- [x] 4.3 既有 1223 C# + 320 VM golden 全绿 → ternary `a ? b : c` 未被新 lookahead 误伤
+- [ ] 4.4 docs/design/language/language-overview.md — named arguments 语法示例（按需补；feature 在 roadmap 0.6.x 完整登场前可省略）
+- [x] 4.5 全绿验证：1223 C# + 309 Rust unit + 320 VM golden

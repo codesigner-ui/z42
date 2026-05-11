@@ -118,6 +118,87 @@ public sealed partial class TypeChecker
         return (pos, bnd);
     }
 
+    /// spec add-named-arguments — Part 2 unified entry point.
+    ///
+    /// Binds raw call-site arguments to a callee's parameter shape, reordering
+    /// named arguments to their declared positions and filling missing slots
+    /// with bound default expressions. Returns parallel lists of
+    /// (originalArg, boundExpr) indexed by parameter position.
+    ///
+    /// `calleeParams`: AST param list when available (local symbol with `.Decl`).
+    /// When null (imported / cross-CU symbol with no AST), any named argument
+    /// triggers `Z1002 UnknownArgumentName` — the call falls back to positional
+    /// binding to preserve forward progress on overload / type checks.
+    ///
+    /// Fast path: when no argument has `.Name != null` and `calleeParams` is
+    /// null OR matching arity, returns positional bind directly (no allocation).
+    private (List<Argument> Orig, List<BoundExpr> Bound) BindArgsReordered(
+        IReadOnlyList<Argument> rawArgs,
+        IReadOnlyList<Param>?    calleeParams,
+        TypeEnv env,
+        Span callSpan)
+    {
+        bool hasNamed = false;
+        for (int i = 0; i < rawArgs.Count; i++)
+            if (rawArgs[i].Name is not null) { hasNamed = true; break; }
+
+        // Fast path: positional-only — preserve existing behaviour exactly.
+        if (!hasNamed)
+            return (rawArgs.ToList(), rawArgs.Select(a => BindArgValue(a, env)).ToList());
+
+        // Callee shape unknown: report Z1002 for each named arg, bind as positional.
+        if (calleeParams is null)
+        {
+            foreach (var a in rawArgs)
+                if (a.Name is not null)
+                    _diags.Error(DiagnosticCodes.UnknownArgumentName,
+                        $"named argument `{a.Name}` not supported for this callee (parameter names unknown)",
+                        a.NameSpan ?? a.Span);
+            return (rawArgs.ToList(), rawArgs.Select(a => BindArgValue(a, env)).ToList());
+        }
+
+        // Build paramName → index map; report duplicates / unknowns via resolver helpers.
+        var paramByName = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < calleeParams.Count; i++)
+            paramByName[calleeParams[i].Name] = i;
+
+        var resolved = ResolveArgPositions(rawArgs, paramByName);
+        var (origPos, boundPos) = ReorderToPositional(resolved, calleeParams.Count, env);
+
+        // Fill missing slots from bound defaults or report Z1005.
+        var origFinal  = new List<Argument>(calleeParams.Count);
+        var boundFinal = new List<BoundExpr>(calleeParams.Count);
+        for (int i = 0; i < calleeParams.Count; i++)
+        {
+            if (origPos[i] is { } a && boundPos[i] is { } b)
+            {
+                origFinal.Add(a);
+                boundFinal.Add(b);
+                continue;
+            }
+            var p = calleeParams[i];
+            if (p.Default is null)
+            {
+                _diags.Error(DiagnosticCodes.MissingRequiredArgument,
+                    $"missing required argument `{p.Name}` (parameter {i + 1})",
+                    callSpan);
+                // Placeholder so downstream Bound layer stays well-typed.
+                origFinal.Add(new Argument(null, new LitNullExpr(p.Span), p.Span));
+                boundFinal.Add(new BoundDefault(Z42Type.Unknown, callSpan));
+                continue;
+            }
+            // Use the param's bound default if already computed; otherwise bind now.
+            if (!_boundDefaults.TryGetValue(p, out var boundDefault))
+            {
+                boundDefault = BindExpr(p.Default, env);
+                _boundDefaults[p] = boundDefault;
+            }
+            origFinal.Add(new Argument(null, p.Default, p.Span));
+            boundFinal.Add(boundDefault);
+        }
+        return (origFinal, boundFinal);
+    }
+
     /// Bind a callsite `ref` / `out` / `in` argument. For `out var x`, declare
     /// the local in the caller's scope with placeholder `Unknown` type; the
     /// matched parameter's type patches it in `CheckArgTypes`.

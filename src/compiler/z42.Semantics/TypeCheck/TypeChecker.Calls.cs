@@ -29,14 +29,18 @@ public sealed partial class TypeChecker
             if (staticSym is not null)
             {
                 var staticSig = staticSym.Signature;
-                var args = call.Args.Select(a => BindArgValue(a, env)).ToList();
+                // spec add-named-arguments: reorder named args to param positions.
+                // calleeParams sourced from local AST when available; null when
+                // imported (named args → Z1002 fallback).
+                var (staticOrigArgs, args) = BindArgsReordered(
+                    call.Args, staticSym.Decl?.Params, env, call.Span);
                 CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
                 // 2026-05-05 fix-generic-extern-infer: substitute T → concrete
                 // before arg-type validation so `BlackBox<T>(int)` etc. accept
                 // int args. Same path also handles non-extern generic statics.
                 var checkedParams = SubstituteGenericParams(staticSig, args);
-                CheckArgTypes(call.Args, args, checkedParams);
-                CheckArgModifiers(call.Args, args, staticSig, env, call.Span);
+                CheckArgTypes(staticOrigArgs, args, checkedParams);
+                CheckArgModifiers(staticOrigArgs, args, staticSig, env, call.Span);
                 var inferredRet = SubstituteGenericReturn(staticSig, args);
                 // Use resolved key when overload (modifier-tagged or arity-tagged) so
                 // IR Codegen / VM dispatch resolves to the correct variant.
