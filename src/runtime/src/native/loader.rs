@@ -10,8 +10,14 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 
-use super::error::{self, Z0910};
+use super::error;
 use crate::vm_context::VmContext;
+
+/// Categorical error code mirrored into the last-error slot for native
+/// library load failures. 2026-05-11 retire-z-codes: was `Z0910`; the
+/// named constant was retired but the numeric value stays for embedder
+/// wire-compat with `Z42Error.code`.
+const LIB_LOAD_FAILURE: u32 = 910;
 
 /// Type signature of the library's register entry point — `void(void)`.
 type RegisterFn = unsafe extern "C" fn();
@@ -23,26 +29,26 @@ pub fn load_library(ctx: &VmContext, path: &Path) -> Result<()> {
     error::clear();
 
     let lib = unsafe { libloading::Library::new(path) }
-        .with_context(|| format!("Z0910: dlopen({})", path.display()))
+        .with_context(|| format!("dlopen({})", path.display()))
         .map_err(|e| {
-            error::set(Z0910, format!("{e:#}"));
+            error::set(LIB_LOAD_FAILURE, format!("{e:#}"));
             e
         })?;
 
     let entry_name = guess_register_symbol(path)
         .ok_or_else(|| {
             let msg = format!(
-                "Z0910: cannot derive register-entry symbol from path {} (file name must end in `<libname>.<ext>` so we can call `<libname>_register`)",
+                "cannot derive register-entry symbol from path {} (file name must end in `<libname>.<ext>` so we can call `<libname>_register`)",
                 path.display()
             );
-            error::set(Z0910, &msg);
+            error::set(LIB_LOAD_FAILURE, &msg);
             anyhow!(msg)
         })?;
 
     let register: libloading::Symbol<RegisterFn> = unsafe { lib.get(entry_name.as_bytes()) }
-        .with_context(|| format!("Z0910: missing register symbol `{entry_name}` in {}", path.display()))
+        .with_context(|| format!("missing register symbol `{entry_name}` in {}", path.display()))
         .map_err(|e| {
-            error::set(Z0910, format!("{e:#}"));
+            error::set(LIB_LOAD_FAILURE, format!("{e:#}"));
             e
         })?;
 
@@ -91,11 +97,16 @@ mod tests {
     }
 
     #[test]
-    fn nonexistent_path_sets_z0910() {
+    fn nonexistent_path_sets_lib_load_failure() {
+        // 2026-05-11 retire-z-codes: no Z#### prefix in message, just the
+        // diagnostic. The numeric code stays in Z42Error for embedder
+        // wire-compat (LIB_LOAD_FAILURE = 910).
         let ctx = VmContext::new();
         let err = load_library(&ctx, Path::new("/nonexistent/lib_definitely_not_here.dylib"))
             .expect_err("must fail");
-        assert!(format!("{err:#}").contains("Z0910"));
-        assert_eq!(error::last().code, Z0910);
+        let msg = format!("{err:#}");
+        assert!(msg.contains("dlopen"), "msg = {msg}");
+        assert!(!msg.contains("Z0910"), "Z#### prefix must be retired; msg = {msg}");
+        assert_eq!(error::last().code, LIB_LOAD_FAILURE);
     }
 }

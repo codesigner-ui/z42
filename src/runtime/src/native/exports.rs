@@ -17,9 +17,16 @@ use std::rc::Rc;
 
 use z42_abi::{Z42Error, Z42TypeDescriptor_v1, Z42TypeOpaque, Z42TypeRef, Z42Value};
 
-use super::error::{self, Z0905, Z0906};
+use super::error;
 use super::registry::RegisteredType;
 use crate::vm_context::VmContext;
+
+/// Categorical error codes mirrored into the last-error slot for embedder
+/// consumption via `z42_last_error()`. 2026-05-11 retire-z-codes: named
+/// `Z####` constants retired, but the numeric values stay for ABI compat
+/// — embedder hosts may still pattern-match on them.
+const TYPE_REGISTRATION_FAILURE: u32 = 905;
+const ABI_VERSION_MISMATCH:      u32 = 906;
 
 // ── thread_local current-VM pointer ──────────────────────────────────────
 
@@ -88,16 +95,23 @@ pub unsafe extern "C" fn z42_register_type(
     error::clear();
 
     let Some(vm) = current_vm() else {
-        error::set(Z0905, "z42_register_type called outside an active z42 VM context");
+        error::set(TYPE_REGISTRATION_FAILURE, "z42_register_type called outside an active z42 VM context");
         return NULL_TYPE_REF;
     };
 
     let registered = match unsafe { RegisteredType::from_descriptor(desc) } {
         Ok(r) => r,
         Err(e) => {
-            // Map the anyhow message back to Z0905 vs Z0906 by inspecting prefix.
+            // 2026-05-11 retire-z-codes: messages no longer carry `Z####:`
+            // prefixes; recover the categorical code from the human-readable
+            // text instead (only ABI mismatch carries a distinct surface
+            // marker — everything else falls under TYPE_REGISTRATION_FAILURE).
             let msg = format!("{e:#}");
-            let code = if msg.contains("Z0906") { Z0906 } else { Z0905 };
+            let code = if msg.contains("ABI version mismatch") {
+                ABI_VERSION_MISMATCH
+            } else {
+                TYPE_REGISTRATION_FAILURE
+            };
             error::set(code, msg);
             return NULL_TYPE_REF;
         }
@@ -106,7 +120,7 @@ pub unsafe extern "C" fn z42_register_type(
     let arc = Rc::new(registered);
     if !vm.register_native_type(arc.clone()) {
         error::set(
-            Z0905,
+            TYPE_REGISTRATION_FAILURE,
             format!(
                 "duplicate native type {}::{}",
                 arc.module(),
@@ -156,7 +170,7 @@ pub unsafe extern "C" fn z42_invoke(
 ) -> Z42Value {
     // C2 only validates the registry path; reverse-call (native → z42)
     // dispatch is wired in C5 when the source generator emits the calls.
-    error::set(Z0905, "z42_invoke not implemented in C2 (lands in spec C5)");
+    error::set(TYPE_REGISTRATION_FAILURE, "z42_invoke not implemented in C2 (lands in spec C5)");
     super::dispatch::z42_null()
 }
 
@@ -167,7 +181,7 @@ pub unsafe extern "C" fn z42_invoke_method(
     _args: *const Z42Value,
     _arg_count: usize,
 ) -> Z42Value {
-    error::set(Z0905, "z42_invoke_method not implemented in C2 (lands in spec C5)");
+    error::set(TYPE_REGISTRATION_FAILURE, "z42_invoke_method not implemented in C2 (lands in spec C5)");
     super::dispatch::z42_null()
 }
 
@@ -191,11 +205,11 @@ pub extern "C" fn z42_last_error() -> Z42Error {
 #[no_mangle]
 pub extern "C" fn z42_set_panic_message(msg: *const c_char) {
     if msg.is_null() {
-        error::set(Z0905, "native shim panic (no message)");
+        error::set(TYPE_REGISTRATION_FAILURE, "native shim panic (no message)");
         return;
     }
     let owned = unsafe { CStr::from_ptr(msg) }
         .to_string_lossy()
         .into_owned();
-    error::set(Z0905, format!("native shim panic: {owned}"));
+    error::set(TYPE_REGISTRATION_FAILURE, format!("native shim panic: {owned}"));
 }

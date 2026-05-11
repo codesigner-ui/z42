@@ -29,8 +29,10 @@
 
 use std::cell::Cell;
 
-use crate::metadata::types::TypeDesc;
-use crate::metadata::{Module, Value};
+use anyhow::{anyhow, Result};
+
+use crate::metadata::types::{NativeData, TypeDesc};
+use crate::metadata::{default_value_for, Module, Value};
 use crate::vm_context::VmContext;
 
 /// One unified per-frame entry — single source of truth for
@@ -255,6 +257,48 @@ pub fn read_message(value: &Value, module: &Module) -> Option<String> {
         Some(Value::Str(s)) => Some(s.clone()),
         _ => None,
     }
+}
+
+/// Construct a stdlib exception instance (e.g. `Std.InvalidMarshalException`)
+/// from inside the VM. Returns a `Value::Object` ready to be propagated up
+/// through `exec_instr`'s `Ok(Some(value))` channel — the existing throw
+/// machinery will then run the local handler lookup + `populate_stack_trace`
+/// fill on first throw.
+///
+/// 2026-05-11 retire-z-codes: introduced so Rust-side throw sites (marshal
+/// NUL, PinPtr type mismatch …) can hand the user a typed, catchable
+/// exception instead of an anyhow! error string with a `Z####:` prefix.
+///
+/// The helper sets `Message` directly rather than invoking the z42 ctor —
+/// reentering `exec_function` from a marshal context would require a
+/// non-trivial extra frame push/pop pair, and every `Std.*Exception` ctor
+/// in the stdlib only assigns `this.Message = message` anyway.
+pub fn make_stdlib_exception(
+    ctx: &VmContext, module: &Module, type_fq: &str, message: String,
+) -> Result<Value> {
+    let type_desc = module
+        .type_registry
+        .get(type_fq)
+        .cloned()
+        .or_else(|| ctx.try_lookup_type(type_fq))
+        .ok_or_else(|| anyhow!("stdlib type `{type_fq}` not loaded; cannot construct exception"))?;
+
+    let mut slots: Vec<Value> = type_desc
+        .fields
+        .iter()
+        .map(|f| default_value_for(&f.type_tag))
+        .collect();
+
+    let msg_slot = type_desc
+        .field_index
+        .get("Message")
+        .copied()
+        .ok_or_else(|| anyhow!("stdlib type `{type_fq}` has no `Message` field"))?;
+    if let Some(slot) = slots.get_mut(msg_slot) {
+        *slot = Value::Str(message);
+    }
+
+    Ok(ctx.heap().alloc_object(type_desc, slots, NativeData::None))
 }
 
 #[cfg(test)]

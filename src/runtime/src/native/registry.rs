@@ -73,36 +73,36 @@ impl RegisteredType {
     /// VM (typically `static` storage in the native library).
     pub unsafe fn from_descriptor(desc: *const Z42TypeDescriptor_v1) -> Result<Self> {
         if desc.is_null() {
-            return Err(anyhow!("Z0905: null descriptor"));
+            return Err(anyhow!("null descriptor"));
         }
         let d = unsafe { &*desc };
         if d.abi_version != Z42_ABI_VERSION {
             return Err(anyhow!(
-                "Z0906: ABI version mismatch: expected {}, got {}",
+                "ABI version mismatch: expected {}, got {}",
                 Z42_ABI_VERSION,
                 d.abi_version
             ));
         }
         if d.module_name.is_null() {
-            return Err(anyhow!("Z0905: descriptor.module_name is null"));
+            return Err(anyhow!("descriptor.module_name is null"));
         }
         if d.type_name.is_null() {
-            return Err(anyhow!("Z0905: descriptor.type_name is null"));
+            return Err(anyhow!("descriptor.type_name is null"));
         }
         if d.method_count > 0 && d.methods.is_null() {
             return Err(anyhow!(
-                "Z0905: method_count={} but methods array is null",
+                "method_count={} but methods array is null",
                 d.method_count
             ));
         }
 
         let module = unsafe { CStr::from_ptr(d.module_name) }
             .to_str()
-            .map_err(|e| anyhow!("Z0905: descriptor.module_name not UTF-8: {e}"))?
+            .map_err(|e| anyhow!("descriptor.module_name not UTF-8: {e}"))?
             .to_string();
         let type_name = unsafe { CStr::from_ptr(d.type_name) }
             .to_str()
-            .map_err(|e| anyhow!("Z0905: descriptor.type_name not UTF-8: {e}"))?
+            .map_err(|e| anyhow!("descriptor.type_name not UTF-8: {e}"))?
             .to_string();
 
         let mut methods = HashMap::new();
@@ -113,7 +113,7 @@ impl RegisteredType {
                 let entry = unsafe { build_method(m) }?;
                 if methods.insert(entry.name.clone(), entry).is_some() {
                     return Err(anyhow!(
-                        "Z0905: duplicate method name in descriptor for {module}::{type_name}"
+                        "duplicate method name in descriptor for {module}::{type_name}"
                     ));
                 }
             }
@@ -133,21 +133,21 @@ impl RegisteredType {
 /// Convert one C method descriptor into a populated [`MethodEntry`].
 unsafe fn build_method(m: &Z42MethodDesc) -> Result<MethodEntry> {
     if m.name.is_null() {
-        return Err(anyhow!("Z0905: method.name is null"));
+        return Err(anyhow!("method.name is null"));
     }
     if m.signature.is_null() {
-        return Err(anyhow!("Z0905: method.signature is null"));
+        return Err(anyhow!("method.signature is null"));
     }
     if m.fn_ptr.is_null() {
-        return Err(anyhow!("Z0905: method.fn_ptr is null"));
+        return Err(anyhow!("method.fn_ptr is null"));
     }
     let name = unsafe { CStr::from_ptr(m.name) }
         .to_str()
-        .map_err(|e| anyhow!("Z0905: method.name not UTF-8: {e}"))?
+        .map_err(|e| anyhow!("method.name not UTF-8: {e}"))?
         .to_string();
     let signature = unsafe { CStr::from_ptr(m.signature) }
         .to_str()
-        .map_err(|e| anyhow!("Z0905: method.signature not UTF-8: {e}"))?
+        .map_err(|e| anyhow!("method.signature not UTF-8: {e}"))?
         .to_string();
     let (params, return_type) = dispatch::parse_signature(&signature)?;
     let cif = dispatch::build_cif(&params, &return_type);

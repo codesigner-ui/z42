@@ -34,12 +34,15 @@ public sealed class DiagnosticCatalogRoutingTests
         text.Should().Contain("Forbidden section in member manifest");
     }
 
+    // 2026-05-11 retire-z-codes: the Rust-side Z#### catalog and its
+    // C# embedding (RustErrorCatalog) were removed. `z42c explain Z####`
+    // now falls into the unknown-code path with a friendly retirement hint.
     [Fact]
-    public void Explain_Z0905_uses_rust_catalog()
+    public void Explain_Z0905_returns_retired_hint()
     {
         var text = DiagnosticCatalog.Explain("Z0905");
-        text.Should().Contain("error[Z0905]");
-        text.Should().Contain("Native type registration failure");
+        text.Should().Contain("retired");
+        text.Should().NotContain("error[Z0905]");
     }
 
     [Fact]
@@ -51,15 +54,14 @@ public sealed class DiagnosticCatalogRoutingTests
     }
 
     [Fact]
-    public void ListAll_includes_all_groups()
+    public void ListAll_includes_compiler_and_workspace_groups()
     {
         var text = DiagnosticCatalog.ListAll();
         text.Should().Contain("Compiler diagnostics (E####)");
         text.Should().Contain("Workspace / manifest diagnostics (WS###)");
-        text.Should().Contain("VM runtime diagnostics (Z####)");
         text.Should().Contain("E0402");
         text.Should().Contain("WS003");
-        text.Should().Contain("Z0905");
+        text.Should().NotContain("Z0905");
     }
 
     [Fact]

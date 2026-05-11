@@ -1,5 +1,13 @@
 # Tasks: Z#### Catalog + Cross-Language Sync
 
+> ⚠️ **2026-05-11 RETIRED**: 本 spec 引入的 Z#### catalog 共享基础设施
+> （`docs/error-codes/Z.json` + Rust `diagnostics/` + C# `RustErrorCatalog`
+> + `--explain` / `--list-errors` flags）已由 [retire-z-codes]
+> (../2026-05-11-retire-z-codes/) 整体反向。运行期错误现在表达为类型化
+> z42 异常（`Std.InvalidMarshalException` 等），按 catch by class + 读
+> `Message` / `StackTrace` 消费，不再需要跨语言 catalog。本归档作为
+> 历史决策追溯保留，不删除。
+
 > 状态：🟢 已完成 | 完成：2026-05-10 | 创建：2026-05-10
 > 类型：feat + refactor（最小化模式）
 

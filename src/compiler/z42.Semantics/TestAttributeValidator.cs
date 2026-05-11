@@ -155,7 +155,7 @@ public static class TestAttributeValidator
         }
 
         // ── E0911 [Test] signature ────────────────────────────────────────
-        if (hasTest && !hasBenchmark) // skip Z0911 sig check when E0911-conflict already emitted
+        if (hasTest && !hasBenchmark) // skip sig check when E0911-conflict already emitted
         {
             ValidateNoArgVoidSignature(fn, "[Test]", DiagnosticCodes.TestSignatureInvalid, diags);
         }

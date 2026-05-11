@@ -16,6 +16,34 @@ use crate::native::dispatch::{
     Z42_VALUE_TAG_NATIVEPTR, Z42_VALUE_TAG_NULL,
 };
 
+/// Marshal failure surfaced to the caller (`call_native`).
+///
+/// `InvalidMarshal` is **user-catchable** — the caller constructs a
+/// `Std.InvalidMarshalException` instance carrying the embedded message and
+/// throws it through the interp's value-based propagation channel.
+/// `Internal` covers VM-side programmer mismatches (IR / signature drift)
+/// that cannot happen after a successful type check.
+#[derive(Debug)]
+pub enum MarshalErr {
+    InvalidMarshal(String),
+    Internal(anyhow::Error),
+}
+
+impl From<anyhow::Error> for MarshalErr {
+    fn from(e: anyhow::Error) -> Self { Self::Internal(e) }
+}
+
+impl std::fmt::Display for MarshalErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MarshalErr::InvalidMarshal(m) => write!(f, "{m}"),
+            MarshalErr::Internal(e)       => write!(f, "{e:#}"),
+        }
+    }
+}
+
+impl std::error::Error for MarshalErr {}
+
 /// Per-call scratch storage owning temporary buffers (currently
 /// NUL-terminated `CString`s) whose raw pointers were handed to a native
 /// function. The arena is created on the stack of one `CallNative`
@@ -48,7 +76,11 @@ impl Arena {
 /// native method whose argument type is `target`. Temporaries that need
 /// to outlive the conversion (e.g. `CString` backing for `*const c_char`)
 /// are stashed in `arena` and remain alive until the caller drops it.
-pub fn value_to_z42(v: &Value, target: &SigType, arena: &mut Arena) -> Result<Z42Value> {
+///
+/// `Err(MarshalErr::InvalidMarshal)` indicates a user-recoverable failure
+/// (interior NUL etc.) that the caller surfaces as
+/// `Std.InvalidMarshalException`. All other errors are `Internal`.
+pub fn value_to_z42(v: &Value, target: &SigType, arena: &mut Arena) -> Result<Z42Value, MarshalErr> {
     match (v, target) {
         // Integer-family targets accept Value::I64 (any narrowing happens
         // at libffi cif level — only the low N bytes are read).
@@ -83,19 +115,20 @@ pub fn value_to_z42(v: &Value, target: &SigType, arena: &mut Arena) -> Result<Z4
         ) => Ok(dispatch::z42_i64(*len as i64)),
         // Spec C8 — Value::Str → *const c_char (NUL-terminated). The
         // arena owns the CString for the call's duration. Interior NULs
-        // surface as Z0908 because the C consumer cannot disambiguate
-        // them from the terminator.
+        // surface as Std.InvalidMarshalException (2026-05-11 retire-z-codes;
+        // formerly Z0908) — the C consumer cannot disambiguate them from
+        // the terminator.
         (Value::Str(s), SigType::CStr | SigType::Ptr) => {
-            let cs = CString::new(s.as_str()).map_err(|_| anyhow!(
-                "Z0908: cannot pass z42 string {:?} as `*const c_char`: contains interior NUL",
+            let cs = CString::new(s.as_str()).map_err(|_| MarshalErr::InvalidMarshal(format!(
+                "cannot pass z42 string {:?} as `*const c_char`: contains interior NUL",
                 truncate_for_msg(s)
-            ))?;
+            )))?;
             let ptr = arena.alloc_cstring(cs);
             Ok(dispatch::z42_native_ptr(ptr as *mut c_void))
         }
-        (v, ty) => Err(anyhow!(
+        (v, ty) => Err(MarshalErr::Internal(anyhow!(
             "marshal: cannot pass z42 {v:?} as native arg of type {ty:?} (C2 blittable subset only; pinned/object marshalling lands in C4/C5)"
-        )),
+        ))),
     }
 }
 

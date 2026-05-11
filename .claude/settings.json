@@ -66,7 +66,12 @@
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== 错误消息渲染：是否有 source 上下文 /**)",
       "Read(//Users/d.s.qiu/Documents/codesigner-ui/z42/=== Frame 结构 /**)",
       "Bash(Z42_LIBS=artifacts/z42/libs ./artifacts/rust/debug/z42vm src/tests/exceptions/stack_trace_field.zbc --mode interp)",
-      "Bash(Z42_LIBS=artifacts/z42/libs ./artifacts/rust/debug/z42vm src/tests/exceptions/stack_trace_field.zbc --mode jit)"
+      "Bash(Z42_LIBS=artifacts/z42/libs ./artifacts/rust/debug/z42vm src/tests/exceptions/stack_trace_field.zbc --mode jit)",
+      "Bash(/Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/rust/debug/hello_rust /tmp/new_hello.zbc /Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/z42/libs)",
+      "Bash(/Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/rust/debug/hello_rust /tmp/embedding_hello.zbc /Users/d.s.qiu/Documents/codesigner-ui/z42/artifacts/z42/libs)",
+      "Bash(Z42_TRACE_SIGS=1 artifacts/rust/debug/z42vm artifacts/z42/libs/z42.core.zpkg)",
+      "Bash(perl -pi -e 's/\\\\bfn\\\\b/f/g' src/tests/generics/func_constraint_basic.z42 src/tests/generics/func_constraint_literal.z42)",
+      "Bash(wait)"
     ],
     "additionalDirectories": [
       "/tmp",

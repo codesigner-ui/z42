@@ -11,8 +11,9 @@ public sealed partial class TypeChecker
 {
     private int _loopDepth = 0;
     /// Spec C5 — non-zero while inside a `pinned` block. ReturnStmt /
-    /// BreakStmt / ContinueStmt / ThrowStmt error with Z0908 if this is
-    /// > 0 so each `pin` pairs with exactly one `unpin` at codegen time.
+    /// BreakStmt / ContinueStmt / ThrowStmt error with `PinnedControlFlow`
+    /// if this is > 0 so each `pin` pairs with exactly one `unpin` at
+    /// codegen time.
     private int _pinnedDepth = 0;
 
     // 2026-05-05 fix-bare-rethrow: stack of catch-variable names enclosing the
@@ -145,7 +146,7 @@ public sealed partial class TypeChecker
                     _diags.Error(DiagnosticCodes.InvalidBreakContinue, "`break` outside of loop", bk.Span);
                 if (_pinnedDepth > 0)
                     _diags.Error(DiagnosticCodes.PinnedControlFlow,
-                        "Z0908: `break` is not allowed inside a `pinned` block (spec C5 limitation)",
+                        "`break` is not allowed inside a `pinned` block (spec C5 limitation)",
                         bk.Span);
                 return new BoundBreak(bk.Span);
 
@@ -154,7 +155,7 @@ public sealed partial class TypeChecker
                     _diags.Error(DiagnosticCodes.InvalidBreakContinue, "`continue` outside of loop", ck.Span);
                 if (_pinnedDepth > 0)
                     _diags.Error(DiagnosticCodes.PinnedControlFlow,
-                        "Z0908: `continue` is not allowed inside a `pinned` block (spec C5 limitation)",
+                        "`continue` is not allowed inside a `pinned` block (spec C5 limitation)",
                         ck.Span);
                 return new BoundContinue(ck.Span);
 
@@ -218,7 +219,7 @@ public sealed partial class TypeChecker
             case ThrowStmt th:
                 if (_pinnedDepth > 0)
                     _diags.Error(DiagnosticCodes.PinnedControlFlow,
-                        "Z0908: `throw` is not allowed inside a `pinned` block (spec C5 limitation)",
+                        "`throw` is not allowed inside a `pinned` block (spec C5 limitation)",
                         th.Span);
                 if (th.Value is null)
                 {
@@ -403,7 +404,7 @@ public sealed partial class TypeChecker
     {
         if (_pinnedDepth > 0)
             _diags.Error(DiagnosticCodes.PinnedControlFlow,
-                "Z0908: `return` is not allowed inside a `pinned` block (spec C5 limitation)",
+                "`return` is not allowed inside a `pinned` block (spec C5 limitation)",
                 r.Span);
         if (r.Value == null)
         {
@@ -493,7 +494,7 @@ public sealed partial class TypeChecker
         var source = BindExpr(pin.Source, env);
         if (source.Type != Z42Type.String && source.Type is not Z42ErrorType)
             _diags.Error(DiagnosticCodes.PinnedNotPinnable,
-                $"Z0908: source of `pinned` must be `string` (current C5 limitation; got `{source.Type}`)",
+                $"source of `pinned` must be `string` (current C5 limitation; got `{source.Type}`)",
                 pin.Source.Span);
 
         var scope = env.PushScope();

@@ -1,19 +1,34 @@
 # Tasks: Retire Z#### Codes
 
-> 状态：🟡 进行中 | 创建：2026-05-11
+> 状态：🟢 已完成 | 完成：2026-05-11 | 创建：2026-05-11
 > 类型：vm（VM throw 语义 + stdlib type 添加）
 > 关联：[proposal.md](proposal.md) + [design.md](design.md) + [specs/diagnostics/spec.md](specs/diagnostics/spec.md)
 
 ## 进度概览
 
-- [ ] 阶段 1: 添加 `Std.InvalidMarshalException` stdlib 类型 + 测试
-- [ ] 阶段 2: VM throw site 改造（Z0908 → stdlib exception；Z0905/Z0906/Z0910 去前缀）
-- [ ] 阶段 3: 删除 Rust catalog 基础设施
-- [ ] 阶段 4: 删除 C# RustErrorCatalog + csproj embed
-- [ ] 阶段 5: 删除 z42-vm `--explain` / `--list-errors` flag
-- [ ] 阶段 6: 删除 `docs/error-codes/` 整个目录
-- [ ] 阶段 7: 测试更新 + GREEN 验证
-- [ ] 阶段 8: 归档加注 + 文档同步 + commit + push
+- [x] 阶段 1: 添加 `Std.InvalidMarshalException` stdlib 类型 + 测试
+- [x] 阶段 2: VM throw site 改造（Z0908 → stdlib exception；Z0905/Z0906/Z0910 去前缀）
+- [x] 阶段 3: 删除 Rust catalog 基础设施
+- [x] 阶段 4: 删除 C# RustErrorCatalog + csproj embed
+- [x] 阶段 5: 删除 z42-vm `--explain` / `--list-errors` flag
+- [x] 阶段 6: 删除 `docs/error-codes/` 整个目录
+- [x] 阶段 7: 测试更新 + GREEN 验证
+- [x] 阶段 8: 归档加注 + 文档同步 + commit + push
+
+实施备注（合并阶段）：
+- Phase 2 / 3 / 5 在同一次提交里完成 —— 移除 Rust diagnostics 模块和
+  `--explain` / `--list-errors` CLI flag 必须随 Z#### 字符串去除一起落地，否则
+  drift-guard 测试 `every_catalog_entry_has_emit_site` 会失败。
+- 端到端 `src/tests/parse/marshal_nul_throws/` 改为 Rust 单测：
+  `exception::tests::make_stdlib_exception_tests` 直接构造
+  `Std.InvalidMarshalException` 实例并校验 `Message` / `StackTrace` 行为；
+  避免引入新 native lib 测试基础设施（现有 `src/runtime/tests/native_*.rs`
+  pre-existing 编译失败）。
+- DiagnosticCatalog.cs 内的 "Z01xx Lexer / Z02xx Parser / …" 区块注释纠正为
+  "E01xx / E02xx / …" 以反映实际 DiagnosticCodes 常量；E-prefix 编译期码本身
+  未改动。
+- TypeChecker.Stmts.cs 中 `pinned` 限制错误消息曾以 `"Z0908:"` 起始（实际
+  diagnostic code 是 E0908a），随本 spec 一并删除字面 `Z0908:` 前缀。
 
 每阶段独立 commit + `dotnet test` + `./scripts/test-vm.sh` 全绿才进下一阶段。
 

@@ -5,10 +5,9 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "z42vm", about = "z42 Virtual Machine", version)]
 struct Cli {
-    /// Bytecode file to execute. Required unless --explain or --list-errors is used.
+    /// Bytecode file to execute.
     /// Accepted formats: .zbc (single-file), .zpkg (project package)
-    #[arg(required_unless_present_any = ["explain", "list_errors"])]
-    file: Option<String>,
+    file: String,
 
     /// Execution mode override (default: use annotation in bytecode)
     #[arg(long, value_enum)]
@@ -23,16 +22,10 @@ struct Cli {
     /// Enable verbose tracing
     #[arg(short, long)]
     verbose: bool,
-
-    /// Print the catalog entry for a Z#### runtime diagnostic code, then exit.
-    /// Sourced from docs/error-codes/Z.json (shared with `z42c explain`).
-    #[arg(long, value_name = "CODE")]
-    explain: Option<String>,
-
-    /// List every Z#### runtime diagnostic code, then exit.
-    #[arg(long)]
-    list_errors: bool,
 }
+// 2026-05-11 retire-z-codes: `--explain` / `--list-errors` were removed
+// alongside the Rust-side `diagnostics` catalog. Use `z42c explain E####`
+// for compile-time codes; runtime errors are typed z42 exceptions now.
 
 // 2026-05-07 add-runtime-feature-flags (P4.1): variants are feature-gated so
 // `--help` only advertises modes the binary can actually run, and clap rejects
@@ -242,26 +235,6 @@ fn build_declared_candidates(
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    // ── Diagnostic catalog short-circuits ────────────────────────────────
-    if cli.list_errors {
-        println!("{}", z42_vm::diagnostics::format_list_all());
-        return Ok(());
-    }
-    if let Some(code) = &cli.explain {
-        let upper = code.to_ascii_uppercase();
-        match z42_vm::diagnostics::explain(&upper) {
-            Some(entry) => println!("{}", z42_vm::diagnostics::format(entry)),
-            None => {
-                eprintln!(
-                    "No documentation found for runtime error code {}.\nRun `z42vm --list-errors` for the full catalog.",
-                    upper
-                );
-                std::process::exit(1);
-            }
-        }
-        return Ok(());
-    }
-
     if cli.verbose {
         tracing_subscriber::fmt::init();
     }
@@ -272,7 +245,7 @@ fn main() -> Result<()> {
         log_module_paths(&module_paths);
     }
 
-    let file = cli.file.as_deref().expect("file required (clap enforces)");
+    let file = cli.file.as_str();
     tracing::debug!("z42vm loading {}", file);
 
     // Locate stdlib libs directory.

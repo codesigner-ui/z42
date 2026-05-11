@@ -362,8 +362,9 @@ fn process_array(data: Array<u8>) {
 ABI tag `Z42_VALUE_TAG_PINNED_VIEW = 8` is reserved in `z42_abi`. `String`
 sources are supported today; `Array<u8>` pinning waits on a dedicated
 byte-buffer variant in a follow-up spec. `view.ptr` and `view.len` go
-through the standard `FieldGet` IR opcode; out-of-range field names raise
-Z0908.
+through the standard `FieldGet` IR opcode; out-of-range field names are
+an internal VM error (IR invariant violated — TypeChecker rejects unknown
+field access before codegen).
 
 ### 6.4 Native Types as First-Class
 
@@ -553,7 +554,7 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 
 | Stage | Content | Depends on | Status |
 |---|---|---|---|
-| **C1** (`design-interop-interfaces`) | All Tier 1/2/3 public surfaces locked: C header + 3 Rust crates + manifest schema + 4 new IR opcodes (declared, trap on execution) + Z0905–Z0910 reserved | — | ✅ 2026-04-29 |
+| **C1** (`design-interop-interfaces`) | All Tier 1/2/3 public surfaces locked: C header + 3 Rust crates + manifest schema + 4 new IR opcodes (declared, trap on execution). _(Z0905–Z0910 originally reserved; retired 2026-05-11 — see `retire-z-codes`)._ | — | ✅ 2026-04-29 |
 | **L2.M8** (`impl-tier1-c-abi`) | Tier 1 C ABI v1 + `z42_register_type` + libffi (Interp); fills `CallNative` runtime behaviour | C1 | ✅ 2026-04-29 |
 | **L2.M9** (`impl-tier1-c-abi`) | Tier 1 PoC: handwritten `numz42-c` demo (Counter type, register + `CallNative` end-to-end) | M8 | ✅ 2026-04-29 (合并入 L2.M8 spec) |
 | **L2.M10** | `z42-abi` / `z42-rs` / `z42-macros` crate skeleton | C1 | ✅ scaffold landed in C1 |
@@ -561,9 +562,9 @@ Machine-readable native library metadata, **published alongside the `.so` / `.dy
 | **L2.M12** (`impl-pinned-block` runtime) | `Value::PinnedView { ptr, len, kind }` + `PinPtr`/`UnpinPtr` runtime + `FieldGet` on PinnedView (.ptr / .len) + marshal 接 PinnedView | type system | ✅ 2026-04-29 (runtime) |
 | **L2.M12.5** (`impl-pinned-syntax`) | z42 用户代码 `pinned p = s { ... }` syntax：lexer (Pinned keyword) + AST (PinnedStmt) + Parser + TypeChecker (source 类型校验 / 控制流限制 / PinnedView 字段) + IR Codegen (PinPtr/Body/UnpinPtr emit)；E0908a/b TypeCheck 错误码；其他 user-facing FFI syntax (`[Native(lib=,entry=)]` / `extern class T` / `import T from "lib"`) 留给后续 spec。 | C4 runtime | ✅ 2026-04-29 (syntax) |
 | **L2.M13a** (`extend-native-attribute`) | 扩展 `[Native]` attribute 接受 `[Native(lib=, type=, entry=)]` Tier 1 形式；解析为 `Tier1NativeBinding`；IR Codegen 在 stub 中 emit `CallNativeInstr` 而非 `BuiltinInstr`。**z42 用户代码现在能直接调用 C2 注册的 native 函数**（test harness 预注册 native lib 留作后续 spec）。E0907 NativeAttributeMalformed。 | C5 syntax | ✅ 2026-04-29 |
-| **L2.M13b** (`marshal-str-to-cstr`) | `Value::Str` 直接 marshal 到 `*const c_char`（NUL-terminated）：`marshal::Arena` 承载 CallNative 期间的 `CString` 临时；`(Value::Str, SigType::CStr/Ptr)` 分支构造借出；`CallNative` dispatch 接 arena；interior NUL 报 Z0908(d)。**z42 字符串可直接进 libc 风格 native 函数无需 pinned 块**。 | C6 / C7 | ✅ 2026-04-29 |
+| **L2.M13b** (`marshal-str-to-cstr`) | `Value::Str` 直接 marshal 到 `*const c_char`（NUL-terminated）：`marshal::Arena` 承载 CallNative 期间的 `CString` 临时；`(Value::Str, SigType::CStr/Ptr)` 分支构造借出；`CallNative` dispatch 接 arena；interior NUL 抛 `Std.InvalidMarshalException`（2026-05-11 retire-z-codes；曾用 Z0908(d)）。**z42 字符串可直接进 libc 风格 native 函数无需 pinned 块**。 | C6 / C7 | ✅ 2026-04-29 |
 | **L2.M13c** (`class-level-native-shorthand`) | 类级 `[Native(lib=, type=)]` 共享默认：`Tier1NativeBinding` 改 nullable，方法级 partial 形式 + 类级 defaults 拼接出完整 binding；TypeChecker 校验 stitched 完整性；IrGen 用 stitched 结果 emit `CallNativeInstr`。**非平凡 native 库声明不再每方法重复 lib + type**。 | C6 + C8 | ✅ 2026-04-29 |
-| **L2.M13d** (`byte-buffer-pin`) | Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 路径扫元素 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。Z0908(e) 抛出。**z42 二进制数据可直接进 native FFI**。 | C4 | ✅ 2026-04-29 |
+| **L2.M13d** (`byte-buffer-pin`) | Array<u8> pin support：`VmContext.pinned_owned_buffers` 副表持有 `Box<[u8]>`；`PinPtr` Array 路径扫元素 0..=255 → 拷贝到 Box → leak ptr；`UnpinPtr` 释放 Box；snapshot 语义。元素越界抛 `Std.InvalidMarshalException`（2026-05-11 retire-z-codes；曾用 Z0908(e)）。**z42 二进制数据可直接进 native FFI**。 | C4 | ✅ 2026-04-29 |
 | **L2.M13e** (`manifest-reader-import`, C11a) | Lexer `Import` Phase1 keyword + contextual `from`；`import IDENT from "<lib>";` 顶层语法 → AST `NativeTypeImport` 收集到 `CompilationUnit.NativeImports`；`Z42.Project.NativeManifest.Read` 读取 `.z42abi` JSON（System.Text.Json，`abi_version == 1` + 必需字段轻量校验）；`NativeManifestException` + E0909 启用。**编译器现在能消费 manifest 数据通路；尚未合成 ClassDecl（留给 C11b）**。 | C9 | ✅ 2026-04-30 |
 | **L2.M13f** (`synthesize-native-class`, C11b — Path B1) | `NativeImportSynthesizer` 编译期 pass（位 Parser 与 TypeChecker 之间）：每个 `import T from "lib";` → 找 manifest → 合成 `ClassDecl`（`IsSealed=true`, `Visibility=Internal`, `Fields=[]`, `ClassNativeDefaults` 复用 C9 stitching）注入 `cu.Classes`；`ManifestSignatureParser` 白名单（primitives + `Self` + `*mut/const Self`）；`INativeManifestLocator` 注入式（默认 `<sourceDir>/<lib>.z42abi` + `Z42_NATIVE_LIBS_PATH`）；E0916 启用。**用户现在写 `import Counter from "numz42";` 即得脚本可见 Counter 类，TypeChecker / IrGen / VM 走 C2–C10 既有路径，零新 ABI**。 | C11a | ✅ 2026-04-30 |
 | **L2.M13g** (`extend-signature-whitelist`, C11e) | `ManifestSignatureParser` 白名单从 demo 级扩到能包真实 opaque-handle C 库：(1) `*const/*mut c_char` 在 param 位置 → `string`（走 C8 已有 arena marshal，零新 IR）；(2) `*const/*mut <Other>` 中 Other 是当前 CompilationUnit 已 import 的 native type 名 → `NamedType("Other")`（让 native 类之间互相引用作为方法签名）。`NativeImportSynthesizer.Run` 收集 `knownNativeTypes`（含所有 import.Name）并下传给 sig parser；E0916 错误信息分两类——**unknown-type**（`*mut Foo` 但 Foo 未 import，附 ``import Foo from "...";`` 提示）/ **unsupported-shape**（`Box<T>` / `[T; N]` 等结构未支持，附当前已 import 的 type 列表）。c_char return 留 C11f（owner ship 协议未定）。**用户现在能 import 真实 C 库（printf/regex_t/sqlite3 等）：c_char param + 跨 native 类指针 unblocked**。 | C11b | ✅ 2026-05-06 |

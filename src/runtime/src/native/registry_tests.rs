@@ -78,10 +78,15 @@ fn from_descriptor_reads_name_and_methods() {
     assert!(!m.fn_ptr.is_null());
 }
 
+// 2026-05-11 retire-z-codes: error messages no longer carry `Z####:`
+// prefixes; assertions match the diagnostic text body directly.
+
 #[test]
 fn rejects_null_descriptor() {
     let err = unsafe { RegisteredType::from_descriptor(ptr::null()) }.expect_err("null rejected");
-    assert!(format!("{err:#}").contains("Z0905"));
+    let msg = format!("{err:#}");
+    assert!(msg.contains("null descriptor"), "msg = {msg}");
+    assert!(!msg.contains("Z0905"), "Z prefix must be retired; msg = {msg}");
 }
 
 #[test]
@@ -89,7 +94,9 @@ fn rejects_wrong_abi_version() {
     let (mut desc, _storage) = build_descriptor();
     desc.abi_version = 2; // future-version sentinel
     let err = unsafe { RegisteredType::from_descriptor(&desc) }.expect_err("rejected");
-    assert!(format!("{err:#}").contains("Z0906"));
+    let msg = format!("{err:#}");
+    assert!(msg.contains("ABI version mismatch"), "msg = {msg}");
+    assert!(!msg.contains("Z0906"), "Z prefix must be retired; msg = {msg}");
 }
 
 #[test]
@@ -97,8 +104,9 @@ fn rejects_null_module_name() {
     let (mut desc, _storage) = build_descriptor();
     desc.module_name = ptr::null();
     let err = unsafe { RegisteredType::from_descriptor(&desc) }.expect_err("rejected");
-    assert!(format!("{err:#}").contains("Z0905"));
-    assert!(format!("{err:#}").contains("module_name"));
+    let msg = format!("{err:#}");
+    assert!(msg.contains("module_name"), "msg = {msg}");
+    assert!(!msg.contains("Z0905"), "Z prefix must be retired; msg = {msg}");
 }
 
 #[test]
@@ -117,6 +125,7 @@ fn rejects_method_count_with_null_methods() {
     desc.method_count = 1;
     desc.methods = ptr::null();
     let err = unsafe { RegisteredType::from_descriptor(&desc) }.expect_err("rejected");
-    assert!(format!("{err:#}").contains("Z0905"));
-    assert!(format!("{err:#}").contains("methods array is null"));
+    let msg = format!("{err:#}");
+    assert!(msg.contains("methods array is null"), "msg = {msg}");
+    assert!(!msg.contains("Z0905"), "Z prefix must be retired; msg = {msg}");
 }

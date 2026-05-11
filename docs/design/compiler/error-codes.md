@@ -1,99 +1,117 @@
 # z42 Diagnostic Codes
 
-> **Status**: L1-L2 🚧 ｜ 4 套错误码空间（E/W/WS/Z）catalog + 加入流程；`z42c explain <CODE>` 命令实施进行中
+> **Status**: L1-L2 🚧 ｜ 3 套错误码空间（E / W / WS）catalog + 加入流程；`z42c explain <CODE>` 命令实施进行中。
+>
+> **2026-05-11 retire-z-codes**：原 Z#### 运行期错误编号整体退役。VM 运行期错误现在通过类型化 z42 异常表达（`Std.InvalidMarshalException` 等），catch by class 后读 `Message` / `StackTrace` 字段即可。原"跨语言 catalog"基础设施（`docs/error-codes/Z.json` + Rust `diagnostics/` 模块 + C# `RustErrorCatalog` + `z42-vm --explain` / `--list-errors`）已整体删除，留 `z42c explain E####` 单一查询入口。
 
 All error, warning, and info codes emitted by the z42 compiler.
 
-Use `z42c --explain <code>` to view the full description and an example in the terminal.
-Use `z42c --list-errors` to print a compact summary of all codes.
+Use `z42c explain <code>` to view the full description and an example in the terminal.
+Use `z42c errors` to print a compact summary of all codes.
 
-The canonical source of truth is [`DiagnosticCodes.cs`](../../src/compiler/z42.Compiler/Diagnostics/Diagnostic.cs) (code constants) and [`DiagnosticCatalog.cs`](../../src/compiler/z42.Compiler/Diagnostics/DiagnosticCatalog.cs) (descriptions + examples).
+The canonical source of truth is [`DiagnosticCodes.cs`](../../../src/compiler/z42.Core/Diagnostics/Diagnostic.cs) (code constants) and [`DiagnosticCatalog.cs`](../../../src/compiler/z42.Core/Diagnostics/DiagnosticCatalog.cs) (descriptions + examples).
 
 ---
 
-## Z01xx — Lexer
+## E01xx — Lexer
 
 | Code   | Title                         | When it occurs |
 |--------|-------------------------------|----------------|
-| Z0101  | Unterminated string literal   | A `"..."` or `'...'` literal is never closed |
-| Z0102  | Invalid escape sequence       | `\q`, `\p`, or other unrecognized `\` sequence |
-| Z0103  | Invalid numeric literal       | `0x` with no digits, malformed float exponent, etc. |
+| E0101  | Unterminated string literal   | A `"..."` or `'...'` literal is never closed |
+| E0102  | Invalid escape sequence       | `\q`, `\p`, or other unrecognized `\` sequence |
+| E0103  | Invalid numeric literal       | `0x` with no digits, malformed float exponent, etc. |
 
 ---
 
-## Z02xx — Parser / Syntax
+## E02xx — Parser / Syntax
 
 | Code   | Title                    | When it occurs |
 |--------|--------------------------|----------------|
-| Z0201  | Unexpected token         | Parser sees a token it cannot use at this position |
-| Z0202  | Expected token           | A required token (`;`, `)`, `{`, …) is missing |
-| Z0203  | Unexpected end of file   | File ends before a construct is complete |
-| Z0204  | Missing return type      | Function declaration has no return type (not even `void`) |
-| Z0205  | Ambiguous expression     | Expression cannot be parsed unambiguously |
+| E0201  | Unexpected token         | Parser sees a token it cannot use at this position |
+| E0202  | Expected token           | A required token (`;`, `)`, `{`, …) is missing |
+| E0203  | Unexpected end of file   | File ends before a construct is complete |
+| E0204  | Missing return type      | Function declaration has no return type (not even `void`) |
+| E0205  | Ambiguous expression     | Expression cannot be parsed unambiguously |
 
 ---
 
-## Z03xx — Feature Gates
+## E03xx — Feature Gates
 
 | Code   | Title                         | When it occurs |
 |--------|-------------------------------|----------------|
-| Z0301  | Language feature not enabled  | A gated syntax (e.g. lambdas) is used without enabling it |
+| E0301  | Language feature not enabled  | A gated syntax (e.g. lambdas) is used without enabling it |
 
 ---
 
-## Z04xx — Type Checker
+## E04xx — Type Checker
 
 | Code   | Title                            | When it occurs |
 |--------|----------------------------------|----------------|
-| Z0401  | Undefined symbol                 | Variable / function / type used before declaration |
-| Z0402  | Type mismatch                    | Wrong type, wrong arity, non-bool condition, break/continue outside loop, duplicate declaration |
-| Z0403  | Missing return value             | Non-void function has a path with no `return` |
-| Z0404  | Private member access violation  | `private` field or method accessed outside its class |
-| Z0405  | Invalid modifier combination     | `abstract sealed`, modifier on enum member, etc. |
-| Z0406  | Integer literal out of range     | Literal exceeds the declared explicit-size type's range (`i8 x = 200`) |
+| E0401  | Undefined symbol                 | Variable / function / type used before declaration |
+| E0402  | Type mismatch                    | Wrong type, wrong arity, non-bool condition, break/continue outside loop, duplicate declaration |
+| E0403  | Missing return value             | Non-void function has a path with no `return` |
+| E0404  | Private member access violation  | `private` field or method accessed outside its class |
+| E0405  | Invalid modifier combination     | `abstract sealed`, modifier on enum member, etc. |
+| E0406  | Integer literal out of range     | Literal exceeds the declared explicit-size type's range (`i8 x = 200`) |
 
 ---
 
-## Z05xx — IR Code Generator
+## E05xx — IR Code Generator
 
 | Code   | Title                                | When it occurs |
 |--------|--------------------------------------|----------------|
-| Z0501  | Unsupported syntax in code generation | A valid-syntax construct is not yet lowered to IR |
+| E0501  | Unsupported syntax in code generation | A valid-syntax construct is not yet lowered to IR |
 
 ---
 
-## Z09xx — Native Interop (FFI)
+## E09xx — Native Interop (FFI)
 
-由 spec [`design-interop-interfaces`](../../spec/changes/design-interop-interfaces/) (C1) 占位；具体语义在 C2–C5 spec 中钉死。Z0901–Z0904 用于 L1 `[Native]` dispatch（已启用）；Z0905–Z0910 是 L2+ 三层 ABI 预留段。
+L1 `[Native]` dispatch 一组（E0901–E0904，已启用）+ Tier1 C ABI 编译期相关
+（E0907 / E0908a/b / E0909 / E0916，已启用）。
 
-### Z0901–Z0904（L1 `[Native]` 已启用）
+> **2026-05-11 retire-z-codes**：原 Z0905 / Z0906 / Z0908 / Z0910 运行期编号
+> 整体退役。VM 现在按错误受众二分：
+>
+> - **用户脚本可 catch**（marshal 失败：interior NUL、`PinPtr` source / element 不合规）
+>   → 抛出 [`Std.InvalidMarshalException`](../../../src/libraries/z42.core/src/Exceptions/InvalidMarshalException.z42)
+>   z42 异常实例（`Message` 含具体原因，`StackTrace` 自动填充）。
+> - **Embedder 侧** native binding setup 失败（`z42_register_type` / dlopen）
+>   → Rust `anyhow!` 错误透传 + `z42_last_error()` 内的 `Z42Error.code`
+>   仍保留数字（905 / 906 / 910）用于 embedder 程序识别，但**消息文本不再带 `Z####:` 前缀**。
+> - **占位 Z0907** (`CallNativeVtable not yet implemented`) → 整个常量删除。
+
+### E0901–E0904（L1 `[Native]` 已启用）
 
 | Code  | Title                            | When it occurs |
 |-------|----------------------------------|----------------|
-| Z0901 | UnknownNativeName                | `[Native("__name")]` 中的 `__name` 不在 VM `dispatch_table` 内 |
-| Z0902 | NativeArityMismatch              | `extern` 方法参数数量与 `dispatch_table` 注册项不一致 |
-| Z0903 | ExternMissingNativeAttribute     | `extern` 方法缺少 `[Native]` 标注 |
-| Z0904 | NativeAttributeOnNonExtern       | `[Native]` 标注用在非 `extern` 方法上 |
+| E0901 | UnknownNativeName                | `[Native("__name")]` 中的 `__name` 不在 VM `dispatch_table` 内 |
+| E0902 | NativeArityMismatch              | `extern` 方法参数数量与 `dispatch_table` 注册项不一致 |
+| E0903 | ExternMissingNativeAttribute     | `extern` 方法缺少 `[Native]` 标注 |
+| E0904 | NativeAttributeOnNonExtern       | `[Native]` 标注用在非 `extern` 方法上 |
 
-### Z0905 / Z0906 / Z0910（C2 已启用，2026-04-29）
+### `pinned` 编译期约束（spec C5）
 
-由 `src/runtime/src/native/{registry,error,loader,exports}.rs` 在 `z42_register_type` / `z42_resolve_type` / `VmContext::load_native_library` / `Instruction::CallNative` 路径上抛出。错误信息通过 thread-local `LAST_ERROR` 透传给 `z42_last_error()`，同时以 `anyhow::Error` 形式向 z42 解释器返回。
+由 TypeChecker（`src/compiler/z42.Semantics/TypeCheck/TypeChecker.Stmts.cs`）报出。
 
-| Code  | Title                            | When it occurs |
-|-------|----------------------------------|----------------|
-| Z0905 | NativeTypeRegistrationFailure    | `z42_register_type` 收到 `null` descriptor / `null` `module_name` 或 `type_name` / `method_count > 0` 但 `methods == NULL` / 方法签名解析失败 / `(module, type)` 在 VM 内已存在；`CallNative` 找不到 `(module, type)` 或 `symbol`；`z42_invoke` / `z42_invoke_method` 在 C2 阶段尚未实现的 reverse-call 路径 |
-| Z0906 | AbiVersionMismatch               | `z42_register_type` 接收的 `Z42TypeDescriptor_v1.abi_version` 与 VM 期望的 `Z42_ABI_VERSION` 不一致 |
-| Z0910 | NativeLibraryLoadFailure         | `VmContext::load_native_library` 中 `libloading::Library::new(path)` 失败（路径不存在 / 架构不匹配 / 权限错误）或目标库缺少 `<basename>_register` 入口符号 |
-
-### Z0908（C4 runtime + C5 syntax + C8 marshal 已启用，2026-04-29）
-
-由 VM runtime（`src/runtime/src/interp/exec_instr.rs` + `src/runtime/src/native/marshal.rs`）和 TypeChecker（`src/compiler/z42.Semantics/TypeCheck/TypeChecker.Stmts.cs`）联合抛出。
-
-| Code   | Title                            | When it occurs |
-|--------|----------------------------------|----------------|
-| Z0908  | NativeMarshalConstraintViolation (runtime) | (a) `PinPtr` 收到非 `Value::Str` / `Value::Array` source；(b) `UnpinPtr` 收到非 `Value::PinnedView`（IR 损坏或 compiler emit 不配对）；(c) `FieldGet` on `PinnedView` 访问 `ptr` / `len` 之外的字段名；(d) **(spec C8)** `marshal::value_to_z42` 把含 interior NUL 的 `Value::Str` 投到 `*const c_char`；(e) **(spec C10)** `PinPtr` Array 源含**非 `Value::I64` 元素**或元素**超出 `0..=255`**（仅每元素都是 u8 范围 i64 时可作为字节缓冲 pin） |
+| Code   | Title                                | When it occurs |
+|--------|--------------------------------------|----------------|
 | E0908a | PinnedNotPinnable (TypeCheck, spec C5) | `pinned p = <expr> { ... }` 中 `<expr>` 类型不是 `string` |
 | E0908b | PinnedControlFlow (TypeCheck, spec C5) | `pinned` 块体内含 `return` / `break` / `continue` / `throw` —— C5 范围内严格禁止；放开需要 IR 层 try-finally-like UnpinPtr emission，留给后续 spec |
+
+### 运行期 marshal 失败 → `Std.InvalidMarshalException`
+
+由 VM runtime（[`src/runtime/src/native/marshal.rs`](../../../src/runtime/src/native/marshal.rs) +
+[`src/runtime/src/interp/exec_native.rs`](../../../src/runtime/src/interp/exec_native.rs)）
+在以下情形构造 `Std.InvalidMarshalException` 并 throw（user-catchable）：
+
+| 触发场景 | Message 含 |
+|---|---|
+| `Value::Str` 含 interior NUL 投到 `*const c_char` | `"cannot pass z42 string ... as `*const c_char`: contains interior NUL"` |
+| `PinPtr` source 不是 `String` / `Array<u8>` | `"PinPtr source must be String or Array<u8>, got ..."` |
+| `PinPtr` Array 元素不是 0..=255 的 `Value::I64` | `"PinPtr Array element N not a u8 in 0..=255: ..."` |
+
+构造细节见 [`crate::exception::make_stdlib_exception`](../../../src/runtime/src/exception/mod.rs)。
+脚本侧用 `catch (Std.InvalidMarshalException e) { ... }` 处理。
 
 ### E0907（C6 已启用，2026-04-29）
 
@@ -198,6 +216,13 @@ C4b 不新增 WSxxx；C4c 已移除 WS004（归并入 WS010）。
 
 ## Adding a new code
 
-1. Add a `public const string Xxx = "Z0nnn";` to `DiagnosticCodes` in [Diagnostic.cs](../../src/compiler/z42.Compiler/Diagnostics/Diagnostic.cs).
-2. Add an entry to `DiagnosticCatalog.All` in [DiagnosticCatalog.cs](../../src/compiler/z42.Compiler/Diagnostics/DiagnosticCatalog.cs) with title, description, and optional example.
+1. Add a `public const string Xxx = "E0nnn";` to `DiagnosticCodes` in [Diagnostic.cs](../../../src/compiler/z42.Core/Diagnostics/Diagnostic.cs).
+2. Add an entry to `DiagnosticCatalog.All` in [DiagnosticCatalog.cs](../../../src/compiler/z42.Core/Diagnostics/DiagnosticCatalog.cs) with title, description, and optional example.
 3. Add a row to the relevant table in this file.
+
+For **runtime** errors (formerly `Z####`, retired 2026-05-11): don't add an
+error code — define a `Std.*Exception` subclass in
+[`src/libraries/z42.core/src/Exceptions/`](../../../src/libraries/z42.core/src/Exceptions/)
+instead, and throw it via [`crate::exception::make_stdlib_exception`](../../../src/runtime/src/exception/mod.rs)
+(or the `throw` IR opcode from script code). The class name + `Message` field
+serve as the diagnostic identity; `StackTrace` is populated automatically.

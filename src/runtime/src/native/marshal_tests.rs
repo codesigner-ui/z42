@@ -106,13 +106,22 @@ fn str_to_ptr_uses_same_path_as_cstr() {
 }
 
 #[test]
-fn str_with_interior_nul_returns_z0908() {
+fn str_with_interior_nul_returns_invalid_marshal() {
+    // 2026-05-11 retire-z-codes: interior NUL surfaces as
+    // `MarshalErr::InvalidMarshal` carrying a plain-text diagnostic.
+    // The caller (`exec_native::call_native`) wraps the message into a
+    // `Std.InvalidMarshalException` instance for user-catchable throw.
+    use crate::native::marshal::MarshalErr;
     let mut a = arena();
     let err = value_to_z42(&Value::Str("a\0b".into()), &SigType::CStr, &mut a)
         .expect_err("interior NUL rejected");
-    let msg = format!("{err:#}");
-    assert!(msg.contains("Z0908"), "msg = {msg}");
-    assert!(msg.contains("interior NUL"), "msg = {msg}");
+    match err {
+        MarshalErr::InvalidMarshal(msg) => {
+            assert!(msg.contains("interior NUL"), "msg = {msg}");
+            assert!(!msg.contains("Z0908"), "Z prefix must be retired; msg = {msg}");
+        }
+        MarshalErr::Internal(e) => panic!("expected InvalidMarshal, got Internal: {e:#}"),
+    }
 }
 
 #[test]

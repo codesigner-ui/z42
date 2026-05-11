@@ -203,10 +203,18 @@ pub fn exec_instr(
 
         // ── Native interop ───────────────────────────────────────────────────
         Instruction::CallNative { dst, module: m, type_name, symbol, args } => {
-            exec_native::call_native(ctx, module, frame, *dst, m, type_name, symbol, args)?
+            // 2026-05-11 retire-z-codes: marshal failures throw
+            // Std.InvalidMarshalException via Ok(Some(exc)).
+            if let Some(thrown) = exec_native::call_native(ctx, module, frame, *dst, m, type_name, symbol, args)? {
+                return Ok(Some(thrown));
+            }
         }
         Instruction::CallNativeVtable { vtable_slot, .. } => exec_native::call_native_vtable(*vtable_slot)?,
-        Instruction::PinPtr   { dst, src }   => exec_native::pin_ptr(ctx, frame, *dst, *src)?,
+        Instruction::PinPtr   { dst, src }   => {
+            if let Some(thrown) = exec_native::pin_ptr(ctx, module, frame, *dst, *src)? {
+                return Ok(Some(thrown));
+            }
+        }
         Instruction::UnpinPtr { pinned }     => exec_native::unpin_ptr(ctx, frame, *pinned)?,
     }
     Ok(None)

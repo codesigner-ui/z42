@@ -21,7 +21,7 @@ public static class DiagnosticCatalog
     public static readonly IReadOnlyDictionary<string, DiagnosticEntry> All =
         new Dictionary<string, DiagnosticEntry>
     {
-        // ── Z01xx: Lexer ──────────────────────────────────────────────────────
+        // ── E01xx: Lexer ──────────────────────────────────────────────────────
 
         [DiagnosticCodes.UnterminatedString] = new(
             "Unterminated string literal",
@@ -40,7 +40,7 @@ public static class DiagnosticCatalog
             "or a floating-point exponent with no digits).",
             "int x = 0x;  // hex prefix with no digits"),
 
-        // ── Z02xx: Parser ─────────────────────────────────────────────────────
+        // ── E02xx: Parser ─────────────────────────────────────────────────────
 
         [DiagnosticCodes.UnexpectedToken] = new(
             "Unexpected token",
@@ -71,7 +71,7 @@ public static class DiagnosticCatalog
             "Add parentheses to clarify the intended grouping.",
             null),
 
-        // ── Z03xx: Feature gates ──────────────────────────────────────────────
+        // ── E03xx: Feature gates ──────────────────────────────────────────────
 
         [DiagnosticCodes.FeatureDisabled] = new(
             "Language feature not enabled",
@@ -79,7 +79,7 @@ public static class DiagnosticCatalog
             "Enable the feature in LanguageFeatures or use a pre-built profile that includes it.",
             "var f = (x) => x + 1;  // lambda requires LanguageFeatures.Lambda = true"),
 
-        // ── Z04xx: Type checker ───────────────────────────────────────────────
+        // ── E04xx: Type checker ───────────────────────────────────────────────
 
         [DiagnosticCodes.UndefinedSymbol] = new(
             "Undefined symbol",
@@ -223,7 +223,7 @@ public static class DiagnosticCatalog
             "void X<T>() where T: Func<int,int> + ICloneable // E0423: cannot combine\n" +
             "void X<T>() where T: Func<int,int>, T: Action  // E0423: multiple func constraints"),
 
-        // ── Z05xx: IR code generator ──────────────────────────────────────────
+        // ── E05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(
             "Unsupported syntax in code generation",
@@ -257,7 +257,7 @@ public static class DiagnosticCatalog
             "// in some-third-party.zpkg:\n" +
             "namespace Std.Acme;  // W0603: `Std` is reserved"),
 
-        // ── Z09xx: Internal compiler error ──────────────────────────────────
+        // ── E09xx: Internal compiler error ──────────────────────────────────
 
         [DiagnosticCodes.InternalCompilerError] = new(
             "Internal compiler error (ICE)",
@@ -266,7 +266,7 @@ public static class DiagnosticCatalog
             "Please report this issue with the full error message and source file.",
             null),
 
-        // ── Z09xx: Native / InternalCall ─────────────────────────────────────
+        // ── E09xx: Native / InternalCall ─────────────────────────────────────
 
         [DiagnosticCodes.ExternRequiresNative] = new(
             "Extern method requires [Native] attribute",
@@ -381,6 +381,17 @@ public static class DiagnosticCatalog
         var entry = TryGet(code);
         if (entry is null)
         {
+            // 2026-05-11 retire-z-codes: Z#### runtime codes were retired in
+            // favour of typed z42 exceptions. Catch by class
+            // (Std.InvalidMarshalException, etc.) and read `Message` /
+            // `StackTrace` directly.
+            if (code.Length >= 1 && (code[0] == 'Z' || code[0] == 'z'))
+            {
+                return $"Error code {code.ToUpperInvariant()} has been retired.\n" +
+                       $"Runtime errors are now typed z42 exceptions — catch the class " +
+                       $"(e.g. Std.InvalidMarshalException) and read `Message` / `StackTrace`.\n" +
+                       $"Compile-time codes are still under `z42c explain E####`.";
+            }
             return $"No documentation found for error code {code}.\n" +
                    $"Run `z42c errors` to see all known codes.";
         }
@@ -444,7 +455,8 @@ public static class DiagnosticCatalog
         "E"  => "Compiler diagnostics (E####)",
         "W"  => "Compiler warnings (W####)",
         "WS" => "Workspace / manifest diagnostics (WS###)",
-        "Z"  => "VM runtime diagnostics (Z####)",
+        // 2026-05-11 retire-z-codes: VM runtime Z#### codes retired; runtime
+        // errors are typed z42 exceptions now (catch by class, with stack trace).
         _    => $"{group}#### diagnostics",
     };
 }

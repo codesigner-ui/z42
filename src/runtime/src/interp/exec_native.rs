@@ -1,31 +1,47 @@
 /// Native interop instructions:
 ///   • CallNative — Spec C2 `impl-tier1-c-abi`: libffi-driven C ABI dispatch
-///   • CallNativeVtable — Spec C5 placeholder (Z0907)
+///   • CallNativeVtable — Spec C5 placeholder
 ///   • PinPtr / UnpinPtr — Spec C4/C10: zero-copy / borrowed buffer FFI
+///
+/// 2026-05-11 retire-z-codes:
+///   - User-facing marshal failures (interior NUL on `*const c_char`,
+///     PinPtr source/element type mismatch) are surfaced as
+///     `Std.InvalidMarshalException` z42 exceptions, propagated up the
+///     interp's `Ok(Some(Value))` channel and catchable from script.
+///   - Embedder-facing failures (unknown native type / method, unimplemented
+///     vtable slot) stay as `anyhow!` errors but without the legacy
+///     `Z####:` prefix — the error message text is the diagnostic itself.
 
+use crate::exception::make_stdlib_exception;
 use crate::metadata::{Module, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 
 use super::Frame;
 
+const INVALID_MARSHAL_FQ: &str = "Std.InvalidMarshalException";
+
 /// C2 (`impl-tier1-c-abi`): `CallNative` flows through the registered
 /// `RegisteredType` → libffi cif → marshal/unmarshal pipeline.
 /// C4/C5 will wire the remaining three opcodes.
+///
+/// Returns `Ok(Some(exc))` when a marshal failure produces a user-catchable
+/// `Std.InvalidMarshalException`; `Ok(None)` on success; `Err` on internal
+/// VM faults (unknown native type / method / arity mismatch).
 pub(super) fn call_native(
-    ctx: &VmContext, _module: &Module, frame: &mut Frame,
+    ctx: &VmContext, module: &Module, frame: &mut Frame,
     dst: u32, module_name: &str, type_name: &str, symbol: &str, args: &[u32],
-) -> Result<()> {
+) -> Result<Option<Value>> {
     use crate::native::{marshal, dispatch as ndisp};
 
     let ty = ctx.resolve_native_type(module_name, type_name).ok_or_else(|| {
         anyhow::anyhow!(
-            "CallNative: unknown native type {module_name}::{type_name} (Z0905)"
+            "CallNative: unknown native type {module_name}::{type_name}"
         )
     })?;
     let method = ty.method(symbol).ok_or_else(|| {
         anyhow::anyhow!(
-            "CallNative: unknown method {module_name}::{type_name}::{symbol} (Z0905)"
+            "CallNative: unknown method {module_name}::{type_name}::{symbol}"
         )
     })?;
 
@@ -42,11 +58,18 @@ pub(super) fn call_native(
     // for `*const c_char`) for the call's duration; dropped after
     // dispatch returns.
     let mut arena = marshal::Arena::new();
-    let z_args: Vec<z42_abi::Z42Value> = args
-        .iter()
-        .zip(method.params.iter())
-        .map(|(reg, ty)| marshal::value_to_z42(frame.get(*reg)?, ty, &mut arena))
-        .collect::<Result<_>>()?;
+    let mut z_args: Vec<z42_abi::Z42Value> = Vec::with_capacity(method.params.len());
+    for (reg, param_ty) in args.iter().zip(method.params.iter()) {
+        let v = frame.get(*reg)?;
+        match marshal::value_to_z42(v, param_ty, &mut arena) {
+            Ok(z)                                       => z_args.push(z),
+            Err(marshal::MarshalErr::InvalidMarshal(m)) => {
+                let exc = make_stdlib_exception(ctx, module, INVALID_MARSHAL_FQ, m)?;
+                return Ok(Some(exc));
+            }
+            Err(marshal::MarshalErr::Internal(e))       => return Err(e),
+        }
+    }
 
     // SAFETY: cif was built from `params`/`return_type` matching the
     // native function pointer at registration time; native lib keeps
@@ -65,12 +88,12 @@ pub(super) fn call_native(
 
     let result = marshal::z42_to_value(&z_ret, &method.return_type)?;
     frame.set(dst, result);
-    Ok(())
+    Ok(None)
 }
 
 pub(super) fn call_native_vtable(vtable_slot: u16) -> Result<()> {
     bail!(
-        "CallNativeVtable not yet implemented (Z0907, see spec C5 / impl-source-generator): slot={vtable_slot}"
+        "CallNativeVtable not yet implemented (spec C5 / impl-source-generator): slot={vtable_slot}"
     );
 }
 
@@ -80,7 +103,13 @@ pub(super) fn call_native_vtable(vtable_slot: u16) -> Result<()> {
 /// every exit path. RC backend treats the borrow as zero-cost
 /// (no relocation possible); the pin set will be repopulated
 /// for moving GC backends in a later spec.
-pub(super) fn pin_ptr(ctx: &VmContext, frame: &mut Frame, dst: u32, src: u32) -> Result<()> {
+///
+/// 2026-05-11 retire-z-codes: type-mismatch + element-out-of-range
+/// surface as `Std.InvalidMarshalException` (user-catchable). Returns
+/// `Ok(Some(exc))` to propagate via interp's value-based throw channel.
+pub(super) fn pin_ptr(
+    ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, src: u32,
+) -> Result<Option<Value>> {
     let view = match frame.get(src)? {
         Value::Str(s) => Value::PinnedView {
             ptr: s.as_ptr() as u64,
@@ -98,9 +127,14 @@ pub(super) fn pin_ptr(ctx: &VmContext, frame: &mut Frame, dst: u32, src: u32) ->
                     Value::I64(n) if (0..=255).contains(n) => {
                         bytes.push(*n as u8);
                     }
-                    other => bail!(
-                        "Z0908: PinPtr Array element {i} not a u8 in 0..=255: {other:?}"
-                    ),
+                    other => {
+                        let msg = format!(
+                            "PinPtr Array element {i} not a u8 in 0..=255: {other:?}"
+                        );
+                        drop(arr_ref);
+                        let exc = make_stdlib_exception(ctx, module, INVALID_MARSHAL_FQ, msg)?;
+                        return Ok(Some(exc));
+                    }
                 }
             }
             let len = bytes.len() as u64;
@@ -112,13 +146,16 @@ pub(super) fn pin_ptr(ctx: &VmContext, frame: &mut Frame, dst: u32, src: u32) ->
                 kind: crate::metadata::PinSourceKind::ArrayU8,
             }
         }
-        other => bail!(
-            "Z0908: PinPtr source must be String or Array<u8>, got {:?}",
-            other
-        ),
+        other => {
+            let msg = format!(
+                "PinPtr source must be String or Array<u8>, got {:?}", other
+            );
+            let exc = make_stdlib_exception(ctx, module, INVALID_MARSHAL_FQ, msg)?;
+            return Ok(Some(exc));
+        }
     };
     frame.set(dst, view);
-    Ok(())
+    Ok(None)
 }
 
 pub(super) fn unpin_ptr(ctx: &VmContext, frame: &Frame, pinned: u32) -> Result<()> {
@@ -136,7 +173,7 @@ pub(super) fn unpin_ptr(ctx: &VmContext, frame: &Frame, pinned: u32) -> Result<(
             Ok(())
         }
         other => bail!(
-            "Z0908: UnpinPtr expects PinnedView (compiler-emitted UnpinPtr should always pair with a prior PinPtr); got {:?}",
+            "UnpinPtr expects PinnedView (compiler-emitted UnpinPtr should always pair with a prior PinPtr); got {:?}",
             other
         ),
     }

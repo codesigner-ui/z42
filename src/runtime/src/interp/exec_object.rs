@@ -143,7 +143,7 @@ pub(super) fn field_get(
             // information (kind) stays internal.
             "ptr" => Value::I64(*ptr as i64),
             "len" => Value::I64(*len as i64),
-            other => bail!("Z0908: PinnedView has no field `{}` (only `ptr` / `len`)", other),
+            other => bail!("PinnedView has no field `{}` (only `ptr` / `len`)", other),
         },
         other => bail!("FieldGet: not an object or known value type, got {:?}", other),
     };

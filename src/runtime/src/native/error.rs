@@ -11,10 +11,11 @@ use std::os::raw::c_char;
 
 use z42_abi::Z42Error;
 
-// Z42 error codes registered to spec C2 (`impl-tier1-c-abi`).
-pub const Z0905: u32 = 905; // NativeTypeRegistrationFailure
-pub const Z0906: u32 = 906; // AbiVersionMismatch
-pub const Z0910: u32 = 910; // NativeLibraryLoadFailure
+// 2026-05-11 retire-z-codes: the named `Z####` constants formerly declared
+// here (Z0905 / Z0906 / Z0910) were retired alongside the cross-language
+// catalog. Callers now inline the numeric codes locally (see
+// `native::exports::TYPE_REGISTRATION_FAILURE` etc.). The `Z42Error.code`
+// field stays in the ABI for embedder wire-compat; values are unchanged.
 
 thread_local! {
     /// Last-error slot. Cleared by each `z42_*` entry on call; set on
@@ -63,16 +64,16 @@ mod tests {
     fn clear_and_set_round_trip() {
         clear();
         assert_eq!(last().code, 0);
-        set(Z0906, "ABI version mismatch: expected 1, got 2");
+        set(906, "ABI version mismatch: expected 1, got 2");
         let e = last();
-        assert_eq!(e.code, Z0906);
+        assert_eq!(e.code, 906);
         let msg = unsafe { std::ffi::CStr::from_ptr(e.message) }.to_string_lossy();
         assert!(msg.contains("ABI version mismatch"));
     }
 
     #[test]
     fn clear_resets_to_no_error() {
-        set(Z0905, "stale");
+        set(905, "stale");
         clear();
         assert_eq!(last().code, 0);
         assert!(last().message.is_null());

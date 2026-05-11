@@ -6,14 +6,4 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!--
-      Z#### catalog source-of-truth: shared with the Rust runtime
-      (src/runtime/src/diagnostics/mod.rs include_str!s the same file).
-      Embedded here so `z42c explain Z0905` works without the JSON being
-      present on disk at runtime. See docs/error-codes/README.md.
-    -->
-    <EmbeddedResource Include="..\..\..\docs\error-codes\Z.json" LogicalName="Z42.Core.Diagnostics.Z.json" />
-  </ItemGroup>
-
 </Project>

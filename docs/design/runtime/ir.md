@@ -198,14 +198,20 @@ from a `Value::Str` source — `ptr` is the raw `String` buffer address,
 `len` is the byte count, `kind = PinSourceKind::Str`. Field access
 `view.ptr` / `view.len` projects via `FieldGet` to `Value::I64`.
 `unpin` is a no-op on the RC backend (no relocation possible) but
-validates that the operand is a PinnedView (Z0908 otherwise) so a
-moving GC backend can later use the same opcode for pin-set
-deregistration. `Array<u8>` pinning is reserved for a follow-up spec
-that introduces a dedicated byte-buffer Value variant.
+validates that the operand is a PinnedView (internal VM error
+otherwise — IR invariant violated) so a moving GC backend can later
+use the same opcode for pin-set deregistration. `Array<u8>` pinning is
+reserved for a follow-up spec that introduces a dedicated byte-buffer
+Value variant.
+
+> User-facing marshal failures (`pin` on an unsupported source, NUL in a C
+> string, etc.) became typed z42 exceptions (`Std.InvalidMarshalException`)
+> in 2026-05-11 retire-z-codes; only IR-shape invariants remain as Rust
+> `anyhow!` traps.
 
 VM behaviour for the still-trapping opcodes (`call.native.vt`): the
 interpreter raises a clean error ("`<opcode>` not yet implemented
-(Z090x, see spec C5)") if executed. The JIT translator refuses to
+(see spec C5)") if executed. The JIT translator refuses to
 compile a function that contains any of the four FFI opcodes (lands in
 L3.M16).
 
