@@ -104,9 +104,14 @@ pub struct VmContext {
     /// `(module_name, type_name)`. Filled by `z42_register_type`; queried by
     /// `CallNative` IR dispatch and `z42_resolve_type`. Per-VM isolated so
     /// multi-VM tests stay independent. See spec C2 (`impl-tier1-c-abi`).
+    ///
+    /// 2026-05-12 add-platform-wasm Stage 0: gated on `native-interop` feature.
+    /// wasm builds drop this field entirely; the sandbox has no dlopen / libffi.
+    #[cfg(feature = "native-interop")]
     pub(crate) native_types:      Rc<RefCell<HashMap<(String, String), Rc<crate::native::RegisteredType>>>>,
     /// Loaded native libraries kept alive for the VM's lifetime so that
     /// function pointers stored in `native_types` stay valid until VM drop.
+    #[cfg(feature = "native-interop")]
     pub(crate) native_libs:       Rc<RefCell<Vec<libloading::Library>>>,
 
     /// Spec C10 — owned byte buffers backing `Value::PinnedView` instances
@@ -187,18 +192,25 @@ impl VmContext {
             call_stack,
             func_ref_slots,
             heap: Box::new(heap),
+            #[cfg(feature = "native-interop")]
             native_types: Rc::new(RefCell::new(HashMap::new())),
+            #[cfg(feature = "native-interop")]
             native_libs:  Rc::new(RefCell::new(Vec::new())),
             pinned_owned_buffers: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 
     // ── Native interop (Tier 1, spec C2) ──────────────────────────────────
+    //
+    // 2026-05-12 add-platform-wasm Stage 0: entire interop API gated on
+    // `native-interop` feature. wasm builds drop these methods (and the
+    // backing fields) entirely.
 
     /// Register a native type with this VM. Returns `false` (with [`crate::native::error::set`]
     /// already populated) on duplicate `(module, name)`. Internally invoked
     /// from `z42_register_type`; tests may also call this directly with a
     /// pre-built [`RegisteredType`].
+    #[cfg(feature = "native-interop")]
     pub fn register_native_type(
         &self,
         ty: Rc<crate::native::RegisteredType>,
@@ -214,6 +226,7 @@ impl VmContext {
 
     /// Look up a previously registered native type. Returns `None` when the
     /// `(module, name)` pair is unknown.
+    #[cfg(feature = "native-interop")]
     pub fn resolve_native_type(
         &self,
         module: &str,
@@ -224,6 +237,7 @@ impl VmContext {
     }
 
     /// Total number of registered native types — primarily for tests.
+    #[cfg(feature = "native-interop")]
     pub fn native_type_count(&self) -> usize {
         self.native_types.borrow().len()
     }
@@ -258,6 +272,7 @@ impl VmContext {
     /// returned as `anyhow::Error` and mirrored into the thread-local
     /// last-error slot so C callers see the same diagnostic via
     /// [`z42_last_error`](z42_abi::z42_last_error).
+    #[cfg(feature = "native-interop")]
     pub fn load_native_library(
         &self,
         path: impl AsRef<std::path::Path>,

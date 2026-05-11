@@ -46,8 +46,12 @@ tracing-subscriber = "0.3"
 # Use system libffi (avoids libffi-sys's bundled build that breaks on macOS arm64
 # with newer Xcode toolchain). pkg-config must be able to find libffi (homebrew /
 # apt install libffi-dev / etc). Enable "bundled" feature instead if that fails.
-libffi     = { version = "3.2", features = ["system"] }
-libloading = "0.8"
+#
+# 2026-05-12 add-platform-wasm Stage 0: these are now `optional = true` and only
+# pulled when the `native-interop` feature is on. wasm builds (no dlopen / no
+# libffi support) deselect this feature.
+libffi     = { version = "3.2", features = ["system"], optional = true }
+libloading = { version = "0.8", optional = true }
 z42-abi    = { path = "crates/z42-abi" }
 
 # JIT backend — Cranelift (optional; enabled via `jit` feature)
@@ -59,18 +63,22 @@ cranelift-native   = { version = "0.115", optional = true }
 
 [features]
 # 2026-05-07 add-runtime-feature-flags (P4.1):
-# - default = ["jit"] keeps `cargo build` behavior unchanged (backward compat)
+# - default = ["jit", "native-interop"] keeps `cargo build` behavior unchanged
 # - `jit` enables the Cranelift JIT backend (desktop x64/aarch64 only)
+# - `native-interop` enables Tier 1 native-extension ABI (dlopen + libffi).
+#   2026-05-12 add-platform-wasm Stage 0 split this out so wasm builds can
+#   deselect it (no dlopen / no libffi support inside the wasm sandbox).
 # - `aot` is a placeholder for future AOT compilation (M9; no impl yet)
 # - `interp-only` is intent-only (no extra deps); used by platform presets
 # - platform presets are convenience combos for `--no-default-features --features <preset>`
-default     = ["jit"]
-jit         = ["dep:cranelift-codegen", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native"]
-aot         = []
-interp-only = []
-wasm        = ["interp-only"]
-ios         = ["interp-only", "aot"]
-android     = ["interp-only", "aot"]
+default        = ["jit", "native-interop"]
+jit            = ["dep:cranelift-codegen", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native"]
+native-interop = ["dep:libffi", "dep:libloading"]
+aot            = []
+interp-only    = []
+wasm           = ["interp-only"]
+ios            = ["interp-only", "aot", "native-interop"]
+android        = ["interp-only", "aot", "native-interop"]
 
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }

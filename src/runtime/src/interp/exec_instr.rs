@@ -34,7 +34,9 @@ pub fn exec_instr(
     func: &Function, block_idx: usize, instr_idx: usize,
     instr: &Instruction,
 ) -> Result<Option<Value>> {
-    use super::{exec_address, exec_array, exec_call, exec_native, exec_object, exec_value, exec_vcall};
+    use super::{exec_address, exec_array, exec_call, exec_object, exec_value, exec_vcall};
+    #[cfg(feature = "native-interop")]
+    use super::exec_native;
 
     // Look up per-instruction site_idx (UNRESOLVED if non-token-bearing or
     // resolver hasn't run). `resolved` is None only if Vm::run hasn't been
@@ -202,6 +204,11 @@ pub fn exec_instr(
         }
 
         // ── Native interop ───────────────────────────────────────────────────
+        // 2026-05-12 add-platform-wasm Stage 0: feature `native-interop`
+        // gates all four opcodes. wasm builds bail with a clear message
+        // (these opcodes shouldn't appear in a wasm-targeted .zbc anyway,
+        // but malformed input shouldn't UAF the interp either).
+        #[cfg(feature = "native-interop")]
         Instruction::CallNative { dst, module: m, type_name, symbol, args } => {
             // 2026-05-11 retire-z-codes: marshal failures throw
             // Std.InvalidMarshalException via Ok(Some(exc)).
@@ -209,13 +216,25 @@ pub fn exec_instr(
                 return Ok(Some(thrown));
             }
         }
+        #[cfg(feature = "native-interop")]
         Instruction::CallNativeVtable { vtable_slot, .. } => exec_native::call_native_vtable(*vtable_slot)?,
+        #[cfg(feature = "native-interop")]
         Instruction::PinPtr   { dst, src }   => {
             if let Some(thrown) = exec_native::pin_ptr(ctx, module, frame, *dst, *src)? {
                 return Ok(Some(thrown));
             }
         }
+        #[cfg(feature = "native-interop")]
         Instruction::UnpinPtr { pinned }     => exec_native::unpin_ptr(ctx, frame, *pinned)?,
+        #[cfg(not(feature = "native-interop"))]
+        Instruction::CallNative { .. }
+        | Instruction::CallNativeVtable { .. }
+        | Instruction::PinPtr { .. }
+        | Instruction::UnpinPtr { .. } => {
+            anyhow::bail!(
+                "native interop opcode encountered in a build with `native-interop` feature disabled"
+            );
+        }
     }
     Ok(None)
 }

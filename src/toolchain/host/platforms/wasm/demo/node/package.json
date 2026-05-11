@@ -1,0 +1,10 @@
+{
+  "name": "z42-wasm-demo-node",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node run.js"
+  },
+  "_comment": "Self-contained node demo. The pkg-nodejs/ files produced by build.sh are imported via relative paths; no node_modules required."
+}

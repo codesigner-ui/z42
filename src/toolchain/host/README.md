@@ -26,7 +26,8 @@
 - ✅ **H2b** Tier 2 `z42-host` crate + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码
 - ✅ **H3** 错误路径全覆盖（17 个 host:: 测试 / 5 类错误：BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）
 - ✅ **H4-prereq** [`add-zpkg-resolver-hook`](../../../docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/) — `Z42ZpkgResolverFn` C ABI + `ZpkgResolver` Rust trait + `MapResolver` / `SearchPathsResolver`（22 个 host:: 测试）
-- 📋 **H4** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` / `add-platform-wasm` spec）
+- 🟢 **H4 (wasm)** [`add-platform-wasm`](../../../docs/spec/archive/2026-05-12-add-platform-wasm/) ✅ —— `@z42/wasm` npm 包；`Z42VM` JS class；wasm-pack web + nodejs 双 target；node demo 跑通；**附带** runtime `native-interop` feature 拆分（让 wasm 能跳过 libffi/libloading）
+- 📋 **H4 (ios / android)** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` spec）
 - 📋 **H5** test-runner library 重构到 `z42-host` 之上（归 runner spec）
 
 ## Quick Start

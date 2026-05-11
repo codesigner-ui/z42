@@ -1,0 +1,33 @@
+{
+  "name": "@z42/wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly facade for the z42 embedding API. Runs .zbc bytecode in browser / Node.js / wasm-runtime hosts.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "stdlib-resolver.js",
+    "pkg-web/",
+    "pkg-nodejs/",
+    "stdlib/"
+  ],
+  "exports": {
+    ".": {
+      "node": "./pkg-nodejs/z42_wasm.js",
+      "browser": "./pkg-web/z42_wasm.js",
+      "default": "./pkg-web/z42_wasm.js",
+      "types": "./index.d.ts"
+    },
+    "./node": "./pkg-nodejs/z42_wasm.js",
+    "./web": "./pkg-web/z42_wasm.js",
+    "./stdlib-resolver": "./stdlib-resolver.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "TBD",
+  "private": true,
+  "_comment": "Built artifacts in pkg-web/ and pkg-nodejs/ are produced by build.sh via wasm-pack. stdlib/*.zpkg is copied in from artifacts/z42/libs/."
+}

@@ -18,8 +18,27 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(z42_have_z42c)");
     println!("cargo:rustc-check-cfg=cfg(z42_have_embedding_hello)");
     println!("cargo:rerun-if-env-changed=Z42_SKIP_NATIVE_POC");
-    if env::var_os("Z42_SKIP_NATIVE_POC").is_some() {
-        println!("cargo:warning=Z42_SKIP_NATIVE_POC set — skipping numz42-c build");
+    // Auto-skip the C PoC when the build environment can't compile it:
+    //   - explicit opt-out (Z42_SKIP_NATIVE_POC=1)
+    //   - native-interop feature disabled (numz42-c is only ever consumed
+    //     by tests/native_interop_e2e.rs, which is itself gated)
+    //   - wasm32 target (no libc / stdlib.h in the wasm sandbox)
+    //
+    // 2026-05-12 add-platform-wasm Stage 0: the last two are auto-detection
+    // so contributors building for wasm don't have to remember the env var.
+    let native_interop_off = env::var("CARGO_FEATURE_NATIVE_INTEROP").is_err();
+    let wasm_target = env::var("CARGO_CFG_TARGET_ARCH")
+        .map(|a| a == "wasm32")
+        .unwrap_or(false);
+    if env::var_os("Z42_SKIP_NATIVE_POC").is_some() || native_interop_off || wasm_target {
+        let reason = if env::var_os("Z42_SKIP_NATIVE_POC").is_some() {
+            "Z42_SKIP_NATIVE_POC set"
+        } else if wasm_target {
+            "target is wasm32"
+        } else {
+            "native-interop feature is disabled"
+        };
+        println!("cargo:warning=skipping numz42-c build ({reason})");
         println!("cargo:rustc-cfg=z42_skip_native_poc");
         return;
     }

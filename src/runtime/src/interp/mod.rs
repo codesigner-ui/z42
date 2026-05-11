@@ -18,6 +18,7 @@ pub(crate) mod exec_instr;
 mod exec_address;
 mod exec_array;
 mod exec_call;
+#[cfg(feature = "native-interop")]
 mod exec_native;
 mod exec_object;
 mod exec_value;
@@ -422,6 +423,11 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
     // entry points fired by native callbacks can locate the active VM.
     // The guard nests safely if a native callback re-enters z42 through
     // `exec_function`; on exit the previous pointer is restored.
+    //
+    // 2026-05-12 add-platform-wasm Stage 0: only relevant when
+    // `native-interop` is enabled — wasm builds have no native callbacks
+    // to dispatch into z42, so the guard is omitted.
+    #[cfg(feature = "native-interop")]
     let _vm_guard = crate::native::exports::VmGuard::enter(ctx);
 
     let block_map = &func.block_index;
