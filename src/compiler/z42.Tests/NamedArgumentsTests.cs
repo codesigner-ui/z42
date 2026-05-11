@@ -193,4 +193,37 @@ public sealed class NamedArgumentsTests
         diags.All.Should().Contain(d =>
             d.Code == DiagnosticCodes.UnknownArgumentName);
     }
+
+    // ── Instance method on user class (Z42ClassType path) ───────────────────
+
+    [Fact]
+    public void TypeCheck_InstanceMethodNamedArgs_BindsClean()
+    {
+        var (_, diags) = Compile("""
+            class Painter {
+                public void Draw(string color, int width, bool filled) { }
+            }
+            void Main() {
+                var p = new Painter();
+                p.Draw(filled: true, color: "red", width: 2);
+            }
+            """);
+        diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TypeCheck_InstanceMethodUnknownName_EmitsZ1002()
+    {
+        var (_, diags) = Compile("""
+            class Painter {
+                public void Draw(string color) { }
+            }
+            void Main() {
+                var p = new Painter();
+                p.Draw(badName: "red");
+            }
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.UnknownArgumentName);
+    }
 }

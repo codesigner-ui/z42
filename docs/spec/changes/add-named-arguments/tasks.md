@@ -47,7 +47,8 @@
 - [x] 2.8 [TypeChecker.Exprs.cs](../../../../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Exprs.cs) — `NewExpr` 分支 `CheckPositionalBeforeNamed` + `BindArgValue`
 - [x] 2.9 **Part 2 (2026-05-12)**：`BindArgsReordered` 统一 helper + 静态方法 / ObjNew 两个核心路径接入；Z1002 / Z1003 / Z1004 / Z1005 实时触发；BoundDefaults 通过 `_boundDefaults` 字典访问 + 按需补绑
 - [x] 2.10 **Part 2**：imported / 跨 CU callees 当 `Decl == null` 时走 Z1002 fallback（保留 forward progress；下游类型校验仍执行）
-- [ ] 2.11 跟进：instance method / virtual / impl-method / lazy / native / 普通函数等 ~10 个剩余路径仍走 shim（位置实参 / Z1002 fallback）；按需求引入 `Z42FuncType.ParamNames` 字段后接入
+- [x] 2.11 **Part 2 (2026-05-12)**：扩展接入 9 个 call paths — static class / ObjNew(ctor) / Z42InstantiatedType / Z42ClassType instance / Z42InterfaceType / Z42GenericParamType (base class + interface) / primitive class / bareCallName（curCt.StaticMethods）；所有 IMethodSymbol-based 路径均通过 `Decl?.Params` 接入 reorder
+- [ ] 2.12 跟进：自由函数 `env.LookupFunc(name)` 路径（line ~382）仍走 shim — 仅当引入 `Z42FuncType.ParamNames` 字段后接入；当前命中此路径的 named-arg 等价位置实参（无错误，但无 reorder）
 
 ## 阶段 3: Codegen FillDefaults 升级
 
@@ -58,8 +59,8 @@
 
 ## 阶段 4: 测试 + 文档
 
-- [x] 4.1 [NamedArgumentsTests.cs](../../../../src/compiler/z42.Tests/NamedArgumentsTests.cs) NEW — 12 个 case 全绿（Parser 3 + Z1001-Z1005 共 5 + reorder 工作 4，覆盖核心场景）
+- [x] 4.1 [NamedArgumentsTests.cs](../../../../src/compiler/z42.Tests/NamedArgumentsTests.cs) NEW — 14 个 case 全绿（Parser 3 + Z1001-Z1005 共 5 + reorder 4 + 2 新增 instance method 覆盖；2026-05-12）
 - [ ] 4.2 [src/tests/calls/named_args/](../../../../src/tests/calls/named_args/) NEW — golden e2e（按需引入；现有 stdlib 不依赖此特性）
 - [x] 4.3 既有 1223 C# + 320 VM golden 全绿 → ternary `a ? b : c` 未被新 lookahead 误伤
 - [ ] 4.4 docs/design/language/language-overview.md — named arguments 语法示例（按需补；feature 在 roadmap 0.6.x 完整登场前可省略）
-- [x] 4.5 全绿验证：1223 C# + 309 Rust unit + 320 VM golden
+- [x] 4.5 全绿验证：1225 C# + 309 Rust unit + 320 VM golden（2026-05-12 9 paths wired）

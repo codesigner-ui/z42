@@ -135,9 +135,13 @@ public sealed partial class TypeChecker
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{def.Name}`", call.Span);
                     var mtSub = (Z42FuncType)SubstituteTypeParams(mtRaw.Signature, subMap);
+                    // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+                    List<Argument> instOrigArgs = call.Args.ToList();
+                    if (call.Args.Any(a => a.Name is not null))
+                        (instOrigArgs, argBound) = BindArgsReordered(call.Args, mtRaw.Decl?.Params, env, call.Span);
                     CheckArgCount(argBound.Count, mtSub.MinArgCount, mtSub.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, mtSub.Params);
-                    CheckArgModifiers(call.Args, argBound, mtSub, env, call.Span);
+                    CheckArgTypes(instOrigArgs, argBound, mtSub.Params);
+                    CheckArgModifiers(instOrigArgs, argBound, mtSub, env, call.Span);
                     bool isVirtual = _symbols.VirtualMethods.TryGetValue(def.Name, out var vmSet)
                         && (vmSet.Contains(mCallee.Member) || vmSet.Contains(instArityKey));
                     return new BoundCall(
@@ -170,9 +174,13 @@ public sealed partial class TypeChecker
                         && mv == Visibility.Private)
                         _diags.Error(DiagnosticCodes.AccessViolation,
                             $"method `{mCallee.Member}` is private to `{ct.Name}`", call.Span);
+                    // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+                    List<Argument> ctOrigArgs = call.Args.ToList();
+                    if (call.Args.Any(a => a.Name is not null))
+                        (ctOrigArgs, argBound) = BindArgsReordered(call.Args, mtSym.Decl?.Params, env, call.Span);
                     CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, mt.Params);
-                    CheckArgModifiers(call.Args, argBound, mt, env, call.Span);
+                    CheckArgTypes(ctOrigArgs, argBound, mt.Params);
+                    CheckArgModifiers(ctOrigArgs, argBound, mt, env, call.Span);
                     // Imported classes always use Instance method calls (no virtual dispatch in stdlib).
                     // User-defined classes may use Virtual dispatch.
                     bool isVirtual = !isImportedCls
@@ -213,9 +221,13 @@ public sealed partial class TypeChecker
                     var subMap = BuildInterfaceSubstitutionMap(ifaceType);
                     var imtSub = subMap is null ? imt
                                                 : (Z42FuncType)SubstituteTypeParams(imt, subMap);
+                    // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+                    List<Argument> ifaceOrigArgs = call.Args.ToList();
+                    if (call.Args.Any(a => a.Name is not null))
+                        (ifaceOrigArgs, argBound) = BindArgsReordered(call.Args, imSym.Decl?.Params, env, call.Span);
                     CheckArgCount(argBound.Count, imtSub.MinArgCount, imtSub.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, imtSub.Params);
-                    CheckArgModifiers(call.Args, argBound, imtSub, env, call.Span);
+                    CheckArgTypes(ifaceOrigArgs, argBound, imtSub.Params);
+                    CheckArgModifiers(ifaceOrigArgs, argBound, imtSub, env, call.Span);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, ifaceType.Name,
                         mCallee.Member, null, argBound, imtSub.Ret, call.Span,
                         Symbol: imSym);
@@ -243,9 +255,13 @@ public sealed partial class TypeChecker
                     && bc.Methods.TryGetValue(mCallee.Member, out var bcMtSym))
                 {
                     var bcMt = bcMtSym.Signature;
+                    // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+                    List<Argument> bcOrigArgs = call.Args.ToList();
+                    if (call.Args.Any(a => a.Name is not null))
+                        (bcOrigArgs, argBound) = BindArgsReordered(call.Args, bcMtSym.Decl?.Params, env, call.Span);
                     CheckArgCount(argBound.Count, bcMt.MinArgCount, bcMt.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, bcMt.Params);
-                    CheckArgModifiers(call.Args, argBound, bcMt, env, call.Span);
+                    CheckArgTypes(bcOrigArgs, argBound, bcMt.Params);
+                    CheckArgModifiers(bcOrigArgs, argBound, bcMt, env, call.Span);
                     return new BoundCall(BoundCallKind.Virtual, recvExpr, bc.Name,
                         mCallee.Member, null, argBound, bcMt.Ret, call.Span,
                         Symbol: bcMtSym);
@@ -255,9 +271,13 @@ public sealed partial class TypeChecker
                     if (iface.Methods.TryGetValue(mCallee.Member, out var gmtSym))
                     {
                         var gmt = gmtSym.Signature;
+                        // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+                        List<Argument> gpOrigArgs = call.Args.ToList();
+                        if (call.Args.Any(a => a.Name is not null))
+                            (gpOrigArgs, argBound) = BindArgsReordered(call.Args, gmtSym.Decl?.Params, env, call.Span);
                         CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
-                        CheckArgTypes(call.Args, argBound, gmt.Params);
-                        CheckArgModifiers(call.Args, argBound, gmt, env, call.Span);
+                        CheckArgTypes(gpOrigArgs, argBound, gmt.Params);
+                        CheckArgModifiers(gpOrigArgs, argBound, gmt, env, call.Span);
                         return new BoundCall(BoundCallKind.Virtual, recvExpr, iface.Name,
                             mCallee.Member, null, argBound, gmt.Ret, call.Span,
                             Symbol: gmtSym);
@@ -307,9 +327,13 @@ public sealed partial class TypeChecker
                 {
                     var pmt = pmtSym.Signature;
                     string resolved = primArity ? primArityKey : mCallee.Member;
+                    // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+                    List<Argument> pmtOrigArgs = call.Args.ToList();
+                    if (call.Args.Any(a => a.Name is not null))
+                        (pmtOrigArgs, argBound) = BindArgsReordered(call.Args, pmtSym.Decl?.Params, env, call.Span);
                     CheckArgCount(argBound.Count, pmt.MinArgCount, pmt.Params.Count, call.Span);
-                    CheckArgTypes(call.Args, argBound, pmt.Params);
-                    CheckArgModifiers(call.Args, argBound, pmt, env, call.Span);
+                    CheckArgTypes(pmtOrigArgs, argBound, pmt.Params);
+                    CheckArgModifiers(pmtOrigArgs, argBound, pmt, env, call.Span);
                     return new BoundCall(BoundCallKind.Instance, recvExpr, primitiveClassName,
                         resolved, null, argBound, pmt.Ret, call.Span,
                         Symbol: pmtSym);
@@ -345,9 +369,13 @@ public sealed partial class TypeChecker
             && curCt.StaticMethods.TryGetValue(bareCallName, out var bareSym))
         {
             var bareSig = bareSym.Signature;
+            // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
+            List<Argument> bareOrigArgs = call.Args.ToList();
+            if (call.Args.Any(a => a.Name is not null))
+                (bareOrigArgs, freeArgs) = BindArgsReordered(call.Args, bareSym.Decl?.Params, env, call.Span);
             CheckArgCount(freeArgs.Count, bareSig.MinArgCount, bareSig.Params.Count, call.Span);
-            CheckArgTypes(call.Args, freeArgs, bareSig.Params);
-            CheckArgModifiers(call.Args, freeArgs, bareSig, env, call.Span);
+            CheckArgTypes(bareOrigArgs, freeArgs, bareSig.Params);
+            CheckArgModifiers(bareOrigArgs, freeArgs, bareSig, env, call.Span);
             return new BoundCall(BoundCallKind.Static, null, env.CurrentClass, bareCallName,
                 null, freeArgs, bareSig.Ret, call.Span,
                 Symbol: bareSym);
