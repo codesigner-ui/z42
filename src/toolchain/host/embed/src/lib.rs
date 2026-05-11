@@ -42,9 +42,12 @@ use z42_abi::{Z42Value, Z42_VALUE_TAG_BOOL, Z42_VALUE_TAG_F64, Z42_VALUE_TAG_I64
 use z42_vm::host::config::{Z42HostConfig, Z42_HOST_ABI_VERSION};
 use z42_vm::host::error::Z42HostStatus;
 use z42_vm::host::{
-    z42_host_initialize, z42_host_invoke, z42_host_last_error, z42_host_load_zbc,
-    z42_host_resolve_entry, z42_host_set_stderr_sink, z42_host_shutdown, Z42Host,
+    install_zpkg_resolver, z42_host_initialize, z42_host_invoke, z42_host_last_error,
+    z42_host_load_zbc, z42_host_resolve_entry, z42_host_set_stderr_sink, z42_host_shutdown,
+    Z42Host,
 };
+
+pub use z42_vm::host::resolver::ZpkgResolver;
 
 // ── Public types ────────────────────────────────────────────────────────
 
@@ -80,6 +83,11 @@ pub struct HostConfig {
     pub stdout: Option<Box<dyn Fn(&[u8]) + Send + Sync + 'static>>,
     pub stderr: Option<Box<dyn Fn(&[u8]) + Send + Sync + 'static>>,
     pub search_paths: Vec<PathBuf>,
+    /// Optional [`ZpkgResolver`]. Takes precedence over `search_paths`
+    /// during `load_zbc` namespace resolution; runtime falls back to
+    /// `search_paths` on miss. See
+    /// [`docs/design/runtime/embedding.md §11`].
+    pub zpkg_resolver: Option<Arc<dyn ZpkgResolver>>,
 }
 
 impl Default for HostConfig {
@@ -91,7 +99,82 @@ impl Default for HostConfig {
             stdout: None,
             stderr: None,
             search_paths: Vec::new(),
+            zpkg_resolver: None,
         }
+    }
+}
+
+// ── Built-in resolvers ──────────────────────────────────────────────────
+
+/// `HashMap`-backed eager resolver. The host pre-populates all known
+/// zpkgs at startup; `resolve` is a trivial map lookup. Ideal for
+/// mobile / WASM where stdlib bundles are loaded once and then served
+/// from memory.
+///
+/// ```no_run
+/// # use z42_host::{MapResolver};
+/// let mut r = MapResolver::new();
+/// r.insert("z42.core", std::fs::read("z42.core.zpkg").unwrap());
+/// ```
+pub struct MapResolver {
+    map: std::sync::RwLock<std::collections::HashMap<String, Vec<u8>>>,
+}
+
+impl MapResolver {
+    pub fn new() -> Self {
+        Self {
+            map: std::sync::RwLock::new(std::collections::HashMap::new()),
+        }
+    }
+
+    pub fn insert(&self, namespace: &str, bytes: Vec<u8>) {
+        if let Ok(mut g) = self.map.write() {
+            g.insert(namespace.to_string(), bytes);
+        }
+    }
+
+    pub fn with(namespace: &str, bytes: Vec<u8>) -> Arc<Self> {
+        let r = Self::new();
+        r.insert(namespace, bytes);
+        Arc::new(r)
+    }
+}
+
+impl Default for MapResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ZpkgResolver for MapResolver {
+    fn resolve(&self, namespace: &str) -> Option<Vec<u8>> {
+        self.map.read().ok()?.get(namespace).cloned()
+    }
+}
+
+/// Filesystem-based resolver. Scans the configured directories for
+/// `.zpkg` files declaring the requested namespace (mirrors the legacy
+/// `search_paths` behaviour). Useful for desktop apps that ship the
+/// stdlib alongside the binary and want explicit resolver chaining.
+pub struct SearchPathsResolver {
+    paths: Vec<PathBuf>,
+}
+
+impl SearchPathsResolver {
+    pub fn new(paths: Vec<PathBuf>) -> Self {
+        Self { paths }
+    }
+}
+
+impl ZpkgResolver for SearchPathsResolver {
+    fn resolve(&self, namespace: &str) -> Option<Vec<u8>> {
+        let zpkgs = z42_vm::metadata::resolve_namespace(namespace, &[], &self.paths).ok()?;
+        for zpkg_path in zpkgs {
+            if let Ok(bytes) = std::fs::read(&zpkg_path) {
+                return Some(bytes);
+            }
+        }
+        None
     }
 }
 
@@ -294,6 +377,10 @@ impl Host {
             } else {
                 path_ptrs.as_ptr()
             },
+            // Tier 2 doesn't round-trip Rust resolvers through C — we
+            // install the Arc directly post-init below.
+            zpkg_resolver: None,
+            zpkg_resolver_user_data: ptr::null_mut(),
         };
 
         let mut handle: *mut Z42Host = ptr::null_mut();
@@ -312,6 +399,17 @@ impl Host {
             if s != Z42HostStatus::Ok {
                 let _ = unsafe { z42_host_shutdown(handle) };
                 return Err(translate_status(s, "z42_host_set_stderr_sink"));
+            }
+        }
+
+        // Plug in the Rust ZpkgResolver (if any) directly into runtime
+        // state, bypassing the C callback adapter for zero-overhead
+        // dispatch.
+        if let Some(resolver) = cfg.zpkg_resolver {
+            let s = install_zpkg_resolver(resolver);
+            if s != Z42HostStatus::Ok {
+                let _ = unsafe { z42_host_shutdown(handle) };
+                return Err(translate_status(s, "install_zpkg_resolver"));
             }
         }
 

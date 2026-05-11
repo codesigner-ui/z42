@@ -3,7 +3,7 @@
 > 状态：📋 H4 设计期（2026-05-11）— 三平台 facade 共同契约。
 >
 > 上层规范：[`docs/design/runtime/embedding.md`](../../../../docs/design/runtime/embedding.md) §6 Tier 3。
-> 前置 ABI：[`docs/spec/changes/add-zpkg-resolver-hook/`](../../../../docs/spec/changes/add-zpkg-resolver-hook/) 必须先落地。
+> 前置 ABI：[`docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/`](../../../../docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/) 必须先落地。
 
 ---
 
@@ -88,7 +88,7 @@ setStderrHandler(handler: (BytesType) -> Void)
 
 桌面端 z42 通过 `search_paths` 扫文件系统找 `*.zpkg`；移动 / wasm 没有文件系统（或不便扫），改成**回调机制**让宿主告诉运行时"namespace X 的 zpkg 字节在这里"。
 
-### Tier 1 C ABI（前置 spec [`add-zpkg-resolver-hook`](../../../../docs/spec/changes/add-zpkg-resolver-hook/) 添加）
+### Tier 1 C ABI（前置 spec [`add-zpkg-resolver-hook`](../../../../docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/) 添加）
 
 ```c
 typedef int (*Z42ZpkgResolverFn)(

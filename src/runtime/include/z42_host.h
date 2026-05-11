@@ -71,6 +71,32 @@ typedef enum Z42ExecMode {
  */
 typedef void (*Z42WriteSink)(const char* bytes, size_t length, void* user_data);
 
+/* ── zpkg resolver hook ──────────────────────────────────────────────────── */
+
+/*
+ * Resolve a namespace to its zpkg bytes. The runtime calls this during
+ * z42_host_load_zbc whenever the user .zbc imports a namespace not yet
+ * loaded; "z42.core" is always probed even when the user code has no
+ * `using` statements.
+ *
+ * Contract:
+ *   - On hit, write *out_bytes / *out_length and return non-zero.
+ *     Bytes need only stay valid until this call returns — the runtime
+ *     copies what it needs before returning to the host.
+ *   - On miss, return 0. The runtime ignores *out_bytes / *out_length
+ *     and falls back to search_paths (if set).
+ *
+ * The `int` return (instead of Z42HostStatus) is intentional: a resolver
+ * has only hit/miss semantics, not a runtime error space.
+ *
+ * Spec: docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/
+ */
+typedef int (*Z42ZpkgResolverFn)(
+    const char*     namespace_name,
+    const uint8_t** out_bytes,
+    size_t*         out_length,
+    void*           user_data);
+
 /* ── Configuration ───────────────────────────────────────────────────────── */
 
 typedef struct Z42HostConfig {
@@ -87,6 +113,18 @@ typedef struct Z42HostConfig {
 
     /* NULL-terminated array of module search paths. NULL = in-memory only. */
     const char* const* search_paths;
+
+    /*
+     * Optional zpkg resolver hook. When set, the runtime tries it FIRST
+     * for every namespace lookup during load_zbc; falls back to
+     * search_paths on miss. NULL = "no resolver; scan search_paths only".
+     *
+     * APPENDED to v1 layout (2026-05-11). ABI version stays at 1 since
+     * adding trailing fields is forward-compatible (callers built against
+     * older headers leave the field NULL when zero-initialising cfg).
+     */
+    Z42ZpkgResolverFn  zpkg_resolver;
+    void*              zpkg_resolver_user_data;
 } Z42HostConfig;
 
 /* ── Status codes ────────────────────────────────────────────────────────── */

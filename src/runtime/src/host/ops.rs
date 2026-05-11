@@ -5,6 +5,7 @@
 //! Spec: docs/design/runtime/embedding.md §4.4 + docs/spec/archive/2026-05-10-add-embedding-api/design.md.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 
@@ -17,6 +18,7 @@ use crate::vm_context::VmContext;
 
 use super::config::ResolvedConfig;
 use super::marshal::{value_to_z42_value, z42_value_to_value};
+use super::resolver::ZpkgResolver;
 use super::state::{HostCorelib, HostEntry, HostModule};
 
 /// Probe the configured `search_paths` for `z42.core.zpkg`. Records the
@@ -71,6 +73,7 @@ pub(crate) fn probe_corelib(config: &ResolvedConfig) -> Result<Option<HostCoreli
 pub(crate) fn build_host_module(
     bytes: &[u8],
     corelib: Option<&HostCorelib>,
+    resolver: Option<&Arc<dyn ZpkgResolver>>,
 ) -> Result<HostModule> {
     let user_artifact = load_artifact_from_bytes(bytes)
         .context("z42_host_load_zbc: cannot parse bytes as a .zbc / .zpkg artifact")?;
@@ -80,26 +83,54 @@ pub(crate) fn build_host_module(
     let mut initially_loaded: Vec<String> = Vec::new();
     let libs_dir = corelib.as_ref().map(|c| c.libs_dir.clone());
 
-    // (2) corelib first — main.rs invariant: z42.core is implicit prelude.
-    if let Some(c) = corelib {
-        let path_str = c.zpkg_path.to_string_lossy().into_owned();
-        let corelib_artifact = load_artifact(&path_str)
-            .with_context(|| format!("z42_host_load_zbc: re-reading corelib at {path_str}"))?;
-        modules.push(corelib_artifact.module);
-        initially_loaded.extend(c.initially_loaded.iter().cloned());
+    // De-dup tracker for the search_paths fallback: ensures the same
+    // .zpkg file on disk isn't loaded twice when multiple namespaces
+    // happen to live in it (e.g. Std.Collections + Std.Core both ship
+    // from z42.core.zpkg).
+    let mut loaded_paths: std::collections::HashSet<PathBuf> =
+        std::collections::HashSet::new();
+
+    // Build the full namespace list: corelib is always probed first
+    // (even when the user wrote no `using` statement), followed by the
+    // user .zbc's import_namespaces in declaration order.
+    let mut namespaces: Vec<String> = vec!["z42.core".to_string()];
+    for ns in &user_artifact.import_namespaces {
+        if !namespaces.iter().any(|x| x == ns) {
+            namespaces.push(ns.clone());
+        }
     }
 
-    // (3) follow the user .zbc's import_namespaces — same scan as main.rs.
-    if let Some(libs) = libs_dir.as_ref() {
-        let libs_paths = vec![libs.clone()];
-        let mut loaded_paths: std::collections::HashSet<PathBuf> =
-            std::collections::HashSet::new();
-        if let Some(c) = corelib {
-            if let Ok(canonical) = c.zpkg_path.canonicalize() {
-                loaded_paths.insert(canonical);
+    for ns in &namespaces {
+        // (a) resolver-first
+        if let Some(r) = resolver {
+            if let Some(bytes) = r.resolve(ns) {
+                let dep = load_artifact_from_bytes(&bytes).with_context(|| {
+                    format!("zpkg_resolver returned malformed bytes for namespace `{ns}`")
+                })?;
+                modules.push(dep.module);
+                initially_loaded.push(format!("{ns}.zpkg"));
+                continue;
             }
         }
-        for ns in &user_artifact.import_namespaces {
+        // (b) fallback: search_paths / corelib path
+        if ns == "z42.core" {
+            if let Some(c) = corelib {
+                let path_str = c.zpkg_path.to_string_lossy().into_owned();
+                let corelib_artifact = load_artifact(&path_str).with_context(|| {
+                    format!("z42_host_load_zbc: re-reading corelib at {path_str}")
+                })?;
+                modules.push(corelib_artifact.module);
+                initially_loaded.extend(c.initially_loaded.iter().cloned());
+                if let Ok(canonical) = c.zpkg_path.canonicalize() {
+                    loaded_paths.insert(canonical);
+                }
+            }
+            // Corelib resolver miss + no search_paths corelib is OK: a
+            // self-contained .zbc may not need corelib. Runtime surfaces
+            // "undefined function" at invoke time if user code reaches
+            // for Console.WriteLine etc.
+        } else if let Some(libs) = libs_dir.as_ref() {
+            let libs_paths = vec![libs.clone()];
             let Ok(zpkg_paths) =
                 crate::metadata::resolve_namespace(ns, &[], &libs_paths)
             else {
@@ -124,7 +155,7 @@ pub(crate) fn build_host_module(
         }
     }
 
-    // (4) push the user module last so merge_modules' name-keep behaviour
+    // Push the user module last so merge_modules' name-keep behaviour
     // doesn't accidentally rename it to the first dependency.
     modules.push(user_artifact.module);
 

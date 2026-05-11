@@ -21,7 +21,7 @@ z42 runtime 对外暴露的 C ABI 公开头文件。供 host 应用 / native 库
 
 `#include "z42_host.h"`（embedding / 启动 VM）：
 
-- 类型：`Z42HostConfig`、`Z42HostStatus`、`Z42ExecMode`、`Z42WriteSink`
+- 类型：`Z42HostConfig`、`Z42HostStatus`、`Z42ExecMode`、`Z42WriteSink`、`Z42ZpkgResolverFn`
 - 句柄：`Z42HostRef`、`Z42ModuleRef`、`Z42EntryRef`
 - 常量：`Z42_HOST_ABI_VERSION`
 - 函数：`z42_host_initialize` / `z42_host_load_zbc` / `z42_host_resolve_entry` / `z42_host_invoke` / `z42_host_set_stdout_sink` / `z42_host_set_stderr_sink` / `z42_host_last_error` / `z42_host_shutdown`

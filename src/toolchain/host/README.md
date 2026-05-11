@@ -25,7 +25,8 @@
 - ✅ **H2-core** `load_zbc` / `resolve_entry` / `invoke` 全链路 + stdout sink 接 VM + 集成测试 hello-world
 - ✅ **H2b** Tier 2 `z42-host` crate + `examples/hello_rust` 端到端跑通 + `examples/hello_c` 参考源码
 - ✅ **H3** 错误路径全覆盖（17 个 host:: 测试 / 5 类错误：BadZbc / EntryNotFound / ArgMismatch / VmException / sink ordering）
-- 📋 **H4** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` spec；包含桌面 staticlib build）
+- ✅ **H4-prereq** [`add-zpkg-resolver-hook`](../../../docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/) — `Z42ZpkgResolverFn` C ABI + `ZpkgResolver` Rust trait + `MapResolver` / `SearchPathsResolver`（22 个 host:: 测试）
+- 📋 **H4** 移动平台 facade 接入（归 `add-platform-ios` / `add-platform-android` / `add-platform-wasm` spec）
 - 📋 **H5** test-runner library 重构到 `z42-host` 之上（归 runner spec）
 
 ## Quick Start

@@ -14,15 +14,19 @@ pub mod error;
 pub mod marshal;
 pub mod module;
 pub mod ops;
+pub mod resolver;
 pub mod state;
 
 use std::os::raw::{c_char, c_void};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
+use std::sync::Arc;
 
 use z42_abi::{Z42Error, Z42Value};
 
 use crate::corelib::io;
+
+pub use resolver::ZpkgResolver;
 
 use self::config::Z42HostConfig;
 use self::entry::Z42Entry;
@@ -216,7 +220,9 @@ pub unsafe extern "C" fn z42_host_load_zbc(
 
         // Build the merged module + ctx outside the write lock so we do
         // I/O without blocking other readers.
-        let host_module = match state::with_state_read(|s| ops::build_host_module(slice, s.corelib.as_ref())) {
+        let host_module = match state::with_state_read(|s| {
+            ops::build_host_module(slice, s.corelib.as_ref(), s.config.zpkg_resolver.as_ref())
+        }) {
             Some(Ok(m)) => m,
             Some(Err(e)) => {
                 return set_error(
@@ -502,6 +508,32 @@ pub unsafe extern "C" fn z42_host_last_error(_host: *mut Z42Host) -> Z42Error {
     snapshot_last_error()
 }
 
+// ── Tier 2 escape hatch: install a Rust ZpkgResolver post-init ──────────
+
+/// Install a Rust [`ZpkgResolver`] trait object into the running host
+/// state, replacing any resolver currently configured (including ones
+/// derived from the C `zpkg_resolver` field of `Z42HostConfig`).
+///
+/// **Not exposed as `extern "C"`** — Tier 2 (`z42-host`) uses this to
+/// hand the runtime a Rust trait object directly, sidestepping the C
+/// callback adapter. C / JNI / wasm-bindgen clients keep using
+/// `Z42HostConfig::zpkg_resolver` at init time.
+///
+/// Returns `Z42HostStatus::Ok` on success or `NotInit` if no VM is
+/// currently initialized.
+pub fn install_zpkg_resolver(resolver: Arc<dyn ZpkgResolver>) -> Z42HostStatus {
+    let outcome = state::with_state_write(|s| {
+        s.config.zpkg_resolver = Some(resolver);
+    });
+    match outcome {
+        Some(()) => Z42HostStatus::Ok,
+        None => set_error(
+            Z42HostStatus::NotInit,
+            "install_zpkg_resolver: VM is not initialized",
+        ),
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 fn classify_config_error(e: config::ConfigError) -> Z42HostStatus {
@@ -542,7 +574,11 @@ fn classify_config_error(e: config::ConfigError) -> Z42HostStatus {
 fn classify_invoke_error(msg: &str) -> Z42HostStatus {
     if msg.contains("arg-count-mismatch:") {
         Z42HostStatus::ArgMismatch
-    } else if msg.contains("uncaught exception") {
+    } else if msg.contains("uncaught exception") || msg.contains("undefined function") {
+        // "undefined function" is the interp's dispatch-time error for
+        // missing symbols (e.g. Console.WriteLine when corelib wasn't
+        // resolved). It's a runtime failure visible to the user's z42
+        // program, so we bucket it as VmException rather than Internal.
         Z42HostStatus::VmException
     } else {
         Z42HostStatus::Internal

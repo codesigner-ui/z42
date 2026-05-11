@@ -4,6 +4,9 @@
 //! `src/runtime/include/z42_host.h`. Spec: docs/design/runtime/embedding.md §4.2.
 
 use std::os::raw::{c_char, c_void};
+use std::sync::Arc;
+
+use super::resolver::ZpkgResolver;
 
 /// Wire-compatible version of `Z42_HOST_ABI_VERSION` from the C header.
 pub const Z42_HOST_ABI_VERSION: u32 = 1;
@@ -12,6 +15,18 @@ pub const Z42_HOST_ABI_VERSION: u32 = 1;
 /// "use the configured default" (real stdout / accumulating sink / etc.).
 pub type Z42WriteSink =
     Option<unsafe extern "C" fn(bytes: *const c_char, length: usize, user_data: *mut c_void)>;
+
+/// `Z42ZpkgResolverFn` C ABI signature: hit returns non-zero, miss returns 0.
+/// Bytes need only stay valid until the callback returns. Spec:
+/// `docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/`.
+pub type Z42ZpkgResolverFn = Option<
+    unsafe extern "C" fn(
+        namespace_name: *const c_char,
+        out_bytes: *mut *const u8,
+        out_length: *mut usize,
+        user_data: *mut c_void,
+    ) -> i32,
+>;
 
 /// `Z42ExecMode` — must stay in sync with the C enum.
 #[repr(i32)]
@@ -38,6 +53,11 @@ impl Z42ExecMode {
 
 /// C ABI layout of `Z42HostConfig`. `#[repr(C)]` keeps field order +
 /// alignment compatible with the C struct in `z42_host.h`.
+///
+/// Fields after `search_paths` are appended in the order they were
+/// introduced and never reordered (see ABI evolution note in the
+/// header). Callers built against older headers leave the new fields
+/// zero-initialised, which the runtime treats as "not configured".
 #[repr(C)]
 pub struct Z42HostConfig {
     pub abi_version: u32,
@@ -52,13 +72,16 @@ pub struct Z42HostConfig {
     pub sink_user_data: *mut c_void,
 
     pub search_paths: *const *const c_char,
+
+    // 2026-05-11 add-zpkg-resolver-hook (append-only).
+    pub zpkg_resolver: Z42ZpkgResolverFn,
+    pub zpkg_resolver_user_data: *mut c_void,
 }
 
 /// Rust-side resolved configuration after validation. The thread-safety
 /// requirement comes from holding this inside the global `RwLock` —
 /// `*mut c_void` is not auto-`Send`, so we wrap the whole config in
 /// `unsafe impl Send + Sync` at the storage site (see `state.rs`).
-#[derive(Debug)]
 pub struct ResolvedConfig {
     pub exec_mode: Z42ExecMode,
     pub heap_initial_bytes: usize,
@@ -67,6 +90,26 @@ pub struct ResolvedConfig {
     pub stderr_sink: Z42WriteSink,
     pub sink_user_data: usize, // raw pointer kept as usize so this struct is Send
     pub search_paths: Vec<String>,
+    /// `None` when neither the C config nor Tier 2 supplied a resolver.
+    /// Otherwise either a `CHookResolver` (built from the C pair) or a
+    /// Rust trait object handed to us by Tier 2 via
+    /// [`super::install_zpkg_resolver`].
+    pub zpkg_resolver: Option<Arc<dyn ZpkgResolver>>,
+}
+
+impl std::fmt::Debug for ResolvedConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ResolvedConfig")
+            .field("exec_mode", &self.exec_mode)
+            .field("heap_initial_bytes", &self.heap_initial_bytes)
+            .field("heap_max_bytes", &self.heap_max_bytes)
+            .field("stdout_sink", &self.stdout_sink.is_some())
+            .field("stderr_sink", &self.stderr_sink.is_some())
+            .field("sink_user_data", &self.sink_user_data)
+            .field("search_paths", &self.search_paths)
+            .field("zpkg_resolver", &self.zpkg_resolver.is_some())
+            .finish()
+    }
 }
 
 /// Validation outcome. Caller maps `Err` to a `Z42HostStatus`.
@@ -105,6 +148,9 @@ pub(crate) unsafe fn validate(cfg: *const Z42HostConfig) -> Result<ResolvedConfi
 
     let search_paths = unsafe { collect_search_paths(cfg.search_paths) }?;
 
+    let zpkg_resolver =
+        super::resolver::arc_from_c_pair(cfg.zpkg_resolver, cfg.zpkg_resolver_user_data);
+
     Ok(ResolvedConfig {
         exec_mode,
         heap_initial_bytes: cfg.heap_initial_bytes,
@@ -113,6 +159,7 @@ pub(crate) unsafe fn validate(cfg: *const Z42HostConfig) -> Result<ResolvedConfi
         stderr_sink: cfg.stderr_sink,
         sink_user_data: cfg.sink_user_data as usize,
         search_paths,
+        zpkg_resolver,
     })
 }
 

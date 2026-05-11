@@ -53,6 +53,8 @@ fn default_config() -> Z42HostConfig {
         stderr_sink: None,
         sink_user_data: ptr::null_mut(),
         search_paths: ptr::null(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
     }
 }
 
@@ -361,6 +363,8 @@ fn load_invoke_hello_world() {
         stderr_sink: None,
         sink_user_data: user_data,
         search_paths: search_paths.as_ptr(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
     };
 
     let mut host: *mut Z42Host = ptr::null_mut();
@@ -447,6 +451,8 @@ fn with_hello_session<R>(
         stderr_sink: None,
         sink_user_data: user_data,
         search_paths: search_paths.as_ptr(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
     };
     let mut host: *mut Z42Host = ptr::null_mut();
     assert_eq!(
@@ -661,4 +667,409 @@ fn load_zbc_with_garbage_bytes_returns_bad_zbc() {
         unsafe { z42_host_shutdown(h) },
         Z42HostStatus::Ok
     );
+}
+
+// ── ZpkgResolver tests (add-zpkg-resolver-hook) ─────────────────────────
+
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use super::resolver::ZpkgResolver;
+
+/// Test-local `ZpkgResolver` backed by a HashMap. We don't depend on the
+/// Tier 2 `z42-host::MapResolver` here because the runtime crate is below
+/// it in the dependency graph.
+struct TestMapResolver {
+    map: HashMap<String, Vec<u8>>,
+}
+
+impl ZpkgResolver for TestMapResolver {
+    fn resolve(&self, namespace: &str) -> Option<Vec<u8>> {
+        self.map.get(namespace).cloned()
+    }
+}
+
+/// Resolver that always misses, but counts how many lookup attempts
+/// were made — useful for proving fallback behaviour.
+struct AlwaysMissResolver {
+    attempts: std::sync::Mutex<Vec<String>>,
+}
+
+impl ZpkgResolver for AlwaysMissResolver {
+    fn resolve(&self, namespace: &str) -> Option<Vec<u8>> {
+        if let Ok(mut g) = self.attempts.lock() {
+            g.push(namespace.to_string());
+        }
+        None
+    }
+}
+
+/// Load the stdlib bytes from `artifacts/z42/libs/`. Returns `None` if
+/// the user hasn't run `dotnet build src/compiler/z42.slnx` yet — tests
+/// skip in that case.
+fn load_stdlib_bytes(name: &str) -> Option<Vec<u8>> {
+    let path = project_root().join("artifacts/z42/libs").join(name);
+    std::fs::read(path).ok()
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn resolver_via_map_resolver_loads_corelib_without_search_paths() {
+    let _g = test_lock();
+    reset_host();
+
+    let core_bytes = match load_stdlib_bytes("z42.core.zpkg") {
+        Some(b) => b,
+        None => {
+            eprintln!("skip: corelib not built");
+            return;
+        }
+    };
+    let io_bytes = load_stdlib_bytes("z42.io.zpkg").expect("z42.io.zpkg");
+
+    let mut map = HashMap::new();
+    map.insert("z42.core".to_string(), core_bytes);
+    map.insert("Std.IO".to_string(), io_bytes);
+    let resolver: Arc<dyn ZpkgResolver> = Arc::new(TestMapResolver { map });
+
+    // Capture stdout
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    let user_data = &capture as *const Mutex<Vec<u8>> as *mut c_void;
+
+    // No search_paths — relies entirely on the resolver.
+    let cfg = Z42HostConfig {
+        abi_version: Z42_HOST_ABI_VERSION,
+        reserved: 0,
+        exec_mode: config::Z42ExecMode::Interp as i32,
+        heap_initial_bytes: 0,
+        heap_max_bytes: 0,
+        stdout_sink: Some(host_simple_capture_sink),
+        stderr_sink: None,
+        sink_user_data: user_data,
+        search_paths: ptr::null(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
+    };
+    let mut host: *mut Z42Host = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_initialize(&cfg, &mut host) },
+        Z42HostStatus::Ok
+    );
+
+    // Plug resolver in post-init via the Rust-only escape hatch.
+    assert_eq!(super::install_zpkg_resolver(resolver), Z42HostStatus::Ok);
+
+    let zbc_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/embedding_hello.zbc"));
+    let mut module: *mut Z42Module = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_load_zbc(host, zbc_bytes.as_ptr(), zbc_bytes.len(), &mut module) },
+        Z42HostStatus::Ok,
+        "load_zbc must succeed; last_error={}",
+        unsafe { CStr::from_ptr(z42_host_last_error(ptr::null_mut()).message) }.to_string_lossy()
+    );
+
+    let fqn = CString::new("Embedding.Hello.Main").unwrap();
+    let mut entry: *mut Z42Entry = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+        Z42HostStatus::Ok
+    );
+
+    assert_eq!(
+        unsafe { z42_host_invoke(entry, ptr::null(), 0, ptr::null_mut()) },
+        Z42HostStatus::Ok
+    );
+
+    let captured = String::from_utf8_lossy(&capture.lock().unwrap()).into_owned();
+    assert_eq!(captured, "Hello, World!\n");
+
+    assert_eq!(unsafe { z42_host_shutdown(host) }, Z42HostStatus::Ok);
+}
+
+// ── C-hook resolver test infra ──────────────────────────────────────────
+
+static C_HOOK_ZPKGS: OnceLock<HashMap<String, Vec<u8>>> = OnceLock::new();
+
+fn c_hook_zpkgs() -> &'static HashMap<String, Vec<u8>> {
+    C_HOOK_ZPKGS.get_or_init(|| {
+        let mut m = HashMap::new();
+        if let Some(b) = load_stdlib_bytes("z42.core.zpkg") {
+            m.insert("z42.core".to_string(), b);
+        }
+        if let Some(b) = load_stdlib_bytes("z42.io.zpkg") {
+            m.insert("Std.IO".to_string(), b);
+        }
+        m
+    })
+}
+
+unsafe extern "C" fn c_hook_resolver_fn(
+    namespace_name: *const c_char,
+    out_bytes: *mut *const u8,
+    out_length: *mut usize,
+    _user_data: *mut c_void,
+) -> i32 {
+    if namespace_name.is_null() {
+        return 0;
+    }
+    let ns = match unsafe { CStr::from_ptr(namespace_name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    let map = c_hook_zpkgs();
+    match map.get(ns) {
+        Some(bytes) => {
+            unsafe {
+                *out_bytes = bytes.as_ptr();
+                *out_length = bytes.len();
+            }
+            1
+        }
+        None => 0,
+    }
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn resolver_via_c_hook_loads_corelib() {
+    let _g = test_lock();
+    reset_host();
+
+    if c_hook_zpkgs().is_empty() {
+        eprintln!("skip: corelib not built");
+        return;
+    }
+
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    let user_data = &capture as *const Mutex<Vec<u8>> as *mut c_void;
+
+    let cfg = Z42HostConfig {
+        abi_version: Z42_HOST_ABI_VERSION,
+        reserved: 0,
+        exec_mode: config::Z42ExecMode::Interp as i32,
+        heap_initial_bytes: 0,
+        heap_max_bytes: 0,
+        stdout_sink: Some(host_simple_capture_sink),
+        stderr_sink: None,
+        sink_user_data: user_data,
+        search_paths: ptr::null(),
+        zpkg_resolver: Some(c_hook_resolver_fn),
+        zpkg_resolver_user_data: ptr::null_mut(),
+    };
+    let mut host: *mut Z42Host = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_initialize(&cfg, &mut host) },
+        Z42HostStatus::Ok
+    );
+
+    let zbc_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/embedding_hello.zbc"));
+    let mut module: *mut Z42Module = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_load_zbc(host, zbc_bytes.as_ptr(), zbc_bytes.len(), &mut module) },
+        Z42HostStatus::Ok
+    );
+
+    let fqn = CString::new("Embedding.Hello.Main").unwrap();
+    let mut entry: *mut Z42Entry = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+        Z42HostStatus::Ok
+    );
+    assert_eq!(
+        unsafe { z42_host_invoke(entry, ptr::null(), 0, ptr::null_mut()) },
+        Z42HostStatus::Ok
+    );
+
+    let captured = String::from_utf8_lossy(&capture.lock().unwrap()).into_owned();
+    assert_eq!(captured, "Hello, World!\n");
+
+    assert_eq!(unsafe { z42_host_shutdown(host) }, Z42HostStatus::Ok);
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn resolver_miss_falls_back_to_search_paths() {
+    let _g = test_lock();
+    reset_host();
+
+    let libs_dir = project_root().join("artifacts/z42/libs");
+    if !libs_dir.join("z42.core.zpkg").is_file() {
+        eprintln!("skip: corelib not built");
+        return;
+    }
+
+    let always_miss: Arc<AlwaysMissResolver> = Arc::new(AlwaysMissResolver {
+        attempts: std::sync::Mutex::new(Vec::new()),
+    });
+    let resolver_dyn: Arc<dyn ZpkgResolver> = always_miss.clone();
+
+    let capture: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+    let user_data = &capture as *const Mutex<Vec<u8>> as *mut c_void;
+
+    let libs_cstr = CString::new(libs_dir.to_string_lossy().as_bytes()).unwrap();
+    let search_paths: [*const c_char; 2] = [libs_cstr.as_ptr(), ptr::null()];
+
+    let cfg = Z42HostConfig {
+        abi_version: Z42_HOST_ABI_VERSION,
+        reserved: 0,
+        exec_mode: config::Z42ExecMode::Interp as i32,
+        heap_initial_bytes: 0,
+        heap_max_bytes: 0,
+        stdout_sink: Some(host_simple_capture_sink),
+        stderr_sink: None,
+        sink_user_data: user_data,
+        search_paths: search_paths.as_ptr(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
+    };
+    let mut host: *mut Z42Host = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_initialize(&cfg, &mut host) },
+        Z42HostStatus::Ok
+    );
+    assert_eq!(super::install_zpkg_resolver(resolver_dyn), Z42HostStatus::Ok);
+
+    let zbc_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/embedding_hello.zbc"));
+    let mut module: *mut Z42Module = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_load_zbc(host, zbc_bytes.as_ptr(), zbc_bytes.len(), &mut module) },
+        Z42HostStatus::Ok
+    );
+
+    // The resolver was queried at least twice (z42.core + Std.IO) before
+    // search_paths kicked in.
+    let attempts = always_miss.attempts.lock().unwrap();
+    assert!(
+        attempts.iter().any(|s| s == "z42.core"),
+        "resolver should have been queried for z42.core; attempts={attempts:?}"
+    );
+    assert!(
+        attempts.iter().any(|s| s == "Std.IO"),
+        "resolver should have been queried for Std.IO; attempts={attempts:?}"
+    );
+    drop(attempts);
+
+    // search_paths fallback supplied corelib + Std.IO, so invoke works.
+    let fqn = CString::new("Embedding.Hello.Main").unwrap();
+    let mut entry: *mut Z42Entry = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+        Z42HostStatus::Ok
+    );
+    assert_eq!(
+        unsafe { z42_host_invoke(entry, ptr::null(), 0, ptr::null_mut()) },
+        Z42HostStatus::Ok
+    );
+
+    let captured = String::from_utf8_lossy(&capture.lock().unwrap()).into_owned();
+    assert_eq!(captured, "Hello, World!\n");
+
+    assert_eq!(unsafe { z42_host_shutdown(host) }, Z42HostStatus::Ok);
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn resolver_both_unset_load_zbc_succeeds_if_zbc_self_contained() {
+    let _g = test_lock();
+    reset_host();
+
+    // No resolver, no search_paths. load_zbc should still succeed
+    // because corelib miss is silent — the runtime only complains
+    // when user code actually references a missing symbol at invoke.
+    let cfg = Z42HostConfig {
+        abi_version: Z42_HOST_ABI_VERSION,
+        reserved: 0,
+        exec_mode: config::Z42ExecMode::Interp as i32,
+        heap_initial_bytes: 0,
+        heap_max_bytes: 0,
+        stdout_sink: None,
+        stderr_sink: None,
+        sink_user_data: ptr::null_mut(),
+        search_paths: ptr::null(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
+    };
+    let mut host: *mut Z42Host = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_initialize(&cfg, &mut host) },
+        Z42HostStatus::Ok
+    );
+
+    let zbc_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/embedding_hello.zbc"));
+    let mut module: *mut Z42Module = ptr::null_mut();
+    let status = unsafe {
+        z42_host_load_zbc(host, zbc_bytes.as_ptr(), zbc_bytes.len(), &mut module)
+    };
+    assert_eq!(
+        status,
+        Z42HostStatus::Ok,
+        "load_zbc must succeed even without corelib; only invoke fails"
+    );
+    assert!(!module.is_null());
+
+    // Resolve also succeeds — the entry symbol is defined in the user .zbc.
+    let fqn = CString::new("Embedding.Hello.Main").unwrap();
+    let mut entry: *mut Z42Entry = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+        Z42HostStatus::Ok
+    );
+
+    assert_eq!(unsafe { z42_host_shutdown(host) }, Z42HostStatus::Ok);
+}
+
+#[test]
+#[cfg(z42_have_embedding_hello)]
+fn resolver_corelib_miss_then_console_writeline_fails_at_invoke() {
+    let _g = test_lock();
+    reset_host();
+
+    let cfg = Z42HostConfig {
+        abi_version: Z42_HOST_ABI_VERSION,
+        reserved: 0,
+        exec_mode: config::Z42ExecMode::Interp as i32,
+        heap_initial_bytes: 0,
+        heap_max_bytes: 0,
+        stdout_sink: None,
+        stderr_sink: None,
+        sink_user_data: ptr::null_mut(),
+        search_paths: ptr::null(),
+        zpkg_resolver: None,
+        zpkg_resolver_user_data: ptr::null_mut(),
+    };
+    let mut host: *mut Z42Host = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_initialize(&cfg, &mut host) },
+        Z42HostStatus::Ok
+    );
+
+    let zbc_bytes: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/embedding_hello.zbc"));
+    let mut module: *mut Z42Module = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_load_zbc(host, zbc_bytes.as_ptr(), zbc_bytes.len(), &mut module) },
+        Z42HostStatus::Ok
+    );
+
+    let fqn = CString::new("Embedding.Hello.Main").unwrap();
+    let mut entry: *mut Z42Entry = ptr::null_mut();
+    assert_eq!(
+        unsafe { z42_host_resolve_entry(host, module, fqn.as_ptr(), &mut entry) },
+        Z42HostStatus::Ok
+    );
+
+    // Invoke hits Console.WriteLine, which is now undefined.
+    let status = unsafe { z42_host_invoke(entry, ptr::null(), 0, ptr::null_mut()) };
+    assert_eq!(
+        status,
+        Z42HostStatus::VmException,
+        "missing corelib must surface as VmException at invoke, not Internal"
+    );
+    let err = unsafe { z42_host_last_error(ptr::null_mut()) };
+    let msg = unsafe { CStr::from_ptr(err.message) }.to_string_lossy();
+    assert!(
+        msg.contains("undefined function") || msg.contains("Console"),
+        "expected undefined-function diagnostic, got {msg}"
+    );
+
+    assert_eq!(unsafe { z42_host_shutdown(host) }, Z42HostStatus::Ok);
 }
