@@ -1,0 +1,49 @@
+# 增量测试（只跑 git diff 影响）
+
+dev 内循环加速：`./scripts/test-changed.sh` 根据 git diff 把改动文件映射到测试命令，去重后执行最小集合。
+
+## 命令
+
+```bash
+./scripts/test-changed.sh                 # base = HEAD（unstaged + staged）
+./scripts/test-changed.sh main            # base = main（branch 全部差异）
+./scripts/test-changed.sh --dry-run       # 只打印计划，不执行
+Z42_TEST_CHANGED_BASE=origin/main ./scripts/test-changed.sh
+```
+
+或 `just`：
+
+```bash
+just test-changed
+just test-changed --dry-run
+```
+
+## 文件 → 测试映射
+
+| 改动 | 触发 |
+|------|------|
+| `src/libraries/<lib>/src/*` | `just test-stdlib <lib>` + `just test-vm` |
+| `src/libraries/<lib>/tests/*` | `just test-stdlib <lib>` |
+| `src/runtime/src/*` / `Cargo.toml` / `build.rs` | `cargo test` + `just test-vm` |
+| `src/runtime/tests/*` | `cargo test` |
+| `src/tests/cross-zpkg/*` | `just test-cross-zpkg` |
+| `src/tests/*` | `just test-vm` |
+| `src/compiler/*` | `just test-compiler` + `just test-vm` |
+| `src/toolchain/*` | runner cargo test + `just test-stdlib` |
+| `*.md` / `docs/**` / `.claude/**` | 不触发 |
+| `justfile` / `*.workspace.toml` / `build.rs` | 全套 `just test` |
+| 其他 `src/**` | 全套 `just test`（防御性） |
+
+完整规则见 [`docs/design/testing/testing.md`](../../design/testing/testing.md) "增量测试" 段。
+
+## 局限
+
+- 不考虑跨文件传递依赖（改 stdlib 内部 helper 不会触发依赖该 helper 的 cross-zpkg 测试）
+- workspace toml / build.rs / justfile 触发全套（粗粒度）
+- 适合**内循环加速**；推送前仍跑 `just test` 全套
+
+## 实施
+
+`test-changed.sh` 用 `git diff --name-only <BASE>` 收集 tracked changes + `git ls-files --others --exclude-standard` 收集 untracked，去重后 case 映射 + dedup 命令 + 固定顺序执行（compile → vm → stdlib → cross）。
+
+source: [`scripts/test-changed.sh`](../../../scripts/test-changed.sh)。

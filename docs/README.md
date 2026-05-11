@@ -8,7 +8,7 @@ z42 项目文档总入口。文件分两类：**对外阅读**（语言用户、
 |------------|------|------|
 | [`features.md`](features.md) | 对外 | 语言特性 catalog（决策、当前 phase 归属） |
 | [`roadmap.md`](roadmap.md) | 对外 | 唯一迭代计划：当前焦点 + 下一阶段 + SemVer 路线 + Feature→Version 映射 + Deferred Backlog |
-| [`dev.md`](dev.md) | 内部 | 本地开发命令（build / test / package） |
+| [`workflow/`](workflow/) | 内部 | 本地构建 / 测试 / CI / release / 调试工作流（按主题分子目录）|
 | [`design/`](design/) | 混合 | 设计文档（按主题分 5 子目录）|
 | [`spec/`](spec/) | 内部 | OpenSpec 风变更工作目录（`changes/` 进行中 + `archive/` 已归档）|
 | [`error-codes/`](error-codes/) | 数据 | `Z.json`：Z#### runtime 错误码 catalog（Rust + C# 共享）|
@@ -46,6 +46,6 @@ z42 仓库文档采用**双语策略**，按受众分流：
   - 例：[`features.md`](features.md), [`design/philosophy.md`](design/philosophy.md), [`design/language/language-overview.md`](design/language/language-overview.md), [`design/language/interop.md`](design/language/interop.md), [`design/runtime/hot-reload.md`](design/runtime/hot-reload.md), [`design/runtime/execution-model.md`](design/runtime/execution-model.md), [`design/language/object-protocol.md`](design/language/object-protocol.md), [`README.md`](../README.md)（仓库根）
 
 - **内部文档**（面向 z42 开发者 / 协作工作流 / 实现细节）：**中文**
-  - 例：[`dev.md`](dev.md), [`roadmap.md`](roadmap.md), [`design/compiler/compiler-architecture.md`](design/compiler/compiler-architecture.md), [`design/runtime/vm-architecture.md`](design/runtime/vm-architecture.md), [`design/runtime/zbc.md`](design/runtime/zbc.md), [`.claude/CLAUDE.md`](../.claude/CLAUDE.md), [`.claude/rules/*.md`](../.claude/rules/)
+  - 例：[`workflow/`](workflow/), [`roadmap.md`](roadmap.md), [`design/compiler/compiler-architecture.md`](design/compiler/compiler-architecture.md), [`design/runtime/vm-architecture.md`](design/runtime/vm-architecture.md), [`design/runtime/zbc.md`](design/runtime/zbc.md), [`.claude/CLAUDE.md`](../.claude/CLAUDE.md), [`.claude/rules/*.md`](../.claude/rules/)
 
 写新文档时按此分流；混用注释（中文文件里的英文 code comment、英文文件里对中文术语的注音等）允许，但**主体语言**应一致。当一份对外英文文档需要配套实现细节时，把实现细节单独拆到一份内部中文文档而不是混在一起。

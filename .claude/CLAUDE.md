@@ -20,7 +20,7 @@ examples/       # .z42 示例源文件
 
 ## 构建与测试
 
-所有构建、编译、测试、打包命令见 [docs/dev.md](../docs/dev.md)。
+所有构建、编译、测试、打包命令见 [docs/workflow/](../docs/workflow/)（按主题分子目录：building / testing / ci / release / debugging）。
 
 ## 实现计划
 

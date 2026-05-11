@@ -57,7 +57,7 @@ dotnet run --project src/compiler/z42.Driver -- hello.z42 --emit zbc -o hello.zb
 cargo run --manifest-path src/runtime/Cargo.toml -- hello.zbc
 ```
 
-Full build / test / packaging commands: [docs/dev.md](docs/dev.md).
+Full build / test / packaging / CI / release workflows: [docs/workflow/](docs/workflow/).
 Collaboration workflow: [.claude/CLAUDE.md](.claude/CLAUDE.md).
 
 ---
