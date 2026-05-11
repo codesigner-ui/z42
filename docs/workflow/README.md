@@ -25,6 +25,9 @@ just ci             # CI 标准管线
 | 编译 Rust VM | [building/vm.md](building/vm.md) |
 | 重新构建标准库（改了 `src/libraries/*` 后） | [building/stdlib.md](building/stdlib.md) |
 | 在 macOS / Linux / Windows / arm64 跑 | [building/cross-platform.md](building/cross-platform.md) |
+| 在浏览器 / Node.js 嵌入 z42（WASM）| [building/wasm.md](building/wasm.md) |
+| 在 iOS app 里嵌入 z42 | [building/ios.md](building/ios.md) |
+| 在 Android app 里嵌入 z42 | [building/android.md](building/android.md) |
 | 跑 C# 编译器 xUnit 测试 | [testing/unit-tests.md](testing/unit-tests.md) |
 | 跑 VM golden tests（interp / JIT） | [testing/vm-tests.md](testing/vm-tests.md) |
 | 跑 stdlib 内部测试（`[Test]` 注解） | [testing/stdlib-tests.md](testing/stdlib-tests.md) |

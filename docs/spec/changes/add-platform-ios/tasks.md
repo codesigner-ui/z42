@@ -1,111 +1,111 @@
 # Tasks: Add iOS Platform Scaffold
 
-> 状态：🔵 DRAFT（未实施） | 创建：2026-04-29
-> 依赖 P4.1 + P4.2 + P4.3 完成。本文件锁定接口契约。
+> 状态：🟡 进行中 | 创建：2026-04-29 / 重写：2026-05-12
+> 前置：[`add-zpkg-resolver-hook`](../../archive/2026-05-12-add-zpkg-resolver-hook/) ✅
+> 同期参考：[`add-platform-wasm`](../../archive/2026-05-12-add-platform-wasm/)（设计模板 + Stage 0 native-interop gate 已完成）
+> Spec 修订：见 [design.md REVISION 2026-05-11](design.md) 段，原稿决策中与 z42-host 不冲突的部分仍生效
+>
+> 本次实施范围（与原稿差异）：
+> - **测试 / XCTest / iOSDemo Xcode 工程 / just / CI 阶段**：用户指示"先不考虑测试流程"，推迟到独立 spec
+> - 目录从 `platform/ios/` 迁到 `src/toolchain/host/platforms/ios/`
+> - Rust crate 直接 wrap `z42-host`（Tier 2），不再走 `z42_runtime::interp::*`
+> - 类名 `Z42Vm` → `Z42VM`
+> - ZpkgResolver 协议（`BundleZpkgResolver` 默认实现）
 
 ## 进度概览
 
-- [ ] 阶段 1: SwiftPM Package 骨架
-- [ ] 阶段 2: C bridge 模块
-- [ ] 阶段 3: Rust ios crate
-- [ ] 阶段 4: Swift facade
-- [ ] 阶段 5: 构建脚本（xcframework）
-- [ ] 阶段 6: XCTest
-- [ ] 阶段 7: iOSDemo Xcode 项目
-- [ ] 阶段 8: just / CI 接入
-- [ ] 阶段 9: 文档同步
-- [ ] 阶段 10: 验证
+- [ ] 阶段 1: 目录骨架 + Package.swift + Rust Cargo.toml + .gitignore
+- [ ] 阶段 2: C bridge 模块（modulemap + 转发头）
+- [ ] 阶段 3: Rust crate（staticlib + rlib，re-export z42_host_*）
+- [ ] 阶段 4: Swift facade（Z42VM / Z42VMModule / Z42VMEntry / Z42VMValue / Z42VMError + ZpkgResolver 协议 + BundleZpkgResolver）
+- [ ] 阶段 5: build.sh（cargo build × 3 iOS targets + lipo simulator + xcodebuild create-xcframework + stdlib 复制）
+- [ ] 阶段 6: README + 文档同步
+- [ ] 阶段 7: 验证（cargo build × iOS targets + swift build Package.swift）+ commit + push + archive
 
 ---
 
-## 阶段 1: SwiftPM Package 骨架
+## 阶段 1: 目录骨架
 
-- [ ] 1.1 [platform/ios/Package.swift](platform/ios/Package.swift) Swift 5.9 manifest
-- [ ] 1.2 [platform/ios/.gitignore](platform/ios/.gitignore) 忽略 .build/ DerivedData/ xcframework binary
-- [ ] 1.3 [platform/ios/README.md](platform/ios/README.md) 工程文档
+- [ ] 1.1 `src/toolchain/host/platforms/ios/` 目录
+- [ ] 1.2 `Package.swift` —— SwiftPM 5.9 manifest；含 `Z42VM`（library）+ `Z42VMC`（system-module C bridge）；platforms 含 iOS 14+ 与 macOS 13+（开发 / 单测用）
+- [ ] 1.3 `rust/Cargo.toml` —— crate `z42-platform-ios`，`crate-type = ["staticlib", "rlib"]`，path-deps `z42_vm` (features=ios) + `z42-host`
+- [ ] 1.4 `rust/src/lib.rs` —— 几乎空：`pub use z42_vm::host::*;` 确保符号导出
+- [ ] 1.5 `.gitignore` 忽略 `.build/` `target/` `*.xcframework/` `Resources/stdlib/*.zpkg`
 
 ## 阶段 2: C bridge 模块
 
-- [ ] 2.1 [platform/ios/Sources/Z42RuntimeC/include/z42_ios.h](platform/ios/Sources/Z42RuntimeC/include/z42_ios.h) 完整 C ABI 头
-- [ ] 2.2 [platform/ios/Sources/Z42RuntimeC/include/module.modulemap](platform/ios/Sources/Z42RuntimeC/include/module.modulemap) clang module
-- [ ] 2.3 [platform/ios/Sources/Z42RuntimeC/z42_ios.c](platform/ios/Sources/Z42RuntimeC/z42_ios.c) thin C glue（仅 include header）
+- [ ] 2.1 `Sources/Z42VMC/include/module.modulemap`：声明 clang module `Z42VMC` 暴露 `z42_host.h`
+- [ ] 2.2 `Sources/Z42VMC/include/z42_host.h`：转发到 runtime 公开头（`#include "../../../../../runtime/include/z42_host.h"`）
+- [ ] 2.3 `Sources/Z42VMC/include/z42_abi.h`：转发同理
+- [ ] 2.4 `Sources/Z42VMC/dummy.c`：空 C 文件让 SwiftPM 把目录当作 system-module 编（实际链接在 build.sh 完成）
 
-## 阶段 3: Rust ios crate
+## 阶段 3: Rust binding
 
-- [ ] 3.1 [platform/ios/rust/Cargo.toml](platform/ios/rust/Cargo.toml) crate manifest
-- [ ] 3.2 [platform/ios/rust/src/lib.rs](platform/ios/rust/src/lib.rs) C ABI 导出（8 个函数）
-- [ ] 3.3 [src/runtime/Cargo.toml](src/runtime/Cargo.toml) workspace members 加 `../platform/ios/rust`
-- [ ] 3.4 验证：`cargo build --target aarch64-apple-ios -p z42-ios` 通过
+- [ ] 3.1 `rust/build.rs`（可选）—— 设置 `Z42_SKIP_NATIVE_POC` 让 iOS 目标 cross-compile 不踩 native poc（实际 build.rs 自动 skip 已就位，可省）
+- [ ] 3.2 验证：`cargo build --target aarch64-apple-ios --manifest-path .../rust/Cargo.toml` 通过
 
 ## 阶段 4: Swift facade
 
-- [ ] 4.1 [platform/ios/Sources/Z42Runtime/Z42Vm.swift](platform/ios/Sources/Z42Runtime/Z42Vm.swift) Swift facade
-- [ ] 4.2 [platform/ios/Sources/Z42Runtime/Z42Error.swift](platform/ios/Sources/Z42Runtime/Z42Error.swift) 错误类型
+- [ ] 4.1 `Sources/Z42VM/Z42VM.swift` —— 主 class，构造器接受 `ZpkgResolver` + sink handlers；`loadZbc` / `resolveEntry` / `invoke`；`deinit` 自动 `z42_host_shutdown`
+- [ ] 4.2 `Sources/Z42VM/Z42VMModule.swift` —— 不透明 handle wrapper
+- [ ] 4.3 `Sources/Z42VM/Z42VMEntry.swift` —— 同上
+- [ ] 4.4 `Sources/Z42VM/Z42VMValue.swift` —— enum 含 null / i64 / f64 / bool
+- [ ] 4.5 `Sources/Z42VM/Z42VMError.swift` —— `enum Z42VMError: Error` 映射 `Z42HostStatus` 全部状态
+- [ ] 4.6 `Sources/Z42VM/ZpkgResolver.swift` —— `protocol ZpkgResolver` + `struct BundleZpkgResolver`（默认从 `Bundle.main` 读 `<ns>.zpkg`）
 
-## 阶段 5: 构建脚本
+## 阶段 5: build.sh
 
-- [ ] 5.1 [platform/ios/build.sh](platform/ios/build.sh) cargo × 3 target + lipo + xcodebuild create-xcframework
-- [ ] 5.2 chmod +x
-- [ ] 5.3 build.sh 内含可选预编译 examples 步骤
+- [ ] 5.1 fail-fast 检查 `cargo` + `xcodebuild` + iOS targets 装好
+- [ ] 5.2 编译 `Resources/stdlib/<demo>.z42` → `.zbc`（如 z42c 可用）
+- [ ] 5.3 从 `artifacts/z42/libs/*.zpkg` 复制到 `Resources/stdlib/`
+- [ ] 5.4 `cargo build --release --target aarch64-apple-ios --manifest-path rust/Cargo.toml`
+- [ ] 5.5 `cargo build --release --target aarch64-apple-ios-sim --manifest-path rust/Cargo.toml`
+- [ ] 5.6 `cargo build --release --target x86_64-apple-ios --manifest-path rust/Cargo.toml`
+- [ ] 5.7 `lipo -create` simulator slices（arm64-sim + x86_64-sim）→ universal sim 静态库
+- [ ] 5.8 `xcodebuild -create-xcframework -library <device-arm64.a> -library <sim-universal.a> -output Z42VM.xcframework`
 
-## 阶段 6: XCTest
+## 阶段 6: README + 文档同步
 
-- [ ] 6.1 [platform/ios/Tests/Z42RuntimeTests/Z42VmTests.swift](platform/ios/Tests/Z42RuntimeTests/Z42VmTests.swift)
-- [ ] 6.2 [platform/ios/Tests/Z42RuntimeTests/Resources/01_hello.zbc](platform/ios/Tests/Z42RuntimeTests/Resources/01_hello.zbc) 测试资源
-- [ ] 6.3 加 5 个 vm_core 跨平台一致性测试
+- [ ] 6.1 `src/toolchain/host/platforms/ios/README.md` —— quick start + API + 限制 + 故障排查
+- [ ] 6.2 `src/toolchain/host/platforms/README.md` 平台索引行 iOS 状态 → 🟢
+- [ ] 6.3 `docs/design/runtime/cross-platform.md` iOS 段补 Z42VM 概览
+- [ ] 6.4 `docs/roadmap.md` L2 Embedding 行加 add-platform-ios
 
-## 阶段 7: iOSDemo Xcode 项目
+## 阶段 7: 验证
 
-- [ ] 7.1 [platform/ios/iOSDemo/iOSDemo.xcodeproj](platform/ios/iOSDemo/iOSDemo.xcodeproj) Xcode 项目
-- [ ] 7.2 [platform/ios/iOSDemo/iOSDemo/iOSDemoApp.swift](platform/ios/iOSDemo/iOSDemo/iOSDemoApp.swift) App 入口
-- [ ] 7.3 [platform/ios/iOSDemo/iOSDemo/ContentView.swift](platform/ios/iOSDemo/iOSDemo/ContentView.swift) UI
-- [ ] 7.4 SwiftPM 依赖配置（指向本地 ../Package.swift）
-- [ ] 7.5 编译 examples/01_hello.z42 → iOSDemo/Resources/01_hello.zbc
+- [ ] 7.1 `cargo build --target aarch64-apple-ios --manifest-path .../ios/rust/Cargo.toml` 通过
+- [ ] 7.2 `cargo build --target aarch64-apple-ios-sim --manifest-path .../ios/rust/Cargo.toml` 通过
+- [ ] 7.3 `cargo build --target x86_64-apple-ios --manifest-path .../ios/rust/Cargo.toml` 通过
+- [ ] 7.4 `swift build --package-path src/toolchain/host/platforms/ios`（Package.swift 形态正确）通过
+- [ ] 7.5 既有 lib 测试不退化（host:: 22/22 + 整体 310+）
+- [ ] 7.6 `./build.sh` 产出 `Z42VM.xcframework` 含 device + simulator slices（如本机已编 z42c + 装好 xcframework 工具）
+- [ ] 7.7 commit + push + 归档
 
-## 阶段 8: just / CI 接入
-
-- [ ] 8.1 [justfile](justfile) `platform` 子命令扩展（ios case）
-- [ ] 8.2 加 `platform-ios-build` / `platform-ios-build-debug` / `platform-ios-test` / `platform-ios-demo-run`
-- [ ] 8.3 [.github/workflows/ci.yml](.github/workflows/ci.yml) 加 `platform-ios` job（macos-14 runner）
-
-## 阶段 9: 文档同步
-
-- [ ] 9.1 [docs/design/runtime/cross-platform.md](docs/design/runtime/cross-platform.md) 加 "iOS" 章节（含 JIT 禁令声明）
-- [ ] 9.2 [platform/ios/README.md](platform/ios/README.md) 完整文档（Xcode 安装、build、SwiftPM 集成）
-- [ ] 9.3 [docs/dev.md](docs/dev.md) 加 "Platform: iOS" 段
-- [ ] 9.4 [docs/roadmap.md](docs/roadmap.md) 进度表加 P4.4 完成（P4 全部完成）
-
-## 阶段 10: 验证
-
-- [ ] 10.1 `cargo build --target aarch64-apple-ios -p z42-ios` 通过
-- [ ] 10.2 `cargo build --target aarch64-apple-ios-sim -p z42-ios` 通过
-- [ ] 10.3 `cargo build --target x86_64-apple-ios -p z42-ios` 通过
-- [ ] 10.4 `./platform/ios/build.sh release` 产出 xcframework
-- [ ] 10.5 xcframework 含 `ios-arm64/` 和 `ios-arm64_x86_64-simulator/`
-- [ ] 10.6 `lipo -info` 验证 simulator slice 含 arm64 + x86_64
-- [ ] 10.7 `xcodebuild test -scheme Z42Runtime -destination 'platform=iOS Simulator,name=iPhone 15'` 通过
-- [ ] 10.8 iOSDemo 在 simulator 启动显示 "Hello, World!"
-- [ ] 10.9 5 个 vm_core 用例在 iOS 跑出与 desktop 一致输出
-- [ ] 10.10 xcframework 总大小 ≤ 15 MB
-- [ ] 10.11 CI platform-ios job 全绿
+---
 
 ## 备注
 
+### 推迟的阶段（test 流程相关）
+
+- iOSDemo Xcode 工程 → 独立 spec `add-platform-ios-demo`
+- XCTest 套件 → 独立 spec `add-platform-ios-tests`
+- just / CI 接入 → 独立 spec
+
+### 与原稿差异
+
+| 项 | 原稿 (2026-04-29) | 修订 (2026-05-12) |
+|---|-------------------|--------------------|
+| 类名 | `Z42Vm` | `Z42VM` |
+| 依赖 | `z42_runtime::interp::Interpreter` | `z42-host` Tier 2 + `z42_host.h` |
+| 路径 | `platform/ios/` | `src/toolchain/host/platforms/ios/` |
+| API | 自定义 `setStdoutHandler(line: String) / run(entryPoint:)` | `Z42VM` 同形 API + `ZpkgResolver` |
+| Demo | iOSDemo SwiftUI 工程 + XCTest | **推迟到独立 spec** |
+| CI | just / GitHub Actions macos-14 | **推迟到独立 spec** |
+| Stage 0 | — | runtime native-interop gate 在 wasm spec 已完成；iOS feature `ios` 已含 `native-interop` |
+
 ### 实施依赖
 
-- 必须先完成 P4.1（feature flags）
-- 强烈建议在 P4.2、P4.3 之后做（复用 cross-platform.md 与 facade 经验）
-- 本机必须有 Xcode 15+
-
-### 风险
-
-- **风险 1**：xcframework 创建时 architecture 冲突（多个 slice 含相同 arch） → lipo 合并 simulator slice 后再传给 xcodebuild
-- **风险 2**：z42-runtime crate 引用 std::process::exit / fork → iOS 沙箱禁；feature ios 已是 interp-only + aot，不应触发
-- **风险 3**：Swift / Rust ABI mismatch（C 层 callback 传 Swift closure） → v0.1 先 fallback 到 NSLog；完整桥接 v0.2
-- **风险 4**：CI macos-14 simulator 启动慢 → 用 `xcrun simctl` 提前启动
-- **风险 5**：Xcode 版本变更导致项目格式不兼容 → 锁定 Xcode 15.x；CI 用 `xcversion select 15`
-- **风险 6**：iOSDemo .xcodeproj/project.pbxproj 是二进制级敏感文件，手写易错 → 用 Xcode 创建后入仓
-
-### 工作量估计
-
-3–4 天（Xcode 项目配置 + xcframework 构建是大头；CI simulator 调试可能额外占半天）。
+- ✅ `add-zpkg-resolver-hook`（hook 已就位）
+- ✅ runtime `native-interop` feature gate（wasm spec 完成）
+- 🛠️ `rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios`（本次实施期装）
+- 编译器：`dotnet build src/compiler/z42.slnx` 已就位
