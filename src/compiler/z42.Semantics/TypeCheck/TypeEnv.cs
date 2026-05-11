@@ -1,3 +1,5 @@
+using Z42.Syntax.Parser;
+
 namespace Z42.Semantics.TypeCheck;
 
 /// <summary>
@@ -19,6 +21,10 @@ internal sealed class TypeEnv
     /// `LookupLocalFunc` walks the parent chain. See docs/design/language/closure.md §3.4
     /// + impl-local-fn-l2 design Decision 3.
     private readonly Dictionary<string, Z42FuncType>                _localFuncs = new();
+    /// spec extend-named-args-shim (2026-05-12): per-scope FunctionDecl for
+    /// nested local funcs, so `BindArgsReordered` can read real `Param.Name`s
+    /// at call sites. Walks parent chain alongside `_localFuncs`.
+    private readonly Dictionary<string, FunctionDecl>               _localFuncDecls = new();
 
     /// 2026-05-02 impl-closure-l3-monomorphize: per-scope "function alias" 表。
     /// `var f = Helper;` 在当前 scope 写入 `f → "Demo.Helper"`；调用 `f()` 时
@@ -143,11 +149,20 @@ internal sealed class TypeEnv
 
     /// Define a local function in this scope. Returns false if the name is
     /// already defined in this scope (caller should report duplicate-decl).
-    internal bool DefineLocalFunc(string name, Z42FuncType sig)
+    internal bool DefineLocalFunc(string name, Z42FuncType sig, FunctionDecl? decl = null)
     {
         if (_localFuncs.ContainsKey(name)) return false;
         _localFuncs[name] = sig;
+        if (decl is not null) _localFuncDecls[name] = decl;
         return true;
+    }
+
+    /// Lookup a nested local function's AST decl, walking the parent chain.
+    /// Used by `BindArgsReordered` to recover `Param.Name`s at call sites.
+    internal FunctionDecl? LookupLocalFuncDecl(string name)
+    {
+        if (_localFuncDecls.TryGetValue(name, out var d)) return d;
+        return _parent?.LookupLocalFuncDecl(name);
     }
 
     /// Returns true if `name` is a local function defined in *this* scope or any

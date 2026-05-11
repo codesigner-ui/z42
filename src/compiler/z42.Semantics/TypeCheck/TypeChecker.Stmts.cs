@@ -36,7 +36,7 @@ public sealed partial class TypeChecker
             {
                 var paramTypes = lf.Decl.Params.Select(p => ResolveType(p.Type)).ToList();
                 var sig        = new Z42FuncType(paramTypes, ResolveType(lf.Decl.ReturnType));
-                if (!scope.DefineLocalFunc(lf.Decl.Name, sig))
+                if (!scope.DefineLocalFunc(lf.Decl.Name, sig, lf.Decl))
                 {
                     _diags.Error(DiagnosticCodes.DuplicateDeclaration,
                         $"local function `{lf.Decl.Name}` is already declared in this block",

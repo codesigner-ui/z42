@@ -92,6 +92,7 @@ public static partial class ImportedSymbolLoader
         }
 
         var delegates = MergeNullable(low.Delegates, high.Delegates);
+        var funcDecls = MergeNullable(low.FuncDecls, high.FuncDecls);
 
         HashSet<string>? resolvedNs = null;
         if (low.ResolvedNamespaces is not null || high.ResolvedNamespaces is not null)
@@ -104,7 +105,8 @@ public static partial class ImportedSymbolLoader
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
             classConstraints, funcConstraints, classInterfaces, classPackages, collisions,
             Delegates: delegates,
-            ResolvedNamespaces: resolvedNs);
+            ResolvedNamespaces: resolvedNs,
+            FuncDecls: funcDecls);
     }
 
     private static Dictionary<string, T>? MergeNullable<T>(
@@ -158,7 +160,12 @@ public sealed record ImportedSymbols(
     /// `using <ns>;` on packages that contribute only impl blocks (no classes),
     /// e.g. cross-zpkg `impl Trait for Type` where the impl-providing zpkg has
     /// its own namespace but no class declarations.
-    HashSet<string>?                     ResolvedNamespaces = null);
+    HashSet<string>?                     ResolvedNamespaces = null,
+    /// spec extend-named-args-shim (2026-05-12): synthesized FunctionDecls
+    /// for imported free functions, keyed by registration name. Merged into
+    /// `SymbolCollector._funcDecls` so call-site BindArgsReordered can read
+    /// `Param.Name` for named-arg reorder against cross-CU callees.
+    Dictionary<string, FunctionDecl>?    FuncDecls          = null);
 
 /// strict-using-resolution: 跨包同 (ns, name) 冲突描述。
 public sealed record NamespaceCollision(

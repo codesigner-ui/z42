@@ -6,6 +6,7 @@ using Z42.IR;
 using Z42.Semantics.TypeCheck;
 using Z42.Syntax.Lexer;
 using Z42.Syntax.Parser;
+using Z42.Semantics;
 
 namespace Z42.Tests;
 
@@ -257,6 +258,145 @@ public sealed class NamedArgumentsTests
             int Add(int a, int b = 10, int c = 20) { return a + b + c; }
             void Main() { var r = Add(1, c: 30); }
             """);
+        diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
+
+    // ── Nested local function (spec extend-named-args-shim) ─────────────────
+
+    [Fact]
+    public void TypeCheck_NestedLocalFunctionNamedArgs_BindsClean()
+    {
+        var (_, diags) = Compile("""
+            void Main() {
+                int Mix(int a, int b, int c) { return a + b * c; }
+                var r = Mix(c: 3, a: 1, b: 2);
+            }
+            """);
+        diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TypeCheck_NestedLocalFunctionUnknownName_EmitsZ1002()
+    {
+        var (_, diags) = Compile("""
+            void Main() {
+                int Mix(int a, int b) { return a + b; }
+                var r = Mix(badName: 3);
+            }
+            """);
+        diags.All.Should().Contain(d =>
+            d.Code == DiagnosticCodes.UnknownArgumentName);
+    }
+
+    // ── Imported (cross-CU) callables (spec extend-named-args-shim) ─────────
+
+    private static (CompilationUnit cu, DiagnosticBag diags) CompileWithImports(
+        string source, ImportedSymbols imports)
+    {
+        var tokens = new Lexer(source).Tokenize();
+        var diags  = new DiagnosticBag();
+        var cu     = new Parser(tokens, LanguageFeatures.Phase1).ParseCompilationUnit();
+        var tc     = new TypeChecker(diags, LanguageFeatures.Phase1);
+        tc.Check(cu, imports);
+        return (cu, diags);
+    }
+
+    private static ImportedSymbols MakeImports(
+        IReadOnlyList<ExportedClassDef>?    classes = null,
+        IReadOnlyList<ExportedFuncDef>?     funcs   = null)
+    {
+        var mod = new ExportedModule(
+            "Foo",
+            classes is null ? new List<ExportedClassDef>()    : classes.ToList(),
+            new List<ExportedInterfaceDef>(),
+            new List<ExportedEnumDef>(),
+            funcs is null   ? new List<ExportedFuncDef>()     : funcs.ToList());
+        var packageOf = new Dictionary<ExportedModule, string> { [mod] = "foo.pkg" };
+        return ImportedSymbolLoader.Load(
+            new[] { mod }, packageOf,
+            activatedPackages: new HashSet<string>(),
+            preludePackages:   new HashSet<string> { "foo.pkg" });
+    }
+
+    [Fact]
+    public void TypeCheck_ImportedClassMethodNamedArgs_BindsClean()
+    {
+        var cls = new ExportedClassDef(
+            Name:       "Tool",
+            BaseClass:  null,
+            IsAbstract: false,
+            IsSealed:   false,
+            IsStatic:   false,
+            Fields:     new List<ExportedFieldDef>(),
+            Methods:    new List<ExportedMethodDef>
+            {
+                new ExportedMethodDef(
+                    Name: "Draw", ReturnType: "void", Visibility: "public",
+                    IsStatic: true, IsVirtual: false, IsAbstract: false,
+                    MinArgCount: 3,
+                    Params: new List<ExportedParamDef>
+                    {
+                        new("color", "string"),
+                        new("width", "int"),
+                        new("filled", "bool"),
+                    })
+            },
+            Interfaces: new List<string>(),
+            TypeParams: null);
+        var imports = MakeImports(classes: new[] { cls });
+        var (_, diags) = CompileWithImports(
+            """
+            void Main() { Tool.Draw(filled: true, color: "red", width: 2); }
+            """, imports);
+        diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TypeCheck_ImportedClassMethodUnknownName_EmitsZ1002()
+    {
+        var cls = new ExportedClassDef(
+            Name:       "Tool",
+            BaseClass:  null,
+            IsAbstract: false,
+            IsSealed:   false,
+            IsStatic:   false,
+            Fields:     new List<ExportedFieldDef>(),
+            Methods:    new List<ExportedMethodDef>
+            {
+                new ExportedMethodDef(
+                    Name: "Draw", ReturnType: "void", Visibility: "public",
+                    IsStatic: true, IsVirtual: false, IsAbstract: false,
+                    MinArgCount: 1,
+                    Params: new List<ExportedParamDef> { new("color", "string") })
+            },
+            Interfaces: new List<string>(),
+            TypeParams: null);
+        var imports = MakeImports(classes: new[] { cls });
+        var (_, diags) = CompileWithImports(
+            """
+            void Main() { Tool.Draw(badName: "red"); }
+            """, imports);
+        diags.All.Should().Contain(d => d.Code == DiagnosticCodes.UnknownArgumentName);
+    }
+
+    [Fact]
+    public void TypeCheck_ImportedFreeFunctionNamedArgs_BindsClean()
+    {
+        var fn = new ExportedFuncDef(
+            Name:        "Mix",
+            ReturnType:  "int",
+            MinArgCount: 3,
+            Params: new List<ExportedParamDef>
+            {
+                new("a", "int"),
+                new("b", "int"),
+                new("c", "int"),
+            });
+        var imports = MakeImports(funcs: new[] { fn });
+        var (_, diags) = CompileWithImports(
+            """
+            void Main() { var r = Mix(c: 3, a: 1, b: 2); }
+            """, imports);
         diags.All.Where(d => d.Severity == DiagnosticSeverity.Error).Should().BeEmpty();
     }
 }

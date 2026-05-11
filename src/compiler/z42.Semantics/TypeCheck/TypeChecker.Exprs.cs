@@ -226,11 +226,15 @@ public sealed partial class TypeChecker
                     Z42ClassType? cls = null;
                     if (_symbols.Classes.TryGetValue(qualName, out var local)) cls = local;
                     else if (_imported?.Classes.TryGetValue(qualName, out var imp) == true) cls = imp;
-                    var ctorDecl = cls?.Methods.TryGetValue(ctorName, out var ctorSym) == true
-                        ? ctorSym.Decl
-                        : null;
+                    FunctionDecl? ctorDecl = null;
+                    Z42FuncType?  ctorSig  = null;
+                    if (cls?.Methods.TryGetValue(ctorName, out var ctorSym) == true)
+                    {
+                        ctorDecl = ctorSym.Decl;
+                        ctorSig  = ctorSym.Signature;
+                    }
                     var (_, reorderedArgs) = BindArgsReordered(
-                        newExpr.Args, ctorDecl?.Params, env, newExpr.Span);
+                        newExpr.Args, ctorDecl?.Params, env, newExpr.Span, sig: ctorSig);
                     args = reorderedArgs;
                 }
 

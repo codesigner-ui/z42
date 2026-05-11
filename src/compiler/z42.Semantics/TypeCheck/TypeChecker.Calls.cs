@@ -33,7 +33,7 @@ public sealed partial class TypeChecker
                 // calleeParams sourced from local AST when available; null when
                 // imported (named args → Z1002 fallback).
                 var (staticOrigArgs, args) = BindArgsReordered(
-                    call.Args, staticSym.Decl?.Params, env, call.Span);
+                    call.Args, staticSym.Decl?.Params, env, call.Span, sig: staticSig);
                 CheckArgCount(args.Count, staticSig.MinArgCount, staticSig.Params.Count, call.Span);
                 // 2026-05-05 fix-generic-extern-infer: substitute T → concrete
                 // before arg-type validation so `BlackBox<T>(int)` etc. accept
@@ -138,7 +138,7 @@ public sealed partial class TypeChecker
                     // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
                     List<Argument> instOrigArgs = call.Args.ToList();
                     if (call.Args.Any(a => a.Name is not null))
-                        (instOrigArgs, argBound) = BindArgsReordered(call.Args, mtRaw.Decl?.Params, env, call.Span);
+                        (instOrigArgs, argBound) = BindArgsReordered(call.Args, mtRaw.Decl?.Params, env, call.Span, sig: mtSub);
                     CheckArgCount(argBound.Count, mtSub.MinArgCount, mtSub.Params.Count, call.Span);
                     CheckArgTypes(instOrigArgs, argBound, mtSub.Params);
                     CheckArgModifiers(instOrigArgs, argBound, mtSub, env, call.Span);
@@ -177,7 +177,7 @@ public sealed partial class TypeChecker
                     // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
                     List<Argument> ctOrigArgs = call.Args.ToList();
                     if (call.Args.Any(a => a.Name is not null))
-                        (ctOrigArgs, argBound) = BindArgsReordered(call.Args, mtSym.Decl?.Params, env, call.Span);
+                        (ctOrigArgs, argBound) = BindArgsReordered(call.Args, mtSym.Decl?.Params, env, call.Span, sig: mt);
                     CheckArgCount(argBound.Count, mt.MinArgCount, mt.Params.Count, call.Span);
                     CheckArgTypes(ctOrigArgs, argBound, mt.Params);
                     CheckArgModifiers(ctOrigArgs, argBound, mt, env, call.Span);
@@ -224,7 +224,7 @@ public sealed partial class TypeChecker
                     // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
                     List<Argument> ifaceOrigArgs = call.Args.ToList();
                     if (call.Args.Any(a => a.Name is not null))
-                        (ifaceOrigArgs, argBound) = BindArgsReordered(call.Args, imSym.Decl?.Params, env, call.Span);
+                        (ifaceOrigArgs, argBound) = BindArgsReordered(call.Args, imSym.Decl?.Params, env, call.Span, sig: imtSub);
                     CheckArgCount(argBound.Count, imtSub.MinArgCount, imtSub.Params.Count, call.Span);
                     CheckArgTypes(ifaceOrigArgs, argBound, imtSub.Params);
                     CheckArgModifiers(ifaceOrigArgs, argBound, imtSub, env, call.Span);
@@ -258,7 +258,7 @@ public sealed partial class TypeChecker
                     // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
                     List<Argument> bcOrigArgs = call.Args.ToList();
                     if (call.Args.Any(a => a.Name is not null))
-                        (bcOrigArgs, argBound) = BindArgsReordered(call.Args, bcMtSym.Decl?.Params, env, call.Span);
+                        (bcOrigArgs, argBound) = BindArgsReordered(call.Args, bcMtSym.Decl?.Params, env, call.Span, sig: bcMt);
                     CheckArgCount(argBound.Count, bcMt.MinArgCount, bcMt.Params.Count, call.Span);
                     CheckArgTypes(bcOrigArgs, argBound, bcMt.Params);
                     CheckArgModifiers(bcOrigArgs, argBound, bcMt, env, call.Span);
@@ -274,7 +274,7 @@ public sealed partial class TypeChecker
                         // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
                         List<Argument> gpOrigArgs = call.Args.ToList();
                         if (call.Args.Any(a => a.Name is not null))
-                            (gpOrigArgs, argBound) = BindArgsReordered(call.Args, gmtSym.Decl?.Params, env, call.Span);
+                            (gpOrigArgs, argBound) = BindArgsReordered(call.Args, gmtSym.Decl?.Params, env, call.Span, sig: gmt);
                         CheckArgCount(argBound.Count, gmt.MinArgCount, gmt.Params.Count, call.Span);
                         CheckArgTypes(gpOrigArgs, argBound, gmt.Params);
                         CheckArgModifiers(gpOrigArgs, argBound, gmt, env, call.Span);
@@ -330,7 +330,7 @@ public sealed partial class TypeChecker
                     // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
                     List<Argument> pmtOrigArgs = call.Args.ToList();
                     if (call.Args.Any(a => a.Name is not null))
-                        (pmtOrigArgs, argBound) = BindArgsReordered(call.Args, pmtSym.Decl?.Params, env, call.Span);
+                        (pmtOrigArgs, argBound) = BindArgsReordered(call.Args, pmtSym.Decl?.Params, env, call.Span, sig: pmt);
                     CheckArgCount(argBound.Count, pmt.MinArgCount, pmt.Params.Count, call.Span);
                     CheckArgTypes(pmtOrigArgs, argBound, pmt.Params);
                     CheckArgModifiers(pmtOrigArgs, argBound, pmt, env, call.Span);
@@ -372,7 +372,7 @@ public sealed partial class TypeChecker
             // spec add-named-arguments Part 2: re-bind with reorder if any named arg.
             List<Argument> bareOrigArgs = call.Args.ToList();
             if (call.Args.Any(a => a.Name is not null))
-                (bareOrigArgs, freeArgs) = BindArgsReordered(call.Args, bareSym.Decl?.Params, env, call.Span);
+                (bareOrigArgs, freeArgs) = BindArgsReordered(call.Args, bareSym.Decl?.Params, env, call.Span, sig: bareSig);
             CheckArgCount(freeArgs.Count, bareSig.MinArgCount, bareSig.Params.Count, call.Span);
             CheckArgTypes(bareOrigArgs, freeArgs, bareSig.Params);
             CheckArgModifiers(bareOrigArgs, freeArgs, bareSig, env, call.Span);
@@ -404,9 +404,14 @@ public sealed partial class TypeChecker
                 List<Argument> ftOrigArgs = call.Args.ToList();
                 if (call.Args.Any(a => a.Name is not null))
                 {
-                    _symbols.FuncDecls.TryGetValue(resolvedFuncName, out var fnDecl);
+                    // Decl lookup priority: nested local (lexical) → SymbolTable
+                    // (top-level, both locally collected and imported via
+                    // ImportedSymbolLoader synthesizing FuncDecls).
+                    var fnDecl = env.LookupLocalFuncDecl(funcId.Name);
+                    if (fnDecl is null)
+                        _symbols.FuncDecls.TryGetValue(resolvedFuncName, out fnDecl);
                     (ftOrigArgs, freeArgs) = BindArgsReordered(
-                        call.Args, fnDecl?.Params, env, call.Span);
+                        call.Args, fnDecl?.Params, env, call.Span, sig: ft);
                 }
                 CheckArgCount(freeArgs.Count, ft.MinArgCount, ft.Params.Count, call.Span);
                 CheckArgTypes(ftOrigArgs, freeArgs, ft.Params);

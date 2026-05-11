@@ -46,9 +46,10 @@ public static partial class ImportedSymbolLoader
                 classes, interfaces, delegates);
             var vis = ParseVisibility(m.Visibility);
             var mods = ImportedModifiers(m);
+            var syntheticDecl = SynthesizeImportedDecl(m.Name, m.Params, m.ReturnType);
             var sym = new MethodSymbol(m.Name, skeleton, sig, mods,
                                         default(Z42.Core.Text.Span), vis,
-                                        decl: null, testAttributes: null);
+                                        decl: syntheticDecl, testAttributes: null);
             if (m.IsStatic) staticMethods[m.Name] = sym;
             else            methods[m.Name]       = sym;
             string visKey = m.Name.Contains('$') ? m.Name[..m.Name.IndexOf('$')] : m.Name;
@@ -63,6 +64,46 @@ public static partial class ImportedSymbolLoader
         if (m.IsVirtual)  mods |= FunctionModifiers.Virtual;
         if (m.IsAbstract) mods |= FunctionModifiers.Abstract;
         return mods;
+    }
+
+    /// spec extend-named-args-shim (2026-05-12): synthesize a minimal
+    /// `FunctionDecl` from a TSIG `ExportedMethodDef` / `ExportedFunctionDef`
+    /// so call sites can read `Decl.Params[i].Name` for named-arg reorder.
+    /// Only `Params` is meaningful — every other field is a placeholder
+    /// (Body=empty BlockStmt, Visibility=Public, no modifiers). The
+    /// synthetic decl is never executed, only inspected.
+    ///
+    /// Default exprs are absent in TSIG (D-9): `Param.Default` is left null,
+    /// and `BindArgsReordered`'s `sig` fallback emits `BoundDefault(type)`
+    /// for missing optional slots (i >= sig.MinArgCount).
+    internal static FunctionDecl SynthesizeImportedDecl(
+        string name,
+        IReadOnlyList<ExportedParamDef> exportedParams,
+        string returnTypeName)
+    {
+        var span = default(Core.Text.Span);
+        var parms = new List<Param>(exportedParams.Count);
+        foreach (var ep in exportedParams)
+        {
+            parms.Add(new Param(
+                Name: ep.Name,
+                Type: new NamedType(ep.TypeName, span),
+                Default: null,
+                Span: span,
+                Modifier: ParamModifier.None));
+        }
+        TypeExpr retType = returnTypeName == "void"
+            ? new VoidType(span)
+            : new NamedType(returnTypeName, span);
+        return new FunctionDecl(
+            Name:           name,
+            Params:         parms,
+            ReturnType:     retType,
+            Body:           new BlockStmt(new List<Stmt>(), span),
+            Visibility:     Visibility.Public,
+            Modifiers:      FunctionModifiers.None,
+            NativeIntrinsic: null,
+            Span:           span);
     }
 
     /// 接口的 StaticMembers 字段在 Z42InterfaceType 中是 nullable，骨架时为 null。
@@ -99,11 +140,12 @@ public static partial class ImportedSymbolLoader
             }
             else
             {
+                var syntheticDecl = SynthesizeImportedDecl(m.Name, m.Params, m.ReturnType);
                 var sym = new MethodSymbol(m.Name, skeleton, sig,
                                             ImportedModifiers(m),
                                             default(Z42.Core.Text.Span),
                                             Visibility.Public,
-                                            decl: null, testAttributes: null);
+                                            decl: syntheticDecl, testAttributes: null);
                 methods[m.Name] = sym;
             }
         }

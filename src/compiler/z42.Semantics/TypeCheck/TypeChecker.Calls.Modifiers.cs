@@ -136,7 +136,8 @@ public sealed partial class TypeChecker
         IReadOnlyList<Argument> rawArgs,
         IReadOnlyList<Param>?    calleeParams,
         TypeEnv env,
-        Span callSpan)
+        Span callSpan,
+        Z42FuncType?             sig = null)
     {
         bool hasNamed = false;
         for (int i = 0; i < rawArgs.Count; i++)
@@ -179,6 +180,17 @@ public sealed partial class TypeChecker
             var p = calleeParams[i];
             if (p.Default is null)
             {
+                // spec extend-named-args-shim (2026-05-12): cross-CU imports
+                // synthesize Param with Default=null (TSIG doesn't carry
+                // default exprs); use Z42FuncType.MinArgCount to recognize
+                // optional slots and emit a typed BoundDefault, consistent
+                // with FillDefaults' cross-CU fallback (D-9).
+                if (sig is not null && i >= sig.MinArgCount && i < sig.Params.Count)
+                {
+                    origFinal.Add(new Argument(null, new LitNullExpr(p.Span), p.Span));
+                    boundFinal.Add(new BoundDefault(sig.Params[i], callSpan));
+                    continue;
+                }
                 _diags.Error(DiagnosticCodes.MissingRequiredArgument,
                     $"missing required argument `{p.Name}` (parameter {i + 1})",
                     callSpan);

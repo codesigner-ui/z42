@@ -167,6 +167,16 @@ public sealed class SymbolTable
         foreach (var (key, info) in Delegates)
             delegates[key] = info;
 
+        // spec extend-named-args-shim (2026-05-12): preserve locally collected
+        // free-function FunctionDecls so other intra-package CUs can read
+        // `Param.Name`s for named-arg reorder against same-package callees.
+        var fnDecls = new Dictionary<string, FunctionDecl>(StringComparer.Ordinal);
+        foreach (var (name, decl) in FuncDecls)
+        {
+            if (ImportedFuncNames.Contains(name)) continue;
+            fnDecls[name] = decl;
+        }
+
         return new ImportedSymbols(
             Classes:          classes,
             Functions:        funcs,
@@ -177,7 +187,8 @@ public sealed class SymbolTable
             ClassConstraints: null,    // intra-package 不传约束（local 会重新 collect）
             FuncConstraints:  null,
             ClassInterfaces:  classInterfaces,
-            Delegates:        delegates.Count > 0 ? delegates : null);
+            Delegates:        delegates.Count > 0 ? delegates : null,
+            FuncDecls:        fnDecls.Count > 0 ? fnDecls : null);
     }
 
     /// Build ancestor set for each class by walking the inheritance chain once per class.

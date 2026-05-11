@@ -38,6 +38,7 @@ public static partial class ImportedSymbolLoader
         var contributors = new Dictionary<(string Ns, string Name), List<string>>();
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
         var funcs      = new Dictionary<string, Z42FuncType>(StringComparer.Ordinal);
+        var funcDecls  = new Dictionary<string, FunctionDecl>(StringComparer.Ordinal);
         var interfaces = new Dictionary<string, Z42InterfaceType>(StringComparer.Ordinal);
         var enumConsts = new Dictionary<string, long>(StringComparer.Ordinal);
         var enumTypes  = new HashSet<string>(StringComparer.Ordinal);
@@ -204,6 +205,7 @@ public static partial class ImportedSymbolLoader
                     funcs[fn.Name] = RebuildFuncType(
                         fn.Params, fn.ReturnType, fn.MinArgCount, null,
                         classes, interfaces, delegates);
+                    funcDecls[fn.Name] = SynthesizeImportedDecl(fn.Name, fn.Params, fn.ReturnType);
                     if (fn.TypeParamConstraints is { Count: > 0 } fc)
                         funcConstraints[fn.Name] = fc;
                 }
@@ -230,7 +232,8 @@ public static partial class ImportedSymbolLoader
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
             classConstraints, funcConstraints, classInterfaces, classPkg, collisions,
             Delegates: delegates.Count > 0 ? delegates : null,
-            ResolvedNamespaces: resolvedNs.Count > 0 ? resolvedNs : null);
+            ResolvedNamespaces: resolvedNs.Count > 0 ? resolvedNs : null,
+            FuncDecls: funcDecls.Count > 0 ? funcDecls : null);
     }
 
 }

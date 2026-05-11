@@ -158,6 +158,14 @@ public sealed partial class SymbolCollector : ISymbolBinder
             if (_funcs.TryAdd(name, ft))
                 _importedFuncNames.Add(name);
         }
+        // spec extend-named-args-shim (2026-05-12): import synthesized decls
+        // so cross-CU named-arg call sites can read `Param.Name` (TSIG already
+        // carries them — see ExportedFunctionDef.Params). Locally collected
+        // decls override imported ones via the same TryAdd / Remove dance as
+        // _importedFuncNames above (CollectFunctions L284).
+        if (imported.FuncDecls is { } impDecls)
+            foreach (var (name, decl) in impDecls)
+                _funcDecls.TryAdd(name, decl);
         foreach (var (name, it) in imported.Interfaces)
         {
             if (_interfaces.TryAdd(name, it))
@@ -286,7 +294,10 @@ public sealed partial class SymbolCollector : ISymbolBinder
             // declaration shadows the import — drop the imported entry silently and
             // fall through to the normal registration.
             if (_funcs.ContainsKey(fn.Name) && _importedFuncNames.Remove(fn.Name))
+            {
                 _funcs.Remove(fn.Name);
+                _funcDecls.Remove(fn.Name);
+            }
 
             if (fn.TypeParams != null) _activeTypeParams = new HashSet<string>(fn.TypeParams);
             var sig = BuildFuncSignature(fn.Params, ResolveType(fn.ReturnType));
