@@ -16,6 +16,7 @@ fn module_with_single_instr(name: &str, instr: Instruction) -> Module {
     let func = Function {
         name: format!("{name}.Main"),
         param_count: 0,
+        param_types: vec![],
         ret_type: "void".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -61,7 +62,7 @@ fn assert_trap_with(err: anyhow::Error, fragment: &str) {
 }
 
 #[test]
-fn call_native_unknown_type_z0905() {
+fn call_native_unknown_type_traps() {
     // C2 (`impl-tier1-c-abi`) flipped CallNative from a blanket trap to
     // real registry+libffi dispatch; the failure mode now is "unknown
     // native type" because no library has registered numz42::Tensor.
@@ -76,7 +77,7 @@ fn call_native_unknown_type_z0905() {
         },
     );
     let err = run(&m).expect_err("CallNative must fail when type is unregistered");
-    assert_trap_with(err, "Z0905");
+    assert_trap_with(err, "unknown native type");
 }
 
 #[test]
@@ -95,10 +96,12 @@ fn call_native_vtable_traps_with_spec_pointer() {
 }
 
 #[test]
-fn pin_ptr_non_str_z0908() {
+fn pin_ptr_non_str_traps() {
     // C4 (`impl-pinned-block`) flipped PinPtr from a blanket trap to real
     // dispatch on `Value::Str` / `Value::Array`. Other source variants
-    // surface as Z0908 with the source variant in the message.
+    // throw Std.InvalidMarshalException; in a stdlib-less test module the
+    // runtime surfaces the marshal-failure path as "stdlib type
+    // `Std.InvalidMarshalException` not loaded; cannot construct exception".
     let m = module_with_single_instr(
         "pin_ptr_non_str",
         Instruction::PinPtr { dst: 0, src: 1 },
@@ -106,16 +109,16 @@ fn pin_ptr_non_str_z0908() {
     // r1 is uninitialised → defaults to Value::Null in Frame, which falls
     // into the catch-all bail.
     let err = run(&m).expect_err("PinPtr Null source must fail");
-    assert_trap_with(err, "Z0908");
+    assert_trap_with(err, "InvalidMarshalException");
 }
 
 #[test]
-fn unpin_ptr_non_view_z0908() {
+fn unpin_ptr_non_view_traps() {
     // C4: UnpinPtr is a hard error when its argument isn't a PinnedView.
     let m = module_with_single_instr(
         "unpin_ptr_non_view",
         Instruction::UnpinPtr { pinned: 1 },
     );
     let err = run(&m).expect_err("UnpinPtr non-view must fail");
-    assert_trap_with(err, "Z0908");
+    assert_trap_with(err, "UnpinPtr expects PinnedView");
 }

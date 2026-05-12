@@ -60,6 +60,7 @@ fn build_function(name: &str, instructions: Vec<Instruction>, terminator: Termin
     Function {
         name: name.to_string(),
         param_count: 0,
+        param_types: vec![],
         ret_type: "i64".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -374,6 +375,7 @@ fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminat
     let func = Function {
         name: format!("{name}.Main"),
         param_count: 0,
+        param_types: vec![],
         ret_type: "i64".into(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -450,6 +452,7 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
     let func = Function {
         name: "byte_pin_e2e.Main".into(),
         param_count: 0,
+        param_types: vec![],
         ret_type: "i64".into(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -505,7 +508,7 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
 }
 
 #[test]
-fn z42_str_with_interior_nul_traps_z0908() {
+fn z42_str_with_interior_nul_traps_marshal() {
     let ctx = VmContext::new();
     invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
 
@@ -514,6 +517,7 @@ fn z42_str_with_interior_nul_traps_z0908() {
     let func = Function {
         name: "interior_nul.Main".into(),
         param_count: 0,
+        param_types: vec![],
         ret_type: "i64".into(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -554,12 +558,11 @@ fn z42_str_with_interior_nul_traps_z0908() {
     let err = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect_err("interior NUL must fail at marshal");
     let msg = format!("{err:#}");
-    assert!(msg.contains("Z0908"), "msg = {msg}");
-    assert!(msg.contains("interior NUL"), "msg = {msg}");
+    assert!(msg.contains("InvalidMarshalException"), "msg = {msg}");
 }
 
 #[test]
-fn callnative_unknown_method_z0905() {
+fn callnative_unknown_method_traps() {
     let ctx = vm_with_counter_registered();
     let m = build_module(
         "unknown_method_e2e",
@@ -574,6 +577,7 @@ fn callnative_unknown_method_z0905() {
     );
     let func = &m.functions[0];
     let err = z42::interp::run(&ctx, &m, func, &[] as &[Value]).expect_err("must fail");
-    assert!(format!("{err:#}").contains("ghost_method"));
-    assert!(format!("{err:#}").contains("Z0905"));
+    let msg = format!("{err:#}");
+    assert!(msg.contains("unknown method"), "msg = {msg}");
+    assert!(msg.contains("ghost_method"), "msg = {msg}");
 }

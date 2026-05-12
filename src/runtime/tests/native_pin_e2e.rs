@@ -15,6 +15,7 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
     let func = Function {
         name: format!("{name}.Main"),
         param_count: 0,
+        param_types: vec![],
         ret_type: "i64".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -86,7 +87,7 @@ fn pin_str_then_field_ptr_returns_nonzero() {
 }
 
 #[test]
-fn pin_view_unknown_field_z0908() {
+fn pin_view_unknown_field_traps() {
     let m = build_module(
         "pin_unknown_field",
         vec![
@@ -98,7 +99,6 @@ fn pin_view_unknown_field_z0908() {
     );
     let err = run_returning(&m).expect_err("unknown PinnedView field must fail");
     let msg = format!("{err:#}");
-    assert!(msg.contains("Z0908"), "msg = {msg}");
     assert!(msg.contains("PinnedView"), "msg = {msg}");
     assert!(msg.contains("lulz"), "msg = {msg}");
 }
@@ -151,7 +151,10 @@ fn pin_array_u8_snapshots_bytes() {
 }
 
 #[test]
-fn pin_array_with_out_of_range_element_z0908() {
+fn pin_array_with_out_of_range_element_traps() {
+    // Out-of-range element should throw Std.InvalidMarshalException; in a
+    // stdlib-less test module the marshal-failure path surfaces as
+    // "stdlib type `Std.InvalidMarshalException` not loaded".
     let m = build_module(
         "pin_oor",
         vec![
@@ -163,12 +166,11 @@ fn pin_array_with_out_of_range_element_z0908() {
     );
     let err = run_returning(&m).expect_err("element 256 must fail");
     let msg = format!("{err:#}");
-    assert!(msg.contains("Z0908"), "msg = {msg}");
-    assert!(msg.contains("0..=255"), "msg = {msg}");
+    assert!(msg.contains("InvalidMarshalException"), "msg = {msg}");
 }
 
 #[test]
-fn pin_array_with_negative_element_z0908() {
+fn pin_array_with_negative_element_traps() {
     let m = build_module(
         "pin_neg",
         vec![
@@ -180,7 +182,7 @@ fn pin_array_with_negative_element_z0908() {
     );
     let err = run_returning(&m).expect_err("element -1 must fail");
     let msg = format!("{err:#}");
-    assert!(msg.contains("Z0908"), "msg = {msg}");
+    assert!(msg.contains("InvalidMarshalException"), "msg = {msg}");
 }
 
 #[test]
