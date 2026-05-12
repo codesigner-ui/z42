@@ -96,10 +96,6 @@ internal sealed partial class FunctionEmitter
         for (int i = 0; i < method.Params.Count; i++)
             _locals[method.Params[i].Name] = new TypedReg(i + paramOffset, ToIrType(method.Params[i].Type));
 
-        // 2026-05-05 ctor delegation `: this(...)`: when present, the chained
-        // ctor performs base-ctor + field-init for us. We emit ONLY the
-        // chained-ctor call here; skip both base and field-init.
-        //
         // 2026-05-07 add-class-arity-overloading: when the IR-side class name
         // is mangled (`Foo$N`), strip the suffix to recover the bare source
         // name used for ctor identity (`method.Name == sourceClassName`).
@@ -109,8 +105,28 @@ internal sealed partial class FunctionEmitter
             ? className[..className.IndexOf('$')]
             : className;
         bool isCtor = !isStatic && method.Name == sourceClassName;
+        EmitCtorChainAndFieldInits(className, method, isCtor, instanceFieldInits);
+
+        EmitBoundBlock(body);
+        if (!_blockEnded) EndBlock(new RetTerm(null));
+
+        return BuildEmittedMethodResult(
+            methodIrName, method, className, paramOffset, isCtor, isStatic);
+    }
+
+    /// Ctor entry: emit `: this(...)` chain when present, otherwise `: base(...)`
+    /// and instance-field initializers. Non-ctor methods skip this entirely.
+    ///   - `: this(...)`         → chained ctor handles base + field-init; emit only the call.
+    ///   - implicit / `: base()` → emit base ctor call + per-field init injection.
+    /// See fix-class-field-default-init Decision 2 + 2026-05-05 ctor delegation.
+    private void EmitCtorChainAndFieldInits(
+        string className, FunctionDecl method, bool isCtor,
+        IReadOnlyList<FieldDecl>? instanceFieldInits)
+    {
+        if (!isCtor) return;
+
         bool emittedThisChain = false;
-        if (isCtor && method.ThisCtorArgs is { }
+        if (method.ThisCtorArgs is { }
             && _ctx.SemanticModel.BoundThisCtorArgs.TryGetValue(method, out var boundThisArgs))
         {
             var classQual = _ctx.QualifyName(className);
@@ -127,7 +143,7 @@ internal sealed partial class FunctionEmitter
         // Emit base constructor call at the start of derived constructors
         // (skipped when delegating via `: this(...)` — the chained ctor handles it).
         if (!emittedThisChain
-            && isCtor && method.BaseCtorArgs is { }
+            && method.BaseCtorArgs is { }
             && _ctx.ClassRegistry.TryGetBaseClassName(_ctx.QualifyName(className), out var baseQual)
             && baseQual is not null
             && _ctx.SemanticModel.BoundBaseCtorArgs.TryGetValue(method, out var boundBaseArgs))
@@ -146,26 +162,34 @@ internal sealed partial class FunctionEmitter
             Emit(new CallInstr(dst, baseCtorIrName, argRegs));
         }
 
-        // 2026-05-02 fix-class-field-default-init: 在 ctor 入口（base ctor call 之后、
-        // 用户 body 之前）按字段声明顺序注入 `this.<field> = <init-expr>`，仅对
-        // 有显式 Initializer 的字段发射；无 init 的字段由 VM ObjNew 的 type defaults
-        // 兜底（参见 design.md Decision 1/2）。隐式合成 ctor 走相同路径，
-        // body 是空 BoundBlock。Skipped when `: this(...)` chains — chained
-        // ctor will run the field inits.
-        if (!emittedThisChain && isCtor && instanceFieldInits is { Count: > 0 })
+        if (!emittedThisChain && instanceFieldInits is { Count: > 0 })
+            EmitInstanceFieldInits(instanceFieldInits);
+    }
+
+    /// 2026-05-02 fix-class-field-default-init: 在 ctor 入口（base ctor call 之后、
+    /// 用户 body 之前）按字段声明顺序注入 `this.<field> = <init-expr>`，仅对
+    /// 有显式 Initializer 的字段发射；无 init 的字段由 VM ObjNew 的 type defaults
+    /// 兜底（参见 design.md Decision 1/2）。隐式合成 ctor 走相同路径，body 是空
+    /// BoundBlock。Caller skips this when `: this(...)` chains — chained ctor
+    /// will run the field inits.
+    private void EmitInstanceFieldInits(IReadOnlyList<FieldDecl> instanceFieldInits)
+    {
+        foreach (var field in instanceFieldInits)
         {
-            foreach (var field in instanceFieldInits)
-            {
-                if (!_ctx.SemanticModel.BoundInstanceInits.TryGetValue(field, out var initExpr))
-                    continue;
-                var valReg = EmitExpr(initExpr);
-                Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), field.Name, valReg));
-            }
+            if (!_ctx.SemanticModel.BoundInstanceInits.TryGetValue(field, out var initExpr))
+                continue;
+            var valReg = EmitExpr(initExpr);
+            Emit(new FieldSetInstr(new TypedReg(0, IrType.Ref), field.Name, valReg));
         }
+    }
 
-        EmitBoundBlock(body);
-        if (!_blockEnded) EndBlock(new RetTerm(null));
-
+    /// Assemble the `IrFunction` record from accumulated emitter state.
+    /// Bundles the boilerplate of pulling ParamTypes / ParamModifiers /
+    /// constraints / exception+line+local-var tables off the emitter.
+    private IrFunction BuildEmittedMethodResult(
+        string methodIrName, FunctionDecl method, string className,
+        int paramOffset, bool isCtor, bool isStatic)
+    {
         var retType = isCtor ? "void" : TypeName(method.ReturnType);
         var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         var lineTable = _lineTable.Count > 0 ? _lineTable : null;
