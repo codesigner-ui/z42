@@ -24,7 +24,9 @@
 | `Symbols/IMethodSymbol.cs` | 方法符号接口 + `MethodSymbol` sealed class；`Signature` / `Modifiers` / `Decl?: FunctionDecl` / `TestAttributes?` |
 | `Symbols/IFieldSymbol.cs` | 字段符号接口 + `FieldSymbol` sealed class；`Type` / `IsStatic` / `IsEvent` / `Decl?: FieldDecl` |
 | `Codegen/IrGen.cs` | 代码生成器：模块级状态、公开 API、函数分派 |
-| `Codegen/FunctionEmitter.cs` | 函数级 IR 生成器：块管理、入口点、辅助方法 |
+| `Codegen/FunctionEmitter.cs` | 函数级 IR 生成器：fields / ctor / 入口点 (`EmitMethod` / `EmitFunction`) / `ResolveBaseCtorKey` |
+| `Codegen/FunctionEmitter.StaticInit.cs` | 分部类：`EmitStaticInit` + `TopologicalSortStaticInits` + `CollectClassRefs` + nested `ClassRefScanner` |
+| `Codegen/FunctionEmitter.Helpers.cs` | 分部类：block 管理 / line 跟踪 / `TypeName` / `WriteBackName` / `SnapshotLocalVarTable` / `ToIrType` ×2 |
 | `Codegen/FunctionEmitterStmts.cs` | 语句 + 控制流 IR 生成（分部类，消费 BoundStmt）|
 | `Codegen/FunctionEmitterExprs.cs` | 表达式 IR 生成（分部类，消费 BoundExpr）|
 | `Codegen/FunctionEmitterCalls.cs` | 调用 + 字符串插值 + switch 表达式 IR 生成（分部类）|
