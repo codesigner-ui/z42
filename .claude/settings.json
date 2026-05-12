@@ -80,7 +80,13 @@
       "Read(//usr/local/bin/**)",
       "Read(//Users/d.s.qiu/.nvm/versions/**)",
       "Read(//opt/homebrew/bin/**)",
-      "Read(//opt/**)"
+      "Read(//opt/**)",
+      "Bash(export ANDROID_HOME=\"$PWD/artifacts/tools/android-sdk\")",
+      "Bash(export ANDROID_NDK_HOME=\"$PWD/artifacts/tools/android-ndk\")",
+      "Bash(export GRADLE_USER_HOME=\"$PWD/artifacts/tools/gradle-user-home\")",
+      "Bash(export JAVA_HOME=\"/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home\")",
+      "Bash(./build.sh)",
+      "Bash(./test.sh)"
     ],
     "additionalDirectories": [
       "/tmp",

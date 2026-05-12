@@ -76,10 +76,36 @@ fi
 # ── (3) cargo-ndk × 4 ABI. ──────────────────────────────────────────────
 
 echo "cargo ndk: building 4 ABI"
-cargo ndk \
-    -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 \
-    -o "$HERE/z42vm/src/main/jniLibs" \
-    build --release --manifest-path "$RUST_MANIFEST"
+# cargo-ndk auto-discovers Cargo.toml from cwd (it doesn't honor
+# --manifest-path the way `cargo build` does), so cd into the crate dir.
+(
+    cd "$HERE/rust"
+    cargo ndk \
+        -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 \
+        -o "$HERE/z42vm/src/main/jniLibs" \
+        build --release
+)
+
+# ── (3.5) Compile test fixtures (shared with add-ios-tests / add-wasm-tests). ─
+
+DRIVER_DLL="$ROOT/artifacts/build/compiler/z42.Driver/bin/z42c.dll"
+TEST_FIX="$HERE/z42vm/src/androidTest/assets/test-fixtures"
+if [[ -f "$DRIVER_DLL" ]]; then
+    mkdir -p "$TEST_FIX"
+    for src in hello multi_line; do
+        src_file="$ROOT/examples/embedding/${src}.z42"
+        out_file="$TEST_FIX/${src}.zbc"
+        if [[ ! -f "$src_file" ]]; then
+            echo "error: fixture source missing: $src_file" >&2
+            exit 1
+        fi
+        echo "z42c $src.z42 → $out_file"
+        dotnet "$DRIVER_DLL" "$src_file" --emit zbc -o "$out_file"
+    done
+else
+    echo "warning: z42c driver missing — skip test fixture compile" >&2
+    echo "         build the compiler first: dotnet build $ROOT/src/compiler/z42.slnx" >&2
+fi
 
 # ── (4) Gradle assemble. ────────────────────────────────────────────────
 
@@ -94,6 +120,7 @@ if [[ -f "$AAR" ]]; then
     echo "  $AAR"
     echo "  $HERE/z42vm/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64,x86}/libz42_platform_android.so"
     echo "  $STDLIB_DIR/"
+    echo "  $TEST_FIX/                  (test fixtures for ./test.sh)"
 else
     echo "error: expected AAR not found at $AAR" >&2; exit 1
 fi

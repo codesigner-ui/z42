@@ -33,10 +33,16 @@ set(Z42_RUST_LIB
 
 # Imported target — Gradle's `packagingOptions` ensures the .so ships
 # alongside libz42vm_jni.so in the final AAR.
+# IMPORTED_NO_SONAME=TRUE makes CMake record only the file basename
+# (libz42_platform_android.so) in libz42vm_jni.so's DT_NEEDED entry,
+# instead of the absolute build-time IMPORTED_LOCATION. Without this,
+# device-side dlopen looks for the macOS build path → UnsatisfiedLinkError.
+# With it, dlopen resolves via the apk's lib/<abi>/ at runtime.
 add_library(z42_platform_android SHARED IMPORTED)
 set_target_properties(
     z42_platform_android PROPERTIES
-    IMPORTED_LOCATION "${Z42_RUST_LIB}"
+    IMPORTED_LOCATION  "${Z42_RUST_LIB}"
+    IMPORTED_NO_SONAME TRUE
 )
 
 target_link_libraries(

@@ -17,6 +17,10 @@ android {
 
         consumerProguardFiles("consumer-rules.pro")
 
+        // Instrumented tests use AndroidJUnit4 + androidx.test.runner.
+        // See src/androidTest/java/io/z42/vm/Z42VMInstrumentedTest.kt.
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
         externalNativeBuild {
             cmake {
                 cppFlags("")
@@ -77,4 +81,11 @@ android {
 dependencies {
     // Pure Kotlin facade — no runtime AndroidX needed for v0.1.
     implementation("androidx.annotation:annotation:1.8.2")
+
+    // Instrumented test deps — drive Z42VMInstrumentedTest.kt against
+    // the Pixel 6 API 34 emulator (AVD z42_pixel6_api34). Spec:
+    //   docs/spec/archive/2026-05-12-add-android-tests/specs/android-tests/spec.md
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
 }
