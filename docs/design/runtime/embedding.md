@@ -537,3 +537,38 @@ Spec：[`docs/spec/archive/2026-05-12-fix-bundle-resolver-namespace-index/`](../
 设计：[`docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/`](../../spec/archive/2026-05-12-add-zpkg-resolver-hook/) — proposal + design + 8 个 Requirement scenario + tasks.
 
 实施：5 个 host:: 测试覆盖 trait / C hook / fallback / 自包含 / VmException 全部路径；22/22 host:: tests pass。
+
+### 11.9 分发 package 形态（per-arch flat，2026-05-13 define-package-layout）
+
+每个 z42 release 产 **13 个 per-arch SDK package** 到 `artifacts/packages/`，按 `z42-<version>-<rid>-<config>` 命名（不带 `<target>` 前缀，RID 完全标识平台 + 架构）：
+
+| 类别 | RID 枚举 | package 数 |
+|------|----------|----------|
+| Desktop SDK (host = C 嵌入同一份) | `macos-arm64` / `macos-x64` / `linux-arm64` / `linux-x64` / `windows-x64` | 5 |
+| iOS (per slice) | `ios-arm64` / `ios-arm64-sim` / `ios-x64-sim` | 3 |
+| Android (per ABI) | `android-arm64` / `android-armv7` / `android-x64` / `android-x86` | 4 |
+| wasm | `wasm32` | 1 |
+
+每个 package 统一目录：
+
+```
+z42-<v>-<rid>-<config>/
+├── bin/                   desktop: z42c+z42vm；mobile/wasm: README 占位
+├── libs/                  stdlib zpkg + zsym + index.json（跨 13 包 byte-identical）
+├── native/                平台静态/动态库 + 单 slice container（如 iOS xcframework）+ C ABI 头
+├── (root) <平台原生入口>  iOS: Sources/+Package.swift；Android: kotlin/+cpp/；wasm: pkg-*/+package.json
+├── examples/              hello_c/main.c byte-identical；README 平台特定
+└── manifest.toml          统一 schema（abi-version / rid / contents.platform / compat）
+```
+
+**核心 invariant**：`libs/` 与 `native/include/` 与 `examples/hello_c/main.c` 跨 13 包 byte-identical（C ABI 头 + zpkg 字节码 + C 嵌入示例都是平台无关）。
+
+**multi-arch 合并 container**（multi-slice xcframework / multi-ABI AAR）进 Deferred；Phase 2 用户呼声出来再加 `z42-<v>-ios-xcframework-<config>` / `z42-<v>-android-aar-<config>` 两个 convenience 包。
+
+Spec：[`docs/spec/archive/<date>-define-package-layout/`](../../spec/archive/) — 契约 + 9 个 decision + Phase 1 spec 簇说明。
+
+Phase 1 下游 spec：
+- 1.1 `add-host-package-conform` — 5 个 desktop RID 包
+- 1.2 `add-ios-package` — 3 个 iOS slice 包
+- 1.3 `add-android-package` — 4 个 Android ABI 包
+- 1.4 `add-wasm-package` — wasm32 包（含 staticlib）

@@ -165,6 +165,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 多平台 CI matrix | 0.2.5 | macOS / Linux / Windows × x86_64/arm64 全绿 |
 | 项目级 CI 模板 | 0.2.5 | `z42c new` 自带 GitHub Actions / GitLab CI 模板 |
 | Release 自动化 | 0.2.6 | git tag → 跨平台 binary + zpkg 自动产出 |
+| 跨平台 SDK package 分发 | 0.2.6 | 13 个 per-arch SDK 包（desktop × 5 / iOS × 3 / Android × 4 / wasm × 1）；统一 `bin/libs/native/examples/manifest.toml` 形态；详见 [embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | 跨 mode 一致性 CI | 0.3.0 | interp / JIT 同测试集结果一致 |
 | `z42c test` GREEN 门禁 | 0.4.6 | stdlib + 用户代码 z42 测试纳入 GREEN |
 | `z42c bench --diff` | 0.4.7 | z42 代码 bench 进 perf CI |
@@ -296,6 +297,9 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | sidecar 跨目录搜索 | debuginfod 风格 + 环境变量配置 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | `Std.Reflection.Symbolicate` 公开 API | 程序内触发符号化 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | Facade threading 测试（R8）| 等 runtime threading 模型落地后回到 platform-test-contract 补"后台 invoke + 主线程 sink"scenario | [runtime/embedding.md §12](design/runtime/embedding.md#§12-deferred明确不做的) |
+| multi-arch-container-packages | multi-slice xcframework / multi-ABI AAR 卷起来发；Phase 1 选 per-arch flat（13 包），用户呼声出来再加 `z42-<v>-ios-xcframework-<config>` / `z42-<v>-android-aar-<config>` 两个 convenience 包 | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
+| per-arch-abi-feature-matrix | abi-version 升 2 后"哪些 host config 字段哪个 ABI 起可用"细粒度矩阵 | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
+| binary-package-signing | iOS xcframework / Android AAR / wasm npm publish 时 notarization / GPG / npm 2FA；Phase 1 全 unsigned，留给 Phase 4 release CI | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 
 ### 实施期延后（D-* 系列）
 
