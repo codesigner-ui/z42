@@ -8,7 +8,7 @@
 - [ ] 阶段 2: examples/embedding/hello_c/README.md.wasm 模板（wasm-ld 命令示意）
 - [ ] 阶段 3: package_helpers.sh 扩展（pkg_emit_wasm_staticlib / pkg_emit_wasm_pkg_dirs / pkg_emit_npm_manifest）
 - [ ] 阶段 4: platforms/wasm/build.sh 加 staticlib emit + export package
-- [ ] 阶段 5: scripts/package.sh `--rid wasm32` dispatch
+- [ ] 阶段 5: scripts/package.sh `--rid browser-wasm` dispatch
 - [ ] 阶段 6: 验证产包；`file libz42.a` + `npm pack` smoke
 - [ ] 阶段 7: README + archive + commit
 

@@ -1,14 +1,14 @@
-# Proposal: wasm SDK package（wasm32，含 staticlib）
+# Proposal: browser-wasm SDK package（含 staticlib）
 
 ## Why
 
 `define-package-layout` (Phase 1.0) 契约 D6 要求 wasm 端**同时**产 staticlib（`libz42.a` wasm32 object archive）+ cdylib（`z42_wasm_bg.wasm` + wasm-bindgen JS glue）。
 
-当前 `platforms/wasm/build.sh` 只产 wasm-bindgen 路径的 `pkg-{web,nodejs}/`，未产 staticlib。本 spec 让 `scripts/package.sh --rid wasm32` 产 1 个完整 wasm SDK package。
+当前 `platforms/wasm/build.sh` 只产 wasm-bindgen 路径的 `pkg-{web,nodejs}/`，未产 staticlib。本 spec 让 `scripts/package.sh --rid browser-wasm` 产 1 个完整 wasm SDK package。
 
 ## What Changes
 
-1. `scripts/package.sh` 加 wasm32 handling
+1. `scripts/package.sh` 加 browser-wasm handling
 2. `scripts/_lib/package_helpers.sh` 扩展：`pkg_emit_wasm_staticlib` / `pkg_emit_wasm_pkg_dirs` / `pkg_emit_npm_manifest` / `pkg_emit_examples_hello_c_wasm`
 3. `platforms/wasm/build.sh` 重构：增加 `cargo rustc --target wasm32-unknown-unknown --crate-type=staticlib` 产 `libz42.a`；导出完整 package 到 `artifacts/packages/`
 4. `examples/embedding/hello_c/README.md.wasm` —— wasm-ld link 命令（链 libz42.a + hello.wasm.o）
@@ -18,7 +18,7 @@
 
 | 文件路径 | 变更类型 | 说明 |
 |---------|---------|------|
-| `scripts/package.sh`                                                          | MODIFY | `--rid wasm32` dispatch |
+| `scripts/package.sh`                                                          | MODIFY | `--rid browser-wasm` dispatch |
 | `scripts/_lib/package_helpers.sh`                                             | MODIFY | wasm-specific helpers |
 | `src/toolchain/host/platforms/wasm/build.sh`                                  | MODIFY | 加 staticlib emit + export package |
 | `examples/embedding/hello_c/README.md.wasm`                                   | NEW    | wasm link 指南 |

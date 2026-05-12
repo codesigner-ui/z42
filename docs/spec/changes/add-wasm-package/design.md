@@ -1,4 +1,4 @@
-# Design: wasm SDK package（staticlib + cdylib + wasm-bindgen）
+# Design: browser-wasm SDK package（staticlib + cdylib + wasm-bindgen）
 
 ## Architecture
 
@@ -10,7 +10,7 @@ platforms/wasm/build.sh
                                         → libz42.a (wasm32 object archive)
                           │
                           ▼
-scripts/package.sh --rid wasm32
+scripts/package.sh --rid browser-wasm
                           ▼ pkg_emit_wasm_staticlib
                           ▼ pkg_emit_wasm_pkg_dirs (cp pkg-web/ pkg-nodejs/)
                           ▼ pkg_emit_npm_manifest
@@ -19,7 +19,7 @@ scripts/package.sh --rid wasm32
                           ▼ pkg_sha256_check
                           │
                           ▼
-artifacts/packages/z42-<v>-wasm32-<config>/
+artifacts/packages/z42-<v>-browser-wasm-<config>/
 ```
 
 ## Decisions
@@ -52,7 +52,7 @@ wasm32-wasi 也是合法 target（wasmtime / wasmer 用），但当前用户场�
 
 ## Testing Strategy
 
-- `./scripts/package.sh release --rid wasm32` 产包；目录结构 + manifest + SHA invariant
+- `./scripts/package.sh release --rid browser-wasm` 产包；目录结构 + manifest + SHA invariant
 - `file native/libz42.a` 输出含 "current ar archive"；`ar t native/libz42.a` 列内部 .o 文件
 - `npm pack` + 其它项目 `npm install` 路径走通
 - add-wasm-tests playwright 不退步
