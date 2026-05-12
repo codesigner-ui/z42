@@ -95,7 +95,7 @@ for MODE in "${MODES[@]}"; do
         for d in $glob; do
             [ -d "$d" ] || continue
             case "$d" in
-                */src/tests/errors/*|*/src/tests/parse/*|*/src/tests/cross-zpkg/*) continue ;;
+                */src/tests/cross-zpkg/*) continue ;;
             esac
             [ -f "$d/source.z42" ] || continue
             name=$(basename "$d")

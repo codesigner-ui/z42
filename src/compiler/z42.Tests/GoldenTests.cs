@@ -24,7 +24,8 @@ namespace Z42.Tests;
 /// Two layouts coexist (dual-mode discovery, 2026-05-08 flatten-assert-only-tests):
 ///
 ///   Dir mode  — case dir holds source + sidecars:
-///     src/tests/&lt;category&gt;/&lt;name&gt;/
+///     src/tests/&lt;category&gt;/&lt;name&gt;/                  — VM-runnable cases (test-vm.sh)
+///     src/compiler/z42.Tests/Fixtures/{errors,parse}/&lt;name&gt;/ — compiler-only goldens (this runner)
 ///     src/libraries/&lt;lib&gt;/tests/&lt;name&gt;/
 ///       source.z42          — z42 source input
 ///       expected.zasm       — expected ZASM output (parse tests)
@@ -38,15 +39,20 @@ namespace Z42.Tests;
 ///     src/libraries/&lt;lib&gt;/tests/&lt;name&gt;.z42
 ///   Sidecars all default (LanguageFeatures.Phase1, emit zbc, expected stdout = "").
 ///
-/// Test discovery walks both layouts. Case kind by file presence:
-///   expected_error.txt → error case (under src/tests/errors/)
-///   expected.zasm      → parse case (typically under src/tests/parse/)
-///   anything else with source.z42 (or flat .z42) under non-error/parse/cross-zpkg → run case
+/// Test discovery walks all roots. Case kind by path + sidecar presence:
+///   under Fixtures/errors/   + expected_error.txt → error case
+///   under Fixtures/parse/                          → parse case (expected.zasm)
+///   anything else with source.z42 (or flat .z42) under non-cross-zpkg → run case
+///
+/// 2026-05-12: compiler-only goldens (errors + parse) live under
+/// `src/compiler/z42.Tests/Fixtures/` (owned by this runner). `src/tests/`
+/// is now reserved for VM-runnable e2e goldens consumed by test-vm.sh.
 /// </summary>
 public sealed class GoldenTests
 {
-    private static readonly string ProjectRoot = FindProjectRoot();
+    private static readonly string ProjectRoot   = FindProjectRoot();
     private static readonly string TestsRoot     = Path.Combine(ProjectRoot, "src", "tests");
+    private static readonly string FixturesRoot  = Path.Combine(ProjectRoot, "src", "compiler", "z42.Tests", "Fixtures");
     private static readonly string LibrariesRoot = Path.Combine(ProjectRoot, "src", "libraries");
 
     private static string FindProjectRoot()
@@ -137,14 +143,17 @@ public sealed class GoldenTests
     private static IEnumerable<object[]> DiscoverCases(
         bool hasExpectedZasm = false, bool errorCategory = false, bool runCategory = false)
     {
-        if (!Directory.Exists(TestsRoot)) yield break;
+        if (!Directory.Exists(TestsRoot) && !Directory.Exists(FixturesRoot)) yield break;
 
         // Walk roots:
-        //   src/tests/<cat>/<name>[/source.z42]      (dir mode)
-        //   src/tests/<cat>/<name>.z42               (flat mode)
-        //   src/libraries/<lib>/tests/<name>[/source.z42]  (dir mode)
-        //   src/libraries/<lib>/tests/<name>.z42     (flat mode)
-        var roots = new List<string> { TestsRoot };
+        //   src/tests/<cat>/<name>[/source.z42]                   (dir mode, run cases)
+        //   src/tests/<cat>/<name>.z42                            (flat mode)
+        //   src/compiler/z42.Tests/Fixtures/{errors,parse}/<name>/  (dir mode, compiler-only)
+        //   src/libraries/<lib>/tests/<name>[/source.z42]         (dir mode)
+        //   src/libraries/<lib>/tests/<name>.z42                  (flat mode)
+        var roots = new List<string>();
+        if (Directory.Exists(TestsRoot))    roots.Add(TestsRoot);
+        if (Directory.Exists(FixturesRoot)) roots.Add(FixturesRoot);
         if (Directory.Exists(LibrariesRoot))
         {
             foreach (var lib in Directory.EnumerateDirectories(LibrariesRoot))

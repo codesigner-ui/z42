@@ -86,7 +86,7 @@ for MODE in "${MODES[@]}"; do
         for d in $glob; do
             [ -d "$d" ] || continue
             case "$d" in
-                src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
+                src/tests/cross-zpkg/*) continue ;;
             esac
             [ -f "$d/source.zbc" ] || continue
             name=$(basename "$d")
@@ -98,7 +98,7 @@ for MODE in "${MODES[@]}"; do
     for f in "src/tests/"*"/"*".zbc"; do
         [ -f "$f" ] || continue
         case "$f" in
-            src/tests/errors/*|src/tests/parse/*|src/tests/cross-zpkg/*) continue ;;
+            src/tests/cross-zpkg/*) continue ;;
         esac
         name=$(basename "$f" .zbc)
         dir=$(dirname "$f")

@@ -2,17 +2,24 @@
 
 ## 职责
 
-按特性分类的 z42 VM 端到端测试集，对标 [dotnet/runtime/src/tests/](https://github.com/dotnet/runtime/tree/main/src/tests)。
+按特性分类的 z42 **VM 端到端**测试集（VM 真跑、interp + JIT 两轮），对标
+[dotnet/runtime/src/tests/](https://github.com/dotnet/runtime/tree/main/src/tests)。
 
 支持两种用例形态（dual-mode discovery，2026-05-08）：
-- **Dir 模式** — `<category>/<name>/` 目录含 `source.z42` + 可选 sidecar 文件（适合需要 `features.toml` / `expected_output.txt` / `expected_error.txt` / `expected.zasm` 等 sidecar 的用例）
+- **Dir 模式** — `<category>/<name>/` 目录含 `source.z42` + 可选 sidecar 文件（适合需要 `features.toml` / `expected_output.txt` 等 sidecar 的用例）
 - **Flat 模式** — `<category>/<name>.z42` 单文件（仅 assert-only run 用例：用 `Std.Assert` 抛异常表达失败，期望空 stdout，无任何 sidecar）
 
 不放在这里：
 - 编译器单元测试 → [src/compiler/z42.Tests/](../compiler/z42.Tests/)
+- 编译器 golden fixtures（errors / parse；不进 VM）→ [src/compiler/z42.Tests/Fixtures/](../compiler/z42.Tests/Fixtures/)
 - VM Rust 单元测试 → [src/runtime/src/](../runtime/src/) 同模块的 `*_tests.rs`
 - VM Rust 集成测试（zbc_compat / native interop / manifest schema）→ [src/runtime/tests/](../runtime/tests/)
 - stdlib 库本地测试 → [src/libraries/<lib>/tests/](../libraries/)
+
+> 2026-05-12 重构：以前 `errors/` + `parse/` 也在本目录，但它们只过编译器、
+> 不进 VM、由 `dotnet test` (GoldenTests.cs) 消费 —— 与 VM e2e 共用同根导致
+> test-vm.sh 要手动 exclude。已搬到 `src/compiler/z42.Tests/Fixtures/`，每个
+> runner 拥有自己的 fixture，黑名单也跟着删了。
 
 ## 类别
 
@@ -32,9 +39,9 @@
 | `refs/` | ref / out / in / nested ref |
 | `classes/` | class / namespace / access / static / auto-property / ctor / indexer |
 | `strings/` | string builtin / 方法 / 静态方法 / 边界 / script-mode |
-| `parse/` | 仅 ZASM-match 测试（无 .zbc / 无 stdout 比对，由 xUnit ParseTests 跑）|
-| `errors/` | 编译失败用例（`expected_error.txt` 期望诊断）|
 | `cross-zpkg/` | 多 zpkg 端到端（target / ext / main 三方协作；由 `test-cross-zpkg.sh` 跑） |
+
+> 编译器 golden（`errors/` + `parse/`）已搬到 [`src/compiler/z42.Tests/Fixtures/`](../compiler/z42.Tests/Fixtures/)。
 
 ## 用例文件约定
 
@@ -63,8 +70,8 @@
 按以下顺序判断归属（先到先得）：
 
 1. **库 API 行为** → `src/libraries/<lib>/tests/<name>[.z42]`
-2. **编译失败** → `src/tests/errors/<name>/`（必须 dir，含 `expected_error.txt`）
-3. **仅 ZASM 匹配** → `src/tests/parse/<name>/`（必须 dir，含 `expected.zasm`）
+2. **编译失败** → `src/compiler/z42.Tests/Fixtures/errors/<name>/`（必须 dir，含 `expected_error.txt`）
+3. **仅 ZASM 匹配** → `src/compiler/z42.Tests/Fixtures/parse/<name>/`（必须 dir，含 `expected.zasm`）
 4. **跨多 zpkg** → `src/tests/cross-zpkg/<name>/`
 5. **其他 VM/编译器特性**：
    - 用 `Console.WriteLine` 测打印行为 / 需要 sidecar → `src/tests/<category>/<name>/source.z42` + sidecars（dir 模式）
@@ -76,7 +83,9 @@
 ## 运行
 
 ```bash
-just test-vm                # 全部 run + parse 用例（interp + jit）
-just test-cross-zpkg        # 仅 cross-zpkg
-dotnet test src/compiler/z42.Tests/z42.Tests.csproj  # xUnit 跑全部三类
+./scripts/test-vm.sh        # 全部 run 用例（interp + jit；不含 cross-zpkg）
+./scripts/test-cross-zpkg.sh  # 仅 cross-zpkg
+dotnet test src/compiler/z42.Tests/z42.Tests.csproj  # xUnit 跑 run + error + parse 三类
 ```
+
+或一把跑全 GREEN：`./scripts/test-all.sh`。

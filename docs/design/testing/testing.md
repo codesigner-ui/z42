@@ -95,8 +95,8 @@ src/
 | `src/libraries/<lib>/tests/<name>/` | `.z42` source + expected_output.txt | `./scripts/test-vm.sh` + xUnit GoldenTests | 库 API 行为校验（与 [Test] 文件共居）|
 | `src/libraries/<lib>/tests/*.z42` | 单文件，含 `[Test]` 注解 | z42-test-runner | 库 [Test] 单元测试 |
 | `src/tests/<category>/<name>/` | `.z42` source + expected_output.txt | `./scripts/test-vm.sh` + xUnit GoldenTests | VM e2e 按特性分类 |
-| `src/tests/parse/<name>/` | `.z42` + expected.zasm | xUnit GoldenTests::ParseTests | IR/ZASM 匹配（无 VM 执行）|
-| `src/tests/errors/<name>/` | `.z42` + expected_error.txt | xUnit GoldenTests::ErrorTests | 编译失败诊断匹配 |
+| `src/compiler/z42.Tests/Fixtures/parse/<name>/` | `.z42` + expected.zasm | xUnit GoldenTests::ParseTests | IR/ZASM 匹配（无 VM 执行）|
+| `src/compiler/z42.Tests/Fixtures/errors/<name>/` | `.z42` + expected_error.txt | xUnit GoldenTests::ErrorTests | 编译失败诊断匹配 |
 | `src/tests/cross-zpkg/<name>/` | target/ext/main 三 toml 工程 | `./scripts/test-cross-zpkg.sh` | 多 zpkg 链接 + 跨包 IR/TSIG 解析 |
 
 ### 添加新测试时的归属规则
@@ -104,8 +104,8 @@ src/
 按以下顺序判断（先到先得）：
 
 1. **库 API 行为？** → `src/libraries/<lib>/tests/<name>/`（与库源码同居）
-2. **编译失败用例？** → `src/tests/errors/<name>/`（用 `expected_error.txt`）
-3. **仅 ZASM 匹配（不需要 VM 执行）？** → `src/tests/parse/<name>/`
+2. **编译失败用例？** → `src/compiler/z42.Tests/Fixtures/errors/<name>/`（用 `expected_error.txt`）
+3. **仅 ZASM 匹配（不需要 VM 执行）？** → `src/compiler/z42.Tests/Fixtures/parse/<name>/`
 4. **跨多个 zpkg？** → `src/tests/cross-zpkg/<name>/`
 5. **其他 VM/编译器特性？** → `src/tests/<category>/<name>/`
    - 不确定类别时归 `basic/`，后续可重新分类
