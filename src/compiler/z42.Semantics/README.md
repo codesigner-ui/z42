@@ -27,9 +27,14 @@
 | `Codegen/FunctionEmitter.cs` | 函数级 IR 生成器：fields / ctor / 入口点 (`EmitMethod` / `EmitFunction`) / `ResolveBaseCtorKey` |
 | `Codegen/FunctionEmitter.StaticInit.cs` | 分部类：`EmitStaticInit` + `TopologicalSortStaticInits` + `CollectClassRefs` + nested `ClassRefScanner` |
 | `Codegen/FunctionEmitter.Helpers.cs` | 分部类：block 管理 / line 跟踪 / `TypeName` / `WriteBackName` / `SnapshotLocalVarTable` / `ToIrType` ×2 |
-| `Codegen/FunctionEmitterStmts.cs` | 语句 + 控制流 IR 生成（分部类，消费 BoundStmt）|
+| `Codegen/FunctionEmitterStmts.cs` | 语句 dispatcher + Block / LocalFunction / Pinned / If（分部类，消费 BoundStmt）|
+| `Codegen/FunctionEmitterStmts.Loops.cs` | 分部类：`EmitBoundWhile` / `DoWhile` / `For` / `Foreach` + `EmitForeachLength` + `ClassIterTarget` |
+| `Codegen/FunctionEmitterStmts.Branches.cs` | 分部类：`EmitBoundSwitchStmt` + `EmitBoundTryCatch` + `EmitTryCatchClauses` |
 | `Codegen/FunctionEmitterExprs.cs` | 表达式 IR 生成（分部类，消费 BoundExpr）|
-| `Codegen/FunctionEmitterCalls.cs` | 调用 + 字符串插值 + switch 表达式 IR 生成（分部类）|
+| `Codegen/FunctionEmitterCalls.cs` | 调用 dispatcher + `EmitBoundCall` 4 个 kind helper（Static / Instance / Virtual / Free）|
+| `Codegen/FunctionEmitterCalls.Defaults.cs` | 分部类：`FillDefaults` + `EmitTypeDefault`（D-9 跨 CU 默认参数 type-default fallback）|
+| `Codegen/FunctionEmitterCalls.Interpolation.cs` | 分部类：字符串插值 5 个 helper + `EmitBoundSwitchExpr` |
+| `Codegen/FunctionEmitterCalls.AddressOf.cs` | 分部类：`EmitCallArg` + `EmitLoad{Local,Elem,Field}AddrFor` + `LookupLocalRegOrNull`（ref/out/in 实参地址提取）|
 
 ## 入口点
 - `Z42.Semantics.TypeCheck.TypeChecker` — `new TypeChecker(diags, features).Check(cu)` → `SemanticModel`
