@@ -1,0 +1,11 @@
+// multi_line.z42 — fixture for platform facade R7 (stdout multi-line order).
+// Emits three lines in order; consumed by add-ios-tests / add-android-tests / add-wasm-tests.
+namespace MultiLine;
+
+using Std.IO;
+
+void Main() {
+    Console.WriteLine("a");
+    Console.WriteLine("b");
+    Console.WriteLine("c");
+}

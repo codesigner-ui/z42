@@ -1,0 +1,26 @@
+# examples/embedding/multi_line.z42.toml — embedding fixture
+# 平台 facade R7 multi-line stdout 测试用；产物 multi_line.zbc 拷进各平台 test bundle。
+
+[project]
+version     = "0.1.0"
+description = "Embedding facade multi-line stdout fixture"
+
+[sources]
+include = ["multi_line.z42"]
+
+[[exe]]
+name  = "multi_line"
+entry = "MultiLine.Main"
+
+[build]
+out_dir = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "interp"
+optimize = 3
+strip    = true

@@ -1,0 +1,26 @@
+# examples/embedding/hello.z42.toml — embedding fixture
+# 平台 facade R1 smoke test 用；产物 hello.zbc 被 host build.sh 拷进各平台 test bundle。
+
+[project]
+version     = "0.1.0"
+description = "Embedding facade smoke fixture (single-line stdout)"
+
+[sources]
+include = ["hello.z42"]
+
+[[exe]]
+name  = "hello"
+entry = "Hello.Main"
+
+[build]
+out_dir = "dist"
+
+[profile.debug]
+mode     = "interp"
+optimize = 0
+debug    = true
+
+[profile.release]
+mode     = "interp"
+optimize = 3
+strip    = true

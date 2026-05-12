@@ -94,4 +94,24 @@ for lib in "${LIBS[@]}"; do
     done
 done
 echo "  flat view: $FLAT_DIR/   (VM single-dir lookup target)"
+
+# Namespace index — mobile / wasm 默认 resolver 用，map namespace → zpkg file.
+# v1 hardcode；docs/spec/archive/2026-05-12-fix-bundle-resolver-namespace-index/
+# 的 design.md Deferred 段记录"auto-derive from zpkg metadata"作为下一步候选。
+# 加新 stdlib lib 时同步更新本 heredoc。
+INDEX="$FLAT_DIR/index.json"
+cat > "$INDEX" <<'EOF'
+{
+  "z42.core":        "z42.core.zpkg",
+  "Std":             "z42.core.zpkg",
+  "Std.Exceptions":  "z42.core.zpkg",
+  "Std.IO":          "z42.io.zpkg",
+  "Std.Math":        "z42.math.zpkg",
+  "Std.Text":        "z42.text.zpkg",
+  "Std.Collections": "z42.collections.zpkg",
+  "Std.Test":        "z42.test.zpkg"
+}
+EOF
+echo "  index:     $INDEX"
+
 echo "  分发版打包用 ./scripts/package.sh."

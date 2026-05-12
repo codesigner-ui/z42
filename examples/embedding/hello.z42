@@ -1,0 +1,9 @@
+// hello.z42 — minimal fixture for platform facade R1 smoke test.
+// Single line of output; consumed by add-ios-tests / add-android-tests / add-wasm-tests.
+namespace Hello;
+
+using Std.IO;
+
+void Main() {
+    Console.WriteLine("hello, world");
+}

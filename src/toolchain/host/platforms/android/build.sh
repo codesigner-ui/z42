@@ -61,9 +61,16 @@ if [[ -d "$LIBS_DIR" ]]; then
     mkdir -p "$STDLIB_DIR"
     cp "$LIBS_DIR"/*.zpkg "$STDLIB_DIR/" 2>/dev/null || true
     ls "$STDLIB_DIR"/*.zpkg 2>/dev/null | xargs -n1 basename | sed 's/^/  - /' || true
+    # Namespace index — AssetZpkgResolver maps "Std.IO" → "z42.io.zpkg".
+    if [[ -f "$LIBS_DIR/index.json" ]]; then
+        cp "$LIBS_DIR/index.json" "$STDLIB_DIR/index.json"
+        echo "  - index.json"
+    else
+        echo "warning: $LIBS_DIR/index.json missing — AssetZpkgResolver will fall back to namespace-as-filename" >&2
+    fi
 else
     echo "warning: stdlib libs dir not found at $LIBS_DIR" >&2
-    echo "         build the standard library first: dotnet build src/compiler/z42.slnx" >&2
+    echo "         build the standard library first: ./scripts/build-stdlib.sh" >&2
 fi
 
 # ── (3) cargo-ndk × 4 ABI. ──────────────────────────────────────────────

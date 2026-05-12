@@ -16,20 +16,58 @@ interface ZpkgResolver {
 }
 
 /**
- * Default Android resolver — reads `<subdir>/<namespace>.zpkg` from
- * the app's `AssetManager`. Stdlib zpkgs are bundled into the AAR's
- * `assets/stdlib/` directory by `build.sh`.
+ * Default Android resolver. Resolution order:
+ *   1. **Namespace index** (`<subdir>/index.json`) — map
+ *      `"Std.IO" → "z42.io.zpkg"` etc. Index is produced by host
+ *      `scripts/build-stdlib.sh` and shipped via `build.sh`.
+ *   2. **Filename fallback** — namespace-as-filename
+ *      (`<subdir>/<namespace>.zpkg`); preserves the simple
+ *      "one namespace per file" convention for hosts that don't ship
+ *      an index.
+ *
+ * Index makes the resolver correct for stdlib where one zpkg provides
+ * multiple namespaces (e.g. `z42.core.zpkg` ships `Std` + `Std.Exceptions`).
+ *
+ * Spec: docs/spec/archive/2026-05-12-fix-bundle-resolver-namespace-index/
  */
 class AssetZpkgResolver(
     private val assets: AssetManager,
     private val subdir: String = "stdlib",
 ) : ZpkgResolver {
-    override fun resolve(namespace: String): ByteArray? =
-        try {
+    private val index: Map<String, String> = loadIndex()
+
+    override fun resolve(namespace: String): ByteArray? {
+        // 1. Index-driven lookup.
+        index[namespace]?.let { filename ->
+            try {
+                return assets.open("$subdir/$filename").use { it.readBytes() }
+            } catch (_: IOException) {
+                /* fall through to filename fallback */
+            }
+        }
+        // 2. Filename fallback (namespace-as-basename).
+        return try {
             assets.open("$subdir/$namespace.zpkg").use { it.readBytes() }
         } catch (_: IOException) {
             null
         }
+    }
+
+    private fun loadIndex(): Map<String, String> = try {
+        val text = assets.open("$subdir/index.json").use {
+            it.readBytes().toString(Charsets.UTF_8)
+        }
+        val obj = org.json.JSONObject(text)
+        val result = HashMap<String, String>(obj.length())
+        val keys = obj.keys()
+        while (keys.hasNext()) {
+            val k = keys.next()
+            result[k] = obj.getString(k)
+        }
+        result
+    } catch (_: Exception) {
+        emptyMap()
+    }
 }
 
 /**
