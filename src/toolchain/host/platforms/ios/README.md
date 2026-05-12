@@ -13,16 +13,27 @@
 
 ```bash
 # 1. 一次性 toolchain
-rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin
 
 # 2. 编 compiler + stdlib
 dotnet build src/compiler/z42.slnx
+./scripts/build-stdlib.sh
 
-# 3. 编 iOS facade
+# 3. 编 iOS facade（含 macOS arm64 slice 给 swift test 用）
 ./build.sh
 ```
 
-产物：`Z42VM.xcframework/` + `Resources/stdlib/*.zpkg`。详见 [`docs/workflow/building/ios.md`](../../../../docs/workflow/building/ios.md)。
+产物：`Z42VM.xcframework/` (ios-arm64 + ios-arm64_x86_64-simulator + macos-arm64) + `Resources/stdlib/*.zpkg,index.json`。详见 [`docs/workflow/building/ios.md`](../../../../docs/workflow/building/ios.md)。
+
+## Run tests
+
+`./build.sh` 顺手把 fixture 编进 `Tests/Z42VMTests/Resources/`，跑 `swift test` 即触发 7 个 XCTest：
+
+```bash
+./build.sh && swift test
+```
+
+测试覆盖 `add-ios-tests` spec 落地的 R1–R7 facade 契约（smoke / 错误码映射 / resolver / lifecycle / 多行 stdout），见 [`docs/spec/archive/2026-05-12-add-ios-tests/`](../../../../docs/spec/archive/2026-05-12-add-ios-tests/)。
 
 ## API 速记
 
@@ -82,7 +93,7 @@ public protocol ZpkgResolver {
 - ~~**无 native interop**~~ → **已启用**：libffi 5.1 / libffi-sys 4.1 的 bundled 汇编（libffi 3.4.7）修复了旧 2.3 在 iOS arm64 上的 CFI advance_loc 不兼容；`ios` feature preset 现含 `native-interop`
 - **单实例**：与其他平台一致；一个进程一个 `Z42VM`
 - **同步 invoke**：长任务阻塞调用线程；UI 上请用 `DispatchQueue.global().async`
-- **Demo / XCTest / CI**：推迟到独立 spec（`add-platform-ios-demo` / `-tests` / `-ci`）
+- **Demo / CI**：推迟到独立 spec（`add-platform-ios-demo` / `-ci`）；XCTest 已在 `add-ios-tests` (2026-05-12) 落地，跑 `swift test` 即可
 
 ## 错误码映射
 
