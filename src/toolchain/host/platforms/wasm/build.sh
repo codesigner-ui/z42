@@ -14,24 +14,34 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../../.." && pwd)"
 
+# 单一真相源：repo 根 versions.toml；helper 在 scripts/_lib/versions.sh.
+source "$ROOT/scripts/_lib/versions.sh"
+versions_require_python3
+versions_check_rust          # 校 rustc 版本 vs [toolchain.rust]
+versions_check_dotnet        # 校 dotnet SDK vs [toolchain.dotnet]
+versions_check_node          # 校 node ≥ [toolchain.node].min_version
+
+WASM_RUST_TARGETS=$(versions_get_list platform.wasm.rust_targets)
+WASM_PACK_MIN=$(versions_get build.wasm.wasm_pack_min)
+NODE_MIN=$(versions_get toolchain.node.min_version)
+
 # ── (1) Tooling check (fail-fast — we do not auto-install). ──────────────
 
 if ! command -v wasm-pack >/dev/null 2>&1; then
-    echo "error: wasm-pack not found on PATH." >&2
+    echo "error: wasm-pack not found on PATH (z42 requires $WASM_PACK_MIN+; versions.toml [build.wasm])." >&2
     echo "       install via: cargo install wasm-pack --locked" >&2
     exit 1
 fi
 
-if ! rustup target list --installed | grep -q '^wasm32-unknown-unknown$'; then
-    echo "error: rustc target wasm32-unknown-unknown not installed." >&2
-    echo "       install via: rustup target add wasm32-unknown-unknown" >&2
-    exit 1
-fi
+for t in $WASM_RUST_TARGETS; do
+    if ! rustup target list --installed | grep -q "^$t$"; then
+        echo "error: rustc target $t not installed (declared in versions.toml [platform.wasm].rust_targets)." >&2
+        echo "       install via: rustup target add $t" >&2
+        exit 1
+    fi
+done
 
-if ! command -v dotnet >/dev/null 2>&1; then
-    echo "error: dotnet not found. Install .NET 8+ (https://dotnet.microsoft.com)." >&2
-    exit 1
-fi
+# dotnet/node 已在头部 versions_check_dotnet / versions_check_node 校过
 
 DRIVER_DLL="$ROOT/artifacts/build/compiler/z42.Driver/bin/z42c.dll"
 if [[ ! -f "$DRIVER_DLL" ]]; then

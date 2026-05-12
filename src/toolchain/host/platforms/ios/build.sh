@@ -19,10 +19,22 @@ RUST_MANIFEST="$HERE/rust/Cargo.toml"
 RUST_TARGET="$ROOT/artifacts/build/runtime"   # cargo target-dir override
 LIB_NAME="libz42_platform_ios.a"
 
+# 单一真相源：repo 根 versions.toml；helper 在 scripts/_lib/versions.sh.
+source "$ROOT/scripts/_lib/versions.sh"
+versions_require_python3
+versions_check_rust          # 校 rustc 版本 vs [toolchain.rust]
+versions_check_dotnet        # 校 dotnet SDK vs [toolchain.dotnet]
+
+IOS_RUST_TARGETS=$(versions_get_list platform.ios.rust_targets)
+HOST_EXTRA=$(versions_get_list build.ios.extra_rust_targets)
+XCODE_MIN=$(versions_get build.ios.xcode_min)
+ALL_TARGETS="$IOS_RUST_TARGETS $HOST_EXTRA"
+
 # ── (1) Tooling check (fail-fast). ───────────────────────────────────────
 
 command -v xcodebuild >/dev/null 2>&1 || {
-    echo "error: xcodebuild not found. Install Xcode + 'xcode-select --install'." >&2
+    echo "error: xcodebuild not found (z42 requires Xcode $XCODE_MIN+; versions.toml [build.ios])." >&2
+    echo "       install Xcode + 'xcode-select --install'." >&2
     exit 1
 }
 command -v cargo >/dev/null 2>&1 || {
@@ -33,9 +45,9 @@ command -v dotnet >/dev/null 2>&1 || {
     echo "error: dotnet not found. Install .NET 8+ (https://dotnet.microsoft.com)." >&2
     exit 1
 }
-for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin; do
+for t in $ALL_TARGETS; do
     if ! rustup target list --installed | grep -q "^$t$"; then
-        echo "error: rustc target $t not installed." >&2
+        echo "error: rustc target $t not installed (declared in versions.toml [platform.ios]/[build.ios])." >&2
         echo "       install via: rustup target add $t" >&2
         exit 1
     fi
@@ -70,9 +82,9 @@ else
     echo "         build the standard library first: ./scripts/build-stdlib.sh" >&2
 fi
 
-# ── (3) Cargo build × 4 targets (3 iOS + macOS arm64 for swift test). ────
+# ── (3) Cargo build × N targets (iOS slice(s) + host extras for swift test). ────
 
-for t in aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios aarch64-apple-darwin; do
+for t in $ALL_TARGETS; do
     echo "cargo build --release --target $t"
     cargo build --release --manifest-path "$RUST_MANIFEST" --target "$t"
 done

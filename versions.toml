@@ -1,0 +1,113 @@
+# versions.toml — z42 build env 要求 + 运行时平台承诺 单一真相源
+#
+# 唯一 SoT。**不**生成 rust-toolchain.toml / global.json 之类的"投影"文件
+# （那只是把版本号写两遍），改由 scripts/_lib/versions.sh 提供 verify 函数，
+# build/test 脚本在入口处显式校验（versions_check_rust / _check_dotnet /
+# _check_node）。代价：rustup / dotnet 不再 cd-into auto-install 该 channel；
+# 收益：单一文件就是答案。
+#
+# 三类块：
+#   [toolchain.*] — 跨平台 build 工具版本（rust / dotnet / node）
+#   [build.*]     — 每平台 native SDK（NDK / Xcode / ...）
+#   [platform.*]  — z42 产物运行时支持承诺（min OS / arch / tier）
+#
+# 其他原生 pin 文件（gradle 是个例外，因为 gradle wrapper 是 gradle 项目
+# 标准做法、不算重复声明）：
+#   gradle/wrapper/gradle-wrapper.properties  ← gradle pin 由 wrapper 自管
+#
+# scripts/_lib/versions.sh 是 bash 端读取入口；setup-tools.sh（待写）用它
+# 下载 NDK / 拿 [platform.*] 对账 Package.swift / build.gradle.kts（drift
+# detection）。
+#
+# 字段约定：
+#   version 用字符串（"26.3.11579264" / "20"）；
+#   tier 用字符串 "tier1" / "tier2" / "tier3"（rust platform-support 约定）；
+#   url 模板里的 {os} = darwin / linux / windows（setup-tools.sh 替换）。
+
+schema_version = 1
+
+# ══════════════════════════════════════════════════════════════════════════
+# TOOLCHAIN: 跨平台 build 工具（每台 dev/CI 机都要装）
+# ══════════════════════════════════════════════════════════════════════════
+
+[toolchain.rust]
+channel     = "stable"
+min_version = "1.78"                    # MSRV；scripts/_lib/versions.sh::versions_check_rust 校它
+components  = ["rustfmt", "clippy"]
+# rust_targets 由各 [platform.*] 汇总（cross-compile 时各 build.sh 单装单平台）
+
+[toolchain.dotnet]
+sdk          = "10.0.102"
+roll_forward = "latestFeature"          # 同 major.minor 任何 SDK 都通过
+# versions_check_dotnet 校 major.minor 一致
+
+[toolchain.node]
+min_version = "20"
+# wasm tests / playwright 需要；versions_check_node verify-only
+
+# ══════════════════════════════════════════════════════════════════════════
+# BUILD: 每平台 native SDK / 工具
+# ══════════════════════════════════════════════════════════════════════════
+
+[build.android]
+jdk_min      = "17"
+install_root = "artifacts/tools/android-sdk"
+
+[build.android.ndk]
+version = "26.3.11579264"
+release = "r26d"                        # Google release 别名（URL 用它）
+url     = "https://dl.google.com/android/repository/android-ndk-r26d-{os}.zip"
+sha256  = ""                            # TODO: setup-tools.sh 首次下载后回填
+
+[build.android.sdk]
+platform           = "android-34"       # compileSdk
+build_tools        = "34.0.0"
+cmdline_tools_url  = "https://dl.google.com/android/repository/commandlinetools-{os}-11076708_latest.zip"
+cmdline_tools_sha256 = ""               # TODO
+
+[build.ios]
+xcode_min          = "15.0"             # verify-only（macOS dev 必备）
+extra_rust_targets = ["aarch64-apple-darwin"]   # `swift test` host slice (跑 unit tests，不是部署 target)
+
+[build.wasm]
+wasm_pack_min = "0.12"
+# rust target wasm32-unknown-unknown 在 [platform.wasm].rust_targets；node 在 [toolchain.node]
+
+# ══════════════════════════════════════════════════════════════════════════
+# PLATFORM: z42 产物的运行时支持承诺
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Tier 约定（rust platform-support 风格）：
+#   tier1 — CI 全 stage 跑（build + test）；release 阻塞项
+#   tier2 — CI 编译过；release "supported"，不一定全测
+#   tier3 — best-effort；社区维护
+#
+# 每块带 `→ <文件>` 注释 = drift-check 对账目标。
+
+[platform.android]
+min_api      = 23                       # → build.gradle.kts minSdk
+target_api   = 34                       # → build.gradle.kts compileSdk
+rust_targets = ["aarch64-linux-android", "armv7-linux-androideabi", "i686-linux-android", "x86_64-linux-android"]
+abis         = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]   # gradle 命名（cargo ndk -t 用这套）
+tier         = "tier2"
+
+[platform.ios]
+min_ios      = "14.0"                   # → Package.swift .iOS(.v14)
+min_macos    = "13.0"                   # → Package.swift .macOS(.v13)
+rust_targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim", "x86_64-apple-ios"]
+tier         = "tier2"
+
+[platform.wasm]
+rust_targets     = ["wasm32-unknown-unknown"]
+browser_baseline = "chromium-stable, firefox-stable, safari>=15"
+tier             = "tier2"
+
+[platform.linux]
+min_glibc    = "2.31"
+rust_targets = ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu"]
+tier         = "tier1"
+
+[platform.macos]
+min_version  = "13.0"
+rust_targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+tier         = "tier1"

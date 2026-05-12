@@ -13,6 +13,16 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../../../../.." && pwd)"
 RUST_MANIFEST="$HERE/rust/Cargo.toml"
 
+# 单一真相源：repo 根 versions.toml；helper 在 scripts/_lib/versions.sh.
+source "$ROOT/scripts/_lib/versions.sh"
+versions_require_python3
+versions_check_rust          # 校 rustc 版本 vs [toolchain.rust]
+
+NDK_VERSION=$(versions_get build.android.ndk.version)
+RUST_TARGETS=$(versions_get_list platform.android.rust_targets)
+ABIS=$(versions_get_list platform.android.abis)
+JDK_MIN=$(versions_get build.android.jdk_min)
+
 # ── (1) Tooling check (fail-fast). ───────────────────────────────────────
 
 command -v cargo >/dev/null 2>&1 || {
@@ -23,16 +33,17 @@ command -v cargo-ndk >/dev/null 2>&1 || {
 
 if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
     echo "error: \$ANDROID_NDK_HOME is unset." >&2
-    echo "       install Android NDK (Side by side) 26+ via Android Studio SDK Manager," >&2
-    echo "       then export ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/<version>" >&2
+    echo "       z42 pins NDK $NDK_VERSION (versions.toml [build.android.ndk]);" >&2
+    echo "       install via Android Studio SDK Manager → 'Side by side NDK'," >&2
+    echo "       then: export ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/$NDK_VERSION" >&2
     exit 1
 fi
 if [[ ! -d "$ANDROID_NDK_HOME" ]]; then
     echo "error: \$ANDROID_NDK_HOME=$ANDROID_NDK_HOME does not exist." >&2; exit 1
 fi
-for t in aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android; do
+for t in $RUST_TARGETS; do
     if ! rustup target list --installed | grep -q "^$t$"; then
-        echo "error: rustc target $t not installed." >&2
+        echo "error: rustc target $t not installed (declared in versions.toml [platform.android].rust_targets)." >&2
         echo "       install via: rustup target add $t" >&2; exit 1
     fi
 done
@@ -75,13 +86,16 @@ fi
 
 # ── (3) cargo-ndk × 4 ABI. ──────────────────────────────────────────────
 
-echo "cargo ndk: building 4 ABI"
+echo "cargo ndk: building $(echo $ABIS | wc -w | tr -d ' ') ABI ($ABIS)"
 # cargo-ndk auto-discovers Cargo.toml from cwd (it doesn't honor
 # --manifest-path the way `cargo build` does), so cd into the crate dir.
+# ABIs come from versions.toml [platform.android].abis — gradle naming
+# (cargo-ndk's `-t` flag accepts the same set).
+abi_args=()
+for abi in $ABIS; do abi_args+=(-t "$abi"); done
 (
     cd "$HERE/rust"
-    cargo ndk \
-        -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 \
+    cargo ndk "${abi_args[@]}" \
         -o "$HERE/z42vm/src/main/jniLibs" \
         build --release
 )
