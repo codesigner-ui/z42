@@ -1,31 +1,24 @@
-/* hello_c — embedding API reference example (C).
+/* hello_c — embedding API end-to-end example (C).
  *
- * Spec: docs/design/embedding.md §9.2.
+ * Spec:
+ *   docs/design/runtime/embedding.md §9.2
+ *   docs/spec/archive/2026-05-12-enable-hello-c-desktop/
  *
- * This file is a *reference implementation* of the same flow as
- * `examples/hello_rust`, written against the Tier 1 C ABI in
- * `src/runtime/include/z42_host.h`. It compiles standalone against
- * the public headers but linking it against the runtime requires a
- * `staticlib` / `cdylib` crate-type for `z42_vm`, which is not enabled
- * by default in v0.1 (the desktop build path is rlib-only).
+ * Companion to `examples/hello_rust` — same hello-world flow, but
+ * against the raw Tier 1 C ABI in `src/runtime/include/z42_host.h`.
  *
- * See README.md in this directory for build status and the H4 mobile
- * platform plans that ship the staticlib configuration end-to-end.
+ * Build + run end-to-end via the sibling `build.sh`. The script:
+ *   - ensures runtime `libz42.a` exists (cargo build --release)
+ *   - ensures z42c + stdlib zpkgs exist (./scripts/build-stdlib.sh)
+ *   - compiles `examples/embedding/hello.z42` → out/hello.zbc
+ *   - cc main.c + links libz42.a + platform native libs
+ *   - runs the binary and asserts stdout == "[host] hello, world\n"
  *
- * Once the staticlib is available, the build is roughly:
- *
- *   cargo build --manifest-path src/runtime/Cargo.toml --release \
- *       --features staticlib    # not yet wired
- *   gcc -I src/runtime/include \
- *       -o hello_c main.c \
- *       -L artifacts/rust/release -lz42_vm \
- *       $(cargo rustc -- --print=native-static-libs 2>&1 | grep "native-static-libs:" | sed "s/.*native-static-libs: //")
- *
- * Run:
- *   ./hello_c <hello.zbc> <libs_dir>
+ * Manual run:
+ *   ./out/hello_c ./out/hello.zbc <libs_dir>
  *
  * Expected stdout:
- *   [host] Hello, World!
+ *   [host] hello, world
  */
 
 #include <stdio.h>
@@ -86,7 +79,7 @@ int main(int argc, char** argv) {
     free(buf);
 
     Z42EntryRef entry = NULL;
-    if (z42_host_resolve_entry(host, module, "Embedding.Hello.Main", &entry) != Z42_HOST_OK) {
+    if (z42_host_resolve_entry(host, module, "Hello.Main", &entry) != Z42_HOST_OK) {
         Z42Error e = z42_host_last_error(NULL);
         fprintf(stderr, "z42_host_resolve_entry: %s\n", e.message);
         z42_host_shutdown(host); return 1;
