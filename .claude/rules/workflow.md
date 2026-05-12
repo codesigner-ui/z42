@@ -442,19 +442,40 @@ docs/spec/changes/<change-name>/
 
 **全绿（GREEN）标准：**
 
-任何迭代进阶段 9 前，必须通过以下全部验证步骤，且 **所有测试全部通过**：
+任何迭代进阶段 9 前，必须通过以下全部验证步骤，且 **所有测试全部通过**。
+统一入口：
+
+```bash
+./scripts/test-all.sh        # 默认串联所有必跑 stage
+```
+
+`test-all.sh` 等价于按顺序跑（任一 stage 失败立刻停）：
 
 ```bash
 # 1. 编译验证（无编译错误）
 dotnet build src/compiler/z42.slnx
-cargo build --manifest-path src/runtime/Cargo.toml
+cargo build --manifest-path src/runtime/Cargo.toml --release
 
 # 2. 编译器测试（必须 100% 通过）
 dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 
 # 3. VM 测试（必须 100% 通过）
 ./scripts/test-vm.sh
+
+# 4. 跨 zpkg 端到端（catch / vcall / 元数据跨包行为）
+./scripts/test-cross-zpkg.sh
+
+# 5. stdlib [Test] dogfood（z42.test 26+ / 其他 5 lib）
+./scripts/test-stdlib.sh
 ```
+
+> **不要单独只跑 1-3**。historic regression：cross-zpkg subclass catch
+> bug 之所以一直没被发现，就是 4 / 5 不在默认 GREEN 路径里 —— 每次 spec
+> 验证都漏跑。该 lesson 现在以 `test-all.sh` 形式固化。
+
+打包发行验证：发行版变更（package.sh / 跨平台 / 嵌入接口）追加跑
+`./scripts/test-all.sh --with-dist`（要求先跑 `./scripts/package.sh release`
+产 host-RID 包）。
 
 **测试失败处理规则：**
 
@@ -470,15 +491,16 @@ dotnet test src/compiler/z42.Tests/z42.Tests.csproj
 ```markdown
 ## 验证报告
 
-### 编译状态
-- ✅ dotnet build src/compiler/z42.slnx
-- ✅ cargo build --manifest-path src/runtime/Cargo.toml
+### test-all.sh 状态：✅ 全绿（N stages）/ ❌ 失败 at <stage>
 
-### 测试结果
-- ✅ dotnet test: N/N 通过
-  - 若有失败：❌ 失败列表与修复说明
-- ✅ ./scripts/test-vm.sh: M/M 通过
-  - 若有失败：❌ 失败列表与修复说明
+逐 stage（出现失败时展开）：
+- ✅ dotnet build
+- ✅ cargo build (release)
+- ✅ dotnet test: N/N
+- ✅ ./scripts/test-vm.sh: M/M（interp + JIT）
+- ✅ ./scripts/test-cross-zpkg.sh: K/K
+- ✅ ./scripts/test-stdlib.sh: 6/6 lib
+- （可选）✅ ./scripts/test-dist.sh: P/P
 
 ### Spec 覆盖（若有 spec）
 | Scenario | 实现位置 | 验证方式 | 状态 |
