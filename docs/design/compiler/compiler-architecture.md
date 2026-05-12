@@ -1078,13 +1078,3 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
   - 或者 `split-symbol-from-type` spec 启动时一并设计
 - **当前 workaround**：保持 FunctionEmitterExprs / Stmts 现有方法表风格不变；EmitExpr 主 switch 紧凑度可接受。后续 `split-large-codegen-files` 处理 FunctionEmitterExprs.cs 878 LOC 超限（按表达式类别拆 partial 文件）
 
-### D-12: BindCall 函数级拆分（split-typechecker-calls 残留）
-
-- **来源**：[docs/spec/archive/2026-05-08-split-typechecker-calls/](../../spec/archive/2026-05-08-split-typechecker-calls/)
-- **触发原因**：split-typechecker-calls 把 TypeChecker.Calls.cs 686 → 405 LOC 主文件，但 `BindCall` 单方法 ~395 行（远超 60 行函数硬限）。三大分支（Static class method / Member call / Free function call）的内联 dispatch 拆为独立 helper 方法属于函数级 refactor，行为级风险高于纯文件拆分
-- **前置依赖**：与 D-11 (`introduce-bound-visitor`) 同性质——可在引入 visitor 框架时一并解决，或独立 spec 抽 3 个 helper 方法（`BindStaticCall` / `BindMemberCall` / `BindFreeCall`）
-- **触发条件**：
-  - D-11 触发条件成熟时同 spec 处理
-  - 或者 BindCall 内部需要新增分支（call kind）导致方法继续膨胀
-  - 或者编译器 LSP / IDE 集成场景需要更细粒度的 call binding 钩子
-- **当前 workaround**：405 LOC 主文件 < 500 硬限，软限超出但工程上可接受。test 覆盖完整（1104/1104），不影响功能演进

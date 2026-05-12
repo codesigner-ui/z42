@@ -306,7 +306,6 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | **D-3** | N>4 arity Action / Func（自举后用 z42 写生成器）| [language/delegates-events.md](design/language/delegates-events.md#d-3-n4-arity-action--func) |
 | **D-4** | 协变 / 逆变（`<in T, out R>` 等）| [language/generics.md](design/language/generics.md#d-4-协变--逆变in-t-out-r-等) |
 | **D-11** | introduce-bound-visitor（review.md §2.1 visitor 抽象基类）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-11-introduce-bound-visitorreviewmd-21-visitor-抽象基类) |
-| **D-12** | BindCall 函数级拆分（split-typechecker-calls 残留）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-12-bindcall-函数级拆分split-typechecker-calls-残留) |
 
 ### Backlog 项实施流程
 
