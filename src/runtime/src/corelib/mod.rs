@@ -134,6 +134,13 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__file_exists",      fs::builtin_file_exists),
     ("__file_delete",      fs::builtin_file_delete),
 
+    // ── Directory（add-std-io-directory，2026-05-13）──────────────────────────
+    ("__dir_exists",              fs::builtin_dir_exists),
+    ("__dir_create",              fs::builtin_dir_create),
+    ("__dir_delete",              fs::builtin_dir_delete),
+    ("__dir_enumerate",           fs::builtin_dir_enumerate),
+    ("__dir_enumerate_recursive", fs::builtin_dir_enumerate_recursive),
+
     // ── Environment / Process ─────────────────────────────────────────────────
     ("__env_get",      fs::builtin_env_get),
     ("__env_args",     fs::builtin_env_args),

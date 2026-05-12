@@ -67,12 +67,13 @@ public sealed class IncrementalBuildIntegrationTests
         // reorganize-gc-stdlib 新增 GCHandle.z42 + HeapStats.z42，45 → 47；
         // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
         // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49。
+        // 2026-05-13 add-std-io-directory 新增 z42.io/Directory.z42，z42.io 4 → 5。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
         err2.Should().Contain("cached: 49/49");
         err2.Should().Contain("cached: 2/2");
-        err2.Should().Contain("cached: 4/4");
+        err2.Should().Contain("cached: 5/5");
     }
 
     /// <summary>--no-incremental 强制全 fresh。</summary>

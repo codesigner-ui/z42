@@ -1,0 +1,34 @@
+namespace Std.IO;
+
+// Std.IO.Directory — 目录操作（mkdir / rmdir / ls）。
+//
+// add-std-io-directory (2026-05-13)：z42 build-driver backlog 阻塞清单 P0 项之一。
+// 没这个模块 `.z42` 写的脚本无法 mkdir / 扫子目录。
+//
+// 语义对标 .NET BCL `System.IO.Directory`：
+//   - Create   = `mkdir -p`（递归建中间目录，已存在不报错）
+//   - Delete   = `rmdir` / `rm -rf`（recursive=true 时后者）
+//   - Enumerate          只列直接子项（含文件 + 子目录），返回 basename
+//   - EnumerateRecursive 深度优先全展开，返回相对 path 的子路径
+//
+// 顺序不保证（OS-dependent）。如需稳定顺序，调用方自己 sort。
+//
+// 错误处理：底层 IO 错（permission denied / disk full / not found）以
+// `Std.Exception` 抛出（runtime 把 anyhow::Error 包装为 z42 Exception）。
+
+public static class Directory {
+    [Native("__dir_exists")]
+    public static extern bool Exists(string path);
+
+    [Native("__dir_create")]
+    public static extern void Create(string path);
+
+    [Native("__dir_delete")]
+    public static extern void Delete(string path, bool recursive);
+
+    [Native("__dir_enumerate")]
+    public static extern string[] Enumerate(string path);
+
+    [Native("__dir_enumerate_recursive")]
+    public static extern string[] EnumerateRecursive(string path);
+}

@@ -38,6 +38,80 @@ pub fn builtin_file_delete(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 // `Std.IO.Path` 现在是 z42 脚本（Unix `/` 语义），见
 // src/libraries/z42.io/src/Path.z42。
 
+// ── Directory ─────────────────────────────────────────────────────────────────
+//
+// add-std-io-directory (2026-05-13)：Std.IO.Directory 模块。语义遵循 BCL
+// `System.IO.Directory`：
+//   - Create 等价 `mkdir -p`（递归建中间目录，已存在不报错）
+//   - Delete recursive=true → 类似 `rm -rf`
+//   - Enumerate 仅直接子项 basename（含文件 + 子目录）
+//   - EnumerateRecursive 深度优先全展开，路径相对 root
+
+pub fn builtin_dir_exists(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__dir_exists")?;
+    Ok(Value::Bool(std::path::Path::new(path.as_str()).is_dir()))
+}
+
+pub fn builtin_dir_create(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__dir_create")?;
+    std::fs::create_dir_all(path.as_str())?;
+    Ok(Value::Null)
+}
+
+pub fn builtin_dir_delete(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__dir_delete")?;
+    let recursive = matches!(args.get(1), Some(Value::Bool(true)));
+    if recursive {
+        std::fs::remove_dir_all(path.as_str())?;
+    } else {
+        std::fs::remove_dir(path.as_str())?;
+    }
+    Ok(Value::Null)
+}
+
+pub fn builtin_dir_enumerate(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__dir_enumerate")?;
+    let mut names: Vec<String> = Vec::new();
+    for entry in std::fs::read_dir(path.as_str())? {
+        let e = entry?;
+        if let Some(name) = e.file_name().to_str() {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    let list: Vec<Value> = names.into_iter().map(Value::Str).collect();
+    Ok(ctx.heap().alloc_array(list))
+}
+
+pub fn builtin_dir_enumerate_recursive(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let root = require_str(args, 0, "__dir_enumerate_recursive")?;
+    let root_path = std::path::Path::new(root.as_str()).to_path_buf();
+    let mut out: Vec<String> = Vec::new();
+    walk_dir(&root_path, &root_path, &mut out)?;
+    out.sort();
+    let list: Vec<Value> = out.into_iter().map(Value::Str).collect();
+    Ok(ctx.heap().alloc_array(list))
+}
+
+fn walk_dir(
+    root: &std::path::Path,
+    cur: &std::path::Path,
+    out: &mut Vec<String>,
+) -> Result<()> {
+    for entry in std::fs::read_dir(cur)? {
+        let e = entry?;
+        let p = e.path();
+        let rel = p.strip_prefix(root).unwrap_or(&p);
+        if let Some(s) = rel.to_str() {
+            out.push(s.to_string());
+        }
+        if e.file_type()?.is_dir() {
+            walk_dir(root, &p, out)?;
+        }
+    }
+    Ok(())
+}
+
 // ── Environment / Process ─────────────────────────────────────────────────────
 
 pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
