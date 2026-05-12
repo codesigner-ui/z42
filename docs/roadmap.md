@@ -296,6 +296,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | sidecar lazy / mmap 加载 | 启动延迟敏感场景的优化路径 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | sidecar 跨目录搜索 | debuginfod 风格 + 环境变量配置 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | `Std.Reflection.Symbolicate` 公开 API | 程序内触发符号化 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
+| Facade threading 测试（R8）| 等 runtime threading 模型落地后回到 platform-test-contract 补"后台 invoke + 主线程 sink"scenario | [runtime/embedding.md §12](design/runtime/embedding.md#§12-deferred明确不做的) |
 
 ### 实施期延后（D-* 系列）
 

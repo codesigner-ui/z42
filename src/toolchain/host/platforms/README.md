@@ -2,8 +2,14 @@
 
 > 状态：📋 H4 设计期（2026-05-11）— 三平台 facade 共同契约。
 >
-> 上层规范：[`docs/design/runtime/embedding.md`](../../../../docs/design/runtime/embedding.md) §6 Tier 3。
+> 上层规范：[`docs/design/runtime/embedding.md`](../../../../docs/design/runtime/embedding.md) §6 Tier 3 + §0 host/mobile 编译边界。
 > 前置 ABI：[`docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/`](../../../../docs/spec/archive/2026-05-12-add-zpkg-resolver-hook/) 必须先落地。
+
+---
+
+## 编译边界（重要）
+
+**移动 / wasm 平台只装 VM，不带编译器**。每个 facade 的 `build.sh` 在 host 端用 `z42c` 把 `.z42` 源（含 stdlib 与 test fixture）编出 `.zbc` / `.zpkg`，复制进 `Z42VM.xcframework/Resources/` / `z42vm/src/main/assets/` / `pkg-{web,nodejs}/`；mobile 设备上**只 load 二进制产物**，不调 `z42c` / `dotnet`。该原则在自举完成前不变；详细背景见 [`embedding.md §0`](../../../../docs/design/runtime/embedding.md#§0-编译边界host-编--mobile-跑)。
 
 ---
 
