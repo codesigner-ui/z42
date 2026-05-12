@@ -10,6 +10,7 @@
 
 | 脚本 | 触发时机 | 关键依赖 | 主要产物 |
 |------|---------|---------|---------|
+| `setup-tools.sh` | **首次 clone / 平台版本变动** | 读 `<repo>/versions.toml`；`scripts/_lib/versions.sh` | 装 rust targets + cargo-ndk + wasm-pack；下载 Android NDK 到 `artifacts/tools/android-sdk/ndk/<version>/` |
 | `test-all.sh` | **每次 commit / 归档前必跑** | 下面 5 个 stage 脚本 | 串联全部 GREEN 验证 |
 | `build-stdlib.sh` | 改了 stdlib `.z42` 源 | `dotnet`（或 `--use-dist` 用打包过的 z42c） | `artifacts/build/libraries/<lib>/<profile>/dist/<lib>.zpkg` |
 | `package.sh` | 准备发行 / 测发行包 | `dotnet publish` + `cargo build` | `artifacts/packages/z42-<version>-<rid>-<config>/{bin,libs,native}` |
@@ -19,7 +20,24 @@
 | `test-stdlib.sh` | stdlib 源 / 编译器变动 | `build-stdlib.sh` + `z42-test-runner` | 6 个 stdlib lib 的 [Test] 通过率 |
 | `test-dist.sh` | 验证打包后的发行版能独立工作 | `package.sh` + `build-stdlib.sh` 的产物 | 终端报告 packaged z42c+z42vm 跑 golden 通过率 |
 
+### `setup-tools.sh` 模式
+
+| 命令 | 行为 |
+|------|------|
+| `./scripts/setup-tools.sh` | 安装所有 missing 项（跨平台 toolchain + 三个 platform 块） |
+| `./scripts/setup-tools.sh android` | 仅 android（同样支持 ios / wasm） |
+| `./scripts/setup-tools.sh --check` | 只 verify，不下载 / 不安装；missing 项报 `✗` |
+| `./scripts/setup-tools.sh --drift` | 拿 `[platform.*]` 跟 Package.swift / build.gradle.kts 对账 |
+| `./scripts/setup-tools.sh android --print-env` | 输出可 `eval` 的 `export ANDROID_NDK_HOME=...` |
+
 ## 典型流程
+
+**首次 clone / 新 dev 环境**：
+```bash
+./scripts/setup-tools.sh --check    # 看缺什么
+./scripts/setup-tools.sh             # 装齐缺的（NDK / rust targets / cargo-ndk / wasm-pack）
+./scripts/setup-tools.sh --drift     # 校验 Package.swift / build.gradle.kts 跟 versions.toml 一致
+```
 
 **commit 前 / 归档前（必跑，workflow 阶段 8 全绿入口）**：
 ```bash

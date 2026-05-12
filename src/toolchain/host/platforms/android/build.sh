@@ -31,12 +31,21 @@ command -v cargo-ndk >/dev/null 2>&1 || {
     echo "error: cargo-ndk not found." >&2
     echo "       install via: cargo install cargo-ndk --locked" >&2; exit 1; }
 
+# Auto-discover NDK from artifacts/tools/ (where setup-tools.sh installs it)
+# when $ANDROID_NDK_HOME is unset. Versioned subdir per versions.toml NDK pin.
 if [[ -z "${ANDROID_NDK_HOME:-}" ]]; then
-    echo "error: \$ANDROID_NDK_HOME is unset." >&2
-    echo "       z42 pins NDK $NDK_VERSION (versions.toml [build.android.ndk]);" >&2
-    echo "       install via Android Studio SDK Manager → 'Side by side NDK'," >&2
-    echo "       then: export ANDROID_NDK_HOME=\$ANDROID_HOME/ndk/$NDK_VERSION" >&2
-    exit 1
+    auto_ndk="$ROOT/$(versions_get build.android.install_root)/ndk/$NDK_VERSION"
+    if [[ -d "$auto_ndk" ]]; then
+        export ANDROID_NDK_HOME="$auto_ndk"
+        echo "ANDROID_NDK_HOME auto-detected: $ANDROID_NDK_HOME"
+    else
+        echo "error: \$ANDROID_NDK_HOME unset and NDK not found locally." >&2
+        echo "       z42 pins NDK $NDK_VERSION (versions.toml [build.android.ndk])." >&2
+        echo "       fix one of:" >&2
+        echo "         1) ./scripts/setup-tools.sh android        # download to artifacts/tools/" >&2
+        echo "         2) export ANDROID_NDK_HOME=<your-ndk-path>  # use existing install" >&2
+        exit 1
+    fi
 fi
 if [[ ! -d "$ANDROID_NDK_HOME" ]]; then
     echo "error: \$ANDROID_NDK_HOME=$ANDROID_NDK_HOME does not exist." >&2; exit 1
