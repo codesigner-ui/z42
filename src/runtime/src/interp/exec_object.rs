@@ -196,12 +196,12 @@ pub(super) fn field_set(
 }
 
 pub(super) fn is_instance(
-    module: &Module, frame: &mut Frame, dst: u32, obj: u32, class_name: &str,
+    ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, obj: u32, class_name: &str,
 ) -> Result<()> {
     let result = match frame.get(obj)? {
         Value::Object(rc) => {
             let runtime_class = rc.borrow().type_desc.name.clone();
-            is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
+            is_subclass_or_eq_td(ctx, &module.type_registry, &runtime_class, class_name)
         }
         // 2026-05-07 add-array-base-class: T[] is-a Std.Array is-a Std.Object.
         // VM hardcodes the chain since Value::Array doesn't carry a TypeDesc.
@@ -214,13 +214,13 @@ pub(super) fn is_instance(
 }
 
 pub(super) fn as_cast(
-    module: &Module, frame: &mut Frame, dst: u32, obj: u32, class_name: &str,
+    ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, obj: u32, class_name: &str,
 ) -> Result<()> {
     let val = frame.get(obj)?.clone();
     let is_match = match &val {
         Value::Object(rc) => {
             let runtime_class = rc.borrow().type_desc.name.clone();
-            is_subclass_or_eq_td(&module.type_registry, &runtime_class, class_name)
+            is_subclass_or_eq_td(ctx, &module.type_registry, &runtime_class, class_name)
         }
         Value::Array(_) => is_array_isa(class_name),
         Value::Null => true,

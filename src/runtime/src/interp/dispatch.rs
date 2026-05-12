@@ -13,15 +13,25 @@ pub use crate::corelib::convert::value_to_str;
 // ── Subclass check ───────────────────────────────────────────────────────────
 
 /// Returns true if `derived` equals `target` or is a subclass via the TypeDesc registry.
+///
+/// Walks the base-class chain via the main module's `type_registry` first;
+/// when a link is missing there falls back to `ctx.try_lookup_type` so
+/// classes loaded lazily from imported zpkgs (e.g. `Std.TestFailure` in
+/// z42.test) participate in cross-zpkg subclass checks. Without the
+/// fallback `catch (Exception e)` failed to match a `TestFailure` thrown
+/// across the z42.core → z42.test boundary.
 pub fn is_subclass_or_eq_td(
+    ctx: &VmContext,
     registry: &HashMap<String, std::sync::Arc<TypeDesc>>,
     derived: &str,
     target: &str,
 ) -> bool {
-    let mut cur = derived;
+    let mut cur: String = derived.to_string();
     loop {
         if cur == target { return true; }
-        match registry.get(cur).and_then(|td| td.base_name.as_deref()) {
+        let td = registry.get(cur.as_str()).cloned()
+            .or_else(|| ctx.try_lookup_type(cur.as_str()));
+        match td.and_then(|t| t.base_name.clone()) {
             Some(base) => cur = base,
             None => return false,
         }

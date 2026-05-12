@@ -59,7 +59,7 @@ pub unsafe extern "C" fn jit_match_catch_type(
         _                 => return 0, // primitives / null don't match typed catches
     };
     let module = &*(*ctx).module;
-    if crate::interp::dispatch::is_subclass_or_eq_td(&module.type_registry, &derived, target) {
+    if crate::interp::dispatch::is_subclass_or_eq_td(vm_ctx, &module.type_registry, &derived, target) {
         1
     } else {
         0

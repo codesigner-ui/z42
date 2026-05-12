@@ -181,8 +181,8 @@ pub fn exec_instr(
                 return Ok(Some(thrown));
             }
         }
-        Instruction::IsInstance { dst, obj, class_name } => exec_object::is_instance(module, frame, *dst, *obj, class_name)?,
-        Instruction::AsCast     { dst, obj, class_name } => exec_object::as_cast(module, frame, *dst, *obj, class_name)?,
+        Instruction::IsInstance { dst, obj, class_name } => exec_object::is_instance(ctx, module, frame, *dst, *obj, class_name)?,
+        Instruction::AsCast     { dst, obj, class_name } => exec_object::as_cast(ctx, module, frame, *dst, *obj, class_name)?,
         Instruction::StaticGet  { dst, field } => {
             // Hot path: pre-resolved StaticFieldId → direct Vec index.
             use std::sync::atomic::Ordering;

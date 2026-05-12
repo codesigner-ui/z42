@@ -460,7 +460,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
 
                     // User exception from a callee — try to find a local handler
                     if let Some(entry_idx) = find_handler(
-                        func, block_idx, block_map, &module.type_registry, &thrown_val,
+                        ctx, func, block_idx, block_map, &module.type_registry, &thrown_val,
                     ) {
                         let entry = &func.exception_table[entry_idx];
                         frame.set(entry.catch_reg, thrown_val);
@@ -528,7 +528,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 crate::exception::populate_stack_trace(&val, ctx, module);
 
                 if let Some(entry_idx) = find_handler(
-                    func, block_idx, block_map, &module.type_registry, &val,
+                    ctx, func, block_idx, block_map, &module.type_registry, &val,
                 ) {
                     let entry = &func.exception_table[entry_idx];
                     frame.set(entry.catch_reg, val);
@@ -578,6 +578,7 @@ fn run_ref_writebacks(frame: &Frame, ctx: &VmContext) -> Result<()> {
 /// Exception-derived class instances); non-object throws fall through to the
 /// untyped catches via the wildcard branches above.
 fn find_handler(
+    ctx: &VmContext,
     func: &Function,
     block_idx: usize,
     block_map: &HashMap<String, usize>,
@@ -599,7 +600,7 @@ fn find_handler(
             Some("*") => return Some(i),                   // synthetic finally fallthrough
             Some(target) => {
                 if let Some(ref derived) = thrown_class {
-                    if dispatch::is_subclass_or_eq_td(type_registry, derived, target) {
+                    if dispatch::is_subclass_or_eq_td(ctx, type_registry, derived, target) {
                         return Some(i);
                     }
                 }
