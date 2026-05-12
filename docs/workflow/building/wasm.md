@@ -41,7 +41,7 @@ cargo install wasm-pack --locked
 dotnet build src/compiler/z42.slnx
 ```
 
-✅ 产出 `artifacts/compiler/z42.Driver/bin/z42c.dll` + `artifacts/z42/libs/*.zpkg`。
+✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll` + `artifacts/build/libs/release/*.zpkg`。
 
 ❗ `dotnet: command not found` → 装 .NET 8+：https://dotnet.microsoft.com/download
 

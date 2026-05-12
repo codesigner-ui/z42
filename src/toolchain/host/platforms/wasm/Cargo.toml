@@ -11,10 +11,10 @@ path = "src/lib.rs"
 crate-type = ["cdylib"]
 
 [dependencies]
-# z42-host crate gives us the Tier 2 Host API. z42_vm has to be a direct
+# z42-host crate gives us the Tier 2 Host API. z42 has to be a direct
 # dep too because Tier 1 types live there and the wasm crate re-borrows
 # them (ZpkgResolver trait, Z42HostStatus).
-z42_vm   = { path = "../../../../runtime", default-features = false, features = ["wasm"] }
+z42   = { path = "../../../../runtime", default-features = false, features = ["wasm"] }
 z42-host = { path = "../../embed" }
 z42-abi  = { path = "../../../../runtime/crates/z42-abi" }
 

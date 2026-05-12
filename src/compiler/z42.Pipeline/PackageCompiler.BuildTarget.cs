@@ -138,45 +138,67 @@ public static partial class PackageCompiler
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
     /// Build the list of directories to scan for dependency `.zpkg` files.
     ///
-    /// 搜索路径包括：
+    /// 搜索路径包括（current layout, redesign-artifact-layout 2026-05-12）：
     ///   - project-local `libs/`
-    ///   - `artifacts/z42/libs/`（legacy + 分发版扁平布局）
-    ///   - `artifacts/libraries/`（workspace 扁平布局兼容；C4c 旧）
-    ///   - `artifacts/libraries/&lt;member&gt;/dist/`（workspace 子目录布局；C4c+ 当前）
+    ///   - `artifacts/build/libraries/&lt;member&gt;/&lt;profile&gt;/dist/`（workspace 当前布局）
+    ///   - `artifacts/packages/&lt;pkg&gt;/libs/`（已组装包；分发版扁平布局）
+    ///
+    /// Legacy 兼容（pre-2026-05-12，过渡期保留）：
+    ///   - `artifacts/z42/libs/`（旧 package.sh 同步目标）
+    ///   - `artifacts/libraries/&lt;member&gt;/dist/`（旧 workspace 布局）
     ///
     /// 沿目录树向上搜索，让 stdlib 包先后编译时能找到上游 zpkg。
     static string[] BuildLibsDirs(string projectDir)
     {
         var dirs = new List<string>();
 
-        void AddCandidate(string baseDir)
+        void AddDirIfExists(string path)
         {
-            // 直接加 baseDir（兼容旧扁平布局）
-            if (Directory.Exists(baseDir) && !dirs.Contains(baseDir))
-                dirs.Add(baseDir);
-            // 子目录布局：扫一层，加每个 <member>/dist/
+            if (Directory.Exists(path) && !dirs.Contains(path))
+                dirs.Add(path);
+        }
+
+        // 当前 workspace 布局：<root>/artifacts/build/libraries/<member>/<profile>/dist/
+        void AddNewWorkspaceLayout(string baseDir)
+        {
+            if (!Directory.Exists(baseDir)) return;
+            foreach (var memberDir in Directory.EnumerateDirectories(baseDir))
+                foreach (var profileDir in Directory.EnumerateDirectories(memberDir))
+                    AddDirIfExists(Path.Combine(profileDir, "dist"));
+        }
+
+        // 当前 packages 布局：<root>/artifacts/packages/<pkg>/libs/
+        void AddPackagesLayout(string baseDir)
+        {
+            if (!Directory.Exists(baseDir)) return;
+            foreach (var pkgDir in Directory.EnumerateDirectories(baseDir))
+                AddDirIfExists(Path.Combine(pkgDir, "libs"));
+        }
+
+        // Legacy 布局：直接加 baseDir + 扫一层 <member>/dist/
+        void AddLegacyCandidate(string baseDir)
+        {
+            AddDirIfExists(baseDir);
             if (Directory.Exists(baseDir))
-            {
                 foreach (var sub in Directory.EnumerateDirectories(baseDir))
-                {
-                    string distSub = Path.Combine(sub, "dist");
-                    if (Directory.Exists(distSub) && !dirs.Contains(distSub))
-                        dirs.Add(distSub);
-                }
-            }
+                    AddDirIfExists(Path.Combine(sub, "dist"));
         }
 
         // project-local
-        AddCandidate(Path.Combine(projectDir, "libs"));
-        AddCandidate(Path.Combine(projectDir, "artifacts", "z42", "libs"));
-        AddCandidate(Path.Combine(projectDir, "artifacts", "libraries"));
+        AddDirIfExists(Path.Combine(projectDir, "libs"));
+        AddNewWorkspaceLayout(Path.Combine(projectDir, "artifacts", "build", "libraries"));
+        AddPackagesLayout(Path.Combine(projectDir, "artifacts", "packages"));
+        AddLegacyCandidate(Path.Combine(projectDir, "artifacts", "z42", "libs"));
+        AddLegacyCandidate(Path.Combine(projectDir, "artifacts", "libraries"));
 
         // walk-up search
         var dir = new DirectoryInfo(projectDir).Parent;
         while (dir != null)
         {
-            AddCandidate(Path.Combine(dir.FullName, "artifacts", "z42", "libs"));
-            AddCandidate(Path.Combine(dir.FullName, "artifacts", "libraries"));
+            AddNewWorkspaceLayout(Path.Combine(dir.FullName, "artifacts", "build", "libraries"));
+            AddPackagesLayout(Path.Combine(dir.FullName, "artifacts", "packages"));
+            AddLegacyCandidate(Path.Combine(dir.FullName, "artifacts", "z42", "libs"));
+            AddLegacyCandidate(Path.Combine(dir.FullName, "artifacts", "libraries"));
             dir = dir.Parent;
         }
 

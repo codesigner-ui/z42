@@ -85,7 +85,7 @@ public sealed class GoldenTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            string candidate = Path.Combine(dir.FullName, "artifacts", "build", "libs", "release");
             if (Directory.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }
@@ -97,7 +97,7 @@ public sealed class GoldenTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
+            string candidate = Path.Combine(dir.FullName, "artifacts", "build", "libs", "release");
             if (Directory.Exists(candidate)) return PackageCompiler.BuildDepIndex([candidate]);
             dir = dir.Parent;
         }
@@ -431,7 +431,7 @@ public sealed class GoldenTests
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "rust", "debug", "z42vm");
+            string candidate = Path.Combine(dir.FullName, "artifacts", "build", "runtime", "debug", "z42vm");
             if (File.Exists(candidate)) return candidate;
             dir = dir.Parent;
         }

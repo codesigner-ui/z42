@@ -12,7 +12,7 @@
 #   ./scripts/test-vm.sh --no-rebuild       # skip stdlib + golden rebuild (fast iteration)
 #   ./scripts/test-vm.sh interp --no-rebuild
 #
-# Default behaviour rebuilds stdlib zpkgs (sync to artifacts/z42/libs/) and golden
+# Default behaviour rebuilds stdlib zpkgs (sync to artifacts/build/libs/release/) and golden
 # .zbc artifacts before running, eliminating the historical "stale artifact gives
 # false GREEN/RED" failure mode (2026-05-04 fix-test-vm-stale-artifacts; previously
 # multiple archived commits' "全绿" verification was based on out-of-sync libs/
@@ -54,7 +54,7 @@ if [ "$REBUILD" = true ]; then
     # Order matters: regen-golden-tests.sh internally calls build-stdlib.sh
     # (transitively rebuilds the C# compiler driver), then recompiles every
     # golden source.z42 → source.zbc against the freshly-built stdlib zpkgs
-    # synced into artifacts/z42/libs/. Pass through to keep both step's
+    # synced into artifacts/build/libs/release/. Pass through to keep both step's
     # output streams visible.
     "$SCRIPT_DIR/regen-golden-tests.sh"
     echo ""

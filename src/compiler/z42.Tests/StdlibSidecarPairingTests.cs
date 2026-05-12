@@ -33,7 +33,7 @@ public sealed class StdlibSidecarPairingTests
     [Fact]
     public void EveryStdlibZpkgHasMatchingSidecar()
     {
-        string distRoot = Path.Combine(RepoRoot, "artifacts", "libraries");
+        string distRoot = Path.Combine(RepoRoot, "artifacts", "build", "libraries");
         if (!Directory.Exists(distRoot))
             return; // stdlib hasn't been built in this clone — nothing to verify, treat as skip
         var zpkgPaths = Directory.EnumerateFiles(distRoot, "*.zpkg", SearchOption.AllDirectories)
@@ -87,7 +87,7 @@ public sealed class StdlibSidecarPairingTests
         // via ApplyDebugInfo. Verify that at least one function ends up with a
         // populated LineTable (proves the sidecar actually carries real debug
         // data, not an empty MDBG section).
-        string distRoot = Path.Combine(RepoRoot, "artifacts", "libraries");
+        string distRoot = Path.Combine(RepoRoot, "artifacts", "build", "libraries");
         if (!Directory.Exists(distRoot)) return;
 
         string? targetZpkg = Directory.EnumerateFiles(distRoot, "z42.core.zpkg", SearchOption.AllDirectories)

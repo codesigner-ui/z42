@@ -14,7 +14,7 @@ cargo build --manifest-path src/runtime/Cargo.toml              # Debug
 cargo build --manifest-path src/runtime/Cargo.toml --release    # Release
 ```
 
-产物：`artifacts/rust/{debug,release}/z42vm`（binary）+ `libz42_vm.{rlib,dylib,so,dll}`（library）。
+产物：`artifacts/build/runtime/{debug,release}/z42vm`（binary）+ `libz42_vm.{rlib,dylib,so,dll}`（library）。
 
 ## 运行 VM
 
@@ -25,7 +25,7 @@ cargo run --manifest-path src/runtime/Cargo.toml -- <file.zbc | file.zpkg> [--mo
 或用分发版 binary（先 `./scripts/package.sh`）：
 
 ```bash
-./artifacts/z42/bin/z42vm <file.zbc>
+./artifacts/build/runtime/release/z42vm <file.zbc>
 ```
 
 VM 通过文件扩展名分发：`.zbc` 走 `load_zbc`，`.zpkg` 走 `load_zpkg`（[`src/runtime/src/metadata/loader.rs::load_artifact`](../../../src/runtime/src/metadata/loader.rs)）。

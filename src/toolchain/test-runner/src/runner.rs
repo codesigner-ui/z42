@@ -19,9 +19,9 @@
 use anyhow::Result;
 use std::time::Instant;
 
-use z42_vm::interp::{self, ExecOutcome};
-use z42_vm::metadata::{Function, Module, TestEntry, TestEntryKind, Value};
-use z42_vm::vm_context::VmContext;
+use z42::interp::{self, ExecOutcome};
+use z42::metadata::{Function, Module, TestEntry, TestEntryKind, Value};
+use z42::vm_context::VmContext;
 
 use crate::bootstrap::LoadedRunner;
 use crate::discover::DiscoveredTest;

@@ -10,8 +10,8 @@
 #   ./scripts/bench-run.sh --quick   # quick: warmup=1, runs=3, 2 scenarios only
 #
 # Prereqs (script auto-builds if missing):
-#   - z42vm release binary (artifacts/rust/release/z42vm)
-#   - stdlib zpkgs (artifacts/z42/libs/*.zpkg)
+#   - z42vm release binary (artifacts/build/runtime/release/z42vm)
+#   - stdlib zpkgs (artifacts/build/libs/release/*.zpkg)
 
 set -euo pipefail
 
@@ -36,19 +36,19 @@ if ! command -v hyperfine >/dev/null; then
 fi
 
 # ── Prereq: z42vm release build ──────────────────────────────────────────
-VM="artifacts/rust/release/z42vm"
+VM="artifacts/build/runtime/release/z42vm"
 if [[ ! -x "$VM" ]]; then
     echo "→ z42vm not found at $VM, building..."
     cargo build --release --manifest-path src/runtime/Cargo.toml --quiet
 fi
 
 # ── Prereq: stdlib built ─────────────────────────────────────────────────
-if [[ ! -f artifacts/z42/libs/z42.core.zpkg ]]; then
-    echo "→ stdlib not found in artifacts/z42/libs/, building..."
+if [[ ! -f artifacts/build/libs/release/z42.core.zpkg ]]; then
+    echo "→ stdlib not found in artifacts/build/libs/release/, building..."
     ./scripts/build-stdlib.sh >/dev/null
-    # build-stdlib.sh writes to artifacts/libraries/; package.sh copies to artifacts/z42/libs/
-    if [[ ! -f artifacts/z42/libs/z42.core.zpkg ]]; then
-        echo "→ running package.sh to populate artifacts/z42/libs/..."
+    # build-stdlib.sh writes to artifacts/build/libraries/; package.sh copies to artifacts/build/libs/release/
+    if [[ ! -f artifacts/build/libs/release/z42.core.zpkg ]]; then
+        echo "→ running package.sh to populate artifacts/build/libs/release/..."
         ./scripts/package.sh >/dev/null
     fi
 fi

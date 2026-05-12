@@ -309,7 +309,7 @@ unsafe extern "C" fn host_stdout_sink_callback(
     }
 }
 
-/// Project root under cargo, used to locate `artifacts/z42/libs/`.
+/// Project root under cargo, used to locate `artifacts/build/libs/release/`.
 fn project_root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -324,7 +324,7 @@ fn project_root() -> std::path::PathBuf {
 fn libs_dir_cstring() -> &'static CString {
     static LIBS_DIR: OnceLock<CString> = OnceLock::new();
     LIBS_DIR.get_or_init(|| {
-        let p = project_root().join("artifacts/z42/libs");
+        let p = project_root().join("artifacts/build/libs/release");
         CString::new(p.to_string_lossy().as_bytes()).expect("libs dir contains no NUL")
     })
 }
@@ -336,7 +336,7 @@ fn load_invoke_hello_world() {
     reset_host();
 
     // Skip cleanly if `dotnet build` hasn't produced the corelib zpkg.
-    let libs_dir = project_root().join("artifacts/z42/libs/z42.core.zpkg");
+    let libs_dir = project_root().join("artifacts/build/libs/release/z42.core.zpkg");
     if !libs_dir.is_file() {
         eprintln!(
             "skipping load_invoke_hello_world: {} not found (run `dotnet build src/compiler/z42.slnx`)",
@@ -497,7 +497,7 @@ unsafe extern "C" fn host_simple_capture_sink(
 fn resolve_entry_unknown_fqn_returns_entry_not_found() {
     let _g = test_lock();
     reset_host();
-    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+    if !project_root().join("artifacts/build/libs/release/z42.core.zpkg").is_file() {
         eprintln!("skipping: corelib zpkg not available");
         return;
     }
@@ -524,7 +524,7 @@ fn resolve_entry_unknown_fqn_returns_entry_not_found() {
 fn invoke_arg_count_mismatch_returns_arg_mismatch() {
     let _g = test_lock();
     reset_host();
-    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+    if !project_root().join("artifacts/build/libs/release/z42.core.zpkg").is_file() {
         eprintln!("skipping: corelib zpkg not available");
         return;
     }
@@ -565,7 +565,7 @@ fn invoke_arg_count_mismatch_returns_arg_mismatch() {
 fn z42_throw_escapes_as_vm_exception_with_message() {
     let _g = test_lock();
     reset_host();
-    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+    if !project_root().join("artifacts/build/libs/release/z42.core.zpkg").is_file() {
         eprintln!("skipping: corelib zpkg not available");
         return;
     }
@@ -604,7 +604,7 @@ fn z42_throw_escapes_as_vm_exception_with_message() {
 fn sink_called_in_correct_order_for_multiple_lines() {
     let _g = test_lock();
     reset_host();
-    if !project_root().join("artifacts/z42/libs/z42.core.zpkg").is_file() {
+    if !project_root().join("artifacts/build/libs/release/z42.core.zpkg").is_file() {
         eprintln!("skipping: corelib zpkg not available");
         return;
     }
@@ -704,11 +704,11 @@ impl ZpkgResolver for AlwaysMissResolver {
     }
 }
 
-/// Load the stdlib bytes from `artifacts/z42/libs/`. Returns `None` if
+/// Load the stdlib bytes from `artifacts/build/libs/release/`. Returns `None` if
 /// the user hasn't run `dotnet build src/compiler/z42.slnx` yet — tests
 /// skip in that case.
 fn load_stdlib_bytes(name: &str) -> Option<Vec<u8>> {
-    let path = project_root().join("artifacts/z42/libs").join(name);
+    let path = project_root().join("artifacts/build/libs/release").join(name);
     std::fs::read(path).ok()
 }
 
@@ -892,7 +892,7 @@ fn resolver_miss_falls_back_to_search_paths() {
     let _g = test_lock();
     reset_host();
 
-    let libs_dir = project_root().join("artifacts/z42/libs");
+    let libs_dir = project_root().join("artifacts/build/libs/release");
     if !libs_dir.join("z42.core.zpkg").is_file() {
         eprintln!("skip: corelib not built");
         return;

@@ -79,7 +79,7 @@ public protocol ZpkgResolver {
 ## 限制（v0.1）
 
 - **仅 interp 模式**：App Store 政策禁动态代码生成；JIT 不可用，AOT 占位
-- **无 native interop**：v0.1 iOS 不含 `native-interop` feature。原因：libffi-sys 在 iOS arm64 bundled 汇编时 CFI advance_loc 不兼容。后续 spec 引入 vendored libffi 后启用
+- ~~**无 native interop**~~ → **已启用**：libffi 5.1 / libffi-sys 4.1 的 bundled 汇编（libffi 3.4.7）修复了旧 2.3 在 iOS arm64 上的 CFI advance_loc 不兼容；`ios` feature preset 现含 `native-interop`
 - **单实例**：与其他平台一致；一个进程一个 `Z42VM`
 - **同步 invoke**：长任务阻塞调用线程；UI 上请用 `DispatchQueue.global().async`
 - **Demo / XCTest / CI**：推迟到独立 spec（`add-platform-ios-demo` / `-tests` / `-ci`）

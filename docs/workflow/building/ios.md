@@ -25,7 +25,7 @@ rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
 dotnet build src/compiler/z42.slnx
 ```
 
-✅ 产出 `artifacts/compiler/z42.Driver/bin/z42c.dll` + `artifacts/z42/libs/*.zpkg`。
+✅ 产出 `artifacts/build/compiler/z42.Driver/bin/z42c.dll` + `artifacts/build/libs/release/*.zpkg`。
 
 ❗ `dotnet: command not found` → 装 .NET 8+：https://dotnet.microsoft.com/download
 
@@ -41,7 +41,7 @@ cd src/toolchain/host/platforms/ios
 ✅ 产物：`Z42VM.xcframework/` 含 `ios-arm64/` + `ios-arm64_x86_64-simulator/`；`Resources/stdlib/*.zpkg` 6 个。
 
 ❗ `linker not found for aarch64-apple-ios` → Step 1 rustup target 漏装。
-❗ `libffi-sys` cross-compile 失败 → 系统 libffi 不在 pkg-config 跨编路径；改用 libffi `bundled` feature（修改 `runtime/Cargo.toml`），或临时去掉 iOS feature 中的 `native-interop`（牺牲 native 注册能力）。
+❗ `libffi-sys` cross-compile 失败 → 检查 `runtime/Cargo.toml` 的 `libffi` 是否为 5.1+（旧 3.2/libffi-sys 2.3 的 bundled `sysv.S` 在 iOS arm64 触发 CFI advance_loc 错误）；当前默认已是 bundled 模式，无需手工切换。
 
 ## Step 4 — Consume in your Xcode project
 

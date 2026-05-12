@@ -1,2 +1,2 @@
 [build]
-target-dir = "artifacts/rust"
+target-dir = "artifacts/build/runtime"

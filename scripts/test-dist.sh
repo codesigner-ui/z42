@@ -20,7 +20,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 
-DIST_DIR="$ROOT/artifacts/z42"
+# redesign-artifact-layout (2026-05-12): 取 packages/ 内最新的 host-RID release 包
+# 用户可显式覆盖：DIST_DIR=artifacts/packages/z42-... ./scripts/test-dist.sh
+DIST_DIR="${DIST_DIR:-}"
+if [ -z "$DIST_DIR" ]; then
+    DIST_DIR=$(ls -td "$ROOT"/artifacts/packages/z42-*-release 2>/dev/null | head -1)
+fi
+if [ -z "$DIST_DIR" ] || [ ! -d "$DIST_DIR" ]; then
+    echo "error: no packaged distribution found at artifacts/packages/z42-*-release"
+    echo "       Run: ./scripts/package.sh release"
+    exit 1
+fi
 Z42C="$DIST_DIR/bin/z42c"
 Z42VM="$DIST_DIR/bin/z42vm"
 LIBS_DIR="$DIST_DIR/libs"
@@ -79,7 +89,7 @@ for MODE in "${MODES[@]}"; do
     COMPILE_FAIL=0
     FAILURES=()
 
-    # Enumerate cases in dual layout (dir + flat). Tuples: "name|source|expected".
+    # Enumerate cases in dual layout (dir + flat). Tuples: "name|source|expected|interp_only_marker".
     CASES=()
     for glob in "${GOLDEN_GLOBS[@]}"; do
         for d in $glob; do
@@ -89,7 +99,7 @@ for MODE in "${MODES[@]}"; do
             esac
             [ -f "$d/source.z42" ] || continue
             name=$(basename "$d")
-            CASES+=("$name|$d/source.z42|$d/expected_output.txt")
+            CASES+=("$name|$d/source.z42|$d/expected_output.txt|$d/interp_only")
         done
     done
     # Flat mode: only src/tests/ (libraries flat .z42 are test-runner cases).
@@ -100,11 +110,16 @@ for MODE in "${MODES[@]}"; do
         esac
         name=$(basename "$f" .z42)
         dir=$(dirname "$f")
-        CASES+=("$name|$f|$dir/$name.expected_output.txt")
+        CASES+=("$name|$f|$dir/$name.expected_output.txt|$dir/$name.interp_only")
     done
 
     for entry in "${CASES[@]}"; do
-        IFS='|' read -r name source expected <<< "$entry"
+        IFS='|' read -r name source expected interp_marker <<< "$entry"
+
+        # Skip JIT for tests with `interp_only` marker (mirrors test-vm.sh).
+        if [ "$MODE" = "jit" ] && [ -f "$interp_marker" ]; then
+            continue
+        fi
 
         # Compile: source.z42 → temp.zbc using packaged z42c
         tmpout="$TMPDIR_BASE/${name}.zbc"

@@ -92,7 +92,7 @@ fn run(cli: &Cli) -> Result<i32> {
 
     if cli.legacy_subprocess {
         // Legacy path: subprocess fork per test (no Setup/Teardown).
-        let artifact = z42_vm::metadata::load_artifact(zbc_path)
+        let artifact = z42::metadata::load_artifact(zbc_path)
             .with_context(|| format!("loading artifact `{zbc_path}`"))?;
         let mut report = TestReport::from_artifact(&artifact);
         if let Some(needle) = &cli.filter {
@@ -125,16 +125,16 @@ fn run(cli: &Cli) -> Result<i32> {
     // user_func_names, but run_one needs &mut loaded).
     let report_tests: Vec<DiscoveredTestOwned> = loaded.test_index.iter()
         .filter_map(|entry| {
-            if entry.kind != z42_vm::metadata::TestEntryKind::Test { return None; }
-            if entry.flags.contains(z42_vm::metadata::TestFlags::IGNORED) { return None; }
+            if entry.kind != z42::metadata::TestEntryKind::Test { return None; }
+            if entry.flags.contains(z42::metadata::TestFlags::IGNORED) { return None; }
             let name = loaded.user_func_names.get(entry.method_id as usize)?.clone();
             if let Some(needle) = &cli.filter {
                 if !name.contains(needle.as_str()) { return None; }
             }
-            let skip_reason = if entry.flags.contains(z42_vm::metadata::TestFlags::SKIPPED) {
+            let skip_reason = if entry.flags.contains(z42::metadata::TestFlags::SKIPPED) {
                 Some(discover::format_skip_reason(entry))
             } else { None };
-            let expected_throw = if entry.flags.contains(z42_vm::metadata::TestFlags::SHOULD_THROW) {
+            let expected_throw = if entry.flags.contains(z42::metadata::TestFlags::SHOULD_THROW) {
                 entry.expected_throw_type.clone()
             } else { None };
             Some(DiscoveredTestOwned {
@@ -178,7 +178,7 @@ fn run(cli: &Cli) -> Result<i32> {
 struct DiscoveredTestOwned {
     #[allow(dead_code)] method_id: u32,
     method_name: String,
-    flags: z42_vm::metadata::TestFlags,
+    flags: z42::metadata::TestFlags,
     skip_reason: Option<String>,
     expected_throw: Option<String>,
 }

@@ -1,6 +1,6 @@
 //! `z42-host` — Tier 2 ergonomic Rust wrapper for the embedding API.
 //!
-//! Tier 1 (the C ABI in `z42_vm::host`) stays the stable contract;
+//! Tier 1 (the C ABI in `z42::host`) stays the stable contract;
 //! Tier 2 trades a bit of overhead for `Result`-based error handling,
 //! `Drop`-based cleanup, and `Box<dyn Fn(...)>` sink callbacks.
 //!
@@ -39,15 +39,15 @@ use std::sync::Arc;
 
 use z42_abi::{Z42Value, Z42_VALUE_TAG_BOOL, Z42_VALUE_TAG_F64, Z42_VALUE_TAG_I64, Z42_VALUE_TAG_NULL};
 
-use z42_vm::host::config::{Z42HostConfig, Z42_HOST_ABI_VERSION};
-use z42_vm::host::error::Z42HostStatus;
-use z42_vm::host::{
+use z42::host::config::{Z42HostConfig, Z42_HOST_ABI_VERSION};
+use z42::host::error::Z42HostStatus;
+use z42::host::{
     install_zpkg_resolver, z42_host_initialize, z42_host_invoke, z42_host_last_error,
     z42_host_load_zbc, z42_host_resolve_entry, z42_host_set_stderr_sink, z42_host_shutdown,
     Z42Host,
 };
 
-pub use z42_vm::host::resolver::ZpkgResolver;
+pub use z42::host::resolver::ZpkgResolver;
 
 // ── Public types ────────────────────────────────────────────────────────
 
@@ -168,7 +168,7 @@ impl SearchPathsResolver {
 
 impl ZpkgResolver for SearchPathsResolver {
     fn resolve(&self, namespace: &str) -> Option<Vec<u8>> {
-        let zpkgs = z42_vm::metadata::resolve_namespace(namespace, &[], &self.paths).ok()?;
+        let zpkgs = z42::metadata::resolve_namespace(namespace, &[], &self.paths).ok()?;
         for zpkg_path in zpkgs {
             if let Ok(bytes) = std::fs::read(&zpkg_path) {
                 return Some(bytes);
@@ -322,14 +322,14 @@ unsafe impl Send for Host {}
 /// Loaded `.zbc` (with merged dependencies). Cheap to clone via the
 /// underlying handle, but we keep it `!Clone` to make ownership obvious.
 pub struct Module {
-    handle: *mut z42_vm::host::module::Z42Module,
+    handle: *mut z42::host::module::Z42Module,
 }
 
 unsafe impl Send for Module {}
 
 /// Resolved entry (function / static method).
 pub struct Entry {
-    handle: *mut z42_vm::host::entry::Z42Entry,
+    handle: *mut z42::host::entry::Z42Entry,
 }
 
 unsafe impl Send for Entry {}
@@ -421,7 +421,7 @@ impl Host {
     }
 
     pub fn load_zbc(&self, bytes: &[u8]) -> Result<Module, HostError> {
-        let mut out: *mut z42_vm::host::module::Z42Module = ptr::null_mut();
+        let mut out: *mut z42::host::module::Z42Module = ptr::null_mut();
         let status = unsafe {
             z42_host_load_zbc(self.handle, bytes.as_ptr(), bytes.len(), &mut out)
         };
@@ -444,7 +444,7 @@ impl Host {
     pub fn resolve_entry(&self, m: &Module, fqn: &str) -> Result<Entry, HostError> {
         let cstr = CString::new(fqn)
             .map_err(|_| HostError::BadConfig("fqn contains NUL".into()))?;
-        let mut out: *mut z42_vm::host::entry::Z42Entry = ptr::null_mut();
+        let mut out: *mut z42::host::entry::Z42Entry = ptr::null_mut();
         let status = unsafe {
             z42_host_resolve_entry(self.handle, m.handle, cstr.as_ptr(), &mut out)
         };

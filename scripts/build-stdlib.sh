@@ -2,41 +2,40 @@
 # build-stdlib.sh — compile z42 standard library packages via workspace mode.
 #
 # Workspace 配置：src/libraries/z42.workspace.toml
-#   - 每个 member 子目录布局：artifacts/libraries/<lib>/dist/<lib>.zpkg
-#                             + artifacts/libraries/<lib>/cache/<file>.zbc
-#   - 拓扑顺序自动（z42.core 先编，其余依赖它的后编）
+# 产物布局（redesign-artifact-layout, 2026-05-12）：
+#   artifacts/build/libraries/<lib>/<profile>/dist/<lib>.zpkg
+#   artifacts/build/libraries/<lib>/<profile>/cache/<file>.zbc
 #
-# 不复制到 artifacts/z42/libs/——拷贝步骤移到 package.sh（仅打包分发版时执行）。
-# 编译 stdlib 间互相依赖（如 z42.collections → z42.core）通过 PackageCompiler.
-# BuildLibsDirs 扫一层 <member>/dist/ 子目录解决，无需扁平布局。
+# 不再同步到 artifacts/z42/libs/（该路径已废弃）。
+# Dev VM 通过 resolve_libs_dir() 自动扫 artifacts/build/libraries/<lib>/<profile>/dist/。
+# 分发包：./scripts/package.sh 组装 artifacts/packages/z42-...
 #
 # Usage:
 #   ./scripts/build-stdlib.sh                 # release build, uses dotnet run
-#   ./scripts/build-stdlib.sh --use-dist      # uses packaged z42c from artifacts/z42/bin/
-#
-# Output:
-#   artifacts/libraries/<lib>/dist/<lib>.zpkg   (workspace 直接产物)
-#   artifacts/libraries/<lib>/cache/...         (中间产物)
+#   ./scripts/build-stdlib.sh --use-dist      # uses packaged z42c from artifacts/packages/<host-pkg>/bin/
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 WS_DIR="$ROOT/src/libraries"
-DIST_ROOT="$ROOT/artifacts/libraries"
-LIBS_OUT="$ROOT/artifacts/z42/libs"
+BUILD_LIBS_ROOT="$ROOT/artifacts/build/libraries"
+PROFILE="release"
 
 USE_DIST=false
 for arg in "$@"; do
     if [ "$arg" = "--use-dist" ]; then
         USE_DIST=true
+    elif [ "$arg" = "--debug" ]; then
+        PROFILE="debug"
     fi
 done
 
 if [ "$USE_DIST" = true ]; then
-    Z42C="$ROOT/artifacts/z42/bin/z42c"
-    if [ ! -x "$Z42C" ]; then
-        echo "error: z42c not found at $Z42C"
+    # 找一个 host 平台已组装的 package（如有多个取最新 mtime）
+    Z42C=$(ls -t "$ROOT"/artifacts/packages/z42-*/bin/z42c 2>/dev/null | head -1)
+    if [ -z "${Z42C:-}" ] || [ ! -x "$Z42C" ]; then
+        echo "error: no packaged z42c found under artifacts/packages/*/bin/"
         echo "       Run: ./scripts/package.sh"
         exit 1
     fi
@@ -51,17 +50,21 @@ LIBS=(z42.core z42.io z42.math z42.text z42.collections z42.test)
 
 # Workspace 模式：cd 到 src/libraries 触发 workspace 发现；
 # z42c build --workspace --release 编译所有 default-members
-echo "  building stdlib workspace (release, all members)"
-( cd "$WS_DIR" && "${COMPILER_CMD[@]}" build --workspace --release )
+echo "  building stdlib workspace ($PROFILE, all members)"
+if [ "$PROFILE" = "release" ]; then
+    ( cd "$WS_DIR" && "${COMPILER_CMD[@]}" build --workspace --release )
+else
+    ( cd "$WS_DIR" && "${COMPILER_CMD[@]}" build --workspace )
+fi
 
 # 校验产物存在
 ok=0
 fail=0
 for lib in "${LIBS[@]}"; do
-    zpkg="$DIST_ROOT/$lib/dist/$lib.zpkg"
+    zpkg="$BUILD_LIBS_ROOT/$lib/$PROFILE/dist/$lib.zpkg"
     if [[ -f "$zpkg" && -s "$zpkg" ]]; then
         size=$(wc -c < "$zpkg" | tr -d ' ')
-        echo "    ✓ $lib.zpkg ($size bytes) → $zpkg"
+        echo "    ✓ $lib.zpkg ($size bytes)"
         ((ok++)) || true
     else
         echo "    ✗ $lib.zpkg — workspace product missing at $zpkg"
@@ -75,24 +78,20 @@ if [[ $fail -gt 0 ]]; then
     exit 1
 fi
 
-# 同步到 VM 加载路径 artifacts/z42/libs/。
-#
-# VM 通过 main.rs::resolve_libs_dir() 在以下顺序找 stdlib：
-#   1. $Z42_LIBS    2. <bin>/../libs/    3. $cwd/artifacts/z42/libs/
-# 早期 build-stdlib.sh 不写这里，改完 stdlib 后必须额外跑 package.sh 才能让 dev
-# 模式 VM / golden test 看到新 zpkg；这是 wave1-path-script (2026-04-27) 实施时
-# 反复踩到的坑。现在每次 stdlib build 后自动 cp 一遍，避免不一致。
-#
-# package.sh 仍负责"完整分发版打包"（含 z42c / z42vm 单文件 + libs/），与本步
-# 互不冲突 —— package.sh 自己也调 build-stdlib.sh，cp 重复执行无副作用。
-mkdir -p "$LIBS_OUT"
 echo ""
-echo "  syncing → $LIBS_OUT/"
+
+# 在 artifacts/build/libs/<profile>/ 下做扁平视图，供 VM 单目录 lookup
+# （resolve_libs_dir() 当前接 PathBuf 单一目录）。每个文件用硬链接（cp -l）
+# 避免重复占盘；fallback 到 cp。
+FLAT_DIR="$ROOT/artifacts/build/libs/$PROFILE"
+mkdir -p "$FLAT_DIR"
+rm -f "$FLAT_DIR"/*.zpkg "$FLAT_DIR"/*.zsym 2>/dev/null || true
 for lib in "${LIBS[@]}"; do
-    src="$DIST_ROOT/$lib/dist/$lib.zpkg"
-    dst="$LIBS_OUT/$lib.zpkg"
-    if [[ -f "$src" && -s "$src" ]]; then
-        cp "$src" "$dst"
-        echo "    ✓ $lib.zpkg"
-    fi
+    src_dir="$BUILD_LIBS_ROOT/$lib/$PROFILE/dist"
+    for f in "$src_dir"/*.zpkg "$src_dir"/*.zsym; do
+        [ -f "$f" ] || continue
+        cp -l "$f" "$FLAT_DIR/" 2>/dev/null || cp "$f" "$FLAT_DIR/"
+    done
 done
+echo "  flat view: $FLAT_DIR/   (VM single-dir lookup target)"
+echo "  分发版打包用 ./scripts/package.sh."

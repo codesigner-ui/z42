@@ -48,7 +48,7 @@ API 方法都用 `&self`（内部 RefCell），调用方代码风格基本不变
 z42vm <file>
   │
   ├── resolve_libs_dir()                       [main.rs]
-  │      → $Z42_LIBS | <binary>/../libs | <cwd>/artifacts/z42/libs
+  │      → $Z42_LIBS | <binary>/../libs | <cwd>/artifacts/build/libs/release
   │
   ├── 5.1b 加载 z42.core.zpkg (eager，隐式 prelude)
   │      → modules[0]

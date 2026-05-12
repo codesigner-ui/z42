@@ -17,7 +17,8 @@ path = "src/lib.rs"
 # to exactly the runtime features it needs. Defaulting to nothing means a
 # wasm consumer doesn't accidentally drag in `libffi` / `jit` via the dep
 # graph union.
-# 2026-05-12 runtime crate renamed `z42_vm` → `z42`.
+# 2026-05-12 runtime crate renamed `z42_vm` → `z42`
+# (redesign-artifact-layout, lib/binary naming alignment).
 z42 = { path = "../../../runtime", default-features = false }
 
 # Reuse the Z42Value / Z42Args / Z42Error types from the shared abi crate

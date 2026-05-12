@@ -2,7 +2,7 @@
 //!
 //! Wraps [`z42_host::Host`] so JavaScript / TypeScript hosts can drive
 //! a z42 VM in-process inside a browser or Node.js runtime. All actual
-//! VM logic lives in `z42_host` + `z42_vm`; this crate is the JS-side
+//! VM logic lives in `z42_host` + `z42`; this crate is the JS-side
 //! glue and the wasm-bindgen surface.
 //!
 //! Spec: docs/spec/archive/2026-05-12-add-platform-wasm/ (REVISION 2026-05-11),

@@ -1,11 +1,17 @@
 <Project>
   <PropertyGroup>
-    <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\compiler\$(MSBuildProjectName)\bin\</BaseOutputPath>
-    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\compiler\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\build\compiler\$(MSBuildProjectName)\bin\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)..\..\artifacts\build\compiler\$(MSBuildProjectName)\obj\</BaseIntermediateOutputPath>
     <OutputPath>$(BaseOutputPath)</OutputPath>
     <IntermediateOutputPath>$(BaseIntermediateOutputPath)</IntermediateOutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- redesign-artifact-layout (2026-05-12): 不为 dotnet build 生成 apphost (z42c
+         Mach-O 单文件 binary)；apphost 仅在 `dotnet publish` 阶段产出（package.sh）。
+         如果 bin/ 里有 apphost，apphost runtime 会把 bin/ 当成 DOTNET_ROOT 找 framework
+         —— 但 bin/ 没有 shared/Microsoft.NETCore.App/<version>/，导致 `dotnet run` 失败。
+         publish 时通过 `-p:UseAppHost=true` 覆盖此设置。 -->
+    <UseAppHost>false</UseAppHost>
   </PropertyGroup>
 </Project>

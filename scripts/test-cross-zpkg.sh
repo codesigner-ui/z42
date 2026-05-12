@@ -25,7 +25,7 @@ cd "$ROOT"
 
 MODE="${1:-interp}"
 TESTS_DIR="src/tests/cross-zpkg"
-DRIVER_DLL="artifacts/compiler/z42.Driver/bin/z42c.dll"
+DRIVER_DLL="artifacts/build/compiler/z42.Driver/bin/z42c.dll"
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
 
 # Ensure compiler + VM are built. Run noisily on first failure but suppress
@@ -37,11 +37,11 @@ cargo build -q --manifest-path "$RUNTIME_MANIFEST"
 echo ""
 
 # Locate stdlib zpkgs (workspace stdlib output, C4c+).
-# 子目录布局：artifacts/libraries/<lib>/dist/<lib>.zpkg
-# 不再依赖 artifacts/z42/libs（那个由 package.sh 分发版打包时填充）。
-STDLIB_ROOT="$ROOT/artifacts/libraries"
+# 子目录布局：artifacts/build/libraries/<lib>/dist/<lib>.zpkg
+# 不再依赖 artifacts/build/libs/release（那个由 package.sh 分发版打包时填充）。
+STDLIB_ROOT="$ROOT/artifacts/build/libraries"
 # 检查至少一个 <lib>/dist/<lib>.zpkg 存在
-if ! ls "$STDLIB_ROOT"/*/dist/*.zpkg >/dev/null 2>&1; then
+if ! ls "$STDLIB_ROOT"/*/release/dist/*.zpkg >/dev/null 2>&1; then
     echo "Building stdlib (required for cross-zpkg tests)..."
     "$SCRIPT_DIR/build-stdlib.sh" >/dev/null
     echo ""
@@ -118,7 +118,7 @@ for dir in "$TESTS_DIR"/*/; do
     fi
     test_libs=$(mktemp -d)
     # 收集 stdlib：每个 <lib>/dist/<lib>.zpkg 都要拷
-    cp "$STDLIB_ROOT"/*/dist/*.zpkg "$test_libs/" 2>/dev/null || true
+    cp "$STDLIB_ROOT"/*/release/dist/*.zpkg "$test_libs/" 2>/dev/null || true
     cp "$dir/target/dist"/*.zpkg "$test_libs/" 2>/dev/null || true
     cp "$dir/ext/dist"/*.zpkg    "$test_libs/" 2>/dev/null || true
     actual=$(Z42_LIBS="$test_libs" cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$main_zpkg" --mode "$MODE" 2>&1) || true

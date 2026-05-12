@@ -1,127 +1,182 @@
 #!/usr/bin/env bash
-# scripts/package.sh — Build the z42 compiler + VM and assemble the distribution layout.
+# scripts/package.sh — Build + assemble distribution package.
+#
+# Spec: docs/spec/archive/2026-05-12-redesign-artifact-layout/
+#
+# Output layout:
+#   artifacts/packages/z42-<version>-<rid>-<config>[-<variant>]/
+#   ├── bin/                          # z42c, z42vm (+ .pdb / .dSYM)
+#   ├── libs/                         # *.zpkg + *.zsym
+#   └── native/
+#       ├── libz42.{dylib,so,a} / z42.{dll,lib}
+#       └── include/                  # z42_host.h, z42_abi.h
 #
 # Usage:
-#   ./scripts/package.sh           # debug build (default)
-#   ./scripts/package.sh release   # release build
-#
-# Output:
-#   artifacts/z42/
-#   ├── bin/
-#   │   ├── z42c           ← compiler (dotnet publish single-file)
-#   │   └── z42vm          ← VM (cargo build)
-#   └── libs/
-#       ├── z42.core.zpkg
-#       ├── z42.io.zpkg
-#       ├── z42.math.zpkg
-#       ├── z42.text.zpkg
-#       └── z42.collections.zpkg
+#   ./scripts/package.sh                    # debug build
+#   ./scripts/package.sh release            # release build
+#   ./scripts/package.sh release --variant mt  # custom variant suffix
 
 set -euo pipefail
 
-# Resolve project root regardless of working directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$SCRIPT_DIR/.."
 cd "$ROOT"
 
-PROFILE="${1:-debug}"
+PROFILE="debug"
+VARIANT=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        release|Release) PROFILE="release" ;;
+        debug|Debug)     PROFILE="debug" ;;
+        --variant)       VARIANT="$2"; shift ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+
+# 大小写：build dir 用小写 (release/debug)；packages name 也用小写。
 RUNTIME_MANIFEST="src/runtime/Cargo.toml"
 COMPILER_PROJECT="src/compiler/z42.Driver/z42.Driver.csproj"
-ARTIFACTS="artifacts/z42"
-STDLIB_MODULES=(z42.core z42.io z42.math z42.text z42.collections)
+STDLIB_MODULES=(z42.core z42.io z42.math z42.text z42.collections z42.test)
 
-# ── Detect runtime identifier ─────────────────────────────────────────────────
+# ── 1. Detect RID ─────────────────────────────────────────────────────────────
 detect_rid() {
     local os arch
     os="$(uname -s)"
     arch="$(uname -m)"
-
     case "$os" in
         Darwin)
             case "$arch" in
                 arm64) echo "osx-arm64" ;;
                 *)     echo "osx-x64" ;;
-            esac
-            ;;
+            esac ;;
         Linux)
             case "$arch" in
                 aarch64) echo "linux-arm64" ;;
                 *)       echo "linux-x64" ;;
-            esac
-            ;;
-        *)
-            echo "win-x64" ;;
+            esac ;;
+        MINGW*|MSYS*|CYGWIN*) echo "win-x64" ;;
+        *) echo "win-x64" ;;
     esac
 }
 
 RID=$(detect_rid)
 
-# ── 1. Build compiler (single-file publish) ───────────────────────────────────
-echo "Publishing z42c ($PROFILE, $RID)..."
-if [ "$PROFILE" = "release" ]; then
-    DOTNET_CONFIG="Release"
-else
-    DOTNET_CONFIG="Debug"
-fi
+# ── 2. Read version ──────────────────────────────────────────────────────────
+VERSION=$(grep -E '^version' src/runtime/Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+[ -z "$VERSION" ] && VERSION="0.0.0"
+
+PKG_NAME="z42-${VERSION}-${RID}-${PROFILE}"
+[ -n "$VARIANT" ] && PKG_NAME="${PKG_NAME}-${VARIANT}"
+PKG_DIR="$ROOT/artifacts/packages/$PKG_NAME"
+
+echo "Package: $PKG_NAME"
+echo "Output:  $PKG_DIR"
+echo ""
+
+rm -rf "$PKG_DIR"
+mkdir -p "$PKG_DIR/bin" "$PKG_DIR/libs" "$PKG_DIR/native/include"
+
+# ── 3. Build + copy z42c ──────────────────────────────────────────────────────
+echo "[1/5] z42c (dotnet publish single-file, $RID, $PROFILE)"
+DOTNET_CONFIG="Debug"
+[ "$PROFILE" = "release" ] && DOTNET_CONFIG="Release"
 
 PUBLISH_TMP=$(mktemp -d)
 trap 'rm -rf "$PUBLISH_TMP"' EXIT
 
+# UseAppHost=true overrides Directory.Build.props (which sets false for dev
+# builds to avoid apphost DOTNET_ROOT resolution); single-file publish needs
+# the apphost executable.
 dotnet publish "$COMPILER_PROJECT" \
-    -c "$DOTNET_CONFIG" \
-    -r "$RID" \
+    -c "$DOTNET_CONFIG" -r "$RID" \
     -p:PublishSingleFile=true \
+    -p:UseAppHost=true \
     -o "$PUBLISH_TMP" \
     --nologo -v quiet
 
-mkdir -p "$ARTIFACTS/bin"
-cp "$PUBLISH_TMP/z42c" "$ARTIFACTS/bin/z42c"
-echo "  Published z42c → $ARTIFACTS/bin/z42c"
-
-# ── 2. Build VM ───────────────────────────────────────────────────────────────
-echo "Building z42vm ($PROFILE)..."
-if [ "$PROFILE" = "release" ]; then
-    cargo build --release --manifest-path "$RUNTIME_MANIFEST"
-    VM_BIN="artifacts/rust/release/z42vm"
-else
-    cargo build --manifest-path "$RUNTIME_MANIFEST"
-    VM_BIN="artifacts/rust/debug/z42vm"
+# z42c binary 名跨平台：macOS / Linux 是 z42c，Windows 是 z42c.exe
+if [ -f "$PUBLISH_TMP/z42c" ]; then
+    cp "$PUBLISH_TMP/z42c" "$PKG_DIR/bin/z42c"
+elif [ -f "$PUBLISH_TMP/z42c.exe" ]; then
+    cp "$PUBLISH_TMP/z42c.exe" "$PKG_DIR/bin/z42c.exe"
 fi
 
-# ── 3. Create output layout ──────────────────────────────────────────────────
-mkdir -p "$ARTIFACTS/bin" "$ARTIFACTS/libs"
+# 拷 dotnet symbol 文件（.pdb）
+find "$PUBLISH_TMP" -maxdepth 1 -name 'z42c.pdb' -exec cp {} "$PKG_DIR/bin/" \;
 
-# ── 4. Copy VM binary ────────────────────────────────────────────────────────
-cp "$VM_BIN" "$ARTIFACTS/bin/z42vm"
-echo "  Copied z42vm → $ARTIFACTS/bin/z42vm"
+echo "      ✓ $PKG_DIR/bin/z42c"
 
-# ── 5. Stdlib：从 artifacts/libraries/<lib>/dist/<lib>.zpkg 拷贝到分发版扁平布局 ───
-# C4c+ 后 build-stdlib.sh 仅产 artifacts/libraries/<lib>/dist/<lib>.zpkg；
-# package.sh 在打包阶段统一拷到 artifacts/z42/libs/<lib>.zpkg（VM 加载约定 +
-# 分发版扁平布局）。如果没有 workspace 产物则建占位 .zpkg（test-dist 失败前提示）。
-echo "Populating libs/ from artifacts/libraries/..."
-LIBRARIES_ROOT="$ROOT/artifacts/libraries"
+# ── 4. Build + copy z42vm + native libs ───────────────────────────────────────
+echo "[2/5] z42vm + libz42 (cargo build, $PROFILE)"
+if [ "$PROFILE" = "release" ]; then
+    cargo build --release --manifest-path "$RUNTIME_MANIFEST"
+    CARGO_OUT="artifacts/build/runtime/release"
+else
+    cargo build --manifest-path "$RUNTIME_MANIFEST"
+    CARGO_OUT="artifacts/build/runtime/debug"
+fi
+
+# z42vm binary
+if [ -f "$CARGO_OUT/z42vm" ]; then
+    cp "$CARGO_OUT/z42vm" "$PKG_DIR/bin/z42vm"
+elif [ -f "$CARGO_OUT/z42vm.exe" ]; then
+    cp "$CARGO_OUT/z42vm.exe" "$PKG_DIR/bin/z42vm.exe"
+fi
+echo "      ✓ $PKG_DIR/bin/z42vm"
+
+# native libs（lib + import lib + static lib）
+for f in libz42.dylib libz42.so libz42.a z42.dll z42.lib; do
+    [ -f "$CARGO_OUT/$f" ] && cp "$CARGO_OUT/$f" "$PKG_DIR/native/$f"
+done
+echo "      ✓ $PKG_DIR/native/  (libz42.* / z42.*)"
+
+# macOS dSYM debug bundle（如果 cargo release 配置了）
+[ -d "$CARGO_OUT/z42vm.dSYM" ] && cp -R "$CARGO_OUT/z42vm.dSYM" "$PKG_DIR/bin/"
+
+# ── 5. Headers ─────────────────────────────────────────────────────────────────
+echo "[3/5] C headers"
+cp src/runtime/include/*.h "$PKG_DIR/native/include/" 2>/dev/null || true
+echo "      ✓ $PKG_DIR/native/include/  ($(ls "$PKG_DIR/native/include/" | wc -l | tr -d ' ') files)"
+
+# ── 6. Stdlib zpkg + zsym ─────────────────────────────────────────────────────
+echo "[4/5] stdlib zpkg + zsym"
+SRC_LIBS="$ROOT/artifacts/build/libraries"
+copied=0
 for mod in "${STDLIB_MODULES[@]}"; do
-    src="$LIBRARIES_ROOT/$mod/dist/$mod.zpkg"
-    dst="$ARTIFACTS/libs/$mod.zpkg"
-    if [ -f "$src" ] && [ -s "$src" ]; then
-        cp "$src" "$dst"
-        size=$(wc -c < "$dst" | tr -d ' ')
-        echo "  ${mod}.zpkg ($size bytes) ← $src"
-    elif [ ! -s "$dst" ]; then
-        touch "$dst"
-        echo "  ${mod}.zpkg (placeholder — run build-stdlib.sh first)"
+    zpkg="$SRC_LIBS/$mod/$PROFILE/dist/$mod.zpkg"
+    zsym="$SRC_LIBS/$mod/$PROFILE/dist/$mod.zsym"
+    if [ -f "$zpkg" ]; then
+        cp "$zpkg" "$PKG_DIR/libs/$mod.zpkg"
+        [ -f "$zsym" ] && cp "$zsym" "$PKG_DIR/libs/$mod.zsym"
+        ((copied++)) || true
     else
-        echo "  ${mod}.zpkg (existing, kept)"
+        echo "      ⚠ $mod.zpkg missing — run ./scripts/build-stdlib.sh first"
     fi
 done
+echo "      ✓ $PKG_DIR/libs/  ($copied/${#STDLIB_MODULES[@]} stdlib packages)"
+
+# ── 7. manifest.toml ───────────────────────────────────────────────────────────
+echo "[5/5] manifest.toml"
+cat > "$PKG_DIR/manifest.toml" <<EOF
+[package]
+version = "$VERSION"
+rid     = "$RID"
+config  = "$PROFILE"
+variant = "$VARIANT"
+created = "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+[layout]
+bin     = "bin/"
+libs    = "libs/"
+native  = "native/"
+include = "native/include/"
+EOF
+echo "      ✓ $PKG_DIR/manifest.toml"
 
 echo ""
-echo "Done. Distribution layout at $ARTIFACTS/"
-echo "  Compiler: $ARTIFACTS/bin/z42c"
-echo "  VM:       $ARTIFACTS/bin/z42vm"
+echo "Done. Package assembled at:"
+echo "  $PKG_DIR/"
 echo ""
-echo "Next steps:"
-echo "  ./scripts/build-stdlib.sh    # compile stdlib (writes to artifacts/libraries/<lib>/dist/)"
-echo "  ./scripts/package.sh         # re-run to copy stdlib into artifacts/z42/libs/"
-echo "  ./scripts/test-dist.sh       # run end-to-end tests with packaged binaries"
+echo "Test with:"
+echo "  ./scripts/test-dist.sh"

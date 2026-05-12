@@ -15,7 +15,7 @@
 
 ```bash
 ./scripts/build-stdlib.sh              # 用 dotnet run 编译（dev 默认）
-./scripts/build-stdlib.sh --use-dist   # 用 artifacts/z42/bin/z42c 编译（package 后测试用）
+./scripts/build-stdlib.sh --use-dist   # 用 artifacts/build/runtime/release/z42c 编译（package 后测试用）
 ```
 
 等价于：
@@ -24,7 +24,7 @@
 ( cd src/libraries && dotnet run --project ../compiler/z42.Driver -- build --workspace --release )
 ```
 
-随后产物自动从 `artifacts/libraries/<lib>/dist/<lib>.zpkg` sync 到 `artifacts/z42/libs/<lib>.zpkg`（VM 默认加载路径）。
+随后产物自动从 `artifacts/build/libraries/<lib>/dist/<lib>.zpkg` sync 到 `artifacts/build/libs/release/<lib>.zpkg`（VM 默认加载路径）。
 
 ## 增量编译（C5）
 
@@ -52,7 +52,7 @@ artifacts/
 ## 分发链端到端
 
 ```bash
-./scripts/package.sh                  # 1. 打 z42c + z42vm 到 artifacts/z42/bin/
+./scripts/package.sh                  # 1. 打 z42c + z42vm 到 artifacts/build/runtime/release/
 ./scripts/build-stdlib.sh --use-dist  # 2. 用分发版 z42c 重编译 stdlib
 ./scripts/test-dist.sh                # 3. 跑分发版 binary 跑 goldens（interp + jit）
 ./scripts/test-dist.sh interp         # 仅 interp 模式

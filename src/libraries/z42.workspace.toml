@@ -1,17 +1,18 @@
 # z42 标准库 workspace
 #
-# 5 个 stdlib 包作为 workspace member 集中编译；产物与 cache 统一落到
-# 仓库根的 artifacts/libraries/ 目录（与单 lib 模式的 src/libraries/<lib>/dist/
-# 分开）。
+# 6 个 stdlib 包作为 workspace member 集中编译；产物与 cache 落到
+# artifacts/build/libraries/<member>/<profile>/{dist,cache}/，按 build profile 分级。
 #
 # 使用：
 #   cd src/libraries && z42c build --workspace --release
-#   产物：artifacts/libraries/z42.core.zpkg / z42.collections.zpkg / ...
-#   cache： artifacts/libraries/.cache/<lib>/...
+#   产物：artifacts/build/libraries/z42.core/release/dist/z42.core.zpkg
+#   cache：artifacts/build/libraries/z42.core/release/cache/<file>.zbc
 #
 # stdlib 互相依赖（z42.collections → z42.core 等）通过编译器的 libsDirs
-# 自动发现：BuildLibsDirs 在仓库子树内搜索 artifacts/libraries/ 与
-# artifacts/z42/libs/，stdlib 编译时各 member 能找到先前编译的产物。
+# 自动发现：BuildLibsDirs 在 artifacts/build/libraries/ 下搜索每个 member
+# 的 dist 子目录，stdlib 编译时各 member 能找到先前编译的产物。
+#
+# Spec: docs/spec/archive/2026-05-12-redesign-artifact-layout/
 
 [workspace]
 members = ["*"]
@@ -29,9 +30,9 @@ version = "0.1.0"
 license = "MIT"
 
 [workspace.build]
-# 每个 member 在 artifacts/libraries 下有自己的子目录，含 dist/ 与 cache/。
-# 例：artifacts/libraries/z42.core/dist/z42.core.zpkg
-#     artifacts/libraries/z42.core/cache/<file>.zbc
-# package.sh 在打包时把 <member>/dist/<name>.zpkg 复制到 artifacts/z42/libs/<name>.zpkg。
-out_dir   = "../../artifacts/libraries/${member_name}/dist"
-cache_dir = "../../artifacts/libraries/${member_name}/cache"
+# 产物按 build profile 分级：
+# 例：artifacts/build/libraries/z42.core/release/dist/z42.core.zpkg
+#     artifacts/build/libraries/z42.core/release/cache/<file>.zbc
+# package.sh 把 <member>/<profile>/dist/<name>.zpkg 复制到 packages/<pkg>/libs/。
+out_dir   = "../../artifacts/build/libraries/${member_name}/${profile}/dist"
+cache_dir = "../../artifacts/build/libraries/${member_name}/${profile}/cache"

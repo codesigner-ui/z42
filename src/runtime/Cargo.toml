@@ -14,12 +14,10 @@ path = "src/main.rs"
 [lib]
 name = "z42"
 path = "src/lib.rs"
-# crate-type 用 cdylib + staticlib + rlib：
-# - cdylib：C 嵌入消费者用 .dylib / .so / .dll
-# - staticlib：C 嵌入静态链接 .a / .lib
-# - rlib：Rust 内 path/git 依赖（其他 Rust crate 引用 z42）
+# 默认 rlib only —— Rust 内 path/git 依赖（z42-test-runner / z42-host crate 引用）。
+# C 嵌入用的 cdylib / staticlib 在分发 package 步骤通过额外的 cargo build 命令产出
+# （package.sh），避免主 build 流程出现 cdylib/staticlib/rlib 三套 metadata 冲突。
 # 来自 redesign-artifact-layout (2026-05-12)
-crate-type = ["cdylib", "staticlib", "rlib"]
 
 [build-dependencies]
 cc = "1"
@@ -52,15 +50,14 @@ tracing-subscriber = "0.3"
 #
 # 2026-05-12 add-platform-wasm Stage 0: gated behind `native-interop` feature
 #   so wasm builds (no dlopen / no libffi support) deselect it cleanly.
-# 2026-05-12 add-platform-ios Stage 0: dropped the `system` feature flag on
-#   libffi. Reason: `-lffi` is not available in the iOS / Android SDKs (the
-#   system libffi exists in libSystem at runtime but isn't exposed for static
-#   link during cross-compile). Falling back to libffi-sys's bundled C build
-#   works uniformly for desktop, iOS, and Android at a small first-build cost.
-# 2026-05-12 redesign-artifact-layout: 启用 `system` feature 用 homebrew/apt 的 libffi。
-# libffi-sys 的 bundled C build 在新 Apple clang 上汇编 sysv.S 失败（CFI advance_loc
-# 兼容性问题）；iOS / Android / WASM 不依赖 libffi（走 interp-only feature 集）。
-libffi     = { version = "3.2", optional = true, features = ["system"] }
+# 2026-05-10 vendored-libffi-upgrade: bumped to libffi 5.1 (libffi-sys 4.1)
+#   to pick up the fixed bundled libffi 3.4.7 sources. Earlier libffi-sys 2.3
+#   shipped a snapshot whose `sysv.S` failed to assemble under new Apple
+#   clang (`CFI advance_loc out of range`); 5.1's bundle compiles cleanly on
+#   desktop macOS/Linux, aarch64-apple-ios, and aarch64-linux-android. No
+#   `system` feature — bundled build keeps the toolchain identical across
+#   host and cross-compile targets at the cost of a one-time first build.
+libffi     = { version = "5.1", optional = true }
 libloading = { version = "0.8", optional = true }
 z42-abi    = { path = "crates/z42-abi" }
 
@@ -87,8 +84,8 @@ native-interop = ["dep:libffi", "dep:libloading"]
 aot            = []
 interp-only    = []
 wasm           = ["interp-only"]
-ios            = ["interp-only", "aot"]
-android        = ["interp-only", "aot"]
+ios            = ["interp-only", "aot", "native-interop"]
+android        = ["interp-only", "aot", "native-interop"]
 
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }

@@ -6,10 +6,10 @@
 
 use std::collections::HashMap;
 
-use z42_vm::metadata::{
+use z42::metadata::{
     BasicBlock, ExecMode, Function, Instruction, Module, Terminator, Value,
 };
-use z42_vm::vm_context::VmContext;
+use z42::vm_context::VmContext;
 
 fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminator) -> Module {
     let func = Function {
@@ -47,7 +47,7 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
 fn run_returning(module: &Module) -> anyhow::Result<Option<Value>> {
     let ctx = VmContext::new();
     let func = &module.functions[0];
-    z42_vm::interp::run_returning(&ctx, module, func, &[] as &[Value])
+    z42::interp::run_returning(&ctx, module, func, &[] as &[Value])
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn pin_empty_array_returns_zero_length_view() {
 #[test]
 fn pin_array_u8_snapshots_bytes() {
     // Spec C10 — Array of I64 in 0..=255 pins as a byte buffer.
-    use z42_vm::vm_context::VmContext;
+    use z42::vm_context::VmContext;
     let ctx = VmContext::new();
     let m = build_module(
         "pin_byte_array",
@@ -139,7 +139,7 @@ fn pin_array_u8_snapshots_bytes() {
         Terminator::Ret { reg: Some(4) },
     );
     let func = &m.functions[0];
-    let out = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+    let out = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect("byte array pin ok");
     assert_eq!(out, Some(Value::I64(2)));
     // After UnpinPtr the owned-buffer table should be empty.

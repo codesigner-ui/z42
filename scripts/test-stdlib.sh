@@ -26,7 +26,7 @@ echo "→ Preparing tooling (stdlib + z42vm + z42-test-runner; release)..."
 cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
 cargo build --manifest-path src/toolchain/test-runner/Cargo.toml --release --quiet
 
-RUNNER="$ROOT/artifacts/rust/release/z42-test-runner"
+RUNNER="$ROOT/artifacts/build/runtime/release/z42-test-runner"
 if [[ ! -x "$RUNNER" ]]; then
     echo "error: z42-test-runner not built at $RUNNER" >&2
     exit 2

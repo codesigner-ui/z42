@@ -259,15 +259,15 @@ The compiler enforces strict package-based using resolution
 
 When the VM needs to load a stdlib module it searches in order:
 1. `$Z42_LIBS` environment variable (if set and directory exists)
-2. `<vm-binary-dir>/../libs/`  (adjacent layout: `artifacts/z42/bin/z42vm` → `artifacts/z42/libs/`)
-3. `<cwd>/artifacts/z42/libs/`  (development: `cargo run` from project root)
+2. `<vm-binary-dir>/../libs/`  (adjacent layout: `artifacts/build/runtime/release/z42vm` → `artifacts/build/libs/release/`)
+3. `<cwd>/artifacts/build/libs/release/`  (development: `cargo run` from project root)
 
 Each path is expected to contain files named `<module-name>.zbc` or `<module-name>.zpkg`.
 Both formats are accepted; `.zpkg` (packed mode) is preferred when both exist as it
 carries version metadata.
 
 **Producing the `libs/` directory:** run `scripts/package.sh` from the project root.
-This builds the VM binary and populates `artifacts/z42/libs/` with stdlib artifacts.
+This builds the VM binary and populates `artifacts/build/libs/release/` with stdlib artifacts.
 Until M7 (`[Native]` attribute support), the `.zbc`/`.zpkg` files are placeholders.
 
 ---

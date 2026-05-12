@@ -22,7 +22,7 @@ just test-vm jit
 
 `./scripts/test-vm.sh` 入口自动按依赖顺序：
 
-1. `build-stdlib.sh` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/z42/libs/`
+1. `build-stdlib.sh` — dotnet 编译 z42c → 编译 stdlib zpkgs → sync 到 `artifacts/build/libs/release/`
 2. `regen-golden-tests.sh` — 用最新 z42c 把所有 golden `source.z42` → `source.zbc`
 3. `cargo build` VM
 4. 逐个跑 golden test
@@ -43,7 +43,7 @@ cargo run --manifest-path src/runtime/Cargo.toml -- src/tests/<category>/<name>/
 或用分发版 binary 跑：
 
 ```bash
-./artifacts/z42/bin/z42vm src/tests/<category>/<name>/source.zbc
+./artifacts/build/runtime/release/z42vm src/tests/<category>/<name>/source.zbc
 ```
 
 ## 只重生 zbc（不跑测试）

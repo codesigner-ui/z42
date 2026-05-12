@@ -48,3 +48,9 @@ BenchmarkDotNet.Artifacts/
 # Bench output / baseline files (only .gitkeep tracked; CI publishes real baselines elsewhere)
 bench/results/*.json
 bench/baselines/*.json
+
+# Claude scheduler local state
+.claude/scheduled_tasks.lock
+
+# dotnet test runner output
+TestResults/

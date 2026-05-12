@@ -22,7 +22,7 @@ public sealed class IncrementalBuildIntegrationTests
         }
     }
 
-    static string Z42cDll => Path.Combine(RepoRoot, "artifacts", "compiler", "z42.Driver", "bin", "z42c.dll");
+    static string Z42cDll => Path.Combine(RepoRoot, "artifacts", "build", "compiler", "z42.Driver", "bin", "z42c.dll");
 
     static (int code, string stdout, string stderr) RunZ42c(string workDir, params string[] args)
     {
@@ -49,7 +49,7 @@ public sealed class IncrementalBuildIntegrationTests
     public void StdlibBuild_SecondRun_AllCached()
     {
         string libsRoot = Path.Combine(RepoRoot, "src", "libraries");
-        string artifactsLibs = Path.Combine(RepoRoot, "artifacts", "libraries");
+        string artifactsLibs = Path.Combine(RepoRoot, "artifacts", "build", "libraries");
 
         // 清空产物
         if (Directory.Exists(artifactsLibs))

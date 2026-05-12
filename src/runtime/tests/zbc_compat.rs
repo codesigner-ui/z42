@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use z42_vm::metadata::zbc_reader::read_zbc;
+use z42::metadata::zbc_reader::read_zbc;
 
 /// Project root resolved from `CARGO_MANIFEST_DIR` (= src/runtime).
 fn project_root() -> PathBuf {
@@ -126,11 +126,11 @@ fn all_golden_zbc_decode() {
 /// must reference valid pool entries. Ensures opcode parameter layout matches
 /// across C# write and Rust read.
 fn check_instr_pool_refs(
-    module: &z42_vm::metadata::Module,
-    instr: &z42_vm::metadata::Instruction,
+    module: &z42::metadata::Module,
+    instr: &z42::metadata::Instruction,
     _func_name: &str,
 ) -> Result<(), String> {
-    use z42_vm::metadata::Instruction as I;
+    use z42::metadata::Instruction as I;
     let pool_len = module.string_pool.len();
     // A handful of instructions carry pool-indexed names; verify they resolve.
     // (Most instructions carry inlined String fields after `read_zbc`
@@ -190,7 +190,7 @@ fn class_basic_zbc_has_classes() {
 #[test]
 fn test_demo_tidx_round_trips() {
     use std::process::Command;
-    use z42_vm::metadata::{TestEntryKind, TestFlags};
+    use z42::metadata::{TestEntryKind, TestFlags};
 
     // Locate the project root (parent-of-parent-of-parent of CARGO_MANIFEST_DIR).
     let runtime_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -237,7 +237,7 @@ fn test_demo_tidx_round_trips() {
 
     // Load and verify the TIDX section.
     let bytes = std::fs::read(&zbc_path).expect("read compiled zbc");
-    let entries = z42_vm::metadata::zbc_reader::read_test_index_section(&bytes)
+    let entries = z42::metadata::zbc_reader::read_test_index_section(&bytes)
         .expect("read TIDX section");
 
     assert_eq!(entries.len(), 8, "expected 8 TestEntry rows for test_demo.z42, got {}", entries.len());

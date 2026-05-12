@@ -7,10 +7,10 @@
 
 use std::collections::HashMap;
 
-use z42_vm::metadata::{
+use z42::metadata::{
     BasicBlock, ExecMode, Function, Instruction, Module, Terminator, Value,
 };
-use z42_vm::vm_context::VmContext;
+use z42::vm_context::VmContext;
 
 fn module_with_single_instr(name: &str, instr: Instruction) -> Module {
     let func = Function {
@@ -49,7 +49,7 @@ fn module_with_single_instr(name: &str, instr: Instruction) -> Module {
 fn run(module: &Module) -> anyhow::Result<()> {
     let ctx = VmContext::new();
     let func = &module.functions[0];
-    z42_vm::interp::run(&ctx, module, func, &[] as &[Value])
+    z42::interp::run(&ctx, module, func, &[] as &[Value])
 }
 
 fn assert_trap_with(err: anyhow::Error, fragment: &str) {

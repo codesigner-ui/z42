@@ -39,10 +39,14 @@ enum ExecMode {
     Aot,
 }
 
-/// Locate the stdlib libs/ directory using three search paths (in priority order):
-///   1. $Z42_LIBS environment variable
-///   2. <binary-dir>/../libs/   (adjacent to installed binary)
-///   3. <cwd>/artifacts/z42/libs/  (development: `cargo run` from project root)
+/// Locate the stdlib libs/ directory.
+///
+/// Search order (redesign-artifact-layout, 2026-05-12):
+///   1. `$Z42_LIBS`                                         — env override
+///   2. `<binary-dir>/../libs/`                             — packages/<pkg>/libs/ adjacent
+///   3. `<cwd>/artifacts/build/libs/release/`               — dev flat view (build-stdlib.sh)
+///   4. `<cwd>/artifacts/build/libs/debug/`                 — dev flat view (debug profile)
+///   5. `<cwd>/artifacts/z42/libs/`                         — legacy fallback (pre-2026-05-12)
 fn resolve_libs_dir() -> Option<PathBuf> {
     // 1. $Z42_LIBS
     if let Ok(v) = std::env::var("Z42_LIBS") {
@@ -51,7 +55,7 @@ fn resolve_libs_dir() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    // 2. <binary-dir>/../libs/
+    // 2. <binary-dir>/../libs/  (packages 布局)
     if let Ok(exe) = std::env::current_exe() {
         if let Some(bin_dir) = exe.parent() {
             let p = bin_dir.parent().unwrap_or(bin_dir).join("libs");
@@ -60,11 +64,16 @@ fn resolve_libs_dir() -> Option<PathBuf> {
             }
         }
     }
-    // 3. <cwd>/artifacts/z42/libs/
+    // 3-4. dev flat view（build-stdlib.sh 产出）
     if let Ok(cwd) = std::env::current_dir() {
-        let p = cwd.join("artifacts/z42/libs");
-        if p.is_dir() {
-            return Some(p);
+        for p in [
+            cwd.join("artifacts/build/libs/release"),
+            cwd.join("artifacts/build/libs/debug"),
+            cwd.join("artifacts/z42/libs"), // legacy fallback
+        ] {
+            if p.is_dir() {
+                return Some(p);
+            }
         }
     }
     None
@@ -167,11 +176,11 @@ fn log_module_paths(module_paths: &[PathBuf]) {
 /// Entries whose file name is already in `initially_loaded` (e.g. `z42.core.zpkg`
 /// eager-loaded at startup, or JIT-mode deps already merged) are excluded.
 fn build_declared_candidates(
-    user_artifact: &z42_vm::metadata::LoadedArtifact,
+    user_artifact: &z42::metadata::LoadedArtifact,
     libs_dir:      &Option<PathBuf>,
     initially_loaded: &[String],
-) -> Vec<(String, z42_vm::metadata::lazy_loader::ZpkgCandidate)> {
-    let mut declared: Vec<(String, z42_vm::metadata::lazy_loader::ZpkgCandidate)> = Vec::new();
+) -> Vec<(String, z42::metadata::lazy_loader::ZpkgCandidate)> {
+    let mut declared: Vec<(String, z42::metadata::lazy_loader::ZpkgCandidate)> = Vec::new();
     let Some(dir) = libs_dir else { return declared };
 
     let loaded_has = |name: &str| initially_loaded.iter().any(|f| f == name);
@@ -185,13 +194,13 @@ fn build_declared_candidates(
     // package filenames like `z42.collections.zpkg`).
     for dep in &user_artifact.dependencies {
         if loaded_has(&dep.file) || declared_has(&declared, &dep.file) { continue; }
-        if let Ok(cand) = z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &dep.file) {
+        if let Ok(cand) = z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &dep.file) {
             declared.push((dep.file.clone(), cand));
             continue;
         }
         // Fallback: reverse lookup by namespaces.
         for ns in &dep.namespaces {
-            let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else {
+            let Ok(zpkg_paths) = z42::metadata::resolve_namespace(ns, &[], &libs_paths) else {
                 continue;
             };
             for zpkg_path in zpkg_paths {
@@ -201,7 +210,7 @@ fn build_declared_candidates(
                     .map(str::to_owned)
                 else { continue };
                 if loaded_has(&file_name) || declared_has(&declared, &file_name) { continue; }
-                match z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+                match z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
                     Ok(cand) => declared.push((file_name, cand)),
                     Err(e)   => tracing::warn!("cannot read zpkg meta `{}`: {e}", file_name),
                 }
@@ -211,7 +220,7 @@ fn build_declared_candidates(
 
     // .zbc import_namespaces — reverse lookup
     for ns in &user_artifact.import_namespaces {
-        let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else {
+        let Ok(zpkg_paths) = z42::metadata::resolve_namespace(ns, &[], &libs_paths) else {
             continue;
         };
         for zpkg_path in zpkg_paths {
@@ -222,7 +231,7 @@ fn build_declared_candidates(
             else { continue };
             if loaded_has(&file_name) { continue; }
             if declared_has(&declared, &file_name) { continue; }
-            match z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+            match z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
                 Ok(cand) => declared.push((file_name, cand)),
                 Err(e)   => tracing::warn!("cannot read zpkg meta `{}`: {e}", file_name),
             }
@@ -257,7 +266,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let mut modules: Vec<z42_vm::metadata::Module> = Vec::new();
+    let mut modules: Vec<z42::metadata::Module> = Vec::new();
     // Track canonical paths of loaded artifact files to prevent duplicate loading.
     let mut loaded_paths: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
     // Track zpkg file names loaded eagerly at startup (initially_loaded input
@@ -270,7 +279,7 @@ fn main() -> Result<()> {
         if core_path.exists() {
             let core_canonical = core_path.canonicalize().unwrap_or(core_path.clone());
             let core_str = core_path.to_string_lossy().into_owned();
-            match z42_vm::metadata::load_artifact(&core_str) {
+            match z42::metadata::load_artifact(&core_str) {
                 Ok(a) => {
                     tracing::debug!("loaded stdlib z42.core from {core_str}");
                     modules.push(a.module);
@@ -285,7 +294,7 @@ fn main() -> Result<()> {
     }
 
     // 5.1c — load the user artifact.
-    let user_artifact = z42_vm::metadata::load_artifact(file)?;
+    let user_artifact = z42::metadata::load_artifact(file)?;
 
     // 5.1d — dependency loading strategy:
     //   Interp mode → pure lazy. Zpkgs are loaded on demand when the
@@ -309,7 +318,7 @@ fn main() -> Result<()> {
                 let dep_path = dir.join(&dep.file);
                 if dep_path.exists() {
                     let dep_str = dep_path.to_string_lossy().into_owned();
-                    if let Ok(a) = z42_vm::metadata::load_artifact(&dep_str) {
+                    if let Ok(a) = z42::metadata::load_artifact(&dep_str) {
                         modules.push(a.module);
                         let canonical = dep_path.canonicalize().unwrap_or(dep_path.clone());
                         loaded_paths.insert(canonical);
@@ -321,12 +330,12 @@ fn main() -> Result<()> {
         for ns in &user_artifact.import_namespaces {
             if let Some(ref dir) = libs_dir {
                 let libs_paths = vec![dir.clone()];
-                let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
+                let Ok(zpkg_paths) = z42::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
                 for zpkg_path in zpkg_paths {
                     let canonical = zpkg_path.canonicalize().unwrap_or(zpkg_path.clone());
                     if loaded_paths.contains(&canonical) { continue; }
                     let zpkg_str = zpkg_path.to_string_lossy().into_owned();
-                    if let Ok(a) = z42_vm::metadata::load_artifact(&zpkg_str) {
+                    if let Ok(a) = z42::metadata::load_artifact(&zpkg_str) {
                         modules.push(a.module);
                         loaded_paths.insert(canonical);
                         if let Some(name) = zpkg_path.file_name().and_then(|n| n.to_str()) {
@@ -356,14 +365,14 @@ fn main() -> Result<()> {
     let final_module = if modules.len() == 1 {
         modules.into_iter().next().unwrap()
     } else {
-        let mut m = z42_vm::metadata::merge_modules(modules)
+        let mut m = z42::metadata::merge_modules(modules)
             .with_context(|| format!("merging modules for `{}`", file))?;
         m.name = user_module_name;
-        z42_vm::metadata::loader::build_type_registry(&mut m);
-        z42_vm::metadata::loader::verify_constraints(&m)
+        z42::metadata::loader::build_type_registry(&mut m);
+        z42::metadata::loader::verify_constraints(&m)
             .with_context(|| format!("constraint verification failed for `{}`", file))?;
-        z42_vm::metadata::loader::build_block_indices(&mut m);
-        z42_vm::metadata::loader::build_func_index(&mut m);
+        z42::metadata::loader::build_block_indices(&mut m);
+        z42::metadata::loader::build_func_index(&mut m);
         m
     };
 
@@ -376,7 +385,7 @@ fn main() -> Result<()> {
     // drives on-demand loading; in JIT mode deps are already merged into
     // `modules` during 5.1d so `declared` is typically empty and the lazy
     // loader is effectively a no-op.
-    let mut ctx = z42_vm::vm_context::VmContext::new();
+    let mut ctx = z42::vm_context::VmContext::new();
     ctx.install_lazy_loader_with_deps(
         libs_dir.clone(),
         final_module.string_pool.len(),
@@ -386,13 +395,13 @@ fn main() -> Result<()> {
 
     let default_mode = match cli.mode {
         #[cfg(feature = "jit")]
-        Some(ExecMode::Jit) => z42_vm::metadata::ExecMode::Jit,
+        Some(ExecMode::Jit) => z42::metadata::ExecMode::Jit,
         #[cfg(feature = "aot")]
-        Some(ExecMode::Aot) => z42_vm::metadata::ExecMode::Aot,
-        _                   => z42_vm::metadata::ExecMode::Interp,
+        Some(ExecMode::Aot) => z42::metadata::ExecMode::Aot,
+        _                   => z42::metadata::ExecMode::Interp,
     };
 
-    let vm = z42_vm::vm::Vm::new(final_module, default_mode);
+    let vm = z42::vm::Vm::new(final_module, default_mode);
     // CLI --entry overrides any artifact-supplied entry hint.
     let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
     vm.run(&mut ctx, effective_entry)

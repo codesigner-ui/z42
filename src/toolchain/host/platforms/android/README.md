@@ -100,7 +100,7 @@ src/runtime/  (interp + aot feature; no JIT inside Android sandbox)
 ## 限制（v0.1）
 
 - **仅 interp 模式**：JIT 与 Android ART 互斥
-- **无 `native-interop`**：与 iOS 同步推迟。libffi-sys 在 cross-compile 时与 NDK 工具链不兼容；后续 spec 引入 vendored libffi 后开启
+- ~~**无 `native-interop`**~~ → **已启用**：libffi 5.1 / libffi-sys 4.1 的 bundled libffi 3.4.7 修复了旧 2.3 与 NDK 工具链不兼容的 CFI advance_loc 问题；`android` feature preset 现含 `native-interop`（首次 cross-compile 时通过 `cargo ndk` + NDK r25+ 验证，详见 `build.sh`）
 - **单实例**
 - **同步 invoke**：UI 上请用 `Dispatchers.Default` 异步包装
 - **Demo / JUnit / CI**：推迟到独立 spec（`add-platform-android-demo` / `-tests` / `-ci`）

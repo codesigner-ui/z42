@@ -71,7 +71,7 @@ fn main() {
     // cargo:warning and rely on the test's own missing-fixture diagnostic.
     let project_root = manifest_dir.parent().and_then(Path::parent);
     let driver = project_root
-        .map(|root| root.join("artifacts/compiler/z42.Driver/bin/z42c.dll"));
+        .map(|root| root.join("artifacts/build/compiler/z42.Driver/bin/z42c.dll"));
     if let Some(d) = &driver {
         println!("cargo:rerun-if-changed={}", d.display());
     }

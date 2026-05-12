@@ -7,7 +7,7 @@
 //! out [Ignore]-marked entries, materializes [Skip] reason and
 //! [ShouldThrow<E>] expected type per (R4.B / A2 / A3 chain expansion).
 
-use z42_vm::metadata::{LoadedArtifact, TestEntry, TestEntryKind, TestFlags};
+use z42::metadata::{LoadedArtifact, TestEntry, TestEntryKind, TestFlags};
 
 #[allow(dead_code)] // method_id reserved for full-impl filtering
 pub struct DiscoveredTest<'a> {

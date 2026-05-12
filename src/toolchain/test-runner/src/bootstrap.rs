@@ -13,9 +13,9 @@
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
-use z42_vm::metadata::{load_artifact, merge_modules, LoadedArtifact, Module, TestEntry};
-use z42_vm::vm::Vm;
-use z42_vm::vm_context::VmContext;
+use z42::metadata::{load_artifact, merge_modules, LoadedArtifact, Module, TestEntry};
+use z42::vm::Vm;
+use z42::vm_context::VmContext;
 
 pub struct LoadedRunner {
     /// Test metadata from the user artifact's TIDX section.
@@ -90,11 +90,11 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
         let mut m = merge_modules(modules)
             .with_context(|| format!("merging modules for `{zbc_path}`"))?;
         m.name = user_module_name;
-        z42_vm::metadata::loader::build_type_registry(&mut m);
-        z42_vm::metadata::loader::verify_constraints(&m)
+        z42::metadata::loader::build_type_registry(&mut m);
+        z42::metadata::loader::verify_constraints(&m)
             .with_context(|| format!("constraint verification failed for `{zbc_path}`"))?;
-        z42_vm::metadata::loader::build_block_indices(&mut m);
-        z42_vm::metadata::loader::build_func_index(&mut m);
+        z42::metadata::loader::build_block_indices(&mut m);
+        z42::metadata::loader::build_func_index(&mut m);
         m
     };
 
@@ -106,7 +106,7 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
         initially_loaded_zpkgs,
     );
 
-    let vm = Vm::new(final_module, z42_vm::metadata::ExecMode::Interp);
+    let vm = Vm::new(final_module, z42::metadata::ExecMode::Interp);
 
     Ok(LoadedRunner { test_index, user_func_names, vm, ctx })
 }
@@ -117,8 +117,8 @@ fn build_declared_candidates(
     user_artifact: &LoadedArtifact,
     libs_dir:      &Option<PathBuf>,
     initially_loaded: &[String],
-) -> Vec<(String, z42_vm::metadata::lazy_loader::ZpkgCandidate)> {
-    let mut declared: Vec<(String, z42_vm::metadata::lazy_loader::ZpkgCandidate)> = Vec::new();
+) -> Vec<(String, z42::metadata::lazy_loader::ZpkgCandidate)> {
+    let mut declared: Vec<(String, z42::metadata::lazy_loader::ZpkgCandidate)> = Vec::new();
     let Some(dir) = libs_dir else { return declared };
 
     let loaded_has = |name: &str| initially_loaded.iter().any(|f| f == name);
@@ -128,16 +128,16 @@ fn build_declared_candidates(
 
     for dep in &user_artifact.dependencies {
         if loaded_has(&dep.file) || declared_has(&declared, &dep.file) { continue; }
-        if let Ok(cand) = z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &dep.file) {
+        if let Ok(cand) = z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &dep.file) {
             declared.push((dep.file.clone(), cand));
             continue;
         }
         for ns in &dep.namespaces {
-            let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
+            let Ok(zpkg_paths) = z42::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
             for zpkg_path in zpkg_paths {
                 let Some(file_name) = zpkg_path.file_name().and_then(|n| n.to_str()).map(str::to_owned) else { continue };
                 if loaded_has(&file_name) || declared_has(&declared, &file_name) { continue; }
-                if let Ok(cand) = z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+                if let Ok(cand) = z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
                     declared.push((file_name, cand));
                 }
             }
@@ -145,12 +145,12 @@ fn build_declared_candidates(
     }
 
     for ns in &user_artifact.import_namespaces {
-        let Ok(zpkg_paths) = z42_vm::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
+        let Ok(zpkg_paths) = z42::metadata::resolve_namespace(ns, &[], &libs_paths) else { continue };
         for zpkg_path in zpkg_paths {
             let Some(file_name) = zpkg_path.file_name().and_then(|n| n.to_str()).map(str::to_owned) else { continue };
             if loaded_has(&file_name) { continue; }
             if declared_has(&declared, &file_name) { continue; }
-            if let Ok(cand) = z42_vm::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
+            if let Ok(cand) = z42::metadata::lazy_loader::ZpkgCandidate::build(dir, &file_name) {
                 declared.push((file_name, cand));
             }
         }
@@ -159,7 +159,15 @@ fn build_declared_candidates(
     declared
 }
 
-/// Locate `artifacts/z42/libs/` (mirror of z42vm's `resolve_libs_dir`).
+/// Locate the stdlib libs/ directory.
+///
+/// Search order (mirrors `src/runtime/src/main.rs::resolve_libs_dir`,
+/// redesign-artifact-layout 2026-05-12):
+///   1. `$Z42_LIBS`                                         — env override
+///   2. `<binary-dir>/../libs/`                             — packages/<pkg>/libs/ adjacent
+///   3. `<cwd>/artifacts/build/libs/release/`               — dev flat view
+///   4. `<cwd>/artifacts/build/libs/debug/`                 — dev flat view (debug profile)
+///   5. `<cwd>/artifacts/z42/libs/`                         — legacy fallback
 fn resolve_libs_dir() -> Option<PathBuf> {
     if let Ok(v) = std::env::var("Z42_LIBS") {
         let p = PathBuf::from(v);
@@ -172,8 +180,13 @@ fn resolve_libs_dir() -> Option<PathBuf> {
         }
     }
     if let Ok(cwd) = std::env::current_dir() {
-        let p = cwd.join("artifacts/z42/libs");
-        if p.is_dir() { return Some(p); }
+        for p in [
+            cwd.join("artifacts/build/libs/release"),
+            cwd.join("artifacts/build/libs/debug"),
+            cwd.join("artifacts/z42/libs"),
+        ] {
+            if p.is_dir() { return Some(p); }
+        }
     }
     None
 }

@@ -101,15 +101,26 @@ public static class SingleFileCompiler
         return 0;
     }
 
-    /// Walk up from the source file's directory to find artifacts/z42/libs/ and load dependencies.
+    /// Walk up from the source file's directory to find stdlib zpkg dir.
+    /// 搜索路径（redesign-artifact-layout, 2026-05-12）：
+    ///   1. `artifacts/build/libs/release/` (dev flat view, built by build-stdlib.sh)
+    ///   2. `artifacts/build/libs/debug/`
+    ///   3. `artifacts/z42/libs/` (legacy fallback)
     public static DependencyIndex LocateDepIndex(string sourceFullPath)
     {
         var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate))
-                return PackageCompiler.BuildDepIndex([candidate]);
+            foreach (var rel in new[] {
+                Path.Combine("artifacts", "build", "libs", "release"),
+                Path.Combine("artifacts", "build", "libs", "debug"),
+                Path.Combine("artifacts", "z42", "libs"),
+            })
+            {
+                string candidate = Path.Combine(dir.FullName, rel);
+                if (Directory.Exists(candidate))
+                    return PackageCompiler.BuildDepIndex([candidate]);
+            }
             dir = dir.Parent;
         }
         return DependencyIndex.Empty;
@@ -125,8 +136,18 @@ public static class SingleFileCompiler
         var dir = new DirectoryInfo(Path.GetDirectoryName(sourceFullPath) ?? ".");
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", "libs");
-            if (Directory.Exists(candidate))
+            // redesign-artifact-layout (2026-05-12): search new layout first.
+            string? candidate = null;
+            foreach (var rel in new[] {
+                Path.Combine("artifacts", "build", "libs", "release"),
+                Path.Combine("artifacts", "build", "libs", "debug"),
+                Path.Combine("artifacts", "z42", "libs"),
+            })
+            {
+                string c = Path.Combine(dir.FullName, rel);
+                if (Directory.Exists(c)) { candidate = c; break; }
+            }
+            if (candidate != null)
             {
                 var cache = new TsigCache();
                 foreach (var zpkgPath in Directory.EnumerateFiles(candidate, "*.zpkg"))

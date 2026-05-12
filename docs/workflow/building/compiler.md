@@ -14,7 +14,7 @@ dotnet build src/compiler/z42.slnx              # 默认 Debug
 dotnet build src/compiler/z42.slnx -c Release   # Release
 ```
 
-产物：`artifacts/compiler/<project>/bin/<config>/net10.0/<proj>.dll`。`z42c.dll` 是 driver 入口。
+产物：`artifacts/build/compiler/<project>/bin/<config>/net10.0/<proj>.dll`。`z42c.dll` 是 driver 入口。
 
 ## 编译器入口（`z42c`）
 
@@ -51,7 +51,7 @@ dotnet run --project src/compiler/z42.Driver -- errors                          
 
 ## 分发版 binary
 
-把 dotnet 单文件 binary 打到 `artifacts/z42/bin/`：
+把 dotnet 单文件 binary 打到 `artifacts/build/runtime/release/`：
 
 ```bash
 ./scripts/package.sh           # debug

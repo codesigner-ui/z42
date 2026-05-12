@@ -18,10 +18,10 @@ dotnet run --project src/compiler/z42.Driver -- <args>
 
 ```bash
 # lldb（macOS / Linux）
-lldb -- ./artifacts/rust/debug/z42vm <file.zbc>
+lldb -- ./artifacts/build/runtime/debug/z42vm <file.zbc>
 
 # gdb
-gdb --args ./artifacts/rust/debug/z42vm <file.zbc>
+gdb --args ./artifacts/build/runtime/debug/z42vm <file.zbc>
 
 # rust-analyzer + VS Code launch.json：照常 cargo run / cargo test
 ```

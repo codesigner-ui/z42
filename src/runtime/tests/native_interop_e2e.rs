@@ -13,10 +13,10 @@
 
 use std::collections::HashMap;
 
-use z42_vm::metadata::{
+use z42::metadata::{
     BasicBlock, ExecMode, Function, Instruction, Module, Terminator, Value,
 };
-use z42_vm::vm_context::VmContext;
+use z42::vm_context::VmContext;
 
 extern "C" {
     /// Linked statically from `libnumz42_c.a`. Calls `z42_register_type`
@@ -108,7 +108,7 @@ fn vm_with_counter_registered() -> VmContext {
 /// installed by `interp::exec_function`; this helper exposes the same
 /// scoping for tests that need to drive `z42_*` extern functions directly.
 fn invoke_with_vm_guard<R>(ctx: &VmContext, f: impl FnOnce() -> R) -> R {
-    let _g = z42_vm::native::exports::VmGuard::enter(ctx);
+    let _g = z42::native::exports::VmGuard::enter(ctx);
     f()
 }
 
@@ -180,7 +180,7 @@ fn callnative_counter_inc_three_times_then_get_returns_three() {
     let m = build_module("counter_e2e", instructions, Terminator::Ret { reg: Some(1) });
     let func = &m.functions[0];
 
-    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+    let result = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect("counter_e2e returns Ok");
     assert_eq!(
         result,
@@ -268,7 +268,7 @@ fn rust_counter_callnative_inc_three_times_then_get_returns_three() {
     );
     let func = &m.functions[0];
 
-    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+    let result = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect("rust_counter_e2e returns Ok");
     assert_eq!(result, Some(Value::I64(3)));
 
@@ -313,7 +313,7 @@ fn c_and_rust_modules_coexist() {
 /// If the .zbc file is regenerated (e.g. compiler IR change), refresh
 /// it via:
 ///
-///   dotnet artifacts/compiler/z42.Driver/bin/z42c.dll \
+///   dotnet artifacts/build/compiler/z42.Driver/bin/Debug/net10.0/z42c.dll \
 ///       src/runtime/tests/data/z42_native_e2e/source.z42 --emit zbc \
 ///       -o src/runtime/tests/data/z42_native_e2e/source.zbc
 #[test]
@@ -334,7 +334,7 @@ fn z42_source_calls_numz42_via_native_attr() {
     }
 
     let zbc_str = zbc_path.to_str().expect("zbc path is utf-8");
-    let artifact = z42_vm::metadata::load_artifact(zbc_str)
+    let artifact = z42::metadata::load_artifact(zbc_str)
         .unwrap_or_else(|e| panic!("load_artifact({zbc_str}) failed: {e}"));
     let module = artifact.module;
 
@@ -358,7 +358,7 @@ fn z42_source_calls_numz42_via_native_attr() {
         });
     let main_fn = &module.functions[main_idx];
 
-    let result = z42_vm::interp::run_returning(&ctx, &module, main_fn, &[] as &[Value])
+    let result = z42::interp::run_returning(&ctx, &module, main_fn, &[] as &[Value])
         .expect("Main runs to completion");
     assert_eq!(
         result,
@@ -428,7 +428,7 @@ fn z42_str_marshals_to_cstr_via_strlen() {
         Terminator::Ret { reg: Some(1) },
     );
     let func = &m.functions[0];
-    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+    let result = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect("strlen via Str-marshal succeeds");
     assert_eq!(result, Some(Value::I64(11)));
 }
@@ -494,7 +494,7 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
         func_ref_cache_slots: 0,
     };
     let func = &m.functions[0];
-    let result = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+    let result = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect("byte array pin → native buflen succeeds");
     assert_eq!(result, Some(Value::I64(3)));
     assert_eq!(
@@ -551,7 +551,7 @@ fn z42_str_with_interior_nul_traps_z0908() {
         func_ref_cache_slots: 0,
     };
     let func = &m.functions[0];
-    let err = z42_vm::interp::run_returning(&ctx, &m, func, &[] as &[Value])
+    let err = z42::interp::run_returning(&ctx, &m, func, &[] as &[Value])
         .expect_err("interior NUL must fail at marshal");
     let msg = format!("{err:#}");
     assert!(msg.contains("Z0908"), "msg = {msg}");
@@ -573,7 +573,7 @@ fn callnative_unknown_method_z0905() {
         Terminator::Ret { reg: None },
     );
     let func = &m.functions[0];
-    let err = z42_vm::interp::run(&ctx, &m, func, &[] as &[Value]).expect_err("must fail");
+    let err = z42::interp::run(&ctx, &m, func, &[] as &[Value]).expect_err("must fail");
     assert!(format!("{err:#}").contains("ghost_method"));
     assert!(format!("{err:#}").contains("Z0905"));
 }
