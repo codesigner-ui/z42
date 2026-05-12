@@ -300,6 +300,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | multi-arch-container-packages | multi-slice xcframework / multi-ABI AAR 卷起来发；Phase 1 选 per-arch flat（13 包），用户呼声出来再加 `z42-<v>-ios-xcframework-<config>` / `z42-<v>-android-aar-<config>` 两个 convenience 包 | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | per-arch-abi-feature-matrix | abi-version 升 2 后"哪些 host config 字段哪个 ABI 起可用"细粒度矩阵 | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | binary-package-signing | iOS xcframework / Android AAR / wasm npm publish 时 notarization / GPG / npm 2FA；Phase 1 全 unsigned，留给 Phase 4 release CI | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
+| z42 build-driver prerequisites | 用 z42 自身重写所有 `.sh` 解 Tier 1 Windows CI；阻塞 = P0 z42.os/z42.io.fs + P1 z42.crypto/z42.net + P2 z42.toml/z42.compression | [stdlib/roadmap.md "Deferred / Future Work"](design/stdlib/roadmap.md#z42-build-driver-prerequisites2026-05-13) |
 
 ### 实施期延后（D-* 系列）
 

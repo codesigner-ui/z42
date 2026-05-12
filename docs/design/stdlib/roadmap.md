@@ -140,3 +140,42 @@
 - VM 内部 intrinsic 调整（属 stdlib.md L1 层）
 - 现有包的 bug fix / 小特性补丁（直接走 docs/spec/changes/）
 - 语言特性扩展（lambda / async / 反射）— 见 [language-overview.md](../language/language-overview.md) + roadmap L3 段
+
+---
+
+## Deferred / Future Work
+
+### z42 build-driver prerequisites（2026-05-13）
+
+**触发来源**：仓库 build / test 脚本目前全是 bash（`scripts/*.sh` + `src/toolchain/host/platforms/*/build.sh`），不能在 Windows 上跑。要让 Tier 1 Windows CI 工作，有 4 条路（xtask / Python driver / PowerShell 双维护 / Git Bash）—— 2026-05-13 决策**全部放弃**，长期目标是**用 z42 自身重写所有 build / test 脚本**：编译为 `.zbc` 单文件，由 `z42vm` 跨平台执行，与 z42 自举路线一致（参 [`roadmap.md`](../../roadmap.md) L4 自举段）。
+
+**问题**：直接做不可行，z42 stdlib 缺一组 build driver 必需的原语。即便先用 native interop（`extern "C"`）shell out 到 libc，也只解决 POSIX，不解决 Windows（Win32 API 还得另封一层）—— 必须等下面这些**跨平台抽象**层在 stdlib 中先到位。
+
+**阻塞清单**（每项对照本路线图分级）：
+
+| 原语 | 本路线图分级 | 用途 |
+|------|------------|------|
+| `Std.Process.Start(file, argv, [...stdio])` 带 stdout capture / exit code | **P0 z42.os** | spawn `cargo build` / `dotnet test` / `gradle` / `xcodebuild` / `wasm-pack` |
+| `Std.IO.File.{ReadAllText, WriteAllText, Exists, Copy, Move, Delete}` | **P0 z42.io.fs** | 读 versions.toml / 写 manifest.toml / 拷 zpkg |
+| `Std.IO.Directory.{Create, Enumerate, Exists}` | **P0 z42.io.fs** | mkdir -p / 扫 src/tests/<cat>/<name>/ |
+| `Std.IO.Path.{Combine, GetDirectoryName, GetExtension, IsRooted, ...}` | **P0 z42.io.fs** | 跨平台 path 拼接（避免 `/` vs `\` 错误） |
+| `Std.Environment.{GetVar, SetVar}` + `Std.Environment.GetCommandLineArgs()` | **P0 z42.os** + 已有 | 读 `$ANDROID_NDK_HOME` / argv 解析 |
+| `Std.Toml.{Read, ReadFile}` | **P2 z42.toml** | 解析 versions.toml；shell 端目前用 python3 + tomllib |
+| `Std.Net.Http.Get(url) -> stream` 或 shell out 到 curl | **P1 z42.net**（先 curl 顶着）| NDK / SDK 压缩包下载 |
+| `Std.Crypto.SHA256` 或 shell out 到 shasum/openssl | **P1 z42.crypto**（先 shasum 顶着）| 下载校验 |
+| `Std.IO.Compression.Zip.Extract` 或 shell out 到 unzip | **P2 z42.compression**（先 unzip 顶着）| NDK zip 解压 |
+
+**触发条件 / 可恢复推进点**：
+
+1. **P0 三件套先到位**（z42.os Process / z42.os Environment / z42.io.fs File+Directory+Path）—— 估计与 L2 M7-M8 标准库主体推进同节奏。这三项落地后，**大多数 bash 脚本**（`test-all.sh` / `test-vm.sh` / `test-cross-zpkg.sh` / `test-stdlib.sh` / `regen-golden-tests.sh`）已经可以 1:1 迁成 `.z42`（shell out 到 curl / unzip / shasum 暂时顶住下载类）
+2. **P1 z42.crypto + P1 z42.net 中后期** —— `setup-tools.sh` 的 NDK 下载 + sha256 校验从 shell-out 升级为纯 z42 端 API
+3. **P2 z42.toml + z42.compression** —— `versions.toml` 解析改 z42 原生；NDK zip 解压改 z42 原生
+4. **打通后**：删除 `scripts/_lib/versions.sh`（python3 依赖也跟着下）+ 所有 `.sh` → `.z42`，CI 第一步 `cargo build z42vm; ./z42vm scripts/test-all.zbc`，Tier 1 Windows 通
+
+**当前 workaround**：
+
+- 仓内继续 bash 驱动（macOS / Linux dev workflow 不受影响）
+- Windows dev：用 WSL / Git Bash（接受 path 翻译等 quirks）；Tier 1 Windows CI 推迟到 z42 build-driver 落地
+- 不投资中间态：**不做 xtask（Rust）**、**不做 PowerShell 双维护**、**不做 Python driver** —— 中间态的代码在 z42 driver 上线后必删，做了就是技术债
+
+**与 stdlib P0/P1/P2 顺序的关系**：这条 backlog **不**强行抢占现有 P0 排期（`z42.time → z42.io.fs 扩展 → z42.os → z42.encoding → z42.json`）。z42.os / z42.io.fs 推进时附带验证它们能驱动 build script 即可。
