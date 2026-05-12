@@ -1,0 +1,15 @@
+{
+    "name": "z42-wasm-tests",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "test": "playwright test",
+        "install-browsers": "playwright install chromium"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.49.0",
+        "http-server": "^14.1.1"
+    },
+    "_comment": "Local-only test harness for @z42/wasm. Run via ../test.sh (sets up Node + PATH + browser cache)."
+}

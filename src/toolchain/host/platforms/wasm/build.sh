@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Build `@z42/wasm` end-to-end:
 #   1. Verify required tooling.
-#   2. Compile the demo .z42 fixture to .zbc via z42c.dll.
-#   3. Copy stdlib zpkgs from artifacts/z42/libs/ into js/stdlib/.
+#   2. Compile test fixtures from examples/embedding/*.z42 → js/fixtures/.
+#   3. Copy stdlib zpkgs + index.json from artifacts/build/libs/release/
+#      into js/stdlib/.
 #   4. Run wasm-pack for web + nodejs targets.
 #
 # Spec: docs/spec/archive/2026-05-12-add-platform-wasm/
+#       docs/spec/archive/2026-05-12-add-wasm-tests/  (stale-path fix + fixtures)
 
 set -euo pipefail
 
@@ -26,41 +28,62 @@ if ! rustup target list --installed | grep -q '^wasm32-unknown-unknown$'; then
     exit 1
 fi
 
-# ── (2) Compile the demo fixture if z42c is available. ───────────────────
-
-Z42C="$ROOT/artifacts/compiler/z42.Driver/bin/z42c.dll"
-SRC="$HERE/demo/fixtures/hello.z42"
-ZBC="$HERE/demo/fixtures/hello.zbc"
-
-if [[ -f "$Z42C" ]]; then
-    echo "compiling fixture: $(basename "$SRC")"
-    dotnet "$Z42C" "$SRC" --emit zbc -o "$ZBC"
-else
-    echo "warning: z42c not built — run 'dotnet build src/compiler/z42.slnx' first" >&2
-    echo "         skipping fixture compile; node demo will not run end-to-end" >&2
+if ! command -v dotnet >/dev/null 2>&1; then
+    echo "error: dotnet not found. Install .NET 8+ (https://dotnet.microsoft.com)." >&2
+    exit 1
 fi
 
-# ── (3) Stdlib bundle: copy artifacts/z42/libs/*.zpkg → js/stdlib/. ──────
+DRIVER_DLL="$ROOT/artifacts/build/compiler/z42.Driver/bin/z42c.dll"
+if [[ ! -f "$DRIVER_DLL" ]]; then
+    echo "error: z42c driver not found at $DRIVER_DLL" >&2
+    echo "       build the compiler first: dotnet build $ROOT/src/compiler/z42.slnx" >&2
+    exit 1
+fi
 
-LIBS_DIR="$ROOT/artifacts/z42/libs"
+# ── (2) Compile fixtures from examples/embedding/*.z42 → js/fixtures/. ───
+#
+# Fixtures are shared with add-ios-tests and any future platform spec;
+# they live under `examples/embedding/` so all platforms reuse one
+# source-of-truth.
+
+FIX_DIR="$HERE/js/fixtures"
+mkdir -p "$FIX_DIR"
+for src in hello multi_line; do
+    src_file="$ROOT/examples/embedding/${src}.z42"
+    out_file="$FIX_DIR/${src}.zbc"
+    if [[ ! -f "$src_file" ]]; then
+        echo "error: fixture source missing: $src_file" >&2
+        exit 1
+    fi
+    echo "z42c $src.z42 → $out_file"
+    dotnet "$DRIVER_DLL" "$src_file" --emit zbc -o "$out_file"
+done
+
+# ── (3) Stdlib bundle (zpkgs + namespace index). ─────────────────────────
+
+LIBS_DIR="$ROOT/artifacts/build/libs/release"
 STDLIB_DIR="$HERE/js/stdlib"
 
 if [[ -d "$LIBS_DIR" ]]; then
-    echo "copying stdlib zpkgs from $LIBS_DIR"
+    echo "copying stdlib zpkgs + index from $LIBS_DIR"
     mkdir -p "$STDLIB_DIR"
     cp "$LIBS_DIR"/*.zpkg "$STDLIB_DIR/" 2>/dev/null || true
     ls "$STDLIB_DIR"/*.zpkg 2>/dev/null | xargs -n1 basename | sed 's/^/  - /' || true
+    if [[ -f "$LIBS_DIR/index.json" ]]; then
+        cp "$LIBS_DIR/index.json" "$STDLIB_DIR/index.json"
+        echo "  - index.json"
+    else
+        echo "warning: $LIBS_DIR/index.json missing — bundleStdlib* will fall back to namespace-as-filename" >&2
+    fi
 else
     echo "warning: stdlib libs dir not found at $LIBS_DIR" >&2
-    echo "         build the standard library first: dotnet build src/compiler/z42.slnx" >&2
+    echo "         build the standard library first: ./scripts/build-stdlib.sh" >&2
 fi
 
 # ── (4) wasm-pack: produce pkg-web/ + pkg-nodejs/. ──────────────────────
 
 cd "$HERE"
 
-# wasm-pack needs a target dir under the crate. We keep both builds
-# parallel-dir so consumers can pick by `import` map.
 echo "wasm-pack build --target web"
 wasm-pack build --target web --out-dir pkg-web --out-name z42_wasm --no-typescript
 
@@ -71,6 +94,8 @@ echo ""
 echo "built:"
 echo "  $HERE/pkg-web/"
 echo "  $HERE/pkg-nodejs/"
-echo "  $STDLIB_DIR/"
+echo "  $STDLIB_DIR/                         (zpkgs + index.json)"
+echo "  $FIX_DIR/                            (test fixtures)"
 echo ""
-echo "run the node demo with:  node $HERE/demo/node/run.js"
+echo "run tests:  ./test.sh   (Node.js via artifacts/tools/node — run ./scripts/install-node-local.sh first)"
+echo "run demo:   $ROOT/artifacts/tools/node/bin/node demo/node/run.js"

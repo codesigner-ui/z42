@@ -1,9 +1,10 @@
 // Browser hello-world demo for `@z42/wasm`.
 //
 // Mirrors `demo/node/run.js`: load corelib via stdlib bundle resolver,
-// invoke `Wasm.Hello.Main`, capture stdout. The only difference is that
-// the .zbc + stdlib zpkgs are loaded via `fetch()` instead of `fs`, and
-// the host writes captured output into the page DOM instead of stdout.
+// invoke `Hello.Main` (from the shared `examples/embedding/hello.z42`
+// fixture), capture stdout. The only difference is that the .zbc +
+// stdlib zpkgs are loaded via `fetch()` instead of `fs`, and the host
+// writes captured output into the page DOM instead of stdout.
 //
 // Serve the wasm/ directory over HTTP (file:// URLs cannot load .wasm)
 // and open this demo's index.html. See docs/workflow/building/wasm.md.
@@ -11,8 +12,8 @@
 import init, { Z42VM } from '../../pkg-web/z42_wasm.js';
 import { bundleStdlibBrowser } from '../../js/stdlib-resolver.js';
 
-const ZBC_URL    = new URL('../fixtures/hello.zbc', import.meta.url);
-const STDLIB_URL = new URL('../../js/stdlib/',      import.meta.url);
+const ZBC_URL    = new URL('../../js/fixtures/hello.zbc', import.meta.url);
+const STDLIB_URL = new URL('../../js/stdlib/',            import.meta.url);
 
 const logEl    = document.getElementById('log');
 const statusEl = document.getElementById('status');
@@ -44,11 +45,11 @@ async function main() {
 
     const zbcBytes = new Uint8Array(await (await fetch(ZBC_URL)).arrayBuffer());
     const module   = vm.loadZbc(zbcBytes);
-    const entry    = vm.resolveEntry(module, 'Wasm.Hello.Main');
+    const entry    = vm.resolveEntry(module, 'Hello.Main');
     vm.invoke(entry);
     vm.dispose();
 
-    const expected = 'Hello, World!\n';
+    const expected = 'hello, world\n';
     if (captured !== expected) {
         throw new Error(
             `expected stdout ${JSON.stringify(expected)}, got ${JSON.stringify(captured)}`);

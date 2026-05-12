@@ -1,13 +1,15 @@
 // Node.js hello-world demo for `@z42/wasm`.
 //
 // Mirrors the Tier 2 `hello_rust` example: load corelib via stdlib
-// bundle resolver, invoke `Wasm.Hello.Main`, capture stdout, assert
-// "Hello, World!\n".
+// bundle resolver, invoke `Hello.Main`, capture stdout, assert
+// "hello, world\n". Uses the shared embedding fixture from
+// `examples/embedding/hello.z42` (also consumed by add-ios-tests
+// XCTest R1).
 //
 // Run after `./build.sh` succeeds:
-//     node demo/node/run.js
+//     <repo>/artifacts/tools/node/bin/node demo/node/run.js
 //
-// Expected output:  [host] Hello, World!
+// Expected output:  [host] hello, world
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +19,7 @@ import { Z42VM } from '../../pkg-nodejs/z42_wasm.js';
 import { bundleStdlibNode } from '../../js/stdlib-resolver.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const ZBC_PATH = path.join(HERE, '..', 'fixtures', 'hello.zbc');
+const ZBC_PATH = path.join(HERE, '..', '..', 'js', 'fixtures', 'hello.zbc');
 
 async function main() {
     if (!fs.existsSync(ZBC_PATH)) {
@@ -42,12 +44,12 @@ async function main() {
     const vm = new Z42VM({ zpkgResolver: resolver, stdoutHandler });
     const zbcBytes = new Uint8Array(fs.readFileSync(ZBC_PATH));
     const module = vm.loadZbc(zbcBytes);
-    const entry  = vm.resolveEntry(module, 'Wasm.Hello.Main');
+    const entry  = vm.resolveEntry(module, 'Hello.Main');
     vm.invoke(entry);
     vm.dispose();
 
     // 4. Assert output.
-    const expected = 'Hello, World!\n';
+    const expected = 'hello, world\n';
     if (captured !== expected) {
         console.error(`\nERROR: expected stdout ${JSON.stringify(expected)}, got ${JSON.stringify(captured)}`);
         process.exit(1);

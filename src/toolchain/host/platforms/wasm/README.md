@@ -34,14 +34,37 @@ miniserve --index demo/web/index.html .        # 然后开 http://127.0.0.1:8080
 # 或：dotnet serve -p 8000                      # 开 http://127.0.0.1:8000/demo/web/index.html
 # 或：python3 -m http.server 8000               # 同上 URL
 
-# 或跑 Node demo（需要 Node ≥ 18）
-node demo/node/run.js
-# 期望输出（两种都是）：[host] Hello, World!
+# 或跑 Node demo（需要本地 Node — 走 artifacts/tools/node）
+../../../../scripts/install-node-local.sh             # 一次性，装到 artifacts/tools/node
+PATH="$PWD/../../../../artifacts/tools/node/bin:$PATH" node demo/node/run.js
+# 期望输出：[host] hello, world
 ```
 
 > 详细 step-by-step 跑通流程见 [`docs/workflow/building/wasm.md`](../../../../docs/workflow/building/wasm.md)。
 
 `[host]` 前缀来自 demo 注册的 stdout handler，证明输出**经过宿主回调**而不是 wasm 内部 println。
+
+## Run tests
+
+```bash
+# 一次性：本地 Node + chromium 落 artifacts/tools/，不动系统
+../../../../scripts/install-node-local.sh
+
+# 每次（自动 npm install + playwright install chromium）：
+./build.sh && ./test.sh
+```
+
+期望尾部输出：
+
+```
+Running 7 tests using 1 worker
+  ✓  1 [chromium] › r1-r7.spec.ts:14:1 › R1 smoke / hello world
+  ✓  2 ... R2 error / bad zbc throws status 10
+  ...
+  7 passed (4.0s)
+```
+
+playwright 在 headless chromium 中跑 7 个 platform-test-contract scenario（详见 [`add-wasm-tests`](../../../../docs/spec/archive/2026-05-12-add-wasm-tests/)）。浏览器装到 `artifacts/tools/playwright-browsers/`（~280MB，gitignored），不污染系统。
 
 ## API 概览
 
