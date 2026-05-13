@@ -157,6 +157,39 @@ var a  = default(int[]);     // null（与 `new int[N]` 区分；后者分配 N 
 
 边界：method-level type-param `m<U>()`、free generic function `f<T>()`、static method on generic class — 这些路径无 `this`，编译期通过但运行时退化为 `Value::Null`（graceful-degradation）。后续 spec 拓展 calling convention 让方法级 / free 也能传 type_args。
 
+### 显式数值 cast（spec fix-numeric-cast-lowering, 2026-05-13）
+
+C# 风格 `(T)expr` 表达式做显式类型转换。**合法**、**非法** 两个矩阵：
+
+**合法 cast**：
+
+| from → to | 行为 |
+|---|---|
+| `double → long/int/short/byte/...` | 向零截断；NaN → 0；超界 saturating（Rust `as iN` 语义）|
+| `float/double → long/int` | 同上 |
+| `long → int/short/byte` | 截低位 + 符号扩展，与 C# `unchecked` 一致：`(int)100000000000L == 1215752192` |
+| `int/long → double/float` | widening；超 2^53 时 f64 精度可能损失（沉默） |
+| `char → int/long` | 取 Unicode scalar value：`(int)'A' == 65` |
+| `int/long → char` | 校验有效 Unicode scalar（拒 surrogate / >U+10FFFF；运行期 `InvalidCastException`） |
+| `object → 任意数值/char` | 运行时按 `Value` variant 解析；现有 `(long)raw[0]` 习惯继续可用 |
+
+**非法 cast → 编译期 E0424**：
+- `bool ↔ 数值/char/string` — 用条件表达式替代
+- `string ↔ 数值/char` — 用 `Parse` / `ToString` 替代
+
+```z42
+long n = (long)3.7;         // 3
+int  c = (int)'A';          // 65
+char a = (char)65;          // 'A'
+
+int  i = (int)true;         // E0424：cannot cast bool ↔ numeric
+long n = (long)"42";        // E0424：use long.Parse
+```
+
+**身份 cast**（如 `(int)int_var`）零开销 — IR 层不发射任何指令。
+
+**实现备注**：IR 新增 `Convert(dst, src)` 指令；dst 静态类型标记目标，src 运行时 `Value` variant 决定来源。运行时 saturating 与 NaN→0 沿用 Rust `as` 语义（与 z42 现有 `int_binop` `wrapping_*` 风格一致），未来若需 C# `checked` 严格语义可独立 spec 升级。
+
 ---
 
 ## 4. 控制流

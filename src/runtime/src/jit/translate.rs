@@ -94,6 +94,9 @@ pub fn max_reg(func: &Function) -> usize {
                 Instruction::LoadFnCached { dst, .. } => Some(*dst),
                 Instruction::CallIndirect { dst, .. } => Some(*dst),
                 Instruction::MkClos       { dst, .. } => Some(*dst),
+
+                // spec fix-numeric-cast-lowering (2026-05-13)
+                Instruction::Convert      { dst, .. } => Some(*dst),
             };
             if let Some(d) = dst {
                 if d as usize > max { max = d as usize; }
@@ -294,6 +297,7 @@ pub fn translate_function(
     let hr_call_indirect = imp!(helper_ids.call_indirect);
     let hr_load_fn_cached = imp!(helper_ids.load_fn_cached);
     let hr_default_of     = imp!(helper_ids.default_of);
+    let hr_convert        = imp!(helper_ids.convert);
 
     // ── Translate each z42 block ──────────────────────────────────────────────
     for (block_idx, z42_block) in z42_func.blocks.iter().enumerate() {
@@ -802,6 +806,15 @@ pub fn translate_function(
                     let d  = ri!(*dst);
                     let pi = builder.ins().iconst(types::I32, *param_index as i64);
                     let inst = builder.ins().call(hr_default_of, &[frame_val, ctx_val, d, pi]);
+                    let ret  = builder.inst_results(inst)[0]; check!(ret);
+                }
+
+                // spec fix-numeric-cast-lowering (2026-05-13): explicit numeric cast
+                Instruction::Convert { dst, src, to_tag } => {
+                    let d = ri!(*dst);
+                    let s = ri!(*src);
+                    let t = builder.ins().iconst(types::I32, *to_tag as i64);
+                    let inst = builder.ins().call(hr_convert, &[frame_val, ctx_val, d, s, t]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
 

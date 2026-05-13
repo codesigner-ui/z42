@@ -223,6 +223,18 @@ public static class DiagnosticCatalog
             "void X<T>() where T: Func<int,int> + ICloneable // E0423: cannot combine\n" +
             "void X<T>() where T: Func<int,int>, T: Action  // E0423: multiple func constraints"),
 
+        [DiagnosticCodes.IllegalCast] = new(
+            "Illegal type cast",
+            "Only the following explicit casts are supported: numeric ↔ numeric, char ↔ numeric, " +
+            "object ↔ anything (runtime-checked). Casts between bool and numeric / string and " +
+            "numeric / etc. are rejected at compile time. Use a conditional expression for " +
+            "bool conversions, and `Parse` / `ToString` for string conversions. " +
+            "(fix-numeric-cast-lowering, 2026-05-13)",
+            "long n = (long)3.7;           // ok: 3\n" +
+            "int  i = (int)'A';            // ok: 65\n" +
+            "int  i = (int)true;           // E0424: cannot cast bool ↔ numeric\n" +
+            "long n = (long)\"42\";          // E0424: cannot cast string ↔ numeric; use long.Parse"),
+
         // ── E05xx: IR code generator ──────────────────────────────────────────
 
         [DiagnosticCodes.UnsupportedSyntax] = new(

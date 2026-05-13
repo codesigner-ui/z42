@@ -94,6 +94,40 @@ entry:
 %r = ge  <type> %a, %b    -> bool
 ```
 
+### Numeric Cast (spec fix-numeric-cast-lowering, 2026-05-13)
+
+`Convert` lowers an explicit user-level cast (e.g. `(long)d`) to a runtime
+type conversion. Target type rides on the destination register's static
+tag; source type is read at runtime from the source `Value` variant.
+
+```
+%r = convert  %src       ; %r has the target tag (e.g. i64); VM reads %src's
+                         ; Value variant (F64 / I64 / Char) to pick conversion
+```
+
+**Opcode**: `0xB1` (slot in the 0xB0–0xBF generic-runtime range)
+**Encoding**: `op(1) + dst_tag(1) + dst_reg(u16) + src_reg(u16)`
+**zbc version**: 1.5+
+
+**Conversion matrix (legal pairs, VM-supported)**:
+
+| from → to | semantics |
+|---|---|
+| `f64 → i*/u*` | Rust `as iN` saturating + truncate toward zero; NaN → 0 |
+| `f64 → char` | scalar value validation (surrogate / >U+10FFFF → InvalidCastException) |
+| `i64 → f32/f64` | widening (precision may be lost beyond 2^53) |
+| `i64 → i8/i16/i32` | low-bits + sign extend (matches C# `(int)long_val`) |
+| `i64 → u8/u16/u32` | low-bits + zero extend |
+| `char → i*/u*` | Unicode scalar value (0..U+10FFFF, skipping surrogates) |
+| `char → f64` | scalar value as double |
+| `i64 → char` | scalar value validation; surrogate / >U+10FFFF → exception |
+
+**Rejected at TypeCheck (E0424 IllegalCast)**: `bool ↔ numeric/char/string`, `string ↔ numeric/char`. Users go through conditional expressions or `Parse` / `ToString` instead.
+
+**Identity casts** (e.g. `(int)int_val`) are elided by Codegen and don't emit `Convert` — register flows through unchanged.
+
+**Object / Unknown source**: Codegen still emits `Convert`; VM resolves at runtime based on dynamic `Value` variant. Preserves the existing stdlib `(long)object` pattern.
+
 ### Control Flow
 ```
 br <label>

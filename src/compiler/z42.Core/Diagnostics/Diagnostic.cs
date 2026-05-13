@@ -78,6 +78,7 @@ public static class DiagnosticCodes
     public const string InvalidDefaultType       = "E0421"; // default(T) where T is unknown / generic type-param (add-default-expression Phase 1)
     public const string GenericFuncConstraintViolation = "E0422"; // where T: Func<...> / (T)->R 不满足 (add-generic-func-constraint)
     public const string InvalidFuncConstraint    = "E0423"; // func 约束与其他约束并置 / 多个 func 约束 (add-generic-func-constraint v1)
+    public const string IllegalCast              = "E0424"; // numeric cast: bool ↔ num / string ↔ num / other illegal pairs (fix-numeric-cast-lowering 2026-05-13)
 
     // IrGen
     public const string UnsupportedSyntax    = "E0501";

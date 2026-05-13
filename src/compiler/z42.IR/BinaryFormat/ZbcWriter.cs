@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 4;   // 2026-05-11 add-generic-func-constraint: constraint bundle flag 0x40 + per-param/return type-name strings (Z42FuncType signature). Pre-1.4 not readable.
+    public const ushort VersionMinor = 5;   // 2026-05-13 fix-numeric-cast-lowering: new opcode Convert (0xB1) for explicit numeric type casts. Pre-1.5 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

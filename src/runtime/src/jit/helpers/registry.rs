@@ -99,6 +99,8 @@ pub struct HelperIds {
     pub mk_clos:        FuncId,
     pub call_indirect:  FuncId,
     pub load_fn_cached: FuncId,
+    /// fix-numeric-cast-lowering (2026-05-13): explicit numeric cast.
+    pub convert:        FuncId,
 }
 
 // ─── register_symbols ───────────────────────────────────────────────────────
@@ -163,6 +165,7 @@ pub fn register_symbols(builder: &mut JITBuilder) {
     // object
     reg!("jit_obj_new",       object::jit_obj_new);
     reg!("jit_default_of",    object::jit_default_of);
+    reg!("jit_convert",       object::jit_convert);
     reg!("jit_field_get",     object::jit_field_get);
     reg!("jit_field_set",     object::jit_field_set);
     reg!("jit_is_instance",   object::jit_is_instance);
@@ -282,5 +285,7 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         load_fn_cached: decl!("jit_load_fn_cached", [ptr, ptr, i32t, ptr, i64t, i32t],           [i8t]),
         // jit_default_of(frame, ctx, dst, param_index) -> u8
         default_of:     decl!("jit_default_of",     [ptr, ptr, i32t, i32t],                      [i8t]),
+        // jit_convert(frame, ctx, dst, src, to_tag) -> u8  (spec fix-numeric-cast-lowering)
+        convert:        decl!("jit_convert",        [ptr, ptr, i32t, i32t, i32t],                [i8t]),
     })
 }

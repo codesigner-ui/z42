@@ -449,6 +449,25 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         param_index: u8,
     },
+    /// spec fix-numeric-cast-lowering (2026-05-13): explicit numeric type
+    /// conversion. Target type comes from `dst`'s static type tag; source
+    /// type is resolved at runtime from `src`'s `Value` variant.
+    ///
+    /// Covered:
+    ///   - f64 → i*/u* (saturating, Rust `as` semantics; NaN → 0)
+    ///   - i64 → f32/f64 (widening)
+    ///   - i64 → i8/i16/i32 (low-bits + sign extend)
+    ///   - i64 → u8/u16/u32 (low-bits + zero extend)
+    ///   - char ↔ i32/i64 (Unicode scalar; invalid → error)
+    /// Identity casts (fromIr == toIr) are not emitted — codegen returns the
+    /// source register directly.
+    Convert {
+        #[serde(with = "typed_reg_serde")] dst: Reg,
+        #[serde(with = "typed_reg_serde")] src: Reg,
+        /// Target type tag (TypeTags constants — I8/I16/.../F64/Char etc.).
+        /// Source type is determined at runtime from `src`'s Value variant.
+        to_tag: u8,
+    },
     // Calls
     Call {
         #[serde(with = "typed_reg_serde")] dst: Reg,

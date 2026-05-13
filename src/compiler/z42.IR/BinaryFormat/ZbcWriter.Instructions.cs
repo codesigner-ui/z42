@@ -107,6 +107,11 @@ public static partial class ZbcWriter
                 w.Write(Opcodes.DefaultOf); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write(i.ParamIndex);
                 break;
+            // spec fix-numeric-cast-lowering: numeric cast — dst type tag carries
+            // the target type; src's dynamic Value variant is the source type.
+            case ConvertInstr i:
+                WriteUn(w, Opcodes.Convert, i.Dst, i.Src);
+                break;
             case LoadFnInstr i:
                 w.Write(Opcodes.LoadFn); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 w.Write(allocator.ResolveMethod(i.Func, pool));
@@ -391,6 +396,7 @@ public static partial class ZbcWriter
             case CallNativeVtableInstr i: v(i.Dst); v(i.Recv); foreach (var a in i.Args) v(a); break;
             case PinPtrInstr i:           v(i.Dst); v(i.Src); break;
             case UnpinPtrInstr i:         v(i.Pinned); break;
+            case ConvertInstr i:          v(i.Dst); v(i.Src); break;
         }
     }
 

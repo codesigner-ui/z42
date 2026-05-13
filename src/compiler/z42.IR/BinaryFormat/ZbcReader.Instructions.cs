@@ -109,6 +109,14 @@ public static partial class ZbcReader
                 var paramIndex = r.ReadByte();
                 return new DefaultOfInstr(d, paramIndex);
             }
+            // spec fix-numeric-cast-lowering: numeric cast (Src follows Dst).
+            // The destination static type is already in `d.Type`; source is
+            // resolved at runtime by the VM from the source Value variant.
+            case Opcodes.Convert:
+            {
+                var src = RU(r.ReadUInt16());
+                return new ConvertInstr(d, src);
+            }
             case Opcodes.LoadFn:
             {
                 var fn = idMap.ResolveMethod(r.ReadUInt32());

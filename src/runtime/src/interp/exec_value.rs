@@ -189,3 +189,108 @@ pub(super) fn to_str(
     frame.set(dst, Value::Str(s));
     Ok(())
 }
+
+// ── Numeric cast (spec fix-numeric-cast-lowering, 2026-05-13) ────────────
+
+/// Target type tag constants — mirror `compiler/z42.IR/BinaryFormat/Opcodes.cs::TypeTags`.
+/// Kept inline here (rather than reading from `metadata::tokens`) to keep
+/// `convert` self-contained; canonical authority is the C# side.
+const T_BOOL: u8 = 0x01;
+const T_I8:   u8 = 0x02;
+const T_I16:  u8 = 0x03;
+const T_I32:  u8 = 0x04;
+const T_I64:  u8 = 0x05;
+const T_U8:   u8 = 0x06;
+const T_U16:  u8 = 0x07;
+const T_U32:  u8 = 0x08;
+const T_U64:  u8 = 0x09;
+const T_F32:  u8 = 0x0A;
+const T_F64:  u8 = 0x0B;
+const T_CHAR: u8 = 0x0C;
+
+pub(super) fn convert(frame: &mut Frame, dst: u32, src: u32, to_tag: u8) -> Result<()> {
+    let v = frame.get(src)?.clone();
+    let result = convert_value(v, to_tag)?;
+    frame.set(dst, result);
+    Ok(())
+}
+
+/// Pure numeric conversion — same dispatch as `convert` but without
+/// frame-register read/write side effects, so JIT helpers can reuse it.
+pub fn convert_value(v: Value, to_tag: u8) -> Result<Value> {
+    match v {
+        Value::F64(f)  => convert_from_f64(f, to_tag),
+        Value::I64(x)  => convert_from_i64(x, to_tag),
+        Value::Char(c) => convert_from_char(c, to_tag),
+        // bool / str / object etc. — TypeChecker should reject; defensive bail
+        other => bail!("InvalidCastException: cannot convert {:?} to type tag 0x{:02X}", other, to_tag),
+    }
+}
+
+fn convert_from_f64(f: f64, to_tag: u8) -> Result<Value> {
+    Ok(match to_tag {
+        T_F32 | T_F64 => Value::F64(f),
+        T_I8  => Value::I64((f as i8) as i64),
+        T_I16 => Value::I64((f as i16) as i64),
+        T_I32 => Value::I64((f as i32) as i64),
+        T_I64 => Value::I64(f as i64),
+        T_U8  => Value::I64((f as u8) as i64),
+        T_U16 => Value::I64((f as u16) as i64),
+        T_U32 => Value::I64((f as u32) as i64),
+        T_U64 => Value::I64(f as i64),  // saturating same as f → i64
+        T_CHAR => {
+            let u = f as u32;
+            char::from_u32(u)
+                .map(Value::Char)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "InvalidCastException: 0x{:X} not a valid Unicode scalar", u))?
+        }
+        T_BOOL => bail!("InvalidCastException: cannot cast f64 to bool"),
+        _ => bail!("InvalidCastException: unknown target tag 0x{:02X} for f64 source", to_tag),
+    })
+}
+
+fn convert_from_i64(x: i64, to_tag: u8) -> Result<Value> {
+    Ok(match to_tag {
+        T_I8  => Value::I64((x as i8) as i64),
+        T_I16 => Value::I64((x as i16) as i64),
+        T_I32 => Value::I64((x as i32) as i64),
+        T_I64 => Value::I64(x),
+        T_U8  => Value::I64((x as u8) as i64),
+        T_U16 => Value::I64((x as u16) as i64),
+        T_U32 => Value::I64((x as u32) as i64),
+        T_U64 => Value::I64(x),
+        T_F32 | T_F64 => Value::F64(x as f64),
+        T_CHAR => {
+            let u = x as u32;
+            char::from_u32(u)
+                .map(Value::Char)
+                .ok_or_else(|| anyhow::anyhow!(
+                    "InvalidCastException: 0x{:X} not a valid Unicode scalar", u))?
+        }
+        T_BOOL => bail!("InvalidCastException: cannot cast int to bool"),
+        _ => bail!("InvalidCastException: unknown target tag 0x{:02X} for i64 source", to_tag),
+    })
+}
+
+fn convert_from_char(c: char, to_tag: u8) -> Result<Value> {
+    let u = c as u32;
+    Ok(match to_tag {
+        T_I8  => Value::I64((u as i8) as i64),
+        T_I16 => Value::I64((u as i16) as i64),
+        T_I32 => Value::I64(u as i32 as i64),
+        T_I64 => Value::I64(u as i64),
+        T_U8  => Value::I64((u as u8) as i64),
+        T_U16 => Value::I64((u as u16) as i64),
+        T_U32 => Value::I64(u as i64),
+        T_U64 => Value::I64(u as i64),
+        T_F32 | T_F64 => Value::F64(u as f64),
+        T_CHAR => Value::Char(c),
+        T_BOOL => bail!("InvalidCastException: cannot cast char to bool"),
+        _ => bail!("InvalidCastException: unknown target tag 0x{:02X} for char source", to_tag),
+    })
+}
+
+#[cfg(test)]
+#[path = "exec_value_tests.rs"]
+mod exec_value_tests;

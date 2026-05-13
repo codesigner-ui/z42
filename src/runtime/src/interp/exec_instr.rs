@@ -104,6 +104,9 @@ pub fn exec_instr(
         // ── Generic default(T) at runtime (D-8b-3 Phase 2) ──────────────────
         Instruction::DefaultOf { dst, param_index } => exec_address::default_of(frame, *dst, *param_index),
 
+        // ── Numeric cast (fix-numeric-cast-lowering, 2026-05-13) ────────────
+        Instruction::Convert { dst, src, to_tag } => exec_value::convert(frame, *dst, *src, *to_tag)?,
+
         // ── Calls ────────────────────────────────────────────────────────────
         Instruction::Call { dst, func: fname, args } => {
             // 2026-05-10 exception-stack-trace: stamp current site's source

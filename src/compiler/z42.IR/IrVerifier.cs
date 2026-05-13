@@ -202,6 +202,8 @@ public static class IrVerifier
         LoadFieldAddrInstr     i => i.Dst,
         // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
         DefaultOfInstr         i => i.Dst,
+        // spec fix-numeric-cast-lowering: numeric cast
+        ConvertInstr           i => i.Dst,
         // No Dst: ArraySetInstr, FieldSetInstr, StaticSetInstr, UnpinPtrInstr
         _ => null,
     };
@@ -264,6 +266,8 @@ public static class IrVerifier
         LoadLocalAddrInstr     => [],
         LoadElemAddrInstr      i => [i.Arr, i.Idx],
         LoadFieldAddrInstr     i => [i.Obj],
+        // spec fix-numeric-cast-lowering: numeric cast reads Src.
+        ConvertInstr           i => [i.Src],
         // No uses: ConstXxx, StaticGetInstr
         _ => [],
     };

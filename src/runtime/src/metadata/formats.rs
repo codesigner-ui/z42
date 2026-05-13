@@ -18,11 +18,13 @@ pub const ZPKG_MAGIC: [u8; 4] = [0x5A, 0x50, 0x4B, 0x00];
 
 /// zbc format version written by this toolchain.
 ///
-/// 0.9 (2026-05-07): new opcode `OP_DEFAULT_OF (0xB0)` for D-8b-3 Phase 2
-/// (generic-T `default(T)` runtime resolution). Old VMs cannot decode the new
-/// byte; pre-1.0 we don't keep a backwards-compat path — older 0.x zbc must be
-/// regenerated via `regen-golden-tests.sh`.
-pub const ZBC_VERSION: [u16; 2] = [0, 9];
+/// 0.9 (2026-05-07): new opcode `OP_DEFAULT_OF (0xB0)` for D-8b-3 Phase 2.
+/// 0.10 (2026-05-13): new opcode `OP_CONVERT (0xB1)` for fix-numeric-cast-lowering.
+/// Note: the canonical zbc version is the major.minor pair written into the
+/// file header by `ZbcWriter.cs` (currently 1.5 — see VersionMinor there).
+/// This constant survives as a legacy serialization marker on a different
+/// header path; both bump in lock-step on opcode additions.
+pub const ZBC_VERSION: [u16; 2] = [0, 10];
 
 /// `flags` bit 0: metadata (SIGS/EXPT/IMPT) has been stripped; requires zpkg index.
 pub const ZBC_FLAG_STRIPPED: u16 = 0x01;

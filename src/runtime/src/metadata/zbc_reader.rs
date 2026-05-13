@@ -95,6 +95,8 @@ const OP_LOAD_FIELD_ADDR: u8 = 0xA2;
 // add-default-generic-typeparam (D-8b-3 Phase 2): runtime resolution of
 // `default(T)` where T is a generic type-parameter on the receiver class.
 const OP_DEFAULT_OF: u8 = 0xB0;
+// fix-numeric-cast-lowering (2026-05-13): explicit numeric type conversion.
+const OP_CONVERT: u8 = 0xB1;
 
 // ── Type tag constants ────────────────────────────────────────────────────────
 
@@ -586,8 +588,8 @@ pub fn parse_zbc_sidecar(data: &[u8]) -> Result<ZbcSidecarData> {
     }
     let major = u16::from_le_bytes([data[4], data[5]]);
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if major != 1 || minor < 4 {
-        bail!("zbc sidecar {major}.{minor} not supported; requires 1.4+");
+    if major != 1 || minor < 5 {
+        bail!("zbc sidecar {major}.{minor} not supported; requires 1.5+");
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -874,6 +876,12 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             Instruction::DefaultOf { dst, param_index }
         }
 
+        // fix-numeric-cast-lowering (2026-05-13)
+        OP_CONVERT => {
+            let src = c.read_u16()? as u32;
+            Instruction::Convert { dst, src, to_tag: typ }
+        }
+
         _ => bail!("unknown opcode 0x{op:02X}"),
     };
     Ok(instr)
@@ -949,9 +957,9 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     // per-parameter type names (u32 strIdx × paramCount) for stack-trace
     // signature decoration. Per CLAUDE.md "不为旧版本提供兼容", pre-1.3
     // artifacts must be regenerated.
-    if major == 0 || (major == 1 && minor < 4) {
+    if major == 0 || (major == 1 && minor < 5) {
         bail!(
-            "zbc {major}.{minor} not supported; requires 1.4+. \
+            "zbc {major}.{minor} not supported; requires 1.5+. \
              Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
         );
     }

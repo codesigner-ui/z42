@@ -86,6 +86,7 @@ public static class Opcodes
 
     // ── Generic runtime (0xB0–0xBF) — D-8b-3 Phase 2 ──────────────────────────
     public const byte DefaultOf     = 0xB0;  // dst, param_index (u8) → default value of this.type_desc.type_args[idx]
+    public const byte Convert       = 0xB1;  // dst, src → numeric cast (spec fix-numeric-cast-lowering, 2026-05-13)
 }
 
 /// <summary>Type tag byte embedded in each instruction header.</summary>

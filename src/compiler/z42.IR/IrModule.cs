@@ -197,6 +197,16 @@ public sealed record LoadFieldAddrInstr(TypedReg Dst, TypedReg Obj, string Field
 /// 解析当前 receiver class 第 ParamIndex（0-based）个 type-arg 的 zero value。
 public sealed record DefaultOfInstr(TypedReg Dst, byte ParamIndex) : IrInstr;
 
+/// Numeric type conversion. Target type comes from `Dst.Type`; source type
+/// is determined at runtime by the source `Value` variant. Covers:
+///   - f64 → i8/i16/i32/i64/u8/u16/u32/u64 (Rust `as i64` saturating + truncate)
+///   - i64 → f64 (widening)
+///   - i64 → i8/i16/i32/u8/u16/u32 (narrowing: low bits + sign/zero extend)
+///   - char ↔ i32/i64 (Unicode scalar value; invalid scalar → InvalidCastException)
+/// Identity casts (fromIr == toIr) are not emitted — Codegen returns the
+/// source register directly. See spec fix-numeric-cast-lowering (2026-05-13).
+public sealed record ConvertInstr(TypedReg Dst, TypedReg Src) : IrInstr;
+
 public sealed record BuiltinInstr(TypedReg Dst, string Name, List<TypedReg> Args) : IrInstr;
 /// Push a function reference value onto the operand stack. L2 no-capture lambda
 /// literal lowers to this instruction with `Func` pointing at a lifted function.

@@ -27,14 +27,14 @@ public static partial class ZbcReader
         // supported per CLAUDE.md "不为旧版本提供兼容".
         if (major == 0)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.4+." +
+                $"zbc {major}.{minor} not supported; requires 1.5+." +
                 "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
         if (major > 1)
             throw new InvalidDataException(
                 $"zbc major version {major} not supported (expected 1.x)");
-        if (major == 1 && minor < 4)
+        if (major == 1 && minor < 5)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.4+." +
+                $"zbc {major}.{minor} not supported; requires 1.5+." +
                 "Run scripts/regen-golden-tests.sh to upgrade golden artifacts.");
 
         var dir = ReadDirectory(data, minor, secCount);
@@ -164,9 +164,9 @@ public static partial class ZbcReader
     {
         ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
 
-        if (major != 1 || minor < 4)
+        if (major != 1 || minor < 5)
             throw new InvalidDataException(
-                $"sidecar zbc {major}.{minor} not supported; requires 1.4+." +
+                $"sidecar zbc {major}.{minor} not supported; requires 1.5+." +
                 "Run scripts/regen-golden-tests.sh to upgrade.");
         if (!flags.HasFlag(ZbcFlags.SymOnly))
             throw new InvalidDataException(

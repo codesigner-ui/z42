@@ -239,7 +239,32 @@ internal sealed partial class FunctionEmitter
         }
 
         protected override TypedReg VisitCast(BoundCast cast)
-            => _e.EmitExpr(cast.Operand); // cast is a no-op in IR
+        {
+            // spec fix-numeric-cast-lowering (2026-05-13): real numeric cast.
+            // Identity casts stay no-op; cross-type casts emit `ConvertInstr`
+            // whose target tag rides on `dst.Type`. VM dispatches at runtime
+            // based on source `Value` variant + target tag.
+            var src    = _e.EmitExpr(cast.Operand);
+            var toIr   = ToIrType(cast.Type);
+            var fromIr = ToIrType(cast.Operand.Type);
+            if (fromIr == toIr) return src;
+            // Object / Unknown / Ref source → still no-op at IR level (VM
+            // already auto-derefs via int_binop; explicit cast is meaningless
+            // until we have richer reference-type narrowing). Conservative:
+            // emit Convert only when both endpoints are concrete IR-typed.
+            if (toIr == IrType.Unknown || toIr == IrType.Ref) return src;
+            if (fromIr == IrType.Unknown || fromIr == IrType.Ref)
+            {
+                // Source side dynamic: still emit Convert so VM can coerce on
+                // demand. Preserves the existing `(long)object` stdlib pattern.
+                var dstR = _e.Alloc(toIr);
+                _e.Emit(new ConvertInstr(dstR, src));
+                return dstR;
+            }
+            var dst = _e.Alloc(toIr);
+            _e.Emit(new ConvertInstr(dst, src));
+            return dst;
+        }
 
         protected override TypedReg VisitMember(BoundMember m)
             => _e.EmitBoundMember(m);

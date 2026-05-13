@@ -23,8 +23,7 @@
 
 ## 实施期发现（保留供恢复时参考）
 
-- z42 当前**numeric cast 是 IR no-op**（`(long)(double * double)` 不发射任何转换指令，VM 寄存器仍存 `Value::F64`）。导致 TimeSpan 不能用 `FromSeconds(double)` 风格；本 spec 采用全整数 API（`FromSeconds(long)`、`TotalSeconds() → long`）。
-- 完整 numeric cast lowering 应作为独立 spec follow-up
+- ~~z42 当前**numeric cast 是 IR no-op**~~ — **2026-05-13 已修复**（[archive/2026-05-13-fix-numeric-cast-lowering](../../archive/2026-05-13-fix-numeric-cast-lowering/)）。恢复 z42.time 时可启用 `FromSeconds(double)` / `TotalSeconds() → double` 等 C# 风格 API；当前草案的整数版可保留为辅助 overload
 - z42.test.Bencher 现状用 `__bench_now_ns` 直接调用，重命名时需同步更新（Bencher.z42 5 处）
 
 ## 进度概览

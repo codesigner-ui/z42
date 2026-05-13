@@ -104,6 +104,37 @@ pub unsafe extern "C" fn jit_default_of(
     0
 }
 
+/// spec fix-numeric-cast-lowering (2026-05-13): explicit numeric type
+/// conversion. Mirrors interp `exec_value::convert` semantics:
+///   - source Value variant determines from-type
+///   - `to_tag` (u32 from JIT calling convention; really TypeTag byte) gives target
+///   - On conversion failure (e.g. invalid Unicode scalar) sets pending
+///     exception via `set_exception` and returns 1
+#[no_mangle]
+pub unsafe extern "C" fn jit_convert(
+    frame: *mut JitFrame, ctx: *const JitModuleCtx,
+    dst: u32, src: u32, to_tag: u32,
+) -> u8 {
+    let frame_ref = &mut *frame;
+    let src_val = match frame_ref.regs.get(src as usize) {
+        Some(v) => v.clone(),
+        None => {
+            set_exception(vm_ctx_ref(ctx),
+                Value::Str(format!("jit_convert: undefined register %{}", src)));
+            return 1;
+        }
+    };
+    let result = match crate::interp::exec_value::convert_value(src_val, to_tag as u8) {
+        Ok(v) => v,
+        Err(e) => {
+            set_exception(vm_ctx_ref(ctx), Value::Str(format!("{:#}", e)));
+            return 1;
+        }
+    };
+    frame_ref.regs[dst as usize] = result;
+    0
+}
+
 // ── Field access ─────────────────────────────────────────────────────────────
 
 /// `jit_field_get` after formalize-jit-method-token Phase 2.E (2026-05-08):

@@ -178,6 +178,8 @@ public static class ZasmWriter
             LoadFieldAddrInstr i => $"{Reg(i.Dst)} = load_field_addr  {Reg(i.Obj)}.{i.FieldName}",
             // D-8b-3 Phase 2: generic-T `default(T)` runtime resolution
             DefaultOfInstr i => $"{Reg(i.Dst)} = default.of  ${i.ParamIndex}",
+            // spec fix-numeric-cast-lowering: numeric cast — dst.Type carries target type
+            ConvertInstr i => $"{Reg(i.Dst)} = convert  {Reg(i.Src)}",
             BuiltinInstr i => $"{Reg(i.Dst)} = builtin  {i.Name}{FormatArgList(i.Args)}",
             VCallInstr   i => $"{Reg(i.Dst)} = v_call  {Reg(i.Obj)}.{i.Method}{FormatArgList(i.Args)}",
 

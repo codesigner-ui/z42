@@ -136,6 +136,7 @@ public sealed partial class TypeChecker
             {
                 var operand  = BindExpr(cast.Operand, env);
                 var castType = ResolveType(cast.TargetType);
+                CheckCastLegal(operand.Type, castType, cast.Span);
                 return new BoundCast(operand, castType, cast.Span);
             }
 
@@ -548,4 +549,56 @@ public sealed partial class TypeChecker
         }
         return 0;
     }
+
+    // ── Numeric cast legality (spec fix-numeric-cast-lowering, 2026-05-13) ──
+
+    /// Validates `(target)operand` legality at TypeCheck time. Always returns
+    /// a `BoundCast` regardless of legality (lets downstream pipeline continue
+    /// even after diagnostic); illegal pairs emit `E0424 IllegalCast`.
+    ///
+    /// Matrix:
+    ///   ✓ Identity (from == to)
+    ///   ✓ object / Unknown ↔ anything — runtime-checked (existing
+    ///     `(long)object` stdlib pattern relies on this)
+    ///   ✓ numeric ↔ numeric, char ↔ numeric
+    ///   ✗ bool ↔ numeric/char/string
+    ///   ✗ string ↔ numeric/char (use Parse / ToString)
+    ///   ✓ (fallback) — anything not explicitly rejected to avoid breaking
+    ///     yet-unaudited generic / impl scenarios
+    private void CheckCastLegal(Z42Type from, Z42Type to, Z42.Core.Text.Span span)
+    {
+        if (from.Equals(to)) return;
+        // Object / Unknown passthrough — current stdlib pattern: `(long)raw[0]`
+        // where raw is `object[]`. VM dynamically inspects Value variant.
+        if (IsObjectOrUnknown(from) || IsObjectOrUnknown(to)) return;
+
+        bool fromBool = IsBool(from);
+        bool toBool   = IsBool(to);
+        bool fromStr  = IsString(from);
+        bool toStr    = IsString(to);
+
+        if (fromBool || toBool)
+        {
+            _diags.Error(DiagnosticCodes.IllegalCast,
+                $"cannot cast `{from}` ↔ `{to}` — use a conditional expression for bool conversions",
+                span);
+            return;
+        }
+        if (fromStr || toStr)
+        {
+            _diags.Error(DiagnosticCodes.IllegalCast,
+                $"cannot cast `{from}` ↔ `{to}` — use `Parse` / `ToString` for string conversions",
+                span);
+            return;
+        }
+        // numeric ↔ numeric / char ↔ numeric all fall through (legal).
+        // class ↔ class is handled by AsCast/IsInstance separately; if a class
+        // value reaches CastExpr (via `(MyClass)obj`), VM will report at runtime.
+    }
+
+    private static bool IsBool(Z42Type t)         => t is Z42PrimType { Name: "bool" };
+    private static bool IsString(Z42Type t)       => t is Z42PrimType { Name: "string" };
+    private static bool IsObjectOrUnknown(Z42Type t) =>
+        t is Z42UnknownType
+        || t is Z42PrimType { Name: "object" or "Object" };
 }

@@ -21,7 +21,7 @@ mod exec_call;
 #[cfg(feature = "native-interop")]
 mod exec_native;
 mod exec_object;
-mod exec_value;
+pub(crate) mod exec_value;
 mod exec_vcall;
 mod ops;
 
