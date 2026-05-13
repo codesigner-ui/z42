@@ -275,6 +275,9 @@ jobs:
             exit 1
           fi
 
+      - name: Check versions.toml drift
+        run: bash scripts/check-versions-drift.sh
+
   # ── iOS packaging ──────────────────────────────────────────────────────
   # Packages ios-arm64 + ios-arm64-sim. Requires Xcode (pre-installed on
   # macos-15 arm64) + iOS Rust targets. build-stdlib.sh also builds z42c.dll.
@@ -339,7 +342,16 @@ jobs:
             test -d "$pkg_dir/Sources/Z42VM"              || { echo "missing Sources/Z42VM/"; exit 1; }
             test -f "$pkg_dir/Package.swift"              || { echo "missing Package.swift"; exit 1; }
             test -f "$pkg_dir/examples/hello_c/hello.zbc" || { echo "missing hello.zbc"; exit 1; }
-            echo "✓ $rid OK"
+            # lipo: verify xcframework contains an arm64 Mach-O static archive
+            xcfw_lib=$(find "$pkg_dir/native/Z42VM.xcframework" -name "libz42.a" | head -1)
+            [ -f "$xcfw_lib" ] || { echo "error: libz42.a missing inside xcframework"; exit 1; }
+            lipo_out=$(lipo -info "$xcfw_lib")
+            echo "$lipo_out" | grep -q "arm64" \
+              || { echo "error: $rid xcframework wrong arch: $lipo_out"; exit 1; }
+            echo "✓ $rid lipo: $lipo_out"
+            # swift package describe: parse Package.swift without building
+            swift package --package-path "$pkg_dir" describe > /dev/null
+            echo "✓ $rid Package.swift valid"
           done
 
       - name: Upload iOS packages
