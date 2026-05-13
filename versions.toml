@@ -109,7 +109,7 @@ tier         = "tier1"
 
 [platform.macos]
 min_version  = "13.0"
-rust_targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+rust_targets = ["aarch64-apple-darwin"]    # arm64 only; Intel (x86_64-apple-darwin) dropped
 tier         = "tier1"
 
 [platform.windows]
