@@ -233,6 +233,41 @@ See memory: project_mobile_no_compiler.
 EOF
 }
 
+# ── Android-specific helpers ────────────────────────────────────────────
+
+# Map z42 RID → Android ABI directory name (gradle / NDK naming).
+rid_to_android_abi() {
+    case "$1" in
+        android-arm64) echo "arm64-v8a" ;;
+        android-armv7) echo "armeabi-v7a" ;;
+        android-x64)   echo "x86_64" ;;
+        android-x86)   echo "x86" ;;
+        *) echo "error: not an android RID: '$1'" >&2; return 1 ;;
+    esac
+}
+
+# Copy Kotlin facade sources into pkg_dir/kotlin/io/z42/vm/.
+# Usage: pkg_emit_kotlin_sources <pkg_dir>
+pkg_emit_kotlin_sources() {
+    local pkg_dir="$1"
+    local src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/android/z42vm/src/main/java/io/z42/vm"
+    local dst="$pkg_dir/kotlin/io/z42/vm"
+    mkdir -p "$dst"
+    cp "$src"/*.kt "$dst/"
+}
+
+# Copy JNI bridge (z42vm_jni.c + CMakeLists.txt + include/) into pkg_dir/cpp/.
+# Usage: pkg_emit_jni_bridge <pkg_dir>
+pkg_emit_jni_bridge() {
+    local pkg_dir="$1"
+    local src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/android/z42vm/src/main/cpp"
+    local dst="$pkg_dir/cpp"
+    mkdir -p "$dst/include"
+    cp "$src/z42vm_jni.c"    "$dst/z42vm_jni.c"
+    cp "$src/CMakeLists.txt" "$dst/CMakeLists.txt"
+    cp "$src/include"/*.h    "$dst/include/"
+}
+
 # ── iOS-specific helpers ────────────────────────────────────────────────
 
 # Build a single-slice xcframework wrapping the just-cargo-built libz42.a.
@@ -348,8 +383,8 @@ pkg_emit_manifest() {
               for d in */; do printf '"%s",' "${d%/}"; done ) | sed 's/,$//'
         fi
     )
-    static_list=$(_existing_quoted "$pkg_dir/native" 'libz42.a' 'z42.lib')
-    dynamic_list=$(_existing_quoted "$pkg_dir/native" 'libz42.dylib' 'libz42.so' 'z42.dll' 'z42_wasm_bg.wasm')
+    static_list=$(_existing_quoted "$pkg_dir/native" 'libz42.a' 'z42.lib' 'libz42_platform_android.a')
+    dynamic_list=$(_existing_quoted "$pkg_dir/native" 'libz42.dylib' 'libz42.so' 'z42.dll' 'z42_wasm_bg.wasm' 'libz42_platform_android.so')
 
     # Platform containers (iOS xcframework / Android AAR / wasm pkg-* dirs).
     containers_list=$(_existing_quoted "$pkg_dir/native" 'Z42VM.xcframework')
@@ -487,6 +522,37 @@ pkg_sha256_check() {
             b=$(basename "$swift")
             if ! _sha_eq "$swift" "$ios_src/Sources/Z42VM/$b"; then
                 echo "  ✗ Sources/Z42VM/$b differs from platforms/ios source" >&2
+                fail=1
+            fi
+        done
+    fi
+
+    # 5. Kotlin facade cross-check (Android packages only — skip if kotlin/ absent).
+    if [[ -d "$pkg_dir/kotlin/io/z42/vm" ]]; then
+        local kt_src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/android/z42vm/src/main/java/io/z42/vm"
+        for kt in "$pkg_dir/kotlin/io/z42/vm/"*.kt; do
+            local b
+            b=$(basename "$kt")
+            if ! _sha_eq "$kt" "$kt_src/$b"; then
+                echo "  ✗ kotlin/io/z42/vm/$b differs from platforms/android source" >&2
+                fail=1
+            fi
+        done
+    fi
+
+    # 6. JNI bridge cross-check (Android packages only — skip if cpp/ absent).
+    if [[ -d "$pkg_dir/cpp" ]]; then
+        local jni_src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/android/z42vm/src/main/cpp"
+        for f in z42vm_jni.c CMakeLists.txt; do
+            if ! _sha_eq "$pkg_dir/cpp/$f" "$jni_src/$f"; then
+                echo "  ✗ cpp/$f differs from platforms/android source" >&2
+                fail=1
+            fi
+        done
+        for h in z42_abi.h z42_host.h; do
+            if [[ -f "$pkg_dir/cpp/include/$h" ]] && \
+               ! _sha_eq "$pkg_dir/cpp/include/$h" "$jni_src/include/$h"; then
+                echo "  ✗ cpp/include/$h differs from platforms/android source" >&2
                 fail=1
             fi
         done
