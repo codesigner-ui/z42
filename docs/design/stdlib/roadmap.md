@@ -46,10 +46,12 @@
 | **z42.time** | `System.DateTime` / `Stopwatch` / `TimeSpan` | `std::time` / `chrono` | L1 | 通过 z42.core 的 `__time_now_ms` | 几乎所有日志、超时、调度都需要；UTC + 单调时钟 |
 | **z42.io.fs**（扩展现 `z42.io`）| `System.IO.File` / `Directory` / `Path` | `std::fs` / `std::path` | L2 | 走 Platform HAL | 当前 `z42.io` 仅 stdin/stdout/基础 File；缺 Directory 枚举、Path 完整 API、文件元数据 |
 | **z42.os** / **z42.env** | `System.Environment` / `System.Diagnostics.Process` | `std::env` / `std::process` | L2 | 走 Platform HAL | 环境变量、命令行参数、退出码、子进程 spawn |
-| **z42.encoding** | `System.Text.Encoding` / `System.Convert` | `std::str` + `base64` / `hex` | L1 | 纯脚本（基于 byte buffer） | UTF-8/16、Base64、Hex；FFI、网络协议刚需 |
 | **z42.json** | `System.Text.Json` | `serde_json` | L1 | 纯脚本 | reader/writer 优先；serde-like derive 留 L3（依赖反射） |
 
-**起步排期**：L2 内可立刻起步（不依赖未实现语言特性），按 `z42.time → z42.io.fs 扩展 → z42.os → z42.encoding → z42.json` 顺序。
+**起步排期**：L2 内可立刻起步（不依赖未实现语言特性），按 `z42.time → z42.io.fs 扩展 → z42.os → ~~z42.encoding~~ → z42.json` 顺序。
+
+**已落地（不在 P0 表）**：
+- `z42.encoding`（2026-05-13 add-z42-encoding）— Hex / Base64 RFC 4648 §4 / UTF-8。详 [encoding.md](encoding.md)
 
 ---
 

@@ -1,0 +1,63 @@
+namespace Std.Encoding;
+
+// Hex 编解码（RFC 4648 §8 大致语义；本实现不强制小写或大写，Decode 接受混合
+// 大小写，Encode 默认小写，提供 `EncodeUpper` 变体）。
+//
+// 错误：奇数长度 / 非 [0-9a-fA-F] 字符 → `Std.FormatException`。
+
+public static class Hex {
+    // 2026-05-13: static field literals reset to Null when class is touched
+    // cross-package (pre-existing stdlib init quirk; tracking separately).
+    // Workaround: inline the alphabet literal per-call.
+    public static string Encode(byte[] bytes) {
+        if (bytes.Length == 0) return "";
+        string alpha = "0123456789abcdef";
+        char[] result = new char[bytes.Length * 2];
+        int i = 0;
+        while (i < bytes.Length) {
+            int b = (int)bytes[i];
+            result[i * 2]     = alpha.CharAt((b >> 4) & 0x0F);
+            result[i * 2 + 1] = alpha.CharAt(b & 0x0F);
+            i = i + 1;
+        }
+        return String.FromChars(result);
+    }
+
+    public static string EncodeUpper(byte[] bytes) {
+        if (bytes.Length == 0) return "";
+        string alpha = "0123456789ABCDEF";
+        char[] result = new char[bytes.Length * 2];
+        int i = 0;
+        while (i < bytes.Length) {
+            int b = (int)bytes[i];
+            result[i * 2]     = alpha.CharAt((b >> 4) & 0x0F);
+            result[i * 2 + 1] = alpha.CharAt(b & 0x0F);
+            i = i + 1;
+        }
+        return String.FromChars(result);
+    }
+
+    public static byte[] Decode(string hex) {
+        if (hex.Length == 0) return new byte[0];
+        if ((hex.Length & 1) != 0) {
+            throw new FormatException("odd-length hex string");
+        }
+        byte[] result = new byte[hex.Length / 2];
+        int i = 0;
+        while (i < hex.Length / 2) {
+            int hi = digitValue(hex.CharAt(i * 2));
+            int lo = digitValue(hex.CharAt(i * 2 + 1));
+            result[i] = (byte)((hi << 4) | lo);
+            i = i + 1;
+        }
+        return result;
+    }
+
+    private static int digitValue(char c) {
+        int code = (int)c;
+        if (code >= 48 && code <= 57)  return code - 48;          // '0'..'9'
+        if (code >= 97 && code <= 102) return code - 97 + 10;     // 'a'..'f'
+        if (code >= 65 && code <= 70)  return code - 65 + 10;     // 'A'..'F'
+        throw new FormatException($"invalid hex character '{c}'");
+    }
+}

@@ -1,0 +1,132 @@
+// Spec add-z42-encoding — Base64 unit tests. RFC 4648 §10 test vectors.
+namespace Z42EncodingTests.Base64Tests;
+
+using Std.Test;
+using Std.Encoding;
+
+// Helper: build byte[] from an ASCII string. Not using Utf8.GetBytes to keep
+// Base64 tests independent of Utf8 implementation.
+byte[] ascii(string s) {
+    byte[] result = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) {
+        result[i] = (byte)(int)s.CharAt(i);
+        i = i + 1;
+    }
+    return result;
+}
+
+string asciiString(byte[] bytes) {
+    char[] chars = new char[bytes.Length];
+    int i = 0;
+    while (i < bytes.Length) {
+        chars[i] = (char)(int)bytes[i];
+        i = i + 1;
+    }
+    return String.FromChars(chars);
+}
+
+// ── RFC 4648 §10 standard test vectors — encode ─────────────────────────────
+
+[Test]
+void test_encode_empty() {
+    Assert.Equal("", Base64.Encode(new byte[0]));
+}
+
+[Test]
+void test_encode_f() {
+    Assert.Equal("Zg==", Base64.Encode(ascii("f")));
+}
+
+[Test]
+void test_encode_fo() {
+    Assert.Equal("Zm8=", Base64.Encode(ascii("fo")));
+}
+
+[Test]
+void test_encode_foo() {
+    Assert.Equal("Zm9v", Base64.Encode(ascii("foo")));
+}
+
+[Test]
+void test_encode_foob() {
+    Assert.Equal("Zm9vYg==", Base64.Encode(ascii("foob")));
+}
+
+[Test]
+void test_encode_fooba() {
+    Assert.Equal("Zm9vYmE=", Base64.Encode(ascii("fooba")));
+}
+
+[Test]
+void test_encode_foobar() {
+    Assert.Equal("Zm9vYmFy", Base64.Encode(ascii("foobar")));
+}
+
+// ── RFC 4648 §10 standard test vectors — decode ─────────────────────────────
+
+[Test]
+void test_decode_empty() {
+    Assert.Equal(0, Base64.Decode("").Length);
+}
+
+[Test]
+void test_decode_f() {
+    Assert.Equal("f", asciiString(Base64.Decode("Zg==")));
+}
+
+[Test]
+void test_decode_fo() {
+    Assert.Equal("fo", asciiString(Base64.Decode("Zm8=")));
+}
+
+[Test]
+void test_decode_foo() {
+    Assert.Equal("foo", asciiString(Base64.Decode("Zm9v")));
+}
+
+[Test]
+void test_decode_foob() {
+    Assert.Equal("foob", asciiString(Base64.Decode("Zm9vYg==")));
+}
+
+[Test]
+void test_decode_fooba() {
+    Assert.Equal("fooba", asciiString(Base64.Decode("Zm9vYmE=")));
+}
+
+[Test]
+void test_decode_foobar() {
+    Assert.Equal("foobar", asciiString(Base64.Decode("Zm9vYmFy")));
+}
+
+// ── Error cases ─────────────────────────────────────────────────────────────
+
+[Test]
+void test_decode_invalid_char_throws() {
+    Assert.Throws("FormatException", () => Base64.Decode("Zm$vYmFy"));
+}
+
+[Test]
+void test_decode_invalid_length_throws() {
+    // 6 chars — not a multiple of 4
+    Assert.Throws("FormatException", () => Base64.Decode("Zm9vYg"));
+}
+
+// ── Roundtrip with non-ASCII bytes ──────────────────────────────────────────
+
+[Test]
+void test_roundtrip_binary() {
+    byte[] original = new byte[8];
+    original[0] = (byte)0x00; original[1] = (byte)0xFF; original[2] = (byte)0x80;
+    original[3] = (byte)0x7F; original[4] = (byte)0x42; original[5] = (byte)0xAB;
+    original[6] = (byte)0xCD; original[7] = (byte)0xEF;
+    var encoded = Base64.Encode(original);
+    var decoded = Base64.Decode(encoded);
+    Assert.Equal(original.Length, decoded.Length);
+    int i = 0;
+    while (i < original.Length) {
+        Assert.Equal((int)original[i], (int)decoded[i]);
+        i = i + 1;
+    }
+}

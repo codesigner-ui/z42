@@ -1,0 +1,107 @@
+namespace Std.Encoding;
+
+// Base64 编解码（RFC 4648 §4 标准变体）：
+//   字母表 = A-Z a-z 0-9 + /
+//   padding = `=`，输出长度始终是 4 的倍数
+//   严格校验：非法字符 / 长度非 4 倍数 / 内部 padding 抛 `Std.FormatException`
+//
+// 不含 URL-safe (§5) 变体 — 留 follow-up。
+
+public static class Base64 {
+    // 2026-05-13: static field literals reset to Null when class is touched
+    // cross-package (pre-existing stdlib init quirk; tracking separately).
+    // Workaround: inline the alphabet literal per-call.
+    public static string Encode(byte[] bytes) {
+        if (bytes.Length == 0) return "";
+        string alpha =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        int outLen = ((bytes.Length + 2) / 3) * 4;
+        char[] result = new char[outLen];
+        int srcI = 0;
+        int dstI = 0;
+        // 完整 3-byte 块
+        while (srcI + 3 <= bytes.Length) {
+            int b0 = (int)bytes[srcI];
+            int b1 = (int)bytes[srcI + 1];
+            int b2 = (int)bytes[srcI + 2];
+            int triple = (b0 << 16) | (b1 << 8) | b2;
+            result[dstI]     = alpha.CharAt((triple >> 18) & 0x3F);
+            result[dstI + 1] = alpha.CharAt((triple >> 12) & 0x3F);
+            result[dstI + 2] = alpha.CharAt((triple >> 6) & 0x3F);
+            result[dstI + 3] = alpha.CharAt(triple & 0x3F);
+            srcI = srcI + 3;
+            dstI = dstI + 4;
+        }
+        // 尾部 padding
+        int rem = bytes.Length - srcI;
+        if (rem == 1) {
+            int b0 = (int)bytes[srcI];
+            result[dstI]     = alpha.CharAt((b0 >> 2) & 0x3F);
+            result[dstI + 1] = alpha.CharAt((b0 << 4) & 0x3F);
+            result[dstI + 2] = '=';
+            result[dstI + 3] = '=';
+        } else if (rem == 2) {
+            int b0 = (int)bytes[srcI];
+            int b1 = (int)bytes[srcI + 1];
+            result[dstI]     = alpha.CharAt((b0 >> 2) & 0x3F);
+            result[dstI + 1] = alpha.CharAt(((b0 << 4) | (b1 >> 4)) & 0x3F);
+            result[dstI + 2] = alpha.CharAt((b1 << 2) & 0x3F);
+            result[dstI + 3] = '=';
+        }
+        return String.FromChars(result);
+    }
+
+    public static byte[] Decode(string s) {
+        if (s.Length == 0) return new byte[0];
+        if ((s.Length & 3) != 0) {
+            throw new FormatException("invalid base64 length (must be multiple of 4)");
+        }
+        // 计算 padding 个数 + 校验末尾 `=` 位置
+        int padCount = 0;
+        if (s.CharAt(s.Length - 1) == '=') padCount = padCount + 1;
+        if (padCount == 1 && s.CharAt(s.Length - 2) == '=') padCount = padCount + 1;
+        if (padCount > 2) {
+            throw new FormatException("too much padding in base64 input");
+        }
+        int outLen = (s.Length / 4) * 3 - padCount;
+        byte[] result = new byte[outLen];
+        int srcI = 0;
+        int dstI = 0;
+        int endQuad = s.Length - 4;
+        // 处理完整 4-char 块（除最后一块）
+        while (srcI < endQuad) {
+            int q0 = decodeChar(s.CharAt(srcI));
+            int q1 = decodeChar(s.CharAt(srcI + 1));
+            int q2 = decodeChar(s.CharAt(srcI + 2));
+            int q3 = decodeChar(s.CharAt(srcI + 3));
+            int triple = (q0 << 18) | (q1 << 12) | (q2 << 6) | q3;
+            result[dstI]     = (byte)((triple >> 16) & 0xFF);
+            result[dstI + 1] = (byte)((triple >> 8) & 0xFF);
+            result[dstI + 2] = (byte)(triple & 0xFF);
+            srcI = srcI + 4;
+            dstI = dstI + 3;
+        }
+        // 最后一块（可能含 padding）
+        int q0 = decodeChar(s.CharAt(srcI));
+        int q1 = decodeChar(s.CharAt(srcI + 1));
+        int q2 = padCount >= 2 ? 0 : decodeChar(s.CharAt(srcI + 2));
+        int q3 = padCount >= 1 ? 0 : decodeChar(s.CharAt(srcI + 3));
+        int triple = (q0 << 18) | (q1 << 12) | (q2 << 6) | q3;
+        result[dstI] = (byte)((triple >> 16) & 0xFF);
+        if (padCount < 2) result[dstI + 1] = (byte)((triple >> 8) & 0xFF);
+        if (padCount < 1) result[dstI + 2] = (byte)(triple & 0xFF);
+        return result;
+    }
+
+    // 单个 base64 字符 → 6-bit value (0..63)。'=' 在此处即被视为非法（padding
+    // 由 Decode 外层逻辑识别）。
+    private static int decodeChar(char c) {
+        int code = (int)c;
+        if (code >= 65 && code <= 90)  return code - 65;           // 'A'..'Z' → 0..25
+        if (code >= 97 && code <= 122) return code - 97 + 26;      // 'a'..'z' → 26..51
+        if (code >= 48 && code <= 57)  return code - 48 + 52;      // '0'..'9' → 52..61
+        if (code == 43) return 62;                                  // '+'
+        if (code == 47) return 63;                                  // '/'
+        throw new FormatException($"invalid base64 character '{c}'");
+    }
+}

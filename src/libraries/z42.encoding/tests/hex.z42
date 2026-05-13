@@ -1,0 +1,87 @@
+// Spec add-z42-encoding — Hex unit tests.
+namespace Z42EncodingTests.HexTests;
+
+using Std.Test;
+using Std.Encoding;
+
+[Test]
+void test_encode_empty() {
+    Assert.Equal("", Hex.Encode(new byte[0]));
+}
+
+[Test]
+void test_encode_single_byte() {
+    var bytes = new byte[1];
+    bytes[0] = (byte)0xAB;
+    Assert.Equal("ab", Hex.Encode(bytes));
+}
+
+[Test]
+void test_encode_multi_byte() {
+    var bytes = new byte[4];
+    bytes[0] = (byte)0xDE; bytes[1] = (byte)0xAD; bytes[2] = (byte)0xBE; bytes[3] = (byte)0xEF;
+    Assert.Equal("deadbeef", Hex.Encode(bytes));
+}
+
+[Test]
+void test_encode_upper() {
+    var bytes = new byte[2];
+    bytes[0] = (byte)0xDE; bytes[1] = (byte)0xAD;
+    Assert.Equal("DEAD", Hex.EncodeUpper(bytes));
+}
+
+[Test]
+void test_decode_empty() {
+    Assert.Equal(0, Hex.Decode("").Length);
+}
+
+[Test]
+void test_decode_lowercase() {
+    var result = Hex.Decode("deadbeef");
+    Assert.Equal(4, result.Length);
+    Assert.Equal(0xDE, (int)result[0]);
+    Assert.Equal(0xAD, (int)result[1]);
+    Assert.Equal(0xBE, (int)result[2]);
+    Assert.Equal(0xEF, (int)result[3]);
+}
+
+[Test]
+void test_decode_uppercase() {
+    var result = Hex.Decode("DEADBEEF");
+    Assert.Equal(0xDE, (int)result[0]);
+    Assert.Equal(0xEF, (int)result[3]);
+}
+
+[Test]
+void test_decode_mixed_case() {
+    var result = Hex.Decode("DeAdBeEf");
+    Assert.Equal(0xDE, (int)result[0]);
+    Assert.Equal(0xAD, (int)result[1]);
+    Assert.Equal(0xBE, (int)result[2]);
+    Assert.Equal(0xEF, (int)result[3]);
+}
+
+[Test]
+void test_decode_odd_length_throws() {
+    Assert.Throws("FormatException", () => Hex.Decode("abc"));
+}
+
+[Test]
+void test_decode_invalid_char_throws() {
+    Assert.Throws("FormatException", () => Hex.Decode("ab xy"));
+}
+
+[Test]
+void test_roundtrip() {
+    var original = new byte[5];
+    original[0] = (byte)0x00; original[1] = (byte)0xFF; original[2] = (byte)0x42;
+    original[3] = (byte)0x7F; original[4] = (byte)0x80;
+    var encoded = Hex.Encode(original);
+    var decoded = Hex.Decode(encoded);
+    Assert.Equal(original.Length, decoded.Length);
+    int i = 0;
+    while (i < original.Length) {
+        Assert.Equal((int)original[i], (int)decoded[i]);
+        i = i + 1;
+    }
+}
