@@ -52,6 +52,16 @@ OS=""
 case "$(uname -s)" in
     Darwin) OS="darwin" ;;
     Linux)  OS="linux" ;;
+    MINGW*|MSYS*|CYGWIN*)
+        cat >&2 <<'EOF'
+error: this installer auto-extracts the .tar.gz Node.js distribution (POSIX-only).
+       On Windows, install Node.js from the official MSI installer:
+         https://nodejs.org/en/download   (LTS, Windows Installer .msi)
+       After install, `node --version` works from Git Bash and PowerShell.
+       See docs/workflow/windows.md for the full Windows dev path.
+EOF
+        exit 1
+        ;;
     *)      echo "error: unsupported OS $(uname -s)" >&2; exit 1 ;;
 esac
 

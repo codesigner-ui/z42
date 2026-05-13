@@ -65,6 +65,27 @@ done
 case "$(uname -s)" in
     Darwin) HOST_OS="mac" ;;
     Linux)  HOST_OS="linux" ;;
+    MINGW*|MSYS*|CYGWIN*)
+        cat >&2 <<'EOF'
+error: this installer auto-downloads SDK + NDK + emulator tarballs targeted
+       at macOS / Linux. On Windows, the canonical path is Android Studio's
+       SDK Manager, which handles SDK + NDK + emulator + AVD setup natively.
+
+       Steps for Windows dev:
+         1. Install Android Studio (one-click installer for SDK + NDK + emulator)
+            https://developer.android.com/studio
+         2. In SDK Manager → Tools tab, install:
+              - Android SDK Platform 34
+              - Android SDK Build-Tools 34.x
+              - NDK (Side by side) 26.x
+         3. set ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
+            set ANDROID_NDK_HOME=%ANDROID_HOME%\ndk\26.1.10909125  (replace with actual version)
+
+       Then ./scripts/package.sh release --rid android-arm64 works from
+       Git Bash. See docs/workflow/windows.md for full Windows dev path.
+EOF
+        exit 1
+        ;;
     *)      echo "error: unsupported OS $(uname -s)" >&2; exit 1 ;;
 esac
 
@@ -80,7 +101,12 @@ if [[ -z "${JAVA_HOME:-}" ]] && [[ -x "/usr/libexec/java_home" ]]; then
     export JAVA_HOME="$(/usr/libexec/java_home -v 17+ 2>/dev/null || /usr/libexec/java_home 2>/dev/null || true)"
 fi
 if [[ -z "${JAVA_HOME:-}" || ! -d "$JAVA_HOME" ]]; then
-    echo "error: JDK 17+ not found. Install via 'brew install --cask temurin@17' or use macOS bundled java." >&2
+    cat >&2 <<'EOF'
+error: JDK 17+ not found.
+       macOS:   brew install --cask temurin@17  (or use bundled java)
+       Linux:   apt install temurin-17-jdk  (or use sdkman)
+       Windows: see docs/workflow/windows.md (装 Android Studio 即自带 JDK)
+EOF
     exit 1
 fi
 JAVA_MAJOR=$("$JAVA_HOME/bin/java" -version 2>&1 | awk -F\" '/version/ {print $2}' | awk -F. '{print ($1 == "1" ? $2 : $1)}')

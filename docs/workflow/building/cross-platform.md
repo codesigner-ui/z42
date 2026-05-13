@@ -6,7 +6,7 @@
 
 ## 当前可用
 
-主开发 + 测试在 **macOS arm64**；其他平台理论可跑（dotnet / cargo 都跨平台），但未做 CI 验证。
+主开发 + 测试在 **macOS arm64**；其他平台理论可跑（dotnet / cargo 都跨平台），但未做 CI 验证。Windows 开发的具体路径（Git Bash / .NET MSI / Rust MSVC toolchain）见 [`../windows.md`](../windows.md)。
 
 ```bash
 # 在任意 macOS / Linux / Windows 工作站上：

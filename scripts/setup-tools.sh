@@ -38,10 +38,25 @@ PLATFORMS=("android" "ios" "wasm")
 
 detect_os() {
     case "$(uname -s)" in
-        Darwin) echo "darwin" ;;
-        Linux)  echo "linux" ;;
+        Darwin)              echo "darwin" ;;
+        Linux)               echo "linux"  ;;
+        MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
         *) echo "error: unsupported host OS for tool download: $(uname -s)" >&2; return 1 ;;
     esac
+}
+
+# Portable SHA-256: macOS ships shasum, Linux ships sha256sum, Git Bash on
+# Windows usually has sha256sum (sometimes shasum).
+sha256_of() {
+    local f="$1"
+    if command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$f" | awk '{print $1}'
+    elif command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$f" | awk '{print $1}'
+    else
+        echo "error: neither shasum nor sha256sum found on PATH" >&2
+        return 1
+    fi
 }
 
 ensure_rust_target() {
@@ -95,7 +110,7 @@ install_ndk() {
     echo "  GET $url"
     curl -L --fail --progress-bar -o "$tmp_zip" "$url"
 
-    got_sha=$(shasum -a 256 "$tmp_zip" | awk '{print $1}')
+    got_sha=$(sha256_of "$tmp_zip")
     if [[ -n "$want_sha" ]]; then
         [[ "$got_sha" == "$want_sha" ]] || {
             echo "error: NDK sha256 mismatch (want=$want_sha got=$got_sha)" >&2; exit 1; }

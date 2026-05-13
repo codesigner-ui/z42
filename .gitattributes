@@ -1,0 +1,48 @@
+# Force LF on shell scripts / Makefiles / cross-platform text formats so
+# Windows checkouts (autocrlf=true) don't corrupt shebangs and POSIX scripts.
+# See docs/workflow/windows.md for Git Bash / WSL2 Windows dev path.
+
+*.sh        text eol=lf
+*.bash      text eol=lf
+justfile    text eol=lf
+Makefile    text eol=lf
+*.mk        text eol=lf
+
+# Source code: always normalize on commit; check out using the platform's
+# default line ending. (Windows devs editing .cs / .rs in VS / VS Code get
+# CRLF locally; LF is stored in git.)
+*.cs        text
+*.rs        text
+*.kt        text
+*.swift     text
+*.c         text
+*.h         text
+*.toml      text
+*.json      text
+*.md        text
+*.yml       text
+*.yaml      text
+*.txt       text
+*.z42       text
+
+# Cross-platform binary artifacts that must never be EOL-converted.
+*.zpkg      binary
+*.zbc       binary
+*.zsym      binary
+*.wasm      binary
+*.a         binary
+*.so        binary
+*.dylib     binary
+*.dll       binary
+*.lib       binary
+*.pdb       binary
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.ico       binary
+
+# Generated golden outputs are text but expected byte-identical; force LF
+# so cross-platform regen doesn't introduce drift.
+tests/**/expected_output.txt    text eol=lf
+tests/**/*.zasm                 text eol=lf
