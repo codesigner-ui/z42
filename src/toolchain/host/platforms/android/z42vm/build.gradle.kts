@@ -29,8 +29,9 @@ android {
         }
 
         ndk {
-            // Mirror the cargo-ndk targets driven by build.sh.
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64", "x86")
+            // Mirror the cargo-ndk targets driven by build.sh (32-bit ABI 已退场；
+            // 见 memory project_supported_platforms 与 versions.toml [platform.android].abis)。
+            abiFilters += listOf("arm64-v8a", "x86_64")
         }
     }
 

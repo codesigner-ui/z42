@@ -8,10 +8,10 @@
 #   - android  → bin/(README) + native/(libz42_platform_android.{a,so}) + kotlin/ + cpp/ + examples/hello_c
 #   - wasm     → bin/(README) + native/(libz42.a + z42_wasm_bg.wasm) + pkg-web/ + pkg-nodejs/ + js/ + package.json + examples/hello_c
 #
-# Per memory project_supported_platforms — 11 RID whitelist:
+# Per memory project_supported_platforms — 9 RID whitelist:
 #   desktop: macos-arm64 / linux-arm64 / linux-x64 / windows-x64
 #   ios:     ios-arm64 / ios-arm64-sim
-#   android: android-arm64 / android-armv7 / android-x64 / android-x86
+#   android: android-arm64 / android-x64       (32-bit ABI 已退场)
 #   wasm:    browser-wasm
 #
 # Usage:
@@ -42,10 +42,10 @@ Builds + assembles a z42 SDK distribution package.
 Profile:  release | debug          (default: debug)
 
 Options:
-  --rid <rid>              Target RID (one of the 11 in whitelist):
+  --rid <rid>              Target RID (one of the 9 in whitelist):
                              desktop: macos-arm64 / linux-arm64 / linux-x64 / windows-x64
                              ios:     ios-arm64 / ios-arm64-sim
-                             android: android-arm64 / android-armv7 / android-x64 / android-x86
+                             android: android-arm64 / android-x64
                              wasm:    browser-wasm
                            (default: auto-detected host RID, desktop only)
   --variant <suffix>       Append "-<suffix>" to the package directory name.

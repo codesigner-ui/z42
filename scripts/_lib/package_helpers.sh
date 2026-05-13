@@ -27,13 +27,14 @@ _PKG_HELPERS_ROOT="$(cd "$_PKG_HELPERS_DIR/../.." && pwd)"
 
 # Supported RID whitelist —— see memory: project_supported_platforms.
 # macOS Intel (macos-x64) 退场（Apple 转 Apple silicon）；iOS x86_64 sim
-# 同步退场（依赖 Intel Mac host）。
+# 同步退场（依赖 Intel Mac host）；Android 32-bit (armv7 / x86) 退场
+# （Google Play 自 2019 要求 64-bit 原生库，32-bit ROM 设备市占率已极低）。
 #
-# Supported:
+# Supported (9 RIDs):
 #   Desktop:  macos-arm64 / linux-arm64 / linux-x64 / windows-x64
 #   iOS:      ios-arm64 / ios-arm64-sim
-#   Android:  android-arm64 / android-armv7 / android-x64 / android-x86
-#   wasm:     wasm32
+#   Android:  android-arm64 / android-x64
+#   wasm:     browser-wasm
 
 detect_host_rid() {
     local os arch
@@ -66,9 +67,7 @@ rid_to_cargo() {
         ios-arm64)     echo "aarch64-apple-ios" ;;
         ios-arm64-sim) echo "aarch64-apple-ios-sim" ;;
         android-arm64) echo "aarch64-linux-android" ;;
-        android-armv7) echo "armv7-linux-androideabi" ;;
         android-x64)   echo "x86_64-linux-android" ;;
-        android-x86)   echo "i686-linux-android" ;;
         browser-wasm)  echo "wasm32-unknown-unknown" ;;
         *) echo "error: unsupported rid '$1' (see memory: project_supported_platforms)" >&2; return 1 ;;
     esac
@@ -115,7 +114,7 @@ EOF
     case "$target" in
         macos-arm64|linux-arm64|linux-x64|windows-x64) ;;
         ios-arm64|ios-arm64-sim) ;;
-        android-arm64|android-armv7|android-x64|android-x86) ;;
+        android-arm64|android-x64) ;;
         browser-wasm) ;;
         *)
             echo "error: rid '$target' not in supported whitelist." >&2
@@ -239,9 +238,7 @@ EOF
 rid_to_android_abi() {
     case "$1" in
         android-arm64) echo "arm64-v8a" ;;
-        android-armv7) echo "armeabi-v7a" ;;
         android-x64)   echo "x86_64" ;;
-        android-x86)   echo "x86" ;;
         *) echo "error: not an android RID: '$1'" >&2; return 1 ;;
     esac
 }

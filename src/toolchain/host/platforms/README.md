@@ -147,7 +147,7 @@ pub trait ZpkgResolver: Send + Sync {
 | 平台 | 产物 | build script |
 |------|------|--------------|
 | iOS | `Z42VM.xcframework`（含 ios-arm64 + ios-arm64_x86_64-simulator slices） | `platforms/ios/build.sh` |
-| Android | `z42vm-<version>.aar`（含 arm64-v8a / armeabi-v7a / x86_64 / x86 jniLibs） | `platforms/android/build.sh` |
+| Android | `z42vm-<version>.aar`（含 arm64-v8a / x86_64 jniLibs；32-bit ABI 已退场） | `platforms/android/build.sh` |
 | WASM | npm package（`pkg-web/` + `pkg-node/` + `pkg-bundler/`） | `platforms/wasm/build.sh`（`wasm-pack build --target ...`） |
 
 每个产物**不入 git**（二进制大；CI 在 release 时上传）；源代码 + build script 入 git。

@@ -540,14 +540,16 @@ Spec：[`docs/spec/archive/2026-05-12-fix-bundle-resolver-namespace-index/`](../
 
 ### 11.9 分发 package 形态（per-arch flat，2026-05-13 define-package-layout）
 
-每个 z42 release 产 **13 个 per-arch SDK package** 到 `artifacts/packages/`，按 `z42-<version>-<rid>-<config>` 命名（不带 `<target>` 前缀，RID 完全标识平台 + 架构）：
+每个 z42 release 产 **9 个 per-arch SDK package** 到 `artifacts/packages/`，按 `z42-<version>-<rid>-<config>` 命名（不带 `<target>` 前缀，RID 完全标识平台 + 架构）。RID 白名单 = memory `project_supported_platforms`：
 
 | 类别 | RID 枚举 | package 数 |
 |------|----------|----------|
-| Desktop SDK (host = C 嵌入同一份) | `macos-arm64` / `macos-x64` / `linux-arm64` / `linux-x64` / `windows-x64` | 5 |
-| iOS (per slice) | `ios-arm64` / `ios-arm64-sim` / `ios-x64-sim` | 3 |
-| Android (per ABI) | `android-arm64` / `android-armv7` / `android-x64` / `android-x86` | 4 |
-| wasm | `wasm32` | 1 |
+| Desktop SDK (host = C 嵌入同一份) | `macos-arm64` / `linux-arm64` / `linux-x64` / `windows-x64` | 4 |
+| iOS (per slice) | `ios-arm64` / `ios-arm64-sim` | 2 |
+| Android (per ABI) | `android-arm64` / `android-x64` | 2 |
+| wasm | `browser-wasm` | 1 |
+
+不在白名单：`macos-x64`（Apple Intel 退场）/ `ios-x64-sim`（依赖 Intel Mac host）/ `android-armv7` + `android-x86`（Google Play 自 2019 要求 64-bit 原生库）。
 
 每个 package 统一目录：
 
@@ -561,7 +563,7 @@ z42-<v>-<rid>-<config>/
 └── manifest.toml          统一 schema（abi-version / rid / contents.platform / compat）
 ```
 
-**核心 invariant**：`libs/` 与 `native/include/` 与 `examples/hello_c/main.c` 跨 13 包 byte-identical（C ABI 头 + zpkg 字节码 + C 嵌入示例都是平台无关）。
+**核心 invariant**：`libs/` 与 `native/include/` 与 `examples/hello_c/main.c` 跨 9 包 byte-identical（C ABI 头 + zpkg 字节码 + C 嵌入示例都是平台无关）。
 
 **multi-arch 合并 container**（multi-slice xcframework / multi-ABI AAR）进 Deferred；Phase 2 用户呼声出来再加 `z42-<v>-ios-xcframework-<config>` / `z42-<v>-android-aar-<config>` 两个 convenience 包。
 

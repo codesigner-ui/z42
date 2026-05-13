@@ -87,8 +87,8 @@ wasm_pack_min = "0.12"
 [platform.android]
 min_api      = 23                       # → build.gradle.kts minSdk
 target_api   = 34                       # → build.gradle.kts compileSdk
-rust_targets = ["aarch64-linux-android", "armv7-linux-androideabi", "i686-linux-android", "x86_64-linux-android"]
-abis         = ["arm64-v8a", "armeabi-v7a", "x86", "x86_64"]   # gradle 命名（cargo ndk -t 用这套）
+rust_targets = ["aarch64-linux-android", "x86_64-linux-android"]
+abis         = ["arm64-v8a", "x86_64"]                         # gradle 命名（cargo ndk -t 用这套）；32-bit ABI 已退场（见 memory project_supported_platforms）
 tier         = "tier2"
 
 [platform.ios]

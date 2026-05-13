@@ -17,7 +17,7 @@
 # 一次性：SDK + NDK + emulator + AVD + Gradle 全装到 artifacts/tools/
 # 不动系统（~4 GB；详见 scripts/install-android-toolchain-local.sh）
 ./scripts/install-android-toolchain-local.sh
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk --locked
 dotnet build src/compiler/z42.slnx                         # 编 stdlib
 
@@ -30,7 +30,7 @@ cd src/toolchain/host/platforms/android
 ./build.sh
 ```
 
-产物：`z42vm/build/outputs/aar/z42vm-release.aar` + `jniLibs/<abi>/libz42_platform_android.so` × 4 + `assets/stdlib/*.zpkg,index.json` + `androidTest/assets/test-fixtures/*.zbc`。
+产物：`z42vm/build/outputs/aar/z42vm-release.aar` + `jniLibs/{arm64-v8a,x86_64}/libz42_platform_android.so` + `assets/stdlib/*.zpkg,index.json` + `androidTest/assets/test-fixtures/*.zbc`（32-bit ABI 已退场；见 memory project_supported_platforms）。
 
 ## Run tests
 

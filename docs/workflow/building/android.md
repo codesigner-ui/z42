@@ -24,7 +24,8 @@ export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"   # 替换为实际版
 export PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools"
 
 # Rust android targets + cargo-ndk
-rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android i686-linux-android
+# 32-bit ABI (armv7 / x86) 已退场；见 memory project_supported_platforms。
+rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk
 ```
 
@@ -48,11 +49,11 @@ cd src/toolchain/host/platforms/android
 ./build.sh
 ```
 
-`build.sh` 内部串接：`cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -t x86 build --release` + `./gradlew :z42vm:assembleRelease`。
+`build.sh` 内部串接：`cargo ndk -t arm64-v8a -t x86_64 build --release` + `./gradlew :z42vm:assembleRelease`。
 
 ✅ 产物：
 - `z42vm/build/outputs/aar/z42vm-release.aar`
-- `z42vm/src/main/jniLibs/{arm64-v8a,armeabi-v7a,x86_64,x86}/libz42_platform_android.so`
+- `z42vm/src/main/jniLibs/{arm64-v8a,x86_64}/libz42_platform_android.so`
 - `z42vm/src/main/assets/stdlib/*.zpkg` 6 个
 
 ❗ `error: linker not found for aarch64-linux-android` → `ANDROID_NDK_HOME` 错或 NDK 版本旧。
