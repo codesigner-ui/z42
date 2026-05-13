@@ -268,6 +268,73 @@ pkg_emit_jni_bridge() {
     cp "$src/include"/*.h    "$dst/include/"
 }
 
+# ── wasm-specific helpers ───────────────────────────────────────────────
+
+# Copy wasm-bindgen pkg-web/ + pkg-nodejs/ into pkg_dir root.
+# Usage: pkg_emit_wasm_pkg_dirs <pkg_dir>
+# Pre-condition: platforms/wasm/build.sh has run (pkg-web/ + pkg-nodejs/ exist).
+pkg_emit_wasm_pkg_dirs() {
+    local pkg_dir="$1"
+    local wasm_root="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/wasm"
+    for sub in pkg-web pkg-nodejs; do
+        if [[ ! -d "$wasm_root/$sub" ]]; then
+            echo "error: $wasm_root/$sub missing; run platforms/wasm/build.sh first" >&2
+            return 1
+        fi
+        mkdir -p "$pkg_dir/$sub"
+        cp "$wasm_root/$sub"/*.js   "$pkg_dir/$sub/" 2>/dev/null || true
+        cp "$wasm_root/$sub"/*.wasm "$pkg_dir/$sub/" 2>/dev/null || true
+        cp "$wasm_root/$sub"/package.json "$pkg_dir/$sub/" 2>/dev/null || true
+        cp "$wasm_root/$sub"/README.md    "$pkg_dir/$sub/" 2>/dev/null || true
+    done
+}
+
+# Copy js/{index.js,index.d.ts,stdlib-resolver.js} + package.json into pkg_dir root.
+# Usage: pkg_emit_wasm_npm_meta <pkg_dir>
+pkg_emit_wasm_npm_meta() {
+    local pkg_dir="$1"
+    local js_src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/wasm/js"
+    mkdir -p "$pkg_dir/js"
+    cp "$js_src/index.js"            "$pkg_dir/js/index.js"
+    cp "$js_src/index.d.ts"          "$pkg_dir/js/index.d.ts"
+    cp "$js_src/stdlib-resolver.js"  "$pkg_dir/js/stdlib-resolver.js"
+    # Emit a publishable package.json at pkg root (paths relative to pkg root,
+    # not js/, since pkg-web / pkg-nodejs are at pkg root, not under js/).
+    cat > "$pkg_dir/package.json" <<'EOF'
+{
+  "name": "@z42/wasm",
+  "version": "0.1.0",
+  "description": "WebAssembly facade for the z42 embedding API. Runs .zbc bytecode in browser / Node.js hosts.",
+  "type": "module",
+  "main": "./js/index.js",
+  "types": "./js/index.d.ts",
+  "files": [
+    "js/",
+    "pkg-web/",
+    "pkg-nodejs/",
+    "libs/",
+    "native/"
+  ],
+  "exports": {
+    ".": {
+      "node": "./pkg-nodejs/z42_wasm.js",
+      "browser": "./pkg-web/z42_wasm.js",
+      "default": "./pkg-web/z42_wasm.js",
+      "types": "./js/index.d.ts"
+    },
+    "./node": "./pkg-nodejs/z42_wasm.js",
+    "./web": "./pkg-web/z42_wasm.js",
+    "./stdlib-resolver": "./js/stdlib-resolver.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "TBD",
+  "private": false
+}
+EOF
+}
+
 # ── iOS-specific helpers ────────────────────────────────────────────────
 
 # Build a single-slice xcframework wrapping the just-cargo-built libz42.a.
@@ -535,6 +602,17 @@ pkg_sha256_check() {
             b=$(basename "$kt")
             if ! _sha_eq "$kt" "$kt_src/$b"; then
                 echo "  ✗ kotlin/io/z42/vm/$b differs from platforms/android source" >&2
+                fail=1
+            fi
+        done
+    fi
+
+    # 6.5 wasm js facade cross-check (wasm package only — skip if js/ absent).
+    if [[ -d "$pkg_dir/js" ]] && [[ -f "$pkg_dir/js/index.js" ]]; then
+        local wasm_js_src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/wasm/js"
+        for f in index.js index.d.ts stdlib-resolver.js; do
+            if ! _sha_eq "$pkg_dir/js/$f" "$wasm_js_src/$f"; then
+                echo "  ✗ js/$f differs from platforms/wasm source" >&2
                 fail=1
             fi
         done

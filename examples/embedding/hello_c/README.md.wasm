@@ -1,0 +1,97 @@
+# hello_c — z42 C 嵌入示例（browser-wasm）
+
+本 demo 是 z42 SDK 的 Tier 1 C ABI 最小用例。`main.c` 在所有平台 byte-identical；
+本 README 给 **browser-wasm** 包的 wasm-ld 链接命令示意 + JS（wasm-bindgen）
+两条消费路径。
+
+## Target
+
+本 package 是一个**单 target** SDK：
+
+| RID | Cargo target | 用途 |
+|-----|--------------|------|
+| `browser-wasm` | `wasm32-unknown-unknown` | 浏览器（V8 / SpiderMonkey / JSC）+ Node.js（V8）|
+
+注：WASI（`wasm32-wasi`）当前**不在** Phase 1 支持范围 —— 见 design.md D4。
+
+## JS 路径（推荐）
+
+最便利的消费路径是 wasm-bindgen 双 target —— `package.json` 已经写好；
+`npm install ./z42-<version>-browser-wasm-release` 之后：
+
+```js
+// Node.js
+import { Z42VM } from "@z42/wasm/node";
+
+// Browser
+import { Z42VM } from "@z42/wasm/web";
+
+const vm = await Z42VM.initialize();
+await vm.loadZbc(await fetch("hello.zbc").then(r => r.arrayBuffer()));
+vm.invoke("Hello.Main");
+```
+
+详见 `js/index.d.ts` 和 `pkg-web/` / `pkg-nodejs/` 的 README。
+
+## C 路径（wasm-ld 链接）
+
+如果不走 wasm-bindgen，可以用 `wasm-ld` 直接把 `main.c` + `libz42.a` 链成
+独立 `.wasm` 模块。需要 LLVM/clang 的 wasm32 后端（clang ≥ 14）：
+
+```sh
+cd examples/hello_c
+
+# 1) 编 main.c → main.wasm.o
+clang --target=wasm32-unknown-unknown \
+    -I ../../native/include \
+    -nostdlib -fvisibility=hidden -O2 \
+    -c main.c -o main.wasm.o
+
+# 2) wasm-ld 链 main.wasm.o + libz42.a → app.wasm
+wasm-ld \
+    --no-entry \
+    --export-dynamic \
+    --allow-undefined \
+    main.wasm.o \
+    ../../native/libz42.a \
+    -o app.wasm
+```
+
+注意：
+
+- `--no-entry`：wasm 模块没有 main()，由 host (JS) 调入口
+- `--allow-undefined`：libz42 引用了 host 提供的 imports（z42_host imports）
+- `--export-dynamic`：让 host 能 `instance.exports.<fn>` 访问入口
+- C 标准库：wasm32-unknown-unknown 不带 libc；如果 main.c 用了 `puts` /
+  `malloc` 等，需要自己提供 stub 或链接 wasi-libc
+
+⚠️ 当前 z42 还没有 `z42-aotcross-wasm` 工具，所以 **hello.zbc 不能直接 link
+进 app.wasm**（它得通过 host JS 用 `loadZbc(bytes)` 喂进去）。等 aotcross-wasm
+出来后会更新本 README。
+
+## 工作原理
+
+`main.c` 调 Tier 1 C ABI (`native/include/z42_host.h`):
+
+1. `z42_host_initialize` — 起 VM
+2. `z42_host_load_zbc` — 装 `hello.zbc`（host build.sh 编自 `examples/embedding/hello.z42`）
+3. `z42_host_resolve_entry` — 找 `"Hello.Main"`
+4. `z42_host_invoke` — 跑
+5. `stdout_sink` 回调 — 把 `"hello, world\n"` 加上 `[host] ` 前缀打到 stdout
+6. `z42_host_shutdown` — 拆
+
+在 wasm 上 stdout 是 host JS 通过 `z42_host_set_stdout` 注的回调；写
+console.log 即可。
+
+## 与桌面 / iOS / Android hello_c 的对比
+
+main.c 跨平台 byte-identical（SHA-256 校）；只是 link 方式不同：
+
+| 平台 | link 工具 | 静态库 |
+|------|-----------|--------|
+| desktop | `cc -lz42` | `libz42.a` / `libz42.dylib` |
+| iOS | `xcrun -sdk` clang | `libz42.a`（slice）|
+| Android | NDK clang | `libz42_platform_android.{a,so}` |
+| **wasm** | `wasm-ld` | `libz42.a`（wasm32 object archive）|
+
+z42 跨平台 C ABI 契约的设计点 —— **同一份 C 代码，链不同 target 的 lib**。
