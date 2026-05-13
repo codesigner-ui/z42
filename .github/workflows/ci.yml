@@ -451,7 +451,8 @@ jobs:
           if-no-files-found: error
 
   # ── wasm packaging ──────────────────────────────────────────────────────
-  # Packages browser-wasm via wasm-pack + Node.js.
+  # Packages browser-wasm via wasm-pack (no Node.js needed — wasm-pack build
+  # only generates JS glue, it doesn't execute it).
   # platforms/wasm/build.sh produces pkg-web/ + pkg-nodejs/ (required by
   # package.sh before it can assemble the wasm SDK package).
   package-wasm:
@@ -471,13 +472,8 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install wasm-pack
-        run: cargo install wasm-pack --locked
+      - name: Install wasm-pack + wasm-tools
+        run: cargo install wasm-pack wasm-tools --locked
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -509,7 +505,7 @@ jobs:
       - name: Package browser-wasm
         run: ./scripts/package.sh release --rid browser-wasm
 
-      - name: Verify wasm package + Node.js smoke
+      - name: Verify wasm package + WebAssembly validation
         run: |
           set -euo pipefail
           pkg_dir=$(ls -d artifacts/packages/z42-*-browser-wasm-release | head -1)
@@ -524,19 +520,13 @@ jobs:
           test -f "$pkg_dir/package.json"                   || { echo "missing package.json"; exit 1; }
           test -f "$pkg_dir/examples/hello_c/hello.zbc"     || { echo "missing hello.zbc"; exit 1; }
           echo "✓ browser-wasm manifest OK"
-          # Node.js smoke: compile the wasm module (validates binary + checks exports).
-          # WebAssembly.compile does not need imports, so it works without the JS glue.
-          node -e "
-            const fs = require('fs');
-            const bytes = fs.readFileSync('${pkg_dir}/native/z42_wasm_bg.wasm');
-            WebAssembly.compile(bytes)
-              .then(mod => {
-                const exps = WebAssembly.Module.exports(mod);
-                if (exps.length === 0) { console.error('wasm: no exports'); process.exit(1); }
-                console.log('✓ wasm compiled OK — ' + exps.length + ' exports');
-              })
-              .catch(err => { console.error('wasm compile failed: ' + err.message); process.exit(1); });
-          "
+          # WebAssembly spec validation via wasm-tools (Bytecode Alliance).
+          # Validates binary encoding + all active wasm proposals; no JS runtime needed.
+          wasm="$pkg_dir/native/z42_wasm_bg.wasm"
+          wasm-tools validate "$wasm"
+          export_count=$(wasm-tools print "$wasm" | grep -c '(export' || true)
+          [ "$export_count" -gt 0 ] || { echo "error: no exports in wasm module"; exit 1; }
+          echo "✓ wasm valid — $export_count exports (wasm-tools)"
 
       - name: Upload wasm package
         uses: actions/upload-artifact@v4
