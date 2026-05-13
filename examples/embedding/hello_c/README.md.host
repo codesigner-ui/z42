@@ -1,0 +1,49 @@
+# hello_c — z42 C 嵌入示例（host / desktop）
+
+本 demo 是 z42 SDK 的 Tier 1 C ABI 最小用例。`main.c` 在所有平台 byte-identical；
+本 README 给 **host / desktop** 平台的编 + 链 + 跑命令。其它平台版本见各自 package 内的 `README.md`。
+
+## 跑通（在本 SDK package 根目录下）
+
+### macOS / Linux
+
+```sh
+# 假设你在 SDK package 根目录（含 bin/ libs/ native/ examples/）
+cd examples/hello_c
+
+cc -O2 -I ../../native/include \
+   -o hello_c main.c \
+   -L ../../native -lz42 \
+   $(case "$(uname -s)" in \
+       Darwin) echo "-liconv -lSystem -lc -lm" ;; \
+       Linux)  echo "-lc -lm -lpthread -ldl -lrt -lgcc_s" ;; \
+     esac)
+
+./hello_c hello.zbc ../../libs/
+# 期望: [host] hello, world
+```
+
+### Windows (MSVC)
+
+```cmd
+cd examples\hello_c
+cl /I..\..\native\include main.c /link ..\..\native\z42.lib /OUT:hello_c.exe
+hello_c.exe hello.zbc ..\..\libs\
+```
+
+## 工作原理
+
+`main.c` 调 Tier 1 C ABI (`native/include/z42_host.h`):
+
+1. `z42_host_initialize` — 起 VM
+2. `z42_host_load_zbc` — 装 `hello.zbc`（host build.sh 编自 `examples/embedding/hello.z42`）
+3. `z42_host_resolve_entry` — 找 `"Hello.Main"`
+4. `z42_host_invoke` — 跑
+5. `stdout_sink` 回调 — 把 `"hello, world\n"` 加上 `[host] ` 前缀打到 stdout
+6. `z42_host_shutdown` — 拆
+
+`libs/` 含 stdlib zpkgs（`z42.io.zpkg` 等）+ `index.json` namespace 映射；`main.c` 通过 `search_paths` 配置让 VM 自动扫文件系统加载（移动 / wasm 用 `zpkg_resolver` 回调）。
+
+## 与 hello_rust 对照
+
+[`../hello_rust/`](../hello_rust/) 是同一 hello-world 流程的 Tier 2 Rust 版本，宿主用 Rust 写时更 ergonomic。stdout 一致。
