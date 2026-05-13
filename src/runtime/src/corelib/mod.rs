@@ -175,6 +175,11 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__gc_handle_kind",     gc::builtin_gc_handle_kind),
     ("__gc_handle_free",     gc::builtin_gc_handle_free),
     ("__gc_stats",           gc::builtin_gc_stats),
+
+    // ── add-std-io-polish (2026-05-12) — appended to preserve existing BuiltinIds ──
+    ("__file_copy",  fs::builtin_file_copy),
+    ("__file_move",  fs::builtin_file_move),
+    ("__env_set",    fs::builtin_env_set),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

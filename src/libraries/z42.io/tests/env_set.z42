@@ -1,0 +1,27 @@
+// add-std-io-polish (2026-05-12)：Environment.SetEnvironmentVariable 测试。
+namespace Z42IoEnvSetTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_set_then_get_roundtrip() {
+    Environment.SetEnvironmentVariable("Z42_TEST_VAR", "hello-env");
+    string? val = Environment.GetEnvironmentVariable("Z42_TEST_VAR");
+    Assert.Equal("hello-env", val);
+}
+
+[Test]
+void test_set_overwrites_existing() {
+    Environment.SetEnvironmentVariable("Z42_TEST_OVERWRITE", "first");
+    Environment.SetEnvironmentVariable("Z42_TEST_OVERWRITE", "second");
+    string? val = Environment.GetEnvironmentVariable("Z42_TEST_OVERWRITE");
+    Assert.Equal("second", val);
+}
+
+[Test]
+void test_set_empty_value() {
+    Environment.SetEnvironmentVariable("Z42_TEST_EMPTY", "");
+    string? val = Environment.GetEnvironmentVariable("Z42_TEST_EMPTY");
+    Assert.Equal("", val);
+}

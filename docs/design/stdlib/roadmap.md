@@ -153,19 +153,19 @@
 
 **问题**：直接做不可行，z42 stdlib 缺一组 build driver 必需的原语。即便先用 native interop（`extern "C"`）shell out 到 libc，也只解决 POSIX，不解决 Windows（Win32 API 还得另封一层）—— 必须等下面这些**跨平台抽象**层在 stdlib 中先到位。
 
-**阻塞清单**（每项对照本路线图分级）：
+**阻塞清单**（每项对照本路线图分级；✅ = 已落地）：
 
-| 原语 | 本路线图分级 | 用途 |
-|------|------------|------|
-| `Std.Process.Start(file, argv, [...stdio])` 带 stdout capture / exit code | **P0 z42.os** | spawn `cargo build` / `dotnet test` / `gradle` / `xcodebuild` / `wasm-pack` |
-| `Std.IO.File.{ReadAllText, WriteAllText, Exists, Copy, Move, Delete}` | **P0 z42.io.fs** | 读 versions.toml / 写 manifest.toml / 拷 zpkg |
-| `Std.IO.Directory.{Create, Enumerate, Exists}` | **P0 z42.io.fs** | mkdir -p / 扫 src/tests/<cat>/<name>/ |
-| `Std.IO.Path.{Combine, GetDirectoryName, GetExtension, IsRooted, ...}` | **P0 z42.io.fs** | 跨平台 path 拼接（避免 `/` vs `\` 错误） |
-| `Std.Environment.{GetVar, SetVar}` + `Std.Environment.GetCommandLineArgs()` | **P0 z42.os** + 已有 | 读 `$ANDROID_NDK_HOME` / argv 解析 |
-| `Std.Toml.{Read, ReadFile}` | **P2 z42.toml** | 解析 versions.toml；shell 端目前用 python3 + tomllib |
-| `Std.Net.Http.Get(url) -> stream` 或 shell out 到 curl | **P1 z42.net**（先 curl 顶着）| NDK / SDK 压缩包下载 |
-| `Std.Crypto.SHA256` 或 shell out 到 shasum/openssl | **P1 z42.crypto**（先 shasum 顶着）| 下载校验 |
-| `Std.IO.Compression.Zip.Extract` 或 shell out 到 unzip | **P2 z42.compression**（先 unzip 顶着）| NDK zip 解压 |
+| 原语 | 本路线图分级 | 用途 | 状态 |
+|------|------------|------|------|
+| `Std.Process.Start(file, argv, [...stdio])` 带 stdout capture / exit code | **P0 z42.os** | spawn `cargo build` / `dotnet test` / `gradle` / `xcodebuild` / `wasm-pack` | 🟡 add-std-process 进行中 |
+| `Std.IO.File.{ReadAllText, WriteAllText, Exists, Copy, Move, Delete}` | **P0 z42.io.fs** | 读 versions.toml / 写 manifest.toml / 拷 zpkg | ✅ 2026-05-12 add-std-io-polish |
+| `Std.IO.Directory.{Create, Enumerate, Exists}` | **P0 z42.io.fs** | mkdir -p / 扫 src/tests/<cat>/<name>/ | ✅ 2026-05-13 add-std-io-directory |
+| `Std.IO.Path.{Combine, GetDirectoryName, GetExtension, IsRooted, ...}` | **P0 z42.io.fs** | 跨平台 path 拼接（避免 `/` vs `\` 错误） | ✅ 2026-05-12 add-std-io-polish |
+| `Std.Environment.{GetVar, SetVar}` + `Std.Environment.GetCommandLineArgs()` | **P0 z42.os** + 已有 | 读 `$ANDROID_NDK_HOME` / argv 解析 | ✅ 2026-05-12 add-std-io-polish |
+| `Std.Toml.{Read, ReadFile}` | **P2 z42.toml** | 解析 versions.toml；shell 端目前用 python3 + tomllib | — |
+| `Std.Net.Http.Get(url) -> stream` 或 shell out 到 curl | **P1 z42.net**（先 curl 顶着）| NDK / SDK 压缩包下载 | — |
+| `Std.Crypto.SHA256` 或 shell out 到 shasum/openssl | **P1 z42.crypto**（先 shasum 顶着）| 下载校验 | — |
+| `Std.IO.Compression.Zip.Extract` 或 shell out 到 unzip | **P2 z42.compression**（先 unzip 顶着）| NDK zip 解压 | — |
 
 **触发条件 / 可恢复推进点**：
 

@@ -33,6 +33,18 @@ pub fn builtin_file_delete(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     std::fs::remove_file(path.as_str())?;
     Ok(Value::Null)
 }
+pub fn builtin_file_copy(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let src = require_str(args, 0, "__file_copy")?;
+    let dst = require_str(args, 1, "__file_copy")?;
+    std::fs::copy(src.as_str(), dst.as_str())?;
+    Ok(Value::Null)
+}
+pub fn builtin_file_move(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let src = require_str(args, 0, "__file_move")?;
+    let dst = require_str(args, 1, "__file_move")?;
+    std::fs::rename(src.as_str(), dst.as_str())?;
+    Ok(Value::Null)
+}
 
 // 2026-04-27 wave1-path-script: 5 builtin_path_* removed.
 // `Std.IO.Path` 现在是 z42 脚本（Unix `/` 语义），见
@@ -114,6 +126,13 @@ fn walk_dir(
 
 // ── Environment / Process ─────────────────────────────────────────────────────
 
+pub fn builtin_env_set(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let name  = require_str(args, 0, "__env_set")?;
+    let value = require_str(args, 1, "__env_set")?;
+    // Safety: z42 is single-threaded; no concurrent env reads during this call.
+    unsafe { std::env::set_var(name.as_str(), value.as_str()); }
+    Ok(Value::Null)
+}
 pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let key = require_str(args, 0, "__env_get")?;
     Ok(match std::env::var(key.as_str()) {

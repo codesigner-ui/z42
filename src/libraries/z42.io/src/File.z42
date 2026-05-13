@@ -15,4 +15,10 @@ public static class File {
 
     [Native("__file_delete")]
     public static extern void Delete(string path);
+
+    [Native("__file_copy")]
+    public static extern void Copy(string src, string dst);
+
+    [Native("__file_move")]
+    public static extern void Move(string src, string dst);
 }

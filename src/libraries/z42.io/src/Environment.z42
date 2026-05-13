@@ -4,6 +4,9 @@ public static class Environment {
     [Native("__env_get")]
     public static extern string? GetEnvironmentVariable(string name);
 
+    [Native("__env_set")]
+    public static extern void SetEnvironmentVariable(string name, string value);
+
     [Native("__env_args")]
     public static extern string[] GetCommandLineArgs();
 

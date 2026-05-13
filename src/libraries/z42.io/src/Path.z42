@@ -14,6 +14,16 @@ public static class Path {
     // 不可用，本常量引入被推迟；现在 `Math.PI` 等已能访问，路径打通。
     public static char Separator = '/';
 
+    // BCL Path.Combine 兼容别名（与 Join 语义相同）。
+    public static string Combine(string a, string b) {
+        return Path.Join(a, b);
+    }
+
+    // 返回路径是否为绝对路径（Unix：以 `/` 开头）。
+    public static bool IsRooted(string path) {
+        return path.Length > 0 && path.CharAt(0) == '/';
+    }
+
     // 拼接两段路径。如果 b 是绝对路径（以 `/` 开头）则替换 a；
     // 否则用 `/` 分隔（已有尾随 `/` 时不重复）。
     public static string Join(string a, string b) {
