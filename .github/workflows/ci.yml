@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -43,8 +43,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src/runtime/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
           restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
             ${{ runner.os }}-cargo-
 
       - name: Cache NuGet packages
@@ -323,6 +324,24 @@ jobs:
       - name: Package ios-arm64-sim
         run: ./scripts/package.sh release --rid ios-arm64-sim
 
+      - name: Verify iOS packages
+        run: |
+          set -euo pipefail
+          for rid in ios-arm64 ios-arm64-sim; do
+            pkg_dir=$(ls -d artifacts/packages/z42-*-${rid}-release | head -1)
+            [ -d "$pkg_dir" ] || { echo "error: no $rid package"; exit 1; }
+            echo "Package: $pkg_dir"
+            test -f "$pkg_dir/manifest.toml"              || { echo "missing manifest.toml"; exit 1; }
+            test -d "$pkg_dir/libs"                       || { echo "missing libs/"; exit 1; }
+            test -f "$pkg_dir/native/libz42.a"            || { echo "missing native/libz42.a"; exit 1; }
+            test -d "$pkg_dir/native/Z42VM.xcframework"   || { echo "missing Z42VM.xcframework/"; exit 1; }
+            test -d "$pkg_dir/native/include"             || { echo "missing native/include/"; exit 1; }
+            test -d "$pkg_dir/Sources/Z42VM"              || { echo "missing Sources/Z42VM/"; exit 1; }
+            test -f "$pkg_dir/Package.swift"              || { echo "missing Package.swift"; exit 1; }
+            test -f "$pkg_dir/examples/hello_c/hello.zbc" || { echo "missing hello.zbc"; exit 1; }
+            echo "✓ $rid OK"
+          done
+
       - name: Upload iOS packages
         uses: actions/upload-artifact@v4
         with:
@@ -393,6 +412,24 @@ jobs:
         env:
           ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
 
+      - name: Verify Android packages
+        run: |
+          set -euo pipefail
+          for rid in android-arm64 android-x64; do
+            pkg_dir=$(ls -d artifacts/packages/z42-*-${rid}-release | head -1)
+            [ -d "$pkg_dir" ] || { echo "error: no $rid package"; exit 1; }
+            echo "Package: $pkg_dir"
+            test -f "$pkg_dir/manifest.toml"                           || { echo "missing manifest.toml"; exit 1; }
+            test -d "$pkg_dir/libs"                                    || { echo "missing libs/"; exit 1; }
+            test -f "$pkg_dir/native/libz42_platform_android.so"       || { echo "missing .so"; exit 1; }
+            test -f "$pkg_dir/native/libz42_platform_android.a"        || { echo "missing .a"; exit 1; }
+            test -d "$pkg_dir/native/include"                          || { echo "missing native/include/"; exit 1; }
+            test -d "$pkg_dir/kotlin/io/z42/vm"                        || { echo "missing kotlin/io/z42/vm/"; exit 1; }
+            test -f "$pkg_dir/cpp/z42vm_jni.c"                         || { echo "missing cpp/z42vm_jni.c"; exit 1; }
+            test -f "$pkg_dir/examples/hello_c/hello.zbc"              || { echo "missing hello.zbc"; exit 1; }
+            echo "✓ $rid OK"
+          done
+
       - name: Upload Android packages
         uses: actions/upload-artifact@v4
         with:
@@ -459,6 +496,30 @@ jobs:
 
       - name: Package browser-wasm
         run: ./scripts/package.sh release --rid browser-wasm
+
+      - name: Verify wasm package + Node.js smoke
+        run: |
+          set -euo pipefail
+          pkg_dir=$(ls -d artifacts/packages/z42-*-browser-wasm-release | head -1)
+          [ -d "$pkg_dir" ] || { echo "error: no browser-wasm package"; exit 1; }
+          echo "Package: $pkg_dir"
+          test -f "$pkg_dir/manifest.toml"                  || { echo "missing manifest.toml"; exit 1; }
+          test -d "$pkg_dir/libs"                           || { echo "missing libs/"; exit 1; }
+          test -f "$pkg_dir/native/z42_wasm_bg.wasm"        || { echo "missing z42_wasm_bg.wasm"; exit 1; }
+          test -f "$pkg_dir/native/libz42.a"                || { echo "missing native/libz42.a"; exit 1; }
+          test -d "$pkg_dir/pkg-web"                        || { echo "missing pkg-web/"; exit 1; }
+          test -d "$pkg_dir/pkg-nodejs"                     || { echo "missing pkg-nodejs/"; exit 1; }
+          test -f "$pkg_dir/package.json"                   || { echo "missing package.json"; exit 1; }
+          test -f "$pkg_dir/examples/hello_c/hello.zbc"     || { echo "missing hello.zbc"; exit 1; }
+          echo "✓ browser-wasm manifest OK"
+          # Node.js smoke: verify wasm binary magic header (0061736d = \0asm)
+          node -e "
+            const fs = require('fs');
+            const buf = fs.readFileSync('${pkg_dir}/native/z42_wasm_bg.wasm');
+            const magic = buf.slice(0, 4).toString('hex');
+            if (magic !== '0061736d') { console.error('bad wasm magic: ' + magic); process.exit(1); }
+            console.log('✓ wasm binary valid (' + buf.length + ' bytes)');
+          "
 
       - name: Upload wasm package
         uses: actions/upload-artifact@v4
