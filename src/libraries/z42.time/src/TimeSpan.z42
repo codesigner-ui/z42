@@ -1,0 +1,70 @@
+namespace Std.Time;
+
+// TimeSpan — 时间段值，内部单位 ns（i64）。
+// 支持亚毫秒精度，范围 ±292 年。
+// add-z42-time (2026-05-14)
+public sealed class TimeSpan {
+    private long _ns;
+
+    public TimeSpan(long nanoseconds) {
+        _ns = nanoseconds;
+    }
+
+    public static TimeSpan Zero() { return new TimeSpan(0); }
+
+    // ── 工厂方法 ──────────────────────────────────────────────────────────────
+
+    public static TimeSpan FromNanoseconds(long ns) {
+        return new TimeSpan(ns);
+    }
+
+    public static TimeSpan FromMilliseconds(long ms) {
+        return new TimeSpan(ms * 1000000);
+    }
+
+    public static TimeSpan FromSeconds(double sec) {
+        return new TimeSpan((long)(sec * 1000000000.0));
+    }
+
+    public static TimeSpan FromMinutes(double min) {
+        return new TimeSpan((long)(min * 60.0 * 1000000000.0));
+    }
+
+    public static TimeSpan FromHours(double hrs) {
+        return new TimeSpan((long)(hrs * 3600.0 * 1000000000.0));
+    }
+
+    // ── 访问器 ────────────────────────────────────────────────────────────────
+
+    public long TotalNanoseconds() { return _ns; }
+
+    public long TotalMilliseconds() { return _ns / 1000000; }
+
+    public double TotalSeconds() { return (double)_ns / 1000000000.0; }
+
+    public double TotalMinutes() { return this.TotalSeconds() / 60.0; }
+
+    public double TotalHours() { return this.TotalSeconds() / 3600.0; }
+
+    // ── 算术 ──────────────────────────────────────────────────────────────────
+
+    public TimeSpan Add(TimeSpan other) {
+        return new TimeSpan(_ns + other.TotalNanoseconds());
+    }
+
+    public TimeSpan Subtract(TimeSpan other) {
+        return new TimeSpan(_ns - other.TotalNanoseconds());
+    }
+
+    // ── 比较 ──────────────────────────────────────────────────────────────────
+
+    public bool IsLessThan(TimeSpan other)     { return _ns <  other.TotalNanoseconds(); }
+    public bool IsLessEqual(TimeSpan other)    { return _ns <= other.TotalNanoseconds(); }
+    public bool IsGreaterThan(TimeSpan other)  { return _ns >  other.TotalNanoseconds(); }
+    public bool IsGreaterEqual(TimeSpan other) { return _ns >= other.TotalNanoseconds(); }
+    public bool Equals(TimeSpan other)         { return _ns == other.TotalNanoseconds(); }
+
+    public override string ToString() {
+        return _ns.ToString() + "ns";
+    }
+}

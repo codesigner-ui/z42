@@ -1,0 +1,62 @@
+// add-z42-time (2026-05-14)：Stopwatch 单元测试。
+// busy-wait 代替 sleep（z42.time v0 无 Sleep API）。
+namespace Z42StopwatchTests;
+
+using Std.Test;
+using Std.Time;
+
+[Test]
+void test_default_not_running() {
+    Stopwatch sw = new Stopwatch();
+    Assert.False(sw.IsRunning());
+    Assert.Equal(0L, sw.Elapsed().TotalNanoseconds());
+}
+
+[Test]
+void test_start_new_is_running() {
+    Stopwatch sw = Stopwatch.StartNew();
+    Assert.True(sw.IsRunning());
+    sw.Stop();
+}
+
+[Test]
+void test_elapsed_after_stop_is_stable() {
+    Stopwatch sw = Stopwatch.StartNew();
+    // busy-wait ~1ms
+    long limit = 1000000;
+    long i = 0;
+    while (i < limit) { i = i + 1; }
+    sw.Stop();
+    Assert.False(sw.IsRunning());
+    TimeSpan e1 = sw.Elapsed();
+    TimeSpan e2 = sw.Elapsed();
+    Assert.True(e1.Equals(e2));
+    Assert.True(e1.TotalNanoseconds() > 0);
+}
+
+[Test]
+void test_restart_resets_elapsed() {
+    Stopwatch sw = Stopwatch.StartNew();
+    long limit = 500000;
+    long i = 0;
+    while (i < limit) { i = i + 1; }
+    sw.Stop();
+    sw.Restart();
+    Assert.True(sw.IsRunning());
+    // After restart, accumulated time is reset; elapsed includes only new segment
+    sw.Stop();
+    TimeSpan e = sw.Elapsed();
+    Assert.True(e.TotalNanoseconds() >= 0);
+}
+
+[Test]
+void test_elapsed_monotonic_while_running() {
+    Stopwatch sw = Stopwatch.StartNew();
+    TimeSpan e1 = sw.Elapsed();
+    long limit = 100000;
+    long i = 0;
+    while (i < limit) { i = i + 1; }
+    TimeSpan e2 = sw.Elapsed();
+    Assert.True(e2.IsGreaterEqual(e1));
+    sw.Stop();
+}

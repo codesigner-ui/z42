@@ -28,7 +28,9 @@
 | `z42.collections` | L1 | Stack、Queue（计划：LinkedList、SortedDictionary、PriorityQueue） | ❌ 纯脚本 |
 | `z42.math` | L1 | Math 静态方法 | ❌ 纯脚本（包装 z42.core 原语） |
 | `z42.text` | L1 | StringBuilder（纯脚本，2026-04-26 迁移）；Regex 占位 | ❌ 纯脚本 |
+| `z42.encoding` | L1 | Hex、Base64（RFC 4648 §4）、Utf8 | ❌ 纯脚本 |
 | `z42.io` | L2 | Console、File、Path、Environment | ✅ host FFI（仅此包例外） |
+| `z42.time` | L1 | DateTime（UTC 时刻）、TimeSpan（时间段）、Stopwatch（单调计时器） | ✅ VM intrinsic（`__time_now_ms` / `__bench_now_ns`，同 z42.math 例外） |
 
 > 历史角度：W1（2026-04-25）把 List / Dictionary 从 z42.collections 上提到 z42.core/Collections/，对齐 C# BCL 把 `System.Collections.Generic.List<T>` 放在 CoreLib 的做法（每个程序都在用）。
 

@@ -1,0 +1,53 @@
+namespace Std.Time;
+
+// DateTime — UTC 时刻值，内部单位 Unix epoch ms（i64）。
+// 直接镜像 __time_now_ms；DateTime - DateTime 返回 TimeSpan（ms × 1_000_000 = ns）。
+// add-z42-time (2026-05-14)
+public sealed class DateTime {
+    private long _unixMs;
+
+    public DateTime(long unixMs) {
+        _unixMs = unixMs;
+    }
+
+    [Native("__time_now_ms")]
+    private static extern long NowMs();
+
+    // ── 工厂方法 ──────────────────────────────────────────────────────────────
+
+    public static DateTime UtcNow() { return new DateTime(NowMs()); }
+
+    public static DateTime FromUnixMs(long unixMs) {
+        return new DateTime(unixMs);
+    }
+
+    public static DateTime UnixEpoch() { return new DateTime(0); }
+
+    // ── 访问器 ────────────────────────────────────────────────────────────────
+
+    public long UnixMs() { return _unixMs; }
+
+    // ── 算术 ──────────────────────────────────────────────────────────────────
+
+    public TimeSpan Subtract(DateTime other) {
+        return TimeSpan.FromNanoseconds((_unixMs - other.UnixMs()) * 1000000);
+    }
+
+    public DateTime Add(TimeSpan span) {
+        return new DateTime(_unixMs + span.TotalMilliseconds());
+    }
+
+    public DateTime SubtractSpan(TimeSpan span) {
+        return new DateTime(_unixMs - span.TotalMilliseconds());
+    }
+
+    // ── 比较 ──────────────────────────────────────────────────────────────────
+
+    public bool IsAfter(DateTime other)  { return _unixMs >  other.UnixMs(); }
+    public bool IsBefore(DateTime other) { return _unixMs <  other.UnixMs(); }
+    public bool Equals(DateTime other)   { return _unixMs == other.UnixMs(); }
+
+    public override string ToString() {
+        return _unixMs.ToString();
+    }
+}

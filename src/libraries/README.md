@@ -15,6 +15,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `z42.text/` | `z42.text` | 文本处理：`StringBuilder`、`Regex` |
 | `z42.encoding/` | `z42.encoding` | 字符 ↔ 字节编码：`Hex`、`Base64` (RFC 4648 §4)、`Utf8` |
 | `z42.test/` | `z42.test` | 单元测试运行时（v0 imperative TestRunner；lambda 就绪后升级 v1）|
+| `z42.time/` | `z42.time` | UTC 时刻（`DateTime`）、时间段（`TimeSpan`）、单调计时器（`Stopwatch`） |
 
 ## 实现规范（必须遵守）
 

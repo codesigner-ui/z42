@@ -1,0 +1,54 @@
+namespace Std.Time;
+
+// Stopwatch — 单调时钟，匹配 C# System.Diagnostics.Stopwatch 行为。
+// 内部使用 __bench_now_ns（单调高精度时钟），待 add-std-process 归档后
+// 随 add-z42-time Decision 2 重命名为 __time_now_mono_ns。
+// add-z42-time (2026-05-14)
+public sealed class Stopwatch {
+    private long _startNs;
+    private long _elapsedNs;
+    private bool _running;
+
+    [Native("__bench_now_ns")]
+    private static extern long MonoNs();
+
+    public Stopwatch() {
+        _startNs = 0;
+        _elapsedNs = 0;
+        _running = false;
+    }
+
+    public static Stopwatch StartNew() {
+        Stopwatch sw = new Stopwatch();
+        sw.Start();
+        return sw;
+    }
+
+    public bool IsRunning() { return _running; }
+
+    public void Start() {
+        if (_running) return;
+        _startNs = MonoNs();
+        _running = true;
+    }
+
+    public void Stop() {
+        if (!_running) return;
+        _elapsedNs = _elapsedNs + (MonoNs() - _startNs);
+        _running = false;
+    }
+
+    public void Restart() {
+        _elapsedNs = 0;
+        _startNs = MonoNs();
+        _running = true;
+    }
+
+    public TimeSpan Elapsed() {
+        long ns = _elapsedNs;
+        if (_running) {
+            ns = ns + (MonoNs() - _startNs);
+        }
+        return TimeSpan.FromNanoseconds(ns);
+    }
+}

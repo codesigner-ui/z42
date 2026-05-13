@@ -17,11 +17,11 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.io` / `z42.math` / `z42.test` / `z42.text`。
+已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.math` / `z42.test` / `z42.text` / `z42.time`。
 
-覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File 基础、测试框架。
+覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File 基础、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器。
 
-**主要空缺**：时间、文件系统的目录/路径深度操作、环境/进程、编码与序列化、并发、网络、加密、随机数。
+**主要空缺**：文件系统的目录/路径深度操作、环境/进程、序列化（JSON/TOML）、并发、网络、加密、随机数。
 
 ---
 
@@ -43,15 +43,15 @@
 
 | 包 | C# 对标 | Rust 对标 | 层级 | extern | 备注 |
 |----|---------|----------|------|--------|------|
-| **z42.time** | `System.DateTime` / `Stopwatch` / `TimeSpan` | `std::time` / `chrono` | L1 | 通过 z42.core 的 `__time_now_ms` | 几乎所有日志、超时、调度都需要；UTC + 单调时钟 |
 | **z42.io.fs**（扩展现 `z42.io`）| `System.IO.File` / `Directory` / `Path` | `std::fs` / `std::path` | L2 | 走 Platform HAL | 当前 `z42.io` 仅 stdin/stdout/基础 File；缺 Directory 枚举、Path 完整 API、文件元数据 |
 | **z42.os** / **z42.env** | `System.Environment` / `System.Diagnostics.Process` | `std::env` / `std::process` | L2 | 走 Platform HAL | 环境变量、命令行参数、退出码、子进程 spawn |
 | **z42.json** | `System.Text.Json` | `serde_json` | L1 | 纯脚本 | reader/writer 优先；serde-like derive 留 L3（依赖反射） |
 
-**起步排期**：L2 内可立刻起步（不依赖未实现语言特性），按 `z42.time → z42.io.fs 扩展 → z42.os → ~~z42.encoding~~ → z42.json` 顺序。
+**起步排期**：L2 内可立刻起步（不依赖未实现语言特性），按 `z42.io.fs 扩展 → z42.os → z42.json` 顺序。
 
 **已落地（不在 P0 表）**：
 - `z42.encoding`（2026-05-13 add-z42-encoding）— Hex / Base64 RFC 4648 §4 / UTF-8。详 [encoding.md](encoding.md)
+- `z42.time`（2026-05-14 add-z42-time）— UTC 时刻（DateTime）/ 时间段（TimeSpan）/ 单调计时器（Stopwatch）。详 [time.md](time.md)
 
 ---
 
@@ -147,6 +147,16 @@
 
 ## Deferred / Future Work
 
+### z42.time 延后项索引（详见 [time.md](time.md) Deferred 段）
+
+| ID | 标题 | 前置依赖 |
+|----|------|---------|
+| `time-future-calendar` | 日历分解（年/月/日）+ 时区 | 时区数据库嵌入 |
+| `time-future-format-parse` | ISO 8601 格式化/解析 | IFormattable + string.Format 格式说明符 |
+| `time-future-sleep-timer` | Sleep / Timer | async/await 或阻塞 Sleep syscall |
+| `time-future-datetime-offset` | DateTimeOffset + 时区偏移 | time-future-calendar |
+| `time-rename-bench-now-ns` | `__bench_now_ns` → `__time_now_mono_ns` 重命名 | add-std-process 归档 |
+
 ### z42 build-driver prerequisites（2026-05-13）
 
 **触发来源**：仓库 build / test 脚本目前全是 bash（`scripts/*.sh` + `src/toolchain/host/platforms/*/build.sh`），不能在 Windows 上跑。要让 Tier 1 Windows CI 工作，有 4 条路（xtask / Python driver / PowerShell 双维护 / Git Bash）—— 2026-05-13 决策**全部放弃**，长期目标是**用 z42 自身重写所有 build / test 脚本**：编译为 `.zbc` 单文件，由 `z42vm` 跨平台执行，与 z42 自举路线一致（参 [`roadmap.md`](../../roadmap.md) L4 自举段）。
@@ -180,4 +190,4 @@
 - Windows dev：用 WSL / Git Bash（接受 path 翻译等 quirks）；Tier 1 Windows CI 推迟到 z42 build-driver 落地
 - 不投资中间态：**不做 xtask（Rust）**、**不做 PowerShell 双维护**、**不做 Python driver** —— 中间态的代码在 z42 driver 上线后必删，做了就是技术债
 
-**与 stdlib P0/P1/P2 顺序的关系**：这条 backlog **不**强行抢占现有 P0 排期（`z42.time → z42.io.fs 扩展 → z42.os → z42.encoding → z42.json`）。z42.os / z42.io.fs 推进时附带验证它们能驱动 build script 即可。
+**与 stdlib P0/P1/P2 顺序的关系**：这条 backlog **不**强行抢占现有 P0 排期（`z42.io.fs 扩展 → z42.os → z42.json`）。z42.os / z42.io.fs 推进时附带验证它们能驱动 build script 即可。

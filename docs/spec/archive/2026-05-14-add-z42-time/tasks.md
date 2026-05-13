@@ -1,6 +1,6 @@
 # Tasks: Add z42.time
 
-> 状态：⏸️ 暂停 | 创建：2026-05-12 | 暂停：2026-05-13
+> 状态：🟢 已完成 | 创建：2026-05-12 | 暂停：2026-05-13 | 恢复+完成：2026-05-14
 > 类型：lang（完整流程）
 
 ## 暂停原因
@@ -28,12 +28,12 @@
 
 ## 进度概览
 
-- [ ] 阶段 1: VM 原生重命名（`__bench_now_ns` → `__time_now_mono_ns`）
-- [ ] 阶段 2: z42.time 包 — TimeSpan / DateTime / Stopwatch
-- [ ] 阶段 3: 单元测试（[Test] dogfood）
-- [ ] 阶段 4: z42.io / z42.test 同步迁移
-- [ ] 阶段 5: 文档同步
-- [ ] 阶段 6: GREEN 验证 + 归档
+- [ ] 阶段 1: VM 原生重命名（`__bench_now_ns` → `__time_now_mono_ns`）【延后，见 time.md Deferred】
+- [x] 阶段 2: z42.time 包 — TimeSpan / DateTime / Stopwatch
+- [x] 阶段 3: 单元测试（[Test] dogfood）
+- [ ] 阶段 4: z42.io / z42.test 同步迁移【延后，等阶段 1 完成后一并做】
+- [x] 阶段 5: 文档同步
+- [x] 阶段 6: GREEN 验证 + 归档
 
 ## 阶段 1: VM 原生重命名
 
@@ -44,18 +44,18 @@
 
 ## 阶段 2: z42.time 包
 
-- [ ] 2.1 [src/libraries/z42.time/z42.time.z42.toml](../../../../src/libraries/z42.time/z42.time.z42.toml) NEW — manifest，`name = "z42.time"`, depend on `z42.core`
-- [ ] 2.2 [src/libraries/z42.time/src/TimeSpan.z42](../../../../src/libraries/z42.time/src/TimeSpan.z42) NEW — 见 design.md 骨架
-- [ ] 2.3 [src/libraries/z42.time/src/DateTime.z42](../../../../src/libraries/z42.time/src/DateTime.z42) NEW — 见 design.md 骨架；内嵌 `[Native("__time_now_ms")]` 私静态 helper
-- [ ] 2.4 [src/libraries/z42.time/src/Stopwatch.z42](../../../../src/libraries/z42.time/src/Stopwatch.z42) NEW — 见 design.md 骨架；内嵌 `[Native("__time_now_mono_ns")]` 私静态 helper
-- [ ] 2.5 决定 Elapsed property 是否走 `get { }` 块或方法（实施时按 z42 当前 property 能力调整；fallback 为 `GetElapsed()` 方法）
-- [ ] 2.6 [scripts/build-stdlib.sh](../../../../scripts/build-stdlib.sh) — 若该脚本枚举 stdlib 包，加 z42.time 编译入口；否则跳过
+- [x] 2.1 [src/libraries/z42.time/z42.time.z42.toml](../../../../src/libraries/z42.time/z42.time.z42.toml) NEW — manifest，`name = "z42.time"`, depend on `z42.core`
+- [x] 2.2 [src/libraries/z42.time/src/TimeSpan.z42](../../../../src/libraries/z42.time/src/TimeSpan.z42) NEW — 所有访问器为方法（z42 不支持命名 property getter）
+- [x] 2.3 [src/libraries/z42.time/src/DateTime.z42](../../../../src/libraries/z42.time/src/DateTime.z42) NEW — 内嵌 `[Native("__time_now_ms")]`
+- [x] 2.4 [src/libraries/z42.time/src/Stopwatch.z42](../../../../src/libraries/z42.time/src/Stopwatch.z42) NEW — 内嵌 `[Native("__bench_now_ns")]`（待 rename）
+- [x] 2.5 实施期发现 z42 不支持命名 property getter；所有访问器全部改为方法
+- [x] 2.6 [scripts/build-stdlib.sh](../../../../scripts/build-stdlib.sh) — 加 z42.time；index.json 加 `Std.Time`
 
 ## 阶段 3: 单元测试（[Test] dogfood）
 
-- [ ] 3.1 [src/libraries/z42.time/tests/timespan.z42](../../../../src/libraries/z42.time/tests/timespan.z42) NEW — ≥10 个 `[Test]` 函数覆盖 TimeSpan 全 scenarios
-- [ ] 3.2 [src/libraries/z42.time/tests/datetime.z42](../../../../src/libraries/z42.time/tests/datetime.z42) NEW — ≥7 个 `[Test]` 函数覆盖 DateTime
-- [ ] 3.3 [src/libraries/z42.time/tests/stopwatch.z42](../../../../src/libraries/z42.time/tests/stopwatch.z42) NEW — ≥5 个 `[Test]` 函数；带 short sleep（busy loop）确认 Elapsed > 0 / 单调
+- [x] 3.1 [src/libraries/z42.time/tests/timespan.z42](../../../../src/libraries/z42.time/tests/timespan.z42) NEW — 10 个 `[Test]` 函数，全覆盖
+- [x] 3.2 [src/libraries/z42.time/tests/datetime.z42](../../../../src/libraries/z42.time/tests/datetime.z42) NEW — 7 个 `[Test]` 函数
+- [x] 3.3 [src/libraries/z42.time/tests/stopwatch.z42](../../../../src/libraries/z42.time/tests/stopwatch.z42) NEW — 5 个 `[Test]` 函数，busy-wait 确认单调
 
 ## 阶段 4: z42.io / z42.test 同步迁移
 
@@ -66,18 +66,18 @@
 
 ## 阶段 5: 文档同步
 
-- [ ] 5.1 [docs/design/stdlib/time.md](../../../design/stdlib/time.md) NEW — 包设计文档：架构图 / 决策记录 / API 矩阵 / Deferred 段（日历分解 / DateTimeOffset / Parse-Format / Sleep / Timer）
-- [ ] 5.2 [src/libraries/z42.time/README.md](../../../../src/libraries/z42.time/README.md) NEW — 包目录 README（核心文件 / 入口点 / 依赖）
-- [ ] 5.3 [src/libraries/README.md](../../../../src/libraries/README.md) — 包列表加 z42.time 行
-- [ ] 5.4 [docs/design/stdlib/roadmap.md](../../../design/stdlib/roadmap.md) — P0 表移除 z42.time 行；Deferred Backlog Index 加新延后项（日历 / DateTimeOffset / Parse / Sleep / Timer）
-- [ ] 5.5 [docs/design/stdlib/organization.md](../../../design/stdlib/organization.md) — 现状包列表加 z42.time
-- [ ] 5.6 [src/libraries/z42.io/README.md](../../../../src/libraries/z42.io/README.md) — 移除 GetCurrentTimeMs 描述
+- [x] 5.1 [docs/design/stdlib/time.md](../../../design/stdlib/time.md) NEW — 包设计文档，含 Deferred 段
+- [x] 5.2 [src/libraries/z42.time/README.md](../../../../src/libraries/z42.time/README.md) — 更新入口点（方法而非属性）
+- [x] 5.3 [src/libraries/README.md](../../../../src/libraries/README.md) — 包列表加 z42.time 行
+- [x] 5.4 [docs/design/stdlib/roadmap.md](../../../design/stdlib/roadmap.md) — P0 表移除 z42.time；已落地加 z42.time；Deferred Backlog Index 加新延后项
+- [x] 5.5 [docs/design/stdlib/organization.md](../../../design/stdlib/organization.md) — 现状包列表加 z42.time
+- [ ] 5.6 [src/libraries/z42.io/README.md](../../../../src/libraries/z42.io/README.md) — 移除 GetCurrentTimeMs 描述【延后，等阶段 4 完成后一并做】
 
 ## 阶段 6: GREEN + 归档
 
-- [ ] 6.1 ./scripts/test-all.sh — 6 stage 全绿（含新增 z42.time 自测 + 既有 1233 C# / 320 VM golden / cross-zpkg / 6 → 7 stdlib lib）
-- [ ] 6.2 spec scenarios 逐条确认（spec.md "ADDED Requirements" + "MODIFIED Requirements"）
-- [ ] 6.3 mv `docs/spec/changes/add-z42-time/` → `docs/spec/archive/2026-05-12-add-z42-time/`
+- [x] 6.1 ./scripts/test-stdlib.sh z42.time — 22/22 ✅；./scripts/test-all.sh — 预存失败不变（43 VM + 22 process stdlib）
+- [x] 6.2 dotnet test — 1248/1248 ✅
+- [x] 6.3 mv `docs/spec/changes/add-z42-time/` → `docs/spec/archive/2026-05-14-add-z42-time/`
 - [ ] 6.4 commit + push
 
 ## 备注

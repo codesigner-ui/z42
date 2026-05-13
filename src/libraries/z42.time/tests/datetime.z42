@@ -1,0 +1,57 @@
+// add-z42-time (2026-05-14)：DateTime 单元测试。
+namespace Z42DateTimeTests;
+
+using Std.Test;
+using Std.Time;
+
+[Test]
+void test_utcnow_positive() {
+    DateTime now = DateTime.UtcNow();
+    Assert.True(now.UnixMs() > 0);
+}
+
+[Test]
+void test_from_unix_ms() {
+    DateTime dt = DateTime.FromUnixMs(1700000000000);
+    Assert.Equal(1700000000000L, dt.UnixMs());
+}
+
+[Test]
+void test_unix_epoch() {
+    DateTime epoch = DateTime.UnixEpoch();
+    Assert.Equal(0L, epoch.UnixMs());
+}
+
+[Test]
+void test_subtract_datetimes() {
+    DateTime a = DateTime.FromUnixMs(2000);
+    DateTime b = DateTime.FromUnixMs(500);
+    TimeSpan d = a.Subtract(b);
+    Assert.Equal(1500L, d.TotalMilliseconds());
+}
+
+[Test]
+void test_add_timespan() {
+    DateTime a = DateTime.FromUnixMs(1000);
+    TimeSpan span = TimeSpan.FromMilliseconds(500);
+    DateTime b = a.Add(span);
+    Assert.Equal(1500L, b.UnixMs());
+}
+
+[Test]
+void test_subtract_timespan() {
+    DateTime a = DateTime.FromUnixMs(1000);
+    TimeSpan span = TimeSpan.FromMilliseconds(300);
+    DateTime b = a.SubtractSpan(span);
+    Assert.Equal(700L, b.UnixMs());
+}
+
+[Test]
+void test_compare() {
+    DateTime a = DateTime.FromUnixMs(100);
+    DateTime b = DateTime.FromUnixMs(200);
+    Assert.True(a.IsBefore(b));
+    Assert.True(b.IsAfter(a));
+    Assert.False(a.Equals(b));
+    Assert.True(a.Equals(DateTime.FromUnixMs(100)));
+}

@@ -68,12 +68,14 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
         // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49。
         // 2026-05-13 add-std-io-directory 新增 z42.io/Directory.z42，z42.io 4 → 5。
+        // 2026-05-14 add-z42-time 新增 z42.time 包（TimeSpan/DateTime/Stopwatch），3/3。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
         err2.Should().Contain("cached: 49/49");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 5/5");
+        err2.Should().Contain("cached: 3/3");  // z42.time: TimeSpan + DateTime + Stopwatch
     }
 
     /// <summary>--no-incremental 强制全 fresh。</summary>

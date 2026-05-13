@@ -1,0 +1,88 @@
+// add-z42-time (2026-05-14)：TimeSpan 单元测试。
+namespace Z42TimeSpanTests;
+
+using Std.Test;
+using Std.Time;
+
+// ── 工厂构造 ──────────────────────────────────────────────────────────────────
+
+[Test]
+void test_from_nanoseconds() {
+    TimeSpan s = TimeSpan.FromNanoseconds(1500);
+    Assert.Equal(1500L, s.TotalNanoseconds());
+    Assert.Equal(0L, s.TotalMilliseconds());
+}
+
+[Test]
+void test_from_milliseconds() {
+    TimeSpan s = TimeSpan.FromMilliseconds(1500);
+    Assert.Equal(1500L, s.TotalMilliseconds());
+    Assert.EqualApprox(1.5, s.TotalSeconds(), 1e-9);
+}
+
+[Test]
+void test_from_seconds() {
+    TimeSpan s = TimeSpan.FromSeconds(2.5);
+    Assert.Equal(2500L, s.TotalMilliseconds());
+    Assert.EqualApprox(2.5, s.TotalSeconds(), 1e-9);
+}
+
+[Test]
+void test_from_minutes() {
+    TimeSpan s = TimeSpan.FromMinutes(1.0);
+    Assert.EqualApprox(60.0, s.TotalSeconds(), 1e-6);
+}
+
+[Test]
+void test_from_hours() {
+    TimeSpan s = TimeSpan.FromHours(1.0);
+    Assert.EqualApprox(60.0, s.TotalMinutes(), 1e-6);
+}
+
+// ── Zero ──────────────────────────────────────────────────────────────────────
+
+[Test]
+void test_zero() {
+    TimeSpan z = TimeSpan.Zero();
+    Assert.Equal(0L, z.TotalNanoseconds());
+}
+
+// ── 加减 ──────────────────────────────────────────────────────────────────────
+
+[Test]
+void test_add() {
+    TimeSpan a = TimeSpan.FromSeconds(1.0);
+    TimeSpan b = TimeSpan.FromSeconds(2.0);
+    TimeSpan c = a.Add(b);
+    Assert.EqualApprox(3.0, c.TotalSeconds(), 1e-9);
+}
+
+[Test]
+void test_subtract() {
+    TimeSpan a = TimeSpan.FromSeconds(3.0);
+    TimeSpan b = TimeSpan.FromSeconds(1.0);
+    TimeSpan c = a.Subtract(b);
+    Assert.EqualApprox(2.0, c.TotalSeconds(), 1e-9);
+}
+
+// ── 比较 ──────────────────────────────────────────────────────────────────────
+
+[Test]
+void test_compare() {
+    TimeSpan a = TimeSpan.FromMilliseconds(100);
+    TimeSpan b = TimeSpan.FromMilliseconds(200);
+    Assert.True(a.IsLessThan(b));
+    Assert.True(a.IsLessEqual(b));
+    Assert.True(b.IsGreaterThan(a));
+    Assert.True(b.IsGreaterEqual(a));
+    Assert.False(a.Equals(b));
+}
+
+// ── 负值 ──────────────────────────────────────────────────────────────────────
+
+[Test]
+void test_negative() {
+    TimeSpan a = TimeSpan.FromMilliseconds(-500);
+    Assert.Equal(-500L, a.TotalMilliseconds());
+    Assert.True(a.IsLessThan(TimeSpan.Zero()));
+}
