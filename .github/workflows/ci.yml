@@ -273,3 +273,197 @@ jobs:
             echo "ERROR: cranelift still present in interp-only build" >&2
             exit 1
           fi
+
+  # ── iOS packaging ──────────────────────────────────────────────────────
+  # Packages ios-arm64 + ios-arm64-sim. Requires Xcode (pre-installed on
+  # macos-latest) + iOS Rust targets. build-stdlib.sh also builds z42c.dll.
+  package-ios:
+    name: package-ios
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust + iOS targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-cargo-ios-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-ios-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Build stdlib (also builds z42c.dll)
+        run: ./scripts/build-stdlib.sh
+
+      - name: Package ios-arm64
+        run: ./scripts/package.sh release --rid ios-arm64
+
+      - name: Package ios-arm64-sim
+        run: ./scripts/package.sh release --rid ios-arm64-sim
+
+      - name: Upload iOS packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: z42-ios-packages
+          path: artifacts/packages/
+          retention-days: 14
+          if-no-files-found: error
+
+  # ── Android packaging ───────────────────────────────────────────────────
+  # Packages android-arm64 + android-x64 via cargo-ndk + NDK r26d.
+  package-android:
+    name: package-android
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust + Android targets
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,x86_64-linux-android
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Setup Android NDK r26d
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          local-cache: true
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-cargo-android-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-android-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Build stdlib (also builds z42c.dll)
+        run: ./scripts/build-stdlib.sh
+
+      - name: Package android-arm64
+        run: ./scripts/package.sh release --rid android-arm64
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Package android-x64
+        run: ./scripts/package.sh release --rid android-x64
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Upload Android packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: z42-android-packages
+          path: artifacts/packages/
+          retention-days: 14
+          if-no-files-found: error
+
+  # ── wasm packaging ──────────────────────────────────────────────────────
+  # Packages browser-wasm via wasm-pack + Node.js.
+  # platforms/wasm/build.sh produces pkg-web/ + pkg-nodejs/ (required by
+  # package.sh before it can assemble the wasm SDK package).
+  package-wasm:
+    name: package-wasm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust + wasm target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --locked
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-wasm-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Build stdlib (also builds z42c.dll)
+        run: ./scripts/build-stdlib.sh
+
+      - name: Build wasm platform (pkg-web/ + pkg-nodejs/ via wasm-pack)
+        run: ./build.sh
+        working-directory: src/toolchain/host/platforms/wasm
+
+      - name: Package browser-wasm
+        run: ./scripts/package.sh release --rid browser-wasm
+
+      - name: Upload wasm package
+        uses: actions/upload-artifact@v4
+        with:
+          name: z42-wasm-package
+          path: artifacts/packages/
+          retention-days: 14
+          if-no-files-found: error

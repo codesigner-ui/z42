@@ -111,3 +111,8 @@ tier         = "tier1"
 min_version  = "13.0"
 rust_targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
 tier         = "tier1"
+
+[platform.windows]
+min_version  = "10.0"
+rust_targets = ["x86_64-pc-windows-msvc"]    # MSVC toolchain (from VS Build Tools / Visual Studio)
+tier         = "tier1"
