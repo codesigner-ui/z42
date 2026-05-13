@@ -27,7 +27,7 @@ GOLDEN_GLOBS=(
     "src/tests/"*"/"*"/"
     "src/libraries/"*"/tests/"*"/"
 )
-COMPILER_SLN="src/compiler/z42.slnx"
+COMPILER_DRIVER="src/compiler/z42.Driver/z42.Driver.csproj"
 
 BUILD_CONFIG="Debug"
 REBUILD_STDLIB=true
@@ -48,9 +48,11 @@ if [ "$REBUILD_STDLIB" = true ]; then
     echo ""
 fi
 
-# Build the compiler first.
+# Build only the compiler driver (z42c.dll) — not the full solution.
+# Building z42.slnx here triggers Microsoft.CodeCoverage targets on z42.Tests
+# which fail with MSB3492 when the mapping file from a prior build exists.
 echo "Building compiler (${BUILD_CONFIG})..."
-dotnet build -q "$COMPILER_SLN" -c "$BUILD_CONFIG"
+dotnet build -q "$COMPILER_DRIVER" -c "$BUILD_CONFIG"
 
 # Locate the driver DLL (output name is z42c.dll per z42.Driver.csproj).
 DRIVER_DLL="artifacts/build/compiler/z42.Driver/bin/z42c.dll"
