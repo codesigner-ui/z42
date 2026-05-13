@@ -58,6 +58,12 @@ jobs:
       - name: Build (just build)
         run: just build
 
+      # Build stdlib before tests — StdlibDelegateTests + MulticastActionTests
+      # require artifacts/build/libs/release/*.zpkg to be present.
+      - name: Build stdlib
+        run: ./scripts/build-stdlib.sh
+        shell: bash
+
       # Test on Unix runners (existing scripts are bash)
       - name: Test (just test)
         if: matrix.os != 'windows-latest'
@@ -72,16 +78,13 @@ jobs:
         shell: bash
 
       # ── host RID SDK package smoke ──
-      # Build stdlib zpkgs + run scripts/package.sh release for the host RID.
+      # Run scripts/package.sh release for the host RID (stdlib already built above).
       # Verifies the per-arch flat SDK layout (Phase 1.1 + 1.4 + drop-android-32bit)
       # works end-to-end on each desktop runner. Cross-platform RIDs (iOS / Android /
       # browser-wasm) deferred to a later CI matrix.
       #
       # shell: bash everywhere — on windows-latest this uses Git Bash (per
       # docs/workflow/windows.md; .gitattributes ensures LF on .sh).
-      - name: Build stdlib (host RID prereq)
-        run: ./scripts/build-stdlib.sh
-        shell: bash
 
       - name: Package host RID
         run: ./scripts/package.sh release
