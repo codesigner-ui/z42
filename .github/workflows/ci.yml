@@ -71,6 +71,53 @@ jobs:
           cargo test --manifest-path src/runtime/Cargo.toml
         shell: bash
 
+      # ── host RID SDK package smoke ──
+      # Build stdlib zpkgs + run scripts/package.sh release for the host RID.
+      # Verifies the per-arch flat SDK layout (Phase 1.1 + 1.4 + drop-android-32bit)
+      # works end-to-end on each desktop runner. Cross-platform RIDs (iOS / Android /
+      # browser-wasm) deferred to a later CI matrix.
+      #
+      # shell: bash everywhere — on windows-latest this uses Git Bash (per
+      # docs/workflow/windows.md; .gitattributes ensures LF on .sh).
+      - name: Build stdlib (host RID prereq)
+        run: ./scripts/build-stdlib.sh
+        shell: bash
+
+      - name: Package host RID
+        run: ./scripts/package.sh release
+        shell: bash
+
+      - name: Verify package manifest + native artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg_dir=$(ls -d artifacts/packages/z42-*-release | head -1)
+          [ -d "$pkg_dir" ] || { echo "error: no package produced"; exit 1; }
+          echo "Package: $pkg_dir"
+          test -f "$pkg_dir/manifest.toml"        || { echo "missing manifest.toml"; exit 1; }
+          test -d "$pkg_dir/libs"                 || { echo "missing libs/"; exit 1; }
+          test -d "$pkg_dir/native/include"       || { echo "missing native/include/"; exit 1; }
+          test -d "$pkg_dir/examples/hello_c"     || { echo "missing examples/hello_c/"; exit 1; }
+          test -f "$pkg_dir/examples/hello_c/hello.zbc" || { echo "missing hello.zbc"; exit 1; }
+          # bin/z42c (or z42c.exe) must be present + executable
+          if [ -f "$pkg_dir/bin/z42c.exe" ]; then
+              echo "✓ bin/z42c.exe ($(du -h "$pkg_dir/bin/z42c.exe" | cut -f1))"
+          elif [ -f "$pkg_dir/bin/z42c" ]; then
+              echo "✓ bin/z42c ($(du -h "$pkg_dir/bin/z42c" | cut -f1))"
+          else
+              echo "error: bin/z42c[.exe] missing"; ls -la "$pkg_dir/bin/"; exit 1
+          fi
+          echo "--- manifest.toml ---"
+          cat "$pkg_dir/manifest.toml"
+
+      - name: Upload host package
+        uses: actions/upload-artifact@v4
+        with:
+          name: z42-host-package-${{ matrix.os }}
+          path: artifacts/packages/z42-*-release/
+          retention-days: 14
+          if-no-files-found: error
+
   # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
   # uploads bench/results/e2e.json as artifact for manual inspection.
   # No diff/gate yet — that's P1.D.3 (gh-pages baseline + automatic PR diff).
