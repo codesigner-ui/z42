@@ -29,6 +29,7 @@ just clean          # 清 artifacts/
 | 跑 cross-zpkg e2e | [`testing/cross-zpkg.md`](testing/cross-zpkg.md) |
 | 只跑 git diff 影响的测试 | [`testing/changed-only.md`](testing/changed-only.md) |
 | 看 CI matrix / GREEN 标准 | [`ci.md`](ci.md) |
+| **本地打 9 个 per-arch SDK package** | [`packaging.md`](packaging.md) |
 | 打跨平台 release | [`release.md`](release.md) |
 | lldb / gdb / dap 调试 | [`debugging.md`](debugging.md) |
 

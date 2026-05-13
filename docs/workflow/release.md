@@ -1,17 +1,27 @@
 # Release 工作流
 
-> **状态**：📋 placeholder。完整 release 自动化在 SemVer **0.2.6** 启用。
+> **状态**：📋 placeholder（自动化部分）。本地打 per-arch SDK package 已落地（Phase 1.x，9 RID），见 [`packaging.md`](packaging.md)。
 
-## 当前手工流程
+## 本地打 SDK package（已落地，2026-05-13）
 
 ```bash
-./scripts/package.sh release                  # 1. 打 z42c + z42vm 到 artifacts/z42/bin/
+./scripts/package.sh release                       # host RID
+./scripts/package.sh release --rid ios-arm64       # 任一 9 RID 之一
+./scripts/package.sh --help                        # RID 矩阵 + 选项
+```
+
+完整 9 RID 矩阵 + 平台前置 + 验证 + 失败排查见 [`packaging.md`](packaging.md)。
+
+## 旧的"打 release tarball"手工流程
+
+```bash
+./scripts/package.sh release                  # 1. 打 host RID SDK 到 artifacts/packages/
 ./scripts/build-stdlib.sh --use-dist          # 2. 用分发版 z42c 重编译 stdlib
 ./scripts/test-dist.sh                        # 3. 分发版 binary 跑全套 goldens（interp + jit）
 ./scripts/test-dist.sh interp                 # 仅 interp 模式
 ```
 
-产物在 `artifacts/z42/{bin,libs}/`。手动打 tarball 即可。
+手动 `tar czf` 或 `zip` 即可（CI 自动化在 0.2.6 接管）。
 
 ## 0.2.6 之后
 
