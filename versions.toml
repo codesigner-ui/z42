@@ -70,8 +70,9 @@ xcode_min          = "15.0"             # verify-only（macOS dev 必备）
 extra_rust_targets = ["aarch64-apple-darwin"]   # `swift test` host slice (跑 unit tests，不是部署 target)
 
 [build.wasm]
-wasm_pack_min = "0.12"
-# rust target wasm32-unknown-unknown 在 [platform.wasm].rust_targets；node 在 [toolchain.node]
+wasm_pack_min   = "0.12"
+wasm_tools_min  = "1.0"     # Bytecode Alliance wasm-tools CLI (validate + print); CI: cargo install wasm-tools --locked
+# rust target wasm32-unknown-unknown 在 [platform.wasm].rust_targets
 
 # ══════════════════════════════════════════════════════════════════════════
 # PLATFORM: z42 产物的运行时支持承诺
