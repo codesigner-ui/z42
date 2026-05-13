@@ -63,6 +63,13 @@ rid_to_cargo() {
         linux-arm64)   echo "aarch64-unknown-linux-gnu" ;;
         linux-x64)     echo "x86_64-unknown-linux-gnu" ;;
         windows-x64)   echo "x86_64-pc-windows-msvc" ;;
+        ios-arm64)     echo "aarch64-apple-ios" ;;
+        ios-arm64-sim) echo "aarch64-apple-ios-sim" ;;
+        android-arm64) echo "aarch64-linux-android" ;;
+        android-armv7) echo "armv7-linux-androideabi" ;;
+        android-x64)   echo "x86_64-linux-android" ;;
+        android-x86)   echo "i686-linux-android" ;;
+        browser-wasm)  echo "wasm32-unknown-unknown" ;;
         *) echo "error: unsupported rid '$1' (see memory: project_supported_platforms)" >&2; return 1 ;;
     esac
 }
@@ -73,7 +80,18 @@ rid_to_dotnet() {
         linux-arm64)   echo "linux-arm64" ;;
         linux-x64)     echo "linux-x64" ;;
         windows-x64)   echo "win-x64" ;;
-        *) echo "error: unsupported rid '$1'" >&2; return 1 ;;
+        *) echo "error: unsupported rid '$1' (dotnet publish only for desktop RIDs)" >&2; return 1 ;;
+    esac
+}
+
+# Returns the RID category: desktop / ios / android / wasm.
+rid_category() {
+    case "$1" in
+        macos-*|linux-*|windows-*) echo "desktop" ;;
+        ios-*)        echo "ios" ;;
+        android-*)    echo "android" ;;
+        browser-wasm) echo "wasm" ;;
+        *) echo "unknown" ;;
     esac
 }
 
@@ -93,25 +111,47 @@ EOF
         return 1
     fi
 
+    # Validate whitelist.
     case "$target" in
         macos-arm64|linux-arm64|linux-x64|windows-x64) ;;
+        ios-arm64|ios-arm64-sim) ;;
+        android-arm64|android-armv7|android-x64|android-x86) ;;
+        browser-wasm) ;;
         *)
             echo "error: rid '$target' not in supported whitelist." >&2
-            echo "       Supported desktop RIDs: macos-arm64 / linux-arm64 / linux-x64 / windows-x64" >&2
+            echo "       See memory: project_supported_platforms." >&2
             return 1
             ;;
     esac
 
-    if [[ "$target" == "$host" ]]; then
-        return 0
-    fi
-    # Phase 1: no desktop cross-compile from macOS host (only native-arch).
-    # CI matrix runs each runner natively.
-    cat >&2 <<EOF
-error: cross-compiling to '$target' from host '$host' not supported by this script.
-       Run on a host of '$target', or use the CI release matrix.
+    # Cross-host support:
+    # - desktop ↔ desktop: only when target == host (no cross). Each desktop
+    #   RID built on its own CI runner.
+    # - macOS host can build: ios-* + browser-wasm (wasm needs only Rust target)
+    # - Linux host can build: android-* + browser-wasm
+    # - Windows host can build: browser-wasm
+    local target_cat="$(rid_category "$target")"
+    case "$host:$target_cat" in
+        "$target":*)
+            return 0
+            ;;
+        macos-*:ios)
+            return 0
+            ;;
+        macos-*:wasm|linux-*:wasm|windows-*:wasm)
+            return 0
+            ;;
+        linux-*:android|macos-*:android)
+            return 0  # cargo-ndk handles both linux + macOS hosts
+            ;;
+        *)
+            cat >&2 <<EOF
+error: cross-compiling to '$target' (category=$target_cat) from host '$host' not supported here.
+       Run on a host that natively supports '$target', or use the CI release matrix.
 EOF
-    return 1
+            return 1
+            ;;
+    esac
 }
 
 # ── Package content helpers ──────────────────────────────────────────────
@@ -172,6 +212,103 @@ pkg_emit_examples_hello_rust() {
     cp "$src/README.md"   "$dst/README.md"
 }
 
+# Mobile / wasm placeholder bin/README.md describing future cross tools.
+pkg_emit_bin_readme_placeholder() {
+    local pkg_dir="$1"
+    local target_label="$2"   # e.g. "iOS" / "Android" / "browser-wasm"
+    local target_lower
+    target_lower=$(echo "$target_label" | tr '[:upper:]' '[:lower:]')
+    mkdir -p "$pkg_dir/bin"
+    cat > "$pkg_dir/bin/README.md" <<EOF
+# bin/
+
+This directory is reserved for future cross-platform tools targeting
+**${target_label}** —— e.g. \`z42-aotcross-${target_lower}\` (compile .z42
+→ ${target_lower}-targeted .zbc) or \`z42-link-${target_lower}\`.
+
+Mobile / wasm packages do **not** ship the host compiler (\`z42c\`); embed
+prebuilt \`.zbc\` shipped from your host build pipeline.
+
+See memory: project_mobile_no_compiler.
+EOF
+}
+
+# ── iOS-specific helpers ────────────────────────────────────────────────
+
+# Build a single-slice xcframework wrapping the just-cargo-built libz42.a.
+# Usage: pkg_emit_ios_xcframework <pkg_dir> <cargo_target>
+pkg_emit_ios_xcframework() {
+    local pkg_dir="$1"
+    local cargo_target="$2"
+    local cargo_out="$_PKG_HELPERS_ROOT/artifacts/build/runtime/$cargo_target/release"
+    local lib="$cargo_out/libz42.a"
+
+    if [[ ! -f "$lib" ]]; then
+        echo "error: libz42.a not built at $lib" >&2
+        echo "       run: cargo rustc --release --lib --crate-type=staticlib --target $cargo_target" >&2
+        return 1
+    fi
+
+    local xcf="$pkg_dir/native/Z42VM.xcframework"
+    rm -rf "$xcf"
+    xcodebuild -create-xcframework \
+        -library "$lib" \
+        -headers "$pkg_dir/native/include" \
+        -output "$xcf" \
+        >/dev/null
+    [[ -d "$xcf" ]] || { echo "error: xcframework not created at $xcf" >&2; return 1; }
+}
+
+# Copy iOS Swift facade sources + Package.swift into the package root.
+# Usage: pkg_emit_ios_facade <pkg_dir> <rid>
+pkg_emit_ios_facade() {
+    local pkg_dir="$1"
+    local rid="$2"
+    local ios_root="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/ios"
+
+    mkdir -p "$pkg_dir/Sources/Z42VM" "$pkg_dir/Sources/Z42VMC/include"
+    cp "$ios_root"/Sources/Z42VM/*.swift          "$pkg_dir/Sources/Z42VM/"
+    cp "$ios_root"/Sources/Z42VMC/dummy.c         "$pkg_dir/Sources/Z42VMC/"
+    cp "$ios_root"/Sources/Z42VMC/include/*       "$pkg_dir/Sources/Z42VMC/include/"
+
+    # Emit a Package.swift that consumes the single-slice xcframework.
+    cat > "$pkg_dir/Package.swift" <<'EOF'
+// swift-tools-version: 5.9
+// Generated by scripts/package.sh; do not edit.
+// Single-slice xcframework SDK package (per docs/spec/archive/2026-05-13-define-package-layout/).
+
+import PackageDescription
+
+let package = Package(
+    name: "Z42VM",
+    platforms: [
+        .iOS(.v14),
+        .macOS(.v13),
+    ],
+    products: [
+        .library(name: "Z42VM", targets: ["Z42VM"]),
+    ],
+    targets: [
+        .target(
+            name: "Z42VM",
+            dependencies: ["Z42VMC", "Z42VMBinary"],
+            path: "Sources/Z42VM"
+        ),
+        .target(
+            name: "Z42VMC",
+            path: "Sources/Z42VMC",
+            sources: ["dummy.c"],
+            publicHeadersPath: "include"
+        ),
+        .binaryTarget(
+            name: "Z42VMBinary",
+            path: "native/Z42VM.xcframework"
+        ),
+    ]
+)
+EOF
+}
+
 pkg_emit_manifest() {
     local pkg_dir="$1"
     local rid="$2"
@@ -202,7 +339,7 @@ pkg_emit_manifest() {
           done ) | sed 's/,$//'
     }
 
-    local bin_list libs_list examples_list static_list dynamic_list
+    local bin_list libs_list examples_list static_list dynamic_list containers_list
     bin_list=$(_glob_quoted "$pkg_dir/bin" '*')
     libs_list=$(_glob_quoted "$pkg_dir/libs" '*.zpkg')
     examples_list=$(
@@ -212,7 +349,57 @@ pkg_emit_manifest() {
         fi
     )
     static_list=$(_existing_quoted "$pkg_dir/native" 'libz42.a' 'z42.lib')
-    dynamic_list=$(_existing_quoted "$pkg_dir/native" 'libz42.dylib' 'libz42.so' 'z42.dll')
+    dynamic_list=$(_existing_quoted "$pkg_dir/native" 'libz42.dylib' 'libz42.so' 'z42.dll' 'z42_wasm_bg.wasm')
+
+    # Platform containers (iOS xcframework / Android AAR / wasm pkg-* dirs).
+    containers_list=$(_existing_quoted "$pkg_dir/native" 'Z42VM.xcframework')
+
+    # Platform-specific facade section + compat fields.
+    local category platform_section compat_section
+    category=$(rid_category "$rid")
+    case "$category" in
+        ios)
+            platform_section=$(cat <<PSEC
+swiftpm-manifest = "Package.swift"
+swift-sources    = "Sources/Z42VM"
+PSEC
+)
+            compat_section=$(cat <<CSEC
+host-min-version      = "${version}"
+ios-deployment-target = "14.0"
+CSEC
+)
+            ;;
+        android)
+            platform_section=$(cat <<PSEC
+kotlin-sources = "kotlin/io/z42/vm"
+PSEC
+)
+            compat_section=$(cat <<CSEC
+host-min-version   = "${version}"
+android-min-sdk    = 23
+android-target-sdk = 34
+CSEC
+)
+            ;;
+        wasm)
+            platform_section=$(cat <<PSEC
+npm-manifest = "package.json"
+wasm-bindgen = ["pkg-web", "pkg-nodejs"]
+PSEC
+)
+            compat_section=$(cat <<CSEC
+host-min-version     = "${version}"
+wasm-bindgen-version = "0.2"
+CSEC
+)
+            ;;
+        *)
+            # desktop: no platform facade
+            platform_section="# desktop package: no platform-native facade (C consumers use native/include/)"
+            compat_section="host-min-version = \"${version}\""
+            ;;
+    esac
 
     cat > "$pkg_dir/manifest.toml" <<EOF
 [package]
@@ -232,14 +419,14 @@ examples    = [${examples_list}]
 [contents.native]
 static      = [${static_list}]
 dynamic     = [${dynamic_list}]
-containers  = []
+containers  = [${containers_list}]
 includes    = ["z42_abi.h", "z42_host.h"]
 
 [contents.platform]
-# desktop package: no platform-native facade (C consumers use native/include/)
+${platform_section}
 
 [compat]
-host-min-version = "${version}"
+${compat_section}
 EOF
 }
 
@@ -292,9 +479,22 @@ pkg_sha256_check() {
         fail=1
     fi
 
+    # 4. Swift sources cross-check (iOS packages only — skip if Sources/ absent).
+    if [[ -d "$pkg_dir/Sources/Z42VM" ]]; then
+        local ios_src="$_PKG_HELPERS_ROOT/src/toolchain/host/platforms/ios"
+        for swift in "$pkg_dir/Sources/Z42VM/"*.swift; do
+            local b
+            b=$(basename "$swift")
+            if ! _sha_eq "$swift" "$ios_src/Sources/Z42VM/$b"; then
+                echo "  ✗ Sources/Z42VM/$b differs from platforms/ios source" >&2
+                fail=1
+            fi
+        done
+    fi
+
     if [[ $fail -ne 0 ]]; then
         echo "SHA-256 invariant check FAILED for $pkg_dir" >&2
         return 1
     fi
-    echo "  ✓ SHA-256 invariants OK (libs / native/include / examples/hello_c/main.c)"
+    echo "  ✓ SHA-256 invariants OK"
 }

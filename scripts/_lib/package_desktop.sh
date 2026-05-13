@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# package_desktop.sh — Desktop SDK package pipeline (host RIDs).
+#
+# Args: <pkg_dir> <rid> <version> <profile> <host_rid>
+# Called from scripts/package.sh after dispatch on RID category = desktop.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+source "$SCRIPT_DIR/package_helpers.sh"
+
+PKG_DIR="$1"
+RID="$2"
+VERSION="$3"
+PROFILE="$4"
+HOST_RID="$5"
+
+CARGO_TARGET=$(rid_to_cargo "$RID")
+DOTNET_RID=$(rid_to_dotnet "$RID")
+
+DOTNET_CONFIG="Debug"
+[ "$PROFILE" = "release" ] && DOTNET_CONFIG="Release"
+
+# ── 1. z42c (dotnet publish single-file) ─────────────────────────────────
+
+echo "[1/7] z42c (dotnet publish $DOTNET_RID, $PROFILE)"
+PUBLISH_TMP=$(mktemp -d)
+trap 'rm -rf "$PUBLISH_TMP"' EXIT
+
+dotnet publish "$ROOT/src/compiler/z42.Driver/z42.Driver.csproj" \
+    -c "$DOTNET_CONFIG" -r "$DOTNET_RID" \
+    -p:PublishSingleFile=true \
+    -p:UseAppHost=true \
+    -o "$PUBLISH_TMP" \
+    --nologo -v quiet
+
+if   [ -f "$PUBLISH_TMP/z42c" ];     then cp "$PUBLISH_TMP/z42c"     "$PKG_DIR/bin/z42c"
+elif [ -f "$PUBLISH_TMP/z42c.exe" ]; then cp "$PUBLISH_TMP/z42c.exe" "$PKG_DIR/bin/z42c.exe"; fi
+find "$PUBLISH_TMP" -maxdepth 1 -name 'z42c.pdb' -exec cp {} "$PKG_DIR/bin/" \;
+echo "      ✓ bin/z42c"
+
+# ── 2. z42vm + libz42.{a,dylib,so,dll} ───────────────────────────────────
+
+echo "[2/7] z42vm + libz42 (cargo $CARGO_TARGET, $PROFILE)"
+
+if [ "$PROFILE" = "release" ]; then
+    cargo build --release --manifest-path "$ROOT/src/runtime/Cargo.toml" --target "$CARGO_TARGET" --quiet
+else
+    cargo build           --manifest-path "$ROOT/src/runtime/Cargo.toml" --target "$CARGO_TARGET" --quiet
+fi
+
+# Explicit staticlib + cdylib emit (rlib already from `cargo build`).
+echo "      cargo rustc --crate-type=staticlib"
+cargo rustc \
+    $([ "$PROFILE" = "release" ] && echo "--release") \
+    --lib --crate-type=staticlib \
+    --manifest-path "$ROOT/src/runtime/Cargo.toml" \
+    --target "$CARGO_TARGET" --quiet >/dev/null 2>&1 || true
+
+echo "      cargo rustc --crate-type=cdylib"
+cargo rustc \
+    $([ "$PROFILE" = "release" ] && echo "--release") \
+    --lib --crate-type=cdylib \
+    --manifest-path "$ROOT/src/runtime/Cargo.toml" \
+    --target "$CARGO_TARGET" --quiet >/dev/null 2>&1 || true
+
+CARGO_OUT="$ROOT/artifacts/build/runtime/$CARGO_TARGET/$PROFILE"
+
+if   [ -f "$CARGO_OUT/z42vm" ];     then cp "$CARGO_OUT/z42vm"     "$PKG_DIR/bin/z42vm"
+elif [ -f "$CARGO_OUT/z42vm.exe" ]; then cp "$CARGO_OUT/z42vm.exe" "$PKG_DIR/bin/z42vm.exe"; fi
+echo "      ✓ bin/z42vm"
+
+for f in libz42.a libz42.dylib libz42.so z42.lib z42.dll; do
+    [ -f "$CARGO_OUT/$f" ] && cp "$CARGO_OUT/$f" "$PKG_DIR/native/$f"
+done
+echo "      ✓ native/ (libz42.* / z42.*)"
+
+[ -d "$CARGO_OUT/z42vm.dSYM" ] && cp -R "$CARGO_OUT/z42vm.dSYM" "$PKG_DIR/bin/"
+
+# ── 3-7. Headers / libs / examples / manifest ───────────────────────────
+
+echo "[3/7] C ABI headers"
+pkg_copy_native_includes "$PKG_DIR"
+
+echo "[4/7] stdlib zpkg + zsym + index.json"
+pkg_copy_libs "$PKG_DIR"
+
+echo "[5/7] examples/hello_c"
+pkg_emit_examples_hello_c "$PKG_DIR" "$ROOT/examples/embedding/hello_c/README.md.host"
+
+echo "[6/7] examples/hello_rust"
+pkg_emit_examples_hello_rust "$PKG_DIR"
+
+echo "[7/7] manifest.toml"
+pkg_emit_manifest "$PKG_DIR" "$RID" "$VERSION" "$PROFILE" "$HOST_RID"
