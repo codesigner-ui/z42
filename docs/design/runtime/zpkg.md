@@ -200,3 +200,18 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.6 | 2026-05-14 | [freeze-zpkg-v0](../../spec/archive/2026-05-14-freeze-zpkg-v0/) catch-up | inner zbc 1.5（Convert opcode；zbc 1.5 在 2026-05-13 fix-numeric-cast-lowering 落地，zpkg 当时漏 bump）|
 
 > **如何 bump minor**：见 [`workflow.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/workflow.md)（zbc bump 流程含 zpkg 同步条款）+ §"Bumping `.zpkg` minor version (independent)"（仅 zpkg outer 变化场景）。
+
+---
+
+## Deferred / Future Work
+
+### reader-writer-asymmetry: Read→Write byte 对账（2026-05-14 调查）
+
+**现状**：`ZpkgReader.ReadModules(bytes) → ZpkgWriter.Write(ZpkgFile)` 在 4/4 freeze-zpkg-v0 fixture 中，packed-multi-module 等含本地类的 fixture 经过 round-trip 后 STRS 池有微小偏移。
+
+**Root cause**：与 [zbc.md "reader-writer-asymmetry"](zbc.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) 同源 —— packed-mode zpkg 内嵌 zbc module bodies；继承 zbc 的 SIGS/TYPE TypeTag 单向 lossy 问题。zpkg outer 各 section 本身没有这种漂移。
+
+**修复选项**：与 zbc 同步处理。zbc 走 Option A → zpkg outer 不变（继承收益）。
+
+**触发条件**：与 zbc reader-writer-asymmetry 同步触发。
+
