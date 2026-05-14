@@ -71,4 +71,42 @@ public sealed class DiagnosticCatalogRoutingTests
         entry.Should().NotBeNull();
         entry!.Title.Should().Contain("Circular dependency");
     }
+
+    /// Guards against drift between the `DiagnosticCodes` / `Z42Errors`
+    /// constant tables and their catalog entries. If you add a new error
+    /// code without a catalog entry (or vice versa), this fires.
+    [Fact]
+    public void Every_defined_code_has_a_catalog_entry()
+    {
+        var unregistered = new List<string>();
+
+        // Compiler codes (DiagnosticCodes → CompilerCatalog.All)
+        foreach (var field in typeof(DiagnosticCodes).GetFields(
+                     System.Reflection.BindingFlags.Public |
+                     System.Reflection.BindingFlags.Static))
+        {
+            if (field.FieldType != typeof(string)) continue;
+            var code = (string?)field.GetRawConstantValue();
+            if (code is null) continue;
+            if (DiagnosticCatalog.TryGet(code) is null)
+                unregistered.Add($"DiagnosticCodes.{field.Name} = \"{code}\"");
+        }
+
+        // Workspace codes (Z42Errors → WorkspaceCatalog.All)
+        foreach (var field in typeof(Z42Errors).GetFields(
+                     System.Reflection.BindingFlags.Public |
+                     System.Reflection.BindingFlags.Static))
+        {
+            if (field.FieldType != typeof(string)) continue;
+            var code = (string?)field.GetRawConstantValue();
+            if (code is null) continue;
+            if (DiagnosticCatalog.TryGet(code) is null)
+                unregistered.Add($"Z42Errors.{field.Name} = \"{code}\"");
+        }
+
+        unregistered.Should().BeEmpty(
+            because: "every defined diagnostic code must have a catalog entry " +
+                     "(z42c explain <code> needs to resolve). Add an entry to " +
+                     "DiagnosticCatalog.cs / WorkspaceCatalog.cs for each code listed.");
+    }
 }
