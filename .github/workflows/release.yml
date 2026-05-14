@@ -108,13 +108,17 @@ jobs:
         if: startsWith(matrix.rid, 'android-')
         run: cargo install cargo-ndk --locked
 
+      # local-cache: false — local-cache: true produced an incomplete
+      # ANDROID_NDK_HOME directory (clang missing under toolchains/llvm/prebuilt/),
+      # causing libffi-sys's configure to fail with "C compiler cannot create
+      # executables". Fresh download every run is ~2 min slower but reliable.
       - name: Setup Android NDK r26d
         if: startsWith(matrix.rid, 'android-')
         uses: nttld/setup-ndk@v1
         id: setup-ndk
         with:
           ndk-version: r26d
-          local-cache: true
+          local-cache: false
 
       # wasm-only: wasm-pack + wasm-tools
       - name: Install wasm-pack + wasm-tools
