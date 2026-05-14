@@ -32,6 +32,17 @@ use super::types::ExecMode;
 pub const ZBC_VERSION_MAJOR: u16 = 1;
 pub const ZBC_VERSION_MINOR: u16 = 5;
 
+// ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
+//
+// Strict-pin policy (freeze-zpkg-v0, 2026-05-14). Same coupling rules as zbc:
+// reader accepts exactly major == ZPKG_VERSION_MAJOR && minor == ZPKG_VERSION_MINOR.
+// Additionally, zbc minor bump REQUIRES zpkg minor bump (strong coupling per
+// docs/design/runtime/zpkg.md). See .claude/rules/workflow.md for the bump
+// procedure (zbc bump → 4 zbc steps + 4 zpkg steps in the same commit).
+
+pub const ZPKG_VERSION_MAJOR: u16 = 0;
+pub const ZPKG_VERSION_MINOR: u16 = 6;
+
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
 const OP_CONST_I: u8     = 0x00;
@@ -642,9 +653,14 @@ pub fn parse_zpkg_sidecar(data: &[u8]) -> Result<ZpkgSidecarData> {
     if data.len() < 16 || &data[0..4] != ZPKG_MAGIC {
         bail!("not a zpkg sidecar (bad magic)");
     }
+    let major = u16::from_le_bytes([data[4], data[5]]);
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if minor < 5 {
-        bail!("zpkg sidecar minor 0.{minor} not supported; requires 0.5+");
+    if major != ZPKG_VERSION_MAJOR || minor != ZPKG_VERSION_MINOR {
+        bail!(
+            "zpkg sidecar {major}.{minor} not supported (writer is at \
+             {ZPKG_VERSION_MAJOR}.{ZPKG_VERSION_MINOR}); \
+             regen via ./scripts/build-stdlib.sh"
+        );
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -1140,6 +1156,21 @@ pub fn read_zpkg_meta(data: &[u8]) -> Result<ZpkgInfo> {
     if data.len() < 16 { bail!("zpkg file too short") }
     if &data[0..4] != ZPKG_MAGIC { bail!("not a binary zpkg (bad magic)") }
 
+    // Strict-pin check (freeze-zpkg-v0): even the lightweight meta-only reader
+    // must reject mismatched versions — otherwise tooling could surface a stale
+    // META and the user has no clear signal to regen.
+    let major     = u16::from_le_bytes([data[4], data[5]]);
+    let minor     = u16::from_le_bytes([data[6], data[7]]);
+    if major != ZPKG_VERSION_MAJOR {
+        bail!("zpkg major {major} not supported (writer is at {ZPKG_VERSION_MAJOR})");
+    }
+    if minor != ZPKG_VERSION_MINOR {
+        bail!(
+            "zpkg minor {minor} not supported (writer is at \
+             {ZPKG_VERSION_MAJOR}.{ZPKG_VERSION_MINOR}); \
+             regen via ./scripts/build-stdlib.sh"
+        );
+    }
     let flags     = u16::from_le_bytes([data[8], data[9]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
     let is_packed = flags & 0x01 != 0;
@@ -1179,17 +1210,22 @@ pub fn read_zpkg_modules(data: &[u8]) -> Result<Vec<(Module, String)>> {
     if data.len() < 16 { bail!("zpkg file too short") }
     if &data[0..4] != ZPKG_MAGIC { bail!("not a binary zpkg (bad magic)") }
 
+    let major     = u16::from_le_bytes([data[4], data[5]]);
     let minor     = u16::from_le_bytes([data[6], data[7]]);
     let flags     = u16::from_le_bytes([data[8], data[9]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
     let is_packed = flags & 0x01 != 0;
-    // 2026-05-10 split-debug-symbols: bumped to zpkg 0.3 — inner zbc 1.2
-    // (LineTable in DBUG) + per-member DBUG body in MODS + sidecar form
-    // (FlagSymOnly + MDBG + BLID).
-    if minor < 5 {
+    // Strict-pin policy (freeze-zpkg-v0, 2026-05-14): exact match with writer.
+    // Pre-1.0 z42 doesn't keep older zpkg minor readable; regen via
+    // scripts/build-stdlib.sh. See docs/design/runtime/zpkg.md.
+    if major != ZPKG_VERSION_MAJOR {
+        bail!("zpkg major {major} not supported (writer is at {ZPKG_VERSION_MAJOR})");
+    }
+    if minor != ZPKG_VERSION_MINOR {
         bail!(
-            "zpkg minor 0.{minor} not supported; requires 0.5+ (with zbc 1.4 inner modules). \
-             Run scripts/build-stdlib.sh to rebuild."
+            "zpkg minor {minor} not supported (writer is at \
+             {ZPKG_VERSION_MAJOR}.{ZPKG_VERSION_MINOR}); \
+             regen via ./scripts/build-stdlib.sh"
         );
     }
     if (flags & 0x04) != 0 {

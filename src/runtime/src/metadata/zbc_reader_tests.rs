@@ -85,3 +85,125 @@ fn import_token_to_oob_pool_errors() {
     assert!(bad < UNRESOLVED_TOKEN); // not the UNRESOLVED sentinel
     assert!(id_map.resolve_method(bad).is_err());
 }
+
+// ── Strict-pin version invariants (freeze-zbc-v1 + freeze-zpkg-v0) ────────────
+//
+// Mirror of C# Z42.Tests.Zbc.FormatInvariantTests + Z42.Tests.Zpkg.FormatInvariantTests.
+// Constructs minimal byte streams to exercise reader version checks without
+// needing a fully-formed zbc / zpkg (those would require compiling z42 source).
+
+fn build_zbc_header(major: u16, minor: u16, flags: u16) -> Vec<u8> {
+    let mut data = vec![0u8; 16];
+    data[0..4].copy_from_slice(&ZBC_MAGIC);
+    data[4..6].copy_from_slice(&major.to_le_bytes());
+    data[6..8].copy_from_slice(&minor.to_le_bytes());
+    data[8..10].copy_from_slice(&flags.to_le_bytes());
+    // sec_count = 0, reserved = 0
+    data
+}
+
+fn build_zpkg_header(major: u16, minor: u16, flags: u16) -> Vec<u8> {
+    let mut data = vec![0u8; 16];
+    data[0..4].copy_from_slice(&ZPKG_MAGIC);
+    data[4..6].copy_from_slice(&major.to_le_bytes());
+    data[6..8].copy_from_slice(&minor.to_le_bytes());
+    data[8..10].copy_from_slice(&flags.to_le_bytes());
+    data
+}
+
+#[test]
+fn zbc_version_constants_pinned() {
+    // Sanity: writer's claimed version matches what the reader pins.
+    // If this fails, the constants drifted out of sync with C# ZbcWriter.
+    assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
+    assert_eq!(ZBC_VERSION_MINOR, 5, "zbc minor at 1.5 (fix-numeric-cast-lowering)");
+}
+
+#[test]
+fn zpkg_version_constants_pinned() {
+    assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
+    assert_eq!(ZPKG_VERSION_MINOR, 6, "zpkg minor at 0.6 (catch-up to zbc 1.5)");
+}
+
+#[test]
+fn zbc_read_rejects_wrong_major() {
+    let bytes = build_zbc_header(2, ZBC_VERSION_MINOR, 0);
+    let err = read_zbc(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("major 2"), "unexpected error: {msg}");
+    assert!(msg.contains("not supported"), "unexpected error: {msg}");
+}
+
+#[test]
+fn zbc_read_rejects_pre_1_0() {
+    let bytes = build_zbc_header(0, 9, 0);
+    let err = read_zbc(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("major 0"), "unexpected error: {msg}");
+}
+
+#[test]
+fn zbc_read_rejects_lower_minor() {
+    if ZBC_VERSION_MINOR == 0 { return; }
+    let bytes = build_zbc_header(ZBC_VERSION_MAJOR, ZBC_VERSION_MINOR - 1, 0);
+    let err = read_zbc(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("minor"), "unexpected error: {msg}");
+    assert!(msg.contains("regen via"), "expected regen hint: {msg}");
+}
+
+#[test]
+fn zbc_read_rejects_higher_minor() {
+    let bytes = build_zbc_header(ZBC_VERSION_MAJOR, ZBC_VERSION_MINOR + 1, 0);
+    let err = read_zbc(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("minor"), "unexpected error: {msg}");
+    assert!(msg.contains("regen via"), "expected regen hint: {msg}");
+}
+
+#[test]
+fn zbc_sidecar_rejects_wrong_minor() {
+    // sidecar requires SymOnly flag (0x04) — set it so we hit the version check first
+    let bytes = build_zbc_header(ZBC_VERSION_MAJOR, ZBC_VERSION_MINOR + 1, 0x04);
+    let err = parse_zbc_sidecar(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("sidecar"), "unexpected error: {msg}");
+    assert!(msg.contains("regen via"), "expected regen hint: {msg}");
+}
+
+#[test]
+fn zpkg_read_rejects_wrong_major() {
+    let bytes = build_zpkg_header(1, ZPKG_VERSION_MINOR, 0x01);
+    let err = read_zpkg_modules(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("major 1"), "unexpected error: {msg}");
+    assert!(msg.contains("not supported"), "unexpected error: {msg}");
+}
+
+#[test]
+fn zpkg_read_rejects_lower_minor() {
+    if ZPKG_VERSION_MINOR == 0 { return; }
+    let bytes = build_zpkg_header(ZPKG_VERSION_MAJOR, ZPKG_VERSION_MINOR - 1, 0x01);
+    let err = read_zpkg_modules(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("minor"), "unexpected error: {msg}");
+    assert!(msg.contains("regen via"), "expected regen hint: {msg}");
+}
+
+#[test]
+fn zpkg_read_rejects_higher_minor() {
+    let bytes = build_zpkg_header(ZPKG_VERSION_MAJOR, ZPKG_VERSION_MINOR + 1, 0x01);
+    let err = read_zpkg_modules(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("minor"), "unexpected error: {msg}");
+    assert!(msg.contains("regen via"), "expected regen hint: {msg}");
+}
+
+#[test]
+fn zpkg_sidecar_rejects_wrong_minor() {
+    let bytes = build_zpkg_header(ZPKG_VERSION_MAJOR, ZPKG_VERSION_MINOR + 1, 0x04);
+    let err = parse_zpkg_sidecar(&bytes).unwrap_err();
+    let msg = err.to_string();
+    assert!(msg.contains("sidecar"), "unexpected error: {msg}");
+    assert!(msg.contains("regen via"), "expected regen hint: {msg}");
+}

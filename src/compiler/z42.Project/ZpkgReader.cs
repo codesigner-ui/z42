@@ -244,12 +244,24 @@ public static partial class ZpkgReader
         var (name, version, entry) = ReadMetaSection(data, dir);
         var namespaces   = ReadNspcSection(data, dir, pool);
         var deps         = ReadDepsSection(data, dir, pool);
+        var exports      = ReadExptSection(data, dir, pool);
         bool packed      = (flags & 0x01) != 0;
         bool isExe       = (flags & 0x02) != 0;
 
+        // BLID is optional; only present in stripped form (mostly sidecars).
+        byte[]? buildId = null;
+        if (dir.TryGetValue("BLID", out var blid)
+            && blid.Size >= Z42.IR.BinaryFormat.BuildId.Size)
+        {
+            buildId = new byte[Z42.IR.BinaryFormat.BuildId.Size];
+            Array.Copy(data, blid.Offset, buildId, 0, Z42.IR.BinaryFormat.BuildId.Size);
+        }
+
         return new ZpkgMeta(name, version, entry, namespaces, deps,
             packed ? ZpkgMode.Packed : ZpkgMode.Indexed,
-            isExe  ? ZpkgKind.Exe   : ZpkgKind.Lib);
+            isExe  ? ZpkgKind.Exe   : ZpkgKind.Lib,
+            Exports: exports,
+            BuildId: buildId);
     }
 
     // ── Binary detection ──────────────────────────────────────────────────────
@@ -345,5 +357,9 @@ public sealed record ZpkgMeta(
     IReadOnlyList<string>   Namespaces,
     IReadOnlyList<ZpkgDep>  Dependencies,
     ZpkgMode           Mode,
-    ZpkgKind           Kind
+    ZpkgKind           Kind,
+    /// freeze-zpkg-v0 follow-up (2026-05-14): export symbols + BuildId surfaced for
+    /// disasm-level tooling. Default empty / null preserves existing callers.
+    IReadOnlyList<ZpkgExport>? Exports = null,
+    byte[]?            BuildId = null
 );

@@ -70,19 +70,15 @@ rootCmd.AddCommand(ScaffoldCommands.CreateFmt());
         }
         try
         {
-            var    raw  = File.ReadAllBytes(inFile.FullName);
-            string ext  = inFile.Extension.ToLowerInvariant();
-            if (ext == ".zpkg")
+            var raw = File.ReadAllBytes(inFile.FullName);
+            // Dispatch by magic bytes — `.zsym` sidecars (ZBC or ZPK) and other
+            // tools may use any extension. First 4 bytes are authoritative.
+            bool isZpkg = raw.Length >= 4 && raw[0] == 'Z' && raw[1] == 'P' && raw[2] == 'K' && raw[3] == 0;
+            if (isZpkg)
             {
-                var sb      = new System.Text.StringBuilder();
-                var modules = ZpkgReader.ReadModules(raw);
-                foreach (var (mod, ns) in modules)
-                {
-                    sb.AppendLine($"; === module: {ns} ===");
-                    sb.AppendLine(ZasmWriter.Write(mod));
-                }
+                string text    = ZpkgDisasm.Format(raw);
                 string outPath = outFile?.FullName ?? System.IO.Path.ChangeExtension(inFile.FullName, ".zpkgd");
-                SingleFileCompiler.WriteFile(outPath, sb.ToString());
+                SingleFileCompiler.WriteFile(outPath, text);
             }
             else
             {

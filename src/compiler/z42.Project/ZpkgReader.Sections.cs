@@ -44,6 +44,26 @@ public static partial class ZpkgReader
         return result;
     }
 
+    // ── EXPT section ─────────────────────────────────────────────────────────
+
+    private static List<ZpkgExport> ReadExptSection(
+        byte[] data, Dictionary<string, (int Offset, int Size)> dir, string[] pool)
+    {
+        if (!dir.TryGetValue("EXPT", out var e)) return [];
+        using var ms = new MemoryStream(data, e.Offset, e.Size, writable: false);
+        using var r  = new BinaryReader(ms, Encoding.UTF8, leaveOpen: true);
+        uint count   = r.ReadUInt32();
+        var result   = new List<ZpkgExport>((int)count);
+        for (int i = 0; i < count; i++)
+        {
+            string symbol = P(pool, r.ReadUInt32());
+            byte kindByte = r.ReadByte();
+            string kind   = kindByte switch { 1 => "type", 2 => "const", _ => "func" };
+            result.Add(new ZpkgExport(symbol, kind));
+        }
+        return result;
+    }
+
     // ── DEPS section ─────────────────────────────────────────────────────────
 
     private static List<ZpkgDep> ReadDepsSection(
