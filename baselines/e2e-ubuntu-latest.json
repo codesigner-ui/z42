@@ -1,38 +1,38 @@
 {
   "schema_version": 1,
-  "commit": "f930fbd",
+  "commit": "d432705",
   "branch": "main",
   "os": "linux-x86_64",
-  "timestamp": "2026-05-14T08:17:43Z",
+  "timestamp": "2026-05-14T10:01:22Z",
   "benchmarks": [
     {
       "name": "01_fibonacci",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 80.768,
+      "value": 73.275,
       "unit": "ms",
-      "ci_lower": 79.46,
-      "ci_upper": 82.04,
+      "ci_lower": 72.402,
+      "ci_upper": 73.99,
       "samples": 10
     },
     {
       "name": "02_math_loop",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 16.337,
+      "value": 16.419,
       "unit": "ms",
-      "ci_lower": 16.228,
-      "ci_upper": 16.458,
+      "ci_lower": 16.211,
+      "ci_upper": 16.676,
       "samples": 10
     },
     {
       "name": "03_startup",
       "tier": "z42-e2e",
       "metric": "time",
-      "value": 3.223,
+      "value": 3.238,
       "unit": "ms",
-      "ci_lower": 3.188,
-      "ci_upper": 3.271,
+      "ci_lower": 3.185,
+      "ci_upper": 3.318,
       "samples": 10
     }
   ]
