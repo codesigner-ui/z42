@@ -163,8 +163,14 @@ public sealed class GoldenTests
             }
         }
 
+        // Exclude wire-format fixture directories — those .z42 files are golden
+        // inputs for ZbcWriter / ZpkgWriter byte-level tests (see Z42.Tests.Zbc /
+        // Z42.Tests.Zpkg FormatGoldenTests), not runnable cases. freeze-zbc-v1 /
+        // freeze-zpkg-v0 introduced them.
         static bool IsExcludedPath(string p) =>
-               p.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar);
+               p.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar)
+            || p.Contains(Path.DirectorySeparatorChar + "zbc-format"  + Path.DirectorySeparatorChar)
+            || p.Contains(Path.DirectorySeparatorChar + "zpkg-format" + Path.DirectorySeparatorChar);
 
         foreach (var root in roots)
         {

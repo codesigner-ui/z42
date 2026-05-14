@@ -705,6 +705,25 @@ dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc"
 
 如果只是修 reader / writer 的非格式相关 bug（不改 wire layout）— **不要** bump minor；invariant tests 仍会通过。
 
+**zpkg 联动规则**（freeze-zpkg-v0, 2026-05-14）：zbc minor bump 必须同步 bump zpkg minor。除上述 4 步外加：
+
+5. **`src/compiler/z42.Project/ZpkgWriter.cs`** — `VersionMinor++` 且注释更新内嵌 zbc 版本
+6. **`src/runtime/src/metadata/zbc_reader.rs`** — `ZPKG_VERSION_MINOR` 同步
+7. **`docs/design/runtime/zpkg.md`** — Minor changelog 加一行（指明触发 spec = 同次 zbc bump 的 spec）
+8. **`src/tests/zpkg-format/generate-fixtures.sh`** 跑一遍 regen
+
+提交前自检扩展：
+
+```bash
+./src/tests/zbc-format/generate-fixtures.sh
+./src/tests/zpkg-format/generate-fixtures.sh
+dotnet test --filter "FullyQualifiedName~Z42.Tests.Zbc|FullyQualifiedName~Z42.Tests.Zpkg"
+```
+
+#### Bumping `.zpkg` minor version (independent)
+
+仅改 zpkg outer（不动 zbc）时（如新增 zpkg-only section / 已定义 section 字段语义）：只触上述步骤 5-8（zpkg writer / Rust 常量 / zpkg.md changelog / zpkg fixture regen），跳过 zbc 步骤 1-4。注意：实际工作中 zpkg-only 改动非常罕见（v0 历史里所有 minor bump 都耦合 zbc），但若发生，本节给出独立路径定义。
+
 ---
 
 ## 设计完整性原则（必须遵守）

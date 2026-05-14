@@ -1,0 +1,31 @@
+{
+  "header": {
+    "major": 0,
+    "minor": 6,
+    "flags": [],
+    "section_count": 6
+  },
+  "sections": [
+    "META",
+    "STRS",
+    "NSPC",
+    "EXPT",
+    "DEPS",
+    "FILE"
+  ],
+  "package": {
+    "name": "demo.indexed",
+    "version": "0.1.0",
+    "entry": null
+  },
+  "is_packed": false,
+  "is_exe": false,
+  "is_sym_only": false,
+  "has_blid": false,
+  "has_mdbg": false,
+  "has_tsig": false,
+  "has_impl": false,
+  "has_sigs": false,
+  "has_mods": false,
+  "has_file": true
+}

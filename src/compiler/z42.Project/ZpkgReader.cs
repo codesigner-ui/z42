@@ -273,13 +273,18 @@ public static partial class ZpkgReader
         ushort flags    = BitConverter.ToUInt16(data, 8);
         ushort secCount = BitConverter.ToUInt16(data, 10);
 
-        // 1.5b split-debug-symbols: bumped to 0.3 (inner zbc 1.2 + per-member
-        // DBUG body + sidecar form). Pre-0.3 zpkg not supported per CLAUDE.md
-        // "不为旧版本提供兼容".
-        if (major == 0 && minor < 5)
+        // Strict-pin policy (freeze-zpkg-v0, 2026-05-14): reader accepts exactly
+        // major == ZpkgWriter.VersionMajor && minor == ZpkgWriter.VersionMinor.
+        // Pre-1.0 z42 doesn't keep older zpkg minor readable; regen via
+        // scripts/build-stdlib.sh. See docs/design/runtime/zpkg.md.
+        if (major != ZpkgWriter.VersionMajor)
             throw new InvalidDataException(
-                $"zpkg {major}.{minor} not supported; requires 0.5+. " +
-                "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
+                $"zpkg major {major} not supported (writer is at {ZpkgWriter.VersionMajor})");
+        if (minor != ZpkgWriter.VersionMinor)
+            throw new InvalidDataException(
+                $"zpkg minor {minor} not supported (writer is at " +
+                $"{ZpkgWriter.VersionMajor}.{ZpkgWriter.VersionMinor}); " +
+                $"regen via ./scripts/build-stdlib.sh");
 
         var dir = new Dictionary<string, (int Offset, int Size)>(StringComparer.Ordinal);
         int pos = 16;

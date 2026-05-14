@@ -97,11 +97,12 @@ rootCmd.AddCommand(ScaffoldCommands.CreateFmt());
     rootCmd.AddCommand(disasmCmd);
 }
 
-// golden-json — Stable JSON dump of a .zbc file for byte-level golden tests.
-// Used by src/tests/zbc-format/ fixtures. See freeze-zbc-v1 spec archive.
+// golden-json — Stable JSON dump of a .zbc or .zpkg file for byte-level golden tests.
+// Used by src/tests/zbc-format/ + src/tests/zpkg-format/ fixtures.
+// See freeze-zbc-v1 / freeze-zpkg-v0 spec archives.
 {
-    var goldenCmd    = new Command("golden-json", "Dump a .zbc as canonical JSON for golden tests");
-    var fileArg      = new Argument<FileInfo>("file", "The .zbc binary file to dump");
+    var goldenCmd    = new Command("golden-json", "Dump a .zbc / .zpkg as canonical JSON for golden tests");
+    var fileArg      = new Argument<FileInfo>("file", "The .zbc or .zpkg binary file to dump");
     var goldenOutOpt = new Option<FileInfo?>(["-o", "--output"], "Output JSON path (default: <file>.json)");
     goldenCmd.AddArgument(fileArg);
     goldenCmd.AddOption(goldenOutOpt);
@@ -118,8 +119,17 @@ rootCmd.AddCommand(ScaffoldCommands.CreateFmt());
         try
         {
             var    raw     = File.ReadAllBytes(inFile.FullName);
-            var    module  = ZbcReader.Read(raw);
-            string json    = ZbcGoldenJsonFormatter.Format(raw, module);
+            string ext     = inFile.Extension.ToLowerInvariant();
+            string json;
+            if (ext == ".zpkg")
+            {
+                json = ZpkgGoldenJsonFormatter.Format(raw);
+            }
+            else
+            {
+                var module = ZbcReader.Read(raw);
+                json = ZbcGoldenJsonFormatter.Format(raw, module);
+            }
             string outPath = outFile?.FullName ?? System.IO.Path.ChangeExtension(inFile.FullName, ".json");
             SingleFileCompiler.WriteFile(outPath, json);
         }

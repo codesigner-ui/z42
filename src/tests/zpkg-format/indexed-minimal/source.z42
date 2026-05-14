@@ -1,0 +1,10 @@
+// freeze-zpkg-v0 fixture: single class, indexed mode (incremental cache form).
+namespace Demo.Indexed;
+
+class Box {
+    int N;
+    Box(int n) { this.N = n; }
+    int Get() { return this.N; }
+}
+
+void Main() { }

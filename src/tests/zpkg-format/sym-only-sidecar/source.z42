@@ -1,0 +1,10 @@
+// freeze-zpkg-v0 fixture: sym-only sidecar (.zsym) — stripped form.
+// Fixture stores ONLY the sidecar bytes (not the main zpkg).
+namespace Demo.Sidecar;
+
+class Item {
+    string Name;
+    Item(string name) { this.Name = name; }
+}
+
+void Main() { }

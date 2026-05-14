@@ -1,0 +1,11 @@
+// freeze-zpkg-v0 fixture: single class, packed mode (default release form).
+namespace Demo.Minimal;
+
+class Greeter {
+    string Hello() { return "hi"; }
+}
+
+void Main() {
+    var g = new Greeter();
+    g.Hello();
+}

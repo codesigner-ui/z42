@@ -1,0 +1,8 @@
+// freeze-zpkg-v0 fixture multi-module: namespace B.
+namespace Demo.Multi.B;
+
+class WidgetB {
+    int Value() { return 2; }
+}
+
+void Main() { }

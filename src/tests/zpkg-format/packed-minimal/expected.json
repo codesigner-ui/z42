@@ -1,0 +1,34 @@
+{
+  "header": {
+    "major": 0,
+    "minor": 6,
+    "flags": [
+      "Packed"
+    ],
+    "section_count": 7
+  },
+  "sections": [
+    "META",
+    "STRS",
+    "NSPC",
+    "EXPT",
+    "DEPS",
+    "SIGS",
+    "MODS"
+  ],
+  "package": {
+    "name": "demo.minimal",
+    "version": "0.1.0",
+    "entry": null
+  },
+  "is_packed": true,
+  "is_exe": false,
+  "is_sym_only": false,
+  "has_blid": false,
+  "has_mdbg": false,
+  "has_tsig": false,
+  "has_impl": false,
+  "has_sigs": true,
+  "has_mods": true,
+  "has_file": false
+}
