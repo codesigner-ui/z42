@@ -10,12 +10,12 @@ struct Cli {
     file: String,
 
     /// Optional entry-function override (positional). When omitted the VM
-    /// uses the `Entry` baked into the zpkg by `z42c build` (which itself
-    /// auto-detects `Main()` at compile time — see add-std-process /
-    /// auto-detect-main). Bare `.zbc` files without zpkg metadata fall back
-    /// to the resolver chain in `vm::resolve_entry`. **z42-test-runner** is
-    /// the main consumer: it forks `z42vm <file> <test_method>` per
-    /// `[Test]` discovered via TIDX.
+    /// reads the `Entry` baked into the zpkg by `z42c build` (which itself
+    /// auto-detects `Main()` at compile time — see auto-detect-main spec).
+    /// Bare `.zbc` files without zpkg metadata REQUIRE this positional
+    /// argument; no silent fallback. **z42-test-runner** is the main
+    /// consumer: it forks `z42vm <file> <test_method>` per `[Test]`
+    /// discovered via TIDX.
     entry: Option<String>,
 
     /// Execution mode override (default: use annotation in bytecode)

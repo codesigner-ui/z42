@@ -117,19 +117,6 @@ public sealed class ScaffoldCommandsTests : IDisposable
     }
 
     [Fact]
-    public void NewMember_ExeWithExplicitEntry_KeepsEntryInManifest()
-    {
-        RunZ42c(_tmp, "new", "--workspace", "ws").code.Should().Be(0);
-        string wsDir = Path.Combine(_tmp, "ws");
-
-        var (code, _, _) = RunZ42c(wsDir, "new", "-p", "hello", "--kind", "exe", "--entry", "Custom.run");
-        code.Should().Be(0);
-
-        string toml = File.ReadAllText(Path.Combine(wsDir, "apps", "hello", "hello.z42.toml"));
-        toml.Should().Contain("entry             = \"Custom.run\"");
-    }
-
-    [Fact]
     public void NewMember_NotInWorkspace_Fails()
     {
         var (code, _, _) = RunZ42c(_tmp, "new", "-p", "foo", "--kind", "lib");

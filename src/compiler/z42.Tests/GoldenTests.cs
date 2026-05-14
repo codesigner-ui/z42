@@ -407,12 +407,31 @@ public sealed class GoldenTests
             string? vmBin = FindVmBinary();
             if (vmBin == null) return; // VM not built: skip
 
-            var psi = new ProcessStartInfo(vmBin, irFile)
+            // 2026-05-14 drop-cli-entry-fallback: VM no longer auto-resolves
+            // `Main` / `<ns>.Main` from a bare zbc. Pick the entry from the
+            // compiled IR (same priority as PackageCompiler.AutoDetectEntry)
+            // and pass it positionally so the GoldenTests fixtures keep
+            // working without going through PackageCompiler.
+            string entryName =
+                ir!.Functions.Select(f => f.Name)
+                    .Where(n => n.EndsWith(".Main", StringComparison.Ordinal))
+                    .OrderBy(s => s, StringComparer.Ordinal).FirstOrDefault()
+                ?? (ir.Functions.Any(f => f.Name == "Main") ? "Main" : null)
+                ?? ir.Functions.Select(f => f.Name)
+                    .Where(n => n.EndsWith(".main", StringComparison.Ordinal))
+                    .OrderBy(s => s, StringComparer.Ordinal).FirstOrDefault()
+                ?? (ir.Functions.Any(f => f.Name == "main") ? "main" : null)
+                ?? throw new InvalidOperationException(
+                       $"test '{name}': no Main/main function in compiled IR");
+
+            var psi = new ProcessStartInfo(vmBin)
             {
                 RedirectStandardOutput = true,
                 RedirectStandardError  = true,
                 UseShellExecute        = false,
             };
+            psi.ArgumentList.Add(irFile);
+            psi.ArgumentList.Add(entryName);
             if (StdlibLibsDir != null)
                 psi.Environment["Z42_LIBS"] = StdlibLibsDir;
 

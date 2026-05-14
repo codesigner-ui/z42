@@ -19,12 +19,12 @@ impl Vm {
     /// pending exception). Caller is responsible for `ctx.install_lazy_loader`
     /// before calling `run` if dependencies need to be lazy-loaded.
     ///
-    /// Entry resolution order (first match wins):
-    ///   1. `hint`               — explicit name from artifact metadata (.zpkg `entry` field)
-    ///   2. `{module.name}.Main`
-    ///   3. `{module.name}.main`
-    ///   4. `Main`
-    ///   5. `main`
+    /// Entry resolution (strict, since 2026-05-14 auto-detect-main +
+    /// drop-cli-entry-fallback): `hint` must be `Some(name)`. The compiler
+    /// (`PackageCompiler.BuildTarget.AutoDetectEntry`) bakes `Entry` into
+    /// every exe zpkg; the artifact loader passes it as `hint`. CLI users
+    /// can override with the positional `[entry]` arg on `z42vm`. No
+    /// silent fallback chain — missing entry → hard error.
     pub fn run(&self, ctx: &mut VmContext, hint: Option<&str>) -> Result<()> {
         let entry_name = self.resolve_entry(hint)?;
 
@@ -67,26 +67,19 @@ impl Vm {
         }
     }
 
+    /// Strict entry resolution (no fallback chain). The hint **must** be
+    /// supplied — either from the zpkg `Entry` field (baked at compile
+    /// time by `PackageCompiler.BuildTarget.AutoDetectEntry`) or from the
+    /// CLI positional `[entry]` argument on `z42vm`.
     fn resolve_entry(&self, hint: Option<&str>) -> Result<String> {
-        let ns = &self.module.name;
-        let qualified_main    = format!("{}.Main", ns);
-        let qualified_main_lc = format!("{}.main", ns);
-
-        // Build candidate list; hint is tried first if present.
-        let mut candidates: Vec<&str> = Vec::with_capacity(5);
-        if let Some(h) = hint { candidates.push(h); }
-        candidates.extend_from_slice(&[&qualified_main, &qualified_main_lc, "Main", "main"]);
-
-        candidates
-            .into_iter()
-            .find(|&n| self.module.functions.iter().any(|f| f.name == n))
-            .map(|s| s.to_owned())
-            .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "no entry point found in module `{ns}` \
-                     (tried: {}.Main, {}.main, Main, main)",
-                    ns, ns
-                )
-            })
+        let name = hint.ok_or_else(|| anyhow::anyhow!(
+            "no entry point: pass the function name as the second positional \
+             argument to `z42vm`, or rebuild with `z42c build` which bakes \
+             an entry into the zpkg automatically (define a `Main()` in source)"
+        ))?;
+        if !self.module.functions.iter().any(|f| f.name == name) {
+            bail!("entry function `{}` not found in module `{}`", name, self.module.name);
+        }
+        Ok(name.to_string())
     }
 }

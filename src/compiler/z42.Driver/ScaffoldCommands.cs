@@ -20,13 +20,14 @@ static class ScaffoldCommands
         var wsOpt      = new Option<bool>("--workspace", "Create a new workspace at <dir>");
         var pkgOpt     = new Option<string?>(["-p", "--package"], "Create a new member with the given name (in current workspace)");
         var kindOpt    = new Option<string>("--kind", () => "lib", "Member kind: lib | exe");
-        var entryOpt   = new Option<string?>("--entry", "Entry function for exe (e.g. Hello.main)");
 
         cmd.AddArgument(dirArg);
         cmd.AddOption(wsOpt);
         cmd.AddOption(pkgOpt);
         cmd.AddOption(kindOpt);
-        cmd.AddOption(entryOpt);
+        // 2026-05-14 drop-cli-entry-fallback: removed `--entry` option.
+        // PackageCompiler auto-detects `Main()` at build time; users who
+        // want a non-default entry edit the generated manifest.
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
@@ -34,7 +35,6 @@ static class ScaffoldCommands
             var ws    = ctx.ParseResult.GetValueForOption(wsOpt);
             var pkg   = ctx.ParseResult.GetValueForOption(pkgOpt);
             var kind  = ctx.ParseResult.GetValueForOption(kindOpt) ?? "lib";
-            var entry = ctx.ParseResult.GetValueForOption(entryOpt);
 
             if (ws)
             {
@@ -43,7 +43,7 @@ static class ScaffoldCommands
             }
             else if (pkg is not null)
             {
-                ctx.ExitCode = NewMember(pkg, kind, entry);
+                ctx.ExitCode = NewMember(pkg, kind);
             }
             else
             {
@@ -83,7 +83,7 @@ static class ScaffoldCommands
         return 0;
     }
 
-    static int NewMember(string name, string kind, string? entry)
+    static int NewMember(string name, string kind)
     {
         var loader = new ManifestLoader();
         var ws = loader.DiscoverWorkspaceRoot(Directory.GetCurrentDirectory());
@@ -94,8 +94,9 @@ static class ScaffoldCommands
         }
 
         bool isExe = string.Equals(kind, "exe", StringComparison.OrdinalIgnoreCase);
-        // 2026-05-14 auto-detect-main: 脚手架默认不写 `entry = ...`；
-        // PackageCompiler 自动发现源里的 `Main()`。显式 `--entry` 才写。
+        // 2026-05-14 drop-cli-entry-fallback: no `--entry` flag anymore.
+        // Manifest stays minimal; source template generates `<Capitalized>.Main`
+        // which PackageCompiler.AutoDetectEntry picks up at build time.
 
         // 决定路径：lib → libs/<name>，exe → apps/<name>
         string subDir = isExe ? "apps" : "libs";
@@ -107,13 +108,12 @@ static class ScaffoldCommands
         }
         Directory.CreateDirectory(Path.Combine(memberDir, "src"));
 
-        string manifest = Templates.MemberManifest(name, isExe ? "exe" : "lib", entry);
+        string manifest = Templates.MemberManifest(name, isExe ? "exe" : "lib");
         File.WriteAllText(Path.Combine(memberDir, $"{name}.z42.toml"), manifest);
 
-        // Source template defaults to `<Capitalized>.Main` — AutoDetectEntry picks it up.
         string defaultEntry = $"{Capitalize(name)}.Main";
         string srcFile = isExe
-            ? Templates.ExeSourceFile(name, entry ?? defaultEntry)
+            ? Templates.ExeSourceFile(name, defaultEntry)
             : Templates.LibSourceFile(name);
         File.WriteAllText(Path.Combine(memberDir, "src", $"{Capitalize(name)}.z42"), srcFile);
 
@@ -241,13 +241,13 @@ static class ScaffoldCommands
             include = ["src/**/*.z42"]
             """;
 
-        public static string MemberManifest(string name, string kind, string? entry)
+        public static string MemberManifest(string name, string kind)
         {
             var sb = new System.Text.StringBuilder();
             sb.AppendLine("[project]");
             sb.AppendLine($"name              = \"{name}\"");
             sb.AppendLine($"kind              = \"{kind}\"");
-            if (entry is not null) sb.AppendLine($"entry             = \"{entry}\"");
+            // 2026-05-14 drop-cli-entry-fallback: never write `entry = ...`.
             sb.AppendLine("version.workspace = true");
             sb.AppendLine("license.workspace = true");
             sb.AppendLine();
