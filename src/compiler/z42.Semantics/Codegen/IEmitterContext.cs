@@ -15,6 +15,13 @@ internal interface IEmitterContext
     // ── Name qualification ───────────────────────────────────────────────────
     string QualifyName(string name);
 
+    /// Source-file stem (filename without extension) for the current
+    /// CompilationUnit, or `null` if the CU was synthesized in-memory.
+    /// fix-multi-file-static-init (2026-05-15): used by `EmitStaticInit` to
+    /// disambiguate per-CU `__static_init__` names so multiple files in the
+    /// same namespace don't collide on zpkg load.
+    string? CompilationUnitStem { get; }
+
     // ── String interning ─────────────────────────────────────────────────────
     int Intern(string s);
 

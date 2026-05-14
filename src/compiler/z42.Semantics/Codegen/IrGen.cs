@@ -30,6 +30,11 @@ public sealed partial class IrGen : IEmitterContext
     private readonly Dictionary<string, int> _stringIndex = new(StringComparer.Ordinal);
     private string? _namespace;
 
+    /// Source-file stem (e.g. `Platform`) used to disambiguate the
+    /// per-CU `__static_init__` function name when multiple files share a
+    /// namespace. fix-multi-file-static-init (2026-05-15).
+    private string? _cuStem;
+
     // ── Derived from SemanticModel ───────────────────────────────────────────
     private readonly ClassRegistry _classRegistry = new();
     private HashSet<string> _topLevelFunctionNames = new();

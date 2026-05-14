@@ -62,7 +62,15 @@ internal sealed partial class FunctionEmitter
         }
 
         EndBlock(new RetTerm(null));
-        string initName = _ctx.QualifyName("__static_init__");
+        // fix-multi-file-static-init (2026-05-15): include the source-file
+        // stem so multiple files in the same namespace each get a distinct
+        // init function name. Loaders previously deduped by name and only
+        // ran one file's init (e.g. only OSKind would initialise; ArchKind
+        // fields silently stayed null).
+        string suffix = _ctx.CompilationUnitStem is { } stem
+            ? $"{stem}.__static_init__"
+            : "__static_init__";
+        string initName = _ctx.QualifyName(suffix);
         return new IrFunction(initName, 0, "void", "Interp", _blocks, MaxReg: _nextReg);
     }
 

@@ -1,3 +1,4 @@
+using System.IO;
 using Z42.Core.Text;
 using Z42.Core.Features;
 using Z42.Semantics.Bound;
@@ -12,9 +13,14 @@ public sealed partial class IrGen
 
     // ── Public API ─────────────────────────────────────────────────────────────
 
-    public IrModule Generate(CompilationUnit cu)
+    public IrModule Generate(CompilationUnit cu, string? sourcePath = null)
     {
         _namespace = cu.Namespace;
+        // fix-multi-file-static-init (2026-05-15): derive a CU-unique stem
+        // from the source filename so multi-file namespaces don't all emit
+        // the same `<ns>.__static_init__` (which would collide on zpkg load).
+        _cuStem = sourcePath is null ? null
+            : Path.GetFileNameWithoutExtension(sourcePath);
 
         if (_semanticModel is null)
             throw new InvalidOperationException(

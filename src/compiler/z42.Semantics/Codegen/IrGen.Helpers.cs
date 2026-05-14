@@ -15,6 +15,8 @@ public sealed partial class IrGen
     internal string QualifyName(string name) =>
         _namespace is null ? name : $"{_namespace}.{name}";
 
+    string? IEmitterContext.CompilationUnitStem => _cuStem;
+
     internal int Intern(string s)
     {
         if (_stringIndex.TryGetValue(s, out int idx)) return idx;

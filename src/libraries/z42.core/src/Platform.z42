@@ -80,3 +80,10 @@ public static class OSKind {
 // inside a class body, so we mirror .NET's `X64` / `Arm64` / `Wasm` / `X86`
 // names — they are also shorter and more recognisable than the Rust-style
 // triple components.
+public static class ArchKind {
+    public static int Unknown = 0;
+    public static int X64     = 1;
+    public static int Arm64   = 2;
+    public static int Wasm    = 3;
+    public static int X86     = 4;
+}

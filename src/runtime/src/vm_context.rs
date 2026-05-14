@@ -619,6 +619,26 @@ impl VmContext {
             None         => Vec::new(),
         }
     }
+
+    /// Force-load every declared zpkg, then return a sorted list of all
+    /// `*.__static_init__` function names across loaded zpkgs.
+    ///
+    /// fix-multi-file-static-init (2026-05-15): the compiler now emits
+    /// `<ns>.<source-stem>.__static_init__` (one per CU). A single
+    /// per-namespace lookup can't find them all, so the runtime force-loads
+    /// each declared zpkg and enumerates the loader's function table for
+    /// the suffix. Sorted for determinism.
+    pub fn collect_lazy_static_init_names(&self) -> Vec<String> {
+        let mut state = self.lazy_loader.borrow_mut();
+        let Some(loader) = state.as_mut() else { return Vec::new(); };
+        loader.force_load_all_declared();
+        let mut names: Vec<String> = loader.iter_function_names()
+            .filter(|n| n.ends_with(".__static_init__"))
+            .cloned()
+            .collect();
+        names.sort();
+        names
+    }
 }
 
 #[cfg(test)]

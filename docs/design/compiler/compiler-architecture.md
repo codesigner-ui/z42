@@ -886,25 +886,36 @@ catch (CompilationException)
 - 未带显式初始化器的字段由 VM 端 `metadata::default_value_for(type_tag)` 在 `ObjNew`
   分配时填默认值，详见 `docs/design/runtime/vm-architecture.md` §ObjNew dispatch。
 
-### 已知限制：同文件多个 static class with static-field init（2026-05-14）
+### 多 CU 共享 namespace 的 `__static_init__` 命名（fix-multi-file-static-init, 2026-05-15）
 
-**症状**：单个 .z42 文件内连续声明两个或以上含 `static int Foo = N;` 形态字段的
-`public static class`，第二个及后续 class 的 static field 在运行时无法访问 —
-读取触发 silent "VM error"（无具体 message，IR 路径正常但字段槽位为 `null`）。
+**问题**：原版 `EmitStaticInit` 直接用 `<namespace>.__static_init__` 作为函数名，
+导致同 namespace 的不同 .z42 文件（例如 `Std/Platform.z42`、`Std/SubscriptionRefs.z42`）
+都生成同名函数。运行时合并阶段（`merge_modules` 与 lazy_loader 的
+`function_table`）按名字 dedupe（"first-wins on function name collisions"），
+**只有第一个进入的 init 被执行**，其余文件的 static field 永远停留在默认值
+（`null` / `0`）。
 
-**触发条件**：
-- 同一文件包含两个 `public static class A { static int ... = ...; }` 风格的声明
-- 第一个 class 完全正常；第二个 class 的 static field 不可读取
+**症状**：第二个文件中 `public static class X { public static int Y = N; }` 的
+`X.Y` 在运行时读取为 `null`，触发 "VM error" 或 silent assertion 失败 —— IR
+显示 `static.set @<ns>.X.Y` 已正确发射，但运行时槽位从未被填充。
 
-**根因（推测）**：`__static_init__` 合成函数对同文件多 class 时只串了第一个 class
-的字段 init opcode，第二个 class 的 `BoundStaticInits` 未参与 emission。
+**修复**：
 
-**workaround**：把每个 static-field 持有 class 拆到独立文件（namespace 不变）。
-典型例子：`add-platform-os-stdlib` 把 `Std.ArchKind` 从 `Platform.z42` 拆到独立的
-`ArchKind.z42`，因为 `Platform.z42` 同文件已有 `Std.OSKind`。
+1. **编译器**（`FunctionEmitter.StaticInit.cs` + `IrGen.Generate`）：把 source-file
+   stem 嵌进函数名 —— `<namespace>.<filestem>.__static_init__`，例如
+   `Std.Platform.__static_init__` / `Std.SubscriptionRefs.__static_init__`。同
+   namespace 多 CU 自动产生唯一名字，merge / lazy_loader dedupe 不再误删 init。
+2. **Runtime lazy 路径**（`interp::init_static_fields` + `VmContext::collect_lazy_static_init_names`）：
+   原本按 `<ns>.__static_init__` 单点 lookup，改为强制 load 所有 declared zpkg
+   后枚举 `function_table` 中所有以 `.__static_init__` 结尾的函数名 → 全部跑。
+3. **向后兼容**：`Generate(cu, sourcePath)` 的 `sourcePath` 是可选参数；测试
+   helper 与 `--single-file` 路径不传，则退回到老式 `<ns>.__static_init__`，
+   单 CU per namespace 行为不变。
 
-**遗留**：编译器层 fix 属独立 spec scope —— 应让 `BoundStaticInits` 按 class
-逐个走 emission，或合并到单个 `__static_init__` 入口。
+**适用边界**：fix 只解决 "name collision in dedupe layer"。如果未来引入更激进
+的合并优化（例如把多个 CU 的 BoundStaticInits 真正合并到单个 IR function），
+要确保 topo-sort 仍然按 cross-CU 字段依赖工作 —— 当前每个 CU 的 init 独立排序，
+跨 CU 字段依赖靠运行时按函数名字典序逐个调用来近似。
 
 ## 关键设计权衡
 

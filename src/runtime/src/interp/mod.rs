@@ -128,11 +128,13 @@ pub fn init_static_fields(ctx: &VmContext, module: &Module) -> Result<()> {
     }
 
     // 2. Lazy-loadable init functions (from declared but not-yet-loaded zpkgs).
-    let mut lazy_init_names: Vec<String> = ctx.declared_namespaces()
-        .into_iter()
-        .map(|ns| format!("{ns}.__static_init__"))
-        .collect();
-    lazy_init_names.sort();
+    //
+    // fix-multi-file-static-init (2026-05-15): the compiler now emits
+    // `<ns>.<source-stem>.__static_init__` (one per CU), so a single
+    // `try_lookup_function("<ns>.__static_init__")` would never resolve. We
+    // force-load every declared zpkg, then enumerate ALL `*.__static_init__`
+    // functions via the loader and run each.
+    let lazy_init_names = ctx.collect_lazy_static_init_names();
     for init_name in lazy_init_names {
         let Some(init_fn) = ctx.try_lookup_function(&init_name) else { continue };
         match exec_function(ctx, module, init_fn.as_ref(), &[])? {

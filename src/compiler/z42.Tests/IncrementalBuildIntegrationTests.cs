@@ -69,13 +69,13 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49。
         // 2026-05-13 add-std-io-directory 新增 z42.io/Directory.z42，z42.io 4 → 5。
         // 2026-05-14 add-z42-time 新增 z42.time 包（TimeSpan/DateTime/Stopwatch），3/3。
-        // 2026-05-14 add-platform-os-stdlib 新增 z42.core/Platform.z42 + OperatingSystem.z42
-        //   + ArchKind.z42（z42 编译器 bug：同文件第二个含 static field 的 static class
-        //   静默失败，将 ArchKind 单独拆文件），z42.core 49 → 52。
+        // 2026-05-15 add-platform-os-stdlib 新增 z42.core/Platform.z42（含 OSKind +
+        //   ArchKind 两个常量类，2026-05-15 fix-multi-file-static-init 解决了同文件多
+        //   class init 的命名冲突）+ OperatingSystem.z42，z42.core 49 → 51。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 52/52");
+        err2.Should().Contain("cached: 51/51");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 5/5");
         err2.Should().Contain("cached: 3/3");  // z42.time: TimeSpan + DateTime + Stopwatch
@@ -97,9 +97,9 @@ public sealed class IncrementalBuildIntegrationTests
         // reorganize-gc-stdlib 新增 GCHandle.z42 + HeapStats.z42，45 → 47；
         // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
         // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49；
-        // 2026-05-14 add-platform-os-stdlib 新增 Platform / OperatingSystem / ArchKind，49 → 52）
+        // 2026-05-15 add-platform-os-stdlib 新增 Platform + OperatingSystem，49 → 51）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/52");
+        err2.Should().Contain("cached: 0/51");
     }
 }

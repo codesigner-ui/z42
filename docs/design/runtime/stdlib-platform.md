@@ -20,9 +20,7 @@ runtime 实现。
 │ src/libraries/z42.core/src/                                    │
 │   Platform.z42         Std.Platform (5 extern + 8 predicates)  │
 │                        + Std.OSKind (8 const ints)             │
-│   ArchKind.z42         Std.ArchKind (5 const ints) ※拆单独文件 │
-│                        绕过 z42 编译器 bug：同文件第二个含       │
-│                        static field 的 static class 静默失效    │
+│                        + Std.ArchKind (5 const ints)           │
 │   OperatingSystem.z42  Std.OperatingSystem (7 extern)          │
 │ src/libraries/z42.io/src/                                      │
 │   Environment.z42      + UnsetEnv / GetAll (在原 class 内追加)  │

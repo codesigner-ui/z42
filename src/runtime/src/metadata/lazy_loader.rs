@@ -231,6 +231,23 @@ impl LazyLoader {
             .collect()
     }
 
+    /// Force-load every declared zpkg into `function_table` / `type_registry`.
+    /// Used by `init_static_fields` to enumerate all `*.__static_init__`
+    /// functions before running them. fix-multi-file-static-init (2026-05-15).
+    pub fn force_load_all_declared(&mut self) {
+        let zpkgs: Vec<String> = self.remaining_declared();
+        for zpkg in zpkgs {
+            // Errors here surface later when a function lookup fails; keep
+            // initialisation best-effort to mirror the previous lookup path.
+            let _ = self.load_zpkg_file(&zpkg);
+        }
+    }
+
+    /// Iterator over all currently-loaded function names.
+    pub fn iter_function_names(&self) -> impl Iterator<Item = &String> + '_ {
+        self.function_table.keys()
+    }
+
     /// Load a zpkg file, merge its functions / types / strings, and expand
     /// its own `ZpkgDep` list into `declared_zpkgs` for future transitive
     /// lookups.
