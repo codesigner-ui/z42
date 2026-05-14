@@ -26,6 +26,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$ROOT"
 
 source "$SCRIPT_DIR/_lib/package_helpers.sh"
+source "$SCRIPT_DIR/_lib/versions.sh"
 
 # ── Arg parsing ──────────────────────────────────────────────────────────
 
@@ -75,8 +76,8 @@ validate_rid_supported_on_host "$RID"
 CATEGORY=$(rid_category "$RID")
 CARGO_TARGET=$(rid_to_cargo "$RID")
 
-VERSION=$(grep -E '^version' src/runtime/Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-[ -z "$VERSION" ] && VERSION="0.0.0"
+VERSION=$(versions_get project.version)
+[ -z "$VERSION" ] && { echo "error: versions.toml [project].version missing" >&2; exit 1; }
 
 PKG_NAME="z42-${VERSION}-${RID}-${PROFILE}"
 [ -n "$VARIANT" ] && PKG_NAME="${PKG_NAME}-${VARIANT}"

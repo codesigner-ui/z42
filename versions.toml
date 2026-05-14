@@ -6,7 +6,8 @@
 # _check_node）。代价：rustup / dotnet 不再 cd-into auto-install 该 channel；
 # 收益：单一文件就是答案。
 #
-# 三类块：
+# 四类块：
+#   [project]     — z42 自身版本号（release tag SoT；workspace.package.version 镜像）
 #   [toolchain.*] — 跨平台 build 工具版本（rust / dotnet / node）
 #   [build.*]     — 每平台 native SDK（NDK / Xcode / ...）
 #   [platform.*]  — z42 产物运行时支持承诺（min OS / arch / tier）
@@ -25,6 +26,19 @@
 #   url 模板里的 {os} = darwin / linux / windows（setup-tools.sh 替换）。
 
 schema_version = 1
+
+# ══════════════════════════════════════════════════════════════════════════
+# PROJECT: z42 自身的版本（release tag 必须与此一致）
+# ══════════════════════════════════════════════════════════════════════════
+#
+# Bumping 流程：
+#   1. 改本字段 → 跑 scripts/check-versions-drift.sh
+#   2. drift 报错 → 同步更新仓库根 Cargo.toml [workspace.package].version
+#   3. commit → git tag v<version> → push --tags
+#   4. .github/workflows/release.yml 自动触发跨平台 SDK package publish
+
+[project]
+version = "0.1.0"                       # → Cargo.toml [workspace.package].version
 
 # ══════════════════════════════════════════════════════════════════════════
 # TOOLCHAIN: 跨平台 build 工具（每台 dev/CI 机都要装）

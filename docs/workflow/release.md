@@ -1,8 +1,8 @@
 # Release 工作流
 
-> **状态**：📋 placeholder（自动化部分）。本地打 per-arch SDK package 已落地（Phase 1.x，9 RID），见 [`packaging.md`](packaging.md)。
+> **状态**：✅ 自动化已落地（[archive/2026-05-14-add-release-automation](../spec/archive/2026-05-14-add-release-automation/)）。本地 per-arch SDK package 同步可用（[packaging.md](packaging.md)）。
 
-## 本地打 SDK package（已落地，2026-05-13）
+## 本地打 SDK package
 
 ```bash
 ./scripts/package.sh release                       # host RID
@@ -10,41 +10,89 @@
 ./scripts/package.sh --help                        # RID 矩阵 + 选项
 ```
 
-完整 9 RID 矩阵 + 平台前置 + 验证 + 失败排查见 [`packaging.md`](packaging.md)。
+9 RID 矩阵 + 平台前置 + 验证 + 失败排查见 [`packaging.md`](packaging.md)。
 
-## 旧的"打 release tarball"手工流程
+## 发 release（tag-triggered 自动化）
+
+### Step-by-step
 
 ```bash
-./scripts/package.sh release                  # 1. 打 host RID SDK 到 artifacts/packages/
-./scripts/build-stdlib.sh --use-dist          # 2. 用分发版 z42c 重编译 stdlib
-./scripts/test-dist.sh                        # 3. 分发版 binary 跑全套 goldens（interp + jit）
-./scripts/test-dist.sh interp                 # 仅 interp 模式
+# 1. 改 versions.toml [project].version（单一 SoT）
+$EDITOR versions.toml                             # 例：0.1.0 → 0.2.0
+
+# 2. drift-check 提醒同步 Cargo.toml
+./scripts/check-versions-drift.sh                 # 应 fail（versions.toml 已改但 Cargo.toml 未改）
+
+# 3. 同步 src/runtime/Cargo.toml [workspace.package].version
+$EDITOR src/runtime/Cargo.toml                    # 同样改成 0.2.0
+
+# 4. 验证（drift-check 通过 + workspace 解析正确）
+./scripts/check-versions-drift.sh                 # 应通过
+cargo metadata --manifest-path src/runtime/Cargo.toml --format-version 1 --no-deps \
+    | jq -r '.packages[].version' | sort -u       # 应全部为 0.2.0
+
+# 5. commit + push
+git add versions.toml src/runtime/Cargo.toml
+git commit -m "chore(release): bump version 0.1.0 → 0.2.0"
+git push origin main
+
+# 6. tag + push tag → 触发 .github/workflows/release.yml
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
-手动 `tar czf` 或 `zip` 即可（CI 自动化在 0.2.6 接管）。
+### CI 流程
 
-## 0.2.6 之后
+`.github/workflows/release.yml` 在 tag push 后跑 3 阶段：
 
-`git tag v0.X.Y` → GitHub Actions 自动：
+1. **verify** — 校验 `tag.strip_prefix('v') == versions.toml [project].version`；drift fail-fast
+2. **package** (matrix × 9 RID) — 每个 RID 一台 runner，跑 `build-stdlib.sh` + `package.sh release --rid <rid>` + `make_archive`
+3. **publish** — 汇总 9 个 archive，生成 `SHA256SUMS`，调 `gh release create v<version>` 上传
 
-1. 在多平台 CI matrix 上 `package.sh release`
-2. 测试 release binary 全套通过
-3. 打 tarball / zip + 计算 checksums
-4. 创建 GitHub Release，挂载跨平台 artifact
+### Artifact 命名
 
-Artifact 命名规范（Q12 待裁决，见 [`docs/roadmap.md`](../roadmap.md)）：
+| RID | 文件名 |
+|-----|--------|
+| linux-x64 / linux-arm64 / macos-arm64 | `z42-<v>-<rid>.tar.gz` |
+| windows-x64 | `z42-<v>-windows-x64.zip` |
+| ios-arm64 / ios-arm64-sim | `z42-<v>-<rid>.tar.gz` |
+| android-arm64 / android-x64 | `z42-<v>-<rid>.tar.gz` |
+| browser-wasm | `z42-<v>-browser-wasm.tar.gz` |
+| 校验和 | `SHA256SUMS`（coreutils 格式）|
 
+### Pre-release 自动标记
+
+`--prerelease` 自动设置的条件：
+- 版本号 < `1.0.0`（pre-1.0 阶段全部）
+- Tag 含 `-` 后缀（`v0.2.5-rc1` / `v1.0.0-rc.1` 等）
+
+GitHub UI 不把 prerelease 显示在 "Latest release" 高亮位。
+
+### 手动 dry-run（不实际打 tag）
+
+GitHub Actions UI → "Release" workflow → "Run workflow" → 输入 version（必须与 versions.toml 一致）。同样跑完整 3 阶段，最终 publish 也会真正创建 release —— 因此 dry-run 实际上等于一次正式 release（pre-1.0 节奏下不必清理）。
+
+### 失败排查
+
+| 症状 | 原因 |
+|------|------|
+| `verify` job：`drift: tag=X versions.toml=Y` | tag 与 versions.toml 不一致；改正后重新打 tag |
+| 某个 `package-<rid>` job fail | 看 ci.yml 对应 `package-<rid>` job 是否也 fail；通常是 toolchain 环境 / 网络 / cache |
+| `publish` job：`gh release create` 报 already exists | tag 重复；删 release + 重 push tag（注意：pre-1.0 一般不删，直接 bump 到下一版本）|
+
+## 校验下载的 release
+
+```bash
+# 在解压前
+curl -LO https://github.com/<owner>/z42/releases/download/v0.2.0/SHA256SUMS
+curl -LO https://github.com/<owner>/z42/releases/download/v0.2.0/z42-0.2.0-macos-arm64.tar.gz
+sha256sum -c SHA256SUMS --ignore-missing      # 或 shasum -a 256 -c (BSD/macOS)
+
+# 解压
+tar -xzf z42-0.2.0-macos-arm64.tar.gz
+cd z42-0.2.0-macos-arm64-release/
+./bin/z42c --version
 ```
-z42-{version}-{os}-{arch}.tar.gz    # 候选
-z42-{version}-{os}-{arch}.zip       # Windows
-```
-
-含：
-
-- `z42c`（单文件 binary）
-- `z42vm`（单文件 binary）
-- `libs/<lib>.zpkg`（6 个 stdlib zpkg）
-- `LICENSE`、`README`
 
 ## 1.0 之后
 

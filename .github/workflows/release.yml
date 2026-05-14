@@ -1,0 +1,199 @@
+name: Release
+
+# Tag-triggered cross-platform SDK package publish.
+#
+# Triggers on tag matching v[0-9]+.[0-9]+.[0-9]+* (e.g. v0.2.5, v0.2.5-rc1).
+# Pre-1.0 versions and tags containing '-' are published as GitHub prereleases.
+#
+# Pipeline: verify (tag ↔ versions.toml) → package × 9 RIDs → publish (with SHA256SUMS).
+# See docs/spec/changes/add-release-automation/ (until archived) or
+# docs/spec/archive/<date>-add-release-automation/.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (must match versions.toml [project].version, e.g. 0.1.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # gh release create
+
+jobs:
+  # ── 1. Verify tag matches versions.toml [project].version ──────────────
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract + verify version
+        id: extract
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            tag="${GITHUB_REF#refs/tags/v}"
+          else
+            tag="${{ inputs.version }}"
+          fi
+          source scripts/_lib/versions.sh
+          repo_version=$(versions_get project.version)
+          if [ "$tag" != "$repo_version" ]; then
+            echo "drift: tag=$tag versions.toml=$repo_version" >&2
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+          echo "✓ release version: $tag"
+
+  # ── 2. Build per-RID SDK package + archive ─────────────────────────────
+  package:
+    name: package (${{ matrix.rid }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64,      runs-on: ubuntu-latest,      rust-target: x86_64-unknown-linux-gnu }
+          - { rid: linux-arm64,    runs-on: ubuntu-24.04-arm,   rust-target: aarch64-unknown-linux-gnu }
+          - { rid: macos-arm64,    runs-on: macos-15,           rust-target: aarch64-apple-darwin }
+          - { rid: windows-x64,    runs-on: windows-latest,     rust-target: x86_64-pc-windows-msvc }
+          - { rid: ios-arm64,      runs-on: macos-15,           rust-target: aarch64-apple-ios }
+          - { rid: ios-arm64-sim,  runs-on: macos-15,           rust-target: aarch64-apple-ios-sim }
+          - { rid: android-arm64,  runs-on: ubuntu-latest,      rust-target: aarch64-linux-android }
+          - { rid: android-x64,    runs-on: ubuntu-latest,      rust-target: x86_64-linux-android }
+          - { rid: browser-wasm,   runs-on: ubuntu-latest,      rust-target: wasm32-unknown-unknown }
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust + target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ matrix.rid }}-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-release-${{ matrix.rid }}-
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Android-only: cargo-ndk + NDK r26d
+      - name: Install cargo-ndk
+        if: startsWith(matrix.rid, 'android-')
+        run: cargo install cargo-ndk --locked
+
+      - name: Setup Android NDK r26d
+        if: startsWith(matrix.rid, 'android-')
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26d
+          local-cache: true
+
+      # wasm-only: wasm-pack + wasm-tools
+      - name: Install wasm-pack + wasm-tools
+        if: matrix.rid == 'browser-wasm'
+        run: cargo install wasm-pack wasm-tools --locked
+
+      - name: Build stdlib (also builds z42c.dll)
+        run: ./scripts/build-stdlib.sh
+        shell: bash
+
+      # wasm-only: pre-build pkg-web/ + pkg-nodejs/ via wasm-pack
+      - name: Build wasm platform
+        if: matrix.rid == 'browser-wasm'
+        run: ./build.sh
+        working-directory: src/toolchain/host/platforms/wasm
+
+      - name: Package ${{ matrix.rid }}
+        run: ./scripts/package.sh release --rid ${{ matrix.rid }}
+        shell: bash
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/_lib/release_archive.sh
+          make_archive "${{ matrix.rid }}" "${{ needs.verify.outputs.version }}"
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.rid }}
+          path: artifacts/release/z42-*
+          retention-days: 7
+          if-no-files-found: error
+
+  # ── 3. Publish GitHub Release with all 9 archives + SHA256SUMS ─────────
+  publish:
+    name: publish
+    needs: [verify, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: 'release-*'
+          merge-multiple: true
+
+      - name: List archives
+        run: ls -la dist/
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          source scripts/_lib/release_archive.sh
+          make_checksums dist > dist/SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat dist/SHA256SUMS
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          v="${{ needs.verify.outputs.version }}"
+          # Prerelease if version contains '-' (e.g. -rc1) OR is strictly < 1.0.0.
+          prerelease_flag=""
+          if [[ "$v" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          elif [ "$v" != "1.0.0" ] \
+            && [ "$(printf '%s\n1.0.0\n' "$v" | sort -V | head -1)" = "$v" ]; then
+            prerelease_flag="--prerelease"
+          fi
+          gh release create "v$v" $prerelease_flag --generate-notes \
+            --title "z42 v$v" \
+            dist/SHA256SUMS dist/z42-*

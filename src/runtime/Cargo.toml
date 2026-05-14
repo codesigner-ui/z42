@@ -1,9 +1,13 @@
 [workspace]
 members = [".", "crates/z42-abi", "crates/z42-rs", "crates/z42-macros"]
 
+[workspace.package]
+# mirror of versions.toml [project].version — drift enforced by scripts/check-versions-drift.sh
+version = "0.1.0"
+
 [package]
 name = "z42"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "z42 virtual machine — interpreter, JIT, and AOT backends"
 

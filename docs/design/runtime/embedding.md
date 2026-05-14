@@ -574,3 +574,27 @@ Phase 1 下游 spec：
 - 1.2 `add-ios-package` — 3 个 iOS slice 包
 - 1.3 `add-android-package` — 4 个 Android ABI 包
 - 1.4 `add-wasm-package` — wasm32 包（含 staticlib）
+
+#### Release 分发（GitHub Releases）
+
+每个语义版本 tag（`v[0-9]+.[0-9]+.[0-9]+*`，例 `v0.2.5` / `v0.2.5-rc1`）触发 [`.github/workflows/release.yml`](../../../.github/workflows/release.yml)，把 9 个 SDK package 压缩并上传到 GitHub Releases：
+
+| RID | 压缩格式 | Release filename |
+|-----|---------|------------------|
+| linux-x64 / linux-arm64 / macos-arm64 | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
+| windows-x64 | `.zip` | `z42-<v>-windows-x64.zip`（Windows 原生格式） |
+| ios-arm64 / ios-arm64-sim | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
+| android-arm64 / android-x64 | `.tar.gz` | `z42-<v>-<rid>.tar.gz` |
+| browser-wasm | `.tar.gz` | `z42-<v>-browser-wasm.tar.gz` |
+
+外加一个 `SHA256SUMS` 文件（coreutils 格式：每行 `<hex>  <filename>`），下游用 `sha256sum -c SHA256SUMS` 校验。
+
+**Pre-release 规则**（自动设置 `--prerelease`）：
+- 版本号 < `1.0.0`（pre-1.0 阶段全部）
+- Tag 含 `-` 后缀（`v0.2.5-rc1` / `v1.0.0-rc.1` 等）
+
+**版本号 SoT**：`versions.toml [project].version` 单一来源；`src/runtime/Cargo.toml [workspace.package].version` 必须镜像（漂移由 [scripts/check-versions-drift.sh](../../../scripts/check-versions-drift.sh) 强制检出）。Release pipeline 在 `verify` job 验证 `tag.strip_prefix('v') == versions.toml [project].version`，漂移即 fail-fast。
+
+**Bump 流程**：① 改 `versions.toml [project].version` ② drift-check 通过 ③ 同步更新 `src/runtime/Cargo.toml [workspace.package].version` ④ commit ⑤ `git tag v<version> && git push --tags`。
+
+Spec：[`docs/spec/archive/<date>-add-release-automation/`](../../spec/archive/) — 8 个 decision + 11 个 scenario + 4 个 Deferred（reusable workflow / cargo-release / signing / 多渠道分发）。

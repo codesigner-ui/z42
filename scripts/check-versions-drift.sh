@@ -24,6 +24,19 @@ check() {
     fi
 }
 
+# ── Project version ──────────────────────────────────────────────────────────
+echo "── project ──────────────────────────────────────────────────────────────"
+RUNTIME_CARGO="$ROOT/src/runtime/Cargo.toml"
+
+want=$(versions_get project.version)
+# Lock to [workspace.package] section to avoid hitting [package] or [dependencies]
+got=$(awk '
+    /^\[workspace\.package\]/ { in_section = 1; next }
+    /^\[/                     { in_section = 0 }
+    in_section && /^[[:space:]]*version[[:space:]]*=/ { print; exit }
+    ' "$RUNTIME_CARGO" | sed -E 's/.*"([^"]+)".*/\1/')
+check "src/runtime/Cargo.toml [workspace.package].version" "$want" "$got"
+
 # ── Android ──────────────────────────────────────────────────────────────────
 echo "── Android ──────────────────────────────────────────────────────────────"
 GRADLE="$ROOT/src/toolchain/host/platforms/android/z42vm/build.gradle.kts"

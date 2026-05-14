@@ -67,7 +67,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | 0.2.3 | Perf CI + 性能预算（≥10% 退化阻塞 commit）| 1 周 |
 | 0.2.4 | `z42c new/init/fmt/clean` 收尾 + `z42-fmt` 独立 binary + `lint-manifest` | 1 周 |
 | 0.2.5 | 多平台 CI matrix（5 平台 build/test 全绿）+ CI 模板 | 1.5 周 |
-| 0.2.6 | Release 自动化：git tag → 跨平台 z42c/z42vm 二进制 + zpkg 自动产出 | 1 周 |
+| 0.2.6 | Release 自动化：git tag → 跨平台 z42c/z42vm 二进制 + zpkg 自动产出（[archive/2026-05-14-add-release-automation](spec/archive/2026-05-14-add-release-automation/) — Q12 已裁决）| 1 周 |
 
 ### 0.3.x — 测试体系 & VM 质量 + GC v1
 
@@ -257,7 +257,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Q9 | 0.10.x | 性能强化 9 个 patch 独立发布还是合并 0.10.0 单次？|
 | Q10 | 1.0 | AOT 是否必须卡 1.0？（备选：1.0 = 自举 + 稳定，1.1 = AOT）|
 | Q11 | 0.2.5 | 多平台 CI 选 GitHub Actions matrix 还是自托管 runner？arm64 主机如何获取？|
-| Q12 | 0.2.5 | Release artifact 命名（`z42-{version}-{os}-{arch}.tar.gz`？包含哪些 binary？）|
+| ~~Q12~~ | ~~0.2.5~~ | ~~Release artifact 命名~~ — 已裁决 2026-05-14：`z42-<version>-<rid>.{tar.gz\|zip}`（9 RID；windows-x64 用 zip，其余 tar.gz；含 SHA256SUMS）。详见 [archive/2026-05-14-add-release-automation/design.md](../docs/spec/archive/2026-05-14-add-release-automation/design.md)。|
 | Q13 | 0.5.7 | LSP server 用 .NET（复用编译器）还是 Rust（复用 VM）？|
 | Q14 | 0.8.7 | DAP debugger 多线程暂停语义：单 thread 还是全部？JIT/AOT 如何 step？|
 | Q15 | 0.9.7 | WASM 下 GC：等 wasm-gc proposal 还是自实现 wasm-internal GC？|
