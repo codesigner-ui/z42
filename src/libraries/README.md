@@ -17,6 +17,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `z42.test/` | `z42.test` | 单元测试运行时（v0 imperative TestRunner；lambda 就绪后升级 v1）|
 | `z42.time/` | `z42.time` | UTC 时刻（`DateTime`）、时间段（`TimeSpan`）、单调计时器（`Stopwatch`） |
 | `z42.toml/` | `z42.toml` | TOML 1.0 subset reader/writer：`TomlValue.Parse(text)` / `Stringify(root)` |
+| `z42.json/` | `z42.json` | JSON RFC 8259 reader/writer：`JsonValue.Parse(text)` / `Stringify(v)` / `StringifyPretty(v)` |
 
 ## 实现规范（必须遵守）
 

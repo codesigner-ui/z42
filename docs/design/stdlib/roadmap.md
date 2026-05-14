@@ -17,11 +17,11 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.math` / `z42.test` / `z42.text` / `z42.time` / `z42.toml`。
+已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.json` / `z42.math` / `z42.test` / `z42.text` / `z42.time` / `z42.toml`。
 
-覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer。
+覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer、JSON RFC 8259 reader/writer。
 
-**主要空缺**：JSON 序列化、并发、网络、加密、随机数。
+**主要空缺**：并发、网络、加密、随机数。
 
 ---
 
@@ -45,14 +45,14 @@
 |----|---------|----------|------|--------|------|
 | **z42.io.fs**（扩展现 `z42.io`）| `System.IO.File` / `Directory` / `Path` | `std::fs` / `std::path` | L2 | 走 Platform HAL | 当前 `z42.io` 仅 stdin/stdout/基础 File；缺 Directory 枚举、Path 完整 API、文件元数据 |
 | **z42.os** / **z42.env** | `System.Environment` / `System.Diagnostics.Process` | `std::env` / `std::process` | L2 | 走 Platform HAL | 环境变量、命令行参数、退出码、子进程 spawn |
-| **z42.json** | `System.Text.Json` | `serde_json` | L1 | 纯脚本 | reader/writer 优先；serde-like derive 留 L3（依赖反射） |
 
-**起步排期**：L2 内可立刻起步（不依赖未实现语言特性），按 `z42.io.fs 扩展 → z42.os → z42.json` 顺序。
+**起步排期**：L2 内可立刻起步（不依赖未实现语言特性），按 `z42.io.fs 扩展 → z42.os` 顺序。
 
 **已落地（不在 P0 表）**：
 - `z42.encoding`（2026-05-13 add-z42-encoding）— Hex / Base64 RFC 4648 §4 / UTF-8。详 [encoding.md](encoding.md)
 - `z42.time`（2026-05-14 add-z42-time）— UTC 时刻（DateTime）/ 时间段（TimeSpan）/ 单调计时器（Stopwatch）。详 [time.md](time.md)
 - `z42.toml`（2026-05-14 add-z42-toml）— TOML 1.0 subset reader/writer，覆盖 manifest 解析。详 [toml.md](toml.md)
+- `z42.json`（2026-05-15 add-z42-json）— JSON RFC 8259 完整 reader/writer。详 [json.md](json.md)
 
 ---
 

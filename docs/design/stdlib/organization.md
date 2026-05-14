@@ -32,6 +32,7 @@
 | `z42.io` | L2 | Console、File、Path、Environment | ✅ host FFI（仅此包例外） |
 | `z42.time` | L1 | DateTime（UTC 时刻）、TimeSpan（时间段）、Stopwatch（单调计时器） | ✅ VM intrinsic（`__time_now_ms` / `__bench_now_ns`，同 z42.math 例外） |
 | `z42.toml` | L1 | TomlValue（discriminated union）、TomlException、TOML 1.0 subset reader/writer | ❌ 纯脚本 |
+| `z42.json` | L1 | JsonValue（discriminated union）、JsonException、JSON RFC 8259 reader/writer | ❌ 纯脚本 |
 
 > 历史角度：W1（2026-04-25）把 List / Dictionary 从 z42.collections 上提到 z42.core/Collections/，对齐 C# BCL 把 `System.Collections.Generic.List<T>` 放在 CoreLib 的做法（每个程序都在用）。
 

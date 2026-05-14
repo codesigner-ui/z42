@@ -1,0 +1,59 @@
+// fix-instance-method-binding-receiver-aware (2026-05-15):
+// User class declares methods with names that collide with stdlib
+// `Std.Collections.Dictionary` (ContainsKey/Get/Set/Add). Before the fix,
+// these calls were silently rebound to Dictionary's methods at compile
+// time and then crashed at runtime trying to access Dictionary's internal
+// state on a Box instance. After the fix, dispatch goes via v_call to
+// the receiver's vtable, so Box's own implementations run.
+namespace Demo;
+
+public class Box {
+    private int _value;
+    public Box(int v) { this._value = v; }
+
+    // Method names match Std.Collections.Dictionary<K,V> exactly.
+    public bool ContainsKey(string key) {
+        // Dummy impl — return true iff key matches a fixed token.
+        // The bug version dispatched to Dictionary.ContainsKey instead,
+        // crashing because `this` isn't a Dictionary.
+        return key == "answer";
+    }
+
+    public int Get(string key) {
+        // Return the box's value if the key matches.
+        if (key == "answer") { return this._value; }
+        return -1;
+    }
+
+    public void Set(string key, int v) {
+        if (key == "answer") { this._value = v; }
+    }
+
+    public void Add(int delta) {
+        // Method named `Add` collides with List<T>.Add — this would have
+        // bound to List.Add(T) and crashed too.
+        this._value = this._value + delta;
+    }
+
+    public int Value() { return this._value; }
+}
+
+void Main() {
+    var b = new Box(42);
+
+    // ContainsKey: receiver class owns this method, must dispatch to Box.
+    Assert.True(b.ContainsKey("answer"));
+    Assert.False(b.ContainsKey("other"));
+
+    // Get: same name as Dictionary.Get.
+    Assert.Equal(42, b.Get("answer"));
+    Assert.Equal(-1, b.Get("missing"));
+
+    // Set: same name as Dictionary.Set.
+    b.Set("answer", 100);
+    Assert.Equal(100, b.Value());
+
+    // Add: same name as List.Add.
+    b.Add(5);
+    Assert.Equal(105, b.Value());
+}

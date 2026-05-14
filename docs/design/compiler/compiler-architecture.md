@@ -603,6 +603,58 @@ intraSymbols = sharedSymbols.ExtractIntraSymbols(firstNs, classNamespaces);
 
 ---
 
+## Instance method binding（receiver-aware，2026-05-15 fix-instance-method-binding-receiver-aware）
+
+位置：`src/compiler/z42.Semantics/Codegen/FunctionEmitterCalls.cs::EmitInstanceBoundCall`
+
+实例方法调用 `receiver.Method(args)` 的绑定优先级（高 → 低）：
+
+1. **Builtin collection 类型**（仅 Array 残留）：方法名是已知 builtin → 发 `BuiltinInstr`
+2. **Receiver class 拥有该方法**：receiver 的类（或继承链上任一祖先）声明了 `Method` → 走 `v_call` 让 receiver 的 vtable dispatch
+3. **DepIndex by name+arity**：上面都不匹配 → 在全局 dep 索引按方法名+arity 找到 imported stdlib 方法 → 发 `CallInstr`（静态调用 to qualified function）
+4. **V_call fallback**：以上都没命中 → 默认 `v_call`（receiver 是 Unknown / 用户自定义类无 dep match）
+
+### 为什么需要 receiver-aware 检查
+
+DepIndex 按 `(method_name, arity)` 索引，**不区分声明类**。若多个类有同名同 arity 方法（例如 `Std.Toml.TomlValue.ContainsKey(string)` 与
+`Std.Collections.Dictionary.ContainsKey(string)`），DepIndex 的 name-only 查找会返回任一命中，把 receiver 类的方法**劫持**到 stdlib 方法。
+
+预 2026-05-15 的保护只是 `!ImportedClassNamespaces.ContainsKey(ReceiverClass)`——只挡 **class 名**冲突（user `class Stack` vs stdlib `Stack`），不挡 **method 名**跨类冲突。结果：当 stdlib 类（如 Dictionary）和用户类（TomlValue）都声明同名方法，user 类的方法被 stdlib 方法的 qualified function 替换发射，调用 user 类的实例进入 stdlib 函数体，触发"function not found"或访问错字段。
+
+### `ReceiverChainHasMethod` 实现
+
+```csharp
+private bool ReceiverChainHasMethod(string receiverClass, string methodName)
+{
+    string current = _ctx.QualifyClassName(receiverClass);
+    for (int depth = 0; depth < 32; depth++) {
+        if (_ctx.ClassRegistry.TryGetMethods(current, out var methods)
+            && methods.Contains(methodName))
+            return true;
+        if (!_ctx.ClassRegistry.TryGetBaseClassName(current, out var baseName) || baseName is null)
+            return false;
+        current = baseName;
+    }
+    return false;
+}
+```
+
+`ClassRegistry` 含 local + imported 所有已加载类，由 `IrGen.Generate` 用
+`SemanticModel.Classes` 注册时填入。继承链遍历是必要的——sub class 可能继承 base 的方法而不重写。
+
+### 不影响的路径
+
+- **Static 方法绑定**（`EmitStaticBoundCall`）：另一套逻辑，仍优先 DepIndex by `(receiverClass, method)` 二元 key（已经 receiver-aware），不变。
+- **Virtual / interface 方法**（`EmitVirtualBoundCall`）：直接走 `v_call`，无 DepIndex 短路，不变。
+- **Free function**（`EmitFreeBoundCall`）：无 receiver，DepIndex 路径合适，不变。
+
+### 触发 spec
+
+[docs/spec/archive/2026-05-15-fix-instance-method-binding-receiver-aware/](../../spec/archive/2026-05-15-fix-instance-method-binding-receiver-aware/)。
+add-z42-json 加 JsonValue 类时与 TomlValue / Dictionary 多处 method 名共名暴露 bug，记录详细复现 + diagnose + 测试见 archive。
+
+---
+
 ## Pratt 表达式解析
 
 位置：`src/compiler/z42.Syntax/Parser/ExprParser.cs`

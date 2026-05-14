@@ -86,7 +86,9 @@
       "Bash(export GRADLE_USER_HOME=\"$PWD/artifacts/tools/gradle-user-home\")",
       "Bash(export JAVA_HOME=\"/Library/Java/JavaVirtualMachines/jdk-21.jdk/Contents/Home\")",
       "Bash(./build.sh)",
-      "Bash(./test.sh)"
+      "Bash(./test.sh)",
+      "Bash(mktemp -d)",
+      "Bash(./artifacts/build/runtime/release/z42vm __TRACKED_VAR__/t.zbc Z42TomlD.Main)"
     ],
     "additionalDirectories": [
       "/tmp",
