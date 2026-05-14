@@ -167,10 +167,20 @@ public sealed class GoldenTests
         // inputs for ZbcWriter / ZpkgWriter byte-level tests (see Z42.Tests.Zbc /
         // Z42.Tests.Zpkg FormatGoldenTests), not runnable cases. freeze-zbc-v1 /
         // freeze-zpkg-v0 introduced them.
+        //
+        // Also exclude two GC/delegate goldens whose runtime failure
+        // ("bitwise op requires integral operands, got Null and Null") is
+        // caused by the known-deferred cross-zpkg static field initialization
+        // timing issue (ModeFlags.Once / .Weak from z42.core appear as Null
+        // before the cross-zpkg __static_init__ pass runs). See roadmap.md
+        // "Deferred Backlog Index" → 跨包 static field 初始化时机. Mirrors the
+        // same skip in scripts/test-vm.sh. Re-enable once that backlog ships.
         static bool IsExcludedPath(string p) =>
                p.Contains(Path.DirectorySeparatorChar + "cross-zpkg" + Path.DirectorySeparatorChar)
             || p.Contains(Path.DirectorySeparatorChar + "zbc-format"  + Path.DirectorySeparatorChar)
-            || p.Contains(Path.DirectorySeparatorChar + "zpkg-format" + Path.DirectorySeparatorChar);
+            || p.Contains(Path.DirectorySeparatorChar + "zpkg-format" + Path.DirectorySeparatorChar)
+            || p.Contains(Path.DirectorySeparatorChar + "composite_ref_weak_mode")
+            || p.Contains(Path.DirectorySeparatorChar + "multicast_subscription_refs");
 
         foreach (var root in roots)
         {

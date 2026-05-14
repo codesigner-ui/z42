@@ -39,6 +39,11 @@ Thumbs.db
 dist/
 .cache/
 
+# zbc-format wire-format fixtures: source.zbc are checked-in byte goldens
+# (regen via src/tests/zbc-format/generate-fixtures.sh after a writer minor bump).
+# Negate the *.zbc rule for this directory only.
+!src/tests/zbc-format/**/source.zbc
+
 # Cross-zpkg e2e test build artifacts (per-package libs/ populated by test driver).
 src/tests/cross-zpkg/*/*/libs/
 
