@@ -72,7 +72,11 @@ fn import_token_is_resolved() {
     assert!(MethodId(IMPORT_BASE + 99).is_resolved());
 }
 
+// Gated to debug builds only — `import_idx()` uses `debug_assert!` which is a
+// no-op in release, so the panic never fires under `cargo test --release`.
+// The test name advertises this scope ("in_debug").
 #[test]
+#[cfg(debug_assertions)]
 #[should_panic(expected = "import_idx() on non-import token")]
 fn import_idx_on_intra_module_panics_in_debug() {
     let m = MethodId(0);
