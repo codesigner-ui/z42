@@ -30,8 +30,13 @@ make_archive() {
     [[ "$rid" == windows-* ]] && ext="zip"
     local archive="$out_dir/z42-${version}-${rid}.${ext}"
 
+    # Use bsdtar's auto-compression (-a) for zip: GitHub's windows-latest git-bash
+    # has tar (bsdtar) but not zip on PATH. bsdtar reads the .zip extension and
+    # produces a real zip archive. macOS tar is also bsdtar so the same flag
+    # works locally on macOS. Linux GNU tar never emits .zip (we only produce
+    # .zip on the windows-x64 RID, which runs on windows-latest).
     if [ "$ext" = "zip" ]; then
-        (cd "$root/artifacts/packages" && zip -rq "$archive" "$pkg_dir_name")
+        tar -C "$root/artifacts/packages" -a -cf "$archive" "$pkg_dir_name"
     else
         tar -C "$root/artifacts/packages" -czf "$archive" "$pkg_dir_name"
     fi
