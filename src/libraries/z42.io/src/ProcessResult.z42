@@ -1,0 +1,40 @@
+namespace Std.IO;
+
+// 2026-05-13 add-std-process: the result object returned by
+// `Process.Run()` / `ProcessHandle.Wait()`. Holds both UTF-8 lossy
+// `Stdout` / `Stderr` strings and the raw `StdoutBytes` / `StderrBytes`
+// for callers that need byte-exact access (binary protocols, non-UTF-8
+// tool output, etc.).
+//
+// Use `.EnsureSuccess()` to convert non-zero exits into a
+// `ProcessExitException` for fail-fast scripting; without it the
+// caller is expected to inspect `ExitCode` manually.
+public class ProcessResult {
+    public string Program;
+    public int    ExitCode;
+    public string Stdout;
+    public string Stderr;
+    public byte[] StdoutBytes;
+    public byte[] StderrBytes;
+
+    public ProcessResult(
+        string program, int exitCode, string stdout, string stderr,
+        byte[] stdoutBytes, byte[] stderrBytes
+    ) {
+        this.Program     = program;
+        this.ExitCode    = exitCode;
+        this.Stdout      = stdout;
+        this.Stderr      = stderr;
+        this.StdoutBytes = stdoutBytes;
+        this.StderrBytes = stderrBytes;
+    }
+
+    // Idiomatic chained "throw if failed" — returns `this` so callers can
+    // write `.Run().EnsureSuccess()` in one expression.
+    public ProcessResult EnsureSuccess() {
+        if (this.ExitCode != 0) {
+            throw new ProcessExitException(this.Program, this.ExitCode, this.Stderr);
+        }
+        return this;
+    }
+}

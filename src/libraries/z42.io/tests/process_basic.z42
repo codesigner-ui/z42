@@ -1,0 +1,53 @@
+// add-std-process: Std.IO.Process basic API smoke tests.
+//
+// Tests assume POSIX coreutils (`echo` / `false` / `sh`). z42 main CI
+// is Unix-only for now (Windows runner is a separate spec). Tests stay
+// short enough that timeouts in CI don't bite.
+namespace Z42IoProcessTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_run_echo_captures_stdout() {
+    var r = new Process("echo").Arg("hello").Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("hello\n", r.Stdout);
+    Assert.Equal("", r.Stderr);
+}
+
+[Test]
+void test_run_args_array() {
+    string[] argv = new string[2];
+    argv[0] = "%s\n";
+    argv[1] = "a b c";    // single arg with spaces — must reach printf literally
+    var r = new Process("printf").Args(argv).Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("a b c\n", r.Stdout);
+}
+
+[Test]
+void test_run_nonzero_exit_returns_result() {
+    // exit != 0 不抛异常，只是 ExitCode 反映
+    var r = new Process("false").Run();
+    Assert.True(r.ExitCode != 0);
+}
+
+[Test]
+void test_ensure_success_throws_on_nonzero_exit() {
+    bool caught = false;
+    try {
+        new Process("false").Run().EnsureSuccess();
+    } catch (ProcessExitException e) {
+        caught = true;
+        Assert.True(e.ExitCode != 0);
+        Assert.Equal("false", e.Program);
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_ensure_success_returns_self_on_zero_exit() {
+    var r = new Process("true").Run().EnsureSuccess();
+    Assert.Equal(0, r.ExitCode);
+}

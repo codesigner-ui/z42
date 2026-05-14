@@ -1,0 +1,32 @@
+// add-std-process: timeout tests.
+//
+// Timeout API takes a `long` (milliseconds) until z42.time lands and an
+// overload taking `Std.Time.TimeSpan` is added.
+namespace Z42IoProcessTimeoutTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_timeout_does_not_fire_when_child_quick() {
+    var r = new Process("echo").Arg("fast")
+        .Timeout(5000)        // 5s
+        .Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("fast\n", r.Stdout);
+}
+
+[Test]
+void test_timeout_fires_for_long_running_child() {
+    bool caught = false;
+    try {
+        new Process("sh").Arg("-c").Arg("sleep 5")
+            .Timeout(150)     // 150ms
+            .Run();
+    } catch (ProcessTimeoutException e) {
+        caught = true;
+        Assert.Equal("sh", e.Program);
+        Assert.Equal(150, e.TimeoutMs);
+    }
+    Assert.True(caught);
+}

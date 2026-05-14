@@ -1,0 +1,18 @@
+namespace Std;
+
+// 2026-05-13 add-std-process: 在 `ProcessHandle` 已 `Wait` / `Dispose` /
+// `Kill+wait reaped` 之后调用任何方法时抛出。也包括 slot id 在 VM 侧
+// 找不到的边界情况（通常意味着 user-after-free 误用）。
+public class ProcessHandleInvalidException : Exception {
+    public string Program;
+
+    public ProcessHandleInvalidException(string program)
+        : base("process handle for `" + program + "` is no longer valid (already waited, killed, or disposed)")
+    {
+        this.Program = program;
+    }
+
+    override string ToString() {
+        return "ProcessHandleInvalidException: " + this.Message;
+    }
+}

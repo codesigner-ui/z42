@@ -1,0 +1,37 @@
+namespace Std;
+
+// 2026-05-13 add-std-process: 子进程退出码非 0 时由
+// `ProcessResult.EnsureSuccess()` 抛出。**opt-in**：仅在用户显式调
+// `EnsureSuccess()` 才走这条路径——`Run()` 自身永远返回结果对象，让
+// 调用方决定是否检查（例如 `git diff --exit-code` 的 exit 1 是有用信息
+// 不是错误）。
+public class ProcessExitException : Exception {
+    public int ExitCode;
+    public string Program;
+
+    public ProcessExitException(string program, int exitCode, string stderrPreview)
+        : base(_buildMsg(program, exitCode, stderrPreview))
+    {
+        this.Program  = program;
+        this.ExitCode = exitCode;
+    }
+
+    private static string _buildMsg(string program, int exitCode, string stderr) {
+        string head = "process `" + program + "` exited with code " + exitCode;
+        if (stderr.Length == 0) {
+            return head;
+        }
+        // 取前 1024 字节做预览；过长截断
+        string preview;
+        if (stderr.Length <= 1024) {
+            preview = stderr;
+        } else {
+            preview = stderr.Substring(0, 1024) + " …<truncated>";
+        }
+        return head + "\nstderr: " + preview;
+    }
+
+    override string ToString() {
+        return "ProcessExitException: " + this.Message;
+    }
+}

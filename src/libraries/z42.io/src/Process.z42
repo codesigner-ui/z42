@@ -1,0 +1,240 @@
+namespace Std.IO;
+
+// 2026-05-13 add-std-process: cross-platform command execution.
+//
+// Builder-style API mirrors `std::process::Command` and
+// `System.Diagnostics.Process` — argv数组进出，不走 shell，stdio 三态
+// 用 [Stdio](Stdio.z42)。 详见 [add-std-process design.md].
+//
+// 用法：
+//   var r = new Process("cargo").Arg("build").Arg("--release")
+//       .WorkingDirectory("src/runtime")
+//       .Env("RUSTFLAGS", "-C opt-level=3")
+//       .Run();
+//   r.EnsureSuccess();
+// Generic class fields with `List<string>` are not supported by the
+// current parser, so we accumulate argv / env via grow-on-append
+// string[] pairs. Argv lengths are tiny (< 100 typical), so the
+// O(n²) cost is negligible.
+public class Process {
+    private string _program;
+    private string[] _args;        private int _argCount;
+    private string[] _envKeys;     private int _envCount;
+    private string[] _envVals;     // grows in lockstep with _envKeys
+    private string[] _envRemove;   private int _envRemoveCount;
+    private bool _envClear;
+    private string _cwd;          // empty string when _hasCwd == false
+    private bool _hasCwd;
+    private Stdio _stdin;
+    private Stdio _stdout;
+    private Stdio _stderr;
+    private byte[] _stdinBytes;   // null = no one-shot stdin
+    private bool _hasStdinBytes;
+    private long _timeoutMs;      // -1 = no timeout
+
+    public Process(string program) {
+        this._program        = program;
+        this._args           = new string[4];
+        this._argCount       = 0;
+        this._envKeys        = new string[4];
+        this._envVals        = new string[4];
+        this._envCount       = 0;
+        this._envRemove      = new string[4];
+        this._envRemoveCount = 0;
+        this._envClear       = false;
+        this._cwd            = "";
+        this._hasCwd         = false;
+        this._stdin          = Stdio.Null();
+        this._stdout         = Stdio.Pipe();
+        this._stderr         = Stdio.Pipe();
+        this._hasStdinBytes  = false;
+        this._timeoutMs      = -1;
+    }
+
+    public Process Arg(string a) {
+        this._args = _appendString(this._args, this._argCount, a);
+        this._argCount = this._argCount + 1;
+        return this;
+    }
+
+    public Process Args(string[] xs) {
+        int i = 0;
+        while (i < xs.Length) {
+            this._args = _appendString(this._args, this._argCount, xs[i]);
+            this._argCount = this._argCount + 1;
+            i = i + 1;
+        }
+        return this;
+    }
+
+    public Process WorkingDirectory(string d) {
+        this._cwd = d;
+        this._hasCwd = true;
+        return this;
+    }
+
+    public Process Env(string k, string v) {
+        this._envKeys = _appendString(this._envKeys, this._envCount, k);
+        this._envVals = _appendString(this._envVals, this._envCount, v);
+        this._envCount = this._envCount + 1;
+        return this;
+    }
+
+    public Process EnvRemove(string k) {
+        this._envRemove = _appendString(this._envRemove, this._envRemoveCount, k);
+        this._envRemoveCount = this._envRemoveCount + 1;
+        return this;
+    }
+    public Process ClearEnv() { this._envClear = true; return this; }
+
+    public Process Stdin(Stdio s)  { this._stdin = s;  return this; }
+    public Process Stdout(Stdio s) { this._stdout = s; return this; }
+    public Process Stderr(Stdio s) { this._stderr = s; return this; }
+
+    public Process StdinBytes(byte[] b) {
+        this._stdinBytes = b;
+        this._hasStdinBytes = true;
+        return this;
+    }
+
+    // Milliseconds. -1 disables the timeout. `Std.Time.TimeSpan` overload
+    // arrives once z42.time lands (currently待 add-z42-time spec).
+    public Process Timeout(long milliseconds) {
+        this._timeoutMs = milliseconds;
+        return this;
+    }
+
+    // ── Run / Spawn ──────────────────────────────────────────────────────
+
+    public ProcessResult Run() {
+        object[] raw = ProcessNative.Run(
+            this._program,
+            _trim(this._args,      this._argCount),
+            _trim(this._envKeys,   this._envCount),
+            _trim(this._envVals,   this._envCount),
+            _trim(this._envRemove, this._envRemoveCount),
+            this._envClear,
+            this._hasCwd ? this._cwd : null,
+            this._stdin.GetMode(),
+            this._hasStdinBytes ? this._stdinBytes : null,
+            this._stdout.GetMode(),
+            this._stdout.GetMode() == 3 ? this._stdout.GetPath() : null,
+            this._stderr.GetMode(),
+            this._stderr.GetMode() == 3 ? this._stderr.GetPath() : null,
+            this._timeoutMs);
+
+        long kind = (long)raw[0];
+        if (kind == 1) {
+            // ProcessStartException — program not found / permission denied / etc.
+            string prog = (string)raw[1];
+            string err  = (string)raw[2];
+            throw new ProcessStartException(prog + ": " + err);
+        }
+        if (kind == 2) {
+            string prog = (string)raw[1];
+            long   ms   = (long)raw[2];
+            throw new ProcessTimeoutException(prog, ms);
+        }
+        // kind == 0 (ok)
+        return new ProcessResult(
+            this._program,
+            (int)(long)raw[1],
+            (string)raw[2],
+            (string)raw[3],
+            (byte[])raw[4],
+            (byte[])raw[5]);
+    }
+
+    public ProcessHandle Spawn() {
+        object[] raw = ProcessNative.Spawn(
+            this._program,
+            _trim(this._args,      this._argCount),
+            _trim(this._envKeys,   this._envCount),
+            _trim(this._envVals,   this._envCount),
+            _trim(this._envRemove, this._envRemoveCount),
+            this._envClear,
+            this._hasCwd ? this._cwd : null,
+            this._stdin.GetMode(),
+            null,   // stdin_bytes — Spawn streams via handle, not one-shot
+            this._stdout.GetMode(),
+            this._stdout.GetMode() == 3 ? this._stdout.GetPath() : null,
+            this._stderr.GetMode(),
+            this._stderr.GetMode() == 3 ? this._stderr.GetPath() : null);
+
+        long kind = (long)raw[0];
+        if (kind == 1) {
+            throw new ProcessStartException((string)raw[1] + ": " + (string)raw[2]);
+        }
+        // kind == 0 (ok): raw[1] is the slot id.
+        long slotId = (long)raw[1];
+        return new ProcessHandle(this._program, slotId);
+    }
+
+    // ── internals ────────────────────────────────────────────────────────
+
+    // Grow-on-overflow append: caller owns the count separately. Returns
+    // either the same array (when there is spare capacity) or a new
+    // doubled-capacity copy.
+    private static string[] _appendString(string[] arr, int count, string v) {
+        if (count < arr.Length) {
+            arr[count] = v;
+            return arr;
+        }
+        int newCap = arr.Length * 2;
+        if (newCap < 4) { newCap = 4; }
+        string[] bigger = new string[newCap];
+        int i = 0;
+        while (i < count) { bigger[i] = arr[i]; i = i + 1; }
+        bigger[count] = v;
+        return bigger;
+    }
+
+    // Slice an over-allocated array to exactly `count` elements so the
+    // native call sees a tight view (no trailing nulls).
+    private static string[] _trim(string[] arr, int count) {
+        if (count == arr.Length) { return arr; }
+        string[] tight = new string[count];
+        int i = 0;
+        while (i < count) { tight[i] = arr[i]; i = i + 1; }
+        return tight;
+    }
+}
+
+// Native binding sink — keeps the [Native] extern signatures isolated so
+// the public `Process` class stays free of cross-cutting `extern`
+// declarations. Mirrors the `__process_run` / `__process_spawn`
+// contract in src/runtime/src/corelib/process.rs.
+public static class ProcessNative {
+    [Native("__process_run")]
+    public static extern object[] Run(
+        string program,
+        string[] args,
+        string[] envKeys,
+        string[] envVals,
+        string[] envRemove,
+        bool envClear,
+        string? cwd,
+        int stdinMode,
+        byte[]? stdinBytes,
+        int stdoutMode,
+        string? stdoutPath,
+        int stderrMode,
+        string? stderrPath,
+        long timeoutMs);
+
+    [Native("__process_spawn")]
+    public static extern object[] Spawn(
+        string program,
+        string[] args,
+        string[] envKeys,
+        string[] envVals,
+        string[] envRemove,
+        bool envClear,
+        string? cwd,
+        int stdinMode,
+        byte[]? stdinBytes,
+        int stdoutMode,
+        string? stdoutPath,
+        int stderrMode,
+        string? stderrPath);
+}

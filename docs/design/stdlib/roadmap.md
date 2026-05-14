@@ -167,7 +167,7 @@
 
 | 原语 | 本路线图分级 | 用途 | 状态 |
 |------|------------|------|------|
-| `Std.Process.Start(file, argv, [...stdio])` 带 stdout capture / exit code | **P0 z42.os** | spawn `cargo build` / `dotnet test` / `gradle` / `xcodebuild` / `wasm-pack` | 🟡 add-std-process 进行中 |
+| `Std.IO.Process.{Run, Spawn}` 带 stdout capture / exit code / timeout / stdio 四态 | **P0 z42.io.process** | spawn `cargo build` / `dotnet test` / `gradle` / `xcodebuild` / `wasm-pack` | ✅ 2026-05-14 add-std-process（在 z42.io 而非独立 z42.os 包；与 File / Directory / Path / Environment 一起共享 host FFI 边界）|
 | `Std.IO.File.{ReadAllText, WriteAllText, Exists, Copy, Move, Delete}` | **P0 z42.io.fs** | 读 versions.toml / 写 manifest.toml / 拷 zpkg | ✅ 2026-05-12 add-std-io-polish |
 | `Std.IO.Directory.{Create, Enumerate, Exists}` | **P0 z42.io.fs** | mkdir -p / 扫 src/tests/<cat>/<name>/ | ✅ 2026-05-13 add-std-io-directory |
 | `Std.IO.Path.{Combine, GetDirectoryName, GetExtension, IsRooted, ...}` | **P0 z42.io.fs** | 跨平台 path 拼接（避免 `/` vs `\` 错误） | ✅ 2026-05-12 add-std-io-polish |

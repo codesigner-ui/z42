@@ -1,0 +1,40 @@
+namespace Std.IO;
+
+// 2026-05-13 add-std-process: cross-platform stdio configuration for
+// `Std.IO.Process`. Each instance carries an integer mode tag (Null /
+// Inherit / Pipe / File) plus an optional path for the File case.
+//
+// z42 当前 enum 只是命名整数常量（L1/L2 阶段不引入 ADT），所以 File 的
+// path payload 用专门的 `ToFile(path)` 静态工厂而非 enum 关联值。
+// 详见 [add-std-process design.md Decision 1].
+public sealed class Stdio {
+    // Mode constants — kept in sync with src/runtime/src/corelib/process.rs
+    // (STDIO_NULL / STDIO_INHERIT / STDIO_PIPE / STDIO_FILE).
+    public static int MODE_NULL    = 0;
+    public static int MODE_INHERIT = 1;
+    public static int MODE_PIPE    = 2;
+    public static int MODE_FILE    = 3;
+
+    private int mode;
+    private string path;     // empty string when mode != File
+
+    public Stdio(int mode, string path) {
+        this.mode = mode;
+        this.path = path;
+    }
+
+    // Singletons-by-construction. z42 currently lacks static field
+    // initialization on the read path, so we return a fresh instance
+    // every call — Stdio is a tiny value-like class so allocation cost
+    // is negligible vs. the spawn it parameterises.
+    public static Stdio Inherit() { return new Stdio(1, ""); }
+    public static Stdio Pipe()    { return new Stdio(2, ""); }
+    public static Stdio Null()    { return new Stdio(0, ""); }
+
+    public static Stdio ToFile(string path) {
+        return new Stdio(3, path);
+    }
+
+    public int GetMode() { return this.mode; }
+    public string GetPath() { return this.path; }
+}

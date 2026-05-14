@@ -1,0 +1,43 @@
+// add-std-process: Stdio mode tests (Null / Pipe / ToFile).
+namespace Z42IoProcessStdioTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_stdout_null_discards_output() {
+    var r = new Process("echo").Arg("should-not-appear")
+        .Stdout(Stdio.Null())
+        .Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("", r.Stdout);
+}
+
+[Test]
+void test_stderr_pipe_captures_separately() {
+    // sh 把 "boom" 写到 stderr，stdout 写 "ok"
+    var r = new Process("sh")
+        .Arg("-c").Arg("echo ok; echo boom >&2")
+        .Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("ok\n",   r.Stdout);
+    Assert.Equal("boom\n", r.Stderr);
+}
+
+[Test]
+void test_stdout_redirect_to_file() {
+    string tmp = "/tmp/z42-process-stdio-test.log";
+    // Pre-clean
+    File.WriteAllText(tmp, "");
+
+    var r = new Process("echo").Arg("redirected-payload")
+        .Stdout(Stdio.ToFile(tmp))
+        .Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("", r.Stdout);   // not captured by parent
+
+    string onDisk = File.ReadAllText(tmp);
+    Assert.Equal("redirected-payload\n", onDisk);
+
+    File.Delete(tmp);
+}

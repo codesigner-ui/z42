@@ -1,0 +1,62 @@
+// add-std-process: Spawn + handle ops tests.
+namespace Z42IoProcessSpawnTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_spawn_then_wait_returns_result() {
+    var h = new Process("echo").Arg("spawned-output")
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+    var r = h.Wait();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("spawned-output\n", r.Stdout);
+}
+
+[Test]
+void test_pid_is_positive() {
+    var h = new Process("sh").Arg("-c").Arg("sleep 0.1")
+        .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe())
+        .Spawn();
+    long pid = h.Pid();
+    Assert.True(pid > 0);
+    h.Wait();
+}
+
+[Test]
+void test_kill_terminates_long_running() {
+    var h = new Process("sh").Arg("-c").Arg("sleep 30")
+        .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe())
+        .Spawn();
+    h.Kill();
+    var r = h.Wait();
+    Assert.True(r.ExitCode != 0);  // killed → non-zero
+}
+
+[Test]
+void test_handle_invalid_after_wait() {
+    var h = new Process("true").Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe()).Spawn();
+    h.Wait();
+
+    bool caught = false;
+    try {
+        h.Pid();
+    } catch (ProcessHandleInvalidException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_dispose_kills_long_running_child() {
+    var h = new Process("sh").Arg("-c").Arg("sleep 30")
+        .Stdout(Stdio.Pipe()).Stderr(Stdio.Pipe())
+        .Spawn();
+    h.Dispose();
+    // After dispose, methods throw.
+    bool caught = false;
+    try { h.Wait(); }
+    catch (ProcessHandleInvalidException e) { caught = true; }
+    Assert.True(caught);
+}

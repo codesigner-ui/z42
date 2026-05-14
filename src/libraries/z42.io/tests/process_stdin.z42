@@ -1,0 +1,42 @@
+// add-std-process: stdin one-shot bytes + streaming via Spawn.
+namespace Z42IoProcessStdinTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_stdin_bytes_oneshot() {
+    // "Hi\n" → bytes [0x48, 0x69, 0x0A]
+    byte[] payload = new byte[3];
+    payload[0] = 0x48;
+    payload[1] = 0x69;
+    payload[2] = 0x0A;
+
+    var r = new Process("cat")
+        .Stdin(Stdio.Pipe())
+        .StdinBytes(payload)
+        .Run();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("Hi\n", r.Stdout);
+}
+
+[Test]
+void test_spawn_write_stdin_stream() {
+    var h = new Process("cat")
+        .Stdin(Stdio.Pipe())
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+
+    byte[] part1 = new byte[3];
+    part1[0] = 0x41; part1[1] = 0x42; part1[2] = 0x43;   // "ABC"
+    h.WriteStdin(part1);
+
+    byte[] part2 = new byte[1];
+    part2[0] = 0x0A;                                      // "\n"
+    h.WriteStdin(part2);
+
+    h.CloseStdin();
+    var r = h.Wait();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("ABC\n", r.Stdout);
+}

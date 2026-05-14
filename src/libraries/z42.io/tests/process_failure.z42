@@ -1,0 +1,37 @@
+// add-std-process: failure / error path tests.
+namespace Z42IoProcessFailureTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_nonexistent_program_throws_start_exception() {
+    bool caught = false;
+    string msg = "";
+    try {
+        new Process("definitely-not-a-real-binary-z42-test-xyzzy").Run();
+    } catch (ProcessStartException e) {
+        caught = true;
+        msg = e.Message;
+    }
+    Assert.True(caught);
+    Assert.NotNull(msg);
+    Assert.Contains("definitely-not-a-real-binary-z42-test-xyzzy", msg);
+}
+
+[Test]
+void test_start_exception_distinct_from_exit_exception() {
+    // Should hit ProcessStartException (program missing), NOT
+    // ProcessExitException (which is only for EnsureSuccess on exit != 0).
+    bool startCaught = false;
+    bool exitCaught  = false;
+    try {
+        new Process("no-such-binary-z42-test").Run();
+    } catch (ProcessStartException e) {
+        startCaught = true;
+    } catch (ProcessExitException e) {
+        exitCaught = true;
+    }
+    Assert.True(startCaught);
+    Assert.False(exitCaught);
+}

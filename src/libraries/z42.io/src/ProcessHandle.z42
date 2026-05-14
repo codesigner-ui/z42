@@ -1,0 +1,138 @@
+namespace Std.IO;
+
+// 2026-05-13 add-std-process: handle to a live spawned child process.
+// Returned by `Process.Spawn()`. The handle carries an opaque slot id
+// pointing at VM-managed state in `VmContext.processes`; all operations
+// dispatch through `__process_handle_*` builtins.
+//
+// 必须 `.Dispose()` 或 GC 时让 Native runtime 回收子进程（仍 alive 时
+// 走 kill + reap，避免僵尸进程）。z42 `IDisposable` 协议保证两种调用都
+// 路由到 `__process_handle_drop`。
+public class ProcessHandle : IDisposable {
+    private string _program;
+    private long _slotId;
+    private bool _disposed;
+
+    public ProcessHandle(string program, long slotId) {
+        this._program  = program;
+        this._slotId   = slotId;
+        this._disposed = false;
+    }
+
+    public long Pid() {
+        this._ensureLive();
+        object pidObj = ProcessHandleNative.Pid(this._slotId);
+        if (pidObj == null) {
+            throw new ProcessHandleInvalidException(this._program);
+        }
+        return (long)pidObj;
+    }
+
+    public ProcessResult Wait() {
+        this._ensureLive();
+        object[] raw = ProcessHandleNative.Wait(this._slotId);
+        return this._handleWaitResult(raw);
+    }
+
+    // Returns null if the child is still running, ProcessResult if exited.
+    public ProcessResult? TryWait() {
+        this._ensureLive();
+        object resObj = ProcessHandleNative.TryWait(this._slotId);
+        if (resObj == null) {
+            return null;
+        }
+        object[] raw = (object[])resObj;
+        return this._handleWaitResult(raw);
+    }
+
+    public void Kill() {
+        this._ensureLive();
+        object res = ProcessHandleNative.Kill(this._slotId, false);
+        this._checkHandleResponse(res);
+    }
+
+    public void KillForce() {
+        this._ensureLive();
+        object res = ProcessHandleNative.Kill(this._slotId, true);
+        this._checkHandleResponse(res);
+    }
+
+    public void WriteStdin(byte[] bytes) {
+        this._ensureLive();
+        object res = ProcessHandleNative.WriteStdin(this._slotId, bytes);
+        this._checkHandleResponse(res);
+    }
+
+    public void CloseStdin() {
+        this._ensureLive();
+        object res = ProcessHandleNative.CloseStdin(this._slotId);
+        this._checkHandleResponse(res);
+    }
+
+    // 实现 IDisposable — 幂等。Dispose 后所有方法抛
+    // ProcessHandleInvalidException，子进程在 Native 侧被 kill + reap。
+    public void Dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        ProcessHandleNative.Drop(this._slotId);
+    }
+
+    // ── internals ────────────────────────────────────────────────────────
+
+    private void _ensureLive() {
+        if (this._disposed) {
+            throw new ProcessHandleInvalidException(this._program);
+        }
+    }
+
+    private ProcessResult _handleWaitResult(object[] raw) {
+        long kind = (long)raw[0];
+        if (kind == 3) {
+            // KIND_HANDLE_INVALID
+            this._disposed = true;
+            throw new ProcessHandleInvalidException(this._program);
+        }
+        // kind == 0 (ok). Wait + TryWait consume the slot on the Native
+        // side, so flag local as disposed for future calls.
+        this._disposed = true;
+        return new ProcessResult(
+            this._program,
+            (int)(long)raw[1],
+            (string)raw[2],
+            (string)raw[3],
+            (byte[])raw[4],
+            (byte[])raw[5]);
+    }
+
+    // For ops that return either Value.Null (success) or a kind-tuple
+    // (handle invalid). Used by Kill / WriteStdin / CloseStdin.
+    private void _checkHandleResponse(object res) {
+        if (res == null) return;          // success
+        // It's an Array — invalid handle.
+        this._disposed = true;
+        throw new ProcessHandleInvalidException(this._program);
+    }
+}
+
+public static class ProcessHandleNative {
+    [Native("__process_handle_wait")]
+    public static extern object[] Wait(long slotId);
+
+    [Native("__process_handle_try_wait")]
+    public static extern object TryWait(long slotId);
+
+    [Native("__process_handle_kill")]
+    public static extern object Kill(long slotId, bool force);
+
+    [Native("__process_handle_write_stdin")]
+    public static extern object WriteStdin(long slotId, byte[] bytes);
+
+    [Native("__process_handle_close_stdin")]
+    public static extern object CloseStdin(long slotId);
+
+    [Native("__process_handle_pid")]
+    public static extern object Pid(long slotId);
+
+    [Native("__process_handle_drop")]
+    public static extern object Drop(long slotId);
+}

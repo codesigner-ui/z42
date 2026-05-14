@@ -206,7 +206,10 @@ const T_U32:  u8 = 0x08;
 const T_U64:  u8 = 0x09;
 const T_F32:  u8 = 0x0A;
 const T_F64:  u8 = 0x0B;
-const T_CHAR: u8 = 0x0C;
+const T_CHAR:   u8 = 0x0C;
+const T_STR:    u8 = 0x0D;
+const T_OBJECT: u8 = 0x20;
+const T_ARRAY:  u8 = 0x21;
 
 pub(super) fn convert(frame: &mut Frame, dst: u32, src: u32, to_tag: u8) -> Result<()> {
     let v = frame.get(src)?.clone();
@@ -217,7 +220,26 @@ pub(super) fn convert(frame: &mut Frame, dst: u32, src: u32, to_tag: u8) -> Resu
 
 /// Pure numeric conversion — same dispatch as `convert` but without
 /// frame-register read/write side effects, so JIT helpers can reuse it.
+///
+/// Reference-type identity casts pass through unchanged. The compiler
+/// emits a single `Convert` IR for every cast (including `(string)obj`,
+/// `(byte[])obj`, `(SomeClass)obj`), so the runtime is responsible for
+/// recognising "narrow static type, value already matches" as a no-op
+/// rather than a numeric conversion. `Null` is universally castable to
+/// any reference target. (add-std-process, 2026-05-13.)
 pub fn convert_value(v: Value, to_tag: u8) -> Result<Value> {
+    // Reference-type identity casts — value's dynamic kind already matches the
+    // narrowed static target.
+    match (&v, to_tag) {
+        (Value::Str(_),    T_STR)    => return Ok(v),
+        (Value::Array(_),  T_ARRAY)  => return Ok(v),
+        (Value::Object(_), T_OBJECT) => return Ok(v),
+        // Object-to-Array cast (e.g. `(byte[])obj_elem`): tag is T_ARRAY
+        // when destination is an array reference type. Already handled above.
+        // Null → any reference target.
+        (Value::Null,      T_STR | T_OBJECT | T_ARRAY) => return Ok(v),
+        _ => {}
+    }
     match v {
         Value::F64(f)  => convert_from_f64(f, to_tag),
         Value::I64(x)  => convert_from_i64(x, to_tag),
