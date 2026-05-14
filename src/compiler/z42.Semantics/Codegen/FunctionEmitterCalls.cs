@@ -105,13 +105,27 @@ internal sealed partial class FunctionEmitter
         // For non-builtin-collection types, just try DepIndex
 
         // Instance methods: try DepIndex next (for stdlib methods not in builtin resolution).
-        // L3-G4d: only consult DepIndex when the receiver is an imported class
-        // (or unknown). A locally-defined class with the same short name as a stdlib
-        // class must dispatch to its OWN method, not be hijacked by a DepIndex match
-        // on method-name+arity alone (e.g. user `class Stack` vs `Std.Collections.Stack`).
-        bool receiverIsLocalClass = call.ReceiverClass is not null
-            && !_ctx.ImportedClassNamespaces.ContainsKey(call.ReceiverClass);
-        if (!receiverIsLocalClass
+        //
+        // **Receiver-aware binding** (fix-instance-method-binding-receiver-aware, 2026-05-15):
+        // The DepIndex is keyed by method-name + arity ALONE — if any imported class has
+        // a method with the same shape, a name-only lookup would hijack the call away from
+        // the receiver's actual class. Concretely: `tomlValue.ContainsKey(k)` was binding to
+        // `Std.Collections.Dictionary.ContainsKey` instead of `Std.Toml.TomlValue.ContainsKey`,
+        // because Dictionary happens to have `ContainsKey(string)` too.
+        //
+        // Guard: if the receiver's class (or any ancestor in its inheritance chain) declares
+        // this method name, prefer v_call so the receiver's vtable wins. The DepIndex shortcut
+        // only fires for receivers whose class chain has no matching method — typically primitive
+        // receivers, Unknown-typed receivers (`var x = ...` where inference fails), and cases
+        // where the receiver class is fully imported and the method genuinely lives in the dep.
+        //
+        // Pre-2026-05-15 the guard checked `ImportedClassNamespaces.ContainsKey(ReceiverClass)`,
+        // which only caught class-name collisions (e.g. user `class Stack` vs stdlib
+        // `Std.Collections.Stack`). Method-name collisions across distinct classes (TomlValue
+        // vs Dictionary, both have `ContainsKey`) were unchecked.
+        bool receiverClassOwnsMethod = call.ReceiverClass is not null
+            && ReceiverChainHasMethod(call.ReceiverClass, call.MethodName!);
+        if (!receiverClassOwnsMethod
             && _ctx.DepIndex.TryGetInstance(call.MethodName!, call.Args.Count, out var depEntry))
         {
             // 2026-05-04 fix-default-param-cross-cu (D-9)：DepIndex 路径
@@ -128,6 +142,38 @@ internal sealed partial class FunctionEmitter
 
         // User-defined class instance methods: fall back to virtual dispatch
         return EmitInstanceVCallFallback(call, argRegs, objReg);
+    }
+
+    /// fix-instance-method-binding-receiver-aware (2026-05-15): walk the
+    /// receiver's class up its base chain via `ClassRegistry`. Return true
+    /// if any class in the chain declares an instance method named
+    /// `methodName`. Used to gate the DepIndex shortcut so a receiver class
+    /// with its own method isn't hijacked by an arity-matching stdlib method.
+    ///
+    /// `receiverClass` is the short or qualified name as it appears in
+    /// `BoundCall.ReceiverClass`; we run it through `QualifyClassName` since
+    /// `ClassRegistry` keys are qualified.
+    private bool ReceiverChainHasMethod(string receiverClass, string methodName)
+    {
+        string current = _ctx.QualifyClassName(receiverClass);
+        // Bound depth — real class hierarchies are at most 3-4 deep
+        // (Exception subclasses). Hard cap defends against accidental cycles
+        // in malformed metadata (ClassRegistry should already be acyclic).
+        for (int depth = 0; depth < 32; depth++)
+        {
+            if (_ctx.ClassRegistry.TryGetMethods(current, out var methods)
+                && methods.Contains(methodName))
+            {
+                return true;
+            }
+            if (!_ctx.ClassRegistry.TryGetBaseClassName(current, out var baseName)
+                || baseName is null)
+            {
+                return false;
+            }
+            current = baseName;
+        }
+        return false;
     }
 
     /// VCall fallback for instance calls when DepIndex / builtin-collection
