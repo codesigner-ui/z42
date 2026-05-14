@@ -16,17 +16,24 @@
 
 [workspace]
 members = ["*"]
+# Topologically ordered (declared order must respect deps even though z42c
+# also runs a topo-sort, in case a build path falls back to literal order):
+#   z42.core       → (no deps)
+#   z42.collections / encoding / math / text / time / toml → (need core only)
+#   z42.io         → (needs z42.time for Std.Process.Timeout/TimeSpan)
+#   z42.json       → (needs z42.text for StringBuilder)
+#   z42.test       → (needs z42.io for Bencher.Std.IO.Console)
 default-members = [
     "z42.core",
     "z42.collections",
-    "z42.io",
+    "z42.encoding",
     "z42.math",
     "z42.text",
-    "z42.encoding",
-    "z42.test",
     "z42.time",
     "z42.toml",
+    "z42.io",
     "z42.json",
+    "z42.test",
 ]
 
 [workspace.project]
