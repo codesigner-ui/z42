@@ -98,6 +98,8 @@ public sealed class ScaffoldCommandsTests : IDisposable
     [Fact]
     public void NewMember_ExeInsideWorkspace()
     {
+        // 2026-05-14 auto-detect-main: scaffolding no longer writes `entry = ...`
+        // by default — PackageCompiler auto-detects the generated `Main()`.
         RunZ42c(_tmp, "new", "--workspace", "ws").code.Should().Be(0);
         string wsDir = Path.Combine(_tmp, "ws");
 
@@ -106,7 +108,25 @@ public sealed class ScaffoldCommandsTests : IDisposable
 
         File.Exists(Path.Combine(wsDir, "apps", "hello", "hello.z42.toml")).Should().BeTrue();
         string toml = File.ReadAllText(Path.Combine(wsDir, "apps", "hello", "hello.z42.toml"));
-        toml.Should().Contain("kind              = \"exe\"").And.Contain("entry             = \"Hello.main\"");
+        toml.Should().Contain("kind              = \"exe\"");
+        toml.Should().NotContain("entry             =");
+
+        string src = File.ReadAllText(Path.Combine(wsDir, "apps", "hello", "src", "Hello.z42"));
+        src.Should().Contain("namespace Hello");
+        src.Should().Contain("Main()");
+    }
+
+    [Fact]
+    public void NewMember_ExeWithExplicitEntry_KeepsEntryInManifest()
+    {
+        RunZ42c(_tmp, "new", "--workspace", "ws").code.Should().Be(0);
+        string wsDir = Path.Combine(_tmp, "ws");
+
+        var (code, _, _) = RunZ42c(wsDir, "new", "-p", "hello", "--kind", "exe", "--entry", "Custom.run");
+        code.Should().Be(0);
+
+        string toml = File.ReadAllText(Path.Combine(wsDir, "apps", "hello", "hello.z42.toml"));
+        toml.Should().Contain("entry             = \"Custom.run\"");
     }
 
     [Fact]

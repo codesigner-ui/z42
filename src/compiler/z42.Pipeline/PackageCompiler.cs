@@ -222,7 +222,8 @@ public static partial class PackageCompiler
         int errors = 0;
         foreach (var target in targets)
         {
-            Console.Error.WriteLine($"   Compiling {target.Name} ({target.Entry})");
+            string entryLabel = target.Entry ?? "Main (auto)";
+            Console.Error.WriteLine($"   Compiling {target.Name} ({entryLabel})");
             if (!TryResolveFiles(manifest, projectDir, target, out var sourceFiles))
             { errors++; continue; }
             bool pack = manifest.ResolvePack(useRelease, target.Pack);

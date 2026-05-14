@@ -173,10 +173,9 @@ public sealed class ProjectManifest
                     $"error: [project].kind must be 'exe' or 'lib', got '{resolvedKindStr}'");
         }
 
-        if (kind == ProjectKind.Exe && string.IsNullOrWhiteSpace(entry))
-            throw new ManifestException(
-                "error: [project].entry is required when kind = \"exe\"");
-
+        // 2026-05-14 auto-detect-main: `[project].entry` is optional even for
+        // exe targets. PackageCompiler.BuildTarget auto-detects `Main()`;
+        // missing-Main is a compile-time error there.
         return new ProjectSection(name, version, kind, entry, desc, pack);
     }
 
@@ -202,8 +201,7 @@ public sealed class ProjectManifest
 
             if (string.IsNullOrWhiteSpace(name))
                 throw new ManifestException($"error: [[exe]] entry is missing required field 'name'");
-            if (string.IsNullOrWhiteSpace(entry))
-                throw new ManifestException($"error: [[exe]] '{name}' is missing required field 'entry'");
+            // 2026-05-14 auto-detect-main: `entry` optional; PackageCompiler auto-detects Main.
 
             var src  = t.TryGetStringArray("src");
             bool? pack = t.TryGetBool("pack");
@@ -270,9 +268,9 @@ public enum ProjectKind { Exe, Lib, Multi }
 
 public sealed record ExeTarget(
     string                 Name,
-    string                 Entry,
-    IReadOnlyList<string>? Src,   // null = inherit [sources]
-    bool?                  Pack   // null = inherit [project].pack
+    string?                Entry,  // 2026-05-14 auto-detect-main: optional
+    IReadOnlyList<string>? Src,    // null = inherit [sources]
+    bool?                  Pack    // null = inherit [project].pack
 );
 
 public sealed record ProjectSection(

@@ -78,11 +78,14 @@ public sealed class ProjectManifestTests : IDisposable
         m.Project.Entry.Should().Be("Hello.main");
     }
 
+    // 2026-05-14 auto-detect-main: `[project].entry` is now optional for exe.
+    // PackageCompiler reports missing-Main, not the manifest loader.
     [Fact]
-    public void Load_ExeWithoutEntry_Throws()
+    public void Load_ExeWithoutEntry_LeavesEntryNull()
     {
-        var act = () => Load("hello.z42.toml", "[project]\nkind=\"exe\"");
-        act.Should().Throw<ManifestException>().WithMessage("*entry is required*");
+        var m = Load("hello.z42.toml", "[project]\nkind=\"exe\"");
+        m.Project.Kind.Should().Be(ProjectKind.Exe);
+        m.Project.Entry.Should().BeNull();
     }
 
     [Fact]
@@ -279,15 +282,18 @@ public sealed class ProjectManifestTests : IDisposable
         act.Should().Throw<ManifestException>().WithMessage("*missing required field 'name'*");
     }
 
+    // 2026-05-14 auto-detect-main: `[[exe]].entry` is optional too.
     [Fact]
-    public void Load_MultiExe_MissingEntry_Throws()
+    public void Load_MultiExe_MissingEntry_LeavesEntryNull()
     {
-        var act = () => Load("myapp.z42.toml", """
+        var m = Load("myapp.z42.toml", """
             [project]
             [[exe]]
             name = "hello"
             """);
-        act.Should().Throw<ManifestException>().WithMessage("*missing required field 'entry'*");
+        m.ExeTargets.Should().HaveCount(1);
+        m.ExeTargets[0].Name.Should().Be("hello");
+        m.ExeTargets[0].Entry.Should().BeNull();
     }
 
     [Fact]

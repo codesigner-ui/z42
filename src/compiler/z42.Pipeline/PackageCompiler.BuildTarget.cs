@@ -101,6 +101,29 @@ public static partial class PackageCompiler
             .Select(u => u.ExportedTypes!)
             .ToList();
 
+        // 2026-05-14 auto-detect-main: `[project].entry` / `[[exe]].entry` is
+        // optional. When unset for exe targets, scan compiled units for a
+        // `Main` candidate and bake it into the zpkg. No candidate → error.
+        if (kind == ZpkgKind.Exe && string.IsNullOrWhiteSpace(entry))
+        {
+            var (autoEntry, ambiguityError) = AutoDetectEntry(units);
+            if (ambiguityError is not null)
+            {
+                Console.Error.WriteLine($"error: {ambiguityError}");
+                return 1;
+            }
+            if (autoEntry is null)
+            {
+                Console.Error.WriteLine(
+                    $"error: no `Main()` function found in exe target `{name}`. " +
+                    $"Define a `Main()` (optionally inside a namespace) in source, " +
+                    $"or set `[project].entry` / `[[exe]].entry` explicitly.");
+                return 1;
+            }
+            entry = autoEntry;
+            Console.Error.WriteLine($"    Entry: {entry} (auto-detected)");
+        }
+
         ZpkgFile zpkg;
         if (pack)
         {
@@ -134,6 +157,47 @@ public static partial class PackageCompiler
     }
 
     // ── Build target sub-steps ────────────────────────────────────────────────
+
+    /// 2026-05-14 auto-detect-main: scan `CompiledUnit.Exports` for a Main
+    /// candidate. Priority (mirrors `src/runtime/src/vm.rs::resolve_entry`):
+    ///   1. any FQ name ending in `.Main`
+    ///   2. bare `Main`
+    ///   3. any FQ name ending in `.main`
+    ///   4. bare `main`
+    /// Returns (entry, error). error != null → ambiguity (multiple .Main); the
+    /// caller aborts. Both null → no candidate at all.
+    static (string? Entry, string? Error) AutoDetectEntry(IEnumerable<CompiledUnit> units)
+    {
+        var fnNames = units.SelectMany(u => u.Exports).ToHashSet(StringComparer.Ordinal);
+
+        static (string?, string?) PickFrom(List<string> candidates, string kindLabel)
+        {
+            if (candidates.Count == 1) return (candidates[0], null);
+            if (candidates.Count >  1) return (null,
+                $"multiple `{kindLabel}` functions found ({string.Join(", ", candidates)}); " +
+                $"set `[project].entry` (or `[[exe]].entry`) explicitly to pick one");
+            return (null, null);
+        }
+
+        var qualifiedMain = fnNames.Where(n => n.EndsWith(".Main", StringComparison.Ordinal))
+                                   .OrderBy(s => s, StringComparer.Ordinal)
+                                   .ToList();
+        var (e1, err1) = PickFrom(qualifiedMain, "Main");
+        if (err1 is not null || e1 is not null) return (e1, err1);
+
+        if (fnNames.Contains("Main")) return ("Main", null);
+
+        var qualifiedMainLc = fnNames.Where(n => n.EndsWith(".main", StringComparison.Ordinal))
+                                     .OrderBy(s => s, StringComparer.Ordinal)
+                                     .ToList();
+        var (e2, err2) = PickFrom(qualifiedMainLc, "main");
+        if (err2 is not null || e2 is not null) return (e2, err2);
+
+        if (fnNames.Contains("main")) return ("main", null);
+
+        return (null, null);
+    }
+
 
     /// Scan .zpkg files in libs dirs and build a namespace → filename map.
     /// Build the list of directories to scan for dependency `.zpkg` files.

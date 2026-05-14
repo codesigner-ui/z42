@@ -94,11 +94,8 @@ static class ScaffoldCommands
         }
 
         bool isExe = string.Equals(kind, "exe", StringComparison.OrdinalIgnoreCase);
-        if (isExe && entry is null)
-        {
-            // 默认 entry：<Capitalized>.main
-            entry = char.ToUpperInvariant(name[0]) + name[1..] + ".main";
-        }
+        // 2026-05-14 auto-detect-main: 脚手架默认不写 `entry = ...`；
+        // PackageCompiler 自动发现源里的 `Main()`。显式 `--entry` 才写。
 
         // 决定路径：lib → libs/<name>，exe → apps/<name>
         string subDir = isExe ? "apps" : "libs";
@@ -113,7 +110,11 @@ static class ScaffoldCommands
         string manifest = Templates.MemberManifest(name, isExe ? "exe" : "lib", entry);
         File.WriteAllText(Path.Combine(memberDir, $"{name}.z42.toml"), manifest);
 
-        string srcFile = isExe ? Templates.ExeSourceFile(name, entry!) : Templates.LibSourceFile(name);
+        // Source template defaults to `<Capitalized>.Main` — AutoDetectEntry picks it up.
+        string defaultEntry = $"{Capitalize(name)}.Main";
+        string srcFile = isExe
+            ? Templates.ExeSourceFile(name, entry ?? defaultEntry)
+            : Templates.LibSourceFile(name);
         File.WriteAllText(Path.Combine(memberDir, "src", $"{Capitalize(name)}.z42"), srcFile);
 
         Console.Error.WriteLine($"    Created member '{name}' at {Path.GetRelativePath(ws.Manifest.RootDirectory, memberDir)}/");
