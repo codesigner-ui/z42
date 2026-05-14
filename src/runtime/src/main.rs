@@ -9,15 +9,18 @@ struct Cli {
     /// Accepted formats: .zbc (single-file), .zpkg (project package)
     file: String,
 
+    /// Optional entry-function override (positional). When omitted the VM
+    /// uses the `Entry` baked into the zpkg by `z42c build` (which itself
+    /// auto-detects `Main()` at compile time — see add-std-process /
+    /// auto-detect-main). Bare `.zbc` files without zpkg metadata fall back
+    /// to the resolver chain in `vm::resolve_entry`. **z42-test-runner** is
+    /// the main consumer: it forks `z42vm <file> <test_method>` per
+    /// `[Test]` discovered via TIDX.
+    entry: Option<String>,
+
     /// Execution mode override (default: use annotation in bytecode)
     #[arg(long, value_enum)]
     mode: Option<ExecMode>,
-
-    /// Override entry point — call this function instead of the default
-    /// (Main / `<namespace>.Main`). Used by z42-test-runner to invoke
-    /// individual `[Test]` methods discovered via the TIDX section.
-    #[arg(long)]
-    entry: Option<String>,
 
     /// Enable verbose tracing
     #[arg(short, long)]
@@ -406,7 +409,7 @@ fn main() -> Result<()> {
     };
 
     let vm = z42::vm::Vm::new(final_module, default_mode);
-    // CLI --entry overrides any artifact-supplied entry hint.
+    // CLI positional `entry` overrides any artifact-supplied entry hint.
     let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
     vm.run(&mut ctx, effective_entry)
 }

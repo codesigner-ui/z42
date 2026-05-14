@@ -20,7 +20,7 @@ pub fn run_one(z42vm: &PathBuf, zbc_path: &str, test: &DiscoveredTest) -> Outcom
     let start = Instant::now();
     let output = Command::new(z42vm)
         .arg(zbc_path)
-        .arg("--entry").arg(test.method_name)
+        .arg(test.method_name)
         .output();
 
     let duration_ms = start.elapsed().as_millis() as u64;
