@@ -70,10 +70,13 @@ fn gc_handle_type_desc() -> Arc<TypeDesc> {
     CACHE.get_or_init(|| {
         let mut field_index = HashMap::new();
         field_index.insert("_slot".to_string(), 0usize);
+        let fields = vec![FieldSlot { name: "_slot".to_string(), type_tag: "long".to_string() }];
         Arc::new(TypeDesc {
             name: "Std.GCHandle".to_string(),
             base_name: None,
-            fields: vec![FieldSlot { name: "_slot".to_string(), type_tag: "long".to_string() }],
+            own_fields: fields.clone(),
+            own_methods: vec![],
+            fields,
             field_index,
             vtable: Vec::new(),
             vtable_index: HashMap::new(),
@@ -106,6 +109,8 @@ fn heap_stats_type_desc() -> Arc<TypeDesc> {
         Arc::new(TypeDesc {
             name: "Std.HeapStats".to_string(),
             base_name: None,
+            own_fields: fields.clone(),
+            own_methods: vec![],
             fields,
             field_index,
             vtable: Vec::new(),

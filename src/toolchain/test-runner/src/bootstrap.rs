@@ -105,6 +105,11 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
         declared_candidates,
         initially_loaded_zpkgs,
     );
+    // fix-cross-pkg-subclass-fields (2026-05-14): seed lazy loader with the
+    // merged module's TypeDescs so cross-zpkg fixup of lazy-loaded subclasses
+    // can find their base classes (e.g. ProcessStartException in z42.io
+    // inheriting from Std.Exception eagerly-loaded via z42.core).
+    ctx.seed_lazy_loader_types(&final_module.type_registry);
 
     let vm = Vm::new(final_module, z42::metadata::ExecMode::Interp);
 

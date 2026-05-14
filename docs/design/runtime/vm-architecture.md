@@ -285,6 +285,65 @@ module。`initially_loaded_zpkgs` 含 `"z42.core.zpkg"`，所以 LazyLoader
 的 `declared_zpkgs` 根本不含它。这保证 prelude 语义（所有 `Std.*` 符号
 启动即可用）。
 
+### 两阶段类型加载：cross-zpkg subclass 字段继承（2026-05-14 fix-cross-pkg-subclass-fields）
+
+**问题**：`build_type_registry` 在每个 module 加载时**单独运行**，只能
+基于本 module 的 `type_registry` 解析 base 类。当 z42.io 中的 `class
+Sub : Std.Exception { ... }` 加载时，`Std.Exception`（在 z42.core）尚
+不在 z42.io 的本地 registry —— `registry.get("Std.Exception")` 返回
+`None`，继承的字段 / vtable 槽位丢失。`Sub.fields` 只含自己声明的字段，
+`field.set @Message` 触不到正确的 slot，`Message` 永远是 null。
+
+**解决方案**：两阶段（skeleton + fixup）类型加载。
+
+**阶段 1 — skeleton**（`build_type_registry`）：
+- 计算 **own_fields / own_methods**（本类自己声明的字段 / 方法），保存
+  到 TypeDesc。这部分不依赖外部信息，是稳定的。
+- 用 `merge_with_base` 计算**初始** `fields / field_index / vtable /
+  vtable_index`。本 module 内 base 可解析 → 完整继承；跨 zpkg base 不
+  可解析 → 仅含 own 部分（后续 fixup 补齐）。
+
+**阶段 2 — fixup**（`try_fixup_inheritance`）：
+- 在 [`LazyLoader::load_zpkg_file`](../../src/runtime/src/metadata/lazy_loader.rs)
+  把新 zpkg 的 TypeDesc 插入全局 `type_registry` 之后调用。
+- 扫描整个 `type_registry`，对每个 base 链 *新近可解析* 的 TypeDesc
+  （`needs_fixup` 检测），用 `merge_with_base` 用全局 registry 重算
+  layout，然后 `Arc::get_mut` mutate 该 TypeDesc。
+- 固定点循环（`while try_fixup_inheritance() > 0`）—— 一次 fix-up 可能
+  让另一个 TypeDesc 变可解析（三级链 `A → B → C`：B 先 fix → C 后 fix）。
+
+**`Arc::get_mut` 可行性**：lazy_loader 是当前 TypeDesc 的**唯一**强引
+用持有者（type 还没被任何对象实例化）。`build_type_registry` 之后立刻
+做 `module.type_registry_vec.clear()` 释放 by-id Vec 的 Arc 副本，
+确保 fixup 时 strong_count = 1。
+
+**Eager-loaded 类型的可见性**：merge 后的 main module（含 z42.core）
+的 TypeDesc 通过 `VmContext::seed_lazy_loader_types(&final_module.type_registry)`
+克隆到 LazyLoader 的 `type_registry`。这些 Arc strong_count = 2（main
++ lazy_loader）—— 它们不需要 mutate，因为 `build_type_registry` 已正
+确解析了它们的 base（base 在同一 merged module 内）。
+
+**`needs_fixup` 计算**：
+```text
+expected_field_count  = base.fields.len() + len(unique own_fields not in base)
+expected_vtable_count = base.vtable.len() + len(distinct simple_names of
+                        own_methods not already in base.vtable_index)
+needs_fixup = td.fields.len() != expected || td.vtable.len() != expected_v
+```
+
+**幂等性**：fixup 运行两次产生相同结果。已正确的 TypeDesc（`needs_fixup`
+返回 false）跳过；BLOCKED（strong_count > 1）也不算 newly_fixed → 收
+敛到 fixed point。
+
+**延后未解析**：base 一直不可解析时 → 不报错，TypeDesc 保持 own-only
+状态。下次新 zpkg 加载触发的 fixup 会重试。VM 退出时若仍有 own-only
+的子类，相关字段访问会写入越界 slot（潜在 UB）—— 当前依赖 build 系统
+保证依赖完整性；未来可在 try_lookup_type 路径加 "all-deps-loaded" 断言。
+
+**前置 spec**：[docs/spec/archive/2026-05-14-fix-cross-pkg-subclass-fields/](../../spec/archive/2026-05-14-fix-cross-pkg-subclass-fields/)
+（首次触发：add-std-process 的 4 个 z42.io exception 类继承 z42.core
+的 Std.Exception）。
+
 ---
 
 ## resolve_namespace / resolve_dependency 的分工

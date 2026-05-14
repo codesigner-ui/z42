@@ -512,35 +512,17 @@ pub fn build_type_registry(module: &mut Module) {
             None    => continue,
         };
 
-        // ── Field slots: base first, then derived (no duplicate names) ────
-        let mut fields: Vec<FieldSlot> = desc.base_class
-            .as_deref()
-            .and_then(|b| registry.get(b))
-            .map(|td| td.fields.clone())
-            .unwrap_or_default();
+        // ── Own fields (this class's own declarations) ────────────────────
+        // fix-cross-pkg-subclass-fields (2026-05-14): preserved separately
+        // so the lazy-loader fixup pass can rebuild merged `fields` once
+        // the cross-zpkg base resolves.
+        let own_fields: Vec<FieldSlot> = desc.fields.iter().map(|f| FieldSlot {
+            name: f.name.clone(),
+            type_tag: f.type_tag.clone(),
+        }).collect();
 
-        for f in &desc.fields {
-            if !fields.iter().any(|s| s.name == f.name) {
-                fields.push(FieldSlot {
-                    name: f.name.clone(),
-                    type_tag: f.type_tag.clone(),
-                });
-            }
-        }
-
-        let field_index: HashMap<String, usize> = fields.iter().enumerate()
-            .map(|(i, f)| (f.name.clone(), i))
-            .collect();
-
-        // ── vtable: start from base, override/append for this class ───────
-        let (mut vtable, mut vtable_index): (Vec<(String, String)>, HashMap<String, usize>) =
-            desc.base_class
-                .as_deref()
-                .and_then(|b| registry.get(b))
-                .map(|td| (td.vtable.clone(), td.vtable_index.clone()))
-                .unwrap_or_default();
-
-        // Scan module functions for methods belonging to this class.
+        // ── Own methods (this class's own declarations) ───────────────────
+        let mut own_methods: Vec<(String, String)> = Vec::new();
         let prefix = format!("{}.", class_name);
         for func in &module.functions {
             if !func.name.starts_with(&prefix) { continue; }
@@ -550,14 +532,14 @@ pub fn build_type_registry(module: &mut Module) {
             if method == simple_name || method.starts_with("__") { continue; }
             // Arity-overloaded names (Method$N) share the base slot with Method
             let base_method = method.split('$').next().unwrap_or(method);
-            if let Some(&slot) = vtable_index.get(base_method) {
-                vtable[slot] = (base_method.to_string(), func.name.clone());
-            } else {
-                let slot = vtable.len();
-                vtable_index.insert(base_method.to_string(), slot);
-                vtable.push((base_method.to_string(), func.name.clone()));
-            }
+            own_methods.push((base_method.to_string(), func.name.clone()));
         }
+
+        // ── Initial merged view: inherit from local-registry base if present.
+        // Cross-zpkg base classes contribute nothing here — that's fixed up
+        // later by `try_fixup_inheritance` once the dep is loaded.
+        let (fields, field_index, vtable, vtable_index) =
+            merge_with_base(&own_fields, &own_methods, desc.base_class.as_deref(), &registry);
 
         let type_id = crate::metadata::tokens::TypeId(next_type_id);
         next_type_id += 1;
@@ -568,6 +550,8 @@ pub fn build_type_registry(module: &mut Module) {
             field_index,
             vtable,
             vtable_index,
+            own_fields,
+            own_methods,
             type_params: desc.type_params.clone(),
             type_args: vec![],
             type_param_constraints: desc.type_param_constraints.clone(),
@@ -583,6 +567,153 @@ pub fn build_type_registry(module: &mut Module) {
 
     module.type_registry = registry;
     module.type_registry_vec = registry_vec;
+}
+
+// ── fix-cross-pkg-subclass-fields (2026-05-14) ─────────────────────────────
+//
+// Two-phase type loading: `build_type_registry` runs per-module and only
+// resolves base-class inheritance against the local module's registry.
+// Cross-zpkg subclasses (subclass in zpkg B, base in zpkg A) get an empty
+// inherited slice. `try_fixup_inheritance` runs at lazy-load merge time
+// from `LazyLoader::load_zpkg_file` to fill them in, using the global
+// type_registry that now contains both A's and B's types.
+
+/// Merge inherited fields/vtable from `base_class_name` (looked up in
+/// `registry`) with `own_fields` / `own_methods`. Returns the four fields
+/// stored on `TypeDesc`: `(fields, field_index, vtable, vtable_index)`.
+///
+/// If `base_class_name` is `None`, `own_*` becomes the entire merged view.
+/// If `base_class_name` is `Some(b)` but `b` isn't in `registry`, the merge
+/// degrades to "own only" (cross-zpkg base unresolved — fixup later).
+fn merge_with_base(
+    own_fields:  &[FieldSlot],
+    own_methods: &[(String, String)],
+    base_class_name: Option<&str>,
+    registry:    &HashMap<String, Arc<TypeDesc>>,
+) -> (Vec<FieldSlot>, HashMap<String, usize>, Vec<(String, String)>, HashMap<String, usize>) {
+    let (mut fields, mut vtable, mut vtable_index) = match base_class_name.and_then(|b| registry.get(b)) {
+        Some(base) => (base.fields.clone(), base.vtable.clone(), base.vtable_index.clone()),
+        None       => (Vec::new(), Vec::new(), HashMap::new()),
+    };
+
+    // Append own fields skipping name collisions (subclass can't shadow).
+    for f in own_fields {
+        if !fields.iter().any(|s| s.name == f.name) {
+            fields.push(f.clone());
+        }
+    }
+    let field_index: HashMap<String, usize> = fields.iter().enumerate()
+        .map(|(i, f)| (f.name.clone(), i))
+        .collect();
+
+    // Apply own methods: override if base method same simple name, else append.
+    for (simple_name, fq_func_name) in own_methods {
+        if let Some(&slot) = vtable_index.get(simple_name) {
+            vtable[slot] = (simple_name.clone(), fq_func_name.clone());
+        } else {
+            let slot = vtable.len();
+            vtable_index.insert(simple_name.clone(), slot);
+            vtable.push((simple_name.clone(), fq_func_name.clone()));
+        }
+    }
+
+    (fields, field_index, vtable, vtable_index)
+}
+
+/// Walk the global type `registry` and, for any TypeDesc whose base class
+/// has become resolvable since its last build, rebuild `fields` /
+/// `field_index` / `vtable` / `vtable_index` from the global registry's
+/// view of the base.
+///
+/// Returns the number of types newly fixed up — caller loops until this
+/// returns 0 (fixed-point), so multi-level deferred chains converge.
+///
+/// **Mutation strategy**: types in the global registry are `Arc<TypeDesc>`,
+/// but at lazy-load time (well before any instance is created from these
+/// types) the registry is the sole strong-Arc holder. We use `Arc::get_mut`
+/// to obtain `&mut TypeDesc` and mutate in place. If `get_mut` ever returns
+/// `None` (an instance was created before all deps loaded — out-of-order
+/// usage that the loader should prevent), we skip the entry and log a
+/// warning rather than panic; the entry's `fields` stays as it was.
+///
+/// **Idempotent**: re-running with the same registry produces the same
+/// merged layout; types already correctly fixed up are detected via the
+/// `needs_fixup` predicate and skipped.
+///
+/// **Why one `&mut HashMap` argument (not separate targets + global)**:
+/// a "snapshot" clone of the registry would `Arc::clone` every TypeDesc,
+/// bumping the strong-count to 2 and breaking `Arc::get_mut` on the
+/// mutation side. Instead, we do all reads against the same `registry`
+/// in an immutable preprocessing pass, materialise the new layouts into
+/// owned `Vec` / `HashMap`s (no shared Arc data), then run a separate
+/// mutation pass that only borrows the registry mutably.
+pub fn try_fixup_inheritance(
+    registry: &mut HashMap<String, Arc<TypeDesc>>,
+) -> usize {
+    // ── Phase 1: immutable scan — compute new layouts without mutating anything.
+    type MergedLayout = (Vec<FieldSlot>, HashMap<String, usize>, Vec<(String, String)>, HashMap<String, usize>);
+    let mut planned: Vec<(String, MergedLayout)> = Vec::new();
+    for (name, td) in registry.iter() {
+        if !needs_fixup(td, registry) {
+            continue;
+        }
+        let layout = merge_with_base(
+            &td.own_fields,
+            &td.own_methods,
+            td.base_name.as_deref(),
+            registry,
+        );
+        planned.push((name.clone(), layout));
+    }
+
+    // ── Phase 2: apply mutations.
+    let mut newly_fixed = 0;
+    for (name, (new_fields, new_field_index, new_vtable, new_vtable_index)) in planned {
+        let arc = match registry.get_mut(&name) {
+            Some(arc) => arc,
+            None      => continue, // unreachable in normal use
+        };
+        match Arc::get_mut(arc) {
+            Some(td) => {
+                td.fields       = new_fields;
+                td.field_index  = new_field_index;
+                td.vtable       = new_vtable;
+                td.vtable_index = new_vtable_index;
+                newly_fixed += 1;
+            }
+            None => {
+                tracing::warn!(
+                    "try_fixup_inheritance: TypeDesc `{}` has additional Arc holders \
+                     before fixup completed; cross-zpkg fields may be silently wrong",
+                    name
+                );
+            }
+        }
+    }
+    newly_fixed
+}
+
+/// True if this TypeDesc's currently-merged view is missing inherited
+/// entries that have since become resolvable in `registry`. We compare
+/// `fields.len()` against `own_fields.len() + base.fields.len()`; a
+/// mismatch means a fixup is needed.
+///
+/// `own_methods` is allowed to contain multiple entries with the same
+/// `simple_name` (arity-overloaded methods like `Foo$1` / `Foo$2` both
+/// map to the same vtable slot `Foo`); count *distinct* simple names
+/// for the vtable size projection, mirroring [`merge_with_base`].
+fn needs_fixup(td: &TypeDesc, registry: &HashMap<String, Arc<TypeDesc>>) -> bool {
+    let Some(base_name) = td.base_name.as_deref() else { return false; };
+    let Some(base) = registry.get(base_name) else { return false; }; // base still unresolvable
+    let expected_field_count = base.fields.len()
+        + td.own_fields.iter().filter(|f| !base.fields.iter().any(|b| b.name == f.name)).count();
+    let mut seen: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    let own_unique_methods = td.own_methods.iter()
+        .filter(|(n, _)| !base.vtable_index.contains_key(n))
+        .filter(|(n, _)| seen.insert(n.as_str()))
+        .count();
+    let expected_vtable_count = base.vtable.len() + own_unique_methods;
+    td.fields.len() != expected_field_count || td.vtable.len() != expected_vtable_count
 }
 
 // ── L3-G3a: constraint verification pass ───────────────────────────────────

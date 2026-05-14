@@ -392,6 +392,10 @@ fn main() -> Result<()> {
         declared_candidates,
         initially_loaded_zpkgs,
     );
+    // fix-cross-pkg-subclass-fields (2026-05-14): seed lazy loader with merged
+    // module's TypeDescs so cross-zpkg base classes are visible to the fixup
+    // pass when a subclass-only zpkg is lazy-loaded later.
+    ctx.seed_lazy_loader_types(&final_module.type_registry);
 
     let default_mode = match cli.mode {
         #[cfg(feature = "jit")]

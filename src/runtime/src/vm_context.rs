@@ -120,6 +120,14 @@ pub struct VmContext {
     /// the right entry. Empty for `Str`-source pins (those borrow from the
     /// source `String` and need no extra storage).
     pub(crate) pinned_owned_buffers: Rc<RefCell<HashMap<u64, Box<[u8]>>>>,
+
+    /// add-std-process (2026-05-13) — live `Std.IO.Process` children
+    /// spawned via `__process_spawn`. Keyed by a monotonic u64 slot id
+    /// that z42 `ProcessHandle` carries. Slot is removed (`take_*`) on
+    /// `wait` / `kill`+reap / explicit `drop`. Single counter never
+    /// reused (u64 is effectively unbounded), so no generation field.
+    pub(crate) processes:         Rc<RefCell<HashMap<u64, crate::corelib::process::ProcessSlot>>>,
+    pub(crate) process_next_id:   std::cell::Cell<u64>,
 }
 
 impl Default for VmContext {
@@ -197,7 +205,46 @@ impl VmContext {
             #[cfg(feature = "native-interop")]
             native_libs:  Rc::new(RefCell::new(Vec::new())),
             pinned_owned_buffers: Rc::new(RefCell::new(HashMap::new())),
+            processes:       Rc::new(RefCell::new(HashMap::new())),
+            process_next_id: std::cell::Cell::new(1),
         }
+    }
+
+    // ── Process slot table (add-std-process, 2026-05-13) ──────────────────
+
+    /// Allocate a new slot id and store `slot` under it. Returns the id
+    /// for the z42 `ProcessHandle` to carry. Counter is monotonic and
+    /// never reused; u64 overflow is not a practical concern (10^19
+    /// spawns).
+    pub fn alloc_process_slot(&self, slot: crate::corelib::process::ProcessSlot) -> u64 {
+        let id = self.process_next_id.get();
+        self.process_next_id.set(id + 1);
+        self.processes.borrow_mut().insert(id, slot);
+        id
+    }
+
+    /// Remove and return the slot. Used by `wait` / `kill`+reap / `drop`
+    /// which take ownership of `child` etc.
+    pub fn take_process_slot(&self, slot_id: u64) -> Option<crate::corelib::process::ProcessSlot> {
+        self.processes.borrow_mut().remove(&slot_id)
+    }
+
+    /// Peek at the slot in-place. Returns `None` if the slot id is
+    /// unknown. Callback runs while the outer `RefCell` is borrowed —
+    /// callers must not invoke other slot methods inside.
+    pub fn with_process_slot<T>(
+        &self,
+        slot_id: u64,
+        f: impl FnOnce(&mut crate::corelib::process::ProcessSlot) -> T,
+    ) -> Option<T> {
+        let mut map = self.processes.borrow_mut();
+        map.get_mut(&slot_id).map(f)
+    }
+
+    /// Number of currently allocated process slots. Used by tests to
+    /// verify cleanup paths drop entries.
+    pub fn process_slot_count(&self) -> usize {
+        self.processes.borrow().len()
     }
 
     // ── Native interop (Tier 1, spec C2) ──────────────────────────────────
@@ -528,6 +575,19 @@ impl VmContext {
     /// Clear the lazy loader (used in tests).
     pub fn uninstall_lazy_loader(&self) {
         *self.lazy_loader.borrow_mut() = None;
+    }
+
+    /// fix-cross-pkg-subclass-fields (2026-05-14): seed the lazy loader's
+    /// `type_registry` with TypeDescs from eagerly-loaded modules (e.g. the
+    /// merged main module). Used by both the z42vm CLI and the in-process
+    /// test runner immediately after `install_lazy_loader_with_deps` so the
+    /// fixup pass can find eagerly-loaded base classes when lazy-loading a
+    /// subclass.
+    pub fn seed_lazy_loader_types(&self, types: &HashMap<String, Arc<TypeDesc>>) {
+        let mut state = self.lazy_loader.borrow_mut();
+        if let Some(loader) = state.as_mut() {
+            loader.seed_types_for_lookup(types);
+        }
     }
 
     /// Look up a function by FQ name; triggers lazy load if needed.

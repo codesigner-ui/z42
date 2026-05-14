@@ -92,6 +92,28 @@ pub struct LazyLoader {
 }
 
 impl LazyLoader {
+    /// Seed the lazy loader's type_registry with TypeDescs from eagerly-loaded
+    /// modules (e.g. the merged main module containing z42.core + user code).
+    /// The cross-zpkg fixup pass (`try_fixup_inheritance`) consults this
+    /// registry when a later-loaded subclass needs to find its base class
+    /// living in an eagerly-loaded module. (fix-cross-pkg-subclass-fields,
+    /// 2026-05-14)
+    ///
+    /// Arcs are shared with the source module — that bumps strong_count to 2
+    /// for these entries, so `Arc::get_mut` will not succeed on them. That's
+    /// the desired behavior: eagerly-loaded types are already fully merged
+    /// (`build_type_registry` ran on the combined module and resolved their
+    /// inheritance), so `needs_fixup` returns false and no mutation is
+    /// attempted. Only later-arriving lazy-loaded TypeDescs (which have
+    /// strong_count = 1 in this registry) are mutable targets.
+    pub fn seed_types_for_lookup(&mut self, types: &HashMap<String, Arc<TypeDesc>>) {
+        for (name, td) in types {
+            if !self.type_registry.contains_key(name) {
+                self.type_registry.insert(name.clone(), Arc::clone(td));
+            }
+        }
+    }
+
     pub fn new(
         libs_dir: Option<PathBuf>,
         main_pool_len: usize,
@@ -229,7 +251,7 @@ impl LazyLoader {
         self.loaded_zpkgs.insert(file_name.to_string());
 
         let path_str = file_path.to_string_lossy().into_owned();
-        let artifact = load_artifact(&path_str)?;
+        let mut artifact = load_artifact(&path_str)?;
 
         let offset = self.main_pool_len + self.string_pool.len();
         self.string_pool.extend(artifact.module.string_pool.iter().cloned());
@@ -246,7 +268,13 @@ impl LazyLoader {
             }
             self.function_table.insert(name, Arc::new(fn_));
         }
-        for (name, desc) in artifact.module.type_registry {
+        // fix-cross-pkg-subclass-fields (2026-05-14): drop the by-id Vec of
+        // TypeDescs BEFORE moving them into `self.type_registry` so each Arc
+        // has strong_count = 1 in the lazy_loader's registry. Otherwise the
+        // fixup pass below can't use `Arc::get_mut` to mutate inherited
+        // field layouts in place.
+        artifact.module.type_registry_vec.clear();
+        for (name, desc) in std::mem::take(&mut artifact.module.type_registry) {
             if self.type_registry.contains_key(&name) {
                 tracing::warn!(
                     "duplicate type `{name}` from zpkg `{file_name}`; keeping first-loaded"
@@ -254,6 +282,16 @@ impl LazyLoader {
                 continue;
             }
             self.type_registry.insert(name, desc);
+        }
+
+        // fix-cross-pkg-subclass-fields (2026-05-14): subclasses in this
+        // zpkg whose base lives in an already-loaded dep zpkg need a fixup
+        // pass to inherit the base's field/vtable layout. The fixed-point
+        // loop also retries previously-deferred subclasses (a freshly-loaded
+        // dep may unblock subclasses from earlier zpkgs).
+        loop {
+            let n = crate::metadata::loader::try_fixup_inheritance(&mut self.type_registry);
+            if n == 0 { break; }
         }
 
         // Transitively expand `ZpkgDep` list into the declared set.

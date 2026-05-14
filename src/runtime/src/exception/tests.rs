@@ -102,6 +102,8 @@ mod make_stdlib_exception_tests {
             name:                   name.into(),
             id:                     TypeId::UNRESOLVED,
             base_name:              base.map(str::to_owned),
+            own_fields:             fields.clone(),
+            own_methods:            vec![],
             fields,
             field_index,
             vtable:                 vec![],

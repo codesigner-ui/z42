@@ -76,6 +76,8 @@ impl Module {
             field_index: td.field_index.clone(),
             vtable: td.vtable.clone(),
             vtable_index: td.vtable_index.clone(),
+            own_fields: td.own_fields.clone(),
+            own_methods: td.own_methods.clone(),
             type_params: td.type_params.clone(),
             type_args: td.type_args.clone(),
             type_param_constraints: td.type_param_constraints.clone(),

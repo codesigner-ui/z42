@@ -35,6 +35,7 @@ pub mod array;
 pub mod char;
 pub mod gc;
 pub mod bench;
+pub mod process;
 
 use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
@@ -180,6 +181,17 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__file_copy",  fs::builtin_file_copy),
     ("__file_move",  fs::builtin_file_move),
     ("__env_set",    fs::builtin_env_set),
+
+    // ── add-std-process (2026-05-13) — appended to preserve existing BuiltinIds ──
+    ("__process_run",                 process::builtin_process_run),
+    ("__process_spawn",               process::builtin_process_spawn),
+    ("__process_handle_wait",         process::builtin_process_handle_wait),
+    ("__process_handle_try_wait",     process::builtin_process_handle_try_wait),
+    ("__process_handle_kill",         process::builtin_process_handle_kill),
+    ("__process_handle_write_stdin",  process::builtin_process_handle_write_stdin),
+    ("__process_handle_close_stdin",  process::builtin_process_handle_close_stdin),
+    ("__process_handle_pid",          process::builtin_process_handle_pid),
+    ("__process_handle_drop",         process::builtin_process_handle_drop),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

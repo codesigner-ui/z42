@@ -15,6 +15,8 @@ pub(super) fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
+        own_fields: Vec::new(),
+        own_methods: Vec::new(),
         type_params: vec![],
         type_args: vec![],
         type_param_constraints: vec![],

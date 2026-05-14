@@ -314,6 +314,8 @@ fn register_lazy_type_appends_with_next_id() {
         field_index: std::collections::HashMap::new(),
         vtable: vec![],
         vtable_index: std::collections::HashMap::new(),
+        own_fields: vec![],
+        own_methods: vec![],
         type_params: vec![],
         type_args: vec![],
         type_param_constraints: vec![],
@@ -334,6 +336,7 @@ fn register_lazy_type_appends_with_next_id() {
         id: crate::metadata::tokens::TypeId(99),
         base_name: None, fields: vec![], field_index: std::collections::HashMap::new(),
         vtable: vec![], vtable_index: std::collections::HashMap::new(),
+        own_fields: vec![], own_methods: vec![],
         type_params: vec![], type_args: vec![], type_param_constraints: vec![],
     });
     let dup_id = module.register_lazy_type(dup);
@@ -355,4 +358,163 @@ fn test_resolve_dependency_by_file_name() {
     assert!(hit.is_some());
     assert_eq!(hit.unwrap().file_name().and_then(|n| n.to_str()), Some("z42.fake.zpkg"));
     assert!(miss.is_none());
+}
+
+// ── fix-cross-pkg-subclass-fields (2026-05-14) ────────────────────────────────
+
+/// Build a minimal Module containing a single class declaration. Used by
+/// fixup tests to simulate per-zpkg load + merge-into-global-registry.
+fn module_with_one_class(
+    name: &str,
+    base: Option<&str>,
+    fields: Vec<(&str, &str)>,
+) -> crate::metadata::bytecode::Module {
+    use crate::metadata::bytecode::{ClassDesc, FieldDesc, Module};
+    Module {
+        name: name.to_owned(),
+        string_pool: vec![],
+        classes: vec![ClassDesc {
+            name: name.to_owned(),
+            base_class: base.map(str::to_owned),
+            fields: fields.into_iter().map(|(n, t)| FieldDesc {
+                name: n.to_owned(), type_tag: t.to_owned(),
+            }).collect(),
+            type_params: vec![],
+            type_param_constraints: vec![],
+        }],
+        functions: vec![],
+        type_registry: std::collections::HashMap::new(),
+        type_registry_vec: Vec::new(),
+        func_index: std::collections::HashMap::new(),
+        func_ref_cache_slots: 0,
+    }
+}
+
+/// Cross-zpkg subclass: base in module A, subclass in module B. After
+/// `try_fixup_inheritance` runs against the merged registry, the subclass
+/// must inherit base's fields at low slot indices.
+#[test]
+fn fixup_inherits_base_fields_from_separate_module() {
+    let mut mod_a = module_with_one_class("Base", None,
+        vec![("name", "str"), ("age", "i64")]);
+    let mut mod_b = module_with_one_class("Sub", Some("Base"),
+        vec![("flag", "bool")]);
+
+    crate::metadata::loader::build_type_registry(&mut mod_a);
+    crate::metadata::loader::build_type_registry(&mut mod_b);
+
+    // Before merge, B's Sub has only its own field — base is unresolvable
+    // within mod_b's local registry.
+    let sub_before = mod_b.type_registry.get("Sub").expect("Sub registered");
+    assert_eq!(sub_before.own_fields.len(), 1, "Sub has 1 own field");
+    assert_eq!(sub_before.fields.len(), 1, "Sub.fields lacks inherited slots pre-fixup");
+
+    // Simulate lazy_loader merge: copy both modules' TypeDescs into a
+    // global registry and run fixup.
+    let mut global: std::collections::HashMap<String, std::sync::Arc<TypeDesc>> =
+        std::collections::HashMap::new();
+    for (n, td) in std::mem::take(&mut mod_a.type_registry) { global.insert(n, td); }
+    for (n, td) in std::mem::take(&mut mod_b.type_registry) { global.insert(n, td); }
+    mod_a.type_registry_vec.clear();
+    mod_b.type_registry_vec.clear();
+
+    let fixed = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert_eq!(fixed, 1, "Sub should be the single newly-fixed type");
+
+    let sub_after = global.get("Sub").expect("Sub still present");
+    assert_eq!(sub_after.fields.len(), 3, "fields = base (2) + own (1)");
+    assert_eq!(sub_after.field_index.get("name"), Some(&0), "base.name at slot 0");
+    assert_eq!(sub_after.field_index.get("age"),  Some(&1), "base.age at slot 1");
+    assert_eq!(sub_after.field_index.get("flag"), Some(&2), "own.flag at slot 2");
+}
+
+/// Three-level cross-zpkg chain: A.Base → B.Mid → C.Leaf. Leaf must
+/// inherit fields from both Mid and Base after fixup converges.
+#[test]
+fn fixup_handles_three_level_chain() {
+    let mut mod_a = module_with_one_class("Base", None, vec![("a", "str")]);
+    let mut mod_b = module_with_one_class("Mid",  Some("Base"), vec![("b", "str")]);
+    let mut mod_c = module_with_one_class("Leaf", Some("Mid"),  vec![("c", "str")]);
+
+    for m in [&mut mod_a, &mut mod_b, &mut mod_c] {
+        crate::metadata::loader::build_type_registry(m);
+    }
+
+    let mut global: std::collections::HashMap<String, std::sync::Arc<TypeDesc>> =
+        std::collections::HashMap::new();
+    for m in [&mut mod_a, &mut mod_b, &mut mod_c] {
+        m.type_registry_vec.clear();  // drop second Arc refs so fixup can mutate
+    }
+    for (n, td) in std::mem::take(&mut mod_a.type_registry) { global.insert(n, td); }
+    for (n, td) in std::mem::take(&mut mod_b.type_registry) { global.insert(n, td); }
+    for (n, td) in std::mem::take(&mut mod_c.type_registry) { global.insert(n, td); }
+
+    // Fixed-point loop: Mid may resolve in pass 1 (base = Base, already
+    // present), then Leaf in pass 2 (base = Mid, freshly fixed up).
+    let mut total = 0;
+    loop {
+        let n = crate::metadata::loader::try_fixup_inheritance(&mut global);
+        if n == 0 { break; }
+        total += n;
+    }
+    assert!(total >= 2, "Both Mid and Leaf should fix up (got {total})");
+
+    let leaf = global.get("Leaf").expect("Leaf present");
+    assert_eq!(leaf.fields.len(), 3, "Leaf.fields = a + b + c");
+    assert_eq!(leaf.field_index.get("a"), Some(&0));
+    assert_eq!(leaf.field_index.get("b"), Some(&1));
+    assert_eq!(leaf.field_index.get("c"), Some(&2));
+}
+
+/// Deferred fixup: load B (subclass) before A (base). On B-only fixup,
+/// nothing changes. After A loads and fixup re-runs, Sub gets inherited
+/// fields.
+#[test]
+fn fixup_deferred_until_base_loads() {
+    let mut mod_b = module_with_one_class("Sub", Some("Base"), vec![("x", "str")]);
+    crate::metadata::loader::build_type_registry(&mut mod_b);
+
+    let mut global: std::collections::HashMap<String, std::sync::Arc<TypeDesc>> =
+        std::collections::HashMap::new();
+    mod_b.type_registry_vec.clear();
+    for (n, td) in std::mem::take(&mut mod_b.type_registry) { global.insert(n, td); }
+
+    // First fixup pass: base "Base" unresolvable — Sub stays own-only.
+    let n1 = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert_eq!(n1, 0, "no fixup possible without Base");
+    assert_eq!(global.get("Sub").unwrap().fields.len(), 1, "Sub still has only its own field");
+
+    // Now A loads, bringing Base into the global registry.
+    let mut mod_a = module_with_one_class("Base", None, vec![("b", "str")]);
+    crate::metadata::loader::build_type_registry(&mut mod_a);
+    mod_a.type_registry_vec.clear();
+    for (n, td) in std::mem::take(&mut mod_a.type_registry) { global.insert(n, td); }
+
+    // Second fixup pass: Sub now resolvable, gets inherited slot.
+    let n2 = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert_eq!(n2, 1, "Sub should fix up now that Base is present");
+    let sub = global.get("Sub").unwrap();
+    assert_eq!(sub.fields.len(), 2);
+    assert_eq!(sub.field_index.get("b"), Some(&0), "base.b at slot 0");
+    assert_eq!(sub.field_index.get("x"), Some(&1), "own.x  at slot 1");
+}
+
+/// Fixup is idempotent: a second pass with no new types changes nothing.
+#[test]
+fn fixup_idempotent_when_no_new_resolutions() {
+    let mut mod_a = module_with_one_class("Base", None, vec![("x", "str")]);
+    let mut mod_b = module_with_one_class("Sub", Some("Base"), vec![]);
+    for m in [&mut mod_a, &mut mod_b] {
+        crate::metadata::loader::build_type_registry(m);
+        m.type_registry_vec.clear();
+    }
+    let mut global: std::collections::HashMap<String, std::sync::Arc<TypeDesc>> =
+        std::collections::HashMap::new();
+    for (n, td) in std::mem::take(&mut mod_a.type_registry) { global.insert(n, td); }
+    for (n, td) in std::mem::take(&mut mod_b.type_registry) { global.insert(n, td); }
+
+    let pass1 = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert!(pass1 >= 1);
+    let pass2 = crate::metadata::loader::try_fixup_inheritance(&mut global);
+    assert_eq!(pass2, 0, "second pass is no-op");
 }

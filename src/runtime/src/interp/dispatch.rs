@@ -122,9 +122,16 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
         }
     }
     let field_index = fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
+    // Fallback type — there's no separate "own vs inherited" split because
+    // `chain` walked the inheritance chain by-name within this module. Mark
+    // all fields as own (cross-zpkg fixup won't re-process this entry since
+    // base resolution above is already complete).
+    let own_fields = fields.clone();
     TypeDesc {
         name: class_name.to_string(),
         base_name,
+        own_fields,
+        own_methods: vec![],
         fields,
         field_index,
         vtable: Vec::new(),

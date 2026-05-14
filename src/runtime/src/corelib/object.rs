@@ -25,13 +25,16 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let mut field_index = HashMap::new();
     field_index.insert("__name".to_string(), 0usize);
     field_index.insert("__fullName".to_string(), 1usize);
+    let fields = vec![
+        crate::metadata::FieldSlot { name: "__name".to_string(), type_tag: "str".to_string() },
+        crate::metadata::FieldSlot { name: "__fullName".to_string(), type_tag: "str".to_string() },
+    ];
     let type_desc = Arc::new(TypeDesc {
         name: crate::metadata::well_known_names::STD_TYPE.to_string(),
         base_name: None,
-        fields: vec![
-            crate::metadata::FieldSlot { name: "__name".to_string(), type_tag: "str".to_string() },
-            crate::metadata::FieldSlot { name: "__fullName".to_string(), type_tag: "str".to_string() },
-        ],
+        own_fields: fields.clone(),
+        own_methods: vec![],
+        fields,
         field_index,
         vtable: Vec::new(),
         vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
@@ -175,6 +178,8 @@ fn weak_handle_type_desc() -> Arc<TypeDesc> {
         field_index: HashMap::new(),
         vtable: Vec::new(),
         vtable_index: HashMap::new(),
+        own_fields: Vec::new(),
+        own_methods: Vec::new(),
         type_params: vec![],
         type_args: vec![],
         type_param_constraints: vec![],

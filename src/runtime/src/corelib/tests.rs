@@ -19,7 +19,10 @@ fn obj(ctx: &VmContext, class_name: &str) -> Value {
         fields: Vec::new(),
         field_index: HashMap::new(),
         vtable: Vec::new(),
-        vtable_index: HashMap::new(), type_params: vec![], type_args: vec![],
+        vtable_index: HashMap::new(),
+        own_fields: Vec::new(),
+        own_methods: Vec::new(),
+        type_params: vec![], type_args: vec![],
         type_param_constraints: vec![],
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     });

@@ -53,14 +53,33 @@ pub struct TypeDesc {
     /// Fully-qualified base class name, if any.
     pub base_name: Option<String>,
     /// Field slots in order (base fields first, then derived).
+    ///
+    /// **Cross-zpkg subclass note** (fix-cross-pkg-subclass-fields, 2026-05-14):
+    /// `build_type_registry` populates this with base fields from the local
+    /// module's registry only — cross-zpkg base classes contribute nothing
+    /// until [`crate::metadata::loader::try_fixup_inheritance`] runs at
+    /// lazy-load time, which rebuilds this vector to include inherited slots.
     pub fields: Vec<FieldSlot>,
-    /// `field_name → slot index` — O(1) field lookup.
+    /// `field_name → slot index` — O(1) field lookup. Same cross-zpkg
+    /// fixup semantics as `fields`.
     pub field_index: HashMap<String, usize>,
     /// Virtual method table: slot → (simple_method_name, qualified_func_name).
     /// Derived class overrides replace base entries at the same slot index.
+    /// Same cross-zpkg fixup semantics as `fields`.
     pub vtable: Vec<(String, String)>,
     /// `method_name → vtable slot index` — O(1) virtual dispatch.
     pub vtable_index: HashMap<String, usize>,
+    /// fix-cross-pkg-subclass-fields (2026-05-14): the fields **this class
+    /// itself declares** (excluding inherited). Preserved so the cross-zpkg
+    /// fixup pass can rebuild `fields` = base.fields ++ own_fields once the
+    /// base class becomes resolvable via the global type registry.
+    pub own_fields: Vec<FieldSlot>,
+    /// fix-cross-pkg-subclass-fields (2026-05-14): the (simple_method_name,
+    /// qualified_func_name) pairs **this class itself defines**, in the
+    /// order they were discovered by `build_type_registry`. Used by fixup
+    /// to rebuild `vtable` (preserving override-vs-append semantics) once
+    /// the base class becomes resolvable.
+    pub own_methods: Vec<(String, String)>,
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic classes.
     pub type_params: Vec<String>,
     /// Concrete type arguments for an instantiated generic class: ["int"], ["string", "int"].
