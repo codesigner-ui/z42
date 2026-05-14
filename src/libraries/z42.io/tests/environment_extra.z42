@@ -1,0 +1,54 @@
+// add-platform-os-stdlib: Environment Unset + EnumerateAll tests.
+namespace Z42IoEnvironmentExtraTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_unset_after_set_returns_null() {
+    Environment.SetEnvironmentVariable("Z42_TEST_UNSET_KEY", "value-x");
+    Assert.Equal("value-x", Environment.GetEnvironmentVariable("Z42_TEST_UNSET_KEY"));
+
+    Environment.UnsetEnvironmentVariable("Z42_TEST_UNSET_KEY");
+    object after = Environment.GetEnvironmentVariable("Z42_TEST_UNSET_KEY");
+    Assert.Null(after);
+}
+
+[Test]
+void test_unset_nonexistent_is_noop() {
+    // Should not throw.
+    Environment.UnsetEnvironmentVariable("Z42_DEFINITELY_NOT_SET_XYZZY_KEY");
+    // Calling twice is also safe.
+    Environment.UnsetEnvironmentVariable("Z42_DEFINITELY_NOT_SET_XYZZY_KEY");
+    Assert.True(true);
+}
+
+[Test]
+void test_get_all_environment_returns_array() {
+    Environment.SetEnvironmentVariable("Z42_TEST_ENUM_KEY", "enum-value");
+    string[] vars = Environment.GetEnvironmentVariables();
+    Assert.True(vars.Length > 0);
+
+    // Find our key in the flat array.
+    bool found = false;
+    int i = 0;
+    while (i < vars.Length) {
+        if (vars[i] == "Z42_TEST_ENUM_KEY=enum-value") {
+            found = true;
+        }
+        i = i + 1;
+    }
+    Assert.True(found);
+
+    Environment.UnsetEnvironmentVariable("Z42_TEST_ENUM_KEY");
+}
+
+[Test]
+void test_every_var_has_equals_separator() {
+    string[] vars = Environment.GetEnvironmentVariables();
+    int i = 0;
+    while (i < vars.Length) {
+        Assert.Contains("=", vars[i]);
+        i = i + 1;
+    }
+}

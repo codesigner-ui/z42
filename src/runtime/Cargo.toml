@@ -91,6 +91,12 @@ wasm           = ["interp-only"]
 ios            = ["interp-only", "aot", "native-interop"]
 android        = ["interp-only", "aot", "native-interop"]
 
+# Platform / system info (Std.Platform / Std.OperatingSystem stdlib, 2026-05-14).
+# Only needed on unix-like for gethostname / uname; windows uses winapi via direct
+# FFI binding (no extra crate); wasm falls through to graceful "" returns.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }
 z42-rs     = { path = "crates/z42-rs" }

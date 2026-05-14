@@ -1,0 +1,35 @@
+namespace Std;
+
+// 2026-05-14 add-platform-os-stdlib: runtime process + machine info.
+// Mirrors .NET System.Environment members (ProcessId / ProcessPath /
+// CurrentDirectory / MachineName / ProcessorCount / OSVersion) and Rust
+// std::process::id() + std::env::current_exe/current_dir/set_current_dir
+// + std::thread::available_parallelism + libc::gethostname / uname.
+//
+// Cross-platform notes:
+//   - Hostname returns "" on Windows (until winapi binding lands) and on wasm.
+//   - OsVersion returns "" when libc::uname fails; on wasm returns "wasm".
+//   - ExecutablePath / CurrentDirectory return "" on hard failures rather
+//     than throwing — scripts can branch on `.Length == 0` if they care.
+public static class OperatingSystem {
+    [Native("__system_pid")]
+    public static extern int CurrentPid();
+
+    [Native("__system_exe_path")]
+    public static extern string ExecutablePath();
+
+    [Native("__system_cwd")]
+    public static extern string CurrentDirectory();
+
+    [Native("__system_set_cwd")]
+    public static extern void SetCurrentDirectory(string path);
+
+    [Native("__system_hostname")]
+    public static extern string Hostname();
+
+    [Native("__system_cpu_count")]
+    public static extern int CpuCount();
+
+    [Native("__system_os_version")]
+    public static extern string OsVersion();
+}

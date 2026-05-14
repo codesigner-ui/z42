@@ -1,0 +1,71 @@
+// add-platform-os-stdlib: Std.Platform tests.
+namespace Z42IoPlatformTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_os_string_known() {
+    string os = Platform.OS();
+    Assert.True(os.Length > 0);
+    // Sanity: one of the known values (loose check — any non-empty is OK).
+    Assert.True(
+        os == "linux" || os == "macos" || os == "windows"
+        || os == "android" || os == "ios" || os == "wasm"
+        || os == "freebsd" || os.Length > 0);
+}
+
+[Test]
+void test_arch_string_known() {
+    string a = Platform.Arch();
+    Assert.True(a.Length > 0);
+}
+
+[Test]
+void test_family_string_known() {
+    string f = Platform.Family();
+    Assert.True(f == "unix" || f == "windows" || f == "wasm" || f.Length > 0);
+}
+
+[Test]
+void test_os_kind_value_matches_predicate() {
+    int k = Platform.OSKindValue();
+    // At least one of the predicates should be true OR we're on an unknown OS
+    // (kind == 0). Either way one self-consistency check:
+    if (k == OSKind.Linux)   { Assert.True(Platform.IsLinux()); }
+    if (k == OSKind.MacOS)   { Assert.True(Platform.IsMacOS()); }
+    if (k == OSKind.Windows) { Assert.True(Platform.IsWindows()); }
+    if (k == OSKind.Wasm)    { Assert.True(Platform.IsWasm()); }
+
+    // Predicates self-consistent: exactly one of the 7 known IsXxx returns
+    // true (or none, if kind == Unknown).
+    int trueCount = 0;
+    if (Platform.IsLinux())   { trueCount = trueCount + 1; }
+    if (Platform.IsMacOS())   { trueCount = trueCount + 1; }
+    if (Platform.IsWindows()) { trueCount = trueCount + 1; }
+    if (Platform.IsAndroid()) { trueCount = trueCount + 1; }
+    if (Platform.IsIOS())     { trueCount = trueCount + 1; }
+    if (Platform.IsWasm())    { trueCount = trueCount + 1; }
+    if (Platform.IsFreeBSD()) { trueCount = trueCount + 1; }
+    Assert.True(trueCount <= 1);
+}
+
+[Test]
+void test_arch_kind_value_known() {
+    int k = Platform.ArchKindValue();
+    Assert.True(k >= 0);
+    Assert.True(k <= ArchKind.X86);
+}
+
+[Test]
+void test_is_unix_consistent_with_os() {
+    // If we're on linux/macos, IsUnix must be true.
+    if (Platform.IsLinux() || Platform.IsMacOS()) {
+        Assert.True(Platform.IsUnix());
+    }
+    // If we're on windows, IsUnix must be false.
+    if (Platform.IsWindows()) {
+        Assert.False(Platform.IsUnix());
+    }
+}

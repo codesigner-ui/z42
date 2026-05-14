@@ -1,0 +1,61 @@
+// add-platform-os-stdlib: Std.OperatingSystem tests.
+namespace Z42IoOperatingSystemTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_pid_positive() {
+    int pid = OperatingSystem.CurrentPid();
+    Assert.True(pid > 0);
+}
+
+[Test]
+void test_cpu_count_at_least_one() {
+    int n = OperatingSystem.CpuCount();
+    Assert.True(n >= 1);
+}
+
+[Test]
+void test_executable_path_returns_something() {
+    string p = OperatingSystem.ExecutablePath();
+    // In CI / dev environments this should always be non-empty.
+    Assert.True(p.Length > 0);
+}
+
+[Test]
+void test_current_directory_non_empty() {
+    string cwd = OperatingSystem.CurrentDirectory();
+    Assert.True(cwd.Length > 0);
+}
+
+[Test]
+void test_set_current_directory_changes_cwd() {
+    string orig = OperatingSystem.CurrentDirectory();
+    OperatingSystem.SetCurrentDirectory("/tmp");
+    string after = OperatingSystem.CurrentDirectory();
+    // macOS symlinks /tmp → /private/tmp; either form is valid.
+    Assert.True(after == "/tmp" || after == "/private/tmp");
+    // Restore so subsequent tests aren't affected.
+    OperatingSystem.SetCurrentDirectory(orig);
+}
+
+[Test]
+void test_hostname_non_empty_on_unix() {
+    // Skip on platforms where hostname is unimplemented (returns "").
+    if (Platform.IsUnix()) {
+        string h = OperatingSystem.Hostname();
+        Assert.True(h.Length > 0);
+    }
+}
+
+[Test]
+void test_os_version_returns_string() {
+    string v = OperatingSystem.OsVersion();
+    // Allowed to be empty on platforms we can't query, but on unix uname
+    // must populate something.
+    if (Platform.IsUnix()) {
+        Assert.True(v.Length > 0);
+    }
+}

@@ -1,0 +1,82 @@
+namespace Std;
+
+// 2026-05-14 add-platform-os-stdlib: cross-platform OS / architecture
+// identity. Two parallel forms:
+//   - String constants (Rust-style, matches std::env::consts values)
+//   - Kind int + predicates (.NET-style, type-safe)
+//
+// Both are backed by the same VM builtin; pick whichever fits your code.
+//
+// 用法：
+//   if (Platform.IsMacOS()) { ... }                    // .NET-style
+//   if (Platform.OS() == "linux") { ... }              // Rust-style
+//   int k = Platform.OSKindValue();                    // for switch-like
+//   if (k == OSKind.Windows) { ... }
+public static class Platform {
+    // String form (matches Rust std::env::consts::OS / ARCH / FAMILY values).
+    [Native("__platform_os")]
+    public static extern string OS();
+    [Native("__platform_arch")]
+    public static extern string Arch();
+    [Native("__platform_family")]
+    public static extern string Family();
+
+    // Enum form. Kind values are listed in OSKind / ArchKind static classes
+    // below and must stay in lockstep with src/runtime/src/corelib/platform.rs.
+    [Native("__platform_os_kind")]
+    public static extern int OSKindValue();
+    [Native("__platform_arch_kind")]
+    public static extern int ArchKindValue();
+
+    // Convenience predicates (.NET OperatingSystem.IsXxx style).
+    // Each routes through OSKindValue() once — callers can cache locally.
+    public static bool IsLinux() {
+        return OSKindValue() == OSKind.Linux;
+    }
+    public static bool IsMacOS() {
+        return OSKindValue() == OSKind.MacOS;
+    }
+    public static bool IsWindows() {
+        return OSKindValue() == OSKind.Windows;
+    }
+    public static bool IsAndroid() {
+        return OSKindValue() == OSKind.Android;
+    }
+    public static bool IsIOS() {
+        return OSKindValue() == OSKind.IOS;
+    }
+    public static bool IsWasm() {
+        return OSKindValue() == OSKind.Wasm;
+    }
+    public static bool IsFreeBSD() {
+        return OSKindValue() == OSKind.FreeBSD;
+    }
+    public static bool IsUnix() {
+        int k = OSKindValue();
+        return k == OSKind.Linux
+            || k == OSKind.MacOS
+            || k == OSKind.IOS
+            || k == OSKind.Android
+            || k == OSKind.FreeBSD;
+    }
+}
+
+// OSKind / ArchKind integer constants. Values must match the int returned by
+// __platform_os_kind / __platform_arch_kind in
+// src/runtime/src/corelib/platform.rs.
+public static class OSKind {
+    public static int Unknown = 0;
+    public static int Linux   = 1;
+    public static int MacOS   = 2;
+    public static int Windows = 3;
+    public static int Android = 4;
+    public static int IOS     = 5;
+    public static int Wasm    = 6;
+    public static int FreeBSD = 7;
+}
+
+// .NET-style architecture names (System.Runtime.InteropServices.Architecture).
+// Underscore-digit identifiers like `X86_64` confuse the z42 lexer when used
+// inside a class body, so we mirror .NET's `X64` / `Arm64` / `Wasm` / `X86`
+// names — they are also shorter and more recognisable than the Rust-style
+// triple components.

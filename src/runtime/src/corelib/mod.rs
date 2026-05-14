@@ -36,6 +36,8 @@ pub mod char;
 pub mod gc;
 pub mod bench;
 pub mod process;
+pub mod platform;
+pub mod system;
 
 use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
@@ -192,6 +194,22 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__process_handle_close_stdin",  process::builtin_process_handle_close_stdin),
     ("__process_handle_pid",          process::builtin_process_handle_pid),
     ("__process_handle_drop",         process::builtin_process_handle_drop),
+
+    // ── add-platform-os-stdlib (2026-05-14) — appended to preserve existing BuiltinIds ──
+    ("__platform_os",         platform::builtin_platform_os),
+    ("__platform_arch",       platform::builtin_platform_arch),
+    ("__platform_family",     platform::builtin_platform_family),
+    ("__platform_os_kind",    platform::builtin_platform_os_kind),
+    ("__platform_arch_kind",  platform::builtin_platform_arch_kind),
+    ("__system_pid",          system::builtin_system_pid),
+    ("__system_exe_path",     system::builtin_system_exe_path),
+    ("__system_cwd",          system::builtin_system_cwd),
+    ("__system_set_cwd",      system::builtin_system_set_cwd),
+    ("__system_hostname",     system::builtin_system_hostname),
+    ("__system_cpu_count",    system::builtin_system_cpu_count),
+    ("__system_os_version",   system::builtin_system_os_version),
+    ("__env_unset",           fs::builtin_env_unset),
+    ("__env_vars",            fs::builtin_env_vars),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

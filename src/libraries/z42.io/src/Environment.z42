@@ -15,4 +15,15 @@ public static class Environment {
 
     [Native("__time_now_ms")]
     public static extern long GetCurrentTimeMs();
+
+    // 2026-05-14 add-platform-os-stdlib: removal + enumeration of env vars.
+    [Native("__env_unset")]
+    public static extern void UnsetEnvironmentVariable(string name);
+
+    // Returns a flat string[] of "KEY=VALUE" entries. Callers split on the
+    // first '=' to recover the pair; z42 currently has no stable
+    // Map<string,string> marshal path so the flat form is what stdlib
+    // exposes (similar shape to /proc/self/environ).
+    [Native("__env_vars")]
+    public static extern string[] GetEnvironmentVariables();
 }

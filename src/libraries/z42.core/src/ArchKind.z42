@@ -1,0 +1,12 @@
+namespace Std;
+
+// .NET-style architecture names (System.Runtime.InteropServices.Architecture).
+// Values must match int returned by __platform_arch_kind in
+// src/runtime/src/corelib/platform.rs.
+public static class ArchKind {
+    public static int Unknown = 0;
+    public static int X64     = 1;   // x86_64 / amd64
+    public static int Arm64   = 2;   // aarch64
+    public static int Wasm    = 3;   // wasm32
+    public static int X86     = 4;   // i686 / 32-bit Intel
+}

@@ -834,6 +834,26 @@ catch (CompilationException)
 - 未带显式初始化器的字段由 VM 端 `metadata::default_value_for(type_tag)` 在 `ObjNew`
   分配时填默认值，详见 `docs/design/runtime/vm-architecture.md` §ObjNew dispatch。
 
+### 已知限制：同文件多个 static class with static-field init（2026-05-14）
+
+**症状**：单个 .z42 文件内连续声明两个或以上含 `static int Foo = N;` 形态字段的
+`public static class`，第二个及后续 class 的 static field 在运行时无法访问 —
+读取触发 silent "VM error"（无具体 message，IR 路径正常但字段槽位为 `null`）。
+
+**触发条件**：
+- 同一文件包含两个 `public static class A { static int ... = ...; }` 风格的声明
+- 第一个 class 完全正常；第二个 class 的 static field 不可读取
+
+**根因（推测）**：`__static_init__` 合成函数对同文件多 class 时只串了第一个 class
+的字段 init opcode，第二个 class 的 `BoundStaticInits` 未参与 emission。
+
+**workaround**：把每个 static-field 持有 class 拆到独立文件（namespace 不变）。
+典型例子：`add-platform-os-stdlib` 把 `Std.ArchKind` 从 `Platform.z42` 拆到独立的
+`ArchKind.z42`，因为 `Platform.z42` 同文件已有 `Std.OSKind`。
+
+**遗留**：编译器层 fix 属独立 spec scope —— 应让 `BoundStaticInits` 按 class
+逐个走 emission，或合并到单个 `__static_init__` 入口。
+
 ## 关键设计权衡
 
 ### 为什么 AST 节点是 `sealed record`

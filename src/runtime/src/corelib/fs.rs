@@ -151,6 +151,17 @@ pub fn builtin_process_exit(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     };
     std::process::exit(code);
 }
+pub fn builtin_env_unset(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let key = require_str(args, 0, "__env_unset")?;
+    std::env::remove_var(key.as_str());
+    Ok(Value::Null)
+}
+pub fn builtin_env_vars(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let list: Vec<Value> = std::env::vars()
+        .map(|(k, v)| Value::Str(format!("{k}={v}")))
+        .collect();
+    Ok(ctx.heap().alloc_array(list))
+}
 pub fn builtin_time_now_ms(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ms = SystemTime::now().duration_since(UNIX_EPOCH)
