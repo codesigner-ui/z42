@@ -121,6 +121,10 @@ for dir in "$TESTS_DIR"/*/; do
     cp "$STDLIB_ROOT"/*/release/dist/*.zpkg "$test_libs/" 2>/dev/null || true
     cp "$dir/target/dist"/*.zpkg "$test_libs/" 2>/dev/null || true
     cp "$dir/ext/dist"/*.zpkg    "$test_libs/" 2>/dev/null || true
+    # Cross-zpkg test main packages are `kind=exe` with `entry = "<ns>.Main"`
+    # baked into the manifest, so META.entry resolves at load time — no
+    # positional entry override needed (and overriding would mask wrong
+    # qualified names like `Demo.App.Main`).
     actual=$(Z42_LIBS="$test_libs" cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$main_zpkg" --mode "$MODE" 2>&1) || true
     rm -rf "$test_libs"
 

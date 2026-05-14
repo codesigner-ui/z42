@@ -124,6 +124,65 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  # ── VM cross-mode consistency (0.3.0 退出标准) ───────────────────────────
+  # `just test` in build-and-test only exercises interp mode (test-vm + test-cross-zpkg
+  # default = interp). This job re-runs both golden suites under JIT mode to
+  # catch interp/JIT divergence (different opcode handling, codegen bugs, etc.)
+  # before they reach main. Single linux-x64 lane is enough — cranelift JIT
+  # behaviour is the same across desktop hosts; reproducing on every OS would
+  # be wasted CI minutes.
+  vm-jit-consistency:
+    name: vm-jit-consistency (linux-x64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+        with:
+          just-version: '1.50.0'
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo (shared key with build-and-test)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src/runtime/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ hashFiles('src/runtime/Cargo.lock', 'src/runtime/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Build (just build)
+        run: just build
+
+      - name: Build stdlib
+        run: ./scripts/build-stdlib.sh
+
+      - name: VM golden — JIT mode
+        run: just test-vm jit
+
+      - name: Cross-zpkg — JIT mode
+        run: just test-cross-zpkg jit
+
   # P1.D.2: PR-only bench smoke. Runs `just bench-e2e --quick` on linux,
   # uploads bench/results/e2e.json as artifact for manual inspection.
   # No diff/gate yet — that's P1.D.3 (gh-pages baseline + automatic PR diff).
