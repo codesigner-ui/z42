@@ -1,0 +1,110 @@
+// add-z42-json (2026-05-14)：basic scalars + nested object/array.
+namespace Z42JsonBasicTests;
+
+using Std.Test;
+using Std.Json;
+
+[Test]
+void test_parse_null() {
+    var v = JsonValue.Parse("null");
+    Assert.True(v.IsNull());
+}
+
+[Test]
+void test_parse_true() {
+    var v = JsonValue.Parse("true");
+    Assert.True(v.IsBool());
+    Assert.True(v.AsBool());
+}
+
+[Test]
+void test_parse_false() {
+    var v = JsonValue.Parse("false");
+    Assert.False(v.AsBool());
+}
+
+[Test]
+void test_parse_integer() {
+    var v = JsonValue.Parse("42");
+    Assert.True(v.IsLong());
+    Assert.Equal(42L, v.AsLong());
+}
+
+[Test]
+void test_parse_negative() {
+    var v = JsonValue.Parse("-100");
+    Assert.Equal(-100L, v.AsLong());
+}
+
+[Test]
+void test_parse_empty_object() {
+    var v = JsonValue.Parse("{}");
+    Assert.True(v.IsObject());
+    Assert.Equal(0, v.Count());
+}
+
+[Test]
+void test_parse_empty_array() {
+    var v = JsonValue.Parse("[]");
+    Assert.True(v.IsArray());
+    Assert.Equal(0, v.Length());
+}
+
+[Test]
+void test_simple_object() {
+    var v = JsonValue.Parse("{\"name\":\"foo\",\"age\":30}");
+    Assert.Equal("foo", v.Get("name").AsString());
+    Assert.Equal(30L, v.Get("age").AsLong());
+}
+
+[Test]
+void test_simple_array() {
+    var v = JsonValue.Parse("[1, 2, 3]");
+    Assert.Equal(3, v.Length());
+    Assert.Equal(2L, v.At(1).AsLong());
+}
+
+[Test]
+void test_nested_object() {
+    var v = JsonValue.Parse("{\"a\":{\"b\":{\"c\":1}}}");
+    Assert.Equal(1L, v.Get("a").Get("b").Get("c").AsLong());
+}
+
+[Test]
+void test_nested_array() {
+    var v = JsonValue.Parse("[[1, 2], [3, 4]]");
+    Assert.Equal(2L, v.At(0).At(1).AsLong());
+    Assert.Equal(3L, v.At(1).At(0).AsLong());
+}
+
+[Test]
+void test_array_of_objects() {
+    var v = JsonValue.Parse("[{\"x\":1},{\"x\":2}]");
+    Assert.Equal(1L, v.At(0).Get("x").AsLong());
+    Assert.Equal(2L, v.At(1).Get("x").AsLong());
+}
+
+[Test]
+void test_whitespace_tolerance() {
+    var v = JsonValue.Parse("  \n  { \n  \"k\" :  1 \n }  ");
+    Assert.Equal(1L, v.Get("k").AsLong());
+}
+
+[Test]
+void test_kind_predicates() {
+    var v = JsonValue.Parse("{\"a\":\"x\",\"b\":1,\"c\":1.5,\"d\":true,\"e\":null,\"f\":[],\"g\":{}}");
+    Assert.True(v.Get("a").IsString());
+    Assert.True(v.Get("b").IsLong());
+    Assert.True(v.Get("c").IsDouble());
+    Assert.True(v.Get("d").IsBool());
+    Assert.True(v.Get("e").IsNull());
+    Assert.True(v.Get("f").IsArray());
+    Assert.True(v.Get("g").IsObject());
+}
+
+[Test]
+void test_kind_name() {
+    var v = JsonValue.Parse("[null]");
+    Assert.Equal("array", v.KindName());
+    Assert.Equal("null", v.At(0).KindName());
+}

@@ -1,0 +1,70 @@
+// add-z42-json (2026-05-14)：integer / float / exponent edge cases.
+namespace Z42JsonNumbersTests;
+
+using Std.Test;
+using Std.Json;
+
+[Test]
+void test_zero() {
+    var v = JsonValue.Parse("0");
+    Assert.Equal(0L, v.AsLong());
+}
+
+[Test]
+void test_positive_int() {
+    var v = JsonValue.Parse("12345");
+    Assert.Equal(12345L, v.AsLong());
+}
+
+[Test]
+void test_negative_int() {
+    var v = JsonValue.Parse("-7");
+    Assert.Equal(-7L, v.AsLong());
+}
+
+[Test]
+void test_simple_float() {
+    var v = JsonValue.Parse("3.14");
+    Assert.True(v.IsDouble());
+    Assert.EqualApprox(3.14, v.AsDouble(), 1e-9);
+}
+
+[Test]
+void test_negative_float() {
+    var v = JsonValue.Parse("-2.5");
+    Assert.EqualApprox(-2.5, v.AsDouble(), 1e-9);
+}
+
+[Test]
+void test_exponent_lowercase_e() {
+    var v = JsonValue.Parse("1.5e2");
+    Assert.EqualApprox(150.0, v.AsDouble(), 1e-9);
+}
+
+[Test]
+void test_exponent_uppercase_e_with_plus() {
+    var v = JsonValue.Parse("1.5E+2");
+    Assert.EqualApprox(150.0, v.AsDouble(), 1e-9);
+}
+
+[Test]
+void test_exponent_negative() {
+    var v = JsonValue.Parse("1.0e-3");
+    Assert.EqualApprox(0.001, v.AsDouble(), 1e-12);
+}
+
+[Test]
+void test_int_as_double_promotion() {
+    // AsDouble() promotes long values to double.
+    var v = JsonValue.Parse("42");
+    Assert.EqualApprox(42.0, v.AsDouble(), 1e-9);
+}
+
+[Test]
+void test_array_mixed_numbers() {
+    var v = JsonValue.Parse("[1, 2.5, -3, 1.5e2]");
+    Assert.Equal(1L, v.At(0).AsLong());
+    Assert.EqualApprox(2.5, v.At(1).AsDouble(), 1e-9);
+    Assert.Equal(-3L, v.At(2).AsLong());
+    Assert.EqualApprox(150.0, v.At(3).AsDouble(), 1e-9);
+}

@@ -1,0 +1,141 @@
+namespace Std.Json;
+using Std;
+using Std.Text;
+
+// add-z42-json (2026-05-14)：JSON 序列化（compact 或 pretty）。
+public sealed class JsonWriter {
+    private StringBuilder _sb;
+    private bool _pretty;
+    private int _depth;
+
+    public JsonWriter(bool pretty) {
+        this._sb = new StringBuilder();
+        this._pretty = pretty;
+        this._depth = 0;
+    }
+
+    public string Write(JsonValue v) {
+        this._writeValue(v);
+        return this._sb.ToString();
+    }
+
+    private void _writeValue(JsonValue v) {
+        if (v.IsNull())   { this._sb.Append("null"); return; }
+        if (v.IsBool())   { this._sb.Append(v.AsBool() ? "true" : "false"); return; }
+        if (v.IsLong())   { this._sb.Append(v.AsLong().ToString()); return; }
+        if (v.IsDouble()) { this._sb.Append(v.AsDouble().ToString()); return; }
+        if (v.IsString()) { this._sb.Append(this._quoteString(v.AsString())); return; }
+        if (v.IsArray())  { this._writeArray(v); return; }
+        if (v.IsObject()) { this._writeObject(v); return; }
+        throw new JsonException("unknown JsonValue kind in stringify");
+    }
+
+    private void _writeArray(JsonValue arr) {
+        int n = arr.Length();
+        if (n == 0) {
+            this._sb.Append("[]");
+            return;
+        }
+        this._sb.Append("[");
+        this._depth = this._depth + 1;
+        int i = 0;
+        while (i < n) {
+            if (this._pretty) {
+                this._sb.Append("\n");
+                this._appendIndent();
+            }
+            this._writeValue(arr.At(i));
+            if (i + 1 < n) {
+                this._sb.Append(this._pretty ? "," : ",");
+            }
+            i = i + 1;
+        }
+        this._depth = this._depth - 1;
+        if (this._pretty) {
+            this._sb.Append("\n");
+            this._appendIndent();
+        }
+        this._sb.Append("]");
+    }
+
+    private void _writeObject(JsonValue obj) {
+        int n = obj.Count();
+        if (n == 0) {
+            this._sb.Append("{}");
+            return;
+        }
+        this._sb.Append("{");
+        this._depth = this._depth + 1;
+        string[] keys = obj.Keys();
+        int i = 0;
+        while (i < keys.Length) {
+            if (this._pretty) {
+                this._sb.Append("\n");
+                this._appendIndent();
+            }
+            this._sb.Append(this._quoteString(keys[i]));
+            this._sb.Append(this._pretty ? ": " : ":");
+            this._writeValue(obj.Get(keys[i]));
+            if (i + 1 < keys.Length) {
+                this._sb.Append(",");
+            }
+            i = i + 1;
+        }
+        this._depth = this._depth - 1;
+        if (this._pretty) {
+            this._sb.Append("\n");
+            this._appendIndent();
+        }
+        this._sb.Append("}");
+    }
+
+    private void _appendIndent() {
+        int i = 0;
+        while (i < this._depth) {
+            this._sb.Append("  ");
+            i = i + 1;
+        }
+    }
+
+    /// JSON string escape: minimal — control chars and `"` / `\`. Non-ASCII
+    /// passes through as raw UTF-8 bytes (RFC 8259 §7 allows this).
+    private string _quoteString(string s) {
+        StringBuilder sb = new StringBuilder();
+        sb.Append("\"");
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            int cc = (int)c;
+            if (c == '"')       { sb.Append("\\\""); }
+            else if (c == '\\') { sb.Append("\\\\"); }
+            else if (c == '\n') { sb.Append("\\n"); }
+            else if (c == '\t') { sb.Append("\\t"); }
+            else if (c == '\r') { sb.Append("\\r"); }
+            else if (cc == 8)   { sb.Append("\\b"); }
+            else if (cc == 12)  { sb.Append("\\f"); }
+            else if (cc < 32)   { sb.Append(this._unicodeEscape(cc)); }
+            else                { sb.Append(this._charString(c)); }
+            i = i + 1;
+        }
+        sb.Append("\"");
+        return sb.ToString();
+    }
+
+    private string _unicodeEscape(int v) {
+        string hex = "0123456789ABCDEF";
+        char[] arr = new char[6];
+        arr[0] = '\\';
+        arr[1] = 'u';
+        arr[2] = hex.CharAt((v >> 12) & 0xF);
+        arr[3] = hex.CharAt((v >> 8) & 0xF);
+        arr[4] = hex.CharAt((v >> 4) & 0xF);
+        arr[5] = hex.CharAt(v & 0xF);
+        return String.FromChars(arr);
+    }
+
+    private string _charString(char c) {
+        char[] arr = new char[1];
+        arr[0] = c;
+        return String.FromChars(arr);
+    }
+}

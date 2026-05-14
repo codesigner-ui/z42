@@ -1,0 +1,105 @@
+// add-z42-json (2026-05-14)：malformed input → JsonException.
+namespace Z42JsonErrorsTests;
+
+using Std.Test;
+using Std.Json;
+
+[Test]
+void test_empty_input_rejected() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unterminated_string() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("\"oops");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unterminated_object() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("{\"a\":1");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unterminated_array() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("[1, 2");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_missing_colon() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("{\"a\" 1}");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_trailing_comma_object_rejected() {
+    // RFC 8259 disallows trailing commas.
+    bool caught = false;
+    try {
+        JsonValue.Parse("{\"a\":1,}");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_trailing_garbage_rejected() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("42 garbage");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unknown_token() {
+    bool caught = false;
+    try {
+        JsonValue.Parse("undefined");
+    } catch (JsonException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_error_has_line_info() {
+    try {
+        JsonValue.Parse("\n\nbad");
+    } catch (JsonException e) {
+        Assert.True(e.Line >= 1);
+        return;
+    }
+    Assert.True(false);
+}

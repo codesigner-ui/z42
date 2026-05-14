@@ -1,0 +1,221 @@
+namespace Std.Json;
+using Std;
+
+// add-z42-json (2026-05-14)：JSON 值的运行时表示 + 入口点。
+//
+// 与 Std.Toml.TomlValue 同款 discriminated-union 设计：单 int kind +
+// 多个 typed 槽位 + Is*/As* 谓词访问。详见 docs/design/stdlib/json.md。
+//
+// kind 0=Null 1=Bool 2=Long 3=Double 4=String 5=Array 6=Object
+//   （注意 Null 在 JSON 中是 first-class value，与 TOML 不同 —— TOML 无 null）
+public class JsonValue {
+    private int _kind;
+    private bool _bool;
+    private long _long;
+    private double _double;
+    private string _str;
+
+    // Array storage (kind == 5)
+    private JsonValue[] _arrayItems;
+    private int _arrayCount;
+
+    // Object storage as parallel key/value arrays (kind == 6).
+    private string[] _objectKeys;
+    private JsonValue[] _objectValues;
+    private int _objectCount;
+
+    // ── Public entry points ──────────────────────────────────────────────
+
+    /// Parse JSON text → root value. Throws JsonException with line/column
+    /// on syntax error. Empty input is invalid per RFC 8259.
+    public static JsonValue Parse(string text) {
+        JsonParser p = new JsonParser(text);
+        return (JsonValue)p.ParseDocument();
+    }
+
+    /// Serialise to canonical compact JSON (no whitespace).
+    public static string Stringify(JsonValue v) {
+        JsonWriter w = new JsonWriter(false);
+        return w.Write(v);
+    }
+
+    /// Serialise to pretty-printed JSON (2-space indent + newlines).
+    public static string StringifyPretty(JsonValue v) {
+        JsonWriter w = new JsonWriter(true);
+        return w.Write(v);
+    }
+
+    // ── Factories ────────────────────────────────────────────────────────
+
+    public static JsonValue OfNull()         { JsonValue v = new JsonValue(); v._kind = 0; return v; }
+    public static JsonValue OfBool(bool b)   { JsonValue v = new JsonValue(); v._kind = 1; v._bool = b; return v; }
+    public static JsonValue OfLong(long n)   { JsonValue v = new JsonValue(); v._kind = 2; v._long = n; return v; }
+    public static JsonValue OfDouble(double d) { JsonValue v = new JsonValue(); v._kind = 3; v._double = d; return v; }
+    public static JsonValue OfString(string s) { JsonValue v = new JsonValue(); v._kind = 4; v._str = s; return v; }
+    public static JsonValue OfArray() {
+        JsonValue v = new JsonValue();
+        v._kind = 5;
+        v._arrayItems = new JsonValue[4];
+        v._arrayCount = 0;
+        return v;
+    }
+    public static JsonValue OfObject() {
+        JsonValue v = new JsonValue();
+        v._kind = 6;
+        v._objectKeys = new string[4];
+        v._objectValues = new JsonValue[4];
+        v._objectCount = 0;
+        return v;
+    }
+
+    // ── Predicates ───────────────────────────────────────────────────────
+
+    public bool IsNull()   { return this._kind == 0; }
+    public bool IsBool()   { return this._kind == 1; }
+    public bool IsLong()   { return this._kind == 2; }
+    public bool IsDouble() { return this._kind == 3; }
+    public bool IsString() { return this._kind == 4; }
+    public bool IsArray()  { return this._kind == 5; }
+    public bool IsObject() { return this._kind == 6; }
+
+    public string KindName() {
+        int k = this._kind;
+        if (k == 0) return "null";
+        if (k == 1) return "bool";
+        if (k == 2) return "long";
+        if (k == 3) return "double";
+        if (k == 4) return "string";
+        if (k == 5) return "array";
+        if (k == 6) return "object";
+        return "unknown";
+    }
+
+    // ── Accessors (throw on wrong kind) ──────────────────────────────────
+
+    public bool AsBool() {
+        if (this._kind != 1) { throw new JsonException("expected bool, got " + this.KindName()); }
+        return this._bool;
+    }
+    public long AsLong() {
+        if (this._kind != 2) { throw new JsonException("expected long, got " + this.KindName()); }
+        return this._long;
+    }
+    public double AsDouble() {
+        if (this._kind == 2) { return (double)this._long; }   // promote int → double
+        if (this._kind != 3) { throw new JsonException("expected number, got " + this.KindName()); }
+        return this._double;
+    }
+    public string AsString() {
+        if (this._kind != 4) { throw new JsonException("expected string, got " + this.KindName()); }
+        return this._str;
+    }
+
+    // ── Object operations (kind == 6) ────────────────────────────────────
+
+    public bool ContainsKey(string key) {
+        if (this._kind != 6) { return false; }
+        int i = 0;
+        while (i < this._objectCount) {
+            if (this._objectKeys[i] == key) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    public JsonValue Get(string key) {
+        if (this._kind != 6) {
+            throw new JsonException("JsonGet on non-object value (" + this.KindName() + ")");
+        }
+        int i = 0;
+        while (i < this._objectCount) {
+            if (this._objectKeys[i] == key) { return this._objectValues[i]; }
+            i = i + 1;
+        }
+        throw new JsonException("key not found: " + key);
+    }
+
+    public void Set(string key, JsonValue v) {
+        if (this._kind != 6) {
+            throw new JsonException("JsonSet on non-object value (" + this.KindName() + ")");
+        }
+        int i = 0;
+        while (i < this._objectCount) {
+            if (this._objectKeys[i] == key) {
+                this._objectValues[i] = v;
+                return;
+            }
+            i = i + 1;
+        }
+        if (this._objectCount == this._objectKeys.Length) {
+            int newCap = this._objectKeys.Length * 2;
+            if (newCap < 4) { newCap = 4; }
+            string[] nk = new string[newCap];
+            JsonValue[] nv = new JsonValue[newCap];
+            int j = 0;
+            while (j < this._objectCount) {
+                nk[j] = this._objectKeys[j];
+                nv[j] = this._objectValues[j];
+                j = j + 1;
+            }
+            this._objectKeys = nk;
+            this._objectValues = nv;
+        }
+        this._objectKeys[this._objectCount] = key;
+        this._objectValues[this._objectCount] = v;
+        this._objectCount = this._objectCount + 1;
+    }
+
+    public string[] Keys() {
+        if (this._kind != 6) {
+            throw new JsonException("ObjectKeys() on non-object value (" + this.KindName() + ")");
+        }
+        string[] result = new string[this._objectCount];
+        int i = 0;
+        while (i < this._objectCount) {
+            result[i] = this._objectKeys[i];
+            i = i + 1;
+        }
+        return result;
+    }
+
+    public int Count() {
+        if (this._kind == 5) { return this._arrayCount; }
+        if (this._kind == 6) { return this._objectCount; }
+        throw new JsonException("JsonCount() on non-collection value (" + this.KindName() + ")");
+    }
+
+    // ── Array operations (kind == 5) ─────────────────────────────────────
+
+    public int Length() {
+        if (this._kind != 5) {
+            throw new JsonException("JsonLength() on non-array value (" + this.KindName() + ")");
+        }
+        return this._arrayCount;
+    }
+
+    public JsonValue At(int i) {
+        if (this._kind != 5) {
+            throw new JsonException("JsonAt() on non-array value (" + this.KindName() + ")");
+        }
+        if (i < 0 || i >= this._arrayCount) {
+            throw new JsonException("array index out of range");
+        }
+        return this._arrayItems[i];
+    }
+
+    public void Add(JsonValue v) {
+        if (this._kind != 5) {
+            throw new JsonException("JsonAdd() on non-array value (" + this.KindName() + ")");
+        }
+        if (this._arrayCount == this._arrayItems.Length) {
+            int newCap = this._arrayItems.Length * 2;
+            if (newCap < 4) { newCap = 4; }
+            JsonValue[] na = new JsonValue[newCap];
+            int j = 0;
+            while (j < this._arrayCount) { na[j] = this._arrayItems[j]; j = j + 1; }
+            this._arrayItems = na;
+        }
+        this._arrayItems[this._arrayCount] = v;
+        this._arrayCount = this._arrayCount + 1;
+    }
+}

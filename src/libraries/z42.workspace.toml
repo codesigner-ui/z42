@@ -26,6 +26,7 @@ default-members = [
     "z42.test",
     "z42.time",
     "z42.toml",
+    "z42.json",
 ]
 
 [workspace.project]

@@ -1,0 +1,71 @@
+// add-z42-json (2026-05-14)：string escapes + Unicode.
+namespace Z42JsonStringsTests;
+
+using Std.Test;
+using Std.Json;
+
+[Test]
+void test_simple_string() {
+    var v = JsonValue.Parse("\"hello\"");
+    Assert.Equal("hello", v.AsString());
+}
+
+[Test]
+void test_empty_string() {
+    var v = JsonValue.Parse("\"\"");
+    Assert.Equal("", v.AsString());
+}
+
+[Test]
+void test_escape_newline() {
+    var v = JsonValue.Parse("\"a\\nb\"");
+    Assert.Equal("a\nb", v.AsString());
+}
+
+[Test]
+void test_escape_tab() {
+    var v = JsonValue.Parse("\"a\\tb\"");
+    Assert.Equal("a\tb", v.AsString());
+}
+
+[Test]
+void test_escape_quote() {
+    var v = JsonValue.Parse("\"a\\\"b\"");
+    Assert.Equal("a\"b", v.AsString());
+}
+
+[Test]
+void test_escape_backslash() {
+    var v = JsonValue.Parse("\"a\\\\b\"");
+    Assert.Equal("a\\b", v.AsString());
+}
+
+[Test]
+void test_escape_solidus_allowed() {
+    // JSON allows \/  as well as plain /
+    var v = JsonValue.Parse("\"a\\/b\"");
+    Assert.Equal("a/b", v.AsString());
+}
+
+[Test]
+void test_unicode_bmp() {
+    // \u00E9 = é
+    var v = JsonValue.Parse("\"caf\\u00E9\"");
+    Assert.Equal("café", v.AsString());
+}
+
+[Test]
+void test_unicode_surrogate_pair() {
+    // \uD83D\uDE00 = 😀 (U+1F600)
+    var v = JsonValue.Parse("\"hi \\uD83D\\uDE00\"");
+    string s = v.AsString();
+    Assert.True(s.Length >= 4);
+    Assert.True(s.StartsWith("hi "));
+}
+
+[Test]
+void test_string_with_special_chars_unescaped() {
+    // Non-ASCII chars pass through directly in source.
+    var v = JsonValue.Parse("\"café\"");
+    Assert.Equal("café", v.AsString());
+}

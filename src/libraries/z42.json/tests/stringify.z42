@@ -1,0 +1,74 @@
+// add-z42-json (2026-05-14)：compact / pretty stringify + round-trip.
+namespace Z42JsonStringifyTests;
+
+using Std.Test;
+using Std.Json;
+
+[Test]
+void test_stringify_simple_compact() {
+    var v = JsonValue.OfObject();
+    v.Set("a", JsonValue.OfLong(1));
+    v.Set("b", JsonValue.OfString("hi"));
+    string s = JsonValue.Stringify(v);
+    Assert.Equal("{\"a\":1,\"b\":\"hi\"}", s);
+}
+
+[Test]
+void test_stringify_pretty_has_newlines() {
+    var v = JsonValue.OfObject();
+    v.Set("a", JsonValue.OfLong(1));
+    string s = JsonValue.StringifyPretty(v);
+    Assert.Contains("\n", s);
+    Assert.Contains("  \"a\":", s);
+}
+
+[Test]
+void test_round_trip_object() {
+    string src = "{\"name\":\"foo\",\"n\":42,\"x\":null}";
+    var v1 = JsonValue.Parse(src);
+    string s = JsonValue.Stringify(v1);
+    var v2 = JsonValue.Parse(s);
+    Assert.Equal("foo", v2.Get("name").AsString());
+    Assert.Equal(42L, v2.Get("n").AsLong());
+    Assert.True(v2.Get("x").IsNull());
+}
+
+[Test]
+void test_round_trip_nested() {
+    string src = "{\"users\":[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"}]}";
+    var v1 = JsonValue.Parse(src);
+    string s = JsonValue.Stringify(v1);
+    var v2 = JsonValue.Parse(s);
+    Assert.Equal(2, v2.Get("users").Length());
+    Assert.Equal("b", v2.Get("users").At(1).Get("name").AsString());
+}
+
+[Test]
+void test_stringify_null() {
+    Assert.Equal("null", JsonValue.Stringify(JsonValue.OfNull()));
+}
+
+[Test]
+void test_stringify_bool() {
+    Assert.Equal("true", JsonValue.Stringify(JsonValue.OfBool(true)));
+    Assert.Equal("false", JsonValue.Stringify(JsonValue.OfBool(false)));
+}
+
+[Test]
+void test_stringify_escapes_control_chars() {
+    var v = JsonValue.OfString("line1\nline2\twith\"quote");
+    string s = JsonValue.Stringify(v);
+    Assert.Contains("\\n", s);
+    Assert.Contains("\\t", s);
+    Assert.Contains("\\\"", s);
+}
+
+[Test]
+void test_empty_array_compact() {
+    Assert.Equal("[]", JsonValue.Stringify(JsonValue.OfArray()));
+}
+
+[Test]
+void test_empty_object_compact() {
+    Assert.Equal("{}", JsonValue.Stringify(JsonValue.OfObject()));
+}
