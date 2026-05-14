@@ -1,0 +1,76 @@
+// add-z42-toml (2026-05-14)：数组 + 内联表 + array-of-tables。
+namespace Z42TomlArrayTests;
+
+using Std.Test;
+using Std.Toml;
+
+[Test]
+void test_empty_array() {
+    var t = TomlValue.Parse("xs = []");
+    var arr = t.Get("xs");
+    Assert.True(arr.IsArray());
+    Assert.Equal(0, arr.Length());
+}
+
+[Test]
+void test_int_array() {
+    var t = TomlValue.Parse("nums = [1, 2, 3]");
+    var arr = t.Get("nums");
+    Assert.Equal(3, arr.Length());
+    Assert.Equal(1L, arr.At(0).AsLong());
+    Assert.Equal(2L, arr.At(1).AsLong());
+    Assert.Equal(3L, arr.At(2).AsLong());
+}
+
+[Test]
+void test_string_array() {
+    var t = TomlValue.Parse("members = [\"a\", \"b\", \"c\"]");
+    var arr = t.Get("members");
+    Assert.Equal(3, arr.Length());
+    Assert.Equal("a", arr.At(0).AsString());
+    Assert.Equal("c", arr.At(2).AsString());
+}
+
+[Test]
+void test_nested_array() {
+    var t = TomlValue.Parse("grid = [[1, 2], [3, 4]]");
+    var grid = t.Get("grid");
+    Assert.Equal(2, grid.Length());
+    Assert.Equal(2L, grid.At(0).At(1).AsLong());
+    Assert.Equal(3L, grid.At(1).At(0).AsLong());
+}
+
+[Test]
+void test_array_trailing_comma_ok() {
+    // TOML 1.0 allows trailing comma in arrays.
+    var t = TomlValue.Parse("xs = [1, 2, 3,]");
+    Assert.Equal(3, t.Get("xs").Length());
+}
+
+[Test]
+void test_array_multiline() {
+    string src = "xs = [\n  1,\n  2,\n  3\n]";
+    var t = TomlValue.Parse(src);
+    Assert.Equal(3, t.Get("xs").Length());
+    Assert.Equal(2L, t.Get("xs").At(1).AsLong());
+}
+
+[Test]
+void test_inline_table() {
+    var t = TomlValue.Parse("dep = { version = \"1.0\", optional = true }");
+    var dep = t.Get("dep");
+    Assert.True(dep.IsTable());
+    Assert.Equal("1.0", dep.Get("version").AsString());
+    Assert.True(dep.Get("optional").AsBool());
+}
+
+[Test]
+void test_array_of_tables() {
+    string src = "[[exe]]\nname = \"a\"\n[[exe]]\nname = \"b\"\n";
+    var t = TomlValue.Parse(src);
+    var arr = t.Get("exe");
+    Assert.True(arr.IsArray());
+    Assert.Equal(2, arr.Length());
+    Assert.Equal("a", arr.At(0).Get("name").AsString());
+    Assert.Equal("b", arr.At(1).Get("name").AsString());
+}

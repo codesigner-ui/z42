@@ -1,0 +1,674 @@
+namespace Std.Toml;
+using Std;
+using Std.Text;
+
+// add-z42-toml (2026-05-14)：TOML 1.0 subset parser（tokenizer + 递归下降）。
+//
+// 状态：
+//   _root   全文档 root TomlValue（Table）
+//   _active 当前活跃 table —— `[a.b]` / `[[c]]` 改变它的指向
+//   _src    源字符串
+//   _pos    当前字符索引
+//   _line/_col 1-based 行 / 列号（用于报错）
+//
+// 不实现：datetime / multiline string / hex/oct/bin int / 下划线分隔符。
+// 见 docs/design/stdlib/toml.md "Deferred" 段。
+public sealed class TomlParser {
+    private string _src;
+    private int _pos;
+    private int _line;
+    private int _col;
+    private TomlValue _root;
+    private TomlValue _active;
+    // 定义过的 [section] / [[aot]] 头集合（FQ "a.b.c"）。
+    // 用平铺 string[] + 线性扫描 —— z42 类字段不支持泛型类型参数（Dictionary<...>
+    // 会被解析为裸 Dictionary），manifest 文件 section 数通常 <50，线性可接受。
+    private string[] _definedSections;
+    private int _definedSectionsCount;
+    // 通过 [[aot]] 创建的 key（不可再用 [section]）。
+    private string[] _aotKeys;
+    private int _aotKeysCount;
+
+    public TomlParser(string src) {
+        this._src = src;
+        this._pos = 0;
+        this._line = 1;
+        this._col = 1;
+        this._root = TomlValue.OfTable();
+        this._active = this._root;
+        this._definedSections = new string[8];
+        this._definedSectionsCount = 0;
+        this._aotKeys = new string[8];
+        this._aotKeysCount = 0;
+    }
+
+    private bool _hasDefinedSection(string fq) {
+        int i = 0;
+        while (i < this._definedSectionsCount) {
+            if (this._definedSections[i] == fq) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    private void _markDefinedSection(string fq) {
+        if (this._definedSectionsCount == this._definedSections.Length) {
+            string[] g = new string[this._definedSections.Length * 2];
+            int j = 0;
+            while (j < this._definedSectionsCount) { g[j] = this._definedSections[j]; j = j + 1; }
+            this._definedSections = g;
+        }
+        this._definedSections[this._definedSectionsCount] = fq;
+        this._definedSectionsCount = this._definedSectionsCount + 1;
+    }
+
+    private bool _isAotKey(string fq) {
+        int i = 0;
+        while (i < this._aotKeysCount) {
+            if (this._aotKeys[i] == fq) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    private void _markAotKey(string fq) {
+        if (this._aotKeysCount == this._aotKeys.Length) {
+            string[] g = new string[this._aotKeys.Length * 2];
+            int j = 0;
+            while (j < this._aotKeysCount) { g[j] = this._aotKeys[j]; j = j + 1; }
+            this._aotKeys = g;
+        }
+        this._aotKeys[this._aotKeysCount] = fq;
+        this._aotKeysCount = this._aotKeysCount + 1;
+    }
+
+    // ── Public entry ─────────────────────────────────────────────────────
+
+    public TomlValue ParseDocument() {
+        while (this._pos < this._src.Length) {
+            this._skipWhitespaceAndComments(true);
+            if (this._pos >= this._src.Length) { break; }
+            char c = this._peek();
+            if (c == '[') {
+                if (this._peekAt(1) == '[') {
+                    this._parseArrayOfTablesHeader();
+                } else {
+                    this._parseTableHeader();
+                }
+            } else {
+                this._parseKeyValue(this._active);
+            }
+            this._skipInlineWhitespace();
+            this._expectLineEnd();
+        }
+        return this._root;
+    }
+
+    // ── Cursor helpers ───────────────────────────────────────────────────
+
+    private char _peek() {
+        if (this._pos >= this._src.Length) { return '\0'; }
+        return this._src.CharAt(this._pos);
+    }
+
+    private char _peekAt(int offset) {
+        int p = this._pos + offset;
+        if (p >= this._src.Length) { return '\0'; }
+        return this._src.CharAt(p);
+    }
+
+    private char _advance() {
+        char c = this._peek();
+        this._pos = this._pos + 1;
+        if (c == '\n') {
+            this._line = this._line + 1;
+            this._col = 1;
+        } else {
+            this._col = this._col + 1;
+        }
+        return c;
+    }
+
+    private bool _eof() { return this._pos >= this._src.Length; }
+
+    private TomlException _err(string msg) {
+        return new TomlException(msg, this._line, this._col);
+    }
+
+    private void _expect(char c, string what) {
+        if (this._peek() != c) {
+            throw this._err("expected " + what + " but got '" + this._charToString(this._peek()) + "'");
+        }
+        this._advance();
+    }
+
+    private string _charToString(char c) {
+        char[] arr = new char[1];
+        arr[0] = c;
+        return String.FromChars(arr);
+    }
+
+    // ── Whitespace + comments ────────────────────────────────────────────
+
+    /// Skip spaces / tabs (+ optional newlines + comments).
+    private void _skipWhitespaceAndComments(bool includeNewlines) {
+        while (!this._eof()) {
+            char c = this._peek();
+            if (c == ' ' || c == '\t') {
+                this._advance();
+            } else if (includeNewlines && (c == '\n' || c == '\r')) {
+                this._advance();
+            } else if (c == '#') {
+                while (!this._eof() && this._peek() != '\n') { this._advance(); }
+            } else {
+                break;
+            }
+        }
+    }
+
+    private void _skipInlineWhitespace() {
+        while (!this._eof()) {
+            char c = this._peek();
+            if (c == ' ' || c == '\t') {
+                this._advance();
+            } else if (c == '#') {
+                while (!this._eof() && this._peek() != '\n') { this._advance(); }
+            } else {
+                break;
+            }
+        }
+    }
+
+    private void _expectLineEnd() {
+        if (this._eof()) { return; }
+        char c = this._peek();
+        if (c == '\n') {
+            this._advance();
+            return;
+        }
+        if (c == '\r') {
+            this._advance();
+            if (!this._eof() && this._peek() == '\n') { this._advance(); }
+            return;
+        }
+        throw this._err("expected newline or EOF after value");
+    }
+
+    // ── Section / AoT headers ────────────────────────────────────────────
+
+    private void _parseTableHeader() {
+        this._expect('[', "'['");
+        this._skipInlineWhitespace();
+        string[] path = this._parseKeyPath();
+        this._skipInlineWhitespace();
+        this._expect(']', "']'");
+
+        string fq = this._joinPath(path);
+        if (this._hasDefinedSection(fq)) {
+            throw this._err("duplicate table definition: [" + fq + "]");
+        }
+        // Disallow targeting an AoT root with plain [section].
+        if (this._isAotKey(fq)) {
+            throw this._err("cannot redefine array-of-tables `" + fq + "` as plain table");
+        }
+        this._markDefinedSection(fq);
+        this._active = this._ensureTablePath(this._root, path);
+    }
+
+    private void _parseArrayOfTablesHeader() {
+        this._expect('[', "'['");
+        this._expect('[', "'[' (second of [[ )");
+        this._skipInlineWhitespace();
+        string[] path = this._parseKeyPath();
+        this._skipInlineWhitespace();
+        this._expect(']', "']'");
+        this._expect(']', "']' (second of ]] )");
+
+        string fq = this._joinPath(path);
+        // Conflict with plain [section]?
+        if (this._hasDefinedSection(fq)) {
+            throw this._err("cannot redefine table `" + fq + "` as array-of-tables");
+        }
+        this._markAotKey(fq);
+
+        // Walk path: create intermediate tables; last segment must be (or become) an array.
+        if (path.Length == 0) {
+            throw this._err("empty array-of-tables header");
+        }
+        TomlValue parent = this._ensurePathParent(this._root, path);
+        string lastKey = path[path.Length - 1];
+        TomlValue arr;
+        if (parent.ContainsKey(lastKey)) {
+            arr = parent.Get(lastKey);
+            if (!arr.IsArray()) {
+                throw this._err("key `" + fq + "` already exists as " + arr.KindName());
+            }
+        } else {
+            arr = TomlValue.OfArray();
+            parent.Set(lastKey, arr);
+        }
+        TomlValue elem = TomlValue.OfTable();
+        arr.Add(elem);
+        this._active = elem;
+    }
+
+    /// Parse a dotted key path: `a.b.c` → ["a", "b", "c"]. Each segment
+    /// may be an unquoted bare key or a quoted "string" / 'literal' key.
+    private string[] _parseKeyPath() {
+        string[] segs = new string[4];
+        int count = 0;
+        segs = this._appendStr(segs, count, this._parseKeySegment());
+        count = count + 1;
+        this._skipInlineWhitespace();
+        while (!this._eof() && this._peek() == '.') {
+            this._advance();
+            this._skipInlineWhitespace();
+            segs = this._appendStr(segs, count, this._parseKeySegment());
+            count = count + 1;
+            this._skipInlineWhitespace();
+        }
+        // Trim to exact size for downstream `.Length` usage.
+        string[] tight = new string[count];
+        int k = 0;
+        while (k < count) { tight[k] = segs[k]; k = k + 1; }
+        return tight;
+    }
+
+    /// Grow-on-overflow append. Returns same array or a doubled-capacity copy.
+    private string[] _appendStr(string[] arr, int count, string v) {
+        if (count < arr.Length) {
+            arr[count] = v;
+            return arr;
+        }
+        int newCap = arr.Length * 2;
+        if (newCap < 4) { newCap = 4; }
+        string[] g = new string[newCap];
+        int i = 0;
+        while (i < count) { g[i] = arr[i]; i = i + 1; }
+        g[count] = v;
+        return g;
+    }
+
+    private string _parseKeySegment() {
+        char c = this._peek();
+        if (c == '"') {
+            return this._parseBasicString();
+        }
+        if (c == '\'') {
+            return this._parseLiteralString();
+        }
+        // Bare key: A-Za-z0-9_-
+        int start = this._pos;
+        while (!this._eof()) {
+            char ch = this._peek();
+            int code = (int)ch;
+            bool isBareChar = (code >= 65 && code <= 90)     // A-Z
+                || (code >= 97 && code <= 122)               // a-z
+                || (code >= 48 && code <= 57)                // 0-9
+                || ch == '_' || ch == '-';
+            if (!isBareChar) { break; }
+            this._advance();
+        }
+        if (this._pos == start) {
+            throw this._err("expected key, got '" + this._charToString(c) + "'");
+        }
+        return this._src.Substring(start, this._pos - start);
+    }
+
+    private string _joinPath(string[] path) {
+        string s = "";
+        int i = 0;
+        while (i < path.Length) {
+            if (i > 0) { s = s + "."; }
+            s = s + path[i];
+            i = i + 1;
+        }
+        return s;
+    }
+
+    /// Walk path creating intermediate tables; return the FINAL table.
+    private TomlValue _ensureTablePath(TomlValue root, string[] path) {
+        TomlValue cur = root;
+        int i = 0;
+        while (i < path.Length) {
+            string seg = path[i];
+            if (cur.ContainsKey(seg)) {
+                TomlValue child = cur.Get(seg);
+                if (child.IsTable()) {
+                    cur = child;
+                } else if (child.IsArray()) {
+                    // Walk into the last AoT element.
+                    int last = child.Length() - 1;
+                    if (last < 0 || !child.At(last).IsTable()) {
+                        throw this._err("cannot descend into non-table element of `" + this._joinPath(path) + "`");
+                    }
+                    cur = child.At(last);
+                } else {
+                    throw this._err("path segment `" + seg + "` is a " + child.KindName() + ", not a table");
+                }
+            } else {
+                TomlValue tbl = TomlValue.OfTable();
+                cur.Set(seg, tbl);
+                cur = tbl;
+            }
+            i = i + 1;
+        }
+        return cur;
+    }
+
+    /// Walk all-but-last segments, returning the parent table (where the
+    /// final key will be created/looked-up). Used by AoT header.
+    private TomlValue _ensurePathParent(TomlValue root, string[] path) {
+        if (path.Length <= 1) { return root; }
+        string[] parentPath = new string[path.Length - 1];
+        int i = 0;
+        while (i < path.Length - 1) {
+            parentPath[i] = path[i];
+            i = i + 1;
+        }
+        return this._ensureTablePath(root, parentPath);
+    }
+
+    // ── key = value ──────────────────────────────────────────────────────
+
+    private void _parseKeyValue(TomlValue dst) {
+        string[] keyPath = this._parseKeyPath();
+        this._skipInlineWhitespace();
+        this._expect('=', "'='");
+        this._skipInlineWhitespace();
+        TomlValue val = this._parseValue();
+
+        // Dotted-key assignment: walk path under `dst`.
+        TomlValue target = dst;
+        int i = 0;
+        while (i < keyPath.Length - 1) {
+            string seg = keyPath[i];
+            if (target.ContainsKey(seg)) {
+                TomlValue next = target.Get(seg);
+                if (!next.IsTable()) {
+                    throw this._err("dotted key conflicts with existing " + next.KindName());
+                }
+                target = next;
+            } else {
+                TomlValue t = TomlValue.OfTable();
+                target.Set(seg, t);
+                target = t;
+            }
+            i = i + 1;
+        }
+        string finalKey = keyPath[keyPath.Length - 1];
+        if (target.ContainsKey(finalKey)) {
+            throw this._err("duplicate key: " + finalKey);
+        }
+        target.Set(finalKey, val);
+    }
+
+    // ── Value parsing ────────────────────────────────────────────────────
+
+    private TomlValue _parseValue() {
+        char c = this._peek();
+        if (c == '"') {
+            return TomlValue.OfString(this._parseBasicString());
+        }
+        if (c == '\'') {
+            return TomlValue.OfString(this._parseLiteralString());
+        }
+        if (c == 't' || c == 'f') {
+            return this._parseBool();
+        }
+        if (c == '[') {
+            return this._parseArray();
+        }
+        if (c == '{') {
+            return this._parseInlineTable();
+        }
+        // Numbers (including +/- prefix, nan/inf).
+        return this._parseNumber();
+    }
+
+    private TomlValue _parseBool() {
+        if (this._tryLiteral("true")) { return TomlValue.OfBool(true); }
+        if (this._tryLiteral("false")) { return TomlValue.OfBool(false); }
+        throw this._err("unrecognised value");
+    }
+
+    private bool _tryLiteral(string lit) {
+        int len = lit.Length;
+        if (this._pos + len > this._src.Length) { return false; }
+        int i = 0;
+        while (i < len) {
+            if (this._src.CharAt(this._pos + i) != lit.CharAt(i)) { return false; }
+            i = i + 1;
+        }
+        // ensure boundary — next char isn't a bare-key continuation
+        if (this._pos + len < this._src.Length) {
+            char after = this._src.CharAt(this._pos + len);
+            int ac = (int)after;
+            bool isContinuation = (ac >= 65 && ac <= 90)        // A-Z
+                || (ac >= 97 && ac <= 122)                       // a-z
+                || (ac >= 48 && ac <= 57)                        // 0-9
+                || after == '_';
+            if (isContinuation) { return false; }
+        }
+        int j = 0;
+        while (j < len) { this._advance(); j = j + 1; }
+        return true;
+    }
+
+    // ── String parsing ───────────────────────────────────────────────────
+
+    private string _parseBasicString() {
+        this._expect('"', "'\"'");
+        StringBuilder sb = new StringBuilder();
+        while (!this._eof()) {
+            char c = this._peek();
+            if (c == '"') {
+                this._advance();
+                return sb.ToString();
+            }
+            if (c == '\n') {
+                throw this._err("newline in basic string (use multi-line \"\"\" — unsupported in v0)");
+            }
+            if (c == '\\') {
+                this._advance();
+                char esc = this._peek();
+                if (this._eof()) { throw this._err("unterminated string escape"); }
+                this._advance();
+                if (esc == '"')  { sb.Append("\""); }
+                else if (esc == '\\') { sb.Append("\\"); }
+                else if (esc == 'n') { sb.Append("\n"); }
+                else if (esc == 't') { sb.Append("\t"); }
+                else if (esc == 'r') { sb.Append("\r"); }
+                else if (esc == '0') { char[] z = new char[1]; z[0] = '\0'; sb.Append(String.FromChars(z)); }
+                else if (esc == 'b') { char[] z = new char[1]; z[0] = '\b'; sb.Append(String.FromChars(z)); }
+                else if (esc == 'f') { char[] z = new char[1]; z[0] = '\f'; sb.Append(String.FromChars(z)); }
+                else if (esc == 'u') {
+                    sb.Append(this._parseUnicodeEscape(4));
+                } else if (esc == 'U') {
+                    sb.Append(this._parseUnicodeEscape(8));
+                } else {
+                    throw this._err("unknown escape: \\" + this._charToString(esc));
+                }
+            } else {
+                this._advance();
+                sb.Append(this._charToString(c));
+            }
+        }
+        throw this._err("unterminated basic string");
+    }
+
+    private string _parseLiteralString() {
+        this._expect('\'', "'\\''");
+        StringBuilder sb = new StringBuilder();
+        while (!this._eof()) {
+            char c = this._peek();
+            if (c == '\'') {
+                this._advance();
+                return sb.ToString();
+            }
+            if (c == '\n') {
+                throw this._err("newline in literal string (multi-line ''' unsupported in v0)");
+            }
+            this._advance();
+            sb.Append(this._charToString(c));
+        }
+        throw this._err("unterminated literal string");
+    }
+
+    /// Parse N hex digits and return the resulting Unicode codepoint as a 1-char string.
+    /// (BMP only — codepoints above 0xFFFF require surrogate pair encoding,
+    /// which z42's char type stores as a single primitive. Errors above U+10FFFF.)
+    private string _parseUnicodeEscape(int width) {
+        int v = 0;
+        int i = 0;
+        while (i < width) {
+            char c = this._peek();
+            int d = this._hexDigit(c);
+            if (d < 0) { throw this._err("invalid hex digit in \\u escape"); }
+            v = v * 16 + d;
+            this._advance();
+            i = i + 1;
+        }
+        if (v > 0x10FFFF) {
+            throw this._err("Unicode escape out of range (>U+10FFFF)");
+        }
+        char[] arr = new char[1];
+        arr[0] = (char)v;
+        return String.FromChars(arr);
+    }
+
+    private int _hexDigit(char c) {
+        int code = (int)c;
+        if (code >= 48 && code <= 57)  { return code - 48; }       // '0'..'9'
+        if (code >= 97 && code <= 102) { return 10 + code - 97; }  // 'a'..'f'
+        if (code >= 65 && code <= 70)  { return 10 + code - 65; }  // 'A'..'F'
+        return -1;
+    }
+
+    // ── Number parsing ───────────────────────────────────────────────────
+
+    /// Scan a numeric token and dispatch to int vs float by content.
+    /// Handles: optional `+`/`-`, decimal digits, `.`, `eE` exponent,
+    /// `nan` / `inf` literals.
+    private TomlValue _parseNumber() {
+        int start = this._pos;
+        bool isFloat = false;
+
+        // Special-case nan / inf with optional sign.
+        if (this._peek() == '+' || this._peek() == '-') {
+            // Peek ahead to detect inf/nan.
+            int p = this._pos + 1;
+            if (p + 2 < this._src.Length) {
+                string ahead = this._src.Substring(p, 3);
+                if (ahead == "inf" || ahead == "nan") {
+                    bool neg = (this._peek() == '-');
+                    this._advance(); // sign
+                    this._advance(); this._advance(); this._advance(); // inf / nan
+                    if (ahead == "nan") {
+                        // Z42 has no NaN literal; produce 0.0 / 0.0 via __math?
+                        // Use a known sentinel: positive nan via parse.
+                        return TomlValue.OfDouble(double.Parse("nan"));
+                    }
+                    double d = double.Parse("inf");
+                    if (neg) { d = 0.0 - d; }
+                    return TomlValue.OfDouble(d);
+                }
+            }
+            this._advance();
+        }
+        if (this._pos + 2 < this._src.Length) {
+            string ahead = this._src.Substring(this._pos, 3);
+            if (ahead == "inf") {
+                this._advance(); this._advance(); this._advance();
+                return TomlValue.OfDouble(double.Parse("inf"));
+            }
+            if (ahead == "nan") {
+                this._advance(); this._advance(); this._advance();
+                return TomlValue.OfDouble(double.Parse("nan"));
+            }
+        }
+
+        while (!this._eof()) {
+            char c = this._peek();
+            int cc = (int)c;
+            if (cc >= 48 && cc <= 57) {       // 0-9
+                this._advance();
+            } else if (c == '.') {
+                isFloat = true;
+                this._advance();
+            } else if (c == 'e' || c == 'E') {
+                isFloat = true;
+                this._advance();
+                if (!this._eof() && (this._peek() == '+' || this._peek() == '-')) {
+                    this._advance();
+                }
+            } else {
+                break;
+            }
+        }
+        if (this._pos == start) {
+            throw this._err("expected number");
+        }
+        string raw = this._src.Substring(start, this._pos - start);
+        if (isFloat) {
+            return TomlValue.OfDouble(double.Parse(raw));
+        }
+        return TomlValue.OfLong(long.Parse(raw));
+    }
+
+    // ── Array ────────────────────────────────────────────────────────────
+
+    private TomlValue _parseArray() {
+        this._expect('[', "'['");
+        TomlValue arr = TomlValue.OfArray();
+        while (true) {
+            this._skipWhitespaceAndComments(true);
+            if (this._peek() == ']') {
+                this._advance();
+                return arr;
+            }
+            TomlValue v = this._parseValue();
+            arr.Add(v);
+            this._skipWhitespaceAndComments(true);
+            char c = this._peek();
+            if (c == ',') {
+                this._advance();
+                continue;
+            }
+            if (c == ']') {
+                this._advance();
+                return arr;
+            }
+            throw this._err("expected ',' or ']' in array");
+        }
+        return arr;
+    }
+
+    // ── Inline table ─────────────────────────────────────────────────────
+
+    private TomlValue _parseInlineTable() {
+        this._expect('{', "'{'");
+        TomlValue tbl = TomlValue.OfTable();
+        this._skipInlineWhitespace();
+        if (this._peek() == '}') {
+            this._advance();
+            return tbl;
+        }
+        while (true) {
+            this._skipInlineWhitespace();
+            this._parseKeyValue(tbl);
+            this._skipInlineWhitespace();
+            char c = this._peek();
+            if (c == ',') {
+                this._advance();
+                continue;
+            }
+            if (c == '}') {
+                this._advance();
+                return tbl;
+            }
+            throw this._err("expected ',' or '}' in inline table");
+        }
+        return tbl;
+    }
+}

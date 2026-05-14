@@ -17,11 +17,11 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.math` / `z42.test` / `z42.text` / `z42.time`。
+已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.math` / `z42.test` / `z42.text` / `z42.time` / `z42.toml`。
 
-覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File 基础、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器。
+覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer。
 
-**主要空缺**：文件系统的目录/路径深度操作、环境/进程、序列化（JSON/TOML）、并发、网络、加密、随机数。
+**主要空缺**：JSON 序列化、并发、网络、加密、随机数。
 
 ---
 
@@ -52,6 +52,7 @@
 **已落地（不在 P0 表）**：
 - `z42.encoding`（2026-05-13 add-z42-encoding）— Hex / Base64 RFC 4648 §4 / UTF-8。详 [encoding.md](encoding.md)
 - `z42.time`（2026-05-14 add-z42-time）— UTC 时刻（DateTime）/ 时间段（TimeSpan）/ 单调计时器（Stopwatch）。详 [time.md](time.md)
+- `z42.toml`（2026-05-14 add-z42-toml）— TOML 1.0 subset reader/writer，覆盖 manifest 解析。详 [toml.md](toml.md)
 
 ---
 
@@ -172,7 +173,7 @@
 | `Std.IO.Directory.{Create, Enumerate, Exists}` | **P0 z42.io.fs** | mkdir -p / 扫 src/tests/<cat>/<name>/ | ✅ 2026-05-13 add-std-io-directory |
 | `Std.IO.Path.{Combine, GetDirectoryName, GetExtension, IsRooted, ...}` | **P0 z42.io.fs** | 跨平台 path 拼接（避免 `/` vs `\` 错误） | ✅ 2026-05-12 add-std-io-polish |
 | `Std.Environment.{GetVar, SetVar}` + `Std.Environment.GetCommandLineArgs()` | **P0 z42.os** + 已有 | 读 `$ANDROID_NDK_HOME` / argv 解析 | ✅ 2026-05-12 add-std-io-polish |
-| `Std.Toml.{Read, ReadFile}` | **P2 z42.toml** | 解析 versions.toml；shell 端目前用 python3 + tomllib | — |
+| `Std.Toml.TomlValue.Parse(text)` / `Stringify(root)` | **P2 z42.toml** | 解析 versions.toml；shell 端目前用 python3 + tomllib | ✅ 2026-05-14 add-z42-toml |
 | `Std.Net.Http.Get(url) -> stream` 或 shell out 到 curl | **P1 z42.net**（先 curl 顶着）| NDK / SDK 压缩包下载 | — |
 | `Std.Crypto.SHA256` 或 shell out 到 shasum/openssl | **P1 z42.crypto**（先 shasum 顶着）| 下载校验 | — |
 | `Std.IO.Compression.Zip.Extract` 或 shell out 到 unzip | **P2 z42.compression**（先 unzip 顶着）| NDK zip 解压 | — |

@@ -25,6 +25,7 @@ default-members = [
     "z42.encoding",
     "z42.test",
     "z42.time",
+    "z42.toml",
 ]
 
 [workspace.project]

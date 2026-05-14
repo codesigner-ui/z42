@@ -1,0 +1,56 @@
+// add-z42-toml (2026-05-14)：basic / literal 字符串 + 转义。
+namespace Z42TomlStringsTests;
+
+using Std.Test;
+using Std.Toml;
+
+[Test]
+void test_basic_string() {
+    var t = TomlValue.Parse("s = \"hello\"");
+    Assert.Equal("hello", t.Get("s").AsString());
+}
+
+[Test]
+void test_literal_string_no_escape() {
+    // Literal strings (single quotes) don't process escapes.
+    var t = TomlValue.Parse("s = 'a\\nb'");
+    Assert.Equal("a\\nb", t.Get("s").AsString());
+}
+
+[Test]
+void test_basic_string_escapes() {
+    var t = TomlValue.Parse("s = \"line1\\nline2\\ttab\"");
+    Assert.Equal("line1\nline2\ttab", t.Get("s").AsString());
+}
+
+[Test]
+void test_basic_string_quote_escape() {
+    var t = TomlValue.Parse("s = \"he said \\\"hi\\\"\"");
+    Assert.Equal("he said \"hi\"", t.Get("s").AsString());
+}
+
+[Test]
+void test_basic_string_backslash_escape() {
+    var t = TomlValue.Parse("s = \"a\\\\b\"");
+    Assert.Equal("a\\b", t.Get("s").AsString());
+}
+
+[Test]
+void test_unicode_escape_4digit() {
+    // \u00E9 = é
+    var t = TomlValue.Parse("s = \"caf\\u00E9\"");
+    Assert.Equal("café", t.Get("s").AsString());
+}
+
+[Test]
+void test_empty_string() {
+    var t = TomlValue.Parse("s = \"\"");
+    Assert.Equal("", t.Get("s").AsString());
+}
+
+[Test]
+void test_string_with_section_chars() {
+    // Brackets inside strings are literal.
+    var t = TomlValue.Parse("s = \"[not a section]\"");
+    Assert.Equal("[not a section]", t.Get("s").AsString());
+}

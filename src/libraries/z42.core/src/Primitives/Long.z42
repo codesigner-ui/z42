@@ -2,6 +2,7 @@ namespace Std;
 
 // L3 primitive-as-struct: `long` (64-bit integer) with arithmetic + comparison.
 public struct long : IComparable<long>, IEquatable<long>, INumber<long> {
+    [Native("__long_parse")]     public static extern long Parse(string s);
     [Native("__int_equals")]     public extern bool Equals(long other);
     [Native("__int_hash_code")]  public extern int GetHashCode();
     [Native("__int_to_string")]  public extern string ToString();

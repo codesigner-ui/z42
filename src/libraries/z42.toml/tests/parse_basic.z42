@@ -1,0 +1,101 @@
+// add-z42-toml (2026-05-14)：基本 key/value + section 测试。
+namespace Z42TomlBasicTests;
+
+using Std.Test;
+using Std.Toml;
+
+[Test]
+void test_empty_document() {
+    var t = TomlValue.Parse("");
+    Assert.True(t.IsTable());
+    Assert.Equal(0, t.Count());
+}
+
+[Test]
+void test_single_string_kv() {
+    var t = TomlValue.Parse("name = \"foo\"");
+    Assert.Equal("foo", t.Get("name").AsString());
+}
+
+[Test]
+void test_integer() {
+    var t = TomlValue.Parse("version = 42");
+    Assert.Equal(42L, t.Get("version").AsLong());
+}
+
+[Test]
+void test_negative_integer() {
+    var t = TomlValue.Parse("offset = -7");
+    Assert.Equal(-7L, t.Get("offset").AsLong());
+}
+
+[Test]
+void test_double() {
+    var t = TomlValue.Parse("pi = 3.14");
+    Assert.EqualApprox(3.14, t.Get("pi").AsDouble(), 1e-9);
+}
+
+[Test]
+void test_double_exponent() {
+    var t = TomlValue.Parse("big = 1.5e10");
+    Assert.EqualApprox(1.5e10, t.Get("big").AsDouble(), 1.0);
+}
+
+[Test]
+void test_bool_true_false() {
+    var t = TomlValue.Parse("a = true\nb = false");
+    Assert.True(t.Get("a").AsBool());
+    Assert.False(t.Get("b").AsBool());
+}
+
+[Test]
+void test_multiple_kv() {
+    var t = TomlValue.Parse("a = 1\nb = 2\nc = 3");
+    Assert.Equal(1L, t.Get("a").AsLong());
+    Assert.Equal(2L, t.Get("b").AsLong());
+    Assert.Equal(3L, t.Get("c").AsLong());
+}
+
+[Test]
+void test_simple_section() {
+    var t = TomlValue.Parse("[server]\nport = 8080");
+    Assert.True(t.Get("server").IsTable());
+    Assert.Equal(8080L, t.Get("server").Get("port").AsLong());
+}
+
+[Test]
+void test_nested_section() {
+    var t = TomlValue.Parse("[a.b.c]\nx = 1");
+    Assert.Equal(1L, t.Get("a").Get("b").Get("c").Get("x").AsLong());
+}
+
+[Test]
+void test_comments_skipped() {
+    string src = "# a comment line\nname = \"x\"  # trailing\n# another\nversion = 1";
+    var t = TomlValue.Parse(src);
+    Assert.Equal("x", t.Get("name").AsString());
+    Assert.Equal(1L, t.Get("version").AsLong());
+}
+
+[Test]
+void test_dotted_key() {
+    var t = TomlValue.Parse("server.port = 8080");
+    Assert.Equal(8080L, t.Get("server").Get("port").AsLong());
+}
+
+[Test]
+void test_kind_predicates() {
+    var t = TomlValue.Parse("s = \"x\"\nn = 1\nf = 1.5\nb = true");
+    Assert.True(t.Get("s").IsString());
+    Assert.True(t.Get("n").IsLong());
+    Assert.True(t.Get("f").IsDouble());
+    Assert.True(t.Get("b").IsBool());
+    Assert.False(t.Get("s").IsLong());
+}
+
+[Test]
+void test_kind_name() {
+    var t = TomlValue.Parse("s = \"x\"");
+    Assert.Equal("string", t.Get("s").KindName());
+    Assert.Equal("table", t.KindName());
+}

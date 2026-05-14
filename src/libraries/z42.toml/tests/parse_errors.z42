@@ -1,0 +1,72 @@
+// add-z42-toml (2026-05-14)：错误输入 → TomlException。
+namespace Z42TomlErrorsTests;
+
+using Std.Test;
+using Std.Toml;
+
+[Test]
+void test_duplicate_key_rejected() {
+    bool caught = false;
+    try {
+        TomlValue.Parse("name = \"a\"\nname = \"b\"");
+    } catch (TomlException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_duplicate_section_rejected() {
+    bool caught = false;
+    try {
+        TomlValue.Parse("[foo]\na = 1\n[foo]\nb = 2");
+    } catch (TomlException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unterminated_string() {
+    bool caught = false;
+    try {
+        TomlValue.Parse("s = \"unterminated");
+    } catch (TomlException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unterminated_section() {
+    bool caught = false;
+    try {
+        TomlValue.Parse("[unclosed\nname = \"x\"");
+    } catch (TomlException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_missing_value_after_equals() {
+    bool caught = false;
+    try {
+        TomlValue.Parse("name = ");
+    } catch (TomlException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_error_has_line_info() {
+    try {
+        // Error on line 3
+        TomlValue.Parse("a = 1\nb = 2\nbad =");
+    } catch (TomlException e) {
+        Assert.True(e.Line >= 1);
+        return;
+    }
+    Assert.True(false);  // should have thrown
+}

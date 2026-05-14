@@ -1,0 +1,189 @@
+namespace Std.Toml;
+using Std;
+using Std.Text;
+
+// add-z42-toml (2026-05-14)：值树 → TOML 文本。
+//
+// 输出策略：
+//   1. root 表的非 table 值（k = v）先输出，按 key 字典序
+//   2. 然后每个 sub-table 按 key 字典序输出，递归（FQ path 如 [a.b]）
+//   3. 数组按 `[v, v, v]` 单行（无换行；若元素是 table 用 [[aot]] 形式）
+//
+// 不保留：原始 key 顺序、注释、空行。
+public sealed class TomlWriter {
+    private StringBuilder _sb;
+
+    public TomlWriter() {
+        this._sb = new StringBuilder();
+    }
+
+    public string Write(TomlValue root) {
+        // root table key/value 先输出（非 table 值）
+        this._writeTableBody(root, "");
+        return this._sb.ToString();
+    }
+
+    /// Write keys whose value is NOT a table or AoT (those go under section headers).
+    /// `path` = FQ section path prefix (empty for root).
+    private void _writeTableBody(TomlValue table, string path) {
+        string[] keys = this._sortedKeys(table);
+
+        // 1) Non-table / non-aot leaves at this level.
+        int i = 0;
+        while (i < keys.Length) {
+            string k = keys[i];
+            TomlValue v = table.Get(k);
+            if (!v.IsTable() && !this._isAotArray(v)) {
+                this._sb.Append(this._formatKey(k));
+                this._sb.Append(" = ");
+                this._sb.Append(this._formatValue(v));
+                this._sb.Append("\n");
+            }
+            i = i + 1;
+        }
+
+        // 2) Sub-tables and AoT arrays.
+        int j = 0;
+        while (j < keys.Length) {
+            string k = keys[j];
+            TomlValue v = table.Get(k);
+            string sub = (path.Length == 0) ? this._formatKey(k) : (path + "." + this._formatKey(k));
+            if (v.IsTable()) {
+                this._sb.Append("\n[");
+                this._sb.Append(sub);
+                this._sb.Append("]\n");
+                this._writeTableBody(v, sub);
+            } else if (this._isAotArray(v)) {
+                int n = v.Length();
+                int e = 0;
+                while (e < n) {
+                    this._sb.Append("\n[[");
+                    this._sb.Append(sub);
+                    this._sb.Append("]]\n");
+                    this._writeTableBody(v.At(e), sub);
+                    e = e + 1;
+                }
+            }
+            j = j + 1;
+        }
+    }
+
+    /// Array of tables? (every element is a table.) Empty array is NOT AoT.
+    private bool _isAotArray(TomlValue v) {
+        if (!v.IsArray()) { return false; }
+        if (v.Length() == 0) { return false; }
+        int i = 0;
+        while (i < v.Length()) {
+            if (!v.At(i).IsTable()) { return false; }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    private string[] _sortedKeys(TomlValue table) {
+        string[] ks = table.Keys();
+        // Simple insertion sort — table sizes are small.
+        int i = 1;
+        while (i < ks.Length) {
+            string cur = ks[i];
+            int j = i - 1;
+            while (j >= 0 && ks[j].CompareTo(cur) > 0) {
+                ks[j + 1] = ks[j];
+                j = j - 1;
+            }
+            ks[j + 1] = cur;
+            i = i + 1;
+        }
+        return ks;
+    }
+
+    private string _formatKey(string k) {
+        // Bare key if all chars are [A-Za-z0-9_-]; else quote.
+        bool bare = (k.Length > 0);
+        int i = 0;
+        while (i < k.Length) {
+            char c = k.CharAt(i);
+            int cc = (int)c;
+            bool ok = (cc >= 65 && cc <= 90)        // A-Z
+                || (cc >= 97 && cc <= 122)           // a-z
+                || (cc >= 48 && cc <= 57)            // 0-9
+                || c == '_' || c == '-';
+            if (!ok) { bare = false; }
+            i = i + 1;
+        }
+        if (bare) { return k; }
+        return this._quoteBasic(k);
+    }
+
+    private string _formatValue(TomlValue v) {
+        if (v.IsString()) { return this._quoteBasic(v.AsString()); }
+        if (v.IsLong())   { return v.AsLong().ToString(); }
+        if (v.IsDouble()) {
+            double d = v.AsDouble();
+            string s = d.ToString();
+            // ToString may emit integer-looking form (e.g. "42") for whole values —
+            // ensure a decimal point survives so re-parse stays float.
+            if (!s.Contains(".") && !s.Contains("e") && !s.Contains("E") && !s.Contains("n") && !s.Contains("i")) {
+                s = s + ".0";
+            }
+            return s;
+        }
+        if (v.IsBool())   { return v.AsBool() ? "true" : "false"; }
+        if (v.IsArray())  { return this._formatArray(v); }
+        if (v.IsTable())  { return this._formatInlineTable(v); }
+        throw new TomlException("unknown TomlValue kind in stringify");
+    }
+
+    private string _formatArray(TomlValue arr) {
+        StringBuilder sb = new StringBuilder();
+        sb.Append("[");
+        int i = 0;
+        while (i < arr.Length()) {
+            if (i > 0) { sb.Append(", "); }
+            sb.Append(this._formatValue(arr.At(i)));
+            i = i + 1;
+        }
+        sb.Append("]");
+        return sb.ToString();
+    }
+
+    private string _formatInlineTable(TomlValue tbl) {
+        StringBuilder sb = new StringBuilder();
+        sb.Append("{ ");
+        string[] keys = this._sortedKeys(tbl);
+        int i = 0;
+        while (i < keys.Length) {
+            if (i > 0) { sb.Append(", "); }
+            sb.Append(this._formatKey(keys[i]));
+            sb.Append(" = ");
+            sb.Append(this._formatValue(tbl.Get(keys[i])));
+            i = i + 1;
+        }
+        sb.Append(" }");
+        return sb.ToString();
+    }
+
+    private string _quoteBasic(string s) {
+        StringBuilder sb = new StringBuilder();
+        sb.Append("\"");
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c == '"')       { sb.Append("\\\""); }
+            else if (c == '\\') { sb.Append("\\\\"); }
+            else if (c == '\n') { sb.Append("\\n"); }
+            else if (c == '\t') { sb.Append("\\t"); }
+            else if (c == '\r') { sb.Append("\\r"); }
+            else { sb.Append(this._charString(c)); }
+            i = i + 1;
+        }
+        sb.Append("\"");
+        return sb.ToString();
+    }
+
+    private string _charString(char c) {
+        char[] arr = new char[1];
+        arr[0] = c;
+        return String.FromChars(arr);
+    }
+}

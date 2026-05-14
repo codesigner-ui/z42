@@ -1,0 +1,67 @@
+// add-z42-toml (2026-05-14)：stringify + 简单 round-trip。
+namespace Z42TomlStringifyTests;
+
+using Std.Test;
+using Std.Toml;
+
+[Test]
+void test_stringify_simple() {
+    var t = TomlValue.OfTable();
+    t.Set("name", TomlValue.OfString("foo"));
+    t.Set("version", TomlValue.OfLong(42));
+    string s = TomlValue.Stringify(t);
+    Assert.Contains("name = \"foo\"", s);
+    Assert.Contains("version = 42", s);
+}
+
+[Test]
+void test_round_trip_basic() {
+    string src = "name = \"foo\"\nversion = 42\nactive = true";
+    var t1 = TomlValue.Parse(src);
+    string s = TomlValue.Stringify(t1);
+    var t2 = TomlValue.Parse(s);
+    Assert.Equal("foo", t2.Get("name").AsString());
+    Assert.Equal(42L, t2.Get("version").AsLong());
+    Assert.True(t2.Get("active").AsBool());
+}
+
+[Test]
+void test_round_trip_section() {
+    string src = "[server]\nport = 8080\nhost = \"localhost\"";
+    var t1 = TomlValue.Parse(src);
+    string s = TomlValue.Stringify(t1);
+    var t2 = TomlValue.Parse(s);
+    Assert.Equal(8080L, t2.Get("server").Get("port").AsLong());
+    Assert.Equal("localhost", t2.Get("server").Get("host").AsString());
+}
+
+[Test]
+void test_round_trip_array() {
+    string src = "members = [\"a\", \"b\", \"c\"]";
+    var t1 = TomlValue.Parse(src);
+    string s = TomlValue.Stringify(t1);
+    var t2 = TomlValue.Parse(s);
+    Assert.Equal(3, t2.Get("members").Length());
+    Assert.Equal("b", t2.Get("members").At(1).AsString());
+}
+
+[Test]
+void test_stringify_rejects_non_table_root() {
+    bool caught = false;
+    try {
+        TomlValue.Stringify(TomlValue.OfString("not a table"));
+    } catch (TomlException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_double_preserves_decimal() {
+    var t = TomlValue.OfTable();
+    t.Set("pi", TomlValue.OfDouble(3.0));  // whole-valued double
+    string s = TomlValue.Stringify(t);
+    // Must still parse back as double, not int.
+    var t2 = TomlValue.Parse(s);
+    Assert.True(t2.Get("pi").IsDouble());
+}
