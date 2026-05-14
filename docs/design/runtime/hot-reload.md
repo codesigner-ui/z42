@@ -148,7 +148,7 @@ The VM calls these hooks **automatically** when reloading (if they exist).
 The VM maintains a **function code table**:
 
 ```rust
-// src/runtime/src/module.rs
+// src/runtime/src/metadata/bytecode.rs
 
 pub struct Module {
     functions: HashMap<String, FunctionCode>,

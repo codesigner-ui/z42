@@ -542,14 +542,14 @@ R4 计划新增的 attribute（**目前 parser 不识别**）：
 
 | Phase | Spec | Status | Commit |
 |-------|------|--------|--------|
-| R1.A+B | [add-test-metadata-section](../../spec/changes/add-test-metadata-section/) | ✅ TestEntry types + zbc TIDX v=1 plumbing | `ea54554` |
+| R1.A+B | [add-test-metadata-section](../../spec/archive/2026-04-30-add-test-metadata-section/) | ✅ TestEntry types + zbc TIDX v=1 plumbing | `ea54554` |
 | R1.C.1 | 同上 | ✅ TIDX v=2 + skip_platform/feature fields | `bb2df98` |
 | R1.C.2-5 | 同上 | ✅ parser 识别 6 attribute + IrGen + 跨语言契约 | `5180d21` |
 | R1.D | 同上 | 🟡 docs（本文件 + ir.md 注 + error-codes 占位）+ archive |  |
-| R2 | [extend-z42-test-library](../../spec/changes/extend-z42-test-library/) | 🔵 DRAFT | — |
-| R3 | [rewrite-z42-test-runner-compile-time](../../spec/changes/rewrite-z42-test-runner-compile-time/) | 🔵 DRAFT | — |
-| R4 | [compiler-validate-test-attributes](../../spec/changes/compiler-validate-test-attributes/) | 🔵 DRAFT | — |
-| R5 | [rewrite-goldens-with-test-mechanism](../../spec/changes/rewrite-goldens-with-test-mechanism/) | 🔵 DRAFT (scope 缩窄) | — |
+| R2 | [extend-z42-test-library](../../spec/archive/2026-05-05-extend-z42-test-library/) | ✅ Assert API + TestIO + Setup/Teardown | — |
+| R3 | [rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/) | ✅ z42-test-runner lib API | — |
+| R4 | [compiler-validate-test-attributes](../../spec/archive/2026-04-30-compiler-validate-test-attributes/) | ✅ E0911/E0912/E0914/E0915 validation | — |
+| R5 | [rewrite-goldens-with-test-mechanism](../../spec/archive/2026-04-30-rewrite-goldens-with-test-mechanism/) | ✅ (scope 缩窄, 部分 stdlib goldens migrated) | — |
 
 ---
 

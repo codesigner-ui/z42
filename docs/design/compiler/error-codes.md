@@ -137,7 +137,7 @@ L1 `[Native]` dispatch 一组（E0901–E0904，已启用）+ Tier1 C ABI 编译
 
 ### E0911 / E0912 / E0914 / E0915（R4.A 已启用，2026-04-30）
 
-由 spec [`compiler-validate-test-attributes`](../../spec/changes/compiler-validate-test-attributes/) (R4) 钉死；R1.C parser 收集 `[Test]` / `[Benchmark]` / `[Skip]` / `[Setup]` / `[Teardown]` / `[Ignore]` 6 个 attribute 后，本 pass 在 TypeCheck 之后、IrGen 之前校验签名 + 组合合法性。实施位置：[`src/compiler/z42.Semantics/TestAttributeValidator.cs`](../../src/compiler/z42.Semantics/TestAttributeValidator.cs)。
+由 spec [`compiler-validate-test-attributes`](../../spec/archive/2026-04-30-compiler-validate-test-attributes/) (R4) 钉死；R1.C parser 收集 `[Test]` / `[Benchmark]` / `[Skip]` / `[Setup]` / `[Teardown]` / `[Ignore]` 6 个 attribute 后，本 pass 在 TypeCheck 之后、IrGen 之前校验签名 + 组合合法性。实施位置：[`src/compiler/z42.Semantics/TestAttributeValidator.cs`](../../src/compiler/z42.Semantics/TestAttributeValidator.cs)。
 
 | Code   | Title                            | When it occurs |
 |--------|----------------------------------|----------------|

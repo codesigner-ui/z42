@@ -1,6 +1,6 @@
 # Cross-Platform 测试架构
 
-> 状态：Design Draft（2026-05-09）。落地分散到 [rewrite-z42-test-runner-compile-time](../../spec/changes/rewrite-z42-test-runner-compile-time/)（lib API） + [add-platform-wasm](../../spec/changes/add-platform-wasm/) / [add-platform-android](../../spec/changes/add-platform-android/) / [add-platform-ios](../../spec/changes/add-platform-ios/) 各自的 Testing 子段。
+> 状态：Design Draft（2026-05-09）。落地分散到 [rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/)（lib API） + [add-platform-wasm](../../spec/archive/2026-05-12-add-platform-wasm/) / [add-platform-android](../../spec/archive/2026-05-12-add-platform-android/) / [add-platform-ios](../../spec/archive/2026-05-12-add-platform-ios/) 各自的 Testing 子段。
 >
 > 本文是 [cross-platform.md](../runtime/cross-platform.md)（VM build 矩阵）与 [testing.md](testing.md)（测试框架架构）的桥接：**同一份测试集如何在 host / wasm / iOS / Android 一致地跑，并把失败精确报告回 CI**。
 >
@@ -71,7 +71,7 @@
 
 ## test-runner library API
 
-按 [rewrite-z42-test-runner-compile-time](../../spec/changes/rewrite-z42-test-runner-compile-time/) spec 落地。最小可绑定 surface：
+按 [rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/) spec 落地。最小可绑定 surface：
 
 ```rust
 // src/toolchain/test-runner/src/lib.rs
@@ -137,7 +137,7 @@ pub struct SuiteResult {
 
 ## 各平台绑定模式
 
-### WASM（[add-platform-wasm](../../spec/changes/add-platform-wasm/)）
+### WASM（[add-platform-wasm](../../spec/archive/2026-05-12-add-platform-wasm/)）
 
 ```js
 // platform/wasm/test/runner.test.js  (vitest)
@@ -160,7 +160,7 @@ describe('z42 cross-platform tests on wasm', () => {
 - Node.js 场景直接 fs（更适合 CI）
 - stdout 在 wasm 下走 `Z42TestIO.captureStdout` → 字符串（无 stdio）
 
-### Android（[add-platform-android](../../spec/changes/add-platform-android/)）
+### Android（[add-platform-android](../../spec/archive/2026-05-12-add-platform-android/)）
 
 ```kotlin
 // platform/android/z42-runtime/src/androidTest/.../Z42TestRunnerTest.kt
@@ -184,7 +184,7 @@ class Z42TestRunnerTest(private val zbcAsset: String) {
 - `Z42TestRunner.runZbc` 是 JNI 包装，内部调用 Rust `run_zbc(bytes, opts)`
 - emulator / device 上跑（CI 用 macOS runner 提供 x86_64 emulator 加速）
 
-### iOS（[add-platform-ios](../../spec/changes/add-platform-ios/)）
+### iOS（[add-platform-ios](../../spec/archive/2026-05-12-add-platform-ios/)）
 
 ```swift
 // platform/ios/Tests/Z42RuntimeTests/Z42TestRunnerTests.swift
@@ -412,7 +412,7 @@ jobs:
 按依赖顺序：
 
 1. **Phase 1 — test-runner library 化**（基础）
-   spec：[rewrite-z42-test-runner-compile-time](../../spec/changes/rewrite-z42-test-runner-compile-time/) （已 DRAFT）
+   spec：[rewrite-z42-test-runner-compile-time](../../spec/archive/2026-05-12-rewrite-z42-test-runner-compile-time/) （已 DRAFT）
    交付：`pub fn run_zbc(...)`，CLI 改成调用库；host 现有 `./scripts/test-stdlib.sh` 不变
 
 2. **Phase 2 — Capability 注册表 + `[SkipPlatform]` attribute**（轻量）
@@ -426,7 +426,7 @@ jobs:
    新 spec（小）：`./scripts/build-test-zbcs.sh` 把所有 `src/tests/**/*.z42` + `src/libraries/<lib>/tests/*.z42` 编译到 `artifacts/test-zbcs/`，CI upload
 
 4. **Phase 4 — wasm 平台 + testing 子段**（独立）
-   spec：[add-platform-wasm](../../spec/changes/add-platform-wasm/)，加 Testing 段（vitest 消费 zbc bundle）
+   spec：[add-platform-wasm](../../spec/archive/2026-05-12-add-platform-wasm/)，加 Testing 段（vitest 消费 zbc bundle）
 
 5. **Phase 5 — android + ios 平台**（独立，可并行）
    spec：add-platform-android / add-platform-ios，各自 Testing 段
