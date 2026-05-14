@@ -1,0 +1,15 @@
+// freeze-zbc-v1 fixture: multi-method class with cross-method calls.
+// Exercises line table density (more DBUG entries) + multiple FUNC bodies.
+class Calculator {
+    int Add(int a, int b) { return a + b; }
+    int Sub(int a, int b) { return a - b; }
+    int AddTwice(int a, int b) {
+        return this.Add(a, b) + this.Add(a, b);
+    }
+}
+
+void Main() {
+    var c = new Calculator();
+    c.AddTwice(1, 2);
+    c.Sub(10, 3);
+}

@@ -1,0 +1,2 @@
+// freeze-zbc-v1 fixture: minimal valid module — no classes, only Main.
+void Main() { }

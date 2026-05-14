@@ -1,0 +1,8 @@
+// freeze-zbc-v1 fixture: cross-zpkg call triggers IMPT section + IMPORT_BASE
+// (0x8000_0000) token encoding in FUNC body references to Std.IO.Console.WriteLine.
+using Std.IO;
+
+void Main() {
+    Console.WriteLine("hello");
+    Console.WriteLine(42);
+}

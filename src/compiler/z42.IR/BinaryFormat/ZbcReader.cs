@@ -21,21 +21,18 @@ public static partial class ZbcReader
         ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
         bool stripped = flags.HasFlag(ZbcFlags.Stripped);
 
-        // Phase 3 S3c (tokenize-ir-and-zbc-bump, 2026-05-09): require zbc 1.0+.
-        // 2026-05-10 split-debug-symbols: bumped to 1.2 (LineTable moved from
-        // FUNC body into DBUG section + new BLID section). Pre-1.2 not
-        // supported per CLAUDE.md "不为旧版本提供兼容".
-        if (major == 0)
+        // Strict-pin policy (freeze-zbc-v1, 2026-05-14): reader accepts exactly
+        // major == ZbcWriter.VersionMajor && minor == ZbcWriter.VersionMinor.
+        // Pre-1.0 z42 doesn't preserve compatibility across minor bumps; older
+        // zbc artifacts must be regenerated. See docs/design/runtime/zbc.md
+        // "版本兼容性" + .claude/rules/workflow.md "不为旧版本提供兼容".
+        if (major != ZbcWriter.VersionMajor)
             throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.5+." +
-                "Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade.");
-        if (major > 1)
+                $"zbc major {major} not supported (writer is at {ZbcWriter.VersionMajor})");
+        if (minor != ZbcWriter.VersionMinor)
             throw new InvalidDataException(
-                $"zbc major version {major} not supported (expected 1.x)");
-        if (major == 1 && minor < 5)
-            throw new InvalidDataException(
-                $"zbc {major}.{minor} not supported; requires 1.5+." +
-                "Run scripts/regen-golden-tests.sh to upgrade golden artifacts.");
+                $"zbc minor {minor} not supported (writer is at {ZbcWriter.VersionMinor}); " +
+                $"regen via ./scripts/regen-golden-tests.sh");
 
         var dir = ReadDirectory(data, minor, secCount);
 
@@ -164,10 +161,11 @@ public static partial class ZbcReader
     {
         ParseHeader(data, out ushort major, out ushort minor, out var flags, out ushort secCount);
 
-        if (major != 1 || minor < 5)
+        if (major != ZbcWriter.VersionMajor || minor != ZbcWriter.VersionMinor)
             throw new InvalidDataException(
-                $"sidecar zbc {major}.{minor} not supported; requires 1.5+." +
-                "Run scripts/regen-golden-tests.sh to upgrade.");
+                $"sidecar zbc {major}.{minor} not supported (writer is at " +
+                $"{ZbcWriter.VersionMajor}.{ZbcWriter.VersionMinor}); " +
+                $"regen via ./scripts/regen-golden-tests.sh");
         if (!flags.HasFlag(ZbcFlags.SymOnly))
             throw new InvalidDataException(
                 "expected SymOnly flag set; this is not a debug-symbol sidecar.");

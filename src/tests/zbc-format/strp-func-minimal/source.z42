@@ -1,0 +1,9 @@
+// freeze-zbc-v1 fixture: single class with one method — covers STRP / TYPE / FUNC / DBUG.
+class Greeter {
+    string Hi() { return "hello"; }
+}
+
+void Main() {
+    var g = new Greeter();
+    g.Hi();
+}

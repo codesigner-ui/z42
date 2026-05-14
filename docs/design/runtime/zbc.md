@@ -248,7 +248,7 @@ Byte 4+:  ...    — 按操作码定义的额外操作数字（u8 / u16 / u32 / 
 ```
 [4]  magic:         0x5A 0x42 0x43 0x00   ("ZBC\0")
 [2]  version_major  当前 1
-[2]  version_minor  当前 3 (2026-05-10 split-debug-symbols Phase 4: SIGS 携带 per-param 类型名)
+[2]  version_minor  当前 5 (详见 minor changelog 表)
 [2]  flags          bit0=Stripped, bit1=HasDebug, bit2=SymOnly
 [2]  section_count
 [4]  reserved
@@ -425,11 +425,27 @@ z42c --assemble foo.zasm -o foo.zbc
 
 ## 版本兼容性
 
-- `version_major` 变化 → 破坏性变更，VM 必须拒绝加载
-- `version_minor` 变化 → 新增操作码，旧 VM 遇到未知 opcode 报 `UnsupportedOpcode` 错误
-- **当前版本**：`major=1, minor=0`（Phase 3 `tokenize-ir-and-zbc-bump`，2026-05-09）
-- pre-1.0 (0.x) 不支持，VM 加载时 bail。Phase 1+2 历史版本 0.1–0.9 已废弃；
-  artifacts 用 `scripts/build-stdlib.sh + scripts/regen-golden-tests.sh` 重生
+**Strict-pin 政策**（与 [`workflow.md` "不为旧版本提供兼容"](../../../.claude/rules/workflow.md) 对齐）：
+
+- Reader 仅接受 `major == ZbcWriter.VersionMajor && minor == ZbcWriter.VersionMinor`。pre-1.0 z42 阶段**不为旧 zbc minor 提供向前 / 向后兼容**；每次 minor bump = 所有现存 zbc artifacts 必须 regen（`./scripts/regen-golden-tests.sh`）。
+- **当前版本**：`major=1, minor=5`（详见下方 minor changelog）
+- **触发 minor bump** 的事项：新增 opcode / 新增 section id / 已定义 section 内部字段语义变化 / Flag 位语义变化
+- **触发 major bump** 的事项（迄今未发生）：改 magic / 改 16B header 字段宽度或排列 / 改 section directory 12B 条目格式 / 重划 Token 编码空间（IMPORT_BASE / UNRESOLVED 等）
+- **未识别 section**：reader 通过 dict-lookup 自动跳过（不在已知 tag 集合内的 section 不影响其他 section 加载）。这是 v1 内 "加 section 不破坏 reader" 的唯一保留兼容点；但前提是新 section 不携带必须信息（必须信息出现时 minor bump 本身就让旧 reader bail）。
+- **未来 v2**：v1 框架内能容纳的变化都走 minor bump；只有上述 "触发 major bump" 事项才考虑 v2。v2 出现前不预留任何 v2 兼容代码。
+
+### Minor changelog
+
+| minor | 日期 | 触发 spec | 引入内容 |
+|:-----:|------|----------|---------|
+| 1.0 | 2026-05-09 | [tokenize-ir-and-zbc-bump](../../spec/archive/2026-05-09-tokenize-ir-and-zbc-bump/) | 重设结构骨架（替换 pre-1.0 sequential format）；IR 字段 tokenized via TokenAllocator (local index OR `IMPORT_BASE + STRS idx` for cross-zpkg) |
+| 1.1 | 2026-05-10 | [span-column-propagate](../../spec/archive/2026-05-10-span-column-propagate/) | Line table entry 加 `u32 Column`（除 Line 外）|
+| 1.2 | 2026-05-10 | [split-debug-symbols](../../spec/archive/2026-05-11-split-debug-symbols/) Phase 1 | `ZbcFlags.SymOnly` + `BLID` section（16B BLAKE3-128 build_id，always last）|
+| 1.3 | 2026-05-10 | split-debug-symbols Phase 4 | `SIGS` 加 per-parameter type names（u32 strIdx × ParamCount），stack-trace signature decoration |
+| 1.4 | 2026-05-11 | [add-generic-func-constraint](../../spec/archive/2026-05-11-add-generic-func-constraint/) | Constraint bundle flag 0x40 + per-param/return type-name strings (Z42FuncType signature) |
+| 1.5 | 2026-05-13 | [fix-numeric-cast-lowering](../../spec/archive/2026-05-13-fix-numeric-cast-lowering/) | 新 opcode `Convert` (0xB1) 表达显式数值类型转换（替换之前 cast 为 IR no-op 的语义） |
+
+> **如何 bump minor**：见 [`workflow.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/workflow.md)。简而言之 — 写 `ZbcWriter.VersionMinor++` + 同步 `zbc_reader.rs` 常量 + 本表加一行 + `generate-fixtures.sh` regen + commit。Invariant CI 校验三方常量一致。
 
 ### Token 编码（v1.0+）
 

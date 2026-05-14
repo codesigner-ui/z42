@@ -1,0 +1,12 @@
+// freeze-zbc-v1 fixture: method-group conversion to delegate type forces
+// ZbcWriter to emit FRCS section (FuncRef cache slot count).
+namespace Demo;
+
+public delegate int IntFn1(int x);
+
+int Square(int x) { return x * x; }
+
+void Main() {
+    IntFn1 sq = Square;   // method-group conversion → FRCS cache slot allocated
+    sq(5);
+}

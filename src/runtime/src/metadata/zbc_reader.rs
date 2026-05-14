@@ -18,6 +18,20 @@ use super::bytecode::{
 use super::formats::{ZpkgDep, ZPKG_MAGIC, ZBC_MAGIC};
 use super::types::ExecMode;
 
+// ── zbc wire format version (mirror of C# ZbcWriter.VersionMajor/Minor) ──────
+//
+// Strict-pin policy (freeze-zbc-v1, 2026-05-14):
+// reader accepts exactly major == ZBC_VERSION_MAJOR && minor == ZBC_VERSION_MINOR.
+// Bumping either requires synchronized update of:
+//   1. src/compiler/z42.IR/BinaryFormat/ZbcWriter.cs (VersionMajor / VersionMinor)
+//   2. these two constants
+//   3. docs/design/runtime/zbc.md "Minor changelog" table
+//   4. src/tests/zbc-format/generate-fixtures.sh regen
+// See docs/design/runtime/zbc.md + .claude/rules/workflow.md for the full procedure.
+
+pub const ZBC_VERSION_MAJOR: u16 = 1;
+pub const ZBC_VERSION_MINOR: u16 = 5;
+
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
 const OP_CONST_I: u8     = 0x00;
@@ -588,8 +602,12 @@ pub fn parse_zbc_sidecar(data: &[u8]) -> Result<ZbcSidecarData> {
     }
     let major = u16::from_le_bytes([data[4], data[5]]);
     let minor = u16::from_le_bytes([data[6], data[7]]);
-    if major != 1 || minor < 5 {
-        bail!("zbc sidecar {major}.{minor} not supported; requires 1.5+");
+    if major != ZBC_VERSION_MAJOR || minor != ZBC_VERSION_MINOR {
+        bail!(
+            "zbc sidecar {major}.{minor} not supported (writer is at \
+             {ZBC_VERSION_MAJOR}.{ZBC_VERSION_MINOR}); \
+             regen via ./scripts/regen-golden-tests.sh"
+        );
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) == 0 {
@@ -953,18 +971,17 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
     let major     = u16::from_le_bytes([data[4], data[5]]);
     let minor     = u16::from_le_bytes([data[6], data[7]]);
     let sec_count = u16::from_le_bytes([data[10], data[11]]);
-    // 2026-05-10 split-debug-symbols Phase 4: bumped to 1.3 — SIGS gains
-    // per-parameter type names (u32 strIdx × paramCount) for stack-trace
-    // signature decoration. Per CLAUDE.md "不为旧版本提供兼容", pre-1.3
-    // artifacts must be regenerated.
-    if major == 0 || (major == 1 && minor < 5) {
-        bail!(
-            "zbc {major}.{minor} not supported; requires 1.5+. \
-             Run scripts/build-stdlib.sh + scripts/regen-golden-tests.sh to upgrade."
-        );
+    // Strict-pin policy (freeze-zbc-v1, 2026-05-14): exact match with writer.
+    // Pre-1.0 z42 doesn't keep older zbc minor readable; regen via
+    // scripts/regen-golden-tests.sh. See docs/design/runtime/zbc.md.
+    if major != ZBC_VERSION_MAJOR {
+        bail!("zbc major {major} not supported (writer is at {ZBC_VERSION_MAJOR})");
     }
-    if major > 1 {
-        bail!("zbc major version {major} not supported (expected 1.x)");
+    if minor != ZBC_VERSION_MINOR {
+        bail!(
+            "zbc minor {minor} not supported (writer is at {ZBC_VERSION_MINOR}); \
+             regen via ./scripts/regen-golden-tests.sh"
+        );
     }
     let flags = u16::from_le_bytes([data[8], data[9]]);
     if (flags & 0x04) != 0 {

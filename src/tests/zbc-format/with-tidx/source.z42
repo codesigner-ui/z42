@@ -1,0 +1,16 @@
+// freeze-zbc-v1 fixture: [Test] attribute triggers TIDX section.
+using Std.Test;
+
+class MathTests {
+    [Test]
+    void test_add() {
+        Assert.Equal(3, 1 + 2);
+    }
+
+    [Test]
+    void test_sub() {
+        Assert.Equal(5, 10 - 5);
+    }
+}
+
+void Main() { }

@@ -1,0 +1,37 @@
+{
+  "header": {
+    "major": 1,
+    "minor": 5,
+    "flags": [],
+    "section_count": 7
+  },
+  "sections": [
+    "NSPC",
+    "STRS",
+    "TYPE",
+    "SIGS",
+    "IMPT",
+    "EXPT",
+    "FUNC"
+  ],
+  "module": "main",
+  "string_pool_size": 0,
+  "classes": [],
+  "functions": [
+    {
+      "name": "Main",
+      "param_count": 0,
+      "param_types": null,
+      "return_type": "void",
+      "exec_mode": "Interp",
+      "is_static": false,
+      "block_count": 1,
+      "instr_count": 0,
+      "opcodes": []
+    }
+  ],
+  "has_test_index": false,
+  "test_index_size": 0,
+  "func_ref_cache_slots": 0,
+  "has_build_id": false
+}
