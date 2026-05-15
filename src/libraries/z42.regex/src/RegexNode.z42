@@ -1,0 +1,125 @@
+namespace Std.Regex;
+using Std;
+
+// add-z42-regex (2026-05-16)：regex AST 节点。
+//
+// 用 _kind: int + 各 field 表示 discriminated union（z42 无 ADT；同 TomlValue /
+// JsonValue 模式）。
+//
+// 顶层 pattern 是 RegexNode[]（concat 隐式 — 顺序即 concat）；ALT / QUANT /
+// GROUP 的 child 同样是 RegexNode[]。
+//
+// 序列存储：raw `RegexNode[]` + 显式 count 字段（z42 stdlib 不用 List<T>，
+// 类型参数 dropping bug；同 TomlValue._arrayItems 模式）。
+//
+// Kinds:
+//   1 = LIT          字符字面（_ch）
+//   2 = ANY          `.`（match 任意单字符；v0 包括换行）
+//   3 = CHARSET      `[...]`（_negated, _rangeStarts/_rangeEnds 配对成区间）
+//   4 = ANCHOR_START `^`
+//   5 = ANCHOR_END   `$`
+//   6 = ALT          `a|b`（_leftSeq/_leftCount, _rightSeq/_rightCount）
+//   7 = QUANT        `?`/`*`/`+`/`{n,m}`（_childSeq/_childCount, _min, _max；_max=-1 unbounded）
+//   8 = GROUP        capturing `()`（_childSeq/_childCount, _groupIndex 1-based）
+public class RegexNode {
+    public int _kind;
+    public int _ch;                    // LIT — codepoint
+
+    public bool _negated;              // CHARSET
+    public int[] _rangeStarts;         // CHARSET — inclusive
+    public int[] _rangeEnds;
+    public int _rangeCount;
+
+    public RegexNode[] _leftSeq;       // ALT
+    public int _leftCount;
+    public RegexNode[] _rightSeq;
+    public int _rightCount;
+
+    public RegexNode[] _childSeq;      // QUANT / GROUP
+    public int _childCount;
+    public int _min;                   // QUANT
+    public int _max;                   // QUANT (-1 = unbounded)
+
+    public int _groupIndex;            // GROUP (1-based)
+
+    public RegexNode(int kind) {
+        this._kind        = kind;
+        this._ch          = 0;
+        this._negated     = false;
+        this._rangeStarts = null;
+        this._rangeEnds   = null;
+        this._rangeCount  = 0;
+        this._leftSeq     = null;
+        this._leftCount   = 0;
+        this._rightSeq    = null;
+        this._rightCount  = 0;
+        this._childSeq    = null;
+        this._childCount  = 0;
+        this._min         = 0;
+        this._max         = 0;
+        this._groupIndex  = 0;
+    }
+
+    public static RegexNode Lit(int ch) {
+        var n = new RegexNode(1);
+        n._ch = ch;
+        return n;
+    }
+
+    public static RegexNode Any() {
+        return new RegexNode(2);
+    }
+
+    public static RegexNode Charset(bool negated, int[] starts, int[] ends, int count) {
+        var n = new RegexNode(3);
+        n._negated     = negated;
+        n._rangeStarts = starts;
+        n._rangeEnds   = ends;
+        n._rangeCount  = count;
+        return n;
+    }
+
+    public static RegexNode AnchorStart() { return new RegexNode(4); }
+    public static RegexNode AnchorEnd()   { return new RegexNode(5); }
+
+    public static RegexNode Alt(RegexNode[] left, int leftCount,
+                                RegexNode[] right, int rightCount) {
+        var n = new RegexNode(6);
+        n._leftSeq    = left;
+        n._leftCount  = leftCount;
+        n._rightSeq   = right;
+        n._rightCount = rightCount;
+        return n;
+    }
+
+    public static RegexNode Quant(RegexNode[] child, int childCount, int min, int max) {
+        var n = new RegexNode(7);
+        n._childSeq   = child;
+        n._childCount = childCount;
+        n._min        = min;
+        n._max        = max;
+        return n;
+    }
+
+    public static RegexNode Group(RegexNode[] child, int childCount, int groupIndex) {
+        var n = new RegexNode(8);
+        n._childSeq   = child;
+        n._childCount = childCount;
+        n._groupIndex = groupIndex;
+        return n;
+    }
+
+    /// CHARSET 是否匹配 ch（含 _negated 反转）。仅 _kind == 3 时调用。
+    public bool CharsetMatches(int ch) {
+        int i = 0;
+        bool inSet = false;
+        while (i < this._rangeCount) {
+            int a = this._rangeStarts[i];
+            int b = this._rangeEnds[i];
+            if (ch >= a && ch <= b) { inSet = true; break; }
+            i = i + 1;
+        }
+        if (this._negated) { return !inSet; }
+        return inSet;
+    }
+}

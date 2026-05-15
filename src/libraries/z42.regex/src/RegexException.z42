@@ -1,0 +1,13 @@
+namespace Std;
+
+// add-z42-regex (2026-05-16)：Regex compile / match 错误。
+//
+// 主要用于 Regex.Compile 阶段（非法 pattern）；运行时 Match 引擎不抛此异常
+// （internal errors 走通用 InvalidOperationException）。
+public class RegexException : Exception {
+    public RegexException(string message) : base(message) {}
+
+    override string ToString() {
+        return "RegexException: " + this.Message;
+    }
+}

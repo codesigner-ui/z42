@@ -1,0 +1,69 @@
+// add-z42-regex (2026-05-16)：() capturing group + | alternation。
+namespace Z42RegexGroupsTests;
+
+using Std.Test;
+using Std.Regex;
+
+[Test]
+void test_simple_alternation() {
+    Regex r = Regex.Compile("^(cat|dog|fish)$");
+    Assert.True(r.IsMatch("cat"));
+    Assert.True(r.IsMatch("dog"));
+    Assert.True(r.IsMatch("fish"));
+    Assert.False(r.IsMatch("bird"));
+    Assert.False(r.IsMatch("catdog"));
+}
+
+[Test]
+void test_group_capture() {
+    Regex r = Regex.Compile("(\\w+)=(\\w+)");
+    Match m = r.Find("name=alice");
+    Assert.True(m != null);
+    Assert.Equal(2, r.GroupCount());
+    Assert.Equal("name=alice", m.Group(0));
+    Assert.Equal("name",       m.Group(1));
+    Assert.Equal("alice",      m.Group(2));
+}
+
+[Test]
+void test_nested_groups() {
+    Regex r = Regex.Compile("^((a)(b))$");
+    Match m = r.Find("ab");
+    Assert.True(m != null);
+    Assert.Equal("ab", m.Group(1));
+    Assert.Equal("a",  m.Group(2));
+    Assert.Equal("b",  m.Group(3));
+}
+
+[Test]
+void test_group_with_quantifier() {
+    Regex r = Regex.Compile("^(\\d+)\\.(\\d+)$");
+    Match m = r.Find("3.14");
+    Assert.True(m != null);
+    Assert.Equal("3",  m.Group(1));
+    Assert.Equal("14", m.Group(2));
+}
+
+[Test]
+void test_alternation_inside_group() {
+    Regex r = Regex.Compile("^(yes|no)-(true|false)$");
+    Match m = r.Find("yes-true");
+    Assert.True(m != null);
+    Assert.Equal("yes",  m.Group(1));
+    Assert.Equal("true", m.Group(2));
+
+    Match m2 = r.Find("no-false");
+    Assert.True(m2 != null);
+    Assert.Equal("no",    m2.Group(1));
+    Assert.Equal("false", m2.Group(2));
+}
+
+[Test]
+void test_unmatched_group_returns_empty() {
+    // Note: v0 simplification — unmatched group returns ""
+    Regex r = Regex.Compile("(a)|(b)");
+    Match m = r.Find("a");
+    Assert.True(m != null);
+    Assert.Equal("a", m.Group(1));
+    Assert.Equal("",  m.Group(2));  // not matched
+}

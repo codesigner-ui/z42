@@ -46,7 +46,7 @@ else
     COMPILER_CMD=(dotnet run --project "$ROOT/src/compiler/z42.Driver" --)
 fi
 
-LIBS=(z42.core z42.io z42.io.binary z42.math z42.text z42.encoding z42.collections z42.test z42.time z42.toml z42.json z42.random z42.uri z42.diagnostics)
+LIBS=(z42.core z42.io z42.io.binary z42.math z42.text z42.encoding z42.collections z42.test z42.time z42.toml z42.json z42.random z42.uri z42.diagnostics z42.regex)
 
 # Workspace 模式：cd 到 src/libraries 触发 workspace 发现；
 # z42c build --workspace --release 编译所有 default-members
@@ -117,7 +117,8 @@ cat > "$INDEX" <<'EOF'
   "Std.Random":      "z42.random.zpkg",
   "Std.Uri":         "z42.uri.zpkg",
   "Std.Binary":      "z42.io.binary.zpkg",
-  "Std.Diagnostics": "z42.diagnostics.zpkg"
+  "Std.Diagnostics": "z42.diagnostics.zpkg",
+  "Std.Regex":       "z42.regex.zpkg"
 }
 EOF
 echo "  index:     $INDEX"

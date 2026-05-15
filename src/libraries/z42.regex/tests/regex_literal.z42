@@ -1,0 +1,85 @@
+// add-z42-regex (2026-05-16)：字面字符 + ^$ anchor + escape。
+namespace Z42RegexLiteralTests;
+
+using Std.Test;
+using Std.Regex;
+
+[Test]
+void test_literal_match_anywhere() {
+    Regex r = Regex.Compile("abc");
+    Assert.True(r.IsMatch("abc"));
+    Assert.True(r.IsMatch("xxabcxx"));
+    Assert.True(r.IsMatch("abc and more"));
+    Assert.False(r.IsMatch("ab"));
+    Assert.False(r.IsMatch(""));
+}
+
+[Test]
+void test_anchored_start() {
+    Regex r = Regex.Compile("^abc");
+    Assert.True(r.IsMatch("abc"));
+    Assert.True(r.IsMatch("abc and more"));
+    Assert.False(r.IsMatch("xabc"));
+}
+
+[Test]
+void test_anchored_end() {
+    Regex r = Regex.Compile("abc$");
+    Assert.True(r.IsMatch("abc"));
+    Assert.True(r.IsMatch("xxabc"));
+    Assert.False(r.IsMatch("abcx"));
+}
+
+[Test]
+void test_anchored_both() {
+    Regex r = Regex.Compile("^abc$");
+    Assert.True(r.IsMatch("abc"));
+    Assert.False(r.IsMatch("abcx"));
+    Assert.False(r.IsMatch("xabc"));
+    Assert.False(r.IsMatch("ab"));
+}
+
+[Test]
+void test_any_char() {
+    Regex r = Regex.Compile("a.c");
+    Assert.True(r.IsMatch("abc"));
+    Assert.True(r.IsMatch("axc"));
+    Assert.True(r.IsMatch("a1c"));
+    Assert.False(r.IsMatch("ac"));
+    Assert.False(r.IsMatch("abbc"));
+}
+
+[Test]
+void test_escape_dot() {
+    Regex r = Regex.Compile("a\\.c");
+    Assert.True(r.IsMatch("a.c"));
+    Assert.False(r.IsMatch("abc"));
+}
+
+[Test]
+void test_escape_newline_tab() {
+    Regex r = Regex.Compile("a\\nb");
+    Assert.True(r.IsMatch("a\nb"));
+    Assert.False(r.IsMatch("anb"));
+
+    Regex t = Regex.Compile("\\t");
+    Assert.True(t.IsMatch("\t"));
+}
+
+[Test]
+void test_find_returns_position() {
+    Regex r = Regex.Compile("bcd");
+    Match m = r.Find("abcde");
+    Assert.True(m != null);
+    Assert.Equal(1, m.Start());
+    Assert.Equal(4, m.End());
+    Assert.Equal(3, m.Length());
+    Assert.Equal("bcd", m.Value());
+}
+
+[Test]
+void test_find_no_match_returns_null() {
+    Regex r = Regex.Compile("xyz");
+    Match m = r.Find("abc");
+    Assert.True(m == null);
+}

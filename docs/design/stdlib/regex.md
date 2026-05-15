@@ -1,0 +1,231 @@
+# z42.regex — Regular expression parser + matcher
+
+> 落地版本：2026-05-16（add-z42-regex）
+> 包路径：`src/libraries/z42.regex/`
+> 命名空间：`Std.Regex`（`RegexException` 在 `Std`）
+
+## 职责
+
+正则 pattern 编译 + 匹配 / 搜索 / 替换 / split。子集语法：字面字符 + `.` +
+quantifier (`?` `*` `+` `{n,m}`) + 字符类 (`[...]` `\d \w \s`) + group `()`
++ alternation `|` + anchor `^$`。
+
+**对标**：C# `System.Text.RegularExpressions.Regex` + Python `re` +
+JavaScript `RegExp` + Java `java.util.regex`（语义子集，行为基本同）。
+
+**引擎**：backtracking NFA。与 Python / Java / JavaScript / .NET 默认引擎
+一致；不是 RE2 / Rust 的 linear-time Thompson sim。
+
+## API surface
+
+```z42
+class Regex {
+    static Regex Compile(string pattern)             // 抛 RegexException
+    bool IsMatch(string input)
+    Match Find(string input)                          // 第一个 match 或 null
+    Match[] FindAll(string input)                     // 所有非重叠 match
+    string Replace(string input, string replacement)  // literal repl (no $1)
+    string[] Split(string input)
+    int GroupCount()                                  // 不含 group 0
+}
+
+class Match {
+    int    Start()
+    int    End()
+    int    Length()
+    string Value()
+    string Group(int index)                           // 0 = entire match
+    int    GroupCount()                               // 不含 group 0
+}
+
+class RegexException : Exception     // in Std namespace
+```
+
+## 设计决策
+
+| Decision | 选项 | 决定 | 理由 |
+|----------|------|------|------|
+| 1. 引擎 | backtracking / Thompson NFA / DFA | backtracking | 简单实现，~250 LOC；同 Python/Java/JS/C# 默认；ReDoS 风险 documented |
+| 2. AST 表达 | discriminated union 类 / sealed inheritance | union 类 | z42 无 ADT；同 TomlValue/JsonValue 模式 |
+| 3. Compile vs runtime check | compile-time / lazy | compile-time | fail-fast |
+| 4. 字符类存储 | 区间逐对 / bitset 256 | 区间逐对 | N 通常 < 10；O(N) 查找够快 |
+| 5. Greedy 实现 | max-then-backoff / lazy | max-then-backoff | greedy 默认；non-greedy 留 Deferred |
+| 6. 大小写敏感 | sensitive only / flag | sensitive only | i flag 留 Deferred |
+| 7. Multiline `^$` | 始终首末 / m flag | 始终首末 | 多行匹配留 Deferred |
+| 8. 异常类 | RegexException 在 `Std` namespace | yes | 同 UriException / TomlException 模式 |
+| 9. Namespace | `Std.Text.Regex` / `Std.Regex` | `Std.Regex` | 避免三段 namespace bug（z42.io.binary 经验）；text 包占位类可后续 deprecate |
+| 10. Group 0 语义 | 0 = entire / 1 = first | 0 = entire | 同 C#/Python/Java |
+
+## 实现结构
+
+```
+src/RegexException.z42  (~10 行)
+└── class RegexException : Exception     in Std namespace
+
+src/RegexNode.z42  (~110 行)
+└── class RegexNode  — _kind + 各字段 + Charset matching helper
+
+src/RegexParser.z42  (~210 行)
+└── class RegexParser  — 递归下降，pattern → RegexNode[]
+
+src/Match.z42  (~45 行)
+└── class Match  — Start/End/Length/Value/Group(i)/GroupCount
+
+src/Regex.z42  (~250 行)
+├── class Regex  — Compile / IsMatch / Find / FindAll / Replace / Split
+└── backtracking engine — _match / _matchQuant + group save/restore
+```
+
+## 引擎细节
+
+### 顶层匹配（Find）
+
+`_findFrom(input, pos)` 循环试每个起始位置：
+
+```
+for from in 0..input.Length:
+    reset group state
+    end = _match(seq, 0, from)
+    if end >= 0: return Match(from, end, groups)
+return null
+```
+
+`^` anchored pattern 优化：仅试 `from = 0`，失败立即 return。
+
+### 递归 _match
+
+```
+_match(seq, idx, pos) → int    // 新 pos 或 -1
+    if idx >= seq.Length: return pos        // 序列消费完
+    node = seq[idx]
+    switch node._kind:
+        LIT, ANY, CHARSET: 匹配单字符，pos+1，递归
+        ANCHOR_START: pos == 0
+        ANCHOR_END:   pos == input.Length
+        ALT: 试 left subseq，成功后递归剩余；失败 restore + 试 right
+        QUANT: _matchQuant
+        GROUP: 试 child subseq；成功后记录 _gStarts/_gEnds[i]，递归剩余
+```
+
+### Quantifier 回溯
+
+Greedy：
+
+```
+_matchQuant(q, seq, idx, pos):
+    snapshot = save group state
+    p = pos
+    positions = [pos]
+    matched = 0
+    while max < 0 or matched < max:
+        np = _match(q._childSeq, 0, p)
+        if np < 0: break
+        if np == p and matched >= min: break    // 零宽防死循环
+        matched++
+        p = np
+        positions.add(p)
+    if matched < min: restore; return -1
+    for i in positions.length-1 down to min:
+        restore snapshot
+        replay min..i 次 child match
+        rp = _match(seq, idx+1, position[i])
+        if rp >= 0: return rp
+    return -1
+```
+
+注：每次 backtrack 都从 entry 重新 replay min..i 次 child match — 开销 O(i)
+per attempt，总 O(positions.length²)。pathological pattern 下指数；正常用例
+可接受。优化候选：状态机式增量 backtrack（v1）。
+
+### Group save/restore
+
+ALT / GROUP / QUANT 在 backtrack 时调用 `_snapshotStarts` / `_snapshotEnds`
++ `_restoreStarts` / `_restoreEnds`。每次 snapshot 是 `_groupCount` 大小的
+int 数组拷贝 — O(groupCount) per call。groupCount typically < 10。
+
+## 不支持（Deferred）
+
+### regex-future-thompson-nfa
+
+- **来源**：pathological pattern `(a+)+x` over `aaa...aab` 指数时间 ReDoS
+- **触发原因**：backtracking 引擎天然问题；切到 Thompson NFA simulation
+  （RE2/Rust style）保证 linear time
+- **触发条件**：用户场景出现 ReDoS / 接受不信任 pattern（如 web app
+  user-defined regex filter）时
+- **当前 workaround**：调用方限制 pattern 长度 + input 长度；不要接受不信任输入
+
+### regex-future-backreference
+
+- **来源**：`(\\w+)\\s+\\1`（重复 word）
+- **触发原因**：backreference 与 Thompson NFA 不兼容（强制 backtracking）；
+  v0 引擎可加但 API 表面增加
+- **当前 workaround**：调用方自行做两次匹配 + Group(1) 比较
+
+### regex-future-non-greedy
+
+- **来源**：`<.*?>` 而非 `<.*>`（HTML tag 最短匹配）
+- **触发原因**：v0 全 greedy；non-greedy 需 quant 变种 (`*?` `+?` `??`)
+- **当前 workaround**：用更具体的字符类 `[^>]*` 替代 `.*?`
+
+### regex-future-lookaround
+
+- **来源**：`(?=)` `(?!)` `(?<=)` `(?<!)` 零宽断言
+- **触发原因**：高级功能；引擎需要 lookahead 支持
+- **当前 workaround**：通常可用 group + post-filter 替代
+
+### regex-future-named-group
+
+- **来源**：`(?<year>\d{4})-(?<month>\d{2})`
+- **触发原因**：v0 仅 1-based index；命名 group 需要 dict 映射
+- **当前 workaround**：用 index + 调用方维护映射
+
+### regex-future-non-capturing-group
+
+- **来源**：`(?:abc)` 不分配 group index
+- **触发原因**：v0 每个 `(` 都是 capturing；性能微优化 + clean API
+- **当前 workaround**：忽略不用的 group
+
+### regex-future-unicode-classes
+
+- **来源**：`\p{L}` 任意 letter；`\p{Greek}` 等
+- **触发原因**：依赖 Unicode database（数 KB 数据 + lookup 算法）
+- **前置依赖**：z42.core 落地 Unicode property API
+- **当前 workaround**：手写 charset
+
+### regex-future-flags
+
+- **来源**：`(?i)abc` 大小写不敏感；`(?m)` multiline；`(?s)` dotall
+- **触发原因**：v0 无 flag；每个 flag 行为变更要嵌入引擎
+- **当前 workaround**：调用方 `input.ToLower()` 前手匹配
+
+### regex-future-replace-backreference
+
+- **来源**：`Replace("(\\w+)=(\\w+)", "$2=$1")`（交换 key/value）
+- **触发原因**：v0 replacement 是 literal string；`$N` 解析需新 parser
+- **当前 workaround**：调用方手循环 `FindAll` + 构造
+
+### regex-future-text-regex-merge
+
+- **来源**：z42.text 早有占位 `Regex` class，本 spec 走独立 z42.regex
+- **触发原因**：text 包占位是 placeholder；本 spec 在独立包给完整实现，更
+  清晰边界
+- **触发条件**：后续 spec 决定 deprecate 旧占位（z42.text.Regex 删除 +
+  redirect notice）
+
+## 跨 stdlib 交互
+
+- 依赖 `z42.core`（基础类型 + Exception）
+- 依赖 `z42.collections`（manifest 声明；当前实际用 raw array，未直接 List<T>）
+- 与 `z42.text` 互补：z42.text 的 StringBuilder + Substring 与本包结合可
+  构造非 regex 字符串管道
+- 被未来 `z42.net` / web 处理可能调用（URL 验证、HTTP header parse）
+
+## 实施期发现
+
+1. **`out` 是 z42 保留字**（用作 `out` 参数 modifier？），不能作变量名。
+   Replace 内变量 `string out` 改为 `string acc`，parser 内 `out` 改为 `wrap`。
+2. **z42 stdlib 不用 `List<T>`**（generic 类型参数 dropping bug）。AST 储存
+   走 raw `RegexNode[]` + 显式 count 字段；同 TomlValue / JsonValue 模式。
+3. **`_peek()` 越界需显式 `_eof()` 检查**。`{3` 末尾 parser 调用 `_peek()`
+   触发 IndexOutOfRange 而非 RegexException。所有 `_peek` 比较前加
+   `!this._eof() &&` 守卫。

@@ -37,6 +37,7 @@
 | `z42.uri` | L1 | Uri / UriException / UriCodec，RFC 3986 子集 parser + percent codec | ❌ 纯脚本 |
 | `z42.io.binary` | L1 | BinaryReader / BinaryWriter / BinaryException：LE+BE int16/32/64 + UTF-8 string + byte[] helper | ❌ 纯脚本（namespace 暂用 `Std.Binary` —— 三段 ns 编译器 fix 后改回 `Std.IO.Binary`） |
 | `z42.diagnostics` | L1 | Log / LogLevel：全局 facade，5 level，stderr 输出 | ❌ 纯脚本 |
+| `z42.regex` | L1 | Regex / Match / RegexException：backtracking NFA，字面+`.`+量词+字符类+分组+alternation | ❌ 纯脚本 |
 
 > 历史角度：W1（2026-04-25）把 List / Dictionary 从 z42.collections 上提到 z42.core/Collections/，对齐 C# BCL 把 `System.Collections.Generic.List<T>` 放在 CoreLib 的做法（每个程序都在用）。
 

@@ -1,0 +1,49 @@
+namespace Std.Regex;
+using Std;
+
+// add-z42-regex (2026-05-16)：单次 match 的结果。
+//
+// Group 0 = 整个 match；Group i (1-based) = 第 i 个 capturing `()`。
+// 未匹配的 group（如 alt 未走中的 group）start == -1。
+public class Match {
+    private string _input;
+    private int _start;
+    private int _end;
+    private int[] _groupStarts;
+    private int[] _groupEnds;
+    private int _groupCount;        // total count incl. group 0
+
+    public Match(string input, int start, int end, int[] groupStarts, int[] groupEnds, int groupCount) {
+        this._input       = input;
+        this._start       = start;
+        this._end         = end;
+        this._groupStarts = groupStarts;
+        this._groupEnds   = groupEnds;
+        this._groupCount  = groupCount;
+    }
+
+    public int    Start()  { return this._start; }
+    public int    End()    { return this._end; }
+    public int    Length() { return this._end - this._start; }
+
+    public string Value() {
+        return this._input.Substring(this._start, this._end - this._start);
+    }
+
+    /// 返回 capturing group index (0 = entire match, 1..GroupCount = capturing groups)。
+    /// 未匹配的 group 返回空字符串。out-of-range 抛 RegexException。
+    public string Group(int index) {
+        if (index == 0) { return this.Value(); }
+        if (index < 0 || index >= this._groupCount) {
+            throw new RegexException("group index " + index.ToString() +
+                " out of range (have " + (this._groupCount - 1).ToString() + " groups)");
+        }
+        int s = this._groupStarts[index];
+        int e = this._groupEnds[index];
+        if (s < 0) { return ""; }
+        return this._input.Substring(s, e - s);
+    }
+
+    /// 不含 group 0。
+    public int GroupCount() { return this._groupCount - 1; }
+}

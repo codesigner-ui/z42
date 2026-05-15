@@ -17,7 +17,7 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.diagnostics` / `z42.encoding` / `z42.io` / `z42.io.binary` / `z42.json` / `z42.math` / `z42.random` / `z42.test` / `z42.text` / `z42.time` / `z42.toml` / `z42.uri`。
+已实现包：`z42.core` / `z42.collections` / `z42.diagnostics` / `z42.encoding` / `z42.io` / `z42.io.binary` / `z42.json` / `z42.math` / `z42.random` / `z42.regex` / `z42.test` / `z42.text` / `z42.time` / `z42.toml` / `z42.uri`。
 
 覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer、JSON RFC 8259 reader/writer。
 
@@ -57,6 +57,7 @@
 - `z42.uri`（2026-05-15 add-z42-uri）— RFC 3986 子集 URI parser + percent codec。详 [uri.md](uri.md)
 - `z42.io.binary`（2026-05-15 add-z42-io-binary）— `BinaryReader/Writer` over byte[]，LE+BE int16/32/64 + UTF-8 string。详 [io-binary.md](io-binary.md)
 - `z42.diagnostics`（2026-05-15 add-z42-diagnostics）— `Log` static facade + 5 level (TRACE/DEBUG/INFO/WARN/ERROR)，stderr 输出。详 [diagnostics.md](diagnostics.md)
+- `z42.regex`（2026-05-16 add-z42-regex）— RFC 子集 regex parser + backtracking 匹配引擎；Compile/IsMatch/Find/FindAll/Replace/Split。详 [regex.md](regex.md)
 
 ---
 
@@ -67,7 +68,6 @@
 | **z42.threading** | `System.Threading`（`Thread` / `Mutex` / `Monitor` / `Channel`）| `std::thread` / `std::sync` / `crossbeam` | L2 | 通过 Platform HAL | **roadmap A6: Value `Rc<RefCell>` → `Arc<Mutex>`** + GC `Send` 设计；与并发模型一并 |
 | **z42.async** | `Task` + `async/await` + `CancellationToken` | `tokio` / `async-std` | L3 | 部分 native | **L3 async/await 语法**（roadmap L3）；标准库需先有 z42.threading 同步原语 |
 | **z42.net** | `System.Net.Sockets` / `System.Net.Http` | `std::net` + `hyper` / `reqwest` | L2 | 走 Tier1 C ABI（系统 socket 或 libcurl） | 先 TCP/UDP（同步）；HTTP client 留次级 |
-| **z42.regex** | `System.Text.RegularExpressions` | `regex` crate | L1/L2 | 可 FFI（PCRE2）或纯脚本 | text 处理常用；`Std.Text.Regex` 已占位 |
 | **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI（libsodium / OpenSSL 最快）| 哈希（SHA-2/3）+ CSPRNG + 对称加密 |
 
 **起步排期**：

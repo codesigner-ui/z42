@@ -1,0 +1,71 @@
+// add-z42-regex (2026-05-16)：FindAll / Replace / Split。
+namespace Z42RegexReplaceTests;
+
+using Std.Test;
+using Std.Regex;
+
+[Test]
+void test_find_all_basic() {
+    Regex r = Regex.Compile("\\d+");
+    Match[] ms = r.FindAll("a1 b22 c333");
+    Assert.Equal(3, ms.Length);
+    Assert.Equal("1",   ms[0].Value());
+    Assert.Equal("22",  ms[1].Value());
+    Assert.Equal("333", ms[2].Value());
+}
+
+[Test]
+void test_find_all_no_match() {
+    Regex r = Regex.Compile("\\d+");
+    Match[] ms = r.FindAll("abc");
+    Assert.Equal(0, ms.Length);
+}
+
+[Test]
+void test_replace_basic() {
+    Regex r = Regex.Compile("\\d+");
+    string result = r.Replace("a1 b22 c333", "N");
+    Assert.Equal("aN bN cN", result);
+}
+
+[Test]
+void test_replace_no_match_returns_original() {
+    Regex r = Regex.Compile("\\d+");
+    string result = r.Replace("abc", "N");
+    Assert.Equal("abc", result);
+}
+
+[Test]
+void test_replace_empty_replacement() {
+    Regex r = Regex.Compile("\\s+");
+    string result = r.Replace("hello   world", "");
+    Assert.Equal("helloworld", result);
+}
+
+[Test]
+void test_split_basic() {
+    Regex r = Regex.Compile(",");
+    string[] parts = r.Split("a,b,c");
+    Assert.Equal(3, parts.Length);
+    Assert.Equal("a", parts[0]);
+    Assert.Equal("b", parts[1]);
+    Assert.Equal("c", parts[2]);
+}
+
+[Test]
+void test_split_with_quantifier() {
+    Regex r = Regex.Compile("\\s+");
+    string[] parts = r.Split("hello   world  z42");
+    Assert.Equal(3, parts.Length);
+    Assert.Equal("hello", parts[0]);
+    Assert.Equal("world", parts[1]);
+    Assert.Equal("z42",   parts[2]);
+}
+
+[Test]
+void test_split_no_match_returns_single() {
+    Regex r = Regex.Compile(",");
+    string[] parts = r.Split("abc");
+    Assert.Equal(1, parts.Length);
+    Assert.Equal("abc", parts[0]);
+}

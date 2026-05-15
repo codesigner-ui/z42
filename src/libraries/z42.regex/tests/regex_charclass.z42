@@ -1,0 +1,85 @@
+// add-z42-regex (2026-05-16)：[abc] / [a-z] / [^...] / \d \w \s。
+namespace Z42RegexCharclassTests;
+
+using Std.Test;
+using Std.Regex;
+
+[Test]
+void test_charset_explicit() {
+    Regex r = Regex.Compile("^[aeiou]$");
+    Assert.True(r.IsMatch("a"));
+    Assert.True(r.IsMatch("e"));
+    Assert.True(r.IsMatch("u"));
+    Assert.False(r.IsMatch("b"));
+    Assert.False(r.IsMatch("A"));
+}
+
+[Test]
+void test_charset_range() {
+    Regex r = Regex.Compile("^[a-f]$");
+    Assert.True(r.IsMatch("a"));
+    Assert.True(r.IsMatch("c"));
+    Assert.True(r.IsMatch("f"));
+    Assert.False(r.IsMatch("g"));
+    Assert.False(r.IsMatch("A"));
+}
+
+[Test]
+void test_charset_negated() {
+    Regex r = Regex.Compile("^[^abc]$");
+    Assert.False(r.IsMatch("a"));
+    Assert.False(r.IsMatch("c"));
+    Assert.True(r.IsMatch("d"));
+    Assert.True(r.IsMatch("1"));
+}
+
+[Test]
+void test_charset_mixed() {
+    Regex r = Regex.Compile("^[A-Za-z0-9_]+$");  // 等价 \w
+    Assert.True(r.IsMatch("hello_42"));
+    Assert.True(r.IsMatch("ABC"));
+    Assert.True(r.IsMatch("99"));
+    Assert.False(r.IsMatch("hi!"));
+    Assert.False(r.IsMatch(""));
+}
+
+[Test]
+void test_digit_shortcut() {
+    Regex r = Regex.Compile("^\\d+$");
+    Assert.True(r.IsMatch("0"));
+    Assert.True(r.IsMatch("12345"));
+    Assert.False(r.IsMatch("12a"));
+    Assert.False(r.IsMatch(""));
+}
+
+[Test]
+void test_word_shortcut() {
+    Regex r = Regex.Compile("^\\w+$");
+    Assert.True(r.IsMatch("hello"));
+    Assert.True(r.IsMatch("hello_42"));
+    Assert.False(r.IsMatch("hi there"));
+}
+
+[Test]
+void test_whitespace_shortcut() {
+    Regex r = Regex.Compile("^\\s+$");
+    Assert.True(r.IsMatch(" "));
+    Assert.True(r.IsMatch("\t\n "));
+    Assert.False(r.IsMatch("a"));
+}
+
+[Test]
+void test_negated_shortcut() {
+    Regex r = Regex.Compile("^\\D+$");  // 非 digit
+    Assert.True(r.IsMatch("abc"));
+    Assert.False(r.IsMatch("1"));
+    Assert.False(r.IsMatch("abc1"));
+}
+
+[Test]
+void test_charset_with_escape_inside() {
+    Regex r = Regex.Compile("^[\\.\\*]$");
+    Assert.True(r.IsMatch("."));
+    Assert.True(r.IsMatch("*"));
+    Assert.False(r.IsMatch("a"));
+}

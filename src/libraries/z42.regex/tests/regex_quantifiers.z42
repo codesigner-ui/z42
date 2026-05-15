@@ -1,0 +1,73 @@
+// add-z42-regex (2026-05-16)：?, *, +, {n}, {n,m} quantifier。
+namespace Z42RegexQuantifiersTests;
+
+using Std.Test;
+using Std.Regex;
+
+[Test]
+void test_optional() {
+    Regex r = Regex.Compile("^colou?r$");
+    Assert.True(r.IsMatch("color"));
+    Assert.True(r.IsMatch("colour"));
+    Assert.False(r.IsMatch("colouur"));
+}
+
+[Test]
+void test_star_zero_or_more() {
+    Regex r = Regex.Compile("^a*$");
+    Assert.True(r.IsMatch(""));
+    Assert.True(r.IsMatch("a"));
+    Assert.True(r.IsMatch("aaaa"));
+    Assert.False(r.IsMatch("ab"));
+}
+
+[Test]
+void test_plus_one_or_more() {
+    Regex r = Regex.Compile("^a+$");
+    Assert.False(r.IsMatch(""));
+    Assert.True(r.IsMatch("a"));
+    Assert.True(r.IsMatch("aaaa"));
+}
+
+[Test]
+void test_greedy_star() {
+    // .*x should match the longest possible run up to the LAST x
+    Regex r = Regex.Compile("^a.*x$");
+    Assert.True(r.IsMatch("axxxx"));
+    Assert.True(r.IsMatch("aBxCxDx"));
+}
+
+[Test]
+void test_exact_count() {
+    Regex r = Regex.Compile("^a{3}$");
+    Assert.False(r.IsMatch("aa"));
+    Assert.True(r.IsMatch("aaa"));
+    Assert.False(r.IsMatch("aaaa"));
+}
+
+[Test]
+void test_min_max_range() {
+    Regex r = Regex.Compile("^a{2,4}$");
+    Assert.False(r.IsMatch("a"));
+    Assert.True(r.IsMatch("aa"));
+    Assert.True(r.IsMatch("aaa"));
+    Assert.True(r.IsMatch("aaaa"));
+    Assert.False(r.IsMatch("aaaaa"));
+}
+
+[Test]
+void test_min_only() {
+    Regex r = Regex.Compile("^a{2,}$");
+    Assert.False(r.IsMatch("a"));
+    Assert.True(r.IsMatch("aa"));
+    Assert.True(r.IsMatch("aaaaaaa"));
+}
+
+[Test]
+void test_quant_on_charclass() {
+    Regex r = Regex.Compile("^[0-9]+$");
+    Assert.True(r.IsMatch("0"));
+    Assert.True(r.IsMatch("12345"));
+    Assert.False(r.IsMatch(""));
+    Assert.False(r.IsMatch("12a"));
+}

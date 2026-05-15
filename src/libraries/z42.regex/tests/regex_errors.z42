@@ -1,0 +1,64 @@
+// add-z42-regex (2026-05-16)：非法 pattern 抛 RegexException。
+namespace Z42RegexErrorsTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+[Test]
+void test_unclosed_paren_throws() {
+    bool caught = false;
+    try { Regex.Compile("(abc"); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unclosed_charclass_throws() {
+    bool caught = false;
+    try { Regex.Compile("[abc"); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_empty_charclass_throws() {
+    bool caught = false;
+    try { Regex.Compile("[]"); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unclosed_quant_brace_throws() {
+    bool caught = false;
+    try { Regex.Compile("a{3"); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_trailing_backslash_throws() {
+    bool caught = false;
+    try { Regex.Compile("abc\\"); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_stray_close_paren_throws() {
+    bool caught = false;
+    try { Regex.Compile(")"); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_group_index_out_of_range_throws() {
+    Regex r = Regex.Compile("(\\w+)");
+    Match m = r.Find("hello");
+    bool caught = false;
+    try { m.Group(99); }
+    catch (RegexException e) { caught = true; }
+    Assert.True(caught);
+}
