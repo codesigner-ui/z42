@@ -1,0 +1,99 @@
+// add-z42-uri (2026-05-15)：URI parse 基础 cases。
+namespace Z42UriBasicTests;
+
+using Std.Test;
+using Std.Uri;
+
+[Test]
+void test_simple_https_url() {
+    var u = Uri.Parse("https://example.com/");
+    Assert.Equal("https", u.GetScheme());
+    Assert.Equal("example.com", u.GetHost());
+    Assert.Equal("/", u.GetPath());
+    Assert.False(u.HasPort());
+    Assert.False(u.HasUserInfo());
+    Assert.False(u.HasQuery());
+    Assert.False(u.HasFragment());
+}
+
+[Test]
+void test_http_with_port() {
+    var u = Uri.Parse("http://localhost:8080/api");
+    Assert.Equal("http", u.GetScheme());
+    Assert.Equal("localhost", u.GetHost());
+    Assert.Equal(8080, u.GetPort());
+    Assert.Equal("/api", u.GetPath());
+}
+
+[Test]
+void test_with_query_string() {
+    var u = Uri.Parse("https://search/?q=hello&n=10");
+    Assert.Equal("q=hello&n=10", u.GetQuery());
+    Assert.True(u.HasQuery());
+}
+
+[Test]
+void test_with_fragment() {
+    var u = Uri.Parse("https://docs/#installation");
+    Assert.Equal("installation", u.GetFragment());
+    Assert.True(u.HasFragment());
+}
+
+[Test]
+void test_query_and_fragment() {
+    var u = Uri.Parse("https://x.com/p?a=1#top");
+    Assert.Equal("a=1", u.GetQuery());
+    Assert.Equal("top", u.GetFragment());
+}
+
+[Test]
+void test_user_info() {
+    var u = Uri.Parse("ftp://anon:pass@server/file");
+    Assert.Equal("anon:pass", u.GetUserInfo());
+    Assert.Equal("server", u.GetHost());
+    Assert.Equal("/file", u.GetPath());
+}
+
+[Test]
+void test_path_only_no_query() {
+    var u = Uri.Parse("https://a.b/c/d/e");
+    Assert.Equal("/c/d/e", u.GetPath());
+    Assert.False(u.HasQuery());
+    Assert.False(u.HasFragment());
+}
+
+[Test]
+void test_empty_path() {
+    var u = Uri.Parse("https://example.com");
+    Assert.Equal("", u.GetPath());
+}
+
+[Test]
+void test_opaque_uri_mailto() {
+    var u = Uri.Parse("mailto:user@example.com");
+    Assert.Equal("mailto", u.GetScheme());
+    Assert.Equal("", u.GetHost());
+    Assert.Equal("user@example.com", u.GetPath());
+}
+
+[Test]
+void test_file_uri() {
+    var u = Uri.Parse("file:///tmp/foo.txt");
+    Assert.Equal("file", u.GetScheme());
+    Assert.Equal("", u.GetHost());            // empty authority allowed
+    Assert.Equal("/tmp/foo.txt", u.GetPath());
+}
+
+[Test]
+void test_round_trip_simple() {
+    string src = "https://example.com/path?q=1#frag";
+    var u = Uri.Parse(src);
+    Assert.Equal(src, u.ToString());
+}
+
+[Test]
+void test_round_trip_with_port_and_user() {
+    string src = "https://alice@host:443/v1?a=b#c";
+    var u = Uri.Parse(src);
+    Assert.Equal(src, u.ToString());
+}

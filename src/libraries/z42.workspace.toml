@@ -33,6 +33,7 @@ default-members = [
     "z42.time",
     "z42.toml",
     "z42.random",
+    "z42.uri",
     "z42.io",
     "z42.json",
     "z42.test",

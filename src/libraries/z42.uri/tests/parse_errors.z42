@@ -1,0 +1,69 @@
+// add-z42-uri (2026-05-15)：malformed input → UriException。
+namespace Z42UriErrorsTests;
+
+using Std.Test;
+using Std.Uri;
+
+[Test]
+void test_empty_input_throws() {
+    bool caught = false;
+    try {
+        Uri.Parse("");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_no_scheme_throws() {
+    bool caught = false;
+    try {
+        Uri.Parse("just-a-string");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_scheme_starting_with_digit_throws() {
+    bool caught = false;
+    try {
+        Uri.Parse("1https://example.com");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_missing_colon_after_scheme_throws() {
+    bool caught = false;
+    try {
+        Uri.Parse("https//example.com");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_empty_host_allowed() {
+    // RFC 3986 §3.2.2 allows empty host (e.g. file:///). Parse OK.
+    var u = Uri.Parse("https:///");
+    Assert.Equal("", u.GetHost());
+    Assert.Equal("/", u.GetPath());
+    Assert.True(u.HasAuthority());
+}
+
+[Test]
+void test_port_with_no_digits_throws() {
+    bool caught = false;
+    try {
+        Uri.Parse("http://h:/path");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

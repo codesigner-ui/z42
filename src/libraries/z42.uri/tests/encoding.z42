@@ -1,0 +1,82 @@
+// add-z42-uri (2026-05-15)：percent-encode / decode tests，含 UTF-8。
+namespace Z42UriEncodingTests;
+
+using Std.Test;
+using Std.Uri;
+
+[Test]
+void test_encode_unreserved_unchanged() {
+    Assert.Equal("hello", Uri.EncodeComponent("hello"));
+    Assert.Equal("Foo-Bar.Baz_2~3", Uri.EncodeComponent("Foo-Bar.Baz_2~3"));
+}
+
+[Test]
+void test_encode_space() {
+    Assert.Equal("a%20b", Uri.EncodeComponent("a b"));
+}
+
+[Test]
+void test_encode_reserved_chars() {
+    // & = ? # / etc. all get encoded by EncodeComponent (the "component" variant).
+    Assert.Equal("a%26b", Uri.EncodeComponent("a&b"));
+    Assert.Equal("a%3Db", Uri.EncodeComponent("a=b"));
+    Assert.Equal("a%3Fb", Uri.EncodeComponent("a?b"));
+    Assert.Equal("a%2Fb", Uri.EncodeComponent("a/b"));
+}
+
+[Test]
+void test_decode_basic() {
+    Assert.Equal("hello world", Uri.DecodeComponent("hello%20world"));
+    Assert.Equal("a&b=c", Uri.DecodeComponent("a%26b%3Dc"));
+}
+
+[Test]
+void test_decode_lowercase_hex() {
+    Assert.Equal("a b", Uri.DecodeComponent("a%20b"));
+    Assert.Equal("a b", Uri.DecodeComponent("a%20b"));
+}
+
+[Test]
+void test_decode_plus_to_space() {
+    // Form-url-encoding extension '+' → ' ' is widely expected.
+    Assert.Equal("hello world", Uri.DecodeComponent("hello+world"));
+}
+
+[Test]
+void test_encode_decode_round_trip_ascii() {
+    string original = "Hello, World! 123";
+    string encoded  = Uri.EncodeComponent(original);
+    string decoded  = Uri.DecodeComponent(encoded);
+    Assert.Equal(original, decoded);
+}
+
+[Test]
+void test_encode_decode_round_trip_utf8() {
+    string original = "café";   // contains U+00E9
+    string encoded  = Uri.EncodeComponent(original);
+    Assert.Contains("%C3%A9", encoded);
+    string decoded = Uri.DecodeComponent(encoded);
+    Assert.Equal(original, decoded);
+}
+
+[Test]
+void test_decode_truncated_throws() {
+    bool caught = false;
+    try {
+        Uri.DecodeComponent("ok%2");          // %2X truncated
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_decode_bad_hex_throws() {
+    bool caught = false;
+    try {
+        Uri.DecodeComponent("a%ZZ");
+    } catch (UriException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

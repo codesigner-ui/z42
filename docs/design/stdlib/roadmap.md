@@ -17,7 +17,7 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.json` / `z42.math` / `z42.random` / `z42.test` / `z42.text` / `z42.time` / `z42.toml`。
+已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.json` / `z42.math` / `z42.random` / `z42.test` / `z42.text` / `z42.time` / `z42.toml` / `z42.uri`。
 
 覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer、JSON RFC 8259 reader/writer。
 
@@ -54,6 +54,7 @@
 - `z42.toml`（2026-05-14 add-z42-toml）— TOML 1.0 subset reader/writer，覆盖 manifest 解析。详 [toml.md](toml.md)
 - `z42.json`（2026-05-15 add-z42-json）— JSON RFC 8259 完整 reader/writer。详 [json.md](json.md)
 - `z42.random`（2026-05-15 add-z42-random）— PCG-XSH-RR deterministic PRNG。详 [random.md](random.md)
+- `z42.uri`（2026-05-15 add-z42-uri）— RFC 3986 子集 URI parser + percent codec。详 [uri.md](uri.md)
 
 ---
 
@@ -82,7 +83,6 @@
 | **z42.toml** / **z42.yaml** | (社区) | `toml` / `serde_yaml` | L1 | 工程文件已用 toml，可先内部用，再公开 |
 | **z42.linq** | `System.Linq` | `Iterator` trait 链式方法 | L1 | **依赖 lambda + iterator trait**（L3） |
 | **z42.diagnostics** | `System.Diagnostics.Trace` / `EventSource` | `log` / `tracing` | L1 | 结构化日志；先做 facade，sink 可插拔 |
-| **z42.uri** | `System.Uri` | `url` crate | L1 | URL 解析；net 之前可独立 |
 
 ---
 
