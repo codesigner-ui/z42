@@ -1,0 +1,23 @@
+namespace Std.Diagnostics;
+
+// add-z42-diagnostics (2026-05-15)：日志级别整数常量 + 名字反查。
+//
+// 工业惯例：TRACE < DEBUG < INFO < WARN < ERROR。Level 越大越严重；过滤
+// 时 `level >= minLevel` 通过。
+public static class LogLevel {
+    public static int TRACE = 0;
+    public static int DEBUG = 1;
+    public static int INFO  = 2;
+    public static int WARN  = 3;
+    public static int ERROR = 4;
+
+    /// 返回 level 的大写名字。未知 level 返回 "LEVEL<n>"。
+    public static string Name(int level) {
+        if (level == LogLevel.TRACE) { return "TRACE"; }
+        if (level == LogLevel.DEBUG) { return "DEBUG"; }
+        if (level == LogLevel.INFO)  { return "INFO";  }
+        if (level == LogLevel.WARN)  { return "WARN";  }
+        if (level == LogLevel.ERROR) { return "ERROR"; }
+        return "LEVEL" + level.ToString();
+    }
+}

@@ -1,0 +1,43 @@
+namespace Std.Diagnostics;
+using Std.IO;
+using Std.Time;
+
+// add-z42-diagnostics (2026-05-15)：global Log facade，输出到 stderr。
+//
+// Format: `[LEVEL ms] message`，例：
+//     [INFO 1747327200000] connecting to api.example.com
+//     [ERROR 1747327201234] timeout after 1000ms
+//
+// 写入 ConsoleError（stderr），不污染 Console.WriteLine 的 stdout 主用途。
+//
+// 默认 min level = INFO（TRACE / DEBUG 不输出）；调用方可 SetMinLevel 调整。
+public static class Log {
+    private static int _minLevel = 2;  // LogLevel.INFO；static initializer 顺序避免 forward-ref
+
+    /// 设置全局最低输出级别。 < 该级别的调用被丢弃。
+    public static void SetMinLevel(int level) {
+        Log._minLevel = level;
+    }
+
+    public static int GetMinLevel() {
+        return Log._minLevel;
+    }
+
+    /// 是否当前 level 会被输出。expensive log message 构造前先 check：
+    ///     if (Log.IsEnabled(LogLevel.DEBUG)) { Log.Debug("expensive: " + ...); }
+    public static bool IsEnabled(int level) {
+        return level >= Log._minLevel;
+    }
+
+    public static void Trace(string msg) { Log._write(LogLevel.TRACE, msg); }
+    public static void Debug(string msg) { Log._write(LogLevel.DEBUG, msg); }
+    public static void Info(string msg)  { Log._write(LogLevel.INFO,  msg); }
+    public static void Warn(string msg)  { Log._write(LogLevel.WARN,  msg); }
+    public static void Error(string msg) { Log._write(LogLevel.ERROR, msg); }
+
+    private static void _write(int level, string msg) {
+        if (level < Log._minLevel) { return; }
+        long ms = DateTime.UtcNow().UnixMs();
+        ConsoleError.WriteLine("[" + LogLevel.Name(level) + " " + ms.ToString() + "] " + msg);
+    }
+}

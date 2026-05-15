@@ -1,0 +1,51 @@
+// add-z42-diagnostics (2026-05-15)：5 个 level method 都存在 + IsEnabled 行为。
+namespace Z42DiagnosticsBasicTests;
+
+using Std.Test;
+using Std.Diagnostics;
+
+[Test]
+void test_level_constants_are_ordered() {
+    Assert.True(LogLevel.TRACE < LogLevel.DEBUG);
+    Assert.True(LogLevel.DEBUG < LogLevel.INFO);
+    Assert.True(LogLevel.INFO  < LogLevel.WARN);
+    Assert.True(LogLevel.WARN  < LogLevel.ERROR);
+}
+
+[Test]
+void test_level_name_lookup() {
+    Assert.Equal("TRACE", LogLevel.Name(LogLevel.TRACE));
+    Assert.Equal("DEBUG", LogLevel.Name(LogLevel.DEBUG));
+    Assert.Equal("INFO",  LogLevel.Name(LogLevel.INFO));
+    Assert.Equal("WARN",  LogLevel.Name(LogLevel.WARN));
+    Assert.Equal("ERROR", LogLevel.Name(LogLevel.ERROR));
+}
+
+[Test]
+void test_level_name_unknown() {
+    Assert.Equal("LEVEL99", LogLevel.Name(99));
+}
+
+[Test]
+void test_default_min_level_is_info() {
+    Log.SetMinLevel(LogLevel.INFO);  // reset to known state
+    Assert.Equal(LogLevel.INFO, Log.GetMinLevel());
+    Assert.False(Log.IsEnabled(LogLevel.TRACE));
+    Assert.False(Log.IsEnabled(LogLevel.DEBUG));
+    Assert.True(Log.IsEnabled(LogLevel.INFO));
+    Assert.True(Log.IsEnabled(LogLevel.WARN));
+    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+}
+
+[Test]
+void test_log_methods_do_not_throw() {
+    // smoke：5 个 method 都可以调用。stderr 实际输出由 ConsoleError 处理，
+    // 这里只验证 method 存在 + 不抛异常。
+    Log.SetMinLevel(LogLevel.ERROR);  // suppress most output during test
+    Log.Trace("trace msg");
+    Log.Debug("debug msg");
+    Log.Info("info msg");
+    Log.Warn("warn msg");
+    Log.Error("error msg");
+    Assert.True(true);
+}

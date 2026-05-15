@@ -1,0 +1,45 @@
+// add-z42-diagnostics (2026-05-15)：SetMinLevel 过滤行为。
+namespace Z42DiagnosticsFilterTests;
+
+using Std.Test;
+using Std.Diagnostics;
+
+[Test]
+void test_set_min_level_changes_gate() {
+    Log.SetMinLevel(LogLevel.WARN);
+    Assert.Equal(LogLevel.WARN, Log.GetMinLevel());
+    Assert.False(Log.IsEnabled(LogLevel.TRACE));
+    Assert.False(Log.IsEnabled(LogLevel.DEBUG));
+    Assert.False(Log.IsEnabled(LogLevel.INFO));
+    Assert.True(Log.IsEnabled(LogLevel.WARN));
+    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+}
+
+[Test]
+void test_min_level_trace_allows_all() {
+    Log.SetMinLevel(LogLevel.TRACE);
+    Assert.True(Log.IsEnabled(LogLevel.TRACE));
+    Assert.True(Log.IsEnabled(LogLevel.DEBUG));
+    Assert.True(Log.IsEnabled(LogLevel.INFO));
+    Assert.True(Log.IsEnabled(LogLevel.WARN));
+    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+}
+
+[Test]
+void test_min_level_error_silences_lower() {
+    Log.SetMinLevel(LogLevel.ERROR);
+    Assert.False(Log.IsEnabled(LogLevel.TRACE));
+    Assert.False(Log.IsEnabled(LogLevel.DEBUG));
+    Assert.False(Log.IsEnabled(LogLevel.INFO));
+    Assert.False(Log.IsEnabled(LogLevel.WARN));
+    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+}
+
+[Test]
+void test_min_level_round_trip() {
+    Log.SetMinLevel(LogLevel.DEBUG);
+    int v = Log.GetMinLevel();
+    Log.SetMinLevel(LogLevel.INFO);
+    Assert.Equal(LogLevel.DEBUG, v);
+    Assert.Equal(LogLevel.INFO,  Log.GetMinLevel());
+}
