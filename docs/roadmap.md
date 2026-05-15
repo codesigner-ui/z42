@@ -302,8 +302,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | binary-package-signing | iOS xcframework / Android AAR / wasm npm publish 时 notarization / GPG / npm 2FA；Phase 1 全 unsigned，留给 Phase 4 release CI | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | z42 build-driver prerequisites | 用 z42 自身重写所有 `.sh` 解 Tier 1 Windows CI；阻塞 = P0 z42.os/z42.io.fs + P1 z42.crypto/z42.net + P2 z42.toml/z42.compression | [stdlib/roadmap.md "Deferred / Future Work"](design/stdlib/roadmap.md#z42-build-driver-prerequisites2026-05-13) |
 | URL-safe Base64 / Base32 / UTF-16 / Encoding streaming API | z42.encoding v0 排除的形态 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
-| 跨包 static field 初始化时机 | static `private string FOO = "..."` 在外包首次触发时为 Null；workaround = 方法内局部变量；根本修复需调研 IrGen `__static_init__` 跨包顺序 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
 | reader-writer-asymmetry (zbc+zpkg) | SIGS/TYPE TypeTag 单向 lossy（`"int"` → I32 → `"i32"`），导致 Read→Write 字节不对账；strict-pin 契约不受影响，writer 生产物正常加载。修复需 wire format 增长（zbc minor bump） | [runtime/zbc.md](design/runtime/zbc.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) + [runtime/zpkg.md](design/runtime/zpkg.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) |
+| ~~跨包 static field 初始化时机~~ | ✅ 已修复 by `dfcd1495 fix(compiler+vm): unique __static_init__ name per source file`（2026-05-15）；stdlib workaround 由 `cleanup-static-field-workarounds` spec 回收 | — |
 
 ### 实施期延后（D-* 系列）
 

@@ -8,13 +8,12 @@ namespace Std.Encoding;
 // 不含 URL-safe (§5) 变体 — 留 follow-up。
 
 public static class Base64 {
-    // 2026-05-13: static field literals reset to Null when class is touched
-    // cross-package (pre-existing stdlib init quirk; tracking separately).
-    // Workaround: inline the alphabet literal per-call.
+    private static string ALPHA =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
     public static string Encode(byte[] bytes) {
         if (bytes.Length == 0) return "";
-        string alpha =
-            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        string alpha = Base64.ALPHA;
         int outLen = ((bytes.Length + 2) / 3) * 4;
         char[] result = new char[outLen];
         int srcI = 0;

@@ -118,9 +118,9 @@ public class Process {
             this._stdin.GetMode(),
             this._hasStdinBytes ? this._stdinBytes : null,
             this._stdout.GetMode(),
-            this._stdout.GetMode() == 3 ? this._stdout.GetPath() : null,
+            this._stdout.GetMode() == Stdio.MODE_FILE ? this._stdout.GetPath() : null,
             this._stderr.GetMode(),
-            this._stderr.GetMode() == 3 ? this._stderr.GetPath() : null,
+            this._stderr.GetMode() == Stdio.MODE_FILE ? this._stderr.GetPath() : null,
             this._timeoutMs);
 
         long kind = (long)raw[0];
@@ -157,9 +157,9 @@ public class Process {
             this._stdin.GetMode(),
             null,   // stdin_bytes — Spawn streams via handle, not one-shot
             this._stdout.GetMode(),
-            this._stdout.GetMode() == 3 ? this._stdout.GetPath() : null,
+            this._stdout.GetMode() == Stdio.MODE_FILE ? this._stdout.GetPath() : null,
             this._stderr.GetMode(),
-            this._stderr.GetMode() == 3 ? this._stderr.GetPath() : null);
+            this._stderr.GetMode() == Stdio.MODE_FILE ? this._stderr.GetPath() : null);
 
         long kind = (long)raw[0];
         if (kind == 1) {

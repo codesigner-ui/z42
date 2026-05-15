@@ -23,16 +23,17 @@ public sealed class Stdio {
         this.path = path;
     }
 
-    // Singletons-by-construction. z42 currently lacks static field
-    // initialization on the read path, so we return a fresh instance
-    // every call — Stdio is a tiny value-like class so allocation cost
-    // is negligible vs. the spawn it parameterises.
-    public static Stdio Inherit() { return new Stdio(1, ""); }
-    public static Stdio Pipe()    { return new Stdio(2, ""); }
-    public static Stdio Null()    { return new Stdio(0, ""); }
+    // Allocate a fresh instance every call — Stdio is a tiny value-like
+    // class so allocation cost is negligible vs. the spawn it parameterises.
+    // A `static Stdio INHERIT = new Stdio(1, "")` style cached singleton
+    // is a possible future optimisation (now feasible after the 2026-05-15
+    // unique __static_init__ fix) — see roadmap.
+    public static Stdio Inherit() { return new Stdio(Stdio.MODE_INHERIT, ""); }
+    public static Stdio Pipe()    { return new Stdio(Stdio.MODE_PIPE,    ""); }
+    public static Stdio Null()    { return new Stdio(Stdio.MODE_NULL,    ""); }
 
     public static Stdio ToFile(string path) {
-        return new Stdio(3, path);
+        return new Stdio(Stdio.MODE_FILE, path);
     }
 
     public int GetMode() { return this.mode; }
