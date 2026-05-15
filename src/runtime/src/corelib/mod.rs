@@ -101,6 +101,15 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── Parse / convert ───────────────────────────────────────────────────────
     ("__long_parse",   convert::builtin_long_parse),
     ("__int_parse",    convert::builtin_int_parse),
+    // add-narrow-int-primitives (2026-05-15): per-type Parse with range
+    // validation. Underlying Value is still I64; these only differ from
+    // __int_parse in the [min, max] check.
+    ("__i8_parse",     convert::builtin_i8_parse),
+    ("__i16_parse",    convert::builtin_i16_parse),
+    ("__u8_parse",     convert::builtin_u8_parse),
+    ("__u16_parse",    convert::builtin_u16_parse),
+    ("__u32_parse",    convert::builtin_u32_parse),
+    ("__u64_parse",    convert::builtin_u64_parse),
     ("__double_parse", convert::builtin_double_parse),
     ("__to_str",       convert::builtin_to_str),
 

@@ -65,10 +65,48 @@ pub fn builtin_long_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     s.trim().parse::<i64>().map(Value::I64)
         .map_err(|_| anyhow::anyhow!("long.Parse: could not parse {:?} as long", s))
 }
+
+/// add-narrow-int-primitives (2026-05-15): parse the input as an i64, then
+/// validate that the value fits in the target's range. Out-of-range values
+/// throw OverflowException-style error (anyhow string surfaced as VM bail).
+/// Pre-2026-05-15 `int.Parse("99999999999999")` silently succeeded with a
+/// value larger than i32 could hold; this build now rejects it.
 pub fn builtin_int_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "int.Parse")?;
-    s.trim().parse::<i64>().map(Value::I64)
-        .map_err(|_| anyhow::anyhow!("int.Parse: could not parse {:?} as int", s))
+    parse_narrow_int(args, "int.Parse", i32::MIN as i64, i32::MAX as i64)
+}
+pub fn builtin_i8_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "i8.Parse", i8::MIN as i64, i8::MAX as i64)
+}
+pub fn builtin_i16_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "i16.Parse", i16::MIN as i64, i16::MAX as i64)
+}
+pub fn builtin_u8_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "u8.Parse", 0, u8::MAX as i64)
+}
+pub fn builtin_u16_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "u16.Parse", 0, u16::MAX as i64)
+}
+pub fn builtin_u32_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "u32.Parse", 0, u32::MAX as i64)
+}
+/// u64 can hold values > i64::MAX. We parse as u64 then bit-cast to i64
+/// (i.e. values above i64::MAX appear as negative under int.ToString — same
+/// bit-preserving semantics as `convert_from_i64` U64 cast).
+pub fn builtin_u64_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let s = require_str(args, 0, "u64.Parse")?;
+    s.trim().parse::<u64>().map(|v| Value::I64(v as i64))
+        .map_err(|_| anyhow::anyhow!(
+            "u64.Parse: could not parse {:?} as u64 (range: 0..={})", s, u64::MAX))
+}
+
+fn parse_narrow_int(args: &[Value], ctx: &str, min: i64, max: i64) -> Result<Value> {
+    let s = require_str(args, 0, ctx)?;
+    let v = s.trim().parse::<i64>()
+        .map_err(|_| anyhow::anyhow!("{}: could not parse {:?} as integer", ctx, s))?;
+    if v < min || v > max {
+        bail!("{}: value {} out of range (expected {}..={})", ctx, v, min, max);
+    }
+    Ok(Value::I64(v))
 }
 pub fn builtin_double_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = require_str(args, 0, "double.Parse")?;
@@ -166,3 +204,7 @@ pub fn builtin_str_compare_to(_ctx: &VmContext, args: &[Value]) -> Result<Value>
     let b = require_str(args, 1, "string.CompareTo")?;
     Ok(Value::I64(a.cmp(&b) as i64))
 }
+
+#[cfg(test)]
+#[path = "convert_tests.rs"]
+mod convert_tests;

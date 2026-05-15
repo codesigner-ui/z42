@@ -1,0 +1,22 @@
+namespace Std;
+
+// add-narrow-int-primitives (2026-05-15): `u16` / `ushort` (unsigned 16-bit,
+// 0..=65535). Underlying runtime Value is i64; Parse range-checks input.
+public struct u16 : IComparable<u16>, IEquatable<u16>, INumber<u16> {
+    [Native("__u16_parse")]     public static extern u16 Parse(string s);
+    [Native("__int_equals")]    public extern bool Equals(u16 other);
+    [Native("__int_hash_code")] public extern int GetHashCode();
+    [Native("__int_to_string")] public extern string ToString();
+
+    public int CompareTo(u16 other) {
+        if (this < other) return -1;
+        if (this > other) return 1;
+        return 0;
+    }
+
+    public static override u16 op_Add(u16 a, u16 b)      { return (u16)(a + b); }
+    public static override u16 op_Subtract(u16 a, u16 b) { return (u16)(a - b); }
+    public static override u16 op_Multiply(u16 a, u16 b) { return (u16)(a * b); }
+    public static override u16 op_Divide(u16 a, u16 b)   { return (u16)(a / b); }
+    public static override u16 op_Modulo(u16 a, u16 b)   { return (u16)(a % b); }
+}

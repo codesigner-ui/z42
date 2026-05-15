@@ -286,14 +286,33 @@ internal static partial class ExprParser
         [TokenKind.Null]                      = new((c, t, _, _) => Ok(new LitNullExpr(t.Span), c)),
 
         // Identifier and type-keywords as static-call targets (string.Join, int.Parse, …)
+        // add-narrow-int-primitives (2026-05-15): cover every TypeKeywords entry so
+        // narrow ints (`byte.Parse`, `u8.Parse`, …) work in expression position too —
+        // previously only `int / long / double / float / bool / char` had nuds.
         [TokenKind.Identifier] = new((c, t, _, _) => Ok(new IdentExpr(t.Text,     t.Span), c)),
         [TokenKind.String]     = new((c, t, _, _) => Ok(new IdentExpr("string",   t.Span), c)),
         [TokenKind.Int]        = new((c, t, _, _) => Ok(new IdentExpr("int",      t.Span), c)),
         [TokenKind.Long]       = new((c, t, _, _) => Ok(new IdentExpr("long",     t.Span), c)),
+        [TokenKind.Short]      = new((c, t, _, _) => Ok(new IdentExpr("short",    t.Span), c)),
+        [TokenKind.Byte]       = new((c, t, _, _) => Ok(new IdentExpr("byte",     t.Span), c)),
+        [TokenKind.Sbyte]      = new((c, t, _, _) => Ok(new IdentExpr("sbyte",    t.Span), c)),
+        [TokenKind.Ushort]     = new((c, t, _, _) => Ok(new IdentExpr("ushort",   t.Span), c)),
+        [TokenKind.Uint]       = new((c, t, _, _) => Ok(new IdentExpr("uint",     t.Span), c)),
+        [TokenKind.Ulong]      = new((c, t, _, _) => Ok(new IdentExpr("ulong",    t.Span), c)),
         [TokenKind.Double]     = new((c, t, _, _) => Ok(new IdentExpr("double",   t.Span), c)),
         [TokenKind.Float]      = new((c, t, _, _) => Ok(new IdentExpr("float",    t.Span), c)),
         [TokenKind.Bool]       = new((c, t, _, _) => Ok(new IdentExpr("bool",     t.Span), c)),
         [TokenKind.Char]       = new((c, t, _, _) => Ok(new IdentExpr("char",     t.Span), c)),
+        [TokenKind.I8]         = new((c, t, _, _) => Ok(new IdentExpr("i8",       t.Span), c)),
+        [TokenKind.I16]        = new((c, t, _, _) => Ok(new IdentExpr("i16",      t.Span), c)),
+        [TokenKind.I32]        = new((c, t, _, _) => Ok(new IdentExpr("i32",      t.Span), c)),
+        [TokenKind.I64]        = new((c, t, _, _) => Ok(new IdentExpr("i64",      t.Span), c)),
+        [TokenKind.U8]         = new((c, t, _, _) => Ok(new IdentExpr("u8",       t.Span), c)),
+        [TokenKind.U16]        = new((c, t, _, _) => Ok(new IdentExpr("u16",      t.Span), c)),
+        [TokenKind.U32]        = new((c, t, _, _) => Ok(new IdentExpr("u32",      t.Span), c)),
+        [TokenKind.U64]        = new((c, t, _, _) => Ok(new IdentExpr("u64",      t.Span), c)),
+        [TokenKind.F32]        = new((c, t, _, _) => Ok(new IdentExpr("f32",      t.Span), c)),
+        [TokenKind.F64]        = new((c, t, _, _) => Ok(new IdentExpr("f64",      t.Span), c)),
 
         // Prefix unary (BpUnary so postfix at BpPostfix binds tighter)
         [TokenKind.Plus]       = new(PrefixUnary("+",      BpUnary)),

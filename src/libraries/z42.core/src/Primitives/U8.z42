@@ -1,0 +1,22 @@
+namespace Std;
+
+// add-narrow-int-primitives (2026-05-15): `u8` / `byte` (unsigned 8-bit,
+// 0..=255). Underlying runtime Value is i64; Parse range-checks input.
+public struct u8 : IComparable<u8>, IEquatable<u8>, INumber<u8> {
+    [Native("__u8_parse")]      public static extern u8 Parse(string s);
+    [Native("__int_equals")]    public extern bool Equals(u8 other);
+    [Native("__int_hash_code")] public extern int GetHashCode();
+    [Native("__int_to_string")] public extern string ToString();
+
+    public int CompareTo(u8 other) {
+        if (this < other) return -1;
+        if (this > other) return 1;
+        return 0;
+    }
+
+    public static override u8 op_Add(u8 a, u8 b)      { return (u8)(a + b); }
+    public static override u8 op_Subtract(u8 a, u8 b) { return (u8)(a - b); }
+    public static override u8 op_Multiply(u8 a, u8 b) { return (u8)(a * b); }
+    public static override u8 op_Divide(u8 a, u8 b)   { return (u8)(a / b); }
+    public static override u8 op_Modulo(u8 a, u8 b)   { return (u8)(a % b); }
+}

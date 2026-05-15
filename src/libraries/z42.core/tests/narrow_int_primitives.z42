@@ -1,0 +1,88 @@
+// add-narrow-int-primitives (2026-05-15): z42 integration tests for the new
+// narrow integer primitive facades. Covers Parse → ToString round-trip,
+// Equals, and CompareTo on every narrow type.
+//
+// Range-rejection paths (`Parse("256")` throws on u8 etc.) are exercised by
+// the Rust unit tests in `convert_tests.rs` — at the z42 level, builtin
+// `bail!` errors surface as raw VM errors that aren't caught by
+// `Assert.ThrowsAny`, so we don't try to catch them here.
+namespace Z42CoreNarrowIntTests;
+
+using Std;
+using Std.Test;
+
+// ── i8 ───────────────────────────────────────────────────────────────────────
+
+[Test]
+void test_i8_parse_round_trip() {
+    i8 v = i8.Parse("-128");
+    Assert.Equal("-128", v.ToString());
+    v = i8.Parse("127");
+    Assert.Equal("127", v.ToString());
+    v = i8.Parse("0");
+    Assert.Equal("0", v.ToString());
+}
+
+[Test]
+void test_i8_compare_to() {
+    i8 a = i8.Parse("10");
+    i8 b = i8.Parse("20");
+    Assert.True(a.CompareTo(b) < 0);
+    Assert.True(b.CompareTo(a) > 0);
+    Assert.Equal(0, a.CompareTo(a));
+}
+
+// ── i16 ──────────────────────────────────────────────────────────────────────
+
+[Test]
+void test_i16_parse_round_trip() {
+    i16 v = i16.Parse("-32768");
+    Assert.Equal("-32768", v.ToString());
+    v = i16.Parse("32767");
+    Assert.Equal("32767", v.ToString());
+}
+
+// ── u8 (byte) ────────────────────────────────────────────────────────────────
+
+[Test]
+void test_u8_parse_round_trip() {
+    u8 v = u8.Parse("0");
+    Assert.Equal("0", v.ToString());
+    v = u8.Parse("255");
+    Assert.Equal("255", v.ToString());
+}
+
+[Test]
+void test_u8_equals() {
+    u8 a = u8.Parse("42");
+    u8 b = u8.Parse("42");
+    u8 c = u8.Parse("43");
+    Assert.True(a.Equals(b));
+    Assert.False(a.Equals(c));
+}
+
+// ── u16 (ushort) ─────────────────────────────────────────────────────────────
+
+[Test]
+void test_u16_parse_round_trip() {
+    u16 v = u16.Parse("65535");
+    Assert.Equal("65535", v.ToString());
+    v = u16.Parse("0");
+    Assert.Equal("0", v.ToString());
+}
+
+// ── u32 (uint) ───────────────────────────────────────────────────────────────
+
+[Test]
+void test_u32_parse_round_trip() {
+    u32 v = u32.Parse("4294967295");
+    Assert.Equal("4294967295", v.ToString());
+}
+
+// ── u64 (ulong) ──────────────────────────────────────────────────────────────
+
+[Test]
+void test_u64_parse_low_values_round_trip() {
+    u64 v = u64.Parse("12345");
+    Assert.Equal("12345", v.ToString());
+}

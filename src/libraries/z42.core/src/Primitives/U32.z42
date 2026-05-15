@@ -1,0 +1,22 @@
+namespace Std;
+
+// add-narrow-int-primitives (2026-05-15): `u32` / `uint` (unsigned 32-bit,
+// 0..=4_294_967_295). Underlying runtime Value is i64; Parse range-checks input.
+public struct u32 : IComparable<u32>, IEquatable<u32>, INumber<u32> {
+    [Native("__u32_parse")]     public static extern u32 Parse(string s);
+    [Native("__int_equals")]    public extern bool Equals(u32 other);
+    [Native("__int_hash_code")] public extern int GetHashCode();
+    [Native("__int_to_string")] public extern string ToString();
+
+    public int CompareTo(u32 other) {
+        if (this < other) return -1;
+        if (this > other) return 1;
+        return 0;
+    }
+
+    public static override u32 op_Add(u32 a, u32 b)      { return (u32)(a + b); }
+    public static override u32 op_Subtract(u32 a, u32 b) { return (u32)(a - b); }
+    public static override u32 op_Multiply(u32 a, u32 b) { return (u32)(a * b); }
+    public static override u32 op_Divide(u32 a, u32 b)   { return (u32)(a / b); }
+    public static override u32 op_Modulo(u32 a, u32 b)   { return (u32)(a % b); }
+}
