@@ -17,7 +17,7 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.json` / `z42.math` / `z42.test` / `z42.text` / `z42.time` / `z42.toml`。
+已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.json` / `z42.math` / `z42.random` / `z42.test` / `z42.text` / `z42.time` / `z42.toml`。
 
 覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer、JSON RFC 8259 reader/writer。
 
@@ -53,6 +53,7 @@
 - `z42.time`（2026-05-14 add-z42-time）— UTC 时刻（DateTime）/ 时间段（TimeSpan）/ 单调计时器（Stopwatch）。详 [time.md](time.md)
 - `z42.toml`（2026-05-14 add-z42-toml）— TOML 1.0 subset reader/writer，覆盖 manifest 解析。详 [toml.md](toml.md)
 - `z42.json`（2026-05-15 add-z42-json）— JSON RFC 8259 完整 reader/writer。详 [json.md](json.md)
+- `z42.random`（2026-05-15 add-z42-random）— PCG-XSH-RR deterministic PRNG。详 [random.md](random.md)
 
 ---
 
@@ -65,10 +66,9 @@
 | **z42.net** | `System.Net.Sockets` / `System.Net.Http` | `std::net` + `hyper` / `reqwest` | L2 | 走 Tier1 C ABI（系统 socket 或 libcurl） | 先 TCP/UDP（同步）；HTTP client 留次级 |
 | **z42.regex** | `System.Text.RegularExpressions` | `regex` crate | L1/L2 | 可 FFI（PCRE2）或纯脚本 | text 处理常用；`Std.Text.Regex` 已占位 |
 | **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI（libsodium / OpenSSL 最快）| 哈希（SHA-2/3）+ CSPRNG + 对称加密 |
-| **z42.random** | `System.Random` | `rand` crate | L1 | 通用伪随机纯脚本；安全随机走 Platform HAL | 可拆出独立轻量包，先于 crypto |
 
 **起步排期**：
-- L2 末 / L3 初（A6 改造完成后）：`z42.random` → `z42.regex` → `z42.threading` → `z42.crypto` → `z42.net`
+- L2 末 / L3 初（A6 改造完成后）：`z42.regex` → `z42.threading` → `z42.crypto` → `z42.net`
 - L3 中（async 语法就绪后）：`z42.async`
 
 ---

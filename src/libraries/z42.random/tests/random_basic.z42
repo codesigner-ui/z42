@@ -1,0 +1,101 @@
+// add-z42-random (2026-05-15)：seeded PRNG 基础 API + 确定性测试。
+namespace Z42RandomBasicTests;
+
+using Std.Test;
+using Std.Random;
+
+[Test]
+void test_same_seed_same_sequence() {
+    var a = new Random(42);
+    var b = new Random(42);
+    Assert.Equal(a.NextInt(), b.NextInt());
+    Assert.Equal(a.NextInt(), b.NextInt());
+    Assert.Equal(a.NextLong(), b.NextLong());
+}
+
+[Test]
+void test_different_seed_different_first() {
+    var a = new Random(1);
+    var b = new Random(2);
+    Assert.True(a.NextInt() != b.NextInt());
+}
+
+[Test]
+void test_next_long_varies() {
+    var r = new Random(123);
+    long a = r.NextLong();
+    long b = r.NextLong();
+    Assert.True(a != b);
+}
+
+[Test]
+void test_next_double_in_unit_range() {
+    var r = new Random(7);
+    int i = 0;
+    while (i < 100) {
+        double d = r.NextDouble();
+        Assert.True(d >= 0.0);
+        Assert.True(d < 1.0);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_next_int_range_bounds() {
+    var r = new Random(99);
+    int i = 0;
+    while (i < 200) {
+        int n = r.NextIntRange(10, 20);
+        Assert.True(n >= 10);
+        Assert.True(n < 20);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_next_long_range_bounds() {
+    var r = new Random(99);
+    int i = 0;
+    while (i < 200) {
+        long n = r.NextLongRange(1000000000000L, 2000000000000L);
+        Assert.True(n >= 1000000000000L);
+        Assert.True(n <  2000000000000L);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_next_bool_both_outcomes() {
+    var r = new Random(2026);
+    bool sawTrue = false;
+    bool sawFalse = false;
+    int i = 0;
+    while (i < 50) {
+        if (r.NextBool()) { sawTrue = true; }
+        else { sawFalse = true; }
+        i = i + 1;
+    }
+    Assert.True(sawTrue);
+    Assert.True(sawFalse);
+}
+
+[Test]
+void test_range_rejects_invalid() {
+    var r = new Random(0);
+    bool caught = false;
+    try {
+        r.NextIntRange(10, 5);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_default_ctor_does_not_throw() {
+    // No seed → wall-clock seed; should just produce *some* value.
+    var r = new Random();
+    long a = r.NextLong();
+    long b = r.NextLong();
+    Assert.True(a != b);
+}

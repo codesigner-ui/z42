@@ -20,6 +20,7 @@ members = ["*"]
 # also runs a topo-sort, in case a build path falls back to literal order):
 #   z42.core       → (no deps)
 #   z42.collections / encoding / math / text / time / toml → (need core only)
+#   z42.random     → (needs z42.time for wall-clock default seed)
 #   z42.io         → (needs z42.time for Std.Process.Timeout/TimeSpan)
 #   z42.json       → (needs z42.text for StringBuilder)
 #   z42.test       → (needs z42.io for Bencher.Std.IO.Console)
@@ -31,6 +32,7 @@ default-members = [
     "z42.text",
     "z42.time",
     "z42.toml",
+    "z42.random",
     "z42.io",
     "z42.json",
     "z42.test",

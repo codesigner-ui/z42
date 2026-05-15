@@ -1,0 +1,122 @@
+namespace Std.Random;
+using Std;
+using Std.Time;
+
+// add-z42-random (2026-05-15)：通用伪随机数（PCG-XSH-RR 64→32 输出）。
+//
+// **不是 CSPRNG**：仅作 deterministic 测试 / fixture / 临时 ID 用。
+// 安全场景请等 z42.crypto。
+//
+// 算法：PCG (Permuted Congruential Generator) — 状态 64-bit，
+// 输出 32-bit by xor-shift-high + rotate-right。Wikipedia / pcg-random.org
+// 参考实现等价。
+public class Random {
+    private long _state;
+
+    // 这两个常数是 PCG 标准 multiplier / default increment（来自原论文）。
+    // 字段而非常量内联：方便 z42 type resolver；常量 inline 在表达式里。
+
+    public Random() {
+        // wall-clock seed — 同 C# new Random() default behaviour。
+        // DateTime.UtcNow().UnixMs() returns ms since epoch — 64-bit signed.
+        long ms = DateTime.UtcNow().UnixMs();
+        this._init(ms);
+    }
+
+    public Random(long seed) {
+        this._init(seed);
+    }
+
+    private void _init(long seed) {
+        // PCG seed step: state starts as 0, increment + step once with the
+        // user seed mixed in. Equivalent to pcg32_srandom_r(rng, seed, seq).
+        this._state = 0;
+        this._step();
+        this._state = this._state + seed;
+        this._step();
+    }
+
+    /// One PCG round: state advances; return 32-bit output (masked into low
+    /// bits of a `long` since z42 has no `uint`). The full XSH-RR output
+    /// fits in 32 bits but we keep it in i64 storage to make masking explicit.
+    private long _step() {
+        long oldState = this._state;
+        // Multiplier from L'Ecuyer 1999 (PCG paper constant).
+        long mul = 6364136223846793005;
+        long inc = 1442695040888963407;
+        this._state = oldState * mul + inc;
+        // 32-bit mask. Decimal literal since z42 hex literal support is TBD.
+        long MASK32 = 4294967295;          // 0xFFFFFFFF
+        // xorshift: ((state >> 18) ^ state) >> 27, masked to 32 bits.
+        long shifted = (((oldState >> 18) ^ oldState) >> 27) & MASK32;
+        // rotate-right by top 5 bits of state (0..31).
+        int rot = (int)((oldState >> 59) & 31);
+        // raw32 rotate-right: ((x >> rot) | (x << (32 - rot))) & MASK32.
+        long result;
+        if (rot == 0) {
+            result = shifted;
+        } else {
+            result = ((shifted >> rot) | (shifted << (32 - rot))) & MASK32;
+        }
+        return result;
+    }
+
+    /// Full 64-bit random. Composed from two 32-bit steps.
+    public long NextLong() {
+        long high = this._step();
+        long low  = this._step();
+        return (high << 32) | low;
+    }
+
+    /// Random 32-bit int (returned as z42 i32; high bit may be set → negative).
+    public int NextInt() {
+        long raw32 = this._step();
+        long SIGN_BIT = 2147483648;        // 0x80000000
+        long WRAP     = 4294967296;        // 0x100000000
+        // Sign-extend the 32-bit value into i32: if bit 31 set, value is negative.
+        if ((raw32 & SIGN_BIT) != 0) {
+            return (int)(raw32 - WRAP);
+        }
+        return (int)raw32;
+    }
+
+    /// Uniformly distributed long in [min, max). Throws if max <= min.
+    public long NextLongRange(long min, long max) {
+        if (max <= min) {
+            throw new ArgumentException("NextLongRange: max must be > min");
+        }
+        long span = max - min;
+        // Modulo bias is negligible for span << 2^63; acceptable for L1.
+        long raw = this.NextLong();
+        // Ensure non-negative before modulo.
+        if (raw < 0) { raw = raw + 9223372036854775807 + 1; }
+        return min + (raw % span);
+    }
+
+    /// Uniformly distributed int in [min, max). Throws if max <= min.
+    public int NextIntRange(int min, int max) {
+        if (max <= min) {
+            throw new ArgumentException("NextIntRange: max must be > min");
+        }
+        int span = max - min;
+        long raw = this._step();
+        // `raw` is already in [0, 2^32) (masked low 32 bits); modulo is safe.
+        return min + (int)(raw % (long)span);
+    }
+
+    /// Uniformly distributed double in [0.0, 1.0).
+    public double NextDouble() {
+        // Use top 53 bits (double mantissa width) for full precision.
+        // shift right 11 to drop low bits AND clear sign — but `>>` in z42
+        // is arithmetic shift on i64, so we explicitly mask after to be safe.
+        long bits = this.NextLong();
+        long MANTISSA_MASK = 9007199254740991;     // (1 << 53) - 1
+        long unsigned53 = ((bits >> 11) & MANTISSA_MASK);
+        return (double)unsigned53 / 9007199254740992.0;     // 1 / 2^53
+    }
+
+    /// Coin flip — true with probability 0.5.
+    public bool NextBool() {
+        return (this._step() & 1) == 1;
+    }
+}

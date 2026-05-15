@@ -1,0 +1,70 @@
+// add-z42-random (2026-05-15)：粗粒度分布烟雾测试 —— 不是严格的 chi-square，
+// 只验证 bucket 计数没明显偏斜。PCG 通过 PractRand 32TB，本地 smoke 够用。
+namespace Z42RandomDistTests;
+
+using Std.Test;
+using Std.Random;
+
+[Test]
+void test_int_range_buckets_roughly_uniform() {
+    var r = new Random(2026);
+    // 10 buckets, 10000 samples → expected ~1000 per bucket.
+    // Tolerance: each bucket in [600, 1400] (±40%) for L1 stdlib smoke.
+    int N = 10;
+    int total = 10000;
+    int[] counts = new int[N];
+    int k = 0;
+    while (k < N) { counts[k] = 0; k = k + 1; }
+    int i = 0;
+    while (i < total) {
+        int b = r.NextIntRange(0, N);
+        counts[b] = counts[b] + 1;
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < N) {
+        Assert.True(counts[j] >= 600);
+        Assert.True(counts[j] <= 1400);
+        j = j + 1;
+    }
+}
+
+[Test]
+void test_bool_balanced() {
+    var r = new Random(42);
+    int trueCount = 0;
+    int total = 10000;
+    int i = 0;
+    while (i < total) {
+        if (r.NextBool()) { trueCount = trueCount + 1; }
+        i = i + 1;
+    }
+    // Expected ~5000; ±10% tolerance.
+    Assert.True(trueCount > 4500);
+    Assert.True(trueCount < 5500);
+}
+
+[Test]
+void test_double_buckets_uniform() {
+    var r = new Random(7);
+    int N = 10;
+    int total = 10000;
+    int[] counts = new int[N];
+    int k = 0;
+    while (k < N) { counts[k] = 0; k = k + 1; }
+    int i = 0;
+    while (i < total) {
+        double d = r.NextDouble();
+        int b = (int)(d * (double)N);
+        if (b < 0)  { b = 0; }
+        if (b >= N) { b = N - 1; }
+        counts[b] = counts[b] + 1;
+        i = i + 1;
+    }
+    int j = 0;
+    while (j < N) {
+        Assert.True(counts[j] >= 600);
+        Assert.True(counts[j] <= 1400);
+        j = j + 1;
+    }
+}
