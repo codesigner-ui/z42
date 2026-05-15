@@ -17,7 +17,7 @@
 
 ## 现状回顾（2026-04-30）
 
-已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.json` / `z42.math` / `z42.random` / `z42.test` / `z42.text` / `z42.time` / `z42.toml` / `z42.uri`。
+已实现包：`z42.core` / `z42.collections` / `z42.encoding` / `z42.io` / `z42.io.binary` / `z42.json` / `z42.math` / `z42.random` / `z42.test` / `z42.text` / `z42.time` / `z42.toml` / `z42.uri`。
 
 覆盖能力：基础类型、协议接口、基础集合、Math、StringBuilder、Console + File / Directory / Path / Environment / Process、测试框架、编码（Hex/Base64/UTF-8）、UTC 时刻 + 时间段 + 单调计时器、TOML 1.0 子集 reader/writer、JSON RFC 8259 reader/writer。
 
@@ -55,6 +55,7 @@
 - `z42.json`（2026-05-15 add-z42-json）— JSON RFC 8259 完整 reader/writer。详 [json.md](json.md)
 - `z42.random`（2026-05-15 add-z42-random）— PCG-XSH-RR deterministic PRNG。详 [random.md](random.md)
 - `z42.uri`（2026-05-15 add-z42-uri）— RFC 3986 子集 URI parser + percent codec。详 [uri.md](uri.md)
+- `z42.io.binary`（2026-05-15 add-z42-io-binary）— `BinaryReader/Writer` over byte[]，LE+BE int16/32/64 + UTF-8 string。详 [io-binary.md](io-binary.md)
 
 ---
 
@@ -78,7 +79,6 @@
 
 | 包 | C# 对标 | Rust 对标 | 层级 | 备注 |
 |----|---------|----------|------|------|
-| **z42.io.binary**（z42.io 子模块）| `BinaryReader/Writer` | `byteorder` | L2 | 二进制流读写；协议解析、自定义文件格式 |
 | **z42.compression** | `System.IO.Compression` | `flate2` / `zstd` | L2 | gzip / zstd；FFI 包 zlib 优先 |
 | **z42.toml** / **z42.yaml** | (社区) | `toml` / `serde_yaml` | L1 | 工程文件已用 toml，可先内部用，再公开 |
 | **z42.linq** | `System.Linq` | `Iterator` trait 链式方法 | L1 | **依赖 lambda + iterator trait**（L3） |

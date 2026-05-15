@@ -1,0 +1,149 @@
+namespace Std.Binary;
+using Std;
+using Std.Encoding;
+
+// add-z42-io-binary (2026-05-15): 低层级二进制流读取，over byte[]。
+//
+// 字节序：LE / BE 两种显式后缀（不依赖平台默认）。Int16 sign-extends 到 int
+// 返回（z42 暂无 short 公开类型）。
+//
+// 越界 read → throws Std.EndOfStreamException（同 Console / File 模式）。
+public class BinaryReader {
+    private byte[] _data;
+    private int    _pos;
+
+    public BinaryReader(byte[] data) {
+        this._data = data;
+        this._pos  = 0;
+    }
+
+    // ── Cursor ────────────────────────────────────────────────────────────
+
+    public int  GetPosition()  { return this._pos; }
+    public int  GetLength()    { return this._data.Length; }
+    public bool EndOfStream()  { return this._pos >= this._data.Length; }
+
+    public void Seek(int pos) {
+        if (pos < 0 || pos > this._data.Length) {
+            throw new BinaryException("Seek position " + pos.ToString() +
+                " out of range [0, " + this._data.Length.ToString() + "]");
+        }
+        this._pos = pos;
+    }
+
+    public void Skip(int count) {
+        this.Seek(this._pos + count);
+    }
+
+    // ── Bytes ─────────────────────────────────────────────────────────────
+
+    /// 读取 1 个字节，返回 0-255 的 int（z42 当前 stdlib 不直接传递 byte 参数 / 返回值，
+    /// 调用方拿到 int 可显式 `(byte)x` cast 回去）。
+    public int ReadByte() {
+        this._requireAvail(1);
+        int b = (int)this._data[this._pos];
+        this._pos = this._pos + 1;
+        return b;
+    }
+
+    public byte[] ReadBytes(int count) {
+        if (count < 0) {
+            throw new BinaryException("ReadBytes count must be >= 0, got " + count.ToString());
+        }
+        this._requireAvail(count);
+        byte[] result = new byte[count];
+        int i = 0;
+        while (i < count) {
+            result[i] = this._data[this._pos + i];
+            i = i + 1;
+        }
+        this._pos = this._pos + count;
+        return result;
+    }
+
+    // ── Int16 (sign-extended to int) ──────────────────────────────────────
+
+    public int ReadInt16LE() {
+        this._requireAvail(2);
+        int b0 = (int)this._data[this._pos];
+        int b1 = (int)this._data[this._pos + 1];
+        this._pos = this._pos + 2;
+        int raw = b0 | (b1 << 8);
+        // sign-extend from 16 bits
+        if ((raw & 0x8000) != 0) { return raw - 0x10000; }
+        return raw;
+    }
+
+    public int ReadInt16BE() {
+        this._requireAvail(2);
+        int b0 = (int)this._data[this._pos];
+        int b1 = (int)this._data[this._pos + 1];
+        this._pos = this._pos + 2;
+        int raw = (b0 << 8) | b1;
+        if ((raw & 0x8000) != 0) { return raw - 0x10000; }
+        return raw;
+    }
+
+    // ── Int32 ─────────────────────────────────────────────────────────────
+
+    public int ReadInt32LE() {
+        this._requireAvail(4);
+        long b0 = (long)this._data[this._pos];
+        long b1 = (long)this._data[this._pos + 1];
+        long b2 = (long)this._data[this._pos + 2];
+        long b3 = (long)this._data[this._pos + 3];
+        this._pos = this._pos + 4;
+        long raw = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+        // sign-extend from bit 31 (z42 int is i32 view of i64; without this the
+        // returned value would be 2^32 too high for negative inputs).
+        if ((raw & 2147483648L) != 0L) { raw = raw - 4294967296L; }
+        return (int)raw;
+    }
+
+    public int ReadInt32BE() {
+        this._requireAvail(4);
+        long b0 = (long)this._data[this._pos];
+        long b1 = (long)this._data[this._pos + 1];
+        long b2 = (long)this._data[this._pos + 2];
+        long b3 = (long)this._data[this._pos + 3];
+        this._pos = this._pos + 4;
+        long raw = (b0 << 24) | (b1 << 16) | (b2 << 8) | b3;
+        if ((raw & 2147483648L) != 0L) { raw = raw - 4294967296L; }
+        return (int)raw;
+    }
+
+    // ── Int64 ─────────────────────────────────────────────────────────────
+
+    public long ReadInt64LE() {
+        this._requireAvail(8);
+        long lo = (long)this.ReadInt32LE() & 4294967295L;
+        long hi = (long)this.ReadInt32LE();
+        return lo | (hi << 32);
+    }
+
+    public long ReadInt64BE() {
+        this._requireAvail(8);
+        long hi = (long)this.ReadInt32BE();
+        long lo = (long)this.ReadInt32BE() & 4294967295L;
+        return (hi << 32) | lo;
+    }
+
+    // ── String (UTF-8) ────────────────────────────────────────────────────
+
+    /// 读取 byteCount 个字节并按 UTF-8 解码为 string。
+    public string ReadString(int byteCount) {
+        byte[] bytes = this.ReadBytes(byteCount);
+        return Utf8.GetString(bytes);
+    }
+
+    // ── Internals ─────────────────────────────────────────────────────────
+
+    private void _requireAvail(int n) {
+        if (this._pos + n > this._data.Length) {
+            throw new BinaryException(
+                "BinaryReader: need " + n.ToString() +
+                " byte(s) but only " + (this._data.Length - this._pos).ToString() +
+                " remaining at pos " + this._pos.ToString());
+        }
+    }
+}

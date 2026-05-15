@@ -35,6 +35,7 @@ default-members = [
     "z42.random",
     "z42.uri",
     "z42.io",
+    "z42.io.binary",
     "z42.json",
     "z42.test",
 ]

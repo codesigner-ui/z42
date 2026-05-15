@@ -1,0 +1,93 @@
+// add-z42-io-binary (2026-05-15)：UTF-8 string + raw bytes round-trip。
+namespace Z42IoBinaryStringsTests;
+
+using Std.Test;
+using Std.Binary;
+
+[Test]
+void test_ascii_string_round_trip() {
+    var w = new BinaryWriter();
+    int n = w.WriteString("hello");
+    Assert.Equal(5, n);
+    Assert.Equal(5, w.GetLength());
+
+    var r = new BinaryReader(w.ToArray());
+    Assert.Equal("hello", r.ReadString(5));
+    Assert.True(r.EndOfStream());
+}
+
+[Test]
+void test_utf8_string_round_trip() {
+    var w = new BinaryWriter();
+    int n = w.WriteString("hello 中文");  // 6 ASCII + 6 UTF-8 (3 bytes each) = 12 bytes
+    Assert.Equal(12, n);
+
+    var r = new BinaryReader(w.ToArray());
+    Assert.Equal("hello 中文", r.ReadString(12));
+}
+
+[Test]
+void test_length_prefixed_string() {
+    // 自定义 framing：u16-LE length + utf8 bytes
+    var w = new BinaryWriter();
+    string s = "z42 binary stream";
+    w.WriteInt16LE(s.Length);    // ASCII so char count == byte count
+    int written = w.WriteString(s);
+    Assert.Equal(s.Length, written);
+
+    var r = new BinaryReader(w.ToArray());
+    int len = r.ReadInt16LE();
+    Assert.Equal(s.Length, len);
+    Assert.Equal(s, r.ReadString(len));
+}
+
+[Test]
+void test_read_bytes_returns_copy() {
+    var w = new BinaryWriter();
+    w.WriteByte(0xAA);
+    w.WriteByte(0xBB);
+    w.WriteByte(0xCC);
+
+    var r = new BinaryReader(w.ToArray());
+    byte[] chunk = r.ReadBytes(3);
+    Assert.Equal(3,    chunk.Length);
+    Assert.Equal(0xAA, (int)chunk[0]);
+    Assert.Equal(0xBB, (int)chunk[1]);
+    Assert.Equal(0xCC, (int)chunk[2]);
+    Assert.True(r.EndOfStream());
+}
+
+[Test]
+void test_write_bytes_appends_in_order() {
+    byte[] payload = new byte[4];
+    payload[0] = (byte)1;
+    payload[1] = (byte)2;
+    payload[2] = (byte)3;
+    payload[3] = (byte)4;
+
+    var w = new BinaryWriter();
+    w.WriteByte(0);
+    w.WriteBytes(payload);
+    w.WriteByte(9);
+
+    byte[] result = w.ToArray();
+    Assert.Equal(6, result.Length);
+    Assert.Equal(0, (int)result[0]);
+    Assert.Equal(1, (int)result[1]);
+    Assert.Equal(2, (int)result[2]);
+    Assert.Equal(3, (int)result[3]);
+    Assert.Equal(4, (int)result[4]);
+    Assert.Equal(9, (int)result[5]);
+}
+
+[Test]
+void test_empty_string() {
+    var w = new BinaryWriter();
+    int n = w.WriteString("");
+    Assert.Equal(0, n);
+    Assert.Equal(0, w.GetLength());
+
+    var r = new BinaryReader(w.ToArray());
+    Assert.Equal("", r.ReadString(0));
+    Assert.True(r.EndOfStream());
+}
