@@ -1,11 +1,7 @@
 // add-narrow-int-primitives (2026-05-15): z42 integration tests for the new
 // narrow integer primitive facades. Covers Parse → ToString round-trip,
-// Equals, and CompareTo on every narrow type.
-//
-// Range-rejection paths (`Parse("256")` throws on u8 etc.) are exercised by
-// the Rust unit tests in `convert_tests.rs` — at the z42 level, builtin
-// `bail!` errors surface as raw VM errors that aren't caught by
-// `Assert.ThrowsAny`, so we don't try to catch them here.
+// Equals, CompareTo, and range-rejection (which throws `Std.Exception`
+// post-make-corelib-errors-catchable, 2026-05-15).
 namespace Z42CoreNarrowIntTests;
 
 using Std;
@@ -85,4 +81,56 @@ void test_u32_parse_round_trip() {
 void test_u64_parse_low_values_round_trip() {
     u64 v = u64.Parse("12345");
     Assert.Equal("12345", v.ToString());
+}
+
+// ── Range-rejection paths ────────────────────────────────────────────────────
+// Verify that out-of-range Parse calls throw a catchable `Std.Exception`
+// (make-corelib-errors-catchable, 2026-05-15). Before that fix, builtin
+// `bail!` errors aborted the VM with an uncatchable raw error.
+
+[Test]
+void test_i8_parse_rejects_out_of_range() {
+    Assert.ThrowsAny(() => i8.Parse("128"));
+    Assert.ThrowsAny(() => i8.Parse("-129"));
+}
+
+[Test]
+void test_i16_parse_rejects_out_of_range() {
+    Assert.ThrowsAny(() => i16.Parse("32768"));
+    Assert.ThrowsAny(() => i16.Parse("-32769"));
+}
+
+[Test]
+void test_u8_parse_rejects_out_of_range() {
+    Assert.ThrowsAny(() => u8.Parse("256"));
+    Assert.ThrowsAny(() => u8.Parse("-1"));
+}
+
+[Test]
+void test_u16_parse_rejects_out_of_range() {
+    Assert.ThrowsAny(() => u16.Parse("65536"));
+    Assert.ThrowsAny(() => u16.Parse("-1"));
+}
+
+[Test]
+void test_u32_parse_rejects_out_of_range() {
+    Assert.ThrowsAny(() => u32.Parse("4294967296"));
+    Assert.ThrowsAny(() => u32.Parse("-1"));
+}
+
+[Test]
+void test_u64_parse_rejects_negative() {
+    Assert.ThrowsAny(() => u64.Parse("-1"));
+}
+
+[Test]
+void test_int_parse_now_rejects_overflow() {
+    // Pre-2026-05-15 this silently succeeded with a value too big for i32.
+    Assert.ThrowsAny(() => int.Parse("9999999999"));
+}
+
+[Test]
+void test_parse_rejects_non_numeric() {
+    Assert.ThrowsAny(() => int.Parse("abc"));
+    Assert.ThrowsAny(() => u8.Parse("12x"));
 }

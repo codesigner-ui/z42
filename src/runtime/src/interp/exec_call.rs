@@ -67,21 +67,44 @@ pub(super) fn call(
 /// `builtin_id` is the resolved `BuiltinId.0` from
 /// `Function.resolved.builtin_tokens[site_idx]`, or `None` when the
 /// caller has no resolved token to pass (back-compat path).
+///
+/// make-corelib-errors-catchable (2026-05-15): when the builtin returns
+/// `Err`, we convert the anyhow string into a `Std.Exception` instance and
+/// surface it as a thrown value via `Ok(Some(exc))`. This makes
+/// `int.Parse("abc")` / `u8.Parse("256")` / `byte.Parse(...)` catchable
+/// from z42 code with normal `try / catch (Exception e)` syntax, instead of
+/// aborting the VM with an uncaught raw error. If exception construction
+/// itself fails (e.g. `Std.Exception` type isn't loaded), we fall back to
+/// propagating the original error to avoid masking startup-time corruption.
 pub(super) fn builtin(
-    ctx: &VmContext, frame: &mut Frame, dst: u32, name: &str, args: &[u32],
+    ctx: &VmContext, module: &crate::metadata::Module,
+    frame: &mut Frame, dst: u32, name: &str, args: &[u32],
     builtin_id: Option<u32>,
-) -> Result<()> {
+) -> Result<Option<Value>> {
     let arg_vals = collect_args(&frame.regs, args)?;
     let result = match builtin_id {
         Some(id) => crate::corelib::exec_builtin_by_id(
             ctx,
             crate::metadata::tokens::BuiltinId(id),
             &arg_vals,
-        )?,
-        None => crate::corelib::exec_builtin(ctx, name, &arg_vals)?,
+        ),
+        None => crate::corelib::exec_builtin(ctx, name, &arg_vals),
     };
-    frame.set(dst, result);
-    Ok(())
+    match result {
+        Ok(v) => {
+            frame.set(dst, v);
+            Ok(None)
+        }
+        Err(e) => {
+            let msg = e.to_string();
+            match crate::exception::make_stdlib_exception(
+                ctx, module, "Std.Exception", msg,
+            ) {
+                Ok(exc) => Ok(Some(exc)),
+                Err(_)  => Err(e),  // Std.Exception not loaded → keep raw error
+            }
+        }
+    }
 }
 
 /// L2 no-capture lambda lifting: push a function reference value.

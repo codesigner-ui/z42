@@ -130,7 +130,11 @@ pub fn exec_instr(
             let builtin_id = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
                 .and_then(|r| r.builtin_tokens.get(_site_idx as usize).copied());
-            exec_call::builtin(ctx, frame, *dst, name, args, builtin_id)?;
+            // make-corelib-errors-catchable (2026-05-15): builtin errors now
+            // surface as catchable `Std.Exception` instances (see exec_call::builtin).
+            if let Some(thrown) = exec_call::builtin(ctx, module, frame, *dst, name, args, builtin_id)? {
+                return Ok(Some(thrown));
+            }
         }
         Instruction::LoadFn { dst, func } => exec_call::load_fn(frame, *dst, func),
         Instruction::LoadFnCached { dst, func, slot_id } => exec_call::load_fn_cached(ctx, frame, *dst, func, *slot_id),
