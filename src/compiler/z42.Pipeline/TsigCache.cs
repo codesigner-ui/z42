@@ -43,7 +43,9 @@ public sealed class TsigCache
         foreach (var paths in _nsToPaths.Values)
             foreach (var p in paths) allPaths.Add(p);
         var result = new List<ExportedModule>();
-        foreach (var path in allPaths)
+        // fix-loadforpackages-nondeterministic-order (2026-05-17): sort for
+        // stable first-wins resolution downstream. See LoadForPackages note.
+        foreach (var path in allPaths.OrderBy(p => p, StringComparer.Ordinal))
             result.AddRange(LoadZpkg(path));
         return result;
     }
@@ -58,7 +60,8 @@ public sealed class TsigCache
                 foreach (var p in paths) needed.Add(p);
 
         var result = new List<ExportedModule>();
-        foreach (var path in needed)
+        // fix-loadforpackages-nondeterministic-order (2026-05-17): same as above.
+        foreach (var path in needed.OrderBy(p => p, StringComparer.Ordinal))
             result.AddRange(LoadZpkg(path));
         return result;
     }
@@ -77,7 +80,17 @@ public sealed class TsigCache
 
         var modules    = new List<ExportedModule>();
         var packageOf  = new Dictionary<ExportedModule, string>();
-        foreach (var path in allPaths)
+        // fix-loadforpackages-nondeterministic-order (2026-05-17):
+        // `allPaths` is a HashSet; iteration order is per-process (depends on
+        // string hash + bucket layout, randomized per .NET process). The
+        // downstream `ImportedSymbolLoader.Load` uses first-wins for ambiguous
+        // class names (e.g. `Std.Assert` from z42.core vs `Std.Test.Assert`
+        // from z42.test — both reachable as bare `Assert` under `using Std;
+        // using Std.Test;`). Non-determinism here surfaces as flaky CI: on
+        // some OSes / .NET versions `Std.Assert` wins, on others
+        // `Std.Test.Assert` wins, producing byte-different zbc and different
+        // exception messages at runtime. Sort by path so iteration is stable.
+        foreach (var path in allPaths.OrderBy(p => p, StringComparer.Ordinal))
         {
             var pkgName = GetPackageName(path);
             if (!activatedPackages.Contains(pkgName)) continue;
@@ -94,11 +107,15 @@ public sealed class TsigCache
     /// triggering full TSIG decode. Reads META only.
     public IEnumerable<(string Path, string PackageName)> AllPackages()
     {
+        // fix-loadforpackages-nondeterministic-order (2026-05-17): collect
+        // then sort so callers that thread the result into resolution paths
+        // get a stable order across processes.
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var paths in _nsToPaths.Values)
             foreach (var p in paths)
-                if (seen.Add(p))
-                    yield return (p, GetPackageName(p));
+                seen.Add(p);
+        foreach (var p in seen.OrderBy(x => x, StringComparer.Ordinal))
+            yield return (p, GetPackageName(p));
     }
 
     /// strict-using-resolution: which packages provide ANY type in the given
