@@ -158,6 +158,16 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__file_create_temp_dir",  fs::builtin_file_create_temp_dir),
     ("__file_create_temp_file", fs::builtin_file_create_temp_file),
 
+    // ── Script helpers（extend-z42-io-script-helpers, 2026-05-16）────────────
+    ("__file_make_executable",      fs::builtin_file_make_executable),
+    ("__file_link",                 fs::builtin_file_link),
+    ("__file_symlink",              fs::builtin_file_symlink),
+    ("__file_get_size",             fs::builtin_file_get_size),
+    ("__console_is_terminal",       fs::builtin_console_is_terminal),
+    ("__console_error_is_terminal", fs::builtin_console_error_is_terminal),
+    ("__env_get_cwd",               fs::builtin_env_get_cwd),
+    ("__env_set_cwd",               fs::builtin_env_set_cwd),
+
     // ── Environment / Process ─────────────────────────────────────────────────
     ("__env_get",      fs::builtin_env_get),
     ("__env_args",     fs::builtin_env_args),

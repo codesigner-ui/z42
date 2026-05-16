@@ -54,7 +54,9 @@ internal sealed partial class FunctionEmitter
             _ctx.DepIndex.TryGetStatic(call.ReceiverClass!, call.MethodName!, out depEntry);
         if (depEntry is not null)
         {
-            if (call.ReceiverClass == "Console" && argRegs.Count != 1)
+            // Console.WriteLine / Write variadic-concat sugar: only collapse multi-arg
+            // calls; 0-arg (e.g. IsTerminal) and 1-arg calls pass through unchanged.
+            if (call.ReceiverClass == "Console" && argRegs.Count > 1)
                 argRegs = [EmitConcat(argRegs)];
             _ctx.TrackDepNamespace(depEntry.Namespace);
             var dst = Alloc(ToIrType(call.Type));

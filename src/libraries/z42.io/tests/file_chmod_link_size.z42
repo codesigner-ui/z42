@@ -1,0 +1,59 @@
+// extend-z42-io-script-helpers (2026-05-16)：MakeExecutable / Link / SymLink / GetSize。
+namespace Z42IoFileChmodLinkSizeTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_get_size_of_known_content() {
+    string f = File.CreateTempFile("size", ".bin");
+    File.WriteAllText(f, "hello");  // 5 bytes (ASCII)
+    Assert.Equal(5L, File.GetSize(f));
+    File.WriteAllText(f, "hello world");  // 11 bytes
+    Assert.Equal(11L, File.GetSize(f));
+    File.Delete(f);
+}
+
+[Test]
+void test_get_size_empty_file() {
+    string f = File.CreateTempFile("zero", "");
+    Assert.Equal(0L, File.GetSize(f));
+    File.Delete(f);
+}
+
+[Test]
+void test_make_executable_does_not_throw() {
+    // 不验证 mode bit（跨平台 / Win no-op），只确认 idempotent + 不抛
+    string f = File.CreateTempFile("exec", ".sh");
+    File.WriteAllText(f, "#!/bin/sh\necho hi\n");
+    File.MakeExecutable(f);
+    File.MakeExecutable(f);  // 二次调用应 no-op，不抛
+    File.Delete(f);
+}
+
+[Test]
+void test_hard_link_shares_content() {
+    string dir = File.CreateTempDir("link");
+    string src = Path.Join(dir, "src.txt");
+    string dst = Path.Join(dir, "dst.txt");
+    File.WriteAllText(src, "shared");
+    File.Link(src, dst);
+    Assert.True(File.Exists(dst));
+    Assert.Equal("shared", File.ReadAllText(dst));
+    // 两个 inode 同一文件 — 改 src 立刻反映在 dst
+    File.WriteAllText(src, "modified");
+    Assert.Equal("modified", File.ReadAllText(dst));
+    Directory.Delete(dir, true);
+}
+
+[Test]
+void test_symlink_resolves_to_target() {
+    string dir = File.CreateTempDir("symlink");
+    string src = Path.Join(dir, "target.txt");
+    string lnk = Path.Join(dir, "link.txt");
+    File.WriteAllText(src, "target content");
+    File.SymLink(src, lnk);
+    Assert.True(File.Exists(lnk));
+    Assert.Equal("target content", File.ReadAllText(lnk));
+    Directory.Delete(dir, true);
+}

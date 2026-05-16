@@ -39,4 +39,22 @@ public static class File {
     /// suffix 可为 ""（无扩展名）。
     [Native("__file_create_temp_file")]
     public static extern string CreateTempFile(string prefix, string suffix);
+
+    // extend-z42-io-script-helpers (2026-05-16)：脚本常用 file 操作。
+
+    /// Unix: `chmod u+x,g+x,o+x`；Windows: no-op（NTFS 由扩展名决定）。
+    [Native("__file_make_executable")]
+    public static extern void MakeExecutable(string path);
+
+    /// 创建 hard link `dst → src`（跨设备 OS 错误透传）。
+    [Native("__file_link")]
+    public static extern void Link(string src, string dst);
+
+    /// 创建 symbolic link `dst → src`（Windows 暂未支持）。
+    [Native("__file_symlink")]
+    public static extern void SymLink(string src, string dst);
+
+    /// 文件字节数（path 是 directory 时抛错）。
+    [Native("__file_get_size")]
+    public static extern long GetSize(string path);
 }

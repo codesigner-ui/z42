@@ -260,3 +260,76 @@ fn unique_temp_path(prefix: &str, suffix: &str) -> String {
     p.push(format!("{prefix}.{nanos:x}.{pid}.{bump:x}{suffix}"));
     p.to_string_lossy().into_owned()
 }
+
+// ── Script helpers（extend-z42-io-script-helpers, 2026-05-16）─────────────────
+
+/// Unix: `chmod u+x,g+x,o+x`（owner / group / world execute）；Windows: no-op
+/// （NTFS 文件可执行性由扩展名而非 ACL bit 决定）。
+pub fn builtin_file_make_executable(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__file_make_executable")?;
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        let mut perms = std::fs::metadata(path.as_str())?.permissions();
+        let mode = perms.mode() | 0o111;
+        perms.set_mode(mode);
+        std::fs::set_permissions(path.as_str(), perms)?;
+    }
+    #[cfg(not(unix))] { let _ = path; }
+    Ok(Value::Null)
+}
+
+/// 创建 hard link（dst → src）。跨设备时 OS 错误透传。
+pub fn builtin_file_link(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let src = require_str(args, 0, "__file_link")?;
+    let dst = require_str(args, 1, "__file_link")?;
+    std::fs::hard_link(src.as_str(), dst.as_str())?;
+    Ok(Value::Null)
+}
+
+/// 创建 symbolic link（dst → src）。Windows 暂未实现（需 privilege）。
+pub fn builtin_file_symlink(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let src = require_str(args, 0, "__file_symlink")?;
+    let dst = require_str(args, 1, "__file_symlink")?;
+    #[cfg(unix)] {
+        std::os::unix::fs::symlink(src.as_str(), dst.as_str())?;
+    }
+    #[cfg(not(unix))] {
+        anyhow::bail!("File.SymLink: not implemented on this platform");
+    }
+    Ok(Value::Null)
+}
+
+/// 文件字节数（dir 错误）。
+pub fn builtin_file_get_size(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__file_get_size")?;
+    let meta = std::fs::metadata(path.as_str())?;
+    if meta.is_dir() {
+        anyhow::bail!("File.GetSize: '{}' is a directory", path);
+    }
+    Ok(Value::I64(meta.len() as i64))
+}
+
+/// stdout 是否连接 tty（颜色 / 进度条决策）。
+pub fn builtin_console_is_terminal(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    use std::io::IsTerminal;
+    Ok(Value::Bool(std::io::stdout().is_terminal()))
+}
+
+/// stderr 是否连接 tty。
+pub fn builtin_console_error_is_terminal(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    use std::io::IsTerminal;
+    Ok(Value::Bool(std::io::stderr().is_terminal()))
+}
+
+/// `pwd` / `$PWD`。
+pub fn builtin_env_get_cwd(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let p = std::env::current_dir()?;
+    Ok(Value::Str(p.to_string_lossy().into_owned()))
+}
+
+/// `cd path`（路径不存在 / 无权限会抛）。
+pub fn builtin_env_set_cwd(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = require_str(args, 0, "__env_set_cwd")?;
+    std::env::set_current_dir(path.as_str())?;
+    Ok(Value::Null)
+}

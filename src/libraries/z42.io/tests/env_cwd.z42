@@ -1,0 +1,38 @@
+// extend-z42-io-script-helpers (2026-05-16)：GetCurrentDirectory / SetCurrentDirectory。
+namespace Z42IoEnvCwdTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_get_current_directory_returns_absolute_path() {
+    string cwd = Environment.GetCurrentDirectory();
+    Assert.True(cwd.Length > 0);
+    // Unix: 应以 '/' 开头
+    Assert.Equal('/', cwd.CharAt(0));
+}
+
+[Test]
+void test_set_then_get_round_trip() {
+    string original = Environment.GetCurrentDirectory();
+    string tmp = File.CreateTempDir("cwdtest");
+    Environment.SetCurrentDirectory(tmp);
+    string current = Environment.GetCurrentDirectory();
+    // macOS：tmp 可能被符号链接到 /private/var/...（/var → /private/var）
+    // 所以 GetCurrentDirectory 可能返回 resolved path；只要 basename 一致即可
+    string tmpBase = Path.GetFileName(tmp);
+    string curBase = Path.GetFileName(current);
+    Assert.Equal(tmpBase, curBase);
+    // 恢复原 cwd
+    Environment.SetCurrentDirectory(original);
+    Directory.Delete(tmp, true);
+}
+
+[Test]
+void test_set_nonexistent_throws() {
+    bool caught = false;
+    try { Environment.SetCurrentDirectory("/nonexistent-z42-cwd-test-12345"); }
+    catch (Exception e) { caught = true; }
+    Assert.True(caught);
+}

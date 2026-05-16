@@ -26,4 +26,14 @@ public static class Environment {
     // exposes (similar shape to /proc/self/environ).
     [Native("__env_vars")]
     public static extern string[] GetEnvironmentVariables();
+
+    // extend-z42-io-script-helpers (2026-05-16)：当前工作目录。
+
+    /// `pwd` / `$PWD`。
+    [Native("__env_get_cwd")]
+    public static extern string GetCurrentDirectory();
+
+    /// `cd path`。路径不存在 / 无权限抛 Std.Exception。
+    [Native("__env_set_cwd")]
+    public static extern void SetCurrentDirectory(string path);
 }

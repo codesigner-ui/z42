@@ -1,0 +1,28 @@
+// extend-z42-io-script-helpers (2026-05-16)：IsTerminal smoke test。
+//
+// 在 test runner 下 stdout/stderr 被 capture，IsTerminal() 应返回 false；
+// 但具体值依赖 runner 实现，我们只验证：调用不抛 + 返回 bool + 多次一致。
+namespace Z42IoConsoleTtyTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_console_is_terminal_does_not_throw() {
+    bool t = Console.IsTerminal();
+    Assert.True(t || !t);  // 任一返回值都算通过
+}
+
+[Test]
+void test_console_error_is_terminal_does_not_throw() {
+    bool t = ConsoleError.IsTerminal();
+    Assert.True(t || !t);
+}
+
+[Test]
+void test_is_terminal_idempotent() {
+    bool a = Console.IsTerminal();
+    bool b = Console.IsTerminal();
+    // OS state 不变 — 两次调用应一致
+    if (a) { Assert.True(b); } else { Assert.False(b); }
+}
