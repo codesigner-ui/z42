@@ -93,24 +93,47 @@ static class BuildCommand
 
     public static Command CreateRun()
     {
-        var cmd         = new Command("run", "Build and execute a z42 project");
-        var manifestArg = ManifestArg();
+        var cmd         = new Command("run",
+            "Build and execute a z42 project or single `.z42` script");
+        // add-z42c-run-script (2026-05-17): accept either a project manifest
+        // (.z42.toml — existing behavior) or a single .z42 source file (script
+        // mode — compile to temp .zbc, auto-detect Main(), exec z42vm).
+        var pathArg     = new Argument<string?>("path",
+            () => null,
+            "Path to .z42.toml (manifest, auto-discovered if omitted) or .z42 (script)")
+        {
+            Arity = ArgumentArity.ZeroOrOne
+        };
         var releaseOpt  = new Option<bool>("--release", "Build and run with the release profile");
-        var binOpt      = new Option<string?>("--bin", "Run the named [[exe]] target");
+        var binOpt      = new Option<string?>("--bin", "Run the named [[exe]] target (project mode only)");
         var modeOpt     = new Option<string>("--mode", () => "interp", "VM execution mode: interp | jit | aot");
 
-        cmd.AddArgument(manifestArg);
+        cmd.AddArgument(pathArg);
         cmd.AddOption(releaseOpt);
         cmd.AddOption(binOpt);
         cmd.AddOption(modeOpt);
 
         cmd.SetHandler((InvocationContext ctx) =>
         {
-            var manifestPath = ctx.ParseResult.GetValueForArgument(manifestArg);
-            var release      = ctx.ParseResult.GetValueForOption(releaseOpt);
-            var bin          = ctx.ParseResult.GetValueForOption(binOpt);
-            var mode         = ctx.ParseResult.GetValueForOption(modeOpt) ?? "interp";
-            ctx.ExitCode = RunProject(manifestPath, release, bin, mode);
+            var path    = ctx.ParseResult.GetValueForArgument(pathArg);
+            var release = ctx.ParseResult.GetValueForOption(releaseOpt);
+            var bin     = ctx.ParseResult.GetValueForOption(binOpt);
+            var mode    = ctx.ParseResult.GetValueForOption(modeOpt) ?? "interp";
+
+            // Script mode: explicit .z42 path.
+            if (path is not null && path.EndsWith(".z42", StringComparison.OrdinalIgnoreCase))
+            {
+                if (bin is not null)
+                {
+                    Console.Error.WriteLine("error: --bin is not valid in script mode");
+                    ctx.ExitCode = 2;
+                    return;
+                }
+                ctx.ExitCode = RunScript(path, mode);
+                return;
+            }
+
+            ctx.ExitCode = RunProject(path, release, bin, mode);
         });
 
         return cmd;
@@ -208,6 +231,127 @@ static class BuildCommand
     }
 
     // ── Implementations ───────────────────────────────────────────────────────
+
+    // add-z42c-run-script (2026-05-17): single-file script mode.
+    // 编译 `.z42` 到临时 zbc → 自动检测 Main entry → exec z42vm。
+    // 用于无 manifest 的 build/test scripts（Phase 1 of shell → z42 自举）。
+    static int RunScript(string scriptPath, string mode)
+    {
+        var src = new FileInfo(scriptPath);
+        if (!src.Exists)
+        {
+            Console.Error.WriteLine($"error: script not found: {scriptPath}");
+            return 1;
+        }
+
+        // 1. Compile to in-memory IR module.
+        string sourceText;
+        try { sourceText = File.ReadAllText(src.FullName); }
+        catch
+        {
+            Console.Error.WriteLine($"error: cannot read {src.FullName}");
+            return 1;
+        }
+
+        var tokens = new Z42.Syntax.Lexer.Lexer(sourceText, src.FullName).Tokenize();
+        var parser = new Z42.Syntax.Parser.Parser(tokens);
+        var cu     = parser.ParseCompilationUnit();
+        if (parser.Diagnostics.HasErrors)
+        {
+            parser.Diagnostics.PrintAll();
+            return 1;
+        }
+
+        var depIndex = SingleFileCompiler.LocateDepIndex(src.FullName);
+        var imported = SingleFileCompiler.LocateImportedSymbols(src.FullName, cu.Usings);
+        var result   = PipelineCore.CheckAndGenerate(cu, src.FullName, depIndex, imported: imported);
+        result.Diags.PrintAll();
+        if (result.Diags.HasErrors || result.Module is null) return 1;
+
+        // 2. Auto-detect Main entry.
+        var fnNames = result.Module.Functions.Select(f => f.Name).ToHashSet(StringComparer.Ordinal);
+        var (entry, err) = AutoDetectScriptEntry(fnNames);
+        if (err is not null)
+        {
+            Console.Error.WriteLine($"error: {err}");
+            return 1;
+        }
+        if (entry is null)
+        {
+            Console.Error.WriteLine(
+                $"error: no `Main()` function found in script `{src.Name}`. " +
+                $"Define a `Main()` (optionally inside a namespace) to use `z42c run`.");
+            return 1;
+        }
+
+        // 3. Write temp zbc.
+        string tmpDir = Path.Combine(
+            Path.GetTempPath(),
+            $"z42c-run-{Path.GetFileNameWithoutExtension(src.Name)}-{Path.GetRandomFileName()}");
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            string zbcPath = Path.Combine(tmpDir, "script.zbc");
+            var exports    = result.Module.Functions.Select(f => f.Name).ToList();
+            File.WriteAllBytes(zbcPath, Z42.IR.BinaryFormat.ZbcWriter.Write(result.Module, exports: exports));
+
+            // 4. Locate z42vm + exec.
+            string? vm = FindVm(Path.GetDirectoryName(src.FullName) ?? ".");
+            if (vm is null)
+            {
+                Console.Error.WriteLine(
+                    "error: z42vm not found. Set Z42VM env var, add z42vm to PATH, or run `./scripts/package.sh` first.");
+                return 1;
+            }
+
+            var psi = new ProcessStartInfo(vm)
+            {
+                UseShellExecute = false,
+            };
+            psi.ArgumentList.Add(zbcPath);
+            psi.ArgumentList.Add(entry);
+            psi.ArgumentList.Add("--mode");
+            psi.ArgumentList.Add(mode);
+
+            var proc = Process.Start(psi)!;
+            proc.WaitForExit();
+            return proc.ExitCode;
+        }
+        finally
+        {
+            try { Directory.Delete(tmpDir, recursive: true); } catch { /* best-effort */ }
+        }
+    }
+
+    /// Auto-detect Main entry from function FQ names. Mirrors
+    /// `PackageCompiler.BuildTarget::AutoDetectEntry` + `vm::resolve_entry`.
+    /// Priority: `*.Main` → `Main` → `*.main` → `main`. Returns (entry, error);
+    /// error != null on ambiguity (multiple `*.Main`).
+    static (string? Entry, string? Error) AutoDetectScriptEntry(HashSet<string> fnNames)
+    {
+        static (string?, string?) PickFrom(List<string> candidates, string kindLabel)
+        {
+            if (candidates.Count == 1) return (candidates[0], null);
+            if (candidates.Count >  1) return (null,
+                $"multiple `{kindLabel}` functions found ({string.Join(", ", candidates)}); " +
+                $"the script must have exactly one `Main()` to run via `z42c run`");
+            return (null, null);
+        }
+
+        var qMain = fnNames.Where(n => n.EndsWith(".Main", StringComparison.Ordinal))
+                           .OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var (e1, err1) = PickFrom(qMain, "Main");
+        if (err1 is not null || e1 is not null) return (e1, err1);
+        if (fnNames.Contains("Main")) return ("Main", null);
+
+        var qMainLc = fnNames.Where(n => n.EndsWith(".main", StringComparison.Ordinal))
+                             .OrderBy(s => s, StringComparer.Ordinal).ToList();
+        var (e2, err2) = PickFrom(qMainLc, "main");
+        if (err2 is not null || e2 is not null) return (e2, err2);
+        if (fnNames.Contains("main")) return ("main", null);
+
+        return (null, null);
+    }
 
     static int RunProject(string? explicitToml, bool useRelease, string? bin, string mode)
     {
@@ -318,13 +462,23 @@ static class BuildCommand
         if (!string.IsNullOrWhiteSpace(envVm) && File.Exists(envVm))
             return envVm;
 
-        // 2. Walk up looking for artifacts/z42/z42vm
+        // 2. Walk up looking for the z42vm binary in known layout positions:
+        //    a) artifacts/build/runtime/release/z42vm  (current dev layout)
+        //    b) artifacts/build/runtime/debug/z42vm    (current dev layout)
+        //    c) artifacts/z42/z42vm                    (legacy layout)
         string vmName = OperatingSystem.IsWindows() ? "z42vm.exe" : "z42vm";
         var dir = new DirectoryInfo(projectDir);
         while (dir != null)
         {
-            string candidate = Path.Combine(dir.FullName, "artifacts", "z42", vmName);
-            if (File.Exists(candidate)) return candidate;
+            foreach (var rel in new[] {
+                Path.Combine("artifacts", "build", "runtime", "release", vmName),
+                Path.Combine("artifacts", "build", "runtime", "debug",   vmName),
+                Path.Combine("artifacts", "z42", vmName),
+            })
+            {
+                string candidate = Path.Combine(dir.FullName, rel);
+                if (File.Exists(candidate)) return candidate;
+            }
             dir = dir.Parent;
         }
 
