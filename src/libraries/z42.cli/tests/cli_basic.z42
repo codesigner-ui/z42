@@ -1,0 +1,116 @@
+// add-z42-cli (2026-05-16)：flag + option + positional 基础 parse 行为。
+namespace Z42CliBasicTests;
+
+using Std.Test;
+using Std.Cli;
+
+[Test]
+void test_flag_set_when_long_passed() {
+    var p = new ArgParser("prog", "test");
+    p.AddFlag("verbose", "v", "verbose output");
+    string[] argv = new string[1];
+    argv[0] = "--verbose";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.GetFlag("verbose"));
+}
+
+[Test]
+void test_flag_set_when_short_passed() {
+    var p = new ArgParser("prog", "test");
+    p.AddFlag("verbose", "v", "verbose output");
+    string[] argv = new string[1];
+    argv[0] = "-v";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.GetFlag("verbose"));
+}
+
+[Test]
+void test_flag_default_false() {
+    var p = new ArgParser("prog", "test");
+    p.AddFlag("verbose", "v", "verbose output");
+    string[] argv = new string[0];
+    ParseResult r = p.Parse(argv);
+    Assert.False(r.GetFlag("verbose"));
+}
+
+[Test]
+void test_option_with_space_value() {
+    var p = new ArgParser("prog", "test");
+    p.AddOption("profile", "p", "build profile", "release");
+    string[] argv = new string[2];
+    argv[0] = "--profile";
+    argv[1] = "debug";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("debug", r.GetOption("profile"));
+}
+
+[Test]
+void test_option_with_equals_value() {
+    var p = new ArgParser("prog", "test");
+    p.AddOption("profile", "p", "build profile", "release");
+    string[] argv = new string[1];
+    argv[0] = "--profile=debug";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("debug", r.GetOption("profile"));
+}
+
+[Test]
+void test_option_short_form() {
+    var p = new ArgParser("prog", "test");
+    p.AddOption("profile", "p", "build profile", "release");
+    string[] argv = new string[2];
+    argv[0] = "-p";
+    argv[1] = "debug";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("debug", r.GetOption("profile"));
+}
+
+[Test]
+void test_option_default_when_not_passed() {
+    var p = new ArgParser("prog", "test");
+    p.AddOption("profile", "p", "build profile", "release");
+    string[] argv = new string[0];
+    ParseResult r = p.Parse(argv);
+    Assert.Equal("release", r.GetOption("profile"));
+}
+
+[Test]
+void test_positional_args() {
+    var p = new ArgParser("prog", "test");
+    p.AddPositional("src", "source");
+    p.AddPositional("dst", "destination");
+    string[] argv = new string[2];
+    argv[0] = "/tmp/a";
+    argv[1] = "/tmp/b";
+    ParseResult r = p.Parse(argv);
+    Assert.Equal(2,        r.PositionalCount());
+    Assert.Equal("/tmp/a", r.GetPositional(0));
+    Assert.Equal("/tmp/b", r.GetPositional(1));
+}
+
+[Test]
+void test_mixed_flag_option_positional() {
+    var p = new ArgParser("build", "compile");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddOption("profile", "p", "profile", "release");
+    p.AddPositional("target", "target");
+    string[] argv = new string[4];
+    argv[0] = "-v";
+    argv[1] = "--profile";
+    argv[2] = "debug";
+    argv[3] = "z42.core";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.GetFlag("verbose"));
+    Assert.Equal("debug",    r.GetOption("profile"));
+    Assert.Equal("z42.core", r.GetPositional(0));
+}
+
+[Test]
+void test_no_short_name_still_works() {
+    var p = new ArgParser("prog", "test");
+    p.AddFlag("only-long", "", "no short form");
+    string[] argv = new string[1];
+    argv[0] = "--only-long";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.GetFlag("only-long"));
+}

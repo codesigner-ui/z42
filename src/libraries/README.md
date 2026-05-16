@@ -23,6 +23,7 @@ z42 标准库的 `.z42` 源文件。每个库是独立的 z42 包，通过 `buil
 | `z42.io.binary/` | `z42.io.binary` | 二进制流读写：`BinaryReader.Read{Byte,Int16/32/64{LE,BE},Bytes,String}` / `BinaryWriter` 对称 + UTF-8 string + 自动 2x grow（namespace `Std.Binary`） |
 | `z42.diagnostics/` | `z42.diagnostics` | 日志门面：`Log.{Trace,Debug,Info,Warn,Error}(msg)` + `Log.SetMinLevel(LogLevel.X)` + stderr 输出 |
 | `z42.regex/` | `z42.regex` | 正则：`Regex.Compile(pat)` + `IsMatch / Find / FindAll / Replace / Split` + `Match.Group(i)`（backtracking NFA） |
+| `z42.cli/` | `z42.cli` | CLI argv 解析：`ArgParser.{AddFlag, AddOption, AddPositional}` + `Parse(argv)` → `ParseResult.{GetFlag, GetOption, GetPositional, ShowHelp}` + auto `-h/--help` |
 
 ## 实现规范（必须遵守）
 

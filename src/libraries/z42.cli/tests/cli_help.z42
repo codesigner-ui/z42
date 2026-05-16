@@ -1,0 +1,78 @@
+// add-z42-cli (2026-05-16)：-h/--help 行为 + HelpText 自动生成。
+namespace Z42CliHelpTests;
+
+using Std.Test;
+using Std.Cli;
+
+[Test]
+void test_short_help_sets_show_help() {
+    var p = new ArgParser("prog", "test");
+    string[] argv = new string[1];
+    argv[0] = "-h";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.ShowHelp());
+}
+
+[Test]
+void test_long_help_sets_show_help() {
+    var p = new ArgParser("prog", "test");
+    string[] argv = new string[1];
+    argv[0] = "--help";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.ShowHelp());
+}
+
+[Test]
+void test_show_help_skips_positional_check() {
+    // declared 1 positional but argv 给 --help → 不应抛 missing-positional
+    var p = new ArgParser("prog", "test");
+    p.AddPositional("target", "target");
+    string[] argv = new string[1];
+    argv[0] = "--help";
+    ParseResult r = p.Parse(argv);
+    Assert.True(r.ShowHelp());
+    Assert.Equal(0, r.PositionalCount());
+}
+
+[Test]
+void test_help_text_contains_program_name() {
+    var p = new ArgParser("build-stdlib", "compile workspace");
+    string h = p.HelpText();
+    Assert.True(h.Contains("build-stdlib"));
+    Assert.True(h.Contains("compile workspace"));
+    Assert.True(h.Contains("USAGE:"));
+}
+
+[Test]
+void test_help_text_lists_flags() {
+    var p = new ArgParser("prog", "test");
+    p.AddFlag("verbose", "v", "verbose output");
+    p.AddFlag("debug",   "d", "debug mode");
+    string h = p.HelpText();
+    Assert.True(h.Contains("--verbose"));
+    Assert.True(h.Contains("--debug"));
+    Assert.True(h.Contains("-v"));
+    Assert.True(h.Contains("verbose output"));
+    Assert.True(h.Contains("debug mode"));
+}
+
+[Test]
+void test_help_text_lists_options_with_defaults() {
+    var p = new ArgParser("prog", "test");
+    p.AddOption("profile", "p", "build profile", "release");
+    string h = p.HelpText();
+    Assert.True(h.Contains("--profile"));
+    Assert.True(h.Contains("build profile"));
+    Assert.True(h.Contains("release"));
+}
+
+[Test]
+void test_help_text_lists_positionals() {
+    var p = new ArgParser("prog", "test");
+    p.AddPositional("src", "source file");
+    p.AddPositional("dst", "destination file");
+    string h = p.HelpText();
+    Assert.True(h.Contains("<src>"));
+    Assert.True(h.Contains("<dst>"));
+    Assert.True(h.Contains("source file"));
+}

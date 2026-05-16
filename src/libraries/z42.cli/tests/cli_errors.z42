@@ -1,0 +1,102 @@
+// add-z42-cli (2026-05-16)：parse 错误抛 CliException。
+namespace Z42CliErrorsTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+[Test]
+void test_unknown_long_flag_throws() {
+    var p = new ArgParser("prog", "test");
+    string[] argv = new string[1];
+    argv[0] = "--bogus";
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_unknown_short_flag_throws() {
+    var p = new ArgParser("prog", "test");
+    string[] argv = new string[1];
+    argv[0] = "-x";
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_option_without_value_throws() {
+    var p = new ArgParser("prog", "test");
+    p.AddOption("profile", "p", "profile", "release");
+    string[] argv = new string[1];
+    argv[0] = "--profile";  // 缺 value
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_value_on_flag_throws() {
+    var p = new ArgParser("prog", "test");
+    p.AddFlag("verbose", "v", "verbose");
+    string[] argv = new string[1];
+    argv[0] = "--verbose=yes";
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_too_few_positionals_throws() {
+    var p = new ArgParser("prog", "test");
+    p.AddPositional("src", "source");
+    p.AddPositional("dst", "destination");
+    string[] argv = new string[1];
+    argv[0] = "/tmp/only-one";
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_too_many_positionals_throws() {
+    var p = new ArgParser("prog", "test");
+    p.AddPositional("src", "source");
+    string[] argv = new string[2];
+    argv[0] = "/tmp/a";
+    argv[1] = "/tmp/b";
+    bool caught = false;
+    try { p.Parse(argv); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_get_flag_not_registered_throws() {
+    var p = new ArgParser("prog", "test");
+    string[] argv = new string[0];
+    ParseResult r = p.Parse(argv);
+    bool caught = false;
+    try { r.GetFlag("not-declared"); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
+
+[Test]
+void test_positional_out_of_range_throws() {
+    var p = new ArgParser("prog", "test");
+    p.AddPositional("src", "source");
+    string[] argv = new string[1];
+    argv[0] = "/tmp/a";
+    ParseResult r = p.Parse(argv);
+    bool caught = false;
+    try { r.GetPositional(5); }
+    catch (CliException e) { caught = true; }
+    Assert.True(caught);
+}
