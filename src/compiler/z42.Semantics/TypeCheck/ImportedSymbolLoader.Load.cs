@@ -34,6 +34,24 @@ public static partial class ImportedSymbolLoader
         var allowedPkgs = new HashSet<string>(activatedPackages, StringComparer.Ordinal);
         allowedPkgs.UnionWith(preludePackages);
 
+        // fix-prelude-wins-for-ambiguous-names (2026-05-17): re-order modules
+        // so prelude packages (z42.core) are processed BEFORE explicit
+        // `using`-activated packages, and within each group by package name +
+        // module namespace. The Phase-1 loop below uses first-wins for
+        // ambiguous bare names (e.g. `Assert` lives in both `Std` from
+        // z42.core prelude and `Std.Test` from z42.test). Caller-side path
+        // iteration in `TsigCache` is already sorted, but explicit ordering
+        // here also pins the semantics: prelude beats explicit using, so an
+        // unqualified `Assert` keeps resolving to `Std.Assert` regardless of
+        // OS / .NET hash-randomised dictionary iteration. Use FQN
+        // (`<package>.<namespace>`) qualified call sites to override.
+        var preludeSet = new HashSet<string>(preludePackages, StringComparer.Ordinal);
+        modules = modules
+            .OrderBy(m => preludeSet.Contains(packageOf.TryGetValue(m, out var pk) ? pk : "") ? 0 : 1)
+            .ThenBy(m => packageOf.TryGetValue(m, out var pk2) ? pk2 : "", StringComparer.Ordinal)
+            .ThenBy(m => m.Namespace ?? "", StringComparer.Ordinal)
+            .ToList();
+
         // (namespace, class-name) → 已贡献该名字的 package 集合（用于冲突检测）
         var contributors = new Dictionary<(string Ns, string Name), List<string>>();
         var classes    = new Dictionary<string, Z42ClassType>(StringComparer.Ordinal);
