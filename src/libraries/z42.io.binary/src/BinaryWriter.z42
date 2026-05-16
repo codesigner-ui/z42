@@ -1,4 +1,4 @@
-namespace Std.Binary;
+namespace Std.IO.Binary;
 using Std;
 using Std.Encoding;
 

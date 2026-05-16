@@ -116,7 +116,7 @@ cat > "$INDEX" <<'EOF'
   "Std.Json":        "z42.json.zpkg",
   "Std.Random":      "z42.random.zpkg",
   "Std.Uri":         "z42.uri.zpkg",
-  "Std.Binary":      "z42.io.binary.zpkg",
+  "Std.IO.Binary":   "z42.io.binary.zpkg",
   "Std.Diagnostics": "z42.diagnostics.zpkg",
   "Std.Regex":       "z42.regex.zpkg"
 }

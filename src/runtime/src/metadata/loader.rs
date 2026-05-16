@@ -452,9 +452,10 @@ fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
                     Instruction::StaticSet { field, .. } => field,
                     _ => continue,
                 };
-                let ns = infer_namespace(target);
-                if seen.insert(ns.to_owned()) {
-                    result.push(ns.to_owned());
+                for ns in infer_namespace_candidates(target) {
+                    if seen.insert(ns.to_owned()) {
+                        result.push(ns.to_owned());
+                    }
                 }
             }
         }
@@ -462,26 +463,38 @@ fn extract_import_namespaces_from_module(module: &Module) -> Vec<String> {
     result
 }
 
-/// Infer the namespace from a fully-qualified function name.
-/// Returns the first two dot-separated components, or the whole name.
+/// Extract candidate import-namespace prefixes from a list of fully-qualified
+/// call targets. Returns each unique prefix in first-seen order.
 pub fn extract_import_namespaces(imports: &[String]) -> Vec<String> {
     let mut seen = std::collections::HashSet::new();
     let mut result = Vec::new();
     for import in imports {
-        let ns = infer_namespace(import);
-        if seen.insert(ns.to_owned()) { result.push(ns.to_owned()); }
+        for ns in infer_namespace_candidates(import) {
+            if seen.insert(ns.to_owned()) { result.push(ns.to_owned()); }
+        }
     }
     result
 }
 
-fn infer_namespace(name: &str) -> &str {
-    match name.find('.') {
-        None => name,
-        Some(first) => match name[first + 1..].find('.') {
-            None => name,
-            Some(rel) => &name[..first + 1 + rel],
-        },
-    }
+/// All candidate namespace prefixes of a fully-qualified call target.
+///
+/// For `Std.IO.Binary.BinaryWriter.WriteByte` returns
+/// `["Std", "Std.IO", "Std.IO.Binary", "Std.IO.Binary.BinaryWriter"]` — every
+/// `.`-bounded prefix shorter than the full name. The lazy loader feeds these
+/// to `resolve_namespace`: only prefixes that match an actual zpkg's declared
+/// namespace pull in deps. Returning the full set covers stdlib namespaces of
+/// any depth (`Std.IO` vs `Std.IO.Binary`) without the resolver needing to
+/// know in advance where the namespace ends and `class.method` begins.
+///
+/// Names with no dot fall back to the name itself (preserves legacy behaviour
+/// for single-segment idents).
+fn infer_namespace_candidates(name: &str) -> Vec<&str> {
+    let mut result: Vec<&str> = name
+        .char_indices()
+        .filter_map(|(i, c)| if c == '.' { Some(&name[..i]) } else { None })
+        .collect();
+    if result.is_empty() { result.push(name); }
+    result
 }
 
 // ── TypeDesc registry ─────────────────────────────────────────────────────────

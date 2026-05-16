@@ -88,7 +88,9 @@
       "Bash(./build.sh)",
       "Bash(./test.sh)",
       "Bash(mktemp -d)",
-      "Bash(./artifacts/build/runtime/release/z42vm __TRACKED_VAR__/t.zbc Z42TomlD.Main)"
+      "Bash(./artifacts/build/runtime/release/z42vm __TRACKED_VAR__/t.zbc Z42TomlD.Main)",
+      "Bash(bash /tmp/wrap_uri.sh)",
+      "Bash(./src/tests/zbc-format/generate-fixtures.sh)"
     ],
     "additionalDirectories": [
       "/tmp",

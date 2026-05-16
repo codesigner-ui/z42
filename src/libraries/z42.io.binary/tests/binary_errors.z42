@@ -3,7 +3,7 @@ namespace Z42IoBinaryErrorsTests;
 
 using Std;
 using Std.Test;
-using Std.Binary;
+using Std.IO.Binary;
 
 [Test]
 void test_read_past_end_throws() {

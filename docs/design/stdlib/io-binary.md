@@ -1,8 +1,8 @@
 # z42.io.binary — Low-level binary stream over byte[]
 
-> 落地版本：2026-05-15（add-z42-io-binary）
+> 落地版本：2026-05-15（add-z42-io-binary），2026-05-16 升级到 `Std.IO.Binary`（fix-deep-namespace-import-discovery）
 > 包路径：`src/libraries/z42.io.binary/`
-> 命名空间：`Std.Binary`（顶层 — 三段 namespace 待 compiler fix；详 Deferred）
+> 命名空间：`Std.IO.Binary`
 
 ## 职责
 
@@ -57,7 +57,7 @@ class BinaryException : Exception     // in Std namespace
 | 5. Float read/write | 提供 / 不提供 | 不提供 | 需 BitConverter intrinsic；defer |
 | 6. UTF-8 string framing | length-prefixed / explicit byteCount | explicit | 不强制 framing 协议；caller 决定 |
 | 7. 异常类 | 复用 Std.EndOfStreamException / 包内 BinaryException | 包内 | EndOfStream 不存在；新加到 z42.core 会扰动 incremental cache 计数 |
-| 8. Namespace 层级 | `Std.IO.Binary` / `Std.Binary` | `Std.Binary` | 实施期发现编译器对三段 namespace 方法解析失效；package 名仍 `z42.io.binary` |
+| 8. Namespace 层级 | `Std.IO.Binary` / `Std.Binary` | `Std.IO.Binary` | 与 package 名一致 `z42.io.binary`；VM lazy loader 的 prefix-emit 路径修好后（fix-deep-namespace-import-discovery, 2026-05-16）三段 namespace 工作 |
 | 9. Byte param/return | `byte` 类型 / `int` | `int` | stdlib 无 `byte` 方法签名先例；统一 int + caller cast |
 | 10. Int32 sign-extend | 不处理 / bit-31 显式 | 显式 | 不处理时负值变正大数 |
 
@@ -100,17 +100,10 @@ Int64 read 不需要因为 `(long)int << 32` 路径里的 i64 overflow 自然给
 
 ## 不支持（Deferred）
 
-### io-binary-future-nested-ns
-
-- **来源**：理想 namespace 是 `Std.IO.Binary`（与 `Std.IO` 组成树）
-- **触发原因**：编译器 method-resolution 对 `using Std.X.Y;` + unqualified
-  identifier reference 不工作；首次尝试 `Std.IO.Binary` 时 VM 报 `undefined
-  function <caller-ns>.BinaryWriter.WriteByte`（误解析到调用方 namespace）
-- **前置依赖**：compiler `TypeChecker` / `OverloadResolver` 支持多段 namespace
-  imports（C# / Java 都正常支持）
-- **触发条件**：fix-nested-namespace-resolution spec 完成
-- **当前 workaround**：用 `Std.Binary`（两段）；index.json 映射 `Std.Binary` →
-  `z42.io.binary.zpkg`；package 名保持 `z42.io.binary` 不变
+> ~~`io-binary-future-nested-ns`~~ ✅ 已解 by `fix-deep-namespace-import-discovery`
+> (2026-05-16)：VM `extract_import_namespaces` 现 emit 每个 call target 的所有
+> `.`-bounded prefix（不再只取前两段），3+ 段 stdlib namespace 现可被 lazy loader
+> 命中。namespace 从 `Std.Binary` 还原为 `Std.IO.Binary`。
 
 ### io-binary-future-float-double
 
@@ -161,7 +154,7 @@ Int64 read 不需要因为 `(long)int << 32` 路径里的 i64 overflow 自然给
 
 详 archived tasks.md "实施期发现" 段。关键四条：
 
-1. 三段 namespace 编译器 bug（导致 `Std.Binary` workaround）
+1. 三段 namespace 在 VM lazy loader 里被 prefix heuristic 截断（`infer_namespace` 只取前两段）→ z42.io.binary.zpkg 不被加载 → `undefined function`。`fix-deep-namespace-import-discovery` (2026-05-16) 改为 emit 所有 `.`-bounded prefix。namespace 还原为 `Std.IO.Binary`
 2. `byte` 不能作 method param/return（导致 `int` API）
 3. Int32 read 必须显式 sign-extend（i64 backing 不自动 sign-extend）
 4. `-i64::MIN` literal parser overflow

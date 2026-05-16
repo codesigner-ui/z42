@@ -13,29 +13,45 @@ fn empty_imports_returns_empty() {
 }
 
 #[test]
-fn single_import_extracts_two_component_namespace() {
-    assert_eq!(ns(&["Std.IO.Console.WriteLine"]), vec!["Std.IO"]);
+fn single_import_emits_all_prefixes() {
+    // namespace-aware: emit every `.`-bounded prefix so 3+ segment stdlib
+    // namespaces (Std.IO.Binary, …) get a chance to match a zpkg, not just
+    // the first two segments.
+    assert_eq!(
+        ns(&["Std.IO.Console.WriteLine"]),
+        vec!["Std", "Std.IO", "Std.IO.Console"]
+    );
+}
+
+#[test]
+fn deeper_namespace_emits_three_segment_prefix() {
+    // Regression: Std.IO.Binary.BinaryWriter.WriteByte must yield
+    // "Std.IO.Binary" so lazy loader pulls in z42.io.binary.zpkg.
+    assert_eq!(
+        ns(&["Std.IO.Binary.BinaryWriter.WriteByte"]),
+        vec!["Std", "Std.IO", "Std.IO.Binary", "Std.IO.Binary.BinaryWriter"]
+    );
 }
 
 #[test]
 fn multiple_imports_same_namespace_deduplicated() {
     assert_eq!(
         ns(&["Std.IO.Console.WriteLine", "Std.IO.File.ReadText"]),
-        vec!["Std.IO"]
+        vec!["Std", "Std.IO", "Std.IO.Console", "Std.IO.File"]
     );
 }
 
 #[test]
 fn imports_from_different_namespaces_all_returned() {
     let result = ns(&["Std.IO.File.ReadText", "Std.Math.Math.Abs"]);
-    assert_eq!(result.len(), 2);
     assert!(result.contains(&"Std.IO".to_owned()));
     assert!(result.contains(&"Std.Math".to_owned()));
+    assert!(result.contains(&"Std".to_owned()));
 }
 
 #[test]
-fn import_with_one_dot_uses_full_name() {
-    assert_eq!(ns(&["mylib.Foo"]), vec!["mylib.Foo"]);
+fn import_with_one_dot_emits_first_segment() {
+    assert_eq!(ns(&["mylib.Foo"]), vec!["mylib"]);
 }
 
 #[test]
