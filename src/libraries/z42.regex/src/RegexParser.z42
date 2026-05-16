@@ -42,21 +42,20 @@ public class RegexParser {
 
     // 解析 alt 表达式；inGroup=true 时遇到 ')' 返回。结果写入 ResultNodes/ResultCount。
     private void _parseAlt(bool inGroup) {
-        // 先解析第一个 concat 序列
-        RegexNode[] leftBuf = new RegexNode[8];
-        int leftN = this._parseConcat(leftBuf, 0, inGroup);
-        // 如果没有 '|'，直接返回 leftBuf
+        // _parseConcat 直接写 ResultNodes/ResultCount（z42 array reassignment 不
+        // 跨方法调用栈传递 — pass-by-value 引用槽位；早期版本用 `buf` 参数 +
+        // return count，结果 grow 后的新 array 丢在 callee local 里，导致大 pattern
+        // 触发 array index OOB（fix-regex-parser-buffer-grow, 2026-05-16）。
+        this._parseConcat(inGroup);
+        RegexNode[] leftBuf = this.ResultNodes;
+        int leftN = this.ResultCount;
         if (this._eof() || this._peek() != '|') {
-            this.ResultNodes = leftBuf;
-            this.ResultCount = leftN;
+            // ResultNodes/Count already set by _parseConcat
             return;
         }
-        // 有 '|' — 收集所有分支
-        // 当前结构：用 ALT 节点（二叉），多个分支左折成 ALT(left, ALT(mid, right))；
-        // 这里简化用左折一次性折叠为右结合：alt = left | (rest_alt)
-        this._advance();  // 吃 '|'
+        // 有 '|' — 右折叠：alt = left | (rest_alt)
+        this._advance();
         this._parseAlt(inGroup);
-        // 此时 ResultNodes/ResultCount 是右侧子 alt
         RegexNode altNode = RegexNode.Alt(leftBuf, leftN, this.ResultNodes, this.ResultCount);
         RegexNode[] wrap = new RegexNode[1];
         wrap[0] = altNode;
@@ -64,9 +63,11 @@ public class RegexParser {
         this.ResultCount = 1;
     }
 
-    // 解析 concat（无 '|'）：解析 atom+quant 直到 '|' / ')' / EOF。写入 buf 起始处，返回 count。
-    private int _parseConcat(RegexNode[] buf, int startIdx, bool inGroup) {
-        int n = startIdx;
+    // 解析 concat（无 '|'）：解析 atom+quant 直到 '|' / ')' / EOF。结果写入
+    // this.ResultNodes / this.ResultCount（避免 grown buffer 跨调用栈丢失）。
+    private void _parseConcat(bool inGroup) {
+        RegexNode[] buf = new RegexNode[8];
+        int n = 0;
         while (!this._eof()) {
             char c = this._peek();
             if (c == '|') { break; }
@@ -79,7 +80,8 @@ public class RegexParser {
             buf[n] = quantified;
             n = n + 1;
         }
-        return n;
+        this.ResultNodes = buf;
+        this.ResultCount = n;
     }
 
     // 若 atom 后跟 quantifier，包装为 QUANT 节点。

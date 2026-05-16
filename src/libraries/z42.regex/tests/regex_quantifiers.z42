@@ -71,3 +71,14 @@ void test_quant_on_charclass() {
     Assert.False(r.IsMatch(""));
     Assert.False(r.IsMatch("12a"));
 }
+
+[Test]
+void test_pattern_with_more_than_8_atoms() {
+    // fix-regex-parser-buffer-grow (2026-05-16) regression：14-atom 模式 触发
+    // _parseConcat 的 grow path（初始 buf 8 slots）；老版本因 array 引用未传
+    // 回 caller 导致后续运行 OOB。
+    Regex r = Regex.Compile("^\\s*version\\s*=\\s*\"([^\"]+)\"");
+    Match m = r.Find("version = \"0.1.0\"");
+    Assert.True(m != null);
+    Assert.Equal("0.1.0", m.Group(1));
+}

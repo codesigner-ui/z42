@@ -1,83 +1,28 @@
 #!/usr/bin/env bash
-# scripts/check-versions-drift.sh — verify versions.toml is the single source of truth.
+# scripts/check-versions-drift.sh — bootstrap stub for the z42 implementation.
 #
-# Checks that platform source files (build.gradle.kts, package_helpers.sh) stay in sync
-# with versions.toml. Run in CI (feature-matrix job) and locally before platform changes.
-#
-# Exit code: 0 = all in sync, 1 = drift detected.
+# 2026-05-16 port-check-versions-drift: 主体迁移到 scripts/check-versions-drift.z42。
+# 本 bash 文件仅作 self-host 边界 — toolchain build 不能用 z42 自启动，所以
+# 这层 ~10 行 stub 永远不会消失：
+#   1. dotnet build z42c
+#   2. cargo build z42vm
+#   3. ./scripts/build-stdlib.sh
+#   4. compile script → .zbc → exec z42vm
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$SCRIPT_DIR/.."
-source "$SCRIPT_DIR/_lib/versions.sh"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 
-FAIL=0
+# Toolchain — silent rebuild; no-op if up-to-date
+dotnet build -c Release src/compiler/z42.slnx >/dev/null 2>&1
+cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
+./scripts/build-stdlib.sh >/dev/null 2>&1
 
-check() {
-    local desc="$1" want="$2" got="$3"
-    if [[ "$want" == "$got" ]]; then
-        printf "  ✓ %-50s %s\n" "$desc" "$got"
-    else
-        printf "  ✗ %-50s want=%s got=%s\n" "$desc" "$want" "$got" >&2
-        FAIL=1
-    fi
-}
-
-# ── Project version ──────────────────────────────────────────────────────────
-echo "── project ──────────────────────────────────────────────────────────────"
-RUNTIME_CARGO="$ROOT/src/runtime/Cargo.toml"
-
-want=$(versions_get project.version)
-# Lock to [workspace.package] section to avoid hitting [package] or [dependencies]
-got=$(awk '
-    /^\[workspace\.package\]/ { in_section = 1; next }
-    /^\[/                     { in_section = 0 }
-    in_section && /^[[:space:]]*version[[:space:]]*=/ { print; exit }
-    ' "$RUNTIME_CARGO" | sed -E 's/.*"([^"]+)".*/\1/')
-check "src/runtime/Cargo.toml [workspace.package].version" "$want" "$got"
-
-# ── Android ──────────────────────────────────────────────────────────────────
-echo "── Android ──────────────────────────────────────────────────────────────"
-GRADLE="$ROOT/src/toolchain/host/platforms/android/z42vm/build.gradle.kts"
-
-want=$(versions_get platform.android.min_api)
-got=$(grep -E '^\s*minSdk\s*=' "$GRADLE" | grep -oE '[0-9]+' | head -1)
-check "build.gradle.kts  minSdk" "$want" "$got"
-
-want=$(versions_get platform.android.target_api)
-got=$(grep -E '^\s*compileSdk\s*=' "$GRADLE" | grep -oE '[0-9]+' | head -1)
-check "build.gradle.kts  compileSdk" "$want" "$got"
-
-# ── iOS ───────────────────────────────────────────────────────────────────────
-echo "── iOS ───────────────────────────────────────────────────────────────────"
-PKG_HELPERS="$ROOT/scripts/_lib/package_helpers.sh"
-
-want=$(versions_get platform.ios.min_ios)
-# manifest.toml template line: ios-deployment-target = "14.0"
-got=$(grep 'ios-deployment-target' "$PKG_HELPERS" | grep -oE '[0-9]+\.[0-9]+' | head -1)
-check "package_helpers.sh  ios-deployment-target" "$want" "$got"
-
-want=$(versions_get platform.ios.min_macos)
-# Package.swift template line: .macOS(.v13)  → extract "13" → append ".0"
-got_major=$(grep '\.macOS(\.v' "$PKG_HELPERS" | grep -oE '\.v[0-9]+' | grep -oE '[0-9]+' | head -1)
-got="${got_major}.0"
-check "package_helpers.sh  macOS deployment target" "$want" "$got"
-
-# ── Android min_api cross-check: versions.toml matches abiFilters count ──────
-# (abiFilters encodes which ABIs are shipped; indirect check that 32-bit removal stayed)
-echo "── wasm ──────────────────────────────────────────────────────────────────"
-want=$(versions_get build.wasm.wasm_pack_min)
-check "versions.toml  build.wasm.wasm_pack_min present" "$want" "$want"
-
-want=$(versions_get build.wasm.wasm_tools_min)
-check "versions.toml  build.wasm.wasm_tools_min present" "$want" "$want"
-
-# ── Result ────────────────────────────────────────────────────────────────────
-echo "─────────────────────────────────────────────────────────────────────────"
-if [[ "$FAIL" -ne 0 ]]; then
-    echo "error: versions.toml drift detected — update the source files to match versions.toml" >&2
-    echo "       See versions.toml → field comments (→ filename) for which file to fix." >&2
-    exit 1
-fi
-echo "All version checks passed."
+# Compile + run script
+TMP=$(mktemp -d)
+trap "rm -rf $TMP" EXIT
+dotnet run --project src/compiler/z42.Driver -c Release --verbosity quiet -- \
+    scripts/check-versions-drift.z42 --emit zbc -o "$TMP/cvd.zbc" >/dev/null 2>&1
+exec ./artifacts/build/runtime/release/z42vm \
+    "$TMP/cvd.zbc" Z42CheckVersionsDriftScript.Main

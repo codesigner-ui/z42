@@ -1,0 +1,130 @@
+// port-check-versions-drift (2026-05-16)：第一个 .z42 实现的 build script。
+//
+// 行为对齐 scripts/check-versions-drift.sh（83 LOC bash）：从 versions.toml
+// 拿期望值，扫几个"投影"文件（Cargo.toml / build.gradle.kts / package_helpers.sh）
+// 验证一致性。任一 mismatch → exit 1。
+//
+// 入口：直接 `z42c run scripts/check-versions-drift.z42` 或经 bash bootstrap
+// 编译执行；CWD 必须是 repo root。
+namespace Z42CheckVersionsDriftScript;
+
+using Std;
+using Std.IO;
+using Std.Toml;
+using Std.Regex;
+
+void Main() {
+    string root = Environment.GetCurrentDirectory();
+    string tomlPath = Path.Join(root, "versions.toml");
+    if (!File.Exists(tomlPath)) {
+        ConsoleError.WriteLine("error: versions.toml not found at " + tomlPath);
+        Environment.Exit(2);
+    }
+
+    TomlValue toml = TomlValue.Parse(File.ReadAllText(tomlPath));
+    int failCount = 0;
+
+    // ── project ──────────────────────────────────────────────────────────
+    Console.WriteLine("── project ──────────────────────────────────────────────────────────────");
+    string cargoText = File.ReadAllText(Path.Join(root, "src/runtime/Cargo.toml"));
+    string wantVer = _tomlScalarToString(toml.Get("project").Get("version"));
+    string gotVer  = _extractCargoWorkspaceVersion(cargoText);
+    failCount = failCount + _check("src/runtime/Cargo.toml [workspace.package].version", wantVer, gotVer);
+
+    // ── Android ──────────────────────────────────────────────────────────
+    Console.WriteLine("── Android ──────────────────────────────────────────────────────────────");
+    string gradleText = File.ReadAllText(Path.Join(root, "src/toolchain/host/platforms/android/z42vm/build.gradle.kts"));
+    string wantMin = _tomlScalarToString(toml.Get("platform").Get("android").Get("min_api"));
+    string gotMin  = _firstMatchGroup(gradleText, "minSdk\\s*=\\s*([0-9]+)", 1);
+    failCount = failCount + _check("build.gradle.kts  minSdk", wantMin, gotMin);
+
+    string wantTgt = _tomlScalarToString(toml.Get("platform").Get("android").Get("target_api"));
+    string gotTgt  = _firstMatchGroup(gradleText, "compileSdk\\s*=\\s*([0-9]+)", 1);
+    failCount = failCount + _check("build.gradle.kts  compileSdk", wantTgt, gotTgt);
+
+    // ── iOS ──────────────────────────────────────────────────────────────
+    Console.WriteLine("── iOS ───────────────────────────────────────────────────────────────────");
+    string helpersText = File.ReadAllText(Path.Join(root, "scripts/_lib/package_helpers.sh"));
+    string wantIos = _tomlScalarToString(toml.Get("platform").Get("ios").Get("min_ios"));
+    string gotIos  = _firstMatchGroup(helpersText, "ios-deployment-target\\s*=\\s*\"([0-9]+\\.[0-9]+)\"", 1);
+    failCount = failCount + _check("package_helpers.sh  ios-deployment-target", wantIos, gotIos);
+
+    string wantMac = _tomlScalarToString(toml.Get("platform").Get("ios").Get("min_macos"));
+    string gotMacMajor = _firstMatchGroup(helpersText, "\\.macOS\\(\\.v([0-9]+)\\)", 1);
+    string gotMac = gotMacMajor + ".0";
+    failCount = failCount + _check("package_helpers.sh  macOS deployment target", wantMac, gotMac);
+
+    // ── wasm presence checks ────────────────────────────────────────────
+    Console.WriteLine("── wasm ──────────────────────────────────────────────────────────────────");
+    string wpm = _tomlScalarToString(toml.Get("build").Get("wasm").Get("wasm_pack_min"));
+    failCount = failCount + _check("versions.toml  build.wasm.wasm_pack_min present", wpm, wpm);
+    string wtm = _tomlScalarToString(toml.Get("build").Get("wasm").Get("wasm_tools_min"));
+    failCount = failCount + _check("versions.toml  build.wasm.wasm_tools_min present", wtm, wtm);
+
+    // ── Result ──────────────────────────────────────────────────────────
+    Console.WriteLine("─────────────────────────────────────────────────────────────────────────");
+    if (failCount > 0) {
+        ConsoleError.WriteLine("error: versions.toml drift detected — update the source files to match versions.toml");
+        ConsoleError.WriteLine("       See versions.toml → field comments (→ filename) for which file to fix.");
+        Environment.Exit(1);
+    }
+    Console.WriteLine("All version checks passed.");
+}
+
+// 同 bash check()：want == got → ✓，否则 ✗ + 计 1 失败。
+int _check(string desc, string want, string got) {
+    if (want == got) {
+        Console.WriteLine("  ✓ " + _padRight(desc, 50) + " " + got);
+        return 0;
+    } else {
+        ConsoleError.WriteLine("  ✗ " + _padRight(desc, 50) + " want=" + want + " got=" + got);
+        return 1;
+    }
+}
+
+// 左对齐到 width 列；超长不截断。
+string _padRight(string s, int width) {
+    if (s.Length >= width) { return s; }
+    string acc = s;
+    int n = width - s.Length;
+    int i = 0;
+    while (i < n) { acc = acc + " "; i = i + 1; }
+    return acc;
+}
+
+// TomlValue scalar → string（同 python `print(node)` 行为：int 23 → "23"）。
+string _tomlScalarToString(TomlValue v) {
+    if (v.IsString()) { return v.AsString(); }
+    if (v.IsLong())   { return v.AsLong().ToString(); }
+    if (v.IsDouble()) { return v.AsDouble().ToString(); }
+    if (v.IsBool())   { return v.AsBool().ToString(); }
+    throw new Exception("expected scalar TomlValue, got " + v.KindName());
+}
+
+// 第一个 regex match 的指定 group；找不到返回 ""（同 bash `head -1` 失败时空）。
+string _firstMatchGroup(string text, string pattern, int groupIdx) {
+    Regex r = Regex.Compile(pattern);
+    Match m = r.Find(text);
+    if (m == null) { return ""; }
+    return m.Group(groupIdx);
+}
+
+// 等价 bash awk 块：找到 [workspace.package] section，取该 section 内第一个
+// `version = "..."` 行。section 边界由 `[...]` 起始的下一行决定。
+string _extractCargoWorkspaceVersion(string cargoText) {
+    string[] lines = cargoText.Split("\n");
+    Regex verLine = Regex.Compile("^\\s*version\\s*=\\s*\"([^\"]+)\"");
+    bool inSection = false;
+    int i = 0;
+    while (i < lines.Length) {
+        string line = lines[i];
+        if (line.StartsWith("[workspace.package]")) { inSection = true; i = i + 1; continue; }
+        if (line.StartsWith("[")) { inSection = false; i = i + 1; continue; }
+        if (inSection) {
+            Match m = verLine.Find(line);
+            if (m != null) { return m.Group(1); }
+        }
+        i = i + 1;
+    }
+    return "";
+}
