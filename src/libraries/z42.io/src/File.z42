@@ -21,4 +21,22 @@ public static class File {
 
     [Native("__file_move")]
     public static extern void Move(string src, string dst);
+
+    // extend-z42-io-glob-temp (2026-05-16)：临时文件 / 临时目录。
+    //
+    // 在 system temp root（mac /var/folders、linux /tmp、win %TEMP%）创建
+    // 唯一命名的文件 / 目录，返回全路径。命名包含 nanos + pid + counter
+    // 避免并发冲突。
+    //
+    // **手动 cleanup**：z42 无 RAII / finalizer 保证，调用方负责 `File.Delete`
+    // / `Directory.Delete(path, true)`。
+
+    /// 创建唯一临时目录，返回全路径（`<sysTemp>/prefix.<nanos>.<pid>.<bump>`）。
+    [Native("__file_create_temp_dir")]
+    public static extern string CreateTempDir(string prefix);
+
+    /// 创建唯一空临时文件，返回全路径（`<sysTemp>/prefix.<nanos>.<pid>.<bump><suffix>`）。
+    /// suffix 可为 ""（无扩展名）。
+    [Native("__file_create_temp_file")]
+    public static extern string CreateTempFile(string prefix, string suffix);
 }

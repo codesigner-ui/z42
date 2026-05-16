@@ -153,6 +153,11 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__dir_enumerate",           fs::builtin_dir_enumerate),
     ("__dir_enumerate_recursive", fs::builtin_dir_enumerate_recursive),
 
+    // ── Glob + Temp（extend-z42-io-glob-temp，2026-05-16）─────────────────────
+    ("__path_glob",             fs::builtin_path_glob),
+    ("__file_create_temp_dir",  fs::builtin_file_create_temp_dir),
+    ("__file_create_temp_file", fs::builtin_file_create_temp_file),
+
     // ── Environment / Process ─────────────────────────────────────────────────
     ("__env_get",      fs::builtin_env_get),
     ("__env_args",     fs::builtin_env_args),

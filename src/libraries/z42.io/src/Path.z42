@@ -104,6 +104,20 @@ public static class Path {
         return Path.Slice(path, 0, dirEnd);
     }
 
+    // extend-z42-io-glob-temp (2026-05-16)：Glob 匹配。
+    //
+    // 直接子项（不递归）。pattern 支持 `*`（任意序列）和 `?`（单字符），
+    // 大小写敏感。pattern 不应含 `/`。返回 sorted 全路径数组。
+    //
+    // 示例：
+    //   Path.Glob("/tmp/build", "*.zpkg")  → ["/tmp/build/a.zpkg", "/tmp/build/b.zpkg"]
+    //   Path.Glob("/tmp/build", "z42.?")   → ["/tmp/build/z42.a", "/tmp/build/z42.b"]
+    //
+    // 递归 glob（`**`）留 follow-up；当前用 `Directory.EnumerateRecursive` +
+    // 调用方 filter 等价。
+    [Native("__path_glob")]
+    public static extern string[] Glob(string dir, string pattern);
+
     // 内部 helper：切片 [start, end)。
     static string Slice(string s, int start, int end) {
         int len = end - start;

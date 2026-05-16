@@ -1,0 +1,65 @@
+// extend-z42-io-glob-temp (2026-05-16)：File.CreateTempDir / CreateTempFile。
+namespace Z42IoFileTempTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_create_temp_dir_exists_and_is_unique() {
+    string a = File.CreateTempDir("ztest");
+    string b = File.CreateTempDir("ztest");
+    Assert.True(Directory.Exists(a));
+    Assert.True(Directory.Exists(b));
+    Assert.True(a != b);  // 唯一性
+    Directory.Delete(a, true);
+    Directory.Delete(b, true);
+}
+
+[Test]
+void test_create_temp_dir_prefix_in_basename() {
+    string p = File.CreateTempDir("myproj");
+    string base = Path.GetFileName(p);
+    Assert.True(base.StartsWith("myproj"));
+    Directory.Delete(p, true);
+}
+
+[Test]
+void test_create_temp_file_exists_and_writable() {
+    string f = File.CreateTempFile("ztest", ".zbc");
+    Assert.True(File.Exists(f));
+    // 写入 + 读取 round-trip
+    File.WriteAllText(f, "hello z42");
+    string content = File.ReadAllText(f);
+    Assert.Equal("hello z42", content);
+    File.Delete(f);
+}
+
+[Test]
+void test_create_temp_file_unique() {
+    string a = File.CreateTempFile("ztest", ".tmp");
+    string b = File.CreateTempFile("ztest", ".tmp");
+    Assert.True(a != b);
+    File.Delete(a);
+    File.Delete(b);
+}
+
+[Test]
+void test_create_temp_file_empty_suffix_works() {
+    string f = File.CreateTempFile("noext", "");
+    Assert.True(File.Exists(f));
+    string base = Path.GetFileName(f);
+    // 无 suffix：basename 末尾不应是 "."（无 .ext）
+    Assert.True(base.StartsWith("noext"));
+    File.Delete(f);
+}
+
+[Test]
+void test_temp_dir_usable_for_sub_files() {
+    // 典型 test 模式：建临时 dir → 内部写文件 → 验证 → 清理
+    string dir = File.CreateTempDir("scratch");
+    string sub = Path.Join(dir, "data.bin");
+    File.WriteAllText(sub, "x");
+    Assert.True(File.Exists(sub));
+    Directory.Delete(dir, true);
+    Assert.False(File.Exists(sub));
+}

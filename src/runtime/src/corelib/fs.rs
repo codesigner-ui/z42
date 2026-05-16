@@ -168,3 +168,95 @@ pub fn builtin_time_now_ms(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         .map(|d| d.as_millis() as i64).unwrap_or(0);
     Ok(Value::I64(ms))
 }
+
+// ── Glob + Temp（extend-z42-io-glob-temp, 2026-05-16）─────────────────────────
+//
+// Phase 0b of script self-hosting：试点脚本所需的最小补丁集。
+
+/// Glob `dir/pattern` 直接子项；pattern 支持 `*`（任意序列）和 `?`（单字符）。
+/// 大小写敏感；返回 sorted 全路径数组。pattern 不含 `/`。
+pub fn builtin_path_glob(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let dir     = require_str(args, 0, "__path_glob")?;
+    let pattern = require_str(args, 1, "__path_glob")?;
+    let mut hits: Vec<String> = Vec::new();
+    if !std::path::Path::new(dir.as_str()).is_dir() {
+        return Ok(ctx.heap().alloc_array(Vec::new()));
+    }
+    for entry in std::fs::read_dir(dir.as_str())? {
+        let e = entry?;
+        if let Some(name) = e.file_name().to_str() {
+            if glob_match(pattern.as_str(), name) {
+                // Join dir + '/' + name without re-allocating the dir twice.
+                let mut full = String::with_capacity(dir.len() + name.len() + 1);
+                full.push_str(dir.as_str());
+                if !dir.as_str().ends_with('/') { full.push('/'); }
+                full.push_str(name);
+                hits.push(full);
+            }
+        }
+    }
+    hits.sort();
+    let list: Vec<Value> = hits.into_iter().map(Value::Str).collect();
+    Ok(ctx.heap().alloc_array(list))
+}
+
+/// `*` / `?` glob matcher — recursion-free, backtracking via two cursors
+/// (same idea as the classic K&R wildcard match).
+fn glob_match(pattern: &str, text: &str) -> bool {
+    let p: Vec<char> = pattern.chars().collect();
+    let t: Vec<char> = text.chars().collect();
+    let mut pi = 0usize;
+    let mut ti = 0usize;
+    let mut star_pi: Option<usize> = None;
+    let mut star_ti = 0usize;
+    while ti < t.len() {
+        if pi < p.len() && (p[pi] == '?' || p[pi] == t[ti]) {
+            pi += 1;
+            ti += 1;
+        } else if pi < p.len() && p[pi] == '*' {
+            star_pi = Some(pi);
+            star_ti = ti;
+            pi += 1;
+        } else if let Some(sp) = star_pi {
+            pi = sp + 1;
+            star_ti += 1;
+            ti = star_ti;
+        } else {
+            return false;
+        }
+    }
+    while pi < p.len() && p[pi] == '*' { pi += 1; }
+    pi == p.len()
+}
+
+/// 创建唯一临时目录在 system temp root，返回全路径。
+/// 命名：`prefix.<nanos>.<pid>`（极低冲突概率 + 单进程内可重复调用）。
+pub fn builtin_file_create_temp_dir(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let prefix = require_str(args, 0, "__file_create_temp_dir")?;
+    let path   = unique_temp_path(prefix.as_str(), "");
+    std::fs::create_dir_all(&path)?;
+    Ok(Value::Str(path))
+}
+
+/// 创建唯一临时文件（touched，0 bytes）在 system temp root，返回全路径。
+/// 命名：`prefix.<nanos>.<pid><suffix>`。suffix 可为 ""（无后缀）。
+pub fn builtin_file_create_temp_file(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let prefix = require_str(args, 0, "__file_create_temp_file")?;
+    let suffix = require_str(args, 1, "__file_create_temp_file")?;
+    let path   = unique_temp_path(prefix.as_str(), suffix.as_str());
+    std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&path)?;
+    Ok(Value::Str(path))
+}
+
+fn unique_temp_path(prefix: &str, suffix: &str) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64).unwrap_or(0);
+    let pid   = std::process::id();
+    let bump  = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let mut p = std::env::temp_dir();
+    p.push(format!("{prefix}.{nanos:x}.{pid}.{bump:x}{suffix}"));
+    p.to_string_lossy().into_owned()
+}

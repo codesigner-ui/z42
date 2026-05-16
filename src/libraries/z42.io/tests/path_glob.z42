@@ -1,0 +1,95 @@
+// extend-z42-io-glob-temp (2026-05-16)：Path.Glob 基础行为。
+namespace Z42IoPathGlobTests;
+
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_glob_star_extension() {
+    // 在临时目录 setup 几个 fixture 文件，glob *.txt 应取得 2 个
+    string dir = File.CreateTempDir("glob-star");
+    File.WriteAllText(Path.Join(dir, "a.txt"), "");
+    File.WriteAllText(Path.Join(dir, "b.txt"), "");
+    File.WriteAllText(Path.Join(dir, "c.md"),  "");
+
+    string[] hits = Path.Glob(dir, "*.txt");
+    Assert.Equal(2, hits.Length);
+    // sorted，且全路径
+    Assert.True(hits[0].EndsWith("a.txt"));
+    Assert.True(hits[1].EndsWith("b.txt"));
+
+    Directory.Delete(dir, true);
+}
+
+[Test]
+void test_glob_question_mark() {
+    string dir = File.CreateTempDir("glob-q");
+    File.WriteAllText(Path.Join(dir, "a.x"), "");
+    File.WriteAllText(Path.Join(dir, "b.x"), "");
+    File.WriteAllText(Path.Join(dir, "ab.x"), "");  // 2 chars before .x — 不匹配
+
+    string[] hits = Path.Glob(dir, "?.x");
+    Assert.Equal(2, hits.Length);
+
+    Directory.Delete(dir, true);
+}
+
+[Test]
+void test_glob_no_match_returns_empty() {
+    string dir = File.CreateTempDir("glob-empty");
+    File.WriteAllText(Path.Join(dir, "hi.txt"), "");
+
+    string[] hits = Path.Glob(dir, "*.bogus");
+    Assert.Equal(0, hits.Length);
+
+    Directory.Delete(dir, true);
+}
+
+[Test]
+void test_glob_literal_pattern() {
+    // pattern 不含 wildcard：精确匹配
+    string dir = File.CreateTempDir("glob-lit");
+    File.WriteAllText(Path.Join(dir, "exact"), "");
+    File.WriteAllText(Path.Join(dir, "exact2"), "");
+
+    string[] hits = Path.Glob(dir, "exact");
+    Assert.Equal(1, hits.Length);
+    Assert.True(hits[0].EndsWith("/exact"));
+
+    Directory.Delete(dir, true);
+}
+
+[Test]
+void test_glob_star_matches_all() {
+    string dir = File.CreateTempDir("glob-all");
+    File.WriteAllText(Path.Join(dir, "a"), "");
+    File.WriteAllText(Path.Join(dir, "bb"), "");
+    File.WriteAllText(Path.Join(dir, "ccc"), "");
+
+    string[] hits = Path.Glob(dir, "*");
+    Assert.Equal(3, hits.Length);
+
+    Directory.Delete(dir, true);
+}
+
+[Test]
+void test_glob_nonexistent_dir_returns_empty() {
+    string[] hits = Path.Glob("/nonexistent-z42-test-dir-12345", "*");
+    Assert.Equal(0, hits.Length);
+}
+
+[Test]
+void test_glob_prefix_suffix() {
+    string dir = File.CreateTempDir("glob-ps");
+    File.WriteAllText(Path.Join(dir, "z42.core.zpkg"),  "");
+    File.WriteAllText(Path.Join(dir, "z42.io.zpkg"),    "");
+    File.WriteAllText(Path.Join(dir, "z42.core.zsym"),  "");
+    File.WriteAllText(Path.Join(dir, "other.zpkg"),     "");
+
+    string[] hits = Path.Glob(dir, "z42.*.zpkg");
+    Assert.Equal(2, hits.Length);
+    Assert.True(hits[0].EndsWith("z42.core.zpkg"));
+    Assert.True(hits[1].EndsWith("z42.io.zpkg"));
+
+    Directory.Delete(dir, true);
+}
