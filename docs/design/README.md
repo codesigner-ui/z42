@@ -96,4 +96,4 @@ z42 长期设计文档。变更归档时（`docs/spec/changes/<name>/` → `docs
 
 ## 延后特性管理
 
-延后项一律写在对应文档的 "Deferred / Future Work" 段，并在 [`docs/roadmap.md`](../roadmap.md) "Deferred Backlog Index" 加索引行。详见 [workflow.md "延后特性管理"](../../.claude/rules/workflow.md)。
+延后项一律写在对应文档的 "Deferred / Future Work" 段，并在 [`docs/roadmap.md`](../roadmap.md) "Deferred Backlog Index" 加索引行。详见 [philosophy.md "延后特性管理"](../../.claude/rules/philosophy.md#延后特性管理必须遵守)。

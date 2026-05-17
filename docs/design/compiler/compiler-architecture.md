@@ -306,7 +306,7 @@ ResolveTypeName 里走 `_ => new Z42PrimType(name)` fallback，被降级。
 下游 IsAssignableTo 比较 `Z42ClassType vs Z42PrimType` same-name 不通过 →
 用户代码 `outer.InnerException = inner` 报 E0402。
 
-按 [.claude/rules/workflow.md "修复必须从根因出发"](.claude/rules/workflow.md#修复必须从根因出发-2026-04-26-强化)，
+按 [.claude/rules/philosophy.md "修复必须从根因出发"](../../.claude/rules/philosophy.md#修复必须从根因出发2026-04-26-强化)，
 **禁止在 IsAssignableTo 加 PrimType↔ClassType 同名兼容分支**（症状级补丁）。
 两阶段加载是经典 C# / Java 编译器的"先建骨架再填字段"做法，从源头物理消除降级。
 

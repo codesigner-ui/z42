@@ -429,7 +429,7 @@ strip    = true
 
 - ❌ 运行时延迟 import / 函数体内 import（Python 风格） —— z42 不提供此后门
 - ❌ "源码引用"打洞（Haskell `{-# SOURCE #-}` 风格） —— z42 不引入此机制
-- ❌ 新旧 zpkg 共存 + 灰度迁移以"绕开"循环 —— pre-1.0 不留兼容（见 [workflow.md](../../.claude/rules/workflow.md) "不为旧版本提供兼容"）
+- ❌ 新旧 zpkg 共存 + 灰度迁移以"绕开"循环 —— pre-1.0 不留兼容（见 [philosophy.md "不为旧版本提供兼容"](../../.claude/rules/philosophy.md#不为旧版本提供兼容2026-04-26-强化)）
 
 **编译器报错要求**（待实现时遵守）：
 

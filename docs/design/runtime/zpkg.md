@@ -17,7 +17,7 @@
 
 zpkg 是 zbc 的容器：packed-mode zpkg 把多个 zbc module 的 FUNC + TYPE + DBUG 字节直接嵌入 `MODS` section。zpkg outer wire format 与 zbc inner wire format **强耦合**：
 
-- zbc minor bump → zpkg minor 必须 +1（[`workflow.md`](../../../.claude/rules/workflow.md) 强制规则）
+- zbc minor bump → zpkg minor 必须 +1（[`version-bumping.md` 强制规则](../../../.claude/rules/version-bumping.md#zpkg-联动规则freeze-zpkg-v0-2026-05-14)）
 - zpkg outer 独立变化（如新增 section）也走 zpkg minor bump，但不需 zbc 同步
 
 历史一致性：zpkg 0.1 → 0.5 每次 minor 都对应一次 zbc 内嵌版本提升，唯一漏 bump 是 zbc 1.4 → 1.5（fix-numeric-cast-lowering）；本文档定型时通过 freeze-zpkg-v0 catch-up 把 zpkg 升到 0.6 对齐 zbc 1.5。
@@ -199,7 +199,7 @@ Sidecar 不可作为项目包加载（reader 见 `FlagSymOnly` 即 bail）。
 | 0.5 | 2026-05-11 | [add-generic-func-constraint](../../spec/archive/2026-05-11-add-generic-func-constraint/) | inner zbc 1.4（func constraint bundle flag 0x40 + signature）|
 | 0.6 | 2026-05-14 | [freeze-zpkg-v0](../../spec/archive/2026-05-14-freeze-zpkg-v0/) catch-up | inner zbc 1.5（Convert opcode；zbc 1.5 在 2026-05-13 fix-numeric-cast-lowering 落地，zpkg 当时漏 bump）|
 
-> **如何 bump minor**：见 [`workflow.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/workflow.md)（zbc bump 流程含 zpkg 同步条款）+ §"Bumping `.zpkg` minor version (independent)"（仅 zpkg outer 变化场景）。
+> **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)（zbc bump 流程含 zpkg 同步条款）+ [§"Bumping `.zpkg` minor version (independent)"](../../../.claude/rules/version-bumping.md#bumping-zpkg-minor-version-independent)（仅 zpkg outer 变化场景）。
 
 ---
 

@@ -425,7 +425,7 @@ z42c --assemble foo.zasm -o foo.zbc
 
 ## 版本兼容性
 
-**Strict-pin 政策**（与 [`workflow.md` "不为旧版本提供兼容"](../../../.claude/rules/workflow.md) 对齐）：
+**Strict-pin 政策**（与 [`philosophy.md` "不为旧版本提供兼容"](../../../.claude/rules/philosophy.md#不为旧版本提供兼容2026-04-26-强化) 对齐）：
 
 - Reader 仅接受 `major == ZbcWriter.VersionMajor && minor == ZbcWriter.VersionMinor`。pre-1.0 z42 阶段**不为旧 zbc minor 提供向前 / 向后兼容**；每次 minor bump = 所有现存 zbc artifacts 必须 regen（`./scripts/regen-golden-tests.sh`）。
 - **当前版本**：`major=1, minor=5`（详见下方 minor changelog）
@@ -445,7 +445,7 @@ z42c --assemble foo.zasm -o foo.zbc
 | 1.4 | 2026-05-11 | [add-generic-func-constraint](../../spec/archive/2026-05-11-add-generic-func-constraint/) | Constraint bundle flag 0x40 + per-param/return type-name strings (Z42FuncType signature) |
 | 1.5 | 2026-05-13 | [fix-numeric-cast-lowering](../../spec/archive/2026-05-13-fix-numeric-cast-lowering/) | 新 opcode `Convert` (0xB1) 表达显式数值类型转换（替换之前 cast 为 IR no-op 的语义） |
 
-> **如何 bump minor**：见 [`workflow.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/workflow.md)。简而言之 — 写 `ZbcWriter.VersionMinor++` + 同步 `zbc_reader.rs` 常量 + 本表加一行 + `generate-fixtures.sh` regen + commit。Invariant CI 校验三方常量一致。
+> **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)。简而言之 — 写 `ZbcWriter.VersionMinor++` + 同步 `zbc_reader.rs` 常量 + 本表加一行 + `generate-fixtures.sh` regen + commit。Invariant CI 校验三方常量一致。
 
 ### Token 编码（v1.0+）
 

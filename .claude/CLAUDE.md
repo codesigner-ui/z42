@@ -28,7 +28,7 @@ examples/       # .z42 示例源文件
 
 ## 协作工作流（必须遵守）
 
-完整流程见 `.claude/rules/workflow.md`。核心要点：
+完整流程见 [`workflow.md`](rules/workflow.md)（流程主线 / Scope / commit）+ [`philosophy.md`](rules/philosophy.md)（实现哲学 / 设计完整性 / 延后管理）+ [`version-bumping.md`](rules/version-bumping.md)（zbc / zpkg version bump checklist）。核心要点：
 
 - **每次新对话**：Claude 自动读取 `.claude/projects/<project>/memory/MEMORY.md` 和当前阶段，主动说明状态和下一步
 - **需规范先行**（lang / ir / vm 类变更）：DRAFT → User 确认 → IMPL → GREEN → COMMIT
@@ -64,7 +64,7 @@ examples/       # .z42 示例源文件
 3. **等待 User 裁决**后再继续实施
 4. **裁决结果同步到所有相关文档**，确保唯一真相来源
 
-> 规范冲突优先级高于当前任务推进，适用于所有规范文档（`CLAUDE.md`、`workflow.md`、`code-organization.md`、`docs/design/` 等）。
+> 规范冲突优先级高于当前任务推进，适用于所有规范文档（`CLAUDE.md`、`workflow.md` / `philosophy.md` / `version-bumping.md`、`code-organization.md`、`docs/design/` 等）。
 
 ## 注意事项
 
