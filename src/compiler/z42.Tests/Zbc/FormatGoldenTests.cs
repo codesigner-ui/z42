@@ -47,9 +47,28 @@ public class FormatGoldenTests
         byte[] actual = ZbcWriter.Write(module);
         byte[] expected = File.ReadAllBytes(expectedZbc);
 
+        // TEMP DIAG (2026-05-17): on mismatch, attach the IR's call targets +
+        // string pool to the failure message so we can see what Assert
+        // resolved to on the CI side (stderr from inside xUnit tests isn't
+        // shown by default). Remove once CI is green.
+        string diag = "";
+        if (actual.Length != expected.Length)
+        {
+            var calls = module.Functions
+                .SelectMany(f => f.Blocks.SelectMany(b => b.Instructions))
+                .OfType<CallInstr>()
+                .Select(c => c.Func)
+                .Distinct()
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToList();
+            diag = $"\n[DIAG] actual.len={actual.Length} expected.len={expected.Length} " +
+                   $"calls=[{string.Join(",", calls)}] " +
+                   $"module.strpool=[{string.Join(",", module.StringPool.Take(20))}]";
+        }
+
         actual.Should().Equal(expected,
             because: $"fixture `{fixture}` byte-level mismatch — wire format drifted. " +
-                     $"If intentional, run src/tests/zbc-format/generate-fixtures.sh and commit the diff.");
+                     $"If intentional, run src/tests/zbc-format/generate-fixtures.sh and commit the diff." + diag);
     }
 
     [Theory]
