@@ -111,3 +111,72 @@ Opt(rule)           // 可选（始终成功）
 Seq(rules...)       // 顺序组合
 Or(rules...)        // 有序选择（第一个匹配）
 ```
+
+## 资源加载顺序必须显式排序（2026-05-17 强化）
+
+**任何"first-wins 注册到全局 key"的资源加载循环都必须先 `.OrderBy(...)` 才迭代，禁止依赖 OS / 文件系统 / Dict / HashSet 的"碰巧 alphabetical"。**
+
+### 为什么这条规则
+
+`Directory.EnumerateFiles` **不是** alphabetical：
+- macOS APFS：通常按字母序（巧合）
+- Linux ext4 / btrfs：按 inode 顺序（与创建顺序相关）
+- Windows NTFS：通常按字母序，但 .NET runtime 版本 + 文件系统驱动会影响
+
+`HashSet<T>` / `Dictionary<TKey, TValue>` 迭代顺序：
+- 取决于内部 bucket 布局 + string hash
+- .NET 5+ 默认开启 string hash randomization → **每个进程的迭代顺序都可能不同**
+
+任何后续依赖"第一个出现的赢" 的 first-wins 逻辑（`TryAdd` / `if (!dict.ContainsKey)` / 类似 pattern）一旦上面任何一个非确定性源进入数据流，**整条解析链都变成非确定性的**。本地某 OS 上"碰巧 alphabetical"会让人误以为正确，CI 在另一 OS 上炸。
+
+### 现场案例（2026-05-17 fix-depindex-nondeterministic-order）
+
+`PackageCompiler.BuildDepIndex` 用 `Directory.EnumerateFiles(dir, "*.zpkg")` 迭代 zpkg 路径 → `DependencyIndex.Build` 用 `TryAdd` 注册 `<ShortClass>.<Method>` 静态 key。z42.core 的 `Std.Assert.Equal` 和 z42.test 的 `Std.Test.Assert.Equal` 都注册到同一个 key `"Assert.Equal"`，谁先到谁赢。
+
+- macOS：z42.core 字母序在前 → 用户写 `Assert.Equal(1, 2)` emit 到 `Std.Assert.Equal` ✓
+- Linux/Windows CI：枚举顺序不同 → emit 到 `Std.Test.Assert.Equal` ✗ → zbc 5 字节漂移 + 测试输出从 "AssertionError" 变成 "values not equal"
+
+### 强制规则
+
+写任何"加载 zpkg / 加载 module / 加载 plugin / 注册 builtin"循环时：
+
+1. **加载循环前必须 `.OrderBy(stableKey, StringComparer.Ordinal).ToList()` 一次**
+   - 顺序键要语义稳定（prelude-first → 字母序，或纯字母序）
+   - 不能用文件系统 mtime / inode / hash code 作为排序键
+
+2. **不要"碰巧 alphabetical"**：如果某次本地测试通过但你怀疑只是巧合，就显式 `OrderBy` 一次（成本几乎为零）
+
+3. **现有 `foreach (var x in hashSet)` / `foreach (var x in dict.Values)` + first-wins 写入** 都是潜在 bug 点 — 见到就加 `OrderBy`
+
+### 反例（曾经出过 bug 的代码）
+
+```csharp
+// ❌ Linux/Windows 顺序不确定
+foreach (var zpkgPath in Directory.EnumerateFiles(dir, "*.zpkg"))
+{
+    // first-wins 注册
+    staticBuf.TryAdd(staticKey, entry);
+}
+
+// ❌ HashSet 迭代顺序不确定
+foreach (var path in allPaths)
+    foreach (var mod in LoadZpkg(path))
+        modules.Add(mod);
+```
+
+### 正例
+
+```csharp
+// ✅ 显式排序 + prelude-first 语义键
+var sortedPaths = Directory.EnumerateFiles(dir, "*.zpkg")
+    .OrderBy(p => {
+        string name = Path.GetFileNameWithoutExtension(p);
+        return PreludePackages.Names.Contains(name) ? "0_" + name : "1_" + name;
+    }, StringComparer.Ordinal);
+foreach (var zpkgPath in sortedPaths) { ... }
+
+// ✅ HashSet 迭代前显式排
+foreach (var path in allPaths.OrderBy(p => p, StringComparer.Ordinal))
+    foreach (var mod in LoadZpkg(path))
+        modules.Add(mod);
+```
