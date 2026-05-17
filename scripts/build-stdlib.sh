@@ -21,8 +21,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Toolchain
-dotnet build -c Release src/compiler/z42.slnx >/dev/null 2>&1
+# Toolchain — build only the driver project in Debug (matches downstream
+# regen-golden-tests.sh / test-vm.sh config; pre-priming Release would leave
+# obj/ caches inconsistent with their Debug build and trip MSB3492). slnx-wide
+# build also pulls Microsoft.CodeCoverage targets on z42.Tests which add their
+# own MSB3492 surface — single-project keeps the cache footprint minimal.
+dotnet build src/compiler/z42.Driver/z42.Driver.csproj >/dev/null
 cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
 
 # Chicken-and-egg primer: build-stdlib.z42 self uses `using Std.IO/Regex/Cli;`
@@ -31,7 +35,7 @@ cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
 # 已存在）整个 if 块跳过，z42 script 直接接管 + incremental rebuild。
 if [ ! -f artifacts/build/libs/release/z42.core.zpkg ]; then
     echo "  (primer: bootstrapping stdlib for the first time)"
-    ( cd src/libraries && dotnet run --project ../compiler/z42.Driver -c Release \
+    ( cd src/libraries && dotnet run --project ../compiler/z42.Driver \
         --verbosity quiet --no-build -- build --workspace --release ) >/dev/null
     mkdir -p artifacts/build/libs/release
     for d in artifacts/build/libraries/*/release/dist; do
@@ -40,5 +44,5 @@ if [ ! -f artifacts/build/libs/release/z42.core.zpkg ]; then
     done
 fi
 
-exec dotnet run --project src/compiler/z42.Driver -c Release --verbosity quiet --no-build -- \
+exec dotnet run --project src/compiler/z42.Driver --verbosity quiet --no-build -- \
     run scripts/build-stdlib.z42 "$@"

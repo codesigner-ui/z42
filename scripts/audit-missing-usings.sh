@@ -9,9 +9,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-dotnet build -c Release src/compiler/z42.slnx >/dev/null 2>&1
+# Build only the driver project in Debug — matches regen-golden-tests.sh /
+# test-vm.sh; pre-priming Release trips MSB3492 in CI.
+dotnet build src/compiler/z42.Driver/z42.Driver.csproj >/dev/null
 cargo build --manifest-path src/runtime/Cargo.toml --release --quiet
-./scripts/build-stdlib.sh >/dev/null 2>&1
+./scripts/build-stdlib.sh >/dev/null
 
-exec dotnet run --project src/compiler/z42.Driver -c Release --verbosity quiet --no-build -- \
+exec dotnet run --project src/compiler/z42.Driver --verbosity quiet --no-build -- \
     run scripts/audit-missing-usings.z42
