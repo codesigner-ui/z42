@@ -8,7 +8,7 @@
 //!
 //! 2026-05-14 add-platform-os-stdlib.
 
-use super::convert::arg_str;
+use super::convert::require_str;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::Result;
@@ -32,8 +32,8 @@ pub fn builtin_system_cwd(_ctx: &VmContext, _: &[Value]) -> Result<Value> {
 }
 
 pub fn builtin_system_set_cwd(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = arg_str(args, 0, "__system_set_cwd")?;
-    std::env::set_current_dir(path)?;
+    let path = require_str(args, 0, "__system_set_cwd")?;
+    std::env::set_current_dir(&path)?;
     Ok(Value::Null)
 }
 
