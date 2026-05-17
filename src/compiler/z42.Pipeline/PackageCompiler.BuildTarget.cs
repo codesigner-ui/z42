@@ -283,7 +283,15 @@ public static partial class PackageCompiler
         foreach (var libsDir in libsDirs)
         {
             if (!Directory.Exists(libsDir)) continue;
-            foreach (var zpkgFile in Directory.EnumerateFiles(libsDir, "*.zpkg"))
+            // fix-depindex-nondeterministic-order (2026-05-17): same as in
+            // BuildDepIndex — sort prelude (z42.core) first to pin the
+            // `<ShortClass>.<Method>` first-wins resolution.
+            var sortedPaths = Directory.EnumerateFiles(libsDir, "*.zpkg")
+                .OrderBy(p => {
+                    string name = Path.GetFileNameWithoutExtension(p);
+                    return PreludePackages.Names.Contains(name) ? "0_" + name : "1_" + name;
+                }, StringComparer.Ordinal);
+            foreach (var zpkgFile in sortedPaths)
             {
                 try
                 {
