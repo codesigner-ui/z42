@@ -47,13 +47,20 @@ public class FormatGoldenTests
         byte[] actual = ZbcWriter.Write(module);
         byte[] expected = File.ReadAllBytes(expectedZbc);
 
-        // TEMP DIAG (2026-05-17): on mismatch, attach the IR's call targets +
-        // string pool to the failure message so we can see what Assert
-        // resolved to on the CI side (stderr from inside xUnit tests isn't
-        // shown by default). Remove once CI is green.
+        // TEMP DIAG (2026-05-17): on mismatch, attach the resolver state so
+        // we can see why CI's Assert resolves differently from local.
         string diag = "";
         if (actual.Length != expected.Length)
         {
+            var assertNs = Imported?.ClassNamespaces.TryGetValue("Assert", out var ns) == true ? ns : "<not-set>";
+            IEnumerable<string> allAssertEntries = Imported?.ClassNamespaces
+                .Where(kv => kv.Key.EndsWith("Assert", StringComparison.Ordinal))
+                .Select(kv => $"{kv.Key}={kv.Value}")
+                .OrderBy(s => s, StringComparer.Ordinal)
+                ?? Enumerable.Empty<string>();
+            var allAssertNs = string.Join(",", allAssertEntries);
+            var assertPkg = Imported?.ClassPackages?.TryGetValue("Assert", out var pkg) == true ? pkg : "<not-set>";
+            var preludeStr = string.Join(",", PreludePackages.Names);
             var calls = module.Functions
                 .SelectMany(f => f.Blocks.SelectMany(b => b.Instructions))
                 .OfType<CallInstr>()
@@ -61,9 +68,12 @@ public class FormatGoldenTests
                 .Distinct()
                 .OrderBy(s => s, StringComparer.Ordinal)
                 .ToList();
-            diag = $"\n[DIAG] actual.len={actual.Length} expected.len={expected.Length} " +
-                   $"calls=[{string.Join(",", calls)}] " +
-                   $"module.strpool=[{string.Join(",", module.StringPool.Take(20))}]";
+            diag = $"\n[DIAG] actual.len={actual.Length} expected.len={expected.Length}" +
+                   $"\n[DIAG] calls=[{string.Join(",", calls)}]" +
+                   $"\n[DIAG] Imported.ClassNs[Assert]={assertNs} pkg={assertPkg}" +
+                   $"\n[DIAG] all '*Assert' entries: [{allAssertNs}]" +
+                   $"\n[DIAG] PreludePackages.Names=[{preludeStr}]" +
+                   $"\n[DIAG] Imported is null? {Imported == null}";
         }
 
         actual.Should().Equal(expected,
