@@ -10,14 +10,14 @@ public static class Hex {
     private static string ALPHA_UPPER = "0123456789ABCDEF";
 
     public static string Encode(byte[] bytes) {
-        return _encodeWith(bytes, Hex.ALPHA_LOWER);
+        return EncodeWith(bytes, Hex.ALPHA_LOWER);
     }
 
     public static string EncodeUpper(byte[] bytes) {
-        return _encodeWith(bytes, Hex.ALPHA_UPPER);
+        return EncodeWith(bytes, Hex.ALPHA_UPPER);
     }
 
-    private static string _encodeWith(byte[] bytes, string alpha) {
+    private static string EncodeWith(byte[] bytes, string alpha) {
         if (bytes.Length == 0) return "";
         char[] result = new char[bytes.Length * 2];
         int i = 0;

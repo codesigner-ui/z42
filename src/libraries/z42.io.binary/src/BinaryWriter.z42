@@ -48,13 +48,13 @@ public class BinaryWriter {
 
     /// 写入 1 个字节。接受 int 输入（仅低 8 bit 写入），与 z42.encoding 风格一致。
     public void WriteByte(int b) {
-        this._ensureCapacity(1);
+        this.EnsureCapacity(1);
         this._buffer[this._pos] = (byte)(b & 0xFF);
         this._pos = this._pos + 1;
     }
 
     public void WriteBytes(byte[] data) {
-        this._ensureCapacity(data.Length);
+        this.EnsureCapacity(data.Length);
         int i = 0;
         while (i < data.Length) {
             this._buffer[this._pos + i] = data[i];
@@ -66,14 +66,14 @@ public class BinaryWriter {
     // ── Int16 ─────────────────────────────────────────────────────────────
 
     public void WriteInt16LE(int v) {
-        this._ensureCapacity(2);
+        this.EnsureCapacity(2);
         this._buffer[this._pos]     = (byte)(v & 0xFF);
         this._buffer[this._pos + 1] = (byte)((v >> 8) & 0xFF);
         this._pos = this._pos + 2;
     }
 
     public void WriteInt16BE(int v) {
-        this._ensureCapacity(2);
+        this.EnsureCapacity(2);
         this._buffer[this._pos]     = (byte)((v >> 8) & 0xFF);
         this._buffer[this._pos + 1] = (byte)(v & 0xFF);
         this._pos = this._pos + 2;
@@ -82,7 +82,7 @@ public class BinaryWriter {
     // ── Int32 ─────────────────────────────────────────────────────────────
 
     public void WriteInt32LE(int v) {
-        this._ensureCapacity(4);
+        this.EnsureCapacity(4);
         this._buffer[this._pos]     = (byte)(v & 0xFF);
         this._buffer[this._pos + 1] = (byte)((v >> 8) & 0xFF);
         this._buffer[this._pos + 2] = (byte)((v >> 16) & 0xFF);
@@ -91,7 +91,7 @@ public class BinaryWriter {
     }
 
     public void WriteInt32BE(int v) {
-        this._ensureCapacity(4);
+        this.EnsureCapacity(4);
         this._buffer[this._pos]     = (byte)((v >> 24) & 0xFF);
         this._buffer[this._pos + 1] = (byte)((v >> 16) & 0xFF);
         this._buffer[this._pos + 2] = (byte)((v >> 8) & 0xFF);
@@ -102,7 +102,7 @@ public class BinaryWriter {
     // ── Int64 ─────────────────────────────────────────────────────────────
 
     public void WriteInt64LE(long v) {
-        this._ensureCapacity(8);
+        this.EnsureCapacity(8);
         long mask = 255;
         this._buffer[this._pos]     = (byte)(int)(v & mask);
         this._buffer[this._pos + 1] = (byte)(int)((v >> 8) & mask);
@@ -116,7 +116,7 @@ public class BinaryWriter {
     }
 
     public void WriteInt64BE(long v) {
-        this._ensureCapacity(8);
+        this.EnsureCapacity(8);
         long mask = 255;
         this._buffer[this._pos]     = (byte)(int)((v >> 56) & mask);
         this._buffer[this._pos + 1] = (byte)(int)((v >> 48) & mask);
@@ -140,7 +140,7 @@ public class BinaryWriter {
 
     // ── Internals ─────────────────────────────────────────────────────────
 
-    private void _ensureCapacity(int additional) {
+    private void EnsureCapacity(int additional) {
         int need = this._pos + additional;
         if (need <= this._buffer.Length) { return; }
         int newCap = this._buffer.Length;

@@ -20,7 +20,7 @@ public class ProcessHandle : IDisposable {
     }
 
     public long Pid() {
-        this._ensureLive();
+        this.EnsureLive();
         object pidObj = ProcessHandleNative.Pid(this._slotId);
         if (pidObj == null) {
             throw new ProcessHandleInvalidException(this._program);
@@ -29,44 +29,44 @@ public class ProcessHandle : IDisposable {
     }
 
     public ProcessResult Wait() {
-        this._ensureLive();
+        this.EnsureLive();
         object[] raw = ProcessHandleNative.Wait(this._slotId);
-        return this._handleWaitResult(raw);
+        return this.HandleWaitResult(raw);
     }
 
     // Returns null if the child is still running, ProcessResult if exited.
     public ProcessResult? TryWait() {
-        this._ensureLive();
+        this.EnsureLive();
         object resObj = ProcessHandleNative.TryWait(this._slotId);
         if (resObj == null) {
             return null;
         }
         object[] raw = (object[])resObj;
-        return this._handleWaitResult(raw);
+        return this.HandleWaitResult(raw);
     }
 
     public void Kill() {
-        this._ensureLive();
+        this.EnsureLive();
         object res = ProcessHandleNative.Kill(this._slotId, false);
-        this._checkHandleResponse(res);
+        this.CheckHandleResponse(res);
     }
 
     public void KillForce() {
-        this._ensureLive();
+        this.EnsureLive();
         object res = ProcessHandleNative.Kill(this._slotId, true);
-        this._checkHandleResponse(res);
+        this.CheckHandleResponse(res);
     }
 
     public void WriteStdin(byte[] bytes) {
-        this._ensureLive();
+        this.EnsureLive();
         object res = ProcessHandleNative.WriteStdin(this._slotId, bytes);
-        this._checkHandleResponse(res);
+        this.CheckHandleResponse(res);
     }
 
     public void CloseStdin() {
-        this._ensureLive();
+        this.EnsureLive();
         object res = ProcessHandleNative.CloseStdin(this._slotId);
-        this._checkHandleResponse(res);
+        this.CheckHandleResponse(res);
     }
 
     // 实现 IDisposable — 幂等。Dispose 后所有方法抛
@@ -79,13 +79,13 @@ public class ProcessHandle : IDisposable {
 
     // ── internals ────────────────────────────────────────────────────────
 
-    private void _ensureLive() {
+    private void EnsureLive() {
         if (this._disposed) {
             throw new ProcessHandleInvalidException(this._program);
         }
     }
 
-    private ProcessResult _handleWaitResult(object[] raw) {
+    private ProcessResult HandleWaitResult(object[] raw) {
         long kind = (long)raw[0];
         if (kind == 3) {
             // KIND_HANDLE_INVALID
@@ -106,7 +106,7 @@ public class ProcessHandle : IDisposable {
 
     // For ops that return either Value.Null (success) or a kind-tuple
     // (handle invalid). Used by Kill / WriteStdin / CloseStdin.
-    private void _checkHandleResponse(object res) {
+    private void CheckHandleResponse(object res) {
         if (res == null) return;          // success
         // It's an Array — invalid handle.
         this._disposed = true;

@@ -41,7 +41,7 @@ public class Regex {
 
     /// 第一个 match 或 null。anchored pattern (^...) 仅尝试 pos=0；否则扫描每个 pos。
     public Match Find(string input) {
-        return this._findFrom(input, 0);
+        return this.FindFrom(input, 0);
     }
 
     /// 所有非重叠 match。返回 Match[] + count via parallel arrays?  v0 用一个
@@ -51,7 +51,7 @@ public class Regex {
         int n = 0;
         int pos = 0;
         while (pos <= input.Length) {
-            Match m = this._findFrom(input, pos);
+            Match m = this.FindFrom(input, pos);
             if (m == null) { break; }
             if (n >= buf.Length) {
                 Match[] grown = new Match[buf.Length * 2];
@@ -114,13 +114,13 @@ public class Regex {
 
     // ── Engine ────────────────────────────────────────────────────────────
 
-    private Match _findFrom(string input, int startPos) {
+    private Match FindFrom(string input, int startPos) {
         // ^ anchored 优化：若第一个 atom 是 ANCHOR_START，仅尝试 startPos == 0
         bool anchoredStart = (this._seqCount > 0 && this._seq[0]._kind == 4);
         int from = startPos;
         while (from <= input.Length) {
-            this._resetState(input);
-            int end = this._match(this._seq, this._seqCount, 0, from);
+            this.ResetState(input);
+            int end = this.Match(this._seq, this._seqCount, 0, from);
             if (end >= 0) {
                 return new Match(input, from, end, this._gStarts, this._gEnds, this._groupCount);
             }
@@ -130,7 +130,7 @@ public class Regex {
         return null;
     }
 
-    private void _resetState(string input) {
+    private void ResetState(string input) {
         this._input = input;
         this._gStarts = new int[this._groupCount];
         this._gEnds   = new int[this._groupCount];
@@ -143,81 +143,81 @@ public class Regex {
     }
 
     // 核心 match：从 seq[idx..count) 匹配，起始 pos。返回结束 pos 或 -1。
-    private int _match(RegexNode[] seq, int count, int idx, int pos) {
+    private int Match(RegexNode[] seq, int count, int idx, int pos) {
         if (idx >= count) { return pos; }
         RegexNode node = seq[idx];
         int k = node._kind;
 
         if (k == 1) {  // LIT
             if (pos < this._input.Length && (int)this._input.CharAt(pos) == node._ch) {
-                return this._match(seq, count, idx + 1, pos + 1);
+                return this.Match(seq, count, idx + 1, pos + 1);
             }
             return -1;
         }
         if (k == 2) {  // ANY (v0：包括换行)
             if (pos < this._input.Length) {
-                return this._match(seq, count, idx + 1, pos + 1);
+                return this.Match(seq, count, idx + 1, pos + 1);
             }
             return -1;
         }
         if (k == 3) {  // CHARSET
             if (pos < this._input.Length && node.CharsetMatches((int)this._input.CharAt(pos))) {
-                return this._match(seq, count, idx + 1, pos + 1);
+                return this.Match(seq, count, idx + 1, pos + 1);
             }
             return -1;
         }
         if (k == 4) {  // ANCHOR_START
-            if (pos == 0) { return this._match(seq, count, idx + 1, pos); }
+            if (pos == 0) { return this.Match(seq, count, idx + 1, pos); }
             return -1;
         }
         if (k == 5) {  // ANCHOR_END
-            if (pos == this._input.Length) { return this._match(seq, count, idx + 1, pos); }
+            if (pos == this._input.Length) { return this.Match(seq, count, idx + 1, pos); }
             return -1;
         }
         if (k == 6) {  // ALT — try left subseq then idx+1; on fail restore and try right
-            int[] savS = this._snapshotStarts();
-            int[] savE = this._snapshotEnds();
-            int lp = this._match(node._leftSeq, node._leftCount, 0, pos);
+            int[] savS = this.SnapshotStarts();
+            int[] savE = this.SnapshotEnds();
+            int lp = this.Match(node._leftSeq, node._leftCount, 0, pos);
             if (lp >= 0) {
-                int rp = this._match(seq, count, idx + 1, lp);
+                int rp = this.Match(seq, count, idx + 1, lp);
                 if (rp >= 0) { return rp; }
             }
-            this._restoreStarts(savS);
-            this._restoreEnds(savE);
-            int rp2 = this._match(node._rightSeq, node._rightCount, 0, pos);
+            this.RestoreStarts(savS);
+            this.RestoreEnds(savE);
+            int rp2 = this.Match(node._rightSeq, node._rightCount, 0, pos);
             if (rp2 >= 0) {
-                int fp = this._match(seq, count, idx + 1, rp2);
+                int fp = this.Match(seq, count, idx + 1, rp2);
                 if (fp >= 0) { return fp; }
             }
-            this._restoreStarts(savS);
-            this._restoreEnds(savE);
+            this.RestoreStarts(savS);
+            this.RestoreEnds(savE);
             return -1;
         }
         if (k == 7) {  // QUANT — greedy
-            return this._matchQuant(node, seq, count, idx, pos);
+            return this.MatchQuant(node, seq, count, idx, pos);
         }
         if (k == 8) {  // GROUP
-            int[] savS = this._snapshotStarts();
-            int[] savE = this._snapshotEnds();
-            int gp = this._match(node._childSeq, node._childCount, 0, pos);
+            int[] savS = this.SnapshotStarts();
+            int[] savE = this.SnapshotEnds();
+            int gp = this.Match(node._childSeq, node._childCount, 0, pos);
             if (gp >= 0) {
                 this._gStarts[node._groupIndex] = pos;
                 this._gEnds[node._groupIndex]   = gp;
-                int rp = this._match(seq, count, idx + 1, gp);
+                int rp = this.Match(seq, count, idx + 1, gp);
                 if (rp >= 0) { return rp; }
             }
-            this._restoreStarts(savS);
-            this._restoreEnds(savE);
+            this.RestoreStarts(savS);
+            this.RestoreEnds(savE);
             return -1;
         }
         return -1;
     }
 
     // greedy quantifier with backtracking
-    private int _matchQuant(RegexNode q, RegexNode[] seq, int count, int idx, int pos) {
+    private int MatchQuant(RegexNode q, RegexNode[] seq, int count, int idx, int pos) {
         // 先匹配 min 次（必须成功，否则失败）
-        int[] savS = this._snapshotStarts();
-        int[] savE = this._snapshotEnds();
+        int[] savS = this.SnapshotStarts();
+        int[] savE = this.SnapshotEnds();
         int p = pos;
         int matched = 0;
         // 用一个固定大小的位置数组记录每次 child 成功后的 pos
@@ -227,7 +227,7 @@ public class Regex {
         int posCount = 1;
 
         while (q._max < 0 || matched < q._max) {
-            int np = this._match(q._childSeq, q._childCount, 0, p);
+            int np = this.Match(q._childSeq, q._childCount, 0, p);
             if (np < 0) { break; }
             if (np == p && matched >= q._min) {
                 // 零宽匹配：满足 min 后继续会无限循环
@@ -245,8 +245,8 @@ public class Regex {
             posCount = posCount + 1;
         }
         if (matched < q._min) {
-            this._restoreStarts(savS);
-            this._restoreEnds(savE);
+            this.RestoreStarts(savS);
+            this.RestoreEnds(savE);
             return -1;
         }
         // 从最长 → 最短 backtrack；至少 min 次匹配才考虑
@@ -254,48 +254,48 @@ public class Regex {
         while (i >= q._min) {
             // 注意：当前 _gStarts / _gEnds 状态是最深 child match 后的。
             // backtracking 时我们 restore 到 entry，再 reapply min..i 次（开销大但正确）
-            this._restoreStarts(savS);
-            this._restoreEnds(savE);
+            this.RestoreStarts(savS);
+            this.RestoreEnds(savE);
             int rp = pos;
             int j = 0;
             bool ok = true;
             while (j < i) {
-                int np = this._match(q._childSeq, q._childCount, 0, rp);
+                int np = this.Match(q._childSeq, q._childCount, 0, rp);
                 if (np < 0) { ok = false; break; }
                 rp = np;
                 j = j + 1;
             }
             if (ok) {
-                int fp = this._match(seq, count, idx + 1, rp);
+                int fp = this.Match(seq, count, idx + 1, rp);
                 if (fp >= 0) { return fp; }
             }
             i = i - 1;
         }
-        this._restoreStarts(savS);
-        this._restoreEnds(savE);
+        this.RestoreStarts(savS);
+        this.RestoreEnds(savE);
         return -1;
     }
 
-    private int[] _snapshotStarts() {
+    private int[] SnapshotStarts() {
         int[] s = new int[this._groupCount];
         int i = 0;
         while (i < this._groupCount) { s[i] = this._gStarts[i]; i = i + 1; }
         return s;
     }
 
-    private int[] _snapshotEnds() {
+    private int[] SnapshotEnds() {
         int[] s = new int[this._groupCount];
         int i = 0;
         while (i < this._groupCount) { s[i] = this._gEnds[i]; i = i + 1; }
         return s;
     }
 
-    private void _restoreStarts(int[] s) {
+    private void RestoreStarts(int[] s) {
         int i = 0;
         while (i < this._groupCount) { this._gStarts[i] = s[i]; i = i + 1; }
     }
 
-    private void _restoreEnds(int[] s) {
+    private void RestoreEnds(int[] s) {
         int i = 0;
         while (i < this._groupCount) { this._gEnds[i] = s[i]; i = i + 1; }
     }

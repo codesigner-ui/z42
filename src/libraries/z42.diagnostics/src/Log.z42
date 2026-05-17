@@ -12,7 +12,7 @@ using Std.Time;
 //
 // 默认 min level = INFO（TRACE / DEBUG 不输出）；调用方可 SetMinLevel 调整。
 public static class Log {
-    private static int _minLevel = 2;  // LogLevel.INFO；static initializer 顺序避免 forward-ref
+    private static int _minLevel = 2;  // LogLevel.Info；static initializer 顺序避免 forward-ref
 
     /// 设置全局最低输出级别。 < 该级别的调用被丢弃。
     public static void SetMinLevel(int level) {
@@ -24,18 +24,18 @@ public static class Log {
     }
 
     /// 是否当前 level 会被输出。expensive log message 构造前先 check：
-    ///     if (Log.IsEnabled(LogLevel.DEBUG)) { Log.Debug("expensive: " + ...); }
+    ///     if (Log.IsEnabled(LogLevel.Debug)) { Log.Debug("expensive: " + ...); }
     public static bool IsEnabled(int level) {
         return level >= Log._minLevel;
     }
 
-    public static void Trace(string msg) { Log._write(LogLevel.TRACE, msg); }
-    public static void Debug(string msg) { Log._write(LogLevel.DEBUG, msg); }
-    public static void Info(string msg)  { Log._write(LogLevel.INFO,  msg); }
-    public static void Warn(string msg)  { Log._write(LogLevel.WARN,  msg); }
-    public static void Error(string msg) { Log._write(LogLevel.ERROR, msg); }
+    public static void Trace(string msg) { Log.Write(LogLevel.Trace, msg); }
+    public static void Debug(string msg) { Log.Write(LogLevel.Debug, msg); }
+    public static void Info(string msg)  { Log.Write(LogLevel.Info,  msg); }
+    public static void Warn(string msg)  { Log.Write(LogLevel.Warn,  msg); }
+    public static void Error(string msg) { Log.Write(LogLevel.Error, msg); }
 
-    private static void _write(int level, string msg) {
+    private static void Write(int level, string msg) {
         if (level < Log._minLevel) { return; }
         long ms = DateTime.UtcNow().UnixMs();
         ConsoleError.WriteLine("[" + LogLevel.Name(level) + " " + ms.ToString() + "] " + msg);

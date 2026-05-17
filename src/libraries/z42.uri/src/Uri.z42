@@ -115,8 +115,8 @@ public sealed class UriParser {
 
     public Uri ParseUri() {
         // RFC 3986 §3: URI = scheme ":" hier-part [ "?" query ] [ "#" fragment ]
-        string scheme = this._parseScheme();
-        this._expect(':', "':' after scheme");
+        string scheme = this.ParseScheme();
+        this.Expect(':', "':' after scheme");
 
         bool hasAuthority = false;
         string userInfo = "";
@@ -125,32 +125,32 @@ public sealed class UriParser {
         string path     = "";
 
         // hier-part = "//" authority path-abempty / path-absolute / path-rootless / path-empty
-        if (this._peek() == '/' && this._peekAt(1) == '/') {
+        if (this.Peek() == '/' && this.PeekAt(1) == '/') {
             hasAuthority = true;
-            this._advance(); this._advance(); // "//"
+            this.Advance(); this.Advance(); // "//"
             // authority = [ userinfo "@" ] host [ ":" port ]
             // RFC 3986 §3.2.2 allows empty host (e.g. `file:///path`).
-            int atIdx = this._findInAuthority('@');
+            int atIdx = this.FindInAuthority('@');
             if (atIdx >= 0) {
                 userInfo = this._src.Substring(this._pos, atIdx - this._pos);
                 this._pos = atIdx + 1;
             }
             int hostStart = this._pos;
             // host extends to ':' or '/' or '?' or '#' or EOF
-            while (!this._eof()) {
-                char c = this._peek();
+            while (!this.Eof()) {
+                char c = this.Peek();
                 if (c == ':' || c == '/' || c == '?' || c == '#') { break; }
-                this._advance();
+                this.Advance();
             }
             host = this._src.Substring(hostStart, this._pos - hostStart);
-            if (this._peek() == ':') {
-                this._advance();
+            if (this.Peek() == ':') {
+                this.Advance();
                 int portStart = this._pos;
-                while (!this._eof()) {
-                    char c = this._peek();
+                while (!this.Eof()) {
+                    char c = this.Peek();
                     int cc = (int)c;
                     if (cc < 48 || cc > 57) { break; }
-                    this._advance();
+                    this.Advance();
                 }
                 string portStr = this._src.Substring(portStart, this._pos - portStart);
                 if (portStr.Length == 0) {
@@ -160,60 +160,60 @@ public sealed class UriParser {
             }
             // path = "/" path-abempty (starts with '/' or empty)
             int pathStart = this._pos;
-            while (!this._eof()) {
-                char c = this._peek();
+            while (!this.Eof()) {
+                char c = this.Peek();
                 if (c == '?' || c == '#') { break; }
-                this._advance();
+                this.Advance();
             }
             path = this._src.Substring(pathStart, this._pos - pathStart);
         } else {
             // Opaque or path-rootless: e.g. "mailto:foo@bar"
             int pathStart = this._pos;
-            while (!this._eof()) {
-                char c = this._peek();
+            while (!this.Eof()) {
+                char c = this.Peek();
                 if (c == '?' || c == '#') { break; }
-                this._advance();
+                this.Advance();
             }
             path = this._src.Substring(pathStart, this._pos - pathStart);
         }
 
         string query = "";
-        if (this._peek() == '?') {
-            this._advance();
+        if (this.Peek() == '?') {
+            this.Advance();
             int qStart = this._pos;
-            while (!this._eof() && this._peek() != '#') { this._advance(); }
+            while (!this.Eof() && this.Peek() != '#') { this.Advance(); }
             query = this._src.Substring(qStart, this._pos - qStart);
         }
 
         string fragment = "";
-        if (this._peek() == '#') {
-            this._advance();
+        if (this.Peek() == '#') {
+            this.Advance();
             int fStart = this._pos;
-            while (!this._eof()) { this._advance(); }
+            while (!this.Eof()) { this.Advance(); }
             fragment = this._src.Substring(fStart, this._pos - fStart);
         }
 
         return new Uri(scheme, hasAuthority, userInfo, host, port, path, query, fragment);
     }
 
-    private string _parseScheme() {
+    private string ParseScheme() {
         // scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
         int start = this._pos;
-        if (this._eof()) { throw new UriException("empty URI"); }
-        char first = this._peek();
+        if (this.Eof()) { throw new UriException("empty URI"); }
+        char first = this.Peek();
         int fc = (int)first;
         bool isAlpha = (fc >= 65 && fc <= 90) || (fc >= 97 && fc <= 122);
         if (!isAlpha) { throw new UriException("scheme must start with a letter"); }
-        this._advance();
-        while (!this._eof()) {
-            char c = this._peek();
+        this.Advance();
+        while (!this.Eof()) {
+            char c = this.Peek();
             int cc = (int)c;
             bool ok = (cc >= 65 && cc <= 90)       // A-Z
                    || (cc >= 97 && cc <= 122)      // a-z
                    || (cc >= 48 && cc <= 57)       // 0-9
                    || c == '+' || c == '-' || c == '.';
             if (!ok) { break; }
-            this._advance();
+            this.Advance();
         }
         return this._src.Substring(start, this._pos - start);
     }
@@ -223,7 +223,7 @@ public sealed class UriParser {
     /// userinfo `@` is at the very end of userinfo, but inside it `@` may
     /// be percent-encoded as `%40`. We use last-`@` since unencoded `@` in
     /// userinfo is invalid.
-    private int _findInAuthority(char target) {
+    private int FindInAuthority(char target) {
         int p = this._pos;
         int lastAt = -1;
         while (p < this._src.Length) {
@@ -235,35 +235,35 @@ public sealed class UriParser {
         return lastAt;
     }
 
-    private char _peek() {
+    private char Peek() {
         if (this._pos >= this._src.Length) { return '\0'; }
         return this._src.CharAt(this._pos);
     }
-    private char _peekAt(int offset) {
+    private char PeekAt(int offset) {
         int p = this._pos + offset;
         if (p >= this._src.Length) { return '\0'; }
         return this._src.CharAt(p);
     }
-    private char _advance() {
-        char c = this._peek();
+    private char Advance() {
+        char c = this.Peek();
         this._pos = this._pos + 1;
         return c;
     }
-    private bool _eof() { return this._pos >= this._src.Length; }
-    private void _expect(char c, string what) {
-        if (this._peek() != c) {
+    private bool Eof() { return this._pos >= this._src.Length; }
+    private void Expect(char c, string what) {
+        if (this.Peek() != c) {
             char[] arr = new char[1];
-            arr[0] = this._peek();
+            arr[0] = this.Peek();
             throw new UriException("expected " + what + " but got '" + String.FromChars(arr) + "'");
         }
-        this._advance();
+        this.Advance();
     }
 }
 
 // ── Percent-encode / decode helpers ─────────────────────────────────────
 
 public static class UriCodec {
-    private static string HEX = "0123456789ABCDEF";
+    private static string _hex = "0123456789ABCDEF";
 
     public static string Encode(string s) {
         StringBuilder sb = new StringBuilder();
@@ -283,19 +283,19 @@ public static class UriCodec {
                 // ASCII non-unreserved → single %XX
                 sb.Append("%");
                 char[] hex = new char[2];
-                hex[0] = UriCodec.HEX.CharAt((cc >> 4) & 15);
-                hex[1] = UriCodec.HEX.CharAt(cc & 15);
+                hex[0] = UriCodec._hex.CharAt((cc >> 4) & 15);
+                hex[1] = UriCodec._hex.CharAt(cc & 15);
                 sb.Append(String.FromChars(hex));
             } else {
                 // Non-ASCII codepoint → UTF-8 encode, percent each byte
-                byte[] utf8 = UriCodec._utf8Encode(cc);
+                byte[] utf8 = UriCodec.Utf8Encode(cc);
                 int j = 0;
                 while (j < utf8.Length) {
                     int b = (int)utf8[j] & 255;
                     sb.Append("%");
                     char[] hex = new char[2];
-                    hex[0] = UriCodec.HEX.CharAt((b >> 4) & 15);
-                    hex[1] = UriCodec.HEX.CharAt(b & 15);
+                    hex[0] = UriCodec._hex.CharAt((b >> 4) & 15);
+                    hex[1] = UriCodec._hex.CharAt(b & 15);
                     sb.Append(String.FromChars(hex));
                     j = j + 1;
                 }
@@ -316,8 +316,8 @@ public static class UriCodec {
                 if (i + 2 >= s.Length) {
                     throw new UriException("truncated %XX in percent-encoded input");
                 }
-                int hi = UriCodec._hexDigit(s.CharAt(i + 1));
-                int lo = UriCodec._hexDigit(s.CharAt(i + 2));
+                int hi = UriCodec.HexDigit(s.CharAt(i + 1));
+                int lo = UriCodec.HexDigit(s.CharAt(i + 2));
                 if (hi < 0 || lo < 0) {
                     throw new UriException("invalid hex digit in %XX");
                 }
@@ -343,10 +343,10 @@ public static class UriCodec {
         byte[] tight = new byte[n];
         int k = 0;
         while (k < n) { tight[k] = buf[k]; k = k + 1; }
-        return UriCodec._utf8DecodeString(tight);
+        return UriCodec.Utf8DecodeString(tight);
     }
 
-    private static int _hexDigit(char c) {
+    private static int HexDigit(char c) {
         int code = (int)c;
         if (code >= 48 && code <= 57)  return code - 48;
         if (code >= 97 && code <= 102) return 10 + code - 97;
@@ -356,7 +356,7 @@ public static class UriCodec {
 
     /// Encode a single Unicode codepoint to UTF-8 bytes (1 - 4 bytes).
     /// Caller must ensure cp ≤ 0x10FFFF.
-    private static byte[] _utf8Encode(int cp) {
+    private static byte[] Utf8Encode(int cp) {
         if (cp < 0x80) {
             byte[] r = new byte[1];
             r[0] = (byte)cp;
@@ -385,7 +385,7 @@ public static class UriCodec {
 
     /// UTF-8 decode bytes → string. Bare-bones implementation; assumes valid
     /// input (defers strict validation to z42.encoding.Utf8 if user wants).
-    private static string _utf8DecodeString(byte[] bytes) {
+    private static string Utf8DecodeString(byte[] bytes) {
         StringBuilder sb = new StringBuilder();
         int i = 0;
         while (i < bytes.Length) {

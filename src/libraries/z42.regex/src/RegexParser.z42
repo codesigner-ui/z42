@@ -32,30 +32,30 @@ public class RegexParser {
     public int ResultCount;
 
     public void ParsePattern() {
-        this._parseAlt(false);
+        this.ParseAlt(false);
         if (this._pos < this._src.Length) {
-            throw new RegexException("unexpected character '" + this._peek().ToString() +
+            throw new RegexException("unexpected character '" + this.Peek().ToString() +
                 "' at pos " + this._pos.ToString());
         }
         this.GroupCount = this._nextGroup - 1;
     }
 
     // 解析 alt 表达式；inGroup=true 时遇到 ')' 返回。结果写入 ResultNodes/ResultCount。
-    private void _parseAlt(bool inGroup) {
+    private void ParseAlt(bool inGroup) {
         // _parseConcat 直接写 ResultNodes/ResultCount（z42 array reassignment 不
         // 跨方法调用栈传递 — pass-by-value 引用槽位；早期版本用 `buf` 参数 +
         // return count，结果 grow 后的新 array 丢在 callee local 里，导致大 pattern
         // 触发 array index OOB（fix-regex-parser-buffer-grow, 2026-05-16）。
-        this._parseConcat(inGroup);
+        this.ParseConcat(inGroup);
         RegexNode[] leftBuf = this.ResultNodes;
         int leftN = this.ResultCount;
-        if (this._eof() || this._peek() != '|') {
+        if (this.Eof() || this.Peek() != '|') {
             // ResultNodes/Count already set by _parseConcat
             return;
         }
         // 有 '|' — 右折叠：alt = left | (rest_alt)
-        this._advance();
-        this._parseAlt(inGroup);
+        this.Advance();
+        this.ParseAlt(inGroup);
         RegexNode altNode = RegexNode.Alt(leftBuf, leftN, this.ResultNodes, this.ResultCount);
         RegexNode[] wrap = new RegexNode[1];
         wrap[0] = altNode;
@@ -65,17 +65,17 @@ public class RegexParser {
 
     // 解析 concat（无 '|'）：解析 atom+quant 直到 '|' / ')' / EOF。结果写入
     // this.ResultNodes / this.ResultCount（避免 grown buffer 跨调用栈丢失）。
-    private void _parseConcat(bool inGroup) {
+    private void ParseConcat(bool inGroup) {
         RegexNode[] buf = new RegexNode[8];
         int n = 0;
-        while (!this._eof()) {
-            char c = this._peek();
+        while (!this.Eof()) {
+            char c = this.Peek();
             if (c == '|') { break; }
             if (inGroup && c == ')') { break; }
-            RegexNode atom = this._parseAtom();
-            RegexNode quantified = this._maybeWrapQuant(atom);
+            RegexNode atom = this.ParseAtom();
+            RegexNode quantified = this.MaybeWrapQuant(atom);
             if (n >= buf.Length) {
-                buf = this._growNodes(buf, n);
+                buf = this.GrowNodes(buf, n);
             }
             buf[n] = quantified;
             n = n + 1;
@@ -85,33 +85,33 @@ public class RegexParser {
     }
 
     // 若 atom 后跟 quantifier，包装为 QUANT 节点。
-    private RegexNode _maybeWrapQuant(RegexNode atom) {
-        if (this._eof()) { return atom; }
-        char c = this._peek();
+    private RegexNode MaybeWrapQuant(RegexNode atom) {
+        if (this.Eof()) { return atom; }
+        char c = this.Peek();
         int min = 0;
         int max = 0;
         bool isQuant = false;
-        if (c == '?') { min = 0; max =  1; isQuant = true; this._advance(); }
-        else if (c == '*') { min = 0; max = -1; isQuant = true; this._advance(); }
-        else if (c == '+') { min = 1; max = -1; isQuant = true; this._advance(); }
+        if (c == '?') { min = 0; max =  1; isQuant = true; this.Advance(); }
+        else if (c == '*') { min = 0; max = -1; isQuant = true; this.Advance(); }
+        else if (c == '+') { min = 1; max = -1; isQuant = true; this.Advance(); }
         else if (c == '{') {
-            this._advance();
-            int n = this._parseInt();
+            this.Advance();
+            int n = this.ParseInt();
             min = n;
-            if (!this._eof() && this._peek() == ',') {
-                this._advance();
-                if (!this._eof() && this._peek() == '}') {
+            if (!this.Eof() && this.Peek() == ',') {
+                this.Advance();
+                if (!this.Eof() && this.Peek() == '}') {
                     max = -1;
                 } else {
-                    max = this._parseInt();
+                    max = this.ParseInt();
                 }
             } else {
                 max = n;
             }
-            if (this._eof() || this._peek() != '}') {
+            if (this.Eof() || this.Peek() != '}') {
                 throw new RegexException("expected '}' at pos " + this._pos.ToString());
             }
-            this._advance();
+            this.Advance();
             isQuant = true;
         }
         if (!isQuant) { return atom; }
@@ -120,13 +120,13 @@ public class RegexParser {
         return RegexNode.Quant(child, 1, min, max);
     }
 
-    private int _parseInt() {
+    private int ParseInt() {
         int start = this._pos;
-        while (!this._eof()) {
-            char c = this._peek();
+        while (!this.Eof()) {
+            char c = this.Peek();
             int cc = (int)c;
             if (cc < 48 || cc > 57) { break; }
-            this._advance();
+            this.Advance();
         }
         if (this._pos == start) {
             throw new RegexException("expected digit at pos " + this._pos.ToString());
@@ -134,46 +134,46 @@ public class RegexParser {
         return int.Parse(this._src.Substring(start, this._pos - start));
     }
 
-    private RegexNode _parseAtom() {
-        char c = this._peek();
+    private RegexNode ParseAtom() {
+        char c = this.Peek();
         if (c == '(') {
             int idx = this._nextGroup;
             this._nextGroup = this._nextGroup + 1;
-            this._advance();
-            this._parseAlt(true);
+            this.Advance();
+            this.ParseAlt(true);
             RegexNode[] body = this.ResultNodes;
             int bodyN = this.ResultCount;
-            if (this._eof() || this._peek() != ')') {
+            if (this.Eof() || this.Peek() != ')') {
                 throw new RegexException("expected ')' at pos " + this._pos.ToString());
             }
-            this._advance();
+            this.Advance();
             return RegexNode.Group(body, bodyN, idx);
         }
         if (c == '[') {
-            this._advance();
-            return this._parseCharset();
+            this.Advance();
+            return this.ParseCharset();
         }
-        if (c == '.') { this._advance(); return RegexNode.Any(); }
-        if (c == '^') { this._advance(); return RegexNode.AnchorStart(); }
-        if (c == '$') { this._advance(); return RegexNode.AnchorEnd(); }
+        if (c == '.') { this.Advance(); return RegexNode.Any(); }
+        if (c == '^') { this.Advance(); return RegexNode.AnchorStart(); }
+        if (c == '$') { this.Advance(); return RegexNode.AnchorEnd(); }
         if (c == '\\') {
-            this._advance();
-            return this._parseEscape();
+            this.Advance();
+            return this.ParseEscape();
         }
         if (c == ')' || c == '|' || c == '?' || c == '*' || c == '+' || c == '{' || c == '}') {
             throw new RegexException("unexpected '" + c.ToString() + "' at pos " + this._pos.ToString());
         }
-        this._advance();
+        this.Advance();
         return RegexNode.Lit((int)c);
     }
 
     // 处理 `\d \D \w \W \s \S \n \t \r \\ \. \( \) \[ \] \{ \} \| \? \* \+ \^ \$`
-    private RegexNode _parseEscape() {
-        if (this._eof()) {
+    private RegexNode ParseEscape() {
+        if (this.Eof()) {
             throw new RegexException("trailing backslash at end of pattern");
         }
-        char e = this._peek();
-        this._advance();
+        char e = this.Peek();
+        this.Advance();
         if (e == 'n')  { return RegexNode.Lit(10); }
         if (e == 't')  { return RegexNode.Lit(9); }
         if (e == 'r')  { return RegexNode.Lit(13); }
@@ -202,66 +202,66 @@ public class RegexParser {
         return RegexNode.Lit((int)e);
     }
 
-    private RegexNode _parseCharset() {
+    private RegexNode ParseCharset() {
         bool negated = false;
-        if (!this._eof() && this._peek() == '^') {
+        if (!this.Eof() && this.Peek() == '^') {
             negated = true;
-            this._advance();
+            this.Advance();
         }
         int[] starts = new int[8];
         int[] ends   = new int[8];
         int n = 0;
-        while (!this._eof() && this._peek() != ']') {
-            int a = this._parseCharsetChar();
+        while (!this.Eof() && this.Peek() != ']') {
+            int a = this.ParseCharsetChar();
             int b = a;
-            if (!this._eof() && this._peek() == '-' && this._pos + 1 < this._src.Length
+            if (!this.Eof() && this.Peek() == '-' && this._pos + 1 < this._src.Length
                 && this._src.CharAt(this._pos + 1) != ']') {
-                this._advance();  // '-'
-                b = this._parseCharsetChar();
+                this.Advance();  // '-'
+                b = this.ParseCharsetChar();
             }
             if (n >= starts.Length) {
-                starts = this._growInts(starts, n);
-                ends   = this._growInts(ends, n);
+                starts = this.GrowInts(starts, n);
+                ends   = this.GrowInts(ends, n);
             }
             starts[n] = a;
             ends[n]   = b;
             n = n + 1;
         }
-        if (this._eof()) {
+        if (this.Eof()) {
             throw new RegexException("unterminated character class");
         }
-        this._advance();  // ']'
+        this.Advance();  // ']'
         if (n == 0) {
             throw new RegexException("empty character class");
         }
         return RegexNode.Charset(negated, starts, ends, n);
     }
 
-    private int _parseCharsetChar() {
-        char c = this._peek();
+    private int ParseCharsetChar() {
+        char c = this.Peek();
         if (c == '\\') {
-            this._advance();
-            if (this._eof()) {
+            this.Advance();
+            if (this.Eof()) {
                 throw new RegexException("trailing backslash in character class");
             }
-            char e = this._peek();
-            this._advance();
+            char e = this.Peek();
+            this.Advance();
             if (e == 'n')  { return 10; }
             if (e == 't')  { return 9; }
             if (e == 'r')  { return 13; }
             return (int)e;  // literal escape
         }
-        this._advance();
+        this.Advance();
         return (int)c;
     }
 
     // ── Internals ─────────────────────────────────────────────────────────
 
-    private bool _eof()      { return this._pos >= this._src.Length; }
-    private char _peek()     { return this._src.CharAt(this._pos); }
-    private void _advance()  { this._pos = this._pos + 1; }
+    private bool Eof()      { return this._pos >= this._src.Length; }
+    private char Peek()     { return this._src.CharAt(this._pos); }
+    private void Advance()  { this._pos = this._pos + 1; }
 
-    private RegexNode[] _growNodes(RegexNode[] old, int used) {
+    private RegexNode[] GrowNodes(RegexNode[] old, int used) {
         int newCap = old.Length * 2;
         if (newCap < used + 1) { newCap = used + 1; }
         RegexNode[] grown = new RegexNode[newCap];
@@ -270,7 +270,7 @@ public class RegexParser {
         return grown;
     }
 
-    private int[] _growInts(int[] old, int used) {
+    private int[] GrowInts(int[] old, int used) {
         int newCap = old.Length * 2;
         if (newCap < used + 1) { newCap = used + 1; }
         int[] grown = new int[newCap];

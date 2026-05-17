@@ -20,27 +20,27 @@ public sealed class JsonParser {
     }
 
     public JsonValue ParseDocument() {
-        this._skipWhitespace();
-        if (this._eof()) {
-            throw this._err("empty input (RFC 8259 requires at least one JSON value)");
+        this.SkipWhitespace();
+        if (this.Eof()) {
+            throw this.Err("empty input (RFC 8259 requires at least one JSON value)");
         }
-        JsonValue v = this._parseValue();
-        this._skipWhitespace();
-        if (!this._eof()) {
-            throw this._err("unexpected trailing characters after root value");
+        JsonValue v = this.ParseValue();
+        this.SkipWhitespace();
+        if (!this.Eof()) {
+            throw this.Err("unexpected trailing characters after root value");
         }
         return v;
     }
 
     // ── Cursor / whitespace helpers ──────────────────────────────────────
 
-    private char _peek() {
+    private char Peek() {
         if (this._pos >= this._src.Length) { return '\0'; }
         return this._src.CharAt(this._pos);
     }
 
-    private char _advance() {
-        char c = this._peek();
+    private char Advance() {
+        char c = this.Peek();
         this._pos = this._pos + 1;
         if (c == '\n') {
             this._line = this._line + 1;
@@ -51,24 +51,24 @@ public sealed class JsonParser {
         return c;
     }
 
-    private bool _eof() { return this._pos >= this._src.Length; }
+    private bool Eof() { return this._pos >= this._src.Length; }
 
-    private JsonException _err(string msg) {
+    private JsonException Err(string msg) {
         return new JsonException(msg, this._line, this._col);
     }
 
-    private void _skipWhitespace() {
-        while (!this._eof()) {
-            char c = this._peek();
+    private void SkipWhitespace() {
+        while (!this.Eof()) {
+            char c = this.Peek();
             if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
-                this._advance();
+                this.Advance();
             } else {
                 break;
             }
         }
     }
 
-    private string _charToString(char c) {
+    private string CharToString(char c) {
         char[] arr = new char[1];
         arr[0] = c;
         return String.FromChars(arr);
@@ -76,30 +76,30 @@ public sealed class JsonParser {
 
     // ── Value dispatch ───────────────────────────────────────────────────
 
-    private JsonValue _parseValue() {
-        this._skipWhitespace();
-        if (this._eof()) { throw this._err("unexpected end of input"); }
-        char c = this._peek();
-        if (c == '{') { return this._parseObject(); }
-        if (c == '[') { return this._parseArray(); }
-        if (c == '"') { return JsonValue.OfString(this._parseString()); }
-        if (c == 't' || c == 'f') { return this._parseBool(); }
-        if (c == 'n') { return this._parseNull(); }
-        return this._parseNumber();
+    private JsonValue ParseValue() {
+        this.SkipWhitespace();
+        if (this.Eof()) { throw this.Err("unexpected end of input"); }
+        char c = this.Peek();
+        if (c == '{') { return this.ParseObject(); }
+        if (c == '[') { return this.ParseArray(); }
+        if (c == '"') { return JsonValue.OfString(this.ParseString()); }
+        if (c == 't' || c == 'f') { return this.ParseBool(); }
+        if (c == 'n') { return this.ParseNull(); }
+        return this.ParseNumber();
     }
 
-    private JsonValue _parseBool() {
-        if (this._tryLiteral("true"))  { return JsonValue.OfBool(true); }
-        if (this._tryLiteral("false")) { return JsonValue.OfBool(false); }
-        throw this._err("unrecognised value");
+    private JsonValue ParseBool() {
+        if (this.TryLiteral("true"))  { return JsonValue.OfBool(true); }
+        if (this.TryLiteral("false")) { return JsonValue.OfBool(false); }
+        throw this.Err("unrecognised value");
     }
 
-    private JsonValue _parseNull() {
-        if (this._tryLiteral("null")) { return JsonValue.OfNull(); }
-        throw this._err("unrecognised value");
+    private JsonValue ParseNull() {
+        if (this.TryLiteral("null")) { return JsonValue.OfNull(); }
+        throw this.Err("unrecognised value");
     }
 
-    private bool _tryLiteral(string lit) {
+    private bool TryLiteral(string lit) {
         int len = lit.Length;
         if (this._pos + len > this._src.Length) { return false; }
         int i = 0;
@@ -108,32 +108,32 @@ public sealed class JsonParser {
             i = i + 1;
         }
         int j = 0;
-        while (j < len) { this._advance(); j = j + 1; }
+        while (j < len) { this.Advance(); j = j + 1; }
         return true;
     }
 
     // ── String ───────────────────────────────────────────────────────────
 
-    private string _parseString() {
-        if (this._peek() != '"') {
-            throw this._err("expected '\"'");
+    private string ParseString() {
+        if (this.Peek() != '"') {
+            throw this.Err("expected '\"'");
         }
-        this._advance();
+        this.Advance();
         StringBuilder sb = new StringBuilder();
-        while (!this._eof()) {
-            char c = this._peek();
+        while (!this.Eof()) {
+            char c = this.Peek();
             if (c == '"') {
-                this._advance();
+                this.Advance();
                 return sb.ToString();
             }
             int code = (int)c;
             if (code < 32) {
-                throw this._err("unescaped control character in string");
+                throw this.Err("unescaped control character in string");
             }
             if (c == '\\') {
-                this._advance();
-                if (this._eof()) { throw this._err("unterminated escape"); }
-                char esc = this._advance();
+                this.Advance();
+                if (this.Eof()) { throw this.Err("unterminated escape"); }
+                char esc = this.Advance();
                 if (esc == '"')       { sb.Append("\""); }
                 else if (esc == '\\') { sb.Append("\\"); }
                 else if (esc == '/')  { sb.Append("/"); }
@@ -142,61 +142,61 @@ public sealed class JsonParser {
                 else if (esc == 'r')  { sb.Append("\r"); }
                 else if (esc == 'b')  { char[] z = new char[1]; z[0] = '\b'; sb.Append(String.FromChars(z)); }
                 else if (esc == 'f')  { char[] z = new char[1]; z[0] = '\f'; sb.Append(String.FromChars(z)); }
-                else if (esc == 'u')  { sb.Append(this._parseUnicodeEscape()); }
-                else { throw this._err("unknown escape: \\" + this._charToString(esc)); }
+                else if (esc == 'u')  { sb.Append(this.ParseUnicodeEscape()); }
+                else { throw this.Err("unknown escape: \\" + this.CharToString(esc)); }
             } else {
-                this._advance();
-                sb.Append(this._charToString(c));
+                this.Advance();
+                sb.Append(this.CharToString(c));
             }
         }
-        throw this._err("unterminated string");
+        throw this.Err("unterminated string");
     }
 
     /// Parse 4-digit hex, return a 1-char string. Handles surrogate pairs
     /// (\uD83D\uDE00 → single supplementary codepoint).
-    private string _parseUnicodeEscape() {
-        int v = this._readHex4();
+    private string ParseUnicodeEscape() {
+        int v = this.ReadHex4();
         // High surrogate? Look for low surrogate \uDxxx pair.
         if (v >= 0xD800 && v <= 0xDBFF) {
             if (this._pos + 1 < this._src.Length
                 && this._src.CharAt(this._pos) == '\\'
                 && this._src.CharAt(this._pos + 1) == 'u') {
-                this._advance();
-                this._advance();
-                int low = this._readHex4();
+                this.Advance();
+                this.Advance();
+                int low = this.ReadHex4();
                 if (low >= 0xDC00 && low <= 0xDFFF) {
                     int codepoint = 0x10000 + (v - 0xD800) * 0x400 + (low - 0xDC00);
                     char[] arr = new char[1];
                     arr[0] = (char)codepoint;
                     return String.FromChars(arr);
                 }
-                throw this._err("invalid low surrogate after high surrogate");
+                throw this.Err("invalid low surrogate after high surrogate");
             }
-            throw this._err("lone high surrogate without low surrogate");
+            throw this.Err("lone high surrogate without low surrogate");
         }
         if (v >= 0xDC00 && v <= 0xDFFF) {
-            throw this._err("lone low surrogate (no preceding high surrogate)");
+            throw this.Err("lone low surrogate (no preceding high surrogate)");
         }
         char[] arr = new char[1];
         arr[0] = (char)v;
         return String.FromChars(arr);
     }
 
-    private int _readHex4() {
+    private int ReadHex4() {
         int v = 0;
         int i = 0;
         while (i < 4) {
-            char c = this._peek();
-            int d = this._hexDigit(c);
-            if (d < 0) { throw this._err("invalid hex digit in \\u escape"); }
+            char c = this.Peek();
+            int d = this.HexDigit(c);
+            if (d < 0) { throw this.Err("invalid hex digit in \\u escape"); }
             v = v * 16 + d;
-            this._advance();
+            this.Advance();
             i = i + 1;
         }
         return v;
     }
 
-    private int _hexDigit(char c) {
+    private int HexDigit(char c) {
         int code = (int)c;
         if (code >= 48 && code <= 57)  { return code - 48; }       // '0'..'9'
         if (code >= 97 && code <= 102) { return 10 + code - 97; }  // 'a'..'f'
@@ -206,61 +206,61 @@ public sealed class JsonParser {
 
     // ── Number ───────────────────────────────────────────────────────────
 
-    private JsonValue _parseNumber() {
+    private JsonValue ParseNumber() {
         int start = this._pos;
         bool isFloat = false;
 
-        if (this._peek() == '-') { this._advance(); }
+        if (this.Peek() == '-') { this.Advance(); }
 
         // Integer part: 0 or [1-9][0-9]*
-        char first = this._peek();
+        char first = this.Peek();
         if (first == '0') {
-            this._advance();
+            this.Advance();
         } else {
             int fc = (int)first;
             if (fc < 49 || fc > 57) {   // not 1..9
-                throw this._err("invalid number (expected digit)");
+                throw this.Err("invalid number (expected digit)");
             }
-            while (!this._eof()) {
-                int cc = (int)this._peek();
+            while (!this.Eof()) {
+                int cc = (int)this.Peek();
                 if (cc < 48 || cc > 57) { break; }
-                this._advance();
+                this.Advance();
             }
         }
 
         // Fraction
-        if (!this._eof() && this._peek() == '.') {
+        if (!this.Eof() && this.Peek() == '.') {
             isFloat = true;
-            this._advance();
+            this.Advance();
             // Need at least one digit
-            int fdc = (int)this._peek();
+            int fdc = (int)this.Peek();
             if (fdc < 48 || fdc > 57) {
-                throw this._err("invalid number (expected digit after '.')");
+                throw this.Err("invalid number (expected digit after '.')");
             }
-            while (!this._eof()) {
-                int cc = (int)this._peek();
+            while (!this.Eof()) {
+                int cc = (int)this.Peek();
                 if (cc < 48 || cc > 57) { break; }
-                this._advance();
+                this.Advance();
             }
         }
 
         // Exponent
-        if (!this._eof()) {
-            char ec = this._peek();
+        if (!this.Eof()) {
+            char ec = this.Peek();
             if (ec == 'e' || ec == 'E') {
                 isFloat = true;
-                this._advance();
-                if (!this._eof() && (this._peek() == '+' || this._peek() == '-')) {
-                    this._advance();
+                this.Advance();
+                if (!this.Eof() && (this.Peek() == '+' || this.Peek() == '-')) {
+                    this.Advance();
                 }
-                int edc = (int)this._peek();
+                int edc = (int)this.Peek();
                 if (edc < 48 || edc > 57) {
-                    throw this._err("invalid number (expected digit in exponent)");
+                    throw this.Err("invalid number (expected digit in exponent)");
                 }
-                while (!this._eof()) {
-                    int cc = (int)this._peek();
+                while (!this.Eof()) {
+                    int cc = (int)this.Peek();
                     if (cc < 48 || cc > 57) { break; }
-                    this._advance();
+                    this.Advance();
                 }
             }
         }
@@ -276,68 +276,68 @@ public sealed class JsonParser {
 
     // ── Object ───────────────────────────────────────────────────────────
 
-    private JsonValue _parseObject() {
-        if (this._peek() != '{') { throw this._err("expected '{'"); }
-        this._advance();
+    private JsonValue ParseObject() {
+        if (this.Peek() != '{') { throw this.Err("expected '{'"); }
+        this.Advance();
         JsonValue obj = JsonValue.OfObject();
-        this._skipWhitespace();
-        if (this._peek() == '}') {
-            this._advance();
+        this.SkipWhitespace();
+        if (this.Peek() == '}') {
+            this.Advance();
             return obj;
         }
         while (true) {
-            this._skipWhitespace();
-            if (this._peek() != '"') {
-                throw this._err("expected '\"' (object key must be string)");
+            this.SkipWhitespace();
+            if (this.Peek() != '"') {
+                throw this.Err("expected '\"' (object key must be string)");
             }
-            string key = this._parseString();
-            this._skipWhitespace();
-            if (this._peek() != ':') {
-                throw this._err("expected ':' after object key");
+            string key = this.ParseString();
+            this.SkipWhitespace();
+            if (this.Peek() != ':') {
+                throw this.Err("expected ':' after object key");
             }
-            this._advance();
-            JsonValue val = this._parseValue();
+            this.Advance();
+            JsonValue val = this.ParseValue();
             obj.Set(key, val);
-            this._skipWhitespace();
-            char c = this._peek();
+            this.SkipWhitespace();
+            char c = this.Peek();
             if (c == ',') {
-                this._advance();
+                this.Advance();
                 continue;
             }
             if (c == '}') {
-                this._advance();
+                this.Advance();
                 return obj;
             }
-            throw this._err("expected ',' or '}' in object");
+            throw this.Err("expected ',' or '}' in object");
         }
         return obj;
     }
 
     // ── Array ────────────────────────────────────────────────────────────
 
-    private JsonValue _parseArray() {
-        if (this._peek() != '[') { throw this._err("expected '['"); }
-        this._advance();
+    private JsonValue ParseArray() {
+        if (this.Peek() != '[') { throw this.Err("expected '['"); }
+        this.Advance();
         JsonValue arr = JsonValue.OfArray();
-        this._skipWhitespace();
-        if (this._peek() == ']') {
-            this._advance();
+        this.SkipWhitespace();
+        if (this.Peek() == ']') {
+            this.Advance();
             return arr;
         }
         while (true) {
-            JsonValue v = this._parseValue();
+            JsonValue v = this.ParseValue();
             arr.Add(v);
-            this._skipWhitespace();
-            char c = this._peek();
+            this.SkipWhitespace();
+            char c = this.Peek();
             if (c == ',') {
-                this._advance();
+                this.Advance();
                 continue;
             }
             if (c == ']') {
-                this._advance();
+                this.Advance();
                 return arr;
             }
-            throw this._err("expected ',' or ']' in array");
+            throw this.Err("expected ',' or ']' in array");
         }
         return arr;
     }

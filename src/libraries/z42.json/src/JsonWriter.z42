@@ -15,22 +15,22 @@ public sealed class JsonWriter {
     }
 
     public string Write(JsonValue v) {
-        this._writeValue(v);
+        this.WriteValue(v);
         return this._sb.ToString();
     }
 
-    private void _writeValue(JsonValue v) {
+    private void WriteValue(JsonValue v) {
         if (v.IsNull())   { this._sb.Append("null"); return; }
         if (v.IsBool())   { this._sb.Append(v.AsBool() ? "true" : "false"); return; }
         if (v.IsLong())   { this._sb.Append(v.AsLong().ToString()); return; }
         if (v.IsDouble()) { this._sb.Append(v.AsDouble().ToString()); return; }
-        if (v.IsString()) { this._sb.Append(this._quoteString(v.AsString())); return; }
-        if (v.IsArray())  { this._writeArray(v); return; }
-        if (v.IsObject()) { this._writeObject(v); return; }
+        if (v.IsString()) { this._sb.Append(this.QuoteString(v.AsString())); return; }
+        if (v.IsArray())  { this.WriteArray(v); return; }
+        if (v.IsObject()) { this.WriteObject(v); return; }
         throw new JsonException("unknown JsonValue kind in stringify");
     }
 
-    private void _writeArray(JsonValue arr) {
+    private void WriteArray(JsonValue arr) {
         int n = arr.Length();
         if (n == 0) {
             this._sb.Append("[]");
@@ -42,9 +42,9 @@ public sealed class JsonWriter {
         while (i < n) {
             if (this._pretty) {
                 this._sb.Append("\n");
-                this._appendIndent();
+                this.AppendIndent();
             }
-            this._writeValue(arr.At(i));
+            this.WriteValue(arr.At(i));
             if (i + 1 < n) {
                 this._sb.Append(this._pretty ? "," : ",");
             }
@@ -53,12 +53,12 @@ public sealed class JsonWriter {
         this._depth = this._depth - 1;
         if (this._pretty) {
             this._sb.Append("\n");
-            this._appendIndent();
+            this.AppendIndent();
         }
         this._sb.Append("]");
     }
 
-    private void _writeObject(JsonValue obj) {
+    private void WriteObject(JsonValue obj) {
         int n = obj.Count();
         if (n == 0) {
             this._sb.Append("{}");
@@ -71,11 +71,11 @@ public sealed class JsonWriter {
         while (i < keys.Length) {
             if (this._pretty) {
                 this._sb.Append("\n");
-                this._appendIndent();
+                this.AppendIndent();
             }
-            this._sb.Append(this._quoteString(keys[i]));
+            this._sb.Append(this.QuoteString(keys[i]));
             this._sb.Append(this._pretty ? ": " : ":");
-            this._writeValue(obj.Get(keys[i]));
+            this.WriteValue(obj.Get(keys[i]));
             if (i + 1 < keys.Length) {
                 this._sb.Append(",");
             }
@@ -84,12 +84,12 @@ public sealed class JsonWriter {
         this._depth = this._depth - 1;
         if (this._pretty) {
             this._sb.Append("\n");
-            this._appendIndent();
+            this.AppendIndent();
         }
         this._sb.Append("}");
     }
 
-    private void _appendIndent() {
+    private void AppendIndent() {
         int i = 0;
         while (i < this._depth) {
             this._sb.Append("  ");
@@ -99,7 +99,7 @@ public sealed class JsonWriter {
 
     /// JSON string escape: minimal — control chars and `"` / `\`. Non-ASCII
     /// passes through as raw UTF-8 bytes (RFC 8259 §7 allows this).
-    private string _quoteString(string s) {
+    private string QuoteString(string s) {
         StringBuilder sb = new StringBuilder();
         sb.Append("\"");
         int i = 0;
@@ -113,15 +113,15 @@ public sealed class JsonWriter {
             else if (c == '\r') { sb.Append("\\r"); }
             else if (cc == 8)   { sb.Append("\\b"); }
             else if (cc == 12)  { sb.Append("\\f"); }
-            else if (cc < 32)   { sb.Append(this._unicodeEscape(cc)); }
-            else                { sb.Append(this._charString(c)); }
+            else if (cc < 32)   { sb.Append(this.UnicodeEscape(cc)); }
+            else                { sb.Append(this.CharString(c)); }
             i = i + 1;
         }
         sb.Append("\"");
         return sb.ToString();
     }
 
-    private string _unicodeEscape(int v) {
+    private string UnicodeEscape(int v) {
         string hex = "0123456789ABCDEF";
         char[] arr = new char[6];
         arr[0] = '\\';
@@ -133,7 +133,7 @@ public sealed class JsonWriter {
         return String.FromChars(arr);
     }
 
-    private string _charString(char c) {
+    private string CharString(char c) {
         char[] arr = new char[1];
         arr[0] = c;
         return String.FromChars(arr);

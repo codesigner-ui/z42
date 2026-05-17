@@ -20,26 +20,26 @@ public class Random {
         // wall-clock seed — 同 C# new Random() default behaviour。
         // DateTime.UtcNow().UnixMs() returns ms since epoch — 64-bit signed.
         long ms = DateTime.UtcNow().UnixMs();
-        this._init(ms);
+        this.Init(ms);
     }
 
     public Random(long seed) {
-        this._init(seed);
+        this.Init(seed);
     }
 
-    private void _init(long seed) {
+    private void Init(long seed) {
         // PCG seed step: state starts as 0, increment + step once with the
         // user seed mixed in. Equivalent to pcg32_srandom_r(rng, seed, seq).
         this._state = 0;
-        this._step();
+        this.Step();
         this._state = this._state + seed;
-        this._step();
+        this.Step();
     }
 
     /// One PCG round: state advances; return 32-bit output (masked into low
     /// bits of a `long` since z42 has no `uint`). The full XSH-RR output
     /// fits in 32 bits but we keep it in i64 storage to make masking explicit.
-    private long _step() {
+    private long Step() {
         long oldState = this._state;
         // Multiplier from L'Ecuyer 1999 (PCG paper constant).
         long mul = 6364136223846793005;
@@ -63,14 +63,14 @@ public class Random {
 
     /// Full 64-bit random. Composed from two 32-bit steps.
     public long NextLong() {
-        long high = this._step();
-        long low  = this._step();
+        long high = this.Step();
+        long low  = this.Step();
         return (high << 32) | low;
     }
 
     /// Random 32-bit int (returned as z42 i32; high bit may be set → negative).
     public int NextInt() {
-        long raw32 = this._step();
+        long raw32 = this.Step();
         long SIGN_BIT = 2147483648;        // 0x80000000
         long WRAP     = 4294967296;        // 0x100000000
         // Sign-extend the 32-bit value into i32: if bit 31 set, value is negative.
@@ -99,7 +99,7 @@ public class Random {
             throw new ArgumentException("NextIntRange: max must be > min");
         }
         int span = max - min;
-        long raw = this._step();
+        long raw = this.Step();
         // `raw` is already in [0, 2^32) (masked low 32 bits); modulo is safe.
         return min + (int)(raw % (long)span);
     }
@@ -117,6 +117,6 @@ public class Random {
 
     /// Coin flip — true with probability 0.5.
     public bool NextBool() {
-        return (this._step() & 1) == 1;
+        return (this.Step() & 1) == 1;
     }
 }

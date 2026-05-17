@@ -6,19 +6,19 @@ using Std.Diagnostics;
 
 [Test]
 void test_level_constants_are_ordered() {
-    Assert.True(LogLevel.TRACE < LogLevel.DEBUG);
-    Assert.True(LogLevel.DEBUG < LogLevel.INFO);
-    Assert.True(LogLevel.INFO  < LogLevel.WARN);
-    Assert.True(LogLevel.WARN  < LogLevel.ERROR);
+    Assert.True(LogLevel.Trace < LogLevel.Debug);
+    Assert.True(LogLevel.Debug < LogLevel.Info);
+    Assert.True(LogLevel.Info  < LogLevel.Warn);
+    Assert.True(LogLevel.Warn  < LogLevel.Error);
 }
 
 [Test]
 void test_level_name_lookup() {
-    Assert.Equal("TRACE", LogLevel.Name(LogLevel.TRACE));
-    Assert.Equal("DEBUG", LogLevel.Name(LogLevel.DEBUG));
-    Assert.Equal("INFO",  LogLevel.Name(LogLevel.INFO));
-    Assert.Equal("WARN",  LogLevel.Name(LogLevel.WARN));
-    Assert.Equal("ERROR", LogLevel.Name(LogLevel.ERROR));
+    Assert.Equal("TRACE", LogLevel.Name(LogLevel.Trace));
+    Assert.Equal("DEBUG", LogLevel.Name(LogLevel.Debug));
+    Assert.Equal("INFO",  LogLevel.Name(LogLevel.Info));
+    Assert.Equal("WARN",  LogLevel.Name(LogLevel.Warn));
+    Assert.Equal("ERROR", LogLevel.Name(LogLevel.Error));
 }
 
 [Test]
@@ -28,20 +28,20 @@ void test_level_name_unknown() {
 
 [Test]
 void test_default_min_level_is_info() {
-    Log.SetMinLevel(LogLevel.INFO);  // reset to known state
-    Assert.Equal(LogLevel.INFO, Log.GetMinLevel());
-    Assert.False(Log.IsEnabled(LogLevel.TRACE));
-    Assert.False(Log.IsEnabled(LogLevel.DEBUG));
-    Assert.True(Log.IsEnabled(LogLevel.INFO));
-    Assert.True(Log.IsEnabled(LogLevel.WARN));
-    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+    Log.SetMinLevel(LogLevel.Info);  // reset to known state
+    Assert.Equal(LogLevel.Info, Log.GetMinLevel());
+    Assert.False(Log.IsEnabled(LogLevel.Trace));
+    Assert.False(Log.IsEnabled(LogLevel.Debug));
+    Assert.True(Log.IsEnabled(LogLevel.Info));
+    Assert.True(Log.IsEnabled(LogLevel.Warn));
+    Assert.True(Log.IsEnabled(LogLevel.Error));
 }
 
 [Test]
 void test_log_methods_do_not_throw() {
     // smoke：5 个 method 都可以调用。stderr 实际输出由 ConsoleError 处理，
     // 这里只验证 method 存在 + 不抛异常。
-    Log.SetMinLevel(LogLevel.ERROR);  // suppress most output during test
+    Log.SetMinLevel(LogLevel.Error);  // suppress most output during test
     Log.Trace("trace msg");
     Log.Debug("debug msg");
     Log.Info("info msg");

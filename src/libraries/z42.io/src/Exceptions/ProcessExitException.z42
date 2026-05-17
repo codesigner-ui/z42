@@ -10,13 +10,13 @@ public class ProcessExitException : Exception {
     public string Program;
 
     public ProcessExitException(string program, int exitCode, string stderrPreview)
-        : base(_buildMsg(program, exitCode, stderrPreview))
+        : base(BuildMsg(program, exitCode, stderrPreview))
     {
         this.Program  = program;
         this.ExitCode = exitCode;
     }
 
-    private static string _buildMsg(string program, int exitCode, string stderr) {
+    private static string BuildMsg(string program, int exitCode, string stderr) {
         string head = "process `" + program + "` exited with code " + exitCode;
         if (stderr.Length == 0) {
             return head;

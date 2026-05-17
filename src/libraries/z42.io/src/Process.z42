@@ -52,7 +52,7 @@ public class Process {
     }
 
     public Process Arg(string a) {
-        this._args = _appendString(this._args, this._argCount, a);
+        this._args = AppendString(this._args, this._argCount, a);
         this._argCount = this._argCount + 1;
         return this;
     }
@@ -60,7 +60,7 @@ public class Process {
     public Process Args(string[] xs) {
         int i = 0;
         while (i < xs.Length) {
-            this._args = _appendString(this._args, this._argCount, xs[i]);
+            this._args = AppendString(this._args, this._argCount, xs[i]);
             this._argCount = this._argCount + 1;
             i = i + 1;
         }
@@ -74,14 +74,14 @@ public class Process {
     }
 
     public Process Env(string k, string v) {
-        this._envKeys = _appendString(this._envKeys, this._envCount, k);
-        this._envVals = _appendString(this._envVals, this._envCount, v);
+        this._envKeys = AppendString(this._envKeys, this._envCount, k);
+        this._envVals = AppendString(this._envVals, this._envCount, v);
         this._envCount = this._envCount + 1;
         return this;
     }
 
     public Process EnvRemove(string k) {
-        this._envRemove = _appendString(this._envRemove, this._envRemoveCount, k);
+        this._envRemove = AppendString(this._envRemove, this._envRemoveCount, k);
         this._envRemoveCount = this._envRemoveCount + 1;
         return this;
     }
@@ -109,10 +109,10 @@ public class Process {
     public ProcessResult Run() {
         object[] raw = ProcessNative.Run(
             this._program,
-            _trim(this._args,      this._argCount),
-            _trim(this._envKeys,   this._envCount),
-            _trim(this._envVals,   this._envCount),
-            _trim(this._envRemove, this._envRemoveCount),
+            Trim(this._args,      this._argCount),
+            Trim(this._envKeys,   this._envCount),
+            Trim(this._envVals,   this._envCount),
+            Trim(this._envRemove, this._envRemoveCount),
             this._envClear,
             this._hasCwd ? this._cwd : null,
             this._stdin.GetMode(),
@@ -148,10 +148,10 @@ public class Process {
     public ProcessHandle Spawn() {
         object[] raw = ProcessNative.Spawn(
             this._program,
-            _trim(this._args,      this._argCount),
-            _trim(this._envKeys,   this._envCount),
-            _trim(this._envVals,   this._envCount),
-            _trim(this._envRemove, this._envRemoveCount),
+            Trim(this._args,      this._argCount),
+            Trim(this._envKeys,   this._envCount),
+            Trim(this._envVals,   this._envCount),
+            Trim(this._envRemove, this._envRemoveCount),
             this._envClear,
             this._hasCwd ? this._cwd : null,
             this._stdin.GetMode(),
@@ -175,7 +175,7 @@ public class Process {
     // Grow-on-overflow append: caller owns the count separately. Returns
     // either the same array (when there is spare capacity) or a new
     // doubled-capacity copy.
-    private static string[] _appendString(string[] arr, int count, string v) {
+    private static string[] AppendString(string[] arr, int count, string v) {
         if (count < arr.Length) {
             arr[count] = v;
             return arr;
@@ -191,7 +191,7 @@ public class Process {
 
     // Slice an over-allocated array to exactly `count` elements so the
     // native call sees a tight view (no trailing nulls).
-    private static string[] _trim(string[] arr, int count) {
+    private static string[] Trim(string[] arr, int count) {
         if (count == arr.Length) { return arr; }
         string[] tight = new string[count];
         int i = 0;

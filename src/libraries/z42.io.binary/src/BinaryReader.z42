@@ -40,7 +40,7 @@ public class BinaryReader {
     /// 读取 1 个字节，返回 0-255 的 int（z42 当前 stdlib 不直接传递 byte 参数 / 返回值，
     /// 调用方拿到 int 可显式 `(byte)x` cast 回去）。
     public int ReadByte() {
-        this._requireAvail(1);
+        this.RequireAvail(1);
         int b = (int)this._data[this._pos];
         this._pos = this._pos + 1;
         return b;
@@ -50,7 +50,7 @@ public class BinaryReader {
         if (count < 0) {
             throw new BinaryException("ReadBytes count must be >= 0, got " + count.ToString());
         }
-        this._requireAvail(count);
+        this.RequireAvail(count);
         byte[] result = new byte[count];
         int i = 0;
         while (i < count) {
@@ -64,7 +64,7 @@ public class BinaryReader {
     // ── Int16 (sign-extended to int) ──────────────────────────────────────
 
     public int ReadInt16LE() {
-        this._requireAvail(2);
+        this.RequireAvail(2);
         int b0 = (int)this._data[this._pos];
         int b1 = (int)this._data[this._pos + 1];
         this._pos = this._pos + 2;
@@ -75,7 +75,7 @@ public class BinaryReader {
     }
 
     public int ReadInt16BE() {
-        this._requireAvail(2);
+        this.RequireAvail(2);
         int b0 = (int)this._data[this._pos];
         int b1 = (int)this._data[this._pos + 1];
         this._pos = this._pos + 2;
@@ -87,7 +87,7 @@ public class BinaryReader {
     // ── Int32 ─────────────────────────────────────────────────────────────
 
     public int ReadInt32LE() {
-        this._requireAvail(4);
+        this.RequireAvail(4);
         long b0 = (long)this._data[this._pos];
         long b1 = (long)this._data[this._pos + 1];
         long b2 = (long)this._data[this._pos + 2];
@@ -101,7 +101,7 @@ public class BinaryReader {
     }
 
     public int ReadInt32BE() {
-        this._requireAvail(4);
+        this.RequireAvail(4);
         long b0 = (long)this._data[this._pos];
         long b1 = (long)this._data[this._pos + 1];
         long b2 = (long)this._data[this._pos + 2];
@@ -115,14 +115,14 @@ public class BinaryReader {
     // ── Int64 ─────────────────────────────────────────────────────────────
 
     public long ReadInt64LE() {
-        this._requireAvail(8);
+        this.RequireAvail(8);
         long lo = (long)this.ReadInt32LE() & 4294967295L;
         long hi = (long)this.ReadInt32LE();
         return lo | (hi << 32);
     }
 
     public long ReadInt64BE() {
-        this._requireAvail(8);
+        this.RequireAvail(8);
         long hi = (long)this.ReadInt32BE();
         long lo = (long)this.ReadInt32BE() & 4294967295L;
         return (hi << 32) | lo;
@@ -138,7 +138,7 @@ public class BinaryReader {
 
     // ── Internals ─────────────────────────────────────────────────────────
 
-    private void _requireAvail(int n) {
+    private void RequireAvail(int n) {
         if (this._pos + n > this._data.Length) {
             throw new BinaryException(
                 "BinaryReader: need " + n.ToString() +

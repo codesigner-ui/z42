@@ -62,7 +62,7 @@ public class ArgParser {
     /// 注册 boolean flag。shortName 可为 ""（无短名）。
     /// `-h` / `--help` 是 auto-registered，无需手加。
     public void AddFlag(string longName, string shortName, string help) {
-        this._ensureFlagCap();
+        this.EnsureFlagCap();
         this._flagLongs[this._flagCount]  = longName;
         this._flagShorts[this._flagCount] = shortName;
         this._flagHelps[this._flagCount]  = help;
@@ -71,7 +71,7 @@ public class ArgParser {
 
     /// 注册带值的 option（`--name value` / `--name=value`）。
     public void AddOption(string longName, string shortName, string help, string defaultValue) {
-        this._ensureOptionCap();
+        this.EnsureOptionCap();
         this._optionLongs[this._optionCount]    = longName;
         this._optionShorts[this._optionCount]   = shortName;
         this._optionHelps[this._optionCount]    = help;
@@ -81,7 +81,7 @@ public class ArgParser {
 
     /// 注册 positional 参数（按声明顺序匹配 argv 中非 flag/option 的部分）。
     public void AddPositional(string name, string help) {
-        this._ensurePositionalCap();
+        this.EnsurePositionalCap();
         this._positionalNames[this._positionalCount] = name;
         this._positionalHelps[this._positionalCount] = help;
         this._positionalCount = this._positionalCount + 1;
@@ -134,10 +134,10 @@ public class ArgParser {
             }
             if (a.Length >= 2 && a.CharAt(0) == '-' && a.CharAt(1) == '-') {
                 // long flag/option
-                idx = this._parseLong(a, argv, idx, r);
+                idx = this.ParseLong(a, argv, idx, r);
             } else if (a.Length >= 2 && a.CharAt(0) == '-') {
                 // short flag/option
-                idx = this._parseShort(a, argv, idx, r);
+                idx = this.ParseShort(a, argv, idx, r);
             } else {
                 // positional
                 if (r._positionalCount >= this._positionalCount) {
@@ -160,12 +160,12 @@ public class ArgParser {
     }
 
     // 解析 --long 或 --long=value 或 --long value
-    private int _parseLong(string a, string[] argv, int idx, ParseResult r) {
+    private int ParseLong(string a, string[] argv, int idx, ParseResult r) {
         // 切割 = 形式
         string name = "";
         string value = "";
         bool hasValue = false;
-        int eq = this._indexOf(a, '=');
+        int eq = this.IndexOf(a, '=');
         if (eq >= 0) {
             name  = a.Substring(2, eq - 2);
             value = a.Substring(eq + 1, a.Length - eq - 1);
@@ -174,7 +174,7 @@ public class ArgParser {
             name = a.Substring(2, a.Length - 2);
         }
         // 找 flag
-        int fi = this._findFlagByLong(name);
+        int fi = this.FindFlagByLong(name);
         if (fi >= 0) {
             if (hasValue) {
                 throw new CliException("flag '--" + name + "' does not take a value");
@@ -183,7 +183,7 @@ public class ArgParser {
             return idx + 1;
         }
         // 找 option
-        int oi = this._findOptionByLong(name);
+        int oi = this.FindOptionByLong(name);
         if (oi >= 0) {
             if (hasValue) {
                 r._optionValues[oi] = value;
@@ -199,14 +199,14 @@ public class ArgParser {
         throw new CliException("unknown option '--" + name + "'");
     }
 
-    private int _parseShort(string a, string[] argv, int idx, ParseResult r) {
+    private int ParseShort(string a, string[] argv, int idx, ParseResult r) {
         string name = a.Substring(1, a.Length - 1);
-        int fi = this._findFlagByShort(name);
+        int fi = this.FindFlagByShort(name);
         if (fi >= 0) {
             r._flagValues[fi] = true;
             return idx + 1;
         }
-        int oi = this._findOptionByShort(name);
+        int oi = this.FindOptionByShort(name);
         if (oi >= 0) {
             if (idx + 1 >= argv.Length) {
                 throw new CliException("option '-" + name + "' requires a value");
@@ -309,7 +309,7 @@ public class ArgParser {
 
     // ── Internals ────────────────────────────────────────────────────────
 
-    private int _findFlagByLong(string name) {
+    private int FindFlagByLong(string name) {
         int i = 0;
         while (i < this._flagCount) {
             if (this._flagLongs[i] == name) { return i; }
@@ -318,7 +318,7 @@ public class ArgParser {
         return -1;
     }
 
-    private int _findFlagByShort(string name) {
+    private int FindFlagByShort(string name) {
         int i = 0;
         while (i < this._flagCount) {
             if (this._flagShorts[i] == name) { return i; }
@@ -327,7 +327,7 @@ public class ArgParser {
         return -1;
     }
 
-    private int _findOptionByLong(string name) {
+    private int FindOptionByLong(string name) {
         int i = 0;
         while (i < this._optionCount) {
             if (this._optionLongs[i] == name) { return i; }
@@ -336,7 +336,7 @@ public class ArgParser {
         return -1;
     }
 
-    private int _findOptionByShort(string name) {
+    private int FindOptionByShort(string name) {
         int i = 0;
         while (i < this._optionCount) {
             if (this._optionShorts[i] == name) { return i; }
@@ -345,7 +345,7 @@ public class ArgParser {
         return -1;
     }
 
-    private int _indexOf(string s, char c) {
+    private int IndexOf(string s, char c) {
         int i = 0;
         while (i < s.Length) {
             if (s.CharAt(i) == c) { return i; }
@@ -354,7 +354,7 @@ public class ArgParser {
         return -1;
     }
 
-    private void _ensureFlagCap() {
+    private void EnsureFlagCap() {
         if (this._flagCount < this._flagLongs.Length) { return; }
         int n = this._flagLongs.Length * 2;
         string[] gl = new string[n];
@@ -372,7 +372,7 @@ public class ArgParser {
         this._flagHelps  = gh;
     }
 
-    private void _ensureOptionCap() {
+    private void EnsureOptionCap() {
         if (this._optionCount < this._optionLongs.Length) { return; }
         int n = this._optionLongs.Length * 2;
         string[] gl = new string[n];
@@ -393,7 +393,7 @@ public class ArgParser {
         this._optionDefaults = gd;
     }
 
-    private void _ensurePositionalCap() {
+    private void EnsurePositionalCap() {
         if (this._positionalCount < this._positionalNames.Length) { return; }
         int n = this._positionalNames.Length * 2;
         string[] gn = new string[n];

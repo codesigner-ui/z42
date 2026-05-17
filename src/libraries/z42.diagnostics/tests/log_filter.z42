@@ -6,40 +6,40 @@ using Std.Diagnostics;
 
 [Test]
 void test_set_min_level_changes_gate() {
-    Log.SetMinLevel(LogLevel.WARN);
-    Assert.Equal(LogLevel.WARN, Log.GetMinLevel());
-    Assert.False(Log.IsEnabled(LogLevel.TRACE));
-    Assert.False(Log.IsEnabled(LogLevel.DEBUG));
-    Assert.False(Log.IsEnabled(LogLevel.INFO));
-    Assert.True(Log.IsEnabled(LogLevel.WARN));
-    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+    Log.SetMinLevel(LogLevel.Warn);
+    Assert.Equal(LogLevel.Warn, Log.GetMinLevel());
+    Assert.False(Log.IsEnabled(LogLevel.Trace));
+    Assert.False(Log.IsEnabled(LogLevel.Debug));
+    Assert.False(Log.IsEnabled(LogLevel.Info));
+    Assert.True(Log.IsEnabled(LogLevel.Warn));
+    Assert.True(Log.IsEnabled(LogLevel.Error));
 }
 
 [Test]
 void test_min_level_trace_allows_all() {
-    Log.SetMinLevel(LogLevel.TRACE);
-    Assert.True(Log.IsEnabled(LogLevel.TRACE));
-    Assert.True(Log.IsEnabled(LogLevel.DEBUG));
-    Assert.True(Log.IsEnabled(LogLevel.INFO));
-    Assert.True(Log.IsEnabled(LogLevel.WARN));
-    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+    Log.SetMinLevel(LogLevel.Trace);
+    Assert.True(Log.IsEnabled(LogLevel.Trace));
+    Assert.True(Log.IsEnabled(LogLevel.Debug));
+    Assert.True(Log.IsEnabled(LogLevel.Info));
+    Assert.True(Log.IsEnabled(LogLevel.Warn));
+    Assert.True(Log.IsEnabled(LogLevel.Error));
 }
 
 [Test]
 void test_min_level_error_silences_lower() {
-    Log.SetMinLevel(LogLevel.ERROR);
-    Assert.False(Log.IsEnabled(LogLevel.TRACE));
-    Assert.False(Log.IsEnabled(LogLevel.DEBUG));
-    Assert.False(Log.IsEnabled(LogLevel.INFO));
-    Assert.False(Log.IsEnabled(LogLevel.WARN));
-    Assert.True(Log.IsEnabled(LogLevel.ERROR));
+    Log.SetMinLevel(LogLevel.Error);
+    Assert.False(Log.IsEnabled(LogLevel.Trace));
+    Assert.False(Log.IsEnabled(LogLevel.Debug));
+    Assert.False(Log.IsEnabled(LogLevel.Info));
+    Assert.False(Log.IsEnabled(LogLevel.Warn));
+    Assert.True(Log.IsEnabled(LogLevel.Error));
 }
 
 [Test]
 void test_min_level_round_trip() {
-    Log.SetMinLevel(LogLevel.DEBUG);
+    Log.SetMinLevel(LogLevel.Debug);
     int v = Log.GetMinLevel();
-    Log.SetMinLevel(LogLevel.INFO);
-    Assert.Equal(LogLevel.DEBUG, v);
-    Assert.Equal(LogLevel.INFO,  Log.GetMinLevel());
+    Log.SetMinLevel(LogLevel.Info);
+    Assert.Equal(LogLevel.Debug, v);
+    Assert.Equal(LogLevel.Info,  Log.GetMinLevel());
 }
