@@ -1,12 +1,12 @@
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::{anyhow, bail, Result};
-use super::convert::{require_str, require_usize};
+use super::convert::{arg_str, arg_usize};
 
 /// Returns the number of Unicode scalar values (characters) in the string.
 /// args: [this: str]
 pub fn builtin_str_length(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "__str_length")?;
+    let s = arg_str(args, 0, "__str_length")?;
     Ok(Value::I64(s.chars().count() as i64))
 }
 
@@ -14,8 +14,8 @@ pub fn builtin_str_length(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// args: [this: str, index: i64]
 /// New in simplify-string-stdlib (2026-04-24): enables script-side loops.
 pub fn builtin_str_char_at(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "__str_char_at")?;
-    let i = require_usize(args, 1, "__str_char_at")?;
+    let s = arg_str(args, 0, "__str_char_at")?;
+    let i = arg_usize(args, 1, "__str_char_at")?;
     s.chars().nth(i).map(Value::Char).ok_or_else(|| {
         anyhow!("__str_char_at: index {} out of range (length {})", i, s.chars().count())
     })
@@ -50,16 +50,22 @@ pub fn builtin_str_from_chars(_ctx: &VmContext, args: &[Value]) -> Result<Value>
 
 /// string.ToString() — returns the string itself.
 /// args: [this: str]
+///
+/// refactor-corelib-typed-extractors (2026-05-17): `arg_str` returns `&str`,
+/// here we own a fresh `String` to fit `Value::Str(String)`. Only ONE clone
+/// at the return boundary, vs the old code's double-clone（require_str clone
+/// 一次 + Value::Str(s) 再持有一次）。
 pub fn builtin_str_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    Ok(Value::Str(require_str(args, 0, "__str_to_string")?))
+    let s = arg_str(args, 0, "__str_to_string")?;
+    Ok(Value::Str(s.to_owned()))
 }
 
 /// string.Equals(other) — value equality.
 /// args: [this: str, other: str | null]
 pub fn builtin_str_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_str(args, 0, "__str_equals")?;
+    let a = arg_str(args, 0, "__str_equals")?;
     let result = match args.get(1) {
-        Some(Value::Str(b)) => a == *b,
+        Some(Value::Str(b)) => a == b.as_str(),
         Some(Value::Null) | None => false,
         _ => false,
     };
@@ -69,7 +75,7 @@ pub fn builtin_str_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// string.GetHashCode() — FNV-1a hash of the UTF-8 bytes.
 /// args: [this: str]
 pub fn builtin_str_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "__str_hash_code")?;
+    let s = arg_str(args, 0, "__str_hash_code")?;
     let mut hash: u32 = 2_166_136_261;
     for byte in s.bytes() {
         hash ^= byte as u32;

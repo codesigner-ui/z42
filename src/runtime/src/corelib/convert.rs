@@ -2,6 +2,76 @@ use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 
+// ── Typed argument extractors ────────────────────────────────────────────────
+//
+// refactor-corelib-typed-extractors (2026-05-17): direct-ABI 优化的第一阶段。
+// 每个 builtin 在 dispatch 边界拿到 `&[Value]` 后会 extract typed args；旧的
+// `require_str` 每次都 `s.clone()` 一份 `String`，对 `__str_length` /
+// `__str_equals` 这种纯只读 ops 是显著开销。
+//
+// 新 `arg_*` 系列：
+//   * 返回 `&str` / `i64` / `bool` / `char` / `f64` / `usize` — 全部 borrow 或 Copy
+//   * `#[inline]` 让编译器把 match 内联到 caller，消除函数调用开销
+//   * 错误格式与旧 `require_*` 一致（caller 报错信息不变）
+//
+// 旧 `require_str` / `require_usize` / `require_i64` 还在用（其他 corelib 文件
+// 未迁），等本 spec 后续 commit 全迁完后整体删除。
+
+#[inline]
+pub fn arg_str<'a>(args: &'a [Value], idx: usize, ctx: &str) -> Result<&'a str> {
+    match args.get(idx) {
+        Some(Value::Str(s)) => Ok(s.as_str()),
+        Some(other) => bail!("{}: arg {} expected string, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
+#[inline]
+pub fn arg_i64(args: &[Value], idx: usize, ctx: &str) -> Result<i64> {
+    match args.get(idx) {
+        Some(Value::I64(n)) => Ok(*n),
+        Some(other) => bail!("{}: arg {} expected int, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
+#[inline]
+pub fn arg_f64(args: &[Value], idx: usize, ctx: &str) -> Result<f64> {
+    match args.get(idx) {
+        Some(Value::F64(f)) => Ok(*f),
+        Some(Value::I64(n)) => Ok(*n as f64),
+        Some(other) => bail!("{}: arg {} expected double, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
+#[inline]
+pub fn arg_bool(args: &[Value], idx: usize, ctx: &str) -> Result<bool> {
+    match args.get(idx) {
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(other) => bail!("{}: arg {} expected bool, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
+#[inline]
+pub fn arg_char(args: &[Value], idx: usize, ctx: &str) -> Result<char> {
+    match args.get(idx) {
+        Some(Value::Char(c)) => Ok(*c),
+        Some(other) => bail!("{}: arg {} expected char, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
+#[inline]
+pub fn arg_usize(args: &[Value], idx: usize, ctx: &str) -> Result<usize> {
+    match args.get(idx) {
+        Some(Value::I64(n)) if *n >= 0 => Ok(*n as usize),
+        Some(other) => bail!("{}: arg {} expected non-negative integer, got {:?}", ctx, idx, other),
+        None => bail!("{}: missing arg {}", ctx, idx),
+    }
+}
+
 /// Convert a Value to its string representation.
 ///
 /// Exhaustive match: 加新 `Value` variant 时编译期强制覆盖（防止再次出现
