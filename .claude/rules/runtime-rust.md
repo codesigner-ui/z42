@@ -58,3 +58,7 @@ fn test_something() { ... }
 
 - `Module`、`Function`、`Instruction` 等持久化类型必须 `#[derive(Serialize, Deserialize)]`
 - 二进制格式使用 `bincode`；文本调试格式用 `serde_json`（可选依赖）
+
+## 资源加载顺序
+
+`std::fs::read_dir` / `HashMap` 迭代 + `or_insert` first-wins 等不确定性来源的处理规则见 [common-pitfalls.md §1](common-pitfalls.md#1-资源加载顺序必须显式排序2026-05-17-强化)。该规则跨语言适用（C# / Rust / bash 都涉及），统一在 common-pitfalls.md 沉淀。

@@ -31,13 +31,6 @@ pub struct LoadedRunner {
     pub ctx: VmContext,
 }
 
-impl LoadedRunner {
-    /// Resolve a test method by `method_id` (from TIDX) to its name.
-    pub fn method_name(&self, method_id: u32) -> Option<&str> {
-        self.user_func_names.get(method_id as usize).map(String::as_str)
-    }
-}
-
 /// Bootstrap an in-process VM from a single .zbc artifact.
 pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
     let libs_dir = resolve_libs_dir();
@@ -98,7 +91,7 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
         m
     };
 
-    let mut ctx = VmContext::new();
+    let ctx = VmContext::new();
     ctx.install_lazy_loader_with_deps(
         libs_dir,
         final_module.string_pool.len(),
