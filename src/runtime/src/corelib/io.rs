@@ -221,9 +221,8 @@ pub fn builtin_len(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 pub fn builtin_contains(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     match args.first() {
         Some(Value::Str(s)) => {
-            use super::convert::require_str;
-            let needle = require_str(args, 1, "__contains")?;
-            Ok(Value::Bool(s.contains(needle.as_str())))
+            let needle = super::convert::arg_str(args, 1, "__contains")?;
+            Ok(Value::Bool(s.contains(needle)))
         }
         Some(Value::Array(arr)) => {
             let item = args.get(1).cloned().unwrap_or(Value::Null);

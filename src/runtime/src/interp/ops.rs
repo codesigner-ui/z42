@@ -2,7 +2,7 @@
 ///
 /// These functions operate directly on the register slice (`&[Value]`)
 /// and are specific to the interpreter's execution model.
-/// Value conversion helpers (value_to_str, require_str, etc.) live in corelib::convert.
+/// Value conversion helpers (value_to_str, arg_str, etc.) live in corelib::convert.
 
 use crate::metadata::Value;
 use anyhow::{bail, Result};

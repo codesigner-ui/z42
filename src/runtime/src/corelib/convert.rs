@@ -9,13 +9,12 @@ use anyhow::{bail, Result};
 // `require_str` 每次都 `s.clone()` 一份 `String`，对 `__str_length` /
 // `__str_equals` 这种纯只读 ops 是显著开销。
 //
-// 新 `arg_*` 系列：
+// `arg_*` 系列：
 //   * 返回 `&str` / `i64` / `bool` / `char` / `f64` / `usize` — 全部 borrow 或 Copy
 //   * `#[inline]` 让编译器把 match 内联到 caller，消除函数调用开销
-//   * 错误格式与旧 `require_*` 一致（caller 报错信息不变）
+//   * 错误格式与旧 `require_*` 一致
 //
-// 旧 `require_str` / `require_usize` / `require_i64` 还在用（其他 corelib 文件
-// 未迁），等本 spec 后续 commit 全迁完后整体删除。
+// 所有 corelib 已 migrate 完，旧 `require_*` 已删（pre-1.0 不留兼容包袱）。
 
 #[inline]
 pub fn arg_str<'a>(args: &'a [Value], idx: usize, ctx: &str) -> Result<&'a str> {
@@ -102,36 +101,15 @@ pub fn value_to_str(v: &Value) -> String {
     }
 }
 
-/// Extract a String argument from the args slice.
-pub fn require_str(args: &[Value], idx: usize, ctx: &str) -> Result<String> {
-    match args.get(idx) {
-        Some(Value::Str(s)) => Ok(s.clone()),
-        Some(other) => bail!("{}: arg {} expected string, got {:?}", ctx, idx, other),
-        None => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
-
-/// Extract a usize argument from the args slice.
-pub fn require_usize(args: &[Value], idx: usize, ctx: &str) -> Result<usize> {
-    match args.get(idx) {
-        Some(v) => to_usize(v, ctx),
-        None => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
-
-/// Convert a Value to a usize index/size, rejecting negative values.
-pub fn to_usize(v: &Value, ctx: &str) -> Result<usize> {
-    match v {
-        Value::I64(n) if *n >= 0 => Ok(*n as usize),
-        Value::I64(n) if *n >= 0 => Ok(*n as usize),
-        other => bail!("{}: expected non-negative integer, got {:?}", ctx, other),
-    }
-}
+// refactor-corelib-typed-extractors (2026-05-17): 旧的 `require_str` /
+// `require_usize` / `to_usize` / `require_i64` / `require_f64` / `require_char`
+// 全部删除 —— 全 corelib 已 migrated 到 `arg_*` 系列（零 clone / Copy / #[inline]）。
+// pre-1.0 不留兼容包袱。
 
 // ── Parse / convert builtins ─────────────────────────────────────────────────
 
 pub fn builtin_long_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "long.Parse")?;
+    let s = arg_str(args, 0, "long.Parse")?;
     s.trim().parse::<i64>().map(Value::I64)
         .map_err(|_| anyhow::anyhow!("long.Parse: could not parse {:?} as long", s))
 }
@@ -163,14 +141,14 @@ pub fn builtin_u32_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// (i.e. values above i64::MAX appear as negative under int.ToString — same
 /// bit-preserving semantics as `convert_from_i64` U64 cast).
 pub fn builtin_u64_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "u64.Parse")?;
+    let s = arg_str(args, 0, "u64.Parse")?;
     s.trim().parse::<u64>().map(|v| Value::I64(v as i64))
         .map_err(|_| anyhow::anyhow!(
             "u64.Parse: could not parse {:?} as u64 (range: 0..={})", s, u64::MAX))
 }
 
 fn parse_narrow_int(args: &[Value], ctx: &str, min: i64, max: i64) -> Result<Value> {
-    let s = require_str(args, 0, ctx)?;
+    let s = arg_str(args, 0, ctx)?;
     let v = s.trim().parse::<i64>()
         .map_err(|_| anyhow::anyhow!("{}: could not parse {:?} as integer", ctx, s))?;
     if v < min || v > max {
@@ -179,7 +157,7 @@ fn parse_narrow_int(args: &[Value], ctx: &str, min: i64, max: i64) -> Result<Val
     Ok(Value::I64(v))
 }
 pub fn builtin_double_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = require_str(args, 0, "double.Parse")?;
+    let s = arg_str(args, 0, "double.Parse")?;
     s.trim().parse::<f64>().map(Value::F64)
         .map_err(|_| anyhow::anyhow!("double.Parse: could not parse {:?} as double", s))
 }
@@ -191,44 +169,22 @@ pub fn builtin_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 // Backing native functions for IComparable<T> / IEquatable<T> on primitive
 // receivers (int/double/bool/char). Dispatched by VCall when the receiver
 // is Value::I64/F64/Bool/Char and the method matches CompareTo/Equals/GetHashCode.
-
-fn require_i64(args: &[Value], idx: usize, ctx: &str) -> Result<i64> {
-    match args.get(idx) {
-        Some(Value::I64(n)) => Ok(*n),
-        Some(other) => bail!("{}: arg {} expected int, got {:?}", ctx, idx, other),
-        None => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
-fn require_f64(args: &[Value], idx: usize, ctx: &str) -> Result<f64> {
-    match args.get(idx) {
-        Some(Value::F64(f)) => Ok(*f),
-        Some(Value::I64(n)) => Ok(*n as f64),
-        Some(other) => bail!("{}: arg {} expected double, got {:?}", ctx, idx, other),
-        None => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
-fn require_char(args: &[Value], idx: usize, ctx: &str) -> Result<char> {
-    match args.get(idx) {
-        Some(Value::Char(c)) => Ok(*c),
-        Some(other) => bail!("{}: arg {} expected char, got {:?}", ctx, idx, other),
-        None => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
+// 旧 file-local require_* 已删 —— 用顶部 pub `arg_i64` / `arg_f64` / `arg_char`。
 
 // 2026-04-27 wave2-compare-to-script: builtin_int_compare_to removed.
 // `Std.int.CompareTo` / `Std.long.CompareTo` 现在是脚本（用 IR `<`/`>`）。
 
 pub fn builtin_int_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_i64(args, 0, "int.Equals")?;
-    let b = require_i64(args, 1, "int.Equals")?;
+    let a = arg_i64(args, 0, "int.Equals")?;
+    let b = arg_i64(args, 1, "int.Equals")?;
     Ok(Value::Bool(a == b))
 }
 pub fn builtin_int_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_i64(args, 0, "int.GetHashCode")?;
+    let a = arg_i64(args, 0, "int.GetHashCode")?;
     Ok(Value::I64(a))  // identity hash for integers
 }
 pub fn builtin_int_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_i64(args, 0, "int.ToString")?;
+    let a = arg_i64(args, 0, "int.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
@@ -236,16 +192,16 @@ pub fn builtin_int_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> 
 // `Std.double.CompareTo` / `Std.float.CompareTo` 现在是脚本（NaN → 0 由 `<`/`>` 自然返回 false 实现）。
 
 pub fn builtin_double_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_f64(args, 0, "double.Equals")?;
-    let b = require_f64(args, 1, "double.Equals")?;
+    let a = arg_f64(args, 0, "double.Equals")?;
+    let b = arg_f64(args, 1, "double.Equals")?;
     Ok(Value::Bool(a == b))
 }
 pub fn builtin_double_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_f64(args, 0, "double.GetHashCode")?;
+    let a = arg_f64(args, 0, "double.GetHashCode")?;
     Ok(Value::I64(a.to_bits() as i64))
 }
 pub fn builtin_double_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_f64(args, 0, "double.ToString")?;
+    let a = arg_f64(args, 0, "double.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
@@ -256,22 +212,22 @@ pub fn builtin_double_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Valu
 // `Std.char.CompareTo` 现在是脚本（codepoint `<`/`>` 比较）。
 
 pub fn builtin_char_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_char(args, 0, "char.Equals")?;
-    let b = require_char(args, 1, "char.Equals")?;
+    let a = arg_char(args, 0, "char.Equals")?;
+    let b = arg_char(args, 1, "char.Equals")?;
     Ok(Value::Bool(a == b))
 }
 pub fn builtin_char_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_char(args, 0, "char.GetHashCode")?;
+    let a = arg_char(args, 0, "char.GetHashCode")?;
     Ok(Value::I64(a as i64))
 }
 pub fn builtin_char_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_char(args, 0, "char.ToString")?;
+    let a = arg_char(args, 0, "char.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
 pub fn builtin_str_compare_to(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = require_str(args, 0, "string.CompareTo")?;
-    let b = require_str(args, 1, "string.CompareTo")?;
+    let a = arg_str(args, 0, "string.CompareTo")?;
+    let b = arg_str(args, 1, "string.CompareTo")?;
     Ok(Value::I64(a.cmp(&b) as i64))
 }
 
