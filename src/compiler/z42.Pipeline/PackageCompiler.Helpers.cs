@@ -1,3 +1,4 @@
+using Z42.Core;
 using Z42.IR;
 using Z42.IR.BinaryFormat;
 using Z42.Project;
@@ -120,7 +121,28 @@ public static partial class PackageCompiler
         foreach (var dir in libsDirs)
         {
             if (!Directory.Exists(dir)) continue;
-            foreach (var zpkgPath in Directory.EnumerateFiles(dir, "*.zpkg"))
+            // fix-depindex-nondeterministic-order (2026-05-17):
+            // `Directory.EnumerateFiles` returns OS-dependent order (inode on
+            // Linux, alphabetical on macOS / Windows). `DependencyIndex.Build`
+            // uses TryAdd first-wins for the `<ClassName>.<MethodName>` static
+            // key, so when two packages contain the same short class+method
+            // (e.g. `Std.Assert.Equal` from z42.core vs `Std.Test.Assert.Equal`
+            // from z42.test, both registered under key "Assert.Equal"),
+            // whoever's zpkg gets enumerated first wins resolution. On Linux
+            // CI this picked z42.test → `Assert.Equal(...)` was emitted as
+            // `Std.Test.Assert.Equal` instead of `Std.Assert.Equal`, producing
+            // a 5-byte zbc drift and a "values not equal" runtime message
+            // instead of "AssertionError: ...". Sort paths so prelude packages
+            // (`z42.core`) always register first, matching the long-standing
+            // resolver semantics used by every checked-in fixture.
+            var sortedPaths = Directory.EnumerateFiles(dir, "*.zpkg")
+                .OrderBy(p => {
+                    string name = Path.GetFileNameWithoutExtension(p);
+                    // z42.core first (prelude wins for ambiguous bare names),
+                    // then alphabetical by package name.
+                    return PreludePackages.Names.Contains(name) ? "0_" + name : "1_" + name;
+                }, StringComparer.Ordinal);
+            foreach (var zpkgPath in sortedPaths)
             {
                 try
                 {
