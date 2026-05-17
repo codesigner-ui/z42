@@ -247,6 +247,19 @@ public static partial class ImportedSymbolLoader
             }
         }
 
+        // TEMP DIAG (2026-05-17): always-on stderr trace to chase the CI
+        // failure that local can't reproduce. Remove once CI is green.
+        if (classNs.TryGetValue("Assert", out var assertNs))
+        {
+            var assertPkg = classPkg.TryGetValue("Assert", out var ap) ? ap : "?";
+            var modOrder = string.Join(",",
+                modules.Take(20)
+                    .Select(m => $"{(packageOf.TryGetValue(m, out var p) ? p : "?")}/{m.Namespace}"));
+            var preludeList = string.Join(",", preludePackages);
+            Console.Error.WriteLine(
+                $"[Z42_DIAG_LOAD] Assert.ns={assertNs} Assert.pkg={assertPkg} prelude=[{preludeList}] modOrder(20)=[{modOrder}]");
+        }
+
         return new ImportedSymbols(classes, funcs, interfaces, enumConsts, enumTypes, classNs,
             classConstraints, funcConstraints, classInterfaces, classPkg, collisions,
             Delegates: delegates.Count > 0 ? delegates : null,
