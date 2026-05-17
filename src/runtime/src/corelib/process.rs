@@ -31,7 +31,7 @@
 //!
 //! See [`docs/spec/changes/add-std-process/design.md`].
 
-use super::convert::require_str;
+use super::convert::{arg_str, arg_i64, arg_bool};
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::{anyhow, bail, Result};
@@ -64,22 +64,11 @@ pub struct ProcessSlot {
 }
 
 // ── arg-parsing helpers ──────────────────────────────────────────────────
-
-fn require_i64(args: &[Value], idx: usize, ctx: &str) -> Result<i64> {
-    match args.get(idx) {
-        Some(Value::I64(n)) => Ok(*n),
-        Some(other) => bail!("{}: arg {} expected int, got {:?}", ctx, idx, other),
-        None        => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
-
-fn require_bool(args: &[Value], idx: usize, ctx: &str) -> Result<bool> {
-    match args.get(idx) {
-        Some(Value::Bool(b)) => Ok(*b),
-        Some(other) => bail!("{}: arg {} expected bool, got {:?}", ctx, idx, other),
-        None        => bail!("{}: missing arg {}", ctx, idx),
-    }
-}
+//
+// `arg_str` / `arg_i64` / `arg_bool` come from convert.rs (refactor-corelib-
+// typed-extractors, 2026-05-17). File-local helpers below cover the shapes
+// not in the shared layer: Vec<String> (env_keys / argv) and Option<String>
+// (cwd null-or-set).
 
 /// Accept `Value::Str` or `Value::Null` — null means "not set, fall through".
 fn optional_str(args: &[Value], idx: usize, ctx: &str) -> Result<Option<String>> {
@@ -222,20 +211,20 @@ fn timeout_result(ctx: &VmContext, program: &str, timeout_ms: i64) -> Value {
 pub fn builtin_process_run(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     const NAME: &str = "__process_run";
 
-    let program     = require_str(args, 0, NAME)?;
+    let program     = arg_str(args, 0, NAME)?;
     let argv        = require_str_array(args, 1, NAME)?;
     let env_keys    = require_str_array(args, 2, NAME)?;
     let env_vals    = require_str_array(args, 3, NAME)?;
     let env_remove  = require_str_array(args, 4, NAME)?;
-    let env_clear   = require_bool(args, 5, NAME)?;
+    let env_clear   = arg_bool(args, 5, NAME)?;
     let cwd         = optional_str(args, 6, NAME)?;
-    let stdin_mode  = require_i64(args, 7, NAME)?;
+    let stdin_mode  = arg_i64(args, 7, NAME)?;
     let stdin_bytes = optional_byte_array(args, 8, NAME)?;
-    let stdout_mode = require_i64(args, 9, NAME)?;
+    let stdout_mode = arg_i64(args, 9, NAME)?;
     let stdout_path = optional_str(args, 10, NAME)?;
-    let stderr_mode = require_i64(args, 11, NAME)?;
+    let stderr_mode = arg_i64(args, 11, NAME)?;
     let stderr_path = optional_str(args, 12, NAME)?;
-    let timeout_ms  = require_i64(args, 13, NAME)?;
+    let timeout_ms  = arg_i64(args, 13, NAME)?;
 
     if env_keys.len() != env_vals.len() {
         bail!("{}: env_keys / env_vals length mismatch ({} vs {})",
@@ -338,18 +327,18 @@ fn wait_with_optional_timeout(
 pub fn builtin_process_spawn(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     const NAME: &str = "__process_spawn";
 
-    let program     = require_str(args, 0, NAME)?;
+    let program     = arg_str(args, 0, NAME)?;
     let argv        = require_str_array(args, 1, NAME)?;
     let env_keys    = require_str_array(args, 2, NAME)?;
     let env_vals    = require_str_array(args, 3, NAME)?;
     let env_remove  = require_str_array(args, 4, NAME)?;
-    let env_clear   = require_bool(args, 5, NAME)?;
+    let env_clear   = arg_bool(args, 5, NAME)?;
     let cwd         = optional_str(args, 6, NAME)?;
-    let stdin_mode  = require_i64(args, 7, NAME)?;
+    let stdin_mode  = arg_i64(args, 7, NAME)?;
     let _stdin_bytes_unused = optional_byte_array(args, 8, NAME)?; // see doc above
-    let stdout_mode = require_i64(args, 9, NAME)?;
+    let stdout_mode = arg_i64(args, 9, NAME)?;
     let stdout_path = optional_str(args, 10, NAME)?;
-    let stderr_mode = require_i64(args, 11, NAME)?;
+    let stderr_mode = arg_i64(args, 11, NAME)?;
     let stderr_path = optional_str(args, 12, NAME)?;
 
     if env_keys.len() != env_vals.len() {
@@ -410,7 +399,7 @@ fn handle_invalid_result(ctx: &VmContext, slot_id: i64) -> Value {
 }
 
 fn require_slot_id(args: &[Value], idx: usize, ctx: &str) -> Result<u64> {
-    let n = require_i64(args, idx, ctx)?;
+    let n = arg_i64(args, idx, ctx)?;
     if n < 0 {
         bail!("{}: slot id must be non-negative, got {}", ctx, n);
     }
@@ -523,7 +512,7 @@ pub fn builtin_process_handle_try_wait(ctx: &VmContext, args: &[Value]) -> Resul
 pub fn builtin_process_handle_kill(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     const NAME: &str = "__process_handle_kill";
     let slot_id  = require_slot_id(args, 0, NAME)?;
-    let _force   = require_bool(args, 1, NAME)?;
+    let _force   = arg_bool(args, 1, NAME)?;
 
     let killed = ctx.with_process_slot(slot_id, |slot| -> Result<bool> {
         let Some(child) = slot.child.as_mut() else { return Ok(false) };

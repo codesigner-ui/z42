@@ -1,48 +1,48 @@
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::Result;
-use super::convert::require_str;
+use super::convert::arg_str;
 
 // ── File I/O ──────────────────────────────────────────────────────────────────
 
 pub fn builtin_file_read_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__file_read_text")?;
-    let text = std::fs::read_to_string(path.as_str())?;
+    let path = arg_str(args, 0, "__file_read_text")?;
+    let text = std::fs::read_to_string(path)?;
     Ok(Value::Str(text))
 }
 pub fn builtin_file_write_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path    = require_str(args, 0, "__file_write_text")?;
-    let content = require_str(args, 1, "__file_write_text")?;
-    std::fs::write(path.as_str(), content.as_str())?;
+    let path    = arg_str(args, 0, "__file_write_text")?;
+    let content = arg_str(args, 1, "__file_write_text")?;
+    std::fs::write(path, content)?;
     Ok(Value::Null)
 }
 pub fn builtin_file_append_text(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     use std::io::Write;
-    let path    = require_str(args, 0, "__file_append_text")?;
-    let content = require_str(args, 1, "__file_append_text")?;
-    let mut file = std::fs::OpenOptions::new().append(true).create(true).open(path.as_str())?;
+    let path    = arg_str(args, 0, "__file_append_text")?;
+    let content = arg_str(args, 1, "__file_append_text")?;
+    let mut file = std::fs::OpenOptions::new().append(true).create(true).open(path)?;
     file.write_all(content.as_bytes())?;
     Ok(Value::Null)
 }
 pub fn builtin_file_exists(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__file_exists")?;
-    Ok(Value::Bool(std::path::Path::new(path.as_str()).exists()))
+    let path = arg_str(args, 0, "__file_exists")?;
+    Ok(Value::Bool(std::path::Path::new(path).exists()))
 }
 pub fn builtin_file_delete(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__file_delete")?;
-    std::fs::remove_file(path.as_str())?;
+    let path = arg_str(args, 0, "__file_delete")?;
+    std::fs::remove_file(path)?;
     Ok(Value::Null)
 }
 pub fn builtin_file_copy(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let src = require_str(args, 0, "__file_copy")?;
-    let dst = require_str(args, 1, "__file_copy")?;
-    std::fs::copy(src.as_str(), dst.as_str())?;
+    let src = arg_str(args, 0, "__file_copy")?;
+    let dst = arg_str(args, 1, "__file_copy")?;
+    std::fs::copy(src, dst)?;
     Ok(Value::Null)
 }
 pub fn builtin_file_move(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let src = require_str(args, 0, "__file_move")?;
-    let dst = require_str(args, 1, "__file_move")?;
-    std::fs::rename(src.as_str(), dst.as_str())?;
+    let src = arg_str(args, 0, "__file_move")?;
+    let dst = arg_str(args, 1, "__file_move")?;
+    std::fs::rename(src, dst)?;
     Ok(Value::Null)
 }
 
@@ -60,31 +60,31 @@ pub fn builtin_file_move(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 //   - EnumerateRecursive 深度优先全展开，路径相对 root
 
 pub fn builtin_dir_exists(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__dir_exists")?;
-    Ok(Value::Bool(std::path::Path::new(path.as_str()).is_dir()))
+    let path = arg_str(args, 0, "__dir_exists")?;
+    Ok(Value::Bool(std::path::Path::new(path).is_dir()))
 }
 
 pub fn builtin_dir_create(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__dir_create")?;
-    std::fs::create_dir_all(path.as_str())?;
+    let path = arg_str(args, 0, "__dir_create")?;
+    std::fs::create_dir_all(path)?;
     Ok(Value::Null)
 }
 
 pub fn builtin_dir_delete(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__dir_delete")?;
+    let path = arg_str(args, 0, "__dir_delete")?;
     let recursive = matches!(args.get(1), Some(Value::Bool(true)));
     if recursive {
-        std::fs::remove_dir_all(path.as_str())?;
+        std::fs::remove_dir_all(path)?;
     } else {
-        std::fs::remove_dir(path.as_str())?;
+        std::fs::remove_dir(path)?;
     }
     Ok(Value::Null)
 }
 
 pub fn builtin_dir_enumerate(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__dir_enumerate")?;
+    let path = arg_str(args, 0, "__dir_enumerate")?;
     let mut names: Vec<String> = Vec::new();
-    for entry in std::fs::read_dir(path.as_str())? {
+    for entry in std::fs::read_dir(path)? {
         let e = entry?;
         if let Some(name) = e.file_name().to_str() {
             names.push(name.to_string());
@@ -96,8 +96,8 @@ pub fn builtin_dir_enumerate(ctx: &VmContext, args: &[Value]) -> Result<Value> {
 }
 
 pub fn builtin_dir_enumerate_recursive(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let root = require_str(args, 0, "__dir_enumerate_recursive")?;
-    let root_path = std::path::Path::new(root.as_str()).to_path_buf();
+    let root = arg_str(args, 0, "__dir_enumerate_recursive")?;
+    let root_path = std::path::Path::new(root).to_path_buf();
     let mut out: Vec<String> = Vec::new();
     walk_dir(&root_path, &root_path, &mut out)?;
     out.sort();
@@ -127,15 +127,15 @@ fn walk_dir(
 // ── Environment / Process ─────────────────────────────────────────────────────
 
 pub fn builtin_env_set(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let name  = require_str(args, 0, "__env_set")?;
-    let value = require_str(args, 1, "__env_set")?;
+    let name  = arg_str(args, 0, "__env_set")?;
+    let value = arg_str(args, 1, "__env_set")?;
     // Safety: z42 is single-threaded; no concurrent env reads during this call.
-    unsafe { std::env::set_var(name.as_str(), value.as_str()); }
+    unsafe { std::env::set_var(name, value); }
     Ok(Value::Null)
 }
 pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let key = require_str(args, 0, "__env_get")?;
-    Ok(match std::env::var(key.as_str()) {
+    let key = arg_str(args, 0, "__env_get")?;
+    Ok(match std::env::var(key) {
         Ok(v)  => Value::Str(v),
         Err(_) => Value::Null,
     })
@@ -152,8 +152,8 @@ pub fn builtin_process_exit(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     std::process::exit(code);
 }
 pub fn builtin_env_unset(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let key = require_str(args, 0, "__env_unset")?;
-    std::env::remove_var(key.as_str());
+    let key = arg_str(args, 0, "__env_unset")?;
+    std::env::remove_var(key);
     Ok(Value::Null)
 }
 pub fn builtin_env_vars(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
@@ -176,20 +176,20 @@ pub fn builtin_time_now_ms(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
 /// Glob `dir/pattern` 直接子项；pattern 支持 `*`（任意序列）和 `?`（单字符）。
 /// 大小写敏感；返回 sorted 全路径数组。pattern 不含 `/`。
 pub fn builtin_path_glob(ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let dir     = require_str(args, 0, "__path_glob")?;
-    let pattern = require_str(args, 1, "__path_glob")?;
+    let dir     = arg_str(args, 0, "__path_glob")?;
+    let pattern = arg_str(args, 1, "__path_glob")?;
     let mut hits: Vec<String> = Vec::new();
-    if !std::path::Path::new(dir.as_str()).is_dir() {
+    if !std::path::Path::new(dir).is_dir() {
         return Ok(ctx.heap().alloc_array(Vec::new()));
     }
-    for entry in std::fs::read_dir(dir.as_str())? {
+    for entry in std::fs::read_dir(dir)? {
         let e = entry?;
         if let Some(name) = e.file_name().to_str() {
-            if glob_match(pattern.as_str(), name) {
+            if glob_match(pattern, name) {
                 // Join dir + '/' + name without re-allocating the dir twice.
                 let mut full = String::with_capacity(dir.len() + name.len() + 1);
-                full.push_str(dir.as_str());
-                if !dir.as_str().ends_with('/') { full.push('/'); }
+                full.push_str(dir);
+                if !dir.ends_with('/') { full.push('/'); }
                 full.push_str(name);
                 hits.push(full);
             }
@@ -232,8 +232,8 @@ fn glob_match(pattern: &str, text: &str) -> bool {
 /// 创建唯一临时目录在 system temp root，返回全路径。
 /// 命名：`prefix.<nanos>.<pid>`（极低冲突概率 + 单进程内可重复调用）。
 pub fn builtin_file_create_temp_dir(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let prefix = require_str(args, 0, "__file_create_temp_dir")?;
-    let path   = unique_temp_path(prefix.as_str(), "");
+    let prefix = arg_str(args, 0, "__file_create_temp_dir")?;
+    let path   = unique_temp_path(prefix, "");
     std::fs::create_dir_all(&path)?;
     Ok(Value::Str(path))
 }
@@ -241,9 +241,9 @@ pub fn builtin_file_create_temp_dir(_ctx: &VmContext, args: &[Value]) -> Result<
 /// 创建唯一临时文件（touched，0 bytes）在 system temp root，返回全路径。
 /// 命名：`prefix.<nanos>.<pid><suffix>`。suffix 可为 ""（无后缀）。
 pub fn builtin_file_create_temp_file(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let prefix = require_str(args, 0, "__file_create_temp_file")?;
-    let suffix = require_str(args, 1, "__file_create_temp_file")?;
-    let path   = unique_temp_path(prefix.as_str(), suffix.as_str());
+    let prefix = arg_str(args, 0, "__file_create_temp_file")?;
+    let suffix = arg_str(args, 1, "__file_create_temp_file")?;
+    let path   = unique_temp_path(prefix, suffix);
     std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&path)?;
     Ok(Value::Str(path))
 }
@@ -266,13 +266,13 @@ fn unique_temp_path(prefix: &str, suffix: &str) -> String {
 /// Unix: `chmod u+x,g+x,o+x`（owner / group / world execute）；Windows: no-op
 /// （NTFS 文件可执行性由扩展名而非 ACL bit 决定）。
 pub fn builtin_file_make_executable(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__file_make_executable")?;
+    let path = arg_str(args, 0, "__file_make_executable")?;
     #[cfg(unix)] {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(path.as_str())?.permissions();
+        let mut perms = std::fs::metadata(path)?.permissions();
         let mode = perms.mode() | 0o111;
         perms.set_mode(mode);
-        std::fs::set_permissions(path.as_str(), perms)?;
+        std::fs::set_permissions(path, perms)?;
     }
     #[cfg(not(unix))] { let _ = path; }
     Ok(Value::Null)
@@ -280,18 +280,18 @@ pub fn builtin_file_make_executable(_ctx: &VmContext, args: &[Value]) -> Result<
 
 /// 创建 hard link（dst → src）。跨设备时 OS 错误透传。
 pub fn builtin_file_link(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let src = require_str(args, 0, "__file_link")?;
-    let dst = require_str(args, 1, "__file_link")?;
-    std::fs::hard_link(src.as_str(), dst.as_str())?;
+    let src = arg_str(args, 0, "__file_link")?;
+    let dst = arg_str(args, 1, "__file_link")?;
+    std::fs::hard_link(src, dst)?;
     Ok(Value::Null)
 }
 
 /// 创建 symbolic link（dst → src）。Windows 暂未实现（需 privilege）。
 pub fn builtin_file_symlink(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let src = require_str(args, 0, "__file_symlink")?;
-    let dst = require_str(args, 1, "__file_symlink")?;
+    let src = arg_str(args, 0, "__file_symlink")?;
+    let dst = arg_str(args, 1, "__file_symlink")?;
     #[cfg(unix)] {
-        std::os::unix::fs::symlink(src.as_str(), dst.as_str())?;
+        std::os::unix::fs::symlink(src, dst)?;
     }
     #[cfg(not(unix))] {
         anyhow::bail!("File.SymLink: not implemented on this platform");
@@ -301,8 +301,8 @@ pub fn builtin_file_symlink(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 
 /// 文件字节数（dir 错误）。
 pub fn builtin_file_get_size(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__file_get_size")?;
-    let meta = std::fs::metadata(path.as_str())?;
+    let path = arg_str(args, 0, "__file_get_size")?;
+    let meta = std::fs::metadata(path)?;
     if meta.is_dir() {
         anyhow::bail!("File.GetSize: '{}' is a directory", path);
     }
@@ -329,7 +329,7 @@ pub fn builtin_env_get_cwd(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
 
 /// `cd path`（路径不存在 / 无权限会抛）。
 pub fn builtin_env_set_cwd(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let path = require_str(args, 0, "__env_set_cwd")?;
-    std::env::set_current_dir(path.as_str())?;
+    let path = arg_str(args, 0, "__env_set_cwd")?;
+    std::env::set_current_dir(path)?;
     Ok(Value::Null)
 }
