@@ -1,0 +1,263 @@
+// port-build-stdlib (2026-05-17)：第三个 .z42 实现的 build script。
+// Dogfood Process.Run + File.Link（Phase 0b 落地的两个 API）。
+//
+// 行为对齐 scripts/build-stdlib.sh（126 LOC bash）：
+//   1. 用 z42c build --workspace 编译 16 个 stdlib zpkgs（dotnet run 或 packaged）
+//   2. 验证产物存在 + 报告 byte size
+//   3. 在 artifacts/build/libs/<profile>/ 维护扁平视图（hard-link）
+//   4. 写 namespace → zpkg 的 index.json
+//
+// 入口：bash bootstrap 处理 toolchain build + primer stdlib（chicken-and-egg：
+// 编译本脚本需要 stdlib 已存在），然后 dispatch 到这里。
+namespace Z42BuildStdlibScript;
+
+using Std;
+using Std.IO;
+using Std.Cli;
+
+void Main() {
+    string root = Environment.GetCurrentDirectory();
+
+    // ── CLI ──────────────────────────────────────────────────────────────
+    var p = new ArgParser("build-stdlib",
+        "Compile z42 standard library packages via workspace mode");
+    p.AddFlag("debug",    "",   "Build debug profile (default release)");
+    p.AddFlag("use-dist", "",   "Use packaged z42c from artifacts/packages/*/bin/");
+    ParseResult r;
+    try {
+        r = p.Parse(_argvSlice());
+    } catch (CliException e) {
+        ConsoleError.WriteLine("error: " + e.Message);
+        Environment.Exit(2);
+        return;
+    }
+    if (r.ShowHelp()) {
+        Console.WriteLine(p.HelpText());
+        return;
+    }
+
+    string profile = r.GetFlag("debug") ? "debug" : "release";
+    bool useDist = r.GetFlag("use-dist");
+
+    string wsDir = Path.Join(root, "src/libraries");
+    string buildLibsRoot = Path.Join(root, "artifacts/build/libraries");
+    string flatDir = Path.Join(root, "artifacts/build/libs/" + profile);
+
+    // ── Pick compiler ────────────────────────────────────────────────────
+    string compilerProgram = "";
+    string[] compilerLeadArgs = new string[0];
+    if (useDist) {
+        string z42c = _findPackagedZ42c(root);
+        if (z42c.Length == 0) {
+            ConsoleError.WriteLine("error: no packaged z42c found under artifacts/packages/*/bin/");
+            ConsoleError.WriteLine("       Run: ./scripts/package.sh");
+            Environment.Exit(1);
+            return;
+        }
+        Console.WriteLine("Using packaged compiler: " + z42c);
+        compilerProgram = z42c;
+    } else {
+        Console.WriteLine("Using dotnet run compiler");
+        compilerProgram = "dotnet";
+        compilerLeadArgs = new string[7];
+        compilerLeadArgs[0] = "run";
+        compilerLeadArgs[1] = "--project";
+        compilerLeadArgs[2] = Path.Join(root, "src/compiler/z42.Driver");
+        compilerLeadArgs[3] = "-c";
+        compilerLeadArgs[4] = "Release";
+        compilerLeadArgs[5] = "--no-build";
+        compilerLeadArgs[6] = "--";
+    }
+
+    // ── Workspace build ──────────────────────────────────────────────────
+    Console.WriteLine("  building stdlib workspace (" + profile + ", all members)");
+    string[] buildArgs = profile == "release"
+        ? _concat3(compilerLeadArgs, new string[]{"build", "--workspace"}, new string[]{"--release"})
+        : _concat3(compilerLeadArgs, new string[]{"build", "--workspace"}, new string[0]);
+    ProcessResult br = new Process(compilerProgram)
+        .Args(buildArgs)
+        .WorkingDirectory(wsDir)
+        .Stdout(Stdio.Inherit())
+        .Stderr(Stdio.Inherit())
+        .Run();
+    if (br.ExitCode != 0) {
+        Environment.Exit(br.ExitCode);
+        return;
+    }
+
+    // ── Verify zpkg products ─────────────────────────────────────────────
+    string[] libs = _stdlibList();
+    int ok = 0;
+    int fail = 0;
+    int i = 0;
+    while (i < libs.Length) {
+        string zpkg = Path.Join(buildLibsRoot,
+            libs[i] + "/" + profile + "/dist/" + libs[i] + ".zpkg");
+        if (File.Exists(zpkg) && File.GetSize(zpkg) > 0L) {
+            long size = File.GetSize(zpkg);
+            Console.WriteLine("    ✓ " + libs[i] + ".zpkg (" + size.ToString() + " bytes)");
+            ok = ok + 1;
+        } else {
+            Console.WriteLine("    ✗ " + libs[i] + ".zpkg — workspace product missing at " + zpkg);
+            fail = fail + 1;
+        }
+        i = i + 1;
+    }
+
+    Console.WriteLine("");
+    Console.WriteLine("build-stdlib: " + ok.ToString() + " succeeded, " + fail.ToString() + " failed");
+    if (fail > 0) {
+        Environment.Exit(1);
+        return;
+    }
+
+    Console.WriteLine("");
+
+    // ── Flat view (hard-link) ────────────────────────────────────────────
+    Directory.Create(flatDir);
+    _cleanGlob(flatDir, "*.zpkg");
+    _cleanGlob(flatDir, "*.zsym");
+    i = 0;
+    while (i < libs.Length) {
+        string srcDir = Path.Join(buildLibsRoot, libs[i] + "/" + profile + "/dist");
+        _linkAll(srcDir, flatDir, "*.zpkg");
+        _linkAll(srcDir, flatDir, "*.zsym");
+        i = i + 1;
+    }
+    Console.WriteLine("  flat view: " + flatDir + "/   (VM single-dir lookup target)");
+
+    // ── index.json ───────────────────────────────────────────────────────
+    string indexPath = Path.Join(flatDir, "index.json");
+    File.WriteAllText(indexPath, _indexJson());
+    Console.WriteLine("  index:     " + indexPath);
+
+    Console.WriteLine("  分发版打包用 ./scripts/package.sh.");
+}
+
+// 16-element list matching bash LIBS ordering（workspace topological + bash heredoc 顺序）。
+string[] _stdlibList() {
+    string[] libs = new string[16];
+    libs[0]  = "z42.core";
+    libs[1]  = "z42.io";
+    libs[2]  = "z42.io.binary";
+    libs[3]  = "z42.math";
+    libs[4]  = "z42.text";
+    libs[5]  = "z42.encoding";
+    libs[6]  = "z42.collections";
+    libs[7]  = "z42.test";
+    libs[8]  = "z42.time";
+    libs[9]  = "z42.toml";
+    libs[10] = "z42.json";
+    libs[11] = "z42.random";
+    libs[12] = "z42.uri";
+    libs[13] = "z42.diagnostics";
+    libs[14] = "z42.regex";
+    libs[15] = "z42.cli";
+    return libs;
+}
+
+// 与 bash heredoc 字节级一致（保留对齐冒号 + 顺序）。
+string _indexJson() {
+    string s = "{\n";
+    s = s + "  \"z42.core\":        \"z42.core.zpkg\",\n";
+    s = s + "  \"Std\":             \"z42.core.zpkg\",\n";
+    s = s + "  \"Std.Exceptions\":  \"z42.core.zpkg\",\n";
+    s = s + "  \"Std.IO\":          \"z42.io.zpkg\",\n";
+    s = s + "  \"Std.Math\":        \"z42.math.zpkg\",\n";
+    s = s + "  \"Std.Text\":        \"z42.text.zpkg\",\n";
+    s = s + "  \"Std.Encoding\":    \"z42.encoding.zpkg\",\n";
+    s = s + "  \"Std.Collections\": \"z42.collections.zpkg\",\n";
+    s = s + "  \"Std.Test\":        \"z42.test.zpkg\",\n";
+    s = s + "  \"Std.Time\":        \"z42.time.zpkg\",\n";
+    s = s + "  \"Std.Toml\":        \"z42.toml.zpkg\",\n";
+    s = s + "  \"Std.Json\":        \"z42.json.zpkg\",\n";
+    s = s + "  \"Std.Random\":      \"z42.random.zpkg\",\n";
+    s = s + "  \"Std.Uri\":         \"z42.uri.zpkg\",\n";
+    s = s + "  \"Std.IO.Binary\":   \"z42.io.binary.zpkg\",\n";
+    s = s + "  \"Std.Diagnostics\": \"z42.diagnostics.zpkg\",\n";
+    s = s + "  \"Std.Regex\":       \"z42.regex.zpkg\",\n";
+    s = s + "  \"Std.Cli\":         \"z42.cli.zpkg\"\n";
+    s = s + "}\n";
+    return s;
+}
+
+// 查找最新 mtime 的 packaged z42c（bash: `ls -t .../bin/z42c | head -1`）。
+// z42.io 无 mtime API；用 alphabetical sort 替代（Path.Glob 已 sorted），取最后一项。
+// 返回 "" 当未找到（避免 nullable string 流敏感分析的 trip）。
+string _findPackagedZ42c(string root) {
+    string packagesRoot = Path.Join(root, "artifacts/packages");
+    if (!Directory.Exists(packagesRoot)) { return ""; }
+    string[] subs = Directory.Enumerate(packagesRoot);
+    string latest = "";
+    int i = 0;
+    while (i < subs.Length) {
+        string sub = subs[i];
+        if (sub.StartsWith("z42-")) {
+            string cand = Path.Join(packagesRoot, sub + "/bin/z42c");
+            if (File.Exists(cand)) { latest = cand; }
+        }
+        i = i + 1;
+    }
+    return latest;
+}
+
+void _cleanGlob(string dir, string pattern) {
+    string[] hits = Path.Glob(dir, pattern);
+    int i = 0;
+    while (i < hits.Length) {
+        try { File.Delete(hits[i]); } catch (Exception e) { /* best-effort */ }
+        i = i + 1;
+    }
+}
+
+// 把 srcDir 下匹配 pattern 的文件 hard-link 到 flatDir；fallback 到 Copy
+// （跨文件系统时 hard link 会失败 — 同 bash `cp -l ... || cp`）。
+void _linkAll(string srcDir, string flatDir, string pattern) {
+    if (!Directory.Exists(srcDir)) { return; }
+    string[] hits = Path.Glob(srcDir, pattern);
+    int i = 0;
+    while (i < hits.Length) {
+        string dst = Path.Join(flatDir, Path.GetFileName(hits[i]));
+        try { File.Link(hits[i], dst); }
+        catch (Exception e) {
+            try { File.Copy(hits[i], dst); } catch (Exception e2) { /* skip */ }
+        }
+        i = i + 1;
+    }
+}
+
+// 取 argv 中 script 之后的参数。z42c run 把 script 作为 entry 之后的第二个
+// positional，再往后是 user args。Environment.GetCommandLineArgs 返回完整列表
+// (z42vm + zbc-path + entry + --mode + mode + user args...)。
+// v0 简单切：找 "--mode" 后跳过其 value，剩余即 user args。
+string[] _argvSlice() {
+    string[] all = Environment.GetCommandLineArgs();
+    int start = 0;
+    int i = 0;
+    while (i < all.Length) {
+        if (all[i] == "--mode" && i + 1 < all.Length) { start = i + 2; i = i + 2; continue; }
+        i = i + 1;
+    }
+    if (start == 0) {
+        // 没找到 --mode：fallback 假定 argv[0..2]=(vm, zbc, entry)，剩下是 user args
+        if (all.Length >= 3) { start = 3; }
+        else { start = all.Length; }
+    }
+    int n = all.Length - start;
+    string[] slice = new string[n];
+    int j = 0;
+    while (j < n) { slice[j] = all[start + j]; j = j + 1; }
+    return slice;
+}
+
+string[] _concat3(string[] a, string[] b, string[] c) {
+    string[] acc = new string[a.Length + b.Length + c.Length];
+    int idx = 0;
+    int i = 0;
+    while (i < a.Length) { acc[idx] = a[i]; idx = idx + 1; i = i + 1; }
+    i = 0;
+    while (i < b.Length) { acc[idx] = b[i]; idx = idx + 1; i = i + 1; }
+    i = 0;
+    while (i < c.Length) { acc[idx] = c[i]; idx = idx + 1; i = i + 1; }
+    return acc;
+}
