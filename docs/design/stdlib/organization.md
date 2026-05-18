@@ -25,7 +25,7 @@
 | 包 | 层级 | 内容（节选） | extern？ |
 |----|----|----|----|
 | `z42.core` | L0 | Object、primitive 类型（int/long/double/float/char/bool/string）、Type、Convert、Assert、Exception 树、核心接口（IComparable / IEquatable / IComparer / IEqualityComparer / IFormattable / IDisposable / IEnumerable / INumber）、Collections/{List, Dictionary} | ✅ VM intrinsic |
-| `z42.collections` | L1 | Stack、Queue（计划：LinkedList、SortedDictionary、PriorityQueue） | ❌ 纯脚本 |
+| `z42.collections` | L1 | Stack、Queue、LinkedList、SortedSet（计划：SortedDictionary、PriorityQueue） | ❌ 纯脚本 |
 | `z42.math` | L1 | Math 静态方法 | ❌ 纯脚本（包装 z42.core 原语） |
 | `z42.text` | L1 | StringBuilder（纯脚本，2026-04-26 迁移）；Regex 占位 | ❌ 纯脚本 |
 | `z42.encoding` | L1 | Hex、Base64（RFC 4648 §4）、Utf8 | ❌ 纯脚本 |
