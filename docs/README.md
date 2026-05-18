@@ -36,7 +36,7 @@ z42 项目文档总入口。文件分两类：**对外阅读**（语言用户、
 
 ## 延后特性管理
 
-所有延后项一律就近写入对应 design doc 的 "Deferred / Future Work" 段；`roadmap.md` "Deferred Backlog Index" 横向索引。规则见 [`.claude/rules/workflow.md`](../.claude/rules/workflow.md) "延后特性管理"。
+所有延后项一律就近写入对应 design doc 的 "Deferred / Future Work" 段；`roadmap.md` "Deferred Backlog Index" 横向索引。规则见 [`.claude/rules/philosophy.md`](../.claude/rules/philosophy.md#延后特性管理必须遵守) "延后特性管理"。
 
 ## 文档语种策略
 
