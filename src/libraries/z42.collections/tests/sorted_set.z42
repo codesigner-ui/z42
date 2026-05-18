@@ -1,0 +1,99 @@
+// extend-z42-collections (2026-05-17): SortedSet<T> tests.
+namespace Z42CollectionsSortedSetTests;
+
+using Std.Test;
+using Std.Collections;
+
+[Test]
+void test_new_set_is_empty() {
+    var s = new SortedSet<int>();
+    Assert.True(s.IsEmpty());
+    Assert.Equal(0, s.Count());
+}
+
+[Test]
+void test_add_unique_increments_count() {
+    var s = new SortedSet<int>();
+    Assert.True(s.Add(3));
+    Assert.True(s.Add(1));
+    Assert.True(s.Add(2));
+    Assert.Equal(3, s.Count());
+}
+
+[Test]
+void test_add_duplicate_returns_false() {
+    var s = new SortedSet<int>();
+    Assert.True(s.Add(5));
+    Assert.False(s.Add(5));
+    Assert.Equal(1, s.Count());
+}
+
+[Test]
+void test_to_array_returns_sorted_ascending() {
+    var s = new SortedSet<int>();
+    s.Add(5); s.Add(1); s.Add(3); s.Add(4); s.Add(2);
+    int[] arr = s.ToArray();
+    Assert.Equal(5, arr.Length);
+    Assert.Equal(1, arr[0]);
+    Assert.Equal(2, arr[1]);
+    Assert.Equal(3, arr[2]);
+    Assert.Equal(4, arr[3]);
+    Assert.Equal(5, arr[4]);
+}
+
+[Test]
+void test_contains() {
+    var s = new SortedSet<int>();
+    s.Add(10); s.Add(20); s.Add(30);
+    Assert.True(s.Contains(20));
+    Assert.False(s.Contains(25));
+}
+
+[Test]
+void test_remove_existing_returns_true() {
+    var s = new SortedSet<int>();
+    s.Add(1); s.Add(2); s.Add(3);
+    Assert.True(s.Remove(2));
+    Assert.Equal(2, s.Count());
+    Assert.False(s.Contains(2));
+}
+
+[Test]
+void test_remove_missing_returns_false() {
+    var s = new SortedSet<int>();
+    s.Add(1); s.Add(2);
+    Assert.False(s.Remove(99));
+    Assert.Equal(2, s.Count());
+}
+
+[Test]
+void test_min_max() {
+    var s = new SortedSet<int>();
+    s.Add(5); s.Add(1); s.Add(3); s.Add(9);
+    Assert.Equal(1, s.Min());
+    Assert.Equal(9, s.Max());
+}
+
+[Test]
+void test_min_throws_on_empty() {
+    var s = new SortedSet<int>();
+    Assert.ThrowsAny(() => s.Min());
+}
+
+[Test]
+void test_clear_resets() {
+    var s = new SortedSet<int>();
+    s.Add(1); s.Add(2);
+    s.Clear();
+    Assert.True(s.IsEmpty());
+}
+
+[Test]
+void test_string_set_sorted() {
+    var s = new SortedSet<string>();
+    s.Add("cherry"); s.Add("apple"); s.Add("banana");
+    string[] arr = s.ToArray();
+    Assert.Equal("apple", arr[0]);
+    Assert.Equal("banana", arr[1]);
+    Assert.Equal("cherry", arr[2]);
+}

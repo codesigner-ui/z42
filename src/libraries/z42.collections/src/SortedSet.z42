@@ -1,0 +1,110 @@
+namespace Std.Collections;
+
+// extend-z42-collections (2026-05-17): sorted unique-element set.
+//
+// Backed by a sorted `T[]`, binary-search for Contains/Remove (O(log n))
+// and binary-search-insert for Add (O(log n) lookup + O(n) shift).
+// v0 design favours simplicity; red-black tree backend is a future
+// perf upgrade for data sets that exceed ~1k elements.
+public class SortedSet<T> where T: IComparable<T> + IEquatable<T> {
+    T[] items;
+    int count;
+    int capacity;
+
+    public SortedSet() {
+        this.capacity = 4;
+        this.items = new T[4];
+        this.count = 0;
+    }
+
+    public int Count() { return this.count; }
+    public bool IsEmpty() { return this.count == 0; }
+
+    // Returns true if the item was newly added; false if already present.
+    public bool Add(T item) {
+        int idx = this.LowerBound(item);
+        if (idx < this.count && this.items[idx].Equals(item)) {
+            return false;
+        }
+        if (this.count == this.capacity) this.Grow();
+        int i = this.count;
+        while (i > idx) {
+            this.items[i] = this.items[i - 1];
+            i = i - 1;
+        }
+        this.items[idx] = item;
+        this.count = this.count + 1;
+        return true;
+    }
+
+    public bool Contains(T item) {
+        int idx = this.LowerBound(item);
+        return idx < this.count && this.items[idx].Equals(item);
+    }
+
+    public bool Remove(T item) {
+        int idx = this.LowerBound(item);
+        if (idx >= this.count || !this.items[idx].Equals(item)) {
+            return false;
+        }
+        int i = idx;
+        while (i < this.count - 1) {
+            this.items[i] = this.items[i + 1];
+            i = i + 1;
+        }
+        this.count = this.count - 1;
+        return true;
+    }
+
+    public T Min() {
+        if (this.count == 0) throw new Exception("SortedSet: empty");
+        return this.items[0];
+    }
+
+    public T Max() {
+        if (this.count == 0) throw new Exception("SortedSet: empty");
+        return this.items[this.count - 1];
+    }
+
+    public T[] ToArray() {
+        T[] result = new T[this.count];
+        int i = 0;
+        while (i < this.count) {
+            result[i] = this.items[i];
+            i = i + 1;
+        }
+        return result;
+    }
+
+    public void Clear() {
+        this.count = 0;
+    }
+
+    // First index `i` in 0..count such that items[i] >= item (returns count
+    // if all items < item). Standard lower_bound semantics.
+    public int LowerBound(T item) {
+        int lo = 0;
+        int hi = this.count;
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (this.items[mid].CompareTo(item) < 0) {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
+        return lo;
+    }
+
+    public void Grow() {
+        int newCap = this.capacity * 2;
+        T[] bigger = new T[newCap];
+        int i = 0;
+        while (i < this.count) {
+            bigger[i] = this.items[i];
+            i = i + 1;
+        }
+        this.items = bigger;
+        this.capacity = newCap;
+    }
+}
