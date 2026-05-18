@@ -290,7 +290,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | hot-reload 签名变更 + 跨模块 | 签名变更检测 / 跨模块 reload 故事 | [runtime/hot-reload.md](design/runtime/hot-reload.md) |
 | 完整 JIT 指令映射 + 性能基准 | jit.md 待补 | [runtime/jit.md](design/runtime/jit.md) |
 | GC handle Phase 3+ | Pinned / WeakTrackResurrection / 多线程 barrier | [runtime/gc-handle.md](design/runtime/gc-handle.md) |
-| stdlib P0–P3 缺失包 | time / fs / threading / encoding / net | [stdlib/roadmap.md](design/stdlib/roadmap.md) |
+| stdlib P0–P3 缺失包 | fs / os / threading / net / async / crypto（time + encoding 已 ship；详 stdlib/roadmap.md "未来包" 表）| [stdlib/roadmap.md](design/stdlib/roadmap.md) |
 | split-debug-symbols 退化 trace ip+build_id | line==0 时帧追加 `+0x<ip> [build:<8hex>]`；需 VmFrame 追踪 PC | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | `z42c symbolicate` 离线工具 | 把 `.zsym` 应用到 crash trace 还原 file:line:col | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
 | sidecar lazy / mmap 加载 | 启动延迟敏感场景的优化路径 | [language/exceptions.md](design/language/exceptions.md#deferred--future-work) |
