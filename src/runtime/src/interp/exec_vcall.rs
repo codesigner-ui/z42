@@ -22,7 +22,7 @@ use super::{ExecOutcome, Frame};
 /// looking up the function in `module.func_index` — replacing the old
 /// hardcoded `(Value, method)` → builtin-name switch.
 ///
-/// Returns None for non-primitive values (objects, arrays, null, etc.).
+/// Returns None for non-primitive values (objects, null, etc.).
 pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
     use crate::metadata::well_known_names::*;
     match obj {
@@ -36,6 +36,27 @@ pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
         // below tries `Std.Array.<method>` first, then falls through to base
         // `Std.Object.<method>` via the existing primitive overload retry logic.
         Value::Array(_) => Some(STD_ARRAY),
+        _ => None,
+    }
+}
+
+/// refactor-vcall-ic-primitives (2026-05-17): synthetic TypeId for IC keying.
+/// Primitives don't have a real `TypeDesc.id` (they're built-in runtime values,
+/// not user-defined classes). Returning a stable `PRIM_TYPE_*` lets `VCallIC`
+/// cache them with the same `cached_type_id` mechanism used for object
+/// receivers — no extra slot, no separate cache path.
+///
+/// Returns None for objects (which use real `type_desc.id.0`) and `Value::Null`.
+#[inline]
+pub(crate) fn value_synthetic_type_id(obj: &Value) -> Option<u32> {
+    use crate::metadata::tokens::*;
+    match obj {
+        Value::I64(_)   => Some(PRIM_TYPE_I64),
+        Value::F64(_)   => Some(PRIM_TYPE_F64),
+        Value::Bool(_)  => Some(PRIM_TYPE_BOOL),
+        Value::Char(_)  => Some(PRIM_TYPE_CHAR),
+        Value::Str(_)   => Some(PRIM_TYPE_STR),
+        Value::Array(_) => Some(PRIM_TYPE_ARRAY),
         _ => None,
     }
 }
@@ -61,14 +82,18 @@ pub(super) fn vcall(
     let obj_val = frame.get(obj)?.clone();
     let mut extra_args = collect_args(&frame.regs, args)?;
 
-    // ── Fast path: IC hit on user-class receiver ─────────────────────────
-    // Only applies when (1) caller passed an IC, (2) receiver is Value::Object
-    // (primitives go through the dedicated primitive_class_name path below),
-    // (3) receiver's TypeId matches cache, (4) cached MethodId resolves to a
-    // module function. Anything else falls through to the slow path which
-    // also updates the IC.
-    if let (Some(ic), Value::Object(ref rc)) = (vcall_ic, &obj_val) {
-        let recv_type = rc.borrow().type_desc.id.0;
+    // ── Fast path: IC hit (object OR primitive receiver) ────────────────
+    // Fires when (1) caller passed an IC, (2) receiver's TypeId — real for
+    // Value::Object, synthetic `PRIM_TYPE_*` for primitives (refactor-vcall-
+    // ic-primitives, 2026-05-17) — matches cache, (3) cached MethodId
+    // resolves to a module function. Anything else falls through to the slow
+    // path, which also updates the IC for next time.
+    if let Some(ic) = vcall_ic {
+        let recv_type = match &obj_val {
+            Value::Object(rc) => rc.borrow().type_desc.id.0,
+            other => value_synthetic_type_id(other)
+                .unwrap_or(crate::metadata::tokens::UNRESOLVED),
+        };
         let cached_type = ic.cached_type_id.load(Ordering::Relaxed);
         if recv_type != crate::metadata::tokens::UNRESOLVED && recv_type == cached_type {
             let fn_idx = ic.cached_fn_idx.load(Ordering::Relaxed);
@@ -109,9 +134,20 @@ pub(super) fn vcall(
         let arity = call_args.len() - 1; // exclude `this`
         let primary = format!("{}.{}", class_name, method);
         let overload = format!("{}.{}${}", class_name, method, arity);
+        // refactor-vcall-ic-primitives (2026-05-17): on intra-module resolve,
+        // populate VCallIC so the next call at this site with the same primitive
+        // receiver type takes the IC fast path above — skips both format!()
+        // calls + the HashMap lookup. Cross-zpkg (lazy_fn) skips populate
+        // because IC cached_fn_idx must index into THIS module's functions table.
         for func_name in [primary.as_str(), overload.as_str()] {
             if let Some(&idx) = module.func_index.get(func_name) {
                 if let Some(callee) = module.functions.get(idx) {
+                    if let (Some(ic), Some(synth_id)) =
+                        (vcall_ic, value_synthetic_type_id(&obj_val))
+                    {
+                        ic.cached_type_id.store(synth_id, Ordering::Relaxed);
+                        ic.cached_fn_idx.store(idx as u32, Ordering::Relaxed);
+                    }
                     let outcome = super::exec_function(ctx, module, callee, &call_args)?;
                     return match outcome {
                         ExecOutcome::Returned(ret) => {

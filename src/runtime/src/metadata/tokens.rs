@@ -42,6 +42,24 @@ pub const UNRESOLVED: u32 = u32::MAX;
 /// the type).
 pub const IMPORT_BASE: u32 = 0x8000_0000;
 
+/// refactor-vcall-ic-primitives (2026-05-17): synthetic TypeId base for
+/// primitive receivers (`Value::I64` / `F64` / `Bool` / `Char` / `Str` / `Array`).
+/// These don't appear in `Module.type_registry` — primitives are built-in
+/// runtime values, not user-defined classes — but the `VCallIC` machinery
+/// keys on a `u32` TypeId. Using a fixed high range avoids collision with
+/// real IDs (real IDs grow from 0 and are bounded by metadata size ≪ 2^32).
+///
+/// Layout: `PRIM_TYPE_BASE + variant_offset`. Range reserves 16 slots
+/// (`0xFFFE_0000..0xFFFE_000F`) — far below `UNRESOLVED` (`0xFFFF_FFFF`)
+/// and `IMPORT_BASE` (`0x8000_0000`), no collision possible.
+pub const PRIM_TYPE_BASE:   u32 = 0xFFFE_0000;
+pub const PRIM_TYPE_I64:    u32 = 0xFFFE_0001;
+pub const PRIM_TYPE_F64:    u32 = 0xFFFE_0002;
+pub const PRIM_TYPE_BOOL:   u32 = 0xFFFE_0003;
+pub const PRIM_TYPE_CHAR:   u32 = 0xFFFE_0004;
+pub const PRIM_TYPE_STR:    u32 = 0xFFFE_0005;
+pub const PRIM_TYPE_ARRAY:  u32 = 0xFFFE_0006;
+
 macro_rules! define_token {
     ($(#[$meta:meta])* $name:ident) => {
         $(#[$meta])*
