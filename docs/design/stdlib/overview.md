@@ -223,10 +223,21 @@ Rules:
 | Package | Namespace | Load condition | Analogy |
 |---------|-----------|---------------|---------|
 | `z42.core` | `Std` | **Always loaded at VM startup.** No `using` required. | Python `builtins`, Rust `std::prelude` |
-| `z42.io` | `Std.IO` | Loaded when `using Std.IO;` is present | C# `System.IO` |
-| `z42.collections` | `Std.Collections` | Loaded when `using Std.Collections;` is present（**仅覆盖 Queue/Stack 等次级集合**；`List<T>` / `Dictionary<K,V>` 虽属同 namespace，但物理驻留 `z42.core`，随 prelude 一起加载）| C# `System.Collections.Generic`（非基础部分） |
-| `z42.text` | `Std.Text` | Loaded when `using Std.Text;` is present | C# `System.Text` |
-| `z42.math` | `Std.Math` | Loaded when `using Std.Math;` is present | C# `System.Math` |
+| `z42.io` | `Std.IO` | `using Std.IO;` | C# `System.IO` |
+| `z42.io.binary` | `Std.IO.Binary` | `using Std.IO.Binary;` | C# `System.IO.BinaryReader/Writer` |
+| `z42.collections` | `Std.Collections` | `using Std.Collections;`（**仅次级容器** Queue/Stack/SortedSet 等；`List<T>` / `Dictionary<K,V>` 物理驻留 `z42.core`，随 prelude 一起加载）| C# `System.Collections.Generic` 非基础部分 |
+| `z42.text` | `Std.Text` | `using Std.Text;` | C# `System.Text` |
+| `z42.math` | `Std.Math` | `using Std.Math;` | C# `System.Math` |
+| `z42.encoding` | `Std.Encoding` | `using Std.Encoding;` | C# `System.Convert` / `System.Text.Encoding` |
+| `z42.time` | `Std.Time` | `using Std.Time;` | C# `System.DateTime` / `System.Diagnostics.Stopwatch` |
+| `z42.toml` | `Std.Toml` | `using Std.Toml;` | Rust `toml` crate |
+| `z42.json` | `Std.Json` | `using Std.Json;` | C# `System.Text.Json` / `serde_json` |
+| `z42.random` | `Std.Random` | `using Std.Random;` | C# `System.Random` / Rust `rand` |
+| `z42.uri` | `Std.Uri` | `using Std.Uri;` | C# `System.Uri` / Rust `url` crate |
+| `z42.diagnostics` | `Std.Diagnostics` | `using Std.Diagnostics;` | C# `Microsoft.Extensions.Logging` / Rust `log` |
+| `z42.regex` | `Std.Regex` | `using Std.Regex;` | C# `System.Text.RegularExpressions` |
+| `z42.cli` | `Std.Cli` | `using Std.Cli;` | Python `argparse` / Rust `clap` (subset) |
+| `z42.test` | `Std.Test` | `using Std.Test;` (test files only) | xUnit / NUnit / Rust `#[test]` |
 
 **`z42.core` auto-load semantics:**
 - Loaded before the first instruction of any user module is executed.
