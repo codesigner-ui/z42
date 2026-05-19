@@ -102,6 +102,19 @@ pub struct VmCore {
     /// that z42 `ProcessHandle` carries; removed (`take_*`) on `wait` /
     /// `kill`+reap / explicit `drop`.
     pub(crate) processes:          Mutex<HashMap<u64, crate::corelib::process::ProcessSlot>>,
+    /// **GC subsystem**. Moved here in Phase 2.2 so it can be shared across
+    /// threads (single global heap). Backing today is `RcMagrGC`; Phase 3
+    /// swaps to Arc + Send + Sync. Stored as `Box<dyn MagrGC>` (no inner
+    /// lock) because all `MagrGC` methods take `&self` and the impl handles
+    /// its own interior mutability.
+    ///
+    /// **Scanner cycle avoidance**: the external root scanner closure
+    /// captures `Weak<VmCore>` (not `Arc<VmCore>`) for static_fields access
+    /// — otherwise `VmCore` → heap → scanner → Arc<VmCore> forms a cycle
+    /// and the core never drops. Per-thread roots (call_stack /
+    /// pending_exception / func_ref_slots) stay captured via `Rc<RefCell>`
+    /// clones from the unique VmContext.
+    pub(crate) heap:               Box<dyn MagrGC>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -144,7 +157,7 @@ pub struct VmContext {
     /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。Slot id 在
     /// `merge_modules` 阶段已 remap 到全局 index space。
     pub(crate) func_ref_slots:    Rc<RefCell<Vec<Value>>>,
-    pub(crate) heap:              Box<dyn MagrGC>,
+    // heap moved to VmCore (Phase 2.2)
 
     // native_types / native_libs / pinned_owned_buffers moved to VmCore (Phase 1.7-1.9)
 
@@ -158,6 +171,16 @@ impl Default for VmContext {
 
 impl VmContext {
     pub fn new() -> Self {
+        let pending_exception = Rc::new(RefCell::new(None));
+        let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
+        // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
+        // previous trio (exec_stack / env_arena_stack / call_stack).
+        let call_stack: Rc<RefCell<Vec<crate::exception::VmFrame>>> = Rc::new(RefCell::new(Vec::new()));
+
+        // Construct VmCore with heap embedded; scanner is installed AFTER
+        // wrapping in Arc so the closure can capture Weak<VmCore> (cycle
+        // avoidance: heap owns the scanner, scanner refs core, core owns
+        // heap → strong-Arc loop = leak). Weak.upgrade() per call.
         let core: Arc<VmCore> = Arc::new(VmCore {
             static_fields:      Mutex::new(Vec::new()),
             static_field_index: Mutex::new(HashMap::new()),
@@ -168,27 +191,29 @@ impl VmContext {
             native_libs:        Mutex::new(Vec::new()),
             pinned_owned_buffers: Mutex::new(HashMap::new()),
             processes:            Mutex::new(HashMap::new()),
+            heap:                 Box::new(RcMagrGC::new()),
         });
-        let pending_exception = Rc::new(RefCell::new(None));
-        let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
-        // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
-        // previous trio (exec_stack / env_arena_stack / call_stack).
-        let call_stack: Rc<RefCell<Vec<crate::exception::VmFrame>>> = Rc::new(RefCell::new(Vec::new()));
 
         // External GC root scanner — invoked by the cycle collector during
         // mark phase. Walks all out-of-heap Value sources so cycles whose
         // only roots are static fields / pending exception / live frame
         // regs / stack closure envs / func-ref slots stay alive.
-        let heap = RcMagrGC::new();
+        //
+        // **Single-VmContext-per-VmCore invariant** (Phase 2.2): scanner
+        // captures the per-thread `Rc<RefCell<...>>` clones directly. Future
+        // multi-thread spec will introduce a VmContext registry on VmCore
+        // so multiple threads' per-thread state can all be walked.
         {
-            let core_clone = Arc::clone(&core);
+            let core_weak = Arc::downgrade(&core);
             let pe  = pending_exception.clone();
             let cs  = call_stack.clone();
             let frs = func_ref_slots.clone();
-            heap.set_external_root_scanner(Box::new(move |visit| {
-                // 1. static_fields (via VmCore)
-                for v in core_clone.static_fields.lock().iter() {
-                    visit(v);
+            core.heap.set_external_root_scanner(Box::new(move |visit| {
+                // 1. static_fields (via VmCore, weak-upgrade so heap drop is clean)
+                if let Some(c) = core_weak.upgrade() {
+                    for v in c.static_fields.lock().iter() {
+                        visit(v);
+                    }
                 }
                 // 2. pending_exception
                 if let Some(v) = pe.borrow().as_ref() {
@@ -227,7 +252,6 @@ impl VmContext {
             pending_exception,
             call_stack,
             func_ref_slots,
-            heap: Box::new(heap),
             process_next_id: std::cell::Cell::new(1),
         }
     }
@@ -457,7 +481,7 @@ impl VmContext {
     /// Borrow the GC heap as a trait object. All script-driven allocations go
     /// through this entry point; see `docs/design/runtime/vm-architecture.md` "GC 子系统".
     pub fn heap(&self) -> &dyn MagrGC {
-        self.heap.as_ref()
+        self.core.heap.as_ref()
     }
 
     // ── Static fields ─────────────────────────────────────────────────────

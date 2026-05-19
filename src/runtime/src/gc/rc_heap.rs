@@ -200,7 +200,7 @@ impl std::fmt::Debug for RcHeapInner {
 ///
 /// 不要求 Send + Sync —— 闭包通常捕获 `Rc<RefCell<...>>` 共享 VmContext 字段，
 /// 与 RcMagrGC 同处单一线程下使用。
-type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value))>;
+pub type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value))>;
 
 #[derive(Default)]
 pub struct RcMagrGC {
@@ -233,12 +233,6 @@ impl RcMagrGC {
     /// pending_exception 的闭包，让那些字段持有的 cyclic 对象在 collect 时
     /// 不被误判为可断。
     ///
-    /// 同一 RcMagrGC 上重复调用会**覆盖**之前的 scanner（仅一个 active 闭包）。
-    /// 传 `set_external_root_scanner(Box::new(|_| {}))` 等价于卸载（no-op 闭包）。
-    pub fn set_external_root_scanner(&self, scanner: ExternalRootScanner) {
-        *self.external_root_scanner.borrow_mut() = Some(scanner);
-    }
-
     fn now_us() -> u64 {
         static EPOCH: OnceLock<Instant> = OnceLock::new();
         EPOCH.get_or_init(Instant::now).elapsed().as_micros() as u64
@@ -540,6 +534,17 @@ impl RcMagrGC {
 // ── trait impl ───────────────────────────────────────────────────────────────
 
 impl MagrGC for RcMagrGC {
+    // ── 2. Roots / scanner ───────────────────────────────────────────────────
+
+    /// **Phase 3d.1** + **add-multithreading-foundation Phase 2.2**：
+    /// 注册 external root scanner 闭包。每次 cycle collection mark 阶段在
+    /// 扫完 pinned roots 后调用，把闭包 yield 的 Value 也加入 reachable BFS。
+    ///
+    /// 重复调用覆盖之前的 scanner；传 no-op 闭包等价于卸载。
+    fn set_external_root_scanner(&self, scanner: ExternalRootScanner) {
+        *self.external_root_scanner.borrow_mut() = Some(scanner);
+    }
+
     // ── 1. Allocation ────────────────────────────────────────────────────────
 
     fn alloc_object(

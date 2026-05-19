@@ -70,6 +70,21 @@ pub trait MagrGC: std::fmt::Debug {
 
     // ── 2. Roots ─────────────────────────────────────────────────────────────
 
+    /// 注册一个 **external root scanner** 闭包 —— GC mark 阶段在扫完 pinned
+    /// root 后调用此闭包，让宿主（典型情况是 `VmContext` / `VmCore`）暴露自己
+    /// 持有的、不通过 GC handle 持有的 `Value`（如 `static_fields` 槽位、
+    /// pending exception、frame regs 等）。
+    ///
+    /// **add-multithreading-foundation Phase 2.2 (2026-05-19)**：本方法从
+    /// `RcMagrGC` 专属升级到 trait 接口，因为 `heap` 字段在本阶段移入 VmCore
+    /// 后，scanner 必须能通过 `Box<dyn MagrGC>` 安装（VmCore 构造完毕拿到
+    /// `Weak<VmCore>` 再 install）。
+    ///
+    /// 同一 backend 上重复调用**覆盖**之前的 scanner（仅一个 active 闭包）。
+    /// 默认实现 no-op（适合不参与 cycle / external-root 的 backend；当前
+    /// 仅 `RcMagrGC` 重载）。
+    fn set_external_root_scanner(&self, _scanner: super::rc_heap::ExternalRootScanner) {}
+
     /// 把一个 value 加入 root set，host 持有返回的 `RootHandle` 期间该值
     /// 不会被 GC 回收。等价于 V8 `Persistent<T>` / .NET `GCHandle.Alloc(Normal)`。
     fn pin_root(&self, value: Value) -> RootHandle;

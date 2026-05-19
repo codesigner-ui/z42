@@ -24,8 +24,8 @@
 
 ## 阶段 2: 剩余共享字段
 - [x] 2.1 移动 `processes`（`Mutex<HashMap<u64, ProcessSlot>>`）+ 调用方
-- [ ] 2.2 移动 GC backend `gc: Arc<dyn MagrGC + Send + Sync>` 到 VmCore（先用 dyn box，arc 边界待阶段 3）
-- [ ] 2.3 阶段 2 全 GREEN
+- [x] 2.2 移动 GC backend `gc: Arc<dyn MagrGC + Send + Sync>` 到 VmCore（先用 dyn box，arc 边界待阶段 3）
+- [x] 2.3 阶段 2 全 GREEN
 
 ## 阶段 3: GcRef + MagrGC trait（大块）
 - [ ] 3.1 `src/runtime/src/gc/refs.rs`：`GcRef.inner: Rc<...>` → `Arc<...>`；`GcAllocation.inner: RefCell<T>` → `parking_lot::Mutex<T>`；`GcAllocation.finalizer` 同
@@ -72,8 +72,16 @@
 
 | 名称 | 范围 |
 |------|------|
+| `add-vmcontext-registry` | VmCore 加 VmContext 注册表 + scanner walk registry 扫所有线程 frames（discovered in Phase 2.2，design Decision 8）— **必须先于 `add-threading-stdlib`** |
 | `add-threading-stdlib` | `Std.Threading.Thread.Start` / `.Join` / per-thread heap-local（用本 spec 的 foundation）|
 | `add-sync-primitives` | `Std.Threading.Mutex<T>` / `Channel<T>`（用户类型）|
 | `add-gc-safepoint` | 并发 GC 前置：interp / JIT 插入 safepoint，让 GC 能安全 stop-the-world |
 | `add-concurrent-gc` | mark-sweep 升级到并发（Phase A 性能轨道）|
 | `add-spawn-syntax` | `spawn` / `task scope` 语言层（L3，concurrency.md §3.5）|
+
+**Phase 2.2 实施发现（2026-05-19/20）**：
+
+- 原计划：把 `Box<dyn MagrGC>` 移入 VmCore 即可。
+- 实际：scanner closure 当前捕获 `Arc<VmCore>` 强引用，若 heap 进 VmCore 就形成 `VmCore → heap → scanner → Arc<VmCore>` 循环引用 → VmCore 永不 drop。
+- 解决：scanner 切到 `Weak<VmCore>` + 每次 upgrade。同时为支持"先构造 Arc<VmCore>，再装 scanner"模式，把 `set_external_root_scanner` 提升到 `MagrGC` trait 接口（带 no-op 默认实现），让 `Box<dyn MagrGC>` 也能调。
+- 多线程下"每线程独立 VmContext，scanner 要 walk 所有线程的 frames"是更深问题：当前 spec 范围（single-threaded foundation）通过"单 VmContext per VmCore 不变量 + scanner 捕获 per-thread Rc 克隆"绕过。未来 multi-thread spec 要在 VmCore 加 VmContext 注册表（`Mutex<Vec<RawCtxPtr>>` 或 `Weak<...>`）。已在 design.md Decision 8 + 本 tasks.md 这一段都注明。
