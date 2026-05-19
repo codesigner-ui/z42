@@ -23,7 +23,7 @@
 - [ ] 1.10 阶段 1 全 GREEN check（stdlib + test-vm + dotnet test）
 
 ## 阶段 2: 剩余共享字段
-- [ ] 2.1 移动 `processes`（`Mutex<HashMap<u64, ProcessSlot>>`）+ 调用方
+- [x] 2.1 移动 `processes`（`Mutex<HashMap<u64, ProcessSlot>>`）+ 调用方
 - [ ] 2.2 移动 GC backend `gc: Arc<dyn MagrGC + Send + Sync>` 到 VmCore（先用 dyn box，arc 边界待阶段 3）
 - [ ] 2.3 阶段 2 全 GREEN
 

@@ -97,6 +97,11 @@ pub struct VmCore {
     /// Spec C10 — owned byte buffers backing `Value::PinnedView` instances.
     /// Keyed by buffer data pointer so `UnpinPtr` can drop the entry.
     pub(crate) pinned_owned_buffers: Mutex<HashMap<u64, Box<[u8]>>>,
+    /// add-std-process (2026-05-13) — live `Std.IO.Process` children
+    /// spawned via `__process_spawn`. Keyed by monotonic u64 slot id
+    /// that z42 `ProcessHandle` carries; removed (`take_*`) on `wait` /
+    /// `kill`+reap / explicit `drop`.
+    pub(crate) processes:          Mutex<HashMap<u64, crate::corelib::process::ProcessSlot>>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -143,12 +148,7 @@ pub struct VmContext {
 
     // native_types / native_libs / pinned_owned_buffers moved to VmCore (Phase 1.7-1.9)
 
-    /// add-std-process (2026-05-13) — live `Std.IO.Process` children
-    /// spawned via `__process_spawn`. Keyed by a monotonic u64 slot id
-    /// that z42 `ProcessHandle` carries. Slot is removed (`take_*`) on
-    /// `wait` / `kill`+reap / explicit `drop`. Single counter never
-    /// reused (u64 is effectively unbounded), so no generation field.
-    pub(crate) processes:         Rc<RefCell<HashMap<u64, crate::corelib::process::ProcessSlot>>>,
+    // processes moved to VmCore (Phase 2.1)
     pub(crate) process_next_id:   std::cell::Cell<u64>,
 }
 
@@ -167,6 +167,7 @@ impl VmContext {
             #[cfg(feature = "native-interop")]
             native_libs:        Mutex::new(Vec::new()),
             pinned_owned_buffers: Mutex::new(HashMap::new()),
+            processes:            Mutex::new(HashMap::new()),
         });
         let pending_exception = Rc::new(RefCell::new(None));
         let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
@@ -227,7 +228,6 @@ impl VmContext {
             call_stack,
             func_ref_slots,
             heap: Box::new(heap),
-            processes:       Rc::new(RefCell::new(HashMap::new())),
             process_next_id: std::cell::Cell::new(1),
         }
     }
@@ -241,14 +241,14 @@ impl VmContext {
     pub fn alloc_process_slot(&self, slot: crate::corelib::process::ProcessSlot) -> u64 {
         let id = self.process_next_id.get();
         self.process_next_id.set(id + 1);
-        self.processes.borrow_mut().insert(id, slot);
+        self.core.processes.lock().insert(id, slot);
         id
     }
 
     /// Remove and return the slot. Used by `wait` / `kill`+reap / `drop`
     /// which take ownership of `child` etc.
     pub fn take_process_slot(&self, slot_id: u64) -> Option<crate::corelib::process::ProcessSlot> {
-        self.processes.borrow_mut().remove(&slot_id)
+        self.core.processes.lock().remove(&slot_id)
     }
 
     /// Peek at the slot in-place. Returns `None` if the slot id is
@@ -259,14 +259,14 @@ impl VmContext {
         slot_id: u64,
         f: impl FnOnce(&mut crate::corelib::process::ProcessSlot) -> T,
     ) -> Option<T> {
-        let mut map = self.processes.borrow_mut();
+        let mut map = self.core.processes.lock();
         map.get_mut(&slot_id).map(f)
     }
 
     /// Number of currently allocated process slots. Used by tests to
     /// verify cleanup paths drop entries.
     pub fn process_slot_count(&self) -> usize {
-        self.processes.borrow().len()
+        self.core.processes.lock().len()
     }
 
     // ── Native interop (Tier 1, spec C2) ──────────────────────────────────
