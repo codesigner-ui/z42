@@ -74,6 +74,20 @@ pub struct VmFrame {
     pub env_arena: *const Vec<Vec<Value>>,
 }
 
+// SAFETY (add-multithreading-foundation Phase 3, 2026-05-20):
+// `VmFrame` holds raw pointers (`regs` / `env_arena`) into the owning
+// interp / JIT frame's Rust stack. These are valid for the frame's
+// lifetime, which is enclosed by `FrameGuard` RAII. The GC scanner is
+// the only cross-thread reader (mark phase invoked from a possible GC
+// worker thread); it only ever reads these pointers while the owning
+// thread is paused at a safepoint (future invariant; today GC only
+// runs from the same thread that owns the frame). The `Cell<u32>`
+// `line` / `column` are wrapped in this single-thread invariant.
+// Once `add-vmcontext-registry` lands per-thread VmContexts with proper
+// safepoints, this invariant is enforced by the safepoint protocol.
+unsafe impl Send for VmFrame {}
+unsafe impl Sync for VmFrame {}
+
 impl VmFrame {
     pub fn new(
         func_name: String, file: String,

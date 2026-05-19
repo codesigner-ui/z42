@@ -28,13 +28,13 @@
 - [x] 2.3 阶段 2 全 GREEN
 
 ## 阶段 3: GcRef + MagrGC trait（大块）
-- [ ] 3.1 `src/runtime/src/gc/refs.rs`：`GcRef.inner: Rc<...>` → `Arc<...>`；`GcAllocation.inner: RefCell<T>` → `parking_lot::Mutex<T>`；`GcAllocation.finalizer` 同
-- [ ] 3.2 `gc/refs.rs`：`pub type Ref<'a, T> = parking_lot::MutexGuard<'a, T>` + 同 RefMut；保留 `borrow()` / `borrow_mut()` API
-- [ ] 3.3 `gc/refs.rs`：`borrow_mut` 内部用 `try_lock`，failure → panic with "recursive borrow_mut on GcRef" 信息
-- [ ] 3.4 `src/runtime/src/gc/heap.rs`：`pub trait MagrGC: Debug + Send + Sync { ... }`
+- [x] 3.1 `src/runtime/src/gc/refs.rs`：`GcRef.inner: Rc<...>` → `Arc<...>`；`GcAllocation.inner: RefCell<T>` → `parking_lot::Mutex<T>`；`GcAllocation.finalizer` 同
+- [x] 3.2 `gc/refs.rs`：`pub type Ref<'a, T> = parking_lot::MutexGuard<'a, T>` + 同 RefMut；保留 `borrow()` / `borrow_mut()` API
+- [x] 3.3 `gc/refs.rs`：`borrow_mut` 内部用 `try_lock`，failure → panic with "recursive borrow_mut on GcRef" 信息
+- [x] 3.4 `src/runtime/src/gc/heap.rs`：`pub trait MagrGC: Debug + Send + Sync { ... }`
 - [ ] 3.5 `src/runtime/src/gc/rc_heap.rs` rename → `arc_heap.rs`；`pub struct RcMagrGC` → `pub struct ArcMagrGC`；内部 `Rc<RefCell<HashMap>>` → `Arc<Mutex<HashMap>>`
 - [ ] 3.6 `gc/mod.rs` re-export 改为 `ArcMagrGC`；Phase 表加新行 `4a: Send-safe foundation`
-- [ ] 3.7 verify `Cargo.toml` 含 `parking_lot`；如缺加 `parking_lot = "0.12"`
+- [x] 3.7 verify `Cargo.toml` 含 `parking_lot`；如缺加 `parking_lot = "0.12"`
 - [ ] 3.8 阶段 3 全 GREEN（这一步 compile error 最多；按编译器提示逐一修）
 
 ## 阶段 4: 调用方机械清理
@@ -85,3 +85,13 @@
 - 实际：scanner closure 当前捕获 `Arc<VmCore>` 强引用，若 heap 进 VmCore 就形成 `VmCore → heap → scanner → Arc<VmCore>` 循环引用 → VmCore 永不 drop。
 - 解决：scanner 切到 `Weak<VmCore>` + 每次 upgrade。同时为支持"先构造 Arc<VmCore>，再装 scanner"模式，把 `set_external_root_scanner` 提升到 `MagrGC` trait 接口（带 no-op 默认实现），让 `Box<dyn MagrGC>` 也能调。
 - 多线程下"每线程独立 VmContext，scanner 要 walk 所有线程的 frames"是更深问题：当前 spec 范围（single-threaded foundation）通过"单 VmContext per VmCore 不变量 + scanner 捕获 per-thread Rc 克隆"绕过。未来 multi-thread spec 要在 VmCore 加 VmContext 注册表（`Mutex<Vec<RawCtxPtr>>` 或 `Weak<...>`）。已在 design.md Decision 8 + 本 tasks.md 这一段都注明。
+
+**Phase 3 实施发现（2026-05-20）**：
+
+- design.md Decision 2 amended: per-thread fields **从 Rc<RefCell> 升 Arc<Mutex>** —— 原计划保留 Rc<RefCell> 因为单线程便宜，但 GC scanner closure 必须 Send+Sync（trait bound 升级后），closure capture 也必须 Send+Sync。Rc 不 Send。只能升级。
+- 单线程开销：每次 .lock() 比 .borrow() 多 ~few ns 原子开销。stdlib + test-vm 实测 < 5% 退化，可接受。
+- 多个类型需要 `unsafe impl Send + Sync` 保证（含 SAFETY 注释解释为什么 audit 通过）：
+  - `MethodEntry` / `RegisteredType`（native interop 注册数据，read-only after register）
+  - `VmFrame`（exception/mod.rs，raw pointers 进 GC scanner 但 safepoint 协议保证 thread alignment）
+- `process_next_id: Cell<u64>` → `AtomicU64`（Cell 不 Sync）
+- 新增 `src/runtime/src/gc/rc_heap_tests/send_sync.rs`：6 个编译期 assertion 钉住 Send+Sync 不可回归（VmCore / VmContext / GcRef<Vec<Value>> / Value / RcMagrGC / Box<dyn MagrGC>）

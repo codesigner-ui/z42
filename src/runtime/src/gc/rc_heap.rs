@@ -44,7 +44,7 @@
 //!   max_heap_bytes 时返回 `Value::Null` 不入 registry / 不 bump used_bytes
 //!   （撤销分配），同时 fire OutOfMemory 事件。
 
-use std::cell::RefCell;
+use parking_lot::Mutex;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -193,30 +193,31 @@ impl std::fmt::Debug for RcHeapInner {
 
 // ── RcMagrGC ─────────────────────────────────────────────────────────────────
 
-/// External root scanner type. **Phase 3d.1**：宿主（典型情况是 `VmContext`）
+/// External root scanner type. 宿主（典型情况是 `VmCore` / `VmContext`）
 /// 通过 `set_external_root_scanner` 注册的闭包，在 mark 阶段被调用以暴露
-/// 自己持有的 Value（如 static_fields / pending_exception / 未来的 interp
-/// 栈帧 regs），让 cycle collector 不会把这些可达对象误判为 unreachable。
+/// 自己持有的 Value（如 static_fields / pending_exception / interp 栈帧 regs），
+/// 让 cycle collector 不会把这些可达对象误判为 unreachable。
 ///
-/// 不要求 Send + Sync —— 闭包通常捕获 `Rc<RefCell<...>>` 共享 VmContext 字段，
-/// 与 RcMagrGC 同处单一线程下使用。
-pub type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value))>;
+/// **add-multithreading-foundation Phase 3 (2026-05-20)**：要求 `Send + Sync`
+/// —— 闭包内部捕获 Arc<VmCore> Weak 等 Send-safe handle；GC 后续可能在
+/// 独立 worker 线程上跑收集。
+pub type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value)) + Send + Sync>;
 
 #[derive(Default)]
 pub struct RcMagrGC {
-    inner: RefCell<RcHeapInner>,
-    external_root_scanner: RefCell<Option<ExternalRootScanner>>,
+    inner: Mutex<RcHeapInner>,
+    external_root_scanner: Mutex<Option<ExternalRootScanner>>,
 }
 
 impl std::fmt::Debug for RcMagrGC {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let scanner_set = self.external_root_scanner.try_borrow()
+        let scanner_set = self.external_root_scanner.try_lock()
             .map(|s| s.is_some())
             .unwrap_or(false);
         let mut d = f.debug_struct("RcMagrGC");
-        match self.inner.try_borrow() {
-            Ok(i)  => { d.field("inner", &*i); }
-            Err(_) => { d.field("inner", &"<borrowed>"); }
+        match self.inner.try_lock() {
+            Some(i) => { d.field("inner", &*i); }
+            None    => { d.field("inner", &"<borrowed>"); }
         }
         d.field("external_scanner", &scanner_set).finish()
     }
@@ -259,7 +260,7 @@ impl RcMagrGC {
     /// 把事件分发到所有 observer。先 snapshot observer 列表再分发，避免
     /// observer 在回调中重入 add_observer/remove_observer 引发 borrow 冲突。
     fn fire_event(&self, event: GcEvent) {
-        let observers: Vec<_> = self.inner.borrow().observers.iter()
+        let observers: Vec<_> = self.inner.lock().observers.iter()
             .map(|(_, o)| Arc::clone(o)).collect();
         for o in observers {
             o.on_event(&event);
@@ -270,18 +271,18 @@ impl RcMagrGC {
     fn record_alloc(&self, value: &Value, kind: AllocKind, size: usize) {
         // 0. 注册到 heap_registry（Phase 3b）
         if let Some(weak) = self.make_weak_internal(value) {
-            self.inner.borrow_mut().heap_registry.push(weak);
+            self.inner.lock().heap_registry.push(weak);
         }
         // 1. 更新 stats（先借再放，避免后续触发事件时 borrow 冲突）
         {
-            let mut i = self.inner.borrow_mut();
+            let mut i = self.inner.lock();
             i.stats.allocations += 1;
             i.stats.used_bytes  = i.stats.used_bytes.saturating_add(size as u64);
         }
         // 2. 压力检查（可能触发 GcEvent）
         self.check_pressure(size as u64);
         // 3. Sampler 调度
-        let sampler = self.inner.borrow().alloc_sampler.clone();
+        let sampler = self.inner.lock().alloc_sampler.clone();
         if let Some(s) = sampler {
             s(&AllocSample {
                 kind,
@@ -327,12 +328,12 @@ impl RcMagrGC {
     /// Value（Phase 3f Cranelift stack maps 解决）。
     fn mark_reachable_set(&self) -> HashSet<usize> {
         let mut reachable: HashSet<usize> = HashSet::new();
-        let mut queue: Vec<Value> = self.inner.borrow().roots.values().cloned().collect();
+        let mut queue: Vec<Value> = self.inner.lock().roots.values().cloned().collect();
 
         // Phase 3d.1: 把 external scanner 暴露的额外 roots 也压入 queue
         // 注：在 borrow scanner 的 scope 内不持有 self.inner 借用，避免 re-entrant 冲突
         {
-            let scanner_borrow = self.external_root_scanner.borrow();
+            let scanner_borrow = self.external_root_scanner.lock();
             if let Some(scan) = scanner_borrow.as_ref() {
                 scan(&mut |v| {
                     queue.push(v.clone());
@@ -441,7 +442,7 @@ impl RcMagrGC {
     /// Snapshot 当前 registry 中所有仍存活的 Value，并就地 prune 掉死引用。
     /// 返回值已去重（同一对象只出现一次）。
     fn snapshot_live_from_registry(&self) -> Vec<Value> {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         let mut alive: Vec<Value> = Vec::with_capacity(i.heap_registry.len());
         let mut visited: HashSet<usize> = HashSet::new();
         // 同步 prune：retain 只保留还能 upgrade 的项
@@ -463,7 +464,7 @@ impl RcMagrGC {
     /// **Phase 3-OOM**: 检查在当前 used_bytes 基础上再分配 `size` 字节是否会
     /// 越过 max_heap_bytes 上限。仅在 strict_oom 模式下使用。
     fn would_oom_after_alloc(&self, size: u64) -> (bool, u64) {
-        let i = self.inner.borrow();
+        let i = self.inner.lock();
         if !i.strict_oom { return (false, 0); }
         let Some(limit) = i.stats.max_bytes else { return (false, 0); };
         let after = i.stats.used_bytes.saturating_add(size);
@@ -479,7 +480,7 @@ impl RcMagrGC {
     /// - pause_count == 0
     fn maybe_auto_collect(&self) {
         let (used, max_opt, last, paused) = {
-            let i = self.inner.borrow();
+            let i = self.inner.lock();
             (i.stats.used_bytes, i.stats.max_bytes, i.last_auto_collect_used, i.pause_count > 0)
         };
         if paused { return; }
@@ -488,14 +489,14 @@ impl RcMagrGC {
         if used < near_threshold { return; }
         let throttle_delta = (limit as f64 * 0.1) as u64;
         if used.saturating_sub(last) < throttle_delta { return; }
-        self.inner.borrow_mut().last_auto_collect_used = used;
+        self.inner.lock().last_auto_collect_used = used;
         self.collect_cycles();
     }
 
     /// **Phase 3d**: collect 完成后，若 used 已降到 90% 阈值以下，
     /// reset `near_limit_warned` 让下次跨阈值能再发 NearHeapLimit 事件。
     fn maybe_reset_near_limit_warned(&self) {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         let Some(limit) = i.stats.max_bytes else { return };
         let near_threshold = (limit as f64 * 0.9) as u64;
         if i.stats.used_bytes < near_threshold {
@@ -505,7 +506,7 @@ impl RcMagrGC {
 
     fn check_pressure(&self, requested: u64) {
         let (used, max, near_warned) = {
-            let i = self.inner.borrow();
+            let i = self.inner.lock();
             (i.stats.used_bytes, i.stats.max_bytes, i.near_limit_warned)
         };
         let Some(limit) = max else { return };
@@ -513,7 +514,7 @@ impl RcMagrGC {
         let pressure_threshold = (limit as f64 * 0.75) as u64;
 
         if !near_warned && used >= near_threshold {
-            self.inner.borrow_mut().near_limit_warned = true;
+            self.inner.lock().near_limit_warned = true;
             self.fire_event(GcEvent::NearHeapLimit {
                 used_bytes: used, limit_bytes: limit,
             });
@@ -542,7 +543,7 @@ impl MagrGC for RcMagrGC {
     ///
     /// 重复调用覆盖之前的 scanner；传 no-op 闭包等价于卸载。
     fn set_external_root_scanner(&self, scanner: ExternalRootScanner) {
-        *self.external_root_scanner.borrow_mut() = Some(scanner);
+        *self.external_root_scanner.lock() = Some(scanner);
     }
 
     // ── 1. Allocation ────────────────────────────────────────────────────────
@@ -597,7 +598,7 @@ impl MagrGC for RcMagrGC {
     // ── 2. Roots ─────────────────────────────────────────────────────────────
 
     fn pin_root(&self, value: Value) -> RootHandle {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         let handle = RootHandle(i.next_root_id);
         i.next_root_id += 1;
         i.roots.insert(handle, value);
@@ -609,21 +610,21 @@ impl MagrGC for RcMagrGC {
     }
 
     fn unpin_root(&self, handle: RootHandle) {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         if i.roots.remove(&handle).is_some() {
             i.stats.roots_pinned = i.stats.roots_pinned.saturating_sub(1);
         }
     }
 
     fn enter_frame(&self) -> FrameMark {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         let depth = i.frame_pins.len() as u32;
         i.frame_pins.push(Vec::new());
         FrameMark(depth)
     }
 
     fn leave_frame(&self, mark: FrameMark) {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         while i.frame_pins.len() as u32 > mark.0 {
             if let Some(pins) = i.frame_pins.pop() {
                 for h in pins {
@@ -636,7 +637,7 @@ impl MagrGC for RcMagrGC {
     }
 
     fn for_each_root(&self, visitor: &mut dyn FnMut(&Value)) {
-        let i = self.inner.borrow();
+        let i = self.inner.lock();
         for v in i.roots.values() {
             visitor(v);
         }
@@ -733,15 +734,15 @@ impl MagrGC for RcMagrGC {
     // ── 5. Collection control ────────────────────────────────────────────────
 
     fn collect_cycles(&self) {
-        if self.inner.borrow().pause_count > 0 { return; }
+        if self.inner.lock().pause_count > 0 { return; }
         let start = Self::now_us();
-        let used_before = self.inner.borrow().stats.used_bytes;
+        let used_before = self.inner.lock().stats.used_bytes;
         self.fire_event(GcEvent::BeforeCollect {
             kind: GcKind::CycleCollector, used_bytes: used_before,
         });
         let freed_bytes = self.run_cycle_collection();
         {
-            let mut i = self.inner.borrow_mut();
+            let mut i = self.inner.lock();
             i.stats.gc_cycles += 1;
             i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
         }
@@ -754,17 +755,17 @@ impl MagrGC for RcMagrGC {
     }
 
     fn force_collect(&self) -> CollectStats {
-        if self.inner.borrow().pause_count > 0 {
+        if self.inner.lock().pause_count > 0 {
             return CollectStats::default();
         }
         let start = Self::now_us();
-        let used_before = self.inner.borrow().stats.used_bytes;
+        let used_before = self.inner.lock().stats.used_bytes;
         self.fire_event(GcEvent::BeforeCollect {
             kind: GcKind::Full, used_bytes: used_before,
         });
         let freed_bytes = self.run_cycle_collection();
         {
-            let mut i = self.inner.borrow_mut();
+            let mut i = self.inner.lock();
             i.stats.gc_cycles += 1;
             i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
         }
@@ -778,26 +779,26 @@ impl MagrGC for RcMagrGC {
         }
     }
 
-    fn pause(&self)  { self.inner.borrow_mut().pause_count += 1; }
+    fn pause(&self)  { self.inner.lock().pause_count += 1; }
     fn resume(&self) {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         i.pause_count = i.pause_count.saturating_sub(1);
     }
 
     // ── 6. Heap config ───────────────────────────────────────────────────────
 
     fn set_max_heap_bytes(&self, max: Option<u64>) {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         i.stats.max_bytes      = max;
         i.near_limit_warned    = false; // reset 让新阈值能再次触发 NearHeapLimit
     }
 
     fn used_bytes(&self) -> u64 {
-        self.inner.borrow().stats.used_bytes
+        self.inner.lock().stats.used_bytes
     }
 
     fn set_strict_oom(&self, enabled: bool) {
-        self.inner.borrow_mut().strict_oom = enabled;
+        self.inner.lock().strict_oom = enabled;
     }
 
     // ── 7. Finalization ──────────────────────────────────────────────────────
@@ -855,29 +856,29 @@ impl MagrGC for RcMagrGC {
             // Atomic Weak: rejected — atomics aren't Rc-backed, can't weak-ref.
             (_, GcHandleKind::Weak) => return 0,
         };
-        self.inner.borrow_mut().handle_slab.alloc(entry)
+        self.inner.lock().handle_slab.alloc(entry)
     }
 
     fn handle_target(&self, slot: u64) -> Option<Value> {
-        self.inner.borrow().handle_slab.get(slot).and_then(|e| e.target())
+        self.inner.lock().handle_slab.get(slot).and_then(|e| e.target())
     }
 
     fn handle_is_alloc(&self, slot: u64) -> bool {
-        self.inner.borrow().handle_slab.get(slot).is_some()
+        self.inner.lock().handle_slab.get(slot).is_some()
     }
 
     fn handle_kind(&self, slot: u64) -> Option<GcHandleKind> {
-        self.inner.borrow().handle_slab.get(slot).map(|e| e.kind())
+        self.inner.lock().handle_slab.get(slot).map(|e| e.kind())
     }
 
     fn handle_free(&self, slot: u64) {
-        self.inner.borrow_mut().handle_slab.free(slot);
+        self.inner.lock().handle_slab.free(slot);
     }
 
     // ── 9. Event observers ───────────────────────────────────────────────────
 
     fn add_observer(&self, observer: Arc<dyn GcObserver>) -> ObserverId {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         let id = ObserverId(i.next_observer_id);
         i.next_observer_id += 1;
         i.observers.push((id, observer));
@@ -886,7 +887,7 @@ impl MagrGC for RcMagrGC {
     }
 
     fn remove_observer(&self, id: ObserverId) {
-        let mut i = self.inner.borrow_mut();
+        let mut i = self.inner.lock();
         i.observers.retain(|(o_id, _)| *o_id != id);
         i.stats.observers = i.observers.len() as u64;
     }
@@ -894,7 +895,7 @@ impl MagrGC for RcMagrGC {
     // ── 10. Profiler ─────────────────────────────────────────────────────────
 
     fn set_alloc_sampler(&self, sampler: Option<AllocSamplerFn>) {
-        self.inner.borrow_mut().alloc_sampler = sampler;
+        self.inner.lock().alloc_sampler = sampler;
     }
 
     fn take_snapshot(&self) -> HeapSnapshot {
@@ -939,7 +940,7 @@ impl MagrGC for RcMagrGC {
             _ => false,
         }).count() as u64;
 
-        let mut s = self.inner.borrow().stats;
+        let mut s = self.inner.lock().stats;
         s.finalizers_pending = pending;
         s
     }

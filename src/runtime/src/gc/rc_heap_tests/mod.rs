@@ -33,4 +33,5 @@ mod finalization;
 mod object_model;
 mod oom;
 mod roots;
+mod send_sync;
 mod weak_refs;

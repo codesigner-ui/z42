@@ -40,10 +40,8 @@
 //! See `docs/design/runtime/vm-architecture.md` "VmContext —— 运行时状态归口" 段 for
 //! the full state-collapse rationale.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -88,7 +86,7 @@ pub struct VmCore {
     /// load / `z42_register_type`. Concurrent reads from multiple threads
     /// not serialized.
     #[cfg(feature = "native-interop")]
-    pub(crate) native_types:       RwLock<HashMap<(String, String), Rc<crate::native::RegisteredType>>>,
+    pub(crate) native_types:       RwLock<HashMap<(String, String), Arc<crate::native::RegisteredType>>>,
     /// Loaded native libraries kept alive for VM lifetime so function
     /// pointers stored in `native_types` stay valid. Lock contention low
     /// (only `dlopen` adds entries) → plain Mutex.
@@ -136,33 +134,33 @@ pub struct VmContext {
     /// Static fields, type registries, native interop registry etc. accessed
     /// through `self.core.<field>.lock()` (or `.read()` for RwLock variants).
     pub(crate) core: Arc<VmCore>,
-    pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
-    // lazy_loader moved to VmCore (Phase 1.6)
+    /// **Phase 3 revision of Decision 2** (2026-05-20): per-thread state is
+    /// Arc<Mutex<>> instead of Rc<RefCell<>> because the GC scanner closure
+    /// must be `Send + Sync` (MagrGC trait now requires it), which forces
+    /// every closure capture to also be Send + Sync. Single-thread overhead
+    /// is small (~few ns per lock vs RefCell borrow), worth the architectural
+    /// consistency. Tracked in design.md Decision 2 amendment.
+    pub(crate) pending_exception: Arc<Mutex<Option<Value>>>,
     /// 2026-05-10 unify-frame-chain: single source of truth for active
     /// script frames. Each [`crate::exception::VmFrame`] carries the
     /// `(name, file, line, column)` trace metadata **and** raw pointers
-    /// to `regs` / `env_arena` for GC root scanning, eliminating the
-    /// risk of partial frames (only one of the previously-parallel
-    /// `exec_stack` / `env_arena_stack` / `call_stack` getting pushed).
+    /// to `regs` / `env_arena` for GC root scanning.
     ///
     /// Raw ptrs valid only while the owning Rust frame
     /// (`interp::Frame` / `JitFrame`) is alive — `FrameGuard` RAII for
     /// interp + paired `push_frame` / `pop_frame` in JIT helpers ensure
-    /// the pop runs before the owner returns. GC collect is only invoked
-    /// from inside script code, so any walk of this Vec sees pointers
-    /// that are still in-bounds.
-    pub(crate) call_stack:        Rc<RefCell<Vec<crate::exception::VmFrame>>>,
+    /// the pop runs before the owner returns.
+    pub(crate) call_stack:        Arc<Mutex<Vec<crate::exception::VmFrame>>>,
     /// 2026-05-02 add-method-group-conversion (D1b): module-level FuncRef cache
     /// slots. `LoadFnCached { slot_id }` 首次执行时把 `Value::FuncRef(name)`
-    /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。Slot id 在
-    /// `merge_modules` 阶段已 remap 到全局 index space。
-    pub(crate) func_ref_slots:    Rc<RefCell<Vec<Value>>>,
+    /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。
+    pub(crate) func_ref_slots:    Arc<Mutex<Vec<Value>>>,
     // heap moved to VmCore (Phase 2.2)
 
     // native_types / native_libs / pinned_owned_buffers moved to VmCore (Phase 1.7-1.9)
 
     // processes moved to VmCore (Phase 2.1)
-    pub(crate) process_next_id:   std::cell::Cell<u64>,
+    pub(crate) process_next_id:   std::sync::atomic::AtomicU64,
 }
 
 impl Default for VmContext {
@@ -171,11 +169,11 @@ impl Default for VmContext {
 
 impl VmContext {
     pub fn new() -> Self {
-        let pending_exception = Rc::new(RefCell::new(None));
-        let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
+        let pending_exception: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
+        let func_ref_slots: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
         // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
         // previous trio (exec_stack / env_arena_stack / call_stack).
-        let call_stack: Rc<RefCell<Vec<crate::exception::VmFrame>>> = Rc::new(RefCell::new(Vec::new()));
+        let call_stack: Arc<Mutex<Vec<crate::exception::VmFrame>>> = Arc::new(Mutex::new(Vec::new()));
 
         // Construct VmCore with heap embedded; scanner is installed AFTER
         // wrapping in Arc so the closure can capture Weak<VmCore> (cycle
@@ -216,7 +214,7 @@ impl VmContext {
                     }
                 }
                 // 2. pending_exception
-                if let Some(v) = pe.borrow().as_ref() {
+                if let Some(v) = pe.lock().as_ref() {
                     visit(v);
                 }
                 // 3. live z42 frame state — unified per VmFrame entry.
@@ -226,7 +224,7 @@ impl VmContext {
                 // popped by RAII / paired helper exits before the owner
                 // returns. GC collect is invoked from inside script code,
                 // so every walk sees pointers still in-bounds.
-                for frame in cs.borrow().iter() {
+                for frame in cs.lock().iter() {
                     unsafe {
                         for v in (*frame.regs).iter() {
                             visit(v);
@@ -241,7 +239,7 @@ impl VmContext {
                     }
                 }
                 // 4. method group conversion cache slots (D1b).
-                for v in frs.borrow().iter() {
+                for v in frs.lock().iter() {
                     visit(v);
                 }
             }));
@@ -252,7 +250,7 @@ impl VmContext {
             pending_exception,
             call_stack,
             func_ref_slots,
-            process_next_id: std::cell::Cell::new(1),
+            process_next_id: std::sync::atomic::AtomicU64::new(1),
         }
     }
 
@@ -263,8 +261,10 @@ impl VmContext {
     /// never reused; u64 overflow is not a practical concern (10^19
     /// spawns).
     pub fn alloc_process_slot(&self, slot: crate::corelib::process::ProcessSlot) -> u64 {
-        let id = self.process_next_id.get();
-        self.process_next_id.set(id + 1);
+        // Phase 3 (multi-threading foundation): Cell<u64> → AtomicU64 for
+        // Send/Sync. Relaxed ordering is fine — slot IDs only need to be
+        // unique within the VM and the registry lock orders observations.
+        let id = self.process_next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.core.processes.lock().insert(id, slot);
         id
     }
@@ -306,7 +306,7 @@ impl VmContext {
     #[cfg(feature = "native-interop")]
     pub fn register_native_type(
         &self,
-        ty: Rc<crate::native::RegisteredType>,
+        ty: Arc<crate::native::RegisteredType>,
     ) -> bool {
         let key = (ty.module().to_string(), ty.type_name().to_string());
         let mut map = self.core.native_types.write();
@@ -324,7 +324,7 @@ impl VmContext {
         &self,
         module: &str,
         name: &str,
-    ) -> Option<Rc<crate::native::RegisteredType>> {
+    ) -> Option<Arc<crate::native::RegisteredType>> {
         let key = (module.to_string(), name.to_string());
         self.core.native_types.read().get(&key).cloned()
     }
@@ -381,7 +381,7 @@ impl VmContext {
     /// 2026-05-02 add-method-group-conversion (D1b): ensure VmContext has at
     /// least `n` FuncRef cache slots allocated. Idempotent — only grows.
     pub fn alloc_func_ref_slots(&self, n: u32) {
-        let mut s = self.func_ref_slots.borrow_mut();
+        let mut s = self.func_ref_slots.lock();
         if s.len() < n as usize {
             s.resize(n as usize, Value::Null);
         }
@@ -391,7 +391,7 @@ impl VmContext {
     /// (caller's responsibility to fill on first miss). Bounds-checked.
     pub(crate) fn func_ref_slot(&self, idx: u32) -> Value {
         self.func_ref_slots
-            .borrow()
+            .lock()
             .get(idx as usize)
             .cloned()
             .unwrap_or(Value::Null)
@@ -399,7 +399,7 @@ impl VmContext {
 
     /// LoadFnCached write: store a `Value::FuncRef` into the slot for future hits.
     pub(crate) fn set_func_ref_slot(&self, idx: u32, value: Value) {
-        let mut s = self.func_ref_slots.borrow_mut();
+        let mut s = self.func_ref_slots.lock();
         if (idx as usize) >= s.len() {
             s.resize((idx as usize) + 1, Value::Null);
         }
@@ -417,12 +417,12 @@ impl VmContext {
     /// chain. Pop is the caller's responsibility (typically via the
     /// interp `FrameGuard` RAII or the explicit pair in JIT helpers).
     pub(crate) fn push_frame(&self, frame: crate::exception::VmFrame) {
-        self.call_stack.borrow_mut().push(frame);
+        self.call_stack.lock().push(frame);
     }
 
     /// Pop the most recently pushed frame. No-op when empty (defensive).
     pub(crate) fn pop_frame(&self) {
-        self.call_stack.borrow_mut().pop();
+        self.call_stack.lock().pop();
     }
 
     /// Update the *top* (currently executing) frame's source position.
@@ -432,7 +432,7 @@ impl VmContext {
     /// `column = 0` means unknown — the snapshot formats as `(file:line)`
     /// rather than `(file:line:col)`.
     pub(crate) fn update_top_frame_pos(&self, line: u32, column: u32) {
-        if let Some(top) = self.call_stack.borrow().last() {
+        if let Some(top) = self.call_stack.lock().last() {
             top.line.set(line);
             top.column.set(column);
         }
@@ -442,13 +442,13 @@ impl VmContext {
     /// `throw` site. Cheap clone (small-string + u32 per frame); only
     /// invoked on the throw path so per-instruction overhead is zero.
     pub(crate) fn snapshot_call_stack(&self) -> Vec<crate::exception::FrameSnapshot> {
-        self.call_stack.borrow().iter().map(|f| f.snapshot()).collect()
+        self.call_stack.lock().iter().map(|f| f.snapshot()).collect()
     }
 
     /// Current depth of the call stack — debugging / tests.
     #[cfg(test)]
     pub(crate) fn call_stack_depth(&self) -> usize {
-        self.call_stack.borrow().len()
+        self.call_stack.lock().len()
     }
 
     /// Spec impl-ref-out-in-runtime (Decision R1): index into the frame
@@ -464,7 +464,7 @@ impl VmContext {
     ///   2. Not race with concurrent push/pop on the same VmContext (single
     ///      RefCell borrow boundary; deref is synchronous within a frame).
     pub(crate) fn frame_state_at(&self, idx: usize) -> Option<*const Vec<Value>> {
-        let stack = self.call_stack.borrow();
+        let stack = self.call_stack.lock();
         stack.get(idx).map(|f| f.regs)
     }
 
@@ -473,7 +473,7 @@ impl VmContext {
     /// to produce a `RefKind::Stack { frame_idx }` referencing the
     /// current frame at emission time.
     pub(crate) fn frame_stack_depth(&self) -> usize {
-        self.call_stack.borrow().len()
+        self.call_stack.lock().len()
     }
 
     // ── GC heap ───────────────────────────────────────────────────────────
@@ -579,12 +579,12 @@ impl VmContext {
     /// `extern "C"` return code = 1 and pulls the value via
     /// `take_exception()` to propagate as `ExecOutcome::Thrown`.
     pub fn set_exception(&self, val: Value) {
-        *self.pending_exception.borrow_mut() = Some(val);
+        *self.pending_exception.lock() = Some(val);
     }
 
     /// Pop the pending exception (called once per `extern "C"` failure).
     pub fn take_exception(&self) -> Option<Value> {
-        self.pending_exception.borrow_mut().take()
+        self.pending_exception.lock().take()
     }
 
     /// Peek at the pending exception without removing it. Used by JIT catch-type
@@ -593,7 +593,7 @@ impl VmContext {
     /// handler to jump to, and a later `take_exception` (via `jit_install_catch`)
     /// hands the value to the chosen catch register.
     pub fn peek_exception(&self) -> Option<Value> {
-        self.pending_exception.borrow().clone()
+        self.pending_exception.lock().clone()
     }
 
     // ── Lazy loader (delegates to LazyLoader struct) ─────────────────────

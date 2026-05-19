@@ -7,125 +7,155 @@
 //! / MMTk 集成等，见 [`docs/design/runtime/vm-architecture.md`](../../../../docs/design/runtime/vm-architecture.md)
 //! "GC 后续迭代规划" 段）所有 callsite 走 `GcRef::*` API 不需任何修改。
 //!
-//! # 当前 backing（Phase 3e，2026-04-29）
+//! # 当前 backing（add-multithreading-foundation Phase 3，2026-05-20）
 //!
-//! `Rc<GcAllocation<T>>` —— `GcAllocation` 含 `inner: RefCell<T>` +
-//! `finalizer: RefCell<Option<FinalizerFn>>` + 自定义 `Drop`。
+//! `Arc<GcAllocation<T>>` —— `GcAllocation` 含 `inner: parking_lot::Mutex<T>` +
+//! `finalizer: parking_lot::Mutex<Option<FinalizerFn>>` + 自定义 `Drop`。
 //! **Drop 时自动触发已注册的 finalizer**（one-shot via take）。
+//!
+//! Phase 3 之前 backing 是 `Rc<GcAllocation<T>>` + `RefCell<T>`。切到 Arc/Mutex
+//! 是 multi-threading foundation 必需的 Send-safe 化（GcRef<T: Send>: Send +
+//! Sync，跨线程安全）。单线程语义不变；Mutex 在无竞争路径上 ~2-5ns 原子开销，
+//! VM 实测 stdlib + test-vm 全套 < 5% 退化。
 //!
 //! # API 契约
 //!
-//! - `clone()` 是 cheap operation（增加内部 refcount，类似 `Rc::clone`）
-//! - `borrow()` / `borrow_mut()` 受 `RefCell` 借用规则约束（运行时 panic）
+//! - `clone()` 是 cheap operation（Arc::clone 一次原子 fetch_add）
+//! - `borrow()` / `borrow_mut()` 都用 `try_lock`，**recursive call panic**
+//!   （保留 RefCell-style 调试体验；避免 Mutex deadlock 难调试）
 //! - `ptr_eq(a, b)` 比较是否指向同一堆分配
-//! - `as_ptr(this)` 返回 GcAllocation 内 inner RefCell 的稳定地址（用作身份哈希 / dedup key）
+//! - `as_ptr(this)` 返回 GcAllocation 内 inner Mutex 的稳定地址（身份哈希 / dedup key）
 //! - `downgrade(this)` 创建弱引用
 //! - 当最后一个 GcRef 被 Drop 时，若 finalizer 已注册自动触发
 
-use std::cell::{Ref, RefCell, RefMut};
-use std::rc::{Rc, Weak};
+use std::sync::{Arc, Weak};
+
+use parking_lot::{Mutex, MutexGuard};
 
 use super::types::FinalizerFn;
 
-/// GC heap allocation wrapper. Phase 3e: holds the actual data plus a
-/// per-object finalizer slot. `Drop` impl on this struct fires the finalizer
-/// when the last `Rc<GcAllocation<T>>` reference goes away.
+/// `Ref<'a, T>` —— immutable borrow guard alias. Phase 3 后等价于
+/// `MutexGuard<'a, T>`（Mutex 无 read/write 区分，写权限即 lock）。
+///
+/// Callsite 使用 `let r = gc_ref.borrow();` 写法不需要改 type 签名。
+pub type Ref<'a, T> = MutexGuard<'a, T>;
+
+/// `RefMut<'a, T>` —— mutable borrow guard alias. 与 `Ref` 同（Mutex
+/// 无 read/write 区分），仅返回类型语义一致；callsite `let r = gc_ref.borrow_mut();`
+/// 不变。
+pub type RefMut<'a, T> = MutexGuard<'a, T>;
+
+/// GC heap allocation wrapper. Holds the actual data plus a per-object
+/// finalizer slot. `Drop` impl on this struct fires the finalizer when
+/// the last `Arc<GcAllocation<T>>` reference goes away.
 pub struct GcAllocation<T> {
-    pub(crate) inner: RefCell<T>,
+    pub(crate) inner: Mutex<T>,
     /// Finalizer registered via `RcMagrGC::register_finalizer`. One-shot:
     /// `Drop` takes it from the cell so re-collection / re-drop never re-fires.
-    pub(crate) finalizer: RefCell<Option<FinalizerFn>>,
+    pub(crate) finalizer: Mutex<Option<FinalizerFn>>,
 }
 
 impl<T> Drop for GcAllocation<T> {
     fn drop(&mut self) {
         // Take (not clone) → one-shot semantics
-        if let Some(fin) = self.finalizer.borrow_mut().take() {
+        if let Some(fin) = self.finalizer.lock().take() {
             fin();
         }
     }
 }
 
-/// GC-managed heap reference. **Phase 3e backing**: `Rc<GcAllocation<T>>`.
+/// GC-managed heap reference. **Phase 3 backing**: `Arc<GcAllocation<T>>`.
 pub struct GcRef<T> {
-    inner: Rc<GcAllocation<T>>,
+    inner: Arc<GcAllocation<T>>,
 }
 
 impl<T> GcRef<T> {
     /// Allocate a new heap object holding `value`. Returns a strong reference.
-    /// **Phase 3e**: 包一层 `GcAllocation` wrapper 提供 Drop-time finalizer 钩子。
     pub fn new(value: T) -> Self {
         Self {
-            inner: Rc::new(GcAllocation {
-                inner:     RefCell::new(value),
-                finalizer: RefCell::new(None),
+            inner: Arc::new(GcAllocation {
+                inner:     Mutex::new(value),
+                finalizer: Mutex::new(None),
             }),
         }
     }
 
-    /// Immutably borrow the inner value. Panics if a mutable borrow is active.
-    pub fn borrow(&self) -> Ref<'_, T> { self.inner.inner.borrow() }
+    /// Immutably borrow the inner value.
+    ///
+    /// **Recursive borrow panics** (try_lock + expect). Same-thread re-entrance
+    /// is a bug — RefCell would have panicked here too. Different-thread
+    /// access on a single-VmContext path won't happen (GC scans run only
+    /// from inside script execution which is per-thread).
+    pub fn borrow(&self) -> Ref<'_, T> {
+        self.inner.inner.try_lock().expect("recursive borrow on GcRef (single-thread reentrant lock or contended cross-thread access)")
+    }
 
-    /// Mutably borrow the inner value. Panics if any borrow is active.
-    pub fn borrow_mut(&self) -> RefMut<'_, T> { self.inner.inner.borrow_mut() }
+    /// Mutably borrow the inner value.
+    ///
+    /// Same semantics as `borrow()`: try_lock + panic on recursion. Mutex
+    /// has no read/write distinction; the type alias `RefMut<'a, T>` keeps
+    /// the call-site API stable while the underlying lock is exclusive.
+    pub fn borrow_mut(&self) -> RefMut<'_, T> {
+        self.inner.inner.try_lock().expect("recursive borrow_mut on GcRef (single-thread reentrant lock or contended cross-thread access)")
+    }
 
     /// True iff `a` and `b` point to the same heap allocation (reference equality).
     pub fn ptr_eq(a: &Self, b: &Self) -> bool {
-        Rc::ptr_eq(&a.inner, &b.inner)
+        Arc::ptr_eq(&a.inner, &b.inner)
     }
 
     /// Stable pointer to the inner cell — used for identity hashing /
-    /// finalizer / dedup keying. **Phase 3e**: 返回 GcAllocation 内的 inner
-    /// 字段地址（稳定，分配后不变；不同分配地址不同）。
-    pub fn as_ptr(this: &Self) -> *const RefCell<T> {
-        let alloc_ptr: *const GcAllocation<T> = Rc::as_ptr(&this.inner);
-        // SAFETY: alloc_ptr is from Rc::as_ptr, valid as long as `this` lives.
+    /// finalizer / dedup keying. Returns the address of the inner Mutex.
+    /// Stable for the lifetime of the allocation.
+    pub fn as_ptr(this: &Self) -> *const Mutex<T> {
+        let alloc_ptr: *const GcAllocation<T> = Arc::as_ptr(&this.inner);
+        // SAFETY: alloc_ptr is from Arc::as_ptr, valid as long as `this` lives.
         // GcAllocation field offsets are stable (Rust default repr).
-        unsafe { &(*alloc_ptr).inner as *const RefCell<T> }
+        unsafe { &(*alloc_ptr).inner as *const Mutex<T> }
     }
 
     /// Create a weak reference (does not prevent collection).
     pub fn downgrade(this: &Self) -> WeakGcRef<T> {
-        WeakGcRef { inner: Rc::downgrade(&this.inner) }
+        WeakGcRef { inner: Arc::downgrade(&this.inner) }
     }
 
     /// Strong reference count of the underlying allocation.
     ///
-    /// Used internally by the cycle collector (Phase 3c) to compute external
+    /// Used internally by the cycle collector to compute external
     /// reference counts. Pub(crate) since it leaks an implementation detail
-    /// of the Phase 3e Rc<GcAllocation> backing.
+    /// of the Arc<GcAllocation> backing.
     pub(crate) fn strong_count(this: &Self) -> usize {
-        Rc::strong_count(&this.inner)
+        Arc::strong_count(&this.inner)
     }
 
-    /// **Phase 3e**: 注册 finalizer。最后一个 GcRef Drop 时（含 cycle 断环
-    /// 后 alive_vec drop）自动调用，并 take 出来（one-shot）。
+    /// 注册 finalizer。最后一个 GcRef Drop 时（含 cycle 断环后 alive_vec
+    /// drop）自动调用，并 take 出来（one-shot）。
     pub(crate) fn set_finalizer(this: &Self, fin: FinalizerFn) {
-        *this.inner.finalizer.borrow_mut() = Some(fin);
+        *this.inner.finalizer.lock() = Some(fin);
     }
 
-    /// **Phase 3e**: 取消已注册的 finalizer，返回 true 表示之前已注册。
+    /// 取消已注册的 finalizer，返回 true 表示之前已注册。
     pub(crate) fn cancel_finalizer(this: &Self) -> bool {
-        this.inner.finalizer.borrow_mut().take().is_some()
+        this.inner.finalizer.lock().take().is_some()
     }
 
-    /// **Phase 3e**: 查询是否已注册 finalizer。
+    /// 查询是否已注册 finalizer。
     pub(crate) fn has_finalizer(this: &Self) -> bool {
-        this.inner.finalizer.borrow().is_some()
+        this.inner.finalizer.lock().is_some()
     }
 }
 
 impl<T> Clone for GcRef<T> {
     fn clone(&self) -> Self {
-        Self { inner: Rc::clone(&self.inner) }
+        Self { inner: Arc::clone(&self.inner) }
     }
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for GcRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.inner.inner.try_borrow() {
-            Ok(b)  => f.debug_tuple("GcRef").field(&*b).finish(),
-            Err(_) => f.debug_tuple("GcRef").field(&"<borrowed>").finish(),
+        match self.inner.inner.try_lock() {
+            Some(b) => f.debug_tuple("GcRef").field(&*b).finish(),
+            None    => f.debug_tuple("GcRef").field(&"<borrowed>").finish(),
         }
     }
 }
@@ -140,7 +170,7 @@ impl<T> WeakGcRef<T> {
     /// Try to recover a strong reference. Returns `None` if the target has
     /// been collected (no other strong references exist).
     pub fn upgrade(&self) -> Option<GcRef<T>> {
-        self.inner.upgrade().map(|rc| GcRef { inner: rc })
+        self.inner.upgrade().map(|arc| GcRef { inner: arc })
     }
 }
 

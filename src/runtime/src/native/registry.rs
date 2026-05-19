@@ -24,11 +24,20 @@ pub struct MethodEntry {
     pub fn_ptr: *mut c_void,
     pub params: Vec<SigType>,
     pub return_type: SigType,
-    /// Prebuilt libffi cif. Cif is `!Send` / `!Sync` because it owns
-    /// libffi-internal pointers; that matches `RegisteredType` (kept on the
-    /// single-threaded VmContext).
+    /// Prebuilt libffi cif. Cif is `!Send` / `!Sync` by Rust default, but
+    /// after construction the cif is treated as immutable look-up data; see
+    /// `unsafe impl Send + Sync for MethodEntry` below.
     pub cif: Cif,
 }
+
+// SAFETY (add-multithreading-foundation Phase 3, 2026-05-20):
+// `MethodEntry` is **read-only after registration** — `name` / `signature` /
+// `fn_ptr` / `params` / `return_type` / `cif` are all set once in
+// `from_descriptor` and never mutated. The raw `fn_ptr` and `Cif`'s internal
+// libffi pointers are intended to be invoked from any thread (standard C
+// ABI). Concurrent reads of immutable data is safe.
+unsafe impl Send for MethodEntry {}
+unsafe impl Sync for MethodEntry {}
 
 impl std::fmt::Debug for MethodEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -55,6 +64,14 @@ pub struct RegisteredType {
     descriptor_ptr: *const Z42TypeDescriptor_v1,
     methods: HashMap<String, MethodEntry>,
 }
+
+// SAFETY: `RegisteredType` is read-only after registration. The raw
+// `descriptor_ptr` points to caller-supplied static descriptor data (per
+// `from_descriptor` contract) — immutable for the VM's lifetime. `methods`
+// is built once, never mutated. See same-file `unsafe impl` on
+// `MethodEntry` for the per-method rationale.
+unsafe impl Send for RegisteredType {}
+unsafe impl Sync for RegisteredType {}
 
 impl RegisteredType {
     pub fn module(&self) -> &str { &self.module }

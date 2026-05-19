@@ -13,7 +13,7 @@ use std::ffi::CStr;
 use std::marker::PhantomData;
 use std::os::raw::c_char;
 use std::ptr;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use z42_abi::{Z42Error, Z42TypeDescriptor_v1, Z42TypeOpaque, Z42TypeRef, Z42Value};
 
@@ -74,8 +74,8 @@ const NULL_TYPE_REF: Z42TypeRef = Z42TypeRef(ptr::null_mut());
 /// `Z42TypeRef` is a stable handle. We treat the raw pointer as a key into
 /// a per-VM type table; for C2 we just leak `Rc::into_raw(ty)` so the
 /// pointer stays alive as long as the VM holds the `Rc` clone.
-fn type_ref_from_rc(ty: &Rc<RegisteredType>) -> Z42TypeRef {
-    let ptr = Rc::as_ptr(ty) as *mut Z42TypeOpaque;
+fn type_ref_from_rc(ty: &Arc<RegisteredType>) -> Z42TypeRef {
+    let ptr = Arc::as_ptr(ty) as *mut Z42TypeOpaque;
     Z42TypeRef(ptr)
 }
 
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn z42_register_type(
         }
     };
 
-    let arc = Rc::new(registered);
+    let arc = Arc::new(registered);
     if !vm.register_native_type(arc.clone()) {
         error::set(
             TYPE_REGISTRATION_FAILURE,

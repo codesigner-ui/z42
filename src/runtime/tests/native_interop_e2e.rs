@@ -297,8 +297,8 @@ fn c_and_rust_modules_coexist() {
     assert_eq!(c_ty.module(), "numz42");
     assert_eq!(rs_ty.module(), "numz42_rs");
     assert_ne!(
-        std::rc::Rc::as_ptr(&c_ty) as *const _,
-        std::rc::Rc::as_ptr(&rs_ty) as *const _
+        std::sync::Arc::as_ptr(&c_ty) as *const _,
+        std::sync::Arc::as_ptr(&rs_ty) as *const _
     );
 }
 

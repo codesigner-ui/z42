@@ -52,7 +52,7 @@ pub use super::types::{
 /// - `for_each_root` 必须遍历**所有当前活跃**的 pinned root（含 frame 内）
 /// - `enter_frame` 与 `leave_frame` 必须严格配对（栈式）
 /// - 实现自负 `&self` 接口背后的内部可变性
-pub trait MagrGC: std::fmt::Debug {
+pub trait MagrGC: std::fmt::Debug + Send + Sync {
     // ── 1. Allocation ────────────────────────────────────────────────────────
 
     /// 分配一个 `ScriptObject` 并以 `Value::Object` 返回。

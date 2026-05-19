@@ -83,13 +83,13 @@ fn frame_held_outer_with_inner_chain_protected_by_stack_scan() {
         g.borrow_mut().slots[0] = inner.clone();
     }
 
-    let frame_regs: std::rc::Rc<std::cell::RefCell<Vec<Value>>>
-        = std::rc::Rc::new(std::cell::RefCell::new(vec![outer.clone()]));
+    let frame_regs: std::sync::Arc<parking_lot::Mutex<Vec<Value>>>
+        = std::sync::Arc::new(parking_lot::Mutex::new(vec![outer.clone()]));
 
     {
         let fr = frame_regs.clone();
         heap.set_external_root_scanner(Box::new(move |visit| {
-            for v in fr.borrow().iter() {
+            for v in fr.lock().iter() {
                 visit(v);
             }
         }));
@@ -101,7 +101,7 @@ fn frame_held_outer_with_inner_chain_protected_by_stack_scan() {
     heap.collect_cycles();
 
     // Verify: outer / inner 数据 intact（inner.slots[0] = 42 未被错误清空）
-    let regs = frame_regs.borrow();
+    let regs = frame_regs.lock();
     let Value::Object(outer_gc) = &regs[0] else { panic!() };
     let inner_val = outer_gc.borrow().slots[0].clone();
     let Value::Object(inner_gc) = &inner_val else {
@@ -128,19 +128,19 @@ fn external_root_scanner_called_during_collect() {
 
 #[test]
 fn cycle_reachable_via_external_scanner_is_preserved() {
-    use std::cell::RefCell as StdRefCell;
-    use std::rc::Rc as StdRc;
+    use parking_lot::Mutex as StdMutex;
+    use std::sync::Arc as StdArc;
 
     let heap = RcMagrGC::new();
 
     // 模拟 VmContext.static_fields 风格的外部容器
-    let external: StdRc<StdRefCell<Vec<Value>>> = StdRc::new(StdRefCell::new(Vec::new()));
+    let external: StdArc<StdMutex<Vec<Value>>> = StdArc::new(StdMutex::new(Vec::new()));
 
     // scanner 把 external 中所有 Value 暴露为 roots
     {
         let ext = external.clone();
         heap.set_external_root_scanner(Box::new(move |visit| {
-            for v in ext.borrow().iter() {
+            for v in ext.lock().iter() {
                 visit(v);
             }
         }));
@@ -157,7 +157,7 @@ fn cycle_reachable_via_external_scanner_is_preserved() {
     }
 
     // 把 a 放到 external（模拟 static_fields 持有），drop 本地强引用
-    external.borrow_mut().push(a.clone());
+    external.lock().push(a.clone());
     drop(a);
     drop(b);
 
@@ -170,7 +170,7 @@ fn cycle_reachable_via_external_scanner_is_preserved() {
     assert_eq!(count, 2, "external-rooted cycle survives collect");
 
     // 关键：a 的 slots 应该 intact（不被误清）
-    let alive_a = external.borrow()[0].clone();
+    let alive_a = external.lock()[0].clone();
     let Value::Object(g) = &alive_a else { panic!() };
     let slot0 = g.borrow().slots[0].clone();
     assert!(matches!(slot0, Value::Object(_)),
@@ -179,15 +179,15 @@ fn cycle_reachable_via_external_scanner_is_preserved() {
 
 #[test]
 fn cycle_unreachable_from_external_scanner_still_collected() {
-    use std::cell::RefCell as StdRefCell;
-    use std::rc::Rc as StdRc;
+    use parking_lot::Mutex as StdMutex;
+    use std::sync::Arc as StdArc;
 
     let heap = RcMagrGC::new();
-    let external: StdRc<StdRefCell<Vec<Value>>> = StdRc::new(StdRefCell::new(Vec::new()));
+    let external: StdArc<StdMutex<Vec<Value>>> = StdArc::new(StdMutex::new(Vec::new()));
     {
         let ext = external.clone();
         heap.set_external_root_scanner(Box::new(move |visit| {
-            for v in ext.borrow().iter() { visit(v); }
+            for v in ext.lock().iter() { visit(v); }
         }));
     }
 
