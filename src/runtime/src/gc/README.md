@@ -11,16 +11,16 @@ observers / profiler / weak refs / finalizers / strict OOM / ...）。
 | 文件 | 职责 |
 |------|------|
 | `heap.rs` | `trait MagrGC` —— GC 抽象接口（对齐 MMTk porting contract，10 能力组 ~30 方法）|
-| `rc_heap.rs` | `RcMagrGC` —— 默认后端（`GcRef` backing 是 `Rc<GcAllocation<T>>`，wrapper 含 finalizer Cell + 自定义 Drop）+ 完整 host-side 实现 + Trial-deletion 环回收器 |
+| `arc_heap.rs` | `ArcMagrGC` —— 默认后端（`GcRef` backing 是 `Rc<GcAllocation<T>>`，wrapper 含 finalizer Cell + 自定义 Drop）+ 完整 host-side 实现 + Trial-deletion 环回收器 |
 | `refs.rs` | `GcRef<T>` / `WeakGcRef<T>` 不透明句柄 + `GcAllocation<T>` wrapper |
 | `types.rs` | 支持类型 —— `RootHandle` / `FrameMark` / `GcEvent` / `GcObserver` / `WeakRef` / `HeapSnapshot` / `HeapStats` / `FinalizerFn` / `AllocSamplerFn` / ... |
 | `heap_tests.rs` | trait 默认方法契约测试 |
-| `rc_heap_tests.rs` | RcMagrGC 行为单元测试（覆盖全 11 能力组 + cycle / drop-time finalizer / strict OOM 等）|
+| `arc_heap_tests.rs` | ArcMagrGC 行为单元测试（覆盖全 11 能力组 + cycle / drop-time finalizer / strict OOM 等）|
 
 ## 入口点
 
 - `crate::gc::MagrGC` —— GC 接口 trait（10 能力组）
-- `crate::gc::RcMagrGC` —— 默认实现（GcRef backing 是 `Rc<GcAllocation<T>>`，Phase 3e 起 wrapper Drop 自动触发 finalizer）
+- `crate::gc::ArcMagrGC` —— 默认实现（GcRef backing 是 `Rc<GcAllocation<T>>`，Phase 3e 起 wrapper Drop 自动触发 finalizer）
 - `crate::gc::GcRef<T>` / `crate::gc::WeakGcRef<T>` —— 堆引用不透明句柄；后续 backing 切换（自定义堆 / mark-sweep / MMTk）零 callsite 修改
 - 嵌入相关类型：`RootHandle` / `FrameMark` / `GcEvent` / `GcObserver` / `AllocSample` / `WeakRef` / `HeapSnapshot` / `HeapStats` / ...
 
@@ -78,7 +78,7 @@ z42 脚本端可调 `Std.GC.Collect()` / `UsedBytes()` / `ForceCollect()`（见
 
 | Phase | 主要内容 |
 |-------|---------|
-| 1 / 1.5 | trait MagrGC + RcMagrGC + 全 host-side 嵌入接口 + corelib NativeFn 签名带 `&VmContext` |
+| 1 / 1.5 | trait MagrGC + ArcMagrGC + 全 host-side 嵌入接口 + corelib NativeFn 签名带 `&VmContext` |
 | 3a | `GcRef<T>` / `WeakGcRef<T>` 不透明句柄抽象 |
 | 3b | Heap registry + snapshot/iterate Full coverage |
 | 3c | Trial-deletion 环回收器（Bacon-Rajan）→ 修复环引用泄漏 |

@@ -3,9 +3,9 @@
 > 状态：🟡 进行中 | 创建：2026-05-19 | 类型：vm
 
 ## 进度概览
-- [ ] 阶段 1: VmCore 雏形 + 共享字段第一批
-- [ ] 阶段 2: 剩余共享字段 + GC backend 搬入 VmCore
-- [ ] 阶段 3: GcRef Arc backing + MagrGC trait Send/Sync
+- [x] 阶段 1: VmCore 雏形 + 共享字段第一批
+- [x] 阶段 2: 剩余共享字段 + GC backend 搬入 VmCore
+- [x] 阶段 3: GcRef Arc backing + MagrGC trait Send/Sync
 - [ ] 阶段 4: 调用方机械清理
 - [ ] 阶段 5: 测试 + benchmark + 文档
 - [ ] 阶段 6: 归档 + 提交
@@ -20,7 +20,7 @@
 - [x] 1.7 移动 `native_types`（`RwLock<HashMap<...>>`，读多写少）+ 调用方
 - [x] 1.8 移动 `native_libs`（`Mutex<Vec<libloading::Library>>`）+ 调用方
 - [x] 1.9 移动 `pinned_owned_buffers`（`Mutex<HashMap<...>>`）+ 调用方
-- [ ] 1.10 阶段 1 全 GREEN check（stdlib + test-vm + dotnet test）
+- [x] 1.10 阶段 1 全 GREEN check（stdlib + test-vm + dotnet test）
 
 ## 阶段 2: 剩余共享字段
 - [x] 2.1 移动 `processes`（`Mutex<HashMap<u64, ProcessSlot>>`）+ 调用方
@@ -32,10 +32,10 @@
 - [x] 3.2 `gc/refs.rs`：`pub type Ref<'a, T> = parking_lot::MutexGuard<'a, T>` + 同 RefMut；保留 `borrow()` / `borrow_mut()` API
 - [x] 3.3 `gc/refs.rs`：`borrow_mut` 内部用 `try_lock`，failure → panic with "recursive borrow_mut on GcRef" 信息
 - [x] 3.4 `src/runtime/src/gc/heap.rs`：`pub trait MagrGC: Debug + Send + Sync { ... }`
-- [ ] 3.5 `src/runtime/src/gc/rc_heap.rs` rename → `arc_heap.rs`；`pub struct RcMagrGC` → `pub struct ArcMagrGC`；内部 `Rc<RefCell<HashMap>>` → `Arc<Mutex<HashMap>>`
-- [ ] 3.6 `gc/mod.rs` re-export 改为 `ArcMagrGC`；Phase 表加新行 `4a: Send-safe foundation`
+- [x] 3.5 `src/runtime/src/gc/rc_heap.rs` rename → `arc_heap.rs`；`pub struct RcMagrGC` → `pub struct ArcMagrGC`；内部 `Rc<RefCell<HashMap>>` → `Arc<Mutex<HashMap>>`
+- [x] 3.6 `gc/mod.rs` re-export 改为 `ArcMagrGC`；Phase 表加新行 `4a: Send-safe foundation`
 - [x] 3.7 verify `Cargo.toml` 含 `parking_lot`；如缺加 `parking_lot = "0.12"`
-- [ ] 3.8 阶段 3 全 GREEN（这一步 compile error 最多；按编译器提示逐一修）
+- [x] 3.8 阶段 3 全 GREEN（这一步 compile error 最多；按编译器提示逐一修）
 
 ## 阶段 4: 调用方机械清理
 - [ ] 4.1 grep `\.borrow()` / `\.borrow_mut()` 残留：runtime 内剩下的都应该走 GcRef API

@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn alloc_object_returns_value_object_with_given_fields() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let td   = dummy_type_desc("Foo");
     let v    = heap.alloc_object(td.clone(), vec![Value::I64(1), Value::I64(2)], NativeData::None);
     let Value::Object(rc) = v else { panic!("expected Value::Object") };
@@ -16,7 +16,7 @@ fn alloc_object_returns_value_object_with_given_fields() {
 
 #[test]
 fn two_alloc_object_calls_return_distinct_rcs() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let td   = dummy_type_desc("Foo");
     let a    = heap.alloc_object(td.clone(), vec![], NativeData::None);
     let b    = heap.alloc_object(td.clone(), vec![], NativeData::None);
@@ -26,7 +26,7 @@ fn two_alloc_object_calls_return_distinct_rcs() {
 
 #[test]
 fn alloc_array_returns_value_array_with_given_elems() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v    = heap.alloc_array(vec![Value::I64(7), Value::I64(8), Value::I64(9)]);
     let Value::Array(rc) = v else { panic!("expected Value::Array") };
     let b = rc.borrow();
@@ -37,7 +37,7 @@ fn alloc_array_returns_value_array_with_given_elems() {
 
 #[test]
 fn alloc_array_empty_returns_empty_vec() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v    = heap.alloc_array(vec![]);
     let Value::Array(rc) = v else { panic!() };
     assert!(rc.borrow().is_empty());

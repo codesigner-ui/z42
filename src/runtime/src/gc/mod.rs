@@ -4,7 +4,7 @@
 //!
 //! - [`MagrGC`] —— GC 抽象 trait，对齐 MMTk porting contract（10 个能力组 / ~30 方法）
 //! - [`GcRef<T>`] / [`WeakGcRef<T>`] —— 堆引用不透明句柄（隐藏 backing 实现）
-//! - [`RcMagrGC`] —— 默认后端，`GcRef` backing 是 `Rc<GcAllocation<T>>`（含 finalizer Cell + 自定义 Drop）
+//! - [`ArcMagrGC`] —— 默认后端，`GcRef` backing 是 `Rc<GcAllocation<T>>`（含 finalizer Cell + 自定义 Drop）
 //!   + 完整 host-side 嵌入接口（alloc / roots / write barriers / object model /
 //!   collection control / heap config / finalization / weak refs / observers /
 //!   profiler / stats）
@@ -13,7 +13,7 @@
 //!
 //! | Phase | 内容 | 状态 |
 //! |-------|------|:---:|
-//! | 1 | trait + RcMagrGC + 6 个脚本驱动 callsite 收口 | ✅ |
+//! | 1 | trait + ArcMagrGC + 6 个脚本驱动 callsite 收口 | ✅ |
 //! | 1（扩展）| trait 全面对齐 MMTk porting contract（10 能力组）+ host-side 嵌入接口完整 | ✅ |
 //! | 1.5 | corelib NativeFn 签名带 `&VmContext` + 剩余 Rc::new 迁移 | ✅ |
 //! | 2 | （**跳过**）—— 直奔 Phase 3 mark-sweep | ⏭ |
@@ -36,12 +36,12 @@
 //! D MMTk 集成（终极方向）。
 
 pub mod heap;
-pub mod rc_heap;
+pub mod arc_heap;
 pub mod refs;
 pub mod types;
 
 pub use heap::MagrGC;
-pub use rc_heap::RcMagrGC;
+pub use arc_heap::ArcMagrGC;
 pub use refs::{GcRef, WeakGcRef};
 pub use types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,

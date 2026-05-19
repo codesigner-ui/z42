@@ -2,7 +2,7 @@ use super::*;
 
 // ── Cycle collection (Phase 3c) ──────────────────────────────────────────────
 
-fn alive_count(heap: &RcMagrGC) -> usize {
+fn alive_count(heap: &ArcMagrGC) -> usize {
     let mut n = 0;
     heap.iterate_live_objects(&mut |_| n += 1);
     n
@@ -10,7 +10,7 @@ fn alive_count(heap: &RcMagrGC) -> usize {
 
 #[test]
 fn simple_two_node_cycle_is_freed_after_collect() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
     let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
     {
@@ -30,7 +30,7 @@ fn simple_two_node_cycle_is_freed_after_collect() {
 
 #[test]
 fn self_reference_cycle_is_freed() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let a = heap.alloc_object(dummy_type_desc("Self"), vec![Value::Null], NativeData::None);
     {
         let Value::Object(a_gc) = &a else { panic!() };
@@ -46,7 +46,7 @@ fn self_reference_cycle_is_freed() {
 
 #[test]
 fn cycle_with_external_user_ref_is_not_broken_yet() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
     let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
     {
@@ -72,7 +72,7 @@ fn cycle_with_external_user_ref_is_not_broken_yet() {
 
 #[test]
 fn pinned_root_cycle_is_not_broken() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
     let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
     {
@@ -94,7 +94,7 @@ fn pinned_root_cycle_is_not_broken() {
 
 #[test]
 fn unrelated_alive_object_is_not_affected_by_collect() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let _alive = heap.alloc_object(dummy_type_desc("Alive"), vec![Value::I64(42)], NativeData::None);
     // 不构造环；_alive 由当前作用域强引用持有
 
@@ -107,7 +107,7 @@ fn unrelated_alive_object_is_not_affected_by_collect() {
 
 #[test]
 fn multiple_disjoint_cycles_all_freed() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     // 第一个环 a-b
     let a = heap.alloc_object(dummy_type_desc("A1"), vec![Value::Null], NativeData::None);
     let b = heap.alloc_object(dummy_type_desc("B1"), vec![Value::Null], NativeData::None);
@@ -136,7 +136,7 @@ fn multiple_disjoint_cycles_all_freed() {
 
 #[test]
 fn collect_cycles_freed_bytes_observable() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
     let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
     {
@@ -159,7 +159,7 @@ fn collect_cycles_freed_bytes_observable() {
 #[test]
 fn registry_prunes_dropped_objects() {
     // Phase 3b: 对象 drop 后 registry 自动清掉（下次 iterate / snapshot 时 prune）。
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     {
         let _ephemeral = heap.alloc_array(vec![]);
         // _ephemeral 出 scope drop
@@ -171,7 +171,7 @@ fn registry_prunes_dropped_objects() {
 
 #[test]
 fn snapshot_includes_pinned_root_object() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_object(dummy_type_desc("Foo"), vec![], NativeData::None);
     let _h = heap.pin_root(v);
     let snap = heap.take_snapshot();
@@ -181,7 +181,7 @@ fn snapshot_includes_pinned_root_object() {
 
 #[test]
 fn snapshot_traverses_nested_objects() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let inner1 = heap.alloc_object(dummy_type_desc("Inner"), vec![], NativeData::None);
     let inner2 = heap.alloc_object(dummy_type_desc("Inner"), vec![], NativeData::None);
     let outer  = heap.alloc_object(
@@ -198,7 +198,7 @@ fn snapshot_traverses_nested_objects() {
 
 #[test]
 fn iterate_live_objects_visits_root_reachable() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let elems = (0..5)
         .map(|i| heap.alloc_object(dummy_type_desc("Foo"), vec![Value::I64(i)], NativeData::None))
         .collect::<Vec<_>>();
@@ -213,7 +213,7 @@ fn iterate_live_objects_visits_root_reachable() {
 
 #[test]
 fn iterate_live_objects_dedupes_cycle() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     // 自引用 cycle：obj.slots[0] = obj 自己（通过 wrap-by-clone）
     let obj = heap.alloc_object(dummy_type_desc("Cycle"), vec![Value::Null], NativeData::None);
     let Value::Object(rc) = &obj else { panic!() };

@@ -1,10 +1,10 @@
-//! `RcMagrGC` 单元测试 —— 覆盖全部 11 个能力组。
+//! `ArcMagrGC` 单元测试 —— 覆盖全部 11 个能力组。
 
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::gc::{GcEvent, GcHandleKind, GcKind, GcObserver, MagrGC, RcMagrGC, SnapshotCoverage};
+use crate::gc::{GcEvent, GcHandleKind, GcKind, GcObserver, MagrGC, ArcMagrGC, SnapshotCoverage};
 use crate::metadata::{NativeData, TypeDesc, Value};
 
 pub(super) fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {

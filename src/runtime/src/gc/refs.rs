@@ -50,7 +50,7 @@ pub type RefMut<'a, T> = MutexGuard<'a, T>;
 /// the last `Arc<GcAllocation<T>>` reference goes away.
 pub struct GcAllocation<T> {
     pub(crate) inner: Mutex<T>,
-    /// Finalizer registered via `RcMagrGC::register_finalizer`. One-shot:
+    /// Finalizer registered via `ArcMagrGC::register_finalizer`. One-shot:
     /// `Drop` takes it from the cell so re-collection / re-drop never re-fires.
     pub(crate) finalizer: Mutex<Option<FinalizerFn>>,
 }

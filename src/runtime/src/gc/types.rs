@@ -60,7 +60,7 @@ pub enum GcEvent {
     AfterCollect       { kind: GcKind, freed_bytes: u64, pause_us: u64 },
     /// Allocation happening with heap usage at >75% of `max_bytes`.
     AllocationPressure { used_bytes: u64, limit_bytes: u64 },
-    /// Heap usage crossed >90% of `max_bytes` (deduped per RcMagrGC instance).
+    /// Heap usage crossed >90% of `max_bytes` (deduped per ArcMagrGC instance).
     NearHeapLimit      { used_bytes: u64, limit_bytes: u64 },
     /// Allocation would exceed `max_bytes`; Phase 1 still allows the allocation
     /// (RC mode does not enforce). Phase 3 tracing GC may reject.
@@ -90,7 +90,7 @@ pub enum AllocKind {
 pub struct AllocSample {
     pub kind:         AllocKind,
     pub size_bytes:   usize,
-    /// Microseconds since `RcMagrGC::EPOCH` (process start, monotonic).
+    /// Microseconds since `ArcMagrGC::EPOCH` (process start, monotonic).
     pub timestamp_us: u64,
 }
 
@@ -213,7 +213,7 @@ pub struct HeapSnapshot {
     pub objects_by_type: HashMap<String, ObjectStats>,
     pub total_objects:   u64,
     pub total_bytes:     u64,
-    /// Microseconds since `RcMagrGC::EPOCH`.
+    /// Microseconds since `ArcMagrGC::EPOCH`.
     pub timestamp_us:    u64,
     pub coverage:        SnapshotCoverage,
 }

@@ -8,7 +8,7 @@
 //! - **`pending_exception`** — JIT extern-C exception ABI bridge slot
 //! - **`lazy_loader`** — on-demand zpkg loader registry
 //! - **`exec_stack`** — interp/JIT frame.regs raw pointers (Phase 3f / 3f-2 GC roots)
-//! - **`heap`** — `Box<dyn MagrGC>` GC subsystem (default `RcMagrGC`)
+//! - **`heap`** — `Box<dyn MagrGC>` GC subsystem (default `ArcMagrGC`)
 //! - **`native_types`** / **`native_libs`** — Tier 1 native interop registry (spec C2)
 //! - **`pinned_owned_buffers`** — owned byte buffers backing `Value::PinnedView` (spec C4)
 //!
@@ -46,7 +46,7 @@ use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 
-use crate::gc::{MagrGC, RcMagrGC};
+use crate::gc::{MagrGC, ArcMagrGC};
 use crate::metadata::lazy_loader::{LazyLoader, ZpkgCandidate};
 use crate::metadata::{Function, TypeDesc, Value};
 
@@ -101,7 +101,7 @@ pub struct VmCore {
     /// `kill`+reap / explicit `drop`.
     pub(crate) processes:          Mutex<HashMap<u64, crate::corelib::process::ProcessSlot>>,
     /// **GC subsystem**. Moved here in Phase 2.2 so it can be shared across
-    /// threads (single global heap). Backing today is `RcMagrGC`; Phase 3
+    /// threads (single global heap). Backing today is `ArcMagrGC`; Phase 3
     /// swaps to Arc + Send + Sync. Stored as `Box<dyn MagrGC>` (no inner
     /// lock) because all `MagrGC` methods take `&self` and the impl handles
     /// its own interior mutability.
@@ -124,7 +124,7 @@ pub struct VmCore {
 /// implementation handles its own interior mutability.
 ///
 /// **Phase 3d.1 (2026-04-29)**: `static_fields` / `pending_exception` /
-/// `lazy_loader` 改用 `Rc<RefCell<...>>` 包装，让 `RcMagrGC` 的 external
+/// `lazy_loader` 改用 `Rc<RefCell<...>>` 包装，让 `ArcMagrGC` 的 external
 /// root scanner 闭包能 clone Rc 共享访问，从而 mark_reachable_set 把这些
 /// 字段持有的 Value 也纳入 GC roots（修复 cycle collector 漏扫 static_fields
 /// 导致误清的 bug）。
@@ -189,7 +189,7 @@ impl VmContext {
             native_libs:        Mutex::new(Vec::new()),
             pinned_owned_buffers: Mutex::new(HashMap::new()),
             processes:            Mutex::new(HashMap::new()),
-            heap:                 Box::new(RcMagrGC::new()),
+            heap:                 Box::new(ArcMagrGC::new()),
         });
 
         // External GC root scanner — invoked by the cycle collector during

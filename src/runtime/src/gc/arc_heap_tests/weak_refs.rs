@@ -4,21 +4,21 @@ use super::*;
 
 #[test]
 fn make_weak_on_object_succeeds() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_object(dummy_type_desc("Foo"), vec![], NativeData::None);
     assert!(heap.make_weak(&v).is_some());
 }
 
 #[test]
 fn make_weak_on_array_succeeds() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_array(vec![]);
     assert!(heap.make_weak(&v).is_some());
 }
 
 #[test]
 fn make_weak_on_atomic_returns_none() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     assert!(heap.make_weak(&Value::I64(1)).is_none());
     assert!(heap.make_weak(&Value::Str("x".into())).is_none());
     assert!(heap.make_weak(&Value::Null).is_none());
@@ -27,7 +27,7 @@ fn make_weak_on_atomic_returns_none() {
 
 #[test]
 fn upgrade_weak_succeeds_while_strong_alive() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_array(vec![Value::I64(42)]);
     let w = heap.make_weak(&v).unwrap();
     let upgraded = heap.upgrade_weak(&w).unwrap();
@@ -37,7 +37,7 @@ fn upgrade_weak_succeeds_while_strong_alive() {
 
 #[test]
 fn upgrade_weak_fails_after_strong_dropped() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let w = {
         let v = heap.alloc_array(vec![]);
         heap.make_weak(&v).unwrap()
@@ -49,7 +49,7 @@ fn upgrade_weak_fails_after_strong_dropped() {
 
 #[test]
 fn handle_alloc_returns_nonzero_for_object() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_object(dummy_type_desc("H"), vec![], NativeData::None);
     let slot = heap.handle_alloc(&v, GcHandleKind::Strong);
     assert!(slot >= 1, "slot 0 is reserved as 'unallocated' sentinel");
@@ -57,7 +57,7 @@ fn handle_alloc_returns_nonzero_for_object() {
 
 #[test]
 fn handle_alloc_atomic_weak_returns_zero_slot() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     // Atomic values can't be weakly referenced.
     assert_eq!(heap.handle_alloc(&Value::I64(42), GcHandleKind::Weak), 0);
     assert_eq!(heap.handle_alloc(&Value::Str("x".into()), GcHandleKind::Weak), 0);
@@ -67,14 +67,14 @@ fn handle_alloc_atomic_weak_returns_zero_slot() {
 
 #[test]
 fn handle_alloc_null_returns_zero_slot() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     assert_eq!(heap.handle_alloc(&Value::Null, GcHandleKind::Strong), 0);
     assert_eq!(heap.handle_alloc(&Value::Null, GcHandleKind::Weak), 0);
 }
 
 #[test]
 fn handle_alloc_atomic_strong_stores_value() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let slot = heap.handle_alloc(&Value::I64(99), GcHandleKind::Strong);
     assert!(slot >= 1);
     assert_eq!(heap.handle_target(slot), Some(Value::I64(99)));
@@ -83,7 +83,7 @@ fn handle_alloc_atomic_strong_stores_value() {
 
 #[test]
 fn handle_strong_anchors_after_external_drop() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let slot = {
         let v = heap.alloc_object(dummy_type_desc("Anchor"), vec![], NativeData::None);
         heap.handle_alloc(&v, GcHandleKind::Strong)
@@ -96,7 +96,7 @@ fn handle_strong_anchors_after_external_drop() {
 
 #[test]
 fn handle_weak_clears_after_external_drop() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let slot = {
         let v = heap.alloc_object(dummy_type_desc("WeakTgt"), vec![], NativeData::None);
         heap.handle_alloc(&v, GcHandleKind::Weak)
@@ -110,7 +110,7 @@ fn handle_weak_clears_after_external_drop() {
 
 #[test]
 fn handle_free_invalidates_slot() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_object(dummy_type_desc("F"), vec![], NativeData::None);
     let slot = heap.handle_alloc(&v, GcHandleKind::Strong);
     assert!(heap.handle_is_alloc(slot));
@@ -122,7 +122,7 @@ fn handle_free_invalidates_slot() {
 
 #[test]
 fn handle_free_then_realloc_reuses_slot() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v1 = heap.alloc_object(dummy_type_desc("R1"), vec![], NativeData::None);
     let slot1 = heap.handle_alloc(&v1, GcHandleKind::Strong);
     heap.handle_free(slot1);
@@ -134,7 +134,7 @@ fn handle_free_then_realloc_reuses_slot() {
 
 #[test]
 fn handle_free_idempotent_and_safe_for_zero() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.handle_free(0); // sentinel — must be no-op
     heap.handle_free(99_999); // out of range — must be no-op
     let v = heap.alloc_object(dummy_type_desc("I"), vec![], NativeData::None);
@@ -146,7 +146,7 @@ fn handle_free_idempotent_and_safe_for_zero() {
 
 #[test]
 fn handle_kind_distinguishes_strong_and_weak() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_object(dummy_type_desc("K"), vec![], NativeData::None);
     let s = heap.handle_alloc(&v, GcHandleKind::Strong);
     let w = heap.handle_alloc(&v, GcHandleKind::Weak);

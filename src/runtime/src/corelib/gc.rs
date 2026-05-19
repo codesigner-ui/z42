@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 /// `Std.GC.Collect()` —— 触发环检测（不阻断；no-op 当 paused）。
-/// 调用 `ctx.heap().collect_cycles()`，进而走 `RcMagrGC` 的 trial-deletion 算法。
+/// 调用 `ctx.heap().collect_cycles()`，进而走 `ArcMagrGC` 的 trial-deletion 算法。
 pub fn builtin_gc_collect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     ctx.heap().collect_cycles();
     Ok(Value::Null)

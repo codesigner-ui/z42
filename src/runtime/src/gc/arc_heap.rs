@@ -1,4 +1,4 @@
-//! `RcMagrGC` —— 默认 GC backend（接口完整 + Trial-deletion 环回收器）。
+//! `ArcMagrGC` —— 默认 GC backend（接口完整 + Trial-deletion 环回收器）。
 //!
 //! 通过 [`GcRef<T>`] 句柄抽象走 `Rc<GcAllocation<T>>` backing（GcAllocation
 //! 含 `inner: RefCell<T>` + `finalizer: RefCell<Option<FinalizerFn>>` + 自定义
@@ -40,7 +40,7 @@
 //!   共用同一数据结构）。修复 JIT 路径下 transitive 可达对象（如返回值穿过
 //!   函数边界后通过 outer.slot 间接持有）被误清的 bug。
 //! - Phase 3-OOM（add-strict-oom-rejection）：trait 加 `set_strict_oom(bool)`
-//!   默认 no-op（向后兼容）。RcMagrGC 启用 strict 模式后 alloc 越过
+//!   默认 no-op（向后兼容）。ArcMagrGC 启用 strict 模式后 alloc 越过
 //!   max_heap_bytes 时返回 `Value::Null` 不入 registry / 不 bump used_bytes
 //!   （撤销分配），同时 fire OutOfMemory 事件。
 
@@ -191,7 +191,7 @@ impl std::fmt::Debug for RcHeapInner {
     }
 }
 
-// ── RcMagrGC ─────────────────────────────────────────────────────────────────
+// ── ArcMagrGC ─────────────────────────────────────────────────────────────────
 
 /// External root scanner type. 宿主（典型情况是 `VmCore` / `VmContext`）
 /// 通过 `set_external_root_scanner` 注册的闭包，在 mark 阶段被调用以暴露
@@ -204,17 +204,17 @@ impl std::fmt::Debug for RcHeapInner {
 pub type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value)) + Send + Sync>;
 
 #[derive(Default)]
-pub struct RcMagrGC {
+pub struct ArcMagrGC {
     inner: Mutex<RcHeapInner>,
     external_root_scanner: Mutex<Option<ExternalRootScanner>>,
 }
 
-impl std::fmt::Debug for RcMagrGC {
+impl std::fmt::Debug for ArcMagrGC {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let scanner_set = self.external_root_scanner.try_lock()
             .map(|s| s.is_some())
             .unwrap_or(false);
-        let mut d = f.debug_struct("RcMagrGC");
+        let mut d = f.debug_struct("ArcMagrGC");
         match self.inner.try_lock() {
             Some(i) => { d.field("inner", &*i); }
             None    => { d.field("inner", &"<borrowed>"); }
@@ -223,7 +223,7 @@ impl std::fmt::Debug for RcMagrGC {
     }
 }
 
-impl RcMagrGC {
+impl ArcMagrGC {
     pub fn new() -> Self { Self::default() }
 
     /// **Phase 3d.1**: 注册一个 external root scanner 闭包。每次 cycle
@@ -319,7 +319,7 @@ impl RcMagrGC {
     /// reachable pointer-key set.
     ///
     /// **Phase 3d.1**: 现在扫两批 roots：
-    /// 1. RcMagrGC 内部 `pinned_roots`（host 通过 `pin_root` / `enter_frame` 注册）
+    /// 1. ArcMagrGC 内部 `pinned_roots`（host 通过 `pin_root` / `enter_frame` 注册）
     /// 2. `external_root_scanner` 闭包暴露的额外 roots（典型：VmContext
     ///    的 `static_fields` / `pending_exception` 持有的 Value）
     ///
@@ -534,7 +534,7 @@ impl RcMagrGC {
 
 // ── trait impl ───────────────────────────────────────────────────────────────
 
-impl MagrGC for RcMagrGC {
+impl MagrGC for ArcMagrGC {
     // ── 2. Roots / scanner ───────────────────────────────────────────────────
 
     /// **Phase 3d.1** + **add-multithreading-foundation Phase 2.2**：
@@ -644,7 +644,7 @@ impl MagrGC for RcMagrGC {
     }
 
     // ── 3. Write barriers (default no-op via trait) ──────────────────────────
-    // (RcMagrGC 不重载；trait 默认实现已经是 no-op)
+    // (ArcMagrGC 不重载；trait 默认实现已经是 no-op)
 
     // ── 4. Object Model ──────────────────────────────────────────────────────
 
@@ -947,5 +947,5 @@ impl MagrGC for RcMagrGC {
 }
 
 #[cfg(test)]
-#[path = "rc_heap_tests/mod.rs"]
-mod rc_heap_tests;
+#[path = "arc_heap_tests/mod.rs"]
+mod arc_heap_tests;

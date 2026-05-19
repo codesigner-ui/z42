@@ -4,7 +4,7 @@ use super::*;
 
 #[test]
 fn force_collect_returns_full_kind() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let stats = heap.force_collect();
     assert_eq!(stats.kind, Some(GcKind::Full));
     assert_eq!(stats.freed_bytes, 0);
@@ -13,7 +13,7 @@ fn force_collect_returns_full_kind() {
 
 #[test]
 fn pause_skips_force_collect() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.pause();
     let stats = heap.force_collect();
     assert_eq!(stats.kind, None);  // skipped
@@ -22,7 +22,7 @@ fn pause_skips_force_collect() {
 
 #[test]
 fn resume_after_pause_re_enables_collect() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.pause();
     heap.resume();
     let stats = heap.force_collect();
@@ -31,7 +31,7 @@ fn resume_after_pause_re_enables_collect() {
 
 #[test]
 fn nested_pause_requires_matching_resume() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.pause();
     heap.pause();
     heap.resume();
@@ -44,7 +44,7 @@ fn nested_pause_requires_matching_resume() {
 
 #[test]
 fn collect_cycles_increments_gc_cycles() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.collect_cycles();
     heap.collect_cycles();
     assert_eq!(heap.stats().gc_cycles, 2);
@@ -52,7 +52,7 @@ fn collect_cycles_increments_gc_cycles() {
 
 #[test]
 fn stats_collect_does_not_change_counters() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let _ = heap.alloc_array(vec![]);
     let before = heap.stats();
     heap.collect();  // default no-op
@@ -63,7 +63,7 @@ fn stats_collect_does_not_change_counters() {
 
 #[test]
 fn auto_collect_triggers_when_over_threshold() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.set_max_heap_bytes(Some(2_000));  // 阈值 1800 (90%)
     let gc_before = heap.stats().gc_cycles;
 
@@ -78,7 +78,7 @@ fn auto_collect_triggers_when_over_threshold() {
 
 #[test]
 fn auto_collect_throttled_by_growth_delta() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.set_max_heap_bytes(Some(10_000));
 
     // 一次性 alloc 跨 90% 阈值

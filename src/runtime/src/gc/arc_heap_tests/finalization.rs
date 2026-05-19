@@ -6,7 +6,7 @@ use super::*;
 fn finalizer_fires_on_normal_rc_drop_no_cycle_no_collect() {
     // Phase 3e 关键测试：alloc + register finalizer + drop 最后一个引用 →
     // GcAllocation::Drop 自动触发 finalizer（无需调用 collect_cycles）。
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let fired = Arc::new(AtomicUsize::new(0));
     let f = fired.clone();
 
@@ -25,7 +25,7 @@ fn finalizer_fires_on_normal_rc_drop_no_cycle_no_collect() {
 fn finalizer_one_shot_via_drop_then_collect() {
     // Phase 3e: drop 触发 finalizer 后，registry 已无该对象；collect_cycles
     // 找不到也不会重发。
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let fired = Arc::new(AtomicUsize::new(0));
     let f = fired.clone();
 
@@ -46,7 +46,7 @@ fn finalizer_one_shot_via_drop_then_collect() {
 fn finalizers_pending_reflects_alive_with_finalizer() {
     // Phase 3e: stats.finalizers_pending 由 snapshot 重算，反映当前
     // 仍存活且有 finalizer 的对象数。
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v1 = heap.alloc_object(dummy_type_desc("F1"), vec![], NativeData::None);
     let v2 = heap.alloc_object(dummy_type_desc("F2"), vec![], NativeData::None);
     let _v3 = heap.alloc_object(dummy_type_desc("F3"), vec![], NativeData::None);
@@ -66,7 +66,7 @@ fn finalizers_pending_reflects_alive_with_finalizer() {
 
 #[test]
 fn finalizer_fires_when_object_freed_via_cycle_collect() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let fired = Arc::new(AtomicUsize::new(0));
     let f = fired.clone();
 
@@ -92,7 +92,7 @@ fn finalizer_fires_when_object_freed_via_cycle_collect() {
 
 #[test]
 fn finalizer_does_not_fire_when_object_kept_alive() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let fired = Arc::new(AtomicUsize::new(0));
     let f = fired.clone();
     let _alive = heap.alloc_object(dummy_type_desc("Alive"), vec![], NativeData::None);
@@ -108,7 +108,7 @@ fn finalizer_does_not_fire_when_object_kept_alive() {
 
 #[test]
 fn finalizer_is_one_shot_after_fire() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let fired = Arc::new(AtomicUsize::new(0));
     let f = fired.clone();
     let a = heap.alloc_object(dummy_type_desc("F"), vec![Value::Null], NativeData::None);
@@ -131,7 +131,7 @@ fn finalizer_is_one_shot_after_fire() {
 
 #[test]
 fn register_finalizer_increments_pending_count() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_array(vec![]);
     heap.register_finalizer(&v, Arc::new(|| {}));
     assert_eq!(heap.stats().finalizers_pending, 1);
@@ -139,7 +139,7 @@ fn register_finalizer_increments_pending_count() {
 
 #[test]
 fn cancel_finalizer_decrements_pending_count() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     let v = heap.alloc_array(vec![]);
     heap.register_finalizer(&v, Arc::new(|| {}));
     heap.cancel_finalizer(&v);
@@ -148,7 +148,7 @@ fn cancel_finalizer_decrements_pending_count() {
 
 #[test]
 fn register_finalizer_on_atomic_value_is_noop() {
-    let heap = RcMagrGC::new();
+    let heap = ArcMagrGC::new();
     heap.register_finalizer(&Value::I64(1), Arc::new(|| {}));
     assert_eq!(heap.stats().finalizers_pending, 0);
 }

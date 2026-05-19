@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use crate::gc::{GcRef, MagrGC, RcMagrGC};
+use crate::gc::{GcRef, MagrGC, ArcMagrGC};
 use crate::metadata::Value;
 use crate::vm_context::{VmContext, VmCore};
 
@@ -44,7 +44,7 @@ fn value_is_send_sync() {
 
 #[test]
 fn rc_magr_gc_is_send_sync() {
-    assert_send_sync::<RcMagrGC>();
+    assert_send_sync::<ArcMagrGC>();
 }
 
 #[test]
