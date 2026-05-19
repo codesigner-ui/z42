@@ -17,9 +17,6 @@ public class Dictionary<K, V> where K: IEquatable<K> {
         this.keys = new K[8];
         this.values = new V[8];
         this.occupied = new bool[8];
-        // VM 默认初始化 bool[] 为 Null；显式置 false。
-        int i = 0;
-        while (i < 8) { this.occupied[i] = false; i = i + 1; }
         this.Count = 0;
     }
 
@@ -142,8 +139,6 @@ public class Dictionary<K, V> where K: IEquatable<K> {
         K[] newKeys = new K[newCap];
         V[] newValues = new V[newCap];
         bool[] newOccupied = new bool[newCap];
-        int j = 0;
-        while (j < newCap) { newOccupied[j] = false; j = j + 1; }
         K[] oldKeys = this.keys;
         V[] oldValues = this.values;
         bool[] oldOccupied = this.occupied;

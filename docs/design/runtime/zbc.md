@@ -444,6 +444,7 @@ z42c --assemble foo.zasm -o foo.zbc
 | 1.3 | 2026-05-10 | split-debug-symbols Phase 4 | `SIGS` 加 per-parameter type names（u32 strIdx × ParamCount），stack-trace signature decoration |
 | 1.4 | 2026-05-11 | [add-generic-func-constraint](../../spec/archive/2026-05-11-add-generic-func-constraint/) | Constraint bundle flag 0x40 + per-param/return type-name strings (Z42FuncType signature) |
 | 1.5 | 2026-05-13 | [fix-numeric-cast-lowering](../../spec/archive/2026-05-13-fix-numeric-cast-lowering/) | 新 opcode `Convert` (0xB1) 表达显式数值类型转换（替换之前 cast 为 IR no-op 的语义） |
+| 1.6 | 2026-05-19 | [fix-array-default-init](../../spec/archive/2026-05-19-fix-array-default-init/) | `ArrayNew` opcode 在 `size` 之后追加 1 byte element type tag（`TypeTags::*`），驱动数组元素的 per-type 默认值（int→0 / bool→false / char→'\0' / ref→null） |
 
 > **如何 bump minor**：见 [`version-bumping.md` §"Bumping `.zbc` minor version"](../../../.claude/rules/version-bumping.md#bumping-zbc-minor-versionfreeze-zbc-v1-2026-05-14)。简而言之 — 写 `ZbcWriter.VersionMinor++` + 同步 `zbc_reader.rs` 常量 + 本表加一行 + `generate-fixtures.sh` regen + commit。Invariant CI 校验三方常量一致。
 

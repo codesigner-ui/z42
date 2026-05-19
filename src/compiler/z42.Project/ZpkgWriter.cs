@@ -35,7 +35,7 @@ namespace Z42.Project;
 public static partial class ZpkgWriter
 {
     public const ushort VersionMajor = 0;
-    public const ushort VersionMinor = 6;   // 2026-05-14 freeze-zpkg-v0 catch-up: inner zbc 1.5 (Convert opcode from 2026-05-13 fix-numeric-cast-lowering; zpkg minor was missed in that spec). Pre-0.6 not readable.
+    public const ushort VersionMinor = 7;   // 2026-05-18 fix-array-default-init: inner zbc 1.6 (ArrayNew opcode appends element type tag byte). Pre-0.7 not readable.
 
     /// Magic bytes: "ZPK\0"
     private static readonly byte[] Magic = [(byte)'Z', (byte)'P', (byte)'K', (byte)'\0'];

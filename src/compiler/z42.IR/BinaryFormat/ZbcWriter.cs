@@ -29,7 +29,7 @@ namespace Z42.IR.BinaryFormat;
 public static partial class ZbcWriter
 {
     public const ushort VersionMajor = 1;
-    public const ushort VersionMinor = 5;   // 2026-05-13 fix-numeric-cast-lowering: new opcode Convert (0xB1) for explicit numeric type casts. Pre-1.5 not readable.
+    public const ushort VersionMinor = 6;   // 2026-05-18 fix-array-default-init: ArrayNew opcode appends element type tag byte (drives per-type default value). Pre-1.6 not readable.
 
     // ── Public API ─────────────────────────────────────────────────────────────
 

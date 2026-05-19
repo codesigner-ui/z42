@@ -657,9 +657,10 @@ pub fn translate_function(
                 }
 
                 // Arrays
-                Instruction::ArrayNew { dst, size } => {
+                Instruction::ArrayNew { dst, size, elem_tag } => {
                     let d = ri!(*dst); let s = ri!(*size);
-                    let inst = builder.ins().call(hr_array_new, &[frame_val, ctx_val, d, s]);
+                    let t = builder.ins().iconst(types::I8, *elem_tag as i64);
+                    let inst = builder.ins().call(hr_array_new, &[frame_val, ctx_val, d, s, t]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
                 }
                 Instruction::ArrayNewLit { dst, elems } => {

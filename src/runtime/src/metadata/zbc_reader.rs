@@ -30,7 +30,7 @@ use super::types::ExecMode;
 // See docs/design/runtime/zbc.md + .claude/rules/workflow.md for the full procedure.
 
 pub const ZBC_VERSION_MAJOR: u16 = 1;
-pub const ZBC_VERSION_MINOR: u16 = 5;
+pub const ZBC_VERSION_MINOR: u16 = 6;
 
 // ── zpkg wire format version (mirror of C# ZpkgWriter.VersionMajor/Minor) ────
 //
@@ -41,7 +41,7 @@ pub const ZBC_VERSION_MINOR: u16 = 5;
 // procedure (zbc bump → 4 zbc steps + 4 zpkg steps in the same commit).
 
 pub const ZPKG_VERSION_MAJOR: u16 = 0;
-pub const ZPKG_VERSION_MINOR: u16 = 6;
+pub const ZPKG_VERSION_MINOR: u16 = 7;
 
 // ── Opcode constants (must match C# Opcodes.cs) ───────────────────────────────
 
@@ -857,7 +857,11 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             let class_name = id_map.resolve_type(c.read_u32()?)?;
             Instruction::AsCast { dst, obj, class_name }
         }
-        OP_ARRAY_NEW     => Instruction::ArrayNew { dst, size: c.read_u16()? as u32 },
+        OP_ARRAY_NEW     => {
+            let size = c.read_u16()? as u32;
+            let elem_tag = c.read_u8()?;
+            Instruction::ArrayNew { dst, size, elem_tag }
+        }
         OP_ARRAY_NEW_LIT => { let elems = read_args(c)?; Instruction::ArrayNewLit { dst, elems } }
         OP_ARRAY_GET     => {
             let arr = c.read_u16()? as u32;

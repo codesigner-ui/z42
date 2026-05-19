@@ -37,6 +37,46 @@ pub fn default_value_for(type_tag: &str) -> Value {
     }
 }
 
+// ── zbc TypeTag bytes (mirror of C# Opcodes.TypeTags) ────────────────────────
+//
+// Single source of truth for the 1-byte type tag carried in instruction
+// headers / extra fields. Keep these in sync with
+// src/compiler/z42.IR/BinaryFormat/Opcodes.cs `TypeTags`.
+
+pub const TAG_UNKNOWN: u8 = 0x00;
+pub const TAG_BOOL:    u8 = 0x01;
+pub const TAG_I8:      u8 = 0x02;
+pub const TAG_I16:     u8 = 0x03;
+pub const TAG_I32:     u8 = 0x04;
+pub const TAG_I64:     u8 = 0x05;
+pub const TAG_U8:      u8 = 0x06;
+pub const TAG_U16:     u8 = 0x07;
+pub const TAG_U32:     u8 = 0x08;
+pub const TAG_U64:     u8 = 0x09;
+pub const TAG_F32:     u8 = 0x0A;
+pub const TAG_F64:     u8 = 0x0B;
+pub const TAG_CHAR:    u8 = 0x0C;
+pub const TAG_STR:     u8 = 0x0D;
+pub const TAG_OBJECT:  u8 = 0x20;
+pub const TAG_ARRAY:   u8 = 0x21;
+
+/// Returns the default `Value` for a slot whose declared element type tag
+/// is `tag`. Mirrors `default_value_for(&str)` but keyed on the wire byte
+/// directly (no string lookup). Used by `ArrayNew` (interp + JIT) to
+/// initialise array elements without an explicit literal.
+///
+/// fix-array-default-init, 2026-05-18.
+pub fn default_value_for_tag(tag: u8) -> Value {
+    match tag {
+        TAG_BOOL => Value::Bool(false),
+        TAG_I8 | TAG_I16 | TAG_I32 | TAG_I64
+      | TAG_U8 | TAG_U16 | TAG_U32 | TAG_U64 => Value::I64(0),
+        TAG_F32 | TAG_F64 => Value::F64(0.0),
+        TAG_CHAR => Value::Char('\0'),
+        _ => Value::Null,
+    }
+}
+
 /// Pre-computed runtime type descriptor (CoreCLR MethodTable equivalent).
 ///
 /// Built once per class at module load time; instances reference it via `Arc`.

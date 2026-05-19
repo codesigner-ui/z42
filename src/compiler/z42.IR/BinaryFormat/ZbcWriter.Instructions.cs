@@ -185,6 +185,7 @@ public static partial class ZbcWriter
             case ArrayNewInstr i:
                 w.Write(Opcodes.ArrayNew); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);
                 WriteReg(w, i.Size);
+                w.Write(TypeTagFromIrType(i.ElemType));
                 break;
             case ArrayNewLitInstr i:
                 w.Write(Opcodes.ArrayNewLit); w.Write(TypeTagFromIrType(i.Dst.Type)); WriteReg(w, i.Dst);

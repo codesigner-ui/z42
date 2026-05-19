@@ -270,8 +270,11 @@ public sealed record ShrInstr(TypedReg Dst, TypedReg A, TypedReg B)    : IrInstr
 
 // ── Array instructions ───────────────────────────────────────────────────────
 
-/// Allocate a zero-initialized array of Size elements.
-public sealed record ArrayNewInstr(TypedReg Dst, TypedReg Size)              : IrInstr;
+/// Allocate a zero-initialized array of Size elements; each slot defaults
+/// to the per-type default value (0 for numeric, false for bool, '\0' for
+/// char, null for ref). Element type tag carried in zbc wire format
+/// (fix-array-default-init, 2026-05-18).
+public sealed record ArrayNewInstr(TypedReg Dst, TypedReg Size, IrType ElemType) : IrInstr;
 /// Allocate an array from a list of element registers.
 public sealed record ArrayNewLitInstr(TypedReg Dst, List<TypedReg> Elems)    : IrInstr;
 /// Load element at index Idx from array Arr into Dst.

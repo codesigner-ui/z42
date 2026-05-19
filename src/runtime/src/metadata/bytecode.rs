@@ -515,10 +515,17 @@ pub enum Instruction {
         #[serde(default)] stack_alloc: bool,
     },
     // Arrays
-    /// Allocate a zero-initialised array of `size` elements.
+    /// Allocate a zero-initialised array of `size` elements. Each slot is
+    /// filled with the per-type default value derived from `elem_tag`
+    /// (zbc `TypeTags::*` byte): `Value::I64(0)` for numeric tags,
+    /// `Value::Bool(false)` for bool, `Value::Char('\0')` for char,
+    /// `Value::F64(0.0)` for float/double, `Value::Null` for ref/string/unknown.
+    /// fix-array-default-init, 2026-05-18.
     ArrayNew {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         #[serde(with = "typed_reg_serde")] size: Reg,
+        #[serde(default)]
+        elem_tag: u8,
     },
     /// Allocate an array from a literal list of element registers.
     ArrayNewLit {

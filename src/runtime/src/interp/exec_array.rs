@@ -2,6 +2,7 @@
 /// All errors here are VM-internal (out-of-bounds, type mismatch); arrays
 /// don't propagate user exceptions through these primitives.
 
+use crate::metadata::types::default_value_for_tag;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
@@ -9,9 +10,10 @@ use anyhow::{bail, Result};
 use super::ops::to_usize;
 use super::Frame;
 
-pub(super) fn array_new(ctx: &VmContext, frame: &mut Frame, dst: u32, size: u32) -> Result<()> {
+pub(super) fn array_new(ctx: &VmContext, frame: &mut Frame, dst: u32, size: u32, elem_tag: u8) -> Result<()> {
     let n = to_usize(frame.get(size)?, "ArrayNew size")?;
-    frame.set(dst, ctx.heap().alloc_array(vec![Value::Null; n]));
+    let default = default_value_for_tag(elem_tag);
+    frame.set(dst, ctx.heap().alloc_array(vec![default; n]));
     Ok(())
 }
 

@@ -202,7 +202,12 @@ public static partial class ZbcReader
                 var cls = idMap.ResolveType(r.ReadUInt32());
                 return new AsCastInstr(d, obj, cls);
             }
-            case Opcodes.ArrayNew:    return new ArrayNewInstr(d, RU(r.ReadUInt16()));
+            case Opcodes.ArrayNew:
+            {
+                var size = RU(r.ReadUInt16());
+                var elemTag = r.ReadByte();
+                return new ArrayNewInstr(d, size, IrTypeFromTag(elemTag));
+            }
             case Opcodes.ArrayNewLit: return new ArrayNewLitInstr(d, ReadArgs(r));
             case Opcodes.ArrayGet:    return new ArrayGetInstr(d, RU(r.ReadUInt16()), RU(r.ReadUInt16()));
             case Opcodes.ArraySet:

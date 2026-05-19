@@ -149,7 +149,7 @@ pub fn exec_instr(
         }
 
         // ── Arrays ───────────────────────────────────────────────────────────
-        Instruction::ArrayNew    { dst, size }      => exec_array::array_new(ctx, frame, *dst, *size)?,
+        Instruction::ArrayNew    { dst, size, elem_tag } => exec_array::array_new(ctx, frame, *dst, *size, *elem_tag)?,
         Instruction::ArrayNewLit { dst, elems }     => exec_array::array_new_lit(ctx, frame, *dst, elems)?,
         Instruction::ArrayGet    { dst, arr, idx }  => exec_array::array_get(frame, *dst, *arr, *idx)?,
         Instruction::ArraySet    { arr, idx, val }  => exec_array::array_set(frame, *arr, *idx, *val)?,

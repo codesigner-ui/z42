@@ -282,7 +282,8 @@ internal sealed partial class FunctionEmitter
         {
             var sizeReg = _e.EmitExpr(ac.Size);
             var dst = _e.Alloc(IrType.Ref);
-            _e.Emit(new ArrayNewInstr(dst, sizeReg));
+            var elemIr = ToIrType(ac.ElemType);
+            _e.Emit(new ArrayNewInstr(dst, sizeReg, elemIr));
             return dst;
         }
 

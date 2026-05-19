@@ -192,7 +192,7 @@ public static class ZasmWriter
             IsInstanceInstr i => $"{Reg(i.Dst)} = is_instance  {Reg(i.Obj)}  @{i.ClassName}",
             AsCastInstr     i => $"{Reg(i.Dst)} = as_cast  {Reg(i.Obj)}  @{i.ClassName}",
 
-            ArrayNewInstr    i => $"{Reg(i.Dst)} = arr.new  {Reg(i.Size)}",
+            ArrayNewInstr    i => $"{Reg(i.Dst)} = arr.new  {Reg(i.Size)}  <{i.ElemType}>",
             ArrayNewLitInstr i => $"{Reg(i.Dst)} = arr.new.lit{FormatArgList(i.Elems)}",
             ArrayGetInstr    i => $"{Reg(i.Dst)} = arr.get  {Reg(i.Arr)}, {Reg(i.Idx)}",
             ArraySetInstr    i => $"arr.set  {Reg(i.Arr)}, {Reg(i.Idx)}, {Reg(i.Val)}",

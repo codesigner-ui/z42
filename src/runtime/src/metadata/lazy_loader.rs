@@ -234,12 +234,24 @@ impl LazyLoader {
     /// Force-load every declared zpkg into `function_table` / `type_registry`.
     /// Used by `init_static_fields` to enumerate all `*.__static_init__`
     /// functions before running them. fix-multi-file-static-init (2026-05-15).
+    ///
+    /// fix-array-default-init (2026-05-19): loop until the declared set is
+    /// stable. `load_zpkg_file` adds *transitive* deps to `declared_zpkgs`
+    /// as it loads each artifact; a single snapshot misses zpkgs that only
+    /// become declared mid-loop. The previous single-pass version skipped
+    /// `__static_init__` for transitively-discovered zpkgs (e.g. z42.encoding
+    /// pulled in by z42.crypto when the user module only imports Std.Crypto),
+    /// leaving their static fields at `Null` (`Hex.ALPHA_LOWER` etc.) and
+    /// crashing the first downstream `.CharAt` with `expected string, got Null`.
     pub fn force_load_all_declared(&mut self) {
-        let zpkgs: Vec<String> = self.remaining_declared();
-        for zpkg in zpkgs {
-            // Errors here surface later when a function lookup fails; keep
-            // initialisation best-effort to mirror the previous lookup path.
-            let _ = self.load_zpkg_file(&zpkg);
+        loop {
+            let zpkgs: Vec<String> = self.remaining_declared();
+            if zpkgs.is_empty() { break; }
+            for zpkg in zpkgs {
+                // Errors here surface later when a function lookup fails; keep
+                // initialisation best-effort to mirror the previous lookup path.
+                let _ = self.load_zpkg_file(&zpkg);
+            }
         }
     }
 

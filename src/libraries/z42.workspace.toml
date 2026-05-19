@@ -40,6 +40,7 @@ default-members = [
     "z42.regex",
     "z42.cli",
     "z42.json",
+    "z42.crypto",
     "z42.test",
 ]
 

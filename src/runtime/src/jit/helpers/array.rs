@@ -1,6 +1,7 @@
 #![allow(dangerous_implicit_autorefs)]
 //! Array allocation, element access, length.
 
+use crate::metadata::types::default_value_for_tag;
 use crate::metadata::Value;
 use super::super::frame::{JitFrame, JitModuleCtx};
 use super::{set_exception, vm_ctx_ref};
@@ -8,17 +9,17 @@ use super::{set_exception, vm_ctx_ref};
 #[no_mangle]
 pub unsafe extern "C" fn jit_array_new(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
-    dst: u32, size: u32,
+    dst: u32, size: u32, elem_tag: u8,
 ) -> u8 {
     let n = match &(*frame).regs[size as usize] {
-        Value::I64(n) if *n >= 0 => *n as usize,
         Value::I64(n) if *n >= 0 => *n as usize,
         other => {
             set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArrayNew: expected non-negative int, got {:?}", other)));
             return 1;
         }
     };
-    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vec![Value::Null; n]);
+    let default = default_value_for_tag(elem_tag);
+    (*frame).regs[dst as usize] = vm_ctx_ref(ctx).heap().alloc_array(vec![default; n]);
     0
 }
 

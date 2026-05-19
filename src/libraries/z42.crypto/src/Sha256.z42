@@ -9,11 +9,6 @@ using Std.Encoding;
 // bits at every op boundary — z42 `int` is signed i32, overflows on the
 // schedule additions.
 //
-// **gotcha**: `new byte[N]` in z42 leaves elements as `null` (not 0).
-// Every fresh byte buffer must be zero-initialised in a loop before
-// any element is read. Hex.z42 / BinaryReader.z42 sidestep this because
-// they only read from user-provided already-populated byte[].
-//
 // Tested against NIST FIPS 180-2 test vectors (see tests/sha256_vectors.z42).
 public static class Sha256 {
     // ── Public API ───────────────────────────────────────────────────────────
@@ -27,7 +22,7 @@ public static class Sha256 {
             _processBlock(h, padded, b * 64);
             b = b + 1;
         }
-        byte[] digest = _zeroBytes(32);
+        byte[] digest = new byte[32];
         int i = 0;
         while (i < 8) {
             long v = h[i];
@@ -49,7 +44,7 @@ public static class Sha256 {
     }
 
     public static string HashStringHex(string s) {
-        if (s.Length == 0) return Hex.Encode(Hash(_zeroBytes(0)));
+        if (s.Length == 0) return Hex.Encode(Hash(new byte[0]));
         return Hex.Encode(Hash(Utf8.GetBytes(s)));
     }
 
@@ -83,25 +78,13 @@ public static class Sha256 {
         return k;
     }
 
-    // ── Helper: zero-initialised byte buffer ────────────────────────────────
-
-    static byte[] _zeroBytes(int n) {
-        byte[] arr = new byte[n];
-        int i = 0;
-        while (i < n) {
-            arr[i] = (byte)0;
-            i = i + 1;
-        }
-        return arr;
-    }
-
     // ── Pre-processing: pad + length-encode ──────────────────────────────────
 
     static byte[] _pad(byte[] data) {
         long bitLen = (long)data.Length * 8L;
         int padZeros = (56 - (data.Length + 1) % 64 + 64) % 64;
         int totalLen = data.Length + 1 + padZeros + 8;
-        byte[] padded = _zeroBytes(totalLen);
+        byte[] padded = new byte[totalLen];
         int i = 0;
         while (i < data.Length) { padded[i] = data[i]; i = i + 1; }
         padded[data.Length] = (byte)0x80;
