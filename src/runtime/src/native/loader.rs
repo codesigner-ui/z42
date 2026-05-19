@@ -59,7 +59,7 @@ pub fn load_library(ctx: &VmContext, path: &Path) -> Result<()> {
 
     // Drop the symbol borrow before moving the library into native_libs.
     drop(register);
-    ctx.native_libs.borrow_mut().push(lib);
+    ctx.core.native_libs.lock().push(lib);
     Ok(())
 }
 

@@ -46,7 +46,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use crate::gc::{MagrGC, RcMagrGC};
 use crate::metadata::lazy_loader::{LazyLoader, ZpkgCandidate};
@@ -78,6 +78,25 @@ pub struct VmCore {
     /// FQN → slot id map. Lazy-allocated on first access; cross-zpkg lazy
     /// fields can be encountered in any order.
     pub(crate) static_field_index: Mutex<HashMap<String, u32>>,
+    /// On-demand zpkg loader. `None` until `install_lazy_loader[_with_deps]`
+    /// is called (typically from `bootstrap.rs`). Shared across threads
+    /// since zpkg resolution + module loading is a process-global operation.
+    pub(crate) lazy_loader:        Mutex<Option<LazyLoader>>,
+    /// Native interop Tier 1 — registered native types keyed by `(module, type)`.
+    /// **`RwLock`** (Decision 6): read-mostly path — `CallNative` dispatch /
+    /// `z42_resolve_type` are pure reads, writes only happen during module
+    /// load / `z42_register_type`. Concurrent reads from multiple threads
+    /// not serialized.
+    #[cfg(feature = "native-interop")]
+    pub(crate) native_types:       RwLock<HashMap<(String, String), Rc<crate::native::RegisteredType>>>,
+    /// Loaded native libraries kept alive for VM lifetime so function
+    /// pointers stored in `native_types` stay valid. Lock contention low
+    /// (only `dlopen` adds entries) → plain Mutex.
+    #[cfg(feature = "native-interop")]
+    pub(crate) native_libs:        Mutex<Vec<libloading::Library>>,
+    /// Spec C10 — owned byte buffers backing `Value::PinnedView` instances.
+    /// Keyed by buffer data pointer so `UnpinPtr` can drop the entry.
+    pub(crate) pinned_owned_buffers: Mutex<HashMap<u64, Box<[u8]>>>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -100,7 +119,7 @@ pub struct VmContext {
     /// through `self.core.<field>.lock()` (or `.read()` for RwLock variants).
     pub(crate) core: Arc<VmCore>,
     pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
-    pub(crate) lazy_loader:       Rc<RefCell<Option<LazyLoader>>>,
+    // lazy_loader moved to VmCore (Phase 1.6)
     /// 2026-05-10 unify-frame-chain: single source of truth for active
     /// script frames. Each [`crate::exception::VmFrame`] carries the
     /// `(name, file, line, column)` trace metadata **and** raw pointers
@@ -122,26 +141,7 @@ pub struct VmContext {
     pub(crate) func_ref_slots:    Rc<RefCell<Vec<Value>>>,
     pub(crate) heap:              Box<dyn MagrGC>,
 
-    /// Native interop Tier 1 — registered native types keyed by
-    /// `(module_name, type_name)`. Filled by `z42_register_type`; queried by
-    /// `CallNative` IR dispatch and `z42_resolve_type`. Per-VM isolated so
-    /// multi-VM tests stay independent. See spec C2 (`impl-tier1-c-abi`).
-    ///
-    /// 2026-05-12 add-platform-wasm Stage 0: gated on `native-interop` feature.
-    /// wasm builds drop this field entirely; the sandbox has no dlopen / libffi.
-    #[cfg(feature = "native-interop")]
-    pub(crate) native_types:      Rc<RefCell<HashMap<(String, String), Rc<crate::native::RegisteredType>>>>,
-    /// Loaded native libraries kept alive for the VM's lifetime so that
-    /// function pointers stored in `native_types` stay valid until VM drop.
-    #[cfg(feature = "native-interop")]
-    pub(crate) native_libs:       Rc<RefCell<Vec<libloading::Library>>>,
-
-    /// Spec C10 — owned byte buffers backing `Value::PinnedView` instances
-    /// produced by pinning a `Value::Array<u8>`. Keyed by the buffer's data
-    /// pointer (`Box::as_ptr() as u64`) so `UnpinPtr` can find and drop
-    /// the right entry. Empty for `Str`-source pins (those borrow from the
-    /// source `String` and need no extra storage).
-    pub(crate) pinned_owned_buffers: Rc<RefCell<HashMap<u64, Box<[u8]>>>>,
+    // native_types / native_libs / pinned_owned_buffers moved to VmCore (Phase 1.7-1.9)
 
     /// add-std-process (2026-05-13) — live `Std.IO.Process` children
     /// spawned via `__process_spawn`. Keyed by a monotonic u64 slot id
@@ -161,9 +161,14 @@ impl VmContext {
         let core: Arc<VmCore> = Arc::new(VmCore {
             static_fields:      Mutex::new(Vec::new()),
             static_field_index: Mutex::new(HashMap::new()),
+            lazy_loader:        Mutex::new(None),
+            #[cfg(feature = "native-interop")]
+            native_types:       RwLock::new(HashMap::new()),
+            #[cfg(feature = "native-interop")]
+            native_libs:        Mutex::new(Vec::new()),
+            pinned_owned_buffers: Mutex::new(HashMap::new()),
         });
         let pending_exception = Rc::new(RefCell::new(None));
-        let lazy_loader       = Rc::new(RefCell::new(None));
         let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
         // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
         // previous trio (exec_stack / env_arena_stack / call_stack).
@@ -219,15 +224,9 @@ impl VmContext {
         Self {
             core,
             pending_exception,
-            lazy_loader,
             call_stack,
             func_ref_slots,
             heap: Box::new(heap),
-            #[cfg(feature = "native-interop")]
-            native_types: Rc::new(RefCell::new(HashMap::new())),
-            #[cfg(feature = "native-interop")]
-            native_libs:  Rc::new(RefCell::new(Vec::new())),
-            pinned_owned_buffers: Rc::new(RefCell::new(HashMap::new())),
             processes:       Rc::new(RefCell::new(HashMap::new())),
             process_next_id: std::cell::Cell::new(1),
         }
@@ -286,7 +285,7 @@ impl VmContext {
         ty: Rc<crate::native::RegisteredType>,
     ) -> bool {
         let key = (ty.module().to_string(), ty.type_name().to_string());
-        let mut map = self.native_types.borrow_mut();
+        let mut map = self.core.native_types.write();
         if map.contains_key(&key) {
             return false;
         }
@@ -303,13 +302,13 @@ impl VmContext {
         name: &str,
     ) -> Option<Rc<crate::native::RegisteredType>> {
         let key = (module.to_string(), name.to_string());
-        self.native_types.borrow().get(&key).cloned()
+        self.core.native_types.read().get(&key).cloned()
     }
 
     /// Total number of registered native types — primarily for tests.
     #[cfg(feature = "native-interop")]
     pub fn native_type_count(&self) -> usize {
-        self.native_types.borrow().len()
+        self.core.native_types.read().len()
     }
 
     // ── Pinned owned buffers (spec C10 — Array<u8> pin) ──────────────────
@@ -320,7 +319,7 @@ impl VmContext {
     /// [`release_owned_buffer`] is called from a matching `UnpinPtr`.
     pub fn pin_owned_buffer(&self, buf: Box<[u8]>) -> u64 {
         let ptr = buf.as_ptr() as u64;
-        self.pinned_owned_buffers.borrow_mut().insert(ptr, buf);
+        self.core.pinned_owned_buffers.lock().insert(ptr, buf);
         ptr
     }
 
@@ -328,13 +327,13 @@ impl VmContext {
     /// Idempotent: silently no-ops if `ptr` isn't registered (e.g. `Str`
     /// pins which never enter the table).
     pub fn release_owned_buffer(&self, ptr: u64) {
-        let _ = self.pinned_owned_buffers.borrow_mut().remove(&ptr);
+        let _ = self.core.pinned_owned_buffers.lock().remove(&ptr);
     }
 
     /// Total number of currently-pinned owned buffers — exposed for
     /// tests asserting that UnpinPtr cleaned up.
     pub fn pinned_owned_buffer_count(&self) -> usize {
-        self.pinned_owned_buffers.borrow().len()
+        self.core.pinned_owned_buffers.lock().len()
     }
 
     /// Load a native library and invoke its `<basename>_register` entry point.
@@ -589,7 +588,7 @@ impl VmContext {
         declared: Vec<(String, ZpkgCandidate)>,
         initially_loaded: Vec<String>,
     ) {
-        *self.lazy_loader.borrow_mut() = Some(LazyLoader::new(
+        *self.core.lazy_loader.lock() = Some(LazyLoader::new(
             libs_dir,
             main_pool_len,
             declared,
@@ -599,7 +598,7 @@ impl VmContext {
 
     /// Clear the lazy loader (used in tests).
     pub fn uninstall_lazy_loader(&self) {
-        *self.lazy_loader.borrow_mut() = None;
+        *self.core.lazy_loader.lock() = None;
     }
 
     /// fix-cross-pkg-subclass-fields (2026-05-14): seed the lazy loader's
@@ -609,7 +608,7 @@ impl VmContext {
     /// fixup pass can find eagerly-loaded base classes when lazy-loading a
     /// subclass.
     pub fn seed_lazy_loader_types(&self, types: &HashMap<String, Arc<TypeDesc>>) {
-        let mut state = self.lazy_loader.borrow_mut();
+        let mut state = self.core.lazy_loader.lock();
         if let Some(loader) = state.as_mut() {
             loader.seed_types_for_lookup(types);
         }
@@ -617,28 +616,28 @@ impl VmContext {
 
     /// Look up a function by FQ name; triggers lazy load if needed.
     pub fn try_lookup_function(&self, func_name: &str) -> Option<Arc<Function>> {
-        let mut state = self.lazy_loader.borrow_mut();
+        let mut state = self.core.lazy_loader.lock();
         let loader = state.as_mut()?;
         loader.resolve_function(func_name)
     }
 
     /// Look up a class TypeDesc by FQ name; triggers lazy load if needed.
     pub fn try_lookup_type(&self, class_name: &str) -> Option<Arc<TypeDesc>> {
-        let mut state = self.lazy_loader.borrow_mut();
+        let mut state = self.core.lazy_loader.lock();
         let loader = state.as_mut()?;
         loader.resolve_type(class_name)
     }
 
     /// Resolve an "overflow" ConstStr index past the main module's pool.
     pub fn try_lookup_string(&self, absolute_idx: usize) -> Option<String> {
-        let state = self.lazy_loader.borrow();
+        let state = self.core.lazy_loader.lock();
         let loader = state.as_ref()?;
         loader.try_lookup_string(absolute_idx)
     }
 
     /// All namespaces declared by lazy-loadable zpkgs (for static-init scan).
     pub fn declared_namespaces(&self) -> Vec<String> {
-        let state = self.lazy_loader.borrow();
+        let state = self.core.lazy_loader.lock();
         match state.as_ref() {
             Some(loader) => loader.declared_namespaces(),
             None         => Vec::new(),
@@ -654,7 +653,7 @@ impl VmContext {
     /// each declared zpkg and enumerates the loader's function table for
     /// the suffix. Sorted for determinism.
     pub fn collect_lazy_static_init_names(&self) -> Vec<String> {
-        let mut state = self.lazy_loader.borrow_mut();
+        let mut state = self.core.lazy_loader.lock();
         let Some(loader) = state.as_mut() else { return Vec::new(); };
         loader.force_load_all_declared();
         let mut names: Vec<String> = loader.iter_function_names()

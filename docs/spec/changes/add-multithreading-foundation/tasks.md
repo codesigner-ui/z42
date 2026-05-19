@@ -16,10 +16,10 @@
 - [x] 1.3 调用方更新：所有 `self.static_fields.borrow()` → `self.core.static_fields.lock()`
 - [x] 1.4 `cargo build --release` GREEN
 - [x] 1.5 `./scripts/test-stdlib.sh` GREEN（17 lib）
-- [ ] 1.6 移动 `lazy_loader`（`Mutex<Option<LazyLoader>>`）+ 调用方更新
-- [ ] 1.7 移动 `native_types`（`RwLock<HashMap<...>>`，读多写少）+ 调用方
-- [ ] 1.8 移动 `native_libs`（`Mutex<Vec<libloading::Library>>`）+ 调用方
-- [ ] 1.9 移动 `pinned_owned_buffers`（`Mutex<HashMap<...>>`）+ 调用方
+- [x] 1.6 移动 `lazy_loader`（`Mutex<Option<LazyLoader>>`）+ 调用方更新
+- [x] 1.7 移动 `native_types`（`RwLock<HashMap<...>>`，读多写少）+ 调用方
+- [x] 1.8 移动 `native_libs`（`Mutex<Vec<libloading::Library>>`）+ 调用方
+- [x] 1.9 移动 `pinned_owned_buffers`（`Mutex<HashMap<...>>`）+ 调用方
 - [ ] 1.10 阶段 1 全 GREEN check（stdlib + test-vm + dotnet test）
 
 ## 阶段 2: 剩余共享字段
