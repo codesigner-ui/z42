@@ -46,9 +46,39 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
+use parking_lot::Mutex;
+
 use crate::gc::{MagrGC, RcMagrGC};
 use crate::metadata::lazy_loader::{LazyLoader, ZpkgCandidate};
 use crate::metadata::{Function, TypeDesc, Value};
+
+/// **`VmCore`** —— state shared across all threads sharing one VM instance
+/// (add-multithreading-foundation, 2026-05-19, Phase 1 / spec
+/// `2026-05-19-add-multithreading-foundation`).
+///
+/// Holds fields that are **process-globally singular**: static fields, type
+/// registries, native interop registry, pinned buffer table, etc. Per-thread
+/// state (call stack, pending exception, frame guards, func-ref cache slots)
+/// stays directly on [`VmContext`], which references this struct through
+/// `Arc<VmCore>`.
+///
+/// Phase 1 (this commit): only `static_fields` + `static_field_index` are
+/// here. Subsequent phases move `lazy_loader` / `native_types` /
+/// `native_libs` / `pinned_owned_buffers` / `processes` / `gc heap` in.
+///
+/// `VmCore` will become `Send + Sync` once `GcRef<T>` backing switches to
+/// `Arc<...>` (Phase 3 of the spec). Until then, `Mutex` is wrapped around
+/// fields that hold `Value` (which transitively contains `Rc<RefCell>` via
+/// the current `GcRef` backing), so the API surface is already stable —
+/// Send-safety completes at Phase 3 without further VmCore API changes.
+pub struct VmCore {
+    /// Static field storage indexed by `StaticFieldId.0` (introduce-method-token,
+    /// 2026-05-08). Slot 0 reserved? No; ids start at 0 (allocation order).
+    pub(crate) static_fields:      Mutex<Vec<Value>>,
+    /// FQN → slot id map. Lazy-allocated on first access; cross-zpkg lazy
+    /// fields can be encountered in any order.
+    pub(crate) static_field_index: Mutex<HashMap<String, u32>>,
+}
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
 ///
@@ -64,19 +94,11 @@ use crate::metadata::{Function, TypeDesc, Value};
 /// 字段持有的 Value 也纳入 GC roots（修复 cycle collector 漏扫 static_fields
 /// 导致误清的 bug）。
 pub struct VmContext {
-    /// Static field storage indexed by `StaticFieldId.0` (introduce-method-token,
-    /// 2026-05-08). Replaces the prior `HashMap<String, Value>` to enable
-    /// O(1) Vec-indexed access from the dispatch hot path. Names are
-    /// remapped to integer IDs via `static_field_index` (lazy allocation
-    /// on first access — safe across cross-zpkg lazy load order).
-    pub(crate) static_fields:     Rc<RefCell<Vec<Value>>>,
-    /// Maps full-qualified static-field name to its `StaticFieldId.0`
-    /// (slot index in `static_fields`). Lazy-built on first access via
-    /// `resolve_static_field_id` so cross-zpkg static fields can be
-    /// encountered in any order. Read by:
-    ///  - `static_get(name)` / `static_set(name)` legacy by-name API
-    ///  - `metadata::resolver` to populate `ResolvedTokens.static_field_tokens`
-    pub(crate) static_field_index: Rc<RefCell<HashMap<String, u32>>>,
+    /// Shared-across-threads state (add-multithreading-foundation, 2026-05-19).
+    /// See [`VmCore`] for the field list and per-phase migration table.
+    /// Static fields, type registries, native interop registry etc. accessed
+    /// through `self.core.<field>.lock()` (or `.read()` for RwLock variants).
+    pub(crate) core: Arc<VmCore>,
     pub(crate) pending_exception: Rc<RefCell<Option<Value>>>,
     pub(crate) lazy_loader:       Rc<RefCell<Option<LazyLoader>>>,
     /// 2026-05-10 unify-frame-chain: single source of truth for active
@@ -136,8 +158,10 @@ impl Default for VmContext {
 
 impl VmContext {
     pub fn new() -> Self {
-        let static_fields:     Rc<RefCell<Vec<Value>>>            = Rc::new(RefCell::new(Vec::new()));
-        let static_field_index: Rc<RefCell<HashMap<String, u32>>> = Rc::new(RefCell::new(HashMap::new()));
+        let core: Arc<VmCore> = Arc::new(VmCore {
+            static_fields:      Mutex::new(Vec::new()),
+            static_field_index: Mutex::new(HashMap::new()),
+        });
         let pending_exception = Rc::new(RefCell::new(None));
         let lazy_loader       = Rc::new(RefCell::new(None));
         let func_ref_slots: Rc<RefCell<Vec<Value>>> = Rc::new(RefCell::new(Vec::new()));
@@ -151,13 +175,13 @@ impl VmContext {
         // regs / stack closure envs / func-ref slots stay alive.
         let heap = RcMagrGC::new();
         {
-            let sf  = static_fields.clone();
+            let core_clone = Arc::clone(&core);
             let pe  = pending_exception.clone();
             let cs  = call_stack.clone();
             let frs = func_ref_slots.clone();
             heap.set_external_root_scanner(Box::new(move |visit| {
-                // 1. static_fields
-                for v in sf.borrow().iter() {
+                // 1. static_fields (via VmCore)
+                for v in core_clone.static_fields.lock().iter() {
                     visit(v);
                 }
                 // 2. pending_exception
@@ -193,8 +217,7 @@ impl VmContext {
         }
 
         Self {
-            static_fields,
-            static_field_index,
+            core,
             pending_exception,
             lazy_loader,
             call_stack,
@@ -454,14 +477,14 @@ impl VmContext {
     /// static-field name. Idempotent. Called by `metadata::resolver` at module
     /// load and by hot paths on cache miss (cross-zpkg lazy fields).
     pub fn resolve_static_field_id(&self, name: &str) -> crate::metadata::tokens::StaticFieldId {
-        let mut idx = self.static_field_index.borrow_mut();
+        let mut idx = self.core.static_field_index.lock();
         if let Some(&id) = idx.get(name) {
             return crate::metadata::tokens::StaticFieldId(id);
         }
         let id = idx.len() as u32;
         idx.insert(name.to_string(), id);
         // Extend backing Vec to match index.
-        let mut sf = self.static_fields.borrow_mut();
+        let mut sf = self.core.static_fields.lock();
         if (id as usize) >= sf.len() {
             sf.resize_with((id + 1) as usize, || Value::Null);
         }
@@ -472,11 +495,12 @@ impl VmContext {
     /// `Value::Null`. Lazy fallback for cross-zpkg paths and JIT helpers
     /// not yet threading `StaticFieldId`.
     pub fn static_get(&self, field: &str) -> Value {
-        let idx = self.static_field_index.borrow();
+        let idx = self.core.static_field_index.lock();
         match idx.get(field) {
             Some(&id) => self
+                .core
                 .static_fields
-                .borrow()
+                .lock()
                 .get(id as usize)
                 .cloned()
                 .unwrap_or(Value::Null),
@@ -495,8 +519,9 @@ impl VmContext {
     /// Returns `Value::Null` if id ≥ Vec length (unallocated slot).
     #[inline]
     pub fn static_get_by_id(&self, id: crate::metadata::tokens::StaticFieldId) -> Value {
-        self.static_fields
-            .borrow()
+        self.core
+            .static_fields
+            .lock()
             .get(id.0 as usize)
             .cloned()
             .unwrap_or(Value::Null)
@@ -506,7 +531,7 @@ impl VmContext {
     /// is auto-extended if id ≥ current Vec length.
     #[inline]
     pub fn static_set_by_id(&self, id: crate::metadata::tokens::StaticFieldId, val: Value) {
-        let mut sf = self.static_fields.borrow_mut();
+        let mut sf = self.core.static_fields.lock();
         if (id.0 as usize) >= sf.len() {
             sf.resize_with((id.0 + 1) as usize, || Value::Null);
         }
@@ -519,7 +544,7 @@ impl VmContext {
     /// stable across runs (resolver-populated IDs in `Function.resolved`
     /// remain valid after re-init).
     pub fn static_fields_clear(&self) {
-        let mut sf = self.static_fields.borrow_mut();
+        let mut sf = self.core.static_fields.lock();
         for slot in sf.iter_mut() {
             *slot = Value::Null;
         }

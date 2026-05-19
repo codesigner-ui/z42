@@ -116,13 +116,13 @@ fn zbc_version_constants_pinned() {
     // Sanity: writer's claimed version matches what the reader pins.
     // If this fails, the constants drifted out of sync with C# ZbcWriter.
     assert_eq!(ZBC_VERSION_MAJOR, 1, "zbc major locked at 1 by freeze-zbc-v1");
-    assert_eq!(ZBC_VERSION_MINOR, 5, "zbc minor at 1.5 (fix-numeric-cast-lowering)");
+    assert_eq!(ZBC_VERSION_MINOR, 6, "zbc minor at 1.6 (fix-array-default-init)");
 }
 
 #[test]
 fn zpkg_version_constants_pinned() {
     assert_eq!(ZPKG_VERSION_MAJOR, 0, "zpkg major locked at 0 by freeze-zpkg-v0");
-    assert_eq!(ZPKG_VERSION_MINOR, 6, "zpkg minor at 0.6 (catch-up to zbc 1.5)");
+    assert_eq!(ZPKG_VERSION_MINOR, 7, "zpkg minor at 0.7 (catch-up to zbc 1.6)");
 }
 
 #[test]
