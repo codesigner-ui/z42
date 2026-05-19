@@ -1,14 +1,14 @@
 # Tasks: add multi-threading foundation
 
-> 状态：🟡 进行中 | 创建：2026-05-19 | 类型：vm
+> 状态：🟢 已完成 | 创建：2026-05-19 | 完成：2026-05-20 | 类型：vm
 
 ## 进度概览
 - [x] 阶段 1: VmCore 雏形 + 共享字段第一批
 - [x] 阶段 2: 剩余共享字段 + GC backend 搬入 VmCore
 - [x] 阶段 3: GcRef Arc backing + MagrGC trait Send/Sync
-- [ ] 阶段 4: 调用方机械清理
-- [ ] 阶段 5: 测试 + benchmark + 文档
-- [ ] 阶段 6: 归档 + 提交
+- [x] 阶段 4: 调用方机械清理
+- [x] 阶段 5: 测试 + benchmark + 文档
+- [x] 阶段 6: 归档 + 提交
 
 ## 阶段 1: VmCore 雏形 + 第一批字段
 - [x] 1.1 `src/runtime/src/vm_context.rs` —— 新增 `pub struct VmCore { ... }`（先空壳）+ `pub(crate) core: Arc<VmCore>` 字段
@@ -38,26 +38,26 @@
 - [x] 3.8 阶段 3 全 GREEN（这一步 compile error 最多；按编译器提示逐一修）
 
 ## 阶段 4: 调用方机械清理
-- [ ] 4.1 grep `\.borrow()` / `\.borrow_mut()` 残留：runtime 内剩下的都应该走 GcRef API
-- [ ] 4.2 grep `Rc<RefCell<` runtime 内残留；除 VmContext per-thread 字段外应为 0
-- [ ] 4.3 删除 unused `use std::rc::Rc;` / `use std::cell::RefCell;` import
-- [ ] 4.4 验证 `cargo clippy` 不增警告
+- [x] 4.1 grep `\.borrow()` / `\.borrow_mut()` 残留：runtime 内剩下的都应该走 GcRef API
+- [x] 4.2 grep `Rc<RefCell<` runtime 内残留；除 VmContext per-thread 字段外应为 0
+- [x] 4.3 删除 unused `use std::rc::Rc;` / `use std::cell::RefCell;` import
+- [x] 4.4 验证 `cargo clippy` 不增警告
 
 ## 阶段 5: 测试 + benchmark + 文档
-- [ ] 5.1 `src/runtime/src/gc/heap_tests.rs` 加 `assert_send_sync::<VmCore>()`、`assert_send_sync::<GcRef<Vec<Value>>>()`、`assert_send_sync::<Arc<dyn MagrGC>>()`
-- [ ] 5.2 `src/runtime/tests/cross_thread_smoke.rs` 新建：构 VmCore，分配 GcRef，跨线程 read（不调 z42 函数）
-- [ ] 5.3 `./scripts/test-all.sh` 全绿（含 stdlib + VM e2e + cross-zpkg）
-- [ ] 5.4 手测 `time ./scripts/test-vm.sh` 前/后对比；记入"实施期发现"段
-- [ ] 5.5 `docs/design/runtime/vm-architecture.md` 新章节 "VmCore / VmContext 分离"（数据结构 + per-thread vs shared 规则）
-- [ ] 5.6 `docs/design/runtime/vm-architecture.md` "GC 子系统" 段加 Phase 4a 行
-- [ ] 5.7 `docs/design/runtime/gc-handle.md` 更新 backing 描述（Arc + Mutex）
-- [ ] 5.8 `docs/design/runtime/concurrency.md` 加 "runtime foundation 现状（add-multithreading-foundation 2026-05-19 落地）" 章节，链接本 archive
-- [ ] 5.9 `docs/roadmap.md` Pipeline 实现进度表更新（如适用）
+- [x] 5.1 `src/runtime/src/gc/heap_tests.rs` 加 `assert_send_sync::<VmCore>()`、`assert_send_sync::<GcRef<Vec<Value>>>()`、`assert_send_sync::<Arc<dyn MagrGC>>()`
+- [x] 5.2 `src/runtime/tests/cross_thread_smoke.rs` 新建：构 VmCore，分配 GcRef，跨线程 read（不调 z42 函数）
+- [x] 5.3 `./scripts/test-all.sh` 全绿（含 stdlib + VM e2e + cross-zpkg）
+- [x] 5.4 手测 `time ./scripts/test-vm.sh` 前/后对比；记入"实施期发现"段
+- [x] 5.5 `docs/design/runtime/vm-architecture.md` 新章节 "VmCore / VmContext 分离"（数据结构 + per-thread vs shared 规则）
+- [x] 5.6 `docs/design/runtime/vm-architecture.md` "GC 子系统" 段加 Phase 4a 行
+- [x] 5.7 `docs/design/runtime/gc-handle.md` 更新 backing 描述（Arc + Mutex）
+- [x] 5.8 `docs/design/runtime/concurrency.md` 加 "runtime foundation 现状（add-multithreading-foundation 2026-05-19 落地）" 章节，链接本 archive
+- [x] 5.9 `docs/roadmap.md` Pipeline 实现进度表更新（如适用）
 
 ## 阶段 6: 归档 + 提交
-- [ ] 6.1 mv → `docs/spec/archive/2026-05-19-add-multithreading-foundation/`
-- [ ] 6.2 commit + push（每 phase 一个 commit；不囤积）
-- [ ] 6.3 验证 GitHub Actions CI 全绿（macOS / Linux / Windows）
+- [x] 6.1 mv → `docs/spec/archive/2026-05-19-add-multithreading-foundation/`
+- [x] 6.2 commit + push（每 phase 一个 commit；不囤积）
+- [x] 6.3 验证 GitHub Actions CI 全绿（macOS / Linux / Windows）
 
 ## 备注
 

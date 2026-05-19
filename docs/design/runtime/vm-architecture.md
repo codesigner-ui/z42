@@ -8,30 +8,53 @@
 
 ---
 
-## VmContext —— 运行时状态归口（2026-04-28）
+## VmContext / VmCore —— 运行时状态归口（2026-04-28 + add-multithreading-foundation Phase 1-3, 2026-05-20）
 
 宿主代码运行 VM 的标准流程：
 
 ```rust
-let mut ctx = VmContext::new();
+let ctx = VmContext::new();
 ctx.install_lazy_loader_with_deps(libs_dir, main_pool_len, declared, loaded);
 let vm = Vm::new(module, ExecMode::Interp);
 vm.run(&mut ctx, hint)?;
 ```
 
-`VmContext` 持有：
+### VmCore：跨线程共享状态
 
-- `static_fields: Rc<RefCell<HashMap<String, Value>>>` — 用户类 static 字段
-- `pending_exception: Rc<RefCell<Option<Value>>>` — JIT extern "C" 边界异常槽位
-- `lazy_loader: Rc<RefCell<Option<LazyLoader>>>` — 按需 zpkg 加载器
-- `call_stack: Rc<RefCell<Vec<VmFrame>>>` — 单一统一帧栈（unify-frame-chain，2026-05-10）。每个 `VmFrame` 同时承载 `(regs ptr, env_arena ptr, func_name, file, line, column)`：GC root scanner 扫 regs+env_arena，stack-trace 读 name/file/line/col，interp `RefKind::Stack` 跨帧 deref 通过 `frame.regs`。push/pop 单点操作，物理上消除"GC 看得见但 trace 看不到"的部分帧 bug
-- `heap: Box<dyn MagrGC>` — GC 子系统接口（默认 RcMagrGC 后端）
-- `native_types: Rc<RefCell<HashMap<(String,String), Rc<RegisteredType>>>>` — Tier 1 native interop 注册表（spec C2，2026-04-29）
-- `native_libs: Rc<RefCell<Vec<libloading::Library>>>` — 已加载的 native 库句柄，保活到 VM drop（spec C2）
+`VmCore` 持有 **process-globally singular** 的状态，通过 `Arc<VmCore>` 让多个 `VmContext`（每个 OS 线程一个）共享：
 
-API 方法都用 `&self`（内部 RefCell），调用方代码风格基本不变。多 VmContext
-实例完全隔离 —— 这是 review2 §3 的设计目标兑现。详见
-[`object-protocol.md`](../language/object-protocol.md)、[`interop.md`](../language/interop.md) 与 review2 §3 / §5.5 / §5.2。
+- `static_fields: Mutex<Vec<Value>>` — 用户类 static 字段槽位，按 `StaticFieldId.0` 索引
+- `static_field_index: Mutex<HashMap<String, u32>>` — FQN → 槽位 id 映射
+- `lazy_loader: Mutex<Option<LazyLoader>>` — 按需 zpkg 加载器
+- `native_types: RwLock<HashMap<(String,String), Arc<RegisteredType>>>` — Tier 1 native interop 注册表（**RwLock**，读多写少：dispatch 是纯读，写仅在 module 加载期）
+- `native_libs: Mutex<Vec<libloading::Library>>` — 已加载的 native 库句柄
+- `pinned_owned_buffers: Mutex<HashMap<u64, Box<[u8]>>>` — `Value::PinnedView` 的 owned 缓冲（spec C10）
+- `processes: Mutex<HashMap<u64, ProcessSlot>>` — `Std.IO.Process` 子进程注册表
+- `heap: Box<dyn MagrGC>` — GC 子系统接口（默认 ArcMagrGC 后端）
+
+`VmCore` 满足 `Send + Sync`（编译期 assertion 在 `src/runtime/src/gc/arc_heap_tests/send_sync.rs`）。
+
+### VmContext：per-thread 视图
+
+每个 OS 线程拿一个 `VmContext`，它持有：
+
+- `core: Arc<VmCore>` — 指向 VmCore 共享状态
+- `pending_exception: Arc<Mutex<Option<Value>>>` — JIT extern "C" 边界异常槽位
+- `call_stack: Arc<Mutex<Vec<VmFrame>>>` — 当前线程帧栈（unify-frame-chain，2026-05-10）
+- `func_ref_slots: Arc<Mutex<Vec<Value>>>` — method-group-conversion FuncRef cache 槽位（D1b）
+- `process_next_id: AtomicU64` — 进程 slot id 计数器
+
+每个 `VmFrame` 同时承载 `(regs ptr, env_arena ptr, func_name, file, line, column)`：GC root scanner 扫 regs+env_arena，stack-trace 读 name/file/line/col，interp `RefKind::Stack` 跨帧 deref 通过 `frame.regs`。
+
+### Send-safety 与 GC scanner 设计
+
+`MagrGC` trait 要求 `Send + Sync`（add-multithreading-foundation Phase 3.4）。GC scanner closure（mark 阶段被调用）也要求 `Send + Sync`，进而所有 closure 捕获都必须 Send + Sync —— 这是 per-thread 字段从 `Rc<RefCell<>>` 升级到 `Arc<Mutex<>>` 的根因（design Decision 2 Phase 3 amendment）。
+
+Scanner closure 通过 `Weak<VmCore>` 捕获 VmCore（避免 `VmCore → heap → scanner → Arc<VmCore>` 循环引用），upgrade 失败时 silent skip。
+
+**当前不变量（single-VmContext-per-VmCore，2026-05-20）**：scanner 通过捕获 per-thread `Arc<Mutex<...>>` clone 看到唯一 VmContext 的 frames。未来 multi-thread 支持落地（独立 spec `add-vmcontext-registry`）时，VmCore 需加 `Mutex<Vec<Weak<VmContext>>>` 注册表，scanner 改为 walk 所有线程的 frames。
+
+API 方法都用 `&self`（内部 Mutex/RwLock），调用方代码风格基本不变。详见 [`object-protocol.md`](../language/object-protocol.md)、[`interop.md`](../language/interop.md)、[`concurrency.md`](concurrency.md) 与 review2 §3 / §5.5 / §5.2。
 
 **Native interop 入口**：`VmContext::register_native_type(Rc<RegisteredType>)` /
 `resolve_native_type(module, name)` / `load_native_library(path)`；后者打开 `.dylib`

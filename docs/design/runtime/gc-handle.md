@@ -153,9 +153,9 @@ Phase 3 引入 `Optional<long>` 后再迁移到 nullable 形态。
 | Script | `src/libraries/z42.core/src/GC/GC.z42` | 加 `GetStats()` 静态方法 |
 | Corelib | `src/runtime/src/corelib/gc.rs` | 6 个 builtin（5 GCHandle + 1 stats）+ TypeDesc 工厂 |
 | GC trait | `src/runtime/src/gc/heap.rs` | `handle_alloc` / `_target` / `_is_alloc` / `_kind` / `_free` |
-| GC impl | `src/runtime/src/gc/rc_heap.rs` | `HandleSlab` + `HandleEntry` enum + RcMagrGC impl |
+| GC impl | `src/runtime/src/gc/arc_heap.rs` | `HandleSlab` + `HandleEntry` enum + ArcMagrGC impl（Phase 3 swap: Rc/RefCell → Arc/Mutex for Send+Sync） |
 | GC types | `src/runtime/src/gc/types.rs` | `GcHandleKind` enum |
 | Dispatch | `src/runtime/src/corelib/mod.rs` | 6 个 builtin 注册 |
-| Tests | `src/runtime/src/gc/rc_heap_tests.rs` | 10 个 HandleTable 单测 |
+| Tests | `src/runtime/src/gc/arc_heap_tests/` | 10 个 HandleTable 单测 |
 | Tests | `src/tests/gc/gc_handle/` | strong / weak / Free / struct copy e2e |
 | Tests | `src/tests/gc/gc_stats/` | GetStats 字段一致性 e2e |

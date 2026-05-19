@@ -1,6 +1,7 @@
 # z42 并发与异步设计
 
-> **状态**：L3 前瞻性设计草案（2026-04-30），实现尚未开始
+> **状态**：L3 前瞻性设计草案（2026-04-30），语言层尚未实现；**runtime
+> foundation 已落地**（2026-05-20，详下方）
 > **定位**：与 `generics.md` / `static-abstract-interface.md` 同级 — 长期规范，等
 > 到 L3 阶段才进入 `docs/spec/changes/` 实施流程
 > **参考**：C# / .NET TPL（主蓝本）+ Rust（Send/Sync）+ Kotlin / Swift（结构化并发）
@@ -10,6 +11,36 @@
 > 阅读对象：使用者视角（语法 / 心智模型 / 减痛体验）。
 > 实现原理（VM 调度器、状态机生成、I/O reactor）见 `vm-architecture.md` 与
 > `compiler-architecture.md` 的对应章节（L3 阶段补齐）。
+
+---
+
+## Runtime foundation 现状（2026-05-20 落地）
+
+[`add-multithreading-foundation`](../../spec/archive/2026-05-20-add-multithreading-foundation/) spec 已完成 Phase 1+2+3：
+
+- **VmCore / VmContext 类型层划分**：共享 8 字段 (`Arc<VmCore>`) + per-thread 4 字段（VmContext 持 `Arc<VmCore>` 加自己的 Arc<Mutex<>> 字段）
+- **GcRef 切到 Arc backing**：`Rc<GcAllocation>` → `Arc<GcAllocation>`，内部 `RefCell<T>` → `parking_lot::Mutex<T>`
+- **MagrGC trait 加 Send + Sync 边界**：实施 backend `ArcMagrGC`（前 `RcMagrGC`）满足
+- **6 个编译期 Send+Sync assertion**（[src/runtime/src/gc/arc_heap_tests/send_sync.rs](../../../src/runtime/src/gc/arc_heap_tests/send_sync.rs)）+ 3 个 cross-thread 集成测试（[src/runtime/tests/cross_thread_smoke.rs](../../../src/runtime/tests/cross_thread_smoke.rs)）钉死不可回归
+
+**Phase 1+2+3 完成后能做什么 / 还不能做什么**：
+
+| 现状 | 描述 |
+|------|------|
+| ✅ Rust 类型层 Send+Sync | `VmContext` / `VmCore` / `GcRef` / `Value` / `Box<dyn MagrGC>` 全 Send+Sync |
+| ✅ 跨线程 read 共享 GC | `Arc<VmCore>` 可跨线程；GcRef 可跨线程 move / clone / borrow |
+| ❌ 用户层线程 API | 没有 `Std.Threading.Thread.Start`；落地在独立 spec `add-threading-stdlib` |
+| ❌ 多 VmContext 共享 GC heap | 单 VmContext per VmCore 不变量；future `add-vmcontext-registry` spec 移除 |
+| ❌ 并发 GC | mark-sweep 仍单线程；safepoint 协议待 `add-gc-safepoint` |
+| ❌ `spawn` / `task scope` 语法 | L3 阶段引入（本文档 §3.5） |
+
+**下一步实施 spec**（已在 add-multithreading-foundation tasks.md 列）：
+1. `add-vmcontext-registry` — VmCore 加 VmContext 注册表（移除 single-VmContext 不变量）
+2. `add-threading-stdlib` — `Std.Threading.Thread.Start` / `.Join` / per-thread heap-local
+3. `add-sync-primitives` — `Std.Threading.Mutex<T>` / `Channel<T>` 用户类型
+4. `add-gc-safepoint` — 并发 GC 前置：interp + JIT safepoint
+5. `add-concurrent-gc` — Phase A 性能轨道
+6. `add-spawn-syntax` — L3，本文档 §3.5
 
 ---
 
