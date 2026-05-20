@@ -91,10 +91,12 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
         m
     };
 
-    let ctx = VmContext::new();
+    // add-threading-stdlib (2026-05-20): module → VmCore; Vm thin.
+    let string_pool_len = final_module.string_pool.len();
+    let ctx = VmContext::with_module(final_module);
     ctx.install_lazy_loader_with_deps(
         libs_dir,
-        final_module.string_pool.len(),
+        string_pool_len,
         declared_candidates,
         initially_loaded_zpkgs,
     );
@@ -102,9 +104,10 @@ pub fn bootstrap(zbc_path: &str) -> Result<LoadedRunner> {
     // merged module's TypeDescs so cross-zpkg fixup of lazy-loaded subclasses
     // can find their base classes (e.g. ProcessStartException in z42.io
     // inheriting from Std.Exception eagerly-loaded via z42.core).
-    ctx.seed_lazy_loader_types(&final_module.type_registry);
+    let type_registry = ctx.module().unwrap().type_registry.clone();
+    ctx.seed_lazy_loader_types(&type_registry);
 
-    let vm = Vm::new(final_module, z42::metadata::ExecMode::Interp);
+    let vm = Vm::new(z42::metadata::ExecMode::Interp);
 
     Ok(LoadedRunner { test_index, user_func_names, vm, ctx })
 }

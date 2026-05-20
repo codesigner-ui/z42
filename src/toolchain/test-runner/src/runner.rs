@@ -35,7 +35,7 @@ pub fn run_one(loaded: &mut LoadedRunner, test: &DiscoveredTest<'_>) -> Outcome 
     let start = Instant::now();
 
     // 1. Per-test isolation: clear static fields + re-run all __static_init__.
-    if let Err(e) = interp::init_static_fields(&loaded.ctx, &loaded.vm.module) {
+    if let Err(e) = interp::init_static_fields(&loaded.ctx, &loaded.ctx.module().unwrap()) {
         return Outcome::Failed {
             reason: format!("static init error: {e}"),
         };
@@ -44,7 +44,7 @@ pub fn run_one(loaded: &mut LoadedRunner, test: &DiscoveredTest<'_>) -> Outcome 
     // 2. Setup methods (sequential; first failure short-circuits to test fail).
     let setup_names = collect_kind_names(&loaded.test_index, &loaded.user_func_names, TestEntryKind::Setup);
     for setup in &setup_names {
-        if let Some(Outcome::Failed { reason }) = exec_named(&loaded.vm.module, &loaded.ctx, setup, "Setup") {
+        if let Some(Outcome::Failed { reason }) = exec_named(&loaded.ctx.module().unwrap(), &loaded.ctx, setup, "Setup") {
             run_teardowns(loaded);
             return Outcome::Failed { reason };
         }
@@ -89,7 +89,7 @@ fn exec_one(module: &Module, ctx: &VmContext, func: &Function, role: &str) -> Ou
 }
 
 fn exec_test_body(loaded: &LoadedRunner, test: &DiscoveredTest<'_>) -> Outcome {
-    let module = &loaded.vm.module;
+    let module = &loaded.ctx.module().unwrap();
     let func = match module.functions.iter().find(|f| f.name == test.method_name) {
         Some(f) => f,
         None => return Outcome::Failed {
@@ -189,6 +189,6 @@ fn run_teardowns(loaded: &mut LoadedRunner) {
     for name in &teardowns {
         // Teardown errors are logged but don't override the test outcome;
         // for v0.1 we silently swallow (mirror xUnit behavior).
-        let _ = exec_named(&loaded.vm.module, &loaded.ctx, name, "Teardown");
+        let _ = exec_named(&loaded.ctx.module().unwrap(), &loaded.ctx, name, "Teardown");
     }
 }

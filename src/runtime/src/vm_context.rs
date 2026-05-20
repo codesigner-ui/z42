@@ -150,6 +150,22 @@ pub struct VmCore {
     /// The GC scanner closure walks this list under lock to find every
     /// thread's per-thread roots. See `VmContextPtr` SAFETY block.
     pub(crate) vm_contexts:        Mutex<Vec<VmContextPtr>>,
+    /// **add-threading-stdlib (2026-05-20)**: the user's compiled Module,
+    /// shared via `Arc` across all threads on this VmCore. `None` in test
+    /// paths that don't need a real Module (most cargo unit tests construct
+    /// VmContext via `VmContext::new()` 0-arg which leaves this `None`).
+    /// Production paths use `VmContext::with_module(module)` to populate.
+    /// `__thread_spawn` requires this to be `Some` (panics in test paths if
+    /// missing, which is acceptable since tests don't spawn threads).
+    pub(crate) module:             Option<Arc<crate::metadata::Module>>,
+    /// **add-threading-stdlib (2026-05-20)**: live `Std.Threading.Thread`
+    /// instances keyed by monotonic u64 slot id. `__thread_spawn` inserts;
+    /// `__thread_join` takes-out + joins. Pattern mirrors
+    /// `add-std-process` processes registry.
+    pub(crate) threads:            Mutex<std::collections::HashMap<u64, std::thread::JoinHandle<anyhow::Result<()>>>>,
+    /// **add-threading-stdlib (2026-05-20)**: monotonic thread slot id
+    /// counter; never reused (u64 effectively unbounded).
+    pub(crate) next_thread_id:     std::sync::atomic::AtomicU64,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -212,7 +228,30 @@ pub struct VmContext {
 // method calls).
 
 impl VmContext {
+    /// Public accessor for the shared compiled Module installed by
+    /// [`with_module`](Self::with_module). Returns `None` if VmContext was
+    /// built via [`new`](Self::new) (test path).
+    pub fn module(&self) -> Option<&Arc<crate::metadata::Module>> {
+        self.core.module.as_ref()
+    }
+
+    /// Standard test entry: constructs a VmContext with `VmCore.module = None`.
+    /// Cargo unit tests use this — they don't need a real Module for
+    /// builtin / static-field / alloc tests. Production paths use
+    /// [`with_module`](Self::with_module).
     pub fn new() -> std::pin::Pin<Box<Self>> {
+        Self::new_internal(None)
+    }
+
+    /// Production entry: constructs a VmContext with the user's compiled
+    /// Module wrapped in `Arc` for cross-thread sharing. Required by any
+    /// path that may invoke `__thread_spawn` (which dispatches into the
+    /// shared module from the spawned thread).
+    pub fn with_module(module: crate::metadata::Module) -> std::pin::Pin<Box<Self>> {
+        Self::new_internal(Some(Arc::new(module)))
+    }
+
+    fn new_internal(module: Option<Arc<crate::metadata::Module>>) -> std::pin::Pin<Box<Self>> {
         let pending_exception: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
         let func_ref_slots: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
         // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
@@ -235,6 +274,9 @@ impl VmContext {
             processes:            Mutex::new(HashMap::new()),
             heap:                 Box::new(ArcMagrGC::new()),
             vm_contexts:          Mutex::new(Vec::new()),
+            module,
+            threads:              Mutex::new(HashMap::new()),
+            next_thread_id:       std::sync::atomic::AtomicU64::new(1),
         });
 
         // External GC root scanner — invoked by the cycle collector during

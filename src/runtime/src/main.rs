@@ -388,17 +388,21 @@ fn main() -> Result<()> {
     // drives on-demand loading; in JIT mode deps are already merged into
     // `modules` during 5.1d so `declared` is typically empty and the lazy
     // loader is effectively a no-op.
-    let ctx = z42::vm_context::VmContext::new();
+    // add-threading-stdlib (2026-05-20): module moves into VmCore (shared
+    // across threads); Vm becomes a thin run-config wrapper.
+    let string_pool_len = final_module.string_pool.len();
+    let ctx = z42::vm_context::VmContext::with_module(final_module);
     ctx.install_lazy_loader_with_deps(
         libs_dir.clone(),
-        final_module.string_pool.len(),
+        string_pool_len,
         declared_candidates,
         initially_loaded_zpkgs,
     );
     // fix-cross-pkg-subclass-fields (2026-05-14): seed lazy loader with merged
     // module's TypeDescs so cross-zpkg base classes are visible to the fixup
     // pass when a subclass-only zpkg is lazy-loaded later.
-    ctx.seed_lazy_loader_types(&final_module.type_registry);
+    let type_registry = ctx.module().unwrap().type_registry.clone();
+    ctx.seed_lazy_loader_types(&type_registry);
 
     let default_mode = match cli.mode {
         #[cfg(feature = "jit")]
@@ -408,7 +412,7 @@ fn main() -> Result<()> {
         _                   => z42::metadata::ExecMode::Interp,
     };
 
-    let vm = z42::vm::Vm::new(final_module, default_mode);
+    let vm = z42::vm::Vm::new(default_mode);
     // CLI positional `entry` overrides any artifact-supplied entry hint.
     let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
     vm.run(&*ctx, effective_entry)
