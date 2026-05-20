@@ -31,14 +31,14 @@
 | ✅ 跨线程 read 共享 GC | `Arc<VmCore>` 可跨线程；GcRef 可跨线程 move / clone / borrow |
 | ✅ 多 VmContext 共享 GC heap | VmCore `vm_contexts` 注册表 + `Pin<Box<VmContext>>` 地址稳定 + scanner walk registry（add-vmcontext-registry 2026-05-20） |
 | ✅ 用户层线程 API | `Std.Threading.Thread.Start(Action)` / `.Join()` + `Std.ThreadException`（add-threading-stdlib 2026-05-20）。底层 `__thread_spawn` / `__thread_join` builtin 接 `VmCore.threads: Mutex<HashMap<u64, JoinHandle>>` slot table。worker 走 `VmContext::new_with_core(Arc::clone(core))` 共享父 VmCore |
-| ❌ 同步原语 | `Mutex<T>` / `Channel<T>` 待 `add-sync-primitives`；目前跨线程共享走 static field + GC heap |
+| ✅ 同步原语 | `Std.Threading.Mutex<T>` / `Channel<T>` + `Std.ChannelDisconnectedException`（add-sync-primitives 2026-05-20）。Mutex 走 `parking_lot::Mutex<Value>` + thread-local guard parking（`__mutex_lock_acquire` / `__mutex_store` / `__mutex_unlock`，z42 facade 暴露 RAII `Lock(Func<T,T>)`）；Channel 走 `std::sync::mpsc` unbounded MPSC（`__channel_send` / `__channel_recv` / `__channel_try_recv` / `__channel_close`）。GcRef::borrow 同时从 `try_lock+panic` 改为 blocking `lock`（多线程下两 worker 并发 field_get 同一 object 的根因修复）|
 | ❌ 并发 GC | mark-sweep 仍单线程；safepoint 协议待 `add-gc-safepoint` |
 | ❌ `spawn` / `task scope` 语法 | L3 阶段引入（本文档 §3.5） |
 
 **下一步实施 spec**（已在 add-multithreading-foundation tasks.md 列）：
 1. ~~`add-vmcontext-registry`~~ ✅ 已落地（2026-05-20）—— VmCore registry + Pin<Box<VmContext>> + scanner walk
 2. ~~`add-threading-stdlib`~~ ✅ 已落地（2026-05-20）—— `Std.Threading.Thread.Start` / `.Join` + ThreadException
-3. `add-sync-primitives` — `Std.Threading.Mutex<T>` / `Channel<T>` 用户类型
+3. ~~`add-sync-primitives`~~ ✅ 已落地（2026-05-20）—— `Std.Threading.Mutex<T>` / `Channel<T>` + ChannelDisconnectedException + GcRef::borrow blocking 修复
 4. `add-gc-safepoint` — 并发 GC 前置：interp + JIT safepoint
 5. `add-concurrent-gc` — Phase A 性能轨道
 6. `add-spawn-syntax` — L3，本文档 §3.5

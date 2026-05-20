@@ -39,6 +39,7 @@ pub mod process;
 pub mod platform;
 pub mod system;
 pub mod threading;
+pub mod sync;
 
 use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
@@ -239,6 +240,17 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-threading-stdlib (2026-05-20) — appended to preserve existing BuiltinIds ──
     ("__thread_spawn",        threading::builtin_thread_spawn),
     ("__thread_join",         threading::builtin_thread_join),
+
+    // ── add-sync-primitives (2026-05-20) — appended to preserve existing BuiltinIds ──
+    ("__mutex_new",           sync::builtin_mutex_new),
+    ("__mutex_lock_acquire",  sync::builtin_mutex_lock_acquire),
+    ("__mutex_store",         sync::builtin_mutex_store),
+    ("__mutex_unlock",        sync::builtin_mutex_unlock),
+    ("__channel_new",         sync::builtin_channel_new),
+    ("__channel_send",        sync::builtin_channel_send),
+    ("__channel_recv",        sync::builtin_channel_recv),
+    ("__channel_try_recv",    sync::builtin_channel_try_recv),
+    ("__channel_close",       sync::builtin_channel_close),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

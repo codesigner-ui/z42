@@ -1,0 +1,70 @@
+// add-sync-primitives (2026-05-20): Channel<T> basic send/recv and
+// producer-consumer hand-off.
+namespace Z42ThreadingChannelBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+[Test]
+void test_single_send_then_recv_same_thread() {
+    var c = new Channel<long>();
+    c.Send(42);
+    long v = c.Recv();
+    Assert.Equal((long)42, v);
+}
+
+[Test]
+void test_multi_send_recv_fifo_order() {
+    var c = new Channel<long>();
+    c.Send(1);
+    c.Send(2);
+    c.Send(3);
+    Assert.Equal((long)1, c.Recv());
+    Assert.Equal((long)2, c.Recv());
+    Assert.Equal((long)3, c.Recv());
+}
+
+[Test]
+void test_try_recv_empty_returns_discriminator_1() {
+    var c = new Channel<long>();
+    object[] result = c.TryRecv();
+    long kind = (long)result[0];
+    Assert.Equal((long)1, kind);  // 1 = empty
+}
+
+[Test]
+void test_try_recv_with_pending_returns_value() {
+    var c = new Channel<long>();
+    c.Send(99);
+    object[] result = c.TryRecv();
+    long kind = (long)result[0];
+    Assert.Equal((long)0, kind);  // 0 = ok
+    long v = (long)result[1];
+    Assert.Equal((long)99, v);
+}
+
+public static class HandOff {
+    public static Channel<long> Pipe;
+}
+
+[Test]
+void test_producer_consumer_hand_off_across_threads() {
+    HandOff.Pipe = new Channel<long>();
+    Thread producer = Thread.Start(() => {
+        int i = 0;
+        while (i < 5) {
+            HandOff.Pipe.Send((long)i);
+            i = i + 1;
+        }
+    });
+    // Consumer (main thread) — read 5 values in FIFO order.
+    long sum = 0;
+    int j = 0;
+    while (j < 5) {
+        sum = sum + HandOff.Pipe.Recv();
+        j = j + 1;
+    }
+    producer.Join();
+    Assert.Equal((long)(0 + 1 + 2 + 3 + 4), sum);
+}

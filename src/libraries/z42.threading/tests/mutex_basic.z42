@@ -1,0 +1,65 @@
+// add-sync-primitives (2026-05-20): Mutex<T> single-thread + cross-thread
+// counter tests. Verifies the RAII callback wrapping + that
+// `parking_lot::Mutex` correctly serialises concurrent writers.
+//
+// Note on capture semantics (closure.md §4.1): z42 closures snapshot
+// value-type locals at capture time — writes from inside a lambda body
+// do NOT escape. Shared mutable state (read-out values, cross-worker
+// counters) goes through static fields instead.
+namespace Z42ThreadingMutexBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+public static class MutexState {
+    public static long Observed;
+    public static Mutex<long> Counter;
+}
+
+[Test]
+void test_mutex_single_thread_lock_increment() {
+    var m = new Mutex<long>(0);
+    m.Lock((long v) => v + 1);
+    m.Lock((long v) => v + 1);
+    m.Lock((long v) => v + 5);
+    MutexState.Observed = -1;
+    m.Lock((long v) => {
+        MutexState.Observed = v;
+        return v;
+    });
+    Assert.Equal((long)7, MutexState.Observed);
+}
+
+[Test]
+void test_two_workers_concurrent_increments_serialised() {
+    // Each worker increments the shared mutex N times. Without serialisation
+    // some increments would be lost (read-modify-write race). Final value
+    // must equal 2 × N.
+    int N = 50;
+    MutexState.Counter = new Mutex<long>(0);
+
+    Thread t1 = Thread.Start(() => {
+        int i = 0;
+        while (i < N) {
+            MutexState.Counter.Lock((long v) => v + 1);
+            i = i + 1;
+        }
+    });
+    Thread t2 = Thread.Start(() => {
+        int i = 0;
+        while (i < N) {
+            MutexState.Counter.Lock((long v) => v + 1);
+            i = i + 1;
+        }
+    });
+    t1.Join();
+    t2.Join();
+
+    MutexState.Observed = -1;
+    MutexState.Counter.Lock((long v) => {
+        MutexState.Observed = v;
+        return v;
+    });
+    Assert.Equal((long)(2 * N), MutexState.Observed);
+}

@@ -1,0 +1,84 @@
+namespace Std.Threading;
+
+using Std;
+
+// 2026-05-20 add-sync-primitives: unidirectional unbounded MPSC channel.
+//
+// Wraps `std::sync::mpsc::channel()` on the Rust side. Multiple producer
+// threads can `Send`; receivers serialise via an internal Mutex (mpsc
+// `Receiver` is `Send` but `!Sync`). When all senders close (`Close()`)
+// AND the queue is drained, subsequent `Recv()` raises
+// `Std.ChannelDisconnectedException`.
+//
+// Usage:
+//   var c = new Channel<long>();
+//   Thread.Start(() => { c.Send(42); c.Close(); });
+//   long v = c.Recv();  // 42
+//
+// Capacity is unbounded in v0 (`add-sync-primitives-future-bounded-channel`
+// will add an overload).
+public class Channel<T> {
+    private long _slot;
+
+    public Channel() {
+        this._slot = ChannelNative.New();
+    }
+
+    // Send `v` on the channel. Throws if the channel was previously closed.
+    public void Send(T v) {
+        ChannelNative.Send(this._slot, v);
+    }
+
+    // Block until a value is available. Throws ChannelDisconnectedException
+    // when all senders have closed AND the queue is empty.
+    public T Recv() {
+        object[] result = ChannelNative.Recv(this._slot);
+        long kind = (long)result[0];
+        if (kind == 2) {
+            throw new ChannelDisconnectedException("channel disconnected");
+        }
+        // kind == 0 — ok; index 1 holds the value.
+        return (T)result[1];
+    }
+
+    // Non-blocking. Returns a 1- or 2-element discriminated array:
+    //   [0, value]  → ok
+    //   [1]         → empty (no value pending; not disconnected)
+    //   [2]         → disconnected (all senders closed AND queue empty)
+    //
+    // Returning the raw discriminator lets callers distinguish "empty"
+    // from "disconnected" without exceptions — useful for polling.
+    public object[] TryRecv() {
+        return (object[])ChannelNative.TryRecv(this._slot);
+    }
+
+    // Drop the sender half. Any subsequent Send throws; pending values
+    // already in the queue remain receivable until drained; after that
+    // Recv throws ChannelDisconnectedException.
+    public void Close() {
+        ChannelNative.Close(this._slot);
+    }
+
+    // Internal slot id — for diagnostics only.
+    public long SlotId() {
+        return this._slot;
+    }
+}
+
+// Native binding sink.
+public static class ChannelNative {
+    [Native("__channel_new")]
+    public static extern long New();
+
+    [Native("__channel_send")]
+    public static extern object Send(long slotId, object value);
+
+    [Native("__channel_recv")]
+    public static extern object[] Recv(long slotId);
+
+    [Native("__channel_try_recv")]
+    public static extern object[] TryRecv(long slotId);
+
+    [Native("__channel_close")]
+    public static extern object Close(long slotId);
+}

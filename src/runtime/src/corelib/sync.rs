@@ -1,0 +1,266 @@
+//! `Std.Threading.Mutex<T>` / `Channel<T>` builtins
+//! (add-sync-primitives, 2026-05-20).
+//!
+//! Layered on top of `add-threading-stdlib`:
+//! - **Mutex** wraps `parking_lot::Mutex<Value>` keyed by monotonic slot id
+//!   in `VmCore.mutexes`. RAII callback API: z42's `Mutex.Lock(Func<T,T>)`
+//!   decomposes into 3 native calls — `__mutex_lock_acquire`, `__mutex_store`,
+//!   `__mutex_unlock` — bracketing the user callback. Acquired guards are
+//!   parked in a thread-local map keyed by slot id so the matching unlock
+//!   on the same thread can find them.
+//! - **Channel** wraps `std::sync::mpsc` keyed by slot id in `VmCore.channels`.
+//!   Multi-producer is supported by `Sender::clone()` per `Send` call; the
+//!   single-consumer constraint is preserved by an internal `Mutex` around
+//!   the `Receiver`.
+//!
+//! Cross-thread error semantics:
+//! - `__mutex_*` parameter validation → anyhow Err (worker dies via
+//!   `__thread_join` discriminator 1)
+//! - `__channel_recv` after all senders closed → throws
+//!   `Std.ChannelDisconnectedException` (encoded via the existing exception
+//!   protocol in the z42 facade)
+//!
+//! See [`docs/spec/changes/add-sync-primitives/`].
+
+use crate::metadata::Value;
+use crate::vm_context::VmContext;
+use anyhow::{anyhow, bail, Result};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+
+// ── ChannelSlot ───────────────────────────────────────────────────────────────
+
+/// One live channel pair. `sender` is `Option` so `__channel_close` can
+/// drop it (cause subsequent `Recv` to fail with `RecvError`). `receiver`
+/// is wrapped in `Arc<Mutex<...>>` so callers can clone the Arc out of
+/// the registry, drop the outer registry lock, and only then block on
+/// `recv()` — otherwise a concurrent `__channel_send` would deadlock
+/// trying to take the registry lock while the receiver thread blocks
+/// holding it. mpsc::Receiver is `Send` but `!Sync`, so the inner Mutex
+/// serialises concurrent `__channel_recv` callers on the same slot.
+pub(crate) struct ChannelSlot {
+    pub(crate) sender:   Option<mpsc::Sender<Value>>,
+    pub(crate) receiver: Arc<std::sync::Mutex<mpsc::Receiver<Value>>>,
+}
+
+// ── thread-local held-guard parking ───────────────────────────────────────────
+
+thread_local! {
+    /// `slot_id` → leaked `parking_lot::MutexGuard`'s underlying raw pointer
+    /// to the live `Mutex<Value>`. Held between `__mutex_lock_acquire` and
+    /// the matching `__mutex_unlock` on the same OS thread.
+    ///
+    /// The Arc<Mutex<Value>> stored in `VmCore.mutexes` keeps the underlying
+    /// `parking_lot::Mutex` alive while we hold the lock; `__mutex_unlock`
+    /// calls `Mutex::force_unlock_*` on the same raw mutex pointer.
+    ///
+    /// Tracked here per-thread because parking_lot Mutex is non-reentrant
+    /// and a thread holding the lock is the only one allowed to release it.
+    static HELD_MUTEX_GUARDS: RefCell<HashMap<u64, Arc<parking_lot::Mutex<Value>>>>
+        = RefCell::new(HashMap::new());
+}
+
+// ── const discriminators ─────────────────────────────────────────────────────
+
+const TRY_RECV_OK:           i64 = 0;
+const TRY_RECV_EMPTY:        i64 = 1;
+const TRY_RECV_DISCONNECTED: i64 = 2;
+
+// ── Mutex builtins ────────────────────────────────────────────────────────────
+
+/// `__mutex_new(initial: Value) -> i64 slot_id` — allocate a new Mutex
+/// wrapping `initial` and register it in `VmCore.mutexes`.
+pub fn builtin_mutex_new(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let initial = args.first()
+        .ok_or_else(|| anyhow!("__mutex_new: missing initial value"))?
+        .clone();
+
+    let id = ctx.core.next_mutex_id.fetch_add(1, Ordering::Relaxed);
+    let mutex = Arc::new(parking_lot::Mutex::new(initial));
+    ctx.core.mutexes.lock().insert(id, mutex);
+    Ok(Value::I64(id as i64))
+}
+
+/// `__mutex_lock_acquire(slot: i64) -> Value` — block until the Mutex is
+/// available, return a clone of the current stored value. The acquired
+/// guard is parked in the thread-local `HELD_MUTEX_GUARDS` map; the matching
+/// `__mutex_unlock` releases it.
+pub fn builtin_mutex_lock_acquire(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__mutex_lock_acquire")?;
+    let arc = ctx.core.mutexes.lock().get(&slot).cloned()
+        .ok_or_else(|| anyhow!("__mutex_lock_acquire: unknown slot id {slot}"))?;
+    // SAFETY (block-on-acquire): parking_lot::Mutex::lock is the standard
+    // blocking acquire. We immediately drop the MutexGuard via mem::forget
+    // after cloning the stored Value, then store the Arc in the thread-local
+    // map. The Arc keeps the Mutex alive; we release the lock by calling
+    // `unsafe { Mutex::force_unlock() }` from `__mutex_unlock` on the same
+    // thread. parking_lot's lock_api permits this pattern — it's the
+    // documented escape hatch when MutexGuard lifetime can't be expressed
+    // in plain Rust (cross-FFI / cross-builtin call here).
+    let guard = arc.lock();
+    let cloned = (*guard).clone();
+    // Forget the guard so it does NOT drop and unlock at end of scope.
+    std::mem::forget(guard);
+    HELD_MUTEX_GUARDS.with(|cell| {
+        cell.borrow_mut().insert(slot, Arc::clone(&arc));
+    });
+    Ok(cloned)
+}
+
+/// `__mutex_store(slot: i64, new_val: Value) -> Null` — overwrite the
+/// stored Value. Caller must currently hold the lock on the same thread
+/// (enforced via `HELD_MUTEX_GUARDS` presence).
+pub fn builtin_mutex_store(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__mutex_store")?;
+    let new_val = args.get(1)
+        .ok_or_else(|| anyhow!("__mutex_store: missing new value"))?
+        .clone();
+
+    let arc = HELD_MUTEX_GUARDS.with(|cell| cell.borrow().get(&slot).cloned())
+        .ok_or_else(|| anyhow!(
+            "__mutex_store: slot {slot} not currently locked on this thread"
+        ))?;
+    // SAFETY: caller currently owns the lock on this thread (we acquired
+    // and forgot the MutexGuard in `__mutex_lock_acquire`; only this
+    // thread can unlock it). data_ptr() returns a raw pointer to the
+    // protected value — writing through it is the same as writing through
+    // the MutexGuard would have been.
+    unsafe {
+        *arc.data_ptr() = new_val;
+    }
+    Ok(Value::Null)
+}
+
+/// `__mutex_unlock(slot: i64) -> Null` — release a previously acquired
+/// lock. Must be called on the same OS thread that did the acquire;
+/// non-paired unlock is an error (returns Err rather than panicking, so
+/// the worker thread surfaces it as a ThreadException).
+pub fn builtin_mutex_unlock(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__mutex_unlock")?;
+    let arc = HELD_MUTEX_GUARDS.with(|cell| cell.borrow_mut().remove(&slot))
+        .ok_or_else(|| anyhow!(
+            "__mutex_unlock: slot {slot} not currently locked on this thread"
+        ))?;
+    // SAFETY: this thread acquired the lock via `lock()` + `mem::forget`
+    // in `__mutex_lock_acquire`. parking_lot's `force_unlock` documents
+    // exactly this pattern — caller asserts ownership of the locked state.
+    unsafe {
+        arc.force_unlock();
+    }
+    Ok(Value::Null)
+}
+
+// ── Channel builtins ─────────────────────────────────────────────────────────
+
+/// `__channel_new() -> i64 slot_id` — create an unbounded mpsc channel
+/// and register it in `VmCore.channels`.
+pub fn builtin_channel_new(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let (tx, rx) = mpsc::channel::<Value>();
+    let id = ctx.core.next_channel_id.fetch_add(1, Ordering::Relaxed);
+    ctx.core.channels.lock().insert(id, ChannelSlot {
+        sender:   Some(tx),
+        receiver: Arc::new(std::sync::Mutex::new(rx)),
+    });
+    Ok(Value::I64(id as i64))
+}
+
+/// `__channel_send(slot: i64, v: Value) -> Null` — send `v` on the
+/// channel. Returns `Err` if the channel slot is unknown or closed.
+pub fn builtin_channel_send(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__channel_send")?;
+    let val  = args.get(1)
+        .ok_or_else(|| anyhow!("__channel_send: missing value argument"))?
+        .clone();
+
+    let tx_clone: mpsc::Sender<Value> = {
+        let map = ctx.core.channels.lock();
+        let chan = map.get(&slot)
+            .ok_or_else(|| anyhow!("__channel_send: unknown slot id {slot}"))?;
+        chan.sender.as_ref()
+            .ok_or_else(|| anyhow!("__channel_send: channel {slot} is closed"))?
+            .clone()
+    };
+    tx_clone.send(val)
+        .map_err(|_| anyhow!("__channel_send: channel {slot} disconnected"))?;
+    Ok(Value::Null)
+}
+
+/// `__channel_recv(slot: i64) -> Value::Array` — block until a value
+/// arrives. Returns the same discriminated shape as `__channel_try_recv`
+/// minus the `EMPTY` case (which doesn't apply to a blocking recv):
+///   `[I64(0), value]`  — ok
+///   `[I64(2)]`         — disconnected (all senders closed, queue drained)
+///
+/// The discriminator-rather-than-anyhow protocol lets the z42 `Channel.Recv()`
+/// facade `throw new Std.ChannelDisconnectedException(...)` so user code
+/// can `catch (ChannelDisconnectedException e)` cleanly.
+pub fn builtin_channel_recv(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__channel_recv")?;
+    let rx_arc = {
+        let map = ctx.core.channels.lock();
+        let chan = map.get(&slot)
+            .ok_or_else(|| anyhow!("__channel_recv: unknown slot id {slot}"))?;
+        Arc::clone(&chan.receiver)
+    };
+    // Registry lock released. Inner Mutex serialises concurrent
+    // `__channel_recv` callers on the same slot (Receiver is !Sync);
+    // a concurrent `__channel_send` takes the registry lock, clones the
+    // Sender, drops the registry lock, and sends — so we don't block
+    // each other.
+    let rx_guard = rx_arc.lock()
+        .map_err(|_| anyhow!("__channel_recv: receiver mutex poisoned"))?;
+    let arr = match rx_guard.recv() {
+        Ok(v)  => vec![Value::I64(TRY_RECV_OK), v],
+        Err(_) => vec![Value::I64(TRY_RECV_DISCONNECTED)],
+    };
+    Ok(ctx.heap().alloc_array(arr))
+}
+
+/// `__channel_try_recv(slot: i64) -> Value::Array` — non-blocking recv,
+/// returns a discriminated array (see module docs).
+pub fn builtin_channel_try_recv(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__channel_try_recv")?;
+    let rx_arc = {
+        let map = ctx.core.channels.lock();
+        let chan = map.get(&slot)
+            .ok_or_else(|| anyhow!("__channel_try_recv: unknown slot id {slot}"))?;
+        Arc::clone(&chan.receiver)
+    };
+    let rx_guard = rx_arc.lock()
+        .map_err(|_| anyhow!("__channel_try_recv: receiver mutex poisoned"))?;
+    let arr = match rx_guard.try_recv() {
+        Ok(v) => vec![Value::I64(TRY_RECV_OK), v],
+        Err(mpsc::TryRecvError::Empty) => vec![Value::I64(TRY_RECV_EMPTY)],
+        Err(mpsc::TryRecvError::Disconnected) => vec![Value::I64(TRY_RECV_DISCONNECTED)],
+    };
+    Ok(ctx.heap().alloc_array(arr))
+}
+
+/// `__channel_close(slot: i64) -> Null` — drop the sender half so
+/// pending and future `Recv` calls return `Disconnected` after the
+/// already-queued values are drained.
+pub fn builtin_channel_close(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__channel_close")?;
+    let mut map = ctx.core.channels.lock();
+    let chan = map.get_mut(&slot)
+        .ok_or_else(|| anyhow!("__channel_close: unknown slot id {slot}"))?;
+    chan.sender = None;
+    Ok(Value::Null)
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+fn slot_id_arg(args: &[Value], idx: usize, ctx_name: &str) -> Result<u64> {
+    match args.get(idx) {
+        Some(Value::I64(n)) if *n >= 0 => Ok(*n as u64),
+        Some(other) => bail!("{ctx_name}: arg {idx} expected i64 slot id, got {:?}", other),
+        None        => bail!("{ctx_name}: missing arg {idx}"),
+    }
+}
+
+#[cfg(test)]
+#[path = "sync_tests.rs"]
+mod sync_tests;

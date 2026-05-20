@@ -82,21 +82,32 @@ impl<T> GcRef<T> {
 
     /// Immutably borrow the inner value.
     ///
-    /// **Recursive borrow panics** (try_lock + expect). Same-thread re-entrance
-    /// is a bug — RefCell would have panicked here too. Different-thread
-    /// access on a single-VmContext path won't happen (GC scans run only
-    /// from inside script execution which is per-thread).
+    /// **Blocking acquire** (parking_lot `lock()`). Until 2026-05-20 this
+    /// used `try_lock().expect(...)` to catch RefCell-style same-thread
+    /// re-entrance — but `add-multithreading-foundation` Phase 3 migrated
+    /// the backing from `Rc<RefCell>` to `Arc<parking_lot::Mutex>` and
+    /// `add-threading-stdlib` (2026-05-20) made cross-thread access real.
+    /// Two workers concurrently `field_get` on the same shared object
+    /// hit this borrow path and would `try_lock` panic.
+    ///
+    /// `add-sync-primitives` (2026-05-20) flips to blocking: legitimate
+    /// cross-thread contention waits its turn; same-thread reentrance now
+    /// deadlocks (matching standard `std::sync::Mutex` semantics). The
+    /// recursive-borrow safety net was a RefCell porting artifact — Rust
+    /// `Mutex` has never offered it. If reentrant access patterns appear
+    /// in practice they're bugs and should be restructured, not papered
+    /// over with a recursive Mutex variant.
     pub fn borrow(&self) -> Ref<'_, T> {
-        self.inner.inner.try_lock().expect("recursive borrow on GcRef (single-thread reentrant lock or contended cross-thread access)")
+        self.inner.inner.lock()
     }
 
     /// Mutably borrow the inner value.
     ///
-    /// Same semantics as `borrow()`: try_lock + panic on recursion. Mutex
-    /// has no read/write distinction; the type alias `RefMut<'a, T>` keeps
-    /// the call-site API stable while the underlying lock is exclusive.
+    /// Same semantics as `borrow()`: blocking lock. Mutex has no read/write
+    /// distinction; the type alias `RefMut<'a, T>` keeps the call-site API
+    /// stable while the underlying lock is exclusive.
     pub fn borrow_mut(&self) -> RefMut<'_, T> {
-        self.inner.inner.try_lock().expect("recursive borrow_mut on GcRef (single-thread reentrant lock or contended cross-thread access)")
+        self.inner.inner.lock()
     }
 
     /// True iff `a` and `b` point to the same heap allocation (reference equality).

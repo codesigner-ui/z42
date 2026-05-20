@@ -44,6 +44,10 @@ vm.run(&ctx, hint)?;
 - `module: Option<Arc<Module>>` — 用户编译后的 Module，跨线程共享（add-threading-stdlib 2026-05-20）；测试路径 `None`，生产路径 `Some(Arc::new(module))`
 - `threads: Mutex<HashMap<u64, JoinHandle<Result<()>>>>` — `Std.Threading.Thread` 的 JoinHandle slot table（add-threading-stdlib 2026-05-20）；`__thread_spawn` 插入，`__thread_join` take-out 后 join
 - `next_thread_id: AtomicU64` — Thread slot id 计数器（同 processes 模式，单调递增）
+- `mutexes: Mutex<HashMap<u64, Arc<parking_lot::Mutex<Value>>>>` — `Std.Threading.Mutex<T>` slot table（add-sync-primitives 2026-05-20）。`__mutex_lock_acquire` 把 Arc clone 到调用方 thread-local guard map；`__mutex_store` / `__mutex_unlock` 通过 thread-local 查回 + `force_unlock` 释放
+- `next_mutex_id: AtomicU64` — Mutex slot id 计数器
+- `channels: Mutex<HashMap<u64, ChannelSlot>>` — `Std.Threading.Channel<T>` slot table（add-sync-primitives 2026-05-20）。`ChannelSlot` 持 `Option<mpsc::Sender>` + `Arc<std::sync::Mutex<mpsc::Receiver>>`：多 producer 通过 `Sender::clone()` 分发，多 consumer 通过内部 Mutex 串行
+- `next_channel_id: AtomicU64` — Channel slot id 计数器
 
 `VmCore` 满足 `Send + Sync`（编译期 assertion 在 `src/runtime/src/gc/arc_heap_tests/send_sync.rs`）。
 

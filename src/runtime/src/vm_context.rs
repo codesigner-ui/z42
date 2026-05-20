@@ -166,6 +166,26 @@ pub struct VmCore {
     /// **add-threading-stdlib (2026-05-20)**: monotonic thread slot id
     /// counter; never reused (u64 effectively unbounded).
     pub(crate) next_thread_id:     std::sync::atomic::AtomicU64,
+    /// **add-sync-primitives (2026-05-20)**: `Std.Threading.Mutex<T>`
+    /// slot table. `__mutex_new` inserts; `__mutex_unlock` keeps the
+    /// entry (Mutexes are reusable). The `Arc` lets the lock-acquire
+    /// thread keep the inner mutex alive across builtin call boundaries
+    /// via a thread-local guard registry — see `corelib/sync.rs`.
+    pub(crate) mutexes:            Mutex<HashMap<u64, Arc<parking_lot::Mutex<Value>>>>,
+    /// **add-sync-primitives (2026-05-20)**: monotonic mutex slot id
+    /// counter; never reused.
+    pub(crate) next_mutex_id:      std::sync::atomic::AtomicU64,
+    /// **add-sync-primitives (2026-05-20)**: `Std.Threading.Channel<T>`
+    /// slot table. `__channel_new` inserts; `__channel_close` flips
+    /// `sender = None` so subsequent recv sees disconnected. Entries
+    /// are never removed in v0 (no `__channel_drop` builtin) — the
+    /// Channel object's lifetime keeps the slot alive for the whole VM
+    /// run, which is acceptable for normal workloads but documented as
+    /// a Deferred for future cleanup (`add-sync-primitives-future-gc`).
+    pub(crate) channels:           Mutex<HashMap<u64, crate::corelib::sync::ChannelSlot>>,
+    /// **add-sync-primitives (2026-05-20)**: monotonic channel slot id
+    /// counter; never reused.
+    pub(crate) next_channel_id:    std::sync::atomic::AtomicU64,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -233,6 +253,14 @@ impl VmContext {
     /// built via [`new`](Self::new) (test path).
     pub fn module(&self) -> Option<&Arc<crate::metadata::Module>> {
         self.core.module.as_ref()
+    }
+
+    /// Clone the shared `Arc<VmCore>` — needed by external integration
+    /// tests / embedders that spawn raw OS threads and want to construct
+    /// a child VmContext via [`new_with_core`](Self::new_with_core). The
+    /// `core` field itself is `pub(crate)`; this is the public escape hatch.
+    pub fn core_arc(&self) -> Arc<VmCore> {
+        Arc::clone(&self.core)
     }
 
     /// Standard test entry: constructs a VmContext with `VmCore.module = None`.
@@ -307,6 +335,10 @@ impl VmContext {
             module,
             threads:              Mutex::new(HashMap::new()),
             next_thread_id:       std::sync::atomic::AtomicU64::new(1),
+            mutexes:              Mutex::new(HashMap::new()),
+            next_mutex_id:        std::sync::atomic::AtomicU64::new(1),
+            channels:             Mutex::new(HashMap::new()),
+            next_channel_id:      std::sync::atomic::AtomicU64::new(1),
         });
 
         // External GC root scanner — invoked by the cycle collector during

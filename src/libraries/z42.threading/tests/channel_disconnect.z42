@@ -1,0 +1,47 @@
+// add-sync-primitives (2026-05-20): Channel<T> close + disconnect semantics.
+namespace Z42ThreadingChannelDisconnectTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+[Test]
+void test_close_then_recv_throws_disconnected() {
+    var c = new Channel<long>();
+    c.Close();
+    bool caught = false;
+    try {
+        c.Recv();
+    } catch (ChannelDisconnectedException e) {
+        caught = true;
+        Assert.True(e.Message.Length > 0);
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_close_drains_pending_before_disconnect() {
+    var c = new Channel<long>();
+    c.Send(7);
+    c.Send(8);
+    c.Close();
+    Assert.Equal((long)7, c.Recv());
+    Assert.Equal((long)8, c.Recv());
+    // Now the queue is drained and the sender is gone — next Recv throws.
+    bool caught = false;
+    try {
+        c.Recv();
+    } catch (ChannelDisconnectedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_try_recv_after_close_drained_returns_discriminator_2() {
+    var c = new Channel<long>();
+    c.Close();
+    object[] result = c.TryRecv();
+    long kind = (long)result[0];
+    Assert.Equal((long)2, kind);  // 2 = disconnected
+}

@@ -59,7 +59,8 @@
 - `z42.diagnostics`（2026-05-15 add-z42-diagnostics）— `Log` static facade + 5 level (TRACE/DEBUG/INFO/WARN/ERROR)，stderr 输出。详 [diagnostics.md](diagnostics.md)
 - `z42.regex`（2026-05-16 add-z42-regex）— RFC 子集 regex parser + backtracking 匹配引擎；Compile/IsMatch/Find/FindAll/Replace/Split。详 [regex.md](regex.md)
 - `z42.cli`（2026-05-16 add-z42-cli）— ArgParser + ParseResult + auto -h/--help；Phase 0 of shell-script → z42 self-hosting。详 [cli.md](cli.md)
-- `z42.threading`（2026-05-20 add-threading-stdlib）— `Std.Threading.Thread` / `Std.ThreadException`：OS 线程级 `Start(Action)` / `Join()`，跨线程 exception 经 `ThreadException.Message` 透传。底层 `__thread_spawn` / `__thread_join` builtin 接 `VmCore.threads` slot table。同步原语（`Mutex<T>` / `Channel<T>`）由后续 spec `add-sync-primitives` 引入。
+- `z42.threading`（2026-05-20 add-threading-stdlib）— `Std.Threading.Thread` / `Std.ThreadException`：OS 线程级 `Start(Action)` / `Join()`，跨线程 exception 经 `ThreadException.Message` 透传。底层 `__thread_spawn` / `__thread_join` builtin 接 `VmCore.threads` slot table。
+- `z42.threading` 扩展（2026-05-20 add-sync-primitives）— `Std.Threading.Mutex<T>` / `Channel<T>` + `Std.ChannelDisconnectedException`：RAII callback Mutex（`Lock(Func<T,T>)`）+ unbounded MPSC channel（`Send` / `Recv` / `TryRecv` / `Close`）。底层 `__mutex_*` × 4 + `__channel_*` × 5 builtin 接 `VmCore.mutexes` / `VmCore.channels` slot table；附带修复 `GcRef::borrow` 跨线程 panic（`try_lock` → blocking `lock`）。
 
 ---
 
@@ -67,8 +68,7 @@
 
 | 包 | C# 对标 | Rust 对标 | 层级 | extern | 阻塞依赖 |
 |----|---------|----------|------|--------|---------|
-| ~~z42.threading~~ | ~~`System.Threading.Thread`~~ | ~~`std::thread`~~ | ~~L2~~ | — | **✅ 已落地 2026-05-20 add-threading-stdlib**（`Thread.Start/Join` + `ThreadException`，移动到 P0 已落地段）。同步原语 `Mutex<T>` / `Channel<T>` 由后续 spec `add-sync-primitives` 引入；保留 P1 行作为该后续 spec 占位见下行 |
-| **z42.threading.sync**（占位）| `System.Threading.Mutex` / `Channel<T>` / `Monitor` | `std::sync::Mutex` / `std::sync::mpsc::channel` / `crossbeam` | L2 | — | 建在 z42.threading 之上；待 `add-sync-primitives` spec |
+| ~~z42.threading~~ | ~~`System.Threading.Thread`~~ | ~~`std::thread`~~ | ~~L2~~ | — | **✅ 已落地 2026-05-20**（add-threading-stdlib + add-sync-primitives 双 spec）—— `Thread.Start/Join` + `Mutex<T>` + `Channel<T>` + `ThreadException` + `ChannelDisconnectedException`。Condvar / RwLock / Semaphore 等后续按需独立 spec（见 `add-sync-primitives-future-condvar`） |
 | **z42.async** | `Task` + `async/await` + `CancellationToken` | `tokio` / `async-std` | L3 | 部分 native | **L3 async/await 语法**（roadmap L3）；标准库需先有 z42.threading 同步原语 |
 | **z42.net** | `System.Net.Sockets` / `System.Net.Http` | `std::net` + `hyper` / `reqwest` | L2 | 走 Tier1 C ABI（系统 socket 或 libcurl） | 先 TCP/UDP（同步）；HTTP client 留次级 |
 | **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI（libsodium / OpenSSL 最快）| 哈希（SHA-2/3）+ CSPRNG + 对称加密 |
