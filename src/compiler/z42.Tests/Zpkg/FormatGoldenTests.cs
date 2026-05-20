@@ -194,11 +194,15 @@ public class FormatGoldenTests
     {
         string source = File.ReadAllText(sourcePath);
         IrModule module = CompileSource(source);
+        // CRLF → LF before hashing: keeps SourceHash stable across
+        // Windows/Linux/macOS checkouts (committed fixtures were generated
+        // from LF source). Mirrors CompilerUtils.Sha256Hex normalization.
+        string canonical = source.Replace("\r\n", "\n");
         return new ZbcFile(
             ZbcVersion: ZbcFile.CurrentVersion,
             SourceFile: Path.GetFileName(sourcePath),
             SourceHash: Convert.ToHexString(
-                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(source))),
+                System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical))),
             Namespace:  module.Name,
             Exports:    [],
             Imports:    [],
