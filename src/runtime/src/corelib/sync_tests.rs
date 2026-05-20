@@ -468,3 +468,125 @@ fn rwlock_unknown_slot_errors() {
     let err = builtin_rwlock_write_acquire(&c, &[Value::I64(9_999)]).unwrap_err();
     assert!(err.to_string().contains("unknown slot id"));
 }
+
+// ── add-sync-primitives-try-variants Phase 2 (2026-05-20) ────────────────────
+
+/// Helper: extract the i64 discriminator from a Value::Array result.
+fn try_lock_discriminator(result: Value) -> i64 {
+    let arr = match result {
+        Value::Array(rc) => rc,
+        other => panic!("expected Array, got {other:?}"),
+    };
+    let borrowed = arr.borrow();
+    match borrowed[0] {
+        Value::I64(n) => n,
+        ref other => panic!("expected I64 discriminator, got {other:?}"),
+    }
+}
+
+#[test]
+fn channel_try_send_unbounded_succeeds() {
+    let c = ctx();
+    let id = match builtin_channel_new(&c, &[]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    let result = builtin_channel_try_send(&c, &[Value::I64(id), Value::I64(42)]).unwrap();
+    assert!(matches!(result, Value::I64(0)), "expected TRY_SEND_OK (0)");
+    // Verify the value actually went through
+    let v = expect_recv_ok(builtin_channel_recv(&c, &[Value::I64(id)]).unwrap());
+    assert!(matches!(v, Value::I64(42)));
+}
+
+#[test]
+fn channel_try_send_bounded_full_returns_1() {
+    let c = ctx();
+    let id = match builtin_channel_new_bounded(&c, &[Value::I64(2)]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    // Fill the buffer.
+    builtin_channel_send(&c, &[Value::I64(id), Value::I64(1)]).unwrap();
+    builtin_channel_send(&c, &[Value::I64(id), Value::I64(2)]).unwrap();
+    // Third TrySend should fail with FULL discriminator.
+    let result = builtin_channel_try_send(&c, &[Value::I64(id), Value::I64(3)]).unwrap();
+    assert!(matches!(result, Value::I64(1)), "expected TRY_SEND_FULL (1)");
+}
+
+#[test]
+fn channel_try_send_closed_returns_2() {
+    let c = ctx();
+    let id = match builtin_channel_new(&c, &[]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    builtin_channel_close(&c, &[Value::I64(id)]).unwrap();
+    let result = builtin_channel_try_send(&c, &[Value::I64(id), Value::I64(42)]).unwrap();
+    assert!(matches!(result, Value::I64(2)), "expected TRY_SEND_DISCONNECTED (2)");
+}
+
+#[test]
+fn rwlock_try_read_uncontended_succeeds() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(100));
+    let result = builtin_rwlock_try_read(&c, &[Value::I64(id)]).unwrap();
+    let kind = try_lock_discriminator(result.clone());
+    assert_eq!(kind, 0);
+    // Value present at index 1.
+    let arr = match result {
+        Value::Array(rc) => rc,
+        _ => panic!(),
+    };
+    let borrowed = arr.borrow();
+    assert!(matches!(borrowed[1], Value::I64(100)));
+    drop(borrowed);
+    // Must release.
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_try_read_same_thread_reentrancy_rejected() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    builtin_rwlock_try_read(&c, &[Value::I64(id)]).unwrap();
+    // Second try on the same slot from the same thread must NOT acquire
+    // (HELD_RWLOCK_GUARDS reentrancy check).
+    let result = builtin_rwlock_try_read(&c, &[Value::I64(id)]).unwrap();
+    assert_eq!(try_lock_discriminator(result), 1);
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_try_write_uncontended_succeeds() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    let result = builtin_rwlock_try_write(&c, &[Value::I64(id)]).unwrap();
+    assert_eq!(try_lock_discriminator(result), 0);
+    builtin_rwlock_write_store(&c, &[Value::I64(id), Value::I64(99)]).unwrap();
+    builtin_rwlock_write_release(&c, &[Value::I64(id)]).unwrap();
+
+    // Verify via blocking read.
+    let observed = builtin_rwlock_read_acquire(&c, &[Value::I64(id)]).unwrap();
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+    assert!(matches!(observed, Value::I64(99)));
+}
+
+#[test]
+fn rwlock_try_write_during_outstanding_read_returns_contended() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    // Acquire read on the same thread.
+    builtin_rwlock_read_acquire(&c, &[Value::I64(id)]).unwrap();
+    // try_write should fail because thread-local reentrancy check (we
+    // hold the slot, even in read mode).
+    let result = builtin_rwlock_try_write(&c, &[Value::I64(id)]).unwrap();
+    assert_eq!(try_lock_discriminator(result), 1);
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_try_read_unknown_slot_errors() {
+    let c = ctx();
+    let err = builtin_rwlock_try_read(&c, &[Value::I64(9_999)]).unwrap_err();
+    assert!(err.to_string().contains("unknown slot id"));
+}

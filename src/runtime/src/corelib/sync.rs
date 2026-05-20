@@ -97,6 +97,15 @@ const TRY_RECV_OK:           i64 = 0;
 const TRY_RECV_EMPTY:        i64 = 1;
 const TRY_RECV_DISCONNECTED: i64 = 2;
 
+// add-sync-primitives-try-variants (2026-05-20): discriminators for
+// __channel_try_send + __rwlock_try_{read,write}.
+const TRY_SEND_OK:           i64 = 0;
+const TRY_SEND_FULL:         i64 = 1;
+const TRY_SEND_DISCONNECTED: i64 = 2;
+
+const TRY_LOCK_OK:           i64 = 0;
+const TRY_LOCK_CONTENDED:    i64 = 1;
+
 // ── Mutex builtins ────────────────────────────────────────────────────────────
 
 /// `__mutex_new(initial: Value) -> i64 slot_id` — allocate a new Mutex
@@ -316,6 +325,50 @@ pub fn builtin_channel_close(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// `__channel_try_send(slot: i64, v: Value) -> i64` — non-blocking send
+/// (add-sync-primitives-try-variants, 2026-05-20). Returns the same
+/// discriminator family as `__channel_try_recv`:
+///   `0` ok / `1` full (bounded only) / `2` disconnected
+///
+/// Unbounded channels never report "full" — they fall back to `Sender::send`
+/// which never blocks; they only return `2` when the channel is closed.
+pub fn builtin_channel_try_send(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__channel_try_send")?;
+    let val  = args.get(1)
+        .ok_or_else(|| anyhow!("__channel_try_send: missing value argument"))?
+        .clone();
+
+    enum SendHandle {
+        Unbounded(mpsc::Sender<Value>),
+        Bounded(mpsc::SyncSender<Value>),
+    }
+    let handle: SendHandle = {
+        let map = ctx.core.channels.lock();
+        let chan = map.get(&slot)
+            .ok_or_else(|| anyhow!("__channel_try_send: unknown slot id {slot}"))?;
+        let sender = match chan.sender.as_ref() {
+            Some(s) => s,
+            None    => return Ok(Value::I64(TRY_SEND_DISCONNECTED)),
+        };
+        match sender {
+            ChannelSender::Unbounded(tx) => SendHandle::Unbounded(tx.clone()),
+            ChannelSender::Bounded(tx)   => SendHandle::Bounded(tx.clone()),
+        }
+    };
+    let kind = match handle {
+        SendHandle::Unbounded(tx) => match tx.send(val) {
+            Ok(())  => TRY_SEND_OK,
+            Err(_)  => TRY_SEND_DISCONNECTED,
+        },
+        SendHandle::Bounded(tx) => match tx.try_send(val) {
+            Ok(())                                    => TRY_SEND_OK,
+            Err(mpsc::TrySendError::Full(_))          => TRY_SEND_FULL,
+            Err(mpsc::TrySendError::Disconnected(_))  => TRY_SEND_DISCONNECTED,
+        },
+    };
+    Ok(Value::I64(kind))
+}
+
 // ── RwLock builtins (add-sync-primitives-rwlock, 2026-05-20) ─────────────────
 
 /// `__rwlock_new(initial: Value) -> i64 slot_id` — allocate a new
@@ -430,6 +483,67 @@ pub fn builtin_rwlock_write_release(_ctx: &VmContext, args: &[Value]) -> Result<
             bail!("__rwlock_write_release: slot {slot} held in read mode; call __rwlock_read_release instead")
         }
     }
+}
+
+/// `__rwlock_try_read(slot: i64) -> Value::Array` — non-blocking shared
+/// acquire (add-sync-primitives-try-variants, 2026-05-20). Returns a
+/// discriminated array:
+///   `[I64(0), value]` — ok, caller now holds read lock (must release)
+///   `[I64(1)]`        — contended (writer holds, or same-thread reentrancy)
+///
+/// Rejects same-thread same-slot reentrancy upfront to keep
+/// `HELD_RWLOCK_GUARDS` map invariants simple (single entry per slot
+/// per thread → matched by single release call).
+pub fn builtin_rwlock_try_read(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use parking_lot::lock_api::RawRwLock;
+    let slot = slot_id_arg(args, 0, "__rwlock_try_read")?;
+    let already_held = HELD_RWLOCK_GUARDS.with(|cell| cell.borrow().contains_key(&slot));
+    if already_held {
+        return Ok(ctx.heap().alloc_array(vec![Value::I64(TRY_LOCK_CONTENDED)]));
+    }
+    let arc = ctx.core.rwlocks.lock().get(&slot).cloned()
+        .ok_or_else(|| anyhow!("__rwlock_try_read: unknown slot id {slot}"))?;
+    // SAFETY: bypass the guard type entirely (its lifetime borrows from arc
+    // and the borrow checker can't see that mem::forget releases). Raw
+    // API matches what __rwlock_read_acquire's force_unlock_read pairs with.
+    // SAFETY: parking_lot's .raw() is unsafe because raw lock/unlock skips
+    // the type-system guard. We pair it with HELD_RWLOCK_GUARDS bookkeeping
+    // + matching force_unlock_read in __rwlock_read_release.
+    if !unsafe { arc.raw() }.try_lock_shared() {
+        return Ok(ctx.heap().alloc_array(vec![Value::I64(TRY_LOCK_CONTENDED)]));
+    }
+    // Lock acquired; data_ptr access is safe.
+    let cloned = unsafe { (*arc.data_ptr()).clone() };
+    HELD_RWLOCK_GUARDS.with(|cell| {
+        cell.borrow_mut().insert(slot, RwLockHeld::Read(Arc::clone(&arc)));
+    });
+    Ok(ctx.heap().alloc_array(vec![Value::I64(TRY_LOCK_OK), cloned]))
+}
+
+/// `__rwlock_try_write(slot: i64) -> Value::Array` — non-blocking exclusive
+/// acquire. Same discriminator shape as `__rwlock_try_read`. Rejects
+/// reentrancy upfront.
+pub fn builtin_rwlock_try_write(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use parking_lot::lock_api::RawRwLock;
+    let slot = slot_id_arg(args, 0, "__rwlock_try_write")?;
+    let already_held = HELD_RWLOCK_GUARDS.with(|cell| cell.borrow().contains_key(&slot));
+    if already_held {
+        return Ok(ctx.heap().alloc_array(vec![Value::I64(TRY_LOCK_CONTENDED)]));
+    }
+    let arc = ctx.core.rwlocks.lock().get(&slot).cloned()
+        .ok_or_else(|| anyhow!("__rwlock_try_write: unknown slot id {slot}"))?;
+    // SAFETY: see __rwlock_try_read; same raw-API pattern. force_unlock_write
+    // (used by __rwlock_write_release) is the matching release.
+    // SAFETY: see __rwlock_try_read; matched by force_unlock_write in
+    // __rwlock_write_release.
+    if !unsafe { arc.raw() }.try_lock_exclusive() {
+        return Ok(ctx.heap().alloc_array(vec![Value::I64(TRY_LOCK_CONTENDED)]));
+    }
+    let cloned = unsafe { (*arc.data_ptr()).clone() };
+    HELD_RWLOCK_GUARDS.with(|cell| {
+        cell.borrow_mut().insert(slot, RwLockHeld::Write(Arc::clone(&arc)));
+    });
+    Ok(ctx.heap().alloc_array(vec![Value::I64(TRY_LOCK_OK), cloned]))
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

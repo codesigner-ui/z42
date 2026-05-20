@@ -262,6 +262,11 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__rwlock_write_acquire", sync::builtin_rwlock_write_acquire),
     ("__rwlock_write_store",   sync::builtin_rwlock_write_store),
     ("__rwlock_write_release", sync::builtin_rwlock_write_release),
+
+    // ── add-sync-primitives-try-variants (2026-05-20) — appended to preserve existing BuiltinIds ──
+    ("__channel_try_send",     sync::builtin_channel_try_send),
+    ("__rwlock_try_read",      sync::builtin_rwlock_try_read),
+    ("__rwlock_try_write",     sync::builtin_rwlock_try_write),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

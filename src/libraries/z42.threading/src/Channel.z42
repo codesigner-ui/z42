@@ -70,6 +70,16 @@ public class Channel<T> {
         ChannelNative.Close(this._slot);
     }
 
+    // 2026-05-20 add-sync-primitives-try-variants: non-blocking Send.
+    // Returns true on success; false if the bounded buffer is full OR
+    // the channel was previously closed. Unbounded channels return true
+    // unless closed (the queue never fills). Does NOT throw — caller
+    // checks the bool and reacts (poll loop, work-stealing, drop, etc.).
+    public bool TrySend(T v) {
+        long kind = ChannelNative.TrySend(this._slot, v);
+        return kind == 0;
+    }
+
     // Internal slot id — for diagnostics only.
     public long SlotId() {
         return this._slot;
@@ -95,4 +105,7 @@ public static class ChannelNative {
 
     [Native("__channel_close")]
     public static extern object Close(long slotId);
+
+    [Native("__channel_try_send")]
+    public static extern long TrySend(long slotId, object value);
 }

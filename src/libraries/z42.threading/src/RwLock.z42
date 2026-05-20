@@ -52,6 +52,35 @@ public class RwLock<T> {
     public long SlotId() {
         return this._slot;
     }
+
+    // 2026-05-20 add-sync-primitives-try-variants: non-blocking shared
+    // acquire. If a writer holds the lock OR this thread already holds
+    // any acquire on this RwLock, returns false and body is NOT invoked.
+    // On success returns true and body has already run + lock released.
+    public bool TryRead(Action<T> body) {
+        object[] result = RwLockNative.TryRead(this._slot);
+        long kind = (long)result[0];
+        if (kind != 0) { return false; }
+        T snapshot = (T)result[1];
+        body(snapshot);
+        RwLockNative.ReadRelease(this._slot);
+        return true;
+    }
+
+    // 2026-05-20 add-sync-primitives-try-variants: non-blocking exclusive
+    // acquire. If any reader OR writer holds the lock, returns false and
+    // body is NOT invoked. On success runs the body, stores its return,
+    // releases the lock, returns true.
+    public bool TryWrite(Func<T, T> body) {
+        object[] result = RwLockNative.TryWrite(this._slot);
+        long kind = (long)result[0];
+        if (kind != 0) { return false; }
+        T current = (T)result[1];
+        T next    = body(current);
+        RwLockNative.WriteStore(this._slot, next);
+        RwLockNative.WriteRelease(this._slot);
+        return true;
+    }
 }
 
 // Native binding sink — isolates [Native] declarations from the public
@@ -74,4 +103,10 @@ public static class RwLockNative {
 
     [Native("__rwlock_write_release")]
     public static extern object WriteRelease(long slotId);
+
+    [Native("__rwlock_try_read")]
+    public static extern object[] TryRead(long slotId);
+
+    [Native("__rwlock_try_write")]
+    public static extern object[] TryWrite(long slotId);
 }

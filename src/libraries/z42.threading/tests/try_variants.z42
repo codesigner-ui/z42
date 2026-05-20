@@ -1,0 +1,60 @@
+// add-sync-primitives-try-variants (2026-05-20): non-blocking TrySend /
+// TryRead / TryWrite for polling-style code.
+namespace Z42ThreadingTryVariantsTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+public static class TryState {
+    public static long Observed;
+}
+
+[Test]
+void test_try_send_unbounded_succeeds() {
+    var c = new Channel<long>();
+    bool ok = c.TrySend(7);
+    Assert.True(ok);
+    Assert.Equal((long)7, c.Recv());
+}
+
+[Test]
+void test_try_send_bounded_full_returns_false() {
+    var c = new Channel<long>(2);
+    Assert.True(c.TrySend(1));
+    Assert.True(c.TrySend(2));
+    // Third TrySend fails — queue is full.
+    Assert.True(!c.TrySend(3));
+    // Drain the queued values to confirm 3 was not stashed somewhere.
+    Assert.Equal((long)1, c.Recv());
+    Assert.Equal((long)2, c.Recv());
+}
+
+[Test]
+void test_try_send_closed_returns_false() {
+    var c = new Channel<long>();
+    c.Close();
+    Assert.True(!c.TrySend(5));
+}
+
+[Test]
+void test_try_read_uncontended_succeeds() {
+    var l = new RwLock<long>(42);
+    TryState.Observed = -1;
+    bool ok = l.TryRead((long v) => {
+        TryState.Observed = v;
+    });
+    Assert.True(ok);
+    Assert.Equal((long)42, TryState.Observed);
+}
+
+[Test]
+void test_try_write_uncontended_succeeds() {
+    var l = new RwLock<long>(0);
+    bool ok = l.TryWrite((long v) => v + 100);
+    Assert.True(ok);
+    // Verify the write took effect.
+    TryState.Observed = -1;
+    l.Read((long v) => { TryState.Observed = v; });
+    Assert.Equal((long)100, TryState.Observed);
+}
