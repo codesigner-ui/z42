@@ -251,6 +251,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__channel_recv",        sync::builtin_channel_recv),
     ("__channel_try_recv",    sync::builtin_channel_try_recv),
     ("__channel_close",       sync::builtin_channel_close),
+
+    // ── add-sync-primitives-bounded-channel (2026-05-20) — appended to preserve existing BuiltinIds ──
+    ("__channel_new_bounded", sync::builtin_channel_new_bounded),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

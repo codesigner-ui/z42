@@ -20,8 +20,19 @@ using Std;
 public class Channel<T> {
     private long _slot;
 
+    // Unbounded constructor (default). The queue grows without limit;
+    // for back-pressure use the `int capacity` overload instead.
     public Channel() {
         this._slot = ChannelNative.New();
+    }
+
+    // 2026-05-20 add-sync-primitives-bounded-channel: bounded constructor.
+    // `Send` blocks the caller when the queue contains `capacity` values
+    // until a `Recv` makes room (back-pressure). When `capacity == 0` you
+    // get a rendezvous channel — every `Send` blocks until paired with a
+    // `Recv` on another thread.
+    public Channel(int capacity) {
+        this._slot = ChannelNative.NewBounded((long)capacity);
     }
 
     // Send `v` on the channel. Throws if the channel was previously closed.
@@ -69,6 +80,9 @@ public class Channel<T> {
 public static class ChannelNative {
     [Native("__channel_new")]
     public static extern long New();
+
+    [Native("__channel_new_bounded")]
+    public static extern long NewBounded(long capacity);
 
     [Native("__channel_send")]
     public static extern object Send(long slotId, object value);

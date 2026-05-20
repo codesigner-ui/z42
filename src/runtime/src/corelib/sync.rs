@@ -33,6 +33,18 @@ use std::sync::mpsc;
 
 // ── ChannelSlot ───────────────────────────────────────────────────────────────
 
+/// Sender variant — unbounded mpsc or bounded (sync) mpsc. The two share
+/// the same Receiver type so all consumer paths (`__channel_recv` /
+/// `__channel_try_recv` / `__channel_close`) are agnostic; only
+/// `__channel_send` cares about the variant for back-pressure semantics
+/// (Bounded::send blocks when full; Unbounded::send never blocks).
+///
+/// add-sync-primitives-bounded-channel (2026-05-20).
+pub(crate) enum ChannelSender {
+    Unbounded(mpsc::Sender<Value>),
+    Bounded(mpsc::SyncSender<Value>),
+}
+
 /// One live channel pair. `sender` is `Option` so `__channel_close` can
 /// drop it (cause subsequent `Recv` to fail with `RecvError`). `receiver`
 /// is wrapped in `Arc<Mutex<...>>` so callers can clone the Arc out of
@@ -42,7 +54,7 @@ use std::sync::mpsc;
 /// holding it. mpsc::Receiver is `Send` but `!Sync`, so the inner Mutex
 /// serialises concurrent `__channel_recv` callers on the same slot.
 pub(crate) struct ChannelSlot {
-    pub(crate) sender:   Option<mpsc::Sender<Value>>,
+    pub(crate) sender:   Option<ChannelSender>,
     pub(crate) receiver: Arc<std::sync::Mutex<mpsc::Receiver<Value>>>,
 }
 
@@ -161,7 +173,28 @@ pub fn builtin_channel_new(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
     let (tx, rx) = mpsc::channel::<Value>();
     let id = ctx.core.next_channel_id.fetch_add(1, Ordering::Relaxed);
     ctx.core.channels.lock().insert(id, ChannelSlot {
-        sender:   Some(tx),
+        sender:   Some(ChannelSender::Unbounded(tx)),
+        receiver: Arc::new(std::sync::Mutex::new(rx)),
+    });
+    Ok(Value::I64(id as i64))
+}
+
+/// `__channel_new_bounded(capacity: i64) -> i64 slot_id` — create a
+/// bounded sync channel (add-sync-primitives-bounded-channel, 2026-05-20).
+/// `Send` on the resulting channel blocks when the queue reaches `capacity`
+/// values; `capacity == 0` gives a rendezvous channel (every Send blocks
+/// until paired with a Recv).
+pub fn builtin_channel_new_bounded(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let cap = match args.first() {
+        Some(Value::I64(n)) if *n >= 0 => *n as usize,
+        Some(Value::I64(_)) => bail!("__channel_new_bounded: capacity must be >= 0"),
+        Some(other) => bail!("__channel_new_bounded: expected i64 capacity, got {:?}", other),
+        None        => bail!("__channel_new_bounded: missing capacity argument"),
+    };
+    let (tx, rx) = mpsc::sync_channel::<Value>(cap);
+    let id = ctx.core.next_channel_id.fetch_add(1, Ordering::Relaxed);
+    ctx.core.channels.lock().insert(id, ChannelSlot {
+        sender:   Some(ChannelSender::Bounded(tx)),
         receiver: Arc::new(std::sync::Mutex::new(rx)),
     });
     Ok(Value::I64(id as i64))
@@ -169,22 +202,38 @@ pub fn builtin_channel_new(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
 
 /// `__channel_send(slot: i64, v: Value) -> Null` — send `v` on the
 /// channel. Returns `Err` if the channel slot is unknown or closed.
+///
+/// Dispatches on `ChannelSender` variant: unbounded send is non-blocking;
+/// bounded send may block until the queue has room (back-pressure).
 pub fn builtin_channel_send(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let slot = slot_id_arg(args, 0, "__channel_send")?;
     let val  = args.get(1)
         .ok_or_else(|| anyhow!("__channel_send: missing value argument"))?
         .clone();
 
-    let tx_clone: mpsc::Sender<Value> = {
+    enum SendHandle {
+        Unbounded(mpsc::Sender<Value>),
+        Bounded(mpsc::SyncSender<Value>),
+    }
+    let handle: SendHandle = {
         let map = ctx.core.channels.lock();
         let chan = map.get(&slot)
             .ok_or_else(|| anyhow!("__channel_send: unknown slot id {slot}"))?;
-        chan.sender.as_ref()
-            .ok_or_else(|| anyhow!("__channel_send: channel {slot} is closed"))?
-            .clone()
+        let sender = chan.sender.as_ref()
+            .ok_or_else(|| anyhow!("__channel_send: channel {slot} is closed"))?;
+        match sender {
+            ChannelSender::Unbounded(tx) => SendHandle::Unbounded(tx.clone()),
+            ChannelSender::Bounded(tx)   => SendHandle::Bounded(tx.clone()),
+        }
     };
-    tx_clone.send(val)
-        .map_err(|_| anyhow!("__channel_send: channel {slot} disconnected"))?;
+    // Registry lock released before potentially-blocking send (bounded
+    // case must not hold the registry lock or concurrent recv/close paths
+    // would deadlock).
+    let send_result = match handle {
+        SendHandle::Unbounded(tx) => tx.send(val).map_err(|_| ()),
+        SendHandle::Bounded(tx)   => tx.send(val).map_err(|_| ()),
+    };
+    send_result.map_err(|_| anyhow!("__channel_send: channel {slot} disconnected"))?;
     Ok(Value::Null)
 }
 

@@ -280,3 +280,95 @@ fn channel_recv_unknown_slot_errors() {
     let err = builtin_channel_recv(&c, &[Value::I64(9_999)]).unwrap_err();
     assert!(err.to_string().contains("unknown slot id"));
 }
+
+// ── add-sync-primitives-bounded-channel Phase 4 (2026-05-20) ─────────────────
+
+#[test]
+fn channel_new_bounded_returns_slot_id() {
+    let c = ctx();
+    let v = builtin_channel_new_bounded(&c, &[Value::I64(4)]).unwrap();
+    let id = match v { Value::I64(n) => n, _ => panic!("expected I64, got {v:?}") };
+    assert!(id > 0);
+}
+
+#[test]
+fn channel_new_bounded_missing_arg_errors() {
+    let c = ctx();
+    let err = builtin_channel_new_bounded(&c, &[]).unwrap_err();
+    assert!(err.to_string().contains("missing capacity argument"));
+}
+
+#[test]
+fn channel_new_bounded_negative_capacity_errors() {
+    let c = ctx();
+    let err = builtin_channel_new_bounded(&c, &[Value::I64(-1)]).unwrap_err();
+    assert!(err.to_string().contains("capacity must be >= 0"));
+}
+
+#[test]
+fn channel_new_bounded_wrong_type_errors() {
+    let c = ctx();
+    let err = builtin_channel_new_bounded(&c, &[Value::Str("not a number".into())]).unwrap_err();
+    assert!(err.to_string().contains("expected i64 capacity"));
+}
+
+#[test]
+fn channel_bounded_send_recv_round_trip() {
+    let c = ctx();
+    let id = match builtin_channel_new_bounded(&c, &[Value::I64(4)]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    builtin_channel_send(&c, &[Value::I64(id), Value::I64(77)]).unwrap();
+    let v = expect_recv_ok(builtin_channel_recv(&c, &[Value::I64(id)]).unwrap());
+    assert!(matches!(v, Value::I64(77)));
+}
+
+#[test]
+fn channel_bounded_multi_send_recv_fifo_order() {
+    let c = ctx();
+    let id = match builtin_channel_new_bounded(&c, &[Value::I64(8)]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    for n in 0..5_i64 {
+        builtin_channel_send(&c, &[Value::I64(id), Value::I64(n)]).unwrap();
+    }
+    for expected in 0..5_i64 {
+        let v = expect_recv_ok(builtin_channel_recv(&c, &[Value::I64(id)]).unwrap());
+        match v {
+            Value::I64(n) => assert_eq!(n, expected),
+            other => panic!("expected I64, got {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn channel_bounded_close_then_recv_returns_discriminator_2() {
+    let c = ctx();
+    let id = match builtin_channel_new_bounded(&c, &[Value::I64(4)]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    builtin_channel_close(&c, &[Value::I64(id)]).unwrap();
+    let result = builtin_channel_recv(&c, &[Value::I64(id)]).unwrap();
+    let arr = match result {
+        Value::Array(rc) => rc,
+        _ => panic!("expected Array"),
+    };
+    let borrowed = arr.borrow();
+    assert!(matches!(borrowed[0], Value::I64(2)),
+        "disconnected recv on bounded should be discriminator 2, got {:?}", borrowed[0]);
+}
+
+#[test]
+fn channel_bounded_send_to_closed_errors() {
+    let c = ctx();
+    let id = match builtin_channel_new_bounded(&c, &[Value::I64(4)]).unwrap() {
+        Value::I64(n) => n,
+        _ => panic!(),
+    };
+    builtin_channel_close(&c, &[Value::I64(id)]).unwrap();
+    let err = builtin_channel_send(&c, &[Value::I64(id), Value::I64(7)]).unwrap_err();
+    assert!(err.to_string().contains("is closed"));
+}
