@@ -1,0 +1,92 @@
+// add-sync-primitives-rwlock (2026-05-20): RwLock<T> single-thread +
+// cross-thread coverage. Stored mutable state goes through static fields
+// per closure.md §4.4 (callback body can't escape value-type writes).
+namespace Z42ThreadingRwLockBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+public static class RwLockState {
+    public static long Observed;
+    public static long SumObserved;
+    public static RwLock<long> Config;
+}
+
+[Test]
+void test_single_thread_read_write_cycle() {
+    var l = new RwLock<long>(0);
+    l.Write((long v) => v + 10);
+    l.Write((long v) => v + 5);
+    RwLockState.Observed = -1;
+    l.Read((long v) => {
+        RwLockState.Observed = v;
+    });
+    Assert.Equal((long)15, RwLockState.Observed);
+}
+
+[Test]
+void test_concurrent_readers_observe_consistent() {
+    // Set a value, then spawn N reader threads — all must observe the
+    // same value (since no writers run between).
+    RwLockState.Config = new RwLock<long>(7);
+    RwLockState.SumObserved = 0;
+    var sumLock = new Mutex<long>(0);
+
+    int N = 5;
+    Thread[] threads = new Thread[N];
+    int i = 0;
+    while (i < N) {
+        threads[i] = Thread.Start(() => {
+            RwLockState.Config.Read((long v) => {
+                sumLock.Lock((long s) => s + v);
+            });
+        });
+        i = i + 1;
+    }
+    i = 0;
+    while (i < N) {
+        threads[i].Join();
+        i = i + 1;
+    }
+    sumLock.Lock((long s) => {
+        RwLockState.SumObserved = s;
+        return s;
+    });
+    // All readers see 7; sum should be N × 7 = 35
+    Assert.Equal((long)(N * 7), RwLockState.SumObserved);
+}
+
+[Test]
+void test_writer_blocks_readers_then_unblocks() {
+    // 1 writer thread sets value to 100; 2 reader threads observe.
+    // Test passes if all complete (no deadlock) and at least one reader
+    // observes the post-write value (100).
+    RwLockState.Config = new RwLock<long>(0);
+    RwLockState.SumObserved = 0;
+    var sumLock = new Mutex<long>(0);
+
+    Thread writer = Thread.Start(() => {
+        RwLockState.Config.Write((long v) => 100);
+    });
+    writer.Join();
+
+    // After writer completes, spawn 2 readers — each must see 100.
+    Thread r1 = Thread.Start(() => {
+        RwLockState.Config.Read((long v) => {
+            sumLock.Lock((long s) => s + v);
+        });
+    });
+    Thread r2 = Thread.Start(() => {
+        RwLockState.Config.Read((long v) => {
+            sumLock.Lock((long s) => s + v);
+        });
+    });
+    r1.Join();
+    r2.Join();
+    sumLock.Lock((long s) => {
+        RwLockState.SumObserved = s;
+        return s;
+    });
+    Assert.Equal((long)200, RwLockState.SumObserved);
+}

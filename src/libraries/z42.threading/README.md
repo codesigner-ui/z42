@@ -13,7 +13,8 @@ slot table。
 | `Thread.z42` | `Std.Threading.Thread` | OS 线程句柄；`Start(Action)` 工厂 + `Join()` 同步等待 |
 | `ThreadException.z42` | `Std.ThreadException` | 跨线程异常封装（worker `throw` 或 Rust panic 经由 Join 透传） |
 | `Mutex.z42` | `Std.Threading.Mutex<T>` | 排他互斥；RAII callback `Lock(Func<T,T>)`（add-sync-primitives 2026-05-20） |
-| `Channel.z42` | `Std.Threading.Channel<T>` | unbounded MPSC 管道：`Send` / `Recv` / `TryRecv` / `Close`（add-sync-primitives 2026-05-20） |
+| `RwLock.z42` | `Std.Threading.RwLock<T>` | 多读单写 lock；`Read(Action<T>)` 多 reader 并发 + `Write(Func<T,T>)` 单 writer 排他（add-sync-primitives-rwlock 2026-05-20） |
+| `Channel.z42` | `Std.Threading.Channel<T>` | MPSC 管道：unbounded (`new Channel<T>()`) 或 bounded with back-pressure (`new Channel<T>(N)`)；`Send` / `Recv` / `TryRecv` / `Close`（add-sync-primitives 2026-05-20 + bounded 扩展 2026-05-20） |
 | `ChannelDisconnectedException.z42` | `Std.ChannelDisconnectedException` | 所有 sender 关闭且队列空时 `Recv()` 抛出 |
 
 ## 入口点

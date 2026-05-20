@@ -1,0 +1,77 @@
+namespace Std.Threading;
+
+using Std;
+
+// 2026-05-20 add-sync-primitives-rwlock: multi-reader / single-writer lock.
+//
+// Two RAII callback methods mirroring `Mutex<T>.Lock(Func<T,T>)`:
+//   - `Read(Action<T>)` lets multiple threads see a snapshot of the
+//     current value concurrently; the body runs while a shared lock is
+//     held. Mutations inside the body do NOT propagate to the stored
+//     value (closure §4.1 value-snapshot capture). Export observations
+//     through static fields / shared objects like Mutex.
+//   - `Write(Func<T,T>)` acquires exclusively (blocks all readers + other
+//     writers); body returns the new stored value; runtime stores it and
+//     releases.
+//
+// Backed by `parking_lot::RwLock<Value>` (write-preferring fairness — no
+// writer starvation under read-heavy load). Non-reentrant: a thread that
+// already holds a Read on slot X must NOT acquire another Read on the
+// same slot (would deadlock). Cross-slot is fine.
+//
+// Usage:
+//   var config = new RwLock<long>(0);
+//   // 50 readers in parallel:
+//   config.Read((long v) => { Stats.Last = v; });
+//   // Occasional update:
+//   config.Write((long v) => v + 1);
+public class RwLock<T> {
+    private long _slot;
+
+    public RwLock(T initial) {
+        this._slot = RwLockNative.New(initial);
+    }
+
+    // Multi-reader. Body sees a snapshot of the current value; mutations
+    // inside body don't propagate. Export observations via static fields.
+    public void Read(Action<T> body) {
+        T snapshot = (T)RwLockNative.ReadAcquire(this._slot);
+        body(snapshot);
+        RwLockNative.ReadRelease(this._slot);
+    }
+
+    // Exclusive writer. body returns the new value to store.
+    public void Write(Func<T, T> body) {
+        T current = (T)RwLockNative.WriteAcquire(this._slot);
+        T next    = body(current);
+        RwLockNative.WriteStore(this._slot, next);
+        RwLockNative.WriteRelease(this._slot);
+    }
+
+    // Internal slot id — for diagnostics only.
+    public long SlotId() {
+        return this._slot;
+    }
+}
+
+// Native binding sink — isolates [Native] declarations from the public
+// surface (same pattern as MutexNative / ChannelNative / ThreadNative).
+public static class RwLockNative {
+    [Native("__rwlock_new")]
+    public static extern long New(object initial);
+
+    [Native("__rwlock_read_acquire")]
+    public static extern object ReadAcquire(long slotId);
+
+    [Native("__rwlock_read_release")]
+    public static extern object ReadRelease(long slotId);
+
+    [Native("__rwlock_write_acquire")]
+    public static extern object WriteAcquire(long slotId);
+
+    [Native("__rwlock_write_store")]
+    public static extern object WriteStore(long slotId, object newValue);
+
+    [Native("__rwlock_write_release")]
+    public static extern object WriteRelease(long slotId);
+}

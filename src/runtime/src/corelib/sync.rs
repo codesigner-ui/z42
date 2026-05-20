@@ -73,6 +73,22 @@ thread_local! {
     /// and a thread holding the lock is the only one allowed to release it.
     static HELD_MUTEX_GUARDS: RefCell<HashMap<u64, Arc<parking_lot::Mutex<Value>>>>
         = RefCell::new(HashMap::new());
+
+    /// add-sync-primitives-rwlock (2026-05-20): per-thread map from RwLock
+    /// slot id to the held variant. Read variants may co-exist across
+    /// threads (parking_lot RwLock allows multiple shared holders); write
+    /// variants are exclusive per slot.
+    static HELD_RWLOCK_GUARDS: RefCell<HashMap<u64, RwLockHeld>>
+        = RefCell::new(HashMap::new());
+}
+
+/// Per-thread RwLock acquire mode tracking. Held entries are removed by
+/// the matching `*_release` builtin which dispatches on this variant to
+/// pick the correct parking_lot raw unlock path.
+#[derive(Clone)]
+pub(crate) enum RwLockHeld {
+    Read(Arc<parking_lot::RwLock<Value>>),
+    Write(Arc<parking_lot::RwLock<Value>>),
 }
 
 // ── const discriminators ─────────────────────────────────────────────────────
@@ -298,6 +314,122 @@ pub fn builtin_channel_close(ctx: &VmContext, args: &[Value]) -> Result<Value> {
         .ok_or_else(|| anyhow!("__channel_close: unknown slot id {slot}"))?;
     chan.sender = None;
     Ok(Value::Null)
+}
+
+// ── RwLock builtins (add-sync-primitives-rwlock, 2026-05-20) ─────────────────
+
+/// `__rwlock_new(initial: Value) -> i64 slot_id` — allocate a new
+/// RwLock wrapping `initial` and register it in `VmCore.rwlocks`.
+pub fn builtin_rwlock_new(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let initial = args.first()
+        .ok_or_else(|| anyhow!("__rwlock_new: missing initial value"))?
+        .clone();
+    let id = ctx.core.next_rwlock_id.fetch_add(1, Ordering::Relaxed);
+    let lock = Arc::new(parking_lot::RwLock::new(initial));
+    ctx.core.rwlocks.lock().insert(id, lock);
+    Ok(Value::I64(id as i64))
+}
+
+/// `__rwlock_read_acquire(slot: i64) -> Value` — acquire shared lock
+/// (blocks while a writer holds it; multiple readers may proceed
+/// concurrently), return a clone of the current stored value.
+pub fn builtin_rwlock_read_acquire(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__rwlock_read_acquire")?;
+    let arc = ctx.core.rwlocks.lock().get(&slot).cloned()
+        .ok_or_else(|| anyhow!("__rwlock_read_acquire: unknown slot id {slot}"))?;
+    // SAFETY: parking_lot::RwLock::read is the blocking shared acquire.
+    // We mem::forget the guard so it doesn't unlock at scope end and
+    // pair release with `force_unlock_read` via the thread-local map.
+    let guard = arc.read();
+    let cloned = (*guard).clone();
+    std::mem::forget(guard);
+    HELD_RWLOCK_GUARDS.with(|cell| {
+        cell.borrow_mut().insert(slot, RwLockHeld::Read(Arc::clone(&arc)));
+    });
+    Ok(cloned)
+}
+
+/// `__rwlock_read_release(slot: i64) -> Null` — release a previously
+/// acquired shared lock. Errors if the slot wasn't held in Read mode
+/// on this thread (e.g. attempting to read-release a write-acquired slot).
+pub fn builtin_rwlock_read_release(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__rwlock_read_release")?;
+    let held = HELD_RWLOCK_GUARDS.with(|cell| cell.borrow_mut().remove(&slot))
+        .ok_or_else(|| anyhow!("__rwlock_read_release: slot {slot} not currently locked on this thread"))?;
+    match held {
+        RwLockHeld::Read(arc) => {
+            // SAFETY: this thread holds the shared lock (acquired via
+            // arc.read() + mem::forget above). force_unlock_read decrements
+            // the shared counter on the same parking_lot::RwLock.
+            unsafe { arc.force_unlock_read(); }
+            Ok(Value::Null)
+        }
+        RwLockHeld::Write(arc) => {
+            // Put it back so the caller can recover.
+            HELD_RWLOCK_GUARDS.with(|cell| {
+                cell.borrow_mut().insert(slot, RwLockHeld::Write(arc));
+            });
+            bail!("__rwlock_read_release: slot {slot} held in write mode; call __rwlock_write_release instead")
+        }
+    }
+}
+
+/// `__rwlock_write_acquire(slot: i64) -> Value` — acquire exclusive
+/// lock (blocks all readers and other writers), return a clone of the
+/// current stored value. Pair with `__rwlock_write_store` + `__rwlock_write_release`.
+pub fn builtin_rwlock_write_acquire(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__rwlock_write_acquire")?;
+    let arc = ctx.core.rwlocks.lock().get(&slot).cloned()
+        .ok_or_else(|| anyhow!("__rwlock_write_acquire: unknown slot id {slot}"))?;
+    let guard = arc.write();
+    let cloned = (*guard).clone();
+    std::mem::forget(guard);
+    HELD_RWLOCK_GUARDS.with(|cell| {
+        cell.borrow_mut().insert(slot, RwLockHeld::Write(Arc::clone(&arc)));
+    });
+    Ok(cloned)
+}
+
+/// `__rwlock_write_store(slot: i64, new_val: Value) -> Null` — overwrite
+/// the stored Value. Caller must currently hold the lock in *Write* mode
+/// on the same thread (this is checked; calling under a Read acquire errs).
+pub fn builtin_rwlock_write_store(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__rwlock_write_store")?;
+    let new_val = args.get(1)
+        .ok_or_else(|| anyhow!("__rwlock_write_store: missing new value"))?
+        .clone();
+    let held = HELD_RWLOCK_GUARDS.with(|cell| cell.borrow().get(&slot).cloned())
+        .ok_or_else(|| anyhow!("__rwlock_write_store: slot {slot} not currently locked on this thread"))?;
+    let arc = match held {
+        RwLockHeld::Write(arc) => arc,
+        RwLockHeld::Read(_) => bail!("__rwlock_write_store: slot {slot} held in read mode (cannot store via read lock)"),
+    };
+    // SAFETY: caller currently owns the exclusive write lock on this thread
+    // (we acquired via arc.write() + mem::forget; only this thread may
+    // release). data_ptr() is the protected slot; writing through it under
+    // exclusive ownership matches the parking_lot raw API contract.
+    unsafe { *arc.data_ptr() = new_val; }
+    Ok(Value::Null)
+}
+
+/// `__rwlock_write_release(slot: i64) -> Null` — release a previously
+/// acquired exclusive lock. Errors if the slot wasn't held in Write mode.
+pub fn builtin_rwlock_write_release(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let slot = slot_id_arg(args, 0, "__rwlock_write_release")?;
+    let held = HELD_RWLOCK_GUARDS.with(|cell| cell.borrow_mut().remove(&slot))
+        .ok_or_else(|| anyhow!("__rwlock_write_release: slot {slot} not currently locked on this thread"))?;
+    match held {
+        RwLockHeld::Write(arc) => {
+            unsafe { arc.force_unlock_write(); }
+            Ok(Value::Null)
+        }
+        RwLockHeld::Read(arc) => {
+            HELD_RWLOCK_GUARDS.with(|cell| {
+                cell.borrow_mut().insert(slot, RwLockHeld::Read(arc));
+            });
+            bail!("__rwlock_write_release: slot {slot} held in read mode; call __rwlock_read_release instead")
+        }
+    }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

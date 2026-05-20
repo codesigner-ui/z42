@@ -372,3 +372,99 @@ fn channel_bounded_send_to_closed_errors() {
     let err = builtin_channel_send(&c, &[Value::I64(id), Value::I64(7)]).unwrap_err();
     assert!(err.to_string().contains("is closed"));
 }
+
+// ── add-sync-primitives-rwlock Phase 3 (2026-05-20) ──────────────────────────
+
+fn make_rwlock(ctx: &VmContext, initial: Value) -> i64 {
+    match builtin_rwlock_new(ctx, &[initial]).unwrap() {
+        Value::I64(n) => n,
+        other => panic!("expected I64 slot id, got {other:?}"),
+    }
+}
+
+#[test]
+fn rwlock_new_missing_arg_errors() {
+    let c = ctx();
+    let err = builtin_rwlock_new(&c, &[]).unwrap_err();
+    assert!(err.to_string().contains("missing initial value"));
+}
+
+#[test]
+fn rwlock_new_returns_monotonic_slot_ids() {
+    let c = ctx();
+    let id1 = make_rwlock(&c, Value::I64(1));
+    let id2 = make_rwlock(&c, Value::I64(2));
+    assert!(id2 > id1, "second slot id should be > first");
+}
+
+#[test]
+fn rwlock_read_acquire_returns_initial_value_and_releases() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(123));
+    let v = builtin_rwlock_read_acquire(&c, &[Value::I64(id)]).unwrap();
+    assert!(matches!(v, Value::I64(123)));
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_write_store_then_read_observes_new_value() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    let cur = builtin_rwlock_write_acquire(&c, &[Value::I64(id)]).unwrap();
+    assert!(matches!(cur, Value::I64(0)));
+    builtin_rwlock_write_store(&c, &[Value::I64(id), Value::I64(42)]).unwrap();
+    builtin_rwlock_write_release(&c, &[Value::I64(id)]).unwrap();
+
+    let observed = builtin_rwlock_read_acquire(&c, &[Value::I64(id)]).unwrap();
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+    assert!(matches!(observed, Value::I64(42)));
+}
+
+#[test]
+fn rwlock_write_store_without_write_acquire_errors() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    let err = builtin_rwlock_write_store(&c, &[Value::I64(id), Value::I64(99)]).unwrap_err();
+    assert!(err.to_string().contains("not currently locked"));
+}
+
+#[test]
+fn rwlock_write_store_under_read_acquire_errors() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    builtin_rwlock_read_acquire(&c, &[Value::I64(id)]).unwrap();
+    let err = builtin_rwlock_write_store(&c, &[Value::I64(id), Value::I64(99)]).unwrap_err();
+    assert!(err.to_string().contains("held in read mode"));
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_release_mismatched_kind_errors() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    builtin_rwlock_read_acquire(&c, &[Value::I64(id)]).unwrap();
+    let err = builtin_rwlock_write_release(&c, &[Value::I64(id)]).unwrap_err();
+    assert!(err.to_string().contains("held in read mode"));
+    // Verify the read still holds — clean release path.
+    builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_read_release_when_held_write_errors() {
+    let c = ctx();
+    let id = make_rwlock(&c, Value::I64(0));
+    builtin_rwlock_write_acquire(&c, &[Value::I64(id)]).unwrap();
+    let err = builtin_rwlock_read_release(&c, &[Value::I64(id)]).unwrap_err();
+    assert!(err.to_string().contains("held in write mode"));
+    // Clean release.
+    builtin_rwlock_write_release(&c, &[Value::I64(id)]).unwrap();
+}
+
+#[test]
+fn rwlock_unknown_slot_errors() {
+    let c = ctx();
+    let err = builtin_rwlock_read_acquire(&c, &[Value::I64(9_999)]).unwrap_err();
+    assert!(err.to_string().contains("unknown slot id"));
+    let err = builtin_rwlock_write_acquire(&c, &[Value::I64(9_999)]).unwrap_err();
+    assert!(err.to_string().contains("unknown slot id"));
+}

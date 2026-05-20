@@ -46,8 +46,10 @@ vm.run(&ctx, hint)?;
 - `next_thread_id: AtomicU64` — Thread slot id 计数器（同 processes 模式，单调递增）
 - `mutexes: Mutex<HashMap<u64, Arc<parking_lot::Mutex<Value>>>>` — `Std.Threading.Mutex<T>` slot table（add-sync-primitives 2026-05-20）。`__mutex_lock_acquire` 把 Arc clone 到调用方 thread-local guard map；`__mutex_store` / `__mutex_unlock` 通过 thread-local 查回 + `force_unlock` 释放
 - `next_mutex_id: AtomicU64` — Mutex slot id 计数器
-- `channels: Mutex<HashMap<u64, ChannelSlot>>` — `Std.Threading.Channel<T>` slot table（add-sync-primitives 2026-05-20）。`ChannelSlot` 持 `Option<mpsc::Sender>` + `Arc<std::sync::Mutex<mpsc::Receiver>>`：多 producer 通过 `Sender::clone()` 分发，多 consumer 通过内部 Mutex 串行
+- `channels: Mutex<HashMap<u64, ChannelSlot>>` — `Std.Threading.Channel<T>` slot table（add-sync-primitives 2026-05-20）。`ChannelSlot` 持 `Option<ChannelSender>` + `Arc<std::sync::Mutex<mpsc::Receiver>>`：多 producer 通过 `Sender::clone()` 分发，多 consumer 通过内部 Mutex 串行。`ChannelSender` enum 区分 `Unbounded(mpsc::Sender)` / `Bounded(mpsc::SyncSender)`（add-sync-primitives-bounded-channel 2026-05-20）
 - `next_channel_id: AtomicU64` — Channel slot id 计数器
+- `rwlocks: Mutex<HashMap<u64, Arc<parking_lot::RwLock<Value>>>>` — `Std.Threading.RwLock<T>` slot table（add-sync-primitives-rwlock 2026-05-20）。多读单写 lock 与 Mutex 同款 Arc + thread-local guard parking 模式；thread-local 用 enum `RwLockHeld { Read(Arc), Write(Arc) }` 区分释放路径
+- `next_rwlock_id: AtomicU64` — RwLock slot id 计数器
 
 `VmCore` 满足 `Send + Sync`（编译期 assertion 在 `src/runtime/src/gc/arc_heap_tests/send_sync.rs`）。
 

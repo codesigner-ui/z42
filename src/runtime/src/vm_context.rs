@@ -205,6 +205,15 @@ pub struct VmCore {
     /// the round's stop-the-world collect. Cross-thread safe via the
     /// safepoint protocol.
     pub(crate) needs_auto_collect: Arc<std::sync::atomic::AtomicBool>,
+    /// **add-sync-primitives-rwlock (2026-05-20)**: `Std.Threading.RwLock<T>`
+    /// slot table. Multiple shared (read) holders OR a single exclusive
+    /// (write) holder. Same Arc-+-thread-local-guard parking pattern as
+    /// Mutex, with an additional Read/Write variant tracked per slot so
+    /// release picks the correct unlock path.
+    pub(crate) rwlocks:            Mutex<HashMap<u64, Arc<parking_lot::RwLock<Value>>>>,
+    /// **add-sync-primitives-rwlock (2026-05-20)**: monotonic RwLock slot
+    /// id counter; never reused.
+    pub(crate) next_rwlock_id:     std::sync::atomic::AtomicU64,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -362,6 +371,8 @@ impl VmContext {
             gc_phase_cv:          parking_lot::Condvar::new(),
             parked_count:         std::sync::atomic::AtomicUsize::new(0),
             needs_auto_collect:   Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            rwlocks:              Mutex::new(HashMap::new()),
+            next_rwlock_id:       std::sync::atomic::AtomicU64::new(1),
         });
 
         // add-gc-safepoint-auto-threshold (2026-05-20): wire the

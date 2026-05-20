@@ -254,6 +254,14 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-sync-primitives-bounded-channel (2026-05-20) — appended to preserve existing BuiltinIds ──
     ("__channel_new_bounded", sync::builtin_channel_new_bounded),
+
+    // ── add-sync-primitives-rwlock (2026-05-20) — appended to preserve existing BuiltinIds ──
+    ("__rwlock_new",           sync::builtin_rwlock_new),
+    ("__rwlock_read_acquire",  sync::builtin_rwlock_read_acquire),
+    ("__rwlock_read_release",  sync::builtin_rwlock_read_release),
+    ("__rwlock_write_acquire", sync::builtin_rwlock_write_acquire),
+    ("__rwlock_write_store",   sync::builtin_rwlock_write_store),
+    ("__rwlock_write_release", sync::builtin_rwlock_write_release),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
