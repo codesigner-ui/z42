@@ -38,6 +38,7 @@ pub mod bench;
 pub mod process;
 pub mod platform;
 pub mod system;
+pub mod threading;
 
 use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
@@ -234,6 +235,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__system_os_version",   system::builtin_system_os_version),
     ("__env_unset",           fs::builtin_env_unset),
     ("__env_vars",            fs::builtin_env_vars),
+
+    // ── add-threading-stdlib (2026-05-20) — appended to preserve existing BuiltinIds ──
+    ("__thread_spawn",        threading::builtin_thread_spawn),
+    ("__thread_join",         threading::builtin_thread_join),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

@@ -138,14 +138,56 @@ fn vm_context_drop_removes_from_registry() {
 
 #[test]
 fn two_vm_contexts_both_registered_independently() {
-    // Note: each `VmContext::new()` constructs its own VmCore (current
-    // constructor doesn't accept a shared core — adding `new_with_core`
-    // would extend scope here). The intent of this test is to verify
-    // independence: ctx1 dropping shouldn't affect ctx2.
+    // Each `VmContext::new()` constructs its own VmCore; `new_with_core`
+    // (below) covers the shared-core case for `__thread_spawn`. The intent
+    // of this test is to verify independence: ctx1 dropping shouldn't
+    // affect ctx2.
     let ctx1 = VmContext::new();
     let ctx2 = VmContext::new();
     assert_eq!(ctx1.core.vm_contexts.lock().len(), 1);
     assert_eq!(ctx2.core.vm_contexts.lock().len(), 1);
     drop(ctx1);
     assert_eq!(ctx2.core.vm_contexts.lock().len(), 1, "ctx2 unaffected by ctx1 drop");
+}
+
+// ── add-threading-stdlib Phase 3 (2026-05-20) ─────────────────────────────────
+
+#[test]
+fn vm_context_new_with_core_shares_core() {
+    // Construct primary ctx; spawn-clone its core into a second ctx;
+    // verify both register self into the same `vm_contexts` registry.
+    let ctx1 = VmContext::new();
+    let core = std::sync::Arc::clone(&ctx1.core);
+    let ctx2 = VmContext::new_with_core(core);
+
+    let registry = ctx1.core.vm_contexts.lock();
+    assert_eq!(registry.len(), 2, "shared-core registry should contain both ctxs");
+
+    let p1 = &*ctx1 as *const VmContext;
+    let p2 = &*ctx2 as *const VmContext;
+    assert!(registry.iter().any(|p| p.0 == p1));
+    assert!(registry.iter().any(|p| p.0 == p2));
+}
+
+#[test]
+fn vm_context_new_with_core_drop_only_removes_self() {
+    let ctx1 = VmContext::new();
+    let core = std::sync::Arc::clone(&ctx1.core);
+    let ctx2 = VmContext::new_with_core(core);
+    assert_eq!(ctx1.core.vm_contexts.lock().len(), 2);
+    let p1 = &*ctx1 as *const VmContext;
+    drop(ctx2);
+    let registry = ctx1.core.vm_contexts.lock();
+    assert_eq!(registry.len(), 1, "ctx2 drop should not remove ctx1");
+    assert_eq!(registry[0].0, p1);
+}
+
+#[test]
+fn vm_context_new_with_core_shares_static_fields() {
+    // Static fields live on VmCore — both contexts should see the same
+    // values when one writes.
+    let ctx1 = VmContext::new();
+    let ctx2 = VmContext::new_with_core(std::sync::Arc::clone(&ctx1.core));
+    ctx1.static_set("Shared", Value::I64(7));
+    assert!(matches!(ctx2.static_get("Shared"), Value::I64(7)));
 }

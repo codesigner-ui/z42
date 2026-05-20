@@ -251,6 +251,36 @@ impl VmContext {
         Self::new_internal(Some(Arc::new(module)))
     }
 
+    /// Spawned-thread entry: build a VmContext that **shares** an existing
+    /// `Arc<VmCore>` instead of creating a new one. Used by
+    /// `__thread_spawn`'s spawned closure so the worker thread sees the
+    /// same module / static_fields / heap / lazy_loader / native_libs
+    /// state as the parent thread.
+    ///
+    /// The new VmContext registers itself in `core.vm_contexts` for GC root
+    /// scanning, so the worker's per-thread roots (`pending_exception` /
+    /// `call_stack` / `func_ref_slots`) are visible to the cycle collector.
+    /// On drop, the entry is removed under the same Mutex discipline as
+    /// the primary path.
+    pub fn new_with_core(core: Arc<VmCore>) -> std::pin::Pin<Box<Self>> {
+        let pending_exception: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
+        let func_ref_slots: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+        let call_stack: Arc<Mutex<Vec<crate::exception::VmFrame>>> = Arc::new(Mutex::new(Vec::new()));
+
+        let ctx = Self {
+            core,
+            pending_exception,
+            call_stack,
+            func_ref_slots,
+            process_next_id: std::sync::atomic::AtomicU64::new(1),
+            _pin: PhantomPinned,
+        };
+        let boxed = Box::new(ctx);
+        let ptr = VmContextPtr(&*boxed as *const VmContext);
+        boxed.core.vm_contexts.lock().push(ptr);
+        unsafe { std::pin::Pin::new_unchecked(boxed) }
+    }
+
     fn new_internal(module: Option<Arc<crate::metadata::Module>>) -> std::pin::Pin<Box<Self>> {
         let pending_exception: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
         let func_ref_slots: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
