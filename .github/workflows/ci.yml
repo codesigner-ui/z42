@@ -609,3 +609,139 @@ jobs:
           path: artifacts/packages/
           retention-days: 14
           if-no-files-found: error
+
+  # ── Nightly rolling pre-release ────────────────────────────────────────
+  # On every push to main, repackage all 9 RID artifacts (host ×4 + ios ×2 +
+  # android ×2 + wasm) into archives and force-replace a single `nightly`
+  # GitHub Release. The tag URL stays stable so downstream consumers can pin to:
+  #
+  #   https://github.com/<owner>/z42/releases/download/nightly/z42-nightly-<rid>.{tar.gz,zip}
+  #
+  # Not signed. Marked --prerelease. Skipped on PRs (token + fork-PR limitations).
+  publish-nightly:
+    name: publish-nightly
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - build-and-test
+      - vm-jit-consistency
+      - feature-matrix
+      - package-ios
+      - package-android
+      - package-wasm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # gh release create / delete
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-raw
+          pattern: 'z42-*-package*'
+          merge-multiple: true
+
+      - name: Show downloaded layout (debug)
+        run: |
+          echo "--- dist-raw top level ---"
+          ls -la dist-raw/ || true
+          echo "--- z42-*-release dirs anywhere under dist-raw/ ---"
+          find dist-raw -type d -name 'z42-*-release' | sort || true
+
+      - name: Layout + archive each RID package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/packages artifacts/release
+          # Find package dirs regardless of nesting depth (upload-artifact v4
+          # may preserve or strip the source-path prefix depending on the
+          # upstream `path:` shape).
+          mapfile -t pkg_dirs < <(find dist-raw -type d -name 'z42-*-release' | sort -u)
+          [ "${#pkg_dirs[@]}" -gt 0 ] \
+              || { echo "error: no z42-*-release dirs under dist-raw/"; find dist-raw -maxdepth 3 -type d; exit 1; }
+          echo "→ Found ${#pkg_dirs[@]} package dirs"
+          for src in "${pkg_dirs[@]}"; do
+              name=$(basename "$src")          # z42-<v>-<rid>-release
+              stripped=${name#z42-}            # <v>-<rid>-release
+              stripped=${stripped%-release}    # <v>-<rid>
+              # rid = last segment matching a known suffix (handles linux-x64,
+              # ios-arm64-sim, browser-wasm). Order matters: ios-arm64-sim
+              # must come before ios-arm64 so the longer suffix wins.
+              rid=""
+              for candidate in linux-x64 linux-arm64 macos-arm64 windows-x64 \
+                               ios-arm64-sim ios-arm64 \
+                               android-arm64 android-x64 browser-wasm; do
+                  if [[ "$stripped" == *-"$candidate" ]]; then
+                      rid="$candidate"
+                      break
+                  fi
+              done
+              [ -n "$rid" ] || { echo "error: cannot infer RID from $name"; exit 1; }
+              # Rename to neutral version label so the download URL stays
+              # stable across commits.
+              new_name="z42-nightly-${rid}-release"
+              dst="artifacts/packages/$new_name"
+              rm -rf "$dst"
+              cp -R "$src" "$dst"
+              if [ "$rid" = "windows-x64" ]; then
+                  archive="artifacts/release/z42-nightly-${rid}.zip"
+                  tar -C artifacts/packages -a -cf "$archive" "$new_name"
+              else
+                  archive="artifacts/release/z42-nightly-${rid}.tar.gz"
+                  tar -C artifacts/packages -czf "$archive" "$new_name"
+              fi
+              echo "✓ ${rid} → $(basename "$archive") ($(du -h "$archive" | cut -f1))"
+          done
+
+      - name: Generate SHA256SUMS
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd artifacts/release
+          shasum -a 256 z42-nightly-*.tar.gz z42-nightly-*.zip 2>/dev/null | sort -k2 > SHA256SUMS
+          echo "--- SHA256SUMS ---"
+          cat SHA256SUMS
+
+      - name: Force-replace nightly release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          short_sha=$(git rev-parse --short HEAD)
+          today=$(date -u +%Y-%m-%d)
+          # Delete prior nightly (release + tag); ignore if absent.
+          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
+          notes=$(cat <<EOF
+          **Rolling pre-release** built from \`main\` on ${today} (commit \`${short_sha}\`).
+
+          - **Unsigned** — do not use for production.
+          - **Replaced on every push to main** — URL stays stable, contents change.
+          - For tagged releases see [Releases](../../releases?q=v).
+
+          ## Downloads (host RIDs)
+
+          | Platform | Archive |
+          |----------|---------|
+          | Linux x64 | \`z42-nightly-linux-x64.tar.gz\` |
+          | Linux arm64 | \`z42-nightly-linux-arm64.tar.gz\` |
+          | macOS arm64 | \`z42-nightly-macos-arm64.tar.gz\` |
+          | Windows x64 | \`z42-nightly-windows-x64.zip\` |
+
+          ## Downloads (mobile + wasm)
+
+          | Platform | Archive |
+          |----------|---------|
+          | iOS arm64 (device) | \`z42-nightly-ios-arm64.tar.gz\` |
+          | iOS arm64-sim | \`z42-nightly-ios-arm64-sim.tar.gz\` |
+          | Android arm64 | \`z42-nightly-android-arm64.tar.gz\` |
+          | Android x64 | \`z42-nightly-android-x64.tar.gz\` |
+          | Browser WASM | \`z42-nightly-browser-wasm.tar.gz\` |
+
+          Verify: \`shasum -a 256 -c SHA256SUMS --ignore-missing\`
+          EOF
+          )
+          gh release create nightly --prerelease --target "$GITHUB_SHA" \
+            --title "Nightly (main @ ${short_sha} · ${today})" \
+            --notes "$notes" \
+            artifacts/release/SHA256SUMS artifacts/release/z42-nightly-*

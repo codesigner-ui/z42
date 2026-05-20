@@ -10,6 +10,7 @@
 |------|---------|------|
 | `ci.yml` (job: `build-and-test`) | `pull_request` 到 main / `push` 到 main | linux/macos/windows 三平台跑 `just build` + `just test`（Windows 退化为 smoke test） |
 | `ci.yml` (job: `bench-e2e`) | `pull_request` 到 main（仅 ubuntu） | 跑 `just bench-e2e --quick`，上传 `bench/results/e2e.json` 为 artifact 供 PR 作者手动 diff（自动 diff 留 P1.D.4） |
+| `ci.yml` (job: `publish-nightly`) | `push` 到 main（仅 ubuntu） | 汇总 9 个 RID 的 package artifact → tar.gz / zip → 强制覆盖 `nightly` GitHub Release（unsigned，prerelease，URL 永远稳定）|
 | `bench-update.yml` | `push` 到 main（仅 ubuntu） | 跑 `just bench-e2e` 全量 → 把 `bench/results/e2e.json` 提交到 `bench-baselines` 分支的 `baselines/e2e-ubuntu-latest.json`。首次自动 bootstrap 该分支。 |
 
 ## 设计约定
