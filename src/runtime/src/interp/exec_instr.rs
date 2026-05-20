@@ -122,6 +122,11 @@ pub fn exec_instr(
             if let Some(thrown) = exec_call::call(ctx, module, frame, *dst, fname, args, method_token)? {
                 return Ok(Some(thrown));
             }
+            // add-gc-safepoint (2026-05-20): post-Call safepoint — long-running
+            // callees pop their FrameGuard before returning here, so checking
+            // upon resumption catches GC requests that arrived while we were
+            // in the callee.
+            crate::gc::safepoint::check_safepoint(ctx);
         }
         Instruction::Builtin { dst, name, args } => {
             // Hot path: resolver populates Function.resolved.builtin_tokens
@@ -143,6 +148,7 @@ pub fn exec_instr(
             if let Some(thrown) = exec_call::call_indirect(ctx, module, frame, *dst, *callee, args)? {
                 return Ok(Some(thrown));
             }
+            crate::gc::safepoint::check_safepoint(ctx);
         }
         Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
             exec_call::mk_clos(ctx, frame, *dst, fn_name, captures, *stack_alloc)?

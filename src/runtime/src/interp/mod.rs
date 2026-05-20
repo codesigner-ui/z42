@@ -380,6 +380,11 @@ impl Drop for FrameGuard<'_> {
 }
 
 pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, args: &[Value]) -> Result<ExecOutcome> {
+    // add-gc-safepoint (2026-05-20): every newly-entered z42 function
+    // immediately respects a pending GC request. A worker thread spawned
+    // mid-collect parks here before touching any roots.
+    crate::gc::safepoint::check_safepoint(ctx);
+
     let mut frame = Frame::new(args, func.max_reg);
 
     // Spec impl-ref-out-in-runtime (Decision R2 architecture E):
@@ -502,8 +507,15 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 return Ok(ExecOutcome::Returned(Some(ret_val)));
             }
             Terminator::Br  { label }          => {
-                block_idx = *block_map.get(label.as_str())
+                let target = *block_map.get(label.as_str())
                     .with_context(|| format!("undefined block `{label}`"))?;
+                // add-gc-safepoint (2026-05-20): backward branch heuristic
+                // — block index decreasing is a loop back-edge. Check
+                // safepoint so long-running loops park promptly.
+                if target <= block_idx {
+                    crate::gc::safepoint::check_safepoint(ctx);
+                }
+                block_idx = target;
             }
             Terminator::BrCond { cond, true_label, false_label } => {
                 let go_true = match frame.get(*cond)? {
@@ -511,8 +523,12 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                     other => bail!("BrCond expects bool, got {:?}", other),
                 };
                 let label = if go_true { true_label } else { false_label };
-                block_idx = *block_map.get(label.as_str())
+                let target = *block_map.get(label.as_str())
                     .with_context(|| format!("undefined block `{label}`"))?;
+                if target <= block_idx {
+                    crate::gc::safepoint::check_safepoint(ctx);
+                }
+                block_idx = target;
             }
             Terminator::Throw { reg } => {
                 let val = frame.get(*reg)?.clone();

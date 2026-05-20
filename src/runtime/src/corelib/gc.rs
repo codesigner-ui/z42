@@ -16,7 +16,13 @@ use std::sync::{Arc, OnceLock};
 
 /// `Std.GC.Collect()` —— 触发环检测（不阻断；no-op 当 paused）。
 /// 调用 `ctx.heap().collect_cycles()`，进而走 `ArcMagrGC` 的 trial-deletion 算法。
+///
+/// **add-gc-safepoint (2026-05-20)**: stop-the-world via
+/// [`crate::gc::safepoint::request_gc_pause`] before mark+sweep. All other
+/// VmContexts park at their next safepoint check; this thread runs collect;
+/// the RAII guard's Drop releases everyone.
 pub fn builtin_gc_collect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let _pause = crate::gc::safepoint::request_gc_pause(ctx);
     ctx.heap().collect_cycles();
     Ok(Value::Null)
 }
@@ -29,7 +35,11 @@ pub fn builtin_gc_used_bytes(ctx: &VmContext, _args: &[Value]) -> Result<Value> 
 
 /// `Std.GC.ForceCollect()` —— 强制完整 collect，返回 `freed_bytes`（i64）。
 /// 与 `Collect()` 区别：前者是建议性（pause 时跳过），后者总是触发并返回数据。
+///
+/// **add-gc-safepoint (2026-05-20)**: same stop-the-world wrapper as
+/// `builtin_gc_collect` — see that doc.
 pub fn builtin_gc_force_collect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let _pause = crate::gc::safepoint::request_gc_pause(ctx);
     let stats = ctx.heap().force_collect();
     Ok(Value::I64(stats.freed_bytes as i64))
 }

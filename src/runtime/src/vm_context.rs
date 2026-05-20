@@ -186,6 +186,19 @@ pub struct VmCore {
     /// **add-sync-primitives (2026-05-20)**: monotonic channel slot id
     /// counter; never reused.
     pub(crate) next_channel_id:    std::sync::atomic::AtomicU64,
+    /// **add-gc-safepoint (2026-05-20)**: cooperative-polling GC safepoint
+    /// phase. Mutators read this at each `check_safepoint` and park when
+    /// non-Idle. The collector flips Idle → Requested → Marking → Idle
+    /// under the protocol in [`crate::gc::safepoint`].
+    pub(crate) gc_phase:           Mutex<crate::gc::safepoint::GcPhase>,
+    /// **add-gc-safepoint (2026-05-20)**: Condvar used by both sides —
+    /// mutators wait on it to resume; the collector waits on it to learn
+    /// when `parked_count` reached its threshold.
+    pub(crate) gc_phase_cv:        parking_lot::Condvar,
+    /// **add-gc-safepoint (2026-05-20)**: number of mutator VmContexts
+    /// currently parked at a safepoint (excludes the collector). Used by
+    /// the collector to know when stop-the-world is in effect.
+    pub(crate) parked_count:       std::sync::atomic::AtomicUsize,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -339,6 +352,9 @@ impl VmContext {
             next_mutex_id:        std::sync::atomic::AtomicU64::new(1),
             channels:             Mutex::new(HashMap::new()),
             next_channel_id:      std::sync::atomic::AtomicU64::new(1),
+            gc_phase:             Mutex::new(crate::gc::safepoint::GcPhase::Idle),
+            gc_phase_cv:          parking_lot::Condvar::new(),
+            parked_count:         std::sync::atomic::AtomicUsize::new(0),
         });
 
         // External GC root scanner — invoked by the cycle collector during

@@ -212,6 +212,62 @@ fn channel_producer_consumer_hand_off_across_threads() {
     assert_eq!(got, vec![0, 1, 2, 3, 4]);
 }
 
+// ── add-gc-safepoint Phase 5 (2026-05-20) ────────────────────────────────────
+
+#[test]
+fn gc_collect_with_concurrent_mutators_no_race() {
+    // 4 worker threads loop allocating arrays + 1 main thread loops
+    // request_gc_pause + collect_cycles. Without safepoint, the GC scanner's
+    // unsafe pointer reads into worker frame.regs would race with workers'
+    // legitimate writes. With safepoint, workers park before each GC cycle
+    // and resume after.
+    //
+    // We don't run real z42 code here (no easy way to bake interp loops
+    // into this integration test); instead we exercise the safepoint
+    // protocol directly: workers loop `check_safepoint` + `alloc_array`,
+    // collector loops `request_gc_pause` (RAII guard release on drop).
+    //
+    // Success criterion: completes 100 collect rounds without panic /
+    // deadlock; final heap is internally consistent.
+    use z42::gc::safepoint::{check_safepoint, request_gc_pause};
+
+    let collector = VmContext::with_module(make_void_action_module("CollectorMain"));
+    let n_workers = 4usize;
+    let iters_per_worker = 200usize;
+    let collect_rounds = 100usize;
+
+    let mut worker_handles = Vec::with_capacity(n_workers);
+    for _ in 0..n_workers {
+        let core = collector.core_arc();
+        worker_handles.push(thread::spawn(move || {
+            let w = z42::vm_context::VmContext::new_with_core(core);
+            for _ in 0..iters_per_worker {
+                check_safepoint(&w);
+                let _ = w.heap().alloc_array(vec![
+                    Value::I64(1), Value::I64(2), Value::I64(3),
+                ]);
+                // Touch local "work" briefly; check again to model a loop body.
+                check_safepoint(&w);
+            }
+        }));
+    }
+
+    for _ in 0..collect_rounds {
+        let _pause = request_gc_pause(&collector);
+        collector.heap().collect_cycles();
+        // _pause drop releases workers.
+    }
+
+    for h in worker_handles {
+        h.join().expect("worker panicked");
+    }
+
+    // Sanity: heap still functional, no deadlock, GC ran the expected rounds.
+    let stats = collector.heap().stats();
+    assert!(stats.gc_cycles >= collect_rounds as u64,
+        "expected >= {collect_rounds} collect rounds, got {}", stats.gc_cycles);
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Build a Module containing one zero-arg, void-returning function whose

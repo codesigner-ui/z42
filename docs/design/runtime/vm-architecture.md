@@ -793,6 +793,61 @@ Ruby / RustPython 的事实标准 GC 抽象）。trait 在单文件内按"能力
 
 GC 子系统主功能至此完整。所有原始限制已解决，可投产。
 
+### Safepoint 协议（add-gc-safepoint, 2026-05-20）
+
+多线程引入（add-threading-stdlib）后，GC scanner 通过 `vm_contexts` 注册表
+对每个 VmContext 走 raw `frame.regs` / `frame.env_arena` 指针扫 root —— 但 worker
+线程同时在跑 interp 指令、改写 regs，构成 Rust 内存模型层 data race。Safepoint
+协议引入 stop-the-world 屏障：
+
+```
+VmCore {
+    gc_phase:     Mutex<GcPhase>,     // Idle / Requested / Marking
+    gc_phase_cv:  Condvar,
+    parked_count: AtomicUsize,        // mutator parked 数（不含 collector）
+}
+
+enum GcPhase { Idle, Requested, Marking }
+```
+
+**Mutator 侧**：interp dispatch loop 在三类位置调 `crate::gc::safepoint::check_safepoint(ctx)`：
+
+| 位置 | 理由 |
+|------|------|
+| `exec_function` 入口 | 新 spawn 的 worker 在执行任何指令前先 yield 给未决 GC |
+| 后向 branch（`Br` / `BrCond` target ≤ 当前 block_idx）| 循环回边 = 长流程的天然 yield 点 |
+| `Call` / `CallIndirect` 返回后 | callee 跑完返回本帧时检查；长 callee 的 GC 请求被父帧捕获 |
+
+fast path（Idle）：一次 Mutex lock + 一次 enum compare。slow path（Requested/Marking）：
+`parked_count.fetch_add(1)` + `gc_phase_cv.notify_all()`（唤醒等阈值的 collector）+
+`gc_phase_cv.wait()`（等回 Idle）+ `parked_count.fetch_sub(1)`。
+
+**Collector 侧**：`crate::gc::safepoint::request_gc_pause(ctx) -> GcPauseGuard`
+RAII guard：
+
+1. 写 `gc_phase = Requested`
+2. 循环等 `parked_count >= vm_contexts.len() - 1`（不含 collector 自身），重新读
+   `vm_contexts.lock().len()` 每轮以容忍 mid-pause 注册的新 VmContext
+3. 写 `gc_phase = Marking`
+4. caller 跑 mark + sweep
+5. Drop 时写 `gc_phase = Idle` + `notify_all()` 释放所有 mutator
+
+**接入点**：`corelib/gc.rs` 的 `builtin_gc_collect` / `builtin_gc_force_collect`
+（即 z42 `Std.GC.Collect()` / `ForceCollect()`）持 RAII guard 调
+`heap.collect_cycles()` / `force_collect()`。
+
+**v0 范围**（已记入 design.md Decisions）：
+
+| 维度 | v0 行为 | 后续 spec |
+|------|---------|----------|
+| JIT-mode safepoint | 不实施；JIT native code 无 Rust 插桩点 | `add-gc-safepoint-jit` |
+| Auto-threshold (`maybe_auto_collect`) | 仍 unguarded；要 trait 签名扩展但级联代价大 | `add-gc-safepoint-auto-threshold` |
+| 检查频率节流 | 每个后向 branch 都查；可加 counter-based throttle | `add-gc-safepoint-counter-throttling` |
+| 并发 mark/sweep | 仍单线程；safepoint 是前置条件 | `add-concurrent-gc`（Phase A 性能轨道）|
+
+多线程 workloads 推荐用显式 `Std.GC.Collect()` 触发；或将 `max_bytes` 配
+足够大以避免 auto-collect 在 contended 路径触发。
+
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate `Full` 覆盖。
 >
 > **2026-04-29 add-cycle-breaking-collector（Phase 3c 完成）**：环引用泄漏
