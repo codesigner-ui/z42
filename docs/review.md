@@ -470,3 +470,175 @@ ee_alloc_context {
 
 *文档作者：Claude（z42 项目 review 助手）*
 *核对范围：源码 commit `62899729`（2026-05-19 fix-array-default-init）+ 截至 2026-05-21 的 working tree*
+
+---
+
+# Part 3：标准库 Review（2026-05-21 补充）
+
+> 对比对象：CoreCLR [`runtime/src/libraries/`](../../../runtime/src/libraries/) (213+ packages) vs z42 [`src/libraries/`](../src/libraries/) (18 packages, 9986 LOC)
+>
+> 目的：找 z42 stdlib 的组织缺失，识别 CoreCLR 成熟模式哪些可以借鉴。
+
+## S1. CoreCLR libraries 关键组织模式
+
+| 模式 | 做法 | 关键收益 |
+|---|---|---|
+| **ref/ vs src/ 分离** | 每个 lib 含 `ref/<Name>.csproj` 只列签名 + `src/<Name>.csproj` 含实现 | 公共 API contract 跟 impl 解耦；breaking change 必须改 ref/，CI 强制 |
+| **Common/src/Interop** | `Interop.Brotli.cs` / `Interop.Unix.cs` / `Interop.Windows.cs` partial classes | 多平台 P/Invoke 集中；新平台 = 加一个 partial 文件 |
+| **Common/tests trait 合约** | `ICollection.Generic.Tests.cs` 一份，被 List / Queue / Dict tests `Link=` 进各自工程 | 50+ 接口契约测试一次写、所有实现共享 |
+| **Tier 0/1/2/3 分层** | CoreLib (0) → Runtime/Collections/Threading (1) → Json/Http (2) → Extensions (3) | 严格 DAG，CI 阻止循环依赖 |
+| **Multi-target via `<TargetFrameworks>`** | 一个 .csproj，`net8;net9;netstandard2.0;net462` | 一份源码跨 5 个 framework 出货 |
+| **Facade pattern** | `<IsPartialFacadeAssembly>true</IsPartialFacadeAssembly>` 把类型 forward 到 CoreLib | 公开 surface 稳定、impl 可下沉 |
+| **Shared helper code via `<Compile Link=>`** | `HexConverter.cs` / `ValueStringBuilder.cs` 物理一份，多个 lib 通过 link 引用 | 杜绝代码重复，比 import 还轻 |
+
+## S2. z42 stdlib 现状与对照
+
+### 已经做对的部分 ✅
+
+| z42 | CoreCLR 对应 | 注 |
+|---|---|---|
+| Topological ordering 在 [`z42.workspace.toml`](../src/libraries/z42.workspace.toml) 显式 + 注释解释 | CoreCLR build graph 同思路（DAG） | 已避免循环依赖 |
+| z42.core 作为 prelude（compiler+VM 自动注入，用户不能显式 dep） | `System.Private.CoreLib` 同地位 | 对齐 |
+| 17 个包按职责分（io / text / encoding / collections / json / regex / crypto / test 等） | System.* / Microsoft.Extensions.* 同思路 | 粒度合理 |
+| 测试与 src 分目录（`<pkg>/tests/`） | 每个 lib `tests/<Name>.Tests.csproj` | 对齐 |
+| Per-member artifacts 隔离（`artifacts/build/libraries/<member>/<profile>/`） | CoreCLR per-lib bin/obj | 对齐 |
+| `using Std.<sub>` 导入约定 | `using System.<sub>` | 对齐 |
+
+### 问题清单 ❌
+
+#### S2.1 z42.crypto **没有 README** ❌
+
+所有其他 17 个包都有 README，z42.crypto 缺失。z42.crypto 是最新加的包（2026-05-17 add-z42-crypto），归档时漏写。
+
+**修复**：1 个文件 ≤30 分钟。可以现在补。
+
+#### S2.2 z42.text 和 z42.regex 重复 ❌
+
+[`z42.text/src/Regex.z42`](../src/libraries/z42.text/src/Regex.z42) 是早期 stub，但 z42.regex 是独立包（770 LOC + 6 test files）实际实现。stub 留着是 **dead code**，可能误导新用户。
+
+**修复**：删除 `z42.text/src/Regex.z42`；如果 namespace 有冲突就在 z42.text README 里说明 "Regex moved to z42.regex"。
+
+#### S2.3 **没有共享 helper 代码层** ❌（最值得借鉴）
+
+CoreCLR 把 `HexConverter.cs` / `ValueStringBuilder.cs` / `ArrayPool.cs` 放在 [`Common/src/`](../../../runtime/src/libraries/Common/src/)，多个 lib 通过 `.csproj` 的 `<Compile Include="..." Link="..." />` 物理引用同一份代码 —— 不是 namespace import，是源码级共享。
+
+z42 现状：
+
+- z42.encoding 有 `Hex.z42`（hex encode/decode）
+- z42.crypto 也会需要 hex（已经 import 了 z42.encoding ✅）
+- 但**比 hex 更小的 helpers**（如 zero-fill buffer pattern、Utf8 byte-count、format 通用 padding）目前可能在多个包里各写各的
+
+**深层问题**：z42 没有"通用工具但又不值得做成 public stdlib API"的存放处。CoreCLR 的 `Common/src/` 解决这个 — 既不污染 public namespace 又能内部共享。
+
+**建议**：
+- 短期：识别 stdlib 中的代码重复（grep `(byte)0` patterns、`StringBuilder` 重复使用 patterns）
+- 长期：建立 `src/libraries/_internal/` 或在 z42.core 加 `internal namespace Std._Internal`（语言层加 `internal` 访问修饰符是单独 spec）
+
+#### S2.4 **没有 trait-based test commons** ❌
+
+CoreCLR `Common/tests/` 有 `ICollection.Generic.Tests.cs`、`IDictionary.Generic.Tests.cs` 等 ~30 个 trait test suite，每个有 ~50 个测试。所有实现（`List<T>`/`Queue<T>`/`SortedSet<T>`/`ConcurrentDictionary<T>`/...）通过 `.csproj` link 进来自动跑同一套合约测试。
+
+z42 现状：
+- z42.collections 的 Queue / Stack / LinkedList / SortedSet 各有 4 个独立测试文件，**互不共享**
+- z42.io 的 13 个文件、20 个测试都是 per-file 写的
+
+**建议**：
+- z42.test 加 `contracts/` 子目录：`ICollectionContract.z42` / `IEnumerableContract.z42` / `IComparableContract.z42`
+- 每个 contract 定义 ~20 个测试函数，take 一个工厂方法 `Func<T>` 创建被测对象
+- z42.collections.tests / z42.io.tests 等通过 import 调用 contract 跑测试
+- 收益：新增一个 collection 实现，测试代码 = 2 行（call contract 工厂）
+
+**估时**：3-5 天。**这是 stdlib 改造里 ROI 最高的一项**。
+
+#### S2.5 **没有 public API surface 文档** ⚠️
+
+CoreCLR `ref/` 是机器可读的 API contract，CI 阻止意外破坏。z42 没有等价物。最接近的是 README 里的"主要类型"列表，但不强制、不可机检。
+
+**短期建议**：
+- 每个包 README 标准化加 `## Public API` 段，列出所有 public class / method 签名
+- CI 加 lint：跑一遍 `z42c export <pkg>` 输出公共 API，diff 当前 vs README 段，不匹配则 fail
+- 长期：spec 一个 `z42c api-surface <pkg>` 命令，输出 IR 级签名（参考 cargo 的 `cargo public-api`）
+
+#### S2.6 **没有平台抽象 partial 命名约定** ⚠️ 推迟
+
+z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `Interop.Unix.cs` / `Interop.Windows.cs` partial-class 模式是**为未来移植做准备**，不是当前需求。
+
+**建议**：现在记笔记，等 z42.os / z42.io.fs Phase 3 落地时按 `Foo.Unix.z42` / `Foo.Windows.z42` 命名（即使现在只有 Unix 实现）。
+
+#### S2.7 命名一致性：可解释的不一致 ⚠️
+
+- `String.z42` (PascalCase) + `class String`
+- `int.z42` / `long.z42` / `bool.z42` (lowercase) + `struct <name>`
+
+这是已有设计决策（primitive-as-struct，String 例外因为是 reference type）。✅ 已文档化，不动。
+
+#### S2.8 README 质量不一 ⚠️
+
+- 高质量（70-108 行）：z42.core / z42.io / z42.uri / z42.cli / z42.diagnostics
+- 中等（45-67 行）：z42.collections / z42.text / z42.encoding / z42.regex
+- 极简（11-22 行）：z42.math / z42.time / z42.test
+- 缺失：z42.crypto
+
+**建议**：建立 [`docs/stdlib/README-template.md`](../docs/stdlib/) 模板，新包必须套。已有包按"用户访问频次"渐进补齐（z42.math / z42.time 用户用得多，应该详细一点）。
+
+## S3. z42 stdlib API 覆盖度对照 CoreCLR
+
+| 领域 | CoreCLR | z42 | 缺口 / 评估 |
+|---|---|---|---|
+| 基础类型（int / string / array / object） | System | z42.core | ✅ 对齐 |
+| 集合（List / Dict / Queue / Stack / ...） | System.Collections.Generic | z42.core (List/Dict) + z42.collections (others) | ✅ 基本覆盖；缺 ConcurrentDictionary（待 threading） |
+| 字符串处理 | System.Text | z42.text | ⚠️ z42.text 太单薄（97 LOC）；StringBuilder 在 z42.text，但 Format / Tokenize / Splitter 等都缺 |
+| 编码 | System.Text.Encoding / System.Buffers.Text | z42.encoding | ✅ Utf8 / Hex / Base64 都有 |
+| 数学 | System.Numerics | z42.math | ⚠️ 50 LOC，缺 BigInteger / Vector / Decimal / Complex |
+| 时间 | System.DateTime / System.TimeSpan | z42.time | ⚠️ 177 LOC；缺 timezone、calendar、duration arithmetic 完整 |
+| IO / 文件系统 | System.IO.* | z42.io | ✅ 13 文件，覆盖 console / file / process / dir |
+| JSON | System.Text.Json (1500+ LOC) | z42.json (736 LOC) | ⚠️ 缺 streaming reader/writer；当前是 DOM-only |
+| 加密 | System.Security.Cryptography (8000+ LOC) | z42.crypto (164 LOC, SHA-256 only) | ❌ 缺 HMAC / AES / RSA / ECDSA / CSPRNG / X.509（已有 deferred 列表） |
+| 网络 | System.Net.* | — | ❌ 整个 z42.net 不存在；roadmap P1 |
+| 反射 | System.Reflection | typeof 内嵌 | ⚠️ 仅 `typeof(T)` + `obj.GetType()`；缺 Type / FieldInfo / MethodInfo / Attribute scan |
+| 异步 | System.Threading.Tasks | — | ❌ async/await 是 L3 phase |
+| 序列化（XML/二进制） | System.Runtime.Serialization | — | ❌ 不在 roadmap |
+| 正则 | System.Text.RegularExpressions | z42.regex (770 LOC) | ✅ 已有 |
+| TOML | — | z42.toml (1157 LOC) | ⚠️ CoreCLR 没有；z42 stdlib over-scope（应该是第三方？） |
+| URI | System.Uri | z42.uri | ✅ 对齐 |
+| 多线程 | System.Threading | z42.threading (398 LOC) | ⚠️ 早期；Channel / Mutex / RwLock 有，但 ThreadPool / Tasks 缺 |
+| CLI 参数解析 | System.CommandLine (独立 NuGet) | z42.cli | ✅ 对齐（也是 stdlib 边缘） |
+| 诊断 / logging | System.Diagnostics + Microsoft.Extensions.Logging | z42.diagnostics (67 LOC) | ⚠️ 极简 |
+| 测试框架 | xUnit (独立) | z42.test | ✅ 自带是 z42 特色 |
+
+**结论**：
+- **核心覆盖** 7/9 OK，缺反射 + 异步（已知 L3）
+- **第二梯队**（数学 / 时间 / 字符串处理 / JSON）有缺口但 v0 够用
+- **第三梯队**（网络 / 高级加密 / 序列化）大缺口；roadmap 已列
+- **over-scope 检视**：z42.toml 在 stdlib 里有点重；CoreCLR TOML 是第三方。建议保持现状但加注 "stdlib first-party because z42 build-driver self-hosts on TOML config"
+
+## S4. 立即可做的小项目（每个 ≤1 天）
+
+1. ⚡ **补 z42.crypto README** — 列出 SHA-256 用法 + deferred 列表（HMAC / CSPRNG）
+2. ⚡ **删除 z42.text/src/Regex.z42 stub** — 误导性的死代码
+3. ⚡ **建立 README-template.md** — 用 z42.core/README.md 为蓝本
+4. ⚡ **z42.math / z42.time README 扩充** — 补齐到中等质量（40-50 行）
+5. ⚡ **stdlib API audit one-liner** — `z42c export <pkg>` 命令规划（spec → 实施分两阶段）
+
+## S5. 中期项目（每个 3-7 天）
+
+| 优先级 | 项目 | 估时 | 价值 |
+|---|---|---|---|
+| **S-P0** | **trait-based test commons** — z42.test 加 `ICollectionContract` / `IEnumerableContract`，所有 collections 复用 | 3-5 天 | 测试代码 -50%，新 collection 落地从 1 天 → 2 小时 |
+| **S-P1** | **internal shared helpers 层** — 识别 stdlib 中重复 patterns 提到 z42.core/_Internal 或新 internal-only package | 5-7 天 | 杜绝代码重复；维护成本下降 |
+| **S-P1** | **public API surface lint** — README `## Public API` 段 + CI diff lint | 2-3 天 | API breaking change 检测；对齐 ref/ 角色 |
+| **S-P2** | **z42.text 扩充** — Format / Tokenize / Splitter / Padding helpers | 5-7 天 | 减少业务代码里手写 StringBuilder |
+| **S-P2** | **z42.math BigInteger / Decimal** | 7-10 天 | 解锁 z42.crypto 后续工作（RSA 需 BigInteger） |
+| **S-P3** | **z42.io streaming JSON reader/writer** | 5-7 天 | 大文件场景；DOM-only 撑不住 |
+
+## S6. 长期项目（spec + ≥2 周）
+
+- **z42.net** — 完整网络栈（TCP / HTTP / TLS）→ 阻塞 web 类应用
+- **z42.crypto 完整版** — HMAC / AES / RSA / ECDSA / X.509 → 阻塞安全敏感应用
+- **z42.reflection** — Type / FieldInfo / MethodInfo / AttributeScan → 阻塞 ORM / serialization framework
+- **async / await** — L3 阶段；scheduler + Task<T>
+
+---
+
+*Part 3 作者：Claude（z42 review）*
+*调研日期：2026-05-21*
