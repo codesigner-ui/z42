@@ -23,7 +23,14 @@ Makefile    text eol=lf
 *.yml       text
 *.yaml      text
 *.txt       text
-*.z42       text
+
+# z42 source: force LF on all platforms. The compiler computes a SHA256 of
+# the raw source bytes (`SourceHash`) and embeds it into `.zpkg` metadata.
+# Windows `autocrlf=true` checkout converts LF → CRLF, hash drifts, and
+# `Z42.Tests.Zpkg.FormatGoldenTests.ByteEqual` fails (the committed `source.zpkg`
+# fixtures were generated from LF source). Forcing LF here keeps the hash
+# stable cross-platform.
+*.z42       text eol=lf
 
 # Cross-platform binary artifacts that must never be EOL-converted.
 *.zpkg      binary
