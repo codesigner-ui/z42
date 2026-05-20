@@ -842,7 +842,7 @@ RAII guard：
 
 | 维度 | v0 行为 | 后续 spec |
 |------|---------|----------|
-| JIT-mode safepoint | 不实施；JIT native code 无 Rust 插桩点 | `add-gc-safepoint-jit` |
+| JIT-mode safepoint | ✅ 已落地（add-gc-safepoint-jit 2026-05-21）：JIT translate 在 function entry / backward Br / BrCond / `Call` / `CallIndirect` 返回后共 4 类 site emit `jit_check_safepoint` helper call。trampoline 调用 `gc::safepoint::check_safepoint`，与 interp 协议完全对齐；JIT-mode multi-thread workloads 不再死锁 | — |
 | Auto-threshold (`maybe_auto_collect`) | ✅ Safepoint-aware（add-gc-safepoint-auto-threshold 2026-05-20）：trip 时 set `VmCore.needs_auto_collect: Arc<AtomicBool>` flag 而非 inline `collect_cycles()`；下个 `check_safepoint(ctx)` 用 `swap(false, AcqRel)` claim 后 safepoint-wrapped collect。trait 加默认 no-op `set_external_needs_collect_flag`；ArcMagrGC 内部 `Mutex<Option<Arc<AtomicBool>>>`，VmCore 构造后 wire。flag 未装时 fallback inline（GC 单测路径不变） | — |
 | 检查频率节流 | 每个后向 branch 都查；可加 counter-based throttle | `add-gc-safepoint-counter-throttling` |
 | 并发 mark/sweep | 仍单线程；safepoint 是前置条件 | `add-concurrent-gc`（Phase A 性能轨道）|

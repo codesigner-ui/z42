@@ -65,3 +65,90 @@ pub unsafe extern "C" fn jit_match_catch_type(
         0
     }
 }
+
+/// `jit_check_safepoint` (add-gc-safepoint-jit, 2026-05-21): JIT-emitted
+/// code calls this at each safepoint insertion site — function entry,
+/// backward Br terminators, BrCond terminators, and after Call /
+/// CallIndirect helpers return. Thin trampoline into the shared
+/// `gc::safepoint::check_safepoint` so the JIT path follows the same
+/// Idle / Requested / Marking protocol as interp.
+///
+/// `_frame` is unused (signature kept for ABI uniformity with the rest of
+/// the JIT helpers — every helper is `(frame, ctx, ...)`).
+///
+/// Safety: `ctx` must point to a valid `JitModuleCtx` whose `vm_ctx`
+/// dereferences to a live `VmContext`. The JIT entry path (`JitModule::run`)
+/// guarantees this for the duration of any compiled function call.
+#[no_mangle]
+pub unsafe extern "C" fn jit_check_safepoint(
+    _frame: *mut JitFrame,
+    ctx:    *const JitModuleCtx,
+) {
+    let vm_ctx = vm_ctx_ref(ctx);
+    crate::gc::safepoint::check_safepoint(vm_ctx);
+}
+
+#[cfg(test)]
+mod check_safepoint_tests {
+    //! add-gc-safepoint-jit (2026-05-21): inline tests for the
+    //! `jit_check_safepoint` trampoline. End-to-end JIT-compiled coverage
+    //! requires building a real JIT-compiled function via
+    //! `jit::compile_module` (heavy fixture); these tests cover the
+    //! trampoline ABI + the protocol routing.
+
+    use super::*;
+    use crate::vm_context::VmContext;
+    use std::sync::atomic::Ordering;
+
+    fn make_jit_ctx(vm_ctx: &VmContext) -> (JitModuleCtx, JitFrame) {
+        // module pointer dangles for the test — check_safepoint never
+        // dereferences it.
+        let jit_ctx = JitModuleCtx {
+            string_pool:      Vec::new(),
+            fn_entries:       std::collections::HashMap::new(),
+            fn_entries_by_id: Vec::new(),
+            module:           std::ptr::null(),
+            vm_ctx:           vm_ctx as *const VmContext as *mut VmContext,
+        };
+        (jit_ctx, JitFrame::new(0, &[]))
+    }
+
+    #[test]
+    fn jit_check_safepoint_idle_is_no_op_fast_path() {
+        // Idle phase + no pending auto-collect: trampoline should return
+        // immediately without touching gc_cycles.
+        let ctx = VmContext::new();
+        let cycles_before = ctx.heap().stats().gc_cycles;
+        let (jit_ctx, mut frame) = make_jit_ctx(&ctx);
+        unsafe {
+            jit_check_safepoint(
+                &mut frame as *mut JitFrame,
+                &jit_ctx as *const JitModuleCtx,
+            );
+        }
+        assert_eq!(ctx.heap().stats().gc_cycles, cycles_before,
+            "Idle path should be a no-op");
+    }
+
+    #[test]
+    fn jit_check_safepoint_drains_pending_auto_collect() {
+        // Pre-set the needs_auto_collect flag; trampoline should reach
+        // gc::safepoint::check_safepoint which atomically swaps it and
+        // runs a stop-the-world collect.
+        let ctx = VmContext::new();
+        let cycles_before = ctx.heap().stats().gc_cycles;
+        ctx.core.needs_auto_collect.store(true, Ordering::Release);
+
+        let (jit_ctx, mut frame) = make_jit_ctx(&ctx);
+        unsafe {
+            jit_check_safepoint(
+                &mut frame as *mut JitFrame,
+                &jit_ctx as *const JitModuleCtx,
+            );
+        }
+        assert!(!ctx.core.needs_auto_collect.load(Ordering::Acquire),
+            "trampoline should have drained the flag");
+        assert!(ctx.heap().stats().gc_cycles > cycles_before,
+            "trampoline should have run a real collect");
+    }
+}

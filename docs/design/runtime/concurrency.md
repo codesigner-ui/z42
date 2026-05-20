@@ -41,9 +41,9 @@
 3. ~~`add-sync-primitives`~~ ✅ 已落地（2026-05-20）—— `Std.Threading.Mutex<T>` / `Channel<T>` + ChannelDisconnectedException + GcRef::borrow blocking 修复
 4. ~~`add-gc-safepoint`~~ ✅ 已落地（2026-05-20）—— interp safepoint 协议 + stop-the-world wrapper
 5. ~~`add-gc-safepoint-auto-threshold`~~ ✅ 已落地（2026-05-20）—— auto-threshold 路径也走 safepoint，关闭 v0 race window
-6. `add-concurrent-gc` — Phase A 性能轨道
-7. `add-spawn-syntax` — L3，本文档 §3.5
-8. `add-gc-safepoint-jit` — JIT-mode safepoint（v0 interp-only 已覆盖大多数场景）
+6. ~~`add-gc-safepoint-jit`~~ ✅ 已落地（2026-05-21）—— JIT translate 在 function entry / backward branch / Call return 等 4 个 site emit `jit_check_safepoint` helper call，与 interp 完全对齐
+7. `add-concurrent-gc` — Phase A 性能轨道
+8. `add-spawn-syntax` — L3，本文档 §3.5
 
 ---
 

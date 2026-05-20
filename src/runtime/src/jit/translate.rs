@@ -298,6 +298,14 @@ pub fn translate_function(
     let hr_load_fn_cached = imp!(helper_ids.load_fn_cached);
     let hr_default_of     = imp!(helper_ids.default_of);
     let hr_convert        = imp!(helper_ids.convert);
+    // add-gc-safepoint-jit (2026-05-21): cooperative GC safepoint trampoline.
+    let hr_check_safepoint = imp!(helper_ids.check_safepoint);
+
+    // add-gc-safepoint-jit (2026-05-21): function-entry safepoint check.
+    // A spawned worker that enters JIT-compiled code immediately after
+    // spawn must respect a pending GC pause before touching any roots.
+    // Idle fast path is one Mutex lock + one enum compare (~10ns).
+    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
 
     // ── Translate each z42 block ──────────────────────────────────────────────
     for (block_idx, z42_block) in z42_func.blocks.iter().enumerate() {
@@ -630,6 +638,10 @@ pub fn translate_function(
                     let col_val  = builder.ins().iconst(types::I32, col as i64);
                     let inst = builder.ins().call(hr_call, &[frame_val, ctx_val, d, mid_val, np, nl, ap, al, line_val, col_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    // add-gc-safepoint-jit (2026-05-21): post-Call safepoint
+                    // — long callees may yield to a GC request that arrived
+                    // partway through; the caller catches it on return.
+                    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
                 }
                 Instruction::Builtin { dst, name, args } => {
                     // formalize-jit-method-token Phase 2 (2026-05-08): emit
@@ -859,6 +871,9 @@ pub fn translate_function(
                     let inst = builder.ins().call(hr_call_indirect,
                         &[frame_val, ctx_val, d, c, ap, al, line_val, col_val]);
                     let ret  = builder.inst_results(inst)[0]; check!(ret);
+                    // add-gc-safepoint-jit (2026-05-21): post-CallIndirect
+                    // safepoint, see Instruction::Call for rationale.
+                    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
                 }
             }
         }
@@ -878,9 +893,21 @@ pub fn translate_function(
             Terminator::Br { label } => {
                 let target = z42_func.blocks.iter().position(|b| &b.label == label)
                     .expect("Br label not found");
+                // add-gc-safepoint-jit (2026-05-21): backward branch =
+                // loop back-edge; check safepoint so long-running JIT
+                // loops park promptly when GC requests a pause.
+                if target <= block_idx {
+                    builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+                }
                 builder.ins().jump(cl_blocks[target], &[]);
             }
             Terminator::BrCond { cond, true_label, false_label } => {
+                // add-gc-safepoint-jit (2026-05-21): BrCond's runtime target
+                // isn't known until cond is evaluated; check unconditionally.
+                // Idle fast path is cheap; this catches loops where the
+                // back-edge is a BrCond rather than a Br.
+                builder.ins().call(hr_check_safepoint, &[frame_val, ctx_val]);
+
                 let cv   = ri!(*cond);
                 let inst = builder.ins().call(hr_get_bool, &[frame_val, ctx_val, cv]);
                 let b    = builder.inst_results(inst)[0];

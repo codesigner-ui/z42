@@ -51,6 +51,10 @@ pub struct HelperIds {
     /// catch-by-generic-type (2026-05-06): peek at pending exception's class +
     /// subclass walk vs `target` string. Returns 1 on match, 0 otherwise.
     pub match_catch_type: FuncId,
+    /// add-gc-safepoint-jit (2026-05-21): cooperative GC safepoint check
+    /// trampoline. Emitted by translate.rs at function entry, backward
+    /// branches, and post-Call sites.
+    pub check_safepoint: FuncId,
     // arith
     pub add:            FuncId,
     pub sub:            FuncId,
@@ -131,6 +135,7 @@ pub fn register_symbols(builder: &mut JITBuilder) {
     reg!("jit_throw",         control::jit_throw);
     reg!("jit_install_catch", control::jit_install_catch);
     reg!("jit_match_catch_type", control::jit_match_catch_type);
+    reg!("jit_check_safepoint",  control::jit_check_safepoint);
     // arith
     reg!("jit_add",           arith::jit_add);
     reg!("jit_sub",           arith::jit_sub);
@@ -275,6 +280,8 @@ pub fn declare_imports(jit: &mut JITModule) -> Result<HelperIds> {
         install_catch: decl!("jit_install_catch", [ptr, ptr, i32t],                       []),
         // jit_match_catch_type(frame, ctx, target_ptr, target_len) -> i8
         match_catch_type: decl!("jit_match_catch_type", [ptr, ptr, ptr, i64t],            [i8t]),
+        // add-gc-safepoint-jit (2026-05-21): jit_check_safepoint(frame, ctx) -> void
+        check_safepoint:  decl!("jit_check_safepoint",  [ptr, ptr],                       []),
         // jit_load_fn(frame, ctx, dst, name_ptr, name_len) -> u8
         load_fn:        decl!("jit_load_fn",       [ptr, ptr, i32t, ptr, i64t],                  [i8t]),
         // jit_mk_clos(frame, ctx, dst, name_ptr, name_len, caps_ptr, caps_len, stack_alloc:u8) -> u8
