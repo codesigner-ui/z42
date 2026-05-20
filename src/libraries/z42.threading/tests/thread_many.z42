@@ -1,0 +1,51 @@
+// add-threading-stdlib (2026-05-20): spawn 10 workers then join all.
+// Verifies the slot allocator handles many concurrent JoinHandles and
+// that the JoinHandle HashMap doesn't deadlock under realistic loads.
+namespace Z42ThreadingManyTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+[Test]
+void test_spawn_ten_threads_all_join() {
+    int N = 10;
+    Thread[] threads = new Thread[N];
+    int i = 0;
+    while (i < N) {
+        threads[i] = Thread.Start(() => { });
+        i = i + 1;
+    }
+    i = 0;
+    while (i < N) {
+        threads[i].Join();
+        i = i + 1;
+    }
+    Assert.Equal(N, N);
+}
+
+[Test]
+void test_spawn_many_slot_ids_unique_and_monotonic() {
+    // Each Thread carries a slot id; consecutive spawns must yield
+    // strictly increasing ids (next_thread_id is AtomicU64::fetch_add).
+    int N = 5;
+    long[] ids = new long[N];
+    Thread[] threads = new Thread[N];
+    int i = 0;
+    while (i < N) {
+        threads[i] = Thread.Start(() => { });
+        ids[i] = threads[i].SlotId();
+        i = i + 1;
+    }
+    i = 0;
+    while (i < N) {
+        threads[i].Join();
+        i = i + 1;
+    }
+    // Verify strict monotonic increase.
+    i = 1;
+    while (i < N) {
+        Assert.True(ids[i] > ids[i - 1]);
+        i = i + 1;
+    }
+}

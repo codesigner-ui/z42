@@ -1,0 +1,77 @@
+namespace Std.Threading;
+
+using Std;
+
+// 2026-05-20 add-threading-stdlib: OS-thread spawn / join facade.
+//
+// Backed by `__thread_spawn` / `__thread_join` builtins which keep the
+// `std::thread::JoinHandle` in `VmCore.threads` keyed by a monotonic
+// slot id. This class carries only the slot id, mirroring the pattern
+// of [ProcessHandle](../../z42.io/src/ProcessHandle.z42).
+//
+// Usage:
+//   var t = Thread.Start(() => {
+//       Console.WriteLine("hello from worker");
+//   });
+//   t.Join();
+//
+// Errors:
+//   - Worker `throw new SomethingException(...)` → `Join()` raises
+//     `Std.ThreadException` whose `Message` carries the worker's
+//     formatted exception text
+//   - Rust panic in the worker → `Join()` raises `ThreadException("thread panicked")`
+//   - Second `Join()` on the same Thread → `ThreadException("thread already joined")`
+public class Thread {
+    private long _slot;
+
+    // Constructor is private — users go through `Start(...)`. The slot id
+    // is allocated by `__thread_spawn` and only the runtime knows it.
+    private Thread(long slot) {
+        this._slot = slot;
+    }
+
+    // Spawn a worker thread running `action`. Returns a Thread handle whose
+    // `Join()` waits for the worker to finish. The Action runs with a
+    // fresh per-thread `pending_exception` / `call_stack` / `func_ref_slots`
+    // but shares the parent's static fields, GC heap, lazy-loaded zpkgs,
+    // and native libraries (`VmCore`).
+    public static Thread Start(Action action) {
+        long slot = ThreadNative.Spawn(action);
+        return new Thread(slot);
+    }
+
+    // Block until the worker finishes. Idempotence:
+    //   - Worker returned normally → returns void
+    //   - Worker threw → throws `Std.ThreadException`
+    //   - Already joined → throws `Std.ThreadException("thread already joined")`
+    public void Join() {
+        object[] result = ThreadNative.Join(this._slot);
+        long kind = (long)result[0];
+        if (kind == 1) {
+            string msg = (string)result[1];
+            throw new ThreadException(msg);
+        }
+        if (kind == 2) {
+            throw new ThreadException("thread already joined");
+        }
+        // kind == 0 — worker completed normally; nothing to return.
+    }
+
+    // The internal slot id — exposed read-only for diagnostics. Users
+    // should not depend on the numeric value.
+    public long SlotId() {
+        return this._slot;
+    }
+}
+
+// Native binding sink. Keeps the [Native] extern signatures isolated so
+// the public `Thread` class stays free of cross-cutting `extern`
+// declarations. Mirrors `__thread_spawn` / `__thread_join` in
+// src/runtime/src/corelib/threading.rs.
+public static class ThreadNative {
+    [Native("__thread_spawn")]
+    public static extern long Spawn(object action);
+
+    [Native("__thread_join")]
+    public static extern object[] Join(long slotId);
+}

@@ -8,16 +8,26 @@
 
 ---
 
-## VmContext / VmCore —— 运行时状态归口（2026-04-28 + add-multithreading-foundation Phase 1-3, 2026-05-20）
+## VmContext / VmCore —— 运行时状态归口（2026-04-28 + add-multithreading-foundation Phase 1-3 + add-threading-stdlib, 2026-05-20）
 
 宿主代码运行 VM 的标准流程：
 
 ```rust
-let ctx = VmContext::new();
+let ctx = VmContext::with_module(final_module);    // production: 把 Module 装入 VmCore
 ctx.install_lazy_loader_with_deps(libs_dir, main_pool_len, declared, loaded);
-let vm = Vm::new(module, ExecMode::Interp);
-vm.run(&mut ctx, hint)?;
+let vm = Vm::new(ExecMode::Interp);                 // Vm 不再持 Module
+vm.run(&ctx, hint)?;
 ```
+
+### VmContext 构造 entry —— 两个 + 一个内部
+
+| 方法 | 用途 | 备注 |
+|------|------|------|
+| `VmContext::with_module(module: Module) -> Pin<Box<Self>>` | 生产入口；构造新 VmCore + 把 `Arc<Module>` 装入 `VmCore.module` | `__thread_spawn` worker 需要 `VmCore.module = Some` 来 dispatch；test 路径若不需要 module 走 `new()` |
+| `VmContext::new() -> Pin<Box<Self>>` | 测试入口；构造新 VmCore + `module = None` | 单测大量用（heap / static_fields / corelib 单测均不需要真 Module） |
+| `VmContext::new_with_core(core: Arc<VmCore>) -> Pin<Box<Self>>` | spawn 入口；**复用现有 VmCore**，仅构造 per-thread 字段 + register self 到 `vm_contexts` | `__thread_spawn` worker 通过此构造，让 worker 看见父 VmCore 的 static_fields / heap / lazy_loader / native_libs |
+
+`__thread_spawn`（[corelib/threading.rs](../../../src/runtime/src/corelib/threading.rs)）流程：拿到调用者 `ctx.core` 的 `Arc::clone` → `std::thread::spawn` → worker 内 `VmContext::new_with_core(core)` 构造 worker ctx → `interp::exec_function` dispatch。worker 的 per-thread 字段（pending_exception / call_stack / func_ref_slots）私有；通过 `vm_contexts` 注册让 GC scanner 看见 worker 自己的 roots。
 
 ### VmCore：跨线程共享状态
 
@@ -31,6 +41,9 @@ vm.run(&mut ctx, hint)?;
 - `pinned_owned_buffers: Mutex<HashMap<u64, Box<[u8]>>>` — `Value::PinnedView` 的 owned 缓冲（spec C10）
 - `processes: Mutex<HashMap<u64, ProcessSlot>>` — `Std.IO.Process` 子进程注册表
 - `heap: Box<dyn MagrGC>` — GC 子系统接口（默认 ArcMagrGC 后端）
+- `module: Option<Arc<Module>>` — 用户编译后的 Module，跨线程共享（add-threading-stdlib 2026-05-20）；测试路径 `None`，生产路径 `Some(Arc::new(module))`
+- `threads: Mutex<HashMap<u64, JoinHandle<Result<()>>>>` — `Std.Threading.Thread` 的 JoinHandle slot table（add-threading-stdlib 2026-05-20）；`__thread_spawn` 插入，`__thread_join` take-out 后 join
+- `next_thread_id: AtomicU64` — Thread slot id 计数器（同 processes 模式，单调递增）
 
 `VmCore` 满足 `Send + Sync`（编译期 assertion 在 `src/runtime/src/gc/arc_heap_tests/send_sync.rs`）。
 

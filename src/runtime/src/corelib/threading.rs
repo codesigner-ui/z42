@@ -150,7 +150,12 @@ fn run_spawned_action(
     match outcome {
         ExecOutcome::Returned(_) => Ok(()),
         ExecOutcome::Thrown(val) => {
-            let msg = crate::corelib::convert::value_to_str(&val);
+            // Prefer the Exception.Message field so the user-visible error
+            // text matches what `throw new ...Exception("msg")` set. Fall
+            // back to value_to_str for non-Exception thrown values (rare —
+            // z42 type-checker normally requires Exception subclasses).
+            let msg = crate::exception::read_message(&val, module)
+                .unwrap_or_else(|| crate::corelib::convert::value_to_str(&val));
             bail!("{msg}")
         }
     }

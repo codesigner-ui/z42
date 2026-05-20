@@ -134,9 +134,9 @@ void Main() {
     Console.WriteLine("  分发版打包用 ./scripts/package.sh.");
 }
 
-// 17-element list matching bash LIBS ordering（workspace topological + bash heredoc 顺序）。
+// 18-element list matching bash LIBS ordering（workspace topological + bash heredoc 顺序）。
 string[] _stdlibList() {
-    string[] libs = new string[17];
+    string[] libs = new string[18];
     libs[0]  = "z42.core";
     libs[1]  = "z42.io";
     libs[2]  = "z42.io.binary";
@@ -154,6 +154,7 @@ string[] _stdlibList() {
     libs[14] = "z42.regex";
     libs[15] = "z42.cli";
     libs[16] = "z42.crypto";
+    libs[17] = "z42.threading";
     return libs;
 }
 
@@ -178,7 +179,8 @@ string _indexJson() {
     s = s + "  \"Std.Diagnostics\": \"z42.diagnostics.zpkg\",\n";
     s = s + "  \"Std.Regex\":       \"z42.regex.zpkg\",\n";
     s = s + "  \"Std.Cli\":         \"z42.cli.zpkg\",\n";
-    s = s + "  \"Std.Crypto\":      \"z42.crypto.zpkg\"\n";
+    s = s + "  \"Std.Crypto\":      \"z42.crypto.zpkg\",\n";
+    s = s + "  \"Std.Threading\":   \"z42.threading.zpkg\"\n";
     s = s + "}\n";
     return s;
 }

@@ -1,0 +1,41 @@
+// add-threading-stdlib (2026-05-20): worker writes to a static field that
+// the main thread reads after Join. Verifies that `static_fields` is
+// `VmCore`-scoped (shared by both VmContexts) and that the Mutex around
+// it serialises cross-thread writes safely.
+namespace Z42ThreadingSharedStaticTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+public static class Shared {
+    public static long Value;
+}
+
+[Test]
+void test_worker_write_visible_after_join() {
+    Shared.Value = 0;
+    Thread t = Thread.Start(() => {
+        Shared.Value = 42;
+    });
+    t.Join();
+    Assert.Equal((long)42, Shared.Value);
+}
+
+[Test]
+void test_two_workers_then_join_sum_observed() {
+    // Sequential spawn-join-spawn-join — easy invariant: each worker
+    // observes the post-write state of the previous one through the
+    // shared static field. Concurrent writes are covered by sync
+    // primitives in a follow-up spec (`add-sync-primitives`).
+    Shared.Value = 0;
+    Thread t1 = Thread.Start(() => {
+        Shared.Value = Shared.Value + 10;
+    });
+    t1.Join();
+    Thread t2 = Thread.Start(() => {
+        Shared.Value = Shared.Value + 20;
+    });
+    t2.Join();
+    Assert.Equal((long)30, Shared.Value);
+}

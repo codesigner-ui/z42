@@ -59,6 +59,7 @@
 - `z42.diagnostics`（2026-05-15 add-z42-diagnostics）— `Log` static facade + 5 level (TRACE/DEBUG/INFO/WARN/ERROR)，stderr 输出。详 [diagnostics.md](diagnostics.md)
 - `z42.regex`（2026-05-16 add-z42-regex）— RFC 子集 regex parser + backtracking 匹配引擎；Compile/IsMatch/Find/FindAll/Replace/Split。详 [regex.md](regex.md)
 - `z42.cli`（2026-05-16 add-z42-cli）— ArgParser + ParseResult + auto -h/--help；Phase 0 of shell-script → z42 self-hosting。详 [cli.md](cli.md)
+- `z42.threading`（2026-05-20 add-threading-stdlib）— `Std.Threading.Thread` / `Std.ThreadException`：OS 线程级 `Start(Action)` / `Join()`，跨线程 exception 经 `ThreadException.Message` 透传。底层 `__thread_spawn` / `__thread_join` builtin 接 `VmCore.threads` slot table。同步原语（`Mutex<T>` / `Channel<T>`）由后续 spec `add-sync-primitives` 引入。
 
 ---
 
@@ -66,13 +67,14 @@
 
 | 包 | C# 对标 | Rust 对标 | 层级 | extern | 阻塞依赖 |
 |----|---------|----------|------|--------|---------|
-| **z42.threading** | `System.Threading`（`Thread` / `Mutex` / `Monitor` / `Channel`）| `std::thread` / `std::sync` / `crossbeam` | L2 | 通过 Platform HAL | **roadmap A6: Value `Rc<RefCell>` → `Arc<Mutex>`** + GC `Send` 设计；与并发模型一并 |
+| ~~z42.threading~~ | ~~`System.Threading.Thread`~~ | ~~`std::thread`~~ | ~~L2~~ | — | **✅ 已落地 2026-05-20 add-threading-stdlib**（`Thread.Start/Join` + `ThreadException`，移动到 P0 已落地段）。同步原语 `Mutex<T>` / `Channel<T>` 由后续 spec `add-sync-primitives` 引入；保留 P1 行作为该后续 spec 占位见下行 |
+| **z42.threading.sync**（占位）| `System.Threading.Mutex` / `Channel<T>` / `Monitor` | `std::sync::Mutex` / `std::sync::mpsc::channel` / `crossbeam` | L2 | — | 建在 z42.threading 之上；待 `add-sync-primitives` spec |
 | **z42.async** | `Task` + `async/await` + `CancellationToken` | `tokio` / `async-std` | L3 | 部分 native | **L3 async/await 语法**（roadmap L3）；标准库需先有 z42.threading 同步原语 |
 | **z42.net** | `System.Net.Sockets` / `System.Net.Http` | `std::net` + `hyper` / `reqwest` | L2 | 走 Tier1 C ABI（系统 socket 或 libcurl） | 先 TCP/UDP（同步）；HTTP client 留次级 |
 | **z42.crypto** | `System.Security.Cryptography` | `ring` / `sha2` / `aes` | L2 | FFI（libsodium / OpenSSL 最快）| 哈希（SHA-2/3）+ CSPRNG + 对称加密 |
 
 **起步排期**：
-- L2 末 / L3 初（A6 改造完成后）：`z42.regex` → `z42.threading` → `z42.crypto` → `z42.net`
+- L2 末 / L3 初（A6 改造完成后）：`z42.regex` → ~~`z42.threading`~~（已落地）→ `z42.crypto` → `z42.net`
 - L3 中（async 语法就绪后）：`z42.async`
 
 ---
@@ -116,12 +118,19 @@
 - 包系统库（libsodium / zlib / PCRE2）比纯脚本实现快 10×+，且代码量少
 - 但需先 P0 解决"基础"（时间、文件、编码），再用 FFI 包系统库锦上添花
 
-### 为什么 z42.threading 排 P1 而非 P0
+### 为什么 z42.threading 原本排 P1（已于 2026-05-20 提前落地）
 
 - 单线程脚本 + GC 已能跑大多数应用（Python / Node.js 单线程也能撑住主流场景）
 - 多线程依赖 Value 类型 `Rc<RefCell>` → `Arc<Mutex>` 改造（roadmap A6），
   这是底层架构变更，不能轻量提前
 - 延后 P0 等基础齐了一并设计，避免 API 反复
+
+**实际落地路径**（2026-05-20）：A6 改造拆成三个独立 spec 顺次完成 —
+`add-multithreading-foundation`（Value/GC backing → `Arc<Mutex>`）→
+`add-vmcontext-registry`（GC 扫描跨 VmContext）→
+`add-threading-stdlib`（`Std.Threading.Thread`），让 P1 第一品提前到位。
+P1 剩余条目（`z42.threading.sync` / `z42.crypto` / `z42.net` / `z42.async`）
+照原计划推进。
 
 ---
 

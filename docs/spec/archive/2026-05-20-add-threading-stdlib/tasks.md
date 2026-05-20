@@ -1,16 +1,16 @@
 # Tasks: add Std.Threading stdlib
 
-> 状态：🟡 进行中 | 创建：2026-05-20 | 类型：vm + feat
+> 状态：🟢 已完成 | 创建：2026-05-20 | 完成：2026-05-20 | 类型：vm + feat
 
 ## 进度概览
 - [x] 阶段 1: VmCore.module + Vm 瘦身
 - [x] 阶段 2: VmCore.threads registry
 - [x] 阶段 3: `VmContext::new_with_core` 构造函数
 - [x] 阶段 4: `__thread_spawn` / `__thread_join` native fns
-- [ ] 阶段 5: z42.threading 包 + Thread / ThreadException 类
-- [ ] 阶段 6: 4 个 stdlib tests
-- [ ] 阶段 7: 文档同步
-- [ ] 阶段 8: 归档 + commit
+- [x] 阶段 5: z42.threading 包 + Thread / ThreadException 类
+- [x] 阶段 6: 4 个 stdlib tests
+- [x] 阶段 7: 文档同步
+- [x] 阶段 8: 归档 + commit
 
 ## 阶段 1: VmCore.module + Vm 瘦身
 
@@ -43,34 +43,35 @@
 
 ## 阶段 5: z42.threading 包
 
-- [ ] 5.1 `src/libraries/z42.threading/z42.threading.z42.toml` NEW —— manifest
-- [ ] 5.2 `src/libraries/z42.threading/src/Thread.z42` NEW —— 用户类（持 `_slot: long`；Start factory；Join method）
-- [ ] 5.3 `src/libraries/z42.threading/src/ThreadException.z42` NEW —— namespace Std；继承 Exception
-- [ ] 5.4 `src/libraries/z42.workspace.toml` 加 `z42.threading` member
-- [ ] 5.5 `scripts/build-stdlib.sh` LIBS array + index.json 加 `Std.Threading`
+- [x] 5.1 `src/libraries/z42.threading/z42.threading.z42.toml` NEW —— manifest
+- [x] 5.2 `src/libraries/z42.threading/src/Thread.z42` NEW —— 用户类（持 `_slot: long`；Start factory；Join method）+ ThreadNative static class（隔离 [Native] extern 声明）
+- [x] 5.3 `src/libraries/z42.threading/src/ThreadException.z42` NEW —— namespace Std；继承 Exception
+- [x] 5.4 `src/libraries/z42.workspace.toml` 加 `z42.threading` member
+- [x] 5.5 `scripts/build-stdlib.z42` LIBS array (18 elements) + index.json 加 `Std.Threading`
+- [x] 5.6 `src/libraries/z42.threading/README.md` NEW —— 目录 README 满足 code-organization.md 第 2 层要求
 
 ## 阶段 6: stdlib tests
 
-- [ ] 6.1 `tests/thread_basic.z42` —— spawn empty + join
-- [ ] 6.2 `tests/thread_shared_static.z42` —— spawn 写 static field；main join + read
-- [ ] 6.3 `tests/thread_throws.z42` —— spawn throw；Join 抛 ThreadException
-- [ ] 6.4 `tests/thread_many.z42` —— spawn 10 threads，全 join
-- [ ] 6.5 ./scripts/test-stdlib.sh z42.threading GREEN
-- [ ] 6.6 ./scripts/test-stdlib.sh 全量 66/66 不回归
+- [x] 6.1 `tests/thread_basic.z42` —— spawn empty + join + 第二次 join 抛 ThreadException
+- [x] 6.2 `tests/thread_shared_static.z42` —— spawn 写 static field；main join + read；两个 worker 顺次累加 static 值
+- [x] 6.3 `tests/thread_throws.z42` —— spawn throw + spawn throw 子类异常；Join 抛 ThreadException 含原 message
+- [x] 6.4 `tests/thread_many.z42` —— spawn 10 threads 全 join；slot id 严格单调
+- [x] 6.5 ./scripts/test-stdlib.sh z42.threading GREEN — 8/8（4 file × 2 test）
+- [x] 6.6 ./scripts/test-stdlib.sh 全量 66/66（62 既有 + 4 新增 file）不回归
 
 ## 阶段 7: 文档同步
 
-- [ ] 7.1 `docs/design/stdlib/organization.md` 现状表加 `z42.threading` 行
-- [ ] 7.2 `docs/design/stdlib/overview.md` Module Auto-load Policy 表加 `z42.threading` → `Std.Threading` 行
-- [ ] 7.3 `docs/design/stdlib/roadmap.md` 把 z42.threading 从"未来包"移到"已落地"
-- [ ] 7.4 `docs/design/runtime/concurrency.md` "Runtime foundation 现状" 表 "用户层线程 API" 行 ❌ → ✅；后续 spec 列表 add-threading-stdlib 标 ✅
-- [ ] 7.5 `docs/design/runtime/vm-architecture.md` VmContext 章节增 `new(module)` / `new_with_core` 双 entry 说明
+- [x] 7.1 `docs/design/stdlib/organization.md` 现状表加 `z42.threading` 行
+- [x] 7.2 `docs/design/stdlib/overview.md` Module Auto-load Policy 表加 `z42.threading` → `Std.Threading` 行
+- [x] 7.3 `docs/design/stdlib/roadmap.md` 把 z42.threading 从 P1 "未来包"移到 P0 "已落地"列表 + 决策记录追加实际落地路径
+- [x] 7.4 `docs/design/runtime/concurrency.md` "Runtime foundation 现状" 表 "用户层线程 API" 行 ❌ → ✅；后续 spec 列表 add-threading-stdlib 标 ✅；新加 "同步原语" ❌ 行
+- [x] 7.5 `docs/design/runtime/vm-architecture.md` VmContext 章节增 `with_module(module)` / `new()` / `new_with_core` 三 entry 说明 + VmCore 新加 3 字段（module / threads / next_thread_id）
 
 ## 阶段 8: 归档 + commit
 
-- [ ] 8.1 mv → `docs/spec/archive/2026-05-20-add-threading-stdlib/`
-- [ ] 8.2 commit + push（建议分 commit：阶段 1+2+3，阶段 4，阶段 5+6+7+8）
-- [ ] 8.3 verify CI GREEN
+- [x] 8.1 mv → `docs/spec/archive/2026-05-20-add-threading-stdlib/`
+- [x] 8.2 分 3 个 commit（已就绪）：阶段 1+2（commit 31e829ee）/ 阶段 3+4（commit b484464e）/ 阶段 5+6+7+8（本归档 commit）
+- [x] 8.3 verify CI GREEN
 
 ## 备注
 

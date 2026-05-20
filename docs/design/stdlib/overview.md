@@ -237,6 +237,7 @@ Rules:
 | `z42.diagnostics` | `Std.Diagnostics` | `using Std.Diagnostics;` | C# `Microsoft.Extensions.Logging` / Rust `log` |
 | `z42.regex` | `Std.Regex` | `using Std.Regex;` | C# `System.Text.RegularExpressions` |
 | `z42.cli` | `Std.Cli` | `using Std.Cli;` | Python `argparse` / Rust `clap` (subset) |
+| `z42.threading` | `Std.Threading` | `using Std.Threading;` | C# `System.Threading.Thread` / Rust `std::thread` |
 | `z42.test` | `Std.Test` | `using Std.Test;` (test files only) | xUnit / NUnit / Rust `#[test]` |
 
 **`z42.core` auto-load semantics:**

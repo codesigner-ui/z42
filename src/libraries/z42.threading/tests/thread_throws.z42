@@ -1,0 +1,42 @@
+// add-threading-stdlib (2026-05-20): worker throws an exception; main
+// thread's Join() observes a Std.ThreadException whose Message carries
+// the worker exception's formatted text (Decision 5 in design.md).
+namespace Z42ThreadingThrowsTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+[Test]
+void test_worker_throw_propagates_as_thread_exception() {
+    Thread t = Thread.Start(() => {
+        throw new Exception("boom from worker");
+    });
+    bool caught = false;
+    try {
+        t.Join();
+    } catch (ThreadException e) {
+        caught = true;
+        // Worker's message must surface in the wrapping ThreadException.
+        Assert.True(e.Message.Contains("boom from worker"));
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_worker_throw_subclass_propagates_as_thread_exception() {
+    // The worker throws a typed subclass; v0 doesn't preserve the original
+    // type across threads (Decision 5 deferred fidelity), but the message
+    // still surfaces via ThreadException.Message.
+    Thread t = Thread.Start(() => {
+        throw new ArgumentException("bad input");
+    });
+    bool caught = false;
+    try {
+        t.Join();
+    } catch (ThreadException e) {
+        caught = true;
+        Assert.True(e.Message.Contains("bad input"));
+    }
+    Assert.True(caught);
+}

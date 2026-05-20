@@ -1,0 +1,21 @@
+namespace Std;
+
+// 2026-05-20 add-threading-stdlib: cross-thread exception envelope.
+//
+// Thrown by `Std.Threading.Thread.Join()` when the worker:
+//   - threw a z42 exception (Message carries the worker's exception text)
+//   - hit a Rust-level panic (Message = "thread panicked")
+//   - is being joined a second time (Message = "thread already joined")
+//
+// The worker's original exception type and stack trace do **not** cross
+// the thread boundary in v0 — only the formatted Message string. Restoring
+// type / trace fidelity is deferred to a follow-up (`add-sync-primitives`
+// or its successor); the Message keeps the diagnostic usable in the
+// meantime.
+public class ThreadException : Exception {
+    public ThreadException(string message) : base(message) {}
+
+    override string ToString() {
+        return "ThreadException: " + this.Message;
+    }
+}

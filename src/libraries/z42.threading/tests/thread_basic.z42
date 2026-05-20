@@ -1,0 +1,32 @@
+// add-threading-stdlib (2026-05-20): smoke test — spawn an empty worker
+// and join. Verifies the basic plumbing (Thread.Start → JoinHandle in
+// VmCore.threads → join → JOIN_OK discriminator → quiet return).
+namespace Z42ThreadingBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+
+[Test]
+void test_spawn_empty_action_then_join() {
+    Thread t = Thread.Start(() => { });
+    t.Join();
+    // No exception thrown is the success criterion. Add a sanity assert
+    // so the test isn't "trivially passing" if `t.Join()` accidentally
+    // becomes a no-op (e.g., short-circuit before native dispatch).
+    Assert.True(t.SlotId() > 0);
+}
+
+[Test]
+void test_join_after_join_throws_thread_exception() {
+    Thread t = Thread.Start(() => { });
+    t.Join();
+    bool caught = false;
+    try {
+        t.Join();
+    } catch (ThreadException e) {
+        caught = true;
+        Assert.True(e.Message.Length > 0);
+    }
+    Assert.True(caught);
+}

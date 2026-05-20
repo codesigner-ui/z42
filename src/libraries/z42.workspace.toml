@@ -34,6 +34,7 @@ default-members = [
     "z42.toml",
     "z42.random",
     "z42.uri",
+    "z42.threading",
     "z42.io",
     "z42.io.binary",
     "z42.diagnostics",
