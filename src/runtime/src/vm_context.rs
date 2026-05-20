@@ -199,6 +199,12 @@ pub struct VmCore {
     /// currently parked at a safepoint (excludes the collector). Used by
     /// the collector to know when stop-the-world is in effect.
     pub(crate) parked_count:       std::sync::atomic::AtomicUsize,
+    /// **add-gc-safepoint-auto-threshold (2026-05-20)**: shared AtomicBool
+    /// that `ArcMagrGC::maybe_auto_collect` sets on pressure trip;
+    /// `check_safepoint(ctx)` swaps it to `false` and takes ownership of
+    /// the round's stop-the-world collect. Cross-thread safe via the
+    /// safepoint protocol.
+    pub(crate) needs_auto_collect: Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -355,7 +361,15 @@ impl VmContext {
             gc_phase:             Mutex::new(crate::gc::safepoint::GcPhase::Idle),
             gc_phase_cv:          parking_lot::Condvar::new(),
             parked_count:         std::sync::atomic::AtomicUsize::new(0),
+            needs_auto_collect:   Arc::new(std::sync::atomic::AtomicBool::new(false)),
         });
+
+        // add-gc-safepoint-auto-threshold (2026-05-20): wire the
+        // needs_auto_collect flag into the heap so its pressure-trip
+        // path defers to the next safepoint check instead of collecting
+        // inline (the inline path has no &VmContext and would race with
+        // concurrent mutators' frame.regs writes).
+        core.heap.set_external_needs_collect_flag(Arc::clone(&core.needs_auto_collect));
 
         // External GC root scanner — invoked by the cycle collector during
         // mark phase. Walks all out-of-heap Value sources so cycles whose

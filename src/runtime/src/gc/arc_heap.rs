@@ -207,6 +207,16 @@ pub type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value)) + Send + Sync>
 pub struct ArcMagrGC {
     inner: Mutex<RcHeapInner>,
     external_root_scanner: Mutex<Option<ExternalRootScanner>>,
+    /// **add-gc-safepoint-auto-threshold (2026-05-20)**: external flag the
+    /// `maybe_auto_collect` path sets (instead of running collect inline)
+    /// when allocation pressure trips the threshold. Drained by the next
+    /// `check_safepoint(ctx)` which runs a stop-the-world collect.
+    ///
+    /// `None` when not wired (e.g. GC unit tests that construct
+    /// `ArcMagrGC::new()` standalone without a VmCore) — `maybe_auto_collect`
+    /// then falls back to the legacy inline `collect_cycles()` call,
+    /// preserving the pre-2026-05-20 single-threaded behaviour.
+    external_needs_collect: Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
 }
 
 impl std::fmt::Debug for ArcMagrGC {
@@ -478,6 +488,13 @@ impl ArcMagrGC {
     /// - used >= 90% limit
     /// - 距上次 auto-collect 增长 >= 10% limit（throttle，避免每次 alloc 都 collect）
     /// - pause_count == 0
+    ///
+    /// **add-gc-safepoint-auto-threshold (2026-05-20)**: 当 `external_needs_collect`
+    /// flag 装上时（VmCore 构造后 wire），仅 `flag.store(true, Release)` —
+    /// 实际 collect 延迟到下一次 mutator 走 `check_safepoint(ctx)` 时由该 mutator
+    /// 在 safepoint guard 内执行，避免多线程下 scanner 与 mutator regs 写读 race。
+    /// 当 flag 未装（GC 单测直接 `ArcMagrGC::new()` 路径）→ fallback 回原
+    /// inline collect，保持单线程现有行为零变化。
     fn maybe_auto_collect(&self) {
         let (used, max_opt, last, paused) = {
             let i = self.inner.lock();
@@ -489,7 +506,17 @@ impl ArcMagrGC {
         if used < near_threshold { return; }
         let throttle_delta = (limit as f64 * 0.1) as u64;
         if used.saturating_sub(last) < throttle_delta { return; }
+        // Mark this as the "last seen used" pre-collect so we don't re-trip
+        // on every subsequent alloc until the collect actually runs.
         self.inner.lock().last_auto_collect_used = used;
+
+        // Defer to safepoint when wired (multi-thread safe path).
+        if let Some(flag) = self.external_needs_collect.lock().clone() {
+            flag.store(true, std::sync::atomic::Ordering::Release);
+            return;
+        }
+        // Fallback: legacy inline collect — preserves GC unit-test behaviour
+        // (those tests construct ArcMagrGC::new() without VmCore wiring).
         self.collect_cycles();
     }
 
@@ -544,6 +571,13 @@ impl MagrGC for ArcMagrGC {
     /// 重复调用覆盖之前的 scanner；传 no-op 闭包等价于卸载。
     fn set_external_root_scanner(&self, scanner: ExternalRootScanner) {
         *self.external_root_scanner.lock() = Some(scanner);
+    }
+
+    /// **add-gc-safepoint-auto-threshold (2026-05-20)**: wire the
+    /// AtomicBool that `maybe_auto_collect` should set on pressure trip
+    /// (deferring the actual collect to the next safepoint).
+    fn set_external_needs_collect_flag(&self, flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+        *self.external_needs_collect.lock() = Some(flag);
     }
 
     // ── 1. Allocation ────────────────────────────────────────────────────────

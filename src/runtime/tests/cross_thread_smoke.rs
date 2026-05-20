@@ -268,6 +268,76 @@ fn gc_collect_with_concurrent_mutators_no_race() {
         "expected >= {collect_rounds} collect rounds, got {}", stats.gc_cycles);
 }
 
+// ── add-gc-safepoint-auto-threshold Phase 5 (2026-05-20) ─────────────────────
+
+#[test]
+fn auto_collect_triggers_via_safepoint_no_race() {
+    // 4 workers concurrently alloc small arrays. max_bytes is set tight
+    // enough that the auto-threshold path is repeatedly tripped, deferring
+    // each collect to the next safepoint (rather than the previous v0
+    // inline-collect-without-ctx path that would race with the workers'
+    // frame.regs writes).
+    //
+    // Critical: `main` holds a VmContext registered in vm_contexts. When the
+    // collector requests a pause, it waits for parked_count == vm_contexts.len()-1.
+    // Main MUST keep calling check_safepoint until all workers finish — if
+    // main blocks in `handles[i].join()`, it never parks, and the collector
+    // (run by one of the workers via auto-collect drain) deadlocks waiting
+    // for main. We track active workers via an atomic counter and have main
+    // poll check_safepoint until it reaches zero.
+    //
+    // Success criterion: completes without panic / deadlock, gc_cycles
+    // increments at least once (proves the safepoint-deferred collect ran).
+    use std::sync::atomic::{AtomicUsize, Ordering as AtoOrd};
+    use z42::gc::safepoint::check_safepoint;
+
+    let main = VmContext::with_module(make_void_action_module("AutoCollectMain"));
+
+    // Tight budget so allocations cross the 90% mark frequently. The cycle
+    // collector reclaims; subsequent iters re-allocate; threshold trips again.
+    main.heap().set_max_heap_bytes(Some(8 * 1024));
+
+    let n_workers = 4usize;
+    let iters_per_worker = 200usize;
+    let active = Arc::new(AtomicUsize::new(n_workers));
+
+    let mut handles = Vec::with_capacity(n_workers);
+    for _ in 0..n_workers {
+        let core = main.core_arc();
+        let active_clone = Arc::clone(&active);
+        handles.push(thread::spawn(move || {
+            let w = z42::vm_context::VmContext::new_with_core(core);
+            for _ in 0..iters_per_worker {
+                let _ = w.heap().alloc_array(vec![
+                    Value::I64(0), Value::I64(1), Value::I64(2), Value::I64(3),
+                    Value::I64(4), Value::I64(5), Value::I64(6), Value::I64(7),
+                ]);
+                check_safepoint(&w);
+            }
+            active_clone.fetch_sub(1, AtoOrd::AcqRel);
+        }));
+    }
+
+    // Main thread participates in the safepoint protocol throughout the
+    // test. If a worker requests gc_pause, main parks here on the next
+    // check_safepoint, contributing to parked_count.
+    while active.load(AtoOrd::Acquire) > 0 {
+        check_safepoint(&main);
+        thread::yield_now();
+    }
+
+    for h in handles {
+        h.join().expect("worker panicked");
+    }
+    // Drain anything still pending after workers exit.
+    check_safepoint(&main);
+
+    let stats = main.heap().stats();
+    assert!(stats.gc_cycles > 0,
+        "auto-threshold should have fired at least one collect (gc_cycles={})",
+        stats.gc_cycles);
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Build a Module containing one zero-arg, void-returning function whose

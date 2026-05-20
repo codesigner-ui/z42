@@ -85,6 +85,17 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
     /// 仅 `ArcMagrGC` 重载）。
     fn set_external_root_scanner(&self, _scanner: super::arc_heap::ExternalRootScanner) {}
 
+    /// **add-gc-safepoint-auto-threshold (2026-05-20)**: wire an external
+    /// `Arc<AtomicBool>` flag for the backend to set (instead of calling
+    /// `collect_cycles` inline) when an automatic threshold-based collection
+    /// is warranted. The flag is then drained at the next
+    /// [`crate::gc::safepoint::check_safepoint`] call, which performs a
+    /// stop-the-world collect under the safepoint protocol.
+    ///
+    /// Default no-op: backends that don't observe allocation thresholds
+    /// or that don't need cross-thread safety opt out.
+    fn set_external_needs_collect_flag(&self, _flag: std::sync::Arc<std::sync::atomic::AtomicBool>) {}
+
     /// 把一个 value 加入 root set，host 持有返回的 `RootHandle` 期间该值
     /// 不会被 GC 回收。等价于 V8 `Persistent<T>` / .NET `GCHandle.Alloc(Normal)`。
     fn pin_root(&self, value: Value) -> RootHandle;

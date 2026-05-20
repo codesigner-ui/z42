@@ -90,6 +90,46 @@ fn pause_guard_drop_notifies_waiters() {
     drop(mutator);
 }
 
+// ── add-gc-safepoint-auto-threshold Phase 5 (2026-05-20) ─────────────────────
+
+#[test]
+fn auto_collect_flag_drained_at_next_safepoint() {
+    // Manually set the auto-collect flag, call check_safepoint, verify
+    // the flag is drained AND gc_cycles incremented (proof that the
+    // safepoint path ran a real collect_cycles).
+    let ctx = VmContext::new();
+    assert!(!ctx.core.needs_auto_collect.load(Ordering::Acquire));
+    let cycles_before = ctx.heap().stats().gc_cycles;
+
+    ctx.core.needs_auto_collect.store(true, Ordering::Release);
+    check_safepoint(&ctx);
+
+    assert!(!ctx.core.needs_auto_collect.load(Ordering::Acquire),
+        "flag should have been swapped to false by check_safepoint");
+    let cycles_after = ctx.heap().stats().gc_cycles;
+    assert!(cycles_after > cycles_before,
+        "expected gc_cycles to increment after drain (before={cycles_before}, after={cycles_after})");
+}
+
+#[test]
+fn auto_collect_flag_idempotent_only_first_swap_runs_collect() {
+    // Two consecutive check_safepoint calls with the flag set once: the
+    // first drains and collects; the second sees false and is a fast no-op.
+    let ctx = VmContext::new();
+    ctx.core.needs_auto_collect.store(true, Ordering::Release);
+    let cycles_before = ctx.heap().stats().gc_cycles;
+
+    check_safepoint(&ctx);
+    let cycles_after_first = ctx.heap().stats().gc_cycles;
+    assert_eq!(cycles_after_first, cycles_before + 1);
+
+    // Flag is false now; this call should NOT trigger another collect.
+    check_safepoint(&ctx);
+    let cycles_after_second = ctx.heap().stats().gc_cycles;
+    assert_eq!(cycles_after_second, cycles_after_first,
+        "second check_safepoint should not collect when flag is false");
+}
+
 #[test]
 fn request_pause_waits_for_other_mutators_to_park() {
     // collector + 2 mutator VmContexts. Spawn 2 worker threads that

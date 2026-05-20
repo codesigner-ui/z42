@@ -41,14 +41,29 @@ pub enum GcPhase {
 
 /// Fast-path safepoint check called from interp hot path.
 ///
-/// Common case (no pending GC) takes one Mutex lock + one enum compare and
-/// returns. When the GC has requested a pause, branches off to the slow
-/// [`park_until_idle`] path.
+/// Common case (no pending GC, no pending auto-collect) takes one Mutex
+/// lock + one enum compare + one atomic load and returns. When the GC has
+/// requested a pause, branches off to the slow [`park_until_idle`] path.
+///
+/// **add-gc-safepoint-auto-threshold (2026-05-20)**: when phase is Idle
+/// but the heap's pressure-trip path has set `needs_auto_collect = true`,
+/// the calling thread atomically claims the collect round via `swap(false,
+/// AcqRel)` and runs a stop-the-world collect under [`request_gc_pause`].
+/// If multiple threads see the flag, only the first swap-true claims;
+/// the rest see false and skip (subsequent allocs that still trip pressure
+/// re-set the flag).
 #[inline]
 pub fn check_safepoint(ctx: &VmContext) {
     let phase = *ctx.core.gc_phase.lock();
     if matches!(phase, GcPhase::Requested | GcPhase::Marking) {
         park_until_idle(ctx);
+        return;
+    }
+    // Idle phase — drain pending auto-collect if any.
+    if ctx.core.needs_auto_collect.swap(false, Ordering::AcqRel) {
+        let _pause = request_gc_pause(ctx);
+        ctx.heap().collect_cycles();
+        // _pause Drop releases the world + notifies all parked mutators.
     }
 }
 
