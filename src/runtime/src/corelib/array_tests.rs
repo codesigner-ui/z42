@@ -3,7 +3,7 @@ use crate::gc::GcRef;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 
-fn ctx() -> VmContext {
+fn ctx() -> std::pin::Pin<Box<VmContext>> {
     VmContext::new()
 }
 

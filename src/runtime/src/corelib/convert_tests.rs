@@ -2,7 +2,7 @@ use super::*;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 
-fn ctx() -> VmContext { VmContext::new() }
+fn ctx() -> std::pin::Pin<Box<VmContext>> { VmContext::new() }
 
 fn parse(builtin: fn(&VmContext, &[Value]) -> anyhow::Result<Value>, s: &str)
     -> anyhow::Result<i64>

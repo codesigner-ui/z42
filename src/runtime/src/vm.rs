@@ -25,7 +25,7 @@ impl Vm {
     /// every exe zpkg; the artifact loader passes it as `hint`. CLI users
     /// can override with the positional `[entry]` arg on `z42vm`. No
     /// silent fallback chain — missing entry → hard error.
-    pub fn run(&self, ctx: &mut VmContext, hint: Option<&str>) -> Result<()> {
+    pub fn run(&self, ctx: &VmContext, hint: Option<&str>) -> Result<()> {
         let entry_name = self.resolve_entry(hint)?;
 
         // 2026-05-02 add-method-group-conversion (D1b): pre-allocate the FuncRef

@@ -388,7 +388,7 @@ fn main() -> Result<()> {
     // drives on-demand loading; in JIT mode deps are already merged into
     // `modules` during 5.1d so `declared` is typically empty and the lazy
     // loader is effectively a no-op.
-    let mut ctx = z42::vm_context::VmContext::new();
+    let ctx = z42::vm_context::VmContext::new();
     ctx.install_lazy_loader_with_deps(
         libs_dir.clone(),
         final_module.string_pool.len(),
@@ -411,5 +411,5 @@ fn main() -> Result<()> {
     let vm = z42::vm::Vm::new(final_module, default_mode);
     // CLI positional `entry` overrides any artifact-supplied entry hint.
     let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
-    vm.run(&mut ctx, effective_entry)
+    vm.run(&*ctx, effective_entry)
 }

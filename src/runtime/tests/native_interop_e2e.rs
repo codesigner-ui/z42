@@ -99,7 +99,7 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
 /// `z42_register_type` extern function can find the active VM. We install
 /// the same `VmGuard` the interpreter uses, call the C entry, then drop
 /// the guard before handing the VM to the test body.
-fn vm_with_counter_registered() -> VmContext {
+fn vm_with_counter_registered() -> std::pin::Pin<Box<VmContext>> {
     let ctx = VmContext::new();
     invoke_with_vm_guard(&ctx, || unsafe { numz42_register_static() });
     ctx
@@ -192,7 +192,7 @@ fn callnative_counter_inc_three_times_then_get_returns_three() {
 
 // ── Rust PoC scenarios (spec C3) ─────────────────────────────────────────
 
-fn vm_with_rust_counter_registered() -> VmContext {
+fn vm_with_rust_counter_registered() -> std::pin::Pin<Box<VmContext>> {
     let ctx = VmContext::new();
     invoke_with_vm_guard(&ctx, || unsafe { numz42_rs_register() });
     ctx

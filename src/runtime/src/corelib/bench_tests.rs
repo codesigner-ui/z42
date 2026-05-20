@@ -2,7 +2,7 @@ use super::*;
 use crate::metadata::Value;
 use crate::vm_context::VmContext;
 
-fn ctx() -> VmContext { VmContext::default() }
+fn ctx() -> std::pin::Pin<Box<VmContext>> { VmContext::new() }
 
 #[test]
 fn now_ns_is_monotonic_non_decreasing() {

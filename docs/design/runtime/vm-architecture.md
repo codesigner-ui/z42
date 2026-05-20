@@ -52,7 +52,7 @@ vm.run(&mut ctx, hint)?;
 
 Scanner closure 通过 `Weak<VmCore>` 捕获 VmCore（避免 `VmCore → heap → scanner → Arc<VmCore>` 循环引用），upgrade 失败时 silent skip。
 
-**当前不变量（single-VmContext-per-VmCore，2026-05-20）**：scanner 通过捕获 per-thread `Arc<Mutex<...>>` clone 看到唯一 VmContext 的 frames。未来 multi-thread 支持落地（独立 spec `add-vmcontext-registry`）时，VmCore 需加 `Mutex<Vec<Weak<VmContext>>>` 注册表，scanner 改为 walk 所有线程的 frames。
+**VmContext 注册表（add-vmcontext-registry 2026-05-20）**：VmCore 持 `vm_contexts: Mutex<Vec<VmContextPtr>>` 注册表。`VmContext::new()` 返回 `Pin<Box<VmContext>>` 以保证地址稳定（`PhantomPinned` 标 !Unpin 防 move-out），构造时 push 自身到注册表，Drop 时 retain 移除。GC scanner 改为：**1**) 上锁 vm_contexts → **2**) 遍历每个 VmContext ptr → **3**) `unsafe { &*ptr }` 扫其 `pending_exception` / `call_stack` 帧 / `func_ref_slots`。所有 VmContext 的 per-thread roots 在 mark 阶段都被看见 —— multi-thread 安全。Lock 持有期间 Drop 阻塞，无 use-after-free。
 
 API 方法都用 `&self`（内部 Mutex/RwLock），调用方代码风格基本不变。详见 [`object-protocol.md`](../language/object-protocol.md)、[`interop.md`](../language/interop.md)、[`concurrency.md`](concurrency.md) 与 review2 §3 / §5.5 / §5.2。
 

@@ -21,7 +21,7 @@ use super::config::ResolvedConfig;
 /// (see embedding.md §12 Deferred).
 pub(crate) struct HostModule {
     pub module: Module,
-    pub ctx: VmContext,
+    pub ctx: std::pin::Pin<Box<VmContext>>,
 }
 
 /// Resolved entry handle. Indexes into `HostModule.module.functions`.

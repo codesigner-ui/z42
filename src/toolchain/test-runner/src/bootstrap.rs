@@ -28,7 +28,7 @@ pub struct LoadedRunner {
     /// Merged module (z42.core + user) ready for execution. Find a test
     /// function by name via `vm.module.functions.iter().find(|f| f.name == ...)`.
     pub vm: Vm,
-    pub ctx: VmContext,
+    pub ctx: std::pin::Pin<Box<VmContext>>,
 }
 
 /// Bootstrap an in-process VM from a single .zbc artifact.

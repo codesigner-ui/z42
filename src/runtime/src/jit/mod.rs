@@ -41,11 +41,18 @@ impl JitModule {
     /// `ctx` is the canonical state holder; we wire its raw pointer into
     /// `JitModuleCtx.vm_ctx` for the duration of this call so JIT helpers
     /// (which receive `*const JitModuleCtx`) can reach VmContext through it.
-    pub fn run_fn(&mut self, ctx: &mut VmContext, entry_name: &str) -> Result<()> {
+    pub fn run_fn(&mut self, ctx: &VmContext, entry_name: &str) -> Result<()> {
         let entry = self.ctx.fn_entries.get(entry_name)
             .ok_or_else(|| anyhow::anyhow!("JIT: entry `{}` not found", entry_name))?
             .clone();
-        self.ctx.vm_ctx = ctx as *mut VmContext;
+        // Cast `&VmContext` (immutable ref) to a `*mut VmContext` for the
+        // JIT ABI. The JIT extern-C bridge expects a `*mut` pointer for
+        // historical compatibility (the helper functions reach VmContext
+        // through `(*jit_ctx).vm_ctx`), but they only ever call `&self`
+        // methods on it. add-vmcontext-registry (2026-05-20) converted
+        // the caller signature to `&VmContext`, so the cast goes via
+        // `*const _` first to satisfy the strict pointer-cast rules.
+        self.ctx.vm_ctx = (ctx as *const VmContext) as *mut VmContext;
         let mut frame = JitFrame::new(entry.max_reg, &[]);
         let f: JitFn = unsafe { std::mem::transmute(entry.ptr) };
         // 2026-05-10 unify-frame-chain: single push enrolling this entry
@@ -79,7 +86,7 @@ impl JitModule {
     /// 2026-04-27 fix-static-field-access: 与 interp 的 `run_with_static_init`
     /// 对称修复。修前只跑主模块 init，导入 zpkg（如 z42.math 的
     /// `Std.Math.__static_init__`）虽然 link 但永不被调用。
-    pub fn run(&mut self, ctx: &mut VmContext, entry_name: &str) -> Result<()> {
+    pub fn run(&mut self, ctx: &VmContext, entry_name: &str) -> Result<()> {
         ctx.static_fields_clear();
 
         // Collect all __static_init__ entries; sort by name for determinism.
@@ -198,7 +205,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
 // ─── Public entry point called from vm.rs ───────────────────────────────────
 
 /// Called by `Vm::run` when the execution mode is JIT.
-pub fn run(ctx: &mut VmContext, module: &Module, entry_name: &str) -> Result<()> {
+pub fn run(ctx: &VmContext, module: &Module, entry_name: &str) -> Result<()> {
     let mut jit_module = compile_module(module)?;
     jit_module.run(ctx, entry_name)
 }

@@ -29,13 +29,13 @@
 |------|------|
 | ✅ Rust 类型层 Send+Sync | `VmContext` / `VmCore` / `GcRef` / `Value` / `Box<dyn MagrGC>` 全 Send+Sync |
 | ✅ 跨线程 read 共享 GC | `Arc<VmCore>` 可跨线程；GcRef 可跨线程 move / clone / borrow |
+| ✅ 多 VmContext 共享 GC heap | VmCore `vm_contexts` 注册表 + `Pin<Box<VmContext>>` 地址稳定 + scanner walk registry（add-vmcontext-registry 2026-05-20） |
 | ❌ 用户层线程 API | 没有 `Std.Threading.Thread.Start`；落地在独立 spec `add-threading-stdlib` |
-| ❌ 多 VmContext 共享 GC heap | 单 VmContext per VmCore 不变量；future `add-vmcontext-registry` spec 移除 |
 | ❌ 并发 GC | mark-sweep 仍单线程；safepoint 协议待 `add-gc-safepoint` |
 | ❌ `spawn` / `task scope` 语法 | L3 阶段引入（本文档 §3.5） |
 
 **下一步实施 spec**（已在 add-multithreading-foundation tasks.md 列）：
-1. `add-vmcontext-registry` — VmCore 加 VmContext 注册表（移除 single-VmContext 不变量）
+1. ~~`add-vmcontext-registry`~~ ✅ 已落地（2026-05-20）—— VmCore registry + Pin<Box<VmContext>> + scanner walk
 2. `add-threading-stdlib` — `Std.Threading.Thread.Start` / `.Join` / per-thread heap-local
 3. `add-sync-primitives` — `Std.Threading.Mutex<T>` / `Channel<T>` 用户类型
 4. `add-gc-safepoint` — 并发 GC 前置：interp + JIT safepoint

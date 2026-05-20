@@ -13,8 +13,8 @@ use super::*;
 use crate::vm_context::VmContext;
 use crate::metadata::Value;
 
-fn ctx() -> VmContext {
-    VmContext::default()
+fn ctx() -> std::pin::Pin<Box<VmContext>> {
+    VmContext::new()
 }
 
 fn s(text: &str) -> Value {

@@ -41,12 +41,43 @@
 //! the full state-collapse rationale.
 
 use std::collections::HashMap;
+use std::marker::PhantomPinned;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
 
 use crate::gc::{MagrGC, ArcMagrGC};
+
+/// Type-erased pointer to a registered [`VmContext`].
+///
+/// Stored in [`VmCore::vm_contexts`] so the GC scanner can walk every thread's
+/// per-thread state (call stack / pending exception / func-ref slots) during
+/// mark phase. Without this registry, the scanner could only see the first
+/// VmContext it was given a clone of — multi-threading would silently miss
+/// roots and free live cross-thread objects.
+///
+/// # Safety
+///
+/// - The pointer is registered by [`VmContext::new`] AFTER `Pin<Box<...>>`
+///   wrapping guarantees address stability for the entire lifetime of the
+///   VmContext (the Box's heap allocation address is stable, and Pin prevents
+///   `mem::swap` / move-out).
+/// - It is deregistered by [`VmContext::drop`] BEFORE the Box is freed
+///   (`retain` runs in Drop, prior to memory deallocation), so any
+///   dereference performed while the entry is in `vm_contexts` is on a live
+///   VmContext.
+/// - Cross-thread access: every per-thread field on VmContext is itself
+///   `Arc<Mutex<...>>` (Send + Sync), so reading them from another thread
+///   under registry-lock-then-deref discipline is sound.
+pub(crate) struct VmContextPtr(pub(crate) *const VmContext);
+
+// SAFETY: see SAFETY block on `VmContextPtr` above — the raw pointer is
+// kept alive by the Box/Pin ownership of the registering thread, registry
+// updates happen under `vm_contexts: Mutex<...>`, and dereferenced fields
+// are themselves Send + Sync.
+unsafe impl Send for VmContextPtr {}
+unsafe impl Sync for VmContextPtr {}
 use crate::metadata::lazy_loader::{LazyLoader, ZpkgCandidate};
 use crate::metadata::{Function, TypeDesc, Value};
 
@@ -113,6 +144,12 @@ pub struct VmCore {
     /// pending_exception / func_ref_slots) stay captured via `Rc<RefCell>`
     /// clones from the unique VmContext.
     pub(crate) heap:               Box<dyn MagrGC>,
+    /// **add-vmcontext-registry (2026-05-20)**: registry of all live
+    /// [`VmContext`] instances on this VmCore (one per OS thread).
+    /// Populated by `VmContext::new()`; cleared by `VmContext::drop()`.
+    /// The GC scanner closure walks this list under lock to find every
+    /// thread's per-thread roots. See `VmContextPtr` SAFETY block.
+    pub(crate) vm_contexts:        Mutex<Vec<VmContextPtr>>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -155,6 +192,11 @@ pub struct VmContext {
     /// slots. `LoadFnCached { slot_id }` 首次执行时把 `Value::FuncRef(name)`
     /// 写入 `func_ref_slots[slot_id]`；后续命中直接 load。
     pub(crate) func_ref_slots:    Arc<Mutex<Vec<Value>>>,
+    /// **add-vmcontext-registry (2026-05-20)**: marks `VmContext: !Unpin`,
+    /// so callers cannot `mem::swap` / move out of the `Pin<Box<VmContext>>`
+    /// returned by [`new`]. Required so the raw pointer registered in
+    /// [`VmCore::vm_contexts`] stays valid for the entire lifetime.
+    _pin: PhantomPinned,
     // heap moved to VmCore (Phase 2.2)
 
     // native_types / native_libs / pinned_owned_buffers moved to VmCore (Phase 1.7-1.9)
@@ -163,12 +205,14 @@ pub struct VmContext {
     pub(crate) process_next_id:   std::sync::atomic::AtomicU64,
 }
 
-impl Default for VmContext {
-    fn default() -> Self { Self::new() }
-}
+// `Default` removed: `new()` now returns `Pin<Box<VmContext>>`, which
+// cannot satisfy `Default::default() -> Self`. Test helpers that
+// previously used `VmContext::default()` should call `VmContext::new()`
+// directly and accept `Pin<Box<VmContext>>` (deref still works for
+// method calls).
 
 impl VmContext {
-    pub fn new() -> Self {
+    pub fn new() -> std::pin::Pin<Box<Self>> {
         let pending_exception: Arc<Mutex<Option<Value>>> = Arc::new(Mutex::new(None));
         let func_ref_slots: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
         // 2026-05-10 unify-frame-chain: single Vec<VmFrame> replaces the
@@ -190,6 +234,7 @@ impl VmContext {
             pinned_owned_buffers: Mutex::new(HashMap::new()),
             processes:            Mutex::new(HashMap::new()),
             heap:                 Box::new(ArcMagrGC::new()),
+            vm_contexts:          Mutex::new(Vec::new()),
         });
 
         // External GC root scanner — invoked by the cycle collector during
@@ -197,61 +242,84 @@ impl VmContext {
         // only roots are static fields / pending exception / live frame
         // regs / stack closure envs / func-ref slots stay alive.
         //
-        // **Single-VmContext-per-VmCore invariant** (Phase 2.2): scanner
-        // captures the per-thread `Rc<RefCell<...>>` clones directly. Future
-        // multi-thread spec will introduce a VmContext registry on VmCore
-        // so multiple threads' per-thread state can all be walked.
+        // **add-vmcontext-registry (2026-05-20)**: scanner walks the
+        // `vm_contexts` registry to find every live VmContext on this
+        // VmCore. Each VmContext contributes its own per-thread roots
+        // (pending_exception / call_stack frames / func_ref_slots). The
+        // closure captures `Weak<VmCore>` ONLY — no per-thread Arc clones.
         {
             let core_weak = Arc::downgrade(&core);
-            let pe  = pending_exception.clone();
-            let cs  = call_stack.clone();
-            let frs = func_ref_slots.clone();
             core.heap.set_external_root_scanner(Box::new(move |visit| {
-                // 1. static_fields (via VmCore, weak-upgrade so heap drop is clean)
-                if let Some(c) = core_weak.upgrade() {
-                    for v in c.static_fields.lock().iter() {
-                        visit(v);
-                    }
-                }
-                // 2. pending_exception
-                if let Some(v) = pe.lock().as_ref() {
+                let Some(c) = core_weak.upgrade() else { return; };
+                // 1. Shared static fields.
+                for v in c.static_fields.lock().iter() {
                     visit(v);
                 }
-                // 3. live z42 frame state — unified per VmFrame entry.
+                // 2-4. Per-thread roots, one VmContext per OS thread.
                 //
-                // SAFETY: `regs` / `env_arena` raw ptrs are valid for the
-                // lifetime of the owning interp `Frame` / `JitFrame`,
-                // popped by RAII / paired helper exits before the owner
-                // returns. GC collect is invoked from inside script code,
-                // so every walk sees pointers still in-bounds.
-                for frame in cs.lock().iter() {
-                    unsafe {
-                        for v in (*frame.regs).iter() {
-                            visit(v);
-                        }
-                        if !frame.env_arena.is_null() {
-                            for env in (*frame.env_arena).iter() {
-                                for v in env.iter() {
-                                    visit(v);
+                // SAFETY: each VmContextPtr was registered via
+                // `VmContext::new()` *after* its `Pin<Box<...>>` heap
+                // allocation, and `VmContext::drop` removes the entry
+                // BEFORE the Box is dealloc'd. We hold `vm_contexts.lock()`
+                // for the full walk, so a concurrent drop on another thread
+                // blocks until we release — no use-after-free possible.
+                let registry = c.vm_contexts.lock();
+                for ctx_ptr in registry.iter() {
+                    let ctx = unsafe { &*ctx_ptr.0 };
+                    // pending_exception
+                    if let Some(v) = ctx.pending_exception.lock().as_ref() {
+                        visit(v);
+                    }
+                    // live z42 frame state — unified VmFrame entries.
+                    //
+                    // SAFETY (frame.regs / env_arena): raw ptrs valid for
+                    // the lifetime of the owning Rust frame (FrameGuard
+                    // RAII for interp; paired push/pop for JIT). GC
+                    // collect is invoked from inside script code, so
+                    // every walk sees pointers still in-bounds.
+                    for frame in ctx.call_stack.lock().iter() {
+                        unsafe {
+                            for v in (*frame.regs).iter() {
+                                visit(v);
+                            }
+                            if !frame.env_arena.is_null() {
+                                for env in (*frame.env_arena).iter() {
+                                    for v in env.iter() {
+                                        visit(v);
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                // 4. method group conversion cache slots (D1b).
-                for v in frs.lock().iter() {
-                    visit(v);
+                    // method group conversion cache slots (D1b).
+                    for v in ctx.func_ref_slots.lock().iter() {
+                        visit(v);
+                    }
                 }
             }));
         }
 
-        Self {
+        let ctx = Self {
             core,
             pending_exception,
             call_stack,
             func_ref_slots,
             process_next_id: std::sync::atomic::AtomicU64::new(1),
-        }
+            _pin: PhantomPinned,
+        };
+        // Heap-allocate so the address is stable for the scanner registry.
+        let boxed = Box::new(ctx);
+        // SAFETY: VmContext registers its OWN address into VmCore.vm_contexts
+        // here and removes the entry in Drop (running BEFORE Box dealloc).
+        // The Pin wrapper + PhantomPinned prevents any subsequent move-out.
+        let ptr = VmContextPtr(&*boxed as *const VmContext);
+        boxed.core.vm_contexts.lock().push(ptr);
+        // SAFETY: We never expose `&mut Box<VmContext>` to user code (only
+        // `Pin<&mut VmContext>` via `Pin::as_mut`, which respects
+        // `PhantomPinned`), so the contents stay at a stable address until
+        // Drop. Constructing the Pin here is the standard idiom for
+        // self-referential heap data.
+        unsafe { std::pin::Pin::new_unchecked(boxed) }
     }
 
     // ── Process slot table (add-std-process, 2026-05-13) ──────────────────
@@ -686,6 +754,19 @@ impl VmContext {
             .collect();
         names.sort();
         names
+    }
+}
+
+impl Drop for VmContext {
+    /// **add-vmcontext-registry (2026-05-20)**: deregister this `VmContext`
+    /// from `VmCore.vm_contexts` so the GC scanner stops trying to walk a
+    /// soon-to-be-freed allocation. Runs BEFORE the underlying `Box` storage
+    /// is released (Rust drop order: contents → Box dealloc), so any GC
+    /// scan racing this Drop will block on the registry lock and see the
+    /// post-removed list.
+    fn drop(&mut self) {
+        let ptr = self as *const Self;
+        self.core.vm_contexts.lock().retain(|p| p.0 != ptr);
     }
 }
 

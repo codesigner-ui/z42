@@ -111,3 +111,41 @@ fn lazy_loader_two_contexts_independent() {
     assert_eq!(ctx1.declared_namespaces(), Vec::<String>::new());
     assert_eq!(ctx2.declared_namespaces(), Vec::<String>::new());
 }
+
+// ── add-vmcontext-registry (2026-05-20) ───────────────────────────────────────
+
+#[test]
+fn vm_context_registers_self_on_new() {
+    let ctx = VmContext::new();
+    let registry = ctx.core.vm_contexts.lock();
+    assert_eq!(registry.len(), 1, "newly-constructed VmContext should be in registry");
+    let self_ptr = &*ctx as *const VmContext;
+    assert!(
+        registry.iter().any(|p| p.0 == self_ptr),
+        "registry should contain self-pointer"
+    );
+}
+
+#[test]
+fn vm_context_drop_removes_from_registry() {
+    let ctx = VmContext::new();
+    let core = std::sync::Arc::clone(&ctx.core);
+    let self_ptr = &*ctx as *const VmContext;
+    assert!(core.vm_contexts.lock().iter().any(|p| p.0 == self_ptr));
+    drop(ctx);
+    assert_eq!(core.vm_contexts.lock().len(), 0, "drop should clear the entry");
+}
+
+#[test]
+fn two_vm_contexts_both_registered_independently() {
+    // Note: each `VmContext::new()` constructs its own VmCore (current
+    // constructor doesn't accept a shared core — adding `new_with_core`
+    // would extend scope here). The intent of this test is to verify
+    // independence: ctx1 dropping shouldn't affect ctx2.
+    let ctx1 = VmContext::new();
+    let ctx2 = VmContext::new();
+    assert_eq!(ctx1.core.vm_contexts.lock().len(), 1);
+    assert_eq!(ctx2.core.vm_contexts.lock().len(), 1);
+    drop(ctx1);
+    assert_eq!(ctx2.core.vm_contexts.lock().len(), 1, "ctx2 unaffected by ctx1 drop");
+}

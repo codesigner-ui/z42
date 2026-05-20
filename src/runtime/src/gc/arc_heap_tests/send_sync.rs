@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use crate::gc::{GcRef, MagrGC, ArcMagrGC};
 use crate::metadata::Value;
-use crate::vm_context::{VmContext, VmCore};
+use crate::vm_context::{VmContext, VmContextPtr, VmCore};
 
 fn assert_send<T: Send>() {}
 fn assert_sync<T: Sync>() {}
@@ -53,4 +53,12 @@ fn dyn_magr_gc_is_send_sync() {
     // shares the heap; verify the dyn version preserves Send + Sync.
     assert_send::<Box<dyn MagrGC>>();
     assert_sync::<Box<dyn MagrGC>>();
+}
+
+#[test]
+fn vm_context_ptr_is_send_sync() {
+    // add-vmcontext-registry (2026-05-20): VmContextPtr is a raw-pointer
+    // newtype with `unsafe impl Send + Sync` — pin this at compile time
+    // so removing the impl breaks the build.
+    assert_send_sync::<VmContextPtr>();
 }

@@ -9,7 +9,7 @@ fn i(n: i64) -> Value { Value::I64(n) }
 fn i64(n: i64) -> Value { Value::I64(n) }
 
 /// Build a fresh VmContext for each test (heap is fully isolated, fast to construct).
-fn ctx() -> VmContext { VmContext::new() }
+fn ctx() -> std::pin::Pin<Box<VmContext>> { VmContext::new() }
 
 /// Allocate a minimal Object with the given class name through the heap interface.
 fn obj(ctx: &VmContext, class_name: &str) -> Value {
