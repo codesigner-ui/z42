@@ -63,27 +63,41 @@ if [[ "$QUICK" == "--quick" ]]; then
 fi
 
 echo "→ Compiling ${#scenarios[@]} scenarios..."
+# Parallel arrays: scenarios[i] → entries[i] = "<namespace>.Main".
+# Required because b8c97a7c dropped vm::resolve_entry's "guess Main" fallback;
+# bare .zbc invocations now need an explicit positional entry. (Project builds
+# via `z42c build` bake Entry into the zpkg, but bench compiles single files
+# with --emit zbc and so must supply the entry itself.)
+entries=()
 for src in "${scenarios[@]}"; do
     name=$(basename "$src" .z42)
     out="$TMP_DIR/${name}.zbc"
     dotnet run --project src/compiler/z42.Driver -c Release -- \
         "$src" --emit zbc -o "$out" >/dev/null 2>&1
+    ns=$(grep -E '^namespace ' "$src" | head -1 | sed -E 's/^namespace[[:space:]]+([^;[:space:]]+);.*/\1/')
+    if [[ -z "$ns" ]]; then
+        echo "❌ no 'namespace' declaration in $src" >&2
+        exit 2
+    fi
+    entries+=("${ns}.Main")
 done
 
 # ── Run hyperfine ────────────────────────────────────────────────────────
 bench_jsons=()
-for src in "${scenarios[@]}"; do
+for i in "${!scenarios[@]}"; do
+    src="${scenarios[$i]}"
     name=$(basename "$src" .z42)
     zbc="$TMP_DIR/${name}.zbc"
+    entry="${entries[$i]}"
     out_json="$TMP_DIR/${name}-bench.json"
-    echo "→ Benchmarking $name (warmup=$WARMUP, runs=$RUNS)..."
+    echo "→ Benchmarking $name (entry=$entry, warmup=$WARMUP, runs=$RUNS)..."
     hyperfine \
         --warmup "$WARMUP" \
         --runs "$RUNS" \
         --export-json "$out_json" \
         --shell=none \
         --command-name "$name" \
-        "$VM $zbc" >/dev/null
+        "$VM $zbc $entry" >/dev/null
     bench_jsons+=("$out_json")
 done
 
