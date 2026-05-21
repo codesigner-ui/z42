@@ -75,6 +75,17 @@ jobs:
         run: ./scripts/test-all.sh --parallel
         shell: bash
 
+      # Windows pre-test: regenerate golden source.zbc fixtures the same way
+      # Linux/macOS do via test-vm.sh → regen-golden-tests.sh. The repo only
+      # commits 6 source.zbc files; the remaining ~30 are regen-on-demand.
+      # Without this step `cargo test --test zbc_compat` fails with "expected
+      # ≥ 50 golden tests with source.zbc, found 6". --no-stdlib because the
+      # "Build stdlib" step above already populated artifacts/build/libs/release/.
+      - name: Regen golden zbc fixtures (Windows)
+        if: matrix.os == 'windows-latest'
+        run: ./scripts/regen-golden-tests.sh --no-stdlib
+        shell: bash
+
       # Windows: smoke test only (cargo + dotnet are cross-platform; bash scripts not)
       # shell: pwsh (default on windows-latest) — dotnet test spawns testhost.exe,
       # a native Windows process that crashes silently when its console handle is
