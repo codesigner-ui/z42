@@ -642,3 +642,346 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 *Part 3 作者：Claude（z42 review）*
 *调研日期：2026-05-21*
+
+---
+
+# Part 4：运行时 Ops / DevEx 设施 Review（2026-05-22 补充）
+
+> 对比对象：CoreCLR 的 **运行时配置 / 日志 / 事件流 / profiling / crash 处理 / 指标 / startup 信息** 等"生产 VM 必备"基础设施 vs z42 现状。
+>
+> 与 Part 2 不同：Part 2 看的是 hot path 性能；这部分看 **operability + observability** —— 一个 VM 要进生产，除了能跑得快，还得能"看得见 + 调得出"。
+
+## D1. 运行时配置系统
+
+### CoreCLR
+- 中心配置表 [`inc/clrconfigvalues.h`](../../../runtime/src/coreclr/inc/clrconfigvalues.h) —— 宏定义注册**几百个** runtime knobs（GC 触发阈值 / JIT tier 阈值 / log facility mask / heap 大小上限 / ...）
+- 统一访问：`CLRConfig::GetConfigValue(CLRConfig::INTERNAL_*)`
+- 支持 env var (`DOTNET_*`) / config 文件 (`runtimeconfig.json`) / registry 三层叠加
+- 每个 knob 含 default / type / description / scope (internal vs external)
+
+### z42 现状
+- 仅 [`main.rs:55`](../src/runtime/src/main.rs) 的 `Z42_LIBS` + [`main.rs:123`](../src/runtime/src/main.rs#L123) 的 `Z42_PATH` 两个 env var
+- 无中心化 `RuntimeConfig` struct；新加 knob 要散落到各处 `std::env::var()`
+- 无 CLI ⇄ env var ⇄ config file 三层叠加约定
+
+### 建议 ❌
+1. **新建 `runtime/src/config.rs`**，定义：
+   ```rust
+   pub struct RuntimeConfig {
+       // GC
+       pub gc_heap_limit_bytes: Option<u64>,        // Z42_GC_HEAP_LIMIT
+       pub gc_verbose: bool,                         // Z42_GC_VERBOSE
+       pub gc_collect_threshold_bytes: u64,
+       // JIT
+       pub jit_disable: bool,                        // Z42_JIT_DISABLE
+       pub jit_dump_ir: bool,                        // Z42_JIT_DUMP_IR
+       // Logging
+       pub log_directives: String,                   // Z42_LOG=jit=debug,gc=trace
+       // Paths
+       pub libs_dir: Option<PathBuf>,                // Z42_LIBS (existing)
+       pub module_path: Vec<PathBuf>,                // Z42_PATH (existing)
+       // Diag
+       pub crash_report_dir: Option<PathBuf>,        // Z42_CRASH_DIR
+       pub stack_trace_depth_limit: usize,
+   }
+   impl RuntimeConfig { pub fn from_env() -> Self {...} }
+   ```
+2. CLI flag 同步 `--gc-verbose` / `--jit-disable` 等，CLI 覆盖 env
+
+**ROI**：高。1-2 天。后续所有 ops/devex 改造都要这个底层。
+
+## D2. 日志基础设施
+
+### CoreCLR
+- [`inc/log.h`](../../../runtime/src/coreclr/inc/log.h) 定义 `LF_*` facility mask（`LF_GC` / `LF_JIT` / `LF_LOADER` / `LF_INTEROP` / ...）× 7 个 level（`LL_ALWAYS` ... `LL_EVERYTHING`）
+- 用法：`LOG((LF_GC, LL_INFO, "starting gc cycle %d", cycle))`
+- 单独的 [`stresslog.h`](../../../runtime/src/coreclr/inc/stresslog.h)：固定大小 circular buffer，**zero I/O**，崩溃时从 debugger 读取
+- 三种 build (CHK / DBG / FRE) 静态裁剪 log level
+
+### z42 现状
+- 已用 `tracing` crate ✅ ([main.rs:148-170](../src/runtime/src/main.rs#L148-L170) 等)
+- 启动方式：`--verbose` 单一 binary 开关 → `tracing_subscriber::fmt::init()` ([main.rs:251](../src/runtime/src/main.rs#L251))
+- 问题：
+  - 无 per-module 控制（要么全开要么全关）
+  - hot path（`interp/exec_*.rs`）几乎没有 `debug!` / `trace!`
+  - 无 stress log 类似物（崩溃前的 ring buffer）
+
+### 建议 ⚠️
+1. **`tracing` directives 已经支持 per-module**，只需改启动：
+   ```rust
+   tracing_subscriber::fmt()
+       .with_env_filter(
+           tracing_subscriber::EnvFilter::try_from_env("Z42_LOG")
+               .or_else(|_| tracing_subscriber::EnvFilter::try_new("z42=warn"))
+               .unwrap()
+       )
+       .init();
+   ```
+   → 用户可以 `Z42_LOG=z42::jit=debug,z42::gc=trace ./z42vm ...`
+2. **在 hot path 加 `trace!` 级别日志**（编译时 zero cost when feature 关闭）：
+   - `interp::exec_call::call` — log function entry
+   - `gc::arc_heap::collect_cycle` — log GC cycle stats
+   - `jit::translate::translate_function` — log JIT compile
+3. **stress log 推迟**：等真出现"崩溃前最后几条状态"诊断需求再做
+
+**ROI**：高。半天就能把 EnvFilter 接上 + 加 10 处 trace!。
+
+## D3. 结构化事件流
+
+### CoreCLR
+- **EventPipe** ([`vm/eventpipeinternal.h`](../../../runtime/src/coreclr/vm/eventpipeinternal.h))：统一事件流，多 provider（GC / JIT / Thread / Type / Loader / Method / Assembly / Exception）
+- 外部工具（`dotnet-trace` / `dotnet-counters` / Perfview）通过 IPC 订阅
+- 内置 circular buffer，可写 `.nettrace` 文件
+- ETW 兼容（Windows native）+ EventPipe 协议（cross-platform）
+
+### z42 现状
+- 仅 [`gc/types.rs:74`](../src/runtime/src/gc/types.rs#L74) `GcObserver` trait + 5 个 `GcEvent` variants（`BeforeCollect` / `AfterCollect` / `AllocationPressure` / `NearHeapLimit` / `OutOfMemory`）
+- 仅 GC 域有事件流 —— JIT / interp / exception / type-load 都无
+- 无外部订阅协议
+
+### 建议 ❌
+1. **扩展 observer 到非 GC 域**：
+   ```rust
+   // runtime/src/observability/events.rs (新文件)
+   pub enum RuntimeEvent {
+       Gc(GcEvent),                                      // 已有
+       JitCompiled { func: String, ir_size: usize, code_size: usize, duration_us: u64 },
+       ExceptionThrown { class: String, message: String },
+       ExceptionCaught { class: String, frames_unwound: usize },
+       NativeCallEntered { lib: String, symbol: String },
+       ModuleLoaded { name: String, size: u64 },
+   }
+   pub trait RuntimeObserver { fn on_event(&self, evt: &RuntimeEvent); }
+   ```
+2. **`RuntimeStats` snapshot API**（同步轮询用，区别于 push-based event）：
+   ```rust
+   pub struct RuntimeStats {
+       pub heap: HeapStats,
+       pub jit_methods_compiled: u64,
+       pub jit_total_compile_us: u64,
+       pub exceptions_thrown: u64,
+       pub exceptions_caught: u64,
+       pub instructions_executed: u64,  // optional, gate behind feature
+   }
+   ```
+3. **外部 IPC 协议推迟**：先把 in-process observer 做扎实，再考虑 socket 暴露
+
+**ROI**：中。3-5 天。前置依赖 D1 config。
+
+## D4. Crash 处理 + Signal handler
+
+### CoreCLR
+- [`debug/createdump/`](../../../runtime/src/coreclr/debug/createdump/) —— SIGSEGV / SIGABRT / 内部 fail-fast 都触发 minidump 生成
+- 输出 ELF/PE core dump，可供 `lldb` / `windbg` 离线分析
+- Stack walk 在 signal handler 内安全（async-signal-safe primitives）
+
+### z42 现状 ❌
+- 顶层 `main() -> Result<()>`，`anyhow!` / `bail!` 错误以 `Display` 形式输出到 stderr 后退出码 1
+- **没有 signal handler**：SIGSEGV / SIGABRT 直接 abort，丢失全部状态
+- 无 Rust panic hook override
+- 无 crash report 文件输出
+
+### 建议 ❌ **生产前必做**
+1. **加 Rust panic hook**（[`main.rs`](../src/runtime/src/main.rs) 入口）：
+   ```rust
+   std::panic::set_hook(Box::new(|info| {
+       eprintln!("=== z42vm internal panic ===");
+       eprintln!("location: {:?}", info.location());
+       eprintln!("payload: {:?}", info.payload());
+       // dump stack trace via backtrace crate
+       let bt = std::backtrace::Backtrace::capture();
+       eprintln!("rust backtrace:\n{}", bt);
+       // dump VM state if available (via thread-local CURRENT_VM)
+       if let Some(ctx) = crate::native::exports::CURRENT_VM.with(|c| c.get()) {
+           eprintln!("z42 call stack:\n{}", ctx.format_call_stack());
+       }
+       std::process::abort();
+   }));
+   ```
+2. **OS signal handler**（用 [`signal-hook`](https://crates.io/crates/signal-hook) crate）：
+   - SIGSEGV / SIGABRT / SIGFPE → 同上 dump + abort
+   - SIGINT → graceful shutdown（让用户 Ctrl+C 时也能看到 partial trace）
+3. **`Z42_CRASH_DIR` env var** —— crash 报告输出到该目录而非 stderr
+4. **minidump 推迟**：cross-platform 复杂，先做文本 dump
+
+**ROI**：极高。1-2 天。production 前必备。
+
+## D5. 启动 banner + 版本信息
+
+### CoreCLR
+- 启动期默认静默；DEBUG build 打印 runtime 版本 + enabled features
+- `dotnet --info` 输出完整 runtime / SDK / framework 信息
+
+### z42 现状
+- [`main.rs:6`](../src/runtime/src/main.rs#L6) `#[command(name = "z42vm", version)]` —— clap 自动 `--version`
+- 启动完全静默（无 banner）
+- 没参数运行只输出 clap 的 "error: missing required argument"
+
+### 建议 ⚠️
+1. **`z42vm --info` 子命令**输出：
+   ```
+   z42vm 0.1.0
+   target: aarch64-apple-darwin
+   features: jit, native-interop
+   exec modes: interp, jit
+   libs dir: /Users/.../artifacts/build/libs/release
+   gc: ArcMagrGC (Rc-backed, Phase 3-OOM)
+   build profile: release
+   ```
+2. **verbose 模式启动 banner**：`--verbose` 时打印简短版（z42vm 0.1.0 (jit) starting）
+3. **无参数时**：clap default 已经够，但可以加 `--help-mini` 一行式
+4. **首次 JIT 编译 / 首次 GC** 默认 trace! 级别 —— 通过 D2 的 EnvFilter 可以打开
+
+**ROI**：低。0.5 天。诊断价值不高但用户体验好。
+
+## D6. 性能指标 / Counters
+
+### CoreCLR
+- EventCounters 模型：runtime 暴露 `gc-heap-size` / `cpu-usage` / `working-set` / `gen-2-gc-count` / `exception-count` 等内置 counter
+- 定期采样（默认 60s）+ EventPipe 推送到 monitoring backend
+- `dotnet-counters monitor` 直接展示
+
+### z42 现状
+- [`gc/types.rs`](../src/runtime/src/gc/types.rs) `HeapStats`（`allocated_bytes` / `freed_bytes` / `objects_count` / `pause_us` 等）✅
+- 暴露给 z42 脚本：`Std.GC.UsedBytes()` / `Std.GC.ForceCollect()` ✅
+- 缺：JIT 编译数 / 异常 throw 数 / Builtin call 频率 / native call 数
+
+### 建议 ⚠️
+1. 在 `VmContext` 加 atomic counters：
+   ```rust
+   pub struct RuntimeCounters {
+       pub jit_methods_compiled: AtomicU64,
+       pub jit_compile_us_total: AtomicU64,
+       pub exceptions_thrown: AtomicU64,
+       pub exceptions_caught: AtomicU64,
+       pub native_calls: AtomicU64,
+       pub builtin_calls: AtomicU64,
+   }
+   ```
+2. corelib 加 `Std.Diagnostics.RuntimeStats.Snapshot()` 暴露给脚本
+3. CLI `--print-stats-on-exit` 打印 summary
+4. Prometheus / OTLP exporter 推迟
+
+**ROI**：中。1-2 天 (counters) + 后续脚本 API 单独 spec。
+
+## D7. Profiling 钩子
+
+### CoreCLR
+- `ICorProfilerInfo` API：function entry/exit / GC events / alloc / exception / thread lifecycle
+- profiler 以 out-of-process 方式 attach
+- Evacuation counter 同步避免死锁
+
+### z42 现状
+- [`gc/types.rs:99`](../src/runtime/src/gc/types.rs#L99) `AlloceSamplerFn` —— allocation 采样 ✅
+- 无 function entry/exit hook
+- 无 JIT compile event hook
+
+### 建议 ⚠️ 后置
+- 当前阶段 RuntimeObserver（见 D3）已经够；完整 profiling API 等 Phase 4
+- function entry/exit 钩子和 JIT inline 冲突，需配合 tiered compilation 设计
+
+**ROI**：低（短期），高（Phase 4+）
+
+## D8. 内部 invariant 检查
+
+### CoreCLR
+- [`inc/check.h`](../../../runtime/src/coreclr/inc/check.h) `CONTRACTL` 宏 —— 形式化 pre/post/invariant
+- 三种 build (CHK / DBG / FRE)：retail build 完全擦除
+- `_ASSERTE` 类似 Rust `debug_assert!` 但 + thread-safe + capture context
+
+### z42 现状
+- 596 行 `debug_assert!` / `assert!` / `bail!` 散落在 81 文件 ✅ 覆盖关键路径
+- 无 formal contract 系统
+
+### 建议 ✅ 当前够用
+- Rust 类型系统已经替代了 CoreCLR 一大半 CONTRACTL 用途（`Option<T>` / `Result<T, E>` / 借用检查器）
+- 真正缺的是 **runtime invariants** —— 这块用 `debug_assert!` 即可
+- 不需要 formal contract 框架
+
+**结论**：保持现状，标记为已对齐。
+
+## D9. 诊断 IPC
+
+### CoreCLR
+- Diagnostic Server：named pipe (Win) / Unix socket，外部工具实时连接
+- 协议：dotnet-trace / dotnet-counters / dotnet-dump
+
+### z42 现状 ❌
+- 完全没有
+- 无 REPL / debug protocol / dump-on-demand
+
+### 建议 ❌ 推迟
+- 单线程 VM 实施成本不值；多线程 (Phase 3) 落地后再考虑
+- 短期替代：CLI `--stats-interval=5s` 在 stderr 周期输出 stats（D6 配套）
+
+**ROI**：极低（短期）
+
+## D10. README / 运维手册
+
+### CoreCLR
+- 完整运维文档（troubleshooting / GC tuning / JIT diagnostics / collecting traces）
+- 每个 subsystem 有自己的 design doc
+
+### z42 现状
+- [`src/runtime/README.md`](../src/runtime/README.md) 73 行 ✅
+- 各 subsystem 有 README（gc / interp / jit）✅
+- 缺：**运维手册**（"GC pause 怎么诊断"/"JIT crash 怎么 debug"/"native interop hang 怎么排查"）
+
+### 建议 ⚠️
+- 不急。等 production 用户出现报障再写
+- 短期：在 [`docs/workflow/debugging/`](../docs/workflow/debugging/) 加 "Runtime triage" 一章
+
+**ROI**：低。0.5-1 天，等出第一个 production bug 再写。
+
+---
+
+## D11. 综合优先级表（合并 Part 1-4）
+
+把所有 Part 的发现重排：
+
+| 优先级 | 改造 | Part | 估时 | 类别 |
+|---|---|---|---|---|
+| **P0** | **Panic hook + signal handler** (D4) — 生产前 must-have | 4 | 1-2 天 | ops |
+| **P0** | **`RuntimeConfig` 中心化** (D1) — 所有 knob 一处声明 | 4 | 1-2 天 | ops |
+| **P0** | **JIT type specialization** (C2) — 已知 IrType 不走 helper | 2 | 2-3 天 | perf |
+| **P0** | **JIT↔VM trait 抽象** (Part 1) | 1 | 2-3 天 | arch |
+| **P1** | **Per-module log filtering** (D2) — `Z42_LOG=z42::jit=debug` | 4 | 0.5 天 | ops |
+| **P1** | **`Value::Str(String) → Rc<str>`** (C1+C3) | 2 | 1-2 天 | perf |
+| **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
+| **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
+| **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
+| **P1** | **`RuntimeObserver` + `RuntimeStats`** (D3+D6) | 4 | 3-5 天 | ops |
+| **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
+| **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
+| **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
+| **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
+| **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
+| **P3** | **Startup banner / --info** (D5) | 4 | 0.5 天 | ops |
+| **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
+| **P4** | **GC bump allocator** (C6) | 2 | 极大 | arch |
+| **P4** | **Hot-path stub inline** (Part 1) | 1 | 2-3 天 | perf |
+| **P5** | **Diagnostic IPC** (D9) | 4 | 巨大 | ops |
+| **P5** | **z42.text 扩充 / z42.math BigInteger** (S5) | 3 | 7-10 天 | stdlib |
+
+### 立即可上（≤1 天，5 个独立 commit）
+
+1. ⚡ **删除 z42.text/src/Regex.z42 stub** (S2.2)
+2. ⚡ **z42.crypto 补 README** (S2.1)
+3. ⚡ **`tracing` EnvFilter**（D2）—— `Z42_LOG=...` 即时生效
+4. ⚡ **Rust panic hook + Z42_CRASH_DIR**（D4 的第一步）
+5. ⚡ **`String.Length` 加 cache** 或改 byte semantics（C11.1）
+
+## D12. 不做 / 后置的部分
+
+明确不抄的 CoreCLR 设施：
+- **createdump minidump** — cross-platform 复杂度 ≫ 价值
+- **CONTRACTL 宏系统** — Rust 类型系统已部分替代
+- **EventPipe IPC 协议** — 单线程阶段没价值
+- **完整 ICorProfilerInfo** — out-of-process profiler 不在 z42 roadmap
+- **Locale / globalization 初始化** — z42 当前 ASCII-only，国际化未规划
+- **Per-arch ASM stubs** — Cranelift 兜底
+
+---
+
+*Part 4 作者：Claude（z42 review）*
+*调研日期：2026-05-22*
