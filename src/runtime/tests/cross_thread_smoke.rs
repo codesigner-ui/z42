@@ -258,7 +258,10 @@ fn gc_collect_with_concurrent_mutators_no_race() {
     }
 
     for _ in 0..collect_rounds {
-        let _pause = request_gc_pause(&collector);
+        // add-multi-collector-arbitration (2026-05-21): request_gc_pause
+        // returns Option. Main thread is the sole collector here, so
+        // CAS should always succeed.
+        let _pause = request_gc_pause(&collector).expect("main thread CAS succeeds");
         collector.heap().collect_cycles();
         // _pause drop releases workers.
     }
@@ -277,45 +280,41 @@ fn gc_collect_with_concurrent_mutators_no_race() {
 
 #[test]
 fn auto_collect_triggers_via_safepoint_no_race() {
-    // 1 worker concurrently alloc small arrays. max_bytes tight enough that
-    // the auto-threshold path is repeatedly tripped, deferring each collect
-    // to the next safepoint (rather than the v0 inline-collect-without-ctx
-    // path that would race with the worker's frame.regs writes).
-    //
-    // 2026-05-21 add-gc-safepoint-counter-throttling: reduced from 4 workers
-    // to 1. With 4+ concurrent workers, the auto-collect drain protocol
-    // currently has a race where two workers can both atomically swap the
-    // flag and both enter `request_gc_pause`, each excluding themselves
-    // from the parked_count target — neither parks → deadlock. That race
-    // is pre-existing (latent before throttling) but exposed reliably by
-    // throttle timing. Tracked as deferred spec
-    // `add-multi-collector-arbitration` (notes in备注 below).
-    //
-    // Single-worker test still proves the core "drain flag → safepoint
-    // wrapped collect → no race with mutator" path.
+    // 4 workers concurrently alloc small arrays. max_bytes tight enough
+    // that the auto-threshold path is repeatedly tripped across workers,
+    // deferring each collect to the next safepoint. Tests both the
+    // deferred-drain path (add-gc-safepoint-auto-threshold) AND the
+    // multi-collector arbitration (add-multi-collector-arbitration 2026-05-21):
+    // multiple workers can lose the auto-collect drain race, but the
+    // CAS-guarded `request_gc_pause` ensures only one becomes the
+    // active collector; the others park-as-mutator → no deadlock.
     use std::sync::atomic::{AtomicUsize, Ordering as AtoOrd};
     use z42::gc::safepoint::check_safepoint;
 
     let main = VmContext::with_module(make_void_action_module("AutoCollectMain"));
     main.heap().set_max_heap_bytes(Some(8 * 1024));
 
+    let n_workers = 4usize;
     let iters_per_worker = 200usize;
-    let active = Arc::new(AtomicUsize::new(1));
+    let active = Arc::new(AtomicUsize::new(n_workers));
 
-    let core = main.core_arc();
-    let active_clone = Arc::clone(&active);
-    let worker = thread::spawn(move || {
-        let w = z42::vm_context::VmContext::new_with_core(core);
-        for _ in 0..iters_per_worker {
-            let _ = w.heap().alloc_array(vec![
-                Value::I64(0), Value::I64(1), Value::I64(2), Value::I64(3),
-                Value::I64(4), Value::I64(5), Value::I64(6), Value::I64(7),
-            ]);
-            w.force_safepoint();
-            check_safepoint(&w);
-        }
-        active_clone.fetch_sub(1, AtoOrd::AcqRel);
-    });
+    let mut handles = Vec::with_capacity(n_workers);
+    for _ in 0..n_workers {
+        let core = main.core_arc();
+        let active_clone = Arc::clone(&active);
+        handles.push(thread::spawn(move || {
+            let w = z42::vm_context::VmContext::new_with_core(core);
+            for _ in 0..iters_per_worker {
+                let _ = w.heap().alloc_array(vec![
+                    Value::I64(0), Value::I64(1), Value::I64(2), Value::I64(3),
+                    Value::I64(4), Value::I64(5), Value::I64(6), Value::I64(7),
+                ]);
+                w.force_safepoint();
+                check_safepoint(&w);
+            }
+            active_clone.fetch_sub(1, AtoOrd::AcqRel);
+        }));
+    }
 
     while active.load(AtoOrd::Acquire) > 0 {
         main.force_safepoint();
@@ -323,7 +322,9 @@ fn auto_collect_triggers_via_safepoint_no_race() {
         thread::yield_now();
     }
 
-    worker.join().expect("worker panicked");
+    for h in handles {
+        h.join().expect("worker panicked");
+    }
     main.force_safepoint();
     check_safepoint(&main);
 
@@ -331,6 +332,76 @@ fn auto_collect_triggers_via_safepoint_no_race() {
     assert!(stats.gc_cycles > 0,
         "auto-threshold should have fired at least one collect (gc_cycles={})",
         stats.gc_cycles);
+}
+
+// ── add-multi-collector-arbitration Phase 4 (2026-05-21) ─────────────────────
+
+#[test]
+fn concurrent_gc_collect_callers_arbitrate() {
+    // 2 threads both attempt request_gc_pause + collect concurrently.
+    // The arbitration CAS ensures exactly one becomes the active collector;
+    // the other parks-as-mutator and returns None. Without arbitration,
+    // both would wait on parked_count forever (each excluding itself).
+    //
+    // Note: main holds a VmContext registered in vm_contexts (3 total
+    // with the 2 workers). If main blocks in handles[].join() it does
+    // NOT participate in the safepoint protocol → active collector
+    // never sees parked_count == 2 (only 1 worker parks; main is in
+    // kernel-blocking join). Solution: track active workers via an
+    // atomic counter and have main loop check_safepoint until both
+    // workers finish.
+    use std::sync::atomic::{AtomicUsize, Ordering as AtoOrd};
+    use z42::gc::safepoint::{check_safepoint, request_gc_pause};
+
+    let main = VmContext::with_module(make_void_action_module("ArbitrateMain"));
+    let collected = Arc::new(AtomicUsize::new(0));
+    let none_returned = Arc::new(AtomicUsize::new(0));
+
+    let n_threads = 2usize;
+    let active = Arc::new(AtomicUsize::new(n_threads));
+    let mut handles = Vec::with_capacity(n_threads);
+    for _ in 0..n_threads {
+        let core = main.core_arc();
+        let collected_c = Arc::clone(&collected);
+        let none_c = Arc::clone(&none_returned);
+        let active_c = Arc::clone(&active);
+        handles.push(thread::spawn(move || {
+            let w = z42::vm_context::VmContext::new_with_core(core);
+            let pause = request_gc_pause(&w);
+            let got_some = pause.is_some();
+            if got_some {
+                w.heap().collect_cycles();
+            }
+            drop(pause);
+            if got_some {
+                collected_c.fetch_add(1, AtoOrd::AcqRel);
+            } else {
+                none_c.fetch_add(1, AtoOrd::AcqRel);
+            }
+            active_c.fetch_sub(1, AtoOrd::AcqRel);
+        }));
+    }
+
+    // Main participates in safepoint protocol until workers finish.
+    while active.load(AtoOrd::Acquire) > 0 {
+        main.force_safepoint();
+        check_safepoint(&main);
+        thread::yield_now();
+    }
+
+    for h in handles {
+        h.join().expect("worker panicked");
+    }
+
+    let n_collected = collected.load(AtoOrd::Acquire);
+    let n_none = none_returned.load(AtoOrd::Acquire);
+    assert_eq!(n_collected + n_none, n_threads,
+        "all threads must reach either Some or None branch");
+    // Verify the collector_active flag is back to false after both finish:
+    // a subsequent request_gc_pause must succeed.
+    let post_pause = request_gc_pause(&main);
+    assert!(post_pause.is_some(),
+        "collector_active must be released after both arbitration losers/winners drop");
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

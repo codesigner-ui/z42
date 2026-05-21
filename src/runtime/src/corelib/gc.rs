@@ -21,9 +21,17 @@ use std::sync::{Arc, OnceLock};
 /// [`crate::gc::safepoint::request_gc_pause`] before mark+sweep. All other
 /// VmContexts park at their next safepoint check; this thread runs collect;
 /// the RAII guard's Drop releases everyone.
+///
+/// **add-multi-collector-arbitration (2026-05-21)**: best-effort —
+/// silently no-op if another collector is already active. The active
+/// collector's pending work covers our intent; calling again redundantly
+/// would just run an immediate-no-op collect with nothing reachable to
+/// reclaim. Matches typical `GC.Collect()` semantics in C# / Java where
+/// concurrent calls may coalesce.
 pub fn builtin_gc_collect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
-    let _pause = crate::gc::safepoint::request_gc_pause(ctx);
-    ctx.heap().collect_cycles();
+    if let Some(_pause) = crate::gc::safepoint::request_gc_pause(ctx) {
+        ctx.heap().collect_cycles();
+    }
     Ok(Value::Null)
 }
 
@@ -37,11 +45,19 @@ pub fn builtin_gc_used_bytes(ctx: &VmContext, _args: &[Value]) -> Result<Value> 
 /// 与 `Collect()` 区别：前者是建议性（pause 时跳过），后者总是触发并返回数据。
 ///
 /// **add-gc-safepoint (2026-05-20)**: same stop-the-world wrapper as
-/// `builtin_gc_collect` — see that doc.
+/// `builtin_gc_collect`.
+///
+/// **add-multi-collector-arbitration (2026-05-21)**: if another collector
+/// is already active, we skip our own force_collect and return 0 freed
+/// bytes (the active collector's work covers our intent). Same
+/// best-effort semantics as `builtin_gc_collect`.
 pub fn builtin_gc_force_collect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
-    let _pause = crate::gc::safepoint::request_gc_pause(ctx);
-    let stats = ctx.heap().force_collect();
-    Ok(Value::I64(stats.freed_bytes as i64))
+    if let Some(_pause) = crate::gc::safepoint::request_gc_pause(ctx) {
+        let stats = ctx.heap().force_collect();
+        Ok(Value::I64(stats.freed_bytes as i64))
+    } else {
+        Ok(Value::I64(0))
+    }
 }
 
 // ── reorganize-gc-stdlib (2026-05-07) ────────────────────────────────────────

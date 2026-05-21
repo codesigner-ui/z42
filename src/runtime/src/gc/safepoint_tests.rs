@@ -33,7 +33,7 @@ fn request_gc_pause_with_only_self_proceeds_immediately() {
     // Should transition Idle → Requested → Marking without blocking.
     let ctx = VmContext::new();
     {
-        let _guard = request_gc_pause(&ctx);
+        let _guard = request_gc_pause(&ctx).expect("uncontended CAS should succeed");
         assert_eq!(*ctx.core.gc_phase.lock(), GcPhase::Marking);
     }
     // Guard dropped → released.
@@ -259,4 +259,82 @@ fn check_safepoint_slow_path_pure_idle_no_op_resets_counter() {
     assert_eq!(after, throttle_n());
     assert_eq!(ctx.heap().stats().gc_cycles, cycles_before,
         "Idle slow path should not run any collect");
+}
+
+// ── add-multi-collector-arbitration Phase 4 (2026-05-21) ─────────────────────
+
+#[test]
+fn request_gc_pause_returns_some_when_uncontested() {
+    // No other collector active — CAS succeeds, returns Some.
+    let ctx = VmContext::new();
+    assert!(!ctx.core.collector_active.load(Ordering::Acquire));
+
+    let guard = request_gc_pause(&ctx);
+    assert!(guard.is_some(), "uncontested CAS should succeed");
+    assert!(ctx.core.collector_active.load(Ordering::Acquire));
+    drop(guard);
+    // After Drop, collector_active released.
+    assert!(!ctx.core.collector_active.load(Ordering::Acquire));
+}
+
+#[test]
+fn second_collector_falls_back_to_mutator_park_returns_none() {
+    // Pre-set collector_active = true to simulate another collector
+    // holding the role. Spawn a worker thread that calls
+    // request_gc_pause — it should park (briefly until we release the
+    // bool and notify) and return None.
+    let collector = VmContext::new();
+    let _other = VmContext::new_with_core(collector.core_arc());
+
+    // Simulate "another collector is active":
+    collector.core.collector_active.store(true, Ordering::Release);
+    *collector.core.gc_phase.lock() = GcPhase::Marking;
+
+    let core = collector.core_arc();
+    let worker = std::thread::spawn(move || {
+        let w = VmContext::new_with_core(core);
+        // GcPauseGuard borrows from w; we can't return it across the
+        // thread boundary (w would drop first). Instead check is_some,
+        // drop guard (if any) inside the closure, return the bool.
+        let result = request_gc_pause(&w);
+        let got_some = result.is_some();
+        drop(result);
+        got_some
+    });
+
+    // Wait until the worker has parked.
+    let start = std::time::Instant::now();
+    while collector.core.parked_count.load(Ordering::Acquire) < 1 {
+        std::thread::yield_now();
+        if start.elapsed() > std::time::Duration::from_secs(5) {
+            panic!("worker never parked as fallback");
+        }
+    }
+
+    // Release: clear collector_active + phase = Idle + notify.
+    collector.core.collector_active.store(false, Ordering::Release);
+    *collector.core.gc_phase.lock() = GcPhase::Idle;
+    collector.core.gc_phase_cv.notify_all();
+
+    let got_some = worker.join().expect("worker panicked");
+    assert!(!got_some,
+        "losing collector should return None, got Some");
+    assert_eq!(collector.core.parked_count.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn release_re_enables_next_collector() {
+    // After the active collector drops its guard, a fresh
+    // request_gc_pause from the same thread should succeed.
+    let ctx = VmContext::new();
+
+    {
+        let g1 = request_gc_pause(&ctx).expect("first claim");
+        assert!(ctx.core.collector_active.load(Ordering::Acquire));
+        drop(g1);
+    }
+    // After drop, collector_active = false. Next claim succeeds.
+    assert!(!ctx.core.collector_active.load(Ordering::Acquire));
+    let g2 = request_gc_pause(&ctx);
+    assert!(g2.is_some(), "second claim after release should succeed");
 }

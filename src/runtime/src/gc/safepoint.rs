@@ -118,9 +118,13 @@ fn check_safepoint_slow(ctx: &VmContext) {
     }
     // Idle phase — drain pending auto-collect if any.
     if ctx.core.needs_auto_collect.swap(false, Ordering::AcqRel) {
-        let _pause = request_gc_pause(ctx);
-        ctx.heap().collect_cycles();
-        // _pause Drop releases the world + notifies all parked mutators.
+        // add-multi-collector-arbitration (2026-05-21): request_gc_pause
+        // returns Option. None means another collector is already active
+        // — we've been park-as-mutator'd inside the call; just return.
+        if let Some(_pause) = request_gc_pause(ctx) {
+            ctx.heap().collect_cycles();
+            // _pause Drop releases the world + notifies all parked mutators.
+        }
     }
 }
 
@@ -152,11 +156,37 @@ pub struct GcPauseGuard<'a> {
 /// and returns the guard. Caller does mark+sweep, then drops the guard to
 /// transition `Marking → Idle` and notify all parked mutators.
 ///
+/// **add-multi-collector-arbitration (2026-05-21)**: returns
+/// `Option<GcPauseGuard>`. The leading CAS on `collector_active` ensures
+/// only one thread can be the active collector at a time:
+///
+/// - `Some(guard)` — we claimed the collector role; caller proceeds with
+///   `collect_cycles()` / `force_collect()`
+/// - `None` — another collector is active. We've already parked-as-mutator
+///   inside this call (contributing to the active collector's
+///   `parked_count` target). Caller skips its collect.
+///
 /// The collector itself is **never** counted in `parked_count`; only other
 /// VmContexts are waited for. If the collector is the only live VmContext
 /// (`vm_contexts.len() == 1`), the wait condition `need_parked == 0` is
 /// satisfied immediately.
-pub fn request_gc_pause(ctx: &VmContext) -> GcPauseGuard<'_> {
+pub fn request_gc_pause(ctx: &VmContext) -> Option<GcPauseGuard<'_>> {
+    // Atomic CAS: claim the unique collector role. Acquire side pairs
+    // with the previous collector's `Release` store in GcPauseGuard::drop
+    // (so we see its heap changes); Release side pairs with our
+    // subsequent `gc_phase = Requested` store (so workers seeing
+    // Requested also see our collector_active = true).
+    if ctx.core.collector_active
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+        .is_err()
+    {
+        // Another collector is active. Park-as-mutator so the active
+        // collector's `parked_count` target is reached faster; return
+        // None so caller skips its own collect.
+        park_until_idle(ctx);
+        return None;
+    }
+
     *ctx.core.gc_phase.lock() = GcPhase::Requested;
 
     // Wait for everyone-but-self to park. Re-read vm_contexts.len() on
@@ -175,13 +205,17 @@ pub fn request_gc_pause(ctx: &VmContext) -> GcPauseGuard<'_> {
     *phase = GcPhase::Marking;
     drop(phase);
 
-    GcPauseGuard { ctx }
+    Some(GcPauseGuard { ctx })
 }
 
 impl Drop for GcPauseGuard<'_> {
     fn drop(&mut self) {
         *self.ctx.core.gc_phase.lock() = GcPhase::Idle;
         self.ctx.core.gc_phase_cv.notify_all();
+        // add-multi-collector-arbitration (2026-05-21): release the
+        // exclusive collector claim. Release ordering so the next
+        // collector's compare_exchange Acquire sees our final heap state.
+        self.ctx.core.collector_active.store(false, Ordering::Release);
     }
 }
 

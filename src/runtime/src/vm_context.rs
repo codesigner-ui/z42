@@ -199,6 +199,11 @@ pub struct VmCore {
     /// currently parked at a safepoint (excludes the collector). Used by
     /// the collector to know when stop-the-world is in effect.
     pub(crate) parked_count:       std::sync::atomic::AtomicUsize,
+    /// **add-multi-collector-arbitration (2026-05-21)**: exclusive
+    /// collector claim. `request_gc_pause` CAS-es false→true; only the
+    /// winner becomes the active collector for one round. Losers
+    /// park-as-mutator and return `None`. Cleared by `GcPauseGuard::drop`.
+    pub(crate) collector_active:   std::sync::atomic::AtomicBool,
     /// **add-gc-safepoint-auto-threshold (2026-05-20)**: shared AtomicBool
     /// that `ArcMagrGC::maybe_auto_collect` sets on pressure trip;
     /// `check_safepoint(ctx)` swaps it to `false` and takes ownership of
@@ -387,6 +392,7 @@ impl VmContext {
             gc_phase:             Mutex::new(crate::gc::safepoint::GcPhase::Idle),
             gc_phase_cv:          parking_lot::Condvar::new(),
             parked_count:         std::sync::atomic::AtomicUsize::new(0),
+            collector_active:     std::sync::atomic::AtomicBool::new(false),
             needs_auto_collect:   Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rwlocks:              Mutex::new(HashMap::new()),
             next_rwlock_id:       std::sync::atomic::AtomicU64::new(1),
