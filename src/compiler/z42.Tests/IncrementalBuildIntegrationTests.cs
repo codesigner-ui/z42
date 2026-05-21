@@ -38,10 +38,15 @@ public sealed class IncrementalBuildIntegrationTests
         psi.Environment["NO_COLOR"] = "1";
 
         using var proc = Process.Start(psi)!;
-        string stdout = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
+        // Read stdout + stderr in parallel: sequential ReadToEnd() deadlocks
+        // on Windows once the child fills the 4 KB pipe buffer on the
+        // not-yet-being-read stream (Linux/macOS have larger buffers, so the
+        // race usually hides there). `z42c build --workspace` emits enough
+        // progress output on stderr to reliably hit this on windows-latest CI.
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
         proc.WaitForExit();
-        return (proc.ExitCode, stdout, stderr);
+        return (proc.ExitCode, stdoutTask.Result, stderrTask.Result);
     }
 
     /// <summary>清空 stdlib 输出后第一次 build 应全 fresh，第二次应全 cached。</summary>

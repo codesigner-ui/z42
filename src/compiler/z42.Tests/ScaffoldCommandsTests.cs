@@ -44,10 +44,13 @@ public sealed class ScaffoldCommandsTests : IDisposable
         psi.Environment["NO_COLOR"] = "1";
 
         using var proc = Process.Start(psi)!;
-        string stdout = proc.StandardOutput.ReadToEnd();
-        string stderr = proc.StandardError.ReadToEnd();
+        // Read stdout + stderr in parallel: sequential ReadToEnd() deadlocks
+        // on Windows once the child fills the 4 KB pipe buffer on the
+        // not-yet-being-read stream (Linux/macOS have larger buffers).
+        var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+        var stderrTask = proc.StandardError.ReadToEndAsync();
         proc.WaitForExit();
-        return (proc.ExitCode, stdout, stderr);
+        return (proc.ExitCode, stdoutTask.Result, stderrTask.Result);
     }
 
     // ── new --workspace ──────────────────────────────────────────────────────
