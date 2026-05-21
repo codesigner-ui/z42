@@ -363,6 +363,80 @@ impl ArcMagrGC {
         reachable
     }
 
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: mark phase of the
+    /// future mark-sweep collector. Currently runs *alongside* the
+    /// trial-deletion path (P2 will add side-by-side validation; P3
+    /// switches over and removes trial-deletion).
+    ///
+    /// BFS from roots (pinned + external scanner) → sets `marked = 1` on
+    /// every reachable `GcAllocation`. Idempotent within one cycle: the
+    /// `GcRef::mark` CAS guarantees each object enqueues children exactly
+    /// once even under root reuse.
+    ///
+    /// Caller (P3 sweep_phase) is responsible for resetting marks on
+    /// survivors after the sweep. Until P3, callers MUST call
+    /// [`reset_marks_for_test`](Self::reset_marks_for_test) themselves
+    /// or accept that subsequent mark_phase calls observe stale marks
+    /// (only relevant for the new mark_phase unit tests; production
+    /// path stays on trial-deletion until P3).
+    ///
+    /// Returns the count of newly-marked allocations — used by the new
+    /// unit tests to verify BFS visits the expected set.
+    #[allow(dead_code)] // becomes used in P2 (side-by-side) + P3 (default path)
+    fn mark_phase(&self) -> usize {
+        // Initial roots: pinned + external scanner output.
+        let mut queue: Vec<Value> = self.inner.lock().roots.values().cloned().collect();
+        {
+            let scanner_borrow = self.external_root_scanner.lock();
+            if let Some(scan) = scanner_borrow.as_ref() {
+                scan(&mut |v| {
+                    queue.push(v.clone());
+                });
+            }
+        }
+
+        let mut newly_marked = 0usize;
+        while let Some(v) = queue.pop() {
+            // Mark the allocation backing this Value; if already marked
+            // (or not a heap allocation at all, e.g. a primitive), skip.
+            let just_marked = match &v {
+                Value::Object(gc) => GcRef::mark(gc),
+                Value::Array(gc)  => GcRef::mark(gc),
+                Value::Closure { env, .. } => GcRef::mark(env),
+                Value::Ref { kind } => match kind {
+                    crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::mark(gc_ref),
+                    crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::mark(gc_ref),
+                    crate::metadata::types::RefKind::Stack { .. } => false,
+                },
+                _ => false,
+            };
+            if !just_marked { continue; }
+            newly_marked += 1;
+
+            v.trace_children(&mut |child| {
+                queue.push(child.clone());
+            });
+        }
+        newly_marked
+    }
+
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: clear all mark bits.
+    /// Helper for tests + P3 will use this at the end of sweep to prep
+    /// survivors for the next cycle. Walks the registry via the existing
+    /// snapshot upgrade path (so dead WeakRefs are skipped naturally).
+    ///
+    /// Test-visible: makes mark_phase tests idempotent across runs.
+    #[allow(dead_code)] // becomes used in P3 + tests below
+    fn reset_marks_for_test(&self) {
+        for v in self.snapshot_live_from_registry() {
+            match &v {
+                Value::Object(gc) => GcRef::clear_mark(gc),
+                Value::Array(gc)  => GcRef::clear_mark(gc),
+                _ => {}
+            }
+        }
+    }
+
     /// 断环：清空对象内部引用，让被引用方 Rc::strong_count 减一。
     /// Object → 所有 slots 设 `Value::Null`；Array → `vec.clear()`。
     fn break_cycle_value(v: &Value) {

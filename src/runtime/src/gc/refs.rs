@@ -53,6 +53,16 @@ pub struct GcAllocation<T> {
     /// Finalizer registered via `ArcMagrGC::register_finalizer`. One-shot:
     /// `Drop` takes it from the cell so re-collection / re-drop never re-fires.
     pub(crate) finalizer: Mutex<Option<FinalizerFn>>,
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: per-object mark bit
+    /// used by the mark-sweep collector. Reset to 0 at the start of each
+    /// collect; set to 1 by the mark phase BFS when the object is found
+    /// reachable from roots. Sweep phase drops entries where this is 0.
+    ///
+    /// `Relaxed` ordering is sufficient — the AtomicU8 is only meaningful
+    /// during stop-the-world collect (safepoint already established
+    /// happens-before via gc_phase Mutex). Single byte keeps allocation
+    /// size bump negligible.
+    pub(crate) marked: std::sync::atomic::AtomicU8,
 }
 
 impl<T> Drop for GcAllocation<T> {
@@ -76,6 +86,7 @@ impl<T> GcRef<T> {
             inner: Arc::new(GcAllocation {
                 inner:     Mutex::new(value),
                 finalizer: Mutex::new(None),
+                marked:    std::sync::atomic::AtomicU8::new(0),
             }),
         }
     }
@@ -123,6 +134,34 @@ impl<T> GcRef<T> {
         // SAFETY: alloc_ptr is from Arc::as_ptr, valid as long as `this` lives.
         // GcAllocation field offsets are stable (Rust default repr).
         unsafe { &(*alloc_ptr).inner as *const Mutex<T> }
+    }
+
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: atomically set the
+    /// mark bit. Returns `true` if this call transitioned 0→1 (i.e., we
+    /// were the first to mark this allocation in the current GC cycle),
+    /// `false` if it was already marked. Used by the mark phase BFS to
+    /// decide whether to enqueue this object's children.
+    pub fn mark(this: &Self) -> bool {
+        this.inner.marked
+            .compare_exchange(
+                0, 1,
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+            )
+            .is_ok()
+    }
+
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: read the current
+    /// mark state. Used by the sweep phase to decide retention.
+    pub fn is_marked(this: &Self) -> bool {
+        this.inner.marked.load(std::sync::atomic::Ordering::Relaxed) != 0
+    }
+
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: reset the mark bit
+    /// to 0. Called by the sweep phase on survivors (preparing them for
+    /// the next collect cycle).
+    pub fn clear_mark(this: &Self) {
+        this.inner.marked.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Create a weak reference (does not prevent collection).

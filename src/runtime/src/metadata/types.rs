@@ -257,6 +257,50 @@ pub enum PinSourceKind {
     ArrayU8,
 }
 
+impl Value {
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: visit every direct
+    /// child `Value` reachable from `self`. Used by the mark phase BFS
+    /// to extend reachability through reference-bearing variants
+    /// (Object slots, Array elements, Closure env, Ref::Array/Field
+    /// inner `GcRef`).
+    ///
+    /// Primitives (I64 / F64 / Bool / Char / Str / Null / FuncRef /
+    /// PinnedView / StackClosure / Ref::Stack) yield no children.
+    /// Mirrors `ArcMagrGC::scan_object_refs` (will become its
+    /// authoritative source once trial-deletion is removed in P3).
+    pub fn trace_children(&self, visit: &mut dyn FnMut(&Value)) {
+        match self {
+            Value::Object(rc) => {
+                let obj = rc.borrow();
+                for slot in &obj.slots { visit(slot); }
+            }
+            Value::Array(rc) => {
+                let arr = rc.borrow();
+                for elem in arr.iter() { visit(elem); }
+            }
+            Value::Closure { env, .. } => {
+                let arr = env.borrow();
+                for elem in arr.iter() { visit(elem); }
+            }
+            Value::Ref { kind } => match kind {
+                RefKind::Stack { .. } => {}
+                RefKind::Array { gc_ref, .. } => {
+                    let arr = gc_ref.borrow();
+                    for elem in arr.iter() { visit(elem); }
+                }
+                RefKind::Field { gc_ref, .. } => {
+                    let obj = gc_ref.borrow();
+                    for slot in &obj.slots { visit(slot); }
+                }
+            },
+            // Primitives — no children.
+            Value::I64(_) | Value::F64(_) | Value::Bool(_) | Value::Char(_)
+            | Value::Str(_) | Value::Null | Value::FuncRef(_)
+            | Value::PinnedView { .. } | Value::StackClosure { .. } => {}
+        }
+    }
+}
+
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
