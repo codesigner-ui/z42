@@ -18,6 +18,7 @@ z42 C# Bootstrap 编译器内部架构与工程文件规范。
 | [`project.md`](project.md) | `z42.toml` / `z42.workspace.toml` 格式、依赖 DAG、workspace include / preset 机制 |
 | [`manifest-schema.json`](manifest-schema.json) | manifest JSON Schema（机器可读）|
 | [`error-codes.md`](error-codes.md) | 错误码体系：E#### / W#### / WS### / Z#### 四套空间的来源、catalog 位置、加入流程 |
+| [`scripting-charter.md`](scripting-charter.md) | **Charter / not-scheduled**：compiler 拆分为 8 个 stdlib 包 + `z42.scripting` API 长期目标；路径 2b（自举后全平台），1.0+ 触发 |
 
 ## 入口点
 
