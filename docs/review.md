@@ -985,3 +985,469 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 *Part 4 作者：Claude（z42 review）*
 *调研日期：2026-05-22*
+
+---
+
+# Part 5：VM 内部分层 + 数据类型设计深度 Review（2026-05-22）
+
+> 前几部分看了顶层切分、热路径、stdlib、ops/devex。这部分专攻**两个最深的内部问题**：
+> 1. VM 内部模块依赖图 + 解耦机制（forward decl / opaque handle / tiering）
+> 2. 核心数据类型字节布局 + 大小设计（`Value` / `TypeDesc` / `ScriptObject` / `Instruction` 等）
+>
+> 这两层是其他所有优化的"地基"：地基不对，上层优化只能 patch；地基对了，性能 / 可维护性 / 演进能力一起涨。
+
+---
+
+## E1. VM 内部分层对照
+
+### CoreCLR 4 层结构 + 解耦机制
+
+```
+Tier 0 (Foundation)
+    utilcode/                — 内存 / 断言 / 容器；不依赖 VM
+Tier 1 (Type System Primitives)
+    object.h / field.h       — Object header + FieldDesc (16B bit-packed)
+    typehandle.h             — TypeHandle (tagged pointer)
+    typedesc.h               — 非 class 类型（数组 / byref / 泛型参数）
+Tier 2 (Type Metadata)
+    methodtable.h            — MethodTable (热)
+    class.h                  — EEClass (冷)
+Tier 3 (Method Execution)
+    clsload.hpp              — Class loader
+    method.hpp               — MethodDesc (32B base + 子类)
+    prestub.cpp              — 懒编译入口
+    jitinterface.cpp         — JIT↔VM 契约实现
+Tier 4 (Runtime Support)
+    threads.h                — Thread state
+    frames.h                 — Frame hierarchy
+    exceptionhandling.cpp    — 异常处理
+```
+
+**关键解耦机制**：
+
+1. **Forward declaration walls**：[`methodtable.h`](../../../runtime/src/coreclr/vm/methodtable.h) 第 34-59 行 forward-declare **15 个类**，只 `#include` 必需的 10 个 header。改 `MethodDesc` 字段不会触发 `MethodTable.h` 整链重编译。
+2. **Opaque handles**：[`corinfo.h:989`](../../../runtime/src/coreclr/inc/corinfo.h#L989) `CORINFO_CLASS_HANDLE = struct CORINFO_CLASS_STRUCT_*;` —— JIT 拿到的是不透明 void*；MT 内部布局变化与 JIT 完全无关。
+3. **`inc/` vs `vm/` boundary**：`inc/` 是跨子系统契约（`corinfo.h` / `clrtypes.h` / `corjit.h`），**不允许 include `vm/*.h`**。这是个 build-time 强制的契约层。
+4. **TypeHandle tagged pointer**：[`typehnd.h`](../../../runtime/src/coreclr/vm/typehnd.h) 低 2 bit 区分 `MethodTable*` (0b00) vs `TypeDesc*` (0b10) —— 无需额外 discriminator field。
+5. **MethodTable / EEClass 分层**：MT 是热数据（JIT 频繁读：vtable / field offset / interface map），EEClass 是冷数据（class loader / reflection 才用）。
+
+### z42 现状层次
+
+```
+metadata/  (root layer, no internal deps)  ✅
+    ↑
+vm_context.rs                              ⚠️ hub
+    ↑
+interp/  jit/  gc/  exception/  corelib/   (parallel layer, all depend on metadata + vm_context)
+    ↑
+host/  native/                             (FFI boundary)
+```
+
+**z42 已经对的部分** ✅：
+
+| 模式 | z42 实现 | 对应 CoreCLR 模式 |
+|---|---|---|
+| metadata 是 root（无回头依赖） | `metadata/mod.rs` 无 `use crate::*` | utilcode 同样无 VM 依赖 |
+| `pub(crate)` boundary 严格 | `exec_instr / helpers / frame` 都是 `pub(crate)` 或私有 | `.hpp` vs `.h` 内外有别 |
+| Exhaustive match 防 silent breakage | [`exec_instr.rs:53`](../src/runtime/src/interp/exec_instr.rs#L53) 65+ arm 无 `_` 兜底 | CoreCLR forward decl + 严格 include |
+| `trait MagrGC` 解耦 GC ↔ Value | [`gc/heap.rs`](../src/runtime/src/gc/heap.rs) trait + visitor 模式 | `IGCHeapInternal` |
+| corelib BuiltinId 数组索引 | [`corelib/mod.rs:69`](../src/runtime/src/corelib/mod.rs#L69) `BUILTINS: &[(&str, NativeFn)]` | EEHash + 哈希 dispatch |
+| 无 cycle / 无 diamond dep | 调研已确认 | CoreCLR 同 |
+
+**z42 问题** ⚠️：
+
+#### E1.P1 `VmContext` 是 hub（46 public methods, 944 LOC, 19 fields） ⚠️
+
+**现状**：[`vm_context.rs`](../src/runtime/src/vm_context.rs) 集中所有可变状态 —— static fields / pending exception / lazy loader / native types / heap / processes / threads / mutexes / channels / gc_phase 等。
+- 不是经典 god object（方法有 boundary，调用者只能通过 `ctx.static_set()` / `ctx.set_exception()` 等访问，看不到 struct field）
+- 但 **每个模块都 take `&VmContext`** 作为参数，相当于把"所有 VM 状态"广播给所有调用方
+- 加新 concern（observability / monitoring / tracing）必须扩 `VmContext` 字段表
+
+**对照 CoreCLR**：状态分散得多 ——
+- Thread-local state 在 `Thread`（[`threads.h:877`](../../../runtime/src/coreclr/vm/threads.h#L877)）
+- Process-global state 在 EE singleton（`g_pGCHeap` / `g_pThreadStore` 等）
+- 各模块通过自己的 singleton 拿状态，不共用一个 mega-struct
+
+**改造方向**（中长期）：
+
+按 concern 拆 trait，VmContext 实现所有 trait：
+
+```rust
+// runtime/src/interfaces.rs (new)
+pub trait GcAccess {
+    fn heap(&self) -> &dyn MagrGC;
+    fn alloc_object(&self, td: Arc<TypeDesc>, slots: Vec<Value>) -> Value;
+    fn for_each_root(&self, visitor: &mut dyn FnMut(&Value));
+}
+
+pub trait ExceptionAccess {
+    fn set_exception(&self, val: Value);
+    fn take_exception(&self) -> Option<Value>;
+    fn peek_exception(&self) -> Option<Value>;
+}
+
+pub trait StaticFieldAccess {
+    fn static_get(&self, id: StaticFieldId) -> Option<Value>;
+    fn static_set(&self, id: StaticFieldId, val: Value);
+}
+
+pub trait CallStackAccess {
+    fn push_frame(&self, frame: VmFrame) -> FrameGuard<'_>;
+    fn current_frames(&self) -> &[VmFrame];
+}
+
+impl GcAccess for VmContext { ... }
+impl ExceptionAccess for VmContext { ... }
+// ...
+
+// 然后 interp / jit / corelib 只 take 它需要的 trait：
+fn array_new(ctx: &impl GcAccess, ...) -> Value { ... }
+fn throw(ctx: &impl ExceptionAccess, val: Value) { ... }
+```
+
+**收益**：
+1. 调用方只看自己需要的能力，依赖收窄
+2. 测试可以 mock 单个 trait
+3. 多线程（Phase 3）只需让单个 trait 实现 Send/Sync，不是整个 VmContext
+4. 加新 concern 只需新 trait，不动 VmContext 字段表
+
+**估时**：5-7 天（含 callsite 修改）。**ROI 中等**：不是性能优化，但解锁 VmContext 演进。
+
+#### E1.P2 JIT↔Metadata 直接 import（重申 Part 1 P0） ⚠️
+
+[`jit/translate.rs:24-100`](../src/runtime/src/jit/translate.rs#L24-L100) 直接 import `crate::metadata::{Function, Instruction, Terminator}`，对 `Instruction` 做 65+ arm 模式匹配。
+
+**对照** CoreCLR：JIT 拿到 `CORINFO_METHOD_HANDLE` (void*)，所有信息通过 callback 查（`getMethodInfo` / `getClassInfo` / `getFieldOffset` 等）。换 metadata 内部格式 JIT 完全无感。
+
+**已在 Part 1 P0 列出**：新建 `jit/vm_interface.rs` 定义 `trait JitVm`，translate.rs 走 trait 不直接 import metadata。
+
+#### E1.P3 没有 `inc/` 等价的契约层 ⚠️
+
+CoreCLR `inc/` 目录强制隔离公共契约 vs 内部实现。z42 没有等价物 —— 公共契约（`Value` / `Instruction` / `Module` 等）混在 metadata 模块里。
+
+**改造方向**：
+
+新建 `runtime/src/interfaces/`（或保留 `lib.rs` 作为聚合点）：
+- `interfaces/handles.rs` —— 不透明 handle 类型：`MethodHandle(u32)` / `ClassHandle(u32)` / `FieldHandle(u32)`
+- `interfaces/vm.rs` —— 上述 trait（GcAccess / ExceptionAccess 等）
+- `interfaces/jit.rs` —— `trait JitVm`（Part 1 P0）
+
+metadata 内部类型保持 `pub` 但实际上仅 host/main.rs 直接用；interp/jit/gc 走 handle + trait。
+
+**ROI**：和 P1 / P2 同等。1-2 周完整改造。
+
+---
+
+## E2. 核心数据类型对照
+
+### z42 数据类型字节布局（实测）
+
+| 类型 | 文件 | 实测大小 | 说明 |
+|---|---|---|---|
+| `Value` | [types.rs:199](../src/runtime/src/metadata/types.rs#L199) | **~48B** | 12 variant，largest `Closure { env, fn_name: String }` ≈ 40B |
+| `TypeDesc` | [types.rs:85](../src/runtime/src/metadata/types.rs#L85) | **~336B** | 13 字段含 6 个 `String` + 4 个 `Vec<...>` + 2 个 `HashMap<String, usize>` |
+| `ScriptObject` | [types.rs:165](../src/runtime/src/metadata/types.rs#L165) | **64B 头** + slots | `Arc<TypeDesc>` + `Vec<Value>` + `NativeData` + `Vec<String>` type_args |
+| `FieldSlot` | [types.rs:13](../src/runtime/src/metadata/types.rs#L13) | **48B** | `name: String` + `type_tag: String` —— 全 heap String |
+| `Function` | [bytecode.rs:191](../src/runtime/src/metadata/bytecode.rs#L191) | **200B+ 头** | name / ret_type / param_types / blocks / exception_table / line_table / local_vars 全 inline |
+| `Module` | [bytecode.rs:11](../src/runtime/src/metadata/bytecode.rs#L11) | **~220B** | 双 type_registry（HashMap + Vec），双 func 索引 |
+| `Instruction` | [bytecode.rs:291](../src/runtime/src/metadata/bytecode.rs#L291) | **~120B** | 45+ variant，largest `CallNative` 100B+（4 个 String 字段） |
+| `Frame` | [interp/mod.rs:161](../src/runtime/src/interp/mod.rs#L161) | **72B 头** | `Vec<Value>` regs + env_arena + ref_writebacks |
+| `VmFrame` | [exception/mod.rs:64](../src/runtime/src/exception/mod.rs#L64) | **72B** | 含 raw pointers 到 Frame.regs 和 env_arena |
+| `ResolvedTokens` | [resolver.rs:36](../src/runtime/src/metadata/resolver.rs#L36) | **168B 头** | 7 个稀疏缓存 Vec |
+| `TypeId`/`MethodId`/`FieldId` | [tokens.rs](../src/runtime/src/metadata/tokens.rs) | **4B 每个** | `u32` newtype；UNRESOLVED = `u32::MAX` |
+| `GcRef<T>` | [gc/refs.rs:78](../src/runtime/src/gc/refs.rs#L78) | **16B 手柄** | `Arc<GcAllocation<T>>` |
+
+### CoreCLR 数据类型对照
+
+| z42 类型 | CoreCLR 等价 | CoreCLR 大小 | 设计差异 |
+|---|---|---|---|
+| `Value` 48B | tagged 64-bit (primitive) / OBJECTREF | **8B** | CoreCLR primitive 内联到 64-bit slot，z42 enum 永远 48B |
+| `TypeDesc` 336B | `MethodTable` + `EEClass` 分层 | **MT ~40-50B base** + cold EEClass 出口 | z42 不分热 / 冷 |
+| `ScriptObject` 64B 头 | `Object` 8B header (MT*) + 8B sync block | **16B 头** | z42 多了 `Vec<Value>` (24B) 和 `Vec<String>` type_args (24B) inline |
+| `FieldSlot` 48B | `FieldDesc` bit-packed | **16B** | z42 全 String，CoreCLR 27-bit offset + 5-bit type + 24-bit token packed |
+| `Function` 200B+ 头 | `MethodDesc` 32B base + chunk | **32B** | z42 把 line_table / local_vars / exception_table 全 inline |
+| `Instruction` ~120B | IL byte stream | **变长 byte** | z42 用 Rust enum + Vec args；CoreCLR IL 是 byte sequence |
+| Token IDs 4B | metadata token 24-bit + table | **4B** | 对齐 |
+| `GcRef<T>` 16B | `Object*` | **8B** | z42 多 8B 是 Arc overhead；trade-off：Rust 内存安全 |
+
+### 关键发现 ❌
+
+#### E2.P1 `TypeDesc` 巨型化（336B）—— 没分热 / 冷 ⚠️
+
+**问题**：z42 把所有 metadata 塞进一个 struct：
+- 热（vtable / field_index / instance size）
+- 冷（type_args / generic_constraints / own_methods 名字列表）
+- 冗余（vtable 同时存 `Vec<(String, String)>` + `HashMap<String, usize>`）
+
+每加载一个 class 在堆上躺 336B+，**stdlib ~80 个类 ≈ 27KB**（小但 cache locality 差）。
+
+**对照** CoreCLR：
+- `MethodTable` ~40-50B base（指针 + base size + flags） + 出口 vtable / interface map
+- `EEClass` 是冷数据，class loader 用，reflection 用，hot path 不读
+- `MethodTableAuxiliaryData` 再分一层，把 reflection-exposed class object / hash code cache 进一步分离
+
+**改造方向**（强烈建议）：
+
+```rust
+// metadata/types.rs
+
+// 热数据 (~64B)
+pub struct TypeDesc {
+    pub id: TypeId,                            // 4B
+    pub name_id: StringId,                     // 4B (intern, 见 E2.P3)
+    pub base_id: Option<TypeId>,               // 4B + 4B padding
+    pub instance_size: u32,                    // 4B
+    pub field_layout: Box<[FieldSlot]>,        // 16B (fat pointer to slice)
+    pub vtable: Box<[MethodId]>,               // 16B
+    pub flags: u32,                            // 4B (IsArray / IsValueType / ...)
+    pub cold: Box<TypeDescCold>,               // 16B → 间接到冷数据
+}
+
+// 冷数据 (~128B, 反射 / 异常 / 调试才用)
+pub struct TypeDescCold {
+    pub fields_by_name: FxHashMap<StringId, u32>,
+    pub vtable_by_name: FxHashMap<StringId, u32>,
+    pub own_methods: Vec<MethodId>,
+    pub type_args: Vec<TypeId>,
+    pub generic_constraints: Vec<ConstraintBundle>,
+}
+```
+
+**收益**：
+- TypeDesc 从 336B → 64B（**5x**）
+- hot path（FieldGet IC miss / VCall miss）不 touch cold 数据，cache 友好
+- cold 数据延迟分配（首次反射访问时），未触发就不占内存
+
+**估时**：5-7 天（含 callsite 修改 + IC slot 重对齐）。**ROI 极高**。
+
+#### E2.P2 `FieldSlot` 48B → 应该 16B ❌
+
+**现状**：
+```rust
+pub struct FieldSlot {
+    pub name: String,         // 24B heap
+    pub type_tag: String,     // 24B heap
+}
+```
+
+每个 class 几十个字段就是几 KB。
+
+**对照** CoreCLR `FieldDesc` 16B bit-packed：27-bit offset + 5-bit type + 24-bit token + ...
+
+**改造**：
+```rust
+#[repr(C)]
+pub struct FieldSlot {
+    pub name_id: StringId,    // 4B (intern)
+    pub offset: u32,          // 4B (instance offset，bit 30/31 留 flags)
+    pub type_id: TypeId,      // 4B
+    pub flags: u32,           // 4B (IsStatic / IsReadOnly / ...)
+}                             // 总 16B
+```
+
+**估时**：2-3 天。**ROI 高**：FieldSlot 在每个 TypeDesc 里有 N 个，乘数效应大。
+
+#### E2.P3 String 满天飞 → StringId intern ❌
+
+**问题**：z42 数据结构里 String 触目皆是：
+- `TypeDesc.name / base_name / vtable.0/1 / type_params / type_args`
+- `FieldSlot.name / type_tag`
+- `Function.name / ret_type / param_types`
+- `Instruction::Call { func: String }` / `CallNative { module/type_name/symbol: String }` / `FieldGet { field_name: String }`
+
+每个 String 24B + heap allocation。clone 触发堆拷贝。
+
+**对照** CoreCLR：metadata tokens (24-bit) 引用 stringheap entry；运行时 cache resolved handle，never store string in hot data。
+
+**改造**：
+1. 已有 `Module.string_pool: Vec<String>` ✅
+2. 引入 `StringId(u32)` newtype 作为 pool index
+3. 所有 metadata struct 的 `String` 字段改 `StringId`
+4. 提供 `ctx.string(id) -> &str` 方法做解 reference
+5. zbc wire format **不变**（字符串还是写 pool；只是运行时表示改）
+
+**估时**：5-7 天（涉及面广，单独 spec）。**ROI 极高**：内存 -30%+，HashMap 哈希更快（u32 vs String）。
+
+#### E2.P4 `Instruction` enum ~120B → 应该 ≤32B ❌
+
+已在 Part 2 C1 提过。配合 E2.P3 String intern：
+
+```rust
+// Before
+Call { dst: u32, func: String, args: Vec<u32> }       // 52B+
+
+// After
+Call { dst: u32, func: MethodId, args: Box<[u32]> }   // 4+4+16 = 24B
+```
+
+**Box<[u32]>** 而非 `Vec<u32>` —— args 创建后不可变，省 8B 长度冗余 + cap field。
+
+**估时**：3-4 天（callsite 多）。**ROI 极高**：bytecode 内存 -60%+；解析 zbc 也快（不分配 String）。
+
+#### E2.P5 `Function` 200B+ → 拆 hot / cold ❌
+
+**现状**：[`bytecode.rs:191`](../src/runtime/src/metadata/bytecode.rs#L191) inline 所有元信息（line_table / local_vars / exception_table / generics constraints）。
+
+**对照** CoreCLR `MethodDesc` 32B base + `MethodDescChunk` 分块 + `MethodDescCodeData` 单独间接。
+
+**改造**：
+
+```rust
+// 热数据 (~80B)
+pub struct Function {
+    pub name_id: StringId,
+    pub method_id: MethodId,
+    pub param_count: u16,
+    pub max_reg: u16,
+    pub flags: u32,                       // IsStatic / HasExceptions / ...
+    pub ret_type: TypeId,
+    pub param_types: Box<[TypeId]>,
+    pub blocks: Box<[BasicBlock]>,
+    pub resolved: OnceLock<ResolvedTokens>,
+    pub cold: Box<FunctionCold>,          // 间接到冷
+}
+
+// 冷数据 (debugger / exception trace 才用)
+pub struct FunctionCold {
+    pub line_table: Vec<LineEntry>,
+    pub local_vars: Vec<LocalVar>,
+    pub exception_table: Vec<ExceptionEntry>,
+    pub generics: GenericConstraintBundle,
+}
+```
+
+异常发生时才解 cold；正常调用零 cold 访问。
+
+**估时**：3-5 天。**ROI 高**。
+
+#### E2.P6 `ScriptObject` header 64B → 应该 32B ⚠️
+
+**现状**：
+```rust
+pub struct ScriptObject {
+    pub type_desc: Arc<TypeDesc>,      // 16B
+    pub slots: Vec<Value>,             // 24B
+    pub native: NativeData,            // ~12B
+    pub type_args: Vec<String>,        // 24B (大多类不用泛型)
+}
+```
+
+大多对象 `type_args` 是空 Vec，但占 24B。
+
+**改造**：
+```rust
+pub struct ScriptObject {
+    pub type_desc: Arc<TypeDesc>,            // 16B
+    pub slots: Box<[Value]>,                 // 16B (Box<[T]> 不可变长度)
+    pub instantiation: Option<Box<TypeArgs>>,// 8B (Box<None> = NULL ptr)
+    pub native: NativeData,                  // ~12B (单独打包，见下)
+}
+// 总 ~52B 头；不带泛型实例化的对象 instantiation = None
+```
+
+**估时**：2-3 天。**ROI 中**。
+
+### z42 数据类型 ✅ 已对的部分
+
+| z42 已做 | 对应 CoreCLR | 注 |
+|---|---|---|
+| `Arc<TypeDesc>` 实例间共享 | `Object` → `MethodTable*` 单例 | 已对齐 |
+| `ScriptObject` 含 `Arc<TypeDesc>` ref + slot array | `Object` header + 内联 fields | 思路对齐，细节待优化 |
+| Field access canonical = slot index (`obj.slots[slot]`) | CoreCLR `obj + fieldDesc.offset` | 对齐 |
+| `Function.resolved: OnceLock<ResolvedTokens>` 热路径缓存 | CoreCLR `MethodDesc.m_codeData` 同思路 | 对齐 |
+| `pub use types::{...}` 集中 re-export | CoreCLR `inc/clrtypes.h` 集中类型 | 思路对齐 |
+| `GcRef<T>` 透明 newtype 不引入间接 | CoreCLR `OBJECTREF` 透明 alias | 对齐 |
+| Token IDs u32 newtype | CoreCLR metadata token 4B | 对齐 |
+
+---
+
+## E3. 合并所有 Part 后的最终 P0-P5 表
+
+| 优先级 | 改造 | Part | 估时 | 类别 |
+|---|---|---|---|---|
+| **P0** | **Panic hook + signal handler** (D4) | 4 | 1-2 天 | ops |
+| **P0** | **`RuntimeConfig` 中心化** (D1) | 4 | 1-2 天 | ops |
+| **P0** | **StringId intern**（E2.P3）— 所有 String 字段 → StringId | 5 | 5-7 天 | data |
+| **P0** | **JIT type specialization** (C2) | 2 | 2-3 天 | perf |
+| **P0** | **JIT↔VM `JitVm` trait 抽象** (Part 1 + E1.P2) | 1 | 2-3 天 | arch |
+| **P1** | **TypeDesc 热 / 冷拆分**（E2.P1）— 336B → 64B | 5 | 5-7 天 | data |
+| **P1** | **Instruction 瘦身**（E2.P4）— ~120B → ≤32B | 5 | 3-4 天 | data |
+| **P1** | **FieldSlot 16B bit-packed**（E2.P2）— 48B → 16B | 5 | 2-3 天 | data |
+| **P1** | **Per-module log filtering** (D2) | 4 | 0.5 天 | ops |
+| **P1** | **`Value::Str(String) → Rc<str>`** (C1+C3) | 2 | 1-2 天 | perf |
+| **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
+| **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
+| **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
+| **P1** | **`RuntimeObserver` + `RuntimeStats`** (D3+D6) | 4 | 3-5 天 | ops |
+| **P2** | **VmContext trait 拆分**（E1.P1）— GcAccess / ExceptionAccess 等 | 5 | 5-7 天 | arch |
+| **P2** | **`interfaces/` 契约层**（E1.P3）— 对齐 CoreCLR `inc/` | 5 | 7-10 天 | arch |
+| **P2** | **Function 热 / 冷拆分**（E2.P5）— 200B → 80B + 间接 cold | 5 | 3-5 天 | data |
+| **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
+| **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
+| **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
+| **P3** | **ScriptObject header 瘦身**（E2.P6）— 64B → ~52B | 5 | 2-3 天 | data |
+| **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
+| **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
+| **P3** | **Startup banner / --info** (D5) | 4 | 0.5 天 | ops |
+| **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
+| **P4** | **GC bump allocator** (C6) | 2 | 巨大 | arch |
+| **P4** | **Hot-path stub inline** (Part 1) | 1 | 2-3 天 | perf |
+| **P5** | **Diagnostic IPC** (D9) | 4 | 巨大 | ops |
+| **P5** | **z42.text / z42.math 扩充** (S5) | 3 | 7-10 天 | stdlib |
+
+### 建议组织顺序
+
+**第一波 (production-ready 阶段, 2-3 周)**：
+1. P0 panic hook + signal handler（生产前 must-have）
+2. P0 RuntimeConfig 中心化（解锁后续 knob）
+3. P1 per-module log filtering（半天快速 win）
+4. P1 Value::Str → Rc<str> + String.Length cache（lowest hanging fruit）
+
+**第二波 (data type 大改, 3-4 周)**：
+1. P0 StringId intern —— 前置依赖
+2. P1 TypeDesc 热 / 冷拆分
+3. P1 Instruction 瘦身
+4. P1 FieldSlot 16B
+5. P2 Function 热 / 冷拆分
+
+**第三波 (架构演进, 3-4 周)**：
+1. P0 JitVm trait + interfaces/
+2. P2 VmContext trait 拆分
+3. P2 Prestub / lazy JIT
+
+**第四波 (stdlib + ops 完善, 2-3 周)**：
+1. P1 trait-based test commons
+2. P1 internal shared helpers
+3. P1 RuntimeObserver
+4. P2 Public API surface lint
+
+**预估总改造时长**：12-14 周 single-developer。可以并发的项目（不同模块）能压缩到 8-10 周。
+
+---
+
+## E4. 不抄的部分（明确放弃）
+
+- **MethodTable 出口 vtable 数组（inline 在 MT 末尾）**：Rust 不易表达 `[u8; flexible]` 紧凑 inline 数组；用 `Box<[MethodId]>` 间接是合理 trade-off
+- **EEClass 完全独立 struct**：z42 用 `cold: Box<TypeDescCold>` 间接，效果等价但少一个类型
+- **InstantiatedMethodDesc / FCallMethodDesc 子类化**：Rust 无 OOP；用 enum + boxed 子状态即可
+- **MethodDescChunk 内存池**：z42 当前规模不需要；几百个 Function 直接 Vec 即可
+- **CORINFO_CLASS_HANDLE void* opaque**：Rust 用 `pub struct ClassHandle(u32)` newtype 更安全
+- **3 种 build flavor (CHK / DBG / FRE)**：Rust 用 `#[cfg(debug_assertions)]` + features 替代
+
+---
+
+## E5. 立即可做的小项目（≤1 天）
+
+1. ⚡ **`Function.line_table` / `local_vars` / `exception_table` 用 `Box<[T]>` 替代 `Vec<T>`** —— 创建后不变长，省 8B/字段
+2. ⚡ **`Instruction::Call.args: Vec<u32>` → `Box<[u32]>`** —— 同上，每条指令省 8B
+3. ⚡ **TypeDesc cold 字段先用 `Option<Box<...>>` 包起来** —— 不重排字段先减常驻内存
+4. ⚡ **`ScriptObject.type_args: Vec<String>` → `Option<Box<[StringId]>>`** —— 非泛型对象省 24B
+5. ⚡ **删 `TypeDesc.own_methods` 的 String pair tuple，仅保 `Vec<MethodId>`** —— vtable 名字应该走 vtable_by_name HashMap
+
+每项独立 commit，小步前进，不依赖大改造。
+
+---
+
+*Part 5 作者：Claude（z42 review）*
+*调研日期：2026-05-22*
+*合并 4 个 explore agent 输出：CoreCLR VM 内部分层 / CoreCLR 数据类型设计 / z42 内部耦合 / z42 数据类型设计*
