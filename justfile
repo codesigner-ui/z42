@@ -66,8 +66,20 @@ build-feature-matrix: build-interp-only build-wasm-feature build-ios-feature bui
 
 # ──────────── Test ────────────
 
-# Run all tests: compiler + VM + cross-zpkg
-test: test-compiler test-vm test-cross-zpkg
+# Run all tests through the unified GREEN gate (compiler + VM + cross-zpkg
+# + stdlib). Composes with --scope / --parallel / --quick from test-all.sh.
+# 2026-05-21 fix-just-test-coverage: previously this target ran only 3 of
+# the 4 layers — `test-stdlib` was a separate target, leading to the
+# add-stdlib-not-in-default-green gap that hid the cross-zpkg subclass
+# catch bug. Routing through test-all.sh closes the gap by default.
+#
+# Examples:
+#   just test                     # full GREEN gate, sequential
+#   just test --parallel          # ~38% faster via wave-based parallel
+#   just test --scope=runtime     # skip dotnet stages
+#   just test --scope=auto --parallel  # auto-narrow + parallel
+test *args:
+    ./scripts/test-all.sh {{args}}
 
 # Run C# compiler tests (xUnit)
 test-compiler:
