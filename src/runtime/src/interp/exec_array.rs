@@ -42,17 +42,27 @@ pub(super) fn array_get(frame: &mut Frame, dst: u32, arr: u32, idx: u32) -> Resu
     Ok(())
 }
 
-pub(super) fn array_set(frame: &mut Frame, arr: u32, idx: u32, val: u32) -> Result<()> {
+/// `ArraySet` dispatch.
+///
+/// **add-write-barriers (2026-05-21)**: dispatches `write_barrier_array_elem`
+/// after a successful element write *iff* the new value is a heap
+/// reference (`v.is_heap_ref()`). Primitive writes skip the dispatch
+/// per Decision 1.
+pub(super) fn array_set(ctx: &VmContext, frame: &mut Frame, arr: u32, idx: u32, val: u32) -> Result<()> {
     let v = frame.get(val)?.clone();
-    match frame.get(arr)? {
+    let arr_value = frame.get(arr)?.clone();
+    match &arr_value {
         Value::Array(rc) => {
-            let rc = rc.clone();
             let i = to_usize(frame.get(idx)?, "ArraySet index")?;
             let mut borrowed = rc.borrow_mut();
             if i >= borrowed.len() {
                 bail!("array index {} out of bounds (len={})", i, borrowed.len());
             }
-            borrowed[i] = v;
+            borrowed[i] = v.clone();
+            drop(borrowed);
+            if v.is_heap_ref() {
+                ctx.heap().write_barrier_array_elem(&arr_value, i, &v);
+            }
             Ok(())
         }
         other => bail!("ArraySet: expected array, got {:?}", other),

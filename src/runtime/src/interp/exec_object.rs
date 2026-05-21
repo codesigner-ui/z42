@@ -152,13 +152,21 @@ pub(super) fn field_get(
 }
 
 /// `FieldSet` dispatch — mirror of `field_get` IC pattern.
+///
+/// **add-write-barriers (2026-05-21)**: dispatches `write_barrier_field`
+/// to the GC after each successful slot write *iff* the new value is a
+/// heap reference (`v.is_heap_ref()`). Primitive writes skip the
+/// dispatch (Decision 1 of the spec). Both IC fast and slow paths must
+/// fire the barrier (Decision 5) — otherwise concurrent / generational
+/// backends would miss writes on hot code.
 pub(super) fn field_set(
-    frame: &mut Frame, obj: u32, field_name: &str, val: u32,
+    ctx: &VmContext, frame: &mut Frame, obj: u32, field_name: &str, val: u32,
     field_ic: Option<&crate::metadata::resolver::FieldIC>,
 ) -> Result<()> {
     use std::sync::atomic::Ordering;
     let v = frame.get(val)?.clone();
-    match frame.get(obj)? {
+    let owner = frame.get(obj)?.clone();
+    match &owner {
         Value::Object(rc) => {
             let mut borrowed = rc.borrow_mut();
             // IC fast path
@@ -169,7 +177,11 @@ pub(super) fn field_set(
                 {
                     let slot = ic.cached_slot.load(Ordering::Relaxed) as usize;
                     if slot < borrowed.slots.len() {
-                        borrowed.slots[slot] = v;
+                        borrowed.slots[slot] = v.clone();
+                        drop(borrowed);
+                        if v.is_heap_ref() {
+                            ctx.heap().write_barrier_field(&owner, slot, &v);
+                        }
                     }
                     return Ok(());
                 }
@@ -181,12 +193,20 @@ pub(super) fn field_set(
                         ic.cached_slot.store(slot as u32, Ordering::Relaxed);
                     }
                     if slot < borrowed.slots.len() {
-                        borrowed.slots[slot] = v;
+                        borrowed.slots[slot] = v.clone();
+                        drop(borrowed);
+                        if v.is_heap_ref() {
+                            ctx.heap().write_barrier_field(&owner, slot, &v);
+                        }
                     }
                 }
             } else if let Some(&slot) = borrowed.type_desc.field_index.get(field_name) {
                 if slot < borrowed.slots.len() {
-                    borrowed.slots[slot] = v;
+                    borrowed.slots[slot] = v.clone();
+                    drop(borrowed);
+                    if v.is_heap_ref() {
+                        ctx.heap().write_barrier_field(&owner, slot, &v);
+                    }
                 }
             }
             Ok(())

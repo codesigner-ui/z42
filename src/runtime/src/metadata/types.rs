@@ -258,6 +258,29 @@ pub enum PinSourceKind {
 }
 
 impl Value {
+    /// **add-write-barriers (2026-05-21)**: returns `true` iff writing
+    /// this value into a heap slot must dispatch a GC write barrier.
+    /// Heap-ref variants: `Object` / `Array` / `Closure` (Closure.env is a
+    /// `GcRef<Vec<Value>>`) / `Ref` with `RefKind::Array` or `RefKind::Field`
+    /// (the inner `gc_ref` is a real heap edge). All primitives, plus
+    /// `FuncRef` (string-keyed func table) / `PinnedView` (raw ptr) /
+    /// `StackClosure` (stack arena env) / `Ref::Stack` (stack location)
+    /// return `false` — none of them create a strong heap → heap edge
+    /// that card-marking or SATB collectors would care about.
+    ///
+    /// Mirrors the variant selection of [`Value::trace_children`] —
+    /// `is_heap_ref` is the predicate, `trace_children` is the traversal.
+    #[inline]
+    pub fn is_heap_ref(&self) -> bool {
+        matches!(
+            self,
+            Value::Object(_)
+                | Value::Array(_)
+                | Value::Closure { .. }
+                | Value::Ref { kind: RefKind::Array { .. } | RefKind::Field { .. } }
+        )
+    }
+
     /// **add-mark-sweep-collector P1 (2026-05-21)**: visit every direct
     /// child `Value` reachable from `self`. Used by the mark phase BFS
     /// to extend reachability through reference-bearing variants

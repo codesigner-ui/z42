@@ -66,6 +66,11 @@ pub unsafe extern "C" fn jit_array_get(
     0
 }
 
+/// JIT ArraySet helper.
+///
+/// **add-write-barriers (2026-05-21)**: dispatches `write_barrier_array_elem`
+/// after a successful element write *iff* `v.is_heap_ref()`.
+/// Mirrors `interp::exec_array::array_set`.
 #[no_mangle]
 pub unsafe extern "C" fn jit_array_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
@@ -89,7 +94,11 @@ pub unsafe extern "C" fn jit_array_set(
                 set_exception(vm_ctx_ref(ctx), Value::Str(format!("array index {} out of bounds (len={})", i, borrowed.len())));
                 return 1;
             }
-            borrowed[i] = v;
+            borrowed[i] = v.clone();
+            drop(borrowed);
+            if v.is_heap_ref() {
+                vm_ctx_ref(ctx).heap().write_barrier_array_elem(&arr_val, i, &v);
+            }
         }
         other => {
             set_exception(vm_ctx_ref(ctx), Value::Str(format!("ArraySet: expected array, got {:?}", other)));

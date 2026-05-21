@@ -217,6 +217,42 @@ pub struct ArcMagrGC {
     /// then falls back to the legacy inline `collect_cycles()` call,
     /// preserving the pre-2026-05-20 single-threaded behaviour.
     external_needs_collect: Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>>,
+    /// **add-write-barriers (2026-05-21)**: test-only sink for barrier
+    /// dispatch events. Production builds (no `cfg(test)`) compile this
+    /// field out entirely, so the override on `write_barrier_field` /
+    /// `write_barrier_array_elem` collapses to a true no-op.
+    #[cfg(test)]
+    barrier_observer: Mutex<Option<std::sync::Arc<BarrierObserver>>>,
+}
+
+/// **add-write-barriers (2026-05-21)**: discriminant for a single
+/// barrier dispatch event captured by [`BarrierObserver`]. Used by
+/// `arc_heap_tests::write_barriers` to prove that interp / JIT call
+/// sites invoke the barrier with the expected arguments.
+#[cfg(test)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BarrierEvent {
+    Field { owner_addr: usize, slot: usize, new_is_heap: bool },
+    ArrayElem { arr_addr: usize, idx: usize, new_is_heap: bool },
+}
+
+/// **add-write-barriers (2026-05-21)**: test-only barrier event sink.
+/// Wrap in `Arc` for sharing across the heap and the test assertion
+/// closure. Construct via `BarrierObserver::new()`, install via
+/// [`ArcMagrGC::install_barrier_observer`], read recorded events via
+/// [`BarrierObserver::events`].
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub struct BarrierObserver {
+    events: Mutex<Vec<BarrierEvent>>,
+}
+
+#[cfg(test)]
+impl BarrierObserver {
+    pub fn new() -> Self { Self::default() }
+    pub fn events(&self) -> Vec<BarrierEvent> { self.events.lock().clone() }
+    pub fn count(&self) -> usize { self.events.lock().len() }
+    pub(crate) fn push(&self, ev: BarrierEvent) { self.events.lock().push(ev); }
 }
 
 impl std::fmt::Debug for ArcMagrGC {
@@ -235,6 +271,55 @@ impl std::fmt::Debug for ArcMagrGC {
 
 impl ArcMagrGC {
     pub fn new() -> Self { Self::default() }
+
+    /// **add-write-barriers (2026-05-21)**: install a test-only observer
+    /// that records every `write_barrier_field` / `write_barrier_array_elem`
+    /// dispatch on this heap instance. Returns the previously-installed
+    /// observer (if any) so tests can chain. Replaces (not stacks) — one
+    /// observer per heap. `clear_barrier_observer` removes.
+    #[cfg(test)]
+    pub fn install_barrier_observer(
+        &self,
+        obs: std::sync::Arc<BarrierObserver>,
+    ) -> Option<std::sync::Arc<BarrierObserver>> {
+        std::mem::replace(&mut *self.barrier_observer.lock(), Some(obs))
+    }
+
+    /// **add-write-barriers (2026-05-21)**: uninstall the test observer.
+    #[cfg(test)]
+    pub fn clear_barrier_observer(&self) -> Option<std::sync::Arc<BarrierObserver>> {
+        self.barrier_observer.lock().take()
+    }
+
+    #[cfg(test)]
+    fn fire_barrier_field(&self, owner: &Value, slot: usize, new: &Value) {
+        if let Some(obs) = self.barrier_observer.lock().as_ref() {
+            let owner_addr = match owner {
+                Value::Object(rc) => GcRef::as_ptr(rc) as *const () as usize,
+                _ => 0,
+            };
+            obs.push(BarrierEvent::Field {
+                owner_addr,
+                slot,
+                new_is_heap: new.is_heap_ref(),
+            });
+        }
+    }
+
+    #[cfg(test)]
+    fn fire_barrier_array_elem(&self, arr: &Value, idx: usize, new: &Value) {
+        if let Some(obs) = self.barrier_observer.lock().as_ref() {
+            let arr_addr = match arr {
+                Value::Array(rc) => GcRef::as_ptr(rc) as *const () as usize,
+                _ => 0,
+            };
+            obs.push(BarrierEvent::ArrayElem {
+                arr_addr,
+                idx,
+                new_is_heap: new.is_heap_ref(),
+            });
+        }
+    }
 
     /// **Phase 3d.1**: 注册一个 external root scanner 闭包。每次 cycle
     /// collection mark 阶段在扫完 pinned roots 后会调用此闭包，把闭包 yield
@@ -714,8 +799,32 @@ impl MagrGC for ArcMagrGC {
         }
     }
 
-    // ── 3. Write barriers (default no-op via trait) ──────────────────────────
-    // (ArcMagrGC 不重载；trait 默认实现已经是 no-op)
+    // ── 3. Write barriers ────────────────────────────────────────────────────
+    //
+    // **add-write-barriers (2026-05-21)**: ArcMagrGC overrides the trait
+    // methods only to fire a `#[cfg(test)]` observer; production builds
+    // compile the override body down to an empty function (`fire_barrier_*`
+    // is `#[cfg(test)]`). Real generational / concurrent backends will
+    // replace these overrides with card-marking / SATB logic in
+    // `add-generational-gc` / `add-concurrent-gc`.
+    //
+    // Caller contract: invoke ONLY when `new.is_heap_ref() == true`
+    // (Decision 1) — these methods may `debug_assert!` the new value is a
+    // heap ref once the call-site filter is universally enforced; the
+    // current observer treats primitive writes as a recorded oddity
+    // (`new_is_heap = false`) for test inspection, not a bug.
+
+    #[allow(unused_variables)]
+    fn write_barrier_field(&self, owner: &Value, slot: usize, new: &Value) {
+        #[cfg(test)]
+        self.fire_barrier_field(owner, slot, new);
+    }
+
+    #[allow(unused_variables)]
+    fn write_barrier_array_elem(&self, arr: &Value, idx: usize, new: &Value) {
+        #[cfg(test)]
+        self.fire_barrier_array_elem(arr, idx, new);
+    }
 
     // ── 4. Object Model ──────────────────────────────────────────────────────
 

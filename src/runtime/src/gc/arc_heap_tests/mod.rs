@@ -36,3 +36,4 @@ mod oom;
 mod roots;
 mod send_sync;
 mod weak_refs;
+mod write_barriers;

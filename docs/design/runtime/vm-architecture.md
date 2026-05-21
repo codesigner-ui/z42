@@ -873,6 +873,53 @@ RAII guard：
 > - **`near_limit_warned` 自动 reset**：collect 后若 `used` 已降到阈值以下
 >   reset，让下次跨阈值能再发 `NearHeapLimit` 事件
 
+#### Write barrier contract (add-write-barriers, 2026-05-21)
+
+`MagrGC` trait 包含两个 write-barrier 钩子：
+
+```rust
+fn write_barrier_field(&self, owner: &Value, slot: usize, new: &Value);
+fn write_barrier_array_elem(&self, arr: &Value, idx: usize, new: &Value);
+```
+
+默认实现（含 `ArcMagrGC` STW mark-sweep）是 no-op；后续
+`add-generational-gc` / `add-concurrent-gc` 落地时 override 为 card-marking /
+SATB 真实逻辑。Phase 1 落地的是**call-site wiring + 调用契约**，运行时
+行为零变化（trait override 为 no-op，仅 `#[cfg(test)]` 时 dispatch 到
+test-only `BarrierObserver`）。
+
+**Caller 契约**（interp `field_set` / `array_set`、JIT `jit_field_set` /
+`jit_array_set`）:
+
+1. **Filter at call site**: 只在 `new.is_heap_ref()` 时 invoke barrier。
+   Primitive (`I64 / F64 / Bool / Char / Str / Null / FuncRef / PinnedView /
+   StackClosure / Ref::Stack`) 写入 skip — 这些既不参与 cross-region 引用
+   也不参与 cross-generation 引用，barrier dispatch 是纯浪费。`is_heap_ref()`
+   是 `Value` 上 inherent 方法，与 `trace_children` 平行：一个判定，一个遍历。
+2. **Post-write order**: barrier 在 slot/elem 写之后调用。card-marking
+   自然 fit；若未来 A4 用 SATB 需要 pre-barrier（看 *旧* 值），扩 trait
+   加 `write_barrier_field_pre(&owner, slot, old: &Value, new: &Value)`，
+   不强迫所有 backend 都付 pre-barrier 代价。
+3. **Lock released before call**: 调用前 `drop(borrowed)` 释放
+   `owner.slots` / `arr` 的 inner-`Mutex` lock，让未来 override 可以
+   re-borrow `owner` 而不死锁。
+4. **IC fast path 也 dispatch**: FieldSet 的 inline cache 命中路径也必须
+   走 barrier，否则未来 generational/concurrent 在 hot code 漏写 → mark
+   queue 不完整 → UAF。这条规则在 `interp::field_set` /
+   `jit_field_set` 内 inline 多个写入点都加了 dispatch；六个写入点对应六个
+   `write_barrier_field` call（fast + slow + 无-IC，interp 和 JIT 各一套）。
+5. **StaticSet 不 dispatch**: static fields 是 GC root，"old → new"
+   写永远在 root，不存在 cross-region/cross-generation 关心的场景。
+
+**Override 契约**:
+
+- 实现可以 `debug_assert!(new.is_heap_ref())` 检测 caller 是否漏 filter
+- 不能假设 `owner` 持有 inner-`Mutex` lock；可以自由 `owner.borrow()` /
+  `owner.borrow_mut()`（caller 已 drop）
+- Phase 1 default no-op 不修改 `HeapStats`；这条契约保留下来意味着
+  pure-tracing / generational override 也不应改 `HeapStats`（stats 反映
+  alloc/free，不反映 barrier dispatch 次数）
+
 > **2026-04-29 extend-native-fn-signature（Phase 1.5 完成）**：原限制"corelib 直构未迁移"
 > 已解决 —— `NativeFn` 签名扩展为 `fn(&VmContext, &[Value]) -> Result<Value>`，全部 ~55
 > 个 builtin 走 ctx 传参；`__obj_get_type` / `__env_args` 走 `ctx.heap().alloc_*(...)`。

@@ -115,12 +115,29 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
 
     // ── 3. Write barriers ────────────────────────────────────────────────────
 
-    /// 写屏障：当 `owner` 对象的 `slot` 字段被赋为 `new` 时通知 GC。
-    /// Phase 2+ 用于 generational / SATB；Phase 1 默认 no-op。
-    fn write_barrier_field(&self, _owner: &Value, _slot: usize, _new: &Value) {}
+    /// 字段写屏障：当 `owner` 对象的第 `slot` 字段被赋为 `new` 时通知 GC。
+    ///
+    /// **Caller 契约 (add-write-barriers, 2026-05-21)**: callers (interp /
+    /// JIT FieldSet path) MUST invoke this exactly when `new.is_heap_ref()
+    /// == true`. Primitive writes (`I64 / F64 / Bool / Char / Str / Null /
+    /// FuncRef / PinnedView / StackClosure / Ref::Stack`) skip the call —
+    /// they neither create cross-region nor cross-generation references.
+    /// Caller also drops any held inner-`Mutex` lock before calling
+    /// (`borrow_mut` on `owner.slots`), so a future override that needs
+    /// to re-borrow `owner` (e.g. card-marking that inspects all slots)
+    /// does not deadlock.
+    ///
+    /// **Override 契约**: implementations may `debug_assert!(new.is_heap_ref())`
+    /// to detect contract violations. Phase 1 STW mark-sweep default is
+    /// no-op. Future `add-generational-gc` / `add-concurrent-gc` will
+    /// override with card-marking / SATB logic.
+    #[allow(unused_variables)]
+    fn write_barrier_field(&self, owner: &Value, slot: usize, new: &Value) {}
 
-    /// 数组元素写屏障；同 `write_barrier_field`。
-    fn write_barrier_array_elem(&self, _arr: &Value, _idx: usize, _new: &Value) {}
+    /// 数组元素写屏障；契约同 `write_barrier_field`（call-site filter +
+    /// post-write + lock released before call）。
+    #[allow(unused_variables)]
+    fn write_barrier_array_elem(&self, arr: &Value, idx: usize, new: &Value) {}
 
     // ── 4. Object Model ──────────────────────────────────────────────────────
 

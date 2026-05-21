@@ -158,7 +158,7 @@ pub fn exec_instr(
         Instruction::ArrayNew    { dst, size, elem_tag } => exec_array::array_new(ctx, frame, *dst, *size, *elem_tag)?,
         Instruction::ArrayNewLit { dst, elems }     => exec_array::array_new_lit(ctx, frame, *dst, elems)?,
         Instruction::ArrayGet    { dst, arr, idx }  => exec_array::array_get(frame, *dst, *arr, *idx)?,
-        Instruction::ArraySet    { arr, idx, val }  => exec_array::array_set(frame, *arr, *idx, *val)?,
+        Instruction::ArraySet    { arr, idx, val }  => exec_array::array_set(ctx, frame, *arr, *idx, *val)?,
         Instruction::ArrayLen    { dst, arr }       => exec_array::array_len(frame, *dst, *arr)?,
 
         // ── Objects ──────────────────────────────────────────────────────────
@@ -180,7 +180,7 @@ pub fn exec_instr(
             let field_ic = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
                 .and_then(|r| r.field_ic.get(_site_idx as usize));
-            exec_object::field_set(frame, *obj, field_name, *val, field_ic)?;
+            exec_object::field_set(ctx, frame, *obj, field_name, *val, field_ic)?;
         }
         Instruction::VCall { dst, obj, method, args } => {
             update_caller_line(ctx, func, block_idx, instr_idx);

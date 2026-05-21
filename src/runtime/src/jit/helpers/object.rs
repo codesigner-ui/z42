@@ -192,6 +192,12 @@ pub unsafe extern "C" fn jit_field_get(
     0
 }
 
+/// JIT FieldSet helper.
+///
+/// **add-write-barriers (2026-05-21)**: dispatches `write_barrier_field`
+/// after a successful slot write *iff* `v.is_heap_ref()`. Mirrors
+/// `interp::exec_object::field_set` — primitive writes skip dispatch
+/// (Decision 1); both IC fast and slow paths fire (Decision 5).
 #[no_mangle]
 pub unsafe extern "C" fn jit_field_set(
     frame: *mut JitFrame, ctx: *const JitModuleCtx,
@@ -203,7 +209,8 @@ pub unsafe extern "C" fn jit_field_set(
     let field_name = std::str::from_utf8(std::slice::from_raw_parts(field_name_ptr, field_name_len))
         .unwrap_or("<invalid>");
     let v = (*frame).regs[val as usize].clone();
-    match &(*frame).regs[obj as usize] {
+    let owner = (*frame).regs[obj as usize].clone();
+    match &owner {
         Value::Object(rc) => {
             let mut b = rc.borrow_mut();
             // IC fast path
@@ -213,7 +220,13 @@ pub unsafe extern "C" fn jit_field_set(
                     && (*ic_ptr).cached_type_id.load(Ordering::Relaxed) == recv_type
                 {
                     let slot = (*ic_ptr).cached_slot.load(Ordering::Relaxed) as usize;
-                    if slot < b.slots.len() { b.slots[slot] = v; }
+                    if slot < b.slots.len() {
+                        b.slots[slot] = v.clone();
+                        drop(b);
+                        if v.is_heap_ref() {
+                            vm_ctx_ref(ctx).heap().write_barrier_field(&owner, slot, &v);
+                        }
+                    }
                     return 0;
                 }
                 // Miss: walk + update IC.
@@ -223,10 +236,22 @@ pub unsafe extern "C" fn jit_field_set(
                         (*ic_ptr).cached_type_id.store(recv_type, Ordering::Relaxed);
                         (*ic_ptr).cached_slot.store(slot as u32, Ordering::Relaxed);
                     }
-                    if slot < b.slots.len() { b.slots[slot] = v; }
+                    if slot < b.slots.len() {
+                        b.slots[slot] = v.clone();
+                        drop(b);
+                        if v.is_heap_ref() {
+                            vm_ctx_ref(ctx).heap().write_barrier_field(&owner, slot, &v);
+                        }
+                    }
                 }
             } else if let Some(&slot) = b.type_desc.field_index.get(field_name) {
-                if slot < b.slots.len() { b.slots[slot] = v; }
+                if slot < b.slots.len() {
+                    b.slots[slot] = v.clone();
+                    drop(b);
+                    if v.is_heap_ref() {
+                        vm_ctx_ref(ctx).heap().write_barrier_field(&owner, slot, &v);
+                    }
+                }
             }
             0
         }
