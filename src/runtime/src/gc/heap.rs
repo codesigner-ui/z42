@@ -153,6 +153,22 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
 
     // ── 5. Collection control ────────────────────────────────────────────────
 
+    /// **add-concurrent-gc P0 (2026-05-22)**: 读取当前 GC 模式
+    /// (STW mark-sweep / concurrent mark-sweep)。
+    ///
+    /// 默认实现返回 `GcMode::StwMarkSweep` —— 非 Arc backing 的 heap impl
+    /// 不必支持模式切换，trait 默认让它们自动落到 STW（兼容）。
+    fn mode(&self) -> super::GcMode { super::GcMode::StwMarkSweep }
+
+    /// **add-concurrent-gc P0 (2026-05-22)**: 设置 GC 模式。
+    ///
+    /// 默认实现 panic —— 只有支持多模式的 backing（当前仅 `ArcMagrGC`）
+    /// 真实重载。模式切换在 collect 进行中不生效（下次 collect 才采用
+    /// 新模式），由实现保证。
+    fn set_mode(&self, _mode: super::GcMode) {
+        panic!("set_mode not supported by this MagrGC impl");
+    }
+
     /// 触发完整 GC（stop-the-world tracing）。Phase 1 默认 no-op。
     fn collect(&self) {}
 

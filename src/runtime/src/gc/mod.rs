@@ -37,12 +37,14 @@
 
 pub mod heap;
 pub mod arc_heap;
+pub mod mode;
 pub mod refs;
 pub mod safepoint;
 pub mod types;
 
 pub use heap::MagrGC;
 pub use arc_heap::ArcMagrGC;
+pub use mode::GcMode;
 pub use refs::{GcRef, WeakGcRef};
 pub use safepoint::{check_safepoint, request_gc_pause, GcPauseGuard, GcPhase};
 pub use types::{

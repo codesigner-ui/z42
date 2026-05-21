@@ -203,10 +203,20 @@ impl std::fmt::Debug for RcHeapInner {
 /// 独立 worker 线程上跑收集。
 pub type ExternalRootScanner = Box<dyn Fn(&mut dyn FnMut(&Value)) + Send + Sync>;
 
-#[derive(Default)]
 pub struct ArcMagrGC {
     inner: Mutex<RcHeapInner>,
     external_root_scanner: Mutex<Option<ExternalRootScanner>>,
+    /// **add-concurrent-gc P0 (2026-05-22)**: selectable GC algorithm.
+    /// Encoded as `u8` (`GcMode::from_u8` for round-trip). Read on the
+    /// barrier-override hot path and at the entrance of
+    /// `run_cycle_collection`. `Relaxed` ordering is sufficient — mode
+    /// changes don't synchronize with collect; in-progress collect
+    /// completes with its original mode, next collect picks up new
+    /// mode (per spec scenario "Mode switch is observable but cannot
+    /// interrupt a running collect"). Initialized from
+    /// `GcMode::from_env()` so `Z42_GC_MODE=concurrent` selects
+    /// concurrent path at process start.
+    mode: std::sync::atomic::AtomicU8,
     /// **add-gc-safepoint-auto-threshold (2026-05-20)**: external flag the
     /// `maybe_auto_collect` path sets (instead of running collect inline)
     /// when allocation pressure trips the threshold. Drained by the next
@@ -223,6 +233,22 @@ pub struct ArcMagrGC {
     /// `write_barrier_array_elem` collapses to a true no-op.
     #[cfg(test)]
     barrier_observer: Mutex<Option<std::sync::Arc<BarrierObserver>>>,
+}
+
+/// **add-concurrent-gc P0 (2026-05-22)**: manual `Default` impl so the
+/// `mode` field is initialized from `GcMode::from_env()` (reads
+/// `Z42_GC_MODE`). Other fields fall back to their own `Default`.
+impl Default for ArcMagrGC {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(RcHeapInner::default()),
+            external_root_scanner: Mutex::new(None),
+            external_needs_collect: Mutex::new(None),
+            mode: std::sync::atomic::AtomicU8::new(super::GcMode::from_env() as u8),
+            #[cfg(test)]
+            barrier_observer: Mutex::new(None),
+        }
+    }
 }
 
 /// **add-write-barriers (2026-05-21)**: discriminant for a single
@@ -566,7 +592,25 @@ impl ArcMagrGC {
     /// O(N²) → O(reachable). The pure tracing contract: Rust-local
     /// `Value` strong refs are NOT roots — embedders must `pin_root`
     /// anything they want preserved across collect.
+    ///
+    /// **add-concurrent-gc P0 (2026-05-22)**: dispatches on `self.mode()`.
+    /// Both arms currently route to the STW path; P4 fills in the
+    /// concurrent arm with `run_cycle_collection_concurrent`.
     fn run_cycle_collection(&self) -> u64 {
+        match self.mode() {
+            super::GcMode::StwMarkSweep => self.run_cycle_collection_stw(),
+            super::GcMode::ConcurrentMarkSweep => {
+                // P0 stub: concurrent arm currently routes to STW path —
+                // proves dispatch wiring without changing behavior. P4
+                // replaces this with `run_cycle_collection_concurrent`.
+                self.run_cycle_collection_stw()
+            }
+        }
+    }
+
+    /// STW mark-sweep collect — the proven path. Called directly when
+    /// `mode() == StwMarkSweep`, or as a fallback by the concurrent path.
+    fn run_cycle_collection_stw(&self) -> u64 {
         let _newly_marked = self.mark_phase();
         self.sweep_phase()
     }
@@ -912,6 +956,22 @@ impl MagrGC for ArcMagrGC {
     }
 
     // ── 5. Collection control ────────────────────────────────────────────────
+
+    /// **add-concurrent-gc P0 (2026-05-22)**: current GC mode. Read on
+    /// the barrier hot path + `run_cycle_collection` entry. `Relaxed`
+    /// ordering — mode changes are observed at the next collect / next
+    /// write, not synchronized with anything else.
+    fn mode(&self) -> super::GcMode {
+        super::GcMode::from_u8(self.mode.load(std::sync::atomic::Ordering::Relaxed))
+    }
+
+    /// **add-concurrent-gc P0 (2026-05-22)**: switch GC mode at runtime.
+    /// Takes effect at the next collect; in-progress collects complete
+    /// with their original mode. Lock-free `store(Relaxed)` — fast path
+    /// on the rare config call.
+    fn set_mode(&self, mode: super::GcMode) {
+        self.mode.store(mode as u8, std::sync::atomic::Ordering::Relaxed);
+    }
 
     fn collect_cycles(&self) {
         if self.inner.lock().pause_count > 0 { return; }
