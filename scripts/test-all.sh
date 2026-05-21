@@ -201,26 +201,45 @@ run_wave() {
 if $PARALLEL; then
     total_stages=0
     total_waves=0
+    # Sequential regen step run between W2 and W3 in every scope that includes
+    # VM goldens. STAGE_VM_GOLDENS_NOREBUILD passes --no-rebuild to test-vm.sh,
+    # which historically skipped BOTH stdlib rebuild AND golden zbc regen.
+    # On a fresh CI checkout that produces an empty CASES array → silent
+    # 0-tests-ran on bash 5+ and a hard "CASES[@]: unbound variable" on macOS
+    # bash 3.2 (Apple's frozen version). We invoke regen-golden-tests.sh
+    # --no-stdlib here so the W3 goldens have real fixtures to run; --no-stdlib
+    # reuses W1's stdlib so there's no duplicate work or W2 race.
+    regen_step() {
+        echo ""
+        echo "════════════════════════════════════════════════"
+        echo "  regen golden zbc fixtures (--no-stdlib)"
+        echo "════════════════════════════════════════════════"
+        ./scripts/regen-golden-tests.sh --no-stdlib
+    }
     case "$SCOPE" in
         full)
             run_wave "$STAGE_DOTNET_BUILD" "$STAGE_CARGO_BUILD"        || exit 1
             run_wave "$STAGE_DOTNET_TEST" "$STAGE_STDLIB"              || exit 1
+            regen_step                                                 || exit 1
             run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
-            total_stages=6; total_waves=3 ;;
+            total_stages=7; total_waves=4 ;;
         runtime)
             run_wave "$STAGE_CARGO_BUILD"                              || exit 1
             run_wave "$STAGE_STDLIB"                                   || exit 1
+            regen_step                                                 || exit 1
             run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
-            total_stages=4; total_waves=3 ;;
+            total_stages=5; total_waves=4 ;;
         compiler)
             run_wave "$STAGE_DOTNET_BUILD"                             || exit 1
             run_wave "$STAGE_DOTNET_TEST" "$STAGE_STDLIB"              || exit 1
+            regen_step                                                 || exit 1
             run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
-            total_stages=5; total_waves=3 ;;
+            total_stages=6; total_waves=4 ;;
         stdlib)
             run_wave "$STAGE_STDLIB"                                   || exit 1
+            regen_step                                                 || exit 1
             run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
-            total_stages=3; total_waves=2 ;;
+            total_stages=4; total_waves=3 ;;
         docs-only)
             total_stages=0; total_waves=0 ;;
         *)

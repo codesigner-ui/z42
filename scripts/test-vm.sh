@@ -149,6 +149,17 @@ for MODE in "${MODES[@]}"; do
         CASES+=("$name|$f|$dir/$name.expected_output.txt|$dir/$name.interp_only|$entry_name")
     done
 
+    # Bash 3.2 (macOS native) errors on `"${arr[@]}"` of a declared-but-empty
+    # array under `set -u`. Guard the count + fail loudly so a missing-regen
+    # config doesn't surface as the cryptic "CASES[@]: unbound variable".
+    if [ "${#CASES[@]}" -eq 0 ]; then
+        echo "❌ no runnable golden fixtures found." >&2
+        echo "   Hint: run \`./scripts/regen-golden-tests.sh\` to produce" >&2
+        echo "   src/tests/**/source.zbc and src/libraries/*/tests/**/source.zbc." >&2
+        echo "   (test-vm.sh --no-rebuild assumes regen ran previously.)" >&2
+        exit 1
+    fi
+
     for entry in "${CASES[@]}"; do
         IFS='|' read -r name artifact expected interp_marker entry_name <<< "$entry"
 

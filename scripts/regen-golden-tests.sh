@@ -48,14 +48,24 @@ if [ "$REBUILD_STDLIB" = true ]; then
     echo ""
 fi
 
-# Build only the compiler driver (z42c.dll) — not the full solution.
-# Building z42.slnx here triggers Microsoft.CodeCoverage targets on z42.Tests
-# which fail with MSB3492 when the mapping file from a prior build exists.
-echo "Building compiler (${BUILD_CONFIG})..."
-dotnet build -q "$COMPILER_DRIVER" -c "$BUILD_CONFIG"
-
 # Locate the driver DLL (output name is z42c.dll per z42.Driver.csproj).
 DRIVER_DLL="artifacts/build/compiler/z42.Driver/bin/z42c.dll"
+
+# Reuse an existing driver build when one is already on disk (CI pipelines
+# like test-all.sh --parallel always do `dotnet build src/compiler/z42.slnx`
+# in an earlier wave; rebuilding here trips MSB3492 because the slnx build
+# primed obj/.../AssemblyInfoInputs.cache for the Tests + CodeCoverage path
+# and the Driver-only incremental rebuild can't read it consistently).
+# Fall through to a Driver-only build only when no prior artifact exists.
+if [ ! -f "$DRIVER_DLL" ]; then
+    # Build only the compiler driver (z42c.dll) — not the full solution.
+    # Building z42.slnx here triggers Microsoft.CodeCoverage targets on
+    # z42.Tests which fail with MSB3492 when the mapping file from a prior
+    # build exists.
+    echo "Building compiler (${BUILD_CONFIG})..."
+    dotnet build -q "$COMPILER_DRIVER" -c "$BUILD_CONFIG"
+fi
+
 if [ ! -f "$DRIVER_DLL" ]; then
     echo "error: driver DLL not found at $DRIVER_DLL"
     exit 1
