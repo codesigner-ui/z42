@@ -217,6 +217,16 @@ pub struct ArcMagrGC {
     /// `GcMode::from_env()` so `Z42_GC_MODE=concurrent` selects
     /// concurrent path at process start.
     mode: std::sync::atomic::AtomicU8,
+    /// **add-concurrent-gc P2 (2026-05-22)**: gray-object queue for the
+    /// concurrent mark path. Populated by (1) the STW root snapshot at
+    /// the start of a concurrent collect, (2) the write-barrier
+    /// override (P3) when mutators write heap-ref values into slots,
+    /// and (3) the mark thread (P4) when tracing children discovers
+    /// newly-reachable objects. Drained by the mark thread + the
+    /// termination handshake. `parking_lot::Mutex` is sufficient v1
+    /// (z42 typical 1-2 mutators); lock-free upgrade is a deferred
+    /// perf spec. Stays empty when mode == StwMarkSweep.
+    mark_queue: Mutex<Vec<Value>>,
     /// **add-gc-safepoint-auto-threshold (2026-05-20)**: external flag the
     /// `maybe_auto_collect` path sets (instead of running collect inline)
     /// when allocation pressure trips the threshold. Drained by the next
@@ -245,6 +255,7 @@ impl Default for ArcMagrGC {
             external_root_scanner: Mutex::new(None),
             external_needs_collect: Mutex::new(None),
             mode: std::sync::atomic::AtomicU8::new(super::GcMode::from_env() as u8),
+            mark_queue: Mutex::new(Vec::new()),
             #[cfg(test)]
             barrier_observer: Mutex::new(None),
         }
@@ -315,6 +326,29 @@ impl ArcMagrGC {
     #[cfg(test)]
     pub fn clear_barrier_observer(&self) -> Option<std::sync::Arc<BarrierObserver>> {
         self.barrier_observer.lock().take()
+    }
+
+    /// **add-concurrent-gc P2 (2026-05-22)**: test-only entry point to
+    /// `snapshot_roots_into_mark_queue`. The production caller will be
+    /// `run_cycle_collection_concurrent` (P4) under STW; tests need to
+    /// drive the snapshot directly without setting up a real collect.
+    #[cfg(test)]
+    pub(crate) fn snapshot_roots_into_mark_queue_for_test(&self) -> usize {
+        self.snapshot_roots_into_mark_queue()
+    }
+
+    /// **add-concurrent-gc P2 (2026-05-22)**: test-only entry to read
+    /// the mark queue contents.
+    #[cfg(test)]
+    pub(crate) fn mark_queue_for_test(&self) -> Vec<Value> {
+        self.mark_queue.lock().clone()
+    }
+
+    /// **add-concurrent-gc P2 (2026-05-22)**: test-only entry to the
+    /// `mark_if_unmarked` static helper.
+    #[cfg(test)]
+    pub(crate) fn mark_if_unmarked_for_test(v: &Value) -> bool {
+        Self::mark_if_unmarked(v)
     }
 
     #[cfg(test)]
@@ -487,6 +521,67 @@ impl ArcMagrGC {
             });
         }
         newly_marked
+    }
+
+    /// **add-concurrent-gc P2 (2026-05-22)**: attempt to mark `v` via
+    /// CAS. Returns `true` iff this call transitioned the allocation
+    /// from unmarked to marked (i.e. caller is responsible for tracing
+    /// children). Returns `false` for primitives + already-marked +
+    /// non-heap refs (Stack ref kinds). Single source of truth for
+    /// "mark this value" — used by both `mark_phase` (when refactored
+    /// in P4) and the concurrent path (P3 barrier, P4 mark loop).
+    fn mark_if_unmarked(v: &Value) -> bool {
+        match v {
+            Value::Object(gc) => GcRef::mark(gc),
+            Value::Array(gc)  => GcRef::mark(gc),
+            Value::Closure { env, .. } => GcRef::mark(env),
+            Value::Ref { kind } => match kind {
+                crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::mark(gc_ref),
+                crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::mark(gc_ref),
+                crate::metadata::types::RefKind::Stack { .. } => false,
+            },
+            _ => false,
+        }
+    }
+
+    /// **add-concurrent-gc P2 (2026-05-22)**: STW-phase root snapshot for
+    /// the concurrent mark loop. Walks pinned roots + external root
+    /// scanner output, marks each as gray (via `mark_if_unmarked`), and
+    /// pushes newly-marked roots into `mark_queue`. The mark thread (P4)
+    /// then drains the queue concurrently with mutators.
+    ///
+    /// Must be called under STW (during `GcPhase::Marking` between
+    /// `request_gc_pause` and `set phase ConcurrentMarking`) so the
+    /// snapshot is consistent — no mutator can add/remove roots between
+    /// `pinned_roots` traversal and external scanner traversal.
+    ///
+    /// Returns the count of newly-marked root objects (for tests +
+    /// diagnostics).
+    #[allow(dead_code)]
+    fn snapshot_roots_into_mark_queue(&self) -> usize {
+        let mut queue = self.mark_queue.lock();
+        queue.clear();
+        let mut count = 0usize;
+        // Pinned roots — cloned under inner.lock() to release the lock
+        // before any potential observer callbacks.
+        let roots: Vec<Value> = self.inner.lock().roots.values().cloned().collect();
+        for v in roots {
+            if Self::mark_if_unmarked(&v) {
+                queue.push(v);
+                count += 1;
+            }
+        }
+        // External root scanner (e.g. VmContext static_fields).
+        let scanner_borrow = self.external_root_scanner.lock();
+        if let Some(scan) = scanner_borrow.as_ref() {
+            scan(&mut |v| {
+                if Self::mark_if_unmarked(v) {
+                    queue.push(v.clone());
+                    count += 1;
+                }
+            });
+        }
+        count
     }
 
     /// **add-mark-sweep-collector P3 (2026-05-21)**: sweep phase of the

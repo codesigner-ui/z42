@@ -26,6 +26,7 @@ pub(super) fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
 
 mod allocation;
 mod collection;
+mod concurrent_mark;
 mod config_stats;
 mod cycle_collection;
 mod events;
