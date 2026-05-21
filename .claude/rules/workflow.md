@@ -446,8 +446,15 @@ docs/spec/changes/<change-name>/
 统一入口：
 
 ```bash
-./scripts/test-all.sh        # 默认串联所有必跑 stage
+./scripts/test-all.sh        # 默认串联所有必跑 stage（scope=full）
 ```
+
+**Scope-aware 加速（add-test-split-by-area, 2026-05-21）**：
+iteration 期可用 `--scope=runtime|compiler|stdlib|auto` 缩窄 scope 跳过
+不相关 stage。但 **commit 前最终 GREEN 必须 `--scope=full`**（或
+`--scope=auto` 没有缩窄到比变更范围窄）。Partial scope 验证只算 dev 期
+快速 iterate，不替代 commit 门禁。详细 scope 说明见
+[`docs/workflow/testing/README.md`](../../docs/workflow/testing/README.md)。
 
 `test-all.sh` 等价于按顺序跑（任一 stage 失败立刻停）：
 
