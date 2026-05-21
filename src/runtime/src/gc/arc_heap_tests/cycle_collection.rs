@@ -46,6 +46,13 @@ fn self_reference_cycle_is_freed() {
 
 #[test]
 fn cycle_with_external_user_ref_is_not_broken_yet() {
+    // **add-mark-sweep-collector P3 (2026-05-21)**: under mark-sweep,
+    // "external user ref" alone does NOT keep an object alive. The mark
+    // phase only walks pinned roots + external_root_scanner output;
+    // Rust-local Value strong refs are invisible to the GC. To preserve
+    // a Value across `collect_cycles`, embedders MUST `pin_root` it.
+    // Trial-deletion's previous behavior (Arc::strong_count > 1 implicitly
+    // preserved cycle nodes) is gone — pure tracing semantics.
     let heap = ArcMagrGC::new();
     let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
     let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
@@ -55,19 +62,21 @@ fn cycle_with_external_user_ref_is_not_broken_yet() {
         a_gc.borrow_mut().slots[0] = b.clone();
         b_gc.borrow_mut().slots[0] = a.clone();
     }
-    let user_a = a.clone();
+    // Pin a explicitly — this is the new contract for "I want this to
+    // survive collect_cycles even though my code holds a strong ref".
+    let user_pin = heap.pin_root(a.clone());
     drop(a);
     drop(b);
 
     heap.collect_cycles();
 
-    // 用户外部还持 a，所以 a 不被断（tentative > 0）；b 被断后仍由 a.slots[0] 持有 → 仍存活
-    assert_eq!(alive_count(&heap), 2, "external user ref keeps both alive");
+    // Pinned root keeps a alive → cycle keeps b alive.
+    assert_eq!(alive_count(&heap), 2, "pinned root keeps cycle alive");
 
-    // 用户释放后第二次 collect（实际上不需要 collect，普通 Drop 链就够了）
-    drop(user_a);
-    // 此时 a.count → 0 → drop a → drop a.slots[0] 即 b 的 Rc → b.count → 0 → drop b
-    assert_eq!(alive_count(&heap), 0, "after user drops, RC drop chain finishes the release");
+    // Unpin → next collect frees the cycle.
+    heap.unpin_root(user_pin);
+    heap.collect_cycles();
+    assert_eq!(alive_count(&heap), 0, "after unpin + collect, mark-sweep frees the cycle");
 }
 
 #[test]
@@ -94,15 +103,21 @@ fn pinned_root_cycle_is_not_broken() {
 
 #[test]
 fn unrelated_alive_object_is_not_affected_by_collect() {
+    // **add-mark-sweep-collector P3 (2026-05-21)**: mark-sweep requires
+    // the object to be reachable from a pinned root (or external scanner
+    // output) to survive. The Rust local `_alive` is NOT a root by
+    // itself. Pin it explicitly to preserve through collect.
     let heap = ArcMagrGC::new();
-    let _alive = heap.alloc_object(dummy_type_desc("Alive"), vec![Value::I64(42)], NativeData::None);
-    // 不构造环；_alive 由当前作用域强引用持有
+    let alive = heap.alloc_object(dummy_type_desc("Alive"), vec![Value::I64(42)], NativeData::None);
+    let pin = heap.pin_root(alive.clone());
 
     heap.collect_cycles();
 
-    assert_eq!(alive_count(&heap), 1, "non-cycle object not affected");
-    let Value::Object(gc) = &_alive else { panic!() };
+    assert_eq!(alive_count(&heap), 1, "pinned object survives collect");
+    let Value::Object(gc) = &alive else { panic!() };
     assert_eq!(gc.borrow().slots[0], Value::I64(42), "data intact");
+
+    heap.unpin_root(pin);
 }
 
 #[test]

@@ -169,15 +169,6 @@ impl<T> GcRef<T> {
         WeakGcRef { inner: Arc::downgrade(&this.inner) }
     }
 
-    /// Strong reference count of the underlying allocation.
-    ///
-    /// Used internally by the cycle collector to compute external
-    /// reference counts. Pub(crate) since it leaks an implementation detail
-    /// of the Arc<GcAllocation> backing.
-    pub(crate) fn strong_count(this: &Self) -> usize {
-        Arc::strong_count(&this.inner)
-    }
-
     /// 注册 finalizer。最后一个 GcRef Drop 时（含 cycle 断环后 alive_vec
     /// drop）自动调用，并 take 出来（one-shot）。
     pub(crate) fn set_finalizer(this: &Self, fin: FinalizerFn) {

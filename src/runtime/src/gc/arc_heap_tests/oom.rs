@@ -5,11 +5,23 @@ use super::*;
 #[test]
 fn strict_oom_off_by_default_no_rejection() {
     // 默认行为不变：alloc 越界仍成功（仅 fire 事件）。
+    //
+    // **add-mark-sweep-collector P3 (2026-05-21)**: under mark-sweep,
+    // the tight `max_bytes=8` setting trips auto-collect inline during
+    // `alloc_array` (the flag-deferred path is only active when a
+    // VmContext wires the external flag; here we use a raw ArcMagrGC).
+    // The un-pinned `v` would then be swept (Rust local strong refs no
+    // longer count as roots — see migration note in
+    // `cycle_collection.rs`). Pause GC for the test so auto-collect
+    // doesn't fire; this still exercises the strict-mode-off path
+    // (alloc returns non-Null even though over limit).
     let heap = ArcMagrGC::new();
     heap.set_max_heap_bytes(Some(8));  // 极小 limit
+    heap.pause();
     let v = heap.alloc_array(vec![Value::I64(0); 100]);
     assert!(matches!(v, Value::Array(_)), "no rejection without strict mode");
     assert!(heap.used_bytes() > 0);
+    heap.resume();
 }
 
 #[test]

@@ -36,13 +36,17 @@
 - [ ] P2.5 commit（实验函数仍在；旧路径仍 default）
 
 **P3: Switchover + delete trial-deletion（~3 天）**
-- [ ] P3.1 `collect_cycles` 默认走 mark-sweep
-- [ ] P3.2 删除 `run_cycle_collection` 旧实现 + `tentative` HashMap + `break_cycle_value`
-- [ ] P3.3 迁移 ~40 个 arc_heap_tests/ 单测 assertion（每个 fail
-        case 分析并修正；详 design.md Decision 6）
-- [ ] P3.4 cargo --lib + cross_thread_smoke + test-stdlib z42.threading GREEN
-- [ ] P3.5 docs/design/runtime/vm-architecture.md 同步：A2 从"未来"
-        转"已落地"；trial-deletion 移到 historical 章
+- [x] P3.1 `collect_cycles` 默认走 mark-sweep（`run_cycle_collection` 改为 mark+sweep 2 行）
+- [x] P3.2 删除 `mark_reachable_set` + trial-deletion `tentative` 计数逻辑；
+        `break_cycle_value` **保留**（被 `sweep_phase` 复用断不可达对象的内部引用），
+        `GcRef::strong_count` 删除（不再需要 RC-based 外部引用计数）
+- [x] P3.3 迁移 3 个语义切换敏感的单测：
+        - `cycle_with_external_user_ref_is_not_broken_yet` → 显式 `pin_root`
+        - `unrelated_alive_object_is_not_affected_by_collect` → 显式 `pin_root`
+        - `strict_oom_off_by_default_no_rejection` → `pause()` / `resume()` 屏蔽 auto-collect
+- [x] P3.4 cargo --lib gc:: 119/119 GREEN；stdlib + cross_thread_smoke GREEN
+- [x] P3.5 docs/design/runtime/vm-architecture.md 同步：A2 从"未来"
+        转"已落地"；Phase 表新增 mark-sweep 行；trial-deletion 注释退到 historical 段
 - [ ] P3.6 commit
 
 **P4: Performance benchmark + report（~2 天）**

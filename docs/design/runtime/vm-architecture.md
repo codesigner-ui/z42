@@ -854,9 +854,15 @@ RAII guard：
 > **2026-04-29 add-heap-registry（Phase 3b 完成）**：snapshot/iterate `Full` 覆盖。
 >
 > **2026-04-29 add-cycle-breaking-collector（Phase 3c 完成）**：环引用泄漏
-> + `used_bytes` 单调递增两项限制解决 —— Bacon-Rajan trial-deletion 算法：
-> mark from pinned roots → `tentative[v] = strong_count - 1` 扣减集合内部引用 →
-> `tentative == 0` 清空内部 slots → alive_vec drop 时 Rc 链完成释放。
+> + `used_bytes` 单调递增两项限制解决 —— 初始实现走 Bacon-Rajan trial-deletion
+> 算法：mark from pinned roots → `tentative[v] = strong_count - 1` 扣减集合
+> 内部引用 → `tentative == 0` 清空内部 slots → alive_vec drop 时 Rc 链完成释放。
+>
+> **2026-05-21 add-mark-sweep-collector（A2 完成）**：trial-deletion 升级为
+> 标准 mark-sweep（见下文 ["GC 后续迭代规划" A2 段](#a2-纯-mark-sweep已落地2026-05-21)）。
+> O(N²) → O(reachable)；语义切到纯 tracing：Rust-local `Value` 强引用**不再
+> 隐式作为 root**，embedder 必须 `pin_root` 显式标记保留对象。算法路径
+> 仅 2 行（`mark_phase` + `sweep_phase`），断环逻辑沿用 `break_cycle_value`。
 >
 > **2026-04-29 add-finalizer-and-auto-collect（Phase 3d 完成）**：
 > - **Finalizer 真触发**：`run_cycle_collection` 断环前从 finalizers map remove +
@@ -898,6 +904,7 @@ RAII guard：
 | **Phase 3f-2** | JIT 栈扫描（6 个 JitFrame::new 站点 push/pop frame.regs 到 exec_stack，修复 JIT 路径 transitive bug）| ✅ 2026-04-29 add-jit-stack-scanning |
 | **unify-frame-chain** | `exec_stack` / `env_arena_stack` / `call_stack` 三栈合并为单一 `Vec<VmFrame>`；任一 invoke 站点 push 全套 (regs/env_arena/name/file)，GC scanner 改单循环；附带修复 `jit_obj_new` ctor + `jit_to_str` ToString 缺 call_frame push 的 stack-trace 漏帧 bug | ✅ 2026-05-10 unify-frame-chain |
 | **Phase 3-OOM** | strict OOM 模式（trait `set_strict_oom`；启用后 alloc 越过 `max_heap_bytes` 返回 `Value::Null` 不入 registry / 不 bump stats）| ✅ 2026-04-29 add-strict-oom-rejection |
+| **A2 mark-sweep** | 移除 trial-deletion，切到标准 mark-sweep（`marked: AtomicU8` 字段 + `mark_phase` BFS + `sweep_phase`）；纯 tracing 语义，Rust-local 强引用不再隐式为 root | ✅ 2026-05-21 add-mark-sweep-collector |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -933,24 +940,37 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 - **Size**：500-800 LOC，4-6 天
 - **Risk**：内部 Drop 语义改变（Rc 即时释放 → allocator 批量回收）需要严格测试覆盖
 
-##### A2. 纯 Mark-Sweep（移除 RC，统一 tracing）
-- **What**：从 trial-deletion (RC + 环检测) 升到纯 tracing GC（无 Rc 元数据）
-- **Why**：环检测 RC 混合算法的 trial-deletion 在 cycle 多的 workload 下 O(N²) 计算 tentative；纯 tracing 是 O(reachable)
-- **Deps**：A1（自定义 allocator）+ Trace trait 全 Value variant 实现
-- **Size**：1500+ LOC，10-14 天
-- **Risk**：行为变化（Rc 即时释放消失 → 析构延迟到 collect）；性能 trade-off 取决于 workload，需 benchmark 决策
+##### A2. 纯 Mark-Sweep（已落地，2026-05-21）
+- **状态**：✅ 完成，spec `add-mark-sweep-collector`
+- **What**：从 trial-deletion（mark + tentative count + 断环）升到标准 mark-sweep
+  （BFS 标记 reachable → 扫描 registry 反向断不可达对象）
+- **实现要点**：
+  - `GcAllocation<T>` 新增 `marked: AtomicU8`（Relaxed ordering 足够，STW
+    safepoint 已建立 happens-before）
+  - `mark_phase()`：BFS from `pinned_roots` + `external_root_scanner`，
+    `Value::trace_children` 提供子引用枚举
+  - `sweep_phase()`：snapshot live → `is_marked = true` reset mark，
+    `is_marked = false` 调 `break_cycle_value` 清内部引用；Vec drop 时 Arc
+    链式 Drop 触发 finalizer
+  - 算法路径仅 `run_cycle_collection` 2 行（mark + sweep）
+- **语义切换**：trial-deletion 之前默认按 `Arc::strong_count` 把"外部用户强引用"
+  当作隐式 root；mark-sweep 走**纯 tracing**——Rust-local `Value` 不再保护
+  对象，embedder 必须 `pin_root` 显式表达保留意图。VmContext 已通过
+  `external_root_scanner` 暴露所有 mutator-visible 根，stdlib/JIT 路径无回归
+- **未实现**：Trace trait 一次性 derive（沿用 `Value::trace_children` 内联
+  match），自定义 allocator 仍未做（A1 仍 backlog）；后续 benchmark 报告独立 spec
 
 ##### A3. Generational GC（young/old 分代）
 - **What**：young 代频繁回收（短命对象集中）+ old 代低频回收 + write barriers 跟踪跨代引用
 - **Why**：典型程序"分配的对象大多很快死"（generational hypothesis），young-only collect 大幅降低 pause time
-- **Deps**：A1 + A2 + write barriers 真实实现 + IR codegen 在引用赋值处插桩
+- **Deps**：A1 + A2（mark-sweep，✅ 已就位）+ write barriers 真实实现 + IR codegen 在引用赋值处插桩
 - **Size**：2000+ LOC，15-20 天
 - **Risk**：write barrier 在每个引用赋值处插入 → 性能开销需 careful；compiler/codegen 配合工作量大
 
 ##### A4. Concurrent / incremental collector
 - **What**：collect 工作分摊到多个 alloc 时间片（incremental）或后台线程（concurrent）
 - **Why**：当前 STW collect 在大堆下停顿明显；分摊后单次 pause 时间有界
-- **Deps**：A2（mark-sweep）+ 多线程模型（roadmap A6 backlog）
+- **Deps**：A2（mark-sweep，✅ 已就位）+ 多线程模型（roadmap A6 backlog）
 - **Size**：3000+ LOC，20-30 天
 - **Risk**：数据竞争 + write barrier 复杂度高；需要 GC safepoint 协议
 
@@ -966,7 +986,7 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 ##### B2. 软引用（SoftGcRef）
 - **What**：内存压力下 GC 可主动回收的引用，介于 strong 与 weak 之间
 - **Why**：缓存场景（"内存够则保留，紧张则丢弃"）现在只能手动 weak + 重建
-- **Deps**：A2 mark phase 决策接口（区分软引用与强引用）
+- **Deps**：A2 mark phase 决策接口（区分软引用与强引用，A2 已就位可扩展）
 - **Size**：~200 LOC，2 天
 
 ##### B3. Heap snapshot 导出（V8 / Chrome DevTools 格式）
@@ -1013,7 +1033,7 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 ##### D1. MMTk 后端实现
 - **What**：实现 [MMTk](https://www.mmtk.io/) `VMBinding` trait，把 RcMagrGC 替换为 MMTk-backed GC（多 collector 可选：SemiSpace / GenImmix / MarkSweep / Immix / GenCopy）
 - **Why**：MMTk 是工业级研究项目，被 OpenJDK / V8 / Julia / Ruby / RustPython 采用；享受 ~30 年 GC 算法成果
-- **Deps**：A1 + A2（自定义 allocator + tracing）；trait 形状已对齐 MMTk porting contract
+- **Deps**：A1（自定义 allocator）；A2 mark-sweep 已落地（提供 tracing 基础）；trait 形状已对齐 MMTk porting contract
 - **Size**：4-8 周（包括稳定 + benchmark）
 - **Risk**：高 —— 引入大型 crate 依赖；ABI 边界 careful；但 trait 抽象层可以 ABI-shield
 
@@ -1029,9 +1049,10 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 如以性能为优先：
 
 1. **A1**（自定义 allocator）—— 单刀直入的常数因子优化
-2. **A2**（mark-sweep）—— 算法路径简化的前提
+2. ~~**A2**（mark-sweep）~~ ✅ 已落地（2026-05-21）
 3. **B4**（alloc site tracking）—— 找出热点
-4. **A3 / A4**（generational / concurrent）—— 长期投资
+4. **A3 / A4**（generational / concurrent）—— 长期投资（A2 已就位，可基于
+   mark-sweep 进阶）
 
 如以"赶上工业级"为优先：
 
