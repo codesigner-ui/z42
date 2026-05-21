@@ -65,3 +65,44 @@ dotnet test / test-vm / cross-zpkg / stdlib）≈ 3-5 min。iteration 期常
 GREEN 必须 `--scope=full`**（或 `--scope=auto` 自动等价 full，
 即未缩窄）。Partial scope 不算 GREEN，不可作为 commit 通过依据。
 详见 [`.claude/rules/workflow.md`](../../../.claude/rules/workflow.md) 阶段 8。
+
+### Parallel waves（add-test-parallel-stages, 2026-05-21）
+
+正交于 `--scope`。加 `--parallel` 让 test-all.sh 按依赖图分 wave 跑，每个
+wave 内的 stage 并发；wave 之间串行。期望加速 ~38%（scope=full）。
+
+各 scope 的 wave 排列：
+
+| Scope | Wave 1 | Wave 2 | Wave 3 |
+|-------|--------|--------|--------|
+| full | dotnet build \|\| cargo build | dotnet test \|\| test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
+| runtime | cargo build | test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
+| compiler | dotnet build | dotnet test \|\| test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg |
+| stdlib | test-stdlib | test-vm `--no-rebuild` \|\| cross-zpkg | — |
+| docs-only | — | — | — |
+
+**关键安全约束**：`--parallel` 强制 test-vm 走 `--no-rebuild`。Default
+test-vm 在启动时重建 stdlib（写 `artifacts/build/libs/`）；与 W2 的
+test-stdlib 时间窗口重合 → race。Wave 3 时 W2 已完成 stdlib build，
+test-vm 直接读现有 zpkgs 即可。
+
+输出处理：每个 wave 内并发 stage 的 stdout/stderr 各自 capture 到 temp
+文件；`wait` 完后按原 stage 顺序串行 print。transcript 与 sequential
+模式视觉一致，无 interleaving。
+
+**失败时保留 temp 文件**：wave 内任一 stage 失败，wave 结束后保留所有
+stage 的 temp 输出文件，echo 完整路径供 debug。成功 wave 自动清理。
+
+例：
+
+```bash
+./scripts/test-all.sh --parallel                       # full + parallel ≈ 160s
+./scripts/test-all.sh --scope=runtime --parallel       # runtime + parallel
+./scripts/test-all.sh --scope=auto --parallel          # auto + parallel
+```
+
+`--parallel` + `--quick`、`--parallel` + `--with-dist` 都兼容（额外 stage
+进入相应 wave 或单独 wave）。
+
+**GREEN gate 不强制 `--parallel`**：commit 前可用 sequential `--scope=full`
+（最保守）或 `--scope=full --parallel`（更快）。两者都算 full coverage GREEN。

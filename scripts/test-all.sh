@@ -24,6 +24,7 @@
 #   ./scripts/test-all.sh --scope=stdlib      # skip both builds + dotnet test
 #   ./scripts/test-all.sh --scope=auto        # detect from `git diff --name-only HEAD`
 #   ./scripts/test-all.sh --scope=full        # same as default
+#   ./scripts/test-all.sh --parallel          # run independent stages in parallel waves
 #   ./scripts/test-all.sh --with-dist         # also run packaged binary check
 #   ./scripts/test-all.sh --quick             # skip rebuild inside test-vm.sh
 #
@@ -38,6 +39,18 @@
 #   - docs-only — 0 stages (clean exit). Use for docs/.claude/spec-only edits.
 #   - auto      — `git diff --name-only HEAD` → narrowest scope. Mixed
 #                 changes resolve to `full`; only docs/.claude → `docs-only`.
+#
+# Parallel waves (add-test-parallel-stages, 2026-05-21):
+# When `--parallel` is set, stages within each scope are grouped into 3
+# dependency-respecting waves and the stages in each wave run concurrently:
+#   W1: dotnet build || cargo build         (independent toolchains)
+#   W2: dotnet test || test-stdlib          (independent inputs)
+#   W3: test-vm --no-rebuild || cross-zpkg  (both consume W2's stdlib)
+# Wave failure short-circuits subsequent waves. Stage outputs are captured
+# and printed serially in their original order after each wave so the
+# transcript remains readable (no interleaving). On failure, temp output
+# files are preserved + their paths printed for debugging. `--parallel`
+# implies `--no-rebuild` on test-vm to avoid racing W2's stdlib build.
 #
 # **GREEN gate rule**: iteration may use narrowed scope for speed. The
 # final pre-commit GREEN MUST be `--scope=full` (or `--scope=auto` not
@@ -56,10 +69,12 @@ cd "$ROOT"
 SCOPE="full"
 WITH_DIST=false
 QUICK=false
+PARALLEL=false
 for arg in "$@"; do
     case "$arg" in
         --with-dist)  WITH_DIST=true ;;
         --quick)      QUICK=true ;;
+        --parallel)   PARALLEL=true ;;
         --scope=*)    SCOPE="${arg#--scope=}" ;;
         -h|--help)
             sed -n '2,/^set -euo/p' "$0" | sed 's/^# \{0,1\}//;s/^#$//;/^set -euo/d'
@@ -110,9 +125,127 @@ STAGE_DOTNET_BUILD="dotnet build|dotnet build src/compiler/z42.slnx --nologo -v 
 STAGE_CARGO_BUILD="cargo build (release)|cargo build --manifest-path src/runtime/Cargo.toml --release --quiet"
 STAGE_DOTNET_TEST="dotnet test|dotnet test src/compiler/z42.Tests/z42.Tests.csproj --nologo"
 STAGE_VM_GOLDENS="VM goldens|./scripts/test-vm.sh $($QUICK && echo '--no-rebuild' || true)"
+# add-test-parallel-stages (2026-05-21): in parallel mode, force --no-rebuild
+# on test-vm to avoid racing W2's stdlib build path.
+STAGE_VM_GOLDENS_NOREBUILD="VM goldens|./scripts/test-vm.sh --no-rebuild"
 STAGE_CROSS_ZPKG="cross-zpkg|./scripts/test-cross-zpkg.sh"
 STAGE_STDLIB="stdlib [Test]|./scripts/test-stdlib.sh"
 STAGE_DIST="packaged binary|./scripts/test-dist.sh"
+
+# ── Sequential mode (existing behavior) ──────────────────────────────────────
+
+run_stage_sequential() {
+    local entry="$1"
+    local name cmd
+    IFS='|' read -r name cmd <<< "$entry"
+    echo ""
+    echo "════════════════════════════════════════════════"
+    echo "  $name"
+    echo "════════════════════════════════════════════════"
+    bash -c "$cmd"
+}
+
+# ── Parallel mode (add-test-parallel-stages, 2026-05-21) ─────────────────────
+#
+# run_wave: launch each arg (a "name|cmd" stage entry) concurrently, capture
+# stdout+stderr to temp files, wait for all, then print outputs serially in
+# original stage order. Returns 0 if all stages pass, 1 if any fail. On
+# failure, temp files are preserved and their paths are echoed so the user
+# can inspect partial output.
+run_wave() {
+    local pids=() outs=() names=()
+    for entry in "$@"; do
+        local name cmd
+        IFS='|' read -r name cmd <<< "$entry"
+        local out
+        out=$(mktemp -t z42-test-all.XXXXXX)
+        names+=("$name")
+        outs+=("$out")
+        bash -c "$cmd" > "$out" 2>&1 &
+        pids+=($!)
+    done
+
+    local fail=0
+    local fail_idx=-1
+    for i in "${!pids[@]}"; do
+        if ! wait "${pids[$i]}"; then
+            fail=1
+            if [ $fail_idx -eq -1 ]; then fail_idx=$i; fi
+        fi
+    done
+
+    # Print outputs in original stage order so the transcript is readable.
+    for i in "${!outs[@]}"; do
+        echo ""
+        echo "════════════════════════════════════════════════"
+        echo "  ${names[$i]}"
+        echo "════════════════════════════════════════════════"
+        cat "${outs[$i]}"
+    done
+
+    if [ $fail -eq 0 ]; then
+        for o in "${outs[@]}"; do rm -f "$o"; done
+        return 0
+    fi
+    echo ""
+    echo "wave failed at stage: ${names[$fail_idx]}"
+    echo "stage outputs preserved at:"
+    for i in "${!outs[@]}"; do
+        echo "  ${names[$i]}: ${outs[$i]}"
+    done
+    return 1
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+
+if $PARALLEL; then
+    total_stages=0
+    total_waves=0
+    case "$SCOPE" in
+        full)
+            run_wave "$STAGE_DOTNET_BUILD" "$STAGE_CARGO_BUILD"        || exit 1
+            run_wave "$STAGE_DOTNET_TEST" "$STAGE_STDLIB"              || exit 1
+            run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
+            total_stages=6; total_waves=3 ;;
+        runtime)
+            run_wave "$STAGE_CARGO_BUILD"                              || exit 1
+            run_wave "$STAGE_STDLIB"                                   || exit 1
+            run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
+            total_stages=4; total_waves=3 ;;
+        compiler)
+            run_wave "$STAGE_DOTNET_BUILD"                             || exit 1
+            run_wave "$STAGE_DOTNET_TEST" "$STAGE_STDLIB"              || exit 1
+            run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
+            total_stages=5; total_waves=3 ;;
+        stdlib)
+            run_wave "$STAGE_STDLIB"                                   || exit 1
+            run_wave "$STAGE_VM_GOLDENS_NOREBUILD" "$STAGE_CROSS_ZPKG" || exit 1
+            total_stages=3; total_waves=2 ;;
+        docs-only)
+            total_stages=0; total_waves=0 ;;
+        *)
+            echo "unknown scope: $SCOPE (try full|runtime|compiler|stdlib|auto|docs-only)" >&2
+            exit 2 ;;
+    esac
+
+    if [ "$WITH_DIST" = true ] && [ $total_stages -gt 0 ]; then
+        run_wave "$STAGE_DIST" || exit 1
+        total_stages=$((total_stages + 1))
+        total_waves=$((total_waves + 1))
+    fi
+
+    echo ""
+    echo "════════════════════════════════════════════════"
+    if [ $total_stages -eq 0 ]; then
+        echo "  ✅ ALL GREEN (0 stages — docs-only)"
+    else
+        echo "  ✅ ALL GREEN ($total_waves waves, $total_stages stages, scope=$SCOPE, parallel)"
+    fi
+    echo "════════════════════════════════════════════════"
+    exit 0
+fi
+
+# ── Sequential path (default; unchanged behavior) ────────────────────────────
 
 case "$SCOPE" in
     full)
@@ -126,7 +259,6 @@ case "$SCOPE" in
         )
         ;;
     runtime)
-        # Compiler unchanged → skip dotnet build + dotnet test.
         STAGES=(
             "$STAGE_CARGO_BUILD"
             "$STAGE_VM_GOLDENS"
@@ -135,8 +267,6 @@ case "$SCOPE" in
         )
         ;;
     compiler)
-        # Runtime cached → skip cargo build. Compiler change may affect
-        # emitted .zbc so VM / stdlib stages still run.
         STAGES=(
             "$STAGE_DOTNET_BUILD"
             "$STAGE_DOTNET_TEST"
@@ -146,7 +276,6 @@ case "$SCOPE" in
         )
         ;;
     stdlib)
-        # Both toolchains cached → skip builds + dotnet test.
         STAGES=(
             "$STAGE_VM_GOLDENS"
             "$STAGE_CROSS_ZPKG"
