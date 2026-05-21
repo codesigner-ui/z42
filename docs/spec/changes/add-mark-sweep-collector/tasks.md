@@ -50,10 +50,13 @@
 - [ ] P3.6 commit
 
 **P4: Performance benchmark + report（~2 天）**
-- [ ] P4.1 `bench/microbench/gc_cycle.rs`（如不存在则新建）—— 3 类
-        workload (cycle-heavy / shallow-tree / large-array)
-- [ ] P4.2 跑 baseline (trial-deletion checkout) + 新版 (mark-sweep)
-- [ ] P4.3 撰写报告入 design.md "Benchmark results" 段
+- [x] P4.1 `src/runtime/benches/gc_cycle_bench.rs` 新建 —— 3 类 workload
+        (`cycle_heavy_100` / `shallow_tree_1k` / `large_array_10k`)，criterion
+        `iter_batched` 把 heap 构造排除在计时外
+- [x] P4.2 跑 baseline (commit `cbb377c4` P2 via git worktree, trial-deletion
+        默认) + 新版 (mark-sweep)；3 workload × 2 算法 = 6 个 measurement
+- [x] P4.3 撰写报告入 design.md "Benchmark Results (P4)" 段；结论：
+        cycle-heavy 1.39×、reachable-heavy 1.28×，全部正收益
 - [ ] P4.4 commit（report + benchmark code）
 
 **P5: Final archive**

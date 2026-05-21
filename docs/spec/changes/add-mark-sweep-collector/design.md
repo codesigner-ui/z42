@@ -231,6 +231,46 @@ fn sweep_phase(&self) -> u64 {
 - **VM e2e**: ./scripts/test-vm.sh + ./scripts/test-stdlib.sh GREEN
 - **Bench**: `bench/microbench/gc_cycle.rs` — 对比报告入 design doc P4 commit
 
+## Benchmark Results (P4, 2026-05-21)
+
+`src/runtime/benches/gc_cycle_bench.rs` 实现 3 个 workload。`force_collect`
+单独计时（`iter_batched` 把 heap setup 排除在外）。Baseline 是 P3 切换前
+的 commit `cbb377c4`（P2 完成态：mark-sweep 已侧载但 `collect_cycles`
+仍走 trial-deletion），通过 `git worktree` 复制本 bench 文件得到。
+机器：macOS arm64（M-series），release profile（opt-level=3 + LTO +
+codegen-units=1），criterion 0.5 — 3s measurement，30 samples，1s warm-up。
+
+| Workload | trial-deletion | mark-sweep | speedup |
+|----------|---------------:|-----------:|--------:|
+| `cycle_heavy_100` (100 disjoint 2-node cycles, no roots) | 37.28 µs | 26.74 µs | **1.39×** |
+| `shallow_tree_1k` (1 root → 1111-node tree, all survivors) | 230.85 µs | 179.83 µs | **1.28×** |
+| `large_array_10k` (1 root → array of 10 000 objects, all survivors) | 1.987 ms | 1.547 ms | **1.28×** |
+
+### 解读
+
+- **cycle_heavy** 收益最大（1.39×）。这是 trial-deletion 算法上最弱的
+  shape —— 每个 cycle node 走完 mark-from-roots 还要再做一遍 tentative
+  count 减一 + 检查 strong_count + 修正 → O(N²)（在小 N 下也已经体现）。
+  Mark-sweep 直接 BFS 不可达对象，常数因子也低。
+- **shallow_tree / large_array** 没有 cycle 但 reachable set 大（survivor
+  全部留下）。两者均 ~1.28×：mark-sweep 仍快，因为 trial-deletion 的
+  "mark reachable + snapshot alive + filter unreachable" 三阶段被 mark-sweep
+  的 "mark reachable + sweep alive" 两阶段合并；同样的对象集合扫一遍代价更低。
+- 不存在 mark-sweep 慢于 trial-deletion 的 workload（在测过的 3 种 shape 上）。
+
+### 局限与未来 benchmark
+
+- 单线程结果，未测多线程 mutator + GC 并发（concurrent GC 是 A4 工作，
+  本测试不覆盖）
+- 没测 max_bytes 触发的 auto-collect 路径，只测显式 `force_collect`
+- 不测 finalizer 触发耗时（finalizer 路径与算法选型正交）
+- 真实 workload（VM 跑 .z42 程序）下 mark-sweep 的收益可能更大或更小，
+  取决于 alloc/collect 比例；本 bench 是算法对比，不是端到端性能 claim
+
+总体：mark-sweep 切换在 cycle 密集 workload 上有显著收益（~40%），
+在纯 reachable workload 上仍有 ~28% 收益；切换决策（A2 整体）从性能
+角度看是正确的。
+
 ## Deferred / Future Work
 
 ### `add-write-barriers` (A3 dep)
