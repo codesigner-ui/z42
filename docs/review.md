@@ -1451,3 +1451,475 @@ pub struct ScriptObject {
 *Part 5 作者：Claude（z42 review）*
 *调研日期：2026-05-22*
 *合并 4 个 explore agent 输出：CoreCLR VM 内部分层 / CoreCLR 数据类型设计 / z42 内部耦合 / z42 数据类型设计*
+
+---
+
+# Part 6：Bootstrap 编译器 vs Roslyn 架构 Review（2026-05-22）
+
+> 对比对象：[`src/compiler/`](../src/compiler/) 的 C# bootstrap 编译器（~24 KLOC across 9 projects）vs Roslyn (.NET 官方 C# 编译器架构)
+>
+> Roslyn 是迄今最成熟的"编译器即服务"参考实现 —— 不只是 batch compiler，还服务 IDE / Analyzer / Refactoring / Code Generator。z42 当前是 bootstrap 编译器，未来要自举，对应的"编译器即服务"能力必须靠拢 Roslyn 模式。
+
+## F1. Roslyn 核心架构（参考）
+
+| 概念 | 角色 | 关键设计 |
+|---|---|---|
+| **`Compilation`** | 整个编译单元的不可变快照 | immutable；任何修改 → `WithReferences()` 等产生新 Compilation；多线程共享安全 |
+| **GreenNode / RedNode** | 双层 SyntaxTree 表示 | Green = 不可变共享子树（结构相同的代码段去重）；Red = 带 parent 指针的 view，按需创建 |
+| **`SyntaxTree`** | 单文件的不可变语法树 | 增量编辑 = 局部 reparse + 子树重用 |
+| **Binder hierarchy** | 嵌套作用域的 binder 链 | 每个 scope（method body / loop / lambda / catch block）有自己的 Binder，lookup 沿链向上 |
+| **`BoundNode`** | 内部语义树（不暴露公共 API） | 类似 z42 BoundExpr，但 Roslyn 有 30+ lowering pass 转换 |
+| **`ISymbol`** | 公共符号身份 | 跨树持久 —— `INamedTypeSymbol` / `IMethodSymbol` / `IFieldSymbol` / `ILocalSymbol` 等；GetHashCode / Equals 稳定 |
+| **`SemanticModel`** | 单 SyntaxTree 的语义查询 API | `GetTypeInfo(node)` / `GetSymbolInfo(node)` / `GetDeclaredSymbol(decl)` 按需 bind + cache |
+| **`Diagnostic`** | 结构化诊断 | id (CSxxxx) / severity / location / properties (键值对) / 可被 #pragma 抑制 |
+| **DiagnosticAnalyzer + CodeFix** | 扩展点 | 用户写 Roslyn 插件加 lint / refactor / analyzer，不动 compiler 核心 |
+| **`IOperation`** | 分析用语义树 | 与 BoundNode 独立的稳定 API，供 analyzer 用 |
+| **Lowering passes** | Bound → simpler Bound 的多步转换 | async/await 重写 / iterator 重写 / lambda 提升 / using 展开 / switch 表展开 / nullable analysis |
+| **Source Generator** | 编译期源码生成扩展 | analyzer + 写文件能力；不修改用户源码，往 Compilation 注入新 SyntaxTree |
+
+## F2. z42 编译器现状概览
+
+### 已经对的 ✅（部分已对齐 Roslyn）
+
+| z42 | Roslyn 对应 | 注 |
+|---|---|---|
+| AST 全 `sealed record` | Roslyn `SyntaxNode`（GreenNode 不可变） | ✅ 不可变契约对齐 |
+| BoundExpr / BoundStmt `sealed record` + Visitor | Roslyn `BoundNode` + `BoundTreeVisitor<...>` | ✅ 同构 |
+| `BoundExprVisitor<T>` switch + abstract method 强制覆盖 | Roslyn `BoundTreeWalker` / `BoundTreeRewriter` | ✅ 添加新 BoundNode 编译期失败强制更新 visitors |
+| `DiagnosticBag` 收集（不 fail-fast） | Roslyn `DiagnosticBag` 同名同思路 | ✅ 大段对齐 |
+| 结构化错误码（E0xxx, 85+ codes） | Roslyn CSxxxx（数千个） | ✅ 模式对齐，规模小 |
+| `Span` 带 file/line/column propagate 全程 | Roslyn `Location` + `TextSpan` | ✅ |
+| `DiagnosticCatalog` 支持外部注册（WS### / Z###） | Roslyn `DiagnosticDescriptor` registration | ✅ 已有扩展点 |
+| Parser 错误恢复（`ErrorExpr` placeholder） | Roslyn `MissingToken` + skipped trivia | ✅ 同思路 |
+| TypeChecker pass 分阶段（Symbols → Binding → Flow） | Roslyn (Declaration → Binding → Lowering → Emit) | ✅ 思路对齐 |
+| Partial class 拆 TypeChecker (Stmts/Exprs/Calls/Generics) | Roslyn partial class 拆 Binder | ✅ |
+| 80+ Test class + 36 error fixture 黄金对比 | Roslyn 巨量测试 | ✅ |
+
+### 重要差距 ❌
+
+#### F2.1 没有 `Compilation` 不可变快照 ⚠️
+
+**Roslyn**：`CSharpCompilation` 是整个编译单元的不可变值。
+```csharp
+var compilation = CSharpCompilation.Create("MyAssembly")
+    .AddReferences(refs)
+    .AddSyntaxTrees(trees);
+
+// 后续修改产生新 Compilation：
+var c2 = compilation.AddSyntaxTrees(newTree);
+// c1 仍然存在，可被其他 thread / IDE feature 用
+```
+
+好处：
+- 多 thread 同时查询安全
+- 增量更新只重建受影响的子树
+- IDE feature（hover / find references / refactor）持有 Compilation 引用做长时间分析
+
+**z42 现状**：[`PipelineCore.Compile()`](../src/compiler/z42.Pipeline/PipelineCore.cs) 是 procedural call —— `source → token → AST → Bound → IR`，无中间 cache 对象。每次重编译从头跑。
+
+**建议**：
+
+```csharp
+// z42.Pipeline/Compilation.cs (新文件)
+public sealed class Compilation {
+    public IReadOnlyList<SyntaxTree> SyntaxTrees { get; }
+    public IReadOnlyList<Compilation> References { get; }     // 跨 zpkg deps
+    public SymbolTable Symbols { get; }                       // 懒解析
+    public SemanticModel GetSemanticModel(SyntaxTree tree);   // 按需 bind
+    public ImmutableArray<Diagnostic> Diagnostics { get; }
+
+    public Compilation AddSyntaxTrees(params SyntaxTree[] trees)
+        => new Compilation(SyntaxTrees.AddRange(trees), References, /* invalidate caches */);
+
+    public Compilation AddReferences(params Compilation[] refs)
+        => new Compilation(SyntaxTrees, References.AddRange(refs), /* invalidate caches */);
+
+    public EmitResult Emit(...);     // 出 zbc / zpkg
+}
+```
+
+收益：
+1. **多线程并行编译**：每个 file 一个 Compilation slice 并行 bind
+2. **IDE 集成基础**：未来 LSP server 持有 `Compilation`，hover/find-refs 走它
+3. **增量重编译**：单 file 改 → 替换该 SyntaxTree，其他 cached symbols 复用
+
+估时：**7-10 天**（涉及 PipelineCore + driver + tests 重构）。**ROI 极高**：解锁 IDE / LSP / 并行编译。
+
+#### F2.2 没有 `ISymbol` 公共抽象 ⚠️
+
+**Roslyn**：所有 Symbol 实现 `ISymbol` 公共接口 —— `INamedTypeSymbol`（类）/ `IMethodSymbol`（方法）/ `IFieldSymbol`（字段）/ `ILocalSymbol`（局部变量）等。Symbol 有稳定身份（GetHashCode/Equals 跨 SemanticModel 一致），可被分析器持有。
+
+**z42 现状**：
+- `Z42Type` 体系（`Z42ClassType` / `Z42InterfaceType` / `Z42ArrayType` 等）混合了"类型表示"和"符号身份"
+- `IMethodSymbol` / `IFieldSymbol` 有 interface ✅ 但仅在 z42.Semantics 内部用
+- 跨 zpkg 解析全靠 string name lookup（`SymbolTable._funcs: Dictionary<string, Z42FuncType>`）—— 没有稳定 SymbolId
+
+**对比 Roslyn**：Roslyn ISymbol 有 `SymbolId` / `OriginalDefinition` / `ContainingSymbol` —— 三个属性几乎解决所有跨文件查询问题。
+
+**建议**：
+
+```csharp
+// z42.Semantics/Symbols/ISymbol.cs (新建)
+public interface ISymbol {
+    SymbolKind Kind { get; }                       // Class / Interface / Method / Field / Local / Param / TypeParam
+    string Name { get; }
+    ISymbol? ContainingSymbol { get; }             // 父 scope
+    INamespaceSymbol? ContainingNamespace { get; }
+    Span DeclarationSpan { get; }
+    Visibility Visibility { get; }                 // Public / Private / Internal / Protected
+    bool IsStatic { get; }
+    bool IsAbstract { get; }
+    SymbolId Id { get; }                          // 稳定身份，跨 Compilation
+    bool Equals(ISymbol? other);
+}
+
+public interface INamedTypeSymbol : ISymbol {
+    ImmutableArray<IFieldSymbol> Fields { get; }
+    ImmutableArray<IMethodSymbol> Methods { get; }
+    INamedTypeSymbol? BaseType { get; }
+    ImmutableArray<INamedTypeSymbol> Interfaces { get; }
+    ImmutableArray<ITypeParameterSymbol> TypeParameters { get; }
+    bool IsGenericType { get; }
+    INamedTypeSymbol Construct(params ITypeSymbol[] typeArgs);  // 泛型实例化
+    // ...
+}
+
+public interface IMethodSymbol : ISymbol {
+    ITypeSymbol ReturnType { get; }
+    ImmutableArray<IParameterSymbol> Parameters { get; }
+    bool IsExtensionMethod { get; }
+    ImmutableArray<ITypeParameterSymbol> TypeParameters { get; }
+    IMethodSymbol Construct(params ITypeSymbol[] typeArgs);
+    IMethodSymbol OriginalDefinition { get; }      // 对应 List<int>.Add() → List<T>.Add()
+    // ...
+}
+```
+
+`Z42Type` 和 `ISymbol` 解耦 —— 类型是"形状"，符号是"身份"。Roslyn 同样区分（`ITypeSymbol` ⊂ `ISymbol`）。
+
+估时：**10-14 天**（大改）。**ROI 高**：解锁 future 的 LSP find-references / rename / GoToDefinition。
+
+#### F2.3 没有 `SemanticModel` 按需 binding ⚠️
+
+**Roslyn**：
+```csharp
+var model = compilation.GetSemanticModel(syntaxTree);
+var typeInfo = model.GetTypeInfo(expressionNode);     // 给某 expr 返回 (Type, ConvertedType)
+var symbol = model.GetSymbolInfo(invocationNode);     // 给某 invocation 返回 IMethodSymbol
+var decl = model.GetDeclaredSymbol(methodDeclNode);   // 给某 method decl 返回 IMethodSymbol
+```
+
+这些 query **按需 bind 并缓存** —— 调用前 BoundTree 不必存在；首次调用时 bind 该 node 所在的 method body，结果 cache。
+
+**z42 现状**：[`SemanticModel`](../src/compiler/z42.Semantics/SemanticModel.cs) 类存在 ✅ 但它是 **TypeChecker 跑完后产出的"所有结果集"**，不是按需 binding 接口。
+
+**差距**：z42 必须 eager bind 整个 file 才能拿到任何信息；Roslyn 可以只 bind 你 query 的那一段。
+
+**建议**：
+
+Phase 1（短期）：把现有 SemanticModel 加 query API：
+
+```csharp
+public sealed class SemanticModel {
+    // 已有：BoundBodies / BoundDefaults / BoundStaticInits / BoundInstanceInits
+
+    // 新增 query API：
+    public BoundExpr? GetBoundExpression(Expr astNode);   // O(1) cached
+    public Z42Type? GetExpressionType(Expr astNode);
+    public ISymbol? GetSymbol(Expr astNode);
+    public ISymbol? GetDeclaredSymbol(Item astDecl);
+    public IEnumerable<Diagnostic> GetDiagnostics(Span span);
+}
+```
+
+Phase 2（中期，配合 F2.1 Compilation）：lazy binding —— 首次 query 时才 bind 那段。
+
+估时 Phase 1：**3-5 天**。Phase 2：**5-7 天**。**ROI 高**（IDE 必备）。
+
+#### F2.4 没有 Binder 层级 ⚠️
+
+**Roslyn**：每个 scope 有自己的 `Binder` 对象，嵌套形成链：
+
+```
+GlobalScopeBinder
+  → UsingsBinder        (using 指令)
+  → InNamespaceBinder
+  → InContainerBinder    (class)
+  → InMethodBinder       (method body)
+  → InBlockBinder        (block { } 大括号)
+  → InForBinder          (for 循环作用域)
+  → InCatchBlockBinder   (catch 变量)
+  → ...
+```
+
+每个 Binder 知道 "我能 lookup 什么"，未命中传给 parent。Lambda 提取捕获、`using` 别名解析、`goto` label 范围、generic constraint scope —— 全靠 Binder 链。
+
+**z42 现状**：`TypeChecker` 是单 instance，所有作用域信息塞 `TypeEnv` + 几个 mutable stacks（`_lambdaBindingStack` / `_funcConstraints`）。新作用域规则 → 加新字段 + 改 push/pop 逻辑。
+
+**对比**：Roslyn `Binder` 子类有 30+ 个，每个对应一种 scope 语义。z42 把它们全压到 TypeChecker.cs 各方法分支。
+
+**建议**（中期重构）：
+
+```csharp
+// z42.Semantics/TypeCheck/Binders/Binder.cs (新建)
+public abstract class Binder {
+    public Binder? Next { get; }                   // parent scope binder
+    public Compilation Compilation { get; }
+    public DiagnosticBag Diagnostics { get; }
+
+    // 核心 API：
+    public virtual ISymbol? LookupSymbol(string name) {
+        return Next?.LookupSymbol(name);          // default = forward to parent
+    }
+
+    public virtual BoundExpr BindExpression(Expr expr) {
+        return Next!.BindExpression(expr);
+    }
+
+    public virtual BoundStmt BindStatement(Stmt stmt) {
+        return Next!.BindStatement(stmt);
+    }
+}
+
+// 各种子类：
+public class GlobalScopeBinder : Binder { ... }
+public class InNamespaceBinder : Binder {
+    string _namespace;
+    public override ISymbol? LookupSymbol(string name) {
+        // 先查本 namespace
+        // 未命中 → base.LookupSymbol(name)
+    }
+}
+public class InMethodBinder : Binder {
+    MethodDecl _method;
+    Dictionary<string, ILocalSymbol> _locals = new();
+    public override ISymbol? LookupSymbol(string name) {
+        if (_locals.TryGetValue(name, out var s)) return s;
+        // 参数也在这里查
+        return base.LookupSymbol(name);
+    }
+}
+public class InBlockBinder : Binder { /* 局部 scope，let / var */ }
+public class InLambdaBinder : Binder { /* capture 跟踪 */ }
+public class InCatchBinder : Binder { /* catch 变量 */ }
+```
+
+收益：
+1. 每种 scope 语义独立，加新 scope（如 `using` block / `await using`）= 加一个 Binder 子类
+2. 现有 TypeChecker.cs 6 partial files 几千 LOC 可缩到 ~1000 LOC + 10+ Binder 子类各 100-200 LOC
+3. 测试单个 Binder 容易（输入：name → 输出：ISymbol?）
+
+估时：**14-21 天**（大架构改动）。**ROI 中长期**：当前 TypeChecker 还能撑，但加 L3 lambda / async / generic constraints 时复杂度爆炸前就该做。
+
+#### F2.5 没有 Lowering Pass 框架 ⚠️
+
+**Roslyn**：Bound → Bound 多级转换 ——
+- `LocalRewriter`：async/await → state machine、iterator → state machine、lambda → 闭包类、`using` → try/finally、`foreach` → while + enumerator、switch → if-else 链、interpolated string → 构造、is-pattern → 等价 expr
+- 每个 pass 是独立 `BoundTreeRewriter` 子类
+- Pass 顺序固定 在 `MethodCompiler.cs`
+
+每个 pass 输入是合法的 BoundNode，输出也是合法的 BoundNode（只是更"低级"）。最终送 IL emitter 的是已经被全部 lower 后的 BoundTree。
+
+**z42 现状**：BoundTree 直接送 [`FunctionEmitter`](../src/compiler/z42.Semantics/Codegen/FunctionEmitter.cs)，所有 lowering 都在 emit 时做（`FunctionEmitterStmts.Loops.cs` 直接展开 foreach；`FunctionEmitterCalls.Interpolation.cs` 直接展开字符串插值）。
+
+**问题**：
+- 复杂 lowering（如 L3 的 async / lambda 提升）混在 emit 代码里，调试困难
+- 不能在 lowering 后跑 analyzer / optimization
+- 不能 `--dump-bound-lowered` 看中间结果
+
+**建议**：
+
+```csharp
+// z42.Semantics/Lowering/BoundTreeRewriter.cs (新建)
+public abstract class BoundTreeRewriter : BoundExprVisitor<BoundExpr>, BoundStmtVisitor<BoundStmt> {
+    // 默认实现：递归 rewrite 所有 children；子类只 override 自己关心的 node
+}
+
+public sealed class ForeachLoweringPass : BoundTreeRewriter {
+    protected override BoundStmt VisitForeach(BoundForeach f) {
+        // foreach (var x in arr) body
+        // ↓ rewrite to
+        // var __idx = 0; while (__idx < arr.Length) { var x = arr[__idx]; body; __idx++; }
+        return new BoundBlock(...);
+    }
+}
+
+public sealed class InterpolatedStringLoweringPass : BoundTreeRewriter { ... }
+public sealed class LambdaCaptureLoweringPass : BoundTreeRewriter { ... }  // L3
+public sealed class AsyncStateMachinePass : BoundTreeRewriter { ... }       // L3+
+public sealed class SwitchTableLoweringPass : BoundTreeRewriter { ... }
+
+// 主 emitter 只接收 fully lowered BoundTree：
+public static class MethodCompiler {
+    public static IrFunction Compile(MethodSymbol method, BoundBlock body) {
+        var passes = new BoundTreeRewriter[] {
+            new ForeachLoweringPass(),
+            new InterpolatedStringLoweringPass(),
+            new SwitchTableLoweringPass(),
+            // L3 时加 lambda / async lowering
+        };
+        var lowered = passes.Aggregate(body, (b, p) => (BoundBlock)p.Visit(b));
+        return FunctionEmitter.Emit(method, lowered);
+    }
+}
+```
+
+收益：
+1. 加新 lowering = 加新 Rewriter 子类，不动 emitter
+2. 可 `--dump-bound-after=foreach-lowering` 看中间结果
+3. L3 async / lambda 复杂语义改写有清晰的 pass 边界，不污染 IR emit
+4. 未来 optimization pass（dead code elim / constant folding）走同一框架
+
+估时：**7-10 天**（先建框架 + 迁移 2-3 个现有 lowering）。**ROI 极高**（L3 前置）。
+
+#### F2.6 没有 Analyzer / Source Generator 扩展点 ⚠️
+
+**Roslyn**：用户可以写 `DiagnosticAnalyzer` 子类 + `[DiagnosticAnalyzer]` attribute 注册，分析器跟着每次编译跑，发自定义 warning。配套 `CodeFixProvider` 提供自动修复建议。Source Generator 在 Compilation 阶段往里注入新 SyntaxTree（最早 Roslyn 3.x）。
+
+**z42 现状**：完全没有外部扩展接口。所有 lint / check / 自定义规则都得改 z42.Semantics 源码。
+
+**z42 长期路径**：
+
+Phase 1（短期，未来 spec）：
+- `IAnalyzer` interface ── `void Analyze(SemanticModel model, DiagnosticBag bag)`
+- DLL plug-in 机制（参考 Roslyn `AnalyzerLoadFailureEventArgs`）
+- 编译器在 typecheck 完后调用所有注册的 analyzer
+
+Phase 2（远期）：
+- Source Generator ── 用户写代码生成器，编译期注入新 .z42 源码
+- Code Fix ── IDE 集成时按 Diagnostic 找匹配的 fix
+
+**ROI**：当前不紧迫；自举完成后 + IDE 集成阶段再做。
+
+#### F2.7 IR Pass Manager 框架空闲 ⚠️
+
+**当前**：[`z42.IR`](../src/compiler/z42.IR/) 有 `IIrPass` interface + `IrPassManager`，但**没有任何 pass 实现**。注释说"infrastructure present but unused"。
+
+**建议**：和 F2.5 lowering 框架配套，把 IR 层 optimization pass 也建起来 ——
+- `DeadCodeEliminationPass`
+- `ConstantFoldingPass`
+- `RegisterCoalescingPass`
+- `BasicBlockMergePass`
+
+但 **建议先做 BoundTree lowering（F2.5），IR pass 之后再说**。原因：bytecode 层 optimization 是 micro-optimization；BoundTree lowering 解决可正确性问题（async / lambda），优先级更高。
+
+#### F2.8 Generics: 仅 monomorphization，缺统一表达 ⚠️
+
+**Roslyn**：generic type 有清晰双层 ——
+- `INamedTypeSymbol.OriginalDefinition` ── 未实例化的"模板"（`List<T>`）
+- `INamedTypeSymbol.Construct(int)` ── 实例化后的具体类型（`List<int>`）
+- `IsGenericType` / `IsUnboundGenericType` 区分状态
+- 所有泛型 lookup 都通过 `OriginalDefinition` 路径，instantiation 是叶子
+
+**z42 现状**：
+- `Z42InstantiatedType(Definition: Z42ClassType, TypeArgs: [...])` 有结构
+- `Z42GenericParamType` 表 T 占位符
+- 但 [`TypeChecker.Generics.cs`](../src/compiler/z42.Semantics/TypeCheck/TypeChecker.Generics.cs) 各处 ad-hoc 做 substitution，没集中
+- IR 层全 monomorphize（每个 `List<int>` / `List<string>` 单独生成 IR）—— 实例多了膨胀
+
+**建议**（中期）：
+1. 把 generic substitution 集中到 `TypeSubstitution` 类
+2. IR 层考虑 generic sharing（Roslyn / CoreCLR 都做 ── List<int> / List<long> 共享 code，仅 dictionary 不同）—— 但这是 L3 之后的优化
+
+#### F2.9 Parser 错误恢复偏弱 ⚠️
+
+**z42 现状**：spec enhance-expr-recovery 已落地（`ErrorExpr` placeholder + skip-to-boundary），statement 层基本失败立返。
+
+**Roslyn**：
+- Token level：`SkippedTokensTrivia` 把无法 parse 的 token 挂在前面 trivia，不丢源码位置
+- Production level：panic-mode recovery 通过 first/follow set 计算"何时认为产生式结束"
+- 同样一段烂代码，Roslyn 能 fail-soft 报 10 个错而不是 1 个
+
+**建议**：当前对 bootstrap 够用；自举后 IDE 集成时（错误代码需要实时高亮）必须改进。
+
+**ROI**：短期低，长期必要。
+
+## F3. z42 编译器 ✅ Roslyn 模式已对齐的部分
+
+不要重复改造，已经做得不错：
+
+1. **AST 不可变 sealed records** ── ✅
+2. **BoundTree 不可变 + Visitor** ── ✅（缺 Rewriter，见 F2.5）
+3. **DiagnosticBag 收集模式** ── ✅
+4. **结构化错误码** ── ✅（E0xxx vs CSxxxx）
+5. **Pretty diagnostic renderer** ── ✅
+6. **DiagnosticCatalog + explain 命令** ── ✅
+7. **TypeRegistry 数据驱动注册** ── ✅
+8. **Partial class 按 concern 拆 TypeChecker** ── ✅
+9. **Pratt parser + combinators** ── ✅（Roslyn 是手写递归下降，z42 用 combinators 更模块化）
+10. **错误恢复占位符 `ErrorExpr`** ── ✅
+11. **Phase 0/1/2 顺序明确** ── ✅
+12. **80+ test class + 36 error fixture** ── ✅
+13. **Span propagate 全程** ── ✅
+14. **Bound 节点编译期 visitor 强制 override** ── ✅ 对齐 Roslyn
+
+## F4. 改进优先级（合并 Part 6 到总表）
+
+新加 6 项 P0-P3：
+
+| 优先级 | 改造 | Part | 估时 | 解锁价值 |
+|---|---|---|---|---|
+| **P0** | **`Compilation` 不可变快照**（F2.1） | 6 | 7-10 天 | 多线程并行编译 + IDE / LSP 集成基础 |
+| **P1** | **`ISymbol` 公共抽象**（F2.2） | 6 | 10-14 天 | 跨文件符号身份；解锁 find-references / rename |
+| **P1** | **`SemanticModel` 按需 binding**（F2.3 Phase 1） | 6 | 3-5 天 | query API；IDE / analyzer 前置 |
+| **P1** | **BoundTree Lowering Pass 框架**（F2.5） | 6 | 7-10 天 | L3 async / lambda / generics lowering 前置 |
+| **P2** | **Binder 层级**（F2.4） | 6 | 14-21 天 | scope 语义清晰，加 L3 特性时不爆炸 |
+| **P3** | **Analyzer / SourceGen 扩展点**（F2.6） | 6 | 大 | 自举完成后；IDE 阶段必备 |
+| **P4** | **IR Pass Manager 实装**（F2.7） | 6 | 中 | bytecode 微优化；先做 BoundTree lowering |
+| **P4** | **Parser 强化错误恢复**（F2.9） | 6 | 中 | 自举后 IDE 阶段 |
+
+合并到总优先级表（**Part 1-6 最终汇总**，省略中间已列项目；仅追加 Part 6 新增）：
+
+**Wave 5（编译器架构演进, 6-8 周）—— 自举前 must-have**：
+1. F2.1 Compilation 不可变快照
+2. F2.3 SemanticModel 按需 query API (Phase 1)
+3. F2.5 BoundTree Lowering Pass 框架
+4. F2.2 ISymbol 公共抽象
+5. F2.4 Binder 层级
+
+## F5. 立即可做的小项目（≤1 天，独立 commit）
+
+不依赖大改造，今晚就能写：
+
+1. ⚡ **把 `Z42Type` 的 well-known singletons 移到 `WellKnownTypes` 类集中** ── 现在散落在 `Z42Type.cs`；对齐 Roslyn `WellKnownMembers` / `WellKnownTypes`
+2. ⚡ **`DiagnosticCodes` 加 `Category` 字段** ── 让 catalog 按"Lexer / Parser / TypeCheck / IrGen"分组，便于 `z42c explain --category=parser` 列同类
+3. ⚡ **`Diagnostic` 加 `Properties: ImmutableDictionary<string, string>` 字段** ── Roslyn analyzer 用 properties 传给 CodeFix；未来扩展接口前置
+4. ⚡ **Parser error message 加 `expected: <list>`** ── Roslyn 错误是 "expected `(`, identifier, or `default`"；z42 当前是单 token
+5. ⚡ **TypeChecker `_funcConstraints` 等 mutable stack 改 `ImmutableStack<T>`** ── 配合未来 Binder hierarchy 演进；现在改不破任何东西
+6. ⚡ **BoundDumper 加 `--dump-bound-with-types` 选项** ── 当前已有 type 注解，再加 symbol id（如果 F2.2 落地后）方便 LSP 调试
+7. ⚡ **`IrPassManager` 框架未用，加一个 no-op `IIrPass` 实现作为占位** ── 让框架"活着"被测试覆盖
+
+## F6. 不抄的部分
+
+明确不抄 Roslyn 的部分：
+
+- **GreenNode / RedNode 双层**：Rust 那边 z42 还没 incremental editing 需求；C# bootstrap 是 batch compiler；单层 sealed record 够用
+- **`IOperation` 独立分析模型**：Roslyn 为了支持公开的 IDE API 而独立的"语义视图"；z42 Bound 已经够用，不再加一层
+- **WPF Workspace API（VS 集成）**：z42 IDE 集成走 LSP 即可，不需要 Roslyn 那套
+- **Nullable Reference Type 流分析**：z42 spec 用 `T?` Option type 而非 NRT 注解；语义不同，不抄
+- **Source Generator 复杂度**：Phase 1-2 不做
+- **30+ lowering pass**：z42 还在 L2，async/await 都没；先做 5-7 个基本 pass（foreach / interpolation / lambda capture / switch / using）
+
+## F7. 总结：z42 编译器目前位置
+
+**类比 Roslyn 时间线**：
+- **z42 现状 ≈ Roslyn 0.x 时代**（Microsoft.CodeAnalysis 早期）
+  - ✅ 不可变 AST / Bound + Visitor + DiagnosticBag —— **核心 80% 已对齐**
+  - ❌ Compilation 不可变快照 / Binder hierarchy / 按需 SemanticModel / lowering pass 框架 —— **未做**
+  - ❌ Analyzer extensibility / Source Generator —— **未做**
+
+**距离自举的关键路径**：
+1. Wave 5 编译器架构演进（6-8 周）—— **F2.1 + F2.3 + F2.5 是 P0**
+2. 性能 / 数据类型优化（Wave 2，3-4 周）
+3. 然后才有信心把 compiler 重写到 z42
+
+**最值得抄 Roslyn 的 3 件事**：
+1. **Compilation 不可变快照** —— 解锁并行 + IDE
+2. **BoundTree Lowering Pass 框架** —— async / lambda / generics 前置
+3. **ISymbol 公共抽象** —— 跨文件符号身份；find-references / rename / GoToDef 基础
+
+---
+
+*Part 6 作者：Claude（z42 review）*
+*调研日期：2026-05-22*
+*Roslyn 部分参考：训练知识 + Roslyn 官方文档（dotnet/roslyn wiki & API docs）*
