@@ -138,3 +138,146 @@ fn clear_mark_resets_state() {
     GcRef::clear_mark(a_gc);
     assert!(!GcRef::is_marked(a_gc));
 }
+
+// ── add-mark-sweep-collector P2 (2026-05-21): sweep + full cycle ────────────
+
+fn alive_count(heap: &ArcMagrGC) -> usize {
+    let mut n = 0;
+    heap.iterate_live_objects(&mut |_| n += 1);
+    n
+}
+
+/// Mark+sweep frees a simple two-node cycle (a ↔ b), same as trial-deletion.
+#[test]
+fn mark_sweep_frees_two_node_cycle() {
+    let heap = ArcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a);
+    drop(b);
+    assert_eq!(alive_count(&heap), 2, "cycle keeps both alive before sweep");
+
+    let freed = heap.collect_cycles_mark_sweep_for_test();
+
+    assert!(freed > 0, "expected positive freed_bytes (got {freed})");
+    assert_eq!(alive_count(&heap), 0, "mark+sweep frees the cycle just like trial-deletion");
+}
+
+/// Mark+sweep frees a self-referencing cycle (a → a).
+#[test]
+fn mark_sweep_frees_self_reference_cycle() {
+    let heap = ArcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("Self"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        a_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a);
+    assert_eq!(alive_count(&heap), 1);
+
+    heap.collect_cycles_mark_sweep_for_test();
+
+    assert_eq!(alive_count(&heap), 0);
+}
+
+/// Mark+sweep preserves rooted (reachable) objects.
+#[test]
+fn mark_sweep_preserves_rooted_chain() {
+    let heap = ArcMagrGC::new();
+    let leaf = heap.alloc_object(dummy_type_desc("Leaf"), vec![Value::Null], NativeData::None);
+    let mid  = heap.alloc_object(dummy_type_desc("Mid"),  vec![leaf.clone()], NativeData::None);
+    let root = heap.alloc_object(dummy_type_desc("Root"), vec![mid.clone()],  NativeData::None);
+
+    let root_handle = heap.pin_root(root.clone());
+
+    // Release user-side refs except the pinned root.
+    drop(leaf);
+    drop(mid);
+    drop(root);
+    assert_eq!(alive_count(&heap), 3, "pinned root keeps the chain alive");
+
+    let freed = heap.collect_cycles_mark_sweep_for_test();
+
+    assert_eq!(freed, 0, "no unreachable objects → freed_bytes == 0");
+    assert_eq!(alive_count(&heap), 3, "rooted chain survives");
+
+    heap.unpin_root(root_handle);
+}
+
+/// Mark+sweep frees a 3-cycle (a → b → c → a) when no root reaches it.
+#[test]
+fn mark_sweep_frees_three_node_cycle() {
+    let heap = ArcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    let c = heap.alloc_object(dummy_type_desc("C"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        let Value::Object(c_gc) = &c else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = c.clone();
+        c_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a);
+    drop(b);
+    drop(c);
+    assert_eq!(alive_count(&heap), 3);
+
+    heap.collect_cycles_mark_sweep_for_test();
+
+    assert_eq!(alive_count(&heap), 0, "3-cycle freed by mark+sweep");
+}
+
+/// Mark+sweep preserves a cycle that one strong external ref keeps alive.
+#[test]
+fn mark_sweep_preserves_externally_referenced_cycle() {
+    let heap = ArcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    // Pin a as root → both a and b are reachable through the cycle.
+    let root_handle = heap.pin_root(a.clone());
+    drop(b);
+
+    heap.collect_cycles_mark_sweep_for_test();
+    assert_eq!(alive_count(&heap), 2, "rooted cycle survives mark+sweep");
+
+    heap.unpin_root(root_handle);
+    // Now nothing roots a or b → next mark+sweep should free both.
+    drop(a);
+    heap.collect_cycles_mark_sweep_for_test();
+    assert_eq!(alive_count(&heap), 0);
+}
+
+/// Survivor marks reset after sweep so the next cycle starts clean.
+#[test]
+fn sweep_resets_marks_on_survivors() {
+    let heap = ArcMagrGC::new();
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let root_handle = heap.pin_root(a.clone());
+
+    heap.collect_cycles_mark_sweep_for_test();
+
+    let Value::Object(a_gc) = &a else { panic!() };
+    assert!(!GcRef::is_marked(a_gc), "survivor's mark must be reset after sweep");
+
+    // Run again — should still preserve a (mark phase will re-mark; sweep
+    // will reset). Verifies the cycle is repeatable.
+    heap.collect_cycles_mark_sweep_for_test();
+    assert!(!GcRef::is_marked(a_gc));
+    assert_eq!(alive_count(&heap), 1);
+
+    heap.unpin_root(root_handle);
+}

@@ -420,6 +420,68 @@ impl ArcMagrGC {
         newly_marked
     }
 
+    /// **add-mark-sweep-collector P2 (2026-05-21)**: sweep phase of the
+    /// future mark-sweep collector. Snapshots live objects from the
+    /// registry (same source as trial-deletion's `snapshot_live_from_registry`),
+    /// then for each:
+    ///
+    /// - `is_marked == true` → reset mark to 0 (prep for next cycle), retain
+    /// - `is_marked == false` → break its internal refs (cycle break via
+    ///   `break_cycle_value`), accumulate `freed_bytes`. When the snapshot
+    ///   Vec drops at function return, the unmarked allocations' last
+    ///   strong refs go away → Arc Drop chain fires → finalizers run.
+    ///
+    /// Returns the total bytes-freed estimate. **Must be called after**
+    /// [`mark_phase`](Self::mark_phase) — otherwise everything is unmarked
+    /// and would be incorrectly swept.
+    ///
+    /// Currently `#[allow(dead_code)]` (P3 will wire as default
+    /// `collect_cycles` path); accessible from tests via
+    /// [`collect_cycles_mark_sweep_for_test`](Self::collect_cycles_mark_sweep_for_test).
+    #[allow(dead_code)]
+    fn sweep_phase(&self) -> u64 {
+        let live = self.snapshot_live_from_registry();
+        let mut freed_bytes: u64 = 0;
+        for v in &live {
+            let marked = match v {
+                Value::Object(gc) => GcRef::is_marked(gc),
+                Value::Array(gc)  => GcRef::is_marked(gc),
+                _ => true, // non-allocations: treat as "skip" (mark/sweep operates on heap only)
+            };
+            if marked {
+                // Survival: reset mark so the next cycle starts clean.
+                match v {
+                    Value::Object(gc) => GcRef::clear_mark(gc),
+                    Value::Array(gc)  => GcRef::clear_mark(gc),
+                    _ => {}
+                }
+            } else {
+                // Unmarked: break internal references so when `live`
+                // drops at function return, Arc strong counts can reach
+                // zero and chain-drop fires finalizers.
+                freed_bytes += self.object_size_bytes(v) as u64;
+                Self::break_cycle_value(v);
+            }
+        }
+        // `live` Vec drops here. Allocations whose only remaining strong
+        // refs were the cycle (which we just broke) get released.
+        freed_bytes
+    }
+
+    /// **add-mark-sweep-collector P2 (2026-05-21)**: full mark+sweep
+    /// cycle — test-only entry point that runs the alternative
+    /// algorithm without touching the production `collect_cycles` path
+    /// (which still goes through trial-deletion until P3).
+    ///
+    /// Used by `arc_heap_tests::mark_sweep_validation` to compare
+    /// surviving-set behavior with trial-deletion across the same
+    /// fixtures.
+    #[allow(dead_code)]
+    fn collect_cycles_mark_sweep_for_test(&self) -> u64 {
+        let _newly_marked = self.mark_phase();
+        self.sweep_phase()
+    }
+
     /// **add-mark-sweep-collector P1 (2026-05-21)**: clear all mark bits.
     /// Helper for tests + P3 will use this at the end of sweep to prep
     /// survivors for the next cycle. Walks the registry via the existing
