@@ -267,6 +267,12 @@ pub struct VmContext {
 
     // processes moved to VmCore (Phase 2.1)
     pub(crate) process_next_id:   std::sync::atomic::AtomicU64,
+    /// **add-gc-safepoint-counter-throttling (2026-05-21)**: per-thread
+    /// throttle counter. `check_safepoint`'s fast path decrements; only
+    /// when it reaches 0 does the slow path probe `gc_phase` and drain
+    /// `needs_auto_collect`. Initial value comes from
+    /// [`crate::gc::safepoint::throttle_n`] (default 1024, env-overridable).
+    pub(crate) safepoint_skip:    std::sync::atomic::AtomicU32,
 }
 
 // `Default` removed: `new()` now returns `Pin<Box<VmContext>>`, which
@@ -289,6 +295,16 @@ impl VmContext {
     /// `core` field itself is `pub(crate)`; this is the public escape hatch.
     pub fn core_arc(&self) -> Arc<VmCore> {
         Arc::clone(&self.core)
+    }
+
+    /// add-gc-safepoint-counter-throttling (2026-05-21): force the next
+    /// `check_safepoint` call into the slow path immediately, bypassing
+    /// the throttle counter. For tests and embedders that need
+    /// deterministic safepoint timing — production code should not need
+    /// this (the throttle counter caps GC pause latency at N iterations
+    /// which is small enough in practice).
+    pub fn force_safepoint(&self) {
+        self.safepoint_skip.store(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Standard test entry: constructs a VmContext with `VmCore.module = None`.
@@ -329,6 +345,7 @@ impl VmContext {
             call_stack,
             func_ref_slots,
             process_next_id: std::sync::atomic::AtomicU64::new(1),
+            safepoint_skip: std::sync::atomic::AtomicU32::new(crate::gc::safepoint::throttle_n()),
             _pin: PhantomPinned,
         };
         let boxed = Box::new(ctx);
@@ -450,6 +467,7 @@ impl VmContext {
             call_stack,
             func_ref_slots,
             process_next_id: std::sync::atomic::AtomicU64::new(1),
+            safepoint_skip: std::sync::atomic::AtomicU32::new(crate::gc::safepoint::throttle_n()),
             _pin: PhantomPinned,
         };
         // Heap-allocate so the address is stable for the scanner registry.

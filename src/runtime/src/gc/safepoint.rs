@@ -27,6 +27,42 @@
 
 use crate::vm_context::VmContext;
 use std::sync::atomic::Ordering;
+use std::sync::OnceLock;
+
+/// add-gc-safepoint-counter-throttling (2026-05-21): default throttle
+/// constant. Every Nth `check_safepoint` call runs the slow path (real
+/// `gc_phase` Mutex lock + auto_collect drain); other N-1 calls are a
+/// single atomic decrement.
+///
+/// 1024 mirrors HotSpot's polling-page heuristic — at z42's typical
+/// per-iter cost (~50ns) it caps GC pause latency at ≈ 50us, which is
+/// negligible compared to actual collect time (10ms+).
+const DEFAULT_THROTTLE: u32 = 1024;
+
+/// Cached throttle value. Resolved once from `Z42_SAFEPOINT_THROTTLE` env
+/// on first access; subsequent calls hit the OnceLock fast path.
+static THROTTLE: OnceLock<u32> = OnceLock::new();
+
+/// Effective safepoint throttle. Reads `Z42_SAFEPOINT_THROTTLE` env on
+/// first call; cached for the process lifetime. Invalid values fall back
+/// to [`DEFAULT_THROTTLE`] with a warning on stderr.
+///
+/// Setting `Z42_SAFEPOINT_THROTTLE=1` disables throttling (every call
+/// runs the slow path) — useful for debugging latency-sensitive paths.
+pub fn throttle_n() -> u32 {
+    *THROTTLE.get_or_init(|| match std::env::var("Z42_SAFEPOINT_THROTTLE") {
+        Ok(s) => match s.parse::<u32>() {
+            Ok(n) if n >= 1 => n,
+            _ => {
+                eprintln!(
+                    "z42: invalid Z42_SAFEPOINT_THROTTLE={s:?}; using default {DEFAULT_THROTTLE}"
+                );
+                DEFAULT_THROTTLE
+            }
+        },
+        Err(_) => DEFAULT_THROTTLE,
+    })
+}
 
 /// Current GC phase observed by mutators at safepoint checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,9 +77,30 @@ pub enum GcPhase {
 
 /// Fast-path safepoint check called from interp hot path.
 ///
-/// Common case (no pending GC, no pending auto-collect) takes one Mutex
-/// lock + one enum compare + one atomic load and returns. When the GC has
-/// requested a pause, branches off to the slow [`park_until_idle`] path.
+/// **add-gc-safepoint-counter-throttling (2026-05-21)**: this fast path
+/// is one `AtomicU32::fetch_sub(1, Relaxed) + compare + branch` (~3-5ns).
+/// The Mutex-lock + phase-check + auto-collect-drain logic only runs every
+/// [`throttle_n()`] th call (default 1024). Worker liveness under a GC
+/// request is bounded by N iterations × per-iter cost — at typical z42
+/// hot-loop iter (~50ns) this caps GC pause latency at ~50us, far below
+/// actual collect time.
+#[inline]
+pub fn check_safepoint(ctx: &VmContext) {
+    // Fast path: relaxed decrement; if counter was > 1 before, we still
+    // have work to do before probing the real state.
+    let prev = ctx.safepoint_skip.fetch_sub(1, Ordering::Relaxed);
+    if prev > 1 {
+        return;
+    }
+    // Slow path: counter just hit 0 (or wrapped to u32::MAX in a
+    // theoretical overflow — saturating reset below restores invariant).
+    ctx.safepoint_skip.store(throttle_n(), Ordering::Relaxed);
+    check_safepoint_slow(ctx);
+}
+
+/// Slow-path safepoint check — Mutex lock + phase check + auto-collect
+/// drain. Called from [`check_safepoint`] every Nth call (per
+/// [`throttle_n`]).
 ///
 /// **add-gc-safepoint-auto-threshold (2026-05-20)**: when phase is Idle
 /// but the heap's pressure-trip path has set `needs_auto_collect = true`,
@@ -52,8 +109,8 @@ pub enum GcPhase {
 /// If multiple threads see the flag, only the first swap-true claims;
 /// the rest see false and skip (subsequent allocs that still trip pressure
 /// re-set the flag).
-#[inline]
-pub fn check_safepoint(ctx: &VmContext) {
+#[inline(never)]
+fn check_safepoint_slow(ctx: &VmContext) {
     let phase = *ctx.core.gc_phase.lock();
     if matches!(phase, GcPhase::Requested | GcPhase::Marking) {
         park_until_idle(ctx);

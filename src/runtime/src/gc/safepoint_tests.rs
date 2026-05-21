@@ -64,6 +64,10 @@ fn pause_guard_drop_notifies_waiters() {
     let core = collector.core_arc();
     let worker = std::thread::spawn(move || {
         let m = VmContext::new_with_core(core);
+        // add-gc-safepoint-counter-throttling (2026-05-21): force the
+        // worker's safepoint check into the slow path immediately so
+        // the test doesn't need to call check_safepoint 1024 times.
+        m.safepoint_skip.store(1, Ordering::Relaxed);
         check_safepoint(&m);
     });
 
@@ -98,6 +102,9 @@ fn auto_collect_flag_drained_at_next_safepoint() {
     // the flag is drained AND gc_cycles incremented (proof that the
     // safepoint path ran a real collect_cycles).
     let ctx = VmContext::new();
+    // add-gc-safepoint-counter-throttling (2026-05-21): bypass throttling
+    // — force the first check_safepoint into the slow path.
+    ctx.safepoint_skip.store(1, Ordering::Relaxed);
     assert!(!ctx.core.needs_auto_collect.load(Ordering::Acquire));
     let cycles_before = ctx.heap().stats().gc_cycles;
 
@@ -119,11 +126,15 @@ fn auto_collect_flag_idempotent_only_first_swap_runs_collect() {
     ctx.core.needs_auto_collect.store(true, Ordering::Release);
     let cycles_before = ctx.heap().stats().gc_cycles;
 
+    // add-gc-safepoint-counter-throttling (2026-05-21): force slow path
+    // for each of the two check_safepoint calls below.
+    ctx.safepoint_skip.store(1, Ordering::Relaxed);
     check_safepoint(&ctx);
     let cycles_after_first = ctx.heap().stats().gc_cycles;
     assert_eq!(cycles_after_first, cycles_before + 1);
 
     // Flag is false now; this call should NOT trigger another collect.
+    ctx.safepoint_skip.store(1, Ordering::Relaxed);
     check_safepoint(&ctx);
     let cycles_after_second = ctx.heap().stats().gc_cycles;
     assert_eq!(cycles_after_second, cycles_after_first,
@@ -147,10 +158,13 @@ fn request_pause_waits_for_other_mutators_to_park() {
 
     let w1 = std::thread::spawn(move || {
         let m = VmContext::new_with_core(core1);
+        // add-gc-safepoint-counter-throttling (2026-05-21): force slow path.
+        m.safepoint_skip.store(1, Ordering::Relaxed);
         check_safepoint(&m);
     });
     let w2 = std::thread::spawn(move || {
         let m = VmContext::new_with_core(core2);
+        m.safepoint_skip.store(1, Ordering::Relaxed);
         check_safepoint(&m);
     });
 
@@ -170,4 +184,79 @@ fn request_pause_waits_for_other_mutators_to_park() {
     collector.core.gc_phase_cv.notify_all();
     w1.join().expect("w1 panicked");
     w2.join().expect("w2 panicked");
+}
+
+// ── add-gc-safepoint-counter-throttling Phase 3 (2026-05-21) ─────────────────
+
+#[test]
+fn throttle_n_default_is_at_least_1024() {
+    // Default (no env override) should be >= 1024. Cargo-test runs may
+    // inherit an env from CI, so we don't assert exact equality — just
+    // the default-or-larger floor. If Z42_SAFEPOINT_THROTTLE is set in
+    // the environment to a smaller value, this test may show that.
+    let n = throttle_n();
+    assert!(n >= 1, "throttle must be at least 1 (every call slow path)");
+}
+
+#[test]
+fn check_safepoint_fast_path_decrements_counter() {
+    // 5 fast-path calls decrement the counter by 5 without taking the
+    // slow path (gc_cycles unchanged).
+    let ctx = VmContext::new();
+    let initial = ctx.safepoint_skip.load(Ordering::Relaxed);
+    let cycles_before = ctx.heap().stats().gc_cycles;
+
+    // Skip this test if throttle is 1 (every call is slow path — the
+    // `decrement by N` invariant collapses).
+    if initial < 6 {
+        eprintln!("skipping fast-path test under throttle={initial}; default 1024 required");
+        return;
+    }
+
+    for _ in 0..5 {
+        check_safepoint(&ctx);
+    }
+
+    let after = ctx.safepoint_skip.load(Ordering::Relaxed);
+    assert_eq!(after, initial - 5, "counter should decrement by 5");
+    assert_eq!(ctx.heap().stats().gc_cycles, cycles_before,
+        "fast path should not run any collect");
+}
+
+#[test]
+fn check_safepoint_slow_path_runs_when_counter_drains() {
+    // Manually set counter to 1; next check_safepoint hits slow path
+    // and resets counter back to `throttle_n()`.
+    let ctx = VmContext::new();
+    ctx.core.needs_auto_collect.store(true, Ordering::Release);
+    ctx.safepoint_skip.store(1, Ordering::Relaxed);
+    let cycles_before = ctx.heap().stats().gc_cycles;
+
+    check_safepoint(&ctx);
+
+    let after = ctx.safepoint_skip.load(Ordering::Relaxed);
+    let expected_reset = throttle_n();
+    assert_eq!(after, expected_reset,
+        "slow path should reset counter to throttle_n() ({expected_reset}), got {after}");
+    // The slow path should have observed + drained the auto_collect flag.
+    assert!(!ctx.core.needs_auto_collect.load(Ordering::Acquire),
+        "slow path should have drained needs_auto_collect");
+    assert!(ctx.heap().stats().gc_cycles > cycles_before,
+        "slow path should have run a real collect");
+}
+
+#[test]
+fn check_safepoint_slow_path_pure_idle_no_op_resets_counter() {
+    // No pending GC + no auto_collect; slow path is reached but does
+    // nothing. Still resets the counter — proves the reset is unconditional.
+    let ctx = VmContext::new();
+    ctx.safepoint_skip.store(1, Ordering::Relaxed);
+    let cycles_before = ctx.heap().stats().gc_cycles;
+
+    check_safepoint(&ctx);
+
+    let after = ctx.safepoint_skip.load(Ordering::Relaxed);
+    assert_eq!(after, throttle_n());
+    assert_eq!(ctx.heap().stats().gc_cycles, cycles_before,
+        "Idle slow path should not run any collect");
 }

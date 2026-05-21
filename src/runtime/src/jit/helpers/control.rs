@@ -136,6 +136,10 @@ mod check_safepoint_tests {
         // gc::safepoint::check_safepoint which atomically swaps it and
         // runs a stop-the-world collect.
         let ctx = VmContext::new();
+        // add-gc-safepoint-counter-throttling (2026-05-21): force the
+        // first check_safepoint into the slow path (otherwise the
+        // throttle counter would skip it).
+        ctx.safepoint_skip.store(1, Ordering::Relaxed);
         let cycles_before = ctx.heap().stats().gc_cycles;
         ctx.core.needs_auto_collect.store(true, Ordering::Release);
 

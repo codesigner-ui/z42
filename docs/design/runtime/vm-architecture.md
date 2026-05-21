@@ -844,7 +844,8 @@ RAII guard：
 |------|---------|----------|
 | JIT-mode safepoint | ✅ 已落地（add-gc-safepoint-jit 2026-05-21）：JIT translate 在 function entry / backward Br / BrCond / `Call` / `CallIndirect` 返回后共 4 类 site emit `jit_check_safepoint` helper call。trampoline 调用 `gc::safepoint::check_safepoint`，与 interp 协议完全对齐；JIT-mode multi-thread workloads 不再死锁 | — |
 | Auto-threshold (`maybe_auto_collect`) | ✅ Safepoint-aware（add-gc-safepoint-auto-threshold 2026-05-20）：trip 时 set `VmCore.needs_auto_collect: Arc<AtomicBool>` flag 而非 inline `collect_cycles()`；下个 `check_safepoint(ctx)` 用 `swap(false, AcqRel)` claim 后 safepoint-wrapped collect。trait 加默认 no-op `set_external_needs_collect_flag`；ArcMagrGC 内部 `Mutex<Option<Arc<AtomicBool>>>`，VmCore 构造后 wire。flag 未装时 fallback inline（GC 单测路径不变） | — |
-| 检查频率节流 | 每个后向 branch 都查；可加 counter-based throttle | `add-gc-safepoint-counter-throttling` |
+| 检查频率节流 | ✅ Counter-throttled fast path（add-gc-safepoint-counter-throttling 2026-05-21）：`VmContext.safepoint_skip: AtomicU32`，`check_safepoint` fast path 单 `fetch_sub` (~3-5ns)；每 N=1024 次（默认）才走 slow path（Mutex lock + 真正的 phase + auto-collect drain）。`Z42_SAFEPOINT_THROTTLE` env override（设 1 = disable throttling）。`VmContext::force_safepoint()` 公共 API 供 test / embedder 强制下次走 slow path。trampoline `jit_check_safepoint` 自动透明受益（同 fn）。GC pause latency 上限 = N × 单 iter (~50ns) ≈ 50us，远小于实际 collect 时间 | — |
+| 多 collector 仲裁 | ⚠️ 自动 auto-threshold 路径下，多个 worker 同时 drain `needs_auto_collect` flag 可能让两个 worker 都进入 `request_gc_pause`，互相在 parked_count 等待中排除自己 → 死锁。当前 stdlib / interp 测试不触发（throttle timing 之前的版本恰好避开）；2026-05-21 throttle 落地时 reliably 暴露，已通过测试改用 1 worker 隔离 | `add-multi-collector-arbitration` |
 | 并发 mark/sweep | 仍单线程；safepoint 是前置条件 | `add-concurrent-gc`（Phase A 性能轨道）|
 
 多线程 workloads 推荐用显式 `Std.GC.Collect()` 触发；或将 `max_bytes` 配
