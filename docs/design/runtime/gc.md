@@ -406,6 +406,58 @@ test 自动启用。
 变化 < 5%（219 tests in ~0.01s）。Validate 是 O(N) per collect；典型
 collect 时间 µs–ms 数量级，O(N) 检查不显著。
 
+### Stress testing (add-gc-stress-test, 2026-05-22)
+
+Random-workload stress driver on top of the C1 validator. Hand-rolled
+xorshift64 PRNG（self-contained, no crate dep），每个 test 用固定 seed
++ 2000 iters 默认。每次 `force_collect` op 后 C1 invariant 自动验证。
+失败的 panic message 嵌入 seed + iter index + op，便于复现。
+
+**4 个 tests** (in `arc_heap_tests/stress.rs`):
+
+| Test | Mode | Seed | 默认 iters |
+|------|------|------|-----------|
+| `stress_seeded_stw_short` | StwMarkSweep | 42 | 2000 |
+| `stress_seeded_concurrent_short` | ConcurrentMarkSweep | 0x1234 | 2000 |
+| `stress_seeded_generational_short` | GenerationalMarkSweep | 0xC0DE | 2000 |
+| `stress_seeded_mode_switching_short` | 全部循环 | 0xBEEF | 3000 |
+
+**9 op 类型** + weighted distribution：alloc_object / alloc_array
+(~30%)、field/array writes (~25%，60% heap-ref → 触发 barrier)、
+pin/unpin (~25%)、force_collect (~5%)、set_mode (~5% in
+mode-switching test only).
+
+**Bounded pool**：state.objects capped 200 entries 防 OOM；
+ForceCollect 后用 `iterate_live_objects` 重建 state.objects（pre
+mark-sweep contract: Rust-local Values 不是 roots → unpinned 在
+collect 后失效；重建后续 ops 不触碰 stale handles）。
+
+**Reproducible failure replay**：
+
+```bash
+# Replay specific seed
+Z42_STRESS_SEED=12345 cargo test --lib stress_seeded_stw_short
+
+# Longer local run (10x iters)
+Z42_STRESS_ITERS=20000 cargo test --lib gc::arc_heap::arc_heap_tests::stress
+```
+
+**Coverage gates**：每个 test 完成后 assert min op counts (≥100 allocs,
+≥100 writes, ≥50 pins, ≥50 collects)，防止 op weights drift 导致
+silent regression。
+
+**关键落地结果**：stress 第一次跑 catch 到一个**latent bug**
+（add-concurrent-gc 的 no-VmContext `force_collect` 路径下，barrier
+留下的 mark 状态破坏了 STW mark_phase 的 "clean slate" 假设 →
+trace_children 漏 mark 子节点 → 子节点被 swept → 下次 collect 经过
+slot 触发 use-after-finalize panic）。修复：`run_cycle_collection_stw`
+入口 defensive 清 mark_queue + reset_all_marks_in_regions。
+**Stress 的价值得到验证 —— 不是过度工程，而是真在 catch bugs。**
+
+**cost 实测**：4 个 stress tests 总耗时 < 1s in debug (cargo test)。
+2000 iters × O(几十次 collect with O(N) validator) × O(state ops) =
+几十毫秒。可接受。
+
 ## Phase 路线（持续迭代）
 
 | Phase | 内容 | 状态 |
@@ -432,6 +484,7 @@ collect 时间 µs–ms 数量级，O(N) 检查不显著。
 | **A1 custom allocator** | `GcRef<T>` 从 `Arc<GcAllocation<T>>` 切到 chunked region + NonNull handle。Clone 零原子 op；`heap_registry` 删除；finalizer at sweep + `Std.GC.Finalize(x)` 显式 API。Sweep survivors 2.49× faster；alloc 1.03-1.06× faster | ✅ 2026-05-22 add-custom-allocator |
 | **A3 generational** | `GcMode::GenerationalMarkSweep` opt-in：RegionEntry gen_age + young_list + per-chunk card_dirty bitmap；write barrier 标记 old→young 跨代写；minor GC 扫 young + dirty cards (O(young) pause)；major GC 扫全堆 + 清 cards；survival rate >= 0.75 时 minor → major escalation。Bench: 1.40 ms minor vs 5.55 ms full STW on equivalent heap (**~4× minor speedup**) | ✅ 2026-05-22 add-generational-gc |
 | **C1 debug invariants** | `Region<T>::validate(&self) -> Result<(), Violation>` + `ArcMagrGC::debug_validate_invariants()` panicking wrapper（cfg debug_assertions）。每次 collect 末尾运行，验证 8 项 invariant（young_list ⇔ gen_age、free_list ⇔ alive、entry.location、card_dirty 长度、mark_queue 空、no stale mark bit）。Release 构建零开销 | ✅ 2026-05-22 add-gc-debug-invariants |
+| **C2 stress test** | Seeded xorshift64 random-workload driver + 4 tests (per-mode + mode-switching, ~2000 iters each)。Build on C1 validator。Discovered + fixed latent bug in concurrent's no-VmContext force_collect path (defensive reset_marks + mark_queue clear in run_cycle_collection_stw) | ✅ 2026-05-22 add-gc-stress-test |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -587,11 +640,24 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
   违反 — 验证算法本身实现正确。详见
   ["Debug invariants"](#debug-invariants-add-gc-debug-invariants-2026-05-22) 段
 
-#### C2. Stress test（property-based）
-- **What**：proptest / quickcheck 生成随机 alloc / drop / pin / collect 序列，长跑下 verify 不 crash + 内存不 leak
-- **Why**：手工 unit test 难覆盖 alloc 与 collect 的交错状态空间
-- **Deps**：proptest crate
-- **Size**：~300 LOC，2-3 天
+#### C2. Stress test (已落地, 2026-05-22)
+- **状态**：✅ 完成, spec `add-gc-stress-test`
+- **What**：seeded random-workload driver + 4 tests (per-mode +
+  mode-switching, ~2000 iters each)。Build on C1 validator。
+  Hand-rolled xorshift64 PRNG (no proptest dep). Reproducible failure
+  replay via `Z42_STRESS_SEED` env.
+- **实现要点**：
+  - 9 op 类型 + weighted distribution (~30% alloc, ~25% writes
+    triggering barriers, ~25% pin/unpin, ~5% collect)
+  - Bounded live-objects pool (200 entries) prevents OOM
+  - State pruning: ForceCollect rebuilds state.objects from
+    iterate_live_objects (Rust-local Values aren't roots)
+  - Coverage gates assert min op counts to prevent silent
+    weight-drift regressions
+- **关键落地结果**：第一次跑 caught latent bug in concurrent's
+  no-VmContext force_collect path; defensive `reset_marks_in_regions`
+  + `mark_queue.clear()` at STW dispatch start。详见
+  ["Stress testing"](#stress-testing-add-gc-stress-test-2026-05-22) 段
 
 #### C3. Multi-VmContext 隔离压测
 - **What**：多个 VmContext 实例并行运行（线程间隔离），verify GC 状态不互相污染
