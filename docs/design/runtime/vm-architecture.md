@@ -873,6 +873,95 @@ RAII guard：
 > - **`near_limit_warned` 自动 reset**：collect 后若 `used` 已降到阈值以下
 >   reset，让下次跨阈值能再发 `NearHeapLimit` 事件
 
+#### GC mode selection (add-concurrent-gc, 2026-05-22)
+
+`ArcMagrGC` 现在支持运行时选择 GC 算法。Default 仍是 STW mark-sweep
+（与 add-mark-sweep-collector 落地后行为完全一致）；ConcurrentMarkSweep
+模式作为可选 opt-in 提供。
+
+**切换方式：**
+
+- **Env var**：进程启动前设 `Z42_GC_MODE=concurrent`（或 `=stw`，与
+  不设等价）。无法识别的值回退到 stw 并 stderr 警告。
+- **API**：运行期调 `heap.set_mode(GcMode::ConcurrentMarkSweep)`。下次
+  `collect_cycles_with_context` 起生效；进行中的 collect 完成时仍按原
+  模式（per spec scenario）。
+- **生产入口**：`safepoint::check_safepoint_slow` 的 auto-collect 路径
+  + `Std.GC.Collect()` builtin 都改走 `collect_cycles_with_context`，
+  由 heap 内部按 mode 分发。
+
+**当前可选模式：**
+
+| Mode | 描述 | 何时用 |
+|------|------|--------|
+| `StwMarkSweep` (default) | 一次性停世界跑 mark + sweep | 单线程、对 throughput 敏感、所有 workload |
+| `ConcurrentMarkSweep` | STW root 快照 → mutator 继续跑 + barrier shade → 终止 handshake STW → STW sweep | 多线程 + 对 pause time 敏感 |
+
+**遇到 bug 的回退路径**：`Z42_GC_MODE=stw` 强制走默认稳定路径。生产报
+错优先 fallback STW 看是否复现，把 bug 定位到 concurrent 路径还是更
+底层（trait / barrier / safepoint）。
+
+#### Concurrent mark protocol (add-concurrent-gc P4, 2026-05-22)
+
+ConcurrentMarkSweep 模式下 `collect_cycles_with_context` 跑 6 个阶段：
+
+```text
+1. request_gc_pause                    [STW]   collector_active=true, phase=Marking
+   ↓
+2. snapshot_roots_into_mark_queue       [STW]   pinned_roots + external_scanner → mark + enqueue
+   ↓
+3. yield_to_concurrent_marking          [STW]   phase=ConcurrentMarking, mutators wake
+   ↓
+4. drain_mark_queue (collector thread)  [concurrent]   BFS through gray queue;
+                                                       mutators run; barriers push gray
+   ↓
+5. request_handshake_pause              [STW]   phase=Marking, wait for re-park
+   ↓
+6. drain_mark_queue (residual)          [STW]   catch barrier pushes during handshake race window
+   ↓
+7. sweep_phase                          [STW]   walk registry, free unmarked
+   ↓
+8. GcPauseGuard::drop                   [STW]   phase=Idle, collector_active=false, mutators resume
+```
+
+**Tricolor 不变量**：incremental update（Dijkstra）。Barrier override
+（add-write-barriers 落地的 call site）只在 ConcurrentMarkSweep 模式下
+shade：写入 heap-ref 时 `mark_if_unmarked(new)`，CAS 成功则 push 到
+`mark_queue`。保证 "no black-to-white edge" —— 任何 mutator 写入的
+new 都至少是 gray，最终被 collector traced。
+
+**Termination invariant**：drain 当 queue 空。但 barrier 可能在 STW
+handshake 触发**前的瞬间**push 新 gray —— 阶段 5/6 的 handshake →
+residual drain 安全捕获。`request_handshake_pause` 等待 mutators
+park（同 `request_gc_pause` 模式），park 后所有 mutator 已观察到 phase
+= Marking，不会再写 → 此时 queue 空 = 真终止。
+
+**为什么 Relaxed atomic 对 marked bit 仍然安全**：
+
+- 每个 mark 操作是 CAS（atomic + idempotent）—— 多 thread race 时只有
+  一个 transitions 0→1，其它返回 false 跳过 enqueue（不会重复 trace）
+- BFS 是单调的（一个 cycle 内 mark bit 只从 0 → 1，永远不反向）
+- 跨 thread 可见性通过 (a) `parking_lot::Mutex` on mark_queue 的
+  Acquire/Release，(b) STW handshake 转换时 `gc_phase` Mutex 的
+  Acquire/Release。这两个 sync point 足以建立 happens-before
+
+未来 audit 若移除其中任一 sync point（比如改用 lock-free queue），
+必须重新评估 Acquire/Release ordering。
+
+**Phase 状态机**：
+
+```text
+STW path (mode = StwMarkSweep):
+  Idle → Requested → Marking → Idle
+
+Concurrent path (mode = ConcurrentMarkSweep):
+  Idle → Requested → Marking (snapshot) → ConcurrentMarking (drain) →
+  Marking (handshake + sweep) → Idle
+```
+
+`park_until_idle` 的等待条件从 `!Idle` 改为 `Requested | Marking`
+—— ConcurrentMarking 不让 mutator park。
+
 #### Write barrier contract (add-write-barriers, 2026-05-21)
 
 `MagrGC` trait 包含两个 write-barrier 钩子：
@@ -952,6 +1041,8 @@ test-only `BarrierObserver`）。
 | **unify-frame-chain** | `exec_stack` / `env_arena_stack` / `call_stack` 三栈合并为单一 `Vec<VmFrame>`；任一 invoke 站点 push 全套 (regs/env_arena/name/file)，GC scanner 改单循环；附带修复 `jit_obj_new` ctor + `jit_to_str` ToString 缺 call_frame push 的 stack-trace 漏帧 bug | ✅ 2026-05-10 unify-frame-chain |
 | **Phase 3-OOM** | strict OOM 模式（trait `set_strict_oom`；启用后 alloc 越过 `max_heap_bytes` 返回 `Value::Null` 不入 registry / 不 bump stats）| ✅ 2026-04-29 add-strict-oom-rejection |
 | **A2 mark-sweep** | 移除 trial-deletion，切到标准 mark-sweep（`marked: AtomicU8` 字段 + `mark_phase` BFS + `sweep_phase`）；纯 tracing 语义，Rust-local 强引用不再隐式为 root | ✅ 2026-05-21 add-mark-sweep-collector |
+| **Write barriers** | `MagrGC::write_barrier_field` / `write_barrier_array_elem` call-site wiring 完成；`Value::is_heap_ref()` 在 call site 过滤 primitive 写入；trait override 可由后续 generational / concurrent backend 接入；default no-op | ✅ 2026-05-22 add-write-barriers |
+| **A4 concurrent mark** | 可选 `Z42_GC_MODE=concurrent` 切换 tricolor incremental update：STW root snapshot → ConcurrentMarking 阶段 mutator 不 park → barrier shade gray → STW 终止 handshake → STW sweep；STW 仍为默认 | ✅ 2026-05-22 add-concurrent-gc |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 

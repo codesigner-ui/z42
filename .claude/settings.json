@@ -101,7 +101,8 @@
       "Bash(curl -sL \"https://github.com/codesigner-ui/z42/commit/29119694.patch\")",
       "Bash(curl -sIL \"https://github.com/codesigner-ui/z42/actions/runs/26234263530/job/77203081654\")",
       "Bash(curl -s \"https://api.github.com/repos/codesigner-ui/z42/actions/runs?branch=main&per_page=3\")",
-      "Bash(kill -9 40908)"
+      "Bash(kill -9 40908)",
+      "Read(//Users/d.s.qiu/Documents/codesigner-ui/**)"
     ],
     "additionalDirectories": [
       "/tmp",
