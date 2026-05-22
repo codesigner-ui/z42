@@ -29,9 +29,12 @@ use std::sync::{Arc, OnceLock};
 /// reclaim. Matches typical `GC.Collect()` semantics in C# / Java where
 /// concurrent calls may coalesce.
 pub fn builtin_gc_collect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
-    if let Some(_pause) = crate::gc::safepoint::request_gc_pause(ctx) {
-        ctx.heap().collect_cycles();
-    }
+    // add-concurrent-gc P4b (2026-05-22): dispatch via
+    // collect_cycles_with_context so the heap can choose STW or concurrent
+    // path based on its current GcMode. STW mode (default) keeps the
+    // pre-this-spec behavior exactly; ConcurrentMarkSweep runs the
+    // multi-phase flow internally.
+    ctx.heap().collect_cycles_with_context(ctx);
     Ok(Value::Null)
 }
 

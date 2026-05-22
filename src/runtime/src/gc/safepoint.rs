@@ -154,13 +154,13 @@ fn check_safepoint_slow(ctx: &VmContext) {
     }
     // Idle phase — drain pending auto-collect if any.
     if ctx.core.needs_auto_collect.swap(false, Ordering::AcqRel) {
-        // add-multi-collector-arbitration (2026-05-21): request_gc_pause
-        // returns Option. None means another collector is already active
-        // — we've been park-as-mutator'd inside the call; just return.
-        if let Some(_pause) = request_gc_pause(ctx) {
-            ctx.heap().collect_cycles();
-            // _pause Drop releases the world + notifies all parked mutators.
-        }
+        // add-concurrent-gc P4b (2026-05-22): use collect_cycles_with_context
+        // so the heap can pick STW vs concurrent path internally. The STW
+        // default impl does the same `request_gc_pause` + `collect_cycles`
+        // dance as before; ArcMagrGC's override routes ConcurrentMarkSweep
+        // mode through the multi-phase flow (snapshot → yield → drain →
+        // handshake → sweep).
+        ctx.heap().collect_cycles_with_context(ctx);
     }
 }
 
@@ -255,6 +255,66 @@ impl Drop for GcPauseGuard<'_> {
         // exclusive collector claim. Release ordering so the next
         // collector's compare_exchange Acquire sees our final heap state.
         self.ctx.core.collector_active.store(false, Ordering::Release);
+    }
+}
+
+// ── add-concurrent-gc P4b (2026-05-22) ────────────────────────────────────
+//
+// Phase transition methods on the held guard. Used by the concurrent
+// collect loop:
+//   1. request_gc_pause → guard in Marking phase, mutators parked
+//   2. yield_to_concurrent_marking → guard in ConcurrentMarking phase,
+//      mutators wake from park_until_idle and resume (write barriers
+//      shade gray writes per add-concurrent-gc P3)
+//   3. background mark drain by collector thread (this thread)
+//   4. request_handshake_pause → guard back to Marking phase, waits
+//      for all other VmContexts to re-park at their next safepoint
+//   5. (collector drains residual gray, runs STW sweep)
+//   6. drop → release everyone
+
+impl GcPauseGuard<'_> {
+    /// Transition `Marking → ConcurrentMarking`. Mutators waiting on
+    /// `gc_phase_cv` wake (their wait predicate `Requested | Marking`
+    /// no longer matches) and resume execution. The collector retains
+    /// its `collector_active` claim — no other collector can preempt.
+    ///
+    /// Caller must currently be in `Marking` phase (asserted in
+    /// debug builds); typical caller acquired guard via
+    /// `request_gc_pause`.
+    pub fn yield_to_concurrent_marking(&self) {
+        let mut phase = self.ctx.core.gc_phase.lock();
+        debug_assert_eq!(*phase, GcPhase::Marking,
+            "yield_to_concurrent_marking expects current phase Marking");
+        *phase = GcPhase::ConcurrentMarking;
+        drop(phase);
+        self.ctx.core.gc_phase_cv.notify_all();
+    }
+
+    /// Transition `ConcurrentMarking → Marking`. Waits for all other
+    /// VmContexts to park at their next safepoint check (same wait
+    /// pattern as `request_gc_pause`). After return, the world is
+    /// STW-stopped exactly as after `request_gc_pause` (mutators
+    /// parked, mark queue safe to drain without race).
+    pub fn request_handshake_pause(&self) {
+        let mut phase = self.ctx.core.gc_phase.lock();
+        debug_assert_eq!(*phase, GcPhase::ConcurrentMarking,
+            "request_handshake_pause expects current phase ConcurrentMarking");
+        *phase = GcPhase::Marking;
+        // Wake mutators currently in safepoint slow-path checks so they
+        // observe the new phase + park. New ones hitting safepoint will
+        // see Marking and park directly.
+        self.ctx.core.gc_phase_cv.notify_all();
+        // Wait for everyone-but-self to park. Re-read vm_contexts.len()
+        // on each wakeup so a freshly-registered VmContext doesn't
+        // strand us.
+        loop {
+            let total = self.ctx.core.vm_contexts.lock().len();
+            let need  = total.saturating_sub(1);
+            if self.ctx.core.parked_count.load(Ordering::Acquire) >= need {
+                break;
+            }
+            self.ctx.core.gc_phase_cv.wait(&mut phase);
+        }
     }
 }
 

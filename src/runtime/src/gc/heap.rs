@@ -176,6 +176,28 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
     /// 与发 GcEvent）。
     fn collect_cycles(&self) {}
 
+    /// **add-concurrent-gc P4b (2026-05-22)**: VmContext-aware collect
+    /// entry point. Production callers (safepoint slow-path + the
+    /// `Std.GC.Collect()` builtin) call this so the heap can choose its
+    /// own pause-coordination strategy:
+    ///
+    /// - `GcMode::StwMarkSweep` impls take `request_gc_pause` themselves
+    ///   and call `collect_cycles()` STW (current default).
+    /// - `GcMode::ConcurrentMarkSweep` impls take the initial pause,
+    ///   snapshot roots, transition to `ConcurrentMarking`, drain the
+    ///   gray queue concurrently with mutators, then call
+    ///   `request_handshake_pause` for final drain + STW sweep.
+    ///
+    /// Default implementation falls back to the STW path: caller
+    /// acquires its own pause (via `request_gc_pause`) and calls
+    /// `collect_cycles()`. ArcMagrGC overrides to dispatch on `mode()`.
+    fn collect_cycles_with_context(&self, ctx: &crate::vm_context::VmContext) {
+        // Default: STW path. ArcMagrGC overrides.
+        if let Some(_pause) = super::safepoint::request_gc_pause(ctx) {
+            self.collect_cycles();
+        }
+    }
+
     /// 强制立即回收，返回本次 GC 的统计。返回 `kind: None` 表示被
     /// `pause()` 跳过。
     fn force_collect(&self) -> CollectStats;

@@ -186,6 +186,73 @@ fn barrier_idempotent_on_already_marked_in_concurrent_mode() {
     GcRef::clear_mark(rc);
 }
 
+// ── P4b: End-to-end concurrent collect via VmContext ──────────────────────
+
+#[test]
+fn collect_cycles_with_context_routes_concurrent_under_concurrent_mode() {
+    // End-to-end: VmContext + concurrent mode + cycle → cycle is freed.
+    use crate::vm_context::VmContext;
+    let ctx = VmContext::new();
+    ctx.heap().set_mode(GcMode::ConcurrentMarkSweep);
+
+    let heap_dyn = ctx.heap();
+    // Build an unrooted cycle (use ArcMagrGC via VmContext's heap accessor).
+    let a = heap_dyn.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap_dyn.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a); drop(b);
+
+    let pre_alive = {
+        let mut n = 0;
+        heap_dyn.iterate_live_objects(&mut |_| n += 1);
+        n
+    };
+    assert_eq!(pre_alive, 2, "cycle keeps both alive before collect");
+
+    // Production path: collect_cycles_with_context dispatches to the
+    // concurrent implementation, runs full snapshot → drain → handshake
+    // → sweep sequence.
+    heap_dyn.collect_cycles_with_context(&ctx);
+
+    let post_alive = {
+        let mut n = 0;
+        heap_dyn.iterate_live_objects(&mut |_| n += 1);
+        n
+    };
+    assert_eq!(post_alive, 0, "concurrent collect via context frees unrooted cycle");
+}
+
+#[test]
+fn collect_cycles_with_context_default_stw_unchanged() {
+    // STW mode (default) routes to the same `collect_cycles()` path as
+    // pre-this-spec. Verify cycle still freed (parity with STW).
+    use crate::vm_context::VmContext;
+    let ctx = VmContext::new();
+    assert_eq!(ctx.heap().mode(), GcMode::StwMarkSweep);
+
+    let heap_dyn = ctx.heap();
+    let a = heap_dyn.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap_dyn.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a); drop(b);
+
+    heap_dyn.collect_cycles_with_context(&ctx);
+
+    let mut n = 0;
+    heap_dyn.iterate_live_objects(&mut |_| n += 1);
+    assert_eq!(n, 0, "STW path via collect_cycles_with_context still frees cycle");
+}
+
 // ── P4a: Concurrent BFS drain + end-to-end collect (inline) ───────────────
 
 fn alive_count(heap: &ArcMagrGC) -> usize {

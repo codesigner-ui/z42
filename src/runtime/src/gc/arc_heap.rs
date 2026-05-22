@@ -559,7 +559,6 @@ impl ArcMagrGC {
     ///
     /// Returns the count of objects marked during this drain (useful
     /// for tests + diagnostics). 0 on already-empty queue.
-    #[allow(dead_code)] // becomes used by P4b production path
     fn drain_mark_queue(&self) -> usize {
         let mut traced = 0usize;
         loop {
@@ -630,7 +629,6 @@ impl ArcMagrGC {
     ///
     /// Returns the count of newly-marked root objects (for tests +
     /// diagnostics).
-    #[allow(dead_code)]
     fn snapshot_roots_into_mark_queue(&self) -> usize {
         let mut queue = self.mark_queue.lock();
         queue.clear();
@@ -1163,6 +1161,67 @@ impl MagrGC for ArcMagrGC {
     /// on the rare config call.
     fn set_mode(&self, mode: super::GcMode) {
         self.mode.store(mode as u8, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// **add-concurrent-gc P4b (2026-05-22)**: VmContext-aware collect
+    /// dispatch. STW mode follows the proven path (request pause →
+    /// collect_cycles); ConcurrentMarkSweep runs the multi-phase
+    /// flow (initial STW snapshot → ConcurrentMarking drain → final
+    /// STW handshake + sweep).
+    fn collect_cycles_with_context(&self, ctx: &crate::vm_context::VmContext) {
+        match self.mode() {
+            super::GcMode::StwMarkSweep => {
+                if let Some(_pause) = super::safepoint::request_gc_pause(ctx) {
+                    self.collect_cycles();
+                }
+            }
+            super::GcMode::ConcurrentMarkSweep => {
+                let pause = match super::safepoint::request_gc_pause(ctx) {
+                    Some(p) => p,
+                    None => return, // another collector active; park-as-mutator done
+                };
+                if self.inner.lock().pause_count > 0 { return; }
+                let start = Self::now_us();
+                let used_before = self.inner.lock().stats.used_bytes;
+                self.fire_event(GcEvent::BeforeCollect {
+                    kind: GcKind::CycleCollector, used_bytes: used_before,
+                });
+
+                // Phase 1: STW root snapshot (still holding initial pause).
+                self.snapshot_roots_into_mark_queue();
+
+                // Phase 2: Yield to ConcurrentMarking — mutators resume.
+                pause.yield_to_concurrent_marking();
+
+                // Phase 3: Background mark (this thread = collector; barrier
+                // writes from mutators land in mark_queue concurrently).
+                self.drain_mark_queue();
+
+                // Phase 4: STW handshake — re-park mutators for final drain.
+                pause.request_handshake_pause();
+
+                // Phase 5: Residual drain — any barrier writes between
+                // drain-empty-check and handshake-acquire are now safely
+                // captured in mark_queue.
+                self.drain_mark_queue();
+
+                // Phase 6: STW sweep (mutators still parked).
+                let freed_bytes = self.sweep_phase();
+                {
+                    let mut i = self.inner.lock();
+                    i.stats.gc_cycles += 1;
+                    i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
+                }
+                self.maybe_reset_near_limit_warned();
+                let pause_us = Self::now_us().saturating_sub(start);
+                self.fire_event(GcEvent::AfterCollect {
+                    kind: GcKind::CycleCollector, freed_bytes, pause_us,
+                });
+
+                // pause Drop releases the world.
+                drop(pause);
+            }
+        }
     }
 
     fn collect_cycles(&self) {
