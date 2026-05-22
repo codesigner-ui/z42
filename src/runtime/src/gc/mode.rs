@@ -26,6 +26,14 @@ pub enum GcMode {
     /// shades new heap-ref writes gray. Landing across
     /// `add-concurrent-gc` P0–P7.
     ConcurrentMarkSweep = 1,
+    /// Generational mark-sweep. Heap split into young / old
+    /// generations via per-entry `gen_age`; minor GC scans only
+    /// `young_list` + cross-gen dirty cards (O(young) pause); major
+    /// GC scans whole heap. Write barrier records old→young writes
+    /// via per-chunk dirty bitmap. Promotion threshold N=2.
+    /// Mutually exclusive with `ConcurrentMarkSweep` in v1.
+    /// Landing across `add-generational-gc` P0–P4.
+    GenerationalMarkSweep = 2,
 }
 
 impl Default for GcMode {
@@ -41,6 +49,7 @@ impl GcMode {
         match std::env::var("Z42_GC_MODE") {
             Ok(s) => match s.as_str() {
                 "concurrent" | "concurrent-mark-sweep" => GcMode::ConcurrentMarkSweep,
+                "generational" | "generational-mark-sweep" => GcMode::GenerationalMarkSweep,
                 "stw" | "stw-mark-sweep" => GcMode::StwMarkSweep,
                 "" => GcMode::StwMarkSweep,
                 other => {
@@ -63,6 +72,7 @@ impl GcMode {
         match v {
             0 => GcMode::StwMarkSweep,
             1 => GcMode::ConcurrentMarkSweep,
+            2 => GcMode::GenerationalMarkSweep,
             _ => GcMode::StwMarkSweep,
         }
     }
@@ -81,6 +91,7 @@ mod mode_tests {
     fn from_u8_roundtrips_known_variants() {
         assert_eq!(GcMode::from_u8(GcMode::StwMarkSweep as u8), GcMode::StwMarkSweep);
         assert_eq!(GcMode::from_u8(GcMode::ConcurrentMarkSweep as u8), GcMode::ConcurrentMarkSweep);
+        assert_eq!(GcMode::from_u8(GcMode::GenerationalMarkSweep as u8), GcMode::GenerationalMarkSweep);
     }
 
     #[test]

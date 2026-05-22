@@ -358,6 +358,19 @@ impl ArcMagrGC {
         Self::mark_if_unmarked(v)
     }
 
+    /// **add-generational-gc P1 (2026-05-22)**: test-only accessors
+    /// for the region locks (needed by `arc_heap_tests::generational`
+    /// to peek at card_dirty state without going through MagrGC trait).
+    #[cfg(test)]
+    pub(crate) fn region_object_for_test(&self) -> &Mutex<super::region::Region<ScriptObject>> {
+        &self.region_object
+    }
+
+    #[cfg(test)]
+    pub(crate) fn region_array_for_test(&self) -> &Mutex<super::region::Region<Vec<Value>>> {
+        &self.region_array
+    }
+
     #[cfg(test)]
     fn fire_barrier_field(&self, owner: &Value, slot: usize, new: &Value) {
         if let Some(obs) = self.barrier_observer.lock().as_ref() {
@@ -519,6 +532,56 @@ impl ArcMagrGC {
                 crate::metadata::types::RefKind::Stack { .. } => false,
             },
             _ => false,
+        }
+    }
+
+    /// **add-generational-gc P1 (2026-05-22)**: cross-gen detection
+    /// helper for the write-barrier override. Marks the owner's chunk
+    /// dirty when `owner.gen_age >= PROMOTION_THRESHOLD` (old) AND
+    /// `new.gen_age < PROMOTION_THRESHOLD` (young).
+    ///
+    /// Same routine for both field + array_elem barriers — checks the
+    /// owner Value's kind to pick the right region's card bitmap.
+    /// Non-heap or stack-kind owners → no-op (no card to mark).
+    fn maybe_mark_cross_gen_card(&self, owner: &Value, new: &Value) {
+        let new_age = match new {
+            Value::Object(gc) => GcRef::gen_age(gc),
+            Value::Array(gc)  => GcRef::gen_age(gc),
+            Value::Closure { env, .. } => GcRef::gen_age(env),
+            Value::Ref { kind } => match kind {
+                crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::gen_age(gc_ref),
+                crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::gen_age(gc_ref),
+                crate::metadata::types::RefKind::Stack { .. } => return,
+            },
+            _ => return,
+        };
+        // Only old→young triggers a card. Young→young is in-young
+        // scan already; old→old won't reach young.
+        if new_age >= super::region::PROMOTION_THRESHOLD {
+            return;
+        }
+        match owner {
+            Value::Object(gc) => {
+                if GcRef::gen_age(gc) < super::region::PROMOTION_THRESHOLD { return; }
+                // owner is old; mark its chunk in region_object dirty.
+                let entry_ptr = gc.entry_ptr();
+                // SAFETY: entry pointer valid for GcRef lifetime.
+                let entry = unsafe { entry_ptr.as_ref() };
+                let (ci, _) = entry.location;
+                if ci != u16::MAX {
+                    self.region_object.lock().mark_card_dirty(ci);
+                }
+            }
+            Value::Array(gc) => {
+                if GcRef::gen_age(gc) < super::region::PROMOTION_THRESHOLD { return; }
+                let entry_ptr = gc.entry_ptr();
+                let entry = unsafe { entry_ptr.as_ref() };
+                let (ci, _) = entry.location;
+                if ci != u16::MAX {
+                    self.region_array.lock().mark_card_dirty(ci);
+                }
+            }
+            _ => {} // non-heap owners — no card to mark
         }
     }
 
@@ -802,6 +865,13 @@ impl ArcMagrGC {
                 // P0 stub: concurrent arm currently routes to STW path —
                 // proves dispatch wiring without changing behavior. P4
                 // replaces this with `run_cycle_collection_concurrent`.
+                self.run_cycle_collection_stw()
+            }
+            super::GcMode::GenerationalMarkSweep => {
+                // add-generational-gc P1: dispatch stub — same STW path.
+                // P2 will replace with minor/major dispatch. Until then
+                // every collect is a full STW collect; the gen_age +
+                // young_list bookkeeping is silent.
                 self.run_cycle_collection_stw()
             }
         }
@@ -1100,13 +1170,29 @@ impl MagrGC for ArcMagrGC {
         #[cfg(test)]
         self.fire_barrier_field(owner, slot, new);
 
-        if self.mode() == super::GcMode::ConcurrentMarkSweep {
-            debug_assert!(
-                new.is_heap_ref(),
-                "write_barrier_field caller must filter primitives via Value::is_heap_ref"
-            );
-            if Self::mark_if_unmarked(new) {
-                self.mark_queue.lock().push(new.clone());
+        match self.mode() {
+            super::GcMode::StwMarkSweep => {} // no-op (production default)
+            super::GcMode::ConcurrentMarkSweep => {
+                debug_assert!(
+                    new.is_heap_ref(),
+                    "write_barrier_field caller must filter primitives via Value::is_heap_ref"
+                );
+                if Self::mark_if_unmarked(new) {
+                    self.mark_queue.lock().push(new.clone());
+                }
+            }
+            super::GcMode::GenerationalMarkSweep => {
+                debug_assert!(
+                    new.is_heap_ref(),
+                    "write_barrier_field caller must filter primitives via Value::is_heap_ref"
+                );
+                // **add-generational-gc P1 (2026-05-22)**: cross-gen
+                // detection. If owner is old (gen_age >= threshold)
+                // AND new is young (gen_age < threshold), the owner's
+                // chunk gets card-dirtied so the upcoming minor GC
+                // re-roots from that chunk (the young target would
+                // otherwise be missed).
+                self.maybe_mark_cross_gen_card(owner, new);
             }
         }
     }
@@ -1116,13 +1202,24 @@ impl MagrGC for ArcMagrGC {
         #[cfg(test)]
         self.fire_barrier_array_elem(arr, idx, new);
 
-        if self.mode() == super::GcMode::ConcurrentMarkSweep {
-            debug_assert!(
-                new.is_heap_ref(),
-                "write_barrier_array_elem caller must filter primitives via Value::is_heap_ref"
-            );
-            if Self::mark_if_unmarked(new) {
-                self.mark_queue.lock().push(new.clone());
+        match self.mode() {
+            super::GcMode::StwMarkSweep => {}
+            super::GcMode::ConcurrentMarkSweep => {
+                debug_assert!(
+                    new.is_heap_ref(),
+                    "write_barrier_array_elem caller must filter primitives via Value::is_heap_ref"
+                );
+                if Self::mark_if_unmarked(new) {
+                    self.mark_queue.lock().push(new.clone());
+                }
+            }
+            super::GcMode::GenerationalMarkSweep => {
+                debug_assert!(
+                    new.is_heap_ref(),
+                    "write_barrier_array_elem caller must filter primitives via Value::is_heap_ref"
+                );
+                // add-generational-gc P1: same cross-gen check.
+                self.maybe_mark_cross_gen_card(arr, new);
             }
         }
     }
@@ -1329,6 +1426,15 @@ impl MagrGC for ArcMagrGC {
 
                 // pause Drop releases the world.
                 drop(pause);
+            }
+            super::GcMode::GenerationalMarkSweep => {
+                // add-generational-gc P1: dispatch stub — same STW
+                // path as default. P2/P3 add minor/major routing.
+                // Until then bookkeeping (young_list, cards) is
+                // populated but never read; behavior identical to STW.
+                if let Some(_pause) = super::safepoint::request_gc_pause(ctx) {
+                    self.collect_cycles();
+                }
             }
         }
     }
