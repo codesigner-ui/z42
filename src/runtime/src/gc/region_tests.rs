@@ -418,6 +418,160 @@ fn tombstone_via_entry_removes_from_young_list() {
         "tombstone_via_entry removes the entry from young_list");
 }
 
+// ── add-gc-debug-invariants P0 (2026-05-22) ────────────────────────────────
+
+use crate::gc::region::Violation;
+
+#[test]
+fn validate_healthy_region_passes() {
+    let mut r: Region<u64> = Region::new();
+    // Empty region — should validate cleanly.
+    assert_eq!(r.validate(), Ok(()));
+
+    // After several allocs + a tombstone + a promote, still valid.
+    let h1 = r.alloc(1);
+    let h2 = r.alloc(2);
+    let _h3 = r.alloc(3);
+    r.tombstone(h1);
+    r.promote(h2);  // gen_age 0 → 1 (still young)
+    assert_eq!(r.validate(), Ok(()),
+        "alloc + tombstone + promote leaves invariants intact");
+}
+
+#[test]
+fn validate_healthy_after_growing_across_chunks() {
+    let mut r: Region<u64> = Region::new();
+    for i in 0..(2 * CHUNK_SIZE + 5) {
+        r.alloc(i as u64);
+    }
+    assert_eq!(r.validate(), Ok(()),
+        "multi-chunk growth preserves invariants");
+}
+
+#[test]
+fn validate_detects_old_in_young_list() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    // Manually corrupt: bump gen_age to threshold but leave in young_list.
+    let entry = r.resolve(h);
+    entry.gen_age.store(PROMOTION_THRESHOLD, Ordering::Relaxed);
+
+    match r.validate() {
+        Err(Violation::OldEntryInYoungList { gen_age, .. }) => {
+            assert_eq!(gen_age, PROMOTION_THRESHOLD);
+        }
+        other => panic!("expected OldEntryInYoungList, got {:?}", other),
+    }
+}
+
+#[test]
+fn validate_detects_young_not_in_list() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(10);
+    // Manually corrupt: remove from young_list without changing gen_age.
+    r.young_list.clear();
+
+    match r.validate() {
+        Err(Violation::YoungEntryNotInList { chunk_idx, entry_idx }) => {
+            assert_eq!((chunk_idx, entry_idx), (h.chunk_idx, h.entry_idx));
+        }
+        other => panic!("expected YoungEntryNotInList, got {:?}", other),
+    }
+}
+
+#[test]
+fn validate_detects_duplicate_in_young_list() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    r.young_list.push((h.chunk_idx, h.entry_idx)); // duplicate
+
+    match r.validate() {
+        Err(Violation::DuplicateInYoungList { chunk_idx, entry_idx }) => {
+            assert_eq!((chunk_idx, entry_idx), (h.chunk_idx, h.entry_idx));
+        }
+        other => panic!("expected DuplicateInYoungList, got {:?}", other),
+    }
+}
+
+#[test]
+fn validate_detects_alive_in_free_list() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    // Manually corrupt: push h's location to free_list without tombstoning.
+    r.free_list.push((h.chunk_idx, h.entry_idx));
+
+    match r.validate() {
+        Err(Violation::AliveSlotInFreeList { chunk_idx, entry_idx }) => {
+            assert_eq!((chunk_idx, entry_idx), (h.chunk_idx, h.entry_idx));
+        }
+        other => panic!("expected AliveSlotInFreeList, got {:?}", other),
+    }
+}
+
+#[test]
+fn validate_detects_location_mismatch() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    // SAFETY: tests corrupt internal state intentionally.
+    // We can't easily mutate `location` (it's not pub) — work around by
+    // allocating + manually setting via unsafe field write.
+    let entry_ptr = r.resolve(h) as *const RegionEntry<u64> as *mut RegionEntry<u64>;
+    unsafe {
+        (*entry_ptr).location = (99, 99);
+    }
+
+    match r.validate() {
+        Err(Violation::LocationMismatch { chunk_idx, entry_idx, recorded }) => {
+            assert_eq!((chunk_idx, entry_idx), (h.chunk_idx, h.entry_idx));
+            assert_eq!(recorded, (99, 99));
+        }
+        other => panic!("expected LocationMismatch, got {:?}", other),
+    }
+}
+
+#[test]
+fn validate_detects_card_dirty_length_mismatch() {
+    let mut r: Region<u64> = Region::new();
+    r.alloc(1);
+    // Manually corrupt: truncate card_dirty.
+    r.card_dirty.clear();
+
+    match r.validate() {
+        Err(Violation::CardDirtyLengthMismatch { expected, actual }) => {
+            assert_eq!(expected, 1);
+            assert_eq!(actual, 0);
+        }
+        other => panic!("expected CardDirtyLengthMismatch, got {:?}", other),
+    }
+}
+
+#[test]
+fn validate_tolerates_promoted_entry_outside_young_list() {
+    // Promotion: bring gen_age to threshold; entry leaves young_list.
+    // This is the canonical "old in region, not in young_list" state —
+    // must validate cleanly.
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    r.promote(h);  // 0 → 1
+    r.promote(h);  // 1 → 2 (threshold); removed from young_list
+    assert_eq!(r.young_count(), 0);
+    let entry = r.resolve(h);
+    assert!(entry.gen_age() >= PROMOTION_THRESHOLD);
+
+    assert_eq!(r.validate(), Ok(()),
+        "old-and-not-in-young_list is a valid state");
+}
+
+#[test]
+fn validate_tolerates_tombstoned_entries() {
+    let mut r: Region<u64> = Region::new();
+    let h1 = r.alloc(1);
+    let _h2 = r.alloc(2);
+    r.tombstone(h1);
+    // Slot in free_list with alive=false → valid.
+    assert_eq!(r.validate(), Ok(()));
+}
+
 #[test]
 fn tombstoned_old_entry_not_in_young_list_no_op() {
     let mut r: Region<u64> = Region::new();
