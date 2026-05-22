@@ -172,16 +172,21 @@ fn collect_cycles_freed_bytes_observable() {
 }
 
 #[test]
-fn registry_prunes_dropped_objects() {
-    // Phase 3b: 对象 drop 后 registry 自动清掉（下次 iterate / snapshot 时 prune）。
+fn region_prunes_dropped_objects_after_collect() {
+    // **add-custom-allocator P1 (2026-05-22)**: heap_registry removed;
+    // sweep tombstones unreachable entries in the region directly.
+    // GcRef::drop is no-op so the scope-exit alone doesn't prune —
+    // we must force a collect.
     let heap = ArcMagrGC::new();
     {
         let _ephemeral = heap.alloc_array(vec![]);
-        // _ephemeral 出 scope drop
+        // _ephemeral 出 scope；GcRef::drop is no-op. Entry stays alive
+        // in region until sweep tombstones it.
     }
+    heap.force_collect();
     let mut count = 0;
     heap.iterate_live_objects(&mut |_| count += 1);
-    assert_eq!(count, 0);
+    assert_eq!(count, 0, "sweep tombstones unrooted entry → iterate_live_objects sees none");
 }
 
 #[test]

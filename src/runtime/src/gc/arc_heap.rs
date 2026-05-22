@@ -45,7 +45,7 @@
 //!   （撤销分配），同时 fire OutOfMemory 事件。
 
 use parking_lot::Mutex;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
@@ -154,11 +154,9 @@ struct RcHeapInner {
     /// 防止 NearHeapLimit 事件刷屏（Phase 3d 后 collect_cycles 完成且使用降到
     /// 阈值以下时会自动 reset，下次跨阈值能再发事件）。
     near_limit_warned: bool,
-    /// **Phase 3b: heap registry** —— 每次 `alloc_*` 推入对应 WeakRef，让 GC
-    /// 能枚举所有"曾经分配且当前可能存活"的堆对象。这是 Phase 3c mark-sweep
-    /// 的物理前置：mark 阶段需要候选集（roots 之外的所有对象）。
-    /// 不阻止对象回收（Weak 不持 strong refcount）。
-    heap_registry:     Vec<WeakRef>,
+    /// **add-custom-allocator P1 (2026-05-22)**: heap_registry deleted.
+    /// Authoritative liveness store is now `ArcMagrGC.region_object` +
+    /// `region_array`. Sweep + iterate walk the regions directly.
     /// **Phase 3d**: 上次 auto-collect 触发时的 `used_bytes`，用于 throttle
     /// 自动 collect —— 仅当当前 used 距上次增长 >= 10% limit 才再次自动触发。
     last_auto_collect_used: u64,
@@ -185,7 +183,6 @@ impl std::fmt::Debug for RcHeapInner {
             .field("alloc_sampler",     &self.alloc_sampler.is_some())
             .field("pause_count",       &self.pause_count)
             .field("near_limit_warned", &self.near_limit_warned)
-            .field("registry_size",     &self.heap_registry.len())
             .field("last_auto_collect_used", &self.last_auto_collect_used)
             .finish()
     }
@@ -217,6 +214,14 @@ pub struct ArcMagrGC {
     /// `GcMode::from_env()` so `Z42_GC_MODE=concurrent` selects
     /// concurrent path at process start.
     mode: std::sync::atomic::AtomicU8,
+    /// **add-custom-allocator P1 (2026-05-22)**: chunked region for
+    /// `Value::Object` script-object storage. Replaces the previous
+    /// per-object `Arc<GcAllocation<ScriptObject>>` backing. Sweep
+    /// walks this region directly (no separate heap_registry).
+    region_object: Mutex<super::region::Region<ScriptObject>>,
+    /// **add-custom-allocator P1 (2026-05-22)**: chunked region for
+    /// `Value::Array` storage (heap-allocated `Vec<Value>`).
+    region_array: Mutex<super::region::Region<Vec<Value>>>,
     /// **add-concurrent-gc P2 (2026-05-22)**: gray-object queue for the
     /// concurrent mark path. Populated by (1) the STW root snapshot at
     /// the start of a concurrent collect, (2) the write-barrier
@@ -255,6 +260,8 @@ impl Default for ArcMagrGC {
             external_root_scanner: Mutex::new(None),
             external_needs_collect: Mutex::new(None),
             mode: std::sync::atomic::AtomicU8::new(super::GcMode::from_env() as u8),
+            region_object: Mutex::new(super::region::Region::new()),
+            region_array:  Mutex::new(super::region::Region::new()),
             mark_queue: Mutex::new(Vec::new()),
             #[cfg(test)]
             barrier_observer: Mutex::new(None),
@@ -394,15 +401,6 @@ impl ArcMagrGC {
         EPOCH.get_or_init(Instant::now).elapsed().as_micros() as u64
     }
 
-    /// 提取 heap 引用类型 Value 的指针 key（用于去重 / finalizer key）。
-    fn rc_ptr_key(value: &Value) -> Option<usize> {
-        match value {
-            Value::Object(gc) => Some(GcRef::as_ptr(gc) as *const _ as usize),
-            Value::Array(gc)  => Some(GcRef::as_ptr(gc) as *const _ as usize),
-            _ => None,
-        }
-    }
-
     /// 取 Value 的"类型名"（用于 snapshot 聚合）。
     fn type_name_of(value: &Value) -> Option<String> {
         match value {
@@ -422,12 +420,13 @@ impl ArcMagrGC {
         }
     }
 
-    /// alloc 通用通路：注册到 registry + bump stats + 检查压力 + 触发 sampler。
-    fn record_alloc(&self, value: &Value, kind: AllocKind, size: usize) {
-        // 0. 注册到 heap_registry（Phase 3b）
-        if let Some(weak) = self.make_weak_internal(value) {
-            self.inner.lock().heap_registry.push(weak);
-        }
+    /// alloc 通用通路：bump stats + 检查压力 + 触发 sampler。
+    ///
+    /// **add-custom-allocator P1 (2026-05-22)**: previously pushed a
+    /// WeakRef to `heap_registry`; that field is gone now — the region
+    /// itself is the authoritative liveness store, iterated directly
+    /// by sweep / iterate_live_objects / snapshot helpers.
+    fn record_alloc(&self, _value: &Value, kind: AllocKind, size: usize) {
         // 1. 更新 stats（先借再放，避免后续触发事件时 borrow 冲突）
         {
             let mut i = self.inner.lock();
@@ -444,27 +443,6 @@ impl ArcMagrGC {
                 size_bytes: size,
                 timestamp_us: Self::now_us(),
             });
-        }
-    }
-
-    /// 内部版 make_weak —— 复制 trait 实现避免在 trait dispatch 路径递归借用。
-    fn make_weak_internal(&self, value: &Value) -> Option<WeakRef> {
-        match value {
-            Value::Object(gc) => Some(WeakRef {
-                inner: WeakRefInner::Object(GcRef::downgrade(gc)),
-            }),
-            Value::Array(gc) => Some(WeakRef {
-                inner: WeakRefInner::Array(GcRef::downgrade(gc)),
-            }),
-            _ => None,
-        }
-    }
-
-    /// 内部版 upgrade_weak。
-    fn upgrade_weak_internal(weak: &WeakRef) -> Option<Value> {
-        match &weak.inner {
-            WeakRefInner::Object(w) => w.upgrade().map(Value::Object),
-            WeakRefInner::Array (w) => w.upgrade().map(Value::Array),
         }
     }
 
@@ -655,46 +633,118 @@ impl ArcMagrGC {
         count
     }
 
-    /// **add-mark-sweep-collector P3 (2026-05-21)**: sweep phase of the
-    /// mark-sweep collector (now the default). Snapshots live objects
-    /// from the registry, then for each:
+    /// Sweep phase of the mark-sweep collector.
     ///
-    /// - `is_marked == true` → reset mark to 0 (prep for next cycle), retain
-    /// - `is_marked == false` → break its internal refs (cycle break via
-    ///   `break_cycle_value`), accumulate `freed_bytes`. When the snapshot
-    ///   Vec drops at function return, the unmarked allocations' last
-    ///   strong refs go away → Arc Drop chain fires → finalizers run.
+    /// **add-mark-sweep-collector P3 (2026-05-21)**: original
+    /// implementation walked the Arc-backed `heap_registry` snapshot.
     ///
-    /// Returns the total bytes-freed estimate. **Must be called after**
-    /// [`mark_phase`](Self::mark_phase) — otherwise everything is unmarked
-    /// and would be incorrectly swept.
+    /// **add-custom-allocator P1 (2026-05-22)**: rewritten to walk
+    /// regions directly:
+    /// 1. For each alive entry in `region_object` + `region_array`:
+    ///    - `marked == 1` → reset to 0 (next cycle ready), retain
+    ///    - `marked == 0` → fire registered finalizer (one-shot take),
+    ///      tombstone the entry (alive=false, generation++, push slot
+    ///      to free list); break inner refs so any cyclic references
+    ///      no longer count toward "iterate_live_objects" reachability
+    ///
+    /// Returns estimated `freed_bytes` (sum of `object_size_bytes` for
+    /// tombstoned entries).
+    ///
+    /// Finalizer-timing contract (D3): firings happen here only. The
+    /// `Std.GC.Finalize(x)` builtin (added by P2) provides a separate
+    /// path for prompt resource release outside sweep.
     fn sweep_phase(&self) -> u64 {
-        let live = self.snapshot_live_from_registry();
         let mut freed_bytes: u64 = 0;
-        for v in &live {
-            let marked = match v {
-                Value::Object(gc) => GcRef::is_marked(gc),
-                Value::Array(gc)  => GcRef::is_marked(gc),
-                _ => true, // non-allocations: treat as "skip" (mark/sweep operates on heap only)
-            };
-            if marked {
-                // Survival: reset mark so the next cycle starts clean.
-                match v {
-                    Value::Object(gc) => GcRef::clear_mark(gc),
-                    Value::Array(gc)  => GcRef::clear_mark(gc),
-                    _ => {}
+
+        // Object region.
+        let mut tombstones_object: Vec<(super::region::RegionHandle, Option<FinalizerFn>, u64)> =
+            Vec::new();
+        {
+            let region = self.region_object.lock();
+            region.iterate_alive(|h, entry| {
+                if entry.is_marked() {
+                    entry.clear_mark();
+                } else {
+                    // Estimate size before tombstoning (entry still readable).
+                    let size = {
+                        let obj = entry.value.lock();
+                        Self::script_object_size_estimate(&obj)
+                    };
+                    let fin = entry.finalizer.lock().take();
+                    tombstones_object.push((h, fin, size));
                 }
-            } else {
-                // Unmarked: break internal references so when `live`
-                // drops at function return, Arc strong counts can reach
-                // zero and chain-drop fires finalizers.
-                freed_bytes += self.object_size_bytes(v) as u64;
-                Self::break_cycle_value(v);
-            }
+            });
         }
-        // `live` Vec drops here. Allocations whose only remaining strong
-        // refs were the cycle (which we just broke) get released.
+        // Fire finalizers + clear inner refs + tombstone.
+        for (h, fin, size) in tombstones_object {
+            if let Some(f) = fin { f(); }
+            freed_bytes += size;
+            // Break inner refs to release any cycles for the region's
+            // bookkeeping (iterate_live_objects, future child traversal
+            // won't see refs into already-tombstoned entries).
+            //
+            // SAFETY: handle came from iterate_alive; entry is still
+            // accessible (alive=true at this point — we haven't
+            // tombstoned yet).
+            {
+                let region = self.region_object.lock();
+                let entry = region.resolve(h);
+                if entry.alive.load(std::sync::atomic::Ordering::Acquire) {
+                    let mut obj = entry.value.lock();
+                    for slot in obj.slots.iter_mut() {
+                        *slot = Value::Null;
+                    }
+                }
+            }
+            self.region_object.lock().tombstone(h);
+        }
+
+        // Array region.
+        let mut tombstones_array: Vec<(super::region::RegionHandle, Option<FinalizerFn>, u64)> =
+            Vec::new();
+        {
+            let region = self.region_array.lock();
+            region.iterate_alive(|h, entry| {
+                if entry.is_marked() {
+                    entry.clear_mark();
+                } else {
+                    let size = {
+                        let arr = entry.value.lock();
+                        Self::array_size_estimate(&arr)
+                    };
+                    let fin = entry.finalizer.lock().take();
+                    tombstones_array.push((h, fin, size));
+                }
+            });
+        }
+        for (h, fin, size) in tombstones_array {
+            if let Some(f) = fin { f(); }
+            freed_bytes += size;
+            {
+                let region = self.region_array.lock();
+                let entry = region.resolve(h);
+                if entry.alive.load(std::sync::atomic::Ordering::Acquire) {
+                    entry.value.lock().clear();
+                }
+            }
+            self.region_array.lock().tombstone(h);
+        }
+
         freed_bytes
+    }
+
+    /// Size estimate helpers for sweep_phase — operate on already-
+    /// locked inner data (avoids re-locking via object_size_bytes path).
+    fn script_object_size_estimate(obj: &ScriptObject) -> u64 {
+        use std::mem::size_of;
+        (size_of::<Value>() + size_of::<ScriptObject>()
+            + obj.slots.capacity() * size_of::<Value>()) as u64
+    }
+
+    fn array_size_estimate(arr: &Vec<Value>) -> u64 {
+        use std::mem::size_of;
+        (size_of::<Value>() + size_of::<Vec<Value>>()
+            + arr.capacity() * size_of::<Value>()) as u64
     }
 
     /// **add-mark-sweep-collector P3 (2026-05-21)**: test-only entry
@@ -721,23 +771,6 @@ impl ArcMagrGC {
                 Value::Array(gc)  => GcRef::clear_mark(gc),
                 _ => {}
             }
-        }
-    }
-
-    /// 断环：清空 unmarked 对象的内部引用，让其指向的对象在 sweep_phase
-    /// 末尾随 `live` Vec 析构时 Arc strong_count 减一并链式释放。
-    /// Object → 所有 slots 设 `Value::Null`；Array → `vec.clear()`。
-    fn break_cycle_value(v: &Value) {
-        match v {
-            Value::Object(gc) => {
-                for slot in gc.borrow_mut().slots.iter_mut() {
-                    *slot = Value::Null;
-                }
-            }
-            Value::Array(gc) => {
-                gc.borrow_mut().clear();
-            }
-            _ => {}
         }
     }
 
@@ -781,25 +814,34 @@ impl ArcMagrGC {
         self.sweep_phase()
     }
 
-    /// Snapshot 当前 registry 中所有仍存活的 Value，并就地 prune 掉死引用。
-    /// 返回值已去重（同一对象只出现一次）。
+    /// Snapshot all alive Values across the heap's regions. Order:
+    /// object region first, then array region. Each entry visited
+    /// exactly once (no de-dup required — regions are the authoritative
+    /// store, every entry there represents one allocation).
+    ///
+    /// **add-custom-allocator P1 (2026-05-22)**: replaces the
+    /// heap_registry-walking version. No more `Weak::upgrade` per
+    /// entry; just a linear chunks walk with an alive-bit check.
     fn snapshot_live_from_registry(&self) -> Vec<Value> {
-        let mut i = self.inner.lock();
-        let mut alive: Vec<Value> = Vec::with_capacity(i.heap_registry.len());
-        let mut visited: HashSet<usize> = HashSet::new();
-        // 同步 prune：retain 只保留还能 upgrade 的项
-        i.heap_registry.retain(|weak| {
-            if let Some(v) = Self::upgrade_weak_internal(weak) {
-                if let Some(key) = Self::rc_ptr_key(&v) {
-                    if visited.insert(key) {
-                        alive.push(v);
-                    }
-                }
-                true
-            } else {
-                false
-            }
-        });
+        let mut alive: Vec<Value> = Vec::new();
+        {
+            let region = self.region_object.lock();
+            region.iterate_alive(|h, entry| {
+                let entry_ptr = std::ptr::NonNull::from(entry);
+                // SAFETY: handle came from iterate_alive over a live entry;
+                // generation matches the entry's current state.
+                let gc = unsafe { GcRef::from_region_entry(entry_ptr, h.generation) };
+                alive.push(Value::Object(gc));
+            });
+        }
+        {
+            let region = self.region_array.lock();
+            region.iterate_alive(|h, entry| {
+                let entry_ptr = std::ptr::NonNull::from(entry);
+                let gc = unsafe { GcRef::from_region_entry(entry_ptr, h.generation) };
+                alive.push(Value::Array(gc));
+            });
+        }
         alive
     }
 
@@ -921,35 +963,60 @@ impl MagrGC for ArcMagrGC {
         native: NativeData,
     ) -> Value {
         let class = type_desc.name.clone();
-        let value = Value::Object(GcRef::new(ScriptObject {
+        let obj = ScriptObject {
             type_desc, slots, native,
-            // D-8b-3 Phase 2: type_args 默认为空；ObjNew 路径在 alloc 后通过
-            // GcRef 的 borrow_mut() 设置具体值。
             type_args: Vec::new(),
-        }));
+        };
+
+        // **add-custom-allocator P1 (2026-05-22)**: alloc into region.
+        // Region::alloc returns a stable handle; resolve gives us the
+        // entry pointer for GcRef construction.
+        let (entry_ptr, gen, handle) = {
+            let mut region = self.region_object.lock();
+            let handle = region.alloc(obj);
+            let entry: std::ptr::NonNull<super::region::RegionEntry<ScriptObject>> =
+                std::ptr::NonNull::from(region.resolve(handle));
+            (entry, handle.generation, handle)
+        };
+        // SAFETY: handle was just produced by region.alloc; entry ptr
+        // is stable for entry lifetime; generation matches.
+        let gc = unsafe { GcRef::from_region_entry(entry_ptr, gen) };
+        let value = Value::Object(gc);
+
         let size = self.object_size_bytes(&value);
         // Phase 3-OOM: strict 模式下若 alloc 后会越界，撤销并返 Null
         let (would_oom, limit) = self.would_oom_after_alloc(size as u64);
         if would_oom {
+            // Refund: tombstone the entry (no finalizer registered yet,
+            // so no fire on tombstone).
+            self.region_object.lock().tombstone(handle);
             self.fire_event(GcEvent::OutOfMemory {
                 requested_bytes: size as u64,
                 limit_bytes: limit,
             });
-            return Value::Null; // value 在此 drop，GcRef Drop → GcAllocation Drop（无 finalizer 注册）
+            return Value::Null;
         }
         self.record_alloc(&value, AllocKind::Object { class }, size);
-        // Phase 3d: 内存压力下自动 collect（local `value` 持外部强引用，自身不会被破坏）
         self.maybe_auto_collect();
         value
     }
 
     fn alloc_array(&self, elems: Vec<Value>) -> Value {
         let elem_count = elems.len();
-        let value      = Value::Array(GcRef::new(elems));
-        let size       = self.object_size_bytes(&value);
-        // Phase 3-OOM: strict 模式下若 alloc 后会越界，撤销并返 Null
+        let (entry_ptr, gen, handle) = {
+            let mut region = self.region_array.lock();
+            let handle = region.alloc(elems);
+            let entry: std::ptr::NonNull<super::region::RegionEntry<Vec<Value>>> =
+                std::ptr::NonNull::from(region.resolve(handle));
+            (entry, handle.generation, handle)
+        };
+        let gc = unsafe { GcRef::from_region_entry(entry_ptr, gen) };
+        let value = Value::Array(gc);
+
+        let size = self.object_size_bytes(&value);
         let (would_oom, limit) = self.would_oom_after_alloc(size as u64);
         if would_oom {
+            self.region_array.lock().tombstone(handle);
             self.fire_event(GcEvent::OutOfMemory {
                 requested_bytes: size as u64,
                 limit_bytes: limit,

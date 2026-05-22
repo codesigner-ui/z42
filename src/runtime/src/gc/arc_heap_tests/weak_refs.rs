@@ -36,13 +36,20 @@ fn upgrade_weak_succeeds_while_strong_alive() {
 }
 
 #[test]
-fn upgrade_weak_fails_after_strong_dropped() {
+fn upgrade_weak_fails_after_sweep_tombstones() {
+    // **add-custom-allocator P1 (2026-05-22)**: WeakRef no longer
+    // invalidates at Rust-scope-exit (GcRef::drop is now no-op). It
+    // invalidates when sweep_phase tombstones the entry. Was named
+    // `upgrade_weak_fails_after_strong_dropped` — semantics updated.
     let heap = ArcMagrGC::new();
     let w = {
         let v = heap.alloc_array(vec![]);
         heap.make_weak(&v).unwrap()
-    }; // v 在此处 drop
-    assert!(heap.upgrade_weak(&w).is_none());
+    };
+    // Force a collect — `v` was unrooted, so sweep tombstones it.
+    heap.force_collect();
+    assert!(heap.upgrade_weak(&w).is_none(),
+        "Weak invalidates after sweep tombstones the entry");
 }
 
 // ── 8.5 Handle table（reorganize-gc-stdlib，2026-05-07）─────────────────────
@@ -95,16 +102,20 @@ fn handle_strong_anchors_after_external_drop() {
 }
 
 #[test]
-fn handle_weak_clears_after_external_drop() {
+fn handle_weak_clears_after_sweep_collects_target() {
+    // **add-custom-allocator P1 (2026-05-22)**: weak handle target
+    // invalidates when sweep tombstones the entry, not at scope exit
+    // of the original strong ref (GcRef::drop is now no-op).
     let heap = ArcMagrGC::new();
     let slot = {
         let v = heap.alloc_object(dummy_type_desc("WeakTgt"), vec![], NativeData::None);
         heap.handle_alloc(&v, GcHandleKind::Weak)
-        // `v` dropped here — weak slot does NOT anchor; target is collectable
     };
-    // Slot is still owned by its handle (IsAllocated stays true), but target gone.
+    // Force collect → target unrooted → tombstoned → weak resolves to None.
+    heap.force_collect();
     assert!(heap.handle_is_alloc(slot));
-    assert_eq!(heap.handle_target(slot), None);
+    assert_eq!(heap.handle_target(slot), None,
+        "weak handle target gone after sweep tombstones");
     assert_eq!(heap.handle_kind(slot), Some(GcHandleKind::Weak));
 }
 

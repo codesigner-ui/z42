@@ -3,228 +3,321 @@
 //! # 设计意图
 //!
 //! `GcRef<T>` 是 `Value::Object` / `Value::Array` 等堆引用类型的**不透明句柄**，
-//! 隐藏内部 backing 实现。后续 backing 切换（自定义堆 allocator / 真 mark-sweep
-//! / MMTk 集成等，见 [`docs/design/runtime/vm-architecture.md`](../../../../docs/design/runtime/vm-architecture.md)
-//! "GC 后续迭代规划" 段）所有 callsite 走 `GcRef::*` API 不需任何修改。
+//! 隐藏内部 backing 实现。
 //!
-//! # 当前 backing（add-multithreading-foundation Phase 3，2026-05-20）
+//! # 当前 backing（add-custom-allocator P1，2026-05-22）
 //!
-//! `Arc<GcAllocation<T>>` —— `GcAllocation` 含 `inner: parking_lot::Mutex<T>` +
-//! `finalizer: parking_lot::Mutex<Option<FinalizerFn>>` + 自定义 `Drop`。
-//! **Drop 时自动触发已注册的 finalizer**（one-shot via take）。
+//! `NonNull<RegionEntry<T>>` —— 直接指向 [`Region<T>`](super::region::Region)
+//! 内部的 `RegionEntry<T>`。Region 由 `ArcMagrGC` 拥有，chunks 是 `Box`
+//! 单位故 entry 地址在 region 生命周期内稳定。
 //!
-//! Phase 3 之前 backing 是 `Rc<GcAllocation<T>>` + `RefCell<T>`。切到 Arc/Mutex
-//! 是 multi-threading foundation 必需的 Send-safe 化（GcRef<T: Send>: Send +
-//! Sync，跨线程安全）。单线程语义不变；Mutex 在无竞争路径上 ~2-5ns 原子开销，
-//! VM 实测 stdlib + test-vm 全套 < 5% 退化。
+//! ## Phase 历史
+//! - Phase 1（旧）：`Rc<GcAllocation<T>>` + `RefCell<T>`（单线程语义）
+//! - Phase 3（旧）：`Arc<GcAllocation<T>>` + `Mutex<T>`（add-multithreading-foundation）
+//! - **P1 当前**：`NonNull<RegionEntry<T>>` + generation（add-custom-allocator）
+//!
+//! 关键改动 vs Arc：
+//! - **`Clone` 无 atomic op**：handle 是 12B Copy 原语（NonNull + u32），
+//!   memcpy 一次完成；之前每次 `Arc::clone` 一次 `fetch_add`（2-4 ns）
+//! - **`Drop` 是 no-op**：不再 refcount decrement。Finalizer 在 sweep 触发，
+//!   不在 scope 退出触发。配 `Std.GC.Finalize(x)` 显式 API（P2 加）做 RAII
+//!   资源回收
+//! - **生命周期契约**：`GcRef` 不能 outlive 拥有它所指 `Region` 的 `ArcMagrGC`。
+//!   z42 现有架构所有 GcRef 都生活在 VmContext 范围内，契约天然满足
 //!
 //! # API 契约
 //!
-//! - `clone()` 是 cheap operation（Arc::clone 一次原子 fetch_add）
-//! - `borrow()` / `borrow_mut()` 都用 `try_lock`，**recursive call panic**
-//!   （保留 RefCell-style 调试体验；避免 Mutex deadlock 难调试）
-//! - `ptr_eq(a, b)` 比较是否指向同一堆分配
-//! - `as_ptr(this)` 返回 GcAllocation 内 inner Mutex 的稳定地址（身份哈希 / dedup key）
-//! - `downgrade(this)` 创建弱引用
-//! - 当最后一个 GcRef 被 Drop 时，若 finalizer 已注册自动触发
+//! - `clone()` 是 cheap operation（12 字节 memcpy；零 atomic op）
+//! - `borrow()` / `borrow_mut()` 走 RegionEntry 内置 `Mutex<T>`，
+//!   **blocking lock**（同 Phase 3 / mutator contention 行为）
+//! - `ptr_eq(a, b)` 比较 NonNull 是否指向同一 RegionEntry
+//! - `as_ptr(this)` 返回 RegionEntry 内 `value: Mutex<T>` 的稳定地址
+//!   （身份哈希 / dedup key；契约：地址在 entry 生命周期内不变）
+//! - `mark` / `is_marked` / `clear_mark`：操作 RegionEntry 的 `marked` 字段
+//! - `downgrade(this)` 创建 weak handle（同 NonNull + generation；upgrade
+//!   走 `alive + generation` 一致性检查）
+//! - **`borrow` 在 generation 不匹配时 panic**（detect use-after-finalize）
 
-use std::sync::{Arc, Weak};
+use std::marker::PhantomData;
+use std::ptr::NonNull;
+use std::sync::atomic::Ordering;
 
 use parking_lot::{Mutex, MutexGuard};
 
+use super::region::RegionEntry;
 use super::types::FinalizerFn;
 
-/// `Ref<'a, T>` —— immutable borrow guard alias. Phase 3 后等价于
-/// `MutexGuard<'a, T>`（Mutex 无 read/write 区分，写权限即 lock）。
-///
-/// Callsite 使用 `let r = gc_ref.borrow();` 写法不需要改 type 签名。
+/// `Ref<'a, T>` —— immutable borrow guard alias.
+/// 等价于 `MutexGuard<'a, T>`（parking_lot Mutex 无 read/write 区分）。
 pub type Ref<'a, T> = MutexGuard<'a, T>;
 
-/// `RefMut<'a, T>` —— mutable borrow guard alias. 与 `Ref` 同（Mutex
-/// 无 read/write 区分），仅返回类型语义一致；callsite `let r = gc_ref.borrow_mut();`
-/// 不变。
+/// `RefMut<'a, T>` —— mutable borrow guard alias. 与 `Ref` 同。
 pub type RefMut<'a, T> = MutexGuard<'a, T>;
 
-/// GC heap allocation wrapper. Holds the actual data plus a per-object
-/// finalizer slot. `Drop` impl on this struct fires the finalizer when
-/// the last `Arc<GcAllocation<T>>` reference goes away.
-pub struct GcAllocation<T> {
-    pub(crate) inner: Mutex<T>,
-    /// Finalizer registered via `ArcMagrGC::register_finalizer`. One-shot:
-    /// `Drop` takes it from the cell so re-collection / re-drop never re-fires.
-    pub(crate) finalizer: Mutex<Option<FinalizerFn>>,
-    /// **add-mark-sweep-collector P1 (2026-05-21)**: per-object mark bit
-    /// used by the mark-sweep collector. Reset to 0 at the start of each
-    /// collect; set to 1 by the mark phase BFS when the object is found
-    /// reachable from roots. Sweep phase drops entries where this is 0.
-    ///
-    /// `Relaxed` ordering is sufficient — the AtomicU8 is only meaningful
-    /// during stop-the-world collect (safepoint already established
-    /// happens-before via gc_phase Mutex). Single byte keeps allocation
-    /// size bump negligible.
-    pub(crate) marked: std::sync::atomic::AtomicU8,
-}
-
-impl<T> Drop for GcAllocation<T> {
-    fn drop(&mut self) {
-        // Take (not clone) → one-shot semantics
-        if let Some(fin) = self.finalizer.lock().take() {
-            fin();
-        }
-    }
-}
-
-/// GC-managed heap reference. **Phase 3 backing**: `Arc<GcAllocation<T>>`.
+/// GC-managed heap reference. **P1 backing**: `NonNull<RegionEntry<T>>`
+/// + generation snapshot.
+///
+/// **Lifetime contract**: caller must not let `GcRef<T>` outlive the
+/// `ArcMagrGC` that owns the backing `Region<T>`. In z42's architecture
+/// this is automatic — all `GcRef`s live inside `Value` instances which
+/// in turn live inside the heap's pinned roots, registry, or VmContext
+/// state. Embedders that hold `GcRef` outside the heap must ensure
+/// teardown order.
 pub struct GcRef<T> {
-    inner: Arc<GcAllocation<T>>,
+    /// Pointer to the backing RegionEntry. Stable for entry lifetime
+    /// (chunks in Region are Box-owned and never relocate).
+    entry: NonNull<RegionEntry<T>>,
+    /// Generation snapshot at construction. Compared against
+    /// `entry.generation` on each access to detect "the slot was
+    /// tombstoned + reused for a different object" (ABA prevention).
+    generation: u32,
+    /// Variance + dropck marker: behaves like `&'static RegionEntry<T>`
+    /// for the type system (we own neither the entry nor T, just a
+    /// reference into shared region storage).
+    _phantom: PhantomData<RegionEntry<T>>,
 }
+
+// SAFETY: GcRef<T> is conceptually a shared reference into a
+// thread-safe storage region. The backing RegionEntry<T> contains
+// Mutex<T> (Send+Sync via parking_lot for any T: Send) + atomics
+// (Send+Sync). All field accesses go through synchronized primitives.
+// Caller upholds the lifetime contract (no use-after-region-free).
+unsafe impl<T: Send + Sync> Send for GcRef<T> {}
+unsafe impl<T: Send + Sync> Sync for GcRef<T> {}
 
 impl<T> GcRef<T> {
-    /// Allocate a new heap object holding `value`. Returns a strong reference.
-    pub fn new(value: T) -> Self {
+    /// **add-custom-allocator P1 (2026-05-22)**: construct a `GcRef`
+    /// pointing at an existing `RegionEntry`. Caller is responsible for
+    /// supplying a valid pointer + matching generation. Used by
+    /// `ArcMagrGC::alloc_object` / `alloc_array` after `Region::alloc`
+    /// returns a handle.
+    ///
+    /// SAFETY: `entry` must be a stable pointer to a live `RegionEntry<T>`
+    /// inside a `Region<T>` that outlives this `GcRef`. `generation`
+    /// must match the entry's current generation at the time of call.
+    pub(crate) unsafe fn from_region_entry(
+        entry: NonNull<RegionEntry<T>>,
+        generation: u32,
+    ) -> Self {
+        Self { entry, generation, _phantom: PhantomData }
+    }
+
+    /// **Transitional standalone constructor**: allocates a `RegionEntry`
+    /// outside any `Region<T>` (via `Box::leak`). Memory is intentionally
+    /// leaked — the entry stays alive for the rest of the process. Used
+    /// only by tests + the rare callsite that constructs a `GcRef` without
+    /// a heap context (e.g., `corelib/array.rs::builtin_array_clone` will
+    /// be migrated to `ctx.heap().alloc_array` in a follow-up commit).
+    ///
+    /// This is the only allocation path that doesn't go through a Region;
+    /// such GcRefs participate in identity / borrow / mark APIs but are
+    /// invisible to GC sweep (not in any heap registry → never reclaimed
+    /// while the process lives).
+    pub fn new(value: T) -> Self
+    where
+        T: 'static,
+    {
+        let entry: &'static mut RegionEntry<T> =
+            Box::leak(Box::new(RegionEntry::new_for_test(value)));
         Self {
-            inner: Arc::new(GcAllocation {
-                inner:     Mutex::new(value),
-                finalizer: Mutex::new(None),
-                marked:    std::sync::atomic::AtomicU8::new(0),
-            }),
+            entry: NonNull::from(entry),
+            generation: 0,
+            _phantom: PhantomData,
         }
     }
 
-    /// Immutably borrow the inner value.
-    ///
-    /// **Blocking acquire** (parking_lot `lock()`). Until 2026-05-20 this
-    /// used `try_lock().expect(...)` to catch RefCell-style same-thread
-    /// re-entrance — but `add-multithreading-foundation` Phase 3 migrated
-    /// the backing from `Rc<RefCell>` to `Arc<parking_lot::Mutex>` and
-    /// `add-threading-stdlib` (2026-05-20) made cross-thread access real.
-    /// Two workers concurrently `field_get` on the same shared object
-    /// hit this borrow path and would `try_lock` panic.
-    ///
-    /// `add-sync-primitives` (2026-05-20) flips to blocking: legitimate
-    /// cross-thread contention waits its turn; same-thread reentrance now
-    /// deadlocks (matching standard `std::sync::Mutex` semantics). The
-    /// recursive-borrow safety net was a RefCell porting artifact — Rust
-    /// `Mutex` has never offered it. If reentrant access patterns appear
-    /// in practice they're bugs and should be restructured, not papered
-    /// over with a recursive Mutex variant.
+    /// Resolve to the inner `&RegionEntry<T>`. Panics if generation
+    /// mismatches (use-after-finalize per design D5).
+    fn entry_ref(&self) -> &RegionEntry<T> {
+        // SAFETY: entry pointer is stable for the entry's lifetime;
+        // caller upholds the GcRef-not-outlive-Region contract.
+        let e = unsafe { self.entry.as_ref() };
+        debug_assert!(
+            e.generation.load(Ordering::Acquire) == self.generation
+                && e.alive.load(Ordering::Acquire),
+            "GcRef::entry_ref: generation/alive mismatch — use-after-finalize"
+        );
+        e
+    }
+
+    /// Immutably borrow the inner value (blocking lock on the
+    /// `RegionEntry`'s `Mutex<T>`).
     pub fn borrow(&self) -> Ref<'_, T> {
-        self.inner.inner.lock()
+        self.entry_ref().value.lock()
     }
 
-    /// Mutably borrow the inner value.
-    ///
-    /// Same semantics as `borrow()`: blocking lock. Mutex has no read/write
-    /// distinction; the type alias `RefMut<'a, T>` keeps the call-site API
-    /// stable while the underlying lock is exclusive.
+    /// Mutably borrow the inner value (blocking lock).
     pub fn borrow_mut(&self) -> RefMut<'_, T> {
-        self.inner.inner.lock()
+        self.entry_ref().value.lock()
     }
 
-    /// True iff `a` and `b` point to the same heap allocation (reference equality).
+    /// True iff `a` and `b` point to the same `RegionEntry`. Both
+    /// pointer-equality AND generation-equality (so a stale GcRef
+    /// pointing at a tombstoned slot does not equal a fresh GcRef
+    /// pointing at the reused slot — that would be a spurious match).
     pub fn ptr_eq(a: &Self, b: &Self) -> bool {
-        Arc::ptr_eq(&a.inner, &b.inner)
+        a.entry == b.entry && a.generation == b.generation
     }
 
-    /// Stable pointer to the inner cell — used for identity hashing /
-    /// finalizer / dedup keying. Returns the address of the inner Mutex.
-    /// Stable for the lifetime of the allocation.
+    /// Stable pointer to the inner `Mutex<T>` — used for identity
+    /// hashing / dedup keying. Address stable for entry lifetime.
     pub fn as_ptr(this: &Self) -> *const Mutex<T> {
-        let alloc_ptr: *const GcAllocation<T> = Arc::as_ptr(&this.inner);
-        // SAFETY: alloc_ptr is from Arc::as_ptr, valid as long as `this` lives.
-        // GcAllocation field offsets are stable (Rust default repr).
-        unsafe { &(*alloc_ptr).inner as *const Mutex<T> }
+        // SAFETY: entry pointer stable for lifetime; field access is
+        // a direct offset, no atomic. Returned pointer is the
+        // identity key for the entry.
+        unsafe { &(*this.entry.as_ptr()).value as *const Mutex<T> }
     }
 
-    /// **add-mark-sweep-collector P1 (2026-05-21)**: atomically set the
-    /// mark bit. Returns `true` if this call transitioned 0→1 (i.e., we
-    /// were the first to mark this allocation in the current GC cycle),
-    /// `false` if it was already marked. Used by the mark phase BFS to
-    /// decide whether to enqueue this object's children.
+    /// **add-mark-sweep-collector P1 (2026-05-21)**: atomically set
+    /// the mark bit. Returns `true` on 0→1 transition (CAS won).
     pub fn mark(this: &Self) -> bool {
-        this.inner.marked
-            .compare_exchange(
-                0, 1,
-                std::sync::atomic::Ordering::Relaxed,
-                std::sync::atomic::Ordering::Relaxed,
-            )
-            .is_ok()
+        this.entry_ref().mark()
     }
 
-    /// **add-mark-sweep-collector P1 (2026-05-21)**: read the current
-    /// mark state. Used by the sweep phase to decide retention.
+    /// Read current mark state.
     pub fn is_marked(this: &Self) -> bool {
-        this.inner.marked.load(std::sync::atomic::Ordering::Relaxed) != 0
+        this.entry_ref().is_marked()
     }
 
-    /// **add-mark-sweep-collector P1 (2026-05-21)**: reset the mark bit
-    /// to 0. Called by the sweep phase on survivors (preparing them for
-    /// the next collect cycle).
+    /// Reset mark to 0 (sweep on survivors).
     pub fn clear_mark(this: &Self) {
-        this.inner.marked.store(0, std::sync::atomic::Ordering::Relaxed);
+        this.entry_ref().clear_mark();
     }
 
-    /// Create a weak reference (does not prevent collection).
+    /// Create a weak reference (does not extend liveness).
     pub fn downgrade(this: &Self) -> WeakGcRef<T> {
-        WeakGcRef { inner: Arc::downgrade(&this.inner) }
+        WeakGcRef {
+            entry: this.entry,
+            generation: this.generation,
+            _phantom: PhantomData,
+        }
     }
 
-    /// 注册 finalizer。最后一个 GcRef Drop 时（含 cycle 断环后 alive_vec
-    /// drop）自动调用，并 take 出来（one-shot）。
+    /// Register a one-shot finalizer. Fires at next `sweep_phase` if
+    /// the entry is unreachable, or immediately via `Std.GC.Finalize(x)`
+    /// (P2 API).
     pub(crate) fn set_finalizer(this: &Self, fin: FinalizerFn) {
-        *this.inner.finalizer.lock() = Some(fin);
+        *this.entry_ref().finalizer.lock() = Some(fin);
     }
 
-    /// 取消已注册的 finalizer，返回 true 表示之前已注册。
+    /// Cancel + take the registered finalizer. Returns true if one
+    /// was previously registered.
     pub(crate) fn cancel_finalizer(this: &Self) -> bool {
-        this.inner.finalizer.lock().take().is_some()
+        this.entry_ref().finalizer.lock().take().is_some()
     }
 
-    /// 查询是否已注册 finalizer。
+    /// Take the finalizer (one-shot). Used by sweep when firing the
+    /// finalizer at object death.
+    #[allow(dead_code)] // becomes used by P2 `Std.GC.Finalize(x)` builtin
+    pub(crate) fn take_finalizer(this: &Self) -> Option<FinalizerFn> {
+        this.entry_ref().finalizer.lock().take()
+    }
+
+    /// Query whether a finalizer is registered.
     pub(crate) fn has_finalizer(this: &Self) -> bool {
-        this.inner.finalizer.lock().is_some()
+        this.entry_ref().finalizer.lock().is_some()
+    }
+
+    /// **add-custom-allocator P1 (2026-05-22)**: expose the underlying
+    /// `RegionEntry` pointer + generation for `ArcMagrGC` internal
+    /// bookkeeping (sweep walks regions directly; this is the inverse
+    /// — given a Value-held GcRef, find which entry to tombstone).
+    #[allow(dead_code)] // becomes used by P2 `Std.GC.Finalize(x)` builtin
+    pub(crate) fn entry_ptr(&self) -> NonNull<RegionEntry<T>> {
+        self.entry
+    }
+
+    #[allow(dead_code)] // becomes used by P2 `Std.GC.Finalize(x)` builtin
+    pub(crate) fn generation(&self) -> u32 {
+        self.generation
     }
 }
 
 impl<T> Clone for GcRef<T> {
+    /// **D8 (no atomic op on clone)**: 12-byte memcpy of (NonNull, u32).
+    /// No `fetch_add`, no `Arc::clone`. Hot path on every Value passing
+    /// through interp / JIT / closure capture / field access.
     fn clone(&self) -> Self {
-        Self { inner: Arc::clone(&self.inner) }
+        Self {
+            entry: self.entry,
+            generation: self.generation,
+            _phantom: PhantomData,
+        }
     }
+}
+
+impl<T> Drop for GcRef<T> {
+    /// **D8 cont.**: no-op. No refcount to decrement. Finalizer fires
+    /// at sweep_phase (or via `Std.GC.Finalize(x)`), never here.
+    fn drop(&mut self) {}
 }
 
 impl<T: std::fmt::Debug> std::fmt::Debug for GcRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.inner.inner.try_lock() {
+        // SAFETY: entry pointer stable; we're just reading metadata.
+        let e = unsafe { self.entry.as_ref() };
+        if !e.alive.load(Ordering::Acquire) {
+            return f.debug_tuple("GcRef").field(&"<tombstoned>").finish();
+        }
+        if e.generation.load(Ordering::Acquire) != self.generation {
+            return f.debug_tuple("GcRef").field(&"<stale generation>").finish();
+        }
+        match e.value.try_lock() {
             Some(b) => f.debug_tuple("GcRef").field(&*b).finish(),
             None    => f.debug_tuple("GcRef").field(&"<borrowed>").finish(),
         }
     }
 }
 
-/// Weak GC reference. Does not keep target alive; upgrade returns `None` if
-/// the target has been collected.
+/// Weak GC reference. Does not extend liveness; `upgrade` returns
+/// `None` if the target was tombstoned (alive=false) or the slot was
+/// reused with a different generation.
 pub struct WeakGcRef<T> {
-    inner: Weak<GcAllocation<T>>,
+    entry: NonNull<RegionEntry<T>>,
+    generation: u32,
+    _phantom: PhantomData<RegionEntry<T>>,
 }
 
+unsafe impl<T: Send + Sync> Send for WeakGcRef<T> {}
+unsafe impl<T: Send + Sync> Sync for WeakGcRef<T> {}
+
 impl<T> WeakGcRef<T> {
-    /// Try to recover a strong reference. Returns `None` if the target has
-    /// been collected (no other strong references exist).
+    /// Try to recover a strong reference. Returns `None` if the
+    /// entry has been tombstoned by sweep, or if the slot was reused
+    /// (generation mismatch).
     pub fn upgrade(&self) -> Option<GcRef<T>> {
-        self.inner.upgrade().map(|arc| GcRef { inner: arc })
+        // SAFETY: entry pointer stable for the region's lifetime
+        // (chunks are Box-owned, never freed individually). The
+        // tombstone/generation check below is the correctness
+        // boundary against use-after-tombstone.
+        let e = unsafe { self.entry.as_ref() };
+        let cur_gen = e.generation.load(Ordering::Acquire);
+        if !e.alive.load(Ordering::Acquire) || cur_gen != self.generation {
+            return None;
+        }
+        Some(GcRef {
+            entry: self.entry,
+            generation: self.generation,
+            _phantom: PhantomData,
+        })
     }
 }
 
 impl<T> Clone for WeakGcRef<T> {
     fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
+        Self {
+            entry: self.entry,
+            generation: self.generation,
+            _phantom: PhantomData,
+        }
     }
 }
 
 impl<T> std::fmt::Debug for WeakGcRef<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WeakGcRef")
-            .field("dropped", &(self.inner.strong_count() == 0))
-            .finish()
+        let e = unsafe { self.entry.as_ref() };
+        let dropped = !e.alive.load(Ordering::Acquire)
+            || e.generation.load(Ordering::Acquire) != self.generation;
+        f.debug_struct("WeakGcRef").field("dropped", &dropped).finish()
     }
 }

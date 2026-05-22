@@ -89,6 +89,14 @@ pub struct RegionEntry<T> {
 }
 
 impl<T> RegionEntry<T> {
+    /// Test / transitional constructor used by `GcRef::new` for
+    /// standalone (no-Region) allocations. Wraps a fresh entry with
+    /// generation=0, alive=true. See refs.rs for the lifetime model
+    /// (intentional leak — process-wide static).
+    pub fn new_for_test(value: T) -> Self {
+        Self::new(value)
+    }
+
     fn new(value: T) -> Self {
         Self {
             value:      Mutex::new(value),
