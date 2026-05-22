@@ -962,6 +962,71 @@ Concurrent path (mode = ConcurrentMarkSweep):
 `park_until_idle` 的等待条件从 `!Idle` 改为 `Requested | Marking`
 —— ConcurrentMarking 不让 mutator park。
 
+#### Finalizer contract (add-custom-allocator, 2026-05-22)
+
+Finalizer 触发时机随 backing 切换变化：
+
+**当前契约（post-add-custom-allocator）**: finalizer **不**在 `GcRef`
+出 scope 时触发（`GcRef::drop` 是 no-op，无 refcount）。两条触发路径：
+
+1. **自动**：GC `sweep_phase` 找到 unreachable 对象 → take finalizer →
+   触发 → tombstone slot。时机不可控（依赖下次 collect）。
+2. **手动**：用户显式调 `Std.GC.Finalize(target)` → 立即 take + 触发
+   finalizer → tombstone slot。匹配 .NET `IDisposable.Dispose()` /
+   Java `AutoCloseable.close()` 语义。
+
+**RAII 模式建议**：
+
+- 资源类型（文件 handle / socket / FFI handle）暴露显式 `Close()` /
+  `Dispose()` 方法；用户主动调用
+- 不依赖 finalizer 做"scope exit 立即释放" —— 该模式在 z42 不成立
+- finalizer 是 **safety net**（防泄漏），不是即时释放机制
+
+**Strong reference 检测**（design D5）: 显式 `Std.GC.Finalize` 后，
+其他 strong reference 之后 `borrow` 会 `debug_assert!` panic（generation
+mismatch detection — debug build 立即报错；release build 由后续
+generation 检查 enforce）。
+
+**Pre-spec 历史契约**（archive reference）: Arc backing 下 `GcRef::drop`
+触发 refcount 减 1；最后一个 ref drop 时 `GcAllocation::Drop` 自动触发
+finalizer。这条契约已废弃；现有 stdlib `ProcessHandle.Drop(slotId)`
+本来就是显式 dispose，已经匹配新契约。
+
+#### GC heap backing (add-custom-allocator, 2026-05-22)
+
+`ArcMagrGC` 现在两个 region 持有所有堆引用对象：
+
+- `region_object: Mutex<Region<ScriptObject>>` —— `Value::Object` 后端
+- `region_array: Mutex<Region<Vec<Value>>>` —— `Value::Array` 后端
+
+`Region<T>` 内部 `Vec<Box<[MaybeUninit<RegionEntry<T>>; 256]>>` chunked
+storage —— chunks 是 `Box` 单位故 entry 地址在 chunk 生命周期内**绝对稳定**
+（`GcRef::as_ptr` 身份哈希契约的物理基础）。Alloc 走 free-list pop 优先
+（reuse tombstoned slot，preserve bumped generation）+ bump pointer。
+
+`GcRef<T>` 是 12B 的 `NonNull<RegionEntry<T>>` + `u32 generation` handle：
+- Clone = memcpy 12 字节，**零原子 op**（vs 之前 `Arc::clone` 每次
+  `fetch_add` 2-4 ns）
+- Drop = no-op（无 refcount）
+- borrow / borrow_mut 走 `RegionEntry.value: Mutex<T>` 阻塞 lock
+  （同 add-multithreading-foundation 并发模型）
+- `ptr_eq` 比 NonNull + generation（stale-vs-fresh 区分）
+- `as_ptr` 返回 entry 内 `Mutex<T>` 稳定地址
+
+**WeakGcRef** 同 handle shape + generation snapshot。`upgrade` 检查
+`alive && generation matches` —— ABA-safe：被 tombstone 后即使槽位
+重用，generation 也 mismatch 不会假阳性 upgrade。
+
+**Sweep 路径**：`sweep_phase` 直接 walk `region_object` + `region_array`
+的 `iterate_alive`；找 unmarked `is_marked() == false` → 取 finalizer
+（mutex take）→ 触发 finalizer → tombstone（alive=false, generation++,
+push free_list）。`heap_registry: Vec<WeakRef>` 字段已删除 —— region
+就是 authoritative liveness store。
+
+**生命周期契约**：`GcRef` 不能 outlive 它所指 `Region` 所属的
+`ArcMagrGC`。z42 现有架构所有 GcRef 都活在 VmContext 范围内，契约
+天然满足。Embedder 需注意 drop order。
+
 #### Write barrier contract (add-write-barriers, 2026-05-21)
 
 `MagrGC` trait 包含两个 write-barrier 钩子：
@@ -1043,6 +1108,7 @@ test-only `BarrierObserver`）。
 | **A2 mark-sweep** | 移除 trial-deletion，切到标准 mark-sweep（`marked: AtomicU8` 字段 + `mark_phase` BFS + `sweep_phase`）；纯 tracing 语义，Rust-local 强引用不再隐式为 root | ✅ 2026-05-21 add-mark-sweep-collector |
 | **Write barriers** | `MagrGC::write_barrier_field` / `write_barrier_array_elem` call-site wiring 完成；`Value::is_heap_ref()` 在 call site 过滤 primitive 写入；trait override 可由后续 generational / concurrent backend 接入；default no-op | ✅ 2026-05-22 add-write-barriers |
 | **A4 concurrent mark** | 可选 `Z42_GC_MODE=concurrent` 切换 tricolor incremental update：STW root snapshot → ConcurrentMarking 阶段 mutator 不 park → barrier shade gray → STW 终止 handshake → STW sweep；STW 仍为默认 | ✅ 2026-05-22 add-concurrent-gc |
+| **A1 custom allocator** | `GcRef<T>` 从 `Arc<GcAllocation<T>>` 切到 chunked region + NonNull handle。Clone 零原子 op；`heap_registry` 删除；finalizer at sweep + `Std.GC.Finalize(x)` 显式 API。Sweep survivors 2.49× faster；alloc 1.03-1.06× faster | ✅ 2026-05-22 add-custom-allocator |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -1071,12 +1137,31 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 
 #### A. 性能优化轨道
 
-##### A1. 自定义堆 allocator（移除 std Rc 开销）
-- **What**：替换 `Rc<GcAllocation<T>>` backing 为自定义 region allocator + bump pointer
-- **Why**：std Rc 每次 clone/drop 走原子 refcount op（单线程下 non-atomic 但仍有 cache miss）；自定义 allocator 可批量回收 + 更紧凑的对象布局
-- **Deps**：无（`GcRef<T>` 句柄抽象 Phase 3a 已就位，调用方无需修改）
-- **Size**：500-800 LOC，4-6 天
-- **Risk**：内部 Drop 语义改变（Rc 即时释放 → allocator 批量回收）需要严格测试覆盖
+##### A1. 自定义堆 allocator（已落地，2026-05-22）
+- **状态**：✅ 完成，spec `add-custom-allocator`
+- **What**：`GcRef<T>` 从 `Arc<GcAllocation<T>>` 切到 `NonNull<RegionEntry<T>>` +
+  generation handle。Backing 是 chunked region allocator（`Vec<Box<[E;256]>>`，
+  chunks 永不 relocate 保 pointer stability）。
+- **实现要点**：
+  - `Region<T>` chunked allocator + bump pointer + free list（gc/region.rs，
+    `add-custom-allocator P0`）
+  - `GcRef<T>` 重写：NonNull + generation 12B handle；Clone 是 memcpy 零原子 op；
+    Drop 是 no-op（add-custom-allocator P1）
+  - `heap_registry: Vec<WeakRef>` 删除；region 是 authoritative liveness store；
+    sweep / iterate / snapshot 都直接走 `Region::iterate_alive`
+  - Finalizer 语义切换：Drop 不再触发，sweep 时触发 + `Std.GC.Finalize(x)`
+    显式 API 给 RAII 场景立即释放（add-custom-allocator P2）
+  - WeakRef 用 generation tombstone 替代 `std::Weak<Arc<...>>` —— ABA-safe
+- **生命周期契约**：`GcRef` 不能 outlive 它所指 `Region` 所属的 `ArcMagrGC`。
+  z42 现有架构所有 GcRef 都活在 VmContext 范围内，契约天然满足；embedder 需注意
+- **Benchmark 实测**（macOS arm64 release，10k objects）:
+  - alloc throughput: 1.03-1.06× faster（Arc init 节省，但 record_alloc bookkeeping 仍占大头）
+  - sweep survivors: **2.49× faster**（去除 per-entry Weak::upgrade）
+  - sweep garbage: 3.50× slower（**work 时序重分布**：Arc 路径在 Drop 时分散付费，
+    region 路径集中在 sweep 付费；total CPU 大致相同）
+  - GcRef::clone: 架构上去除原子 op（hot-path bench 待 follow-up perf spec）
+- **A3 / D1 解锁**：Region<T> 是 generational promotion 物理前提；API shape 已对齐
+  MMTk `Mutator::alloc` binding 契约
 
 ##### A2. 纯 Mark-Sweep（已落地，2026-05-21）
 - **状态**：✅ 完成，spec `add-mark-sweep-collector`

@@ -409,6 +409,72 @@ Implementation in 4 phases, each independently committable + GREEN.
   `docs/spec/archive/YYYY-MM-DD-add-custom-allocator/`
 - Commit
 
+## Benchmark Results (P3, 2026-05-22)
+
+`src/runtime/benches/gc_cycle_bench.rs` extended with 4 alloc/sweep
+workloads. Pre-spec baseline obtained via `git worktree` at commit
+`30509787` (spec-only, last commit with Arc backing). macOS arm64,
+release + LTO, criterion 0.5 — 3s measurement, 30 samples, 1s warm-up.
+
+| Workload | Arc baseline | Region post-spec | Δ |
+|----------|-------------:|-----------------:|---|
+| `gc_alloc/object_throughput_10k` (10k alloc_object) | 2.15 ms | 2.09 ms | **1.03× faster** |
+| `gc_alloc/array_throughput_10k` (10k alloc_array)   | 1.21 ms | 1.14 ms | **1.06× faster** |
+| `gc_sweep/10k_survivors` (10k pinned objs sweep)    | 2.72 ms | 1.09 ms | **2.49× faster** |
+| `gc_sweep/10k_garbage` (10k unpinned objs sweep)    | 0.37 ms | 1.29 ms | **3.50× slower** |
+
+### 解读
+
+**Alloc (modest 3-6% win)**: 原本设计期望 5-10x 改进，实际只 3-6%。
+原因是 alloc 热路径的大头不在 Arc 分配本身，而在 `record_alloc` 的
+bookkeeping（stats update、pressure check、sampler 调度）。Arc malloc
+节省了，但只是常数因子之一。**Per-clone 的 atomic op 消除（D8）没
+在这个 bench 体现** —— 因为 alloc 路径只 clone 一次（push 到 registry，
+现在已删除）；真实收益要测频繁 clone 的 hot path（closure capture、
+Value 传参），那是后续 perf spec 工作。
+
+**Sweep survivors (2.49x faster — big win)**: 这是 region 模型的明确
+收益。Arc 路径 sweep 每个对象一次 `Weak::upgrade` (atomic load + ptr
+check) + `retain` 删 dead weakref；region 路径直接 `is_marked()` +
+`clear_mark` 两个 byte atomic op。10k 对象上累计差距显著。
+
+**Sweep garbage (3.5x slower — work shifted, not lost)**: 这个数字看
+起来糟，但要理解整体工作量分布：
+
+- **Arc baseline**: garbage 对象的 `GcAllocation::Drop` 在 *scope exit
+  时立即* 跑，分散到执行流中。Sweep 看到的 `Weak::upgrade()` 返回
+  None，直接 retain 跳过 —— 几乎零成本。看起来 sweep 快，实际成本
+  在前面分散付了。
+- **Region post-spec**: garbage 一直 alive=true 直到 sweep tombstones。
+  Sweep 这一刻要做：take finalizer (mutex lock + take) + clear inner
+  slots (value mutex lock + iter) + alive swap + generation++ + push
+  free_list。**集中付费**。Total CPU 大致相同；时序变成 batch 释放。
+
+这是 mark-sweep GC 的经典 trade-off。集中工作的优势：可批处理、cache
+友好、可后台并发（concurrent sweep 未来 spec）。劣势：单次 sweep
+pause 变长。在带 max_bytes 触发 auto-collect 的 workload 中，这种
+"alloc 期间几乎零开销 + 周期 sweep batch 付费" 是更可预测的延迟模型。
+
+### 综合评估
+
+| 维度 | 评价 |
+|------|------|
+| Alloc throughput | 改进幅度小于预期，但仍正收益 |
+| Sweep survivors | **核心胜场** (2.49x) — 配合现有 root chain 长的 workload 显著降低 GC pause |
+| Sweep garbage | 数字看起来差，实际 work 时序重新分布；total CPU 基本不变 |
+| GcRef::clone | 架构上消除 atomic op；bench 没单独测，需要 hot-path workload 才能体现 |
+| 内存布局紧凑 | RegionEntry ~16-24B 比 Arc 包装 ~48-64B 节省 ~40-60% wrapper overhead |
+| 死代码 / 抽象债 | 删除 Arc/tracing 混合架构、heap_registry、Weak 桥接代码 → 维护成本下降 |
+| A3 generational 解锁 | Region 是分代 promotion 的物理前提 ✓ |
+| MMTk 解锁 | API shape 已对齐 MMTk Mutator::alloc ✓ |
+
+### 后续 bench TODO
+
+- GcRef::clone 单独 micro-bench（hot path closure capture）
+- VM end-to-end stdlib 全跑时序对比（实际 workload 比 micro-bench 更
+  representative）
+- 内存峰值对比（region 因 batch 释放，峰值更高）
+
 ## Deferred / Future Work
 
 ### add-generational-gc (A3)

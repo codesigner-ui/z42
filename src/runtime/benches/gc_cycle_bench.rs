@@ -226,6 +226,107 @@ fn bench_large_array_10k_concurrent(c: &mut Criterion) {
     });
 }
 
+// ── add-custom-allocator P3 (2026-05-22): alloc + sweep throughput ──────────
+//
+// Measure the constant-factor improvements the region allocator delivers
+// on the alloc hot path + sweep traversal. Pre-spec baseline is captured
+// via `git worktree` at the commit before P0 (30509787 spec-only); same
+// bench file is copied there and run for comparison.
+
+fn bench_alloc_throughput_10k_objects(c: &mut Criterion) {
+    c.bench_function("gc_alloc/object_throughput_10k", |b| {
+        b.iter_batched(
+            || ArcMagrGC::new(),
+            |heap| {
+                heap.pause();  // disable auto-collect during the loop
+                for _ in 0..10_000 {
+                    let _ = black_box(heap.alloc_object(
+                        make_type_desc("AllocBench"),
+                        vec![],
+                        NativeData::None,
+                    ));
+                }
+                heap.resume();
+                black_box(heap);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_alloc_throughput_10k_arrays(c: &mut Criterion) {
+    c.bench_function("gc_alloc/array_throughput_10k", |b| {
+        b.iter_batched(
+            || ArcMagrGC::new(),
+            |heap| {
+                heap.pause();
+                for _ in 0..10_000 {
+                    let _ = black_box(heap.alloc_array(vec![Value::I64(0); 4]));
+                }
+                heap.resume();
+                black_box(heap);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_sweep_10k_survivors(c: &mut Criterion) {
+    // 10k pinned objects → sweep visits every entry, all survive → mostly
+    // measures the per-entry "is_marked → clear_mark" loop cost.
+    c.bench_function("gc_sweep/10k_survivors", |b| {
+        b.iter_batched(
+            || {
+                let heap = ArcMagrGC::new();
+                heap.pause();
+                let mut pins = Vec::with_capacity(10_000);
+                for _ in 0..10_000 {
+                    let v = heap.alloc_object(
+                        make_type_desc("Survivor"),
+                        vec![],
+                        NativeData::None,
+                    );
+                    pins.push(heap.pin_root(v));
+                }
+                heap.resume();
+                (heap, pins)
+            },
+            |(heap, _pins)| {
+                let stats = heap.force_collect();
+                black_box(stats);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_sweep_10k_garbage(c: &mut Criterion) {
+    // 10k unpinned objects → sweep tombstones every entry → measures the
+    // unmarked-tombstone path (finalize_now-style overhead × 10k).
+    c.bench_function("gc_sweep/10k_garbage", |b| {
+        b.iter_batched(
+            || {
+                let heap = ArcMagrGC::new();
+                heap.pause();
+                for _ in 0..10_000 {
+                    let _ = heap.alloc_object(
+                        make_type_desc("Garbage"),
+                        vec![],
+                        NativeData::None,
+                    );
+                }
+                heap.resume();
+                heap
+            },
+            |heap| {
+                let stats = heap.force_collect();
+                black_box(stats);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     benches,
     bench_cycle_heavy_100,
@@ -234,5 +335,9 @@ criterion_group!(
     bench_cycle_heavy_100_concurrent,
     bench_shallow_tree_1k_concurrent,
     bench_large_array_10k_concurrent,
+    bench_alloc_throughput_10k_objects,
+    bench_alloc_throughput_10k_arrays,
+    bench_sweep_10k_survivors,
+    bench_sweep_10k_garbage,
 );
 criterion_main!(benches);
