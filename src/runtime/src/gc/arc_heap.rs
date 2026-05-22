@@ -1179,9 +1179,35 @@ impl ArcMagrGC {
 
     /// STW mark-sweep collect — the proven path. Called directly when
     /// `mode() == StwMarkSweep`, or as a fallback by the concurrent path.
+    ///
+    /// **add-gc-stress-test (2026-05-22)**: defensive cleanup at the
+    /// boundaries. The concurrent barrier override (under
+    /// `GcMode::ConcurrentMarkSweep`) leaves `marked = 1` on shaded
+    /// objects + entries on `mark_queue`. The no-context `force_collect`
+    /// path falls back to STW, which assumes a clean slate at start
+    /// (all marks 0, queue empty). Without clearing, mark_phase
+    /// observes pre-marked entries — CAS fails → `just_marked == false`
+    /// → children NOT traced. Sweep then retains those entries
+    /// (marked=1) even though they may be unreachable, AND their
+    /// children (pointed to via slots) may be unmarked and swept,
+    /// leaving stale Values inside slots → next collect's mark BFS
+    /// hits entry_ref panic (use-after-finalize). Caught by stress
+    /// test + C1 validator.
     fn run_cycle_collection_stw(&self) -> u64 {
+        // Defensive reset: ensure clean state for STW mark.
+        self.reset_all_marks_in_regions();
+        self.mark_queue.lock().clear();
         let _newly_marked = self.mark_phase();
         self.sweep_phase()
+    }
+
+    /// **add-gc-stress-test (2026-05-22)**: clear `marked` on every
+    /// alive entry across both regions. Used by
+    /// `run_cycle_collection_stw` to guarantee mark-bit clean slate
+    /// when starting a STW cycle. Idempotent.
+    fn reset_all_marks_in_regions(&self) {
+        self.region_object.lock().iterate_alive(|_h, e| e.clear_mark());
+        self.region_array.lock().iterate_alive(|_h, e| e.clear_mark());
     }
 
     /// Snapshot all alive Values across the heap's regions. Order:

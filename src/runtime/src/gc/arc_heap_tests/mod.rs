@@ -39,5 +39,6 @@ mod object_model;
 mod oom;
 mod roots;
 mod send_sync;
+mod stress;
 mod weak_refs;
 mod write_barriers;
