@@ -1,6 +1,6 @@
 # Tasks: GC Pause-Time Histogram
 
-> 状态：🟡 进行中（spec-only commit start）| 创建：2026-05-22 | 类型：vm
+> 状态：🟢 已完成 | 创建：2026-05-22 | 归档：2026-05-22 | 类型：vm
 
 **总体策略**：Pure observability addition. No GC algorithm changes.
 8-bucket logarithmic histogram on `pause_us`. Surface via existing
@@ -48,17 +48,17 @@
 
 ## P1: gc.md docs + archive (~0.5 session)
 
-- [ ] P1.1 `docs/design/runtime/gc.md` 加新 "Pause histogram"
+- [x] P1.1 `docs/design/runtime/gc.md` 加新 "Pause histogram"
        subsection 紧跟 "Stress testing" 后:
        - Bucket boundaries 列表
        - 怎么从 script 端读取
        - 怎么对比 mode（diff before/after set_mode）
        - 局限 (fixed buckets, no rolling window, no per-mode split)
-- [ ] P1.2 Phase 表加 add-gc-pause-histogram 行
-- [ ] P1.3 B5 backlog entry: "future" → "landed"
-- [ ] P1.4 archive 到 `docs/spec/archive/YYYY-MM-DD-add-gc-pause-histogram/`
-- [ ] P1.5 final `test-all.sh --scope=full` GREEN
-- [ ] P1.6 commit + push
+- [x] P1.2 Phase 表加 add-gc-pause-histogram 行
+- [x] P1.3 B5 backlog entry: "future" → "landed"
+- [x] P1.4 archive 到 `docs/spec/archive/2026-05-22-add-gc-pause-histogram/`
+- [x] P1.5 final `test-all.sh --scope=full` GREEN
+- [x] P1.6 commit + push
 
 ## 备注
 

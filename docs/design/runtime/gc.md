@@ -458,6 +458,73 @@ slot 触发 use-after-finalize panic）。修复：`run_cycle_collection_stw`
 2000 iters × O(几十次 collect with O(N) validator) × O(state ops) =
 几十毫秒。可接受。
 
+### Pause histogram (add-gc-pause-histogram, 2026-05-22)
+
+每次 collect 测量的 `pause_us` 此前只对挂了 `GcObserver` 的 host
+逐事件可见，没有"过去 10000 次 collect 的 p95 是多少 / concurrent
+比 stw 是不是真的更短"这种聚合视角。`ArcMagrGC` 现在自维护一个
+**固定 8 桶对数直方图** + min / max / total / count，每次
+`collect_cycles` / `collect_cycles_with_context` (concurrent +
+generational arms) / `force_collect` 末尾、`AfterCollect` event 前
+调一次 `record(pause_us)`。
+
+桶边界（半开区间 `[lower, upper)`，微秒）：
+
+| i | 范围                       |
+|---|----------------------------|
+| 0 | `[0, 10) µs`               |
+| 1 | `[10, 100) µs`             |
+| 2 | `[100 µs, 1 ms)`           |
+| 3 | `[1, 10) ms`               |
+| 4 | `[10, 100) ms`             |
+| 5 | `[100 ms, 1 s)`            |
+| 6 | `[1, 10) s`                |
+| 7 | `[10 s, ∞)` (catastrophic) |
+
+**从 script 端读取**：
+
+```z42
+using Std;
+
+long[] buckets = GC.PauseHistogram();      // 8 elements
+long[] raw     = GC.PauseStatsRaw();       // [min, max, total, count]
+long count     = raw[3];
+if (count == 0) {
+    // No collect recorded yet — min_us is u64::MAX sentinel; skip.
+}
+```
+
+**对比不同 GcMode** —— 直方图跨 mode 切换累积（不重置）。Diff
+模式间分布：
+
+```z42
+long[] before = GC.PauseHistogram();
+GC.Collect();                              // warm up new mode
+// ... 若干 collect ...
+long[] after = GC.PauseHistogram();
+// after[i] - before[i] 是新 mode 下该桶的新增 collect 计数
+```
+
+**O(1) record 成本**：bucket lookup 是 7 个比较的 unrolled loop，
+加上一次 `Mutex<PauseHistogram>` lock + 4 saturating add。每次
+collect 已经是 µs–ms 级别，多这 ~ns 级别 overhead 可忽略。Mutex
+没替成 atomic — record 一次/collect 不在热路径，Mutex 简化保留。
+
+**Empty sentinel**：`min_us = u64::MAX` when `count == 0`，区分
+"没 collect 过" 与 "0 µs collect"（sub-µs collect round 到 0 是
+valid）。Script 端 / 消费端先检 `count == 0` 再读 `min_us`。
+
+**局限**（留给后续 perf spec）：
+
+- 固定 8 桶：用户读 p50/p95/p99 时只能粗略到桶（"p95 落在
+  [10, 100) ms"），不是精确分位数 — 精确化等 `add-gc-pause-tdigest`
+- 单一直方图聚合所有 mode：要 per-mode 比较只能 diff before/after
+  `set_mode`，等 `add-gc-pause-per-mode`
+- Cumulative 不滚动：长跑 server 看不到 "最近 1000 次 collect"
+  分布，等 `add-gc-pause-window`
+- 无 SLA hook：不能 "pause > 100ms 时 log warning"，等
+  `add-gc-pause-sla`
+
 ## Phase 路线（持续迭代）
 
 | Phase | 内容 | 状态 |
@@ -485,6 +552,7 @@ slot 触发 use-after-finalize panic）。修复：`run_cycle_collection_stw`
 | **A3 generational** | `GcMode::GenerationalMarkSweep` opt-in：RegionEntry gen_age + young_list + per-chunk card_dirty bitmap；write barrier 标记 old→young 跨代写；minor GC 扫 young + dirty cards (O(young) pause)；major GC 扫全堆 + 清 cards；survival rate >= 0.75 时 minor → major escalation。Bench: 1.40 ms minor vs 5.55 ms full STW on equivalent heap (**~4× minor speedup**) | ✅ 2026-05-22 add-generational-gc |
 | **C1 debug invariants** | `Region<T>::validate(&self) -> Result<(), Violation>` + `ArcMagrGC::debug_validate_invariants()` panicking wrapper（cfg debug_assertions）。每次 collect 末尾运行，验证 8 项 invariant（young_list ⇔ gen_age、free_list ⇔ alive、entry.location、card_dirty 长度、mark_queue 空、no stale mark bit）。Release 构建零开销 | ✅ 2026-05-22 add-gc-debug-invariants |
 | **C2 stress test** | Seeded xorshift64 random-workload driver + 4 tests (per-mode + mode-switching, ~2000 iters each)。Build on C1 validator。Discovered + fixed latent bug in concurrent's no-VmContext force_collect path (defensive reset_marks + mark_queue clear in run_cycle_collection_stw) | ✅ 2026-05-22 add-gc-stress-test |
+| **B5 pause histogram** | 8-bucket logarithmic histogram on `pause_us`（µs–10s+）+ min/max/total/count。每次 collect 记录；`HeapStats.pause_histogram` 字段 + `Std.GC.PauseHistogram()` / `Std.GC.PauseStatsRaw()` builtins 暴露给 script。Single histogram per heap，跨 mode 切换累积 | ✅ 2026-05-22 add-gc-pause-histogram |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -615,11 +683,26 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 - **Size**：~400 LOC，3-4 天
 - **Risk**：site ID 在 IR 持久化、跨 zpkg 唯一性
 
-#### B5. GC pause 直方图
-- **What**：内置 metrics 直方图（Prometheus 风格 buckets：< 1ms / 1-10 / 10-100 / ...）
-- **Why**：观察长尾 pause 分布，比单次 pause_us 更有信息量
-- **Deps**：无
-- **Size**：~200 LOC，2 天
+#### B5. GC pause 直方图（已落地，2026-05-22）
+- **状态**：✅ 完成，spec `add-gc-pause-histogram`
+- **What**：固定 8 桶对数直方图（边界 `[10, 100, 1K, 10K, 100K,
+  1M, 10M]` µs，覆盖 µs–10s+）+ min/max/total/count summary。
+  每次 collect 末尾 `record(pause_us)`；through `HeapStats` +
+  `Std.GC.PauseHistogram()` / `Std.GC.PauseStatsRaw()` 暴露给 script
+- **实现要点**：
+  - `PauseHistogram` 类型在 `gc/types.rs`；`min_us = u64::MAX`
+    sentinel 标 "empty"，caller 检 `count == 0` 再读
+  - `ArcMagrGC.pause_histogram: Mutex<PauseHistogram>` 单 instance
+    （per-heap，不 per-mode）；record 在每个 collect 路径
+    AfterCollect 事件前调用
+  - 2 个新 z42 builtins (`__gc_pause_histogram`,
+    `__gc_pause_stats_raw`) 直返 `long[8]` / `long[4]`，不引入新
+    TypeDesc — 简洁优先于结构化字段
+  - 直方图跨 mode 切换累积（不重置）；script 端 diff
+    before/after `set_mode` 拿 per-mode 分布
+- **延后**：t-digest 精确分位数、per-mode 直方图分裂、rolling
+  window、SLA hook — 详见
+  ["Pause histogram"](#pause-histogram-add-gc-pause-histogram-2026-05-22) 段
 
 ### C. 测试 / 调试质量
 
@@ -678,9 +761,9 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 
 如以工程成熟度优先：
 
-1. **C1 + C2 + C3**（debug invariants + stress + multi-VM）—— 巩固现有质量
+1. ~~**C1 + C2**（debug invariants + stress）~~ ✅ 已落地（2026-05-22）；剩 **C3**（multi-VM 隔离压测）—— 巩固现有质量
 2. **B1**（OOM exception）—— 嵌入用户最常请求的 ergonomics
-3. **B5**（pause 直方图）—— 低成本可观察性
+3. ~~**B5**（pause 直方图）~~ ✅ 已落地（2026-05-22）—— 低成本可观察性
 4. **B3**（heap snapshot 导出）—— 让现有工具链可用
 
 如以性能为优先：
