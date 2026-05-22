@@ -255,6 +255,184 @@ fn region_drop_does_not_touch_tombstoned_slots_double_drop() {
     assert_eq!(drop_count.load(Ordering::Acquire), 2);
 }
 
+// ── add-generational-gc P0 (2026-05-22) ────────────────────────────────────
+
+#[test]
+fn alloc_pushes_to_young_list_with_gen_age_zero() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(7);
+    assert_eq!(r.young_count(), 1);
+    let entry = r.resolve(h);
+    assert_eq!(entry.gen_age(), 0, "fresh alloc starts at gen_age=0");
+}
+
+#[test]
+fn promote_increments_gen_age() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    assert_eq!(r.resolve(h).gen_age(), 0);
+
+    let promoted_first = r.promote(h);
+    assert!(!promoted_first, "first promote (0→1) does not cross threshold yet");
+    assert_eq!(r.resolve(h).gen_age(), 1);
+    assert_eq!(r.young_count(), 1, "still in young_list after first promote");
+
+    let promoted_second = r.promote(h);
+    assert!(promoted_second, "second promote (1→2) crosses PROMOTION_THRESHOLD=2");
+    assert_eq!(r.resolve(h).gen_age(), 2);
+    assert_eq!(r.young_count(), 0, "removed from young_list at threshold");
+}
+
+#[test]
+fn promote_stale_handle_is_noop() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    r.tombstone(h);
+    let h2 = r.alloc(2); // reuses slot; h is stale
+
+    let result = r.promote(h);
+    assert!(!result, "stale handle promote → false");
+    // h2 still at gen_age=0
+    assert_eq!(r.resolve(h2).gen_age(), 0);
+}
+
+#[test]
+fn iterate_young_yields_only_young_entries() {
+    let mut r: Region<u64> = Region::new();
+    let h_young = r.alloc(10);
+    let h_to_promote = r.alloc(20);
+    // Promote h_to_promote 2 times → reaches threshold.
+    r.promote(h_to_promote);
+    r.promote(h_to_promote);
+
+    let mut seen = Vec::new();
+    r.iterate_young(|h, e| {
+        seen.push((h.entry_idx, *e.value.lock()));
+    });
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0], (h_young.entry_idx, 10),
+        "only h_young remains in young_list after h_to_promote is promoted");
+}
+
+#[test]
+fn iterate_young_skips_tombstoned_young_entries() {
+    let mut r: Region<u64> = Region::new();
+    let h_alive  = r.alloc(100);
+    let h_dead   = r.alloc(200);
+    r.tombstone(h_dead);
+
+    let mut seen = Vec::new();
+    r.iterate_young(|_h, e| {
+        seen.push(*e.value.lock());
+    });
+    assert_eq!(seen, vec![100], "tombstoned entry removed from young_list");
+    assert_eq!(r.young_count(), 1);
+    let _ = h_alive; // suppress unused
+}
+
+#[test]
+fn mark_card_dirty_sets_bit_at_chunk_offset() {
+    let mut r: Region<u64> = Region::new();
+    r.alloc(1); // ensures chunk 0 exists + card_dirty[0] initialized to 0
+
+    assert!(!r.is_card_dirty(0));
+    r.mark_card_dirty(0);
+    assert!(r.is_card_dirty(0));
+
+    // Out-of-range chunk index → no-op (defensive).
+    r.mark_card_dirty(999);
+    assert!(!r.is_card_dirty(999));
+}
+
+#[test]
+fn clear_card_dirty_resets_all_bits() {
+    let mut r: Region<u64> = Region::new();
+    // Force multiple chunks.
+    for i in 0..(2 * CHUNK_SIZE + 5) {
+        r.alloc(i as u64);
+    }
+    r.mark_card_dirty(0);
+    r.mark_card_dirty(1);
+    r.mark_card_dirty(2);
+    assert!(r.is_card_dirty(0));
+    assert!(r.is_card_dirty(1));
+    assert!(r.is_card_dirty(2));
+
+    r.clear_card_dirty();
+    assert!(!r.is_card_dirty(0));
+    assert!(!r.is_card_dirty(1));
+    assert!(!r.is_card_dirty(2));
+}
+
+#[test]
+fn iterate_dirty_cards_yields_all_entries_in_dirty_chunks() {
+    let mut r: Region<u64> = Region::new();
+    // Fill chunk 0 with 3 entries; mark chunk 0 dirty.
+    let _h0 = r.alloc(10);
+    let _h1 = r.alloc(20);
+    let _h2 = r.alloc(30);
+    // Allocate 1 into chunk 1 but don't mark.
+    let _h3 = r.alloc(40);
+
+    // Force chunk 1 — alloc CHUNK_SIZE - 3 more dummies to fill chunk 0,
+    // then 1 more for chunk 1.
+    for i in 0..(CHUNK_SIZE - 4) {
+        r.alloc(100 + i as u64);
+    }
+    let _h_chunk1 = r.alloc(999); // lands in chunk 1
+    assert!(r.chunks_count_for_test() >= 2);
+
+    r.mark_card_dirty(0);
+
+    let mut seen = Vec::new();
+    r.iterate_dirty_cards(|_h, e| {
+        seen.push(*e.value.lock());
+    });
+    // Chunk 0 had 4 alloc'd + (CHUNK_SIZE-4) dummies = CHUNK_SIZE entries.
+    assert_eq!(seen.len(), CHUNK_SIZE,
+        "all chunk-0 entries yielded as roots");
+}
+
+#[test]
+fn iterate_dirty_cards_skips_clean_chunks() {
+    let mut r: Region<u64> = Region::new();
+    let _h = r.alloc(1);
+    // No mark_card_dirty.
+    let mut seen = 0;
+    r.iterate_dirty_cards(|_h, _e| seen += 1);
+    assert_eq!(seen, 0, "no dirty cards → no entries visited");
+}
+
+#[test]
+fn tombstone_via_entry_removes_from_young_list() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(42);
+    assert_eq!(r.young_count(), 1);
+
+    // Take a pointer; the entry stays valid as long as region does.
+    let entry: *const RegionEntry<u64> = r.resolve(h);
+    let entry_ref = unsafe { &*entry };
+    r.tombstone_via_entry(entry_ref);
+
+    assert_eq!(r.young_count(), 0,
+        "tombstone_via_entry removes the entry from young_list");
+}
+
+#[test]
+fn tombstoned_old_entry_not_in_young_list_no_op() {
+    let mut r: Region<u64> = Region::new();
+    let h = r.alloc(1);
+    r.promote(h); // 0→1
+    r.promote(h); // 1→2, removed from young_list
+    assert_eq!(r.young_count(), 0);
+    assert_eq!(r.resolve(h).gen_age(), 2);
+
+    let ok = r.tombstone(h);
+    assert!(ok, "old entry tombstone succeeds");
+    // young_list was already empty; remove_from_young_list is a no-op.
+    assert_eq!(r.young_count(), 0);
+}
+
 #[test]
 fn region_drop_after_slot_reuse_drops_each_value_exactly_once() {
     use std::sync::atomic::AtomicUsize;

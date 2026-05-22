@@ -222,9 +222,16 @@ impl<T> GcRef<T> {
     /// `RegionEntry` pointer + generation for `ArcMagrGC` internal
     /// bookkeeping (sweep walks regions directly; this is the inverse
     /// — given a Value-held GcRef, find which entry to tombstone).
-    #[allow(dead_code)] // becomes used by P2 `Std.GC.Finalize(x)` builtin
     pub(crate) fn entry_ptr(&self) -> NonNull<RegionEntry<T>> {
         self.entry
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: read the entry's
+    /// current `gen_age`. Used by write barrier override under
+    /// `GcMode::GenerationalMarkSweep` to detect cross-gen writes.
+    /// Lock-free atomic load (`Relaxed`).
+    pub fn gen_age(this: &Self) -> u8 {
+        this.entry_ref().gen_age()
     }
 
     #[allow(dead_code)] // becomes used by P2 `Std.GC.Finalize(x)` builtin

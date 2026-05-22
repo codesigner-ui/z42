@@ -70,6 +70,14 @@ pub struct RegionEntry<T> {
     /// (prevents reading half-tombstoned state).
     pub(crate) alive: AtomicBool,
 
+    /// **add-generational-gc P0 (2026-05-22)**: generation age. 0 =
+    /// young (fresh alloc); incremented at each minor GC the entry
+    /// survives; >= `PROMOTION_THRESHOLD` means promoted to old gen.
+    /// Lock-free atomic read for the write-barrier hot path
+    /// (cross-gen detection). Promotion writes happen during STW
+    /// minor sweep, so no race.
+    pub(crate) gen_age: AtomicU8,
+
     /// Generation counter. Bumped on every tombstone. `GcRef` and
     /// `WeakGcRef` both record the generation at construction; access
     /// methods (`upgrade`, `borrow`) check the recorded generation
@@ -91,6 +99,12 @@ pub struct RegionEntry<T> {
     pub(crate) location: (u16, u16),
 }
 
+/// **add-generational-gc P0 (2026-05-22)**: number of minor GCs an
+/// entry must survive before being promoted to old generation
+/// (removed from `young_list`). Default = 2 (industry-standard Java
+/// tenure). Configurable via `Z42_GC_TENURE` env var (P3 wiring).
+pub const PROMOTION_THRESHOLD: u8 = 2;
+
 impl<T> RegionEntry<T> {
     /// Test / transitional constructor used by `GcRef::new` for
     /// standalone (no-Region) allocations. Wraps a fresh entry with
@@ -108,10 +122,19 @@ impl<T> RegionEntry<T> {
             value:      Mutex::new(value),
             marked:     AtomicU8::new(0),
             alive:      AtomicBool::new(true),
+            gen_age:    AtomicU8::new(0),
             generation: AtomicU32::new(0),
             finalizer:  Mutex::new(None),
             location,
         }
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: read current gen_age.
+    /// Used by write barrier override under `GenerationalMarkSweep`
+    /// mode to detect cross-gen writes.
+    #[inline]
+    pub fn gen_age(&self) -> u8 {
+        self.gen_age.load(Ordering::Relaxed)
     }
 
     /// Atomically attempt to mark this entry (0 → 1). Returns `true`
@@ -170,6 +193,24 @@ pub struct Region<T> {
     /// favors clarity.
     initialized: Vec<Vec<bool>>,
 
+    /// **add-generational-gc P0 (2026-05-22)**: track young entries
+    /// (gen_age < PROMOTION_THRESHOLD). Updated on alloc (push),
+    /// promote (swap_remove once threshold reached), and tombstone
+    /// (swap_remove if was young). Minor GC iterates this list for
+    /// O(young) cost instead of walking all chunks.
+    young_list: Vec<(u16, u16)>,
+
+    /// **add-generational-gc P0 (2026-05-22)**: per-chunk dirty card
+    /// bitmap. Bit `ci` set when an old→young write happened to an
+    /// entry in chunk `ci` (recorded by write barrier override under
+    /// `GenerationalMarkSweep` mode). Minor GC scans dirty chunks +
+    /// adds their entries as additional roots (in case any reaches
+    /// a young object).
+    ///
+    /// One `u32` per chunk — over-allocated for alignment + future
+    /// sub-chunk card granularity. v1 uses bit 0 only.
+    card_dirty: Vec<u32>,
+
     _phantom: PhantomData<T>,
 }
 
@@ -180,6 +221,8 @@ impl<T> Default for Region<T> {
             next_bump:   (0, 0),
             free_list:   Vec::new(),
             initialized: Vec::new(),
+            young_list:  Vec::new(),
+            card_dirty:  Vec::new(),
             _phantom:    PhantomData,
         }
     }
@@ -219,6 +262,8 @@ impl<T> Region<T> {
             // SAFETY: ptr-write replaces the old entry with new.
             // The old's Drop runs as part of the assignment.
             *slot = new_entry;
+            // add-generational-gc P0: reused slot starts at gen_age=0 (young).
+            self.young_list.push((ci, ei));
             return RegionHandle { chunk_idx: ci, entry_idx: ei, generation: gen };
         }
 
@@ -232,10 +277,14 @@ impl<T> Region<T> {
             });
             self.chunks.push(chunk);
             self.initialized.push(vec![false; CHUNK_SIZE]);
+            // add-generational-gc P0: grow card_dirty bitmap (one u32/chunk).
+            self.card_dirty.push(0);
         }
         let chunk = &mut self.chunks[ci as usize];
         chunk[ei as usize] = MaybeUninit::new(RegionEntry::new(value, (ci, ei)));
         self.initialized[ci as usize][ei as usize] = true;
+        // add-generational-gc P0: track newly-allocated entry as young.
+        self.young_list.push((ci, ei));
 
         // Advance next_bump.
         let next_ei = ei + 1;
@@ -272,6 +321,12 @@ impl<T> Region<T> {
     /// Returns `false` if the handle's generation no longer matches
     /// (slot was already tombstoned + reused — stale handle). In that
     /// case the call is a no-op.
+    ///
+    /// **add-generational-gc P0 (2026-05-22)**: also removes the
+    /// (chunk_idx, entry_idx) from `young_list` if the tombstoned
+    /// entry was still young (gen_age < PROMOTION_THRESHOLD). Old
+    /// entries weren't in young_list, so the lookup is a no-op for
+    /// them.
     pub fn tombstone(&mut self, handle: RegionHandle) -> bool {
         let entry = self.resolve(handle);
         if entry.generation.load(Ordering::Acquire) != handle.generation {
@@ -280,10 +335,143 @@ impl<T> Region<T> {
         if !entry.alive.load(Ordering::Acquire) {
             return false;
         }
+        let was_young = entry.gen_age() < PROMOTION_THRESHOLD;
         entry.alive.store(false, Ordering::Release);
         entry.generation.fetch_add(1, Ordering::AcqRel);
         self.free_list.push((handle.chunk_idx, handle.entry_idx));
+        if was_young {
+            self.remove_from_young_list(handle.chunk_idx, handle.entry_idx);
+        }
         true
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: helper to remove a
+    /// `(chunk_idx, entry_idx)` pair from `young_list` via
+    /// `swap_remove` (O(young_list.len()) lookup — acceptable since
+    /// tombstone is sweep-time work, not the alloc hot path).
+    fn remove_from_young_list(&mut self, ci: u16, ei: u16) {
+        if let Some(pos) = self.young_list.iter().position(|&p| p == (ci, ei)) {
+            self.young_list.swap_remove(pos);
+        }
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: increment the entry's
+    /// `gen_age`. If the new age reaches `PROMOTION_THRESHOLD`, the
+    /// entry is "promoted" — removed from `young_list` so subsequent
+    /// minor GCs don't visit it. Returns `true` iff the entry was
+    /// promoted in this call (transitioned `< threshold` →
+    /// `>= threshold`).
+    ///
+    /// Called by minor GC after sweep, on each surviving young entry.
+    pub fn promote(&mut self, handle: RegionHandle) -> bool {
+        let entry = self.resolve(handle);
+        // Guard against stale handle: only promote alive entries with
+        // matching generation.
+        if !entry.alive.load(Ordering::Acquire)
+            || entry.generation.load(Ordering::Acquire) != handle.generation
+        {
+            return false;
+        }
+        let prev = entry.gen_age.fetch_add(1, Ordering::AcqRel);
+        let new_age = prev.saturating_add(1);
+        if prev < PROMOTION_THRESHOLD && new_age >= PROMOTION_THRESHOLD {
+            // Transition: young → old. Remove from young_list.
+            self.remove_from_young_list(handle.chunk_idx, handle.entry_idx);
+            true
+        } else {
+            false
+        }
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: walk every entry in
+    /// `young_list`. O(young) iteration cost. Order: insertion order
+    /// (last-promoted entries swap-removed; insertion order otherwise).
+    pub fn iterate_young(&self, mut visit: impl FnMut(RegionHandle, &RegionEntry<T>)) {
+        for &(ci, ei) in &self.young_list {
+            if !self.initialized[ci as usize][ei as usize] {
+                continue;
+            }
+            let slot = &self.chunks[ci as usize][ei as usize];
+            let entry = unsafe { slot.assume_init_ref() };
+            if !entry.alive.load(Ordering::Acquire) {
+                continue;
+            }
+            let h = RegionHandle {
+                chunk_idx:  ci,
+                entry_idx:  ei,
+                generation: entry.generation.load(Ordering::Acquire),
+            };
+            visit(h, entry);
+        }
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: number of entries in
+    /// young_list (for diagnostics + escalation heuristic).
+    pub fn young_count(&self) -> usize {
+        self.young_list.len()
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: mark a chunk's card
+    /// as dirty. Called by write barrier override under
+    /// `GenerationalMarkSweep` when an old entry writes a young
+    /// reference into one of its slots. The minor GC re-roots from
+    /// dirty cards so the young target isn't incorrectly swept.
+    pub fn mark_card_dirty(&mut self, chunk_idx: u16) {
+        let ci = chunk_idx as usize;
+        if ci < self.card_dirty.len() {
+            self.card_dirty[ci] |= 1u32;
+        }
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: query a chunk's
+    /// card-dirty state. Mostly for tests; minor GC iterates via
+    /// `iterate_dirty_cards`.
+    pub fn is_card_dirty(&self, chunk_idx: u16) -> bool {
+        let ci = chunk_idx as usize;
+        ci < self.card_dirty.len() && (self.card_dirty[ci] & 1u32) != 0
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: reset all card-dirty
+    /// bits. Called at end of minor / major GC so the next minor
+    /// cycle starts fresh.
+    pub fn clear_card_dirty(&mut self) {
+        for bit in &mut self.card_dirty {
+            *bit = 0;
+        }
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: walk every entry in
+    /// dirty chunks. Minor GC uses this to re-root entries in
+    /// chunks that received old→young writes since the last collect.
+    ///
+    /// Callback receives entries regardless of `gen_age` — the
+    /// caller filters (typically: re-root old entries to find their
+    /// young children for marking).
+    pub fn iterate_dirty_cards(&self, mut visit: impl FnMut(RegionHandle, &RegionEntry<T>)) {
+        for (ci, card) in self.card_dirty.iter().enumerate() {
+            if (*card & 1u32) == 0 {
+                continue;
+            }
+            if ci >= self.chunks.len() {
+                continue;
+            }
+            for ei in 0..CHUNK_SIZE {
+                if !self.initialized[ci][ei] {
+                    continue;
+                }
+                let slot = &self.chunks[ci][ei];
+                let entry = unsafe { slot.assume_init_ref() };
+                if !entry.alive.load(Ordering::Acquire) {
+                    continue;
+                }
+                let h = RegionHandle {
+                    chunk_idx:  ci as u16,
+                    entry_idx:  ei as u16,
+                    generation: entry.generation.load(Ordering::Acquire),
+                };
+                visit(h, entry);
+            }
+        }
     }
 
     /// Iterate every currently-alive entry. Skips uninit slots in
@@ -319,14 +507,21 @@ impl<T> Region<T> {
     /// The `(u16::MAX, u16::MAX)` sentinel (test-only entries from
     /// `GcRef::new` Box::leak) skips the free-list push — those
     /// entries aren't in any Region, just leaked.
+    ///
+    /// **add-generational-gc P0 (2026-05-22)**: also removes from
+    /// `young_list` if the entry was young.
     pub fn tombstone_via_entry(&mut self, entry: &RegionEntry<T>) -> bool {
         if !entry.alive.swap(false, Ordering::Release) {
             return false;
         }
+        let was_young = entry.gen_age() < PROMOTION_THRESHOLD;
         entry.generation.fetch_add(1, Ordering::AcqRel);
         let (ci, ei) = entry.location;
         if ci != u16::MAX {
             self.free_list.push((ci, ei));
+            if was_young {
+                self.remove_from_young_list(ci, ei);
+            }
         }
         true
     }
@@ -344,6 +539,13 @@ impl<T> Region<T> {
     #[allow(dead_code)]
     pub(crate) fn total_capacity(&self) -> usize {
         self.chunks.len() * CHUNK_SIZE
+    }
+
+    /// **add-generational-gc P0 (2026-05-22)**: chunk count for tests
+    /// + diagnostics.
+    #[cfg(test)]
+    pub(crate) fn chunks_count_for_test(&self) -> usize {
+        self.chunks.len()
     }
 
     /// Number of free slots available without growing (`free_list +
