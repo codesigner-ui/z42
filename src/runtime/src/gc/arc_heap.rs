@@ -535,6 +535,192 @@ impl ArcMagrGC {
         }
     }
 
+    /// **add-generational-gc P2 (2026-05-22)**: read the gen_age of
+    /// any `Value`. Returns 0 for primitives + stack refs (irrelevant
+    /// to generational dispatch — mark/sweep already handles those).
+    fn gen_age_of(v: &Value) -> u8 {
+        match v {
+            Value::Object(gc) => GcRef::gen_age(gc),
+            Value::Array(gc)  => GcRef::gen_age(gc),
+            Value::Closure { env, .. } => GcRef::gen_age(env),
+            Value::Ref { kind } => match kind {
+                crate::metadata::types::RefKind::Array { gc_ref, .. } => GcRef::gen_age(gc_ref),
+                crate::metadata::types::RefKind::Field { gc_ref, .. } => GcRef::gen_age(gc_ref),
+                crate::metadata::types::RefKind::Stack { .. } => 0,
+            },
+            _ => 0,
+        }
+    }
+
+    /// **add-generational-gc P2 (2026-05-22)**: mark phase for minor GC.
+    ///
+    /// Roots = pinned roots + external_root_scanner output + entries
+    /// in dirty card chunks of both regions. The latter ensures any
+    /// old object that has received a young-pointer write since the
+    /// last major GC is treated as an additional root.
+    ///
+    /// BFS marks every reachable entry. When tracing children, only
+    /// young children (gen_age < PROMOTION_THRESHOLD) are pushed to
+    /// the queue. Old children are skipped — either they have no
+    /// young descendants (otherwise they'd be in dirty cards via the
+    /// barrier), or their old→young paths are seeded as separate
+    /// dirty-card roots. This bounds minor mark work at O(young +
+    /// |dirty-card entries|).
+    fn mark_phase_minor(&self) -> usize {
+        let threshold = super::region::PROMOTION_THRESHOLD;
+        let mut queue: Vec<Value> = Vec::new();
+
+        // Pinned roots + external scanner.
+        queue.extend(self.inner.lock().roots.values().cloned());
+        {
+            let scanner = self.external_root_scanner.lock();
+            if let Some(scan) = scanner.as_ref() {
+                scan(&mut |v| queue.push(v.clone()));
+            }
+        }
+
+        // Dirty card roots — all entries in dirty chunks of both regions.
+        {
+            let region = self.region_object.lock();
+            region.iterate_dirty_cards(|h, entry| {
+                let entry_ptr = std::ptr::NonNull::from(entry);
+                // SAFETY: handle came from iterate_dirty_cards; entry
+                // is alive + generation matches at iteration time.
+                let gc = unsafe { GcRef::from_region_entry(entry_ptr, h.generation) };
+                queue.push(Value::Object(gc));
+            });
+        }
+        {
+            let region = self.region_array.lock();
+            region.iterate_dirty_cards(|h, entry| {
+                let entry_ptr = std::ptr::NonNull::from(entry);
+                let gc = unsafe { GcRef::from_region_entry(entry_ptr, h.generation) };
+                queue.push(Value::Array(gc));
+            });
+        }
+
+        let mut marked = 0usize;
+        while let Some(v) = queue.pop() {
+            let just_marked = Self::mark_if_unmarked(&v);
+            if !just_marked { continue; }
+            marked += 1;
+
+            v.trace_children(&mut |child| {
+                // Only enqueue young children. Old children that need
+                // re-rooting are already covered via dirty cards.
+                if Self::gen_age_of(child) < threshold {
+                    queue.push(child.clone());
+                }
+            });
+        }
+        marked
+    }
+
+    /// **add-generational-gc P2 (2026-05-22)**: sweep phase for minor GC.
+    ///
+    /// Walks `young_list` in both regions; for each entry:
+    /// - `is_marked == true` → clear mark, increment gen_age (promote
+    ///   to next age tier); if reaches threshold, region.promote()
+    ///   removes from young_list.
+    /// - `is_marked == false` → fire finalizer, tombstone (alive=false,
+    ///   generation++, push to free_list AND remove from young_list).
+    ///
+    /// Old entries are NOT visited — major GC handles them.
+    /// card_dirty is NOT cleared by minor (stable old→young refs need
+    /// to keep their cards dirty until major scans them).
+    fn sweep_phase_young_only(&self) -> u64 {
+        let mut freed_bytes: u64 = 0;
+
+        // Object region
+        let mut tombstones_object: Vec<(super::region::RegionHandle, Option<FinalizerFn>, u64)> = Vec::new();
+        let mut survivors_object: Vec<super::region::RegionHandle> = Vec::new();
+        {
+            let region = self.region_object.lock();
+            region.iterate_young(|h, entry| {
+                if entry.is_marked() {
+                    entry.clear_mark();
+                    survivors_object.push(h);
+                } else {
+                    let size = {
+                        let obj = entry.value.lock();
+                        Self::script_object_size_estimate(&obj)
+                    };
+                    let fin = entry.finalizer.lock().take();
+                    tombstones_object.push((h, fin, size));
+                }
+            });
+        }
+        // Promote survivors (may remove some from young_list at threshold).
+        for h in survivors_object {
+            self.region_object.lock().promote(h);
+        }
+        // Tombstone dead young entries.
+        for (h, fin, size) in tombstones_object {
+            if let Some(f) = fin { f(); }
+            freed_bytes += size;
+            {
+                let region = self.region_object.lock();
+                let entry = region.resolve(h);
+                if entry.alive.load(std::sync::atomic::Ordering::Acquire) {
+                    let mut obj = entry.value.lock();
+                    for slot in obj.slots.iter_mut() {
+                        *slot = Value::Null;
+                    }
+                }
+            }
+            self.region_object.lock().tombstone(h);
+        }
+
+        // Array region (parallel logic)
+        let mut tombstones_array: Vec<(super::region::RegionHandle, Option<FinalizerFn>, u64)> = Vec::new();
+        let mut survivors_array: Vec<super::region::RegionHandle> = Vec::new();
+        {
+            let region = self.region_array.lock();
+            region.iterate_young(|h, entry| {
+                if entry.is_marked() {
+                    entry.clear_mark();
+                    survivors_array.push(h);
+                } else {
+                    let size = {
+                        let arr = entry.value.lock();
+                        Self::array_size_estimate(&arr)
+                    };
+                    let fin = entry.finalizer.lock().take();
+                    tombstones_array.push((h, fin, size));
+                }
+            });
+        }
+        for h in survivors_array {
+            self.region_array.lock().promote(h);
+        }
+        for (h, fin, size) in tombstones_array {
+            if let Some(f) = fin { f(); }
+            freed_bytes += size;
+            {
+                let region = self.region_array.lock();
+                let entry = region.resolve(h);
+                if entry.alive.load(std::sync::atomic::Ordering::Acquire) {
+                    entry.value.lock().clear();
+                }
+            }
+            self.region_array.lock().tombstone(h);
+        }
+
+        freed_bytes
+    }
+
+    /// **add-generational-gc P2 (2026-05-22)**: full minor GC cycle.
+    /// Mark phase (young + dirty cards) → sweep phase (young only) →
+    /// returns freed_bytes estimate. Card dirty bits are NOT cleared
+    /// here — they accumulate across minors and are only cleared by
+    /// the next major GC. This preserves correctness for stable
+    /// old→young references (whose cards were dirtied at the time of
+    /// the write but the target young object hasn't yet been promoted).
+    fn run_cycle_collection_minor(&self) -> u64 {
+        let _newly_marked = self.mark_phase_minor();
+        self.sweep_phase_young_only()
+    }
+
     /// **add-generational-gc P1 (2026-05-22)**: cross-gen detection
     /// helper for the write-barrier override. Marks the owner's chunk
     /// dirty when `owner.gen_age >= PROMOTION_THRESHOLD` (old) AND
@@ -868,11 +1054,14 @@ impl ArcMagrGC {
                 self.run_cycle_collection_stw()
             }
             super::GcMode::GenerationalMarkSweep => {
-                // add-generational-gc P1: dispatch stub — same STW path.
-                // P2 will replace with minor/major dispatch. Until then
-                // every collect is a full STW collect; the gen_age +
-                // young_list bookkeeping is silent.
-                self.run_cycle_collection_stw()
+                // add-generational-gc P2: minor GC by default. Major
+                // GC requires the VmContext-aware entry
+                // (`collect_cycles_with_context`) for pause coord;
+                // direct callers of `collect_cycles` (which go through
+                // `force_collect`) get a minor cycle here. Major is
+                // P3's expansion (auto-collect young pressure trigger
+                // + escalation heuristic).
+                self.run_cycle_collection_minor()
             }
         }
     }
