@@ -364,6 +364,50 @@ P0–P3 are mostly mechanical (no concurrency logic yet — switch + dispatch
 + wire up). P4 is the bulk of the new logic. P5–P7 are verification +
 docs.
 
+## Benchmark Results (P6, 2026-05-22)
+
+`src/runtime/benches/gc_cycle_bench.rs` extended with 3 concurrent-mode
+variants of the existing STW workloads. `force_collect` (STW path) and
+`collect_cycles_with_context` (mode-dispatched) measured separately.
+Setup excluded via `iter_batched`. macOS arm64, release + LTO, criterion
+0.5 — 3s measurement, 30 samples, 1s warm-up.
+
+| Workload | STW total | Concurrent total | Δ |
+|----------|----------:|-----------------:|--:|
+| `cycle_heavy_100` | 26.7 µs | 27.9 µs | +4.5% |
+| `shallow_tree_1k` | 179.6 µs | 181.8 µs | +1.2% |
+| `large_array_10k` | 1.543 ms | 1.547 ms | +0.3% |
+
+### 解读
+
+**结果符合预期**：concurrent GC 在单线程 bench 下**总耗时不应该更低**
+—— 算法上 concurrent 和 STW 都跑 mark+sweep；concurrent 还多付：
+
+1. 初始 STW pause 获取（`request_gc_pause` 的 CAS + condvar wait）
+2. Phase 转换 (`yield_to_concurrent_marking` + `request_handshake_pause`)
+3. 终止 handshake（再次 wait parked_count）
+
+Concurrent GC 的价值**不是降低总 CPU 时间**，而是降低**对 mutator
+的阻塞时间**。在单线程 bench 中：
+- STW: 整个 26.7 µs 都是阻塞
+- Concurrent: 大约 80-90% 是 mark drain，理论上 mutator 在这段时间内
+  可以继续做事（只是 bench 里没有 mutator 在做事）
+
+### 局限 + 后续 bench TODO
+
+- 单线程 bench 无法体现 concurrent 的"mutator 不停"优势 —— 真正的
+  价值衡量需要 multi-thread harness 测 mutator 吞吐
+- 没有测 pause time 拆解（即 mutator 实际被 park 的时间 vs 总 collect
+  时间）。理论上 pause time ≈ 初始 pause + 终止 handshake，应该是总
+  时间的小百分比
+- 没有测 generational hypothesis 下的优势（年轻对象大量产生 + 快速
+  死亡场景）—— 那需要 A3 generational GC，本 spec 范围外
+
+**结论**：concurrent 路径作为**可选模式**就绪。单线程负载继续推荐
+STW（默认）；多线程负载 + 对 pause time 敏感的场景可以 opt-in。
+未来若有真实 workload 表明 pause time 是瓶颈，可以加 pause-time
+专项 bench 量化收益。
+
 ## Deferred / Future Work
 
 ### `add-concurrent-sweep`

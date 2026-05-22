@@ -26,8 +26,9 @@ use criterion::{
     black_box, criterion_group, criterion_main, BatchSize, Criterion,
 };
 
-use z42::gc::{ArcMagrGC, MagrGC};
+use z42::gc::{ArcMagrGC, GcMode, MagrGC};
 use z42::metadata::{tokens::TypeId, NativeData, TypeDesc, Value};
+use z42::vm_context::VmContext;
 
 fn make_type_desc(name: &str) -> Arc<TypeDesc> {
     Arc::new(TypeDesc {
@@ -46,7 +47,7 @@ fn make_type_desc(name: &str) -> Arc<TypeDesc> {
     })
 }
 
-fn build_cycle_heavy(heap: &ArcMagrGC, num_cycles: usize) {
+fn build_cycle_heavy(heap: &dyn MagrGC, num_cycles: usize) {
     let td = make_type_desc("Cycle");
     for _ in 0..num_cycles {
         let a = heap.alloc_object(td.clone(), vec![Value::Null], NativeData::None);
@@ -61,7 +62,7 @@ fn build_cycle_heavy(heap: &ArcMagrGC, num_cycles: usize) {
     }
 }
 
-fn build_shallow_tree(heap: &ArcMagrGC) -> Value {
+fn build_shallow_tree(heap: &dyn MagrGC) -> Value {
     // 1 root → 10 children → each 10 grandchildren → each 10 great-grandchildren
     // Total = 1 + 10 + 100 + 1000 = 1111 nodes.
     let td = make_type_desc("Node");
@@ -86,7 +87,7 @@ fn build_shallow_tree(heap: &ArcMagrGC) -> Value {
     heap.alloc_object(td, vec![top_arr], NativeData::None)
 }
 
-fn build_large_array(heap: &ArcMagrGC, n: usize) -> Value {
+fn build_large_array(heap: &dyn MagrGC, n: usize) -> Value {
     let td = make_type_desc("Elem");
     let elems: Vec<Value> = (0..n)
         .map(|_| heap.alloc_object(td.clone(), vec![Value::Null], NativeData::None))
@@ -153,10 +154,85 @@ fn bench_large_array_10k(c: &mut Criterion) {
     });
 }
 
+// ── add-concurrent-gc P6 (2026-05-22): ConcurrentMarkSweep variants ────────
+//
+// Mirror of the 3 STW benches above but routes through VmContext +
+// `collect_cycles_with_context` so the concurrent multi-phase flow runs
+// (snapshot → yield → drain → handshake → sweep). Wall-clock total is
+// what's measured; this includes the brief STW periods + the concurrent
+// mark window. A real "mutator throughput" comparison would need a
+// separate harness — for now the wall-clock anchor lets us see if the
+// concurrent flow's overhead is in the right order of magnitude.
+
+fn bench_cycle_heavy_100_concurrent(c: &mut Criterion) {
+    c.bench_function("gc_cycle/concurrent_cycle_heavy_100", |b| {
+        b.iter_batched(
+            || {
+                let ctx = VmContext::new();
+                ctx.heap().set_mode(GcMode::ConcurrentMarkSweep);
+                ctx.heap().pause();
+                build_cycle_heavy(ctx.heap(), 100);
+                ctx.heap().resume();
+                ctx
+            },
+            |ctx| {
+                ctx.heap().collect_cycles_with_context(&ctx);
+                black_box(&ctx);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_shallow_tree_1k_concurrent(c: &mut Criterion) {
+    c.bench_function("gc_cycle/concurrent_shallow_tree_1k", |b| {
+        b.iter_batched(
+            || {
+                let ctx = VmContext::new();
+                ctx.heap().set_mode(GcMode::ConcurrentMarkSweep);
+                ctx.heap().pause();
+                let root = build_shallow_tree(ctx.heap());
+                let _pin = ctx.heap().pin_root(root);
+                ctx.heap().resume();
+                ctx
+            },
+            |ctx| {
+                ctx.heap().collect_cycles_with_context(&ctx);
+                black_box(&ctx);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_large_array_10k_concurrent(c: &mut Criterion) {
+    c.bench_function("gc_cycle/concurrent_large_array_10k", |b| {
+        b.iter_batched(
+            || {
+                let ctx = VmContext::new();
+                ctx.heap().set_mode(GcMode::ConcurrentMarkSweep);
+                ctx.heap().pause();
+                let arr = build_large_array(ctx.heap(), 10_000);
+                let _pin = ctx.heap().pin_root(arr);
+                ctx.heap().resume();
+                ctx
+            },
+            |ctx| {
+                ctx.heap().collect_cycles_with_context(&ctx);
+                black_box(&ctx);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     benches,
     bench_cycle_heavy_100,
     bench_shallow_tree_1k,
     bench_large_array_10k,
+    bench_cycle_heavy_100_concurrent,
+    bench_shallow_tree_1k_concurrent,
+    bench_large_array_10k_concurrent,
 );
 criterion_main!(benches);
