@@ -32,6 +32,7 @@ mod cycle_collection;
 mod events;
 mod finalization;
 mod generational;
+mod invariants;
 mod mark_phase;
 mod mode_selection;
 mod object_model;

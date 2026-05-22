@@ -548,6 +548,14 @@ impl<T> Region<T> {
         self.chunks.len()
     }
 
+    /// **add-gc-debug-invariants P1 (2026-05-22)**: test-only corruption
+    /// injection helper — clears `young_list` directly so the next
+    /// `validate()` reports `YoungEntryNotInList`.
+    #[cfg(test)]
+    pub(crate) fn clear_young_list_for_test(&mut self) {
+        self.young_list.clear();
+    }
+
     /// Number of free slots available without growing (`free_list +
     /// remaining bump capacity in current chunk`). Used by P3 bench
     /// + diagnostics.

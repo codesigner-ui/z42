@@ -351,6 +351,14 @@ impl ArcMagrGC {
         self.mark_queue.lock().clone()
     }
 
+    /// **add-gc-debug-invariants P1 (2026-05-22)**: test-only mutable
+    /// access to the mark queue for injecting corruption (e.g. leaving
+    /// stale entries to verify validate panics).
+    #[cfg(test)]
+    pub(crate) fn mark_queue_for_test_mut(&self) -> parking_lot::MutexGuard<'_, Vec<Value>> {
+        self.mark_queue.lock()
+    }
+
     /// **add-concurrent-gc P2 (2026-05-22)**: test-only entry to the
     /// `mark_if_unmarked` static helper.
     #[cfg(test)]
@@ -377,6 +385,62 @@ impl ArcMagrGC {
     #[cfg(test)]
     pub(crate) fn minor_escalation_threshold_for_test() -> f32 {
         Self::minor_escalation_threshold()
+    }
+
+    /// **add-gc-debug-invariants P1 (2026-05-22)**: post-collect
+    /// invariant check. Validates both regions + heap-wide invariants.
+    /// Panics on first violation with a descriptive message. Release
+    /// builds compile this method body out entirely via the cfg gate
+    /// at the call site.
+    ///
+    /// Invariants checked:
+    /// - `region_object` + `region_array`: see
+    ///   [`super::region::Region::validate`]
+    /// - `mark_queue` is empty post-collect (concurrent mark must
+    ///   drain to empty before sweep; STW + generational never use
+    ///   the queue)
+    /// - No alive entry has `marked == 1` (sweep clears marks on
+    ///   survivors; orphaned mark bit = bug)
+    #[cfg(debug_assertions)]
+    pub(crate) fn debug_validate_invariants(&self) {
+        // 1. Per-region invariants.
+        if let Err(v) = self.region_object.lock().validate() {
+            panic!("region_object invariant violation: {}", v);
+        }
+        if let Err(v) = self.region_array.lock().validate() {
+            panic!("region_array invariant violation: {}", v);
+        }
+
+        // 2. mark_queue must be empty post-collect.
+        let q_len = self.mark_queue.lock().len();
+        if q_len != 0 {
+            panic!(
+                "mark_queue stale post-collect: {} entries remaining",
+                q_len
+            );
+        }
+
+        // 3. No alive entry should carry marked=1 post-sweep.
+        //    iterate_alive walks heap-registry-equivalent (regions).
+        let region_object = self.region_object.lock();
+        region_object.iterate_alive(|h, e| {
+            if e.is_marked() {
+                panic!(
+                    "stale mark bit in region_object after sweep: chunk={}, entry={}",
+                    h.chunk_idx, h.entry_idx
+                );
+            }
+        });
+        drop(region_object);
+        let region_array = self.region_array.lock();
+        region_array.iterate_alive(|h, e| {
+            if e.is_marked() {
+                panic!(
+                    "stale mark bit in region_array after sweep: chunk={}, entry={}",
+                    h.chunk_idx, h.entry_idx
+                );
+            }
+        });
     }
 
     #[cfg(test)]
@@ -1662,6 +1726,8 @@ impl MagrGC for ArcMagrGC {
 
                 // pause Drop releases the world.
                 drop(pause);
+                #[cfg(debug_assertions)]
+                self.debug_validate_invariants();
             }
             super::GcMode::GenerationalMarkSweep => {
                 // add-generational-gc P3 (2026-05-22): minor + escalation.
@@ -1721,6 +1787,8 @@ impl MagrGC for ArcMagrGC {
                 self.fire_event(GcEvent::AfterCollect {
                     kind: GcKind::CycleCollector, freed_bytes, pause_us,
                 });
+                #[cfg(debug_assertions)]
+                self.debug_validate_invariants();
             }
         }
     }
@@ -1744,6 +1812,10 @@ impl MagrGC for ArcMagrGC {
         self.fire_event(GcEvent::AfterCollect {
             kind: GcKind::CycleCollector, freed_bytes, pause_us,
         });
+        // **add-gc-debug-invariants P1 (2026-05-22)**: post-collect
+        // invariant check. Release builds compile this out entirely.
+        #[cfg(debug_assertions)]
+        self.debug_validate_invariants();
     }
 
     fn force_collect(&self) -> CollectStats {
