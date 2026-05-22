@@ -371,6 +371,14 @@ impl ArcMagrGC {
         &self.region_array
     }
 
+    /// **add-generational-gc P3 (2026-05-22)**: test-only entry to the
+    /// minor escalation threshold (used by tests; production reads via
+    /// minor_escalation_threshold() in the dispatch path).
+    #[cfg(test)]
+    pub(crate) fn minor_escalation_threshold_for_test() -> f32 {
+        Self::minor_escalation_threshold()
+    }
+
     #[cfg(test)]
     fn fire_barrier_field(&self, owner: &Value, slot: usize, new: &Value) {
         if let Some(obs) = self.barrier_observer.lock().as_ref() {
@@ -719,6 +727,45 @@ impl ArcMagrGC {
     fn run_cycle_collection_minor(&self) -> u64 {
         let _newly_marked = self.mark_phase_minor();
         self.sweep_phase_young_only()
+    }
+
+    /// **add-generational-gc P3 (2026-05-22)**: full major GC cycle.
+    /// Same as `run_cycle_collection_stw` (mark whole heap from
+    /// roots; sweep all entries) PLUS clears `card_dirty` at the end
+    /// (cross-gen references are now fully traced; cards can reset
+    /// for the next round of minors).
+    fn run_cycle_collection_major(&self) -> u64 {
+        let freed = self.run_cycle_collection_stw();
+        // Major scanned the whole heap → cards no longer track
+        // anything we don't already know. Clear so the next minor
+        // starts with a fresh dirty set.
+        self.region_object.lock().clear_card_dirty();
+        self.region_array.lock().clear_card_dirty();
+        freed
+    }
+
+    /// **add-generational-gc P3 (2026-05-22)**: escalation threshold
+    /// (configurable via `Z42_GC_MINOR_THRESHOLD` env var). If the
+    /// fraction of young entries surviving a minor GC exceeds this
+    /// threshold, the next collect is escalated to major immediately.
+    /// Default 0.75: if >75% survive, minor isn't recovering much.
+    #[allow(dead_code)] // wired in collect_cycles_with_context below
+    fn minor_escalation_threshold() -> f32 {
+        use std::sync::OnceLock;
+        static CACHE: OnceLock<f32> = OnceLock::new();
+        *CACHE.get_or_init(|| match std::env::var("Z42_GC_MINOR_THRESHOLD") {
+            Ok(s) => match s.parse::<f32>() {
+                Ok(v) if v > 0.0 && v <= 1.0 => v,
+                _ => {
+                    eprintln!(
+                        "z42: invalid Z42_GC_MINOR_THRESHOLD={:?}; using default 0.75",
+                        s
+                    );
+                    0.75
+                }
+            },
+            Err(_) => 0.75,
+        })
     }
 
     /// **add-generational-gc P1 (2026-05-22)**: cross-gen detection
@@ -1617,13 +1664,63 @@ impl MagrGC for ArcMagrGC {
                 drop(pause);
             }
             super::GcMode::GenerationalMarkSweep => {
-                // add-generational-gc P1: dispatch stub — same STW
-                // path as default. P2/P3 add minor/major routing.
-                // Until then bookkeeping (young_list, cards) is
-                // populated but never read; behavior identical to STW.
-                if let Some(_pause) = super::safepoint::request_gc_pause(ctx) {
-                    self.collect_cycles();
+                // add-generational-gc P3 (2026-05-22): minor + escalation.
+                // Run a minor first; if survival rate >= threshold,
+                // escalate to major in the same STW pause window.
+                let _pause = match super::safepoint::request_gc_pause(ctx) {
+                    Some(p) => p,
+                    None => return,
+                };
+                if self.inner.lock().pause_count > 0 { return; }
+
+                let start = Self::now_us();
+                let used_before = self.inner.lock().stats.used_bytes;
+                self.fire_event(GcEvent::BeforeCollect {
+                    kind: GcKind::CycleCollector, used_bytes: used_before,
+                });
+
+                // Measure young population pre-minor for escalation calc.
+                let young_before = {
+                    let r_obj = self.region_object.lock();
+                    let r_arr = self.region_array.lock();
+                    r_obj.young_count() + r_arr.young_count()
+                };
+
+                let mut freed_bytes = self.run_cycle_collection_minor();
+
+                // Survival rate: how much of young survived (not
+                // tombstoned) AND was promoted out. Easier measured:
+                // 1 - tombstoned_fraction; even easier: post young_count
+                // / young_before. High survival → escalate.
+                let young_after = {
+                    let r_obj = self.region_object.lock();
+                    let r_arr = self.region_array.lock();
+                    r_obj.young_count() + r_arr.young_count()
+                };
+
+                if young_before > 0 {
+                    // survival_rate = young_after / young_before (the
+                    // entries still classed as young after minor —
+                    // promoted entries also "survive" but leave
+                    // young_list, so this is roughly the
+                    // "not-tombstoned-and-not-promoted" rate).
+                    let survival = young_after as f32 / young_before as f32;
+                    if survival >= Self::minor_escalation_threshold() {
+                        // Major in same pause window.
+                        freed_bytes += self.run_cycle_collection_major();
+                    }
                 }
+
+                {
+                    let mut i = self.inner.lock();
+                    i.stats.gc_cycles += 1;
+                    i.stats.used_bytes = i.stats.used_bytes.saturating_sub(freed_bytes);
+                }
+                self.maybe_reset_near_limit_warned();
+                let pause_us = Self::now_us().saturating_sub(start);
+                self.fire_event(GcEvent::AfterCollect {
+                    kind: GcKind::CycleCollector, freed_bytes, pause_us,
+                });
             }
         }
     }
