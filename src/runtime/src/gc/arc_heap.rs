@@ -1230,6 +1230,48 @@ impl MagrGC for ArcMagrGC {
         self.mode.store(mode as u8, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// **add-custom-allocator P2 (2026-05-22)**: explicit finalize.
+    /// Wired to `Std.GC.Finalize(x)` z42 builtin.
+    ///
+    /// Steps (per design D3):
+    /// 1. Look up the `RegionEntry` from the Value's GcRef.
+    /// 2. Take the finalizer (one-shot via `Mutex<Option>` swap).
+    /// 3. If a finalizer was registered: fire it; tombstone the entry
+    ///    (alive=false, generation++, push slot to free_list).
+    /// 4. Otherwise: still tombstone the entry — caller asked for it
+    ///    to be collected.
+    ///
+    /// Returns `true` iff a finalizer was actually fired by this call.
+    fn finalize_now(&self, value: &Value) -> bool {
+        match value {
+            Value::Object(gc) => {
+                let entry_ptr = gc.entry_ptr();
+                // SAFETY: GcRef contract guarantees entry pointer is
+                // valid for the lifetime of the GcRef. We're under
+                // the trait dispatch path; caller's Value parameter
+                // keeps the GcRef alive throughout.
+                let entry: &super::region::RegionEntry<ScriptObject> = unsafe { entry_ptr.as_ref() };
+                let fin = entry.finalizer.lock().take();
+                let fired = fin.is_some();
+                if let Some(f) = fin { f(); }
+                let mut region = self.region_object.lock();
+                region.tombstone_via_entry(entry);
+                fired
+            }
+            Value::Array(gc) => {
+                let entry_ptr = gc.entry_ptr();
+                let entry: &super::region::RegionEntry<Vec<Value>> = unsafe { entry_ptr.as_ref() };
+                let fin = entry.finalizer.lock().take();
+                let fired = fin.is_some();
+                if let Some(f) = fin { f(); }
+                let mut region = self.region_array.lock();
+                region.tombstone_via_entry(entry);
+                fired
+            }
+            _ => false,
+        }
+    }
+
     /// **add-concurrent-gc P4b (2026-05-22)**: VmContext-aware collect
     /// dispatch. STW mode follows the proven path (request pause →
     /// collect_cycles); ConcurrentMarkSweep runs the multi-phase

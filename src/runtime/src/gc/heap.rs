@@ -169,6 +169,22 @@ pub trait MagrGC: std::fmt::Debug + Send + Sync {
         panic!("set_mode not supported by this MagrGC impl");
     }
 
+    /// **add-custom-allocator P2 (2026-05-22)**: explicit finalize.
+    /// User-facing entry point via `Std.GC.Finalize(x)` z42 builtin.
+    /// Fires `value`'s registered finalizer immediately (one-shot)
+    /// and tombstones the slot so future strong references panic on
+    /// borrow + future weak references upgrade to None.
+    ///
+    /// Returns `true` if a finalizer was invoked (object had one
+    /// registered and was alive at time of call), `false` otherwise
+    /// (no-finalizer / not heap-ref / already tombstoned).
+    ///
+    /// Default impl returns false — non-ArcMagrGC backends without
+    /// region/tombstone semantics don't support prompt finalization.
+    fn finalize_now(&self, _value: &crate::metadata::Value) -> bool {
+        false
+    }
+
     /// 触发完整 GC（stop-the-world tracing）。Phase 1 默认 no-op。
     fn collect(&self) {}
 

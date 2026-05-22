@@ -51,11 +51,6 @@ pub(crate) const CHUNK_SIZE: usize = 256;
 /// inside a chunk, its `&self` reference remains valid until the
 /// owning chunk's Box is dropped (which happens only when the Region
 /// itself drops — never during normal sweep cycles).
-// P0 lands this scaffolding; P1 wires up the `value` + `finalizer`
-// fields via the rewritten `GcRef` / `WeakGcRef` and the relocated
-// `set_finalizer` path. `allow(dead_code)` silences the unused-field
-// warnings until then (VM tests treat any stderr warning as a regression).
-#[allow(dead_code)]
 pub struct RegionEntry<T> {
     /// User value. `Mutex` provides per-entry locking (preserves the
     /// multi-threading concurrency model). Access via
@@ -86,24 +81,36 @@ pub struct RegionEntry<T> {
     /// sweep path can `take()` the closure atomically (fire-once
     /// semantics — matches add-mark-sweep-collector behavior).
     pub(crate) finalizer: Mutex<Option<FinalizerFn>>,
+
+    /// **add-custom-allocator P2 (2026-05-22)**: self-location
+    /// (chunk_idx, entry_idx) within the owning Region. Lets the
+    /// `MagrGC::finalize_now` path tombstone + recycle this slot
+    /// given only a `&RegionEntry<T>` (no separate handle needed).
+    /// Set by `Region::alloc`; immutable thereafter for the entry's
+    /// lifetime (a single slot keeps its location across reuse).
+    pub(crate) location: (u16, u16),
 }
 
 impl<T> RegionEntry<T> {
     /// Test / transitional constructor used by `GcRef::new` for
     /// standalone (no-Region) allocations. Wraps a fresh entry with
     /// generation=0, alive=true. See refs.rs for the lifetime model
-    /// (intentional leak — process-wide static).
+    /// (intentional leak — process-wide static). `location` is set to
+    /// `(u16::MAX, u16::MAX)` — sentinel meaning "not in any Region"
+    /// so `finalize_now` skips free-list bookkeeping for these
+    /// standalone entries.
     pub fn new_for_test(value: T) -> Self {
-        Self::new(value)
+        Self::new(value, (u16::MAX, u16::MAX))
     }
 
-    fn new(value: T) -> Self {
+    fn new(value: T, location: (u16, u16)) -> Self {
         Self {
             value:      Mutex::new(value),
             marked:     AtomicU8::new(0),
             alive:      AtomicBool::new(true),
             generation: AtomicU32::new(0),
             finalizer:  Mutex::new(None),
+            location,
         }
     }
 
@@ -206,7 +213,7 @@ impl<T> Region<T> {
             let slot = unsafe { chunk[ei as usize].assume_init_mut() };
             let gen = slot.generation.load(Ordering::Acquire);
             // Replace the entry in place. Drop the old, write new.
-            let new_entry = RegionEntry::new(value);
+            let new_entry = RegionEntry::new(value, (ci, ei));
             // Manually preserve the generation across the replacement.
             new_entry.generation.store(gen, Ordering::Release);
             // SAFETY: ptr-write replaces the old entry with new.
@@ -227,7 +234,7 @@ impl<T> Region<T> {
             self.initialized.push(vec![false; CHUNK_SIZE]);
         }
         let chunk = &mut self.chunks[ci as usize];
-        chunk[ei as usize] = MaybeUninit::new(RegionEntry::new(value));
+        chunk[ei as usize] = MaybeUninit::new(RegionEntry::new(value, (ci, ei)));
         self.initialized[ci as usize][ei as usize] = true;
 
         // Advance next_bump.
@@ -301,6 +308,27 @@ impl<T> Region<T> {
                 visit(h, entry);
             }
         }
+    }
+
+    /// **add-custom-allocator P2 (2026-05-22)**: tombstone an entry
+    /// using only the entry reference (no separate handle). Uses the
+    /// entry's self-recorded `location` to push the slot back into the
+    /// free list. Idempotent: if alive is already false, no-op.
+    /// Returns `true` if this call actually tombstoned (alive 1→0).
+    ///
+    /// The `(u16::MAX, u16::MAX)` sentinel (test-only entries from
+    /// `GcRef::new` Box::leak) skips the free-list push — those
+    /// entries aren't in any Region, just leaked.
+    pub fn tombstone_via_entry(&mut self, entry: &RegionEntry<T>) -> bool {
+        if !entry.alive.swap(false, Ordering::Release) {
+            return false;
+        }
+        entry.generation.fetch_add(1, Ordering::AcqRel);
+        let (ci, ei) = entry.location;
+        if ci != u16::MAX {
+            self.free_list.push((ci, ei));
+        }
+        true
     }
 
     /// Number of alive entries (linear scan). Mostly for tests +

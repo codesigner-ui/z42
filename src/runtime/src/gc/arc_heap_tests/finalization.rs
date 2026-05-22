@@ -130,6 +130,122 @@ fn finalizer_does_not_fire_when_object_kept_alive() {
     assert_eq!(heap.stats().finalizers_pending, 1);
 }
 
+// ── add-custom-allocator P2 (2026-05-22): Std.GC.Finalize / finalize_now ──
+
+#[test]
+fn finalize_now_fires_registered_finalizer_immediately() {
+    let heap = ArcMagrGC::new();
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+
+    let v = heap.alloc_object(dummy_type_desc("FinalizeNow"), vec![], NativeData::None);
+    heap.register_finalizer(&v, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    assert_eq!(fired.load(Ordering::SeqCst), 0,
+        "no fire before Finalize call");
+
+    let returned = heap.finalize_now(&v);
+    assert!(returned, "finalize_now returns true when finalizer fires");
+    assert_eq!(fired.load(Ordering::SeqCst), 1,
+        "finalizer fires immediately via finalize_now");
+}
+
+#[test]
+fn finalize_now_returns_false_without_finalizer() {
+    let heap = ArcMagrGC::new();
+    let v = heap.alloc_object(dummy_type_desc("NoFin"), vec![], NativeData::None);
+
+    let returned = heap.finalize_now(&v);
+    assert!(!returned,
+        "finalize_now returns false when no finalizer registered");
+}
+
+#[test]
+fn finalize_now_returns_false_on_primitive() {
+    let heap = ArcMagrGC::new();
+    assert!(!heap.finalize_now(&Value::I64(42)));
+    assert!(!heap.finalize_now(&Value::Null));
+    assert!(!heap.finalize_now(&Value::Str("x".into())));
+}
+
+#[test]
+fn finalize_now_tombstones_the_entry() {
+    let heap = ArcMagrGC::new();
+    let v = heap.alloc_object(dummy_type_desc("Tomb"), vec![], NativeData::None);
+    let _pin = heap.pin_root(v.clone());
+
+    // Before Finalize: object alive.
+    let mut alive_before = 0;
+    heap.iterate_live_objects(&mut |_| alive_before += 1);
+    assert_eq!(alive_before, 1);
+
+    heap.finalize_now(&v);
+
+    // After Finalize: object tombstoned despite being pinned.
+    let mut alive_after = 0;
+    heap.iterate_live_objects(&mut |_| alive_after += 1);
+    assert_eq!(alive_after, 0,
+        "finalize_now tombstones the entry; iterate_alive no longer visits it");
+}
+
+#[test]
+fn finalize_now_idempotent_on_already_tombstoned() {
+    let heap = ArcMagrGC::new();
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+    let v = heap.alloc_object(dummy_type_desc("Idem"), vec![], NativeData::None);
+    heap.register_finalizer(&v, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    let first = heap.finalize_now(&v);
+    let second = heap.finalize_now(&v);
+
+    assert!(first, "first call fires");
+    assert!(!second, "second call does not re-fire (finalizer was taken)");
+    assert_eq!(fired.load(Ordering::SeqCst), 1, "one-shot semantics");
+}
+
+#[test]
+fn finalize_now_works_on_array_value() {
+    let heap = ArcMagrGC::new();
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+    let arr = heap.alloc_array(vec![Value::I64(1), Value::I64(2)]);
+    heap.register_finalizer(&arr, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    let returned = heap.finalize_now(&arr);
+    assert!(returned);
+    assert_eq!(fired.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn finalize_now_does_not_disturb_other_objects() {
+    let heap = ArcMagrGC::new();
+    let target = heap.alloc_object(dummy_type_desc("Target"), vec![], NativeData::None);
+    let other  = heap.alloc_object(dummy_type_desc("Other"),  vec![], NativeData::None);
+    let _pin1 = heap.pin_root(target.clone());
+    let _pin2 = heap.pin_root(other.clone());
+
+    let fired = Arc::new(AtomicUsize::new(0));
+    let f = fired.clone();
+    heap.register_finalizer(&target, Arc::new(move || {
+        f.fetch_add(1, Ordering::SeqCst);
+    }));
+
+    heap.finalize_now(&target);
+
+    // `other` is unaffected — still pinned + alive.
+    let mut alive = 0;
+    heap.iterate_live_objects(&mut |_| alive += 1);
+    assert_eq!(alive, 1, "only `target` tombstoned; `other` survives");
+    assert_eq!(fired.load(Ordering::SeqCst), 1);
+}
+
 #[test]
 fn finalizer_is_one_shot_after_fire() {
     let heap = ArcMagrGC::new();

@@ -36,4 +36,21 @@ public static class GC {
     /// 详见 `docs/design/runtime/gc-handle.md`。
     [Native("__gc_stats")]
     public static extern HeapStats GetStats();
+
+    /// **add-custom-allocator P2 (2026-05-22)**: 显式触发对象的 finalizer
+    /// + 立即 tombstone 槽位，用于 RAII 风格的资源即时释放（文件 handle /
+    /// 网络 socket / 原生 FFI handle 等）。
+    ///
+    /// 默认 finalizer 在 GC sweep 时才触发（"finalizer-at-sweep" 契约）；
+    /// 若需要立即关闭资源，调用 `Std.GC.Finalize(handle)`：finalizer 同步
+    /// 执行，槽位被 tombstone（其他 strong reference 之后 borrow 会 panic
+    /// "use-after-finalize"；weak reference upgrade 返回 null）。
+    ///
+    /// 返回值：true 表示 finalizer 真触发了；false 表示对象没注册 finalizer、
+    /// 不是堆引用类型，或已被 tombstone。null 参数返回 false。
+    ///
+    /// 与 .NET `IDisposable.Dispose()` / Java `AutoCloseable.close()` 语义对齐：
+    /// 用户主动释放资源；GC sweep 是兜底（防泄漏，但时机不可控）。
+    [Native("__gc_finalize")]
+    public static extern bool Finalize(Object target);
 }

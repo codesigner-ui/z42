@@ -63,6 +63,28 @@ pub fn builtin_gc_force_collect(ctx: &VmContext, _args: &[Value]) -> Result<Valu
     }
 }
 
+/// `Std.GC.Finalize(target)` — **add-custom-allocator P2 (2026-05-22)**.
+///
+/// Fires the registered finalizer on `target` immediately (one-shot)
+/// and tombstones the region slot. Use this when RAII-style prompt
+/// resource release matters (file handles, network sockets, native
+/// FFI handles). For most objects (no finalizer registered), this is
+/// a no-op return.
+///
+/// Returns `true` if a finalizer was actually fired; `false` if
+/// `target` had no finalizer registered, was not a heap reference,
+/// or was already tombstoned. Null target → false.
+///
+/// **Contract**: after this call, any other strong reference to the
+/// same object panics on borrow (generation mismatch detection,
+/// per add-custom-allocator design D5). Weak refs return None on
+/// upgrade. Slot becomes reusable on next alloc.
+pub fn builtin_gc_finalize(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let target = args.first().unwrap_or(&Value::Null);
+    let fired = ctx.heap().finalize_now(target);
+    Ok(Value::Bool(fired))
+}
+
 // ── reorganize-gc-stdlib (2026-05-07) ────────────────────────────────────────
 //
 // `Std.GCHandle` (struct, single `_slot: long`) and `Std.HeapStats` (class,

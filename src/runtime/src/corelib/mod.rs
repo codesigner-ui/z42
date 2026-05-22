@@ -196,6 +196,8 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__gc_collect",       gc::builtin_gc_collect),
     ("__gc_used_bytes",    gc::builtin_gc_used_bytes),
     ("__gc_force_collect", gc::builtin_gc_force_collect),
+    // ── add-custom-allocator P2 (2026-05-22) ─────────────────────────────
+    ("__gc_finalize",      gc::builtin_gc_finalize),
 
     // ── GCHandle struct + HeapStats（reorganize-gc-stdlib，2026-05-07）───────
     ("__gc_handle_alloc",    gc::builtin_gc_handle_alloc),
