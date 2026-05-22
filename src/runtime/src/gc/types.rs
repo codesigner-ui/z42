@@ -159,6 +159,77 @@ pub enum GcHandleKind {
     Strong,
 }
 
+// ── Pause histogram ──────────────────────────────────────────────────────────
+
+/// Half-open bucket edges (µs). `BUCKET_EDGES[i]` is the lower bound of
+/// bucket `i+1`; bucket `i` covers `[BUCKET_EDGES[i-1], BUCKET_EDGES[i])`.
+/// Bucket 0 is `[0, BUCKET_EDGES[0])`; bucket 7 is `[BUCKET_EDGES[6], ∞)`.
+pub const PAUSE_BUCKET_EDGES: [u64; 7] = [
+    10,          // < 10 µs
+    100,         // [10, 100) µs
+    1_000,       // [100µs, 1ms)
+    10_000,      // [1, 10) ms
+    100_000,     // [10, 100) ms
+    1_000_000,   // [100ms, 1s)
+    10_000_000,  // [1, 10) s
+                 // bucket 7: ≥ 10 s
+];
+
+/// Aggregate pause-time distribution recorded across every `collect_cycles`
+/// invocation. 8 logarithmic buckets cover µs–10s+ pause ranges; min / max /
+/// total / count provide basic summary stats.
+///
+/// `Default` uses `min_us = u64::MAX` as a sentinel for "no collect recorded
+/// yet"; callers should check `count == 0` before reading `min_us`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PauseHistogram {
+    pub buckets:  [u64; 8],
+    pub min_us:   u64,
+    pub max_us:   u64,
+    pub total_us: u64,
+    pub count:    u64,
+}
+
+impl Default for PauseHistogram {
+    fn default() -> Self {
+        Self {
+            buckets:  [0; 8],
+            min_us:   u64::MAX,
+            max_us:   0,
+            total_us: 0,
+            count:    0,
+        }
+    }
+}
+
+impl PauseHistogram {
+    /// Maps a pause measurement (µs) into its bucket index (0..=7).
+    ///
+    /// Half-open intervals `[lower, upper)`: boundary values land in the
+    /// higher bucket (e.g. `bucket_index(10) == 1`, not `0`).
+    pub fn bucket_index(pause_us: u64) -> usize {
+        for (i, &edge) in PAUSE_BUCKET_EDGES.iter().enumerate() {
+            if pause_us < edge { return i; }
+        }
+        7
+    }
+
+    /// Records one pause sample. Saturating arithmetic on every field so a
+    /// pathological process running for years cannot overflow into garbage.
+    pub fn record(&mut self, pause_us: u64) {
+        let idx = Self::bucket_index(pause_us);
+        self.buckets[idx] = self.buckets[idx].saturating_add(1);
+        if self.count == 0 || pause_us < self.min_us {
+            self.min_us = pause_us;
+        }
+        if pause_us > self.max_us {
+            self.max_us = pause_us;
+        }
+        self.total_us = self.total_us.saturating_add(pause_us);
+        self.count    = self.count.saturating_add(1);
+    }
+}
+
 // ── Stats ────────────────────────────────────────────────────────────────────
 
 /// Heap-wide statistics snapshot returned by
@@ -180,6 +251,8 @@ pub struct HeapStats {
     pub finalizers_pending: u64,
     /// Active observers.
     pub observers:          u64,
+    /// Aggregate pause-time histogram (add-gc-pause-histogram, 2026-05-22).
+    pub pause_histogram:    PauseHistogram,
 }
 
 // ── Heap snapshot ────────────────────────────────────────────────────────────
@@ -217,3 +290,7 @@ pub struct HeapSnapshot {
     pub timestamp_us:    u64,
     pub coverage:        SnapshotCoverage,
 }
+
+#[cfg(test)]
+#[path = "types_tests.rs"]
+mod types_tests;

@@ -1,0 +1,100 @@
+//! Unit tests for [`PauseHistogram`] (add-gc-pause-histogram, 2026-05-22).
+//!
+//! Covers bucket boundary correctness, record-side effects on
+//! min/max/total/count, sentinel handling for the empty case, and
+//! saturation on extreme repeated input.
+
+use super::*;
+
+#[test]
+fn default_is_empty() {
+    let h = PauseHistogram::default();
+    assert_eq!(h.buckets, [0; 8]);
+    assert_eq!(h.min_us, u64::MAX, "empty sentinel");
+    assert_eq!(h.max_us, 0);
+    assert_eq!(h.total_us, 0);
+    assert_eq!(h.count, 0);
+}
+
+#[test]
+fn bucket_index_boundaries() {
+    // Sub-µs collects fall in bucket 0.
+    assert_eq!(PauseHistogram::bucket_index(0), 0);
+    assert_eq!(PauseHistogram::bucket_index(9), 0);
+
+    // Half-open intervals: boundary value lands in the HIGHER bucket.
+    assert_eq!(PauseHistogram::bucket_index(10),         1);
+    assert_eq!(PauseHistogram::bucket_index(99),         1);
+    assert_eq!(PauseHistogram::bucket_index(100),        2);
+    assert_eq!(PauseHistogram::bucket_index(999),        2);
+    assert_eq!(PauseHistogram::bucket_index(1_000),      3);
+    assert_eq!(PauseHistogram::bucket_index(9_999),      3);
+    assert_eq!(PauseHistogram::bucket_index(10_000),     4);
+    assert_eq!(PauseHistogram::bucket_index(99_999),     4);
+    assert_eq!(PauseHistogram::bucket_index(100_000),    5);
+    assert_eq!(PauseHistogram::bucket_index(999_999),    5);
+    assert_eq!(PauseHistogram::bucket_index(1_000_000),  6);
+    assert_eq!(PauseHistogram::bucket_index(9_999_999),  6);
+
+    // Catastrophic-pause bucket.
+    assert_eq!(PauseHistogram::bucket_index(10_000_000), 7);
+    assert_eq!(PauseHistogram::bucket_index(u64::MAX),   7);
+}
+
+#[test]
+fn record_updates_bucket() {
+    let mut h = PauseHistogram::default();
+    h.record(5);           // bucket 0
+    h.record(50);          // bucket 1
+    h.record(500);         // bucket 2
+    h.record(5_000);       // bucket 3
+    h.record(50_000);      // bucket 4
+    h.record(500_000);     // bucket 5
+    h.record(5_000_000);   // bucket 6
+    h.record(50_000_000);  // bucket 7
+
+    assert_eq!(h.buckets, [1; 8]);
+    assert_eq!(h.count, 8);
+}
+
+#[test]
+fn record_updates_min_max_total_count() {
+    let mut h = PauseHistogram::default();
+    h.record(100);
+    h.record(50);
+    h.record(200);
+
+    assert_eq!(h.min_us, 50);
+    assert_eq!(h.max_us, 200);
+    assert_eq!(h.total_us, 350);
+    assert_eq!(h.count, 3);
+}
+
+#[test]
+fn record_first_value_sets_min_from_sentinel() {
+    // Regression guard: the empty sentinel (u64::MAX) must NOT survive
+    // the first `record` call — even when the recorded pause is 0.
+    let mut h = PauseHistogram::default();
+    h.record(0);
+
+    assert_eq!(h.min_us, 0, "first record must overwrite sentinel");
+    assert_eq!(h.max_us, 0);
+    assert_eq!(h.count, 1);
+}
+
+#[test]
+fn record_saturates_on_overflow() {
+    let mut h = PauseHistogram::default();
+    h.count    = u64::MAX - 1;
+    h.total_us = u64::MAX - 1;
+    h.buckets[0] = u64::MAX - 1;
+
+    // Two more `record(1)` calls hit saturation in count / total /
+    // bucket simultaneously.
+    h.record(1);
+    h.record(1);
+
+    assert_eq!(h.count,        u64::MAX, "count saturates instead of wrapping");
+    assert_eq!(h.total_us,     u64::MAX, "total saturates");
+    assert_eq!(h.buckets[0],   u64::MAX, "bucket saturates");
+}

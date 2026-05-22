@@ -53,4 +53,30 @@ public static class GC {
     /// 用户主动释放资源；GC sweep 是兜底（防泄漏，但时机不可控）。
     [Native("__gc_finalize")]
     public static extern bool Finalize(Object target);
+
+    /// **add-gc-pause-histogram (2026-05-22)**: 返回 8 元素 `long[]`，
+    /// 元素 `i` 是落入第 `i` 桶的 collect 数量。桶边界（半开区间 `[lower,
+    /// upper)`，微秒）：
+    ///
+    /// | i | 范围                |
+    /// |---|---------------------|
+    /// | 0 | `[0, 10) µs`        |
+    /// | 1 | `[10, 100) µs`      |
+    /// | 2 | `[100 µs, 1 ms)`    |
+    /// | 3 | `[1, 10) ms`        |
+    /// | 4 | `[10, 100) ms`      |
+    /// | 5 | `[100 ms, 1 s)`     |
+    /// | 6 | `[1, 10) s`         |
+    /// | 7 | `[10 s, ∞)`         |
+    ///
+    /// 直方图自 heap 创建起累积，跨 GcMode 切换保留（不重置）。
+    [Native("__gc_pause_histogram")]
+    public static extern long[] PauseHistogram();
+
+    /// **add-gc-pause-histogram (2026-05-22)**: 返回 4 元素 `long[]`：
+    /// `[min_us, max_us, total_us, count]`。当尚未发生任何 collect 时，
+    /// `min_us == long.MaxValue`（sentinel），其余三项为 0。读 `min_us`
+    /// 前先检查 `count == 0`。
+    [Native("__gc_pause_stats_raw")]
+    public static extern long[] PauseStatsRaw();
 }

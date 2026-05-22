@@ -269,6 +269,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__channel_try_send",     sync::builtin_channel_try_send),
     ("__rwlock_try_read",      sync::builtin_rwlock_try_read),
     ("__rwlock_try_write",     sync::builtin_rwlock_try_write),
+
+    // ── add-gc-pause-histogram (2026-05-22) — appended to preserve existing BuiltinIds ──
+    ("__gc_pause_histogram", gc::builtin_gc_pause_histogram),
+    ("__gc_pause_stats_raw", gc::builtin_gc_pause_stats_raw),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

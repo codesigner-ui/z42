@@ -232,6 +232,14 @@ pub struct ArcMagrGC {
     /// (z42 typical 1-2 mutators); lock-free upgrade is a deferred
     /// perf spec. Stays empty when mode == StwMarkSweep.
     mark_queue: Mutex<Vec<Value>>,
+    /// **add-gc-pause-histogram (2026-05-22)**: aggregate pause-time
+    /// histogram. Recorded into at the end of every `collect_cycles` /
+    /// `collect_cycles_with_context` / `force_collect` path, right
+    /// before the `AfterCollect` event fires. Surfaced via
+    /// `stats().pause_histogram` and the `Std.GC.PauseHistogram()` /
+    /// `Std.GC.PauseStatsRaw()` z42 builtins. Single histogram per
+    /// heap (per-mode split is a deferred perf spec).
+    pause_histogram: Mutex<super::types::PauseHistogram>,
     /// **add-gc-safepoint-auto-threshold (2026-05-20)**: external flag the
     /// `maybe_auto_collect` path sets (instead of running collect inline)
     /// when allocation pressure trips the threshold. Drained by the next
@@ -263,6 +271,7 @@ impl Default for ArcMagrGC {
             region_object: Mutex::new(super::region::Region::new()),
             region_array:  Mutex::new(super::region::Region::new()),
             mark_queue: Mutex::new(Vec::new()),
+            pause_histogram: Mutex::new(super::types::PauseHistogram::default()),
             #[cfg(test)]
             barrier_observer: Mutex::new(None),
         }
@@ -1746,6 +1755,7 @@ impl MagrGC for ArcMagrGC {
                 }
                 self.maybe_reset_near_limit_warned();
                 let pause_us = Self::now_us().saturating_sub(start);
+                self.pause_histogram.lock().record(pause_us);
                 self.fire_event(GcEvent::AfterCollect {
                     kind: GcKind::CycleCollector, freed_bytes, pause_us,
                 });
@@ -1810,6 +1820,7 @@ impl MagrGC for ArcMagrGC {
                 }
                 self.maybe_reset_near_limit_warned();
                 let pause_us = Self::now_us().saturating_sub(start);
+                self.pause_histogram.lock().record(pause_us);
                 self.fire_event(GcEvent::AfterCollect {
                     kind: GcKind::CycleCollector, freed_bytes, pause_us,
                 });
@@ -1835,6 +1846,7 @@ impl MagrGC for ArcMagrGC {
         // Phase 3d: 若 used 已降到 90% 阈值以下，重置 near_limit_warned
         self.maybe_reset_near_limit_warned();
         let pause_us = Self::now_us().saturating_sub(start);
+        self.pause_histogram.lock().record(pause_us);
         self.fire_event(GcEvent::AfterCollect {
             kind: GcKind::CycleCollector, freed_bytes, pause_us,
         });
@@ -1861,6 +1873,7 @@ impl MagrGC for ArcMagrGC {
         }
         self.maybe_reset_near_limit_warned();
         let pause_us = Self::now_us().saturating_sub(start);
+        self.pause_histogram.lock().record(pause_us);
         self.fire_event(GcEvent::AfterCollect {
             kind: GcKind::Full, freed_bytes, pause_us,
         });
@@ -2032,6 +2045,7 @@ impl MagrGC for ArcMagrGC {
 
         let mut s = self.inner.lock().stats;
         s.finalizers_pending = pending;
+        s.pause_histogram = *self.pause_histogram.lock();
         s
     }
 }

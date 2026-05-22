@@ -1,0 +1,41 @@
+// add-gc-pause-histogram (2026-05-22) — end-to-end test that
+// `Std.GC.PauseHistogram()` returns 8 elements and `Std.GC.PauseStatsRaw()`
+// returns 4 elements with sensible values after a few collects.
+namespace Z42CoreTests.Gc;
+
+using Std;
+using Std.Test;
+
+[Test]
+void test_pause_histogram_returns_8_elements() {
+    GC.ForceCollect();
+    GC.ForceCollect();
+
+    long[] buckets = GC.PauseHistogram();
+    Assert.Equal(8, buckets.Length);
+
+    long sum = 0;
+    for (int i = 0; i < buckets.Length; i = i + 1) {
+        Assert.True(buckets[i] >= 0);
+        sum = sum + buckets[i];
+    }
+    // Every collect lands in some bucket; sum >= 2.
+    Assert.True(sum >= 2);
+}
+
+[Test]
+void test_pause_stats_raw_returns_4_elements() {
+    GC.ForceCollect();
+
+    long[] raw = GC.PauseStatsRaw();
+    Assert.Equal(4, raw.Length);
+
+    long minUs = raw[0];
+    long maxUs = raw[1];
+    long totalUs = raw[2];
+    long count = raw[3];
+
+    Assert.True(count >= 1);
+    Assert.True(maxUs >= minUs);
+    Assert.True(totalUs >= minUs);
+}

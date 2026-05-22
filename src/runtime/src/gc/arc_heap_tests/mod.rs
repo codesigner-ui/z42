@@ -37,6 +37,7 @@ mod mark_phase;
 mod mode_selection;
 mod object_model;
 mod oom;
+mod pause_histogram;
 mod roots;
 mod send_sync;
 mod stress;

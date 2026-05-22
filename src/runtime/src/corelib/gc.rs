@@ -232,6 +232,46 @@ pub fn builtin_gc_handle_free(ctx: &VmContext, args: &[Value]) -> Result<Value> 
     Ok(Value::Null)
 }
 
+/// `Std.GC.PauseHistogram()` — **add-gc-pause-histogram (2026-05-22)**.
+///
+/// Returns a `long[]` of length 8 where `result[i]` is the count of
+/// collects whose `pause_us` fell into bucket `i`. Bucket boundaries
+/// (half-open `[lower, upper)`, microseconds):
+///
+/// | i | range                       |
+/// |---|-----------------------------|
+/// | 0 | `[0, 10) µs`                |
+/// | 1 | `[10, 100) µs`              |
+/// | 2 | `[100 µs, 1 ms)`            |
+/// | 3 | `[1, 10) ms`                |
+/// | 4 | `[10, 100) ms`              |
+/// | 5 | `[100 ms, 1 s)`             |
+/// | 6 | `[1, 10) s`                 |
+/// | 7 | `[10 s, ∞)`                 |
+pub fn builtin_gc_pause_histogram(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let h = ctx.heap().stats().pause_histogram;
+    let arr: Vec<Value> = h.buckets.iter()
+        .map(|&n| Value::I64(n as i64))
+        .collect();
+    Ok(ctx.heap().alloc_array(arr))
+}
+
+/// `Std.GC.PauseStatsRaw()` — **add-gc-pause-histogram (2026-05-22)**.
+///
+/// Returns a `long[]` of length 4: `[min_us, max_us, total_us, count]`.
+/// When no collects have occurred, `min_us == i64::MAX` (sentinel) and
+/// the other three fields are 0. Callers should check `count == 0`
+/// before reading `min_us`.
+pub fn builtin_gc_pause_stats_raw(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let h = ctx.heap().stats().pause_histogram;
+    Ok(ctx.heap().alloc_array(vec![
+        Value::I64(h.min_us   as i64),
+        Value::I64(h.max_us   as i64),
+        Value::I64(h.total_us as i64),
+        Value::I64(h.count    as i64),
+    ]))
+}
+
 /// `Std.GC.GetStats()` — projects Rust `HeapStats` into a `Std.HeapStats` instance.
 /// `MaxBytes` uses `-1` as the unlimited sentinel (z42 has no `Optional<T>`).
 pub fn builtin_gc_stats(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
