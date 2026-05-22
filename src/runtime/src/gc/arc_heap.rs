@@ -941,28 +941,52 @@ impl MagrGC for ArcMagrGC {
     // ── 3. Write barriers ────────────────────────────────────────────────────
     //
     // **add-write-barriers (2026-05-21)**: ArcMagrGC overrides the trait
-    // methods only to fire a `#[cfg(test)]` observer; production builds
-    // compile the override body down to an empty function (`fire_barrier_*`
-    // is `#[cfg(test)]`). Real generational / concurrent backends will
-    // replace these overrides with card-marking / SATB logic in
-    // `add-generational-gc` / `add-concurrent-gc`.
+    // methods. Production STW-mode is no-op (matches the pre-this-spec
+    // baseline); `#[cfg(test)]` always fires the test observer regardless
+    // of mode.
+    //
+    // **add-concurrent-gc P3 (2026-05-22)**: under `ConcurrentMarkSweep`
+    // mode, the override implements tricolor incremental update —
+    // shade new heap-ref writes gray (mark + enqueue). Mark thread (P4)
+    // drains the queue.
     //
     // Caller contract: invoke ONLY when `new.is_heap_ref() == true`
-    // (Decision 1) — these methods may `debug_assert!` the new value is a
-    // heap ref once the call-site filter is universally enforced; the
-    // current observer treats primitive writes as a recorded oddity
-    // (`new_is_heap = false`) for test inspection, not a bug.
+    // (Decision 1 of add-write-barriers). Override `debug_assert!`s the
+    // contract under concurrent mode (where the assertion is load-bearing
+    // for correctness — a primitive write incorrectly dispatched here
+    // would silently no-op since `mark_if_unmarked` returns false on
+    // primitives, but the contract violation should be caught).
 
     #[allow(unused_variables)]
     fn write_barrier_field(&self, owner: &Value, slot: usize, new: &Value) {
         #[cfg(test)]
         self.fire_barrier_field(owner, slot, new);
+
+        if self.mode() == super::GcMode::ConcurrentMarkSweep {
+            debug_assert!(
+                new.is_heap_ref(),
+                "write_barrier_field caller must filter primitives via Value::is_heap_ref"
+            );
+            if Self::mark_if_unmarked(new) {
+                self.mark_queue.lock().push(new.clone());
+            }
+        }
     }
 
     #[allow(unused_variables)]
     fn write_barrier_array_elem(&self, arr: &Value, idx: usize, new: &Value) {
         #[cfg(test)]
         self.fire_barrier_array_elem(arr, idx, new);
+
+        if self.mode() == super::GcMode::ConcurrentMarkSweep {
+            debug_assert!(
+                new.is_heap_ref(),
+                "write_barrier_array_elem caller must filter primitives via Value::is_heap_ref"
+            );
+            if Self::mark_if_unmarked(new) {
+                self.mark_queue.lock().push(new.clone());
+            }
+        }
     }
 
     // ── 4. Object Model ──────────────────────────────────────────────────────

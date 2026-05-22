@@ -111,3 +111,99 @@ fn mark_queue_starts_empty_in_default_heap() {
     assert!(heap.mark_queue_for_test().is_empty(),
         "fresh heap has empty mark_queue regardless of mode");
 }
+
+// ── P3: Barrier override branches on mode ──────────────────────────────────
+
+#[test]
+fn barrier_field_no_op_in_stw_mode() {
+    let heap = ArcMagrGC::new();
+    assert_eq!(heap.mode(), GcMode::StwMarkSweep);
+
+    let owner = heap.alloc_object(dummy_type_desc("O"), vec![Value::Null], NativeData::None);
+    let new = heap.alloc_object(dummy_type_desc("N"), vec![], NativeData::None);
+
+    heap.write_barrier_field(&owner, 0, &new);
+
+    assert!(heap.mark_queue_for_test().is_empty(),
+        "STW mode → barrier is no-op, mark_queue stays empty");
+    let Value::Object(rc) = &new else { panic!() };
+    assert!(!GcRef::is_marked(rc),
+        "STW mode → barrier does not mark new value");
+}
+
+#[test]
+fn barrier_field_shades_new_value_in_concurrent_mode() {
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let owner = heap.alloc_object(dummy_type_desc("O"), vec![Value::Null], NativeData::None);
+    let new = heap.alloc_object(dummy_type_desc("N"), vec![], NativeData::None);
+
+    heap.write_barrier_field(&owner, 0, &new);
+
+    let queue = heap.mark_queue_for_test();
+    assert_eq!(queue.len(), 1, "concurrent mode → barrier pushes new to mark_queue");
+    let Value::Object(rc) = &new else { panic!() };
+    assert!(GcRef::is_marked(rc),
+        "concurrent mode → barrier marks new value gray");
+
+    GcRef::clear_mark(rc);
+}
+
+#[test]
+fn barrier_array_shades_new_value_in_concurrent_mode() {
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let arr = heap.alloc_array(vec![Value::Null]);
+    let new = heap.alloc_object(dummy_type_desc("E"), vec![], NativeData::None);
+
+    heap.write_barrier_array_elem(&arr, 0, &new);
+
+    let queue = heap.mark_queue_for_test();
+    assert_eq!(queue.len(), 1);
+    let Value::Object(rc) = &new else { panic!() };
+    assert!(GcRef::is_marked(rc));
+    GcRef::clear_mark(rc);
+}
+
+#[test]
+fn barrier_idempotent_on_already_marked_in_concurrent_mode() {
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let owner = heap.alloc_object(dummy_type_desc("O"), vec![Value::Null], NativeData::None);
+    let new = heap.alloc_object(dummy_type_desc("N"), vec![], NativeData::None);
+
+    heap.write_barrier_field(&owner, 0, &new);
+    heap.write_barrier_field(&owner, 0, &new);  // duplicate write
+
+    let queue = heap.mark_queue_for_test();
+    assert_eq!(queue.len(), 1,
+        "duplicate write → CAS fails second time → no re-enqueue");
+
+    let Value::Object(rc) = &new else { panic!() };
+    GcRef::clear_mark(rc);
+}
+
+#[test]
+fn barrier_mode_switch_takes_effect_immediately_on_next_write() {
+    let heap = ArcMagrGC::new();
+    let owner = heap.alloc_object(dummy_type_desc("O"), vec![Value::Null], NativeData::None);
+    let n1 = heap.alloc_object(dummy_type_desc("N1"), vec![], NativeData::None);
+    let n2 = heap.alloc_object(dummy_type_desc("N2"), vec![], NativeData::None);
+
+    // STW mode: barrier no-op
+    heap.write_barrier_field(&owner, 0, &n1);
+    assert!(heap.mark_queue_for_test().is_empty());
+
+    // Switch to concurrent: next barrier shades
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+    heap.write_barrier_field(&owner, 0, &n2);
+
+    let queue = heap.mark_queue_for_test();
+    assert_eq!(queue.len(), 1, "switch effective on next write");
+
+    let Value::Object(rc) = &n2 else { panic!() };
+    GcRef::clear_mark(rc);
+}
