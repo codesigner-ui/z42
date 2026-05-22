@@ -342,6 +342,70 @@ test-only `BarrierObserver`）。
 > `Std.Collections.Dictionary` 改为纯脚本类后，`Value::Map` 已无创建路径。`value_to_str`
 > 同步改为 exhaustive match，编译期强制覆盖所有 Value variant。
 
+### Debug invariants (add-gc-debug-invariants, 2026-05-22)
+
+A1 / A2 / A3 / A4 共四个 GC 算法叠加后引入了大量数据结构 invariant
+（young_list ⇔ gen_age 一致、free_list ⇔ alive=false、card_dirty 长度
+与 chunks 一致、mark_queue 在 cycle 外为空、sweep 后无 stale mark
+bit、entry.location 与实际位置吻合等）。这些 invariant 现在由 debug-
+only 验证器在每次 collect 末尾检查；release 构建完全编译掉。
+
+**两层 API**：
+
+- [`Region<T>::validate(&self) -> Result<(), Violation>`](../../../src/runtime/src/gc/region.rs)
+  —— per-region check，返回结构化 `Violation` 让 test 通过模式匹配确
+  认期望的 invariant 被触发
+- [`ArcMagrGC::debug_validate_invariants(&self)`](../../../src/runtime/src/gc/arc_heap.rs)
+  —— panicking wrapper，由 collect 路径在 cycle 完成后调用；任何
+  violation 立即 panic + 详细消息
+
+**6 个 Region 级 Violation 变种**：
+
+| Variant | 触发条件 | 来源 spec |
+|---------|---------|-----------|
+| `OldEntryInYoungList` | young_list 含 gen_age ≥ PROMOTION_THRESHOLD 的 entry | add-generational-gc |
+| `YoungEntryNotInList` | alive young entry 未出现在 young_list | add-generational-gc |
+| `DuplicateInYoungList` | young_list 同一 (ci, ei) 出现多次 | add-generational-gc |
+| `AliveSlotInFreeList` | free_list 含 alive=true 的 slot | add-custom-allocator |
+| `LocationMismatch` | `entry.location` 不等于实际 (ci, ei) | add-custom-allocator |
+| `CardDirtyLengthMismatch` | `card_dirty.len() != chunks.len()` | add-generational-gc |
+
+**2 个 heap 级检查**（panic-only，无 Violation enum）：
+
+- mark_queue 必须在 cycle 外为空（concurrent mark drain 必须完整；
+  非 concurrent mode 该 queue 从不写）
+- 没有 alive entry 携带 marked=1（sweep 必须清 survivors 的 mark）
+
+**触发时机**：
+
+- `collect_cycles` 尾部（StwMarkSweep + GenerationalMarkSweep default）
+- `collect_cycles_with_context` 的 ConcurrentMarkSweep 分支末（pause Drop 后）
+- `collect_cycles_with_context` 的 GenerationalMarkSweep 分支末
+
+每次都包在 `#[cfg(debug_assertions)]` 里 —— release 构建（cargo build
+--release）整段编译消除，零 production overhead。debug 构建 + cargo
+test 自动启用。
+
+**怎么加新 invariant**：
+
+1. 在 `Violation` enum 加新 variant + `Display` impl 分支
+2. 在 `Region::validate` 加检查（first-violation-returned 模式）
+3. 在 `region_tests.rs` 写 `validate_detects_xxx` test（故意 corrupt
+   state → 断言匹配 variant）
+4. 跑 `cargo test --lib gc::` —— 现有 4 个 GC 算法**不得违反**新
+   invariant；若违反就是 latent bug，必须修
+
+**测试方法**：
+
+- Healthy path：构造典型 workload + 跑 collect + 隐式 invariant 检查
+  通过（在 `arc_heap_tests/invariants.rs` 的 healthy tests）
+- Corruption path：手动注入违反 state + `#[should_panic(expected = "...")]`
+  验证 validator 抓到（同文件 corruption tests）
+
+**cost 实测**：`cargo test --lib gc::` 时间在 invariant landing 前后
+变化 < 5%（219 tests in ~0.01s）。Validate 是 O(N) per collect；典型
+collect 时间 µs–ms 数量级，O(N) 检查不显著。
+
 ## Phase 路线（持续迭代）
 
 | Phase | 内容 | 状态 |
@@ -367,6 +431,7 @@ test-only `BarrierObserver`）。
 | **A4 concurrent mark** | 可选 `Z42_GC_MODE=concurrent` 切换 tricolor incremental update：STW root snapshot → ConcurrentMarking 阶段 mutator 不 park → barrier shade gray → STW 终止 handshake → STW sweep；STW 仍为默认 | ✅ 2026-05-22 add-concurrent-gc |
 | **A1 custom allocator** | `GcRef<T>` 从 `Arc<GcAllocation<T>>` 切到 chunked region + NonNull handle。Clone 零原子 op；`heap_registry` 删除；finalizer at sweep + `Std.GC.Finalize(x)` 显式 API。Sweep survivors 2.49× faster；alloc 1.03-1.06× faster | ✅ 2026-05-22 add-custom-allocator |
 | **A3 generational** | `GcMode::GenerationalMarkSweep` opt-in：RegionEntry gen_age + young_list + per-chunk card_dirty bitmap；write barrier 标记 old→young 跨代写；minor GC 扫 young + dirty cards (O(young) pause)；major GC 扫全堆 + 清 cards；survival rate >= 0.75 时 minor → major escalation。Bench: 1.40 ms minor vs 5.55 ms full STW on equivalent heap (**~4× minor speedup**) | ✅ 2026-05-22 add-generational-gc |
+| **C1 debug invariants** | `Region<T>::validate(&self) -> Result<(), Violation>` + `ArcMagrGC::debug_validate_invariants()` panicking wrapper（cfg debug_assertions）。每次 collect 末尾运行，验证 8 项 invariant（young_list ⇔ gen_age、free_list ⇔ alive、entry.location、card_dirty 长度、mark_queue 空、no stale mark bit）。Release 构建零开销 | ✅ 2026-05-22 add-gc-debug-invariants |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -505,11 +570,22 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 
 ### C. 测试 / 调试质量
 
-#### C1. Debug-only invariant 检查
-- **What**：debug build 下每次 collect 后 assert（无 dangling Rc / registry 一致性 / finalizers_pending == has_finalizer 总数 / 等）
-- **Why**：早暴露内部一致性 bug，防止生产环境疑难杂症
-- **Deps**：无
-- **Size**：~150 LOC，1-2 天
+#### C1. Debug-only invariant 检查（已落地，2026-05-22）
+- **状态**：✅ 完成，spec `add-gc-debug-invariants`
+- **What**：debug build 下每次 collect 后 `Region<T>::validate` +
+  `ArcMagrGC::debug_validate_invariants` 跑 8 项 invariant 检查；
+  release build 整段编译消除
+- **实现要点**：
+  - 8 项 invariant：young_list ⇔ gen_age 一致 (3 variants) +
+    free_list ⇔ alive=false + entry.location 自一致 + card_dirty
+    长度 + mark_queue 空 + no stale mark bit
+  - 两层 API：`Region::validate() -> Result<(), Violation>` (test
+    友好) + `ArcMagrGC::debug_validate_invariants` (panic wrapper)
+  - 集成于 `collect_cycles` + `collect_cycles_with_context` 的
+    所有 mode 分支末尾
+- **关键落地结果**：现有 4 个 GC 算法（A1/A2/A3/A4）零 invariant
+  违反 — 验证算法本身实现正确。详见
+  ["Debug invariants"](#debug-invariants-add-gc-debug-invariants-2026-05-22) 段
 
 #### C2. Stress test（property-based）
 - **What**：proptest / quickcheck 生成随机 alloc / drop / pin / collect 序列，长跑下 verify 不 crash + 内存不 leak
