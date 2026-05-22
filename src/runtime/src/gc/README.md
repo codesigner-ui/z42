@@ -66,12 +66,14 @@ z42 脚本端可调 `Std.GC.Collect()` / `UsedBytes()` / `ForceCollect()`（见
 
 ## Phase 路线
 
-详见 [`docs/design/runtime/vm-architecture.md`](../../../../docs/design/runtime/vm-architecture.md) "GC 子系统" 段。
+详见 [`docs/design/runtime/gc.md`](../../../../docs/design/runtime/gc.md).
 
-**至 Phase 3-OOM 完成（2026-04-29）GC 主功能完整 —— 所有原始限制已解决，可投产。**
+**至 add-generational-gc 完成（2026-05-22）GC 主功能完整 —— A1 / A2 / A3 / A4
+均已落地（custom allocator / mark-sweep / generational / concurrent mark），
+三种 GcMode 可选 opt-in。可投产。**
 
-后续可选迭代规划（性能 / 嵌入式工具 / 测试质量 / MMTk 集成）见同文档
-["GC 后续迭代规划"](../../../../docs/design/runtime/vm-architecture.md#gc-后续迭代规划) 段，
+后续可选迭代规划（剩余性能轨道 / 嵌入式工具 / 测试质量 / MMTk 集成）见同文档
+["GC 后续迭代规划"](../../../../docs/design/runtime/gc.md#gc-后续迭代规划) 段，
 每条目带 What / Why / Deps / Size / Risk 四元组，可按优先级独立启动 spec。
 
 ### 已完成 Phase 速览

@@ -16,7 +16,7 @@
 //! 1. **Allocation** —— 堆分配入口
 //! 2. **Roots** —— host-side 显式 pin/unpin + frame scope + GC-side scan
 //! 3. **Write barriers** —— 字段 / 数组元素写屏障（默认 no-op；generational
-//!    / 自定义堆 / MMTk 集成等后续迭代会重载，见 vm-architecture.md "GC 后续迭代规划" A3 / D1）
+//!    / 自定义堆 / MMTk 集成等后续迭代会重载，见 gc.md "GC 后续迭代规划" A3 / D1）
 //! 4. **Object Model** —— 对象尺寸 / 引用扫描 helper（用于 trace / snapshot）
 //! 5. **Collection control** —— collect / cycles / force / pause / resume
 //! 6. **Heap config** —— max_bytes / used_bytes
@@ -28,7 +28,7 @@
 //!
 //! # Phase 路线
 //!
-//! 见 [`docs/design/runtime/vm-architecture.md`](../../../../docs/design/runtime/vm-architecture.md)
+//! 见 [`docs/design/runtime/gc.md`](../../../../docs/design/runtime/gc.md)
 //! "GC 子系统" 段。
 
 use std::sync::Arc;
