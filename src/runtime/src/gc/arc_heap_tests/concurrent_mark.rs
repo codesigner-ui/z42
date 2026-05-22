@@ -186,6 +186,144 @@ fn barrier_idempotent_on_already_marked_in_concurrent_mode() {
     GcRef::clear_mark(rc);
 }
 
+// ── P4a: Concurrent BFS drain + end-to-end collect (inline) ───────────────
+
+fn alive_count(heap: &ArcMagrGC) -> usize {
+    let mut n = 0;
+    heap.iterate_live_objects(&mut |_| n += 1);
+    n
+}
+
+#[test]
+fn concurrent_collect_inline_preserves_pinned_chain() {
+    // Pinned root → leaf chain; concurrent collect must keep all 3 alive.
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let leaf = heap.alloc_object(dummy_type_desc("Leaf"), vec![Value::Null], NativeData::None);
+    let mid  = heap.alloc_object(dummy_type_desc("Mid"),  vec![leaf.clone()], NativeData::None);
+    let root = heap.alloc_object(dummy_type_desc("Root"), vec![mid.clone()],  NativeData::None);
+    let root_handle = heap.pin_root(root.clone());
+
+    drop(leaf); drop(mid); drop(root);
+    assert_eq!(alive_count(&heap), 3, "pinned root keeps the chain alive");
+
+    let freed = heap.run_cycle_collection_concurrent_inline_for_test();
+    assert_eq!(freed, 0, "no unreachable → freed_bytes == 0");
+    assert_eq!(alive_count(&heap), 3, "rooted chain survives concurrent collect");
+
+    heap.unpin_root(root_handle);
+}
+
+#[test]
+fn concurrent_collect_inline_frees_unreachable_cycle() {
+    // Two-node cycle with no root → concurrent collect should free both,
+    // matching the STW path's behavior.
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let a = heap.alloc_object(dummy_type_desc("A"), vec![Value::Null], NativeData::None);
+    let b = heap.alloc_object(dummy_type_desc("B"), vec![Value::Null], NativeData::None);
+    {
+        let Value::Object(a_gc) = &a else { panic!() };
+        let Value::Object(b_gc) = &b else { panic!() };
+        a_gc.borrow_mut().slots[0] = b.clone();
+        b_gc.borrow_mut().slots[0] = a.clone();
+    }
+    drop(a); drop(b);
+    assert_eq!(alive_count(&heap), 2);
+
+    let freed = heap.run_cycle_collection_concurrent_inline_for_test();
+    assert!(freed > 0);
+    assert_eq!(alive_count(&heap), 0, "unreachable cycle freed");
+}
+
+#[test]
+fn concurrent_collect_inline_traces_via_array_elements() {
+    // Array of pinned objects — sweep must keep all elements alive
+    // because the array is rooted and BFS traces through Array.
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let elems: Vec<Value> = (0..5)
+        .map(|_| heap.alloc_object(dummy_type_desc("E"), vec![], NativeData::None))
+        .collect();
+    let arr = heap.alloc_array(elems);
+    let pin = heap.pin_root(arr);
+
+    let pre = alive_count(&heap);
+    assert!(pre >= 6, "5 objects + 1 array = at least 6 alive before collect");
+
+    let freed = heap.run_cycle_collection_concurrent_inline_for_test();
+    assert_eq!(freed, 0);
+    assert_eq!(alive_count(&heap), pre, "everything reachable from pinned array survives");
+
+    heap.unpin_root(pin);
+}
+
+#[test]
+fn concurrent_collect_inline_with_simulated_barrier_marks_late_writes() {
+    // Simulate the concurrent mutator: between root snapshot and drain
+    // completion, a mutator writes a new object into a rooted slot.
+    // Without barrier shading, the new object would be missed by the
+    // collector and incorrectly swept.
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let root_obj = heap.alloc_object(
+        dummy_type_desc("Root"), vec![Value::Null], NativeData::None
+    );
+    let root_handle = heap.pin_root(root_obj.clone());
+
+    // Phase: pre-mark — simulate concurrent collect start by snapshotting roots
+    heap.snapshot_roots_into_mark_queue_for_test();
+
+    // Simulate mutator: write a new object into root.slots[0] mid-collect.
+    // Barrier dispatch shades the new object gray + enqueues.
+    let new_child = heap.alloc_object(
+        dummy_type_desc("LateChild"), vec![], NativeData::None
+    );
+    {
+        let Value::Object(root_gc) = &root_obj else { panic!() };
+        root_gc.borrow_mut().slots[0] = new_child.clone();
+    }
+    heap.write_barrier_field(&root_obj, 0, &new_child);  // P3 barrier dispatch
+
+    // Now run drain + sweep. The late-written child must survive.
+    let _traced = heap.run_cycle_collection_concurrent_inline_for_test();
+
+    // Expectation: late-written child survives because barrier marked it.
+    // root (pinned) + late_child (barrier-shaded, reachable via root.slots[0]).
+    assert_eq!(alive_count(&heap), 2,
+        "late-barrier-shaded child survives concurrent collect");
+
+    heap.unpin_root(root_handle);
+    drop(new_child);
+}
+
+#[test]
+fn concurrent_collect_inline_resets_marks_on_survivors() {
+    // Sweep's reset-marks behavior must apply under concurrent path too —
+    // survivors come back unmarked for the next cycle.
+    let heap = ArcMagrGC::new();
+    heap.set_mode(GcMode::ConcurrentMarkSweep);
+
+    let root = heap.alloc_object(dummy_type_desc("R"), vec![Value::Null], NativeData::None);
+    let pin = heap.pin_root(root.clone());
+
+    heap.run_cycle_collection_concurrent_inline_for_test();
+    let Value::Object(rc) = &root else { panic!() };
+    assert!(!GcRef::is_marked(rc),
+        "sweep resets survivor's mark for next cycle");
+
+    // Second cycle should still preserve root.
+    heap.run_cycle_collection_concurrent_inline_for_test();
+    assert_eq!(alive_count(&heap), 1);
+    assert!(!GcRef::is_marked(rc));
+
+    heap.unpin_root(pin);
+}
+
 #[test]
 fn barrier_mode_switch_takes_effect_immediately_on_next_write() {
     let heap = ArcMagrGC::new();

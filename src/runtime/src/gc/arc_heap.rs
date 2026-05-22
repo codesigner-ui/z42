@@ -544,6 +544,79 @@ impl ArcMagrGC {
         }
     }
 
+    /// **add-concurrent-gc P4a (2026-05-22)**: drain the gray-set
+    /// (`mark_queue`) until empty. Trace each popped value's children
+    /// and shade newly-discovered heap refs gray (mark + enqueue).
+    ///
+    /// **Termination invariant**: caller must ensure no new entries
+    /// can be pushed concurrently before checking emptiness. In the
+    /// concurrent path that means either:
+    /// 1. Run during `ConcurrentMarking` phase — barriers + this drain
+    ///    race; loop until both empty AND a final STW handshake
+    ///    confirms no more writes can occur (P4b orchestrates this).
+    /// 2. Run during `Marking` phase (handshake) — mutators parked,
+    ///    no new barrier pushes possible, so emptiness is final.
+    ///
+    /// Returns the count of objects marked during this drain (useful
+    /// for tests + diagnostics). 0 on already-empty queue.
+    #[allow(dead_code)] // becomes used by P4b production path
+    fn drain_mark_queue(&self) -> usize {
+        let mut traced = 0usize;
+        loop {
+            // Take ownership of the current queue contents in one swap.
+            // Mutators may push concurrently via barrier (under
+            // ConcurrentMarking); we'll see those on the next iteration.
+            let local: Vec<Value> = std::mem::take(&mut *self.mark_queue.lock());
+            if local.is_empty() {
+                break;
+            }
+            for v in &local {
+                traced += 1;
+                v.trace_children(&mut |child| {
+                    if Self::mark_if_unmarked(child) {
+                        self.mark_queue.lock().push(child.clone());
+                    }
+                });
+            }
+            // `local` drops here; any heap-ref values it held that are
+            // also reachable elsewhere stay alive via those other refs.
+        }
+        traced
+    }
+
+    /// **add-concurrent-gc P4a (2026-05-22)**: end-to-end concurrent
+    /// collect minus the safepoint phase transitions (P4b wires those
+    /// in). Runs the steps that DON'T require a real VmContext: root
+    /// snapshot → drain → sweep. Test-callable on a standalone
+    /// `ArcMagrGC::new()` so we can verify algorithmic correctness
+    /// (reachable chains preserved, unreachable cycles freed, barrier
+    /// integration) before integrating with safepoint protocol.
+    ///
+    /// **NOT a production path**: production goes through P4b which
+    /// adds STW pause coordination + handshake. Calling this without
+    /// the surrounding pause is racy under real concurrent mutators —
+    /// safe only for single-threaded test contexts that simulate
+    /// mutator writes inline.
+    #[cfg(test)]
+    pub(crate) fn run_cycle_collection_concurrent_inline_for_test(&self) -> u64 {
+        // Step 1: STW-equivalent root snapshot (no mutators in test).
+        self.snapshot_roots_into_mark_queue();
+
+        // Step 2: Drain queue (simulates "ConcurrentMarking" but
+        // single-threaded — no real concurrency).
+        let _traced = self.drain_mark_queue();
+
+        // Step 3: Final residual drain (post-handshake equivalent —
+        // catches anything pushed by barrier between roots snapshot
+        // and now; in single-thread test no concurrent writes happen,
+        // so this should be a no-op, but the loop is still here for
+        // structural parity with P4b production flow).
+        let _residual = self.drain_mark_queue();
+
+        // Step 4: Sweep (STW; identical to STW path's sweep).
+        self.sweep_phase()
+    }
+
     /// **add-concurrent-gc P2 (2026-05-22)**: STW-phase root snapshot for
     /// the concurrent mark loop. Walks pinned roots + external root
     /// scanner output, marks each as gray (via `mark_if_unmarked`), and
