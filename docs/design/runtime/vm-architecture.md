@@ -1109,6 +1109,7 @@ test-only `BarrierObserver`）。
 | **Write barriers** | `MagrGC::write_barrier_field` / `write_barrier_array_elem` call-site wiring 完成；`Value::is_heap_ref()` 在 call site 过滤 primitive 写入；trait override 可由后续 generational / concurrent backend 接入；default no-op | ✅ 2026-05-22 add-write-barriers |
 | **A4 concurrent mark** | 可选 `Z42_GC_MODE=concurrent` 切换 tricolor incremental update：STW root snapshot → ConcurrentMarking 阶段 mutator 不 park → barrier shade gray → STW 终止 handshake → STW sweep；STW 仍为默认 | ✅ 2026-05-22 add-concurrent-gc |
 | **A1 custom allocator** | `GcRef<T>` 从 `Arc<GcAllocation<T>>` 切到 chunked region + NonNull handle。Clone 零原子 op；`heap_registry` 删除；finalizer at sweep + `Std.GC.Finalize(x)` 显式 API。Sweep survivors 2.49× faster；alloc 1.03-1.06× faster | ✅ 2026-05-22 add-custom-allocator |
+| **A3 generational** | `GcMode::GenerationalMarkSweep` opt-in：RegionEntry gen_age + young_list + per-chunk card_dirty bitmap；write barrier 标记 old→young 跨代写；minor GC 扫 young + dirty cards (O(young) pause)；major GC 扫全堆 + 清 cards；survival rate >= 0.75 时 minor → major escalation。Bench: 1.40 ms minor vs 5.55 ms full STW on equivalent heap (**~4× minor speedup**) | ✅ 2026-05-22 add-generational-gc |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -1183,12 +1184,26 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 - **未实现**：Trace trait 一次性 derive（沿用 `Value::trace_children` 内联
   match），自定义 allocator 仍未做（A1 仍 backlog）；后续 benchmark 报告独立 spec
 
-##### A3. Generational GC（young/old 分代）
-- **What**：young 代频繁回收（短命对象集中）+ old 代低频回收 + write barriers 跟踪跨代引用
-- **Why**：典型程序"分配的对象大多很快死"（generational hypothesis），young-only collect 大幅降低 pause time
-- **Deps**：A1 + A2（mark-sweep，✅ 已就位）+ write barriers 真实实现 + IR codegen 在引用赋值处插桩
-- **Size**：2000+ LOC，15-20 天
-- **Risk**：write barrier 在每个引用赋值处插入 → 性能开销需 careful；compiler/codegen 配合工作量大
+##### A3. Generational GC（已落地，2026-05-22）
+- **状态**：✅ 完成，spec `add-generational-gc`
+- **What**：`GcMode::GenerationalMarkSweep` opt-in mode；RegionEntry gen_age
+  + Region young_list + per-chunk card_dirty bitmap；minor GC 扫 young +
+  dirty cards (O(young) pause)；major GC 扫全堆 + 清 cards；survival rate
+  >= 0.75 (Z42_GC_MINOR_THRESHOLD) 时 minor → major escalation。
+- **实现要点**：
+  - Logical promotion (gen_age 字段，不物理移动)：保 GcRef NonNull 契约
+  - Promotion threshold N=2 (industry default Java tenure)，配
+    `Z42_GC_TENURE` 调
+  - Card marking 粒度 per-chunk (256 entries / card)；u32 bitmap per chunk
+  - Write barrier override 检查 `owner.gen_age >= threshold && new.gen_age == 0`
+    时 `mark_card_dirty(owner.chunk)`
+  - Minor mark phase：BFS from pinned + external + dirty cards；trace
+    children but enqueue young only (老 children 通过 dirty card 重 root)
+  - Card_dirty 不在 minor 清；只在 major 清（preserve stable old→young refs）
+- **Bench**: 1.40 ms minor vs 5.55 ms full STW on 10k pinned old + 1k young
+  workload — **~4× minor speedup**
+- **Mutually exclusive with concurrent mark v1**: combine in future
+  `add-concurrent-generational` spec
 
 ##### A4. Concurrent / incremental collector
 - **What**：collect 工作分摊到多个 alloc 时间片（incremental）或后台线程（concurrent）

@@ -367,6 +367,46 @@ short-lived-heavy workloads. Major GC pause unchanged.
   4 existing gc_cycle_bench workloads + new gc_minor/* workloads.
   vm-architecture.md sync.
 
+## Benchmark Results (P4, 2026-05-22)
+
+`src/runtime/benches/gc_cycle_bench.rs` extended with 3 generational
+workloads. macOS arm64, release + LTO, criterion 0.5, 3s measurement
+× 30 samples × 1s warm-up.
+
+| Workload | Mode | Time | Notes |
+|----------|------|-----:|-------|
+| `gc_minor/pure_young_churn_1k` | generational | 232 µs | 1k unrooted young → minor sweeps all |
+| `gc_minor/1k_young_with_10k_pinned_old` | generational | **1.40 ms** | 10k pinned old + 1k unrooted young → minor scans young + dirty cards (no cards in this workload) |
+| `gc_minor/baseline_full_collect_10k_old_1k_young` | StwMarkSweep | **5.55 ms** | Same heap shape but full collect: marks all 11k reachable + sweeps |
+
+### 解读
+
+**~4× minor speedup vs full collect on equivalent heap**: 1.40 ms vs
+5.55 ms. The canonical generational win.
+
+- 完全 reachable set ~11k：full STW 全部 mark + sweep
+- 仅 young 1k：minor mark BFS 只看 pinned roots + dirty cards →
+  几乎不进 old subtree → 然后 sweep 只 walk young_list (1k entries)
+- Card-marking 在这个 workload 中没触发（无 old→young 写），minor
+  路径 fully 跳过 old；future stdlib workload 有真实跨代引用时会
+  surface 卡片扫描的成本
+
+**Pure young churn (232 µs)**: 几乎 baseline 上限的 young-only
+overhead，体现 minor 路径 fixed cost。
+
+### 局限 + 后续 bench TODO
+
+- 没测真实 workload 的"alloc + churn + 多次 minor"长时序模式
+- 没测 escalation 触发（高 survival rate 跑 major）的开销
+- 没测真实跨代引用（dirty cards 实际 fire）下的 minor 时间
+- 没测多线程下 mutator throughput during concurrent generational
+  （deferred — concurrent generational v1 互斥）
+
+**结论**：generational mark-sweep 提供了 minor pause ~4× 改进 vs full
+STW collect on workloads with stable old gen + short-lived young
+churn (i.e., the generational hypothesis). 默认 STW 保持稳定路径；
+用户可 opt-in `Z42_GC_MODE=generational` 体验更短 minor pauses。
+
 ## Deferred / Future Work
 
 ### add-concurrent-generational

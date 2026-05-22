@@ -327,6 +327,116 @@ fn bench_sweep_10k_garbage(c: &mut Criterion) {
     });
 }
 
+// ── add-generational-gc P4 (2026-05-22): minor vs major pause time ─────────
+//
+// Workloads that exhibit generational hypothesis: large pinned old-gen +
+// small ephemeral young churn. Compare:
+//   - StwMarkSweep (baseline): every collect = full O(reachable) scan
+//   - GenerationalMarkSweep: minor = O(young + dirty cards) ≪ full
+
+fn bench_minor_only_pure_young_churn(c: &mut Criterion) {
+    // 1000 small unrooted young objects → minor sweeps them all.
+    // Pure young workload — no old, no cross-gen.
+    c.bench_function("gc_minor/pure_young_churn_1k", |b| {
+        b.iter_batched(
+            || {
+                let ctx = VmContext::new();
+                ctx.heap().set_mode(GcMode::GenerationalMarkSweep);
+                ctx.heap().pause();
+                for _ in 0..1000 {
+                    let _ = ctx.heap().alloc_object(
+                        make_type_desc("Y"), vec![], NativeData::None,
+                    );
+                }
+                ctx.heap().resume();
+                ctx
+            },
+            |ctx| {
+                ctx.heap().collect_cycles_with_context(&ctx);
+                black_box(&ctx);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_minor_pause_with_large_pinned_old_gen(c: &mut Criterion) {
+    // 10k pinned old objects (simulated by repeated minors) + 1k
+    // ephemeral young → minor's young-list-only sweep should be much
+    // smaller than full STW.
+    //
+    // Note: setup cost is high (10 minors to promote) but excluded by
+    // iter_batched. Steady-state minor runs over 1k young.
+    c.bench_function("gc_minor/1k_young_with_10k_pinned_old", |b| {
+        b.iter_batched(
+            || {
+                let ctx = VmContext::new();
+                ctx.heap().set_mode(GcMode::GenerationalMarkSweep);
+                // Build pinned old gen
+                let mut pins = Vec::with_capacity(10_000);
+                for _ in 0..10_000 {
+                    let v = ctx.heap().alloc_object(
+                        make_type_desc("OldPinned"), vec![], NativeData::None,
+                    );
+                    pins.push(ctx.heap().pin_root(v));
+                }
+                // Promote to old gen.
+                for _ in 0..2 {
+                    ctx.heap().force_collect();
+                }
+                // Now add 1k young (unrooted = ephemeral).
+                ctx.heap().pause();
+                for _ in 0..1000 {
+                    let _ = ctx.heap().alloc_object(
+                        make_type_desc("Y"), vec![], NativeData::None,
+                    );
+                }
+                ctx.heap().resume();
+                (ctx, pins)
+            },
+            |(ctx, _pins)| {
+                ctx.heap().collect_cycles_with_context(&ctx);
+                black_box(&ctx);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
+fn bench_full_collect_with_large_pinned_old_baseline(c: &mut Criterion) {
+    // Same workload but under StwMarkSweep. Every collect is full
+    // O(reachable) — the baseline that generational is supposed to beat.
+    c.bench_function("gc_minor/baseline_full_collect_10k_old_1k_young", |b| {
+        b.iter_batched(
+            || {
+                let ctx = VmContext::new();
+                // Default StwMarkSweep.
+                let mut pins = Vec::with_capacity(10_000);
+                for _ in 0..10_000 {
+                    let v = ctx.heap().alloc_object(
+                        make_type_desc("OldPinned"), vec![], NativeData::None,
+                    );
+                    pins.push(ctx.heap().pin_root(v));
+                }
+                ctx.heap().force_collect();
+                ctx.heap().pause();
+                for _ in 0..1000 {
+                    let _ = ctx.heap().alloc_object(
+                        make_type_desc("Y"), vec![], NativeData::None,
+                    );
+                }
+                ctx.heap().resume();
+                (ctx, pins)
+            },
+            |(ctx, _pins)| {
+                ctx.heap().collect_cycles_with_context(&ctx);
+                black_box(&ctx);
+            },
+            BatchSize::SmallInput,
+        );
+    });
+}
+
 criterion_group!(
     benches,
     bench_cycle_heavy_100,
@@ -339,5 +449,8 @@ criterion_group!(
     bench_alloc_throughput_10k_arrays,
     bench_sweep_10k_survivors,
     bench_sweep_10k_garbage,
+    bench_minor_only_pure_young_churn,
+    bench_minor_pause_with_large_pinned_old_gen,
+    bench_full_collect_with_large_pinned_old_baseline,
 );
 criterion_main!(benches);
