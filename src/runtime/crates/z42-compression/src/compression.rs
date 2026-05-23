@@ -34,6 +34,7 @@ fn flate_level(level: i32) -> Result<FlateLevel, (i32, String)> {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn zstd_level(level: i32) -> Result<i32, (i32, String)> {
     match level {
         1..=22 => Ok(level),
@@ -84,12 +85,18 @@ pub fn deflate_decompress(input: &[u8], mode: i32) -> AlgoResult {
     Ok(out)
 }
 
+// zstd one-shot — non-wasm only. Wasm callers handle the unsupported case
+// at the C ABI shim layer (see lib.rs); these functions don't compile in
+// at all on wasm so any caller path is a logic bug.
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn zstd_compress(input: &[u8], level: i32) -> AlgoResult {
     let level = zstd_level(level)?;
     zstd::stream::encode_all(input, level)
         .map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string()))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn zstd_decompress(input: &[u8]) -> AlgoResult {
     zstd::stream::decode_all(input)
         .map_err(|e| (Z42_COMPRESSION_ERR_DECOMPRESS, format!("invalid zstd data: {e}")))
@@ -105,6 +112,7 @@ enum Handle {
     DeflateEnc(DeflateEncoder<Vec<u8>>),
     ZlibEnc(ZlibEncoder<Vec<u8>>),
     GzipEnc(GzEncoder<Vec<u8>>),
+    #[cfg(not(target_arch = "wasm32"))]
     ZstdEnc(zstd::stream::Encoder<'static, Vec<u8>>),
     // Decoders v0: accumulate fed chunks, bulk-decompress at finish.
     // Simpler than implementing flate2::Decompress state machine; v1
@@ -112,6 +120,9 @@ enum Handle {
     DeflateDec(Vec<u8>),
     ZlibDec(Vec<u8>),
     GzipDec(Vec<u8>),
+    // Zstd decompressor buffer kept on every target — the wasm path
+    // surfaces the "not supported" error at `compressor_finish` rather
+    // than at `compressor_begin`, mirroring the one-shot wasm shim.
     ZstdDec(Vec<u8>),
 }
 
@@ -140,11 +151,15 @@ pub fn compressor_begin(algo: i32, level: i32, is_decompress: bool) -> Result<u6
             ALGO_DEFLATE_RAW => Handle::DeflateEnc(DeflateEncoder::new(Vec::new(), flate_level(level)?)),
             ALGO_ZLIB        => Handle::ZlibEnc(ZlibEncoder::new(Vec::new(), flate_level(level)?)),
             ALGO_GZIP        => Handle::GzipEnc(GzEncoder::new(Vec::new(), flate_level(level)?)),
+            #[cfg(not(target_arch = "wasm32"))]
             ALGO_ZSTD => {
                 let enc = zstd::stream::Encoder::new(Vec::new(), zstd_level(level)?)
                     .map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string()))?;
                 Handle::ZstdEnc(enc)
             }
+            #[cfg(target_arch = "wasm32")]
+            ALGO_ZSTD => return Err((Z42_COMPRESSION_ERR_INVALID_MODE,
+                "zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd".into())),
             other => return Err((Z42_COMPRESSION_ERR_INVALID_MODE,
                                  format!("unknown algo {other} for compress"))),
         }
@@ -171,6 +186,7 @@ pub fn compressor_feed(slot_id: u64, chunk: &[u8]) -> Result<Vec<u8>, (i32, Stri
             e.write_all(chunk).map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string()))?;
             std::mem::take(e.get_mut())
         }
+        #[cfg(not(target_arch = "wasm32"))]
         Handle::ZstdEnc(e) => {
             e.write_all(chunk).map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string()))?;
             std::mem::take(e.get_mut())
@@ -191,11 +207,16 @@ pub fn compressor_finish(slot_id: u64) -> Result<Vec<u8>, (i32, String)> {
         Handle::DeflateEnc(e) => e.finish().map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string())),
         Handle::ZlibEnc(e)    => e.finish().map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string())),
         Handle::GzipEnc(e)    => e.finish().map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string())),
+        #[cfg(not(target_arch = "wasm32"))]
         Handle::ZstdEnc(e)    => e.finish().map_err(|e| (Z42_COMPRESSION_ERR_COMPRESS, e.to_string())),
         Handle::DeflateDec(buf) => deflate_decompress(&buf, ALGO_DEFLATE_RAW),
         Handle::ZlibDec(buf)    => deflate_decompress(&buf, ALGO_ZLIB),
         Handle::GzipDec(buf)    => deflate_decompress(&buf, ALGO_GZIP),
+        #[cfg(not(target_arch = "wasm32"))]
         Handle::ZstdDec(buf)    => zstd_decompress(&buf),
+        #[cfg(target_arch = "wasm32")]
+        Handle::ZstdDec(_)      => Err((Z42_COMPRESSION_ERR_INVALID_MODE,
+            "zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd".into())),
     }
 }
 

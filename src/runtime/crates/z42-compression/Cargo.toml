@@ -18,11 +18,18 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # non-wasm targets override to zlib-ng below (SIMD-optimised vendored C,
 # 2-3× the perf of stock zlib).
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-zstd   = { version = "0.13", default-features = false }
 anyhow = "1"
 
+# Non-wasm-only deps:
+#   * zlib-ng feature: vendored C, needs system clang (works on every
+#     non-wasm target through cc-rs)
+#   * zstd: libzstd is C; cc-rs can't easily target wasm32-unknown-unknown
+#     without WASI SDK / emscripten clang. Excluded on wasm — Std.Compression
+#     .Zstd.* entries on wasm return CompressionException("zstd not supported
+#     on wasm32 — see Deferred: compression-future-wasm-zstd").
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 flate2 = { version = "1", default-features = false, features = ["zlib-ng"] }
+zstd   = { version = "0.13", default-features = false }
 
 # Profile lives at workspace root (src/runtime/Cargo.toml) for the whole
 # workspace; defining one here is ignored with a warning by cargo.

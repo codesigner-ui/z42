@@ -132,6 +132,13 @@ pub unsafe extern "C" fn z42_compression_deflate_decompress(
     }
 }
 
+// zstd: not built for wasm32 (the libzstd C source needs WASI SDK /
+// emscripten clang that's not in the standard wasm32-unknown-unknown
+// toolchain). Wasm callers that reach these entries get
+// Z42_COMPRESSION_ERR_INVALID_MODE with the "zstd not supported on
+// wasm32" message via z42_compression_last_error. Tracked in
+// compression.md Deferred → `compression-future-wasm-zstd`.
+
 #[no_mangle]
 pub unsafe extern "C" fn z42_compression_zstd_compress(
     input_ptr: *const u8, input_len: usize,
@@ -140,10 +147,19 @@ pub unsafe extern "C" fn z42_compression_zstd_compress(
 ) -> i32 {
     *out_ptr = std::ptr::null_mut();
     *out_len = 0;
-    let input = std::slice::from_raw_parts(input_ptr, input_len);
-    match compression::zstd_compress(input, level) {
-        Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (input_ptr, input_len, level);
+        set_last_error("zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd\0");
+        return Z42_COMPRESSION_ERR_INVALID_MODE;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let input = std::slice::from_raw_parts(input_ptr, input_len);
+        match compression::zstd_compress(input, level) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 
@@ -154,10 +170,19 @@ pub unsafe extern "C" fn z42_compression_zstd_decompress(
 ) -> i32 {
     *out_ptr = std::ptr::null_mut();
     *out_len = 0;
-    let input = std::slice::from_raw_parts(input_ptr, input_len);
-    match compression::zstd_decompress(input) {
-        Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
-        Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = (input_ptr, input_len);
+        set_last_error("zstd not supported on wasm32 — see compression.md Deferred: compression-future-wasm-zstd\0");
+        return Z42_COMPRESSION_ERR_INVALID_MODE;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let input = std::slice::from_raw_parts(input_ptr, input_len);
+        match compression::zstd_decompress(input) {
+            Ok(bytes) => write_owned_buffer(bytes, out_ptr, out_len),
+            Err((code, msg)) => { set_last_error(format!("{msg}\0")); code }
+        }
     }
 }
 

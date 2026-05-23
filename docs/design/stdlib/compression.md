@@ -93,7 +93,7 @@ with target-specific feature selection:
 | Algorithm family | Crate | Non-wasm target | wasm32 target |
 |------------------|-------|-----------------|---------------|
 | DEFLATE / zlib / gzip | `flate2` | feature `zlib-ng` (vendored C, SIMD-optimised, 200–280 MB/s) | default `rust_backend` = `miniz_oxide` (pure Rust, 50–80 MB/s; no SIMD in wasm so zlib-ng has no advantage + 200 KB larger bundle) |
-| Zstandard | `zstd` | libzstd vendored via `zstd-sys` | same crate has wasm support |
+| Zstandard | `zstd` | libzstd vendored via `zstd-sys` | **not built** — `zstd-sys`'s C source needs WASI SDK / emscripten clang that's not in the standard `wasm32-unknown-unknown` toolchain. Wasm callers reaching `Std.Compression.Zstd.*` get `CompressionException("zstd not supported on wasm32")`. See Deferred → `compression-future-wasm-zstd`. |
 
 Cross-target build commands:
 
@@ -196,6 +196,24 @@ wrapper overhead is < 0.5%.
 
 - **触发条件**：use case requiring read or write of encrypted Zip
   archives (rare in z42's target domains).
+
+### `compression-future-wasm-zstd`
+
+- **来源**：add-z42-compression v0 wasm target build
+- **触发原因**：`zstd-sys` crate vendors libzstd C source. cc-rs invokes
+  `clang --target=wasm32-unknown-unknown` to build it, but a plain
+  Apple/Linux clang doesn't have wasm target support — it's available
+  through the WASI SDK or emscripten clang only. Standing up that
+  toolchain in CI / dev environments is non-trivial.
+- **触发条件**：either (a) WASI SDK becomes a documented part of the
+  z42 dev environment, OR (b) a pure-Rust zstd implementation reaches
+  production quality (e.g. `ruzstd` for decompress-only — currently
+  experimental).
+- **当前 workaround**：on wasm, `Std.Compression.Zstd.*` and
+  `Std.Compression.CompressionStream` with algo=Zstd return
+  `CompressionException("zstd not supported on wasm32")`. Apps that
+  only need gzip / zlib / deflate are unaffected — those use
+  `miniz_oxide` pure Rust which compiles cleanly for wasm.
 
 ## Architecture notes
 
