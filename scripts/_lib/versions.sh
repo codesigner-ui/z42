@@ -54,7 +54,20 @@ versions_get() {
     local toml
     toml="$(_versions_toml)"
     python3 - "$toml" "$path" <<'PY'
-import sys, tomllib
+import sys
+# Try stdlib `tomllib` (Python 3.11+); fall back to the pip `tomli`
+# shim (`python3 -m pip install --user tomli`) for older Python so we
+# don't force a Python upgrade just to run the build.
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        sys.stderr.write(
+            "versions.toml: need Python 3.11+ (stdlib tomllib) OR "
+            "`python3 -m pip install --user tomli`\n")
+        sys.exit(3)
 toml_path, dotted = sys.argv[1], sys.argv[2]
 with open(toml_path, "rb") as f:
     data = tomllib.load(f)
@@ -80,7 +93,17 @@ versions_get_list() {
     local toml
     toml="$(_versions_toml)"
     python3 - "$toml" "$path" <<'PY'
-import sys, tomllib
+import sys
+try:
+    import tomllib
+except ModuleNotFoundError:
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:
+        sys.stderr.write(
+            "versions.toml: need Python 3.11+ (stdlib tomllib) OR "
+            "`python3 -m pip install --user tomli`\n")
+        sys.exit(3)
 toml_path, dotted = sys.argv[1], sys.argv[2]
 with open(toml_path, "rb") as f:
     data = tomllib.load(f)
@@ -105,9 +128,12 @@ versions_require_python3() {
         echo "       install python3.11+ (macOS: brew install python; ubuntu: apt install python3)" >&2
         return 1
     fi
-    if ! python3 -c "import tomllib" >/dev/null 2>&1; then
-        echo "error: python3 lacks tomllib (need python 3.11+)" >&2
-        echo "       fix: brew upgrade python  /  or pip install tomli" >&2
+    # Either stdlib tomllib (Python 3.11+) OR pip `tomli` shim works.
+    if ! python3 -c "import tomllib" >/dev/null 2>&1 \
+       && ! python3 -c "import tomli"   >/dev/null 2>&1; then
+        echo "error: python3 lacks tomllib AND tomli — need one of:" >&2
+        echo "       (a) upgrade Python to 3.11+ (macOS: brew upgrade python)" >&2
+        echo "       (b) install the shim: python3 -m pip install --user tomli" >&2
         return 1
     fi
 }
