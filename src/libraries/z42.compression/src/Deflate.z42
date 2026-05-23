@@ -1,0 +1,39 @@
+namespace Std.Compression;
+
+using Std;
+
+// add-z42-compression (2026-05-22): raw DEFLATE (RFC 1951) — no
+// framing, no checksum. Used by Zip entry payloads and by callers who
+// need the raw stream (e.g. embedding in custom binary formats).
+
+public static class Deflate {
+    [Native(lib = "z42_compression", entry = "__deflate_compress")]
+    private static extern byte[] _CompressRaw(byte[] data, int level, int mode);
+
+    [Native(lib = "z42_compression", entry = "__deflate_decompress")]
+    private static extern byte[] _DecompressRaw(byte[] data, int mode);
+
+    public static byte[] Compress(byte[] data) {
+        return _CompressRaw(data, Compression.Default, AlgoId.DeflateRaw);
+    }
+
+    public static byte[] Compress(byte[] data, int level) {
+        return _CompressRaw(data, level, AlgoId.DeflateRaw);
+    }
+
+    public static byte[] Decompress(byte[] data) {
+        return _DecompressRaw(data, AlgoId.DeflateRaw);
+    }
+
+    public static CompressionStream CompressStream() {
+        return CompressionStream._BeginEncode(AlgoId.DeflateRaw, Compression.Default);
+    }
+
+    public static CompressionStream CompressStream(int level) {
+        return CompressionStream._BeginEncode(AlgoId.DeflateRaw, level);
+    }
+
+    public static CompressionStream DecompressStream() {
+        return CompressionStream._BeginDecode(AlgoId.DeflateRaw);
+    }
+}

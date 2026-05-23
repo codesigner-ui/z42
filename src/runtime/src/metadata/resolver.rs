@@ -176,9 +176,15 @@ pub fn resolve_module(module: &crate::metadata::Module, ctx: &crate::vm_context:
 
         let builtin_tokens: Vec<u32> = builtin_site_names.iter()
             .map(|name| {
+                // Static `BUILTINS[]` first, then per-VM ext registry (populated by
+                // `native::ext::load_all` at VM startup). add-z42-compression
+                // (2026-05-22): facade `[Native(lib="z42_compression", entry=...)]`
+                // names resolve through the ext path.
                 crate::corelib::builtin_id_of(name)
+                    .or_else(|| crate::corelib::ext_builtin_id_of(ctx, name))
                     .unwrap_or_else(|| panic!(
-                        "unknown builtin `{}` (typo? not registered in BUILTINS table?)",
+                        "unknown builtin `{}` (typo? not in BUILTINS table or any \
+                         dlopened native extension?)",
                         name
                     ))
                     .0

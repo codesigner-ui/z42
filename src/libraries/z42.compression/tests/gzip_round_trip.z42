@@ -1,0 +1,63 @@
+// add-z42-compression (2026-05-22): gzip round-trip via the dlopened
+// `libz42_compression` cdylib (or statically-linked rlib on wasm).
+namespace Z42CompressionGzipTests;
+
+using Std.Test;
+using Std.Compression;
+
+[Test]
+void test_round_trip_short_text() {
+    byte[] original = new byte[] { (byte)104, (byte)101, (byte)108, (byte)108, (byte)111 };  // "hello"
+    byte[] compressed = Gzip.Compress(original);
+    Assert.True(compressed.Length > 0);
+    byte[] decompressed = Gzip.Decompress(compressed);
+    Assert.Equal(original.Length, decompressed.Length);
+    int i = 0;
+    while (i < original.Length) {
+        Assert.Equal((int)original[i], (int)decompressed[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_gzip_magic_bytes() {
+    byte[] original = new byte[] { (byte)120 };  // "x"
+    byte[] compressed = Gzip.Compress(original);
+    Assert.Equal(0x1F, (int)compressed[0]);
+    Assert.Equal(0x8B, (int)compressed[1]);
+}
+
+[Test]
+void test_round_trip_at_each_level() {
+    byte[] original = new byte[] { (byte)116, (byte)104, (byte)101, (byte)32, (byte)113, (byte)117, (byte)105, (byte)99, (byte)107 };  // "the quick"
+    int level = 1;
+    while (level <= 9) {
+        byte[] compressed = Gzip.Compress(original, level);
+        byte[] decompressed = Gzip.Decompress(compressed);
+        Assert.Equal(original.Length, decompressed.Length);
+        int i = 0;
+        while (i < original.Length) {
+            Assert.Equal((int)original[i], (int)decompressed[i]);
+            i = i + 1;
+        }
+        level = level + 1;
+    }
+}
+
+[Test]
+void test_repetitive_input_compresses_well() {
+    // 1000 copies of "abc" — should compress dramatically.
+    int n = 1000 * 3;
+    byte[] big = new byte[n];
+    int i = 0;
+    while (i < n) {
+        big[i + 0] = (byte)97;  // 'a'
+        big[i + 1] = (byte)98;  // 'b'
+        big[i + 2] = (byte)99;  // 'c'
+        i = i + 3;
+    }
+    byte[] compressed = Gzip.Compress(big);
+    Assert.True(compressed.Length < big.Length / 10);
+    byte[] decompressed = Gzip.Decompress(compressed);
+    Assert.Equal(big.Length, decompressed.Length);
+}

@@ -1,0 +1,159 @@
+namespace Std.Archive;
+
+using Std;
+using Std.Compression;
+
+// add-z42-compression (2026-05-22): Zip archive reader (PKWARE
+// APPNOTE.TXT v6.3.x). Pure z42 parsing of the local file header /
+// central directory / EOCD; per-entry payload decompression goes
+// through `Std.Compression.Deflate` for method=8 (DEFLATE) entries.
+// method=0 (STORE) is also supported.
+//
+// v0 scope:
+//   - Read-side only (Write deferred to `add-z42-compression-zip-write`
+//     follow-up — needs `byte[][]` array-of-array support in z42 to
+//     express the natural implementation; v0 ships the high-impact
+//     extraction use case for `setup-tools.sh` NDK/SDK unzipping)
+//   - methods 0 (STORE) and 8 (DEFLATE) only
+//   - no encryption (method 99 / strong encryption)
+//   - no ZIP64 extra fields (archives < 4 GB, fewer than 65 535 entries)
+//   - filenames assumed UTF-8 (general purpose bit 11 set; older
+//     CP437/GBK archives produce mojibake names — pax exception left
+//     to v1)
+//   - no central directory comments
+
+public class ZipEntry {
+    public string Name;
+    public byte[] Content;
+    public int    CompressionMethod;  // 0 = STORE, 8 = DEFLATE
+
+    public ZipEntry(string name, byte[] content, int compressionMethod) {
+        this.Name              = name;
+        this.Content           = content;
+        this.CompressionMethod = compressionMethod;
+    }
+}
+
+public static class Zip {
+    // PKWARE signatures
+    private static int SIG_LOCAL_FILE_HEADER  = 0x04034b50;  // "PK\x03\x04"
+    private static int SIG_CENTRAL_DIR_HEADER = 0x02014b50;  // "PK\x01\x02"
+    private static int SIG_EOCD               = 0x06054b50;  // "PK\x05\x06"
+    private static int METHOD_STORE   = 0;
+    private static int METHOD_DEFLATE = 8;
+
+    // ── Read ────────────────────────────────────────────────────────
+
+    public static ZipEntry[] Read(byte[] zipBytes) {
+        if (zipBytes.Length < 22) {
+            throw new ArchiveException("zip archive too small (< 22 bytes EOCD)");
+        }
+        int eocdOff = _LocateEocd(zipBytes);
+        if (eocdOff < 0) {
+            throw new ArchiveException("zip archive: no EOCD signature");
+        }
+        int entryCount = _ReadU16LE(zipBytes, eocdOff + 10);
+        int cdOff      = _ReadU32LE(zipBytes, eocdOff + 16);
+
+        ZipEntry[] result = new ZipEntry[entryCount];
+        int cdCursor = cdOff;
+        int i = 0;
+        while (i < entryCount) {
+            int sig = _ReadU32LE(zipBytes, cdCursor);
+            if (sig != Zip.SIG_CENTRAL_DIR_HEADER) {
+                throw new ArchiveException("zip: bad central directory entry signature at " + cdCursor.ToString());
+            }
+            int method      = _ReadU16LE(zipBytes, cdCursor + 10);
+            int compressed  = _ReadU32LE(zipBytes, cdCursor + 20);
+            int uncompressed = _ReadU32LE(zipBytes, cdCursor + 24);
+            int nameLen     = _ReadU16LE(zipBytes, cdCursor + 28);
+            int extraLen    = _ReadU16LE(zipBytes, cdCursor + 30);
+            int commentLen  = _ReadU16LE(zipBytes, cdCursor + 32);
+            int localOff    = _ReadU32LE(zipBytes, cdCursor + 42);
+            string name = _ReadStr(zipBytes, cdCursor + 46, nameLen);
+
+            int localSig = _ReadU32LE(zipBytes, localOff);
+            if (localSig != Zip.SIG_LOCAL_FILE_HEADER) {
+                throw new ArchiveException("zip: bad local file header for entry '" + name + "'");
+            }
+            int localNameLen  = _ReadU16LE(zipBytes, localOff + 26);
+            int localExtraLen = _ReadU16LE(zipBytes, localOff + 28);
+            int payloadOff = localOff + 30 + localNameLen + localExtraLen;
+
+            byte[] rawPayload = new byte[compressed];
+            int j = 0;
+            while (j < compressed) {
+                rawPayload[j] = zipBytes[payloadOff + j];
+                j = j + 1;
+            }
+
+            byte[] content;
+            if (method == Zip.METHOD_STORE) {
+                content = rawPayload;
+            } else if (method == Zip.METHOD_DEFLATE) {
+                content = Deflate.Decompress(rawPayload);
+                if (content.Length != uncompressed) {
+                    throw new ArchiveException("zip: decompressed size mismatch for '" + name + "'");
+                }
+            } else {
+                throw new ArchiveException("zip: unsupported compression method " + method.ToString() + " for entry '" + name + "' (only 0=STORE / 8=DEFLATE)");
+            }
+
+            result[i] = new ZipEntry(name, content, method);
+            cdCursor = cdCursor + 46 + nameLen + extraLen + commentLen;
+            i = i + 1;
+        }
+        return result;
+    }
+
+    public static byte[] ExtractFile(byte[] zipBytes, string name) {
+        ZipEntry[] entries = Read(zipBytes);
+        int i = 0;
+        while (i < entries.Length) {
+            if (entries[i].Name == name) {
+                return entries[i].Content;
+            }
+            i = i + 1;
+        }
+        throw new ArchiveException("zip: entry '" + name + "' not found");
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────
+
+    private static int _LocateEocd(byte[] bytes) {
+        int max = bytes.Length - 22;
+        int min = 0;
+        if (bytes.Length > 65557) {
+            min = bytes.Length - 65557;
+        }
+        int i = max;
+        while (i >= min) {
+            if (_ReadU32LE(bytes, i) == Zip.SIG_EOCD) {
+                return i;
+            }
+            i = i - 1;
+        }
+        return -1;
+    }
+
+    private static int _ReadU16LE(byte[] bytes, int off) {
+        return ((int)bytes[off]) | (((int)bytes[off + 1]) << 8);
+    }
+
+    private static int _ReadU32LE(byte[] bytes, int off) {
+        return ((int)bytes[off])
+             | (((int)bytes[off + 1]) << 8)
+             | (((int)bytes[off + 2]) << 16)
+             | (((int)bytes[off + 3]) << 24);
+    }
+
+    private static string _ReadStr(byte[] bytes, int offset, int len) {
+        char[] chars = new char[len];
+        int i = 0;
+        while (i < len) {
+            chars[i] = (char)bytes[offset + i];
+            i = i + 1;
+        }
+        return new string(chars);
+    }
+}

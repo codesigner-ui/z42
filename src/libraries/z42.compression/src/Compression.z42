@@ -1,0 +1,25 @@
+namespace Std.Compression;
+
+// add-z42-compression (2026-05-22): level + algorithm constants shared
+// by all facade classes.
+public static class Compression {
+    // DEFLATE / zlib / gzip level constants (1..=9).
+    public static int Fastest = 1;
+    public static int Default = 6;
+    public static int Best    = 9;
+
+    // Zstd level constants (1..=22). Default 3 matches libzstd's default.
+    public static int ZstdFastest = 1;
+    public static int ZstdDefault = 3;
+    public static int ZstdBest    = 22;
+}
+
+// Algorithm IDs passed to the streaming builtin __compressor_begin and
+// the mode arg of __deflate_compress / __deflate_decompress. Must stay
+// in sync with the cdylib's ALGO_* constants in compression.rs.
+public static class AlgoId {
+    public static int DeflateRaw = 0;
+    public static int Zlib       = 1;
+    public static int Gzip       = 2;
+    public static int Zstd       = 10;
+}

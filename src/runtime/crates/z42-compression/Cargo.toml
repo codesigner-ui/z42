@@ -1,0 +1,28 @@
+[package]
+name        = "z42-compression"
+version     = "0.1.0"
+edition     = "2021"
+description = "z42 stdlib native extension — compression (gzip / zlib / deflate / zstd). Built as cdylib + staticlib + rlib. z42vm loads via dlopen on desktop/mobile, statically links via the bundled-compression feature on wasm. Pure C ABI surface — no z42-type dependency, so this crate has no cycle with the z42 main crate."
+publish     = false
+
+[lib]
+# - cdylib:    libz42_compression.{so,dylib,dll} — dlopened by z42vm
+# - staticlib: libz42_compression.a — mobile integrators can statically link
+# - rlib:      z42 main crate `path =` deps for wasm bundled feature
+name       = "z42_compression"
+path       = "src/lib.rs"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+# Default = miniz_oxide (pure Rust) — works on every target including wasm;
+# non-wasm targets override to zlib-ng below (SIMD-optimised vendored C,
+# 2-3× the perf of stock zlib).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+zstd   = { version = "0.13", default-features = false }
+anyhow = "1"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+flate2 = { version = "1", default-features = false, features = ["zlib-ng"] }
+
+# Profile lives at workspace root (src/runtime/Cargo.toml) for the whole
+# workspace; defining one here is ignored with a warning by cargo.

@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/z42-abi", "crates/z42-rs", "crates/z42-macros"]
+members = [".", "crates/z42-abi", "crates/z42-rs", "crates/z42-macros", "crates/z42-compression"]
 
 [workspace.package]
 # mirror of versions.toml [project].version — drift enforced by scripts/check-versions-drift.sh
@@ -47,6 +47,11 @@ parking_lot = "0.12"
 # BLAKE3 hash for zbc/zpkg build_id (split-debug-symbols, 1.2/0.3+)
 blake3 = "1"
 
+# Compression cdylib — add-z42-compression (2026-05-22).
+# Optional dep, enabled by the `bundled-compression` feature (wasm-only by
+# default; non-wasm targets dlopen the cdylib via native::ext at startup).
+z42-compression = { path = "crates/z42-compression", optional = true }
+
 # CLI
 clap = { version = "4", features = ["derive"] }
 
@@ -86,14 +91,17 @@ cranelift-native   = { version = "0.115", optional = true }
 # - `aot` is a placeholder for future AOT compilation (M9; no impl yet)
 # - `interp-only` is intent-only (no extra deps); used by platform presets
 # - platform presets are convenience combos for `--no-default-features --features <preset>`
-default        = ["jit", "native-interop"]
-jit            = ["dep:cranelift-codegen", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native"]
-native-interop = ["dep:libffi", "dep:libloading"]
-aot            = []
-interp-only    = []
-wasm           = ["interp-only"]
-ios            = ["interp-only", "aot", "native-interop"]
-android        = ["interp-only", "aot", "native-interop"]
+default              = ["jit", "native-interop"]
+jit                  = ["dep:cranelift-codegen", "dep:cranelift-frontend", "dep:cranelift-jit", "dep:cranelift-module", "dep:cranelift-native"]
+native-interop       = ["dep:libffi", "dep:libloading"]
+aot                  = []
+interp-only          = []
+# bundled-compression: statically link z42-compression instead of dlopen'ing it.
+# Required on wasm (no dlopen); optional everywhere else.
+bundled-compression  = ["dep:z42-compression"]
+wasm                 = ["interp-only", "bundled-compression"]
+ios                  = ["interp-only", "aot", "native-interop"]
+android              = ["interp-only", "aot", "native-interop"]
 
 # Platform / system info (Std.Platform / Std.OperatingSystem stdlib, 2026-05-14).
 # Only needed on unix-like for gethostname / uname; windows uses winapi via direct

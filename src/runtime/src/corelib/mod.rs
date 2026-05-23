@@ -273,6 +273,12 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-gc-pause-histogram (2026-05-22) — appended to preserve existing BuiltinIds ──
     ("__gc_pause_histogram", gc::builtin_gc_pause_histogram),
     ("__gc_pause_stats_raw", gc::builtin_gc_pause_stats_raw),
+
+    // ── add-z42-compression (2026-05-22): __deflate_* / __zstd_* / __compressor_*
+    //    builtins are NOT statically registered here — they're provided by the
+    //    z42-compression cdylib, dlopen'd at VM startup (or statically linked
+    //    on wasm via the `bundled-compression` feature). Resolved through
+    //    `VmCore.ext_builtins` (see corelib::ext_builtin_id_of below).
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
@@ -288,32 +294,62 @@ fn builtin_index() -> &'static HashMap<&'static str, u32> {
     })
 }
 
-/// Resolve a builtin name to its `BuiltinId`. Returns `None` if no builtin
-/// with that name is registered. Called by `metadata::resolver` at module
-/// load to populate `ResolvedTokens.builtin_tokens`.
+/// High bit of `BuiltinId.0` marks an ext (dlopen / bundled) builtin
+/// resolved through `VmCore.ext_builtins` rather than the static
+/// `BUILTINS` slice. Low 31 bits are the index into the ext table.
+/// add-z42-compression (2026-05-22).
+pub const BUILTIN_ID_EXT_BIT: u32 = 0x8000_0000;
+
+/// Resolve a builtin name to its `BuiltinId`. Static `BUILTINS[]` first;
+/// callers should fall back to [`ext_builtin_id_of`] if this returns
+/// `None` (the resolver needs a `VmContext` for the ext table).
 pub fn builtin_id_of(name: &str) -> Option<BuiltinId> {
     builtin_index().get(name).copied().map(BuiltinId)
 }
 
-/// Fast-path dispatch by id (no hash, just `BUILTINS[id.0 as usize]`).
-/// Caller must have validated the id (e.g. resolver assigned it).
+/// Resolve a builtin name via the per-VM extension table populated at
+/// VM startup by `native::ext::load_all`. Returns a `BuiltinId` whose
+/// high bit is set; dispatch routes it through `ext_builtins.dispatch`.
+pub fn ext_builtin_id_of(ctx: &VmContext, name: &str) -> Option<BuiltinId> {
+    ctx.core.ext_builtins.lock().lookup_id(name)
+        .map(|idx| BuiltinId(idx | BUILTIN_ID_EXT_BIT))
+}
+
+/// Fast-path dispatch by id. Static ids index into `BUILTINS`; ids with
+/// the ext bit set index into `VmCore.ext_builtins.by_idx`.
 #[inline]
 pub fn exec_builtin_by_id(ctx: &VmContext, id: BuiltinId, args: &[Value]) -> Result<Value> {
+    if id.0 & BUILTIN_ID_EXT_BIT != 0 {
+        let idx = id.0 & !BUILTIN_ID_EXT_BIT;
+        let fn_ptr = {
+            let ext = ctx.core.ext_builtins.lock();
+            ext.dispatch(idx)
+                .ok_or_else(|| anyhow::anyhow!("ext builtin id {} out of range", idx))?
+        };
+        return fn_ptr(ctx, args);
+    }
     let idx = id.0 as usize;
     debug_assert!(idx < BUILTINS.len(), "BuiltinId {} out of range", id.0);
     BUILTINS[idx].1(ctx, args)
 }
 
 /// Stable public entry point — called by the interpreter and JIT `jit_builtin`.
-/// Falls back to `HashMap<&'static str, _>` lookup when caller has only a name
-/// (e.g. JIT helpers in Phase 1; cross-zpkg lazy paths). Hot interp path
-/// after `introduce-method-token` Phase 1 prefers `exec_builtin_by_id`.
+/// Static `BUILTINS[]` first; ext (dlopened) second. A miss in both is a
+/// hard error.
 pub fn exec_builtin(ctx: &VmContext, name: &str, args: &[Value]) -> Result<Value> {
-    let id = builtin_index()
-        .get(name)
-        .copied()
-        .ok_or_else(|| anyhow::anyhow!("unknown builtin `{name}`"))?;
-    BUILTINS[id as usize].1(ctx, args)
+    if let Some(&id) = builtin_index().get(name) {
+        return BUILTINS[id as usize].1(ctx, args);
+    }
+    {
+        let ext = ctx.core.ext_builtins.lock();
+        if let Some(idx) = ext.lookup_id(name) {
+            if let Some(fn_ptr) = ext.dispatch(idx) {
+                drop(ext);  // release before invoking — wrappers may re-enter
+                return fn_ptr(ctx, args);
+            }
+        }
+    }
+    Err(anyhow::anyhow!("unknown builtin `{name}`"))
 }
 
 #[cfg(test)]

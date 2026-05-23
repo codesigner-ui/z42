@@ -78,18 +78,29 @@ public sealed partial class IrGen
     }
 
     /// Emits a single-block stub function that forwards all parameters to a
-    /// VM-side native dispatch. Two forms (mutually exclusive — exactly one
-    /// of `intrinsicName` / `tier1` must be non-null):
+    /// VM-side native dispatch. Three forms (exactly one of `intrinsicName`
+    /// / `tier1` must be non-null):
     ///
-    ///   * legacy `[Native("__name")]` (L1 stdlib) → `BuiltinInstr`
-    ///   * spec C6 `[Native(lib=, type=, entry=)]`  → `CallNativeInstr`
+    ///   * legacy `[Native("__name")]` (L1 stdlib)        → `BuiltinInstr`
+    ///   * spec C6 `[Native(lib=, type=, entry=)]` (Tier 1) → `CallNativeInstr`
+    ///   * add-z42-compression `[Native(lib=, entry=)]` (Tier 1 short form for
+    ///     stdlib-internal native extensions, type= omitted)             → `BuiltinInstr`
     ///
-    /// In both cases the stub function itself has the same shape: arguments
-    /// in r0..rN-1, result in rN, single block returning the result.
+    /// The Tier 1 short form bypasses libffi + Z42Value marshal (which
+    /// requires spec C5 byte[] support, not yet done). The `entry` name
+    /// is resolved at module-load time through the per-VM `ext_builtins`
+    /// registry populated by `native::ext::load_all` from dlopened
+    /// `lib<libname>.{so,dylib,dll}` artefacts.
+    ///
+    /// In all three cases the stub function itself has the same shape:
+    /// arguments in r0..rN-1, result in rN, single block returning the
+    /// result.
     ///
     /// `tier1` is the *stitched* binding (method + class defaults already
-    /// merged via [`StitchTier1`]). All three fields must be non-null when
-    /// non-null is passed; type-check guarantees this otherwise emits E0907.
+    /// merged via [`StitchTier1`]). When `tier1.TypeName` is null it's
+    /// the short form; type-check guarantees `Lib` and `Entry` are then
+    /// non-null. When all three Tier1 fields are present it's Tier 1
+    /// proper (CallNativeInstr).
     private static IrFunction EmitNativeStub(
         string qualifiedName, int totalParams, int paramOffset,
         string? intrinsicName, Tier1NativeBinding? tier1, bool isVoid)
@@ -97,9 +108,25 @@ public sealed partial class IrGen
         var args = Enumerable.Range(0, totalParams)
             .Select(i => new TypedReg(i, IrType.Unknown)).ToList();
         var dst  = new TypedReg(totalParams, isVoid ? IrType.Void : IrType.Unknown);
-        IrInstr call = tier1 is { } t
-            ? new CallNativeInstr(dst, t.Lib!, t.TypeName!, t.Entry!, args)
-            : new BuiltinInstr(dst, intrinsicName!, args);
+        IrInstr call;
+        if (tier1 is { } t)
+        {
+            if (t.TypeName is null)
+            {
+                // Stdlib-internal short form: route through Builtin name lookup
+                // (resolves via static BUILTINS[] or the VM-side ext_builtins
+                // registry populated from dlopened lib<t.Lib>.{so,dylib,dll}).
+                call = new BuiltinInstr(dst, t.Entry!, args);
+            }
+            else
+            {
+                call = new CallNativeInstr(dst, t.Lib!, t.TypeName, t.Entry!, args);
+            }
+        }
+        else
+        {
+            call = new BuiltinInstr(dst, intrinsicName!, args);
+        }
         var instrs = new List<IrInstr> { call };
         var term   = new RetTerm(isVoid ? null : dst);
         var block  = new IrBlock("entry", instrs, term);

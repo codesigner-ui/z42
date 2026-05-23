@@ -1,0 +1,276 @@
+namespace Std.Archive;
+
+using Std;
+
+// add-z42-compression (2026-05-22): ustar archive (POSIX 1003.1-1988).
+// Pure z42 — no FFI dependency. Tar is an archive format only (no
+// compression); pair with `Std.Compression.Gzip` / `Zstd` etc. when
+// you want `.tar.gz` / `.tar.zst`.
+//
+// v0 scope: ustar format (the modern GNU tar / bsdtar default).
+//   - regular files (typeflag '0' or '\0')
+//   - 100-byte name + 155-byte prefix (long-name handling via prefix
+//     concatenation; pax extended headers are deferred)
+//   - octal sizes / modes
+//   - 512-byte blocks with NUL padding
+//   - 2 × 512 NUL trailer marks EOF
+//
+// Out of scope (deferred): pax extended headers, sparse files, symlinks
+// with content, hard links, device files. Bytes of an unsupported entry
+// type produce an `ArchiveException`.
+
+public class TarEntry {
+    public string Name;
+    public byte[] Content;
+    public int    Mode;
+
+    public TarEntry(string name, byte[] content, int mode) {
+        this.Name    = name;
+        this.Content = content;
+        this.Mode    = mode;
+    }
+}
+
+public static class Tar {
+    // ── Read ────────────────────────────────────────────────────────
+
+    public static TarEntry[] Read(byte[] tarBytes) {
+        if (tarBytes.Length == 0) {
+            return new TarEntry[0];
+        }
+        if (tarBytes.Length % 512 != 0) {
+            throw new ArchiveException("tar archive length must be a multiple of 512 bytes");
+        }
+
+        // Build result into a List-like growable buffer. Use byte[]+count
+        // pattern; entries grow on demand.
+        TarEntry[] buf = new TarEntry[16];
+        int count = 0;
+        int offset = 0;
+
+        while (offset + 512 <= tarBytes.Length) {
+            // EOF marker: two consecutive zero blocks → stop.
+            if (_IsZeroBlock(tarBytes, offset)) {
+                break;
+            }
+
+            // Parse header fields.
+            string name = _ReadStr(tarBytes, offset, 100);
+            int mode    = _ReadOctal(tarBytes, offset + 100, 8);
+            long size   = _ReadOctalLong(tarBytes, offset + 124, 12);
+            byte typeflag = tarBytes[offset + 156];
+            string prefix = _ReadStr(tarBytes, offset + 345, 155);
+
+            // ustar magic check is informational; we accept any header.
+
+            // Glue prefix + "/" + name (ustar spec) when prefix non-empty.
+            string fullName;
+            if (prefix.Length > 0) {
+                fullName = prefix + "/" + name;
+            } else {
+                fullName = name;
+            }
+
+            offset = offset + 512;
+
+            // Only regular files supported in v0.
+            byte zero = 48;  // ASCII '0'
+            byte nul  = 0;
+            if (typeflag != zero && typeflag != nul) {
+                // Skip non-regular entries' payload; throw on archive
+                // close if any were present? v0: throw immediately so
+                // callers know the archive has unsupported content.
+                throw new ArchiveException("unsupported tar entry typeflag at offset " + offset.ToString());
+            }
+
+            // Read payload + skip padding to next 512-byte boundary.
+            byte[] content = new byte[(int)size];
+            int i = 0;
+            while (i < (int)size) {
+                content[i] = tarBytes[offset + i];
+                i = i + 1;
+            }
+            long padded = ((size + 511) / 512) * 512;
+            offset = offset + (int)padded;
+
+            // Grow buf if needed
+            if (count >= buf.Length) {
+                TarEntry[] bigger = new TarEntry[buf.Length * 2];
+                int j = 0;
+                while (j < count) {
+                    bigger[j] = buf[j];
+                    j = j + 1;
+                }
+                buf = bigger;
+            }
+            buf[count] = new TarEntry(fullName, content, mode);
+            count = count + 1;
+        }
+
+        TarEntry[] result = new TarEntry[count];
+        int k = 0;
+        while (k < count) {
+            result[k] = buf[k];
+            k = k + 1;
+        }
+        return result;
+    }
+
+    // ── Write ───────────────────────────────────────────────────────
+
+    public static byte[] Write(TarEntry[] entries) {
+        // Compute total output size: 512 header + padded payload per
+        // entry + 2*512 zero trailer.
+        long total = 0;
+        int idx = 0;
+        while (idx < entries.Length) {
+            long size = (long)entries[idx].Content.Length;
+            long padded = ((size + 511) / 512) * 512;
+            total = total + 512 + padded;
+            idx = idx + 1;
+        }
+        total = total + 1024;  // 2 × 512 zero trailer
+
+        byte[] result = new byte[(int)total];
+        int off = 0;
+        idx = 0;
+        while (idx < entries.Length) {
+            TarEntry e = entries[idx];
+            _WriteHeader(result, off, e);
+            off = off + 512;
+            int i = 0;
+            while (i < e.Content.Length) {
+                result[off + i] = e.Content[i];
+                i = i + 1;
+            }
+            long padded = (((long)e.Content.Length + 511) / 512) * 512;
+            off = off + (int)padded;
+            idx = idx + 1;
+        }
+        // 1024 zero bytes are already 0 from new byte[].
+        return result;
+    }
+
+    // ── Helpers ─────────────────────────────────────────────────────
+
+    private static bool _IsZeroBlock(byte[] bytes, int offset) {
+        int i = 0;
+        while (i < 512) {
+            if (bytes[offset + i] != 0) {
+                return false;
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    private static string _ReadStr(byte[] bytes, int offset, int maxLen) {
+        // Read until NUL or end of field.
+        int end = 0;
+        while (end < maxLen) {
+            if (bytes[offset + end] == 0) {
+                break;
+            }
+            end = end + 1;
+        }
+        char[] chars = new char[end];
+        int i = 0;
+        while (i < end) {
+            chars[i] = (char)bytes[offset + i];
+            i = i + 1;
+        }
+        return new string(chars);
+    }
+
+    private static int _ReadOctal(byte[] bytes, int offset, int len) {
+        // Octal ASCII digits in a fixed-width field, possibly NUL- or
+        // space-terminated.
+        int result = 0;
+        int i = 0;
+        while (i < len) {
+            byte b = bytes[offset + i];
+            // ASCII '0' = 48, '7' = 55
+            if (b >= 48 && b <= 55) {
+                result = result * 8 + (int)(b - 48);
+            } else {
+                break;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    private static long _ReadOctalLong(byte[] bytes, int offset, int len) {
+        long result = 0L;
+        int i = 0;
+        while (i < len) {
+            byte b = bytes[offset + i];
+            if (b >= 48 && b <= 55) {
+                result = result * 8L + (long)(b - 48);
+            } else {
+                break;
+            }
+            i = i + 1;
+        }
+        return result;
+    }
+
+    private static void _WriteOctal(byte[] bytes, int offset, int len, long value) {
+        // Write value as left-zero-padded octal digits + trailing NUL.
+        int writePos = offset + len - 1;
+        bytes[writePos] = 0;
+        writePos = writePos - 1;
+        long v = value;
+        while (writePos >= offset) {
+            int digit = (int)(v & 7L);
+            bytes[writePos] = (byte)(48 + digit);
+            v = v >> 3;
+            writePos = writePos - 1;
+        }
+    }
+
+    private static void _WriteStr(byte[] bytes, int offset, int maxLen, string s) {
+        int n = s.Length;
+        if (n > maxLen) {
+            n = maxLen;
+        }
+        int i = 0;
+        while (i < n) {
+            bytes[offset + i] = (byte)s.CharAt(i);
+            i = i + 1;
+        }
+    }
+
+    private static void _WriteHeader(byte[] bytes, int offset, TarEntry e) {
+        _WriteStr(bytes, offset, 100, e.Name);
+        _WriteOctal(bytes, offset + 100, 8, (long)e.Mode);
+        _WriteOctal(bytes, offset + 108, 8, 0L);    // uid
+        _WriteOctal(bytes, offset + 116, 8, 0L);    // gid
+        _WriteOctal(bytes, offset + 124, 12, (long)e.Content.Length);
+        _WriteOctal(bytes, offset + 136, 12, 0L);   // mtime
+        // checksum field (offset 148, 8 bytes): fill with spaces during
+        // checksum computation, write the actual checksum afterward.
+        int i = 0;
+        while (i < 8) {
+            bytes[offset + 148 + i] = 32;  // ASCII space
+            i = i + 1;
+        }
+        bytes[offset + 156] = 48;  // typeflag '0' = regular file
+        // ustar magic + version (offset 257..264)
+        _WriteStr(bytes, offset + 257, 6, "ustar");
+        bytes[offset + 263] = 48;  // version '0'
+        bytes[offset + 264] = 48;  // version '0'
+        // Compute header checksum: sum of all 512 bytes (with checksum
+        // field filled with spaces) as a 6-digit octal + NUL + space.
+        long sum = 0L;
+        int k = 0;
+        while (k < 512) {
+            sum = sum + (long)bytes[offset + k];
+            k = k + 1;
+        }
+        // Write checksum field: 6 octal digits + NUL + space.
+        _WriteOctal(bytes, offset + 148, 7, sum);
+        bytes[offset + 154] = 0;   // NUL between digits and space
+        bytes[offset + 155] = 32;  // trailing space (POSIX convention)
+    }
+}

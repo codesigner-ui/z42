@@ -417,17 +417,31 @@ public sealed partial class TypeChecker : ITypeInferrer
                 $"[Native] attribute on '{fn.Name}' requires the extern modifier", fn.Span);
             return false;
         }
-        // Tier 1 stitched binding must be complete.
-        if (stitched is not null
-            && (stitched.Lib is null || stitched.TypeName is null || stitched.Entry is null))
+        // Tier 1 stitched binding completeness:
+        //   * full form: `lib + type + entry` — Tier 1 proper, emits CallNativeInstr
+        //   * short form: `lib + entry` (no `type=`) — stdlib-internal, emits
+        //     BuiltinInstr resolved via the VM's ext_builtins registry
+        //     (add-z42-compression, 2026-05-22)
+        //   * anything else (missing lib OR missing entry) — error
+        if (stitched is not null)
         {
-            var missing = new List<string>();
-            if (stitched.Lib is null)      missing.Add("lib");
-            if (stitched.TypeName is null) missing.Add("type");
-            if (stitched.Entry is null)    missing.Add("entry");
-            _diags.Error(DiagnosticCodes.NativeAttributeMalformed,
-                $"`[Native]` on extern method `{fn.Name}` is incomplete after stitching with class defaults; missing: {string.Join(", ", missing)}",
-                fn.Span);
+            bool isShortForm = stitched.Lib is not null
+                               && stitched.Entry is not null
+                               && stitched.TypeName is null;
+            bool isFullForm  = stitched.Lib is not null
+                               && stitched.TypeName is not null
+                               && stitched.Entry is not null;
+            if (!isShortForm && !isFullForm)
+            {
+                var missing = new List<string>();
+                if (stitched.Lib is null)   missing.Add("lib");
+                if (stitched.Entry is null) missing.Add("entry");
+                // `type` is only required when the user intended Tier 1 full
+                // form; we don't list it as "missing" in the short-form path.
+                _diags.Error(DiagnosticCodes.NativeAttributeMalformed,
+                    $"`[Native]` on extern method `{fn.Name}` is incomplete after stitching with class defaults; missing: {string.Join(", ", missing)}",
+                    fn.Span);
+            }
         }
         return isExtern;
     }

@@ -17,6 +17,7 @@
 pub mod dispatch;
 pub mod error;
 pub mod exports;
+pub mod ext;
 pub mod loader;
 pub mod marshal;
 pub mod registry;
@@ -27,5 +28,7 @@ mod registry_tests;
 mod marshal_tests;
 #[cfg(test)]
 mod dispatch_tests;
+#[cfg(test)]
+mod ext_tests;
 
 pub use registry::{MethodEntry, RegisteredType};

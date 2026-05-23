@@ -1,0 +1,39 @@
+// add-z42-compression (2026-05-22): zstd round-trip via the dlopened
+// `libz42_compression` cdylib.
+namespace Z42CompressionZstdTests;
+
+using Std.Test;
+using Std.Compression;
+
+[Test]
+void test_round_trip_short_text() {
+    byte[] original = new byte[] { (byte)104, (byte)101, (byte)108, (byte)108, (byte)111 };  // "hello"
+    byte[] compressed = Zstd.Compress(original);
+    Assert.True(compressed.Length > 0);
+    byte[] decompressed = Zstd.Decompress(compressed);
+    Assert.Equal(original.Length, decompressed.Length);
+    int i = 0;
+    while (i < original.Length) {
+        Assert.Equal((int)original[i], (int)decompressed[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_zstd_magic_bytes() {
+    byte[] original = new byte[] { (byte)120 };  // "x"
+    byte[] compressed = Zstd.Compress(original);
+    // RFC 8478: zstd frame magic is 0x28 0xB5 0x2F 0xFD.
+    Assert.Equal(0x28, (int)compressed[0]);
+    Assert.Equal(0xB5, (int)compressed[1]);
+    Assert.Equal(0x2F, (int)compressed[2]);
+    Assert.Equal(0xFD, (int)compressed[3]);
+}
+
+[Test]
+void test_round_trip_level_22() {
+    byte[] original = new byte[] { (byte)116, (byte)104, (byte)101 };  // "the"
+    byte[] compressed = Zstd.Compress(original, 22);
+    byte[] decompressed = Zstd.Decompress(compressed);
+    Assert.Equal(original.Length, decompressed.Length);
+}

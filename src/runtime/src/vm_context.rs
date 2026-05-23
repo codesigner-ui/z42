@@ -219,6 +219,13 @@ pub struct VmCore {
     /// **add-sync-primitives-rwlock (2026-05-20)**: monotonic RwLock slot
     /// id counter; never reused.
     pub(crate) next_rwlock_id:     std::sync::atomic::AtomicU64,
+    /// **add-z42-compression (2026-05-22)**: stdlib native extension builtins
+    /// (e.g. `__deflate_compress` from libz42_compression). Populated at VM
+    /// startup by `crate::native::ext::load_all`, which scans the SDK native
+    /// search path, dlopens each `libz42_*.{so,dylib,dll}`, and lets it
+    /// register `(name, fn_ptr)` pairs. Lookup parallels static `BUILTINS[]`;
+    /// see `corelib::ext_builtin_id_of` for the resolver fallback.
+    pub(crate) ext_builtins:       Mutex<crate::native::ext::ExtBuiltinTable>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -396,6 +403,7 @@ impl VmContext {
             needs_auto_collect:   Arc::new(std::sync::atomic::AtomicBool::new(false)),
             rwlocks:              Mutex::new(HashMap::new()),
             next_rwlock_id:       std::sync::atomic::AtomicU64::new(1),
+            ext_builtins:         Mutex::new(crate::native::ext::ExtBuiltinTable::default()),
         });
 
         // add-gc-safepoint-auto-threshold (2026-05-20): wire the
@@ -483,6 +491,16 @@ impl VmContext {
         // The Pin wrapper + PhantomPinned prevents any subsequent move-out.
         let ptr = VmContextPtr(&*boxed as *const VmContext);
         boxed.core.vm_contexts.lock().push(ptr);
+
+        // add-z42-compression (2026-05-22): scan native search paths +
+        // dlopen each lib*.{so,dylib,dll}, populating `ext_builtins`. Run
+        // once at primary-VM init only (workers via `new_with_core` reuse
+        // the parent's populated table). Failures are logged but never
+        // abort startup — apps that don't need any ext lib still boot.
+        if let Err(e) = crate::native::ext::load_all(&boxed) {
+            tracing::warn!("native ext loader: {:#}", e);
+        }
+
         // SAFETY: We never expose `&mut Box<VmContext>` to user code (only
         // `Pin<&mut VmContext>` via `Pin::as_mut`, which respects
         // `PhantomPinned`), so the contents stay at a stable address until
