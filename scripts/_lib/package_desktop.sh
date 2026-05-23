@@ -78,6 +78,26 @@ echo "      ✓ native/ (libz42.* / z42.*)"
 
 [ -d "$CARGO_OUT/z42vm.dSYM" ] && cp -R "$CARGO_OUT/z42vm.dSYM" "$PKG_DIR/bin/"
 
+# ── 2b. z42-compression cdylib (add-z42-compression, 2026-05-22) ─────────
+# Separate Cargo workspace member; z42vm dlopens it at startup from
+# <pkg_dir>/native/ via the default search path in
+# `src/runtime/src/native/ext.rs`. Produces both .{so,dylib,dll} (for
+# dlopen) and .a (for mobile integrators who prefer compile-time link).
+
+echo "[2b/7] z42-compression cdylib + staticlib (cargo $CARGO_TARGET, $PROFILE)"
+
+cargo build \
+    $([ "$PROFILE" = "release" ] && echo "--release") \
+    -p z42-compression \
+    --manifest-path "$ROOT/src/runtime/Cargo.toml" \
+    --target "$CARGO_TARGET" --quiet
+
+for f in libz42_compression.a libz42_compression.dylib libz42_compression.so \
+         z42_compression.dll z42_compression.lib; do
+    [ -f "$CARGO_OUT/$f" ] && cp "$CARGO_OUT/$f" "$PKG_DIR/native/$f"
+done
+echo "      ✓ native/libz42_compression.* (dlopened by z42vm at startup)"
+
 # ── 3-7. Headers / libs / examples / manifest ───────────────────────────
 
 echo "[3/7] C ABI headers"
