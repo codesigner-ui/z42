@@ -1,0 +1,119 @@
+// add-z42-yaml (2026-05-24): scalar literals + single-level block mapping.
+namespace Z42YamlParseBasicTests;
+
+using Std.Test;
+using Std.Yaml;
+
+[Test]
+void test_empty_input_yields_null() {
+    YamlValue v = Yaml.Parse("");
+    Assert.True(v.IsNull());
+}
+
+[Test]
+void test_null_tilde() {
+    YamlValue v = Yaml.Parse("~");
+    Assert.True(v.IsNull());
+}
+
+[Test]
+void test_null_word() {
+    YamlValue v = Yaml.Parse("null");
+    Assert.True(v.IsNull());
+}
+
+[Test]
+void test_bool_true() {
+    YamlValue v = Yaml.Parse("true");
+    Assert.True(v.IsBool());
+    Assert.True(v.AsBool());
+}
+
+[Test]
+void test_bool_false() {
+    YamlValue v = Yaml.Parse("false");
+    Assert.True(v.IsBool());
+    Assert.True(!v.AsBool());
+}
+
+[Test]
+void test_int_positive() {
+    YamlValue v = Yaml.Parse("42");
+    Assert.True(v.IsInt());
+    Assert.Equal(42L, v.AsInt());
+}
+
+[Test]
+void test_int_negative() {
+    YamlValue v = Yaml.Parse("-7");
+    Assert.True(v.IsInt());
+    Assert.Equal(-7L, v.AsInt());
+}
+
+[Test]
+void test_float_decimal() {
+    YamlValue v = Yaml.Parse("3.14");
+    Assert.True(v.IsFloat());
+    Assert.True(v.AsFloat() > 3.13 && v.AsFloat() < 3.15);
+}
+
+[Test]
+void test_float_exponent() {
+    YamlValue v = Yaml.Parse("1.5e2");
+    Assert.True(v.IsFloat());
+    Assert.True(v.AsFloat() > 149.9 && v.AsFloat() < 150.1);
+}
+
+[Test]
+void test_plain_string() {
+    YamlValue v = Yaml.Parse("hello world");
+    Assert.True(v.IsString());
+    Assert.Equal("hello world", v.AsString());
+}
+
+[Test]
+void test_single_level_mapping() {
+    string yaml = "name: alice\nage: 30\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.IsMapping());
+    Assert.Equal(2, v.Count());
+    Assert.True(v.ContainsKey("name"));
+    Assert.Equal("alice", v.Get("name").AsString());
+    Assert.True(v.ContainsKey("age"));
+    Assert.Equal(30L, v.Get("age").AsInt());
+}
+
+[Test]
+void test_mapping_with_null_value() {
+    string yaml = "name: alice\nnickname: ~\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.Get("nickname").IsNull());
+}
+
+[Test]
+void test_mapping_with_empty_value() {
+    string yaml = "name: alice\nnotes:\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.Get("notes").IsNull());
+}
+
+[Test]
+void test_comment_at_end_of_line() {
+    YamlValue v = Yaml.Parse("count: 5 # the count\n");
+    Assert.Equal(5L, v.Get("count").AsInt());
+}
+
+[Test]
+void test_standalone_comment_lines() {
+    string yaml = "# leading comment\nname: bob\n# middle\nage: 25\n# trailing\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.Equal("bob", v.Get("name").AsString());
+    Assert.Equal(25L, v.Get("age").AsInt());
+}
+
+[Test]
+void test_document_start_marker_ignored() {
+    string yaml = "---\nname: charlie\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.Equal("charlie", v.Get("name").AsString());
+}

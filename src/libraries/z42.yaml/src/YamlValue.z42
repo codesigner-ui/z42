@@ -1,0 +1,274 @@
+namespace Std.Yaml;
+
+using Std;
+
+// add-z42-yaml (2026-05-24): YAML 值的运行时表示。
+//
+// Mirror of `Std.Toml.TomlValue` / `Std.Json.JsonValue` — single int
+// kind discriminator + typed slots + parallel arrays for sequence /
+// mapping storage (z42 class fields don't yet take generic type
+// parameters, so `List<YamlValue>` is silently dropped; parallel
+// arrays are the established workaround).
+//
+// Integer / float split into separate slots (not unified as f64) —
+// large ints (2^53+) lose precision when stored as f64. Same trade as
+// TomlValue.
+//
+// Kind discriminator (0..=6):
+//   0 = Null    (YAML `~` or empty)
+//   1 = Bool    (YAML 1.2: `true` / `false` only — no `yes`/`on` foot-gun)
+//   2 = Int     (decimal i64; octal / hex deferred — yaml-future-numeric-bases)
+//   3 = Float   (f64; `1.5e10` exponent form supported)
+//   4 = String  (UTF-8)
+//   5 = Sequence (ordered list)
+//   6 = Mapping  (ordered key→value, string keys only in v0)
+
+public class YamlValue {
+    private int _kind;
+    private bool _bool;
+    private long _int;
+    private double _float;
+    private string _str;
+
+    // Sequence storage (when kind == 5)
+    private YamlValue[] _seqItems;
+    private int _seqCount;
+
+    // Mapping storage as parallel key/value arrays (when kind == 6)
+    private string[] _mapKeys;
+    private YamlValue[] _mapValues;
+    private int _mapCount;
+
+    // ── Public entry points (parse / stringify) ──────────────────────────
+
+    /// Parse YAML text → root value. Throws YamlException with line/column
+    /// on syntax error. Empty input yields a null value.
+    public static YamlValue Parse(string text) {
+        YamlParser parser = new YamlParser(text);
+        return (YamlValue)parser.ParseDocument();
+    }
+
+    /// Serialise a YAML value tree to canonical YAML text (block style).
+    /// The output is reasonable for human reading; it is NOT byte-identical
+    /// to the original input (comment / quoting style not preserved).
+    public static string Stringify(YamlValue root) {
+        YamlWriter w = new YamlWriter();
+        return w.Write(root);
+    }
+
+    // ── Factories ────────────────────────────────────────────────────────
+
+    public static YamlValue OfNull() {
+        YamlValue v = new YamlValue();
+        v._kind = 0;
+        return v;
+    }
+
+    public static YamlValue OfBool(bool b) {
+        YamlValue v = new YamlValue();
+        v._kind = 1;
+        v._bool = b;
+        return v;
+    }
+
+    public static YamlValue OfInt(long n) {
+        YamlValue v = new YamlValue();
+        v._kind = 2;
+        v._int = n;
+        return v;
+    }
+
+    public static YamlValue OfFloat(double d) {
+        YamlValue v = new YamlValue();
+        v._kind = 3;
+        v._float = d;
+        return v;
+    }
+
+    public static YamlValue OfString(string s) {
+        YamlValue v = new YamlValue();
+        v._kind = 4;
+        v._str = s;
+        return v;
+    }
+
+    public static YamlValue OfSequence() {
+        YamlValue v = new YamlValue();
+        v._kind = 5;
+        v._seqItems = new YamlValue[4];
+        v._seqCount = 0;
+        return v;
+    }
+
+    public static YamlValue OfMapping() {
+        YamlValue v = new YamlValue();
+        v._kind = 6;
+        v._mapKeys = new string[4];
+        v._mapValues = new YamlValue[4];
+        v._mapCount = 0;
+        return v;
+    }
+
+    // ── Predicates ───────────────────────────────────────────────────────
+
+    public bool IsNull()     { return this._kind == 0; }
+    public bool IsBool()     { return this._kind == 1; }
+    public bool IsInt()      { return this._kind == 2; }
+    public bool IsFloat()    { return this._kind == 3; }
+    public bool IsString()   { return this._kind == 4; }
+    public bool IsSequence() { return this._kind == 5; }
+    public bool IsMapping()  { return this._kind == 6; }
+
+    /// Type tag name for diagnostics.
+    public string KindName() {
+        int k = this._kind;
+        if (k == 0) return "null";
+        if (k == 1) return "bool";
+        if (k == 2) return "int";
+        if (k == 3) return "float";
+        if (k == 4) return "string";
+        if (k == 5) return "sequence";
+        if (k == 6) return "mapping";
+        return "unknown";
+    }
+
+    // ── Accessors (throw YamlException on wrong kind) ────────────────────
+
+    public bool AsBool() {
+        if (this._kind != 1) {
+            throw new YamlException("expected bool, got " + this.KindName());
+        }
+        return this._bool;
+    }
+
+    public long AsInt() {
+        if (this._kind != 2) {
+            throw new YamlException("expected int, got " + this.KindName());
+        }
+        return this._int;
+    }
+
+    public double AsFloat() {
+        if (this._kind != 3) {
+            throw new YamlException("expected float, got " + this.KindName());
+        }
+        return this._float;
+    }
+
+    public string AsString() {
+        if (this._kind != 4) {
+            throw new YamlException("expected string, got " + this.KindName());
+        }
+        return this._str;
+    }
+
+    // ── Sequence operations (only valid when IsSequence()) ──────────────
+
+    public int Length() {
+        if (this._kind != 5) {
+            throw new YamlException("Length() on non-sequence value (" + this.KindName() + ")");
+        }
+        return this._seqCount;
+    }
+
+    public YamlValue At(int i) {
+        if (this._kind != 5) {
+            throw new YamlException("At() on non-sequence value (" + this.KindName() + ")");
+        }
+        if (i < 0 || i >= this._seqCount) {
+            throw new YamlException("sequence index out of range");
+        }
+        return this._seqItems[i];
+    }
+
+    public void Add(YamlValue v) {
+        if (this._kind != 5) {
+            throw new YamlException("Add() on non-sequence value (" + this.KindName() + ")");
+        }
+        if (this._seqCount == this._seqItems.Length) {
+            int newCap = this._seqItems.Length * 2;
+            if (newCap < 4) { newCap = 4; }
+            YamlValue[] grown = new YamlValue[newCap];
+            int j = 0;
+            while (j < this._seqCount) { grown[j] = this._seqItems[j]; j = j + 1; }
+            this._seqItems = grown;
+        }
+        this._seqItems[this._seqCount] = v;
+        this._seqCount = this._seqCount + 1;
+    }
+
+    // ── Mapping operations (only valid when IsMapping()) ────────────────
+
+    public bool ContainsKey(string key) {
+        if (this._kind != 6) { return false; }
+        int i = 0;
+        while (i < this._mapCount) {
+            if (this._mapKeys[i] == key) { return true; }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    public YamlValue Get(string key) {
+        if (this._kind != 6) {
+            throw new YamlException("Get on non-mapping value (" + this.KindName() + ")");
+        }
+        int i = 0;
+        while (i < this._mapCount) {
+            if (this._mapKeys[i] == key) { return this._mapValues[i]; }
+            i = i + 1;
+        }
+        throw new YamlException("key not found: " + key);
+    }
+
+    public void Set(string key, YamlValue v) {
+        if (this._kind != 6) {
+            throw new YamlException("Set on non-mapping value (" + this.KindName() + ")");
+        }
+        int i = 0;
+        while (i < this._mapCount) {
+            if (this._mapKeys[i] == key) {
+                this._mapValues[i] = v;
+                return;
+            }
+            i = i + 1;
+        }
+        if (this._mapCount == this._mapKeys.Length) {
+            int newCap = this._mapKeys.Length * 2;
+            if (newCap < 4) { newCap = 4; }
+            string[] nk = new string[newCap];
+            YamlValue[] nv = new YamlValue[newCap];
+            int j = 0;
+            while (j < this._mapCount) {
+                nk[j] = this._mapKeys[j];
+                nv[j] = this._mapValues[j];
+                j = j + 1;
+            }
+            this._mapKeys = nk;
+            this._mapValues = nv;
+        }
+        this._mapKeys[this._mapCount] = key;
+        this._mapValues[this._mapCount] = v;
+        this._mapCount = this._mapCount + 1;
+    }
+
+    /// Snapshot of current mapping keys (insertion order).
+    public string[] Keys() {
+        if (this._kind != 6) {
+            throw new YamlException("Keys() on non-mapping value (" + this.KindName() + ")");
+        }
+        string[] result = new string[this._mapCount];
+        int i = 0;
+        while (i < this._mapCount) {
+            result[i] = this._mapKeys[i];
+            i = i + 1;
+        }
+        return result;
+    }
+
+    public int Count() {
+        if (this._kind == 5) { return this._seqCount; }
+        if (this._kind == 6) { return this._mapCount; }
+        throw new YamlException("Count() on non-collection value (" + this.KindName() + ")");
+    }
+}

@@ -136,7 +136,7 @@ void Main() {
 
 // 18-element list matching bash LIBS ordering（workspace topological + bash heredoc 顺序）。
 string[] _stdlibList() {
-    string[] libs = new string[19];
+    string[] libs = new string[20];
     libs[0]  = "z42.core";
     libs[1]  = "z42.io";
     libs[2]  = "z42.io.binary";
@@ -156,6 +156,7 @@ string[] _stdlibList() {
     libs[16] = "z42.crypto";
     libs[17] = "z42.threading";
     libs[18] = "z42.compression";
+    libs[19] = "z42.yaml";
     return libs;
 }
 
@@ -183,7 +184,8 @@ string _indexJson() {
     s = s + "  \"Std.Crypto\":      \"z42.crypto.zpkg\",\n";
     s = s + "  \"Std.Threading\":   \"z42.threading.zpkg\",\n";
     s = s + "  \"Std.Compression\": \"z42.compression.zpkg\",\n";
-    s = s + "  \"Std.Archive\":     \"z42.compression.zpkg\"\n";
+    s = s + "  \"Std.Archive\":     \"z42.compression.zpkg\",\n";
+    s = s + "  \"Std.Yaml\":        \"z42.yaml.zpkg\"\n";
     s = s + "}\n";
     return s;
 }

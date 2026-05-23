@@ -1,0 +1,825 @@
+namespace Std.Yaml;
+
+using Std;
+using Std.Text;
+
+// add-z42-yaml (2026-05-24): YAML 1.2 subset parser.
+//
+// Algorithm: single-pass recursive descent. Each block recursion tracks
+// the required parent-indent; child lines must indent strictly more.
+// Lines are processed in order; comments and blank lines are skipped at
+// the line boundary so they never appear mid-token.
+//
+// Supported (v0):
+//   * Block mapping        key: value
+//   * Block sequence       - item
+//   * Flow mapping         { key: value, ... }
+//   * Flow sequence        [ value, ... ]
+//   * Scalars              plain / 'single' / "double" with \n \t \" \\ \uXXXX escapes
+//   * null token           ~ or empty value
+//   * bool tokens          true / false (YAML 1.2 — no yes/on/off Norway-problem)
+//   * int / float          decimal only; sign + exponent OK
+//   * Comments             # …  (line-end and standalone)
+//   * Document marker      --- (consumed at start if present, ignored)
+//
+// Not supported (raise YamlException → see yaml.md Deferred):
+//   anchors / aliases / tags / multi-line | > / multi-doc / complex keys /
+//   octal-hex int literals / timestamp scalars / YAML 1.1 quirks.
+
+public sealed class YamlParser {
+    private string _src;
+    private int    _pos;
+    private int    _line;
+    private int    _col;
+
+    public YamlParser(string src) {
+        this._src  = src;
+        this._pos  = 0;
+        this._line = 1;
+        this._col  = 1;
+    }
+
+    // ── Public entry ─────────────────────────────────────────────────────
+
+    public YamlValue ParseDocument() {
+        // Skip leading blank / comment lines.
+        this._SkipBlankLines();
+        if (this._pos >= this._src.Length) {
+            return YamlValue.OfNull();
+        }
+        // Optional document-start marker.
+        if (this._PeekLineIs("---")) {
+            this._ConsumeRestOfLine();
+            this._SkipBlankLines();
+            if (this._pos >= this._src.Length) {
+                return YamlValue.OfNull();
+            }
+        }
+        // The document is exactly one block value at indent 0.
+        YamlValue root = this._ParseBlockValue(0);
+        // Anything left over (other than trailing blanks / comments) is
+        // a second document or trailing junk — both unsupported in v0.
+        this._SkipBlankLines();
+        if (this._pos < this._src.Length) {
+            // Allow a trailing `...` end-of-document marker (rare).
+            if (this._PeekLineIs("...")) {
+                this._ConsumeRestOfLine();
+            } else {
+                throw this._Err("unexpected trailing content after document");
+            }
+        }
+        return root;
+    }
+
+    // ── Block value: dispatch on first non-WS char ──────────────────────
+    //
+    // `requiredIndent` is the indent the next non-blank line must have to
+    // belong to this block. Returns the parsed YamlValue; on return,
+    // `_pos` sits at the start of the line *after* the block (or EOF).
+
+    private YamlValue _ParseBlockValue(int requiredIndent) {
+        this._SkipBlankLines();
+        if (this._pos >= this._src.Length) {
+            return YamlValue.OfNull();
+        }
+        int actualIndent = this._CurrentLineIndent();
+        if (actualIndent < requiredIndent) {
+            // Block is empty.
+            return YamlValue.OfNull();
+        }
+        // Inspect first non-WS char to decide block flavour.
+        int lineStart = this._pos;
+        int contentPos = lineStart + actualIndent;
+        if (contentPos >= this._src.Length) {
+            return YamlValue.OfNull();
+        }
+        char first = this._src.CharAt(contentPos);
+
+        // Block sequence: line starts with `- ` (or just `-` at EOL).
+        if (first == '-') {
+            // Peek to confirm it's a real sequence dash, not start of a
+            // negative number scalar (e.g. `-42`). It's a sequence dash
+            // iff the next char is whitespace or EOL.
+            if (contentPos + 1 >= this._src.Length
+                || this._src.CharAt(contentPos + 1) == ' '
+                || this._src.CharAt(contentPos + 1) == '\n'
+                || this._src.CharAt(contentPos + 1) == '\r') {
+                return this._ParseBlockSequence(actualIndent);
+            }
+        }
+
+        // Flow style — single-line `[…]` or `{…}` value at this indent.
+        if (first == '[' || first == '{') {
+            this._pos = contentPos;
+            this._col = actualIndent + 1;
+            YamlValue v = this._ParseFlow();
+            this._SkipInlineSpacesAndOptionalComment();
+            this._ConsumeRestOfLine();
+            return v;
+        }
+
+        // Otherwise it's either a block mapping (`key: …`) or a plain
+        // scalar that takes up the line. Distinguish by scanning the
+        // current line for an unquoted `:` followed by space / EOL.
+        if (this._LineHasMappingColon(contentPos)) {
+            return this._ParseBlockMapping(actualIndent);
+        }
+
+        // Plain scalar on a single line.
+        this._pos = contentPos;
+        this._col = actualIndent + 1;
+        string raw = this._ConsumeLinePlainScalar();
+        this._ConsumeRestOfLine();
+        return this._ParseScalarLiteral(raw);
+    }
+
+    // ── Block mapping ────────────────────────────────────────────────────
+
+    private YamlValue _ParseBlockMapping(int indent) {
+        YamlValue m = YamlValue.OfMapping();
+        while (true) {
+            this._SkipBlankLines();
+            if (this._pos >= this._src.Length) { break; }
+            int lineIndent = this._CurrentLineIndent();
+            if (lineIndent < indent) { break; }
+            if (lineIndent > indent) {
+                // Over-indented child line at the mapping level is an error
+                // — it should have been absorbed by the previous value's
+                // recursive descent.
+                throw this._Err("unexpected indent at mapping level (expected "
+                    + indent.ToString() + ", got " + lineIndent.ToString() + ")");
+            }
+            int contentPos = this._pos + indent;
+            // Refuse to parse a `- ` sequence entry inline with a mapping.
+            char first = this._src.CharAt(contentPos);
+            if (first == '-' && (contentPos + 1 >= this._src.Length
+                || this._src.CharAt(contentPos + 1) == ' '
+                || this._src.CharAt(contentPos + 1) == '\n'
+                || this._src.CharAt(contentPos + 1) == '\r')) {
+                break;  // sibling block sequence shouldn't happen at exact mapping indent
+            }
+            this._pos = contentPos;
+            this._col = indent + 1;
+
+            // Parse key (plain or quoted scalar before unquoted `:`).
+            string key = this._ParseMappingKey();
+            this._SkipInlineSpaces();
+            if (this._pos >= this._src.Length || this._src.CharAt(this._pos) != ':') {
+                throw this._Err("expected ':' after mapping key '" + key + "'");
+            }
+            this._pos = this._pos + 1;  // consume ':'
+            this._col = this._col + 1;
+            this._SkipInlineSpaces();
+
+            // What follows: inline value on this line, or block value on next.
+            YamlValue val;
+            if (this._pos >= this._src.Length
+                || this._src.CharAt(this._pos) == '\n'
+                || this._src.CharAt(this._pos) == '\r'
+                || (this._src.CharAt(this._pos) == '#' && this._IsCommentStart())) {
+                // Empty inline value → check next line.
+                this._ConsumeRestOfLine();
+                this._SkipBlankLines();
+                if (this._pos >= this._src.Length) {
+                    val = YamlValue.OfNull();
+                } else {
+                    int nextIndent = this._CurrentLineIndent();
+                    if (nextIndent > indent) {
+                        val = this._ParseBlockValue(nextIndent);
+                    } else {
+                        val = YamlValue.OfNull();
+                    }
+                }
+            } else if (this._src.CharAt(this._pos) == '[' || this._src.CharAt(this._pos) == '{') {
+                val = this._ParseFlow();
+                this._SkipInlineSpacesAndOptionalComment();
+                this._ConsumeRestOfLine();
+            } else {
+                string raw = this._ConsumeLinePlainScalar();
+                this._ConsumeRestOfLine();
+                val = this._ParseScalarLiteral(raw);
+            }
+
+            if (m.ContainsKey(key)) {
+                throw this._Err("duplicate mapping key '" + key + "'");
+            }
+            m.Set(key, val);
+        }
+        return m;
+    }
+
+    private string _ParseMappingKey() {
+        if (this._pos >= this._src.Length) {
+            throw this._Err("expected mapping key, got EOF");
+        }
+        char c = this._src.CharAt(this._pos);
+        if (c == '"') {
+            return this._ParseDoubleQuotedString();
+        }
+        if (c == '\'') {
+            return this._ParseSingleQuotedString();
+        }
+        // Plain key: read until ':' (followed by space or EOL) or EOL.
+        int start = this._pos;
+        while (this._pos < this._src.Length) {
+            char ch = this._src.CharAt(this._pos);
+            if (ch == ':') {
+                // Mapping key terminator iff next is WS/EOL/EOF.
+                if (this._pos + 1 >= this._src.Length
+                    || this._src.CharAt(this._pos + 1) == ' '
+                    || this._src.CharAt(this._pos + 1) == '\n'
+                    || this._src.CharAt(this._pos + 1) == '\r'
+                    || this._src.CharAt(this._pos + 1) == '\t') {
+                    break;
+                }
+            }
+            if (ch == '\n' || ch == '\r') { break; }
+            this._pos = this._pos + 1;
+            this._col = this._col + 1;
+        }
+        if (start == this._pos) {
+            throw this._Err("expected mapping key, got empty");
+        }
+        string raw = this._src.Substring(start, this._pos - start);
+        return raw.TrimEnd();
+    }
+
+    // ── Block sequence ──────────────────────────────────────────────────
+
+    private YamlValue _ParseBlockSequence(int indent) {
+        YamlValue seq = YamlValue.OfSequence();
+        while (true) {
+            this._SkipBlankLines();
+            if (this._pos >= this._src.Length) { break; }
+            int lineIndent = this._CurrentLineIndent();
+            if (lineIndent < indent) { break; }
+            if (lineIndent > indent) {
+                throw this._Err("unexpected indent at sequence level (expected "
+                    + indent.ToString() + ", got " + lineIndent.ToString() + ")");
+            }
+            int contentPos = this._pos + indent;
+            if (contentPos >= this._src.Length || this._src.CharAt(contentPos) != '-') {
+                break;
+            }
+            // Must be a dash followed by WS / EOL.
+            if (contentPos + 1 < this._src.Length) {
+                char nx = this._src.CharAt(contentPos + 1);
+                if (nx != ' ' && nx != '\n' && nx != '\r' && nx != '\t') {
+                    break;
+                }
+            }
+            // Consume `- ` (or just `-` at EOL).
+            this._pos = contentPos + 1;
+            this._col = indent + 2;
+            this._SkipInlineSpaces();
+
+            // The "value" starts at this column. It may be:
+            //   - inline scalar / flow
+            //   - empty (newline immediately) → child block on next line
+            //   - inline `key: …` indicating a single-line mapping entry,
+            //     where the rest of the mapping continues at deeper indent
+            //     under the same `-` (rare — v0 supports inline single
+            //     k:v form only, multi-line nested mapping under `- ` is
+            //     out of v0 scope; raise an error)
+            YamlValue item;
+            if (this._pos >= this._src.Length
+                || this._src.CharAt(this._pos) == '\n'
+                || this._src.CharAt(this._pos) == '\r'
+                || (this._src.CharAt(this._pos) == '#' && this._IsCommentStart())) {
+                this._ConsumeRestOfLine();
+                this._SkipBlankLines();
+                if (this._pos >= this._src.Length) {
+                    item = YamlValue.OfNull();
+                } else {
+                    int nextIndent = this._CurrentLineIndent();
+                    if (nextIndent > indent) {
+                        item = this._ParseBlockValue(nextIndent);
+                    } else {
+                        item = YamlValue.OfNull();
+                    }
+                }
+            } else if (this._src.CharAt(this._pos) == '[' || this._src.CharAt(this._pos) == '{') {
+                item = this._ParseFlow();
+                this._SkipInlineSpacesAndOptionalComment();
+                this._ConsumeRestOfLine();
+            } else {
+                // Could be a plain scalar OR an inline `key: value` mapping
+                // entry. If the line contains an unquoted `:` followed by
+                // WS/EOL, treat as a single-pair inline mapping.
+                int probePos = this._pos;
+                if (this._LineHasMappingColon(probePos)) {
+                    // Inline mapping under `- `. v0: support exactly one
+                    // k:v on the same line; deeper nested mapping under
+                    // the dash is a v1 case.
+                    string key = this._ParseMappingKey();
+                    this._SkipInlineSpaces();
+                    if (this._pos >= this._src.Length || this._src.CharAt(this._pos) != ':') {
+                        throw this._Err("expected ':' in inline mapping under '- '");
+                    }
+                    this._pos = this._pos + 1;
+                    this._col = this._col + 1;
+                    this._SkipInlineSpaces();
+                    YamlValue val;
+                    if (this._pos >= this._src.Length
+                        || this._src.CharAt(this._pos) == '\n'
+                        || this._src.CharAt(this._pos) == '\r') {
+                        val = YamlValue.OfNull();
+                    } else if (this._src.CharAt(this._pos) == '[' || this._src.CharAt(this._pos) == '{') {
+                        val = this._ParseFlow();
+                    } else {
+                        string raw = this._ConsumeLinePlainScalar();
+                        val = this._ParseScalarLiteral(raw);
+                    }
+                    item = YamlValue.OfMapping();
+                    item.Set(key, val);
+                    this._ConsumeRestOfLine();
+                } else {
+                    string raw = this._ConsumeLinePlainScalar();
+                    item = this._ParseScalarLiteral(raw);
+                    this._ConsumeRestOfLine();
+                }
+            }
+            seq.Add(item);
+        }
+        return seq;
+    }
+
+    // ── Flow style ───────────────────────────────────────────────────────
+
+    private YamlValue _ParseFlow() {
+        char c = this._src.CharAt(this._pos);
+        if (c == '[') { return this._ParseFlowSequence(); }
+        if (c == '{') { return this._ParseFlowMapping(); }
+        throw this._Err("expected '[' or '{', got '" + c.ToString() + "'");
+    }
+
+    private YamlValue _ParseFlowSequence() {
+        this._Advance();  // consume '['
+        YamlValue seq = YamlValue.OfSequence();
+        this._SkipFlowWS();
+        if (this._pos < this._src.Length && this._src.CharAt(this._pos) == ']') {
+            this._Advance();
+            return seq;
+        }
+        while (true) {
+            YamlValue v = this._ParseFlowValue();
+            seq.Add(v);
+            this._SkipFlowWS();
+            if (this._pos >= this._src.Length) {
+                throw this._Err("unterminated flow sequence (missing ']')");
+            }
+            char ch = this._src.CharAt(this._pos);
+            if (ch == ',') {
+                this._Advance();
+                this._SkipFlowWS();
+                continue;
+            }
+            if (ch == ']') {
+                this._Advance();
+                return seq;
+            }
+            throw this._Err("expected ',' or ']' in flow sequence, got '" + ch.ToString() + "'");
+        }
+        return seq;  // unreachable
+    }
+
+    private YamlValue _ParseFlowMapping() {
+        this._Advance();  // consume '{'
+        YamlValue m = YamlValue.OfMapping();
+        this._SkipFlowWS();
+        if (this._pos < this._src.Length && this._src.CharAt(this._pos) == '}') {
+            this._Advance();
+            return m;
+        }
+        while (true) {
+            string key = this._ParseFlowKey();
+            this._SkipFlowWS();
+            if (this._pos >= this._src.Length || this._src.CharAt(this._pos) != ':') {
+                throw this._Err("expected ':' after flow mapping key '" + key + "'");
+            }
+            this._Advance();
+            this._SkipFlowWS();
+            YamlValue v = this._ParseFlowValue();
+            if (m.ContainsKey(key)) {
+                throw this._Err("duplicate flow mapping key '" + key + "'");
+            }
+            m.Set(key, v);
+            this._SkipFlowWS();
+            if (this._pos >= this._src.Length) {
+                throw this._Err("unterminated flow mapping (missing '}')");
+            }
+            char ch = this._src.CharAt(this._pos);
+            if (ch == ',') {
+                this._Advance();
+                this._SkipFlowWS();
+                continue;
+            }
+            if (ch == '}') {
+                this._Advance();
+                return m;
+            }
+            throw this._Err("expected ',' or '}' in flow mapping, got '" + ch.ToString() + "'");
+        }
+        return m;  // unreachable
+    }
+
+    private string _ParseFlowKey() {
+        if (this._pos >= this._src.Length) {
+            throw this._Err("expected flow mapping key, got EOF");
+        }
+        char c = this._src.CharAt(this._pos);
+        if (c == '"') { return this._ParseDoubleQuotedString(); }
+        if (c == '\'') { return this._ParseSingleQuotedString(); }
+        // Plain flow key: until ':' or ',' or '}' or whitespace
+        int start = this._pos;
+        while (this._pos < this._src.Length) {
+            char ch = this._src.CharAt(this._pos);
+            if (ch == ':' || ch == ',' || ch == '}' || ch == ']'
+                || ch == '\n' || ch == '\r' || ch == ' ' || ch == '\t') { break; }
+            this._Advance();
+        }
+        if (start == this._pos) {
+            throw this._Err("expected flow mapping key, got empty");
+        }
+        return this._src.Substring(start, this._pos - start);
+    }
+
+    private YamlValue _ParseFlowValue() {
+        if (this._pos >= this._src.Length) {
+            throw this._Err("expected flow value, got EOF");
+        }
+        char c = this._src.CharAt(this._pos);
+        if (c == '[' || c == '{') { return this._ParseFlow(); }
+        if (c == '"') { return YamlValue.OfString(this._ParseDoubleQuotedString()); }
+        if (c == '\'') { return YamlValue.OfString(this._ParseSingleQuotedString()); }
+        // Plain scalar: until ',' or ']' or '}' or EOL
+        int start = this._pos;
+        while (this._pos < this._src.Length) {
+            char ch = this._src.CharAt(this._pos);
+            if (ch == ',' || ch == ']' || ch == '}' || ch == '\n' || ch == '\r') { break; }
+            this._Advance();
+        }
+        string raw = this._src.Substring(start, this._pos - start);
+        return this._ParseScalarLiteral(raw.Trim());
+    }
+
+    // ── Scalars (quoted strings + plain literal type detection) ─────────
+
+    private string _ParseDoubleQuotedString() {
+        this._Advance();  // consume opening "
+        StringBuilder sb = new StringBuilder();
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if (c == '"') {
+                this._Advance();
+                return sb.ToString();
+            }
+            if (c == '\\') {
+                this._Advance();
+                if (this._pos >= this._src.Length) {
+                    throw this._Err("unterminated string escape");
+                }
+                char esc = this._src.CharAt(this._pos);
+                this._Advance();
+                if (esc == 'n')  { sb.Append('\n'); }
+                else if (esc == 't')  { sb.Append('\t'); }
+                else if (esc == 'r')  { sb.Append('\r'); }
+                else if (esc == '\\') { sb.Append('\\'); }
+                else if (esc == '"')  { sb.Append('"'); }
+                else if (esc == '/')  { sb.Append('/'); }
+                else if (esc == '0')  { sb.Append((char)0); }
+                else if (esc == 'u') {
+                    if (this._pos + 4 > this._src.Length) {
+                        throw this._Err("incomplete \\uXXXX escape");
+                    }
+                    string hex = this._src.Substring(this._pos, 4);
+                    int code = 0;
+                    int hi = 0;
+                    while (hi < 4) {
+                        char hc = hex.CharAt(hi);
+                        int hv;
+                        if (hc >= '0' && hc <= '9')      { hv = (int)hc - (int)'0'; }
+                        else if (hc >= 'a' && hc <= 'f') { hv = (int)hc - (int)'a' + 10; }
+                        else if (hc >= 'A' && hc <= 'F') { hv = (int)hc - (int)'A' + 10; }
+                        else { throw this._Err("bad hex in \\uXXXX escape: '" + hc.ToString() + "'"); }
+                        code = code * 16 + hv;
+                        hi = hi + 1;
+                    }
+                    this._pos = this._pos + 4;
+                    this._col = this._col + 4;
+                    sb.Append((char)code);
+                } else {
+                    throw this._Err("unknown string escape: \\" + esc.ToString());
+                }
+                continue;
+            }
+            if (c == '\n') {
+                throw this._Err("newline in double-quoted string");
+            }
+            sb.Append(c);
+            this._Advance();
+        }
+        throw this._Err("unterminated double-quoted string");
+    }
+
+    private string _ParseSingleQuotedString() {
+        this._Advance();  // consume opening '
+        StringBuilder sb = new StringBuilder();
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if (c == '\'') {
+                // YAML 1.2: '' inside a single-quoted string is a literal '.
+                if (this._pos + 1 < this._src.Length && this._src.CharAt(this._pos + 1) == '\'') {
+                    sb.Append('\'');
+                    this._Advance();
+                    this._Advance();
+                    continue;
+                }
+                this._Advance();
+                return sb.ToString();
+            }
+            if (c == '\n') {
+                throw this._Err("newline in single-quoted string");
+            }
+            sb.Append(c);
+            this._Advance();
+        }
+        throw this._Err("unterminated single-quoted string");
+    }
+
+    /// Consume from current pos through the rest of the line; return the
+    /// trimmed content, stripped of any end-of-line `#…` comment.
+    private string _ConsumeLinePlainScalar() {
+        int start = this._pos;
+        int commentStart = -1;
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if (c == '\n' || c == '\r') { break; }
+            // YAML allows `#` inside a plain scalar only when not preceded
+            // by whitespace; an inline comment requires `␣#`.
+            if (c == '#' && this._pos > start) {
+                char prev = this._src.CharAt(this._pos - 1);
+                if (prev == ' ' || prev == '\t') {
+                    commentStart = this._pos;
+                    break;
+                }
+            }
+            this._Advance();
+        }
+        int end = commentStart >= 0 ? commentStart : this._pos;
+        string raw = this._src.Substring(start, end - start);
+        return raw.Trim();
+    }
+
+    /// Type-detect a plain (unquoted, untrimmed) scalar:
+    ///   "" / "~" / "null"  → null
+    ///   "true" / "false"   → bool
+    ///   integer literal    → int   (sign, decimal only — v0)
+    ///   float literal      → float (sign, decimal point or exponent — v0)
+    ///   otherwise          → string
+    private YamlValue _ParseScalarLiteral(string raw) {
+        if (raw.Length == 0)      { return YamlValue.OfNull(); }
+        if (raw == "~")           { return YamlValue.OfNull(); }
+        if (raw == "null")        { return YamlValue.OfNull(); }
+        if (raw == "Null")        { return YamlValue.OfNull(); }
+        if (raw == "NULL")        { return YamlValue.OfNull(); }
+        if (raw == "true")        { return YamlValue.OfBool(true); }
+        if (raw == "True")        { return YamlValue.OfBool(true); }
+        if (raw == "TRUE")        { return YamlValue.OfBool(true); }
+        if (raw == "false")       { return YamlValue.OfBool(false); }
+        if (raw == "False")       { return YamlValue.OfBool(false); }
+        if (raw == "FALSE")       { return YamlValue.OfBool(false); }
+        // Try int → float → string.
+        if (this._LooksLikeInt(raw)) {
+            try { return YamlValue.OfInt(Int64.Parse(raw)); }
+            catch (Exception e) { /* fall through to float / string */ }
+        }
+        if (this._LooksLikeFloat(raw)) {
+            try { return YamlValue.OfFloat(Double.Parse(raw)); }
+            catch (Exception e) { /* fall through to string */ }
+        }
+        return YamlValue.OfString(raw);
+    }
+
+    private bool _LooksLikeInt(string s) {
+        int i = 0;
+        if (s.Length == 0) { return false; }
+        if (s.CharAt(0) == '+' || s.CharAt(0) == '-') { i = 1; }
+        if (i >= s.Length) { return false; }
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c < '0' || c > '9') { return false; }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    private bool _LooksLikeFloat(string s) {
+        int i = 0;
+        if (s.Length == 0) { return false; }
+        if (s.CharAt(0) == '+' || s.CharAt(0) == '-') { i = 1; }
+        bool sawDigit = false;
+        bool sawDot = false;
+        bool sawExp = false;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c >= '0' && c <= '9') {
+                sawDigit = true;
+            } else if (c == '.' && !sawDot && !sawExp) {
+                sawDot = true;
+            } else if ((c == 'e' || c == 'E') && sawDigit && !sawExp) {
+                sawExp = true;
+                if (i + 1 < s.Length && (s.CharAt(i + 1) == '+' || s.CharAt(i + 1) == '-')) {
+                    i = i + 1;
+                }
+            } else {
+                return false;
+            }
+            i = i + 1;
+        }
+        return sawDigit && (sawDot || sawExp);
+    }
+
+    // ── Whitespace + line handling ──────────────────────────────────────
+
+    /// Number of leading space characters on the line starting at _pos.
+    /// Throws if a tab appears in the indentation (YAML forbids).
+    private int _CurrentLineIndent() {
+        int i = this._pos;
+        int n = 0;
+        while (i < this._src.Length) {
+            char c = this._src.CharAt(i);
+            if (c == ' ') { n = n + 1; i = i + 1; continue; }
+            if (c == '\t') {
+                throw this._Err("tab character not allowed in indentation");
+            }
+            break;
+        }
+        return n;
+    }
+
+    private void _SkipBlankLines() {
+        while (this._pos < this._src.Length) {
+            int save = this._pos;
+            int indent = 0;
+            // Skip leading spaces.
+            while (save < this._src.Length && this._src.CharAt(save) == ' ') {
+                save = save + 1;
+                indent = indent + 1;
+            }
+            if (save >= this._src.Length) { this._pos = save; return; }
+            char c = this._src.CharAt(save);
+            if (c == '\n' || c == '\r' || c == '#') {
+                this._pos = save;
+                this._col = indent + 1;
+                this._ConsumeRestOfLine();
+                continue;
+            }
+            return;
+        }
+    }
+
+    private void _SkipInlineSpaces() {
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if (c == ' ' || c == '\t') { this._Advance(); } else { break; }
+        }
+    }
+
+    private void _SkipInlineSpacesAndOptionalComment() {
+        this._SkipInlineSpaces();
+        if (this._pos < this._src.Length && this._src.CharAt(this._pos) == '#') {
+            // Skip until EOL.
+            while (this._pos < this._src.Length) {
+                char c = this._src.CharAt(this._pos);
+                if (c == '\n' || c == '\r') { break; }
+                this._Advance();
+            }
+        }
+    }
+
+    private void _SkipFlowWS() {
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+                this._Advance();
+                continue;
+            }
+            if (c == '#') {
+                while (this._pos < this._src.Length && this._src.CharAt(this._pos) != '\n') {
+                    this._Advance();
+                }
+                continue;
+            }
+            break;
+        }
+    }
+
+    private void _ConsumeRestOfLine() {
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if (c == '\n') {
+                this._pos = this._pos + 1;
+                this._line = this._line + 1;
+                this._col = 1;
+                return;
+            }
+            if (c == '\r') {
+                this._pos = this._pos + 1;
+                if (this._pos < this._src.Length && this._src.CharAt(this._pos) == '\n') {
+                    this._pos = this._pos + 1;
+                }
+                this._line = this._line + 1;
+                this._col = 1;
+                return;
+            }
+            this._pos = this._pos + 1;
+        }
+    }
+
+    private bool _PeekLineIs(string marker) {
+        int i = this._pos;
+        int m = 0;
+        while (i < this._src.Length && m < marker.Length) {
+            if (this._src.CharAt(i) != marker.CharAt(m)) { return false; }
+            i = i + 1;
+            m = m + 1;
+        }
+        if (m < marker.Length) { return false; }
+        if (i >= this._src.Length) { return true; }
+        char nx = this._src.CharAt(i);
+        return nx == '\n' || nx == '\r' || nx == ' ' || nx == '\t';
+    }
+
+    private bool _IsCommentStart() {
+        // Caller ensures this._pos points at '#'. A comment requires `␣#` —
+        // i.e. the char before must be whitespace OR this must be the first
+        // non-WS char of the line. We approximate: if prev char is space or
+        // we're at line start, it's a comment.
+        if (this._pos == 0) { return true; }
+        char prev = this._src.CharAt(this._pos - 1);
+        return prev == ' ' || prev == '\t' || prev == '\n' || prev == '\r';
+    }
+
+    /// Scan from `start` to end-of-line looking for an unquoted `:` followed
+    /// by WS / EOL — that means the line is a block-mapping key:value.
+    /// Returns false for lines that are plain scalars.
+    private bool _LineHasMappingColon(int start) {
+        int i = start;
+        bool inSingleQuote = false;
+        bool inDoubleQuote = false;
+        while (i < this._src.Length) {
+            char c = this._src.CharAt(i);
+            if (c == '\n' || c == '\r') { return false; }
+            if (inDoubleQuote) {
+                if (c == '\\' && i + 1 < this._src.Length) { i = i + 2; continue; }
+                if (c == '"') { inDoubleQuote = false; }
+                i = i + 1;
+                continue;
+            }
+            if (inSingleQuote) {
+                if (c == '\'') {
+                    if (i + 1 < this._src.Length && this._src.CharAt(i + 1) == '\'') {
+                        i = i + 2; continue;
+                    }
+                    inSingleQuote = false;
+                }
+                i = i + 1;
+                continue;
+            }
+            if (c == '"')  { inDoubleQuote = true;  i = i + 1; continue; }
+            if (c == '\'') { inSingleQuote = true;  i = i + 1; continue; }
+            // Inline comment ends search.
+            if (c == '#' && i > start) {
+                char prev = this._src.CharAt(i - 1);
+                if (prev == ' ' || prev == '\t') { return false; }
+            }
+            if (c == ':') {
+                if (i + 1 >= this._src.Length) { return true; }
+                char nx = this._src.CharAt(i + 1);
+                if (nx == ' ' || nx == '\t' || nx == '\n' || nx == '\r') {
+                    return true;
+                }
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+
+    private void _Advance() {
+        if (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            this._pos = this._pos + 1;
+            if (c == '\n') {
+                this._line = this._line + 1;
+                this._col = 1;
+            } else {
+                this._col = this._col + 1;
+            }
+        }
+    }
+
+    private YamlException _Err(string msg) {
+        return new YamlException(msg + " at " + this._line.ToString() + ":" + this._col.ToString());
+    }
+}

@@ -1,0 +1,88 @@
+// add-z42-yaml (2026-05-24): nested block mapping + block sequence.
+namespace Z42YamlParseBlockTests;
+
+using Std.Test;
+using Std.Yaml;
+
+[Test]
+void test_nested_mapping() {
+    string yaml = "person:\n  name: bob\n  age: 25\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.IsMapping());
+    YamlValue p = v.Get("person");
+    Assert.True(p.IsMapping());
+    Assert.Equal("bob", p.Get("name").AsString());
+    Assert.Equal(25L, p.Get("age").AsInt());
+}
+
+[Test]
+void test_simple_block_sequence() {
+    string yaml = "- apple\n- banana\n- cherry\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.IsSequence());
+    Assert.Equal(3, v.Length());
+    Assert.Equal("apple",  v.At(0).AsString());
+    Assert.Equal("banana", v.At(1).AsString());
+    Assert.Equal("cherry", v.At(2).AsString());
+}
+
+[Test]
+void test_mapping_with_block_sequence_value() {
+    string yaml = "fruits:\n  - apple\n  - banana\n";
+    YamlValue v = Yaml.Parse(yaml);
+    YamlValue f = v.Get("fruits");
+    Assert.True(f.IsSequence());
+    Assert.Equal(2, f.Length());
+    Assert.Equal("apple",  f.At(0).AsString());
+    Assert.Equal("banana", f.At(1).AsString());
+}
+
+[Test]
+void test_deeply_nested_mapping() {
+    string yaml = "a:\n  b:\n    c:\n      d: leaf\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.Equal("leaf",
+        v.Get("a").Get("b").Get("c").Get("d").AsString());
+}
+
+[Test]
+void test_mixed_mapping_and_sequence() {
+    string yaml = "name: alice\nfriends:\n  - bob\n  - charlie\ndetails:\n  age: 30\n  city: nyc\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.Equal("alice", v.Get("name").AsString());
+    YamlValue f = v.Get("friends");
+    Assert.Equal(2, f.Length());
+    Assert.Equal("bob", f.At(0).AsString());
+    YamlValue d = v.Get("details");
+    Assert.Equal(30L, d.Get("age").AsInt());
+    Assert.Equal("nyc", d.Get("city").AsString());
+}
+
+[Test]
+void test_sequence_of_inline_mappings() {
+    string yaml = "- name: bob\n- name: alice\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.IsSequence());
+    Assert.Equal(2, v.Length());
+    Assert.Equal("bob",   v.At(0).Get("name").AsString());
+    Assert.Equal("alice", v.At(1).Get("name").AsString());
+}
+
+[Test]
+void test_top_level_sequence() {
+    string yaml = "- 1\n- 2\n- 3\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.IsSequence());
+    Assert.Equal(3, v.Length());
+    Assert.Equal(1L, v.At(0).AsInt());
+    Assert.Equal(2L, v.At(1).AsInt());
+    Assert.Equal(3L, v.At(2).AsInt());
+}
+
+[Test]
+void test_empty_mapping_value_then_sibling() {
+    string yaml = "first:\nsecond: 2\n";
+    YamlValue v = Yaml.Parse(yaml);
+    Assert.True(v.Get("first").IsNull());
+    Assert.Equal(2L, v.Get("second").AsInt());
+}

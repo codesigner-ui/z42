@@ -1,0 +1,100 @@
+// add-z42-yaml (2026-05-24): stringify round-trip + scalar quoting heuristic.
+namespace Z42YamlStringifyTests;
+
+using Std.Test;
+using Std.Yaml;
+
+[Test]
+void test_stringify_simple_mapping_round_trip() {
+    YamlValue v = YamlValue.OfMapping();
+    v.Set("name", YamlValue.OfString("alice"));
+    v.Set("age",  YamlValue.OfInt(30));
+    string text = Yaml.Stringify(v);
+    YamlValue parsed = Yaml.Parse(text);
+    Assert.Equal("alice", parsed.Get("name").AsString());
+    Assert.Equal(30L,     parsed.Get("age").AsInt());
+}
+
+[Test]
+void test_stringify_nested_round_trip() {
+    YamlValue inner = YamlValue.OfMapping();
+    inner.Set("x", YamlValue.OfInt(1));
+    inner.Set("y", YamlValue.OfInt(2));
+    YamlValue root = YamlValue.OfMapping();
+    root.Set("point", inner);
+    string text = Yaml.Stringify(root);
+    YamlValue parsed = Yaml.Parse(text);
+    Assert.Equal(1L, parsed.Get("point").Get("x").AsInt());
+    Assert.Equal(2L, parsed.Get("point").Get("y").AsInt());
+}
+
+[Test]
+void test_stringify_sequence_round_trip() {
+    YamlValue seq = YamlValue.OfSequence();
+    seq.Add(YamlValue.OfString("apple"));
+    seq.Add(YamlValue.OfString("banana"));
+    seq.Add(YamlValue.OfString("cherry"));
+    YamlValue root = YamlValue.OfMapping();
+    root.Set("fruits", seq);
+    string text = Yaml.Stringify(root);
+    YamlValue parsed = Yaml.Parse(text);
+    YamlValue f = parsed.Get("fruits");
+    Assert.Equal(3, f.Length());
+    Assert.Equal("apple",  f.At(0).AsString());
+    Assert.Equal("banana", f.At(1).AsString());
+    Assert.Equal("cherry", f.At(2).AsString());
+}
+
+[Test]
+void test_stringify_quotes_ambiguous_string() {
+    // "true" as a string must be quoted to avoid being parsed as bool.
+    YamlValue v = YamlValue.OfMapping();
+    v.Set("answer", YamlValue.OfString("true"));
+    string text = Yaml.Stringify(v);
+    YamlValue parsed = Yaml.Parse(text);
+    Assert.True(parsed.Get("answer").IsString());
+    Assert.Equal("true", parsed.Get("answer").AsString());
+}
+
+[Test]
+void test_stringify_quotes_numeric_string() {
+    YamlValue v = YamlValue.OfMapping();
+    v.Set("zip", YamlValue.OfString("12345"));
+    string text = Yaml.Stringify(v);
+    YamlValue parsed = Yaml.Parse(text);
+    Assert.True(parsed.Get("zip").IsString());
+    Assert.Equal("12345", parsed.Get("zip").AsString());
+}
+
+[Test]
+void test_stringify_null_value() {
+    YamlValue v = YamlValue.OfMapping();
+    v.Set("nope", YamlValue.OfNull());
+    string text = Yaml.Stringify(v);
+    YamlValue parsed = Yaml.Parse(text);
+    Assert.True(parsed.Get("nope").IsNull());
+}
+
+[Test]
+void test_stringify_bool_value() {
+    YamlValue v = YamlValue.OfMapping();
+    v.Set("active", YamlValue.OfBool(true));
+    string text = Yaml.Stringify(v);
+    YamlValue parsed = Yaml.Parse(text);
+    Assert.True(parsed.Get("active").AsBool());
+}
+
+[Test]
+void test_stringify_preserves_insertion_order() {
+    YamlValue v = YamlValue.OfMapping();
+    v.Set("z", YamlValue.OfInt(1));
+    v.Set("a", YamlValue.OfInt(2));
+    v.Set("m", YamlValue.OfInt(3));
+    string text = Yaml.Stringify(v);
+    // Insertion order keys: z, a, m — check 'z' appears before 'a'.
+    int zPos = text.IndexOf("z");
+    int aPos = text.IndexOf("a");
+    int mPos = text.IndexOf("m");
+    Assert.True(zPos < aPos);
+    Assert.True(aPos < mPos);
+}

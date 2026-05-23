@@ -1,0 +1,11 @@
+namespace Std;
+
+// add-z42-yaml (2026-05-24): user-facing exception thrown by `Std.Yaml.*`
+// for parse errors / type-mismatch accessor calls / stringify errors.
+// Lives in `Std` namespace so `catch (Std.YamlException e)` and the
+// bare `catch (Std.Exception e)` both resolve cleanly — same pattern
+// as `Std.TomlException` / `Std.JsonException`.
+
+public class YamlException : Exception {
+    public YamlException(string message) : base(message) { }
+}

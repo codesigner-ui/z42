@@ -1,0 +1,237 @@
+namespace Std.Yaml;
+
+using Std;
+using Std.Text;
+
+// add-z42-yaml (2026-05-24): YAML block-style stringifier.
+//
+// Output rules:
+//   * 2-space indent per nesting level
+//   * Mapping entries on separate lines: `key: value\n`
+//   * Sequence entries on separate lines: `- value\n`
+//   * Scalar quoting:
+//       - null → empty (mapping value: `key:`; sequence item: `-`)
+//       - bool → `true` / `false`
+//       - int → decimal
+//       - float → standard decimal / exponent
+//       - string → plain when safe (no leading/trailing WS, no `: # & * !
+//         | > " ' ` , [ ] { }`, doesn't match a reserved keyword like
+//         true / false / null / ~), else double-quoted with \n \t \" \\
+//         escapes
+//   * Empty mapping → `{}`; empty sequence → `[]`
+//
+// Out of scope (deferred → yaml.md):
+//   * flow-style stringify (one-line `{...}` / `[...]`)
+//   * comment preservation
+//   * canonical key ordering (we emit insertion order)
+
+public sealed class YamlWriter {
+    public string Write(YamlValue root) {
+        StringBuilder sb = new StringBuilder();
+        this._WriteValue(sb, root, 0, false);
+        return sb.ToString();
+    }
+
+    /// Write `v` at indent `indent` (in spaces). `inline` = true means the
+    /// caller already emitted the leading context (`key: ` or `- `) on
+    /// the current line — for scalars we just emit the value + newline;
+    /// for nested mapping/sequence we emit a newline then recurse with
+    /// indent+2 prefix on each child line.
+    private void _WriteValue(StringBuilder sb, YamlValue v, int indent, bool inline) {
+        if (v.IsNull()) {
+            if (inline) {
+                sb.Append("\n");
+            } else {
+                this._WriteIndent(sb, indent);
+                sb.Append("~\n");
+            }
+            return;
+        }
+        if (v.IsBool() || v.IsInt() || v.IsFloat() || v.IsString()) {
+            string lit = this._ScalarLiteral(v);
+            if (inline) {
+                sb.Append(lit);
+                sb.Append("\n");
+            } else {
+                this._WriteIndent(sb, indent);
+                sb.Append(lit);
+                sb.Append("\n");
+            }
+            return;
+        }
+        if (v.IsSequence()) {
+            if (v.Length() == 0) {
+                if (inline) { sb.Append("[]\n"); }
+                else { this._WriteIndent(sb, indent); sb.Append("[]\n"); }
+                return;
+            }
+            if (inline) { sb.Append("\n"); }
+            int i = 0;
+            while (i < v.Length()) {
+                this._WriteIndent(sb, indent);
+                sb.Append("- ");
+                YamlValue child = v.At(i);
+                if (child.IsMapping() || child.IsSequence()) {
+                    // Nested compound: emit newline-then-block at indent+2.
+                    if (child.IsMapping() && child.Count() == 0) {
+                        sb.Append("{}\n");
+                    } else if (child.IsSequence() && child.Length() == 0) {
+                        sb.Append("[]\n");
+                    } else {
+                        sb.Append("\n");
+                        this._WriteValue(sb, child, indent + 2, false);
+                    }
+                } else {
+                    this._WriteValue(sb, child, indent + 2, true);
+                }
+                i = i + 1;
+            }
+            return;
+        }
+        if (v.IsMapping()) {
+            if (v.Count() == 0) {
+                if (inline) { sb.Append("{}\n"); }
+                else { this._WriteIndent(sb, indent); sb.Append("{}\n"); }
+                return;
+            }
+            if (inline) { sb.Append("\n"); }
+            string[] keys = v.Keys();
+            int i = 0;
+            while (i < keys.Length) {
+                this._WriteIndent(sb, indent);
+                sb.Append(this._KeyLiteral(keys[i]));
+                sb.Append(":");
+                YamlValue child = v.Get(keys[i]);
+                if (child.IsMapping() && child.Count() > 0) {
+                    sb.Append("\n");
+                    this._WriteValue(sb, child, indent + 2, false);
+                } else if (child.IsSequence() && child.Length() > 0) {
+                    sb.Append("\n");
+                    this._WriteValue(sb, child, indent, false);  // sequence keeps mapping's indent for `-`
+                } else {
+                    sb.Append(" ");
+                    this._WriteValue(sb, child, indent + 2, true);
+                }
+                i = i + 1;
+            }
+            return;
+        }
+        throw new YamlException("YamlWriter: unknown kind " + v.KindName());
+    }
+
+    private void _WriteIndent(StringBuilder sb, int n) {
+        int i = 0;
+        while (i < n) {
+            sb.Append(' ');
+            i = i + 1;
+        }
+    }
+
+    private string _ScalarLiteral(YamlValue v) {
+        if (v.IsBool()) {
+            return v.AsBool() ? "true" : "false";
+        }
+        if (v.IsInt()) {
+            return v.AsInt().ToString();
+        }
+        if (v.IsFloat()) {
+            return v.AsFloat().ToString();
+        }
+        if (v.IsString()) {
+            string s = v.AsString();
+            if (this._NeedsQuoting(s)) {
+                return this._DoubleQuote(s);
+            }
+            return s;
+        }
+        throw new YamlException("YamlWriter: not a scalar (" + v.KindName() + ")");
+    }
+
+    private string _KeyLiteral(string key) {
+        if (this._NeedsQuoting(key)) {
+            return this._DoubleQuote(key);
+        }
+        return key;
+    }
+
+    private bool _NeedsQuoting(string s) {
+        if (s.Length == 0) { return true; }
+        // Strings that look like other scalar types → need quoting to
+        // disambiguate (else parser would re-interpret).
+        if (s == "~" || s == "null" || s == "Null" || s == "NULL"
+            || s == "true" || s == "True" || s == "TRUE"
+            || s == "false" || s == "False" || s == "FALSE") {
+            return true;
+        }
+        // Anything that would parse as int / float → quote to keep string.
+        if (this._LooksNumeric(s)) { return true; }
+        // Leading / trailing whitespace → quote (else trimmed away).
+        char first = s.CharAt(0);
+        char last  = s.CharAt(s.Length - 1);
+        if (first == ' ' || first == '\t' || last == ' ' || last == '\t') {
+            return true;
+        }
+        // YAML structural indicators anywhere → quote.
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c == ':' || c == '#' || c == '&' || c == '*' || c == '!'
+                || c == '|' || c == '>' || c == '"' || c == '\''
+                || c == ',' || c == '[' || c == ']' || c == '{' || c == '}'
+                || c == '\n' || c == '\r' || c == '\t' || c == '\\'
+                || c == '%' || c == '@' || c == '`') {
+                return true;
+            }
+            i = i + 1;
+        }
+        // Leading indicators that YAML treats specially: `- ? :` followed
+        // by space, plus `- ` start, plus reserved `@` `` ` `` etc.
+        if (first == '-' || first == '?' || first == ':') {
+            return true;
+        }
+        return false;
+    }
+
+    private bool _LooksNumeric(string s) {
+        int i = 0;
+        if (s.Length == 0) { return false; }
+        if (s.CharAt(0) == '+' || s.CharAt(0) == '-') { i = 1; }
+        if (i >= s.Length) { return false; }
+        bool sawDigit = false;
+        bool sawDot = false;
+        bool sawExp = false;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c >= '0' && c <= '9') { sawDigit = true; }
+            else if (c == '.' && !sawDot && !sawExp) { sawDot = true; }
+            else if ((c == 'e' || c == 'E') && sawDigit && !sawExp) {
+                sawExp = true;
+                if (i + 1 < s.Length && (s.CharAt(i + 1) == '+' || s.CharAt(i + 1) == '-')) {
+                    i = i + 1;
+                }
+            } else {
+                return false;
+            }
+            i = i + 1;
+        }
+        return sawDigit;
+    }
+
+    private string _DoubleQuote(string s) {
+        StringBuilder sb = new StringBuilder();
+        sb.Append('"');
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c == '\\')      { sb.Append("\\\\"); }
+            else if (c == '"')  { sb.Append("\\\""); }
+            else if (c == '\n') { sb.Append("\\n"); }
+            else if (c == '\t') { sb.Append("\\t"); }
+            else if (c == '\r') { sb.Append("\\r"); }
+            else                { sb.Append(c); }
+            i = i + 1;
+        }
+        sb.Append('"');
+        return sb.ToString();
+    }
+}
