@@ -100,8 +100,13 @@ interp-only          = []
 # Required on wasm (no dlopen); optional everywhere else.
 bundled-compression  = ["dep:z42-compression"]
 wasm                 = ["interp-only", "bundled-compression"]
-ios                  = ["interp-only", "aot", "native-interop"]
-android              = ["interp-only", "aot", "native-interop"]
+# Mobile presets bundle compression too — these platforms either disallow
+# dlopen (iOS App Store) or strongly prefer single-binary integration
+# (Android JNI side-load convention). The separately-shipped
+# libz42_compression.a in SDK packages is left as a belt-and-suspenders
+# option for integrators who want manual linking control.
+ios                  = ["interp-only", "aot", "native-interop", "bundled-compression"]
+android              = ["interp-only", "aot", "native-interop", "bundled-compression"]
 
 # Platform / system info (Std.Platform / Std.OperatingSystem stdlib, 2026-05-14).
 # Only needed on unix-like for gethostname / uname; windows uses winapi via direct

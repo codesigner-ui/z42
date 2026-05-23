@@ -304,6 +304,11 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | URL-safe Base64 / Base32 / UTF-16 / Encoding streaming API | z42.encoding v0 排除的形态 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
 | HMAC-SHA256 | v0 SHA-256 落地后的下一步；RFC 2104 公式 | [stdlib/crypto.md](design/stdlib/crypto.md#hmac-sha256) |
 | Std.Crypto.Random (CSPRNG) | 需要 OS syscall 抽象层（z42.os / z42.io.fs）就绪 | [stdlib/crypto.md](design/stdlib/crypto.md#csprngstdcryptorandom) |
+| Zip.Write | byte[][] 类型系统或 2-pass workaround；v0 仅 Read | [stdlib/compression.md](design/stdlib/compression.md#compression-future-zip-write) |
+| Compression streaming decode | v0 是 accumulate-then-decompress | [stdlib/compression.md](design/stdlib/compression.md#compression-future-streaming-decode) |
+| Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |
+| libdeflate batch | 1.5× DEFLATE 快通道；bench 驱动 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-libdeflate-batch) |
+| Migrate existing stdlib natives to ext loader | crypto / 等可选移出 z42vm | [runtime/native-ext-loader.md](design/runtime/native-ext-loader.md#migration-of-existing-stdlib-natives) |
 | reader-writer-asymmetry (zbc+zpkg) | SIGS/TYPE TypeTag 单向 lossy（`"int"` → I32 → `"i32"`），导致 Read→Write 字节不对账；strict-pin 契约不受影响，writer 生产物正常加载。修复需 wire format 增长（zbc minor bump） | [runtime/zbc.md](design/runtime/zbc.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) + [runtime/zpkg.md](design/runtime/zpkg.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) |
 | ~~跨包 static field 初始化时机~~ | ✅ 已修复 by `dfcd1495 fix(compiler+vm): unique __static_init__ name per source file`（2026-05-15）；stdlib workaround 由 `cleanup-static-field-workarounds` spec 回收 | — |
 

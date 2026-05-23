@@ -62,6 +62,26 @@ local_lib="$ROOT/artifacts/build/runtime/$CARGO_TARGET/$PROFILE/libz42.a"
 cp "$local_lib" "$PKG_DIR/native/libz42.a"
 echo "      ✓ native/libz42.a ($(du -h "$PKG_DIR/native/libz42.a" | cut -f1))"
 
+# ── 2b. libz42_compression.a (iOS staticlib, add-z42-compression 2026-05-22) ──
+# iOS App Store disallows dlopen of arbitrary dylibs, so we ship the
+# compression code as a staticlib only. Integrators either link the .a
+# directly (Xcode → Build Phases → Link Binary With Libraries) or via
+# the xcframework slice produced in step 4. The z42 runtime side
+# auto-enables the `bundled-compression` Cargo feature on iOS, which
+# statically registers the rlib's builtins at VmContext::new() instead
+# of scanning for a dlopen target.
+
+echo "[2b/7] libz42_compression.a (cargo $CARGO_TARGET, $PROFILE)"
+cargo build \
+    $([ "$PROFILE" = "release" ] && echo "--release") \
+    -p z42-compression \
+    --manifest-path "$ROOT/src/runtime/Cargo.toml" \
+    --target "$CARGO_TARGET" --quiet
+compression_lib="$ROOT/artifacts/build/runtime/$CARGO_TARGET/$PROFILE/libz42_compression.a"
+[ -f "$compression_lib" ] || { echo "error: $compression_lib not produced" >&2; exit 1; }
+cp "$compression_lib" "$PKG_DIR/native/libz42_compression.a"
+echo "      ✓ native/libz42_compression.a ($(du -h "$PKG_DIR/native/libz42_compression.a" | cut -f1))"
+
 # ── 3. C ABI headers (needed before xcframework) ────────────────────────
 
 echo "[3/7] C ABI headers"

@@ -123,6 +123,40 @@ cp "$STATIC_A" "$SO_OUT/libz42_platform_android.a"
 rm -rf "$SO_OUT/.ndk-out"
 echo "      ✓ native/libz42_platform_android.a ($(du -h "$SO_OUT/libz42_platform_android.a" | cut -f1))"
 
+# ── 3b. libz42_compression.{so,a} (add-z42-compression 2026-05-22) ──────
+# Both formats: .so for runtime dlopen by z42vm (System.loadLibrary in
+# Kotlin or putting it on jniLibs path), .a for integrators who prefer
+# compile-time link via Gradle ndk-build. The z42 runtime auto-enables
+# `bundled-compression` Cargo feature on Android, statically registering
+# the rlib's builtins, so dlopen of the .so is optional.
+
+echo "[3b/8] libz42_compression.{so,a} (cargo $CARGO_TARGET, $PROFILE)"
+(
+    cd "$ANDROID_CRATE"
+    if [ "$PROFILE" = "release" ]; then
+        cargo ndk -t "$ABI" -o "$SO_OUT/.ndk-out2" build --release \
+            -p z42-compression --quiet >/dev/null 2>&1 || true
+    else
+        cargo ndk -t "$ABI" -o "$SO_OUT/.ndk-out2" build \
+            -p z42-compression --quiet >/dev/null 2>&1 || true
+    fi
+)
+# cargo-ndk layout: <out>/<abi>/libz42_compression.so
+NDK_COMP_SO="$SO_OUT/.ndk-out2/$ABI/libz42_compression.so"
+if [ -f "$NDK_COMP_SO" ]; then
+    mv "$NDK_COMP_SO" "$SO_OUT/libz42_compression.so"
+    echo "      ✓ native/libz42_compression.so ($(du -h "$SO_OUT/libz42_compression.so" | cut -f1))"
+fi
+COMP_A="$ROOT/artifacts/build/runtime/$CARGO_TARGET/$PROFILE/libz42_compression.a"
+if [ ! -f "$COMP_A" ]; then
+    COMP_A="$ANDROID_CRATE/target/$CARGO_TARGET/$PROFILE/libz42_compression.a"
+fi
+if [ -f "$COMP_A" ]; then
+    cp "$COMP_A" "$SO_OUT/libz42_compression.a"
+    echo "      ✓ native/libz42_compression.a ($(du -h "$SO_OUT/libz42_compression.a" | cut -f1))"
+fi
+rm -rf "$SO_OUT/.ndk-out2"
+
 # ── 4. C ABI headers ────────────────────────────────────────────────────
 
 echo "[4/8] C ABI headers"

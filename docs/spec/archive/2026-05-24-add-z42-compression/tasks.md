@@ -1,6 +1,6 @@
 # Tasks: add z42.compression
 
-> 状态：🟡 进行中 | 创建：2026-05-22
+> 状态：🟢 已完成 | 创建：2026-05-22 | 完成：2026-05-24
 > 类型：feat（新 stdlib + 新 VM infra "stdlib native ext loader"）
 > Spec：[proposal](proposal.md) + [design](design.md)
 

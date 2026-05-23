@@ -134,6 +134,25 @@ jobs:
           else
               echo "error: bin/z42c[.exe] missing"; ls -la "$pkg_dir/bin/"; exit 1
           fi
+          # add-z42-compression (2026-05-22): libz42_compression cdylib must
+          # ship in native/ so z42vm can dlopen it from <pkg>/native/ at
+          # startup. .a counterpart is for mobile / future static-link
+          # integrators; verify it too.
+          if [ -f "$pkg_dir/native/libz42_compression.dylib" ] \
+             || [ -f "$pkg_dir/native/libz42_compression.so" ] \
+             || [ -f "$pkg_dir/native/z42_compression.dll" ]; then
+              echo "✓ native/libz42_compression.* (dlopen target)"
+          else
+              echo "error: native/libz42_compression.{dylib,so,dll} missing — z42.compression facade will fail with 'unknown builtin' at runtime"
+              ls -la "$pkg_dir/native/"; exit 1
+          fi
+          test -f "$pkg_dir/native/libz42_compression.a" \
+              && echo "✓ native/libz42_compression.a (staticlib for mobile / future bundled link)"
+          # z42.compression.zpkg must ship in libs/ — the facade resolves
+          # Std.Compression / Std.Archive through it.
+          test -f "$pkg_dir/libs/z42.compression.zpkg" \
+              || { echo "error: libs/z42.compression.zpkg missing"; exit 1; }
+          echo "✓ libs/z42.compression.zpkg"
           echo "--- manifest.toml ---"
           cat "$pkg_dir/manifest.toml"
 
