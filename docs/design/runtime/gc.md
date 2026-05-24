@@ -525,6 +525,31 @@ valid）。Script 端 / 消费端先检 `count == 0` 再读 `min_us`。
 - 无 SLA hook：不能 "pause > 100ms 时 log warning"，等
   `add-gc-pause-sla`
 
+#### Rolling window (add-gc-pause-window, 2026-05-24)
+
+补充上面"cumulative 不滚动"局限：`PauseHistogram` 现在也维护一个
+**rolling FIFO window**（`VecDeque<u64>`，容量默认 1024，env
+`Z42_GC_PAUSE_WINDOW` 覆盖 clamp 到 `[1, 65536]`）。每次
+`record(pause_us)` 在 push_back 时若 deque 已满则先 pop_front
+最老样本 → 总保留最近 N 次。
+
+**从 script 端读取**：
+
+```z42
+using Std;
+
+long cap = GC.PauseWindowCapacity();   // e.g. 1024
+long[] recent = GC.RecentPauses();      // 最近 cap 次，oldest first
+long mostRecent = recent[recent.Length - 1];
+// → 自己算 p50/p95/p99 over window
+```
+
+**用途**：长跑 server 监控近期 pause 趋势 —
+cumulative histogram 把"过去几周 30 万次 collect"全平摊，单一 spike
+看不出来；rolling window 让你看清"最近 1000 次"分布。Script 端
+diff `RecentPauses()` 与上次调用结果也能算 incremental
+（"过去 1 分钟新增的 pause 都长啥样"）。
+
 ### Heap snapshot export (add-gc-heap-snapshot-export, 2026-05-24)
 
 `Std.GC.WriteHeapSnapshot(path)` 把当前堆的对象引用图导出到 `path`
@@ -609,6 +634,7 @@ overhead 内）。
 | **B5 pause histogram** | 8-bucket logarithmic histogram on `pause_us`（µs–10s+）+ min/max/total/count。每次 collect 记录；`HeapStats.pause_histogram` 字段 + `Std.GC.PauseHistogram()` / `Std.GC.PauseStatsRaw()` builtins 暴露给 script。Single histogram per heap，跨 mode 切换累积 | ✅ 2026-05-22 add-gc-pause-histogram |
 | **C3 multi-heap isolation stress** | 5 个测试在 `arc_heap_tests/multi_vm.rs`，跨 `ArcMagrGC` 实例并行 stress（线程间用独立 heap）。覆盖 STW / Generational / 混合 mode + pause histogram 隔离 cross-check (B5)。验证多 VM 嵌入场景 Phase 3 隔离设计成立 | ✅ 2026-05-24 add-gc-multi-vm-stress |
 | **B3 heap snapshot export** | V8 `.heapsnapshot` JSON writer (`gc/snapshot.rs`)：two-pass walker (id assign + edge emit + root link) + flat custom serializer (no serde dep) + `Std.GC.WriteHeapSnapshot(path)` builtin。生成的文件直接用 Chrome DevTools / speedscope / heapviewer.com 加载查看 retainer 图 / dominator 树 | ✅ 2026-05-24 add-gc-heap-snapshot-export |
+| **add-gc-pause-window** | PauseHistogram 加 `recent_pauses: VecDeque<u64>` rolling FIFO 窗口（默认 1024 容量，`Z42_GC_PAUSE_WINDOW` clamp 到 `[1, 65536]`）+ 2 个新 builtins `Std.GC.RecentPauses()` / `PauseWindowCapacity()`。补 B5 "cumulative 不滚动" 局限。`PauseHistogram` / `HeapStats` 同时 drop `Copy` derive（VecDeque 不 Copy）| ✅ 2026-05-24 add-gc-pause-window |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -771,9 +797,12 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
     TypeDesc — 简洁优先于结构化字段
   - 直方图跨 mode 切换累积（不重置）；script 端 diff
     before/after `set_mode` 拿 per-mode 分布
-- **延后**：t-digest 精确分位数、per-mode 直方图分裂、rolling
-  window、SLA hook — 详见
-  ["Pause histogram"](#pause-histogram-add-gc-pause-histogram-2026-05-22) 段
+- **延后**：t-digest 精确分位数、per-mode 直方图分裂、SLA hook —
+  详见 ["Pause histogram"](#pause-histogram-add-gc-pause-histogram-2026-05-22) 段
+- **后续延伸已落地**：
+  - **add-gc-pause-window** (2026-05-24) ✅ — rolling FIFO 窗口补
+    "cumulative 不滚动" 局限。详见
+    ["Rolling window"](#rolling-window-add-gc-pause-window-2026-05-24) 段
 
 ### C. 测试 / 调试质量
 
