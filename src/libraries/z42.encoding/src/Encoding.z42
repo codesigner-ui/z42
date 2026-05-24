@@ -1,0 +1,83 @@
+namespace Std.Encoding;
+
+using Std;
+
+// add-encoding-and-stream-text (2026-05-24): concrete Encoding class
+// wrapping the existing Utf8 static codec.
+//
+// v0 ships only UTF-8; the class is single-concrete because z42 has
+// no `abstract` keyword yet. When more encodings land (Latin-1 /
+// UTF-16 / ASCII), extract a base class or interface and migrate
+// existing call sites — caller-facing API is forward-compatible
+// (consumers already write `Encoding e = Encoding.GetUtf8()`).
+//
+// Static singleton via `GetUtf8()` method (not a `public static
+// Encoding UTF8 = new Encoding()` field) — class-init ordering for
+// static fields holding instance-typed values is brittle in z42's
+// current static-initializer story; method-call form sidesteps the
+// edge cases.
+
+public class Encoding {
+    // Encoding "kind" tag — v0 only has UTF-8 (= 1). Reserved for
+    // forward use; consumers don't read this directly.
+    private int _kind;
+
+    public Encoding(int kind) {
+        this._kind = kind;
+    }
+
+    // ── Singletons ──────────────────────────────────────────────────────
+
+    /// Return the canonical UTF-8 Encoding instance. Idempotent —
+    /// returns the same instance on every call within a VM lifetime.
+    public static Encoding GetUtf8() {
+        return EncodingSingletons.Utf8();
+    }
+
+    // ── String ↔ bytes ──────────────────────────────────────────────────
+
+    /// Encode `s` to bytes per this encoding.
+    public byte[] GetBytes(string s) {
+        return Utf8.GetBytes(s);
+    }
+
+    /// Decode `bytes` to a string per this encoding. Bytes are
+    /// strict-validated; invalid input throws `FormatException`.
+    public string GetString(byte[] bytes) {
+        return Utf8.GetString(bytes);
+    }
+
+    /// Decode the slice `bytes[offset..offset+count]`. Returns "" for
+    /// count == 0. Throws ArgumentException on out-of-range offset/count.
+    public string GetString(byte[] bytes, int offset, int count) {
+        if (offset < 0 || count < 0 || offset + count > bytes.Length) {
+            throw new ArgumentException("Encoding.GetString: offset / count out of range");
+        }
+        if (count == 0) { return ""; }
+        if (offset == 0 && count == bytes.Length) {
+            return Utf8.GetString(bytes);
+        }
+        byte[] slice = new byte[count];
+        int i = 0;
+        while (i < count) {
+            slice[i] = bytes[offset + i];
+            i = i + 1;
+        }
+        return Utf8.GetString(slice);
+    }
+}
+
+// Singleton holder — lazy-init pattern via a static cache class.
+// Separated to keep `Encoding`'s API surface focused and to allow
+// future encodings (`Latin1()`, `Utf16()`) to live alongside without
+// cluttering the main type.
+public static class EncodingSingletons {
+    private static Encoding _utf8;
+
+    public static Encoding Utf8() {
+        if (EncodingSingletons._utf8 == null) {
+            EncodingSingletons._utf8 = new Encoding(1);
+        }
+        return EncodingSingletons._utf8;
+    }
+}

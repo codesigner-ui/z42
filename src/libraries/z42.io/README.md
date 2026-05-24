@@ -24,4 +24,6 @@ z42 标准 IO 类型。
 | `SeekOrigin.z42` | `SeekOrigin` | `Seek(offset, origin)` origin 常量（Begin=0 / Current=1 / End=2） |
 | `StringReader.z42` | `StringReader` | char-oriented reader over an in-memory string（`Peek` / `Read` / `ReadLine` / `ReadToEnd`） |
 | `StringWriter.z42` | `StringWriter` | char-oriented writer accumulating into a string（`Write` / `WriteLine` / `ToString` / `Clear`） |
+| `StreamReader.z42` | `StreamReader` | char-oriented reader over a byte `Stream` via an `Encoding`（drain-and-decode v0） |
+| `StreamWriter.z42` | `StreamWriter` | char-oriented writer over a byte `Stream` via an `Encoding`（encode-on-write） |
 | `Exceptions/` | 各类 IO 异常 | `FileNotFoundException` / `ProcessHandleInvalidException` 等 |

@@ -1,0 +1,124 @@
+namespace Std.IO;
+
+using Std;
+using Std.Encoding;
+
+// add-encoding-and-stream-text (2026-05-24): char-oriented reader
+// over a byte `Stream` via an `Encoding`. Bridges the Stream
+// ecosystem (byte) with the StringReader / StringWriter ecosystem
+// (char) so text can flow through the same pipeline as bytes —
+// file, network, compressed, etc.
+//
+// v0 implementation: drain-and-decode. On first read, slurp all
+// bytes from the source via `Stream.ReadAllBytes()`, decode to a
+// `string` via the Encoding, hand off subsequent operations to an
+// internal `StringReader`. Trade-offs:
+//
+//   * Correct UTF-8 boundary handling for free — we decode the full
+//     byte array at once, so multi-byte sequences can't split across
+//     chunks (because there are no chunks at this layer)
+//   * Simple — ~30 LOC instead of the ~300 LOC a stateful Decoder
+//     state-machine would need
+//   * Cost — the entire source is materialised before the first Read
+//     returns. Fine for "load this UTF-8 config" / "parse this 50 KB
+//     log line-by-line" workloads; not for "tail a 10 GB log" which
+//     should wait for the deferred `io-stream-future-streamreader-chunked`
+//
+// `Close()` releases the cached string ref + marks closed. It does
+// NOT close the source Stream — caller owns its lifecycle (matches
+// `CompressionEncoderStream(leaveOpen=true)` and Process*Stream
+// conventions).
+
+public class StreamReader {
+    private Stream       _source;
+    private Encoding     _encoding;
+    private StringReader _inner;     // built lazily on first read
+    private bool         _drained;
+    private bool         _closed;
+
+    /// UTF-8 default — matches .NET / Python.
+    public StreamReader(Stream source) {
+        this._source   = source;
+        this._encoding = Encoding.GetUtf8();
+        this._drained  = false;
+        this._closed   = false;
+    }
+
+    public StreamReader(Stream source, Encoding encoding) {
+        this._source   = source;
+        this._encoding = encoding;
+        this._drained  = false;
+        this._closed   = false;
+    }
+
+    // ── Single char ─────────────────────────────────────────────────────
+
+    public int Peek() {
+        this.EnsureOpen();
+        this.EnsureDrained();
+        return this._inner.Peek();
+    }
+
+    public int Read() {
+        this.EnsureOpen();
+        this.EnsureDrained();
+        return this._inner.Read();
+    }
+
+    // ── Bulk read ───────────────────────────────────────────────────────
+
+    public int Read(char[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        this.EnsureDrained();
+        return this._inner.Read(buffer, offset, count);
+    }
+
+    // ── Line-oriented ───────────────────────────────────────────────────
+
+    /// Read one line (terminator stripped); null on EOF. Behaviour
+    /// matches `StringReader.ReadLine` — see that file for the
+    /// `\n` / `\r\n` / lone `\r` rules.
+    public string ReadLine() {
+        this.EnsureOpen();
+        this.EnsureDrained();
+        return this._inner.ReadLine();
+    }
+
+    /// Return everything remaining as one string; subsequent Read*
+    /// observe EOF.
+    public string ReadToEnd() {
+        this.EnsureOpen();
+        this.EnsureDrained();
+        return this._inner.ReadToEnd();
+    }
+
+    // ── Lifecycle ───────────────────────────────────────────────────────
+
+    /// Mark closed. Releases the cached string; subsequent ops throw.
+    /// Does NOT close the source Stream.
+    public void Close() {
+        if (this._closed) { return; }
+        this._closed = true;
+        if (this._inner != null) {
+            this._inner.Close();
+            this._inner = null;
+        }
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────
+
+    private void EnsureOpen() {
+        if (this._closed) {
+            throw new InvalidOperationException("StreamReader: reader is closed");
+        }
+    }
+
+    /// Lazy first-call drain. Subsequent calls are O(1).
+    private void EnsureDrained() {
+        if (this._drained) { return; }
+        byte[] all = this._source.ReadAllBytes();
+        string text = this._encoding.GetString(all);
+        this._inner   = new StringReader(text);
+        this._drained = true;
+    }
+}

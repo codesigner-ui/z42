@@ -219,17 +219,33 @@ bridge is the future `StreamReader/Writer(Stream, Encoding)`
 (deferred — needs an `Encoding` type). See
 [`docs/spec/archive/2026-05-24-add-z42-io-string-reader-writer/`](../../spec/archive/2026-05-24-add-z42-io-string-reader-writer/).
 
-### `io-stream-future-streamreader-writer`
+### ~~`io-stream-future-streamreader-writer`~~ — **✅ landed 2026-05-24**
 
-- **来源**：add-z42-io-string-reader-writer v0 scope cut
-- **触发原因**：text I/O over a byte `Stream` (`StreamReader(Stream, Encoding)`
-  / `StreamWriter(Stream, Encoding)`) requires an `Encoding` type
-  with `GetBytes / GetChars / GetCharCount / GetByteCount` shape —
-  z42 has only loose UTF-8 helpers in `Std.Encoding`. Spec for
-  `Std.Text.Encoding` is a prerequisite.
-- **触发条件**：first real use case for reading lines from a file
-  (build script log parser, large config reader) or writing text to
-  a compressed stream.
+Shipped via `add-encoding-and-stream-text`: new `Std.Encoding.Encoding`
+concrete class wrapping `Utf8` statics (forward-compatible for future
+Latin-1 / UTF-16); `Std.IO.StreamReader(Stream)` / `(Stream, Encoding)`
+and `Std.IO.StreamWriter(Stream)` / `(Stream, Encoding)`. v0
+StreamReader uses drain-and-decode (slurp all bytes → decode → wrap
+in internal StringReader) for correct UTF-8 boundary handling without
+a stateful decoder. StreamWriter encodes immediately per Write
+(byte-side buffering left to the dest Stream). Both leave the
+underlying Stream open on `Close()` (caller owns lifecycle). See
+[`docs/spec/archive/2026-05-24-add-encoding-and-stream-text/`](../../spec/archive/2026-05-24-add-encoding-and-stream-text/).
+
+### `io-stream-future-streamreader-chunked`
+
+- **来源**：add-encoding-and-stream-text v0 scope cut
+- **触发原因**：v0 `StreamReader` drains the entire source Stream
+  before the first Read returns — fine for files / typical config
+  payloads, fails for 10 GB log tailing or unbounded streams (sockets
+  that never EOF). True chunked decoding needs a stateful
+  `Encoding.GetDecoder() -> Decoder` API with
+  `Convert(byte[] in, int inOff, int inN, char[] out, int outOff,
+  int outN, bool flush) -> (int bytesUsed, int charsProduced,
+  bool complete)` shape (mirrors .NET `System.Text.Decoder`) to carry
+  partial UTF-8 sequences across chunk boundaries.
+- **触发条件**：first real use case for streaming-decode (live log
+  tailing / unbounded socket text protocol).
 
 ### `io-stream-future-objectdisposed`
 

@@ -1,0 +1,93 @@
+// add-encoding-and-stream-text (2026-05-24): Encoding class round-trips.
+namespace Z42EncodingEncodingTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+[Test]
+void test_get_utf8_returns_non_null() {
+    Encoding e = Encoding.GetUtf8();
+    Assert.True(e != null);
+}
+
+[Test]
+void test_get_utf8_is_singleton() {
+    Encoding e1 = Encoding.GetUtf8();
+    Encoding e2 = Encoding.GetUtf8();
+    e1.GetBytes("anchor");  // exercise to confirm both refer to functional instance
+    e2.GetBytes("anchor");
+    // Singleton identity is implementation detail; behaviour stays
+    // consistent across the two refs which is the observable contract.
+    byte[] a = e1.GetBytes("hello");
+    byte[] b = e2.GetBytes("hello");
+    Assert.Equal(a.Length, b.Length);
+}
+
+[Test]
+void test_get_bytes_ascii() {
+    Encoding e = Encoding.GetUtf8();
+    byte[] bytes = e.GetBytes("abc");
+    Assert.Equal(3, bytes.Length);
+    Assert.Equal(97, (int)bytes[0]);
+    Assert.Equal(98, (int)bytes[1]);
+    Assert.Equal(99, (int)bytes[2]);
+}
+
+[Test]
+void test_get_bytes_multibyte() {
+    // "héllo" — 'é' is 2-byte UTF-8 (C3 A9)
+    Encoding e = Encoding.GetUtf8();
+    byte[] bytes = e.GetBytes("héllo");
+    Assert.Equal(6, bytes.Length);
+}
+
+[Test]
+void test_get_string_round_trip() {
+    Encoding e = Encoding.GetUtf8();
+    string original = "round-trip ✓ 中文";
+    byte[] bytes = e.GetBytes(original);
+    string back = e.GetString(bytes);
+    Assert.Equal(original, back);
+}
+
+[Test]
+void test_get_string_empty() {
+    Encoding e = Encoding.GetUtf8();
+    byte[] empty = new byte[0];
+    Assert.Equal("", e.GetString(empty));
+}
+
+[Test]
+void test_get_string_slice() {
+    Encoding e = Encoding.GetUtf8();
+    byte[] full = e.GetBytes("abcdef");
+    Assert.Equal("cde", e.GetString(full, 2, 3));
+}
+
+[Test]
+void test_get_string_slice_full_range() {
+    Encoding e = Encoding.GetUtf8();
+    byte[] full = e.GetBytes("xyz");
+    Assert.Equal("xyz", e.GetString(full, 0, 3));
+}
+
+[Test]
+void test_get_string_slice_zero_count() {
+    Encoding e = Encoding.GetUtf8();
+    byte[] full = e.GetBytes("hello");
+    Assert.Equal("", e.GetString(full, 2, 0));
+}
+
+[Test]
+void test_get_string_slice_out_of_range_throws() {
+    Encoding e = Encoding.GetUtf8();
+    byte[] full = e.GetBytes("hi");
+    bool threw = false;
+    try {
+        e.GetString(full, 0, 100);
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

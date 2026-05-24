@@ -1,0 +1,109 @@
+// add-encoding-and-stream-text (2026-05-24): end-to-end text pipelines
+// chaining StreamWriter / StreamReader with byte Streams.
+namespace Z42IoStreamTextPipelineTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+// ── StreamWriter → MemoryStream → StreamReader round-trip ───────────────
+
+[Test]
+void test_writer_to_reader_via_memory_stream() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.WriteLine("alpha");
+    w.WriteLine("beta");
+    w.WriteLine("gamma");
+    w.Close();
+
+    // Read back via a fresh reader over the produced bytes.
+    MemoryStream ms2 = new MemoryStream(ms.ToArray());
+    StreamReader r = new StreamReader(ms2);
+    Assert.Equal("alpha", r.ReadLine());
+    Assert.Equal("beta",  r.ReadLine());
+    Assert.Equal("gamma", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+// ── StreamWriter → FileStream → StreamReader pipeline ───────────────────
+
+[Test]
+void test_writer_to_filestream_then_read_back() {
+    string path = File.CreateTempFile("z42_streamtxt_", ".txt");
+    try {
+        // Write text via StreamWriter on top of FileStream.
+        FileStream wfs = new FileStream(path, FileMode.Write);
+        StreamWriter w = new StreamWriter(wfs);
+        try {
+            w.WriteLine("line 1");
+            w.WriteLine("line 2");
+            w.Write("trailing-no-newline");
+            w.Close();
+        } finally {
+            wfs.Close();
+        }
+        // Read text via StreamReader on top of FileStream.
+        FileStream rfs = new FileStream(path);
+        StreamReader r = new StreamReader(rfs);
+        try {
+            Assert.Equal("line 1",              r.ReadLine());
+            Assert.Equal("line 2",              r.ReadLine());
+            Assert.Equal("trailing-no-newline", r.ReadLine());
+            Assert.True(r.ReadLine() == null);
+        } finally {
+            r.Close();
+            rfs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── Multibyte content survives byte ↔ char hop ──────────────────────────
+
+[Test]
+void test_multibyte_round_trip_via_filestream() {
+    string path = File.CreateTempFile("z42_streamtxt_mb_", ".txt");
+    try {
+        FileStream wfs = new FileStream(path, FileMode.Write);
+        StreamWriter w = new StreamWriter(wfs);
+        try {
+            w.WriteLine("héllo ✓ 中文");
+            w.Close();
+        } finally {
+            wfs.Close();
+        }
+        FileStream rfs = new FileStream(path);
+        StreamReader r = new StreamReader(rfs);
+        try {
+            Assert.Equal("héllo ✓ 中文", r.ReadLine());
+        } finally {
+            r.Close();
+            rfs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── ReadToEnd on a freshly drained FileStream ───────────────────────────
+
+[Test]
+void test_read_to_end_from_filestream() {
+    string path = File.CreateTempFile("z42_streamtxt_rte_", ".txt");
+    try {
+        // Write some bytes via direct File API.
+        File.WriteAllText(path, "raw payload");
+        FileStream fs = new FileStream(path);
+        StreamReader r = new StreamReader(fs);
+        try {
+            Assert.Equal("raw payload", r.ReadToEnd());
+        } finally {
+            r.Close();
+            fs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}

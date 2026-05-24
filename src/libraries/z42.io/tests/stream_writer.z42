@@ -1,0 +1,158 @@
+// add-encoding-and-stream-text (2026-05-24): StreamWriter behaviour.
+namespace Z42IoStreamWriterTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Encoding;
+
+string _utf8_decode(byte[] bytes) {
+    return Encoding.GetUtf8().GetString(bytes);
+}
+
+// ── Default-UTF8 write to MemoryStream ──────────────────────────────────
+
+[Test]
+void test_default_utf8_write_string() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("hello");
+    w.Close();
+    Assert.Equal("hello", _utf8_decode(ms.ToArray()));
+}
+
+[Test]
+void test_default_utf8_write_multibyte() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("héllo ✓");
+    w.Close();
+    Assert.Equal("héllo ✓", _utf8_decode(ms.ToArray()));
+}
+
+[Test]
+void test_explicit_encoding_arg() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms, Encoding.GetUtf8());
+    w.Write("explicit");
+    w.Close();
+    Assert.Equal("explicit", _utf8_decode(ms.ToArray()));
+}
+
+// ── Multiple writes accumulate ──────────────────────────────────────────
+
+[Test]
+void test_multiple_writes_concat() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("a");
+    w.Write("bc");
+    w.Write("d");
+    w.Close();
+    Assert.Equal("abcd", _utf8_decode(ms.ToArray()));
+}
+
+// ── Write(char[], off, n) ───────────────────────────────────────────────
+
+[Test]
+void test_write_chars_bulk() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    char[] cs = new char[3];
+    cs[0] = 'X'; cs[1] = 'Y'; cs[2] = 'Z';
+    w.Write(cs, 0, 3);
+    w.Close();
+    Assert.Equal("XYZ", _utf8_decode(ms.ToArray()));
+}
+
+[Test]
+void test_write_chars_slice() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    char[] cs = new char[5];
+    cs[0] = 'X'; cs[1] = 'a'; cs[2] = 'b'; cs[3] = 'c'; cs[4] = 'Y';
+    w.Write(cs, 1, 3);  // "abc"
+    w.Close();
+    Assert.Equal("abc", _utf8_decode(ms.ToArray()));
+}
+
+// ── WriteLine ───────────────────────────────────────────────────────────
+
+[Test]
+void test_write_line_empty() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.WriteLine();
+    w.Close();
+    Assert.Equal("\n", _utf8_decode(ms.ToArray()));
+}
+
+[Test]
+void test_write_line_string() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.WriteLine("first");
+    w.WriteLine("second");
+    w.Close();
+    Assert.Equal("first\nsecond\n", _utf8_decode(ms.ToArray()));
+}
+
+[Test]
+void test_mixed_write_and_writeline() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("prefix:");
+    w.WriteLine(" body");
+    w.Write("tail");
+    w.Close();
+    Assert.Equal("prefix: body\ntail", _utf8_decode(ms.ToArray()));
+}
+
+// ── Flush + Close lifecycle ─────────────────────────────────────────────
+
+[Test]
+void test_flush_does_not_close() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("a");
+    w.Flush();
+    w.Write("b");
+    w.Close();
+    Assert.Equal("ab", _utf8_decode(ms.ToArray()));
+}
+
+[Test]
+void test_close_idempotent() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("x");
+    w.Close();
+    w.Close();
+    w.Close();
+}
+
+[Test]
+void test_write_after_close_throws() {
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Close();
+    bool threw = false;
+    try {
+        w.Write("x");
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_close_does_not_close_dest() {
+    // After StreamWriter.Close, the underlying MemoryStream is still
+    // usable — we can read its accumulated bytes via ToArray.
+    MemoryStream ms = new MemoryStream();
+    StreamWriter w = new StreamWriter(ms);
+    w.Write("alive");
+    w.Close();
+    byte[] back = ms.ToArray();
+    Assert.Equal("alive", _utf8_decode(back));
+}
