@@ -1,0 +1,176 @@
+// refactor-binary-reader-stream (2026-05-24): Stream-source / Stream-dest
+// pipeline cases for BinaryReader / BinaryWriter. Existing byte[]-flavour
+// tests (binary_basic / binary_errors / binary_strings) continue to cover
+// the convenience constructor path.
+namespace Z42IoBinaryStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.IO.Binary;
+
+// ── BinaryWriter(MemoryStream) ───────────────────────────────────────────
+
+[Test]
+void test_writer_with_user_supplied_stream() {
+    MemoryStream dest = new MemoryStream();
+    BinaryWriter w = new BinaryWriter(dest);
+    w.WriteInt32LE(0x12345678);
+    w.WriteInt16BE(0x4242);
+    // Bytes landed in dest; the writer doesn't own ToArray.
+    byte[] result = dest.ToArray();
+    Assert.Equal(6, result.Length);
+    // 0x12345678 little-endian = 78 56 34 12
+    Assert.Equal(0x78, (int)result[0]);
+    Assert.Equal(0x56, (int)result[1]);
+    Assert.Equal(0x34, (int)result[2]);
+    Assert.Equal(0x12, (int)result[3]);
+    // 0x4242 big-endian = 42 42
+    Assert.Equal(0x42, (int)result[4]);
+    Assert.Equal(0x42, (int)result[5]);
+}
+
+[Test]
+void test_writer_to_array_throws_for_user_stream() {
+    MemoryStream dest = new MemoryStream();
+    BinaryWriter w = new BinaryWriter(dest);
+    w.WriteInt32LE(42);
+    bool caught = false;
+    try {
+        w.ToArray();
+    } catch (BinaryException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_writer_clear_throws_for_user_stream() {
+    MemoryStream dest = new MemoryStream();
+    BinaryWriter w = new BinaryWriter(dest);
+    bool caught = false;
+    try {
+        w.Clear();
+    } catch (BinaryException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_writer_rejects_non_writable_stream() {
+    byte[] data = new byte[] { (byte)1, (byte)2 };
+    MemoryStream ro = new MemoryStream(data);  // read-only
+    bool caught = false;
+    try {
+        BinaryWriter w = new BinaryWriter(ro);
+    } catch (BinaryException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+// ── BinaryReader(Stream) ─────────────────────────────────────────────────
+
+[Test]
+void test_reader_with_user_supplied_stream() {
+    byte[] data = new byte[] {
+        (byte)0x78, (byte)0x56, (byte)0x34, (byte)0x12,   // 0x12345678 LE
+        (byte)0x42, (byte)0x42,                            // 0x4242 BE
+    };
+    MemoryStream src = new MemoryStream(data);
+    BinaryReader r = new BinaryReader(src);
+    Assert.Equal(0x12345678, r.ReadInt32LE());
+    Assert.Equal(0x4242, r.ReadInt16BE());
+}
+
+[Test]
+void test_reader_rejects_non_readable_stream() {
+    // (no non-readable concrete in v0 — only base class Stream qualifies)
+    Stream baseStream = new Stream();
+    bool caught = false;
+    try {
+        BinaryReader r = new BinaryReader(baseStream);
+    } catch (BinaryException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+// ── Round-trip Writer → MemoryStream → Reader ────────────────────────────
+
+[Test]
+void test_writer_then_reader_pipeline_round_trip() {
+    MemoryStream buf = new MemoryStream();
+    BinaryWriter w = new BinaryWriter(buf);
+    w.WriteInt32LE(-12345);
+    w.WriteInt64BE(1234567890123456789L);
+    w.WriteString("hello");
+    int writtenLen = w.GetLength();
+
+    // Rewind backing stream and read everything back through a fresh Reader.
+    buf.Seek(0L, SeekOrigin.Begin);
+    BinaryReader r = new BinaryReader(buf);
+    Assert.Equal(-12345, r.ReadInt32LE());
+    Assert.Equal(1234567890123456789L, r.ReadInt64BE());
+    Assert.Equal("hello", r.ReadString(5));
+    Assert.Equal(writtenLen, w.GetLength());
+}
+
+// ── Backward-compat: byte[] constructor path still works ────────────────
+
+[Test]
+void test_byte_array_constructor_still_works() {
+    // The byte[] constructor delegates to `new MemoryStream(data)`
+    // internally. Existing add-z42-io-binary v0 callers see no change.
+    byte[] data = new byte[] {
+        (byte)0x78, (byte)0x56, (byte)0x34, (byte)0x12,
+    };
+    BinaryReader r = new BinaryReader(data);
+    Assert.Equal(0x12345678, r.ReadInt32LE());
+    Assert.True(r.EndOfStream());
+}
+
+[Test]
+void test_default_writer_to_array_still_works() {
+    BinaryWriter w = new BinaryWriter();
+    w.WriteInt16LE(0x1234);
+    byte[] result = w.ToArray();
+    Assert.Equal(2, result.Length);
+    Assert.Equal(0x34, (int)result[0]);
+    Assert.Equal(0x12, (int)result[1]);
+}
+
+// ── Read past EOF → BinaryException ──────────────────────────────────────
+
+[Test]
+void test_reader_throws_on_premature_eof() {
+    MemoryStream src = new MemoryStream(new byte[] { (byte)1, (byte)2 });
+    BinaryReader r = new BinaryReader(src);
+    bool caught = false;
+    try {
+        r.ReadInt32LE();  // needs 4 bytes, only 2 available
+    } catch (BinaryException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+// ── Position ops on seekable Stream work ─────────────────────────────────
+
+[Test]
+void test_reader_position_on_memory_stream() {
+    byte[] data = new byte[] {
+        (byte)1, (byte)2, (byte)3, (byte)4, (byte)5, (byte)6, (byte)7, (byte)8,
+    };
+    BinaryReader r = new BinaryReader(new MemoryStream(data));
+    Assert.Equal(0, r.GetPosition());
+    r.ReadByte();
+    r.ReadByte();
+    Assert.Equal(2, r.GetPosition());
+    r.Seek(0);
+    Assert.Equal(0, r.GetPosition());
+    r.Skip(4);
+    Assert.Equal(4, r.GetPosition());
+    Assert.Equal(8, r.GetLength());
+}

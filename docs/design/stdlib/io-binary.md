@@ -1,6 +1,6 @@
-# z42.io.binary — Low-level binary stream over byte[]
+# z42.io.binary — Low-level binary stream
 
-> 落地版本：2026-05-15（add-z42-io-binary），2026-05-16 升级到 `Std.IO.Binary`（fix-deep-namespace-import-discovery）
+> 落地版本：2026-05-15（add-z42-io-binary），2026-05-16 升级到 `Std.IO.Binary`（fix-deep-namespace-import-discovery），2026-05-24 后端 byte[] → `Std.IO.Stream`（refactor-binary-reader-stream）
 > 包路径：`src/libraries/z42.io.binary/`
 > 命名空间：`Std.IO.Binary`
 
@@ -18,33 +18,62 @@ binary marshal、CTF / forensics 工具。
 
 ```z42
 class BinaryReader {
-    BinaryReader(byte[] data)
-    int  GetPosition() / GetLength()
-    bool EndOfStream()
-    void Seek(int pos) / Skip(int count)
-    int  ReadByte()                       // 0..255
-    int  ReadInt16LE() / ReadInt16BE()    // sign-extended
-    int  ReadInt32LE() / ReadInt32BE()    // sign-extended
+    BinaryReader(byte[] data)             // convenience — wraps in MemoryStream
+    BinaryReader(Std.IO.Stream src)        // NEW (refactor 2026-05-24)
+    int  GetPosition() / GetLength()       // throws BinaryException if !CanSeek
+    bool EndOfStream()                     // throws BinaryException if !CanSeek
+    void Seek(int pos) / Skip(int count)   // throws BinaryException if !CanSeek
+    int  ReadByte()                        // 0..255
+    int  ReadInt16LE() / ReadInt16BE()     // sign-extended
+    int  ReadInt32LE() / ReadInt32BE()     // sign-extended
     long ReadInt64LE() / ReadInt64BE()
     byte[] ReadBytes(int count)
-    string ReadString(int byteCount)      // UTF-8
+    string ReadString(int byteCount)       // UTF-8
 }
 
 class BinaryWriter {
-    BinaryWriter() / BinaryWriter(int initialCapacity)
-    int  GetLength()
-    void Clear()
-    byte[] ToArray()                      // snapshot copy
-    void WriteByte(int b)                 // low 8 bits
+    BinaryWriter()                         // default — internal MemoryStream
+    BinaryWriter(int initialCapacity)      // hint only (MemoryStream grows on demand)
+    BinaryWriter(Std.IO.Stream dest)        // NEW (refactor 2026-05-24)
+    int  GetLength()                       // throws BinaryException if !CanSeek
+    void Clear()                           // throws if !_ownsStream
+    byte[] ToArray()                       // throws if !_ownsStream (caller-supplied dest)
+    void WriteByte(int b)                  // low 8 bits
     void WriteBytes(byte[] data)
     void WriteInt16LE(int v) / WriteInt16BE(int v)
     void WriteInt32LE(int v) / WriteInt32BE(int v)
     void WriteInt64LE(long v) / WriteInt64BE(long v)
-    int  WriteString(string s)            // returns bytes written
+    int  WriteString(string s)             // returns bytes written
 }
 
 class BinaryException : Exception     // in Std namespace
 ```
+
+## Pipeline composition (refactor 2026-05-24)
+
+```z42
+using Std.IO;
+using Std.IO.Binary;
+using Std.Compression;
+
+// Read structured binary from a gzip-encoded source:
+Stream gz = Gzip.WrapRead(new MemoryStream(compressedBytes));
+BinaryReader r = new BinaryReader(gz);
+int magic = r.ReadInt32LE();
+long size = r.ReadInt64LE();
+
+// Write structured binary into a destination stream (also works with
+// future FileStream / NetworkStream — no API change):
+MemoryStream dest = new MemoryStream();
+BinaryWriter w = new BinaryWriter(dest);
+w.WriteInt32LE(0xDEADBEEF);
+w.WriteString("hello");
+byte[] payload = dest.ToArray();
+```
+
+The byte[] constructor and `ToArray()` / `Clear()` continue to work
+for the common "I just have a byte[]" case — internally they
+delegate to a MemoryStream so all existing v0 callers see no change.
 
 ## 设计决策
 

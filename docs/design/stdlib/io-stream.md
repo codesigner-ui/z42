@@ -176,15 +176,18 @@ WrapRead(Stream src)`. See
 + [compression.md "Pipeline composition"](../stdlib/compression.md#pipeline-composition-wrapwrite--wrapread)
 for the post-refactor API.
 
-### `refactor-binary-reader-stream`
+### ~~`refactor-binary-reader-stream`~~ — **✅ landed 2026-05-24**
 
-- **来源**：v0 scope cut
-- **触发原因**：`Std.IO.Binary.BinaryReader` / `BinaryWriter` today
-  consume `byte[]` only — they should also accept a `Stream` source
-  so users can read structured data straight from `FileStream` /
-  `NetworkStream` without buffering.
-- **触发条件**：first caller that needs to read a structured binary
-  format from a file / socket bigger than memory.
+Shipped: `BinaryReader / BinaryWriter` now back onto `Std.IO.Stream`
+internally. Existing `BinaryReader(byte[])` / `BinaryWriter()` /
+`BinaryWriter(int initialCapacity)` constructors preserved as
+convenience sugar (delegate to `new MemoryStream(...)` internally);
+new `BinaryReader(Stream src)` / `BinaryWriter(Stream dest)`
+constructors let users pipe through any Stream. `ToArray()` /
+`Clear()` on BinaryWriter gated to `_ownsStream` for the
+caller-supplied dest path. See
+[`docs/spec/archive/2026-05-24-refactor-binary-reader-stream/`](../../spec/archive/2026-05-24-refactor-binary-reader-stream/)
++ [io-binary.md](io-binary.md) for the post-refactor surface.
 
 ### `io-stream-future-objectdisposed`
 
