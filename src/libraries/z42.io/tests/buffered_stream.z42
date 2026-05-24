@@ -1,0 +1,208 @@
+// add-buffered-stream (2026-05-24): BufferedStream behaviour.
+namespace Z42IoBufferedStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+// ── helpers ─────────────────────────────────────────────────────────────
+
+byte[] _bytes_of(int[] xs) {
+    byte[] r = new byte[xs.Length];
+    int i = 0;
+    while (i < xs.Length) {
+        r[i] = (byte)xs[i];
+        i = i + 1;
+    }
+    return r;
+}
+
+// ── Construction / capability ───────────────────────────────────────────
+
+[Test]
+void test_default_capacity_construction() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms);
+    Assert.True(b.CanRead());
+    Assert.True(b.CanWrite());
+    Assert.True(b.CanSeek());
+    b.Close();
+}
+
+[Test]
+void test_capability_delegates_to_inner() {
+    // Read-only MemoryStream — BufferedStream should report
+    // CanWrite=false.
+    MemoryStream ro = new MemoryStream(_bytes_of(new int[] { 1, 2, 3 }));
+    BufferedStream b = new BufferedStream(ro);
+    Assert.True(b.CanRead());
+    Assert.False(b.CanWrite());
+    b.Close();
+}
+
+// Note: BufferedStream constructor rejects bufferSize <= 0 via
+// `throw new ArgumentException`. No dedicated negative test —
+// constructor-throw-catch hits the same pre-existing z42 quirk that
+// already affects FileStream's `test_unknown_mode_throws`. Spec 3 of
+// this batch investigates a root-cause fix.
+
+// ── Read path ───────────────────────────────────────────────────────────
+
+[Test]
+void test_small_reads_aggregate() {
+    byte[] payload = _bytes_of(new int[] { 10, 20, 30, 40, 50, 60, 70, 80 });
+    MemoryStream ms = new MemoryStream(payload);
+    BufferedStream b = new BufferedStream(ms, 4);  // small buffer to force refills
+    byte[] one = new byte[1];
+    int i = 0;
+    while (i < 8) {
+        int n = b.Read(one, 0, 1);
+        Assert.Equal(1, n);
+        Assert.Equal(payload[i], one[0]);
+        i = i + 1;
+    }
+    int eof = b.Read(one, 0, 1);
+    Assert.Equal(0, eof);
+}
+
+[Test]
+void test_large_read_bypasses_buffer() {
+    byte[] payload = _bytes_of(new int[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+    MemoryStream ms = new MemoryStream(payload);
+    BufferedStream b = new BufferedStream(ms, 4);
+    // Request larger than buffer size — should pass through to inner.
+    byte[] big = new byte[8];
+    int n = b.Read(big, 0, 8);
+    Assert.Equal(8, n);
+    Assert.Equal(1, (int)big[0]);
+    Assert.Equal(8, (int)big[7]);
+}
+
+// ── Write path ──────────────────────────────────────────────────────────
+
+[Test]
+void test_small_writes_aggregate_until_flush() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms, 8);
+    // Write 4 individual bytes — inner shouldn't see them yet.
+    byte[] one = new byte[1];
+    one[0] = 99;
+    b.Write(one, 0, 1);
+    b.Write(one, 0, 1);
+    b.Write(one, 0, 1);
+    b.Write(one, 0, 1);
+    Assert.Equal(0, ms.ToArray().Length);  // still buffered
+    b.Flush();
+    Assert.Equal(4, ms.ToArray().Length);  // now in inner
+}
+
+[Test]
+void test_close_flushes_pending_writes() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms, 16);
+    b.Write(_bytes_of(new int[] { 7, 8, 9 }), 0, 3);
+    Assert.Equal(0, ms.ToArray().Length);
+    b.Close();
+    Assert.Equal(3, ms.ToArray().Length);
+}
+
+[Test]
+void test_large_write_bypasses_buffer() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms, 4);
+    byte[] big = _bytes_of(new int[] { 1, 2, 3, 4, 5, 6, 7, 8 });
+    b.Write(big, 0, 8);
+    // Large writes bypass the buffer entirely → inner sees them now.
+    Assert.Equal(8, ms.ToArray().Length);
+}
+
+[Test]
+void test_write_overflow_triggers_flush() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms, 8);
+    // Fill buffer with a small first write (< cap, so it's buffered).
+    b.Write(_bytes_of(new int[] { 1, 2, 3 }), 0, 3);
+    Assert.Equal(0, ms.ToArray().Length);  // still buffered
+    // Next write would overflow remaining slack (3+6 > 8) → flush first.
+    b.Write(_bytes_of(new int[] { 4, 5, 6, 7, 8, 9 }), 0, 6);
+    Assert.Equal(3, ms.ToArray().Length);  // first 3 flushed; new 6 buffered
+    b.Close();
+    Assert.Equal(9, ms.ToArray().Length);
+}
+
+// ── Read ↔ Write direction switching ────────────────────────────────────
+
+[Test]
+void test_write_then_read_after_seek() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms, 16);
+    b.Write(_bytes_of(new int[] { 1, 2, 3, 4 }), 0, 4);
+    b.Seek(0L, SeekOrigin.Begin);  // resets buffer; flushes pending writes
+    byte[] buf = new byte[4];
+    int n = b.Read(buf, 0, 4);
+    Assert.Equal(4, n);
+    Assert.Equal(1, (int)buf[0]);
+    Assert.Equal(4, (int)buf[3]);
+}
+
+// ── Position / Length / Seek ────────────────────────────────────────────
+
+[Test]
+void test_length_passes_through() {
+    MemoryStream ms = new MemoryStream(_bytes_of(new int[] { 1, 2, 3, 4, 5 }));
+    BufferedStream b = new BufferedStream(ms);
+    Assert.Equal(5L, b.Length());
+}
+
+[Test]
+void test_position_accounts_for_buffer_during_read() {
+    MemoryStream ms = new MemoryStream(_bytes_of(new int[] { 1, 2, 3, 4, 5, 6, 7, 8 }));
+    BufferedStream b = new BufferedStream(ms, 4);
+    // Read 1 byte — buffer pulled 4 from inner; logical position is 1.
+    byte[] one = new byte[1];
+    b.Read(one, 0, 1);
+    Assert.Equal(1L, b.Position());
+}
+
+[Test]
+void test_position_accounts_for_buffer_during_write() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms, 16);
+    b.Write(_bytes_of(new int[] { 9, 9, 9 }), 0, 3);
+    // Inner hasn't seen them yet; Position should report 3 anyway.
+    Assert.Equal(3L, b.Position());
+}
+
+// ── Lifecycle ───────────────────────────────────────────────────────────
+
+[Test]
+void test_close_does_not_close_inner() {
+    MemoryStream ms = new MemoryStream(_bytes_of(new int[] { 1, 2, 3 }));
+    BufferedStream b = new BufferedStream(ms);
+    b.Close();
+    // Inner is still usable — ToArray works.
+    Assert.Equal(3, ms.ToArray().Length);
+}
+
+[Test]
+void test_close_idempotent() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms);
+    b.Close();
+    b.Close();
+    b.Close();
+}
+
+[Test]
+void test_write_after_close_throws() {
+    MemoryStream ms = new MemoryStream();
+    BufferedStream b = new BufferedStream(ms);
+    b.Close();
+    bool threw = false;
+    try {
+        b.Write(_bytes_of(new int[] { 1 }), 0, 1);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

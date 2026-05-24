@@ -1,0 +1,243 @@
+namespace Std.IO;
+
+using Std;
+
+// add-buffered-stream (2026-05-24): Std.IO.Stream wrapper that
+// batches small Reads / Writes into larger underlying operations.
+// Mirrors .NET `System.IO.BufferedStream` (single shared buffer that
+// serves either read OR write at any moment, never both
+// simultaneously — direction-switch flushes/discards the buffer).
+//
+// Why single-buffer (vs separate read/write): the common case is
+// open-for-read OR open-for-write, not both interleaved on the same
+// stream. The single-buffer pattern matches .NET / Java / Rust and
+// avoids the bookkeeping cost of two parallel buffers. If a future
+// use case needs concurrent bidirectional buffering, the class can
+// be split (the API stays unchanged).
+//
+// Lifecycle: `Close()` calls `Flush()` then releases the inner
+// reference but does NOT close the inner Stream — caller owns its
+// lifecycle (matches CompressionEncoderStream / StreamWriter
+// conventions).
+
+public class BufferedStream : Stream {
+    // Mode tag — single buffer can only be in one mode at a time.
+    private static int MODE_IDLE    = 0;
+    private static int MODE_READING = 1;
+    private static int MODE_WRITING = 2;
+
+    private Stream _inner;
+    private byte[] _buf;
+    private int    _mode;
+    // For Reading: _readPos = first unconsumed byte; _readLen = total
+    //               bytes in buffer.
+    // For Writing: _writeLen = bytes pending push to inner (always
+    //               starts at 0 of buffer).
+    private int  _readPos;
+    private int  _readLen;
+    private int  _writeLen;
+    private bool _closed;
+
+    /// 4 KB default — matches .NET. Two-block on most filesystems'
+    /// page sizes.
+    public BufferedStream(Stream inner) {
+        this._inner    = inner;
+        this._buf      = new byte[4096];
+        this._mode     = 0;        // MODE_IDLE
+        this._readPos  = 0;
+        this._readLen  = 0;
+        this._writeLen = 0;
+        this._closed   = false;
+    }
+
+    public BufferedStream(Stream inner, int bufferSize) {
+        if (bufferSize <= 0) {
+            throw new ArgumentException("BufferedStream: bufferSize must be > 0");
+        }
+        this._inner    = inner;
+        this._buf      = new byte[bufferSize];
+        this._mode     = 0;
+        this._readPos  = 0;
+        this._readLen  = 0;
+        this._writeLen = 0;
+        this._closed   = false;
+    }
+
+    // ── Capability — delegate to inner ──────────────────────────────────
+
+    public override bool CanRead() {
+        if (this._closed) { return false; }
+        return this._inner.CanRead();
+    }
+
+    public override bool CanWrite() {
+        if (this._closed) { return false; }
+        return this._inner.CanWrite();
+    }
+
+    public override bool CanSeek() {
+        if (this._closed) { return false; }
+        return this._inner.CanSeek();
+    }
+
+    // ── Read ────────────────────────────────────────────────────────────
+
+    public override int Read(byte[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Read: buffer / offset / count out of range");
+        }
+        if (count == 0) { return 0; }
+        // Switch to Reading mode — flush any pending writes.
+        if (this._mode == 2) {  // MODE_WRITING
+            this.FlushWriteBuffer();
+        }
+        this._mode = 1;  // MODE_READING
+
+        int available = this._readLen - this._readPos;
+        if (available <= 0) {
+            // Refill from inner.
+            // Optimization: if the caller's request is at least as big
+            // as our buffer, skip the buffer entirely and let them
+            // read direct (one syscall instead of two: one to fill
+            // our buffer, one to copy out).
+            if (count >= this._buf.Length) {
+                this._readPos = 0;
+                this._readLen = 0;
+                return this._inner.Read(buffer, offset, count);
+            }
+            int n = this._inner.Read(this._buf, 0, this._buf.Length);
+            this._readPos = 0;
+            this._readLen = n;
+            available = n;
+            if (available <= 0) { return 0; }  // EOF
+        }
+        int take = count;
+        if (take > available) { take = available; }
+        int i = 0;
+        while (i < take) {
+            buffer[offset + i] = this._buf[this._readPos + i];
+            i = i + 1;
+        }
+        this._readPos = this._readPos + take;
+        return take;
+    }
+
+    // ── Write ───────────────────────────────────────────────────────────
+
+    public override void Write(byte[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Write: buffer / offset / count out of range");
+        }
+        if (count == 0) { return; }
+        // Switch to Writing mode — discard read buffer (caller is
+        // overwriting; positional consistency is their responsibility
+        // when using Seek).
+        if (this._mode == 1) {  // MODE_READING
+            // Note: if the caller was mid-stream-read and switches to
+            // write without seeking, the unconsumed read buffer is
+            // discarded. This matches .NET BufferedStream's
+            // FlushRead() behaviour — it's the price of single-buffer
+            // bidirectional state. Document via Seek as the proper
+            // remedy.
+            this._readPos = 0;
+            this._readLen = 0;
+        }
+        this._mode = 2;  // MODE_WRITING
+
+        // Pass-through: large writes bypass the buffer entirely (also
+        // flush any pending small writes first to preserve order).
+        if (count >= this._buf.Length) {
+            if (this._writeLen > 0) {
+                this.FlushWriteBuffer();
+            }
+            this._inner.Write(buffer, offset, count);
+            return;
+        }
+
+        // If incoming bytes won't fit in the remaining buffer slack,
+        // flush first.
+        if (this._writeLen + count > this._buf.Length) {
+            this.FlushWriteBuffer();
+        }
+        int i = 0;
+        while (i < count) {
+            this._buf[this._writeLen + i] = buffer[offset + i];
+            i = i + 1;
+        }
+        this._writeLen = this._writeLen + count;
+    }
+
+    // ── Position / Length / Seek — delegate after flushing ──────────────
+
+    public override long Length() {
+        this.EnsureOpen();
+        return this._inner.Length();
+    }
+
+    public override long Position() {
+        this.EnsureOpen();
+        // Mid-Reading: inner's reported position is past our
+        // unconsumed buffer; correct by subtracting what's left.
+        // Mid-Writing: inner hasn't seen the pending bytes yet; add
+        // them on.
+        long innerPos = this._inner.Position();
+        if (this._mode == 1) {  // MODE_READING
+            return innerPos - (long)(this._readLen - this._readPos);
+        }
+        if (this._mode == 2) {  // MODE_WRITING
+            return innerPos + (long)this._writeLen;
+        }
+        return innerPos;
+    }
+
+    public override long Seek(long offset, int origin) {
+        this.EnsureOpen();
+        // Discard any state — seeking invalidates buffered bytes.
+        if (this._mode == 2) {  // MODE_WRITING
+            this.FlushWriteBuffer();
+        }
+        this._readPos = 0;
+        this._readLen = 0;
+        this._mode    = 0;  // MODE_IDLE
+        return this._inner.Seek(offset, origin);
+    }
+
+    // ── Flush / Close ───────────────────────────────────────────────────
+
+    public override void Flush() {
+        if (this._closed) { return; }
+        if (this._mode == 2) {  // MODE_WRITING
+            this.FlushWriteBuffer();
+        }
+        this._inner.Flush();
+    }
+
+    public override void Close() {
+        if (this._closed) { return; }
+        // Best-effort flush — Close shouldn't silently drop pending
+        // bytes. If inner's Write throws here, the exception
+        // propagates (caller's responsibility to surface or wrap).
+        if (this._mode == 2) {  // MODE_WRITING
+            this.FlushWriteBuffer();
+        }
+        this._closed = true;
+        // Intentionally do NOT call this._inner.Close() — caller owns
+        // its lifecycle.
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────
+
+    private void EnsureOpen() {
+        if (this._closed) {
+            throw new InvalidOperationException("BufferedStream: stream is closed");
+        }
+    }
+
+    private void FlushWriteBuffer() {
+        if (this._writeLen <= 0) { return; }
+        this._inner.Write(this._buf, 0, this._writeLen);
+        this._writeLen = 0;
+    }
+}

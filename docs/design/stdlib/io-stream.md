@@ -143,14 +143,15 @@ mislead callers).
 - **触发条件**：first real use case for line-oriented streaming
   (parsing large log files / processing stdin line-by-line).
 
-### `io-stream-future-bufferedstream`
+### ~~`io-stream-future-bufferedstream`~~ — **✅ landed 2026-05-24**
 
-- **来源**：v0 scope cut
-- **触发原因**：performance-oriented wrapper that batches small Reads
-  / Writes against a slow underlying stream (typical for
-  `NetworkStream` / unbuffered `FileStream`).
-- **触发条件**：benchmark evidence that small-IO patterns are
-  bottlenecked.
+Shipped via `add-buffered-stream`: `Std.IO.BufferedStream` — Stream
+subclass with a single shared buffer that serves either reads OR
+writes at any moment (mirrors .NET single-buffer pattern; switching
+directions flushes / discards). Default 4 KB buffer. Large
+reads/writes (>= bufferSize) bypass the buffer to avoid double-copy.
+`Close()` flushes pending writes; does NOT close inner. See
+[`docs/spec/archive/2026-05-24-add-buffered-stream/`](../../spec/archive/2026-05-24-add-buffered-stream/).
 
 ### `io-stream-future-async`
 
