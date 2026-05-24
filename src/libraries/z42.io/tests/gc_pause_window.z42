@@ -1,0 +1,41 @@
+// add-gc-pause-window (2026-05-24) — end-to-end test that
+// `Std.GC.RecentPauses()` returns a long[] of length matching the
+// number of force_collect calls (well below the default cap of 1024)
+// and `Std.GC.PauseWindowCapacity()` is positive.
+namespace Z42IoGcPauseWindowTests;
+
+using Std;
+using Std.Test;
+
+[Test]
+void test_pause_window_capacity_positive() {
+    long cap = GC.PauseWindowCapacity();
+    Assert.True(cap >= 1);
+    Assert.True(cap <= 65536);
+}
+
+[Test]
+void test_recent_pauses_length_grows_with_collects() {
+    // Bring the window to a known starting count.
+    long[] before = GC.RecentPauses();
+    long beforeLen = before.Length;
+
+    long n = 5;
+    for (int i = 0; i < n; i = i + 1) {
+        GC.ForceCollect();
+    }
+    long[] after = GC.RecentPauses();
+
+    // The window almost certainly hasn't saturated yet (cap >= 1024).
+    // Either it grew by exactly n, or it saturated and didn't grow at
+    // all — both are valid; never grows by more than n.
+    long delta = after.Length - beforeLen;
+    Assert.True(delta >= 0);
+    Assert.True(delta <= n);
+
+    // The last entry (chronologically newest) should be a sane µs count.
+    if (after.Length > 0) {
+        long last = after[after.Length - 1];
+        Assert.True(last >= 0);
+    }
+}

@@ -14,6 +14,69 @@ fn default_is_empty() {
     assert_eq!(h.max_us, 0);
     assert_eq!(h.total_us, 0);
     assert_eq!(h.count, 0);
+    // add-gc-pause-window: window is empty + capacity = env / default.
+    assert_eq!(h.recent_pauses.len(), 0);
+    assert!(h.window_cap >= 1, "capacity must be positive");
+}
+
+#[test]
+fn default_has_empty_window_with_default_capacity() {
+    std::env::remove_var("Z42_GC_PAUSE_WINDOW");
+    let h = PauseHistogram::default();
+    assert_eq!(h.recent_pauses.len(), 0);
+    assert_eq!(h.window_cap, PAUSE_WINDOW_DEFAULT_CAP);
+}
+
+#[test]
+fn record_appends_to_window_in_chronological_order() {
+    let mut h = PauseHistogram::default();
+    h.record(11);
+    h.record(22);
+    h.record(33);
+    let snapshot: Vec<u64> = h.recent_pauses.iter().copied().collect();
+    assert_eq!(snapshot, vec![11u64, 22, 33]);
+}
+
+#[test]
+fn window_evicts_oldest_at_capacity() {
+    let mut h = PauseHistogram::default();
+    h.window_cap = 3;  // shrink for the test
+    h.recent_pauses = std::collections::VecDeque::with_capacity(3);
+
+    for v in [1u64, 2, 3, 4, 5] {
+        h.record(v);
+    }
+    let snapshot: Vec<u64> = h.recent_pauses.iter().copied().collect();
+    assert_eq!(snapshot, vec![3u64, 4, 5], "oldest two (1, 2) evicted");
+    assert_eq!(h.count, 5, "count still tracks every sample");
+}
+
+#[test]
+fn pause_window_cap_from_env_clamps_and_falls_back() {
+    // Valid numeric → adopted.
+    std::env::set_var("Z42_GC_PAUSE_WINDOW", "42");
+    assert_eq!(pause_window_cap_from_env(), 42);
+
+    // Over ceiling → clamped to MAX (silent truncation; user
+    // intent "give me as much as you'll allow" is preserved).
+    std::env::set_var("Z42_GC_PAUSE_WINDOW", "99999999");
+    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_MAX_CAP);
+
+    // Zero → fallback.
+    std::env::set_var("Z42_GC_PAUSE_WINDOW", "0");
+    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
+
+    // Negative → fallback.
+    std::env::set_var("Z42_GC_PAUSE_WINDOW", "-5");
+    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
+
+    // Garbage → fallback.
+    std::env::set_var("Z42_GC_PAUSE_WINDOW", "notanumber");
+    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
+
+    // Cleanup.
+    std::env::remove_var("Z42_GC_PAUSE_WINDOW");
+    assert_eq!(pause_window_cap_from_env(), PAUSE_WINDOW_DEFAULT_CAP);
 }
 
 #[test]

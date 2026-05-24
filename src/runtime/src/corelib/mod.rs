@@ -313,6 +313,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
 
     // ── add-gc-heap-snapshot-export B3 (2026-05-24) — appended to preserve existing BuiltinIds ──
     ("__gc_write_heap_snapshot", gc::builtin_gc_write_heap_snapshot),
+
+    // ── add-gc-pause-window (2026-05-24) — appended to preserve existing BuiltinIds ──
+    ("__gc_recent_pauses",         gc::builtin_gc_recent_pauses),
+    ("__gc_pause_window_capacity", gc::builtin_gc_pause_window_capacity),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

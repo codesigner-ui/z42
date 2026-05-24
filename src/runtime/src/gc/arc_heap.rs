@@ -2043,9 +2043,9 @@ impl MagrGC for ArcMagrGC {
             _ => false,
         }).count() as u64;
 
-        let mut s = self.inner.lock().stats;
+        let mut s = self.inner.lock().stats.clone();
         s.finalizers_pending = pending;
-        s.pause_histogram = *self.pause_histogram.lock();
+        s.pause_histogram = self.pause_histogram.lock().clone();
         s
     }
 }

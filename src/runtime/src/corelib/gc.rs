@@ -272,6 +272,29 @@ pub fn builtin_gc_pause_stats_raw(ctx: &VmContext, _args: &[Value]) -> Result<Va
     ]))
 }
 
+/// `Std.GC.RecentPauses()` — **add-gc-pause-window (2026-05-24)**.
+///
+/// Returns the rolling pause-time window as a `long[]` (microseconds,
+/// oldest first). Length is at most `PauseWindowCapacity()`; 0 when no
+/// collect has occurred yet.
+pub fn builtin_gc_recent_pauses(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let h = ctx.heap().stats().pause_histogram;
+    let arr: Vec<Value> = h.recent_pauses.iter()
+        .map(|&us| Value::I64(us as i64))
+        .collect();
+    Ok(ctx.heap().alloc_array(arr))
+}
+
+/// `Std.GC.PauseWindowCapacity()` — **add-gc-pause-window (2026-05-24)**.
+///
+/// Returns the configured rolling-window capacity (`Z42_GC_PAUSE_WINDOW`
+/// env or default 1024). Useful for distinguishing "only N collects have
+/// happened" from "the window saturated at N".
+pub fn builtin_gc_pause_window_capacity(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+    let cap = ctx.heap().stats().pause_histogram.window_cap;
+    Ok(Value::I64(cap as i64))
+}
+
 /// `Std.GC.WriteHeapSnapshot(path)` — **add-gc-heap-snapshot-export (2026-05-24)**.
 ///
 /// Walks the live heap once via `MagrGC::iterate_live_objects` +

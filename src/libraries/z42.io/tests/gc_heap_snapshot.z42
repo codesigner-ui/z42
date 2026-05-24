@@ -12,7 +12,7 @@ void test_write_snapshot_creates_nonempty_file() {
     string path = "/tmp/z42-test-snapshot.heapsnapshot";
     long bytes = GC.WriteHeapSnapshot(path);
 
-    Assert.True(bytes > 100, "snapshot should be more than a hundred bytes");
+    Assert.True(bytes > 100);
     Assert.True(File.Exists(path));
 
     string content = File.ReadAllText(path);

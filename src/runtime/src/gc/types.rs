@@ -9,7 +9,7 @@
 //! into multi-threaded telemetry / metrics pipelines, so the bound is required
 //! even though `VmContext` itself is currently single-threaded.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 
 use super::refs::WeakGcRef;
@@ -161,6 +161,30 @@ pub enum GcHandleKind {
 
 // ── Pause histogram ──────────────────────────────────────────────────────────
 
+/// Default capacity of the per-heap rolling pause-time window
+/// (add-gc-pause-window, 2026-05-24). Overridable via
+/// `Z42_GC_PAUSE_WINDOW` env var; clamped to `[1, 65536]`.
+pub const PAUSE_WINDOW_DEFAULT_CAP: usize = 1024;
+
+/// Hard ceiling on `Z42_GC_PAUSE_WINDOW` override. 65536 × 8 bytes =
+/// 512 KB per heap — generous but prevents a hostile env from
+/// allocating GB-sized deques.
+pub const PAUSE_WINDOW_MAX_CAP: usize = 65536;
+
+/// Reads `Z42_GC_PAUSE_WINDOW`, clamping into `[1, PAUSE_WINDOW_MAX_CAP]`.
+/// Falls back to [`PAUSE_WINDOW_DEFAULT_CAP`] on parse failure / 0 /
+/// negative / out-of-range. Called once per `PauseHistogram::default()`
+/// construction.
+pub fn pause_window_cap_from_env() -> usize {
+    match std::env::var("Z42_GC_PAUSE_WINDOW").ok().and_then(|v| v.parse::<i64>().ok()) {
+        // Positive integer → adopt, clamped to MAX (silent truncate
+        // for ergonomic "I want as much as you'll give me" UX).
+        Some(n) if n >= 1 => (n as usize).min(PAUSE_WINDOW_MAX_CAP),
+        // 0 / negative / parse-fail / unset → fallback.
+        _ => PAUSE_WINDOW_DEFAULT_CAP,
+    }
+}
+
 /// Half-open bucket edges (µs). `BUCKET_EDGES[i]` is the lower bound of
 /// bucket `i+1`; bucket `i` covers `[BUCKET_EDGES[i-1], BUCKET_EDGES[i])`.
 /// Bucket 0 is `[0, BUCKET_EDGES[0])`; bucket 7 is `[BUCKET_EDGES[6], ∞)`.
@@ -181,23 +205,38 @@ pub const PAUSE_BUCKET_EDGES: [u64; 7] = [
 ///
 /// `Default` uses `min_us = u64::MAX` as a sentinel for "no collect recorded
 /// yet"; callers should check `count == 0` before reading `min_us`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// **add-gc-pause-window (2026-05-24)**: also maintains
+/// `recent_pauses: VecDeque<u64>`, a rolling FIFO window of the
+/// last `window_cap` pause samples (oldest first). `Copy` is no
+/// longer derivable due to the deque — callers `clone()` instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PauseHistogram {
-    pub buckets:  [u64; 8],
-    pub min_us:   u64,
-    pub max_us:   u64,
-    pub total_us: u64,
-    pub count:    u64,
+    pub buckets:       [u64; 8],
+    pub min_us:        u64,
+    pub max_us:        u64,
+    pub total_us:      u64,
+    pub count:         u64,
+    /// Rolling window of the last `window_cap` pause-time samples
+    /// in microseconds, oldest first. Capacity is fixed at heap
+    /// construction (see `pause_window_cap_from_env`).
+    pub recent_pauses: VecDeque<u64>,
+    /// Fixed capacity of `recent_pauses`. Stored so callers /
+    /// snapshots can self-describe (`Std.GC.PauseWindowCapacity`).
+    pub window_cap:    usize,
 }
 
 impl Default for PauseHistogram {
     fn default() -> Self {
+        let cap = pause_window_cap_from_env();
         Self {
-            buckets:  [0; 8],
-            min_us:   u64::MAX,
-            max_us:   0,
-            total_us: 0,
-            count:    0,
+            buckets:       [0; 8],
+            min_us:        u64::MAX,
+            max_us:        0,
+            total_us:      0,
+            count:         0,
+            recent_pauses: VecDeque::with_capacity(cap),
+            window_cap:    cap,
         }
     }
 }
@@ -216,6 +255,9 @@ impl PauseHistogram {
 
     /// Records one pause sample. Saturating arithmetic on every field so a
     /// pathological process running for years cannot overflow into garbage.
+    ///
+    /// **add-gc-pause-window (2026-05-24)**: also appends to the rolling
+    /// window, evicting the oldest sample if the window is at capacity.
     pub fn record(&mut self, pause_us: u64) {
         let idx = Self::bucket_index(pause_us);
         self.buckets[idx] = self.buckets[idx].saturating_add(1);
@@ -227,6 +269,12 @@ impl PauseHistogram {
         }
         self.total_us = self.total_us.saturating_add(pause_us);
         self.count    = self.count.saturating_add(1);
+
+        // Rolling window: FIFO, drop oldest at saturation.
+        if self.recent_pauses.len() == self.window_cap {
+            self.recent_pauses.pop_front();
+        }
+        self.recent_pauses.push_back(pause_us);
     }
 }
 
@@ -234,7 +282,12 @@ impl PauseHistogram {
 
 /// Heap-wide statistics snapshot returned by
 /// [`MagrGC::stats`](super::heap::MagrGC::stats).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// **add-gc-pause-window (2026-05-24)**: dropped `Copy` (transitive on
+/// `PauseHistogram`, which now carries a `VecDeque`). Callers that
+/// previously consumed by value continue to work — `stats()` returns
+/// by value via `Clone`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct HeapStats {
     /// Total allocations since heap creation.
     pub allocations:        u64,
