@@ -154,9 +154,9 @@ public static class ExportedTypeExtractor
 
             var methods = new List<ExportedMethodDef>();
             foreach (var (mn, msym) in ct.Methods)
-                methods.Add(FuncToMethod(mn, msym.Signature, false, ct.MemberVisibility));
+                methods.Add(FuncToMethod(mn, msym.Signature, false, ct.MemberVisibility, msym.Modifiers));
             foreach (var (mn, msym) in ct.StaticMethods)
-                methods.Add(FuncToMethod(mn, msym.Signature, true, ct.MemberVisibility));
+                methods.Add(FuncToMethod(mn, msym.Signature, true, ct.MemberVisibility, msym.Modifiers));
 
             // L3-G4d: propagate generic type parameters so consumers can
             // instantiate imported generic classes with type arguments.
@@ -302,16 +302,22 @@ public static class ExportedTypeExtractor
 
     private static ExportedMethodDef FuncToMethod(
         string name, Z42FuncType ft, bool isStatic,
-        IReadOnlyDictionary<string, Visibility> memberVis)
+        IReadOnlyDictionary<string, Visibility> memberVis,
+        FunctionModifiers modifiers = FunctionModifiers.None)
     {
         // Strip arity suffix for visibility lookup: "Method$2" → "Method"
         string visKey = name.Contains('$') ? name[..name.IndexOf('$')] : name;
         var vis = memberVis.TryGetValue(visKey, out var v) ? VisToString(v) : "public";
         var parms = ft.Params.Select((p, i) =>
             new ExportedParamDef($"p{i}", TypeToString(p))).ToList();
+        // fix-memorystream-override-visibility (2026-05-24): preserve IsVirtual/IsAbstract
+        // through TSIG so consumers can correctly resolve `override` against base classes
+        // declared in OTHER packages or in other CUs of the same package.
+        bool isVirtual  = modifiers.HasFlag(FunctionModifiers.Virtual);
+        bool isAbstract = modifiers.HasFlag(FunctionModifiers.Abstract);
         return new ExportedMethodDef(
             name, parms, TypeToString(ft.Ret),
-            vis, isStatic, false, false, ft.MinArgCount);
+            vis, isStatic, isVirtual, isAbstract, ft.MinArgCount);
     }
 
     /// Convert a Z42Type to its string representation for TSIG serialization.

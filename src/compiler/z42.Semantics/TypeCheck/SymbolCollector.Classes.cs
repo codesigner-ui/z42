@@ -344,30 +344,14 @@ public sealed partial class SymbolCollector
                 _diags.Error(DiagnosticCodes.InvalidInheritance,
                     $"cannot inherit from sealed class `{effectiveBase3}`", cls.Span);
 
-            // Static override goes through VerifyStaticOverrides (interface static members);
-            // here we only verify instance override targets base virtual/abstract or interface instance methods.
-            foreach (var m in cls.Methods.Where(m => m.IsOverride && !m.IsStatic))
-            {
-                bool found = false;
-                var  cur   = effectiveBase3;
-                while (cur != null)
-                {
-                    if (_virtualMethods.TryGetValue(cur, out var vset) && vset.Contains(m.Name))
-                    { found = true; break; }
-                    cur = _classes.TryGetValue(cur, out var ct) ? ct.BaseClassName : null;
-                }
-                if (!found && _classInterfaces.TryGetValue(clsKey, out var ifaces))
-                {
-                    foreach (var iface in ifaces)
-                    {
-                        if (_interfaces.TryGetValue(iface.Name, out var it) && it.Methods.ContainsKey(m.Name))
-                        { found = true; break; }
-                    }
-                }
-                if (!found)
-                    _diags.Error(DiagnosticCodes.InvalidInheritance,
-                        $"`{cls.Name}.{m.Name}`: no matching virtual or abstract method in base class", m.Span);
-            }
+            // fix-memorystream-override-visibility (2026-05-24): defer instance-method
+            // override validation to `FinalizeOverrideChecks()`. Running here per-CU
+            // missed same-package cross-file base classes whose `_virtualMethods` entry
+            // had not yet been populated (alphabetical CU order processes
+            // `MemoryStream.z42` before `Stream.z42`). Static override goes through
+            // `VerifyStaticOverrides` (interface static members) elsewhere.
+            if (cls.Methods.Any(m => m.IsOverride && !m.IsStatic))
+                _pendingOverrideChecks.Add((clsKey, cls));
 
             if (!_classes.TryGetValue(effectiveBase3, out var baseType)) continue;
             var derived = _classes[clsKey];
@@ -524,6 +508,49 @@ public sealed partial class SymbolCollector
         var done = new HashSet<string>();
         foreach (var name in _classes.Keys.ToList())
             FinalizeInheritanceOne(name, done);
+    }
+
+    /// fix-memorystream-override-visibility (2026-05-24): run deferred `override`-method
+    /// validation now that all CUs are collected and `_virtualMethods` / `_classInterfaces`
+    /// for every class in the package is populated. Must run AFTER `FinalizeInheritance()`
+    /// so the base chain walk via `_classes[cur].BaseClassName` is consistent.
+    ///
+    /// Same diagnostic logic as the original per-CU block (E0411 InvalidInheritance):
+    ///   1. Walk base chain; if any ancestor's `_virtualMethods` contains the method → ok
+    ///   2. Otherwise check declared interface methods → ok
+    ///   3. Otherwise emit "no matching virtual or abstract method in base class"
+    public void FinalizeOverrideChecks()
+    {
+        foreach (var (clsKey, cls) in _pendingOverrideChecks)
+        {
+            var effectiveBase = cls.BaseClass
+                ?? (ExcludeFromImplicitObject(cls) ? null : "Object");
+            if (effectiveBase == null) continue;
+
+            foreach (var m in cls.Methods.Where(m => m.IsOverride && !m.IsStatic))
+            {
+                bool found = false;
+                var  cur   = effectiveBase;
+                while (cur != null)
+                {
+                    if (_virtualMethods.TryGetValue(cur, out var vset) && vset.Contains(m.Name))
+                    { found = true; break; }
+                    cur = _classes.TryGetValue(cur, out var ct) ? ct.BaseClassName : null;
+                }
+                if (!found && _classInterfaces.TryGetValue(clsKey, out var ifaces))
+                {
+                    foreach (var iface in ifaces)
+                    {
+                        if (_interfaces.TryGetValue(iface.Name, out var it) && it.Methods.ContainsKey(m.Name))
+                        { found = true; break; }
+                    }
+                }
+                if (!found)
+                    _diags.Error(DiagnosticCodes.InvalidInheritance,
+                        $"`{cls.Name}.{m.Name}`: no matching virtual or abstract method in base class", m.Span);
+            }
+        }
+        _pendingOverrideChecks.Clear();
     }
 
     private void FinalizeInheritanceOne(string name, HashSet<string> done)

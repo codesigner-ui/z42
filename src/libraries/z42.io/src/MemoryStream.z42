@@ -45,13 +45,13 @@ public class MemoryStream : Stream {
 
     // ── Capability ───────────────────────────────────────────────────────
 
-    override bool CanRead()  { return true; }
-    override bool CanWrite() { return this._writable; }
-    override bool CanSeek()  { return true; }
+    public override bool CanRead()  { return true; }
+    public override bool CanWrite() { return this._writable; }
+    public override bool CanSeek()  { return true; }
 
     // ── Read ─────────────────────────────────────────────────────────────
 
-    override int Read(byte[] buffer, int offset, int count) {
+    public override int Read(byte[] buffer, int offset, int count) {
         if (offset < 0 || count < 0 || offset + count > buffer.Length) {
             throw new ArgumentException("Read: buffer / offset / count out of range");
         }
@@ -70,7 +70,7 @@ public class MemoryStream : Stream {
 
     // ── Write ────────────────────────────────────────────────────────────
 
-    override void Write(byte[] buffer, int offset, int count) {
+    public override void Write(byte[] buffer, int offset, int count) {
         if (!this._writable) {
             throw new NotSupportedException("Write: MemoryStream is read-only");
         }
@@ -94,15 +94,15 @@ public class MemoryStream : Stream {
 
     // ── Seek / Length / Position ─────────────────────────────────────────
 
-    override long Length() {
+    public override long Length() {
         return (long)this._length;
     }
 
-    override long Position() {
+    public override long Position() {
         return (long)this._position;
     }
 
-    override long Seek(long offset, int origin) {
+    public override long Seek(long offset, int origin) {
         long basePos;
         if (origin == SeekOrigin.Begin) {
             basePos = 0L;
@@ -126,11 +126,11 @@ public class MemoryStream : Stream {
 
     // ── Flush / Close ────────────────────────────────────────────────────
 
-    override void Flush() {
+    public override void Flush() {
         // In-memory only; nothing to flush.
     }
 
-    override void Close() {
+    public override void Close() {
         // Drop the buffer ref so the GC can reclaim. Subsequent
         // Read / Write will throw via the standard null-deref path
         // (v0 doesn't track a separate `_closed` flag — the buffer

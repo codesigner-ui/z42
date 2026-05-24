@@ -449,6 +449,11 @@ public static partial class PackageCompiler
         // Global inheritance merge: ensures derived classes carry their full
         // base-chain Fields/Methods regardless of CU processing order.
         sharedCollector.FinalizeInheritance();
+        // fix-memorystream-override-visibility (2026-05-24): run deferred override
+        // validation now that all CUs are collected. Per-CU run missed same-package
+        // cross-file base classes (e.g. `MemoryStream : Stream` in z42.io where
+        // alphabetical order processes MemoryStream first).
+        sharedCollector.FinalizeOverrideChecks();
         // Re-snapshot SymbolTable so ExtractIntraSymbols sees finalized classes.
         // FinalizeInheritance mutates _classes in place; the SymbolTable returned
         // from the last Collect() call holds references to the same dictionaries,

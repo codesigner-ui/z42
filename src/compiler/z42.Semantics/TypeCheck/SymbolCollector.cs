@@ -29,6 +29,13 @@ public sealed partial class SymbolCollector : ISymbolBinder
     internal readonly HashSet<string>                      _abstractClasses = new();
     internal readonly HashSet<string>                      _sealedClasses   = new();
     internal readonly Dictionary<string, HashSet<string>>  _virtualMethods  = new();
+    /// fix-memorystream-override-visibility (2026-05-24): tracks (clsKey, cls) pairs
+    /// whose override-method validation was deferred from per-CU collection. Same-package
+    /// cross-file inheritance (e.g. `MemoryStream : Stream` in z42.io) processed in
+    /// alphabetical CU order would let MemoryStream's override check run before Stream's
+    /// `_virtualMethods` entry exists — false-negative E0411. Drained by
+    /// `FinalizeOverrideChecks()` after all CUs collected.
+    internal readonly List<(string ClsKey, ClassDecl Cls)> _pendingOverrideChecks = new();
     internal readonly HashSet<string>                      _importedClassNames = new();
     internal Dictionary<string, string>                    _importedClassNamespaces = new();
     /// 跟踪 imported (来自 zpkg) interface / func / enum names，用于
@@ -152,6 +159,24 @@ public sealed partial class SymbolCollector : ISymbolBinder
         {
             if (_classes.TryAdd(name, ct))
                 _importedClassNames.Add(name);
+            // fix-memorystream-override-visibility (2026-05-24): populate
+            // `_virtualMethods` from imported class symbols so same-package
+            // cross-file override checks (run in `FinalizeOverrideChecks`) can
+            // resolve base virtuals declared in OTHER CUs of the same package
+            // (e.g. `MemoryStream : Stream` where Stream is in another file).
+            // Method.Modifiers carries IsVirtual/IsAbstract from TSIG / intra.
+            var virtuals = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var ms in ct.Methods.Values)
+                if (ms.Modifiers.HasFlag(FunctionModifiers.Virtual)
+                    || ms.Modifiers.HasFlag(FunctionModifiers.Abstract))
+                    virtuals.Add(ms.Name);
+            if (virtuals.Count > 0)
+            {
+                if (_virtualMethods.TryGetValue(name, out var existing))
+                    foreach (var v in virtuals) existing.Add(v);
+                else
+                    _virtualMethods[name] = virtuals;
+            }
         }
         foreach (var (name, ft) in imported.Functions)
         {

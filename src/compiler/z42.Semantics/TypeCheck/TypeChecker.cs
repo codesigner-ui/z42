@@ -92,6 +92,12 @@ public sealed partial class TypeChecker : ITypeInferrer
         }
         var binder  = new SymbolCollector(_diags);
         var symbols = binder.Collect(cu, imported);
+        // fix-memorystream-override-visibility (2026-05-24): single-CU path must
+        // drain deferred override checks before TypeChecker.Infer runs. PackageCompiler
+        // calls these on the shared collector after all CUs collected; here only one
+        // CU exists so the finalize methods are essentially per-CU but symmetric.
+        binder.FinalizeInheritance();
+        binder.FinalizeOverrideChecks();
         // L3-G3d: rehydrate imported `where` constraints so ValidateGenericConstraints
         // fires for `new ImportedGeneric<T>()` / imported generic func calls.
         _imported = imported;
