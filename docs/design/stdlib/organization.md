@@ -254,6 +254,7 @@ L3 包的判定：
 | z42.text | `Std.Text` |
 | z42.threading | `Std.Threading` |
 | z42.net | `Std.Net.Sockets` (K1: TCP), `Std` (exceptions: SocketException / SocketClosedException / NetException / NetUnsupportedException) |
+| z42.numerics | `Std.Numerics` (v0: BigInt) |
 | z42.async（未来）| `Std.Async` |
 
 ---

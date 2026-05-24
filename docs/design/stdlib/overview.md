@@ -401,6 +401,18 @@ src/libraries/z42.net/src/
 
 K1 scope: sync blocking TCP only. UDP / IPAddress / DNS / Timeout / TLS / HTTP / async 走 follow-up specs（详 [net.md](net.md) Deferred）。
 
+### `z42.numerics` — Arbitrary-precision integer (v0)
+
+```
+src/libraries/z42.numerics/src/
+└── BigInt.z42            # Std.Numerics.BigInt — pure-script任意精度整数
+```
+
+v0 scope: BigInt only — Add/Sub/Mul/Div/Mod/Pow + Parse(decimal+hex) +
+ToString/ToHex + CompareTo/Equals。31-bit limb (`int[]`) + sign 表示。
+位运算 / ModPow / Gcd / Karatsuba / Vector / Complex / Decimal 走
+follow-up specs（详 [numerics.md](numerics.md) Deferred）。
+
 ---
 
 ## Relationship to Pseudo-class Strategy

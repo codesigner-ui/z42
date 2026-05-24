@@ -1,0 +1,72 @@
+// add-z42-numerics-bigint (2026-05-24): Pow correctness across small +
+// large exponents.
+namespace Z42NumericsBigIntPowTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_pow_zero_exponent() {
+    Assert.True(new BigInt(5).Pow(0).IsOne());
+    Assert.True(new BigInt(0).Pow(0).IsOne());     // 0^0 = 1 by convention
+    Assert.True(new BigInt(-7).Pow(0).IsOne());
+}
+
+[Test]
+void test_pow_one_exponent() {
+    Assert.Equal("5", new BigInt(5).Pow(1).ToString());
+    Assert.Equal("-7", new BigInt(-7).Pow(1).ToString());
+}
+
+[Test]
+void test_pow_small() {
+    Assert.Equal("8", new BigInt(2).Pow(3).ToString());
+    Assert.Equal("1024", new BigInt(2).Pow(10).ToString());
+    Assert.Equal("-8", new BigInt(-2).Pow(3).ToString());    // (-2)^3 = -8
+    Assert.Equal("4", new BigInt(-2).Pow(2).ToString());     // (-2)^2 = 4
+}
+
+[Test]
+void test_pow_large() {
+    // 2^100 = 1267650600228229401496703205376
+    string expected = "1267650600228229401496703205376";
+    Assert.Equal(expected, new BigInt(2).Pow(100).ToString());
+}
+
+[Test]
+void test_pow_base_zero() {
+    Assert.True(new BigInt(0).Pow(5).IsZero());
+}
+
+[Test]
+void test_pow_negative_exponent_throws() {
+    bool threw = false;
+    try {
+        new BigInt(2).Pow(-1);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_factorial_via_pow_and_multiply() {
+    // 10! = 3628800
+    BigInt fact = BigInt.One;
+    int i = 1;
+    while (i <= 10) {
+        fact = fact.Multiply(new BigInt(i));
+        i = i + 1;
+    }
+    Assert.Equal("3628800", fact.ToString());
+
+    // 20! crosses i64
+    fact = BigInt.One;
+    i = 1;
+    while (i <= 20) {
+        fact = fact.Multiply(new BigInt(i));
+        i = i + 1;
+    }
+    Assert.Equal("2432902008176640000", fact.ToString());
+}

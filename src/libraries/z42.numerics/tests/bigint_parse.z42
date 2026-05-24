@@ -1,0 +1,92 @@
+// add-z42-numerics-bigint (2026-05-24): Parse / ParseHex 正常路径 +
+// 错误路径 + round-trip。
+namespace Z42NumericsBigIntParseTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_parse_zero_one_neg_one() {
+    Assert.True(BigInt.Parse("0").IsZero());
+    Assert.True(BigInt.Parse("1").IsOne());
+    Assert.True(BigInt.Parse("-1").Equals(BigInt.MinusOne));
+}
+
+[Test]
+void test_parse_small_decimal() {
+    Assert.Equal("123", BigInt.Parse("123").ToString());
+    Assert.Equal("-456", BigInt.Parse("-456").ToString());
+    Assert.Equal("789", BigInt.Parse("+789").ToString());
+}
+
+[Test]
+void test_parse_large_decimal() {
+    string big = "99999999999999999999999";   // 23 digits, beyond long
+    BigInt b = BigInt.Parse(big);
+    Assert.Equal(big, b.ToString());
+}
+
+[Test]
+void test_parse_negative_zero_collapses() {
+    BigInt nz = BigInt.Parse("-0");
+    Assert.True(nz.IsZero());
+    Assert.Equal("0", nz.ToString());
+}
+
+[Test]
+void test_parse_invalid_format_throws() {
+    bool threw = false;
+    try { BigInt.Parse(""); } catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+
+    threw = false;
+    try { BigInt.Parse("abc"); } catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+
+    threw = false;
+    try { BigInt.Parse("-"); } catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+
+    threw = false;
+    try { BigInt.Parse("1a2"); } catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_parse_hex_basic() {
+    Assert.Equal("255", BigInt.ParseHex("ff").ToString());
+    Assert.Equal("255", BigInt.ParseHex("FF").ToString());
+    Assert.Equal("255", BigInt.ParseHex("0xFF").ToString());
+    Assert.Equal("-256", BigInt.ParseHex("-100").ToString());
+}
+
+[Test]
+void test_parse_hex_large() {
+    BigInt b = BigInt.ParseHex("0x1234567890abcdef1234567890abcdef");
+    string expected = "24197857200151252728969465429440056815";
+    Assert.Equal(expected, b.ToString());
+}
+
+[Test]
+void test_to_hex_round_trip() {
+    BigInt n = BigInt.Parse("1234567890123456789");
+    string hex = n.ToHex();
+    BigInt back = BigInt.ParseHex(hex);
+    Assert.True(n.Equals(back));
+}
+
+[Test]
+void test_to_hex_basic() {
+    Assert.Equal("0", BigInt.Zero.ToHex());
+    Assert.Equal("ff", new BigInt(255).ToHex());
+    Assert.Equal("-ff", new BigInt(-255).ToHex());
+    Assert.Equal("100", new BigInt(256).ToHex());
+}
+
+[Test]
+void test_parse_round_trip_random_digits() {
+    string s = "31415926535897932384626433832795028841971693993751058209749445923078164062862089986280348253421170679";
+    BigInt b = BigInt.Parse(s);
+    Assert.Equal(s, b.ToString());
+}

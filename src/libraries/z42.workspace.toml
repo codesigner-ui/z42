@@ -45,6 +45,7 @@ default-members = [
     "z42.compression",
     "z42.yaml",
     "z42.net",
+    "z42.numerics",
     "z42.test",
 ]
 

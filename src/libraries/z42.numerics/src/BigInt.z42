@@ -1,0 +1,797 @@
+namespace Std.Numerics;
+
+using Std;
+
+// add-z42-numerics-bigint (2026-05-24): arbitrary-precision integer.
+//
+// Internal representation:
+//   _mag  — int[] magnitude as little-endian 31-bit limbs (each in [0, 2^31))
+//   _sign — int: -1 (negative), 0 (zero — _mag.Length == 0), +1 (positive)
+//   normalised: no trailing-zero limbs (_mag.Length == 0 iff _sign == 0)
+//
+// 31-bit limb 选型理由：z42 `int` 是 signed i32 (max 2^31-1)；用 31-bit 限
+// 单 limb 后两 limb 乘积 = 62 bits，fit i64 + 留 1 bit 给 carry。Carry
+// chain 不需要任何 wrap-around 处理，纯算术 / 比较即可。trade-off：单
+// limb 容量 4.6% 损失 (vs 32-bit)。
+//
+// v0 scope (per docs/design/stdlib/numerics.md):
+//   Add / Sub / Mul (schoolbook) / Div / Mod / Pow / Negate / Abs
+//   Parse(decimal + hex) / ToString / ToHex / ToInt32 / ToInt64
+//   CompareTo / Equals / GetHashCode + Zero/One/MinusOne constants
+// Out of scope (follow-up): bit ops / ModPow / Gcd / Karatsuba / FFT.
+
+// Helper carrier — z42 当前不支持 int[][] (jagged 2D arrays)。把 q + r 包成
+// 一个 class 透传比 sentinel-pack 更显式。
+public class _MagDivModResult {
+    public int[] q;
+    public int[] r;
+    public _MagDivModResult(int[] q, int[] r) {
+        this.q = q;
+        this.r = r;
+    }
+}
+
+public class BigInt {
+
+    // ── Constants ────────────────────────────────────────────────────────
+
+    public static BigInt Zero     = BigInt._fromMagSign(new int[0], 0);
+    public static BigInt One      = BigInt._fromMagSign(BigInt._oneMag(), 1);
+    public static BigInt MinusOne = BigInt._fromMagSign(BigInt._oneMag(), -1);
+
+    // ── Constants on limb size ──────────────────────────────────────────
+
+    // 31-bit limbs: each limb in [0, BASE), where BASE = 2^31 = 0x80000000.
+    // Stored in z42 `int` (signed i32) so positive [0, 2^31) round-trips
+    // through `int` without sign-bit overlap.
+    public static int LIMB_BITS = 31;
+    public static long BASE     = 2147483648L;   // 1 << 31
+
+    // ── Fields ───────────────────────────────────────────────────────────
+
+    public int[] _mag;
+    public int   _sign;
+
+    // ── Public constructors ─────────────────────────────────────────────
+
+    public BigInt(int value) {
+        if (value == 0) {
+            this._mag  = new int[0];
+            this._sign = 0;
+        } else if (value > 0) {
+            this._mag  = BigInt._magFromLongAbs((long)value);
+            this._sign = 1;
+        } else {
+            // -2^31 special case — negating overflows i32; cast to long first.
+            this._mag  = BigInt._magFromLongAbs(-(long)value);
+            this._sign = -1;
+        }
+    }
+
+    public BigInt(long value) {
+        if (value == 0L) {
+            this._mag  = new int[0];
+            this._sign = 0;
+        } else if (value > 0L) {
+            this._mag  = BigInt._magFromLongAbs(value);
+            this._sign = 1;
+        } else if (value == (-9223372036854775807L - 1L)) {
+            // Long.MinValue: negating overflows i64. Build magnitude directly.
+            // |Long.MinValue| = 2^63 = limb representation [0, 0, 4] (since 2^63 = 4 * 2^62 = 4 << 62)
+            // Compute via magFromLongAbs((value + 1) → -9223372036854775807) then +1.
+            int[] partial = BigInt._magFromLongAbs(9223372036854775807L);
+            this._mag  = BigInt._magAdd(partial, BigInt._oneMag());
+            this._sign = -1;
+        } else {
+            this._mag  = BigInt._magFromLongAbs(-value);
+            this._sign = -1;
+        }
+    }
+
+    // ── Static factories (parse) ────────────────────────────────────────
+
+    /// Parse decimal representation; optional leading "-". Empty string or
+    /// non-digit char throws FormatException. Leading "+" tolerated.
+    public static BigInt Parse(string s) {
+        if (s == null || s.Length == 0) {
+            throw new FormatException("BigInt.Parse: empty input");
+        }
+        int signFlag = 1;
+        int i = 0;
+        char c0 = s.CharAt(0);
+        if (c0 == '-') { signFlag = -1; i = 1; }
+        else if (c0 == '+') { i = 1; }
+        if (i >= s.Length) {
+            throw new FormatException("BigInt.Parse: no digits after sign");
+        }
+        BigInt result  = BigInt.Zero;
+        BigInt ten     = new BigInt(10);
+        int j = i;
+        while (j < s.Length) {
+            int ch = (int)s.CharAt(j);
+            if (ch < 48 || ch > 57) {  // not '0'..'9'
+                throw new FormatException("BigInt.Parse: non-digit character at index " + Int32.ToString(j));
+            }
+            int digit = ch - 48;
+            BigInt scaled = result.Multiply(ten);
+            result = scaled.Add(new BigInt(digit));
+            j = j + 1;
+        }
+        if (result.IsZero()) {
+            return BigInt.Zero;   // -0 == 0
+        }
+        if (signFlag == -1) {
+            return result.Negate();
+        }
+        return result;
+    }
+
+    /// Parse hex (case-insensitive). Optional "-" sign + optional "0x"/"0X"
+    /// prefix. Empty string or non-hex char throws FormatException.
+    public static BigInt ParseHex(string s) {
+        if (s == null || s.Length == 0) {
+            throw new FormatException("BigInt.ParseHex: empty input");
+        }
+        int signFlag = 1;
+        int i = 0;
+        if (s.CharAt(0) == '-') { signFlag = -1; i = 1; }
+        if (i + 1 < s.Length && s.CharAt(i) == '0'
+            && (s.CharAt(i + 1) == 'x' || s.CharAt(i + 1) == 'X')) {
+            i = i + 2;
+        }
+        if (i >= s.Length) {
+            throw new FormatException("BigInt.ParseHex: no digits after prefix");
+        }
+        BigInt result  = BigInt.Zero;
+        BigInt sixteen = new BigInt(16);
+        int j = i;
+        while (j < s.Length) {
+            int ch = (int)s.CharAt(j);
+            int digit;
+            if (ch >= 48 && ch <= 57) {        // 0-9
+                digit = ch - 48;
+            } else if (ch >= 97 && ch <= 102) { // a-f
+                digit = ch - 97 + 10;
+            } else if (ch >= 65 && ch <= 70) {  // A-F
+                digit = ch - 65 + 10;
+            } else {
+                throw new FormatException("BigInt.ParseHex: non-hex character at index " + Int32.ToString(j));
+            }
+            BigInt scaled = result.Multiply(sixteen);
+            result = scaled.Add(new BigInt(digit));
+            j = j + 1;
+        }
+        if (result.IsZero()) return BigInt.Zero;
+        if (signFlag == -1) return result.Negate();
+        return result;
+    }
+
+    // ── Inspection ──────────────────────────────────────────────────────
+
+    public bool IsZero() {
+        return this._sign == 0;
+    }
+
+    public bool IsOne() {
+        if (this._sign != 1) return false;
+        if (this._mag.Length != 1) return false;
+        return this._mag[0] == 1;
+    }
+
+    public bool IsNegative() {
+        return this._sign < 0;
+    }
+
+    public int Sign() {
+        return this._sign;
+    }
+
+    // ── Conversion ──────────────────────────────────────────────────────
+
+    /// Returns the value as int. Throws InvalidOperationException if out of i32 range.
+    public int ToInt32() {
+        long v = this.ToInt64();
+        if (v < -2147483648L || v > 2147483647L) {
+            throw new InvalidOperationException("BigInt.ToInt32: value out of i32 range");
+        }
+        return (int)v;
+    }
+
+    /// Returns the value as long. Throws InvalidOperationException if out of i64 range.
+    public long ToInt64() {
+        if (this._sign == 0) return 0L;
+        // Max positive: 2^63 - 1 = 9223372036854775807
+        // Max negative: -2^63     = -9223372036854775808 (special-cased)
+        // Limb 0 holds bits [0..30], limb 1 holds bits [31..61], limb 2 holds bits [62..]
+        // i64 needs ≤ 63 bits magnitude (except -2^63), so _mag.Length ≤ 3 with limb 2 ≤ 1.
+        if (this._mag.Length > 3) {
+            throw new InvalidOperationException("BigInt.ToInt64: value out of i64 range");
+        }
+        long magnitude = 0L;
+        int i = this._mag.Length - 1;
+        while (i >= 0) {
+            // Shift left LIMB_BITS, then add limb.
+            // Check overflow: magnitude * 2^31 must not exceed 2^63 (or 2^63+1 for the -Long.MinValue boundary).
+            long limbVal = (long)this._mag[i];
+            // magnitude * BASE: if magnitude >= 2^32 this overflows i64; guard with explicit check
+            if (magnitude > 4294967295L) {  // 2^32 - 1; beyond this *BASE overflows i63
+                throw new InvalidOperationException("BigInt.ToInt64: value out of i64 range");
+            }
+            magnitude = magnitude * BigInt.BASE + limbVal;
+            // After shift+add: if magnitude > 2^63 (positive) or > 2^63 (for -Long.MinValue boundary): overflow.
+            if (magnitude < 0L) {
+                // Sign bit set — overflow OR exact -2^63 boundary.
+                // Allow only when sign == -1 AND magnitude == Long.MinValue (negation cancels).
+                if (this._sign != -1 || magnitude != (-9223372036854775807L - 1L)) {
+                    throw new InvalidOperationException("BigInt.ToInt64: value out of i64 range");
+                }
+            }
+            i = i - 1;
+        }
+        if (this._sign == -1) {
+            // For -2^63 boundary: magnitude is already 0x8000000000000000 = -2^63 in i64 reinterpret.
+            // For all other negatives, magnitude > 0; negation is fine.
+            if (magnitude == (-9223372036854775807L - 1L)) return magnitude;
+            return -magnitude;
+        }
+        return magnitude;
+    }
+
+    /// Decimal string representation. "0" for Zero, "-N" for negative.
+    override string ToString() {
+        if (this._sign == 0) return "0";
+        // Repeatedly divmod-by-1_000_000_000 (largest power of 10 below BASE-ish)
+        // and stitch the 9-digit chunks. Chunk size = 9 (10^9 < 2^31, safe single-limb divisor).
+        BigInt acc = this.Abs();
+        int[] chunks = new int[64];   // ~64 * 9 = 576 decimal digits; reallocate if more (rare)
+        int   nChunk = 0;
+        BigInt billion = new BigInt(1000000000);
+        while (!acc.IsZero()) {
+            BigInt[] dm = acc._divMod(billion);
+            BigInt q = dm[0];
+            BigInt r = dm[1];
+            if (nChunk == chunks.Length) {
+                int[] grown = new int[chunks.Length * 2];
+                int k = 0;
+                while (k < chunks.Length) { grown[k] = chunks[k]; k = k + 1; }
+                chunks = grown;
+            }
+            chunks[nChunk] = r.ToInt32();
+            nChunk = nChunk + 1;
+            acc = q;
+        }
+        // Build the string: highest chunk no zero-pad; lower chunks zero-padded to 9.
+        string s = "";
+        if (this._sign < 0) s = "-";
+        s = s + Int32.ToString(chunks[nChunk - 1]);
+        int idx = nChunk - 2;
+        while (idx >= 0) {
+            string c = Int32.ToString(chunks[idx]);
+            int pad = 9 - c.Length;
+            while (pad > 0) { s = s + "0"; pad = pad - 1; }
+            s = s + c;
+            idx = idx - 1;
+        }
+        return s;
+    }
+
+    /// Lowercase hex, no "0x" prefix. "0" for Zero, "-..." for negative.
+    ///
+    /// 31-bit limbs don't align with hex 4-bit boundaries, so we can't simply
+    /// concatenate per-limb hex. Instead, divmod-by-16^7 = 0x10000000 (which
+    /// fits in 31 bits — 16^7 = 2^28 < 2^31) and emit 7-hex-char chunks.
+    /// Top chunk no zero-pad; lower chunks zero-padded to 7.
+    public string ToHex() {
+        if (this._sign == 0) return "0";
+        BigInt acc = this.Abs();
+        BigInt chunkDiv = new BigInt(268435456);   // 16^7
+        // Each chunk = 7 hex chars. Max BigInt size = many thousand limbs;
+        // pre-size at 64 chunks (~448 hex chars) and grow on demand.
+        int[] chunks = new int[64];
+        int   n      = 0;
+        while (!acc.IsZero()) {
+            BigInt[] dm = acc._divMod(chunkDiv);
+            if (n == chunks.Length) {
+                int[] grown = new int[chunks.Length * 2];
+                int k = 0;
+                while (k < chunks.Length) { grown[k] = chunks[k]; k = k + 1; }
+                chunks = grown;
+            }
+            chunks[n] = dm[1].ToInt32();
+            n = n + 1;
+            acc = dm[0];
+        }
+        string s = "";
+        if (this._sign < 0) s = "-";
+        // Top chunk: no zero-pad.
+        s = s + BigInt._chunkToHex(chunks[n - 1], false);
+        int idx = n - 2;
+        while (idx >= 0) {
+            s = s + BigInt._chunkToHex(chunks[idx], true);
+            idx = idx - 1;
+        }
+        return s;
+    }
+
+    // ── Arithmetic ──────────────────────────────────────────────────────
+
+    public BigInt Add(BigInt other) {
+        if (this._sign == 0)  return other;
+        if (other._sign == 0) return this;
+        if (this._sign == other._sign) {
+            // Same sign: magnitude add, keep sign.
+            int[] mag = BigInt._magAdd(this._mag, other._mag);
+            return BigInt._fromMagSign(mag, this._sign);
+        }
+        // Opposite signs: magnitude subtract larger - smaller, sign = sign of larger.
+        int cmp = BigInt._magCmp(this._mag, other._mag);
+        if (cmp == 0) return BigInt.Zero;
+        if (cmp > 0) {
+            int[] mag = BigInt._magSub(this._mag, other._mag);
+            return BigInt._fromMagSign(mag, this._sign);
+        }
+        int[] mag = BigInt._magSub(other._mag, this._mag);
+        return BigInt._fromMagSign(mag, other._sign);
+    }
+
+    public BigInt Subtract(BigInt other) {
+        return this.Add(other.Negate());
+    }
+
+    public BigInt Multiply(BigInt other) {
+        if (this._sign == 0 || other._sign == 0) return BigInt.Zero;
+        int[] mag = BigInt._magMul(this._mag, other._mag);
+        int sign = this._sign * other._sign;
+        return BigInt._fromMagSign(mag, sign);
+    }
+
+    public BigInt Divide(BigInt other) {
+        BigInt[] dm = this._divMod(other);
+        return dm[0];
+    }
+
+    public BigInt Mod(BigInt other) {
+        BigInt[] dm = this._divMod(other);
+        return dm[1];
+    }
+
+    /// Internal divmod: returns [quotient, remainder] with truncation
+    /// semantics — quotient truncated toward zero, remainder same sign as
+    /// dividend (this), so dividend = quotient * divisor + remainder.
+    BigInt[] _divMod(BigInt divisor) {
+        if (divisor._sign == 0) {
+            throw new InvalidOperationException("BigInt division by zero");
+        }
+        if (this._sign == 0) {
+            BigInt[] dm = new BigInt[2];
+            dm[0] = BigInt.Zero;
+            dm[1] = BigInt.Zero;
+            return dm;
+        }
+        int cmp = BigInt._magCmp(this._mag, divisor._mag);
+        if (cmp < 0) {
+            // |this| < |divisor| → quotient 0, remainder = this
+            BigInt[] dm = new BigInt[2];
+            dm[0] = BigInt.Zero;
+            dm[1] = this;
+            return dm;
+        }
+        if (cmp == 0) {
+            // |this| == |divisor| → quotient sign = sign product, remainder = 0
+            BigInt[] dm = new BigInt[2];
+            int q_sign = this._sign * divisor._sign;
+            dm[0] = BigInt._fromMagSign(BigInt._oneMag(), q_sign);
+            dm[1] = BigInt.Zero;
+            return dm;
+        }
+        // |this| > |divisor|: do the heavy lifting.
+        _MagDivModResult qr = BigInt._magDivMod(this._mag, divisor._mag);
+        int q_sign = this._sign * divisor._sign;
+        BigInt[] dm = new BigInt[2];
+        dm[0] = BigInt._fromMagSign(qr.q, q_sign);
+        dm[1] = BigInt._fromMagSign(qr.r, this._sign);   // remainder follows dividend sign
+        return dm;
+    }
+
+    public BigInt Negate() {
+        if (this._sign == 0) return BigInt.Zero;
+        return BigInt._fromMagSign(this._mag, -this._sign);
+    }
+
+    public BigInt Abs() {
+        if (this._sign >= 0) return this;
+        return BigInt._fromMagSign(this._mag, 1);
+    }
+
+    /// Integer power. `exponent >= 0`. Uses repeated squaring (O(log exp)
+    /// multiplications). Negative exponent throws ArgumentException.
+    public BigInt Pow(int exponent) {
+        if (exponent < 0) {
+            throw new ArgumentException("BigInt.Pow: negative exponent not supported");
+        }
+        if (exponent == 0) return BigInt.One;
+        if (this._sign == 0) return BigInt.Zero;
+        BigInt result = BigInt.One;
+        BigInt base_ = this;
+        int    exp   = exponent;
+        while (exp > 0) {
+            if ((exp & 1) == 1) {
+                result = result.Multiply(base_);
+            }
+            exp = exp >> 1;
+            if (exp > 0) {
+                base_ = base_.Multiply(base_);
+            }
+        }
+        return result;
+    }
+
+    // ── Comparison ──────────────────────────────────────────────────────
+
+    public int CompareTo(BigInt other) {
+        if (this._sign != other._sign) {
+            return this._sign - other._sign;
+        }
+        // Same sign: compare magnitudes; negate if both negative.
+        int magCmp = BigInt._magCmp(this._mag, other._mag);
+        if (this._sign < 0) return -magCmp;
+        return magCmp;
+    }
+
+    override bool Equals(object other) {
+        if (other == null) return false;
+        BigInt b = (BigInt)other;
+        if (this._sign != b._sign) return false;
+        return BigInt._magCmp(this._mag, b._mag) == 0;
+    }
+
+    override int GetHashCode() {
+        // FNV-1a style accumulator across limbs + sign. The classic FNV offset basis
+        // 2166136261 (= 0x811C9DC5) overflows i32 — z42 `int` 是 signed i32，最大
+        // 2^31-1。用 0x811C9DC5 as i32 reinterpret (signed) = -2128831035 等价；
+        // 但 z42 当前缺少 (int) 强转 i64 literal，简化用 i32 范围内的 reduced basis
+        // (上半 2 bytes of FNV offset) — collision rate 略升但 hash 仍 deterministic。
+        int h = 31;
+        h = (h * 31) ^ this._sign;
+        int i = 0;
+        while (i < this._mag.Length) {
+            h = (h * 31) ^ this._mag[i];
+            i = i + 1;
+        }
+        return h;
+    }
+
+    // ── Internal helpers ────────────────────────────────────────────────
+
+    /// Build a normalised BigInt from a magnitude + sign. Trims trailing
+    /// zero limbs; if magnitude becomes empty, forces sign to 0.
+    static BigInt _fromMagSign(int[] mag, int sign) {
+        int[] trimmed = BigInt._trim(mag);
+        BigInt b = new BigInt(0);
+        b._mag = trimmed;
+        if (trimmed.Length == 0) {
+            b._sign = 0;
+        } else {
+            b._sign = sign;
+        }
+        return b;
+    }
+
+    static int[] _oneMag() {
+        int[] m = new int[1];
+        m[0] = 1;
+        return m;
+    }
+
+    /// Convert a positive long (≤ 2^63 - 1) into a limb array.
+    static int[] _magFromLongAbs(long v) {
+        if (v == 0L) return new int[0];
+        // Worst case: 2^63 needs 3 limbs (63 / 31 = 2.03).
+        int[] tmp = new int[3];
+        int n = 0;
+        long x = v;
+        while (x > 0L) {
+            tmp[n] = (int)(x % BigInt.BASE);
+            x      = x / BigInt.BASE;
+            n      = n + 1;
+        }
+        int[] mag = new int[n];
+        int i = 0;
+        while (i < n) { mag[i] = tmp[i]; i = i + 1; }
+        return mag;
+    }
+
+    /// Strip trailing-zero limbs.
+    static int[] _trim(int[] mag) {
+        int n = mag.Length;
+        while (n > 0 && mag[n - 1] == 0) { n = n - 1; }
+        if (n == mag.Length) return mag;
+        int[] r = new int[n];
+        int i = 0;
+        while (i < n) { r[i] = mag[i]; i = i + 1; }
+        return r;
+    }
+
+    /// Compare two normalised magnitudes. -1 if a < b, 0 if equal, +1 if a > b.
+    static int _magCmp(int[] a, int[] b) {
+        if (a.Length != b.Length) {
+            if (a.Length < b.Length) return -1;
+            return 1;
+        }
+        int i = a.Length - 1;
+        while (i >= 0) {
+            if (a[i] != b[i]) {
+                if (a[i] < b[i]) return -1;
+                return 1;
+            }
+            i = i - 1;
+        }
+        return 0;
+    }
+
+    /// Magnitude addition.
+    static int[] _magAdd(int[] a, int[] b) {
+        int la = a.Length;
+        int lb = b.Length;
+        int n;
+        if (la > lb) { n = la; } else { n = lb; }
+        int[] r = new int[n + 1];
+        long carry = 0L;
+        int  i = 0;
+        while (i < n) {
+            long av = 0L;
+            long bv = 0L;
+            if (i < la) av = (long)a[i];
+            if (i < lb) bv = (long)b[i];
+            long s = av + bv + carry;
+            r[i]   = (int)(s % BigInt.BASE);
+            carry  = s / BigInt.BASE;
+            i = i + 1;
+        }
+        r[n] = (int)carry;
+        return BigInt._trim(r);
+    }
+
+    /// Magnitude subtraction; **assumes a >= b**. Caller must check magnitude
+    /// ordering beforehand.
+    static int[] _magSub(int[] a, int[] b) {
+        int la = a.Length;
+        int[] r = new int[la];
+        long borrow = 0L;
+        int  i = 0;
+        while (i < la) {
+            long av = (long)a[i];
+            long bv = 0L;
+            if (i < b.Length) bv = (long)b[i];
+            long d = av - bv - borrow;
+            if (d < 0L) {
+                d      = d + BigInt.BASE;
+                borrow = 1L;
+            } else {
+                borrow = 0L;
+            }
+            r[i] = (int)d;
+            i = i + 1;
+        }
+        // borrow must be 0 here (precondition a >= b).
+        return BigInt._trim(r);
+    }
+
+    /// Magnitude schoolbook multiplication. O(n*m).
+    static int[] _magMul(int[] a, int[] b) {
+        int la = a.Length;
+        int lb = b.Length;
+        if (la == 0 || lb == 0) return new int[0];
+        int[] r = new int[la + lb];
+        int i = 0;
+        while (i < la) {
+            long ai    = (long)a[i];
+            long carry = 0L;
+            int  j     = 0;
+            while (j < lb) {
+                long prod = ai * (long)b[j] + (long)r[i + j] + carry;
+                r[i + j]  = (int)(prod % BigInt.BASE);
+                carry     = prod / BigInt.BASE;
+                j = j + 1;
+            }
+            // Drain remaining carry.
+            int k = lb;
+            while (carry > 0L) {
+                long s = (long)r[i + k] + carry;
+                r[i + k] = (int)(s % BigInt.BASE);
+                carry    = s / BigInt.BASE;
+                k = k + 1;
+            }
+            i = i + 1;
+        }
+        return BigInt._trim(r);
+    }
+
+    /// Magnitude divmod: long-division for general case + fast path for
+    /// single-limb divisor. Precondition: divisor.Length > 0, dividend.Length >= divisor.Length.
+    static _MagDivModResult _magDivMod(int[] dividend, int[] divisor) {
+        if (divisor.Length == 1) {
+            return BigInt._magDivModSingle(dividend, divisor[0]);
+        }
+        return BigInt._magDivModGeneral(dividend, divisor);
+    }
+
+    /// Single-limb divisor — straightforward O(n) long division.
+    static _MagDivModResult _magDivModSingle(int[] dividend, int divisorLimb) {
+        int n = dividend.Length;
+        int[] q = new int[n];
+        long rem = 0L;
+        int  i = n - 1;
+        while (i >= 0) {
+            long cur = rem * BigInt.BASE + (long)dividend[i];
+            q[i]     = (int)(cur / (long)divisorLimb);
+            rem      = cur % (long)divisorLimb;
+            i = i - 1;
+        }
+        int[] rArr = new int[1];
+        rArr[0]    = (int)rem;
+        return new _MagDivModResult(BigInt._trim(q), BigInt._trim(rArr));
+    }
+
+    /// General multi-limb divisor. Knuth Algorithm D / school long division
+    /// adapted for 31-bit limbs. Returns `[quotient, remainder]`.
+    ///
+    /// Approach: shift divisor left so top bit of high limb is set (~30 or 29 bit position),
+    /// then for each quotient digit estimate by `top2(rem) / top1(div)`, correct down
+    /// by 1-2 if overestimate, subtract trial product, repeat. O(n × m).
+    static _MagDivModResult _magDivModGeneral(int[] dividend, int[] divisor) {
+        // Simpler O(n × m × log) approach without normalisation: trial-and-error
+        // with binary search on quotient digit. Slower but correct + simpler to verify.
+        int n = dividend.Length;
+        int m = divisor.Length;
+        int qLen = n - m + 1;
+        int[] q = new int[qLen];
+        // Working remainder = dividend (will shrink as we subtract).
+        int[] rem = new int[n + 1];
+        int i = 0;
+        while (i < n) { rem[i] = dividend[i]; i = i + 1; }
+        rem[n] = 0;
+        // Quotient digit positions go from high to low.
+        int qi = qLen - 1;
+        while (qi >= 0) {
+            // Estimate q_digit by binary searching in [0, BASE) such that
+            // (divisor * q_digit) << qi <= rem.
+            // Optimised initial estimate from top two limbs of rem and top of divisor.
+            long topRem = ((long)rem[qi + m]) * BigInt.BASE + (long)rem[qi + m - 1];
+            long topDiv = (long)divisor[m - 1];
+            long estimate = topRem / topDiv;
+            if (estimate >= BigInt.BASE) estimate = BigInt.BASE - 1L;
+            // Now correct: build (divisor * estimate) shifted to qi position; if > rem suffix,
+            // decrement until fits.
+            while (estimate >= 0L) {
+                int[] trial = BigInt._magMulByLimb(divisor, (int)estimate);
+                if (BigInt._magSubShifted_le(rem, trial, qi)) {
+                    // rem >= trial << qi → subtract in place and accept.
+                    BigInt._magSubShifted_apply(rem, trial, qi);
+                    q[qi] = (int)estimate;
+                    estimate = -1L;   // break
+                } else {
+                    estimate = estimate - 1L;
+                }
+            }
+            qi = qi - 1;
+        }
+        // Build remainder array (drop trailing zeros).
+        int[] r = new int[m];
+        int j = 0;
+        while (j < m) { r[j] = rem[j]; j = j + 1; }
+        return new _MagDivModResult(BigInt._trim(q), BigInt._trim(r));
+    }
+
+    /// Multiply a magnitude by a single limb. Helper for general divmod.
+    static int[] _magMulByLimb(int[] a, int limbVal) {
+        if (limbVal == 0 || a.Length == 0) return new int[0];
+        long  lv = (long)limbVal;
+        int[] r  = new int[a.Length + 1];
+        long  carry = 0L;
+        int   i = 0;
+        while (i < a.Length) {
+            long prod = (long)a[i] * lv + carry;
+            r[i]      = (int)(prod % BigInt.BASE);
+            carry     = prod / BigInt.BASE;
+            i = i + 1;
+        }
+        r[a.Length] = (int)carry;
+        return BigInt._trim(r);
+    }
+
+    /// Test whether `rem >= trial << offset_limbs` (without modifying rem).
+    /// Used by divmod estimate-correct loop.
+    static bool _magSubShifted_le(int[] rem, int[] trial, int offset) {
+        // Compare rem[offset..offset+trial.Length] (+ rem[offset+trial.Length])
+        // against trial.
+        // Highest limb of rem at this position is rem[offset + trial.Length].
+        // If positive → trial fits guaranteed (rem suffix > trial); if zero, fall through
+        // to limb-by-limb compare.
+        int trialLen = trial.Length;
+        // rem may extend up to offset + trialLen.
+        if (offset + trialLen < rem.Length && rem[offset + trialLen] > 0) {
+            return true;
+        }
+        int i = trialLen - 1;
+        while (i >= 0) {
+            int rv = 0;
+            if (offset + i < rem.Length) rv = rem[offset + i];
+            if (rv != trial[i]) {
+                if (rv < trial[i]) return false;
+                return true;
+            }
+            i = i - 1;
+        }
+        return true;   // equal → still subtractable
+    }
+
+    /// Mutate `rem` ← `rem - (trial << offset_limbs)`. Caller must guarantee
+    /// the subtraction stays non-negative (i.e. `_magSubShifted_le` returned true).
+    static void _magSubShifted_apply(int[] rem, int[] trial, int offset) {
+        int    trialLen = trial.Length;
+        long   borrow   = 0L;
+        int    i        = 0;
+        while (i < trialLen) {
+            long rv = (long)rem[offset + i];
+            long tv = (long)trial[i];
+            long d  = rv - tv - borrow;
+            if (d < 0L) {
+                d      = d + BigInt.BASE;
+                borrow = 1L;
+            } else {
+                borrow = 0L;
+            }
+            rem[offset + i] = (int)d;
+            i = i + 1;
+        }
+        // Propagate borrow into higher limbs.
+        int j = offset + trialLen;
+        while (borrow > 0L && j < rem.Length) {
+            long rv = (long)rem[j];
+            long d  = rv - borrow;
+            if (d < 0L) {
+                d      = d + BigInt.BASE;
+                borrow = 1L;
+            } else {
+                borrow = 0L;
+            }
+            rem[j] = (int)d;
+            j = j + 1;
+        }
+    }
+
+    /// Convert a 28-bit (or less) hex chunk to lowercase hex.
+    /// If `pad`, output zero-padded to 7 hex chars; else top chunk trimmed.
+    static string _chunkToHex(int chunkVal, bool pad) {
+        if (chunkVal == 0 && !pad) return "0";
+        char[] buf = new char[7];
+        int v = chunkVal;
+        int i = 6;
+        while (i >= 0) {
+            int nibble = v & 0xF;
+            char c;
+            if (nibble < 10) {
+                c = (char)(48 + nibble);
+            } else {
+                c = (char)(87 + nibble);
+            }
+            buf[i] = c;
+            v = v >> 4;
+            i = i - 1;
+        }
+        if (pad) {
+            return String.FromChars(buf);
+        }
+        // Trim leading zeros for top chunk.
+        int start = 0;
+        while (start < 6 && buf[start] == '0') { start = start + 1; }
+        char[] trimmed = new char[7 - start];
+        int k = 0;
+        while (start + k < 7) {
+            trimmed[k] = buf[start + k];
+            k = k + 1;
+        }
+        return String.FromChars(trimmed);
+    }
+}

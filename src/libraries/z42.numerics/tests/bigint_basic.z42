@@ -1,0 +1,101 @@
+// add-z42-numerics-bigint (2026-05-24): BigInt construction + simple
+// inspection + conversion round-trip.
+namespace Z42NumericsBigIntBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_zero_construct() {
+    BigInt z = BigInt.Zero;
+    Assert.True(z.IsZero());
+    Assert.Equal(0, z.Sign());
+    Assert.Equal("0", z.ToString());
+}
+
+[Test]
+void test_one_constants() {
+    Assert.True(BigInt.One.IsOne());
+    Assert.Equal(1, BigInt.One.Sign());
+    Assert.Equal("1", BigInt.One.ToString());
+
+    Assert.Equal(-1, BigInt.MinusOne.Sign());
+    Assert.True(BigInt.MinusOne.IsNegative());
+    Assert.Equal("-1", BigInt.MinusOne.ToString());
+}
+
+[Test]
+void test_construct_from_int() {
+    BigInt a = new BigInt(42);
+    Assert.Equal("42", a.ToString());
+    Assert.Equal(42, a.ToInt32());
+
+    BigInt b = new BigInt(-123456789);
+    Assert.Equal("-123456789", b.ToString());
+    Assert.Equal(-123456789, b.ToInt32());
+
+    // int min boundary
+    BigInt c = new BigInt(-2147483648);
+    Assert.Equal("-2147483648", c.ToString());
+    Assert.Equal(-2147483648, c.ToInt32());
+}
+
+[Test]
+void test_construct_from_long() {
+    BigInt a = new BigInt(9999999999L);   // > int32 max
+    Assert.Equal("9999999999", a.ToString());
+    Assert.Equal(9999999999L, a.ToInt64());
+
+    BigInt b = new BigInt(-9999999999L);
+    Assert.Equal("-9999999999", b.ToString());
+    Assert.Equal(-9999999999L, b.ToInt64());
+
+    // long max boundary
+    BigInt c = new BigInt(9223372036854775807L);
+    Assert.Equal("9223372036854775807", c.ToString());
+    Assert.Equal(9223372036854775807L, c.ToInt64());
+}
+
+[Test]
+void test_to_int32_overflow_throws() {
+    BigInt big = new BigInt(99999999999L);   // > int32 max
+    bool threw = false;
+    try {
+        big.ToInt32();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_is_negative_zero() {
+    BigInt z = BigInt.Zero;
+    Assert.False(z.IsNegative());
+    Assert.False(z.IsOne());
+}
+
+[Test]
+void test_compare_to_basic() {
+    BigInt a = new BigInt(10);
+    BigInt b = new BigInt(20);
+    Assert.True(a.CompareTo(b) < 0);
+    Assert.True(b.CompareTo(a) > 0);
+    Assert.Equal(0, a.CompareTo(new BigInt(10)));
+
+    BigInt neg = new BigInt(-5);
+    Assert.True(neg.CompareTo(a) < 0);
+    Assert.True(a.CompareTo(neg) > 0);
+}
+
+[Test]
+void test_equals_basic() {
+    BigInt a = new BigInt(42);
+    BigInt b = new BigInt(42);
+    Assert.True(a.Equals(b));
+    Assert.Equal(a.GetHashCode(), b.GetHashCode());
+
+    BigInt c = new BigInt(43);
+    Assert.False(a.Equals(c));
+}

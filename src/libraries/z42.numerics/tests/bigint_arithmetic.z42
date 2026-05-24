@@ -1,0 +1,129 @@
+// add-z42-numerics-bigint (2026-05-24): Add / Sub / Mul / Div / Mod
+// edge cases and large-magnitude correctness.
+namespace Z42NumericsBigIntArithmeticTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+[Test]
+void test_add_small() {
+    BigInt sum = new BigInt(2).Add(new BigInt(3));
+    Assert.Equal("5", sum.ToString());
+}
+
+[Test]
+void test_add_negative() {
+    BigInt sum = new BigInt(-7).Add(new BigInt(3));
+    Assert.Equal("-4", sum.ToString());
+
+    BigInt sum2 = new BigInt(-3).Add(new BigInt(7));
+    Assert.Equal("4", sum2.ToString());
+
+    BigInt sum3 = new BigInt(-3).Add(new BigInt(-7));
+    Assert.Equal("-10", sum3.ToString());
+}
+
+[Test]
+void test_add_to_zero() {
+    BigInt z = new BigInt(5).Add(new BigInt(-5));
+    Assert.True(z.IsZero());
+
+    BigInt a = BigInt.Zero.Add(new BigInt(42));
+    Assert.Equal("42", a.ToString());
+}
+
+[Test]
+void test_add_large_carries() {
+    // 2^31 - 1 + 2 → cross limb boundary
+    BigInt a = new BigInt(2147483647);  // 2^31 - 1
+    BigInt sum = a.Add(new BigInt(2));
+    Assert.Equal("2147483649", sum.ToString());
+}
+
+[Test]
+void test_subtract() {
+    Assert.Equal("4", new BigInt(10).Subtract(new BigInt(6)).ToString());
+    Assert.Equal("-4", new BigInt(6).Subtract(new BigInt(10)).ToString());
+    Assert.Equal("13", new BigInt(10).Subtract(new BigInt(-3)).ToString());
+}
+
+[Test]
+void test_multiply_small() {
+    Assert.Equal("12", new BigInt(3).Multiply(new BigInt(4)).ToString());
+    Assert.Equal("-12", new BigInt(-3).Multiply(new BigInt(4)).ToString());
+    Assert.Equal("12", new BigInt(-3).Multiply(new BigInt(-4)).ToString());
+    Assert.Equal("0", new BigInt(0).Multiply(new BigInt(99)).ToString());
+}
+
+[Test]
+void test_multiply_large() {
+    // 1_000_000 * 1_000_000 = 10^12
+    BigInt a = new BigInt(1000000);
+    BigInt b = new BigInt(1000000);
+    Assert.Equal("1000000000000", a.Multiply(b).ToString());
+}
+
+[Test]
+void test_multiply_crosses_limbs() {
+    // 2^31 * 2^31 = 2^62 = 4611686018427387904
+    BigInt a = new BigInt(2147483648L);  // 2^31
+    BigInt b = new BigInt(2147483648L);
+    Assert.Equal("4611686018427387904", a.Multiply(b).ToString());
+}
+
+[Test]
+void test_divide_small() {
+    Assert.Equal("3", new BigInt(10).Divide(new BigInt(3)).ToString());
+    Assert.Equal("0", new BigInt(2).Divide(new BigInt(3)).ToString());
+    Assert.Equal("4", new BigInt(20).Divide(new BigInt(5)).ToString());
+}
+
+[Test]
+void test_divide_truncation_negative() {
+    // Truncation toward zero (NOT floor):
+    // -7 / 3 = -2 (not -3), remainder -1
+    Assert.Equal("-2", new BigInt(-7).Divide(new BigInt(3)).ToString());
+    Assert.Equal("-1", new BigInt(-7).Mod(new BigInt(3)).ToString());
+
+    // 7 / -3 = -2, remainder 1
+    Assert.Equal("-2", new BigInt(7).Divide(new BigInt(-3)).ToString());
+    Assert.Equal("1", new BigInt(7).Mod(new BigInt(-3)).ToString());
+}
+
+[Test]
+void test_divide_by_zero_throws() {
+    bool threw = false;
+    try {
+        new BigInt(5).Divide(new BigInt(0));
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_mod_basic() {
+    Assert.Equal("1", new BigInt(10).Mod(new BigInt(3)).ToString());
+    Assert.Equal("0", new BigInt(12).Mod(new BigInt(4)).ToString());
+}
+
+[Test]
+void test_negate_abs() {
+    Assert.Equal("-42", new BigInt(42).Negate().ToString());
+    Assert.Equal("42", new BigInt(-42).Abs().ToString());
+    Assert.Equal("0", BigInt.Zero.Negate().ToString());
+}
+
+[Test]
+void test_divide_large_general() {
+    // 10^20 / (2^31 + 1) — general multi-limb divisor path
+    BigInt num = new BigInt(10).Pow(20);
+    BigInt div = new BigInt(2147483649L);   // 2^31 + 1
+    BigInt q = num.Divide(div);
+    BigInt r = num.Mod(div);
+    // verify: q*div + r == num
+    BigInt prod = q.Multiply(div);
+    BigInt reconstructed = prod.Add(r);
+    Assert.True(reconstructed.Equals(num));
+}
