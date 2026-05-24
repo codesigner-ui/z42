@@ -1,0 +1,103 @@
+namespace Std.Compression;
+
+using Std;
+using Std.IO;
+
+// refactor-compression-stream-on-iostream (2026-05-24): pull-mode
+// decoder Stream — caller reads decompressed bytes; the decoder
+// pulls compressed bytes from the wrapped source Stream as needed.
+//
+// v0 semantics: lazy bulk decode.
+//   * First call to `Read(...)` triggers `_src.ReadAllBytes()` →
+//     `__compressor_feed` (in one shot) → `__compressor_finish` →
+//     full decompressed payload buffered internally
+//   * Subsequent `Read` calls serve out of the buffer
+//   * EOF when buffer drained
+//
+// This trades memory for code simplicity, matching the cdylib's
+// existing v0 decoder model (accumulate-then-decompress). True
+// streaming decode requires a flate2::Decompress state-machine
+// upgrade on the cdylib side (tracked in compression.md Deferred →
+// `compression-future-streaming-decode`); when that lands this class
+// migrates to per-chunk pull semantics without API change.
+//
+// Practical constraint: callers reading multi-GB compressed payloads
+// will materialise the full decompressed output in memory before any
+// `Read` returns. For HTTP responses, log entries, zpkg metadata
+// (v0 target use cases) this is fine.
+
+public sealed class CompressionDecoderStream : Stream {
+    private Stream _src;
+    private int    _algo;
+    private byte[] _decoded;
+    private int    _decodedPos;
+    private bool   _materialised;
+
+    public CompressionDecoderStream(Stream src, int algo) {
+        if (!src.CanRead()) {
+            throw new ArgumentException("CompressionDecoderStream: src Stream is not readable");
+        }
+        this._src           = src;
+        this._algo          = algo;
+        this._decoded       = new byte[0];
+        this._decodedPos    = 0;
+        this._materialised  = false;
+    }
+
+    // ── Capability ───────────────────────────────────────────────────────
+
+    override bool CanRead()  { return true; }
+    override bool CanWrite() { return false; }
+    override bool CanSeek()  { return false; }
+
+    // ── Read ─────────────────────────────────────────────────────────────
+
+    override int Read(byte[] buffer, int offset, int count) {
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Read: buffer / offset / count out of range");
+        }
+        if (count == 0) { return 0; }
+
+        // Lazy materialise on first Read.
+        if (!this._materialised) {
+            byte[] compressed = this._src.ReadAllBytes();
+            long slotId = CompressionDecoderStream._CompressorBegin(this._algo, 0, true);
+            // Feed the entire compressed buffer (decoder accumulates internally).
+            CompressionDecoderStream._CompressorFeed(slotId, compressed);
+            this._decoded       = CompressionDecoderStream._CompressorFinish(slotId);
+            this._decodedPos    = 0;
+            this._materialised  = true;
+        }
+
+        int available = this._decoded.Length - this._decodedPos;
+        if (available <= 0) { return 0; }
+        int n = count;
+        if (n > available) { n = available; }
+        int i = 0;
+        while (i < n) {
+            buffer[offset + i] = this._decoded[this._decodedPos + i];
+            i = i + 1;
+        }
+        this._decodedPos = this._decodedPos + n;
+        return n;
+    }
+
+    override void Close() {
+        // No held cdylib slot (decoder slot is freed during the lazy
+        // materialise's `_finish` call). _src lifecycle owned by caller.
+        // Reset decoded buffer so a re-used reference frees memory.
+        this._decoded       = new byte[0];
+        this._decodedPos    = 0;
+    }
+
+    // ── Native bindings ──────────────────────────────────────────────────
+
+    [Native(lib = "z42_compression", entry = "__compressor_begin")]
+    private static extern long _CompressorBegin(int algo, int level, bool isDecompress);
+
+    [Native(lib = "z42_compression", entry = "__compressor_feed")]
+    private static extern byte[] _CompressorFeed(long slotId, byte[] chunk);
+
+    [Native(lib = "z42_compression", entry = "__compressor_finish")]
+    private static extern byte[] _CompressorFinish(long slotId);
+}

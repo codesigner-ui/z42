@@ -1,10 +1,14 @@
 namespace Std.Compression;
 
 using Std;
+using Std.IO;
 
 // add-z42-compression (2026-05-22): RFC 1950 zlib container. Same
 // DEFLATE engine as Gzip / Deflate, different framing (2-byte CMF/FLG
 // header + adler32 footer).
+//
+// refactor-compression-stream-on-iostream (2026-05-24): see Gzip.z42
+// for the API shape rationale.
 
 public static class Zlib {
     [Native(lib = "z42_compression", entry = "__deflate_compress")]
@@ -25,15 +29,15 @@ public static class Zlib {
         return _DecompressRaw(data, AlgoId.Zlib);
     }
 
-    public static CompressionStream CompressStream() {
-        return CompressionStream._BeginEncode(AlgoId.Zlib, Compression.Default);
+    public static Stream WrapWrite(Stream dest) {
+        return new CompressionEncoderStream(dest, AlgoId.Zlib, Compression.Default);
     }
 
-    public static CompressionStream CompressStream(int level) {
-        return CompressionStream._BeginEncode(AlgoId.Zlib, level);
+    public static Stream WrapWrite(Stream dest, int level) {
+        return new CompressionEncoderStream(dest, AlgoId.Zlib, level);
     }
 
-    public static CompressionStream DecompressStream() {
-        return CompressionStream._BeginDecode(AlgoId.Zlib);
+    public static Stream WrapRead(Stream src) {
+        return new CompressionDecoderStream(src, AlgoId.Zlib);
     }
 }

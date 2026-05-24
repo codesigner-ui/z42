@@ -1,0 +1,205 @@
+// refactor-compression-stream-on-iostream (2026-05-24): pipeline-shape
+// streaming compression. Verifies the new `WrapWrite(Stream) /
+// WrapRead(Stream)` factory shape composes with `Std.IO.MemoryStream`.
+namespace Z42CompressionStreamPipelineTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Compression;
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+byte[] _MakeText() {
+    // 100 copies of "hello " → 600 bytes that compress well
+    int n = 100;
+    byte[] result = new byte[n * 6];
+    int i = 0;
+    while (i < n) {
+        result[i * 6 + 0] = (byte)104;  // h
+        result[i * 6 + 1] = (byte)101;  // e
+        result[i * 6 + 2] = (byte)108;  // l
+        result[i * 6 + 3] = (byte)108;  // l
+        result[i * 6 + 4] = (byte)111;  // o
+        result[i * 6 + 5] = (byte)32;   // space
+        i = i + 1;
+    }
+    return result;
+}
+
+void _AssertBytesEqual(byte[] a, byte[] b) {
+    Assert.Equal(a.Length, b.Length);
+    int i = 0;
+    while (i < a.Length) {
+        Assert.Equal((int)a[i], (int)b[i]);
+        i = i + 1;
+    }
+}
+
+// ── Gzip pipeline ────────────────────────────────────────────────────────
+
+[Test]
+void test_gzip_wrap_write_round_trip_via_memory_stream() {
+    byte[] plain = _MakeText();
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Gzip.WrapWrite(dest);
+    enc.Write(plain, 0, plain.Length);
+    enc.Close();
+    byte[] compressed = dest.ToArray();
+    // Compression should have shrunk a 600-byte repetitive text noticeably.
+    Assert.True(compressed.Length < plain.Length);
+    // Gzip magic bytes 1F 8B
+    Assert.Equal(0x1F, (int)compressed[0]);
+    Assert.Equal(0x8B, (int)compressed[1]);
+    // Round-trip via one-shot decode (already proven by add-z42-compression v0).
+    byte[] roundTrip = Gzip.Decompress(compressed);
+    _AssertBytesEqual(plain, roundTrip);
+}
+
+[Test]
+void test_gzip_wrap_read_round_trip_via_memory_stream() {
+    byte[] plain = _MakeText();
+    byte[] compressed = Gzip.Compress(plain);
+    MemoryStream src = new MemoryStream(compressed);
+    Stream dec = Gzip.WrapRead(src);
+    byte[] decompressed = dec.ReadAllBytes();
+    _AssertBytesEqual(plain, decompressed);
+}
+
+[Test]
+void test_gzip_many_small_writes_equals_one_big_write() {
+    byte[] plain = _MakeText();
+    // Path A: one big Write
+    MemoryStream destA = new MemoryStream();
+    Stream encA = Gzip.WrapWrite(destA);
+    encA.Write(plain, 0, plain.Length);
+    encA.Close();
+    byte[] decompA = Gzip.Decompress(destA.ToArray());
+    _AssertBytesEqual(plain, decompA);
+    // Path B: 60 × 10-byte Writes
+    MemoryStream destB = new MemoryStream();
+    Stream encB = Gzip.WrapWrite(destB);
+    int offset = 0;
+    while (offset < plain.Length) {
+        int n = 10;
+        if (offset + n > plain.Length) { n = plain.Length - offset; }
+        encB.Write(plain, offset, n);
+        offset = offset + n;
+    }
+    encB.Close();
+    byte[] decompB = Gzip.Decompress(destB.ToArray());
+    _AssertBytesEqual(plain, decompB);
+}
+
+[Test]
+void test_gzip_write_after_close_throws() {
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Gzip.WrapWrite(dest);
+    enc.Write(new byte[] { (byte)1 }, 0, 1);
+    enc.Close();
+    bool caught = false;
+    try {
+        enc.Write(new byte[] { (byte)2 }, 0, 1);
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_gzip_close_is_idempotent() {
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Gzip.WrapWrite(dest);
+    enc.Write(new byte[] { (byte)1 }, 0, 1);
+    enc.Close();
+    enc.Close();  // second Close should NOT throw
+    Assert.True(dest.ToArray().Length > 0);
+}
+
+[Test]
+void test_gzip_capability_flags() {
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Gzip.WrapWrite(dest);
+    Assert.True(enc.CanWrite());
+    Assert.True(!enc.CanRead());
+    Assert.True(!enc.CanSeek());
+    enc.Close();
+    MemoryStream src = new MemoryStream(new byte[0]);
+    Stream dec = Gzip.WrapRead(src);
+    Assert.True(dec.CanRead());
+    Assert.True(!dec.CanWrite());
+    Assert.True(!dec.CanSeek());
+}
+
+// ── Zstd pipeline ────────────────────────────────────────────────────────
+
+[Test]
+void test_zstd_wrap_write_round_trip() {
+    byte[] plain = _MakeText();
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Zstd.WrapWrite(dest);
+    enc.Write(plain, 0, plain.Length);
+    enc.Close();
+    byte[] compressed = dest.ToArray();
+    // zstd magic bytes 28 B5 2F FD
+    Assert.Equal(0x28, (int)compressed[0]);
+    Assert.Equal(0xB5, (int)compressed[1]);
+    Assert.Equal(0x2F, (int)compressed[2]);
+    Assert.Equal(0xFD, (int)compressed[3]);
+    byte[] roundTrip = Zstd.Decompress(compressed);
+    _AssertBytesEqual(plain, roundTrip);
+}
+
+[Test]
+void test_zstd_wrap_read_round_trip() {
+    byte[] plain = _MakeText();
+    byte[] compressed = Zstd.Compress(plain);
+    MemoryStream src = new MemoryStream(compressed);
+    Stream dec = Zstd.WrapRead(src);
+    byte[] decompressed = dec.ReadAllBytes();
+    _AssertBytesEqual(plain, decompressed);
+}
+
+// ── Deflate / Zlib quick smoke ──────────────────────────────────────────
+
+[Test]
+void test_deflate_pipeline_round_trip() {
+    byte[] plain = _MakeText();
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Deflate.WrapWrite(dest);
+    enc.Write(plain, 0, plain.Length);
+    enc.Close();
+    byte[] compressed = dest.ToArray();
+    MemoryStream src = new MemoryStream(compressed);
+    Stream dec = Deflate.WrapRead(src);
+    byte[] back = dec.ReadAllBytes();
+    _AssertBytesEqual(plain, back);
+}
+
+[Test]
+void test_zlib_pipeline_round_trip() {
+    byte[] plain = _MakeText();
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Zlib.WrapWrite(dest);
+    enc.Write(plain, 0, plain.Length);
+    enc.Close();
+    byte[] compressed = dest.ToArray();
+    // zlib header (CMF * 256 + FLG) must be divisible by 31.
+    int header = ((int)compressed[0]) * 256 + ((int)compressed[1]);
+    Assert.Equal(0, header % 31);
+    MemoryStream src = new MemoryStream(compressed);
+    Stream dec = Zlib.WrapRead(src);
+    byte[] back = dec.ReadAllBytes();
+    _AssertBytesEqual(plain, back);
+}
+
+[Test]
+void test_wrap_write_with_explicit_level() {
+    byte[] plain = _MakeText();
+    MemoryStream dest = new MemoryStream();
+    Stream enc = Gzip.WrapWrite(dest, 9);  // best compression
+    enc.Write(plain, 0, plain.Length);
+    enc.Close();
+    byte[] back = Gzip.Decompress(dest.ToArray());
+    _AssertBytesEqual(plain, back);
+}

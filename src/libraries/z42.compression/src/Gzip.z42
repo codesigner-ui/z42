@@ -1,6 +1,7 @@
 namespace Std.Compression;
 
 using Std;
+using Std.IO;
 
 // add-z42-compression (2026-05-22): RFC 1952 gzip container backed by
 // the `z42-compression` cdylib via the `[Native(lib="z42_compression",
@@ -8,6 +9,12 @@ using Std;
 // from the SDK native search path (Z42_NATIVE_PATH env override + default
 // <exec_dir>/../native/ fallback); the entries below resolve through
 // the VM's ext_builtins registry.
+//
+// refactor-compression-stream-on-iostream (2026-05-24): streaming API
+// replaced — bespoke `CompressStream() / DecompressStream()` factories
+// removed in favour of `WrapWrite(Stream) / WrapRead(Stream)` returning
+// a `Std.IO.Stream`. Composes naturally with `MemoryStream` (today) and
+// future `FileStream` / `NetworkStream`.
 
 public static class Gzip {
     // mode = 2 → gzip (RFC 1952). Algorithm shared with Zlib (mode=1) and
@@ -17,6 +24,8 @@ public static class Gzip {
 
     [Native(lib = "z42_compression", entry = "__deflate_decompress")]
     private static extern byte[] _DecompressRaw(byte[] data, int mode);
+
+    // ── One-shot (byte[] in / byte[] out) ────────────────────────────────
 
     public static byte[] Compress(byte[] data) {
         return _CompressRaw(data, Compression.Default, AlgoId.Gzip);
@@ -30,15 +39,26 @@ public static class Gzip {
         return _DecompressRaw(data, AlgoId.Gzip);
     }
 
-    public static CompressionStream CompressStream() {
-        return CompressionStream._BeginEncode(AlgoId.Gzip, Compression.Default);
+    // ── Stream pipeline (write to dest / read from src) ──────────────────
+
+    /// Wrap `dest` so that bytes written to the returned Stream are
+    /// gzip-compressed (default level) and forwarded to `dest`. Caller
+    /// MUST call `Close()` on the returned Stream to flush the gzip
+    /// footer; otherwise the output is truncated. `dest` is not closed
+    /// by the encoder — caller owns its lifecycle.
+    public static Stream WrapWrite(Stream dest) {
+        return new CompressionEncoderStream(dest, AlgoId.Gzip, Compression.Default);
     }
 
-    public static CompressionStream CompressStream(int level) {
-        return CompressionStream._BeginEncode(AlgoId.Gzip, level);
+    public static Stream WrapWrite(Stream dest, int level) {
+        return new CompressionEncoderStream(dest, AlgoId.Gzip, level);
     }
 
-    public static CompressionStream DecompressStream() {
-        return CompressionStream._BeginDecode(AlgoId.Gzip);
+    /// Wrap `src` so that reads from the returned Stream pull
+    /// gzip-compressed bytes from `src` and yield decompressed plaintext.
+    /// See `CompressionDecoderStream` for the v0 "lazy bulk decode"
+    /// memory caveat.
+    public static Stream WrapRead(Stream src) {
+        return new CompressionDecoderStream(src, AlgoId.Gzip);
     }
 }

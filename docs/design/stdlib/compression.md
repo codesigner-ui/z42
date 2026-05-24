@@ -15,30 +15,29 @@ dll}`) loaded on demand via the native ext loader
 
 ```z42
 public static class Gzip {                                    // RFC 1952
+    // One-shot
     public static byte[] Compress(byte[] data);
     public static byte[] Compress(byte[] data, int level);    // 1..=9
     public static byte[] Decompress(byte[] data);
-    public static CompressionStream CompressStream();
-    public static CompressionStream CompressStream(int level);
-    public static CompressionStream DecompressStream();
+
+    // Streaming (refactor-compression-stream-on-iostream, 2026-05-24):
+    // returns a Std.IO.Stream that wraps dest / src — composes with
+    // MemoryStream (today) and future FileStream / NetworkStream.
+    public static Std.IO.Stream WrapWrite(Std.IO.Stream dest);
+    public static Std.IO.Stream WrapWrite(Std.IO.Stream dest, int level);
+    public static Std.IO.Stream WrapRead(Std.IO.Stream src);
 }
 
 public static class Zlib    { /* same shape, RFC 1950 framing */ }
 public static class Deflate { /* same shape, raw RFC 1951      */ }
 
 public static class Zstd {
-    public static byte[] Compress(byte[] data);
-    public static byte[] Compress(byte[] data, int level);    // 1..=22
-    public static byte[] Decompress(byte[] data);
-    public static CompressionStream CompressStream();
-    public static CompressionStream CompressStream(int level);
-    public static CompressionStream DecompressStream();
-}
-
-public sealed class CompressionStream {
-    public byte[] Feed(byte[] chunk);   // streaming compressor / decompressor
-    public byte[] Finish();              // flush + return tail
-    public void   Dispose();             // idempotent slot release
+    public static byte[]        Compress(byte[] data);
+    public static byte[]        Compress(byte[] data, int level);  // 1..=22
+    public static byte[]        Decompress(byte[] data);
+    public static Std.IO.Stream WrapWrite(Std.IO.Stream dest);
+    public static Std.IO.Stream WrapWrite(Std.IO.Stream dest, int level);
+    public static Std.IO.Stream WrapRead(Std.IO.Stream src);
 }
 
 public static class Compression {
@@ -50,6 +49,49 @@ public static class Compression {
     public static int ZstdBest;    // 22
 }
 ```
+
+### Pipeline composition (`WrapWrite` / `WrapRead`)
+
+```z42
+using Std.IO;
+using Std.Compression;
+
+// Compress straight into an in-memory destination:
+MemoryStream dest = new MemoryStream();
+Stream enc = Gzip.WrapWrite(dest);
+enc.Write(plaintext, 0, plaintext.Length);
+enc.Close();                                  // emits gzip footer
+byte[] compressed = dest.ToArray();
+
+// Decompress straight from an in-memory source:
+MemoryStream src = new MemoryStream(compressedBytes);
+Stream dec = Gzip.WrapRead(src);
+byte[] plain = dec.ReadAllBytes();
+```
+
+Once `FileStream` / `NetworkStream` land (separate follow-up specs)
+they slot into the same factories with no API change:
+
+```z42
+FileStream f = new FileStream("response.gz");
+Stream gunzipped = Gzip.WrapRead(f);
+TextReader text = new TextReader(gunzipped, Utf8);
+string line = text.ReadLine();
+```
+
+**Caveats** (per Deferred section):
+
+- `WrapRead` v0 buffers the entire source upfront and bulk-decompresses
+  on first `Read` — full decompressed payload sits in memory. Sufficient
+  for HTTP / log / metadata workloads (≤ ~100 MB); multi-GB streams
+  need the `compression-future-streaming-decode` upgrade.
+- `WrapWrite` is true streaming — `Write` calls feed the encoder
+  chunk-by-chunk, output forwards to `dest` immediately. Caller MUST
+  call `Close()` to flush the codec's footer / final state; without
+  it the output is truncated.
+- Neither wrapper closes the wrapped `dest` / `src` — caller owns
+  their lifecycle (matches .NET `leaveOpen=true` behaviour, safer
+  default for pipeline composition).
 
 ### `namespace Std.Archive`
 

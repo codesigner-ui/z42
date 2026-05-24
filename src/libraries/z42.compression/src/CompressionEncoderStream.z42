@@ -1,0 +1,110 @@
+namespace Std.Compression;
+
+using Std;
+using Std.IO;
+
+// refactor-compression-stream-on-iostream (2026-05-24): write-through
+// encoder Stream — caller writes plaintext, encoder compresses on the
+// fly via the cdylib slot table and forwards compressed bytes to the
+// wrapped destination Stream.
+//
+// Lifecycle:
+//   * Construct → `__compressor_begin(algo, level, is_decompress=false)`
+//     allocates a slot in libz42_compression's internal handle table
+//   * Each `Write(buf, off, n)` calls `__compressor_feed` once and
+//     forwards whatever output bytes the codec produced to `_dest`
+//   * `Close()` calls `__compressor_finish` to flush remaining state
+//     + emit the footer (gzip CRC32 / zstd checksum / etc.) and
+//     forwards those bytes too. Idempotent — second Close is a no-op.
+//
+// Does NOT close the wrapped destination Stream — caller owns its
+// lifecycle. (Mirrors .NET `GZipStream(dest, mode, leaveOpen=true)`
+// semantics; safer default for pipeline composition where the same
+// dest may receive multiple compressed payloads back-to-back.)
+
+public sealed class CompressionEncoderStream : Stream {
+    private Stream _dest;
+    private long   _slotId;
+    private bool   _closed;
+
+    public CompressionEncoderStream(Stream dest, int algo, int level) {
+        if (!dest.CanWrite()) {
+            throw new ArgumentException("CompressionEncoderStream: dest Stream is not writable");
+        }
+        this._dest    = dest;
+        this._slotId  = CompressionEncoderStream._CompressorBegin(algo, level, false);
+        this._closed  = false;
+    }
+
+    // ── Capability ───────────────────────────────────────────────────────
+
+    override bool CanWrite() { return !this._closed; }
+    override bool CanRead()  { return false; }
+    override bool CanSeek()  { return false; }
+
+    // ── Write — feed plaintext, forward compressed bytes to dest ─────────
+
+    override void Write(byte[] buffer, int offset, int count) {
+        if (this._closed) {
+            throw new InvalidOperationException("CompressionEncoderStream: stream is closed");
+        }
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Write: buffer / offset / count out of range");
+        }
+        if (count == 0) { return; }
+        // Slice into a fresh buffer so the cdylib gets a tight byte[].
+        // (Future: pass offset / count to the FFI directly to skip this
+        // copy — needs API extension on `__compressor_feed`.)
+        byte[] chunk;
+        if (offset == 0 && count == buffer.Length) {
+            chunk = buffer;
+        } else {
+            chunk = new byte[count];
+            int i = 0;
+            while (i < count) {
+                chunk[i] = buffer[offset + i];
+                i = i + 1;
+            }
+        }
+        byte[] compressed = CompressionEncoderStream._CompressorFeed(this._slotId, chunk);
+        if (compressed.Length > 0) {
+            this._dest.Write(compressed, 0, compressed.Length);
+        }
+    }
+
+    override void Flush() {
+        // DEFLATE / zstd don't expose a stable mid-stream flush in the
+        // v0 cdylib API. Caller-side `Flush()` is a no-op; the actual
+        // pending bytes are released by `Close()` along with the footer.
+        // Tracked in compression.md Deferred → `compression-future-mid-stream-flush`.
+    }
+
+    override void Close() {
+        if (this._closed) { return; }
+        // Drain and emit the codec's footer / final flush bytes.
+        byte[] tail = CompressionEncoderStream._CompressorFinish(this._slotId);
+        if (tail.Length > 0) {
+            this._dest.Write(tail, 0, tail.Length);
+        }
+        // `_finish` already removed the slot on the cdylib side; calling
+        // `_dispose` is idempotent and just confirms the cleanup. Done
+        // here for symmetry with explicit teardown.
+        CompressionEncoderStream._CompressorDispose(this._slotId);
+        this._closed = true;
+        // Intentionally do NOT close _dest — caller owns its lifecycle.
+    }
+
+    // ── Native bindings ──────────────────────────────────────────────────
+
+    [Native(lib = "z42_compression", entry = "__compressor_begin")]
+    private static extern long _CompressorBegin(int algo, int level, bool isDecompress);
+
+    [Native(lib = "z42_compression", entry = "__compressor_feed")]
+    private static extern byte[] _CompressorFeed(long slotId, byte[] chunk);
+
+    [Native(lib = "z42_compression", entry = "__compressor_finish")]
+    private static extern byte[] _CompressorFinish(long slotId);
+
+    [Native(lib = "z42_compression", entry = "__compressor_dispose")]
+    private static extern void _CompressorDispose(long slotId);
+}

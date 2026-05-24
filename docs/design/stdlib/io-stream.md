@@ -165,16 +165,16 @@ spec is the foundation that makes them possible.
 - **触发条件**：repetitive caller patterns in real apps prove its
   worth.
 
-### `refactor-compression-stream-on-iostream`
+### ~~`refactor-compression-stream-on-iostream`~~ — **✅ landed 2026-05-24**
 
-- **来源**：v0 scope cut by design — `z42.compression` already
-  shipped its own `CompressionStream` shape
-- **触发原因**：retrofit `Std.Compression.CompressionStream` to
-  extend `Std.IO.Stream` + add `Gzip.WrapStream(Stream src) ->
-  Stream` for true on-the-fly pipeline composition.
-- **触发条件**：when the user signals "pipeline composition
-  matters now" — likely tied to `add-z42-net` HTTP client landing
-  (response stream → gzip-decode → text-reader pipeline).
+Shipped: bespoke `Std.Compression.CompressionStream` removed;
+replaced by generic `_CompressionEncoderStream` / `_CompressionDecoderStream`
+extending `Std.IO.Stream`. Each facade now exposes
+`WrapWrite(Stream dest) / WrapWrite(Stream dest, int level) /
+WrapRead(Stream src)`. See
+[`docs/spec/archive/2026-05-24-refactor-compression-stream-on-iostream/`](../../spec/archive/2026-05-24-refactor-compression-stream-on-iostream/)
++ [compression.md "Pipeline composition"](../stdlib/compression.md#pipeline-composition-wrapwrite--wrapread)
+for the post-refactor API.
 
 ### `refactor-binary-reader-stream`
 
