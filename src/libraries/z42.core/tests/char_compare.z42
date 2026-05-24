@@ -1,0 +1,86 @@
+// fix-char-comparison (2026-05-24): regression for VM bailing on char-char
+// `<` / `>` / `<=` / `>=` comparisons. Pre-fix, `c < '0'` etc. threw
+// "type mismatch in comparison: Char vs Char" at the interp level —
+// every parser doing range checks for digit detection (YamlParser
+// `_LooksLikeInt`, every parser implementing a digit-classifier in pure
+// z42) was broken.
+namespace Z42CoreCharCompareTests;
+
+using Std;
+using Std.Test;
+
+[Test]
+void test_char_lt_char() {
+    char a = '0';
+    char b = '9';
+    Assert.True(a < b);
+    Assert.False(b < a);
+    Assert.False(a < a);
+}
+
+[Test]
+void test_char_le_char() {
+    Assert.True('0' <= '0');
+    Assert.True('0' <= '9');
+    Assert.False('9' <= '0');
+}
+
+[Test]
+void test_char_gt_char() {
+    char a = '0';
+    char b = '9';
+    Assert.True(b > a);
+    Assert.False(a > b);
+    Assert.False(a > a);
+}
+
+[Test]
+void test_char_ge_char() {
+    Assert.True('9' >= '0');
+    Assert.True('9' >= '9');
+    Assert.False('0' >= '9');
+}
+
+[Test]
+void test_char_digit_range_check() {
+    // The exact pattern that broke yaml `_LooksLikeInt`.
+    string s = "42";
+    bool allDigits = true;
+    int i = 0;
+    while (i < s.Length) {
+        char c = s.CharAt(i);
+        if (c < '0' || c > '9') {
+            allDigits = false;
+            break;
+        }
+        i = i + 1;
+    }
+    Assert.True(allDigits);
+}
+
+[Test]
+void test_char_digit_range_check_negative() {
+    string s = "4x";
+    bool allDigits = true;
+    int i = 0;
+    while (i < s.Length) {
+        char c = s.CharAt(i);
+        if (c < '0' || c > '9') {
+            allDigits = false;
+            break;
+        }
+        i = i + 1;
+    }
+    Assert.False(allDigits);
+}
+
+[Test]
+void test_char_compare_with_int_widens() {
+    // Mixed char/int compare — VM auto-widens char to int.
+    char c = 'A';   // 65
+    Assert.True(c > 64);
+    Assert.True(c < 70);
+    // Int comparison with char literal — widens the char side.
+    Assert.True(65 < 'Z');
+    Assert.True('Z' > 65);
+}

@@ -119,6 +119,11 @@ pub(super) fn numeric_lt_helper(va: &Value, vb: &Value) -> anyhow::Result<bool> 
         (Value::F64(x), Value::F64(y)) => x < y,
         (Value::F64(x), Value::I64(y)) => *x < (*y as f64),
         (Value::I64(x), Value::F64(y)) => (*x as f64) < *y,
+        // fix-char-comparison (2026-05-24): mirror interp::ops::numeric_lt
+        // — Char-vs-Char + mixed Char/I64 widening.
+        (Value::Char(x), Value::Char(y)) => x < y,
+        (Value::Char(x), Value::I64(y))  => (*x as u32 as i64) < *y,
+        (Value::I64(x),  Value::Char(y)) => *x < (*y as u32 as i64),
         (a, b) => anyhow::bail!("type mismatch in comparison: {:?} vs {:?}", a, b),
     })
 }

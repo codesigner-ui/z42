@@ -489,9 +489,19 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                     // UserException sentinel branch — JIT helpers now report
                     // exceptions via `ctx.set_exception` + extern-C return code,
                     // not via `anyhow::Error` wrapping.)
+                    //
+                    // fix-vm-error-display-loses-cause (2026-05-24): inline the
+                    // original error message into the location string instead
+                    // of `e.context(...)`. anyhow's `.context()` makes the
+                    // location the *new* topmost message, and downstream
+                    // consumers that print via `Display` (`{e}`) show ONLY the
+                    // topmost — losing the actual bug. Pre-fix, every "VM
+                    // error" in test output read `"  at <fn> (line X)"` with
+                    // no clue what blew up. Format change: include the cause
+                    // first, then location, separated by `\n  at`.
                     let (line, col) = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
                     let loc_str = if col > 0 { format!("line {line}, col {col}") } else { format!("line {line}") };
-                    return Err(e.context(format!("  at {} ({})", func.name, loc_str)));
+                    return Err(anyhow::anyhow!("{}\n  at {} ({})", e, func.name, loc_str));
                 }
             }
         }

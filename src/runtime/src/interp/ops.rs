@@ -67,6 +67,13 @@ pub(super) fn int_bitop(
 }
 
 /// Numeric less-than comparison with automatic widening.
+///
+/// fix-char-comparison (2026-05-24): `Value::Char` cases added so
+/// `c < '0'` / `c >= '9'` etc. work in user code without explicit
+/// `(int)c` casts. Char-to-Char compares its codepoint; mixed Char/I64
+/// auto-widens Char to I64 (matches how the parallel Eq path treats
+/// chars). Pre-fix, every char range check (yaml `_LooksLikeInt` etc.)
+/// bailed with "type mismatch in comparison: Char vs Char".
 pub(super) fn numeric_lt(regs: &[Value], a: u32, b: u32) -> Result<bool> {
     let va = regs.get(a as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{a}"))?;
     let vb = regs.get(b as usize).ok_or_else(|| anyhow::anyhow!("undefined register %{b}"))?;
@@ -75,6 +82,9 @@ pub(super) fn numeric_lt(regs: &[Value], a: u32, b: u32) -> Result<bool> {
         (Value::F64(x), Value::F64(y)) => x < y,
         (Value::F64(x), Value::I64(y)) => *x < (*y as f64),
         (Value::I64(x), Value::F64(y)) => (*x as f64) < *y,
+        (Value::Char(x), Value::Char(y)) => x < y,
+        (Value::Char(x), Value::I64(y))  => (*x as u32 as i64) < *y,
+        (Value::I64(x),  Value::Char(y)) => *x < (*y as u32 as i64),
         (a, b) => bail!("type mismatch in comparison: {:?} vs {:?}", a, b),
     })
 }
