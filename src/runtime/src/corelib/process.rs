@@ -602,6 +602,91 @@ pub fn builtin_process_handle_drop(ctx: &VmContext, args: &[Value]) -> Result<Va
     Ok(Value::Null)
 }
 
+// ── add-process-stream-stdio (2026-05-24) — streaming reads from child pipes ──
+//
+// Mirrors `__file_read`'s buffer-fill shape (slot, buf, offset, count -> int;
+// 0 = EOF) so callers can plug a z42-side `ProcessOutputStream` straight into
+// the `Std.IO.Stream` ecosystem alongside `FileStream` / `MemoryStream`.
+//
+// A single `Read` call reads up-to-`count` bytes (whatever the OS pipe
+// surfaces in one go) — we deliberately do NOT loop to fill the buffer;
+// that's the `Read` contract everywhere in the stream API. Blocking
+// behaviour: the underlying `ChildStdout::read` blocks until at least
+// one byte is available OR the child closes the pipe (EOF).
+//
+// Reader-already-consumed-by-Wait case: `slot.stdout_reader` becomes
+// `None` after Wait/TryWait drained it. We treat None as EOF (`Ok(0)`)
+// rather than handle-invalid — the z42 facade's `CanRead()` defends
+// against the typical misuse; if a caller still drives Read post-Wait
+// they'll just see EOF, matching .NET behaviour on a closed stream.
+
+use std::io::Read;
+
+/// Common impl for stdout / stderr — picks the reader off the slot,
+/// reads up to `count` bytes into a scratch Vec<u8>, then copies into
+/// the user's z42 `byte[]`.
+fn process_handle_read_impl(
+    ctx: &VmContext,
+    args: &[Value],
+    name: &'static str,
+    is_stderr: bool,
+) -> Result<Value> {
+    let slot_id = require_slot_id(args, 0, name)?;
+    let buf_value = args.get(1).cloned()
+        .ok_or_else(|| anyhow!("{}: missing arg 1 (buf)", name))?;
+    let buf_arr = match &buf_value {
+        Value::Array(rc) => rc.clone(),
+        other => bail!("{}: arg 1 expected byte array, got {:?}", name, other),
+    };
+    let offset  = arg_i64(args, 2, name)? as usize;
+    let count   = arg_i64(args, 3, name)? as usize;
+
+    let buf_len = buf_arr.borrow().len();
+    if offset + count > buf_len {
+        bail!("{}: offset {} + count {} exceeds buf length {}", name, offset, count, buf_len);
+    }
+    if count == 0 { return Ok(Value::I64(0)); }
+
+    // Borrow the reader from the slot, do the blocking read, then drop
+    // the slot borrow before touching the heap (Read blocks; we don't
+    // want to hold the slot lock across an unbounded wait).
+    let mut tmp = vec![0u8; count];
+    let read_result = ctx.with_process_slot(slot_id, |slot| -> Result<Option<usize>> {
+        // Returning None signals "reader is None" → EOF.
+        if is_stderr {
+            let Some(r) = slot.stderr_reader.as_mut() else { return Ok(None) };
+            Ok(Some(r.read(&mut tmp)?))
+        } else {
+            let Some(r) = slot.stdout_reader.as_mut() else { return Ok(None) };
+            Ok(Some(r.read(&mut tmp)?))
+        }
+    });
+    let n = match read_result {
+        // Slot missing: facade translates Value::Null →
+        // ProcessHandleInvalidException. Distinct from EOF (Value::I64(0)).
+        None              => return Ok(Value::Null),
+        Some(Err(e))      => return Err(e),
+        Some(Ok(None))    => 0,       // pipe never piped → EOF
+        Some(Ok(Some(n))) => n,
+    };
+
+    let mut borrowed = buf_arr.borrow_mut();
+    for i in 0..n {
+        borrowed[offset + i] = Value::I64(tmp[i] as i64);
+    }
+    Ok(Value::I64(n as i64))
+}
+
+/// `__process_handle_read_stdout(slot, buf, off, count) -> int`
+pub fn builtin_process_handle_read_stdout(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    process_handle_read_impl(ctx, args, "__process_handle_read_stdout", false)
+}
+
+/// `__process_handle_read_stderr(slot, buf, off, count) -> int`
+pub fn builtin_process_handle_read_stderr(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    process_handle_read_impl(ctx, args, "__process_handle_read_stderr", true)
+}
+
 #[cfg(test)]
 #[path = "process_tests.rs"]
 mod process_tests;

@@ -12,6 +12,12 @@ public class ProcessHandle : IDisposable {
     private string _program;
     private long _slotId;
     private bool _disposed;
+    // add-process-stream-stdio (2026-05-24): cached Stream wrappers
+    // so repeated `GetXxxStream()` returns the same object (callers
+    // can `==`/identity-compare; matches .NET `Process.StandardOutput`).
+    private ProcessStdinStream  _stdinStream;
+    private ProcessOutputStream _stdoutStream;
+    private ProcessOutputStream _stderrStream;
 
     public ProcessHandle(string program, long slotId) {
         this._program  = program;
@@ -69,6 +75,58 @@ public class ProcessHandle : IDisposable {
         this.CheckHandleResponse(res);
     }
 
+    // ── add-process-stream-stdio (2026-05-24): streaming read API ────────
+    //
+    // Blocking reads from the child's stdout / stderr pipe. Returns
+    // number of bytes actually placed in `buffer[offset..offset+count]`;
+    // 0 = EOF (child closed the pipe or already-consumed by Wait).
+    //
+    // Designed for the `ProcessOutputStream` Stream wrapper —
+    // direct callers are welcome but the Stream API composes more
+    // cleanly with other `Std.IO.Stream` consumers (pipelines,
+    // ReadAllBytes, etc.).
+
+    public int ReadStdout(byte[] buffer, int offset, int count) {
+        this.EnsureLive();
+        object res = ProcessHandleNative.ReadStdout(this._slotId, buffer, offset, count);
+        return this.CheckReadResponse(res);
+    }
+
+    public int ReadStderr(byte[] buffer, int offset, int count) {
+        this.EnsureLive();
+        object res = ProcessHandleNative.ReadStderr(this._slotId, buffer, offset, count);
+        return this.CheckReadResponse(res);
+    }
+
+    // ── add-process-stream-stdio (2026-05-24): Stream accessors ──────────
+    //
+    // Lazy + cached: first call constructs, subsequent calls return
+    // the same instance. Lets callers store the Stream once and re-use
+    // it across loop iterations without paying for per-call construction
+    // or accidentally creating multiple "views" with divergent _closed
+    // bits.
+
+    public ProcessStdinStream GetStdinStream() {
+        if (this._stdinStream == null) {
+            this._stdinStream = new ProcessStdinStream(this);
+        }
+        return this._stdinStream;
+    }
+
+    public ProcessOutputStream GetStdoutStream() {
+        if (this._stdoutStream == null) {
+            this._stdoutStream = new ProcessOutputStream(this, ProcessOutputStream.Stdout);
+        }
+        return this._stdoutStream;
+    }
+
+    public ProcessOutputStream GetStderrStream() {
+        if (this._stderrStream == null) {
+            this._stderrStream = new ProcessOutputStream(this, ProcessOutputStream.Stderr);
+        }
+        return this._stderrStream;
+    }
+
     // 实现 IDisposable — 幂等。Dispose 后所有方法抛
     // ProcessHandleInvalidException，子进程在 Native 侧被 kill + reap。
     public void Dispose() {
@@ -112,6 +170,17 @@ public class ProcessHandle : IDisposable {
         this._disposed = true;
         throw new ProcessHandleInvalidException(this._program);
     }
+
+    // For Read{Stdout,Stderr}: Native returns either Value::I64(n)
+    // (success; n=0 means EOF) or Value::Null (slot missing / handle
+    // invalid). Z42 sees these as `long` and `null` respectively.
+    private int CheckReadResponse(object res) {
+        if (res == null) {
+            this._disposed = true;
+            throw new ProcessHandleInvalidException(this._program);
+        }
+        return (int)(long)res;
+    }
 }
 
 public static class ProcessHandleNative {
@@ -135,4 +204,11 @@ public static class ProcessHandleNative {
 
     [Native("__process_handle_drop")]
     public static extern object Drop(long slotId);
+
+    // add-process-stream-stdio (2026-05-24): streaming pipe reads.
+    [Native("__process_handle_read_stdout")]
+    public static extern object ReadStdout(long slotId, byte[] buffer, int offset, int count);
+
+    [Native("__process_handle_read_stderr")]
+    public static extern object ReadStderr(long slotId, byte[] buffer, int offset, int count);
 }

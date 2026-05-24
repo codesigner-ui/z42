@@ -1,0 +1,73 @@
+namespace Std.IO;
+
+using Std;
+
+// add-process-stream-stdio (2026-05-24): read-only Std.IO.Stream
+// wrapper over a live ProcessHandle's stdout OR stderr pipe.
+//
+// Single class parameterised by `_fd` (1 = stdout, 2 = stderr) — same
+// shape as `FileStream` which serves Read / Write / Append via a
+// single `_mode` field. Avoids two near-identical classes.
+//
+// Reading blocks until at least one byte arrives or the child closes
+// the pipe (EOF → returns 0). Once the underlying handle's `Wait()` /
+// `Dispose()` consumes the slot, subsequent Reads observe the
+// drained-pipe state and return 0 (EOF) — see Native-side
+// `process_handle_read_impl` for the precise semantics.
+//
+// `Close()` is a logical close on the z42 side (CanRead → false). It
+// does NOT close the OS reader — that's the ProcessHandle's job.
+
+public class ProcessOutputStream : Stream {
+    public static int Stdout = 1;
+    public static int Stderr = 2;
+
+    private ProcessHandle _handle;
+    private int           _fd;
+    private bool          _closed;
+
+    public ProcessOutputStream(ProcessHandle handle, int fd) {
+        if (fd != 1 && fd != 2) {
+            throw new ArgumentException("ProcessOutputStream: fd must be 1 (stdout) or 2 (stderr)");
+        }
+        this._handle = handle;
+        this._fd     = fd;
+        this._closed = false;
+    }
+
+    // ── Capability ───────────────────────────────────────────────────────
+
+    public override bool CanRead()  { return !this._closed; }
+    public override bool CanWrite() { return false; }
+    public override bool CanSeek()  { return false; }
+
+    // ── Read ─────────────────────────────────────────────────────────────
+
+    public override int Read(byte[] buffer, int offset, int count) {
+        if (this._closed) {
+            throw new InvalidOperationException("ProcessOutputStream: stream is closed");
+        }
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Read: buffer / offset / count out of range");
+        }
+        if (count == 0) { return 0; }
+        if (this._fd == 1) {
+            return this._handle.ReadStdout(buffer, offset, count);
+        }
+        return this._handle.ReadStderr(buffer, offset, count);
+    }
+
+    // ── Flush / Close ────────────────────────────────────────────────────
+
+    public override void Flush() {
+        // Read-only stream — nothing buffered.
+    }
+
+    public override void Close() {
+        // Logical close only — underlying ChildStdout / ChildStderr is
+        // owned by the ProcessHandle's slot. Setting `_closed` makes
+        // subsequent Read throw InvalidOperationException locally
+        // rather than racing with handle teardown.
+        this._closed = true;
+    }
+}

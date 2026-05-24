@@ -296,6 +296,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__file_position",  fs::builtin_file_position),
     ("__file_flush",     fs::builtin_file_flush),
     ("__file_close",     fs::builtin_file_close),
+
+    // ── add-process-stream-stdio (2026-05-24) — appended to preserve existing BuiltinIds ──
+    ("__process_handle_read_stdout", process::builtin_process_handle_read_stdout),
+    ("__process_handle_read_stderr", process::builtin_process_handle_read_stderr),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

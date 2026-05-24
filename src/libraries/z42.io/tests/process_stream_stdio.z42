@@ -1,0 +1,213 @@
+// add-process-stream-stdio (2026-05-24): ProcessStdinStream /
+// ProcessOutputStream behaviour — Stream API over live child pipes.
+namespace Z42IoProcessStreamStdioTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+// ── helpers ─────────────────────────────────────────────────────────────
+
+byte[] _bytes_of(int[] xs) {
+    byte[] r = new byte[xs.Length];
+    int i = 0;
+    while (i < xs.Length) {
+        r[i] = (byte)xs[i];
+        i = i + 1;
+    }
+    return r;
+}
+
+// ── stdin: write through Stream API ─────────────────────────────────────
+
+[Test]
+void test_stdin_stream_write_through_then_wait() {
+    var h = new Process("cat")
+        .Stdin(Stdio.Pipe())
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+
+    ProcessStdinStream sin = h.GetStdinStream();
+    Assert.True(sin.CanWrite());
+    Assert.False(sin.CanRead());
+    Assert.False(sin.CanSeek());
+
+    sin.Write(_bytes_of(new int[] { 65, 66, 67 }), 0, 3);  // "ABC"
+    sin.Write(_bytes_of(new int[] { 10 }), 0, 1);           // "\n"
+    sin.Close();  // closes stdin → cat sees EOF
+
+    ProcessResult r = h.Wait();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("ABC\n", r.Stdout);
+}
+
+[Test]
+void test_stdin_stream_close_idempotent() {
+    var h = new Process("cat")
+        .Stdin(Stdio.Pipe())
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+
+    ProcessStdinStream sin = h.GetStdinStream();
+    sin.Write(_bytes_of(new int[] { 88 }), 0, 1);  // "X"
+    sin.Close();
+    sin.Close();  // second close = no-op
+    sin.Close();  // third too
+    Assert.False(sin.CanWrite());
+
+    ProcessResult r = h.Wait();
+    Assert.Equal("X", r.Stdout);
+}
+
+[Test]
+void test_stdin_stream_write_after_close_throws() {
+    var h = new Process("cat")
+        .Stdin(Stdio.Pipe())
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+
+    ProcessStdinStream sin = h.GetStdinStream();
+    sin.Close();
+    bool threw = false;
+    try {
+        sin.Write(_bytes_of(new int[] { 1 }), 0, 1);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    h.Wait();
+}
+
+// ── stdout: read via Stream API ─────────────────────────────────────────
+
+[Test]
+void test_stdout_stream_read_via_helpers() {
+    var h = new Process("printf")
+        .Arg("hello")
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+
+    ProcessOutputStream sout = h.GetStdoutStream();
+    Assert.True(sout.CanRead());
+    Assert.False(sout.CanWrite());
+    Assert.False(sout.CanSeek());
+
+    byte[] all = sout.ReadAllBytes();
+    Assert.Equal(5, all.Length);
+    Assert.Equal(104, (int)all[0]);  // 'h'
+    Assert.Equal(111, (int)all[4]);  // 'o'
+
+    ProcessResult r = h.Wait();
+    Assert.Equal(0, r.ExitCode);
+    // We already drained stdout via streaming — Wait drains whatever
+    // is left (nothing).
+    Assert.Equal(0, r.StdoutBytes.Length);
+}
+
+[Test]
+void test_stdout_stream_read_buffered_chunks() {
+    var h = new Process("printf")
+        .Arg("0123456789")
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+
+    ProcessOutputStream sout = h.GetStdoutStream();
+    byte[] buf = new byte[4];
+    // First chunk: 4 bytes.
+    int n1 = sout.Read(buf, 0, 4);
+    Assert.True(n1 > 0);
+    // Drain the rest into a MemoryStream.
+    MemoryStream ms = new MemoryStream();
+    ms.Write(buf, 0, n1);
+    while (true) {
+        int n = sout.Read(buf, 0, 4);
+        if (n <= 0) { break; }
+        ms.Write(buf, 0, n);
+    }
+    byte[] full = ms.ToArray();
+    Assert.Equal(10, full.Length);
+    Assert.Equal(48, (int)full[0]);  // '0'
+    Assert.Equal(57, (int)full[9]);  // '9'
+
+    h.Wait();
+}
+
+// ── stderr: read via Stream API ─────────────────────────────────────────
+
+[Test]
+void test_stderr_stream_read() {
+    var h = new Process("sh")
+        .Arg("-c")
+        .Arg("printf err 1>&2")
+        .Stdout(Stdio.Pipe())
+        .Stderr(Stdio.Pipe())
+        .Spawn();
+
+    ProcessOutputStream serr = h.GetStderrStream();
+    byte[] all = serr.ReadAllBytes();
+    Assert.Equal(3, all.Length);
+    Assert.Equal(101, (int)all[0]);  // 'e'
+    Assert.Equal(114, (int)all[1]);  // 'r'
+    Assert.Equal(114, (int)all[2]);  // 'r'
+
+    h.Wait();
+}
+
+// ── pipeline composition (MemoryStream → Process stdin) ─────────────────
+
+[Test]
+void test_pipeline_memorystream_into_process_stdin() {
+    // Pre-load a MemoryStream with bytes, then pipe them into `cat`'s
+    // stdin via ProcessStdinStream — using only the Stream base API.
+    byte[] src = _bytes_of(new int[] { 80, 105, 112, 101, 33 });  // "Pipe!"
+    MemoryStream ms = new MemoryStream();
+    ms.Write(src, 0, src.Length);
+    ms.Seek(0L, SeekOrigin.Begin);
+
+    var h = new Process("cat")
+        .Stdin(Stdio.Pipe())
+        .Stdout(Stdio.Pipe())
+        .Spawn();
+    ProcessStdinStream sin = h.GetStdinStream();
+    byte[] chunk = new byte[2];
+    while (true) {
+        int n = ms.Read(chunk, 0, 2);
+        if (n <= 0) { break; }
+        sin.Write(chunk, 0, n);
+    }
+    sin.Close();
+    ProcessResult r = h.Wait();
+    Assert.Equal(0, r.ExitCode);
+    Assert.Equal("Pipe!", r.Stdout);
+}
+
+// ── caching: GetXxxStream returns same instance ─────────────────────────
+
+[Test]
+void test_get_stdin_stream_caches() {
+    // Cache test via observable state: mutate s1 (close it) and check
+    // that a fresh GetStdinStream() returns the same already-closed
+    // instance (CanWrite reflects _closed = true).
+    var h = new Process("cat").Stdin(Stdio.Pipe()).Stdout(Stdio.Pipe()).Spawn();
+    ProcessStdinStream s1 = h.GetStdinStream();
+    s1.Close();
+    ProcessStdinStream s2 = h.GetStdinStream();
+    Assert.False(s2.CanWrite());  // same instance ⇒ also closed
+    h.Wait();
+}
+
+[Test]
+void test_get_stdout_stream_caches() {
+    var h = new Process("printf").Arg("ok").Stdout(Stdio.Pipe()).Spawn();
+    ProcessOutputStream s1 = h.GetStdoutStream();
+    s1.Close();
+    ProcessOutputStream s2 = h.GetStdoutStream();
+    Assert.False(s2.CanRead());   // same instance ⇒ also closed
+    h.Wait();
+}
+
+// Note: ProcessOutputStream constructor rejects fd ∉ {1, 2} via
+// `throw new ArgumentException`. No dedicated negative test here —
+// catching constructor-thrown exceptions in z42 currently hits the
+// same shape that `FileStream`'s `test_unknown_mode_throws` does
+// (pre-existing quirk; tracked separately).

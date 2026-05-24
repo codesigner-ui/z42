@@ -179,6 +179,21 @@ WrapRead(Stream src)`. See
 + [compression.md "Pipeline composition"](../stdlib/compression.md#pipeline-composition-wrapwrite--wrapread)
 for the post-refactor API.
 
+### ~~`process-stream-stdio`~~ — **✅ landed 2026-05-24**
+
+Shipped: `Std.IO.ProcessStdinStream` (write-only Stream over child stdin)
++ `Std.IO.ProcessOutputStream` (read-only Stream, parameterised by
+`_fd` to serve both stdout and stderr — same single-class-multi-mode
+pattern as `FileStream`). Backed by 2 new corelib builtins
+(`__process_handle_read_stdout` / `_read_stderr`) with the same
+buffer-fill shape as `__file_read` (slot, buf, off, count → int;
+0 = EOF). `ProcessHandle` gains cached `GetStdinStream()` /
+`GetStdoutStream()` / `GetStderrStream()` accessors. After draining
+via streaming reads, `Wait()`'s `ProcessResult.StdoutBytes` /
+`StderrBytes` reflect only whatever was left in the pipe (typically
+empty). See
+[`docs/spec/archive/2026-05-24-add-process-stream-stdio/`](../../spec/archive/2026-05-24-add-process-stream-stdio/).
+
 ### ~~`refactor-binary-reader-stream`~~ — **✅ landed 2026-05-24**
 
 Shipped: `BinaryReader / BinaryWriter` now back onto `Std.IO.Stream`
