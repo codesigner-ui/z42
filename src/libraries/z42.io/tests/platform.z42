@@ -45,7 +45,7 @@ void test_os_kind_value_matches_predicate() {
     if (Platform.IsMacOS())   { trueCount = trueCount + 1; }
     if (Platform.IsWindows()) { trueCount = trueCount + 1; }
     if (Platform.IsAndroid()) { trueCount = trueCount + 1; }
-    if (Platform.IsIOS())     { trueCount = trueCount + 1; }
+    if (Platform.IsIos())     { trueCount = trueCount + 1; }
     if (Platform.IsWasm())    { trueCount = trueCount + 1; }
     if (Platform.IsFreeBSD()) { trueCount = trueCount + 1; }
     Assert.True(trueCount <= 1);

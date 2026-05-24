@@ -43,6 +43,6 @@ void test_min_int() {
 [Test]
 void test_constants_pi() {
     // π 至少应该在 [3.14, 3.15] 之间（保护防止常量被误改）
-    Assert.True(Math.PI > 3.14);
-    Assert.True(Math.PI < 3.15);
+    Assert.True(Math.Pi > 3.14);
+    Assert.True(Math.Pi < 3.15);
 }

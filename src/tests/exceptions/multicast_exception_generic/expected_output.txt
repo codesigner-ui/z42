@@ -2,4 +2,4 @@ Failures not null
 Results not null
 3
 2
-MulticastException<R>: 1 of 3 handlers failed; 3 results
+MulticastException<TResult>: 1 of 3 handlers failed; 3 results

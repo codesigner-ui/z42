@@ -1,63 +1,63 @@
 namespace Std;
 
 // 2026-05-03 add-multicast-func-predicate (D2d-1):
-// 多播 Func —— 一次注册多个 `Func<T, R>` handler，Invoke 收集所有返回值
-// 入 `R[]`。FIFO（注册顺序 = 调用顺序）。与单播 `Func<T, R>` 类型分离
+// 多播 Func —— 一次注册多个 `Func<TArg, TResult>` handler，Invoke 收集所有返回值
+// 入 `TResult[]`。FIFO（注册顺序 = 调用顺序）。与单播 `Func<TArg, TResult>` 类型分离
 // （delegates-events.md K2/K8）。
 //
 // 双 vec 通道（同 MulticastAction 模式）：
-//   • strong vec —— 直接持 Func<T,R>，invoke fast loop 无 wrapper 检查；裸
-//     handler `Subscribe(Func<T,R>)` 走此路径。
-//   • advanced vec —— 持 `ISubscription<Func<T,R>>` wrapper（OnceRef /
+//   • strong vec —— 直接持 Func<TArg,TResult>，invoke fast loop 无 wrapper 检查；裸
+//     handler `Subscribe(Func<TArg,TResult>)` 走此路径。
+//   • advanced vec —— 持 `ISubscription<Func<TArg,TResult>>` wrapper（OnceRef /
 //     CompositeRef / 自定义）。invoke slow loop 走 IsAlive + Get + OnInvoked。
 //
 // COW snapshot —— Invoke 时拷贝当前数组遍历副本。
 // fail-fast 路径（continueOnException 默认 false；handler 抛异常直接传播）。
 // `continueOnException=true`（2026-05-07 switch-multicast-funcpredicate-to-generic-exception
-// 落地）：全跑完后失败位置占 `default(R)`，多失败聚合抛 `MulticastException<R>`，
-// 携带 Results: R[] 与失败索引 / 异常并行数组。
+// 落地）：全跑完后失败位置占 `default(TResult)`，多失败聚合抛 `MulticastException<TResult>`，
+// 携带 Results: TResult[] 与失败索引 / 异常并行数组。
 
-public sealed class MulticastFunc<T, R> {
+public sealed class MulticastFunc<TArg, TResult> {
     // ── strong fast path ──
-    Func<T, R>[] strong;
+    Func<TArg, TResult>[] strong;
     bool[] strongAlive;
     int strongCount;
     int strongCapacity;
 
     // ── advanced slow path ──
-    ISubscription<Func<T, R>>[] advanced;
+    ISubscription<Func<TArg, TResult>>[] advanced;
     bool[] advancedAlive;
     int advancedCount;
     int advancedCapacity;
 
     public MulticastFunc() {
         this.strongCapacity = 4;
-        this.strong = new Func<T, R>[4];
+        this.strong = new Func<TArg, TResult>[4];
         this.strongAlive = new bool[4];
         this.strongCount = 0;
 
         this.advancedCapacity = 4;
-        this.advanced = new ISubscription<Func<T, R>>[4];
+        this.advanced = new ISubscription<Func<TArg, TResult>>[4];
         this.advancedAlive = new bool[4];
         this.advancedCount = 0;
     }
 
-    public IDisposable Subscribe(Func<T, R> handler) {
+    public IDisposable Subscribe(Func<TArg, TResult> handler) {
         if (this.strongCount == this.strongCapacity) this.GrowStrong();
         int idx = this.strongCount;
         this.strong[idx] = handler;
         this.strongAlive[idx] = true;
         this.strongCount = this.strongCount + 1;
-        return new MulticastFuncSubscription<T, R>(this, idx, false);
+        return new MulticastFuncSubscription<TArg, TResult>(this, idx, false);
     }
 
-    public IDisposable SubscribeAdvanced(ISubscription<Func<T, R>> wrapper) {
+    public IDisposable SubscribeAdvanced(ISubscription<Func<TArg, TResult>> wrapper) {
         if (this.advancedCount == this.advancedCapacity) this.GrowAdvanced();
         int idx = this.advancedCount;
         this.advanced[idx] = wrapper;
         this.advancedAlive[idx] = true;
         this.advancedCount = this.advancedCount + 1;
-        return new MulticastFuncSubscription<T, R>(this, idx, true);
+        return new MulticastFuncSubscription<TArg, TResult>(this, idx, true);
     }
 
     public int Count() {
@@ -77,12 +77,12 @@ public sealed class MulticastFunc<T, R> {
 
     // 2026-05-04 fix-default-param-cross-cu (D-9) 修复后回归 default param
     // 单签名形式（先前临时拆 1-arg/2-arg overload 已退回）。
-    // Invoke 收集所有活跃 handler 返回值进 R[]，按 strong-first / advanced-after
+    // Invoke 收集所有活跃 handler 返回值进 TResult[]，按 strong-first / advanced-after
     // 顺序累加。失败抛原异常（D2d-2 加聚合）。
-    public R[] Invoke(T arg, bool continueOnException = false) {
+    public TResult[] Invoke(TArg arg, bool continueOnException = false) {
         // ── strong snapshot + fast loop ──
         int sn = this.strongCount;
-        Func<T, R>[] snapStrong = new Func<T, R>[sn];
+        Func<TArg, TResult>[] snapStrong = new Func<TArg, TResult>[sn];
         bool[] snapStrongAlive = new bool[sn];
         int i = 0;
         while (i < sn) {
@@ -93,7 +93,7 @@ public sealed class MulticastFunc<T, R> {
 
         // ── advanced snapshot + slow loop ──
         int an = this.advancedCount;
-        ISubscription<Func<T, R>>[] snapAdv = new ISubscription<Func<T, R>>[an];
+        ISubscription<Func<TArg, TResult>>[] snapAdv = new ISubscription<Func<TArg, TResult>>[an];
         bool[] snapAdvAlive = new bool[an];
         i = 0;
         while (i < an) {
@@ -115,7 +115,7 @@ public sealed class MulticastFunc<T, R> {
             i = i + 1;
         }
 
-        R[] result = new R[total];
+        TResult[] result = new TResult[total];
         int outIdx = 0;
 
         // ── fail-fast 路径（continueOnException=false）──
@@ -143,7 +143,7 @@ public sealed class MulticastFunc<T, R> {
             return result;
         }
 
-        // ── continueOnException=true 路径：累积失败 + 占位 default(R) ──
+        // ── continueOnException=true 路径：累积失败 + 占位 default(TResult) ──
         Exception[] failExns = new Exception[8];
         int[] failIdx = new int[8];
         int failCap = 8;
@@ -155,7 +155,7 @@ public sealed class MulticastFunc<T, R> {
                 try {
                     result[outIdx] = snapStrong[i](arg);
                 } catch (Exception e) {
-                    result[outIdx] = default(R);
+                    result[outIdx] = default(TResult);
                     if (failCount == failCap) {
                         int newCap = failCap * 2;
                         Exception[] biggerE = new Exception[newCap];
@@ -187,7 +187,7 @@ public sealed class MulticastFunc<T, R> {
                         result[outIdx] = w.Get()(arg);
                         w.OnInvoked();
                     } catch (Exception e) {
-                        result[outIdx] = default(R);
+                        result[outIdx] = default(TResult);
                         if (failCount == failCap) {
                             int newCap = failCap * 2;
                             Exception[] biggerE = new Exception[newCap];
@@ -221,12 +221,12 @@ public sealed class MulticastFunc<T, R> {
                 trimI[j] = failIdx[j];
                 j = j + 1;
             }
-            throw new MulticastException<R>(trimE, trimI, total, result);
+            throw new MulticastException<TResult>(trimE, trimI, total, result);
         }
         return result;
     }
 
-    public void Unsubscribe(Func<T, R> handler) {
+    public void Unsubscribe(Func<TArg, TResult> handler) {
         int i = 0;
         while (i < this.strongCount) {
             if (this.strongAlive[i]) {
@@ -252,7 +252,7 @@ public sealed class MulticastFunc<T, R> {
 
     void GrowStrong() {
         int newCap = this.strongCapacity * 2;
-        Func<T, R>[] biggerH = new Func<T, R>[newCap];
+        Func<TArg, TResult>[] biggerH = new Func<TArg, TResult>[newCap];
         bool[] biggerA = new bool[newCap];
         int i = 0;
         while (i < this.strongCount) {
@@ -267,7 +267,7 @@ public sealed class MulticastFunc<T, R> {
 
     void GrowAdvanced() {
         int newCap = this.advancedCapacity * 2;
-        ISubscription<Func<T, R>>[] biggerH = new ISubscription<Func<T, R>>[newCap];
+        ISubscription<Func<TArg, TResult>>[] biggerH = new ISubscription<Func<TArg, TResult>>[newCap];
         bool[] biggerA = new bool[newCap];
         int i = 0;
         while (i < this.advancedCount) {
@@ -282,12 +282,12 @@ public sealed class MulticastFunc<T, R> {
 }
 
 // 内部订阅 token —— SubscribeXxx 返回它，Dispose 把 alive[idx] 置 false。
-public sealed class MulticastFuncSubscription<T, R> : IDisposable {
-    MulticastFunc<T, R> bus;
+public sealed class MulticastFuncSubscription<TArg, TResult> : IDisposable {
+    MulticastFunc<TArg, TResult> bus;
     int idx;
     bool isAdvanced;
 
-    public MulticastFuncSubscription(MulticastFunc<T, R> bus, int idx, bool isAdvanced) {
+    public MulticastFuncSubscription(MulticastFunc<TArg, TResult> bus, int idx, bool isAdvanced) {
         this.bus = bus;
         this.idx = idx;
         this.isAdvanced = isAdvanced;

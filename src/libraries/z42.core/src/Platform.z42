@@ -42,8 +42,8 @@ public static class Platform {
     public static bool IsAndroid() {
         return OSKindValue() == OSKind.Android;
     }
-    public static bool IsIOS() {
-        return OSKindValue() == OSKind.IOS;
+    public static bool IsIos() {
+        return OSKindValue() == OSKind.Ios;
     }
     public static bool IsWasm() {
         return OSKindValue() == OSKind.Wasm;
@@ -55,7 +55,7 @@ public static class Platform {
         int k = OSKindValue();
         return k == OSKind.Linux
             || k == OSKind.MacOS
-            || k == OSKind.IOS
+            || k == OSKind.Ios
             || k == OSKind.Android
             || k == OSKind.FreeBSD;
     }
@@ -70,7 +70,7 @@ public static class OSKind {
     public static int MacOS   = 2;
     public static int Windows = 3;
     public static int Android = 4;
-    public static int IOS     = 5;
+    public static int Ios     = 5;
     public static int Wasm    = 6;
     public static int FreeBSD = 7;
 }

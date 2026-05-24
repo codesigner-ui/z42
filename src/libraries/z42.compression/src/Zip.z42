@@ -36,11 +36,11 @@ public class ZipEntry {
 
 public static class Zip {
     // PKWARE signatures
-    private static int SIG_LOCAL_FILE_HEADER  = 0x04034b50;  // "PK\x03\x04"
-    private static int SIG_CENTRAL_DIR_HEADER = 0x02014b50;  // "PK\x01\x02"
-    private static int SIG_EOCD               = 0x06054b50;  // "PK\x05\x06"
-    private static int METHOD_STORE   = 0;
-    private static int METHOD_DEFLATE = 8;
+    private static int _sigLocalFileHeader  = 0x04034b50;  // "PK\x03\x04"
+    private static int _sigCentralDirHeader = 0x02014b50;  // "PK\x01\x02"
+    private static int _sigEocd               = 0x06054b50;  // "PK\x05\x06"
+    private static int _methodStore   = 0;
+    private static int _methodDeflate = 8;
 
     // ── Read ────────────────────────────────────────────────────────
 
@@ -60,7 +60,7 @@ public static class Zip {
         int i = 0;
         while (i < entryCount) {
             int sig = _ReadU32LE(zipBytes, cdCursor);
-            if (sig != Zip.SIG_CENTRAL_DIR_HEADER) {
+            if (sig != Zip._sigCentralDirHeader) {
                 throw new ArchiveException("zip: bad central directory entry signature at " + cdCursor.ToString());
             }
             int method      = _ReadU16LE(zipBytes, cdCursor + 10);
@@ -73,7 +73,7 @@ public static class Zip {
             string name = _ReadStr(zipBytes, cdCursor + 46, nameLen);
 
             int localSig = _ReadU32LE(zipBytes, localOff);
-            if (localSig != Zip.SIG_LOCAL_FILE_HEADER) {
+            if (localSig != Zip._sigLocalFileHeader) {
                 throw new ArchiveException("zip: bad local file header for entry '" + name + "'");
             }
             int localNameLen  = _ReadU16LE(zipBytes, localOff + 26);
@@ -88,9 +88,9 @@ public static class Zip {
             }
 
             byte[] content;
-            if (method == Zip.METHOD_STORE) {
+            if (method == Zip._methodStore) {
                 content = rawPayload;
-            } else if (method == Zip.METHOD_DEFLATE) {
+            } else if (method == Zip._methodDeflate) {
                 content = Deflate.Decompress(rawPayload);
                 if (content.Length != uncompressed) {
                     throw new ArchiveException("zip: decompressed size mismatch for '" + name + "'");
@@ -128,7 +128,7 @@ public static class Zip {
         }
         int i = max;
         while (i >= min) {
-            if (_ReadU32LE(bytes, i) == Zip.SIG_EOCD) {
+            if (_ReadU32LE(bytes, i) == Zip._sigEocd) {
                 return i;
             }
             i = i - 1;

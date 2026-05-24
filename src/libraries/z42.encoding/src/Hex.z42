@@ -6,15 +6,15 @@ namespace Std.Encoding;
 // 错误：奇数长度 / 非 [0-9a-fA-F] 字符 → `Std.FormatException`。
 
 public static class Hex {
-    private static string ALPHA_LOWER = "0123456789abcdef";
-    private static string ALPHA_UPPER = "0123456789ABCDEF";
+    private static string _alphaLower = "0123456789abcdef";
+    private static string _alphaUpper = "0123456789ABCDEF";
 
     public static string Encode(byte[] bytes) {
-        return EncodeWith(bytes, Hex.ALPHA_LOWER);
+        return EncodeWith(bytes, Hex._alphaLower);
     }
 
     public static string EncodeUpper(byte[] bytes) {
-        return EncodeWith(bytes, Hex.ALPHA_UPPER);
+        return EncodeWith(bytes, Hex._alphaUpper);
     }
 
     private static string EncodeWith(byte[] bytes, string alpha) {

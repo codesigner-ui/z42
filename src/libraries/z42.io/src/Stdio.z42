@@ -10,10 +10,10 @@ namespace Std.IO;
 public sealed class Stdio {
     // Mode constants — kept in sync with src/runtime/src/corelib/process.rs
     // (STDIO_NULL / STDIO_INHERIT / STDIO_PIPE / STDIO_FILE).
-    public static int MODE_NULL    = 0;
-    public static int MODE_INHERIT = 1;
-    public static int MODE_PIPE    = 2;
-    public static int MODE_FILE    = 3;
+    public static int ModeNull    = 0;
+    public static int ModeInherit = 1;
+    public static int ModePipe    = 2;
+    public static int ModeFile    = 3;
 
     private int mode;
     private string path;     // empty string when mode != File
@@ -28,12 +28,12 @@ public sealed class Stdio {
     // A `static Stdio INHERIT = new Stdio(1, "")` style cached singleton
     // is a possible future optimisation (now feasible after the 2026-05-15
     // unique __static_init__ fix) — see roadmap.
-    public static Stdio Inherit() { return new Stdio(Stdio.MODE_INHERIT, ""); }
-    public static Stdio Pipe()    { return new Stdio(Stdio.MODE_PIPE,    ""); }
-    public static Stdio Null()    { return new Stdio(Stdio.MODE_NULL,    ""); }
+    public static Stdio Inherit() { return new Stdio(Stdio.ModeInherit, ""); }
+    public static Stdio Pipe()    { return new Stdio(Stdio.ModePipe,    ""); }
+    public static Stdio Null()    { return new Stdio(Stdio.ModeNull,    ""); }
 
     public static Stdio ToFile(string path) {
-        return new Stdio(Stdio.MODE_FILE, path);
+        return new Stdio(Stdio.ModeFile, path);
     }
 
     public int GetMode() { return this.mode; }

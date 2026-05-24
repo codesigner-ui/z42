@@ -8,12 +8,12 @@ namespace Std.Encoding;
 // 不含 URL-safe (§5) 变体 — 留 follow-up。
 
 public static class Base64 {
-    private static string ALPHA =
+    private static string _alpha =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     public static string Encode(byte[] bytes) {
         if (bytes.Length == 0) return "";
-        string alpha = Base64.ALPHA;
+        string alpha = Base64._alpha;
         int outLen = ((bytes.Length + 2) / 3) * 4;
         char[] result = new char[outLen];
         int srcI = 0;

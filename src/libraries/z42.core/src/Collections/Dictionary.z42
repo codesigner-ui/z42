@@ -1,33 +1,33 @@
 namespace Std.Collections;
 
-// `Dictionary<K,V>` — 开放寻址哈希表（L3-G4h step 3：取代 pseudo-class 实现）。
+// `Dictionary<TKey, TValue>` — 开放寻址哈希表（L3-G4h step 3：取代 pseudo-class 实现）。
 //
 // 线性探测，负载因子 > 0.75 时 2 倍扩容；摊还 O(1) 平均操作。
-// 约束：K 必须 hashable + equatable。primitive K 通过 VM builtin 路由 GetHashCode / Equals；
-// 用户自定义 K 必须实现 IEquatable<K> —— GetHashCode 走 Object 协议。
-public class Dictionary<K, V> where K: IEquatable<K> {
-    K[] keys;
-    V[] values;
+// 约束：TKey 必须 hashable + equatable。primitive TKey 通过 VM builtin 路由 GetHashCode / Equals；
+// 用户自定义 TKey 必须实现 IEquatable<TKey> —— GetHashCode 走 Object 协议。
+public class Dictionary<TKey, TValue> where TKey: IEquatable<TKey> {
+    TKey[] keys;
+    TValue[] values;
     bool[] occupied;
     public int Count;
     int capacity;
 
     public Dictionary() {
         this.capacity = 8;
-        this.keys = new K[8];
-        this.values = new V[8];
+        this.keys = new TKey[8];
+        this.values = new TValue[8];
         this.occupied = new bool[8];
         this.Count = 0;
     }
 
     public bool IsEmpty() { return this.Count == 0; }
 
-    public V this[K key] {
+    public TValue this[TKey key] {
         get { return this.Get(key); }
         set { this.Set(key, value); }
     }
 
-    public void Set(K key, V value) {
+    public void Set(TKey key, TValue value) {
         // 负载因子 > 0.75 即扩容（count * 4 > capacity * 3）
         if (this.Count * 4 > this.capacity * 3) this.Grow();
         int slot = this.FindSlot(key);
@@ -39,18 +39,18 @@ public class Dictionary<K, V> where K: IEquatable<K> {
         this.values[slot] = value;
     }
 
-    public V Get(K key) {
+    public TValue Get(TKey key) {
         int slot = this.FindSlot(key);
         // 不存在时返回 default (null)；调用方应先 ContainsKey。
         return this.values[slot];
     }
 
-    public bool ContainsKey(K key) {
+    public bool ContainsKey(TKey key) {
         int slot = this.FindSlot(key);
         return this.occupied[slot];
     }
 
-    public bool Remove(K key) {
+    public bool Remove(TKey key) {
         int slot = this.FindSlot(key);
         if (!this.occupied[slot]) return false;
         this.occupied[slot] = false;
@@ -58,8 +58,8 @@ public class Dictionary<K, V> where K: IEquatable<K> {
         // 重新插入探测链剩余项以避免空洞。
         int j = (slot + 1) % this.capacity;
         while (this.occupied[j]) {
-            K k = this.keys[j];
-            V v = this.values[j];
+            TKey k = this.keys[j];
+            TValue v = this.values[j];
             this.occupied[j] = false;
             this.Count = this.Count - 1;
             this.Set(k, v);
@@ -80,8 +80,8 @@ public class Dictionary<K, V> where K: IEquatable<K> {
     // 2026-04-27 add-keyvaluepair-and-dict-entries：返回所有 key/value/entry
     // 的快照数组，供用户 `foreach (var k in dict.Keys()) { ... }` 等使用。
     // 顺序由 capacity 扫描顺序决定，**不保证稳定**（hash 分布相关）。
-    public K[] Keys() {
-        K[] result = new K[this.Count];
+    public TKey[] Keys() {
+        TKey[] result = new TKey[this.Count];
         int idx = 0;
         int i = 0;
         while (i < this.capacity) {
@@ -94,8 +94,8 @@ public class Dictionary<K, V> where K: IEquatable<K> {
         return result;
     }
 
-    public V[] Values() {
-        V[] result = new V[this.Count];
+    public TValue[] Values() {
+        TValue[] result = new TValue[this.Count];
         int idx = 0;
         int i = 0;
         while (i < this.capacity) {
@@ -109,13 +109,13 @@ public class Dictionary<K, V> where K: IEquatable<K> {
     }
 
     // 2026-04-27 fix-generic-array-type-parsing 解锁后引入 Entries()。
-    public KeyValuePair<K, V>[] Entries() {
-        KeyValuePair<K, V>[] result = new KeyValuePair<K, V>[this.Count];
+    public KeyValuePair<TKey, TValue>[] Entries() {
+        KeyValuePair<TKey, TValue>[] result = new KeyValuePair<TKey, TValue>[this.Count];
         int idx = 0;
         int i = 0;
         while (i < this.capacity) {
             if (this.occupied[i]) {
-                result[idx] = new KeyValuePair<K, V>(this.keys[i], this.values[i]);
+                result[idx] = new KeyValuePair<TKey, TValue>(this.keys[i], this.values[i]);
                 idx = idx + 1;
             }
             i = i + 1;
@@ -124,7 +124,7 @@ public class Dictionary<K, V> where K: IEquatable<K> {
     }
 
     // 线性探测：返回 key 所在槽（若 occupied）或应放入的空槽。
-    public int FindSlot(K key) {
+    public int FindSlot(TKey key) {
         int h = key.GetHashCode();
         if (h < 0) h = -h;
         int slot = h % this.capacity;
@@ -136,11 +136,11 @@ public class Dictionary<K, V> where K: IEquatable<K> {
 
     public void Grow() {
         int newCap = this.capacity * 2;
-        K[] newKeys = new K[newCap];
-        V[] newValues = new V[newCap];
+        TKey[] newKeys = new TKey[newCap];
+        TValue[] newValues = new TValue[newCap];
         bool[] newOccupied = new bool[newCap];
-        K[] oldKeys = this.keys;
-        V[] oldValues = this.values;
+        TKey[] oldKeys = this.keys;
+        TValue[] oldValues = this.values;
         bool[] oldOccupied = this.occupied;
         int oldCap = this.capacity;
         this.keys = newKeys;

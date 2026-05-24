@@ -71,11 +71,11 @@ public class Random {
     /// Random 32-bit int (returned as z42 i32; high bit may be set → negative).
     public int NextInt() {
         long raw32 = this.Step();
-        long SIGN_BIT = 2147483648;        // 0x80000000
-        long WRAP     = 4294967296;        // 0x100000000
+        long signBit = 2147483648;        // 0x80000000
+        long wrap     = 4294967296;        // 0x100000000
         // Sign-extend the 32-bit value into i32: if bit 31 set, value is negative.
-        if ((raw32 & SIGN_BIT) != 0) {
-            return (int)(raw32 - WRAP);
+        if ((raw32 & signBit) != 0) {
+            return (int)(raw32 - wrap);
         }
         return (int)raw32;
     }
@@ -110,8 +110,8 @@ public class Random {
         // shift right 11 to drop low bits AND clear sign — but `>>` in z42
         // is arithmetic shift on i64, so we explicitly mask after to be safe.
         long bits = this.NextLong();
-        long MANTISSA_MASK = 9007199254740991;     // (1 << 53) - 1
-        long unsigned53 = ((bits >> 11) & MANTISSA_MASK);
+        long mantissaMask = 9007199254740991;     // (1 << 53) - 1
+        long unsigned53 = ((bits >> 11) & mantissaMask);
         return (double)unsigned53 / 9007199254740992.0;     // 1 / 2^53
     }
 
