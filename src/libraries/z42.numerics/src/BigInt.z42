@@ -422,6 +422,140 @@ public class BigInt {
         return result;
     }
 
+    // ── Bit operations (add-bigint-bitops, 2026-05-25) ──────────────────
+    //
+    // v0 scope: AND / OR / XOR 限非负操作数；ShiftLeft / ShiftRight 操作
+    // magnitude 保留 sign（非算术 shift）；TestBit / BitLength 限非负 receiver.
+    // 两补码语义留 follow-up spec（bigint-future-bitops-twoscomp）。
+
+    /// 位与 (AND). 双方都必须非负 (this._sign >= 0 AND other._sign >= 0)；
+    /// 负数操作数抛 ArgumentException (v0 限制).
+    public BigInt And(BigInt other) {
+        if (this._sign < 0 || other._sign < 0) {
+            throw new ArgumentException("BigInt.And: negative operand not supported (v0)");
+        }
+        if (this._sign == 0 || other._sign == 0) return BigInt.Zero;
+        int la = this._mag.Length;
+        int lb = other._mag.Length;
+        int n;
+        if (la < lb) { n = la; } else { n = lb; }
+        int[] r = new int[n];
+        int i = 0;
+        while (i < n) {
+            r[i] = this._mag[i] & other._mag[i];
+            i = i + 1;
+        }
+        return BigInt._fromMagSign(r, 1);
+    }
+
+    /// 位或 (OR). 同 And 的非负限制.
+    public BigInt Or(BigInt other) {
+        if (this._sign < 0 || other._sign < 0) {
+            throw new ArgumentException("BigInt.Or: negative operand not supported (v0)");
+        }
+        if (this._sign == 0) return other;
+        if (other._sign == 0) return this;
+        int la = this._mag.Length;
+        int lb = other._mag.Length;
+        int n;
+        if (la > lb) { n = la; } else { n = lb; }
+        int[] r = new int[n];
+        int i = 0;
+        while (i < n) {
+            int av = 0;
+            int bv = 0;
+            if (i < la) av = this._mag[i];
+            if (i < lb) bv = other._mag[i];
+            r[i] = av | bv;
+            i = i + 1;
+        }
+        return BigInt._fromMagSign(r, 1);
+    }
+
+    /// 位异或 (XOR). 同 And 的非负限制.
+    public BigInt Xor(BigInt other) {
+        if (this._sign < 0 || other._sign < 0) {
+            throw new ArgumentException("BigInt.Xor: negative operand not supported (v0)");
+        }
+        if (this._sign == 0) return other;
+        if (other._sign == 0) return this;
+        int la = this._mag.Length;
+        int lb = other._mag.Length;
+        int n;
+        if (la > lb) { n = la; } else { n = lb; }
+        int[] r = new int[n];
+        int i = 0;
+        while (i < n) {
+            int av = 0;
+            int bv = 0;
+            if (i < la) av = this._mag[i];
+            if (i < lb) bv = other._mag[i];
+            r[i] = av ^ bv;
+            i = i + 1;
+        }
+        return BigInt._fromMagSign(r, 1);
+    }
+
+    /// 左移 n 位 (n >= 0)。Magnitude 左移；符号保留 (-8 << 1 == -16).
+    /// n 为负数抛 ArgumentException.
+    public BigInt ShiftLeft(int n) {
+        if (n < 0) {
+            throw new ArgumentException("BigInt.ShiftLeft: negative shift amount");
+        }
+        if (n == 0) return this;
+        if (this._sign == 0) return BigInt.Zero;
+        int[] mag = BigInt._magShiftLeft(this._mag, n);
+        return BigInt._fromMagSign(mag, this._sign);
+    }
+
+    /// 右移 n 位 (n >= 0)。Magnitude 逻辑右移；符号保留 (-8 >> 1 == -4).
+    /// 是 **逻辑** magnitude shift，**非** 算术 shift (.NET BigInteger 用算术
+    /// shift on 负数会向 -∞ 取整；本 v0 用 sign+magnitude repr 不便实现，
+    /// follow-up 处理).
+    public BigInt ShiftRight(int n) {
+        if (n < 0) {
+            throw new ArgumentException("BigInt.ShiftRight: negative shift amount");
+        }
+        if (n == 0) return this;
+        if (this._sign == 0) return BigInt.Zero;
+        int[] mag = BigInt._magShiftRight(this._mag, n);
+        if (mag.Length == 0) return BigInt.Zero;
+        return BigInt._fromMagSign(mag, this._sign);
+    }
+
+    /// 测试 bit `n` (n >= 0) 是否 set。Receiver 必须非负 (v0 限制)。
+    /// `n` 超出 BitLength 返回 false (高位都是 0).
+    public bool TestBit(int n) {
+        if (n < 0) {
+            throw new ArgumentException("BigInt.TestBit: negative bit index");
+        }
+        if (this._sign < 0) {
+            throw new ArgumentException("BigInt.TestBit: negative receiver not supported (v0)");
+        }
+        if (this._sign == 0) return false;
+        int limbIdx = n / 31;
+        int bitIdx  = n % 31;
+        if (limbIdx >= this._mag.Length) return false;
+        return ((this._mag[limbIdx] >> bitIdx) & 1) == 1;
+    }
+
+    /// 表示该数值（绝对值）所需的最少 bit 数。
+    /// `Zero.BitLength() == 0`, `One.BitLength() == 1`, `255.BitLength() == 8`,
+    /// `(-256).BitLength() == 9`. 永远 `>= 0`.
+    public int BitLength() {
+        if (this._sign == 0) return 0;
+        int topIdx = this._mag.Length - 1;
+        int top    = this._mag[topIdx];
+        // floor(log2(top)) + 1
+        int topBits = 0;
+        int v = top;
+        while (v > 0) {
+            topBits = topBits + 1;
+            v = v >> 1;
+        }
+        return topIdx * 31 + topBits;
+    }
+
     // ── Comparison ──────────────────────────────────────────────────────
 
     public int CompareTo(BigInt other) {
@@ -570,6 +704,69 @@ public class BigInt {
             i = i + 1;
         }
         // borrow must be 0 here (precondition a >= b).
+        return BigInt._trim(r);
+    }
+
+    /// Magnitude left-shift by n bits (n > 0).
+    /// 拆分 n 为 limbShift (n / 31) + bitShift (n % 31).
+    static int[] _magShiftLeft(int[] mag, int n) {
+        if (mag.Length == 0) return new int[0];
+        int limbShift = n / 31;
+        int bitShift  = n % 31;
+        int oldLen    = mag.Length;
+        // newLen = oldLen + limbShift + (1 if bitShift produces carry-out else 0)
+        int newLen = oldLen + limbShift + 1;
+        int[] r    = new int[newLen];
+        // First copy with limbShift offset; apply bitShift via two-limb merge.
+        if (bitShift == 0) {
+            int i = 0;
+            while (i < oldLen) {
+                r[i + limbShift] = mag[i];
+                i = i + 1;
+            }
+        } else {
+            int inv = 31 - bitShift;
+            int i   = 0;
+            int carry = 0;
+            while (i < oldLen) {
+                int v = mag[i];
+                r[i + limbShift] = ((v << bitShift) & 0x7FFFFFFF) | carry;
+                carry = v >> inv;   // high bits spill into next limb
+                i = i + 1;
+            }
+            r[oldLen + limbShift] = carry;
+        }
+        return BigInt._trim(r);
+    }
+
+    /// Magnitude right-shift by n bits (n > 0). Returns empty array if shifted out.
+    static int[] _magShiftRight(int[] mag, int n) {
+        if (mag.Length == 0) return new int[0];
+        int limbShift = n / 31;
+        int bitShift  = n % 31;
+        if (limbShift >= mag.Length) return new int[0];
+        int newLen = mag.Length - limbShift;
+        int[] r    = new int[newLen];
+        if (bitShift == 0) {
+            int i = 0;
+            while (i < newLen) {
+                r[i] = mag[i + limbShift];
+                i = i + 1;
+            }
+        } else {
+            int inv = 31 - bitShift;
+            int i   = 0;
+            while (i < newLen) {
+                int lo = mag[i + limbShift] >> bitShift;
+                int hi = 0;
+                if (i + limbShift + 1 < mag.Length) {
+                    // bring in low bits from the next-higher limb
+                    hi = (mag[i + limbShift + 1] << inv) & 0x7FFFFFFF;
+                }
+                r[i] = lo | hi;
+                i = i + 1;
+            }
+        }
         return BigInt._trim(r);
     }
 

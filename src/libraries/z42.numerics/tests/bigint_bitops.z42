@@ -1,0 +1,259 @@
+// add-bigint-bitops (2026-05-25): bit operations on Std.Numerics.BigInt.
+// v0 limits: AND/OR/XOR non-negative only; ShiftLeft/Right magnitude-shift
+// preserving sign; TestBit requires non-negative receiver.
+namespace Z42NumericsBigIntBitOpsTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+// ── AND ─────────────────────────────────────────────────────────────────
+
+[Test]
+void test_and_byte_pattern() {
+    BigInt a = new BigInt(0xFFL);
+    BigInt b = new BigInt(0x0FL);
+    Assert.Equal(0x0FL, a.And(b).ToInt64());
+}
+
+[Test]
+void test_and_with_zero() {
+    BigInt a = new BigInt(0xFFL);
+    BigInt b = BigInt.Zero;
+    Assert.True(a.And(b).IsZero());
+    Assert.True(b.And(a).IsZero());
+}
+
+[Test]
+void test_and_huge_with_byte_mask() {
+    // (2^100 - 1) AND 0xFFFFFFFF == 0xFFFFFFFF (low 32 bits all set)
+    BigInt huge = BigInt.One.ShiftLeft(100).Subtract(BigInt.One);
+    BigInt mask = new BigInt(0xFFFFFFFFL);
+    Assert.Equal(0xFFFFFFFFL, huge.And(mask).ToInt64());
+}
+
+[Test]
+void test_and_rejects_negative() {
+    bool threw = false;
+    try {
+        new BigInt(-1L).And(new BigInt(7L));
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── OR ──────────────────────────────────────────────────────────────────
+
+[Test]
+void test_or_byte_pattern() {
+    BigInt a = new BigInt(0xF0L);
+    BigInt b = new BigInt(0x0FL);
+    Assert.Equal(0xFFL, a.Or(b).ToInt64());
+}
+
+[Test]
+void test_or_identity_with_zero() {
+    BigInt a = new BigInt(42L);
+    Assert.Equal(42L, a.Or(BigInt.Zero).ToInt64());
+    Assert.Equal(42L, BigInt.Zero.Or(a).ToInt64());
+}
+
+[Test]
+void test_or_rejects_negative() {
+    bool threw = false;
+    try {
+        new BigInt(7L).Or(new BigInt(-1L));
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── XOR ─────────────────────────────────────────────────────────────────
+
+[Test]
+void test_xor_byte_pattern() {
+    BigInt a = new BigInt(0xFFL);
+    BigInt b = new BigInt(0x0FL);
+    Assert.Equal(0xF0L, a.Xor(b).ToInt64());
+}
+
+[Test]
+void test_xor_self_zero() {
+    BigInt a = new BigInt(12345L);
+    Assert.True(a.Xor(a).IsZero());
+}
+
+[Test]
+void test_xor_rejects_negative() {
+    bool threw = false;
+    try {
+        new BigInt(-7L).Xor(new BigInt(7L));
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── ShiftLeft ───────────────────────────────────────────────────────────
+
+[Test]
+void test_shift_left_small() {
+    Assert.Equal(1024L, BigInt.One.ShiftLeft(10).ToInt64());
+    Assert.Equal(2L,    BigInt.One.ShiftLeft(1).ToInt64());
+}
+
+[Test]
+void test_shift_left_large_equals_pow2() {
+    // 1 << 100 == 2^100
+    BigInt a = BigInt.One.ShiftLeft(100);
+    BigInt b = new BigInt(2L).Pow(100);
+    Assert.Equal(0, a.CompareTo(b));
+}
+
+[Test]
+void test_shift_left_zero_amount_returns_this() {
+    BigInt a = new BigInt(42L);
+    Assert.Equal(42L, a.ShiftLeft(0).ToInt64());
+}
+
+[Test]
+void test_shift_left_preserves_negative_sign() {
+    Assert.Equal(-16L, new BigInt(-8L).ShiftLeft(1).ToInt64());
+}
+
+[Test]
+void test_shift_left_rejects_negative_amount() {
+    bool threw = false;
+    try {
+        BigInt.One.ShiftLeft(-1);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── ShiftRight ──────────────────────────────────────────────────────────
+
+[Test]
+void test_shift_right_small() {
+    Assert.Equal(1L, new BigInt(1024L).ShiftRight(10).ToInt64());
+    Assert.Equal(0L, BigInt.One.ShiftRight(1).ToInt64());
+}
+
+[Test]
+void test_shift_right_round_trip_with_left() {
+    // (1 << 100) >> 50 == (1 << 50)
+    BigInt a = BigInt.One.ShiftLeft(100).ShiftRight(50);
+    BigInt b = BigInt.One.ShiftLeft(50);
+    Assert.Equal(0, a.CompareTo(b));
+}
+
+[Test]
+void test_shift_right_overshoot_yields_zero() {
+    Assert.True(BigInt.One.ShiftRight(1000).IsZero());
+}
+
+[Test]
+void test_shift_right_preserves_negative_sign_magnitude() {
+    // v0: magnitude logical shift (NOT .NET-style arithmetic) — (-8 >> 1) == -4
+    Assert.Equal(-4L, new BigInt(-8L).ShiftRight(1).ToInt64());
+}
+
+[Test]
+void test_shift_right_rejects_negative_amount() {
+    bool threw = false;
+    try {
+        BigInt.One.ShiftRight(-1);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── TestBit ─────────────────────────────────────────────────────────────
+
+[Test]
+void test_testbit_basics() {
+    // 5 = binary 101 → bits 0 and 2 set, bit 1 clear
+    BigInt five = new BigInt(5L);
+    Assert.True(five.TestBit(0));
+    Assert.False(five.TestBit(1));
+    Assert.True(five.TestBit(2));
+    Assert.False(five.TestBit(3));
+}
+
+[Test]
+void test_testbit_high_bit_in_huge() {
+    // (1 << 100) has only bit 100 set
+    BigInt huge = BigInt.One.ShiftLeft(100);
+    Assert.True(huge.TestBit(100));
+    Assert.False(huge.TestBit(99));
+    Assert.False(huge.TestBit(101));
+}
+
+[Test]
+void test_testbit_out_of_range_returns_false() {
+    BigInt one = BigInt.One;
+    Assert.False(one.TestBit(1000));
+}
+
+[Test]
+void test_testbit_zero_always_false() {
+    Assert.False(BigInt.Zero.TestBit(0));
+    Assert.False(BigInt.Zero.TestBit(100));
+}
+
+[Test]
+void test_testbit_rejects_negative_index() {
+    bool threw = false;
+    try {
+        BigInt.One.TestBit(-1);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_testbit_rejects_negative_receiver() {
+    bool threw = false;
+    try {
+        new BigInt(-1L).TestBit(0);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── BitLength ───────────────────────────────────────────────────────────
+
+[Test]
+void test_bitlength_zero() {
+    Assert.Equal(0, BigInt.Zero.BitLength());
+}
+
+[Test]
+void test_bitlength_one() {
+    Assert.Equal(1, BigInt.One.BitLength());
+}
+
+[Test]
+void test_bitlength_byte_boundaries() {
+    Assert.Equal(8, new BigInt(255L).BitLength());     // 0xFF
+    Assert.Equal(9, new BigInt(256L).BitLength());     // 0x100
+    Assert.Equal(16, new BigInt(65535L).BitLength());  // 0xFFFF
+    Assert.Equal(17, new BigInt(65536L).BitLength());
+}
+
+[Test]
+void test_bitlength_negative_uses_magnitude() {
+    Assert.Equal(9, new BigInt(-256L).BitLength());
+}
+
+[Test]
+void test_bitlength_huge() {
+    // (1 << 100) needs 101 bits
+    Assert.Equal(101, BigInt.One.ShiftLeft(100).BitLength());
+}

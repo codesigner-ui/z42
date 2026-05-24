@@ -100,12 +100,30 @@ chunks (28-bit boundaries) instead of direct per-limb hex dump.
 
 ## Out of Scope (follow-up specs)
 
-### `bigint-future-bitops` — AND / OR / XOR / NOT / shift
+### ~~`bigint-future-bitops`~~ — **✅ 已落地 2026-05-25 (add-bigint-bitops)**
 
-- **来源**：F v0 explicit deferral
-- **触发原因**：32-bit-aligned bit ops on 31-bit limbs need careful boundary handling; not required for arithmetic v0
-- **触发条件**：crypto RSA / hash / bloom filter / bitset 用例
-- **当前 workaround**：用户可 `n.Divide(new BigInt(2).Pow(k))` 替代 shift-right
+Shipped: `And` / `Or` / `Xor` (v0 non-negative operands only),
+`ShiftLeft(int)` / `ShiftRight(int)` (magnitude shift preserving
+sign — non-arithmetic; `(-8 >> 1) == -4`), `TestBit(int)` (non-negative
+receiver only), `BitLength()` (magnitude bit-count; `(-256).BitLength()
+== 9`). 31 tests cover the byte-pattern / huge-mask / round-trip /
+negative-amount / zero / overshoot / negative-receiver cases. Two's-
+complement semantics for negatives (`Not` + signed-bitwise) is the
+follow-up `bigint-future-bitops-twoscomp`.
+
+### `bigint-future-bitops-twoscomp` — two's-complement bit-ops on negatives
+
+- **来源**：add-bigint-bitops v0 scope cut (negatives currently throw
+  ArgumentException for And/Or/Xor/TestBit; ShiftRight on negatives
+  uses magnitude shift, not the .NET-style arithmetic shift toward -∞)
+- **触发原因**：proper two's-complement requires a virtual infinite-
+  sign-extension scheme over the sign+magnitude representation; non-
+  trivial and rarely needed for the v0 use cases (crypto / bitset on
+  non-negative big ints)
+- **触发条件**：first real use case for negative-operand bitwise ops
+  (signed serialization / bit-manipulation tricks on negatives)
+- **当前 workaround**：take `.Abs()` first, do the op, then re-sign
+  appropriately
 
 ### `bigint-future-modpow` — modular exponentiation `ModPow(exp, modulus)`
 
