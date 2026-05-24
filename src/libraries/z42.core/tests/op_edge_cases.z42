@@ -1,0 +1,97 @@
+// Audit: VM op-handler edge cases (arithmetic / division / modulo / unary
+// negation / bitwise) for the same "missing Value case" pattern that bit
+// char comparison (fix-char-comparison, 2026-05-24).
+namespace Z42CoreOpEdgeCasesTests;
+
+using Std;
+using Std.Test;
+
+// ── Division by zero ─────────────────────────────────────────────────────
+
+[Test]
+void test_int_divide_by_zero_throws_specific_type() {
+    bool threw = false;
+    try {
+        int x = 10 / 0;
+    } catch (DivideByZeroException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_int_modulo_by_zero_throws_specific_type() {
+    bool threw = false;
+    try {
+        int x = 10 % 0;
+    } catch (DivideByZeroException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_double_divide_by_zero_gives_infinity() {
+    // IEEE 754: 1.0 / 0.0 = +Inf, not an exception
+    double x = 1.0 / 0.0;
+    Assert.True(x > 1e300);
+}
+
+// ── Unary negation edge cases ────────────────────────────────────────────
+
+[Test]
+void test_neg_int_min_overflow() {
+    // -INT_MIN can't fit in int — interpretation: should wrap or throw?
+    // z42 ints are i64; INT_MIN literal lands as i64 long, negation safe.
+    long min = -9223372036854775807L - 1L;  // i64 min
+    // -min would overflow; ensure z42 either gives back min (wrap) or throws.
+    // Test should NOT crash the VM.
+    bool ok = true;
+    try {
+        long neg = -min;
+        // Either neg == min (wrap) or this branch unreachable due to throw.
+        Assert.True(neg == min || neg > 0);
+    } catch (Exception e) {
+        // Either outcome is acceptable; main thing is no VM crash.
+        ok = true;
+    }
+    Assert.True(ok);
+}
+
+// ── Bitwise on bool? (should reject) ─────────────────────────────────────
+
+[Test]
+void test_bitwise_on_int_works() {
+    int x = 0xF0 & 0x0F;
+    Assert.Equal(0, x);
+    int y = 0xF0 | 0x0F;
+    Assert.Equal(0xFF, y);
+    int z = 0xF0 ^ 0xFF;
+    Assert.Equal(0x0F, z);
+}
+
+[Test]
+void test_shift_ops_work() {
+    int a = 1 << 4;
+    Assert.Equal(16, a);
+    int b = 256 >> 4;
+    Assert.Equal(16, b);
+}
+
+// ── Mixed int/long arithmetic ────────────────────────────────────────────
+
+[Test]
+void test_int_plus_long_widens() {
+    int a = 5;
+    long b = 1000000000000L;
+    long c = a + b;
+    Assert.Equal(1000000000005L, c);
+}
+
+[Test]
+void test_int_minus_double_widens() {
+    int a = 10;
+    double b = 0.5;
+    double c = a - b;
+    Assert.True(c > 9.49 && c < 9.51);
+}

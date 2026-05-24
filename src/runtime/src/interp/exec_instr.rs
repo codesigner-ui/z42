@@ -65,8 +65,19 @@ pub fn exec_instr(
         Instruction::Add { dst, a, b } => exec_value::add(frame, *dst, *a, *b)?,
         Instruction::Sub { dst, a, b } => exec_value::sub(frame, *dst, *a, *b)?,
         Instruction::Mul { dst, a, b } => exec_value::mul(frame, *dst, *a, *b)?,
-        Instruction::Div { dst, a, b } => exec_value::div(frame, *dst, *a, *b)?,
-        Instruction::Rem { dst, a, b } => exec_value::rem(frame, *dst, *a, *b)?,
+        Instruction::Div { dst, a, b } => {
+            // fix-int-div-by-zero-panic (2026-05-25): div/rem now return
+            // Option<Value> so int-by-zero can surface as a catchable
+            // Std.DivideByZeroException instead of panicking.
+            if let Some(thrown) = exec_value::div(ctx, module, frame, *dst, *a, *b)? {
+                return Ok(Some(thrown));
+            }
+        }
+        Instruction::Rem { dst, a, b } => {
+            if let Some(thrown) = exec_value::rem(ctx, module, frame, *dst, *a, *b)? {
+                return Ok(Some(thrown));
+            }
+        }
 
         // ── Comparison ───────────────────────────────────────────────────────
         Instruction::Eq { dst, a, b } => exec_value::eq(frame, *dst, *a, *b)?,

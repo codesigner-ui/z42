@@ -66,14 +66,52 @@ pub(super) fn mul(frame: &mut Frame, dst: u32, a: u32, b: u32) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn div(frame: &mut Frame, dst: u32, a: u32, b: u32) -> Result<()> {
+/// fix-int-div-by-zero-panic (2026-05-25): pre-fix, `int / 0` and
+/// `int % 0` panicked the VM via Rust's `i64::div` instead of throwing
+/// a catchable z42 exception. (Float divide-by-zero correctly yielded
+/// Infinity per IEEE 754 — no fix needed there.) Now: detect zero
+/// divisor for the integer case before the panic point and surface
+/// `Std.DivideByZeroException` via `make_stdlib_exception` so callers
+/// can `try / catch (DivideByZeroException)`.
+///
+/// Signature changed to `Result<Option<Value>>` (Some = thrown user
+/// exception, None = success) mirroring the `Call` / `Builtin`
+/// propagation pattern.
+pub(super) fn div(
+    ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, a: u32, b: u32,
+) -> Result<Option<Value>> {
+    if let Some(thrown) = check_int_div_by_zero(ctx, module, &frame.regs, b, "/")? {
+        return Ok(Some(thrown));
+    }
     frame.set(dst, int_binop(&frame.regs, a, b, |x, y| x / y, |x, y| x / y)?);
-    Ok(())
+    Ok(None)
 }
 
-pub(super) fn rem(frame: &mut Frame, dst: u32, a: u32, b: u32) -> Result<()> {
+pub(super) fn rem(
+    ctx: &VmContext, module: &Module, frame: &mut Frame, dst: u32, a: u32, b: u32,
+) -> Result<Option<Value>> {
+    if let Some(thrown) = check_int_div_by_zero(ctx, module, &frame.regs, b, "%")? {
+        return Ok(Some(thrown));
+    }
     frame.set(dst, int_binop(&frame.regs, a, b, |x, y| x % y, |x, y| x % y)?);
-    Ok(())
+    Ok(None)
+}
+
+/// Build a `Std.DivideByZeroException` if `regs[b]` is `Value::I64(0)`.
+/// Float divisors fall through (IEEE 754 gives Infinity / NaN); mixed
+/// I64/F64 also falls through (the int_binop float widening handles
+/// the zero case via float semantics). Returns `Ok(Some(exc))` to
+/// indicate a user exception to propagate, `Ok(None)` to continue.
+fn check_int_div_by_zero(
+    ctx: &VmContext, module: &Module, regs: &[Value], b: u32, op: &str,
+) -> Result<Option<Value>> {
+    if matches!(regs.get(b as usize), Some(Value::I64(0))) {
+        return Ok(Some(crate::exception::make_stdlib_exception(
+            ctx, module, "Std.DivideByZeroException",
+            format!("integer {} by zero", op),
+        )?));
+    }
+    Ok(None)
 }
 
 // ── Comparison ───────────────────────────────────────────────────────────
