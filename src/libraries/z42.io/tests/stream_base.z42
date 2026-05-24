@@ -1,0 +1,100 @@
+// add-z42-io-stream (2026-05-24): bare Stream base class behaviour —
+// every operation throws NotSupportedException unless a subclass
+// overrides; capability flags default to false.
+namespace Z42IoStreamBaseTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_base_capability_flags_default_false() {
+    Stream s = new Stream();
+    Assert.True(!s.CanRead());
+    Assert.True(!s.CanWrite());
+    Assert.True(!s.CanSeek());
+}
+
+[Test]
+void test_base_read_throws() {
+    Stream s = new Stream();
+    bool caught = false;
+    try {
+        byte[] buf = new byte[4];
+        s.Read(buf, 0, 4);
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_base_write_throws() {
+    Stream s = new Stream();
+    bool caught = false;
+    try {
+        s.Write(new byte[] { (byte)1 }, 0, 1);
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_base_seek_throws() {
+    Stream s = new Stream();
+    bool caught = false;
+    try {
+        s.Seek(0L, SeekOrigin.Begin);
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_base_length_throws() {
+    Stream s = new Stream();
+    bool caught = false;
+    try {
+        s.Length();
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_base_position_throws() {
+    Stream s = new Stream();
+    bool caught = false;
+    try {
+        s.Position();
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_base_flush_default_is_noop() {
+    Stream s = new Stream();
+    // Should NOT throw — base class default for Flush is a no-op
+    // (streams without buffering have nothing to flush).
+    s.Flush();
+}
+
+[Test]
+void test_base_close_default_is_noop() {
+    Stream s = new Stream();
+    // Should NOT throw — base class default for Close is a no-op
+    // (streams without resources have nothing to release).
+    s.Close();
+}
+
+[Test]
+void test_seek_origin_constants() {
+    Assert.Equal(0, SeekOrigin.Begin);
+    Assert.Equal(1, SeekOrigin.Current);
+    Assert.Equal(2, SeekOrigin.End);
+}

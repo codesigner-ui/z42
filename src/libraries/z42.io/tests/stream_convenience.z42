@@ -1,0 +1,138 @@
+// add-z42-io-stream (2026-05-24): convenience helpers built atop
+// the Read / Write core — verified through MemoryStream.
+namespace Z42IoStreamConvenienceTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_read_all_bytes_from_memory_stream() {
+    byte[] data = new byte[] {
+        (byte)1, (byte)2, (byte)3, (byte)4, (byte)5, (byte)6, (byte)7, (byte)8
+    };
+    MemoryStream ro = new MemoryStream(data);
+    byte[] all = ro.ReadAllBytes();
+    Assert.Equal(8, all.Length);
+    int i = 0;
+    while (i < 8) {
+        Assert.Equal((int)data[i], (int)all[i]);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_read_all_bytes_grows_past_initial_chunk() {
+    // 10_000 bytes — forces multiple 4 KB chunks + accumulator growth.
+    int n = 10000;
+    byte[] big = new byte[n];
+    int i = 0;
+    while (i < n) {
+        big[i] = (byte)((i * 7) & 0xFF);
+        i = i + 1;
+    }
+    MemoryStream ro = new MemoryStream(big);
+    byte[] all = ro.ReadAllBytes();
+    Assert.Equal(n, all.Length);
+    int j = 0;
+    while (j < n) {
+        Assert.Equal((int)big[j], (int)all[j]);
+        j = j + 1;
+    }
+}
+
+[Test]
+void test_read_all_bytes_on_empty_stream_yields_empty() {
+    MemoryStream s = new MemoryStream();  // empty + writable
+    byte[] all = s.ReadAllBytes();
+    Assert.Equal(0, all.Length);
+}
+
+[Test]
+void test_write_all_bytes_then_round_trip() {
+    MemoryStream s = new MemoryStream();
+    byte[] data = new byte[] { (byte)10, (byte)20, (byte)30 };
+    s.WriteAllBytes(data);
+    Assert.Equal(3L, s.Length());
+    s.Seek(0L, SeekOrigin.Begin);
+    byte[] back = s.ReadAllBytes();
+    Assert.Equal(3, back.Length);
+    Assert.Equal(10, (int)back[0]);
+    Assert.Equal(20, (int)back[1]);
+    Assert.Equal(30, (int)back[2]);
+}
+
+[Test]
+void test_read_exactly_returns_exact_count() {
+    byte[] data = new byte[] {
+        (byte)1, (byte)2, (byte)3, (byte)4, (byte)5
+    };
+    MemoryStream ro = new MemoryStream(data);
+    byte[] first3 = ro.ReadExactly(3);
+    Assert.Equal(3, first3.Length);
+    Assert.Equal(1, (int)first3[0]);
+    Assert.Equal(2, (int)first3[1]);
+    Assert.Equal(3, (int)first3[2]);
+    byte[] last2 = ro.ReadExactly(2);
+    Assert.Equal(2, last2.Length);
+    Assert.Equal(4, (int)last2[0]);
+    Assert.Equal(5, (int)last2[1]);
+}
+
+[Test]
+void test_read_exactly_throws_on_premature_eof() {
+    byte[] data = new byte[] { (byte)1, (byte)2 };
+    MemoryStream ro = new MemoryStream(data);
+    bool caught = false;
+    try {
+        ro.ReadExactly(5);  // only 2 bytes available
+    } catch (InvalidOperationException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_read_exactly_zero_returns_empty() {
+    byte[] data = new byte[] { (byte)1 };
+    MemoryStream ro = new MemoryStream(data);
+    byte[] none = ro.ReadExactly(0);
+    Assert.Equal(0, none.Length);
+}
+
+[Test]
+void test_read_exactly_negative_throws() {
+    MemoryStream s = new MemoryStream();
+    bool caught = false;
+    try {
+        s.ReadExactly(-1);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_read_all_bytes_on_non_readable_throws() {
+    Stream s = new Stream();  // base class — CanRead() = false
+    bool caught = false;
+    try {
+        s.ReadAllBytes();
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_write_all_bytes_on_non_writable_throws() {
+    byte[] data = new byte[] { (byte)1 };
+    MemoryStream ro = new MemoryStream(data);  // read-only
+    bool caught = false;
+    try {
+        ro.WriteAllBytes(new byte[] { (byte)99 });
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

@@ -1,0 +1,168 @@
+// add-z42-io-stream (2026-05-24): MemoryStream behaviour — capability,
+// read / write / seek / position / growth / ToArray snapshot.
+namespace Z42IoStreamMemoryTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_empty_stream_initial_state() {
+    MemoryStream s = new MemoryStream();
+    Assert.True(s.CanRead());
+    Assert.True(s.CanWrite());
+    Assert.True(s.CanSeek());
+    Assert.Equal(0L, s.Length());
+    Assert.Equal(0L, s.Position());
+}
+
+[Test]
+void test_write_advances_position_and_length() {
+    MemoryStream s = new MemoryStream();
+    byte[] data = new byte[] { (byte)1, (byte)2, (byte)3 };
+    s.Write(data, 0, data.Length);
+    Assert.Equal(3L, s.Length());
+    Assert.Equal(3L, s.Position());
+}
+
+[Test]
+void test_write_then_seek_then_read_round_trip() {
+    MemoryStream s = new MemoryStream();
+    byte[] data = new byte[] { (byte)10, (byte)20, (byte)30, (byte)40 };
+    s.Write(data, 0, data.Length);
+    s.Seek(0L, SeekOrigin.Begin);
+    byte[] buf = new byte[4];
+    int n = s.Read(buf, 0, 4);
+    Assert.Equal(4, n);
+    Assert.Equal(10, (int)buf[0]);
+    Assert.Equal(20, (int)buf[1]);
+    Assert.Equal(30, (int)buf[2]);
+    Assert.Equal(40, (int)buf[3]);
+}
+
+[Test]
+void test_read_at_eof_returns_zero() {
+    MemoryStream s = new MemoryStream();
+    s.Write(new byte[] { (byte)1 }, 0, 1);
+    s.Seek(0L, SeekOrigin.Begin);
+    byte[] buf = new byte[4];
+    int first = s.Read(buf, 0, 4);
+    Assert.Equal(1, first);
+    int eof = s.Read(buf, 0, 4);
+    Assert.Equal(0, eof);
+}
+
+[Test]
+void test_seek_origin_current() {
+    MemoryStream s = new MemoryStream();
+    s.Write(new byte[] { (byte)1, (byte)2, (byte)3, (byte)4 }, 0, 4);
+    s.Seek(0L, SeekOrigin.Begin);
+    s.Seek(2L, SeekOrigin.Current);
+    Assert.Equal(2L, s.Position());
+    byte[] buf = new byte[2];
+    int n = s.Read(buf, 0, 2);
+    Assert.Equal(2, n);
+    Assert.Equal(3, (int)buf[0]);
+    Assert.Equal(4, (int)buf[1]);
+}
+
+[Test]
+void test_seek_origin_end() {
+    MemoryStream s = new MemoryStream();
+    s.Write(new byte[] { (byte)1, (byte)2, (byte)3 }, 0, 3);
+    long landed = s.Seek(-1L, SeekOrigin.End);
+    Assert.Equal(2L, landed);
+    Assert.Equal(2L, s.Position());
+    byte[] buf = new byte[1];
+    int n = s.Read(buf, 0, 1);
+    Assert.Equal(1, n);
+    Assert.Equal(3, (int)buf[0]);
+}
+
+[Test]
+void test_seek_negative_throws() {
+    MemoryStream s = new MemoryStream();
+    bool caught = false;
+    try {
+        s.Seek(-5L, SeekOrigin.Begin);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_growth_beyond_initial_capacity() {
+    MemoryStream s = new MemoryStream();
+    // initial cap = 16; write 100 bytes triggers multiple growth doublings
+    byte[] big = new byte[100];
+    int i = 0;
+    while (i < 100) {
+        big[i] = (byte)(i & 0xFF);
+        i = i + 1;
+    }
+    s.Write(big, 0, 100);
+    Assert.Equal(100L, s.Length());
+    s.Seek(0L, SeekOrigin.Begin);
+    byte[] back = new byte[100];
+    int n = s.Read(back, 0, 100);
+    Assert.Equal(100, n);
+    int j = 0;
+    while (j < 100) {
+        Assert.Equal((int)big[j], (int)back[j]);
+        j = j + 1;
+    }
+}
+
+[Test]
+void test_to_array_snapshot_is_independent() {
+    MemoryStream s = new MemoryStream();
+    s.Write(new byte[] { (byte)1, (byte)2, (byte)3 }, 0, 3);
+    byte[] snap = s.ToArray();
+    Assert.Equal(3, snap.Length);
+    Assert.Equal(1, (int)snap[0]);
+    // mutating snap doesn't affect the stream and vice versa
+    snap[0] = (byte)99;
+    s.Seek(0L, SeekOrigin.Begin);
+    byte[] buf = new byte[3];
+    s.Read(buf, 0, 3);
+    Assert.Equal(1, (int)buf[0]);
+}
+
+[Test]
+void test_readonly_constructor_disallows_write() {
+    byte[] data = new byte[] { (byte)1, (byte)2, (byte)3 };
+    MemoryStream ro = new MemoryStream(data);
+    Assert.True(ro.CanRead());
+    Assert.True(!ro.CanWrite());
+    Assert.True(ro.CanSeek());
+    bool caught = false;
+    try {
+        ro.Write(new byte[] { (byte)9 }, 0, 1);
+    } catch (NotSupportedException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_readonly_view_round_trip_read() {
+    byte[] data = new byte[] { (byte)100, (byte)101, (byte)102 };
+    MemoryStream ro = new MemoryStream(data);
+    Assert.Equal(3L, ro.Length());
+    byte[] buf = new byte[3];
+    int n = ro.Read(buf, 0, 3);
+    Assert.Equal(3, n);
+    Assert.Equal(100, (int)buf[0]);
+    Assert.Equal(102, (int)buf[2]);
+}
+
+[Test]
+void test_partial_read_returns_actual_count() {
+    MemoryStream s = new MemoryStream();
+    s.Write(new byte[] { (byte)1, (byte)2 }, 0, 2);
+    s.Seek(0L, SeekOrigin.Begin);
+    byte[] buf = new byte[10];
+    int n = s.Read(buf, 0, 10);
+    Assert.Equal(2, n);  // only 2 bytes available
+}

@@ -1,0 +1,162 @@
+namespace Std.IO;
+
+using Std;
+
+// add-z42-io-stream (2026-05-24): unified flow-style I/O base class.
+//
+// Concrete base + throw stubs pattern (z42 has no `abstract` keyword
+// yet). Subclasses override capability predicates (`CanRead` /
+// `CanWrite` / `CanSeek`) and the corresponding core methods. The
+// position API (`Length` / `Position` / `Seek`) is optional — base
+// class throws `NotSupportedException`; seekable subclasses
+// (`MemoryStream`, future `FileStream`) override.
+//
+// Convenience helpers (`ReadAllBytes` / `WriteAllBytes` / `ReadExactly`)
+// are implemented in terms of the core `Read` / `Write` so subclasses
+// don't have to reimplement them.
+//
+// EOF protocol: `Read` returns 0 (.NET / Java / Go convention) when
+// no more bytes are available. `ReadExactly` translates "fewer than N
+// bytes" into an exception for callers who need exactly N.
+//
+// Lifecycle: `Close()` releases resources. Calling other methods after
+// `Close()` is undefined per-subclass (most concretes throw).
+//
+// Not in scope for v0 (see docs/design/stdlib/io-stream.md Deferred):
+//   * `CopyTo(Stream)` — manual loop is one-liner in v0
+//   * `BeginRead` / async — gated on L3 async/await
+//   * `Dispose` pattern — z42 has no `IDisposable` yet; use Close()
+//   * `Timeout` / `ReadTimeout` / `WriteTimeout` — needs concrete
+//     subclass with timer (NetworkStream)
+
+public class Stream {
+    // ── Capability predicates ────────────────────────────────────────────
+    //
+    // Subclasses override to return true for the capabilities they
+    // implement. Default false so a "Stream that can't do anything" is
+    // semantically valid (defensive programming: caller checks before
+    // attempting).
+
+    public virtual bool CanRead()  { return false; }
+    public virtual bool CanWrite() { return false; }
+    public virtual bool CanSeek()  { return false; }
+
+    // ── Core I/O ─────────────────────────────────────────────────────────
+    //
+    // Both Read and Write take (buffer, offset, count) so callers can
+    // reuse a single buffer across many calls (zero allocation in the
+    // hot path — same model as .NET / Java). Read returns the number
+    // of bytes actually placed into the buffer (0..=count); 0 = EOF.
+
+    public virtual int Read(byte[] buffer, int offset, int count) {
+        throw new NotSupportedException("Read not supported on this stream");
+    }
+
+    public virtual void Write(byte[] buffer, int offset, int count) {
+        throw new NotSupportedException("Write not supported on this stream");
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    public virtual void Flush() {
+        // Base class default: no buffered state to flush, so no-op.
+        // Writable streams with internal buffering override.
+    }
+
+    public virtual void Close() {
+        // Base class default: no resources held. Subclasses that own
+        // file descriptors / native handles / slot ids override.
+    }
+
+    // ── Position / seek (optional capability) ────────────────────────────
+
+    public virtual long Length() {
+        throw new NotSupportedException("Length not supported on this stream");
+    }
+
+    public virtual long Position() {
+        throw new NotSupportedException("Position not supported on this stream");
+    }
+
+    /// Move the cursor to `offset` bytes relative to `origin`
+    /// (`SeekOrigin.Begin` / `.Current` / `.End`). Returns the new
+    /// absolute position. Throws `NotSupportedException` if the stream
+    /// isn't seekable.
+    public virtual long Seek(long offset, int origin) {
+        throw new NotSupportedException("Seek not supported on this stream");
+    }
+
+    // ── Convenience helpers (composed on Read / Write) ──────────────────
+
+    /// Read the entire remaining content of the stream into a single
+    /// byte[]. For unbounded streams (sockets etc.) this reads until
+    /// EOF. Internally chunks in 4 KB blocks.
+    public byte[] ReadAllBytes() {
+        if (!this.CanRead()) {
+            throw new NotSupportedException("ReadAllBytes: stream not readable");
+        }
+        byte[] buf = new byte[4096];
+        int    total = 0;
+        // Accumulate into a growable buffer (geometric grow factor 2x).
+        byte[] acc = new byte[4096];
+        while (true) {
+            int n = this.Read(buf, 0, buf.Length);
+            if (n <= 0) { break; }
+            // Grow acc if needed.
+            if (total + n > acc.Length) {
+                int newCap = acc.Length * 2;
+                while (newCap < total + n) { newCap = newCap * 2; }
+                byte[] grown = new byte[newCap];
+                int i = 0;
+                while (i < total) { grown[i] = acc[i]; i = i + 1; }
+                acc = grown;
+            }
+            int j = 0;
+            while (j < n) {
+                acc[total + j] = buf[j];
+                j = j + 1;
+            }
+            total = total + n;
+        }
+        // Snapshot to exact-size return.
+        byte[] result = new byte[total];
+        int k = 0;
+        while (k < total) {
+            result[k] = acc[k];
+            k = k + 1;
+        }
+        return result;
+    }
+
+    /// Write `data` to the stream in one logical operation (may be
+    /// split across multiple `Write` calls internally; v0 single
+    /// call). Equivalent to `Write(data, 0, data.Length)`.
+    public void WriteAllBytes(byte[] data) {
+        if (!this.CanWrite()) {
+            throw new NotSupportedException("WriteAllBytes: stream not writable");
+        }
+        this.Write(data, 0, data.Length);
+    }
+
+    /// Read exactly `count` bytes and return them as a new byte[].
+    /// Throws if EOF arrives before `count` bytes are available.
+    public byte[] ReadExactly(int count) {
+        if (!this.CanRead()) {
+            throw new NotSupportedException("ReadExactly: stream not readable");
+        }
+        if (count < 0) {
+            throw new ArgumentException("ReadExactly count must be non-negative");
+        }
+        byte[] result = new byte[count];
+        int total = 0;
+        while (total < count) {
+            int n = this.Read(result, total, count - total);
+            if (n <= 0) {
+                throw new InvalidOperationException("ReadExactly: unexpected EOF after "
+                    + total.ToString() + " of " + count.ToString() + " bytes");
+            }
+            total = total + n;
+        }
+        return result;
+    }
+}

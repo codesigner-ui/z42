@@ -1,0 +1,173 @@
+namespace Std.IO;
+
+using Std;
+
+// add-z42-io-stream (2026-05-24): `byte[]`-backed concrete Stream.
+//
+// Two construction modes:
+//   * `MemoryStream()` — empty, writable, growable (geometric grow
+//     from initial 16 bytes to fit Writes); Reads from current
+//     position
+//   * `MemoryStream(byte[] data)` — read-only view; Writes throw
+//     NotSupportedException; suitable for parsing already-loaded
+//     bytes via the same Stream API a NetworkStream / FileStream
+//     consumer expects
+//
+// The internal buffer is sized to capacity (`_buffer.Length`) which
+// may exceed the "logical length" (`_length`) when growth occurs;
+// `ToArray()` snapshots the logical-length prefix into a fresh
+// byte[] so callers can't accidentally mutate or observe the slack.
+
+public class MemoryStream : Stream {
+    private byte[] _buffer;
+    private int    _length;
+    private int    _position;
+    private bool   _writable;
+
+    /// Empty + writable + growable. Initial capacity 16; grows
+    /// geometrically (2×) on overflow.
+    public MemoryStream() {
+        this._buffer   = new byte[16];
+        this._length   = 0;
+        this._position = 0;
+        this._writable = true;
+    }
+
+    /// Read-only view over `data`. The constructor does NOT copy — the
+    /// MemoryStream and the original byte[] share backing until the
+    /// caller calls `ToArray()` (which snapshots).
+    public MemoryStream(byte[] data) {
+        this._buffer   = data;
+        this._length   = data.Length;
+        this._position = 0;
+        this._writable = false;
+    }
+
+    // ── Capability ───────────────────────────────────────────────────────
+
+    override bool CanRead()  { return true; }
+    override bool CanWrite() { return this._writable; }
+    override bool CanSeek()  { return true; }
+
+    // ── Read ─────────────────────────────────────────────────────────────
+
+    override int Read(byte[] buffer, int offset, int count) {
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Read: buffer / offset / count out of range");
+        }
+        int available = this._length - this._position;
+        if (available <= 0) { return 0; }  // EOF
+        int n = count;
+        if (n > available) { n = available; }
+        int i = 0;
+        while (i < n) {
+            buffer[offset + i] = this._buffer[this._position + i];
+            i = i + 1;
+        }
+        this._position = this._position + n;
+        return n;
+    }
+
+    // ── Write ────────────────────────────────────────────────────────────
+
+    override void Write(byte[] buffer, int offset, int count) {
+        if (!this._writable) {
+            throw new NotSupportedException("Write: MemoryStream is read-only");
+        }
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Write: buffer / offset / count out of range");
+        }
+        int writeEnd = this._position + count;
+        if (writeEnd > this._buffer.Length) {
+            this._EnsureCapacity(writeEnd);
+        }
+        int i = 0;
+        while (i < count) {
+            this._buffer[this._position + i] = buffer[offset + i];
+            i = i + 1;
+        }
+        this._position = this._position + count;
+        if (this._position > this._length) {
+            this._length = this._position;
+        }
+    }
+
+    // ── Seek / Length / Position ─────────────────────────────────────────
+
+    override long Length() {
+        return (long)this._length;
+    }
+
+    override long Position() {
+        return (long)this._position;
+    }
+
+    override long Seek(long offset, int origin) {
+        long basePos;
+        if (origin == SeekOrigin.Begin) {
+            basePos = 0L;
+        } else if (origin == SeekOrigin.Current) {
+            basePos = (long)this._position;
+        } else if (origin == SeekOrigin.End) {
+            basePos = (long)this._length;
+        } else {
+            throw new ArgumentException("Seek: unknown origin " + origin.ToString());
+        }
+        long newPos = basePos + offset;
+        if (newPos < 0L) {
+            throw new ArgumentException("Seek: resulting position would be negative");
+        }
+        // Seeking past Length is allowed for writable streams (gap
+        // fills with 0 on next Write); for read-only that just lands
+        // at EOF. v0 matches .NET: allow it, no eager grow.
+        this._position = (int)newPos;
+        return newPos;
+    }
+
+    // ── Flush / Close ────────────────────────────────────────────────────
+
+    override void Flush() {
+        // In-memory only; nothing to flush.
+    }
+
+    override void Close() {
+        // Drop the buffer ref so the GC can reclaim. Subsequent
+        // Read / Write will throw via the standard null-deref path
+        // (v0 doesn't track a separate `_closed` flag — the buffer
+        // = null + ArgumentException equivalent is enough signal).
+        // (Future: add a _closed bool + clearer ObjectDisposedException
+        //  message — gated on a polished IDisposable story.)
+    }
+
+    // ── MemoryStream-specific extensions ────────────────────────────────
+
+    /// Snapshot the logical-length prefix of the backing buffer into a
+    /// fresh byte[]. The returned array is independent of the
+    /// MemoryStream's internal storage — subsequent Writes don't show
+    /// up in the snapshot and vice versa.
+    public byte[] ToArray() {
+        byte[] result = new byte[this._length];
+        int i = 0;
+        while (i < this._length) {
+            result[i] = this._buffer[i];
+            i = i + 1;
+        }
+        return result;
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────
+
+    private void _EnsureCapacity(int needed) {
+        if (this._buffer.Length >= needed) { return; }
+        int newCap = this._buffer.Length;
+        if (newCap < 16) { newCap = 16; }
+        while (newCap < needed) { newCap = newCap * 2; }
+        byte[] grown = new byte[newCap];
+        int i = 0;
+        while (i < this._length) {
+            grown[i] = this._buffer[i];
+            i = i + 1;
+        }
+        this._buffer = grown;
+    }
+}

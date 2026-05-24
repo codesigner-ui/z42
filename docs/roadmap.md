@@ -309,6 +309,8 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |
 | wasm zstd | 需 WASI SDK 或 ruzstd | [stdlib/compression.md](design/stdlib/compression.md#compression-future-wasm-zstd) |
 | YAML anchors / tags / multi-line / multi-doc | z42.yaml v0 之外 | [stdlib/yaml.md](design/stdlib/yaml.md#deferred--future-work) |
+| FileStream / TextReader / BufferedStream / async streams | Std.IO.Stream v0 之外，跨 stdlib pipeline 基建 | [stdlib/io-stream.md](design/stdlib/io-stream.md#deferred--future-work) |
+| Refactor CompressionStream / BinaryReader to Stream | 让 Gzip(FileStream) / BinaryReader(NetworkStream) 等 pipeline 自然 fit | [stdlib/io-stream.md](design/stdlib/io-stream.md#refactor-compression-stream-on-iostream) |
 | libdeflate batch | 1.5× DEFLATE 快通道；bench 驱动 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-libdeflate-batch) |
 | Migrate existing stdlib natives to ext loader | crypto / 等可选移出 z42vm | [runtime/native-ext-loader.md](design/runtime/native-ext-loader.md#migration-of-existing-stdlib-natives) |
 | reader-writer-asymmetry (zbc+zpkg) | SIGS/TYPE TypeTag 单向 lossy（`"int"` → I32 → `"i32"`），导致 Read→Write 字节不对账；strict-pin 契约不受影响，writer 生产物正常加载。修复需 wire format 增长（zbc minor bump） | [runtime/zbc.md](design/runtime/zbc.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) + [runtime/zpkg.md](design/runtime/zpkg.md#reader-writer-asymmetry-readwrite-byte-对账2026-05-14-调查) |
