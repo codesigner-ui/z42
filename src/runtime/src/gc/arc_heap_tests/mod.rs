@@ -35,6 +35,7 @@ mod generational;
 mod invariants;
 mod mark_phase;
 mod mode_selection;
+mod multi_vm;
 mod object_model;
 mod oom;
 mod pause_histogram;

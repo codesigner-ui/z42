@@ -553,6 +553,7 @@ valid）。Script 端 / 消费端先检 `count == 0` 再读 `min_us`。
 | **C1 debug invariants** | `Region<T>::validate(&self) -> Result<(), Violation>` + `ArcMagrGC::debug_validate_invariants()` panicking wrapper（cfg debug_assertions）。每次 collect 末尾运行，验证 8 项 invariant（young_list ⇔ gen_age、free_list ⇔ alive、entry.location、card_dirty 长度、mark_queue 空、no stale mark bit）。Release 构建零开销 | ✅ 2026-05-22 add-gc-debug-invariants |
 | **C2 stress test** | Seeded xorshift64 random-workload driver + 4 tests (per-mode + mode-switching, ~2000 iters each)。Build on C1 validator。Discovered + fixed latent bug in concurrent's no-VmContext force_collect path (defensive reset_marks + mark_queue clear in run_cycle_collection_stw) | ✅ 2026-05-22 add-gc-stress-test |
 | **B5 pause histogram** | 8-bucket logarithmic histogram on `pause_us`（µs–10s+）+ min/max/total/count。每次 collect 记录；`HeapStats.pause_histogram` 字段 + `Std.GC.PauseHistogram()` / `Std.GC.PauseStatsRaw()` builtins 暴露给 script。Single histogram per heap，跨 mode 切换累积 | ✅ 2026-05-22 add-gc-pause-histogram |
+| **C3 multi-heap isolation stress** | 5 个测试在 `arc_heap_tests/multi_vm.rs`，跨 `ArcMagrGC` 实例并行 stress（线程间用独立 heap）。覆盖 STW / Generational / 混合 mode + pause histogram 隔离 cross-check (B5)。验证多 VM 嵌入场景 Phase 3 隔离设计成立 | ✅ 2026-05-24 add-gc-multi-vm-stress |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -742,11 +743,26 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
   + `mark_queue.clear()` at STW dispatch start。详见
   ["Stress testing"](#stress-testing-add-gc-stress-test-2026-05-22) 段
 
-#### C3. Multi-VmContext 隔离压测
-- **What**：多个 VmContext 实例并行运行（线程间隔离），verify GC 状态不互相污染
-- **Why**：嵌入用户可能创建多 VM；验证 Phase 3 多实例隔离设计真的成立
-- **Deps**：无
-- **Size**：~200 LOC，2 天
+#### C3. Multi-heap 隔离压测（已落地，2026-05-24）
+- **状态**：✅ 完成，spec `add-gc-multi-vm-stress`
+- **What**：5 个测试在 `arc_heap_tests/multi_vm.rs`，验证多个
+  `ArcMagrGC` 实例 in-process 完全隔离。`ArcMagrGC` 已是
+  `Send + Sync` (`send_sync.rs`)，测试直接 `thread::spawn` 一组
+  heap 跑独立 workload。
+- **覆盖**：
+  - 两 heap 基础互不感染（allocations / gc_cycles / used_bytes /
+    pause_histogram 全独立）
+  - 4 线程 STW 模式 concurrent stress（每 heap 独立 100 allocs +
+    多次 force_collect）
+  - 3 线程 Generational 模式（young_list / card_dirty / promote 状态
+    per-heap）
+  - 3 线程混用 StwMarkSweep / ConcurrentMarkSweep /
+    GenerationalMarkSweep — 验证 `mode` AtomicU8 per-instance
+  - Pause histogram 跨 heap 隔离（B5 cross-check）
+- **关键落地结果**：5 tests 全绿，无跨 heap 状态串扰。Phase 3 多实例
+  隔离设计验证成立 — heap 是 per-VmCore 资源，statics/thread-locals
+  没有意外串到 GC 状态层。Debug build 下 C1 validator 在每次 collect
+  末尾跑，跨线程也 OK
 
 ### D. 终极方向：MMTk 集成
 
@@ -761,7 +777,7 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 
 如以工程成熟度优先：
 
-1. ~~**C1 + C2**（debug invariants + stress）~~ ✅ 已落地（2026-05-22）；剩 **C3**（multi-VM 隔离压测）—— 巩固现有质量
+1. ~~**C1 + C2 + C3**（debug invariants + stress + multi-VM 隔离）~~ ✅ 全部已落地（2026-05-22 / 2026-05-24）—— 工程质量基线已铺满
 2. **B1**（OOM exception）—— 嵌入用户最常请求的 ergonomics
 3. ~~**B5**（pause 直方图）~~ ✅ 已落地（2026-05-22）—— 低成本可观察性
 4. **B3**（heap snapshot 导出）—— 让现有工具链可用
