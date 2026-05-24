@@ -1159,7 +1159,19 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
   5. 顶上加 `ResolveCtorName` / `ResolveMethodCall` 类型 best-match 逻辑（已有原型代码草稿，见 commit `cd82803e` 之前的探索分支）
 - **当前 workaround**：stdlib 撞到的类用 static factory 命名（`BinaryReader.OverStream` / `JsonValue.ParseStream` / `StringWriter` 不暴露 `Write(char)` 等）。每个 workaround 都在源文件 docstring 标注 "z42 overload-resolution quirk" + 指向本条 Deferred。
 
-### D-11: introduce-bound-visitor（review.md §2.1 visitor 抽象基类）
+### compiler-future-vcall-base-class-fallback
+
+- **来源**：add-z42-net K1 (2026-05-24) — `NetworkStream extends Std.IO.Stream`，未 override `Seek` / `Length` / `Position` 等 base virtual method。VCall `peer.GetStream().Seek(0L, SeekOrigin.Begin)` 抛 "VCall: function `Std.Net.Sockets.NetworkStream.Seek` not found"，预期是 dispatch 到 base `Std.IO.Stream.Seek`（base 默认 throw `NotSupportedException`）。K1 spec 中跳过 Seek 测试做 workaround，bug 入此 Deferred。
+- **触发原因**：跨 zpkg 继承时 virtual method base-class fallback 失败。具体路径未深查，可能在 `loader.rs::merge_with_base` / `try_fixup_inheritance` 或 `exec_vcall.rs` 三处之一：
+  1. NetworkStream 在 z42.net 编译时，`own_methods` 不含 Seek（正确）；merge_with_base 应从 base Stream.vtable 继承 `("Seek", "Std.IO.Stream.Seek")`
+  2. 若 z42.io 的 Stream 在 z42.net 编译时尚未在 registry，cross-zpkg fixup `try_fixup_inheritance` 应在 lazy load 时补全
+  3. VCall 路径若 vtable_index["Seek"] missing，"Lazy hierarchy walk"（exec_vcall.rs:235-265）应通过 `ctx.try_lookup_function("Std.IO.Stream.Seek")` 找到
+- **不对称证据**：同测试 fixture 下 base 非 virtual `Stream.ReadAllBytes()` 工作正常（直接 call resolves to base FQN at compile time）。只 virtual method 经 vtable dispatch 才坏。
+- **触发条件**：调试 vtable 中 Seek 项实际值 + try_fixup_inheritance 是否在 NetworkStream 注册时触发；按 `vcall fixup verifier` 单测在 loader_tests.rs 加 cross-zpkg base-virtual fallback case 锁住行为
+- **当前 workaround**：subclass 显式 override base virtual method（哪怕只是 `throw new NotSupportedException(...)` 直接转发 base 默认行为）；或调用方先 `CanSeek()` / `CanRead()` 等 capability 检查避免 fallback 路径
+- **修复方案概要**：先添加最小 repro 单测（z42 source 跨 zpkg base-virtual not-overridden + run），再 attach `RUST_LOG=trace` 到 lazy_loader + exec_vcall 确认是 vtable build 错 / fixup 漏跑 / VCall walk 漏路径，对症修
+
+
 
 - **来源**：[docs/spec/archive/2026-05-10-docs-review/review.md](../../spec/archive/2026-05-10-docs-review/review.md) Part 2 §2.1（推荐引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>` 抽象基类）；2026-05-07 探索后暂缓
 - **触发原因（探索结论）**：

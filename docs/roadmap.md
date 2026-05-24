@@ -326,6 +326,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | **D-4** | 协变 / 逆变（`<in T, out R>` 等）| [language/generics.md](design/language/generics.md#d-4-协变--逆变in-t-out-r-等) |
 | **D-11** | introduce-bound-visitor（review.md §2.1 visitor 抽象基类）| [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#d-11-introduce-bound-visitorreviewmd-21-visitor-抽象基类) |
 | `compiler-future-typed-overload-resolution` | mangling 改为类型编码键 + IR/zpkg/resolver 同步 + 类型 best-match 选择；解锁 stdlib 类的 `(byte[])` / `(Stream)` 等同元不同类型 ctor / method 重载（当前用 static factory workaround） | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-typed-overload-resolution) |
+| `compiler-future-vcall-base-class-fallback` | 跨 zpkg subclass 未 override 的 virtual method 经 VCall 不能 fallback 到 base 实现（k1 NetworkStream.Seek 撞到）；可能在 vtable build / cross-zpkg fixup / VCall 走 hierarchy 三处之一漏路径，需 repro 单测 + tracing 定位 | [compiler/compiler-architecture.md](design/compiler/compiler-architecture.md#compiler-future-vcall-base-class-fallback) |
 
 ### Backlog 项实施流程
 
