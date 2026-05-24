@@ -10,7 +10,8 @@ z42 文本处理类型。**纯脚本实现** —— 严格遵循 [`src/libraries
 | 文件 | 类型 | 说明 |
 |------|------|------|
 | `StringBuilder.z42` | `StringBuilder` | 字符串拼接缓冲区 — Script-First 实现，基于 `string[]` + `String.FromChars` |
-| `Regex.z42` | `Regex` | 正则表达式匹配（占位 — 待 L3 lambda） |
+
+> **Regex 在 [`z42.regex`](../z42.regex/)** —— 不在本包。本包的 `Regex.z42` 旧 stub 已删除（commit 2026-05-24 docs/review.md Part 3 S2.2 清理）。
 
 ## 实现备注
 
