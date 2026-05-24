@@ -340,9 +340,17 @@ Depends on Platform HAL.
 ```
 src/libraries/z42.io/src/
 ├── Console.z42       # Console.Write, WriteLine, ReadLine
+├── Stdio.z42         # IsTty + raw stdin/stdout helpers
 ├── File.z42          # File.ReadAllText, WriteAllText, Exists, Delete
+├── Directory.z42     # Directory.Create, Enumerate, Delete
 ├── Path.z42          # Path.Join, GetExtension, GetFileName, GetDirectory
-└── Environment.z42   # Environment.GetEnvironmentVariable, GetCommandLineArgs
+├── Environment.z42   # Environment.GetEnvironmentVariable, GetCommandLineArgs
+├── Process.z42       # Process.Start + ProcessHandle / ProcessResult
+├── Stream.z42        # Stream base class (CanRead/CanWrite/CanSeek + Read/Write/Seek)
+├── MemoryStream.z42  # byte[]-backed Stream (writable+growable / read-only view)
+├── FileStream.z42    # OS-file Stream (Read/Write/Append mode; slot table)
+├── FileMode.z42      # FileStream construction mode constants
+└── SeekOrigin.z42    # Seek origin constants (Begin/Current/End)
 ```
 
 `Console` provides typed overloads (int, bool, double, …) as pure z42 methods

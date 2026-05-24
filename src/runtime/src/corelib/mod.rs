@@ -279,6 +279,16 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     //    z42-compression cdylib, dlopen'd at VM startup (or statically linked
     //    on wasm via the `bundled-compression` feature). Resolved through
     //    `VmCore.ext_builtins` (see corelib::ext_builtin_id_of below).
+
+    // ── add-z42-io-filestream (2026-05-24) — appended to preserve existing BuiltinIds ──
+    ("__file_open",      fs::builtin_file_open),
+    ("__file_read",      fs::builtin_file_read),
+    ("__file_write",     fs::builtin_file_write),
+    ("__file_seek",      fs::builtin_file_seek),
+    ("__file_length",    fs::builtin_file_length),
+    ("__file_position",  fs::builtin_file_position),
+    ("__file_flush",     fs::builtin_file_flush),
+    ("__file_close",     fs::builtin_file_close),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

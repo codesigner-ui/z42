@@ -121,15 +121,18 @@ spec is the foundation that makes them possible.
 
 ## Deferred / Future Work
 
-### `io-stream-future-filestream`
+### `io-stream-future-filestream` — ✅ landed 2026-05-24
 
-- **来源**：add-z42-io-stream v0 scope cut
-- **触发原因**：FileStream needs to wrap the existing `Std.IO.File`
-  primitives + track position + handle large-file `long` offsets.
-  Independent spec scope.
-- **触发条件**：first real use case beyond `File.ReadAllText` /
-  `File.WriteAllText` — e.g. processing a > 100 MB log without
-  loading it all into memory.
+Landed in spec `add-z42-io-filestream`: `Std.IO.FileStream : Stream`
+plus `Std.IO.FileMode` (`Read` / `Write` / `Append`). Backed by 8 new
+corelib builtins (`__file_open` / `__file_read` / `__file_write` /
+`__file_seek` / `__file_length` / `__file_position` / `__file_flush`
+/ `__file_close`) operating on a `VmCore.file_handles` slot table
+keyed by monotonic `u64` handle id — same pattern as processes /
+mutexes / channels / compressors. Capability matrix per mode: Read
+→ `CanRead + CanSeek`; Write → `CanWrite + CanSeek`; Append →
+`CanWrite` only (POSIX `O_APPEND` forces writes to EOF so seek would
+mislead callers).
 
 ### `io-stream-future-textreader`
 

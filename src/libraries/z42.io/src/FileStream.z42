@@ -1,0 +1,167 @@
+namespace Std.IO;
+
+using Std;
+
+// add-z42-io-filestream (2026-05-24): OS-file-backed Stream subclass.
+//
+// All methods delegate to corelib builtins (`__file_*`) operating on
+// a slot id stored in `VmCore.file_handles`. The slot lifetime is
+// owned by this object — `Close()` releases the OS fd; subsequent
+// operations on the closed handle throw via the VM-side check.
+//
+// Capability matrix:
+//
+//   Mode      CanRead  CanWrite  CanSeek
+//   Read      true     false     true
+//   Write     false    true      true
+//   Append    false    true      false   (O_APPEND on POSIX — seek
+//                                          can't influence where
+//                                          writes land)
+//
+// Construction failures (path missing in Read mode, permission denied,
+// parent dir missing in Write mode) bubble up as the underlying VM
+// IOException — no facade-level translation in v0.
+
+public class FileStream : Stream {
+    private long _slotId;
+    private int  _mode;
+    private bool _closed;
+
+    /// Default mode = `FileMode.Read`. Convenience for the dominant
+    /// "open existing for read" case.
+    public FileStream(string path) {
+        this._slotId = FileStream._FileOpen(path, FileMode.Read);
+        this._mode   = FileMode.Read;
+        this._closed = false;
+    }
+
+    public FileStream(string path, int mode) {
+        if (mode != FileMode.Read && mode != FileMode.Write && mode != FileMode.Append) {
+            throw new ArgumentException("FileStream: unknown FileMode " + mode.ToString());
+        }
+        this._slotId = FileStream._FileOpen(path, mode);
+        this._mode   = mode;
+        this._closed = false;
+    }
+
+    // ── Capability ───────────────────────────────────────────────────────
+
+    public override bool CanRead() {
+        return !this._closed && this._mode == FileMode.Read;
+    }
+
+    public override bool CanWrite() {
+        return !this._closed && (this._mode == FileMode.Write || this._mode == FileMode.Append);
+    }
+
+    public override bool CanSeek() {
+        // Append-mode files seek to EOF on every write (POSIX O_APPEND),
+        // so reporting CanSeek = true would mislead callers. Read and
+        // Write modes get true positioning.
+        return !this._closed && this._mode != FileMode.Append;
+    }
+
+    // ── Read ─────────────────────────────────────────────────────────────
+
+    public override int Read(byte[] buffer, int offset, int count) {
+        if (this._closed) {
+            throw new InvalidOperationException("FileStream: stream is closed");
+        }
+        if (this._mode != FileMode.Read) {
+            throw new NotSupportedException("FileStream: not opened for reading");
+        }
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Read: buffer / offset / count out of range");
+        }
+        if (count == 0) { return 0; }
+        return FileStream._FileRead(this._slotId, buffer, offset, count);
+    }
+
+    // ── Write ────────────────────────────────────────────────────────────
+
+    public override void Write(byte[] buffer, int offset, int count) {
+        if (this._closed) {
+            throw new InvalidOperationException("FileStream: stream is closed");
+        }
+        if (this._mode == FileMode.Read) {
+            throw new NotSupportedException("FileStream: not opened for writing");
+        }
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Write: buffer / offset / count out of range");
+        }
+        if (count == 0) { return; }
+        FileStream._FileWrite(this._slotId, buffer, offset, count);
+    }
+
+    // ── Seek / Length / Position ─────────────────────────────────────────
+
+    public override long Length() {
+        if (this._closed) {
+            throw new InvalidOperationException("FileStream: stream is closed");
+        }
+        return FileStream._FileLength(this._slotId);
+    }
+
+    public override long Position() {
+        if (this._closed) {
+            throw new InvalidOperationException("FileStream: stream is closed");
+        }
+        return FileStream._FilePosition(this._slotId);
+    }
+
+    public override long Seek(long offset, int origin) {
+        if (this._closed) {
+            throw new InvalidOperationException("FileStream: stream is closed");
+        }
+        if (this._mode == FileMode.Append) {
+            throw new NotSupportedException("FileStream: Seek not supported in Append mode");
+        }
+        if (origin != SeekOrigin.Begin && origin != SeekOrigin.Current && origin != SeekOrigin.End) {
+            throw new ArgumentException("Seek: unknown origin " + origin.ToString());
+        }
+        return FileStream._FileSeek(this._slotId, offset, origin);
+    }
+
+    // ── Flush / Close ────────────────────────────────────────────────────
+
+    public override void Flush() {
+        if (this._closed) { return; }
+        FileStream._FileFlush(this._slotId);
+    }
+
+    public override void Close() {
+        if (this._closed) { return; }
+        FileStream._FileClose(this._slotId);
+        this._closed = true;
+    }
+
+    // ── Native bindings ──────────────────────────────────────────────────
+    //
+    // All implemented as static built-ins in src/runtime/src/corelib/fs.rs
+    // (see "add-z42-io-filestream" section). Short-form `[Native(name)]`
+    // → BuiltinInstr dispatch (not ext-cdylib, so no `lib=` qualifier).
+
+    [Native("__file_open")]
+    private static extern long _FileOpen(string path, int mode);
+
+    [Native("__file_read")]
+    private static extern int _FileRead(long slotId, byte[] buffer, int offset, int count);
+
+    [Native("__file_write")]
+    private static extern void _FileWrite(long slotId, byte[] buffer, int offset, int count);
+
+    [Native("__file_seek")]
+    private static extern long _FileSeek(long slotId, long offset, int origin);
+
+    [Native("__file_length")]
+    private static extern long _FileLength(long slotId);
+
+    [Native("__file_position")]
+    private static extern long _FilePosition(long slotId);
+
+    [Native("__file_flush")]
+    private static extern void _FileFlush(long slotId);
+
+    [Native("__file_close")]
+    private static extern void _FileClose(long slotId);
+}

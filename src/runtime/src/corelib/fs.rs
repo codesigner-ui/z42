@@ -333,3 +333,211 @@ pub fn builtin_env_set_cwd(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     std::env::set_current_dir(path)?;
     Ok(Value::Null)
 }
+
+// ── add-z42-io-filestream (2026-05-24) — FileStream slot table + 8 ops ────
+//
+// Mirrors the slot-table pattern used by `processes` / `mutexes` /
+// `channels` / `compressors`: each opened OS handle lands in
+// `VmCore.file_handles` keyed by a monotonic u64 id; z42-side
+// `Std.IO.FileStream` holds the id; all operations look up the slot,
+// perform the syscall via `std::fs::File`, return the result.
+//
+// The `Option<File>` slot lets `__file_close` drop the underlying
+// handle (releasing the OS fd) while leaving the slot present —
+// subsequent operations see `None` and report a clear "file closed"
+// error instead of dangling-slot UB.
+
+use std::sync::atomic::Ordering;
+use super::convert::arg_i64;
+
+/// 0 = Read (open existing, read-only)
+/// 1 = Write (create-or-truncate, write-only)
+/// 2 = Append (create-if-missing / append, write-only; O_APPEND on POSIX
+///     so writes always go to EOF and `seek` is a no-op on the write
+///     side — z42 facade reports CanSeek() == false in this mode)
+pub(crate) struct FileHandleSlot {
+    pub(crate) file: Option<std::fs::File>,
+    #[allow(dead_code)] // reserved for future stricter mode-aware error messages
+    pub(crate) mode: i64,
+}
+
+fn require_slot_mut<'a>(
+    slots: &'a mut std::collections::HashMap<u64, FileHandleSlot>,
+    id: u64,
+    op: &str,
+) -> Result<&'a mut FileHandleSlot> {
+    slots.get_mut(&id)
+        .ok_or_else(|| anyhow::anyhow!("{}: file handle {} not found", op, id))
+}
+
+fn require_open_file<'a>(slot: &'a mut FileHandleSlot, op: &str) -> Result<&'a mut std::fs::File> {
+    slot.file.as_mut()
+        .ok_or_else(|| anyhow::anyhow!("{}: file handle is closed", op))
+}
+
+fn require_byte_array(args: &[Value], idx: usize, op: &str) -> Result<Vec<u8>> {
+    match args.get(idx) {
+        Some(Value::Array(rc)) => {
+            let borrowed = rc.borrow();
+            let mut out = Vec::with_capacity(borrowed.len());
+            for (i, v) in borrowed.iter().enumerate() {
+                match v {
+                    Value::I64(n) if (0..=255).contains(n) => out.push(*n as u8),
+                    other => anyhow::bail!("{}: arg {} byte {} not u8 in 0..=255: {:?}",
+                                           op, idx, i, other),
+                }
+            }
+            Ok(out)
+        }
+        Some(other) => anyhow::bail!("{}: arg {} expected byte array, got {:?}", op, idx, other),
+        None => anyhow::bail!("{}: missing arg {}", op, idx),
+    }
+}
+
+/// `__file_open(path: string, mode: int) -> long`
+pub fn builtin_file_open(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    const NAME: &str = "__file_open";
+    let path = arg_str(args, 0, NAME)?;
+    let mode = arg_i64(args, 1, NAME)?;
+    let file = match mode {
+        0 => std::fs::OpenOptions::new().read(true).open(path)?,
+        1 => std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(path)?,
+        2 => std::fs::OpenOptions::new().append(true).create(true).open(path)?,
+        n => anyhow::bail!("{}: unknown FileMode {} (expected 0=Read, 1=Write, 2=Append)", NAME, n),
+    };
+    let id = ctx.core.next_file_handle_id.fetch_add(1, Ordering::Relaxed);
+    ctx.core.file_handles.lock().insert(id, FileHandleSlot { file: Some(file), mode });
+    Ok(Value::I64(id as i64))
+}
+
+/// `__file_read(slot: long, buf: byte[], offset: int, count: int) -> int`
+/// Writes into `buf[offset..offset+count]`; returns bytes actually read
+/// (0 = EOF). buf is a z42 `byte[]` which crosses FFI as `Value::Array<I64>`
+/// — to stay consistent with the rest of the corelib we round-trip via
+/// a temporary `Vec<u8>` slice.
+pub fn builtin_file_read(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use std::io::Read;
+    const NAME: &str = "__file_read";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let offset  = arg_i64(args, 2, NAME)? as usize;
+    let count   = arg_i64(args, 3, NAME)? as usize;
+    // We need to write into the user's byte[] in-place. The cleanest path:
+    // read into a temp Vec<u8>, then copy slot bytes back into the
+    // Value::Array. Validate the buf shape first (must be Array of u8-as-I64).
+    let buf_value = args.get(1).cloned()
+        .ok_or_else(|| anyhow::anyhow!("{}: missing arg 1 (buf)", NAME))?;
+    let buf_arr = match &buf_value {
+        Value::Array(rc) => rc.clone(),
+        other => anyhow::bail!("{}: arg 1 expected byte array, got {:?}", NAME, other),
+    };
+    let buf_len = buf_arr.borrow().len();
+    if offset + count > buf_len {
+        anyhow::bail!("{}: offset {} + count {} exceeds buf length {}", NAME, offset, count, buf_len);
+    }
+    let mut tmp = vec![0u8; count];
+    let n = {
+        let mut slots = ctx.core.file_handles.lock();
+        let slot = require_slot_mut(&mut slots, slot_id, NAME)?;
+        let f = require_open_file(slot, NAME)?;
+        f.read(&mut tmp)?
+    };
+    // Copy actually-read bytes into the user's array.
+    let mut borrowed = buf_arr.borrow_mut();
+    for i in 0..n {
+        borrowed[offset + i] = Value::I64(tmp[i] as i64);
+    }
+    Ok(Value::I64(n as i64))
+}
+
+/// `__file_write(slot: long, buf: byte[], offset: int, count: int)`
+pub fn builtin_file_write(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use std::io::Write;
+    const NAME: &str = "__file_write";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let offset  = arg_i64(args, 2, NAME)? as usize;
+    let count   = arg_i64(args, 3, NAME)? as usize;
+    let mut all_bytes = require_byte_array(args, 1, NAME)?;
+    if offset + count > all_bytes.len() {
+        anyhow::bail!("{}: offset {} + count {} exceeds buf length {}", NAME, offset, count, all_bytes.len());
+    }
+    // Slice [offset..offset+count] — write only that portion.
+    let _ = all_bytes.drain(0..offset);
+    all_bytes.truncate(count);
+    let mut slots = ctx.core.file_handles.lock();
+    let slot = require_slot_mut(&mut slots, slot_id, NAME)?;
+    let f = require_open_file(slot, NAME)?;
+    f.write_all(&all_bytes)?;
+    Ok(Value::Null)
+}
+
+/// `__file_seek(slot: long, offset: long, origin: int) -> long` (new abs pos)
+pub fn builtin_file_seek(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use std::io::{Seek, SeekFrom};
+    const NAME: &str = "__file_seek";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let offset  = arg_i64(args, 1, NAME)?;
+    let origin  = arg_i64(args, 2, NAME)?;
+    let from = match origin {
+        0 => SeekFrom::Start(offset.max(0) as u64),
+        1 => SeekFrom::Current(offset),
+        2 => SeekFrom::End(offset),
+        n => anyhow::bail!("{}: unknown origin {} (expected 0=Begin 1=Current 2=End)", NAME, n),
+    };
+    let mut slots = ctx.core.file_handles.lock();
+    let slot = require_slot_mut(&mut slots, slot_id, NAME)?;
+    let f = require_open_file(slot, NAME)?;
+    let new_pos = f.seek(from)?;
+    Ok(Value::I64(new_pos as i64))
+}
+
+/// `__file_length(slot: long) -> long`
+pub fn builtin_file_length(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    const NAME: &str = "__file_length";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let mut slots = ctx.core.file_handles.lock();
+    let slot = require_slot_mut(&mut slots, slot_id, NAME)?;
+    let f = require_open_file(slot, NAME)?;
+    let meta = f.metadata()?;
+    Ok(Value::I64(meta.len() as i64))
+}
+
+/// `__file_position(slot: long) -> long`
+pub fn builtin_file_position(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use std::io::{Seek, SeekFrom};
+    const NAME: &str = "__file_position";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let mut slots = ctx.core.file_handles.lock();
+    let slot = require_slot_mut(&mut slots, slot_id, NAME)?;
+    let f = require_open_file(slot, NAME)?;
+    // Position = seek by 0 from Current.
+    let pos = f.seek(SeekFrom::Current(0))?;
+    Ok(Value::I64(pos as i64))
+}
+
+/// `__file_flush(slot: long)`
+pub fn builtin_file_flush(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    use std::io::Write;
+    const NAME: &str = "__file_flush";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let mut slots = ctx.core.file_handles.lock();
+    let slot = require_slot_mut(&mut slots, slot_id, NAME)?;
+    let f = require_open_file(slot, NAME)?;
+    f.flush()?;
+    Ok(Value::Null)
+}
+
+/// `__file_close(slot: long)` — idempotent
+pub fn builtin_file_close(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    const NAME: &str = "__file_close";
+    let slot_id = arg_i64(args, 0, NAME)? as u64;
+    let mut slots = ctx.core.file_handles.lock();
+    if let Some(slot) = slots.get_mut(&slot_id) {
+        // Drop the File (releases OS fd) but leave the slot present so
+        // subsequent reads / writes get a clear "file closed" error
+        // rather than "slot not found".
+        slot.file.take();
+    }
+    // Unknown slot id is silently OK — Close is idempotent and a no-op
+    // on already-closed handles is the conventional behaviour.
+    Ok(Value::Null)
+}

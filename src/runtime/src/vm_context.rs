@@ -226,6 +226,14 @@ pub struct VmCore {
     /// register `(name, fn_ptr)` pairs. Lookup parallels static `BUILTINS[]`;
     /// see `corelib::ext_builtin_id_of` for the resolver fallback.
     pub(crate) ext_builtins:       Mutex<crate::native::ext::ExtBuiltinTable>,
+    /// **add-z42-io-filestream (2026-05-24)**: live `Std.IO.FileStream`
+    /// handles keyed by monotonic slot id. `__file_open` inserts;
+    /// `__file_close` removes (or marks slot dead). Pattern mirrors
+    /// `processes` / `mutexes` / `channels` / `compressors` slot tables.
+    pub(crate) file_handles:       Mutex<HashMap<u64, crate::corelib::fs::FileHandleSlot>>,
+    /// **add-z42-io-filestream (2026-05-24)**: monotonic file-handle slot
+    /// id counter; never reused.
+    pub(crate) next_file_handle_id: std::sync::atomic::AtomicU64,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -404,6 +412,8 @@ impl VmContext {
             rwlocks:              Mutex::new(HashMap::new()),
             next_rwlock_id:       std::sync::atomic::AtomicU64::new(1),
             ext_builtins:         Mutex::new(crate::native::ext::ExtBuiltinTable::default()),
+            file_handles:         Mutex::new(HashMap::new()),
+            next_file_handle_id:  std::sync::atomic::AtomicU64::new(1),
         });
 
         // add-gc-safepoint-auto-threshold (2026-05-20): wire the

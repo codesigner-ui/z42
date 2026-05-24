@@ -1,0 +1,304 @@
+// add-z42-io-filestream (2026-05-24): FileStream behaviour —
+// open/read/write/append/seek/close round-trips against the real FS.
+//
+// Every test creates its own temp file via `File.CreateTempFile` and
+// deletes it at the end. No shared state; tests are safe in parallel.
+namespace Z42IoFileStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+// ── helpers ─────────────────────────────────────────────────────────────
+
+byte[] _bytes_of(int[] xs) {
+    byte[] r = new byte[xs.Length];
+    int i = 0;
+    while (i < xs.Length) {
+        r[i] = (byte)xs[i];
+        i = i + 1;
+    }
+    return r;
+}
+
+// ── open / read existing ────────────────────────────────────────────────
+
+[Test]
+void test_read_mode_round_trip() {
+    string path = File.CreateTempFile("z42_fs_read_", ".bin");
+    File.WriteAllText(path, "hello");
+    try {
+        FileStream fs = new FileStream(path);  // default mode = Read
+        try {
+            Assert.True(fs.CanRead());
+            Assert.False(fs.CanWrite());
+            Assert.True(fs.CanSeek());
+            Assert.Equal(5L, fs.Length());
+            byte[] buf = new byte[5];
+            int n = fs.Read(buf, 0, 5);
+            Assert.Equal(5, n);
+            Assert.Equal(104, (int)buf[0]);  // 'h'
+            Assert.Equal(101, (int)buf[1]);  // 'e'
+            Assert.Equal(108, (int)buf[2]);  // 'l'
+            Assert.Equal(108, (int)buf[3]);  // 'l'
+            Assert.Equal(111, (int)buf[4]);  // 'o'
+            int eof = fs.Read(buf, 0, 5);
+            Assert.Equal(0, eof);  // EOF
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_read_all_bytes_helper_on_filestream() {
+    string path = File.CreateTempFile("z42_fs_readall_", ".bin");
+    File.WriteAllText(path, "z42-rocks");
+    try {
+        FileStream fs = new FileStream(path);
+        try {
+            byte[] all = fs.ReadAllBytes();
+            Assert.Equal(9, all.Length);
+            Assert.Equal(122, (int)all[0]);  // 'z'
+            Assert.Equal(115, (int)all[8]);  // 's'
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── write mode (create-or-truncate) ─────────────────────────────────────
+
+[Test]
+void test_write_mode_truncates_and_writes() {
+    string path = File.CreateTempFile("z42_fs_write_", ".bin");
+    File.WriteAllText(path, "stale-content-that-must-be-truncated");
+    try {
+        FileStream fs = new FileStream(path, FileMode.Write);
+        try {
+            Assert.False(fs.CanRead());
+            Assert.True(fs.CanWrite());
+            Assert.True(fs.CanSeek());
+            byte[] payload = _bytes_of(new int[] { 1, 2, 3, 4, 5 });
+            fs.Write(payload, 0, payload.Length);
+            fs.Flush();
+        } finally {
+            fs.Close();
+        }
+        // Verify via FileStream read-back, not File.ReadAllText (avoid
+        // UTF-8 round-trip on raw bytes).
+        FileStream verify = new FileStream(path);
+        try {
+            byte[] back = verify.ReadAllBytes();
+            Assert.Equal(5, back.Length);
+            Assert.Equal(1, (int)back[0]);
+            Assert.Equal(5, (int)back[4]);
+        } finally {
+            verify.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── append mode ─────────────────────────────────────────────────────────
+
+[Test]
+void test_append_mode_concatenates() {
+    string path = File.CreateTempFile("z42_fs_append_", ".bin");
+    try {
+        // Initial write.
+        FileStream w1 = new FileStream(path, FileMode.Write);
+        try {
+            w1.Write(_bytes_of(new int[] { 65, 66, 67 }), 0, 3);  // "ABC"
+        } finally {
+            w1.Close();
+        }
+        // Append more.
+        FileStream w2 = new FileStream(path, FileMode.Append);
+        try {
+            Assert.False(w2.CanRead());
+            Assert.True(w2.CanWrite());
+            Assert.False(w2.CanSeek());  // Append disables seek
+            w2.Write(_bytes_of(new int[] { 68, 69 }), 0, 2);     // "DE"
+        } finally {
+            w2.Close();
+        }
+        // Read full content.
+        FileStream r = new FileStream(path);
+        try {
+            byte[] full = r.ReadAllBytes();
+            Assert.Equal(5, full.Length);
+            Assert.Equal(65, (int)full[0]);
+            Assert.Equal(66, (int)full[1]);
+            Assert.Equal(67, (int)full[2]);
+            Assert.Equal(68, (int)full[3]);
+            Assert.Equal(69, (int)full[4]);
+        } finally {
+            r.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_append_mode_seek_throws() {
+    string path = File.CreateTempFile("z42_fs_appendseek_", ".bin");
+    try {
+        FileStream fs = new FileStream(path, FileMode.Append);
+        try {
+            bool threw = false;
+            try {
+                fs.Seek(0L, SeekOrigin.Begin);
+            } catch (NotSupportedException e) {
+                threw = true;
+            }
+            Assert.True(threw);
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── seek + position ─────────────────────────────────────────────────────
+
+[Test]
+void test_seek_and_position() {
+    string path = File.CreateTempFile("z42_fs_seek_", ".bin");
+    try {
+        // Lay down 100 bytes [0, 1, 2, ..., 99].
+        FileStream w = new FileStream(path, FileMode.Write);
+        try {
+            byte[] buf = new byte[100];
+            int i = 0;
+            while (i < 100) { buf[i] = (byte)i; i = i + 1; }
+            w.Write(buf, 0, 100);
+        } finally {
+            w.Close();
+        }
+        FileStream r = new FileStream(path);
+        try {
+            Assert.Equal(100L, r.Length());
+            Assert.Equal(0L, r.Position());
+            long pos = r.Seek(50L, SeekOrigin.Begin);
+            Assert.Equal(50L, pos);
+            Assert.Equal(50L, r.Position());
+            byte[] chunk = new byte[10];
+            int n = r.Read(chunk, 0, 10);
+            Assert.Equal(10, n);
+            Assert.Equal(50, (int)chunk[0]);
+            Assert.Equal(59, (int)chunk[9]);
+            // Seek from current.
+            long pos2 = r.Seek(-5L, SeekOrigin.Current);
+            Assert.Equal(55L, pos2);
+            // Seek from end.
+            long pos3 = r.Seek(-1L, SeekOrigin.End);
+            Assert.Equal(99L, pos3);
+            byte[] last = new byte[1];
+            int m = r.Read(last, 0, 1);
+            Assert.Equal(1, m);
+            Assert.Equal(99, (int)last[0]);
+        } finally {
+            r.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── close idempotence ───────────────────────────────────────────────────
+
+[Test]
+void test_close_is_idempotent() {
+    string path = File.CreateTempFile("z42_fs_closeidem_", ".bin");
+    try {
+        FileStream fs = new FileStream(path, FileMode.Write);
+        fs.Close();
+        fs.Close();  // second Close must be a no-op
+        fs.Close();  // third too
+        // Flush after close is also no-op.
+        fs.Flush();
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_read_after_close_throws() {
+    string path = File.CreateTempFile("z42_fs_readclosed_", ".bin");
+    File.WriteAllText(path, "x");
+    try {
+        FileStream fs = new FileStream(path);
+        fs.Close();
+        bool threw = false;
+        try {
+            byte[] buf = new byte[1];
+            fs.Read(buf, 0, 1);
+        } catch (InvalidOperationException e) {
+            threw = true;
+        }
+        Assert.True(threw);
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── bad inputs ──────────────────────────────────────────────────────────
+
+[Test]
+void test_unknown_mode_throws() {
+    string path = File.CreateTempFile("z42_fs_badmode_", ".bin");
+    try {
+        bool threw = false;
+        try {
+            FileStream fs = new FileStream(path, 99);
+        } catch (ArgumentException e) {
+            threw = true;
+        }
+        Assert.True(threw);
+    } finally {
+        File.Delete(path);
+    }
+}
+
+// ── pipeline composition (FileStream → MemoryStream copy) ───────────────
+//
+// Verifies FileStream plays well with the generic Stream API: feed
+// FileStream output into a MemoryStream via ReadAllBytes / WriteAllBytes.
+
+[Test]
+void test_filestream_to_memorystream_pipeline() {
+    string path = File.CreateTempFile("z42_fs_pipe_", ".bin");
+    try {
+        // Prepare disk file with known bytes.
+        FileStream w = new FileStream(path, FileMode.Write);
+        try {
+            w.Write(_bytes_of(new int[] { 10, 20, 30, 40, 50 }), 0, 5);
+        } finally {
+            w.Close();
+        }
+        // Read into a MemoryStream via base-class helpers.
+        FileStream r = new FileStream(path);
+        MemoryStream ms = new MemoryStream();
+        try {
+            byte[] all = r.ReadAllBytes();
+            ms.WriteAllBytes(all);
+        } finally {
+            r.Close();
+        }
+        ms.Seek(0L, SeekOrigin.Begin);
+        byte[] mirrored = ms.ReadAllBytes();
+        Assert.Equal(5, mirrored.Length);
+        Assert.Equal(10, (int)mirrored[0]);
+        Assert.Equal(50, (int)mirrored[4]);
+    } finally {
+        File.Delete(path);
+    }
+}

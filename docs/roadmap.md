@@ -309,7 +309,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | Brotli / xz / LZ4 | z42.compression v0 算法之外 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-brotli) |
 | wasm zstd | 需 WASI SDK 或 ruzstd | [stdlib/compression.md](design/stdlib/compression.md#compression-future-wasm-zstd) |
 | YAML anchors / tags / multi-line / multi-doc | z42.yaml v0 之外 | [stdlib/yaml.md](design/stdlib/yaml.md#deferred--future-work) |
-| FileStream / TextReader / BufferedStream / async streams | Std.IO.Stream v0 之外，跨 stdlib pipeline 基建 | [stdlib/io-stream.md](design/stdlib/io-stream.md#deferred--future-work) |
+| ~~FileStream~~ ✅ + TextReader / BufferedStream / async streams | **`FileStream` 已落地 2026-05-24** (`add-z42-io-filestream`)；TextReader / BufferedStream / async 仍延后 | [stdlib/io-stream.md](design/stdlib/io-stream.md#deferred--future-work) |
 | ~~Refactor CompressionStream to Stream~~ | **✅ 已落地 2026-05-24** — CompressionStream → `WrapWrite/WrapRead` 返回 `Std.IO.Stream` | [stdlib/io-stream.md](design/stdlib/io-stream.md#refactor-compression-stream-on-iostream--landed-2026-05-24) |
 | ~~Refactor BinaryReader/Writer to accept Stream~~ | **✅ 已落地 2026-05-24** — `(Stream)` 构造器；byte[] 构造保留作 sugar | [stdlib/io-stream.md](design/stdlib/io-stream.md#refactor-binary-reader-stream--landed-2026-05-24) |
 | libdeflate batch | 1.5× DEFLATE 快通道；bench 驱动 | [stdlib/compression.md](design/stdlib/compression.md#compression-future-libdeflate-batch) |
