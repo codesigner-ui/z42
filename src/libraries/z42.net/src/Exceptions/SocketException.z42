@@ -1,0 +1,15 @@
+namespace Std;
+
+// add-z42-net K1 (2026-05-24): socket 操作 (connect / bind / read / write /
+// accept) 因系统错误失败时抛出。Message 包含底层 std::io::Error 的 debug
+// 字符串（"ConnectionRefused: ..." / "BrokenPipe: ..." 等），允许 z42 端
+// 程序根据消息子串做精细判定（K1 不暴露结构化 error kind 枚举 —
+// follow-up spec 加 `SocketErrorCode` 时可叠加）。
+public class SocketException : NetException {
+    public SocketException(string message) : base(message) {
+    }
+
+    override string ToString() {
+        return "SocketException: " + this.Message;
+    }
+}

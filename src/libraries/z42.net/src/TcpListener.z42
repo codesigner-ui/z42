@@ -1,0 +1,102 @@
+namespace Std.Net.Sockets;
+
+using Std;
+
+// add-z42-net K1 (2026-05-24): sync blocking TCP server.
+//
+// Lifecycle:
+//   var server = new TcpListener();
+//   server.Bind("127.0.0.1", 0);          // OS-assigned port
+//   int port = server.LocalPort();         // discover bound port
+//   var client = server.AcceptTcpClient(); // blocks until peer connects
+//   var s = client.GetStream();
+//   ...handle client...
+//   client.Dispose();
+//   server.Stop();
+//
+// `Bind` performs the bind + listen in one step (Rust `TcpListener::bind`
+// does both). `Start()` is provided as a BCL-compat no-op for code
+// migrating from .NET.
+public class TcpListener {
+    private long _slotId;
+    private bool _started;
+    private bool _stopped;
+    private int  _localPort;
+    private string _bindHost;
+
+    public TcpListener() {
+        this._slotId   = -1;
+        this._started  = false;
+        this._stopped  = false;
+        this._localPort = 0;
+        this._bindHost  = "";
+    }
+
+    /// Bind to `host:port` and start listening. Use port 0 to let the OS
+    /// pick an available port (typical for test code) — query `LocalPort()`
+    /// after Bind to discover the chosen port.
+    public void Bind(string host, int port) {
+        if (this._stopped) {
+            throw new SocketClosedException();
+        }
+        if (this._started) {
+            throw new InvalidOperationException("TcpListener already bound");
+        }
+        object[] raw = NetTcpNative.Listen(host, port);
+        long[] slotAndPort = NetTcpDecode.ToListenSlot(raw);
+        this._slotId    = slotAndPort[0];
+        this._localPort = (int)slotAndPort[1];
+        this._bindHost  = host;
+        this._started   = true;
+    }
+
+    /// BCL-compat no-op. Rust `TcpListener::bind` already starts listening,
+    /// so there's nothing to do here. Provided for code migrating from .NET
+    /// where `Bind` then `Start()` is the idiom.
+    public void Start() {
+        if (!this._started) {
+            throw new InvalidOperationException("Start() called before Bind()");
+        }
+        // Intentionally empty — bind+listen happen atomically in `Bind`.
+    }
+
+    /// Block until a peer connects. Returns a `TcpClient` wrapping the
+    /// accepted socket. Throws `SocketClosedException` if the listener has
+    /// been Stop'd / Dispose'd.
+    public TcpClient AcceptTcpClient() {
+        if (this._stopped) {
+            throw new SocketClosedException();
+        }
+        if (!this._started) {
+            throw new InvalidOperationException("AcceptTcpClient() called before Bind()");
+        }
+        object[] raw = NetTcpNative.Accept(this._slotId);
+        long sockSlot = NetTcpDecode.ToSlot(raw);
+        return new TcpClient(sockSlot, true);
+    }
+
+    /// Local bound port — useful when Bind was called with port 0 to query
+    /// the OS-assigned port number.
+    public int LocalPort() {
+        return this._localPort;
+    }
+
+    public string BindHost() {
+        return this._bindHost;
+    }
+
+    /// Stop accepting and release the listening socket. Idempotent. Once
+    /// stopped, subsequent AcceptTcpClient throws SocketClosedException.
+    public void Stop() {
+        this.Dispose();
+    }
+
+    public void Dispose() {
+        if (this._stopped) return;
+        this._stopped = true;
+        if (this._started) {
+            NetTcpNative.ListenerDrop(this._slotId);
+            this._started = false;
+        }
+    }
+}

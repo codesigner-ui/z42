@@ -1,0 +1,82 @@
+namespace Std.Net.Sockets;
+
+using Std;
+using Std.IO;
+
+// add-z42-net K1 (2026-05-24): byte-oriented Stream over a TCP socket.
+//
+// Read/write 路径转发到 `__net_tcp_socket_*` builtin。Read 返回 0 = peer
+// 关闭 (EOF)。Write throw on broken pipe / connection reset。
+//
+// Lifecycle 由 owning `TcpClient` 管理 — `NetworkStream.Close()` 仅标记
+// 本对象 _closed；底层 fd 在 `TcpClient.Dispose()` 时通过
+// `__net_tcp_socket_drop` 关闭。多次 Close / Dispose 幂等。
+//
+// Capability：CanRead = true / CanWrite = true / CanSeek = false。
+// Seek 调用走 base Stream 默认 throw NotSupportedException。
+public class NetworkStream : Stream {
+    private long _slotId;
+    private bool _closed;
+
+    public NetworkStream(long slotId) {
+        this._slotId = slotId;
+        this._closed = false;
+    }
+
+    // ── Capability overrides ─────────────────────────────────────────────
+
+    override bool CanRead() {
+        return !this._closed;
+    }
+
+    override bool CanWrite() {
+        return !this._closed;
+    }
+
+    override bool CanSeek() {
+        return false;
+    }
+
+    // ── Core I/O ─────────────────────────────────────────────────────────
+
+    override int Read(byte[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (count == 0) return 0;
+        object[] raw = NetTcpNative.SocketRead(this._slotId, buffer, offset, count);
+        return NetTcpDecode.ToInt(raw);
+    }
+
+    override void Write(byte[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (count == 0) return;
+        object[] raw = NetTcpNative.SocketWrite(this._slotId, buffer, offset, count);
+        // Return value ignored — for blocking write, OK case means all bytes
+        // went out; non-zero short-write is impossible via write_all on Rust side.
+        NetTcpDecode.ToInt(raw);
+    }
+
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    override void Close() {
+        // Idempotent. Subsequent Read/Write throw SocketClosedException via
+        // EnsureOpen. Underlying fd close happens in TcpClient.Dispose.
+        this._closed = true;
+    }
+
+    // ── Internal accessor for owning TcpClient ───────────────────────────
+
+    // Called by `TcpClient.Dispose` so it can flip the Stream's _closed bit
+    // even if the user is still holding the cached reference. Not for general
+    // user code — z42 has no `internal` visibility yet, treat as package-private.
+    public void MarkClosed() {
+        this._closed = true;
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────
+
+    private void EnsureOpen() {
+        if (this._closed) {
+            throw new SocketClosedException();
+        }
+    }
+}

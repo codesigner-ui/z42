@@ -1,0 +1,124 @@
+namespace Std.Net.Sockets;
+
+using Std;
+
+// add-z42-net K1 (2026-05-24): sync blocking TCP client.
+//
+// Lifecycle:
+//   var c = new TcpClient();
+//   c.Connect("example.com", 80);     // blocks until TCP handshake complete
+//   var s = c.GetStream();            // returns cached NetworkStream
+//   s.Write(req, 0, req.Length);
+//   var n = s.Read(buf, 0, buf.Length);
+//   c.Dispose();                      // closes fd
+//
+// Connect can be deferred (default constructor creates an unconnected client)
+// or eager via `new TcpClient(host, port)`. Mirrors .NET BCL.
+//
+// IDisposable: z42 没有正式的 IDisposable protocol，但 stdlib 约定带
+// `Dispose()` 方法 + GC finalizer drop。这里 explicit Dispose 必须在
+// 用户 main path 上调用以及时释放 fd；GC fallback 只是保险。
+public class TcpClient {
+    private long _slotId;
+    private bool _connected;
+    private bool _disposed;
+    private NetworkStream _stream;
+    private string _remoteHost;
+    private int _remotePort;
+
+    public TcpClient() {
+        this._slotId    = -1;
+        this._connected = false;
+        this._disposed  = false;
+        this._stream    = null;
+        this._remoteHost = "";
+        this._remotePort = 0;
+    }
+
+    /// Static factory equivalent to `new TcpClient()` + `.Connect(host, port)`.
+    /// Static method rather than 2-param ctor because z42 当前 constructor
+    /// 重载解析对多个 2-param ctor 冲突 — accept-side wrapper 用 `_fromAcceptedSlot`
+    /// (long, bool) 占用了 $2 slot。
+    public static TcpClient ConnectTo(string host, int port) {
+        var c = new TcpClient();
+        c.Connect(host, port);
+        return c;
+    }
+
+    /// Establish TCP connection to `host:port`. Blocks until handshake
+    /// completes or fails. Throws `SocketException` on connection refused
+    /// / DNS failure / network unreachable.
+    public void Connect(string host, int port) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (this._connected) {
+            throw new InvalidOperationException("TcpClient already connected");
+        }
+        object[] raw = NetTcpNative.Connect(host, port);
+        long slotId = NetTcpDecode.ToSlot(raw);
+        this._slotId     = slotId;
+        this._connected  = true;
+        this._remoteHost = host;
+        this._remotePort = port;
+    }
+
+    /// Get the byte-oriented NetworkStream over this socket. Lazy + cached:
+    /// repeat calls return the same instance, so callers can `==`-compare and
+    /// closing one closes all.
+    public NetworkStream GetStream() {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._connected) {
+            throw new InvalidOperationException("TcpClient not connected — call Connect first");
+        }
+        if (this._stream == null) {
+            this._stream = new NetworkStream(this._slotId);
+        }
+        return this._stream;
+    }
+
+    /// Host this client was Connected to (or constructed with). Useful for
+    /// error messages and logging.
+    public string RemoteHost() {
+        return this._remoteHost;
+    }
+
+    public int RemotePort() {
+        return this._remotePort;
+    }
+
+    /// Close the socket and release the underlying fd. Idempotent.
+    /// Subsequent operations throw `SocketClosedException`.
+    public void Dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        if (this._stream != null) {
+            this._stream.MarkClosed();
+        }
+        if (this._connected) {
+            NetTcpNative.SocketDrop(this._slotId);
+            this._connected = false;
+        }
+    }
+
+    /// Alias for `Dispose()` matching .NET BCL `TcpClient.Close()`.
+    public void Close() {
+        this.Dispose();
+    }
+
+    // ── Internal constructor for `TcpListener.AcceptTcpClient` ───────────
+    //
+    // The listener has the slot id from `__net_tcp_accept`; we just need
+    // to wrap it in a TcpClient with `_connected = true` straight away.
+    // No public-API access path — z42 has no `internal`, see NetworkStream.
+    public TcpClient(long slotId, bool fromAccept) {
+        this._slotId    = slotId;
+        this._connected = true;
+        this._disposed  = false;
+        this._stream    = null;
+        this._remoteHost = "<accepted>";
+        this._remotePort = 0;
+    }
+}

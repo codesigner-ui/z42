@@ -1,0 +1,280 @@
+//! `Std.Net.Sockets` builtins — sync blocking TCP sockets.
+//!
+//! add-z42-net (K1, 2026-05-24): pattern mirrors `process.rs` (slot-id
+//! handle + per-builtin slot lookup). All cross-platform differences
+//! (BSD vs Winsock vs iOS/Android) are delegated to Rust
+//! `std::net::{TcpStream, TcpListener}`.
+//!
+//! ## Return shape
+//!
+//! All builtins (except `*_drop`, which return `Value::Null`) return a
+//! discriminated `Value::Array` tuple. The first element is always a
+//! `KIND_*` tag so z42 decoding is uniform:
+//!
+//! ```text
+//!   [I64(0), I64(slot)]                       // KIND_OK — connect / accept
+//!   [I64(0), I64(slot), I64(actual_port)]     // KIND_OK — listen
+//!   [I64(0), I64(nbytes)]                     // KIND_OK — read / write (0 = EOF)
+//!   [I64(1), Str(message)]                    // KIND_SOCKET_ERR — io fail
+//!   [I64(2)]                                  // KIND_HANDLE_INVALID — slot missing
+//!   [I64(3)]                                  // KIND_UNSUPPORTED — wasm32
+//! ```
+//!
+//! Drops always return `Value::Null` (idempotent; no error path needed).
+
+use super::convert::{arg_i64, arg_str};
+use crate::metadata::Value;
+use crate::vm_context::VmContext;
+use anyhow::{bail, Result};
+
+pub(crate) const KIND_OK:              i64 = 0;
+pub(crate) const KIND_SOCKET_ERR:      i64 = 1;
+pub(crate) const KIND_HANDLE_INVALID:  i64 = 2;
+#[cfg(target_arch = "wasm32")]
+pub(crate) const KIND_UNSUPPORTED:     i64 = 3;
+
+fn ok_value(ctx: &VmContext, v: i64) -> Value {
+    ctx.heap().alloc_array(vec![Value::I64(KIND_OK), Value::I64(v)])
+}
+
+fn ok_two(ctx: &VmContext, a: i64, b: i64) -> Value {
+    ctx.heap().alloc_array(vec![Value::I64(KIND_OK), Value::I64(a), Value::I64(b)])
+}
+
+fn socket_err(ctx: &VmContext, msg: String) -> Value {
+    ctx.heap().alloc_array(vec![Value::I64(KIND_SOCKET_ERR), Value::Str(msg)])
+}
+
+fn handle_invalid(ctx: &VmContext) -> Value {
+    ctx.heap().alloc_array(vec![Value::I64(KIND_HANDLE_INVALID)])
+}
+
+#[cfg(target_arch = "wasm32")]
+fn unsupported(ctx: &VmContext) -> Value {
+    ctx.heap().alloc_array(vec![Value::I64(KIND_UNSUPPORTED)])
+}
+
+fn require_slot_id(args: &[Value], idx: usize, name: &str) -> Result<u64> {
+    let n = arg_i64(args, idx, name)?;
+    if n < 0 {
+        bail!("{}: slot id must be non-negative, got {}", name, n);
+    }
+    Ok(n as u64)
+}
+
+fn require_port(args: &[Value], idx: usize, name: &str) -> Result<u16> {
+    let p = arg_i64(args, idx, name)?;
+    if !(0..=65535).contains(&p) {
+        bail!("{}: port out of range [0, 65535]: {}", name, p);
+    }
+    Ok(p as u16)
+}
+
+// ── desktop / mobile (non-wasm32) implementations ─────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+mod imp {
+    use super::*;
+    use std::net::{TcpListener, TcpStream, SocketAddr, ToSocketAddrs};
+    use std::io::{Read, Write};
+
+    pub fn builtin_net_tcp_connect(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_connect";
+        let host = arg_str(args, 0, NAME)?.to_string();
+        let port = require_port(args, 1, NAME)?;
+
+        let addr = format!("{}:{}", host, port);
+        match TcpStream::connect(&addr) {
+            Ok(stream) => {
+                let slot_id = ctx.alloc_tcp_socket_slot(stream);
+                Ok(ok_value(ctx, slot_id as i64))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("connect to {}: {}", addr, e))),
+        }
+    }
+
+    pub fn builtin_net_tcp_listen(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_listen";
+        let host = arg_str(args, 0, NAME)?.to_string();
+        let port = require_port(args, 1, NAME)?;
+
+        let bind_target = format!("{}:{}", host, port);
+        let bind_result = bind_target.to_socket_addrs()
+            .and_then(|mut iter| iter.next()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "no addresses")))
+            .and_then(|addr: SocketAddr| TcpListener::bind(addr));
+
+        match bind_result {
+            Ok(listener) => {
+                let actual_port = listener.local_addr()
+                    .map(|a| a.port())
+                    .unwrap_or(port);
+                let slot_id = ctx.alloc_tcp_listener_slot(listener);
+                Ok(ok_two(ctx, slot_id as i64, actual_port as i64))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("bind {}: {}", bind_target, e))),
+        }
+    }
+
+    pub fn builtin_net_tcp_accept(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_accept";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+
+        // Take the listener out so `.accept()` can block without holding
+        // the global listener table lock.
+        let listener = {
+            let mut map = ctx.core.tcp_listeners.lock();
+            map.remove(&slot_id)
+        };
+        let Some(listener) = listener else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let accept_result = listener.accept();
+        // Put listener back so subsequent Accept calls work.
+        ctx.core.tcp_listeners.lock().insert(slot_id, listener);
+
+        match accept_result {
+            Ok((stream, _peer)) => {
+                let sock_slot = ctx.alloc_tcp_socket_slot(stream);
+                Ok(ok_value(ctx, sock_slot as i64))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("accept: {}", e))),
+        }
+    }
+
+    pub fn builtin_net_tcp_socket_read(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_read";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let buf_arr = match args.get(1) {
+            Some(Value::Array(rc)) => rc.clone(),
+            other => bail!("{}: arg 1 expected byte array, got {:?}", NAME, other),
+        };
+        let offset = arg_i64(args, 2, NAME)? as usize;
+        let count  = arg_i64(args, 3, NAME)? as usize;
+
+        let buf_len = buf_arr.borrow().len();
+        if offset + count > buf_len {
+            bail!("{}: offset {} + count {} exceeds buf length {}", NAME, offset, count, buf_len);
+        }
+        if count == 0 { return Ok(ok_value(ctx, 0)); }
+
+        let stream = {
+            let mut map = ctx.core.tcp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(mut stream) = stream else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let mut tmp = vec![0u8; count];
+        let read_result = stream.read(&mut tmp);
+
+        ctx.core.tcp_sockets.lock().insert(slot_id, stream);
+
+        match read_result {
+            Ok(n) => {
+                let mut borrowed = buf_arr.borrow_mut();
+                for i in 0..n {
+                    borrowed[offset + i] = Value::I64(tmp[i] as i64);
+                }
+                Ok(ok_value(ctx, n as i64))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("read: {}", e))),
+        }
+    }
+
+    pub fn builtin_net_tcp_socket_write(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_write";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let buf_arr = match args.get(1) {
+            Some(Value::Array(rc)) => rc.clone(),
+            other => bail!("{}: arg 1 expected byte array, got {:?}", NAME, other),
+        };
+        let offset = arg_i64(args, 2, NAME)? as usize;
+        let count  = arg_i64(args, 3, NAME)? as usize;
+
+        let buf_len = buf_arr.borrow().len();
+        if offset + count > buf_len {
+            bail!("{}: offset {} + count {} exceeds buf length {}", NAME, offset, count, buf_len);
+        }
+        if count == 0 { return Ok(ok_value(ctx, 0)); }
+
+        let mut tmp = vec![0u8; count];
+        {
+            let borrowed = buf_arr.borrow();
+            for i in 0..count {
+                match &borrowed[offset + i] {
+                    Value::I64(v) => tmp[i] = (*v as i64 & 0xFF) as u8,
+                    other => bail!("{}: byte[] elem at {} expected I64, got {:?}", NAME, offset + i, other),
+                }
+            }
+        }
+
+        let stream = {
+            let mut map = ctx.core.tcp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(mut stream) = stream else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let write_result = stream.write_all(&tmp).map(|_| count);
+
+        ctx.core.tcp_sockets.lock().insert(slot_id, stream);
+
+        match write_result {
+            Ok(n) => Ok(ok_value(ctx, n as i64)),
+            Err(e) => Ok(socket_err(ctx, format!("write: {}", e))),
+        }
+    }
+
+    pub fn builtin_net_tcp_socket_drop(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_socket_drop";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        ctx.core.tcp_sockets.lock().remove(&slot_id);
+        Ok(Value::Null)
+    }
+
+    pub fn builtin_net_tcp_listener_drop(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_tcp_listener_drop";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        ctx.core.tcp_listeners.lock().remove(&slot_id);
+        Ok(Value::Null)
+    }
+}
+
+// ── wasm32: all builtins return KIND_UNSUPPORTED tuple ────────────────────
+
+#[cfg(target_arch = "wasm32")]
+mod imp {
+    use super::*;
+
+    pub fn builtin_net_tcp_connect(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_listen(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_accept(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_read(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_write(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_tcp_socket_drop(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(Value::Null)
+    }
+    pub fn builtin_net_tcp_listener_drop(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(Value::Null)
+    }
+}
+
+pub use imp::*;
+
+#[cfg(test)]
+#[path = "network_tests.rs"]
+mod network_tests;

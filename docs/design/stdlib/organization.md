@@ -252,9 +252,9 @@ L3 包的判定：
 | z42.io | `Std.IO` |
 | z42.math | `Std.Math` |
 | z42.text | `Std.Text` |
-| z42.threading（未来）| `Std.Threading` |
+| z42.threading | `Std.Threading` |
+| z42.net | `Std.Net.Sockets` (K1: TCP), `Std` (exceptions: SocketException / SocketClosedException / NetException / NetUnsupportedException) |
 | z42.async（未来）| `Std.Async` |
-| z42.net（未来）| `Std.Net` / `Std.Net.Http` |
 
 ---
 

@@ -1,0 +1,97 @@
+// add-z42-net K1 (2026-05-24): TcpClient / TcpListener disposal — idempotent
+// Dispose + connection failures + post-stop semantics.
+namespace Z42NetTcpDisposalTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_dispose_is_idempotent_listener() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    server.Stop();
+    server.Stop();   // second call must not throw
+    server.Dispose(); // third call must not throw
+}
+
+[Test]
+void test_dispose_is_idempotent_client_unconnected() {
+    var c = new TcpClient();
+    c.Dispose();
+    c.Dispose();  // must not throw
+}
+
+[Test]
+void test_connect_to_unbound_port_throws_socket_exception() {
+    // Port 1 — reserved + almost certainly not listening on any dev box.
+    bool threw = false;
+    try {
+        var c = new TcpClient();
+        c.Connect("127.0.0.1", 1);
+    } catch (SocketException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_accept_after_stop_throws() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    server.Stop();
+
+    bool threw = false;
+    try {
+        server.AcceptTcpClient();
+    } catch (SocketClosedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_get_stream_after_dispose_throws() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+
+    var c = new TcpClient();
+    c.Connect("127.0.0.1", port);
+    var peer = server.AcceptTcpClient();
+    c.Dispose();
+
+    bool threw = false;
+    try {
+        c.GetStream();
+    } catch (SocketClosedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    peer.Dispose();
+    server.Stop();
+}
+
+[Test]
+void test_connect_twice_throws() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+
+    var c = new TcpClient();
+    c.Connect("127.0.0.1", port);
+    var peer = server.AcceptTcpClient();
+
+    bool threw = false;
+    try {
+        c.Connect("127.0.0.1", port);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    c.Dispose();
+    peer.Dispose();
+    server.Stop();
+}

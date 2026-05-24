@@ -1,0 +1,81 @@
+// add-z42-net K1 (2026-05-24): in-process echo loopback — listener +
+// client round-trip bytes both directions.
+namespace Z42NetTcpLoopbackTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+
+[Test]
+void test_loopback_basic_round_trip() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    Assert.True(port > 0);
+
+    // Client thread connects, writes "hello", waits for "world".
+    Thread client = Thread.Start(() => {
+        var c = new TcpClient();
+        c.Connect("127.0.0.1", port);
+        var s = c.GetStream();
+        byte[] req = new byte[5];
+        req[0] = (byte)'h'; req[1] = (byte)'e'; req[2] = (byte)'l';
+        req[3] = (byte)'l'; req[4] = (byte)'o';
+        s.Write(req, 0, 5);
+
+        byte[] resp = new byte[5];
+        int n = 0;
+        while (n < 5) {
+            int got = s.Read(resp, n, 5 - n);
+            if (got == 0) break;
+            n = n + got;
+        }
+        Assert.Equal(5, n);
+        Assert.Equal((byte)'w', resp[0]);
+        Assert.Equal((byte)'o', resp[1]);
+        Assert.Equal((byte)'r', resp[2]);
+        Assert.Equal((byte)'l', resp[3]);
+        Assert.Equal((byte)'d', resp[4]);
+        c.Dispose();
+    });
+
+    // Server side: accept, read 5 bytes, write back "world".
+    var peer = server.AcceptTcpClient();
+    var ps = peer.GetStream();
+    byte[] inBuf = new byte[5];
+    int got = 0;
+    while (got < 5) {
+        int r = ps.Read(inBuf, got, 5 - got);
+        if (r == 0) break;
+        got = got + r;
+    }
+    Assert.Equal(5, got);
+    Assert.Equal((byte)'h', inBuf[0]);
+    Assert.Equal((byte)'o', inBuf[4]);
+
+    byte[] outBuf = new byte[5];
+    outBuf[0] = (byte)'w'; outBuf[1] = (byte)'o'; outBuf[2] = (byte)'r';
+    outBuf[3] = (byte)'l'; outBuf[4] = (byte)'d';
+    ps.Write(outBuf, 0, 5);
+
+    client.Join();
+    peer.Dispose();
+    server.Stop();
+}
+
+[Test]
+void test_local_port_nonzero_after_bind_zero() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    Assert.True(server.LocalPort() > 0);
+    server.Stop();
+}
+
+[Test]
+void test_bind_host_recorded() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    Assert.Equal("127.0.0.1", server.BindHost());
+    server.Stop();
+}

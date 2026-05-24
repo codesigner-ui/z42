@@ -44,6 +44,7 @@ default-members = [
     "z42.crypto",
     "z42.compression",
     "z42.yaml",
+    "z42.net",
     "z42.test",
 ]
 

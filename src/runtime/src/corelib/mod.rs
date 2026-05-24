@@ -40,6 +40,7 @@ pub mod platform;
 pub mod system;
 pub mod threading;
 pub mod sync;
+pub mod network;
 
 use crate::metadata::tokens::BuiltinId;
 use crate::metadata::Value;
@@ -300,6 +301,15 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-process-stream-stdio (2026-05-24) — appended to preserve existing BuiltinIds ──
     ("__process_handle_read_stdout", process::builtin_process_handle_read_stdout),
     ("__process_handle_read_stderr", process::builtin_process_handle_read_stderr),
+
+    // ── add-z42-net K1 (2026-05-24) — appended to preserve existing BuiltinIds ──
+    ("__net_tcp_connect",       network::builtin_net_tcp_connect),
+    ("__net_tcp_listen",        network::builtin_net_tcp_listen),
+    ("__net_tcp_accept",        network::builtin_net_tcp_accept),
+    ("__net_tcp_socket_read",   network::builtin_net_tcp_socket_read),
+    ("__net_tcp_socket_write",  network::builtin_net_tcp_socket_write),
+    ("__net_tcp_socket_drop",   network::builtin_net_tcp_socket_drop),
+    ("__net_tcp_listener_drop", network::builtin_net_tcp_listener_drop),
 
     // ── add-gc-heap-snapshot-export B3 (2026-05-24) — appended to preserve existing BuiltinIds ──
     ("__gc_write_heap_snapshot", gc::builtin_gc_write_heap_snapshot),

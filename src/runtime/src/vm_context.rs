@@ -234,6 +234,20 @@ pub struct VmCore {
     /// **add-z42-io-filestream (2026-05-24)**: monotonic file-handle slot
     /// id counter; never reused.
     pub(crate) next_file_handle_id: std::sync::atomic::AtomicU64,
+
+    // ── add-z42-net K1 (2026-05-24) ───────────────────────────────────────
+    /// live `Std.Net.Sockets.TcpClient` streams keyed by monotonic u64 slot
+    /// id. `__net_tcp_connect` / `__net_tcp_accept` insert; `__net_tcp_socket_drop`
+    /// removes (TcpStream Drop closes the fd). wasm32 target: never populated.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) tcp_sockets:          Mutex<HashMap<u64, std::net::TcpStream>>,
+    /// live `Std.Net.Sockets.TcpListener` instances keyed by monotonic u64 slot id.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) tcp_listeners:        Mutex<HashMap<u64, std::net::TcpListener>>,
+    /// monotonic TCP socket slot id; never reused.
+    pub(crate) next_tcp_socket_id:   std::sync::atomic::AtomicU64,
+    /// monotonic TCP listener slot id; never reused.
+    pub(crate) next_tcp_listener_id: std::sync::atomic::AtomicU64,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -414,6 +428,12 @@ impl VmContext {
             ext_builtins:         Mutex::new(crate::native::ext::ExtBuiltinTable::default()),
             file_handles:         Mutex::new(HashMap::new()),
             next_file_handle_id:  std::sync::atomic::AtomicU64::new(1),
+            #[cfg(not(target_arch = "wasm32"))]
+            tcp_sockets:          Mutex::new(HashMap::new()),
+            #[cfg(not(target_arch = "wasm32"))]
+            tcp_listeners:        Mutex::new(HashMap::new()),
+            next_tcp_socket_id:   std::sync::atomic::AtomicU64::new(1),
+            next_tcp_listener_id: std::sync::atomic::AtomicU64::new(1),
         });
 
         // add-gc-safepoint-auto-threshold (2026-05-20): wire the
@@ -556,6 +576,39 @@ impl VmContext {
     /// verify cleanup paths drop entries.
     pub fn process_slot_count(&self) -> usize {
         self.core.processes.lock().len()
+    }
+
+    // ── add-z42-net K1 (2026-05-24): TCP socket / listener slot helpers ──
+    //
+    // Pattern mirrors `alloc_process_slot` exactly. Counter lives in `core`
+    // (shared across threads) so a server thread accepting connections + a
+    // worker thread reading from them can't collide on slot ids.
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn alloc_tcp_socket_slot(&self, stream: std::net::TcpStream) -> u64 {
+        let id = self.core.next_tcp_socket_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.core.tcp_sockets.lock().insert(id, stream);
+        id
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn alloc_tcp_listener_slot(&self, listener: std::net::TcpListener) -> u64 {
+        let id = self.core.next_tcp_listener_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.core.tcp_listeners.lock().insert(id, listener);
+        id
+    }
+
+    /// Number of currently allocated TCP socket slots. Used by tests to
+    /// verify cleanup paths drop entries.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn tcp_socket_slot_count(&self) -> usize {
+        self.core.tcp_sockets.lock().len()
+    }
+
+    /// Number of currently allocated TCP listener slots.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn tcp_listener_slot_count(&self) -> usize {
+        self.core.tcp_listeners.lock().len()
     }
 
     // ── Native interop (Tier 1, spec C2) ──────────────────────────────────

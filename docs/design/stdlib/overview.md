@@ -388,6 +388,19 @@ src/libraries/z42.math/src/
 
 Thin z42 wrappers over `__math_*` intrinsics plus pure-z42 helpers.
 
+### `z42.net` — Network sockets (K1)
+
+```
+src/libraries/z42.net/src/
+├── TcpClient.z42         # sync TCP client (Std.Net.Sockets.TcpClient)
+├── TcpListener.z42       # sync TCP server (Std.Net.Sockets.TcpListener)
+├── NetworkStream.z42     # Std.IO.Stream subclass over a TCP fd
+├── NetTcpNative.z42      # [Native] extern wrappers + kind-tuple decoder
+└── Exceptions/           # NetException / SocketException / SocketClosedException / NetUnsupportedException (namespace Std)
+```
+
+K1 scope: sync blocking TCP only. UDP / IPAddress / DNS / Timeout / TLS / HTTP / async 走 follow-up specs（详 [net.md](net.md) Deferred）。
+
 ---
 
 ## Relationship to Pseudo-class Strategy
