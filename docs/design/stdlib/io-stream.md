@@ -207,6 +207,30 @@ caller-supplied dest path. See
 [`docs/spec/archive/2026-05-24-refactor-binary-reader-stream/`](../../spec/archive/2026-05-24-refactor-binary-reader-stream/)
 + [io-binary.md](io-binary.md) for the post-refactor surface.
 
+### ~~`add-z42-io-string-reader-writer`~~ — **✅ landed 2026-05-24**
+
+Shipped: char-oriented `Std.IO.StringReader` (`Peek` / `Read` /
+`ReadLine` / `ReadToEnd`) + `Std.IO.StringWriter` (`Write` /
+`WriteLine` / `ToString` / `Clear`). Pure-script, no VM changes;
+StringWriter backed by `Std.Text.StringBuilder`. Mirrors .NET
+`System.IO.StringReader/Writer` and Python `io.StringIO`. Does NOT
+extend `Std.IO.Stream` — these are char-oriented; the byte ↔ char
+bridge is the future `StreamReader/Writer(Stream, Encoding)`
+(deferred — needs an `Encoding` type). See
+[`docs/spec/archive/2026-05-24-add-z42-io-string-reader-writer/`](../../spec/archive/2026-05-24-add-z42-io-string-reader-writer/).
+
+### `io-stream-future-streamreader-writer`
+
+- **来源**：add-z42-io-string-reader-writer v0 scope cut
+- **触发原因**：text I/O over a byte `Stream` (`StreamReader(Stream, Encoding)`
+  / `StreamWriter(Stream, Encoding)`) requires an `Encoding` type
+  with `GetBytes / GetChars / GetCharCount / GetByteCount` shape —
+  z42 has only loose UTF-8 helpers in `Std.Encoding`. Spec for
+  `Std.Text.Encoding` is a prerequisite.
+- **触发条件**：first real use case for reading lines from a file
+  (build script log parser, large config reader) or writing text to
+  a compressed stream.
+
 ### `io-stream-future-objectdisposed`
 
 - **来源**：v0 scope cut

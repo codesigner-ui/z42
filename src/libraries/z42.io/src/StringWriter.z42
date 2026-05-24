@@ -1,0 +1,120 @@
+namespace Std.IO;
+
+using Std;
+using Std.Text;
+
+// add-z42-io-string-reader-writer (2026-05-24): char-oriented writer
+// that accumulates into an in-memory string. Mirrors .NET
+// `System.IO.StringWriter` and Python `io.StringIO` for write-only
+// producers.
+//
+// Backed by `Std.Text.StringBuilder` (already a chunked-list O(n)
+// builder) so appends are O(1) amortised regardless of how many small
+// Writes the caller does.
+//
+// Char vs byte: this writer operates on **characters**, not bytes —
+// it does NOT extend `Std.IO.Stream`. For text → byte stream use the
+// future `StreamWriter(Stream, Encoding)` once an Encoding type lands.
+//
+// `WriteLine` uses `\n` (Unix LF). Mirrors Python `print()`'s default
+// and the prevailing convention in source-code generation / config
+// emission. Callers needing CRLF can `Write("\r\n")` explicitly.
+
+public class StringWriter {
+    private StringBuilder _buf;
+    private bool          _closed;
+
+    public StringWriter() {
+        this._buf    = new StringBuilder();
+        this._closed = false;
+    }
+
+    /// `initialCapacity` is a hint; v0 `StringBuilder` doesn't accept
+    /// one, so this overload is purely API-shape-compatibility for
+    /// callers porting from .NET. Future: thread through once
+    /// `StringBuilder(int)` exists.
+    public StringWriter(int initialCapacity) {
+        this._buf    = new StringBuilder();
+        this._closed = false;
+    }
+
+    // ── Write ───────────────────────────────────────────────────────────
+
+    public void Write(string s) {
+        this.EnsureOpen();
+        this._buf.Append(s);
+    }
+
+    // Note: no `Write(char)` overload — z42 overload resolution
+    // currently confuses single-arg `string` vs `char` (compiler picks
+    // the wrong one). Callers wanting to append a single char should
+    // either `Write(c.ToString())` or use the bulk `Write(char[], 0, 1)`
+    // shape. The same applies to `WriteLine(string)` vs `WriteLine(char)`
+    // — the char overload is omitted.
+
+    public void Write(char[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Write: buffer / offset / count out of range");
+        }
+        if (count == 0) { return; }
+        char[] slice;
+        if (offset == 0 && count == buffer.Length) {
+            slice = buffer;
+        } else {
+            slice = new char[count];
+            int i = 0;
+            while (i < count) {
+                slice[i] = buffer[offset + i];
+                i = i + 1;
+            }
+        }
+        this._buf.Append(String.FromChars(slice));
+    }
+
+    // ── WriteLine ───────────────────────────────────────────────────────
+
+    public void WriteLine() {
+        this.EnsureOpen();
+        this._buf.Append("\n");
+    }
+
+    public void WriteLine(string s) {
+        this.EnsureOpen();
+        this._buf.Append(s);
+        this._buf.Append("\n");
+    }
+    // No `WriteLine(char)` — see comment above on Write overloads.
+
+    // ── Snapshot / reset ────────────────────────────────────────────────
+
+    /// Materialise the current buffer contents as one string. The
+    /// returned string is independent of subsequent Writes.
+    override string ToString() {
+        return this._buf.ToString();
+    }
+
+    /// Reset to an empty buffer; subsequent Writes start fresh. Cheap
+    /// — `StringBuilder` is replaced wholesale rather than mutated.
+    public void Clear() {
+        this.EnsureOpen();
+        this._buf = new StringBuilder();
+    }
+
+    // ── Lifecycle ───────────────────────────────────────────────────────
+
+    /// Mark the writer closed; subsequent Writes throw. Idempotent.
+    /// In-memory only — no OS resource to release.
+    public void Close() {
+        if (this._closed) { return; }
+        this._closed = true;
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────
+
+    private void EnsureOpen() {
+        if (this._closed) {
+            throw new InvalidOperationException("StringWriter: writer is closed");
+        }
+    }
+}

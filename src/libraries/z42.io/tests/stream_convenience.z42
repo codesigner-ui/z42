@@ -96,8 +96,8 @@ void test_read_exactly_throws_on_premature_eof() {
 void test_read_exactly_zero_returns_empty() {
     byte[] data = new byte[] { (byte)1 };
     MemoryStream ro = new MemoryStream(data);
-    byte[] none = ro.ReadExactly(0);
-    Assert.Equal(0, none.Length);
+    byte[] empty = ro.ReadExactly(0);
+    Assert.Equal(0, empty.Length);
 }
 
 [Test]

@@ -1,0 +1,148 @@
+namespace Std.IO;
+
+using Std;
+
+// add-z42-io-string-reader-writer (2026-05-24): char-oriented reader
+// over an in-memory string. Mirrors .NET `System.IO.StringReader` and
+// Python `io.StringIO` for read-only consumers.
+//
+// Char vs byte: this reader operates on **characters** (`int` code
+// points / `char` values), not bytes — it does NOT extend
+// `Std.IO.Stream` which is byte-oriented. For text over a byte
+// stream (file / network / decompressed) use the future
+// `StreamReader(Stream, Encoding)` once an Encoding type lands.
+//
+// Lifecycle: `Close()` releases the source string reference and
+// flips a `_closed` flag; subsequent operations throw
+// `InvalidOperationException`. There's no resource to release on the
+// OS side — `Close` is purely a "no more reads" marker mirroring the
+// .NET API.
+//
+// EOF protocol:
+//   Peek() / Read() → -1 = EOF (matches .NET)
+//   Read(buf, off, n) → returns 0 = EOF (matches Stream.Read contract)
+//   ReadLine() → returns null on pre-existing EOF; empty string for a
+//                blank line ("" between two `\n`)
+
+public class StringReader {
+    private string _source;
+    private int    _pos;
+    private bool   _closed;
+
+    public StringReader(string source) {
+        this._source = source;
+        this._pos    = 0;
+        this._closed = false;
+    }
+
+    // ── Peek / Read single char ─────────────────────────────────────────
+
+    /// Peek next char as int code; -1 on EOF. Does NOT advance cursor.
+    public int Peek() {
+        this.EnsureOpen();
+        if (this._pos >= this._source.Length) { return -1; }
+        return (int)this._source.CharAt(this._pos);
+    }
+
+    /// Consume next char as int code; -1 on EOF (cursor unchanged on EOF).
+    public int Read() {
+        this.EnsureOpen();
+        if (this._pos >= this._source.Length) { return -1; }
+        int code = (int)this._source.CharAt(this._pos);
+        this._pos = this._pos + 1;
+        return code;
+    }
+
+    // ── Bulk read ───────────────────────────────────────────────────────
+
+    /// Fill `buffer[offset..offset+count]` with up to `count` chars.
+    /// Returns the count actually placed; 0 = EOF. Mirrors the
+    /// buffer-fill shape of `Stream.Read` for byte streams.
+    public int Read(char[] buffer, int offset, int count) {
+        this.EnsureOpen();
+        if (offset < 0 || count < 0 || offset + count > buffer.Length) {
+            throw new ArgumentException("Read: buffer / offset / count out of range");
+        }
+        if (count == 0) { return 0; }
+        int remaining = this._source.Length - this._pos;
+        if (remaining <= 0) { return 0; }
+        int n = count;
+        if (n > remaining) { n = remaining; }
+        int i = 0;
+        while (i < n) {
+            buffer[offset + i] = this._source.CharAt(this._pos + i);
+            i = i + 1;
+        }
+        this._pos = this._pos + n;
+        return n;
+    }
+
+    // ── Line-oriented ───────────────────────────────────────────────────
+
+    /// Read up to (but not including) the next line terminator
+    /// (`\n` or `\r\n`), advancing past the terminator. Returns:
+    ///   * the line content as a string (may be empty for a blank line)
+    ///   * `null` if the cursor is already at EOF before this call
+    /// A final line without trailing terminator is returned in full.
+    public string ReadLine() {
+        this.EnsureOpen();
+        int len = this._source.Length;
+        if (this._pos >= len) { return null; }
+        int start = this._pos;
+        int i = start;
+        while (i < len) {
+            char c = this._source.CharAt(i);
+            if (c == '\n') {
+                string line = this._source.Substring(start, i - start);
+                this._pos = i + 1;
+                return line;
+            }
+            if (c == '\r') {
+                string line = this._source.Substring(start, i - start);
+                // Consume optional \n after \r (CRLF).
+                if (i + 1 < len && this._source.CharAt(i + 1) == '\n') {
+                    this._pos = i + 2;
+                } else {
+                    this._pos = i + 1;
+                }
+                return line;
+            }
+            i = i + 1;
+        }
+        // No terminator before EOF — return remainder.
+        string tail = this._source.Substring(start);
+        this._pos = len;
+        return tail;
+    }
+
+    // ── ReadToEnd ───────────────────────────────────────────────────────
+
+    /// Return everything from the current cursor to the end of the
+    /// source as one string; subsequent Read* return EOF immediately.
+    public string ReadToEnd() {
+        this.EnsureOpen();
+        if (this._pos >= this._source.Length) { return ""; }
+        string rest = this._source.Substring(this._pos);
+        this._pos = this._source.Length;
+        return rest;
+    }
+
+    // ── Lifecycle ───────────────────────────────────────────────────────
+
+    /// Mark the reader closed; subsequent ops throw. Idempotent.
+    public void Close() {
+        if (this._closed) { return; }
+        this._closed = true;
+        // Drop the source ref so the GC can reclaim it if the caller
+        // didn't hold an outside reference.
+        this._source = "";
+    }
+
+    // ── Internal ────────────────────────────────────────────────────────
+
+    private void EnsureOpen() {
+        if (this._closed) {
+            throw new InvalidOperationException("StringReader: reader is closed");
+        }
+    }
+}

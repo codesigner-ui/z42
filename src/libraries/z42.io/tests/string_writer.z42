@@ -1,0 +1,153 @@
+// add-z42-io-string-reader-writer (2026-05-24): StringWriter
+// behaviour — write chars / strings / lines, ToString, Clear, Close.
+namespace Z42IoStringWriterTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+// ── Empty / initial state ───────────────────────────────────────────────
+
+[Test]
+void test_empty_initial_state() {
+    StringWriter w = new StringWriter();
+    Assert.Equal("", w.ToString());
+}
+
+[Test]
+void test_initial_capacity_does_not_throw() {
+    StringWriter w = new StringWriter(1024);
+    w.Write("hi");
+    Assert.Equal("hi", w.ToString());
+}
+
+// ── Write(string) ───────────────────────────────────────────────────────
+
+[Test]
+void test_write_string() {
+    StringWriter w = new StringWriter();
+    w.Write("hello");
+    Assert.Equal("hello", w.ToString());
+}
+
+[Test]
+void test_write_multiple_strings_concat() {
+    StringWriter w = new StringWriter();
+    w.Write("a");
+    w.Write("b");
+    w.Write("cd");
+    Assert.Equal("abcd", w.ToString());
+}
+
+[Test]
+void test_write_empty_string_noop() {
+    StringWriter w = new StringWriter();
+    w.Write("");
+    w.Write("x");
+    w.Write("");
+    Assert.Equal("x", w.ToString());
+}
+
+// ── Write(char[], off, n) ───────────────────────────────────────────────
+
+[Test]
+void test_write_chars_bulk() {
+    StringWriter w = new StringWriter();
+    char[] cs = new char[4];
+    cs[0] = 'a'; cs[1] = 'b'; cs[2] = 'c'; cs[3] = 'd';
+    w.Write(cs, 0, 4);
+    Assert.Equal("abcd", w.ToString());
+}
+
+[Test]
+void test_write_chars_slice() {
+    StringWriter w = new StringWriter();
+    char[] cs = new char[5];
+    cs[0] = 'X'; cs[1] = 'a'; cs[2] = 'b'; cs[3] = 'c'; cs[4] = 'Y';
+    w.Write(cs, 1, 3);  // "abc"
+    Assert.Equal("abc", w.ToString());
+}
+
+// ── WriteLine ───────────────────────────────────────────────────────────
+
+[Test]
+void test_write_line_empty() {
+    StringWriter w = new StringWriter();
+    w.WriteLine();
+    Assert.Equal("\n", w.ToString());
+}
+
+[Test]
+void test_write_line_with_string() {
+    StringWriter w = new StringWriter();
+    w.WriteLine("first");
+    w.WriteLine("second");
+    Assert.Equal("first\nsecond\n", w.ToString());
+}
+
+[Test]
+void test_mixed_write_and_write_line() {
+    StringWriter w = new StringWriter();
+    w.Write("greet:");
+    w.WriteLine(" hi");
+    w.Write("done");
+    Assert.Equal("greet: hi\ndone", w.ToString());
+}
+
+// ── Clear ───────────────────────────────────────────────────────────────
+
+[Test]
+void test_clear_resets() {
+    StringWriter w = new StringWriter();
+    w.Write("first run");
+    Assert.Equal("first run", w.ToString());
+    w.Clear();
+    Assert.Equal("", w.ToString());
+    w.Write("second");
+    Assert.Equal("second", w.ToString());
+}
+
+// ── Close ───────────────────────────────────────────────────────────────
+
+[Test]
+void test_close_idempotent() {
+    StringWriter w = new StringWriter();
+    w.Close();
+    w.Close();
+    w.Close();
+}
+
+[Test]
+void test_close_then_write_throws() {
+    StringWriter w = new StringWriter();
+    w.Close();
+    bool threw = false;
+    try {
+        w.Write("x");
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_close_then_clear_throws() {
+    StringWriter w = new StringWriter();
+    w.Close();
+    bool threw = false;
+    try {
+        w.Clear();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_to_string_after_close_still_works() {
+    // Snapshot operation; closing is "no more writes" not "no more reads".
+    StringWriter w = new StringWriter();
+    w.Write("preserved");
+    w.Close();
+    Assert.Equal("preserved", w.ToString());
+}

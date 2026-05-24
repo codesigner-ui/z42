@@ -1,0 +1,58 @@
+// add-z42-io-string-reader-writer (2026-05-24): pipeline composition
+// of StringWriter → ToString → StringReader. Demonstrates the
+// textual equivalent of the byte-Stream MemoryStream pipeline.
+namespace Z42IoStringReaderWriterPipelineTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_writer_to_reader_round_trip_lines() {
+    StringWriter w = new StringWriter();
+    w.WriteLine("alpha");
+    w.WriteLine("beta");
+    w.WriteLine("gamma");
+    StringReader r = new StringReader(w.ToString());
+    Assert.Equal("alpha", r.ReadLine());
+    Assert.Equal("beta",  r.ReadLine());
+    Assert.Equal("gamma", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+[Test]
+void test_writer_to_reader_round_trip_chars() {
+    StringWriter w = new StringWriter();
+    w.Write("a");
+    w.Write("b");
+    char[] cs = new char[2];
+    cs[0] = 'c'; cs[1] = 'd';
+    w.Write(cs, 0, 2);
+    StringReader r = new StringReader(w.ToString());
+    Assert.Equal("abcd", r.ReadToEnd());
+}
+
+[Test]
+void test_writer_collect_then_reader_drain_into_array() {
+    // Producer side: build up a multi-line payload.
+    StringWriter w = new StringWriter();
+    int i = 0;
+    while (i < 5) {
+        w.Write("line ");
+        w.WriteLine(i.ToString());
+        i = i + 1;
+    }
+    // Consumer side: drain into a string[] via the reader's line API.
+    StringReader r = new StringReader(w.ToString());
+    string[] lines = new string[5];
+    int k = 0;
+    string line = r.ReadLine();
+    while (line != null) {
+        lines[k] = line;
+        k = k + 1;
+        line = r.ReadLine();
+    }
+    Assert.Equal(5, k);
+    Assert.Equal("line 0", lines[0]);
+    Assert.Equal("line 4", lines[4]);
+}

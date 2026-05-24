@@ -1,0 +1,189 @@
+// add-z42-io-string-reader-writer (2026-05-24): StringReader
+// behaviour — char read / line read / EOF / close.
+namespace Z42IoStringReaderTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+// ── Peek / Read ─────────────────────────────────────────────────────────
+
+[Test]
+void test_peek_does_not_advance() {
+    StringReader r = new StringReader("abc");
+    int p1 = r.Peek();
+    int p2 = r.Peek();
+    int p3 = r.Read();
+    Assert.Equal((int)'a', p1);
+    Assert.Equal((int)'a', p2);
+    Assert.Equal((int)'a', p3);
+}
+
+[Test]
+void test_read_advances_one_char() {
+    StringReader r = new StringReader("xy");
+    Assert.Equal((int)'x', r.Read());
+    Assert.Equal((int)'y', r.Read());
+}
+
+[Test]
+void test_read_at_eof_returns_minus_one() {
+    StringReader r = new StringReader("a");
+    r.Read();
+    Assert.Equal(-1, r.Read());
+    Assert.Equal(-1, r.Peek());
+}
+
+[Test]
+void test_empty_source_immediately_eof() {
+    StringReader r = new StringReader("");
+    Assert.Equal(-1, r.Peek());
+    Assert.Equal(-1, r.Read());
+}
+
+// ── Bulk Read ───────────────────────────────────────────────────────────
+
+[Test]
+void test_read_bulk_chars() {
+    StringReader r = new StringReader("hello");
+    char[] buf = new char[3];
+    int n = r.Read(buf, 0, 3);
+    Assert.Equal(3, n);
+    Assert.Equal('h', buf[0]);
+    Assert.Equal('e', buf[1]);
+    Assert.Equal('l', buf[2]);
+}
+
+[Test]
+void test_read_bulk_partial_at_eof() {
+    StringReader r = new StringReader("ab");
+    char[] buf = new char[5];
+    int n = r.Read(buf, 0, 5);
+    Assert.Equal(2, n);     // only 2 available
+    int n2 = r.Read(buf, 0, 5);
+    Assert.Equal(0, n2);    // EOF on next call
+}
+
+[Test]
+void test_read_bulk_with_offset() {
+    StringReader r = new StringReader("12");
+    char[] buf = new char[4];
+    buf[0] = 'x';
+    buf[3] = 'y';
+    int n = r.Read(buf, 1, 2);
+    Assert.Equal(2, n);
+    Assert.Equal('x', buf[0]);   // unchanged
+    Assert.Equal('1', buf[1]);
+    Assert.Equal('2', buf[2]);
+    Assert.Equal('y', buf[3]);   // unchanged
+}
+
+// ── ReadLine ────────────────────────────────────────────────────────────
+
+[Test]
+void test_read_line_lf() {
+    StringReader r = new StringReader("alpha\nbeta\n");
+    Assert.Equal("alpha", r.ReadLine());
+    Assert.Equal("beta", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+[Test]
+void test_read_line_crlf() {
+    StringReader r = new StringReader("one\r\ntwo\r\nthree");
+    Assert.Equal("one",   r.ReadLine());
+    Assert.Equal("two",   r.ReadLine());
+    Assert.Equal("three", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+[Test]
+void test_read_line_lone_cr() {
+    // Lone \r treated as line terminator (matches .NET StringReader).
+    StringReader r = new StringReader("a\rb");
+    Assert.Equal("a", r.ReadLine());
+    Assert.Equal("b", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+[Test]
+void test_read_line_no_terminator_at_eof() {
+    StringReader r = new StringReader("noterm");
+    Assert.Equal("noterm", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+[Test]
+void test_read_line_empty_lines() {
+    StringReader r = new StringReader("\n\nfoo\n");
+    Assert.Equal("", r.ReadLine());
+    Assert.Equal("", r.ReadLine());
+    Assert.Equal("foo", r.ReadLine());
+    Assert.True(r.ReadLine() == null);
+}
+
+[Test]
+void test_read_line_empty_source_returns_null() {
+    StringReader r = new StringReader("");
+    Assert.True(r.ReadLine() == null);
+}
+
+// ── ReadToEnd ───────────────────────────────────────────────────────────
+
+[Test]
+void test_read_to_end_from_start() {
+    StringReader r = new StringReader("hello world");
+    Assert.Equal("hello world", r.ReadToEnd());
+    Assert.Equal("", r.ReadToEnd());
+}
+
+[Test]
+void test_read_to_end_after_partial_read() {
+    StringReader r = new StringReader("prefix:rest");
+    char[] buf = new char[7];
+    r.Read(buf, 0, 7);  // consume "prefix:"
+    Assert.Equal("rest", r.ReadToEnd());
+}
+
+[Test]
+void test_read_to_end_at_eof_returns_empty() {
+    StringReader r = new StringReader("x");
+    r.Read();
+    Assert.Equal("", r.ReadToEnd());
+}
+
+// ── Close ───────────────────────────────────────────────────────────────
+
+[Test]
+void test_close_idempotent() {
+    StringReader r = new StringReader("abc");
+    r.Close();
+    r.Close();  // second close = no-op
+    r.Close();  // third too
+}
+
+[Test]
+void test_close_then_read_throws() {
+    StringReader r = new StringReader("abc");
+    r.Close();
+    bool threw = false;
+    try {
+        r.Read();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_close_then_read_line_throws() {
+    StringReader r = new StringReader("a\nb");
+    r.Close();
+    bool threw = false;
+    try {
+        r.ReadLine();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

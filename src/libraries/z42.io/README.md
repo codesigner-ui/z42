@@ -22,4 +22,6 @@ z42 标准 IO 类型。
 | `FileStream.z42` | `FileStream` | OS-file-backed Stream（Read / Write / Append mode，走 `VmCore.file_handles` slot table） |
 | `FileMode.z42` | `FileMode` | `FileStream` 构造模式常量（Read=0 / Write=1 / Append=2） |
 | `SeekOrigin.z42` | `SeekOrigin` | `Seek(offset, origin)` origin 常量（Begin=0 / Current=1 / End=2） |
+| `StringReader.z42` | `StringReader` | char-oriented reader over an in-memory string（`Peek` / `Read` / `ReadLine` / `ReadToEnd`） |
+| `StringWriter.z42` | `StringWriter` | char-oriented writer accumulating into a string（`Write` / `WriteLine` / `ToString` / `Clear`） |
 | `Exceptions/` | 各类 IO 异常 | `FileNotFoundException` / `ProcessHandleInvalidException` 等 |
