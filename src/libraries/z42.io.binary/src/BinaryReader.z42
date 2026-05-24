@@ -20,22 +20,32 @@ using Std.Encoding;
 public class BinaryReader {
     private Stream _stream;
 
-    /// Convenience constructor — wraps `data` in a read-only `MemoryStream`
-    /// internally. Existing callers from add-z42-io-binary v0 continue to
-    /// work unchanged.
+    /// Construct over a `byte[]` — wraps `data` in a read-only
+    /// `MemoryStream` internally. Most common case (in-memory bytes
+    /// from anywhere: file read, network payload, hex decode, etc.).
     public BinaryReader(byte[] data) {
         this._stream = new MemoryStream(data);
     }
 
-    /// Stream-based constructor. `src` must be `CanRead() == true`; if
-    /// `src.CanSeek() == false` the position-tracking methods
-    /// (`GetPosition / GetLength / Seek / Skip / EndOfStream`) throw
-    /// `BinaryException` but the read methods themselves still work.
-    public BinaryReader(Stream src) {
+    /// Construct over an existing `Stream`. Static factory because
+    /// z42's overload resolution picks the FIRST declared ctor when
+    /// multiple candidates have single arity-1 signatures regardless of
+    /// arg type — having `(Stream)` as a normal ctor would route
+    /// `BinaryReader(byte[])` to the Stream branch (or vice versa
+    /// depending on declaration order) and break one of the call
+    /// patterns. Factory shape sidesteps the ambiguity entirely.
+    ///
+    /// `src` must be `CanRead() == true`; if `src.CanSeek() == false`
+    /// the position-tracking methods (`GetPosition / GetLength / Seek
+    /// / Skip / EndOfStream`) throw `BinaryException` but the read
+    /// methods themselves still work.
+    public static BinaryReader OverStream(Stream src) {
         if (!src.CanRead()) {
             throw new BinaryException("BinaryReader: src stream is not readable");
         }
-        this._stream = src;
+        BinaryReader r = new BinaryReader(new byte[0]);  // dummy bootstrap
+        r._stream = src;
+        return r;
     }
 
     // ── Cursor (capability-gated on seekability) ──────────────────────────

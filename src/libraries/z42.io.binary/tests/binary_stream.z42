@@ -2,6 +2,12 @@
 // pipeline cases for BinaryReader / BinaryWriter. Existing byte[]-flavour
 // tests (binary_basic / binary_errors / binary_strings) continue to cover
 // the convenience constructor path.
+//
+// fix-binary-writer-stream-overload-and-clear (2026-05-24): Stream
+// variants moved to `OverStream` static factory because z42's overload
+// resolution picks the first declared ctor regardless of arg type when
+// multiple arity-1 candidates exist — see BinaryReader.OverStream
+// rationale.
 namespace Z42IoBinaryStreamTests;
 
 using Std;
@@ -9,12 +15,12 @@ using Std.Test;
 using Std.IO;
 using Std.IO.Binary;
 
-// ── BinaryWriter(MemoryStream) ───────────────────────────────────────────
+// ── BinaryWriter.OverStream(MemoryStream) ────────────────────────────────
 
 [Test]
 void test_writer_with_user_supplied_stream() {
     MemoryStream dest = new MemoryStream();
-    BinaryWriter w = new BinaryWriter(dest);
+    BinaryWriter w = BinaryWriter.OverStream(dest);
     w.WriteInt32LE(0x12345678);
     w.WriteInt16BE(0x4242);
     // Bytes landed in dest; the writer doesn't own ToArray.
@@ -33,7 +39,7 @@ void test_writer_with_user_supplied_stream() {
 [Test]
 void test_writer_to_array_throws_for_user_stream() {
     MemoryStream dest = new MemoryStream();
-    BinaryWriter w = new BinaryWriter(dest);
+    BinaryWriter w = BinaryWriter.OverStream(dest);
     w.WriteInt32LE(42);
     bool caught = false;
     try {
@@ -47,7 +53,7 @@ void test_writer_to_array_throws_for_user_stream() {
 [Test]
 void test_writer_clear_throws_for_user_stream() {
     MemoryStream dest = new MemoryStream();
-    BinaryWriter w = new BinaryWriter(dest);
+    BinaryWriter w = BinaryWriter.OverStream(dest);
     bool caught = false;
     try {
         w.Clear();
@@ -63,14 +69,14 @@ void test_writer_rejects_non_writable_stream() {
     MemoryStream ro = new MemoryStream(data);  // read-only
     bool caught = false;
     try {
-        BinaryWriter w = new BinaryWriter(ro);
+        BinaryWriter w = BinaryWriter.OverStream(ro);
     } catch (BinaryException e) {
         caught = true;
     }
     Assert.True(caught);
 }
 
-// ── BinaryReader(Stream) ─────────────────────────────────────────────────
+// ── BinaryReader.OverStream(Stream) ──────────────────────────────────────
 
 [Test]
 void test_reader_with_user_supplied_stream() {
@@ -79,7 +85,7 @@ void test_reader_with_user_supplied_stream() {
         (byte)0x42, (byte)0x42,                            // 0x4242 BE
     };
     MemoryStream src = new MemoryStream(data);
-    BinaryReader r = new BinaryReader(src);
+    BinaryReader r = BinaryReader.OverStream(src);
     Assert.Equal(0x12345678, r.ReadInt32LE());
     Assert.Equal(0x4242, r.ReadInt16BE());
 }
@@ -90,7 +96,7 @@ void test_reader_rejects_non_readable_stream() {
     Stream baseStream = new Stream();
     bool caught = false;
     try {
-        BinaryReader r = new BinaryReader(baseStream);
+        BinaryReader r = BinaryReader.OverStream(baseStream);
     } catch (BinaryException e) {
         caught = true;
     }
@@ -102,7 +108,7 @@ void test_reader_rejects_non_readable_stream() {
 [Test]
 void test_writer_then_reader_pipeline_round_trip() {
     MemoryStream buf = new MemoryStream();
-    BinaryWriter w = new BinaryWriter(buf);
+    BinaryWriter w = BinaryWriter.OverStream(buf);
     w.WriteInt32LE(-12345);
     w.WriteInt64BE(1234567890123456789L);
     w.WriteString("hello");
@@ -110,7 +116,7 @@ void test_writer_then_reader_pipeline_round_trip() {
 
     // Rewind backing stream and read everything back through a fresh Reader.
     buf.Seek(0L, SeekOrigin.Begin);
-    BinaryReader r = new BinaryReader(buf);
+    BinaryReader r = BinaryReader.OverStream(buf);
     Assert.Equal(-12345, r.ReadInt32LE());
     Assert.Equal(1234567890123456789L, r.ReadInt64BE());
     Assert.Equal("hello", r.ReadString(5));
@@ -146,7 +152,7 @@ void test_default_writer_to_array_still_works() {
 [Test]
 void test_reader_throws_on_premature_eof() {
     MemoryStream src = new MemoryStream(new byte[] { (byte)1, (byte)2 });
-    BinaryReader r = new BinaryReader(src);
+    BinaryReader r = BinaryReader.OverStream(src);
     bool caught = false;
     try {
         r.ReadInt32LE();  // needs 4 bytes, only 2 available
@@ -163,7 +169,7 @@ void test_reader_position_on_memory_stream() {
     byte[] data = new byte[] {
         (byte)1, (byte)2, (byte)3, (byte)4, (byte)5, (byte)6, (byte)7, (byte)8,
     };
-    BinaryReader r = new BinaryReader(new MemoryStream(data));
+    BinaryReader r = BinaryReader.OverStream(new MemoryStream(data));
     Assert.Equal(0, r.GetPosition());
     r.ReadByte();
     r.ReadByte();

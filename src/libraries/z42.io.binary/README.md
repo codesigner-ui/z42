@@ -32,8 +32,10 @@ r.ReadBytes(int count)       → byte[]
 r.ReadString(int byteCount)  → string  // UTF-8
 
 // Writer
-var w = new BinaryWriter();              // initial capacity 64, 2x grow
-var w = new BinaryWriter(initialCap);
+var w = new BinaryWriter();              // internal growable MemoryStream
+var w = BinaryWriter.OverStream(stream); // wrap any Std.IO.Stream
+// Reader: `new BinaryReader(byte[])` for in-memory bytes,
+//         `BinaryReader.OverStream(stream)` for any Std.IO.Stream
 w.GetLength() / Clear() / ToArray()
 w.WriteByte(int b)                       // low 8 bits
 w.WriteBytes(byte[] data)

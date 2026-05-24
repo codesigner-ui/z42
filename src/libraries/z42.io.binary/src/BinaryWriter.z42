@@ -21,29 +21,38 @@ public class BinaryWriter {
         this._ownsStream = true;
     }
 
-    /// Initial-capacity hint. `initialCapacity` was originally used to
-    /// pre-size the internal byte[]; under the Stream refactor the
-    /// MemoryStream picks its own initial 16-byte cap and grows on
-    /// demand, so this is now an API-compat no-op (parameter validated
-    /// for non-negative but otherwise ignored).
-    public BinaryWriter(int initialCapacity) {
-        if (initialCapacity < 0) {
-            throw new BinaryException("initialCapacity must be >= 0, got " +
-                initialCapacity.ToString());
-        }
-        this._stream     = new MemoryStream();
-        this._ownsStream = true;
-    }
+    // Note: the int-initialCapacity constructor was removed in
+    // fix-binary-writer-stream-overload-and-clear (2026-05-24). It was
+    // an API-compat no-op (MemoryStream picks its own initial cap and
+    // grows on demand), and z42's overload resolution couldn't
+    // distinguish `BinaryWriter(int)` from `BinaryWriter(Stream)` for
+    // a caller passing a `MemoryStream` (it picked the int variant
+    // and bailed on `initialCapacity < 0` with a type-mismatch on
+    // Object vs I64). Callers wanting a sized buffer can construct
+    // a `MemoryStream` themselves and pass it via the Stream ctor.
 
-    /// Stream-based — writes pass through to `dest`. Caller owns `dest`'s
-    /// lifecycle (BinaryWriter does NOT close it). `ToArray()` / `Clear()`
-    /// throw `BinaryException` because the writer doesn't own the backing.
-    public BinaryWriter(Stream dest) {
+    // Stream-based ctor was removed in favour of `OverStream` factory
+    // (2026-05-24) — see `BinaryReader.OverStream` for the z42
+    // overload-resolution rationale.
+
+    /// Construct over an existing `Stream`. Static factory rather than
+    /// a `(Stream)` ctor for parity with `BinaryReader.OverStream`
+    /// (keeps the two classes' API shapes aligned even though
+    /// `BinaryWriter` no longer has a competing arity-1 ctor today —
+    /// future expansion would re-introduce the ambiguity).
+    ///
+    /// `dest` must be `CanWrite() == true`. Caller owns `dest`'s
+    /// lifecycle (BinaryWriter does NOT close it). `ToArray()` /
+    /// `Clear()` throw `BinaryException` because the writer doesn't
+    /// own the backing.
+    public static BinaryWriter OverStream(Stream dest) {
         if (!dest.CanWrite()) {
             throw new BinaryException("BinaryWriter: dest stream is not writable");
         }
-        this._stream     = dest;
-        this._ownsStream = false;
+        BinaryWriter w = new BinaryWriter();
+        w._stream     = dest;
+        w._ownsStream = false;
+        return w;
     }
 
     // ── Length / Snapshot ─────────────────────────────────────────────────
@@ -67,16 +76,21 @@ public class BinaryWriter {
         return m.ToArray();
     }
 
-    /// 复位 cursor 到 0，复用 buffer（不释放内存）。仅在默认 / int-capacity 构造
-    /// 路径下有效。
+    /// 复位 buffer 到空状态（GetLength() == 0；后续 Write 从位置 0 起）。
+    /// 仅在默认构造路径下有效（caller-supplied Stream 由 caller 自己管理）。
+    ///
+    /// fix-binary-writer-stream-overload-and-clear (2026-05-24): re-init
+    /// the MemoryStream instead of just Seek(0). Pre-fix, Seek(0) left
+    /// the existing bytes in place — GetLength still reported the old
+    /// total, and a follow-up Write returned a buffer mixing new + old
+    /// bytes (the comment "v0 semantics: reset cursor only" hid this
+    /// as intentional, but the existing test_writer_clear_resets_position
+    /// asserts GetLength == 0 post-Clear, matching .NET BCL behaviour).
     public void Clear() {
         if (!this._ownsStream) {
             throw new BinaryException("Clear: only valid on default-constructed BinaryWriter");
         }
-        this._stream.Seek(0L, SeekOrigin.Begin);
-        // Note: MemoryStream.Seek(0) doesn't shrink Length; v0 semantics
-        // were "reset cursor only" (`_pos = 0` left old bytes in
-        // `_buffer`) — preserved.
+        this._stream = new MemoryStream();
     }
 
     // ── Byte / Bytes ──────────────────────────────────────────────────────

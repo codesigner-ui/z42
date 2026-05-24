@@ -58,7 +58,10 @@ void test_read_bytes_negative_count_throws() {
 
 [Test]
 void test_writer_grows_past_initial_capacity() {
-    var w = new BinaryWriter(2);
+    // fix-binary-writer-stream-overload-and-clear (2026-05-24): dropped
+    // the int-initialCapacity ctor; growth still happens via the
+    // backing MemoryStream's natural geometric grow.
+    var w = new BinaryWriter();
     int i = 0;
     while (i < 100) {
         w.WriteByte((i & 0xFF));
