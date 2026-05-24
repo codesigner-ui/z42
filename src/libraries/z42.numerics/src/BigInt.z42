@@ -54,20 +54,16 @@ public class BigInt {
 
     // ── Public constructors ─────────────────────────────────────────────
 
-    public BigInt(int value) {
-        if (value == 0) {
-            this._mag  = new int[0];
-            this._sign = 0;
-        } else if (value > 0) {
-            this._mag  = BigInt._magFromLongAbs((long)value);
-            this._sign = 1;
-        } else {
-            // -2^31 special case — negating overflows i32; cast to long first.
-            this._mag  = BigInt._magFromLongAbs(-(long)value);
-            this._sign = -1;
-        }
-    }
-
+    // fix-bigint-int-long-overload-collision (2026-05-25): the previous
+    // `BigInt(int value)` overload was silently dropped at symbol
+    // collection (mangling `BigInt$1` collided with `BigInt(long)`,
+    // see `compiler-future-typed-overload-resolution` Deferred). All
+    // existing `new BigInt(intLiteral)` callsites already routed through
+    // `BigInt(long)` via int→long widening — and the dropped `int`
+    // overload's body was functionally identical (it just `(long)`-cast
+    // and called `_magFromLongAbs` the same way). So removing it is a
+    // no-op for behavior, but unmasks the "phantom signature" so docs
+    // / tools reflect what actually runs.
     public BigInt(long value) {
         if (value == 0L) {
             this._mag  = new int[0];
