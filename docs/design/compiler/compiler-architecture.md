@@ -1146,6 +1146,19 @@ BoundExprVisitor 加 `VisitIndirectCall` abstract → 5 个 visitor 子类编译
 
 > 索引也存于 [docs/roadmap.md](../../roadmap.md) "Deferred Backlog Index"。
 
+### compiler-future-typed-overload-resolution
+
+- **来源**：投放 stdlib 期间反复触发的同名同元 ctor 冲突（StringWriter 早期 `Write(char)` / `Write(string)`、JSON/TOML/YAML `Parse(string)` / `Parse(Stream)`、BinaryReader `(byte[])` / `(Stream)`、BinaryWriter `(int)` / `(Stream)`）。每次撞到都用 rename / static factory workaround 绕过；2026-05-24 一次性探索修复后认定需要更深改造，作为单独 spec 处理。
+- **触发原因**：当前 `SymbolCollector.Classes.cs:230-264` 的 method/ctor 命名 mangling 用 `{Name}${Params.Count}` 编码——同名同 arity 的两个签名（哪怕参数类型完全不同）都注册成 `Name$arity`，后写者直接 overwrite `methods[]` dict，只有 ONE 候选活下来。继而上层 `ResolveCtorName` 想做类型 best-match 也无候选可选——整条 overload-by-type 链条要从最底层 mangling 推上去。
+- **触发条件**：第三方 stdlib / 用户代码反复表达"我就想要两个同元不同类型 ctor"且因此需要 mengling rename → 写 spec 把方案沉淀；或者实施大型 stdlib 项目（z42.net 多模式 socket 等）发现 factory naming 噪声明显。
+- **修复方案概要**：
+  1. mangling 改用类型编码键（如 `BinaryReader$1$ArrU8` / `BinaryReader$1$Stream`，参数类型 stable 文本签名）
+  2. IR codegen / call site emit 用新键
+  3. zpkg metadata export / 读取端同步
+  4. resolver token lookup 同步
+  5. 顶上加 `ResolveCtorName` / `ResolveMethodCall` 类型 best-match 逻辑（已有原型代码草稿，见 commit `cd82803e` 之前的探索分支）
+- **当前 workaround**：stdlib 撞到的类用 static factory 命名（`BinaryReader.OverStream` / `JsonValue.ParseStream` / `StringWriter` 不暴露 `Write(char)` 等）。每个 workaround 都在源文件 docstring 标注 "z42 overload-resolution quirk" + 指向本条 Deferred。
+
 ### D-11: introduce-bound-visitor（review.md §2.1 visitor 抽象基类）
 
 - **来源**：[docs/spec/archive/2026-05-10-docs-review/review.md](../../spec/archive/2026-05-10-docs-review/review.md) Part 2 §2.1（推荐引入 `BoundExprVisitor<T>` / `BoundStmtVisitor<T>` 抽象基类）；2026-05-07 探索后暂缓
