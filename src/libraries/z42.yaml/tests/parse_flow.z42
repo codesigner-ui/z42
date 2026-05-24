@@ -6,21 +6,21 @@ using Std.Yaml;
 
 [Test]
 void test_empty_flow_sequence() {
-    YamlValue v = Yaml.Parse("[]");
+    YamlValue v = YamlValue.Parse("[]");
     Assert.True(v.IsSequence());
     Assert.Equal(0, v.Length());
 }
 
 [Test]
 void test_empty_flow_mapping() {
-    YamlValue v = Yaml.Parse("{}");
+    YamlValue v = YamlValue.Parse("{}");
     Assert.True(v.IsMapping());
     Assert.Equal(0, v.Count());
 }
 
 [Test]
 void test_flow_sequence_of_ints() {
-    YamlValue v = Yaml.Parse("[1, 2, 3]");
+    YamlValue v = YamlValue.Parse("[1, 2, 3]");
     Assert.True(v.IsSequence());
     Assert.Equal(3, v.Length());
     Assert.Equal(1L, v.At(0).AsInt());
@@ -30,7 +30,7 @@ void test_flow_sequence_of_ints() {
 
 [Test]
 void test_flow_mapping_simple() {
-    YamlValue v = Yaml.Parse("{width: 80, height: 24}");
+    YamlValue v = YamlValue.Parse("{width: 80, height: 24}");
     Assert.True(v.IsMapping());
     Assert.Equal(80L, v.Get("width").AsInt());
     Assert.Equal(24L, v.Get("height").AsInt());
@@ -39,7 +39,7 @@ void test_flow_mapping_simple() {
 [Test]
 void test_block_mapping_with_flow_sequence_value() {
     string yaml = "matrix: [1, 2, 3]\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     YamlValue m = v.Get("matrix");
     Assert.Equal(3, m.Length());
     Assert.Equal(2L, m.At(1).AsInt());
@@ -48,7 +48,7 @@ void test_block_mapping_with_flow_sequence_value() {
 [Test]
 void test_block_mapping_with_flow_mapping_value() {
     string yaml = "size: {w: 100, h: 50}\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     YamlValue s = v.Get("size");
     Assert.True(s.IsMapping());
     Assert.Equal(100L, s.Get("w").AsInt());
@@ -57,7 +57,7 @@ void test_block_mapping_with_flow_mapping_value() {
 
 [Test]
 void test_nested_flow_sequence_inside_flow_sequence() {
-    YamlValue v = Yaml.Parse("[[1, 2], [3, 4]]");
+    YamlValue v = YamlValue.Parse("[[1, 2], [3, 4]]");
     Assert.Equal(2, v.Length());
     Assert.Equal(1L, v.At(0).At(0).AsInt());
     Assert.Equal(4L, v.At(1).At(1).AsInt());
@@ -65,7 +65,7 @@ void test_nested_flow_sequence_inside_flow_sequence() {
 
 [Test]
 void test_nested_flow_mapping_inside_flow_sequence() {
-    YamlValue v = Yaml.Parse("[{n: 1}, {n: 2}]");
+    YamlValue v = YamlValue.Parse("[{n: 1}, {n: 2}]");
     Assert.Equal(2, v.Length());
     Assert.Equal(1L, v.At(0).Get("n").AsInt());
     Assert.Equal(2L, v.At(1).Get("n").AsInt());
@@ -73,7 +73,7 @@ void test_nested_flow_mapping_inside_flow_sequence() {
 
 [Test]
 void test_flow_sequence_with_string_items() {
-    YamlValue v = Yaml.Parse("[apple, banana, cherry]");
+    YamlValue v = YamlValue.Parse("[apple, banana, cherry]");
     Assert.Equal(3, v.Length());
     Assert.Equal("apple",  v.At(0).AsString());
     Assert.Equal("banana", v.At(1).AsString());
@@ -82,7 +82,7 @@ void test_flow_sequence_with_string_items() {
 
 [Test]
 void test_flow_sequence_with_mixed_types() {
-    YamlValue v = Yaml.Parse("[1, hello, true, ~]");
+    YamlValue v = YamlValue.Parse("[1, hello, true, ~]");
     Assert.Equal(4, v.Length());
     Assert.True(v.At(0).IsInt());
     Assert.True(v.At(1).IsString());

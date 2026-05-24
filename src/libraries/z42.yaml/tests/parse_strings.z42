@@ -6,38 +6,38 @@ using Std.Yaml;
 
 [Test]
 void test_double_quoted_basic() {
-    YamlValue v = Yaml.Parse("\"hello\"");
+    YamlValue v = YamlValue.Parse("\"hello\"");
     Assert.True(v.IsString());
     Assert.Equal("hello", v.AsString());
 }
 
 [Test]
 void test_double_quoted_with_newline_escape() {
-    YamlValue v = Yaml.Parse("\"line1\\nline2\"");
+    YamlValue v = YamlValue.Parse("\"line1\\nline2\"");
     Assert.Equal("line1\nline2", v.AsString());
 }
 
 [Test]
 void test_double_quoted_with_tab_escape() {
-    YamlValue v = Yaml.Parse("\"a\\tb\"");
+    YamlValue v = YamlValue.Parse("\"a\\tb\"");
     Assert.Equal("a\tb", v.AsString());
 }
 
 [Test]
 void test_double_quoted_with_quote_escape() {
-    YamlValue v = Yaml.Parse("\"he said \\\"hi\\\"\"");
+    YamlValue v = YamlValue.Parse("\"he said \\\"hi\\\"\"");
     Assert.Equal("he said \"hi\"", v.AsString());
 }
 
 [Test]
 void test_double_quoted_with_unicode_escape() {
-    YamlValue v = Yaml.Parse("\"\\u0041\\u0042\"");
+    YamlValue v = YamlValue.Parse("\"\\u0041\\u0042\"");
     Assert.Equal("AB", v.AsString());
 }
 
 [Test]
 void test_single_quoted_basic() {
-    YamlValue v = Yaml.Parse("'hello world'");
+    YamlValue v = YamlValue.Parse("'hello world'");
     Assert.True(v.IsString());
     Assert.Equal("hello world", v.AsString());
 }
@@ -45,34 +45,34 @@ void test_single_quoted_basic() {
 [Test]
 void test_single_quoted_with_apostrophe() {
     // YAML 1.2: '' inside a single-quoted string is a literal '.
-    YamlValue v = Yaml.Parse("'don''t'");
+    YamlValue v = YamlValue.Parse("'don''t'");
     Assert.Equal("don't", v.AsString());
 }
 
 [Test]
 void test_single_quoted_no_escapes() {
     // No backslash escapes in single-quoted strings.
-    YamlValue v = Yaml.Parse("'line1\\nline2'");
+    YamlValue v = YamlValue.Parse("'line1\\nline2'");
     Assert.Equal("line1\\nline2", v.AsString());
 }
 
 [Test]
 void test_quoted_string_preserves_leading_space() {
-    YamlValue v = Yaml.Parse("\"  hello  \"");
+    YamlValue v = YamlValue.Parse("\"  hello  \"");
     Assert.Equal("  hello  ", v.AsString());
 }
 
 [Test]
 void test_quoted_string_as_mapping_value() {
     string yaml = "msg: \"hello, world\"\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.Equal("hello, world", v.Get("msg").AsString());
 }
 
 [Test]
 void test_quoted_key_in_mapping() {
     string yaml = "\"weird key\": value\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.True(v.ContainsKey("weird key"));
     Assert.Equal("value", v.Get("weird key").AsString());
 }
@@ -81,6 +81,6 @@ void test_quoted_key_in_mapping() {
 void test_plain_string_with_colon_not_followed_by_space() {
     // `url: http://example.com` — the `:` inside the URL is *not* a mapping separator.
     string yaml = "url: http://example.com\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.Equal("http://example.com", v.Get("url").AsString());
 }

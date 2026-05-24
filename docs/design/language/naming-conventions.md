@@ -49,6 +49,35 @@ int count = list.Count();      // int = 内置类型；count = 值；Count = 方
 
 借鉴 Rust（`fn foo() -> Foo` 中 `foo` 和 `Foo` 视觉区分），同时保留 C#-style 的 `PascalCase` 用于"东西的名字"。
 
+**Primitive 类型例外（keyword ⟷ BCL struct alias）**：源代码层有两种等价拼写：
+
+```z42
+int x = 5;          // keyword 形式（推荐 — 日常代码用）
+Int32 y = 5;        // BCL form（等价 — 同义于 C# `int` ⟷ `System.Int32`）
+
+x.ToString();       // dispatch 到 Std.Int32.ToString
+Int32.Parse("42");  // 等价 int.Parse("42")
+```
+
+stdlib `struct` 名采用 BCL PascalCase（`Boolean / Char / SByte / Int16 / Int32 / Int64 /
+Byte / UInt16 / UInt32 / UInt64 / Single / Double`），文件名 = struct 名（`Int32.z42` /
+`Boolean.z42`）。z42 关键字（`int / long / bool / char / float / double / i8 / i16 / u8 /
+u16 / u32 / u64`）是 source-level alias，由 TypeChecker 通过 `TypeRegistry.StdlibClassName`
+映射到 stdlib FQN（`Std.Int32` 等）。
+
+| keyword | struct | 文件 |
+|---------|:------:|:----:|
+| `int` | `Int32` | `Primitives/Int32.z42` |
+| `long` | `Int64` | `Primitives/Int64.z42` |
+| `i8` | `SByte` | `Primitives/SByte.z42` |
+| `bool` | `Boolean` | `Primitives/Boolean.z42` |
+| `float` | `Single` | `Primitives/Single.z42` |
+| `double` | `Double` | `Primitives/Double.z42`（拼写一致） |
+| `char` | `Char` | `Primitives/Char.z42`（拼写一致） |
+| ...     | ...    | （完整 12 条见 [rename-primitives-to-pascal-case spec](../../spec/archive/2026-05-24-rename-primitives-to-pascal-case/proposal.md#映射)） |
+
+历史背景见 [rename-primitives-to-pascal-case](../../spec/archive/2026-05-24-rename-primitives-to-pascal-case/) (2026-05-24)。
+
 ### 2. 可见性靠 `public` / `private` 关键字，不靠命名
 
 Go 用大小写编码可见性（`Foo` exported / `foo` unexported）有简洁性优势，但代价是限制了**值标识符的命名自由**——比如 Go 必须 `func main()` 小写。

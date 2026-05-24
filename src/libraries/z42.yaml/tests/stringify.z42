@@ -9,8 +9,8 @@ void test_stringify_simple_mapping_round_trip() {
     YamlValue v = YamlValue.OfMapping();
     v.Set("name", YamlValue.OfString("alice"));
     v.Set("age",  YamlValue.OfInt(30));
-    string text = Yaml.Stringify(v);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(v);
+    YamlValue parsed = YamlValue.Parse(text);
     Assert.Equal("alice", parsed.Get("name").AsString());
     Assert.Equal(30L,     parsed.Get("age").AsInt());
 }
@@ -22,8 +22,8 @@ void test_stringify_nested_round_trip() {
     inner.Set("y", YamlValue.OfInt(2));
     YamlValue root = YamlValue.OfMapping();
     root.Set("point", inner);
-    string text = Yaml.Stringify(root);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(root);
+    YamlValue parsed = YamlValue.Parse(text);
     Assert.Equal(1L, parsed.Get("point").Get("x").AsInt());
     Assert.Equal(2L, parsed.Get("point").Get("y").AsInt());
 }
@@ -36,8 +36,8 @@ void test_stringify_sequence_round_trip() {
     seq.Add(YamlValue.OfString("cherry"));
     YamlValue root = YamlValue.OfMapping();
     root.Set("fruits", seq);
-    string text = Yaml.Stringify(root);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(root);
+    YamlValue parsed = YamlValue.Parse(text);
     YamlValue f = parsed.Get("fruits");
     Assert.Equal(3, f.Length());
     Assert.Equal("apple",  f.At(0).AsString());
@@ -50,8 +50,8 @@ void test_stringify_quotes_ambiguous_string() {
     // "true" as a string must be quoted to avoid being parsed as bool.
     YamlValue v = YamlValue.OfMapping();
     v.Set("answer", YamlValue.OfString("true"));
-    string text = Yaml.Stringify(v);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(v);
+    YamlValue parsed = YamlValue.Parse(text);
     Assert.True(parsed.Get("answer").IsString());
     Assert.Equal("true", parsed.Get("answer").AsString());
 }
@@ -60,8 +60,8 @@ void test_stringify_quotes_ambiguous_string() {
 void test_stringify_quotes_numeric_string() {
     YamlValue v = YamlValue.OfMapping();
     v.Set("zip", YamlValue.OfString("12345"));
-    string text = Yaml.Stringify(v);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(v);
+    YamlValue parsed = YamlValue.Parse(text);
     Assert.True(parsed.Get("zip").IsString());
     Assert.Equal("12345", parsed.Get("zip").AsString());
 }
@@ -70,8 +70,8 @@ void test_stringify_quotes_numeric_string() {
 void test_stringify_null_value() {
     YamlValue v = YamlValue.OfMapping();
     v.Set("nope", YamlValue.OfNull());
-    string text = Yaml.Stringify(v);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(v);
+    YamlValue parsed = YamlValue.Parse(text);
     Assert.True(parsed.Get("nope").IsNull());
 }
 
@@ -79,8 +79,8 @@ void test_stringify_null_value() {
 void test_stringify_bool_value() {
     YamlValue v = YamlValue.OfMapping();
     v.Set("active", YamlValue.OfBool(true));
-    string text = Yaml.Stringify(v);
-    YamlValue parsed = Yaml.Parse(text);
+    string text = YamlValue.Stringify(v);
+    YamlValue parsed = YamlValue.Parse(text);
     Assert.True(parsed.Get("active").AsBool());
 }
 
@@ -90,7 +90,7 @@ void test_stringify_preserves_insertion_order() {
     v.Set("z", YamlValue.OfInt(1));
     v.Set("a", YamlValue.OfInt(2));
     v.Set("m", YamlValue.OfInt(3));
-    string text = Yaml.Stringify(v);
+    string text = YamlValue.Stringify(v);
     // Insertion order keys: z, a, m — check 'z' appears before 'a'.
     int zPos = text.IndexOf("z");
     int aPos = text.IndexOf("a");

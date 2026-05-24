@@ -10,7 +10,7 @@ void test_tab_in_indentation_throws() {
     bool caught = false;
     try {
         // 1 tab + content
-        Yaml.Parse("a:\n\tb: 1\n");
+        YamlValue.Parse("a:\n\tb: 1\n");
     } catch (YamlException e) {
         caught = true;
     }
@@ -21,7 +21,7 @@ void test_tab_in_indentation_throws() {
 void test_unterminated_double_quote_throws() {
     bool caught = false;
     try {
-        Yaml.Parse("\"no end");
+        YamlValue.Parse("\"no end");
     } catch (YamlException e) {
         caught = true;
     }
@@ -32,7 +32,7 @@ void test_unterminated_double_quote_throws() {
 void test_unterminated_single_quote_throws() {
     bool caught = false;
     try {
-        Yaml.Parse("'no end");
+        YamlValue.Parse("'no end");
     } catch (YamlException e) {
         caught = true;
     }
@@ -43,7 +43,7 @@ void test_unterminated_single_quote_throws() {
 void test_unterminated_flow_sequence_throws() {
     bool caught = false;
     try {
-        Yaml.Parse("[1, 2, 3");
+        YamlValue.Parse("[1, 2, 3");
     } catch (YamlException e) {
         caught = true;
     }
@@ -54,7 +54,7 @@ void test_unterminated_flow_sequence_throws() {
 void test_unterminated_flow_mapping_throws() {
     bool caught = false;
     try {
-        Yaml.Parse("{a: 1");
+        YamlValue.Parse("{a: 1");
     } catch (YamlException e) {
         caught = true;
     }
@@ -65,7 +65,7 @@ void test_unterminated_flow_mapping_throws() {
 void test_duplicate_mapping_key_throws() {
     bool caught = false;
     try {
-        Yaml.Parse("name: alice\nname: bob\n");
+        YamlValue.Parse("name: alice\nname: bob\n");
     } catch (YamlException e) {
         caught = true;
     }
@@ -76,7 +76,7 @@ void test_duplicate_mapping_key_throws() {
 void test_unknown_escape_in_double_quote_throws() {
     bool caught = false;
     try {
-        Yaml.Parse("\"\\q\"");
+        YamlValue.Parse("\"\\q\"");
     } catch (YamlException e) {
         caught = true;
     }
@@ -85,7 +85,7 @@ void test_unknown_escape_in_double_quote_throws() {
 
 [Test]
 void test_accessor_type_mismatch_throws() {
-    YamlValue v = Yaml.Parse("42");
+    YamlValue v = YamlValue.Parse("42");
     bool caught = false;
     try {
         v.AsString();  // it's an int, not a string
@@ -97,7 +97,7 @@ void test_accessor_type_mismatch_throws() {
 
 [Test]
 void test_missing_key_throws() {
-    YamlValue v = Yaml.Parse("name: alice\n");
+    YamlValue v = YamlValue.Parse("name: alice\n");
     bool caught = false;
     try {
         v.Get("nonexistent");

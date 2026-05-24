@@ -7,7 +7,7 @@ using Std.Yaml;
 [Test]
 void test_nested_mapping() {
     string yaml = "person:\n  name: bob\n  age: 25\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.True(v.IsMapping());
     YamlValue p = v.Get("person");
     Assert.True(p.IsMapping());
@@ -18,7 +18,7 @@ void test_nested_mapping() {
 [Test]
 void test_simple_block_sequence() {
     string yaml = "- apple\n- banana\n- cherry\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.True(v.IsSequence());
     Assert.Equal(3, v.Length());
     Assert.Equal("apple",  v.At(0).AsString());
@@ -29,7 +29,7 @@ void test_simple_block_sequence() {
 [Test]
 void test_mapping_with_block_sequence_value() {
     string yaml = "fruits:\n  - apple\n  - banana\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     YamlValue f = v.Get("fruits");
     Assert.True(f.IsSequence());
     Assert.Equal(2, f.Length());
@@ -40,7 +40,7 @@ void test_mapping_with_block_sequence_value() {
 [Test]
 void test_deeply_nested_mapping() {
     string yaml = "a:\n  b:\n    c:\n      d: leaf\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.Equal("leaf",
         v.Get("a").Get("b").Get("c").Get("d").AsString());
 }
@@ -48,7 +48,7 @@ void test_deeply_nested_mapping() {
 [Test]
 void test_mixed_mapping_and_sequence() {
     string yaml = "name: alice\nfriends:\n  - bob\n  - charlie\ndetails:\n  age: 30\n  city: nyc\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.Equal("alice", v.Get("name").AsString());
     YamlValue f = v.Get("friends");
     Assert.Equal(2, f.Length());
@@ -61,7 +61,7 @@ void test_mixed_mapping_and_sequence() {
 [Test]
 void test_sequence_of_inline_mappings() {
     string yaml = "- name: bob\n- name: alice\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.True(v.IsSequence());
     Assert.Equal(2, v.Length());
     Assert.Equal("bob",   v.At(0).Get("name").AsString());
@@ -71,7 +71,7 @@ void test_sequence_of_inline_mappings() {
 [Test]
 void test_top_level_sequence() {
     string yaml = "- 1\n- 2\n- 3\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.True(v.IsSequence());
     Assert.Equal(3, v.Length());
     Assert.Equal(1L, v.At(0).AsInt());
@@ -82,7 +82,7 @@ void test_top_level_sequence() {
 [Test]
 void test_empty_mapping_value_then_sibling() {
     string yaml = "first:\nsecond: 2\n";
-    YamlValue v = Yaml.Parse(yaml);
+    YamlValue v = YamlValue.Parse(yaml);
     Assert.True(v.Get("first").IsNull());
     Assert.Equal(2L, v.Get("second").AsInt());
 }
