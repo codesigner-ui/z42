@@ -159,4 +159,33 @@ public class Stream {
         }
         return result;
     }
+
+    /// add-stream-copy-to (2026-05-24): pipe everything from `this`
+    /// into `dest` until `this` reports EOF. Uses a 4 KB intermediate
+    /// buffer. Does NOT close either stream — caller owns lifecycles
+    /// (matches CompressionEncoderStream / StreamWriter / Process*Stream
+    /// convention).
+    public void CopyTo(Stream dest) {
+        this.CopyTo(dest, 4096);
+    }
+
+    /// `bufferSize`-controlled variant. Useful when the source / dest
+    /// has a known natural chunk size (e.g. network MTU, codec window).
+    public void CopyTo(Stream dest, int bufferSize) {
+        if (!this.CanRead()) {
+            throw new NotSupportedException("CopyTo: source stream is not readable");
+        }
+        if (!dest.CanWrite()) {
+            throw new NotSupportedException("CopyTo: destination stream is not writable");
+        }
+        if (bufferSize <= 0) {
+            throw new ArgumentException("CopyTo: bufferSize must be > 0");
+        }
+        byte[] buf = new byte[bufferSize];
+        while (true) {
+            int n = this.Read(buf, 0, buf.Length);
+            if (n <= 0) { break; }
+            dest.Write(buf, 0, n);
+        }
+    }
 }

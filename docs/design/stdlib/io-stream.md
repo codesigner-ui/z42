@@ -160,14 +160,14 @@ reads/writes (>= bufferSize) bypass the buffer to avoid double-copy.
   `async`/`await` syntax which isn't implemented yet.
 - **触发条件**：L3 async lands.
 
-### `io-stream-future-copy-to`
+### ~~`io-stream-future-copy-to`~~ — **✅ landed 2026-05-24**
 
-- **来源**：v0 scope cut — a minor convenience helper
-- **触发原因**：`Stream.CopyTo(Stream dest)` is a `while Read; Write`
-  one-liner; v0 callers write it inline. Adds zero capability, only
-  ergonomic gain.
-- **触发条件**：repetitive caller patterns in real apps prove its
-  worth.
+Shipped via `add-stream-copy-to`: `Stream.CopyTo(Stream dest)` (4 KB
+buffer default) + `Stream.CopyTo(Stream dest, int bufferSize)` on the
+base class so subclasses don't need to override. Pre-checks: source
+`CanRead`, dest `CanWrite`, `bufferSize > 0`. Does NOT close either
+stream — caller owns lifecycles. See
+[`docs/spec/archive/2026-05-24-add-stream-copy-to/`](../../spec/archive/2026-05-24-add-stream-copy-to/).
 
 ### ~~`refactor-compression-stream-on-iostream`~~ — **✅ landed 2026-05-24**
 

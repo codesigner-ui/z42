@@ -1,0 +1,110 @@
+// add-stream-copy-to (2026-05-24): Stream.CopyTo(Stream) helper.
+namespace Z42IoStreamCopyToTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+byte[] _bytes_of(int[] xs) {
+    byte[] r = new byte[xs.Length];
+    int i = 0;
+    while (i < xs.Length) {
+        r[i] = (byte)xs[i];
+        i = i + 1;
+    }
+    return r;
+}
+
+[Test]
+void test_memory_to_memory() {
+    byte[] src = _bytes_of(new int[] { 1, 2, 3, 4, 5 });
+    MemoryStream from = new MemoryStream(src);
+    MemoryStream to   = new MemoryStream();
+    from.CopyTo(to);
+    byte[] out_ = to.ToArray();
+    Assert.Equal(5, out_.Length);
+    Assert.Equal(1, (int)out_[0]);
+    Assert.Equal(5, (int)out_[4]);
+}
+
+[Test]
+void test_empty_source_no_writes() {
+    MemoryStream from = new MemoryStream(new byte[0]);
+    MemoryStream to   = new MemoryStream();
+    from.CopyTo(to);
+    Assert.Equal(0, to.ToArray().Length);
+}
+
+[Test]
+void test_custom_buffer_size() {
+    // Tiny buffer forces multiple Read/Write cycles.
+    byte[] src = _bytes_of(new int[] { 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 });
+    MemoryStream from = new MemoryStream(src);
+    MemoryStream to   = new MemoryStream();
+    from.CopyTo(to, 3);
+    byte[] out_ = to.ToArray();
+    Assert.Equal(10, out_.Length);
+    Assert.Equal(10,  (int)out_[0]);
+    Assert.Equal(100, (int)out_[9]);
+}
+
+[Test]
+void test_filestream_to_memorystream() {
+    string path = File.CreateTempFile("z42_copyto_", ".bin");
+    try {
+        File.WriteAllText(path, "from disk to memory");
+        FileStream fs = new FileStream(path);
+        MemoryStream ms = new MemoryStream();
+        try {
+            fs.CopyTo(ms);
+        } finally {
+            fs.Close();
+        }
+        byte[] bytes = ms.ToArray();
+        Assert.Equal(19, bytes.Length);
+        Assert.Equal((int)'f', (int)bytes[0]);
+        Assert.Equal((int)'y', (int)bytes[18]);
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_non_readable_source_throws() {
+    // Base Stream — CanRead() = false.
+    Stream s = new Stream();
+    MemoryStream to = new MemoryStream();
+    bool threw = false;
+    try {
+        s.CopyTo(to);
+    } catch (NotSupportedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_non_writable_dest_throws() {
+    MemoryStream from = new MemoryStream(_bytes_of(new int[] { 1, 2 }));
+    MemoryStream ro   = new MemoryStream(_bytes_of(new int[] { 0 }));  // read-only view
+    bool threw = false;
+    try {
+        from.CopyTo(ro);
+    } catch (NotSupportedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_zero_buffer_size_throws() {
+    MemoryStream from = new MemoryStream(_bytes_of(new int[] { 1 }));
+    MemoryStream to   = new MemoryStream();
+    bool threw = false;
+    try {
+        from.CopyTo(to, 0);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
