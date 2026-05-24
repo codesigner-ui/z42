@@ -64,14 +64,12 @@ fn slot_id_monotonic_increasing() {
 
 // ── Connect failures ────────────────────────────────────────────────────
 
-#[cfg(not(target_arch = "wasm32"))]
-#[test]
-fn connect_to_invalid_host_returns_socket_err() {
-    let ctx = ctx();
-    let args = vec![Value::Str("nonexistent-host.invalid".to_string()), Value::I64(65535)];
-    let r = builtin_net_tcp_connect(&ctx, &args).expect("call ok");
-    assert_eq!(kind_of(&r), Some(KIND_SOCKET_ERR), "got {:?}", r);
-}
+// Note: a "connect to bad host" test would seem natural here but local DNS
+// resolvers / ISP captive portals frequently hijack NXDOMAIN, and TEST-NET-1
+// (192.0.2.0/24) is not reliably unroutable on all dev networks either —
+// connect would succeed-via-hijack or hang-then-timeout, not return
+// ConnectionRefused. The `connect_to_unbound_port_returns_socket_err` below
+// is the reliable error-path test (localhost:1 = guaranteed-refused).
 
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
