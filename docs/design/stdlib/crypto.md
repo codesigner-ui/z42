@@ -10,18 +10,26 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `HashHex(byte[]) -> string`
   - `HashStringHex(string) -> string`
 
-Pure-script implementation. State held as `long` (i64) masked to 32 bits at
-every op boundary — z42 `int` is signed i32 and overflows on the message
-schedule additions.
+- HMAC-SHA256 (RFC 2104) — `Std.Crypto.HmacSha256` (add-hmac-sha256, 2026-05-24)
+  - `Compute(byte[] key, byte[] message) -> byte[32]`
+  - `ComputeString(string key, string message) -> byte[32]`
+  - `ComputeHex(byte[] key, byte[] message) -> string`
+  - `ComputeStringHex(string key, string message) -> string`
+
+Pure-script implementation built on `Sha256.Hash`. State held as `long`
+(i64) masked to 32 bits at every op boundary — z42 `int` is signed i32 and
+overflows on the message schedule additions.
+
+**命名约定**：mirror `Sha256` — distinct method name per parameter form
+(`Compute` / `ComputeString` / `ComputeHex` / `ComputeStringHex`) instead
+of overload-by-arg-type. z42 当前 overload 解析对 `byte[]` vs `string`
+歧义（曾在 BinaryWriter / JsonValue.Parse 踩过），distinct names 既绕开
+该限制也跟 stdlib 既有风格一致。
+
+**测试**：RFC 4231 §4.2-4.4 / §4.5 / §4.7 / §4.8 全部覆盖；§4.6
+（HMAC-SHA-256-128 truncation）跳过，用户需要时可 `result[:16]`。
 
 ## Deferred / Future Work
-
-### HMAC-SHA256
-
-- **来源**：add-z42-crypto 计划但 v0 未做
-- **触发原因**：HMAC 需要先确认 z42 string runtime 的 byte-level 操作 + 性能模型；与 SHA-256 算法独立
-- **触发条件**：v1 stdlib crypto 阶段，配合 KDF / 签名 API 一并设计
-- **当前 workaround**：用户需要 HMAC 时可用 RFC 2104 公式手写：`HMAC-SHA256(K, m) = SHA-256(K' XOR opad || SHA-256(K' XOR ipad || m))`
 
 ### CSPRNG（`Std.Crypto.Random`）
 

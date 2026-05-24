@@ -1,0 +1,105 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-hmac-sha256 (2026-05-24): HMAC-SHA256 (RFC 2104).
+//
+// Pure-script over `Sha256`. Naming mirrors `Sha256` convention exactly —
+// distinct method names per parameter type rather than overloads (z42 当前
+// overload 解析对 byte[] vs string 有 ambiguity，参考 BinaryWriter /
+// JsonValue.Parse 同一坑；与 Sha256 / HashString / HashHex / HashStringHex
+// 命名风格一致是 stdlib 既定方向）。
+//
+// Algorithm (RFC 2104):
+//   K'    = if len(K) > 64 then SHA256(K) else K right-padded with 0x00 to 64
+//   inner = SHA256( (K' XOR 0x36 repeated 64) || msg )
+//   HMAC  = SHA256( (K' XOR 0x5C repeated 64) || inner )
+//
+// Class name mirrors .NET BCL `HMACSHA256`. Future SHA-384/512 variants
+// land as `HmacSha384` / `HmacSha512` sibling classes.
+//
+// Tested against RFC 4231 §4.2-4.4, §4.5, §4.7, §4.8 test vectors. §4.6
+// (truncation HMAC-SHA-256-128) skipped — users can `result[:16]` if needed.
+public static class HmacSha256 {
+    // ── Public API ───────────────────────────────────────────────────────────
+
+    /// HMAC-SHA256 of `message` keyed by `key`. Returns 32-byte digest.
+    public static byte[] Compute(byte[] key, byte[] message) {
+        byte[] paddedKey = _padKey(key);
+
+        // Inner: SHA256( (K' XOR ipad) || message )
+        byte[] inner = new byte[64 + message.Length];
+        int i = 0;
+        while (i < 64) {
+            inner[i] = (byte)((int)paddedKey[i] ^ 0x36);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < message.Length) {
+            inner[64 + i] = message[i];
+            i = i + 1;
+        }
+        byte[] innerHash = Sha256.Hash(inner);
+
+        // Outer: SHA256( (K' XOR opad) || innerHash )
+        byte[] outer = new byte[64 + 32];
+        i = 0;
+        while (i < 64) {
+            outer[i] = (byte)((int)paddedKey[i] ^ 0x5C);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < 32) {
+            outer[64 + i] = innerHash[i];
+            i = i + 1;
+        }
+        return Sha256.Hash(outer);
+    }
+
+    /// HMAC-SHA256 with string key + string message (UTF-8 encoded). Returns 32 bytes.
+    public static byte[] ComputeString(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return Compute(keyBytes, msgBytes);
+    }
+
+    /// HMAC-SHA256 returning lowercase hex (64 chars).
+    public static string ComputeHex(byte[] key, byte[] message) {
+        return Hex.Encode(Compute(key, message));
+    }
+
+    /// HMAC-SHA256 with string key + message, returning lowercase hex.
+    public static string ComputeStringHex(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return Hex.Encode(Compute(keyBytes, msgBytes));
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    /// Normalise key to exactly 64 bytes (SHA-256 block size):
+    /// - longer  → SHA-256 the key first (32 bytes), then 0x00-pad to 64
+    /// - shorter → right-pad with 0x00
+    /// - exact   → copy (defensive — XOR pad will mutate the buffer)
+    static byte[] _padKey(byte[] key) {
+        byte[] padded = new byte[64];
+        if (key.Length > 64) {
+            byte[] digest = Sha256.Hash(key);
+            int i = 0;
+            while (i < 32) {
+                padded[i] = digest[i];
+                i = i + 1;
+            }
+            // bytes [32..63] already 0 from `new byte[64]`
+        } else {
+            int i = 0;
+            while (i < key.Length) {
+                padded[i] = key[i];
+                i = i + 1;
+            }
+            // bytes [key.Length..63] already 0
+        }
+        return padded;
+    }
+}
