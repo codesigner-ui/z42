@@ -77,7 +77,7 @@ pub unsafe extern "C" fn jit_vcall(
     }
 
     // L3-G4b primitive-as-struct: primitives dispatch through their stdlib struct's
-    // method — construct `{Std.int | Std.double | ...}.{method}` and invoke via the
+    // method — construct `{Std.Int32 | Std.Double | ...}.{method}` and invoke via the
     // JIT entry cache. Replaces the old hardcoded `(Value, method) → builtin` table.
     //
     // Overload resolution: when the receiver type is statically `object` the IR

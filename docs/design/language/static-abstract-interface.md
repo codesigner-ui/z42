@@ -353,7 +353,7 @@ public sealed record Z42InterfaceType(
 - 生成**新的 BoundCall 种类**：`InterfaceStaticCall(interface=INumber, method=op_Add, args=[a, b])`
 - IR 层：新指令 `OpInterfaceStaticCall(iface_name, method_name, args)` 或复用 VCall 但 kind=InterfaceStatic
 - VM 运行时：
-  - 取 `args[0]` 的 concrete type（primitive → class_name 如 `Std.int`；Object → type_desc.name）
+  - 取 `args[0]` 的 concrete type（primitive → class_name 如 `Std.Int32`；Object → type_desc.name）
   - 查该 class 的 `StaticMethods[method_name]`
   - 调用，返回结果
 - **值驱动 limitation**：`args[0]` 必须是非 null 值；对 `T.Zero` 这类无参静态成员**不适用**
@@ -409,8 +409,8 @@ Instruction::StaticCallViaIface { dst, iface_name, method, args } => {
 
 ### 5.2 性能考虑
 
-- primitive 的 `a + b` 编译为 StaticCallViaIface → VM 派发到 `Std.int.op_Add`
-- `Std.int.op_Add` body 是 `return a + b` → IR AddInstr
+- primitive 的 `a + b` 编译为 StaticCallViaIface → VM 派发到 `Std.Int32.op_Add`
+- `Std.Int32.op_Add` body 是 `return a + b` → IR AddInstr
 - 开销：**1 次函数调用 + 原生加法**（vs 直接 AddInstr）
 - 对泛型代码可接受；未来可加 IR-level specialization（iter 3+）
 
@@ -421,8 +421,8 @@ Instruction::StaticCallViaIface { dst, iface_name, method, args } => {
 ```rust
 pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
     match obj {
-        Value::I64(_)  => Some("Std.int"),
-        Value::F64(_)  => Some("Std.double"),
+        Value::I64(_)  => Some("Std.Int32"),
+        Value::F64(_)  => Some("Std.Double"),
         ...
     }
 }

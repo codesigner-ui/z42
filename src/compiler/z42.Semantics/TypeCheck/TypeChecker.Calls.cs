@@ -143,19 +143,10 @@ public sealed partial class TypeChecker
     {
         var args = call.Args.Select(a => BindArgValue(a, env)).ToList();
 
-        // Map built-in type names to stdlib class names.
-        // L3-G4b primitive-as-struct: int / double now live as `struct int` / `struct double`
-        // in Std namespace (lowercase). `bool` / `string` still resolve to uppercase helpers
-        // for backward compat with Std.Bool / Std.String static members (IsNullOrEmpty, etc.).
-        string resolvedClassName = tgtName switch
-        {
-            "string" => "Std.String",
-            "int"    => "Std.int",
-            "double" => "Std.double",
-            "bool"   => "Std.bool",
-            "char"   => "Std.char",
-            _ => tgtName
-        };
+        // Map keyword → stdlib class FQN via TypeRegistry (single source of truth).
+        // Covers all 12 primitives + string + object; falls through to tgtName for user types.
+        // See rename-primitives-to-pascal-case spec for the keyword→PascalCase BCL mapping.
+        string resolvedClassName = TypeRegistry.GetTypeEntry(tgtName)?.StdlibClassName ?? tgtName;
 
         // Try to resolve via DepIndex (static method on stdlib class)
         if (_depIndex?.TryGetStatic(resolvedClassName, mCallee.Member, out var depUnknownEntry) == true)
@@ -417,11 +408,23 @@ public sealed partial class TypeChecker
             primitiveClassName = pt.Name;
 
         // L3 primitive-as-struct: when recvExpr is a primitive (e.g. string) and
-        // a same-package stdlib class exists (String), consult its method table
-        // so intra-package calls like `this.Substring(start, n)` resolve to the
-        // correct overload `Substring$2` before the VM tries string-method lookup.
-        if (recvExpr.Type is Z42PrimType primT
-            && _symbols.Classes.TryGetValue(CapitalizeFirst(primT.Name), out var primClsType))
+        // a same-package stdlib class exists (String / Int32 / Boolean / ...), consult
+        // its method table so intra-package calls like `this.Substring(start, n)` resolve
+        // to the correct overload `Substring$2` before the VM tries primitive lookup.
+        //
+        // rename-primitives-to-pascal-case (2026-05-24): primitive struct name comes
+        // from `TypeRegistry.StdlibClassName` (the simple name after the last `.`),
+        // replacing the old `CapitalizeFirst(primT.Name)` heuristic which assumed
+        // `int → Int` / `string → String` (no longer valid: `int → Int32`).
+        string? primStructSimpleName = null;
+        if (recvExpr.Type is Z42PrimType primT)
+        {
+            var fqn = TypeRegistry.GetTypeEntry(primT.Name)?.StdlibClassName;
+            int lastDot = fqn?.LastIndexOf('.') ?? -1;
+            primStructSimpleName = lastDot >= 0 ? fqn![(lastDot + 1)..] : fqn;
+        }
+        if (primStructSimpleName != null
+            && _symbols.Classes.TryGetValue(primStructSimpleName, out var primClsType))
         {
             var primArityKey = $"{mCallee.Member}${argBound.Count}";
             bool primBare  = primClsType.Methods.TryGetValue(mCallee.Member, out var pmt1);

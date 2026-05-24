@@ -3,10 +3,10 @@ namespace Std;
 // Type conversion helpers.
 // Native bindings delegate to VM intrinsics.
 public static class Convert {
-    [Native("__int_parse")]
+    [Native("__int32_parse")]
     public static extern int ToInt32(string s);
 
-    [Native("__long_parse")]
+    [Native("__int64_parse")]
     public static extern long ToInt64(string s);
 
     [Native("__double_parse")]

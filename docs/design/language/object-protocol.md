@@ -119,7 +119,7 @@ For `Value::I64` / `Value::F64` / `Value::Bool` / `Value::Char` / `Value::Null`
 
 Note: this path is the **fallback** for `ToStr` IR instruction. When user code
 writes `n.ToString()` on a typed `int`, the call goes through the **interp
-VCall** with receiver type → stdlib script `Std.int.ToString` (not directly
+VCall** with receiver type → stdlib script `Std.Int32.ToString` (not directly
 through `value_to_str`). `value_to_str` is only the implicit format for
 `ToStr` instructions (string interpolation, `+`).
 
@@ -131,7 +131,7 @@ These follow analogous paths but currently lack a centralised dispatch helper
 (unlike `obj_to_string`):
 
 - **`Equals` / `GetHashCode`**: routed through `VCall`. For `Value::Object` →
-  vtable lookup. For primitives → hardcoded builtins (`__int_equals`,
+  vtable lookup. For primitives → hardcoded builtins (`__int32_equals`,
   `__double_hash_code`, `__char_equals`, ...). For `Value::Str` → same
   hardcoded shortcut as `ToString` above.
 - **`GetType`**: always routes through `__obj_get_type` builtin (returns a
@@ -167,8 +167,8 @@ History:
    removed the hardcoded block in favour of the same unified path other
    primitives use, gated only by overload-suffix retry. The intrinsic
    `__str_*` builtins are reached via the IR `extern` stub IrGen emits for
-   each `[Native]` declaration in `Std.String` — same pattern as `Std.int`
-   / `Std.double`.
+   each `[Native]` declaration in `Std.String` — same pattern as `Std.Int32`
+   / `Std.Double`.
 
 3. **`value_to_str` fallback** (Path 3) covers `ToStr` IR instructions on
    primitives where the receiver type is statically `Value::I64` etc. and the

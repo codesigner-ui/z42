@@ -144,7 +144,7 @@ void Main() { var p = new Parser<Color>(); }";
     {
         var src = @"
 interface IEquatable<T> { bool Equals(T other); }
-struct int : IEquatable<int> { [Native(""__int_equals"")] public extern bool Equals(int other); }
+struct Int32 : IEquatable<int> { [Native(""__int32_equals"")] public extern bool Equals(int other); }
 class Box<T> where T: IEquatable<T> {
     T value;
     Box(T v) { this.value = v; }
@@ -175,7 +175,7 @@ void Main() { var f = new Foo<int, string>(0, ""x""); }";
     {
         var src = @"
 interface IEquatable<T> { bool Equals(T other); }
-struct int : IEquatable<int> { [Native(""__int_equals"")] public extern bool Equals(int other); }
+struct Int32 : IEquatable<int> { [Native(""__int32_equals"")] public extern bool Equals(int other); }
 class Foo<T, U> where T: IEquatable<U>, U: IEquatable<U> {
     T t; U u;
     Foo(T t, U u) { this.t = t; this.u = u; }

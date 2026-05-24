@@ -608,7 +608,7 @@ public struct int : INumber<int> {
    （复用现有虚派发通路）
 
 3. **VM interp / JIT**：
-   - `primitive_class_name(obj)` 解析原语类 → 调 `Std.int.op_Add(a, b)`
+   - `primitive_class_name(obj)` 解析原语类 → 调 `Std.Int32.op_Add(a, b)`
    - 对象走 vtable → 找不到则 fallback `{class}.{method}` 直接拼接
    - VCall 调用约定 `(obj, ...extras)` 与 2 参静态 op 的 `(a, b)` 签名天然匹配
 
@@ -805,8 +805,8 @@ public struct int : IComparable<int>, IEquatable<int> {
 | 层 | 原硬编码 | 现在 |
 |----|---------|------|
 | **Parser** | 不允许 primitive 关键字作 struct 名 | `ExpectTypeDeclName` 接受 `int`/`double`/... 作为声明名 |
-| **TypeChecker** | `PrimitiveImplementsInterface` switch 表（20+ 条） | 数据驱动：查 `SymbolTable.ClassInterfaces[canonical]`（别名 `i32/sbyte/...` 归一为 `int`） |
-| **VM** | `primitive_method_builtin` 方法-内置名映射（17 条） | `primitive_class_name` 仅 5 条变体→类名映射；实际方法派发走 `module.func_index["Std.int.CompareTo"]` → stdlib 生成的 extern stub 调 `__int_compare_to` builtin |
+| **TypeChecker** | `PrimitiveImplementsInterface` switch 表（20+ 条） | 数据驱动：查 `SymbolTable.ClassInterfaces[canonical]`（通过 `TypeRegistry.StdlibClassName` 把 keyword `int / i32` 归一为 BCL 名 `Int32`） |
+| **VM** | `primitive_method_builtin` 方法-内置名映射（17 条） | `primitive_class_name` 仅 6 条变体→类名映射；实际方法派发走 `module.func_index["Std.Int32.CompareTo"]` → stdlib 生成的 extern stub 调 `__int32_compare_to` builtin |
 
 #### 类型身份保守
 

@@ -2,7 +2,7 @@
 // INumber<T> declares `static abstract T op_Add(T a, T b)` etc. (C# 11 alignment).
 // primitive int/double/etc. implement via `public static override T op_Add(T a, T b) { return a + b; }`.
 // Generic `x.op_Add(x)` lowers to VCall, which dispatches on x's runtime class
-// to the concrete `Std.int.op_Add(a, b)` — zero VM builtin, zero codegen special.
+// to the concrete `Std.Int32.op_Add(a, b)` — zero VM builtin, zero codegen special.
 
 T Double<T>(T x) where T: INumber<T> {
     return x.op_Add(x);

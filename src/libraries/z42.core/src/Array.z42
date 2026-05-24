@@ -4,7 +4,7 @@ namespace Std;
 // 所有 T[] 在运行时是 `Std.Array` 的实例。编译器特殊处理 is-a：`Z42ArrayType`
 // 视作 `Z42ClassType("Std.Array")` 的子类型；VM 端 `Value::Array` 不携带
 // TypeDesc 引用，VCall 通过 `primitive_class_name` 路由到 `Std.Array.<method>`
-// 直查 func_index（与 Std.int / Std.String 同款）。
+// 直查 func_index（与 Std.Int32 / Std.String 同款）。
 //
 // 用户不能 `new Array()` —— `T[]` 通过 `array_new` IR 指令构造。
 // 用户不能继承 Array —— `sealed` 阻止派生。
@@ -24,7 +24,7 @@ public sealed class Array {
     [Native("__array_clone")]
     public extern Object Clone();
 
-    // ── Object 协议（Native 绑定到现有 __obj_* builtin；与 Std.int / Std.String
+    // ── Object 协议（Native 绑定到现有 __obj_* builtin；与 Std.Int32 / Std.String
     //    同款 —— `Value::Array` 在每个 builtin 内部单独识别）──
     [Native("__obj_get_type")]
     public extern Type GetType();

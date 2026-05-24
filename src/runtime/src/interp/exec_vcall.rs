@@ -1,7 +1,7 @@
 /// Virtual dispatch (`VCall`) plus its dedicated helpers.
 ///
 /// `VCall` is split out from `exec_object.rs` because it carries:
-///   • The L3-G4b primitive-as-struct dispatch path (Value::I64 → `Std.int.<m>`)
+///   • The L3-G4b primitive-as-struct dispatch path (Value::I64 → `Std.Int32.<m>`)
 ///   • The `add-array-base-class` is-a hardcoded chain for `Value::Array`
 ///   • A 3-way fallback search (vtable_index → resolve_virtual → lazy hierarchy walk)
 /// Together ~140 LOC; keeping it isolated makes the rest of `exec_object.rs`
@@ -17,7 +17,7 @@ use super::ops::collect_args;
 use super::{ExecOutcome, Frame};
 
 /// L3-G4b primitive-as-struct: maps a primitive `Value` variant to its stdlib
-/// struct's qualified class name (e.g. `Value::I64` → `"Std.int"`). The VM
+/// struct's qualified class name (e.g. `Value::I64` → `"Std.Int32"`). The VM
 /// dispatches primitive method calls by constructing `{class}.{method}` and
 /// looking up the function in `module.func_index` — replacing the old
 /// hardcoded `(Value, method)` → builtin-name switch.
@@ -26,11 +26,14 @@ use super::{ExecOutcome, Frame};
 pub(crate) fn primitive_class_name(obj: &Value) -> Option<&'static str> {
     use crate::metadata::well_known_names::*;
     match obj {
-        Value::I64(_)  => Some(STD_INT),
+        // rename-primitives-to-pascal-case (2026-05-24): VM dispatch on
+        // Value::I64 routes to Std.Int32 by default (narrow int / long values
+        // are tagged with class FQN at compile-time in VCall instructions).
+        Value::I64(_)  => Some(STD_INT32),
         Value::F64(_)  => Some(STD_DOUBLE),
-        Value::Bool(_) => Some(STD_BOOL),
+        Value::Bool(_) => Some(STD_BOOLEAN),
         Value::Char(_) => Some(STD_CHAR),
-        Value::Str(_)  => Some(STD_STRING),  // capitalised — stdlib retains `class String`
+        Value::Str(_)  => Some(STD_STRING),
         // 2026-05-07 add-array-base-class: T[] dispatches to Std.Array methods
         // (Clone / GetType / ToString / Equals / GetHashCode). The lookup path
         // below tries `Std.Array.<method>` first, then falls through to base
@@ -115,8 +118,8 @@ pub(super) fn vcall(
     }
 
     // L3-G4b primitive-as-struct: primitives dispatch through their stdlib
-    // struct's method (e.g. `Value::I64.CompareTo` → call `Std.int.CompareTo`
-    // IR function, which contains a BuiltinInstr for `__int_compare_to`).
+    // struct's method (e.g. `Value::I64.CompareTo` → call `Std.Int32.CompareTo`
+    // IR function, which contains a BuiltinInstr for `__int32_compare_to`).
     // This replaces the old hardcoded `(Value, method) → builtin` table —
     // method-to-native binding is now entirely data-driven via stdlib source.
     //

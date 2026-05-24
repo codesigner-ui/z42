@@ -140,11 +140,12 @@ void Main() {
             MemberVisibility: new Dictionary<string, Visibility>(),
             BaseClassName: null,
             TypeParams: new List<string> { "T" });
-        // L3-G4b primitive-as-struct: stdlib normally declares `struct int : IEquatable<int>`;
-        // synthetic imports must carry the same interface list so data-driven
-        // `PrimitiveImplementsInterface` accepts `int` as conforming.
+        // rename-primitives-to-pascal-case (2026-05-24): stdlib declares `struct Int32 :
+        // IEquatable<int>` (BCL PascalCase); synthetic imports must carry the same
+        // interface list under the new class name so data-driven
+        // `PrimitiveImplementsInterface` accepts `int` as conforming via TypeRegistry alias.
         var intStruct = new Z42ClassType(
-            Name: "int",
+            Name: "Int32",
             Fields: new Dictionary<string, IFieldSymbol>(),
             Methods: new Dictionary<string, IMethodSymbol>(),
             StaticFields: new Dictionary<string, IFieldSymbol>(),
@@ -153,12 +154,12 @@ void Main() {
             BaseClassName: null,
             IsStruct: true);
         var imported = new ImportedSymbols(
-            Classes: new() { ["Box"] = box, ["int"] = intStruct },
+            Classes: new() { ["Box"] = box, ["Int32"] = intStruct },
             Functions: new(),
             Interfaces: new() { ["IEquatable"] = ieq },
             EnumConstants: new(),
             EnumTypes: [],
-            ClassNamespaces: new() { ["Box"] = "Demo.Lib", ["int"] = "Std" },
+            ClassNamespaces: new() { ["Box"] = "Demo.Lib", ["Int32"] = "Std" },
             ClassConstraints: new()
             {
                 ["Box"] = [
@@ -172,7 +173,7 @@ void Main() {
                 ]
             },
             FuncConstraints: null,
-            ClassInterfaces: new() { ["int"] = ["IEquatable"] });
+            ClassInterfaces: new() { ["Int32"] = ["IEquatable"] });
 
         // int implements IEquatable via the stdlib-declared struct (imported above).
         const string src = @"void Main() { var b = new Box<int>(); }";

@@ -101,24 +101,31 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     ("__char_to_upper",      char::builtin_char_to_upper),
 
     // ── Parse / convert ───────────────────────────────────────────────────────
-    ("__long_parse",   convert::builtin_long_parse),
-    ("__int_parse",    convert::builtin_int_parse),
+    //
+    // rename-primitives-to-pascal-case (2026-05-24): builtin names now follow
+    // BCL convention (Int32 / Int64 / SByte / Byte / Single / Boolean / ...).
+    // BUILTINS array position is the stable BuiltinId — entry order preserved.
+    ("__int64_parse",   convert::builtin_int64_parse),
+    ("__int32_parse",   convert::builtin_int32_parse),
     // add-narrow-int-primitives (2026-05-15): per-type Parse with range
     // validation. Underlying Value is still I64; these only differ from
-    // __int_parse in the [min, max] check.
-    ("__i8_parse",     convert::builtin_i8_parse),
-    ("__i16_parse",    convert::builtin_i16_parse),
-    ("__u8_parse",     convert::builtin_u8_parse),
-    ("__u16_parse",    convert::builtin_u16_parse),
-    ("__u32_parse",    convert::builtin_u32_parse),
-    ("__u64_parse",    convert::builtin_u64_parse),
-    ("__double_parse", convert::builtin_double_parse),
-    ("__to_str",       convert::builtin_to_str),
+    // __int32_parse in the [min, max] check.
+    ("__sbyte_parse",   convert::builtin_sbyte_parse),
+    ("__int16_parse",   convert::builtin_int16_parse),
+    ("__byte_parse",    convert::builtin_byte_parse),
+    ("__uint16_parse",  convert::builtin_uint16_parse),
+    ("__uint32_parse",  convert::builtin_uint32_parse),
+    ("__uint64_parse",  convert::builtin_uint64_parse),
+    ("__double_parse",  convert::builtin_double_parse),
+    ("__to_str",        convert::builtin_to_str),
 
     // ── Primitive IComparable / IEquatable (L3-G4b) ───────────────────────────
-    ("__int_equals",        convert::builtin_int_equals),
-    ("__int_hash_code",     convert::builtin_int_hash_code),
-    ("__int_to_string",     convert::builtin_int_to_string),
+    // `__int32_*` underlying routines are shared by all narrow integer wrapper
+    // types (Int16 / SByte / Byte / UInt16 / UInt32 / UInt64 / Int64) since
+    // VM stores them all as Value::I64.
+    ("__int32_equals",      convert::builtin_int32_equals),
+    ("__int32_hash_code",   convert::builtin_int32_hash_code),
+    ("__int32_to_string",   convert::builtin_int32_to_string),
     ("__double_equals",     convert::builtin_double_equals),
     ("__double_hash_code",  convert::builtin_double_hash_code),
     ("__double_to_string",  convert::builtin_double_to_string),

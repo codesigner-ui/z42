@@ -73,7 +73,7 @@ public sealed partial class IrGen
         }
         // L3 extern impl (Change 1): register impl methods under the target class's qualified name.
         // L3-Impl2: use QualifyClassName so imported targets (e.g. `int` from z42.core)
-        // get registered under their source namespace (`Std.int.op_Add`), not the
+        // get registered under their source namespace (`Std.Int32.op_Add`), not the
         // current package namespace. Local targets are unaffected (QualifyClassName
         // returns QualifyName when class is local).
         foreach (var impl in cu.Impls)

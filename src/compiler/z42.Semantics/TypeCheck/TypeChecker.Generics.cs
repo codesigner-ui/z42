@@ -347,26 +347,28 @@ public sealed partial class TypeChecker
     }
 
     /// L3-G4b primitive-as-struct: primitive types satisfy interfaces via stdlib
-    /// `struct int : IComparable<int> { ... }` declarations (see z42.core/src/Int.z42
-    /// etc.). No hardcoded table — consults the symbol-level `ClassInterfaces` registry.
+    /// `struct Int32 : IComparable<int> { ... }` declarations (see z42.core/src/Primitives/Int32.z42
+    /// etc.). No hardcoded table — consults the symbol-level `ClassInterfaces` registry
+    /// keyed by the stdlib struct's simple name (BCL PascalCase post rename-primitives-to-pascal-case).
     ///
-    /// Size-alias primitive names (i32, i64, short, byte, ushort, uint, ulong, f32, ...) are
-    /// normalized to their canonical stdlib struct name (int/long/double/float) before lookup,
-    /// so `Max<i8>(...)` reuses `struct int`'s interface list.
+    /// Size-alias primitive names (i32, i64, short, byte, ushort, uint, ulong, f32, ...) and the
+    /// canonical lowercase keywords (int/long/bool/...) are both resolved through `TypeRegistry`
+    /// to the BCL class simple name (e.g. `i8` → `SByte`, `int` → `Int32`, `bool` → `Boolean`),
+    /// so `Max<i8>(...)` reuses `struct SByte`'s interface list.
     private bool PrimitiveImplementsInterface(string primName, string ifaceName)
     {
-        string canonical = primName switch
+        // Map keyword / alias → BCL stdlib struct simple name via TypeRegistry SoT.
+        var fqn = TypeRegistry.GetTypeEntry(primName)?.StdlibClassName;
+        string canonical;
+        if (fqn != null)
         {
-            "i8" or "i16" or "i32" or "u8" or "u16" or "u32"
-            or "sbyte" or "short" or "byte" or "ushort" or "uint" => "int",
-            "i64" or "u64" or "ulong"                             => "long",
-            "f32"                                                  => "float",
-            "f64"                                                  => "double",
-            // stdlib retains legacy uppercase `class String`; map primitive `string` to it
-            // until String is migrated to a `struct string` declaration.
-            "string"                                               => "String",
-            _                                                      => primName,
-        };
+            int lastDot = fqn.LastIndexOf('.');
+            canonical = lastDot >= 0 ? fqn[(lastDot + 1)..] : fqn;
+        }
+        else
+        {
+            canonical = primName;
+        }
         if (!_symbols.ClassInterfaces.TryGetValue(canonical, out var ifaces)) return false;
         foreach (var iface in ifaces)
             if (iface.Name == ifaceName) return true;

@@ -1,16 +1,21 @@
 namespace Std;
 
+// rename-primitives-to-pascal-case (2026-05-24): primitive struct now named
+// `UInt64` per BCL convention; source keyword `u64` is preserved as alias.
+//
 // add-narrow-int-primitives (2026-05-15): `u64` / `ulong` (unsigned 64-bit).
 // Values above i64::MAX (9_223_372_036_854_775_807) are stored as the
 // bit-preserving i64 cast — i.e. `int.ToString` will render them as
 // negative, but `==` and arithmetic preserve the unsigned semantics.
 // A dedicated u64-aware ToString is deferred until Value gains explicit
 // unsigned variants.
-public struct u64 : IComparable<u64>, IEquatable<u64>, INumber<u64> {
-    [Native("__u64_parse")]     public static extern u64 Parse(string s);
-    [Native("__int_equals")]    public extern bool Equals(u64 other);
-    [Native("__int_hash_code")] public extern int GetHashCode();
-    [Native("__int_to_string")] public extern string ToString();
+//
+// Equals / GetHashCode / ToString share `__int32_*` builtins (Value::I64 storage).
+public struct UInt64 : IComparable<u64>, IEquatable<u64>, INumber<u64> {
+    [Native("__uint64_parse")]     public static extern u64 Parse(string s);
+    [Native("__int32_equals")]     public extern bool Equals(u64 other);
+    [Native("__int32_hash_code")]  public extern int GetHashCode();
+    [Native("__int32_to_string")]  public extern string ToString();
 
     public int CompareTo(u64 other) {
         if (this < other) return -1;

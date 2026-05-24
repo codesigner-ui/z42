@@ -107,11 +107,16 @@ pub fn value_to_str(v: &Value) -> String {
 // pre-1.0 不留兼容包袱。
 
 // ── Parse / convert builtins ─────────────────────────────────────────────────
+//
+// rename-primitives-to-pascal-case (2026-05-24): builtin functions + error
+// messages now use BCL PascalCase (`Int32.Parse` instead of `int.Parse`).
+// Source keyword (`int / long / i8 / u8 / ...`) remains valid in user code
+// via C# TypeChecker alias; this Rust layer is the underlying implementation.
 
-pub fn builtin_long_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = arg_str(args, 0, "long.Parse")?;
+pub fn builtin_int64_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let s = arg_str(args, 0, "Int64.Parse")?;
     s.trim().parse::<i64>().map(Value::I64)
-        .map_err(|_| anyhow::anyhow!("long.Parse: could not parse {:?} as long", s))
+        .map_err(|_| anyhow::anyhow!("Int64.Parse: could not parse {:?} as Int64", s))
 }
 
 /// add-narrow-int-primitives (2026-05-15): parse the input as an i64, then
@@ -119,32 +124,32 @@ pub fn builtin_long_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 /// throw OverflowException-style error (anyhow string surfaced as VM bail).
 /// Pre-2026-05-15 `int.Parse("99999999999999")` silently succeeded with a
 /// value larger than i32 could hold; this build now rejects it.
-pub fn builtin_int_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    parse_narrow_int(args, "int.Parse", i32::MIN as i64, i32::MAX as i64)
+pub fn builtin_int32_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "Int32.Parse", i32::MIN as i64, i32::MAX as i64)
 }
-pub fn builtin_i8_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    parse_narrow_int(args, "i8.Parse", i8::MIN as i64, i8::MAX as i64)
+pub fn builtin_sbyte_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "SByte.Parse", i8::MIN as i64, i8::MAX as i64)
 }
-pub fn builtin_i16_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    parse_narrow_int(args, "i16.Parse", i16::MIN as i64, i16::MAX as i64)
+pub fn builtin_int16_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "Int16.Parse", i16::MIN as i64, i16::MAX as i64)
 }
-pub fn builtin_u8_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    parse_narrow_int(args, "u8.Parse", 0, u8::MAX as i64)
+pub fn builtin_byte_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "Byte.Parse", 0, u8::MAX as i64)
 }
-pub fn builtin_u16_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    parse_narrow_int(args, "u16.Parse", 0, u16::MAX as i64)
+pub fn builtin_uint16_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "UInt16.Parse", 0, u16::MAX as i64)
 }
-pub fn builtin_u32_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    parse_narrow_int(args, "u32.Parse", 0, u32::MAX as i64)
+pub fn builtin_uint32_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    parse_narrow_int(args, "UInt32.Parse", 0, u32::MAX as i64)
 }
 /// u64 can hold values > i64::MAX. We parse as u64 then bit-cast to i64
-/// (i.e. values above i64::MAX appear as negative under int.ToString — same
+/// (i.e. values above i64::MAX appear as negative under Int32.ToString — same
 /// bit-preserving semantics as `convert_from_i64` U64 cast).
-pub fn builtin_u64_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = arg_str(args, 0, "u64.Parse")?;
+pub fn builtin_uint64_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let s = arg_str(args, 0, "UInt64.Parse")?;
     s.trim().parse::<u64>().map(|v| Value::I64(v as i64))
         .map_err(|_| anyhow::anyhow!(
-            "u64.Parse: could not parse {:?} as u64 (range: 0..={})", s, u64::MAX))
+            "UInt64.Parse: could not parse {:?} as UInt64 (range: 0..={})", s, u64::MAX))
 }
 
 fn parse_narrow_int(args: &[Value], ctx: &str, min: i64, max: i64) -> Result<Value> {
@@ -157,9 +162,9 @@ fn parse_narrow_int(args: &[Value], ctx: &str, min: i64, max: i64) -> Result<Val
     Ok(Value::I64(v))
 }
 pub fn builtin_double_parse(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let s = arg_str(args, 0, "double.Parse")?;
+    let s = arg_str(args, 0, "Double.Parse")?;
     s.trim().parse::<f64>().map(Value::F64)
-        .map_err(|_| anyhow::anyhow!("double.Parse: could not parse {:?} as double", s))
+        .map_err(|_| anyhow::anyhow!("Double.Parse: could not parse {:?} as Double", s))
 }
 pub fn builtin_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     Ok(Value::Str(args.first().map(value_to_str).unwrap_or_default()))
@@ -167,67 +172,67 @@ pub fn builtin_to_str(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 
 // ── L3-G4b primitive interface implementations ──────────────────────────────
 // Backing native functions for IComparable<T> / IEquatable<T> on primitive
-// receivers (int/double/bool/char). Dispatched by VCall when the receiver
+// receivers (Int32/Double/Boolean/Char). Dispatched by VCall when the receiver
 // is Value::I64/F64/Bool/Char and the method matches CompareTo/Equals/GetHashCode.
 // 旧 file-local require_* 已删 —— 用顶部 pub `arg_i64` / `arg_f64` / `arg_char`。
 
 // 2026-04-27 wave2-compare-to-script: builtin_int_compare_to removed.
-// `Std.int.CompareTo` / `Std.long.CompareTo` 现在是脚本（用 IR `<`/`>`）。
+// `Std.Int32.CompareTo` / `Std.Int64.CompareTo` 现在是脚本（用 IR `<`/`>`）。
 
-pub fn builtin_int_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_i64(args, 0, "int.Equals")?;
-    let b = arg_i64(args, 1, "int.Equals")?;
+pub fn builtin_int32_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let a = arg_i64(args, 0, "Int32.Equals")?;
+    let b = arg_i64(args, 1, "Int32.Equals")?;
     Ok(Value::Bool(a == b))
 }
-pub fn builtin_int_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_i64(args, 0, "int.GetHashCode")?;
+pub fn builtin_int32_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let a = arg_i64(args, 0, "Int32.GetHashCode")?;
     Ok(Value::I64(a))  // identity hash for integers
 }
-pub fn builtin_int_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_i64(args, 0, "int.ToString")?;
+pub fn builtin_int32_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let a = arg_i64(args, 0, "Int32.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
 // 2026-04-27 wave2-compare-to-script: builtin_double_compare_to removed.
-// `Std.double.CompareTo` / `Std.float.CompareTo` 现在是脚本（NaN → 0 由 `<`/`>` 自然返回 false 实现）。
+// `Std.Double.CompareTo` / `Std.Single.CompareTo` 现在是脚本（NaN → 0 由 `<`/`>` 自然返回 false 实现）。
 
 pub fn builtin_double_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_f64(args, 0, "double.Equals")?;
-    let b = arg_f64(args, 1, "double.Equals")?;
+    let a = arg_f64(args, 0, "Double.Equals")?;
+    let b = arg_f64(args, 1, "Double.Equals")?;
     Ok(Value::Bool(a == b))
 }
 pub fn builtin_double_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_f64(args, 0, "double.GetHashCode")?;
+    let a = arg_f64(args, 0, "Double.GetHashCode")?;
     Ok(Value::I64(a.to_bits() as i64))
 }
 pub fn builtin_double_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_f64(args, 0, "double.ToString")?;
+    let a = arg_f64(args, 0, "Double.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
 // 2026-04-27 wave1-bool-script: 3 `builtin_bool_*` removed.
-// `Std.bool.Equals` / `GetHashCode` / `ToString` 现在是 z42 脚本实现。
+// `Std.Boolean.Equals` / `GetHashCode` / `ToString` 现在是 z42 脚本实现。
 
 // 2026-04-27 wave2-compare-to-script: builtin_char_compare_to removed.
-// `Std.char.CompareTo` 现在是脚本（codepoint `<`/`>` 比较）。
+// `Std.Char.CompareTo` 现在是脚本（codepoint `<`/`>` 比较）。
 
 pub fn builtin_char_equals(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_char(args, 0, "char.Equals")?;
-    let b = arg_char(args, 1, "char.Equals")?;
+    let a = arg_char(args, 0, "Char.Equals")?;
+    let b = arg_char(args, 1, "Char.Equals")?;
     Ok(Value::Bool(a == b))
 }
 pub fn builtin_char_hash_code(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_char(args, 0, "char.GetHashCode")?;
+    let a = arg_char(args, 0, "Char.GetHashCode")?;
     Ok(Value::I64(a as i64))
 }
 pub fn builtin_char_to_string(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_char(args, 0, "char.ToString")?;
+    let a = arg_char(args, 0, "Char.ToString")?;
     Ok(Value::Str(a.to_string()))
 }
 
 pub fn builtin_str_compare_to(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let a = arg_str(args, 0, "string.CompareTo")?;
-    let b = arg_str(args, 1, "string.CompareTo")?;
+    let a = arg_str(args, 0, "String.CompareTo")?;
+    let b = arg_str(args, 1, "String.CompareTo")?;
     Ok(Value::I64(a.cmp(&b) as i64))
 }
 

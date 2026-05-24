@@ -36,7 +36,7 @@ public sealed record ExportedDelegateDef(
     string? ContainerClass = null);
 
 /// L3-Impl2: serialized `impl Trait for Target { ... }` block.
-/// `TargetFqName` and `TraitFqName` are fully-qualified (e.g. `Std.int`,
+/// `TargetFqName` and `TraitFqName` are fully-qualified (e.g. `Std.Int32`,
 /// `Std.INumber`) so consumers across zpkg boundaries can find target/trait
 /// in the merged imported symbol table. Method bodies are NOT in this record —
 /// they live in the regular MODS section under `{TargetFqName}.{Method}`.

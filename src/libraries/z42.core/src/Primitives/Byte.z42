@@ -1,12 +1,16 @@
 namespace Std;
 
+// rename-primitives-to-pascal-case (2026-05-24): primitive struct now named
+// `Byte` per BCL convention; source keyword `u8` is preserved as alias.
+//
 // add-narrow-int-primitives (2026-05-15): `u8` / `byte` (unsigned 8-bit,
 // 0..=255). Underlying runtime Value is i64; Parse range-checks input.
-public struct u8 : IComparable<u8>, IEquatable<u8>, INumber<u8> {
-    [Native("__u8_parse")]      public static extern u8 Parse(string s);
-    [Native("__int_equals")]    public extern bool Equals(u8 other);
-    [Native("__int_hash_code")] public extern int GetHashCode();
-    [Native("__int_to_string")] public extern string ToString();
+// Equals / GetHashCode / ToString share `__int32_*` builtins (Value::I64 storage).
+public struct Byte : IComparable<u8>, IEquatable<u8>, INumber<u8> {
+    [Native("__byte_parse")]       public static extern u8 Parse(string s);
+    [Native("__int32_equals")]     public extern bool Equals(u8 other);
+    [Native("__int32_hash_code")]  public extern int GetHashCode();
+    [Native("__int32_to_string")]  public extern string ToString();
 
     public int CompareTo(u8 other) {
         if (this < other) return -1;

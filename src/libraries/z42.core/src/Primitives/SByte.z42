@@ -1,12 +1,16 @@
 namespace Std;
 
+// rename-primitives-to-pascal-case (2026-05-24): primitive struct now named
+// `SByte` per BCL convention; source keyword `i8` is preserved as alias.
+//
 // add-narrow-int-primitives (2026-05-15): `i8` / `sbyte` (signed 8-bit,
 // -128..=127). Underlying runtime Value is i64; Parse range-checks input.
-public struct i8 : IComparable<i8>, IEquatable<i8>, INumber<i8> {
-    [Native("__i8_parse")]      public static extern i8 Parse(string s);
-    [Native("__int_equals")]    public extern bool Equals(i8 other);
-    [Native("__int_hash_code")] public extern int GetHashCode();
-    [Native("__int_to_string")] public extern string ToString();
+// Equals / GetHashCode / ToString share `__int32_*` builtins (Value::I64 storage).
+public struct SByte : IComparable<i8>, IEquatable<i8>, INumber<i8> {
+    [Native("__sbyte_parse")]      public static extern i8 Parse(string s);
+    [Native("__int32_equals")]     public extern bool Equals(i8 other);
+    [Native("__int32_hash_code")]  public extern int GetHashCode();
+    [Native("__int32_to_string")]  public extern string ToString();
 
     public int CompareTo(i8 other) {
         if (this < other) return -1;

@@ -2,7 +2,7 @@
 //! special builtin / method identifiers consumed in multiple call sites.
 //!
 //! Centralising these literals lets us rename a stdlib class (e.g.
-//! `Std.int` → `Std.Primitives.Int`) by changing one location instead of
+//! `Std.Int32` → `Std.Primitives.Int32`) by changing one location instead of
 //! grep-replacing across `interp/`, `jit/`, `corelib/`.
 //!
 //! The C# compiler has a counterpart at `z42.IR/WellKnownNames.cs`; both
@@ -10,25 +10,35 @@
 //! change there).
 
 // ── Qualified stdlib class names ──────────────────────────────────────────
+//
+// rename-primitives-to-pascal-case (2026-05-24): primitives migrated to BCL
+// PascalCase struct names (`Std.Int32` / `Std.Boolean` / `Std.SByte` / ...).
+// Source keyword (`int / bool / i8 / ...`) is preserved as an alias resolved
+// by the C# TypeChecker via `TypeRegistry.StdlibClassName`.
+//
+// Narrow integer / unsigned BCL names (`Std.Int16` / `Std.SByte` / `Std.Byte` /
+// `Std.UInt16` / `Std.UInt32` / `Std.UInt64`) are NOT registered here — they
+// have no `Value` variant to map from (all stored as `Value::I64`) and are
+// reached via compile-time-emitted class FQN strings in VCall instructions.
 
-/// Stdlib qualified name for the `int` primitive's struct definition
-/// (`struct int : ...` declared in z42.core/src/Int.z42).
-pub const STD_INT: &str = "Std.int";
+/// Stdlib qualified name for the `int` keyword's BCL struct
+/// (`struct Int32 : ...` in z42.core/src/Primitives/Int32.z42).
+pub const STD_INT32: &str = "Std.Int32";
 
-/// Stdlib qualified name for the `long` primitive struct.
-pub const STD_LONG: &str = "Std.long";
+/// Stdlib qualified name for the `long` keyword's BCL struct.
+pub const STD_INT64: &str = "Std.Int64";
 
-/// Stdlib qualified name for the `double` primitive struct.
-pub const STD_DOUBLE: &str = "Std.double";
+/// Stdlib qualified name for the `double` keyword's BCL struct.
+pub const STD_DOUBLE: &str = "Std.Double";
 
-/// Stdlib qualified name for the `float` primitive struct.
-pub const STD_FLOAT: &str = "Std.float";
+/// Stdlib qualified name for the `float` keyword's BCL struct.
+pub const STD_SINGLE: &str = "Std.Single";
 
-/// Stdlib qualified name for the `bool` primitive struct.
-pub const STD_BOOL: &str = "Std.bool";
+/// Stdlib qualified name for the `bool` keyword's BCL struct.
+pub const STD_BOOLEAN: &str = "Std.Boolean";
 
-/// Stdlib qualified name for the `char` primitive struct.
-pub const STD_CHAR: &str = "Std.char";
+/// Stdlib qualified name for the `char` keyword's BCL struct.
+pub const STD_CHAR: &str = "Std.Char";
 
 /// Stdlib qualified name for the `String` primitive class. Note: capitalised
 /// because stdlib retains `class String` (lowercase `string` is the source

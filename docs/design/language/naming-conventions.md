@@ -11,6 +11,7 @@
 | 标识符类型 | 约定 | 示例 |
 |------|------|------|
 | **类 / 结构体 / record / enum** | `PascalCase` | `class Calculator`, `enum Direction`, `record Point` |
+| **Primitive 类型 struct（stdlib）** | BCL `PascalCase`（`Int32 / Boolean / SByte / ...`）；keyword（`int / bool / i8 / ...`）是 source-level alias，参 C# `int` ⟷ `System.Int32` | `public struct Int32 : ...`, `public struct Boolean : ...` |
 | **接口** | `I` + `PascalCase` | `interface IDisposable`, `IEnumerable<T>` |
 | **委托 / 事件类型** | `PascalCase`（Action / Func 例外）| `delegate void OnClick(...)`, `Action<int>` |
 | **方法 / 函数** | `PascalCase` | `void Main()`, `int Add(int a, int b)` |
@@ -679,10 +680,6 @@ L3 async / await 引入时确定 `Async` 后缀策略（C# 风格的 `LoadAsync(
 ### naming-conv-3: z42-fmt 自动 enforce
 
 0.2.4 z42-fmt 落地时把本文档转成 lint 规则。当前用户违反不会编译失败 —— z42-fmt 集成后可选 `--strict` 模式 enforce。
-
-### naming-conv-4: 内置类型别名是否大写
-
-z42 当前用 `int` / `string` / `bool` 等 C# 风格小写关键字。这些是**关键字不是标识符**，不受本规范管辖。未来如果引入用户可定义的 type alias（`type Mat4 = Matrix4`），则按 PascalCase 命名 alias。
 
 ### naming-conv-5: 线程局部变量正式形态（0.8.x concurrency）
 

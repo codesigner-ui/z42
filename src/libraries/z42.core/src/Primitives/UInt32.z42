@@ -1,12 +1,16 @@
 namespace Std;
 
+// rename-primitives-to-pascal-case (2026-05-24): primitive struct now named
+// `UInt32` per BCL convention; source keyword `u32` is preserved as alias.
+//
 // add-narrow-int-primitives (2026-05-15): `u32` / `uint` (unsigned 32-bit,
 // 0..=4_294_967_295). Underlying runtime Value is i64; Parse range-checks input.
-public struct u32 : IComparable<u32>, IEquatable<u32>, INumber<u32> {
-    [Native("__u32_parse")]     public static extern u32 Parse(string s);
-    [Native("__int_equals")]    public extern bool Equals(u32 other);
-    [Native("__int_hash_code")] public extern int GetHashCode();
-    [Native("__int_to_string")] public extern string ToString();
+// Equals / GetHashCode / ToString share `__int32_*` builtins (Value::I64 storage).
+public struct UInt32 : IComparable<u32>, IEquatable<u32>, INumber<u32> {
+    [Native("__uint32_parse")]     public static extern u32 Parse(string s);
+    [Native("__int32_equals")]     public extern bool Equals(u32 other);
+    [Native("__int32_hash_code")]  public extern int GetHashCode();
+    [Native("__int32_to_string")]  public extern string ToString();
 
     public int CompareTo(u32 other) {
         if (this < other) return -1;

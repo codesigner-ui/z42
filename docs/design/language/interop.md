@@ -613,8 +613,8 @@ Compile-time rules:
 | Area | Domain | Examples |
 |---|---|---|
 | `str`     | string ops on `Std.String` | `__str_length`, `__str_char_at` |
-| `char`    | `Std.char` ops | `__char_to_upper`, `__char_is_whitespace` |
-| `int` / `long` / `double` | primitive ops (parse / hash / equals / to_string) | `__int_parse`, `__double_to_string` |
+| `char`    | `Std.Char` ops | `__char_to_upper`, `__char_is_whitespace` |
+| `int32` / `int64` / `double` | primitive ops (parse / hash / equals / to_string) | `__int32_parse`, `__double_to_string` |
 | `math`    | `Std.Math.Math` static methods | `__math_sqrt`, `__math_atan2` |
 | `obj`     | universal object protocol | `__obj_get_type`, `__obj_hash_code` |
 | `file`    | `Std.IO.File` static methods | `__file_read_text`, `__file_exists` |

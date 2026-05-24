@@ -66,19 +66,22 @@ public partial class TypeCheckerTests
     // L3-G4b primitive-as-struct: tests inline-declare the primitive struct so
     // `PrimitiveImplementsInterface` (now data-driven) has the interface list to consult.
     // In production compilation stdlib provides these automatically.
+    // rename-primitives-to-pascal-case (2026-05-24): synthetic primitive structs declared
+    // with BCL PascalCase names (`Int32` / `Boolean`) matching the production stdlib.
+    // The keyword forms (`int` / `bool`) remain valid in user code as source-level aliases.
     private const string InlinePrimitiveStructs = @"
 interface IComparable<T> { int CompareTo(T other); }
 interface IEquatable<T> { bool Equals(T other); }
-struct int : IComparable<int>, IEquatable<int> {
-    [Native(""__int_compare_to"")] public extern int CompareTo(int other);
-    [Native(""__int_equals"")]     public extern bool Equals(int other);
+struct Int32 : IComparable<int>, IEquatable<int> {
+    [Native(""__int32_compare_to"")] public extern int CompareTo(int other);
+    [Native(""__int32_equals"")]     public extern bool Equals(int other);
 }
 struct String : IComparable<string>, IEquatable<string> {
     [Native(""__str_compare_to"")] public extern int CompareTo(string other);
     [Native(""__str_equals"")]     public extern bool Equals(string other);
 }
-struct bool : IEquatable<bool> {
-    [Native(""__bool_equals"")] public extern bool Equals(bool other);
+struct Boolean : IEquatable<bool> {
+    [Native(""__boolean_equals"")] public extern bool Equals(bool other);
 }
 ";
 

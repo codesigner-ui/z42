@@ -26,7 +26,7 @@ public static partial class ImportedSymbolLoader
             if (mod.Impls is null) continue;
             foreach (var impl in mod.Impls)
             {
-                // FQ "Std.int" → short "int". Skip if target unknown to import set.
+                // FQ "Std.Int32" → short "Int32". Skip if target unknown to import set.
                 var (targetNs, targetShort) = SplitFqName(impl.TargetFqName);
                 if (targetShort is null) continue;
                 if (!classes.TryGetValue(targetShort, out var targetClass)) continue;
@@ -71,7 +71,7 @@ public static partial class ImportedSymbolLoader
         }
     }
 
-    /// Split a fully-qualified type name (e.g. "Std.int") into (namespace, shortName).
+    /// Split a fully-qualified type name (e.g. "Std.Int32") into (namespace, shortName).
     /// Returns (null, name) when there's no dot.
     private static (string? Namespace, string? ShortName) SplitFqName(string fq)
     {

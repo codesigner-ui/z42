@@ -387,7 +387,7 @@ For each module:
     [Namespace pool idx: u32]   ← 与 TSIG 模块顺序一致（positional matching）
     [Impl Count: u16]
     For each impl:
-        [Target FQ name pool idx: u32]   ← 例如 "Std.int"
+        [Target FQ name pool idx: u32]   ← 例如 "Std.Int32"
         [Trait FQ name pool idx: u32]    ← 例如 "Std.INumber"
         [Trait TypeArg Count: u8]
         For each trait type arg: [Type string pool idx: u32]
@@ -415,7 +415,7 @@ Phase 3 — impl merge (NEW)
 ```
 
 冲突策略：first-wins（与 SymbolCollector.MergeImported `TryAdd` 一致）。
-`target` FQ 名通过 `SplitFqName` 拆 `Std.int` → namespace `Std` + short `int`，
+`target` FQ 名通过 `SplitFqName` 拆 `Std.Int32` → namespace `Std` + short `int`，
 仅在 namespace 匹配 `classNs[short]` 时才合并（避免不同包同名类污染）。
 
 ### IrGen — QualifyClassName 对齐 imported target
@@ -423,16 +423,16 @@ Phase 3 — impl merge (NEW)
 `IrGen.cs` 早先用 `QualifyName(targetNt.Name)` 给 impl 方法注册 funcParams
 和生成方法 body 的 IR 函数符号。当 target 是 imported（如 z42.numerics 给
 z42.core `int` 加方法），这会把方法生成到错误命名空间（`numerics.int.op_Add`
-而非 `Std.int.op_Add`），导致 VM `func_index` 注册符号与消费者 VCall 期望
+而非 `Std.Int32.op_Add`），导致 VM `func_index` 注册符号与消费者 VCall 期望
 不一致。修复：改用 `((IEmitterContext)this).QualifyClassName(...)`，imported
 target 走 source namespace，local target 行为不变（等同 QualifyName）。
 
 ### VM 端零改动
 
-方法 body 走 z42.numerics 自己的 MODS section，函数符号 `Std.int.op_Add`。
+方法 body 走 z42.numerics 自己的 MODS section，函数符号 `Std.Int32.op_Add`。
 当用户代码 `using z42.numerics`，lazy loader 注册该 zpkg 所有函数到 `func_index`，
-VCall(int_obj, "op_Add") 通过 `primitive_class_name(I64) = "Std.int"` + method
-拼出 `Std.int.op_Add` → 命中 z42.numerics body。VM decoder 不需要解析 IMPL
+VCall(int_obj, "op_Add") 通过 `primitive_class_name(I64) = "Std.Int32"` + method
+拼出 `Std.Int32.op_Add` → 命中 z42.numerics body。VM decoder 不需要解析 IMPL
 section（基于 tag 查找天然跳过未识别 section）。
 
 ### 兼容性
