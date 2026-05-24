@@ -33,6 +33,25 @@
   (in Std, not Std.Json — for `: Exception` resolution)
 ```
 
+## Stream overloads（2026-05-24 add-stream-overloads-to-format-parsers）
+
+In addition to the string entry points, `JsonValue` exposes Stream
+overloads so callers can pipe a `Std.IO.FileStream` /
+`MemoryStream` / `ProcessOutputStream` / compressed stream straight
+in or out (UTF-8):
+
+| 方法 | 签名 |
+|------|------|
+| `JsonValue.ParseStream` | `(Std.IO.Stream) → JsonValue` — drain + decode via `StreamReader`; src not closed |
+| `JsonValue.WriteTo` | `(Std.IO.Stream, JsonValue) → void` — compact JSON encoded via `StreamWriter`; dest not closed |
+| `JsonValue.WriteToPretty` | `(Std.IO.Stream, JsonValue) → void` — pretty-printed variant |
+
+Naming note: the Stream variant is **`ParseStream`** (not an overload
+of `Parse`) because z42's overload resolution can't reliably
+distinguish `Parse(string)` from `Parse(Stream)` at call sites; same
+limitation applies across Toml / Yaml. Rename can be lifted once the
+compiler handles type-distinct arity-1 overloads.
+
 ## 值表示（Discriminated Union）
 
 同 `Std.Toml.TomlValue` 同款 discriminated-union（z42 无 ADT）：单 `_kind: int` + 多个 typed 槽位：

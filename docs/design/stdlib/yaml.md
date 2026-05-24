@@ -59,6 +59,21 @@ namespace Std;
 public class YamlException : Exception { /* */ }
 ```
 
+## Stream overloads（2026-05-24 add-stream-overloads-to-format-parsers）
+
+| Method | Signature |
+|--------|-----------|
+| `YamlValue.ParseStream` | `(Std.IO.Stream) → YamlValue` — UTF-8 drain + decode; src not closed |
+| `YamlValue.WriteTo` | `(Std.IO.Stream, YamlValue) → void` — canonical YAML, UTF-8; dest not closed |
+
+See [`json.md` Stream overloads](json.md#stream-overloads2026-05-24-add-stream-overloads-to-format-parsers)
+for the rationale on the `ParseStream` naming.
+
+> Tests for these overloads land alongside the
+> `fix-yaml-parse-regression` spec (currently `YamlValue.Parse(string)`
+> is broken on `main` — int / string / mapping parsing failures
+> introduced between commits `249a0411` and `739112ce`).
+
 ## Supported syntax (v0)
 
 | Feature | Example |

@@ -1,0 +1,112 @@
+// add-stream-overloads-to-format-parsers (2026-05-24): Stream-based
+// JSON parse / write overloads on JsonValue.
+namespace Z42JsonStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Encoding;
+using Std.Json;
+
+byte[] _utf8(string s) { return Encoding.GetUtf8().GetBytes(s); }
+string _decode(byte[] b) { return Encoding.GetUtf8().GetString(b); }
+
+[Test]
+void test_parse_from_memory_stream() {
+    MemoryStream ms = new MemoryStream(_utf8("{\"name\":\"z42\",\"version\":42}"));
+    JsonValue v = JsonValue.ParseStream(ms);
+    Assert.True(v.IsObject());
+    Assert.Equal("z42", v.Get("name").AsString());
+    Assert.Equal(42L,   v.Get("version").AsLong());
+}
+
+[Test]
+void test_parse_from_file_stream() {
+    string path = File.CreateTempFile("z42_json_stream_", ".json");
+    try {
+        File.WriteAllText(path, "[1, 2, 3]");
+        FileStream fs = new FileStream(path);
+        try {
+            JsonValue v = JsonValue.ParseStream(fs);
+            Assert.True(v.IsArray());
+            Assert.Equal(3, v.Count());
+            Assert.Equal(2L, v.At(1).AsLong());
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_parse_utf8_multibyte() {
+    MemoryStream ms = new MemoryStream(_utf8("{\"greeting\":\"héllo ✓ 中文\"}"));
+    JsonValue v = JsonValue.ParseStream(ms);
+    Assert.Equal("héllo ✓ 中文", v.Get("greeting").AsString());
+}
+
+[Test]
+void test_write_to_memory_stream_compact() {
+    JsonValue v = JsonValue.OfObject();
+    v.Set("ok", JsonValue.OfBool(true));
+    v.Set("n", JsonValue.OfLong(7L));
+    MemoryStream ms = new MemoryStream();
+    JsonValue.WriteTo(ms, v);
+    string out_ = _decode(ms.ToArray());
+    Assert.Equal("{\"ok\":true,\"n\":7}", out_);
+}
+
+[Test]
+void test_write_to_pretty() {
+    JsonValue v = JsonValue.OfObject();
+    v.Set("a", JsonValue.OfLong(1L));
+    MemoryStream ms = new MemoryStream();
+    JsonValue.WriteToPretty(ms, v);
+    string out_ = _decode(ms.ToArray());
+    // Pretty format adds whitespace; we just check it's non-empty and
+    // round-trips back to the same logical value.
+    Assert.True(out_.Length > 5);
+    JsonValue back = JsonValue.Parse(out_);
+    Assert.Equal(1L, back.Get("a").AsLong());
+}
+
+[Test]
+void test_round_trip_filestream() {
+    string path = File.CreateTempFile("z42_json_rt_", ".json");
+    try {
+        JsonValue original = JsonValue.OfObject();
+        original.Set("k", JsonValue.OfString("v"));
+        original.Set("arr", JsonValue.OfArray());
+        original.Get("arr").Add(JsonValue.OfLong(1L));
+        original.Get("arr").Add(JsonValue.OfLong(2L));
+
+        FileStream wfs = new FileStream(path, FileMode.Write);
+        try {
+            JsonValue.WriteTo(wfs, original);
+        } finally {
+            wfs.Close();
+        }
+        FileStream rfs = new FileStream(path);
+        try {
+            JsonValue back = JsonValue.ParseStream(rfs);
+            Assert.Equal("v", back.Get("k").AsString());
+            Assert.Equal(2, back.Get("arr").Count());
+            Assert.Equal(2L, back.Get("arr").At(1).AsLong());
+        } finally {
+            rfs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_write_does_not_close_dest() {
+    JsonValue v = JsonValue.OfLong(42L);
+    MemoryStream ms = new MemoryStream();
+    JsonValue.WriteTo(ms, v);
+    // After WriteTo, ms should still be usable.
+    byte[] back = ms.ToArray();
+    Assert.True(back.Length > 0);
+}

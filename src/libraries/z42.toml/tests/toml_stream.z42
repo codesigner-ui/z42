@@ -1,0 +1,101 @@
+// add-stream-overloads-to-format-parsers (2026-05-24): Stream-based
+// TOML parse / write overloads on TomlValue.
+namespace Z42TomlStreamTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Encoding;
+using Std.Toml;
+
+byte[] _utf8(string s) { return Encoding.GetUtf8().GetBytes(s); }
+string _decode(byte[] b) { return Encoding.GetUtf8().GetString(b); }
+
+[Test]
+void test_parse_from_memory_stream() {
+    MemoryStream ms = new MemoryStream(_utf8("name = \"z42\"\nversion = 42\n"));
+    TomlValue v = TomlValue.ParseStream(ms);
+    Assert.True(v.IsTable());
+    Assert.Equal("z42", v.Get("name").AsString());
+    Assert.Equal(42L,   v.Get("version").AsLong());
+}
+
+[Test]
+void test_parse_from_file_stream() {
+    string path = File.CreateTempFile("z42_toml_stream_", ".toml");
+    try {
+        File.WriteAllText(path, "key = \"value\"\nint = 99\n");
+        FileStream fs = new FileStream(path);
+        try {
+            TomlValue v = TomlValue.ParseStream(fs);
+            Assert.Equal("value", v.Get("key").AsString());
+            Assert.Equal(99L, v.Get("int").AsLong());
+        } finally {
+            fs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_parse_utf8_multibyte() {
+    MemoryStream ms = new MemoryStream(_utf8("greeting = \"héllo ✓ 中文\"\n"));
+    TomlValue v = TomlValue.ParseStream(ms);
+    Assert.Equal("héllo ✓ 中文", v.Get("greeting").AsString());
+}
+
+[Test]
+void test_write_to_memory_stream() {
+    TomlValue root = TomlValue.OfTable();
+    root.Set("k", TomlValue.OfString("v"));
+    root.Set("n", TomlValue.OfLong(7L));
+    MemoryStream ms = new MemoryStream();
+    TomlValue.WriteTo(ms, root);
+    string out_ = _decode(ms.ToArray());
+    Assert.True(out_.Length > 0);
+    // Round-trip back through Parse to verify semantic equality.
+    TomlValue back = TomlValue.Parse(out_);
+    Assert.Equal("v", back.Get("k").AsString());
+    Assert.Equal(7L,  back.Get("n").AsLong());
+}
+
+[Test]
+void test_round_trip_filestream() {
+    string path = File.CreateTempFile("z42_toml_rt_", ".toml");
+    try {
+        TomlValue original = TomlValue.OfTable();
+        original.Set("name",   TomlValue.OfString("project"));
+        original.Set("status", TomlValue.OfBool(true));
+
+        FileStream wfs = new FileStream(path, FileMode.Write);
+        try {
+            TomlValue.WriteTo(wfs, original);
+        } finally {
+            wfs.Close();
+        }
+        FileStream rfs = new FileStream(path);
+        try {
+            TomlValue back = TomlValue.ParseStream(rfs);
+            Assert.Equal("project", back.Get("name").AsString());
+            Assert.True(back.Get("status").AsBool());
+        } finally {
+            rfs.Close();
+        }
+    } finally {
+        File.Delete(path);
+    }
+}
+
+[Test]
+void test_write_non_table_throws() {
+    TomlValue scalar = TomlValue.OfLong(42L);
+    MemoryStream ms = new MemoryStream();
+    bool threw = false;
+    try {
+        TomlValue.WriteTo(ms, scalar);
+    } catch (TomlException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

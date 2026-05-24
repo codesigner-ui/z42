@@ -34,6 +34,16 @@ shell out 到 `python3 -c 'import tomllib; ...'` 的代码可以迁移成纯 z42
   (in Std namespace, not Std.Toml — for `: Exception` resolution)
 ```
 
+## Stream overloads（2026-05-24 add-stream-overloads-to-format-parsers）
+
+| 方法 | 签名 |
+|------|------|
+| `TomlValue.ParseStream` | `(Std.IO.Stream) → TomlValue` — UTF-8 drain + decode; src not closed |
+| `TomlValue.WriteTo` | `(Std.IO.Stream, TomlValue) → void` — canonical TOML, UTF-8; dest not closed; root must be a Table |
+
+See [`json.md` Stream overloads](json.md#stream-overloads2026-05-24-add-stream-overloads-to-format-parsers)
+for the rationale on the `ParseStream` naming.
+
 ## 值表示（Discriminated Union）
 
 z42 没有 ADT / sum type，用单 `_kind: int` + 多个 typed 槽位：

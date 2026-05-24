@@ -1,5 +1,7 @@
 namespace Std.Toml;
 
+using Std.IO;
+
 // add-z42-toml (2026-05-14)：TOML 值的运行时表示。
 //
 // z42 暂无 ADT，用 discriminated-union 模式：单 int kind + 多个 typed 槽位。
@@ -49,6 +51,29 @@ public class TomlValue {
         }
         TomlWriter w = new TomlWriter();
         return w.Write(root);
+    }
+
+    // ── Stream overloads (add-stream-overloads-to-format-parsers, 2026-05-24) ──
+    //
+    // Thin wrappers over the string variants. Neither closes the
+    // underlying Stream — caller owns its lifecycle.
+
+    /// Parse TOML from a UTF-8 byte Stream. Distinct name from
+    /// `Parse(string)` (not an overload) — see JsonValue.ParseStream
+    /// comment for the z42 overload-resolution rationale.
+    public static TomlValue ParseStream(Stream source) {
+        StreamReader r = new StreamReader(source);
+        string text = r.ReadToEnd();
+        TomlParser parser = new TomlParser(text);
+        return (TomlValue)parser.ParseDocument();
+    }
+
+    /// Serialise canonical TOML to a Stream as UTF-8 bytes. Does NOT
+    /// close `dest`. `root` must be a table (throws TomlException).
+    public static void WriteTo(Stream dest, TomlValue root) {
+        StreamWriter w = new StreamWriter(dest);
+        w.Write(TomlValue.Stringify(root));
+        w.Flush();
     }
 
     // ── Factories ────────────────────────────────────────────────────────

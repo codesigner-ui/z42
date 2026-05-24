@@ -1,5 +1,6 @@
 namespace Std.Json;
 using Std;
+using Std.IO;
 
 // add-z42-json (2026-05-14)：JSON 值的运行时表示 + 入口点。
 //
@@ -43,6 +44,48 @@ public class JsonValue {
     public static string StringifyPretty(JsonValue v) {
         JsonWriter w = new JsonWriter(true);
         return w.Write(v);
+    }
+
+    // ── Stream overloads (add-stream-overloads-to-format-parsers, 2026-05-24) ──
+    //
+    // Thin wrappers over the string variants — Parse(Stream) drains the
+    // source via StreamReader (UTF-8), WriteTo(Stream, v) emits via
+    // StreamWriter (UTF-8). Neither closes the underlying Stream —
+    // caller owns its lifecycle (matches the rest of the Stream
+    // ecosystem's convention).
+
+    /// Parse JSON from a UTF-8 byte Stream. Equivalent to
+    /// `Parse(new StreamReader(s).ReadToEnd())` but spares the caller
+    /// the boilerplate. The source Stream is read to EOF; not closed.
+    ///
+    /// NOTE: distinct name from `Parse(string)` (not an overload) to
+    /// sidestep z42's overload-resolution limitation — the compiler
+    /// can't reliably pick between `Parse(string)` and `Parse(Stream)`
+    /// for callers passing a `string` (it picks the Stream variant
+    /// and complains about type mismatch). Rename can be lifted once
+    /// the compiler handles two-different-type-arity-1 overloads.
+    public static JsonValue ParseStream(Stream source) {
+        StreamReader r = new StreamReader(source);
+        string text = r.ReadToEnd();
+        JsonParser p = new JsonParser(text);
+        return (JsonValue)p.ParseDocument();
+    }
+
+    /// Serialise compact JSON to a Stream as UTF-8 bytes. Does NOT
+    /// close `dest` — caller owns its lifecycle. For pretty output use
+    /// `WriteToPretty`.
+    public static void WriteTo(Stream dest, JsonValue v) {
+        StreamWriter w = new StreamWriter(dest);
+        w.Write(JsonValue.Stringify(v));
+        w.Flush();
+    }
+
+    /// Serialise pretty-printed JSON to a Stream as UTF-8 bytes. See
+    /// `WriteTo` for lifecycle semantics.
+    public static void WriteToPretty(Stream dest, JsonValue v) {
+        StreamWriter w = new StreamWriter(dest);
+        w.Write(JsonValue.StringifyPretty(v));
+        w.Flush();
     }
 
     // ── Factories ────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 namespace Std.Yaml;
 
 using Std;
+using Std.IO;
 
 // add-z42-yaml (2026-05-24): YAML 值的运行时表示。
 //
@@ -54,6 +55,29 @@ public class YamlValue {
     public static string Stringify(YamlValue root) {
         YamlWriter w = new YamlWriter();
         return w.Write(root);
+    }
+
+    // ── Stream overloads (add-stream-overloads-to-format-parsers, 2026-05-24) ──
+    //
+    // Thin wrappers over the string variants. Neither closes the
+    // underlying Stream — caller owns its lifecycle.
+
+    /// Parse YAML from a UTF-8 byte Stream. Distinct name from
+    /// `Parse(string)` (not an overload) — see JsonValue.ParseStream
+    /// comment for the z42 overload-resolution rationale.
+    public static YamlValue ParseStream(Stream source) {
+        StreamReader r = new StreamReader(source);
+        string text = r.ReadToEnd();
+        YamlParser parser = new YamlParser(text);
+        return (YamlValue)parser.ParseDocument();
+    }
+
+    /// Serialise canonical YAML to a Stream as UTF-8 bytes. Does NOT
+    /// close `dest`.
+    public static void WriteTo(Stream dest, YamlValue root) {
+        StreamWriter w = new StreamWriter(dest);
+        w.Write(YamlValue.Stringify(root));
+        w.Flush();
     }
 
     // ── Factories ────────────────────────────────────────────────────────
