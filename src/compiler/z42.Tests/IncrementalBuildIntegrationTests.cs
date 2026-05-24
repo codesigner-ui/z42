@@ -79,10 +79,12 @@ public sealed class IncrementalBuildIntegrationTests
         //   class init 的命名冲突）+ OperatingSystem.z42，z42.core 49 → 51。
         // 2026-05-15 add-narrow-int-primitives 新增 Primitives/{I8, I16, U8, U16, U32, U64}.z42
         //   (6 文件)，z42.core 51 → 57。
+        // 2026-05-24 add-overflow-divide-by-zero-exceptions 新增 Exceptions/OverflowException.z42 +
+        //   Exceptions/DivideByZeroException.z42，z42.core 57 → 59。
         // 如果新增 / 删除 stdlib 文件需同步更新此处。
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 57/57");
+        err2.Should().Contain("cached: 59/59");
         err2.Should().Contain("cached: 2/2");
         err2.Should().Contain("cached: 5/5");
         err2.Should().Contain("cached: 3/3");  // z42.time: TimeSpan + DateTime + Stopwatch
@@ -105,9 +107,11 @@ public sealed class IncrementalBuildIntegrationTests
         // 2026-05-07 add-array-base-class 新增 Array.z42，47 → 48；
         // 2026-05-11 retire-z-codes 新增 InvalidMarshalException.z42，48 → 49；
         // 2026-05-15 add-platform-os-stdlib 新增 Platform + OperatingSystem，49 → 51；
-        // 2026-05-15 add-narrow-int-primitives 新增 I8/I16/U8/U16/U32/U64.z42，51 → 57）
+        // 2026-05-15 add-narrow-int-primitives 新增 I8/I16/U8/U16/U32/U64.z42，51 → 57；
+        // 2026-05-24 add-overflow-divide-by-zero-exceptions 新增 OverflowException +
+        //   DivideByZeroException，57 → 59）
         var (code2, _, err2) = RunZ42c(libsRoot, "build", "--workspace", "--release", "--no-incremental");
         code2.Should().Be(0, err2);
-        err2.Should().Contain("cached: 0/57");
+        err2.Should().Contain("cached: 0/59");
     }
 }
