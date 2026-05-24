@@ -525,6 +525,60 @@ valid）。Script 端 / 消费端先检 `count == 0` 再读 `min_us`。
 - 无 SLA hook：不能 "pause > 100ms 时 log warning"，等
   `add-gc-pause-sla`
 
+### Heap snapshot export (add-gc-heap-snapshot-export, 2026-05-24)
+
+`Std.GC.WriteHeapSnapshot(path)` 把当前堆的对象引用图导出到 `path`
+指定的文件，使用 V8 `.heapsnapshot` JSON 格式。Chrome DevTools
+(Memory → Load)、[speedscope](https://www.speedscope.app)、
+[heapviewer.com](https://heapviewer.com) 都能直接打开。
+
+实现走 `gc/snapshot.rs` two-pass walker：
+
+```
+pass 1: iterate_live_objects → assign V8 node ids (odd 2k+1), emit NodeRecs
+pass 2: for each node, scan_object_refs → emit Property / Element EdgeRecs
+pass 3: for_each_root → emit Shortcut edges from synthetic root (id=0)
+```
+
+**节点 / 边类型映射**：
+
+| z42 来源 | V8 节点 / 边类型 | name 字段 |
+|----------|------------------|-----------|
+| `Value::Object(gc)` | node `object` (3) | `TypeDesc.name` |
+| `Value::Array(gc)` | node `array` (1) | `"Array[{len}]"` |
+| pinned roots 集合 | node `synthetic` (9) | `"(GC roots)"` |
+| object slot `i` → obj | edge `property` (2) | string of `fields[i].name` |
+| array elem `i` → obj | edge `element` (1) | 数字下标 `i` |
+| root → obj | edge `shortcut` (5) | empty string |
+
+**从 script 端使用**：
+
+```z42
+using Std;
+
+long bytes = GC.WriteHeapSnapshot("/tmp/snap.heapsnapshot");
+// → bytes 是写入的 JSON 字节数
+// → 文件用 Chrome DevTools Memory → Load 直接打开
+```
+
+**V8 JSON 形状**：nodes 是 flat `[type, name, id, self_size, edge_count,
+trace_node_id, detachedness, ...]` 每 node 7 字段；edges 是 flat
+`[type, name_or_index, to_node, ...]` 每 edge 3 字段；string-table
+dedup；`trace_function_infos` / `trace_tree` / `samples` / `locations`
+v1 输出空数组。10 MB heap → 约 30 MB snapshot 文件（V8 char-count
+overhead 内）。
+
+**局限**（留给后续 perf spec）：
+
+- 不输出 allocation-site stack trace（需要 IR `alloc_site_id` —
+  `add-gc-snapshot-alloc-trace` 依赖 B4）
+- 不 stream 大堆（in-memory build → 一次 `std::fs::write`） —
+  `add-gc-snapshot-streaming` 解决
+- WeakRef 不出现在 graph（避免与 retention 混淆） —
+  `add-gc-snapshot-weak-edges` 后续可加 `EdgeType::Weak`
+- 不预算 dominator tree（DevTools 自己算） —
+  `add-gc-snapshot-retainer-dominator` 可 server-side 加速
+
 ## Phase 路线（持续迭代）
 
 | Phase | 内容 | 状态 |
@@ -554,6 +608,7 @@ valid）。Script 端 / 消费端先检 `count == 0` 再读 `min_us`。
 | **C2 stress test** | Seeded xorshift64 random-workload driver + 4 tests (per-mode + mode-switching, ~2000 iters each)。Build on C1 validator。Discovered + fixed latent bug in concurrent's no-VmContext force_collect path (defensive reset_marks + mark_queue clear in run_cycle_collection_stw) | ✅ 2026-05-22 add-gc-stress-test |
 | **B5 pause histogram** | 8-bucket logarithmic histogram on `pause_us`（µs–10s+）+ min/max/total/count。每次 collect 记录；`HeapStats.pause_histogram` 字段 + `Std.GC.PauseHistogram()` / `Std.GC.PauseStatsRaw()` builtins 暴露给 script。Single histogram per heap，跨 mode 切换累积 | ✅ 2026-05-22 add-gc-pause-histogram |
 | **C3 multi-heap isolation stress** | 5 个测试在 `arc_heap_tests/multi_vm.rs`，跨 `ArcMagrGC` 实例并行 stress（线程间用独立 heap）。覆盖 STW / Generational / 混合 mode + pause histogram 隔离 cross-check (B5)。验证多 VM 嵌入场景 Phase 3 隔离设计成立 | ✅ 2026-05-24 add-gc-multi-vm-stress |
+| **B3 heap snapshot export** | V8 `.heapsnapshot` JSON writer (`gc/snapshot.rs`)：two-pass walker (id assign + edge emit + root link) + flat custom serializer (no serde dep) + `Std.GC.WriteHeapSnapshot(path)` builtin。生成的文件直接用 Chrome DevTools / speedscope / heapviewer.com 加载查看 retainer 图 / dominator 树 | ✅ 2026-05-24 add-gc-heap-snapshot-export |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -671,11 +726,26 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 - **Deps**：A2 mark phase 决策接口（区分软引用与强引用，A2 已就位可扩展）
 - **Size**：~200 LOC，2 天
 
-#### B3. Heap snapshot 导出（V8 / Chrome DevTools 格式）
-- **What**：序列化 `HeapSnapshot` 为 `.heapsnapshot` 兼容 Chrome DevTools / [perfetto](https://perfetto.dev/) 等工具
-- **Why**：嵌入用户用熟悉的工具分析堆，无需重写 z42 专用 GUI
-- **Deps**：无（纯序列化层）
-- **Size**：~300 LOC，2-3 天
+#### B3. Heap snapshot 导出（已落地，2026-05-24）
+- **状态**：✅ 完成，spec `add-gc-heap-snapshot-export`
+- **What**：新 `GraphSnapshot` 类型 + V8 `.heapsnapshot` JSON 序列化器
+  in `gc/snapshot.rs`；1 个新 builtin `Std.GC.WriteHeapSnapshot(path)`
+  返回写入字节数。文件直接用 Chrome DevTools (Memory → Load) /
+  [speedscope](https://www.speedscope.app) /
+  [heapviewer.com](https://heapviewer.com) 加载查看 retainer 图
+- **实现要点**：
+  - Two-pass walker：pass 1 `iterate_live_objects` 给每个 alive
+    `Value::Object`/`Value::Array` assign 奇数 V8 node id +
+    emit NodeRec；pass 2 走 `scan_object_refs` emit Property
+    (object slot, name = field 名) / Element (array elem, name =
+    数字 index) 边；pass 3 走 `for_each_root` 从合成 root (id=0)
+    emit Shortcut 边
+  - 自写 flat JSON serializer (no serde dep)：node 7 字段 / edge
+    3 字段 / string-table dedup
+  - Cycle 安全（id_map dedup by pointer）；weak refs 跳过
+- **延后**：alloc-site stack trace (需要 B4 site id)、streaming
+  serializer、weak edges、server-side dominator tree — 详见
+  ["Heap snapshot export"](#heap-snapshot-export-add-gc-heap-snapshot-export-2026-05-24) 段
 
 #### B4. 分配站点追踪（per-callsite alloc count + total bytes）
 - **What**：默认 alloc_sampler 实现按 IR 站点 ID 聚合分配数据
@@ -780,7 +850,7 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
 1. ~~**C1 + C2 + C3**（debug invariants + stress + multi-VM 隔离）~~ ✅ 全部已落地（2026-05-22 / 2026-05-24）—— 工程质量基线已铺满
 2. **B1**（OOM exception）—— 嵌入用户最常请求的 ergonomics
 3. ~~**B5**（pause 直方图）~~ ✅ 已落地（2026-05-22）—— 低成本可观察性
-4. **B3**（heap snapshot 导出）—— 让现有工具链可用
+4. ~~**B3**（heap snapshot 导出）~~ ✅ 已落地（2026-05-24）—— 让现有工具链可用
 
 如以性能为优先：
 
