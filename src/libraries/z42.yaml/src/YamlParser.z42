@@ -125,12 +125,12 @@ public sealed class YamlParser {
             return this._ParseBlockMapping(actualIndent);
         }
 
-        // Plain scalar on a single line.
+        // Plain scalar (or quoted string) on a single line.
         this._pos = contentPos;
         this._col = actualIndent + 1;
-        string raw = this._ConsumeLinePlainScalar();
+        YamlValue v = this._ParseBlockScalarValue();
         this._ConsumeRestOfLine();
-        return this._ParseScalarLiteral(raw);
+        return v;
     }
 
     // ── Block mapping ────────────────────────────────────────────────────
@@ -186,6 +186,28 @@ public sealed class YamlParser {
                     int nextIndent = this._CurrentLineIndent();
                     if (nextIndent > indent) {
                         val = this._ParseBlockValue(nextIndent);
+                    } else if (nextIndent == indent
+                            && nextIndent < this._src.Length - this._pos
+                            && this._src.CharAt(this._pos + nextIndent) == '-') {
+                        // fix-yaml-quoted-strings (2026-05-24): YAML allows a
+                        // mapping value to be a block sequence at the SAME
+                        // indent as the mapping key — `key:\n- item`. The
+                        // YamlWriter emits sequences this way (see writer
+                        // line 110 "sequence keeps mapping's indent for -").
+                        // Pre-fix, we treated it as `key: null` then bailed
+                        // on the unexpected `-` as trailing content.
+                        // Confirm it's a real sequence dash (followed by WS
+                        // or EOL) before committing.
+                        int dashNext = this._pos + nextIndent + 1;
+                        bool isDash = dashNext >= this._src.Length
+                            || this._src.CharAt(dashNext) == ' '
+                            || this._src.CharAt(dashNext) == '\n'
+                            || this._src.CharAt(dashNext) == '\r';
+                        if (isDash) {
+                            val = this._ParseBlockSequence(nextIndent);
+                        } else {
+                            val = YamlValue.OfNull();
+                        }
                     } else {
                         val = YamlValue.OfNull();
                     }
@@ -195,9 +217,8 @@ public sealed class YamlParser {
                 this._SkipInlineSpacesAndOptionalComment();
                 this._ConsumeRestOfLine();
             } else {
-                string raw = this._ConsumeLinePlainScalar();
+                val = this._ParseBlockScalarValue();
                 this._ConsumeRestOfLine();
-                val = this._ParseScalarLiteral(raw);
             }
 
             if (m.ContainsKey(key)) {
@@ -327,15 +348,13 @@ public sealed class YamlParser {
                     } else if (this._src.CharAt(this._pos) == '[' || this._src.CharAt(this._pos) == '{') {
                         val = this._ParseFlow();
                     } else {
-                        string raw = this._ConsumeLinePlainScalar();
-                        val = this._ParseScalarLiteral(raw);
+                        val = this._ParseBlockScalarValue();
                     }
                     item = YamlValue.OfMapping();
                     item.Set(key, val);
                     this._ConsumeRestOfLine();
                 } else {
-                    string raw = this._ConsumeLinePlainScalar();
-                    item = this._ParseScalarLiteral(raw);
+                    item = this._ParseBlockScalarValue();
                     this._ConsumeRestOfLine();
                 }
             }
@@ -545,6 +564,31 @@ public sealed class YamlParser {
             this._Advance();
         }
         throw this._Err("unterminated single-quoted string");
+    }
+
+    /// fix-yaml-quoted-strings (2026-05-24): single entry point for
+    /// "scalar value at the current cursor in block context" — handles
+    /// `"..."` / `'...'` quoted strings before falling back to plain
+    /// scalar reading + type detection. Pre-fix, block-context scalar
+    /// paths (top-level value, mapping value, sequence item) called
+    /// `_ConsumeLinePlainScalar` directly which slurped the quotes as
+    /// literal characters, then `_ParseScalarLiteral` returned the
+    /// raw `"hello"` as a string (with the quotes).
+    ///
+    /// Caller is responsible for `_ConsumeRestOfLine()` after — this
+    /// helper only consumes up to the end of the scalar token.
+    private YamlValue _ParseBlockScalarValue() {
+        if (this._pos < this._src.Length) {
+            char first = this._src.CharAt(this._pos);
+            if (first == '"') {
+                return YamlValue.OfString(this._ParseDoubleQuotedString());
+            }
+            if (first == '\'') {
+                return YamlValue.OfString(this._ParseSingleQuotedString());
+            }
+        }
+        string raw = this._ConsumeLinePlainScalar();
+        return this._ParseScalarLiteral(raw);
     }
 
     /// Consume from current pos through the rest of the line; return the
