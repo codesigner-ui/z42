@@ -300,6 +300,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-process-stream-stdio (2026-05-24) — appended to preserve existing BuiltinIds ──
     ("__process_handle_read_stdout", process::builtin_process_handle_read_stdout),
     ("__process_handle_read_stderr", process::builtin_process_handle_read_stderr),
+
+    // ── add-gc-heap-snapshot-export B3 (2026-05-24) — appended to preserve existing BuiltinIds ──
+    ("__gc_write_heap_snapshot", gc::builtin_gc_write_heap_snapshot),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

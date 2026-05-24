@@ -272,6 +272,28 @@ pub fn builtin_gc_pause_stats_raw(ctx: &VmContext, _args: &[Value]) -> Result<Va
     ]))
 }
 
+/// `Std.GC.WriteHeapSnapshot(path)` — **add-gc-heap-snapshot-export (2026-05-24)**.
+///
+/// Walks the live heap once via `MagrGC::iterate_live_objects` +
+/// `scan_object_refs` + `for_each_root`, builds the V8 `.heapsnapshot`
+/// graph, serialises it to JSON, and writes the result to `path`.
+/// Returns the number of bytes written (as `long`).
+///
+/// The resulting file opens directly in Chrome DevTools → Memory →
+/// Load, speedscope, and heapviewer.com.
+pub fn builtin_gc_write_heap_snapshot(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = match args.first() {
+        Some(Value::Str(s)) => s.clone(),
+        _ => return Err(anyhow!("__gc_write_heap_snapshot: expected string path")),
+    };
+    let snap = crate::gc::snapshot::build_graph_snapshot(ctx.heap());
+    let json = crate::gc::snapshot::serialize_v8_heapsnapshot(&snap);
+    let n_bytes = json.len();
+    std::fs::write(path.as_str(), &json)
+        .map_err(|e| anyhow!("__gc_write_heap_snapshot: write {}: {}", path, e))?;
+    Ok(Value::I64(n_bytes as i64))
+}
+
 /// `Std.GC.GetStats()` — projects Rust `HeapStats` into a `Std.HeapStats` instance.
 /// `MaxBytes` uses `-1` as the unlimited sentinel (z42 has no `Optional<T>`).
 pub fn builtin_gc_stats(ctx: &VmContext, _args: &[Value]) -> Result<Value> {

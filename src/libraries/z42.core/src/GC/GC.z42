@@ -79,4 +79,29 @@ public static class GC {
     /// 前先检查 `count == 0`。
     [Native("__gc_pause_stats_raw")]
     public static extern long[] PauseStatsRaw();
+
+    /// **add-gc-heap-snapshot-export (2026-05-24)**: 把当前堆的对象
+    /// 引用图导出到 `path` 指定的文件（V8 `.heapsnapshot` JSON 格式）。
+    /// 返回写入的字节数。
+    ///
+    /// 生成的 `.heapsnapshot` 文件可直接被 Chrome DevTools (Memory →
+    /// Load) / [speedscope](https://www.speedscope.app) /
+    /// [heapviewer.com](https://heapviewer.com) 加载查看 retainer 图、
+    /// dominator 树、shortest-path-to-root。
+    ///
+    /// **节点映射**：`Value::Object` → V8 `object`，`Value::Array` →
+    /// V8 `array`，pinned root 集合 → 合成 V8 `synthetic` "(GC roots)"
+    /// 节点。
+    ///
+    /// **边映射**：object slot → `property` 边（name = field 名）；
+    /// array elem → `element` 边（name = 数字下标）；root → object
+    /// → `shortcut` 边。
+    ///
+    /// **v1 局限**：不输出 allocation-site stack trace（需要 IR site
+    /// id 支持）；不 stream 大堆（in-memory build → 一次 write）；
+    /// weak refs 跳过（不视为 retention）。
+    ///
+    /// **抛出**：路径不可写时通过 VM `anyhow` 抛 host-error。
+    [Native("__gc_write_heap_snapshot")]
+    public static extern long WriteHeapSnapshot(string path);
 }

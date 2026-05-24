@@ -1,0 +1,48 @@
+// add-gc-heap-snapshot-export (2026-05-24): end-to-end test that
+// `Std.GC.WriteHeapSnapshot(path)` writes a V8 `.heapsnapshot` JSON
+// file containing the expected top-level keys + root sentinel.
+namespace Z42IoGcHeapSnapshotTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_write_snapshot_creates_nonempty_file() {
+    string path = "/tmp/z42-test-snapshot.heapsnapshot";
+    long bytes = GC.WriteHeapSnapshot(path);
+
+    Assert.True(bytes > 100, "snapshot should be more than a hundred bytes");
+    Assert.True(File.Exists(path));
+
+    string content = File.ReadAllText(path);
+    Assert.True(content.Length > 0);
+
+    // V8 top-level keys — none of these should be missing.
+    Assert.Contains("\"snapshot\"",             content);
+    Assert.Contains("\"nodes\"",                content);
+    Assert.Contains("\"edges\"",                content);
+    Assert.Contains("\"trace_function_infos\"", content);
+    Assert.Contains("\"trace_tree\"",           content);
+    Assert.Contains("\"samples\"",              content);
+    Assert.Contains("\"locations\"",            content);
+    Assert.Contains("\"strings\"",              content);
+
+    // Meta layout sanity.
+    Assert.Contains("\"node_fields\"", content);
+    Assert.Contains("\"edge_fields\"", content);
+
+    // Synthetic root must be present.
+    Assert.Contains("(GC roots)", content);
+
+    File.Delete(path);
+}
+
+[Test]
+void test_returned_bytes_equal_file_length() {
+    string path = "/tmp/z42-test-snapshot-len.heapsnapshot";
+    long bytes = GC.WriteHeapSnapshot(path);
+    string content = File.ReadAllText(path);
+    Assert.Equal(bytes, content.Length);
+    File.Delete(path);
+}

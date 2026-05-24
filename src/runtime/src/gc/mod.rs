@@ -41,6 +41,7 @@ pub mod mode;
 pub mod refs;
 pub mod region;
 pub mod safepoint;
+pub mod snapshot;
 pub mod types;
 
 pub use heap::MagrGC;
@@ -48,6 +49,9 @@ pub use arc_heap::ArcMagrGC;
 pub use mode::GcMode;
 pub use refs::{GcRef, WeakGcRef};
 pub use safepoint::{check_safepoint, request_gc_pause, GcPauseGuard, GcPhase};
+pub use snapshot::{
+    build_graph_snapshot, serialize_v8_heapsnapshot, EdgeType, GraphSnapshot, NodeType,
+};
 pub use types::{
     AllocKind, AllocSample, AllocSamplerFn, CollectStats, FinalizerFn, FrameMark,
     GcEvent, GcHandleKind, GcKind, GcObserver, HeapSnapshot, HeapStats, ObjectStats,
