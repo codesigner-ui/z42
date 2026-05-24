@@ -206,8 +206,15 @@ void test_get_stdout_stream_caches() {
     h.Wait();
 }
 
-// Note: ProcessOutputStream constructor rejects fd ∉ {1, 2} via
-// `throw new ArgumentException`. No dedicated negative test here —
-// catching constructor-thrown exceptions in z42 currently hits the
-// same shape that `FileStream`'s `test_unknown_mode_throws` does
-// (pre-existing quirk; tracked separately).
+[Test]
+void test_process_output_stream_bad_fd_throws() {
+    var h = new Process("printf").Arg("x").Stdout(Stdio.Pipe()).Spawn();
+    bool threw = false;
+    try {
+        ProcessOutputStream bad = new ProcessOutputStream(h, 99);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    h.Wait();
+}

@@ -17,11 +17,23 @@ use super::Frame;
 /// when the slot starts as UNRESOLVED and the lazy loader resolves the
 /// class, we write the resolved id back so subsequent diagnostics /
 /// reflection see it.
+///
+/// Return `Ok(Some(val))` when the ctor `throw`s a user exception, so
+/// the caller's `try`/`catch` can match — mirrors the `Call` / `Builtin`
+/// propagation pattern in `exec_instr.rs`. `Ok(None)` = success.
+/// `Err(...)` = internal anyhow error (separate from user exceptions).
+///
+/// fix-ctor-throw-propagation (2026-05-24): pre-fix, the ctor was
+/// invoked via `exec_function(...)?;` and the `ExecOutcome::Thrown`
+/// branch was silently dropped — `try { new C(badArg) } catch (X) {}`
+/// could never match because the throw never propagated out of
+/// `ObjNew`. The partially-constructed object was even written into
+/// `dst`!
 pub(super) fn obj_new(
     ctx: &VmContext, module: &Module, frame: &mut Frame,
     dst: u32, class_name: &str, ctor_name: &str, args: &[u32], type_args: &[String],
     type_token: Option<&std::sync::atomic::AtomicU32>,
-) -> Result<()> {
+) -> Result<Option<Value>> {
     use std::sync::atomic::Ordering;
     // L3-G4d: for imported classes (e.g. Std.Collections.Stack) the TypeDesc
     // may only exist in the lazy loader until first use; probe it before
@@ -68,18 +80,29 @@ pub(super) fn obj_new(
     // (imported generic class ctor isn't in the main module's function table).
     let ctor_fn = module.func_index.get(ctor_name)
         .and_then(|&i| module.functions.get(i));
-    if let Some(ctor) = ctor_fn {
+    let outcome = if let Some(ctor) = ctor_fn {
         let mut ctor_args = vec![obj_val.clone()];
         ctor_args.extend(collect_args(&frame.regs, args)?);
-        super::exec_function(ctx, module, ctor, &ctor_args)?;
+        Some(super::exec_function(ctx, module, ctor, &ctor_args)?)
     } else if let Some(lazy_ctor) = ctx.try_lookup_function(ctor_name) {
         let mut ctor_args = vec![obj_val.clone()];
         ctor_args.extend(collect_args(&frame.regs, args)?);
-        super::exec_function(ctx, module, lazy_ctor.as_ref(), &ctor_args)?;
+        Some(super::exec_function(ctx, module, lazy_ctor.as_ref(), &ctor_args)?)
+    } else {
+        None
+    };
+
+    // fix-ctor-throw-propagation (2026-05-24): if the ctor threw a user
+    // exception, surface it via Ok(Some(val)) so the enclosing try/catch
+    // can match. Do NOT write `obj_val` into `dst` — the object is
+    // partially constructed and the caller is about to jump to a catch
+    // handler that won't read it.
+    if let Some(super::ExecOutcome::Thrown(val)) = outcome {
+        return Ok(Some(val));
     }
 
     frame.set(dst, obj_val);
-    Ok(())
+    Ok(None)
 }
 
 /// `FieldGet` dispatch with monomorphic inline cache. When `field_ic`

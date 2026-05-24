@@ -168,7 +168,14 @@ pub fn exec_instr(
             let type_token = resolved
                 .filter(|_| _site_idx != UNRESOLVED)
                 .and_then(|r| r.type_tokens.get(_site_idx as usize));
-            exec_object::obj_new(ctx, module, frame, *dst, class_name, ctor_name, args, type_args, type_token)?
+            // fix-ctor-throw-propagation (2026-05-24): mirror Call / Builtin —
+            // propagate user `throw` from the ctor body to the enclosing
+            // try/catch instead of silently dropping it.
+            if let Some(thrown) = exec_object::obj_new(
+                ctx, module, frame, *dst, class_name, ctor_name, args, type_args, type_token,
+            )? {
+                return Ok(Some(thrown));
+            }
         }
         Instruction::FieldGet { dst, obj, field_name } => {
             let field_ic = resolved

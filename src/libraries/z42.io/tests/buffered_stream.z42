@@ -40,11 +40,17 @@ void test_capability_delegates_to_inner() {
     b.Close();
 }
 
-// Note: BufferedStream constructor rejects bufferSize <= 0 via
-// `throw new ArgumentException`. No dedicated negative test —
-// constructor-throw-catch hits the same pre-existing z42 quirk that
-// already affects FileStream's `test_unknown_mode_throws`. Spec 3 of
-// this batch investigates a root-cause fix.
+[Test]
+void test_zero_buffer_size_throws() {
+    MemoryStream ms = new MemoryStream();
+    bool threw = false;
+    try {
+        BufferedStream b = new BufferedStream(ms, 0);
+    } catch (ArgumentException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
 
 // ── Read path ───────────────────────────────────────────────────────────
 

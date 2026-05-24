@@ -1,0 +1,74 @@
+// fix-ctor-throw-propagation (2026-05-24): regression tests for
+// `throw` from a constructor body being silently dropped at the VM
+// layer. Pre-fix, `new C(badArg)` would silently swallow ctor throws
+// and return a half-built object instead of propagating to
+// try/catch.
+namespace Z42IoCtorThrowCatchTests;
+
+using Std;
+using Std.Test;
+
+class Validator {
+    public int x;
+
+    public Validator(int x) {
+        if (x < 0) {
+            throw new ArgumentException("x must be non-negative");
+        }
+        this.x = x;
+    }
+}
+
+[Test]
+void test_ctor_throw_caught_as_argument_exception() {
+    bool caught = false;
+    try {
+        Validator v = new Validator(-1);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_ctor_throw_caught_as_base_exception() {
+    bool caught = false;
+    try {
+        Validator v = new Validator(-1);
+    } catch (Exception e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_ctor_throw_message_preserved() {
+    string got = "";
+    try {
+        Validator v = new Validator(-1);
+    } catch (ArgumentException e) {
+        got = e.Message;
+    }
+    Assert.Equal("x must be non-negative", got);
+}
+
+[Test]
+void test_ctor_no_throw_normal_path() {
+    Validator v = new Validator(5);
+    Assert.Equal(5, v.x);
+}
+
+[Test]
+void test_ctor_throw_does_not_assign_dst() {
+    // Pre-fix bug: even when the ctor "threw", the partially-constructed
+    // object got written to the destination. Verify we don't observe
+    // that — `v` should remain null because the throw aborts the
+    // assignment.
+    Validator v = null;
+    try {
+        v = new Validator(-1);
+    } catch (ArgumentException e) {
+        // Expected.
+    }
+    Assert.True(v == null);
+}
