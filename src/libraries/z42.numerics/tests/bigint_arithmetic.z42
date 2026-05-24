@@ -96,7 +96,7 @@ void test_divide_by_zero_throws() {
     bool threw = false;
     try {
         new BigInt(5).Divide(new BigInt(0));
-    } catch (InvalidOperationException e) {
+    } catch (DivideByZeroException e) {
         threw = true;
     }
     Assert.True(threw);

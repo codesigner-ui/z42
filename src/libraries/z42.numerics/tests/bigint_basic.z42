@@ -63,7 +63,7 @@ void test_to_int32_overflow_throws() {
     bool threw = false;
     try {
         big.ToInt32();
-    } catch (InvalidOperationException e) {
+    } catch (OverflowException e) {
         threw = true;
     }
     Assert.True(threw);

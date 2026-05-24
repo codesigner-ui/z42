@@ -188,16 +188,16 @@ public class BigInt {
 
     // ── Conversion ──────────────────────────────────────────────────────
 
-    /// Returns the value as int. Throws InvalidOperationException if out of i32 range.
+    /// Returns the value as int. Throws OverflowException if out of i32 range.
     public int ToInt32() {
         long v = this.ToInt64();
         if (v < -2147483648L || v > 2147483647L) {
-            throw new InvalidOperationException("BigInt.ToInt32: value out of i32 range");
+            throw new OverflowException("BigInt.ToInt32: value out of i32 range");
         }
         return (int)v;
     }
 
-    /// Returns the value as long. Throws InvalidOperationException if out of i64 range.
+    /// Returns the value as long. Throws OverflowException if out of i64 range.
     public long ToInt64() {
         if (this._sign == 0) return 0L;
         // Max positive: 2^63 - 1 = 9223372036854775807
@@ -205,7 +205,7 @@ public class BigInt {
         // Limb 0 holds bits [0..30], limb 1 holds bits [31..61], limb 2 holds bits [62..]
         // i64 needs ≤ 63 bits magnitude (except -2^63), so _mag.Length ≤ 3 with limb 2 ≤ 1.
         if (this._mag.Length > 3) {
-            throw new InvalidOperationException("BigInt.ToInt64: value out of i64 range");
+            throw new OverflowException("BigInt.ToInt64: value out of i64 range");
         }
         long magnitude = 0L;
         int i = this._mag.Length - 1;
@@ -215,7 +215,7 @@ public class BigInt {
             long limbVal = (long)this._mag[i];
             // magnitude * BASE: if magnitude >= 2^32 this overflows i64; guard with explicit check
             if (magnitude > 4294967295L) {  // 2^32 - 1; beyond this *BASE overflows i63
-                throw new InvalidOperationException("BigInt.ToInt64: value out of i64 range");
+                throw new OverflowException("BigInt.ToInt64: value out of i64 range");
             }
             magnitude = magnitude * BigInt.BASE + limbVal;
             // After shift+add: if magnitude > 2^63 (positive) or > 2^63 (for -Long.MinValue boundary): overflow.
@@ -223,7 +223,7 @@ public class BigInt {
                 // Sign bit set — overflow OR exact -2^63 boundary.
                 // Allow only when sign == -1 AND magnitude == Long.MinValue (negation cancels).
                 if (this._sign != -1 || magnitude != (-9223372036854775807L - 1L)) {
-                    throw new InvalidOperationException("BigInt.ToInt64: value out of i64 range");
+                    throw new OverflowException("BigInt.ToInt64: value out of i64 range");
                 }
             }
             i = i - 1;
@@ -360,7 +360,7 @@ public class BigInt {
     /// dividend (this), so dividend = quotient * divisor + remainder.
     BigInt[] _divMod(BigInt divisor) {
         if (divisor._sign == 0) {
-            throw new InvalidOperationException("BigInt division by zero");
+            throw new DivideByZeroException("BigInt division by zero");
         }
         if (this._sign == 0) {
             BigInt[] dm = new BigInt[2];
