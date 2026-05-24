@@ -153,13 +153,22 @@ pub(crate) fn native_search_paths() -> Vec<PathBuf> {
 
     // 2. Default SDK layout, relative to the running z42vm binary:
     //      <exec_dir>/../native/    — SDK package layout (bin/ and native/ siblings)
-    //      <exec_dir>/native/       — dev / cargo-target layout (release/native/)
+    //      <exec_dir>/native/       — dev / cargo-target layout when scripts symlink
+    //      <exec_dir>              — raw cargo-target layout (libz42_*.dylib sit next
+    //                                 to z42vm directly; added 2026-05-24 to remove
+    //                                 the manual `ln -sf ../libz42_compression.dylib
+    //                                 release/native/libz42_compression.dylib` setup
+    //                                 step every fresh `cargo build` previously
+    //                                 required). `parse_z42_lib_name` filters to
+    //                                 `libz42_<name>.{so,dylib,dll}`, so dependency
+    //                                 dylibs / `libz42.rlib` / `*.a` are ignored.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(parent_dir) = exe.parent() {
             if let Some(sdk_root) = parent_dir.parent() {
                 paths.push(sdk_root.join("native"));
             }
             paths.push(parent_dir.join("native"));
+            paths.push(parent_dir.to_path_buf());
         }
     }
 

@@ -38,6 +38,22 @@ fn native_search_paths_includes_default_sdk_layout() {
 }
 
 #[test]
+fn native_search_paths_includes_exec_dir_for_cargo_target_layout() {
+    // 2026-05-24 dev-infra: <exec_dir> itself is now a search path so cargo
+    // `target/<profile>/libz42_*.dylib` is discovered without manual
+    // `ln -sf ../libz42_compression.dylib release/native/libz42_compression.dylib`.
+    let exe = std::env::current_exe().expect("current_exe");
+    let exec_dir = exe.parent().expect("exec dir").to_path_buf();
+    let paths = native_search_paths();
+    assert!(
+        paths.iter().any(|p| p == &exec_dir),
+        "expected <exec_dir> ({}) among search paths, got {:?}",
+        exec_dir.display(),
+        paths,
+    );
+}
+
+#[test]
 fn native_search_paths_respects_env_var() {
     use std::sync::Mutex;
     // serialise so concurrent tests don't trample each other's env var
