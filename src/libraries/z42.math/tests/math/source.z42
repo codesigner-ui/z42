@@ -1,12 +1,14 @@
 using Std.Math;
 void Main() {
-    // Abs
-    Assert.Equal(5, Math.Abs(-5));
-    Assert.Equal(5, Math.Abs(5));
+    // Abs (int-preserving via AbsInt; double via Abs).
+    // fix-math-int-overload-collision (2026-05-24): Abs/Min/Max int
+    // overloads renamed to AbsInt/MinInt/MaxInt — see Math.z42 notes.
+    Assert.Equal(5, Math.AbsInt(-5));
+    Assert.Equal(5, Math.AbsInt(5));
 
-    // Max / Min
-    Assert.Equal(10, Math.Max(3, 10));
-    Assert.Equal(3, Math.Min(3, 10));
+    // Max / Min (int-preserving via MaxInt / MinInt)
+    Assert.Equal(10, Math.MaxInt(3, 10));
+    Assert.Equal(3, Math.MinInt(3, 10));
 
     // Pow
     Assert.Equal(8, Math.Pow(2, 3));
