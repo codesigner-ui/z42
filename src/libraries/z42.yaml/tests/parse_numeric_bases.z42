@@ -1,0 +1,155 @@
+// add-yaml-numeric-bases (2026-05-25): YAML 1.2 hex (0x) and octal (0o)
+// integer literals.
+namespace Z42YamlParseNumericBasesTests;
+
+using Std;
+using Std.Test;
+using Std.Yaml;
+
+// ── Hex literals ────────────────────────────────────────────────────────
+
+[Test]
+void test_hex_uppercase() {
+    YamlValue v = YamlValue.Parse("0xFF");
+    Assert.True(v.IsInt());
+    Assert.Equal(255L, v.AsInt());
+}
+
+[Test]
+void test_hex_lowercase() {
+    YamlValue v = YamlValue.Parse("0xff");
+    Assert.True(v.IsInt());
+    Assert.Equal(255L, v.AsInt());
+}
+
+[Test]
+void test_hex_mixed_case() {
+    YamlValue v = YamlValue.Parse("0xCaFe");
+    Assert.True(v.IsInt());
+    Assert.Equal(51966L, v.AsInt());
+}
+
+[Test]
+void test_hex_zero() {
+    YamlValue v = YamlValue.Parse("0x0");
+    Assert.True(v.IsInt());
+    Assert.Equal(0L, v.AsInt());
+}
+
+[Test]
+void test_hex_big() {
+    YamlValue v = YamlValue.Parse("0x7FFFFFFFFFFFFFFF");
+    Assert.True(v.IsInt());
+    Assert.Equal(9223372036854775807L, v.AsInt());   // long max
+}
+
+[Test]
+void test_hex_in_mapping_value() {
+    YamlValue v = YamlValue.Parse("color: 0xFF0000");
+    Assert.Equal(16711680L, v.Get("color").AsInt());
+}
+
+// ── Octal literals ──────────────────────────────────────────────────────
+
+[Test]
+void test_octal_basic() {
+    YamlValue v = YamlValue.Parse("0o755");
+    Assert.True(v.IsInt());
+    Assert.Equal(493L, v.AsInt());     // 7*64 + 5*8 + 5 == 493
+}
+
+[Test]
+void test_octal_zero() {
+    YamlValue v = YamlValue.Parse("0o0");
+    Assert.True(v.IsInt());
+    Assert.Equal(0L, v.AsInt());
+}
+
+[Test]
+void test_octal_file_mode() {
+    YamlValue v = YamlValue.Parse("mode: 0o644");
+    Assert.Equal(420L, v.Get("mode").AsInt());   // common rw-r--r-- bits
+}
+
+// ── Reject malformed prefixes (stay as strings) ─────────────────────────
+
+[Test]
+void test_uppercase_X_not_hex_so_treated_as_string() {
+    // YAML 1.2 spec uses lowercase `0x`; `0X` is not a hex prefix.
+    YamlValue v = YamlValue.Parse("0X12");
+    Assert.True(v.IsString());
+    Assert.Equal("0X12", v.AsString());
+}
+
+[Test]
+void test_uppercase_O_not_octal_so_treated_as_string() {
+    YamlValue v = YamlValue.Parse("0O77");
+    Assert.True(v.IsString());
+    Assert.Equal("0O77", v.AsString());
+}
+
+[Test]
+void test_hex_with_invalid_char_falls_through() {
+    // `0xGG` is not valid hex → not detected as hex → fall through to string.
+    YamlValue v = YamlValue.Parse("0xGG");
+    Assert.True(v.IsString());
+}
+
+[Test]
+void test_octal_with_digit_8_falls_through() {
+    // `0o89` contains non-octal digit 8 → fall through to string.
+    YamlValue v = YamlValue.Parse("0o89");
+    Assert.True(v.IsString());
+}
+
+// ── Decimal still works ─────────────────────────────────────────────────
+
+[Test]
+void test_decimal_zero_not_misread_as_base_prefix() {
+    YamlValue v = YamlValue.Parse("0");
+    Assert.True(v.IsInt());
+    Assert.Equal(0L, v.AsInt());
+}
+
+[Test]
+void test_decimal_with_leading_zero() {
+    // `01` (no x / o) is still a plain decimal 1.
+    YamlValue v = YamlValue.Parse("01");
+    Assert.True(v.IsInt());
+    Assert.Equal(1L, v.AsInt());
+}
+
+[Test]
+void test_negative_decimal_still_works() {
+    YamlValue v = YamlValue.Parse("-42");
+    Assert.True(v.IsInt());
+    Assert.Equal(-42L, v.AsInt());
+}
+
+// ── Hex with no digits → string ─────────────────────────────────────────
+
+[Test]
+void test_bare_0x_treated_as_string() {
+    YamlValue v = YamlValue.Parse("0x");
+    Assert.True(v.IsString());
+    Assert.Equal("0x", v.AsString());
+}
+
+[Test]
+void test_bare_0o_treated_as_string() {
+    YamlValue v = YamlValue.Parse("0o");
+    Assert.True(v.IsString());
+    Assert.Equal("0o", v.AsString());
+}
+
+// ── In a sequence ───────────────────────────────────────────────────────
+
+[Test]
+void test_hex_and_octal_in_sequence() {
+    string src = "- 0xFF\n- 0o755\n- 100\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(3, v.Length());
+    Assert.Equal(255L, v.At(0).AsInt());
+    Assert.Equal(493L, v.At(1).AsInt());
+    Assert.Equal(100L, v.At(2).AsInt());
+}

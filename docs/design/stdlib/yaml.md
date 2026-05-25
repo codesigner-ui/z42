@@ -82,7 +82,7 @@ for the rationale on the `ParseStream` naming.
 |---------|---------|
 | Scalars: null | `~` / `null` / empty |
 | Scalars: bool | `true` / `false` (YAML 1.2 — no `yes`/`on`/`off` Norway-problem) |
-| Scalars: int  | `42` / `-7` (decimal, signed) |
+| Scalars: int  | `42` / `-7` (decimal, signed) / `0xFF` / `0o755` (hex, octal — YAML 1.2; lowercase prefix only) |
 | Scalars: float | `3.14` / `1.5e10` (decimal, exponent OK) |
 | Scalars: plain string | `hello world` |
 | Scalars: double-quoted | `"a\nb"` with `\n \t \r \" \\ \/ \0 \uXXXX` escapes |
@@ -200,9 +200,13 @@ single-doc `Parse()` accepts trailing `...` / comments between docs.
 - **触发条件**：z42.time stabilises a DateTime type that yaml can
   emit / consume.
 
-### `yaml-future-numeric-bases`
+### ~~`yaml-future-numeric-bases`~~ — **✅ 已落地 2026-05-25 (add-yaml-numeric-bases)**
 
-- **来源**：add-z42-yaml v0 scope
-- **触发原因**：YAML 1.2 supports `0o7` (octal) / `0xFF` (hex) integer
-  literals. v0 supports decimal only; non-decimal literals are emitted
-  as strings.
+Shipped: YAML 1.2 hex (`0xFF`) and octal (`0o755`) integer literals.
+Lowercase prefix only (matches spec §10.2 schema; `0X` / `0O` stay as
+strings). No sign permitted on non-decimal literals. Decimal literals
+unchanged. 19 tests cover hex upper/lower/mixed case, octal file-mode
+patterns (`0o755` = 493, `0o644` = 420), hex in mapping value / sequence,
+rejection paths (uppercase prefix → string, invalid digit → string,
+bare `0x` / `0o` → string), decimal-with-leading-zero stays decimal,
+long-max hex (`0x7FFFFFFFFFFFFFFF`).

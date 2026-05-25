@@ -692,6 +692,14 @@ public sealed class YamlParser {
         if (raw == "false")       { return YamlValue.OfBool(false); }
         if (raw == "False")       { return YamlValue.OfBool(false); }
         if (raw == "FALSE")       { return YamlValue.OfBool(false); }
+        // YAML 1.2 hex / octal literals (add-yaml-numeric-bases, 2026-05-25).
+        // Checked before decimal so `0xFF` / `0o755` aren't matched as string.
+        if (this._LooksLikeHex(raw)) {
+            return YamlValue.OfInt(this._ParseHex(raw));
+        }
+        if (this._LooksLikeOctal(raw)) {
+            return YamlValue.OfInt(this._ParseOctal(raw));
+        }
         // Try int → float → string.
         if (this._LooksLikeInt(raw)) {
             try { return YamlValue.OfInt(Int64.Parse(raw)); }
@@ -702,6 +710,63 @@ public sealed class YamlParser {
             catch (Exception e) { /* fall through to string */ }
         }
         return YamlValue.OfString(raw);
+    }
+
+    /// YAML 1.2 hex literal: `0x` prefix (lowercase), at least one hex digit.
+    /// No sign allowed (matches YAML 1.2 spec §10.2 schema).
+    private bool _LooksLikeHex(string s) {
+        if (s.Length < 3) { return false; }
+        if (s.CharAt(0) != '0' || s.CharAt(1) != 'x') { return false; }
+        int i = 2;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            bool isHexDigit = (c >= '0' && c <= '9')
+                || (c >= 'a' && c <= 'f')
+                || (c >= 'A' && c <= 'F');
+            if (!isHexDigit) { return false; }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    private long _ParseHex(string s) {
+        long n = 0;
+        int i = 2;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            long d = 0;
+            if (c >= '0' && c <= '9')      { d = (long)((int)c - (int)'0'); }
+            else if (c >= 'a' && c <= 'f') { d = (long)((int)c - (int)'a' + 10); }
+            else                            { d = (long)((int)c - (int)'A' + 10); }
+            n = (n << 4) | d;
+            i = i + 1;
+        }
+        return n;
+    }
+
+    /// YAML 1.2 octal literal: `0o` prefix, at least one octal digit.
+    /// No sign allowed.
+    private bool _LooksLikeOctal(string s) {
+        if (s.Length < 3) { return false; }
+        if (s.CharAt(0) != '0' || s.CharAt(1) != 'o') { return false; }
+        int i = 2;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c < '0' || c > '7') { return false; }
+            i = i + 1;
+        }
+        return true;
+    }
+
+    private long _ParseOctal(string s) {
+        long n = 0;
+        int i = 2;
+        while (i < s.Length) {
+            long d = (long)((int)s.CharAt(i) - (int)'0');
+            n = (n << 3) | d;
+            i = i + 1;
+        }
+        return n;
     }
 
     private bool _LooksLikeInt(string s) {
