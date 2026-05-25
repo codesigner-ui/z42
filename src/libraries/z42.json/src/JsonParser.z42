@@ -150,7 +150,38 @@ public sealed class JsonParser {
         if (c == '"') { return JsonValue.OfString(this.ParseString()); }
         if (c == 't' || c == 'f') { return this.ParseBool(); }
         if (c == 'n') { return this.ParseNull(); }
+        // Relaxed-only: NaN / Infinity / -Infinity / -NaN / +Infinity.
+        if (this._relaxed) {
+            JsonValue special = this.TryParseSpecialFloat();
+            if (special != null) { return special; }
+        }
         return this.ParseNumber();
+    }
+
+    /// JSON5-style special float literals (`NaN`, `Infinity`, signed forms).
+    /// Returns null when current position is not one of those tokens — caller
+    /// falls through to standard `ParseNumber`. add-json-relaxed-naninf
+    /// (2026-05-25).
+    private JsonValue TryParseSpecialFloat() {
+        bool neg = false;
+        int savedPos  = this._pos;
+        int savedLine = this._line;
+        int savedCol  = this._col;
+        if (this.Peek() == '-') { neg = true; this.Advance(); }
+        else if (this.Peek() == '+') {       this.Advance(); }
+        if (this.TryLiteral("Infinity")) {
+            double d = double.Parse("inf");
+            if (neg) { d = 0.0 - d; }
+            return JsonValue.OfDouble(d);
+        }
+        if (this.TryLiteral("NaN")) {
+            return JsonValue.OfDouble(double.Parse("nan"));
+        }
+        // Not a special float — rewind so `ParseNumber` sees the original sign.
+        this._pos  = savedPos;
+        this._line = savedLine;
+        this._col  = savedCol;
+        return null;
     }
 
     private JsonValue ParseBool() {

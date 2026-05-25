@@ -140,10 +140,27 @@ strings — only comments + trailing commas were the practical pain.
 - **触发原因**：v0 stringify 按插入顺序，但 round-trip 不保 comment
 - **同 TOML**：与 toml-future-key-order-preservation 一起做
 
-### json-future-nan-inf
-- **来源**：JSON5 / 老 Python json 容忍 `NaN` / `Infinity`
-- **触发原因**：RFC 8259 不允许；z42.json 严格遵守
-- **当前 workaround**：null 或专用 sentinel string
+### ~~json-future-nan-inf~~ — **✅ 已落地 2026-05-25 (add-json-relaxed-naninf)**
+
+Shipped: `NaN`, `Infinity`, `-Infinity`, `+Infinity`, `-NaN` accepted by
+`JsonValue.ParseRelaxed` / `ParseRelaxedStream`. Strict `Parse` /
+`ParseStream` still reject (RFC 8259 conformance preserved).
+
+Implementation: new private `TryParseSpecialFloat()` in JsonParser
+runs ahead of `ParseNumber` when `_relaxed` is true. Detects sign
++ `Infinity` / `NaN` literal; converts via `double.Parse("inf")` /
+`double.Parse("nan")` (same path used by TomlParser's number code).
+Negation via subtraction (no `-double.Parse(...)` chained-call).
+
+8 new tests cover: `Infinity` (positive / negative / explicit `+`),
+`NaN` (with IEEE-754 `x != x` identity check), special floats in
+arrays alongside regular numbers, strict-mode rejection of both
+`NaN` and `Infinity`, regression check that signed numbers
+(`-42`) still take the standard path.
+
+`Stringify` emission of NaN / Infinity not part of this spec — RFC
+8259 has no canonical representation. Callers needing round-trip
+should pre-check `IsDouble()` + the IEEE-754 special-value checks.
 
 ## 与 z42.toml / 其他 stdlib 的交互
 

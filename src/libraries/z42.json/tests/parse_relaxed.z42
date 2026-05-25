@@ -187,3 +187,69 @@ void test_string_containing_block_comment_syntax_unaffected() {
     JsonValue v = JsonValue.ParseRelaxed("{\"x\": \"/* not a comment */\"}");
     Assert.Equal("/* not a comment */", v.Get("x").AsString());
 }
+
+// ── NaN / Infinity (relaxed only; add-json-relaxed-naninf 2026-05-25) ──
+
+[Test]
+void test_relaxed_accepts_positive_infinity() {
+    JsonValue v = JsonValue.ParseRelaxed("{\"x\": Infinity}");
+    Assert.True(v.Get("x").IsDouble());
+    Assert.True(v.Get("x").AsDouble() > 1e300);
+}
+
+[Test]
+void test_relaxed_accepts_negative_infinity() {
+    JsonValue v = JsonValue.ParseRelaxed("{\"x\": -Infinity}");
+    Assert.True(v.Get("x").AsDouble() < -1e300);
+}
+
+[Test]
+void test_relaxed_accepts_plus_infinity() {
+    JsonValue v = JsonValue.ParseRelaxed("{\"x\": +Infinity}");
+    Assert.True(v.Get("x").AsDouble() > 1e300);
+}
+
+[Test]
+void test_relaxed_accepts_nan() {
+    JsonValue v = JsonValue.ParseRelaxed("{\"x\": NaN}");
+    Assert.True(v.Get("x").IsDouble());
+    double d = v.Get("x").AsDouble();
+    // NaN is not equal to itself per IEEE-754.
+    Assert.False(d == d);
+}
+
+[Test]
+void test_relaxed_accepts_special_float_in_array() {
+    JsonValue v = JsonValue.ParseRelaxed("[Infinity, -Infinity, NaN, 42]");
+    Assert.Equal(4, v.Length());
+    Assert.True(v.At(0).AsDouble() > 1e300);
+    Assert.True(v.At(1).AsDouble() < -1e300);
+    double nan = v.At(2).AsDouble();
+    Assert.False(nan == nan);
+    Assert.Equal(42L, v.At(3).AsLong());
+}
+
+[Test]
+void test_strict_rejects_nan() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.Parse("{\"x\": NaN}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_strict_rejects_infinity() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.Parse("{\"x\": Infinity}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_relaxed_negative_number_still_works() {
+    // Sign followed by digits (not Infinity/NaN) must still take the
+    // standard number path.
+    JsonValue v = JsonValue.ParseRelaxed("{\"x\": -42}");
+    Assert.True(v.Get("x").IsLong());
+    Assert.Equal(-42L, v.Get("x").AsLong());
+}
