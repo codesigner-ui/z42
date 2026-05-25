@@ -205,7 +205,30 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
 // ─── Public entry point called from vm.rs ───────────────────────────────────
 
 /// Called by `Vm::run` when the execution mode is JIT.
+///
+/// Phase 2 D3+D6 wiring (2026-05-26): records `jit_methods_compiled` +
+/// `jit_compile_us_total` counter increments + fires one
+/// [`RuntimeEvent::JitModuleCompiled`] event per module compile. Per-
+/// function granularity is deferred to a future spec (the granularity
+/// trade-off — N events vs 1 event for a module with N functions —
+/// favors aggregate for now).
 pub fn run(ctx: &VmContext, module: &Module, entry_name: &str) -> Result<()> {
+    use std::sync::atomic::Ordering;
+
+    let function_count = module.functions.len() as u64;
+    let start = std::time::Instant::now();
+
     let mut jit_module = compile_module(module)?;
+
+    let duration_us = start.elapsed().as_micros() as u64;
+    ctx.counters().jit_methods_compiled.fetch_add(function_count, Ordering::Relaxed);
+    ctx.counters().jit_compile_us_total.fetch_add(duration_us, Ordering::Relaxed);
+
+    ctx.fire_runtime_event(&crate::observer::RuntimeEvent::JitModuleCompiled {
+        module_name:    module.name.clone(),
+        function_count: function_count as u32,
+        duration_us,
+    });
+
     jit_module.run(ctx, entry_name)
 }

@@ -470,6 +470,13 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                         ctx, func, block_idx, block_map, &module.type_registry, &thrown_val,
                     ) {
                         let entry = &func.exception_table[entry_idx];
+                        // Phase 2 D3+D6: callee-thrown + caller-caught is
+                        // an unwind of exactly 1 frame (the callee). Throw
+                        // was already counted/emitted at its origin
+                        // (Terminator::Throw or JIT set_exception bridge,
+                        // tracked separately when the JIT path also wires
+                        // in Phase 2.x).
+                        fire_exception_caught(ctx, module, &thrown_val, 1);
                         frame.set(entry.catch_reg, thrown_val);
                         block_idx = *block_map.get(entry.catch_label.as_str())
                             .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
@@ -555,10 +562,17 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 ctx.update_top_frame_pos(throw_line, throw_col);
                 crate::exception::populate_stack_trace(&val, ctx, module);
 
+                // Phase 2 D3+D6 wiring (2026-05-26): count + emit the throw
+                // BEFORE handler lookup so even immediately-caught exceptions
+                // are visible in the event stream.
+                fire_exception_thrown(ctx, module, &val);
+
                 if let Some(entry_idx) = find_handler(
                     ctx, func, block_idx, block_map, &module.type_registry, &val,
                 ) {
                     let entry = &func.exception_table[entry_idx];
+                    // Same-frame catch — 0 frames unwound.
+                    fire_exception_caught(ctx, module, &val, 0);
                     frame.set(entry.catch_reg, val);
                     block_idx = *block_map.get(entry.catch_label.as_str())
                         .with_context(|| format!("undefined block `{}`", entry.catch_label))?;
@@ -577,6 +591,47 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
 /// callee's final value of that reg and store it through the original Ref
 /// to the caller's lvalue. Runs before every function-exit return path
 /// (normal return + uncaught throw).
+/// Phase 2 D3+D6 (2026-05-26): increment `exceptions_thrown` counter and
+/// fire `RuntimeEvent::ExceptionThrown`. Reads class name + message from
+/// the thrown value if it's an Exception subclass; otherwise stamps both
+/// as `"<non-exception-value>"`. Message truncated to 256 chars to keep
+/// the event firehose bounded.
+fn fire_exception_thrown(ctx: &VmContext, module: &crate::metadata::Module, val: &crate::metadata::Value) {
+    use std::sync::atomic::Ordering;
+    ctx.counters().exceptions_thrown.fetch_add(1, Ordering::Relaxed);
+    let (class, mut message) = exception_class_and_message(val, module);
+    if message.len() > 256 {
+        message.truncate(256);
+        message.push_str("…");
+    }
+    ctx.fire_runtime_event(&crate::observer::RuntimeEvent::ExceptionThrown { class, message });
+}
+
+/// Phase 2 D3+D6 sibling: increment `exceptions_caught` + fire
+/// `RuntimeEvent::ExceptionCaught`. `frames_unwound` = 0 for same-frame
+/// catch; 1 for callee-thrown + caller-caught; >1 for deeper unwind.
+fn fire_exception_caught(
+    ctx: &VmContext, module: &crate::metadata::Module,
+    val: &crate::metadata::Value, frames_unwound: u32,
+) {
+    use std::sync::atomic::Ordering;
+    ctx.counters().exceptions_caught.fetch_add(1, Ordering::Relaxed);
+    let (class, _) = exception_class_and_message(val, module);
+    ctx.fire_runtime_event(&crate::observer::RuntimeEvent::ExceptionCaught { class, frames_unwound });
+}
+
+fn exception_class_and_message(
+    val: &crate::metadata::Value, module: &crate::metadata::Module,
+) -> (String, String) {
+    use crate::metadata::Value;
+    let class = match val {
+        Value::Object(rc) => rc.borrow().type_desc.name.clone(),
+        _ => "<non-exception-value>".to_string(),
+    };
+    let message = crate::exception::read_message(val, module).unwrap_or_default();
+    (class, message)
+}
+
 fn run_ref_writebacks(frame: &Frame, ctx: &VmContext) -> Result<()> {
     for (reg, kind) in &frame.ref_writebacks {
         let final_val = frame.regs.get(*reg as usize)

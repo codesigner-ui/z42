@@ -19,11 +19,48 @@ public class RegexParser {
     private int _nextGroup;
     public int GroupCount;       // 解析完成后 = 已分配的 group 数（不含 group 0 = 整个 match）
 
+    // add-regex-named-groups (2026-05-26): parallel arrays mapping declared
+    // name → 1-based capture index, exposed for Regex.Compile to forward
+    // into the compiled Regex.
+    public string[] GroupNames;
+    public int[]    GroupIndices;
+    public int      NamedGroupCount;
+
     public RegexParser(string src) {
-        this._src       = src;
-        this._pos       = 0;
-        this._nextGroup = 1;
-        this.GroupCount = 0;
+        this._src            = src;
+        this._pos            = 0;
+        this._nextGroup      = 1;
+        this.GroupCount      = 0;
+        this.GroupNames      = new string[4];
+        this.GroupIndices    = new int[4];
+        this.NamedGroupCount = 0;
+    }
+
+    private void _RegisterNamedGroup(string name, int idx) {
+        // Reject duplicate names within a single pattern.
+        int i = 0;
+        while (i < this.NamedGroupCount) {
+            if (this.GroupNames[i] == name) {
+                throw new RegexException("duplicate named group '" + name + "'");
+            }
+            i = i + 1;
+        }
+        if (this.NamedGroupCount == this.GroupNames.Length) {
+            int newCap = this.GroupNames.Length * 2;
+            string[] nn = new string[newCap];
+            int[]    ni = new int[newCap];
+            int j = 0;
+            while (j < this.NamedGroupCount) {
+                nn[j] = this.GroupNames[j];
+                ni[j] = this.GroupIndices[j];
+                j = j + 1;
+            }
+            this.GroupNames   = nn;
+            this.GroupIndices = ni;
+        }
+        this.GroupNames[this.NamedGroupCount]   = name;
+        this.GroupIndices[this.NamedGroupCount] = idx;
+        this.NamedGroupCount = this.NamedGroupCount + 1;
     }
 
     /// 入口：parse 完整 pattern，返回 RegexNode[] + 实际 count（通过 _resultCount 字段）。
@@ -148,21 +185,44 @@ public class RegexParser {
         char c = this.Peek();
         if (c == '(') {
             this.Advance();
-            // Non-capturing group `(?:…)` — add-regex-non-capturing-group
-            // (2026-05-26). Skip capture-index allocation; matcher detects
-            // `_groupIndex == -1` and bypasses the slot write.
+            // `(?…)` dispatch — currently `(?:` non-capturing and
+            // `(?<name>` named-capturing supported.
             bool nonCapturing = false;
+            string namedName  = "";
+            bool named        = false;
             if (!this.Eof() && this.Peek() == '?') {
-                int save = this._pos;
                 this.Advance();
                 if (!this.Eof() && this.Peek() == ':') {
                     this.Advance();
                     nonCapturing = true;
+                } else if (!this.Eof() && this.Peek() == '<') {
+                    // `(?<name>…)` named capturing group — add-regex-named-
+                    // groups (2026-05-26). Name chars: ASCII alphanumerics +
+                    // `_`; must start with non-digit; must be unique in pattern.
+                    this.Advance();
+                    int nameStart = this._pos;
+                    if (this.Eof()) {
+                        throw new RegexException("expected name after '(?<' at pos " + this._pos.ToString());
+                    }
+                    char fst = this.Peek();
+                    bool firstOk = (fst >= 'a' && fst <= 'z') || (fst >= 'A' && fst <= 'Z') || fst == '_';
+                    if (!firstOk) {
+                        throw new RegexException("named group name must start with letter or '_' at pos " + this._pos.ToString());
+                    }
+                    while (!this.Eof()) {
+                        char nc = this.Peek();
+                        bool ok = (nc >= 'a' && nc <= 'z') || (nc >= 'A' && nc <= 'Z')
+                            || (nc >= '0' && nc <= '9') || nc == '_';
+                        if (!ok) { break; }
+                        this.Advance();
+                    }
+                    if (this.Eof() || this.Peek() != '>') {
+                        throw new RegexException("expected '>' after named group name at pos " + this._pos.ToString());
+                    }
+                    namedName = this._src.Substring(nameStart, this._pos - nameStart);
+                    this.Advance();   // consume `>`
+                    named = true;
                 } else {
-                    // `(?` followed by something else — not a valid v0 atom;
-                    // restore position and let the dispatch fall through to
-                    // the normal error path below.
-                    this._pos = save;
                     throw new RegexException("unsupported '(?…)' construct at pos " + this._pos.ToString());
                 }
             }
@@ -172,6 +232,9 @@ public class RegexParser {
             } else {
                 idx = this._nextGroup;
                 this._nextGroup = this._nextGroup + 1;
+                if (named) {
+                    this._RegisterNamedGroup(namedName, idx);
+                }
             }
             this.ParseAlt(true);
             RegexNode[] body = this.ResultNodes;

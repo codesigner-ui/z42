@@ -34,6 +34,15 @@ pub(super) fn call_native(
 ) -> Result<Option<Value>> {
     use crate::native::{marshal, dispatch as ndisp};
 
+    // Phase 2 D3+D6 wiring (2026-05-26): count + event for native FFI calls.
+    // Increment fires BEFORE dispatch so even failing calls (unknown type /
+    // marshal error) are counted — they still represent FFI traffic.
+    ctx.counters().native_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    ctx.fire_runtime_event(&crate::observer::RuntimeEvent::NativeCallEntered {
+        module: module_name.to_string(),
+        symbol: format!("{type_name}::{symbol}"),
+    });
+
     let ty = ctx.resolve_native_type(module_name, type_name).ok_or_else(|| {
         anyhow::anyhow!(
             "CallNative: unknown native type {module_name}::{type_name}"

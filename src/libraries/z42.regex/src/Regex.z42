@@ -19,16 +19,43 @@ public class Regex {
     private int[] _gStarts;
     private int[] _gEnds;
 
-    private Regex(RegexNode[] seq, int seqCount, int groupCount) {
-        this._seq        = seq;
-        this._seqCount   = seqCount;
-        this._groupCount = groupCount;
+    // add-regex-named-groups (2026-05-26): parallel arrays mapping group
+    // name → 1-based capture index. Empty arrays when no `(?<name>...)`
+    // appears in the pattern. Names are case-sensitive and must be
+    // unique per pattern (parser rejects duplicates).
+    private string[] _groupNames;
+    private int[]    _groupIndices;
+    private int      _namedGroupCount;
+
+    private Regex(RegexNode[] seq, int seqCount, int groupCount,
+                  string[] groupNames, int[] groupIndices, int namedGroupCount) {
+        this._seq             = seq;
+        this._seqCount        = seqCount;
+        this._groupCount      = groupCount;
+        this._groupNames      = groupNames;
+        this._groupIndices    = groupIndices;
+        this._namedGroupCount = namedGroupCount;
     }
 
     public static Regex Compile(string pattern) {
         var p = new RegexParser(pattern);
         p.ParsePattern();
-        return new Regex(p.ResultNodes, p.ResultCount, 1 + p.GroupCount);
+        return new Regex(p.ResultNodes, p.ResultCount, 1 + p.GroupCount,
+                         p.GroupNames, p.GroupIndices, p.NamedGroupCount);
+    }
+
+    /// Lookup table for `Match.Group(string name)` resolution.
+    /// Returns -1 if `name` is not a declared capture group name.
+    /// add-regex-named-groups (2026-05-26).
+    public int GroupIndexOf(string name) {
+        int i = 0;
+        while (i < this._namedGroupCount) {
+            if (this._groupNames[i] == name) {
+                return this._groupIndices[i];
+            }
+            i = i + 1;
+        }
+        return -1;
     }
 
     public int GroupCount() { return this._groupCount - 1; }
@@ -178,7 +205,7 @@ public class Regex {
             this.ResetState(input);
             int end = this.Match(this._seq, this._seqCount, 0, from);
             if (end >= 0) {
-                return new Match(input, from, end, this._gStarts, this._gEnds, this._groupCount);
+                return new Match(input, from, end, this._gStarts, this._gEnds, this._groupCount, this);
             }
             if (anchoredStart) { return null; }
             from = from + 1;

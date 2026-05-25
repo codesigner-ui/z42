@@ -188,11 +188,41 @@ same pattern (`(<.*?>)(\d+)`), HTML tag-name extraction
 - **触发原因**：高级功能；引擎需要 lookahead 支持
 - **当前 workaround**：通常可用 group + post-filter 替代
 
-### regex-future-named-group
+### ~~regex-future-named-group~~ — **✅ 已落地 2026-05-26 (add-regex-named-groups)**
 
-- **来源**：`(?<year>\d{4})-(?<month>\d{2})`
-- **触发原因**：v0 仅 1-based index；命名 group 需要 dict 映射
-- **当前 workaround**：用 index + 调用方维护映射
+Shipped: `(?<name>…)` syntax — same matching as `(…)` but the group is
+also addressable by name. Numeric index still works alongside.
+
+API:
+- `Match.GroupByName(string name) → string` — look up by name; throws
+  `RegexException` when the name isn't declared
+- `Regex.GroupIndexOf(string name) → int` — name → 1-based index;
+  returns `-1` when undeclared (programmatic capability lookup)
+- `(?<name>…)` allocates a normal capture index (counts toward
+  `GroupCount()`); numeric `m.Group(N)` returns the same string
+
+Name rules (covers all common use cases):
+- ASCII letters (`A-Z` / `a-z`) and `_` for the first char
+- ASCII letters / digits / `_` for subsequent chars
+- Unique per pattern — duplicate names throw at compile time
+- Empty name (`(?<>...)`) throws
+- Missing closing `>` throws
+
+Implementation:
+- `RegexParser`: parallel `string[] GroupNames` + `int[] GroupIndices`
+  arrays grown 2× on overflow; `_RegisterNamedGroup` checks uniqueness
+- `Regex`: stores the parallel arrays; new public `GroupIndexOf(name)`
+  is a linear scan (typical pattern has < 5 named groups so a hash
+  would add overhead beyond benefit)
+- `Match`: new private `_owner: Regex` back-reference; constructor
+  takes an extra arg; `GroupByName` delegates lookup then calls
+  existing `Group(int)`
+
+14 new tests cover: basic lookup, dual numeric+name access, canonical
+YYYY-MM-DD date parser, mixed named + unnamed, three named groups,
+named + quantifier, named + optional, name with `_`/digits, undefined-
+name error, duplicate-name compile error, empty-name compile error,
+digit-first compile error, missing-`>` compile error, `Regex.GroupIndexOf`.
 
 ### ~~regex-future-non-capturing-group~~ — **✅ 已落地 2026-05-26 (add-regex-non-capturing-group)**
 

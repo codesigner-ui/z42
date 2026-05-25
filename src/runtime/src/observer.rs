@@ -34,18 +34,57 @@
 
 use std::sync::Arc;
 
-/// Push-based runtime event. Phase 1 ships **one** active variant
-/// (`ModuleLoaded`) + a forward-compatible `Custom` escape hatch.
-/// Future variants land via separate small refactors (see module doc).
+/// Push-based runtime event. Phase 1 shipped `ModuleLoaded` + `Custom`;
+/// Phase 2 (2026-05-26) wired 4 more covering JIT compile / exception
+/// throw+catch / native FFI call sites.
 #[derive(Debug, Clone)]
 pub enum RuntimeEvent {
     /// A `.zbc` / `.zpkg` artifact was loaded into the VM. Fired by
     /// `main.rs` for eager loads (z42.core + user artifact) and by the
-    /// lazy loader for on-demand zpkg resolution. Phase 1 captures
-    /// canonical path + on-disk byte size (None when reading from buffer).
+    /// lazy loader for on-demand zpkg resolution. Captures canonical
+    /// path + on-disk byte size (None when reading from buffer).
     ModuleLoaded {
         name:       String,
         byte_size:  Option<u64>,
+    },
+
+    /// A module's JIT compilation finished. Fired from `jit::run` after
+    /// `compile_module` returns. Phase 2 emits one event per
+    /// compile_module call (covering all module functions); per-function
+    /// granularity is deferred. `function_count` is how many functions
+    /// Cranelift translated; `duration_us` is wall-clock compile time.
+    /// Phase 2 (2026-05-26).
+    JitModuleCompiled {
+        module_name:     String,
+        function_count:  u32,
+        duration_us:     u64,
+    },
+
+    /// A user exception was thrown via `Terminator::Throw` or JIT's
+    /// `set_exception` bridge. `class` is the exception's declared
+    /// type-name (e.g. `"Std.Exception"` / user subclass); `message`
+    /// is the first 256 chars of the exception's Message field
+    /// (truncated to avoid huge payloads in event firehose). Phase 2.
+    ExceptionThrown {
+        class:    String,
+        message:  String,
+    },
+
+    /// A user exception was caught by a `try { ... } catch` clause.
+    /// `class` is the catch-clause's declared type; `frames_unwound`
+    /// is how many z42 call-stack frames were popped between throw
+    /// and catch (0 = same-frame catch). Phase 2.
+    ExceptionCaught {
+        class:           String,
+        frames_unwound:  u32,
+    },
+
+    /// A native FFI call was dispatched via `Instruction::CallNative`.
+    /// `module` is the native library name (e.g. `"libz42_compression"`);
+    /// `symbol` is the resolved `extern "C"` symbol called. Phase 2.
+    NativeCallEntered {
+        module:  String,
+        symbol:  String,
     },
 
     /// Generic escape hatch. Lets experimental / internal code emit
@@ -55,12 +94,6 @@ pub enum RuntimeEvent {
         source:  &'static str,
         message: String,
     },
-    // Phase 2 placeholders (commented to keep the enum's public surface stable
-    // until those subsystems actually wire up):
-    //   JitCompiled { func: String, ir_instrs: usize, code_bytes: usize, duration_us: u64 },
-    //   ExceptionThrown { class: String, message: String },
-    //   ExceptionCaught { class: String, frames_unwound: usize },
-    //   NativeCallEntered { module: String, symbol: String },
 }
 
 /// Subscriber for [`RuntimeEvent`]. `Send + Sync` so observers can live
@@ -138,8 +171,12 @@ mod tests {
     impl RuntimeObserver for RecordingObserver {
         fn on_event(&self, event: &RuntimeEvent) {
             let tag = match event {
-                RuntimeEvent::ModuleLoaded { name, .. } => format!("ModuleLoaded({name})"),
-                RuntimeEvent::Custom { source, .. }     => format!("Custom({source})"),
+                RuntimeEvent::ModuleLoaded { name, .. }       => format!("ModuleLoaded({name})"),
+                RuntimeEvent::JitModuleCompiled { module_name, .. } => format!("JitModuleCompiled({module_name})"),
+                RuntimeEvent::ExceptionThrown { class, .. }   => format!("ExceptionThrown({class})"),
+                RuntimeEvent::ExceptionCaught { class, .. }   => format!("ExceptionCaught({class})"),
+                RuntimeEvent::NativeCallEntered { module, symbol } => format!("NativeCallEntered({module}/{symbol})"),
+                RuntimeEvent::Custom { source, .. }           => format!("Custom({source})"),
             };
             self.seen.lock().push(tag);
         }
@@ -200,6 +237,26 @@ mod tests {
             "ModuleLoaded(user.zbc)".to_string(),
             "Custom(demo)".to_string(),
             "ModuleLoaded(z42.io.zpkg)".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn phase2_variants_round_trip_through_recorder() {
+        let r = RuntimeObserverRegistry::new();
+        let obs = Arc::new(RecordingObserver::default());
+        r.add(obs.clone());
+
+        r.fire(&RuntimeEvent::JitModuleCompiled { module_name: "mymod".into(), function_count: 10, duration_us: 100 });
+        r.fire(&RuntimeEvent::ExceptionThrown   { class: "Std.IO.IOException".into(), message: "boom".into() });
+        r.fire(&RuntimeEvent::ExceptionCaught   { class: "Std.Exception".into(), frames_unwound: 3 });
+        r.fire(&RuntimeEvent::NativeCallEntered { module: "libz".into(), symbol: "z_init".into() });
+
+        let seen = obs.seen.lock().clone();
+        assert_eq!(seen, vec![
+            "JitModuleCompiled(mymod)".to_string(),
+            "ExceptionThrown(Std.IO.IOException)".to_string(),
+            "ExceptionCaught(Std.Exception)".to_string(),
+            "NativeCallEntered(libz/z_init)".to_string(),
         ]);
     }
 

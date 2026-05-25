@@ -1,0 +1,146 @@
+// add-regex-named-groups (2026-05-26): `(?<name>…)` syntax + Match.GroupByName.
+namespace Z42RegexNamedGroupsTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+// ── Basic named group ──────────────────────────────────────────────────
+
+[Test]
+void test_named_group_basic_lookup() {
+    Regex r = Regex.Compile("(?<word>\\w+)");
+    Match m = r.Find("hello");
+    Assert.True(m != null);
+    Assert.Equal("hello", m.GroupByName("word"));
+}
+
+[Test]
+void test_named_group_still_has_numeric_index() {
+    // `(?<name>...)` is also accessible by 1-based numeric index.
+    Regex r = Regex.Compile("(?<word>\\w+)");
+    Match m = r.Find("hello");
+    Assert.Equal("hello", m.Group(1));
+    Assert.Equal("hello", m.GroupByName("word"));
+}
+
+// ── Date parsing — canonical use case ──────────────────────────────────
+
+[Test]
+void test_date_year_month_day() {
+    Regex r = Regex.Compile("(?<year>\\d{4})-(?<month>\\d{2})-(?<day>\\d{2})");
+    Match m = r.Find("2026-05-26");
+    Assert.True(m != null);
+    Assert.Equal("2026", m.GroupByName("year"));
+    Assert.Equal("05",   m.GroupByName("month"));
+    Assert.Equal("26",   m.GroupByName("day"));
+}
+
+// ── Mix named + numeric groups ─────────────────────────────────────────
+
+[Test]
+void test_mix_named_and_unnamed() {
+    Regex r = Regex.Compile("(\\w+):(?<value>\\d+)");
+    Match m = r.Find("port:8080");
+    Assert.True(m != null);
+    Assert.Equal("port", m.Group(1));
+    Assert.Equal("8080", m.GroupByName("value"));
+    Assert.Equal("8080", m.Group(2));   // numeric index still works
+}
+
+// ── Multiple named groups ──────────────────────────────────────────────
+
+[Test]
+void test_three_named_groups_independent() {
+    Regex r = Regex.Compile("(?<scheme>\\w+):(?<host>\\w+)/(?<path>\\w+)");
+    Match m = r.Find("https:example/index");
+    Assert.True(m != null);
+    Assert.Equal("https",   m.GroupByName("scheme"));
+    Assert.Equal("example", m.GroupByName("host"));
+    Assert.Equal("index",   m.GroupByName("path"));
+}
+
+// ── Named group with quantifier ────────────────────────────────────────
+
+[Test]
+void test_named_group_with_plus() {
+    Regex r = Regex.Compile("(?<digits>\\d+)");
+    Match m = r.Find("abc123def");
+    Assert.True(m != null);
+    Assert.Equal("123", m.GroupByName("digits"));
+}
+
+[Test]
+void test_named_group_optional() {
+    Regex r = Regex.Compile("color(?<plural>s)?");
+    Match m = r.Find("colors");
+    Assert.True(m != null);
+    Assert.Equal("s", m.GroupByName("plural"));
+}
+
+// ── Name with underscore + digits ──────────────────────────────────────
+
+[Test]
+void test_name_with_underscore_and_digits() {
+    Regex r = Regex.Compile("(?<key_1>\\w+)");
+    Match m = r.Find("foo");
+    Assert.True(m != null);
+    Assert.Equal("foo", m.GroupByName("key_1"));
+}
+
+// ── Error: undefined name ──────────────────────────────────────────────
+
+[Test]
+void test_undefined_name_throws() {
+    Regex r = Regex.Compile("(?<x>\\d+)");
+    Match m = r.Find("42");
+    bool threw = false;
+    try { string _v = m.GroupByName("y"); }
+    catch (RegexException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Error: duplicate name ──────────────────────────────────────────────
+
+[Test]
+void test_duplicate_name_throws_at_compile() {
+    bool threw = false;
+    try { Regex r = Regex.Compile("(?<a>\\d+)-(?<a>\\d+)"); }
+    catch (RegexException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Error: malformed name syntax ───────────────────────────────────────
+
+[Test]
+void test_empty_name_throws() {
+    bool threw = false;
+    try { Regex r = Regex.Compile("(?<>\\d+)"); }
+    catch (RegexException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_name_starts_with_digit_throws() {
+    bool threw = false;
+    try { Regex r = Regex.Compile("(?<1foo>\\d+)"); }
+    catch (RegexException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_missing_close_angle_throws() {
+    bool threw = false;
+    try { Regex r = Regex.Compile("(?<name\\d+)"); }
+    catch (RegexException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Lookup table accessible from Regex ─────────────────────────────────
+
+[Test]
+void test_regex_group_index_of() {
+    Regex r = Regex.Compile("(?<year>\\d{4})");
+    Assert.Equal(1,  r.GroupIndexOf("year"));
+    Assert.Equal(-1, r.GroupIndexOf("missing"));
+}

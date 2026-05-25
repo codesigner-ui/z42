@@ -12,14 +12,20 @@ public class Match {
     private int[] _groupStarts;
     private int[] _groupEnds;
     private int _groupCount;        // total count incl. group 0
+    // add-regex-named-groups (2026-05-26): back-reference to compiled Regex
+    // so `Group(string name)` can resolve via `_owner.GroupIndexOf(name)`.
+    // Older signature without _owner kept as a fallback constructor for any
+    // direct callers; the engine always uses the new 7-arg variant.
+    private Regex _owner;
 
-    public Match(string input, int start, int end, int[] groupStarts, int[] groupEnds, int groupCount) {
+    public Match(string input, int start, int end, int[] groupStarts, int[] groupEnds, int groupCount, Regex owner) {
         this._input       = input;
         this._start       = start;
         this._end         = end;
         this._groupStarts = groupStarts;
         this._groupEnds   = groupEnds;
         this._groupCount  = groupCount;
+        this._owner       = owner;
     }
 
     public int    Start()  { return this._start; }
@@ -42,6 +48,17 @@ public class Match {
         int e = this._groupEnds[index];
         if (s < 0) { return ""; }
         return this._input.Substring(s, e - s);
+    }
+
+    /// Look up a named capture group by name. Returns the empty string when
+    /// the named group didn't participate in this match; throws when the
+    /// name isn't a declared group. add-regex-named-groups (2026-05-26).
+    public string GroupByName(string name) {
+        int idx = this._owner.GroupIndexOf(name);
+        if (idx < 0) {
+            throw new RegexException("named group '" + name + "' not declared in pattern");
+        }
+        return this.Group(idx);
     }
 
     /// 不含 group 0。
