@@ -1,0 +1,238 @@
+// add-encoding-base32-crockford (2026-05-25): Crockford Base32 variant.
+namespace Z42EncodingTests.Base32CrockfordTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+byte[] ascii(string s) {
+    byte[] result = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) {
+        result[i] = (byte)(int)s.CharAt(i);
+        i = i + 1;
+    }
+    return result;
+}
+
+string asciiString(byte[] bytes) {
+    char[] chars = new char[bytes.Length];
+    int i = 0;
+    while (i < bytes.Length) {
+        chars[i] = (char)(int)bytes[i];
+        i = i + 1;
+    }
+    return String.FromChars(chars);
+}
+
+// ── Encode: no padding ──────────────────────────────────────────────────
+
+[Test]
+void test_encode_empty() {
+    Assert.Equal("", Base32Crockford.Encode(new byte[0]));
+}
+
+[Test]
+void test_encode_no_padding_one_byte() {
+    // 'f' (0x66) → top 5 bits = 0x0C = 12 → 'C'; next 3 bits = 0b110 << 2 = 0x18 = 24 → 'R'
+    Assert.Equal("CR", Base32Crockford.Encode(ascii("f")));
+}
+
+[Test]
+void test_encode_no_padding_two_bytes() {
+    // "fo" → 4 chars, no `=`
+    string r = Base32Crockford.Encode(ascii("fo"));
+    Assert.Equal(4, r.Length);
+}
+
+[Test]
+void test_encode_full_block_five_bytes() {
+    // 5-byte input → 8-char output exactly
+    string r = Base32Crockford.Encode(ascii("fooba"));
+    Assert.Equal(8, r.Length);
+}
+
+[Test]
+void test_encode_never_contains_iluo() {
+    // Crockford alphabet omits I, L, O, U. Across all 256 byte values it
+    // should never emit one of those chars.
+    byte[] all = new byte[256];
+    int i = 0;
+    while (i < 256) { all[i] = (byte)i; i = i + 1; }
+    string enc = Base32Crockford.Encode(all);
+    int j = 0;
+    while (j < enc.Length) {
+        char c = enc.CharAt(j);
+        Assert.False(c == 'I');
+        Assert.False(c == 'L');
+        Assert.False(c == 'O');
+        Assert.False(c == 'U');
+        j = j + 1;
+    }
+}
+
+// ── Round-trip ──────────────────────────────────────────────────────────
+
+[Test]
+void test_round_trip_basic() {
+    byte[] data = ascii("Hello, World!");
+    string enc = Base32Crockford.Encode(data);
+    byte[] dec = Base32Crockford.Decode(enc);
+    Assert.Equal("Hello, World!", asciiString(dec));
+}
+
+[Test]
+void test_round_trip_all_byte_values() {
+    byte[] all = new byte[256];
+    int i = 0;
+    while (i < 256) { all[i] = (byte)i; i = i + 1; }
+    string enc = Base32Crockford.Encode(all);
+    byte[] dec = Base32Crockford.Decode(enc);
+    Assert.Equal(256, dec.Length);
+    int j = 0;
+    while (j < 256) {
+        Assert.Equal((int)(byte)j, (int)dec[j]);
+        j = j + 1;
+    }
+}
+
+[Test]
+void test_round_trip_5_byte_chunks() {
+    // Exactly 5 bytes = 8 chars (no tail).
+    byte[] data = new byte[5];
+    data[0] = (byte)0x11; data[1] = (byte)0x22; data[2] = (byte)0x33;
+    data[3] = (byte)0x44; data[4] = (byte)0x55;
+    string enc = Base32Crockford.Encode(data);
+    byte[] dec = Base32Crockford.Decode(enc);
+    Assert.Equal(5, dec.Length);
+    Assert.Equal(0x11, (int)dec[0] & 0xFF);
+    Assert.Equal(0x22, (int)dec[1] & 0xFF);
+    Assert.Equal(0x33, (int)dec[2] & 0xFF);
+    Assert.Equal(0x44, (int)dec[3] & 0xFF);
+    Assert.Equal(0x55, (int)dec[4] & 0xFF);
+}
+
+// ── Decode: lenient case ────────────────────────────────────────────────
+
+[Test]
+void test_decode_lowercase_equivalent_to_upper() {
+    byte[] upper = Base32Crockford.Decode("CR");
+    byte[] lower = Base32Crockford.Decode("cr");
+    Assert.Equal(upper.Length, lower.Length);
+    Assert.Equal((int)upper[0] & 0xFF, (int)lower[0] & 0xFF);
+}
+
+[Test]
+void test_decode_mixed_case() {
+    byte[] upper = Base32Crockford.Decode("CRMHQXR");
+    byte[] mixed = Base32Crockford.Decode("CrMhQxR");
+    Assert.Equal(upper.Length, mixed.Length);
+    int i = 0;
+    while (i < upper.Length) {
+        Assert.Equal((int)upper[i] & 0xFF, (int)mixed[i] & 0xFF);
+        i = i + 1;
+    }
+}
+
+// ── Decode: I/L → 1 and O → 0 aliasing ─────────────────────────────────
+
+[Test]
+void test_decode_I_aliased_to_1() {
+    // 'I' should be treated like '1' on decode (Crockford typo-tolerance).
+    byte[] a = Base32Crockford.Decode("1A");
+    byte[] b = Base32Crockford.Decode("IA");
+    Assert.Equal((int)a[0] & 0xFF, (int)b[0] & 0xFF);
+}
+
+[Test]
+void test_decode_L_aliased_to_1() {
+    byte[] a = Base32Crockford.Decode("1A");
+    byte[] b = Base32Crockford.Decode("LA");
+    Assert.Equal((int)a[0] & 0xFF, (int)b[0] & 0xFF);
+}
+
+[Test]
+void test_decode_O_aliased_to_0() {
+    byte[] a = Base32Crockford.Decode("0A");
+    byte[] b = Base32Crockford.Decode("OA");
+    Assert.Equal((int)a[0] & 0xFF, (int)b[0] & 0xFF);
+}
+
+// ── Decode: hyphen separators dropped ───────────────────────────────────
+
+[Test]
+void test_decode_ignores_hyphens() {
+    byte[] a = Base32Crockford.Decode("CRMHQXR");
+    byte[] b = Base32Crockford.Decode("CR-MHQ-XR");
+    Assert.Equal(a.Length, b.Length);
+    int i = 0;
+    while (i < a.Length) {
+        Assert.Equal((int)a[i] & 0xFF, (int)b[i] & 0xFF);
+        i = i + 1;
+    }
+}
+
+// ── Decode: invalid characters ──────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_U() {
+    // 'U' is intentionally excluded from the Crockford alphabet.
+    bool threw = false;
+    try { byte[] discard = Base32Crockford.Decode("AU"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_space() {
+    bool threw = false;
+    try { byte[] discard = Base32Crockford.Decode("A B"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Decode: invalid length ──────────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_length_mod8_eq_1() {
+    bool threw = false;
+    try { byte[] discard = Base32Crockford.Decode("A"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_length_mod8_eq_3() {
+    bool threw = false;
+    try { byte[] discard = Base32Crockford.Decode("ABC"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_length_mod8_eq_6() {
+    bool threw = false;
+    try { byte[] discard = Base32Crockford.Decode("ABCDEF"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── ULID-style 26-char encoding round-trip ─────────────────────────────
+
+[Test]
+void test_ulid_style_16_byte_round_trip() {
+    // ULID is 16 bytes encoded as 26 Crockford chars (130 bits / 5).
+    byte[] ulid = new byte[16];
+    int i = 0;
+    while (i < 16) { ulid[i] = (byte)(i * 13 + 7); i = i + 1; }
+    string enc = Base32Crockford.Encode(ulid);
+    // 16 bytes = 128 bits; ceil(128/5) = 26 chars
+    Assert.Equal(26, enc.Length);
+    byte[] dec = Base32Crockford.Decode(enc);
+    Assert.Equal(16, dec.Length);
+    int j = 0;
+    while (j < 16) {
+        Assert.Equal((int)ulid[j] & 0xFF, (int)dec[j] & 0xFF);
+        j = j + 1;
+    }
+}

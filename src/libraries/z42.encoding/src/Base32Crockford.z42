@@ -1,0 +1,203 @@
+namespace Std.Encoding;
+
+using Std;
+
+// Crockford Base32 编解码 (https://www.crockford.com/base32.html)。
+//   字母表 = 0123456789ABCDEFGHJKMNPQRSTVWXYZ  (32 chars; 去 I L O U)
+//   无 padding（输出长度 = ceil(input_bits / 5)）
+//   Decode 大小写不敏感；输入支持 lenient 字符别名：
+//     'I' / 'i' / 'L' / 'l' → 1
+//     'O' / 'o'             → 0
+//     '-' (人类可读分隔符) → 直接跳过
+//
+// 用例：ULID / Stripe ID / Better-by-human-typing 标识符。
+// 与 RFC 4648 §6 Base32 不同字母表 (无关系) — 不是 padding 差别。
+
+public static class Base32Crockford {
+    private static string _alpha = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+    /// Base32-Crockford encode `bytes`. No padding; output length is
+    /// `ceil(bytes.Length * 8 / 5)` characters. ULID and Stripe ID style.
+    public static string Encode(byte[] bytes) {
+        if (bytes.Length == 0) return "";
+        string alpha = Base32Crockford._alpha;
+        // total bits = bytes.Length * 8; chars = ceil(bits / 5)
+        int totalBits = bytes.Length * 8;
+        int outLen = (totalBits + 4) / 5;
+        char[] result = new char[outLen];
+        // Process 5-byte (40-bit) chunks; tail packed + zero-padded to a
+        // multiple of 5 bits before slicing into chars.
+        long MASK5 = 31;
+        long MASK_BYTE = 255;
+        int srcI = 0;
+        int dstI = 0;
+        while (srcI + 5 <= bytes.Length) {
+            long b0 = (long)((int)bytes[srcI])     & MASK_BYTE;
+            long b1 = (long)((int)bytes[srcI + 1]) & MASK_BYTE;
+            long b2 = (long)((int)bytes[srcI + 2]) & MASK_BYTE;
+            long b3 = (long)((int)bytes[srcI + 3]) & MASK_BYTE;
+            long b4 = (long)((int)bytes[srcI + 4]) & MASK_BYTE;
+            long block = (b0 << 32) | (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
+            result[dstI]     = alpha.CharAt((int)((block >> 35) & MASK5));
+            result[dstI + 1] = alpha.CharAt((int)((block >> 30) & MASK5));
+            result[dstI + 2] = alpha.CharAt((int)((block >> 25) & MASK5));
+            result[dstI + 3] = alpha.CharAt((int)((block >> 20) & MASK5));
+            result[dstI + 4] = alpha.CharAt((int)((block >> 15) & MASK5));
+            result[dstI + 5] = alpha.CharAt((int)((block >> 10) & MASK5));
+            result[dstI + 6] = alpha.CharAt((int)((block >> 5)  & MASK5));
+            result[dstI + 7] = alpha.CharAt((int)(block & MASK5));
+            srcI = srcI + 5;
+            dstI = dstI + 8;
+        }
+        // Tail: 1..4 bytes
+        int rem = bytes.Length - srcI;
+        if (rem > 0) {
+            long block = 0;
+            int i = 0;
+            while (i < rem) {
+                block = (block << 8) | ((long)((int)bytes[srcI + i]) & MASK_BYTE);
+                i = i + 1;
+            }
+            int padBytes = 5 - rem;
+            block = block << (8 * padBytes);
+            // Chars produced per tail byte count (no padding): 1→2, 2→4, 3→5, 4→7
+            int chars = 0;
+            if (rem == 1) chars = 2;
+            if (rem == 2) chars = 4;
+            if (rem == 3) chars = 5;
+            if (rem == 4) chars = 7;
+            int j = 0;
+            while (j < chars) {
+                int shift = 35 - (j * 5);
+                result[dstI + j] = alpha.CharAt((int)((block >> shift) & MASK5));
+                j = j + 1;
+            }
+        }
+        return String.FromChars(result);
+    }
+
+    /// Decode a Crockford Base32 string. Case-insensitive; accepts `-`
+    /// separators (silently dropped); accepts I/L → 1 and O → 0 normalisation
+    /// per Crockford spec.
+    public static byte[] Decode(string s) {
+        if (s.Length == 0) return new byte[0];
+        // First pass: count valid chars (skipping `-`).
+        int validLen = 0;
+        int i = 0;
+        while (i < s.Length) {
+            if (s.CharAt(i) != '-') { validLen = validLen + 1; }
+            i = i + 1;
+        }
+        if (validLen == 0) return new byte[0];
+        // Per-block tail: 2 chars → 1 byte, 4 → 2, 5 → 3, 7 → 4, 8 → 5.
+        // Length-mod-8 of 1, 3, or 6 is impossible for any byte-count source.
+        int mod = validLen % 8;
+        if (mod == 1 || mod == 3 || mod == 6) {
+            throw new FormatException("invalid base32-crockford length (mod 8 == " + mod.ToString() + " is impossible)");
+        }
+        int blocks = validLen / 8;
+        int tailChars = mod;
+        int outPerLast = 0;
+        if (tailChars == 0)      { outPerLast = blocks > 0 ? 5 : 0; }
+        else if (tailChars == 2) { outPerLast = 1; }
+        else if (tailChars == 4) { outPerLast = 2; }
+        else if (tailChars == 5) { outPerLast = 3; }
+        else if (tailChars == 7) { outPerLast = 4; }
+        int outLen = blocks * 5;
+        if (tailChars > 0) {
+            outLen = outLen + outPerLast;
+        }
+        byte[] result = new byte[outLen];
+        long MASK_BYTE = 255;
+        // Build a packed array of valid 5-bit values (skipping `-`).
+        int[] values = new int[validLen];
+        int vi = 0;
+        int si = 0;
+        while (si < s.Length) {
+            char c = s.CharAt(si);
+            if (c != '-') {
+                values[vi] = decodeChar(c);
+                vi = vi + 1;
+            }
+            si = si + 1;
+        }
+        // Process full 8-char blocks → 5 bytes each.
+        int srcI = 0;
+        int dstI = 0;
+        while (srcI + 8 <= validLen) {
+            long block = ((long)values[srcI]     << 35)
+                       | ((long)values[srcI + 1] << 30)
+                       | ((long)values[srcI + 2] << 25)
+                       | ((long)values[srcI + 3] << 20)
+                       | ((long)values[srcI + 4] << 15)
+                       | ((long)values[srcI + 5] << 10)
+                       | ((long)values[srcI + 6] << 5)
+                       |  (long)values[srcI + 7];
+            result[dstI]     = (byte)((block >> 32) & MASK_BYTE);
+            result[dstI + 1] = (byte)((block >> 24) & MASK_BYTE);
+            result[dstI + 2] = (byte)((block >> 16) & MASK_BYTE);
+            result[dstI + 3] = (byte)((block >> 8)  & MASK_BYTE);
+            result[dstI + 4] = (byte)(block         & MASK_BYTE);
+            srcI = srcI + 8;
+            dstI = dstI + 5;
+        }
+        // Tail block
+        if (tailChars > 0) {
+            long block = 0;
+            int j = 0;
+            while (j < tailChars) {
+                block = (block << 5) | (long)values[srcI + j];
+                j = j + 1;
+            }
+            // Align bits to top of 40-bit virtual block (5-bit slots).
+            int padSlots = 8 - tailChars;
+            block = block << (5 * padSlots);
+            int k = 0;
+            while (k < outPerLast) {
+                int shift = 32 - (k * 8);
+                result[dstI + k] = (byte)((block >> shift) & MASK_BYTE);
+                k = k + 1;
+            }
+        }
+        return result;
+    }
+
+    /// Crockford char → 5-bit value (0..31). Case-insensitive.
+    /// `I` / `L` / `i` / `l` aliased to `1`; `O` / `o` aliased to `0`
+    /// (per Crockford spec — typo-tolerant decoding).
+    private static int decodeChar(char c) {
+        int code = (int)c;
+        if (code >= 48 && code <= 57)  return code - 48;            // '0'..'9' → 0..9
+        // Uppercase letters in Crockford alphabet (skip I, L, O, U)
+        if (code == 65) return 10;  // A
+        if (code == 66) return 11;  // B
+        if (code == 67) return 12;  // C
+        if (code == 68) return 13;  // D
+        if (code == 69) return 14;  // E
+        if (code == 70) return 15;  // F
+        if (code == 71) return 16;  // G
+        if (code == 72) return 17;  // H
+        if (code == 73) return 1;   // I → 1 (alias)
+        if (code == 74) return 18;  // J
+        if (code == 75) return 19;  // K
+        if (code == 76) return 1;   // L → 1 (alias)
+        if (code == 77) return 20;  // M
+        if (code == 78) return 21;  // N
+        if (code == 79) return 0;   // O → 0 (alias)
+        if (code == 80) return 22;  // P
+        if (code == 81) return 23;  // Q
+        if (code == 82) return 24;  // R
+        if (code == 83) return 25;  // S
+        if (code == 84) return 26;  // T
+        if (code == 86) return 27;  // V
+        if (code == 87) return 28;  // W
+        if (code == 88) return 29;  // X
+        if (code == 89) return 30;  // Y
+        if (code == 90) return 31;  // Z
+        // Lowercase: re-dispatch (Crockford is case-insensitive).
+        if (code >= 97 && code <= 122) {
+            return decodeChar((char)(code - 32));
+        }
+        throw new FormatException($"invalid base32-crockford character '{c}'");
+    }
+}
