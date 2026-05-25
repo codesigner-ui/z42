@@ -12,6 +12,7 @@ use crate::metadata::{FieldSlot, NativeData, TypeDesc, Value};
 use crate::vm_context::VmContext;
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::sync::{Arc, OnceLock};
 
 /// `Std.GC.Collect()` —— 触发环检测（不阻断；no-op 当 paused）。
@@ -309,11 +310,19 @@ pub fn builtin_gc_write_heap_snapshot(ctx: &VmContext, args: &[Value]) -> Result
         Some(Value::Str(s)) => s.clone(),
         _ => return Err(anyhow!("__gc_write_heap_snapshot: expected string path")),
     };
+    // add-gc-snapshot-streaming (2026-05-25): write JSON directly to
+    // a BufWriter<File> via the streaming serializer — avoids the
+    // ~30 MB intermediate String for large heaps.
     let snap = crate::gc::snapshot::build_graph_snapshot(ctx.heap());
-    let json = crate::gc::snapshot::serialize_v8_heapsnapshot(&snap);
-    let n_bytes = json.len();
-    std::fs::write(path.as_str(), &json)
+    let file = std::fs::File::create(path.as_str())
+        .map_err(|e| anyhow!("__gc_write_heap_snapshot: create {}: {}", path, e))?;
+    let mut writer = std::io::BufWriter::new(file);
+    let n_bytes = crate::gc::snapshot::serialize_v8_heapsnapshot_to(&snap, &mut writer)
         .map_err(|e| anyhow!("__gc_write_heap_snapshot: write {}: {}", path, e))?;
+    // Explicit flush so we surface IO errors before returning success;
+    // BufWriter's Drop-flush silently drops errors otherwise.
+    writer.flush()
+        .map_err(|e| anyhow!("__gc_write_heap_snapshot: flush {}: {}", path, e))?;
     Ok(Value::I64(n_bytes as i64))
 }
 

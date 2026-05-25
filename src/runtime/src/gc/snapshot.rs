@@ -21,6 +21,7 @@
 //! design notes and node/edge type mapping table.
 
 use std::collections::HashMap;
+use std::io::{self, Write};
 
 use super::heap::MagrGC;
 use crate::metadata::Value;
@@ -308,42 +309,62 @@ fn to_node_offset(to_node_id: u32, idx_map: &HashMap<u32, u32>) -> u32 {
     idx * NODE_FIELD_COUNT
 }
 
-fn escape_json_str(s: &str, out: &mut String) {
-    out.push('"');
+/// Streaming JSON string escape — writes a `"...string..."` token
+/// directly to `writer`. Returns bytes written (including the
+/// surrounding quotes). Sole implementation of escape rules; both
+/// the streaming `serialize_v8_heapsnapshot_to` and the in-memory
+/// `serialize_v8_heapsnapshot` wrapper drive it.
+fn escape_json_str_to<W: Write>(s: &str, writer: &mut W) -> io::Result<u64> {
+    let mut n: u64 = 0;
+    writer.write_all(b"\"")?; n += 1;
+    let mut buf = [0u8; 4];
     for c in s.chars() {
         match c {
-            '"'  => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\x08' => out.push_str("\\b"),
-            '\x0c' => out.push_str("\\f"),
+            '"'    => { writer.write_all(b"\\\"")?; n += 2; }
+            '\\'   => { writer.write_all(b"\\\\")?; n += 2; }
+            '\n'   => { writer.write_all(b"\\n")?;  n += 2; }
+            '\r'   => { writer.write_all(b"\\r")?;  n += 2; }
+            '\t'   => { writer.write_all(b"\\t")?;  n += 2; }
+            '\x08' => { writer.write_all(b"\\b")?;  n += 2; }
+            '\x0c' => { writer.write_all(b"\\f")?;  n += 2; }
             c if (c as u32) < 0x20 => {
-                out.push_str(&format!("\\u{:04x}", c as u32));
+                let s = format!("\\u{:04x}", c as u32);
+                writer.write_all(s.as_bytes())?;
+                n += s.len() as u64;
             }
-            c => out.push(c),
+            c => {
+                let enc = c.encode_utf8(&mut buf);
+                writer.write_all(enc.as_bytes())?;
+                n += enc.len() as u64;
+            }
         }
     }
-    out.push('"');
+    writer.write_all(b"\"")?; n += 1;
+    Ok(n)
 }
 
-/// Serialize a [`GraphSnapshot`] to V8 `.heapsnapshot` JSON. Edges are
-/// emitted in node-index order (V8 expects this — each node's
-/// `edge_count` field implicitly slices the flat `edges` array).
-pub fn serialize_v8_heapsnapshot(snap: &GraphSnapshot) -> String {
+/// Streaming serializer: writes V8 `.heapsnapshot` JSON directly to
+/// `writer`. Eliminates the ~30 MB intermediate `String` that the
+/// historical in-memory `serialize_v8_heapsnapshot` allocates for a
+/// large heap. Returns total bytes written.
+///
+/// Output is byte-identical to [`serialize_v8_heapsnapshot`]
+/// (regression-tested in `snapshot_tests::streaming_and_in_memory_produce_identical_bytes`).
+pub fn serialize_v8_heapsnapshot_to<W: Write>(
+    snap: &GraphSnapshot,
+    writer: &mut W,
+) -> io::Result<u64> {
+    let mut n_bytes: u64 = 0;
     let node_count = snap.nodes.len();
     let edge_count = snap.edges.len();
 
-    // Build the id → node-array-index map (the snapshot doesn't keep
-    // this around after build).
+    // Build the id → node-array-index map (snapshot doesn't keep it).
     let mut idx_map: HashMap<u32, u32> = HashMap::with_capacity(node_count);
     for (i, n) in snap.nodes.iter().enumerate() {
         idx_map.insert(n.id, i as u32);
     }
 
-    // Group edges by source-node index so they're emitted in V8's
-    // expected flat order.
+    // Group edges by source-node index for V8's expected flat order.
     let mut edges_by_src: Vec<Vec<&EdgeRec>> = vec![Vec::new(); node_count];
     for e in &snap.edges {
         let i = e.from_node_idx as usize;
@@ -352,27 +373,33 @@ pub fn serialize_v8_heapsnapshot(snap: &GraphSnapshot) -> String {
         }
     }
 
-    let mut out = String::with_capacity(1024 + node_count * 48 + edge_count * 24);
-    out.push('{');
+    // Lightweight emit helpers — keep call sites compact.
+    macro_rules! wb {
+        ($lit:expr) => {{
+            let bytes: &[u8] = $lit;
+            writer.write_all(bytes)?;
+            n_bytes += bytes.len() as u64;
+        }};
+    }
+    macro_rules! wfmt {
+        ($($arg:tt)*) => {{
+            let s = format!($($arg)*);
+            writer.write_all(s.as_bytes())?;
+            n_bytes += s.len() as u64;
+        }};
+    }
 
-    // "snapshot" object.
-    out.push_str("\"snapshot\":{");
-    out.push_str(META_HEADER);
-    out.push_str(",\"node_count\":");
-    out.push_str(&node_count.to_string());
-    out.push_str(",\"edge_count\":");
-    out.push_str(&edge_count.to_string());
-    out.push_str(",\"trace_function_count\":0");
-    out.push_str("},");
+    wb!(b"{\"snapshot\":{");
+    wb!(META_HEADER.as_bytes());
+    wfmt!(",\"node_count\":{}", node_count);
+    wfmt!(",\"edge_count\":{}", edge_count);
+    wb!(b",\"trace_function_count\":0},");
 
-    // "nodes" flat int array.
-    out.push_str("\"nodes\":[");
+    wb!(b"\"nodes\":[");
     for (i, n) in snap.nodes.iter().enumerate() {
-        if i > 0 { out.push(','); }
-        // type, name, id, self_size, edge_count, trace_node_id, detachedness=0
-        use std::fmt::Write;
-        let _ = write!(
-            out, "{},{},{},{},{},{},0",
+        if i > 0 { wb!(b","); }
+        wfmt!(
+            "{},{},{},{},{},{},0",
             n.node_type as u8,
             n.name_idx,
             n.id,
@@ -381,42 +408,56 @@ pub fn serialize_v8_heapsnapshot(snap: &GraphSnapshot) -> String {
             n.trace_node_id,
         );
     }
-    out.push_str("],");
+    wb!(b"],");
 
-    // "edges" flat int array, grouped by source-node index.
-    out.push_str("\"edges\":[");
+    wb!(b"\"edges\":[");
     let mut first_edge = true;
     for src_edges in &edges_by_src {
         for e in src_edges {
-            if !first_edge { out.push(','); }
+            if !first_edge { wb!(b","); }
             first_edge = false;
-            use std::fmt::Write;
-            let _ = write!(
-                out, "{},{},{}",
+            wfmt!(
+                "{},{},{}",
                 e.edge_type as u8,
                 e.name_or_index,
                 to_node_offset(e.to_node_id, &idx_map),
             );
         }
     }
-    out.push_str("],");
+    wb!(b"],");
 
-    // Empty arrays for the v1-unsupported sections.
-    out.push_str("\"trace_function_infos\":[],");
-    out.push_str("\"trace_tree\":[],");
-    out.push_str("\"samples\":[],");
-    out.push_str("\"locations\":[],");
+    wb!(b"\"trace_function_infos\":[],");
+    wb!(b"\"trace_tree\":[],");
+    wb!(b"\"samples\":[],");
+    wb!(b"\"locations\":[],");
 
-    // "strings" array.
-    out.push_str("\"strings\":[");
+    wb!(b"\"strings\":[");
     for (i, s) in snap.strings.iter().enumerate() {
-        if i > 0 { out.push(','); }
-        escape_json_str(s, &mut out);
+        if i > 0 { wb!(b","); }
+        n_bytes += escape_json_str_to(s, writer)?;
     }
-    out.push(']');
+    wb!(b"]");
 
-    out.push('}');
-    out
+    wb!(b"}");
+    Ok(n_bytes)
+}
+
+/// In-memory wrapper: drives [`serialize_v8_heapsnapshot_to`] over a
+/// `Vec<u8>` sink and returns the result as a `String`. Retained for
+/// backward compatibility with existing unit tests + any caller that
+/// needs the whole snapshot as a value (rather than streaming to a
+/// file). For large heaps prefer the streaming form directly.
+pub fn serialize_v8_heapsnapshot(snap: &GraphSnapshot) -> String {
+    let mut buf: Vec<u8> = Vec::with_capacity(
+        1024 + snap.nodes.len() * 48 + snap.edges.len() * 24,
+    );
+    // SAFETY: `Vec<u8>` `Write` impl is infallible.
+    serialize_v8_heapsnapshot_to(snap, &mut buf)
+        .expect("Vec<u8>::write_all never fails");
+    // SAFETY: `escape_json_str_to` emits ASCII-safe JSON escape sequences
+    // and `char::encode_utf8` always produces valid UTF-8 — the buffer
+    // is well-formed UTF-8 by construction.
+    unsafe { String::from_utf8_unchecked(buf) }
 }
 
 #[cfg(test)]

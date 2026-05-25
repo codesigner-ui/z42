@@ -303,3 +303,89 @@ fn root_edge_count_matches_pinned_root_count() {
     let _ = std::mem::size_of::<ScriptObject>();
     let _ = GcRef::<Vec<Value>>::clone;
 }
+
+// ── add-gc-snapshot-streaming (2026-05-25) ───────────────────────────────────
+
+/// Build a small but non-trivial snapshot the streaming tests can share.
+/// Three nodes (root + 2 objects, one referencing the other) + a few
+/// shortcut + property edges. Includes string-table entries that exercise
+/// escape paths (newline + double-quote inside a class name to force
+/// `escape_json_str_to` through its replace branches).
+fn build_sample_snapshot_with_escapes() -> (ArcMagrGC, crate::gc::GraphSnapshot, Vec<crate::gc::RootHandle>) {
+    let heap = ArcMagrGC::default();
+    let td = dummy_type_desc("Has\"weird\nname");
+    let b = alloc_obj_with_fields(&heap, td.clone(), vec![Value::Null, Value::Null]);
+    let a = alloc_obj_with_fields(&heap, td.clone(), vec![b.clone(), Value::Null]);
+    let r1 = heap.pin_root(a.clone());
+    let r2 = heap.pin_root(b.clone());
+    let snap = build_graph_snapshot(&heap);
+    (heap, snap, vec![r1, r2])
+}
+
+#[test]
+fn streaming_and_in_memory_produce_identical_bytes() {
+    let (heap, snap, roots) = build_sample_snapshot_with_escapes();
+
+    let from_string = serialize_v8_heapsnapshot(&snap);
+    let mut from_stream: Vec<u8> = Vec::new();
+    let n = serialize_v8_heapsnapshot_to(&snap, &mut from_stream).unwrap();
+
+    assert_eq!(
+        n as usize,
+        from_string.len(),
+        "streaming byte count must equal in-memory string length",
+    );
+    assert_eq!(
+        from_stream,
+        from_string.as_bytes(),
+        "streaming output must be byte-identical to in-memory output",
+    );
+
+    for r in roots { heap.unpin_root(r); }
+}
+
+#[test]
+fn streaming_byte_count_matches_string_length() {
+    // Empty heap variant — exercises the minimal-content path.
+    let heap = ArcMagrGC::default();
+    let snap = build_graph_snapshot(&heap);
+
+    let from_string = serialize_v8_heapsnapshot(&snap);
+    let mut buf: Vec<u8> = Vec::new();
+    let n = serialize_v8_heapsnapshot_to(&snap, &mut buf).unwrap();
+
+    assert_eq!(n as usize, from_string.len());
+    assert_eq!(n as usize, buf.len());
+}
+
+#[test]
+fn streaming_writes_to_buffered_writer_roundtrip() {
+    use std::io::{BufWriter, Read, Write as _};
+    let (heap, snap, roots) = build_sample_snapshot_with_escapes();
+
+    // Write to a tempfile via BufWriter — the path the production
+    // builtin takes.
+    let tmp = std::env::temp_dir().join(format!(
+        "z42-snapshot-stream-test-{}.heapsnapshot",
+        std::process::id(),
+    ));
+    {
+        let file = std::fs::File::create(&tmp).expect("create tmp");
+        let mut writer = BufWriter::new(file);
+        let n = serialize_v8_heapsnapshot_to(&snap, &mut writer).unwrap();
+        writer.flush().expect("flush");
+        // Bytes written should match the in-memory string length.
+        let expected = serialize_v8_heapsnapshot(&snap);
+        assert_eq!(n as usize, expected.len());
+    }
+
+    // Read back; bytes must equal the in-memory version exactly.
+    let mut got: Vec<u8> = Vec::new();
+    std::fs::File::open(&tmp).unwrap()
+        .read_to_end(&mut got).unwrap();
+    let expected = serialize_v8_heapsnapshot(&snap);
+    assert_eq!(got, expected.as_bytes());
+
+    let _ = std::fs::remove_file(&tmp);
+    for r in roots { heap.unpin_root(r); }
+}
