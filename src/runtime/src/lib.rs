@@ -21,3 +21,10 @@ pub mod native;
 pub mod host;
 pub mod vm;
 pub mod vm_context;
+
+// POSIX signal handler — captures z42 call stack on hard crashes
+// (SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS). Phase 2 of D4 panic-hook
+// story (Phase 1 = main.rs install_panic_hook). Windows VEH = Phase 2.1.
+// Spec: docs/spec/changes/add-os-signal-handler/.
+#[cfg(unix)]
+pub mod signal_handler;

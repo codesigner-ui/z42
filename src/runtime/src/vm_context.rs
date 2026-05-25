@@ -43,7 +43,7 @@
 use std::collections::HashMap;
 use std::marker::PhantomPinned;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use parking_lot::{Mutex, RwLock};
 
@@ -78,6 +78,33 @@ pub(crate) struct VmContextPtr(pub(crate) *const VmContext);
 // are themselves Send + Sync.
 unsafe impl Send for VmContextPtr {}
 unsafe impl Sync for VmContextPtr {}
+
+/// Process-wide registry of all live [`VmCore`] instances.
+///
+/// **add-os-signal-handler (2026-05-25)**: the POSIX signal handler in
+/// [`crate::signal_handler`] (Phase 2 of D4 panic-hook story) walks this
+/// list to capture z42 call stacks across all VMs in the process. Stored
+/// as `Weak` so a VmCore drop doesn't require explicit deregistration;
+/// the handler ignores entries whose `upgrade()` returns `None` and the
+/// next `VmCore::new` call lazy-prunes dead entries via `retain`.
+///
+/// Use the public [`vm_cores_snapshot`] to grab a Vec of live cores from
+/// non-signal contexts (tests, debug tools); the signal handler uses
+/// `try_lock` directly to avoid deadlock on contended mutator threads.
+pub(crate) static VM_CORES: std::sync::Mutex<Vec<Weak<VmCore>>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// Snapshot all live `Arc<VmCore>` instances. Convenience for tests +
+/// diagnostic tools. The signal handler does NOT use this (uses
+/// `VM_CORES.try_lock()` directly to avoid blocking on contended cores).
+pub fn vm_cores_snapshot() -> Vec<Arc<VmCore>> {
+    VM_CORES
+        .lock()
+        .ok()
+        .map(|g| g.iter().filter_map(|w| w.upgrade()).collect())
+        .unwrap_or_default()
+}
+
 use crate::metadata::lazy_loader::{LazyLoader, ZpkgCandidate};
 use crate::metadata::{Function, TypeDesc, Value};
 
@@ -447,6 +474,16 @@ impl VmContext {
             udp_sockets:          Mutex::new(HashMap::new()),
             next_udp_socket_id:   std::sync::atomic::AtomicU64::new(1),
         });
+
+        // add-os-signal-handler (2026-05-25): register this Arc<VmCore> into
+        // the process-wide VM_CORES registry so the POSIX signal handler
+        // can walk it to capture z42 call stacks on hard crash. Lazy-prune
+        // dead Weak entries at the same time (cheap O(n) sweep amortized
+        // across VmCore creations).
+        if let Ok(mut g) = VM_CORES.lock() {
+            g.retain(|w| w.strong_count() > 0);
+            g.push(Arc::downgrade(&core));
+        }
 
         // add-gc-safepoint-auto-threshold (2026-05-20): wire the
         // needs_auto_collect flag into the heap so its pressure-trip

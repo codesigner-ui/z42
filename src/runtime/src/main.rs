@@ -387,6 +387,8 @@ fn main() -> Result<()> {
 
     init_tracing(cli.verbose);
     install_panic_hook();
+    #[cfg(unix)]
+    z42::signal_handler::install();
 
     // --info: print build info to stdout and exit before doing any module loading.
     if cli.info {

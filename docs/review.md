@@ -768,18 +768,17 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 **ROI**：中。3-5 天。前置依赖 D1 config。
 
-## D4. Crash 处理 + Signal handler
+## D4. Crash 处理 + Signal handler ✅ Phase 1 + Phase 2 已落地
 
 ### CoreCLR
 - [`debug/createdump/`](../../../runtime/src/coreclr/debug/createdump/) —— SIGSEGV / SIGABRT / 内部 fail-fast 都触发 minidump 生成
 - 输出 ELF/PE core dump，可供 `lldb` / `windbg` 离线分析
 - Stack walk 在 signal handler 内安全（async-signal-safe primitives）
 
-### z42 现状 ❌
-- 顶层 `main() -> Result<()>`，`anyhow!` / `bail!` 错误以 `Display` 形式输出到 stderr 后退出码 1
-- **没有 signal handler**：SIGSEGV / SIGABRT 直接 abort，丢失全部状态
-- 无 Rust panic hook override
-- 无 crash report 文件输出
+### z42 现状 ✅
+- **Phase 1**（commit `12cf7ef8`, 2026-05-25）：Rust panic hook + `Z42_CRASH_DIR` —— 覆盖 `panic!` / `unwrap` / index OOB / `debug_assert!` failure，捕获 VM 版本 + panic location + Rust backtrace
+- **Phase 2**（add-os-signal-handler spec, 2026-05-26）：POSIX OS signal handler —— 覆盖 SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS，async-signal-safe `sigsafe` 子模块手写写入 primitives，try_lock 拿 z42 call stack（所有 thread / 所有 VmCore），reset to SIG_DFL + raise 保留 kernel coredump
+- 还缺：Windows VEH（Phase 2.1）/ stack-pointer 线程归因（Phase 2.2）/ `sigaltstack` for stack overflow（Phase 2.3）/ async-signal-safe Rust backtrace（Phase 2.4）/ 统一 panic+signal 文件复用（Phase 2.5）
 
 ### 建议 ❌ **生产前必做**
 1. **加 Rust panic hook**（[`main.rs`](../src/runtime/src/main.rs) 入口）：
@@ -941,7 +940,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 | 优先级 | 改造 | Part | 估时 | 类别 |
 |---|---|---|---|---|
-| **P0** | **Panic hook + signal handler** (D4) — 生产前 must-have | 4 | 1-2 天 | ops |
+| ✅ | ~~Panic hook + signal handler~~ (D4) — Phase 1 `12cf7ef8` + Phase 2 add-os-signal-handler | 4 | done | ops |
 | **P0** | **`RuntimeConfig` 中心化** (D1) — 所有 knob 一处声明 | 4 | 1-2 天 | ops |
 | **P0** | **JIT type specialization** (C2) — 已知 IrType 不走 helper | 2 | 2-3 天 | perf |
 | **P0** | **JIT↔VM trait 抽象** (Part 1) | 1 | 2-3 天 | arch |

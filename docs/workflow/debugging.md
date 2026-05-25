@@ -44,24 +44,48 @@ Z42_LOG=z42=warn ./z42vm --verbose script.zbc
 `z42::metadata::*` 等（每个 mod 自己的路径）。完整 directive 语法见
 <https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html>。
 
-### `Z42_CRASH_DIR` —— 内部 panic 抓盘
+### `Z42_CRASH_DIR` —— 内部 panic + OS signal 抓盘
 
-VM 内部 panic（`unwrap` / index OOB / `debug_assert!` failure 等）默认打印 backtrace
-到 stderr 后 abort。设了 `Z42_CRASH_DIR` 后**额外**把报告落到 `<dir>/z42vm-crash-<ts_ns>.txt`：
+VM 内部 panic（`unwrap` / index OOB / `debug_assert!` failure 等）**和** OS 信号
+（SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS）默认都打印诊断到 stderr 后 abort。
+设了 `Z42_CRASH_DIR` 后**额外**把报告落到 `<dir>/z42vm-crash-<ts_ns>.txt`：
 
 ```bash
 mkdir -p /var/log/z42
 Z42_CRASH_DIR=/var/log/z42 RUST_BACKTRACE=1 ./z42vm script.zbc
 
-# 崩溃时：
+# Rust panic 崩溃：
 # [panic hook] crash report written to /var/log/z42/z42vm-crash-1716659200000000000.txt
+
+# OS 信号崩溃（JIT 出 bug / native FFI 写坏内存等）：
+# [signal hook] crash report appended to Z42_CRASH_DIR fd
 ```
 
-报告内容：z42vm 版本 / 平台 / build profile / panic 位置 / payload / Rust backtrace
+**Rust panic 报告内容**（Phase 1, 12cf7ef8 / 2026-05-25）：
+z42vm 版本 / 平台 / build profile / panic 位置 / payload / Rust backtrace
 （`RUST_BACKTRACE=1` 控制详细程度）。
 
-> **Phase 2 待补**：OS signal handler（SIGSEGV / SIGABRT）+ z42 call stack 捕获
-> 在独立 spec 落地后纳入同一报告（见 `docs/review.md` Part 4 D4 Phase 2）。
+**OS signal 报告内容**（Phase 2, add-os-signal-handler / 2026-05-26）：
+信号名 / build banner / **所有 thread 的 z42 call stack**（一行一帧：
+`#<idx>  <func_name> at <file>:<line>:<col>`）。报告写完后 `signal()` 重置到
+`SIG_DFL` + `raise()`，让 kernel 走默认 abort + coredump（`ulimit -c unlimited` 仍生效）。
+
+捕获的 5 个信号：
+
+| 信号 | 典型触发 |
+|---|---|
+| **SIGSEGV** | 访问坏指针 — JIT bug、native FFI 写坏内存 |
+| **SIGABRT** | `libc::abort()` 调用 — native module 内部断言失败 / glibc OOM |
+| **SIGFPE** | 整数除零 — z42 interp 已挡，native / JIT 路径漏网 case |
+| **SIGILL** | 非法指令 — corrupt JIT code |
+| **SIGBUS** | 对齐错误 / mmap 越界 — 偶发 ARM64 |
+
+**Lock contended 降级**：报告依赖 `try_lock` 拿 VM_CORES 注册表 + 每个 thread 的
+`call_stack`。如果信号触发时另一线程持锁（GC mark 阶段等），handler 写
+`<call stack lock contended>` placeholder，**不死锁，不丢报告**，进程仍正常 abort。
+
+**Windows 暂未支持**：现仅 POSIX (macOS / Linux)。Windows VEH (Vectored Exception
+Handler) 是 Phase 2.1 后续 spec — Windows build 编译过但无信号捕获。
 
 ## 当前可用
 

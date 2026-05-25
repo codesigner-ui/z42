@@ -61,6 +61,10 @@ tracing = "0.1"
 # (docs/review.md Part 4 D2, 2026-05-25).
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
+# NOTE: POSIX signal handling crate `signal-hook-registry` is declared
+# in the existing `[target.'cfg(unix)'.dependencies]` block below
+# (next to `libc`) — single unix-deps section per Cargo.toml.
+
 # Native interop — Tier 1 ABI runtime (spec C2)
 #
 # 2026-05-12 add-platform-wasm Stage 0: gated behind `native-interop` feature
@@ -115,6 +119,11 @@ android              = ["interp-only", "aot", "native-interop", "bundled-compres
 # FFI binding (no extra crate); wasm falls through to graceful "" returns.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+# POSIX signal handling — low-level register API (no monitor thread).
+# Used by signal_handler.rs to install async-signal-safe handlers for
+# SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS (add-os-signal-handler
+# spec, 2026-05-25). Windows builds skip via `#[cfg(unix)]` gate.
+signal-hook-registry = "1.4"
 
 [dev-dependencies]
 jsonschema = { version = "0.20", default-features = false }
