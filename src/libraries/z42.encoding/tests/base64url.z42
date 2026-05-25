@@ -1,0 +1,213 @@
+// add-encoding-base64-url (2026-05-25) — RFC 4648 §5 url-safe variant.
+namespace Z42EncodingTests.Base64UrlTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+byte[] ascii(string s) {
+    byte[] result = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) {
+        result[i] = (byte)(int)s.CharAt(i);
+        i = i + 1;
+    }
+    return result;
+}
+
+string asciiString(byte[] bytes) {
+    char[] chars = new char[bytes.Length];
+    int i = 0;
+    while (i < bytes.Length) {
+        chars[i] = (char)(int)bytes[i];
+        i = i + 1;
+    }
+    return String.FromChars(chars);
+}
+
+// ── RFC 4648 §10 vectors — url-safe encode (unpadded) ─────────────────────────
+
+[Test]
+void test_encode_empty() {
+    Assert.Equal("", Base64Url.Encode(new byte[0]));
+}
+
+[Test]
+void test_encode_f() {
+    Assert.Equal("Zg", Base64Url.Encode(ascii("f")));
+}
+
+[Test]
+void test_encode_fo() {
+    Assert.Equal("Zm8", Base64Url.Encode(ascii("fo")));
+}
+
+[Test]
+void test_encode_foo() {
+    Assert.Equal("Zm9v", Base64Url.Encode(ascii("foo")));
+}
+
+[Test]
+void test_encode_foob() {
+    Assert.Equal("Zm9vYg", Base64Url.Encode(ascii("foob")));
+}
+
+[Test]
+void test_encode_fooba() {
+    Assert.Equal("Zm9vYmE", Base64Url.Encode(ascii("fooba")));
+}
+
+[Test]
+void test_encode_foobar() {
+    Assert.Equal("Zm9vYmFy", Base64Url.Encode(ascii("foobar")));
+}
+
+// ── Alphabet difference: `+/` → `-_` ─────────────────────────────────────────
+
+[Test]
+void test_encode_uses_dash_for_62() {
+    // Bytes 0xFB 0xFF — standard yields "+/8=", url-safe yields "-_8".
+    byte[] bytes = new byte[2];
+    bytes[0] = (byte)0xFB;
+    bytes[1] = (byte)0xFF;
+    Assert.Equal("-_8", Base64Url.Encode(bytes));
+}
+
+[Test]
+void test_encode_uses_underscore_for_63() {
+    // 0xFF 0xFF 0xFF — standard "////", url-safe "____"
+    byte[] bytes = new byte[3];
+    bytes[0] = (byte)0xFF;
+    bytes[1] = (byte)0xFF;
+    bytes[2] = (byte)0xFF;
+    Assert.Equal("____", Base64Url.Encode(bytes));
+}
+
+// ── Decode round-trip ────────────────────────────────────────────────────────
+
+[Test]
+void test_decode_round_trip_basic() {
+    byte[] original = ascii("Hello, World!");
+    string encoded  = Base64Url.Encode(original);
+    byte[] decoded  = Base64Url.Decode(encoded);
+    Assert.Equal("Hello, World!", asciiString(decoded));
+}
+
+[Test]
+void test_decode_unpadded_input() {
+    // Unpadded url-safe input — common JWT form
+    byte[] decoded = Base64Url.Decode("Zm9vYmE");
+    Assert.Equal("fooba", asciiString(decoded));
+}
+
+[Test]
+void test_decode_padded_input_accepted() {
+    // Permissive: accept padded url-safe input too
+    byte[] decoded = Base64Url.Decode("Zm9vYmE=");
+    Assert.Equal("fooba", asciiString(decoded));
+}
+
+[Test]
+void test_decode_with_dash_and_underscore() {
+    // 0xFF 0xFF 0xFF round-trip
+    byte[] decoded = Base64Url.Decode("____");
+    Assert.Equal(3, decoded.Length);
+    Assert.Equal((int)0xFF, (int)decoded[0]);
+    Assert.Equal((int)0xFF, (int)decoded[1]);
+    Assert.Equal((int)0xFF, (int)decoded[2]);
+}
+
+[Test]
+void test_decode_empty() {
+    byte[] decoded = Base64Url.Decode("");
+    Assert.Equal(0, decoded.Length);
+}
+
+// ── JWT-style: typical header → b64url ───────────────────────────────────────
+
+[Test]
+void test_jwt_header_round_trip() {
+    // Typical JWT header JSON
+    string header  = "{\"alg\":\"HS256\",\"typ\":\"JWT\"}";
+    byte[] bytes   = ascii(header);
+    string encoded = Base64Url.Encode(bytes);
+    Assert.Equal("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", encoded);
+    byte[] decoded = Base64Url.Decode(encoded);
+    Assert.Equal(header, asciiString(decoded));
+}
+
+// ── Error: standard-alphabet character in url-safe input ─────────────────────
+
+[Test]
+void test_decode_rejects_plus_char() {
+    bool threw = false;
+    try {
+        byte[] discard = Base64Url.Decode("a+b");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_slash_char() {
+    bool threw = false;
+    try {
+        byte[] discard = Base64Url.Decode("a/b");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Error: malformed length ──────────────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_length_mod4_eq_1() {
+    bool threw = false;
+    try {
+        byte[] discard = Base64Url.Decode("abcde");  // len 5: mod 4 == 1
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Cross-byte coverage ──────────────────────────────────────────────────────
+
+[Test]
+void test_all_byte_values_round_trip() {
+    byte[] all = new byte[256];
+    int i = 0;
+    while (i < 256) {
+        all[i] = (byte)i;
+        i = i + 1;
+    }
+    string enc = Base64Url.Encode(all);
+    byte[] dec = Base64Url.Decode(enc);
+    Assert.Equal(256, dec.Length);
+    int j = 0;
+    while (j < 256) {
+        Assert.Equal((int)(byte)j, (int)dec[j]);
+        j = j + 1;
+    }
+}
+
+// ── Encode output never contains forbidden chars ─────────────────────────────
+
+[Test]
+void test_encode_never_emits_plus_slash_or_eq() {
+    byte[] tricky = new byte[3];
+    tricky[0] = (byte)0xFB;
+    tricky[1] = (byte)0xFF;
+    tricky[2] = (byte)0xBF;
+    string s = Base64Url.Encode(tricky);
+    int i = 0;
+    while (i < s.Length) {
+        char c = s.CharAt(i);
+        Assert.False(c == '+');
+        Assert.False(c == '/');
+        Assert.False(c == '=');
+        i = i + 1;
+    }
+}
