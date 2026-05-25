@@ -68,6 +68,18 @@ TOTP / HOTP 密钥 / Bitcoin 部分协议 / Tor v3 onion address 都基于此。
 | `Encode` | `(byte[]) → string` | 5-byte 输入 → 8-char 输出；尾部 padded 到 8 倍数 |
 | `Decode` | `(string) → byte[]` | 长度 mod 8 == 0；padding 数 ∈ {0,1,3,4,6}；非法字符 / 小写均抛 `Std.FormatException` |
 
+### `Std.Encoding.Base32Hex`（2026-05-25 add-encoding-base32-hex）
+
+RFC 4648 §7 base32-hex — 字母表 `0-9A-V`（A=10..V=31）。同 §6 Base32 一样
+的 5-byte→8-char + `=` padding；killer feature 是 **lex-order preservation**:
+encoded string 的字典序 == decoded byte 的自然序，对 DNS NSEC3 等"排序后
+还能反推顺序"的场景有用。
+
+| 方法 | 签名 | 备注 |
+|---|---|---|
+| `Encode` | `(byte[]) → string` | 与标准 Base32 同 padding 规则 |
+| `Decode` | `(string) → byte[]` | 严格大写；非 alphabet 字符抛 `Std.FormatException` |
+
 ### `Std.Encoding.Base32Crockford`（2026-05-25 add-encoding-base32-crockford）
 
 Crockford Base32 — 字母表 `0123456789ABCDEFGHJKMNPQRSTVWXYZ`（去 I L O U
@@ -186,13 +198,26 @@ and length-mod-8 ∈ {1, 3, 6} rejection (impossible block sizes).
 
 Check-digit extension (Crockford `*~$=U`) deferred — not part of v0.
 
-### `encoding-future-base32-hex`
+### ~~`encoding-future-base32-hex`~~ — **✅ 已落地 2026-05-25 (add-encoding-base32-hex)**
 
-- **来源**：add-encoding-base32 v0 scope cut
-- **触发原因**：RFC 4648 §7 `0-9A-V` 变体，DNS NSEC3 等场景用；与 §6 alphabet 仅
-  ordering 不同
-- **前置依赖**：无
-- **触发条件**：DNS / 极少 stdlib 用户呼声
+Shipped: `Std.Encoding.Base32Hex.Encode(byte[]) → string` /
+`Decode(string) → byte[]`. RFC 4648 §7 alphabet `0123456789ABCDEFGHIJKLMNOPQRSTUV`
+(A=10..V=31). Identical bit-packing rules as standard Base32 — `=`
+padding to multiple-of-8, same valid padding counts `{0, 1, 3, 4, 6}`.
+Strict uppercase per RFC (lowercase rejected).
+
+Killer property: the natural ordering of encoded strings preserves the
+natural ordering of decoded byte values (because alphabet is in
+ascending order). Useful for DNS NSEC3 (RFC 5155) hashed-owner-name
+encoding and any application that wants encoded strings to sort.
+
+16 tests cover: RFC 4648 §10 encode vectors (empty / f / fo / foo /
+foob / fooba / foobar → CO/CPNG/CPNMU/CPNMUOG/CPNMUOJ1/CPNMUOJ1E8
+with appropriate `=` padding), symmetric decode, **lex-order
+preservation** (`enc(0x10) < enc(0x80)` byte-by-byte), all-byte
+round-trip, length-not-mod-8 rejection, padding=2 rejection,
+W-char (post-V) rejection, lowercase rejection, output-length-mod-8
+invariant.
 
 ### UTF-16 / UTF-32 编解码
 

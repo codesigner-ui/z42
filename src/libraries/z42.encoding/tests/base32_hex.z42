@@ -1,0 +1,171 @@
+// add-encoding-base32-hex (2026-05-25): RFC 4648 §7 base32 hex variant.
+namespace Z42EncodingTests.Base32HexTests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+byte[] ascii(string s) {
+    byte[] result = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) {
+        result[i] = (byte)(int)s.CharAt(i);
+        i = i + 1;
+    }
+    return result;
+}
+
+string asciiString(byte[] bytes) {
+    char[] chars = new char[bytes.Length];
+    int i = 0;
+    while (i < bytes.Length) {
+        chars[i] = (char)(int)bytes[i];
+        i = i + 1;
+    }
+    return String.FromChars(chars);
+}
+
+// ── RFC 4648 §10 base32hex test vectors — encode ────────────────────────
+
+[Test]
+void test_encode_empty() {
+    Assert.Equal("", Base32Hex.Encode(new byte[0]));
+}
+
+[Test]
+void test_encode_f() {
+    Assert.Equal("CO======", Base32Hex.Encode(ascii("f")));
+}
+
+[Test]
+void test_encode_fo() {
+    Assert.Equal("CPNG====", Base32Hex.Encode(ascii("fo")));
+}
+
+[Test]
+void test_encode_foo() {
+    Assert.Equal("CPNMU===", Base32Hex.Encode(ascii("foo")));
+}
+
+[Test]
+void test_encode_foob() {
+    Assert.Equal("CPNMUOG=", Base32Hex.Encode(ascii("foob")));
+}
+
+[Test]
+void test_encode_fooba() {
+    Assert.Equal("CPNMUOJ1", Base32Hex.Encode(ascii("fooba")));
+}
+
+[Test]
+void test_encode_foobar() {
+    Assert.Equal("CPNMUOJ1E8======", Base32Hex.Encode(ascii("foobar")));
+}
+
+// ── Decode mirror ──────────────────────────────────────────────────────
+
+[Test]
+void test_decode_f() {
+    Assert.Equal("f", asciiString(Base32Hex.Decode("CO======")));
+}
+
+[Test]
+void test_decode_foobar() {
+    Assert.Equal("foobar", asciiString(Base32Hex.Decode("CPNMUOJ1E8======")));
+}
+
+// ── Lexicographic ordering preserved ───────────────────────────────────
+
+[Test]
+void test_hex_alphabet_preserves_byte_order() {
+    // Two byte sequences where a < b lexically should encode to strings
+    // that also satisfy enc(a) < enc(b). This is the killer property of
+    // the hex variant over the standard alphabet.
+    byte[] a = new byte[1]; a[0] = (byte)0x10;
+    byte[] b = new byte[1]; b[0] = (byte)0x80;
+    string ea = Base32Hex.Encode(a);
+    string eb = Base32Hex.Encode(b);
+    // Compare lexicographically (z42 string compare via char-by-char).
+    int i = 0;
+    bool aLess = false;
+    while (i < ea.Length && i < eb.Length) {
+        char ca = ea.CharAt(i);
+        char cb = eb.CharAt(i);
+        if ((int)ca < (int)cb) { aLess = true; break; }
+        if ((int)ca > (int)cb) { aLess = false; break; }
+        i = i + 1;
+    }
+    Assert.True(aLess);
+}
+
+// ── Round-trip ─────────────────────────────────────────────────────────
+
+[Test]
+void test_all_byte_values_round_trip() {
+    byte[] all = new byte[256];
+    int i = 0;
+    while (i < 256) { all[i] = (byte)i; i = i + 1; }
+    string enc = Base32Hex.Encode(all);
+    byte[] dec = Base32Hex.Decode(enc);
+    Assert.Equal(256, dec.Length);
+    int j = 0;
+    while (j < 256) {
+        Assert.Equal((int)(byte)j, (int)dec[j]);
+        j = j + 1;
+    }
+}
+
+// ── Error paths ────────────────────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_length_not_mod_8() {
+    bool threw = false;
+    try { byte[] discard = Base32Hex.Decode("CO====="); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_invalid_padding_count() {
+    bool threw = false;
+    try { byte[] discard = Base32Hex.Decode("CPNMUO=="); }   // pad=2 invalid
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_W_char() {
+    // 'W' is past 'V' (the last alphabet char) — not in base32hex.
+    bool threw = false;
+    try { byte[] discard = Base32Hex.Decode("CPWMUOJ1"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_lowercase() {
+    bool threw = false;
+    try { byte[] discard = Base32Hex.Decode("cpnmuoj1"); }
+    catch (FormatException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Encoding length invariants ─────────────────────────────────────────
+
+[Test]
+void test_encode_output_length_mod_8() {
+    int[] inputLens = new int[5];
+    inputLens[0] = 1; inputLens[1] = 2; inputLens[2] = 3;
+    inputLens[3] = 4; inputLens[4] = 7;
+    int i = 0;
+    while (i < inputLens.Length) {
+        byte[] data = new byte[inputLens[i]];
+        int k = 0;
+        while (k < data.Length) {
+            data[k] = (byte)(k + 1);
+            k = k + 1;
+        }
+        Assert.Equal(0, Base32Hex.Encode(data).Length % 8);
+        i = i + 1;
+    }
+}
