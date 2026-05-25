@@ -34,6 +34,17 @@ public class JsonValue {
         return (JsonValue)p.ParseDocument();
     }
 
+    /// Relaxed (JSON5-style) parse — accepts `//` line comments,
+    /// `/* */` block comments, and trailing commas in arrays/objects.
+    /// Useful for tooling configs (`tsconfig.json`, `.vscode/settings.json`,
+    /// Docker `compose.json`). Other JSON5 features (unquoted keys / hex
+    /// literals / single-quoted strings) deferred.
+    /// add-json-relaxed (2026-05-25).
+    public static JsonValue ParseRelaxed(string text) {
+        JsonParser p = JsonParser.Relaxed(text);
+        return (JsonValue)p.ParseDocument();
+    }
+
     /// Serialise to canonical compact JSON (no whitespace).
     public static string Stringify(JsonValue v) {
         JsonWriter w = new JsonWriter(false);
@@ -68,6 +79,15 @@ public class JsonValue {
         StreamReader r = new StreamReader(source);
         string text = r.ReadToEnd();
         JsonParser p = new JsonParser(text);
+        return (JsonValue)p.ParseDocument();
+    }
+
+    /// Relaxed JSON parse from a UTF-8 byte Stream. Same JSON5-style
+    /// liberties as `ParseRelaxed(string)`. add-json-relaxed (2026-05-25).
+    public static JsonValue ParseRelaxedStream(Stream source) {
+        StreamReader r = new StreamReader(source);
+        string text = r.ReadToEnd();
+        JsonParser p = JsonParser.Relaxed(text);
         return (JsonValue)p.ParseDocument();
     }
 

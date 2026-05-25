@@ -11,12 +11,27 @@ public sealed class JsonParser {
     private int _pos;
     private int _line;
     private int _col;
+    // add-json-relaxed (2026-05-25): when true, parser also accepts JSON5
+    // niceties (`//` + `/* */` comments, trailing commas in arrays/objects).
+    // Strict mode keeps RFC 8259 behaviour unchanged.
+    private bool _relaxed;
 
     public JsonParser(string src) {
         this._src = src;
         this._pos = 0;
         this._line = 1;
         this._col = 1;
+        this._relaxed = false;
+    }
+
+    /// Relaxed-mode parser — JSON5-style `//` / `/* */` comments and
+    /// trailing commas in arrays and objects accepted. Unquoted keys /
+    /// hex literals / single-quoted strings stay deferred.
+    /// add-json-relaxed (2026-05-25).
+    public static JsonParser Relaxed(string src) {
+        JsonParser p = new JsonParser(src);
+        p._relaxed = true;
+        return p;
     }
 
     public JsonValue ParseDocument() {
@@ -62,10 +77,60 @@ public sealed class JsonParser {
             char c = this.Peek();
             if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
                 this.Advance();
-            } else {
-                break;
+                continue;
             }
+            // Relaxed mode: consume `//` line and `/* */` block comments.
+            if (this._relaxed && c == '/') {
+                this.SkipCommentOrBail();
+                // SkipCommentOrBail consumed a comment iff it returned true via
+                // pos advancement — re-loop to keep skipping whitespace.
+                continue;
+            }
+            break;
         }
+    }
+
+    /// Skip a `//` or `/* */` comment if one starts at `_pos`. Caller has
+    /// already peeked the leading `/`. Throws on `/` not followed by `/` or
+    /// `*` (relaxed mode reserves `/` for comments only).
+    /// add-json-relaxed (2026-05-25).
+    private void SkipCommentOrBail() {
+        // Save state in case it's not actually a comment — then we'd bail
+        // out of SkipWhitespace and let downstream see the `/`.
+        int savedPos  = this._pos;
+        int savedLine = this._line;
+        int savedCol  = this._col;
+        this.Advance();    // consume first `/`
+        if (this.Eof()) {
+            this._pos = savedPos; this._line = savedLine; this._col = savedCol;
+            return;
+        }
+        char nx = this.Peek();
+        if (nx == '/') {
+            // Line comment — consume until EOL or EOF.
+            this.Advance();
+            while (!this.Eof()) {
+                char c = this.Peek();
+                if (c == '\n' || c == '\r') { break; }
+                this.Advance();
+            }
+            return;
+        }
+        if (nx == '*') {
+            // Block comment — consume until `*/`.
+            this.Advance();
+            while (!this.Eof()) {
+                char c = this.Peek();
+                this.Advance();
+                if (c == '*' && !this.Eof() && this.Peek() == '/') {
+                    this.Advance();
+                    return;
+                }
+            }
+            throw this.Err("unterminated block comment");
+        }
+        // Not a comment — rewind so the caller sees the `/`.
+        this._pos = savedPos; this._line = savedLine; this._col = savedCol;
     }
 
     private string CharToString(char c) {
@@ -287,6 +352,11 @@ public sealed class JsonParser {
         }
         while (true) {
             this.SkipWhitespace();
+            // Relaxed mode: trailing `,` before `}` is allowed.
+            if (this._relaxed && this.Peek() == '}') {
+                this.Advance();
+                return obj;
+            }
             if (this.Peek() != '"') {
                 throw this.Err("expected '\"' (object key must be string)");
             }
@@ -325,6 +395,14 @@ public sealed class JsonParser {
             return arr;
         }
         while (true) {
+            // Relaxed mode: trailing `,` before `]` is allowed.
+            if (this._relaxed) {
+                this.SkipWhitespace();
+                if (this.Peek() == ']') {
+                    this.Advance();
+                    return arr;
+                }
+            }
             JsonValue v = this.ParseValue();
             arr.Add(v);
             this.SkipWhitespace();

@@ -1,0 +1,189 @@
+// add-json-relaxed (2026-05-25): JSON5-style comments + trailing commas
+// via `JsonValue.ParseRelaxed`. Strict `Parse` rejects the same inputs.
+namespace Z42JsonParseRelaxedTests;
+
+using Std;
+using Std.Test;
+using Std.Json;
+
+// ── // line comments ────────────────────────────────────────────────────
+
+[Test]
+void test_line_comment_before_value() {
+    string src = "// header\n{\"name\": \"alice\"}";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal("alice", v.Get("name").AsString());
+}
+
+[Test]
+void test_line_comment_between_key_value() {
+    string src = "{\"a\": 1, // comment\n  \"b\": 2}";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal(1L, v.Get("a").AsLong());
+    Assert.Equal(2L, v.Get("b").AsLong());
+}
+
+[Test]
+void test_line_comment_to_eof() {
+    string src = "{\"a\": 1} // trailing";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal(1L, v.Get("a").AsLong());
+}
+
+// ── /* */ block comments ────────────────────────────────────────────────
+
+[Test]
+void test_block_comment_before_value() {
+    string src = "/* header */ {\"x\": 42}";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal(42L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_block_comment_multiline() {
+    string src = "/*\n  multi-line\n  block comment\n*/\n{\"x\": 42}";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal(42L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_block_comment_inside_object() {
+    string src = "{ /* before key */ \"a\": /* between */ 1, \"b\": 2 /* trailing */ }";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal(1L, v.Get("a").AsLong());
+    Assert.Equal(2L, v.Get("b").AsLong());
+}
+
+[Test]
+void test_unterminated_block_comment_throws() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.ParseRelaxed("/* never ends"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Trailing commas in arrays ──────────────────────────────────────────
+
+[Test]
+void test_array_trailing_comma() {
+    JsonValue v = JsonValue.ParseRelaxed("[1, 2, 3,]");
+    Assert.Equal(3, v.Length());
+    Assert.Equal(3L, v.At(2).AsLong());
+}
+
+[Test]
+void test_array_trailing_comma_with_whitespace() {
+    JsonValue v = JsonValue.ParseRelaxed("[1, 2, 3,\n  ]");
+    Assert.Equal(3, v.Length());
+}
+
+[Test]
+void test_array_trailing_comma_with_comment() {
+    JsonValue v = JsonValue.ParseRelaxed("[\n  1,\n  2, // last\n]");
+    Assert.Equal(2, v.Length());
+    Assert.Equal(2L, v.At(1).AsLong());
+}
+
+// ── Trailing commas in objects ──────────────────────────────────────────
+
+[Test]
+void test_object_trailing_comma() {
+    JsonValue v = JsonValue.ParseRelaxed("{\"a\": 1, \"b\": 2,}");
+    Assert.Equal(1L, v.Get("a").AsLong());
+    Assert.Equal(2L, v.Get("b").AsLong());
+}
+
+[Test]
+void test_object_trailing_comma_with_comment() {
+    JsonValue v = JsonValue.ParseRelaxed("{\n  \"a\": 1, // comment\n  \"b\": 2, // another\n}");
+    Assert.Equal(2L, v.Get("b").AsLong());
+}
+
+// ── Real-world: tsconfig.json style ─────────────────────────────────────
+
+[Test]
+void test_tsconfig_style() {
+    string src = "{\n"
+        + "  // Compiler options\n"
+        + "  \"compilerOptions\": {\n"
+        + "    \"target\": \"es2020\",\n"
+        + "    \"strict\": true,\n"
+        + "    /* path mapping is experimental */\n"
+        + "    \"paths\": {\n"
+        + "      \"@/*\": [\"src/*\"],\n"
+        + "    },\n"
+        + "  },\n"
+        + "  \"include\": [\"src/**/*\"],\n"
+        + "}";
+    JsonValue v = JsonValue.ParseRelaxed(src);
+    Assert.Equal("es2020", v.Get("compilerOptions").Get("target").AsString());
+    Assert.True(v.Get("compilerOptions").Get("strict").AsBool());
+}
+
+// ── Strict mode rejects same inputs ────────────────────────────────────
+
+[Test]
+void test_strict_rejects_line_comment() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.Parse("// comment\n{\"a\": 1}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_strict_rejects_block_comment() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.Parse("/* x */ {\"a\": 1}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_strict_rejects_trailing_comma_array() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.Parse("[1, 2,]"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_strict_rejects_trailing_comma_object() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.Parse("{\"a\": 1,}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Relaxed still rejects malformed JSON ───────────────────────────────
+
+[Test]
+void test_relaxed_rejects_unquoted_key() {
+    // Unquoted keys are a JSON5 feature but stay deferred in v0 relaxed.
+    bool threw = false;
+    try { JsonValue v = JsonValue.ParseRelaxed("{a: 1}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_relaxed_rejects_missing_value() {
+    bool threw = false;
+    try { JsonValue v = JsonValue.ParseRelaxed("{\"a\": ,}"); }
+    catch (JsonException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Comments don't break strings ───────────────────────────────────────
+
+[Test]
+void test_string_containing_slash_unaffected() {
+    // `//` inside a JSON string must not be treated as a comment.
+    JsonValue v = JsonValue.ParseRelaxed("{\"url\": \"http://example.com\"}");
+    Assert.Equal("http://example.com", v.Get("url").AsString());
+}
+
+[Test]
+void test_string_containing_block_comment_syntax_unaffected() {
+    JsonValue v = JsonValue.ParseRelaxed("{\"x\": \"/* not a comment */\"}");
+    Assert.Equal("/* not a comment */", v.Get("x").AsString());
+}

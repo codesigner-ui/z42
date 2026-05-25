@@ -95,10 +95,31 @@ compiler handles type-distinct arity-1 overloads.
 
 ## 不支持（与 RFC 8259 一致或显式 Deferred）
 
-### json-future-comments-json5
-- **来源**：JSON5 扩展（comments / trailing commas / unquoted keys）
-- **触发原因**：先做严格 RFC；JSON5 独立 spec
-- **当前 workaround**：用 z42.toml 或预处理剥注释
+### ~~json-future-comments-json5~~ — **✅ partial 已落地 2026-05-25 (add-json-relaxed)**
+
+Shipped (relaxed-mode subset of JSON5):
+- `JsonValue.ParseRelaxed(string) → JsonValue` + `ParseRelaxedStream(Stream) → JsonValue`
+- `//` line comments (consumed to EOL)
+- `/* */` block comments (multi-line; unterminated → JsonException)
+- Trailing commas in arrays and objects (`[1, 2,]` / `{"a": 1,}`)
+
+Strict RFC 8259 behaviour preserved on `Parse(string)` / `ParseStream`
+— relaxed entry is opt-in. 21 tests cover comments (line / block /
+multi-line block / inside-object / EOF / unterminated), trailing
+commas (array / object / with whitespace / with comment), real-world
+`tsconfig.json` shape, strict-mode rejection of the same inputs,
+string content unaffected by comment-like syntax (`"http://"` /
+`"/* not a comment */"`).
+
+Out of scope (still deferred) — `json-future-json5-extras`:
+- Unquoted object keys (identifier syntax)
+- Single-quoted strings
+- Hex / leading-`.` / trailing-`.` number literals
+- `\xNN` short-form escapes
+
+These extras add lexer complexity disproportionate to demand; tooling
+configs (tsconfig / compose) ship with quoted keys and double-quoted
+strings — only comments + trailing commas were the practical pain.
 
 ### json-future-schema
 - **来源**：JSON Schema 风约束
