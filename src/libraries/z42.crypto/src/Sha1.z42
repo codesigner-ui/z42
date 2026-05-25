@@ -1,0 +1,157 @@
+namespace Std.Crypto;
+
+using Std;
+using Std.Encoding;
+
+// add-sha1-to-crypto (2026-05-25): SHA-1 hash (FIPS 180-4 §6.1).
+//
+// Pure-script implementation mirroring `Sha256`. State held as `long` (i64)
+// masked to 32 bits at every op boundary — z42 `int` is signed i32 and
+// overflows on the message schedule additions.
+//
+// ⚠️ SHA-1 is broken for collision-resistant uses since SHAttered (2017).
+// Use cases acceptable today: HMAC-SHA1 (HMAC compromise is not the
+// underlying hash collision), git object hash compat, WebSocket
+// Sec-WebSocket-Accept (RFC 6455 §4.2.2 specifies SHA-1), legacy protocol
+// interop. Do NOT use for new content addressing / signature schemes.
+//
+// Tested against FIPS 180-2 §B + NIST CAVP test vectors.
+public static class Sha1 {
+    // ── Public API ───────────────────────────────────────────────────────
+
+    public static byte[] Hash(byte[] data) {
+        byte[] padded = _pad(data);
+        long[] h = _initialHash();
+        int blocks = padded.Length / 64;
+        int b = 0;
+        while (b < blocks) {
+            _processBlock(h, padded, b * 64);
+            b = b + 1;
+        }
+        byte[] digest = new byte[20];
+        int i = 0;
+        while (i < 5) {
+            long v = h[i];
+            digest[i * 4 + 0] = (byte)((v >> 24) & 0xFFL);
+            digest[i * 4 + 1] = (byte)((v >> 16) & 0xFFL);
+            digest[i * 4 + 2] = (byte)((v >> 8)  & 0xFFL);
+            digest[i * 4 + 3] = (byte)( v        & 0xFFL);
+            i = i + 1;
+        }
+        return digest;
+    }
+
+    public static byte[] HashString(string s) {
+        return Hash(Utf8.GetBytes(s));
+    }
+
+    public static string HashHex(byte[] data) {
+        return Hex.Encode(Hash(data));
+    }
+
+    public static string HashStringHex(string s) {
+        if (s.Length == 0) return Hex.Encode(Hash(new byte[0]));
+        return Hex.Encode(Hash(Utf8.GetBytes(s)));
+    }
+
+    // ── FIPS 180-4 §5.3.1 initial hash values ────────────────────────────
+
+    static long[] _initialHash() {
+        long[] h = new long[5];
+        h[0] = 0x67452301L;
+        h[1] = 0xEFCDAB89L;
+        h[2] = 0x98BADCFEL;
+        h[3] = 0x10325476L;
+        h[4] = 0xC3D2E1F0L;
+        return h;
+    }
+
+    // ── Pre-processing: pad + length-encode (same as SHA-256) ────────────
+
+    static byte[] _pad(byte[] data) {
+        long bitLen = (long)data.Length * 8L;
+        int padZeros = (56 - (data.Length + 1) % 64 + 64) % 64;
+        int totalLen = data.Length + 1 + padZeros + 8;
+        byte[] padded = new byte[totalLen];
+        int i = 0;
+        while (i < data.Length) { padded[i] = data[i]; i = i + 1; }
+        padded[data.Length] = (byte)0x80;
+        int lenOffset = totalLen - 8;
+        padded[lenOffset + 0] = (byte)((bitLen >> 56) & 0xFFL);
+        padded[lenOffset + 1] = (byte)((bitLen >> 48) & 0xFFL);
+        padded[lenOffset + 2] = (byte)((bitLen >> 40) & 0xFFL);
+        padded[lenOffset + 3] = (byte)((bitLen >> 32) & 0xFFL);
+        padded[lenOffset + 4] = (byte)((bitLen >> 24) & 0xFFL);
+        padded[lenOffset + 5] = (byte)((bitLen >> 16) & 0xFFL);
+        padded[lenOffset + 6] = (byte)((bitLen >> 8)  & 0xFFL);
+        padded[lenOffset + 7] = (byte)( bitLen        & 0xFFL);
+        return padded;
+    }
+
+    // ── Per-block compression (FIPS 180-4 §6.1.2) ────────────────────────
+
+    static void _processBlock(long[] h, byte[] block, int offset) {
+        long[] w = new long[80];
+
+        // Prepare message schedule W[0..79]
+        int t = 0;
+        while (t < 16) {
+            int o = offset + t * 4;
+            long b0 = (long)((int)block[o]     & 0xFF);
+            long b1 = (long)((int)block[o + 1] & 0xFF);
+            long b2 = (long)((int)block[o + 2] & 0xFF);
+            long b3 = (long)((int)block[o + 3] & 0xFF);
+            w[t] = ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3) & 0xFFFFFFFFL;
+            t = t + 1;
+        }
+        while (t < 80) {
+            long mix = (w[t - 3] ^ w[t - 8] ^ w[t - 14] ^ w[t - 16]) & 0xFFFFFFFFL;
+            w[t] = _rotl(mix, 1);
+            t = t + 1;
+        }
+
+        long a = h[0]; long b = h[1]; long c = h[2]; long d = h[3]; long e = h[4];
+
+        int i = 0;
+        while (i < 80) {
+            long f;
+            long k;
+            if (i < 20) {
+                // Ch: (b AND c) OR ((NOT b) AND d)
+                f = ((b & c) | ((b ^ 0xFFFFFFFFL) & d)) & 0xFFFFFFFFL;
+                k = 0x5A827999L;
+            } else if (i < 40) {
+                // Parity: b XOR c XOR d
+                f = (b ^ c ^ d) & 0xFFFFFFFFL;
+                k = 0x6ED9EBA1L;
+            } else if (i < 60) {
+                // Maj: (b AND c) OR (b AND d) OR (c AND d)
+                f = ((b & c) | (b & d) | (c & d)) & 0xFFFFFFFFL;
+                k = 0x8F1BBCDCL;
+            } else {
+                f = (b ^ c ^ d) & 0xFFFFFFFFL;
+                k = 0xCA62C1D6L;
+            }
+            long temp = (_rotl(a, 5) + f + e + k + w[i]) & 0xFFFFFFFFL;
+            e = d;
+            d = c;
+            c = _rotl(b, 30);
+            b = a;
+            a = temp;
+
+            i = i + 1;
+        }
+
+        h[0] = (h[0] + a) & 0xFFFFFFFFL;
+        h[1] = (h[1] + b) & 0xFFFFFFFFL;
+        h[2] = (h[2] + c) & 0xFFFFFFFFL;
+        h[3] = (h[3] + d) & 0xFFFFFFFFL;
+        h[4] = (h[4] + e) & 0xFFFFFFFFL;
+    }
+
+    /// 32-bit rotate-left. `x` is treated as the low 32 bits of a `long`.
+    static long _rotl(long x, int n) {
+        long masked = x & 0xFFFFFFFFL;
+        return ((masked << n) | (masked >> (32 - n))) & 0xFFFFFFFFL;
+    }
+}

@@ -16,7 +16,26 @@ Cryptographic primitives — hashing, MAC, key derivation, CSPRNG.
   - `ComputeHex(byte[] key, byte[] message) -> string`
   - `ComputeStringHex(string key, string message) -> string`
 
-Pure-script implementation built on `Sha256.Hash`. State held as `long`
+- SHA-1 (FIPS 180-4) — `Std.Crypto.Sha1` (add-sha1-to-crypto, 2026-05-25)
+  - `Hash(byte[]) -> byte[20]`
+  - `HashString(string) -> byte[20]`
+  - `HashHex(byte[]) -> string`
+  - `HashStringHex(string) -> string`
+  - ⚠️ SHA-1 is broken for collision-resistant uses since SHAttered (2017).
+    Acceptable for HMAC-SHA1, git compat, Sec-WebSocket-Accept, legacy
+    protocol interop. Do **not** use for new content-addressing or signature
+    schemes — use SHA-256.
+
+- HMAC-SHA1 (RFC 2104) — `Std.Crypto.HmacSha1` (add-sha1-to-crypto, 2026-05-25)
+  - `Compute(byte[] key, byte[] message) -> byte[20]`
+  - `ComputeString(string key, string message) -> byte[20]`
+  - `ComputeHex(byte[] key, byte[] message) -> string`
+  - `ComputeStringHex(string key, string message) -> string`
+  - HMAC-SHA1 is **not** broken by SHAttered (the HMAC construction protects
+    even with weak hashes). Still in use: TOTP (RFC 6238 default),
+    AWS Signature V2, etc.
+
+Pure-script implementation built on `Sha256.Hash` / `Sha1.Hash`. State held as `long`
 (i64) masked to 32 bits at every op boundary — z42 `int` is signed i32 and
 overflows on the message schedule additions.
 

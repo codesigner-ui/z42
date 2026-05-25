@@ -103,3 +103,84 @@ public static class HmacSha256 {
         return padded;
     }
 }
+
+// add-sha1-to-crypto (2026-05-25): HMAC-SHA-1 (RFC 2104) — mirrors
+// HmacSha256 layout exactly. Block size 64 same as SHA-256; digest 20 bytes.
+//
+// ⚠️ Use HMAC-SHA-1 only when interoperability with legacy systems requires
+// it (TOTP RFC 6238 default, AWS Signature V2, etc.). Prefer HMAC-SHA-256
+// for new designs — see Sha1.z42 SHAttered note.
+public static class HmacSha1 {
+    public static byte[] Compute(byte[] key, byte[] message) {
+        return _computeCore(key, message);
+    }
+
+    static byte[] _computeCore(byte[] key, byte[] message) {
+        byte[] paddedKey = _padKey(key);
+
+        // Inner: SHA1( (K' XOR ipad) || message )
+        byte[] inner = new byte[64 + message.Length];
+        int i = 0;
+        while (i < 64) {
+            inner[i] = (byte)((int)paddedKey[i] ^ 0x36);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < message.Length) {
+            inner[64 + i] = message[i];
+            i = i + 1;
+        }
+        byte[] innerHash = Sha1.Hash(inner);
+
+        // Outer: SHA1( (K' XOR opad) || innerHash )  (20-byte inner digest)
+        byte[] outer = new byte[64 + 20];
+        i = 0;
+        while (i < 64) {
+            outer[i] = (byte)((int)paddedKey[i] ^ 0x5C);
+            i = i + 1;
+        }
+        i = 0;
+        while (i < 20) {
+            outer[64 + i] = innerHash[i];
+            i = i + 1;
+        }
+        return Sha1.Hash(outer);
+    }
+
+    public static byte[] ComputeString(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return _computeCore(keyBytes, msgBytes);
+    }
+
+    public static string ComputeHex(byte[] key, byte[] message) {
+        return Hex.Encode(_computeCore(key, message));
+    }
+
+    public static string ComputeStringHex(string key, string message) {
+        byte[] keyBytes = Utf8.GetBytes(key);
+        byte[] msgBytes = Utf8.GetBytes(message);
+        return Hex.Encode(_computeCore(keyBytes, msgBytes));
+    }
+
+    /// Normalise key to 64 bytes — longer hash via SHA-1 (20 bytes) then
+    /// zero-pad to 64; shorter right-pad with 0x00.
+    static byte[] _padKey(byte[] key) {
+        byte[] padded = new byte[64];
+        if (key.Length > 64) {
+            byte[] digest = Sha1.Hash(key);
+            int i = 0;
+            while (i < 20) {
+                padded[i] = digest[i];
+                i = i + 1;
+            }
+        } else {
+            int i = 0;
+            while (i < key.Length) {
+                padded[i] = key[i];
+                i = i + 1;
+            }
+        }
+        return padded;
+    }
+}

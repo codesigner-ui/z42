@@ -1,0 +1,107 @@
+// add-sha1-to-crypto (2026-05-25): RFC 2202 §3 HMAC-SHA-1 test vectors.
+namespace Z42CryptoHmacSha1VectorsTests;
+
+using Std;
+using Std.Test;
+using Std.Crypto;
+using Std.Encoding;
+
+// ── RFC 2202 §3 Test Case 1 ──
+// Key  = 20 bytes 0x0b
+// Data = "Hi There"
+// Expected = b617318655057264e28bc0b6fb378c8ef146be00
+[Test]
+void test_rfc2202_case1() {
+    byte[] key = new byte[20];
+    int i = 0;
+    while (i < 20) { key[i] = (byte)0x0b; i = i + 1; }
+    byte[] data = Utf8.GetBytes("Hi There");
+    Assert.Equal("b617318655057264e28bc0b6fb378c8ef146be00",
+                 HmacSha1.ComputeHex(key, data));
+}
+
+// ── RFC 2202 §3 Test Case 2 ──
+// Key  = "Jefe"
+// Data = "what do ya want for nothing?"
+// Expected = effcdf6ae5eb2fa2d27416d5f184df9c259a7c79
+[Test]
+void test_rfc2202_case2() {
+    Assert.Equal("effcdf6ae5eb2fa2d27416d5f184df9c259a7c79",
+                 HmacSha1.ComputeStringHex("Jefe", "what do ya want for nothing?"));
+}
+
+// ── RFC 2202 §3 Test Case 3 ──
+// Key  = 20 bytes 0xaa
+// Data = 50 bytes 0xdd
+// Expected = 125d7342b9ac11cd91a39af48aa17b4f63f175d3
+[Test]
+void test_rfc2202_case3() {
+    byte[] key = new byte[20];
+    int i = 0;
+    while (i < 20) { key[i] = (byte)0xaa; i = i + 1; }
+    byte[] data = new byte[50];
+    i = 0;
+    while (i < 50) { data[i] = (byte)0xdd; i = i + 1; }
+    Assert.Equal("125d7342b9ac11cd91a39af48aa17b4f63f175d3",
+                 HmacSha1.ComputeHex(key, data));
+}
+
+// ── RFC 2202 §3 Test Case 4 ──
+// Key  = 0x010203...0x19 (25 bytes)
+// Data = 50 bytes 0xcd
+// Expected = 4c9007f4026250c6bc8414f9bf50c86c2d7235da
+[Test]
+void test_rfc2202_case4() {
+    byte[] key = new byte[25];
+    int i = 0;
+    while (i < 25) { key[i] = (byte)(i + 1); i = i + 1; }
+    byte[] data = new byte[50];
+    i = 0;
+    while (i < 50) { data[i] = (byte)0xcd; i = i + 1; }
+    Assert.Equal("4c9007f4026250c6bc8414f9bf50c86c2d7235da",
+                 HmacSha1.ComputeHex(key, data));
+}
+
+// ── RFC 2202 §3 Test Case 6 ──
+// Key  = 80 bytes 0xaa  (> 64-byte block → triggers SHA1(key) preprocessing)
+// Data = "Test Using Larger Than Block-Size Key - Hash Key First"
+// Expected = aa4ae5e15272d00e95705637ce8a3b55ed402112
+[Test]
+void test_rfc2202_case6_key_longer_than_block() {
+    byte[] key = new byte[80];
+    int i = 0;
+    while (i < 80) { key[i] = (byte)0xaa; i = i + 1; }
+    byte[] data = Utf8.GetBytes("Test Using Larger Than Block-Size Key - Hash Key First");
+    Assert.Equal("aa4ae5e15272d00e95705637ce8a3b55ed402112",
+                 HmacSha1.ComputeHex(key, data));
+}
+
+// ── RFC 2202 §3 Test Case 7 ──
+// Key  = 80 bytes 0xaa
+// Data = "Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data"
+// Expected = e8e99d0f45237d786d6bbaa7965c7808bbff1a91
+[Test]
+void test_rfc2202_case7_key_and_data_longer_than_block() {
+    byte[] key = new byte[80];
+    int i = 0;
+    while (i < 80) { key[i] = (byte)0xaa; i = i + 1; }
+    byte[] data = Utf8.GetBytes(
+        "Test Using Larger Than Block-Size Key and Larger Than One Block-Size Data");
+    Assert.Equal("e8e99d0f45237d786d6bbaa7965c7808bbff1a91",
+                 HmacSha1.ComputeHex(key, data));
+}
+
+[Test]
+void test_byte_array_overload_returns_20_bytes() {
+    byte[] key = new byte[8];
+    byte[] data = new byte[16];
+    byte[] mac = HmacSha1.Compute(key, data);
+    Assert.Equal(20, mac.Length);
+}
+
+[Test]
+void test_empty_key_empty_msg() {
+    // HMAC-SHA1("", "") = fbdb1d1b18aa6c08324b7d64b71fb76370690e1d
+    Assert.Equal("fbdb1d1b18aa6c08324b7d64b71fb76370690e1d",
+                 HmacSha1.ComputeStringHex("", ""));
+}
