@@ -149,11 +149,32 @@ Int64 read 不需要因为 `(long)int << 32` 路径里的 i64 overflow 自然给
 - **前置依赖**：z42.io 重构出 Stream 抽象 + async / await（L3）
 - **当前 workaround**：调用方自己分块 read 到 byte[] + 反复 new BinaryReader
 
-### io-binary-future-varint
+### ~~io-binary-future-varint~~ — **✅ 已落地 2026-05-26 (add-io-binary-varint)**
 
-- **来源**：7-bit varint 编码（protobuf / Thrift / Avro），小整数 1 字节
-- **触发原因**：v0 优先覆盖 fixed-width；varint 是独立特性
-- **当前 workaround**：调用方手动 encode
+Shipped: 4 methods covering both raw and ZigZag-encoded variable-length
+i64 codec (protobuf naming convention `int64` and `sint64`).
+
+| 方法 | 用途 |
+|---|---|
+| `WriteVarInt64(long v) → int` | 7-bit per byte; high bit = continuation; positive: ⌈bits/7⌉ bytes; negative: always 10 bytes |
+| `ReadVarInt64() → long` | Inverse; throws on >10-byte input |
+| `WriteVarSInt64(long v) → int` | ZigZag-encode then varint; small-magnitude negatives stay compact (`-1` → 1 byte, `-64` → 1 byte) |
+| `ReadVarSInt64() → long` | Inverse of `WriteVarSInt64` |
+
+21 tests cover: zero / one-byte boundary (127) / two-byte boundary
+(128, 16383) / three-byte boundary / i64 max round-trip / arbitrary
+sizes; encoded-length spec checks; protobuf canonical example (300 →
+`[0xAC, 0x02]`); negative-1 uses 10 bytes (no zigzag); ZigZag
+small-magnitude compaction (0, -1, -64 all 1 byte); ZigZag round-trip
+positive/negative-small/large-negative/i64 min/i64 max; three varints
+back-to-back in same stream; read varint from manually-constructed
+bytes.
+
+Implementation note: positive vs negative dispatch in the loop uses
+explicit `if (u < 0)` to apply masked-shift-right (since z42 `>>` is
+arithmetic). The mask constants `(1<<57) - 1` and `(1<<63) - 1`
+simulate unsigned right-shift in the 7-bit and 1-bit variants
+respectively.
 
 ### io-binary-future-byte-typed-api
 

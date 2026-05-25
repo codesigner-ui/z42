@@ -1,0 +1,193 @@
+// add-io-binary-varint (2026-05-26): protobuf-style 7-bit-per-byte
+// variable-length integer encoding on BinaryReader / BinaryWriter.
+namespace Z42IoBinaryVarintTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.IO.Binary;
+
+// Helpers: round-trip a value through a MemoryStream and return decoded.
+long roundTrip(long v) {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    int written = w.WriteVarInt64(v);
+    Assert.True(written > 0);
+    ms.Seek(0L, SeekOrigin.Begin);
+    BinaryReader r = BinaryReader.OverStream(ms);
+    return r.ReadVarInt64();
+}
+
+long roundTripSigned(long v) {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    int written = w.WriteVarSInt64(v);
+    Assert.True(written > 0);
+    ms.Seek(0L, SeekOrigin.Begin);
+    BinaryReader r = BinaryReader.OverStream(ms);
+    return r.ReadVarSInt64();
+}
+
+// ── VarInt: positive round-trip ────────────────────────────────────────
+
+[Test]
+void test_varint_zero() {
+    Assert.Equal(0L, roundTrip(0L));
+}
+
+[Test]
+void test_varint_one_byte_max() {
+    Assert.Equal(127L, roundTrip(127L));
+}
+
+[Test]
+void test_varint_two_byte_boundary() {
+    Assert.Equal(128L, roundTrip(128L));
+    Assert.Equal(16383L, roundTrip(16383L));   // 2^14 - 1
+}
+
+[Test]
+void test_varint_three_byte_boundary() {
+    Assert.Equal(16384L,   roundTrip(16384L));    // 2^14
+    Assert.Equal(2097151L, roundTrip(2097151L));  // 2^21 - 1
+}
+
+[Test]
+void test_varint_max_long() {
+    Assert.Equal(9223372036854775807L, roundTrip(9223372036854775807L));
+}
+
+[Test]
+void test_varint_arbitrary_values() {
+    Assert.Equal(42L,        roundTrip(42L));
+    Assert.Equal(1000L,      roundTrip(1000L));
+    Assert.Equal(1000000L,   roundTrip(1000000L));
+    Assert.Equal(123456789L, roundTrip(123456789L));
+}
+
+// ── VarInt: encoded byte count (length spec) ───────────────────────────
+
+[Test]
+void test_varint_zero_one_byte() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    Assert.Equal(1, w.WriteVarInt64(0L));
+}
+
+[Test]
+void test_varint_127_one_byte() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    Assert.Equal(1, w.WriteVarInt64(127L));
+}
+
+[Test]
+void test_varint_128_two_bytes() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    Assert.Equal(2, w.WriteVarInt64(128L));
+}
+
+[Test]
+void test_varint_300_two_bytes_known_encoding() {
+    // protobuf docs canonical example: 300 → bytes [0xAC, 0x02]
+    // 300 = 0b 1_0010_1100 → low 7 bits 0010_1100, hi 1 bit → continuation.
+    // First byte: 0010_1100 | 1000_0000 = 0xAC. Second: 0000_0010 = 0x02.
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    int n = w.WriteVarInt64(300L);
+    Assert.Equal(2, n);
+    byte[] buf = ms.ToArray();
+    Assert.Equal((int)0xAC, (int)buf[0] & 0xFF);
+    Assert.Equal((int)0x02, (int)buf[1] & 0xFF);
+}
+
+[Test]
+void test_varint_negative_one_uses_ten_bytes() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    int n = w.WriteVarInt64(-1L);
+    Assert.Equal(10, n);
+}
+
+// ── ZigZag: small-magnitude negatives stay compact ─────────────────────
+
+[Test]
+void test_zigzag_zero_one_byte() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    Assert.Equal(1, w.WriteVarSInt64(0L));
+}
+
+[Test]
+void test_zigzag_negative_one_one_byte() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    Assert.Equal(1, w.WriteVarSInt64(-1L));
+}
+
+[Test]
+void test_zigzag_negative_64_one_byte() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    // -64 in zigzag: (-64 << 1) ^ (-64 >> 63) = -128 ^ -1 = 127. 1 byte.
+    Assert.Equal(1, w.WriteVarSInt64(-64L));
+}
+
+// ── ZigZag round-trip ──────────────────────────────────────────────────
+
+[Test]
+void test_zigzag_round_trip_positive() {
+    Assert.Equal(42L, roundTripSigned(42L));
+}
+
+[Test]
+void test_zigzag_round_trip_negative_small() {
+    Assert.Equal(-1L,  roundTripSigned(-1L));
+    Assert.Equal(-2L,  roundTripSigned(-2L));
+    Assert.Equal(-64L, roundTripSigned(-64L));
+}
+
+[Test]
+void test_zigzag_round_trip_large_negative() {
+    Assert.Equal(-1000000L, roundTripSigned(-1000000L));
+}
+
+[Test]
+void test_zigzag_round_trip_min_long() {
+    Assert.Equal(-9223372036854775807L - 1L, roundTripSigned(-9223372036854775807L - 1L));
+}
+
+[Test]
+void test_zigzag_round_trip_max_long() {
+    Assert.Equal(9223372036854775807L, roundTripSigned(9223372036854775807L));
+}
+
+// ── Mixed stream: multiple varints back-to-back ────────────────────────
+
+[Test]
+void test_three_varints_in_sequence() {
+    MemoryStream ms = new MemoryStream();
+    BinaryWriter w = BinaryWriter.OverStream(ms);
+    w.WriteVarInt64(1L);
+    w.WriteVarInt64(300L);
+    w.WriteVarInt64(1000000L);
+    ms.Seek(0L, SeekOrigin.Begin);
+    BinaryReader r = BinaryReader.OverStream(ms);
+    Assert.Equal(1L,       r.ReadVarInt64());
+    Assert.Equal(300L,     r.ReadVarInt64());
+    Assert.Equal(1000000L, r.ReadVarInt64());
+}
+
+// ── Edge: known-encoding round-trip via static bytes ───────────────────
+
+[Test]
+void test_read_varint_from_known_bytes() {
+    // Construct bytes [0xAC, 0x02] manually, decode → 300.
+    byte[] bytes = new byte[2];
+    bytes[0] = (byte)0xAC;
+    bytes[1] = (byte)0x02;
+    MemoryStream ms = new MemoryStream(bytes);
+    BinaryReader r = BinaryReader.OverStream(ms);
+    Assert.Equal(300L, r.ReadVarInt64());
+}

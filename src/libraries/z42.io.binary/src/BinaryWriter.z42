@@ -173,6 +173,63 @@ public class BinaryWriter {
         this._stream.Write(buf, 0, 8);
     }
 
+    // ── Varint (protobuf-style 7-bit; add-io-binary-varint 2026-05-26) ────
+    //
+    // Variable-length unsigned encoding: each byte contributes 7 data bits,
+    // high bit set when more bytes follow. Negative inputs are encoded as
+    // their two's-complement i64 representation (10 bytes total) — callers
+    // who want compact negative encoding should use `WriteVarSInt64` which
+    // applies ZigZag (`n>=0 → 2n`, `n<0 → -2n-1`) so small-magnitude
+    // negatives stay small.
+
+    /// Write an i64 as a varint. Positive values use ⌈bits/7⌉ bytes (1 byte
+    /// for 0-127, 2 bytes for 128-16383, etc.). Negative values use the
+    /// full 10 bytes because the sign bit lives in the highest position.
+    /// Returns the number of bytes written. add-io-binary-varint (2026-05-26).
+    public int WriteVarInt64(long v) {
+        long u = v;
+        long mask7 = 127;     // 0x7F
+        long mask8 = 128;     // 0x80
+        int n = 0;
+        // Loop emits 7 bits at a time. We use unsigned right-shift via
+        // mask after shift to keep the loop tractable; the loop bound is
+        // 10 because 10 × 7 ≥ 64 covers any i64.
+        bool done = false;
+        while (!done) {
+            long lo = u & mask7;
+            // Compute "more bytes follow?" by checking if any bits remain
+            // above bit 6 (i.e., if the unsigned shift would be nonzero).
+            long rest;
+            if (u < 0L) {
+                // Arithmetic shift right keeps the sign; mask the top
+                // 7 bits afterward to simulate unsigned shift.
+                rest = (u >> 7) & 144115188075855871L;   // (1<<57) - 1
+            } else {
+                rest = u >> 7;
+            }
+            if (rest == 0L) {
+                this.WriteByte((int)lo);
+                done = true;
+            } else {
+                this.WriteByte((int)(lo | mask8));
+                u = rest;
+            }
+            n = n + 1;
+        }
+        return n;
+    }
+
+    /// ZigZag-encode `v` then write as varint. Small-magnitude negatives
+    /// stay compact (e.g. -1 → 1 byte, -64 → 1 byte; without zigzag they'd
+    /// all be 10 bytes). protobuf naming convention: `sint64`.
+    public int WriteVarSInt64(long v) {
+        // ZigZag: (v << 1) XOR (v >> 63 arithmetic).
+        long shifted = v << 1;
+        long signExt = v >> 63;
+        long u = shifted ^ signExt;
+        return this.WriteVarInt64(u);
+    }
+
     // ── String (UTF-8) ────────────────────────────────────────────────────
 
     /// 编码 s 为 UTF-8 bytes 并写入。返回写入的字节数（便于调用方记录 framing）。

@@ -188,6 +188,46 @@ public class BinaryReader {
         return (hi << 32) | lo;
     }
 
+    // ── Varint (protobuf-style 7-bit; add-io-binary-varint 2026-05-26) ────
+
+    /// Read a varint-encoded i64. Reads bytes until one is encountered
+    /// with the high bit clear (or 10 bytes consumed, whichever first).
+    /// add-io-binary-varint (2026-05-26).
+    public long ReadVarInt64() {
+        long result = 0L;
+        int  shift  = 0;
+        int  read   = 0;
+        long mask7  = 127;
+        long mask8  = 128;
+        while (read < 10) {
+            int b = this.ReadByte();
+            long bl = (long)b;
+            long lo = bl & mask7;
+            result = result | (lo << shift);
+            if ((bl & mask8) == 0L) { return result; }
+            shift = shift + 7;
+            read  = read + 1;
+        }
+        throw new BinaryException("varint too long (>10 bytes)");
+    }
+
+    /// Read a ZigZag-encoded i64 (compact small-magnitude negatives).
+    /// Inverse of `WriteVarSInt64`.
+    public long ReadVarSInt64() {
+        long u = this.ReadVarInt64();
+        // ZigZag decode: (u >> 1) XOR (-(u & 1))
+        long half = 0L;
+        if (u < 0L) {
+            // Same unsigned-shift trick as WriteVarInt64.
+            half = (u >> 1) & 9223372036854775807L;   // (1<<63) - 1
+        } else {
+            half = u >> 1;
+        }
+        long lowBit = u & 1L;
+        long signMask = 0L - lowBit;
+        return half ^ signMask;
+    }
+
     // ── String (UTF-8) ────────────────────────────────────────────────────
 
     /// 读取 byteCount 个字节并按 UTF-8 解码为 string。
