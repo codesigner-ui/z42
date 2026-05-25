@@ -26,22 +26,57 @@ public class Regex {
     private string[] _groupNames;
     private int[]    _groupIndices;
     private int      _namedGroupCount;
+    // add-regex-inline-flags (2026-05-26): case-insensitive matching when
+    // pattern starts with `(?i)`. Pattern-wide; mid-pattern scope changes
+    // not yet supported.
+    private bool _caseInsensitive;
 
     private Regex(RegexNode[] seq, int seqCount, int groupCount,
-                  string[] groupNames, int[] groupIndices, int namedGroupCount) {
+                  string[] groupNames, int[] groupIndices, int namedGroupCount,
+                  bool caseInsensitive) {
         this._seq             = seq;
         this._seqCount        = seqCount;
         this._groupCount      = groupCount;
         this._groupNames      = groupNames;
         this._groupIndices    = groupIndices;
         this._namedGroupCount = namedGroupCount;
+        this._caseInsensitive = caseInsensitive;
     }
 
     public static Regex Compile(string pattern) {
-        var p = new RegexParser(pattern);
+        // Inline flag stripper: leading `(?i)` enables case-insensitive
+        // matching for the whole pattern. Stripped before handing the
+        // remainder to RegexParser. add-regex-inline-flags (2026-05-26).
+        bool caseInsensitive = false;
+        string body = pattern;
+        if (pattern.Length >= 4
+                && pattern.CharAt(0) == '('
+                && pattern.CharAt(1) == '?'
+                && pattern.CharAt(2) == 'i'
+                && pattern.CharAt(3) == ')') {
+            caseInsensitive = true;
+            body = pattern.Substring(4, pattern.Length - 4);
+        }
+        var p = new RegexParser(body);
         p.ParsePattern();
         return new Regex(p.ResultNodes, p.ResultCount, 1 + p.GroupCount,
-                         p.GroupNames, p.GroupIndices, p.NamedGroupCount);
+                         p.GroupNames, p.GroupIndices, p.NamedGroupCount,
+                         caseInsensitive);
+    }
+
+    /// ASCII case fold (A-Z → a-z); other chars unchanged. Used by the
+    /// case-insensitive matcher path. add-regex-inline-flags (2026-05-26).
+    static int _fold(int ch) {
+        if (ch >= 65 && ch <= 90) { return ch + 32; }
+        return ch;
+    }
+
+    /// ASCII case swap: A-Z ↔ a-z. Used to test charset matches under
+    /// case-insensitive mode by probing both cases of the input char.
+    static int _swapCase(int ch) {
+        if (ch >= 65 && ch <= 90)  { return ch + 32; }
+        if (ch >= 97 && ch <= 122) { return ch - 32; }
+        return ch;
     }
 
     /// Lookup table for `Match.Group(string name)` resolution.
@@ -232,8 +267,16 @@ public class Regex {
         int k = node._kind;
 
         if (k == 1) {  // LIT
-            if (pos < this._input.Length && (int)this._input.CharAt(pos) == node._ch) {
-                return this.Match(seq, count, idx + 1, pos + 1);
+            if (pos < this._input.Length) {
+                int inCh  = (int)this._input.CharAt(pos);
+                int patCh = node._ch;
+                bool eq;
+                if (this._caseInsensitive) {
+                    eq = (Regex._fold(inCh) == Regex._fold(patCh));
+                } else {
+                    eq = (inCh == patCh);
+                }
+                if (eq) { return this.Match(seq, count, idx + 1, pos + 1); }
             }
             return -1;
         }
@@ -244,8 +287,25 @@ public class Regex {
             return -1;
         }
         if (k == 3) {  // CHARSET
-            if (pos < this._input.Length && node.CharsetMatches((int)this._input.CharAt(pos))) {
-                return this.Match(seq, count, idx + 1, pos + 1);
+            if (pos < this._input.Length) {
+                int ch = (int)this._input.CharAt(pos);
+                bool hit = node.CharsetMatches(ch);
+                if (this._caseInsensitive) {
+                    int swapped = Regex._swapCase(ch);
+                    if (swapped != ch) {
+                        bool hit2 = node.CharsetMatches(swapped);
+                        // Positive charset `[A]`: EITHER case matches (OR).
+                        // Negated charset `[^A]`: BOTH cases must be in
+                        // the negated set (AND) — case-insensitive means
+                        // both `A` and `a` should be excluded.
+                        if (node._negated) {
+                            hit = hit && hit2;
+                        } else {
+                            hit = hit || hit2;
+                        }
+                    }
+                }
+                if (hit) { return this.Match(seq, count, idx + 1, pos + 1); }
             }
             return -1;
         }

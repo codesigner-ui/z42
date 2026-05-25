@@ -1,0 +1,137 @@
+// add-regex-inline-flags (2026-05-26): leading `(?i)` enables
+// case-insensitive matching for the whole pattern.
+namespace Z42RegexInlineFlagsTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+// ── Literal matching ───────────────────────────────────────────────────
+
+[Test]
+void test_case_insensitive_literal_lower_input() {
+    Regex r = Regex.Compile("(?i)Hello");
+    Assert.True(r.IsMatch("hello"));
+}
+
+[Test]
+void test_case_insensitive_literal_upper_input() {
+    Regex r = Regex.Compile("(?i)hello");
+    Assert.True(r.IsMatch("HELLO"));
+}
+
+[Test]
+void test_case_insensitive_literal_mixed() {
+    Regex r = Regex.Compile("(?i)Hello");
+    Assert.True(r.IsMatch("HeLLo"));
+    Assert.True(r.IsMatch("HELLO"));
+    Assert.True(r.IsMatch("hello"));
+}
+
+[Test]
+void test_case_sensitive_default_still_strict() {
+    // Without `(?i)`, exact case required.
+    Regex r = Regex.Compile("Hello");
+    Assert.False(r.IsMatch("hello"));
+    Assert.False(r.IsMatch("HELLO"));
+}
+
+// ── Charset matching ───────────────────────────────────────────────────
+
+[Test]
+void test_case_insensitive_charset_uppercase_range() {
+    // `[A-Z]` with `(?i)` matches lowercase too.
+    Regex r = Regex.Compile("(?i)^[A-Z]$");
+    Assert.True(r.IsMatch("a"));
+    Assert.True(r.IsMatch("A"));
+    Assert.True(r.IsMatch("z"));
+    Assert.True(r.IsMatch("Z"));
+    Assert.False(r.IsMatch("1"));
+}
+
+[Test]
+void test_case_insensitive_charset_lowercase_range() {
+    // `[a-z]` with `(?i)` matches uppercase too.
+    Regex r = Regex.Compile("(?i)^[a-z]$");
+    Assert.True(r.IsMatch("a"));
+    Assert.True(r.IsMatch("A"));
+}
+
+[Test]
+void test_case_insensitive_negated_charset() {
+    // `[^A]` with `(?i)` excludes both `A` and `a`.
+    Regex r = Regex.Compile("(?i)^[^A]$");
+    Assert.False(r.IsMatch("a"));
+    Assert.False(r.IsMatch("A"));
+    Assert.True(r.IsMatch("b"));
+    Assert.True(r.IsMatch("B"));
+}
+
+// ── Quantifier + alternation interaction ───────────────────────────────
+
+[Test]
+void test_case_insensitive_with_plus() {
+    Regex r = Regex.Compile("(?i)foo+");
+    Assert.True(r.IsMatch("FOOOO"));
+}
+
+[Test]
+void test_case_insensitive_with_alternation() {
+    Regex r = Regex.Compile("(?i)cat|dog");
+    Assert.True(r.IsMatch("CAT"));
+    Assert.True(r.IsMatch("Dog"));
+    Assert.True(r.IsMatch("dOg"));
+    Assert.False(r.IsMatch("fish"));
+}
+
+// ── Captured group preserves original case ─────────────────────────────
+
+[Test]
+void test_case_insensitive_capture_returns_original_case() {
+    // Match is case-insensitive, but `Group(N)` returns the actual input
+    // substring, preserving the original case as seen in the input.
+    Regex r = Regex.Compile("(?i)(hello)");
+    Match m = r.Find("HELLO world");
+    Assert.True(m != null);
+    Assert.Equal("HELLO", m.Group(1));
+}
+
+// ── Common use case: URL host extraction (case-insensitive scheme) ─────
+
+[Test]
+void test_case_insensitive_scheme_extraction() {
+    Regex r = Regex.Compile("(?i)(https?)");
+    Assert.True(r.IsMatch("HTTP"));
+    Assert.True(r.IsMatch("https"));
+    Assert.True(r.IsMatch("Https"));
+}
+
+// ── Non-letter chars unaffected ────────────────────────────────────────
+
+[Test]
+void test_case_insensitive_only_affects_letters() {
+    // `(?i)abc123` — digits unchanged; only ASCII letters fold.
+    Regex r = Regex.Compile("(?i)abc123");
+    Assert.True(r.IsMatch("ABC123"));
+    Assert.True(r.IsMatch("aBc123"));
+    Assert.False(r.IsMatch("abc124"));   // digit mismatch
+}
+
+// ── Escape sequences unaffected (regression check) ─────────────────────
+
+[Test]
+void test_word_class_still_matches_letters_either_case() {
+    Regex r = Regex.Compile("(?i)\\w+");
+    Match m = r.Find("Hello");
+    Assert.True(m != null);
+    Assert.Equal("Hello", m.Group(0));
+}
+
+// ── Pattern without `(?i)` not affected by surrounding tests ───────────
+
+[Test]
+void test_case_sensitive_charset() {
+    Regex r = Regex.Compile("^[A-Z]$");
+    Assert.False(r.IsMatch("a"));
+    Assert.True(r.IsMatch("A"));
+}

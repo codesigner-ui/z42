@@ -265,11 +265,37 @@ tracked):
 - **前置依赖**：z42.core 落地 Unicode property API
 - **当前 workaround**：手写 charset
 
-### regex-future-flags
+### ~~regex-future-flags~~ — **✅ partial 已落地 2026-05-26 (add-regex-inline-flags)**
 
-- **来源**：`(?i)abc` 大小写不敏感；`(?m)` multiline；`(?s)` dotall
-- **触发原因**：v0 无 flag；每个 flag 行为变更要嵌入引擎
-- **当前 workaround**：调用方 `input.ToLower()` 前手匹配
+Shipped: leading `(?i)` flag — case-insensitive matching for the
+whole pattern. ASCII case folding (A-Z ↔ a-z); non-ASCII unchanged
+(matches most regex implementations' default; full Unicode case
+folding is the deferred `regex-future-unicode-classes` work).
+
+Implementation:
+- `Regex.Compile` strips a leading `(?i)` and records the flag before
+  handing the body to `RegexParser` (the parser itself is unchanged)
+- `Match` for LIT compares folded chars when flag set
+- `Match` for CHARSET tries both the input char and its case-swapped
+  version; AND-combines for negated `[^…]` (so `[^A]` excludes both
+  `A` and `a`), OR-combines for positive `[…]`
+- Captured group strings preserve the ORIGINAL input case (case-folding
+  is only for the comparison, not for the output)
+
+14 new tests cover: literal matching with lower / upper / mixed input;
+strict case stays default without flag; `[A-Z]` charset accepts both
+cases under flag; `[a-z]` likewise; negated `[^A]` excludes both
+cases; quantifier + alternation interaction; capture returns original-
+case substring; URL-scheme common pattern (`(?i)(https?)`); digits
+unaffected by flag; `\w+` escape class unaffected (regression).
+
+Still deferred — `regex-future-flags-extras`:
+- `(?m)` multiline — `^` / `$` match line boundaries (currently only
+  match input start/end)
+- `(?s)` dotall — `.` also matches `\n` (currently matches anything;
+  the dotall vs not distinction is implementation-dependent here)
+- `(?x)` extended — whitespace + comments in pattern stripped
+- Mid-pattern flag changes `(?-i)…` or scoped `(?i:…)`
 
 ### ~~regex-future-replace-backreference~~ — **✅ 已落地 2026-05-26 (add-regex-replace-backreference)**
 
