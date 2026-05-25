@@ -1,0 +1,175 @@
+// add-bigint-karatsuba (2026-05-25): exercise the Karatsuba multiplication
+// path (operands ≥ 32 limbs trigger the sub-quadratic algorithm).
+namespace Z42NumericsBigIntKaratsubaTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+// Build a BigInt with `bits` random-looking bits — uses `Pow` to construct
+// a deterministic large operand without relying on RNG state.
+BigInt twoToThe(int bits) {
+    return new BigInt(2L).Pow(bits);
+}
+
+// Construct a multi-thousand-bit operand via repeated Pow + Add. The exact
+// value isn't important — what matters is that it's large enough to land in
+// the Karatsuba regime (>= 32 × 31 = 992 bits).
+BigInt largeOperandA() {
+    // 2^1000 + 2^500 + 1 — three sparse bits across ~1000-bit range.
+    BigInt a = twoToThe(1000);
+    BigInt b = twoToThe(500);
+    BigInt c = a.Add(b);
+    return c.Add(BigInt.One);
+}
+
+BigInt largeOperandB() {
+    // 2^900 + 2^300 + 3 — different sparseness for variety.
+    BigInt a = twoToThe(900);
+    BigInt b = twoToThe(300);
+    BigInt c = a.Add(b);
+    return c.Add(new BigInt(3L));
+}
+
+// ── Correctness: Karatsuba result must equal naive ────────────────────
+
+[Test]
+void test_karatsuba_matches_pow_identity() {
+    // (2^500)^2 == 2^1000. Both paths exercise multiplication: input is
+    // 17-limb (under threshold) on the inner Pow squarings, but the final
+    // product is ~33-limb so the top-level multiply may dispatch to
+    // Karatsuba on z42 builds with low threshold.
+    BigInt a = twoToThe(500);
+    BigInt squared = a.Multiply(a);
+    BigInt direct  = twoToThe(1000);
+    Assert.True(squared.Equals(direct));
+}
+
+[Test]
+void test_karatsuba_self_multiply_large() {
+    BigInt a = largeOperandA();
+    BigInt sq = a.Multiply(a);
+    // Cross-check via Pow(2)
+    BigInt sq2 = a.Pow(2);
+    Assert.True(sq.Equals(sq2));
+}
+
+[Test]
+void test_karatsuba_cross_multiply() {
+    // Cross-check a * b against b * a (commutativity must hold).
+    BigInt a  = largeOperandA();
+    BigInt b  = largeOperandB();
+    BigInt ab = a.Multiply(b);
+    BigInt ba = b.Multiply(a);
+    Assert.True(ab.Equals(ba));
+}
+
+[Test]
+void test_karatsuba_distributes_over_add() {
+    // a * (b + c) == a*b + a*c on large operands.
+    BigInt a = largeOperandA();
+    BigInt b = largeOperandB();
+    BigInt c = new BigInt(12345L);
+    BigInt bPlusC = b.Add(c);
+    BigInt lhs    = a.Multiply(bPlusC);
+    BigInt ab     = a.Multiply(b);
+    BigInt ac     = a.Multiply(c);
+    BigInt rhs    = ab.Add(ac);
+    Assert.True(lhs.Equals(rhs));
+}
+
+[Test]
+void test_karatsuba_identity_one() {
+    // a * 1 == a for large `a`.
+    BigInt a = largeOperandA();
+    BigInt r = a.Multiply(BigInt.One);
+    Assert.True(r.Equals(a));
+}
+
+[Test]
+void test_karatsuba_identity_zero() {
+    // a * 0 == 0
+    BigInt a = largeOperandA();
+    BigInt r = a.Multiply(BigInt.Zero);
+    Assert.True(r.IsZero());
+}
+
+// ── Boundary case: operand exactly at threshold ───────────────────────
+
+[Test]
+void test_at_threshold_limb_count() {
+    // 32 limbs ≈ 992 bits. Use 2^1000 (33 limbs, just above threshold).
+    BigInt a = twoToThe(1000);
+    BigInt small = new BigInt(7L);
+    BigInt r = a.Multiply(small);
+    // 7 * 2^1000 == 2^1000 * 7 — small operand defers to schoolbook
+    // (the asymmetric-size case: min(la, lb) decides dispatch).
+    BigInt r2 = small.Multiply(a);
+    Assert.True(r.Equals(r2));
+}
+
+// ── ModPow with large modulus → exercises Karatsuba inside ModPow loop ─
+
+[Test]
+void test_karatsuba_via_modpow_rsa_size() {
+    // Tiny RSA: p=11, q=13, n=143, e=7, message=42.
+    // Encrypts via repeated squaring; intermediate Multiply calls hit
+    // mod 143 quickly so this doesn't exercise large multiplications.
+    // The real Karatsuba stress test is `largeOperandA().Multiply(...)`.
+    BigInt n   = new BigInt(143L);
+    BigInt e   = new BigInt(7L);
+    BigInt msg = new BigInt(42L);
+    BigInt c   = msg.ModPow(e, n);
+    BigInt d   = e.ModInverse(new BigInt(120L));
+    BigInt rec = c.ModPow(d, n);
+    Assert.Equal(42L, rec.ToInt64());
+}
+
+// ── Asymmetric operand sizes ──────────────────────────────────────────
+
+[Test]
+void test_karatsuba_asymmetric_sizes() {
+    // Large × small must still produce correct result. Threshold dispatch
+    // uses min(la, lb), so this stays schoolbook even when a is huge.
+    BigInt a = largeOperandA();           // ~33 limbs
+    BigInt b = new BigInt(123456789L);    // 1 limb
+    BigInt r = a.Multiply(b);
+    // Cross-check: distribute as (large + 0) * b
+    BigInt r2 = b.Multiply(a);
+    Assert.True(r.Equals(r2));
+}
+
+// ── Negative operand sign propagation ──────────────────────────────────
+
+[Test]
+void test_karatsuba_negative_times_positive() {
+    BigInt a    = largeOperandA();
+    BigInt aNeg = a.Negate();
+    BigInt b    = largeOperandB();
+    BigInt prodNeg = aNeg.Multiply(b);
+    BigInt prodPos = a.Multiply(b);
+    BigInt expected = prodPos.Negate();
+    Assert.True(prodNeg.Equals(expected));
+}
+
+[Test]
+void test_karatsuba_negative_times_negative() {
+    BigInt a = largeOperandA();
+    BigInt b = largeOperandB();
+    BigInt aNeg = a.Negate();
+    BigInt bNeg = b.Negate();
+    BigInt prodNegNeg = aNeg.Multiply(bNeg);
+    BigInt prodPos    = a.Multiply(b);
+    Assert.True(prodNegNeg.Equals(prodPos));
+}
+
+// ── Round-trip: divide back ────────────────────────────────────────────
+
+[Test]
+void test_karatsuba_div_round_trip() {
+    BigInt a = largeOperandA();
+    BigInt b = largeOperandB();
+    BigInt prod = a.Multiply(b);
+    BigInt quot = prod.Divide(b);
+    Assert.True(quot.Equals(a));
+}

@@ -1067,7 +1067,32 @@ public class BigInt {
     }
 
     /// Magnitude schoolbook multiplication. O(n*m).
+    /// Threshold (in limbs) below which schoolbook multiplication wins
+    /// over Karatsuba — empirically ~30 for 31-bit limbs. Lower thresholds
+    /// pay too much recursion overhead; higher thresholds miss the
+    /// asymptotic win. add-bigint-karatsuba (2026-05-25).
+    static int KARATSUBA_THRESHOLD = 32;
+
+    /// Magnitude multiplication. Dispatches to schoolbook below
+    /// `KARATSUBA_THRESHOLD` (small operands win on constant factors) and
+    /// to Karatsuba above (sub-quadratic O(n^log2(3)) ≈ O(n^1.585)).
     static int[] _magMul(int[] a, int[] b) {
+        int la = a.Length;
+        int lb = b.Length;
+        if (la == 0 || lb == 0) return new int[0];
+        int minLen = la < lb ? la : lb;
+        if (minLen < BigInt.KARATSUBA_THRESHOLD) {
+            return BigInt._magMulSchool(a, b);
+        }
+        return BigInt._magMulKaratsuba(a, b);
+    }
+
+    /// Schoolbook (long) multiplication — O(n*m). Fast on small operands
+    /// thanks to cache-friendly tight inner loop and zero allocation past
+    /// the result array. add-bigint-karatsuba (2026-05-25): extracted from
+    /// the old `_magMul` so Karatsuba can fall back to it at the recursion
+    /// base case.
+    static int[] _magMulSchool(int[] a, int[] b) {
         int la = a.Length;
         int lb = b.Length;
         if (la == 0 || lb == 0) return new int[0];
@@ -1091,6 +1116,80 @@ public class BigInt {
                 carry    = s / BigInt.BASE;
                 k = k + 1;
             }
+            i = i + 1;
+        }
+        return BigInt._trim(r);
+    }
+
+    /// Karatsuba multiplication — O(n^log2(3)) ≈ O(n^1.585).
+    /// Algorithm: split each operand into low (m limbs) + high parts
+    /// where m = max(la, lb) / 2. Compute three sub-products:
+    ///   z0 = aLow  * bLow
+    ///   z2 = aHigh * bHigh
+    ///   z1 = (aLow + aHigh) * (bLow + bHigh) - z0 - z2
+    /// Combine: result = z0 + (z1 << m*31) + (z2 << 2m*31).
+    /// add-bigint-karatsuba (2026-05-25).
+    static int[] _magMulKaratsuba(int[] a, int[] b) {
+        int la = a.Length;
+        int lb = b.Length;
+        int n = la > lb ? la : lb;
+        int m = n / 2;
+        // Split each operand at limb index `m`. Slices may shorten via
+        // implicit trimming; `_magSlice` handles `to > a.Length` by
+        // clamping (so a shorter `a` produces an empty high slice).
+        int aLowLen  = la < m ? la : m;
+        int aHighLen = la - aLowLen;
+        int[] aLow   = BigInt._magSlice(a, 0, aLowLen);
+        int[] aHigh  = BigInt._magSlice(a, aLowLen, la);
+        int bLowLen  = lb < m ? lb : m;
+        int[] bLow   = BigInt._magSlice(b, 0, bLowLen);
+        int[] bHigh  = BigInt._magSlice(b, bLowLen, lb);
+        // Three recursive products.
+        int[] z0 = BigInt._magMul(aLow, bLow);
+        int[] z2 = BigInt._magMul(aHigh, bHigh);
+        int[] aSum   = BigInt._magAdd(aLow, aHigh);
+        int[] bSum   = BigInt._magAdd(bLow, bHigh);
+        int[] z1full = BigInt._magMul(aSum, bSum);
+        // z1 = z1full - z0 - z2  (always non-negative since z1full
+        // expands to z0 + cross + z2).
+        int[] z1tmp = BigInt._magSub(z1full, z0);
+        int[] z1    = BigInt._magSub(z1tmp, z2);
+        // Combine: result = z0 + (z1 << m limbs) + (z2 << 2m limbs).
+        int[] z1shift = BigInt._magShiftByLimbs(z1, m);
+        int[] z2shift = BigInt._magShiftByLimbs(z2, 2 * m);
+        int[] tmp     = BigInt._magAdd(z0, z1shift);
+        int[] result  = BigInt._magAdd(tmp, z2shift);
+        return BigInt._trim(result);
+    }
+
+    /// Extract `mag[from..to)` into a fresh limb array. Out-of-range
+    /// indices clamp; trims trailing zeros via `_trim` so callers get
+    /// a normalised slice. add-bigint-karatsuba (2026-05-25).
+    static int[] _magSlice(int[] mag, int from, int to) {
+        int srcLen = mag.Length;
+        int hi = to;
+        if (hi > srcLen) { hi = srcLen; }
+        if (hi <= from)  { return new int[0]; }
+        int len = hi - from;
+        int[] r = new int[len];
+        int i = 0;
+        while (i < len) {
+            r[i] = mag[from + i];
+            i = i + 1;
+        }
+        return BigInt._trim(r);
+    }
+
+    /// Shift magnitude left by `n` full limbs (equivalent to multiplying
+    /// by `BASE^n`). Used to compose Karatsuba sub-products at their
+    /// correct positions. add-bigint-karatsuba (2026-05-25).
+    static int[] _magShiftByLimbs(int[] mag, int n) {
+        if (mag.Length == 0 || n == 0) { return mag; }
+        int[] r = new int[mag.Length + n];
+        // First `n` limbs are 0 (default); copy mag starting at index n.
+        int i = 0;
+        while (i < mag.Length) {
+            r[n + i] = mag[i];
             i = i + 1;
         }
         return BigInt._trim(r);

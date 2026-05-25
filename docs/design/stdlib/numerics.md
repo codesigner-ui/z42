@@ -227,10 +227,38 @@ operand, Fermat-little-theorem cross-check on prime modulus
 ModPow 负指数自动路由（`a^(-n) mod m` 内部走 ModInverse） 留 follow-up
 `bigint-future-modpow-negexp`。
 
-### `bigint-future-karatsuba-fft` — sub-quadratic multiplication
+### ~~`bigint-future-karatsuba`~~ — **✅ 已落地 2026-05-25 (add-bigint-karatsuba)**
 
-- **来源**：v0 schoolbook O(n²) 对 < 1000 位数 OK，更大场景慢
-- **触发条件**：bench 显示乘法成瓶颈 + 实际用例 (1000+ 位数 RSA / 大整数 ML)
+Shipped: Karatsuba multiplication kicks in when `min(la, lb) >= 32`
+limbs (~992 bits). Sub-quadratic O(n^log2(3)) ≈ O(n^1.585) vs the
+previous schoolbook O(n²). Below threshold, schoolbook still wins on
+constant factors so dispatch falls back automatically.
+
+Algorithm: split each operand at limb-index `m = max(la, lb) / 2` into
+`(low, high)` halves; compute three sub-products (recursive):
+- `z0 = aLow * bLow`
+- `z2 = aHigh * bHigh`
+- `z1full = (aLow + aHigh) * (bLow + bHigh)`, then `z1 = z1full - z0 - z2`
+
+Combine: `result = z0 + (z1 << m*31) + (z2 << 2m*31)`. The recursion
+base case (`min(len) < 32`) dispatches to `_magMulSchool`.
+
+Two new private helpers: `_magSlice(mag, from, to)` for splitting
+operands, `_magShiftByLimbs(mag, n)` for the shifted-add combine step.
+
+12 tests cover: Pow identity (`(2^500)^2 == 2^1000`), self-square of
+~1000-bit operands, commutativity (a*b == b*a), distributivity over
+add, multiplicative identity (×1, ×0), threshold boundary (33-limb ×
+1-limb stays schoolbook), ModPow RSA-toy round-trip (regression),
+asymmetric sizes, sign propagation (`-a*b == -(a*b)`, `-a*-b == a*b`),
+divide round-trip (`(a*b)/b == a`).
+
+### `bigint-future-fft` — quasi-linear multiplication
+
+- **来源**：Karatsuba 落地后下一个阶梯（Schönhage-Strassen / NTT）
+- **触发原因**：> 100k 位操作数 Karatsuba 也慢；FFT 给 O(n log n log log n)
+- **触发条件**：> 10k-bit operand 用例（很罕见；密码学常见 2048/4096-bit
+  已经在 Karatsuba 范围内表现 OK）
 
 ### `bigint-future-operator-overloads` — `a + b` / `a * b` syntax
 
