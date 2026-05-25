@@ -1,0 +1,168 @@
+// add-toml-multiline-string (2026-05-25): TOML 1.0 triple-quoted basic
+// (`"""…"""`) and literal (`'''…'''`) multi-line strings.
+namespace Z42TomlParseMultilineStringsTests;
+
+using Std;
+using Std.Test;
+using Std.Toml;
+
+// ── Basic multi-line string ─────────────────────────────────────────────
+
+[Test]
+void test_basic_multiline_two_lines() {
+    string src = "msg = \"\"\"line1\nline2\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("line1\nline2", v.Get("msg").AsString());
+}
+
+[Test]
+void test_basic_multiline_trims_leading_newline() {
+    // TOML 1.0: newline immediately after opening `"""` is trimmed.
+    string src = "msg = \"\"\"\nline1\nline2\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("line1\nline2", v.Get("msg").AsString());
+}
+
+[Test]
+void test_basic_multiline_with_escapes() {
+    string src = "msg = \"\"\"a\\tb\\nc\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("a\tb\nc", v.Get("msg").AsString());
+}
+
+[Test]
+void test_basic_multiline_with_inner_quote() {
+    // A single `"` is allowed inside multi-line basic without escape.
+    string src = "msg = \"\"\"hello \"world\" again\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("hello \"world\" again", v.Get("msg").AsString());
+}
+
+[Test]
+void test_basic_multiline_with_two_inner_quotes() {
+    // `""` allowed inside (only `"""` ends the string).
+    string src = "msg = \"\"\"a\"\"b\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("a\"\"b", v.Get("msg").AsString());
+}
+
+// ── Line continuation (`\` at EOL) ──────────────────────────────────────
+
+[Test]
+void test_basic_multiline_line_continuation() {
+    // `\<newline>` folds the EOL + following whitespace to nothing.
+    string src = "msg = \"\"\"a \\\n   b\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("a b", v.Get("msg").AsString());
+}
+
+[Test]
+void test_basic_multiline_multiple_continuations() {
+    string src = "msg = \"\"\"\nThe quick brown fox \\\n  jumps over \\\n  the lazy dog\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("The quick brown fox jumps over the lazy dog", v.Get("msg").AsString());
+}
+
+// ── Literal multi-line string ───────────────────────────────────────────
+
+[Test]
+void test_literal_multiline_basic() {
+    string src = "msg = '''line1\nline2'''\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("line1\nline2", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_multiline_no_escapes() {
+    // `\n` etc. stay as literal two-char sequences (no escaping in literal).
+    string src = "msg = '''a\\tb\\nc'''\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("a\\tb\\nc", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_multiline_trims_leading_newline() {
+    string src = "msg = '''\nhello'''\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("hello", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_multiline_with_inner_quote() {
+    string src = "msg = '''it's a 'test' '''\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("it's a 'test' ", v.Get("msg").AsString());
+}
+
+// ── Real-world: embedded code blocks ────────────────────────────────────
+
+[Test]
+void test_multiline_python_snippet() {
+    string src = "script = '''\ndef hello():\n    print(\"hi\")\n'''\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("def hello():\n    print(\"hi\")\n", v.Get("script").AsString());
+}
+
+[Test]
+void test_multiline_in_table() {
+    string src = "[config]\ndesc = \"\"\"\nFirst line.\nSecond line.\n\"\"\"\nname = \"prod\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("First line.\nSecond line.\n", v.Get("config").Get("desc").AsString());
+    Assert.Equal("prod", v.Get("config").Get("name").AsString());
+}
+
+// ── Edge cases ──────────────────────────────────────────────────────────
+
+[Test]
+void test_basic_multiline_empty() {
+    string src = "msg = \"\"\"\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_multiline_empty() {
+    string src = "msg = ''''''\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("", v.Get("msg").AsString());
+}
+
+[Test]
+void test_basic_multiline_only_newline() {
+    // `"""\n"""` — opening triple, then newline (trimmed), then closing.
+    string src = "msg = \"\"\"\n\"\"\"\n";
+    TomlValue v = TomlValue.Parse(src);
+    Assert.Equal("", v.Get("msg").AsString());
+}
+
+// ── Unterminated → throws ──────────────────────────────────────────────
+
+[Test]
+void test_unterminated_basic_multiline_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("msg = \"\"\"never closed\n"); }
+    catch (TomlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_unterminated_literal_multiline_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("msg = '''never closed\n"); }
+    catch (TomlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Single-line strings still work (regression check) ──────────────────
+
+[Test]
+void test_single_line_basic_unchanged() {
+    TomlValue v = TomlValue.Parse("msg = \"hello\"\n");
+    Assert.Equal("hello", v.Get("msg").AsString());
+}
+
+[Test]
+void test_single_line_literal_unchanged() {
+    TomlValue v = TomlValue.Parse("msg = 'hello'\n");
+    Assert.Equal("hello", v.Get("msg").AsString());
+}

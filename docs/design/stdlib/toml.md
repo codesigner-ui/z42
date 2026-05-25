@@ -101,9 +101,28 @@ KIND_* 常量** —— 静态字段 read-path 当前返回 0 default（已知限
 - **前置依赖**：z42.time 日历分解 + 时区处理
 - **触发条件**：build-driver / 用户配置真要用 datetime 字段时
 
-### toml-future-multiline-string
-- **来源**：TOML 1.0 spec — `"""…"""` 和 `'''…'''`
-- **触发原因**：配置文件少用；先做高频语法
+### ~~toml-future-multiline-string~~ — **✅ 已落地 2026-05-25 (add-toml-multiline-string)**
+
+Shipped: TOML 1.0 triple-quoted multi-line strings.
+- `"""…"""` multi-line basic: full escape support (`\n`, `\t`, `\u`,
+  etc.) plus `\<newline>` line continuation (`\` at EOL folds the
+  newline + following whitespace to empty)
+- `'''…'''` multi-line literal: no escapes, content verbatim
+- Both: leading newline immediately after opening triple is trimmed
+  (TOML 1.0 spec convention)
+- Both: up to 2 inner same-quote chars allowed without escape; closing
+  is exactly `"""` / `'''` followed by 0-2 trailing quote chars
+
+Implementation: `PeekTriple(q)` detector dispatched from `ParseValue`;
+new `ParseMultiLineBasicString` and `ParseMultiLineLiteralString`
+mirror the existing single-line variants. Line continuation in basic
+form: when `\` is followed by optional WS then EOL, consume up to the
+next non-WS char (skipping all WS including subsequent newlines).
+
+20 tests cover basic and literal forms, escape vs verbatim semantics,
+leading-newline trim, inner-quote runs, line continuation (single and
+multi), embedded code blocks (Python snippet), multi-line in nested
+table, empty multi-line, unterminated → throws, single-line regression.
 - **当前 workaround**：用 `\n` 转义在单行 basic string 中
 
 ### ~~toml-future-non-decimal-int~~ — **✅ 已落地 2026-05-25 (add-toml-numeric-bases-and-underscores)**

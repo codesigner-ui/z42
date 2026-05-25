@@ -408,9 +408,16 @@ public sealed class TomlParser {
     private TomlValue ParseValue() {
         char c = this.Peek();
         if (c == '"') {
+            // Triple-quoted? Multi-line basic string.
+            if (this.PeekTriple('"')) {
+                return TomlValue.OfString(this.ParseMultiLineBasicString());
+            }
             return TomlValue.OfString(this.ParseBasicString());
         }
         if (c == '\'') {
+            if (this.PeekTriple('\'')) {
+                return TomlValue.OfString(this.ParseMultiLineLiteralString());
+            }
             return TomlValue.OfString(this.ParseLiteralString());
         }
         if (c == 't' || c == 'f') {
@@ -424,6 +431,15 @@ public sealed class TomlParser {
         }
         // Numbers (including +/- prefix, nan/inf).
         return this.ParseNumber();
+    }
+
+    /// True if the next three characters at `_pos` are all `q`.
+    /// add-toml-multiline-string (2026-05-25).
+    private bool PeekTriple(char q) {
+        if (this._pos + 2 >= this._src.Length) { return false; }
+        return this._src.CharAt(this._pos)     == q
+            && this._src.CharAt(this._pos + 1) == q
+            && this._src.CharAt(this._pos + 2) == q;
     }
 
     private TomlValue ParseBool() {
@@ -513,6 +529,115 @@ public sealed class TomlParser {
             sb.Append(this.CharToString(c));
         }
         throw this.Err("unterminated literal string");
+    }
+
+    /// TOML 1.0 multi-line basic string `"""…"""`. Escapes work as in
+    /// single-line basic strings, plus `\<newline>` line continuation
+    /// (`\` at EOL + whitespace folds to empty). Newline immediately
+    /// after opening `"""` is trimmed. add-toml-multiline-string (2026-05-25).
+    private string ParseMultiLineBasicString() {
+        // Consume opening triple.
+        this.Advance(); this.Advance(); this.Advance();
+        // Optional immediate newline is trimmed per spec.
+        if (!this.Eof() && this.Peek() == '\r') { this.Advance(); }
+        if (!this.Eof() && this.Peek() == '\n') { this.Advance(); }
+        StringBuilder sb = new StringBuilder();
+        while (!this.Eof()) {
+            // Closing triple: but TOML allows up to 2 `"` chars before
+            // `"""` (so a value of `foo"""` ends with `"foo"""""`).
+            if (this.PeekTriple('"')) {
+                this.Advance(); this.Advance(); this.Advance();
+                // After consuming closing triple, allow at most 2 more `"`s
+                // to be appended (e.g. `"""""` = `""` content + closing).
+                int extra = 0;
+                while (extra < 2 && !this.Eof() && this.Peek() == '"') {
+                    sb.Append("\"");
+                    this.Advance();
+                    extra = extra + 1;
+                }
+                return sb.ToString();
+            }
+            char c = this.Peek();
+            if (c == '\\') {
+                this.Advance();
+                if (this.Eof()) { throw this.Err("unterminated multi-line basic string"); }
+                char esc = this.Peek();
+                // Line continuation: `\` followed by EOL + optional WS folds.
+                if (esc == '\n' || esc == '\r' || esc == ' ' || esc == '\t') {
+                    // Must reach end-of-line for fold; intervening WS allowed.
+                    int save = this._pos;
+                    while (!this.Eof()) {
+                        char w = this.Peek();
+                        if (w == ' ' || w == '\t') { this.Advance(); continue; }
+                        break;
+                    }
+                    if (!this.Eof() && (this.Peek() == '\n' || this.Peek() == '\r')) {
+                        // Consume the EOL + any following whitespace.
+                        if (this.Peek() == '\r') { this.Advance(); }
+                        if (!this.Eof() && this.Peek() == '\n') { this.Advance(); }
+                        // Eat all subsequent whitespace incl. newlines until
+                        // next non-WS char (spec: fold consumes any number
+                        // of whitespace chars after the line ending).
+                        while (!this.Eof()) {
+                            char w = this.Peek();
+                            if (w == ' ' || w == '\t' || w == '\n' || w == '\r') {
+                                this.Advance();
+                            } else {
+                                break;
+                            }
+                        }
+                        continue;
+                    }
+                    // Not a line continuation — rewind and treat as bad escape.
+                    this._pos = save;
+                }
+                this.Advance();   // consume the escape char
+                if      (esc == '"')  { sb.Append("\"");                          }
+                else if (esc == '\\') { sb.Append("\\");                          }
+                else if (esc == 'n')  { sb.Append("\n");                          }
+                else if (esc == 't')  { sb.Append("\t");                          }
+                else if (esc == 'r')  { sb.Append("\r");                          }
+                else if (esc == '0')  { char[] z = new char[1]; z[0] = '\0'; sb.Append(String.FromChars(z)); }
+                else if (esc == 'b')  { char[] z = new char[1]; z[0] = '\b'; sb.Append(String.FromChars(z)); }
+                else if (esc == 'f')  { char[] z = new char[1]; z[0] = '\f'; sb.Append(String.FromChars(z)); }
+                else if (esc == 'u')  { sb.Append(this.ParseUnicodeEscape(4)); }
+                else if (esc == 'U')  { sb.Append(this.ParseUnicodeEscape(8)); }
+                else {
+                    throw this.Err("unknown escape: \\" + this.CharToString(esc));
+                }
+                continue;
+            }
+            // Normal char (including newlines — preserved verbatim).
+            this.Advance();
+            sb.Append(this.CharToString(c));
+        }
+        throw this.Err("unterminated multi-line basic string");
+    }
+
+    /// TOML 1.0 multi-line literal string `'''…'''`. No escapes — content
+    /// is verbatim. Newline immediately after opening triple is trimmed.
+    /// add-toml-multiline-string (2026-05-25).
+    private string ParseMultiLineLiteralString() {
+        this.Advance(); this.Advance(); this.Advance();
+        if (!this.Eof() && this.Peek() == '\r') { this.Advance(); }
+        if (!this.Eof() && this.Peek() == '\n') { this.Advance(); }
+        StringBuilder sb = new StringBuilder();
+        while (!this.Eof()) {
+            if (this.PeekTriple('\'')) {
+                this.Advance(); this.Advance(); this.Advance();
+                int extra = 0;
+                while (extra < 2 && !this.Eof() && this.Peek() == '\'') {
+                    sb.Append("'");
+                    this.Advance();
+                    extra = extra + 1;
+                }
+                return sb.ToString();
+            }
+            char c = this.Peek();
+            this.Advance();
+            sb.Append(this.CharToString(c));
+        }
+        throw this.Err("unterminated multi-line literal string");
     }
 
     /// Parse N hex digits and return the resulting Unicode codepoint as a 1-char string.
