@@ -115,9 +115,19 @@ public class RegexParser {
             isQuant = true;
         }
         if (!isQuant) { return atom; }
+        // Non-greedy marker: `?` after a quantifier (`*?`, `+?`, `??`,
+        // `{n,m}?`). add-regex-non-greedy (2026-05-26).
+        bool greedy = true;
+        if (!this.Eof() && this.Peek() == '?') {
+            greedy = false;
+            this.Advance();
+        }
         RegexNode[] child = new RegexNode[1];
         child[0] = atom;
-        return RegexNode.Quant(child, 1, min, max);
+        if (greedy) {
+            return RegexNode.Quant(child, 1, min, max);
+        }
+        return RegexNode.QuantLazy(child, 1, min, max);
     }
 
     private int ParseInt() {

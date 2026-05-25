@@ -161,11 +161,26 @@ int 数组拷贝 — O(groupCount) per call。groupCount typically < 10。
   v0 引擎可加但 API 表面增加
 - **当前 workaround**：调用方自行做两次匹配 + Group(1) 比较
 
-### regex-future-non-greedy
+### ~~regex-future-non-greedy~~ — **✅ 已落地 2026-05-26 (add-regex-non-greedy)**
 
-- **来源**：`<.*?>` 而非 `<.*>`（HTML tag 最短匹配）
-- **触发原因**：v0 全 greedy；non-greedy 需 quant 变种 (`*?` `+?` `??`)
-- **当前 workaround**：用更具体的字符类 `[^>]*` 替代 `.*?`
+Shipped: `*?` / `+?` / `??` / `{n,m}?` non-greedy (lazy) quantifiers.
+Matcher tries the shortest count first instead of the longest.
+
+Implementation:
+- New `bool _greedy` field on `RegexNode` (default true)
+- New `RegexNode.QuantLazy(child, count, min, max)` factory mirrors
+  `Quant` but sets `_greedy = false`
+- `RegexParser.MaybeWrapQuant`: detects trailing `?` after `*` / `+`
+  / `?` / `{n,m}` — switches to `QuantLazy`
+- `Regex.MatchQuant`: iteration direction parameterised by `_greedy`
+  (greedy: posCount-1 → min; lazy: min → posCount)
+
+13 new tests cover: `<.*?>` shortest HTML tag (vs greedy baseline),
+`a+?` minimum-one (vs greedy), `\d+?5` lazy-with-suffix, `colou??r`
+lazy optional (prefers skip; falls back to match when skip fails),
+`a{2,4}?` lazy counted (picks min in range), lazy-then-greedy in
+same pattern (`(<.*?>)(\d+)`), HTML tag-name extraction
+(`<(\w+?)>`), lazy quantifier on a group.
 
 ### regex-future-lookaround
 

@@ -39,6 +39,7 @@ public class RegexNode {
     public int _childCount;
     public int _min;                   // QUANT
     public int _max;                   // QUANT (-1 = unbounded)
+    public bool _greedy;               // QUANT (true = max-first; false = min-first / non-greedy)
 
     public int _groupIndex;            // GROUP (1-based)
 
@@ -57,6 +58,7 @@ public class RegexNode {
         this._childCount  = 0;
         this._min         = 0;
         this._max         = 0;
+        this._greedy      = true;
         this._groupIndex  = 0;
     }
 
@@ -98,6 +100,20 @@ public class RegexNode {
         n._childCount = childCount;
         n._min        = min;
         n._max        = max;
+        n._greedy     = true;
+        return n;
+    }
+
+    /// Non-greedy quantifier (`*?`, `+?`, `??`, `{n,m}?`) — same min/max
+    /// bounds as the greedy form but `MatchQuant` tries the shortest count
+    /// first. add-regex-non-greedy (2026-05-26).
+    public static RegexNode QuantLazy(RegexNode[] child, int childCount, int min, int max) {
+        var n = new RegexNode(7);
+        n._childSeq   = child;
+        n._childCount = childCount;
+        n._min        = min;
+        n._max        = max;
+        n._greedy     = false;
         return n;
     }
 

@@ -1,0 +1,139 @@
+// add-regex-non-greedy (2026-05-26): `*?` / `+?` / `??` / `{n,m}?`
+// non-greedy quantifiers. Matcher tries shortest count first instead
+// of longest.
+namespace Z42RegexNonGreedyTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+// ── *? (lazy star) ──────────────────────────────────────────────────────
+
+[Test]
+void test_lazy_star_shortest_match() {
+    // `<.*?>` matches shortest `<...>`. Vs greedy `<.*>` which would
+    // span the whole `<a><b>`.
+    Regex r = Regex.Compile("<.*?>");
+    Match m = r.Find("<a><b>");
+    Assert.True(m != null);
+    Assert.Equal("<a>", m.Group(0));
+}
+
+[Test]
+void test_greedy_star_baseline() {
+    // Greedy baseline for comparison.
+    Regex r = Regex.Compile("<.*>");
+    Match m = r.Find("<a><b>");
+    Assert.True(m != null);
+    Assert.Equal("<a><b>", m.Group(0));
+}
+
+[Test]
+void test_lazy_star_zero_match_when_possible() {
+    // `a*?` between two `b`s prefers zero `a`s.
+    Regex r = Regex.Compile("ba*?b");
+    Match m = r.Find("baaab");
+    Assert.True(m != null);
+    Assert.Equal("baaab", m.Group(0));   // forced — only one `b...b` window
+}
+
+// ── +? (lazy plus) ──────────────────────────────────────────────────────
+
+[Test]
+void test_lazy_plus_minimum_one() {
+    Regex r = Regex.Compile("a+?");
+    Match m = r.Find("aaaa");
+    Assert.True(m != null);
+    Assert.Equal("a", m.Group(0));   // lazy: just one
+}
+
+[Test]
+void test_greedy_plus_baseline() {
+    Regex r = Regex.Compile("a+");
+    Match m = r.Find("aaaa");
+    Assert.True(m != null);
+    Assert.Equal("aaaa", m.Group(0));
+}
+
+[Test]
+void test_lazy_plus_with_following_atom() {
+    // `\d+?` followed by `5`: lazy picks fewest digits before reaching 5.
+    Regex r = Regex.Compile("\\d+?5");
+    Match m = r.Find("123455");
+    Assert.True(m != null);
+    Assert.Equal("12345", m.Group(0));
+}
+
+// ── ?? (lazy optional) ──────────────────────────────────────────────────
+
+[Test]
+void test_lazy_optional_prefers_skip() {
+    // `colou??r` — lazy prefers NOT matching the `u`.
+    Regex r = Regex.Compile("colou??r");
+    Match m = r.Find("color");
+    Assert.True(m != null);
+    Assert.Equal("color", m.Group(0));
+}
+
+[Test]
+void test_lazy_optional_falls_back_to_match() {
+    // If skipping fails to match the rest, lazy still tries the longer.
+    Regex r = Regex.Compile("colou??r");
+    Match m = r.Find("colour");
+    Assert.True(m != null);
+    Assert.Equal("colour", m.Group(0));
+}
+
+// ── {n,m}? (lazy counted) ───────────────────────────────────────────────
+
+[Test]
+void test_lazy_counted_picks_minimum_in_range() {
+    // `a{2,4}?` — at least 2, at most 4. Lazy picks 2.
+    Regex r = Regex.Compile("a{2,4}?");
+    Match m = r.Find("aaaa");
+    Assert.True(m != null);
+    Assert.Equal("aa", m.Group(0));
+}
+
+[Test]
+void test_lazy_counted_with_following_atom() {
+    // `a{2,4}?b` — needs to reach the `b`; lazy picks minimum that works.
+    Regex r = Regex.Compile("a{2,4}?b");
+    Match m = r.Find("aaaab");
+    Assert.True(m != null);
+    Assert.Equal("aaaab", m.Group(0));
+}
+
+// ── Mix: lazy + greedy in same pattern ──────────────────────────────────
+
+[Test]
+void test_mix_lazy_then_greedy() {
+    // First captures `<a>` (lazy), then `\d+` greedy captures `123`.
+    Regex r = Regex.Compile("(<.*?>)(\\d+)");
+    Match m = r.Find("<a>123<b>456");
+    Assert.True(m != null);
+    Assert.Equal("<a>",  m.Group(1));
+    Assert.Equal("123",  m.Group(2));
+}
+
+// ── Common HTML scraping pattern ────────────────────────────────────────
+
+[Test]
+void test_html_tag_extraction() {
+    // Extract opening tag name from `<tag attr="x">...`.
+    Regex r = Regex.Compile("<(\\w+?)>");
+    Match m = r.Find("<p><span>hi</span></p>");
+    Assert.True(m != null);
+    Assert.Equal("p", m.Group(1));
+}
+
+// ── Group with lazy quantifier ──────────────────────────────────────────
+
+[Test]
+void test_lazy_quantifier_on_group() {
+    // `(ab)+?` — at least one repetition, but lazy.
+    Regex r = Regex.Compile("(ab)+?");
+    Match m = r.Find("ababab");
+    Assert.True(m != null);
+    Assert.Equal("ab", m.Group(0));
+}
