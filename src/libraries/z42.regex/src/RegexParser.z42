@@ -137,9 +137,32 @@ public class RegexParser {
     private RegexNode ParseAtom() {
         char c = this.Peek();
         if (c == '(') {
-            int idx = this._nextGroup;
-            this._nextGroup = this._nextGroup + 1;
             this.Advance();
+            // Non-capturing group `(?:…)` — add-regex-non-capturing-group
+            // (2026-05-26). Skip capture-index allocation; matcher detects
+            // `_groupIndex == -1` and bypasses the slot write.
+            bool nonCapturing = false;
+            if (!this.Eof() && this.Peek() == '?') {
+                int save = this._pos;
+                this.Advance();
+                if (!this.Eof() && this.Peek() == ':') {
+                    this.Advance();
+                    nonCapturing = true;
+                } else {
+                    // `(?` followed by something else — not a valid v0 atom;
+                    // restore position and let the dispatch fall through to
+                    // the normal error path below.
+                    this._pos = save;
+                    throw new RegexException("unsupported '(?…)' construct at pos " + this._pos.ToString());
+                }
+            }
+            int idx;
+            if (nonCapturing) {
+                idx = -1;
+            } else {
+                idx = this._nextGroup;
+                this._nextGroup = this._nextGroup + 1;
+            }
             this.ParseAlt(true);
             RegexNode[] body = this.ResultNodes;
             int bodyN = this.ResultCount;

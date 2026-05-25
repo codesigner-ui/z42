@@ -179,11 +179,39 @@ int 数组拷贝 — O(groupCount) per call。groupCount typically < 10。
 - **触发原因**：v0 仅 1-based index；命名 group 需要 dict 映射
 - **当前 workaround**：用 index + 调用方维护映射
 
-### regex-future-non-capturing-group
+### ~~regex-future-non-capturing-group~~ — **✅ 已落地 2026-05-26 (add-regex-non-capturing-group)**
 
-- **来源**：`(?:abc)` 不分配 group index
-- **触发原因**：v0 每个 `(` 都是 capturing；性能微优化 + clean API
-- **当前 workaround**：忽略不用的 group
+Shipped: `(?:…)` syntax — same match semantics as `(…)` but no capture
+index allocated; `GroupCount()` and `Group(n)` indices unaffected by
+interspersed non-capturing groups.
+
+Implementation:
+- `RegexParser.ParseAtom`: when `(` is followed by `?:`, skip the
+  capture-index allocation; pass `-1` as the marker `groupIndex`
+- `RegexParser`: `(?` followed by any non-`:` char (e.g. `(?=` lookahead,
+  `(?<` named group, `(?i)` flags) throws `RegexException` —
+  reserves the syntax for clear future error messages on still-deferred
+  features
+- `Regex.Match` matcher: GROUP node with `_groupIndex == -1` skips the
+  `_gStarts` / `_gEnds` slot write, otherwise behaves identically
+
+11 new tests cover: alternation in non-capturing group matches like a
+capturing one; `GroupCount()` ignores `(?:)` and only counts `(`;
+mixed capturing + non-capturing keeps indices stable; quantifier on
+non-capturing (`(?:\d{2}){3}`, `(?:s)?`); nested non-capturing inside
+capturing (`((?:abc)+)`); capturing inside non-capturing
+(`(?:(\d+)\.(\d+))`); KV-pair separator skip pattern
+(`(\w+)(?:=)(\w+)`); error on unsupported `(?=...)` construct.
+
+Two engine limitations surfaced during test authoring (unrelated to
+non-capturing — pre-existing, filed independently if not already
+tracked):
+- Alternation backtracking through a following atom: `(Mr|Mrs|Ms)\.X`
+  on `"Mrs.X"` fails because the engine commits to the first matching
+  alternative and doesn't backtrack into a later alternative when the
+  suffix fails. Tests pick the leftmost-matching alternative.
+- Charset `[\w.]+` adjacent to `\w+` in some URL-shape patterns fails
+  to match — needs separate investigation; tests avoid this combination.
 
 ### regex-future-unicode-classes
 

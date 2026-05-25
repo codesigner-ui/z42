@@ -201,8 +201,12 @@ public class Regex {
             int[] savE = this.SnapshotEnds();
             int gp = this.Match(node._childSeq, node._childCount, 0, pos);
             if (gp >= 0) {
-                this._gStarts[node._groupIndex] = pos;
-                this._gEnds[node._groupIndex]   = gp;
+                // _groupIndex == -1 marks a non-capturing group `(?:…)` —
+                // no slot write (add-regex-non-capturing-group, 2026-05-26).
+                if (node._groupIndex >= 0) {
+                    this._gStarts[node._groupIndex] = pos;
+                    this._gEnds[node._groupIndex]   = gp;
+                }
                 int rp = this.Match(seq, count, idx + 1, gp);
                 if (rp >= 0) { return rp; }
             }

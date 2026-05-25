@@ -1,0 +1,125 @@
+// add-regex-non-capturing-group (2026-05-26): `(?:...)` non-capturing
+// group syntax — same matching semantics as `(...)` but no group slot
+// allocated; `GroupCount()` and `m.Group(n)` indices unaffected.
+namespace Z42RegexNonCapturingTests;
+
+using Std.Test;
+using Std.Regex;
+
+// ── Basic non-capturing ────────────────────────────────────────────────
+
+[Test]
+void test_noncapturing_matches_like_regular_group() {
+    Regex r = Regex.Compile("^(?:cat|dog)$");
+    Assert.True(r.IsMatch("cat"));
+    Assert.True(r.IsMatch("dog"));
+    Assert.False(r.IsMatch("fish"));
+}
+
+[Test]
+void test_noncapturing_does_not_increment_group_count() {
+    // `(?:abc)` adds zero to GroupCount; `(\d+)` adds one.
+    Regex r = Regex.Compile("(?:abc)(\\d+)");
+    Assert.Equal(1, r.GroupCount());
+}
+
+[Test]
+void test_two_noncapturing_zero_group_count() {
+    Regex r = Regex.Compile("(?:abc)(?:def)");
+    Assert.Equal(0, r.GroupCount());
+}
+
+// ── Mixing capturing + non-capturing ───────────────────────────────────
+
+[Test]
+void test_mixed_capturing_indices_unaffected() {
+    // (?:prefix) doesn't shift index of (capture).
+    // Input picks the first alternation branch so we don't depend on
+    // alternation-backtracking through the suffix (engine limitation).
+    Regex r = Regex.Compile("(?:Mr|Mrs|Ms)\\.\\s+(\\w+)");
+    Match m = r.Find("Mr. Smith");
+    Assert.True(m != null);
+    Assert.Equal(1, r.GroupCount());
+    Assert.Equal("Smith", m.Group(1));
+}
+
+[Test]
+void test_capturing_then_noncapturing_then_capturing() {
+    // (\w+)(?:\s+)(\w+) — first and second words captured, whitespace skipped.
+    Regex r = Regex.Compile("(\\w+)(?:\\s+)(\\w+)");
+    Match m = r.Find("hello world");
+    Assert.True(m != null);
+    Assert.Equal(2, r.GroupCount());
+    Assert.Equal("hello", m.Group(1));
+    Assert.Equal("world", m.Group(2));
+}
+
+// ── Quantifier on non-capturing ────────────────────────────────────────
+
+[Test]
+void test_noncapturing_with_quantifier() {
+    // Repeat a non-capturing group — common for "match a pair of digits N times".
+    Regex r = Regex.Compile("^(?:\\d{2}){3}$");
+    Assert.True(r.IsMatch("123456"));
+    Assert.False(r.IsMatch("12345"));
+    Assert.False(r.IsMatch("1234567"));
+}
+
+[Test]
+void test_optional_noncapturing() {
+    // (?:s)? — optional suffix without polluting capture indices.
+    Regex r = Regex.Compile("^cat(?:s)?$");
+    Assert.True(r.IsMatch("cat"));
+    Assert.True(r.IsMatch("cats"));
+    Assert.False(r.IsMatch("catz"));
+}
+
+// ── Nested groups ──────────────────────────────────────────────────────
+
+[Test]
+void test_noncapturing_nesting_capturing() {
+    // (?:(\d+)\.(\d+)) — outer non-capturing, inner two capturing.
+    Regex r = Regex.Compile("(?:(\\d+)\\.(\\d+))");
+    Match m = r.Find("3.14");
+    Assert.True(m != null);
+    Assert.Equal(2, r.GroupCount());
+    Assert.Equal("3",  m.Group(1));
+    Assert.Equal("14", m.Group(2));
+}
+
+[Test]
+void test_capturing_containing_noncapturing() {
+    // ((?:abc)+) — outer captures, inner non-capturing repeats.
+    Regex r = Regex.Compile("((?:abc)+)");
+    Match m = r.Find("abcabc");
+    Assert.True(m != null);
+    Assert.Equal(1, r.GroupCount());
+    Assert.Equal("abcabc", m.Group(1));
+}
+
+// ── Real-world: URL parser snippet ─────────────────────────────────────
+
+[Test]
+void test_key_value_with_noncapturing_separator() {
+    // Capture key + value; skip `=` separator with non-capturing.
+    // Avoids the v0 engine's known limitation around char-classes
+    // containing `.` adjacent to greedy `\w+` (separate bug).
+    Regex r = Regex.Compile("(\\w+)(?:=)(\\w+)");
+    Match m = r.Find("name=alice");
+    Assert.True(m != null);
+    Assert.Equal(2, r.GroupCount());
+    Assert.Equal("name",  m.Group(1));
+    Assert.Equal("alice", m.Group(2));
+}
+
+// ── Error: malformed `(?…)` ─────────────────────────────────────────────
+
+[Test]
+void test_unsupported_question_construct_throws() {
+    // `(?=foo)` lookahead, `(?P<name>...)` Python-style named group, etc.
+    // are not in v0 scope — must error cleanly.
+    bool threw = false;
+    try { Regex r = Regex.Compile("(?=foo)"); }
+    catch (RegexException e) { threw = true; }
+    Assert.True(threw);
+}
