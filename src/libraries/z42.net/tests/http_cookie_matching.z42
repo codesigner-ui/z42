@@ -1,0 +1,77 @@
+// add-z42-net-http-cookies (2026-05-26): cookie matching rules.
+namespace Z42NetHttpCookieMatchingTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Http;
+
+[Test]
+void test_exact_domain_match() {
+    Cookie c = new Cookie("k", "v");
+    c.Domain = "example.com";
+    c.Path   = "/";
+    Assert.True(c.Matches("example.com", "/", false));
+    Assert.False(c.Matches("other.com", "/", false));
+}
+
+[Test]
+void test_subdomain_suffix_match() {
+    Cookie c = new Cookie("k", "v");
+    c.Domain = "example.com";
+    c.Path   = "/";
+    // RFC 6265 §5.4: cookie matches subdomain if request host ends with .cookie.domain
+    Assert.True(c.Matches("api.example.com", "/", false));
+    Assert.True(c.Matches("a.b.example.com", "/", false));
+    Assert.False(c.Matches("notexample.com", "/", false));
+    Assert.False(c.Matches("examplecom", "/", false));
+}
+
+[Test]
+void test_path_prefix_match() {
+    Cookie c = new Cookie("k", "v");
+    c.Domain = "ex.com";
+    c.Path   = "/api";
+    Assert.True(c.Matches("ex.com", "/api", false));
+    Assert.True(c.Matches("ex.com", "/api/users", false));
+    Assert.False(c.Matches("ex.com", "/apixyz", false));
+    Assert.False(c.Matches("ex.com", "/", false));
+    Assert.False(c.Matches("ex.com", "/other", false));
+}
+
+[Test]
+void test_root_path_matches_all() {
+    Cookie c = new Cookie("k", "v");
+    c.Domain = "ex.com";
+    c.Path   = "/";
+    Assert.True(c.Matches("ex.com", "/", false));
+    Assert.True(c.Matches("ex.com", "/foo", false));
+    Assert.True(c.Matches("ex.com", "/a/b/c", false));
+}
+
+[Test]
+void test_secure_flag_blocks_plain_http() {
+    Cookie c = new Cookie("k", "v");
+    c.Domain = "ex.com";
+    c.Path   = "/";
+    c.Secure = true;
+    Assert.False(c.Matches("ex.com", "/", false));
+    Assert.True(c.Matches("ex.com", "/", true));
+}
+
+[Test]
+void test_empty_domain_matches_any_host() {
+    // V0: cookie without Domain has empty .Domain → matches any host
+    Cookie c = new Cookie("k", "v");
+    c.Domain = "";
+    c.Path   = "/";
+    Assert.True(c.Matches("anywhere.example.com", "/", false));
+}
+
+[Test]
+void test_leading_dot_domain_stripped_for_compare() {
+    Cookie c = new Cookie("k", "v");
+    c.Domain = ".example.com";
+    c.Path   = "/";
+    Assert.True(c.Matches("example.com", "/", false));
+    Assert.True(c.Matches("sub.example.com", "/", false));
+}

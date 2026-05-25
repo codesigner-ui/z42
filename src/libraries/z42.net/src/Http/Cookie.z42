@@ -1,0 +1,108 @@
+namespace Std.Net.Http;
+
+using Std;
+
+// add-z42-net-http-cookies (2026-05-26): HTTP cookie value record.
+//
+// Subset of RFC 6265 §5.3 cookie model — name/value plus attributes the
+// client cares about for storage and matching. SameSite is parsed but
+// not enforced (v0 doesn't have a cross-origin model in HttpClient).
+public class Cookie {
+    public string Name;
+    public string Value;
+    public string Domain;
+    public string Path;
+    public bool   Secure;
+    public bool   HttpOnly;
+    /// Absolute expiry as unix-seconds. 0 = session cookie (cleared on jar reset).
+    public long   ExpiresUnixSec;
+
+    public Cookie(string name, string value) {
+        this.Name           = name;
+        this.Value          = value;
+        this.Domain         = "";
+        this.Path           = "/";
+        this.Secure         = false;
+        this.HttpOnly       = false;
+        this.ExpiresUnixSec = 0L;
+    }
+
+    /// True if this cookie has expired at `nowUnixSec`. Session cookies
+    /// (ExpiresUnixSec == 0) never report expired by time.
+    public bool IsExpired(long nowUnixSec) {
+        if (this.ExpiresUnixSec == 0L) return false;
+        return this.ExpiresUnixSec <= nowUnixSec;
+    }
+
+    /// True if this cookie should be sent on a request to (host, path, scheme).
+    /// Implements RFC 6265 §5.4 with simplifications (no Public Suffix List).
+    public bool Matches(string host, string path, bool isSecure) {
+        // Secure-flag rule
+        if (this.Secure && !isSecure) return false;
+        // Domain match — cookie domain matches request host as suffix.
+        if (this.Domain.Length > 0) {
+            string h = host.ToLower();
+            string d = this.Domain.ToLower();
+            // Leading "." per legacy convention — strip for compare.
+            if (d.CharAt(0) == '.') {
+                d = Cookie._substringFrom(d, 1);
+            }
+            if (h != d && !Cookie._endsWith(h, "." + d)) {
+                return false;
+            }
+        }
+        // Path match — request path starts with cookie path.
+        if (!Cookie._pathMatches(path, this.Path)) return false;
+        return true;
+    }
+
+    // ── String helpers ───────────────────────────────────────────────────
+
+    static bool _pathMatches(string requestPath, string cookiePath) {
+        // RFC 6265 §5.1.4: request path matches cookie path if:
+        //   - equal, OR
+        //   - cookie path is "/", OR
+        //   - request starts with cookie path AND (request continues with "/"
+        //     OR cookie path itself ends with "/")
+        if (cookiePath == "/") return true;
+        if (requestPath == cookiePath) return true;
+        if (Cookie._startsWith(requestPath, cookiePath)) {
+            if (cookiePath.CharAt(cookiePath.Length - 1) == '/') return true;
+            if (requestPath.Length > cookiePath.Length
+                && requestPath.CharAt(cookiePath.Length) == '/') return true;
+        }
+        return false;
+    }
+
+    static bool _startsWith(string s, string prefix) {
+        if (s.Length < prefix.Length) return false;
+        int i = 0;
+        while (i < prefix.Length) {
+            if (s.CharAt(i) != prefix.CharAt(i)) return false;
+            i = i + 1;
+        }
+        return true;
+    }
+
+    static bool _endsWith(string s, string suffix) {
+        if (s.Length < suffix.Length) return false;
+        int off = s.Length - suffix.Length;
+        int i = 0;
+        while (i < suffix.Length) {
+            if (s.CharAt(off + i) != suffix.CharAt(i)) return false;
+            i = i + 1;
+        }
+        return true;
+    }
+
+    static string _substringFrom(string s, int start) {
+        if (start >= s.Length) return "";
+        char[] buf = new char[s.Length - start];
+        int i = 0;
+        while (i < buf.Length) {
+            buf[i] = s.CharAt(start + i);
+            i = i + 1;
+        }
+        return String.FromChars(buf);
+    }
+}

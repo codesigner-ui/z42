@@ -1,0 +1,91 @@
+// add-z42-net-http-cookies (2026-05-26): Set-Cookie parsing edge cases.
+namespace Z42NetHttpCookieParseTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Http;
+
+[Test]
+void test_parse_simple_name_value() {
+    Cookie c = CookieJar._parseSetCookie("session=abc123", "example.com", "/", 1700000000L);
+    Assert.True(c != null);
+    Assert.Equal("session", c.Name);
+    Assert.Equal("abc123", c.Value);
+    Assert.Equal("example.com", c.Domain);
+    Assert.Equal("/", c.Path);
+    Assert.False(c.Secure);
+    Assert.False(c.HttpOnly);
+    Assert.Equal((long)0, c.ExpiresUnixSec);
+}
+
+[Test]
+void test_parse_with_all_attributes() {
+    Cookie c = CookieJar._parseSetCookie(
+        "auth=tok; Domain=api.example.com; Path=/v1; Secure; HttpOnly; Max-Age=3600",
+        "example.com", "/", 1700000000L);
+    Assert.True(c != null);
+    Assert.Equal("auth", c.Name);
+    Assert.Equal("tok", c.Value);
+    Assert.Equal("api.example.com", c.Domain);
+    Assert.Equal("/v1", c.Path);
+    Assert.True(c.Secure);
+    Assert.True(c.HttpOnly);
+    Assert.Equal(1700003600L, c.ExpiresUnixSec);
+}
+
+[Test]
+void test_parse_attribute_case_insensitive() {
+    Cookie c = CookieJar._parseSetCookie(
+        "x=y; SECURE; httponly; MAX-AGE=10",
+        "ex.com", "/", 100L);
+    Assert.True(c.Secure);
+    Assert.True(c.HttpOnly);
+    Assert.Equal(110L, c.ExpiresUnixSec);
+}
+
+[Test]
+void test_parse_no_value() {
+    Cookie c = CookieJar._parseSetCookie("flag=", "ex.com", "/", 0L);
+    Assert.True(c != null);
+    Assert.Equal("flag", c.Name);
+    Assert.Equal("", c.Value);
+}
+
+[Test]
+void test_parse_malformed_no_eq_returns_null() {
+    Assert.True(CookieJar._parseSetCookie("noequals", "ex.com", "/", 0L) == null);
+    Assert.True(CookieJar._parseSetCookie("", "ex.com", "/", 0L) == null);
+}
+
+[Test]
+void test_parse_strips_leading_dot_from_domain() {
+    Cookie c = CookieJar._parseSetCookie(
+        "x=y; Domain=.example.com",
+        "example.com", "/", 0L);
+    // .Domain is stored as given; matching strips leading dot.
+    Assert.Equal(".example.com", c.Domain);
+    Assert.True(c.Matches("api.example.com", "/", false));
+    Assert.True(c.Matches("example.com", "/", false));
+}
+
+[Test]
+void test_default_path_from_request() {
+    // Request to "/foo/bar/page" → default Path = "/foo/bar"
+    Cookie c = CookieJar._parseSetCookie("k=v", "ex.com", "/foo/bar/page", 0L);
+    Assert.Equal("/foo/bar", c.Path);
+
+    // Root path → "/"
+    Cookie c2 = CookieJar._parseSetCookie("k=v", "ex.com", "/", 0L);
+    Assert.Equal("/", c2.Path);
+
+    // "/foo" → "/"  (last slash at 0 → fallback)
+    Cookie c3 = CookieJar._parseSetCookie("k=v", "ex.com", "/foo", 0L);
+    Assert.Equal("/", c3.Path);
+}
+
+[Test]
+void test_max_age_negative_expires_immediately() {
+    Cookie c = CookieJar._parseSetCookie("k=v; Max-Age=-1", "ex.com", "/", 1000L);
+    // ExpiresUnixSec = 1 → IsExpired at any reasonable now.
+    Assert.True(c.IsExpired(2L));
+}

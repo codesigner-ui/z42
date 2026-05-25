@@ -1,0 +1,120 @@
+// add-z42-net-http-cookies (2026-05-26): end-to-end — server sets cookie,
+// client jar ingests, client re-sends on next request.
+namespace Z42NetHttpCookieJarE2ETests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+[Test]
+void test_jar_round_trip_against_server() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        // Handle 2 requests:
+        // 1) /login — set session cookie
+        // 2) /me — read Cookie header and echo back the session value
+        server.HandleNext((HttpServerContext ctx) => {
+            var resp = new HttpResponse(200, "OK", new HttpHeaders(), Utf8.GetBytes("welcome"));
+            resp.Headers.Set("Content-Type", "text/plain");
+            resp.Headers.Add("Set-Cookie", "session=tok42; Path=/; Max-Age=3600");
+            ctx.Send(resp);
+        });
+        server.HandleNext((HttpServerContext ctx) => {
+            string cookieHdr = ctx.Request.Headers.Get("Cookie");
+            string body;
+            if (cookieHdr == null) { body = "no-cookie"; }
+            else { body = "cookie:" + cookieHdr; }
+            ctx.SendText(200, body);
+        });
+    });
+
+    var client = new HttpClient();
+    var jar = new CookieJar();
+    long now = 1700000000L;
+
+    // Login
+    HttpResponse loginResp = client.Get(url + "login");
+    Assert.Equal(200, loginResp.StatusCode);
+    jar.IngestFromResponse(loginResp, "127.0.0.1", "/login", now);
+    Assert.Equal(1, jar.LiveCount(now));
+
+    // Subsequent request — send Cookie header manually (v0 doesn't auto-jar
+    // on HttpClient; that's `add-z42-net-http-cookies-auto` follow-up)
+    string cookieHdr = jar.CookieHeaderFor("127.0.0.1", "/me", false, now);
+    Assert.Equal("session=tok42", cookieHdr);
+
+    var meReq = new HttpRequest(HttpMethod.Get, url + "me");
+    meReq.SetHeader("Cookie", cookieHdr);
+    HttpResponse meResp = client.Send(meReq);
+    Assert.Equal("cookie:session=tok42", meResp.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_jar_replaces_cookie_with_same_name_domain_path() {
+    var jar = new CookieJar();
+    Cookie a = new Cookie("k", "v1");
+    a.Domain = "ex.com";
+    a.Path   = "/";
+    jar.Add(a);
+
+    Cookie b = new Cookie("k", "v2");   // same name/domain/path → replace
+    b.Domain = "ex.com";
+    b.Path   = "/";
+    jar.Add(b);
+
+    Assert.Equal(1, jar.LiveCount(0L));
+    Assert.Equal("k=v2", jar.CookieHeaderFor("ex.com", "/", false, 0L));
+}
+
+[Test]
+void test_jar_multiple_cookies_combined() {
+    var jar = new CookieJar();
+    Cookie a = new Cookie("a", "1");
+    a.Domain = "ex.com";
+    a.Path   = "/";
+    jar.Add(a);
+    Cookie b = new Cookie("b", "2");
+    b.Domain = "ex.com";
+    b.Path   = "/";
+    jar.Add(b);
+
+    string hdr = jar.CookieHeaderFor("ex.com", "/", false, 0L);
+    // Either order acceptable per RFC 6265 §5.4. We emit insertion order.
+    Assert.Equal("a=1; b=2", hdr);
+}
+
+[Test]
+void test_jar_excludes_expired() {
+    var jar = new CookieJar();
+    Cookie c = new Cookie("expired", "old");
+    c.Domain = "ex.com";
+    c.Path   = "/";
+    c.ExpiresUnixSec = 100L;
+    jar.Add(c);
+
+    // At nowUnixSec = 200, cookie is expired
+    Assert.Equal(0, jar.LiveCount(200L));
+    Assert.Equal("", jar.CookieHeaderFor("ex.com", "/", false, 200L));
+}
+
+[Test]
+void test_jar_includes_session_cookie() {
+    var jar = new CookieJar();
+    Cookie c = new Cookie("sess", "abc");
+    c.Domain = "ex.com";
+    c.Path   = "/";
+    // ExpiresUnixSec stays 0 → session cookie, never expires by time
+    jar.Add(c);
+
+    Assert.Equal(1, jar.LiveCount(99999999L));
+    Assert.Equal("sess=abc", jar.CookieHeaderFor("ex.com", "/", false, 99999999L));
+}
