@@ -726,7 +726,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 **ROI**：高。半天就能把 EnvFilter 接上 + 加 10 处 trace!。
 
-## D3. 结构化事件流
+## D3. 结构化事件流 ✅ Phase 1 落地
 
 ### CoreCLR
 - **EventPipe** ([`vm/eventpipeinternal.h`](../../../runtime/src/coreclr/vm/eventpipeinternal.h))：统一事件流，多 provider（GC / JIT / Thread / Type / Loader / Method / Assembly / Exception）
@@ -734,10 +734,11 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 - 内置 circular buffer，可写 `.nettrace` 文件
 - ETW 兼容（Windows native）+ EventPipe 协议（cross-platform）
 
-### z42 现状
-- 仅 [`gc/types.rs:74`](../src/runtime/src/gc/types.rs#L74) `GcObserver` trait + 5 个 `GcEvent` variants（`BeforeCollect` / `AfterCollect` / `AllocationPressure` / `NearHeapLimit` / `OutOfMemory`）
-- 仅 GC 域有事件流 —— JIT / interp / exception / type-load 都无
-- 无外部订阅协议
+### z42 现状 ✅
+- [`gc/types.rs:74`](../src/runtime/src/gc/types.rs#L74) `GcObserver` trait + 5 个 `GcEvent` variants ✅
+- **Phase 1 (add-runtime-observer, 2026-05-26)**：[`observer::RuntimeObserver`](../src/runtime/src/observer.rs) trait + `RuntimeEvent` enum (Phase 1: `ModuleLoaded` + `Custom` escape hatch) + `RuntimeObserverRegistry` on `VmCore` + `VmContext::add_runtime_observer` / `fire_runtime_event` accessors。Demo emit site：`main.rs` 每个 boot-time `load_artifact` 成功后 replay-emit `ModuleLoaded`。
+- **Phase 2 待补**（独立小 refactor）：JitCompiled in `jit::compile_module` / ExceptionThrown+Caught in `exception::*` / NativeCallEntered in `interp::exec_native` / lazy_loader emit per on-demand zpkg
+- **Phase 3 推迟**：外部 IPC 订阅协议（dotnet-trace 等价）、`.nettrace` 兼容 binary format、circular buffer with overrun policy
 
 ### 建议 ❌
 1. **扩展 observer 到非 GC 域**：
@@ -934,7 +935,8 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
-| ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters 81e1cbba (2026-05-26); D3 RuntimeObserver still pending | 4 | Phase 1 done | ops |
+| ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
+| ✅ | ~~`RuntimeObserver` (D3 Phase 1)~~ — add-runtime-observer (2026-05-26); ModuleLoaded + Custom variants live; JIT/exception/native emit sites are Phase 2 follow-ups | 4 | done | ops |
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
 | **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
@@ -1362,7 +1364,8 @@ pub struct ScriptObject {
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
-| ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters 81e1cbba (2026-05-26); D3 RuntimeObserver still pending | 4 | Phase 1 done | ops |
+| ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters a9ba398b (2026-05-26) | 4 | done | ops |
+| ✅ | ~~`RuntimeObserver` (D3 Phase 1)~~ — add-runtime-observer (2026-05-26); ModuleLoaded + Custom variants live; JIT/exception/native emit sites are Phase 2 follow-ups | 4 | done | ops |
 | **P2** | **VmContext trait 拆分**（E1.P1）— GcAccess / ExceptionAccess 等 | 5 | 5-7 天 | arch |
 | **P2** | **`interfaces/` 契约层**（E1.P3）— 对齐 CoreCLR `inc/` | 5 | 7-10 天 | arch |
 | **P2** | **Function 热 / 冷拆分**（E2.P5）— 200B → 80B + 间接 cold | 5 | 3-5 天 | data |

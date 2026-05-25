@@ -441,6 +441,13 @@ fn main() -> Result<()> {
     // for the lazy loader — these are excluded from on-demand candidate set).
     let mut initially_loaded_zpkgs: Vec<String> = Vec::new();
 
+    // add-runtime-observer (2026-05-26): collect (name, byte_size) for every
+    // module loaded during boot, then replay-emit as `ModuleLoaded` events
+    // AFTER VmContext::with_module installs the observer registry. We can't
+    // emit at load time because the registry doesn't exist until VmCore is
+    // built. Phase 2: lazy_loader will emit synchronously per on-demand load.
+    let mut loaded_for_replay: Vec<(String, Option<u64>)> = Vec::new();
+
     // 5.1b — unconditionally try to load z42.core.zpkg if present.
     if let Some(ref dir) = libs_dir {
         let core_path = dir.join("z42.core.zpkg");
@@ -450,6 +457,8 @@ fn main() -> Result<()> {
             match z42::metadata::load_artifact(&core_str) {
                 Ok(a) => {
                     tracing::debug!("loaded stdlib z42.core from {core_str}");
+                    let byte_size = std::fs::metadata(&core_path).ok().map(|m| m.len());
+                    loaded_for_replay.push(("z42.core.zpkg".to_string(), byte_size));
                     modules.push(a.module);
                     loaded_paths.insert(core_canonical);
                     initially_loaded_zpkgs.push("z42.core.zpkg".to_string());
@@ -463,6 +472,11 @@ fn main() -> Result<()> {
 
     // 5.1c — load the user artifact.
     let user_artifact = z42::metadata::load_artifact(file)?;
+    // add-runtime-observer: record user artifact for ModuleLoaded replay.
+    {
+        let byte_size = std::fs::metadata(file).ok().map(|m| m.len());
+        loaded_for_replay.push((file.to_string(), byte_size));
+    }
 
     // 5.1d — dependency loading strategy:
     //   Interp mode → pure lazy. Zpkgs are loaded on demand when the
@@ -568,6 +582,17 @@ fn main() -> Result<()> {
     // pass when a subclass-only zpkg is lazy-loaded later.
     let type_registry = ctx.module().unwrap().type_registry.clone();
     ctx.seed_lazy_loader_types(&type_registry);
+
+    // add-runtime-observer (2026-05-26): replay-emit ModuleLoaded for every
+    // module loaded during boot. Empty registry = no-op. Once embedders
+    // install observers (e.g. via z42.embedding API), they'll see boot loads
+    // as if they had subscribed before startup.
+    for (name, byte_size) in loaded_for_replay.drain(..) {
+        ctx.fire_runtime_event(&z42::observer::RuntimeEvent::ModuleLoaded {
+            name,
+            byte_size,
+        });
+    }
 
     let default_mode = match cli.mode {
         #[cfg(feature = "jit")]

@@ -36,6 +36,12 @@ pub mod config;
 // increment sites in individual follow-up refactors.
 pub mod counters;
 
+// Push-based runtime event stream — symmetric to existing GcObserver
+// but for non-GC events (module loads + future JIT compiles / exceptions /
+// native calls). docs/review.md Part 4 D3 Phase 1 (2026-05-26). Phase 2
+// wires individual emit sites in follow-up refactors.
+pub mod observer;
+
 // POSIX signal handler — captures z42 call stack on hard crashes
 // (SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS). Phase 2 of D4 panic-hook
 // story (Phase 1 = main.rs install_panic_hook). Windows VEH = Phase 2.1.

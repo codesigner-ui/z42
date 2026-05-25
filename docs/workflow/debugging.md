@@ -114,6 +114,43 @@ CLI flag 与 `--info` 不同：`--info` 是 boot-time build 信息；`--print-st
 > 脚本层 `Std.Diagnostics.RuntimeStats.Snapshot()` 暴露 API 也在 Phase 2。
 > 定时打印 / Prometheus / OTLP exporter 见 docs/review.md Part 4 D6。
 
+### `RuntimeObserver` —— push-based 事件流（embedding API）
+
+VM 用 push-based 事件流通知**非-GC**运行时活动（模块加载、未来 JIT 编译 / 异常 throw/catch / native 调用）。
+GC 事件保留在独立的 `GcObserver`（不破坏既有 embedder）。
+
+Embedder 通过 `VmContext::add_runtime_observer(Arc<dyn RuntimeObserver>)` 注册：
+
+```rust
+use std::sync::Arc;
+use z42::observer::{RuntimeObserver, RuntimeEvent};
+
+#[derive(Debug)]
+struct JsonLineExporter;
+
+impl RuntimeObserver for JsonLineExporter {
+    fn on_event(&self, evt: &RuntimeEvent) {
+        match evt {
+            RuntimeEvent::ModuleLoaded { name, byte_size } => {
+                eprintln!(r#"{{"kind":"ModuleLoaded","name":{name:?},"byte_size":{byte_size:?}}}"#);
+            }
+            RuntimeEvent::Custom { source, message } => {
+                eprintln!(r#"{{"kind":"Custom","source":{source:?},"message":{message:?}}}"#);
+            }
+        }
+    }
+}
+
+ctx.add_runtime_observer(Arc::new(JsonLineExporter));
+```
+
+Phase 1 emit site：`main.rs` 每个 boot-time `load_artifact` 成功后 replay-emit 一条 `ModuleLoaded`
+（含文件名 + 字节数）。Phase 2 wire 其他 emit 点（JIT / exception / native / lazy loader）。
+
+Observer 回调约束：**Send + Sync**（embedder 可能跨 thread 转发到 async runtime / 监控管线）；
+**禁止 panic**（VM fire-loop 不 catch unwind，panic 会 abort 整个进程）；
+**快速返回**（重活走 channel 给 worker thread，不要阻塞 hot path）。
+
 ## 当前可用
 
 ### 编译器（C#）

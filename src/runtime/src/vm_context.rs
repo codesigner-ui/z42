@@ -292,6 +292,14 @@ pub struct VmCore {
     /// `Arc` wrapper enables cheap cloning into Phase 2 increment sites
     /// that don't already have `&VmCore` access. docs/review.md Part 4 D6.
     pub counters: Arc<crate::counters::RuntimeCounters>,
+
+    /// **add-runtime-observer (2026-05-26)**: push-based event stream
+    /// registry. Symmetric to existing `GcObserver` (which stays in the
+    /// heap) but for non-GC events (`ModuleLoaded`, future JIT compile /
+    /// exception / native call). Embedders register via
+    /// [`VmContext::add_runtime_observer`]; subsystems fire via
+    /// [`VmContext::fire_runtime_event`]. docs/review.md Part 4 D3.
+    pub runtime_observers: crate::observer::RuntimeObserverRegistry,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -381,6 +389,23 @@ impl VmContext {
     /// docs/review.md Part 4 D6 Phase 1 (2026-05-26).
     pub fn counters(&self) -> &crate::counters::RuntimeCounters {
         &self.core.counters
+    }
+
+    /// Register a [`crate::observer::RuntimeObserver`]. The observer
+    /// receives every subsequent [`crate::observer::RuntimeEvent`] fired
+    /// via [`Self::fire_runtime_event`]. Multiple observers fan-out.
+    /// docs/review.md Part 4 D3 Phase 1 (2026-05-26).
+    pub fn add_runtime_observer(&self, obs: Arc<dyn crate::observer::RuntimeObserver>) {
+        self.core.runtime_observers.add(obs);
+    }
+
+    /// Fire a runtime event to all registered observers. Returns the
+    /// number of observers that received the event. No-op when registry
+    /// is empty (cost = one lock acquire + length check). Safe to call
+    /// from any thread; observer callbacks must be `Send + Sync` so they
+    /// handle cross-thread invocation themselves.
+    pub fn fire_runtime_event(&self, event: &crate::observer::RuntimeEvent) -> usize {
+        self.core.runtime_observers.fire(event)
     }
 
     /// add-gc-safepoint-counter-throttling (2026-05-21): force the next
@@ -493,6 +518,10 @@ impl VmContext {
             // add-runtime-counters (2026-05-26): all-zero start; Phase 1
             // increment site = corelib::exec_builtin (builtin_calls).
             counters: Arc::new(crate::counters::RuntimeCounters::new()),
+            // add-runtime-observer (2026-05-26): empty registry; embedders
+            // attach via `VmContext::add_runtime_observer`. Phase 1 emits
+            // ModuleLoaded from main.rs after each load_artifact.
+            runtime_observers: crate::observer::RuntimeObserverRegistry::new(),
         });
 
         // add-os-signal-handler (2026-05-25): register this Arc<VmCore> into
