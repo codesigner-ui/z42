@@ -2,6 +2,7 @@ namespace Std.Net.Http;
 
 using Std;
 using Std.IO;
+using Std.Threading;
 using Std.Net.Sockets;
 
 // add-z42-net-http-server (2026-05-25): single-threaded HTTP/1.1 server.
@@ -125,6 +126,43 @@ public class HttpServer {
         }
     }
 
+    /// Accept-loop with thread-per-connection. Each accepted TcpClient is
+    /// handed to a fresh `Std.Threading.Thread` running the handler; the
+    /// main accept loop continues immediately without waiting.
+    ///
+    /// Worker threads are fire-and-forget (no Join) — they drain when their
+    /// request completes. Handler MUST be thread-safe (avoid shared mutable
+    /// state or guard it).
+    ///
+    /// `Stop()` closes the listener which causes the next AcceptTcpClient
+    /// to throw; in-flight workers continue but are not joined on Stop. For
+    /// graceful shutdown, application should drain via cooperation.
+    ///
+    /// Trade-off: unbounded thread spawn. A request spike spawns a thread
+    /// per concurrent connection. Workload-bounded variant is
+    /// `add-z42-net-http-server-pool` follow-up.
+    public void ServeThreaded(Action<HttpServerContext> handler) {
+        while (!this._stopped) {
+            if (this._listener == null) return;
+            TcpClient peer;
+            try {
+                peer = this._listener.AcceptTcpClient();
+            } catch (SocketClosedException e) {
+                return;
+            } catch (Exception e) {
+                ConsoleError.WriteLine("HttpServer.ServeThreaded: accept error: " + e.Message);
+                continue;
+            }
+            // Dispatch this peer to a worker thread; main loop continues.
+            // Capture `peer` and `handler` (handler is the outer parameter,
+            // shared by all workers — must be thread-safe per docstring).
+            TcpClient workerPeer = peer;
+            Thread.Start(() => {
+                this._workerHandle(workerPeer, handler);
+            });
+        }
+    }
+
     /// Signal the serve loop to exit + close the listener. Idempotent.
     /// If `Serve` is running in another thread, the listener close causes
     /// `AcceptTcpClient` to throw and Serve to return.
@@ -142,6 +180,26 @@ public class HttpServer {
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────
+
+    /// Worker body for `ServeThreaded` — handles one accepted connection
+    /// then drops it. Pulled out of the spawning lambda because the IR
+    /// verifier doesn't accept nested try/catch with no-op handlers in
+    /// thread-spawn closures (register-flow check tripped on empty catch
+    /// blocks).
+    private void _workerHandle(TcpClient workerPeer, Action<HttpServerContext> handler) {
+        NetworkStream stream = null;
+        try {
+            stream = workerPeer.GetStream();
+            this._dispatchOne(stream, handler);
+        } catch (Exception e) {
+            // Per-worker error — swallow; logging would race other workers.
+        }
+        try {
+            workerPeer.Dispose();
+        } catch (Exception e2) {
+            // Best-effort cleanup.
+        }
+    }
 
     private void _tryEmitErrorResponse(NetworkStream stream, int code, string reason, string body) {
         try {
