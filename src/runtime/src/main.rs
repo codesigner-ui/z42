@@ -142,6 +142,69 @@ fn default_filter(verbose: bool) -> &'static str {
     if verbose { "z42=info" } else { "z42=warn" }
 }
 
+/// Install a custom panic hook that prints VM context + Rust backtrace on
+/// internal panic. When `Z42_CRASH_DIR` env var is set and writable, also
+/// writes the report to `<dir>/z42vm-crash-<unix_ts_ns>.txt` for offline
+/// post-mortem. docs/review.md Part 4 D4 — Phase 1 (2026-05-25).
+///
+/// Phase 1 covers Rust `panic!()` / unwrap / index OOB / assertion failures.
+/// Phase 2 (OS signal handler for SIGSEGV / SIGABRT) is a separate spec —
+/// needs the `signal-hook` crate and async-signal-safe primitives.
+///
+/// Hook composes (not replaces) the default — calls default print first,
+/// then appends z42-specific context, then aborts to preserve "panic = bug,
+/// can't be caught" semantics.
+fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default(info);
+
+        let mut report = String::new();
+        report.push_str("\n=== z42vm internal panic ===\n");
+        report.push_str(&format!("z42vm version: {}\n", env!("CARGO_PKG_VERSION")));
+        report.push_str(&format!("target: {}/{}\n", std::env::consts::OS, std::env::consts::ARCH));
+        report.push_str(&format!("build profile: {}\n",
+            if cfg!(debug_assertions) { "debug" } else { "release" }));
+
+        if let Some(loc) = info.location() {
+            report.push_str(&format!("panic location: {}:{}:{}\n", loc.file(), loc.line(), loc.column()));
+        }
+
+        let payload = info.payload();
+        let msg: &str = payload.downcast_ref::<&str>().copied()
+            .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+            .unwrap_or("(non-string payload)");
+        report.push_str(&format!("payload: {msg}\n"));
+
+        // Rust backtrace — env var `RUST_BACKTRACE=1` controls capture
+        let bt = std::backtrace::Backtrace::capture();
+        report.push_str(&format!("rust backtrace:\n{bt}\n"));
+
+        report.push_str("(z42 call stack capture pending — Part 4 D4 Phase 2)\n");
+        report.push_str("============================\n");
+
+        // Always print to stderr
+        eprint!("{report}");
+
+        // Optionally persist to Z42_CRASH_DIR for offline analysis
+        if let Ok(dir) = std::env::var("Z42_CRASH_DIR") {
+            let dir = std::path::PathBuf::from(dir);
+            // Best-effort: create dir, write file, swallow errors (already panicking).
+            let _ = std::fs::create_dir_all(&dir);
+            let ts_ns = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0);
+            let path = dir.join(format!("z42vm-crash-{ts_ns}.txt"));
+            if let Err(e) = std::fs::write(&path, &report) {
+                eprintln!("[panic hook] failed to write crash report to {}: {e}", path.display());
+            } else {
+                eprintln!("[panic hook] crash report written to {}", path.display());
+            }
+        }
+    }));
+}
+
 /// Print runtime build information to stdout. Triggered by `--info`.
 /// Output is intentionally human-readable + grep-friendly (one `key: value`
 /// per line). docs/review.md Part 4 D5 (2026-05-25).
@@ -323,6 +386,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     init_tracing(cli.verbose);
+    install_panic_hook();
 
     // --info: print build info to stdout and exit before doing any module loading.
     if cli.info {
