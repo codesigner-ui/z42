@@ -32,11 +32,20 @@ public sealed class YamlParser {
     private int    _line;
     private int    _col;
 
+    // Anchor table (per document — reset between docs in ParseAllDocuments).
+    // Parallel arrays: anchor name → value. add-yaml-anchors-aliases (2026-05-25).
+    private string[]    _anchorNames;
+    private YamlValue[] _anchorValues;
+    private int         _anchorCount;
+
     public YamlParser(string src) {
         this._src  = src;
         this._pos  = 0;
         this._line = 1;
         this._col  = 1;
+        this._anchorNames  = new string[4];
+        this._anchorValues = new YamlValue[4];
+        this._anchorCount  = 0;
     }
 
     // ── Public entry ─────────────────────────────────────────────────────
@@ -98,6 +107,8 @@ public sealed class YamlParser {
     /// Stops at EOF or a `---` / `...` document boundary, leaving the marker
     /// unconsumed so the caller can decide what to do with it.
     private YamlValue _ParseOneDocBody() {
+        // Reset anchor table — anchors are scoped per-document.
+        this._anchorCount = 0;
         this._SkipBlankLines();
         if (this._pos >= this._src.Length) {
             return YamlValue.OfNull();
@@ -274,14 +285,21 @@ public sealed class YamlParser {
                 this._SkipInlineSpacesAndOptionalComment();
                 this._ConsumeRestOfLine();
             } else {
-                // Block scalar indicator (`|` / `>`) takes precedence over
-                // plain-scalar parsing — see add-yaml-multiline-strings.
-                YamlValue block = this._TryParseBlockScalar(indent);
-                if (block != null) {
-                    val = block;
+                // Anchor (`&name`) / alias (`*name`) takes precedence — they
+                // wrap or replace the value that follows.
+                YamlValue anchored = this._TryParseAnchorOrAlias(indent);
+                if (anchored != null) {
+                    val = anchored;
                 } else {
-                    val = this._ParseBlockScalarValue();
-                    this._ConsumeRestOfLine();
+                    // Block scalar indicator (`|` / `>`) takes precedence over
+                    // plain-scalar parsing — see add-yaml-multiline-strings.
+                    YamlValue block = this._TryParseBlockScalar(indent);
+                    if (block != null) {
+                        val = block;
+                    } else {
+                        val = this._ParseBlockScalarValue();
+                        this._ConsumeRestOfLine();
+                    }
                 }
             }
 
@@ -420,14 +438,18 @@ public sealed class YamlParser {
                     item.Set(key, val);
                     this._ConsumeRestOfLine();
                 } else {
-                    // Block scalar (`- |` / `- >`) takes precedence over
-                    // plain-scalar parsing.
-                    YamlValue block = this._TryParseBlockScalar(indent);
-                    if (block != null) {
-                        item = block;
+                    // Anchor / alias first; block scalar next; plain last.
+                    YamlValue anchored = this._TryParseAnchorOrAlias(indent);
+                    if (anchored != null) {
+                        item = anchored;
                     } else {
-                        item = this._ParseBlockScalarValue();
-                        this._ConsumeRestOfLine();
+                        YamlValue block = this._TryParseBlockScalar(indent);
+                        if (block != null) {
+                            item = block;
+                        } else {
+                            item = this._ParseBlockScalarValue();
+                            this._ConsumeRestOfLine();
+                        }
                     }
                 }
             }
@@ -662,6 +684,128 @@ public sealed class YamlParser {
         }
         string raw = this._ConsumeLinePlainScalar();
         return this._ParseScalarLiteral(raw);
+    }
+
+    /// Try to parse an anchor declaration (`&name`) or alias reference
+    /// (`*name`) at the current position. Returns the resulting YamlValue
+    /// if either was found, `null` otherwise. `parentIndent` is the indent
+    /// of the line containing the indicator; needed when the anchored value
+    /// is a block at deeper indent. add-yaml-anchors-aliases (2026-05-25).
+    private YamlValue _TryParseAnchorOrAlias(int parentIndent) {
+        if (this._pos >= this._src.Length) { return null; }
+        char c = this._src.CharAt(this._pos);
+        if (c != '&' && c != '*') { return null; }
+        bool isAnchor = (c == '&');
+        this._Advance();
+        string name = this._ParseAnchorName();
+        if (name.Length == 0) {
+            throw this._Err(isAnchor
+                ? "expected anchor name after '&'"
+                : "expected anchor name after '*'");
+        }
+        if (!isAnchor) {
+            // Alias: look up and return a deep clone.
+            YamlValue target = this._LookupAnchor(name);
+            if (target == null) {
+                throw this._Err("undefined anchor: *" + name);
+            }
+            // Consume trailing whitespace + comment + EOL for the alias line.
+            this._SkipInlineSpacesAndOptionalComment();
+            this._ConsumeRestOfLine();
+            return target.DeepClone();
+        }
+        // Anchor declaration: parse the value that follows.
+        this._SkipInlineSpaces();
+        YamlValue val;
+        if (this._pos >= this._src.Length
+                || this._src.CharAt(this._pos) == '\n'
+                || this._src.CharAt(this._pos) == '\r'
+                || (this._src.CharAt(this._pos) == '#' && this._IsCommentStart())) {
+            // Block value: anchored content is on subsequent indented lines.
+            this._ConsumeRestOfLine();
+            this._SkipBlankLines();
+            if (this._pos >= this._src.Length) {
+                val = YamlValue.OfNull();
+            } else {
+                int nextIndent = this._CurrentLineIndent();
+                if (nextIndent > parentIndent) {
+                    val = this._ParseBlockValue(nextIndent);
+                } else {
+                    val = YamlValue.OfNull();
+                }
+            }
+        } else if (this._src.CharAt(this._pos) == '|' || this._src.CharAt(this._pos) == '>') {
+            // Block scalar follows the anchor on the same line.
+            YamlValue block = this._TryParseBlockScalar(parentIndent);
+            val = block != null ? block : YamlValue.OfNull();
+        } else if (this._src.CharAt(this._pos) == '[' || this._src.CharAt(this._pos) == '{') {
+            val = this._ParseFlow();
+            this._SkipInlineSpacesAndOptionalComment();
+            this._ConsumeRestOfLine();
+        } else {
+            val = this._ParseBlockScalarValue();
+            this._ConsumeRestOfLine();
+        }
+        this._RegisterAnchor(name, val);
+        return val;
+    }
+
+    /// Parse an anchor name starting at `_pos` (after the `&` or `*` sigil).
+    /// Accepts alphanumerics + `_` `-` `.` (YAML 1.2 is more permissive but
+    /// this covers all common use cases). Stops at whitespace / EOL / flow
+    /// indicators.
+    private string _ParseAnchorName() {
+        int start = this._pos;
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            bool ok = (c >= 'a' && c <= 'z')
+                || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9')
+                || c == '_' || c == '-' || c == '.';
+            if (!ok) { break; }
+            this._Advance();
+        }
+        return this._src.Substring(start, this._pos - start);
+    }
+
+    private void _RegisterAnchor(string name, YamlValue v) {
+        // Overwrite policy: YAML 1.2 allows re-declaring an anchor (later
+        // wins for subsequent aliases). Match that behaviour.
+        int i = 0;
+        while (i < this._anchorCount) {
+            if (this._anchorNames[i] == name) {
+                this._anchorValues[i] = v;
+                return;
+            }
+            i = i + 1;
+        }
+        if (this._anchorCount == this._anchorNames.Length) {
+            int newCap = this._anchorNames.Length * 2;
+            string[]    nk = new string[newCap];
+            YamlValue[] nv = new YamlValue[newCap];
+            int j = 0;
+            while (j < this._anchorCount) {
+                nk[j] = this._anchorNames[j];
+                nv[j] = this._anchorValues[j];
+                j = j + 1;
+            }
+            this._anchorNames  = nk;
+            this._anchorValues = nv;
+        }
+        this._anchorNames[this._anchorCount]  = name;
+        this._anchorValues[this._anchorCount] = v;
+        this._anchorCount = this._anchorCount + 1;
+    }
+
+    private YamlValue _LookupAnchor(string name) {
+        int i = 0;
+        while (i < this._anchorCount) {
+            if (this._anchorNames[i] == name) {
+                return this._anchorValues[i];
+            }
+            i = i + 1;
+        }
+        return null;
     }
 
     /// Try to parse a block-scalar indicator (`|` literal or `>` folded)

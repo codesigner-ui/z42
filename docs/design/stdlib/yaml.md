@@ -89,6 +89,7 @@ for the rationale on the `ParseStream` naming.
 | Scalars: single-quoted | `'don''t'` (no escapes except `''` → `'`) |
 | Scalars: block literal | `key: \|\n  Line1\n  Line2\n` → `"Line1\nLine2\n"` (newlines preserved; chomping `-` strip / `+` keep / default clip) |
 | Scalars: block folded | `key: >\n  A\n  B\n` → `"A B\n"` (consecutive non-blank lines fold to single space; blank line → `\n`) |
+| Anchors / aliases | `defaults: &defaults\n  k: v\nprod: *defaults` — per-doc scope; aliases resolve to a `DeepClone` of the anchored value (no shared mutation) |
 | Block mapping | `key: value\n` with indentation-based nesting |
 | Block sequence | `- item\n` with same indentation rules |
 | Sequence of inline mappings | `- name: bob\n- name: alice\n` |
@@ -138,15 +139,30 @@ with escapes; everything else is plain.
 
 ## Deferred / Future Work
 
-### `yaml-future-anchors`
+### ~~`yaml-future-anchors`~~ — **✅ 已落地 2026-05-25 (add-yaml-anchors-aliases)**
 
-- **来源**：add-z42-yaml v0 scope
-- **触发原因**：anchors (`&id`) / aliases (`*id`) require a parser-side
-  symbol table + value de-duplication, plus careful semantics around
-  cyclic references. Out-of-scope for v0; rarely used in z42's target
-  config files.
-- **触发条件**：use case requiring repeated value references in a
-  large config (Helm / Kubernetes manifests sometimes).
+Shipped: YAML 1.2 anchor declarations (`&name`) + alias references
+(`*name`). Per-document scope (multi-doc inputs reset the anchor table
+between docs; same anchor name reusable across docs). Resolution via
+`YamlValue.DeepClone()` — aliases are independent copies so mutating
+one alias never leaks to the source or sibling aliases (uniform clone
+semantics regardless of scalar/sequence/mapping kind).
+
+API surface unchanged — anchor/alias detection happens inside the
+parser, transparently to callers. New private `_TryParseAnchorOrAlias
+(parentIndent) → YamlValue?` is wired into mapping-value + sequence-item
+dispatch points (precedes block-scalar + plain-scalar fallbacks).
+Anchor name chars: alphanumeric + `_` `-` `.` (covers all common
+use cases; YAML 1.2 §6.9 is more permissive but rare in practice).
+
+17 tests cover inline scalar anchor/alias, string anchor, block-mapping
+anchor (kubectl/helm `defaults: &defaults` pattern), block-sequence
+anchor, anchor-in-sequence-item, anchor+flow sequence/mapping, multiple
+independent anchors, multiple aliases-to-same anchor, anchor name with
+`_` / `-`, undefined-alias error, forward-reference error, per-doc
+scope reset (cross-doc alias throws), same anchor name reused across
+docs OK, nested mapping anchor + deep clone, alias snapshot independence
+under post-parse mutation.
 
 ### `yaml-future-tags`
 

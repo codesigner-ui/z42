@@ -1,0 +1,192 @@
+// add-yaml-anchors-aliases (2026-05-25): YAML 1.2 anchor declarations
+// (`&name`) and alias references (`*name`). Per-document scope.
+namespace Z42YamlParseAnchorsAliasesTests;
+
+using Std;
+using Std.Test;
+using Std.Yaml;
+
+// ── Inline scalar anchor + alias ────────────────────────────────────────
+
+[Test]
+void test_scalar_anchor_then_alias() {
+    string src = "a: &n 42\nb: *n\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(42L, v.Get("a").AsInt());
+    Assert.Equal(42L, v.Get("b").AsInt());
+}
+
+[Test]
+void test_string_anchor_then_alias() {
+    string src = "name: &person alice\nfriend: *person\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("alice", v.Get("name").AsString());
+    Assert.Equal("alice", v.Get("friend").AsString());
+}
+
+// ── Block mapping anchor ────────────────────────────────────────────────
+
+[Test]
+void test_mapping_anchor_block_form() {
+    // Common helm / kubectl pattern.
+    string src = "defaults: &defaults\n  timeout: 30\n  retries: 3\nprod: *defaults\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(30L, v.Get("defaults").Get("timeout").AsInt());
+    Assert.Equal(30L, v.Get("prod").Get("timeout").AsInt());
+    Assert.Equal(3L,  v.Get("prod").Get("retries").AsInt());
+}
+
+[Test]
+void test_alias_is_deep_clone_not_shared() {
+    // Mutating one alias must not affect the other.
+    string src = "defaults: &defaults\n  a: 1\nother: *defaults\n";
+    YamlValue v = YamlValue.Parse(src);
+    YamlValue other = v.Get("other");
+    other.Set("a", YamlValue.OfInt(999L));
+    Assert.Equal(1L,   v.Get("defaults").Get("a").AsInt());
+    Assert.Equal(999L, v.Get("other").Get("a").AsInt());
+}
+
+// ── Block sequence anchor ───────────────────────────────────────────────
+
+[Test]
+void test_sequence_anchor_block_form() {
+    string src = "items: &items\n  - a\n  - b\n  - c\ncopy: *items\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(3, v.Get("items").Length());
+    Assert.Equal(3, v.Get("copy").Length());
+    Assert.Equal("b", v.Get("copy").At(1).AsString());
+}
+
+// ── Anchor in a sequence item ───────────────────────────────────────────
+
+[Test]
+void test_anchor_in_sequence_item() {
+    string src = "- &first\n  name: alice\n  age: 30\n- *first\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(2, v.Length());
+    Assert.Equal("alice", v.At(0).Get("name").AsString());
+    Assert.Equal("alice", v.At(1).Get("name").AsString());
+    Assert.Equal(30L,    v.At(1).Get("age").AsInt());
+}
+
+// ── Anchor with flow value ──────────────────────────────────────────────
+
+[Test]
+void test_anchor_with_flow_sequence() {
+    string src = "a: &nums [1, 2, 3]\nb: *nums\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(3, v.Get("b").Length());
+    Assert.Equal(2L, v.Get("b").At(1).AsInt());
+}
+
+[Test]
+void test_anchor_with_flow_mapping() {
+    string src = "a: &m {x: 1, y: 2}\nb: *m\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(1L, v.Get("b").Get("x").AsInt());
+    Assert.Equal(2L, v.Get("b").Get("y").AsInt());
+}
+
+// ── Multiple anchors in same doc ────────────────────────────────────────
+
+[Test]
+void test_multiple_anchors_independent() {
+    string src = "a: &x 1\nb: &y 2\nc: *x\nd: *y\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(1L, v.Get("c").AsInt());
+    Assert.Equal(2L, v.Get("d").AsInt());
+}
+
+[Test]
+void test_multiple_aliases_to_same_anchor() {
+    string src = "src: &val 42\nfirst: *val\nsecond: *val\nthird: *val\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(42L, v.Get("first").AsInt());
+    Assert.Equal(42L, v.Get("second").AsInt());
+    Assert.Equal(42L, v.Get("third").AsInt());
+}
+
+// ── Anchor names with allowed chars ─────────────────────────────────────
+
+[Test]
+void test_anchor_name_with_underscore_and_dash() {
+    string src = "a: &my-anchor_1 hello\nb: *my-anchor_1\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("hello", v.Get("b").AsString());
+}
+
+// ── Error: undefined alias ──────────────────────────────────────────────
+
+[Test]
+void test_undefined_alias_throws() {
+    string src = "a: *undefined\n";
+    bool threw = false;
+    try {
+        YamlValue v = YamlValue.Parse(src);
+    } catch (YamlException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_forward_reference_throws() {
+    // YAML 1.2 requires anchor declaration BEFORE first alias use.
+    string src = "a: *late\nb: &late 42\n";
+    bool threw = false;
+    try {
+        YamlValue v = YamlValue.Parse(src);
+    } catch (YamlException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Anchor scope: reset between documents ──────────────────────────────
+
+[Test]
+void test_anchor_scope_per_document_in_parse_all() {
+    // Doc 1 anchors must not leak to doc 2.
+    string src = "a: &shared 1\nb: *shared\n---\nc: *shared\n";
+    bool threw = false;
+    try {
+        YamlValue[] docs = YamlValue.ParseAll(src);
+    } catch (YamlException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_same_anchor_name_in_two_docs() {
+    // Same anchor name `x` allowed in two separate docs.
+    string src = "a: &x 1\nb: *x\n---\nc: &x 2\nd: *x\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal(1L, docs[0].Get("b").AsInt());
+    Assert.Equal(2L, docs[1].Get("d").AsInt());
+}
+
+// ── Nested aliases ──────────────────────────────────────────────────────
+
+[Test]
+void test_nested_anchor_inside_aliased_block() {
+    // The aliased mapping contains nested values, all deep-cloned.
+    string src = "base: &b\n  config:\n    port: 8080\n    host: localhost\nalias: *b\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(8080L, v.Get("alias").Get("config").Get("port").AsInt());
+    Assert.Equal("localhost", v.Get("alias").Get("config").Get("host").AsString());
+}
+
+// ── Alias resolves to current snapshot, not future mutations ───────────
+
+[Test]
+void test_alias_captures_value_at_declaration() {
+    // Even if z42 code later mutates the anchor source, the alias was
+    // deep-cloned at parse time so it has its own copy.
+    string src = "src: &s\n  v: 10\ndst: *s\n";
+    YamlValue v = YamlValue.Parse(src);
+    v.Get("src").Set("v", YamlValue.OfInt(999L));
+    Assert.Equal(10L, v.Get("dst").Get("v").AsInt());
+}

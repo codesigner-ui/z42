@@ -55,7 +55,7 @@ public class YamlValue {
     /// add-yaml-multi-doc (2026-05-25).
     public static YamlValue[] ParseAll(string text) {
         YamlParser parser = new YamlParser(text);
-        return parser.ParseAllDocuments();
+        return (YamlValue[])parser.ParseAllDocuments();
     }
 
     /// Serialise a YAML value tree to canonical YAML text (block style).
@@ -87,7 +87,7 @@ public class YamlValue {
         StreamReader r = new StreamReader(source);
         string text = r.ReadToEnd();
         YamlParser parser = new YamlParser(text);
-        return parser.ParseAllDocuments();
+        return (YamlValue[])parser.ParseAllDocuments();
     }
 
     /// Serialise canonical YAML to a Stream as UTF-8 bytes. Does NOT
@@ -312,5 +312,39 @@ public class YamlValue {
         if (this._kind == 5) { return this._seqCount; }
         if (this._kind == 6) { return this._mapCount; }
         throw new YamlException("Count() on non-collection value (" + this.KindName() + ")");
+    }
+
+    /// Recursively copy `this`. Scalars are immutable so the same instance
+    /// could safely be shared, but to keep clone semantics uniform we always
+    /// produce a fresh YamlValue. Used by anchor / alias resolution where
+    /// mutation of one alias must not leak to others. add-yaml-anchors-aliases
+    /// (2026-05-25).
+    public YamlValue DeepClone() {
+        if (this._kind == 0) { return YamlValue.OfNull(); }
+        if (this._kind == 1) { return YamlValue.OfBool(this._bool); }
+        if (this._kind == 2) { return YamlValue.OfInt(this._int); }
+        if (this._kind == 3) { return YamlValue.OfFloat(this._float); }
+        if (this._kind == 4) { return YamlValue.OfString(this._str); }
+        if (this._kind == 5) {
+            YamlValue seq = YamlValue.OfSequence();
+            int i = 0;
+            while (i < this._seqCount) {
+                YamlValue child = this._seqItems[i];
+                YamlValue childClone = child.DeepClone();
+                seq.Add(childClone);
+                i = i + 1;
+            }
+            return seq;
+        }
+        // Mapping (kind == 6)
+        YamlValue m = YamlValue.OfMapping();
+        int j = 0;
+        while (j < this._mapCount) {
+            YamlValue v = this._mapValues[j];
+            YamlValue vClone = v.DeepClone();
+            m.Set(this._mapKeys[j], vClone);
+            j = j + 1;
+        }
+        return m;
     }
 }
