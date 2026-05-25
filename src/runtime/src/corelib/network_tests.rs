@@ -190,3 +190,101 @@ fn wasm32_returns_unsupported_tuple() {
     let r = builtin_net_tcp_connect(&ctx, &args).expect("call ok");
     assert_eq!(kind_of(&r), Some(KIND_UNSUPPORTED));
 }
+
+// ── UDP (add-z42-net-udp K2, 2026-05-25) ────────────────────────────────
+
+#[cfg(not(target_arch = "wasm32"))]
+fn ok_udp_bind(v: &Value) -> (i64, i64) {
+    // Same shape as ok_listen: [0, slot, port]
+    ok_listen(v)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn udp_slot_id_monotonic() {
+    let ctx = ctx();
+    let args = vec![Value::Str("127.0.0.1".to_string()), Value::I64(0)];
+    let r1 = builtin_net_udp_bind(&ctx, &args).expect("bind 1");
+    let r2 = builtin_net_udp_bind(&ctx, &args).expect("bind 2");
+    let (s1, _) = ok_udp_bind(&r1);
+    let (s2, _) = ok_udp_bind(&r2);
+    assert!(s2 > s1);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn udp_send_on_unknown_slot_returns_handle_invalid() {
+    let ctx = ctx();
+    let buf = arr(vec![Value::I64(0xAB)], &ctx);
+    let args = vec![
+        Value::I64(999_999), buf, Value::I64(0), Value::I64(1),
+        Value::Str("127.0.0.1".to_string()), Value::I64(1),
+    ];
+    let r = builtin_net_udp_send(&ctx, &args).expect("call");
+    assert_eq!(kind_of(&r), Some(KIND_HANDLE_INVALID));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn udp_recv_on_unknown_slot_returns_handle_invalid() {
+    let ctx = ctx();
+    let args = vec![Value::I64(999_999)];
+    let r = builtin_net_udp_recv(&ctx, &args).expect("call");
+    assert_eq!(kind_of(&r), Some(KIND_HANDLE_INVALID));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn udp_drop_unknown_slot_is_silent_null() {
+    let ctx = ctx();
+    let args = vec![Value::I64(999_999)];
+    let r = builtin_net_udp_drop(&ctx, &args).expect("call");
+    assert!(matches!(r, Value::Null));
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn udp_loopback_send_recv_round_trip() {
+    let ctx = ctx();
+    // Bind two sockets on loopback with OS-assigned ports.
+    let bind_args = vec![Value::Str("127.0.0.1".to_string()), Value::I64(0)];
+    let (slot_a, port_a) = ok_udp_bind(&builtin_net_udp_bind(&ctx, &bind_args).expect("bind A"));
+    let (slot_b, port_b) = ok_udp_bind(&builtin_net_udp_bind(&ctx, &bind_args).expect("bind B"));
+    assert!(port_a > 0 && port_b > 0);
+
+    // B sends "hi" to A.
+    let payload = arr(b"hi".iter().map(|b| Value::I64(*b as i64)).collect(), &ctx);
+    let send_args = vec![
+        Value::I64(slot_b), payload, Value::I64(0), Value::I64(2),
+        Value::Str("127.0.0.1".to_string()), Value::I64(port_a),
+    ];
+    let send_result = builtin_net_udp_send(&ctx, &send_args).expect("send");
+    assert_eq!(ok_slot(&send_result), 2);  // 2 bytes sent
+
+    // A receives.
+    let recv_result = builtin_net_udp_recv(&ctx, &[Value::I64(slot_a)]).expect("recv");
+    match &recv_result {
+        Value::Array(rc) => {
+            let b = rc.borrow();
+            assert_eq!(b.len(), 4, "recv ok tuple has 4 elements");
+            assert_eq!(b[0], Value::I64(0));
+            match &b[1] {
+                Value::Array(buf) => {
+                    let bb = buf.borrow();
+                    assert_eq!(bb.len(), 2);
+                    assert_eq!(bb[0], Value::I64(b'h' as i64));
+                    assert_eq!(bb[1], Value::I64(b'i' as i64));
+                }
+                other => panic!("expected byte[] buffer, got {:?}", other),
+            }
+            assert!(matches!(&b[2], Value::Str(s) if s == "127.0.0.1"));
+            assert_eq!(b[3], Value::I64(port_b));
+        }
+        other => panic!("expected ok-tuple Array, got {:?}", other),
+    }
+
+    // Cleanup.
+    let _ = builtin_net_udp_drop(&ctx, &[Value::I64(slot_a)]).expect("drop A");
+    let _ = builtin_net_udp_drop(&ctx, &[Value::I64(slot_b)]).expect("drop B");
+    assert_eq!(ctx.udp_socket_slot_count(), 0);
+}

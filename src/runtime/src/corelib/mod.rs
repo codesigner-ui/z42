@@ -317,6 +317,16 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-gc-pause-window (2026-05-24) — appended to preserve existing BuiltinIds ──
     ("__gc_recent_pauses",         gc::builtin_gc_recent_pauses),
     ("__gc_pause_window_capacity", gc::builtin_gc_pause_window_capacity),
+
+    // ── add-gc-oom-exception (2026-05-25) — appended to preserve existing BuiltinIds ──
+    ("__gc_set_max_heap_bytes", gc::builtin_gc_set_max_heap_bytes),
+    ("__gc_set_strict_oom",     gc::builtin_gc_set_strict_oom),
+
+    // ── add-z42-net-udp K2 (2026-05-25) — appended to preserve existing BuiltinIds ──
+    ("__net_udp_bind", network::builtin_net_udp_bind),
+    ("__net_udp_send", network::builtin_net_udp_send),
+    ("__net_udp_recv", network::builtin_net_udp_recv),
+    ("__net_udp_drop", network::builtin_net_udp_drop),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

@@ -2,9 +2,10 @@
 
 Network sockets — sync TCP/UDP today, async + TLS + HTTP later.
 
-## v0 scope (K1, add-z42-net 2026-05-24)
+## v0 scope (K1 + K2, 2026-05-24 / 2026-05-25)
 
-**K1 = TCP-only**. UDP / IPAddress / DNS / TLS / HTTP all独立 follow-up specs.
+**K1 = TCP** (`add-z42-net`, 2026-05-24). **K2 = UDP** (`add-z42-net-udp`, 2026-05-25).
+IPAddress / DNS / TLS / HTTP / WebSocket / Async still 独立 follow-up specs.
 
 ### Public API
 
@@ -40,6 +41,24 @@ public class NetworkStream : Std.IO.Stream {
     override int Read(byte[] buffer, int offset, int count);   // 0 = EOF
     override void Write(byte[] buffer, int offset, int count);
     override void Close();
+}
+
+// UDP — K2 (add-z42-net-udp, 2026-05-25)
+public class UdpClient {
+    public UdpClient();
+    public void Bind(string host, int port);                                    // port 0 → OS assigns
+    public int  Send(byte[] data, int length, string remoteHost, int remotePort);  // auto-bind on first call
+    public UdpReceiveResult Receive();                                          // blocking
+    public int  LocalPort();                                                    // post-Bind
+    public string BindHost();
+    public void Dispose();
+    public void Close();        // alias for Dispose
+}
+
+public class UdpReceiveResult {
+    public byte[] Buffer;
+    public string RemoteHost;
+    public int    RemotePort;
 }
 
 // Exception hierarchy (namespace Std)
@@ -115,12 +134,20 @@ doesn't repeat the switch.
 
 ## Deferred / Future Work
 
-### `net-future-udp` — UDP sockets
+### ~~`net-future-udp`~~ — **✅ 已落地 2026-05-25 (add-z42-net-udp K2)**
 
-- **来源**：K1 跳过的 UDP path
-- **触发原因**：K1 优先 TCP（HTTP / RPC / DB 等主流场景）；UDP 用例较窄
-- **触发条件**：DNS resolver / QUIC / 实时音视频用例驱动
-- **当前 workaround**：无；用户需 UDP 时阻塞等待 follow-up spec
+Shipped: `Std.Net.Sockets.UdpClient` + `UdpReceiveResult` carrier + 4 `__net_udp_*`
+builtins (`bind` / `send` / `recv` / `drop`). Same kind-tagged tuple shape +
+slot-table pattern as K1 TCP; new `VmCore.udp_sockets` HashMap. Auto-bind on
+first Send (BCL `UdpClient` semantics). 13 z42 tests (loopback round-trip,
+reply path, empty datagram, auto-bind, port discovery, disposal idempotent,
+use-after-close, before-bind error paths) + 5 Rust unit tests.
+
+Out of scope (now their own follow-up specs):
+- `add-z42-net-udp-connected` — `Connect(host, port)` + bare Send/Receive
+- `add-z42-net-udp-multicast` — `JoinMulticastGroup` + multicast send
+- `add-z42-net-udp-recv-into` — buffer-fill variant (avoid per-call allocation)
+- `add-z42-net-udp-recv-timeout` — Receive timeout (covered by general `net-future-timeout`)
 
 ### `net-future-ipaddress` — IPAddress / IPEndPoint 强类型
 

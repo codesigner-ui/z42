@@ -1,0 +1,128 @@
+namespace Std.Net.Sockets;
+
+using Std;
+
+// add-z42-net-udp K2 (2026-05-25): sync blocking UDP (datagram) socket.
+//
+// Lifecycle:
+//   var u = new UdpClient();
+//   u.Bind("0.0.0.0", 0);                          // bind for receive (port 0 = OS-assigned)
+//   int port = u.LocalPort();
+//   u.Send(data, data.Length, "127.0.0.1", 9000);  // send to remote
+//   var rx = u.Receive();                           // blocks; rx.Buffer / RemoteHost / RemotePort
+//   u.Dispose();
+//
+// Each Send/Receive is a discrete datagram (vs TCP's stream). Receive
+// blocks until a datagram arrives. No connection state in v0; remote
+// address always explicit per Send (Connect+default-remote is follow-up
+// `add-z42-net-udp-connected`).
+//
+// **Auto-bind**: if `Send` is called before `Bind`, we auto-bind to
+// `("0.0.0.0", 0)` (OS-assigned ephemeral port). This matches BCL
+// `UdpClient.Send` behavior. Caller can then `LocalPort()` to discover
+// the assigned port.
+public class UdpClient {
+    private long   _slotId;
+    private bool   _bound;
+    private bool   _disposed;
+    private int    _localPort;
+    private string _bindHost;
+
+    public UdpClient() {
+        this._slotId    = -1;
+        this._bound     = false;
+        this._disposed  = false;
+        this._localPort = 0;
+        this._bindHost  = "";
+    }
+
+    /// Bind to `host:port`. Use port 0 to let the OS pick an available
+    /// ephemeral port; query `LocalPort()` afterwards to discover.
+    public void Bind(string host, int port) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (this._bound) {
+            throw new InvalidOperationException("UdpClient already bound");
+        }
+        object[] raw = UdpNative.Bind(host, port);
+        long[] slotAndPort = UdpDecode.ToBindResult(raw);
+        this._slotId    = slotAndPort[0];
+        this._localPort = (int)slotAndPort[1];
+        this._bindHost  = host;
+        this._bound     = true;
+    }
+
+    /// Send a datagram of `length` bytes (from `data[0..length]`) to
+    /// `remoteHost:remotePort`. Returns the number of bytes sent (always
+    /// `length` for normal-sized datagrams; OS may fragment larger).
+    ///
+    /// If the client hasn't `Bind`ed yet, auto-binds to `("0.0.0.0", 0)`
+    /// (ephemeral port). Discover the chosen port with `LocalPort()`.
+    public int Send(byte[] data, int length, string remoteHost, int remotePort) {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._bound) {
+            // Auto-bind to ephemeral on first Send.
+            this.Bind("0.0.0.0", 0);
+        }
+        object[] raw = UdpNative.Send(this._slotId, data, 0, length, remoteHost, remotePort);
+        return UdpDecode.ToInt(raw);
+    }
+
+    /// Block until a datagram arrives; return it plus the sender's address.
+    public UdpReceiveResult Receive() {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._bound) {
+            throw new InvalidOperationException("UdpClient.Receive() called before Bind()");
+        }
+        object[] raw = UdpNative.Recv(this._slotId);
+        long kind = (long)raw[0];
+        if (kind != 0) {
+            UdpDecode.Throw(raw, kind);
+        }
+        // Note: `new UdpReceiveResult(...)` must be invoked in the same file as
+        // the declared return type or z42's cross-file type resolver produces
+        // two different type tokens for the same class (manifests as
+        // "expected UdpReceiveResult, got UdpReceiveResult"). Filed as
+        // a follow-up of `compiler-future-typed-overload-resolution`.
+        byte[] buf  = (byte[])raw[1];
+        string host = (string)raw[2];
+        int    port = (int)(long)raw[3];
+        return new UdpReceiveResult(buf, host, port);
+    }
+
+    /// Local bound port — useful after `Bind(host, 0)` to discover the
+    /// OS-assigned port. Throws `InvalidOperationException` if not bound.
+    public int LocalPort() {
+        if (this._disposed) {
+            throw new SocketClosedException();
+        }
+        if (!this._bound) {
+            throw new InvalidOperationException("UdpClient.LocalPort() called before Bind()");
+        }
+        return this._localPort;
+    }
+
+    public string BindHost() {
+        return this._bindHost;
+    }
+
+    /// Close the socket. Idempotent. Subsequent ops throw `SocketClosedException`.
+    public void Dispose() {
+        if (this._disposed) return;
+        this._disposed = true;
+        if (this._bound) {
+            UdpNative.Drop(this._slotId);
+            this._bound = false;
+        }
+    }
+
+    /// Alias for `Dispose()` matching .NET BCL `UdpClient.Close()`.
+    public void Close() {
+        this.Dispose();
+    }
+}

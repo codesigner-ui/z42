@@ -11,6 +11,8 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 | `TcpClient.z42` | `TcpClient` | sync blocking TCP client (`Connect` / `GetStream` / `Close` / `Dispose`) |
 | `TcpListener.z42` | `TcpListener` | sync blocking TCP server (`Bind` / `LocalPort` / `Start` / `AcceptTcpClient` / `Stop` / `Dispose`) |
 | `NetworkStream.z42` | `NetworkStream` | extends `Std.IO.Stream`；read/write 字节经由 socket fd |
+| `UdpClient.z42` | `UdpClient` | sync blocking UDP socket (`Bind` / `Send` / `Receive` / `LocalPort` / `Close` / `Dispose`); auto-bind on first Send |
+| `UdpReceiveResult.z42` | `UdpReceiveResult` | `{ Buffer, RemoteHost, RemotePort }` carrier returned by `UdpClient.Receive()` |
 | `Exceptions/NetException.z42` | `NetException` | z42.net 异常基类 |
 | `Exceptions/NetUnsupportedException.z42` | `NetUnsupportedException` | wasm32 / 未支持平台抛出 |
 | `Exceptions/SocketException.z42` | `SocketException` | 连接 / 读写失败 |
@@ -18,9 +20,8 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 
 ## 入口点
 
-- `Std.Net.Sockets.TcpClient`
-- `Std.Net.Sockets.TcpListener`
-- `Std.Net.Sockets.NetworkStream`
+- `Std.Net.Sockets.TcpClient` / `TcpListener` / `NetworkStream` (K1 TCP, 2026-05-24)
+- `Std.Net.Sockets.UdpClient` / `UdpReceiveResult` (K2 UDP, 2026-05-25)
 
 ## 依赖关系
 
@@ -29,6 +30,7 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 
 ## Native 后端
 
-所有 socket op 走 `__net_tcp_*` builtin，VM-side 实现位于
-`src/runtime/src/corelib/network.rs`，slot table 在 `VmContext.tcp_sockets` /
-`VmContext.tcp_listeners`，pattern 镜像 `Std.IO.ProcessHandle`。
+所有 socket op 走 `__net_tcp_*` / `__net_udp_*` builtin，VM-side 实现位于
+`src/runtime/src/corelib/network.rs`，slot tables 在
+`VmContext.tcp_sockets` / `tcp_listeners` / `udp_sockets`，pattern 镜像
+`Std.IO.ProcessHandle`。

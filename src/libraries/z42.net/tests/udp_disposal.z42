@@ -1,0 +1,104 @@
+// add-z42-net-udp K2 (2026-05-25): UdpClient disposal semantics + use-after-close.
+namespace Z42NetUdpDisposalTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_dispose_is_idempotent() {
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    u.Dispose();
+    u.Dispose();   // must not throw
+    u.Close();     // must not throw
+}
+
+[Test]
+void test_dispose_unbound_is_noop() {
+    var u = new UdpClient();
+    u.Dispose();   // never bound, no slot to drop
+    u.Dispose();
+}
+
+[Test]
+void test_bind_after_dispose_throws() {
+    var u = new UdpClient();
+    u.Dispose();
+    bool threw = false;
+    try {
+        u.Bind("127.0.0.1", 0);
+    } catch (SocketClosedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_send_after_dispose_throws() {
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    u.Dispose();
+    bool threw = false;
+    try {
+        byte[] data = new byte[1];
+        u.Send(data, 1, "127.0.0.1", 65000);
+    } catch (SocketClosedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_receive_after_dispose_throws() {
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    u.Dispose();
+    bool threw = false;
+    try {
+        u.Receive();
+    } catch (SocketClosedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_receive_before_bind_throws() {
+    var u = new UdpClient();
+    bool threw = false;
+    try {
+        u.Receive();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    u.Dispose();
+}
+
+[Test]
+void test_local_port_before_bind_throws() {
+    var u = new UdpClient();
+    bool threw = false;
+    try {
+        u.LocalPort();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    u.Dispose();
+}
+
+[Test]
+void test_bind_twice_throws() {
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    bool threw = false;
+    try {
+        u.Bind("127.0.0.1", 0);
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+    u.Dispose();
+}

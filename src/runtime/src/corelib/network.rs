@@ -242,6 +242,125 @@ mod imp {
         ctx.core.tcp_listeners.lock().remove(&slot_id);
         Ok(Value::Null)
     }
+
+    // ── UDP builtins (add-z42-net-udp K2, 2026-05-25) ────────────────────
+    use std::net::UdpSocket;
+
+    /// `__net_udp_bind(host, port) -> [0, slot, actual_port] | err`
+    pub fn builtin_net_udp_bind(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_bind";
+        let host = arg_str(args, 0, NAME)?.to_string();
+        let port = require_port(args, 1, NAME)?;
+        let bind_target = format!("{}:{}", host, port);
+        let bind_result = bind_target.to_socket_addrs()
+            .and_then(|mut iter| iter.next()
+                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "no addresses")))
+            .and_then(|addr: SocketAddr| UdpSocket::bind(addr));
+        match bind_result {
+            Ok(sock) => {
+                let actual_port = sock.local_addr().map(|a| a.port()).unwrap_or(port);
+                let slot_id = ctx.alloc_udp_socket_slot(sock);
+                Ok(ok_two(ctx, slot_id as i64, actual_port as i64))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("udp bind {}: {}", bind_target, e))),
+        }
+    }
+
+    /// `__net_udp_send(slot, buf, offset, count, host, port) -> [0, n] | err | invalid`
+    pub fn builtin_net_udp_send(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_send";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        let buf_arr = match args.get(1) {
+            Some(Value::Array(rc)) => rc.clone(),
+            other => bail!("{}: arg 1 expected byte array, got {:?}", NAME, other),
+        };
+        let offset = arg_i64(args, 2, NAME)? as usize;
+        let count  = arg_i64(args, 3, NAME)? as usize;
+        let host   = arg_str(args, 4, NAME)?.to_string();
+        let port   = require_port(args, 5, NAME)?;
+
+        let buf_len = buf_arr.borrow().len();
+        if offset + count > buf_len {
+            bail!("{}: offset {} + count {} exceeds buf length {}", NAME, offset, count, buf_len);
+        }
+
+        // Copy datagram bytes into a contiguous Vec<u8>.
+        let mut tmp = vec![0u8; count];
+        {
+            let borrowed = buf_arr.borrow();
+            for i in 0..count {
+                match &borrowed[offset + i] {
+                    Value::I64(v) => tmp[i] = (*v as i64 & 0xFF) as u8,
+                    other => bail!("{}: byte[] elem at {} expected I64, got {:?}", NAME, offset + i, other),
+                }
+            }
+        }
+
+        // Take socket out for the blocking call; restore after.
+        let sock_opt = {
+            let mut map = ctx.core.udp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(sock) = sock_opt else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        let send_result = sock.send_to(&tmp, format!("{}:{}", host, port).as_str());
+        ctx.core.udp_sockets.lock().insert(slot_id, sock);
+
+        match send_result {
+            Ok(n) => Ok(ok_value(ctx, n as i64)),
+            Err(e) => Ok(socket_err(ctx, format!("udp send: {}", e))),
+        }
+    }
+
+    /// `__net_udp_recv(slot) -> [0, byte[] buf, remote_host_str, remote_port_i64] | err | invalid`
+    pub fn builtin_net_udp_recv(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_recv";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+
+        let sock_opt = {
+            let mut map = ctx.core.udp_sockets.lock();
+            map.remove(&slot_id)
+        };
+        let Some(sock) = sock_opt else {
+            return Ok(handle_invalid(ctx));
+        };
+
+        // 65536 is large enough for any normal UDP datagram (incl IPv6 jumbo
+        // up to 65507 payload + room for headers conceptually).
+        let mut tmp = vec![0u8; 65536];
+        let recv_result = sock.recv_from(&mut tmp);
+        ctx.core.udp_sockets.lock().insert(slot_id, sock);
+
+        match recv_result {
+            Ok((n, peer)) => {
+                // Build z42 byte[] sized to actual datagram length.
+                let mut byte_vals: Vec<Value> = Vec::with_capacity(n);
+                for i in 0..n {
+                    byte_vals.push(Value::I64(tmp[i] as i64));
+                }
+                let buf_array = ctx.heap().alloc_array(byte_vals);
+                let host_str = peer.ip().to_string();
+                let port_i64 = peer.port() as i64;
+                Ok(ctx.heap().alloc_array(vec![
+                    Value::I64(KIND_OK),
+                    buf_array,
+                    Value::Str(host_str),
+                    Value::I64(port_i64),
+                ]))
+            }
+            Err(e) => Ok(socket_err(ctx, format!("udp recv: {}", e))),
+        }
+    }
+
+    /// `__net_udp_drop(slot) -> Null` — idempotent.
+    pub fn builtin_net_udp_drop(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+        const NAME: &str = "__net_udp_drop";
+        let slot_id = require_slot_id(args, 0, NAME)?;
+        ctx.core.udp_sockets.lock().remove(&slot_id);
+        Ok(Value::Null)
+    }
 }
 
 // ── wasm32: all builtins return KIND_UNSUPPORTED tuple ────────────────────
@@ -269,6 +388,20 @@ mod imp {
         Ok(Value::Null)
     }
     pub fn builtin_net_tcp_listener_drop(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(Value::Null)
+    }
+
+    // UDP wasm32 fallbacks
+    pub fn builtin_net_udp_bind(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_send(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_recv(ctx: &VmContext, _args: &[Value]) -> Result<Value> {
+        Ok(unsupported(ctx))
+    }
+    pub fn builtin_net_udp_drop(_ctx: &VmContext, _args: &[Value]) -> Result<Value> {
         Ok(Value::Null)
     }
 }

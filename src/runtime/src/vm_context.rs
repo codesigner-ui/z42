@@ -248,6 +248,15 @@ pub struct VmCore {
     pub(crate) next_tcp_socket_id:   std::sync::atomic::AtomicU64,
     /// monotonic TCP listener slot id; never reused.
     pub(crate) next_tcp_listener_id: std::sync::atomic::AtomicU64,
+
+    // ── add-z42-net-udp (K2, 2026-05-25) ───────────────────────────────────
+    /// live `Std.Net.Sockets.UdpClient` sockets keyed by monotonic u64 slot id.
+    /// `__net_udp_bind` inserts; `__net_udp_drop` removes (UdpSocket Drop closes
+    /// the fd). wasm32 target: never populated.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) udp_sockets:          Mutex<HashMap<u64, std::net::UdpSocket>>,
+    /// monotonic UDP socket slot id; never reused.
+    pub(crate) next_udp_socket_id:   std::sync::atomic::AtomicU64,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -434,6 +443,9 @@ impl VmContext {
             tcp_listeners:        Mutex::new(HashMap::new()),
             next_tcp_socket_id:   std::sync::atomic::AtomicU64::new(1),
             next_tcp_listener_id: std::sync::atomic::AtomicU64::new(1),
+            #[cfg(not(target_arch = "wasm32"))]
+            udp_sockets:          Mutex::new(HashMap::new()),
+            next_udp_socket_id:   std::sync::atomic::AtomicU64::new(1),
         });
 
         // add-gc-safepoint-auto-threshold (2026-05-20): wire the
@@ -609,6 +621,21 @@ impl VmContext {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn tcp_listener_slot_count(&self) -> usize {
         self.core.tcp_listeners.lock().len()
+    }
+
+    // ── add-z42-net-udp (K2, 2026-05-25) ────────────────────────────────
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn alloc_udp_socket_slot(&self, sock: std::net::UdpSocket) -> u64 {
+        let id = self.core.next_udp_socket_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.core.udp_sockets.lock().insert(id, sock);
+        id
+    }
+
+    /// Number of currently allocated UDP socket slots.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn udp_socket_slot_count(&self) -> usize {
+        self.core.udp_sockets.lock().len()
     }
 
     // ── Native interop (Tier 1, spec C2) ──────────────────────────────────

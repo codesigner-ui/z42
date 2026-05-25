@@ -1,0 +1,118 @@
+// add-z42-net-udp K2 (2026-05-25): in-process UDP send/receive on loopback.
+namespace Z42NetUdpLoopbackTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Sockets;
+
+[Test]
+void test_loopback_send_receive_round_trip() {
+    var a = new UdpClient();
+    a.Bind("127.0.0.1", 0);
+    int portA = a.LocalPort();
+    Assert.True(portA > 0);
+
+    var b = new UdpClient();
+    b.Bind("127.0.0.1", 0);
+    int portB = b.LocalPort();
+    Assert.True(portB > 0);
+
+    // B sends "hi" to A.
+    byte[] msg = new byte[2];
+    msg[0] = (byte)'h';
+    msg[1] = (byte)'i';
+    int sent = b.Send(msg, 2, "127.0.0.1", portA);
+    Assert.Equal(2, sent);
+
+    // A receives.
+    UdpReceiveResult rx = a.Receive();
+    Assert.Equal(2, rx.Buffer.Length);
+    Assert.Equal((byte)'h', rx.Buffer[0]);
+    Assert.Equal((byte)'i', rx.Buffer[1]);
+    Assert.Equal("127.0.0.1", rx.RemoteHost);
+    Assert.Equal(portB, rx.RemotePort);
+
+    a.Dispose();
+    b.Dispose();
+}
+
+[Test]
+void test_reply_path_using_received_address() {
+    // A binds; B sends; A receives + replies; B receives reply.
+    var a = new UdpClient();
+    a.Bind("127.0.0.1", 0);
+    int portA = a.LocalPort();
+
+    var b = new UdpClient();
+    b.Bind("127.0.0.1", 0);
+
+    byte[] req = new byte[1];
+    req[0] = (byte)42;
+    b.Send(req, 1, "127.0.0.1", portA);
+
+    UdpReceiveResult rxA = a.Receive();
+    Assert.Equal((byte)42, rxA.Buffer[0]);
+
+    byte[] resp = new byte[1];
+    resp[0] = (byte)99;
+    a.Send(resp, 1, rxA.RemoteHost, rxA.RemotePort);
+
+    UdpReceiveResult rxB = b.Receive();
+    Assert.Equal((byte)99, rxB.Buffer[0]);
+    Assert.Equal(portA, rxB.RemotePort);
+
+    a.Dispose();
+    b.Dispose();
+}
+
+[Test]
+void test_empty_datagram_round_trip() {
+    var a = new UdpClient();
+    a.Bind("127.0.0.1", 0);
+    int portA = a.LocalPort();
+
+    var b = new UdpClient();
+    b.Bind("127.0.0.1", 0);
+
+    byte[] empty = new byte[0];
+    int sent = b.Send(empty, 0, "127.0.0.1", portA);
+    Assert.Equal(0, sent);
+
+    UdpReceiveResult rx = a.Receive();
+    Assert.Equal(0, rx.Buffer.Length);
+    Assert.True(rx.RemotePort > 0);   // sender still has a port
+
+    a.Dispose();
+    b.Dispose();
+}
+
+[Test]
+void test_auto_bind_on_first_send() {
+    var receiver = new UdpClient();
+    receiver.Bind("127.0.0.1", 0);
+    int port = receiver.LocalPort();
+
+    var sender = new UdpClient();   // NOT bound explicitly
+    byte[] data = new byte[1];
+    data[0] = (byte)7;
+    sender.Send(data, 1, "127.0.0.1", port);
+
+    // Now sender is auto-bound; LocalPort should be non-zero.
+    Assert.True(sender.LocalPort() > 0);
+
+    UdpReceiveResult rx = receiver.Receive();
+    Assert.Equal((byte)7, rx.Buffer[0]);
+    Assert.Equal(sender.LocalPort(), rx.RemotePort);
+
+    sender.Dispose();
+    receiver.Dispose();
+}
+
+[Test]
+void test_local_port_recorded_after_bind() {
+    var u = new UdpClient();
+    u.Bind("127.0.0.1", 0);
+    Assert.True(u.LocalPort() > 0);
+    Assert.Equal("127.0.0.1", u.BindHost());
+    u.Dispose();
+}
