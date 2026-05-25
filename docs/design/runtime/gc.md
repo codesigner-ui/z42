@@ -593,12 +593,18 @@ dedup；`trace_function_infos` / `trace_tree` / `samples` / `locations`
 v1 输出空数组。10 MB heap → 约 30 MB snapshot 文件（V8 char-count
 overhead 内）。
 
+**序列化实现**（v1，2026-05-24 add-gc-snapshot-streaming）：
+
+`builtin_gc_write_heap_snapshot` 通过 `serialize_v8_heapsnapshot_to<W:
+Write>` 流式直写 `BufWriter<File>`，无中间 `String` 内存分配。
+`serialize_v8_heapsnapshot(&snap) -> String` 作为薄包装（Vec<u8>
+驱动流式路径）供测试和内存场景使用，输出字节完全相同。
+
 **局限**（留给后续 perf spec）：
 
 - 不输出 allocation-site stack trace（需要 IR `alloc_site_id` —
   `add-gc-snapshot-alloc-trace` 依赖 B4）
-- 不 stream 大堆（in-memory build → 一次 `std::fs::write`） —
-  `add-gc-snapshot-streaming` 解决
+- ~~不 stream 大堆~~ ✅ 已流式化 (`add-gc-snapshot-streaming`)
 - WeakRef 不出现在 graph（避免与 retention 混淆） —
   `add-gc-snapshot-weak-edges` 后续可加 `EdgeType::Weak`
 - 不预算 dominator tree（DevTools 自己算） —
@@ -635,6 +641,7 @@ overhead 内）。
 | **C3 multi-heap isolation stress** | 5 个测试在 `arc_heap_tests/multi_vm.rs`，跨 `ArcMagrGC` 实例并行 stress（线程间用独立 heap）。覆盖 STW / Generational / 混合 mode + pause histogram 隔离 cross-check (B5)。验证多 VM 嵌入场景 Phase 3 隔离设计成立 | ✅ 2026-05-24 add-gc-multi-vm-stress |
 | **B3 heap snapshot export** | V8 `.heapsnapshot` JSON writer (`gc/snapshot.rs`)：two-pass walker (id assign + edge emit + root link) + flat custom serializer (no serde dep) + `Std.GC.WriteHeapSnapshot(path)` builtin。生成的文件直接用 Chrome DevTools / speedscope / heapviewer.com 加载查看 retainer 图 / dominator 树 | ✅ 2026-05-24 add-gc-heap-snapshot-export |
 | **add-gc-pause-window** | PauseHistogram 加 `recent_pauses: VecDeque<u64>` rolling FIFO 窗口（默认 1024 容量，`Z42_GC_PAUSE_WINDOW` clamp 到 `[1, 65536]`）+ 2 个新 builtins `Std.GC.RecentPauses()` / `PauseWindowCapacity()`。补 B5 "cumulative 不滚动" 局限。`PauseHistogram` / `HeapStats` 同时 drop `Copy` derive（VecDeque 不 Copy）| ✅ 2026-05-24 add-gc-pause-window |
+| **add-gc-snapshot-streaming** | `gc/snapshot.rs` 新增 `serialize_v8_heapsnapshot_to<W: Write>` 流式直写 + `escape_json_str_to<W: Write>`；`serialize_v8_heapsnapshot` 改为薄包装（byte-identical）；`builtin_gc_write_heap_snapshot` 改用 `BufWriter<File>` + `flush()`，消除中间 `String`。Pure perf，无行为变化 | ✅ 2026-05-24 add-gc-snapshot-streaming |
 
 至此 GC 主功能完整，可投产。后续可选迭代见下文 ["GC 后续迭代规划"](#gc-后续迭代规划) 段。
 
@@ -769,9 +776,10 @@ primitive 迁移成 `Value::Object(...)` 包装的脚本类（z42 源码实现 B
   - 自写 flat JSON serializer (no serde dep)：node 7 字段 / edge
     3 字段 / string-table dedup
   - Cycle 安全（id_map dedup by pointer）；weak refs 跳过
-- **延后**：alloc-site stack trace (需要 B4 site id)、streaming
-  serializer、weak edges、server-side dominator tree — 详见
+- **延后**：alloc-site stack trace (需要 B4 site id)、weak edges、
+  server-side dominator tree — 详见
   ["Heap snapshot export"](#heap-snapshot-export-add-gc-heap-snapshot-export-2026-05-24) 段
+  - ~~streaming serializer~~ ✅ 已落地 `add-gc-snapshot-streaming`
 
 #### B4. 分配站点追踪（per-callsite alloc count + total bytes）
 - **What**：默认 alloc_sampler 实现按 IR 站点 ID 聚合分配数据
