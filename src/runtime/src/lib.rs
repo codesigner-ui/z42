@@ -29,6 +29,13 @@ pub mod vm_context;
 // Z42_SAFEPOINT_THROTTLE / Z42_STRESS_ITERS) for `--info` discovery.
 pub mod config;
 
+// Runtime atomic counters — JIT compiles / builtin calls / exception
+// traffic etc. Surfaced via `--print-stats-on-exit` CLI flag and (future)
+// scripted `Std.Diagnostics.RuntimeStats.Snapshot()`. docs/review.md
+// Part 4 D6 Phase 1 (2026-05-26). Phase 2 migrates JIT / native / exception
+// increment sites in individual follow-up refactors.
+pub mod counters;
+
 // POSIX signal handler — captures z42 call stack on hard crashes
 // (SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS). Phase 2 of D4 panic-hook
 // story (Phase 1 = main.rs install_panic_hook). Windows VEH = Phase 2.1.

@@ -367,6 +367,10 @@ pub fn ext_builtin_id_of(ctx: &VmContext, name: &str) -> Option<BuiltinId> {
 /// the ext bit set index into `VmCore.ext_builtins.by_idx`.
 #[inline]
 pub fn exec_builtin_by_id(ctx: &VmContext, id: BuiltinId, args: &[Value]) -> Result<Value> {
+    // add-runtime-counters (2026-05-26): observation-only fetch_add on
+    // the hot path — single atomic Relaxed op, no control-flow impact.
+    ctx.core.counters.builtin_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     if id.0 & BUILTIN_ID_EXT_BIT != 0 {
         let idx = id.0 & !BUILTIN_ID_EXT_BIT;
         let fn_ptr = {
@@ -385,6 +389,10 @@ pub fn exec_builtin_by_id(ctx: &VmContext, id: BuiltinId, args: &[Value]) -> Res
 /// Static `BUILTINS[]` first; ext (dlopened) second. A miss in both is a
 /// hard error.
 pub fn exec_builtin(ctx: &VmContext, name: &str, args: &[Value]) -> Result<Value> {
+    // add-runtime-counters (2026-05-26): name-keyed slow path also increments
+    // for consistency with exec_builtin_by_id (callers may hit either).
+    ctx.core.counters.builtin_calls.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
     if let Some(&id) = builtin_index().get(name) {
         return BUILTINS[id as usize].1(ctx, args);
     }

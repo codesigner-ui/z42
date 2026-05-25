@@ -284,6 +284,14 @@ pub struct VmCore {
     pub(crate) udp_sockets:          Mutex<HashMap<u64, std::net::UdpSocket>>,
     /// monotonic UDP socket slot id; never reused.
     pub(crate) next_udp_socket_id:   std::sync::atomic::AtomicU64,
+
+    /// **add-runtime-counters (2026-05-26)**: atomic observation-only
+    /// counters for JIT compiles / builtin calls / native calls /
+    /// exception traffic. Surfaced via `--print-stats-on-exit` and
+    /// (future) scripted `Std.Diagnostics.RuntimeStats.Snapshot()`.
+    /// `Arc` wrapper enables cheap cloning into Phase 2 increment sites
+    /// that don't already have `&VmCore` access. docs/review.md Part 4 D6.
+    pub counters: Arc<crate::counters::RuntimeCounters>,
 }
 
 /// Runtime-mutable state shared across one VM instance's interp + JIT paths.
@@ -365,6 +373,14 @@ impl VmContext {
     /// `core` field itself is `pub(crate)`; this is the public escape hatch.
     pub fn core_arc(&self) -> Arc<VmCore> {
         Arc::clone(&self.core)
+    }
+
+    /// Public accessor for runtime atomic counters. Used by main.rs
+    /// `--print-stats-on-exit` flag and embedders that want to observe
+    /// JIT compiles / builtin calls / exception traffic.
+    /// docs/review.md Part 4 D6 Phase 1 (2026-05-26).
+    pub fn counters(&self) -> &crate::counters::RuntimeCounters {
+        &self.core.counters
     }
 
     /// add-gc-safepoint-counter-throttling (2026-05-21): force the next
@@ -473,6 +489,10 @@ impl VmContext {
             #[cfg(not(target_arch = "wasm32"))]
             udp_sockets:          Mutex::new(HashMap::new()),
             next_udp_socket_id:   std::sync::atomic::AtomicU64::new(1),
+
+            // add-runtime-counters (2026-05-26): all-zero start; Phase 1
+            // increment site = corelib::exec_builtin (builtin_calls).
+            counters: Arc::new(crate::counters::RuntimeCounters::new()),
         });
 
         // add-os-signal-handler (2026-05-25): register this Arc<VmCore> into

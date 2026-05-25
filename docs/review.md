@@ -833,35 +833,20 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 
 **ROI**：低。0.5 天。诊断价值不高但用户体验好。
 
-## D6. 性能指标 / Counters
+## D6. 性能指标 / Counters ✅ Phase 1 落地
 
 ### CoreCLR
 - EventCounters 模型：runtime 暴露 `gc-heap-size` / `cpu-usage` / `working-set` / `gen-2-gc-count` / `exception-count` 等内置 counter
 - 定期采样（默认 60s）+ EventPipe 推送到 monitoring backend
 - `dotnet-counters monitor` 直接展示
 
-### z42 现状
+### z42 现状 ✅
 - [`gc/types.rs`](../src/runtime/src/gc/types.rs) `HeapStats`（`allocated_bytes` / `freed_bytes` / `objects_count` / `pause_us` 等）✅
 - 暴露给 z42 脚本：`Std.GC.UsedBytes()` / `Std.GC.ForceCollect()` ✅
-- 缺：JIT 编译数 / 异常 throw 数 / Builtin call 频率 / native call 数
-
-### 建议 ⚠️
-1. 在 `VmContext` 加 atomic counters：
-   ```rust
-   pub struct RuntimeCounters {
-       pub jit_methods_compiled: AtomicU64,
-       pub jit_compile_us_total: AtomicU64,
-       pub exceptions_thrown: AtomicU64,
-       pub exceptions_caught: AtomicU64,
-       pub native_calls: AtomicU64,
-       pub builtin_calls: AtomicU64,
-   }
-   ```
-2. corelib 加 `Std.Diagnostics.RuntimeStats.Snapshot()` 暴露给脚本
-3. CLI `--print-stats-on-exit` 打印 summary
-4. Prometheus / OTLP exporter 推迟
-
-**ROI**：中。1-2 天 (counters) + 后续脚本 API 单独 spec。
+- **Phase 1 (add-runtime-counters, 2026-05-26)**：[`counters::RuntimeCounters`](../src/runtime/src/counters.rs) 6 个 AtomicU64 字段（builtin_calls / native_calls / jit_methods_compiled / jit_compile_us_total / exceptions_thrown / exceptions_caught）+ Snapshot view + Display impl + `--print-stats-on-exit` CLI flag。`VmCore.counters: Arc<RuntimeCounters>` 单 instance 跨 thread 共享。
+- **Phase 1 wiring**：`corelib::exec_builtin` / `exec_builtin_by_id` 接 `builtin_calls.fetch_add` 作为 demo + 验证。
+- **Phase 2 待补**（每个独立小 refactor）：JIT 编译数 / 时间 in `jit::compile_module`；native call in `interp::exec_native`；exceptions in `exception::*`
+- **Phase 3 推迟**：`Std.Diagnostics.RuntimeStats.Snapshot()` 脚本侧 API / 定时打印 / Prometheus / OTLP exporter
 
 ## D7. Profiling 钩子
 
@@ -949,7 +934,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
-| **P1** | **`RuntimeObserver` + `RuntimeStats`** (D3+D6) | 4 | 3-5 天 | ops |
+| ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters 81e1cbba (2026-05-26); D3 RuntimeObserver still pending | 4 | Phase 1 done | ops |
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
 | **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
@@ -1377,7 +1362,7 @@ pub struct ScriptObject {
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
-| **P1** | **`RuntimeObserver` + `RuntimeStats`** (D3+D6) | 4 | 3-5 天 | ops |
+| ✅ | ~~`RuntimeCounters` (D6 Phase 1)~~ — add-runtime-counters 81e1cbba (2026-05-26); D3 RuntimeObserver still pending | 4 | Phase 1 done | ops |
 | **P2** | **VmContext trait 拆分**（E1.P1）— GcAccess / ExceptionAccess 等 | 5 | 5-7 天 | arch |
 | **P2** | **`interfaces/` 契约层**（E1.P3）— 对齐 CoreCLR `inc/` | 5 | 7-10 天 | arch |
 | **P2** | **Function 热 / 冷拆分**（E2.P5）— 200B → 80B + 间接 cold | 5 | 3-5 天 | data |

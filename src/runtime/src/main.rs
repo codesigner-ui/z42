@@ -32,6 +32,12 @@ struct Cli {
     /// preflight. docs/review.md Part 4 D5 (2026-05-25).
     #[arg(long)]
     info: bool,
+
+    /// Print runtime counter snapshot (builtin_calls / native_calls /
+    /// jit_methods_compiled / exceptions_thrown / etc.) to stderr after
+    /// the script exits cleanly. docs/review.md Part 4 D6 (2026-05-26).
+    #[arg(long)]
+    print_stats_on_exit: bool,
 }
 // 2026-05-11 retire-z-codes: `--explain` / `--list-errors` were removed
 // alongside the Rust-side `diagnostics` catalog. Use `z42c explain E####`
@@ -574,5 +580,16 @@ fn main() -> Result<()> {
     let vm = z42::vm::Vm::new(default_mode);
     // CLI positional `entry` overrides any artifact-supplied entry hint.
     let effective_entry = cli.entry.as_deref().or(entry_hint.as_deref());
-    vm.run(&*ctx, effective_entry)
+    let result = vm.run(&*ctx, effective_entry);
+
+    // --print-stats-on-exit (docs/review.md Part 4 D6, 2026-05-26):
+    // snapshot counters AFTER vm.run returns. On error (Err return) we
+    // still print — partial run still has counter activity. Counters are
+    // observation-only so even a failed run's counts are valid.
+    if cli.print_stats_on_exit {
+        let snap = ctx.counters().snapshot();
+        eprintln!("{snap}");
+    }
+
+    result
 }

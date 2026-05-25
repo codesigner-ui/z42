@@ -87,6 +87,33 @@ z42vm 版本 / 平台 / build profile / panic 位置 / payload / Rust backtrace
 **Windows 暂未支持**：现仅 POSIX (macOS / Linux)。Windows VEH (Vectored Exception
 Handler) 是 Phase 2.1 后续 spec — Windows build 编译过但无信号捕获。
 
+### `--print-stats-on-exit` —— 运行时计数器快照
+
+VM 退出时打印 `RuntimeCounters` 快照到 stderr —— 观察 JIT 编译数 / builtin call
+次数 / 异常 throw/catch 次数 / native call 次数等。Phase 1 已接通 `builtin_calls`
+计数器；其他字段（jit / native / exception）框架已就绪，Phase 2 各自小 refactor 接增量点。
+
+```bash
+$ z42vm script.zbc --print-stats-on-exit
+... script output ...
+--- z42vm runtime counters ---
+builtin_calls:        12345
+native_calls:         0
+jit_methods_compiled: 0
+jit_compile_us_total: 0
+exceptions_thrown:    0
+exceptions_caught:    0
+---
+```
+
+CLI flag 与 `--info` 不同：`--info` 是 boot-time build 信息；`--print-stats-on-exit`
+是 runtime 计数。两个 flag 可同时设。
+
+> **Phase 2 路线**：JIT 编译数 / 时间在 `jit::compile_module`、native call 在
+> `interp::exec_native`、exception 计数在 `exception::*` —— 每个独立 refactor。
+> 脚本层 `Std.Diagnostics.RuntimeStats.Snapshot()` 暴露 API 也在 Phase 2。
+> 定时打印 / Prometheus / OTLP exporter 见 docs/review.md Part 4 D6。
+
 ## 当前可用
 
 ### 编译器（C#）
