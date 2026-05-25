@@ -129,10 +129,19 @@ void test_modpow_modulus_negative_throws() {
 }
 
 [Test]
-void test_modpow_negative_exp_throws() {
+void test_modpow_negative_exp_computes_via_inverse() {
+    // add-bigint-modpow-negexp (2026-05-25): negative exp routes through
+    // ModInverse. 2^-1 mod 7 == 4 (since 2*4 = 8 ≡ 1 mod 7).
+    BigInt r = new BigInt(2L).ModPow(new BigInt(-1L), new BigInt(7L));
+    Assert.Equal(4L, r.ToInt64());
+}
+
+[Test]
+void test_modpow_negative_exp_not_coprime_throws() {
+    // gcd(4, 6) = 2 → no modular inverse; ModInverse propagates exception.
     bool threw = false;
     try {
-        new BigInt(2L).ModPow(new BigInt(-1L), new BigInt(7L));
+        BigInt _r = new BigInt(4L).ModPow(new BigInt(-1L), new BigInt(6L));
     } catch (ArgumentException ex) {
         threw = true;
     }

@@ -180,3 +180,39 @@ void test_inverse_matches_fermat_for_prime_modulus() {
     BigInt inv2  = a.ModPow(new BigInt(99L), p);   // a^(p-2)
     Assert.True(inv1.Equals(inv2));
 }
+
+// ── ModPow negative exponent routing (add-bigint-modpow-negexp, 2026-05-25) ──
+
+[Test]
+void test_modpow_negexp_matches_inverse() {
+    // a^(-1) mod m == a.ModInverse(m)
+    BigInt a = new BigInt(7L);
+    BigInt m = new BigInt(100L);
+    BigInt r1 = a.ModPow(new BigInt(-1L), m);
+    BigInt r2 = a.ModInverse(m);
+    Assert.True(r1.Equals(r2));
+}
+
+[Test]
+void test_modpow_negexp_higher_power() {
+    // a^(-n) mod m == (a^-1)^n mod m
+    // 3^(-3) mod 11: 3^-1 mod 11 = 4; 4^3 = 64 ≡ 9 (mod 11)
+    BigInt r = new BigInt(3L).ModPow(new BigInt(-3L), new BigInt(11L));
+    Assert.Equal(9L, r.ToInt64());
+}
+
+[Test]
+void test_modpow_rsa_decrypt_via_negexp() {
+    // RSA toy: encrypt(m, e=7, n=143) then decrypt directly via ModPow(-e, n).
+    // (m^e)^(-e) ≢ m mod n in general; the proper decrypt uses d not -e.
+    // But (c^d) and (c^(some inverse)) should equal m for d = e^-1 mod φ(n).
+    // Use d directly as positive, and as negexp-routed via -d's inverse —
+    // sanity: a^d ≡ a^(d mod φ(n)) ; here ModPow(d, n) is the canonical path.
+    // For negexp coverage proper: verify (c^-1)^|exp| = canonical (a^-1)^exp.
+    BigInt c = new BigInt(42L);
+    BigInt n = new BigInt(143L);
+    BigInt r1 = c.ModPow(new BigInt(-2L), n);           // negexp path
+    BigInt inv = c.ModInverse(n);
+    BigInt r2  = inv.ModPow(new BigInt(2L), n);          // manual two-step
+    Assert.True(r1.Equals(r2));
+}

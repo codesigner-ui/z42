@@ -149,17 +149,17 @@ Montgomery / Barrett reduction (constant-factor speedups) deferred as
 - **触发条件**：real-world crypto perf needs (RSA-2048 ~ 1ms target)
 - **当前 workaround**：v0 correctness is fine; speed is the issue
 
-### `bigint-future-modpow-negexp` — auto-route negative exponent via ModInverse
+### ~~`bigint-future-modpow-negexp`~~ — **✅ 已落地 2026-05-25 (add-bigint-modpow-negexp)**
 
-- **来源**：add-bigint-modinverse 落地后；ModPow 当前在 `exp < 0` 时
-  抛 `ArgumentException`
-- **触发原因**：现在 `ModInverse` 已落地，`a^(-n) mod m` 可分解为
-  `(a^-1 mod m)^n mod m`；ModPow 内部检测负 exp → 先求 ModInverse →
-  再正向 ModPow。需要 ModPow 调用 ModInverse 的小重构 + 行为变更
-  从"抛错"到"正确计算"
-- **触发条件**：第一个用户需要 `a^(-n) mod m` 闭式（RSA 解密 / 数论）
-- **当前 workaround**：用户手动 `a.ModInverse(m).ModPow(n.Negate(), m)`
-  ——可行但 ergonomics 差
+Shipped: `BigInt.ModPow(exp, modulus)` now routes negative `exp` through
+`ModInverse`: `a^(-n) mod m == (a^-1 mod m)^n mod m`. Requires
+`gcd(a, m) == 1` (ModInverse propagates ArgumentException if not).
+Test coverage in `bigint_modinverse.z42` (3 new tests: matches
+ModInverse for exp=-1, higher negative power 3^-3 mod 11 = 9, RSA-style
+two-step equivalence) + `bigint_modpow.z42` updated `test_modpow_negative_
+exp_throws` → `test_modpow_negative_exp_computes_via_inverse` (no longer
+throws) + new `test_modpow_negative_exp_not_coprime_throws` for the
+gcd != 1 propagation path.
 
 ### ~~`bigint-future-gcd`~~ — **✅ Gcd / Lcm 已落地 2026-05-25 (add-bigint-gcd)**
 

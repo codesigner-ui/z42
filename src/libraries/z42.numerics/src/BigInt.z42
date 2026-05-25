@@ -578,8 +578,13 @@ public class BigInt {
         if (modulus._sign <= 0) {
             throw new ArgumentException("BigInt.ModPow: modulus must be > 0");
         }
+        // add-bigint-modpow-negexp (2026-05-25): route negative exponent
+        // through ModInverse (`a^(-n) mod m == (a^-1 mod m)^n mod m`).
+        // Requires gcd(this, modulus) == 1 — ModInverse handles the check.
         if (exp._sign < 0) {
-            throw new ArgumentException("BigInt.ModPow: v0 requires exp >= 0 (negative exponent needs modular inverse — separate spec)");
+            BigInt inv = this.ModInverse(modulus);
+            BigInt absExp = exp.Abs();
+            return inv.ModPow(absExp, modulus);
         }
         if (modulus.IsOne()) return BigInt.Zero;
         if (exp.IsZero())    return BigInt.One;
