@@ -9,6 +9,11 @@
 
 pub mod types;
 pub mod tokens;
+/// Part 5 P0 Phase A foundation (2026-05-26): typed `StringId(u32)` newtype
+/// wrapping the existing `Module.string_pool` indices. Future commits
+/// migrate individual `String` fields (Function.name / TypeDesc.name /
+/// Instruction variants with String params) to use this.
+pub mod string_id;
 pub mod bytecode;
 mod bytecode_serde;
 pub mod project;
@@ -33,6 +38,9 @@ mod sidecar_tests;
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod types_tests;
+
+// Re-exports: string pool typed handle (Part 5 P0 Phase A, 2026-05-26)
+pub use string_id::StringId;
 
 // Re-exports: runtime value types
 pub use types::{default_value_for, ExecMode, FieldSlot, NativeData, PinSourceKind, ScriptObject, TypeDesc, Value};

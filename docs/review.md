@@ -1353,7 +1353,7 @@ pub struct ScriptObject {
 |---|---|---|---|---|
 | **P0** | **Panic hook + signal handler** (D4) | 4 | 1-2 天 | ops |
 | **P0** | **`RuntimeConfig` 中心化** (D1) | 4 | 1-2 天 | ops |
-| **P0** | **StringId intern**（E2.P3）— 所有 String 字段 → StringId | 5 | 5-7 天 | data |
+| 🟡 | **StringId intern**（E2.P3）— Phase A `StringId(u32)` newtype + accessors landed add-string-id-newtype (2026-05-26); Phase B+ migrates individual String fields one at a time | 5 | Phase A done | data |
 | **P0** | **JIT type specialization** (C2) | 2 | 2-3 天 | perf |
 | **P0** | **JIT↔VM `JitVm` trait 抽象** (Part 1 + E1.P2) | 1 | 2-3 天 | arch |
 | **P1** | **TypeDesc 热 / 冷拆分**（E2.P1）— 336B → 64B | 5 | 5-7 天 | data |
