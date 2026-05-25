@@ -326,6 +326,27 @@ pub fn builtin_gc_write_heap_snapshot(ctx: &VmContext, args: &[Value]) -> Result
     Ok(Value::I64(n_bytes as i64))
 }
 
+/// `Std.GC.SetMaxHeapBytes(bytes)` — **add-gc-oom-exception (2026-05-25)**.
+/// Sets the heap upper limit. `bytes <= 0` clears the limit (unbounded).
+pub fn builtin_gc_set_max_heap_bytes(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let bytes = match args.first() {
+        Some(Value::I64(n)) if *n > 0 => Some(*n as u64),
+        _ => None,
+    };
+    ctx.heap().set_max_heap_bytes(bytes);
+    Ok(Value::Null)
+}
+
+/// `Std.GC.SetStrictOOM(enabled)` — **add-gc-oom-exception (2026-05-25)**.
+/// Enables / disables strict OOM mode. When enabled, alloc over
+/// `max_heap_bytes` throws `Std.OutOfMemoryException` instead of
+/// returning `Value::Null` silently.
+pub fn builtin_gc_set_strict_oom(ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let enabled = matches!(args.first(), Some(Value::Bool(true)));
+    ctx.heap().set_strict_oom(enabled);
+    Ok(Value::Null)
+}
+
 /// `Std.GC.GetStats()` — projects Rust `HeapStats` into a `Std.HeapStats` instance.
 /// `MaxBytes` uses `-1` as the unlimited sentinel (z42 has no `Optional<T>`).
 pub fn builtin_gc_stats(ctx: &VmContext, _args: &[Value]) -> Result<Value> {

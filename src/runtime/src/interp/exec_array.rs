@@ -1,28 +1,56 @@
 /// Array instructions: allocation, element access, length.
-/// All errors here are VM-internal (out-of-bounds, type mismatch); arrays
-/// don't propagate user exceptions through these primitives.
+/// add-gc-oom-exception: array_new / array_new_lit return Option<Value>
+/// to propagate Std.OutOfMemoryException when alloc returns Null under
+/// strict OOM mode. Other helpers remain Result<()>.
 
 use crate::metadata::types::default_value_for_tag;
-use crate::metadata::Value;
+use crate::metadata::{Module, Value};
 use crate::vm_context::VmContext;
 use anyhow::{bail, Result};
 
 use super::ops::to_usize;
 use super::Frame;
 
-pub(super) fn array_new(ctx: &VmContext, frame: &mut Frame, dst: u32, size: u32, elem_tag: u8) -> Result<()> {
+pub(super) fn array_new(
+    ctx: &VmContext, module: &Module, frame: &mut Frame,
+    dst: u32, size: u32, elem_tag: u8,
+) -> Result<Option<Value>> {
     let n = to_usize(frame.get(size)?, "ArrayNew size")?;
     let default = default_value_for_tag(elem_tag);
-    frame.set(dst, ctx.heap().alloc_array(vec![default; n]));
-    Ok(())
+    let arr = ctx.heap().alloc_array(vec![default; n]);
+    if matches!(arr, Value::Null) {
+        ctx.heap().set_strict_oom(false);
+        let exc = crate::exception::make_stdlib_exception(
+            ctx, module, "Std.OutOfMemoryException",
+            format!("cannot allocate array[{n}]: heap limit exceeded"),
+        ).unwrap_or(Value::Null);
+        ctx.heap().set_strict_oom(true);
+        return Ok(Some(exc));
+    }
+    frame.set(dst, arr);
+    Ok(None)
 }
 
-pub(super) fn array_new_lit(ctx: &VmContext, frame: &mut Frame, dst: u32, elems: &[u32]) -> Result<()> {
+pub(super) fn array_new_lit(
+    ctx: &VmContext, module: &Module, frame: &mut Frame,
+    dst: u32, elems: &[u32],
+) -> Result<Option<Value>> {
     let vals: Vec<Value> = elems.iter()
         .map(|r| frame.get(*r).map(|v| v.clone()))
         .collect::<Result<_>>()?;
-    frame.set(dst, ctx.heap().alloc_array(vals));
-    Ok(())
+    let n = vals.len();
+    let arr = ctx.heap().alloc_array(vals);
+    if matches!(arr, Value::Null) {
+        ctx.heap().set_strict_oom(false);
+        let exc = crate::exception::make_stdlib_exception(
+            ctx, module, "Std.OutOfMemoryException",
+            format!("cannot allocate array literal[{n}]: heap limit exceeded"),
+        ).unwrap_or(Value::Null);
+        ctx.heap().set_strict_oom(true);
+        return Ok(Some(exc));
+    }
+    frame.set(dst, arr);
+    Ok(None)
 }
 
 pub(super) fn array_get(frame: &mut Frame, dst: u32, arr: u32, idx: u32) -> Result<()> {

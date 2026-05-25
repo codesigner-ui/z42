@@ -1,0 +1,32 @@
+// add-gc-oom-exception (2026-05-25): verify Std.OutOfMemoryException is
+// thrown and catchable when strict OOM mode rejects an object allocation.
+namespace Demo;
+using Std;
+using Std.IO;
+
+public class BigObj {
+    public int X;
+    public BigObj(int x) { this.X = x; }
+}
+
+void Main() {
+    // Set a tiny heap limit and enable strict OOM.
+    GC.SetMaxHeapBytes(1);
+    GC.SetStrictOOM(true);
+
+    // Object allocation should throw OutOfMemoryException.
+    bool caught = false;
+    try {
+        var obj = new BigObj(42);
+        Console.WriteLine("no exception");
+    } catch (OutOfMemoryException e) {
+        caught = true;
+        Console.WriteLine("caught OOM");
+    }
+    Console.WriteLine(caught ? "ok" : "fail");
+
+    // Restore unlimited heap so subsequent code runs normally.
+    GC.SetMaxHeapBytes(0);
+    GC.SetStrictOOM(false);
+    Console.WriteLine("done");
+}

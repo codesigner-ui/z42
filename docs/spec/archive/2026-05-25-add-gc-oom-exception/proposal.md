@@ -22,12 +22,17 @@ interp 没有检查，继续把 Null 写入寄存器。后续字段访问触发
 | 文件 | 变更 | 说明 |
 |------|------|------|
 | `src/libraries/z42.core/src/Exceptions/OutOfMemoryException.z42` | NEW | `Std.OutOfMemoryException : Exception` |
+| `src/libraries/z42.core/src/GC/GC.z42` | MODIFY | 新增 `Std.GC.SetMaxHeapBytes(long)` + `Std.GC.SetStrictOOM(bool)` |
 | `src/runtime/src/interp/exec_object.rs` | MODIFY | obj_new alloc_object 后加 OOM check |
 | `src/runtime/src/interp/exec_array.rs` | MODIFY | array_new / array_new_lit 返回类型 + OOM check |
-| `src/runtime/src/interp/exec_instr.rs` | MODIFY | ArrayNew/ArrayNewLit caller 处理 Ok(Some(exc)) |
-| `src/runtime/src/interp/exec_call.rs` | MODIFY | mk_clos unreachable! → OOM 传播；call() env alloc OOM check |
+| `src/runtime/src/interp/exec_instr.rs` | MODIFY | ArrayNew/ArrayNewLit + MkClos caller 处理 Ok(Some(exc)) |
+| `src/runtime/src/interp/exec_call.rs` | MODIFY | mk_clos unreachable! → OOM 传播；call_indirect env alloc OOM check |
+| `src/runtime/src/corelib/gc.rs` | MODIFY | 新增 builtin_gc_set_max_heap_bytes + builtin_gc_set_strict_oom |
+| `src/runtime/src/corelib/mod.rs` | MODIFY | 注册 2 个新 builtin |
 | `src/tests/gc/gc_oom_exception/source.z42` | NEW | 端到端 golden test |
 | `src/tests/gc/gc_oom_exception/expected_output.txt` | NEW | golden 预期输出 |
+| `src/tests/gc/gc_oom_exception/interp_only` | NEW | JIT 跳过标记（JIT OOM 路径延后）|
+| `src/compiler/z42.Tests/IncrementalBuildIntegrationTests.cs` | MODIFY | z42.core file count 59 → 60 |
 
 **只读引用**：
 - `src/runtime/src/exception/mod.rs` — `make_stdlib_exception` API 用法

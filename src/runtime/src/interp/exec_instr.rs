@@ -162,12 +162,22 @@ pub fn exec_instr(
             crate::gc::safepoint::check_safepoint(ctx);
         }
         Instruction::MkClos { dst, fn_name, captures, stack_alloc } => {
-            exec_call::mk_clos(ctx, frame, *dst, fn_name, captures, *stack_alloc)?
+            if let Some(thrown) = exec_call::mk_clos(ctx, module, frame, *dst, fn_name, captures, *stack_alloc)? {
+                return Ok(Some(thrown));
+            }
         }
 
         // ── Arrays ───────────────────────────────────────────────────────────
-        Instruction::ArrayNew    { dst, size, elem_tag } => exec_array::array_new(ctx, frame, *dst, *size, *elem_tag)?,
-        Instruction::ArrayNewLit { dst, elems }     => exec_array::array_new_lit(ctx, frame, *dst, elems)?,
+        Instruction::ArrayNew    { dst, size, elem_tag } => {
+            if let Some(thrown) = exec_array::array_new(ctx, module, frame, *dst, *size, *elem_tag)? {
+                return Ok(Some(thrown));
+            }
+        }
+        Instruction::ArrayNewLit { dst, elems } => {
+            if let Some(thrown) = exec_array::array_new_lit(ctx, module, frame, *dst, elems)? {
+                return Ok(Some(thrown));
+            }
+        }
         Instruction::ArrayGet    { dst, arr, idx }  => exec_array::array_get(frame, *dst, *arr, *idx)?,
         Instruction::ArraySet    { arr, idx, val }  => exec_array::array_set(ctx, frame, *arr, *idx, *val)?,
         Instruction::ArrayLen    { dst, arr }       => exec_array::array_len(frame, *dst, *arr)?,

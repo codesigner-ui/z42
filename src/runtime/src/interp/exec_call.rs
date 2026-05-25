@@ -159,6 +159,16 @@ pub(super) fn call_indirect(
         Some(env_vec) => {
             // 升格为 heap GcRef 给 callee 用 —— callee 不区分 stack/heap closure。
             let env_val = ctx.heap().alloc_array(env_vec);
+            // add-gc-oom-exception: alloc_array returns Null only under strict OOM
+            if matches!(env_val, Value::Null) {
+                ctx.heap().set_strict_oom(false);
+                let exc = crate::exception::make_stdlib_exception(
+                    ctx, module, "Std.OutOfMemoryException",
+                    "cannot allocate closure env: heap limit exceeded".to_string(),
+                ).unwrap_or(Value::Null);
+                ctx.heap().set_strict_oom(true);
+                return Ok(Some(exc));
+            }
             let mut v = Vec::with_capacity(user_vals.len() + 1);
             v.push(env_val);
             v.extend(user_vals);
@@ -185,10 +195,13 @@ pub(super) fn call_indirect(
 
 /// L3 closure construction. `stack_alloc=true` 走 frame-local arena
 ///（impl-closure-l3-escape-stack）；否则 heap 路径（原 Tier C）。
+///
+/// add-gc-oom-exception: returns `Ok(Some(exc))` when heap alloc_array fails
+/// under strict OOM mode, propagating Std.OutOfMemoryException to the caller.
 pub(super) fn mk_clos(
-    ctx: &VmContext, frame: &mut Frame,
+    ctx: &VmContext, module: &Module, frame: &mut Frame,
     dst: u32, fn_name: &str, captures: &[u32], stack_alloc: bool,
-) -> Result<()> {
+) -> Result<Option<Value>> {
     let mut env_vec: Vec<Value> = Vec::with_capacity(captures.len());
     for r in captures {
         env_vec.push(frame.get(*r)?.clone());
@@ -199,12 +212,22 @@ pub(super) fn mk_clos(
         Value::StackClosure { env_idx: idx, fn_name: fn_name.to_string() }
     } else {
         let env_val = ctx.heap().alloc_array(env_vec);
+        // add-gc-oom-exception: alloc_array returns Null only under strict OOM
+        if matches!(env_val, Value::Null) {
+            ctx.heap().set_strict_oom(false);
+            let exc = crate::exception::make_stdlib_exception(
+                ctx, module, "Std.OutOfMemoryException",
+                format!("cannot allocate closure `{fn_name}` env: heap limit exceeded"),
+            ).unwrap_or(Value::Null);
+            ctx.heap().set_strict_oom(true);
+            return Ok(Some(exc));
+        }
         let env = match env_val {
             Value::Array(rc) => rc,
-            _ => unreachable!("alloc_array must return Value::Array"),
+            _ => bail!("mk_clos: alloc_array returned unexpected value"),
         };
         Value::Closure { env, fn_name: fn_name.to_string() }
     };
     frame.set(dst, value);
-    Ok(())
+    Ok(None)
 }

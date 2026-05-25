@@ -118,4 +118,16 @@ public static class GC {
     /// "只跑了 N 次"还是"window 已饱和到 cap"。
     [Native("__gc_pause_window_capacity")]
     public static extern long PauseWindowCapacity();
+
+    /// **add-gc-oom-exception (2026-05-25)**: 设置堆上限（bytes）。
+    /// 传 0 或负数则清除上限（无界）。strict OOM 开启时，超过上限的 alloc
+    /// 触发 `Std.OutOfMemoryException`。主要用于测试和嵌入场景。
+    [Native("__gc_set_max_heap_bytes")]
+    public static extern void SetMaxHeapBytes(long bytes);
+
+    /// **add-gc-oom-exception (2026-05-25)**: 开启/关闭 strict OOM 模式。
+    /// true = alloc 越过 max_heap_bytes 时 throw OutOfMemoryException；
+    /// false（默认）= 无限制（已有 OOM observer 事件不受影响）。
+    [Native("__gc_set_strict_oom")]
+    public static extern void SetStrictOOM(bool enabled);
 }

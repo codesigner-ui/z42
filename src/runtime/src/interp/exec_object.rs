@@ -67,6 +67,19 @@ pub(super) fn obj_new(
         .collect();
     let obj_val = ctx.heap().alloc_object(type_desc, slots, NativeData::None);
 
+    // add-gc-oom-exception: alloc_object returns Null only under strict OOM.
+    // Temporarily disable strict OOM so the exception object can be allocated;
+    // since alloc_object only returns Null in strict mode, re-enable is safe.
+    if matches!(obj_val, Value::Null) {
+        ctx.heap().set_strict_oom(false);
+        let exc = crate::exception::make_stdlib_exception(
+            ctx, module, "Std.OutOfMemoryException",
+            format!("cannot allocate `{class_name}`: heap limit exceeded"),
+        ).unwrap_or(Value::Null);
+        ctx.heap().set_strict_oom(true);
+        return Ok(Some(exc));
+    }
+
     // 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): populate
     // per-instance type_args from the IR instruction. Read by `DefaultOf`.
     if !type_args.is_empty() {

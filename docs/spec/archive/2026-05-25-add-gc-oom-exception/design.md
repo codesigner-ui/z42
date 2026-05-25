@@ -29,16 +29,15 @@ make_stdlib_exception(ctx, module, "Std.OutOfMemoryException", msg)
 
 **决定**：callsite 检测。heap API 不变。
 
-### Decision 2: 双重 OOM fallback — throw Value::Null
-**问题**：`make_stdlib_exception` 内部也调 `alloc_object`，真满堆时也返 Null。
+### Decision 2: 双重 OOM fallback — 临时禁用 strict OOM
+**问题**：`make_stdlib_exception` 内部也调 `alloc_object`，strict OOM 下 exception
+对象 alloc 也会返 Null，导致 throw `Value::Null`，catch 无法匹配。
 
-**选项 A**：throw `Value::Null`（best-effort，不 panic）
-**选项 B**：预分配单例 OOM exception，heap init 时建好
-**选项 C**：static `String` exception（非 GC 对象）
-
-**决定**：选 A。B 需要 heap 知道 TypeDesc（启动期还未加载 z42.core）；
-C 增加 Value variant 复杂度。Value::Null throw 脚本端 `catch (var e)` 可捕获，
-语义可接受，不 panic 是主要保证。
+**决定**：每个 OOM handler 在调用 `make_stdlib_exception` 前临时设
+`set_strict_oom(false)`，构造完后 `set_strict_oom(true)`。因为 alloc_object
+仅在 strict OOM 下返 Null，反向推断严格 OOM 当前必然开启，重新开启是安全的。
+Exception 对象本身很小，略微超出 `max_heap_bytes` 是可接受的 best-effort。
+如连 exception 构造也 OOM（理论上不可能在临时禁用期间），fallback 为 `Value::Null`。
 
 ### Decision 3: exec_array 返回类型扩展
 `array_new` / `array_new_lit` 当前返 `Result<()>`，需改为 `Result<Option<Value>>`
