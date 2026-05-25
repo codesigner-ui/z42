@@ -637,6 +637,59 @@ public class BigInt {
         return absProd.Divide(g);
     }
 
+    /// Modular multiplicative inverse: returns `x` in `[0, modulus)` such
+    /// that `(this * x) mod modulus == 1`. Computed via iterative extended
+    /// Euclidean algorithm.
+    ///
+    /// Throws `ArgumentException` if:
+    ///   * `modulus <= 1` — `mod 1` collapses every value to 0 (no
+    ///     invertible elements); `modulus <= 0` is undefined
+    ///   * `gcd(this, modulus) != 1` — no inverse exists (includes the
+    ///     `this == 0` case since `gcd(0, m) == m != 1`)
+    ///
+    /// Negative `this` is normalised via `this.Mod(modulus)` to `[0, m)`
+    /// before the algorithm runs; result is always non-negative.
+    ///
+    /// Use cases: ModPow with negative exponent (via `(a^-1)^|e| mod m`);
+    /// RSA private-key derivation (`d = e^-1 mod φ(n)`); Bezout coefficients.
+    public BigInt ModInverse(BigInt modulus) {
+        if (modulus._sign <= 0 || modulus.IsOne()) {
+            throw new ArgumentException("BigInt.ModInverse: modulus must be > 1");
+        }
+        // Normalise `this` into [0, modulus). Mod follows dividend sign,
+        // so add modulus when negative.
+        BigInt a = this.Mod(modulus);
+        if (a._sign < 0) a = a.Add(modulus);
+        if (a.IsZero()) {
+            throw new ArgumentException("BigInt.ModInverse: gcd(0, m) != 1 — inverse does not exist");
+        }
+        // Iterative extended Euclidean.
+        // Invariant: g0 = old_g, g1 = current_g; x0, x1 are coefficients such
+        // that x_k * (this_normalised) ≡ g_k (mod modulus).
+        BigInt g0 = modulus;
+        BigInt g1 = a;
+        BigInt x0 = BigInt.Zero;
+        BigInt x1 = BigInt.One;
+        while (!g1.IsZero()) {
+            BigInt q   = g0.Divide(g1);
+            BigInt qg1 = q.Multiply(g1);
+            BigInt g2  = g0.Subtract(qg1);
+            BigInt qx1 = q.Multiply(x1);
+            BigInt x2  = x0.Subtract(qx1);
+            g0 = g1;
+            g1 = g2;
+            x0 = x1;
+            x1 = x2;
+        }
+        if (!g0.IsOne()) {
+            throw new ArgumentException("BigInt.ModInverse: gcd(this, modulus) != 1 — inverse does not exist");
+        }
+        // x0 may be negative; normalise to [0, modulus).
+        BigInt r = x0.Mod(modulus);
+        if (r._sign < 0) r = r.Add(modulus);
+        return r;
+    }
+
     // ── Comparison ──────────────────────────────────────────────────────
 
     public int CompareTo(BigInt other) {

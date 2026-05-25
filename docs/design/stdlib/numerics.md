@@ -149,6 +149,18 @@ Montgomery / Barrett reduction (constant-factor speedups) deferred as
 - **触发条件**：real-world crypto perf needs (RSA-2048 ~ 1ms target)
 - **当前 workaround**：v0 correctness is fine; speed is the issue
 
+### `bigint-future-modpow-negexp` — auto-route negative exponent via ModInverse
+
+- **来源**：add-bigint-modinverse 落地后；ModPow 当前在 `exp < 0` 时
+  抛 `ArgumentException`
+- **触发原因**：现在 `ModInverse` 已落地，`a^(-n) mod m` 可分解为
+  `(a^-1 mod m)^n mod m`；ModPow 内部检测负 exp → 先求 ModInverse →
+  再正向 ModPow。需要 ModPow 调用 ModInverse 的小重构 + 行为变更
+  从"抛错"到"正确计算"
+- **触发条件**：第一个用户需要 `a^(-n) mod m` 闭式（RSA 解密 / 数论）
+- **当前 workaround**：用户手动 `a.ModInverse(m).ModPow(n.Negate(), m)`
+  ——可行但 ergonomics 差
+
 ### ~~`bigint-future-gcd`~~ — **✅ Gcd / Lcm 已落地 2026-05-25 (add-bigint-gcd)**
 
 Shipped: `BigInt.Gcd(BigInt) → BigInt` (classical Euclidean —
@@ -181,16 +193,21 @@ deferred as `bigint-future-gcd-binary` (constant-factor optimization).
 - **当前 workaround**：deterministic primality for small operands via
   user-side trial division; large primes are pre-computed constants
 
-### `bigint-future-modinverse` — modular multiplicative inverse
+### ~~`bigint-future-modinverse`~~ — **✅ 已落地 2026-05-25 (add-bigint-modinverse)**
 
-- **来源**：add-bigint-gcd v0 scope cut + ModPow negative-exp follow-up
-- **触发原因**：extended Euclidean algorithm to find `x` such that
-  `a*x ≡ 1 (mod m)`; precondition for `ModPow(negative exp, m)` and
-  RSA decryption-key recovery from `(e, φ(n))`
-- **触发条件**：first user calling for ModPow with negative exponent
-  or RSA key-pair generation
-- **当前 workaround**：hard-code precomputed inverse when modulus is
-  a known small prime
+Shipped: `BigInt.ModInverse(BigInt modulus) → BigInt` — iterative
+extended Euclidean algorithm. Returns `x ∈ [0, modulus)` such that
+`(this * x) mod modulus == 1`. v0 限制：`modulus > 1`; gcd != 1 →
+`ArgumentException`. 负 `this` 先 `Mod(modulus)` 归一化；result 总
+非负。15 tests cover classic 3^-1 mod 11 = 4, RSA toy round-trip
+(p=11, q=13, e=7, d=103, m=42), negative-this normalisation,
+inverse*original ≡ 1 identity, error paths (modulus ≤ 1, negative,
+not coprime, this == 0, multiple of modulus), large Mersenne-31
+operand, Fermat-little-theorem cross-check on prime modulus
+(`a^-1 ≡ a^(p-2)` agrees between ModInverse and ModPow).
+
+ModPow 负指数自动路由（`a^(-n) mod m` 内部走 ModInverse） 留 follow-up
+`bigint-future-modpow-negexp`。
 
 ### `bigint-future-karatsuba-fft` — sub-quadratic multiplication
 

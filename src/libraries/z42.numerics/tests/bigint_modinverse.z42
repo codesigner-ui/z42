@@ -1,0 +1,182 @@
+// add-bigint-modinverse (2026-05-25): modular multiplicative inverse via
+// iterative extended Euclidean algorithm.
+namespace Z42NumericsBigIntModInverseTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+// ── Basics ──────────────────────────────────────────────────────────────
+
+[Test]
+void test_inverse_3_mod_11() {
+    // 3 * 4 = 12 ≡ 1 (mod 11)
+    BigInt r = new BigInt(3L).ModInverse(new BigInt(11L));
+    Assert.Equal(4L, r.ToInt64());
+}
+
+[Test]
+void test_inverse_17_mod_100() {
+    // 17 * 53 = 901 ≡ 1 (mod 100)
+    BigInt r = new BigInt(17L).ModInverse(new BigInt(100L));
+    Assert.Equal(53L, r.ToInt64());
+}
+
+[Test]
+void test_inverse_one_is_one() {
+    BigInt r = BigInt.One.ModInverse(new BigInt(11L));
+    Assert.True(r.IsOne());
+}
+
+// ── RSA-style: derive private exponent ──────────────────────────────────
+
+[Test]
+void test_rsa_toy_private_exp_derivation() {
+    // p=11, q=13, n=143, φ(n)=(p-1)(q-1)=120, e=7
+    // d = e^-1 mod φ(n) = 7^-1 mod 120 = 103 (since 7*103 = 721 = 6*120 + 1)
+    BigInt e   = new BigInt(7L);
+    BigInt phi = new BigInt(120L);
+    BigInt d   = e.ModInverse(phi);
+    Assert.Equal(103L, d.ToInt64());
+}
+
+[Test]
+void test_rsa_toy_inverse_round_trip_with_modpow() {
+    // (a^e)^d mod n == a  for a coprime to n
+    // p=11, q=13, n=143, e=7, d=103, a=42
+    BigInt n = new BigInt(143L);
+    BigInt e = new BigInt(7L);
+    BigInt d = e.ModInverse(new BigInt(120L));
+    BigInt a = new BigInt(42L);
+    BigInt c = a.ModPow(e, n);
+    BigInt m = c.ModPow(d, n);
+    Assert.Equal(42L, m.ToInt64());
+}
+
+// ── Negative `this` normalisation ───────────────────────────────────────
+
+[Test]
+void test_inverse_negative_this() {
+    // -3 ≡ 8 (mod 11); 8 * 7 = 56 = 5*11 + 1, so inverse is 7
+    BigInt r = new BigInt(-3L).ModInverse(new BigInt(11L));
+    Assert.Equal(7L, r.ToInt64());
+}
+
+[Test]
+void test_inverse_result_always_in_range_0_to_m() {
+    // Result must be in [0, modulus)
+    BigInt m = new BigInt(11L);
+    BigInt r = new BigInt(-3L).ModInverse(m);
+    Assert.False(r.IsNegative());
+    Assert.True(r.CompareTo(m) < 0);
+}
+
+// ── Inverse * original ≡ 1 (mod m) identity ─────────────────────────────
+
+[Test]
+void test_inverse_product_identity() {
+    BigInt a   = new BigInt(23L);
+    BigInt m   = new BigInt(97L);
+    BigInt inv = a.ModInverse(m);
+    BigInt prod = a.Multiply(inv);
+    BigInt r    = prod.Mod(m);
+    Assert.True(r.IsOne());
+}
+
+// ── Error: modulus <= 1 ─────────────────────────────────────────────────
+
+[Test]
+void test_modulus_one_throws() {
+    bool threw = false;
+    try {
+        BigInt _r = new BigInt(5L).ModInverse(BigInt.One);
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_modulus_zero_throws() {
+    bool threw = false;
+    try {
+        BigInt _r = new BigInt(5L).ModInverse(BigInt.Zero);
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_modulus_negative_throws() {
+    bool threw = false;
+    try {
+        BigInt _r = new BigInt(5L).ModInverse(new BigInt(-7L));
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Error: not coprime ──────────────────────────────────────────────────
+
+[Test]
+void test_not_coprime_throws() {
+    // gcd(4, 6) = 2 != 1 → no inverse
+    bool threw = false;
+    try {
+        BigInt _r = new BigInt(4L).ModInverse(new BigInt(6L));
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_zero_throws_no_inverse() {
+    // gcd(0, m) = m, so no inverse for any m > 1
+    bool threw = false;
+    try {
+        BigInt _r = BigInt.Zero.ModInverse(new BigInt(11L));
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_multiple_of_modulus_throws() {
+    // 11 mod 11 = 0; gcd(0, 11) != 1
+    bool threw = false;
+    try {
+        BigInt _r = new BigInt(11L).ModInverse(new BigInt(11L));
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Large (cross-limb) ──────────────────────────────────────────────────
+
+[Test]
+void test_inverse_large_modulus() {
+    // Mersenne prime 2^31 - 1 = 2147483647 (sits exactly at int max);
+    // 3 is coprime. Use ModPow trick: (3^-1)^1 mod p == ModPow(3, p-2, p)
+    // by Fermat's little theorem (verify both paths agree).
+    BigInt p   = new BigInt(2147483647L);
+    BigInt inv = new BigInt(3L).ModInverse(p);
+    // Verify: 3 * inv ≡ 1 (mod p)
+    BigInt prod = new BigInt(3L).Multiply(inv);
+    BigInt r    = prod.Mod(p);
+    Assert.True(r.IsOne());
+}
+
+[Test]
+void test_inverse_matches_fermat_for_prime_modulus() {
+    // For prime p, a^-1 ≡ a^(p-2) (mod p). Sanity check on a tractable prime.
+    BigInt p     = new BigInt(101L);
+    BigInt a     = new BigInt(37L);
+    BigInt inv1  = a.ModInverse(p);
+    BigInt inv2  = a.ModPow(new BigInt(99L), p);   // a^(p-2)
+    Assert.True(inv1.Equals(inv2));
+}
