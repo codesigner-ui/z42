@@ -1,0 +1,149 @@
+// add-uri-default-port (2026-05-26): Uri.EffectivePort + DefaultPortFor.
+namespace Z42UriDefaultPortTests;
+
+using Std;
+using Std.Test;
+using Std.Uri;
+
+// ── EffectivePort: explicit port wins ──────────────────────────────────
+
+[Test]
+void test_explicit_port_overrides_default() {
+    Uri u = Uri.Parse("http://example.com:8080/path");
+    Assert.Equal(8080, u.EffectivePort());
+}
+
+[Test]
+void test_https_explicit_port() {
+    Uri u = Uri.Parse("https://example.com:8443/");
+    Assert.Equal(8443, u.EffectivePort());
+}
+
+// ── EffectivePort: fall back to default ────────────────────────────────
+
+[Test]
+void test_http_default_80() {
+    Uri u = Uri.Parse("http://example.com/path");
+    Assert.Equal(80, u.EffectivePort());
+}
+
+[Test]
+void test_https_default_443() {
+    Uri u = Uri.Parse("https://example.com/path");
+    Assert.Equal(443, u.EffectivePort());
+}
+
+[Test]
+void test_ws_default_80() {
+    Uri u = Uri.Parse("ws://example.com/socket");
+    Assert.Equal(80, u.EffectivePort());
+}
+
+[Test]
+void test_wss_default_443() {
+    Uri u = Uri.Parse("wss://example.com/socket");
+    Assert.Equal(443, u.EffectivePort());
+}
+
+// ── EffectivePort: unknown scheme falls back to -1 ─────────────────────
+
+[Test]
+void test_unknown_scheme_no_port_returns_minus_one() {
+    Uri u = Uri.Parse("custom://example.com/path");
+    Assert.Equal(-1, u.EffectivePort());
+}
+
+[Test]
+void test_unknown_scheme_with_explicit_port_uses_explicit() {
+    Uri u = Uri.Parse("custom://example.com:1234/path");
+    Assert.Equal(1234, u.EffectivePort());
+}
+
+// ── DefaultPortFor static helper ───────────────────────────────────────
+
+[Test]
+void test_default_port_for_http() {
+    Assert.Equal(80, Uri.DefaultPortFor("http"));
+}
+
+[Test]
+void test_default_port_for_https() {
+    Assert.Equal(443, Uri.DefaultPortFor("https"));
+}
+
+[Test]
+void test_default_port_for_ssh() {
+    Assert.Equal(22, Uri.DefaultPortFor("ssh"));
+}
+
+[Test]
+void test_default_port_for_ftp() {
+    Assert.Equal(21, Uri.DefaultPortFor("ftp"));
+}
+
+[Test]
+void test_default_port_for_postgresql() {
+    Assert.Equal(5432, Uri.DefaultPortFor("postgresql"));
+}
+
+[Test]
+void test_default_port_for_mysql() {
+    Assert.Equal(3306, Uri.DefaultPortFor("mysql"));
+}
+
+[Test]
+void test_default_port_for_redis() {
+    Assert.Equal(6379, Uri.DefaultPortFor("redis"));
+}
+
+[Test]
+void test_default_port_for_mongodb() {
+    Assert.Equal(27017, Uri.DefaultPortFor("mongodb"));
+}
+
+// ── Case-insensitive scheme lookup ─────────────────────────────────────
+
+[Test]
+void test_default_port_case_insensitive_uppercase() {
+    Assert.Equal(80, Uri.DefaultPortFor("HTTP"));
+}
+
+[Test]
+void test_default_port_case_insensitive_mixed() {
+    Assert.Equal(443, Uri.DefaultPortFor("HtTpS"));
+}
+
+// ── Unknown scheme returns -1 ──────────────────────────────────────────
+
+[Test]
+void test_default_port_for_unknown_returns_minus_one() {
+    Assert.Equal(-1, Uri.DefaultPortFor("custom"));
+    Assert.Equal(-1, Uri.DefaultPortFor("zzz"));
+}
+
+[Test]
+void test_default_port_for_empty_returns_minus_one() {
+    Assert.Equal(-1, Uri.DefaultPortFor(""));
+}
+
+// ── Common DB connection-string ports ──────────────────────────────────
+
+[Test]
+void test_db_connection_default_ports_sweep() {
+    Assert.Equal(5432,  Uri.DefaultPortFor("postgresql"));
+    Assert.Equal(3306,  Uri.DefaultPortFor("mysql"));
+    Assert.Equal(6379,  Uri.DefaultPortFor("redis"));
+    Assert.Equal(27017, Uri.DefaultPortFor("mongodb"));
+}
+
+// ── Mail protocols ─────────────────────────────────────────────────────
+
+[Test]
+void test_mail_protocols() {
+    Assert.Equal(25,  Uri.DefaultPortFor("smtp"));
+    Assert.Equal(465, Uri.DefaultPortFor("smtps"));
+    Assert.Equal(143, Uri.DefaultPortFor("imap"));
+    Assert.Equal(993, Uri.DefaultPortFor("imaps"));
+    Assert.Equal(110, Uri.DefaultPortFor("pop3"));
+    Assert.Equal(995, Uri.DefaultPortFor("pop3s"));
+}

@@ -113,11 +113,27 @@ authority = [ userinfo "@" ] host [ ":" port ]
 - **触发原因**：rare needs；不可变 + Parse 已覆盖 95% 场景；增加 API 表面积
 - **当前 workaround**：拼接字符串再 Parse
 
-### uri-future-default-port
+### ~~uri-future-default-port~~ — **✅ 已落地 2026-05-26 (add-uri-default-port)**
 
-- **来源**：scheme → default port 推断（`https → 443`）
-- **触发原因**：scheme 列表无穷且不稳定；用户对显式 vs 默认有差异化预期
-- **当前 workaround**：调用方自行 `port = uri.HasPort() ? uri.GetPort() : 443`
+Shipped: two helpers covering the explicit-vs-default port question:
+
+- `uri.EffectivePort() → int` — explicit port if `HasPort()`, else
+  the scheme's default; `-1` only when both are absent
+- `Uri.DefaultPortFor(scheme) → int` — case-insensitive scheme →
+  IANA default lookup; `-1` for unknown schemes. Static so callers
+  can query without constructing a Uri
+
+Schemes covered (~25): http(s), ws(s), ftp(s), ssh, sftp, telnet,
+smtp(s), dns, tftp, gopher, pop3(s), ntp, imap(s), snmp, ldap(s),
+redis, mongodb, postgresql, mysql. Curated for "what a realistic z42
+app actually reaches for" — full IANA table (~400 entries) isn't
+worth shipping in stdlib.
+
+22 tests cover: explicit port overrides default; default ports for
+common HTTP/WebSocket/SSH/FTP/DB schemes; mail-protocol sweep
+(smtp/smtps/imap/imaps/pop3/pop3s); unknown-scheme returns -1;
+explicit port on unknown scheme works; case-insensitive scheme
+lookup; empty scheme returns -1.
 
 ## 跨 stdlib 交互
 

@@ -50,6 +50,69 @@ public class Uri {
     public bool HasQuery()     { return this._query.Length > 0; }
     public bool HasFragment()  { return this._fragment.Length > 0; }
 
+    /// Effective port — returns the explicit `_port` if present, otherwise
+    /// the IANA default for the scheme (`http` → 80, `https` → 443, etc.).
+    /// Returns -1 for unknown schemes with no explicit port.
+    /// add-uri-default-port (2026-05-26).
+    public int EffectivePort() {
+        if (this._port >= 0) { return this._port; }
+        return Uri.DefaultPortFor(this._scheme);
+    }
+
+    /// IANA default port for a scheme (case-insensitive). Covers the
+    /// common Internet protocols; returns -1 for unknown schemes.
+    /// Static helper so callers can query default ports without
+    /// constructing a Uri first. add-uri-default-port (2026-05-26).
+    public static int DefaultPortFor(string scheme) {
+        // ASCII-lowercase the scheme so callers can pass any case.
+        string s = Uri._asciiLower(scheme);
+        if (s == "http")    return 80;
+        if (s == "https")   return 443;
+        if (s == "ftp")     return 21;
+        if (s == "ftps")    return 990;
+        if (s == "ssh")     return 22;
+        if (s == "sftp")    return 22;
+        if (s == "telnet")  return 23;
+        if (s == "smtp")    return 25;
+        if (s == "smtps")   return 465;
+        if (s == "dns")     return 53;
+        if (s == "tftp")    return 69;
+        if (s == "gopher")  return 70;
+        if (s == "pop3")    return 110;
+        if (s == "pop3s")   return 995;
+        if (s == "ntp")     return 123;
+        if (s == "imap")    return 143;
+        if (s == "imaps")   return 993;
+        if (s == "snmp")    return 161;
+        if (s == "ldap")    return 389;
+        if (s == "ldaps")   return 636;
+        if (s == "ws")      return 80;
+        if (s == "wss")     return 443;
+        if (s == "redis")   return 6379;
+        if (s == "mongodb") return 27017;
+        if (s == "postgresql") return 5432;
+        if (s == "mysql")   return 3306;
+        return -1;
+    }
+
+    /// ASCII-lowercase a string (avoids depending on z42.text for a tiny
+    /// case-fold). Non-ASCII chars unchanged.
+    static string _asciiLower(string s) {
+        char[] buf = new char[s.Length];
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            int code = (int)c;
+            if (code >= 65 && code <= 90) {
+                buf[i] = (char)(code + 32);
+            } else {
+                buf[i] = c;
+            }
+            i = i + 1;
+        }
+        return String.FromChars(buf);
+    }
+
     // ── Public entries ───────────────────────────────────────────────────
 
     public static Uri Parse(string text) {
