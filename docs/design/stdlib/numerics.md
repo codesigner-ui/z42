@@ -204,8 +204,12 @@ Follow-ups deferred:
   `n < 3,317,044,064,679,887,385,961,981` etc.)
 - `bigint-future-bpsw` — Baillie–PSW; known no counterexample, slightly
   slower per round; deterministic up to current numerical tests
-- `bigint-future-prime-sieve` — wheel factorisation 6k±1 candidate skip
-  in NextPrime; ~3× speedup on candidate stepping
+- ~~`bigint-future-prime-sieve`~~ — **✅ 已落地 2026-05-25 (add-bigint-prime-sieve)** —
+  NextPrime 用 2-3 wheel（仅 6k±1 candidates，跳过 2/3 倍数）+ 小素数
+  trial division (primes 3..31) 在 Miller-Rabin 之前 early-reject。5 new
+  tests cover full sweep 4→30, composite-trial-div skip (e.g. 25 = 5²),
+  large composite 1000 → 1009 (路上 1001/1003/1007 都被 trial-div 拦截),
+  mod-6 landing cases for primes 7 / 11.
 
 ### ~~`bigint-future-modinverse`~~ — **✅ 已落地 2026-05-25 (add-bigint-modinverse)**
 

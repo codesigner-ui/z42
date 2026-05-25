@@ -195,3 +195,80 @@ void test_default_overload_small_prime() {
     // Result is non-deterministic in principle but 7 is prime so should be true.
     Assert.True(new BigInt(7L).IsProbablyPrime(10));
 }
+
+// ── NextPrime wheel-2-3 sweep (add-bigint-prime-sieve, 2026-05-25) ──────
+
+[Test]
+void test_next_prime_sweep_from_four_to_thirty() {
+    // Walk through `next prime > k` for k = 4..30 and check each known value.
+    long[] expectedNext = new long[27];
+    // index = k - 4, value = next prime > k
+    expectedNext[0]  =  5;  // 4 → 5
+    expectedNext[1]  =  7;  // 5 → 7
+    expectedNext[2]  =  7;  // 6 → 7
+    expectedNext[3]  = 11;  // 7 → 11
+    expectedNext[4]  = 11;  // 8 → 11
+    expectedNext[5]  = 11;  // 9 → 11
+    expectedNext[6]  = 11;  // 10 → 11
+    expectedNext[7]  = 13;  // 11 → 13
+    expectedNext[8]  = 13;  // 12 → 13
+    expectedNext[9]  = 17;  // 13 → 17
+    expectedNext[10] = 17;  // 14 → 17
+    expectedNext[11] = 17;  // 15 → 17
+    expectedNext[12] = 17;  // 16 → 17
+    expectedNext[13] = 19;  // 17 → 19
+    expectedNext[14] = 19;  // 18 → 19
+    expectedNext[15] = 23;  // 19 → 23
+    expectedNext[16] = 23;  // 20 → 23
+    expectedNext[17] = 23;  // 21 → 23
+    expectedNext[18] = 23;  // 22 → 23
+    expectedNext[19] = 29;  // 23 → 29
+    expectedNext[20] = 29;  // 24 → 29
+    expectedNext[21] = 29;  // 25 → 29
+    expectedNext[22] = 29;  // 26 → 29
+    expectedNext[23] = 29;  // 27 → 29
+    expectedNext[24] = 29;  // 28 → 29
+    expectedNext[25] = 31;  // 29 → 31
+    expectedNext[26] = 31;  // 30 → 31
+    long k = 4L;
+    while (k <= 30L) {
+        BigInt np = new BigInt(k).NextPrime();
+        Assert.Equal(expectedNext[(int)(k - 4L)], np.ToInt64());
+        k = k + 1L;
+    }
+}
+
+[Test]
+void test_next_prime_skips_known_composites_via_trial_div() {
+    // 25 = 5² should be caught by small-prime trial division (5 < 31).
+    // NextPrime(24) must reach 29 (not 25). Wheel-2-3 already steps 25,
+    // but trial-div confirms early reject without invoking Miller-Rabin.
+    BigInt r = new BigInt(24L).NextPrime();
+    Assert.Equal(29L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_large_composite_with_small_factor() {
+    // 1000 → 1009 (next prime). En route: 1001 = 7·11·13 (small factors),
+    // 1003 = 17·59 (small factor 17), 1005 = 3·5·67 (would already be
+    // skipped by wheel), 1007 = 19·53 (small factor 19) — all caught by
+    // trial-div before Miller-Rabin. 1009 is the next prime.
+    BigInt r = new BigInt(1000L).NextPrime();
+    Assert.Equal(1009L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_at_mod6_eq_1_landing() {
+    // this = 7 (mod 6 = 1, this IS prime). Next prime > 7 is 11.
+    // Wheel step: cand = 7 + 4 = 11. ✓
+    BigInt r = new BigInt(7L).NextPrime();
+    Assert.Equal(11L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_at_mod6_eq_5_landing() {
+    // this = 11 (mod 6 = 5, this IS prime). Next prime > 11 is 13.
+    // Wheel step: cand = 11 + 2 = 13. ✓
+    BigInt r = new BigInt(11L).NextPrime();
+    Assert.Equal(13L, r.ToInt64());
+}

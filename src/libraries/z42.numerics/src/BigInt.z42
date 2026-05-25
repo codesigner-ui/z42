@@ -785,22 +785,71 @@ public class BigInt {
     /// Smallest (probably) prime strictly greater than `this`. Uses 20-round
     /// Miller-Rabin (cryptographic-grade default; error ≤ 4^-20 ≈ 10^-12).
     ///
-    /// `(this < 2).NextPrime() == 2`; for `this >= 2` candidates step by 2
-    /// from the next odd number above `this`.
+    /// `(this < 2).NextPrime() == 2`; otherwise stepping uses a 2-3 wheel
+    /// (only candidates coprime to 6, i.e. `6k±1`) plus a small-prime trial
+    /// division early-reject (primes 3..31) to short-circuit before invoking
+    /// the heavier Miller-Rabin path. add-bigint-prime-sieve (2026-05-25).
     public BigInt NextPrime() {
-        BigInt two = new BigInt(2L);
-        if (this.CompareTo(two) < 0) return two;
-        // Start at this + 1; bump to next odd if even.
-        BigInt cand = this.Add(BigInt.One);
-        if (!cand.TestBit(0)) {
-            cand = cand.Add(BigInt.One);
-        }
+        BigInt two   = new BigInt(2L);
+        BigInt three = new BigInt(3L);
+        if (this.CompareTo(two)   < 0) return two;
+        if (this.CompareTo(three) < 0) return three;
+        // Step `this` up to the first candidate strictly greater than `this`
+        // and coprime to 6. Uses `this mod 6` to land on either 6k+1 or 6k+5.
+        BigInt six  = new BigInt(6L);
+        BigInt mod6 = this.Mod(six);
+        long m      = mod6.ToInt64();
+        BigInt cand;
+        if      (m == 0L) { cand = this.Add(BigInt.One);          }   // → 6k+1
+        else if (m == 1L) { cand = this.Add(new BigInt(4L));      }   // → 6k+5
+        else if (m == 2L) { cand = this.Add(new BigInt(3L));      }   // → 6k+5
+        else if (m == 3L) { cand = this.Add(new BigInt(2L));      }   // → 6k+5
+        else if (m == 4L) { cand = this.Add(BigInt.One);          }   // → 6k+5
+        else              { cand = this.Add(new BigInt(2L));      }   // m==5 → 6k+7 = 6(k+1)+1
+        BigInt four = new BigInt(4L);
+        // After a 6k+5 candidate the next coprime-to-6 step is +2 (→ 6k+7);
+        // after 6k+1 the next step is +4 (→ 6k+5).
+        BigInt candMod6 = cand.Mod(six);
+        bool nextStepIs2 = (candMod6.ToInt64() == 5L);
         Random rng = new Random();
         while (true) {
-            if (cand.IsProbablyPrime(20, rng)) return cand;
-            cand = cand.Add(two);
+            if (BigInt._trialDivideSmallPrimes(cand)) {
+                if (cand.IsProbablyPrime(20, rng)) return cand;
+            }
+            if (nextStepIs2) {
+                cand = cand.Add(two);
+                nextStepIs2 = false;
+            } else {
+                cand = cand.Add(four);
+                nextStepIs2 = true;
+            }
         }
         return BigInt.Zero;   // unreachable; satisfies type-checker if needed
+    }
+
+    /// Trial divide `cand` by primes 3, 5, 7, 11, ..., 31. Returns true if
+    /// `cand` is one of those primes or has no small factor (Miller-Rabin
+    /// should be run); returns false if `cand` is divisible by any small
+    /// prime > 2 (definitely composite). Big perf win in NextPrime — most
+    /// composite candidates are caught here without invoking ModPow rounds.
+    static bool _trialDivideSmallPrimes(BigInt cand) {
+        int[] smallPrimes = new int[10];
+        smallPrimes[0] =  3; smallPrimes[1] =  5; smallPrimes[2] =  7;
+        smallPrimes[3] = 11; smallPrimes[4] = 13; smallPrimes[5] = 17;
+        smallPrimes[6] = 19; smallPrimes[7] = 23; smallPrimes[8] = 29;
+        smallPrimes[9] = 31;
+        int i = 0;
+        while (i < 10) {
+            BigInt p = new BigInt((long)smallPrimes[i]);
+            // If cand == p, it IS prime — let Miller-Rabin confirm.
+            if (cand.CompareTo(p) == 0) return true;
+            // Divisibility by a smaller prime → composite (cand > p assumed
+            // since the wheel skips ≤ 4 cases and cand > this >= 3).
+            BigInt r = cand.Mod(p);
+            if (r.IsZero()) return false;
+            i = i + 1;
+        }
+        return true;
     }
 
     // ── Comparison ──────────────────────────────────────────────────────
