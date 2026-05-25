@@ -22,6 +22,13 @@ pub mod host;
 pub mod vm;
 pub mod vm_context;
 
+// Runtime configuration registry — single source of truth for every
+// Z42_* env var the runtime reads (docs/review.md Part 4 D1, 2026-05-26).
+// `RuntimeConfig` carries the 5 startup-consumed knobs; `KNOWN_KNOBS`
+// table also lists subsystem-local knobs (Z42_GC_* / Z42_NATIVE_PATH /
+// Z42_SAFEPOINT_THROTTLE / Z42_STRESS_ITERS) for `--info` discovery.
+pub mod config;
+
 // POSIX signal handler — captures z42 call stack on hard crashes
 // (SIGSEGV / SIGABRT / SIGFPE / SIGILL / SIGBUS). Phase 2 of D4 panic-hook
 // story (Phase 1 = main.rs install_panic_hook). Windows VEH = Phase 2.1.

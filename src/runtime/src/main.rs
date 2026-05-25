@@ -118,19 +118,21 @@ fn log_libs(libs_dir: &PathBuf) {
 }
 
 /// Initialize the tracing subscriber. Precedence (highest wins):
-///   1. `Z42_LOG` env var — `tracing-subscriber` directive syntax
+///   1. `cfg.log_filter` (sourced from `Z42_LOG` env var via `RuntimeConfig`)
+///      — `tracing-subscriber` directive syntax
 ///      (e.g. `Z42_LOG=z42::jit=debug,z42::gc=trace,z42=warn`)
 ///   2. `--verbose` CLI flag — defaults to `z42=info`
 ///   3. Otherwise: `z42=warn` (errors + warnings only; quiet boot)
 ///
-/// docs/review.md Part 4 D2 (2026-05-25).
-fn init_tracing(verbose: bool) {
+/// docs/review.md Part 4 D2 (2026-05-25) + D1 RuntimeConfig migration
+/// (2026-05-26): env var consumed via `RuntimeConfig` not inline read.
+fn init_tracing(verbose: bool, cfg: &z42::config::RuntimeConfig) {
     use tracing_subscriber::EnvFilter;
 
-    let filter = match std::env::var("Z42_LOG") {
-        Ok(s) if !s.trim().is_empty() => EnvFilter::try_new(s.as_str())
+    let filter = match cfg.log_filter.as_deref() {
+        Some(s) => EnvFilter::try_new(s)
             .unwrap_or_else(|_| EnvFilter::new(default_filter(verbose))),
-        _ => EnvFilter::new(default_filter(verbose)),
+        None => EnvFilter::new(default_filter(verbose)),
     };
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -207,8 +209,12 @@ fn install_panic_hook() {
 
 /// Print runtime build information to stdout. Triggered by `--info`.
 /// Output is intentionally human-readable + grep-friendly (one `key: value`
-/// per line). docs/review.md Part 4 D5 (2026-05-25).
+/// per line). docs/review.md Part 4 D5 (2026-05-25) + D1 RuntimeConfig
+/// migration (2026-05-26): enumerates `config::KNOWN_KNOBS` so adding a
+/// new knob is one table edit instead of also updating this function.
 fn print_build_info() {
+    use z42::config::KNOWN_KNOBS;
+
     println!("z42vm {}", env!("CARGO_PKG_VERSION"));
     println!("target: {}", std::env::consts::OS);
     println!("arch: {}", std::env::consts::ARCH);
@@ -227,19 +233,17 @@ fn print_build_info() {
     #[cfg(feature = "aot")] modes.push("aot");
     println!("exec modes: {}", modes.join(", "));
 
-    // Runtime config knobs (env vars)
-    match std::env::var("Z42_LIBS") {
-        Ok(v) => println!("Z42_LIBS: {v}"),
-        Err(_) => println!("Z42_LIBS: (unset; falls back to artifacts/build/libs/release)"),
+    // Runtime knobs — enumerate from KNOWN_KNOBS so this stays automatically
+    // in sync as new env vars get registered. Read raw env directly (not via
+    // RuntimeConfig.from_env) so subsystem-local knobs surface too.
+    println!("--- runtime knobs ({}) ---", KNOWN_KNOBS.len());
+    for knob in KNOWN_KNOBS {
+        match std::env::var(knob.name) {
+            Ok(v) if !v.trim().is_empty() => println!("{}: {v}", knob.name),
+            _                              => println!("{}: ({})", knob.name, knob.default_hint),
+        }
     }
-    match std::env::var("Z42_PATH") {
-        Ok(v) => println!("Z42_PATH: {v}"),
-        Err(_) => println!("Z42_PATH: (unset)"),
-    }
-    match std::env::var("Z42_LOG") {
-        Ok(v) => println!("Z42_LOG: {v}"),
-        Err(_) => println!("Z42_LOG: (unset; defaults to z42=warn / z42=info under --verbose)"),
-    }
+    println!("---");
 
     // Effective libs dir lookup result.
     match resolve_libs_dir() {
@@ -385,7 +389,13 @@ fn build_declared_candidates(
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    init_tracing(cli.verbose);
+    // Centralized runtime config — single source of truth for Z42_* env vars
+    // consumed at boot (docs/review.md Part 4 D1, 2026-05-26). Subsystem
+    // OnceLock-cached env reads (Z42_GC_* / Z42_NATIVE_PATH / ...) stay
+    // inline until their Phase 2 migration.
+    let cfg = z42::config::RuntimeConfig::from_env();
+
+    init_tracing(cli.verbose, &cfg);
     install_panic_hook();
     #[cfg(unix)]
     z42::signal_handler::install();
