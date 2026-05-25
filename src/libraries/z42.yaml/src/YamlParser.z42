@@ -274,8 +274,15 @@ public sealed class YamlParser {
                 this._SkipInlineSpacesAndOptionalComment();
                 this._ConsumeRestOfLine();
             } else {
-                val = this._ParseBlockScalarValue();
-                this._ConsumeRestOfLine();
+                // Block scalar indicator (`|` / `>`) takes precedence over
+                // plain-scalar parsing — see add-yaml-multiline-strings.
+                YamlValue block = this._TryParseBlockScalar(indent);
+                if (block != null) {
+                    val = block;
+                } else {
+                    val = this._ParseBlockScalarValue();
+                    this._ConsumeRestOfLine();
+                }
             }
 
             if (m.ContainsKey(key)) {
@@ -413,8 +420,15 @@ public sealed class YamlParser {
                     item.Set(key, val);
                     this._ConsumeRestOfLine();
                 } else {
-                    item = this._ParseBlockScalarValue();
-                    this._ConsumeRestOfLine();
+                    // Block scalar (`- |` / `- >`) takes precedence over
+                    // plain-scalar parsing.
+                    YamlValue block = this._TryParseBlockScalar(indent);
+                    if (block != null) {
+                        item = block;
+                    } else {
+                        item = this._ParseBlockScalarValue();
+                        this._ConsumeRestOfLine();
+                    }
                 }
             }
             seq.Add(item);
@@ -648,6 +662,159 @@ public sealed class YamlParser {
         }
         string raw = this._ConsumeLinePlainScalar();
         return this._ParseScalarLiteral(raw);
+    }
+
+    /// Try to parse a block-scalar indicator (`|` literal or `>` folded)
+    /// at the current position. Returns the resulting string YamlValue if
+    /// a block scalar starts here; `null` otherwise (caller falls through
+    /// to the inline-scalar path). `parentIndent` is the indent of the
+    /// line containing the indicator; content lines must indent strictly
+    /// more than this. add-yaml-multiline-strings (2026-05-25).
+    private YamlValue _TryParseBlockScalar(int parentIndent) {
+        if (this._pos >= this._src.Length) { return null; }
+        char first = this._src.CharAt(this._pos);
+        if (first != '|' && first != '>') { return null; }
+        bool literal = (first == '|');
+        this._Advance();
+        // Optional chomping (`-` strip, `+` keep, default clip) and indent
+        // indicator (digit 1-9). Either order; at most one of each.
+        // chomp: 0 = clip, 1 = strip, 2 = keep.
+        int chomp = 0;
+        int explicitIndent = -1;
+        int passes = 0;
+        while (passes < 2 && this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            if ((c == '-' || c == '+') && chomp == 0) {
+                if (c == '-') { chomp = 1; }
+                else          { chomp = 2; }
+                this._Advance();
+            } else if (c >= '1' && c <= '9' && explicitIndent < 0) {
+                explicitIndent = (int)c - (int)'0';
+                this._Advance();
+            } else {
+                passes = 2;     // exit inner loop
+            }
+            passes = passes + 1;
+        }
+        // Indicator line ends with optional spaces + optional comment + EOL.
+        this._SkipInlineSpacesAndOptionalComment();
+        this._ConsumeRestOfLine();
+        // Collect content lines.
+        StringBuilder content = new StringBuilder();
+        int contentIndent = -1;
+        int pendingBlanks = 0;
+        bool sawContent = false;
+        bool prevWasBlank = false;
+        while (this._pos < this._src.Length) {
+            int lineStart = this._pos;
+            int lineIndent = 0;
+            while (lineStart + lineIndent < this._src.Length
+                    && this._src.CharAt(lineStart + lineIndent) == ' ') {
+                lineIndent = lineIndent + 1;
+            }
+            int probe = lineStart + lineIndent;
+            bool blank = false;
+            if (probe >= this._src.Length) {
+                blank = true;
+            } else {
+                char pc = this._src.CharAt(probe);
+                if (pc == '\n' || pc == '\r') { blank = true; }
+            }
+            if (blank) {
+                if (sawContent) {
+                    pendingBlanks = pendingBlanks + 1;
+                    prevWasBlank = true;
+                }
+                // Consume the blank line and continue.
+                this._pos = probe;
+                this._ConsumeRestOfLine();
+                continue;
+            }
+            // First non-blank line decides content indent (unless explicit).
+            if (contentIndent < 0) {
+                if (explicitIndent > 0) {
+                    contentIndent = parentIndent + explicitIndent;
+                } else {
+                    contentIndent = lineIndent;
+                }
+                // Content indent must be strictly greater than parent;
+                // otherwise the block scalar is empty and this line belongs
+                // to the surrounding context.
+                if (contentIndent <= parentIndent) {
+                    this._pos = lineStart;
+                    contentIndent = -1;          // signal "empty body"
+                    pendingBlanks = 0;            // discard tracked blanks
+                    break;
+                }
+            }
+            if (lineIndent < contentIndent) {
+                // Reached a dedented line → block scalar ends; leave the
+                // line for the surrounding parser to handle.
+                this._pos = lineStart;
+                break;
+            }
+            // Capture the line text starting at contentIndent.
+            int textStart = lineStart + contentIndent;
+            int textEnd = textStart;
+            while (textEnd < this._src.Length
+                    && this._src.CharAt(textEnd) != '\n'
+                    && this._src.CharAt(textEnd) != '\r') {
+                textEnd = textEnd + 1;
+            }
+            string lineText = this._src.Substring(textStart, textEnd - textStart);
+            // Emit separator between previous content and this line.
+            if (sawContent) {
+                if (literal) {
+                    // Always one `\n` for the previous line's break, plus
+                    // one extra `\n` per intervening blank.
+                    content.Append("\n");
+                    int k = 0;
+                    while (k < pendingBlanks) {
+                        content.Append("\n");
+                        k = k + 1;
+                    }
+                } else {
+                    // Folded: blank lines fold to `\n`; consecutive non-blank
+                    // lines fold to a single space.
+                    if (prevWasBlank) {
+                        int k = 0;
+                        while (k < pendingBlanks) {
+                            content.Append("\n");
+                            k = k + 1;
+                        }
+                    } else {
+                        content.Append(" ");
+                    }
+                }
+            }
+            content.Append(lineText);
+            sawContent = true;
+            prevWasBlank = false;
+            pendingBlanks = 0;
+            this._pos = textEnd;
+            this._ConsumeRestOfLine();
+        }
+        // Apply chomping.
+        string body = content.ToString();
+        if (!sawContent) {
+            return YamlValue.OfString("");
+        }
+        if (chomp == 1) {
+            // strip: no trailing newlines.
+            return YamlValue.OfString(body);
+        }
+        if (chomp == 0) {
+            // clip: exactly one trailing newline.
+            return YamlValue.OfString(body + "\n");
+        }
+        // keep: one trailing newline + one per trailing blank line.
+        int trailing = 1 + pendingBlanks;
+        int t = 0;
+        while (t < trailing) {
+            body = body + "\n";
+            t = t + 1;
+        }
+        return YamlValue.OfString(body);
     }
 
     /// Consume from current pos through the rest of the line; return the

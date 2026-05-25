@@ -1,0 +1,162 @@
+// add-yaml-multiline-strings (2026-05-25): YAML 1.2 block scalars
+// `|` (literal) and `>` (folded) with chomping indicators.
+namespace Z42YamlParseBlockScalarsTests;
+
+using Std;
+using Std.Test;
+using Std.Yaml;
+
+// ── Literal style (`|`) ─────────────────────────────────────────────────
+
+[Test]
+void test_literal_two_lines() {
+    string src = "msg: |\n  Line 1\n  Line 2\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Line 1\nLine 2\n", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_single_line() {
+    string src = "msg: |\n  Hello\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Hello\n", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_preserves_blank_line() {
+    string src = "msg: |\n  Line 1\n\n  Line 3\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Line 1\n\nLine 3\n", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_multiple_blank_lines() {
+    string src = "msg: |\n  A\n\n\n  B\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("A\n\n\nB\n", v.Get("msg").AsString());
+}
+
+// ── Chomping: strip (`-`) ───────────────────────────────────────────────
+
+[Test]
+void test_literal_strip_chomping() {
+    string src = "msg: |-\n  Line 1\n  Line 2\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Line 1\nLine 2", v.Get("msg").AsString());
+}
+
+[Test]
+void test_literal_strip_with_trailing_blanks() {
+    string src = "msg: |-\n  Hello\n\n\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Hello", v.Get("msg").AsString());
+}
+
+// ── Chomping: keep (`+`) ────────────────────────────────────────────────
+
+[Test]
+void test_literal_keep_chomping() {
+    string src = "msg: |+\n  Hello\n\n\n";
+    YamlValue v = YamlValue.Parse(src);
+    // keep: keeps trailing newlines (1 implicit + 2 blank lines = 3 newlines)
+    Assert.Equal("Hello\n\n\n", v.Get("msg").AsString());
+}
+
+// ── Folded style (`>`) ──────────────────────────────────────────────────
+
+[Test]
+void test_folded_two_lines_join_with_space() {
+    string src = "msg: >\n  Line 1\n  Line 2\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Line 1 Line 2\n", v.Get("msg").AsString());
+}
+
+[Test]
+void test_folded_blank_line_becomes_newline() {
+    string src = "msg: >\n  Line 1\n\n  Line 3\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Line 1\nLine 3\n", v.Get("msg").AsString());
+}
+
+[Test]
+void test_folded_three_consecutive_non_blank_lines_fold() {
+    string src = "msg: >\n  A\n  B\n  C\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("A B C\n", v.Get("msg").AsString());
+}
+
+[Test]
+void test_folded_strip_chomping() {
+    string src = "msg: >-\n  A\n  B\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("A B", v.Get("msg").AsString());
+}
+
+[Test]
+void test_folded_keep_chomping() {
+    string src = "msg: >+\n  A\n\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("A\n\n", v.Get("msg").AsString());
+}
+
+// ── In a sequence ───────────────────────────────────────────────────────
+
+[Test]
+void test_literal_in_sequence_item() {
+    string src = "- |\n  hello\n  world\n- plain item\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(2, v.Length());
+    Assert.Equal("hello\nworld\n", v.At(0).AsString());
+    Assert.Equal("plain item",    v.At(1).AsString());
+}
+
+[Test]
+void test_folded_in_sequence_item() {
+    string src = "- >\n  one\n  two\n- 42\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(2, v.Length());
+    Assert.Equal("one two\n", v.At(0).AsString());
+    Assert.Equal(42L,         v.At(1).AsInt());
+}
+
+// ── Mapping continues after block scalar ────────────────────────────────
+
+[Test]
+void test_block_scalar_then_sibling_key() {
+    string src = "before: 1\nmsg: |\n  Line A\n  Line B\nafter: 2\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(1L, v.Get("before").AsInt());
+    Assert.Equal("Line A\nLine B\n", v.Get("msg").AsString());
+    Assert.Equal(2L, v.Get("after").AsInt());
+}
+
+// ── Deeper-indented content (preserved as part of body) ────────────────
+
+[Test]
+void test_literal_extra_indent_preserved() {
+    // Content indent is the LEAST indented line; deeper lines keep their
+    // extra leading spaces relative to that base.
+    string src = "msg: |\n  base\n    deeper\n  back\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("base\n  deeper\nback\n", v.Get("msg").AsString());
+}
+
+// ── Empty block scalar ──────────────────────────────────────────────────
+
+[Test]
+void test_empty_block_scalar() {
+    // `key: |` with no content below at deeper indent → empty string.
+    string src = "key: |\nother: 1\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("", v.Get("key").AsString());
+    Assert.Equal(1L, v.Get("other").AsInt());
+}
+
+// ── End-of-input handling ──────────────────────────────────────────────
+
+[Test]
+void test_literal_at_eof_no_trailing_newline_in_src() {
+    string src = "msg: |\n  Hello";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("Hello\n", v.Get("msg").AsString());
+}

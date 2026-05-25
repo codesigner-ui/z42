@@ -87,6 +87,8 @@ for the rationale on the `ParseStream` naming.
 | Scalars: plain string | `hello world` |
 | Scalars: double-quoted | `"a\nb"` with `\n \t \r \" \\ \/ \0 \uXXXX` escapes |
 | Scalars: single-quoted | `'don''t'` (no escapes except `''` → `'`) |
+| Scalars: block literal | `key: \|\n  Line1\n  Line2\n` → `"Line1\nLine2\n"` (newlines preserved; chomping `-` strip / `+` keep / default clip) |
+| Scalars: block folded | `key: >\n  A\n  B\n` → `"A B\n"` (consecutive non-blank lines fold to single space; blank line → `\n`) |
 | Block mapping | `key: value\n` with indentation-based nesting |
 | Block sequence | `- item\n` with same indentation rules |
 | Sequence of inline mappings | `- name: bob\n- name: alice\n` |
@@ -155,15 +157,23 @@ with escapes; everything else is plain.
 - **触发条件**：use case requiring explicit type override on a scalar
   (e.g. forcing `"42"` to stay a string without quotes).
 
-### `yaml-future-multiline-strings`
+### ~~`yaml-future-multiline-strings`~~ — **✅ 已落地 2026-05-25 (add-yaml-multiline-strings)**
 
-- **来源**：add-z42-yaml v0 scope
-- **触发原因**：literal `|` and folded `>` multi-line scalars need
-  scope-tracking + line-folding rules + chomping indicators. Tractable
-  but ~200 lines of careful spec text → code; deferred until use case
-  demands it.
-- **触发条件**：use case parsing YAML with multi-line embedded scripts
-  or docstrings (Helm `_helpers.tpl` etc.).
+Shipped: YAML 1.2 block scalars `|` (literal) and `>` (folded), with full
+chomping indicator support (`-` strip / `+` keep / default clip) and
+optional indent indicator (digit 1-9). Auto-detect content indent from
+first non-blank line; deeper indentation preserved relative to that base.
+Implemented as `_TryParseBlockScalar(parentIndent) → YamlValue` wired into
+mapping-value + sequence-item dispatch points; returns null when current
+position is not a `|` / `>` indicator (caller falls back to plain-scalar
+parse).
+
+18 tests cover: literal 1/2 line + blank-line preservation + multi-blank
+preservation; strip / clip / keep chomping for both styles; folded
+space-folding (3 consecutive non-blank lines → "A B C"); folded
+blank-as-newline; literal + folded in sequence items; sibling mapping
+key after block scalar; deeper-indented content preserved; empty block
+scalar (`key: |` with no content); EOF without trailing newline in source.
 
 ### ~~`yaml-future-multi-doc`~~ — **✅ 已落地 2026-05-25 (add-yaml-multi-doc)**
 
