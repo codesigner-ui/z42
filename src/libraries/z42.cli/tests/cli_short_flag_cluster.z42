@@ -1,0 +1,169 @@
+// add-cli-short-flag-cluster (2026-05-26): GNU-style `-abc` = `-a -b -c`
+// for boolean flags only. Clustering with an option-short rejected.
+namespace Z42CliShortFlagClusterTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+// ── Basic clusters ─────────────────────────────────────────────────────
+
+[Test]
+void test_two_flag_cluster() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddFlag("debug",   "d", "debug");
+    string[] a = new string[1];
+    a[0] = "-vd";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("verbose"));
+    Assert.True(r.GetFlag("debug"));
+}
+
+[Test]
+void test_three_flag_cluster() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddFlag("debug",   "d", "debug");
+    p.AddFlag("quiet",   "q", "quiet");
+    string[] a = new string[1];
+    a[0] = "-vdq";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("verbose"));
+    Assert.True(r.GetFlag("debug"));
+    Assert.True(r.GetFlag("quiet"));
+}
+
+[Test]
+void test_cluster_order_independent() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("a", "a", "a");
+    p.AddFlag("b", "b", "b");
+    p.AddFlag("c", "c", "c");
+    string[] a1 = new string[1]; a1[0] = "-abc";
+    ParseResult r1 = p.Parse(a1);
+    Assert.True(r1.GetFlag("a") && r1.GetFlag("b") && r1.GetFlag("c"));
+    string[] a2 = new string[1]; a2[0] = "-cab";
+    ParseResult r2 = p.Parse(a2);
+    Assert.True(r2.GetFlag("a") && r2.GetFlag("b") && r2.GetFlag("c"));
+}
+
+// ── Single-short still works (regression) ──────────────────────────────
+
+[Test]
+void test_single_short_flag_unchanged() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    string[] a = new string[1];
+    a[0] = "-v";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("verbose"));
+}
+
+[Test]
+void test_single_short_option_unchanged() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("port", "p", "port", "0");
+    string[] a = new string[2];
+    a[0] = "-p"; a[1] = "8080";
+    ParseResult r = p.Parse(a);
+    Assert.Equal("8080", r.GetOption("port"));
+}
+
+// ── Cluster + standalone interleaved ───────────────────────────────────
+
+[Test]
+void test_cluster_then_separate_flag() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddFlag("debug",   "d", "debug");
+    p.AddFlag("quiet",   "q", "quiet");
+    string[] a = new string[2];
+    a[0] = "-vd"; a[1] = "-q";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("verbose"));
+    Assert.True(r.GetFlag("debug"));
+    Assert.True(r.GetFlag("quiet"));
+}
+
+// ── Cluster + option (separate token) ──────────────────────────────────
+
+[Test]
+void test_cluster_then_option_with_value() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddFlag("debug",   "d", "debug");
+    p.AddOption("port", "p", "port", "0");
+    string[] a = new string[3];
+    a[0] = "-vd"; a[1] = "--port"; a[2] = "443";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("verbose"));
+    Assert.True(r.GetFlag("debug"));
+    Assert.Equal("443", r.GetOption("port"));
+}
+
+// ── Error: cluster containing an option-short ─────────────────────────
+
+[Test]
+void test_cluster_with_option_short_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddOption("port",  "p", "port", "0");
+    bool threw = false;
+    try {
+        string[] a = new string[1];
+        a[0] = "-vp";   // p is an option, not a flag → can't cluster
+        p.Parse(a);
+    } catch (CliException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Error: cluster containing unknown short ───────────────────────────
+
+[Test]
+void test_cluster_with_unknown_short_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    bool threw = false;
+    try {
+        string[] a = new string[1];
+        a[0] = "-vz";   // z is not registered
+        p.Parse(a);
+    } catch (CliException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Common pattern: `tar -xvf` ────────────────────────────────────────
+
+[Test]
+void test_tar_style_cluster_x_v() {
+    // `tar -xv` style — extract verbose. `f` (file) is an option so we
+    // need separate `-f archive.tar`. Here we only cluster pure flags.
+    ArgParser p = new ArgParser("tar", "");
+    p.AddFlag("extract", "x", "extract files");
+    p.AddFlag("verbose", "v", "verbose output");
+    p.AddOption("file", "f", "archive file", "");
+    string[] a = new string[3];
+    a[0] = "-xv"; a[1] = "-f"; a[2] = "out.tar";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("extract"));
+    Assert.True(r.GetFlag("verbose"));
+    Assert.Equal("out.tar", r.GetOption("file"));
+}
+
+// ── Single-char "cluster" doesn't trigger cluster path ────────────────
+
+[Test]
+void test_single_char_short_not_treated_as_cluster() {
+    // `-x` is single-char; the cluster path only kicks in for length > 1.
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("x", "x", "x flag");
+    string[] a = new string[1];
+    a[0] = "-x";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("x"));
+}

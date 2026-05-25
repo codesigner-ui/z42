@@ -253,6 +253,38 @@ public class ArgParser {
             r._optionWasSet[oi]  = true;
             return idx + 2;
         }
+        // GNU-style short-flag cluster `-abc` = `-a -b -c` (boolean flags only).
+        // Only entered when the token isn't a registered single short. Each
+        // char must be a registered flag's short name; if ANY char is an
+        // option-short, throws because clustering doesn't compose with values.
+        // add-cli-short-flag-cluster (2026-05-26).
+        if (name.Length > 1) {
+            // First pass: validate every char is a known flag short.
+            int p = 0;
+            while (p < name.Length) {
+                string ch = name.Substring(p, 1);
+                int cfi = this.FindFlagByShort(ch);
+                if (cfi < 0) {
+                    int coi = this.FindOptionByShort(ch);
+                    if (coi >= 0) {
+                        throw new CliException("short-flag cluster '-" + name +
+                            "' contains option '-" + ch +
+                            "' that requires a value (clusters are flags only)");
+                    }
+                    throw new CliException("unknown option '-" + name + "'");
+                }
+                p = p + 1;
+            }
+            // Second pass: set each flag.
+            int q = 0;
+            while (q < name.Length) {
+                string ch = name.Substring(q, 1);
+                int cfi = this.FindFlagByShort(ch);
+                r._flagValues[cfi] = true;
+                q = q + 1;
+            }
+            return idx + 1;
+        }
         throw new CliException("unknown option '-" + name + "'");
     }
 

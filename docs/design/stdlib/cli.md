@@ -136,11 +136,32 @@ combined required + typed in a realistic "tiny HTTP server" parser.
 - **触发原因**：v0 后值覆盖前值
 - **当前 workaround**：用 `,` 分隔的单 option + caller split
 
-### cli-future-short-flag-cluster
+### ~~cli-future-short-flag-cluster~~ — **✅ 已落地 2026-05-26 (add-cli-short-flag-cluster)**
 
-- **来源**：`-vxf` 等价 `-v -x -f`
-- **触发原因**：v0 `-vxf` 报 unknown short flag
-- **当前 workaround**：分开传
+Shipped: GNU-style `-abc` = `-a -b -c` for **boolean flags only**.
+Clustering with an option-short character (one that requires a value)
+throws `CliException` with a clear message — the ambiguity around
+"is this `-p 8080` or `-p` followed by value `8080`?" makes cluster +
+option composition genuinely unsafe.
+
+Behaviour:
+- `-vd` where both `v` and `d` are registered flag-shorts → both set
+- Order independent (`-cab` == `-abc`)
+- Unknown short in cluster → "unknown option" error
+- Cluster containing option-short → "clusters are flags only" error
+  with the offending char called out
+- Single-char short (`-v`) bypasses the cluster path entirely
+  (matches existing v0 behaviour)
+
+Two-pass validation: first pass verifies every char is a registered
+flag-short; second pass commits the writes. Avoids partial-cluster
+state when the cluster is invalid mid-way.
+
+11 new tests cover: 2-flag / 3-flag clusters; order independence;
+single-short flag and option regression checks; cluster then separate
+flag; cluster then `--option value`; cluster + option-short rejection;
+cluster + unknown rejection; `tar -xv -f out.tar` pattern; single-char
+short doesn't trigger cluster path.
 
 ### cli-future-strict-vs-extras
 
