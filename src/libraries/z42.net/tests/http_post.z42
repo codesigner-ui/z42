@@ -1,0 +1,74 @@
+// add-z42-net-http K3 (2026-05-25): POST with body + Content-Type round-trip.
+namespace Z42NetHttpPostTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+[Test]
+void test_post_string_body_with_json_content_type() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/api";
+
+    string requestBody  = "{\"hello\":\"world\"}";
+    int    requestLen   = requestBody.Length;
+    string contentType  = "application/json";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        // Read until headers complete
+        byte[] buf = new byte[4096];
+        int total = 0;
+        int headerEnd = -1;
+        while (true) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+            // Find \r\n\r\n
+            int i = 0;
+            while (i + 4 <= total) {
+                if (buf[i] == (byte)13 && buf[i+1] == (byte)10
+                    && buf[i+2] == (byte)13 && buf[i+3] == (byte)10) {
+                    headerEnd = i + 4;
+                    break;
+                }
+                i = i + 1;
+            }
+            if (headerEnd >= 0) break;
+        }
+        // Continue reading body
+        while (total < headerEnd + requestLen) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+        }
+        // Echo body in 200 OK
+        byte[] echo = new byte[requestLen];
+        int j = 0;
+        while (j < requestLen) { echo[j] = buf[headerEnd + j]; j = j + 1; }
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Content-Type: " + contentType + "\r\n"
+            + "Content-Length: " + Int32.ToString(requestLen) + "\r\n"
+            + "Connection: close\r\n"
+            + "\r\n";
+        byte[] respHead = Utf8.GetBytes(resp);
+        s.Write(respHead, 0, respHead.Length);
+        s.Write(echo, 0, requestLen);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.PostString(url, requestBody, contentType);
+
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal(contentType, r.Headers.Get("Content-Type"));
+    Assert.Equal(requestBody, r.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}

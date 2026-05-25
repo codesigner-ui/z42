@@ -22,6 +22,22 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 
 - `Std.Net.Sockets.TcpClient` / `TcpListener` / `NetworkStream` (K1 TCP, 2026-05-24)
 - `Std.Net.Sockets.UdpClient` / `UdpReceiveResult` (K2 UDP, 2026-05-25)
+- `Std.Net.Http.HttpClient` / `HttpRequest` / `HttpResponse` / `HttpHeaders` /
+  `HttpMethod` / `HttpStatusCode` / `HttpUrl` (K3 HTTP/1.1, 2026-05-25)
+
+## src/Http/ 核心文件
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `HttpClient.z42` | `HttpClient` | top-level facade: Get / Post / PostString / Send. Pure-script over K1 `TcpClient`. http:// only — https:// throws `NotSupportedException` pending `add-z42-net-tls` |
+| `HttpRequest.z42` | `HttpRequest` | method + url + headers + body 容器 (builder pattern via `SetHeader` / `SetBody`) |
+| `HttpResponse.z42` | `HttpResponse` | parsed status + reason + headers + body; `IsSuccess()` / `BodyAsString()` |
+| `HttpHeaders.z42` | `HttpHeaders` | case-insensitive header dict (raw `string[]`+count; z42 不支持 generic field types) |
+| `HttpMethod.z42` | `HttpMethod` | wire-format method string constants (Get/Post/Put/Delete/Patch/Head/Options) |
+| `HttpStatusCode.z42` | `HttpStatusCode` | common int constants (Ok=200, NotFound=404, ...) |
+| `HttpUrl.z42` | `HttpUrl` | minimal URL parser (scheme / host / port / path / query); http only |
+| `Http/HttpException.z42` | `HttpException` | base HTTP exception (namespace Std) |
+| `Http/HttpProtocolException.z42` | `HttpProtocolException` | wire format violations |
 
 ## 依赖关系
 

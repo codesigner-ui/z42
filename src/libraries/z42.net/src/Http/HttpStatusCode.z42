@@ -1,0 +1,43 @@
+namespace Std.Net.Http;
+
+// add-z42-net-http K3 (2026-05-25): common HTTP status code int constants.
+// Subset of IANA registry — add as use cases require. Code lookup by int
+// matches the wire value.
+public static class HttpStatusCode {
+    // 1xx Informational
+    public static int Continue          = 100;
+    public static int SwitchingProtocols = 101;
+
+    // 2xx Success
+    public static int Ok               = 200;
+    public static int Created          = 201;
+    public static int Accepted         = 202;
+    public static int NoContent        = 204;
+    public static int PartialContent   = 206;
+
+    // 3xx Redirection
+    public static int MovedPermanently = 301;
+    public static int Found            = 302;
+    public static int SeeOther         = 303;
+    public static int NotModified      = 304;
+    public static int TemporaryRedirect = 307;
+    public static int PermanentRedirect = 308;
+
+    // 4xx Client errors
+    public static int BadRequest       = 400;
+    public static int Unauthorized     = 401;
+    public static int Forbidden        = 403;
+    public static int NotFound         = 404;
+    public static int MethodNotAllowed = 405;
+    public static int Conflict         = 409;
+    public static int Gone             = 410;
+    public static int UnsupportedMediaType = 415;
+    public static int TooManyRequests  = 429;
+
+    // 5xx Server errors
+    public static int InternalServerError = 500;
+    public static int NotImplemented      = 501;
+    public static int BadGateway          = 502;
+    public static int ServiceUnavailable  = 503;
+    public static int GatewayTimeout      = 504;
+}

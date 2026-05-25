@@ -1,0 +1,32 @@
+namespace Std.Net.Http;
+
+using Std;
+
+// add-z42-net-http K3 (2026-05-25): incoming HTTP response container.
+//
+// Constructed by `HttpClient.Send` after parsing status line + headers +
+// body. Body is a single `byte[]` (decoded out of chunked transfer encoding
+// if applicable). Streaming body is `add-z42-net-http-stream-body` follow-up.
+public class HttpResponse {
+    public int         StatusCode;     // numeric status (200 / 404 / etc.)
+    public string      ReasonPhrase;   // human reason ("OK" / "Not Found")
+    public HttpHeaders Headers;
+    public byte[]      Body;           // empty array if no body (0 length)
+
+    public HttpResponse(int statusCode, string reasonPhrase, HttpHeaders headers, byte[] body) {
+        this.StatusCode   = statusCode;
+        this.ReasonPhrase = reasonPhrase;
+        this.Headers      = headers;
+        this.Body         = body;
+    }
+
+    /// True if status is in [200, 300) range — typical client success check.
+    public bool IsSuccess() {
+        return this.StatusCode >= 200 && this.StatusCode < 300;
+    }
+
+    /// Decode body as UTF-8 string. Convenience for text APIs.
+    public string BodyAsString() {
+        return Utf8.GetString(this.Body);
+    }
+}

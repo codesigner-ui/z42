@@ -1,11 +1,12 @@
 # z42.net
 
-Network sockets — sync TCP/UDP today, async + TLS + HTTP later.
+Network sockets + HTTP — sync today, async + TLS + WebSocket later.
 
-## v0 scope (K1 + K2, 2026-05-24 / 2026-05-25)
+## v0 scope (K1 + K2 + K3, 2026-05-24 / 2026-05-25 / 2026-05-25)
 
-**K1 = TCP** (`add-z42-net`, 2026-05-24). **K2 = UDP** (`add-z42-net-udp`, 2026-05-25).
-IPAddress / DNS / TLS / HTTP / WebSocket / Async still 独立 follow-up specs.
+**K1 = TCP** (`add-z42-net`, 2026-05-24). **K2 = UDP** (`add-z42-net-udp`,
+2026-05-25). **K3 = HTTP/1.1 plaintext** (`add-z42-net-http`, 2026-05-25).
+IPAddress / DNS / TLS / HTTPS / WebSocket / HTTP/2 / Async still 独立 follow-up specs.
 
 ### Public API
 
@@ -177,12 +178,26 @@ Out of scope (now their own follow-up specs):
 - **触发条件**：HTTP client / 安全 RPC 需求
 - **当前 workaround**：shell out to curl
 
-### `net-future-http` — HTTP/1.1 client
+### ~~`net-future-http`~~ — **✅ 已落地 2026-05-25 (add-z42-net-http K3)**
 
-- **来源**：roadmap P1 HTTP client
-- **触发原因**：需要 K1 + TLS 双前置
-- **触发条件**：`setup-tools.sh` shell-out 消除目标
-- **当前 workaround**：shell out to curl
+Shipped: `Std.Net.Http.{HttpClient, HttpRequest, HttpResponse, HttpHeaders,
+HttpMethod, HttpStatusCode, HttpException, HttpProtocolException, HttpUrl}`.
+Pure-script over TcpClient (K1), no new VM builtin. http:// only —
+https:// throws NotSupportedException pending `add-z42-net-tls`. Supports
+Content-Length and Transfer-Encoding: chunked incoming; outgoing always
+Content-Length. Case-insensitive HttpHeaders (raw string[]+count storage
+since z42 field generic types are unsupported). 13 z42 tests cover
+GET/POST/chunked/headers/scheme errors.
+
+Out of scope (now their own follow-up specs):
+- `add-z42-net-http-keepalive` — Connection: keep-alive + pool
+- `add-z42-net-http-stream-body` — `HttpResponse.GetStream() → Stream`
+- `add-z42-net-http-redirects` — auto-follow 3xx
+- `add-z42-net-http-cookies` — Set-Cookie + jar
+- `add-z42-net-http-auth` — Basic / Bearer / Digest helpers
+- `add-z42-net-http-compression` — gzip / br Accept-Encoding + auto-decompress
+- `add-z42-net-http-server` — `HttpListener` / `HttpServer`
+- `add-z42-net-http2` — HTTP/2 binary framing + HPACK
 
 ### `net-future-async` — async/await sockets
 

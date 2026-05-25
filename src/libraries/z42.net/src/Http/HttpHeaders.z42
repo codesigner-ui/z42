@@ -1,0 +1,125 @@
+namespace Std.Net.Http;
+
+using Std;
+
+// add-z42-net-http K3 (2026-05-25): case-insensitive header dictionary.
+//
+// HTTP headers are case-insensitive per RFC 7230 §3.2. `Get("content-type")`
+// and `Get("Content-Type")` return the same value.
+//
+// Storage: parallel `string[]` arrays + `_count` length (z42 当前不支持
+// 类字段带泛型 — `List<string> _keys;` 的类型参数被 parser 丢弃；用 raw
+// 数组 + 容量手动管理，与 `Std.Toml.TomlValue` 同 pattern)。
+//
+// V0 不去重 multi-value headers (e.g. Set-Cookie can repeat) — `Add` always
+// appends. `Get(name)` returns first match.
+public class HttpHeaders {
+    private string[] _keys;        // original-case for emit
+    private string[] _values;
+    private string[] _lowerKeys;   // lowercase for lookup
+    private int _count;
+    private int _cap;
+
+    public HttpHeaders() {
+        this._cap       = 8;
+        this._keys      = new string[8];
+        this._values    = new string[8];
+        this._lowerKeys = new string[8];
+        this._count     = 0;
+    }
+
+    /// Append a header (multi-value safe — `Add("Set-Cookie", ...)` twice
+    /// stores both).
+    public void Add(string name, string value) {
+        if (this._count == this._cap) {
+            this._grow();
+        }
+        this._keys[this._count]      = name;
+        this._values[this._count]    = value;
+        this._lowerKeys[this._count] = name.ToLower();
+        this._count = this._count + 1;
+    }
+
+    /// Set a header — removes all existing entries with same name (case-
+    /// insensitive) and adds one new. Use for headers that should appear
+    /// once like Content-Length.
+    public void Set(string name, string value) {
+        this.Remove(name);
+        this.Add(name, value);
+    }
+
+    /// Get the FIRST value for `name` (case-insensitive). Returns null if
+    /// no such header.
+    public string Get(string name) {
+        string lower = name.ToLower();
+        int i = 0;
+        while (i < this._count) {
+            if (this._lowerKeys[i] == lower) {
+                return this._values[i];
+            }
+            i = i + 1;
+        }
+        return null;
+    }
+
+    /// True if a header with this name exists.
+    public bool Contains(string name) {
+        return this.Get(name) != null;
+    }
+
+    /// Remove all entries with `name` (case-insensitive). Returns the
+    /// number removed.
+    public int Remove(string name) {
+        string lower = name.ToLower();
+        int removed = 0;
+        int read = 0;
+        int write = 0;
+        while (read < this._count) {
+            if (this._lowerKeys[read] == lower) {
+                removed = removed + 1;
+            } else {
+                if (read != write) {
+                    this._keys[write]      = this._keys[read];
+                    this._values[write]    = this._values[read];
+                    this._lowerKeys[write] = this._lowerKeys[read];
+                }
+                write = write + 1;
+            }
+            read = read + 1;
+        }
+        this._count = write;
+        return removed;
+    }
+
+    public int Count() {
+        return this._count;
+    }
+
+    /// Iterate-friendly accessors — returns `(name, value)` pair lists in
+    /// insertion order. Used by request serialiser to emit headers.
+    public string GetNameAt(int index) {
+        return this._keys[index];
+    }
+
+    public string GetValueAt(int index) {
+        return this._values[index];
+    }
+
+    private void _grow() {
+        int newCap = this._cap * 2;
+        string[] nk = new string[newCap];
+        string[] nv = new string[newCap];
+        string[] nl = new string[newCap];
+        int i = 0;
+        while (i < this._count) {
+            nk[i] = this._keys[i];
+            nv[i] = this._values[i];
+            nl[i] = this._lowerKeys[i];
+            i = i + 1;
+        }
+        this._keys      = nk;
+        this._values    = nv;
+        this._lowerKeys = nl;
+        this._cap       = newCap;
+    }
+}

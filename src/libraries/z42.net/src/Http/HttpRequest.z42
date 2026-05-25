@@ -1,0 +1,42 @@
+namespace Std.Net.Http;
+
+using Std;
+
+// add-z42-net-http K3 (2026-05-25): outgoing HTTP request container.
+//
+// Builder-style API — construct with method+url then mutate headers / body
+// before passing to `HttpClient.Send`. Body is `byte[]` (null = no body).
+// Body 完全提前完成的 v0；streaming body 是 `add-z42-net-http-stream-body`
+// follow-up.
+public class HttpRequest {
+    public string      Method;     // HttpMethod.Get / Post / ... or custom verb
+    public string      Url;        // full absolute URL, http:// only in v0
+    public HttpHeaders Headers;
+    public byte[]      Body;       // null if no body
+
+    public HttpRequest(string method, string url) {
+        this.Method  = method;
+        this.Url     = url;
+        this.Headers = new HttpHeaders();
+        this.Body    = null;
+    }
+
+    /// Convenience header setter (no-arg builder pattern).
+    public HttpRequest SetHeader(string name, string value) {
+        this.Headers.Set(name, value);
+        return this;
+    }
+
+    public HttpRequest AddHeader(string name, string value) {
+        this.Headers.Add(name, value);
+        return this;
+    }
+
+    /// Set request body. Caller is responsible for Content-Type (use
+    /// `SetHeader("Content-Type", ...)`). Content-Length is auto-emitted
+    /// by `HttpClient.Send`.
+    public HttpRequest SetBody(byte[] body) {
+        this.Body = body;
+        return this;
+    }
+}

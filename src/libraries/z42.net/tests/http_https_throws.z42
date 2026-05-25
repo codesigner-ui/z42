@@ -1,0 +1,43 @@
+// add-z42-net-http K3 (2026-05-25): https:// throws NotSupportedException
+// until TLS lands (add-z42-net-tls follow-up).
+namespace Z42NetHttpHttpsThrowsTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Http;
+
+[Test]
+void test_https_url_throws_not_supported() {
+    var client = new HttpClient();
+    bool threw = false;
+    try {
+        client.Get("https://example.com");
+    } catch (NotSupportedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_malformed_url_throws_format() {
+    var client = new HttpClient();
+    bool threw = false;
+    try {
+        client.Get("not-a-url");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_unknown_scheme_throws_format() {
+    var client = new HttpClient();
+    bool threw = false;
+    try {
+        client.Get("ftp://example.com");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

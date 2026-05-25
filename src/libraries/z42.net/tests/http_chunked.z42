@@ -1,0 +1,94 @@
+// add-z42-net-http K3 (2026-05-25): chunked transfer-encoding decoding.
+namespace Z42NetHttpChunkedTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+[Test]
+void test_chunked_response_decoded_correctly() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        // Drain request
+        byte[] buf = new byte[4096];
+        int total = 0;
+        while (true) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+            if (total >= 4
+                && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+                && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+                break;
+            }
+        }
+        // Chunked response: "Hello, " (7) + "World!" (6) + 0 trailing.
+        // 7 in hex = 7; 6 in hex = 6.
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Transfer-Encoding: chunked\r\n"
+            + "Connection: close\r\n"
+            + "\r\n"
+            + "7\r\nHello, \r\n"
+            + "6\r\nWorld!\r\n"
+            + "0\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal("Hello, World!", r.BodyAsString());
+    Assert.Equal(13, r.Body.Length);
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_chunked_with_extension_strips_metadata() {
+    // chunk-size "a;foo=bar" should be parsed as 0xa = 10.
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+        while (true) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+            if (total >= 4
+                && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+                && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+                break;
+            }
+        }
+        string resp = "HTTP/1.1 200 OK\r\n"
+            + "Transfer-Encoding: chunked\r\n\r\n"
+            + "a;ext=ignored\r\n0123456789\r\n"
+            + "0\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal("0123456789", r.BodyAsString());
+    srv.Join();
+    server.Stop();
+}

@@ -1,0 +1,71 @@
+// add-z42-net-http K3 (2026-05-25): HttpHeaders case-insensitive lookup.
+namespace Z42NetHttpHeadersTests;
+
+using Std;
+using Std.Test;
+using Std.Net.Http;
+
+[Test]
+void test_case_insensitive_get() {
+    var h = new HttpHeaders();
+    h.Add("Content-Type", "text/plain");
+    Assert.Equal("text/plain", h.Get("content-type"));
+    Assert.Equal("text/plain", h.Get("Content-Type"));
+    Assert.Equal("text/plain", h.Get("CONTENT-TYPE"));
+}
+
+[Test]
+void test_get_missing_returns_null() {
+    var h = new HttpHeaders();
+    Assert.True(h.Get("X-Missing") == null);
+}
+
+[Test]
+void test_set_replaces() {
+    var h = new HttpHeaders();
+    h.Add("X-Foo", "bar");
+    h.Set("x-foo", "baz");
+    Assert.Equal("baz", h.Get("X-Foo"));
+    Assert.Equal(1, h.Count());
+}
+
+[Test]
+void test_add_multi_value() {
+    var h = new HttpHeaders();
+    h.Add("Set-Cookie", "a=1");
+    h.Add("Set-Cookie", "b=2");
+    Assert.Equal(2, h.Count());
+    Assert.Equal("a=1", h.Get("Set-Cookie"));   // first match
+}
+
+[Test]
+void test_remove_all_matches() {
+    var h = new HttpHeaders();
+    h.Add("X-Trace", "abc");
+    h.Add("x-trace", "def");
+    h.Add("Other", "ok");
+    int removed = h.Remove("X-TRACE");
+    Assert.Equal(2, removed);
+    Assert.True(h.Get("X-Trace") == null);
+    Assert.Equal("ok", h.Get("Other"));
+}
+
+[Test]
+void test_contains() {
+    var h = new HttpHeaders();
+    h.Add("X-Foo", "v");
+    Assert.True(h.Contains("x-foo"));
+    Assert.False(h.Contains("X-Bar"));
+}
+
+[Test]
+void test_iteration_preserves_insertion_order() {
+    var h = new HttpHeaders();
+    h.Add("A", "1");
+    h.Add("B", "2");
+    h.Add("C", "3");
+    Assert.Equal("A", h.GetNameAt(0));
+    Assert.Equal("B", h.GetNameAt(1));
+    Assert.Equal("C", h.GetNameAt(2));
+    Assert.Equal("3", h.GetValueAt(2));
+}

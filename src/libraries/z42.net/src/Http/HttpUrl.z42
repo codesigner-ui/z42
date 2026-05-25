@@ -1,0 +1,150 @@
+namespace Std.Net.Http;
+
+using Std;
+
+// add-z42-net-http K3 (2026-05-25): minimal URL parser for HTTP requests.
+//
+// Subset of RFC 3986 enough for HTTP: scheme + host + port + path + query.
+// Fragment (`#frag`) parsed but not used wire-side (it's client-only state).
+// Userinfo (`user:pass@host`) is rejected — http_auth follow-up adds Authorization
+// header handling.
+//
+// z42.uri 包提供 generic URI parsing. K3 用内联 parser 避免 cross-package 依赖
+// 噪声 + 让 HTTP 语义边界紧凑。后续如果 z42.uri API 稳定，可迁。
+public class HttpUrl {
+    public string Scheme;     // "http" or "https"
+    public string Host;       // hostname or IPv4 literal; IPv6 not supported v0
+    public int    Port;       // explicit or scheme default (80 / 443)
+    public string Path;       // includes leading "/"; "/" if absent
+    public string Query;      // includes leading "?"; "" if absent
+
+    public HttpUrl(string scheme, string host, int port, string path, string query) {
+        this.Scheme = scheme;
+        this.Host   = host;
+        this.Port   = port;
+        this.Path   = path;
+        this.Query  = query;
+    }
+
+    /// `Path + Query` — what goes after METHOD on the request line.
+    public string PathAndQuery() {
+        return this.Path + this.Query;
+    }
+
+    /// Parse an absolute URL. Throws `FormatException` on malformed input,
+    /// `NotSupportedException` if scheme == "https" (TLS not in K3 v0).
+    public static HttpUrl Parse(string url) {
+        if (url == null || url.Length == 0) {
+            throw new FormatException("HttpUrl.Parse: empty URL");
+        }
+        // Scheme: chars up to "://"
+        int schemeEnd = HttpUrl._indexOf(url, "://", 0);
+        if (schemeEnd < 0) {
+            throw new FormatException("HttpUrl.Parse: missing scheme (no '://') in '" + url + "'");
+        }
+        string scheme = HttpUrl._substring(url, 0, schemeEnd).ToLower();
+        if (scheme == "https") {
+            throw new NotSupportedException(
+                "HTTPS is not supported in z42.net v0; needs add-z42-net-tls follow-up");
+        }
+        if (scheme != "http") {
+            throw new FormatException("HttpUrl.Parse: only http:// is supported, got scheme '" + scheme + "'");
+        }
+        int authStart = schemeEnd + 3;
+        // Find path / query start (first '/' or '?' or end)
+        int pathStart = HttpUrl._indexOfAnyAfter(url, '/', '?', authStart);
+        int authEnd;
+        if (pathStart < 0) {
+            authEnd = url.Length;
+        } else {
+            authEnd = pathStart;
+        }
+        string authority = HttpUrl._substring(url, authStart, authEnd);
+        if (authority.Length == 0) {
+            throw new FormatException("HttpUrl.Parse: empty authority in '" + url + "'");
+        }
+        if (HttpUrl._indexOf(authority, "@", 0) >= 0) {
+            throw new NotSupportedException(
+                "HttpUrl.Parse: userinfo (user:pass@host) not supported in v0");
+        }
+        // host[:port]
+        string host;
+        int    port;
+        int colonAt = HttpUrl._indexOf(authority, ":", 0);
+        if (colonAt < 0) {
+            host = authority;
+            port = 80;   // http default
+        } else {
+            host = HttpUrl._substring(authority, 0, colonAt);
+            string portStr = HttpUrl._substring(authority, colonAt + 1, authority.Length);
+            try {
+                port = Int32.Parse(portStr);
+            } catch (Exception e) {
+                throw new FormatException("HttpUrl.Parse: invalid port '" + portStr + "'");
+            }
+            if (port < 0 || port > 65535) {
+                throw new FormatException("HttpUrl.Parse: port out of range: " + Int32.ToString(port));
+            }
+        }
+        if (host.Length == 0) {
+            throw new FormatException("HttpUrl.Parse: empty host in '" + url + "'");
+        }
+        // Path + Query
+        string path;
+        string query;
+        if (pathStart < 0) {
+            path  = "/";
+            query = "";
+        } else {
+            int queryStart = HttpUrl._indexOf(url, "?", pathStart);
+            if (queryStart < 0) {
+                path  = HttpUrl._substring(url, pathStart, url.Length);
+                query = "";
+            } else {
+                path  = HttpUrl._substring(url, pathStart, queryStart);
+                query = HttpUrl._substring(url, queryStart, url.Length);
+            }
+            if (path.Length == 0) path = "/";
+        }
+        return new HttpUrl(scheme, host, port, path, query);
+    }
+
+    // ── string helpers (z42 stdlib subset) ───────────────────────────────
+
+    static int _indexOf(string s, string needle, int start) {
+        int n = s.Length;
+        int m = needle.Length;
+        if (m == 0) return start;
+        int i = start;
+        while (i + m <= n) {
+            int j = 0;
+            while (j < m && s.CharAt(i + j) == needle.CharAt(j)) {
+                j = j + 1;
+            }
+            if (j == m) return i;
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    static int _indexOfAnyAfter(string s, char c1, char c2, int start) {
+        int i = start;
+        while (i < s.Length) {
+            char ch = s.CharAt(i);
+            if (ch == c1 || ch == c2) return i;
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    static string _substring(string s, int start, int end) {
+        if (start >= end) return "";
+        char[] buf = new char[end - start];
+        int i = 0;
+        while (i < end - start) {
+            buf[i] = s.CharAt(start + i);
+            i = i + 1;
+        }
+        return String.FromChars(buf);
+    }
+}
