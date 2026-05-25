@@ -1,0 +1,105 @@
+// add-regex-replace-backreference (2026-05-26): `$N` placeholders in
+// Regex.Replace's replacement string.
+namespace Z42RegexReplaceBackrefTests;
+
+using Std;
+using Std.Test;
+using Std.Regex;
+
+// ── $0 = whole match ────────────────────────────────────────────────────
+
+[Test]
+void test_dollar_zero_is_whole_match() {
+    Regex r = Regex.Compile("\\d+");
+    Assert.Equal("[42] [7]", r.Replace("42 7", "[$0]"));
+}
+
+// ── $1 / $2 = group N ───────────────────────────────────────────────────
+
+[Test]
+void test_swap_key_value_via_two_groups() {
+    Regex r = Regex.Compile("(\\w+)=(\\w+)");
+    Assert.Equal("alice=name", r.Replace("name=alice", "$2=$1"));
+}
+
+[Test]
+void test_format_date() {
+    // YYYY-MM-DD → MM/DD/YYYY style swap.
+    Regex r = Regex.Compile("(\\d{4})-(\\d{2})-(\\d{2})");
+    Assert.Equal("05/26/2026", r.Replace("2026-05-26", "$2/$3/$1"));
+}
+
+// ── $$ = literal $ ──────────────────────────────────────────────────────
+
+[Test]
+void test_double_dollar_emits_one_dollar() {
+    Regex r = Regex.Compile("\\d+");
+    Assert.Equal("$42", r.Replace("42", "$$$0"));
+}
+
+[Test]
+void test_only_double_dollars() {
+    Regex r = Regex.Compile("X");
+    Assert.Equal("$", r.Replace("X", "$$"));
+}
+
+// ── No-dollar replacement still works (legacy path) ────────────────────
+
+[Test]
+void test_legacy_literal_replacement_unchanged() {
+    Regex r = Regex.Compile("\\d+");
+    Assert.Equal("NUM and NUM", r.Replace("42 and 7", "NUM"));
+}
+
+[Test]
+void test_replacement_with_no_match() {
+    Regex r = Regex.Compile("z+");
+    Assert.Equal("abc", r.Replace("abc", "$1"));
+}
+
+// ── Out-of-range group index → emit literally ──────────────────────────
+
+[Test]
+void test_out_of_range_group_index_literal() {
+    // Pattern has 1 group; $5 has no match → emitted as `$5`.
+    Regex r = Regex.Compile("(\\d+)");
+    Assert.Equal("[$5]", r.Replace("42", "[$5]"));
+}
+
+// ── $X for non-digit, non-$ → literal ──────────────────────────────────
+
+[Test]
+void test_dollar_followed_by_letter_literal() {
+    Regex r = Regex.Compile("X");
+    Assert.Equal("$a", r.Replace("X", "$a"));
+}
+
+[Test]
+void test_trailing_dollar_literal() {
+    Regex r = Regex.Compile("X");
+    Assert.Equal("end$", r.Replace("X", "end$"));
+}
+
+// ── Multi-match: each match expands independently ──────────────────────
+
+[Test]
+void test_multi_match_each_uses_own_groups() {
+    Regex r = Regex.Compile("(\\w+)=(\\d+)");
+    Assert.Equal("42:a, 7:b", r.Replace("a=42, b=7", "$2:$1"));
+}
+
+// ── Wrap captures with literal text ────────────────────────────────────
+
+[Test]
+void test_wrap_capture_with_brackets() {
+    Regex r = Regex.Compile("(\\d+)");
+    Assert.Equal("[42] + [7]", r.Replace("42 + 7", "[$1]"));
+}
+
+// ── $1 with no capture group in pattern → emit literally ──────────────
+
+[Test]
+void test_no_capture_groups_in_pattern_emits_dollar_one_literal() {
+    Regex r = Regex.Compile("\\d+");
+    Assert.Equal("$1 $1", r.Replace("42 7", "$1"));
+}

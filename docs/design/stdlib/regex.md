@@ -226,11 +226,34 @@ tracked):
 - **触发原因**：v0 无 flag；每个 flag 行为变更要嵌入引擎
 - **当前 workaround**：调用方 `input.ToLower()` 前手匹配
 
-### regex-future-replace-backreference
+### ~~regex-future-replace-backreference~~ — **✅ 已落地 2026-05-26 (add-regex-replace-backreference)**
 
-- **来源**：`Replace("(\\w+)=(\\w+)", "$2=$1")`（交换 key/value）
-- **触发原因**：v0 replacement 是 literal string；`$N` 解析需新 parser
-- **当前 workaround**：调用方手循环 `FindAll` + 构造
+Shipped: `Regex.Replace(input, replacement)` now interprets `$N` /
+`$$` placeholders in the replacement string. Closes the deferred —
+key/value swaps, date reformatting, capture-wrapping are now one-liners.
+
+| 占位符 | 含义 |
+|---|---|
+| `$0` | whole match (equivalent to `m.Group(0)`) |
+| `$1` … `$9` | capture group N (1-based) |
+| `$$` | literal `$` |
+| `$X` (X non-digit, non-`$`) | emitted literally as `$X` (matches .NET policy — avoids surprising callers using `$` in plain text) |
+| `$N` for out-of-range N | emitted literally |
+
+Implementation: new private `_ExpandReplacement(replacement, m)` on
+`Regex`. Fast path skips reconstruction when the replacement string
+has no `$`. Replacement parsing is a single linear scan with no
+allocations beyond the result string. Backward-compatible: replacement
+strings without `$` produce byte-identical output to the prior v0
+literal path.
+
+13 new tests cover: `$0` whole-match wrap; `$2=$1` key/value swap
+(`name=alice` → `alice=name`); date reformat (`2026-05-26` →
+`05/26/2026`); `$$` literal dollar; combined `$$$0`; no-dollar
+replacement legacy regression; out-of-range `$5` literal; `$a` (non-
+digit) literal; trailing `$` literal; multi-match each uses own
+groups (`a=42, b=7` with `$2:$1` → `42:a, 7:b`); wrap capture
+brackets; `$1` with no capture groups in pattern → emitted literally.
 
 ### regex-future-text-regex-merge
 
