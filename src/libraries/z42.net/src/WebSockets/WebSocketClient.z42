@@ -2,6 +2,7 @@ namespace Std.Net.WebSockets;
 
 using Std;
 using Std.IO;
+using Std.Crypto;
 using Std.Encoding;
 using Std.Random;
 using Std.Net.Sockets;
@@ -81,7 +82,9 @@ public class WebSocketClient {
         stream.Write(reqBytes, 0, reqBytes.Length);
 
         // ── Read response. Must be 101 Switching Protocols + Upgrade: websocket.
-        WebSocketClient._verifyHandshakeResponse(stream);
+        //    Sec-WebSocket-Accept also verified against base64(SHA-1(key + magic))
+        //    per RFC 6455 §4.2.2 (add-sha1-to-crypto 2026-05-25 unblock).
+        WebSocketClient._verifyHandshakeResponse(stream, key);
 
         this._state = WebSocketState.Open;
     }
@@ -278,43 +281,65 @@ public class WebSocketClient {
 
     // ── Handshake response verification ──────────────────────────────────
 
-    static void _verifyHandshakeResponse(Stream stream) {
-        // Read status line + headers via a simple line reader. Reuse the
+    static void _verifyHandshakeResponse(Stream stream, string clientKey) {
+        // Read status line + headers via a simple line reader. Reusing the
         // HTTP module's reader would create a cross-module dependency; we
-        // re-implement minimal line reader here.
+        // re-implement minimal line reader inline (`_WsLineReader` below).
         var lr = new _WsLineReader(stream);
         string statusLine = lr.ReadLine();
         if (statusLine == null) {
             throw new WebSocketProtocolException("handshake: EOF reading status line");
         }
-        // Expect "HTTP/1.1 101 Switching Protocols"
         if (!WebSocketClient._startsWith(statusLine, "HTTP/1.1 101")
             && !WebSocketClient._startsWith(statusLine, "HTTP/1.0 101")) {
             throw new WebSocketProtocolException(
                 "handshake: expected 101 Switching Protocols, got '" + statusLine + "'");
         }
-        bool seenUpgrade = false;
+        bool seenUpgrade  = false;
+        string acceptHdr  = null;
         while (true) {
             string line = lr.ReadLine();
             if (line == null) {
                 throw new WebSocketProtocolException("handshake: EOF in headers");
             }
             if (line.Length == 0) break;
-            // Look for Upgrade: websocket (case-insensitive on both sides)
             int colon = WebSocketClient._indexOfChar(line, ':', 0);
             if (colon < 0) continue;
-            string name  = WebSocketClient._substring(line, 0, colon).ToLower();
-            string value = WebSocketClient._trim(WebSocketClient._substring(line, colon + 1, line.Length)).ToLower();
-            if (name == "upgrade" && value == "websocket") {
+            string name      = WebSocketClient._substring(line, 0, colon).ToLower();
+            string rawValue  = WebSocketClient._trim(WebSocketClient._substring(line, colon + 1, line.Length));
+            string lowValue  = rawValue.ToLower();
+            if (name == "upgrade" && lowValue == "websocket") {
                 seenUpgrade = true;
+            }
+            if (name == "sec-websocket-accept") {
+                acceptHdr = rawValue;
             }
         }
         if (!seenUpgrade) {
             throw new WebSocketProtocolException(
                 "handshake: missing 'Upgrade: websocket' response header");
         }
-        // Note: Sec-WebSocket-Accept validation skipped — needs SHA-1 (not in
-        // z42.crypto v0). Follow-up: `add-z42-net-websocket-accept-validate`.
+        // Sec-WebSocket-Accept validation per RFC 6455 §4.2.2.
+        // base64(SHA-1(clientKey + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")).
+        if (acceptHdr == null) {
+            throw new WebSocketProtocolException(
+                "handshake: missing 'Sec-WebSocket-Accept' response header");
+        }
+        string expected = WebSocketClient._computeExpectedAccept(clientKey);
+        if (acceptHdr != expected) {
+            throw new WebSocketProtocolException(
+                "handshake: invalid Sec-WebSocket-Accept '" + acceptHdr
+                + "', expected '" + expected + "'");
+        }
+    }
+
+    /// Compute the expected `Sec-WebSocket-Accept` value for a given client
+    /// `Sec-WebSocket-Key` per RFC 6455 §4.2.2.
+    static string _computeExpectedAccept(string clientKey) {
+        string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+        string combined = clientKey + magic;
+        byte[] digest = Sha1.HashString(combined);
+        return Base64.Encode(digest);
     }
 
     static string _randomKey(Random rng) {

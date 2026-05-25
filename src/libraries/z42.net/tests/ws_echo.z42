@@ -5,11 +5,14 @@ using Std;
 using Std.Test;
 using Std.Threading;
 using Std.IO;
+using Std.Crypto;
+using Std.Encoding;
 using Std.Net.Sockets;
 using Std.Net.WebSockets;
 
 // Helper: completes WS handshake server-side + returns the open NetworkStream
-// to the test for direct frame manipulation.
+// to the test for direct frame manipulation. Computes the proper
+// Sec-WebSocket-Accept using SHA-1+base64 per RFC 6455 §4.2.2.
 static NetworkStream _completeHandshakeServerSide(NetworkStream s) {
     byte[] buf = new byte[4096];
     int total = 0;
@@ -23,14 +26,52 @@ static NetworkStream _completeHandshakeServerSide(NetworkStream s) {
             break;
         }
     }
+    string key = _findKey(buf, total);
+    string accept = _computeAccept(key);
     string resp = "HTTP/1.1 101 Switching Protocols\r\n"
         + "Upgrade: websocket\r\n"
         + "Connection: Upgrade\r\n"
-        + "Sec-WebSocket-Accept: dummy\r\n"
+        + "Sec-WebSocket-Accept: " + accept + "\r\n"
         + "\r\n";
     byte[] rb = Utf8.GetBytes(resp);
     s.Write(rb, 0, rb.Length);
     return s;
+}
+
+static string _findKey(byte[] buf, int total) {
+    string needle = "Sec-WebSocket-Key:";
+    int i = 0;
+    while (i + needle.Length <= total) {
+        bool match = true;
+        int k = 0;
+        while (k < needle.Length) {
+            if ((char)buf[i + k] != needle.CharAt(k)) { match = false; break; }
+            k = k + 1;
+        }
+        if (match) {
+            int valStart = i + needle.Length;
+            while (valStart < total
+                   && (buf[valStart] == (byte)' ' || buf[valStart] == (byte)'\t')) {
+                valStart = valStart + 1;
+            }
+            int valEnd = valStart;
+            while (valEnd < total && buf[valEnd] != (byte)13 && buf[valEnd] != (byte)10) {
+                valEnd = valEnd + 1;
+            }
+            char[] chars = new char[valEnd - valStart];
+            int j = 0;
+            while (j < chars.Length) { chars[j] = (char)buf[valStart + j]; j = j + 1; }
+            return String.FromChars(chars);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+static string _computeAccept(string key) {
+    string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    byte[] digest = Sha1.HashString(key + magic);
+    return Base64.Encode(digest);
 }
 
 // Server-side frame: build a frame manually (unmasked since server→client).

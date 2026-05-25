@@ -5,6 +5,8 @@ using Std;
 using Std.Test;
 using Std.Threading;
 using Std.IO;
+using Std.Crypto;
+using Std.Encoding;
 using Std.Net.Sockets;
 using Std.Net.WebSockets;
 
@@ -25,12 +27,50 @@ static void _handshake(NetworkStream s) {
             break;
         }
     }
+    string key = _ppFindKey(buf, total);
+    string accept = _ppComputeAccept(key);
     string resp = "HTTP/1.1 101 Switching Protocols\r\n"
         + "Upgrade: websocket\r\n"
         + "Connection: Upgrade\r\n"
+        + "Sec-WebSocket-Accept: " + accept + "\r\n"
         + "\r\n";
     byte[] rb = Utf8.GetBytes(resp);
     s.Write(rb, 0, rb.Length);
+}
+
+static string _ppFindKey(byte[] buf, int total) {
+    string needle = "Sec-WebSocket-Key:";
+    int i = 0;
+    while (i + needle.Length <= total) {
+        bool match = true;
+        int k = 0;
+        while (k < needle.Length) {
+            if ((char)buf[i + k] != needle.CharAt(k)) { match = false; break; }
+            k = k + 1;
+        }
+        if (match) {
+            int vs = i + needle.Length;
+            while (vs < total && (buf[vs] == (byte)' ' || buf[vs] == (byte)'\t')) {
+                vs = vs + 1;
+            }
+            int ve = vs;
+            while (ve < total && buf[ve] != (byte)13 && buf[ve] != (byte)10) {
+                ve = ve + 1;
+            }
+            char[] chars = new char[ve - vs];
+            int j = 0;
+            while (j < chars.Length) { chars[j] = (char)buf[vs + j]; j = j + 1; }
+            return String.FromChars(chars);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+static string _ppComputeAccept(string key) {
+    string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    byte[] digest = Sha1.HashString(key + magic);
+    return Base64.Encode(digest);
 }
 
 static byte[] _srvFrame(int opcode, byte[] payload, int len) {

@@ -4,13 +4,85 @@ namespace Z42NetWsHandshakeTests;
 using Std;
 using Std.Test;
 using Std.Threading;
+using Std.Crypto;
+using Std.Encoding;
 using Std.Net.Sockets;
 using Std.Net.WebSockets;
 
-// Minimal in-process WS server: accepts one client, sends handshake reply.
-// Hard-codes the 101 + Upgrade headers; doesn't validate the client's
-// Sec-WebSocket-Key (echoing a dummy Accept since K4 client skips
-// validation v0).
+// Drains HTTP request bytes and parses the Sec-WebSocket-Key header value.
+// Returns null if not found. Used by tests below to compute the matching
+// Sec-WebSocket-Accept response header.
+static string _drainRequestAndFindKey(byte[] buf, int total) {
+    // Find header lines via CRLF scanning, then look for "Sec-WebSocket-Key:".
+    string needle = "Sec-WebSocket-Key:";
+    int i = 0;
+    while (i + needle.Length <= total) {
+        bool match = true;
+        int k = 0;
+        while (k < needle.Length) {
+            char c = (char)buf[i + k];
+            if (c != needle.CharAt(k)) { match = false; break; }
+            k = k + 1;
+        }
+        if (match) {
+            // Skip past the header name + ":" + any leading whitespace.
+            int valStart = i + needle.Length;
+            while (valStart < total
+                   && (buf[valStart] == (byte)' ' || buf[valStart] == (byte)'\t')) {
+                valStart = valStart + 1;
+            }
+            int valEnd = valStart;
+            while (valEnd < total && buf[valEnd] != (byte)13 && buf[valEnd] != (byte)10) {
+                valEnd = valEnd + 1;
+            }
+            char[] chars = new char[valEnd - valStart];
+            int j = 0;
+            while (j < chars.Length) {
+                chars[j] = (char)buf[valStart + j];
+                j = j + 1;
+            }
+            return String.FromChars(chars);
+        }
+        i = i + 1;
+    }
+    return null;
+}
+
+static string _computeAcceptFromKey(string clientKey) {
+    string magic = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    byte[] digest = Sha1.HashString(clientKey + magic);
+    return Base64.Encode(digest);
+}
+
+// Drains incoming request, extracts client's Sec-WebSocket-Key, writes a
+// valid 101 response with the matching Accept header. Returns the
+// computed Accept (for assertion convenience).
+static string _completeHandshake(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    string key = _drainRequestAndFindKey(buf, total);
+    Assert.True(key != null);
+    string accept = _computeAcceptFromKey(key);
+    string resp = "HTTP/1.1 101 Switching Protocols\r\n"
+        + "Upgrade: websocket\r\n"
+        + "Connection: Upgrade\r\n"
+        + "Sec-WebSocket-Accept: " + accept + "\r\n"
+        + "\r\n";
+    byte[] rb = Utf8.GetBytes(resp);
+    s.Write(rb, 0, rb.Length);
+    return accept;
+}
+
 [Test]
 void test_handshake_101_switching_protocols_accepted() {
     var server = new TcpListener();
@@ -21,7 +93,33 @@ void test_handshake_101_switching_protocols_accepted() {
     Thread srv = Thread.Start(() => {
         var peer = server.AcceptTcpClient();
         var s = peer.GetStream();
-        // Drain HTTP request
+        _completeHandshake(s);
+        // Then read the client's close frame so the connection shuts down cleanly.
+        byte[] discard = new byte[256];
+        s.Read(discard, 0, 256);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    Assert.Equal(WebSocketState.Open, ws.State());
+    ws.Close(1000, "test done");
+    Assert.Equal(WebSocketState.Closed, ws.State());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_handshake_bad_accept_throws_protocol_exception() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/ws";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
         byte[] buf = new byte[4096];
         int total = 0;
         while (true) {
@@ -34,26 +132,70 @@ void test_handshake_101_switching_protocols_accepted() {
                 break;
             }
         }
-        // Reply with 101 Switching Protocols.
+        // Reply 101 but with WRONG Accept (compute Accept of a different key)
+        string fakeAccept = _computeAcceptFromKey("WrongKey");
         string resp = "HTTP/1.1 101 Switching Protocols\r\n"
             + "Upgrade: websocket\r\n"
             + "Connection: Upgrade\r\n"
-            + "Sec-WebSocket-Accept: dummy\r\n"
+            + "Sec-WebSocket-Accept: " + fakeAccept + "\r\n"
             + "\r\n";
         byte[] rb = Utf8.GetBytes(resp);
         s.Write(rb, 0, rb.Length);
-        // Then immediately read the client's close frame so the connection
-        // shuts down cleanly.
-        byte[] discard = new byte[256];
-        s.Read(discard, 0, 256);
         peer.Dispose();
     });
 
     var ws = new WebSocketClient();
-    ws.Connect(url);
-    Assert.Equal(WebSocketState.Open, ws.State());
-    ws.Close(1000, "test done");
-    Assert.Equal(WebSocketState.Closed, ws.State());
+    bool threw = false;
+    try {
+        ws.Connect(url);
+    } catch (WebSocketProtocolException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_handshake_missing_accept_throws_protocol_exception() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/ws";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+        while (true) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+            if (total >= 4
+                && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+                && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+                break;
+            }
+        }
+        // 101 + Upgrade but NO Sec-WebSocket-Accept
+        string resp = "HTTP/1.1 101 Switching Protocols\r\n"
+            + "Upgrade: websocket\r\n"
+            + "\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    bool threw = false;
+    try {
+        ws.Connect(url);
+    } catch (WebSocketProtocolException e) {
+        threw = true;
+    }
+    Assert.True(threw);
 
     srv.Join();
     server.Stop();
@@ -123,4 +265,13 @@ void test_bad_scheme_throws_format() {
         threw = true;
     }
     Assert.True(threw);
+}
+
+[Test]
+void test_computed_accept_matches_rfc_example() {
+    // RFC 6455 §1.3 example:
+    //   Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+    //   → Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+    Assert.Equal("s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+                 _computeAcceptFromKey("dGhlIHNhbXBsZSBub25jZQ=="));
 }
