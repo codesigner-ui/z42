@@ -149,10 +149,48 @@ Montgomery / Barrett reduction (constant-factor speedups) deferred as
 - **触发条件**：real-world crypto perf needs (RSA-2048 ~ 1ms target)
 - **当前 workaround**：v0 correctness is fine; speed is the issue
 
-### `bigint-future-gcd` — Gcd / Lcm / IsProbablyPrime / NextPrime
+### ~~`bigint-future-gcd`~~ — **✅ Gcd / Lcm 已落地 2026-05-25 (add-bigint-gcd)**
 
-- **来源**：数论 / RSA key gen 用例
-- **触发条件**：crypto / 验证程序需求
+Shipped: `BigInt.Gcd(BigInt) → BigInt` (classical Euclidean —
+`gcd(a, b) = gcd(b, a mod b)`, operands taken as absolute value, result
+always non-negative; conventions match .NET / Python: `gcd(0, 0) == 0`,
+`gcd(a, 0) == |a|`) and `BigInt.Lcm(BigInt) → BigInt` (closed form
+`|a*b| / gcd(a, b)`; `lcm(0, _) == 0` to avoid div-by-zero). 17 tests
+cover classic / coprime / equal / zero / negative / cross-limb / Fib
+adjacency / gcd-lcm-product identity. Binary GCD (Stein's algorithm)
+deferred as `bigint-future-gcd-binary` (constant-factor optimization).
+
+### `bigint-future-gcd-binary` — Binary GCD (Stein's algorithm)
+
+- **来源**：add-bigint-gcd v0 scope cut
+- **触发原因**：v0 Euclidean Gcd does `Mod` per iteration; binary GCD
+  replaces division with shifts + subtractions — 2–3× faster on
+  cryptographic-size operands where division dominates
+- **触发条件**：bench shows gcd is on hot path for large operands
+- **当前 workaround**：v0 correctness is fine; only speed differs
+
+### `bigint-future-prime` — IsProbablyPrime / NextPrime
+
+- **来源**：add-bigint-gcd v0 scope cut + RSA key gen 用例
+- **触发原因**：probabilistic primality testing (Miller-Rabin) needs
+  RNG + witness selection + multiple ModPow rounds; rolling NextPrime
+  on top adds candidate-stepping + small-prime sieve. Non-trivial
+  surface area, schedule separately
+- **触发条件**：first user calling for RSA key generation, prime sieve,
+  or cryptographic random prime in z42
+- **当前 workaround**：deterministic primality for small operands via
+  user-side trial division; large primes are pre-computed constants
+
+### `bigint-future-modinverse` — modular multiplicative inverse
+
+- **来源**：add-bigint-gcd v0 scope cut + ModPow negative-exp follow-up
+- **触发原因**：extended Euclidean algorithm to find `x` such that
+  `a*x ≡ 1 (mod m)`; precondition for `ModPow(negative exp, m)` and
+  RSA decryption-key recovery from `(e, φ(n))`
+- **触发条件**：first user calling for ModPow with negative exponent
+  or RSA key-pair generation
+- **当前 workaround**：hard-code precomputed inverse when modulus is
+  a known small prime
 
 ### `bigint-future-karatsuba-fft` — sub-quadratic multiplication
 

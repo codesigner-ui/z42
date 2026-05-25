@@ -1,0 +1,163 @@
+// add-bigint-gcd (2026-05-25): Euclidean GCD + LCM on BigInt.
+namespace Z42NumericsBigIntGcdTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+// ── Gcd: basic ──────────────────────────────────────────────────────────
+
+[Test]
+void test_gcd_classic_48_18() {
+    // gcd(48, 18) = 6
+    BigInt r = new BigInt(48L).Gcd(new BigInt(18L));
+    Assert.Equal(6L, r.ToInt64());
+}
+
+[Test]
+void test_gcd_swapped_args_same_result() {
+    BigInt a = new BigInt(48L).Gcd(new BigInt(18L));
+    BigInt b = new BigInt(18L).Gcd(new BigInt(48L));
+    Assert.True(a.Equals(b));
+}
+
+[Test]
+void test_gcd_coprime_returns_one() {
+    // gcd(17, 13) = 1 (both prime)
+    BigInt r = new BigInt(17L).Gcd(new BigInt(13L));
+    Assert.True(r.IsOne());
+}
+
+[Test]
+void test_gcd_one_divides_other() {
+    // gcd(12, 4) = 4
+    BigInt r = new BigInt(12L).Gcd(new BigInt(4L));
+    Assert.Equal(4L, r.ToInt64());
+}
+
+[Test]
+void test_gcd_equal_args() {
+    // gcd(9, 9) = 9
+    BigInt r = new BigInt(9L).Gcd(new BigInt(9L));
+    Assert.Equal(9L, r.ToInt64());
+}
+
+// ── Gcd: zero cases ─────────────────────────────────────────────────────
+
+[Test]
+void test_gcd_zero_zero_is_zero() {
+    BigInt r = BigInt.Zero.Gcd(BigInt.Zero);
+    Assert.True(r.IsZero());
+}
+
+[Test]
+void test_gcd_with_zero_returns_abs_other() {
+    BigInt r1 = new BigInt(7L).Gcd(BigInt.Zero);
+    Assert.Equal(7L, r1.ToInt64());
+    BigInt r2 = BigInt.Zero.Gcd(new BigInt(7L));
+    Assert.Equal(7L, r2.ToInt64());
+}
+
+// ── Gcd: negative operands ──────────────────────────────────────────────
+
+[Test]
+void test_gcd_negative_treated_as_abs() {
+    // gcd(-48, 18) = gcd(48, 18) = 6
+    BigInt r1 = new BigInt(-48L).Gcd(new BigInt(18L));
+    Assert.Equal(6L, r1.ToInt64());
+    BigInt r2 = new BigInt(48L).Gcd(new BigInt(-18L));
+    Assert.Equal(6L, r2.ToInt64());
+    BigInt r3 = new BigInt(-48L).Gcd(new BigInt(-18L));
+    Assert.Equal(6L, r3.ToInt64());
+}
+
+[Test]
+void test_gcd_result_always_nonneg() {
+    BigInt r = new BigInt(-48L).Gcd(new BigInt(-18L));
+    Assert.False(r.IsNegative());
+}
+
+// ── Gcd: large multi-limb ───────────────────────────────────────────────
+
+[Test]
+void test_gcd_large_multi_limb() {
+    // gcd(2^100, 3 * 2^50) = 2^50
+    BigInt a = new BigInt(2L).Pow(100);
+    BigInt threePow50 = new BigInt(3L).Multiply(new BigInt(2L).Pow(50));
+    BigInt r = a.Gcd(threePow50);
+    BigInt expected = new BigInt(2L).Pow(50);
+    Assert.True(r.Equals(expected));
+}
+
+[Test]
+void test_gcd_consecutive_fibs_is_one() {
+    // gcd(F(20), F(21)) = 1 (consecutive Fibonacci numbers are coprime).
+    // F(20) = 6765, F(21) = 10946
+    BigInt r = new BigInt(6765L).Gcd(new BigInt(10946L));
+    Assert.True(r.IsOne());
+}
+
+// ── Lcm: basic ──────────────────────────────────────────────────────────
+
+[Test]
+void test_lcm_classic_4_6() {
+    // lcm(4, 6) = 12
+    BigInt r = new BigInt(4L).Lcm(new BigInt(6L));
+    Assert.Equal(12L, r.ToInt64());
+}
+
+[Test]
+void test_lcm_coprime_is_product() {
+    // lcm(7, 13) = 91
+    BigInt r = new BigInt(7L).Lcm(new BigInt(13L));
+    Assert.Equal(91L, r.ToInt64());
+}
+
+[Test]
+void test_lcm_one_divides_other_returns_larger() {
+    // lcm(3, 12) = 12
+    BigInt r = new BigInt(3L).Lcm(new BigInt(12L));
+    Assert.Equal(12L, r.ToInt64());
+}
+
+// ── Lcm: zero cases ─────────────────────────────────────────────────────
+
+[Test]
+void test_lcm_with_zero_is_zero() {
+    BigInt r1 = new BigInt(7L).Lcm(BigInt.Zero);
+    Assert.True(r1.IsZero());
+    BigInt r2 = BigInt.Zero.Lcm(new BigInt(7L));
+    Assert.True(r2.IsZero());
+    BigInt r3 = BigInt.Zero.Lcm(BigInt.Zero);
+    Assert.True(r3.IsZero());
+}
+
+// ── Lcm: negative operands ──────────────────────────────────────────────
+
+[Test]
+void test_lcm_negative_treated_as_abs() {
+    // lcm(-4, 6) = 12
+    BigInt r = new BigInt(-4L).Lcm(new BigInt(6L));
+    Assert.Equal(12L, r.ToInt64());
+}
+
+[Test]
+void test_lcm_result_always_nonneg() {
+    BigInt r = new BigInt(-4L).Lcm(new BigInt(-6L));
+    Assert.False(r.IsNegative());
+    Assert.Equal(12L, r.ToInt64());
+}
+
+// ── Identity: gcd(a, b) * lcm(a, b) == |a * b| ─────────────────────────
+
+[Test]
+void test_gcd_lcm_product_identity() {
+    BigInt a = new BigInt(48L);
+    BigInt b = new BigInt(18L);
+    BigInt g = a.Gcd(b);
+    BigInt l = a.Lcm(b);
+    BigInt lhs = g.Multiply(l);
+    BigInt ab  = a.Multiply(b);
+    BigInt rhs = ab.Abs();
+    Assert.True(lhs.Equals(rhs));
+}

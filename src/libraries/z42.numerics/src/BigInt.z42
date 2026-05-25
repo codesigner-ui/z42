@@ -605,6 +605,38 @@ public class BigInt {
         return result;
     }
 
+    /// Greatest common divisor of |this| and |other|. Always returns a
+    /// non-negative result (sign of operands ignored).
+    ///
+    /// Conventions (match .NET BigInteger / Python math.gcd):
+    ///   * `gcd(0, 0) = 0`
+    ///   * `gcd(a, 0) = |a|`, `gcd(0, b) = |b|`
+    ///
+    /// Algorithm: classical Euclidean — `gcd(a, b) = gcd(b, a mod b)`.
+    /// O(log min(a, b)) divisions; each division is O(n*m) so worst-case
+    /// O(n² log n). Binary GCD (Stein's) is a constant-factor follow-up.
+    public BigInt Gcd(BigInt other) {
+        BigInt a = this.Abs();
+        BigInt b = other.Abs();
+        while (!b.IsZero()) {
+            BigInt r = a.Mod(b);
+            a = b;
+            b = r;
+        }
+        return a;
+    }
+
+    /// Least common multiple of |this| and |other|. Always non-negative.
+    /// `lcm(0, _) = 0` (matches the identity `lcm(a, b) * gcd(a, b) = |a*b|`
+    /// extended by continuity; avoids division-by-zero).
+    public BigInt Lcm(BigInt other) {
+        if (this.IsZero() || other.IsZero()) return BigInt.Zero;
+        BigInt g       = this.Gcd(other);
+        BigInt prod    = this.Multiply(other);
+        BigInt absProd = prod.Abs();
+        return absProd.Divide(g);
+    }
+
     // ── Comparison ──────────────────────────────────────────────────────
 
     public int CompareTo(BigInt other) {
