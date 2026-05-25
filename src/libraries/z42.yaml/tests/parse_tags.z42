@@ -1,0 +1,196 @@
+// add-yaml-tags (2026-05-25): YAML 1.2 type tags (`!!str`, `!!int`,
+// `!!float`, `!!bool`, `!!null`) for explicit scalar type coercion.
+namespace Z42YamlParseTagsTests;
+
+using Std;
+using Std.Test;
+using Std.Yaml;
+
+// ── !!str: force scalar to stay as string ───────────────────────────────
+
+[Test]
+void test_tag_str_forces_int_looking_to_string() {
+    string src = "v: !!str 42\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsString());
+    Assert.Equal("42", v.Get("v").AsString());
+}
+
+[Test]
+void test_tag_str_forces_bool_looking_to_string() {
+    string src = "v: !!str true\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsString());
+    Assert.Equal("true", v.Get("v").AsString());
+}
+
+[Test]
+void test_tag_str_forces_null_looking_to_string() {
+    string src = "v: !!str null\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsString());
+    Assert.Equal("null", v.Get("v").AsString());
+}
+
+[Test]
+void test_tag_str_with_quoted_value() {
+    string src = "v: !!str \"hello\"\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("hello", v.Get("v").AsString());
+}
+
+// ── !!int: force int parse ──────────────────────────────────────────────
+
+[Test]
+void test_tag_int_with_quoted_digits() {
+    // `"42"` would normally be a string; `!!int "42"` forces int parse.
+    string src = "v: !!int \"42\"\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsInt());
+    Assert.Equal(42L, v.Get("v").AsInt());
+}
+
+[Test]
+void test_tag_int_plain_value() {
+    string src = "v: !!int 100\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsInt());
+    Assert.Equal(100L, v.Get("v").AsInt());
+}
+
+[Test]
+void test_tag_int_invalid_throws() {
+    string src = "v: !!int notanumber\n";
+    bool threw = false;
+    try { YamlValue v = YamlValue.Parse(src); }
+    catch (YamlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── !!float: force float parse ──────────────────────────────────────────
+
+[Test]
+void test_tag_float_quoted_digit() {
+    // `!!float "1.5"` forces float interpretation of a string literal.
+    string src = "v: !!float \"1.5\"\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsFloat());
+    Assert.True(v.Get("v").AsFloat() > 1.49 && v.Get("v").AsFloat() < 1.51);
+}
+
+[Test]
+void test_tag_float_invalid_throws() {
+    string src = "v: !!float oops\n";
+    bool threw = false;
+    try { YamlValue v = YamlValue.Parse(src); }
+    catch (YamlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── !!bool: force bool parse ────────────────────────────────────────────
+
+[Test]
+void test_tag_bool_quoted_true() {
+    string src = "v: !!bool \"true\"\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsBool());
+    Assert.True(v.Get("v").AsBool());
+}
+
+[Test]
+void test_tag_bool_uppercase() {
+    string src = "v: !!bool FALSE\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsBool());
+    Assert.False(v.Get("v").AsBool());
+}
+
+[Test]
+void test_tag_bool_invalid_throws() {
+    string src = "v: !!bool yes\n";   // YAML 1.2 rejects yes/on for bool
+    bool threw = false;
+    try { YamlValue v = YamlValue.Parse(src); }
+    catch (YamlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── !!null: explicit null ───────────────────────────────────────────────
+
+[Test]
+void test_tag_null_empty() {
+    string src = "v: !!null\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsNull());
+}
+
+[Test]
+void test_tag_null_tilde() {
+    string src = "v: !!null ~\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsNull());
+}
+
+[Test]
+void test_tag_null_word() {
+    string src = "v: !!null null\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsNull());
+}
+
+[Test]
+void test_tag_null_with_non_null_throws() {
+    string src = "v: !!null hello\n";
+    bool threw = false;
+    try { YamlValue v = YamlValue.Parse(src); }
+    catch (YamlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Tags in sequence items ──────────────────────────────────────────────
+
+[Test]
+void test_tag_in_sequence_item() {
+    string src = "- !!str 42\n- !!int \"42\"\n- 42\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal(3, v.Length());
+    Assert.True(v.At(0).IsString());
+    Assert.Equal("42", v.At(0).AsString());
+    Assert.True(v.At(1).IsInt());
+    Assert.Equal(42L, v.At(1).AsInt());
+    Assert.True(v.At(2).IsInt());
+}
+
+// ── Unknown / local tags: ignored, fall back to scalar inference ───────
+
+[Test]
+void test_local_tag_falls_through_to_scalar_inference() {
+    // `!myTag 42` — z42 v0 has no tag registry; tag silently ignored,
+    // value parsed as plain scalar → int.
+    string src = "v: !myTag 42\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsInt());
+    Assert.Equal(42L, v.Get("v").AsInt());
+}
+
+[Test]
+void test_unknown_double_bang_tag_falls_through() {
+    // Unknown `!!` tag (e.g. `!!binary`) silently ignored in v0.
+    string src = "v: !!binary hello\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("v").IsString());
+    Assert.Equal("hello", v.Get("v").AsString());
+}
+
+// ── Real-world: ConfigMap pattern ──────────────────────────────────────
+
+[Test]
+void test_kubernetes_configmap_pattern() {
+    // Kubernetes ConfigMap data values must be strings; `!!str` is the
+    // standard way to force numeric-looking values to stay as strings.
+    string src = "data:\n  port: !!str 8080\n  enabled: !!str true\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.True(v.Get("data").Get("port").IsString());
+    Assert.Equal("8080", v.Get("data").Get("port").AsString());
+    Assert.True(v.Get("data").Get("enabled").IsString());
+    Assert.Equal("true", v.Get("data").Get("enabled").AsString());
+}

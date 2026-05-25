@@ -164,14 +164,48 @@ scope reset (cross-doc alias throws), same anchor name reused across
 docs OK, nested mapping anchor + deep clone, alias snapshot independence
 under post-parse mutation.
 
-### `yaml-future-tags`
+### ~~`yaml-future-tags`~~ — **✅ 已落地 2026-05-25 (add-yaml-tags)**
 
-- **来源**：add-z42-yaml v0 scope
-- **触发原因**：YAML tags (`!str`, `!!binary`, custom `!tag`) drive
-  type-coercion overrides. Without a user-extensible tag registry the
-  feature is half-baked; v0 doesn't ship the registry.
-- **触发条件**：use case requiring explicit type override on a scalar
-  (e.g. forcing `"42"` to stay a string without quotes).
+Shipped: YAML 1.2 universal type tags (`!!str`, `!!int`, `!!float`,
+`!!bool`, `!!null`) for explicit scalar type coercion. Most common
+use case is `!!str 42` to force numeric-looking values to stay as
+strings (Kubernetes ConfigMap data fields are the canonical example).
+
+| 用法 | 解释 |
+|---|---|
+| `key: !!str 42` | force `"42"` (string), not `42` (int) |
+| `key: !!int "42"` | force `42` (int), parse the quoted string |
+| `key: !!float "1.5"` | force float parse |
+| `key: !!bool true` / `!!bool FALSE` | strict YAML 1.2 bool (yes/on/off rejected) |
+| `key: !!null` / `!!null ~` / `!!null null` | explicit null |
+| `key: !myTag value` | local tag — silently ignored, fall back to scalar inference (z42 v0 has no user tag registry) |
+| `key: !!binary hex` | unknown `!!` tag — same fall-through |
+
+Implementation: new `_TryParseTag(parentIndent) → YamlValue?` in
+YamlParser, wired into mapping-value + sequence-item dispatch ahead
+of anchor/alias and block-scalar paths. Tag handle parsed greedily
+(`!`, `!!`, or `!`/`!!` + identifier chars). Following inline scalar
+captured verbatim, then `_ApplyTagCoercion(tag, raw)` produces the
+typed YamlValue or throws YamlException on type mismatch (e.g.
+`!!int notanumber`).
+
+20 tests cover: !!str on int/bool/null-looking and quoted values;
+!!int with quoted digits, plain int, malformed value (throws);
+!!float quoted digit, malformed (throws); !!bool quoted/uppercase,
+non-1.2-bool like `yes` (throws); !!null with empty/~/null and
+non-null (throws); tags in sequence items (`- !!str 42`);
+local/unknown tags fall through to scalar inference; Kubernetes
+ConfigMap pattern (`port: !!str 8080`, `enabled: !!str true`).
+
+Out of scope (no follow-up planned unless user demand surfaces):
+- `!!seq` / `!!map` collection tags (usually inferred from block
+  structure; explicit tag adds no info)
+- Verbose URI form `!<tag:yaml.org,2002:str>` (rare in practice;
+  `!!str` is the standard short form)
+- User-extensible tag registry (no z42 use case yet)
+- Tag combined with anchor in the same value position (`&a !!str 42`
+  or `!!str &a 42`) — rare; current dispatch is tag-first then
+  anchor on the resulting value
 
 ### ~~`yaml-future-multiline-strings`~~ — **✅ 已落地 2026-05-25 (add-yaml-multiline-strings)**
 

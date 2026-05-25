@@ -285,20 +285,22 @@ public sealed class YamlParser {
                 this._SkipInlineSpacesAndOptionalComment();
                 this._ConsumeRestOfLine();
             } else {
-                // Anchor (`&name`) / alias (`*name`) takes precedence — they
-                // wrap or replace the value that follows.
-                YamlValue anchored = this._TryParseAnchorOrAlias(indent);
-                if (anchored != null) {
-                    val = anchored;
+                // Dispatch precedence: tag → anchor/alias → block scalar → plain.
+                YamlValue tagged = this._TryParseTag(indent);
+                if (tagged != null) {
+                    val = tagged;
                 } else {
-                    // Block scalar indicator (`|` / `>`) takes precedence over
-                    // plain-scalar parsing — see add-yaml-multiline-strings.
-                    YamlValue block = this._TryParseBlockScalar(indent);
-                    if (block != null) {
-                        val = block;
+                    YamlValue anchored = this._TryParseAnchorOrAlias(indent);
+                    if (anchored != null) {
+                        val = anchored;
                     } else {
-                        val = this._ParseBlockScalarValue();
-                        this._ConsumeRestOfLine();
+                        YamlValue block = this._TryParseBlockScalar(indent);
+                        if (block != null) {
+                            val = block;
+                        } else {
+                            val = this._ParseBlockScalarValue();
+                            this._ConsumeRestOfLine();
+                        }
                     }
                 }
             }
@@ -438,17 +440,22 @@ public sealed class YamlParser {
                     item.Set(key, val);
                     this._ConsumeRestOfLine();
                 } else {
-                    // Anchor / alias first; block scalar next; plain last.
-                    YamlValue anchored = this._TryParseAnchorOrAlias(indent);
-                    if (anchored != null) {
-                        item = anchored;
+                    // Dispatch precedence: tag → anchor/alias → block scalar → plain.
+                    YamlValue tagged = this._TryParseTag(indent);
+                    if (tagged != null) {
+                        item = tagged;
                     } else {
-                        YamlValue block = this._TryParseBlockScalar(indent);
-                        if (block != null) {
-                            item = block;
+                        YamlValue anchored = this._TryParseAnchorOrAlias(indent);
+                        if (anchored != null) {
+                            item = anchored;
                         } else {
-                            item = this._ParseBlockScalarValue();
-                            this._ConsumeRestOfLine();
+                            YamlValue block = this._TryParseBlockScalar(indent);
+                            if (block != null) {
+                                item = block;
+                            } else {
+                                item = this._ParseBlockScalarValue();
+                                this._ConsumeRestOfLine();
+                            }
                         }
                     }
                 }
@@ -684,6 +691,111 @@ public sealed class YamlParser {
         }
         string raw = this._ConsumeLinePlainScalar();
         return this._ParseScalarLiteral(raw);
+    }
+
+    /// Try to parse a YAML tag (`!!str`, `!!int`, etc.) at current position.
+    /// Returns the type-coerced YamlValue if a tag was found; null otherwise.
+    /// Supports the YAML 1.2 universal type tags `!!str` / `!!int` / `!!float`
+    /// / `!!bool` / `!!null`. Unknown / local tags (e.g. `!myTag`) silently
+    /// fall back to plain-scalar type inference (z42 v0 has no user tag
+    /// registry). add-yaml-tags (2026-05-25).
+    private YamlValue _TryParseTag(int parentIndent) {
+        if (this._pos >= this._src.Length) { return null; }
+        if (this._src.CharAt(this._pos) != '!') { return null; }
+        string tag = this._ParseTagName();
+        this._SkipInlineSpaces();
+        // Parse the following scalar value verbatim (raw text), then coerce.
+        YamlValue raw;
+        if (this._pos < this._src.Length && this._src.CharAt(this._pos) == '"') {
+            raw = YamlValue.OfString(this._ParseDoubleQuotedString());
+            this._ConsumeRestOfLine();
+        } else if (this._pos < this._src.Length && this._src.CharAt(this._pos) == '\'') {
+            raw = YamlValue.OfString(this._ParseSingleQuotedString());
+            this._ConsumeRestOfLine();
+        } else if (this._pos >= this._src.Length
+                || this._src.CharAt(this._pos) == '\n'
+                || this._src.CharAt(this._pos) == '\r'
+                || (this._src.CharAt(this._pos) == '#' && this._IsCommentStart())) {
+            // No inline value after the tag — tag applies to an empty value.
+            this._ConsumeRestOfLine();
+            raw = YamlValue.OfNull();
+        } else if (this._src.CharAt(this._pos) == '[' || this._src.CharAt(this._pos) == '{') {
+            // Flow-style value after a tag — coerce only meaningful for
+            // collection tags (!!seq/!!map) which are not in v0 scope.
+            // Treat as the underlying flow value; tag ignored.
+            YamlValue flow = this._ParseFlow();
+            this._SkipInlineSpacesAndOptionalComment();
+            this._ConsumeRestOfLine();
+            return flow;
+        } else {
+            string lit = this._ConsumeLinePlainScalar();
+            raw = YamlValue.OfString(lit);
+        }
+        return this._ApplyTagCoercion(tag, raw);
+    }
+
+    /// Parse a tag handle starting with `!`. Accepts `!`, `!!`, and
+    /// `!`/`!!` followed by an identifier (alphanumerics + `_` `-` `.`).
+    /// Returns the full handle string including leading `!`(s).
+    private string _ParseTagName() {
+        int start = this._pos;
+        this._Advance();                          // first `!`
+        if (this._pos < this._src.Length && this._src.CharAt(this._pos) == '!') {
+            this._Advance();                      // optional second `!`
+        }
+        while (this._pos < this._src.Length) {
+            char c = this._src.CharAt(this._pos);
+            bool ok = (c >= 'a' && c <= 'z')
+                || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9')
+                || c == '_' || c == '-' || c == '.';
+            if (!ok) { break; }
+            this._Advance();
+        }
+        return this._src.Substring(start, this._pos - start);
+    }
+
+    /// Apply a YAML 1.2 universal tag's type coercion to a raw scalar.
+    /// Unknown tags fall through to plain-scalar type inference.
+    private YamlValue _ApplyTagCoercion(string tag, YamlValue raw) {
+        if (tag == "!!str") {
+            if (raw.IsNull()) { return YamlValue.OfString(""); }
+            return raw;
+        }
+        if (tag == "!!int") {
+            if (raw.IsNull()) { throw this._Err("!!int tag requires a value"); }
+            string text = raw.AsString().Trim();
+            try { return YamlValue.OfInt(Int64.Parse(text)); }
+            catch (Exception e) {
+                throw this._Err("!!int: value '" + text + "' is not an integer");
+            }
+        }
+        if (tag == "!!float") {
+            if (raw.IsNull()) { throw this._Err("!!float tag requires a value"); }
+            string text = raw.AsString().Trim();
+            try { return YamlValue.OfFloat(Double.Parse(text)); }
+            catch (Exception e) {
+                throw this._Err("!!float: value '" + text + "' is not a float");
+            }
+        }
+        if (tag == "!!bool") {
+            if (raw.IsNull()) { throw this._Err("!!bool tag requires a value"); }
+            string text = raw.AsString().Trim();
+            if (text == "true"  || text == "True"  || text == "TRUE")  { return YamlValue.OfBool(true); }
+            if (text == "false" || text == "False" || text == "FALSE") { return YamlValue.OfBool(false); }
+            throw this._Err("!!bool: value '" + text + "' is not true/false");
+        }
+        if (tag == "!!null") {
+            if (raw.IsNull()) { return raw; }
+            string text = raw.AsString().Trim();
+            if (text == "" || text == "~" || text == "null") { return YamlValue.OfNull(); }
+            throw this._Err("!!null: value '" + text + "' is not empty/~/null");
+        }
+        // Unknown / local tag — silently ignore, re-run scalar inference on
+        // the raw text. z42 v0 doesn't ship a tag registry for user types.
+        if (raw.IsNull()) { return raw; }
+        string s = raw.AsString();
+        return this._ParseScalarLiteral(s.Trim());
     }
 
     /// Try to parse an anchor declaration (`&name`) or alias reference
