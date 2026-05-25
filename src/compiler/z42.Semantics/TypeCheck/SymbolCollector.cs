@@ -392,38 +392,16 @@ public sealed partial class SymbolCollector : ISymbolBinder
                             ResolveType(ft.ReturnType)),
         NamedType  nt when _activeTypeParams?.Contains(nt.Name) == true
                       => new Z42GenericParamType(nt.Name),
-        NamedType  nt => nt.Name switch
-        {
-            "int"    or "i32" => Z42Type.Int,
-            "long"   or "i64" => Z42Type.Long,
-            "float"  or "f32" => Z42Type.Float,
-            "double" or "f64" => Z42Type.Double,
-            "bool"            => Z42Type.Bool,
-            "string"          => Z42Type.String,
-            "char"            => Z42Type.Char,
-            "object"          => Z42Type.Object,
-            "void"            => Z42Type.Void,
-            "var"             => Z42Type.Unknown,
-            "i8"              => Z42Type.I8,
-            "i16"             => Z42Type.I16,
-            "u8"              => Z42Type.U8,
-            "u16"             => Z42Type.U16,
-            "u32"             => Z42Type.U32,
-            "u64"             => Z42Type.U64,
-            "sbyte"           => Z42Type.I8,
-            "short"           => Z42Type.I16,
-            "byte"            => Z42Type.U8,
-            "ushort"          => Z42Type.U16,
-            "uint"            => Z42Type.U32,
-            "ulong"           => Z42Type.U64,
-            // 2026-05-02 add-delegate-type: 用户声明的非泛型 delegate → Z42FuncType
-            _ when _delegates.TryGetValue(nt.Name, out var di) && di.TypeParams.Count == 0
-                              => di.Signature,
-            _                 => _enumTypes.Contains(nt.Name)                 ? new Z42EnumType(nt.Name)
-                               : _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
-                               : _interfaces.TryGetValue(nt.Name, out var it) ? it
-                               : new Z42PrimType(nt.Name),
-        },
+        // Primitive lookup centralized in WellKnownTypes (docs/review.md Part 6 F5 #1, 2026-05-25).
+        NamedType  nt when WellKnownTypes.TryResolve(nt.Name, out var prim)
+                      => prim,
+        NamedType  nt => // 2026-05-02 add-delegate-type: 用户声明的非泛型 delegate → Z42FuncType
+                         _delegates.TryGetValue(nt.Name, out var di) && di.TypeParams.Count == 0
+                            ? di.Signature
+                       : _enumTypes.Contains(nt.Name)                 ? new Z42EnumType(nt.Name)
+                       : _classes.TryGetValue(nt.Name, out var ct)    ? (Z42Type)ct
+                       : _interfaces.TryGetValue(nt.Name, out var it) ? it
+                       : new Z42PrimType(nt.Name),
         GenericType gt when _delegates.TryGetValue($"{gt.Name}${gt.TypeArgs.Count}", out var dgi)
                             && dgi.TypeParams.Count == gt.TypeArgs.Count
                        => InstantiateGenericDelegate(dgi, gt.TypeArgs.Select(ResolveType).ToList()),
