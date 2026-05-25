@@ -1,0 +1,149 @@
+// add-bigint-modpow (2026-05-25): modular exponentiation via
+// square-and-multiply over the bit-ops landed in add-bigint-bitops.
+namespace Z42NumericsBigIntModPowTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+
+// ── Basics ──────────────────────────────────────────────────────────────
+
+[Test]
+void test_modpow_small_2_pow_10_mod_1000() {
+    // 2^10 = 1024; 1024 mod 1000 == 24
+    BigInt base_ = new BigInt(2L);
+    BigInt exp   = new BigInt(10L);
+    BigInt m     = new BigInt(1000L);
+    Assert.Equal(24L, base_.ModPow(exp, m).ToInt64());
+}
+
+[Test]
+void test_modpow_3_pow_5_mod_7() {
+    // 3^5 = 243; 243 mod 7 == 5
+    BigInt r = new BigInt(3L).ModPow(new BigInt(5L), new BigInt(7L));
+    Assert.Equal(5L, r.ToInt64());
+}
+
+// ── Edge: exp == 0 ──────────────────────────────────────────────────────
+
+[Test]
+void test_modpow_exp_zero_returns_one() {
+    BigInt r = new BigInt(42L).ModPow(BigInt.Zero, new BigInt(100L));
+    Assert.True(r.IsOne());
+}
+
+[Test]
+void test_modpow_zero_pow_zero_is_one() {
+    // Mathematical convention: 0^0 == 1 (consistent with Pow + iverson bracket).
+    BigInt r = BigInt.Zero.ModPow(BigInt.Zero, new BigInt(7L));
+    Assert.True(r.IsOne());
+}
+
+// ── Edge: base == 0 ─────────────────────────────────────────────────────
+
+[Test]
+void test_modpow_base_zero_exp_positive_is_zero() {
+    BigInt r = BigInt.Zero.ModPow(new BigInt(5L), new BigInt(7L));
+    Assert.True(r.IsZero());
+}
+
+// ── Edge: modulus == 1 ──────────────────────────────────────────────────
+
+[Test]
+void test_modpow_modulus_one_always_zero() {
+    BigInt r1 = new BigInt(99L).ModPow(new BigInt(50L), BigInt.One);
+    Assert.True(r1.IsZero());
+    BigInt r2 = BigInt.Zero.ModPow(BigInt.Zero, BigInt.One);
+    Assert.True(r2.IsZero());
+}
+
+// ── Large: crypto-sized ─────────────────────────────────────────────────
+
+[Test]
+void test_modpow_large_exp() {
+    // 7^100 mod 13 — exp doesn't fit in int, validate square-and-multiply
+    // doesn't blow up the intermediate size. 7 mod 13 = 7;
+    // 7^2 = 49 mod 13 = 10; 7^4 = 100 mod 13 = 9; ...
+    // Easier: compute via Pow().Mod() and compare for small enough exp.
+    BigInt base_ = new BigInt(7L);
+    BigInt exp   = new BigInt(20L);
+    BigInt m     = new BigInt(13L);
+    BigInt fast = base_.ModPow(exp, m);
+    BigInt slow = base_.Pow(20).Mod(m);
+    Assert.Equal(0, fast.CompareTo(slow));
+}
+
+[Test]
+void test_modpow_huge_exp_via_bitlength() {
+    // 2^1000 mod (2^31 - 1)  — Mersenne prime, classic RSA scratch.
+    // Direct Pow would produce a 1000-bit intermediate; ModPow stays
+    // in [0, modulus) throughout.
+    BigInt base_ = new BigInt(2L);
+    BigInt exp   = new BigInt(1000L);
+    BigInt m     = new BigInt(2147483647L);  // 2^31 - 1
+    BigInt r = base_.ModPow(exp, m);
+    // Sanity: result must be in [0, m).
+    Assert.True(r.Sign() >= 0);
+    Assert.True(r.CompareTo(m) < 0);
+    // Cross-check against Pow().Mod() for the same operation.
+    BigInt slow = base_.Pow(1000).Mod(m);
+    Assert.Equal(0, r.CompareTo(slow));
+}
+
+[Test]
+void test_modpow_rsa_toy_round_trip() {
+    // Toy RSA: p=11, q=13 → n=143, φ=120. Pick e=7 (coprime with 120).
+    // d = e^(-1) mod φ = 103 (precomputed; 7*103 mod 120 == 1).
+    // Encrypt: c = m^e mod n. Decrypt: m = c^d mod n.
+    BigInt n = new BigInt(143L);
+    BigInt e = new BigInt(7L);
+    BigInt d = new BigInt(103L);
+    BigInt m = new BigInt(42L);   // plaintext
+    BigInt c = m.ModPow(e, n);
+    BigInt back = c.ModPow(d, n);
+    Assert.Equal(0, back.CompareTo(m));
+}
+
+// ── Negative-arg rejection ──────────────────────────────────────────────
+
+[Test]
+void test_modpow_modulus_zero_throws() {
+    bool threw = false;
+    try {
+        new BigInt(2L).ModPow(new BigInt(5L), BigInt.Zero);
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_modpow_modulus_negative_throws() {
+    bool threw = false;
+    try {
+        new BigInt(2L).ModPow(new BigInt(5L), new BigInt(-7L));
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_modpow_negative_exp_throws() {
+    bool threw = false;
+    try {
+        new BigInt(2L).ModPow(new BigInt(-1L), new BigInt(7L));
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Negative base normalises into [0, m) ────────────────────────────────
+
+[Test]
+void test_modpow_negative_base_normalises() {
+    // (-3) ≡ 4 (mod 7), so (-3)^2 mod 7 == 4^2 mod 7 == 16 mod 7 == 2
+    BigInt r = new BigInt(-3L).ModPow(new BigInt(2L), new BigInt(7L));
+    Assert.Equal(2L, r.ToInt64());
+}

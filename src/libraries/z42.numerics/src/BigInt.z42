@@ -556,6 +556,55 @@ public class BigInt {
         return topIdx * 31 + topBits;
     }
 
+    // ── Modular exponentiation (add-bigint-modpow, 2026-05-25) ──────────
+
+    /// Compute `(this ^ exp) mod modulus` via square-and-multiply
+    /// (LSB-first), walking exp's bits with `TestBit` / `ShiftRight`.
+    /// Reduces O(2^N) intermediate-size explosion of `Pow().Mod()` to
+    /// O(N) modular multiplications. RSA / Diffie-Hellman backbone.
+    ///
+    /// v0 limits:
+    ///   * `modulus > 0` — else ArgumentException
+    ///   * `exp >= 0`    — negative exponent needs modular inverse
+    ///                     (separate spec; throws ArgumentException)
+    ///   * `exp == 0`    → returns 1 (mathematical convention; even
+    ///                     `0^0 mod m == 1` follows it)
+    ///   * `modulus == 1` → always 0 (anything mod 1 is 0)
+    ///
+    /// Out of v0 scope: Montgomery / Barrett reduction (constants
+    /// higher than ideal; correctness comes first).
+    public BigInt ModPow(BigInt exp, BigInt modulus) {
+        if (modulus._sign <= 0) {
+            throw new ArgumentException("BigInt.ModPow: modulus must be > 0");
+        }
+        if (exp._sign < 0) {
+            throw new ArgumentException("BigInt.ModPow: v0 requires exp >= 0 (negative exponent needs modular inverse — separate spec)");
+        }
+        if (modulus.IsOne()) return BigInt.Zero;
+        if (exp.IsZero())    return BigInt.One;
+        // Reduce base into [0, modulus). Mod follows dividend sign in
+        // BigInt; for negative `this` the magnitude reduces fine and
+        // (result * b) wraps mod modulus correctly.
+        BigInt b      = this.Mod(modulus);
+        // BigInt.Mod follows the dividend sign — normalise to non-negative
+        // representative so subsequent Multiply().Mod() stays in [0, m).
+        if (b._sign < 0) b = b.Add(modulus);
+        BigInt result = BigInt.One;
+        BigInt e      = exp;
+        while (!e.IsZero()) {
+            if (e.TestBit(0)) {
+                BigInt prod = result.Multiply(b);
+                result = prod.Mod(modulus);
+            }
+            e = e.ShiftRight(1);
+            if (!e.IsZero()) {
+                BigInt sq = b.Multiply(b);
+                b = sq.Mod(modulus);
+            }
+        }
+        return result;
+    }
+
     // ── Comparison ──────────────────────────────────────────────────────
 
     public int CompareTo(BigInt other) {

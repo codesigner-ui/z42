@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Z42.Core.Text;
 
 namespace Z42.Core.Diagnostics;
@@ -6,16 +7,31 @@ public enum DiagnosticSeverity { Error, Warning, Info }
 
 /// <summary>
 /// A single compiler diagnostic (error, warning, or info).
+///
+/// <para><see cref="Properties"/> carries structured key/value pairs scoped to a
+/// single diagnostic instance — e.g. the offending token text, the expected
+/// type name, a stable suggestion id. Defaults to empty; analyzers /
+/// future code-fix providers may consume them without parsing
+/// <see cref="Message"/>. docs/review.md Part 6 F5 #3 (2026-05-25).</para>
 /// </summary>
 public sealed record Diagnostic(
-    DiagnosticSeverity Severity,
-    string             Code,      // e.g. "E0001"
-    string             Message,
-    Span               Span
+    DiagnosticSeverity                  Severity,
+    string                              Code,      // e.g. "E0001"
+    string                              Message,
+    Span                                Span,
+    ImmutableDictionary<string, string>? Properties = null
 )
 {
     public bool IsError   => Severity == DiagnosticSeverity.Error;
     public bool IsWarning => Severity == DiagnosticSeverity.Warning;
+
+    /// <summary>Properties dictionary, never null — empty when not set.</summary>
+    public ImmutableDictionary<string, string> Props =>
+        Properties ?? ImmutableDictionary<string, string>.Empty;
+
+    /// <summary>Returns a copy with the given key/value added or replaced.</summary>
+    public Diagnostic WithProperty(string key, string value) =>
+        this with { Properties = Props.SetItem(key, value) };
 
     public override string ToString() =>
         $"{Span.File}({Span.Line},{Span.Column}): {Severity.ToString().ToLowerInvariant()} {Code}: {Message}";

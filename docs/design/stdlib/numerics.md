@@ -125,12 +125,29 @@ follow-up `bigint-future-bitops-twoscomp`.
 - **当前 workaround**：take `.Abs()` first, do the op, then re-sign
   appropriately
 
-### `bigint-future-modpow` — modular exponentiation `ModPow(exp, modulus)`
+### ~~`bigint-future-modpow`~~ — **✅ 已落地 2026-05-25 (add-bigint-modpow)**
 
-- **来源**：F v0 explicit deferral
-- **触发原因**：RSA / DH 必备但需要左到右 windowed exp + Montgomery reduction 才高效
-- **触发条件**：z42.crypto RSA / ECDH 支持
-- **当前 workaround**：`a.Pow(b).Mod(m)`（指数爆炸，仅 toy 用例可用）
+Shipped: `BigInt.ModPow(BigInt exp, BigInt modulus) → BigInt` —
+square-and-multiply (LSB-first) over `TestBit` + `ShiftRight`. v0
+constraints: `modulus > 0`, `exp >= 0` (negative exp needs modular
+inverse — separate spec), `exp == 0` → `1` (mathematical convention),
+`modulus == 1` → `0`. Reduces O(2^N) intermediate-size explosion of
+`Pow().Mod()` to O(N) modular multiplications — RSA / DH viable. 13
+tests cover small + large exp, edge cases (modulus 1, exp 0, base 0),
+toy RSA round-trip (p=11, q=13, e=7, d=103), negative-arg rejection,
+negative-base normalisation.
+
+Montgomery / Barrett reduction (constant-factor speedups) deferred as
+`bigint-future-modpow-montgomery`.
+
+### `bigint-future-modpow-montgomery`
+
+- **来源**：add-bigint-modpow v0 scope cut
+- **触发原因**：v0 ModPow does naïve `Multiply().Mod()` per bit;
+  Montgomery / Barrett reduction skips the per-iteration trial
+  division for ~2-3× speedup on cryptographic-size operands
+- **触发条件**：real-world crypto perf needs (RSA-2048 ~ 1ms target)
+- **当前 workaround**：v0 correctness is fine; speed is the issue
 
 ### `bigint-future-gcd` — Gcd / Lcm / IsProbablyPrime / NextPrime
 
