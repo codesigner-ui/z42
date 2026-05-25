@@ -1,6 +1,7 @@
 namespace Std.Numerics;
 
 using Std;
+using Std.Random;
 
 // add-z42-numerics-bigint (2026-05-24): arbitrary-precision integer.
 //
@@ -688,6 +689,113 @@ public class BigInt {
         BigInt r = x0.Mod(modulus);
         if (r._sign < 0) r = r.Add(modulus);
         return r;
+    }
+
+    // ── Probabilistic primality (add-bigint-prime, 2026-05-25) ──────────
+
+    /// Uniform-ish random BigInt in `[0, upper)`. Generates a magnitude
+    /// with `upper.BitLength()` random bits then reduces modulo `upper`.
+    /// Mod-bias is acceptable for Miller-Rabin witness sampling (correctness
+    /// only depends on witnesses being distributed enough to surface
+    /// composites within the requested rounds).
+    static BigInt _randomBelow(Random rng, BigInt upper) {
+        int bitLen = upper.BitLength();
+        if (bitLen <= 0) return BigInt.Zero;
+        int limbCount = (bitLen + 30) / 31;
+        int[] mag = new int[limbCount];
+        int i = 0;
+        while (i < limbCount) {
+            // Generate 31 random bits as a long (NextLongRange takes long
+            // bounds; 2^31 fits comfortably). Cast to int — value is in
+            // [0, 2^31) so the int is non-negative.
+            long raw = rng.NextLongRange(0L, 2147483648L);
+            mag[i] = (int)raw;
+            i = i + 1;
+        }
+        BigInt cand = BigInt._fromMagSign(mag, 1);
+        return cand.Mod(upper);
+    }
+
+    /// Miller-Rabin probabilistic primality test with a default RNG
+    /// (wall-clock seeded). Use the `(int, Random)` overload for
+    /// deterministic / reproducible witnesses.
+    public bool IsProbablyPrime(int rounds) {
+        Random rng = new Random();
+        return this.IsProbablyPrime(rounds, rng);
+    }
+
+    /// Miller-Rabin probabilistic primality test with caller-provided RNG.
+    /// Returns `true` if probably prime (error ≤ `4^(-rounds)`), `false`
+    /// if definitely composite.
+    public bool IsProbablyPrime(int rounds, Random rng) {
+        if (rounds <= 0) {
+            throw new ArgumentException("BigInt.IsProbablyPrime: rounds must be > 0");
+        }
+        // Quick rejects on small values + sign + parity.
+        if (this._sign <= 0) return false;
+        if (this.IsOne())    return false;
+        BigInt two   = new BigInt(2L);
+        BigInt three = new BigInt(3L);
+        if (this.CompareTo(two)   == 0) return true;
+        if (this.CompareTo(three) == 0) return true;
+        // Even numbers > 2 are composite (TestBit(0) returns parity).
+        if (!this.TestBit(0)) return false;
+        // Decompose n - 1 = 2^r * d, d odd.
+        BigInt nMinus1 = this.Subtract(BigInt.One);
+        BigInt d       = nMinus1;
+        int r          = 0;
+        while (!d.TestBit(0)) {
+            d = d.ShiftRight(1);
+            r = r + 1;
+        }
+        // Witness range [2, n-2] generated as `_randomBelow(n-3) + 2`.
+        BigInt nMinus3 = this.Subtract(three);
+        int i = 0;
+        while (i < rounds) {
+            BigInt rawIdx = BigInt._randomBelow(rng, nMinus3);
+            BigInt a      = rawIdx.Add(two);
+            BigInt x      = a.ModPow(d, this);
+            if (x.IsOne() || x.CompareTo(nMinus1) == 0) {
+                i = i + 1;
+                continue;
+            }
+            bool composite = true;
+            int j = 0;
+            while (j < r - 1) {
+                BigInt xSq = x.Multiply(x);
+                x = xSq.Mod(this);
+                if (x.CompareTo(nMinus1) == 0) {
+                    composite = false;
+                    j = r;            // break; z42 loop has no `break` parity yet
+                } else {
+                    j = j + 1;
+                }
+            }
+            if (composite) return false;
+            i = i + 1;
+        }
+        return true;
+    }
+
+    /// Smallest (probably) prime strictly greater than `this`. Uses 20-round
+    /// Miller-Rabin (cryptographic-grade default; error ≤ 4^-20 ≈ 10^-12).
+    ///
+    /// `(this < 2).NextPrime() == 2`; for `this >= 2` candidates step by 2
+    /// from the next odd number above `this`.
+    public BigInt NextPrime() {
+        BigInt two = new BigInt(2L);
+        if (this.CompareTo(two) < 0) return two;
+        // Start at this + 1; bump to next odd if even.
+        BigInt cand = this.Add(BigInt.One);
+        if (!cand.TestBit(0)) {
+            cand = cand.Add(BigInt.One);
+        }
+        Random rng = new Random();
+        while (true) {
+            if (cand.IsProbablyPrime(20, rng)) return cand;
+            cand = cand.Add(two);
+        }
+        return BigInt.Zero;   // unreachable; satisfies type-checker if needed
     }
 
     // ── Comparison ──────────────────────────────────────────────────────

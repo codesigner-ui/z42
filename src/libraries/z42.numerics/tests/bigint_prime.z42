@@ -1,0 +1,197 @@
+// add-bigint-prime (2026-05-25): Miller-Rabin probabilistic primality
+// test + NextPrime. Witnesses from Std.Random.Random (PCG-XSH-RR).
+namespace Z42NumericsBigIntPrimeTests;
+
+using Std;
+using Std.Test;
+using Std.Numerics;
+using Std.Random;
+
+// Use a seeded RNG in every test so results are deterministic; the
+// `IsProbablyPrime(int)` overload (which constructs `new Random()` with
+// wall-clock seed) is exercised in one dedicated test.
+Random seeded() {
+    return new Random(424242L);
+}
+
+// ── Small primes (sanity) ───────────────────────────────────────────────
+
+[Test]
+void test_two_is_prime() {
+    Assert.True(new BigInt(2L).IsProbablyPrime(10, seeded()));
+}
+
+[Test]
+void test_three_is_prime() {
+    Assert.True(new BigInt(3L).IsProbablyPrime(10, seeded()));
+}
+
+[Test]
+void test_small_primes_all_pass() {
+    long[] primes = new long[10];
+    primes[0] = 5L;  primes[1] = 7L;  primes[2] = 11L; primes[3] = 13L;
+    primes[4] = 17L; primes[5] = 19L; primes[6] = 23L; primes[7] = 29L;
+    primes[8] = 31L; primes[9] = 97L;
+    int i = 0;
+    while (i < primes.Length) {
+        BigInt n = new BigInt(primes[i]);
+        Assert.True(n.IsProbablyPrime(10, seeded()));
+        i = i + 1;
+    }
+}
+
+// ── Small composites ────────────────────────────────────────────────────
+
+[Test]
+void test_one_is_not_prime() {
+    Assert.False(BigInt.One.IsProbablyPrime(10, seeded()));
+}
+
+[Test]
+void test_zero_is_not_prime() {
+    Assert.False(BigInt.Zero.IsProbablyPrime(10, seeded()));
+}
+
+[Test]
+void test_negative_is_not_prime() {
+    Assert.False(new BigInt(-7L).IsProbablyPrime(10, seeded()));
+}
+
+[Test]
+void test_small_composites_all_fail() {
+    long[] comps = new long[8];
+    comps[0] = 4L;  comps[1] = 6L;  comps[2] = 8L;  comps[3] = 9L;
+    comps[4] = 15L; comps[5] = 21L; comps[6] = 25L; comps[7] = 91L;
+    int i = 0;
+    while (i < comps.Length) {
+        BigInt n = new BigInt(comps[i]);
+        Assert.False(n.IsProbablyPrime(10, seeded()));
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_even_above_two_fails_fast() {
+    // 1000000 — large even. Should fast-reject without Miller-Rabin rounds.
+    Assert.False(new BigInt(1000000L).IsProbablyPrime(10, seeded()));
+}
+
+// ── Carmichael number: classical Miller-Rabin discriminator ─────────────
+
+[Test]
+void test_carmichael_561_detected_composite() {
+    // 561 = 3 * 11 * 17 — passes Fermat for many bases. Miller-Rabin
+    // catches it because at least one of n-1's bases produces a non-trivial
+    // square root of 1. With seeded RNG this is deterministic.
+    Assert.False(new BigInt(561L).IsProbablyPrime(20, seeded()));
+}
+
+[Test]
+void test_carmichael_1105_detected_composite() {
+    // 1105 = 5 * 13 * 17 — another Carmichael number.
+    Assert.False(new BigInt(1105L).IsProbablyPrime(20, seeded()));
+}
+
+// ── Larger prime (Mersenne M31 = 2^31 - 1 = 2147483647) ─────────────────
+
+[Test]
+void test_mersenne_31_is_prime() {
+    BigInt m = new BigInt(2147483647L);
+    Assert.True(m.IsProbablyPrime(20, seeded()));
+}
+
+// ── NextPrime ───────────────────────────────────────────────────────────
+
+[Test]
+void test_next_prime_from_zero_is_two() {
+    BigInt r = BigInt.Zero.NextPrime();
+    Assert.Equal(2L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_one_is_two() {
+    BigInt r = BigInt.One.NextPrime();
+    Assert.Equal(2L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_negative_is_two() {
+    BigInt r = new BigInt(-100L).NextPrime();
+    Assert.Equal(2L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_two_is_three() {
+    BigInt r = new BigInt(2L).NextPrime();
+    Assert.Equal(3L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_three_is_five() {
+    BigInt r = new BigInt(3L).NextPrime();
+    Assert.Equal(5L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_thirteen_is_seventeen() {
+    BigInt r = new BigInt(13L).NextPrime();
+    Assert.Equal(17L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_99_is_101() {
+    BigInt r = new BigInt(99L).NextPrime();
+    Assert.Equal(101L, r.ToInt64());
+}
+
+[Test]
+void test_next_prime_from_100_is_101() {
+    BigInt r = new BigInt(100L).NextPrime();
+    Assert.Equal(101L, r.ToInt64());
+}
+
+// ── Error: rounds <= 0 throws ───────────────────────────────────────────
+
+[Test]
+void test_rounds_zero_throws() {
+    bool threw = false;
+    try {
+        bool _b = new BigInt(7L).IsProbablyPrime(0, seeded());
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_rounds_negative_throws() {
+    bool threw = false;
+    try {
+        bool _b = new BigInt(7L).IsProbablyPrime(-3, seeded());
+    } catch (ArgumentException ex) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Determinism: same seed → same answer ────────────────────────────────
+
+[Test]
+void test_seeded_rng_reproducible() {
+    // Same seed should produce identical witness sequence and thus identical
+    // outcome (independent of wall-clock at test time).
+    Random rng1 = new Random(123L);
+    Random rng2 = new Random(123L);
+    bool r1 = new BigInt(561L).IsProbablyPrime(15, rng1);
+    bool r2 = new BigInt(561L).IsProbablyPrime(15, rng2);
+    Assert.Equal(r1, r2);
+}
+
+// ── Default overload smoke test (uses new Random() internally) ──────────
+
+[Test]
+void test_default_overload_small_prime() {
+    // Just checks the (int) overload compiles + runs without crashing.
+    // Result is non-deterministic in principle but 7 is prime so should be true.
+    Assert.True(new BigInt(7L).IsProbablyPrime(10));
+}

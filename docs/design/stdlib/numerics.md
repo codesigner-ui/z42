@@ -181,17 +181,31 @@ deferred as `bigint-future-gcd-binary` (constant-factor optimization).
 - **触发条件**：bench shows gcd is on hot path for large operands
 - **当前 workaround**：v0 correctness is fine; only speed differs
 
-### `bigint-future-prime` — IsProbablyPrime / NextPrime
+### ~~`bigint-future-prime`~~ — **✅ 已落地 2026-05-25 (add-bigint-prime)**
 
-- **来源**：add-bigint-gcd v0 scope cut + RSA key gen 用例
-- **触发原因**：probabilistic primality testing (Miller-Rabin) needs
-  RNG + witness selection + multiple ModPow rounds; rolling NextPrime
-  on top adds candidate-stepping + small-prime sieve. Non-trivial
-  surface area, schedule separately
-- **触发条件**：first user calling for RSA key generation, prime sieve,
-  or cryptographic random prime in z42
-- **当前 workaround**：deterministic primality for small operands via
-  user-side trial division; large primes are pre-computed constants
+Shipped: `BigInt.IsProbablyPrime(int rounds) → bool` (Miller-Rabin with
+wall-clock-seeded `Std.Random.Random`) + `IsProbablyPrime(int rounds,
+Random rng) → bool` (caller-provided RNG for deterministic / reproducible
+witnesses) + `NextPrime() → BigInt` (smallest probable prime > this; uses
+20 Miller-Rabin rounds internally). Adds `z42.random` as `z42.numerics`
+dependency (Std.Random.Random is PCG-XSH-RR; non-CSPRNG, but Miller-Rabin
+correctness depends only on witness distribution, not unpredictability).
+
+22 tests cover small primes (2 / 3 / classic list up to 97) / small
+composites (4, 6, 8, 9, 15, 21, 25, 91) / Carmichael discriminators
+(561 = 3·11·17; 1105 = 5·13·17 — Fermat-fooling, Miller-Rabin catches) /
+Mersenne 2^31-1 / NextPrime from zero / one / negative / various small
+starts / fast-rejects (negative, even>2) / error path (rounds<=0) /
+RNG-determinism reproducibility / default-overload smoke test.
+
+Follow-ups deferred:
+- `bigint-future-prime-deterministic` — small-bound deterministic
+  Miller-Rabin (known witness sets per OEIS A014233; valid for
+  `n < 3,317,044,064,679,887,385,961,981` etc.)
+- `bigint-future-bpsw` — Baillie–PSW; known no counterexample, slightly
+  slower per round; deterministic up to current numerical tests
+- `bigint-future-prime-sieve` — wheel factorisation 6k±1 candidate skip
+  in NextPrime; ~3× speedup on candidate stepping
 
 ### ~~`bigint-future-modinverse`~~ — **✅ 已落地 2026-05-25 (add-bigint-modinverse)**
 
