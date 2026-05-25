@@ -75,6 +75,12 @@ public class HttpServer {
             throw new SocketClosedException();
         }
         TcpClient peer = this._listener.AcceptTcpClient();
+        // If Stop() ran concurrently, the accept might have returned a probe
+        // connection the Stop helper made to unblock us. Drop it and return.
+        if (this._stopped) {
+            try { peer.Dispose(); } catch (Exception e) { }
+            throw new SocketClosedException();
+        }
         try {
             NetworkStream stream = peer.GetStream();
             this._dispatchOne(stream, handler);
@@ -153,6 +159,12 @@ public class HttpServer {
                 ConsoleError.WriteLine("HttpServer.ServeThreaded: accept error: " + e.Message);
                 continue;
             }
+            // Stop()-probe wake-up check: if the accept returned because
+            // Stop() did a self-connect to unblock us, drop the peer + exit.
+            if (this._stopped) {
+                try { peer.Dispose(); } catch (Exception e) { }
+                return;
+            }
             // Dispatch this peer to a worker thread; main loop continues.
             // Capture `peer` and `handler` (handler is the outer parameter,
             // shared by all workers — must be thread-safe per docstring).
@@ -164,11 +176,28 @@ public class HttpServer {
     }
 
     /// Signal the serve loop to exit + close the listener. Idempotent.
-    /// If `Serve` is running in another thread, the listener close causes
-    /// `AcceptTcpClient` to throw and Serve to return.
+    /// If `Serve` / `ServeThreaded` is running in another thread, this also
+    /// connects a one-shot probe to the listener port so the in-flight
+    /// `AcceptTcpClient` returns immediately (the OS doesn't reliably
+    /// interrupt blocking `accept()` on listener fd close — macOS notably).
+    /// The accept loop checks `_stopped` after each accept and treats
+    /// `true` as exit signal, discarding the probe peer.
     public void Stop() {
         if (this._stopped) return;
         this._stopped = true;
+        // Wake the accept loop: connect a probe to ourselves so the next
+        // accept returns. Must happen BEFORE we drop the listener.
+        int port = this._localPort;
+        if (this._listener != null && port > 0) {
+            try {
+                var probe = new TcpClient();
+                probe.Connect("127.0.0.1", port);
+                probe.Dispose();
+            } catch (Exception e) {
+                // Probe might fail if listener already gone or host unreachable
+                // (loopback only). Best-effort.
+            }
+        }
         if (this._listener != null) {
             this._listener.Stop();
             this._listener = null;

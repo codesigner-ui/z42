@@ -43,19 +43,10 @@ void test_serve_threaded_handles_concurrent_clients() {
         j = j + 1;
     }
 
-    // Shutdown: Stop closes listener but in-progress accept may still block
-    // (TcpListener::accept() isn't interrupted by close on all OSes — macOS
-    // notably).  Send one final probe-connection to unblock the accept loop,
-    // then Join.
+    // Shutdown — HttpServer.Stop() internally does the self-probe trick
+    // to unblock its own AcceptTcpClient (since TcpListener::accept doesn't
+    // reliably interrupt on listener fd close on macOS).
     server.Stop();
-    try {
-        var probe = new TcpClient();
-        probe.Connect("127.0.0.1", port);
-        probe.Dispose();
-    } catch (Exception e) {
-        // Listener already closed — accept returned and Serve loop exited;
-        // probe-connect fails which is the desired state.
-    }
     srv.Join();
 }
 
@@ -82,11 +73,5 @@ void test_serve_threaded_handles_sequential_calls() {
     Assert.Equal("ok", c3.Get(url).BodyAsString());
 
     server.Stop();
-    try {
-        var probe = new TcpClient();
-        probe.Connect("127.0.0.1", port);
-        probe.Dispose();
-    } catch (Exception e) {
-    }
     srv.Join();
 }
