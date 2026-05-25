@@ -12,13 +12,23 @@ pub fn builtin_str_length(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
 
 /// Returns the char at the given scalar index.
 /// args: [this: str, index: i64]
-/// New in simplify-string-stdlib (2026-04-24): enables script-side loops.
+///
+/// docs/review.md Part 2 C11.2 (2026-05-25): single-pass implementation —
+/// fast path returns at iteration `i` (O(i+1)); error path knows the
+/// actual char count from the same iteration. Previous version did two
+/// full scans (`chars().nth(i)` + `chars().count()` in the error branch)
+/// — O(2n) on failure, wasteful on long strings.
 pub fn builtin_str_char_at(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
     let s = arg_str(args, 0, "__str_char_at")?;
     let i = arg_usize(args, 1, "__str_char_at")?;
-    s.chars().nth(i).map(Value::Char).ok_or_else(|| {
-        anyhow!("__str_char_at: index {} out of range (length {})", i, s.chars().count())
-    })
+    let mut last_seen = 0usize;
+    for (idx, c) in s.chars().enumerate() {
+        if idx == i {
+            return Ok(Value::Char(c));
+        }
+        last_seen = idx + 1;
+    }
+    Err(anyhow!("__str_char_at: index {} out of range (length {})", i, last_seen))
 }
 
 /// Builds a string from a char[] array.
