@@ -1,0 +1,312 @@
+namespace Std.Net.Http;
+
+using Std;
+using Std.IO;
+
+// add-z42-net-http-server (2026-05-25): server-side HTTP/1.1 request parser.
+//
+// Symmetric to `HttpClient._readResponse` but for the request side: status
+// line is "METHOD path_and_query HTTP/1.x" instead of "HTTP/1.x code reason",
+// otherwise same headers + body strategy (Content-Length OR chunked OR
+// no-body).
+//
+// Returns the parsed `HttpRequest` with `Url` set to the request-target
+// (path+query). Caller (HttpServer) prepends the host header for full URL
+// re-construction if needed.
+//
+// Internal — `_`-prefix indicates "package-private; do not consume from
+// outside z42.net.Http".
+public static class _HttpRequestParser {
+
+    /// Parse a complete request off the stream. Throws
+    /// `HttpProtocolException` on malformed wire / EOF mid-request.
+    public static HttpRequest ReadRequest(Stream stream) {
+        var lr = new _ReqLineReader(stream);
+        string requestLine = lr.ReadLine();
+        if (requestLine == null) {
+            throw new HttpProtocolException("EOF reading request line");
+        }
+        // "METHOD path_and_query HTTP/1.x"
+        int sp1 = _HttpRequestParser._indexOfChar(requestLine, ' ', 0);
+        if (sp1 < 0) {
+            throw new HttpProtocolException("malformed request line: '" + requestLine + "'");
+        }
+        int sp2 = _HttpRequestParser._indexOfChar(requestLine, ' ', sp1 + 1);
+        if (sp2 < 0) {
+            throw new HttpProtocolException("malformed request line: '" + requestLine + "'");
+        }
+        string method  = _HttpRequestParser._substring(requestLine, 0, sp1);
+        string target  = _HttpRequestParser._substring(requestLine, sp1 + 1, sp2);
+        string version = _HttpRequestParser._substring(requestLine, sp2 + 1, requestLine.Length);
+        if (!_HttpRequestParser._startsWith(version, "HTTP/1.")) {
+            throw new HttpProtocolException("unsupported HTTP version: '" + version + "'");
+        }
+
+        // Headers
+        var headers = new HttpHeaders();
+        while (true) {
+            string line = lr.ReadLine();
+            if (line == null) {
+                throw new HttpProtocolException("EOF in headers");
+            }
+            if (line.Length == 0) break;
+            int colon = _HttpRequestParser._indexOfChar(line, ':', 0);
+            if (colon < 0) {
+                throw new HttpProtocolException("malformed header line: '" + line + "'");
+            }
+            string name  = _HttpRequestParser._substring(line, 0, colon);
+            string value = _HttpRequestParser._trimSpaces(
+                _HttpRequestParser._substring(line, colon + 1, line.Length));
+            headers.Add(name, value);
+        }
+
+        // Body strategy: Content-Length OR Transfer-Encoding: chunked OR none
+        byte[] body = new byte[0];
+        string te = headers.Get("Transfer-Encoding");
+        if (te != null && te.ToLower() == "chunked") {
+            body = _HttpRequestParser._readChunkedBody(stream, lr);
+        } else {
+            string cl = headers.Get("Content-Length");
+            if (cl != null) {
+                int len;
+                try {
+                    len = Int32.Parse(cl);
+                } catch (Exception e) {
+                    throw new HttpProtocolException("invalid Content-Length: '" + cl + "'");
+                }
+                if (len > 0) {
+                    body = _HttpRequestParser._readExactly(stream, lr, len);
+                }
+            }
+        }
+
+        // Build HttpRequest. Server-side Url = request target (path+query).
+        // Caller can synthesize full URL via Headers.Get("Host") if needed.
+        var req = new HttpRequest(method, target);
+        // Copy headers in (HttpRequest builder constructs empty Headers).
+        int i = 0;
+        int n = headers.Count();
+        while (i < n) {
+            req.Headers.Add(headers.GetNameAt(i), headers.GetValueAt(i));
+            i = i + 1;
+        }
+        if (body.Length > 0) {
+            req.SetBody(body);
+        }
+        return req;
+    }
+
+    static byte[] _readExactly(Stream stream, _ReqLineReader lr, int n) {
+        byte[] buf = new byte[n];
+        int filled = lr.DrainBuffered(buf, 0, n);
+        while (filled < n) {
+            int got = stream.Read(buf, filled, n - filled);
+            if (got == 0) {
+                throw new HttpProtocolException(
+                    "unexpected EOF: needed " + Int32.ToString(n) + " bytes, got " + Int32.ToString(filled));
+            }
+            filled = filled + got;
+        }
+        return buf;
+    }
+
+    static byte[] _readChunkedBody(Stream stream, _ReqLineReader lr) {
+        byte[] body = new byte[4096];
+        int used = 0;
+        while (true) {
+            string sizeLine = lr.ReadLine();
+            if (sizeLine == null) {
+                throw new HttpProtocolException("EOF in chunked body");
+            }
+            int semi = _HttpRequestParser._indexOfChar(sizeLine, ';', 0);
+            string sizeStr;
+            if (semi < 0) { sizeStr = sizeLine; }
+            else { sizeStr = _HttpRequestParser._substring(sizeLine, 0, semi); }
+            int size = _HttpRequestParser._parseHex(sizeStr);
+            if (size < 0) {
+                throw new HttpProtocolException("invalid chunk size: '" + sizeStr + "'");
+            }
+            if (size == 0) {
+                // Trailers
+                while (true) {
+                    string t = lr.ReadLine();
+                    if (t == null || t.Length == 0) break;
+                }
+                break;
+            }
+            while (used + size > body.Length) {
+                int newCap = body.Length * 2;
+                if (newCap < used + size) newCap = used + size;
+                byte[] grown = new byte[newCap];
+                int j = 0;
+                while (j < used) { grown[j] = body[j]; j = j + 1; }
+                body = grown;
+            }
+            byte[] chunk = _HttpRequestParser._readExactly(stream, lr, size);
+            int k = 0;
+            while (k < size) {
+                body[used + k] = chunk[k];
+                k = k + 1;
+            }
+            used = used + size;
+            lr.ReadLine();   // trailing CRLF
+        }
+        byte[] result = new byte[used];
+        int i = 0;
+        while (i < used) { result[i] = body[i]; i = i + 1; }
+        return result;
+    }
+
+    // ── String helpers ───────────────────────────────────────────────────
+
+    static int _indexOfChar(string s, char c, int start) {
+        int i = start;
+        while (i < s.Length) {
+            if (s.CharAt(i) == c) return i;
+            i = i + 1;
+        }
+        return -1;
+    }
+
+    static string _substring(string s, int start, int end) {
+        if (start >= end) return "";
+        char[] buf = new char[end - start];
+        int i = 0;
+        while (i < end - start) {
+            buf[i] = s.CharAt(start + i);
+            i = i + 1;
+        }
+        return String.FromChars(buf);
+    }
+
+    static bool _startsWith(string s, string prefix) {
+        if (s.Length < prefix.Length) return false;
+        int i = 0;
+        while (i < prefix.Length) {
+            if (s.CharAt(i) != prefix.CharAt(i)) return false;
+            i = i + 1;
+        }
+        return true;
+    }
+
+    static string _trimSpaces(string s) {
+        int start = 0;
+        while (start < s.Length && (s.CharAt(start) == ' ' || s.CharAt(start) == '\t')) {
+            start = start + 1;
+        }
+        int end = s.Length;
+        while (end > start && (s.CharAt(end - 1) == ' ' || s.CharAt(end - 1) == '\t')) {
+            end = end - 1;
+        }
+        return _HttpRequestParser._substring(s, start, end);
+    }
+
+    static int _parseHex(string s) {
+        if (s == null || s.Length == 0) return -1;
+        int result = 0;
+        int i = 0;
+        while (i < s.Length) {
+            int ch = (int)s.CharAt(i);
+            int digit;
+            if (ch >= 48 && ch <= 57) {
+                digit = ch - 48;
+            } else if (ch >= 97 && ch <= 102) {
+                digit = ch - 97 + 10;
+            } else if (ch >= 65 && ch <= 70) {
+                digit = ch - 65 + 10;
+            } else {
+                return -1;
+            }
+            result = result * 16 + digit;
+            i = i + 1;
+        }
+        return result;
+    }
+}
+
+// Internal CRLF/LF-tolerant line reader. Same shape as HttpClient's
+// _LineReader (kept inline to avoid cross-file class-token issues).
+public class _ReqLineReader {
+    private Stream _stream;
+    private byte[] _buf;
+    private int    _bufStart;
+    private int    _bufEnd;
+    private char[] _line;
+    private int    _lineLen;
+
+    public _ReqLineReader(Stream stream) {
+        this._stream   = stream;
+        this._buf      = new byte[4096];
+        this._bufStart = 0;
+        this._bufEnd   = 0;
+        this._line     = new char[256];
+        this._lineLen  = 0;
+    }
+
+    public string ReadLine() {
+        this._lineLen = 0;
+        bool any = false;
+        while (true) {
+            if (this._bufStart >= this._bufEnd) {
+                if (!this._refill()) {
+                    if (!any) return null;
+                    return this._finish();
+                }
+            }
+            int b = (int)this._buf[this._bufStart];
+            this._bufStart = this._bufStart + 1;
+            any = true;
+            if (b == 10) {
+                return this._finish();
+            }
+            if (b == 13) {
+                if (this._bufStart >= this._bufEnd) {
+                    this._refill();
+                }
+                if (this._bufStart < this._bufEnd && (int)this._buf[this._bufStart] == 10) {
+                    this._bufStart = this._bufStart + 1;
+                }
+                return this._finish();
+            }
+            if (this._lineLen == this._line.Length) {
+                char[] grown = new char[this._line.Length * 2];
+                int i = 0;
+                while (i < this._lineLen) { grown[i] = this._line[i]; i = i + 1; }
+                this._line = grown;
+            }
+            this._line[this._lineLen] = (char)b;
+            this._lineLen = this._lineLen + 1;
+        }
+        return this._finish();
+    }
+
+    public int DrainBuffered(byte[] dest, int offset, int count) {
+        int available = this._bufEnd - this._bufStart;
+        int toCopy;
+        if (available < count) { toCopy = available; } else { toCopy = count; }
+        int i = 0;
+        while (i < toCopy) {
+            dest[offset + i] = this._buf[this._bufStart + i];
+            i = i + 1;
+        }
+        this._bufStart = this._bufStart + toCopy;
+        return toCopy;
+    }
+
+    private bool _refill() {
+        this._bufStart = 0;
+        int got = this._stream.Read(this._buf, 0, this._buf.Length);
+        this._bufEnd = got;
+        return got > 0;
+    }
+
+    private string _finish() {
+        char[] chars = new char[this._lineLen];
+        int i = 0;
+        while (i < this._lineLen) {
+            chars[i] = this._line[i];
+            i = i + 1;
+        }
+        return String.FromChars(chars);
+    }
+}

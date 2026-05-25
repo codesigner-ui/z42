@@ -1,0 +1,100 @@
+// add-z42-net-http-server (2026-05-25): handler routes by Request.Url path.
+namespace Z42NetHttpServerRoutingTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Http;
+
+[Test]
+void test_handler_dispatches_by_path() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string base_ = "http://127.0.0.1:" + Int32.ToString(port);
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            if (ctx.Request.Url == "/users") {
+                ctx.SendText(200, "[\"alice\",\"bob\"]");
+            } else if (ctx.Request.Url == "/health") {
+                ctx.SendText(200, "ok");
+            } else {
+                ctx.SendStatus(404);
+            }
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(base_ + "/users");
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal("[\"alice\",\"bob\"]", r.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_query_string_preserved_in_url() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/search?q=z42&limit=10";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            // Request.Url == "/search?q=z42&limit=10"
+            ctx.SendText(200, ctx.Request.Url);
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal("/search?q=z42&limit=10", r.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_handler_throws_yields_500() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            throw new InvalidOperationException("simulated handler failure");
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(500, r.StatusCode);
+    Assert.Equal("Internal Server Error", r.ReasonPhrase);
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_handler_forgets_send_yields_500() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            // Intentionally don't call Send*. Server should auto-emit 500.
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(500, r.StatusCode);
+
+    srv.Join();
+    server.Stop();
+}

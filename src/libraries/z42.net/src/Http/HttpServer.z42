@@ -1,0 +1,161 @@
+namespace Std.Net.Http;
+
+using Std;
+using Std.IO;
+using Std.Net.Sockets;
+
+// add-z42-net-http-server (2026-05-25): single-threaded HTTP/1.1 server.
+//
+// Pure-script over K1 `TcpListener`. Pattern:
+//   var server = new HttpServer();
+//   server.Bind("127.0.0.1", 0);
+//   int port = server.LocalPort();
+//   server.Serve((ctx) => {
+//       ctx.SendText(200, "Hello, world!");
+//   });
+//
+// V0 limits:
+// - Single-connection serial: one request fully processed before next accept
+// - Connection: close after each response (no keep-alive)
+// - No streaming request body (parser reads full body upfront)
+// - No WebSocket upgrade handling (would need handler to bypass response emit)
+// - HTTP only (https:// via `add-z42-net-tls`)
+//
+// Multi-threaded variant is `add-z42-net-http-server-threaded` follow-up:
+// dispatch each `AcceptTcpClient` to a `Std.Threading.Thread` worker.
+public class HttpServer {
+    private TcpListener _listener;
+    private bool        _stopped;
+    private int         _localPort;
+    private string      _bindHost;
+
+    public HttpServer() {
+        this._listener  = null;
+        this._stopped   = false;
+        this._localPort = 0;
+        this._bindHost  = "";
+    }
+
+    /// Bind to `host:port` (port 0 → OS-assigned ephemeral). Discover the
+    /// chosen port via `LocalPort()` after bind.
+    public void Bind(string host, int port) {
+        if (this._stopped) {
+            throw new SocketClosedException();
+        }
+        if (this._listener != null) {
+            throw new InvalidOperationException("HttpServer already bound");
+        }
+        var lis = new TcpListener();
+        lis.Bind(host, port);
+        this._listener  = lis;
+        this._localPort = lis.LocalPort();
+        this._bindHost  = host;
+    }
+
+    public int LocalPort() {
+        if (this._listener == null) {
+            throw new InvalidOperationException("HttpServer not bound");
+        }
+        return this._localPort;
+    }
+
+    public string BindHost() {
+        return this._bindHost;
+    }
+
+    /// Handle exactly one incoming request — blocks until a client connects,
+    /// then dispatches to the handler. Useful for tests + careful control flow.
+    /// Returns after the response is sent and the connection closed.
+    public void HandleNext(Action<HttpServerContext> handler) {
+        if (this._listener == null) {
+            throw new InvalidOperationException("HttpServer not bound");
+        }
+        if (this._stopped) {
+            throw new SocketClosedException();
+        }
+        TcpClient peer = this._listener.AcceptTcpClient();
+        try {
+            NetworkStream stream = peer.GetStream();
+            this._dispatchOne(stream, handler);
+            peer.Dispose();
+        } catch (Exception e) {
+            try { peer.Dispose(); } catch (Exception e2) { }
+            throw e;
+        }
+    }
+
+    // Parse one request and invoke the handler. Uses `var` inference on the
+    // ReadRequest return to avoid E0402 cross-class type-object mismatch.
+    private void _dispatchOne(NetworkStream stream, Action<HttpServerContext> handler) {
+        HttpServerContext ctx = null;
+        bool parsed = false;
+        try {
+            var req = _HttpRequestParser.ReadRequest(stream);
+            parsed = true;
+            ctx = new HttpServerContext(req, stream);
+            handler(ctx);
+            if (!ctx.ResponseSent) {
+                this._tryEmitErrorResponse(stream, 500, "Internal Server Error",
+                    "Handler did not call ctx.Send*");
+            }
+        } catch (Exception e) {
+            if (!parsed) {
+                this._tryEmitErrorResponse(stream, 400, "Bad Request",
+                    "Malformed request: " + e.Message);
+            } else if (ctx != null && !ctx.ResponseSent) {
+                this._tryEmitErrorResponse(stream, 500, "Internal Server Error",
+                    "Handler threw: " + e.Message);
+            }
+        }
+    }
+
+    /// Loop forever (until `Stop()` called from another thread) handling
+    /// one request at a time. V0 single-connection serial.
+    public void Serve(Action<HttpServerContext> handler) {
+        while (!this._stopped) {
+            try {
+                this.HandleNext(handler);
+            } catch (SocketClosedException e) {
+                // Stop() called — listener closed mid-accept. Normal exit path.
+                return;
+            } catch (Exception e) {
+                // Per-iteration error — log and continue.
+                ConsoleError.WriteLine("HttpServer.Serve: error: " + e.Message);
+            }
+        }
+    }
+
+    /// Signal the serve loop to exit + close the listener. Idempotent.
+    /// If `Serve` is running in another thread, the listener close causes
+    /// `AcceptTcpClient` to throw and Serve to return.
+    public void Stop() {
+        if (this._stopped) return;
+        this._stopped = true;
+        if (this._listener != null) {
+            this._listener.Stop();
+            this._listener = null;
+        }
+    }
+
+    public void Dispose() {
+        this.Stop();
+    }
+
+    // ── Internal helpers ─────────────────────────────────────────────────
+
+    private void _tryEmitErrorResponse(NetworkStream stream, int code, string reason, string body) {
+        try {
+            string head = "HTTP/1.1 " + Int32.ToString(code) + " " + reason + "\r\n"
+                + "Content-Type: text/plain; charset=utf-8\r\n"
+                + "Content-Length: " + Int32.ToString(body.Length) + "\r\n"
+                + "Connection: close\r\n"
+                + "\r\n";
+            byte[] hb = Utf8.GetBytes(head);
+            stream.Write(hb, 0, hb.Length);
+            byte[] bb = Utf8.GetBytes(body);
+            stream.Write(bb, 0, bb.Length);
+        } catch (Exception e) {
+            // Best-effort — connection may already be broken.
+        }
+    }
+}

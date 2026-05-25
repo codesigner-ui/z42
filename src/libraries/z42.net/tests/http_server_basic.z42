@@ -1,0 +1,100 @@
+// add-z42-net-http-server (2026-05-25): HttpClient ↔ HttpServer in-process round trip.
+namespace Z42NetHttpServerBasicTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Http;
+
+[Test]
+void test_server_handles_get_with_text_response() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/hello";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("GET", ctx.Request.Method);
+            Assert.Equal("/hello", ctx.Request.Url);
+            ctx.SendText(200, "Hello from HttpServer");
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal("OK", r.ReasonPhrase);
+    Assert.Equal("Hello from HttpServer", r.BodyAsString());
+    Assert.Equal("text/plain; charset=utf-8", r.Headers.Get("Content-Type"));
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_server_send_status_404() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/missing";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            ctx.SendStatus(404);
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(404, r.StatusCode);
+    Assert.Equal("Not Found", r.ReasonPhrase);
+    Assert.False(r.IsSuccess());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_server_sends_json() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/api";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            ctx.SendJson(200, "{\"status\":\"ok\",\"count\":42}");
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal("application/json; charset=utf-8", r.Headers.Get("Content-Type"));
+    Assert.Equal("{\"status\":\"ok\",\"count\":42}", r.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_server_local_port_recorded_after_bind() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    Assert.True(server.LocalPort() > 0);
+    Assert.Equal("127.0.0.1", server.BindHost());
+    server.Stop();
+}
+
+[Test]
+void test_local_port_before_bind_throws() {
+    var server = new HttpServer();
+    bool threw = false;
+    try {
+        server.LocalPort();
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

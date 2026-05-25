@@ -1,0 +1,105 @@
+namespace Std.Net.Http;
+
+using Std;
+using Std.IO;
+using Std.Net.Sockets;
+
+// add-z42-net-http-server (2026-05-25): per-request context handed to the
+// handler. Carries `Request` (parsed) + provides `Send*` methods to emit
+// the response. Tracks `ResponseSent` so server loop can detect handlers
+// that forgot to respond.
+public class HttpServerContext {
+    public HttpRequest  Request;
+    public bool         ResponseSent;
+    private NetworkStream _stream;
+
+    public HttpServerContext(HttpRequest request, NetworkStream stream) {
+        this.Request      = request;
+        this.ResponseSent = false;
+        this._stream      = stream;
+    }
+
+    /// Emit an arbitrary HttpResponse on the wire.
+    public void Send(HttpResponse response) {
+        if (this.ResponseSent) {
+            throw new InvalidOperationException(
+                "HttpServerContext: response already sent");
+        }
+        // Wire format: "HTTP/1.1 STATUS REASON\r\nheaders\r\n\r\n" + body
+        string statusLine = "HTTP/1.1 " + Int32.ToString(response.StatusCode)
+            + " " + response.ReasonPhrase + "\r\n";
+        string head = statusLine;
+        // Ensure required headers exist
+        if (!response.Headers.Contains("Content-Length")) {
+            int bodyLen;
+            if (response.Body == null) { bodyLen = 0; }
+            else { bodyLen = response.Body.Length; }
+            response.Headers.Set("Content-Length", Int32.ToString(bodyLen));
+        }
+        if (!response.Headers.Contains("Connection")) {
+            response.Headers.Set("Connection", "close");
+        }
+        int i = 0;
+        int n = response.Headers.Count();
+        while (i < n) {
+            head = head + response.Headers.GetNameAt(i) + ": " + response.Headers.GetValueAt(i) + "\r\n";
+            i = i + 1;
+        }
+        head = head + "\r\n";
+        byte[] headBytes = Utf8.GetBytes(head);
+        this._stream.Write(headBytes, 0, headBytes.Length);
+        if (response.Body != null && response.Body.Length > 0) {
+            this._stream.Write(response.Body, 0, response.Body.Length);
+        }
+        this.ResponseSent = true;
+    }
+
+    /// Convenience: build + send a response from primitive fields.
+    public void SendBytes(int statusCode, string reasonPhrase, byte[] body, string contentType) {
+        var resp = new HttpResponse(statusCode, reasonPhrase, new HttpHeaders(), body);
+        resp.Headers.Set("Content-Type", contentType);
+        this.Send(resp);
+    }
+
+    /// Convenience: send a UTF-8 text body with text/plain content type and
+    /// default reason phrase from status code.
+    public void SendText(int statusCode, string text) {
+        byte[] body = Utf8.GetBytes(text);
+        this.SendBytes(statusCode, _reasonFor(statusCode), body, "text/plain; charset=utf-8");
+    }
+
+    /// Convenience: send a JSON body. Caller responsible for the body being valid JSON.
+    public void SendJson(int statusCode, string jsonBody) {
+        byte[] body = Utf8.GetBytes(jsonBody);
+        this.SendBytes(statusCode, _reasonFor(statusCode), body, "application/json; charset=utf-8");
+    }
+
+    /// Convenience: send an empty body with status only.
+    public void SendStatus(int statusCode) {
+        this.SendBytes(statusCode, _reasonFor(statusCode), new byte[0], "text/plain");
+    }
+
+    static string _reasonFor(int code) {
+        if (code == 200) return "OK";
+        if (code == 201) return "Created";
+        if (code == 202) return "Accepted";
+        if (code == 204) return "No Content";
+        if (code == 301) return "Moved Permanently";
+        if (code == 302) return "Found";
+        if (code == 304) return "Not Modified";
+        if (code == 400) return "Bad Request";
+        if (code == 401) return "Unauthorized";
+        if (code == 403) return "Forbidden";
+        if (code == 404) return "Not Found";
+        if (code == 405) return "Method Not Allowed";
+        if (code == 409) return "Conflict";
+        if (code == 415) return "Unsupported Media Type";
+        if (code == 429) return "Too Many Requests";
+        if (code == 500) return "Internal Server Error";
+        if (code == 501) return "Not Implemented";
+        if (code == 502) return "Bad Gateway";
+        if (code == 503) return "Service Unavailable";
+        if (code == 504) return "Gateway Timeout";
+        return "Unknown";
+    }
+}

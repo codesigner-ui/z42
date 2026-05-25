@@ -1,0 +1,87 @@
+// add-z42-net-http-server (2026-05-25): handler reads request body (Content-Length).
+namespace Z42NetHttpServerPostTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Http;
+
+[Test]
+void test_handler_receives_post_body() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/echo";
+    string sentBody = "Hello, server!";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("POST", ctx.Request.Method);
+            Assert.Equal("/echo", ctx.Request.Url);
+            Assert.Equal("text/plain", ctx.Request.Headers.Get("Content-Type"));
+            byte[] body = ctx.Request.Body;
+            Assert.Equal(sentBody.Length, body.Length);
+            // Echo body back as text.
+            ctx.SendBytes(200, "OK", body, "text/plain; charset=utf-8");
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.PostString(url, sentBody, "text/plain");
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal(sentBody, r.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_handler_receives_json_body() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/api";
+    string requestJson = "{\"name\":\"z42\",\"version\":1}";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("application/json", ctx.Request.Headers.Get("Content-Type"));
+            // Read body as string + echo with status 201.
+            string s = Utf8.GetString(ctx.Request.Body);
+            ctx.SendJson(201, s);
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.PostString(url, requestJson, "application/json");
+    Assert.Equal(201, r.StatusCode);
+    Assert.Equal("Created", r.ReasonPhrase);
+    Assert.Equal(requestJson, r.BodyAsString());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_empty_get_request_no_body() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            // GET shouldn't have a body
+            bool hasBody = ctx.Request.Body != null && ctx.Request.Body.Length > 0;
+            Assert.False(hasBody);
+            ctx.SendStatus(200);
+        });
+    });
+
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(200, r.StatusCode);
+
+    srv.Join();
+    server.Stop();
+}
