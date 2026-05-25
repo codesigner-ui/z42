@@ -106,15 +106,26 @@ KIND_* 常量** —— 静态字段 read-path 当前返回 0 default（已知限
 - **触发原因**：配置文件少用；先做高频语法
 - **当前 workaround**：用 `\n` 转义在单行 basic string 中
 
-### toml-future-non-decimal-int
-- **来源**：TOML 1.0 spec — `0x`, `0o`, `0b` 前缀
-- **触发原因**：配置文件几乎全是十进制
-- **当前 workaround**：手算十进制值
+### ~~toml-future-non-decimal-int~~ — **✅ 已落地 2026-05-25 (add-toml-numeric-bases-and-underscores)**
 
-### toml-future-underscore-separator
-- **来源**：TOML 1.0 spec — `1_000_000`
-- **触发原因**：纯美观
-- **当前 workaround**：去掉下划线
+Shipped: TOML 1.0 §integer non-decimal prefixes `0x` (hex, A-F /
+a-f), `0o` (octal, 0-7), `0b` (binary, 0-1). No leading sign on
+non-decimal literals (per spec). Manual base parse (since `long.Parse`
+only handles decimal). Same change ships underscore separators.
+
+### ~~toml-future-underscore-separator~~ — **✅ 已落地 2026-05-25 (add-toml-numeric-bases-and-underscores)**
+
+Shipped: TOML 1.0 underscore digit separators (`1_000_000` /
+`0xDEAD_BEEF` / `0b1010_0101`). Validation per spec: `_` must be
+between two digits (no leading / trailing / consecutive `_`).
+`StripUnderscores` helper produces the clean literal for `long.Parse`
+/ `double.Parse`. Works in decimal int, float mantissa, exponent
+mantissa, and all three non-decimal bases.
+
+24 tests cover both features: hex/oct/bin upper/lower/mixed case,
+i64-max hex, file-mode octal, underscores in each base, underscores
+in float mantissa, in arrays, validation rejection (leading /
+trailing / double underscore in each base), plain decimal preserved.
 
 ### toml-future-key-order-preservation
 - **来源**：dev workflow（git diff 友好）

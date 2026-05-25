@@ -1,0 +1,184 @@
+// add-toml-numeric-bases-and-underscores (2026-05-25): TOML 1.0 §integer
+// non-decimal prefixes (0x / 0o / 0b) + underscore digit separators in
+// any number.
+namespace Z42TomlParseNumericBasesTests;
+
+using Std;
+using Std.Test;
+using Std.Toml;
+
+// ── Hex literals ────────────────────────────────────────────────────────
+
+[Test]
+void test_hex_uppercase() {
+    TomlValue v = TomlValue.Parse("x = 0xFF\n");
+    Assert.Equal(255L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_hex_lowercase() {
+    TomlValue v = TomlValue.Parse("x = 0xff\n");
+    Assert.Equal(255L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_hex_mixed_case() {
+    TomlValue v = TomlValue.Parse("x = 0xCaFe\n");
+    Assert.Equal(51966L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_hex_max_i64() {
+    TomlValue v = TomlValue.Parse("x = 0x7FFFFFFFFFFFFFFF\n");
+    Assert.Equal(9223372036854775807L, v.Get("x").AsLong());
+}
+
+// ── Octal literals ──────────────────────────────────────────────────────
+
+[Test]
+void test_octal_basic() {
+    TomlValue v = TomlValue.Parse("x = 0o755\n");
+    Assert.Equal(493L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_octal_file_mode() {
+    TomlValue v = TomlValue.Parse("mode = 0o644\n");
+    Assert.Equal(420L, v.Get("mode").AsLong());
+}
+
+[Test]
+void test_octal_zero() {
+    TomlValue v = TomlValue.Parse("x = 0o0\n");
+    Assert.Equal(0L, v.Get("x").AsLong());
+}
+
+// ── Binary literals ─────────────────────────────────────────────────────
+
+[Test]
+void test_binary_basic() {
+    TomlValue v = TomlValue.Parse("x = 0b1010\n");
+    Assert.Equal(10L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_binary_byte() {
+    TomlValue v = TomlValue.Parse("flags = 0b11111111\n");
+    Assert.Equal(255L, v.Get("flags").AsLong());
+}
+
+// ── Underscores in decimal ──────────────────────────────────────────────
+
+[Test]
+void test_decimal_with_underscore() {
+    TomlValue v = TomlValue.Parse("x = 1_000_000\n");
+    Assert.Equal(1000000L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_negative_decimal_with_underscore() {
+    TomlValue v = TomlValue.Parse("x = -1_000\n");
+    Assert.Equal(-1000L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_float_with_underscore_in_mantissa() {
+    TomlValue v = TomlValue.Parse("x = 3.141_592\n");
+    Assert.True(v.Get("x").AsDouble() > 3.1415 && v.Get("x").AsDouble() < 3.1416);
+}
+
+[Test]
+void test_float_with_underscore_in_exponent_mantissa() {
+    TomlValue v = TomlValue.Parse("x = 6.022e23\n");
+    Assert.True(v.Get("x").AsDouble() > 6.0e23);
+}
+
+// ── Underscores in non-decimal ──────────────────────────────────────────
+
+[Test]
+void test_hex_with_underscore() {
+    TomlValue v = TomlValue.Parse("addr = 0xDEAD_BEEF\n");
+    Assert.Equal(3735928559L, v.Get("addr").AsLong());
+}
+
+[Test]
+void test_binary_with_underscore_nibbles() {
+    TomlValue v = TomlValue.Parse("x = 0b1010_0101\n");
+    Assert.Equal(165L, v.Get("x").AsLong());
+}
+
+[Test]
+void test_octal_with_underscore() {
+    TomlValue v = TomlValue.Parse("x = 0o7_7_7\n");
+    Assert.Equal(511L, v.Get("x").AsLong());
+}
+
+// ── Underscore validation: leading / trailing / double ─────────────────
+
+[Test]
+void test_leading_underscore_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("x = _100\n"); }
+    catch (TomlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_trailing_underscore_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("x = 100_\n"); }
+    catch (Exception e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_double_underscore_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("x = 1__000\n"); }
+    catch (TomlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_hex_leading_underscore_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("x = 0x_FF\n"); }
+    catch (TomlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+[Test]
+void test_bin_trailing_underscore_throws() {
+    bool threw = false;
+    try { TomlValue v = TomlValue.Parse("x = 0b1010_\n"); }
+    catch (TomlException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── In arrays ──────────────────────────────────────────────────────────
+
+[Test]
+void test_array_of_hex_values() {
+    TomlValue v = TomlValue.Parse("x = [0xFF, 0xAA, 0x55]\n");
+    Assert.Equal(3, v.Get("x").Count());
+    Assert.Equal(255L, v.Get("x").At(0).AsLong());
+    Assert.Equal(170L, v.Get("x").At(1).AsLong());
+    Assert.Equal(85L,  v.Get("x").At(2).AsLong());
+}
+
+[Test]
+void test_array_of_underscored_integers() {
+    TomlValue v = TomlValue.Parse("x = [1_000, 2_000, 3_000]\n");
+    Assert.Equal(1000L, v.Get("x").At(0).AsLong());
+    Assert.Equal(2000L, v.Get("x").At(1).AsLong());
+    Assert.Equal(3000L, v.Get("x").At(2).AsLong());
+}
+
+// ── Plain decimal still works ───────────────────────────────────────────
+
+[Test]
+void test_plain_decimal_unchanged() {
+    TomlValue v = TomlValue.Parse("x = 42\ny = -7\n");
+    Assert.Equal(42L, v.Get("x").AsLong());
+    Assert.Equal(-7L, v.Get("y").AsLong());
+}
