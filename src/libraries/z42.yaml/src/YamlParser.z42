@@ -42,33 +42,83 @@ public sealed class YamlParser {
     // ── Public entry ─────────────────────────────────────────────────────
 
     public YamlValue ParseDocument() {
-        // Skip leading blank / comment lines.
+        YamlValue root = this._ParseOneDocBody();
+        // Anything left over (other than trailing `...` + blanks) is either a
+        // second document or trailing junk — strict single-doc mode rejects
+        // both with a hint to use `ParseAllDocuments` for multi-doc input.
+        this._SkipBlankLines();
+        if (this._pos < this._src.Length && this._PeekLineIs("...")) {
+            this._ConsumeRestOfLine();
+            this._SkipBlankLines();
+        }
+        if (this._pos < this._src.Length) {
+            throw this._Err("unexpected trailing content after document (use ParseAllDocuments for multi-doc YAML)");
+        }
+        return root;
+    }
+
+    /// Multi-document entry: returns every `---`-separated document in
+    /// order. Empty / blank input → empty array. add-yaml-multi-doc (2026-05-25).
+    public YamlValue[] ParseAllDocuments() {
+        YamlValue[] docs = new YamlValue[8];
+        int count = 0;
+        while (true) {
+            this._SkipBlankLines();
+            if (this._pos >= this._src.Length) { break; }
+            YamlValue doc = this._ParseOneDocBody();
+            // Grow if needed.
+            if (count == docs.Length) {
+                YamlValue[] bigger = new YamlValue[docs.Length * 2];
+                int i = 0;
+                while (i < count) {
+                    bigger[i] = docs[i];
+                    i = i + 1;
+                }
+                docs = bigger;
+            }
+            docs[count] = doc;
+            count = count + 1;
+            // Allow optional `...` end-of-document marker between docs.
+            this._SkipBlankLines();
+            if (this._pos < this._src.Length && this._PeekLineIs("...")) {
+                this._ConsumeRestOfLine();
+            }
+        }
+        // Trim to actual count.
+        YamlValue[] result = new YamlValue[count];
+        int j = 0;
+        while (j < count) {
+            result[j] = docs[j];
+            j = j + 1;
+        }
+        return result;
+    }
+
+    /// Parse exactly one document body (no strict trailing-content check).
+    /// Stops at EOF or a `---` / `...` document boundary, leaving the marker
+    /// unconsumed so the caller can decide what to do with it.
+    private YamlValue _ParseOneDocBody() {
         this._SkipBlankLines();
         if (this._pos >= this._src.Length) {
             return YamlValue.OfNull();
         }
-        // Optional document-start marker.
+        // Optional document-start marker — consumed here, opens this doc.
         if (this._PeekLineIs("---")) {
             this._ConsumeRestOfLine();
             this._SkipBlankLines();
-            if (this._pos >= this._src.Length) {
+            // Empty doc (immediately another boundary or EOF).
+            if (this._pos >= this._src.Length || this._IsDocBoundary()) {
                 return YamlValue.OfNull();
             }
         }
-        // The document is exactly one block value at indent 0.
-        YamlValue root = this._ParseBlockValue(0);
-        // Anything left over (other than trailing blanks / comments) is
-        // a second document or trailing junk — both unsupported in v0.
-        this._SkipBlankLines();
-        if (this._pos < this._src.Length) {
-            // Allow a trailing `...` end-of-document marker (rare).
-            if (this._PeekLineIs("...")) {
-                this._ConsumeRestOfLine();
-            } else {
-                throw this._Err("unexpected trailing content after document");
-            }
-        }
-        return root;
+        return this._ParseBlockValue(0);
+    }
+
+    /// True if the current line is a document-boundary marker (`---` or `...`).
+    /// Used by block parsers to break out cleanly so root-level markers don't
+    /// get mis-parsed as plain scalars / sequence dashes.
+    private bool _IsDocBoundary() {
+        return this._PeekLineIs("---") || this._PeekLineIs("...");
     }
 
     // ── Block value: dispatch on first non-WS char ──────────────────────
@@ -80,6 +130,11 @@ public sealed class YamlParser {
     private YamlValue _ParseBlockValue(int requiredIndent) {
         this._SkipBlankLines();
         if (this._pos >= this._src.Length) {
+            return YamlValue.OfNull();
+        }
+        // Doc boundary `---` / `...` at root-indent terminates the block —
+        // returning null lets the multi-doc loop pick up the boundary cleanly.
+        if (this._IsDocBoundary()) {
             return YamlValue.OfNull();
         }
         int actualIndent = this._CurrentLineIndent();
@@ -140,6 +195,8 @@ public sealed class YamlParser {
         while (true) {
             this._SkipBlankLines();
             if (this._pos >= this._src.Length) { break; }
+            // Doc boundary terminates the mapping (multi-doc support).
+            if (this._IsDocBoundary()) { break; }
             int lineIndent = this._CurrentLineIndent();
             if (lineIndent < indent) { break; }
             if (lineIndent > indent) {
@@ -272,6 +329,8 @@ public sealed class YamlParser {
         while (true) {
             this._SkipBlankLines();
             if (this._pos >= this._src.Length) { break; }
+            // Doc boundary terminates the sequence (multi-doc support).
+            if (this._IsDocBoundary()) { break; }
             int lineIndent = this._CurrentLineIndent();
             if (lineIndent < indent) { break; }
             if (lineIndent > indent) {

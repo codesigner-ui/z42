@@ -1,0 +1,177 @@
+// add-yaml-multi-doc (2026-05-25): ParseAll multi-document parsing.
+namespace Z42YamlParseMultiDocTests;
+
+using Std;
+using Std.Test;
+using Std.Yaml;
+
+// ── Basic 2-doc ─────────────────────────────────────────────────────────
+
+[Test]
+void test_two_docs_simple() {
+    string src = "name: foo\n---\nname: bar\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal("foo", docs[0].Get("name").AsString());
+    Assert.Equal("bar", docs[1].Get("name").AsString());
+}
+
+[Test]
+void test_three_docs() {
+    string src = "a: 1\n---\nb: 2\n---\nc: 3\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(3, docs.Length);
+    Assert.Equal(1L, docs[0].Get("a").AsInt());
+    Assert.Equal(2L, docs[1].Get("b").AsInt());
+    Assert.Equal(3L, docs[2].Get("c").AsInt());
+}
+
+// ── Leading / trailing markers ─────────────────────────────────────────
+
+[Test]
+void test_leading_dash_marker() {
+    string src = "---\nname: foo\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(1, docs.Length);
+    Assert.Equal("foo", docs[0].Get("name").AsString());
+}
+
+[Test]
+void test_trailing_dot_marker() {
+    string src = "name: foo\n...\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(1, docs.Length);
+    Assert.Equal("foo", docs[0].Get("name").AsString());
+}
+
+[Test]
+void test_dot_then_dash_between_docs() {
+    string src = "a: 1\n...\n---\nb: 2\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal(1L, docs[0].Get("a").AsInt());
+    Assert.Equal(2L, docs[1].Get("b").AsInt());
+}
+
+// ── Empty doc handling ─────────────────────────────────────────────────
+
+[Test]
+void test_empty_input_returns_empty_array() {
+    YamlValue[] docs = YamlValue.ParseAll("");
+    Assert.Equal(0, docs.Length);
+}
+
+[Test]
+void test_whitespace_only_input_returns_empty_array() {
+    YamlValue[] docs = YamlValue.ParseAll("\n\n  \n");
+    Assert.Equal(0, docs.Length);
+}
+
+[Test]
+void test_bare_dash_marker_yields_null_doc() {
+    // `---` followed by nothing = one empty document.
+    YamlValue[] docs = YamlValue.ParseAll("---\n");
+    Assert.Equal(1, docs.Length);
+    Assert.True(docs[0].IsNull());
+}
+
+[Test]
+void test_two_dashes_yield_two_null_docs() {
+    YamlValue[] docs = YamlValue.ParseAll("---\n---\n");
+    Assert.Equal(2, docs.Length);
+    Assert.True(docs[0].IsNull());
+    Assert.True(docs[1].IsNull());
+}
+
+// ── Single-doc input still works ───────────────────────────────────────
+
+[Test]
+void test_single_doc_via_parse_all() {
+    string src = "name: foo\nage: 42\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(1, docs.Length);
+    Assert.Equal("foo", docs[0].Get("name").AsString());
+    Assert.Equal(42L, docs[0].Get("age").AsInt());
+}
+
+// ── Mixed types per doc ────────────────────────────────────────────────
+
+[Test]
+void test_mixed_doc_types() {
+    // Doc 1 = scalar, Doc 2 = sequence, Doc 3 = mapping.
+    string src = "42\n---\n- a\n- b\n- c\n---\nk: v\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(3, docs.Length);
+    Assert.Equal(42L, docs[0].AsInt());
+    Assert.Equal(3, docs[1].Length());
+    Assert.Equal("a", docs[1].At(0).AsString());
+    Assert.Equal("v", docs[2].Get("k").AsString());
+}
+
+// ── Nested mapping in each doc ─────────────────────────────────────────
+
+[Test]
+void test_nested_mappings_per_doc() {
+    string src = "outer:\n  inner: 1\n---\nouter:\n  inner: 2\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal(1L, docs[0].Get("outer").Get("inner").AsInt());
+    Assert.Equal(2L, docs[1].Get("outer").Get("inner").AsInt());
+}
+
+// ── Sequence as document body across docs ──────────────────────────────
+
+[Test]
+void test_sequence_then_mapping() {
+    string src = "- 1\n- 2\n---\nname: foo\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal(2, docs[0].Length());
+    Assert.Equal(1L, docs[0].At(0).AsInt());
+    Assert.Equal("foo", docs[1].Get("name").AsString());
+}
+
+// ── kubectl-style: leading `---` + multiple docs ───────────────────────
+
+[Test]
+void test_kubectl_style_manifest_stack() {
+    string src = "---\napiVersion: v1\nkind: Service\n---\napiVersion: v1\nkind: ConfigMap\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal("Service",   docs[0].Get("kind").AsString());
+    Assert.Equal("ConfigMap", docs[1].Get("kind").AsString());
+}
+
+// ── Single-doc Parse() still rejects multi-doc input ───────────────────
+
+[Test]
+void test_single_doc_parse_rejects_multi_doc() {
+    string src = "a: 1\n---\nb: 2\n";
+    bool threw = false;
+    try {
+        YamlValue v = YamlValue.Parse(src);
+    } catch (YamlException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Single-doc Parse() still accepts trailing `...` ────────────────────
+
+[Test]
+void test_single_doc_parse_accepts_trailing_dots() {
+    string src = "name: foo\n...\n";
+    YamlValue v = YamlValue.Parse(src);
+    Assert.Equal("foo", v.Get("name").AsString());
+}
+
+// ── Comments between docs ──────────────────────────────────────────────
+
+[Test]
+void test_comments_between_docs_preserved() {
+    string src = "a: 1\n# this is between docs\n---\nb: 2\n";
+    YamlValue[] docs = YamlValue.ParseAll(src);
+    Assert.Equal(2, docs.Length);
+    Assert.Equal(1L, docs[0].Get("a").AsInt());
+    Assert.Equal(2L, docs[1].Get("b").AsInt());
+}

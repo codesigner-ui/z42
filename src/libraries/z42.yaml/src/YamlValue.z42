@@ -43,10 +43,19 @@ public class YamlValue {
     // ── Public entry points (parse / stringify) ──────────────────────────
 
     /// Parse YAML text → root value. Throws YamlException with line/column
-    /// on syntax error. Empty input yields a null value.
+    /// on syntax error. Empty input yields a null value. Multi-document
+    /// input (`---` separator) is rejected — use `ParseAll` instead.
     public static YamlValue Parse(string text) {
         YamlParser parser = new YamlParser(text);
         return (YamlValue)parser.ParseDocument();
+    }
+
+    /// Parse `---`-separated multi-document YAML into an array of values
+    /// (kubectl / helm manifest-style). Empty / blank input → empty array.
+    /// add-yaml-multi-doc (2026-05-25).
+    public static YamlValue[] ParseAll(string text) {
+        YamlParser parser = new YamlParser(text);
+        return parser.ParseAllDocuments();
     }
 
     /// Serialise a YAML value tree to canonical YAML text (block style).
@@ -70,6 +79,15 @@ public class YamlValue {
         string text = r.ReadToEnd();
         YamlParser parser = new YamlParser(text);
         return (YamlValue)parser.ParseDocument();
+    }
+
+    /// Parse multi-document YAML from a UTF-8 byte Stream.
+    /// add-yaml-multi-doc (2026-05-25).
+    public static YamlValue[] ParseAllStream(Stream source) {
+        StreamReader r = new StreamReader(source);
+        string text = r.ReadToEnd();
+        YamlParser parser = new YamlParser(text);
+        return parser.ParseAllDocuments();
     }
 
     /// Serialise canonical YAML to a Stream as UTF-8 bytes. Does NOT

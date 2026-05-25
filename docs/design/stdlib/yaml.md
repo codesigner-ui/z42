@@ -51,8 +51,9 @@ public class YamlValue {
     public int       Count();
 
     // Entry points
-    public static YamlValue Parse(string text);
-    public static string    Stringify(YamlValue root);
+    public static YamlValue   Parse(string text);                  // single doc, strict
+    public static YamlValue[] ParseAll(string text);               // multi-doc (`---`)
+    public static string      Stringify(YamlValue root);
 }
 
 namespace Std;
@@ -63,7 +64,8 @@ public class YamlException : Exception { /* */ }
 
 | Method | Signature |
 |--------|-----------|
-| `YamlValue.ParseStream` | `(Std.IO.Stream) → YamlValue` — UTF-8 drain + decode; src not closed |
+| `YamlValue.ParseStream` | `(Std.IO.Stream) → YamlValue` — UTF-8 drain + decode (single-doc, strict); src not closed |
+| `YamlValue.ParseAllStream` | `(Std.IO.Stream) → YamlValue[]` — UTF-8 drain + multi-doc decode (`---` separator); src not closed (add-yaml-multi-doc, 2026-05-25) |
 | `YamlValue.WriteTo` | `(Std.IO.Stream, YamlValue) → void` — canonical YAML, UTF-8; dest not closed |
 
 See [`json.md` Stream overloads](json.md#stream-overloads2026-05-24-add-stream-overloads-to-format-parsers)
@@ -163,13 +165,25 @@ with escapes; everything else is plain.
 - **触发条件**：use case parsing YAML with multi-line embedded scripts
   or docstrings (Helm `_helpers.tpl` etc.).
 
-### `yaml-future-multi-doc`
+### ~~`yaml-future-multi-doc`~~ — **✅ 已落地 2026-05-25 (add-yaml-multi-doc)**
 
-- **来源**：add-z42-yaml v0 scope
-- **触发原因**：YAML allows multiple documents per file separated by
-  `---`. v0 parses only the first document; trailing `---` triggers
-  an error.
-- **触发条件**：use case parsing `kubectl`-style stacked manifests.
+Shipped: `YamlValue.ParseAll(string) → YamlValue[]` and
+`ParseAllStream(Stream) → YamlValue[]` for kubectl-style multi-document
+YAML (`---` separator). Internal refactor extracts `_ParseOneDocBody()`
+from `ParseDocument`; adds `_IsDocBoundary()` helper checked at
+`_ParseBlockValue` / `_ParseBlockMapping` / `_ParseBlockSequence` yield
+points so root-level `---` / `...` markers don't get mis-parsed as
+plain scalars / sequence dashes. `Parse(string)` keeps strict single-doc
+behaviour but now hints "use ParseAllDocuments for multi-doc YAML" in
+the error message.
+
+17 tests cover: 2-doc / 3-doc separator / leading `---` / trailing `...` /
+`... + ---` between docs / empty + whitespace-only input → empty array /
+bare `---` → null doc / two `---` → two null docs / single-doc via
+ParseAll / mixed-types doc stack (scalar + sequence + mapping) /
+nested mapping per doc / sequence-then-mapping / kubectl manifest
+stack / single-doc `Parse()` still rejects multi-doc with hint /
+single-doc `Parse()` accepts trailing `...` / comments between docs.
 
 ### `yaml-future-complex-keys`
 
