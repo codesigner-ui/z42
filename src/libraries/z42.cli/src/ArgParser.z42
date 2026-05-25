@@ -36,7 +36,14 @@ public class ArgParser {
     // add-cli-required-option (2026-05-26): parallel `_optionRequired` array.
     // When true, Parse throws if the option wasn't seen on the command line.
     private bool[]   _optionRequired;
+    // add-cli-repeated-option (2026-05-26): when true, the option may be
+    // passed multiple times; values are collected into a list.
+    private bool[]   _optionRepeated;
     private int      _optionCount;
+
+    // add-cli-strict-vs-extras (2026-05-26): when true, unknown flags /
+    // options go into `ParseResult.Extras()` instead of throwing.
+    private bool _allowExtras;
 
     // Declared positionals (in order)
     private string[] _positionalNames;
@@ -55,7 +62,9 @@ public class ArgParser {
         this._optionHelps     = new string[8];
         this._optionDefaults  = new string[8];
         this._optionRequired  = new bool[8];
+        this._optionRepeated  = new bool[8];
         this._optionCount     = 0;
+        this._allowExtras     = false;
         this._positionalNames = new string[8];
         this._positionalHelps = new string[8];
         this._positionalCount = 0;
@@ -81,7 +90,32 @@ public class ArgParser {
         this._optionHelps[this._optionCount]    = help;
         this._optionDefaults[this._optionCount] = defaultValue;
         this._optionRequired[this._optionCount] = false;
+        this._optionRepeated[this._optionCount] = false;
         this._optionCount = this._optionCount + 1;
+    }
+
+    /// 注册可重复 option — argv 中每次出现都 append 而非覆盖。Retrieved via
+    /// `ParseResult.GetRepeatedOption(name) → string[]`. Typical use:
+    /// `-D NAME=VALUE -D OTHER=VALUE`. `GetOption(name)` returns the LAST
+    /// value (matches the implicit repeated-option semantics).
+    /// add-cli-repeated-option (2026-05-26).
+    public void AddRepeatedOption(string longName, string shortName, string help) {
+        this.EnsureOptionCap();
+        this._optionLongs[this._optionCount]    = longName;
+        this._optionShorts[this._optionCount]   = shortName;
+        this._optionHelps[this._optionCount]    = help + " (repeatable)";
+        this._optionDefaults[this._optionCount] = "";
+        this._optionRequired[this._optionCount] = false;
+        this._optionRepeated[this._optionCount] = true;
+        this._optionCount = this._optionCount + 1;
+    }
+
+    /// Enable pass-through mode: unknown flags / options go into
+    /// `ParseResult.Extras()` instead of throwing `CliException`.
+    /// Useful for wrapper / pass-through tools. add-cli-strict-vs-extras
+    /// (2026-05-26).
+    public void AllowExtras() {
+        this._allowExtras = true;
     }
 
     /// 注册必填 option — Parse 在 argv 中没看到该 option 时抛 CliException
@@ -97,6 +131,7 @@ public class ArgParser {
         this._optionHelps[this._optionCount]    = help + " (required)";
         this._optionDefaults[this._optionCount] = "";       // sentinel "missing"
         this._optionRequired[this._optionCount] = true;
+        this._optionRepeated[this._optionCount] = false;
         this._optionCount = this._optionCount + 1;
     }
 
@@ -127,14 +162,27 @@ public class ArgParser {
         r._optionLongs    = new string[this._optionCount];
         r._optionValues   = new string[this._optionCount];
         r._optionWasSet   = new bool[this._optionCount];
+        r._optionRepeated = new bool[this._optionCount];
+        r._optionLists    = new _RepeatedList[this._optionCount];
         r._optionCount    = this._optionCount;
         int j = 0;
         while (j < this._optionCount) {
-            r._optionLongs[j]    = this._optionLongs[j];
-            r._optionValues[j]   = this._optionDefaults[j];
-            r._optionWasSet[j]   = false;
+            r._optionLongs[j]      = this._optionLongs[j];
+            r._optionValues[j]     = this._optionDefaults[j];
+            r._optionWasSet[j]     = false;
+            r._optionRepeated[j]   = this._optionRepeated[j];
+            if (this._optionRepeated[j]) {
+                r._optionLists[j] = new _RepeatedList();
+            } else {
+                r._optionLists[j] = null;
+            }
             j = j + 1;
         }
+        // Extras list (only populated when AllowExtras was called).
+        // add-cli-strict-vs-extras (2026-05-26).
+        r._extras = new string[4];
+        r._extrasCount = 0;
+        r._allowExtras = this._allowExtras;
         // positionals
         r._positionalNames  = new string[this._positionalCount];
         r._positionalValues = new string[this._positionalCount];
@@ -221,20 +269,45 @@ public class ArgParser {
         // 找 option
         int oi = this.FindOptionByLong(name);
         if (oi >= 0) {
+            string val;
+            int  nextIdx;
             if (hasValue) {
-                r._optionValues[oi]  = value;
-                r._optionWasSet[oi]  = true;
-                return idx + 1;
+                val     = value;
+                nextIdx = idx + 1;
+            } else {
+                if (idx + 1 >= argv.Length) {
+                    throw new CliException("option '--" + name + "' requires a value");
+                }
+                val     = argv[idx + 1];
+                nextIdx = idx + 2;
             }
-            // 取下一个 argv 作为 value
-            if (idx + 1 >= argv.Length) {
-                throw new CliException("option '--" + name + "' requires a value");
+            r._optionValues[oi] = val;
+            r._optionWasSet[oi] = true;
+            if (this._optionRepeated[oi]) {
+                r._optionLists[oi].Append(val);
             }
-            r._optionValues[oi]  = argv[idx + 1];
-            r._optionWasSet[oi]  = true;
-            return idx + 2;
+            return nextIdx;
+        }
+        // Pass-through unknown options if extras allowed.
+        if (this._allowExtras) {
+            ArgParser._AppendExtra(r, a);
+            return idx + 1;
         }
         throw new CliException("unknown option '--" + name + "'");
+    }
+
+    /// Push a token into ParseResult._extras (grow on demand).
+    /// add-cli-strict-vs-extras (2026-05-26).
+    static void _AppendExtra(ParseResult r, string token) {
+        if (r._extrasCount >= r._extras.Length) {
+            int n = r._extras.Length * 2;
+            string[] g = new string[n];
+            int i = 0;
+            while (i < r._extrasCount) { g[i] = r._extras[i]; i = i + 1; }
+            r._extras = g;
+        }
+        r._extras[r._extrasCount] = token;
+        r._extrasCount = r._extrasCount + 1;
     }
 
     private int ParseShort(string a, string[] argv, int idx, ParseResult r) {
@@ -249,8 +322,12 @@ public class ArgParser {
             if (idx + 1 >= argv.Length) {
                 throw new CliException("option '-" + name + "' requires a value");
             }
-            r._optionValues[oi]  = argv[idx + 1];
-            r._optionWasSet[oi]  = true;
+            string val = argv[idx + 1];
+            r._optionValues[oi] = val;
+            r._optionWasSet[oi] = true;
+            if (this._optionRepeated[oi]) {
+                r._optionLists[oi].Append(val);
+            }
             return idx + 2;
         }
         // GNU-style short-flag cluster `-abc` = `-a -b -c` (boolean flags only).
@@ -258,7 +335,9 @@ public class ArgParser {
         // char must be a registered flag's short name; if ANY char is an
         // option-short, throws because clustering doesn't compose with values.
         // add-cli-short-flag-cluster (2026-05-26).
-        if (name.Length > 1) {
+        // Skip cluster path entirely when `_allowExtras` is on — the whole
+        // token goes to extras instead.
+        if (name.Length > 1 && !this._allowExtras) {
             // First pass: validate every char is a known flag short.
             int p = 0;
             while (p < name.Length) {
@@ -283,6 +362,10 @@ public class ArgParser {
                 r._flagValues[cfi] = true;
                 q = q + 1;
             }
+            return idx + 1;
+        }
+        if (this._allowExtras) {
+            ArgParser._AppendExtra(r, a);
             return idx + 1;
         }
         throw new CliException("unknown option '-" + name + "'");
@@ -451,6 +534,7 @@ public class ArgParser {
         string[] gh = new string[n];
         string[] gd = new string[n];
         bool[]   gr = new bool[n];
+        bool[]   gp = new bool[n];
         int i = 0;
         while (i < this._optionCount) {
             gl[i] = this._optionLongs[i];
@@ -458,6 +542,7 @@ public class ArgParser {
             gh[i] = this._optionHelps[i];
             gd[i] = this._optionDefaults[i];
             gr[i] = this._optionRequired[i];
+            gp[i] = this._optionRepeated[i];
             i = i + 1;
         }
         this._optionLongs    = gl;
@@ -465,6 +550,7 @@ public class ArgParser {
         this._optionHelps    = gh;
         this._optionDefaults = gd;
         this._optionRequired = gr;
+        this._optionRepeated = gp;
     }
 
     private void EnsurePositionalCap() {

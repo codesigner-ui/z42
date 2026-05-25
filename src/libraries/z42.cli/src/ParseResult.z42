@@ -1,6 +1,38 @@
 namespace Std.Cli;
 using Std;
 
+// Internal wrapper for repeated-option storage. z42 doesn't have native
+// `string[][]` so a per-option `_RepeatedList` holds the appended values.
+// add-cli-repeated-option (2026-05-26).
+public class _RepeatedList {
+    public string[] _values;
+    public int      _count;
+
+    public _RepeatedList() {
+        this._values = new string[4];
+        this._count  = 0;
+    }
+
+    public void Append(string v) {
+        if (this._count >= this._values.Length) {
+            int n = this._values.Length * 2;
+            string[] grown = new string[n];
+            int i = 0;
+            while (i < this._count) { grown[i] = this._values[i]; i = i + 1; }
+            this._values = grown;
+        }
+        this._values[this._count] = v;
+        this._count = this._count + 1;
+    }
+
+    public string[] Snapshot() {
+        string[] result = new string[this._count];
+        int i = 0;
+        while (i < this._count) { result[i] = this._values[i]; i = i + 1; }
+        return result;
+    }
+}
+
 // add-z42-cli (2026-05-16)：ArgParser.Parse 的返回值。
 //
 // 内部存储与 ArgParser 共享 longName index（parallel arrays）。string 默认 "".
@@ -17,8 +49,18 @@ public class ParseResult {
     // actually written from argv (vs left at the default). Used by required-
     // option validation; also lets callers tell "user provided default value"
     // apart from "default was implicit".
-    public bool[]   _optionWasSet;
-    public int      _optionCount;
+    public bool[]            _optionWasSet;
+    // add-cli-repeated-option (2026-05-26): mirror of declaration-side flag
+    // + per-option list of appended values. Null entries when not repeated.
+    public bool[]            _optionRepeated;
+    public _RepeatedList[]   _optionLists;
+    public int               _optionCount;
+
+    // add-cli-strict-vs-extras (2026-05-26): pass-through list of unknown
+    // flags / options. Only populated when ArgParser.AllowExtras was called.
+    public string[] _extras;
+    public int      _extrasCount;
+    public bool     _allowExtras;
 
     // Positional results
     public string[] _positionalNames;
@@ -34,10 +76,15 @@ public class ParseResult {
         this._optionLongs      = null;
         this._optionValues     = null;
         this._optionWasSet     = null;
+        this._optionRepeated   = null;
+        this._optionLists      = null;
         this._optionCount      = 0;
         this._positionalNames  = null;
         this._positionalValues = null;
         this._positionalCount  = 0;
+        this._extras           = null;
+        this._extrasCount      = 0;
+        this._allowExtras      = false;
         this._showHelp         = false;
     }
 
@@ -72,6 +119,39 @@ public class ParseResult {
         }
         throw new CliException("option '" + longName + "' not registered");
     }
+
+    /// Snapshot of all values passed for a repeated option (in argv order).
+    /// Empty array when the option was registered but never passed. Throws
+    /// `CliException` when the option isn't registered or wasn't declared
+    /// as repeated. add-cli-repeated-option (2026-05-26).
+    public string[] GetRepeatedOption(string longName) {
+        int i = 0;
+        while (i < this._optionCount) {
+            if (this._optionLongs[i] == longName) {
+                if (!this._optionRepeated[i]) {
+                    throw new CliException("option '" + longName + "' is not registered as repeatable (use AddRepeatedOption)");
+                }
+                return this._optionLists[i].Snapshot();
+            }
+            i = i + 1;
+        }
+        throw new CliException("option '" + longName + "' not registered");
+    }
+
+    /// Returns the unknown argv tokens collected when `AllowExtras` was set
+    /// on the parser. Empty array otherwise. add-cli-strict-vs-extras
+    /// (2026-05-26).
+    public string[] Extras() {
+        string[] result = new string[this._extrasCount];
+        int i = 0;
+        while (i < this._extrasCount) {
+            result[i] = this._extras[i];
+            i = i + 1;
+        }
+        return result;
+    }
+
+    public int ExtrasCount() { return this._extrasCount; }
 
     // ── Typed option getters (add-cli-type-conversion, 2026-05-26) ────────
     //

@@ -130,11 +130,21 @@ combined required + typed in a realistic "tiny HTTP server" parser.
 - **来源**：`--release` xor `--debug`
 - **触发原因**：v0 caller 自行检查
 
-### cli-future-repeated-option
+### ~~cli-future-repeated-option~~ — **✅ 已落地 2026-05-26 (add-cli-repeated-option)**
 
-- **来源**：`-D NAME=VALUE -D OTHER=...` 收集成 list
-- **触发原因**：v0 后值覆盖前值
-- **当前 workaround**：用 `,` 分隔的单 option + caller split
+Shipped: `AddRepeatedOption(long, short, help)` + `GetRepeatedOption(name)
+→ string[]`. Each `-D foo=1 -D bar=2` appends; `GetOption(name)` still
+returns the last value for back-compat.
+
+Implementation:
+- New `bool[] _optionRepeated` parallel array on ArgParser
+- New `_RepeatedList[] _optionLists` on ParseResult (internal
+  `_RepeatedList` wrapper has `_values: string[] + _count: int` plus
+  `Append(v)` / `Snapshot()` since z42 has no native `string[][]`)
+- `ParseLong` / `ParseShort` now append to the per-option list when
+  `_optionRepeated[oi]` is true
+
+Help text auto-appends " (repeatable)" to the option's help string.
 
 ### ~~cli-future-short-flag-cluster~~ — **✅ 已落地 2026-05-26 (add-cli-short-flag-cluster)**
 
@@ -163,11 +173,26 @@ flag; cluster then `--option value`; cluster + option-short rejection;
 cluster + unknown rejection; `tar -xv -f out.tar` pattern; single-char
 short doesn't trigger cluster path.
 
-### cli-future-strict-vs-extras
+### ~~cli-future-strict-vs-extras~~ — **✅ 已落地 2026-05-26 (add-cli-strict-vs-extras)**
 
-- **来源**：unknown flag 不抛而进 Extras 列表，让 caller pass-through
-- **触发原因**：v0 严格 — fail-fast
-- **当前 workaround**：caller 提前 sanitize argv
+Shipped: opt-in pass-through mode via `ArgParser.AllowExtras()`. With it
+enabled, unknown flags / options go into `ParseResult.Extras() →
+string[]` instead of throwing `CliException`. Strict mode (default)
+unchanged.
+
+Behaviour:
+- `AllowExtras()` is a one-shot toggle on the parser
+- Unknown long / short tokens (after exhausting registered lookups)
+  appended verbatim to `_extras` and consumed (no value-positional
+  consumption attempted — keeps the model simple)
+- `--help` / `-h` still triggers `ShowHelp` ahead of pass-through
+- Short-flag cluster path is bypassed when extras allowed (cluster
+  ambiguity vs unknown-token preservation isn't worth resolving in v0)
+- Known options + repeated options + required validation all still
+  apply alongside extras
+
+Real-world use: wrapper tools (`docker-wrap --my-flag <docker args>...`)
+that own a subset of the namespace and forward the rest.
 
 ## 跨 stdlib 交互
 

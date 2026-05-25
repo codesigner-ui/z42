@@ -1,0 +1,206 @@
+// add-cli-repeated-option + add-cli-strict-vs-extras (2026-05-26):
+// AddRepeatedOption + GetRepeatedOption + AllowExtras + Extras().
+namespace Z42CliRepeatedAndExtrasTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+// ── Repeated option: basic ─────────────────────────────────────────────
+
+[Test]
+void test_repeated_option_two_values() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRepeatedOption("define", "D", "preprocessor define");
+    string[] a = new string[4];
+    a[0] = "-D"; a[1] = "FOO=1";
+    a[2] = "-D"; a[3] = "BAR=2";
+    ParseResult r = p.Parse(a);
+    string[] vals = r.GetRepeatedOption("define");
+    Assert.Equal(2, vals.Length);
+    Assert.Equal("FOO=1", vals[0]);
+    Assert.Equal("BAR=2", vals[1]);
+}
+
+[Test]
+void test_repeated_option_three_values_long_form() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRepeatedOption("include", "I", "include dir");
+    string[] a = new string[6];
+    a[0] = "--include"; a[1] = "src";
+    a[2] = "--include"; a[3] = "include";
+    a[4] = "--include"; a[5] = "ext";
+    ParseResult r = p.Parse(a);
+    string[] vals = r.GetRepeatedOption("include");
+    Assert.Equal(3, vals.Length);
+    Assert.Equal("src",     vals[0]);
+    Assert.Equal("include", vals[1]);
+    Assert.Equal("ext",     vals[2]);
+}
+
+[Test]
+void test_repeated_option_equals_form() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRepeatedOption("define", "D", "define");
+    string[] a = new string[2];
+    a[0] = "--define=A=1"; a[1] = "--define=B=2";
+    ParseResult r = p.Parse(a);
+    string[] vals = r.GetRepeatedOption("define");
+    Assert.Equal(2, vals.Length);
+    Assert.Equal("A=1", vals[0]);
+    Assert.Equal("B=2", vals[1]);
+}
+
+[Test]
+void test_repeated_option_not_passed_returns_empty() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRepeatedOption("define", "D", "define");
+    string[] a = new string[0];
+    ParseResult r = p.Parse(a);
+    string[] vals = r.GetRepeatedOption("define");
+    Assert.Equal(0, vals.Length);
+}
+
+[Test]
+void test_repeated_option_get_option_returns_last() {
+    // `GetOption(name)` still works on a repeated option — returns the
+    // last value (matches the "last-wins" implicit semantics).
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRepeatedOption("define", "D", "define");
+    string[] a = new string[4];
+    a[0] = "-D"; a[1] = "first";
+    a[2] = "-D"; a[3] = "last";
+    ParseResult r = p.Parse(a);
+    Assert.Equal("last", r.GetOption("define"));
+}
+
+// ── Error: GetRepeatedOption on non-repeated option ───────────────────
+
+[Test]
+void test_get_repeated_on_plain_option_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("port", "p", "port", "8080");
+    bool threw = false;
+    try {
+        string[] a = new string[0];
+        ParseResult r = p.Parse(a);
+        string[] _v = r.GetRepeatedOption("port");
+    } catch (CliException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Extras: pass-through unknown flags ────────────────────────────────
+
+[Test]
+void test_extras_disabled_by_default_unknown_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    bool threw = false;
+    try {
+        string[] a = new string[1];
+        a[0] = "--unknown";
+        p.Parse(a);
+    } catch (CliException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_extras_enabled_unknown_long_collected() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AllowExtras();
+    string[] a = new string[2];
+    a[0] = "--passthrough"; a[1] = "--unknown=value";
+    ParseResult r = p.Parse(a);
+    string[] extras = r.Extras();
+    Assert.Equal(2, extras.Length);
+    Assert.Equal("--passthrough", extras[0]);
+    Assert.Equal("--unknown=value", extras[1]);
+}
+
+[Test]
+void test_extras_enabled_unknown_short_collected() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AllowExtras();
+    string[] a = new string[1];
+    a[0] = "-z";
+    ParseResult r = p.Parse(a);
+    Assert.Equal(1, r.ExtrasCount());
+    string[] extras = r.Extras();
+    Assert.Equal("-z", extras[0]);
+}
+
+[Test]
+void test_extras_mixed_with_known_options() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AddOption("port",  "p", "port", "0");
+    p.AllowExtras();
+    string[] a = new string[5];
+    a[0] = "-v";
+    a[1] = "--port"; a[2] = "8080";
+    a[3] = "--custom-thing"; a[4] = "--another-unknown";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetFlag("verbose"));
+    Assert.Equal("8080", r.GetOption("port"));
+    Assert.Equal(2, r.ExtrasCount());
+    string[] extras = r.Extras();
+    Assert.Equal("--custom-thing",    extras[0]);
+    Assert.Equal("--another-unknown", extras[1]);
+}
+
+[Test]
+void test_extras_count_zero_when_none() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddFlag("verbose", "v", "verbose");
+    p.AllowExtras();
+    string[] a = new string[1];
+    a[0] = "-v";
+    ParseResult r = p.Parse(a);
+    Assert.Equal(0, r.ExtrasCount());
+}
+
+// ── Combo: repeated + extras + required ───────────────────────────────
+
+[Test]
+void test_repeated_with_extras_combo() {
+    ArgParser p = new ArgParser("docker-wrap", "");
+    p.AddRepeatedOption("env", "e", "env var");
+    p.AllowExtras();
+    string[] a = new string[5];
+    a[0] = "-e"; a[1] = "FOO=1";
+    a[2] = "-e"; a[3] = "BAR=2";
+    a[4] = "--unknown-passthrough";
+    ParseResult r = p.Parse(a);
+    string[] envs = r.GetRepeatedOption("env");
+    Assert.Equal(2, envs.Length);
+    Assert.Equal("FOO=1", envs[0]);
+    Assert.Equal("BAR=2", envs[1]);
+    Assert.Equal(1, r.ExtrasCount());
+    Assert.Equal("--unknown-passthrough", r.Extras()[0]);
+}
+
+// ── Common real-world: `gcc -DDEBUG -DLOG=2 -Iinclude -Ilib` ──────────
+
+[Test]
+void test_gcc_style_repeated_defines_and_includes() {
+    ArgParser p = new ArgParser("gcc", "");
+    p.AddRepeatedOption("define",  "D", "preprocessor define");
+    p.AddRepeatedOption("include", "I", "include dir");
+    string[] a = new string[8];
+    a[0] = "-D"; a[1] = "DEBUG";
+    a[2] = "-D"; a[3] = "LOG=2";
+    a[4] = "-I"; a[5] = "include";
+    a[6] = "-I"; a[7] = "lib";
+    ParseResult r = p.Parse(a);
+    string[] defs = r.GetRepeatedOption("define");
+    string[] incs = r.GetRepeatedOption("include");
+    Assert.Equal(2, defs.Length);
+    Assert.Equal(2, incs.Length);
+    Assert.Equal("DEBUG", defs[0]);
+    Assert.Equal("LOG=2", defs[1]);
+    Assert.Equal("include", incs[0]);
+    Assert.Equal("lib",     incs[1]);
+}
