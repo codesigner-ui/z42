@@ -57,7 +57,9 @@ clap = { version = "4", features = ["derive"] }
 
 # Logging
 tracing = "0.1"
-tracing-subscriber = "0.3"
+# `env-filter` enables Z42_LOG=... directive parsing in main.rs
+# (docs/review.md Part 4 D2, 2026-05-25).
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Native interop — Tier 1 ABI runtime (spec C2)
 #

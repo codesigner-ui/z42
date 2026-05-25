@@ -6,8 +6,9 @@ use std::path::PathBuf;
 #[command(name = "z42vm", about = "z42 Virtual Machine", version)]
 struct Cli {
     /// Bytecode file to execute.
-    /// Accepted formats: .zbc (single-file), .zpkg (project package)
-    file: String,
+    /// Accepted formats: .zbc (single-file), .zpkg (project package).
+    /// Optional only when `--info` is set.
+    file: Option<String>,
 
     /// Optional entry-function override (positional). When omitted the VM
     /// reads the `Entry` baked into the zpkg by `z42c build` (which itself
@@ -25,6 +26,12 @@ struct Cli {
     /// Enable verbose tracing
     #[arg(short, long)]
     verbose: bool,
+
+    /// Print runtime build info (version / target / build profile / enabled features /
+    /// exec modes / libs dir / Z42_PATH) and exit. Useful for bug reports and CI
+    /// preflight. docs/review.md Part 4 D5 (2026-05-25).
+    #[arg(long)]
+    info: bool,
 }
 // 2026-05-11 retire-z-codes: `--explain` / `--list-errors` were removed
 // alongside the Rust-side `diagnostics` catalog. Use `z42c explain E####`
@@ -107,6 +114,74 @@ fn log_libs(libs_dir: &PathBuf) {
             }
         }
         Err(e) => tracing::warn!("cannot read libs dir: {e}"),
+    }
+}
+
+/// Initialize the tracing subscriber. Precedence (highest wins):
+///   1. `Z42_LOG` env var — `tracing-subscriber` directive syntax
+///      (e.g. `Z42_LOG=z42::jit=debug,z42::gc=trace,z42=warn`)
+///   2. `--verbose` CLI flag — defaults to `z42=info`
+///   3. Otherwise: `z42=warn` (errors + warnings only; quiet boot)
+///
+/// docs/review.md Part 4 D2 (2026-05-25).
+fn init_tracing(verbose: bool) {
+    use tracing_subscriber::EnvFilter;
+
+    let filter = match std::env::var("Z42_LOG") {
+        Ok(s) if !s.trim().is_empty() => EnvFilter::try_new(s.as_str())
+            .unwrap_or_else(|_| EnvFilter::new(default_filter(verbose))),
+        _ => EnvFilter::new(default_filter(verbose)),
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
+fn default_filter(verbose: bool) -> &'static str {
+    if verbose { "z42=info" } else { "z42=warn" }
+}
+
+/// Print runtime build information to stdout. Triggered by `--info`.
+/// Output is intentionally human-readable + grep-friendly (one `key: value`
+/// per line). docs/review.md Part 4 D5 (2026-05-25).
+fn print_build_info() {
+    println!("z42vm {}", env!("CARGO_PKG_VERSION"));
+    println!("target: {}", std::env::consts::OS);
+    println!("arch: {}", std::env::consts::ARCH);
+    println!("build profile: {}", if cfg!(debug_assertions) { "debug" } else { "release" });
+
+    // Enabled feature flags
+    let mut features: Vec<&str> = Vec::new();
+    #[cfg(feature = "jit")]            features.push("jit");
+    #[cfg(feature = "aot")]            features.push("aot");
+    #[cfg(feature = "native-interop")] features.push("native-interop");
+    println!("features: {}", if features.is_empty() { "(none)".to_string() } else { features.join(", ") });
+
+    // Exec modes actually available (function of feature flags)
+    let mut modes: Vec<&str> = vec!["interp"];
+    #[cfg(feature = "jit")] modes.push("jit");
+    #[cfg(feature = "aot")] modes.push("aot");
+    println!("exec modes: {}", modes.join(", "));
+
+    // Runtime config knobs (env vars)
+    match std::env::var("Z42_LIBS") {
+        Ok(v) => println!("Z42_LIBS: {v}"),
+        Err(_) => println!("Z42_LIBS: (unset; falls back to artifacts/build/libs/release)"),
+    }
+    match std::env::var("Z42_PATH") {
+        Ok(v) => println!("Z42_PATH: {v}"),
+        Err(_) => println!("Z42_PATH: (unset)"),
+    }
+    match std::env::var("Z42_LOG") {
+        Ok(v) => println!("Z42_LOG: {v}"),
+        Err(_) => println!("Z42_LOG: (unset; defaults to z42=warn / z42=info under --verbose)"),
+    }
+
+    // Effective libs dir lookup result.
+    match resolve_libs_dir() {
+        Some(dir) => println!("libs dir: {}", dir.display()),
+        None => println!("libs dir: (not found — run ./scripts/build-stdlib.sh or set Z42_LIBS)"),
     }
 }
 
@@ -247,8 +322,12 @@ fn build_declared_candidates(
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    if cli.verbose {
-        tracing_subscriber::fmt::init();
+    init_tracing(cli.verbose);
+
+    // --info: print build info to stdout and exit before doing any module loading.
+    if cli.info {
+        print_build_info();
+        return Ok(());
     }
 
     // Resolve module search paths (Z42_PATH + cwd + cwd/modules); log only for now.
@@ -257,7 +336,11 @@ fn main() -> Result<()> {
         log_module_paths(&module_paths);
     }
 
-    let file = cli.file.as_str();
+    // `file` is required when not in --info mode. clap can't express "required
+    // unless --info" cleanly, so enforce it here.
+    let file = cli.file.as_deref()
+        .ok_or_else(|| anyhow::anyhow!(
+            "missing required argument <FILE> (or pass --info to print build info)"))?;
     tracing::debug!("z42vm loading {}", file);
 
     // Locate stdlib libs directory.
