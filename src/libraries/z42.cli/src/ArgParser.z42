@@ -33,6 +33,9 @@ public class ArgParser {
     private string[] _optionShorts;
     private string[] _optionHelps;
     private string[] _optionDefaults;
+    // add-cli-required-option (2026-05-26): parallel `_optionRequired` array.
+    // When true, Parse throws if the option wasn't seen on the command line.
+    private bool[]   _optionRequired;
     private int      _optionCount;
 
     // Declared positionals (in order)
@@ -51,6 +54,7 @@ public class ArgParser {
         this._optionShorts    = new string[8];
         this._optionHelps     = new string[8];
         this._optionDefaults  = new string[8];
+        this._optionRequired  = new bool[8];
         this._optionCount     = 0;
         this._positionalNames = new string[8];
         this._positionalHelps = new string[8];
@@ -76,6 +80,23 @@ public class ArgParser {
         this._optionShorts[this._optionCount]   = shortName;
         this._optionHelps[this._optionCount]    = help;
         this._optionDefaults[this._optionCount] = defaultValue;
+        this._optionRequired[this._optionCount] = false;
+        this._optionCount = this._optionCount + 1;
+    }
+
+    /// 注册必填 option — Parse 在 argv 中没看到该 option 时抛 CliException
+    /// (`required option '--name' missing`). `defaultValue` is unused but
+    /// kept in the parallel array for storage uniformity. The presence-tracking
+    /// uses a sentinel: the option's slot stays at `_optionDefaults[i]` (i.e.,
+    /// `""` for required options) until argv writes a value; Parse then checks
+    /// each required slot still equals `""`. add-cli-required-option (2026-05-26).
+    public void AddRequiredOption(string longName, string shortName, string help) {
+        this.EnsureOptionCap();
+        this._optionLongs[this._optionCount]    = longName;
+        this._optionShorts[this._optionCount]   = shortName;
+        this._optionHelps[this._optionCount]    = help + " (required)";
+        this._optionDefaults[this._optionCount] = "";       // sentinel "missing"
+        this._optionRequired[this._optionCount] = true;
         this._optionCount = this._optionCount + 1;
     }
 
@@ -103,13 +124,15 @@ public class ArgParser {
             i = i + 1;
         }
         // 初始化 option results = defaults
-        r._optionLongs  = new string[this._optionCount];
-        r._optionValues = new string[this._optionCount];
-        r._optionCount  = this._optionCount;
+        r._optionLongs    = new string[this._optionCount];
+        r._optionValues   = new string[this._optionCount];
+        r._optionWasSet   = new bool[this._optionCount];
+        r._optionCount    = this._optionCount;
         int j = 0;
         while (j < this._optionCount) {
-            r._optionLongs[j]  = this._optionLongs[j];
-            r._optionValues[j] = this._optionDefaults[j];
+            r._optionLongs[j]    = this._optionLongs[j];
+            r._optionValues[j]   = this._optionDefaults[j];
+            r._optionWasSet[j]   = false;
             j = j + 1;
         }
         // positionals
@@ -156,6 +179,19 @@ public class ArgParser {
                 this._positionalNames[r._positionalCount] + "'");
         }
 
+        // Required-option validation — add-cli-required-option (2026-05-26).
+        // Skip when --help requested (so callers can print help with no args).
+        if (!r._showHelp) {
+            int m = 0;
+            while (m < this._optionCount) {
+                if (this._optionRequired[m] && !r._optionWasSet[m]) {
+                    throw new CliException("required option '--" +
+                        this._optionLongs[m] + "' missing");
+                }
+                m = m + 1;
+            }
+        }
+
         return r;
     }
 
@@ -186,14 +222,16 @@ public class ArgParser {
         int oi = this.FindOptionByLong(name);
         if (oi >= 0) {
             if (hasValue) {
-                r._optionValues[oi] = value;
+                r._optionValues[oi]  = value;
+                r._optionWasSet[oi]  = true;
                 return idx + 1;
             }
             // 取下一个 argv 作为 value
             if (idx + 1 >= argv.Length) {
                 throw new CliException("option '--" + name + "' requires a value");
             }
-            r._optionValues[oi] = argv[idx + 1];
+            r._optionValues[oi]  = argv[idx + 1];
+            r._optionWasSet[oi]  = true;
             return idx + 2;
         }
         throw new CliException("unknown option '--" + name + "'");
@@ -211,7 +249,8 @@ public class ArgParser {
             if (idx + 1 >= argv.Length) {
                 throw new CliException("option '-" + name + "' requires a value");
             }
-            r._optionValues[oi] = argv[idx + 1];
+            r._optionValues[oi]  = argv[idx + 1];
+            r._optionWasSet[oi]  = true;
             return idx + 2;
         }
         throw new CliException("unknown option '-" + name + "'");
@@ -379,18 +418,21 @@ public class ArgParser {
         string[] gs = new string[n];
         string[] gh = new string[n];
         string[] gd = new string[n];
+        bool[]   gr = new bool[n];
         int i = 0;
         while (i < this._optionCount) {
             gl[i] = this._optionLongs[i];
             gs[i] = this._optionShorts[i];
             gh[i] = this._optionHelps[i];
             gd[i] = this._optionDefaults[i];
+            gr[i] = this._optionRequired[i];
             i = i + 1;
         }
         this._optionLongs    = gl;
         this._optionShorts   = gs;
         this._optionHelps    = gh;
         this._optionDefaults = gd;
+        this._optionRequired = gr;
     }
 
     private void EnsurePositionalCap() {

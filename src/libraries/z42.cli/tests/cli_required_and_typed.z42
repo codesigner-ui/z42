@@ -1,0 +1,233 @@
+// add-cli-required-option + add-cli-type-conversion (2026-05-26):
+// AddRequiredOption + WasOptionSet + GetIntOption / GetLongOption /
+// GetDoubleOption / GetBoolOption.
+namespace Z42CliRequiredAndTypedTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+string[] argv(string[] xs) { return xs; }
+
+// ── AddRequiredOption: missing → throws ────────────────────────────────
+
+[Test]
+void test_required_option_missing_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRequiredOption("input", "i", "input file");
+    bool threw = false;
+    try {
+        string[] a = new string[0];
+        p.Parse(a);
+    } catch (CliException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_required_option_provided_long_succeeds() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRequiredOption("input", "i", "input file");
+    string[] a = new string[2];
+    a[0] = "--input"; a[1] = "foo.txt";
+    ParseResult r = p.Parse(a);
+    Assert.Equal("foo.txt", r.GetOption("input"));
+}
+
+[Test]
+void test_required_option_provided_short_succeeds() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRequiredOption("input", "i", "input file");
+    string[] a = new string[2];
+    a[0] = "-i"; a[1] = "bar.txt";
+    ParseResult r = p.Parse(a);
+    Assert.Equal("bar.txt", r.GetOption("input"));
+}
+
+[Test]
+void test_required_option_provided_equals_form() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRequiredOption("input", "i", "input file");
+    string[] a = new string[1];
+    a[0] = "--input=baz.txt";
+    ParseResult r = p.Parse(a);
+    Assert.Equal("baz.txt", r.GetOption("input"));
+}
+
+[Test]
+void test_required_help_short_circuit() {
+    // `-h` / `--help` should suppress the required-option check
+    // (so users can print help with no other args).
+    ArgParser p = new ArgParser("prog", "");
+    p.AddRequiredOption("input", "i", "input file");
+    string[] a = new string[1];
+    a[0] = "--help";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.ShowHelp());
+}
+
+// ── WasOptionSet ───────────────────────────────────────────────────────
+
+[Test]
+void test_was_option_set_true_when_provided() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("name", "n", "name", "default");
+    string[] a = new string[2];
+    a[0] = "--name"; a[1] = "alice";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.WasOptionSet("name"));
+}
+
+[Test]
+void test_was_option_set_false_when_unset() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("name", "n", "name", "default");
+    string[] a = new string[0];
+    ParseResult r = p.Parse(a);
+    Assert.False(r.WasOptionSet("name"));
+    Assert.Equal("default", r.GetOption("name"));
+}
+
+// ── GetIntOption ───────────────────────────────────────────────────────
+
+[Test]
+void test_get_int_option_basic() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("port", "p", "port", "8080");
+    string[] a = new string[0];
+    ParseResult r = p.Parse(a);
+    Assert.Equal(8080, r.GetIntOption("port"));
+}
+
+[Test]
+void test_get_int_option_explicit() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("count", "c", "count", "0");
+    string[] a = new string[2];
+    a[0] = "--count"; a[1] = "42";
+    ParseResult r = p.Parse(a);
+    Assert.Equal(42, r.GetIntOption("count"));
+}
+
+[Test]
+void test_get_int_option_negative() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("delta", "d", "delta", "0");
+    string[] a = new string[2];
+    a[0] = "--delta"; a[1] = "-5";
+    ParseResult r = p.Parse(a);
+    Assert.Equal(-5, r.GetIntOption("delta"));
+}
+
+[Test]
+void test_get_int_option_invalid_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("port", "p", "port", "abc");
+    string[] a = new string[0];
+    ParseResult r = p.Parse(a);
+    bool threw = false;
+    try { int _v = r.GetIntOption("port"); }
+    catch (CliException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── GetLongOption ──────────────────────────────────────────────────────
+
+[Test]
+void test_get_long_option_large_value() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("size", "s", "size in bytes", "0");
+    string[] a = new string[2];
+    a[0] = "--size"; a[1] = "9223372036854775807";
+    ParseResult r = p.Parse(a);
+    Assert.Equal(9223372036854775807L, r.GetLongOption("size"));
+}
+
+// ── GetDoubleOption ────────────────────────────────────────────────────
+
+[Test]
+void test_get_double_option() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("rate", "r", "rate", "1.0");
+    string[] a = new string[2];
+    a[0] = "--rate"; a[1] = "3.14";
+    ParseResult r = p.Parse(a);
+    double v = r.GetDoubleOption("rate");
+    Assert.True(v > 3.139 && v < 3.141);
+}
+
+[Test]
+void test_get_double_option_invalid_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("rate", "r", "rate", "oops");
+    string[] a = new string[0];
+    ParseResult r = p.Parse(a);
+    bool threw = false;
+    try { double _v = r.GetDoubleOption("rate"); }
+    catch (CliException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── GetBoolOption ──────────────────────────────────────────────────────
+
+[Test]
+void test_get_bool_option_true() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("enabled", "e", "enabled", "false");
+    string[] a = new string[2];
+    a[0] = "--enabled"; a[1] = "true";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetBoolOption("enabled"));
+}
+
+[Test]
+void test_get_bool_option_false() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("enabled", "e", "enabled", "true");
+    string[] a = new string[2];
+    a[0] = "--enabled"; a[1] = "false";
+    ParseResult r = p.Parse(a);
+    Assert.False(r.GetBoolOption("enabled"));
+}
+
+[Test]
+void test_get_bool_option_case_insensitive() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("enabled", "e", "enabled", "false");
+    string[] a = new string[2];
+    a[0] = "--enabled"; a[1] = "TRUE";
+    ParseResult r = p.Parse(a);
+    Assert.True(r.GetBoolOption("enabled"));
+}
+
+[Test]
+void test_get_bool_option_invalid_throws() {
+    ArgParser p = new ArgParser("prog", "");
+    p.AddOption("enabled", "e", "enabled", "yes");
+    string[] a = new string[0];
+    ParseResult r = p.Parse(a);
+    bool threw = false;
+    try { bool _v = r.GetBoolOption("enabled"); }
+    catch (CliException e) { threw = true; }
+    Assert.True(threw);
+}
+
+// ── Real-world: required + typed combo ─────────────────────────────────
+
+[Test]
+void test_required_typed_combo() {
+    ArgParser p = new ArgParser("server", "Tiny HTTP server");
+    p.AddRequiredOption("host", "H", "bind host");
+    p.AddOption("port", "p", "bind port", "8080");
+    p.AddOption("timeout", "t", "request timeout (s)", "30");
+    string[] a = new string[4];
+    a[0] = "--host"; a[1] = "127.0.0.1";
+    a[2] = "--port"; a[3] = "443";
+    ParseResult r = p.Parse(a);
+    Assert.Equal("127.0.0.1", r.GetOption("host"));
+    Assert.Equal(443,         r.GetIntOption("port"));
+    Assert.Equal(30,          r.GetIntOption("timeout"));   // default
+    Assert.True(r.WasOptionSet("port"));
+    Assert.False(r.WasOptionSet("timeout"));
+}

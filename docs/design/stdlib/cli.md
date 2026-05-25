@@ -75,17 +75,49 @@ src/ArgParser.z42     (~340 行)
 - **触发条件**：自举工具（z42c / z42vm）入口要 z42 实现时 — 它们都有 subcommand
 - **当前 workaround**：调用方手动 `if argv[0] == "build"` 分支再 new sub-parser
 
-### cli-future-required-option
+### ~~cli-future-required-option~~ — **✅ 已落地 2026-05-26 (add-cli-required-option)**
 
-- **来源**：明确标记 `--input` 必填，缺时报错
-- **触发原因**：v0 用 default value="" + caller check 等价
-- **当前 workaround**：检查 `r.GetOption("input") == ""` 后手抛
+Shipped: `ArgParser.AddRequiredOption(long, short, help)` + tracking of
+"was this option explicitly written from argv" via the new
+`ParseResult.WasOptionSet(name) → bool` accessor.
 
-### cli-future-type-conversion
+Behaviour:
+- Missing required option → `CliException` ("required option '--X' missing")
+- `--help` / `-h` short-circuits the check so users can print help with
+  no other args
+- Help text auto-appends " (required)" to the option's help string
 
-- **来源**：`AddIntOption / AddFloatOption / AddListOption`
-- **触发原因**：v0 全 string；调用方 `int.Parse(r.GetOption("port"))` 也够
-- **当前 workaround**：caller cast
+Implementation:
+- New `bool[] _optionRequired` parallel array on `ArgParser` (grown
+  alongside the existing 4 option arrays in `EnsureOptionCap`)
+- New `bool[] _optionWasSet` on `ParseResult`, written by `ParseLong` /
+  `ParseShort` whenever an option's value is consumed from argv
+- Validation pass at the end of `Parse` iterates required options and
+  throws if `_optionWasSet[i]` is still false
+
+### ~~cli-future-type-conversion~~ — **✅ 已落地 2026-05-26 (add-cli-type-conversion)**
+
+Shipped: 4 typed getters on `ParseResult` for the common scalar shapes,
+no need for a separate `AddIntOption` declaration API (all options stay
+declared as strings; conversion happens at retrieval time).
+
+| 方法 | 行为 |
+|---|---|
+| `GetIntOption(name) → int` | `int.Parse`; throws `CliException` with `"option '--X' value 'Y' is not a valid int"` on failure |
+| `GetLongOption(name) → long` | `long.Parse` (i64) |
+| `GetDoubleOption(name) → double` | `double.Parse` (f64) |
+| `GetBoolOption(name) → bool` | ASCII-fold + match `true`/`false`; throws on other strings |
+
+Design note: the lazy "parse at retrieval" approach (vs eager
+`AddIntOption("port", ..., 8080)`) lets callers keep the existing
+string-based `AddOption` API + opt into type checks only where
+needed. Smaller API surface, easier composition.
+
+19 new tests across both features: required missing/provided
+(long/short/equals forms); --help short-circuits required check;
+WasOptionSet true/false; int (basic / explicit / negative / invalid);
+long max i64; double + invalid; bool true/false/uppercase/invalid;
+combined required + typed in a realistic "tiny HTTP server" parser.
 
 ### cli-future-env-fallback
 

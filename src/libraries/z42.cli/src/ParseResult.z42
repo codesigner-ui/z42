@@ -13,6 +13,11 @@ public class ParseResult {
     // Option results
     public string[] _optionLongs;
     public string[] _optionValues;
+    // add-cli-required-option (2026-05-26): marks options whose value was
+    // actually written from argv (vs left at the default). Used by required-
+    // option validation; also lets callers tell "user provided default value"
+    // apart from "default was implicit".
+    public bool[]   _optionWasSet;
     public int      _optionCount;
 
     // Positional results
@@ -28,6 +33,7 @@ public class ParseResult {
         this._flagCount        = 0;
         this._optionLongs      = null;
         this._optionValues     = null;
+        this._optionWasSet     = null;
         this._optionCount      = 0;
         this._positionalNames  = null;
         this._positionalValues = null;
@@ -53,6 +59,70 @@ public class ParseResult {
             i = i + 1;
         }
         throw new CliException("option '" + longName + "' not registered");
+    }
+
+    /// True iff the option was explicitly written from argv (vs left at its
+    /// default). Useful for "did the user actually pass `--verbose=false`?"
+    /// add-cli-required-option (2026-05-26).
+    public bool WasOptionSet(string longName) {
+        int i = 0;
+        while (i < this._optionCount) {
+            if (this._optionLongs[i] == longName) { return this._optionWasSet[i]; }
+            i = i + 1;
+        }
+        throw new CliException("option '" + longName + "' not registered");
+    }
+
+    // ── Typed option getters (add-cli-type-conversion, 2026-05-26) ────────
+    //
+    // Same lookup as `GetOption(name)` plus parse of the value string into the
+    // requested type. Parse failures throw CliException with the option name +
+    // offending value — easier to surface to the user than a low-level
+    // FormatException stack.
+
+    public int GetIntOption(string longName) {
+        string s = this.GetOption(longName);
+        try { return int.Parse(s); }
+        catch (Exception e) {
+            throw new CliException("option '--" + longName + "' value '" + s + "' is not a valid int");
+        }
+    }
+
+    public long GetLongOption(string longName) {
+        string s = this.GetOption(longName);
+        try { return long.Parse(s); }
+        catch (Exception e) {
+            throw new CliException("option '--" + longName + "' value '" + s + "' is not a valid long");
+        }
+    }
+
+    public double GetDoubleOption(string longName) {
+        string s = this.GetOption(longName);
+        try { return double.Parse(s); }
+        catch (Exception e) {
+            throw new CliException("option '--" + longName + "' value '" + s + "' is not a valid double");
+        }
+    }
+
+    /// Recognises `true` / `false` (case-insensitive); throws on anything
+    /// else. Distinguished from `GetFlag` — that's for `--verbose` (presence
+    /// = true), this is for `--enabled=true`.
+    public bool GetBoolOption(string longName) {
+        string s = this.GetOption(longName);
+        // ASCII-fold for tolerance.
+        char[] buf = new char[s.Length];
+        int i = 0;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            int code = (int)c;
+            if (code >= 65 && code <= 90) { buf[i] = (char)(code + 32); }
+            else { buf[i] = c; }
+            i = i + 1;
+        }
+        string lower = String.FromChars(buf);
+        if (lower == "true")  { return true;  }
+        if (lower == "false") { return false; }
+        throw new CliException("option '--" + longName + "' value '" + s + "' is not a valid bool (expected 'true' or 'false')");
     }
 
     /// 返回第 index 个 positional（0-based）。越界抛 CliException。
