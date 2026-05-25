@@ -1,0 +1,130 @@
+// add-z42-net-websocket K4 (2026-05-25): close handshake — Send post-close throws.
+namespace Z42NetWsCloseTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.IO;
+using Std.Net.Sockets;
+using Std.Net.WebSockets;
+
+static void _handshake(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    string resp = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n";
+    byte[] rb = Utf8.GetBytes(resp);
+    s.Write(rb, 0, rb.Length);
+}
+
+static byte[] _srvFrame(int opcode, byte[] payload, int len) {
+    byte[] f = new byte[2 + len];
+    f[0] = (byte)(0x80 | (opcode & 0x0F));
+    f[1] = (byte)len;
+    int i = 0;
+    while (i < len) { f[2 + i] = payload[i]; i = i + 1; }
+    return f;
+}
+
+[Test]
+void test_send_after_close_throws() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _handshake(s);
+        // Just keep socket open until client closes
+        byte[] discard = new byte[256];
+        s.Read(discard, 0, 256);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    ws.Close(1000, "done");
+
+    bool threw = false;
+    try {
+        ws.SendText("after-close");
+    } catch (InvalidOperationException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_dispose_is_idempotent() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _handshake(s);
+        byte[] discard = new byte[256];
+        s.Read(discard, 0, 256);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    ws.Dispose();
+    ws.Dispose();   // must not throw
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_server_initiated_close_received() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _handshake(s);
+        // Send Close frame with code 1001 ("going away") + reason "bye"
+        byte[] payload = new byte[5];
+        payload[0] = (byte)((1001 >> 8) & 0xFF);
+        payload[1] = (byte)(1001 & 0xFF);
+        payload[2] = (byte)'b'; payload[3] = (byte)'y'; payload[4] = (byte)'e';
+        byte[] f = _srvFrame(8, payload, 5);
+        s.Write(f, 0, f.Length);
+        // Read client's echo close
+        byte[] echo = new byte[64];
+        s.Read(echo, 0, 64);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    WebSocketMessage msg = ws.Receive();
+    Assert.True(msg.IsClose());
+    Assert.Equal(1001, msg.CloseStatus());
+    Assert.Equal("bye", msg.CloseReason());
+    Assert.Equal(WebSocketState.Closed, ws.State());
+
+    srv.Join();
+    server.Stop();
+}

@@ -1,0 +1,10 @@
+namespace Std.Net.WebSockets;
+
+// add-z42-net-websocket K4 (2026-05-25): WebSocket connection lifecycle state.
+// Informational — exposed via `WebSocketClient.State()` for status checks.
+public static class WebSocketState {
+    public static int Connecting = 0;
+    public static int Open       = 1;
+    public static int CloseSent  = 2;   // client initiated close, awaiting server ack
+    public static int Closed     = 3;
+}

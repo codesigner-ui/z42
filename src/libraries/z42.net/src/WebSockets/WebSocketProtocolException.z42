@@ -1,0 +1,12 @@
+namespace Std;
+
+// add-z42-net-websocket K4 (2026-05-25): RFC 6455 wire violation —
+// malformed frame header, invalid opcode, masked server frame, oversized
+// payload, missing required handshake header, etc.
+public class WebSocketProtocolException : WebSocketException {
+    public WebSocketProtocolException(string message) : base(message) {}
+
+    override string ToString() {
+        return "WebSocketProtocolException: " + this.Message;
+    }
+}

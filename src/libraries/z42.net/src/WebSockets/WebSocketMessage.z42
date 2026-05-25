@@ -1,0 +1,68 @@
+namespace Std.Net.WebSockets;
+
+using Std;
+
+// add-z42-net-websocket K4 (2026-05-25): incoming WebSocket message carrier.
+//
+// `WebSocketClient.Receive()` returns this. `MessageType` is one of
+// `WebSocketMessageType.{Text, Binary, Close}` (Ping / Pong are auto-handled
+// internally and never surfaced to user code).
+//
+// `Buffer` is the raw payload bytes. For text messages, use
+// `AsString()` to UTF-8 decode.
+//
+// For close messages: `Buffer` is the close payload (2-byte big-endian
+// status code followed by optional UTF-8 reason). Use `CloseStatus()` /
+// `CloseReason()` helpers.
+public class WebSocketMessage {
+    public int    MessageType;
+    public byte[] Buffer;
+
+    public WebSocketMessage(int messageType, byte[] buffer) {
+        this.MessageType = messageType;
+        this.Buffer      = buffer;
+    }
+
+    /// True if this is a text message (UTF-8 encoded body).
+    public bool IsText() {
+        return this.MessageType == WebSocketMessageType.Text;
+    }
+
+    /// True if this is a binary message.
+    public bool IsBinary() {
+        return this.MessageType == WebSocketMessageType.Binary;
+    }
+
+    /// True if this is a close-frame notification.
+    public bool IsClose() {
+        return this.MessageType == WebSocketMessageType.Close;
+    }
+
+    /// Decode body as UTF-8 string. For text messages (RFC requires UTF-8);
+    /// also works on close-frame reason text.
+    public string AsString() {
+        return Utf8.GetString(this.Buffer);
+    }
+
+    /// For close messages: parse the 2-byte big-endian status code.
+    /// Returns 1005 (no status received) if buffer is empty.
+    public int CloseStatus() {
+        if (this.Buffer.Length < 2) return 1005;
+        int hi = (int)this.Buffer[0] & 0xFF;
+        int lo = (int)this.Buffer[1] & 0xFF;
+        return (hi << 8) | lo;
+    }
+
+    /// For close messages: parse the optional UTF-8 reason text (bytes 2+).
+    /// Returns empty string if no reason.
+    public string CloseReason() {
+        if (this.Buffer.Length <= 2) return "";
+        byte[] reason = new byte[this.Buffer.Length - 2];
+        int i = 0;
+        while (i < reason.Length) {
+            reason[i] = this.Buffer[2 + i];
+            i = i + 1;
+        }
+        return Utf8.GetString(reason);
+    }
+}

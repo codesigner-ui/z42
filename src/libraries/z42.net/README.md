@@ -24,6 +24,20 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 - `Std.Net.Sockets.UdpClient` / `UdpReceiveResult` (K2 UDP, 2026-05-25)
 - `Std.Net.Http.HttpClient` / `HttpRequest` / `HttpResponse` / `HttpHeaders` /
   `HttpMethod` / `HttpStatusCode` / `HttpUrl` (K3 HTTP/1.1, 2026-05-25)
+- `Std.Net.WebSockets.WebSocketClient` / `WebSocketMessage` /
+  `WebSocketMessageType` / `WebSocketState` (K4 WebSocket ws://, 2026-05-25)
+
+## src/WebSockets/ 核心文件
+
+| 文件 | 类型 | 说明 |
+|------|------|------|
+| `WebSocketClient.z42` | `WebSocketClient` | RFC 6455 client: Connect / SendText / SendBinary / SendPing / Receive / Close / Dispose. Pure-script over K1 `TcpClient` |
+| `WebSocketMessage.z42` | `WebSocketMessage` | `{ MessageType, Buffer }` + `IsText/IsBinary/IsClose` + `AsString` / `CloseStatus` / `CloseReason` |
+| `WebSocketMessageType.z42` | `WebSocketMessageType` | int constants matching RFC 6455 opcodes (Text=1, Binary=2, Close=8, Ping=9, Pong=10) |
+| `WebSocketState.z42` | `WebSocketState` | lifecycle state constants (Connecting / Open / CloseSent / Closed) |
+| `_FrameCodec.z42` | `_FrameCodec` | internal RFC 6455 §5 frame encode/decode |
+| `WebSockets/WebSocketException.z42` | `WebSocketException` | base WS exception |
+| `WebSockets/WebSocketProtocolException.z42` | `WebSocketProtocolException` | RFC violations |
 
 ## src/Http/ 核心文件
 

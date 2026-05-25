@@ -1,0 +1,175 @@
+namespace Std.Net.WebSockets;
+
+using Std;
+using Std.IO;
+
+// add-z42-net-websocket K4 (2026-05-25): RFC 6455 §5 frame codec.
+//
+// Frame layout (network byte order — big-endian payload length):
+//
+//   0                   1                   2                   3
+//   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+//  +-+-+-+-+-------+-+-------------+-------------------------------+
+//  |F|R|R|R| opcode|M| Payload len |    Extended payload length    |
+//  |I|S|S|S|  (4)  |A|     (7)     |             (16/64)           |
+//  |N|V|V|V|       |S|             |   (if payload len==126/127)   |
+//  | |1|2|3|       |K|             |                               |
+//  +-+-+-+-+-------+-+-------------+ - - - - - - - - - - - - - - - +
+//  |     Extended payload length continued, if payload len == 127  |
+//  + - - - - - - - - - - - - - - - +-------------------------------+
+//  |                               |Masking-key, if MASK set to 1  |
+//  +-------------------------------+-------------------------------+
+//  | Masking-key (continued)       |          Payload Data         |
+//  +-------------------------------- - - - - - - - - - - - - - - - +
+//  :                     Payload Data continued ...                :
+//  + - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - +
+//  |                     Payload Data continued ...                |
+//  +---------------------------------------------------------------+
+//
+// Client-side rules:
+// - Client MUST mask every outgoing frame (`MASK = 1`)
+// - Server MUST NOT mask (any masked server frame = protocol violation)
+// - 7-bit payload length 0-125 inline; 126 ⇒ next 2 bytes = u16; 127 ⇒ next 8 bytes = u64
+//
+// V0 outgoing always single-frame (FIN=1, no fragmentation). Incoming
+// handles fragmentation via opcode 0 (continuation) — caller assembles.
+public static class _FrameCodec {
+
+    // ── Opcodes (RFC 6455 §5.2) ──────────────────────────────────────────
+    public static int OpContinuation = 0;
+    public static int OpText         = 1;
+    public static int OpBinary       = 2;
+    public static int OpClose        = 8;
+    public static int OpPing         = 9;
+    public static int OpPong         = 10;
+
+    /// Encode a single frame (FIN=1, no fragmentation) with client masking
+    /// to a wire byte[]. Caller writes this directly to the TCP stream.
+    /// `maskingKey` is a 4-byte random value (caller-supplied so tests can
+    /// pin it).
+    public static byte[] EncodeFrame(int opcode, byte[] payload, int payloadLen, byte[] maskingKey) {
+        if (maskingKey == null || maskingKey.Length != 4) {
+            throw new WebSocketProtocolException("masking key must be 4 bytes");
+        }
+        // Header size: 2 (base) + 0/2/8 (extended length) + 4 (mask) = 6/8/14
+        int extLenBytes;
+        int hdrLen2;   // bytes used for 7-bit / 16-bit / 64-bit length field
+        if (payloadLen < 126) {
+            extLenBytes = 0;
+            hdrLen2     = payloadLen;
+        } else if (payloadLen < 65536) {
+            extLenBytes = 2;
+            hdrLen2     = 126;
+        } else {
+            extLenBytes = 8;
+            hdrLen2     = 127;
+        }
+        int totalLen = 2 + extLenBytes + 4 + payloadLen;
+        byte[] frame = new byte[totalLen];
+        // Byte 0: FIN=1 + RSV1-3=0 + opcode (4 bits)
+        frame[0] = (byte)(0x80 | (opcode & 0x0F));
+        // Byte 1: MASK=1 + 7-bit length field
+        frame[1] = (byte)(0x80 | hdrLen2);
+        int off = 2;
+        if (extLenBytes == 2) {
+            frame[off]     = (byte)((payloadLen >> 8) & 0xFF);
+            frame[off + 1] = (byte)(payloadLen & 0xFF);
+            off = off + 2;
+        } else if (extLenBytes == 8) {
+            // 64-bit big-endian length. z42 int = i32 max 2^31-1, so high
+            // 4 bytes are always 0 in practice. Layout: 8 bytes, BE.
+            int i = 0;
+            while (i < 4) {
+                frame[off + i] = (byte)0;
+                i = i + 1;
+            }
+            frame[off + 4] = (byte)((payloadLen >> 24) & 0xFF);
+            frame[off + 5] = (byte)((payloadLen >> 16) & 0xFF);
+            frame[off + 6] = (byte)((payloadLen >> 8)  & 0xFF);
+            frame[off + 7] = (byte)(payloadLen & 0xFF);
+            off = off + 8;
+        }
+        // Masking key
+        frame[off]     = maskingKey[0];
+        frame[off + 1] = maskingKey[1];
+        frame[off + 2] = maskingKey[2];
+        frame[off + 3] = maskingKey[3];
+        off = off + 4;
+        // Masked payload
+        int j = 0;
+        while (j < payloadLen) {
+            byte raw    = payload[j];
+            byte mask   = maskingKey[j & 3];
+            frame[off + j] = (byte)((int)raw ^ (int)mask);
+            j = j + 1;
+        }
+        return frame;
+    }
+
+    /// Decoded inbound frame fields.
+    public static _DecodedFrame ReadFrame(Stream stream) {
+        // Read 2 base bytes
+        byte[] hdr = _FrameCodec._readExactly(stream, 2);
+        int b0 = (int)hdr[0] & 0xFF;
+        int b1 = (int)hdr[1] & 0xFF;
+        bool fin    = (b0 & 0x80) != 0;
+        int  opcode = b0 & 0x0F;
+        bool mask   = (b1 & 0x80) != 0;
+        int  len7   = b1 & 0x7F;
+        // Servers MUST NOT mask outgoing (RFC §5.1)
+        if (mask) {
+            throw new WebSocketProtocolException("server frame is masked (RFC 6455 §5.1 violation)");
+        }
+        long payloadLen;
+        if (len7 < 126) {
+            payloadLen = (long)len7;
+        } else if (len7 == 126) {
+            byte[] ext = _FrameCodec._readExactly(stream, 2);
+            payloadLen = (((long)ext[0] & 0xFF) << 8) | ((long)ext[1] & 0xFF);
+        } else {
+            byte[] ext = _FrameCodec._readExactly(stream, 8);
+            payloadLen = 0L;
+            int i = 0;
+            while (i < 8) {
+                payloadLen = (payloadLen << 8) | ((long)ext[i] & 0xFF);
+                i = i + 1;
+            }
+        }
+        if (payloadLen < 0L || payloadLen > 2147483640L) {
+            // Cap to fit z42 i32 length; oversize payloads not supported v0.
+            throw new WebSocketProtocolException("frame payload too large for v0");
+        }
+        int payLen32 = (int)payloadLen;
+        byte[] payload = _FrameCodec._readExactly(stream, payLen32);
+        return new _DecodedFrame(fin, opcode, payload);
+    }
+
+    static byte[] _readExactly(Stream stream, int n) {
+        byte[] buf = new byte[n];
+        int got = 0;
+        while (got < n) {
+            int r = stream.Read(buf, got, n - got);
+            if (r == 0) {
+                throw new WebSocketProtocolException(
+                    "unexpected EOF: needed " + Int32.ToString(n) + " bytes, got " + Int32.ToString(got));
+            }
+            got = got + r;
+        }
+        return buf;
+    }
+}
+
+// add-z42-net-websocket K4 (2026-05-25): decoded inbound frame view.
+// Returned by `_FrameCodec.ReadFrame`. Internal data carrier — `public`
+// fields per stdlib convention (z42 has no `internal` modifier).
+public class _DecodedFrame {
+    public bool   Fin;
+    public int    Opcode;
+    public byte[] Payload;
+
+    public _DecodedFrame(bool fin, int opcode, byte[] payload) {
+        this.Fin     = fin;
+        this.Opcode  = opcode;
+        this.Payload = payload;
+    }
+}

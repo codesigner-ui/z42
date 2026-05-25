@@ -1,12 +1,13 @@
 # z42.net
 
-Network sockets + HTTP — sync today, async + TLS + WebSocket later.
+Network sockets + HTTP + WebSocket — sync today, async + TLS later.
 
-## v0 scope (K1 + K2 + K3, 2026-05-24 / 2026-05-25 / 2026-05-25)
+## v0 scope (K1 + K2 + K3 + K4, 2026-05-24 / 2026-05-25 / 2026-05-25 / 2026-05-25)
 
 **K1 = TCP** (`add-z42-net`, 2026-05-24). **K2 = UDP** (`add-z42-net-udp`,
 2026-05-25). **K3 = HTTP/1.1 plaintext** (`add-z42-net-http`, 2026-05-25).
-IPAddress / DNS / TLS / HTTPS / WebSocket / HTTP/2 / Async still 独立 follow-up specs.
+**K4 = WebSocket ws://** (`add-z42-net-websocket`, 2026-05-25). IPAddress /
+DNS / TLS / HTTPS / wss:// / HTTP/2 / Async still 独立 follow-up specs.
 
 ### Public API
 

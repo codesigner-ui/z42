@@ -1,0 +1,127 @@
+// add-z42-net-websocket K4 (2026-05-25): server-initiated ping → client auto-pong.
+namespace Z42NetWsPingPongTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.IO;
+using Std.Net.Sockets;
+using Std.Net.WebSockets;
+
+// Re-use the server-side helpers from ws_echo (handshake + frame manip).
+// z42 doesn't auto-include sibling test files; we re-implement the needed
+// helpers here to keep tests self-contained.
+
+static void _handshake(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    string resp = "HTTP/1.1 101 Switching Protocols\r\n"
+        + "Upgrade: websocket\r\n"
+        + "Connection: Upgrade\r\n"
+        + "\r\n";
+    byte[] rb = Utf8.GetBytes(resp);
+    s.Write(rb, 0, rb.Length);
+}
+
+static byte[] _srvFrame(int opcode, byte[] payload, int len) {
+    byte[] f = new byte[2 + len];
+    f[0] = (byte)(0x80 | (opcode & 0x0F));
+    f[1] = (byte)len;
+    int i = 0;
+    while (i < len) { f[2 + i] = payload[i]; i = i + 1; }
+    return f;
+}
+
+public class _PpClientFrame {
+    public int    Opcode;
+    public byte[] Payload;
+    public _PpClientFrame(int op, byte[] p) { this.Opcode = op; this.Payload = p; }
+}
+
+static _PpClientFrame _readClientFrame(NetworkStream s) {
+    byte[] hdr = new byte[2];
+    int g = 0;
+    while (g < 2) {
+        int n = s.Read(hdr, g, 2 - g);
+        if (n == 0) throw new Exception("EOF in client header");
+        g = g + n;
+    }
+    int opcode = (int)hdr[0] & 0x0F;
+    int len = (int)hdr[1] & 0x7F;
+    byte[] mask = new byte[4];
+    int mg = 0;
+    while (mg < 4) {
+        int n = s.Read(mask, mg, 4 - mg);
+        if (n == 0) throw new Exception("EOF in mask");
+        mg = mg + n;
+    }
+    byte[] p = new byte[len];
+    int pg = 0;
+    while (pg < len) {
+        int n = s.Read(p, pg, len - pg);
+        if (n == 0) throw new Exception("EOF in payload");
+        pg = pg + n;
+    }
+    int k = 0;
+    while (k < len) {
+        p[k] = (byte)((int)p[k] ^ (int)mask[k & 3]);
+        k = k + 1;
+    }
+    return new _PpClientFrame(opcode, p);
+}
+
+[Test]
+void test_server_ping_auto_pong_then_text() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _handshake(s);
+        // Send a Ping with payload "ping!" (5 bytes)
+        byte[] pingBody = new byte[5];
+        pingBody[0] = (byte)'p'; pingBody[1] = (byte)'i'; pingBody[2] = (byte)'n';
+        pingBody[3] = (byte)'g'; pingBody[4] = (byte)'!';
+        byte[] pingFrame = _srvFrame(9, pingBody, 5);   // opcode 9 = Ping
+        s.Write(pingFrame, 0, pingFrame.Length);
+        // Read the client's pong (should auto-be sent)
+        _PpClientFrame pong = _readClientFrame(s);
+        Assert.Equal(10, pong.Opcode);   // pong
+        Assert.Equal(5, pong.Payload.Length);
+        Assert.Equal((byte)'p', pong.Payload[0]);
+        Assert.Equal((byte)'!', pong.Payload[4]);
+        // Then send a Text frame
+        byte[] hi = new byte[2];
+        hi[0] = (byte)'h'; hi[1] = (byte)'i';
+        byte[] textFrame = _srvFrame(1, hi, 2);
+        s.Write(textFrame, 0, textFrame.Length);
+        // Wait for client close
+        _readClientFrame(s);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    // Client's Receive should auto-pong the server's ping then return the
+    // text frame.
+    WebSocketMessage msg = ws.Receive();
+    Assert.True(msg.IsText());
+    Assert.Equal("hi", msg.AsString());
+    ws.Close(1000, "");
+
+    srv.Join();
+    server.Stop();
+}

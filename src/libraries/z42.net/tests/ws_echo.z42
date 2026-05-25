@@ -1,0 +1,245 @@
+// add-z42-net-websocket K4 (2026-05-25): send/receive text + binary echo.
+namespace Z42NetWsEchoTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.IO;
+using Std.Net.Sockets;
+using Std.Net.WebSockets;
+
+// Helper: completes WS handshake server-side + returns the open NetworkStream
+// to the test for direct frame manipulation.
+static NetworkStream _completeHandshakeServerSide(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    string resp = "HTTP/1.1 101 Switching Protocols\r\n"
+        + "Upgrade: websocket\r\n"
+        + "Connection: Upgrade\r\n"
+        + "Sec-WebSocket-Accept: dummy\r\n"
+        + "\r\n";
+    byte[] rb = Utf8.GetBytes(resp);
+    s.Write(rb, 0, rb.Length);
+    return s;
+}
+
+// Server-side frame: build a frame manually (unmasked since server→client).
+// Same shape as _FrameCodec.EncodeFrame minus the mask bit.
+static byte[] _serverFrame(int opcode, byte[] payload, int payloadLen) {
+    int extLen;
+    int hdr2;
+    if (payloadLen < 126) {
+        extLen = 0;
+        hdr2 = payloadLen;
+    } else if (payloadLen < 65536) {
+        extLen = 2;
+        hdr2 = 126;
+    } else {
+        extLen = 8;
+        hdr2 = 127;
+    }
+    byte[] frame = new byte[2 + extLen + payloadLen];
+    frame[0] = (byte)(0x80 | (opcode & 0x0F));
+    frame[1] = (byte)hdr2;
+    int off = 2;
+    if (extLen == 2) {
+        frame[off]     = (byte)((payloadLen >> 8) & 0xFF);
+        frame[off + 1] = (byte)(payloadLen & 0xFF);
+        off = off + 2;
+    } else if (extLen == 8) {
+        int i = 0;
+        while (i < 4) { frame[off + i] = (byte)0; i = i + 1; }
+        frame[off + 4] = (byte)((payloadLen >> 24) & 0xFF);
+        frame[off + 5] = (byte)((payloadLen >> 16) & 0xFF);
+        frame[off + 6] = (byte)((payloadLen >> 8)  & 0xFF);
+        frame[off + 7] = (byte)(payloadLen & 0xFF);
+        off = off + 8;
+    }
+    int j = 0;
+    while (j < payloadLen) {
+        frame[off + j] = payload[j];
+        j = j + 1;
+    }
+    return frame;
+}
+
+// Server-side: read masked client frame; return unmasked payload bytes
+// + opcode in a result object.
+public class _SrvFrame {
+    public int    Opcode;
+    public byte[] Payload;
+    public _SrvFrame(int op, byte[] p) { this.Opcode = op; this.Payload = p; }
+}
+
+static _SrvFrame _readClientFrame(NetworkStream s) {
+    byte[] hdr = new byte[2];
+    int got = 0;
+    while (got < 2) {
+        int n = s.Read(hdr, got, 2 - got);
+        if (n == 0) throw new Exception("EOF reading frame header");
+        got = got + n;
+    }
+    int opcode = (int)hdr[0] & 0x0F;
+    int len7 = (int)hdr[1] & 0x7F;
+    int extLen;
+    if (len7 < 126) { extLen = 0; }
+    else if (len7 == 126) { extLen = 2; }
+    else { extLen = 8; }
+    int payloadLen = len7;
+    if (extLen > 0) {
+        byte[] ext = new byte[extLen];
+        int eg = 0;
+        while (eg < extLen) {
+            int n = s.Read(ext, eg, extLen - eg);
+            if (n == 0) throw new Exception("EOF reading ext len");
+            eg = eg + n;
+        }
+        if (extLen == 2) {
+            payloadLen = (((int)ext[0] & 0xFF) << 8) | ((int)ext[1] & 0xFF);
+        } else {
+            int p = 0;
+            int i = 4;
+            while (i < 8) { p = (p << 8) | ((int)ext[i] & 0xFF); i = i + 1; }
+            payloadLen = p;
+        }
+    }
+    byte[] mask = new byte[4];
+    int mg = 0;
+    while (mg < 4) {
+        int n = s.Read(mask, mg, 4 - mg);
+        if (n == 0) throw new Exception("EOF reading mask");
+        mg = mg + n;
+    }
+    byte[] payload = new byte[payloadLen];
+    int pg = 0;
+    while (pg < payloadLen) {
+        int n = s.Read(payload, pg, payloadLen - pg);
+        if (n == 0) throw new Exception("EOF reading payload");
+        pg = pg + n;
+    }
+    // Unmask
+    int k = 0;
+    while (k < payloadLen) {
+        payload[k] = (byte)((int)payload[k] ^ (int)mask[k & 3]);
+        k = k + 1;
+    }
+    return new _SrvFrame(opcode, payload);
+}
+
+[Test]
+void test_text_echo_round_trip() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/echo";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _completeHandshakeServerSide(s);
+        // Read client's text frame
+        _SrvFrame f = _readClientFrame(s);
+        Assert.Equal(1, f.Opcode);   // text
+        // Echo back as text (unmasked server frame)
+        byte[] reply = _serverFrame(1, f.Payload, f.Payload.Length);
+        s.Write(reply, 0, reply.Length);
+        // Wait for close frame from client
+        _readClientFrame(s);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    ws.SendText("hello, websocket");
+    WebSocketMessage msg = ws.Receive();
+    Assert.True(msg.IsText());
+    Assert.Equal("hello, websocket", msg.AsString());
+    ws.Close(1000, "");
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_binary_echo_round_trip() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/echo";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _completeHandshakeServerSide(s);
+        _SrvFrame f = _readClientFrame(s);
+        Assert.Equal(2, f.Opcode);   // binary
+        byte[] reply = _serverFrame(2, f.Payload, f.Payload.Length);
+        s.Write(reply, 0, reply.Length);
+        _readClientFrame(s);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    byte[] data = new byte[5];
+    data[0] = (byte)0xDE;
+    data[1] = (byte)0xAD;
+    data[2] = (byte)0xBE;
+    data[3] = (byte)0xEF;
+    data[4] = (byte)0x42;
+    ws.SendBinary(data, 5);
+    WebSocketMessage msg = ws.Receive();
+    Assert.True(msg.IsBinary());
+    Assert.Equal(5, msg.Buffer.Length);
+    Assert.Equal((byte)0xDE, msg.Buffer[0]);
+    Assert.Equal((byte)0x42, msg.Buffer[4]);
+    ws.Close(1000, "");
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_large_payload_uses_16bit_length() {
+    // 200-byte payload exercises the 16-bit extended length (>= 126).
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/echo";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _completeHandshakeServerSide(s);
+        _SrvFrame f = _readClientFrame(s);
+        byte[] reply = _serverFrame(2, f.Payload, f.Payload.Length);
+        s.Write(reply, 0, reply.Length);
+        _readClientFrame(s);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    byte[] big = new byte[200];
+    int i = 0;
+    while (i < 200) { big[i] = (byte)(i & 0xFF); i = i + 1; }
+    ws.SendBinary(big, 200);
+    WebSocketMessage msg = ws.Receive();
+    Assert.Equal(200, msg.Buffer.Length);
+    Assert.Equal((byte)0, msg.Buffer[0]);
+    Assert.Equal((byte)199, msg.Buffer[199]);
+    ws.Close(1000, "");
+
+    srv.Join();
+    server.Stop();
+}

@@ -4,5 +4,7 @@ version = "0.1.0"
 kind    = "lib"
 
 [dependencies]
-"z42.core" = "0.1.0"
-"z42.io"   = "0.1.0"   # Std.IO.Stream base class for NetworkStream
+"z42.core"     = "0.1.0"
+"z42.io"       = "0.1.0"   # Std.IO.Stream base class for NetworkStream
+"z42.encoding" = "0.1.0"   # Base64 for WebSocket Sec-WebSocket-Key (K4)
+"z42.random"   = "0.1.0"   # Random for WS Sec-WebSocket-Key + frame mask (K4)

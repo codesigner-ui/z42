@@ -1,0 +1,126 @@
+// add-z42-net-websocket K4 (2026-05-25): handshake — upgrade GET + 101 response.
+namespace Z42NetWsHandshakeTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.WebSockets;
+
+// Minimal in-process WS server: accepts one client, sends handshake reply.
+// Hard-codes the 101 + Upgrade headers; doesn't validate the client's
+// Sec-WebSocket-Key (echoing a dummy Accept since K4 client skips
+// validation v0).
+[Test]
+void test_handshake_101_switching_protocols_accepted() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/ws";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        // Drain HTTP request
+        byte[] buf = new byte[4096];
+        int total = 0;
+        while (true) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+            if (total >= 4
+                && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+                && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+                break;
+            }
+        }
+        // Reply with 101 Switching Protocols.
+        string resp = "HTTP/1.1 101 Switching Protocols\r\n"
+            + "Upgrade: websocket\r\n"
+            + "Connection: Upgrade\r\n"
+            + "Sec-WebSocket-Accept: dummy\r\n"
+            + "\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        // Then immediately read the client's close frame so the connection
+        // shuts down cleanly.
+        byte[] discard = new byte[256];
+        s.Read(discard, 0, 256);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    Assert.Equal(WebSocketState.Open, ws.State());
+    ws.Close(1000, "test done");
+    Assert.Equal(WebSocketState.Closed, ws.State());
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_handshake_bad_status_throws_protocol_exception() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/ws";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        byte[] buf = new byte[4096];
+        int total = 0;
+        while (true) {
+            int got = s.Read(buf, total, buf.Length - total);
+            if (got == 0) break;
+            total = total + got;
+            if (total >= 4
+                && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+                && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+                break;
+            }
+        }
+        // Reply 200 OK (not 101)
+        string resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+        byte[] rb = Utf8.GetBytes(resp);
+        s.Write(rb, 0, rb.Length);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    bool threw = false;
+    try {
+        ws.Connect(url);
+    } catch (WebSocketProtocolException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    srv.Join();
+    server.Stop();
+}
+
+[Test]
+void test_wss_throws_not_supported() {
+    var ws = new WebSocketClient();
+    bool threw = false;
+    try {
+        ws.Connect("wss://example.com/ws");
+    } catch (NotSupportedException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_bad_scheme_throws_format() {
+    var ws = new WebSocketClient();
+    bool threw = false;
+    try {
+        ws.Connect("http://example.com/ws");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}

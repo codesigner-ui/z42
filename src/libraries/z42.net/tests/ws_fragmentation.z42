@@ -1,0 +1,80 @@
+// add-z42-net-websocket K4 (2026-05-25): server sends multi-frame fragmented
+// message; client assembles into one message.
+namespace Z42NetWsFragmentationTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.IO;
+using Std.Net.Sockets;
+using Std.Net.WebSockets;
+
+static void _handshake(NetworkStream s) {
+    byte[] buf = new byte[4096];
+    int total = 0;
+    while (true) {
+        int got = s.Read(buf, total, buf.Length - total);
+        if (got == 0) break;
+        total = total + got;
+        if (total >= 4
+            && buf[total - 4] == (byte)13 && buf[total - 3] == (byte)10
+            && buf[total - 2] == (byte)13 && buf[total - 1] == (byte)10) {
+            break;
+        }
+    }
+    string resp = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n";
+    byte[] rb = Utf8.GetBytes(resp);
+    s.Write(rb, 0, rb.Length);
+}
+
+// Like _srvFrame in ws_echo but with explicit FIN bit control.
+static byte[] _srvFrameFin(bool fin, int opcode, byte[] payload, int len) {
+    byte[] f = new byte[2 + len];
+    int b0 = opcode & 0x0F;
+    if (fin) b0 = b0 | 0x80;
+    f[0] = (byte)b0;
+    f[1] = (byte)len;
+    int i = 0;
+    while (i < len) { f[2 + i] = payload[i]; i = i + 1; }
+    return f;
+}
+
+[Test]
+void test_three_frame_text_message_assembled() {
+    var server = new TcpListener();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "ws://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        var peer = server.AcceptTcpClient();
+        var s = peer.GetStream();
+        _handshake(s);
+        // Three frames: "Hel" (text, fin=0), "lo " (cont, fin=0), "world" (cont, fin=1)
+        byte[] p1 = new byte[3]; p1[0] = (byte)'H'; p1[1] = (byte)'e'; p1[2] = (byte)'l';
+        byte[] p2 = new byte[3]; p2[0] = (byte)'l'; p2[1] = (byte)'o'; p2[2] = (byte)' ';
+        byte[] p3 = new byte[5];
+        p3[0] = (byte)'w'; p3[1] = (byte)'o'; p3[2] = (byte)'r'; p3[3] = (byte)'l'; p3[4] = (byte)'d';
+        byte[] f1 = _srvFrameFin(false, 1, p1, 3);   // text, no fin
+        byte[] f2 = _srvFrameFin(false, 0, p2, 3);   // continuation, no fin
+        byte[] f3 = _srvFrameFin(true,  0, p3, 5);   // continuation, fin
+        s.Write(f1, 0, f1.Length);
+        s.Write(f2, 0, f2.Length);
+        s.Write(f3, 0, f3.Length);
+        // Wait for client close
+        byte[] discard = new byte[256];
+        s.Read(discard, 0, 256);
+        peer.Dispose();
+    });
+
+    var ws = new WebSocketClient();
+    ws.Connect(url);
+    WebSocketMessage msg = ws.Receive();
+    Assert.True(msg.IsText());
+    Assert.Equal("Hello world", msg.AsString());
+    Assert.Equal(11, msg.Buffer.Length);
+    ws.Close(1000, "");
+
+    srv.Join();
+    server.Stop();
+}
