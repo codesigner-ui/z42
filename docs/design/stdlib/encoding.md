@@ -57,6 +57,17 @@ RFC 4648 §5 url-safe variant — `-_` 替换标准变体的 `+/`，输出默认
 | `Encode` | `(byte[]) → string` | RFC 4648 §5；输出 unpadded（无尾随 `=`） |
 | `Decode` | `(string) → byte[]` | 接受 padded / unpadded；标准变体字符 `+/` 出现即抛 `Std.FormatException`（提示用 `Std.Encoding.Base64`） |
 
+### `Std.Encoding.Base32`（2026-05-25 add-encoding-base32）
+
+RFC 4648 §6 标准变体 — 字母表 `A-Z 2-7`（去 0/O/1/I/L 等歧义字符）。
+TOTP / HOTP 密钥 / Bitcoin 部分协议 / Tor v3 onion address 都基于此。
+严格大写、严格 padding count（`{0, 1, 3, 4, 6}` 之一）。
+
+| 方法 | 签名 | 备注 |
+|---|---|---|
+| `Encode` | `(byte[]) → string` | 5-byte 输入 → 8-char 输出；尾部 padded 到 8 倍数 |
+| `Decode` | `(string) → byte[]` | 长度 mod 8 == 0；padding 数 ∈ {0,1,3,4,6}；非法字符 / 小写均抛 `Std.FormatException` |
+
 ### `Std.Encoding.Utf8`
 
 | 方法 | 签名 | 备注 |
@@ -128,12 +139,41 @@ url-safe output, JWT / RFC 7515 Appendix C 兼容) + `Decode(string) → byte[]`
 §10 vectors / 字母表差异 (`+/` → `-_`) / padded & unpadded round-trip / JWT
 header round-trip / wrong-variant rejection / all-byte coverage。
 
-### Base32 (RFC 4648 §6) / Base85 / ASCII85
+### ~~Base32 (RFC 4648 §6)~~ — **✅ 已落地 2026-05-25 (add-encoding-base32)**
+
+Shipped: `Std.Encoding.Base32.Encode(byte[]) → string` + `Decode(string) → byte[]`.
+RFC 4648 §6 标准变体（字母表 `A-Z 2-7`，严格 padding count {0,1,3,4,6}）。
+21 tests cover RFC 4648 §10 编/解 vectors, all-byte round-trip, TOTP 参考
+key (RFC 6238 Appendix B 的 ASCII "12345678901234567890" → `GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ`),
+非 8 倍数长度 / 非法 padding / 非法字符 / 小写大写各错误路径。
+
+Crockford Base32 (`0-9A-HJKMNP-TV-Z`，去 I/L/O/U，用于 Stripe ID / ULID) 留
+`encoding-future-crockford-base32`；RFC §7 hex 变体 (`0-9A-V`) 留
+`encoding-future-base32-hex`。
+
+### Base85 / ASCII85
 
 - **来源**：本 spec v0 范围排除
-- **触发原因**：极低频；Base32 用于 OTP 密钥，Base85 用于 Adobe / PostScript 历史格式
+- **触发原因**：极低频；Adobe / PostScript 历史格式
 - **前置依赖**：无
 - **触发条件**：实际用户需求
+
+### `encoding-future-crockford-base32`
+
+- **来源**：add-encoding-base32 v0 scope cut
+- **触发原因**：Stripe / ULID / Better-by-human-typing 场景用 Crockford 字母表
+  `0123456789ABCDEFGHJKMNPQRSTVWXYZ`（去 I/L/O/U 进一步降低歧义；含 check digit
+  扩展 `*~$=U`）；与 RFC §6 alphabet 完全不同
+- **前置依赖**：无
+- **触发条件**：用户实际场景出现 ULID / Stripe-style ID 解析
+
+### `encoding-future-base32-hex`
+
+- **来源**：add-encoding-base32 v0 scope cut
+- **触发原因**：RFC 4648 §7 `0-9A-V` 变体，DNS NSEC3 等场景用；与 §6 alphabet 仅
+  ordering 不同
+- **前置依赖**：无
+- **触发条件**：DNS / 极少 stdlib 用户呼声
 
 ### UTF-16 / UTF-32 编解码
 

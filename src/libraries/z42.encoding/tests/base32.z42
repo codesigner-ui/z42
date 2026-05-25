@@ -1,0 +1,238 @@
+// add-encoding-base32 (2026-05-25) — RFC 4648 §6 standard variant.
+namespace Z42EncodingTests.Base32Tests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+
+byte[] ascii(string s) {
+    byte[] result = new byte[s.Length];
+    int i = 0;
+    while (i < s.Length) {
+        result[i] = (byte)(int)s.CharAt(i);
+        i = i + 1;
+    }
+    return result;
+}
+
+string asciiString(byte[] bytes) {
+    char[] chars = new char[bytes.Length];
+    int i = 0;
+    while (i < bytes.Length) {
+        chars[i] = (char)(int)bytes[i];
+        i = i + 1;
+    }
+    return String.FromChars(chars);
+}
+
+// ── RFC 4648 §10 standard test vectors — encode ────────────────────────────
+
+[Test]
+void test_encode_empty() {
+    Assert.Equal("", Base32.Encode(new byte[0]));
+}
+
+[Test]
+void test_encode_f() {
+    Assert.Equal("MY======", Base32.Encode(ascii("f")));
+}
+
+[Test]
+void test_encode_fo() {
+    Assert.Equal("MZXQ====", Base32.Encode(ascii("fo")));
+}
+
+[Test]
+void test_encode_foo() {
+    Assert.Equal("MZXW6===", Base32.Encode(ascii("foo")));
+}
+
+[Test]
+void test_encode_foob() {
+    Assert.Equal("MZXW6YQ=", Base32.Encode(ascii("foob")));
+}
+
+[Test]
+void test_encode_fooba() {
+    Assert.Equal("MZXW6YTB", Base32.Encode(ascii("fooba")));
+}
+
+[Test]
+void test_encode_foobar() {
+    Assert.Equal("MZXW6YTBOI======", Base32.Encode(ascii("foobar")));
+}
+
+// ── RFC 4648 §10 test vectors — decode ─────────────────────────────────────
+
+[Test]
+void test_decode_empty() {
+    Assert.Equal(0, Base32.Decode("").Length);
+}
+
+[Test]
+void test_decode_f() {
+    Assert.Equal("f", asciiString(Base32.Decode("MY======")));
+}
+
+[Test]
+void test_decode_fo() {
+    Assert.Equal("fo", asciiString(Base32.Decode("MZXQ====")));
+}
+
+[Test]
+void test_decode_foo() {
+    Assert.Equal("foo", asciiString(Base32.Decode("MZXW6===")));
+}
+
+[Test]
+void test_decode_foob() {
+    Assert.Equal("foob", asciiString(Base32.Decode("MZXW6YQ=")));
+}
+
+[Test]
+void test_decode_fooba() {
+    Assert.Equal("fooba", asciiString(Base32.Decode("MZXW6YTB")));
+}
+
+[Test]
+void test_decode_foobar() {
+    Assert.Equal("foobar", asciiString(Base32.Decode("MZXW6YTBOI======")));
+}
+
+// ── Round-trip across byte ranges ──────────────────────────────────────────
+
+[Test]
+void test_all_byte_values_round_trip() {
+    byte[] all = new byte[256];
+    int i = 0;
+    while (i < 256) {
+        all[i] = (byte)i;
+        i = i + 1;
+    }
+    string enc = Base32.Encode(all);
+    byte[] dec = Base32.Decode(enc);
+    Assert.Equal(256, dec.Length);
+    int j = 0;
+    while (j < 256) {
+        Assert.Equal((int)(byte)j, (int)dec[j]);
+        j = j + 1;
+    }
+}
+
+[Test]
+void test_random_15_bytes_round_trip() {
+    // 15 bytes = 3 full blocks, no padding
+    byte[] data = new byte[15];
+    int i = 0;
+    while (i < 15) {
+        data[i] = (byte)(i * 17 + 3);
+        i = i + 1;
+    }
+    string enc = Base32.Encode(data);
+    Assert.Equal(24, enc.Length);   // 3 * 8
+    byte[] dec = Base32.Decode(enc);
+    Assert.Equal(15, dec.Length);
+    int j = 0;
+    while (j < 15) {
+        Assert.Equal((int)data[j], (int)dec[j]);
+        j = j + 1;
+    }
+}
+
+// ── Error: bad length ──────────────────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_length_not_mod_8() {
+    bool threw = false;
+    try {
+        byte[] discard = Base32.Decode("MY=====");   // 7 chars, not multiple of 8
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Error: invalid padding count ───────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_padding_2() {
+    bool threw = false;
+    try {
+        byte[] discard = Base32.Decode("MZXW6Y==");   // pad=2 invalid (must be 0/1/3/4/6)
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_padding_5() {
+    bool threw = false;
+    try {
+        byte[] discard = Base32.Decode("MZX=====");   // pad=5 invalid
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── Error: invalid characters ──────────────────────────────────────────────
+
+[Test]
+void test_decode_rejects_zero_char() {
+    // '0' / '1' / '8' / '9' are absent from RFC §6 alphabet (which is A-Z + 2-7).
+    bool threw = false;
+    try {
+        byte[] discard = Base32.Decode("MZ0W6YTB");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_decode_rejects_lowercase() {
+    // v0 is strict uppercase per RFC §6 canonical.
+    bool threw = false;
+    try {
+        byte[] discard = Base32.Decode("mzxw6ytb");
+    } catch (FormatException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+}
+
+// ── TOTP-style example (RFC 6238 reference key) ────────────────────────────
+
+[Test]
+void test_totp_reference_key_round_trip() {
+    // RFC 6238 Appendix B uses ASCII "12345678901234567890" as the key.
+    // Base32 encoding of that 20-byte key.
+    byte[] key = ascii("12345678901234567890");
+    string enc = Base32.Encode(key);
+    Assert.Equal("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", enc);
+    byte[] dec = Base32.Decode(enc);
+    Assert.Equal("12345678901234567890", asciiString(dec));
+}
+
+// ── Encode output structure invariants ─────────────────────────────────────
+
+[Test]
+void test_encode_output_length_multiple_of_8() {
+    // 1, 2, 3, 4, 5, 10-byte inputs all produce length-mod-8 output.
+    int[] inputLens = new int[6];
+    inputLens[0] = 1; inputLens[1] = 2; inputLens[2] = 3;
+    inputLens[3] = 4; inputLens[4] = 5; inputLens[5] = 10;
+    int i = 0;
+    while (i < inputLens.Length) {
+        byte[] data = new byte[inputLens[i]];
+        int k = 0;
+        while (k < data.Length) {
+            data[k] = (byte)(k + 1);
+            k = k + 1;
+        }
+        string enc = Base32.Encode(data);
+        Assert.Equal(0, enc.Length % 8);
+        i = i + 1;
+    }
+}

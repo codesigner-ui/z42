@@ -1,0 +1,158 @@
+namespace Std.Encoding;
+
+using Std;
+
+// Base32 编解码（RFC 4648 §6 标准变体）。
+//   字母表 = A-Z 2-7  (32 chars; 严格大写)
+//   padding = `=`；按 RFC §6 表对齐
+//   5 byte 输入 → 8 char 输出；尾部 1/2/3/4 byte → 2/4/5/7 char + 6/4/3/1 个 `=`
+//   严格校验：长度非 8 倍数 / padding 数非 {0,1,3,4,6} / 非法字符 抛 Std.FormatException
+//
+// 用例：TOTP / HOTP 密钥 (RFC 6238 / 4226) / Bitcoin 部分协议 / Tor v3 onion address.
+// 不含 RFC §7 hex 变体 (`0-9A-V`) / Crockford Base32 — follow-up specs。
+
+public static class Base32 {
+    private static string _alpha = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+    public static string Encode(byte[] bytes) {
+        if (bytes.Length == 0) return "";
+        string alpha = Base32._alpha;
+        // Each 5-byte chunk → 8 chars (with padding if tail). Compute output len.
+        int outLen = ((bytes.Length + 4) / 5) * 8;
+        char[] result = new char[outLen];
+        int srcI = 0;
+        int dstI = 0;
+        long MASK5 = 31;           // 0x1F — five-bit value mask
+        long MASK_BYTE = 255;
+        // Complete 5-byte chunks
+        while (srcI + 5 <= bytes.Length) {
+            long b0 = (long)((int)bytes[srcI])     & MASK_BYTE;
+            long b1 = (long)((int)bytes[srcI + 1]) & MASK_BYTE;
+            long b2 = (long)((int)bytes[srcI + 2]) & MASK_BYTE;
+            long b3 = (long)((int)bytes[srcI + 3]) & MASK_BYTE;
+            long b4 = (long)((int)bytes[srcI + 4]) & MASK_BYTE;
+            long block = (b0 << 32) | (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
+            result[dstI]     = alpha.CharAt((int)((block >> 35) & MASK5));
+            result[dstI + 1] = alpha.CharAt((int)((block >> 30) & MASK5));
+            result[dstI + 2] = alpha.CharAt((int)((block >> 25) & MASK5));
+            result[dstI + 3] = alpha.CharAt((int)((block >> 20) & MASK5));
+            result[dstI + 4] = alpha.CharAt((int)((block >> 15) & MASK5));
+            result[dstI + 5] = alpha.CharAt((int)((block >> 10) & MASK5));
+            result[dstI + 6] = alpha.CharAt((int)((block >> 5)  & MASK5));
+            result[dstI + 7] = alpha.CharAt((int)(block & MASK5));
+            srcI = srcI + 5;
+            dstI = dstI + 8;
+        }
+        // Tail (1-4 bytes)
+        int rem = bytes.Length - srcI;
+        if (rem > 0) {
+            // Pack remaining bytes into low bits of block, then shift left so
+            // bits occupy positions 39..(40 - 8*rem).
+            long block = 0;
+            int i = 0;
+            while (i < rem) {
+                block = (block << 8) | ((long)((int)bytes[srcI + i]) & MASK_BYTE);
+                i = i + 1;
+            }
+            // 5-rem bytes worth of zero padding bits shifted in.
+            int padBytes = 5 - rem;
+            block = block << (8 * padBytes);
+            // Char counts: rem 1→2, 2→4, 3→5, 4→7 (per RFC 4648 §6).
+            int chars = 0;
+            if (rem == 1) chars = 2;
+            if (rem == 2) chars = 4;
+            if (rem == 3) chars = 5;
+            if (rem == 4) chars = 7;
+            int j = 0;
+            while (j < chars) {
+                int shift = 35 - (j * 5);
+                result[dstI + j] = alpha.CharAt((int)((block >> shift) & MASK5));
+                j = j + 1;
+            }
+            // Pad to 8 with `=`
+            while (j < 8) {
+                result[dstI + j] = '=';
+                j = j + 1;
+            }
+        }
+        return String.FromChars(result);
+    }
+
+    public static byte[] Decode(string s) {
+        if (s.Length == 0) return new byte[0];
+        if ((s.Length % 8) != 0) {
+            throw new FormatException("invalid base32 length (must be multiple of 8)");
+        }
+        // Count trailing padding chars.
+        int padCount = 0;
+        int idx = s.Length - 1;
+        while (idx >= 0 && s.CharAt(idx) == '=') {
+            padCount = padCount + 1;
+            idx = idx - 1;
+        }
+        // Valid padding counts per RFC §6 table: {0, 1, 3, 4, 6}.
+        bool padOk = false;
+        if (padCount == 0 || padCount == 1 || padCount == 3 || padCount == 4 || padCount == 6) {
+            padOk = true;
+        }
+        if (!padOk) {
+            throw new FormatException("invalid base32 padding count");
+        }
+        // Output bytes in the last block depends on padding count.
+        int outPerLast = 5;
+        if (padCount == 1) outPerLast = 4;
+        if (padCount == 3) outPerLast = 3;
+        if (padCount == 4) outPerLast = 2;
+        if (padCount == 6) outPerLast = 1;
+        int blocks = s.Length / 8;
+        int outLen = (blocks - 1) * 5 + outPerLast;
+        byte[] result = new byte[outLen];
+        int srcI = 0;
+        int dstI = 0;
+        long MASK_BYTE = 255;
+        int endBlock = s.Length - 8;
+        // Process all but last block (no padding inside).
+        while (srcI < endBlock) {
+            long block = 0;
+            int j = 0;
+            while (j < 8) {
+                block = (block << 5) | (long)decodeChar(s.CharAt(srcI + j));
+                j = j + 1;
+            }
+            result[dstI]     = (byte)((block >> 32) & MASK_BYTE);
+            result[dstI + 1] = (byte)((block >> 24) & MASK_BYTE);
+            result[dstI + 2] = (byte)((block >> 16) & MASK_BYTE);
+            result[dstI + 3] = (byte)((block >> 8)  & MASK_BYTE);
+            result[dstI + 4] = (byte)(block         & MASK_BYTE);
+            srcI = srcI + 8;
+            dstI = dstI + 5;
+        }
+        // Last block — may contain padding.
+        long lastBlock = 0;
+        int validChars = 8 - padCount;
+        int k = 0;
+        while (k < validChars) {
+            lastBlock = (lastBlock << 5) | (long)decodeChar(s.CharAt(srcI + k));
+            k = k + 1;
+        }
+        // Shift left to align valid bits into top of a 40-bit virtual block.
+        lastBlock = lastBlock << (5 * padCount);
+        int m = 0;
+        while (m < outPerLast) {
+            int shift = 32 - (m * 8);
+            result[dstI + m] = (byte)((lastBlock >> shift) & MASK_BYTE);
+            m = m + 1;
+        }
+        return result;
+    }
+
+    /// 单个 Base32 字符 → 5-bit value (0..31)。
+    /// 严格大写：`a-z` 不接受（caller 可先 `s.ToUpper()`）。
+    /// `=` 在此处即视为非法（外层 Decode 已经识别 padding）。
+    private static int decodeChar(char c) {
+        int code = (int)c;
+        if (code >= 65 && code <= 90)  return code - 65;          // 'A'..'Z' → 0..25
+        if (code >= 50 && code <= 55)  return code - 50 + 26;     // '2'..'7' → 26..31
+        throw new FormatException($"invalid base32 character '{c}'");
+    }
+}

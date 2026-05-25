@@ -301,7 +301,7 @@ z42 是一门**全栈系统编程语言**：从嵌入式固件到云端后端，
 | per-arch-abi-feature-matrix | abi-version 升 2 后"哪些 host config 字段哪个 ABI 起可用"细粒度矩阵 | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | binary-package-signing | iOS xcframework / Android AAR / wasm npm publish 时 notarization / GPG / npm 2FA；Phase 1 全 unsigned，留给 Phase 4 release CI | [runtime/embedding.md §11.9](design/runtime/embedding.md#119-分发-package-形态per-arch-flat2026-05-13-define-package-layout) |
 | z42 build-driver prerequisites | 用 z42 自身重写所有 `.sh` 解 Tier 1 Windows CI；阻塞 = P0 z42.os/z42.io.fs + P1 z42.crypto/z42.net + P2 z42.toml/z42.compression | [stdlib/roadmap.md "Deferred / Future Work"](design/stdlib/roadmap.md#z42-build-driver-prerequisites2026-05-13) |
-| ~~URL-safe Base64~~ ✅ + Base32 / UTF-16 / Encoding streaming API | **URL-safe Base64 已落地 2026-05-25** (`add-encoding-base64-url`)；Base32 / UTF-16 / streaming 仍延后 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
+| ~~URL-safe Base64~~ ✅ + ~~Base32~~ ✅ + UTF-16 / Encoding streaming API | **URL-safe Base64 已落地 2026-05-25** (`add-encoding-base64-url`)；**Base32 已落地 2026-05-25** (`add-encoding-base32`)；UTF-16 / streaming / Crockford / Base32-hex / Base85 仍延后 | [stdlib/encoding.md](design/stdlib/encoding.md#deferred--future-work) |
 | HMAC-SHA256 | v0 SHA-256 落地后的下一步；RFC 2104 公式 | [stdlib/crypto.md](design/stdlib/crypto.md#hmac-sha256) |
 | Std.Crypto.Random (CSPRNG) | 需要 OS syscall 抽象层（z42.os / z42.io.fs）就绪 | [stdlib/crypto.md](design/stdlib/crypto.md#csprngstdcryptorandom) |
 | Zip.Write | byte[][] 类型系统或 2-pass workaround；v0 仅 Read | [stdlib/compression.md](design/stdlib/compression.md#compression-future-zip-write) |
