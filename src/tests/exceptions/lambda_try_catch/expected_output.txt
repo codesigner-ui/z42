@@ -1,0 +1,4 @@
+inside
+caught: boom
+local got local-X
+done

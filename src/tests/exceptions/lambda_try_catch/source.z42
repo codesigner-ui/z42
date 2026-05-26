@@ -1,0 +1,35 @@
+using Std.IO;
+
+void Main() {
+    // Lambda with try/catch body — must compile (fix-lambda-exception-table).
+    Action good = () => {
+        try {
+            Console.WriteLine("inside");
+        } catch (Exception e) {
+            Console.WriteLine("never");
+        }
+    };
+    good();
+
+    // Lambda whose body throws then catches.
+    Action withThrow = () => {
+        try {
+            throw new Exception("boom");
+        } catch (Exception e) {
+            Console.WriteLine("caught: " + e.Message);
+        }
+    };
+    withThrow();
+
+    // Local function with try/catch body.
+    void LocalCatch(string label) {
+        try {
+            throw new Exception("local-" + label);
+        } catch (Exception e) {
+            Console.WriteLine("local got " + e.Message);
+        }
+    }
+    LocalCatch("X");
+
+    Console.WriteLine("done");
+}

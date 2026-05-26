@@ -116,9 +116,13 @@ internal sealed partial class FunctionEmitter
             : lambda.FuncType.Ret.ToString() ?? "object";
         var lineTbl  = _lineTable.Count > 0 ? _lineTable : null;
         var localTbl = SnapshotLocalVarTable();
+        // fix-lambda-exception-table (2026-05-27): propagate try/catch
+        // table so IR verifier knows catch-block CatchReg is defined
+        // at handler entry (was: hardcoded null → r2 used-before-define).
+        var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         // ParamCount includes env (+1).
         return new IrFunction(liftedQualName, 1 + lambda.Params.Count, retName,
-            "Interp", _blocks, null, MaxReg: _nextReg,
+            "Interp", _blocks, excTable, MaxReg: _nextReg,
             LineTable: lineTbl, LocalVarTable: localTbl);
     }
 
@@ -150,8 +154,10 @@ internal sealed partial class FunctionEmitter
         var retName  = lfn.RetType == Z42Type.Void ? "void" : lfn.RetType.ToString() ?? "object";
         var lineTbl  = _lineTable.Count > 0 ? _lineTable : null;
         var localTbl = SnapshotLocalVarTable();
+        // fix-lambda-exception-table (2026-05-27): propagate try/catch table.
+        var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         return new IrFunction(liftedQualName, 1 + lfn.ParamNames.Count, retName,
-            "Interp", _blocks, null, MaxReg: _nextReg,
+            "Interp", _blocks, excTable, MaxReg: _nextReg,
             LineTable: lineTbl, LocalVarTable: localTbl);
     }
 
@@ -176,8 +182,10 @@ internal sealed partial class FunctionEmitter
         var retName  = lfn.RetType == Z42Type.Void ? "void" : lfn.RetType.ToString() ?? "object";
         var lineTbl  = _lineTable.Count > 0 ? _lineTable : null;
         var localTbl = SnapshotLocalVarTable();
+        // fix-lambda-exception-table (2026-05-27): propagate try/catch table.
+        var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         return new IrFunction(liftedQualName, lfn.ParamNames.Count, retName,
-            "Interp", _blocks, null, MaxReg: _nextReg, LineTable: lineTbl, LocalVarTable: localTbl);
+            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTbl, LocalVarTable: localTbl);
     }
 
     /// Emit a lifted lambda body as a standalone IrFunction. Mirrors the
@@ -215,7 +223,9 @@ internal sealed partial class FunctionEmitter
         var retName  = lambda.FuncType.Ret == Z42Type.Void ? "void" : lambda.FuncType.Ret.ToString() ?? "object";
         var lineTbl  = _lineTable.Count > 0 ? _lineTable : null;
         var localTbl = SnapshotLocalVarTable();
+        // fix-lambda-exception-table (2026-05-27): propagate try/catch table.
+        var excTable = _exceptionTable.Count > 0 ? _exceptionTable : null;
         return new IrFunction(liftedQualName, lambda.Params.Count, retName,
-            "Interp", _blocks, null, MaxReg: _nextReg, LineTable: lineTbl, LocalVarTable: localTbl);
+            "Interp", _blocks, excTable, MaxReg: _nextReg, LineTable: lineTbl, LocalVarTable: localTbl);
     }
 }
