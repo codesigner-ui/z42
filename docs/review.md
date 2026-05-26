@@ -942,7 +942,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |
 | **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
 | **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
-| **P3** | **Startup banner / --info** (D5) | 4 | 0.5 天 | ops |
+| ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
 | **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
 | **P4** | **GC bump allocator** (C6) | 2 | 极大 | arch |
 | **P4** | **Hot-path stub inline** (Part 1) | 1 | 2-3 天 | perf |
@@ -1375,7 +1375,7 @@ pub struct ScriptObject {
 | **P3** | **ScriptObject header 瘦身**（E2.P6）— 64B → ~52B | 5 | 2-3 天 | data |
 | **P3** | **PAL 抽象层** (Part 1) | 1 | 5-7 天 | arch |
 | **P3** | **String literal interning** (C3) | 2 | 3-4 天 | perf |
-| **P3** | **Startup banner / --info** (D5) | 4 | 0.5 天 | ops |
+| ✅ | ~~Startup banner / `--info`~~ (D5) — `--info` build-info dump (2026-05-25) + verbose-mode `tracing::info!` banner (2026-05-26) | 4 | done | ops |
 | **P4** | **Value 拆 hot/cold variants** (C1) | 2 | 5-7 天 | perf |
 | **P4** | **GC bump allocator** (C6) | 2 | 巨大 | arch |
 | **P4** | **Hot-path stub inline** (Part 1) | 1 | 2-3 天 | perf |

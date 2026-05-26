@@ -213,6 +213,17 @@ fn install_panic_hook() {
     }));
 }
 
+/// Compact comma-separated list of enabled build features for the verbose
+/// startup banner — e.g. `"interp"`, `"interp,jit"`, `"interp,jit,native"`.
+/// Mirrors the `features:` line in `--info` but in one short tag.
+fn build_feature_tag() -> String {
+    let mut tags: Vec<&str> = vec!["interp"];
+    #[cfg(feature = "jit")]            tags.push("jit");
+    #[cfg(feature = "aot")]            tags.push("aot");
+    #[cfg(feature = "native-interop")] tags.push("native");
+    tags.join(",")
+}
+
 /// Print runtime build information to stdout. Triggered by `--info`.
 /// Output is intentionally human-readable + grep-friendly (one `key: value`
 /// per line). docs/review.md Part 4 D5 (2026-05-25) + D1 RuntimeConfig
@@ -405,6 +416,17 @@ fn main() -> Result<()> {
     install_panic_hook();
     #[cfg(unix)]
     z42::signal_handler::install();
+
+    // Verbose-mode startup banner (docs/review.md D5 item 2, 2026-05-26).
+    // One-line tracing::info — gated by EnvFilter / `--verbose` so the
+    // default quiet boot is preserved. `--info` users get the full dump
+    // from `print_build_info` instead.
+    tracing::info!(
+        "z42vm {} ({}) starting [pid={}]",
+        env!("CARGO_PKG_VERSION"),
+        build_feature_tag(),
+        std::process::id(),
+    );
 
     // --info: print build info to stdout and exit before doing any module loading.
     if cli.info {
