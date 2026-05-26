@@ -62,7 +62,7 @@ fn dummy_type_desc(name: &str) -> Arc<TypeDesc> {
         own_fields: Vec::new().into(),
         own_methods: Vec::new().into(),
         type_params: vec![].into(),
-        type_args: vec![].into(),
+        type_args: Box::new([]),
         type_param_constraints: vec![].into(),
         id: crate::metadata::tokens::TypeId::UNRESOLVED,
     })
@@ -74,7 +74,7 @@ fn is_heap_ref_true_for_object() {
         type_desc: dummy_type_desc("Foo"),
         slots: vec![],
         native: NativeData::None,
-        type_args: vec![],
+        type_args: Box::new([]),
     }));
     assert!(v.is_heap_ref());
 }
@@ -107,7 +107,7 @@ fn is_heap_ref_true_for_ref_field() {
         type_desc: dummy_type_desc("Foo"),
         slots: vec![Value::I64(0)],
         native: NativeData::None,
-        type_args: vec![],
+        type_args: Box::new([]),
     });
     let v = Value::Ref { kind: RefKind::Field { gc_ref: obj, field_name: "x".to_string() } };
     assert!(v.is_heap_ref());

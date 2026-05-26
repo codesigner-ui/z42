@@ -182,7 +182,12 @@ pub struct ScriptObject {
     /// `["int", "string"]`. Empty for non-generic classes and uninstantiated
     /// generic definitions. Index aligns with `type_desc.type_params`.
     /// Read by `DefaultOf` opcode and any future runtime type-args queries.
-    pub type_args: Vec<String>,
+    ///
+    /// review.md E5.4 follow-up (2026-05-27): `Box<[String]>` instead of
+    /// `Vec<String>` — written exactly once at `obj.new` time, then
+    /// read-only for the object's lifetime. Saves 8 B/ScriptObject vs
+    /// `Vec`. StringId migration deferred to Phase B+.
+    pub type_args: Box<[String]>,
 }
 
 // ── Value ────────────────────────────────────────────────────────────────────

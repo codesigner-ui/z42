@@ -54,7 +54,7 @@ pub unsafe extern "C" fn jit_obj_new(
     if type_args_count > 0 {
         if let Value::Object(ref rc) = obj_val {
             let slice = std::slice::from_raw_parts(type_args_ptr, type_args_count);
-            rc.borrow_mut().type_args = slice.iter().cloned().collect();
+            rc.borrow_mut().type_args = Box::<[String]>::from(slice);
         }
     }
 

@@ -1400,7 +1400,7 @@ impl MagrGC for ArcMagrGC {
         let class = type_desc.name.clone();
         let obj = ScriptObject {
             type_desc, slots, native,
-            type_args: Vec::new(),
+            type_args: Box::new([]),
         };
 
         // **add-custom-allocator P1 (2026-05-22)**: alloc into region.

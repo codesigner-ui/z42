@@ -84,7 +84,7 @@ pub(super) fn obj_new(
     // per-instance type_args from the IR instruction. Read by `DefaultOf`.
     if !type_args.is_empty() {
         if let Value::Object(ref rc) = obj_val {
-            rc.borrow_mut().type_args = type_args.to_vec();
+            rc.borrow_mut().type_args = Box::<[String]>::from(type_args);
         }
     }
 
