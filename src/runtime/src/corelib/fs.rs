@@ -66,6 +66,60 @@ pub fn builtin_file_write_bytes(_ctx: &VmContext, args: &[Value]) -> Result<Valu
     Ok(Value::Null)
 }
 
+// add-file-atomic-write (2026-05-27): write to a tmp sibling, fsync,
+// then POSIX rename → target. Guarantees a crash mid-write never
+// leaves the target half-written; reader either sees the prior
+// content or the new content. Same-directory tmp keeps the rename
+// in-FS (EXDEV is impossible).
+
+pub fn builtin_file_write_text_atomic(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = arg_str(args, 0, "__file_write_text_atomic")?;
+    let content = arg_str(args, 1, "__file_write_text_atomic")?;
+    write_atomic_bytes(path, content.as_bytes())?;
+    Ok(Value::Null)
+}
+
+pub fn builtin_file_write_bytes_atomic(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    let path = arg_str(args, 0, "__file_write_bytes_atomic")?;
+    let data = require_byte_array(args, 1, "__file_write_bytes_atomic")?;
+    write_atomic_bytes(path, &data)?;
+    Ok(Value::Null)
+}
+
+fn write_atomic_bytes(target: &str, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let target_path = std::path::Path::new(target);
+    let parent = target_path.parent().unwrap_or(std::path::Path::new("."));
+    let basename = target_path.file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "atomic".to_string());
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let tmp = parent.join(format!(".{}.{}.{}.tmp", basename, nanos, pid));
+
+    // Write + fsync + rename. On any failure, best-effort remove tmp
+    // so retries don't accumulate orphans; original error propagates.
+    let result: Result<()> = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        std::fs::rename(&tmp, target_path)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
 // 2026-04-27 wave1-path-script: 5 builtin_path_* removed.
 // `Std.IO.Path` 现在是 z42 脚本（Unix `/` 语义），见
 // src/libraries/z42.io/src/Path.z42。

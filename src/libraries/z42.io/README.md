@@ -10,7 +10,7 @@ z42 标准 IO 类型。
 |------|------|------|
 | `Console.z42` | `Console` | 标准输入/输出（`ReadLine`、`WriteLine` 等） |
 | `Stdio.z42` | `Stdio` | stdin/stdout/stderr 原语 (`IsTty` 等) |
-| `File.z42` | `File` | 文件读写操作（`ReadAllText/Bytes` + `WriteAllText/Bytes` + Link/SymLink/MakeExecutable/CreateTempDir/GetSize） |
+| `File.z42` | `File` | 文件读写操作（`ReadAllText/Bytes` + `WriteAllText/Bytes` + atomic 写 `WriteAllTextAtomic/WriteAllBytesAtomic` + Link/SymLink/MakeExecutable/CreateTempDir/GetSize） |
 | `Directory.z42` | `Directory` | 目录创建 / 列表 / 删除；`CreateTempDir(prefix)` 为 `File.CreateTempDir` 的 alias |
 | `Path.z42` | `Path` | 路径拼接和解析；`Glob`（直接子项）+ `GlobRecursive(dir, pattern)` 递归 |
 | `Environment.z42` | `Environment` | 环境变量、进程退出 |

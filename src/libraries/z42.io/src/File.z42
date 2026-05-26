@@ -23,6 +23,19 @@ public static class File {
     [Native("__file_write_bytes")]
     public static extern void WriteAllBytes(string path, byte[] data);
 
+    // add-file-atomic-write (2026-05-27): 崩溃安全写入。先写到同目录 tmp 文件，
+    // `fsync` 持久化到 disk，再 POSIX `rename` 覆盖目标。崩溃后只可能看到旧内容
+    // 或新内容，绝不会看到半写。比 `WriteAllText`/`WriteAllBytes` 慢 ~10×（额外
+    // 一次 fsync）；仅对关键配置文件（versions.toml / manifest.toml 等）使用。
+
+    /// 原子写文本 —— write→fsync→rename 三步保证崩溃安全。
+    [Native("__file_write_text_atomic")]
+    public static extern void WriteAllTextAtomic(string path, string content);
+
+    /// 原子写 byte 数组 —— 同 `WriteAllTextAtomic` 但二进制 payload。
+    [Native("__file_write_bytes_atomic")]
+    public static extern void WriteAllBytesAtomic(string path, byte[] data);
+
     [Native("__file_exists")]
     public static extern bool Exists(string path);
 

@@ -1,0 +1,87 @@
+// add-file-atomic-write (2026-05-27): File.WriteAllTextAtomic / WriteAllBytesAtomic.
+namespace Z42IoFileAtomicWriteTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Encoding;
+
+[Test]
+void test_atomic_text_round_trip() {
+    string tmp = Directory.CreateTempDir("z42-atomic-text");
+    try {
+        string p = Path.Join(tmp, "config.toml");
+        string payload = "name = \"demo\"\nversion = \"0.1\"\n";
+        File.WriteAllTextAtomic(p, payload);
+        Assert.True(File.Exists(p));
+        Assert.Equal(payload, File.ReadAllText(p));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_atomic_bytes_round_trip() {
+    string tmp = Directory.CreateTempDir("z42-atomic-bytes");
+    try {
+        string p = Path.Join(tmp, "data.bin");
+        byte[] payload = new byte[5];
+        payload[0] = (byte)0xDE;
+        payload[1] = (byte)0xAD;
+        payload[2] = (byte)0xBE;
+        payload[3] = (byte)0xEF;
+        payload[4] = (byte)0x00;
+        File.WriteAllBytesAtomic(p, payload);
+        byte[] back = File.ReadAllBytes(p);
+        Assert.Equal(payload.Length, back.Length);
+        int i = 0;
+        while (i < payload.Length) {
+            Assert.Equal((int)payload[i] & 0xFF, (int)back[i] & 0xFF);
+            i = i + 1;
+        }
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_atomic_overwrites_existing_content() {
+    string tmp = Directory.CreateTempDir("z42-atomic-overwrite");
+    try {
+        string p = Path.Join(tmp, "x.txt");
+        File.WriteAllText(p, "OLD CONTENT");
+        Assert.Equal("OLD CONTENT", File.ReadAllText(p));
+        File.WriteAllTextAtomic(p, "NEW");
+        Assert.Equal("NEW", File.ReadAllText(p));
+        Assert.Equal(3L, File.GetSize(p));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_atomic_leaves_no_tmp_files_in_dir() {
+    string tmp = Directory.CreateTempDir("z42-atomic-clean");
+    try {
+        File.WriteAllTextAtomic(Path.Join(tmp, "a.txt"), "x");
+        File.WriteAllTextAtomic(Path.Join(tmp, "b.txt"), "y");
+        File.WriteAllBytesAtomic(Path.Join(tmp, "c.bin"), Utf8.GetBytes("z"));
+        // Successful writes must clean their own tmp file via rename.
+        // Enumerate sees ONLY the 3 final files, no `.xxx.tmp` left.
+        string[] entries = Directory.Enumerate(tmp);
+        Assert.Equal(3, entries.Length);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_atomic_write_to_nonexistent_directory_throws() {
+    bool caught = false;
+    try {
+        File.WriteAllTextAtomic("/no/such/dir/x.txt", "should fail");
+    } catch (Exception e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}

@@ -342,6 +342,10 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-z42-io-ergonomics-bytes-glob (2026-05-27) — one-shot binary IO ──
     ("__file_read_bytes",  fs::builtin_file_read_bytes),
     ("__file_write_bytes", fs::builtin_file_write_bytes),
+
+    // ── add-file-atomic-write (2026-05-27) — write-fsync-rename for durable config ──
+    ("__file_write_text_atomic",  fs::builtin_file_write_text_atomic),
+    ("__file_write_bytes_atomic", fs::builtin_file_write_bytes_atomic),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the
