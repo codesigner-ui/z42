@@ -106,7 +106,7 @@ fn register_bundled_compression(ctx: &VmContext) {
     let mut table = ctx.core.ext_builtins.lock();
     let symbols = compression_symbols_bundled();
     for (name, fn_ptr) in symbols {
-        table.register(name, fn_ptr);
+        table.register(name, *fn_ptr);
     }
     tracing::debug!(
         "ext: registered {} bundled compression builtins",
