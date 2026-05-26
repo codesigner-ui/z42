@@ -431,7 +431,7 @@ ee_alloc_context {
 |---|---|---|---|---|
 | **P0** | **JIT type specialization**（C2）— 同 IrType 时直接 emit Cranelift native，不走 helper | 2-3 天 | 数值循环 2-5x；不动 wire format | 代码 |
 | **P0** | **JIT↔VM trait 抽象** —— 上半部分 P0 | 2-3 天 | metadata 可演进 | 架构 |
-| **P1** | **`Value::Str(String) → Str(Rc<str>)`**（C1+C3）— clone 廉价化 | 1-2 天 | 字符串 clone 0 拷贝 | 代码 |
+| ✅ | ~~**`Value::Str(String) → Str(Arc<str>)`**~~（C1+C3）— landed in ae23fb60 (2026-05-27, bundled with edition 2024 upgrade); Arc not Rc because `Value: Send + Sync` | 1-2 天 | clone 从 O(n) byte copy 变 O(1) atomic incr | 代码 |
 | **P1** | **Field / Method name → token id**（C4+C5）— `HashMap<String> → Vec<(u32, slot)>` | 3-4 天 | poly site 提速 + 内存省 | 代码 |
 | **P2** | **Prestub / lazy JIT** —— 上半部分 P1 | 3-5 天 | 启动延迟 | 架构 |
 | **P2** | **Polymorphic IC（PIC）**（C4+C5）— 4-slot cache | 2-3 天 | poly site 不再退到 HashMap | 代码 |
@@ -931,7 +931,7 @@ z42 目前单平台，未涉及 Unix / Windows 路径分支。但 CoreCLR 的 `I
 | **P0** | **JIT type specialization** (C2) — 已知 IrType 不走 helper | 2 | 2-3 天 | perf |
 | **P0** | **JIT↔VM trait 抽象** (Part 1) | 1 | 2-3 天 | arch |
 | **P1** | **Per-module log filtering** (D2) — `Z42_LOG=z42::jit=debug` | 4 | 0.5 天 | ops |
-| **P1** | **`Value::Str(String) → Rc<str>`** (C1+C3) | 2 | 1-2 天 | perf |
+| ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
@@ -1360,7 +1360,7 @@ pub struct ScriptObject {
 | **P1** | **Instruction 瘦身**（E2.P4）— ~120B → ≤32B | 5 | 3-4 天 | data |
 | **P1** | **FieldSlot 16B bit-packed**（E2.P2）— 48B → 16B | 5 | 2-3 天 | data |
 | ✅ | ~~Per-module log filtering~~ (D2) — EnvFilter `Z42_LOG` wired in `init_tracing` (2026-05-25) | 4 | done | ops |
-| **P1** | **`Value::Str(String) → Rc<str>`** (C1+C3) | 2 | 1-2 天 | perf |
+| ✅ | ~~`Value::Str(String) → Arc<str>`~~ (C1+C3) — landed in ae23fb60 (2026-05-27); Arc not Rc due to Send+Sync requirement | 2 | done | perf |
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
 | **P1** | **Internal shared helpers 层** (S2.3) | 3 | 5-7 天 | stdlib |
