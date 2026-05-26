@@ -1,0 +1,135 @@
+// add-cli-subcommand (2026-05-27): SubcommandRouter coverage.
+namespace Z42CliSubcommandTests;
+
+using Std;
+using Std.Test;
+using Std.Cli;
+
+static SubcommandRouter _git() {
+    var commit = new ArgParser("git commit", "record changes");
+    commit.AddOption("message", "m", "commit message", "");
+
+    var status = new ArgParser("git status", "show working tree");
+    status.AddFlag("short", "s", "short format");
+
+    var r = new SubcommandRouter("git", "the stupid content tracker");
+    r.Add("commit", "record changes", commit);
+    r.Add("status", "show working tree", status);
+    return r;
+}
+
+[Test]
+void test_count_after_adds() {
+    Assert.Equal(2, _git().Count());
+}
+
+[Test]
+void test_has_known_subcommand() {
+    var r = _git();
+    Assert.True(r.Has("commit"));
+    Assert.True(r.Has("status"));
+}
+
+[Test]
+void test_has_unknown_returns_false() {
+    Assert.False(_git().Has("xyz"));
+    Assert.False(_git().Has(""));
+}
+
+[Test]
+void test_match_dispatches_to_commit_with_option() {
+    string[] argv = new string[3];
+    argv[0] = "commit"; argv[1] = "--message"; argv[2] = "hello";
+    SubcommandMatch m = _git().Match(argv);
+    Assert.NotNull(m);
+    Assert.Equal("commit", m.Name());
+    Assert.Equal("hello", m.Result().GetOption("message"));
+}
+
+[Test]
+void test_match_dispatches_to_status_with_flag() {
+    string[] argv = new string[2];
+    argv[0] = "status"; argv[1] = "-s";
+    SubcommandMatch m = _git().Match(argv);
+    Assert.NotNull(m);
+    Assert.Equal("status", m.Name());
+    Assert.True(m.Result().GetFlag("short"));
+}
+
+[Test]
+void test_match_unknown_returns_null() {
+    string[] argv = new string[1];
+    argv[0] = "wat";
+    Assert.Null(_git().Match(argv));
+}
+
+[Test]
+void test_match_empty_argv_returns_null() {
+    Assert.Null(_git().Match(new string[0]));
+}
+
+[Test]
+void test_match_help_flag_returns_null() {
+    string[] argv = new string[1];
+    argv[0] = "--help";
+    Assert.Null(_git().Match(argv));
+    argv[0] = "-h";
+    Assert.Null(_git().Match(argv));
+}
+
+[Test]
+void test_match_strips_subcommand_arg_from_child_parse() {
+    // child parser sees only argv[1..] — so a flag declared on child
+    // resolves against the remainder, not "commit" itself.
+    var rebase = new ArgParser("git rebase", "rebase");
+    rebase.AddFlag("interactive", "i", "interactive");
+    var r = new SubcommandRouter("git", "");
+    r.Add("rebase", "rebase commits", rebase);
+
+    string[] argv = new string[2];
+    argv[0] = "rebase"; argv[1] = "-i";
+    SubcommandMatch m = r.Match(argv);
+    Assert.NotNull(m);
+    Assert.True(m.Result().GetFlag("interactive"));
+}
+
+[Test]
+void test_re_add_overwrites_existing() {
+    var r = _git();
+    var newCommit = new ArgParser("git commit", "v2");
+    newCommit.AddFlag("amend", "a", "amend");
+    r.Add("commit", "record changes (amended)", newCommit);
+    Assert.Equal(2, r.Count());      // not duplicated
+    string[] argv = new string[2];
+    argv[0] = "commit"; argv[1] = "-a";
+    SubcommandMatch m = r.Match(argv);
+    Assert.True(m.Result().GetFlag("amend"));
+}
+
+[Test]
+void test_help_text_lists_all_subcommands() {
+    string help = _git().HelpText();
+    Assert.True(help.Contains("commit"));
+    Assert.True(help.Contains("status"));
+    Assert.True(help.Contains("the stupid content tracker"));
+}
+
+[Test]
+void test_help_text_includes_program_name() {
+    string help = _git().HelpText();
+    Assert.True(help.Contains("git"));
+}
+
+[Test]
+void test_grow_beyond_initial_capacity() {
+    var r = new SubcommandRouter("multi", "many");
+    int i = 0;
+    while (i < 10) {
+        r.Add("cmd" + i.ToString(), "desc " + i.ToString(),
+              new ArgParser("multi cmd" + i.ToString(), ""));
+        i = i + 1;
+    }
+    Assert.Equal(10, r.Count());
+    Assert.True(r.Has("cmd0"));
+    Assert.True(r.Has("cmd9"));
+}

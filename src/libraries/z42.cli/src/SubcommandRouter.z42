@@ -1,0 +1,170 @@
+namespace Std.Cli;
+
+using Std;
+
+// add-cli-subcommand (2026-05-27): git/cargo-style subcommand router.
+//
+// Wraps a top-level set of `(name, description, ArgParser)` triples and
+// dispatches the first argv element to the matching child parser. v0
+// keeps the design narrow: no nested subcommands, no aliases, no global
+// flags that apply across subcommands. The top-level parser is the
+// child you picked — there is no separate "root" parser that owns
+// shared options. Add those flags to each subcommand if you need them.
+//
+// Usage:
+//
+//   var commit = new ArgParser("git commit", "record changes");
+//   commit.AddOption("message", "m", "commit message", "");
+//
+//   var status = new ArgParser("git status", "show working tree");
+//   status.AddFlag("short", "s", "short format");
+//
+//   var router = new SubcommandRouter("git", "the stupid content tracker");
+//   router.Add("commit", "record changes", commit);
+//   router.Add("status", "show working tree", status);
+//
+//   SubcommandMatch m = router.Match(argv);
+//   if (m == null) {
+//       Console.WriteLine(router.HelpText());
+//       Environment.Exit(2);
+//   }
+//   if (m.Name() == "commit") {
+//       string msg = m.Result().GetOption("message");
+//       ...
+//   }
+//
+// `Match` returns `null` when the first arg is unrecognised (or argv is
+// empty). Use `HelpText()` to print the subcommand list.
+public sealed class SubcommandRouter {
+    string _programName;
+    string _description;
+    string[] _names;
+    string[] _descs;
+    ArgParser[] _parsers;
+    int _count;
+    int _capacity;
+
+    public SubcommandRouter(string programName, string description) {
+        this._programName = programName;
+        this._description = description;
+        this._capacity = 4;
+        this._names   = new string[4];
+        this._descs   = new string[4];
+        this._parsers = new ArgParser[4];
+        this._count = 0;
+    }
+
+    /// Register a subcommand. Re-registering the same name overwrites.
+    public void Add(string name, string description, ArgParser parser) {
+        // Check existing — overwrite if present.
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == name) {
+                this._descs[i] = description;
+                this._parsers[i] = parser;
+                return;
+            }
+            i = i + 1;
+        }
+        if (this._count == this._capacity) this._grow();
+        this._names[this._count]   = name;
+        this._descs[this._count]   = description;
+        this._parsers[this._count] = parser;
+        this._count = this._count + 1;
+    }
+
+    /// Attempt to route `argv`. Returns `SubcommandMatch` on hit or null
+    /// when:
+    ///   - argv is empty
+    ///   - argv[0] is `--help` / `-h` (caller should print HelpText)
+    ///   - argv[0] doesn't match any registered subcommand
+    public SubcommandMatch Match(string[] argv) {
+        if (argv.Length == 0) return null;
+        string first = argv[0];
+        if (first == "--help" || first == "-h") return null;
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == first) {
+                // Slice argv[1..] for the child parser.
+                int n = argv.Length - 1;
+                string[] rest = new string[n];
+                int j = 0;
+                while (j < n) { rest[j] = argv[j + 1]; j = j + 1; }
+                ParseResult pr = this._parsers[i].Parse(rest);
+                return new SubcommandMatch(this._names[i], pr);
+            }
+            i = i + 1;
+        }
+        return null;
+    }
+
+    /// Render top-level help: program description + subcommand list.
+    public string HelpText() {
+        string s = this._programName;
+        if (this._description.Length > 0) {
+            s = s + " - " + this._description;
+        }
+        s = s + "\n\nSUBCOMMANDS:\n";
+        int i = 0;
+        while (i < this._count) {
+            s = s + "  " + this._padRight(this._names[i], 14) + this._descs[i] + "\n";
+            i = i + 1;
+        }
+        return s;
+    }
+
+    public int Count() { return this._count; }
+
+    /// True iff `name` is a registered subcommand.
+    public bool Has(string name) {
+        int i = 0;
+        while (i < this._count) {
+            if (this._names[i] == name) return true;
+            i = i + 1;
+        }
+        return false;
+    }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    string _padRight(string s, int width) {
+        if (s.Length >= width) return s + " ";
+        string acc = s;
+        int pad = width - s.Length;
+        int i = 0;
+        while (i < pad) { acc = acc + " "; i = i + 1; }
+        return acc;
+    }
+
+    void _grow() {
+        int newCap = this._capacity * 2;
+        string[] nn = new string[newCap];
+        string[] nd = new string[newCap];
+        ArgParser[] np = new ArgParser[newCap];
+        int i = 0;
+        while (i < this._count) {
+            nn[i] = this._names[i];
+            nd[i] = this._descs[i];
+            np[i] = this._parsers[i];
+            i = i + 1;
+        }
+        this._names = nn;
+        this._descs = nd;
+        this._parsers = np;
+        this._capacity = newCap;
+    }
+}
+
+/// Result of a successful subcommand dispatch.
+public sealed class SubcommandMatch {
+    string _name;
+    ParseResult _result;
+
+    public SubcommandMatch(string name, ParseResult result) {
+        this._name = name;
+        this._result = result;
+    }
+
+    public string Name() { return this._name; }
+    public ParseResult Result() { return this._result; }
+}
