@@ -845,7 +845,7 @@ fn decode_instr(op: u8, typ: u8, dst: u32, c: &mut Cursor, pool: &[String], id_m
             for _ in 0..t_count {
                 type_args.push(pool_str_owned(pool, c.read_u32()?)?);
             }
-            Instruction::ObjNew { dst, class_name, ctor_name, args, type_args }
+            Instruction::ObjNew { dst, class_name, ctor_name, args, type_args: type_args.into_boxed_slice() }
         }
         OP_IS_INSTANCE => {
             let obj        = c.read_u16()? as u32;
@@ -929,11 +929,11 @@ fn read_ab(c: &mut Cursor) -> Result<(u32, u32)> {
     Ok((c.read_u16()? as u32, c.read_u16()? as u32))
 }
 
-fn read_args(c: &mut Cursor) -> Result<Vec<u32>> {
+fn read_args(c: &mut Cursor) -> Result<Box<[u32]>> {
     let count = c.read_u8()? as usize;
     let mut args = Vec::with_capacity(count);
     for _ in 0..count { args.push(c.read_u16()? as u32); }
-    Ok(args)
+    Ok(args.into_boxed_slice())
 }
 
 fn pool_str_owned(pool: &[String], idx: u32) -> Result<String> {

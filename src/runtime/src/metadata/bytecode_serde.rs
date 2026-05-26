@@ -61,7 +61,11 @@ pub(super) mod typed_reg_serde {
 pub(super) mod typed_reg_vec_serde {
     use super::*;
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<u32>, D::Error> {
+    /// review.md E5.2 (2026-05-26): Instruction reg-list fields are
+    /// immutable post-construction, so the IR stores them as `Box<[u32]>`
+    /// (16 B) instead of `Vec<u32>` (24 B). Wire format is unchanged —
+    /// bincode/serde write the same length-prefixed sequence either way.
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Box<[u32]>, D::Error> {
         let items: Vec<RegOrTypedReg> = Vec::deserialize(d)?;
         Ok(items.into_iter().map(RegOrTypedReg::to_reg).collect())
     }

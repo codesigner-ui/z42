@@ -73,7 +73,7 @@ fn call_native_unknown_type_traps() {
             module: "numz42".into(),
             type_name: "Tensor".into(),
             symbol: "__shim_Tensor_dot".into(),
-            args: vec![],
+            args: vec![].into(),
         },
     );
     let err = run(&m).expect_err("CallNative must fail when type is unregistered");
@@ -88,7 +88,7 @@ fn call_native_vtable_traps_with_spec_pointer() {
             dst: 0,
             recv: 1,
             vtable_slot: 7,
-            args: vec![],
+            args: vec![].into(),
         },
     );
     let err = run(&m).expect_err("CallNativeVtable must trap in C1");

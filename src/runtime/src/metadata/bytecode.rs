@@ -478,12 +478,12 @@ pub enum Instruction {
     Call {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         func: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
     },
     Builtin {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         name: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
     },
     /// Push a function-reference value onto a register. The runtime resolves
     /// `func` at call site (current usage: L2 no-capture lambda lifted as a
@@ -506,7 +506,7 @@ pub enum Instruction {
     CallIndirect {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         #[serde(with = "typed_reg_serde")] callee: Reg,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
     },
     /// L3 closure tier-C: allocate an env from `captures`, build a closure
     /// value and write it to `dst`. See docs/design/language/closure.md §6.
@@ -515,7 +515,7 @@ pub enum Instruction {
     MkClos {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         fn_name: String,
-        #[serde(with = "typed_reg_vec_serde")] captures: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] captures: Box<[Reg]>,
         #[serde(default)] stack_alloc: bool,
     },
     // Arrays
@@ -534,7 +534,7 @@ pub enum Instruction {
     /// Allocate an array from a literal list of element registers.
     ArrayNewLit {
         #[serde(with = "typed_reg_serde")] dst: Reg,
-        #[serde(with = "typed_reg_vec_serde")] elems: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] elems: Box<[Reg]>,
     },
     /// Load element at `idx` from array `arr` into `dst`. Panics on out-of-bounds.
     ArrayGet {
@@ -561,13 +561,18 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         class_name: String,
         ctor_name: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
         /// 2026-05-07 add-default-generic-typeparam (D-8b-3 Phase 2): resolved
         /// generic type-arguments for this allocation, e.g. `["int"]` for
         /// `new Foo<int>()`. VM populates the new instance's
         /// `ScriptObject.type_args` from this list. Empty for non-generic.
+        ///
+        /// review.md E5.2 (2026-05-26): `Box<[String]>` instead of `Vec<String>`
+        /// — immutable IR; saves 8 B/ObjNew. JIT helper takes `*const String`
+        /// + `usize` from this storage (auto-deref ok since `Box<[T]>` ptr is
+        /// the underlying T-array head).
         #[serde(default)]
-        type_args: Vec<String>,
+        type_args: Box<[String]>,
     },
     /// Load field `field_name` of object `obj` into `dst`.
     FieldGet {
@@ -586,7 +591,7 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         #[serde(with = "typed_reg_serde")] obj: Reg,
         method: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
     },
     /// `expr is ClassName` — dst = true if obj's runtime type is class_name or a subclass.
     IsInstance {
@@ -619,7 +624,7 @@ pub enum Instruction {
         module: String,
         type_name: String,
         symbol: String,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
     },
     /// Native-type vtable indirect call. `vtable_slot` is filled by the C5
     /// source generator at compile time so no name lookup happens at runtime.
@@ -627,7 +632,7 @@ pub enum Instruction {
         #[serde(with = "typed_reg_serde")] dst: Reg,
         #[serde(with = "typed_reg_serde")] recv: Reg,
         vtable_slot: u16,
-        #[serde(with = "typed_reg_vec_serde")] args: Vec<Reg>,
+        #[serde(with = "typed_reg_vec_serde")] args: Box<[Reg]>,
     },
     /// Pin a String/Array buffer for FFI borrow. Pinned-view layout and
     /// lifetime semantics land in spec C4.
