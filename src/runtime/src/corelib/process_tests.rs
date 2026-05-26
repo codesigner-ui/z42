@@ -409,3 +409,86 @@ fn slot_ids_are_monotonic_unique() {
     let _ = builtin_process_handle_wait(&ctx, &[i(s1 as i64)]);
     let _ = builtin_process_handle_wait(&ctx, &[i(s2 as i64)]);
 }
+
+// ── __process_which (add-process-which 2026-05-26) ───────────────────────
+
+#[test]
+fn which_returns_null_for_empty_name() {
+    let ctx = VmContext::new();
+    let r = builtin_process_which(&ctx, &[s("")]).unwrap();
+    assert!(matches!(r, Value::Null), "empty name → null, got {r:?}");
+}
+
+#[test]
+fn which_returns_null_for_nonexistent_command() {
+    let ctx = VmContext::new();
+    let r = builtin_process_which(&ctx, &[s("__z42_definitely_no_such_cmd__")]).unwrap();
+    assert!(matches!(r, Value::Null), "missing command → null, got {r:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn which_finds_in_custom_path() {
+    use std::os::unix::fs::PermissionsExt;
+    let ctx = VmContext::new();
+    let tmp = tempdir_unique("z42-which-test");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let stub = tmp.join("zwhich_stub");
+    std::fs::write(&stub, "#!/bin/sh\necho hi\n").unwrap();
+    let mut perm = std::fs::metadata(&stub).unwrap().permissions();
+    perm.set_mode(0o755);
+    std::fs::set_permissions(&stub, perm).unwrap();
+
+    let prev = std::env::var("PATH").ok();
+    std::env::set_var("PATH", &tmp);
+    let r = builtin_process_which(&ctx, &[s("zwhich_stub")]).unwrap();
+    if let Some(p) = prev { std::env::set_var("PATH", p); } else { std::env::remove_var("PATH"); }
+
+    let Value::Str(found) = r else { panic!("expected Str, got {r:?}") };
+    assert_eq!(found, stub.to_string_lossy());
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[cfg(unix)]
+#[test]
+fn which_skips_non_executable_files() {
+    let ctx = VmContext::new();
+    let tmp = tempdir_unique("z42-which-noexec");
+    std::fs::create_dir_all(&tmp).unwrap();
+    let plain = tmp.join("notexec");
+    std::fs::write(&plain, "data").unwrap();
+    // No chmod +x.
+
+    let prev = std::env::var("PATH").ok();
+    std::env::set_var("PATH", &tmp);
+    let r = builtin_process_which(&ctx, &[s("notexec")]).unwrap();
+    if let Some(p) = prev { std::env::set_var("PATH", p); } else { std::env::remove_var("PATH"); }
+
+    assert!(matches!(r, Value::Null), "non-executable should not resolve, got {r:?}");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[cfg(unix)]
+#[test]
+fn which_passthrough_for_path_with_separator() {
+    let ctx = VmContext::new();
+    // /bin/sh is POSIX-mandated and executable.
+    let r = builtin_process_which(&ctx, &[s("/bin/sh")]).unwrap();
+    let Value::Str(found) = r else { panic!("expected Str, got {r:?}") };
+    assert_eq!(found, "/bin/sh");
+}
+
+#[cfg(unix)]
+#[test]
+fn which_passthrough_returns_null_when_path_missing() {
+    let ctx = VmContext::new();
+    let r = builtin_process_which(&ctx, &[s("/nonexistent/dir/no_such_bin")]).unwrap();
+    assert!(matches!(r, Value::Null), "missing absolute path → null, got {r:?}");
+}
+
+#[cfg(unix)]
+fn tempdir_unique(prefix: &str) -> std::path::PathBuf {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    std::env::temp_dir().join(format!("{}.{}.{}", prefix, std::process::id(), nanos))
+}

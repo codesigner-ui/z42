@@ -1,0 +1,50 @@
+// add-process-which (2026-05-26): Std.IO.Process.Which() PATH lookup.
+//
+// Tests assume POSIX (`sh` is on $PATH in any sane Unix env). Windows
+// gate via Std.Platform — current CI is Unix-only so the Windows branch
+// is documented but not exercised here.
+namespace Z42IoProcessWhichTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+
+[Test]
+void test_which_finds_common_shell() {
+    string? hit;
+    if (Platform.IsWindows()) {
+        hit = Process.Which("cmd");
+    } else {
+        hit = Process.Which("sh");
+    }
+    Assert.NotNull(hit);
+    Assert.True(hit.Length > 0);
+}
+
+[Test]
+void test_which_returns_null_for_missing() {
+    string? hit = Process.Which("__z42_definitely_no_such_command__");
+    Assert.Null(hit);
+}
+
+[Test]
+void test_which_passthrough_for_absolute_path() {
+    if (Platform.IsWindows()) {
+        // 跳过：Windows 没有保证的绝对路径可执行
+        return;
+    }
+    string? hit = Process.Which("/bin/sh");
+    Assert.Equal("/bin/sh", hit);
+}
+
+[Test]
+void test_which_passthrough_returns_null_for_missing_absolute_path() {
+    string? hit = Process.Which("/nonexistent/dir/no_such_bin_xyz");
+    Assert.Null(hit);
+}
+
+[Test]
+void test_which_empty_string_returns_null() {
+    string? hit = Process.Which("");
+    Assert.Null(hit);
+}

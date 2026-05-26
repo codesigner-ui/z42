@@ -14,7 +14,7 @@ z42 标准 IO 类型。
 | `Directory.z42` | `Directory` | 目录创建 / 列表 / 删除 |
 | `Path.z42` | `Path` | 路径拼接和解析工具 |
 | `Environment.z42` | `Environment` | 环境变量、进程退出 |
-| `Process.z42` / `ProcessHandle.z42` / `ProcessResult.z42` | 进程子系统 | 启动 / 等待 / kill / stdin 写入 |
+| `Process.z42` / `ProcessHandle.z42` / `ProcessResult.z42` | 进程子系统 | 启动 / 等待 / kill / stdin 写入；静态 `Process.Which(name)` 在 `$PATH` 查可执行 |
 | `ProcessStdinStream.z42` | `ProcessStdinStream` | write-only Stream over a live child stdin pipe (delegates to ProcessHandle.WriteStdin / CloseStdin) |
 | `ProcessOutputStream.z42` | `ProcessOutputStream` | read-only Stream over child stdout/stderr (fd-parameterised；backed by `__process_handle_read_*` builtins) |
 | `Stream.z42` | `Stream` | 流式 I/O base class（capability + Read/Write/Seek + ReadAllBytes / WriteAllBytes / ReadExactly） |

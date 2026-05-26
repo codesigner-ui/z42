@@ -331,6 +331,9 @@ const BUILTINS: &[(&str, NativeFn)] = &[
     // ── add-gc-softref (2026-05-26) ──────────────────────────────────────────
     ("__soft_handle_create", gc::builtin_soft_handle_create),
     ("__soft_handle_get",    gc::builtin_soft_handle_get),
+
+    // ── add-process-which (2026-05-26) — appended to preserve existing BuiltinIds ──
+    ("__process_which", process::builtin_process_which),
 ];
 
 /// Lazy-built `name → BuiltinId` index for `exec_builtin(name, args)` and the

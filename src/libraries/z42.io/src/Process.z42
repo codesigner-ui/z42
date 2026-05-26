@@ -145,6 +145,23 @@ public class Process {
             (byte[])raw[5]);
     }
 
+    // ── Static helpers ───────────────────────────────────────────────────
+
+    // add-process-which (2026-05-26): locate an executable on `$PATH`.
+    //
+    // Returns the absolute or relative path actually resolved (matches the
+    // form stored in $PATH), or `null` when not found. Mirrors POSIX
+    // `command -v` and Windows `where` — names containing a path separator
+    // bypass PATH and stat the file directly; otherwise each PATH entry
+    // (and on Windows each `PATHEXT` suffix) is tried in order, first hit
+    // wins.
+    //
+    // Use case: setup-tools / test-all 风格脚本里 gate 命令存在性，例如
+    //   if (Process.Which("cargo") == null) { ... install ... }
+    public static string? Which(string name) {
+        return ProcessNative.Which(name);
+    }
+
     public ProcessHandle Spawn() {
         object[] raw = ProcessNative.Spawn(
             this._program,
@@ -237,4 +254,7 @@ public static class ProcessNative {
         string? stdoutPath,
         int stderrMode,
         string? stderrPath);
+
+    [Native("__process_which")]
+    public static extern string? Which(string name);
 }

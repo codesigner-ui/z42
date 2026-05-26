@@ -687,6 +687,108 @@ pub fn builtin_process_handle_read_stderr(ctx: &VmContext, args: &[Value]) -> Re
     process_handle_read_impl(ctx, args, "__process_handle_read_stderr", true)
 }
 
+// ── __process_which ──────────────────────────────────────────────────────
+//
+// `Process.Which(name)` — locate an executable on `$PATH`, matching the
+// semantics of POSIX `command -v` and Windows `where`. Returns the full
+// resolved path or `Value::Null` when not found.
+//
+// Resolution rules:
+//   - Names containing a path separator (Unix `/`, Windows `/` or `\`) are
+//     treated as direct paths: stat the file and return if it exists and
+//     is executable, otherwise null. PATH lookup is skipped — matches
+//     POSIX `command -v ./foo` behaviour.
+//   - Otherwise iterate `$PATH` entries (`;`-separated on Windows, `:`
+//     elsewhere). Empty entries are treated as the current directory
+//     per POSIX. First hit wins.
+//   - On Unix, "executable" means `metadata.permissions().mode() & 0o111
+//     != 0` (any of u/g/o exec bit set), matching `access(X_OK)`'s
+//     practical behaviour for normal files.
+//   - On Windows, when the queried name lacks an extension, also try
+//     each `PATHEXT` suffix (`.COM;.EXE;.BAT;.CMD;...`); when it already
+//     has an extension, match it literally.
+
+pub fn builtin_process_which(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
+    const NAME: &str = "__process_which";
+    let name = arg_str(args, 0, NAME)?;
+    Ok(match resolve_executable(&name) {
+        Some(path) => Value::Str(path),
+        None       => Value::Null,
+    })
+}
+
+fn resolve_executable(name: &str) -> Option<String> {
+    if name.is_empty() {
+        return None;
+    }
+
+    // Direct-path branch: contains separator → no PATH walk.
+    if contains_path_separator(name) {
+        return check_candidate(std::path::Path::new(name));
+    }
+
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        // POSIX: empty entry is current directory.
+        let base = if dir.as_os_str().is_empty() {
+            std::path::PathBuf::from(".")
+        } else {
+            dir
+        };
+        for cand in candidates_in_dir(&base, name) {
+            if let Some(hit) = check_candidate(&cand) {
+                return Some(hit);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn contains_path_separator(s: &str) -> bool {
+    s.contains('/') || s.contains('\\')
+}
+#[cfg(not(windows))]
+fn contains_path_separator(s: &str) -> bool {
+    s.contains('/')
+}
+
+#[cfg(windows)]
+fn candidates_in_dir(dir: &std::path::Path, name: &str) -> Vec<std::path::PathBuf> {
+    // If the queried name already has an extension, accept as-is. Otherwise
+    // try each PATHEXT entry (default to common set when env unset).
+    let has_ext = std::path::Path::new(name).extension().is_some();
+    if has_ext {
+        return vec![dir.join(name)];
+    }
+    let pathext = std::env::var("PATHEXT")
+        .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    pathext
+        .split(';')
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| dir.join(format!("{}{}", name, ext)))
+        .collect()
+}
+#[cfg(not(windows))]
+fn candidates_in_dir(dir: &std::path::Path, name: &str) -> Vec<std::path::PathBuf> {
+    vec![dir.join(name)]
+}
+
+#[cfg(unix)]
+fn check_candidate(path: &std::path::Path) -> Option<String> {
+    use std::os::unix::fs::PermissionsExt;
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() { return None; }
+    if meta.permissions().mode() & 0o111 == 0 { return None; }
+    Some(path.to_string_lossy().into_owned())
+}
+#[cfg(not(unix))]
+fn check_candidate(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() { return None; }
+    Some(path.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 #[path = "process_tests.rs"]
 mod process_tests;
