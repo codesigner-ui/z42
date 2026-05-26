@@ -1,0 +1,96 @@
+namespace Std.Diagnostics;
+
+using Std;
+
+// add-log-structured-fields (2026-05-27): chainable key=value attachment
+// for `Log.Info/Warn/Error/...`. Renders as logfmt — `[LEVEL ts] msg
+// key1="v1" key2="v2"` — so grep / awk / `lnav` consumers parse cleanly.
+//
+// Usage:
+//     Log.Info("started", new LogFields()
+//         .Add("port", port.ToString())
+//         .Add("env",  "prod"));
+//
+// → stderr:
+//     [INFO 1747327200000] started port="8080" env="prod"
+//
+// Values are always double-quoted; `"` and `\` inside the value are
+// backslash-escaped (logfmt convention). Keys are emitted verbatim —
+// callers shouldn't put `=` or spaces in keys.
+public sealed class LogFields {
+    string[] _keys;
+    string[] _vals;
+    int _count;
+    int _capacity;
+
+    public LogFields() {
+        this._capacity = 4;
+        this._keys = new string[4];
+        this._vals = new string[4];
+        this._count = 0;
+    }
+
+    /// Append a key/value pair. Returns `this` for chaining.
+    public LogFields Add(string key, string value) {
+        if (this._count == this._capacity) this._grow();
+        this._keys[this._count] = key;
+        this._vals[this._count] = value;
+        this._count = this._count + 1;
+        return this;
+    }
+
+    public int Count() { return this._count; }
+
+    /// Format as ` key1="v1" key2="v2"` (leading space if non-empty). Empty
+    /// when no fields have been added. Used by `Log.Write*` internals.
+    public string Format() {
+        if (this._count == 0) return "";
+        string out_ = "";
+        int i = 0;
+        while (i < this._count) {
+            out_ = out_ + " " + this._keys[i] + "=\"" + LogFields._escape(this._vals[i]) + "\"";
+            i = i + 1;
+        }
+        return out_;
+    }
+
+    // Backslash-escape `\` and `"` inside the value, matching logfmt.
+    static string _escape(string s) {
+        // Fast path: empty or no escapes needed.
+        int i = 0;
+        bool needs = false;
+        while (i < s.Length) {
+            char c = s.CharAt(i);
+            if (c == '"' || c == '\\') { needs = true; break; }
+            i = i + 1;
+        }
+        if (!needs) return s;
+        string out_ = "";
+        int j = 0;
+        while (j < s.Length) {
+            char c = s.CharAt(j);
+            if (c == '"' || c == '\\') {
+                out_ = out_ + "\\" + c.ToString();
+            } else {
+                out_ = out_ + c.ToString();
+            }
+            j = j + 1;
+        }
+        return out_;
+    }
+
+    void _grow() {
+        int newCap = this._capacity * 2;
+        string[] nk = new string[newCap];
+        string[] nv = new string[newCap];
+        int i = 0;
+        while (i < this._count) {
+            nk[i] = this._keys[i];
+            nv[i] = this._vals[i];
+            i = i + 1;
+        }
+        this._keys = nk;
+        this._vals = nv;
+        this._capacity = newCap;
+    }
+}

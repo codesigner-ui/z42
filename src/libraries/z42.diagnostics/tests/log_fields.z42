@@ -1,0 +1,92 @@
+// add-log-structured-fields (2026-05-27): LogFields + Log.*(msg, fields).
+namespace Z42DiagnosticsLogFieldsTests;
+
+using Std.Test;
+using Std.Diagnostics;
+
+[Test]
+void test_empty_fields_format() {
+    var f = new LogFields();
+    Assert.Equal("", f.Format());
+    Assert.Equal(0, f.Count());
+}
+
+[Test]
+void test_single_field_format() {
+    var f = new LogFields().Add("port", "8080");
+    Assert.Equal(" port=\"8080\"", f.Format());
+    Assert.Equal(1, f.Count());
+}
+
+[Test]
+void test_multiple_fields_chain() {
+    var f = new LogFields()
+        .Add("env", "prod")
+        .Add("port", "443")
+        .Add("worker", "3");
+    Assert.Equal(" env=\"prod\" port=\"443\" worker=\"3\"", f.Format());
+    Assert.Equal(3, f.Count());
+}
+
+[Test]
+void test_value_quote_escape() {
+    var f = new LogFields().Add("note", "she said \"hi\"");
+    Assert.Equal(" note=\"she said \\\"hi\\\"\"", f.Format());
+}
+
+[Test]
+void test_value_backslash_escape() {
+    var f = new LogFields().Add("path", "C:\\Program Files\\app");
+    Assert.Equal(" path=\"C:\\\\Program Files\\\\app\"", f.Format());
+}
+
+[Test]
+void test_empty_value_still_emits_pair() {
+    var f = new LogFields().Add("k", "");
+    Assert.Equal(" k=\"\"", f.Format());
+}
+
+[Test]
+void test_value_with_spaces_quoted_as_is() {
+    var f = new LogFields().Add("msg", "hello world");
+    Assert.Equal(" msg=\"hello world\"", f.Format());
+}
+
+[Test]
+void test_grow_beyond_initial_capacity() {
+    var f = new LogFields();
+    int i = 0;
+    while (i < 20) {
+        f.Add("k" + i.ToString(), "v" + i.ToString());
+        i = i + 1;
+    }
+    Assert.Equal(20, f.Count());
+    string out_ = f.Format();
+    // First pair must be present.
+    Assert.True(out_.Contains("k0=\"v0\""));
+    // Last pair must be present.
+    Assert.True(out_.Contains("k19=\"v19\""));
+}
+
+[Test]
+void test_log_info_with_fields_does_not_crash() {
+    // Output goes to stderr — we can't assert content from a [Test], but
+    // exercising the path catches obvious dispatch / null-arg bugs.
+    Log.Info("startup", new LogFields().Add("port", "8080"));
+}
+
+[Test]
+void test_log_info_with_null_fields_does_not_crash() {
+    Log.Info("safe", null);
+}
+
+[Test]
+void test_log_all_levels_have_fields_overload() {
+    var f = new LogFields().Add("k", "v");
+    Log.Trace("t", f);
+    Log.Debug("d", f);
+    Log.Info("i", f);
+    Log.Warn("w", f);
+    Log.Error("e", f);
+    // No crash = pass; output filtering already covered by log_filter.z42.
+}

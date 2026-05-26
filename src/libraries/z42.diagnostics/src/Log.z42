@@ -35,9 +35,27 @@ public static class Log {
     public static void Warn(string msg)  { Log.Write(LogLevel.Warn,  msg); }
     public static void Error(string msg) { Log.Write(LogLevel.Error, msg); }
 
+    // add-log-structured-fields (2026-05-27): logfmt-style structured
+    // attachments. Each method gets a `(msg, LogFields)` overload that
+    // appends ` key="val"` pairs after the message; null fields treated
+    // as no fields. See `LogFields` for format / escape rules.
+    public static void Trace(string msg, LogFields fields) { Log.WriteF(LogLevel.Trace, msg, fields); }
+    public static void Debug(string msg, LogFields fields) { Log.WriteF(LogLevel.Debug, msg, fields); }
+    public static void Info(string msg, LogFields fields)  { Log.WriteF(LogLevel.Info,  msg, fields); }
+    public static void Warn(string msg, LogFields fields)  { Log.WriteF(LogLevel.Warn,  msg, fields); }
+    public static void Error(string msg, LogFields fields) { Log.WriteF(LogLevel.Error, msg, fields); }
+
     private static void Write(int level, string msg) {
         if (level < Log._minLevel) { return; }
         long ms = DateTime.UtcNow().UnixMs();
         ConsoleError.WriteLine("[" + LogLevel.Name(level) + " " + ms.ToString() + "] " + msg);
+    }
+
+    private static void WriteF(int level, string msg, LogFields fields) {
+        if (level < Log._minLevel) { return; }
+        long ms = DateTime.UtcNow().UnixMs();
+        string suffix = "";
+        if (fields != null) suffix = fields.Format();
+        ConsoleError.WriteLine("[" + LogLevel.Name(level) + " " + ms.ToString() + "] " + msg + suffix);
     }
 }
