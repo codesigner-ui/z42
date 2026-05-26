@@ -11,7 +11,7 @@
 #   3. dotnet test             — compiler unit tests (1233+)
 #   4. test-vm.sh              — VM goldens interp + JIT (320+)
 #   5. test-cross-zpkg.sh      — cross-package metadata e2e
-#   6. test-stdlib.sh          — stdlib [Test] dogfood (6 libs)
+#   6. test-lib.sh             — stdlib [Test] dogfood (all libs)
 #
 # Optional stages (skipped unless explicitly requested):
 #   7. test-dist.sh            — packaged binary e2e (--with-dist; requires
@@ -129,7 +129,7 @@ STAGE_VM_GOLDENS="VM goldens|./scripts/test-vm.sh $($QUICK && echo '--no-rebuild
 # on test-vm to avoid racing W2's stdlib build path.
 STAGE_VM_GOLDENS_NOREBUILD="VM goldens|./scripts/test-vm.sh --no-rebuild"
 STAGE_CROSS_ZPKG="cross-zpkg|./scripts/test-cross-zpkg.sh"
-STAGE_STDLIB="stdlib [Test]|./scripts/test-stdlib.sh"
+STAGE_STDLIB="stdlib [Test]|./scripts/test-lib.sh"
 STAGE_DIST="packaged binary|./scripts/test-dist.sh"
 
 # ── Sequential mode (existing behavior) ──────────────────────────────────────

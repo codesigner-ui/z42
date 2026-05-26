@@ -172,7 +172,7 @@ fn format_value(val: &Value) -> String {
             }
             format!("{}{{...}}", b.type_desc.name)
         }
-        Value::Str(s) => s.clone(),
+        Value::Str(s) => s.to_string(),
         _ => format!("{:?}", val),
     }
 }

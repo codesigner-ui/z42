@@ -8,9 +8,11 @@
 # Usage:
 #   ./scripts/test-vm.sh                    # rebuild stdlib + golden zbc, then run interp + jit
 #   ./scripts/test-vm.sh interp             # interp only
-#   ./scripts/test-vm.sh jit                # jit only
+#   ./scripts/test-vm.sh jit               # jit only
 #   ./scripts/test-vm.sh --no-rebuild       # skip stdlib + golden rebuild (fast iteration)
 #   ./scripts/test-vm.sh interp --no-rebuild
+#   ./scripts/test-vm.sh --jobs 8           # run 8 tests concurrently (parallel mode)
+#   ./scripts/test-vm.sh interp --no-rebuild --jobs $(nproc)  # fast iteration, all cores
 #
 # Default behaviour rebuilds stdlib zpkgs (sync to artifacts/build/libs/release/) and golden
 # .zbc artifacts before running, eliminating the historical "stale artifact gives
@@ -38,11 +40,15 @@ GOLDEN_GLOBS=(
 MODES=("interp" "jit")
 
 REBUILD=true
+JOBS=1
 POSITIONAL=()
 for arg in "$@"; do
     case "$arg" in
-        --no-rebuild) REBUILD=false ;;
-        *)            POSITIONAL+=("$arg") ;;
+        --no-rebuild)  REBUILD=false ;;
+        --jobs=*)      JOBS="${arg#--jobs=}" ;;
+        --jobs|-j)     echo "error: --jobs requires a value (e.g. --jobs=4)" >&2; exit 2 ;;
+        -j[0-9]*)      JOBS="${arg#-j}" ;;
+        *)             POSITIONAL+=("$arg") ;;
     esac
 done
 
@@ -60,9 +66,18 @@ if [ "$REBUILD" = true ]; then
     echo ""
 fi
 
-# Build once before running tests
+# Build VM once. The target-dir is set to artifacts/build/runtime via
+# .cargo/config.toml, so the binary is always at the path below. Using
+# the binary directly (not `cargo run`) avoids per-test cargo overhead
+# (~100 ms per invocation) and eliminates cargo-lock contention in
+# parallel mode.
 echo "Building VM..."
 cargo build -q --manifest-path "$RUNTIME_MANIFEST"
+VM_BIN="$ROOT/artifacts/build/runtime/debug/z42vm"
+if [[ ! -x "$VM_BIN" ]]; then
+    echo "error: VM binary not found at $VM_BIN after cargo build" >&2
+    exit 1
+fi
 echo ""
 
 OVERALL_PASS=0
@@ -160,27 +175,30 @@ for MODE in "${MODES[@]}"; do
         exit 1
     fi
 
+    # Filter cases for this mode (removes interp_only entries when running JIT).
+    mode_cases=()
     for entry in "${CASES[@]}"; do
         IFS='|' read -r name artifact expected interp_marker entry_name <<< "$entry"
-
-        # Skip JIT for tests with `interp_only` marker (e.g. tests using IR
-        # opcodes whose JIT path is not yet implemented — see closure.md §6).
         if [ "$MODE" = "jit" ] && [ -f "$interp_marker" ]; then
             continue
         fi
+        mode_cases+=("$entry")
+    done
 
-        actual=$(cargo run -q --manifest-path "$RUNTIME_MANIFEST" -- "$artifact" "$entry_name" --mode "$MODE" 2>&1) || true
+    # run_one_case: execute a single test case and emit PASS/FAIL output.
+    # Non-zero exit if the test fails.
+    run_one_case() {
+        local entry="$1" mode="$2"
+        local name artifact expected interp_marker entry_name
+        IFS='|' read -r name artifact expected interp_marker entry_name <<< "$entry"
 
-        # If no expected_output.txt: assertion-based test (Assert.Equal etc.) —
-        # success means the VM ran to completion with empty stdout.
-        expected_str=""
+        local actual expected_str=""
+        actual=$("$VM_BIN" "$artifact" "$entry_name" --mode "$mode" 2>&1) || true
         [ -f "$expected" ] && expected_str=$(cat "$expected")
 
         if [ "$actual" = "$expected_str" ]; then
-            PASS=$((PASS + 1))
+            return 0
         else
-            FAIL=$((FAIL + 1))
-            FAILURES+=("$name")
             echo "  FAIL: $name"
             if [ -f "$expected" ]; then
                 echo "    expected: $(head -1 "$expected")"
@@ -188,8 +206,74 @@ for MODE in "${MODES[@]}"; do
                 echo "    expected: <empty>"
             fi
             echo "    actual:   $(echo "$actual" | head -1)"
+            return 1
         fi
-    done
+    }
+
+    if [[ "$JOBS" -le 1 ]]; then
+        # ── Sequential ────────────────────────────────────────────────────────
+        for entry in "${mode_cases[@]}"; do
+            if run_one_case "$entry" "$MODE"; then
+                PASS=$((PASS + 1))
+            else
+                FAIL=$((FAIL + 1))
+                IFS='|' read -r name _ <<< "$entry"
+                FAILURES+=("$name")
+            fi
+        done
+    else
+        # ── Parallel: batches of JOBS cases ───────────────────────────────────
+        # Each job captures stdout to a temp file; we print in original order
+        # after the batch completes so output stays readable.
+        local TMPDIR_VM
+        TMPDIR_VM=$(mktemp -d)
+        trap 'rm -rf "$TMPDIR_VM"' RETURN
+
+        local n_cases=${#mode_cases[@]}
+        local i=0
+        while [[ $i -lt $n_cases ]]; do
+            local batch_pids=() batch_outs=() batch_rcs=() batch_entries=()
+
+            for ((j = 0; j < JOBS && i + j < n_cases; j++)); do
+                local entry="${mode_cases[$((i + j))]}"
+                local out_f rc_f
+                out_f=$(mktemp "$TMPDIR_VM/out.XXXXXX")
+                rc_f=$(mktemp "$TMPDIR_VM/rc.XXXXXX")
+                echo "1" > "$rc_f"
+
+                (
+                    if run_one_case "$entry" "$MODE"; then
+                        echo "0" > "$rc_f"
+                    else
+                        echo "1" > "$rc_f"
+                    fi
+                ) > "$out_f" 2>&1 &
+
+                batch_pids+=($!)
+                batch_outs+=("$out_f")
+                batch_rcs+=("$rc_f")
+                batch_entries+=("$entry")
+            done
+
+            for pid in "${batch_pids[@]}"; do
+                wait "$pid" 2>/dev/null || true
+            done
+
+            for k in "${!batch_entries[@]}"; do
+                cat "${batch_outs[$k]}"
+                rc=$(cat "${batch_rcs[$k]}" 2>/dev/null || echo "1")
+                if [[ "$rc" == "0" ]]; then
+                    PASS=$((PASS + 1))
+                else
+                    FAIL=$((FAIL + 1))
+                    IFS='|' read -r name _ <<< "${batch_entries[$k]}"
+                    FAILURES+=("$name")
+                fi
+            done
+
+            i=$((i + JOBS))
+        done
+    fi
 
     echo ""
     echo "  Result: $PASS passed, $FAIL failed"
