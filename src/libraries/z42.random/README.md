@@ -9,7 +9,7 @@ Deterministic 伪随机数生成器（PCG-XSH-RR 64→32 输出）。Seed 后输
 ## 核心文件
 | 文件 | 职责 |
 |------|------|
-| `src/Random.z42` | `Std.Random.Random` 类，PCG-XSH-RR 实现 + range / double / bool helpers |
+| `src/Random.z42` | `Std.Random.Random` 类，PCG-XSH-RR 实现 + range / double / bool helpers + `ShuffleInt/Long/String` / `SampleInt/String` 集合操作 |
 
 ## 入口点
 - `Std.Random.Random()` — 用 wall-clock seed

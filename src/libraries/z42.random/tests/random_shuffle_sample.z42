@@ -1,0 +1,174 @@
+// add-random-shuffle-sample (2026-05-27): Random.Shuffle* / Sample* coverage.
+namespace Z42RandomShuffleSampleTests;
+
+using Std;
+using Std.Test;
+using Std.Random;
+
+[Test]
+void test_shuffle_int_preserves_set() {
+    var rng = new Random(42L);
+    int[] arr = new int[8];
+    int i = 0;
+    while (i < 8) { arr[i] = i; i = i + 1; }
+    rng.ShuffleInt(arr);
+    // Same multiset — sum 0..7 = 28
+    int sum = 0;
+    int j = 0;
+    while (j < 8) { sum = sum + arr[j]; j = j + 1; }
+    Assert.Equal(28, sum);
+}
+
+[Test]
+void test_shuffle_int_actually_permutes() {
+    var rng = new Random(42L);
+    int[] arr = new int[10];
+    int i = 0;
+    while (i < 10) { arr[i] = i; i = i + 1; }
+    rng.ShuffleInt(arr);
+    // At least one position must differ from identity 0..9
+    bool anyMoved = false;
+    int j = 0;
+    while (j < 10) {
+        if (arr[j] != j) { anyMoved = true; }
+        j = j + 1;
+    }
+    Assert.True(anyMoved);
+}
+
+[Test]
+void test_shuffle_long_preserves_sum() {
+    var rng = new Random(123L);
+    long[] arr = new long[5];
+    arr[0] = 1000000000L; arr[1] = 2000000000L; arr[2] = 3000000000L;
+    arr[3] = 4000000000L; arr[4] = 5000000000L;
+    rng.ShuffleLong(arr);
+    long sum = 0L;
+    int j = 0;
+    while (j < 5) { sum = sum + arr[j]; j = j + 1; }
+    Assert.Equal(15000000000L, sum);
+}
+
+[Test]
+void test_shuffle_string_preserves_set() {
+    var rng = new Random(7L);
+    string[] arr = new string[4];
+    arr[0] = "alpha"; arr[1] = "beta"; arr[2] = "gamma"; arr[3] = "delta";
+    rng.ShuffleString(arr);
+    // Each original must appear exactly once
+    int hits = 0;
+    int j = 0;
+    while (j < 4) {
+        if (arr[j] == "alpha" || arr[j] == "beta" || arr[j] == "gamma" || arr[j] == "delta") {
+            hits = hits + 1;
+        }
+        j = j + 1;
+    }
+    Assert.Equal(4, hits);
+}
+
+[Test]
+void test_shuffle_empty_array_is_noop() {
+    var rng = new Random(1L);
+    int[] empty = new int[0];
+    rng.ShuffleInt(empty);
+    Assert.Equal(0, empty.Length);
+}
+
+[Test]
+void test_shuffle_single_element_is_noop() {
+    var rng = new Random(1L);
+    int[] one = new int[1];
+    one[0] = 42;
+    rng.ShuffleInt(one);
+    Assert.Equal(42, one[0]);
+}
+
+[Test]
+void test_sample_returns_k_elements() {
+    var rng = new Random(5L);
+    int[] pool = new int[10];
+    int i = 0;
+    while (i < 10) { pool[i] = i + 100; i = i + 1; }
+    int[] picked = rng.SampleInt(pool, 4);
+    Assert.Equal(4, picked.Length);
+}
+
+[Test]
+void test_sample_returns_distinct_elements() {
+    var rng = new Random(5L);
+    int[] pool = new int[20];
+    int i = 0;
+    while (i < 20) { pool[i] = i; i = i + 1; }
+    int[] picked = rng.SampleInt(pool, 6);
+    // Cross-pair distinctness
+    int a = 0;
+    while (a < picked.Length) {
+        int b = a + 1;
+        while (b < picked.Length) {
+            Assert.False(picked[a] == picked[b]);
+            b = b + 1;
+        }
+        a = a + 1;
+    }
+}
+
+[Test]
+void test_sample_k_equals_zero_returns_empty() {
+    var rng = new Random(1L);
+    int[] pool = new int[5];
+    pool[0] = 1; pool[1] = 2; pool[2] = 3; pool[3] = 4; pool[4] = 5;
+    int[] picked = rng.SampleInt(pool, 0);
+    Assert.Equal(0, picked.Length);
+}
+
+[Test]
+void test_sample_k_equals_length_is_permutation() {
+    var rng = new Random(99L);
+    int[] pool = new int[5];
+    pool[0] = 1; pool[1] = 2; pool[2] = 3; pool[3] = 4; pool[4] = 5;
+    int[] picked = rng.SampleInt(pool, 5);
+    Assert.Equal(5, picked.Length);
+    int sum = 0;
+    int j = 0;
+    while (j < 5) { sum = sum + picked[j]; j = j + 1; }
+    Assert.Equal(15, sum);
+}
+
+[Test]
+void test_sample_k_greater_than_length_throws() {
+    var rng = new Random(1L);
+    int[] pool = new int[3];
+    bool caught = false;
+    try {
+        rng.SampleInt(pool, 10);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_sample_negative_k_throws() {
+    var rng = new Random(1L);
+    int[] pool = new int[3];
+    bool caught = false;
+    try {
+        rng.SampleInt(pool, -1);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_sample_string_distinct() {
+    var rng = new Random(11L);
+    string[] pool = new string[6];
+    pool[0] = "a"; pool[1] = "b"; pool[2] = "c"; pool[3] = "d"; pool[4] = "e"; pool[5] = "f";
+    string[] picked = rng.SampleString(pool, 3);
+    Assert.Equal(3, picked.Length);
+    Assert.False(picked[0] == picked[1]);
+    Assert.False(picked[1] == picked[2]);
+    Assert.False(picked[0] == picked[2]);
+}

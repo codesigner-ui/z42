@@ -119,4 +119,99 @@ public class Random {
     public bool NextBool() {
         return (this.Step() & 1) == 1;
     }
+
+    // add-random-shuffle-sample (2026-05-27): collection helpers.
+    //
+    // `Shuffle` is in-place Fisher–Yates. `Sample` reservoir-style — picks
+    // `k` items without replacement. For sequences whose length is unknown
+    // ahead of time the standard reservoir algorithm; here we know
+    // `arr.Length` so we use partial Fisher–Yates (O(k) swaps) which is
+    // simpler + still uniform.
+
+    /// In-place Fisher–Yates shuffle. Mutates `arr`. Empty / single-element
+    /// arrays are no-ops. Distribution is uniform over the n! permutations
+    /// (modulo the PCG output's modulo bias — negligible for n < 2^32).
+    public void ShuffleInt(int[] arr) {
+        int n = arr.Length;
+        int i = n - 1;
+        while (i > 0) {
+            int j = this.NextIntRange(0, i + 1);
+            int tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+            i = i - 1;
+        }
+    }
+
+    public void ShuffleLong(long[] arr) {
+        int n = arr.Length;
+        int i = n - 1;
+        while (i > 0) {
+            int j = this.NextIntRange(0, i + 1);
+            long tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+            i = i - 1;
+        }
+    }
+
+    public void ShuffleString(string[] arr) {
+        int n = arr.Length;
+        int i = n - 1;
+        while (i > 0) {
+            int j = this.NextIntRange(0, i + 1);
+            string tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+            i = i - 1;
+        }
+    }
+
+    /// Sample `k` distinct elements from `arr` (without replacement).
+    /// Throws if `k > arr.Length` or `k < 0`. Order in result is shuffle
+    /// order (i.e., uniformly random); `arr` is not mutated.
+    public int[] SampleInt(int[] arr, int k) {
+        if (k < 0) throw new ArgumentException("SampleInt: k must be >= 0");
+        if (k > arr.Length) throw new ArgumentException("SampleInt: k > arr.Length");
+        // Copy arr → working buffer; partial Fisher–Yates first k positions.
+        int n = arr.Length;
+        int[] work = new int[n];
+        int i = 0;
+        while (i < n) { work[i] = arr[i]; i = i + 1; }
+        // Swap each of the first k positions with a uniformly-random index
+        // in [pos, n).
+        int pos = 0;
+        while (pos < k) {
+            int j = this.NextIntRange(pos, n);
+            int tmp = work[pos];
+            work[pos] = work[j];
+            work[j] = tmp;
+            pos = pos + 1;
+        }
+        int[] result = new int[k];
+        int r = 0;
+        while (r < k) { result[r] = work[r]; r = r + 1; }
+        return result;
+    }
+
+    public string[] SampleString(string[] arr, int k) {
+        if (k < 0) throw new ArgumentException("SampleString: k must be >= 0");
+        if (k > arr.Length) throw new ArgumentException("SampleString: k > arr.Length");
+        int n = arr.Length;
+        string[] work = new string[n];
+        int i = 0;
+        while (i < n) { work[i] = arr[i]; i = i + 1; }
+        int pos = 0;
+        while (pos < k) {
+            int j = this.NextIntRange(pos, n);
+            string tmp = work[pos];
+            work[pos] = work[j];
+            work[j] = tmp;
+            pos = pos + 1;
+        }
+        string[] result = new string[k];
+        int r = 0;
+        while (r < k) { result[r] = work[r]; r = r + 1; }
+        return result;
+    }
 }
