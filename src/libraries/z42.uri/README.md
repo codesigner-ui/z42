@@ -9,7 +9,7 @@ opaque URI。
 ## 核心文件
 | 文件 | 职责 |
 |------|------|
-| `src/Uri.z42`          | `Std.Uri.Uri` 不可变值对象 + `UriParser` + `UriCodec` |
+| `src/Uri.z42`          | `Std.Uri.Uri` 不可变值对象 + `UriParser` + `UriCodec` + 静态 `Uri.Resolve(base, ref)` RFC 3986 §5.3 |
 | `src/UriException.z42` | `Std.UriException`（malformed input / bad percent escape） |
 
 ## 入口点

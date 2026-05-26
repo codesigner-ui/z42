@@ -134,6 +134,242 @@ public class Uri {
         return UriCodec.Decode(s);
     }
 
+    // add-uri-resolve (2026-05-27): RFC 3986 §5.3 reference resolution.
+    //
+    // Given a base URI and a (possibly relative) reference, compute the
+    // target absolute URI. Examples:
+    //
+    //   Resolve("http://a.com/x/y/z", "../w")  → "http://a.com/x/w"
+    //   Resolve("http://a.com/x/",   "y")      → "http://a.com/x/y"
+    //   Resolve("http://a.com/x",    "/y")     → "http://a.com/y"
+    //   Resolve("http://a.com/x",    "//b.com/y") → "http://b.com/y"
+    //   Resolve("http://a.com/x",    "?q=1")   → "http://a.com/x?q=1"
+    //   Resolve("http://a.com/x",    "https://x") → "https://x"
+    //
+    // Reference may be parseable as an absolute URI (scheme present) or a
+    // relative reference. For relative form, we accept the raw string and
+    // pick it apart locally — full relative-reference grammar is not
+    // exposed by `UriParser` (which requires a scheme).
+    public static Uri Resolve(Uri base_, string reference) {
+        if (reference.Length == 0) {
+            // Empty reference → return base (with fragment cleared per RFC).
+            return new Uri(base_._scheme, base_._hasAuthority, base_._userInfo,
+                base_._host, base_._port, base_._path, base_._query, "");
+        }
+        // Try parsing as absolute URI first (scheme + `:`).
+        if (Uri._hasScheme(reference)) {
+            // Already absolute — just normalise path dot segments.
+            Uri r = Uri.Parse(reference);
+            return new Uri(r._scheme, r._hasAuthority, r._userInfo, r._host, r._port,
+                Uri._removeDotSegments(r._path), r._query, r._fragment);
+        }
+        // Split reference into (authority?, path, query?, fragment?).
+        string[] parts = Uri._splitRef(reference);
+        string rAuth = parts[0];      // includes leading `//` when present; "" otherwise
+        string rPath = parts[1];
+        string rQuery = parts[2];     // "" when absent
+        string rFrag = parts[3];      // "" when absent
+        bool   rHasQuery = parts[4] == "1";
+
+        string tScheme;
+        bool   tHasAuthority;
+        string tUserInfo;
+        string tHost;
+        int    tPort;
+        string tPath;
+        string tQuery;
+
+        if (rAuth.Length > 0) {
+            // Protocol-relative: //host/path
+            tScheme = base_._scheme;
+            // Parse rAuth as a pseudo-URI: `<base_scheme>://<rAuth-without-slashes>`.
+            // _splitRef stripped the leading `//`; pass the bare authority+path here.
+            Uri auth = Uri.Parse(base_._scheme + "://" + rAuth + rPath);
+            tHasAuthority = true;
+            tUserInfo = auth._userInfo;
+            tHost     = auth._host;
+            tPort     = auth._port;
+            tPath     = Uri._removeDotSegments(auth._path);
+            tQuery    = rHasQuery ? rQuery : "";
+        } else {
+            tScheme       = base_._scheme;
+            tHasAuthority = base_._hasAuthority;
+            tUserInfo     = base_._userInfo;
+            tHost         = base_._host;
+            tPort         = base_._port;
+            if (rPath.Length == 0) {
+                tPath  = base_._path;
+                tQuery = rHasQuery ? rQuery : base_._query;
+            } else if (rPath.CharAt(0) == '/') {
+                tPath  = Uri._removeDotSegments(rPath);
+                tQuery = rHasQuery ? rQuery : "";
+            } else {
+                tPath  = Uri._removeDotSegments(Uri._mergePath(base_, rPath));
+                tQuery = rHasQuery ? rQuery : "";
+            }
+        }
+        return new Uri(tScheme, tHasAuthority, tUserInfo, tHost, tPort,
+            tPath, tQuery, rFrag);
+    }
+
+    // True when `s` starts with `<scheme>:` where scheme matches RFC 3986
+    // (ALPHA followed by ALPHA / DIGIT / `+` / `-` / `.`). We avoid
+    // mistaking `//host/path` (rAuth-only) or `/abs/path` for absolute.
+    static bool _hasScheme(string s) {
+        int n = s.Length;
+        if (n == 0) return false;
+        char c0 = s.CharAt(0);
+        if (!Uri._isAlpha(c0)) return false;
+        int i = 1;
+        while (i < n) {
+            char c = s.CharAt(i);
+            if (c == ':') return i > 0;
+            if (!Uri._isAlpha(c) && !Uri._isDigit(c) && c != '+' && c != '-' && c != '.') {
+                return false;
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+    static bool _isAlpha(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    }
+    static bool _isDigit(char c) { return c >= '0' && c <= '9'; }
+
+    // Split a relative reference into (authority, path, query, fragment, has_query).
+    // authority = "" when not starting with `//`; otherwise the chars between
+    // the leading `//` and the next `/?#` (NOT including the leading `//`).
+    static string[] _splitRef(string ref_) {
+        string[] r = new string[5];
+        int n = ref_.Length;
+        int i = 0;
+        // Fragment first (everything from `#` onward).
+        int hash = -1;
+        int k = 0;
+        while (k < n) {
+            if (ref_.CharAt(k) == '#') { hash = k; break; }
+            k = k + 1;
+        }
+        string body;
+        if (hash >= 0) {
+            r[3] = Uri._slice(ref_, hash + 1, n);
+            body = Uri._slice(ref_, 0, hash);
+        } else {
+            r[3] = "";
+            body = ref_;
+        }
+        // Query
+        int qpos = -1;
+        k = 0;
+        int bn = body.Length;
+        while (k < bn) {
+            if (body.CharAt(k) == '?') { qpos = k; break; }
+            k = k + 1;
+        }
+        string pathAndAuth;
+        if (qpos >= 0) {
+            r[2] = Uri._slice(body, qpos + 1, bn);
+            r[4] = "1";
+            pathAndAuth = Uri._slice(body, 0, qpos);
+        } else {
+            r[2] = "";
+            r[4] = "0";
+            pathAndAuth = body;
+        }
+        // Authority (leading `//...` before next `/`).
+        if (pathAndAuth.Length >= 2 && pathAndAuth.CharAt(0) == '/' && pathAndAuth.CharAt(1) == '/') {
+            int slash = -1;
+            k = 2;
+            int pn = pathAndAuth.Length;
+            while (k < pn) {
+                if (pathAndAuth.CharAt(k) == '/') { slash = k; break; }
+                k = k + 1;
+            }
+            if (slash >= 0) {
+                r[0] = Uri._slice(pathAndAuth, 2, slash);
+                r[1] = Uri._slice(pathAndAuth, slash, pn);
+            } else {
+                r[0] = Uri._slice(pathAndAuth, 2, pn);
+                r[1] = "";
+            }
+        } else {
+            r[0] = "";
+            r[1] = pathAndAuth;
+        }
+        return r;
+    }
+
+    // RFC 3986 §5.2.3: merge(base, ref_path).
+    static string _mergePath(Uri base_, string refPath) {
+        if (base_._hasAuthority && base_._path.Length == 0) {
+            return "/" + refPath;
+        }
+        // Replace last segment of base path with refPath.
+        string bp = base_._path;
+        int lastSlash = -1;
+        int i = 0;
+        while (i < bp.Length) {
+            if (bp.CharAt(i) == '/') lastSlash = i;
+            i = i + 1;
+        }
+        if (lastSlash < 0) {
+            return refPath;
+        }
+        return Uri._slice(bp, 0, lastSlash + 1) + refPath;
+    }
+
+    // RFC 3986 §5.2.4 remove_dot_segments algorithm.
+    static string _removeDotSegments(string input) {
+        // We process segment-by-segment using a list of resolved segments.
+        // To support leading `/` we track whether the path is absolute.
+        bool absolute = input.Length > 0 && input.CharAt(0) == '/';
+        // Tokenise path into segments (split by `/`), preserving emptiness.
+        string[] segs = input.Split("/");
+        // Build resolved list.
+        string[] out_ = new string[segs.Length];
+        int n = 0;
+        int idx = 0;
+        // Skip leading empty caused by leading slash so we don't double-count.
+        if (absolute && segs.Length > 0 && segs[0].Length == 0) idx = 1;
+        while (idx < segs.Length) {
+            string s = segs[idx];
+            if (s == ".") {
+                // skip
+            } else if (s == "..") {
+                if (n > 0) { n = n - 1; }
+                // For absolute path, climbing past root is silently clamped.
+            } else {
+                out_[n] = s;
+                n = n + 1;
+            }
+            idx = idx + 1;
+        }
+        // Reassemble.
+        string result = absolute ? "/" : "";
+        int j = 0;
+        while (j < n) {
+            if (j > 0) result = result + "/";
+            result = result + out_[j];
+            j = j + 1;
+        }
+        // Trailing slash preservation: if input ended with `/`, `.`, or `..`
+        // (i.e. the last segment was a "directory"), result must end with `/`.
+        if (input.Length > 0) {
+            string lastSeg = segs[segs.Length - 1];
+            if (lastSeg.Length == 0 || lastSeg == "." || lastSeg == "..") {
+                if (result.Length == 0 || result.CharAt(result.Length - 1) != '/') {
+                    result = result + "/";
+                }
+            }
+        }
+        return result;
+    }
+
+    static string _slice(string s, int start, int end) {
+        if (end <= start) return "";
+        return s.Substring(start, end - start);
+    }
+
     /// Reconstruct canonical URI text:
     ///   scheme:[//[userinfo@]host[:port]]path[?query][#fragment]
     override string ToString() {
