@@ -1,0 +1,219 @@
+// add-z42-net-http-redirects (2026-05-26): HttpClient auto-follows 3xx.
+namespace Z42NetHttpRedirectsTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+[Test]
+void test_disabled_by_default() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            var resp = new HttpResponse(302, "Found", new HttpHeaders(), new byte[0]);
+            resp.Headers.Set("Location", "/elsewhere");
+            ctx.Send(resp);
+        });
+    });
+
+    // Default: no follow → client returns the 302 as-is.
+    var client = new HttpClient();
+    HttpResponse r = client.Get(url);
+    Assert.Equal(302, r.StatusCode);
+    Assert.Equal("/elsewhere", r.Headers.Get("Location"));
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_302_follows_to_new_path() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string base_ = "http://127.0.0.1:" + Int32.ToString(port);
+
+    Thread srv = Thread.Start(() => {
+        // Hop 1: 302 → /target
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("/start", ctx.Request.Url);
+            var resp = new HttpResponse(302, "Found", new HttpHeaders(), new byte[0]);
+            resp.Headers.Set("Location", "/target");
+            ctx.Send(resp);
+        });
+        // Hop 2: 200 at /target
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("/target", ctx.Request.Url);
+            Assert.Equal("GET", ctx.Request.Method);
+            ctx.SendText(200, "arrived");
+        });
+    });
+
+    var client = new HttpClient();
+    client.SetMaxRedirects(5);
+    HttpResponse r = client.Get(base_ + "/start");
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal("arrived", r.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_303_switches_post_to_get_and_drops_body() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string base_ = "http://127.0.0.1:" + Int32.ToString(port);
+
+    Thread srv = Thread.Start(() => {
+        // Hop 1: POST → 303
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("POST", ctx.Request.Method);
+            Assert.True(ctx.Request.Body.Length > 0);
+            var resp = new HttpResponse(303, "See Other", new HttpHeaders(), new byte[0]);
+            resp.Headers.Set("Location", "/result");
+            ctx.Send(resp);
+        });
+        // Hop 2: GET (method switched per RFC 7231 §6.4.4)
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("GET", ctx.Request.Method);
+            // Body should be empty (303 strips body)
+            bool hasBody = ctx.Request.Body != null && ctx.Request.Body.Length > 0;
+            Assert.False(hasBody);
+            ctx.SendText(200, "post-result");
+        });
+    });
+
+    var client = new HttpClient();
+    client.SetMaxRedirects(5);
+    HttpResponse r = client.PostString(base_ + "/create", "{\"data\":1}", "application/json");
+    Assert.Equal(200, r.StatusCode);
+    Assert.Equal("post-result", r.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_307_preserves_method_and_body() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string base_ = "http://127.0.0.1:" + Int32.ToString(port);
+    string sentBody = "stay-with-method";
+
+    Thread srv = Thread.Start(() => {
+        // Hop 1: POST → 307
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("POST", ctx.Request.Method);
+            var resp = new HttpResponse(307, "Temporary Redirect", new HttpHeaders(), new byte[0]);
+            resp.Headers.Set("Location", "/keep");
+            ctx.Send(resp);
+        });
+        // Hop 2: POST preserved + body preserved
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("POST", ctx.Request.Method);
+            string echo = Utf8.GetString(ctx.Request.Body);
+            ctx.SendText(200, "echo:" + echo);
+        });
+    });
+
+    var client = new HttpClient();
+    client.SetMaxRedirects(5);
+    HttpResponse r = client.PostString(base_ + "/", sentBody, "text/plain");
+    Assert.Equal("echo:" + sentBody, r.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_redirect_loop_exceeds_max_throws() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/loop";
+
+    // Use ServeThreaded so server keeps responding to infinite redirect loop
+    // until client gives up; Stop() then exits the accept loop.
+    Thread srv = Thread.Start(() => {
+        server.ServeThreaded((HttpServerContext ctx) => {
+            var resp = new HttpResponse(302, "Found", new HttpHeaders(), new byte[0]);
+            resp.Headers.Set("Location", "/loop");
+            ctx.Send(resp);
+        });
+    });
+
+    var client = new HttpClient();
+    client.SetMaxRedirects(3);
+    bool threw = false;
+    try {
+        client.Get(url);
+    } catch (HttpException e) {
+        threw = true;
+    }
+    Assert.True(threw);
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_absolute_url_redirect() {
+    // Server replies with a Location pointing at itself with full http:// URL.
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string base_ = "http://127.0.0.1:" + Int32.ToString(port);
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            var resp = new HttpResponse(302, "Found", new HttpHeaders(), new byte[0]);
+            resp.Headers.Set("Location", base_ + "/after");
+            ctx.Send(resp);
+        });
+        server.HandleNext((HttpServerContext ctx) => {
+            Assert.Equal("/after", ctx.Request.Url);
+            ctx.SendText(200, "ok");
+        });
+    });
+
+    var client = new HttpClient();
+    client.SetMaxRedirects(5);
+    HttpResponse r = client.Get(base_ + "/before");
+    Assert.Equal("ok", r.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_302_without_location_returns_as_is() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            // 302 without Location — can't follow; client returns as-is.
+            var resp = new HttpResponse(302, "Found", new HttpHeaders(), new byte[0]);
+            ctx.Send(resp);
+        });
+    });
+
+    var client = new HttpClient();
+    client.SetMaxRedirects(5);
+    HttpResponse r = client.Get(url);
+    Assert.Equal(302, r.StatusCode);
+
+    server.Stop();
+    srv.Join();
+}

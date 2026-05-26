@@ -68,14 +68,21 @@ public class CookieJar {
     /// Domain/Path. Cookies with `Max-Age` or `Expires` set their absolute
     /// expiry from `nowUnixSec`.
     public void IngestFromResponse(HttpResponse response, string responseHost, string responsePath, long nowUnixSec) {
-        // HttpHeaders supports multi-value via Add — iterate ALL entries
-        // (not just Get's first match) to handle multiple Set-Cookie headers.
-        int n = response.Headers.Count();
+        this.IngestSetCookieHeaders(response.Headers, responseHost, responsePath, nowUnixSec);
+    }
+
+    /// Variant taking `HttpHeaders` directly — used by `HttpClient` to avoid
+    /// z42 cross-file class-token mismatch on `HttpResponse` (the same class
+    /// referenced from CookieJar.z42 vs HttpClient.z42 produces two type
+    /// tokens; `HttpHeaders` is referenced from a single file (HttpHeaders.z42)
+    /// and threads correctly).
+    public void IngestSetCookieHeaders(HttpHeaders headers, string responseHost, string responsePath, long nowUnixSec) {
+        int n = headers.Count();
         int i = 0;
         while (i < n) {
-            string name = response.Headers.GetNameAt(i);
+            string name = headers.GetNameAt(i);
             if (name.ToLower() == "set-cookie") {
-                string raw = response.Headers.GetValueAt(i);
+                string raw = headers.GetValueAt(i);
                 Cookie c = CookieJar._parseSetCookie(raw, responseHost, responsePath, nowUnixSec);
                 if (c != null) {
                     this.Add(c);

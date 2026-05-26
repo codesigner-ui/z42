@@ -127,10 +127,19 @@ fn walk_dir(
 // ── Environment / Process ─────────────────────────────────────────────────────
 
 pub fn builtin_env_set(_ctx: &VmContext, args: &[Value]) -> Result<Value> {
-    let name  = arg_str(args, 0, "__env_set")?;
-    let value = arg_str(args, 1, "__env_set")?;
-    // Safety: z42 is single-threaded; no concurrent env reads during this call.
-    unsafe { std::env::set_var(name, value); }
+    let name = arg_str(args, 0, "__env_set")?;
+    // Null value = remove (mirrors .NET Environment.SetEnvironmentVariable(name, null)).
+    match args.get(1).unwrap_or(&Value::Null) {
+        Value::Null => unsafe { std::env::remove_var(name) },
+        v => {
+            let s = match v {
+                Value::Str(s) => s.as_str(),
+                _ => anyhow::bail!("__env_set: arg 1 expected string or null, got {:?}", v),
+            };
+            // Safety: z42 is single-threaded; no concurrent env reads during this call.
+            unsafe { std::env::set_var(name, s); }
+        }
+    }
     Ok(Value::Null)
 }
 pub fn builtin_env_get(_ctx: &VmContext, args: &[Value]) -> Result<Value> {

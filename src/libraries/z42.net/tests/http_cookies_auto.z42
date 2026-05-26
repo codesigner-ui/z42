@@ -1,0 +1,118 @@
+// add-z42-net-http-cookies-auto (2026-05-26): HttpClient.SetCookieJar wires
+// Cookie + CookieJar into Send automatically (no manual IngestFromResponse
+// / CookieHeaderFor calls).
+namespace Z42NetHttpCookiesAutoTests;
+
+using Std;
+using Std.Test;
+using Std.Threading;
+using Std.Net.Sockets;
+using Std.Net.Http;
+
+[Test]
+void test_auto_cookie_round_trip() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string base_ = "http://127.0.0.1:" + Int32.ToString(port);
+
+    Thread srv = Thread.Start(() => {
+        // Request 1: Set cookie
+        server.HandleNext((HttpServerContext ctx) => {
+            var resp = new HttpResponse(200, "OK", new HttpHeaders(), Utf8.GetBytes("logged in"));
+            resp.Headers.Add("Set-Cookie", "session=abc123; Path=/; Max-Age=3600");
+            ctx.Send(resp);
+        });
+        // Request 2: Echo Cookie header (should be auto-emitted by client)
+        server.HandleNext((HttpServerContext ctx) => {
+            string c = ctx.Request.Headers.Get("Cookie");
+            string body;
+            if (c == null) { body = "(none)"; }
+            else { body = c; }
+            ctx.SendText(200, body);
+        });
+    });
+
+    var client = new HttpClient();
+    var jar = new CookieJar();
+    client.SetCookieJar(jar);
+
+    // Step 1: login — Set-Cookie auto-ingested.
+    HttpResponse r1 = client.Get(base_ + "/login");
+    Assert.Equal(200, r1.StatusCode);
+    Assert.Equal(1, jar.LiveCount(0L));   // 1 cookie stored, ignoring expiry filter
+
+    // Step 2: subsequent request — Cookie auto-emitted.
+    HttpResponse r2 = client.Get(base_ + "/me");
+    Assert.Equal("session=abc123", r2.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_no_jar_means_no_cookies_sent() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            string c = ctx.Request.Headers.Get("Cookie");
+            string body;
+            if (c == null) { body = "(none)"; }
+            else { body = c; }
+            ctx.SendText(200, body);
+        });
+    });
+
+    var client = new HttpClient();   // No SetCookieJar
+    HttpResponse r = client.Get(url);
+    Assert.Equal("(none)", r.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_explicit_cookie_header_overrides_jar() {
+    var server = new HttpServer();
+    server.Bind("127.0.0.1", 0);
+    int port = server.LocalPort();
+    string url = "http://127.0.0.1:" + Int32.ToString(port) + "/";
+
+    Thread srv = Thread.Start(() => {
+        server.HandleNext((HttpServerContext ctx) => {
+            ctx.SendText(200, ctx.Request.Headers.Get("Cookie"));
+        });
+    });
+
+    var client = new HttpClient();
+    var jar = new CookieJar();
+    Cookie jarred = new Cookie("from-jar", "no");
+    jarred.Domain = "127.0.0.1";
+    jarred.Path   = "/";
+    jar.Add(jarred);
+    client.SetCookieJar(jar);
+
+    // User sets Cookie manually → that wins; jar isn't consulted.
+    var req = new HttpRequest(HttpMethod.Get, url);
+    req.SetHeader("Cookie", "user-set=yes");
+    HttpResponse r = client.Send(req);
+    Assert.Equal("user-set=yes", r.BodyAsString());
+
+    server.Stop();
+    srv.Join();
+}
+
+[Test]
+void test_get_cookie_jar_returns_attached_jar() {
+    var client = new HttpClient();
+    Assert.True(client.GetCookieJar() == null);
+
+    var jar = new CookieJar();
+    client.SetCookieJar(jar);
+    Assert.True(client.GetCookieJar() != null);
+    Assert.True(client.GetCookieJar() == jar);
+}

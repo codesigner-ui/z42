@@ -18,15 +18,53 @@ using Std.Net.Sockets;
 // Chunked transfer encoding: incoming supported (servers commonly use it);
 // outgoing always Content-Length.
 public class HttpClient {
-    private string _userAgent;
+    private string    _userAgent;
+    private CookieJar _cookieJar;     // null → no cookie handling (default)
+    private int       _maxRedirects;  // 0 → no auto-follow (default); recommended: 10
 
     public HttpClient() {
-        this._userAgent = "z42-http/0.1";
+        this._userAgent    = "z42-http/0.1";
+        this._cookieJar    = null;
+        this._maxRedirects = 0;
+    }
+
+    /// Enable auto-follow of 3xx responses. `maxRedirects` is the hop limit
+    /// (typical: 10); 0 disables auto-follow. Exceeding the limit throws
+    /// `HttpException`. Each hop runs through full `Send` semantics
+    /// including cookie auto-handling if a jar is attached.
+    ///
+    /// add-z42-net-http-redirects (2026-05-26). Status codes followed:
+    ///   - 301 Moved Permanently / 302 Found / 303 See Other → GET (RFC 7231 §6.4)
+    ///   - 307 Temporary Redirect / 308 Permanent Redirect → preserve method + body
+    /// 304 Not Modified / others not followed.
+    public void SetMaxRedirects(int maxRedirects) {
+        this._maxRedirects = maxRedirects;
+    }
+
+    public int GetMaxRedirects() {
+        return this._maxRedirects;
     }
 
     /// Set the User-Agent header value added to outgoing requests.
     public void SetUserAgent(string userAgent) {
         this._userAgent = userAgent;
+    }
+
+    /// Enable automatic cookie handling — Set-Cookie headers in responses
+    /// are ingested into the jar; subsequent requests auto-emit a `Cookie:`
+    /// header with applicable cookies. Pass `null` to disable (default).
+    ///
+    /// `add-z42-net-http-cookies-auto` (2026-05-26): yesterday's
+    /// `add-z42-net-http-cookies` shipped Cookie + CookieJar requiring
+    /// manual `IngestFromResponse` / `CookieHeaderFor` calls; this lifts
+    /// that into HttpClient.
+    public void SetCookieJar(CookieJar jar) {
+        this._cookieJar = jar;
+    }
+
+    /// Current cookie jar (or null if none set).
+    public CookieJar GetCookieJar() {
+        return this._cookieJar;
     }
 
     /// Convenience GET.
@@ -49,9 +87,127 @@ public class HttpClient {
     }
 
     /// Send an arbitrary `HttpRequest`. Returns parsed `HttpResponse`.
-    /// Throws `SocketException` on network failure, `HttpProtocolException`
-    /// on malformed wire, `NotSupportedException` on https:// URLs.
+    /// If `SetMaxRedirects(n > 0)` has been called, 3xx responses are
+    /// auto-followed up to `n` hops; exceeding the limit throws
+    /// `HttpException`. Throws `SocketException` on network failure,
+    /// `HttpProtocolException` on malformed wire, `NotSupportedException`
+    /// on https:// URLs.
     public HttpResponse Send(HttpRequest request) {
+        HttpRequest cur = request;
+        int hops = 0;
+        while (true) {
+            HttpResponse resp = this._sendOnce(cur);
+            // Auto-follow disabled? Return immediately.
+            if (this._maxRedirects <= 0) return resp;
+            // Decide if this response should be followed.
+            int code = resp.StatusCode;
+            bool shouldFollow = code == 301 || code == 302 || code == 303
+                             || code == 307 || code == 308;
+            if (!shouldFollow) return resp;
+            string location = resp.Headers.Get("Location");
+            if (location == null || location.Length == 0) {
+                // No Location → cannot follow, return as-is.
+                return resp;
+            }
+            hops = hops + 1;
+            if (hops > this._maxRedirects) {
+                throw new HttpException(
+                    "Exceeded redirect limit (" + Int32.ToString(this._maxRedirects)
+                    + ") at " + cur.Url);
+            }
+            string nextUrl = HttpClient._resolveRedirectUrl(cur.Url, location);
+            string nextMethod = cur.Method;
+            byte[] nextBody = cur.Body;
+            // 301/302/303 → switch method to GET per RFC 7231 §6.4. Drop body.
+            // 307/308 → preserve method + body.
+            if (code == 301 || code == 302 || code == 303) {
+                nextMethod = HttpMethod.Get;
+                nextBody = null;
+            }
+            HttpRequest next = new HttpRequest(nextMethod, nextUrl);
+            if (nextBody != null) {
+                next.SetBody(nextBody);
+            }
+            // Copy non-host-specific headers. Host header gets re-derived; we
+            // intentionally drop Authorization on cross-host hops to avoid
+            // credential leakage (per common HTTP client convention; not
+            // strict RFC 7231 but matches `curl --location` default).
+            HttpUrl oldUrlParsed = HttpUrl.Parse(cur.Url);
+            HttpUrl newUrlParsed = HttpUrl.Parse(nextUrl);
+            string oldHost = oldUrlParsed.Host;
+            string newHost = newUrlParsed.Host;
+            bool crossHost = oldHost.ToLower() != newHost.ToLower();
+            int i = 0;
+            int n = cur.Headers.Count();
+            while (i < n) {
+                string name = cur.Headers.GetNameAt(i);
+                string lower = name.ToLower();
+                if (lower != "host" && lower != "content-length" && lower != "cookie") {
+                    if (crossHost && lower == "authorization") {
+                        // skip
+                    } else {
+                        next.Headers.Add(name, cur.Headers.GetValueAt(i));
+                    }
+                }
+                i = i + 1;
+            }
+            cur = next;
+        }
+        // Unreachable.
+        return null;
+    }
+
+    /// Resolve a redirect Location relative to the current request URL.
+    /// Supports absolute URL ("http://...") and absolute-path ("/foo")
+    /// forms; relative-path forms ("foo") are resolved against the current
+    /// request's path-prefix.
+    static string _resolveRedirectUrl(string currentUrl, string location) {
+        if (HttpClient._startsWithStr(location, "http://")
+            || HttpClient._startsWithStr(location, "https://")) {
+            return location;
+        }
+        HttpUrl base_ = HttpUrl.Parse(currentUrl);
+        string portStr = "";
+        if (base_.Port != 80) portStr = ":" + Int32.ToString(base_.Port);
+        if (location.Length > 0 && location.CharAt(0) == '/') {
+            // Absolute path
+            return base_.Scheme + "://" + base_.Host + portStr + location;
+        }
+        // Relative — strip last path component of base, append location.
+        string basePath = base_.Path;
+        int lastSlash = -1;
+        int i = 0;
+        while (i < basePath.Length) {
+            if (basePath.CharAt(i) == '/') lastSlash = i;
+            i = i + 1;
+        }
+        string parent;
+        if (lastSlash < 0) {
+            parent = "/";
+        } else {
+            char[] buf = new char[lastSlash + 1];
+            int j = 0;
+            while (j <= lastSlash) {
+                buf[j] = basePath.CharAt(j);
+                j = j + 1;
+            }
+            parent = String.FromChars(buf);
+        }
+        return base_.Scheme + "://" + base_.Host + portStr + parent + location;
+    }
+
+    static bool _startsWithStr(string s, string prefix) {
+        if (s.Length < prefix.Length) return false;
+        int i = 0;
+        while (i < prefix.Length) {
+            if (s.CharAt(i) != prefix.CharAt(i)) return false;
+            i = i + 1;
+        }
+        return true;
+    }
+
+    /// One-shot send (no redirect handling). Used by `Send` and tests.
+    private HttpResponse _sendOnce(HttpRequest request) {
         HttpUrl url = HttpUrl.Parse(request.Url);
 
         // Inject required headers (don't clobber if user already set).
@@ -71,6 +227,16 @@ public class HttpClient {
         if (request.Body != null) {
             request.Headers.Set("Content-Length", Int32.ToString(request.Body.Length));
         }
+        // Auto-cookie emit if a jar is attached and the user hasn't set
+        // Cookie manually. http:// scheme is `secure = false`.
+        if (this._cookieJar != null && !request.Headers.Contains("Cookie")) {
+            long now = HttpClient._unixNow();
+            bool isSecure = url.Scheme == "https";
+            string cookieHdr = this._cookieJar.CookieHeaderFor(url.Host, url.Path, isSecure, now);
+            if (cookieHdr.Length > 0) {
+                request.Headers.Set("Cookie", cookieHdr);
+            }
+        }
 
         // Serialise request → byte[]
         byte[] reqBytes = HttpClient._serialiseRequest(request, url);
@@ -78,15 +244,62 @@ public class HttpClient {
         var client = new TcpClient();
         client.Connect(url.Host, url.Port);
         var stream = client.GetStream();
+        // `var` to avoid z42 cross-file class-token mismatch on HttpResponse:
+        // declaring `HttpResponse resp` while the constructor lives in
+        // HttpResponse.z42 + CookieJar.IngestFromResponse signature lives in
+        // CookieJar.z42 produces two type tokens. `var` inference threads the
+        // same token through.
+        var resp = HttpClient._initialResp();
         try {
             stream.Write(reqBytes, 0, reqBytes.Length);
-            HttpResponse resp = HttpClient._readResponse(stream);
+            resp = HttpClient._readResponse(stream);
             client.Dispose();
-            return resp;
         } catch (Exception e) {
             client.Dispose();
             throw e;
         }
+        // Auto-cookie ingest if jar attached. Inlined here (rather than via
+        // CookieJar.IngestSetCookieHeaders) because passing `HttpHeaders` or
+        // `HttpResponse` across files triggers z42's cross-file class-token
+        // mismatch. We iterate headers locally and call jar.Add(...) which
+        // takes a Cookie (constructed inline in this file).
+        if (this._cookieJar != null) {
+            long now = HttpClient._unixNow();
+            int hi = 0;
+            int hn = resp.Headers.Count();
+            while (hi < hn) {
+                string name = resp.Headers.GetNameAt(hi);
+                if (name.ToLower() == "set-cookie") {
+                    string raw = resp.Headers.GetValueAt(hi);
+                    Cookie c = CookieJar._parseSetCookie(raw, url.Host, url.Path, now);
+                    if (c != null) {
+                        this._cookieJar.Add(c);
+                    }
+                }
+                hi = hi + 1;
+            }
+        }
+        return resp;
+    }
+
+    /// Stub for `var resp = ...` initializer — z42 var inference needs
+    /// a same-file expression to bind the type token correctly.
+    static HttpResponse _initialResp() {
+        return new HttpResponse(0, "", new HttpHeaders(), new byte[0]);
+    }
+
+    /// Unix-seconds for cookie expiry math. Direct `__time_now_ms` builtin
+    /// to avoid `using Std.Time;` — adding that import pulls
+    /// `Std.Time.Stopwatch.Stop` into scope, which collides with
+    /// `HttpServer.Stop()` under z42's name-only method resolution and
+    /// dispatches the wrong method (`compiler-future-typed-overload-
+    /// resolution` Deferred — method resolver doesn't discriminate by
+    /// receiver class). The extern call sidesteps the import entirely.
+    [Native("__time_now_ms")]
+    static extern long _timeNowMs();
+
+    static long _unixNow() {
+        return HttpClient._timeNowMs() / 1000L;
     }
 
     // ── Request serialisation ───────────────────────────────────────────
