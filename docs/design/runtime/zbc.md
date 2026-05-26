@@ -248,7 +248,7 @@ Byte 4+:  ...    — 按操作码定义的额外操作数字（u8 / u16 / u32 / 
 ```
 [4]  magic:         0x5A 0x42 0x43 0x00   ("ZBC\0")
 [2]  version_major  当前 1
-[2]  version_minor  当前 5 (详见 minor changelog 表)
+[2]  version_minor  当前 6 (详见 minor changelog 表)
 [2]  flags          bit0=Stripped, bit1=HasDebug, bit2=SymOnly
 [2]  section_count
 [4]  reserved
