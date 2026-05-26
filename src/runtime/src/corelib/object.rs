@@ -26,8 +26,8 @@ pub fn builtin_obj_get_type(ctx: &VmContext, args: &[Value]) -> Result<Value> {
     field_index.insert("__name".to_string(), 0usize);
     field_index.insert("__fullName".to_string(), 1usize);
     let fields = vec![
-        crate::metadata::FieldSlot { name: "__name".to_string(), type_tag: "str".to_string() },
-        crate::metadata::FieldSlot { name: "__fullName".to_string(), type_tag: "str".to_string() },
+        crate::metadata::FieldSlot { name: "__name".to_string().into(), type_tag: "str".to_string().into() },
+        crate::metadata::FieldSlot { name: "__fullName".to_string().into(), type_tag: "str".to_string().into() },
     ];
     let type_desc = Arc::new(TypeDesc {
         name: crate::metadata::well_known_names::STD_TYPE.to_string(),

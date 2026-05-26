@@ -530,8 +530,8 @@ pub fn build_type_registry(module: &mut Module) {
         // so the lazy-loader fixup pass can rebuild merged `fields` once
         // the cross-zpkg base resolves.
         let own_fields: Vec<FieldSlot> = desc.fields.iter().map(|f| FieldSlot {
-            name: f.name.clone(),
-            type_tag: f.type_tag.clone(),
+            name: f.name.clone().into(),
+            type_tag: f.type_tag.clone().into(),
         }).collect();
 
         // ── Own methods (this class's own declarations) ───────────────────
@@ -616,7 +616,7 @@ fn merge_with_base(
         }
     }
     let field_index: HashMap<String, usize> = fields.iter().enumerate()
-        .map(|(i, f)| (f.name.clone(), i))
+        .map(|(i, f)| (f.name.to_string(), i))
         .collect();
 
     // Apply own methods: override if base method same simple name, else append.

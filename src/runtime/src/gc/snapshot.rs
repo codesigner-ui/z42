@@ -245,7 +245,7 @@ pub fn build_graph_snapshot(heap: &dyn MagrGC) -> GraphSnapshot {
                         obj.type_desc
                             .fields
                             .get(i)
-                            .map(|f| f.name.clone())
+                            .map(|f| f.name.to_string())
                             .unwrap_or_else(|| format!("slot{}", i))
                     })
                     .collect();

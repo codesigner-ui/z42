@@ -113,15 +113,15 @@ pub fn make_fallback_type_desc(module: &Module, class_name: &str) -> TypeDesc {
     }
     for desc in chain.iter().rev() {
         for f in &desc.fields {
-            if !fields.iter().any(|s: &FieldSlot| s.name == f.name) {
+            if !fields.iter().any(|s: &FieldSlot| &*s.name == f.name.as_str()) {
                 fields.push(FieldSlot {
-                    name: f.name.clone(),
-                    type_tag: f.type_tag.clone(),
+                    name: f.name.clone().into_boxed_str(),
+                    type_tag: f.type_tag.clone().into_boxed_str(),
                 });
             }
         }
     }
-    let field_index = fields.iter().enumerate().map(|(i, f)| (f.name.clone(), i)).collect();
+    let field_index = fields.iter().enumerate().map(|(i, f)| (f.name.to_string(), i)).collect();
     // Fallback type — there's no separate "own vs inherited" split because
     // `chain` walked the inheritance chain by-name within this module. Mark
     // all fields as own (cross-zpkg fixup won't re-process this entry since

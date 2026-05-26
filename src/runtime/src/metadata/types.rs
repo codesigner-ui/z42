@@ -9,14 +9,21 @@ use crate::gc::GcRef;
 // shared across all instances of a class via Arc.
 
 /// A single field slot in a class layout (runtime representation).
+///
+/// review.md E2.P2 Step 1 (2026-05-27): `Box<str>` (16 B per field) instead
+/// of `String` (24 B; the `cap` word is dead weight — slot fields are
+/// immutable after `build_type_registry`). Saves 16 B per FieldSlot
+/// (48 B → 32 B). Full E2.P2 target (48 B → 16 B with `name_id: StringId`
+/// + `type_id: TypeId` + `offset` + `flags`) waits on StringId Phase B+
+/// migration and a zbc minor bump.
 #[derive(Debug, Clone)]
 pub struct FieldSlot {
-    pub name: String,
+    pub name: Box<str>,
     /// Type tag from zbc (e.g. `"int"`, `"long"`, `"bool"`, `"f64"`, `"str"`,
     /// `"Demo.Box"`, …). Used by `ObjNew` to pick a per-type default `Value`
     /// for fields that have no explicit initializer.
     /// 2026-05-02 fix-class-field-default-init.
-    pub type_tag: String,
+    pub type_tag: Box<str>,
 }
 
 /// Returns the default `Value` for a field whose declared type tag is

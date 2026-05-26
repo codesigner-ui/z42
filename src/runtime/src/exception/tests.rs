@@ -96,7 +96,7 @@ mod make_stdlib_exception_tests {
         ];
         let mut field_index = HashMap::new();
         for (i, f) in fields.iter().enumerate() {
-            field_index.insert(f.name.clone(), i);
+            field_index.insert(f.name.to_string(), i);
         }
         Arc::new(TypeDesc {
             name:                   name.into(),
