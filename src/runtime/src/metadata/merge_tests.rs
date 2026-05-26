@@ -21,16 +21,12 @@ fn make_module_with(
     let mut functions = vec![Function {
         name: format!("{}.Main", name),
         param_count: 0,
-        ret_type: "void".to_string(), param_types: Box::new([]),
+        ret_type: "void".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![block],
-        exception_table: Box::new([]),
         is_static: false,
         max_reg: 0,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: std::collections::HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     }];
@@ -138,20 +134,16 @@ fn merge_deduplicates_functions_by_name() {
     let dup_func = Function {
         name: "A.Main".to_string(),
         param_count: 0,
-        ret_type: "i32".to_string(), param_types: Box::new([]), // different ret_type to distinguish
+        ret_type: "i32".to_string(), // different ret_type to distinguish
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
             label: "entry".to_string(),
             instructions: vec![Instruction::ConstStr { dst: 0, idx: 0 }],
             terminator: Terminator::Ret { reg: None },
         }],
-        exception_table: Box::new([]),
         is_static: false,
         max_reg: 0,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: std::collections::HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };

@@ -142,10 +142,10 @@ fn apply_zbc_sidecar(
     }
     for (i, fb) in sidecar.functions.into_iter().enumerate() {
         if !fb.line_table.is_empty() {
-            module.functions[i].line_table = fb.line_table.into_boxed_slice();
+            module.functions[i].cold_mut().line_table = fb.line_table.into_boxed_slice();
         }
         if !fb.local_vars.is_empty() {
-            module.functions[i].local_vars = fb.local_vars.into_boxed_slice();
+            module.functions[i].cold_mut().local_vars = fb.local_vars.into_boxed_slice();
         }
     }
 }
@@ -279,10 +279,10 @@ fn apply_zpkg_sidecar(
         }
         for (i, fb) in fns.into_iter().enumerate() {
             if !fb.line_table.is_empty() {
-                module.functions[i].line_table = fb.line_table.into_boxed_slice();
+                module.functions[i].cold_mut().line_table = fb.line_table.into_boxed_slice();
             }
             if !fb.local_vars.is_empty() {
-                module.functions[i].local_vars = fb.local_vars.into_boxed_slice();
+                module.functions[i].cold_mut().local_vars = fb.local_vars.into_boxed_slice();
             }
         }
     }
@@ -745,8 +745,8 @@ pub fn verify_constraints(module: &Module) -> Result<()> {
         }
     }
     for f in &module.functions {
-        let tp_names: Vec<&str> = f.type_params.iter().map(|s| s.as_str()).collect();
-        for bundle in &f.type_param_constraints {
+        let tp_names: Vec<&str> = f.type_params().iter().map(|s| s.as_str()).collect();
+        for bundle in f.type_param_constraints() {
             check_constraint_refs(bundle, &module.type_registry, &f.name, &tp_names)?;
         }
     }

@@ -15,7 +15,6 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
     let func = Function {
         name: format!("{name}.Main"),
         param_count: 0,
-        param_types: Box::new([]),
         ret_type: "i64".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -23,13 +22,9 @@ fn build_module(name: &str, instructions: Vec<Instruction>, terminator: Terminat
             instructions,
             terminator,
         }],
-        exception_table: Box::new([]),
         is_static: true,
         max_reg: 8,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };

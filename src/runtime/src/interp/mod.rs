@@ -415,7 +415,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
     // stack; raw pointers stay valid until this function returns.
     // FrameGuard's Drop pops on every exit path (`?` propagation, panic
     // unwind, normal return).
-    let file = func.line_table.first()
+    let file = func.line_table().first()
         .and_then(|e| e.file.clone())
         .unwrap_or_default();
     ctx.push_frame(crate::exception::VmFrame::new(
@@ -469,7 +469,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                     if let Some(entry_idx) = find_handler(
                         ctx, func, block_idx, block_map, &module.type_registry, &thrown_val,
                     ) {
-                        let entry = &func.exception_table[entry_idx];
+                        let entry = &func.exception_table()[entry_idx];
                         // Phase 2 D3+D6: callee-thrown + caller-caught is
                         // an unwind of exactly 1 frame (the callee). Throw
                         // was already counted/emitted at its origin
@@ -506,7 +506,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                     // error" in test output read `"  at <fn> (line X)"` with
                     // no clue what blew up. Format change: include the cause
                     // first, then location, separated by `\n  at`.
-                    let (line, col) = resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
+                    let (line, col) = resolve_line(func.line_table(), block_idx as u32, instr_idx as u32);
                     let loc_str = if col > 0 { format!("line {line}, col {col}") } else { format!("line {line}") };
                     return Err(anyhow::anyhow!("{}\n  at {} ({})", e, func.name, loc_str));
                 }
@@ -555,7 +555,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 // Throw is a block terminator; instr_idx isn't a meaningful
                 // intra-block offset, so use end-of-block (block.instructions.len()).
                 let (throw_line, throw_col) = resolve_line(
-                    &func.line_table,
+                    func.line_table(),
                     block_idx as u32,
                     block.instructions.len() as u32,
                 );
@@ -570,7 +570,7 @@ pub(crate) fn exec_function(ctx: &VmContext, module: &Module, func: &Function, a
                 if let Some(entry_idx) = find_handler(
                     ctx, func, block_idx, block_map, &module.type_registry, &val,
                 ) {
-                    let entry = &func.exception_table[entry_idx];
+                    let entry = &func.exception_table()[entry_idx];
                     // Same-frame catch — 0 frames unwound.
                     fire_exception_caught(ctx, module, &val, 0);
                     frame.set(entry.catch_reg, val);
@@ -673,7 +673,7 @@ fn find_handler(
         _                 => None,
     };
 
-    for (i, entry) in func.exception_table.iter().enumerate() {
+    for (i, entry) in func.exception_table().iter().enumerate() {
         let start_idx = *block_map.get(&entry.try_start)?;
         let end_idx   = *block_map.get(&entry.try_end)?;
         if !(block_idx >= start_idx && block_idx < end_idx) { continue; }

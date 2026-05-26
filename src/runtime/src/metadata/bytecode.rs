@@ -174,14 +174,14 @@ pub fn format_frame_name(func: &Function) -> String {
     let mut out = String::with_capacity(func.name.len() + 2 + func.param_count * 4);
     out.push_str(&func.name);
     out.push('(');
-    for (i, t) in func.param_types.iter().enumerate() {
+    for (i, t) in func.param_types().iter().enumerate() {
         if i > 0 { out.push(','); }
         out.push_str(t);
     }
     // When SIGS lacks per-param types (older artifacts or null source), fall
     // back to "?" placeholders matching `param_count` so the shape is
     // recognizable.
-    if func.param_types.is_empty() && func.param_count > 0 {
+    if func.param_types().is_empty() && func.param_count > 0 {
         for i in 0..func.param_count {
             if i > 0 { out.push(','); }
             out.push('?');
@@ -191,40 +191,31 @@ pub fn format_frame_name(func: &Function) -> String {
     out
 }
 
-/// A single function.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Function {
-    pub name: String,
-    /// Number of parameters — they occupy registers 0..param_count-1 on entry.
-    pub param_count: usize,
-    /// Return type tag: "void", "str", "i32", "i64", "f64", "bool".
-    pub ret_type: String,
+/// Cold (rarely-accessed) slice fields on `Function`. Boxed behind an
+/// `Option` on Function so functions with no debug info, no try/catch,
+/// no params, and no generics carry only an 8-byte null pointer instead
+/// of six `Box<[T]>` headers (96 B inline → 8 B Option<Box>).
+///
+/// review.md E2.P5 (2026-05-27). Mirror of CoreCLR's split between
+/// `MethodDesc` (hot, 32 B base) and `MethodDescChunk` / cold side
+/// tables.
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct FunctionCold {
     /// 1.3 split-debug-symbols: per-parameter type names for stack-trace
     /// signature decoration. Length always equals `param_count` (zbc writer
     /// pads unknowns with "?"). Empty when param_count == 0.
-    ///
-    /// review.md E5.1 (2026-05-26): immutable-after-construction → `Box<[T]>`
-    /// saves 8 B/field/Function vs `Vec<T>` (no `cap` word). Six fields × 8 B
-    /// ≈ 48 B per Function. Read-only consumers use `&[T]` via auto-deref.
     #[serde(default)]
     pub param_types: Box<[String]>,
-    pub exec_mode: ExecMode,
-    pub blocks: Vec<BasicBlock>,
+    /// Exception handler ranges. Populated only when the function body
+    /// contains `try` / `catch` / `finally`.
     #[serde(default)]
     pub exception_table: Box<[ExceptionEntry]>,
-    /// True for static class methods (no implicit `this` receiver).
-    /// Instance methods have `this` as reg 0 and should not be treated as
-    /// static-only entries in the StdlibCallIndex.
-    #[serde(default)]
-    pub is_static: bool,
-    /// Total number of registers used (0 = unknown; VM falls back to dynamic sizing).
-    #[serde(default)]
-    pub max_reg: u32,
-    /// Source-line mapping table (run-length encoded).
-    /// Each entry: from (block_idx, instr_idx) onward, the source line is `line`.
+    /// Source-line mapping table (run-length encoded). Populated only when
+    /// the module is built with debug symbols (DBUG section / sidecar).
     #[serde(default)]
     pub line_table: Box<[LineEntry]>,
     /// Debug info: maps register IDs to source-level variable names.
+    /// Populated only with debug symbols.
     #[serde(default)]
     pub local_vars: Box<[LocalVar]>,
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic functions.
@@ -233,6 +224,38 @@ pub struct Function {
     /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
     #[serde(default)]
     pub type_param_constraints: Box<[ConstraintBundle]>,
+}
+
+/// A single function.
+///
+/// review.md E2.P5 (2026-05-27): six rarely-accessed slice fields moved
+/// into [`FunctionCold`] behind `Option<Box>`. Reads go through accessor
+/// methods that return `&[T]` (empty slice when cold is absent). Sidecar
+/// mutations (`loader.rs` debug-symbol overlay) lazy-init via
+/// [`Function::cold_mut`].
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Function {
+    pub name: String,
+    /// Number of parameters — they occupy registers 0..param_count-1 on entry.
+    pub param_count: usize,
+    /// Return type tag: "void", "str", "i32", "i64", "f64", "bool".
+    pub ret_type: String,
+    pub exec_mode: ExecMode,
+    pub blocks: Vec<BasicBlock>,
+    /// True for static class methods (no implicit `this` receiver).
+    /// Instance methods have `this` as reg 0 and should not be treated as
+    /// static-only entries in the StdlibCallIndex.
+    #[serde(default)]
+    pub is_static: bool,
+    /// Total number of registers used (0 = unknown; VM falls back to dynamic sizing).
+    #[serde(default)]
+    pub max_reg: u32,
+    /// Cold side-table (param_types / exception_table / line_table /
+    /// local_vars / type_params / type_param_constraints). `None` for
+    /// the common case of a non-generic function with no try/catch and
+    /// no debug symbols. Reads go through accessor methods on `Function`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cold: Option<Box<FunctionCold>>,
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,
@@ -242,6 +265,32 @@ pub struct Function {
     /// future multi-thread ready). Not serialized — purely runtime metadata.
     #[serde(skip)]
     pub resolved: std::sync::OnceLock<super::resolver::ResolvedTokens>,
+}
+
+impl Function {
+    /// Borrow the cold side-table or return a static empty slice. Accessor
+    /// methods below all delegate here.
+    #[inline]
+    fn cold_slice<T, F: FnOnce(&FunctionCold) -> &[T]>(&self, f: F) -> &[T] {
+        match self.cold.as_ref() {
+            Some(c) => f(c),
+            None    => &[],
+        }
+    }
+
+    #[inline] pub fn param_types(&self)             -> &[String]           { self.cold_slice(|c| &c.param_types) }
+    #[inline] pub fn exception_table(&self)         -> &[ExceptionEntry]   { self.cold_slice(|c| &c.exception_table) }
+    #[inline] pub fn line_table(&self)              -> &[LineEntry]        { self.cold_slice(|c| &c.line_table) }
+    #[inline] pub fn local_vars(&self)              -> &[LocalVar]         { self.cold_slice(|c| &c.local_vars) }
+    #[inline] pub fn type_params(&self)             -> &[String]           { self.cold_slice(|c| &c.type_params) }
+    #[inline] pub fn type_param_constraints(&self)  -> &[ConstraintBundle] { self.cold_slice(|c| &c.type_param_constraints) }
+
+    /// Lazy-init the cold side-table for mutation. Used by sidecar debug-
+    /// symbol overlay in `metadata::loader`.
+    #[inline]
+    pub fn cold_mut(&mut self) -> &mut FunctionCold {
+        self.cold.get_or_insert_with(|| Box::new(FunctionCold::default()))
+    }
 }
 
 /// An entry in a function's local variable table: register `reg` holds variable `name`.

@@ -117,7 +117,7 @@ pub fn max_reg(func: &Function) -> usize {
 /// class and jumps to the first matching handler.
 fn find_handler_entries(func: &Function, block_idx: usize) -> Vec<usize> {
     let mut out = Vec::new();
-    for (i, entry) in func.exception_table.iter().enumerate() {
+    for (i, entry) in func.exception_table().iter().enumerate() {
         let Some(start) = func.blocks.iter().position(|b| b.label == entry.try_start) else { continue };
         let Some(end)   = func.blocks.iter().position(|b| b.label == entry.try_end)   else { continue };
         if block_idx >= start && block_idx < end {
@@ -325,7 +325,7 @@ pub fn translate_function(
         // pre-fix behaviour. Typed / multi-catch goes through `catch_chain`.
         let catch_chain: Vec<(cranelift_codegen::ir::Block, u32, Option<&str>)> =
             find_handler_entries(z42_func, block_idx).into_iter().map(|ei| {
-                let entry      = &z42_func.exception_table[ei];
+                let entry      = &z42_func.exception_table()[ei];
                 let catch_idx  = z42_func.blocks.iter().position(|b| b.label == entry.catch_label)
                     .expect("catch_label block must exist");
                 let ty: Option<&str> = match entry.catch_type.as_deref() {
@@ -633,7 +633,7 @@ pub fn translate_function(
                     // 2026-05-10 jit-stack-trace + span-column-propagate: pass
                     // current source (line, col) so jit_call can stamp the
                     // caller's frame info before descending into the callee.
-                    let (line, col) = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
+                    let (line, col) = crate::interp::resolve_line(z42_func.line_table(), block_idx as u32, instr_idx as u32);
                     let line_val = builder.ins().iconst(types::I32, line as i64);
                     let col_val  = builder.ins().iconst(types::I32, col as i64);
                     let inst = builder.ins().call(hr_call, &[frame_val, ctx_val, d, mid_val, np, nl, ap, al, line_val, col_val]);
@@ -741,7 +741,7 @@ pub fn translate_function(
                     let ic_ptr = vcall_ic_ptr_at(z42_func, block_idx, instr_idx);
                     let ic_val = builder.ins().iconst(ptr, ic_ptr as i64);
                     // 2026-05-10 jit-stack-trace + span-column-propagate.
-                    let (line, col) = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
+                    let (line, col) = crate::interp::resolve_line(z42_func.line_table(), block_idx as u32, instr_idx as u32);
                     let line_val = builder.ins().iconst(types::I32, line as i64);
                     let col_val  = builder.ins().iconst(types::I32, col as i64);
                     let inst = builder.ins().call(hr_vcall, &[frame_val, ctx_val, d, o, mp, ml, ap, al, ic_val, line_val, col_val]);
@@ -865,7 +865,7 @@ pub fn translate_function(
                     let c = ri!(*callee);
                     let (ap, al) = regs_val!(args);
                     // 2026-05-10 jit-stack-trace + span-column-propagate.
-                    let (line, col) = crate::interp::resolve_line(&z42_func.line_table, block_idx as u32, instr_idx as u32);
+                    let (line, col) = crate::interp::resolve_line(z42_func.line_table(), block_idx as u32, instr_idx as u32);
                     let line_val = builder.ins().iconst(types::I32, line as i64);
                     let col_val  = builder.ins().iconst(types::I32, col as i64);
                     let inst = builder.ins().call(hr_call_indirect,
@@ -928,7 +928,7 @@ pub fn translate_function(
                 // mirror interp's "instr_idx = block.len()" so the position
                 // resolves to the *last* LineEntry covering the block.
                 let (line, col) = crate::interp::resolve_line(
-                    &z42_func.line_table,
+                    z42_func.line_table(),
                     block_idx as u32,
                     z42_block.instructions.len() as u32,
                 );

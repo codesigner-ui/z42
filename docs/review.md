@@ -1368,7 +1368,7 @@ pub struct ScriptObject {
 | ✅ | ~~`RuntimeObserver` (D3 Phase 1 + 2)~~ — add-runtime-observer (2026-05-26) + Phase 2 emit sites (JitModuleCompiled / ExceptionThrown / ExceptionCaught / NativeCallEntered) + lazy-load ModuleLoaded (2026-05-27) | 4 | done | ops |
 | **P2** | **VmContext trait 拆分**（E1.P1）— GcAccess / ExceptionAccess 等 | 5 | 5-7 天 | arch |
 | **P2** | **`interfaces/` 契约层**（E1.P3）— 对齐 CoreCLR `inc/` | 5 | 7-10 天 | arch |
-| **P2** | **Function 热 / 冷拆分**（E2.P5）— 200B → 80B + 间接 cold | 5 | 3-5 天 | data |
+| ✅ | ~~Function 热 / 冷拆分~~（E2.P5）— 2026-05-27. `FunctionCold` boxed behind `Option<Box>`; 6 immutable slice fields (param_types / exception_table / line_table / local_vars / type_params / type_param_constraints) moved off the hot struct. Reads via accessor methods returning `&[T]`; mutations via `cold_mut()` lazy-init. Functions with no debug / try-catch / generics carry 8 B null ptr instead of 96 B inline. | 5 | done | data |
 | **P2** | **Prestub / lazy JIT** (Part 1) | 1 | 3-5 天 | arch |
 | **P2** | **Polymorphic IC** (C4+C5) | 2 | 2-3 天 | perf |
 | **P2** | **Public API surface lint** (S2.5) | 3 | 2-3 天 | stdlib |

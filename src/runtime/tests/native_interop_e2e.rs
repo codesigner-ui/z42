@@ -60,7 +60,6 @@ fn build_function(name: &str, instructions: Vec<Instruction>, terminator: Termin
     Function {
         name: name.to_string(),
         param_count: 0,
-        param_types: Box::new([]),
         ret_type: "i64".to_string(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -68,13 +67,9 @@ fn build_function(name: &str, instructions: Vec<Instruction>, terminator: Termin
             instructions,
             terminator,
         }],
-        exception_table: Box::new([]),
         is_static: true,
         max_reg: 4,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     }
@@ -375,7 +370,6 @@ fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminat
     let func = Function {
         name: format!("{name}.Main"),
         param_count: 0,
-        param_types: Box::new([]),
         ret_type: "i64".into(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -383,13 +377,9 @@ fn module_with_str(name: &str, s: &str, instructions: Vec<Instruction>, terminat
             instructions,
             terminator,
         }],
-        exception_table: Box::new([]),
         is_static: true,
         max_reg: 4,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };
@@ -452,7 +442,6 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
     let func = Function {
         name: "byte_pin_e2e.Main".into(),
         param_count: 0,
-        param_types: Box::new([]),
         ret_type: "i64".into(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -476,13 +465,9 @@ fn z42_byte_array_pins_and_calls_native_buflen() {
             ],
             terminator: Terminator::Ret { reg: Some(7) },
         }],
-        exception_table: Box::new([]),
         is_static: true,
         max_reg: 16,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };
@@ -517,7 +502,6 @@ fn z42_str_with_interior_nul_traps_marshal() {
     let func = Function {
         name: "interior_nul.Main".into(),
         param_count: 0,
-        param_types: Box::new([]),
         ret_type: "i64".into(),
         exec_mode: ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -534,13 +518,9 @@ fn z42_str_with_interior_nul_traps_marshal() {
             ],
             terminator: Terminator::Ret { reg: Some(1) },
         }],
-        exception_table: Box::new([]),
         is_static: true,
         max_reg: 4,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index: HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     };

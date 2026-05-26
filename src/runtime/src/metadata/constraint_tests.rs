@@ -30,20 +30,20 @@ fn simple_class(name: &str) -> ClassDesc {
 }
 
 fn generic_fn(name: &str, tp: &str, bundle: ConstraintBundle) -> Function {
+    let cold = Some(Box::new(crate::metadata::bytecode::FunctionCold {
+        type_params:            vec![tp.into()].into_boxed_slice(),
+        type_param_constraints: vec![bundle].into_boxed_slice(),
+        ..Default::default()
+    }));
     Function {
         name: name.to_owned(),
         param_count: 0,
         ret_type: "void".into(),
-        param_types: Box::new([]),
         exec_mode: ExecMode::Interp,
         blocks: vec![],
-        exception_table: Box::new([]),
         is_static: false,
         max_reg: 0,
-        line_table: Box::new([]),
-        local_vars: Box::new([]),
-        type_params: vec![tp.into()].into_boxed_slice(),
-        type_param_constraints: vec![bundle].into_boxed_slice(),
+        cold,
         block_index: std::collections::HashMap::new(),
         resolved: std::sync::OnceLock::new(),
     }

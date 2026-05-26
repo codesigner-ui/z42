@@ -165,7 +165,7 @@ pub fn compile_module(module: &Module) -> Result<JitModule> {
             let ptr_raw = jit.get_finalized_function(id);
             // 2026-05-10 jit-stack-trace: precompute name + file Arcs so
             // jit_call / jit_vcall can push FrameInfo without reverse lookup.
-            let file_str: std::sync::Arc<str> = func.line_table.first()
+            let file_str: std::sync::Arc<str> = func.line_table().first()
                 .and_then(|e| e.file.as_deref())
                 .unwrap_or("")
                 .into();

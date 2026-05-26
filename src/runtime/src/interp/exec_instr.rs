@@ -286,6 +286,6 @@ pub fn exec_instr(
 /// table linear scan + Cell::set.
 #[inline]
 fn update_caller_line(ctx: &VmContext, func: &Function, block_idx: usize, instr_idx: usize) {
-    let (line, column) = super::resolve_line(&func.line_table, block_idx as u32, instr_idx as u32);
+    let (line, column) = super::resolve_line(func.line_table(), block_idx as u32, instr_idx as u32);
     ctx.update_top_frame_pos(line, column);
 }

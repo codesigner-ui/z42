@@ -413,7 +413,6 @@ fn make_void_action_module(fn_name: &str) -> Module {
     let func = Function {
         name:                   fn_name.to_string(),
         param_count:            0,
-        param_types:            Box::new([]),
         ret_type:               "void".into(),
         exec_mode:              ExecMode::Interp,
         blocks: vec![BasicBlock {
@@ -421,13 +420,9 @@ fn make_void_action_module(fn_name: &str) -> Module {
             instructions: vec![],
             terminator:   Terminator::Ret { reg: None },
         }],
-        exception_table:        Box::new([]),
         is_static:              true,
         max_reg:                1,
-        line_table:             Box::new([]),
-        local_vars:             Box::new([]),
-        type_params:            Box::new([]),
-        type_param_constraints: Box::new([]),
+        cold: None,
         block_index:            std::collections::HashMap::new(),
         resolved:               std::sync::OnceLock::new(),
     };

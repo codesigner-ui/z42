@@ -1065,20 +1065,34 @@ pub fn read_zbc(data: &[u8]) -> Result<Module> {
         } else {
             DbugFuncEntry::default()
         };
+        let cold_inner = crate::metadata::bytecode::FunctionCold {
+            param_types:            sig.map(|s| s.param_types.clone()).unwrap_or_default().into_boxed_slice(),
+            exception_table:        body.exception_table.into_boxed_slice(),
+            line_table:             dbug.line_table.into_boxed_slice(),
+            local_vars:             dbug.local_vars.into_boxed_slice(),
+            type_params:            sig.map(|s| s.type_params.clone()).unwrap_or_default().into_boxed_slice(),
+            type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default().into_boxed_slice(),
+        };
+        let cold = if cold_inner.param_types.is_empty()
+            && cold_inner.exception_table.is_empty()
+            && cold_inner.line_table.is_empty()
+            && cold_inner.local_vars.is_empty()
+            && cold_inner.type_params.is_empty()
+            && cold_inner.type_param_constraints.is_empty()
+        {
+            None
+        } else {
+            Some(Box::new(cold_inner))
+        };
         Function {
             name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
             param_count:     sig.map(|s| s.param_count).unwrap_or(0),
             ret_type:        sig.map(|s| s.ret_type.clone()).unwrap_or_else(|| "void".to_owned()),
-            param_types:     sig.map(|s| s.param_types.clone()).unwrap_or_default().into_boxed_slice(),
             exec_mode:       sig.map(|s| s.exec_mode).unwrap_or(ExecMode::Interp),
             blocks:          body.blocks,
-            exception_table: body.exception_table.into_boxed_slice(),
             is_static:       sig.map(|s| s.is_static).unwrap_or(false),
             max_reg:         0,
-            line_table:      dbug.line_table.into_boxed_slice(),
-            local_vars:      dbug.local_vars.into_boxed_slice(),
-            type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default().into_boxed_slice(),
-            type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default().into_boxed_slice(),
+            cold,
             block_index:     std::collections::HashMap::new(),
             resolved:        std::sync::OnceLock::new(),
         }
@@ -1360,22 +1374,36 @@ fn read_mods_section(
             } else {
                 DbugFuncEntry::default()
             };
+            let cold_inner = crate::metadata::bytecode::FunctionCold {
+                param_types:            sig.map(|s| s.param_types.clone()).unwrap_or_default().into_boxed_slice(),
+                exception_table:        body.exception_table.into_boxed_slice(),
+                line_table:             dbug.line_table.into_boxed_slice(),
+                local_vars:             dbug.local_vars.into_boxed_slice(),
+                type_params:            sig.map(|s| s.type_params.clone()).unwrap_or_default().into_boxed_slice(),
+                type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default().into_boxed_slice(),
+            };
+            let cold = if cold_inner.param_types.is_empty()
+                && cold_inner.exception_table.is_empty()
+                && cold_inner.line_table.is_empty()
+                && cold_inner.local_vars.is_empty()
+                && cold_inner.type_params.is_empty()
+                && cold_inner.type_param_constraints.is_empty()
+            {
+                None
+            } else {
+                Some(Box::new(cold_inner))
+            };
             Function {
                 name:            sig.map(|s| s.name.clone()).unwrap_or_else(|| format!("func#{i}")),
                 param_count:     sig.map(|s| s.param_count).unwrap_or(0),
                 ret_type:        sig.map(|s| s.ret_type.clone()).unwrap_or_else(|| "void".to_owned()),
-                param_types:     sig.map(|s| s.param_types.clone()).unwrap_or_default().into_boxed_slice(),
                 exec_mode:       sig.map(|s| s.exec_mode).unwrap_or(ExecMode::Interp),
                 blocks:          body.blocks,
-                exception_table: body.exception_table.into_boxed_slice(),
                 is_static:       sig.map(|s| s.is_static).unwrap_or(false),
                 max_reg:         0,
-                line_table:      dbug.line_table.into_boxed_slice(),
-                local_vars:      dbug.local_vars.into_boxed_slice(),
-                type_params:     sig.map(|s| s.type_params.clone()).unwrap_or_default().into_boxed_slice(),
-                type_param_constraints: sig.map(|s| s.type_param_constraints.clone()).unwrap_or_default().into_boxed_slice(),
+                cold,
                 block_index:     std::collections::HashMap::new(),
-            resolved:        std::sync::OnceLock::new(),
+                resolved:        std::sync::OnceLock::new(),
             }
         }).collect();
 
