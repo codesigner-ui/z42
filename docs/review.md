@@ -459,10 +459,10 @@ ee_alloc_context {
 这些是"看了就能动手"的局部优化，建议穿插在 spec 间隙做：
 
 1. ⚡ **`String.Length` 加 cache** 或改 byte semantics —— [`exec_object.rs:134`](../src/runtime/src/interp/exec_object.rs#L134)、[`corelib/string.rs:10`](../src/runtime/src/corelib/string.rs#L10)
-2. ⚡ **`__str_char_at` 错误路径减少一次 `chars().count()`** —— [`corelib/string.rs:20`](../src/runtime/src/corelib/string.rs#L20)
+2. ✅ ~~**`__str_char_at` 错误路径减少一次 `chars().count()`**~~ — single-pass impl (2026-05-25), [`corelib/string.rs:21`](../src/runtime/src/corelib/string.rs#L21)
 3. ⚡ **JIT bool 类 helper（jit_and / jit_or / jit_not）走 Cranelift native** —— Bool 类型 IR 已知，不需要 helper
 4. ⚡ **`jit_const_*` 完全 inline emit** —— Cranelift 原生支持 const，不需要 helper call
-5. ⚡ **`Frame::regs: Vec<Value>` → 函数入口预分配 `with_capacity(max_reg+1)`** —— 现有按需 push 会触发多次 realloc
+5. ✅ ~~**`Frame::regs: Vec<Value>` → 函数入口预分配 `with_capacity(max_reg+1)`**~~ — `Frame::new` pre-sizes via `vec![Value::Null; max_reg]` (no per-set push)
 
 每项独立 commit、独立 spec（fix/refactor 类型，不需要完整 spec 流程）。
 
@@ -1351,15 +1351,15 @@ pub struct ScriptObject {
 
 | 优先级 | 改造 | Part | 估时 | 类别 |
 |---|---|---|---|---|
-| **P0** | **Panic hook + signal handler** (D4) | 4 | 1-2 天 | ops |
-| **P0** | **`RuntimeConfig` 中心化** (D1) | 4 | 1-2 天 | ops |
+| ✅ | ~~Panic hook + signal handler~~ (D4) — Phase 1 `12cf7ef8` + Phase 2 add-os-signal-handler | 4 | done | ops |
+| ✅ | ~~`RuntimeConfig` 中心化~~ (D1) — refactor-runtime-config `81e1cbba` (2026-05-25); Phase 2 migrating subsystem-local `Z42_*` reads still open | 4 | done | ops |
 | 🟡 | **StringId intern**（E2.P3）— Phase A `StringId(u32)` newtype + accessors landed add-string-id-newtype (2026-05-26); Phase B+ migrates individual String fields one at a time | 5 | Phase A done | data |
 | **P0** | **JIT type specialization** (C2) | 2 | 2-3 天 | perf |
 | **P0** | **JIT↔VM `JitVm` trait 抽象** (Part 1 + E1.P2) | 1 | 2-3 天 | arch |
 | **P1** | **TypeDesc 热 / 冷拆分**（E2.P1）— 336B → 64B | 5 | 5-7 天 | data |
 | **P1** | **Instruction 瘦身**（E2.P4）— ~120B → ≤32B | 5 | 3-4 天 | data |
 | **P1** | **FieldSlot 16B bit-packed**（E2.P2）— 48B → 16B | 5 | 2-3 天 | data |
-| **P1** | **Per-module log filtering** (D2) | 4 | 0.5 天 | ops |
+| ✅ | ~~Per-module log filtering~~ (D2) — EnvFilter `Z42_LOG` wired in `init_tracing` (2026-05-25) | 4 | done | ops |
 | **P1** | **`Value::Str(String) → Rc<str>`** (C1+C3) | 2 | 1-2 天 | perf |
 | **P1** | **Field/Method name → token id** (C4+C5) | 2 | 3-4 天 | perf |
 | **P1** | **trait-based test commons** (S2.4) | 3 | 3-5 天 | stdlib |
@@ -1425,7 +1425,7 @@ pub struct ScriptObject {
 
 ## E5. 立即可做的小项目（≤1 天）
 
-1. ⚡ **`Function.line_table` / `local_vars` / `exception_table` 用 `Box<[T]>` 替代 `Vec<T>`** —— 创建后不变长，省 8B/字段
+1. ✅ ~~**`Function.line_table` / `local_vars` / `exception_table` 用 `Box<[T]>` 替代 `Vec<T>`**~~ — refactor-function-box-slice (2026-05-26); also includes `param_types` / `type_params` / `type_param_constraints` (6 fields × 8 B ≈ 48 B per Function)
 2. ⚡ **`Instruction::Call.args: Vec<u32>` → `Box<[u32]>`** —— 同上，每条指令省 8B
 3. ⚡ **TypeDesc cold 字段先用 `Option<Box<...>>` 包起来** —— 不重排字段先减常驻内存
 4. ⚡ **`ScriptObject.type_args: Vec<String>` → `Option<Box<[StringId]>>`** —— 非泛型对象省 24B

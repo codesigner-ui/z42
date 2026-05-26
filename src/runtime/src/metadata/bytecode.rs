@@ -197,12 +197,16 @@ pub struct Function {
     /// 1.3 split-debug-symbols: per-parameter type names for stack-trace
     /// signature decoration. Length always equals `param_count` (zbc writer
     /// pads unknowns with "?"). Empty when param_count == 0.
+    ///
+    /// review.md E5.1 (2026-05-26): immutable-after-construction → `Box<[T]>`
+    /// saves 8 B/field/Function vs `Vec<T>` (no `cap` word). Six fields × 8 B
+    /// ≈ 48 B per Function. Read-only consumers use `&[T]` via auto-deref.
     #[serde(default)]
-    pub param_types: Vec<String>,
+    pub param_types: Box<[String]>,
     pub exec_mode: ExecMode,
     pub blocks: Vec<BasicBlock>,
     #[serde(default)]
-    pub exception_table: Vec<ExceptionEntry>,
+    pub exception_table: Box<[ExceptionEntry]>,
     /// True for static class methods (no implicit `this` receiver).
     /// Instance methods have `this` as reg 0 and should not be treated as
     /// static-only entries in the StdlibCallIndex.
@@ -214,16 +218,16 @@ pub struct Function {
     /// Source-line mapping table (run-length encoded).
     /// Each entry: from (block_idx, instr_idx) onward, the source line is `line`.
     #[serde(default)]
-    pub line_table: Vec<LineEntry>,
+    pub line_table: Box<[LineEntry]>,
     /// Debug info: maps register IDs to source-level variable names.
     #[serde(default)]
-    pub local_vars: Vec<LocalVar>,
+    pub local_vars: Box<[LocalVar]>,
     /// Generic type parameter names: ["T"], ["K", "V"]. Empty for non-generic functions.
     #[serde(default)]
-    pub type_params: Vec<String>,
+    pub type_params: Box<[String]>,
     /// L3-G3a: constraint bundle per type parameter (aligned by index with `type_params`).
     #[serde(default)]
-    pub type_param_constraints: Vec<ConstraintBundle>,
+    pub type_param_constraints: Box<[ConstraintBundle]>,
     /// Precomputed block label → index mapping. Not serialized; populated after module load.
     #[serde(skip)]
     pub block_index: std::collections::HashMap<String, usize>,

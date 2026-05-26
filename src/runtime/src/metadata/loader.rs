@@ -142,10 +142,10 @@ fn apply_zbc_sidecar(
     }
     for (i, fb) in sidecar.functions.into_iter().enumerate() {
         if !fb.line_table.is_empty() {
-            module.functions[i].line_table = fb.line_table;
+            module.functions[i].line_table = fb.line_table.into_boxed_slice();
         }
         if !fb.local_vars.is_empty() {
-            module.functions[i].local_vars = fb.local_vars;
+            module.functions[i].local_vars = fb.local_vars.into_boxed_slice();
         }
     }
 }
@@ -279,10 +279,10 @@ fn apply_zpkg_sidecar(
         }
         for (i, fb) in fns.into_iter().enumerate() {
             if !fb.line_table.is_empty() {
-                module.functions[i].line_table = fb.line_table;
+                module.functions[i].line_table = fb.line_table.into_boxed_slice();
             }
             if !fb.local_vars.is_empty() {
-                module.functions[i].local_vars = fb.local_vars;
+                module.functions[i].local_vars = fb.local_vars.into_boxed_slice();
             }
         }
     }
