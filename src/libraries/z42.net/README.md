@@ -9,7 +9,7 @@ z42 标准网络类型。K1: TCP sockets only (sync blocking)。UDP / IPAddress 
 | 文件 | 类型 | 说明 |
 |------|------|------|
 | `TcpClient.z42` | `TcpClient` | sync blocking TCP client (`Connect` / `GetStream` / `SetReadTimeout(ms)` / `SetWriteTimeout(ms)` / `Close` / `Dispose`) |
-| `TcpListener.z42` | `TcpListener` | sync blocking TCP server (`Bind` / `LocalPort` / `Start` / `AcceptTcpClient` / `Stop` / `Dispose`) |
+| `TcpListener.z42` | `TcpListener` | sync blocking TCP server (`Create(host, port)` static factory / `Bind` / `LocalPort` / `Start` / `AcceptTcpClient` / `Stop` / `Dispose`) |
 | `NetworkStream.z42` | `NetworkStream` | extends `Std.IO.Stream`；read/write 字节经由 socket fd |
 | `UdpClient.z42` | `UdpClient` | sync blocking UDP socket (`Bind` / `Send` / `Receive` / `LocalPort` / `Close` / `Dispose`); auto-bind on first Send |
 | `UdpReceiveResult.z42` | `UdpReceiveResult` | `{ Buffer, RemoteHost, RemotePort }` carrier returned by `UdpClient.Receive()` |

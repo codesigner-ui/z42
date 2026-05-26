@@ -32,6 +32,16 @@ public class TcpListener {
         this._bindHost  = "";
     }
 
+    // add-tcplistener-create-factory (2026-05-27): static convenience
+    // factory equivalent to `new TcpListener() + Bind(host, port)`. Mirrors
+    // BCL `TcpListener.Create(port)` / `TcpClient.ConnectTo` style. Test
+    // helpers commonly use port 0 to let the OS pick.
+    public static TcpListener Create(string host, int port) {
+        var l = new TcpListener();
+        l.Bind(host, port);
+        return l;
+    }
+
     /// Bind to `host:port` and start listening. Use port 0 to let the OS
     /// pick an available port (typical for test code) — query `LocalPort()`
     /// after Bind to discover the chosen port.
