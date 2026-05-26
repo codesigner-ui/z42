@@ -1,0 +1,114 @@
+namespace Std.Collections;
+
+using Std;
+
+// add-priority-queue (2026-05-27): generic min-heap priority queue.
+//
+// O(log n) `Enqueue` / `Dequeue`, O(1) `Peek` / `Count`. Smaller element
+// (per `T.CompareTo`) has higher priority — pops first. Callers wanting
+// max-heap semantics negate their comparison key or wrap T in a class
+// inverting `CompareTo`.
+//
+// Constraint:
+//   T : IComparable<T> — for sift-up / sift-down ordering.
+//
+// Single-param shape (T = priority key) matches Rust `BinaryHeap<T>` and
+// pre-.NET-6 `PriorityQueue`. The newer .NET 6+ split-key form
+// `PriorityQueue<TElement, TPriority>` is deferred — wait for a concrete
+// use case that needs the indirection.
+public class PriorityQueue<T> where T: IComparable<T> {
+    T[] items;
+    int count;
+    int capacity;
+
+    public PriorityQueue() {
+        this.capacity = 4;
+        this.items = new T[4];
+        this.count = 0;
+    }
+
+    public int Count() { return this.count; }
+    public bool IsEmpty() { return this.count == 0; }
+
+    /// Add `item` to the queue. O(log n) amortised.
+    public void Enqueue(T item) {
+        if (this.count == this.capacity) this.Grow();
+        this.items[this.count] = item;
+        this.count = this.count + 1;
+        this.SiftUp(this.count - 1);
+    }
+
+    /// Remove and return the smallest element. Throws if empty. O(log n).
+    public T Dequeue() {
+        if (this.count == 0) {
+            throw new Exception("PriorityQueue.Dequeue: queue is empty");
+        }
+        T root = this.items[0];
+        this.count = this.count - 1;
+        if (this.count > 0) {
+            this.items[0] = this.items[this.count];
+            this.SiftDown(0);
+        }
+        return root;
+    }
+
+    /// Return the smallest element without removing it. Throws if empty. O(1).
+    public T Peek() {
+        if (this.count == 0) {
+            throw new Exception("PriorityQueue.Peek: queue is empty");
+        }
+        return this.items[0];
+    }
+
+    /// Remove all elements; keep allocated capacity.
+    public void Clear() { this.count = 0; }
+
+    // ── Internals ────────────────────────────────────────────────────────────
+
+    void SiftUp(int idx) {
+        int i = idx;
+        while (i > 0) {
+            int parent = (i - 1) / 2;
+            if (this.items[i].CompareTo(this.items[parent]) >= 0) {
+                return;
+            }
+            T tmp = this.items[i];
+            this.items[i] = this.items[parent];
+            this.items[parent] = tmp;
+            i = parent;
+        }
+    }
+
+    void SiftDown(int idx) {
+        int n = this.count;
+        int i = idx;
+        while (true) {
+            int left  = 2 * i + 1;
+            int right = 2 * i + 2;
+            int smallest = i;
+            if (left  < n && this.items[left].CompareTo(this.items[smallest])  < 0) {
+                smallest = left;
+            }
+            if (right < n && this.items[right].CompareTo(this.items[smallest]) < 0) {
+                smallest = right;
+            }
+            if (smallest == i) return;
+            T tmp = this.items[i];
+            this.items[i] = this.items[smallest];
+            this.items[smallest] = tmp;
+            i = smallest;
+        }
+    }
+
+    void Grow() {
+        int newCap = this.capacity * 2;
+        T[] bigger = new T[newCap];
+        int i = 0;
+        while (i < this.count) {
+            bigger[i] = this.items[i];
+            i = i + 1;
+        }
+        this.items = bigger;
+        this.capacity = newCap;
+    }
+}

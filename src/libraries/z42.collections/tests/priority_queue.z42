@@ -1,0 +1,142 @@
+// add-priority-queue (2026-05-27): PriorityQueue<T> min-heap.
+namespace Z42CollectionsPriorityQueueTests;
+
+using Std;
+using Std.Test;
+using Std.Collections;
+
+[Test]
+void test_empty_count_zero() {
+    var pq = new PriorityQueue<int>();
+    Assert.Equal(0, pq.Count());
+    Assert.True(pq.IsEmpty());
+}
+
+[Test]
+void test_enqueue_increases_count() {
+    var pq = new PriorityQueue<int>();
+    pq.Enqueue(5);
+    pq.Enqueue(3);
+    pq.Enqueue(7);
+    Assert.Equal(3, pq.Count());
+    Assert.False(pq.IsEmpty());
+}
+
+[Test]
+void test_dequeue_in_min_order() {
+    var pq = new PriorityQueue<int>();
+    pq.Enqueue(5); pq.Enqueue(1); pq.Enqueue(3); pq.Enqueue(9); pq.Enqueue(2);
+    Assert.Equal(1, pq.Dequeue());
+    Assert.Equal(2, pq.Dequeue());
+    Assert.Equal(3, pq.Dequeue());
+    Assert.Equal(5, pq.Dequeue());
+    Assert.Equal(9, pq.Dequeue());
+    Assert.True(pq.IsEmpty());
+}
+
+[Test]
+void test_peek_returns_min_without_removing() {
+    var pq = new PriorityQueue<int>();
+    pq.Enqueue(10);
+    pq.Enqueue(3);
+    pq.Enqueue(7);
+    Assert.Equal(3, pq.Peek());
+    Assert.Equal(3, pq.Count());   // peek does not remove
+}
+
+[Test]
+void test_dequeue_empty_throws() {
+    var pq = new PriorityQueue<int>();
+    bool caught = false;
+    try {
+        pq.Dequeue();
+    } catch (Exception e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_peek_empty_throws() {
+    var pq = new PriorityQueue<int>();
+    bool caught = false;
+    try {
+        pq.Peek();
+    } catch (Exception e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_clear_resets_count() {
+    var pq = new PriorityQueue<int>();
+    pq.Enqueue(1); pq.Enqueue(2); pq.Enqueue(3);
+    pq.Clear();
+    Assert.Equal(0, pq.Count());
+    Assert.True(pq.IsEmpty());
+}
+
+[Test]
+void test_interleaved_enqueue_dequeue() {
+    var pq = new PriorityQueue<int>();
+    pq.Enqueue(5);
+    pq.Enqueue(2);
+    Assert.Equal(2, pq.Dequeue());
+    pq.Enqueue(1);
+    pq.Enqueue(8);
+    Assert.Equal(1, pq.Dequeue());
+    Assert.Equal(5, pq.Dequeue());
+    Assert.Equal(8, pq.Dequeue());
+}
+
+[Test]
+void test_grow_beyond_initial_capacity() {
+    var pq = new PriorityQueue<int>();
+    int i = 0;
+    while (i < 100) {
+        pq.Enqueue(100 - i);   // descending insert
+        i = i + 1;
+    }
+    Assert.Equal(100, pq.Count());
+    // Must come out 1..100 ascending
+    int j = 1;
+    while (j <= 100) {
+        Assert.Equal(j, pq.Dequeue());
+        j = j + 1;
+    }
+    Assert.True(pq.IsEmpty());
+}
+
+[Test]
+void test_duplicate_values_preserved() {
+    var pq = new PriorityQueue<int>();
+    pq.Enqueue(2); pq.Enqueue(2); pq.Enqueue(2);
+    Assert.Equal(3, pq.Count());
+    Assert.Equal(2, pq.Dequeue());
+    Assert.Equal(2, pq.Dequeue());
+    Assert.Equal(2, pq.Dequeue());
+    Assert.True(pq.IsEmpty());
+}
+
+[Test]
+void test_string_priority_queue_lexicographic() {
+    var pq = new PriorityQueue<string>();
+    pq.Enqueue("banana");
+    pq.Enqueue("apple");
+    pq.Enqueue("cherry");
+    Assert.Equal("apple",  pq.Dequeue());
+    Assert.Equal("banana", pq.Dequeue());
+    Assert.Equal("cherry", pq.Dequeue());
+}
+
+[Test]
+void test_long_values() {
+    var pq = new PriorityQueue<long>();
+    pq.Enqueue(1000000000000L);
+    pq.Enqueue(5L);
+    pq.Enqueue(9999999999L);
+    Assert.Equal(5L,             pq.Dequeue());
+    Assert.Equal(9999999999L,    pq.Dequeue());
+    Assert.Equal(1000000000000L, pq.Dequeue());
+}
