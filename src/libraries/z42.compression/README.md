@@ -49,6 +49,10 @@ using Std.Archive;
 ZipEntry[] entries = Zip.Read(zipBytes);
 byte[] hello = Zip.ExtractFile(zipBytes, "hello.txt");
 
+// Extract all entries to a directory (add-zip-extractall 2026-05-27):
+int n = Zip.ExtractAllTo(zipBytes, "destDir");
+// 自动 mkdir-p 父目录 + 目录条目 + Zip-Slip 防御。Zip.Write 仍是 deferred。
+
 // Tar write (Zip write deferred — see compression.md):
 TarEntry[] entries = new TarEntry[] {
     new TarEntry("readme.txt", contentBytes, 0644),

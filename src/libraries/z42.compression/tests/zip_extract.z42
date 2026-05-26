@@ -1,0 +1,137 @@
+// add-zip-extractall (2026-05-27): Zip.ExtractAllTo coverage.
+namespace Z42CompressionZipExtractTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Archive;
+using Std.Encoding;
+
+// Minimal PKWARE zip containing a single STORE-method entry `h.txt` with
+// content `hello\n` (6 bytes). Generated externally via `zip -X`.
+// 114 bytes total: local file header (35) + data (6) + central dir (51) + EOCD (22).
+static byte[] _minimalZip() {
+    return Hex.Decode(
+        "504b03040a0000000000a43abb5c20303a36" +
+        "060000000600000005000000682e74787468" +
+        "656c6c6f0a504b01021e030a0000000000a4" +
+        "3abb5c20303a36060000000600000005000000" +
+        "0000000001000000a48100000000682e74787" +
+        "4504b0506000000000100010033000000290000000000");
+}
+
+[Test]
+void test_extractall_writes_single_file() {
+    string tmp = Directory.CreateTempDir("z42-zip-extract");
+    try {
+        byte[] zipBytes = _minimalZip();
+        int n = Zip.ExtractAllTo(zipBytes, tmp);
+        Assert.Equal(1, n);
+        string outPath = Path.Join(tmp, "h.txt");
+        Assert.True(File.Exists(outPath));
+        byte[] content = File.ReadAllBytes(outPath);
+        Assert.Equal("hello\n", Utf8.GetString(content));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extractall_returns_count_excluding_directory_entries() {
+    string tmp = Directory.CreateTempDir("z42-zip-extract");
+    try {
+        byte[] zipBytes = _minimalZip();
+        int n = Zip.ExtractAllTo(zipBytes, tmp);
+        // Single regular file, no directory entries → count == 1.
+        Assert.Equal(1, n);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extractall_destdir_auto_created() {
+    string tmp = Directory.CreateTempDir("z42-zip-extract");
+    try {
+        // Pass a non-existent subdirectory; ExtractAllTo must mkdir.
+        string sub = Path.Join(tmp, "newsubdir");
+        Zip.ExtractAllTo(_minimalZip(), sub);
+        Assert.True(Directory.Exists(sub));
+        Assert.True(File.Exists(Path.Join(sub, "h.txt")));
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+// Constructing a "bad" zip with `../evil` as entry name requires building
+// the byte sequence by hand (no Zip.Write). Instead we verify the
+// validation helper rejects the same path shape — by smuggling the path
+// via ZipEntry construction + a hypothetical reader; the easier route is
+// to verify the public method behaviour via fixture mutation: take the
+// minimal zip, patch the entry-name bytes in-place to `../X` and re-call.
+[Test]
+void test_extractall_rejects_dotdot_traversal_in_entry_name() {
+    byte[] zipBytes = _minimalZip();
+    // Mutate the local-file-header name "h.txt" → "..xtx" (same 5 bytes).
+    // Then mutate the central directory copy too.
+    // Local file header name offset 30; central dir name offset 30 (local
+    // header) + 6 (data) + 46 (central dir fixed) = 82.
+    zipBytes[30] = (byte)'.';
+    zipBytes[31] = (byte)'.';
+    zipBytes[32] = (byte)'/';
+    zipBytes[33] = (byte)'X';
+    zipBytes[34] = (byte)'Y';
+    // Central dir copy starts at offset 35 + 6 = 41 (local header + data)
+    // + 46 (central dir fixed fields) = 87. The name follows there.
+    int centralNameOff = 35 + 6 + 46;
+    zipBytes[centralNameOff + 0] = (byte)'.';
+    zipBytes[centralNameOff + 1] = (byte)'.';
+    zipBytes[centralNameOff + 2] = (byte)'/';
+    zipBytes[centralNameOff + 3] = (byte)'X';
+    zipBytes[centralNameOff + 4] = (byte)'Y';
+
+    string tmp = Directory.CreateTempDir("z42-zip-slip");
+    try {
+        bool caught = false;
+        try {
+            Zip.ExtractAllTo(zipBytes, tmp);
+        } catch (ArchiveException e) {
+            caught = true;
+            Assert.Contains("..", e.Message);
+        }
+        Assert.True(caught);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}
+
+[Test]
+void test_extractall_rejects_absolute_path_entry_name() {
+    byte[] zipBytes = _minimalZip();
+    // Patch entry name "h.txt" → "/abso" (absolute).
+    zipBytes[30] = (byte)'/';
+    zipBytes[31] = (byte)'a';
+    zipBytes[32] = (byte)'b';
+    zipBytes[33] = (byte)'s';
+    zipBytes[34] = (byte)'o';
+    int centralNameOff = 35 + 6 + 46;
+    zipBytes[centralNameOff + 0] = (byte)'/';
+    zipBytes[centralNameOff + 1] = (byte)'a';
+    zipBytes[centralNameOff + 2] = (byte)'b';
+    zipBytes[centralNameOff + 3] = (byte)'s';
+    zipBytes[centralNameOff + 4] = (byte)'o';
+
+    string tmp = Directory.CreateTempDir("z42-zip-abs");
+    try {
+        bool caught = false;
+        try {
+            Zip.ExtractAllTo(zipBytes, tmp);
+        } catch (ArchiveException e) {
+            caught = true;
+            Assert.Contains("absolute", e.Message);
+        }
+        Assert.True(caught);
+    } finally {
+        Directory.Delete(tmp, true);
+    }
+}

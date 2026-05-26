@@ -1,6 +1,7 @@
 namespace Std.Archive;
 
 using Std;
+using Std.IO;
 using Std.Compression;
 
 // add-z42-compression (2026-05-22): Zip archive reader (PKWARE
@@ -118,6 +119,58 @@ public static class Zip {
         throw new ArchiveException("zip: entry '" + name + "' not found");
     }
 
+    // add-zip-extractall (2026-05-27): extract every entry to destDir.
+    // Mirrors `Tar.ExtractTo`. Entry names ending in `/` are directories
+    // (created but no file written). Zip-Slip prevention identical:
+    // reject names with absolute paths or `..` segments. Returns number
+    // of files written (directory entries don't count).
+    //
+    // Companion `CreateFromDirectory` is deferred — requires `Zip.Write`
+    // which is itself deferred (`compression-future-zip-write`).
+    public static int ExtractAllTo(byte[] zipBytes, string destDir) {
+        Directory.Create(destDir);
+        ZipEntry[] entries = Zip.Read(zipBytes);
+        int written = 0;
+        int i = 0;
+        while (i < entries.Length) {
+            ZipEntry e = entries[i];
+            _EnsureSafeZipEntryName(e.Name);
+            string targetPath = Path.Join(destDir, e.Name);
+            // Names ending in `/` are pure directories (PKWARE convention).
+            if (e.Name.Length > 0 && e.Name.CharAt(e.Name.Length - 1) == '/') {
+                Directory.Create(targetPath);
+            } else {
+                string parent = Path.GetDirectoryName(targetPath);
+                if (parent.Length > 0) {
+                    Directory.Create(parent);
+                }
+                File.WriteAllBytes(targetPath, e.Content);
+                written = written + 1;
+            }
+            i = i + 1;
+        }
+        return written;
+    }
+
+    // Zip-Slip CVE defence — symmetric to `Tar._EnsureSafeEntryName`.
+    // Reject absolute paths (`/...`) and any `..` path segment.
+    private static void _EnsureSafeZipEntryName(string name) {
+        if (name.Length == 0) {
+            throw new ArchiveException("zip entry has empty name");
+        }
+        if (name.CharAt(0) == '/') {
+            throw new ArchiveException("zip entry name is absolute path: " + name);
+        }
+        string[] segs = name.Split("/");
+        int i = 0;
+        while (i < segs.Length) {
+            if (segs[i] == "..") {
+                throw new ArchiveException("zip entry name contains '..' segment: " + name);
+            }
+            i = i + 1;
+        }
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────
 
     private static int _LocateEocd(byte[] bytes) {
@@ -148,12 +201,17 @@ public static class Zip {
     }
 
     private static string _ReadStr(byte[] bytes, int offset, int len) {
+        // add-zip-extractall (2026-05-27): `new string(chars)` returns a
+        // GcRef-wrapped namespace-local "Std.Archive.string" type rather
+        // than the primitive `Std.String`, breaking downstream CharAt /
+        // Length / Split calls. Switch to documented `String.FromChars`
+        // intrinsic. (Same latent bug Tar._ReadStr had until 2026-05-26.)
         char[] chars = new char[len];
         int i = 0;
         while (i < len) {
             chars[i] = (char)bytes[offset + i];
             i = i + 1;
         }
-        return new string(chars);
+        return String.FromChars(chars);
     }
 }
