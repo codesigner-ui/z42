@@ -1,6 +1,7 @@
 namespace Std.Cli;
 using Std;
 using Std.Text;
+using Std.IO;
 
 // add-z42-cli (2026-05-16)：CLI argv 解析器。最小子集 — flag + option + positional。
 //
@@ -39,11 +40,22 @@ public class ArgParser {
     // add-cli-repeated-option (2026-05-26): when true, the option may be
     // passed multiple times; values are collected into a list.
     private bool[]   _optionRepeated;
+    // add-cli-env-fallback (2026-05-26): per-option fallback env-var name.
+    // Empty string when no env fallback. Lookup precedence: argv > env > default.
+    private string[] _optionEnvVars;
     private int      _optionCount;
 
     // add-cli-strict-vs-extras (2026-05-26): when true, unknown flags /
     // options go into `ParseResult.Extras()` instead of throwing.
     private bool _allowExtras;
+
+    // add-cli-mutually-exclusive (2026-05-26): each entry is a group of
+    // option long-names where at most one may be set on the command line.
+    // Stored as parallel arrays: per-group flat-string list + per-group
+    // count. Internal `_MutexGroup` wrapper avoids string[][] which z42
+    // doesn't natively support.
+    private _MutexGroup[] _mutexGroups;
+    private int           _mutexGroupCount;
 
     // Declared positionals (in order)
     private string[] _positionalNames;
@@ -63,8 +75,11 @@ public class ArgParser {
         this._optionDefaults  = new string[8];
         this._optionRequired  = new bool[8];
         this._optionRepeated  = new bool[8];
+        this._optionEnvVars   = new string[8];
         this._optionCount     = 0;
         this._allowExtras     = false;
+        this._mutexGroups     = new _MutexGroup[4];
+        this._mutexGroupCount = 0;
         this._positionalNames = new string[8];
         this._positionalHelps = new string[8];
         this._positionalCount = 0;
@@ -91,7 +106,61 @@ public class ArgParser {
         this._optionDefaults[this._optionCount] = defaultValue;
         this._optionRequired[this._optionCount] = false;
         this._optionRepeated[this._optionCount] = false;
+        this._optionEnvVars[this._optionCount]  = "";
         this._optionCount = this._optionCount + 1;
+    }
+
+    /// 注册带 env 后备 default 的 option — 解析优先级为 argv > envVar > defaultValue.
+    /// Empty/missing env var falls through to defaultValue. Typical use:
+    /// `AddOptionWithEnv("api-key", "k", "API token", "", "API_TOKEN")`.
+    /// add-cli-env-fallback (2026-05-26).
+    public void AddOptionWithEnv(string longName, string shortName, string help,
+                                  string defaultValue, string envVarName) {
+        this.EnsureOptionCap();
+        this._optionLongs[this._optionCount]    = longName;
+        this._optionShorts[this._optionCount]   = shortName;
+        this._optionHelps[this._optionCount]    = help + " (env: $" + envVarName + ")";
+        this._optionDefaults[this._optionCount] = defaultValue;
+        this._optionRequired[this._optionCount] = false;
+        this._optionRepeated[this._optionCount] = false;
+        this._optionEnvVars[this._optionCount]  = envVarName;
+        this._optionCount = this._optionCount + 1;
+    }
+
+    /// Declare that AT MOST ONE of `names` may be set on the command line.
+    /// Validated at the end of Parse — multiple set → CliException listing
+    /// the conflict. Each name must already be a registered option (long
+    /// name). add-cli-mutually-exclusive (2026-05-26).
+    public void AddMutuallyExclusive(string[] names) {
+        // Validate every name is registered up-front so the user gets a
+        // declaration-time error rather than a confusing Parse-time one.
+        int i = 0;
+        while (i < names.Length) {
+            int oi = this.FindOptionLongIndex(names[i]);
+            if (oi < 0) {
+                throw new CliException("AddMutuallyExclusive: option '" + names[i] + "' not registered");
+            }
+            i = i + 1;
+        }
+        if (this._mutexGroupCount >= this._mutexGroups.Length) {
+            int n = this._mutexGroups.Length * 2;
+            _MutexGroup[] g = new _MutexGroup[n];
+            int j = 0;
+            while (j < this._mutexGroupCount) { g[j] = this._mutexGroups[j]; j = j + 1; }
+            this._mutexGroups = g;
+        }
+        this._mutexGroups[this._mutexGroupCount] = new _MutexGroup(names);
+        this._mutexGroupCount = this._mutexGroupCount + 1;
+    }
+
+    /// Find an option by long name; returns -1 if not registered.
+    private int FindOptionLongIndex(string longName) {
+        int i = 0;
+        while (i < this._optionCount) {
+            if (this._optionLongs[i] == longName) { return i; }
+            i = i + 1;
+        }
+        return -1;
     }
 
     /// 注册可重复 option — argv 中每次出现都 append 而非覆盖。Retrieved via
@@ -107,6 +176,7 @@ public class ArgParser {
         this._optionDefaults[this._optionCount] = "";
         this._optionRequired[this._optionCount] = false;
         this._optionRepeated[this._optionCount] = true;
+        this._optionEnvVars[this._optionCount]  = "";
         this._optionCount = this._optionCount + 1;
     }
 
@@ -132,6 +202,7 @@ public class ArgParser {
         this._optionDefaults[this._optionCount] = "";       // sentinel "missing"
         this._optionRequired[this._optionCount] = true;
         this._optionRepeated[this._optionCount] = false;
+        this._optionEnvVars[this._optionCount]  = "";
         this._optionCount = this._optionCount + 1;
     }
 
@@ -168,7 +239,22 @@ public class ArgParser {
         int j = 0;
         while (j < this._optionCount) {
             r._optionLongs[j]      = this._optionLongs[j];
-            r._optionValues[j]     = this._optionDefaults[j];
+            // Resolution precedence: env-var fallback applied at init time
+            // (so default → env-var value if set); argv parse later
+            // overwrites with `_optionWasSet = true`. add-cli-env-fallback
+            // (2026-05-26).
+            string initVal = this._optionDefaults[j];
+            string envName = this._optionEnvVars[j];
+            if (envName.Length > 0) {
+                string? envVal = Environment.GetEnvironmentVariable(envName);
+                if (envVal != null) {
+                    string nonNull = envVal ?? "";
+                    if (nonNull.Length > 0) {
+                        initVal = nonNull;
+                    }
+                }
+            }
+            r._optionValues[j]     = initVal;
             r._optionWasSet[j]     = false;
             r._optionRepeated[j]   = this._optionRepeated[j];
             if (this._optionRepeated[j]) {
@@ -237,6 +323,32 @@ public class ArgParser {
                         this._optionLongs[m] + "' missing");
                 }
                 m = m + 1;
+            }
+        }
+        // Mutually-exclusive group validation — add-cli-mutually-exclusive
+        // (2026-05-26). Skip when --help requested.
+        if (!r._showHelp) {
+            int g = 0;
+            while (g < this._mutexGroupCount) {
+                _MutexGroup grp = this._mutexGroups[g];
+                int seenCount = 0;
+                string firstSeen = "";
+                string secondSeen = "";
+                int k = 0;
+                while (k < grp._count) {
+                    int oi = this.FindOptionLongIndex(grp._names[k]);
+                    if (oi >= 0 && r._optionWasSet[oi]) {
+                        if (seenCount == 0) { firstSeen  = grp._names[k]; }
+                        else if (seenCount == 1) { secondSeen = grp._names[k]; }
+                        seenCount = seenCount + 1;
+                    }
+                    k = k + 1;
+                }
+                if (seenCount > 1) {
+                    throw new CliException("options '--" + firstSeen +
+                        "' and '--" + secondSeen + "' are mutually exclusive");
+                }
+                g = g + 1;
             }
         }
 
@@ -535,6 +647,7 @@ public class ArgParser {
         string[] gd = new string[n];
         bool[]   gr = new bool[n];
         bool[]   gp = new bool[n];
+        string[] ge = new string[n];
         int i = 0;
         while (i < this._optionCount) {
             gl[i] = this._optionLongs[i];
@@ -543,6 +656,7 @@ public class ArgParser {
             gd[i] = this._optionDefaults[i];
             gr[i] = this._optionRequired[i];
             gp[i] = this._optionRepeated[i];
+            ge[i] = this._optionEnvVars[i];
             i = i + 1;
         }
         this._optionLongs    = gl;
@@ -551,6 +665,7 @@ public class ArgParser {
         this._optionDefaults = gd;
         this._optionRequired = gr;
         this._optionRepeated = gp;
+        this._optionEnvVars  = ge;
     }
 
     private void EnsurePositionalCap() {

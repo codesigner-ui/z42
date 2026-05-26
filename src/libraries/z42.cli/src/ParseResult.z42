@@ -33,6 +33,20 @@ public class _RepeatedList {
     }
 }
 
+// Internal wrapper for mutually-exclusive option group declarations.
+// Same shape as `_RepeatedList` but semantically tracks "at most one of
+// these option long-names may be set on the command line".
+// add-cli-mutually-exclusive (2026-05-26).
+public class _MutexGroup {
+    public string[] _names;
+    public int      _count;
+
+    public _MutexGroup(string[] names) {
+        this._names = names;
+        this._count = names.Length;
+    }
+}
+
 // add-z42-cli (2026-05-16)：ArgParser.Parse 的返回值。
 //
 // 内部存储与 ArgParser 共享 longName index（parallel arrays）。string 默认 "".

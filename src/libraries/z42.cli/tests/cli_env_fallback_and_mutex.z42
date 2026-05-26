@@ -1,0 +1,107 @@
+// add-cli-env-fallback + add-cli-mutually-exclusive (2026-05-26)
+// Tests for env-var fallback options and mutually-exclusive option groups.
+namespace Z42CliEnvFallbackMutexTests;
+
+using Std;
+using Std.Test;
+using Std.IO;
+using Std.Cli;
+
+// ── env-var fallback ──────────────────────────────────────────────────────
+
+[Test]
+void test_env_fallback_used_when_no_argv() {
+    Environment.SetEnvironmentVariable("Z42_TEST_API_KEY", "secret123");
+    var p = new ArgParser("prog", "env fallback test");
+    p.AddOptionWithEnv("api-key", "k", "API key", "", "Z42_TEST_API_KEY");
+    var r = p.Parse(new string[0]);
+    Assert.Equal(r.GetOption("api-key"), "secret123");
+    Environment.SetEnvironmentVariable("Z42_TEST_API_KEY", null);
+}
+
+[Test]
+void test_argv_overrides_env_fallback() {
+    Environment.SetEnvironmentVariable("Z42_TEST_TOKEN", "env-value");
+    var p = new ArgParser("prog", "argv wins test");
+    p.AddOptionWithEnv("token", "t", "token", "", "Z42_TEST_TOKEN");
+    var r = p.Parse(new string[] { "--token=argv-value" });
+    Assert.Equal(r.GetOption("token"), "argv-value");
+    Assert.True(r.WasOptionSet("token"));
+    Environment.SetEnvironmentVariable("Z42_TEST_TOKEN", null);
+}
+
+[Test]
+void test_env_fallback_default_when_env_missing() {
+    // Ensure env var is unset.
+    Environment.SetEnvironmentVariable("Z42_TEST_MISSING_VAR", null);
+    var p = new ArgParser("prog", "default fallback test");
+    p.AddOptionWithEnv("level", "l", "level", "info", "Z42_TEST_MISSING_VAR");
+    var r = p.Parse(new string[0]);
+    Assert.Equal(r.GetOption("level"), "info");
+    Assert.False(r.WasOptionSet("level"));
+}
+
+[Test]
+void test_empty_env_var_uses_default() {
+    // Empty env var should be treated as unset, falling through to default.
+    Environment.SetEnvironmentVariable("Z42_TEST_EMPTY_VAR", "");
+    var p = new ArgParser("prog", "empty env var test");
+    p.AddOptionWithEnv("mode", "m", "mode", "production", "Z42_TEST_EMPTY_VAR");
+    var r = p.Parse(new string[0]);
+    Assert.Equal(r.GetOption("mode"), "production");
+    Environment.SetEnvironmentVariable("Z42_TEST_EMPTY_VAR", null);
+}
+
+// ── mutually exclusive ────────────────────────────────────────────────────
+
+[Test]
+void test_mutex_both_set_throws() {
+    var p = new ArgParser("prog", "mutex test");
+    p.AddOption("verbose", "v", "verbose mode", "");
+    p.AddOption("quiet", "q", "quiet mode", "");
+    p.AddMutuallyExclusive(new string[] { "verbose", "quiet" });
+    bool threw = false;
+    try {
+        p.Parse(new string[] { "--verbose=1", "--quiet=1" });
+    } catch (CliException e) {
+        threw = true;
+        Assert.True(e.Message.Contains("mutually exclusive"));
+    }
+    Assert.True(threw);
+}
+
+[Test]
+void test_mutex_one_set_ok() {
+    var p = new ArgParser("prog", "mutex one ok");
+    p.AddOption("format", "f", "output format", "");
+    p.AddOption("raw", "r", "raw output", "");
+    p.AddMutuallyExclusive(new string[] { "format", "raw" });
+    var r = p.Parse(new string[] { "--format=json" });
+    Assert.Equal(r.GetOption("format"), "json");
+    Assert.False(r.WasOptionSet("raw"));
+}
+
+[Test]
+void test_mutex_neither_set_ok() {
+    var p = new ArgParser("prog", "mutex neither ok");
+    p.AddOption("output", "o", "output file", "");
+    p.AddOption("stdout", "s", "write to stdout", "");
+    p.AddMutuallyExclusive(new string[] { "output", "stdout" });
+    var r = p.Parse(new string[0]);
+    Assert.False(r.WasOptionSet("output"));
+    Assert.False(r.WasOptionSet("stdout"));
+}
+
+[Test]
+void test_mutex_unregistered_option_throws_at_declaration() {
+    var p = new ArgParser("prog", "bad mutex");
+    p.AddOption("alpha", "a", "alpha", "");
+    bool threw = false;
+    try {
+        p.AddMutuallyExclusive(new string[] { "alpha", "nonexistent" });
+    } catch (CliException e) {
+        threw = true;
+        Assert.True(e.Message.Contains("not registered"));
+    }
+    Assert.True(threw);
+}
