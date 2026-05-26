@@ -246,17 +246,22 @@ pub(super) fn vcall(
                 chosen_name = Some(candidate);
                 break;
             }
-            // Walk base via either module.classes or the type_desc
-            // we already loaded (may be in registry but missing from
-            // module.classes when imported lazily).
+            // Walk base via module.classes first (intra-zpkg), then fall
+            // back to ctx registry (cross-zpkg base not in module.classes).
+            // This fixes cross-zpkg virtual dispatch where the base class
+            // lives in a different zpkg (e.g. Stream in z42.io, subclass
+            // in z42.net): after the first level we can no longer rely on
+            // module.classes; ctx.try_lookup_type covers deeper levels.
             let next = module.classes.iter()
                 .find(|c| c.name == cur)
                 .and_then(|c| c.base_class.clone())
                 .or_else(|| {
-                    // type_desc only has immediate base; but if cur is
-                    // its own name we know its base. For deeper levels
-                    // we rely on module.classes being populated.
-                    if cur == type_desc.name { type_desc.base_name.clone() } else { None }
+                    if cur == type_desc.name {
+                        type_desc.base_name.clone()
+                    } else {
+                        // Cross-zpkg base: look up from global type registry.
+                        ctx.try_lookup_type(&cur).and_then(|td| td.base_name.clone())
+                    }
                 });
             match next {
                 Some(b) => cur = b,

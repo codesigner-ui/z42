@@ -1,0 +1,24 @@
+namespace Demo.Base;
+using Std;
+
+// Base class with multiple virtual methods. Subclasses in other zpkgs
+// may override some but not all — the unoverridden ones must dispatch
+// back to this base implementation via cross-zpkg VCall fallback.
+public class Animal {
+    public string Name;
+    public Animal(string name) { this.Name = name; }
+
+    public virtual void Speak() {
+        Console.WriteLine(this.Name + " says: ...");
+    }
+
+    // Breathe is intentionally NOT overridden by Dog in the ext zpkg.
+    // VCall on a Dog instance must fall back to this base implementation.
+    public virtual void Breathe() {
+        Console.WriteLine(this.Name + " breathes normally");
+    }
+
+    public virtual string Describe() {
+        return "Animal(" + this.Name + ")";
+    }
+}

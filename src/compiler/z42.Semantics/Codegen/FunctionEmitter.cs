@@ -144,10 +144,14 @@ internal sealed partial class FunctionEmitter
         // (skipped when delegating via `: this(...)` — the chained ctor handles it).
         if (!emittedThisChain
             && method.BaseCtorArgs is { }
-            && _ctx.ClassRegistry.TryGetBaseClassName(_ctx.QualifyName(className), out var baseQual)
-            && baseQual is not null
+            && _ctx.SemanticModel.Classes.TryGetValue(className, out var classMeta)
+            && classMeta.BaseClassName is { } baseShortName
             && _ctx.SemanticModel.BoundBaseCtorArgs.TryGetValue(method, out var boundBaseArgs))
         {
+            // fix-vcall-base-class-fallback: use QualifyClassName so cross-zpkg
+            // base classes (e.g. Dog : Animal where Animal is in demo.base) get
+            // the correct namespace qualifier instead of the current module's ns.
+            var baseQual = _ctx.QualifyClassName(baseShortName);
             var baseSimpleName = baseQual.Contains('.')
                 ? baseQual[(baseQual.LastIndexOf('.') + 1)..] : baseQual;
             // Overload-resolve base ctor by arity（Z42FuncType.Params 不含 this）。

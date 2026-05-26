@@ -1,0 +1,19 @@
+namespace Demo.Ext;
+using Demo.Base;
+using Std;
+
+// Dog overrides Speak and Describe, but intentionally does NOT override
+// Breathe. A cross-zpkg VCall on Dog.Breathe must fall back to the base
+// Animal.Breathe implementation in the demo.base zpkg.
+public class Dog : Animal {
+    public Dog(string name) : base(name) {}
+
+    public override void Speak() {
+        Console.WriteLine(this.Name + " says: Woof!");
+    }
+
+    public override string Describe() {
+        return "Dog(" + this.Name + ")";
+    }
+    // Breathe: intentionally not overridden.
+}

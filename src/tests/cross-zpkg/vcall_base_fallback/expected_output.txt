@@ -1,0 +1,6 @@
+Rex says: Woof!
+Rex breathes normally
+Dog(Rex)
+Rex says: Woof!
+Rex breathes normally
+Dog(Rex)

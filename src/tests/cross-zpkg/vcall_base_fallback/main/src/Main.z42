@@ -1,0 +1,26 @@
+namespace Demo.App;
+using Demo.Base;
+using Demo.Ext;
+using Std;
+
+// fix-vcall-base-class-fallback: verify that a cross-zpkg subclass (Dog
+// in demo.ext) correctly dispatches non-overridden virtual methods to the
+// base class implementation (Animal in demo.base).
+void Main() {
+    Dog d = new Dog("Rex");
+
+    // Overridden method — must dispatch to Dog.Speak.
+    d.Speak();
+
+    // Non-overridden — must dispatch to base Animal.Breathe.
+    d.Breathe();
+
+    // Overridden — Dog.Describe.
+    Console.WriteLine(d.Describe());
+
+    // Via base-type reference — same dispatch rules.
+    Animal a = d;
+    a.Speak();
+    a.Breathe();
+    Console.WriteLine(a.Describe());
+}

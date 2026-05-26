@@ -31,7 +31,7 @@ public sealed partial class IrGen
     {
         var shortName = ClassIrShortName(cls);
         var baseClass = cls.BaseClass is not null
-            ? QualifyName(cls.BaseClass)
+            ? ((IEmitterContext)this).QualifyClassName(cls.BaseClass)
             : (cls.IsStruct || cls.IsRecord || WellKnownNames.IsObjectClass(cls.Name))
                 ? null : "Std.Object";
         return new(QualifyName(shortName), baseClass,
