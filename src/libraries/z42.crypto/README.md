@@ -15,6 +15,7 @@ z42 标准库的加密算法子模块。**纯脚本实现** —— 不依赖 Ope
 | `Sha256.z42` | `static class Sha256` | SHA-256 hash（FIPS 180-4）— 4 个 entry point |
 | `Sha1.z42` | `static class Sha1` | SHA-1 hash（FIPS 180-4）— legacy/compat only (SHAttered); use SHA-256 for new designs |
 | `Hmac.z42` | `static class HmacSha256` / `HmacSha1` | HMAC-SHA-256 + HMAC-SHA-1（RFC 2104） |
+| `Pbkdf2.z42` | `static class Pbkdf2` | PBKDF2-HMAC-SHA256 KDF（RFC 8018 §5.2）— 密码哈希 / 派生密钥 |
 
 ## 入口点
 

@@ -1,0 +1,104 @@
+// add-crypto-pbkdf2 (2026-05-27): PBKDF2-HMAC-SHA256 (RFC 8018) coverage.
+namespace Z42CryptoPbkdf2Tests;
+
+using Std;
+using Std.Test;
+using Std.Encoding;
+using Std.Crypto;
+
+// RFC 7914 §11 test vector — official PBKDF2-HMAC-SHA256 reference.
+[Test]
+void test_rfc7914_passwd_salt_c1_dk64() {
+    string hex = Pbkdf2.DeriveKeyStringHex("passwd", "salt", 1, 64);
+    Assert.Equal(
+        "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc" +
+        "49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783",
+        hex);
+}
+
+[Test]
+void test_iterations_change_output() {
+    string a = Pbkdf2.DeriveKeyStringHex("p", "s", 1, 32);
+    string b = Pbkdf2.DeriveKeyStringHex("p", "s", 2, 32);
+    Assert.False(a == b);
+}
+
+[Test]
+void test_salt_change_changes_output() {
+    string a = Pbkdf2.DeriveKeyStringHex("p", "salt1", 100, 32);
+    string b = Pbkdf2.DeriveKeyStringHex("p", "salt2", 100, 32);
+    Assert.False(a == b);
+}
+
+[Test]
+void test_password_change_changes_output() {
+    string a = Pbkdf2.DeriveKeyStringHex("p1", "s", 100, 32);
+    string b = Pbkdf2.DeriveKeyStringHex("p2", "s", 100, 32);
+    Assert.False(a == b);
+}
+
+[Test]
+void test_dklen_partial_block() {
+    // dkLen 16 = half a SHA-256 block; output is just T(1)[:16].
+    byte[] full = Pbkdf2.DeriveKeyString("p", "s", 1, 32);
+    byte[] half = Pbkdf2.DeriveKeyString("p", "s", 1, 16);
+    Assert.Equal(16, half.Length);
+    Assert.Equal(32, full.Length);
+    int i = 0;
+    while (i < 16) {
+        Assert.Equal((int)full[i] & 0xFF, (int)half[i] & 0xFF);
+        i = i + 1;
+    }
+}
+
+[Test]
+void test_dklen_multi_block() {
+    // dkLen 48 = 1.5 blocks; second block is T(2), distinct from T(1).
+    byte[] dk = Pbkdf2.DeriveKeyString("p", "s", 1, 48);
+    Assert.Equal(48, dk.Length);
+    // bytes [32..47] are the first 16 of T(2) — different from T(1) of same key.
+    byte[] block1 = Pbkdf2.DeriveKeyString("p", "s", 1, 32);
+    Assert.False((int)dk[32] == (int)block1[0]
+              && (int)dk[33] == (int)block1[1]
+              && (int)dk[34] == (int)block1[2]);
+}
+
+[Test]
+void test_zero_iterations_throws() {
+    bool caught = false;
+    try {
+        Pbkdf2.DeriveKeyString("p", "s", 0, 32);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_zero_dklen_throws() {
+    bool caught = false;
+    try {
+        Pbkdf2.DeriveKeyString("p", "s", 1, 0);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_negative_iterations_throws() {
+    bool caught = false;
+    try {
+        Pbkdf2.DeriveKeyString("p", "s", -5, 32);
+    } catch (ArgumentException e) {
+        caught = true;
+    }
+    Assert.True(caught);
+}
+
+[Test]
+void test_empty_salt_is_allowed() {
+    // RFC doesn't forbid empty salt (though insecure). Should not crash.
+    byte[] dk = Pbkdf2.DeriveKey(Utf8.GetBytes("p"), new byte[0], 1, 16);
+    Assert.Equal(16, dk.Length);
+}
